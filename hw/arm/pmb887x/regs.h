@@ -1,0 +1,4160 @@
+#pragma once
+
+/* CPU: pmb8875 */
+#define PMB8875						0
+#define PMB8875_EBU_BASE			0xF0000000
+#define PMB8875_USART0_BASE			0xF1000000
+#define PMB8875_USART1_BASE			0xF1800000
+#define PMB8875_DIF_BASE			0xF1B00000
+#define PMB8875_USB_BASE			0xF2200800
+#define PMB8875_NVIC_BASE			0xF2800000
+#define PMB8875_DMAC_BASE			0xF3000000
+#define PMB8875_CAPCOM0_BASE		0xF4000000
+#define PMB8875_CAPCOM1_BASE		0xF4100000
+#define PMB8875_GPIO_BASE			0xF4300000
+#define PMB8875_SCU_BASE			0xF4400000
+#define PMB8875_PLL_BASE			0xF4500000
+#define PMB8875_RTC_BASE			0xF4700000
+#define PMB8875_I2C_BASE			0xF4800000
+#define PMB8875_GPTU0_BASE			0xF4900000
+#define PMB8875_GPTU1_BASE			0xF4A00000
+#define PMB8875_STM_BASE			0xF4B00000
+#define PMB8875_AMC_BASE			0xF4C00000
+#define PMB8875_KEYPAD_BASE			0xF4D00000
+#define PMB8875_DSP_BASE			0xF6000000
+#define PMB8875_GPRSCU_BASE			0xF6200000
+#define PMB8875_AFC_BASE			0xF6300000
+#define PMB8875_TPU_BASE			0xF6400000
+
+#define PMB8875_USART0_TX_IRQ		4
+#define PMB8875_USART0_TBUF_IRQ		5
+#define PMB8875_USART0_RX_IRQ		6
+#define PMB8875_USART0_ERR_IRQ		7
+#define PMB8875_USART0_CTS_IRQ		8
+#define PMB8875_USART0_ABDET_IRQ	9
+#define PMB8875_USART0_ABSTART_IRQ	10
+#define PMB8875_USART0_TMO_IRQ		11
+#define PMB8875_USB_IRQ				25
+#define PMB8875_USART1_TX_IRQ		26
+#define PMB8875_USART1_TBUF_IRQ		27
+#define PMB8875_USART1_RX_IRQ		28
+#define PMB8875_USART1_ERR_IRQ		29
+#define PMB8875_USART1_CTS_IRQ		30
+#define PMB8875_USART1_ABDET_IRQ	31
+#define PMB8875_USART1_ABSTART_IRQ	32
+#define PMB8875_USART1_TMO_IRQ		33
+#define PMB8875_DMAC_IRQ			35
+#define PMB8875_DMAC_CH0_IRQ		36
+#define PMB8875_DMAC_CH1_IRQ		37
+#define PMB8875_DMAC_CH2_IRQ		38
+#define PMB8875_DMAC_CH3_IRQ		39
+#define PMB8875_DMAC_CH4_IRQ		40
+#define PMB8875_DMAC_CH5_IRQ		41
+#define PMB8875_DMAC_CH6_IRQ		42
+#define PMB8875_DMAC_CH7_IRQ		43
+#define PMB8875_RTC_IRQ				46
+#define PMB8875_SCU_EXTI0_IRQ		48
+#define PMB8875_SCU_EXTI1_IRQ		49
+#define PMB8875_SCU_EXTI2_IRQ		50
+#define PMB8875_SCU_EXTI3_IRQ		51
+#define PMB8875_SCU_EXTI4_IRQ		52
+#define PMB8875_SCU_DSP0_IRQ		53
+#define PMB8875_SCU_DSP1_IRQ		54
+#define PMB8875_SCU_DSP2_IRQ		55
+#define PMB8875_SCU_DSP3_IRQ		56
+#define PMB8875_SCU_DSP4_IRQ		57
+#define PMB8875_SCU_UNK0_IRQ		58
+#define PMB8875_SCU_UNK1_IRQ		59
+#define PMB8875_SCU_UNK2_IRQ		60
+#define PMB8875_SCU_EXTI5_IRQ		61
+#define PMB8875_SCU_EXTI6_IRQ		62
+#define PMB8875_SCU_EXTI7_IRQ		63
+#define PMB8875_PLL_IRQ				65
+#define PMB8875_I2C_INT0_IRQ		66
+#define PMB8875_I2C_INT1_IRQ		67
+#define PMB8875_I2C_INT2_IRQ		68
+#define PMB8875_AMC_INT0_IRQ		70
+#define PMB8875_AMC_INT1_IRQ		71
+#define PMB8875_CAPCOM0_T0_IRQ		72
+#define PMB8875_CAPCOM0_T1_IRQ		73
+#define PMB8875_CAPCOM0_CC0_IRQ		74
+#define PMB8875_CAPCOM0_CC1_IRQ		75
+#define PMB8875_CAPCOM0_CC2_IRQ		76
+#define PMB8875_CAPCOM0_CC3_IRQ		77
+#define PMB8875_CAPCOM0_CC4_IRQ		78
+#define PMB8875_CAPCOM0_CC5_IRQ		79
+#define PMB8875_CAPCOM0_CC6_IRQ		80
+#define PMB8875_CAPCOM0_CC7_IRQ		81
+#define PMB8875_CAPCOM1_T0_IRQ		82
+#define PMB8875_CAPCOM1_T1_IRQ		83
+#define PMB8875_CAPCOM1_CC0_IRQ		84
+#define PMB8875_CAPCOM1_CC1_IRQ		85
+#define PMB8875_CAPCOM1_CC2_IRQ		86
+#define PMB8875_CAPCOM1_CC3_IRQ		87
+#define PMB8875_CAPCOM1_CC4_IRQ		88
+#define PMB8875_CAPCOM1_CC5_IRQ		89
+#define PMB8875_CAPCOM1_CC6_IRQ		90
+#define PMB8875_CAPCOM1_CC7_IRQ		91
+#define PMB8875_GPTU0_SRC0_IRQ		92
+#define PMB8875_GPTU0_SRC1_IRQ		93
+#define PMB8875_GPTU0_SRC2_IRQ		94
+#define PMB8875_GPTU0_SRC3_IRQ		95
+#define PMB8875_GPTU0_SRC4_IRQ		96
+#define PMB8875_GPTU0_SRC5_IRQ		97
+#define PMB8875_GPTU0_SRC6_IRQ		98
+#define PMB8875_GPTU0_SRC7_IRQ		99
+#define PMB8875_GPTU1_SRC0_IRQ		100
+#define PMB8875_GPTU1_SRC1_IRQ		101
+#define PMB8875_GPTU1_SRC2_IRQ		102
+#define PMB8875_GPTU1_SRC3_IRQ		103
+#define PMB8875_GPTU1_SRC4_IRQ		104
+#define PMB8875_GPTU1_SRC5_IRQ		105
+#define PMB8875_GPTU1_SRC6_IRQ		106
+#define PMB8875_GPTU1_SRC7_IRQ		107
+#define PMB8875_KEYPAD_PRESS_IRQ	108
+#define PMB8875_KEYPAD_UNK0_IRQ		109
+#define PMB8875_KEYPAD_UNK1_IRQ		110
+#define PMB8875_KEYPAD_RELEASE_IRQ	111
+#define PMB8875_TPU_INT_UNK0_IRQ	113
+#define PMB8875_TPU_INT_UNK1_IRQ	114
+#define PMB8875_TPU_INT_UNK2_IRQ	115
+#define PMB8875_TPU_INT_UNK3_IRQ	116
+#define PMB8875_TPU_INT_UNK4_IRQ	117
+#define PMB8875_TPU_INT_UNK5_IRQ	118
+#define PMB8875_TPU_INT0_IRQ		119
+#define PMB8875_TPU_INT1_IRQ		120
+#define PMB8875_GPRSCU_INT0_IRQ		121
+#define PMB8875_GPRSCU_INT1_IRQ		122
+
+/* CPU: pmb8876 */
+#define PMB8876						1
+#define PMB8876_EBU_BASE			0xF0000000
+#define PMB8876_USART0_BASE			0xF1000000
+#define PMB8876_SIM_BASE			0xF1300000
+#define PMB8876_USART1_BASE			0xF1800000
+#define PMB8876_USB_BASE			0xF2200800
+#define PMB8876_NVIC_BASE			0xF2800000
+#define PMB8876_DMAC_BASE			0xF3000000
+#define PMB8876_CAPCOM0_BASE		0xF4000000
+#define PMB8876_CAPCOM1_BASE		0xF4100000
+#define PMB8876_GPIO_BASE			0xF4300000
+#define PMB8876_SCU_BASE			0xF4400000
+#define PMB8876_PLL_BASE			0xF4500000
+#define PMB8876_RTC_BASE			0xF4700000
+#define PMB8876_GPTU0_BASE			0xF4900000
+#define PMB8876_GPTU1_BASE			0xF4A00000
+#define PMB8876_STM_BASE			0xF4B00000
+#define PMB8876_AMC_BASE			0xF4C00000
+#define PMB8876_KEYPAD_BASE			0xF4D00000
+#define PMB8876_DSP_BASE			0xF6000000
+#define PMB8876_GPRSCU_BASE			0xF6200000
+#define PMB8876_AFC_BASE			0xF6300000
+#define PMB8876_TPU_BASE			0xF6400000
+#define PMB8876_CIF_BASE			0xF7000000
+#define PMB8876_DIF_BASE			0xF7100000
+#define PMB8876_MMCI_BASE			0xF7200000
+#define PMB8876_MCI_BASE			0xF7301000
+#define PMB8876_I2C_BASE			0xF7600000
+#define PMB8876_MMICIF_BASE			0xF8000000
+
+#define PMB8876_USART0_TX_IRQ		4
+#define PMB8876_USART0_TBUF_IRQ		5
+#define PMB8876_USART0_RX_IRQ		6
+#define PMB8876_USART0_ERR_IRQ		7
+#define PMB8876_USART0_CTS_IRQ		8
+#define PMB8876_USART0_ABDET_IRQ	9
+#define PMB8876_USART0_ABSTART_IRQ	10
+#define PMB8876_USART0_TMO_IRQ		11
+#define PMB8876_SIM_UNK0_IRQ		22
+#define PMB8876_SIM_UNK1_IRQ		23
+#define PMB8876_SIM_UNK2_IRQ		24
+#define PMB8876_USB_IRQ				25
+#define PMB8876_USART1_TX_IRQ		26
+#define PMB8876_USART1_TBUF_IRQ		27
+#define PMB8876_USART1_RX_IRQ		28
+#define PMB8876_USART1_ERR_IRQ		29
+#define PMB8876_USART1_CTS_IRQ		30
+#define PMB8876_USART1_ABDET_IRQ	31
+#define PMB8876_USART1_ABSTART_IRQ	32
+#define PMB8876_USART1_TMO_IRQ		33
+#define PMB8876_DMAC_IRQ			35
+#define PMB8876_DMAC_CH0_IRQ		36
+#define PMB8876_DMAC_CH1_IRQ		37
+#define PMB8876_DMAC_CH2_IRQ		38
+#define PMB8876_DMAC_CH3_IRQ		39
+#define PMB8876_DMAC_CH4_IRQ		40
+#define PMB8876_DMAC_CH5_IRQ		41
+#define PMB8876_DMAC_CH6_IRQ		42
+#define PMB8876_DMAC_CH7_IRQ		43
+#define PMB8876_RTC_IRQ				46
+#define PMB8876_SCU_EXTI0_IRQ		48
+#define PMB8876_SCU_EXTI1_IRQ		49
+#define PMB8876_SCU_EXTI2_IRQ		50
+#define PMB8876_SCU_EXTI3_IRQ		51
+#define PMB8876_SCU_EXTI4_IRQ		52
+#define PMB8876_SCU_DSP0_IRQ		53
+#define PMB8876_SCU_DSP1_IRQ		54
+#define PMB8876_SCU_DSP2_IRQ		55
+#define PMB8876_SCU_DSP3_IRQ		56
+#define PMB8876_SCU_DSP4_IRQ		57
+#define PMB8876_SCU_UNK0_IRQ		58
+#define PMB8876_SCU_UNK1_IRQ		59
+#define PMB8876_SCU_UNK2_IRQ		60
+#define PMB8876_SCU_EXTI5_IRQ		61
+#define PMB8876_SCU_EXTI6_IRQ		62
+#define PMB8876_SCU_EXTI7_IRQ		63
+#define PMB8876_PLL_IRQ				65
+#define PMB8876_AMC_INT0_IRQ		70
+#define PMB8876_AMC_INT1_IRQ		71
+#define PMB8876_CAPCOM0_T0_IRQ		72
+#define PMB8876_CAPCOM0_T1_IRQ		73
+#define PMB8876_CAPCOM0_CC0_IRQ		74
+#define PMB8876_CAPCOM0_CC1_IRQ		75
+#define PMB8876_CAPCOM0_CC2_IRQ		76
+#define PMB8876_CAPCOM0_CC3_IRQ		77
+#define PMB8876_CAPCOM0_CC4_IRQ		78
+#define PMB8876_CAPCOM0_CC5_IRQ		79
+#define PMB8876_CAPCOM0_CC6_IRQ		80
+#define PMB8876_CAPCOM0_CC7_IRQ		81
+#define PMB8876_CAPCOM1_T0_IRQ		82
+#define PMB8876_CAPCOM1_T1_IRQ		83
+#define PMB8876_CAPCOM1_CC0_IRQ		84
+#define PMB8876_CAPCOM1_CC1_IRQ		85
+#define PMB8876_CAPCOM1_CC2_IRQ		86
+#define PMB8876_CAPCOM1_CC3_IRQ		87
+#define PMB8876_CAPCOM1_CC4_IRQ		88
+#define PMB8876_CAPCOM1_CC5_IRQ		89
+#define PMB8876_CAPCOM1_CC6_IRQ		90
+#define PMB8876_CAPCOM1_CC7_IRQ		91
+#define PMB8876_GPTU0_SRC0_IRQ		92
+#define PMB8876_GPTU0_SRC1_IRQ		93
+#define PMB8876_GPTU0_SRC2_IRQ		94
+#define PMB8876_GPTU0_SRC3_IRQ		95
+#define PMB8876_GPTU0_SRC4_IRQ		96
+#define PMB8876_GPTU0_SRC5_IRQ		97
+#define PMB8876_GPTU0_SRC6_IRQ		98
+#define PMB8876_GPTU0_SRC7_IRQ		99
+#define PMB8876_GPTU1_SRC0_IRQ		100
+#define PMB8876_GPTU1_SRC1_IRQ		101
+#define PMB8876_GPTU1_SRC2_IRQ		102
+#define PMB8876_GPTU1_SRC3_IRQ		103
+#define PMB8876_GPTU1_SRC4_IRQ		104
+#define PMB8876_GPTU1_SRC5_IRQ		105
+#define PMB8876_GPTU1_SRC6_IRQ		106
+#define PMB8876_GPTU1_SRC7_IRQ		107
+#define PMB8876_KEYPAD_PRESS_IRQ	108
+#define PMB8876_KEYPAD_UNK0_IRQ		109
+#define PMB8876_KEYPAD_UNK1_IRQ		110
+#define PMB8876_KEYPAD_RELEASE_IRQ	111
+#define PMB8876_TPU_INT_UNK0_IRQ	113
+#define PMB8876_TPU_INT_UNK1_IRQ	114
+#define PMB8876_TPU_INT_UNK2_IRQ	115
+#define PMB8876_TPU_INT_UNK3_IRQ	116
+#define PMB8876_TPU_INT_UNK4_IRQ	117
+#define PMB8876_TPU_INT_UNK5_IRQ	118
+#define PMB8876_TPU_INT0_IRQ		119
+#define PMB8876_TPU_INT1_IRQ		120
+#define PMB8876_GPRSCU_INT0_IRQ		121
+#define PMB8876_GPRSCU_INT1_IRQ		122
+#define PMB8876_CIF_UNK1_IRQ		130
+#define PMB8876_CIF_UNK0_IRQ		138
+#define PMB8876_CIF_UNK2_IRQ		140
+#define PMB8876_MCI_IRQ				148
+#define PMB8876_I2C_SINGLE_REQ_IRQ	155
+#define PMB8876_I2C_BURST_REQ_IRQ	156
+#define PMB8876_I2C_ERROR_IRQ		157
+#define PMB8876_I2C_PROTOCOL_IRQ	158
+
+// Common regs for all modules
+/* Clock Control Register */
+#define MOD_CLC_DISR						(1 << 0)		 // Module Disable Request Bit
+#define MOD_CLC_DISR_SHIFT					0
+#define MOD_CLC_DISS						(1 << 1)		 // Module Disable Status Bit
+#define MOD_CLC_DISS_SHIFT					1
+#define MOD_CLC_SPEN						(1 << 2)		 // Module Suspend Enable Bit
+#define MOD_CLC_SPEN_SHIFT					2
+#define MOD_CLC_EDIS						(1 << 3)		 // Module External Request Disable
+#define MOD_CLC_EDIS_SHIFT					3
+#define MOD_CLC_SBWE						(1 << 4)		 // Module Suspend Bit Write Enable
+#define MOD_CLC_SBWE_SHIFT					4
+#define MOD_CLC_FSOE						(1 << 5)		 // Module Fast Shut-Off Enable.
+#define MOD_CLC_FSOE_SHIFT					5
+#define MOD_CLC_RMC							(0xFF << 8)		 // Module Clock Divider for Normal Mode
+#define MOD_CLC_RMC_SHIFT					8
+
+/* Module Identifier Register */
+#define MOD_ID_REV							(0xFF << 0)
+#define MOD_ID_REV_SHIFT					0
+#define MOD_ID_32B							(0xFF << 8)
+#define MOD_ID_32B_SHIFT					8
+#define MOD_ID_NUMBER						(0xFFFF << 16)
+#define MOD_ID_NUMBER_SHIFT					16
+
+/* Service Routing Control Register */
+#define MOD_SRC_SRPN						(0xFF << 0)		 // IRQ priority number
+#define MOD_SRC_SRPN_SHIFT					0
+#define MOD_SRC_TOS							(0x3 << 10)		 // Type of service for node
+#define MOD_SRC_TOS_SHIFT					10
+#define MOD_SRC_SRE							(1 << 12)		 // IRQ enable
+#define MOD_SRC_SRE_SHIFT					12
+#define MOD_SRC_SRR							(1 << 13)		 // IRQ Service Request Bit
+#define MOD_SRC_SRR_SHIFT					13
+#define MOD_SRC_CLRR						(1 << 14)		 // IRQ Request Clear Bit
+#define MOD_SRC_CLRR_SHIFT					14
+#define MOD_SRC_SETR						(1 << 15)		 // IRQ Request Set Bit
+#define MOD_SRC_SETR_SHIFT					15
+
+#define AMBA_PERIPH_ID0_PARTNUMBER0			(0xFF << 0)
+#define AMBA_PERIPH_ID0_PARTNUMBER0_SHIFT	0
+
+#define AMBA_PERIPH_ID1_PARTNUMBER1			(0xF << 0)
+#define AMBA_PERIPH_ID1_PARTNUMBER1_SHIFT	0
+#define AMBA_PERIPH_ID1_DESIGNER0			(0xFF << 4)
+#define AMBA_PERIPH_ID1_DESIGNER0_SHIFT		4
+
+#define AMBA_PERIPH_ID2_DESIGNER1			(0xF << 0)
+#define AMBA_PERIPH_ID2_DESIGNER1_SHIFT		0
+#define AMBA_PERIPH_ID2_REVISION			(0xFF << 4)
+#define AMBA_PERIPH_ID2_REVISION_SHIFT		4
+
+#define AMBA_PERIPH_ID3_CONFIGURATION		(0xFF << 0)
+#define AMBA_PERIPH_ID3_CONFIGURATION_SHIFT	0
+
+
+// DMAC [AMBA PL080]
+// PrimeCell DMA Controller (PL080)
+#define DMAC_IO_SIZE							0x00001000
+/* Status of the DMA interrupts after masking */
+#define DMAC_INT_STATUS							0x00
+#define DMAC_INT_STATUS_CH0						(1 << 0)
+#define DMAC_INT_STATUS_CH0_SHIFT				0
+#define DMAC_INT_STATUS_CH1						(1 << 1)
+#define DMAC_INT_STATUS_CH1_SHIFT				1
+#define DMAC_INT_STATUS_CH2						(1 << 2)
+#define DMAC_INT_STATUS_CH2_SHIFT				2
+#define DMAC_INT_STATUS_CH3						(1 << 3)
+#define DMAC_INT_STATUS_CH3_SHIFT				3
+#define DMAC_INT_STATUS_CH4						(1 << 4)
+#define DMAC_INT_STATUS_CH4_SHIFT				4
+#define DMAC_INT_STATUS_CH5						(1 << 5)
+#define DMAC_INT_STATUS_CH5_SHIFT				5
+#define DMAC_INT_STATUS_CH6						(1 << 6)
+#define DMAC_INT_STATUS_CH6_SHIFT				6
+#define DMAC_INT_STATUS_CH7						(1 << 7)
+#define DMAC_INT_STATUS_CH7_SHIFT				7
+
+/* Interrupt terminal count request status */
+#define DMAC_TC_STATUS							0x04
+#define DMAC_TC_STATUS_CH0						(1 << 0)
+#define DMAC_TC_STATUS_CH0_SHIFT				0
+#define DMAC_TC_STATUS_CH1						(1 << 1)
+#define DMAC_TC_STATUS_CH1_SHIFT				1
+#define DMAC_TC_STATUS_CH2						(1 << 2)
+#define DMAC_TC_STATUS_CH2_SHIFT				2
+#define DMAC_TC_STATUS_CH3						(1 << 3)
+#define DMAC_TC_STATUS_CH3_SHIFT				3
+#define DMAC_TC_STATUS_CH4						(1 << 4)
+#define DMAC_TC_STATUS_CH4_SHIFT				4
+#define DMAC_TC_STATUS_CH5						(1 << 5)
+#define DMAC_TC_STATUS_CH5_SHIFT				5
+#define DMAC_TC_STATUS_CH6						(1 << 6)
+#define DMAC_TC_STATUS_CH6_SHIFT				6
+#define DMAC_TC_STATUS_CH7						(1 << 7)
+#define DMAC_TC_STATUS_CH7_SHIFT				7
+
+/* Terminal count request clear. */
+#define DMAC_TC_CLEAR							0x08
+#define DMAC_TC_CLEAR_CH0						(1 << 0)
+#define DMAC_TC_CLEAR_CH0_SHIFT					0
+#define DMAC_TC_CLEAR_CH1						(1 << 1)
+#define DMAC_TC_CLEAR_CH1_SHIFT					1
+#define DMAC_TC_CLEAR_CH2						(1 << 2)
+#define DMAC_TC_CLEAR_CH2_SHIFT					2
+#define DMAC_TC_CLEAR_CH3						(1 << 3)
+#define DMAC_TC_CLEAR_CH3_SHIFT					3
+#define DMAC_TC_CLEAR_CH4						(1 << 4)
+#define DMAC_TC_CLEAR_CH4_SHIFT					4
+#define DMAC_TC_CLEAR_CH5						(1 << 5)
+#define DMAC_TC_CLEAR_CH5_SHIFT					5
+#define DMAC_TC_CLEAR_CH6						(1 << 6)
+#define DMAC_TC_CLEAR_CH6_SHIFT					6
+#define DMAC_TC_CLEAR_CH7						(1 << 7)
+#define DMAC_TC_CLEAR_CH7_SHIFT					7
+
+/* Interrupt error status */
+#define DMAC_ERR_STATUS							0x0C
+#define DMAC_ERR_STATUS_CH0						(1 << 0)
+#define DMAC_ERR_STATUS_CH0_SHIFT				0
+#define DMAC_ERR_STATUS_CH1						(1 << 1)
+#define DMAC_ERR_STATUS_CH1_SHIFT				1
+#define DMAC_ERR_STATUS_CH2						(1 << 2)
+#define DMAC_ERR_STATUS_CH2_SHIFT				2
+#define DMAC_ERR_STATUS_CH3						(1 << 3)
+#define DMAC_ERR_STATUS_CH3_SHIFT				3
+#define DMAC_ERR_STATUS_CH4						(1 << 4)
+#define DMAC_ERR_STATUS_CH4_SHIFT				4
+#define DMAC_ERR_STATUS_CH5						(1 << 5)
+#define DMAC_ERR_STATUS_CH5_SHIFT				5
+#define DMAC_ERR_STATUS_CH6						(1 << 6)
+#define DMAC_ERR_STATUS_CH6_SHIFT				6
+#define DMAC_ERR_STATUS_CH7						(1 << 7)
+#define DMAC_ERR_STATUS_CH7_SHIFT				7
+
+/* Interrupt error clear. */
+#define DMAC_ERR_CLEAR							0x10
+#define DMAC_ERR_CLEAR_CH0						(1 << 0)
+#define DMAC_ERR_CLEAR_CH0_SHIFT				0
+#define DMAC_ERR_CLEAR_CH1						(1 << 1)
+#define DMAC_ERR_CLEAR_CH1_SHIFT				1
+#define DMAC_ERR_CLEAR_CH2						(1 << 2)
+#define DMAC_ERR_CLEAR_CH2_SHIFT				2
+#define DMAC_ERR_CLEAR_CH3						(1 << 3)
+#define DMAC_ERR_CLEAR_CH3_SHIFT				3
+#define DMAC_ERR_CLEAR_CH4						(1 << 4)
+#define DMAC_ERR_CLEAR_CH4_SHIFT				4
+#define DMAC_ERR_CLEAR_CH5						(1 << 5)
+#define DMAC_ERR_CLEAR_CH5_SHIFT				5
+#define DMAC_ERR_CLEAR_CH6						(1 << 6)
+#define DMAC_ERR_CLEAR_CH6_SHIFT				6
+#define DMAC_ERR_CLEAR_CH7						(1 << 7)
+#define DMAC_ERR_CLEAR_CH7_SHIFT				7
+
+/* Status of the terminal count interrupt prior to masking */
+#define DMAC_RAW_TC_STATUS						0x14
+#define DMAC_RAW_TC_STATUS_CH0					(1 << 0)
+#define DMAC_RAW_TC_STATUS_CH0_SHIFT			0
+#define DMAC_RAW_TC_STATUS_CH1					(1 << 1)
+#define DMAC_RAW_TC_STATUS_CH1_SHIFT			1
+#define DMAC_RAW_TC_STATUS_CH2					(1 << 2)
+#define DMAC_RAW_TC_STATUS_CH2_SHIFT			2
+#define DMAC_RAW_TC_STATUS_CH3					(1 << 3)
+#define DMAC_RAW_TC_STATUS_CH3_SHIFT			3
+#define DMAC_RAW_TC_STATUS_CH4					(1 << 4)
+#define DMAC_RAW_TC_STATUS_CH4_SHIFT			4
+#define DMAC_RAW_TC_STATUS_CH5					(1 << 5)
+#define DMAC_RAW_TC_STATUS_CH5_SHIFT			5
+#define DMAC_RAW_TC_STATUS_CH6					(1 << 6)
+#define DMAC_RAW_TC_STATUS_CH6_SHIFT			6
+#define DMAC_RAW_TC_STATUS_CH7					(1 << 7)
+#define DMAC_RAW_TC_STATUS_CH7_SHIFT			7
+
+/* Status of the error interrupt prior to masking */
+#define DMAC_RAW_ERR_CLEAR						0x18
+#define DMAC_RAW_ERR_CLEAR_CH0					(1 << 0)
+#define DMAC_RAW_ERR_CLEAR_CH0_SHIFT			0
+#define DMAC_RAW_ERR_CLEAR_CH1					(1 << 1)
+#define DMAC_RAW_ERR_CLEAR_CH1_SHIFT			1
+#define DMAC_RAW_ERR_CLEAR_CH2					(1 << 2)
+#define DMAC_RAW_ERR_CLEAR_CH2_SHIFT			2
+#define DMAC_RAW_ERR_CLEAR_CH3					(1 << 3)
+#define DMAC_RAW_ERR_CLEAR_CH3_SHIFT			3
+#define DMAC_RAW_ERR_CLEAR_CH4					(1 << 4)
+#define DMAC_RAW_ERR_CLEAR_CH4_SHIFT			4
+#define DMAC_RAW_ERR_CLEAR_CH5					(1 << 5)
+#define DMAC_RAW_ERR_CLEAR_CH5_SHIFT			5
+#define DMAC_RAW_ERR_CLEAR_CH6					(1 << 6)
+#define DMAC_RAW_ERR_CLEAR_CH6_SHIFT			6
+#define DMAC_RAW_ERR_CLEAR_CH7					(1 << 7)
+#define DMAC_RAW_ERR_CLEAR_CH7_SHIFT			7
+
+/* Channel enable status */
+#define DMAC_EN_CHAN							0x1C
+#define DMAC_EN_CHAN_CH0						(1 << 0)
+#define DMAC_EN_CHAN_CH0_SHIFT					0
+#define DMAC_EN_CHAN_CH1						(1 << 1)
+#define DMAC_EN_CHAN_CH1_SHIFT					1
+#define DMAC_EN_CHAN_CH2						(1 << 2)
+#define DMAC_EN_CHAN_CH2_SHIFT					2
+#define DMAC_EN_CHAN_CH3						(1 << 3)
+#define DMAC_EN_CHAN_CH3_SHIFT					3
+#define DMAC_EN_CHAN_CH4						(1 << 4)
+#define DMAC_EN_CHAN_CH4_SHIFT					4
+#define DMAC_EN_CHAN_CH5						(1 << 5)
+#define DMAC_EN_CHAN_CH5_SHIFT					5
+#define DMAC_EN_CHAN_CH6						(1 << 6)
+#define DMAC_EN_CHAN_CH6_SHIFT					6
+#define DMAC_EN_CHAN_CH7						(1 << 7)
+#define DMAC_EN_CHAN_CH7_SHIFT					7
+
+/* Software burst request. */
+#define DMAC_SOFT_BREQ							0x20
+#define DMAC_SOFT_BREQ_CH0_0					(1 << 0)
+#define DMAC_SOFT_BREQ_CH0_0_SHIFT				0
+#define DMAC_SOFT_BREQ_CH0_1					(1 << 1)
+#define DMAC_SOFT_BREQ_CH0_1_SHIFT				1
+#define DMAC_SOFT_BREQ_CH1_0					(1 << 2)
+#define DMAC_SOFT_BREQ_CH1_0_SHIFT				2
+#define DMAC_SOFT_BREQ_CH1_1					(1 << 3)
+#define DMAC_SOFT_BREQ_CH1_1_SHIFT				3
+#define DMAC_SOFT_BREQ_CH2_0					(1 << 4)
+#define DMAC_SOFT_BREQ_CH2_0_SHIFT				4
+#define DMAC_SOFT_BREQ_CH2_1					(1 << 5)
+#define DMAC_SOFT_BREQ_CH2_1_SHIFT				5
+#define DMAC_SOFT_BREQ_CH3_0					(1 << 6)
+#define DMAC_SOFT_BREQ_CH3_0_SHIFT				6
+#define DMAC_SOFT_BREQ_CH3_1					(1 << 7)
+#define DMAC_SOFT_BREQ_CH3_1_SHIFT				7
+#define DMAC_SOFT_BREQ_CH4_0					(1 << 8)
+#define DMAC_SOFT_BREQ_CH4_0_SHIFT				8
+#define DMAC_SOFT_BREQ_CH4_1					(1 << 9)
+#define DMAC_SOFT_BREQ_CH4_1_SHIFT				9
+#define DMAC_SOFT_BREQ_CH5_0					(1 << 10)
+#define DMAC_SOFT_BREQ_CH5_0_SHIFT				10
+#define DMAC_SOFT_BREQ_CH5_1					(1 << 11)
+#define DMAC_SOFT_BREQ_CH5_1_SHIFT				11
+#define DMAC_SOFT_BREQ_CH6_0					(1 << 12)
+#define DMAC_SOFT_BREQ_CH6_0_SHIFT				12
+#define DMAC_SOFT_BREQ_CH6_1					(1 << 13)
+#define DMAC_SOFT_BREQ_CH6_1_SHIFT				13
+#define DMAC_SOFT_BREQ_CH7_0					(1 << 14)
+#define DMAC_SOFT_BREQ_CH7_0_SHIFT				14
+#define DMAC_SOFT_BREQ_CH7_1					(1 << 15)
+#define DMAC_SOFT_BREQ_CH7_1_SHIFT				15
+
+/* Software single request. */
+#define DMAC_SOFT_SREQ							0x24
+#define DMAC_SOFT_SREQ_CH0_0					(1 << 0)
+#define DMAC_SOFT_SREQ_CH0_0_SHIFT				0
+#define DMAC_SOFT_SREQ_CH0_1					(1 << 1)
+#define DMAC_SOFT_SREQ_CH0_1_SHIFT				1
+#define DMAC_SOFT_SREQ_CH1_0					(1 << 2)
+#define DMAC_SOFT_SREQ_CH1_0_SHIFT				2
+#define DMAC_SOFT_SREQ_CH1_1					(1 << 3)
+#define DMAC_SOFT_SREQ_CH1_1_SHIFT				3
+#define DMAC_SOFT_SREQ_CH2_0					(1 << 4)
+#define DMAC_SOFT_SREQ_CH2_0_SHIFT				4
+#define DMAC_SOFT_SREQ_CH2_1					(1 << 5)
+#define DMAC_SOFT_SREQ_CH2_1_SHIFT				5
+#define DMAC_SOFT_SREQ_CH3_0					(1 << 6)
+#define DMAC_SOFT_SREQ_CH3_0_SHIFT				6
+#define DMAC_SOFT_SREQ_CH3_1					(1 << 7)
+#define DMAC_SOFT_SREQ_CH3_1_SHIFT				7
+#define DMAC_SOFT_SREQ_CH4_0					(1 << 8)
+#define DMAC_SOFT_SREQ_CH4_0_SHIFT				8
+#define DMAC_SOFT_SREQ_CH4_1					(1 << 9)
+#define DMAC_SOFT_SREQ_CH4_1_SHIFT				9
+#define DMAC_SOFT_SREQ_CH5_0					(1 << 10)
+#define DMAC_SOFT_SREQ_CH5_0_SHIFT				10
+#define DMAC_SOFT_SREQ_CH5_1					(1 << 11)
+#define DMAC_SOFT_SREQ_CH5_1_SHIFT				11
+#define DMAC_SOFT_SREQ_CH6_0					(1 << 12)
+#define DMAC_SOFT_SREQ_CH6_0_SHIFT				12
+#define DMAC_SOFT_SREQ_CH6_1					(1 << 13)
+#define DMAC_SOFT_SREQ_CH6_1_SHIFT				13
+#define DMAC_SOFT_SREQ_CH7_0					(1 << 14)
+#define DMAC_SOFT_SREQ_CH7_0_SHIFT				14
+#define DMAC_SOFT_SREQ_CH7_1					(1 << 15)
+#define DMAC_SOFT_SREQ_CH7_1_SHIFT				15
+
+/* Software last burst request. */
+#define DMAC_SOFT_LBREQ							0x28
+#define DMAC_SOFT_LBREQ_CH0_0					(1 << 0)
+#define DMAC_SOFT_LBREQ_CH0_0_SHIFT				0
+#define DMAC_SOFT_LBREQ_CH0_1					(1 << 1)
+#define DMAC_SOFT_LBREQ_CH0_1_SHIFT				1
+#define DMAC_SOFT_LBREQ_CH1_0					(1 << 2)
+#define DMAC_SOFT_LBREQ_CH1_0_SHIFT				2
+#define DMAC_SOFT_LBREQ_CH1_1					(1 << 3)
+#define DMAC_SOFT_LBREQ_CH1_1_SHIFT				3
+#define DMAC_SOFT_LBREQ_CH2_0					(1 << 4)
+#define DMAC_SOFT_LBREQ_CH2_0_SHIFT				4
+#define DMAC_SOFT_LBREQ_CH2_1					(1 << 5)
+#define DMAC_SOFT_LBREQ_CH2_1_SHIFT				5
+#define DMAC_SOFT_LBREQ_CH3_0					(1 << 6)
+#define DMAC_SOFT_LBREQ_CH3_0_SHIFT				6
+#define DMAC_SOFT_LBREQ_CH3_1					(1 << 7)
+#define DMAC_SOFT_LBREQ_CH3_1_SHIFT				7
+#define DMAC_SOFT_LBREQ_CH4_0					(1 << 8)
+#define DMAC_SOFT_LBREQ_CH4_0_SHIFT				8
+#define DMAC_SOFT_LBREQ_CH4_1					(1 << 9)
+#define DMAC_SOFT_LBREQ_CH4_1_SHIFT				9
+#define DMAC_SOFT_LBREQ_CH5_0					(1 << 10)
+#define DMAC_SOFT_LBREQ_CH5_0_SHIFT				10
+#define DMAC_SOFT_LBREQ_CH5_1					(1 << 11)
+#define DMAC_SOFT_LBREQ_CH5_1_SHIFT				11
+#define DMAC_SOFT_LBREQ_CH6_0					(1 << 12)
+#define DMAC_SOFT_LBREQ_CH6_0_SHIFT				12
+#define DMAC_SOFT_LBREQ_CH6_1					(1 << 13)
+#define DMAC_SOFT_LBREQ_CH6_1_SHIFT				13
+#define DMAC_SOFT_LBREQ_CH7_0					(1 << 14)
+#define DMAC_SOFT_LBREQ_CH7_0_SHIFT				14
+#define DMAC_SOFT_LBREQ_CH7_1					(1 << 15)
+#define DMAC_SOFT_LBREQ_CH7_1_SHIFT				15
+
+/* Software last single request. */
+#define DMAC_SOFT_LSREQ							0x2C
+#define DMAC_SOFT_LSREQ_CH0_0					(1 << 0)
+#define DMAC_SOFT_LSREQ_CH0_0_SHIFT				0
+#define DMAC_SOFT_LSREQ_CH0_1					(1 << 1)
+#define DMAC_SOFT_LSREQ_CH0_1_SHIFT				1
+#define DMAC_SOFT_LSREQ_CH1_0					(1 << 2)
+#define DMAC_SOFT_LSREQ_CH1_0_SHIFT				2
+#define DMAC_SOFT_LSREQ_CH1_1					(1 << 3)
+#define DMAC_SOFT_LSREQ_CH1_1_SHIFT				3
+#define DMAC_SOFT_LSREQ_CH2_0					(1 << 4)
+#define DMAC_SOFT_LSREQ_CH2_0_SHIFT				4
+#define DMAC_SOFT_LSREQ_CH2_1					(1 << 5)
+#define DMAC_SOFT_LSREQ_CH2_1_SHIFT				5
+#define DMAC_SOFT_LSREQ_CH3_0					(1 << 6)
+#define DMAC_SOFT_LSREQ_CH3_0_SHIFT				6
+#define DMAC_SOFT_LSREQ_CH3_1					(1 << 7)
+#define DMAC_SOFT_LSREQ_CH3_1_SHIFT				7
+#define DMAC_SOFT_LSREQ_CH4_0					(1 << 8)
+#define DMAC_SOFT_LSREQ_CH4_0_SHIFT				8
+#define DMAC_SOFT_LSREQ_CH4_1					(1 << 9)
+#define DMAC_SOFT_LSREQ_CH4_1_SHIFT				9
+#define DMAC_SOFT_LSREQ_CH5_0					(1 << 10)
+#define DMAC_SOFT_LSREQ_CH5_0_SHIFT				10
+#define DMAC_SOFT_LSREQ_CH5_1					(1 << 11)
+#define DMAC_SOFT_LSREQ_CH5_1_SHIFT				11
+#define DMAC_SOFT_LSREQ_CH6_0					(1 << 12)
+#define DMAC_SOFT_LSREQ_CH6_0_SHIFT				12
+#define DMAC_SOFT_LSREQ_CH6_1					(1 << 13)
+#define DMAC_SOFT_LSREQ_CH6_1_SHIFT				13
+#define DMAC_SOFT_LSREQ_CH7_0					(1 << 14)
+#define DMAC_SOFT_LSREQ_CH7_0_SHIFT				14
+#define DMAC_SOFT_LSREQ_CH7_1					(1 << 15)
+#define DMAC_SOFT_LSREQ_CH7_1_SHIFT				15
+
+/* Configuration Register */
+#define DMAC_CONFIG								0x30
+#define DMAC_CONFIG_ENABLE						(1 << 0)			 // DMAC Enable
+#define DMAC_CONFIG_ENABLE_SHIFT				0
+#define DMAC_CONFIG_M1							(1 << 1)			 // AHB Master 1 endianness configuration
+#define DMAC_CONFIG_M1_SHIFT					1
+#define DMAC_CONFIG_M1_LE						0x0
+#define DMAC_CONFIG_M1_BE						0x2
+#define DMAC_CONFIG_M2							(1 << 2)			 // AHB Master 2 endianness configuration
+#define DMAC_CONFIG_M2_SHIFT					2
+#define DMAC_CONFIG_M2_LE						0x0
+#define DMAC_CONFIG_M2_BE						0x4
+
+/* Synchronization Register */
+#define DMAC_SYNC								0x34
+#define DMAC_SYNC_CH0_0							(1 << 0)
+#define DMAC_SYNC_CH0_0_SHIFT					0
+#define DMAC_SYNC_CH0_1							(1 << 1)
+#define DMAC_SYNC_CH0_1_SHIFT					1
+#define DMAC_SYNC_CH1_0							(1 << 2)
+#define DMAC_SYNC_CH1_0_SHIFT					2
+#define DMAC_SYNC_CH1_1							(1 << 3)
+#define DMAC_SYNC_CH1_1_SHIFT					3
+#define DMAC_SYNC_CH2_0							(1 << 4)
+#define DMAC_SYNC_CH2_0_SHIFT					4
+#define DMAC_SYNC_CH2_1							(1 << 5)
+#define DMAC_SYNC_CH2_1_SHIFT					5
+#define DMAC_SYNC_CH3_0							(1 << 6)
+#define DMAC_SYNC_CH3_0_SHIFT					6
+#define DMAC_SYNC_CH3_1							(1 << 7)
+#define DMAC_SYNC_CH3_1_SHIFT					7
+#define DMAC_SYNC_CH4_0							(1 << 8)
+#define DMAC_SYNC_CH4_0_SHIFT					8
+#define DMAC_SYNC_CH4_1							(1 << 9)
+#define DMAC_SYNC_CH4_1_SHIFT					9
+#define DMAC_SYNC_CH5_0							(1 << 10)
+#define DMAC_SYNC_CH5_0_SHIFT					10
+#define DMAC_SYNC_CH5_1							(1 << 11)
+#define DMAC_SYNC_CH5_1_SHIFT					11
+#define DMAC_SYNC_CH6_0							(1 << 12)
+#define DMAC_SYNC_CH6_0_SHIFT					12
+#define DMAC_SYNC_CH6_1							(1 << 13)
+#define DMAC_SYNC_CH6_1_SHIFT					13
+#define DMAC_SYNC_CH7_0							(1 << 14)
+#define DMAC_SYNC_CH7_0_SHIFT					14
+#define DMAC_SYNC_CH7_1							(1 << 15)
+#define DMAC_SYNC_CH7_1_SHIFT					15
+
+#define DMAC_CH_SRC_ADDR0						0x100
+#define DMAC_CH_SRC_ADDR1						0x120
+#define DMAC_CH_SRC_ADDR2						0x140
+#define DMAC_CH_SRC_ADDR3						0x160
+#define DMAC_CH_SRC_ADDR4						0x180
+#define DMAC_CH_SRC_ADDR5						0x1A0
+#define DMAC_CH_SRC_ADDR6						0x1C0
+#define DMAC_CH_SRC_ADDR7						0x1E0
+
+#define DMAC_CH_DST_ADDR						0x104
+
+#define DMAC_CH_LLI								0x108
+#define DMAC_CH_LLI_LM							(1 << 0)			 // AHB master select for loading the next LLI
+#define DMAC_CH_LLI_LM_SHIFT					0
+#define DMAC_CH_LLI_LM_AHB1						0x0
+#define DMAC_CH_LLI_LM_AHB2						0x1
+#define DMAC_CH_LLI_LLI							(0x1FFFFFFF << 2)	 // Linked list item
+#define DMAC_CH_LLI_LLI_SHIFT					2
+
+#define DMAC_CH_CONTROL0						0x10C
+#define DMAC_CH_CONTROL1						0x12C
+#define DMAC_CH_CONTROL2						0x14C
+#define DMAC_CH_CONTROL3						0x16C
+#define DMAC_CH_CONTROL4						0x18C
+#define DMAC_CH_CONTROL5						0x1AC
+#define DMAC_CH_CONTROL6						0x1CC
+#define DMAC_CH_CONTROL7						0x1EC
+#define DMAC_CH_CONTROL_TRANSFER_SZIE			(0xFFF << 0)		 // Transfer size.
+#define DMAC_CH_CONTROL_TRANSFER_SZIE_SHIFT		0
+#define DMAC_CH_CONTROL_SB_SIZE					(0x7 << 12)			 // Source burst size
+#define DMAC_CH_CONTROL_SB_SIZE_SHIFT			12
+#define DMAC_CH_CONTROL_SB_SIZE_SZ_1			0x0
+#define DMAC_CH_CONTROL_SB_SIZE_SZ_4			0x1000
+#define DMAC_CH_CONTROL_SB_SIZE_SZ_8			0x2000
+#define DMAC_CH_CONTROL_SB_SIZE_SZ_16			0x3000
+#define DMAC_CH_CONTROL_SB_SIZE_SZ_32			0x4000
+#define DMAC_CH_CONTROL_SB_SIZE_SZ_64			0x5000
+#define DMAC_CH_CONTROL_SB_SIZE_SZ_128			0x6000
+#define DMAC_CH_CONTROL_SB_SIZE_SZ_256			0x7000
+#define DMAC_CH_CONTROL_DB_SIZE					(0x7 << 15)			 // Destination burst size
+#define DMAC_CH_CONTROL_DB_SIZE_SHIFT			15
+#define DMAC_CH_CONTROL_DB_SIZE_SZ_1			0x0
+#define DMAC_CH_CONTROL_DB_SIZE_SZ_4			0x8000
+#define DMAC_CH_CONTROL_DB_SIZE_SZ_8			0x10000
+#define DMAC_CH_CONTROL_DB_SIZE_SZ_16			0x18000
+#define DMAC_CH_CONTROL_DB_SIZE_SZ_32			0x20000
+#define DMAC_CH_CONTROL_DB_SIZE_SZ_64			0x28000
+#define DMAC_CH_CONTROL_DB_SIZE_SZ_128			0x30000
+#define DMAC_CH_CONTROL_DB_SIZE_SZ_256			0x38000
+#define DMAC_CH_CONTROL_S_WIDTH					(0x7 << 18)			 // Source transfer width
+#define DMAC_CH_CONTROL_S_WIDTH_SHIFT			18
+#define DMAC_CH_CONTROL_S_WIDTH_BYTE			0x0
+#define DMAC_CH_CONTROL_S_WIDTH_WORD			0x40000
+#define DMAC_CH_CONTROL_S_WIDTH_DWORD			0x80000
+#define DMAC_CH_CONTROL_D_WIDTH					(0x7 << 21)			 // Destination transfer width
+#define DMAC_CH_CONTROL_D_WIDTH_SHIFT			21
+#define DMAC_CH_CONTROL_D_WIDTH_BYTE			0x0
+#define DMAC_CH_CONTROL_D_WIDTH_WORD			0x200000
+#define DMAC_CH_CONTROL_D_WIDTH_DWORD			0x400000
+#define DMAC_CH_CONTROL_S						(1 << 24)			 // Source AHB master select
+#define DMAC_CH_CONTROL_S_SHIFT					24
+#define DMAC_CH_CONTROL_S_AHB1					0x0
+#define DMAC_CH_CONTROL_S_AHB2					0x1000000
+#define DMAC_CH_CONTROL_D						(1 << 25)			 // Destination AHB master select
+#define DMAC_CH_CONTROL_D_SHIFT					25
+#define DMAC_CH_CONTROL_D_AHB1					0x0
+#define DMAC_CH_CONTROL_D_AHB2					0x2000000
+#define DMAC_CH_CONTROL_SI						(1 << 26)			 // Source increment.
+#define DMAC_CH_CONTROL_SI_SHIFT				26
+#define DMAC_CH_CONTROL_DI						(1 << 27)			 // Destination increment.
+#define DMAC_CH_CONTROL_DI_SHIFT				27
+#define DMAC_CH_CONTROL_PROTECTION				(0x7 << 28)			 // Protection.
+#define DMAC_CH_CONTROL_PROTECTION_SHIFT		28
+#define DMAC_CH_CONTROL_I						(1 << 31)			 // Terminal count interrupt enable bit.
+#define DMAC_CH_CONTROL_I_SHIFT					31
+
+#define DMAC_CH_CONFIG0							0x110
+#define DMAC_CH_CONFIG1							0x130
+#define DMAC_CH_CONFIG2							0x150
+#define DMAC_CH_CONFIG3							0x170
+#define DMAC_CH_CONFIG4							0x190
+#define DMAC_CH_CONFIG5							0x1B0
+#define DMAC_CH_CONFIG6							0x1D0
+#define DMAC_CH_CONFIG7							0x1F0
+#define DMAC_CH_CONFIG_ENABLE					(1 << 0)			 // Channel enable.
+#define DMAC_CH_CONFIG_ENABLE_SHIFT				0
+#define DMAC_CH_CONFIG_SRC_PERIPH				(0xF << 1)			 // Source peripheral.
+#define DMAC_CH_CONFIG_SRC_PERIPH_SHIFT			1
+#define DMAC_CH_CONFIG_DST_PERIPH				(0x3F << 5)			 // Destination peripheral.
+#define DMAC_CH_CONFIG_DST_PERIPH_SHIFT			5
+#define DMAC_CH_CONFIG_FLOW_CTRL				(0x7 << 11)			 // Flow control and transfer type
+#define DMAC_CH_CONFIG_FLOW_CTRL_SHIFT			11
+#define DMAC_CH_CONFIG_FLOW_CTRL_MEM2MEM		0x0
+#define DMAC_CH_CONFIG_FLOW_CTRL_MEM2PER		0x800
+#define DMAC_CH_CONFIG_FLOW_CTRL_PER2MEM		0x1000
+#define DMAC_CH_CONFIG_FLOW_CTRL_SRC2DST		0x1800
+#define DMAC_CH_CONFIG_FLOW_CTRL_SRC2DST_DST	0x2000
+#define DMAC_CH_CONFIG_FLOW_CTRL_MEM2PER_PER	0x2800
+#define DMAC_CH_CONFIG_FLOW_CTRL_PER2MEM_PER	0x3000
+#define DMAC_CH_CONFIG_FLOW_CTRL_SRC2DST_SRC	0x3800
+#define DMAC_CH_CONFIG_INT_MASK_ERR				(1 << 14)			 // Interrupt error mask.
+#define DMAC_CH_CONFIG_INT_MASK_ERR_SHIFT		14
+#define DMAC_CH_CONFIG_INT_MASK_TC				(1 << 15)			 // Terminal count interrupt mask.
+#define DMAC_CH_CONFIG_INT_MASK_TC_SHIFT		15
+#define DMAC_CH_CONFIG_LOCK						(1 << 16)			 // Lock.
+#define DMAC_CH_CONFIG_LOCK_SHIFT				16
+#define DMAC_CH_CONFIG_ACTIVE					(1 << 17)			 // Active.
+#define DMAC_CH_CONFIG_ACTIVE_SHIFT				17
+#define DMAC_CH_CONFIG_HALT						(1 << 18)			 // Halt.
+#define DMAC_CH_CONFIG_HALT_SHIFT				18
+
+#define DMAC_PERIPH_ID0							0xFE0
+
+#define DMAC_PERIPH_ID1							0xFE4
+
+#define DMAC_PERIPH_ID2							0xFE8
+
+#define DMAC_PERIPH_ID3							0xFEC
+
+#define DMAC_PCELL_ID0							0xFF0
+
+#define DMAC_PCELL_ID1							0xFF4
+
+#define DMAC_PCELL_ID2							0xFF8
+
+#define DMAC_PCELL_ID3							0xFFC
+
+
+// MCI [AMBA PL180]
+// ARM PrimeCell Multimedia Card Interface (PL180)
+#define MCI_IO_SIZE							0x00001000
+#define MCI_POWER							0x00
+#define MCI_POWER_CTRL						(0x3 << 0)
+#define MCI_POWER_CTRL_SHIFT				0
+#define MCI_POWER_CTRL_POWER_OFF			0x0
+#define MCI_POWER_CTRL_RESERVED				0x1
+#define MCI_POWER_CTRL_POWER_UP				0x2
+#define MCI_POWER_CTRL_POWER_ON				0x3
+#define MCI_POWER_VOLTAGE					(0xF << 2)
+#define MCI_POWER_VOLTAGE_SHIFT				2
+#define MCI_POWER_OPENDRAIN					(1 << 6)
+#define MCI_POWER_OPENDRAIN_SHIFT			6
+#define MCI_POWER_ROD						(1 << 7)
+#define MCI_POWER_ROD_SHIFT					7
+
+#define MCI_CLOCK							0x04
+#define MCI_CLOCK_CLKDIV					(0xFF << 0)			 // MCLCLK frequency = MCLK / [2x(ClkDiv+1)].
+#define MCI_CLOCK_CLKDIV_SHIFT				0
+#define MCI_CLOCK_ENABLE					(1 << 8)
+#define MCI_CLOCK_ENABLE_SHIFT				8
+#define MCI_CLOCK_PWRSAVE					(1 << 9)
+#define MCI_CLOCK_PWRSAVE_SHIFT				9
+#define MCI_CLOCK_BYPASS					(1 << 10)
+#define MCI_CLOCK_BYPASS_SHIFT				10
+#define MCI_CLOCK_WIDEBUS					(1 << 11)
+#define MCI_CLOCK_WIDEBUS_SHIFT				11
+
+#define MCI_ARGUMENT						0x08
+#define MCI_ARGUMENT_CMDARG					(0xFFFFFFFF << 0)
+#define MCI_ARGUMENT_CMDARG_SHIFT			0
+
+#define MCI_COMMAND							0x0C
+#define MCI_COMMAND_CMDINDEX				(0x3F << 0)
+#define MCI_COMMAND_CMDINDEX_SHIFT			0
+#define MCI_COMMAND_RESPONSE				(1 << 6)
+#define MCI_COMMAND_RESPONSE_SHIFT			6
+#define MCI_COMMAND_LONGRSP					(1 << 7)
+#define MCI_COMMAND_LONGRSP_SHIFT			7
+#define MCI_COMMAND_INTERRUPT				(1 << 8)
+#define MCI_COMMAND_INTERRUPT_SHIFT			8
+#define MCI_COMMAND_PENDING					(1 << 9)
+#define MCI_COMMAND_PENDING_SHIFT			9
+#define MCI_COMMAND_ENABLE					(1 << 10)
+#define MCI_COMMAND_ENABLE_SHIFT			10
+
+#define MCI_RESPCMD							0x10
+#define MCI_RESPCMD_CMDINDEX				(0x3F << 0)
+#define MCI_RESPCMD_CMDINDEX_SHIFT			0
+
+#define MCI_RESPONSE0						0x14
+
+#define MCI_RESPONSE1						0x18
+
+#define MCI_RESPONSE2						0x1C
+
+#define MCI_RESPONSE3						0x20
+
+#define MCI_DATATIMER						0x24
+#define MCI_DATATIMER_TIMER					(0xFFFFFFFF << 0)
+#define MCI_DATATIMER_TIMER_SHIFT			0
+
+#define MCI_DATALENGTH						0x28
+#define MCI_DATALENGTH_LENGTH				(0xFFFF << 0)
+#define MCI_DATALENGTH_LENGTH_SHIFT			0
+
+#define MCI_DATACTRL						0x2C
+#define MCI_DATACTRL_EMABLE					(1 << 0)
+#define MCI_DATACTRL_EMABLE_SHIFT			0
+#define MCI_DATACTRL_DIRECTION				(1 << 1)			 // 0 = From controller to card, 1 = From card to controller
+#define MCI_DATACTRL_DIRECTION_SHIFT		1
+#define MCI_DATACTRL_DIRECTION_WRITE		0x0
+#define MCI_DATACTRL_DIRECTION_READ			0x2
+#define MCI_DATACTRL_MODE					(1 << 2)
+#define MCI_DATACTRL_MODE_SHIFT				2
+#define MCI_DATACTRL_MODE_BLCOK				0x0
+#define MCI_DATACTRL_MODE_STREAM			0x4
+#define MCI_DATACTRL_DMAENABLE				(1 << 3)
+#define MCI_DATACTRL_DMAENABLE_SHIFT		3
+#define MCI_DATACTRL_BLOCKSIZE				(0xF << 4)
+#define MCI_DATACTRL_BLOCKSIZE_SHIFT		4
+
+#define MCI_DATACNT							0x30
+#define MCI_DATACNT_COUNT					(0xFFFF << 0)
+#define MCI_DATACNT_COUNT_SHIFT				0
+
+#define MCI_STATUS							0x34
+#define MCI_STATUS_CMDCRCFAIL				(1 << 0)			 // Command response received (CRC check failed)
+#define MCI_STATUS_CMDCRCFAIL_SHIFT			0
+#define MCI_STATUS_DATACRCFAIL				(1 << 1)			 // Data block sent/received (CRC check failed)
+#define MCI_STATUS_DATACRCFAIL_SHIFT		1
+#define MCI_STATUS_CMDTIMEOUT				(1 << 2)			 // Command response timeout
+#define MCI_STATUS_CMDTIMEOUT_SHIFT			2
+#define MCI_STATUS_DATATIMEOUT				(1 << 3)			 // Data timeout
+#define MCI_STATUS_DATATIMEOUT_SHIFT		3
+#define MCI_STATUS_TXUNDERRUN				(1 << 4)			 // Transmit FIFO underrun error
+#define MCI_STATUS_TXUNDERRUN_SHIFT			4
+#define MCI_STATUS_RXOVERRUN				(1 << 5)			 // Receive FIFO overrun error
+#define MCI_STATUS_RXOVERRUN_SHIFT			5
+#define MCI_STATUS_CMDRESPEND				(1 << 6)			 // Command response received (CRC check passed)
+#define MCI_STATUS_CMDRESPEND_SHIFT			6
+#define MCI_STATUS_CMDSENT					(1 << 7)			 // Command sent (no response required)
+#define MCI_STATUS_CMDSENT_SHIFT			7
+#define MCI_STATUS_DATAEND					(1 << 8)			 // Data end (data counter is zero)
+#define MCI_STATUS_DATAEND_SHIFT			8
+#define MCI_STATUS_STARTBITERR				(1 << 9)			 // Start bit not detected on all data signals in wide bus mode
+#define MCI_STATUS_STARTBITERR_SHIFT		9
+#define MCI_STATUS_DATABLOCKEND				(1 << 10)			 // Data block sent/received (CRC check passed)
+#define MCI_STATUS_DATABLOCKEND_SHIFT		10
+#define MCI_STATUS_CMDACTIVE				(1 << 11)			 // Command transfer in progress
+#define MCI_STATUS_CMDACTIVE_SHIFT			11
+#define MCI_STATUS_TXACTIVE					(1 << 12)			 // Data transmit in progress
+#define MCI_STATUS_TXACTIVE_SHIFT			12
+#define MCI_STATUS_RXACTIVE					(1 << 13)			 // Data receive in progress
+#define MCI_STATUS_RXACTIVE_SHIFT			13
+#define MCI_STATUS_TXFIFOHALFEMPTY			(1 << 14)			 // Transmit FIFO half empty
+#define MCI_STATUS_TXFIFOHALFEMPTY_SHIFT	14
+#define MCI_STATUS_RXFIFOHALFFULL			(1 << 15)			 // Receive FIFO half full
+#define MCI_STATUS_RXFIFOHALFFULL_SHIFT		15
+#define MCI_STATUS_TXFIFOFULL				(1 << 16)			 // Transmit FIFO full
+#define MCI_STATUS_TXFIFOFULL_SHIFT			16
+#define MCI_STATUS_RXFIFOFULL				(1 << 17)			 // Receive FIFO full
+#define MCI_STATUS_RXFIFOFULL_SHIFT			17
+#define MCI_STATUS_TXFIFOEMPTY				(1 << 18)			 // Transmit FIFO empty
+#define MCI_STATUS_TXFIFOEMPTY_SHIFT		18
+#define MCI_STATUS_RXFIFOEMPTY				(1 << 19)			 // Receive FIFO empty
+#define MCI_STATUS_RXFIFOEMPTY_SHIFT		19
+#define MCI_STATUS_TXDATAAVLBL				(1 << 20)			 // Data available in transmit FIFO
+#define MCI_STATUS_TXDATAAVLBL_SHIFT		20
+#define MCI_STATUS_RXDATAAVLBL				(1 << 21)			 // Data available in receive FIFO
+#define MCI_STATUS_RXDATAAVLBL_SHIFT		21
+
+#define MCI_CLEAR							0x38
+#define MCI_CLEAR_CMDCRCFAILCLR				(1 << 0)
+#define MCI_CLEAR_CMDCRCFAILCLR_SHIFT		0
+#define MCI_CLEAR_DATACRCFAILCLR			(1 << 1)
+#define MCI_CLEAR_DATACRCFAILCLR_SHIFT		1
+#define MCI_CLEAR_CMDTIMEOUTCLR				(1 << 2)
+#define MCI_CLEAR_CMDTIMEOUTCLR_SHIFT		2
+#define MCI_CLEAR_DATATIMEOUTCLR			(1 << 3)
+#define MCI_CLEAR_DATATIMEOUTCLR_SHIFT		3
+#define MCI_CLEAR_TXUNDERRUNCLR				(1 << 4)
+#define MCI_CLEAR_TXUNDERRUNCLR_SHIFT		4
+#define MCI_CLEAR_RXOVERRUNCLR				(1 << 5)
+#define MCI_CLEAR_RXOVERRUNCLR_SHIFT		5
+#define MCI_CLEAR_CMDRESPENDCLR				(1 << 6)
+#define MCI_CLEAR_CMDRESPENDCLR_SHIFT		6
+#define MCI_CLEAR_CMDSENTCLR				(1 << 7)
+#define MCI_CLEAR_CMDSENTCLR_SHIFT			7
+#define MCI_CLEAR_DATAENDCLR				(1 << 8)
+#define MCI_CLEAR_DATAENDCLR_SHIFT			8
+#define MCI_CLEAR_STARTBITERRCLR			(1 << 9)
+#define MCI_CLEAR_STARTBITERRCLR_SHIFT		9
+#define MCI_CLEAR_DATABLOCKENDCLR			(1 << 10)
+#define MCI_CLEAR_DATABLOCKENDCLR_SHIFT		10
+
+#define MCI_MASK0							0x3C
+#define MCI_MASK0_CMDCRCFAILMASK			(1 << 0)
+#define MCI_MASK0_CMDCRCFAILMASK_SHIFT		0
+#define MCI_MASK0_DATACRCFAILMASK			(1 << 1)
+#define MCI_MASK0_DATACRCFAILMASK_SHIFT		1
+#define MCI_MASK0_CMDTIMEOUTMASK			(1 << 2)
+#define MCI_MASK0_CMDTIMEOUTMASK_SHIFT		2
+#define MCI_MASK0_DATATIMEOUTMASK			(1 << 3)
+#define MCI_MASK0_DATATIMEOUTMASK_SHIFT		3
+#define MCI_MASK0_TXUNDERRUNMASK			(1 << 4)
+#define MCI_MASK0_TXUNDERRUNMASK_SHIFT		4
+#define MCI_MASK0_RXOVERRUNMASK				(1 << 5)
+#define MCI_MASK0_RXOVERRUNMASK_SHIFT		5
+#define MCI_MASK0_CMDRESPENDMASK			(1 << 6)
+#define MCI_MASK0_CMDRESPENDMASK_SHIFT		6
+#define MCI_MASK0_CMDSENTMASK				(1 << 7)
+#define MCI_MASK0_CMDSENTMASK_SHIFT			7
+#define MCI_MASK0_DATAENDMASK				(1 << 8)
+#define MCI_MASK0_DATAENDMASK_SHIFT			8
+#define MCI_MASK0_STARTBITERRMASK			(1 << 9)
+#define MCI_MASK0_STARTBITERRMASK_SHIFT		9
+#define MCI_MASK0_DATABLOCKENDMASK			(1 << 10)
+#define MCI_MASK0_DATABLOCKENDMASK_SHIFT	10
+#define MCI_MASK0_CMDACTIVEMASK				(1 << 11)
+#define MCI_MASK0_CMDACTIVEMASK_SHIFT		11
+#define MCI_MASK0_TXACTIVEMASK				(1 << 12)
+#define MCI_MASK0_TXACTIVEMASK_SHIFT		12
+#define MCI_MASK0_RXACTIVEMASK				(1 << 13)
+#define MCI_MASK0_RXACTIVEMASK_SHIFT		13
+#define MCI_MASK0_TXFIFOHALFEMPTYMASK		(1 << 14)
+#define MCI_MASK0_TXFIFOHALFEMPTYMASK_SHIFT	14
+#define MCI_MASK0_RXFIFOHALFFULLMASK		(1 << 15)
+#define MCI_MASK0_RXFIFOHALFFULLMASK_SHIFT	15
+#define MCI_MASK0_TXFIFOFULLMASK			(1 << 16)
+#define MCI_MASK0_TXFIFOFULLMASK_SHIFT		16
+#define MCI_MASK0_RXFIFOFULLMASK			(1 << 17)
+#define MCI_MASK0_RXFIFOFULLMASK_SHIFT		17
+#define MCI_MASK0_TXFIFOEMPTYMASK			(1 << 18)
+#define MCI_MASK0_TXFIFOEMPTYMASK_SHIFT		18
+#define MCI_MASK0_RXFIFOEMPTYMASK			(1 << 19)
+#define MCI_MASK0_RXFIFOEMPTYMASK_SHIFT		19
+#define MCI_MASK0_TXDATAAVLBLMASK			(1 << 20)
+#define MCI_MASK0_TXDATAAVLBLMASK_SHIFT		20
+#define MCI_MASK0_RXDATAAVLBLMASK			(1 << 21)
+#define MCI_MASK0_RXDATAAVLBLMASK_SHIFT		21
+
+#define MCI_MASK1							0x40
+#define MCI_MASK1_CMDCRCFAILMASK			(1 << 0)
+#define MCI_MASK1_CMDCRCFAILMASK_SHIFT		0
+#define MCI_MASK1_DATACRCFAILMASK			(1 << 1)
+#define MCI_MASK1_DATACRCFAILMASK_SHIFT		1
+#define MCI_MASK1_CMDTIMEOUTMASK			(1 << 2)
+#define MCI_MASK1_CMDTIMEOUTMASK_SHIFT		2
+#define MCI_MASK1_DATATIMEOUTMASK			(1 << 3)
+#define MCI_MASK1_DATATIMEOUTMASK_SHIFT		3
+#define MCI_MASK1_TXUNDERRUNMASK			(1 << 4)
+#define MCI_MASK1_TXUNDERRUNMASK_SHIFT		4
+#define MCI_MASK1_RXOVERRUNMASK				(1 << 5)
+#define MCI_MASK1_RXOVERRUNMASK_SHIFT		5
+#define MCI_MASK1_CMDRESPENDMASK			(1 << 6)
+#define MCI_MASK1_CMDRESPENDMASK_SHIFT		6
+#define MCI_MASK1_CMDSENTMASK				(1 << 7)
+#define MCI_MASK1_CMDSENTMASK_SHIFT			7
+#define MCI_MASK1_DATAENDMASK				(1 << 8)
+#define MCI_MASK1_DATAENDMASK_SHIFT			8
+#define MCI_MASK1_STARTBITERRMASK			(1 << 9)
+#define MCI_MASK1_STARTBITERRMASK_SHIFT		9
+#define MCI_MASK1_DATABLOCKENDMASK			(1 << 10)
+#define MCI_MASK1_DATABLOCKENDMASK_SHIFT	10
+#define MCI_MASK1_CMDACTIVEMASK				(1 << 11)
+#define MCI_MASK1_CMDACTIVEMASK_SHIFT		11
+#define MCI_MASK1_TXACTIVEMASK				(1 << 12)
+#define MCI_MASK1_TXACTIVEMASK_SHIFT		12
+#define MCI_MASK1_RXACTIVEMASK				(1 << 13)
+#define MCI_MASK1_RXACTIVEMASK_SHIFT		13
+#define MCI_MASK1_TXFIFOHALFEMPTYMASK		(1 << 14)
+#define MCI_MASK1_TXFIFOHALFEMPTYMASK_SHIFT	14
+#define MCI_MASK1_RXFIFOHALFFULLMASK		(1 << 15)
+#define MCI_MASK1_RXFIFOHALFFULLMASK_SHIFT	15
+#define MCI_MASK1_TXFIFOFULLMASK			(1 << 16)
+#define MCI_MASK1_TXFIFOFULLMASK_SHIFT		16
+#define MCI_MASK1_RXFIFOFULLMASK			(1 << 17)
+#define MCI_MASK1_RXFIFOFULLMASK_SHIFT		17
+#define MCI_MASK1_TXFIFOEMPTYMASK			(1 << 18)
+#define MCI_MASK1_TXFIFOEMPTYMASK_SHIFT		18
+#define MCI_MASK1_RXFIFOEMPTYMASK			(1 << 19)
+#define MCI_MASK1_RXFIFOEMPTYMASK_SHIFT		19
+#define MCI_MASK1_TXDATAAVLBLMASK			(1 << 20)
+#define MCI_MASK1_TXDATAAVLBLMASK_SHIFT		20
+#define MCI_MASK1_RXDATAAVLBLMASK			(1 << 21)
+#define MCI_MASK1_RXDATAAVLBLMASK_SHIFT		21
+
+#define MCI_SELECT							0x44
+#define MCI_SELECT_SDCARD					(0xF << 0)
+#define MCI_SELECT_SDCARD_SHIFT				0
+
+#define MCI_FIFOCNT							0x48
+#define MCI_FIFOCNT_COUNT					(0xFFFF << 0)
+#define MCI_FIFOCNT_COUNT_SHIFT				0
+
+#define MCI_FIFO0							0x80
+#define MCI_FIFO1							0x84
+#define MCI_FIFO2							0x88
+#define MCI_FIFO3							0x8C
+#define MCI_FIFO4							0x90
+#define MCI_FIFO5							0x94
+#define MCI_FIFO6							0x98
+#define MCI_FIFO7							0x9C
+#define MCI_FIFO8							0xA0
+#define MCI_FIFO9							0xA4
+#define MCI_FIFO10							0xA8
+#define MCI_FIFO11							0xAC
+#define MCI_FIFO12							0xB0
+#define MCI_FIFO13							0xB4
+#define MCI_FIFO14							0xB8
+#define MCI_FIFO15							0xBC
+
+#define MCI_PERIPH_ID0						0xFE0
+
+#define MCI_PERIPH_ID1						0xFE4
+
+#define MCI_PERIPH_ID2						0xFE8
+
+#define MCI_PERIPH_ID3						0xFEC
+
+#define MCI_PCELL_ID0						0xFF0
+
+#define MCI_PCELL_ID1						0xFF4
+
+#define MCI_PCELL_ID2						0xFF8
+
+#define MCI_PCELL_ID3						0xFFC
+
+
+// AMC [MOD_NUM=F024, MOD_REV=00, MOD_32BIT=C0]
+// Looks like AMC (Analog Measurement Controller? ADC?) module, but not sure.
+#define AMC_IO_SIZE	0x00000200
+/* Clock Control Register */
+#define AMC_CLC		0x00
+
+/* Module Identifier Register */
+#define AMC_ID		0x08
+
+/* Service Routing Control Register */
+#define AMC_SRC0	0xF0
+#define AMC_SRC1	0xF4
+
+
+// CAPCOM [MOD_NUM=0050, MOD_REV=00, MOD_32BIT=00]
+// CAPCOM from drivers/clocksource/xgold_capcom_timer.c (GPL2)
+#define CAPCOM_IO_SIZE					0x00000100
+/* Clock Control Register */
+#define CAPCOM_CLC						0x00
+
+#define CAPCOM_PISEL					0x04
+
+#define CAPCOM_CPISEL					0x04
+#define CAPCOM_CPISEL_C1C0IS			(1 << 0)
+#define CAPCOM_CPISEL_C1C0IS_SHIFT		0
+#define CAPCOM_CPISEL_C3C2IS			(1 << 1)
+#define CAPCOM_CPISEL_C3C2IS_SHIFT		1
+#define CAPCOM_CPISEL_C5C4IS			(1 << 2)
+#define CAPCOM_CPISEL_C5C4IS_SHIFT		2
+#define CAPCOM_CPISEL_C7C6IS			(1 << 3)
+#define CAPCOM_CPISEL_C7C6IS_SHIFT		3
+#define CAPCOM_CPISEL_T0INIS			(1 << 4)
+#define CAPCOM_CPISEL_T0INIS_SHIFT		4
+#define CAPCOM_CPISEL_T1INIS			(1 << 5)
+#define CAPCOM_CPISEL_T1INIS_SHIFT		5
+
+/* Module Identifier Register */
+#define CAPCOM_ID						0x08
+
+#define CAPCOM_T01CON					0x10
+#define CAPCOM_T01CON_T0I				(0x7 << 0)
+#define CAPCOM_T01CON_T0I_SHIFT			0
+#define CAPCOM_T01CON_T0M				(1 << 3)
+#define CAPCOM_T01CON_T0M_SHIFT			3
+#define CAPCOM_T01CON_T0R				(1 << 6)
+#define CAPCOM_T01CON_T0R_SHIFT			6
+#define CAPCOM_T01CON_T1I				(0x7 << 8)
+#define CAPCOM_T01CON_T1I_SHIFT			8
+#define CAPCOM_T01CON_T1M				(1 << 11)
+#define CAPCOM_T01CON_T1M_SHIFT			11
+#define CAPCOM_T01CON_T1R				(1 << 14)
+#define CAPCOM_T01CON_T1R_SHIFT			14
+
+#define CAPCOM_CCM0						0x14
+#define CAPCOM_CCM0_MOD0				(0x7 << 0)
+#define CAPCOM_CCM0_MOD0_SHIFT			0
+#define CAPCOM_CCM0_ACC0				(1 << 3)
+#define CAPCOM_CCM0_ACC0_SHIFT			3
+#define CAPCOM_CCM0_ACC0_TIM0			0x0
+#define CAPCOM_CCM0_ACC0_TIM1			0x8
+#define CAPCOM_CCM0_MOD1				(0x7 << 4)
+#define CAPCOM_CCM0_MOD1_SHIFT			4
+#define CAPCOM_CCM0_ACC1				(1 << 7)
+#define CAPCOM_CCM0_ACC1_SHIFT			7
+#define CAPCOM_CCM0_ACC1_TIM0			0x0
+#define CAPCOM_CCM0_ACC1_TIM1			0x80
+#define CAPCOM_CCM0_MOD2				(0x7 << 8)
+#define CAPCOM_CCM0_MOD2_SHIFT			8
+#define CAPCOM_CCM0_ACC2				(1 << 11)
+#define CAPCOM_CCM0_ACC2_SHIFT			11
+#define CAPCOM_CCM0_ACC2_TIM0			0x0
+#define CAPCOM_CCM0_ACC2_TIM1			0x800
+#define CAPCOM_CCM0_MOD3				(0x7 << 12)
+#define CAPCOM_CCM0_MOD3_SHIFT			12
+#define CAPCOM_CCM0_ACC3				(1 << 15)
+#define CAPCOM_CCM0_ACC3_SHIFT			15
+#define CAPCOM_CCM0_ACC3_TIM0			0x0
+#define CAPCOM_CCM0_ACC3_TIM1			0x8000
+
+#define CAPCOM_CCM1						0x18
+#define CAPCOM_CCM1_MOD4				(0x7 << 0)
+#define CAPCOM_CCM1_MOD4_SHIFT			0
+#define CAPCOM_CCM1_ACC4				(1 << 3)
+#define CAPCOM_CCM1_ACC4_SHIFT			3
+#define CAPCOM_CCM1_ACC4_TIM0			0x0
+#define CAPCOM_CCM1_ACC4_TIM1			0x8
+#define CAPCOM_CCM1_MOD5				(0x7 << 4)
+#define CAPCOM_CCM1_MOD5_SHIFT			4
+#define CAPCOM_CCM1_ACC5				(1 << 7)
+#define CAPCOM_CCM1_ACC5_SHIFT			7
+#define CAPCOM_CCM1_ACC5_TIM0			0x0
+#define CAPCOM_CCM1_ACC5_TIM1			0x80
+#define CAPCOM_CCM1_MOD6				(0x7 << 8)
+#define CAPCOM_CCM1_MOD6_SHIFT			8
+#define CAPCOM_CCM1_ACC6				(1 << 11)
+#define CAPCOM_CCM1_ACC6_SHIFT			11
+#define CAPCOM_CCM1_ACC6_TIM0			0x0
+#define CAPCOM_CCM1_ACC6_TIM1			0x800
+#define CAPCOM_CCM1_MOD7				(0x7 << 12)
+#define CAPCOM_CCM1_MOD7_SHIFT			12
+#define CAPCOM_CCM1_ACC7				(1 << 15)
+#define CAPCOM_CCM1_ACC7_SHIFT			15
+#define CAPCOM_CCM1_ACC7_TIM0			0x0
+#define CAPCOM_CCM1_ACC7_TIM1			0x8000
+
+#define CAPCOM_OUT						0x24
+#define CAPCOM_OUT_O0					(1 << 0)
+#define CAPCOM_OUT_O0_SHIFT				0
+#define CAPCOM_OUT_O1					(1 << 1)
+#define CAPCOM_OUT_O1_SHIFT				1
+#define CAPCOM_OUT_O2					(1 << 2)
+#define CAPCOM_OUT_O2_SHIFT				2
+#define CAPCOM_OUT_O3					(1 << 3)
+#define CAPCOM_OUT_O3_SHIFT				3
+#define CAPCOM_OUT_O4					(1 << 4)
+#define CAPCOM_OUT_O4_SHIFT				4
+#define CAPCOM_OUT_O5					(1 << 5)
+#define CAPCOM_OUT_O5_SHIFT				5
+#define CAPCOM_OUT_O6					(1 << 6)
+#define CAPCOM_OUT_O6_SHIFT				6
+#define CAPCOM_OUT_O7					(1 << 7)
+#define CAPCOM_OUT_O7_SHIFT				7
+
+#define CAPCOM_IOC						0x28
+#define CAPCOM_IOC_PDS					(1 << 3)
+#define CAPCOM_IOC_PDS_SHIFT			3
+#define CAPCOM_IOC_PDS_OUT				0x0
+#define CAPCOM_IOC_PDS_IN				0x8
+
+#define CAPCOM_SEM						0x2C
+#define CAPCOM_SEM_SEM0					(1 << 0)
+#define CAPCOM_SEM_SEM0_SHIFT			0
+#define CAPCOM_SEM_SEM1					(1 << 1)
+#define CAPCOM_SEM_SEM1_SHIFT			1
+#define CAPCOM_SEM_SEM2					(1 << 2)
+#define CAPCOM_SEM_SEM2_SHIFT			2
+#define CAPCOM_SEM_SEM3					(1 << 3)
+#define CAPCOM_SEM_SEM3_SHIFT			3
+#define CAPCOM_SEM_SEM4					(1 << 4)
+#define CAPCOM_SEM_SEM4_SHIFT			4
+#define CAPCOM_SEM_SEM5					(1 << 5)
+#define CAPCOM_SEM_SEM5_SHIFT			5
+#define CAPCOM_SEM_SEM6					(1 << 6)
+#define CAPCOM_SEM_SEM6_SHIFT			6
+#define CAPCOM_SEM_SEM7					(1 << 7)
+#define CAPCOM_SEM_SEM7_SHIFT			7
+
+#define CAPCOM_SEE						0x30
+#define CAPCOM_SEE_SEE0					(1 << 0)
+#define CAPCOM_SEE_SEE0_SHIFT			0
+#define CAPCOM_SEE_SEE1					(1 << 1)
+#define CAPCOM_SEE_SEE1_SHIFT			1
+#define CAPCOM_SEE_SEE2					(1 << 2)
+#define CAPCOM_SEE_SEE2_SHIFT			2
+#define CAPCOM_SEE_SEE3					(1 << 3)
+#define CAPCOM_SEE_SEE3_SHIFT			3
+#define CAPCOM_SEE_SEE4					(1 << 4)
+#define CAPCOM_SEE_SEE4_SHIFT			4
+#define CAPCOM_SEE_SEE5					(1 << 5)
+#define CAPCOM_SEE_SEE5_SHIFT			5
+#define CAPCOM_SEE_SEE6					(1 << 6)
+#define CAPCOM_SEE_SEE6_SHIFT			6
+#define CAPCOM_SEE_SEE7					(1 << 7)
+#define CAPCOM_SEE_SEE7_SHIFT			7
+
+#define CAPCOM_DRM						0x34
+#define CAPCOM_DRM_DR0M					(0x3 << 0)
+#define CAPCOM_DRM_DR0M_SHIFT			0
+#define CAPCOM_DRM_DR0M_CON				0x0
+#define CAPCOM_DRM_DR0M_DIS				0x1
+#define CAPCOM_DRM_DR0M_EN				0x2
+#define CAPCOM_DRM_DR0M_RES				0x3
+#define CAPCOM_DRM_DR1M					(0x3 << 2)
+#define CAPCOM_DRM_DR1M_SHIFT			2
+#define CAPCOM_DRM_DR1M_CON				0x0
+#define CAPCOM_DRM_DR1M_DIS				0x4
+#define CAPCOM_DRM_DR1M_EN				0x8
+#define CAPCOM_DRM_DR1M_RES				0xC
+#define CAPCOM_DRM_DR2M					(0x3 << 4)
+#define CAPCOM_DRM_DR2M_SHIFT			4
+#define CAPCOM_DRM_DR2M_CON				0x0
+#define CAPCOM_DRM_DR2M_DIS				0x10
+#define CAPCOM_DRM_DR2M_EN				0x20
+#define CAPCOM_DRM_DR2M_RES				0x30
+#define CAPCOM_DRM_DR3M					(0x3 << 6)
+#define CAPCOM_DRM_DR3M_SHIFT			6
+#define CAPCOM_DRM_DR3M_CON				0x0
+#define CAPCOM_DRM_DR3M_DIS				0x40
+#define CAPCOM_DRM_DR3M_EN				0x80
+#define CAPCOM_DRM_DR3M_RES				0xC0
+
+#define CAPCOM_WHBSSEE					0x38
+#define CAPCOM_WHBSSEE_SETSEE0			(1 << 0)
+#define CAPCOM_WHBSSEE_SETSEE0_SHIFT	0
+#define CAPCOM_WHBSSEE_SETSEE0_NOE		0x0
+#define CAPCOM_WHBSSEE_SETSEE0_SET		0x1
+#define CAPCOM_WHBSSEE_SETSEE1			(1 << 1)
+#define CAPCOM_WHBSSEE_SETSEE1_SHIFT	1
+#define CAPCOM_WHBSSEE_SETSEE1_NOE		0x0
+#define CAPCOM_WHBSSEE_SETSEE1_SET		0x2
+#define CAPCOM_WHBSSEE_SETSEE2			(1 << 2)
+#define CAPCOM_WHBSSEE_SETSEE2_SHIFT	2
+#define CAPCOM_WHBSSEE_SETSEE2_NOE		0x0
+#define CAPCOM_WHBSSEE_SETSEE2_SET		0x4
+#define CAPCOM_WHBSSEE_SETSEE3			(1 << 3)
+#define CAPCOM_WHBSSEE_SETSEE3_SHIFT	3
+#define CAPCOM_WHBSSEE_SETSEE3_NOE		0x0
+#define CAPCOM_WHBSSEE_SETSEE3_SET		0x8
+#define CAPCOM_WHBSSEE_SETSEE4			(1 << 4)
+#define CAPCOM_WHBSSEE_SETSEE4_SHIFT	4
+#define CAPCOM_WHBSSEE_SETSEE4_NOE		0x0
+#define CAPCOM_WHBSSEE_SETSEE4_SET		0x10
+#define CAPCOM_WHBSSEE_SETSEE5			(1 << 5)
+#define CAPCOM_WHBSSEE_SETSEE5_SHIFT	5
+#define CAPCOM_WHBSSEE_SETSEE5_NOE		0x0
+#define CAPCOM_WHBSSEE_SETSEE5_SET		0x20
+#define CAPCOM_WHBSSEE_SETSEE6			(1 << 6)
+#define CAPCOM_WHBSSEE_SETSEE6_SHIFT	6
+#define CAPCOM_WHBSSEE_SETSEE6_NOE		0x0
+#define CAPCOM_WHBSSEE_SETSEE6_SET		0x40
+#define CAPCOM_WHBSSEE_SETSEE7			(1 << 7)
+#define CAPCOM_WHBSSEE_SETSEE7_SHIFT	7
+#define CAPCOM_WHBSSEE_SETSEE7_NOE		0x0
+#define CAPCOM_WHBSSEE_SETSEE7_SET		0x80
+
+#define CAPCOM_WHBCSEE					0x3C
+#define CAPCOM_WHBCSEE_CLRSEE0			(1 << 0)
+#define CAPCOM_WHBCSEE_CLRSEE0_SHIFT	0
+#define CAPCOM_WHBCSEE_CLRSEE0_NOE		0x0
+#define CAPCOM_WHBCSEE_CLRSEE0_CLR		0x1
+#define CAPCOM_WHBCSEE_CLRSEE1			(1 << 1)
+#define CAPCOM_WHBCSEE_CLRSEE1_SHIFT	1
+#define CAPCOM_WHBCSEE_CLRSEE1_NOE		0x0
+#define CAPCOM_WHBCSEE_CLRSEE1_CLR		0x2
+#define CAPCOM_WHBCSEE_CLRSEE2			(1 << 2)
+#define CAPCOM_WHBCSEE_CLRSEE2_SHIFT	2
+#define CAPCOM_WHBCSEE_CLRSEE2_NOE		0x0
+#define CAPCOM_WHBCSEE_CLRSEE2_CLR		0x4
+#define CAPCOM_WHBCSEE_CLRSEE3			(1 << 3)
+#define CAPCOM_WHBCSEE_CLRSEE3_SHIFT	3
+#define CAPCOM_WHBCSEE_CLRSEE3_NOE		0x0
+#define CAPCOM_WHBCSEE_CLRSEE3_CLR		0x8
+#define CAPCOM_WHBCSEE_CLRSEE4			(1 << 4)
+#define CAPCOM_WHBCSEE_CLRSEE4_SHIFT	4
+#define CAPCOM_WHBCSEE_CLRSEE4_NOE		0x0
+#define CAPCOM_WHBCSEE_CLRSEE4_CLR		0x10
+#define CAPCOM_WHBCSEE_CLRSEE5			(1 << 5)
+#define CAPCOM_WHBCSEE_CLRSEE5_SHIFT	5
+#define CAPCOM_WHBCSEE_CLRSEE5_NOE		0x0
+#define CAPCOM_WHBCSEE_CLRSEE5_CLR		0x20
+#define CAPCOM_WHBCSEE_CLRSEE6			(1 << 6)
+#define CAPCOM_WHBCSEE_CLRSEE6_SHIFT	6
+#define CAPCOM_WHBCSEE_CLRSEE6_NOE		0x0
+#define CAPCOM_WHBCSEE_CLRSEE6_CLR		0x40
+#define CAPCOM_WHBCSEE_CLRSEE7			(1 << 7)
+#define CAPCOM_WHBCSEE_CLRSEE7_SHIFT	7
+#define CAPCOM_WHBCSEE_CLRSEE7_NOE		0x0
+#define CAPCOM_WHBCSEE_CLRSEE7_CLR		0x80
+
+#define CAPCOM_T0						0x40
+#define CAPCOM_T0_T0					(0x7FFFFFFF << 0)
+#define CAPCOM_T0_T0_SHIFT				0
+#define CAPCOM_T0_OVF0					(1 << 31)
+#define CAPCOM_T0_OVF0_SHIFT			31
+#define CAPCOM_T0_OVF0_CLEARED			0x0
+#define CAPCOM_T0_OVF0_SET				0x80000000
+
+#define CAPCOM_T0REL					0x44
+#define CAPCOM_T0REL_T0REL				(0x7FFFFFFF << 0)
+#define CAPCOM_T0REL_T0REL_SHIFT		0
+
+#define CAPCOM_T1						0x48
+#define CAPCOM_T1_T1					(0x7FFFFFFF << 0)
+#define CAPCOM_T1_T1_SHIFT				0
+#define CAPCOM_T1_OVF1					(1 << 31)
+#define CAPCOM_T1_OVF1_SHIFT			31
+#define CAPCOM_T1_OVF1_CLEARED			0x0
+#define CAPCOM_T1_OVF1_SET				0x80000000
+
+#define CAPCOM_T1REL					0x4C
+#define CAPCOM_T1REL_T1REL				(0x7FFFFFFF << 0)
+#define CAPCOM_T1REL_T1REL_SHIFT		0
+
+#define CAPCOM_CC0						0x50
+#define CAPCOM_CC1						0x54
+#define CAPCOM_CC2						0x58
+#define CAPCOM_CC3						0x5C
+#define CAPCOM_CC4						0x60
+#define CAPCOM_CC5						0x64
+#define CAPCOM_CC6						0x68
+#define CAPCOM_CC7						0x6C
+
+#define CAPCOM_T01OCR					0x94
+#define CAPCOM_T01OCR_CT0				(1 << 0)
+#define CAPCOM_T01OCR_CT0_SHIFT			0
+#define CAPCOM_T01OCR_CT0_NOC			0x0
+#define CAPCOM_T01OCR_CT0_CSR			0x1
+#define CAPCOM_T01OCR_CT1				(1 << 1)
+#define CAPCOM_T01OCR_CT1_SHIFT			1
+#define CAPCOM_T01OCR_CT1_NOC			0x0
+#define CAPCOM_T01OCR_CT1_CSR			0x2
+
+#define CAPCOM_WHBSOUT					0x98
+#define CAPCOM_WHBSOUT_SET0O			(1 << 0)
+#define CAPCOM_WHBSOUT_SET0O_SHIFT		0
+#define CAPCOM_WHBSOUT_SET1O			(1 << 1)
+#define CAPCOM_WHBSOUT_SET1O_SHIFT		1
+#define CAPCOM_WHBSOUT_SET2O			(1 << 2)
+#define CAPCOM_WHBSOUT_SET2O_SHIFT		2
+#define CAPCOM_WHBSOUT_SET3O			(1 << 3)
+#define CAPCOM_WHBSOUT_SET3O_SHIFT		3
+#define CAPCOM_WHBSOUT_SET4O			(1 << 4)
+#define CAPCOM_WHBSOUT_SET4O_SHIFT		4
+#define CAPCOM_WHBSOUT_SET5O			(1 << 5)
+#define CAPCOM_WHBSOUT_SET5O_SHIFT		5
+#define CAPCOM_WHBSOUT_SET6O			(1 << 6)
+#define CAPCOM_WHBSOUT_SET6O_SHIFT		6
+#define CAPCOM_WHBSOUT_SET7O			(1 << 7)
+#define CAPCOM_WHBSOUT_SET7O_SHIFT		7
+
+#define CAPCOM_WHBCOUT					0x9C
+#define CAPCOM_WHBCOUT_CLR0O			(1 << 0)
+#define CAPCOM_WHBCOUT_CLR0O_SHIFT		0
+#define CAPCOM_WHBCOUT_CLR1O			(1 << 1)
+#define CAPCOM_WHBCOUT_CLR1O_SHIFT		1
+#define CAPCOM_WHBCOUT_CLR2O			(1 << 2)
+#define CAPCOM_WHBCOUT_CLR2O_SHIFT		2
+#define CAPCOM_WHBCOUT_CLR3O			(1 << 3)
+#define CAPCOM_WHBCOUT_CLR3O_SHIFT		3
+#define CAPCOM_WHBCOUT_CLR4O			(1 << 4)
+#define CAPCOM_WHBCOUT_CLR4O_SHIFT		4
+#define CAPCOM_WHBCOUT_CLR5O			(1 << 5)
+#define CAPCOM_WHBCOUT_CLR5O_SHIFT		5
+#define CAPCOM_WHBCOUT_CLR6O			(1 << 6)
+#define CAPCOM_WHBCOUT_CLR6O_SHIFT		6
+#define CAPCOM_WHBCOUT_CLR7O			(1 << 7)
+#define CAPCOM_WHBCOUT_CLR7O_SHIFT		7
+
+/* Service Routing Control Register */
+#define CAPCOM_CC7_SRC					0xD8
+
+/* Service Routing Control Register */
+#define CAPCOM_CC6_SRC					0xDC
+
+/* Service Routing Control Register */
+#define CAPCOM_CC5_SRC					0xE0
+
+/* Service Routing Control Register */
+#define CAPCOM_CC4_SRC					0xE4
+
+/* Service Routing Control Register */
+#define CAPCOM_CC3_SRC					0xE8
+
+/* Service Routing Control Register */
+#define CAPCOM_CC2_SRC					0xEC
+
+/* Service Routing Control Register */
+#define CAPCOM_CC1_SRC					0xF0
+
+/* Service Routing Control Register */
+#define CAPCOM_CC0_SRC					0xF4
+
+/* Service Routing Control Register */
+#define CAPCOM_T1_SRC					0xF8
+
+/* Service Routing Control Register */
+#define CAPCOM_T0_SRC					0xFC
+
+
+// CIF [MOD_NUM=F052, MOD_REV=00, MOD_32BIT=C0]
+// Looks like DIF (Camera Interface) module, but not sure.
+#define CIF_IO_SIZE	0x00000200
+/* Clock Control Register */
+#define CIF_CLC		0x00
+
+/* Module Identifier Register */
+#define CIF_ID		0x08
+
+
+// DIF [MOD_NUM=F043, MOD_REV=00, MOD_32BIT=C0]
+// Looks like DIF (Display Interface) module, but not sure.
+#define DIF_IO_SIZE	0x00000100
+/* Clock Control Register */
+#define DIF_CLC		0x00
+
+/* Module Identifier Register */
+#define DIF_ID		0x08
+
+
+// EBU [MOD_NUM=0014, MOD_REV=00, MOD_32BIT=C0]
+// EBU from XMC4500 official public datasheet
+#define EBU_IO_SIZE					0x00000194
+/* Clock Control Register */
+#define EBU_CLC						0x00
+
+/* Module Identifier Register */
+#define EBU_ID						0x08
+
+#define EBU_CON						0x10
+#define EBU_CON_EXTRECON			(1 << 1)		 // External reconfiguration
+#define EBU_CON_EXTRECON_SHIFT		1
+#define EBU_CON_EXTSVM				(1 << 2)		 // Perform master in
+#define EBU_CON_EXTSVM_SHIFT		2
+#define EBU_CON_EXTACC				(1 << 3)		 // External access FPI-bus
+#define EBU_CON_EXTACC_SHIFT		3
+#define EBU_CON_EXTLOCK				(1 << 4)		 // Lock external bus
+#define EBU_CON_EXTLOCK_SHIFT		4
+#define EBU_CON_ARBSYNC				(1 << 5)		 // Arbitration evaluation
+#define EBU_CON_ARBSYNC_SHIFT		5
+#define EBU_CON_ARBMODE				(0x3 << 6)		 // Arbitration mode
+#define EBU_CON_ARBMODE_SHIFT		6
+#define EBU_CON_TOUTC				(0xFF << 8)		 // Time-out control
+#define EBU_CON_TOUTC_SHIFT			8
+#define EBU_CON_GLOBALCS			(0xFF << 16)	 // Global chip select signal
+#define EBU_CON_GLOBALCS_SHIFT		16
+#define EBU_CON_BUSCLK				(0x3 << 24)		 // Clock generation
+#define EBU_CON_BUSCLK_SHIFT		24
+#define EBU_CON_SDCMSEL				(1 << 26)		 // SDRAM Clock Mode Select
+#define EBU_CON_SDCMSEL_SHIFT		26
+#define EBU_CON_CS0FAM				(1 << 27)		 // CS0 Fills Address Map
+#define EBU_CON_CS0FAM_SHIFT		27
+#define EBU_CON_EMUFAM				(1 << 28)		 // CSEMU Fills Address Map
+#define EBU_CON_EMUFAM_SHIFT		28
+#define EBU_CON_BFSSS				(1 << 29)		 // Burst FLASH Single Stage Synchronization
+#define EBU_CON_BFSSS_SHIFT			29
+
+#define EBU_BFCON					0x20
+#define EBU_BFCON_FETBLEN0			(0xF << 0)		 // Fetch Burst Length for Burst FLASH Type 0
+#define EBU_BFCON_FETBLEN0_SHIFT	0
+#define EBU_BFCON_FBBMSEL0			(1 << 4)		 // FLASH Burst Buffer Mode Select for Burst FLASH Type 0
+#define EBU_BFCON_FBBMSEL0_SHIFT	4
+#define EBU_BFCON_WAITFUNC0			(1 << 5)		 // Function of WAIT Input for Burst FLASH Type 0
+#define EBU_BFCON_WAITFUNC0_SHIFT	5
+#define EBU_BFCON_EXTCLOCK			(0x3 << 6)		 // Frequency of external clock
+#define EBU_BFCON_EXTCLOCK_SHIFT	6
+#define EBU_BFCON_BFCMSEL			(1 << 8)		 // Burst FLASH Clock Mode Select
+#define EBU_BFCON_BFCMSEL_SHIFT		8
+#define EBU_BFCON_EBSE0				(1 << 9)		 // Early Burst Signal Enable for Burst FLASH Type 0
+#define EBU_BFCON_EBSE0_SHIFT		9
+#define EBU_BFCON_DBA0				(1 << 10)		 // Disable Burst Address Wrapping
+#define EBU_BFCON_DBA0_SHIFT		10
+#define EBU_BFCON_FDBKEN			(1 << 11)		 // Burst FLASH Clock Feedback Enable
+#define EBU_BFCON_FDBKEN_SHIFT		11
+#define EBU_BFCON_DTALTNCY			(0xF << 12)		 // Latency Cycle Control
+#define EBU_BFCON_DTALTNCY_SHIFT	12
+#define EBU_BFCON_FETBLEN1			(0xF << 16)		 // Fetch Burst Length for Burst FLASH Type 1
+#define EBU_BFCON_FETBLEN1_SHIFT	16
+#define EBU_BFCON_FBBMSEL1			(1 << 20)		 // FLASH Burst Buffer Mode Select for Burst FLASH Type 1
+#define EBU_BFCON_FBBMSEL1_SHIFT	20
+#define EBU_BFCON_WAITFUNC1			(1 << 21)		 // Function of WAIT Input for Burst FLASH Type 1
+#define EBU_BFCON_WAITFUNC1_SHIFT	21
+#define EBU_BFCON_DBA1				(1 << 23)		 // Disable Burst Address Wrapping
+#define EBU_BFCON_DBA1_SHIFT		23
+#define EBU_BFCON_EBSE1				(1 << 25)		 // Early Burst Signal Enable for Burst FLASH Type 1
+#define EBU_BFCON_EBSE1_SHIFT		25
+
+#define EBU_SDRMREF0				0x40
+#define EBU_SDRMREF1				0x48
+#define EBU_SDRMREF_REFRESHC		(0x3F << 0)		 // Refresh counter period
+#define EBU_SDRMREF_REFRESHC_SHIFT	0
+#define EBU_SDRMREF_REFRESHR		(0x7 << 6)		 // Number of refresh commands
+#define EBU_SDRMREF_REFRESHR_SHIFT	6
+#define EBU_SDRMREF_SELFREXST		(1 << 9)		 // Self refresh exit status
+#define EBU_SDRMREF_SELFREXST_SHIFT	9
+#define EBU_SDRMREF_SELFREX			(1 << 10)		 // Self refresh exit
+#define EBU_SDRMREF_SELFREX_SHIFT	10
+#define EBU_SDRMREF_SELFRENST		(1 << 11)		 // Self refresh entry status
+#define EBU_SDRMREF_SELFRENST_SHIFT	11
+#define EBU_SDRMREF_SELFREN			(1 << 12)		 // Self refresh entry
+#define EBU_SDRMREF_SELFREN_SHIFT	12
+#define EBU_SDRMREF_AUTOSELFR		(1 << 13)		 // Automatic self refresh
+#define EBU_SDRMREF_AUTOSELFR_SHIFT	13
+
+#define EBU_SDRMCON0				0x50
+#define EBU_SDRMCON1				0x58
+#define EBU_SDRMCON_CRAS			(0xF << 0)		 // Row to precharge delay counter
+#define EBU_SDRMCON_CRAS_SHIFT		0
+#define EBU_SDRMCON_CRFSH			(0xF << 4)		 // Refresh commands counter
+#define EBU_SDRMCON_CRFSH_SHIFT		4
+#define EBU_SDRMCON_CRSC			(0x3 << 8)		 // Mode register setup time
+#define EBU_SDRMCON_CRSC_SHIFT		8
+#define EBU_SDRMCON_CRP				(0x3 << 10)		 // Row precharge time counter
+#define EBU_SDRMCON_CRP_SHIFT		10
+#define EBU_SDRMCON_AWIDTH			(0x3 << 12)		 // Width of column address
+#define EBU_SDRMCON_AWIDTH_SHIFT	12
+#define EBU_SDRMCON_CRCD			(0x3 << 14)		 // Row to column delay counter
+#define EBU_SDRMCON_CRCD_SHIFT		14
+#define EBU_SDRMCON_CRC				(0x7 << 16)		 // Row cycle time counter
+#define EBU_SDRMCON_CRC_SHIFT		16
+#define EBU_SDRMCON_PAGEM			(0x7 << 19)		 // Mask for page tag
+#define EBU_SDRMCON_PAGEM_SHIFT		19
+#define EBU_SDRMCON_BANKM			(0x7 << 22)		 // Mask for bank tag
+#define EBU_SDRMCON_BANKM_SHIFT		22
+
+#define EBU_SDRMOD0					0x60
+#define EBU_SDRMOD1					0x68
+#define EBU_SDRMOD_BURSTL			(0x7 << 0)		 // Burst length
+#define EBU_SDRMOD_BURSTL_SHIFT		0
+#define EBU_SDRMOD_BTYP				(1 << 3)		 // Burst type
+#define EBU_SDRMOD_BTYP_SHIFT		3
+#define EBU_SDRMOD_CASLAT			(0x7 << 4)		 // CAS latency
+#define EBU_SDRMOD_CASLAT_SHIFT		4
+#define EBU_SDRMOD_OPMODE			(0x7F << 7)		 // Operation Mode
+#define EBU_SDRMOD_OPMODE_SHIFT		7
+
+#define EBU_SDRSTAT0				0x70
+#define EBU_SDRSTAT1				0x78
+#define EBU_SDRSTAT_REFERR			(1 << 0)		 // SDRAM Refresh Error
+#define EBU_SDRSTAT_REFERR_SHIFT	0
+#define EBU_SDRSTAT_SDRM_BUSY		(1 << 1)		 // SDRAM Busy
+#define EBU_SDRSTAT_SDRM_BUSY_SHIFT	1
+
+#define EBU_ADDRSEL0				0x80
+#define EBU_ADDRSEL1				0x88
+#define EBU_ADDRSEL2				0x90
+#define EBU_ADDRSEL3				0x98
+#define EBU_ADDRSEL4				0xA0
+#define EBU_ADDRSEL5				0xA8
+#define EBU_ADDRSEL6				0xB0
+#define EBU_ADDRSEL_REGENAB			(1 << 0)		 // Memory Region
+#define EBU_ADDRSEL_REGENAB_SHIFT	0
+#define EBU_ADDRSEL_ALTENAB			(1 << 1)		 // Alternate Segment Comparison
+#define EBU_ADDRSEL_ALTENAB_SHIFT	1
+#define EBU_ADDRSEL_MASK			(0xF << 4)		 // Address Mask
+#define EBU_ADDRSEL_MASK_SHIFT		4
+#define EBU_ADDRSEL_ALTSEG			(0xF << 8)		 // Alternate Segment
+#define EBU_ADDRSEL_ALTSEG_SHIFT	8
+#define EBU_ADDRSEL_BASE			(0xFFFFF << 12)	 // Base Address
+#define EBU_ADDRSEL_BASE_SHIFT		12
+
+#define EBU_BUSCON0					0xC0
+#define EBU_BUSCON1					0xC8
+#define EBU_BUSCON2					0xD0
+#define EBU_BUSCON3					0xD8
+#define EBU_BUSCON4					0xE0
+#define EBU_BUSCON5					0xE8
+#define EBU_BUSCON6					0xF0
+#define EBU_BUSCON_MULTMAP			(0x7F << 0)		 // Multiplier map
+#define EBU_BUSCON_MULTMAP_SHIFT	0
+#define EBU_BUSCON_WPRE				(1 << 8)		 // Weak prefetch
+#define EBU_BUSCON_WPRE_SHIFT		8
+#define EBU_BUSCON_AALIGN			(1 << 9)		 // Address alignment
+#define EBU_BUSCON_AALIGN_SHIFT		9
+#define EBU_BUSCON_CTYPE			(0x3 << 10)		 // Cycle Type
+#define EBU_BUSCON_CTYPE_SHIFT		10
+#define EBU_BUSCON_CMULT			(0x7 << 13)		 // Cycle multiplier
+#define EBU_BUSCON_CMULT_SHIFT		13
+#define EBU_BUSCON_ENDIAN			(1 << 16)		 // Endian mode
+#define EBU_BUSCON_ENDIAN_SHIFT		16
+#define EBU_BUSCON_DLOAD			(1 << 17)		 // Data upload
+#define EBU_BUSCON_DLOAD_SHIFT		17
+#define EBU_BUSCON_PRE				(1 << 18)		 // Prefetch mechanism
+#define EBU_BUSCON_PRE_SHIFT		18
+#define EBU_BUSCON_WAITINV			(1 << 19)		 // Reversed polarity at WAIT
+#define EBU_BUSCON_WAITINV_SHIFT	19
+#define EBU_BUSCON_BCGEN			(0x3 << 20)		 // Signal timing mode
+#define EBU_BUSCON_BCGEN_SHIFT		20
+#define EBU_BUSCON_PORTW			(0x3 << 22)		 // Port width
+#define EBU_BUSCON_PORTW_SHIFT		22
+#define EBU_BUSCON_WAIT				(0x3 << 24)		 // External wait state
+#define EBU_BUSCON_WAIT_SHIFT		24
+#define EBU_BUSCON_XCMDDELAY		(0x3 << 26)		 // External command delay
+#define EBU_BUSCON_XCMDDELAY_SHIFT	26
+#define EBU_BUSCON_AGEN				(0x7 << 28)		 // Address generation
+#define EBU_BUSCON_AGEN_SHIFT		28
+#define EBU_BUSCON_WRITE			(1 << 31)		 // Write protection
+#define EBU_BUSCON_WRITE_SHIFT		31
+
+#define EBU_BUSAP0					0x100
+#define EBU_BUSAP1					0x108
+#define EBU_BUSAP2					0x110
+#define EBU_BUSAP3					0x118
+#define EBU_BUSAP4					0x120
+#define EBU_BUSAP5					0x128
+#define EBU_BUSAP6					0x130
+#define EBU_BUSAP_DTACS				(0xF << 0)		 // Between different regions
+#define EBU_BUSAP_DTACS_SHIFT		0
+#define EBU_BUSAP_DTARDWR			(0xF << 4)		 // Between read and write accesses
+#define EBU_BUSAP_DTARDWR_SHIFT		4
+#define EBU_BUSAP_WRRECOVC			(0x7 << 8)		 // After write accesses
+#define EBU_BUSAP_WRRECOVC_SHIFT	8
+#define EBU_BUSAP_RDRECOVC			(0x7 << 11)		 // After read accesses
+#define EBU_BUSAP_RDRECOVC_SHIFT	11
+#define EBU_BUSAP_DATAC				(0x3 << 14)		 // Write accesses
+#define EBU_BUSAP_DATAC_SHIFT		14
+#define EBU_BUSAP_BURSTC			(0x7 << 16)		 // During burst accesses
+#define EBU_BUSAP_BURSTC_SHIFT		16
+#define EBU_BUSAP_WAITWRC			(0x7 << 19)		 // Programmed for wait accesses
+#define EBU_BUSAP_WAITWRC_SHIFT		19
+#define EBU_BUSAP_WAITRDC			(0x7 << 22)		 // Programmed for read accesses
+#define EBU_BUSAP_WAITRDC_SHIFT		22
+#define EBU_BUSAP_CMDDELAY			(0x7 << 25)		 // Programmed command
+#define EBU_BUSAP_CMDDELAY_SHIFT	25
+#define EBU_BUSAP_AHOLDC			(0x3 << 28)		 // Multiplexed accesses
+#define EBU_BUSAP_AHOLDC_SHIFT		28
+#define EBU_BUSAP_ADDRC				(0x3 << 30)		 // Address Cycles
+#define EBU_BUSAP_ADDRC_SHIFT		30
+
+#define EBU_EMUAS					0x160
+#define EBU_EMUAS_REGENAB			(1 << 0)		 // Memory region
+#define EBU_EMUAS_REGENAB_SHIFT		0
+#define EBU_EMUAS_ALTENAB			(1 << 1)		 // Alternate segment comparison
+#define EBU_EMUAS_ALTENAB_SHIFT		1
+#define EBU_EMUAS_MASK				(0xF << 4)		 // Address mask
+#define EBU_EMUAS_MASK_SHIFT		4
+#define EBU_EMUAS_ALTSEG			(0xF << 8)		 // Alternate segment
+#define EBU_EMUAS_ALTSEG_SHIFT		8
+#define EBU_EMUAS_BASE				(0xFFFFF << 12)	 // Base address
+#define EBU_EMUAS_BASE_SHIFT		12
+
+#define EBU_EMUBC					0x168
+#define EBU_EMUBC_MULTMAP			(0x7F << 0)		 // Multiplier map
+#define EBU_EMUBC_MULTMAP_SHIFT		0
+#define EBU_EMUBC_WPRE				(1 << 8)		 // Weak prefetch
+#define EBU_EMUBC_WPRE_SHIFT		8
+#define EBU_EMUBC_AALIGN			(1 << 9)		 // Address alignment
+#define EBU_EMUBC_AALIGN_SHIFT		9
+#define EBU_EMUBC_CTYPE				(0x3 << 10)		 // Cycle Type
+#define EBU_EMUBC_CTYPE_SHIFT		10
+#define EBU_EMUBC_CMULT				(0x7 << 13)		 // Cycle multiplier
+#define EBU_EMUBC_CMULT_SHIFT		13
+#define EBU_EMUBC_ENDIAN			(1 << 16)		 // Endian mode
+#define EBU_EMUBC_ENDIAN_SHIFT		16
+#define EBU_EMUBC_DLOAD				(1 << 17)		 // Data upload
+#define EBU_EMUBC_DLOAD_SHIFT		17
+#define EBU_EMUBC_PRE				(1 << 18)		 // Prefetch mechanism
+#define EBU_EMUBC_PRE_SHIFT			18
+#define EBU_EMUBC_WAITINV			(1 << 19)		 // Reversed polarity at WAIT
+#define EBU_EMUBC_WAITINV_SHIFT		19
+#define EBU_EMUBC_BCGEN				(0x3 << 20)		 // Signal timing mode
+#define EBU_EMUBC_BCGEN_SHIFT		20
+#define EBU_EMUBC_PORTW				(0x3 << 22)		 // Port width
+#define EBU_EMUBC_PORTW_SHIFT		22
+#define EBU_EMUBC_WAIT				(0x3 << 24)		 // External wait state
+#define EBU_EMUBC_WAIT_SHIFT		24
+#define EBU_EMUBC_XCMDDELAY			(0x3 << 26)		 // External command delay
+#define EBU_EMUBC_XCMDDELAY_SHIFT	26
+#define EBU_EMUBC_AGEN				(0x7 << 28)		 // Address generation
+#define EBU_EMUBC_AGEN_SHIFT		28
+#define EBU_EMUBC_WRITE				(1 << 31)		 // Write protection
+#define EBU_EMUBC_WRITE_SHIFT		31
+
+#define EBU_EMUBAP					0x170
+#define EBU_EMUBAP_DTACS			(0xF << 0)		 // Between different regions
+#define EBU_EMUBAP_DTACS_SHIFT		0
+#define EBU_EMUBAP_DTARDWR			(0xF << 4)		 // Between read and write accesses
+#define EBU_EMUBAP_DTARDWR_SHIFT	4
+#define EBU_EMUBAP_WRRECOVC			(0x7 << 8)		 // After write accesses
+#define EBU_EMUBAP_WRRECOVC_SHIFT	8
+#define EBU_EMUBAP_RDRECOVC			(0x7 << 11)		 // After read accesses
+#define EBU_EMUBAP_RDRECOVC_SHIFT	11
+#define EBU_EMUBAP_DATAC			(0x3 << 14)		 // Write accesses
+#define EBU_EMUBAP_DATAC_SHIFT		14
+#define EBU_EMUBAP_BURSTC			(0x7 << 16)		 // During burst accesses
+#define EBU_EMUBAP_BURSTC_SHIFT		16
+#define EBU_EMUBAP_WAITWRC			(0x7 << 19)		 // Programmed for wait accesses
+#define EBU_EMUBAP_WAITWRC_SHIFT	19
+#define EBU_EMUBAP_WAITRDC			(0x7 << 22)		 // Programmed for read accesses
+#define EBU_EMUBAP_WAITRDC_SHIFT	22
+#define EBU_EMUBAP_CMDDELAY			(0x7 << 25)		 // Programmed command
+#define EBU_EMUBAP_CMDDELAY_SHIFT	25
+#define EBU_EMUBAP_AHOLDC			(0x3 << 28)		 // Multiplexed accesses
+#define EBU_EMUBAP_AHOLDC_SHIFT		28
+#define EBU_EMUBAP_ADDRC			(0x3 << 30)		 // Address Cycles
+#define EBU_EMUBAP_ADDRC_SHIFT		30
+
+#define EBU_EMUOVL					0x178
+#define EBU_EMUOVL_OVERLAY			(0xFF << 0)		 // Overlay chip select
+#define EBU_EMUOVL_OVERLAY_SHIFT	0
+
+#define EBU_USERCON					0x190
+
+
+// GPIO [MOD_NUM=F023, MOD_REV=00, MOD_32BIT=C0]
+// GPIO module, registers found on some "siemens club" forum, dont known source.
+#define GPIO_IO_SIZE		0x000001E8
+/* Clock Control Register */
+#define GPIO_CLC			0x00
+
+/* Module Identifier Register */
+#define GPIO_ID				0x08
+
+#define GPIO_MON_CR1		0x10
+
+#define GPIO_MON_CR2		0x14
+
+#define GPIO_MON_CR3		0x18
+
+#define GPIO_MON_CR4		0x1C
+
+#define GPIO_PIN0			0x20
+#define GPIO_PIN1			0x24
+#define GPIO_PIN2			0x28
+#define GPIO_PIN3			0x2C
+#define GPIO_PIN4			0x30
+#define GPIO_PIN5			0x34
+#define GPIO_PIN6			0x38
+#define GPIO_PIN7			0x3C
+#define GPIO_PIN8			0x40
+#define GPIO_PIN9			0x44
+#define GPIO_PIN10			0x48
+#define GPIO_PIN11			0x4C
+#define GPIO_PIN12			0x50
+#define GPIO_PIN13			0x54
+#define GPIO_PIN14			0x58
+#define GPIO_PIN15			0x5C
+#define GPIO_PIN16			0x60
+#define GPIO_PIN17			0x64
+#define GPIO_PIN18			0x68
+#define GPIO_PIN19			0x6C
+#define GPIO_PIN20			0x70
+#define GPIO_PIN21			0x74
+#define GPIO_PIN22			0x78
+#define GPIO_PIN23			0x7C
+#define GPIO_PIN24			0x80
+#define GPIO_PIN25			0x84
+#define GPIO_PIN26			0x88
+#define GPIO_PIN27			0x8C
+#define GPIO_PIN28			0x90
+#define GPIO_PIN29			0x94
+#define GPIO_PIN30			0x98
+#define GPIO_PIN31			0x9C
+#define GPIO_PIN32			0xA0
+#define GPIO_PIN33			0xA4
+#define GPIO_PIN34			0xA8
+#define GPIO_PIN35			0xAC
+#define GPIO_PIN36			0xB0
+#define GPIO_PIN37			0xB4
+#define GPIO_PIN38			0xB8
+#define GPIO_PIN39			0xBC
+#define GPIO_PIN40			0xC0
+#define GPIO_PIN41			0xC4
+#define GPIO_PIN42			0xC8
+#define GPIO_PIN43			0xCC
+#define GPIO_PIN44			0xD0
+#define GPIO_PIN45			0xD4
+#define GPIO_PIN46			0xD8
+#define GPIO_PIN47			0xDC
+#define GPIO_PIN48			0xE0
+#define GPIO_PIN49			0xE4
+#define GPIO_PIN50			0xE8
+#define GPIO_PIN51			0xEC
+#define GPIO_PIN52			0xF0
+#define GPIO_PIN53			0xF4
+#define GPIO_PIN54			0xF8
+#define GPIO_PIN55			0xFC
+#define GPIO_PIN56			0x100
+#define GPIO_PIN57			0x104
+#define GPIO_PIN58			0x108
+#define GPIO_PIN59			0x10C
+#define GPIO_PIN60			0x110
+#define GPIO_PIN61			0x114
+#define GPIO_PIN62			0x118
+#define GPIO_PIN63			0x11C
+#define GPIO_PIN64			0x120
+#define GPIO_PIN65			0x124
+#define GPIO_PIN66			0x128
+#define GPIO_PIN67			0x12C
+#define GPIO_PIN68			0x130
+#define GPIO_PIN69			0x134
+#define GPIO_PIN70			0x138
+#define GPIO_PIN71			0x13C
+#define GPIO_PIN72			0x140
+#define GPIO_PIN73			0x144
+#define GPIO_PIN74			0x148
+#define GPIO_PIN75			0x14C
+#define GPIO_PIN76			0x150
+#define GPIO_PIN77			0x154
+#define GPIO_PIN78			0x158
+#define GPIO_PIN79			0x15C
+#define GPIO_PIN80			0x160
+#define GPIO_PIN81			0x164
+#define GPIO_PIN82			0x168
+#define GPIO_PIN83			0x16C
+#define GPIO_PIN84			0x170
+#define GPIO_PIN85			0x174
+#define GPIO_PIN86			0x178
+#define GPIO_PIN87			0x17C
+#define GPIO_PIN88			0x180
+#define GPIO_PIN89			0x184
+#define GPIO_PIN90			0x188
+#define GPIO_PIN91			0x18C
+#define GPIO_PIN92			0x190
+#define GPIO_PIN93			0x194
+#define GPIO_PIN94			0x198
+#define GPIO_PIN95			0x19C
+#define GPIO_PIN96			0x1A0
+#define GPIO_PIN97			0x1A4
+#define GPIO_PIN98			0x1A8
+#define GPIO_PIN99			0x1AC
+#define GPIO_PIN100			0x1B0
+#define GPIO_PIN101			0x1B4
+#define GPIO_PIN102			0x1B8
+#define GPIO_PIN103			0x1BC
+#define GPIO_PIN104			0x1C0
+#define GPIO_PIN105			0x1C4
+#define GPIO_PIN106			0x1C8
+#define GPIO_PIN107			0x1CC
+#define GPIO_PIN108			0x1D0
+#define GPIO_PIN109			0x1D4
+#define GPIO_PIN110			0x1D8
+#define GPIO_PIN111			0x1DC
+#define GPIO_PIN112			0x1E0
+#define GPIO_PIN113			0x1E4
+#define GPIO_IS				(0x7 << 0)
+#define GPIO_IS_SHIFT		0
+#define GPIO_IS_NONE		0x0
+#define GPIO_IS_ALT0		0x1
+#define GPIO_IS_ALT1		0x2
+#define GPIO_IS_ALT2		0x3
+#define GPIO_IS_ALT3		0x4
+#define GPIO_IS_ALT4		0x5
+#define GPIO_IS_ALT5		0x6
+#define GPIO_IS_ALT6		0x7
+#define GPIO_OS				(0x7 << 4)
+#define GPIO_OS_SHIFT		4
+#define GPIO_OS_NONE		0x0
+#define GPIO_OS_ALT0		0x10
+#define GPIO_OS_ALT1		0x20
+#define GPIO_OS_ALT2		0x30
+#define GPIO_OS_ALT3		0x40
+#define GPIO_OS_ALT4		0x50
+#define GPIO_OS_ALT5		0x60
+#define GPIO_OS_ALT6		0x70
+#define GPIO_PS				(1 << 8)
+#define GPIO_PS_SHIFT		8
+#define GPIO_PS_ALT			0x0
+#define GPIO_PS_MANUAL		0x100
+#define GPIO_DATA			(1 << 9)
+#define GPIO_DATA_SHIFT		9
+#define GPIO_DATA_LOW		0x0
+#define GPIO_DATA_HIGH		0x200
+#define GPIO_DIR			(1 << 10)
+#define GPIO_DIR_SHIFT		10
+#define GPIO_DIR_IN			0x0
+#define GPIO_DIR_OUT		0x400
+#define GPIO_PPEN			(1 << 12)
+#define GPIO_PPEN_SHIFT		12
+#define GPIO_PPEN_PUSHPULL	0x0
+#define GPIO_PPEN_OPENDRAIN	0x1000
+#define GPIO_PDPU			(0x3 << 13)
+#define GPIO_PDPU_SHIFT		13
+#define GPIO_PDPU_NONE		0x0
+#define GPIO_PDPU_PULLUP	0x2000
+#define GPIO_PDPU_PULLDOWN	0x4000
+#define GPIO_ENAQ			(1 << 15)
+#define GPIO_ENAQ_SHIFT		15
+#define GPIO_ENAQ_OFF		0x0
+#define GPIO_ENAQ_ON		0x8000
+
+
+// GPTU [MOD_NUM=0001, MOD_REV=00, MOD_32BIT=C0]
+// GPTU from Tricore TC1765 official public datasheet
+#define GPTU_IO_SIZE				0x00000100
+/* Clock Control Register */
+#define GPTU_CLC					0x00
+
+/* Module Identifier Register */
+#define GPTU_ID						0x08
+
+#define GPTU_T01IRS					0x10
+#define GPTU_T01IRS_T0AINS			(0x3 << 0)		 // T0A Input Selection
+#define GPTU_T01IRS_T0AINS_SHIFT	0
+#define GPTU_T01IRS_T0BINS			(0x3 << 2)		 // T0B Input Selection
+#define GPTU_T01IRS_T0BINS_SHIFT	2
+#define GPTU_T01IRS_T0CINS			(0x3 << 4)		 // T0C Input Selection
+#define GPTU_T01IRS_T0CINS_SHIFT	4
+#define GPTU_T01IRS_T0DINS			(0x3 << 6)		 // T0D Input Selection
+#define GPTU_T01IRS_T0DINS_SHIFT	6
+#define GPTU_T01IRS_T1AINS			(0x3 << 8)		 // T1A Input Selection
+#define GPTU_T01IRS_T1AINS_SHIFT	8
+#define GPTU_T01IRS_T1BINS			(0x3 << 10)		 // T1B Input Selection
+#define GPTU_T01IRS_T1BINS_SHIFT	10
+#define GPTU_T01IRS_T1CINS			(0x3 << 12)		 // T1C Input Selection
+#define GPTU_T01IRS_T1CINS_SHIFT	12
+#define GPTU_T01IRS_T1DINS			(0x3 << 14)		 // T1D Input Selection
+#define GPTU_T01IRS_T1DINS_SHIFT	14
+#define GPTU_T01IRS_T0AREL			(1 << 16)		 // T0A Reload Source Selection
+#define GPTU_T01IRS_T0AREL_SHIFT	16
+#define GPTU_T01IRS_T0BREL			(1 << 17)		 // T0B Reload Source Selection
+#define GPTU_T01IRS_T0BREL_SHIFT	17
+#define GPTU_T01IRS_T0CREL			(1 << 18)		 // T0C Reload Source Selection
+#define GPTU_T01IRS_T0CREL_SHIFT	18
+#define GPTU_T01IRS_T0DREL			(1 << 19)		 // T0D Reload Source Selection
+#define GPTU_T01IRS_T0DREL_SHIFT	19
+#define GPTU_T01IRS_T1AREL			(1 << 20)		 // T1A Reload Source Selection
+#define GPTU_T01IRS_T1AREL_SHIFT	20
+#define GPTU_T01IRS_T1BREL			(1 << 21)		 // T1B Reload Source Selection
+#define GPTU_T01IRS_T1BREL_SHIFT	21
+#define GPTU_T01IRS_T1CREL			(1 << 22)		 // T1C Reload Source Selection
+#define GPTU_T01IRS_T1CREL_SHIFT	22
+#define GPTU_T01IRS_T1DREL			(1 << 23)		 // T1D Reload Source Selection
+#define GPTU_T01IRS_T1DREL_SHIFT	23
+#define GPTU_T01IRS_T0INC			(1 << 24)		 // T0 Carry Input Selection
+#define GPTU_T01IRS_T0INC_SHIFT		24
+#define GPTU_T01IRS_T1INC			(1 << 25)		 // T1 Carry Input Selection
+#define GPTU_T01IRS_T1INC_SHIFT		25
+#define GPTU_T01IRS_T01IN0			(0x3 << 28)		 // T0 and T1 Global Input CNT0 Selection
+#define GPTU_T01IRS_T01IN0_SHIFT	28
+#define GPTU_T01IRS_T01IN1			(0x3 << 30)		 // T0 and T1 Global Input CNT1 Selection
+#define GPTU_T01IRS_T01IN1_SHIFT	30
+
+#define GPTU_T01OTS					0x14
+#define GPTU_T01OTS_SOUT00			(0x3 << 0)		 // T0 Output 0 Source Selection
+#define GPTU_T01OTS_SOUT00_SHIFT	0
+#define GPTU_T01OTS_SOUT01			(0x3 << 2)		 // T0 Output 1 Source Selection
+#define GPTU_T01OTS_SOUT01_SHIFT	2
+#define GPTU_T01OTS_STRG00			(0x3 << 4)		 // T0 Trigger Output 0 Source Selection
+#define GPTU_T01OTS_STRG00_SHIFT	4
+#define GPTU_T01OTS_STRG01			(0x3 << 6)		 // T0 Trigger Output 1 Source Selection
+#define GPTU_T01OTS_STRG01_SHIFT	6
+#define GPTU_T01OTS_SSR00			(0x3 << 8)		 // T0 Service Request 0 Source Selection
+#define GPTU_T01OTS_SSR00_SHIFT		8
+#define GPTU_T01OTS_SSR01			(0x3 << 10)		 // T0 Service Request 1 Source Selection
+#define GPTU_T01OTS_SSR01_SHIFT		10
+#define GPTU_T01OTS_SOUT10			(0x3 << 16)		 // T1 Output 0 Source Selection
+#define GPTU_T01OTS_SOUT10_SHIFT	16
+#define GPTU_T01OTS_SOUT11			(0x3 << 18)		 // T1 Output 1 Source Selection
+#define GPTU_T01OTS_SOUT11_SHIFT	18
+#define GPTU_T01OTS_STRG10			(0x3 << 20)		 // T1 Trigger Output 0 Source Selection
+#define GPTU_T01OTS_STRG10_SHIFT	20
+#define GPTU_T01OTS_STRG11			(0x3 << 22)		 // T1 Trigger Output 1 Source Selection
+#define GPTU_T01OTS_STRG11_SHIFT	22
+#define GPTU_T01OTS_SSR10			(0x3 << 24)		 // T1 Service Request 0 Source Selection
+#define GPTU_T01OTS_SSR10_SHIFT		24
+#define GPTU_T01OTS_SSR11			(0x3 << 26)		 // T1 Service Request 1 Source Selection.
+#define GPTU_T01OTS_SSR11_SHIFT		26
+
+#define GPTU_T2CON					0x18
+#define GPTU_T2CON_T2ACSRC			(0x3 << 0)		 // Timer T2A Count Input Source Control
+#define GPTU_T2CON_T2ACSRC_SHIFT	0
+#define GPTU_T2CON_T2ACDIR			(0x3 << 2)		 // Timer T2A Direction Control
+#define GPTU_T2CON_T2ACDIR_SHIFT	2
+#define GPTU_T2CON_T2ACCLR			(0x3 << 4)		 // Timer T2A Clear Control
+#define GPTU_T2CON_T2ACCLR_SHIFT	4
+#define GPTU_T2CON_T2ACOV			(0x3 << 6)		 // Timer T2A Overflow/Underflow Generation Control
+#define GPTU_T2CON_T2ACOV_SHIFT		6
+#define GPTU_T2CON_T2ACOS			(1 << 8)		 // Timer T2A One-Shot Control.
+#define GPTU_T2CON_T2ACOS_SHIFT		8
+#define GPTU_T2CON_T2ADIR			(1 << 12)		 // Timer T2A Direction Status Bit.
+#define GPTU_T2CON_T2ADIR_SHIFT		12
+#define GPTU_T2CON_T2SPLIT			(1 << 15)		 // Timer T2 Split Control.
+#define GPTU_T2CON_T2SPLIT_SHIFT	15
+#define GPTU_T2CON_T2BCSRC			(0x3 << 16)		 // Timer T2B Count Input Source Control.
+#define GPTU_T2CON_T2BCSRC_SHIFT	16
+#define GPTU_T2CON_T2BCDIR			(0x3 << 18)		 // Timer T2B Direction Control.
+#define GPTU_T2CON_T2BCDIR_SHIFT	18
+#define GPTU_T2CON_T2BCCLR			(0x3 << 20)		 // Timer T2B Clear Control.
+#define GPTU_T2CON_T2BCCLR_SHIFT	20
+#define GPTU_T2CON_T2BCOV			(0x3 << 22)		 // Timer T2B Overflow/Underflow Generation Control.
+#define GPTU_T2CON_T2BCOV_SHIFT		22
+#define GPTU_T2CON_T2BCOS			(1 << 24)		 // Timer T2B One-Shot Control.
+#define GPTU_T2CON_T2BCOS_SHIFT		24
+#define GPTU_T2CON_T2BDIR			(1 << 28)		 // Timer T2B Direction Status Bit.
+#define GPTU_T2CON_T2BDIR_SHIFT		28
+
+#define GPTU_T2RCCON				0x1C
+#define GPTU_T2RCCON_T2AMRC0		(0x7 << 0)		 // Timer T2A Reload/Capture 0 Mode Control
+#define GPTU_T2RCCON_T2AMRC0_SHIFT	0
+#define GPTU_T2RCCON_T2AMRC1		(0x7 << 4)		 // Timer T2A Reload/Capture 1 Mode Control
+#define GPTU_T2RCCON_T2AMRC1_SHIFT	4
+#define GPTU_T2RCCON_T2BMRC0		(0x7 << 16)		 // Timer T2B Reload/Capture 0 Mode Control
+#define GPTU_T2RCCON_T2BMRC0_SHIFT	16
+#define GPTU_T2RCCON_T2BMRC1		(0x7 << 20)		 // Timer T2B Reload/Capture 1 Mode Control
+#define GPTU_T2RCCON_T2BMRC1_SHIFT	20
+
+#define GPTU_T2AIS					0x20
+#define GPTU_T2AIS_T2AICNT			(0x7 << 0)		 // Timer T2A External Count Input Selection
+#define GPTU_T2AIS_T2AICNT_SHIFT	0
+#define GPTU_T2AIS_T2AISTR			(0x7 << 4)		 // Timer T2A External Start Input Selection
+#define GPTU_T2AIS_T2AISTR_SHIFT	4
+#define GPTU_T2AIS_T2AISTP			(0x7 << 8)		 // Timer T2A External Stop Input Selection
+#define GPTU_T2AIS_T2AISTP_SHIFT	8
+#define GPTU_T2AIS_T2AIUD			(0x7 << 12)		 // Timer T2A External Up/Down Input Selection
+#define GPTU_T2AIS_T2AIUD_SHIFT		12
+#define GPTU_T2AIS_T2AICLR			(0x7 << 16)		 // Timer T2A External Clear Input Selection
+#define GPTU_T2AIS_T2AICLR_SHIFT	16
+#define GPTU_T2AIS_T2AIRC0			(0x7 << 20)		 // Timer T2A External Reload/Capture 0 Input Selection
+#define GPTU_T2AIS_T2AIRC0_SHIFT	20
+#define GPTU_T2AIS_T2AIRC1			(0x7 << 24)		 // Timer T2A External Reload/Capture 1 Input Selection
+#define GPTU_T2AIS_T2AIRC1_SHIFT	24
+
+#define GPTU_T2BIS					0x24
+#define GPTU_T2BIS_T2BICNT			(0x7 << 0)		 // Timer T2B External Count Input Selection
+#define GPTU_T2BIS_T2BICNT_SHIFT	0
+#define GPTU_T2BIS_T2BISTR			(0x7 << 4)		 // Timer T2B External Start Input Selection
+#define GPTU_T2BIS_T2BISTR_SHIFT	4
+#define GPTU_T2BIS_T2BISTP			(0x7 << 8)		 // Timer T2B External Stop Input Selection
+#define GPTU_T2BIS_T2BISTP_SHIFT	8
+#define GPTU_T2BIS_T2BIUD			(0x7 << 12)		 // Timer T2B External Up/Down Input Selection
+#define GPTU_T2BIS_T2BIUD_SHIFT		12
+#define GPTU_T2BIS_T2BICLR			(0x7 << 16)		 // Timer T2B External Clear Input Selection
+#define GPTU_T2BIS_T2BICLR_SHIFT	16
+#define GPTU_T2BIS_T2BIRC0			(0x7 << 20)		 // Timer T2B External Reload/Capture 0 Input Selection
+#define GPTU_T2BIS_T2BIRC0_SHIFT	20
+#define GPTU_T2BIS_T2BIRC1			(0x7 << 24)		 // Timer T2B External Reload/Capture 1 Input Selection
+#define GPTU_T2BIS_T2BIRC1_SHIFT	24
+
+#define GPTU_T2ES					0x28
+#define GPTU_T2ES_T2AECNT			(0x3 << 0)		 // Timer T2A External Count Input Active Edge Selection
+#define GPTU_T2ES_T2AECNT_SHIFT		0
+#define GPTU_T2ES_T2AESTR			(0x3 << 2)		 // Timer T2A External Start Input Active Edge Selection
+#define GPTU_T2ES_T2AESTR_SHIFT		2
+#define GPTU_T2ES_T2AESTP			(0x3 << 4)		 // Timer T2A External Stop Input Active Edge Selection
+#define GPTU_T2ES_T2AESTP_SHIFT		4
+#define GPTU_T2ES_T2AEUD			(0x3 << 6)		 // Timer T2A External Up/Down Input Active Edge Selection
+#define GPTU_T2ES_T2AEUD_SHIFT		6
+#define GPTU_T2ES_T2AECLR			(0x3 << 8)		 // Timer T2A External Clear Input Active Edge Selection
+#define GPTU_T2ES_T2AECLR_SHIFT		8
+#define GPTU_T2ES_T2AERC0			(0x3 << 10)		 // Timer T2A External Reload/Capture 0 Input Active Edge Selection
+#define GPTU_T2ES_T2AERC0_SHIFT		10
+#define GPTU_T2ES_T2AERC1			(0x3 << 12)		 // Timer T2A External Reload/Capture 1 Input Active Edge Selection
+#define GPTU_T2ES_T2AERC1_SHIFT		12
+#define GPTU_T2ES_T2BECNT			(0x3 << 16)		 // Timer T2B External Count Input Active Edge Selection
+#define GPTU_T2ES_T2BECNT_SHIFT		16
+#define GPTU_T2ES_T2BESTR			(0x3 << 18)		 // Timer T2B External Start Input Active Edge Selection
+#define GPTU_T2ES_T2BESTR_SHIFT		18
+#define GPTU_T2ES_T2BESTP			(0x3 << 20)		 // Timer T2B External Stop Input Active Edge Selection
+#define GPTU_T2ES_T2BESTP_SHIFT		20
+#define GPTU_T2ES_T2BEUD			(0x3 << 22)		 // Timer T2B External Up/Down Input Active Edge Selection
+#define GPTU_T2ES_T2BEUD_SHIFT		22
+#define GPTU_T2ES_T2BECLR			(0x3 << 24)		 // Timer T2B External Clear Input Active Edge Selection
+#define GPTU_T2ES_T2BECLR_SHIFT		24
+#define GPTU_T2ES_T2BERC0			(0x3 << 26)		 // Timer T2B External Reload/Capture 0 Input Active Edge Selection
+#define GPTU_T2ES_T2BERC0_SHIFT		26
+#define GPTU_T2ES_T2BERC1			(0x3 << 28)		 // Timer T2B External Reload/Capture 1 Input Active Edge Selection
+#define GPTU_T2ES_T2BERC1_SHIFT		28
+
+#define GPTU_OSEL					0x2C
+#define GPTU_OSEL_GTSO0				(0x7 << 0)		 // GPTU Output 0 Source Selection
+#define GPTU_OSEL_GTSO0_SHIFT		0
+#define GPTU_OSEL_GTSO1				(0x7 << 4)		 // GPTU Output 1 Source Selection
+#define GPTU_OSEL_GTSO1_SHIFT		4
+#define GPTU_OSEL_GTSO2				(0x7 << 8)		 // GPTU Output 2 Source Selection
+#define GPTU_OSEL_GTSO2_SHIFT		8
+#define GPTU_OSEL_GTSO3				(0x7 << 12)		 // GPTU Output 3 Source Selection
+#define GPTU_OSEL_GTSO3_SHIFT		12
+#define GPTU_OSEL_GTSO4				(0x7 << 16)		 // GPTU Output 4 Source Selection
+#define GPTU_OSEL_GTSO4_SHIFT		16
+#define GPTU_OSEL_GTSO5				(0x7 << 20)		 // GPTU Output 5 Source Selection
+#define GPTU_OSEL_GTSO5_SHIFT		20
+#define GPTU_OSEL_GTSO6				(0x7 << 24)		 // GPTU Output 6 Source Selection
+#define GPTU_OSEL_GTSO6_SHIFT		24
+#define GPTU_OSEL_GTSO7				(0x7 << 28)		 // GPTU Output 7 Source Selection
+#define GPTU_OSEL_GTSO7_SHIFT		28
+
+#define GPTU_OUT					0x30
+#define GPTU_OUT_OUT0				(1 << 0)		 // GPTU Output State Bit 0
+#define GPTU_OUT_OUT0_SHIFT			0
+#define GPTU_OUT_OUT1				(1 << 1)		 // GPTU Output State Bit 1
+#define GPTU_OUT_OUT1_SHIFT			1
+#define GPTU_OUT_OUT2				(1 << 2)		 // GPTU Output State Bit 2
+#define GPTU_OUT_OUT2_SHIFT			2
+#define GPTU_OUT_OUT3				(1 << 3)		 // GPTU Output State Bit 3
+#define GPTU_OUT_OUT3_SHIFT			3
+#define GPTU_OUT_OUT4				(1 << 4)		 // GPTU Output State Bit 4
+#define GPTU_OUT_OUT4_SHIFT			4
+#define GPTU_OUT_OUT5				(1 << 5)		 // GPTU Output State Bit 5
+#define GPTU_OUT_OUT5_SHIFT			5
+#define GPTU_OUT_OUT6				(1 << 6)		 // GPTU Output State Bit 6
+#define GPTU_OUT_OUT6_SHIFT			6
+#define GPTU_OUT_OUT7				(1 << 7)		 // GPTU Output State Bit 7
+#define GPTU_OUT_OUT7_SHIFT			7
+#define GPTU_OUT_CLRO0				(1 << 8)		 // GPTU Output 0 Clear Bit
+#define GPTU_OUT_CLRO0_SHIFT		8
+#define GPTU_OUT_CLRO1				(1 << 9)		 // GPTU Output 1 Clear Bit
+#define GPTU_OUT_CLRO1_SHIFT		9
+#define GPTU_OUT_CLRO2				(1 << 10)		 // GPTU Output 2 Clear Bit
+#define GPTU_OUT_CLRO2_SHIFT		10
+#define GPTU_OUT_CLRO3				(1 << 11)		 // GPTU Output 3 Clear Bit
+#define GPTU_OUT_CLRO3_SHIFT		11
+#define GPTU_OUT_CLRO4				(1 << 12)		 // GPTU Output 4 Clear Bit
+#define GPTU_OUT_CLRO4_SHIFT		12
+#define GPTU_OUT_CLRO5				(1 << 13)		 // GPTU Output 5 Clear Bit
+#define GPTU_OUT_CLRO5_SHIFT		13
+#define GPTU_OUT_CLRO6				(1 << 14)		 // GPTU Output 6 Clear Bit
+#define GPTU_OUT_CLRO6_SHIFT		14
+#define GPTU_OUT_CLRO7				(1 << 15)		 // GPTU Output 7 Clear Bit
+#define GPTU_OUT_CLRO7_SHIFT		15
+#define GPTU_OUT_SETO0				(1 << 16)		 // GPTU Output 0 Set Bit
+#define GPTU_OUT_SETO0_SHIFT		16
+#define GPTU_OUT_SETO1				(1 << 17)		 // GPTU Output 1 Set Bit
+#define GPTU_OUT_SETO1_SHIFT		17
+#define GPTU_OUT_SETO2				(1 << 18)		 // GPTU Output 2 Set Bit
+#define GPTU_OUT_SETO2_SHIFT		18
+#define GPTU_OUT_SETO3				(1 << 19)		 // GPTU Output 3 Set Bit
+#define GPTU_OUT_SETO3_SHIFT		19
+#define GPTU_OUT_SETO4				(1 << 20)		 // GPTU Output 4 Set Bit
+#define GPTU_OUT_SETO4_SHIFT		20
+#define GPTU_OUT_SETO5				(1 << 21)		 // GPTU Output 5 Set Bit
+#define GPTU_OUT_SETO5_SHIFT		21
+#define GPTU_OUT_SETO6				(1 << 22)		 // GPTU Output 6 Set Bit
+#define GPTU_OUT_SETO6_SHIFT		22
+#define GPTU_OUT_SETO7				(1 << 23)		 // GPTU Output 7 Set Bit
+#define GPTU_OUT_SETO7_SHIFT		23
+
+#define GPTU_T0DCBA					0x34
+#define GPTU_T0DCBA_T0A				(0xFF << 0)
+#define GPTU_T0DCBA_T0A_SHIFT		0
+#define GPTU_T0DCBA_T0B				(0xFF << 8)
+#define GPTU_T0DCBA_T0B_SHIFT		8
+#define GPTU_T0DCBA_T0C				(0xFF << 16)
+#define GPTU_T0DCBA_T0C_SHIFT		16
+#define GPTU_T0DCBA_T0D				(0xFF << 24)
+#define GPTU_T0DCBA_T0D_SHIFT		24
+
+#define GPTU_T0CBA					0x38
+#define GPTU_T0CBA_T0A				(0xFF << 0)
+#define GPTU_T0CBA_T0A_SHIFT		0
+#define GPTU_T0CBA_T0B				(0xFF << 8)
+#define GPTU_T0CBA_T0B_SHIFT		8
+#define GPTU_T0CBA_T0C				(0xFF << 16)
+#define GPTU_T0CBA_T0C_SHIFT		16
+
+#define GPTU_T0RDCBA				0x3C
+#define GPTU_T0RDCBA_T0RA			(0xFF << 0)
+#define GPTU_T0RDCBA_T0RA_SHIFT		0
+#define GPTU_T0RDCBA_T0RB			(0xFF << 8)
+#define GPTU_T0RDCBA_T0RB_SHIFT		8
+#define GPTU_T0RDCBA_T0RC			(0xFF << 16)
+#define GPTU_T0RDCBA_T0RC_SHIFT		16
+#define GPTU_T0RDCBA_T0RD			(0xFF << 24)
+#define GPTU_T0RDCBA_T0RD_SHIFT		24
+
+#define GPTU_T0RCBA					0x40
+#define GPTU_T0RCBA_T0RA			(0xFF << 0)
+#define GPTU_T0RCBA_T0RA_SHIFT		0
+#define GPTU_T0RCBA_T0RB			(0xFF << 8)
+#define GPTU_T0RCBA_T0RB_SHIFT		8
+#define GPTU_T0RCBA_T0RC			(0xFF << 16)
+#define GPTU_T0RCBA_T0RC_SHIFT		16
+
+#define GPTU_T1DCBA					0x44
+#define GPTU_T1DCBA_T1A				(0xFF << 0)
+#define GPTU_T1DCBA_T1A_SHIFT		0
+#define GPTU_T1DCBA_T1B				(0xFF << 8)
+#define GPTU_T1DCBA_T1B_SHIFT		8
+#define GPTU_T1DCBA_T1C				(0xFF << 16)
+#define GPTU_T1DCBA_T1C_SHIFT		16
+#define GPTU_T1DCBA_T1D				(0xFF << 24)
+#define GPTU_T1DCBA_T1D_SHIFT		24
+
+#define GPTU_T1CBA					0x48
+#define GPTU_T1CBA_T1A				(0xFF << 0)
+#define GPTU_T1CBA_T1A_SHIFT		0
+#define GPTU_T1CBA_T1B				(0xFF << 8)
+#define GPTU_T1CBA_T1B_SHIFT		8
+#define GPTU_T1CBA_T1C				(0xFF << 16)
+#define GPTU_T1CBA_T1C_SHIFT		16
+
+#define GPTU_T1RDCBA				0x4C
+#define GPTU_T1RDCBA_T1RA			(0xFF << 0)
+#define GPTU_T1RDCBA_T1RA_SHIFT		0
+#define GPTU_T1RDCBA_T1RB			(0xFF << 8)
+#define GPTU_T1RDCBA_T1RB_SHIFT		8
+#define GPTU_T1RDCBA_T1RC			(0xFF << 16)
+#define GPTU_T1RDCBA_T1RC_SHIFT		16
+#define GPTU_T1RDCBA_T1RD			(0xFF << 24)
+#define GPTU_T1RDCBA_T1RD_SHIFT		24
+
+#define GPTU_T1RCBA					0x50
+#define GPTU_T1RCBA_T1RA			(0xFF << 0)
+#define GPTU_T1RCBA_T1RA_SHIFT		0
+#define GPTU_T1RCBA_T1RB			(0xFF << 8)
+#define GPTU_T1RCBA_T1RB_SHIFT		8
+#define GPTU_T1RCBA_T1RC			(0xFF << 16)
+#define GPTU_T1RCBA_T1RC_SHIFT		16
+
+#define GPTU_T2						0x54
+#define GPTU_T2_T2A					(0xFFFF << 0)	 // T2A Contents
+#define GPTU_T2_T2A_SHIFT			0
+#define GPTU_T2_T2B					(0xFFFF << 16)	 // T2B Contents
+#define GPTU_T2_T2B_SHIFT			16
+
+#define GPTU_T2RC0					0x58
+#define GPTU_T2RC0_T2ARC0			(0xFFFF << 0)	 // T2A Reload/Capture Value
+#define GPTU_T2RC0_T2ARC0_SHIFT		0
+#define GPTU_T2RC0_T2BRC0			(0xFFFF << 16)	 // T2B Reload/Capture Value
+#define GPTU_T2RC0_T2BRC0_SHIFT		16
+
+#define GPTU_T2RC1					0x5C
+#define GPTU_T2RC1_T2ARC1			(0xFFFF << 0)	 // T2A Reload/Capture Value
+#define GPTU_T2RC1_T2ARC1_SHIFT		0
+#define GPTU_T2RC1_T2BRC1			(0xFFFF << 16)	 // T2B Reload/Capture Value
+#define GPTU_T2RC1_T2BRC1_SHIFT		16
+
+#define GPTU_T012RUN				0x60
+#define GPTU_T012RUN_T0ARUN			(1 << 0)		 // Timer T0D Run Control.
+#define GPTU_T012RUN_T0ARUN_SHIFT	0
+#define GPTU_T012RUN_T0BRUN			(1 << 1)		 // Timer T0B Run Control.
+#define GPTU_T012RUN_T0BRUN_SHIFT	1
+#define GPTU_T012RUN_T0CRUN			(1 << 2)		 // Timer T0C Run Control.
+#define GPTU_T012RUN_T0CRUN_SHIFT	2
+#define GPTU_T012RUN_T0DRUN			(1 << 3)		 // Timer T0D Run Control.
+#define GPTU_T012RUN_T0DRUN_SHIFT	3
+#define GPTU_T012RUN_T1ARUN			(1 << 4)		 // Timer T1A Run Control.
+#define GPTU_T012RUN_T1ARUN_SHIFT	4
+#define GPTU_T012RUN_T1BRUN			(1 << 5)		 // Timer T1B Run Control.
+#define GPTU_T012RUN_T1BRUN_SHIFT	5
+#define GPTU_T012RUN_T1CRUN			(1 << 6)		 // Timer T1C Run Control.
+#define GPTU_T012RUN_T1CRUN_SHIFT	6
+#define GPTU_T012RUN_T1DRUN			(1 << 7)		 // Timer T1D Run Control.
+#define GPTU_T012RUN_T1DRUN_SHIFT	7
+#define GPTU_T012RUN_T2ARUN			(1 << 8)		 // Timer T2A Run Status Bit.
+#define GPTU_T012RUN_T2ARUN_SHIFT	8
+#define GPTU_T012RUN_T2ASETR		(1 << 9)		 // Timer T2A Run Set Bit.
+#define GPTU_T012RUN_T2ASETR_SHIFT	9
+#define GPTU_T012RUN_T2ACLRR		(1 << 10)		 // Timer T2A Run Clear Bit.
+#define GPTU_T012RUN_T2ACLRR_SHIFT	10
+#define GPTU_T012RUN_T2BRUN			(1 << 12)		 // Timer T2B Run Status Bit.
+#define GPTU_T012RUN_T2BRUN_SHIFT	12
+#define GPTU_T012RUN_T2BSETR		(1 << 13)		 // Timer T2B Run Set Bit.
+#define GPTU_T012RUN_T2BSETR_SHIFT	13
+#define GPTU_T012RUN_T2BCLRR		(1 << 14)		 // Timer T2B Run Clear Bit.
+#define GPTU_T012RUN_T2BCLRR_SHIFT	14
+
+#define GPTU_SRSEL					0xDC
+#define GPTU_SRSEL_SSR7				(0xF << 0)		 // GPTU IRQ 7 Source Selection
+#define GPTU_SRSEL_SSR7_SHIFT		0
+#define GPTU_SRSEL_SSR6				(0xF << 4)		 // GPTU IRQ 6 Source Selection
+#define GPTU_SRSEL_SSR6_SHIFT		4
+#define GPTU_SRSEL_SSR5				(0xF << 8)		 // GPTU IRQ 5 Source Selection
+#define GPTU_SRSEL_SSR5_SHIFT		8
+#define GPTU_SRSEL_SSR4				(0xF << 12)		 // GPTU IRQ 4 Source Selection
+#define GPTU_SRSEL_SSR4_SHIFT		12
+#define GPTU_SRSEL_SSR3				(0xF << 16)		 // GPTU IRQ 3 Source Selection
+#define GPTU_SRSEL_SSR3_SHIFT		16
+#define GPTU_SRSEL_SSR2				(0xF << 20)		 // GPTU IRQ 2 Source Selection
+#define GPTU_SRSEL_SSR2_SHIFT		20
+#define GPTU_SRSEL_SSR1				(0xF << 24)		 // GPTU IRQ 1 Source Selection
+#define GPTU_SRSEL_SSR1_SHIFT		24
+#define GPTU_SRSEL_SSR0				(0xF << 28)		 // GPTU IRQ 0 Source Selection
+#define GPTU_SRSEL_SSR0_SHIFT		28
+
+/* Service Routing Control Register */
+#define GPTU_SRC7					0xE0
+
+/* Service Routing Control Register */
+#define GPTU_SRC6					0xE4
+
+/* Service Routing Control Register */
+#define GPTU_SRC5					0xE8
+
+/* Service Routing Control Register */
+#define GPTU_SRC4					0xEC
+
+/* Service Routing Control Register */
+#define GPTU_SRC3					0xF0
+
+/* Service Routing Control Register */
+#define GPTU_SRC2					0xF4
+
+/* Service Routing Control Register */
+#define GPTU_SRC1					0xF8
+
+/* Service Routing Control Register */
+#define GPTU_SRC0					0xFC
+
+
+// AFC [MOD_NUM=F004, MOD_REV=00, MOD_32BIT=C0]
+// Looks like AFC (Automatic Frequency Correction???) module, but not sure.
+#define AFC_IO_SIZE	0x00000200
+/* Clock Control Register */
+#define AFC_CLC		0x00
+
+/* Module Identifier Register */
+#define AFC_ID		0x08
+
+
+// DSP [MOD_NUM=F022, MOD_REV=00, MOD_32BIT=C0]
+// Looks like DSP module, but not sure.
+#define DSP_IO_SIZE	0x0000000C
+/* Clock Control Register */
+#define DSP_CLC		0x00
+
+/* Module Identifier Register */
+#define DSP_ID		0x08
+
+
+// GPRSCU [MOD_NUM=F003, MOD_REV=00, MOD_32BIT=C0]
+// Looks like GPRS Cypher Uinit module, but not sure.
+#define GPRSCU_IO_SIZE	0x00000200
+/* Clock Control Register */
+#define GPRSCU_CLC		0x00
+
+/* Module Identifier Register */
+#define GPRSCU_ID		0x08
+
+/* Service Routing Control Register */
+#define GPRSCU_SRC0		0xF8
+#define GPRSCU_SRC1		0xFC
+
+
+// TPU [MOD_NUM=F021, MOD_REV=00, MOD_32BIT=C0]
+// Looks like TPU (time processing module) module, registers collected using tests on real hardware (using "black box" method).
+#define TPU_IO_SIZE					0x00002000
+/* Clock Control Register */
+#define TPU_CLC						0x00
+
+/* Module Identifier Register */
+#define TPU_ID						0x08
+
+#define TPU_UNK0					0x10
+
+#define TPU_UNK1					0x14
+
+#define TPU_UNK2					0x18
+
+#define TPU_CORRECTION				0x1C
+#define TPU_CORRECTION_VALUE		(0x7FFF << 0)
+#define TPU_CORRECTION_VALUE_SHIFT	0
+#define TPU_CORRECTION_CTRL			(1 << 16)
+#define TPU_CORRECTION_CTRL_SHIFT	16
+
+#define TPU_OVERFLOW				0x20
+#define TPU_OVERFLOW_VALUE			(0x7FFF << 0)
+#define TPU_OVERFLOW_VALUE_SHIFT	0
+
+#define TPU_INT0					0x24
+#define TPU_INT1					0x28
+#define TPU_INT_VALUE				(0x7FFF << 0)
+#define TPU_INT_VALUE_SHIFT			0
+
+#define TPU_OFFSET					0x2C
+#define TPU_OFFSET_VALUE			(0x7FFF << 0)
+#define TPU_OFFSET_VALUE_SHIFT		0
+#define TPU_OFFSET_CTRL				(1 << 16)
+#define TPU_OFFSET_CTRL_SHIFT		16
+
+#define TPU_SKIP					0x30
+#define TPU_SKIP_SKIPN				(1 << 0)
+#define TPU_SKIP_SKIPN_SHIFT		0
+#define TPU_SKIP_SKIPC				(1 << 1)
+#define TPU_SKIP_SKIPC_SHIFT		1
+
+#define TPU_COUNTER					0x34
+#define TPU_COUNTER_VALUE			(0x7FFF << 0)
+#define TPU_COUNTER_VALUE_SHIFT		0
+
+#define TPU_UNK3					0x38
+
+#define TPU_UNK4					0x3C
+
+#define TPU_UNK5					0x40
+
+#define TPU_UNK6					0x44
+
+#define TPU_PARAM					0x5C
+#define TPU_PARAM_TINI				(1 << 0)
+#define TPU_PARAM_TINI_SHIFT		0
+#define TPU_PARAM_FDIS				(1 << 1)
+#define TPU_PARAM_FDIS_SHIFT		1
+
+#define TPU_UNK7					0x60
+
+#define TPU_PLLCON0					0x68
+#define TPU_PLLCON0_K_DIV			(0x3FFFFFFF << 0)
+#define TPU_PLLCON0_K_DIV_SHIFT		0
+
+#define TPU_PLLCON1					0x6C
+#define TPU_PLLCON1_L_DIV			(0x3FFFFFFF << 0)
+#define TPU_PLLCON1_L_DIV_SHIFT		0
+
+#define TPU_PLLCON2					0x70
+#define TPU_PLLCON2_LOAD			(1 << 0)
+#define TPU_PLLCON2_LOAD_SHIFT		0
+#define TPU_PLLCON2_INIT			(1 << 1)
+#define TPU_PLLCON2_INIT_SHIFT		1
+
+/* Service Routing Control Register */
+#define TPU_UNK_SRC0				0xE8
+#define TPU_UNK_SRC1				0xEC
+#define TPU_UNK_SRC2				0xF0
+#define TPU_UNK_SRC3				0xF4
+
+/* Service Routing Control Register */
+#define TPU_SRC0					0xF8
+#define TPU_SRC1					0xFC
+
+#define TPU_RAM0					0x1800
+#define TPU_RAM1					0x1804
+#define TPU_RAM2					0x1808
+#define TPU_RAM3					0x180C
+#define TPU_RAM4					0x1810
+#define TPU_RAM5					0x1814
+#define TPU_RAM6					0x1818
+#define TPU_RAM7					0x181C
+#define TPU_RAM8					0x1820
+#define TPU_RAM9					0x1824
+#define TPU_RAM10					0x1828
+#define TPU_RAM11					0x182C
+#define TPU_RAM12					0x1830
+#define TPU_RAM13					0x1834
+#define TPU_RAM14					0x1838
+#define TPU_RAM15					0x183C
+#define TPU_RAM16					0x1840
+#define TPU_RAM17					0x1844
+#define TPU_RAM18					0x1848
+#define TPU_RAM19					0x184C
+#define TPU_RAM20					0x1850
+#define TPU_RAM21					0x1854
+#define TPU_RAM22					0x1858
+#define TPU_RAM23					0x185C
+#define TPU_RAM24					0x1860
+#define TPU_RAM25					0x1864
+#define TPU_RAM26					0x1868
+#define TPU_RAM27					0x186C
+#define TPU_RAM28					0x1870
+#define TPU_RAM29					0x1874
+#define TPU_RAM30					0x1878
+#define TPU_RAM31					0x187C
+#define TPU_RAM32					0x1880
+#define TPU_RAM33					0x1884
+#define TPU_RAM34					0x1888
+#define TPU_RAM35					0x188C
+#define TPU_RAM36					0x1890
+#define TPU_RAM37					0x1894
+#define TPU_RAM38					0x1898
+#define TPU_RAM39					0x189C
+#define TPU_RAM40					0x18A0
+#define TPU_RAM41					0x18A4
+#define TPU_RAM42					0x18A8
+#define TPU_RAM43					0x18AC
+#define TPU_RAM44					0x18B0
+#define TPU_RAM45					0x18B4
+#define TPU_RAM46					0x18B8
+#define TPU_RAM47					0x18BC
+#define TPU_RAM48					0x18C0
+#define TPU_RAM49					0x18C4
+#define TPU_RAM50					0x18C8
+#define TPU_RAM51					0x18CC
+#define TPU_RAM52					0x18D0
+#define TPU_RAM53					0x18D4
+#define TPU_RAM54					0x18D8
+#define TPU_RAM55					0x18DC
+#define TPU_RAM56					0x18E0
+#define TPU_RAM57					0x18E4
+#define TPU_RAM58					0x18E8
+#define TPU_RAM59					0x18EC
+#define TPU_RAM60					0x18F0
+#define TPU_RAM61					0x18F4
+#define TPU_RAM62					0x18F8
+#define TPU_RAM63					0x18FC
+#define TPU_RAM64					0x1900
+#define TPU_RAM65					0x1904
+#define TPU_RAM66					0x1908
+#define TPU_RAM67					0x190C
+#define TPU_RAM68					0x1910
+#define TPU_RAM69					0x1914
+#define TPU_RAM70					0x1918
+#define TPU_RAM71					0x191C
+#define TPU_RAM72					0x1920
+#define TPU_RAM73					0x1924
+#define TPU_RAM74					0x1928
+#define TPU_RAM75					0x192C
+#define TPU_RAM76					0x1930
+#define TPU_RAM77					0x1934
+#define TPU_RAM78					0x1938
+#define TPU_RAM79					0x193C
+#define TPU_RAM80					0x1940
+#define TPU_RAM81					0x1944
+#define TPU_RAM82					0x1948
+#define TPU_RAM83					0x194C
+#define TPU_RAM84					0x1950
+#define TPU_RAM85					0x1954
+#define TPU_RAM86					0x1958
+#define TPU_RAM87					0x195C
+#define TPU_RAM88					0x1960
+#define TPU_RAM89					0x1964
+#define TPU_RAM90					0x1968
+#define TPU_RAM91					0x196C
+#define TPU_RAM92					0x1970
+#define TPU_RAM93					0x1974
+#define TPU_RAM94					0x1978
+#define TPU_RAM95					0x197C
+#define TPU_RAM96					0x1980
+#define TPU_RAM97					0x1984
+#define TPU_RAM98					0x1988
+#define TPU_RAM99					0x198C
+#define TPU_RAM100					0x1990
+#define TPU_RAM101					0x1994
+#define TPU_RAM102					0x1998
+#define TPU_RAM103					0x199C
+#define TPU_RAM104					0x19A0
+#define TPU_RAM105					0x19A4
+#define TPU_RAM106					0x19A8
+#define TPU_RAM107					0x19AC
+#define TPU_RAM108					0x19B0
+#define TPU_RAM109					0x19B4
+#define TPU_RAM110					0x19B8
+#define TPU_RAM111					0x19BC
+#define TPU_RAM112					0x19C0
+#define TPU_RAM113					0x19C4
+#define TPU_RAM114					0x19C8
+#define TPU_RAM115					0x19CC
+#define TPU_RAM116					0x19D0
+#define TPU_RAM117					0x19D4
+#define TPU_RAM118					0x19D8
+#define TPU_RAM119					0x19DC
+#define TPU_RAM120					0x19E0
+#define TPU_RAM121					0x19E4
+#define TPU_RAM122					0x19E8
+#define TPU_RAM123					0x19EC
+#define TPU_RAM124					0x19F0
+#define TPU_RAM125					0x19F4
+#define TPU_RAM126					0x19F8
+#define TPU_RAM127					0x19FC
+#define TPU_RAM128					0x1A00
+#define TPU_RAM129					0x1A04
+#define TPU_RAM130					0x1A08
+#define TPU_RAM131					0x1A0C
+#define TPU_RAM132					0x1A10
+#define TPU_RAM133					0x1A14
+#define TPU_RAM134					0x1A18
+#define TPU_RAM135					0x1A1C
+#define TPU_RAM136					0x1A20
+#define TPU_RAM137					0x1A24
+#define TPU_RAM138					0x1A28
+#define TPU_RAM139					0x1A2C
+#define TPU_RAM140					0x1A30
+#define TPU_RAM141					0x1A34
+#define TPU_RAM142					0x1A38
+#define TPU_RAM143					0x1A3C
+#define TPU_RAM144					0x1A40
+#define TPU_RAM145					0x1A44
+#define TPU_RAM146					0x1A48
+#define TPU_RAM147					0x1A4C
+#define TPU_RAM148					0x1A50
+#define TPU_RAM149					0x1A54
+#define TPU_RAM150					0x1A58
+#define TPU_RAM151					0x1A5C
+#define TPU_RAM152					0x1A60
+#define TPU_RAM153					0x1A64
+#define TPU_RAM154					0x1A68
+#define TPU_RAM155					0x1A6C
+#define TPU_RAM156					0x1A70
+#define TPU_RAM157					0x1A74
+#define TPU_RAM158					0x1A78
+#define TPU_RAM159					0x1A7C
+#define TPU_RAM160					0x1A80
+#define TPU_RAM161					0x1A84
+#define TPU_RAM162					0x1A88
+#define TPU_RAM163					0x1A8C
+#define TPU_RAM164					0x1A90
+#define TPU_RAM165					0x1A94
+#define TPU_RAM166					0x1A98
+#define TPU_RAM167					0x1A9C
+#define TPU_RAM168					0x1AA0
+#define TPU_RAM169					0x1AA4
+#define TPU_RAM170					0x1AA8
+#define TPU_RAM171					0x1AAC
+#define TPU_RAM172					0x1AB0
+#define TPU_RAM173					0x1AB4
+#define TPU_RAM174					0x1AB8
+#define TPU_RAM175					0x1ABC
+#define TPU_RAM176					0x1AC0
+#define TPU_RAM177					0x1AC4
+#define TPU_RAM178					0x1AC8
+#define TPU_RAM179					0x1ACC
+#define TPU_RAM180					0x1AD0
+#define TPU_RAM181					0x1AD4
+#define TPU_RAM182					0x1AD8
+#define TPU_RAM183					0x1ADC
+#define TPU_RAM184					0x1AE0
+#define TPU_RAM185					0x1AE4
+#define TPU_RAM186					0x1AE8
+#define TPU_RAM187					0x1AEC
+#define TPU_RAM188					0x1AF0
+#define TPU_RAM189					0x1AF4
+#define TPU_RAM190					0x1AF8
+#define TPU_RAM191					0x1AFC
+#define TPU_RAM192					0x1B00
+#define TPU_RAM193					0x1B04
+#define TPU_RAM194					0x1B08
+#define TPU_RAM195					0x1B0C
+#define TPU_RAM196					0x1B10
+#define TPU_RAM197					0x1B14
+#define TPU_RAM198					0x1B18
+#define TPU_RAM199					0x1B1C
+#define TPU_RAM200					0x1B20
+#define TPU_RAM201					0x1B24
+#define TPU_RAM202					0x1B28
+#define TPU_RAM203					0x1B2C
+#define TPU_RAM204					0x1B30
+#define TPU_RAM205					0x1B34
+#define TPU_RAM206					0x1B38
+#define TPU_RAM207					0x1B3C
+#define TPU_RAM208					0x1B40
+#define TPU_RAM209					0x1B44
+#define TPU_RAM210					0x1B48
+#define TPU_RAM211					0x1B4C
+#define TPU_RAM212					0x1B50
+#define TPU_RAM213					0x1B54
+#define TPU_RAM214					0x1B58
+#define TPU_RAM215					0x1B5C
+#define TPU_RAM216					0x1B60
+#define TPU_RAM217					0x1B64
+#define TPU_RAM218					0x1B68
+#define TPU_RAM219					0x1B6C
+#define TPU_RAM220					0x1B70
+#define TPU_RAM221					0x1B74
+#define TPU_RAM222					0x1B78
+#define TPU_RAM223					0x1B7C
+#define TPU_RAM224					0x1B80
+#define TPU_RAM225					0x1B84
+#define TPU_RAM226					0x1B88
+#define TPU_RAM227					0x1B8C
+#define TPU_RAM228					0x1B90
+#define TPU_RAM229					0x1B94
+#define TPU_RAM230					0x1B98
+#define TPU_RAM231					0x1B9C
+#define TPU_RAM232					0x1BA0
+#define TPU_RAM233					0x1BA4
+#define TPU_RAM234					0x1BA8
+#define TPU_RAM235					0x1BAC
+#define TPU_RAM236					0x1BB0
+#define TPU_RAM237					0x1BB4
+#define TPU_RAM238					0x1BB8
+#define TPU_RAM239					0x1BBC
+#define TPU_RAM240					0x1BC0
+#define TPU_RAM241					0x1BC4
+#define TPU_RAM242					0x1BC8
+#define TPU_RAM243					0x1BCC
+#define TPU_RAM244					0x1BD0
+#define TPU_RAM245					0x1BD4
+#define TPU_RAM246					0x1BD8
+#define TPU_RAM247					0x1BDC
+#define TPU_RAM248					0x1BE0
+#define TPU_RAM249					0x1BE4
+#define TPU_RAM250					0x1BE8
+#define TPU_RAM251					0x1BEC
+#define TPU_RAM252					0x1BF0
+#define TPU_RAM253					0x1BF4
+#define TPU_RAM254					0x1BF8
+#define TPU_RAM255					0x1BFC
+#define TPU_RAM256					0x1C00
+#define TPU_RAM257					0x1C04
+#define TPU_RAM258					0x1C08
+#define TPU_RAM259					0x1C0C
+#define TPU_RAM260					0x1C10
+#define TPU_RAM261					0x1C14
+#define TPU_RAM262					0x1C18
+#define TPU_RAM263					0x1C1C
+#define TPU_RAM264					0x1C20
+#define TPU_RAM265					0x1C24
+#define TPU_RAM266					0x1C28
+#define TPU_RAM267					0x1C2C
+#define TPU_RAM268					0x1C30
+#define TPU_RAM269					0x1C34
+#define TPU_RAM270					0x1C38
+#define TPU_RAM271					0x1C3C
+#define TPU_RAM272					0x1C40
+#define TPU_RAM273					0x1C44
+#define TPU_RAM274					0x1C48
+#define TPU_RAM275					0x1C4C
+#define TPU_RAM276					0x1C50
+#define TPU_RAM277					0x1C54
+#define TPU_RAM278					0x1C58
+#define TPU_RAM279					0x1C5C
+#define TPU_RAM280					0x1C60
+#define TPU_RAM281					0x1C64
+#define TPU_RAM282					0x1C68
+#define TPU_RAM283					0x1C6C
+#define TPU_RAM284					0x1C70
+#define TPU_RAM285					0x1C74
+#define TPU_RAM286					0x1C78
+#define TPU_RAM287					0x1C7C
+#define TPU_RAM288					0x1C80
+#define TPU_RAM289					0x1C84
+#define TPU_RAM290					0x1C88
+#define TPU_RAM291					0x1C8C
+#define TPU_RAM292					0x1C90
+#define TPU_RAM293					0x1C94
+#define TPU_RAM294					0x1C98
+#define TPU_RAM295					0x1C9C
+#define TPU_RAM296					0x1CA0
+#define TPU_RAM297					0x1CA4
+#define TPU_RAM298					0x1CA8
+#define TPU_RAM299					0x1CAC
+#define TPU_RAM300					0x1CB0
+#define TPU_RAM301					0x1CB4
+#define TPU_RAM302					0x1CB8
+#define TPU_RAM303					0x1CBC
+#define TPU_RAM304					0x1CC0
+#define TPU_RAM305					0x1CC4
+#define TPU_RAM306					0x1CC8
+#define TPU_RAM307					0x1CCC
+#define TPU_RAM308					0x1CD0
+#define TPU_RAM309					0x1CD4
+#define TPU_RAM310					0x1CD8
+#define TPU_RAM311					0x1CDC
+#define TPU_RAM312					0x1CE0
+#define TPU_RAM313					0x1CE4
+#define TPU_RAM314					0x1CE8
+#define TPU_RAM315					0x1CEC
+#define TPU_RAM316					0x1CF0
+#define TPU_RAM317					0x1CF4
+#define TPU_RAM318					0x1CF8
+#define TPU_RAM319					0x1CFC
+#define TPU_RAM320					0x1D00
+#define TPU_RAM321					0x1D04
+#define TPU_RAM322					0x1D08
+#define TPU_RAM323					0x1D0C
+#define TPU_RAM324					0x1D10
+#define TPU_RAM325					0x1D14
+#define TPU_RAM326					0x1D18
+#define TPU_RAM327					0x1D1C
+#define TPU_RAM328					0x1D20
+#define TPU_RAM329					0x1D24
+#define TPU_RAM330					0x1D28
+#define TPU_RAM331					0x1D2C
+#define TPU_RAM332					0x1D30
+#define TPU_RAM333					0x1D34
+#define TPU_RAM334					0x1D38
+#define TPU_RAM335					0x1D3C
+#define TPU_RAM336					0x1D40
+#define TPU_RAM337					0x1D44
+#define TPU_RAM338					0x1D48
+#define TPU_RAM339					0x1D4C
+#define TPU_RAM340					0x1D50
+#define TPU_RAM341					0x1D54
+#define TPU_RAM342					0x1D58
+#define TPU_RAM343					0x1D5C
+#define TPU_RAM344					0x1D60
+#define TPU_RAM345					0x1D64
+#define TPU_RAM346					0x1D68
+#define TPU_RAM347					0x1D6C
+#define TPU_RAM348					0x1D70
+#define TPU_RAM349					0x1D74
+#define TPU_RAM350					0x1D78
+#define TPU_RAM351					0x1D7C
+#define TPU_RAM352					0x1D80
+#define TPU_RAM353					0x1D84
+#define TPU_RAM354					0x1D88
+#define TPU_RAM355					0x1D8C
+#define TPU_RAM356					0x1D90
+#define TPU_RAM357					0x1D94
+#define TPU_RAM358					0x1D98
+#define TPU_RAM359					0x1D9C
+#define TPU_RAM360					0x1DA0
+#define TPU_RAM361					0x1DA4
+#define TPU_RAM362					0x1DA8
+#define TPU_RAM363					0x1DAC
+#define TPU_RAM364					0x1DB0
+#define TPU_RAM365					0x1DB4
+#define TPU_RAM366					0x1DB8
+#define TPU_RAM367					0x1DBC
+#define TPU_RAM368					0x1DC0
+#define TPU_RAM369					0x1DC4
+#define TPU_RAM370					0x1DC8
+#define TPU_RAM371					0x1DCC
+#define TPU_RAM372					0x1DD0
+#define TPU_RAM373					0x1DD4
+#define TPU_RAM374					0x1DD8
+#define TPU_RAM375					0x1DDC
+#define TPU_RAM376					0x1DE0
+#define TPU_RAM377					0x1DE4
+#define TPU_RAM378					0x1DE8
+#define TPU_RAM379					0x1DEC
+#define TPU_RAM380					0x1DF0
+#define TPU_RAM381					0x1DF4
+#define TPU_RAM382					0x1DF8
+#define TPU_RAM383					0x1DFC
+#define TPU_RAM384					0x1E00
+#define TPU_RAM385					0x1E04
+#define TPU_RAM386					0x1E08
+#define TPU_RAM387					0x1E0C
+#define TPU_RAM388					0x1E10
+#define TPU_RAM389					0x1E14
+#define TPU_RAM390					0x1E18
+#define TPU_RAM391					0x1E1C
+#define TPU_RAM392					0x1E20
+#define TPU_RAM393					0x1E24
+#define TPU_RAM394					0x1E28
+#define TPU_RAM395					0x1E2C
+#define TPU_RAM396					0x1E30
+#define TPU_RAM397					0x1E34
+#define TPU_RAM398					0x1E38
+#define TPU_RAM399					0x1E3C
+#define TPU_RAM400					0x1E40
+#define TPU_RAM401					0x1E44
+#define TPU_RAM402					0x1E48
+#define TPU_RAM403					0x1E4C
+#define TPU_RAM404					0x1E50
+#define TPU_RAM405					0x1E54
+#define TPU_RAM406					0x1E58
+#define TPU_RAM407					0x1E5C
+#define TPU_RAM408					0x1E60
+#define TPU_RAM409					0x1E64
+#define TPU_RAM410					0x1E68
+#define TPU_RAM411					0x1E6C
+#define TPU_RAM412					0x1E70
+#define TPU_RAM413					0x1E74
+#define TPU_RAM414					0x1E78
+#define TPU_RAM415					0x1E7C
+#define TPU_RAM416					0x1E80
+#define TPU_RAM417					0x1E84
+#define TPU_RAM418					0x1E88
+#define TPU_RAM419					0x1E8C
+#define TPU_RAM420					0x1E90
+#define TPU_RAM421					0x1E94
+#define TPU_RAM422					0x1E98
+#define TPU_RAM423					0x1E9C
+#define TPU_RAM424					0x1EA0
+#define TPU_RAM425					0x1EA4
+#define TPU_RAM426					0x1EA8
+#define TPU_RAM427					0x1EAC
+#define TPU_RAM428					0x1EB0
+#define TPU_RAM429					0x1EB4
+#define TPU_RAM430					0x1EB8
+#define TPU_RAM431					0x1EBC
+#define TPU_RAM432					0x1EC0
+#define TPU_RAM433					0x1EC4
+#define TPU_RAM434					0x1EC8
+#define TPU_RAM435					0x1ECC
+#define TPU_RAM436					0x1ED0
+#define TPU_RAM437					0x1ED4
+#define TPU_RAM438					0x1ED8
+#define TPU_RAM439					0x1EDC
+#define TPU_RAM440					0x1EE0
+#define TPU_RAM441					0x1EE4
+#define TPU_RAM442					0x1EE8
+#define TPU_RAM443					0x1EEC
+#define TPU_RAM444					0x1EF0
+#define TPU_RAM445					0x1EF4
+#define TPU_RAM446					0x1EF8
+#define TPU_RAM447					0x1EFC
+#define TPU_RAM448					0x1F00
+#define TPU_RAM449					0x1F04
+#define TPU_RAM450					0x1F08
+#define TPU_RAM451					0x1F0C
+#define TPU_RAM452					0x1F10
+#define TPU_RAM453					0x1F14
+#define TPU_RAM454					0x1F18
+#define TPU_RAM455					0x1F1C
+#define TPU_RAM456					0x1F20
+#define TPU_RAM457					0x1F24
+#define TPU_RAM458					0x1F28
+#define TPU_RAM459					0x1F2C
+#define TPU_RAM460					0x1F30
+#define TPU_RAM461					0x1F34
+#define TPU_RAM462					0x1F38
+#define TPU_RAM463					0x1F3C
+#define TPU_RAM464					0x1F40
+#define TPU_RAM465					0x1F44
+#define TPU_RAM466					0x1F48
+#define TPU_RAM467					0x1F4C
+#define TPU_RAM468					0x1F50
+#define TPU_RAM469					0x1F54
+#define TPU_RAM470					0x1F58
+#define TPU_RAM471					0x1F5C
+#define TPU_RAM472					0x1F60
+#define TPU_RAM473					0x1F64
+#define TPU_RAM474					0x1F68
+#define TPU_RAM475					0x1F6C
+#define TPU_RAM476					0x1F70
+#define TPU_RAM477					0x1F74
+#define TPU_RAM478					0x1F78
+#define TPU_RAM479					0x1F7C
+#define TPU_RAM480					0x1F80
+#define TPU_RAM481					0x1F84
+#define TPU_RAM482					0x1F88
+#define TPU_RAM483					0x1F8C
+#define TPU_RAM484					0x1F90
+#define TPU_RAM485					0x1F94
+#define TPU_RAM486					0x1F98
+#define TPU_RAM487					0x1F9C
+#define TPU_RAM488					0x1FA0
+#define TPU_RAM489					0x1FA4
+#define TPU_RAM490					0x1FA8
+#define TPU_RAM491					0x1FAC
+#define TPU_RAM492					0x1FB0
+#define TPU_RAM493					0x1FB4
+#define TPU_RAM494					0x1FB8
+#define TPU_RAM495					0x1FBC
+#define TPU_RAM496					0x1FC0
+#define TPU_RAM497					0x1FC4
+#define TPU_RAM498					0x1FC8
+#define TPU_RAM499					0x1FCC
+#define TPU_RAM500					0x1FD0
+#define TPU_RAM501					0x1FD4
+#define TPU_RAM502					0x1FD8
+#define TPU_RAM503					0x1FDC
+#define TPU_RAM504					0x1FE0
+#define TPU_RAM505					0x1FE4
+#define TPU_RAM506					0x1FE8
+#define TPU_RAM507					0x1FEC
+#define TPU_RAM508					0x1FF0
+#define TPU_RAM509					0x1FF4
+#define TPU_RAM510					0x1FF8
+#define TPU_RAM511					0x1FFC
+
+
+// I2C [MOD_NUM=F057, MOD_REV=00, MOD_32BIT=C0]
+// I2C from Tricore TC27x official public datasheet
+#define I2C_IO_SIZE							0x0000C004
+/* Clock Control Register */
+#define I2C_CLC								0x00
+
+/* Module Identifier Register */
+#define I2C_ID								0x08
+
+/* RUN Control Register */
+#define I2C_RUNCTRL							0x10
+#define I2C_RUNCTRL_RUN						(1 << 0)		 // Enable I2C-bus Interface
+#define I2C_RUNCTRL_RUN_SHIFT				0
+
+/* End Data Control Register */
+#define I2C_ENDDCTRL						0x14
+#define I2C_ENDDCTRL_SETRSC					(1 << 0)		 // Set Restart Condition
+#define I2C_ENDDCTRL_SETRSC_SHIFT			0
+#define I2C_ENDDCTRL_SETEND					(1 << 1)		 // Set End of Transmission
+#define I2C_ENDDCTRL_SETEND_SHIFT			1
+
+/* Fractional Divider Configuration Register */
+#define I2C_FDIVCFG							0x18
+#define I2C_FDIVCFG_DEC						(0x7FF << 0)	 // Decrement Value of Fractional Divider
+#define I2C_FDIVCFG_DEC_SHIFT				0
+#define I2C_FDIVCFG_INC						(0xFF << 16)	 // Increment Value of Fractional Divider
+#define I2C_FDIVCFG_INC_SHIFT				16
+
+/* Fractional Divider High-speed Mode Configuration Register */
+#define I2C_FDIVHIGHCFG						0x1C
+#define I2C_FDIVHIGHCFG_DEC					(0x7FF << 0)	 // Decrement Value of Fractional Divider
+#define I2C_FDIVHIGHCFG_DEC_SHIFT			0
+#define I2C_FDIVHIGHCFG_INC					(0xFF << 16)	 // Increment Value of Fractional Divider
+#define I2C_FDIVHIGHCFG_INC_SHIFT			16
+
+/* Address Configuration Register */
+#define I2C_ADDRCFG							0x20
+#define I2C_ADDRCFG_ADR						(0x3FF << 0)	 // I2C-bus Device Address (slave)
+#define I2C_ADDRCFG_ADR_SHIFT				0
+#define I2C_ADDRCFG_TBAM					(1 << 16)		 // Ten Bit Address Mode
+#define I2C_ADDRCFG_TBAM_SHIFT				16
+#define I2C_ADDRCFG_GCE						(1 << 17)		 // General Call Enable
+#define I2C_ADDRCFG_GCE_SHIFT				17
+#define I2C_ADDRCFG_MCE						(1 << 18)		 // Master Code Enable
+#define I2C_ADDRCFG_MCE_SHIFT				18
+#define I2C_ADDRCFG_MnS						(1 << 19)		 // Master / not Slave
+#define I2C_ADDRCFG_MnS_SHIFT				19
+#define I2C_ADDRCFG_SONA					(1 << 20)		 // Stop on Not-acknowledge
+#define I2C_ADDRCFG_SONA_SHIFT				20
+#define I2C_ADDRCFG_SOPE					(1 << 21)		 // Stop on Packet End
+#define I2C_ADDRCFG_SOPE_SHIFT				21
+
+/* Bus Status Register */
+#define I2C_BUSSTAT							0x24
+#define I2C_BUSSTAT_BS						(0x3 << 1)		 // Bus Status
+#define I2C_BUSSTAT_BS_SHIFT				1
+#define I2C_BUSSTAT_RnW						(1 << 3)		 // Read/not Write
+#define I2C_BUSSTAT_RnW_SHIFT				3
+
+/* FIFO Configuration Register */
+#define I2C_FIFOCFG							0x28
+#define I2C_FIFOCFG_RXBS					(0x3 << 0)		 // RX Burst Size
+#define I2C_FIFOCFG_RXBS_SHIFT				0
+#define I2C_FIFOCFG_RXBS_1_WORD				0x0
+#define I2C_FIFOCFG_RXBS_2_WORD				0x1
+#define I2C_FIFOCFG_RXBS_4_WORD				0x2
+#define I2C_FIFOCFG_TXBS					(0x3 << 4)		 // TX Burst Size
+#define I2C_FIFOCFG_TXBS_SHIFT				4
+#define I2C_FIFOCFG_TXBS_1_WORD				0x0
+#define I2C_FIFOCFG_TXBS_2_WORD				0x10
+#define I2C_FIFOCFG_TXBS_4_WORD				0x20
+#define I2C_FIFOCFG_RXFA					(0x3 << 8)		 // RX FIFO Alignment
+#define I2C_FIFOCFG_RXFA_SHIFT				8
+#define I2C_FIFOCFG_RXFA_BYTE				0x0
+#define I2C_FIFOCFG_RXFA_HALF_WORLD			0x100
+#define I2C_FIFOCFG_RXFA_WORD				0x200
+#define I2C_FIFOCFG_TXFA					(0x3 << 12)		 // TX FIFO Alignment
+#define I2C_FIFOCFG_TXFA_SHIFT				12
+#define I2C_FIFOCFG_TXFA_BYTE				0x0
+#define I2C_FIFOCFG_TXFA_HALF_WORLD			0x1000
+#define I2C_FIFOCFG_TXFA_WORD				0x2000
+#define I2C_FIFOCFG_RXFC					(1 << 16)		 // RX FIFO Flow Control
+#define I2C_FIFOCFG_RXFC_SHIFT				16
+#define I2C_FIFOCFG_TXFC					(1 << 17)		 // TX FIFO Flow Control
+#define I2C_FIFOCFG_TXFC_SHIFT				17
+
+/* Maximum Received Packet Size Control Register */
+#define I2C_MRPSCTRL						0x2C
+#define I2C_MRPSCTRL_MRPS					(0x3FFF << 0)	 // Maximum Received Packet Size
+#define I2C_MRPSCTRL_MRPS_SHIFT				0
+
+/* Received Packet Size Status Register */
+#define I2C_RPSSTAT							0x30
+#define I2C_RPSSTAT_RPS						(0x3FFF << 0)	 // Received Packet Size
+#define I2C_RPSSTAT_RPS_SHIFT				0
+
+/* Transmit Packet Size Control Register */
+#define I2C_TPSCTRL							0x34
+#define I2C_TPSCTRL_TPS						(0x3FFF << 0)	 // Transmit Packet Size
+#define I2C_TPSCTRL_TPS_SHIFT				0
+
+/* Filled FIFO Stages Status Register */
+#define I2C_FFSSTAT							0x38
+#define I2C_FFSSTAT_FFS						(0x3F << 0)		 // Filled FIFO Stages
+#define I2C_FFSSTAT_FFS_SHIFT				0
+
+/* Timing Configuration Register */
+#define I2C_TIMCFG							0x40
+#define I2C_TIMCFG_SDA_DEL_HD_DAT			(0x3F << 0)		 // SDA Delay Stages for Data Hold Time
+#define I2C_TIMCFG_SDA_DEL_HD_DAT_SHIFT		0
+#define I2C_TIMCFG_HS_SDA_DEL_HD_DAT		(0x7 << 6)		 // SDA Delay Stages for Data Hold Time in Highspeed Mode
+#define I2C_TIMCFG_HS_SDA_DEL_HD_DAT_SHIFT	6
+#define I2C_TIMCFG_SCL_DEL_HD_STA			(0x7 << 9)		 // SCL Delay Stages for Hold Time Start (Restart) Bit
+#define I2C_TIMCFG_SCL_DEL_HD_STA_SHIFT		9
+#define I2C_TIMCFG_EN_SCL_LOW_LEN			(1 << 14)		 // Enable Direct Configuration of SCL Low Period Length in Fast Mode
+#define I2C_TIMCFG_EN_SCL_LOW_LEN_SHIFT		14
+#define I2C_TIMCFG_FS_SCL_LOW				(1 << 15)		 // Set Fast Mode SCL Low Period Timing
+#define I2C_TIMCFG_FS_SCL_LOW_SHIFT			15
+#define I2C_TIMCFG_HS_SDA_DEL				(0x7 << 16)		 // SDA Delay Stages for Start/Stop bit in Highspeed Mode
+#define I2C_TIMCFG_HS_SDA_DEL_SHIFT			16
+#define I2C_TIMCFG_SCL_LOW_LEN				(0xFF << 24)	 // SCL Low Length in Fast Mode
+#define I2C_TIMCFG_SCL_LOW_LEN_SHIFT		24
+
+/* Error Interrupt Request Source Mask Register */
+#define I2C_ERRIRQSM						0x60
+#define I2C_ERRIRQSM_RXF_UFL				(1 << 0)		 // RX FIFO Underflow
+#define I2C_ERRIRQSM_RXF_UFL_SHIFT			0
+#define I2C_ERRIRQSM_RXF_OFL				(1 << 1)		 // RX FIFO Overflow
+#define I2C_ERRIRQSM_RXF_OFL_SHIFT			1
+#define I2C_ERRIRQSM_TXF_UFL				(1 << 2)		 // TX FIFO Underflow
+#define I2C_ERRIRQSM_TXF_UFL_SHIFT			2
+#define I2C_ERRIRQSM_TXF_OFL				(1 << 3)		 // TX FIFO Overflow
+#define I2C_ERRIRQSM_TXF_OFL_SHIFT			3
+
+/* Error Interrupt Request Source Status Register */
+#define I2C_ERRIRQSS						0x64
+#define I2C_ERRIRQSS_RXF_UFL				(1 << 0)		 // RX FIFO Underflow
+#define I2C_ERRIRQSS_RXF_UFL_SHIFT			0
+#define I2C_ERRIRQSS_RXF_OFL				(1 << 1)		 // RX FIFO Overflow
+#define I2C_ERRIRQSS_RXF_OFL_SHIFT			1
+#define I2C_ERRIRQSS_TXF_UFL				(1 << 2)		 // TX FIFO Underflow
+#define I2C_ERRIRQSS_TXF_UFL_SHIFT			2
+#define I2C_ERRIRQSS_TXF_OFL				(1 << 3)		 // TX FIFO Overflow
+#define I2C_ERRIRQSS_TXF_OFL_SHIFT			3
+
+/* Error Interrupt Request Source Clear Register */
+#define I2C_ERRIRQSC						0x68
+#define I2C_ERRIRQSC_RXF_UFL				(1 << 0)		 // RX FIFO Underflow
+#define I2C_ERRIRQSC_RXF_UFL_SHIFT			0
+#define I2C_ERRIRQSC_RXF_OFL				(1 << 1)		 // RX FIFO Overflow
+#define I2C_ERRIRQSC_RXF_OFL_SHIFT			1
+#define I2C_ERRIRQSC_TXF_UFL				(1 << 2)		 // TX FIFO Underflow
+#define I2C_ERRIRQSC_TXF_UFL_SHIFT			2
+#define I2C_ERRIRQSC_TXF_OFL				(1 << 3)		 // TX FIFO Overflow
+#define I2C_ERRIRQSC_TXF_OFL_SHIFT			3
+
+/* Protocol Interrupt Request Source Mask Register */
+#define I2C_PIRQSM							0x70
+#define I2C_PIRQSM_AM						(1 << 0)		 // Address Match
+#define I2C_PIRQSM_AM_SHIFT					0
+#define I2C_PIRQSM_GC						(1 << 1)		 // General Call
+#define I2C_PIRQSM_GC_SHIFT					1
+#define I2C_PIRQSM_MC						(1 << 2)		 // Master Code
+#define I2C_PIRQSM_MC_SHIFT					2
+#define I2C_PIRQSM_AL						(1 << 3)		 // Arbitration Lost
+#define I2C_PIRQSM_AL_SHIFT					3
+#define I2C_PIRQSM_NACK						(1 << 4)		 // Not-acknowledge Received
+#define I2C_PIRQSM_NACK_SHIFT				4
+#define I2C_PIRQSM_TX_END					(1 << 5)		 // Transmission End
+#define I2C_PIRQSM_TX_END_SHIFT				5
+#define I2C_PIRQSM_RX						(1 << 6)		 // Receive Mode
+#define I2C_PIRQSM_RX_SHIFT					6
+
+/* Protocol Interrupt Request Source Status Register */
+#define I2C_PIRQSS							0x74
+#define I2C_PIRQSS_AM						(1 << 0)		 // Address Match
+#define I2C_PIRQSS_AM_SHIFT					0
+#define I2C_PIRQSS_GC						(1 << 1)		 // General Call
+#define I2C_PIRQSS_GC_SHIFT					1
+#define I2C_PIRQSS_MC						(1 << 2)		 // Master Code
+#define I2C_PIRQSS_MC_SHIFT					2
+#define I2C_PIRQSS_AL						(1 << 3)		 // Arbitration Lost
+#define I2C_PIRQSS_AL_SHIFT					3
+#define I2C_PIRQSS_NACK						(1 << 4)		 // Not-acknowledge Received
+#define I2C_PIRQSS_NACK_SHIFT				4
+#define I2C_PIRQSS_TX_END					(1 << 5)		 // Transmission End
+#define I2C_PIRQSS_TX_END_SHIFT				5
+#define I2C_PIRQSS_RX						(1 << 6)		 // Receive Mode
+#define I2C_PIRQSS_RX_SHIFT					6
+
+/* Protocol Interrupt Request Source Clear Register */
+#define I2C_PIRQSC							0x78
+#define I2C_PIRQSC_AM						(1 << 0)		 // Address Match
+#define I2C_PIRQSC_AM_SHIFT					0
+#define I2C_PIRQSC_GC						(1 << 1)		 // General Call
+#define I2C_PIRQSC_GC_SHIFT					1
+#define I2C_PIRQSC_MC						(1 << 2)		 // Master Code
+#define I2C_PIRQSC_MC_SHIFT					2
+#define I2C_PIRQSC_AL						(1 << 3)		 // Arbitration Lost
+#define I2C_PIRQSC_AL_SHIFT					3
+#define I2C_PIRQSC_NACK						(1 << 4)		 // Not-acknowledge Received
+#define I2C_PIRQSC_NACK_SHIFT				4
+#define I2C_PIRQSC_TX_END					(1 << 5)		 // Transmission End
+#define I2C_PIRQSC_TX_END_SHIFT				5
+#define I2C_PIRQSC_RX						(1 << 6)		 // Receive Mode
+#define I2C_PIRQSC_RX_SHIFT					6
+
+/* Raw Interrupt Status Register */
+#define I2C_RIS								0x80
+#define I2C_RIS_LSREQ_INT					(1 << 0)		 // Last Single Request Interrupt
+#define I2C_RIS_LSREQ_INT_SHIFT				0
+#define I2C_RIS_SREQ_INT					(1 << 1)		 // Single Request Interrupt
+#define I2C_RIS_SREQ_INT_SHIFT				1
+#define I2C_RIS_LBREQ_INT					(1 << 2)		 // Last Burst Request Interrupt
+#define I2C_RIS_LBREQ_INT_SHIFT				2
+#define I2C_RIS_BREQ_INT					(1 << 3)		 // Burst Request Interrupt
+#define I2C_RIS_BREQ_INT_SHIFT				3
+#define I2C_RIS_I2C_ERR_INT					(1 << 4)		 // I2C Error Interrupt
+#define I2C_RIS_I2C_ERR_INT_SHIFT			4
+#define I2C_RIS_I2C_P_INT					(1 << 5)		 // I2C Protocol Interrupt
+#define I2C_RIS_I2C_P_INT_SHIFT				5
+
+/* Interrupt Mask Control Register */
+#define I2C_IMSC							0x84
+#define I2C_IMSC_LSREQ_INT					(1 << 0)		 // Last Single Request Interrupt
+#define I2C_IMSC_LSREQ_INT_SHIFT			0
+#define I2C_IMSC_SREQ_INT					(1 << 1)		 // Single Request Interrupt
+#define I2C_IMSC_SREQ_INT_SHIFT				1
+#define I2C_IMSC_LBREQ_INT					(1 << 2)		 // Last Burst Request Interrupt
+#define I2C_IMSC_LBREQ_INT_SHIFT			2
+#define I2C_IMSC_BREQ_INT					(1 << 3)		 // Burst Request Interrupt
+#define I2C_IMSC_BREQ_INT_SHIFT				3
+#define I2C_IMSC_I2C_ERR_INT				(1 << 4)		 // I2C Error Interrupt
+#define I2C_IMSC_I2C_ERR_INT_SHIFT			4
+#define I2C_IMSC_I2C_P_INT					(1 << 5)		 // I2C Protocol Interrupt
+#define I2C_IMSC_I2C_P_INT_SHIFT			5
+
+/* Masked Interrupt Status */
+#define I2C_MIS								0x88
+#define I2C_MIS_LSREQ_INT					(1 << 0)		 // Last Single Request Interrupt
+#define I2C_MIS_LSREQ_INT_SHIFT				0
+#define I2C_MIS_SREQ_INT					(1 << 1)		 // Single Request Interrupt
+#define I2C_MIS_SREQ_INT_SHIFT				1
+#define I2C_MIS_LBREQ_INT					(1 << 2)		 // Last Burst Request Interrupt
+#define I2C_MIS_LBREQ_INT_SHIFT				2
+#define I2C_MIS_BREQ_INT					(1 << 3)		 // Burst Request Interrupt
+#define I2C_MIS_BREQ_INT_SHIFT				3
+#define I2C_MIS_I2C_ERR_INT					(1 << 4)		 // I2C Error Interrupt
+#define I2C_MIS_I2C_ERR_INT_SHIFT			4
+#define I2C_MIS_I2C_P_INT					(1 << 5)		 // I2C Protocol Interrupt
+#define I2C_MIS_I2C_P_INT_SHIFT				5
+
+/* Interrupt Clear Register */
+#define I2C_ICR								0x8C
+#define I2C_ICR_LSREQ_INT					(1 << 0)		 // Last Single Request Interrupt
+#define I2C_ICR_LSREQ_INT_SHIFT				0
+#define I2C_ICR_SREQ_INT					(1 << 1)		 // Single Request Interrupt
+#define I2C_ICR_SREQ_INT_SHIFT				1
+#define I2C_ICR_LBREQ_INT					(1 << 2)		 // Last Burst Request Interrupt
+#define I2C_ICR_LBREQ_INT_SHIFT				2
+#define I2C_ICR_BREQ_INT					(1 << 3)		 // Burst Request Interrupt
+#define I2C_ICR_BREQ_INT_SHIFT				3
+
+/* Interrupt Set Register */
+#define I2C_ISR								0x90
+#define I2C_ISR_LSREQ_INT					(1 << 0)		 // Last Single Request Interrupt
+#define I2C_ISR_LSREQ_INT_SHIFT				0
+#define I2C_ISR_SREQ_INT					(1 << 1)		 // Single Request Interrupt
+#define I2C_ISR_SREQ_INT_SHIFT				1
+#define I2C_ISR_LBREQ_INT					(1 << 2)		 // Last Burst Request Interrupt
+#define I2C_ISR_LBREQ_INT_SHIFT				2
+#define I2C_ISR_BREQ_INT					(1 << 3)		 // Burst Request Interrupt
+#define I2C_ISR_BREQ_INT_SHIFT				3
+#define I2C_ISR_I2C_ERR_INT					(1 << 4)		 // I2C Error Interrupt
+#define I2C_ISR_I2C_ERR_INT_SHIFT			4
+#define I2C_ISR_I2C_P_INT					(1 << 5)		 // I2C Protocol Interrupt
+#define I2C_ISR_I2C_P_INT_SHIFT				5
+
+/* Transmission Data Register */
+#define I2C_TXD								0x8000
+
+/* Reception Data Register */
+#define I2C_RXD								0xC000
+
+
+// I2Cv2 [MOD_NUM=0046, MOD_REV=00, MOD_32BIT=00]
+// Looks like I2C module, but not sure.
+#define I2Cv2_IO_SIZE	0x00000200
+/* Clock Control Register */
+#define I2Cv2_CLC		0x00
+
+/* Module Identifier Register */
+#define I2Cv2_ID		0x08
+
+
+// KEYPAD [MOD_NUM=F046, MOD_REV=00, MOD_32BIT=C0]
+// Keypad scaner module, registers collected using tests on real hardware (using "black box" method).
+#define KEYPAD_IO_SIZE				0x00000200
+/* Module Identifier Register */
+#define KEYPAD_ID					0x08
+
+#define KEYPAD_CON					0x10
+
+#define KEYPAD_PORT0				0x18
+#define KEYPAD_PORT1				0x1C
+#define KEYPAD_PORT2				0x20
+
+#define KEYPAD_ISR					0x24
+#define KEYPAD_ISR_PRESS			(1 << 2)
+#define KEYPAD_ISR_PRESS_SHIFT		2
+#define KEYPAD_ISR_RELEASE			(1 << 3)
+#define KEYPAD_ISR_RELEASE_SHIFT	3
+
+/* Service Routing Control Register */
+#define KEYPAD_PRESS_SRC			0xF0
+
+/* Service Routing Control Register */
+#define KEYPAD_UNK0_SRC				0xF4
+
+/* Service Routing Control Register */
+#define KEYPAD_UNK1_SRC				0xF8
+
+/* Service Routing Control Register */
+#define KEYPAD_RELEASE_SRC			0xFC
+
+
+// MMCI [MOD_NUM=F00F, MOD_REV=00, MOD_32BIT=C0]
+// Module wrapper for AMBA PL180 (MMC/SD controller)
+#define MMCI_IO_SIZE	0x0000000C
+/* Clock Control Register */
+#define MMCI_CLC		0x00
+
+/* Module Identifier Register */
+#define MMCI_ID			0x08
+
+
+// MMCIF [MOD_NUM=F053, MOD_REV=00, MOD_32BIT=C0]
+// Looks like "Multi Media Controller Interface" module, but not sure.
+#define MMCIF_IO_SIZE	0x00000200
+/* Clock Control Register */
+#define MMCIF_CLC		0x00
+
+/* Module Identifier Register */
+#define MMCIF_ID		0x08
+
+
+// NVIC [MOD_NUM=0031, MOD_REV=00, MOD_32BIT=C0]
+// NVIC module, registers collected using tests on real hardware (using "black box" method).
+#define NVIC_IO_SIZE			0x000002D8
+/* Module Identifier Register */
+#define NVIC_ID					0x00
+
+#define NVIC_FIQ_ACK			0x08
+
+#define NVIC_IRQ_ACK			0x14
+
+#define NVIC_CURRENT_FIQ		0x18
+
+#define NVIC_CURRENT_IRQ		0x1C
+
+#define NVIC_CON0				0x30
+#define NVIC_CON1				0x34
+#define NVIC_CON2				0x38
+#define NVIC_CON3				0x3C
+#define NVIC_CON4				0x40
+#define NVIC_CON5				0x44
+#define NVIC_CON6				0x48
+#define NVIC_CON7				0x4C
+#define NVIC_CON8				0x50
+#define NVIC_CON9				0x54
+#define NVIC_CON10				0x58
+#define NVIC_CON11				0x5C
+#define NVIC_CON12				0x60
+#define NVIC_CON13				0x64
+#define NVIC_CON14				0x68
+#define NVIC_CON15				0x6C
+#define NVIC_CON16				0x70
+#define NVIC_CON17				0x74
+#define NVIC_CON18				0x78
+#define NVIC_CON19				0x7C
+#define NVIC_CON20				0x80
+#define NVIC_CON21				0x84
+#define NVIC_CON22				0x88
+#define NVIC_CON23				0x8C
+#define NVIC_CON24				0x90
+#define NVIC_CON25				0x94
+#define NVIC_CON26				0x98
+#define NVIC_CON27				0x9C
+#define NVIC_CON28				0xA0
+#define NVIC_CON29				0xA4
+#define NVIC_CON30				0xA8
+#define NVIC_CON31				0xAC
+#define NVIC_CON32				0xB0
+#define NVIC_CON33				0xB4
+#define NVIC_CON34				0xB8
+#define NVIC_CON35				0xBC
+#define NVIC_CON36				0xC0
+#define NVIC_CON37				0xC4
+#define NVIC_CON38				0xC8
+#define NVIC_CON39				0xCC
+#define NVIC_CON40				0xD0
+#define NVIC_CON41				0xD4
+#define NVIC_CON42				0xD8
+#define NVIC_CON43				0xDC
+#define NVIC_CON44				0xE0
+#define NVIC_CON45				0xE4
+#define NVIC_CON46				0xE8
+#define NVIC_CON47				0xEC
+#define NVIC_CON48				0xF0
+#define NVIC_CON49				0xF4
+#define NVIC_CON50				0xF8
+#define NVIC_CON51				0xFC
+#define NVIC_CON52				0x100
+#define NVIC_CON53				0x104
+#define NVIC_CON54				0x108
+#define NVIC_CON55				0x10C
+#define NVIC_CON56				0x110
+#define NVIC_CON57				0x114
+#define NVIC_CON58				0x118
+#define NVIC_CON59				0x11C
+#define NVIC_CON60				0x120
+#define NVIC_CON61				0x124
+#define NVIC_CON62				0x128
+#define NVIC_CON63				0x12C
+#define NVIC_CON64				0x130
+#define NVIC_CON65				0x134
+#define NVIC_CON66				0x138
+#define NVIC_CON67				0x13C
+#define NVIC_CON68				0x140
+#define NVIC_CON69				0x144
+#define NVIC_CON70				0x148
+#define NVIC_CON71				0x14C
+#define NVIC_CON72				0x150
+#define NVIC_CON73				0x154
+#define NVIC_CON74				0x158
+#define NVIC_CON75				0x15C
+#define NVIC_CON76				0x160
+#define NVIC_CON77				0x164
+#define NVIC_CON78				0x168
+#define NVIC_CON79				0x16C
+#define NVIC_CON80				0x170
+#define NVIC_CON81				0x174
+#define NVIC_CON82				0x178
+#define NVIC_CON83				0x17C
+#define NVIC_CON84				0x180
+#define NVIC_CON85				0x184
+#define NVIC_CON86				0x188
+#define NVIC_CON87				0x18C
+#define NVIC_CON88				0x190
+#define NVIC_CON89				0x194
+#define NVIC_CON90				0x198
+#define NVIC_CON91				0x19C
+#define NVIC_CON92				0x1A0
+#define NVIC_CON93				0x1A4
+#define NVIC_CON94				0x1A8
+#define NVIC_CON95				0x1AC
+#define NVIC_CON96				0x1B0
+#define NVIC_CON97				0x1B4
+#define NVIC_CON98				0x1B8
+#define NVIC_CON99				0x1BC
+#define NVIC_CON100				0x1C0
+#define NVIC_CON101				0x1C4
+#define NVIC_CON102				0x1C8
+#define NVIC_CON103				0x1CC
+#define NVIC_CON104				0x1D0
+#define NVIC_CON105				0x1D4
+#define NVIC_CON106				0x1D8
+#define NVIC_CON107				0x1DC
+#define NVIC_CON108				0x1E0
+#define NVIC_CON109				0x1E4
+#define NVIC_CON110				0x1E8
+#define NVIC_CON111				0x1EC
+#define NVIC_CON112				0x1F0
+#define NVIC_CON113				0x1F4
+#define NVIC_CON114				0x1F8
+#define NVIC_CON115				0x1FC
+#define NVIC_CON116				0x200
+#define NVIC_CON117				0x204
+#define NVIC_CON118				0x208
+#define NVIC_CON119				0x20C
+#define NVIC_CON120				0x210
+#define NVIC_CON121				0x214
+#define NVIC_CON122				0x218
+#define NVIC_CON123				0x21C
+#define NVIC_CON124				0x220
+#define NVIC_CON125				0x224
+#define NVIC_CON126				0x228
+#define NVIC_CON127				0x22C
+#define NVIC_CON128				0x230
+#define NVIC_CON129				0x234
+#define NVIC_CON130				0x238
+#define NVIC_CON131				0x23C
+#define NVIC_CON132				0x240
+#define NVIC_CON133				0x244
+#define NVIC_CON134				0x248
+#define NVIC_CON135				0x24C
+#define NVIC_CON136				0x250
+#define NVIC_CON137				0x254
+#define NVIC_CON138				0x258
+#define NVIC_CON139				0x25C
+#define NVIC_CON140				0x260
+#define NVIC_CON141				0x264
+#define NVIC_CON142				0x268
+#define NVIC_CON143				0x26C
+#define NVIC_CON144				0x270
+#define NVIC_CON145				0x274
+#define NVIC_CON146				0x278
+#define NVIC_CON147				0x27C
+#define NVIC_CON148				0x280
+#define NVIC_CON149				0x284
+#define NVIC_CON150				0x288
+#define NVIC_CON151				0x28C
+#define NVIC_CON152				0x290
+#define NVIC_CON153				0x294
+#define NVIC_CON154				0x298
+#define NVIC_CON155				0x29C
+#define NVIC_CON156				0x2A0
+#define NVIC_CON157				0x2A4
+#define NVIC_CON158				0x2A8
+#define NVIC_CON159				0x2AC
+#define NVIC_CON160				0x2B0
+#define NVIC_CON161				0x2B4
+#define NVIC_CON162				0x2B8
+#define NVIC_CON163				0x2BC
+#define NVIC_CON164				0x2C0
+#define NVIC_CON165				0x2C4
+#define NVIC_CON166				0x2C8
+#define NVIC_CON167				0x2CC
+#define NVIC_CON168				0x2D0
+#define NVIC_CON169				0x2D4
+#define NVIC_CON_PRIORITY		(0xFF << 0)
+#define NVIC_CON_PRIORITY_SHIFT	0
+#define NVIC_CON_FIQ			(1 << 8)
+#define NVIC_CON_FIQ_SHIFT		8
+
+
+// PLL
+// Looks like CGU module, registers collected using tests on real hardware (using "black box" method).
+#define PLL_IO_SIZE					0x00000200
+#define PLL_OSC						0xA0
+
+#define PLL_CON0					0xA4
+
+#define PLL_CON1					0xA8
+#define PLL_CON1_FSYS_DIV_EN		(1 << 25)	 // Enable fsys divider and div fsys by 4
+#define PLL_CON1_FSYS_DIV_EN_SHIFT	25
+#define PLL_CON1_FSYS_DIV			(0x3 << 28)	 // Fsys diviver (work if FSYS_DIV_EN=1)
+#define PLL_CON1_FSYS_DIV_SHIFT		28
+
+#define PLL_CON2					0xAC
+
+#define PLL_STAT					0xB0
+
+#define PLL_CON3					0xB4
+
+/* Service Routing Control Register */
+#define PLL_SRC						0xCC
+
+
+// RTC [MOD_NUM=F049, MOD_REV=00, MOD_32BIT=C0]
+// RTC from XC27x5X official public datasheet
+#define RTC_IO_SIZE					0x000000F4
+/* Clock Control Register */
+#define RTC_CLC						0x00
+
+/* Module Identifier Register */
+#define RTC_ID						0x08
+
+/* RTC Shell Control Register */
+#define RTC_CTRL					0x10
+#define RTC_CTRL_RTCOUTEN			(1 << 0)			 // RTC External Interrupt Output Enable
+#define RTC_CTRL_RTCOUTEN_SHIFT		0
+#define RTC_CTRL_RTCINT				(1 << 1)			 // RTC Interrupt Status
+#define RTC_CTRL_RTCINT_SHIFT		1
+#define RTC_CTRL_CLK32KEN			(1 << 2)			 // 32k Clock Enable
+#define RTC_CTRL_CLK32KEN_SHIFT		2
+#define RTC_CTRL_PU32K				(1 << 3)			 // 32 kHz Oscillator Power Up
+#define RTC_CTRL_PU32K_SHIFT		3
+#define RTC_CTRL_CLK_SEL			(1 << 4)			 // RTC Logic Clock Select
+#define RTC_CTRL_CLK_SEL_SHIFT		4
+#define RTC_CTRL_CLR_RTCINT			(1 << 8)			 // Clears RTCINT
+#define RTC_CTRL_CLR_RTCINT_SHIFT	8
+#define RTC_CTRL_RTCBAD				(1 << 9)			 // RTC Content Inconsistent Due to Power Supply Drop Down
+#define RTC_CTRL_RTCBAD_SHIFT		9
+#define RTC_CTRL_CLR_RTCBAD			(1 << 10)			 // Clears RTCBAD
+#define RTC_CTRL_CLR_RTCBAD_SHIFT	10
+
+/* RTC Control Register */
+#define RTC_CON						0x14
+#define RTC_CON_RUN					(1 << 0)			 // RTC Enable
+#define RTC_CON_RUN_SHIFT			0
+#define RTC_CON_PRE					(1 << 1)			 // RTC Input Source Pre-Scaler Enable
+#define RTC_CON_PRE_SHIFT			1
+#define RTC_CON_T14DEC				(1 << 2)			 // Decrement T14 Timer Value
+#define RTC_CON_T14DEC_SHIFT		2
+#define RTC_CON_T14INC				(1 << 3)			 // Increment T14 Timer Value
+#define RTC_CON_T14INC_SHIFT		3
+#define RTC_CON_ACCPOS				(1 << 4)			 // RTC Register Access Possible
+#define RTC_CON_ACCPOS_SHIFT		4
+
+/* Timer T14 Count/Reload Register */
+#define RTC_T14						0x18
+#define RTC_T14_REL					(0xFFFF << 0)		 // Timer T14 Reload Value
+#define RTC_T14_REL_SHIFT			0
+#define RTC_T14_CNT					(0xFFFF << 16)		 // Timer T14 Count Value
+#define RTC_T14_CNT_SHIFT			16
+
+/* RTC Count Register */
+#define RTC_CNT						0x1C
+#define RTC_CNT_CNT					(0xFFFFFFFF << 0)	 // RTC Timer Count Value
+#define RTC_CNT_CNT_SHIFT			0
+
+/* RTC Reload Register */
+#define RTC_REL						0x20
+#define RTC_REL_REL					(0xFFFFFFFF << 0)	 // RTC Timer Reload Value
+#define RTC_REL_REL_SHIFT			0
+
+/* Interrupt Sub-Node Control Register */
+#define RTC_ISNC					0x24
+#define RTC_ISNC_T14IE				(1 << 0)			 // T14 Overflow Interrupt Enable Control
+#define RTC_ISNC_T14IE_SHIFT		0
+#define RTC_ISNC_T14IR				(1 << 1)			 // T14 Overflow Interrupt Request
+#define RTC_ISNC_T14IR_SHIFT		1
+#define RTC_ISNC_RTC0IE				(1 << 2)			 // Interrupt Enable Control
+#define RTC_ISNC_RTC0IE_SHIFT		2
+#define RTC_ISNC_RTC0IR				(1 << 3)			 // Interrupt Request
+#define RTC_ISNC_RTC0IR_SHIFT		3
+#define RTC_ISNC_RTC1IE				(1 << 4)			 // Interrupt Enable Control
+#define RTC_ISNC_RTC1IE_SHIFT		4
+#define RTC_ISNC_RTC1IR				(1 << 5)			 // Interrupt Request
+#define RTC_ISNC_RTC1IR_SHIFT		5
+#define RTC_ISNC_RTC2IE				(1 << 6)			 // Interrupt Enable Control
+#define RTC_ISNC_RTC2IE_SHIFT		6
+#define RTC_ISNC_RTC2IR				(1 << 7)			 // Interrupt Request
+#define RTC_ISNC_RTC2IR_SHIFT		7
+#define RTC_ISNC_RTC3IE				(1 << 8)			 // Interrupt Enable Control
+#define RTC_ISNC_RTC3IE_SHIFT		8
+#define RTC_ISNC_RTC3IR				(1 << 9)			 // Interrupt Request
+#define RTC_ISNC_RTC3IR_SHIFT		9
+#define RTC_ISNC_ALARMIE			(1 << 10)			 // Alarm Interrupt Enable Control
+#define RTC_ISNC_ALARMIE_SHIFT		10
+#define RTC_ISNC_ALARMIR			(1 << 11)			 // Alarm Interrupt Request
+#define RTC_ISNC_ALARMIR_SHIFT		11
+
+/* RTC Alarm Register */
+#define RTC_ALARM					0x2C
+#define RTC_ALARM_VALUE				(0xFFFFFFFF << 0)
+#define RTC_ALARM_VALUE_SHIFT		0
+
+/* Service Routing Control Register */
+#define RTC_SRC						0xF0
+
+
+// SCU [MOD_NUM=F040, MOD_REV=00, MOD_32BIT=C0]
+// Looks like SCU module, registers collected using TC1766 official public datasheet and tests on real hardware (using "black box" method).
+#define SCU_IO_SIZE						0x00000200
+/* Clock Control Register */
+#define SCU_CLC							0x00
+
+/* Module Identifier Register */
+#define SCU_ID							0x08
+
+/* Reset Status Register */
+#define SCU_RST_SR						0x10
+#define SCU_RST_SR_RSSTM				(1 << 0)		 // System Timer Reset Status
+#define SCU_RST_SR_RSSTM_SHIFT			0
+#define SCU_RST_SR_RSEXT				(1 << 1)		 // HDRST Line State during Last Reset
+#define SCU_RST_SR_RSEXT_SHIFT			1
+#define SCU_RST_SR_HWCFG				(0x7 << 16)		 // Boot Configuration Selection Status
+#define SCU_RST_SR_HWCFG_SHIFT			16
+#define SCU_RST_SR_HWBRKIN				(1 << 21)		 // Latched State of BRKIN Input
+#define SCU_RST_SR_HWBRKIN_SHIFT		21
+#define SCU_RST_SR_TMPLS				(1 << 22)		 // Latched State of TESTMODE Input
+#define SCU_RST_SR_TMPLS_SHIFT			22
+#define SCU_RST_SR_PWORST				(1 << 27)		 // The last reset was a power-on reset
+#define SCU_RST_SR_PWORST_SHIFT			27
+#define SCU_RST_SR_HDRST				(1 << 28)		 // The last reset was a hardware reset.
+#define SCU_RST_SR_HDRST_SHIFT			28
+#define SCU_RST_SR_SFTRST				(1 << 29)		 // The last reset was a software reset.
+#define SCU_RST_SR_SFTRST_SHIFT			29
+#define SCU_RST_SR_WDTRST				(1 << 30)		 // The last reset was a watchdog reset.
+#define SCU_RST_SR_WDTRST_SHIFT			30
+#define SCU_RST_SR_PWDRST				(1 << 31)		 // The last reset was a wake-up from power-down
+#define SCU_RST_SR_PWDRST_SHIFT			31
+
+/* Reset Request Register */
+#define SCU_RST_REQ						0x18
+#define SCU_RST_REQ_RRSTM				(1 << 0)		 // Reset Request for the System Timer
+#define SCU_RST_REQ_RRSTM_SHIFT			0
+#define SCU_RST_REQ_RREXT				(1 << 2)		 // Reset Request for External Devices
+#define SCU_RST_REQ_RREXT_SHIFT			2
+#define SCU_RST_REQ_SWCFG				(0x7 << 16)		 // Software Boot Configuration
+#define SCU_RST_REQ_SWCFG_SHIFT			16
+#define SCU_RST_REQ_SWBRKIN				(1 << 21)		 // Software Break Signal Boot Value
+#define SCU_RST_REQ_SWBRKIN_SHIFT		21
+#define SCU_RST_REQ_SWBOOT				(1 << 24)		 // Software Boot Configuration Selection
+#define SCU_RST_REQ_SWBOOT_SHIFT		24
+
+#define SCU_WDTCON0						0x24
+#define SCU_WDTCON0_ENDINIT				(1 << 0)		 // End-of-Initialization Control Bit.
+#define SCU_WDTCON0_ENDINIT_SHIFT		0
+#define SCU_WDTCON0_WDTLCK				(1 << 1)		 // Lock bit to Control Access to WDT_CON0.
+#define SCU_WDTCON0_WDTLCK_SHIFT		1
+#define SCU_WDTCON0_WDTHPW0				(0x3 << 2)		 // Hardware Password 0.
+#define SCU_WDTCON0_WDTHPW0_SHIFT		2
+#define SCU_WDTCON0_WDTHPW1				(0xF << 4)		 // Hardware Password 1.
+#define SCU_WDTCON0_WDTHPW1_SHIFT		4
+#define SCU_WDTCON0_WDTPW				(0xFF << 8)		 // User-Definable Password Field for Access to WDT_CON0.
+#define SCU_WDTCON0_WDTPW_SHIFT			8
+#define SCU_WDTCON0_WDTREL				(0xFFFF << 16)	 // Reload Value for the Watchdog Timer.
+#define SCU_WDTCON0_WDTREL_SHIFT		16
+
+#define SCU_WDTCON1						0x28
+#define SCU_WDTCON1_WDTIR				(1 << 2)		 // Watchdog Timer Input Frequency Request Control Bit.
+#define SCU_WDTCON1_WDTIR_SHIFT			2
+#define SCU_WDTCON1_WDTDR				(1 << 3)		 // Watchdog Timer Disable Request Control Bit.
+#define SCU_WDTCON1_WDTDR_SHIFT			3
+
+#define SCU_WDT_SR						0x2C
+#define SCU_WDT_SR_WDTAE				(1 << 0)		 // Watchdog Access Error Status Flag
+#define SCU_WDT_SR_WDTAE_SHIFT			0
+#define SCU_WDT_SR_WDTOE				(1 << 1)		 // Watchdog Overflow Error Status Flag
+#define SCU_WDT_SR_WDTOE_SHIFT			1
+#define SCU_WDT_SR_WDTIS				(1 << 2)		 // Watchdog Input Clock Status Flag
+#define SCU_WDT_SR_WDTIS_SHIFT			2
+#define SCU_WDT_SR_WDTDS				(1 << 3)		 // Watchdog Enable/Disable Status Flag
+#define SCU_WDT_SR_WDTDS_SHIFT			3
+#define SCU_WDT_SR_WDTTO				(1 << 4)		 // Watchdog Time-out Mode Flag
+#define SCU_WDT_SR_WDTTO_SHIFT			4
+#define SCU_WDT_SR_WDTPR				(1 << 5)		 // Watchdog Prewarning Mode Flag
+#define SCU_WDT_SR_WDTPR_SHIFT			5
+#define SCU_WDT_SR_WDTTIM				(0xFFFF << 16)	 // Watchdog Timer Value
+#define SCU_WDT_SR_WDTTIM_SHIFT			16
+
+#define SCU_EXTI						0x3C
+#define SCU_EXTI_EXT0_FALLING			(1 << 0)
+#define SCU_EXTI_EXT0_FALLING_SHIFT		0
+#define SCU_EXTI_EXT0_RISING			(1 << 1)
+#define SCU_EXTI_EXT0_RISING_SHIFT		1
+#define SCU_EXTI_EXT1_FALLING			(1 << 2)
+#define SCU_EXTI_EXT1_FALLING_SHIFT		2
+#define SCU_EXTI_EXT1_RISING			(1 << 3)
+#define SCU_EXTI_EXT1_RISING_SHIFT		3
+#define SCU_EXTI_EXT2_FALLING			(1 << 4)
+#define SCU_EXTI_EXT2_FALLING_SHIFT		4
+#define SCU_EXTI_EXT2_RISING			(1 << 5)
+#define SCU_EXTI_EXT2_RISING_SHIFT		5
+#define SCU_EXTI_EXT3_FALLING			(1 << 6)
+#define SCU_EXTI_EXT3_FALLING_SHIFT		6
+#define SCU_EXTI_EXT3_RISING			(1 << 7)
+#define SCU_EXTI_EXT3_RISING_SHIFT		7
+#define SCU_EXTI_EXT4_FALLING			(1 << 8)
+#define SCU_EXTI_EXT4_FALLING_SHIFT		8
+#define SCU_EXTI_EXT4_RISING			(1 << 9)
+#define SCU_EXTI_EXT4_RISING_SHIFT		9
+#define SCU_EXTI_EXT5_FALLING			(1 << 10)
+#define SCU_EXTI_EXT5_FALLING_SHIFT		10
+#define SCU_EXTI_EXT5_RISING			(1 << 11)
+#define SCU_EXTI_EXT5_RISING_SHIFT		11
+#define SCU_EXTI_EXT6_FALLING			(1 << 12)
+#define SCU_EXTI_EXT6_FALLING_SHIFT		12
+#define SCU_EXTI_EXT6_RISING			(1 << 13)
+#define SCU_EXTI_EXT6_RISING_SHIFT		13
+#define SCU_EXTI_EXT7_FALLING			(1 << 14)
+#define SCU_EXTI_EXT7_FALLING_SHIFT		14
+#define SCU_EXTI_EXT7_RISING			(1 << 15)
+#define SCU_EXTI_EXT7_RISING_SHIFT		15
+
+#define SCU_EBUCLC1						0x40
+#define SCU_EBUCLC1_FLAG1				(0xF << 0)
+#define SCU_EBUCLC1_FLAG1_SHIFT			0
+#define SCU_EBUCLC1_READY				(0xF << 4)
+#define SCU_EBUCLC1_READY_SHIFT			4
+
+#define SCU_EBUCLC2						0x44
+#define SCU_EBUCLC2_FLAG1				(0xF << 0)
+#define SCU_EBUCLC2_FLAG1_SHIFT			0
+#define SCU_EBUCLC2_READY				(0xF << 4)
+#define SCU_EBUCLC2_READY_SHIFT			4
+
+#define SCU_EBUCLC						0x48
+#define SCU_EBUCLC_LOCK					(1 << 0)
+#define SCU_EBUCLC_LOCK_SHIFT			0
+#define SCU_EBUCLC_VCOBYP				(1 << 8)
+#define SCU_EBUCLC_VCOBYP_SHIFT			8
+
+#define SCU_MANID						0x5C
+#define SCU_MANID_DEPT					(0xF << 0)
+#define SCU_MANID_DEPT_SHIFT			0
+#define SCU_MANID_MANUF					(0x7FF << 4)
+#define SCU_MANID_MANUF_SHIFT			4
+
+#define SCU_CHIPID						0x60
+#define SCU_CHIPID_CHREV				(0xFF << 0)
+#define SCU_CHIPID_CHREV_SHIFT			0
+#define SCU_CHIPID_MANUF				(0xFF << 8)
+#define SCU_CHIPID_MANUF_SHIFT			8
+
+#define SCU_RTCIF						0x64
+
+#define SCU_BOOT_CFG					0x74
+#define SCU_BOOT_CFG_USART1				(1 << 28)		 // Allow boot from USART1
+#define SCU_BOOT_CFG_USART1_SHIFT		28
+#define SCU_BOOT_CFG_BYPASS_FW			(1 << 29)		 // Force boot from 0x82000, bypass firmware
+#define SCU_BOOT_CFG_BYPASS_FW_SHIFT	29
+#define SCU_BOOT_CFG_USB				(1 << 30)		 // Allow boot from USB
+#define SCU_BOOT_CFG_USB_SHIFT			30
+
+#define SCU_BOOT_FLAG					0x78
+#define SCU_BOOT_FLAG_BOOT_OK			(1 << 0)
+#define SCU_BOOT_FLAG_BOOT_OK_SHIFT		0
+
+#define SCU_ROMAMCR						0x7C
+#define SCU_ROMAMCR_MOUNT_BROM			(1 << 0)
+#define SCU_ROMAMCR_MOUNT_BROM_SHIFT	0
+
+#define SCU_RTID						0x80
+
+/* DMA Request Select Register */
+#define SCU_DMARS						0x84
+#define SCU_DMARS_SEL0					(1 << 0)		 // Request Select Bit 0
+#define SCU_DMARS_SEL0_SHIFT			0
+#define SCU_DMARS_SEL1					(1 << 1)		 // Request Select Bit 1
+#define SCU_DMARS_SEL1_SHIFT			1
+#define SCU_DMARS_SEL2					(1 << 2)		 // Request Select Bit 2
+#define SCU_DMARS_SEL2_SHIFT			2
+#define SCU_DMARS_SEL3					(1 << 3)		 // Request Select Bit 3
+#define SCU_DMARS_SEL3_SHIFT			3
+#define SCU_DMARS_SEL4					(1 << 4)		 // Request Select Bit 4
+#define SCU_DMARS_SEL4_SHIFT			4
+#define SCU_DMARS_SEL5					(1 << 5)		 // Request Select Bit 5
+#define SCU_DMARS_SEL5_SHIFT			5
+#define SCU_DMARS_SEL6					(1 << 6)		 // Request Select Bit 6
+#define SCU_DMARS_SEL6_SHIFT			6
+#define SCU_DMARS_SEL7					(1 << 7)		 // Request Select Bit 7
+#define SCU_DMARS_SEL7_SHIFT			7
+#define SCU_DMARS_SEL8					(1 << 8)		 // Request Select Bit 8
+#define SCU_DMARS_SEL8_SHIFT			8
+#define SCU_DMARS_SEL9					(1 << 9)		 // Request Select Bit 9
+#define SCU_DMARS_SEL9_SHIFT			9
+
+/* Service Routing Control Register */
+#define SCU_EXTI0_SRC					0xB8
+
+/* Service Routing Control Register */
+#define SCU_EXTI1_SRC					0xBC
+
+/* Service Routing Control Register */
+#define SCU_EXTI2_SRC					0xC0
+
+/* Service Routing Control Register */
+#define SCU_EXTI3_SRC					0xC4
+
+/* Service Routing Control Register */
+#define SCU_EXTI4_SRC					0xC8
+
+/* Service Routing Control Register */
+#define SCU_DSP_SRC0					0xCC
+#define SCU_DSP_SRC1					0xD0
+#define SCU_DSP_SRC2					0xD4
+#define SCU_DSP_SRC3					0xD8
+#define SCU_DSP_SRC4					0xDC
+
+/* Service Routing Control Register */
+#define SCU_UNK0_SRC					0xE8
+
+/* Service Routing Control Register */
+#define SCU_UNK1_SRC					0xEC
+
+/* Service Routing Control Register */
+#define SCU_UNK2_SRC					0xF0
+
+/* Service Routing Control Register */
+#define SCU_EXTI5_SRC					0xF4
+
+/* Service Routing Control Register */
+#define SCU_EXTI6_SRC					0xF8
+
+/* Service Routing Control Register */
+#define SCU_EXTI7_SRC					0xFC
+
+
+// SIM [MOD_NUM=F000, MOD_REV=00, MOD_32BIT=C0]
+// Looks like SIM IO module, but not sure.
+#define SIM_IO_SIZE	0x00000200
+/* Clock Control Register */
+#define SIM_CLC		0x00
+
+/* Module Identifier Register */
+#define SIM_ID		0x08
+
+
+// STM [MOD_NUM=0000, MOD_REV=00, MOD_32BIT=C0]
+// STM from Tricore TC1766 official public datasheet
+#define STM_IO_SIZE	0x00000030
+/* Clock Control Register */
+#define STM_CLC		0x00
+
+/* Module Identifier Register */
+#define STM_ID		0x08
+
+#define STM_TIM0	0x10
+
+#define STM_TIM1	0x14
+
+#define STM_TIM2	0x18
+
+#define STM_TIM3	0x1C
+
+#define STM_TIM4	0x20
+
+#define STM_TIM5	0x24
+
+#define STM_TIM6	0x28
+
+#define STM_CAP		0x2C
+
+
+// USART [MOD_NUM=0044, MOD_REV=00, MOD_32BIT=00]
+// ASC0 from Tricore TC1766 official public datasheet
+#define USART_IO_SIZE						0x00000080
+/* Clock Control Register */
+#define USART_CLC							0x00
+
+#define USART_PISEL							0x04
+
+/* Module Identifier Register */
+#define USART_ID							0x08
+
+#define USART_CON							0x10
+#define USART_CON_M							(0x7 << 0)	 // ASC Mode Control.
+#define USART_CON_M_SHIFT					0
+#define USART_CON_M_SYNC_8BIT				0x0
+#define USART_CON_M_ASYNC_8BIT				0x1
+#define USART_CON_M_ASYNC_IRDA_8BIT			0x2
+#define USART_CON_M_ASYNC_PARITY_7BIT		0x3
+#define USART_CON_M_ASYNC_9BIT				0x4
+#define USART_CON_M_ASYNC_WAKE_UP_8BIT		0x5
+#define USART_CON_M_ASYNC_PARITY_8BIT		0x7
+#define USART_CON_STP						(1 << 3)	 // Number of stop bits (0: 1 stop bit; 1: two stop bits)
+#define USART_CON_STP_SHIFT					3
+#define USART_CON_STP_ONE					0x0
+#define USART_CON_STP_TWO					0x8
+#define USART_CON_REN						(1 << 4)	 // Receiver bit enable (0: disable; 1: enable)
+#define USART_CON_REN_SHIFT					4
+#define USART_CON_PEN						(1 << 5)	 // Parity check enable (0: ignore; 1: check)
+#define USART_CON_PEN_SHIFT					5
+#define USART_CON_FEN						(1 << 6)	 // Framing error check (0: ignore; 1: check)
+#define USART_CON_FEN_SHIFT					6
+#define USART_CON_OEN						(1 << 7)	 // Overrun check enable (0: ignore; 1: check)
+#define USART_CON_OEN_SHIFT					7
+#define USART_CON_PE						(1 << 8)	 // Parity error flag
+#define USART_CON_PE_SHIFT					8
+#define USART_CON_FE						(1 << 9)	 // Framing error flag
+#define USART_CON_FE_SHIFT					9
+#define USART_CON_OE						(1 << 10)	 // Overrun error flag
+#define USART_CON_OE_SHIFT					10
+#define USART_CON_FDE						(1 << 11)	 // Fraction divider enable (0: disable; 1: enable)
+#define USART_CON_FDE_SHIFT					11
+#define USART_CON_ODD						(1 << 12)	 // Parity selection (0: even; 1: odd)
+#define USART_CON_ODD_SHIFT					12
+#define USART_CON_BRS						(1 << 13)	 // Baudrate selection (0: Pre-scaler /2; 1: Pre-scaler / 3)
+#define USART_CON_BRS_SHIFT					13
+#define USART_CON_LB						(1 << 14)	 // Loopback mode (0: disable; 1: enable)
+#define USART_CON_LB_SHIFT					14
+#define USART_CON_CON_R						(1 << 15)	 // Baud rate generator run control (0: disable; 1: enable)
+#define USART_CON_CON_R_SHIFT				15
+
+#define USART_BG							0x14
+
+#define USART_FDV							0x18
+
+#define USART_PMW							0x1C
+#define USART_PMW_PW_VALUE					(0xFF << 0)	 // IrDA Pulse Width Value
+#define USART_PMW_PW_VALUE_SHIFT			0
+#define USART_PMW_IRPW						(1 << 8)	 // IrDA Pulse Width Selection
+#define USART_PMW_IRPW_SHIFT				8
+
+#define USART_TXB							0x20
+
+#define USART_RXB							0x24
+
+#define USART_ABCON							0x30
+#define USART_ABCON_ABEN					(1 << 0)	 // Autobaud detection enable
+#define USART_ABCON_ABEN_SHIFT				0
+#define USART_ABCON_AUREN					(1 << 1)	 // Auto control of CON.REN (too complex for here)
+#define USART_ABCON_AUREN_SHIFT				1
+#define USART_ABCON_ABSTEN					(1 << 2)	 // Start of autobaud detect interrupt (0: dis; 1: en)
+#define USART_ABCON_ABSTEN_SHIFT			2
+#define USART_ABCON_ABDETEN					(1 << 3)	 // Autobaud detection interrupt enable (0: dis; 1: en)
+#define USART_ABCON_ABDETEN_SHIFT			3
+#define USART_ABCON_FCDETEN					(1 << 4)	 // Fir char of two byte frame detect
+#define USART_ABCON_FCDETEN_SHIFT			4
+#define USART_ABCON_ABEM_ECHO_DET			(1 << 8)	 // Autobaud echo mode enabled during detection
+#define USART_ABCON_ABEM_ECHO_DET_SHIFT		8
+#define USART_ABCON_ABEM_ECHO_ALWAYS		(1 << 9)	 // Autobaud echo mode always enabled
+#define USART_ABCON_ABEM_ECHO_ALWAYS_SHIFT	9
+#define USART_ABCON_TXINV					(1 << 10)	 // Transmit invert enable (0: disable; 1: enable)
+#define USART_ABCON_TXINV_SHIFT				10
+#define USART_ABCON_RXINV					(1 << 11)	 // Receive invert enable (0: disable; 1: enable)
+#define USART_ABCON_RXINV_SHIFT				11
+
+#define USART_ABSTAT						0x34
+#define USART_ABSTAT_FCSDET					(1 << 0)	 // First character with small letter detected
+#define USART_ABSTAT_FCSDET_SHIFT			0
+#define USART_ABSTAT_FCCDET					(1 << 1)	 // First character with capital letter detected
+#define USART_ABSTAT_FCCDET_SHIFT			1
+#define USART_ABSTAT_SCSDET					(1 << 2)	 // Second character with small letter detected
+#define USART_ABSTAT_SCSDET_SHIFT			2
+#define USART_ABSTAT_SCCDET					(1 << 3)	 // Second character with capital letter detected
+#define USART_ABSTAT_SCCDET_SHIFT			3
+#define USART_ABSTAT_DETWAIT				(1 << 4)	 // Autobaud detect is waiting
+#define USART_ABSTAT_DETWAIT_SHIFT			4
+
+#define USART_RXFCON						0x40
+#define USART_RXFCON_RXFEN					(1 << 0)	 // Receive FIFO enable
+#define USART_RXFCON_RXFEN_SHIFT			0
+#define USART_RXFCON_RXFFLU					(1 << 1)	 // Receive FIFO flush
+#define USART_RXFCON_RXFFLU_SHIFT			1
+#define USART_RXFCON_RXTMEN					(1 << 2)	 // Receive FIFO transparent mode enable
+#define USART_RXFCON_RXTMEN_SHIFT			2
+#define USART_RXFCON_RXFITL					(0xF << 8)	 // Receive FIFO interrupt trigger level
+#define USART_RXFCON_RXFITL_SHIFT			8
+
+#define USART_TXFCON						0x44
+#define USART_TXFCON_TXFEN					(1 << 0)	 // Transmit FIFO enable
+#define USART_TXFCON_TXFEN_SHIFT			0
+#define USART_TXFCON_TXFFLU					(1 << 1)	 // Transmit FIFO flush
+#define USART_TXFCON_TXFFLU_SHIFT			1
+#define USART_TXFCON_TXTMEN					(1 << 2)	 // Transmit FIFO transparent mode enable
+#define USART_TXFCON_TXTMEN_SHIFT			2
+#define USART_TXFCON_TXFITL					(0xF << 8)	 // Transmit FIFO interrupt trigger level
+#define USART_TXFCON_TXFITL_SHIFT			8
+
+#define USART_FSTAT							0x48
+#define USART_FSTAT_RXFFL					(0xF << 0)	 // Receive FIFO filling level mask
+#define USART_FSTAT_RXFFL_SHIFT				0
+#define USART_FSTAT_TXFFL					(0xF << 8)	 // Transmit FIFO filling level mask
+#define USART_FSTAT_TXFFL_SHIFT				8
+
+#define USART_WHBCON						0x50
+#define USART_WHBCON_CLRREN					(1 << 4)	 // Clear receiver enable bit
+#define USART_WHBCON_CLRREN_SHIFT			4
+#define USART_WHBCON_SETREN					(1 << 5)	 // Set receiver enable bit
+#define USART_WHBCON_SETREN_SHIFT			5
+#define USART_WHBCON_CLRPE					(1 << 8)	 // Clear parity error flag
+#define USART_WHBCON_CLRPE_SHIFT			8
+#define USART_WHBCON_CLRFE					(1 << 9)	 // Clear framing error flag
+#define USART_WHBCON_CLRFE_SHIFT			9
+#define USART_WHBCON_CLROE					(1 << 10)	 // Clear overrun error flag
+#define USART_WHBCON_CLROE_SHIFT			10
+#define USART_WHBCON_SETPE					(1 << 11)	 // Set parity error flag
+#define USART_WHBCON_SETPE_SHIFT			11
+#define USART_WHBCON_SETFE					(1 << 12)	 // Set framing error flag
+#define USART_WHBCON_SETFE_SHIFT			12
+#define USART_WHBCON_SETOE					(1 << 13)	 // Set overrun error flag
+#define USART_WHBCON_SETOE_SHIFT			13
+
+#define USART_WHBABCON						0x54
+
+#define USART_WHBABSTAT						0x58
+
+#define USART_FCCON							0x5C
+#define USART_FCCON_CTSEN					(1 << 0)	 // RTS enbled (0: disable; 1: enable)
+#define USART_FCCON_CTSEN_SHIFT				0
+#define USART_FCCON_RTSEN					(1 << 1)	 // CTS enable (0: disable; 1: enable)
+#define USART_FCCON_RTSEN_SHIFT				1
+#define USART_FCCON_RTS						(1 << 4)	 // RTS control bit
+#define USART_FCCON_RTS_SHIFT				4
+#define USART_FCCON_RTS_TRIGGER				(0x3F << 8)	 // RTS receive FIFO trigger level
+#define USART_FCCON_RTS_TRIGGER_SHIFT		8
+
+#define USART_FCSTAT						0x60
+#define USART_FCSTAT_CTS					(1 << 0)	 // CTS Status (0: inactive; 1: active)
+#define USART_FCSTAT_CTS_SHIFT				0
+#define USART_FCSTAT_RTS					(1 << 1)	 // RTS Status (0: inactive; 1: active)
+#define USART_FCSTAT_RTS_SHIFT				1
+
+#define USART_IMSC							0x64
+#define USART_IMSC_TX						(1 << 0)	 // Transmit interrupt mask
+#define USART_IMSC_TX_SHIFT					0
+#define USART_IMSC_TB						(1 << 1)	 // Transmit buffer interrupt mask
+#define USART_IMSC_TB_SHIFT					1
+#define USART_IMSC_RX						(1 << 2)	 // Receive interrupt mask
+#define USART_IMSC_RX_SHIFT					2
+#define USART_IMSC_ERR						(1 << 3)	 // Error interrupt mask
+#define USART_IMSC_ERR_SHIFT				3
+#define USART_IMSC_ABSTART					(1 << 4)	 // Autobaud start interrupt mask
+#define USART_IMSC_ABSTART_SHIFT			4
+#define USART_IMSC_ABDET					(1 << 5)	 // Autobaud detected interrupt mask
+#define USART_IMSC_ABDET_SHIFT				5
+#define USART_IMSC_CTS						(1 << 6)	 // CTS interrupt mask
+#define USART_IMSC_CTS_SHIFT				6
+#define USART_IMSC_TMO						(1 << 7)	 // RX timeout interrupt mask
+#define USART_IMSC_TMO_SHIFT				7
+
+#define USART_RIS							0x68
+#define USART_RIS_TX						(1 << 0)	 // Transmit interrupt mask
+#define USART_RIS_TX_SHIFT					0
+#define USART_RIS_TB						(1 << 1)	 // Transmit buffer interrupt mask
+#define USART_RIS_TB_SHIFT					1
+#define USART_RIS_RX						(1 << 2)	 // Receive interrupt mask
+#define USART_RIS_RX_SHIFT					2
+#define USART_RIS_ERR						(1 << 3)	 // Error interrupt mask
+#define USART_RIS_ERR_SHIFT					3
+#define USART_RIS_ABSTART					(1 << 4)	 // Autobaud start interrupt mask
+#define USART_RIS_ABSTART_SHIFT				4
+#define USART_RIS_ABDET						(1 << 5)	 // Autobaud detected interrupt mask
+#define USART_RIS_ABDET_SHIFT				5
+#define USART_RIS_CTS						(1 << 6)	 // CTS interrupt mask
+#define USART_RIS_CTS_SHIFT					6
+#define USART_RIS_TMO						(1 << 7)	 // RX timeout interrupt mask
+#define USART_RIS_TMO_SHIFT					7
+
+#define USART_MIS							0x6C
+#define USART_MIS_TX						(1 << 0)	 // Transmit interrupt mask
+#define USART_MIS_TX_SHIFT					0
+#define USART_MIS_TB						(1 << 1)	 // Transmit buffer interrupt mask
+#define USART_MIS_TB_SHIFT					1
+#define USART_MIS_RX						(1 << 2)	 // Receive interrupt mask
+#define USART_MIS_RX_SHIFT					2
+#define USART_MIS_ERR						(1 << 3)	 // Error interrupt mask
+#define USART_MIS_ERR_SHIFT					3
+#define USART_MIS_ABSTART					(1 << 4)	 // Autobaud start interrupt mask
+#define USART_MIS_ABSTART_SHIFT				4
+#define USART_MIS_ABDET						(1 << 5)	 // Autobaud detected interrupt mask
+#define USART_MIS_ABDET_SHIFT				5
+#define USART_MIS_CTS						(1 << 6)	 // CTS interrupt mask
+#define USART_MIS_CTS_SHIFT					6
+#define USART_MIS_TMO						(1 << 7)	 // RX timeout interrupt mask
+#define USART_MIS_TMO_SHIFT					7
+
+#define USART_ICR							0x70
+#define USART_ICR_TX						(1 << 0)	 // Transmit interrupt mask
+#define USART_ICR_TX_SHIFT					0
+#define USART_ICR_TB						(1 << 1)	 // Transmit buffer interrupt mask
+#define USART_ICR_TB_SHIFT					1
+#define USART_ICR_RX						(1 << 2)	 // Receive interrupt mask
+#define USART_ICR_RX_SHIFT					2
+#define USART_ICR_ERR						(1 << 3)	 // Error interrupt mask
+#define USART_ICR_ERR_SHIFT					3
+#define USART_ICR_ABSTART					(1 << 4)	 // Autobaud start interrupt mask
+#define USART_ICR_ABSTART_SHIFT				4
+#define USART_ICR_ABDET						(1 << 5)	 // Autobaud detected interrupt mask
+#define USART_ICR_ABDET_SHIFT				5
+#define USART_ICR_CTS						(1 << 6)	 // CTS interrupt mask
+#define USART_ICR_CTS_SHIFT					6
+#define USART_ICR_TMO						(1 << 7)	 // RX timeout interrupt mask
+#define USART_ICR_TMO_SHIFT					7
+
+#define USART_ISR							0x74
+#define USART_ISR_TX						(1 << 0)	 // Transmit interrupt mask
+#define USART_ISR_TX_SHIFT					0
+#define USART_ISR_TB						(1 << 1)	 // Transmit buffer interrupt mask
+#define USART_ISR_TB_SHIFT					1
+#define USART_ISR_RX						(1 << 2)	 // Receive interrupt mask
+#define USART_ISR_RX_SHIFT					2
+#define USART_ISR_ERR						(1 << 3)	 // Error interrupt mask
+#define USART_ISR_ERR_SHIFT					3
+#define USART_ISR_ABSTART					(1 << 4)	 // Autobaud start interrupt mask
+#define USART_ISR_ABSTART_SHIFT				4
+#define USART_ISR_ABDET						(1 << 5)	 // Autobaud detected interrupt mask
+#define USART_ISR_ABDET_SHIFT				5
+#define USART_ISR_CTS						(1 << 6)	 // CTS interrupt mask
+#define USART_ISR_CTS_SHIFT					6
+#define USART_ISR_TMO						(1 << 7)	 // RX timeout interrupt mask
+#define USART_ISR_TMO_SHIFT					7
+
+#define USART_TMO							0x7C
+
+
+// USB [MOD_NUM=F047, MOD_REV=00, MOD_32BIT=C0]
+// Looks like USB module, but not sure.
+#define USB_IO_SIZE	0x00000100
+/* Clock Control Register */
+#define USB_CLC		0x00
+
+/* Module Identifier Register */
+#define USB_ID		0x08
+
+
+
