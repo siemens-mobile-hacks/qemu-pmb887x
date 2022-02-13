@@ -1,10 +1,13 @@
 #include "hw/arm/pmb887x/devices.h"
-#include "hw/arm/pmb887x/regs.h"
+
 #include "qemu/error-report.h"
 #include "qom/object.h"
 #include "hw/qdev-core.h"
 #include "hw/irq.h"
 #include "hw/sysbus.h"
+
+#include "hw/arm/pmb887x/regs.h"
+#include "hw/arm/pmb887x/io_bridge.h"
 
 static const struct pmb887x_dev pmb8876_devices[] = {
 	{
@@ -403,7 +406,12 @@ DeviceState *pmb887x_new_dev(uint32_t cpu_type, const char *name, DeviceState *n
 			irq_n++;
 		}
 		
+		#if defined(PMB887X_IO_BRIDGE)
+		if (strcmp(name, "NVIC") != 0)
+			sysbus_mmio_map(SYS_BUS_DEVICE(dev), 0, device->base);
+		#else
 		sysbus_mmio_map(SYS_BUS_DEVICE(dev), 0, device->base);
+		#endif
 		
 		return dev;
 	}

@@ -157,7 +157,7 @@ static uint64_t usart_io_read(void *opaque, hwaddr haddr, unsigned size) {
 		break;
 		
 		case USART_RIS:
-			value = pmb887x_srb_get_ris(&p->srb);
+			value = USART_RIS_TX;//pmb887x_srb_get_ris(&p->srb);
 		break;
 		
 		case USART_MIS:
@@ -183,7 +183,7 @@ static uint64_t usart_io_read(void *opaque, hwaddr haddr, unsigned size) {
 		break;
 	}
 	
-	pmb887x_dump_io(haddr + p->mmio.addr, size, value, false);
+	//pmb887x_dump_io(haddr + p->mmio.addr, size, value, false);
 	
 	return value;
 }
@@ -191,7 +191,7 @@ static uint64_t usart_io_read(void *opaque, hwaddr haddr, unsigned size) {
 static void usart_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned size) {
 	struct pmb887x_usart_t *p = (struct pmb887x_usart_t *) opaque;
 	
-	pmb887x_dump_io(haddr + p->mmio.addr, size, value, true);
+	//pmb887x_dump_io(haddr + p->mmio.addr, size, value, true);
 	
 	switch (haddr) {
 		case USART_CLC:
@@ -219,6 +219,7 @@ static void usart_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned 
 		break;
 		
 		case USART_TXB:
+			fprintf(stderr, "%c", value & 0xFF);
 			p->txb = value;
 		break;
 		

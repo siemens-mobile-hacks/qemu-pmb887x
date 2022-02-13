@@ -39,29 +39,19 @@ struct pmb887x_stm_t {
 	
 	bool enabled;
 	uint32_t freq;
-    uint64_t counter;
-    uint64_t last_time;
-    uint64_t capture;
+	uint64_t start;
+	uint64_t capture;
+	uint64_t counter;
+	
 	struct pmb887x_pll_t *pll;
 };
 
-static uint64_t stm_capture_time(struct pmb887x_stm_t *p) {
-	if (p->last_time) {
-		uint64_t now = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
-		uint64_t ticks = now - p->last_time;
-		p->last_time = now;
-		p->counter += muldiv64(ticks, p->freq, NANOSECONDS_PER_SECOND);
+static uint64_t stm_get_time(struct pmb887x_stm_t *p) {
+	if (p->enabled) {
+		uint64_t delta_ns = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) - p->start;
+		return p->counter + muldiv64(delta_ns, p->freq, NANOSECONDS_PER_SECOND);
 	}
 	return p->counter;
-}
-
-static uint64_t stm_get_time(struct pmb887x_stm_t *p) {
-	if (p->last_time) {
-		uint64_t ticks = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) - p->last_time;
-		return p->counter + muldiv64(ticks, p->freq, NANOSECONDS_PER_SECOND);
-	} else {
-		return p->counter;
-	}
 }
 
 static void stm_update_state(struct pmb887x_stm_t *p) {
@@ -70,17 +60,17 @@ static void stm_update_state(struct pmb887x_stm_t *p) {
 	bool new_enabled = new_freq > 0 && pmb887x_clc_is_enabled(&p->clc);
 	
 	if (new_enabled != p->enabled || new_freq != p->freq) {
-		// Update counter before state change
-		stm_capture_time(p);
-		
 		p->freq = new_freq;
 		p->enabled = new_enabled;
 		
-		if (!p->enabled)
-			p->last_time = 0;
+		if (p->start)
+			p->counter = stm_get_time(p);
 		
-		if (p->enabled && !p->last_time)
-			p->last_time = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
+		if (p->enabled) {
+			p->start = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
+		} else {
+			p->start = 0;
+		}
 		
 		DPRINTF("fsys=%d, fstm=%d [%s]\n", pmb887x_pll_get_fsys(p->pll), p->freq, p->enabled ? "ON" : "OFF");
 	}

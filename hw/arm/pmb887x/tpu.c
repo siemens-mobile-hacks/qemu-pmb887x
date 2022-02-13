@@ -21,7 +21,7 @@
 #include "hw/arm/pmb887x/regs_dump.h"
 #include "hw/arm/pmb887x/mod.h"
 
-#define TPU_DEBUG
+// #define TPU_DEBUG
 
 #ifdef TPU_DEBUG
 #define DPRINTF(fmt, ...) do { fprintf(stderr, "[pmb887x-tpu]: " fmt , ## __VA_ARGS__); } while (0)
@@ -30,10 +30,10 @@
 #endif
 
 #define TYPE_PMB887X_TPU	"pmb887x-tpu"
-#define PMB887X_TPU(obj)	OBJECT_CHECK(struct tpu_t, (obj), TYPE_PMB887X_TPU)
+#define PMB887X_TPU(obj)	OBJECT_CHECK(struct pmb887x_tpu_t, (obj), TYPE_PMB887X_TPU)
 #define	TPU_RAM_SIZE		512
 
-struct tpu_t {
+struct pmb887x_tpu_t {
 	SysBusDevice parent_obj;
 	MemoryRegion mmio;
 	
@@ -55,13 +55,14 @@ struct tpu_t {
 	
 	uint32_t unk[8];
 	
+	uint32_t irq_fired;
 	qemu_irq irq[2];
 	QEMUTimer *timer;
 	
 	bool enabled;
 	uint32_t freq;
 	uint32_t counter;
-	uint64_t last_time;
+	uint64_t start;
 	
 	uint32_t L;
 	uint32_t K;
@@ -69,79 +70,57 @@ struct tpu_t {
 	struct pmb887x_pll_t *pll;
 };
 
-static uint32_t tpu_get_count(struct tpu_t *p) {
-	if (p->last_time) {
-		uint64_t now = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
-		uint64_t counter = p->counter + muldiv64(now - p->last_time, p->freq, NANOSECONDS_PER_SECOND);
-		uint32_t overflow = p->overflow + 1;
-		
-		if (overflow < 2)
-			overflow = 2;
-		
-		while (counter > overflow)
-			counter -= overflow;
-		return (uint32_t) counter;
+static uint64_t tpu_get_time(struct pmb887x_tpu_t *p, bool real) {
+	if (p->enabled) {
+		uint64_t delta_ns = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) - p->start;
+		return p->counter + muldiv64(delta_ns, p->freq, NANOSECONDS_PER_SECOND);
 	}
-	return p->counter;
+	
+	uint64_t overflow = p->overflow + 1;
+	return real ? p->counter : (p->counter % overflow);
+}
+
+static uint64_t tpu_ticks_to_ns(struct pmb887x_tpu_t *p, uint64_t ticks) {
+    return muldiv64(ticks, NANOSECONDS_PER_SECOND, p->freq);
 }
 
 static void tpu_ptimer_reset(void *opaque) {
-	struct tpu_t *p = (struct tpu_t *) opaque;
+	struct pmb887x_tpu_t *p = (struct pmb887x_tpu_t *) opaque;
 	
-	uint32_t div = pmb887x_clc_get_rmc(&p->clc);
-	bool is_enabled = pmb887x_clc_is_enabled(&p->clc);
-	
-	// On real hardware: if TPU_PARAM_TINI = 0, then reset timer counter and stop it
-	if (!(p->param & TPU_PARAM_TINI)) {
-		p->last_time = 0;
-		p->counter = 0;
+	if (!p->enabled)
 		return;
-	}
 	
-	// On real hardware: if TPU_CLC_RMC = 0 or TPU_CLC_DISR = 1, then only stop timer
-	if (!div || !is_enabled || !p->freq) {
-		p->last_time = 0;
-		p->counter = tpu_get_count(p);
-		return;
-	}
-	
+	uint64_t counter = tpu_get_time(p, true);
+	uint64_t overflow = p->overflow + 1;
 	uint64_t now = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
-	uint32_t overflow = p->overflow + 1;
 	
-	if (overflow < 2)
-		overflow = 2;
+	if (counter >= overflow) {
+		p->start = now;
+		p->counter = p->counter % overflow;
+		
+		p->irq_fired = 0;
+		
+		counter = p->counter;
+	}
 	
-	// Init counter, if first reset
-	if (!p->last_time)
-		p->last_time = now;
+	uint64_t next = now + tpu_ticks_to_ns(p, overflow - counter);
 	
-	// Get real counter value
-	uint64_t counter = p->counter + muldiv64(now - p->last_time, p->freq, NANOSECONDS_PER_SECOND);
-	
-	// Process interrupts
-	for (int i = 0; i < 2; ++i) {
-		uint32_t int_overflow = overflow > p->intr[i] ? p->intr[i] : overflow;
-		if (counter >= int_overflow) {
-			DPRINTF("counter=%ld, overflow=%ld, int_overflow=%ld, elapsed=%ld\n", counter, overflow, int_overflow, (now - p->last_time));
-			
-			pmb887x_src_update(&p->src[i], 0, MOD_SRC_SETR);
+	for (int i = 0; i < 2; i++) {
+		if (!(p->irq_fired & (1 << i))) {
+			if (counter >= p->intr[i]) {
+				pmb887x_src_update(&p->src[i], 0, MOD_SRC_SETR);
+				p->irq_fired |= (1 << i);
+			} else {
+				next = MIN(next, now + tpu_ticks_to_ns(p, p->intr[i] - counter));
+			}
 		}
 	}
 	
-	// Reload counter if overflow
-	if (counter > overflow) {
-		while (counter > overflow)
-			counter -= overflow;
-		
-		p->counter = (uint32_t) counter;
-		p->last_time = now;
-	}
-	
 	// Schedule timer for next INTx or overflow
-	timer_mod(p->timer, now);
+	timer_mod(p->timer, next);
 }
 
-static void tpu_update_state(struct tpu_t *p) {
+static void tpu_update_state(struct pmb887x_tpu_t *p) {
 	uint32_t div = pmb887x_clc_get_rmc(&p->clc);
 	
 	// Input freq for module
@@ -163,16 +142,22 @@ static void tpu_update_state(struct tpu_t *p) {
 		new_freq = ftpu > 0 ? (ftpu / p->L * p->K) / 6 : 0;
 	}
 	
-	if (p->freq != new_freq) {
+	// Reset counter when TPU_PARAM_TINI=0
+	if (!(p->param & TPU_PARAM_TINI))
+		p->counter = 0;
+	
+	bool enabled = pmb887x_clc_is_enabled(&p->clc) && new_freq > 0 && (p->param & TPU_PARAM_TINI) != 0 && p->overflow >= 2;
+	if (p->freq != new_freq || p->enabled != enabled) {
 		p->freq = new_freq;
-		DPRINTF("fsys=%d, ftpu=%d, fcounter=%d\n", pmb887x_pll_get_fsys(p->pll), ftpu, p->freq);
+		p->enabled = enabled;
+		DPRINTF("fsys=%d, ftpu=%d, fcounter=%d [%s]\n", pmb887x_pll_get_fsys(p->pll), ftpu, p->freq, p->enabled ? "ON" : "OFF");
 	}
 	
 	tpu_ptimer_reset(p);
 }
 
 static void tpu_update_state_callback(void *opaque) {
-	tpu_update_state((struct tpu_t *) opaque);
+	tpu_update_state((struct pmb887x_tpu_t *) opaque);
 }
 
 static int tpu_unk_by_reg(hwaddr haddr) {
@@ -198,7 +183,7 @@ static int tpu_unk_by_reg(hwaddr haddr) {
 }
 
 static uint64_t tpu_io_read(void *opaque, hwaddr haddr, unsigned size) {
-	struct tpu_t *p = (struct tpu_t *) opaque;
+	struct pmb887x_tpu_t *p = (struct pmb887x_tpu_t *) opaque;
 	
 	uint64_t value = 0;
 	
@@ -259,6 +244,10 @@ static uint64_t tpu_io_read(void *opaque, hwaddr haddr, unsigned size) {
 			value = p->pllcon2;
 		break;
 		
+		case TPU_COUNTER:
+			value = tpu_get_time(p, false);
+		break;
+		
 		case TPU_RAM0 ... TPU_RAM0 + (TPU_RAM_SIZE * 4):
 			value = p->ram[(haddr - TPU_RAM0) / 4];
 		break;
@@ -281,15 +270,15 @@ static uint64_t tpu_io_read(void *opaque, hwaddr haddr, unsigned size) {
 		break;
 	}
 	
-	pmb887x_dump_io(haddr + p->mmio.addr, size, value, false);
+	//pmb887x_dump_io(haddr + p->mmio.addr, size, value, false);
 	
 	return value;
 }
 
 static void tpu_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned size) {
-	struct tpu_t *p = (struct tpu_t *) opaque;
+	struct pmb887x_tpu_t *p = (struct pmb887x_tpu_t *) opaque;
 	
-	pmb887x_dump_io(haddr + p->mmio.addr, size, value, true);
+	//pmb887x_dump_io(haddr + p->mmio.addr, size, value, true);
 	
 	switch (haddr) {
 		case TPU_CLC:
@@ -379,7 +368,7 @@ static const MemoryRegionOps io_ops = {
 };
 
 static void tpu_init(Object *obj) {
-	struct tpu_t *p = PMB887X_TPU(obj);
+	struct pmb887x_tpu_t *p = PMB887X_TPU(obj);
 	memory_region_init_io(&p->mmio, obj, &io_ops, p, "pmb887x-tpu", TPU_IO_SIZE);
 	sysbus_init_mmio(SYS_BUS_DEVICE(obj), &p->mmio);
 	sysbus_init_irq(SYS_BUS_DEVICE(obj), &p->irq[0]);
@@ -387,7 +376,7 @@ static void tpu_init(Object *obj) {
 }
 
 static void tpu_realize(DeviceState *dev, Error **errp) {
-	struct tpu_t *p = PMB887X_TPU(dev);
+	struct pmb887x_tpu_t *p = PMB887X_TPU(dev);
 	
 	pmb887x_clc_init(&p->clc);
 	
@@ -408,7 +397,7 @@ static void tpu_realize(DeviceState *dev, Error **errp) {
 }
 
 static Property tpu_properties[] = {
-	DEFINE_PROP_LINK("pll", struct tpu_t, pll, "pmb887x-pll", struct pmb887x_pll_t *),
+	DEFINE_PROP_LINK("pll", struct pmb887x_tpu_t, pll, "pmb887x-pll", struct pmb887x_pll_t *),
     DEFINE_PROP_END_OF_LIST(),
 };
 
@@ -421,7 +410,7 @@ static void tpu_class_init(ObjectClass *klass, void *data) {
 static const TypeInfo tpu_info = {
     .name          	= TYPE_PMB887X_TPU,
     .parent        	= TYPE_SYS_BUS_DEVICE,
-    .instance_size 	= sizeof(struct tpu_t),
+    .instance_size 	= sizeof(struct pmb887x_tpu_t),
     .instance_init 	= tpu_init,
     .class_init    	= tpu_class_init,
 };

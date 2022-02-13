@@ -73,8 +73,8 @@ static void *_irq_loop_thread(void *arg) {
 		if (irq)
 			qemu_set_irq(cpu_irq_signal, 1);
 		
-		uint32_t zero = 0;
-		cpu_physical_memory_write(0x0000316c, &zero, 4);
+//		uint32_t zero = 0;
+//		cpu_physical_memory_write(0x0000316c, &zero, 4);
 		
 		if (!locked)
 			qemu_mutex_unlock_iothread();
@@ -96,8 +96,8 @@ unsigned int pmb8876_io_bridge_read(unsigned int addr, unsigned int size, unsign
 	_async_write(sock_client_io, &addr, 4);
 	_async_write(sock_client_io, &from, 4);
 	
-	uint32_t zero = 0;
-	cpu_physical_memory_write(0x0000316c, &zero, 4);
+//	uint32_t zero = 0;
+//	cpu_physical_memory_write(0x0000316c, &zero, 4);
 	
 	uint8_t buf[5];
 	_async_read(sock_client_io, &buf, 5);
@@ -130,8 +130,8 @@ void pmb8876_io_bridge_write(unsigned int addr, unsigned int size, unsigned int 
 		qemu_set_irq(cpu_irq_signal, 0);
 	}
 	
-	uint32_t zero = 0;
-	cpu_physical_memory_write(0x0000316c, &zero, 4);
+//	uint32_t zero = 0;
+//	cpu_physical_memory_write(0x0000316c, &zero, 4);
 	
 	_async_write(sock_client_io, &cmd_w_size[size], 1);
 	_async_write(sock_client_io, &addr, 4);

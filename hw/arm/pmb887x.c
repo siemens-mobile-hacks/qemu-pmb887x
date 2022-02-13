@@ -45,7 +45,7 @@ static void pmb8876_tcm_update(void) {
 		
 		fprintf(stderr, "TCM%d: %08X (%08X, enabled=%d)\n", i, base, size, enabled);
 		
-		if (!enabled && memory_region_is_mapped(&tcm_memory[i])) 
+		if (memory_region_is_mapped(&tcm_memory[i])) 
 			memory_region_del_subregion(get_system_memory(), &tcm_memory[i]);
 		
 		if (enabled && !memory_region_is_mapped(&tcm_memory[i])) {
@@ -87,7 +87,7 @@ static const ARMCPRegInfo cp_reginfo[] = {
 
 static uint64_t cpu_io_read(void *opaque, hwaddr offset, unsigned size) {
 	hwaddr addr = (size_t) opaque + offset;
-	uint32_t value = 0;
+	uint32_t value = 0xFFFFFFFF;
 	
 	#ifdef PMB887X_IO_BRIDGE
 	value = pmb8876_io_bridge_read(addr, size, cpu->env.regs[15]);
@@ -98,7 +98,7 @@ static uint64_t cpu_io_read(void *opaque, hwaddr offset, unsigned size) {
 	pmb887x_dump_io(addr, size, 0xFFFFFFFF, false);
 	
 	fprintf(stderr, "READ: unknown reg access: %08lX\n", addr);
-	exit(1);
+	//exit(1);
 	
 	return value;
 }
@@ -114,7 +114,7 @@ static void cpu_io_write(void *opaque, hwaddr offset, uint64_t value, unsigned s
 	#endif
 	
 	fprintf(stderr, "WRITE: unknown reg access: %08lX\n", addr);
-	exit(1);
+	//exit(1);
 }
 
 static const MemoryRegionOps cpu_io_opts = {
@@ -153,6 +153,27 @@ static void memory_dump_at_exit(void) {
 	qmp_pmemsave(0x00080000, 96 * 1024, "/tmp/sram.bin", NULL);
 }
 
+static DeviceState *create_flash(BlockBackend *blk, uint32_t *banks, int banks_n) {
+	DeviceState *flash = qdev_new("pmb887x-flash");
+	qdev_prop_set_string(flash, "name", "fullflash");
+	qdev_prop_set_drive(flash, "drive", blk);
+	qdev_prop_set_uint16(flash, "otp0-lock", 0x0000);
+	qdev_prop_set_string(flash, "otp0-data", getenv("OTP_ESN") ?: ""); // ESN
+	qdev_prop_set_uint16(flash, "otp1-lock", 0x0000);
+	qdev_prop_set_string(flash, "otp1-data", getenv("OTP_IMEI") ?: ""); // IMEI
+	qdev_prop_set_uint32(flash, "len-bank-size", banks_n);
+	
+	char bank_name[32];
+	for (int i = 0; i < banks_n; i++) {
+		sprintf(bank_name, "bank-size[%d]", i);
+		qdev_prop_set_uint32(flash, bank_name, banks[i]);
+	}
+	
+	sysbus_realize_and_unref(SYS_BUS_DEVICE(flash), &error_fatal);
+	
+	return flash;
+}
+
 static void pmb887x_init(MachineState *machine, uint32_t cpu_type) {
 	#ifdef PMB887X_IO_BRIDGE
 	fprintf(stderr, "Wait for IO bridge...\n");
@@ -174,8 +195,12 @@ static void pmb887x_init(MachineState *machine, uint32_t cpu_type) {
 	qdev_realize(DEVICE(cpuobj), NULL, &error_fatal);
 	
 	// TCM cache memory (8k ATCM, 8k BTCM)
-	memory_region_init_ram(&tcm_memory[0], NULL, "BTCM", 8 * 1024, &error_fatal);
-	memory_region_init_ram(&tcm_memory[1], NULL, "ATCM", 8 * 1024, &error_fatal);
+	MemoryRegion *btcm = g_new(MemoryRegion, 1);
+	MemoryRegion *atcm = g_new(MemoryRegion, 1);
+	memory_region_init_ram(btcm, NULL, "BTCM", 8 * 1024, &error_fatal);
+	memory_region_init_ram(atcm, NULL, "ATCM", 8 * 1024, &error_fatal);
+	memory_region_init_alias(&tcm_memory[0], NULL, "BTCM_ALIAS", btcm, 0, memory_region_size(btcm));
+	memory_region_init_alias(&tcm_memory[1], NULL, "ATCM_ALIAS", atcm, 0, memory_region_size(atcm));
 	pmb8876_tcm_update();
 	
 	// 0x00000000-0xFFFFFFFF (Unmapped IO access)
@@ -253,33 +278,10 @@ static void pmb887x_init(MachineState *machine, uint32_t cpu_type) {
 	MemoryRegion *sdram = g_new(MemoryRegion, 1);
 	memory_region_init_ram(sdram, NULL, "SDRAM", machine->ram_size, &error_fatal);
 	
-	// CFI flash
-	DeviceState *flash = qdev_new("cfi.pflash.0020:8819");
-	qdev_prop_set_uint32(flash, "num-blocks", flash_sz / 0x00040000);
-	qdev_prop_set_uint32(flash, "num-banks", 1);
-	qdev_prop_set_uint64(flash, "sector-length", 0x00040000);
-	qdev_prop_set_uint8(flash, "width", 2);
-	qdev_prop_set_bit(flash, "big-endian", false);
-	qdev_prop_set_uint16(flash, "id0", 0x00);
-	qdev_prop_set_uint16(flash, "id1", 0x20);
-	qdev_prop_set_uint16(flash, "id2", 0x88);
-	qdev_prop_set_uint16(flash, "id3", 0x19);
-	
-	qdev_prop_set_string(flash, "name", "pflash");
-	qdev_prop_set_drive(flash, "drive", blk_by_legacy_dinfo(flash_dinfo));
-	
-	qdev_prop_set_uint16(flash, "otp0-lock", 0x0000);
-	qdev_prop_set_string(flash, "otp0-data", getenv("OTP_ESN") ?: ""); // ESN
-	
-	qdev_prop_set_uint16(flash, "otp1-lock", 0x0000);
-	qdev_prop_set_string(flash, "otp1-data", getenv("OTP_IMEI") ?: ""); // IMEI
-	
-	sysbus_realize_and_unref(SYS_BUS_DEVICE(flash), &error_fatal);
-	
-	MemoryRegion *flash_memory = sysbus_mmio_get_region(SYS_BUS_DEVICE(flash), 0);
-	
 	// NVIC
 	DeviceState *nvic = pmb887x_new_dev(cpu_type, "NVIC", NULL);
+	sysbus_connect_irq(SYS_BUS_DEVICE(nvic), 0, qdev_get_gpio_in(DEVICE(cpu), ARM_CPU_IRQ));
+	sysbus_connect_irq(SYS_BUS_DEVICE(nvic), 1, qdev_get_gpio_in(DEVICE(cpu), ARM_CPU_FIQ));
 	sysbus_realize_and_unref(SYS_BUS_DEVICE(nvic), &error_fatal);
 	
 	// PLL
@@ -351,22 +353,59 @@ static void pmb887x_init(MachineState *machine, uint32_t cpu_type) {
 	// External Bus Unit
 	DeviceState *ebuc = pmb887x_new_dev(cpu_type, "EBU", NULL);
 	
+	// RAM always CS1
+	object_property_set_link(OBJECT(ebuc), "cs1", OBJECT(sdram), &error_fatal);
+	
+	// Flash depends on size
 	switch (flash_sz) {
 		case 0x1000000: // 16M
 		case 0x2000000: // 32M
-			object_property_set_link(OBJECT(ebuc), "cs0", OBJECT(flash_memory), &error_fatal);
-			object_property_set_link(OBJECT(ebuc), "cs1", OBJECT(sdram), &error_fatal);
-			object_property_set_link(OBJECT(ebuc), "cs4", OBJECT(flash_memory), &error_fatal);
+		{
+			uint32_t banks[] = {flash_sz};
+			DeviceState *flash = create_flash(blk_by_legacy_dinfo(flash_dinfo), banks, ARRAY_SIZE(banks));
+			
+			MemoryRegion *bank0 = sysbus_mmio_get_region(SYS_BUS_DEVICE(flash), 0);
+			
+			object_property_set_link(OBJECT(ebuc), "cs0", OBJECT(bank0), &error_fatal);
+			object_property_set_link(OBJECT(ebuc), "cs4", OBJECT(bank0), &error_fatal);
+		}
 		break;
 		
 		case 0x4000000: // 64M
-			object_property_set_link(OBJECT(ebuc), "cs0", OBJECT(flash_memory), &error_fatal);
-			object_property_set_link(OBJECT(ebuc), "cs1", OBJECT(sdram), &error_fatal);
-			object_property_set_link(OBJECT(ebuc), "cs4", OBJECT(flash_memory), &error_fatal);
+		{
+			uint32_t banks[] = {0x2000000, 0x2000000};
+			DeviceState *flash = create_flash(blk_by_legacy_dinfo(flash_dinfo), banks, ARRAY_SIZE(banks));
+			
+			MemoryRegion *bank0 = sysbus_mmio_get_region(SYS_BUS_DEVICE(flash), 0);
+			MemoryRegion *bank1 = sysbus_mmio_get_region(SYS_BUS_DEVICE(flash), 1);
+			
+			object_property_set_link(OBJECT(ebuc), "cs0", OBJECT(bank0), &error_fatal);
+			object_property_set_link(OBJECT(ebuc), "cs2", OBJECT(bank1), &error_fatal);
+			object_property_set_link(OBJECT(ebuc), "cs4", OBJECT(bank0), &error_fatal);
+			object_property_set_link(OBJECT(ebuc), "cs6", OBJECT(bank1), &error_fatal);
+		}
+		break;
+		
+		case 0x6000000: // 96M
+		{
+			uint32_t banks[] = {0x2000000, 0x2000000, 0x2000000};
+			DeviceState *flash = create_flash(blk_by_legacy_dinfo(flash_dinfo), banks, ARRAY_SIZE(banks));
+			
+			MemoryRegion *bank0 = sysbus_mmio_get_region(SYS_BUS_DEVICE(flash), 0);
+			MemoryRegion *bank1 = sysbus_mmio_get_region(SYS_BUS_DEVICE(flash), 1);
+			MemoryRegion *bank2 = sysbus_mmio_get_region(SYS_BUS_DEVICE(flash), 2);
+			
+			object_property_set_link(OBJECT(ebuc), "cs0", OBJECT(bank0), &error_fatal);
+			object_property_set_link(OBJECT(ebuc), "cs2", OBJECT(bank1), &error_fatal);
+			object_property_set_link(OBJECT(ebuc), "cs3", OBJECT(bank2), &error_fatal);
+			object_property_set_link(OBJECT(ebuc), "cs4", OBJECT(bank0), &error_fatal);
+			object_property_set_link(OBJECT(ebuc), "cs6", OBJECT(bank1), &error_fatal);
+			object_property_set_link(OBJECT(ebuc), "cs7", OBJECT(bank2), &error_fatal);
+		}
 		break;
 		
 		default:
-			error_report("Invalid flash ROM size (%ld bytes). Valid only: 16M, 32M, 64M", flash_sz);
+			error_report("Invalid flash ROM size (%ld bytes). Valid only: 16M, 32M, 64M, 96M", flash_sz);
 			exit(1);
 		break;
 	}

@@ -387,7 +387,6 @@ static void ebu_init(Object *obj) {
 	struct pmb887x_ebu_t *p = PMB887X_EBU(obj);
 	memory_region_init_io(&p->mmio, obj, &io_ops, p, "pmb887x-ebu", EBU_IO_SIZE);
 	sysbus_init_mmio(SYS_BUS_DEVICE(obj), &p->mmio);
-	
 }
 
 static void ebu_realize(DeviceState *dev, Error **errp) {

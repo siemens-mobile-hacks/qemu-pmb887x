@@ -260,6 +260,7 @@ static void i2c_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned si
 		
 		case I2C_TPSCTRL:
 			p->tpsctrl = value;
+			pmb887x_srb_set_isr(&p->srb_proto, I2C_PIRQSC_NACK);
 		break;
 		
 		case I2C_FFSSTAT:

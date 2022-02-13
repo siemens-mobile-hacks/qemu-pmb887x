@@ -1103,8 +1103,6 @@
 /* Clock Control Register */
 #define CAPCOM_CLC						0x00
 
-#define CAPCOM_PISEL					0x04
-
 #define CAPCOM_CPISEL					0x04
 #define CAPCOM_CPISEL_C1C0IS			(1 << 0)
 #define CAPCOM_CPISEL_C1C0IS_SHIFT		0
@@ -1118,6 +1116,8 @@
 #define CAPCOM_CPISEL_T0INIS_SHIFT		4
 #define CAPCOM_CPISEL_T1INIS			(1 << 5)
 #define CAPCOM_CPISEL_T1INIS_SHIFT		5
+
+#define CAPCOM_PISEL					0x04
 
 /* Module Identifier Register */
 #define CAPCOM_ID						0x08

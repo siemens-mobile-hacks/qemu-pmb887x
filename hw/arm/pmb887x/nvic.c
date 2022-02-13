@@ -16,7 +16,7 @@
 #include "hw/arm/pmb887x/io_bridge.h"
 #include "hw/arm/pmb887x/regs_dump.h"
 
-#define NVIC_DEBUG
+// #define NVIC_DEBUG
 
 #ifdef NVIC_DEBUG
 #define DPRINTF(fmt, ...) do { fprintf(stderr, "[pmb887x-nvic]: " fmt , ## __VA_ARGS__); } while (0)
@@ -75,12 +75,18 @@ static void nvic_update_state(struct pmb887x_nvic_t *p) {
 		p->current_irq = nvic_current_irq(p, false);
 		qemu_set_irq(p->parent_irq, p->current_irq != -1);
 		p->lock_irq = p->current_irq != -1;
+		
+		if (p->current_irq != -1)
+			DPRINTF("irq: %d\n", p->current_irq);
 	}
 	
 	if (!p->lock_fiq) {
 		p->current_fiq = nvic_current_irq(p, true);
 		qemu_set_irq(p->parent_fiq, p->current_fiq != -1);
 		p->lock_fiq = p->current_fiq != -1;
+		
+		if (p->current_fiq != -1)
+			DPRINTF("fiq: %d\n", p->current_fiq);
 	}
 }
 
@@ -126,7 +132,7 @@ static uint64_t nvic_io_read(void *opaque, hwaddr haddr, unsigned size) {
 		break;
 	}
 	
-	pmb887x_dump_io(haddr + p->mmio.addr, size, value, false);
+	//pmb887x_dump_io(haddr + p->mmio.addr, size, value, false);
 	
 	return value;
 }
@@ -134,7 +140,7 @@ static uint64_t nvic_io_read(void *opaque, hwaddr haddr, unsigned size) {
 static void nvic_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned size) {
 	struct pmb887x_nvic_t *p = (struct pmb887x_nvic_t *) opaque;
 	
-	pmb887x_dump_io(haddr + p->mmio.addr, size, value, true);
+	//pmb887x_dump_io(haddr + p->mmio.addr, size, value, true);
 	
 	switch (haddr) {
 		default:

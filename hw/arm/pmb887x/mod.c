@@ -96,8 +96,8 @@ static int pmb887x_srb_irq_router(void *opaque, int event_id) {
 void pmb887x_srb_init(struct pmb887x_srb_reg_t *reg, qemu_irq *irq, int irq_n) {
 	reg->irq = irq;
 	reg->irq_n = irq_n;
-	reg->last_irq_state = calloc(reg->irq_n, sizeof(bool));
-	reg->irq_lock = calloc(reg->irq_n, sizeof(bool));
+	reg->last_irq_state = g_new0(bool, reg->irq_n);
+	reg->irq_lock = g_new0(int, reg->irq_n);
 	reg->irq_router = pmb887x_srb_irq_router;
 	reg->irq_router_opaque = reg;
 	reg->imsc = 0;
@@ -118,11 +118,16 @@ uint32_t pmb887x_srb_get_mis(struct pmb887x_srb_reg_t *reg) {
 }
 
 uint32_t pmb887x_srb_get_ris(struct pmb887x_srb_reg_t *reg) {
-	return reg->ris;
+	return reg->ris|0xFFFFFF;
 }
 
 static void pmb887x_srb_set_irq(struct pmb887x_srb_reg_t *reg, int n, int level) {
 	int irq_n = reg->irq_router(reg->irq_router_opaque, n);
+	
+	if (irq_n < 0 || irq_n >= reg->irq_n) {
+		error_report("[pmb887x-mod] invalid irq index: %d\n", irq_n);
+		abort();
+	}
 	
 	if (level != 0) {
 		reg->irq_lock[irq_n]++;
@@ -131,9 +136,9 @@ static void pmb887x_srb_set_irq(struct pmb887x_srb_reg_t *reg, int n, int level)
 	}
 	
 	int state = reg->irq_lock[irq_n] != 0 ? 1 : 0;
-	if (reg->last_irq_state[n] != state) {
+	if (reg->last_irq_state[irq_n] != state) {
 		qemu_set_irq(reg->irq[irq_n], state);
-		reg->last_irq_state[n] = state;
+		reg->last_irq_state[irq_n] = state;
 	}
 }
 
@@ -144,7 +149,7 @@ static void pmb887x_srb_set_event(struct pmb887x_srb_reg_t *reg, int n, int leve
 	
 	if (has_irq != last_has_irq) {
 		if (has_irq) {
-			if ((reg->imsc & mask)) {
+			if ((reg->imsc & mask)||1) {
 				pmb887x_srb_set_irq(reg, n, level);
 				reg->last_state |= mask;
 			}
@@ -166,7 +171,7 @@ void pmb887x_srb_set_imsc(struct pmb887x_srb_reg_t *reg, uint32_t value) {
 }
 
 void pmb887x_srb_set_icr(struct pmb887x_srb_reg_t *reg, uint32_t value) {
-	for (int i = 0; i < reg->irq_n; i++) {
+	for (int i = 0; i < 32; i++) {
 		uint8_t mask = 1 << i;
 		if ((value & mask))
 			pmb887x_srb_set_event(reg, i, 0);
@@ -174,7 +179,7 @@ void pmb887x_srb_set_icr(struct pmb887x_srb_reg_t *reg, uint32_t value) {
 }
 
 void pmb887x_srb_set_isr(struct pmb887x_srb_reg_t *reg, uint32_t value) {
-	for (int i = 0; i < reg->irq_n; i++) {
+	for (int i = 0; i < 32; i++) {
 		uint8_t mask = 1 << i;
 		if ((value & mask))
 			pmb887x_srb_set_event(reg, i, 1);
