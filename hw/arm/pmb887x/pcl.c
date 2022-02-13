@@ -37,6 +37,7 @@ struct pmb887x_pcl_t {
 	
 	struct pmb887x_clc_reg_t clc;
 	uint32_t pins[GPIOS_COUNT];
+	uint32_t mon_cr[4];
 };
 
 static void pcl_update_state(struct pmb887x_pcl_t *p) {
@@ -59,6 +60,10 @@ static uint64_t pcl_io_read(void *opaque, hwaddr haddr, unsigned size) {
 		
 		case GPIO_PIN0 ... GPIO_PIN113:
 			value = p->pins[(haddr - GPIO_PIN0) / 4];
+		break;
+		
+		case GPIO_MON_CR1 ... GPIO_MON_CR4:
+			value = p->mon_cr[(haddr - GPIO_MON_CR1) / 4];
 		break;
 		
 		default:
@@ -85,6 +90,10 @@ static void pcl_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned si
 		
 		case GPIO_PIN0 ... GPIO_PIN113:
 			p->pins[(haddr - GPIO_PIN0) / 4] = value;
+		break;
+		
+		case GPIO_MON_CR1 ... GPIO_MON_CR4:
+			p->mon_cr[(haddr - GPIO_MON_CR1) / 4] = value;
 		break;
 		
 		default:

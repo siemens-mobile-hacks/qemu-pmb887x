@@ -89,6 +89,9 @@ static uint64_t cpu_io_read(void *opaque, hwaddr offset, unsigned size) {
 	hwaddr addr = (size_t) opaque + offset;
 	uint32_t value = 0xFFFFFFFF;
 	
+	if (addr == 0xF4C0001C)
+		value = 0;
+	
 	#ifdef PMB887X_IO_BRIDGE
 	value = pmb8876_io_bridge_read(addr, size, cpu->env.regs[15]);
 	pmb887x_dump_io(addr, size, value, false);
@@ -153,14 +156,13 @@ static void memory_dump_at_exit(void) {
 	qmp_pmemsave(0x00080000, 96 * 1024, "/tmp/sram.bin", NULL);
 }
 
-static DeviceState *create_flash(BlockBackend *blk, uint32_t *banks, int banks_n) {
+static DeviceState *create_flash(BlockBackend *blk, uint16_t vendor_id, uint32_t *banks, int banks_n) {
 	DeviceState *flash = qdev_new("pmb887x-flash");
 	qdev_prop_set_string(flash, "name", "fullflash");
 	qdev_prop_set_drive(flash, "drive", blk);
-	qdev_prop_set_uint16(flash, "otp0-lock", 0x0000);
 	qdev_prop_set_string(flash, "otp0-data", getenv("OTP_ESN") ?: ""); // ESN
-	qdev_prop_set_uint16(flash, "otp1-lock", 0x0000);
 	qdev_prop_set_string(flash, "otp1-data", getenv("OTP_IMEI") ?: ""); // IMEI
+	qdev_prop_set_uint16(flash, "vendor-id", vendor_id);
 	qdev_prop_set_uint32(flash, "len-bank-size", banks_n);
 	
 	char bank_name[32];
@@ -362,7 +364,7 @@ static void pmb887x_init(MachineState *machine, uint32_t cpu_type) {
 		case 0x2000000: // 32M
 		{
 			uint32_t banks[] = {flash_sz};
-			DeviceState *flash = create_flash(blk_by_legacy_dinfo(flash_dinfo), banks, ARRAY_SIZE(banks));
+			DeviceState *flash = create_flash(blk_by_legacy_dinfo(flash_dinfo), 0x0089, banks, ARRAY_SIZE(banks));
 			
 			MemoryRegion *bank0 = sysbus_mmio_get_region(SYS_BUS_DEVICE(flash), 0);
 			
@@ -373,23 +375,20 @@ static void pmb887x_init(MachineState *machine, uint32_t cpu_type) {
 		
 		case 0x4000000: // 64M
 		{
-			uint32_t banks[] = {0x2000000, 0x2000000};
-			DeviceState *flash = create_flash(blk_by_legacy_dinfo(flash_dinfo), banks, ARRAY_SIZE(banks));
+			uint32_t banks[] = {0x4000000};
+			DeviceState *flash = create_flash(blk_by_legacy_dinfo(flash_dinfo), 0x0020, banks, ARRAY_SIZE(banks));
 			
 			MemoryRegion *bank0 = sysbus_mmio_get_region(SYS_BUS_DEVICE(flash), 0);
-			MemoryRegion *bank1 = sysbus_mmio_get_region(SYS_BUS_DEVICE(flash), 1);
 			
 			object_property_set_link(OBJECT(ebuc), "cs0", OBJECT(bank0), &error_fatal);
-			object_property_set_link(OBJECT(ebuc), "cs2", OBJECT(bank1), &error_fatal);
 			object_property_set_link(OBJECT(ebuc), "cs4", OBJECT(bank0), &error_fatal);
-			object_property_set_link(OBJECT(ebuc), "cs6", OBJECT(bank1), &error_fatal);
 		}
 		break;
 		
 		case 0x6000000: // 96M
 		{
 			uint32_t banks[] = {0x2000000, 0x2000000, 0x2000000};
-			DeviceState *flash = create_flash(blk_by_legacy_dinfo(flash_dinfo), banks, ARRAY_SIZE(banks));
+			DeviceState *flash = create_flash(blk_by_legacy_dinfo(flash_dinfo), 0x0089, banks, ARRAY_SIZE(banks));
 			
 			MemoryRegion *bank0 = sysbus_mmio_get_region(SYS_BUS_DEVICE(flash), 0);
 			MemoryRegion *bank1 = sysbus_mmio_get_region(SYS_BUS_DEVICE(flash), 1);
