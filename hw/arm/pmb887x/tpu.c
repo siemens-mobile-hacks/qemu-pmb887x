@@ -21,7 +21,7 @@
 #include "hw/arm/pmb887x/regs_dump.h"
 #include "hw/arm/pmb887x/mod.h"
 
-// #define TPU_DEBUG
+#define TPU_DEBUG
 
 #ifdef TPU_DEBUG
 #define DPRINTF(fmt, ...) do { fprintf(stderr, "[pmb887x-tpu]: " fmt , ## __VA_ARGS__); } while (0)
@@ -31,7 +31,7 @@
 
 #define TYPE_PMB887X_TPU	"pmb887x-tpu"
 #define PMB887X_TPU(obj)	OBJECT_CHECK(struct pmb887x_tpu_t, (obj), TYPE_PMB887X_TPU)
-#define	TPU_RAM_SIZE		512
+#define	TPU_RAM_SIZE		0x2000
 
 struct pmb887x_tpu_t {
 	SysBusDevice parent_obj;
@@ -39,7 +39,7 @@ struct pmb887x_tpu_t {
 	
 	// regs
 	struct pmb887x_clc_reg_t clc;
-	uint32_t ram[TPU_RAM_SIZE];
+	uint8_t ram[TPU_RAM_SIZE];
 	uint32_t correction;
 	uint32_t overflow;
 	uint32_t offset;
@@ -48,6 +48,10 @@ struct pmb887x_tpu_t {
 	uint32_t intr[2];
 	
 	struct pmb887x_src_reg_t src[2];
+	struct pmb887x_src_reg_t unk_src[6];
+	
+	qemu_irq irq[2];
+	qemu_irq unk_irq[6];
 	
 	uint32_t pllcon0;
 	uint32_t pllcon1;
@@ -56,7 +60,6 @@ struct pmb887x_tpu_t {
 	uint32_t unk[8];
 	
 	uint32_t irq_fired;
-	qemu_irq irq[2];
 	QEMUTimer *timer;
 	
 	bool enabled;
@@ -142,6 +145,8 @@ static void tpu_update_state(struct pmb887x_tpu_t *p) {
 		new_freq = ftpu > 0 ? (ftpu / p->L * p->K) / 6 : 0;
 	}
 	
+	new_freq = new_freq / 4;
+	
 	// Reset counter when TPU_PARAM_TINI=0
 	if (!(p->param & TPU_PARAM_TINI))
 		p->counter = 0;
@@ -160,24 +165,54 @@ static void tpu_update_state_callback(void *opaque) {
 	tpu_update_state((struct pmb887x_tpu_t *) opaque);
 }
 
+static uint32_t tpu_ram_read(struct pmb887x_tpu_t *p, uint32_t offset, unsigned size) {
+	uint8_t *data = p->ram;
+	switch (size) {
+		case 1:		return data[offset];
+		case 2:		return data[offset] | (data[offset + 1] << 8);
+		case 4:		return data[offset] | (data[offset + 1] << 8) | (data[offset + 2] << 16) | (data[offset + 3] << 24);
+	}
+    return 0;
+}
+
+static void tpu_ram_write(struct pmb887x_tpu_t *p, uint32_t offset, uint32_t value, unsigned size) {
+	uint8_t *data = p->ram;
+	switch (size) {
+		case 1:
+			data[offset] = value & 0xFF;
+		break;
+		
+		case 2:
+			data[offset] = value & 0xFF;
+			data[offset + 1] = (value >> 8) & 0xFF;
+		break;
+		
+		case 4:
+			data[offset] = value & 0xFF;
+			data[offset + 1] = (value >> 8) & 0xFF;
+			data[offset + 2] = (value >> 16) & 0xFF;
+			data[offset + 3] = (value >> 24) & 0xFF;
+		break;
+	}
+}
+
 static int tpu_unk_by_reg(hwaddr haddr) {
 	switch (haddr) {
-		case TPU_UNK0:
-			return 0;
-		case TPU_UNK1:
-			return 1;
-		case TPU_UNK2:
-			return 2;
-		case TPU_UNK3:
-			return 3;
-		case TPU_UNK4:
-			return 4;
-		case TPU_UNK5:
-			return 5;
-		case TPU_UNK6:
-			return 6;
-		case TPU_UNK7:
-			return 7;
+		case TPU_UNK0:		return 0;
+		case TPU_UNK1:		return 1;
+		case TPU_UNK2:		return 2;
+		case TPU_UNK3:		return 3;
+		case TPU_UNK4:		return 4;
+		case TPU_UNK5:		return 5;
+		case TPU_UNK6:		return 6;
+		case TPU_UNK7:		return 7;
+		
+		case TPU_UNK_SRC0:	return 0;
+		case TPU_UNK_SRC1:	return 1;
+		case TPU_UNK_SRC2:	return 2;
+		case TPU_UNK_SRC3:	return 3;
+		case TPU_UNK_SRC4:	return 4;
+		case TPU_UNK_SRC5:	return 5;
 	}
 	return -1;
 }
@@ -245,11 +280,24 @@ static uint64_t tpu_io_read(void *opaque, hwaddr haddr, unsigned size) {
 		break;
 		
 		case TPU_COUNTER:
+		{
 			value = tpu_get_time(p, false);
+			uint32_t zero = 0;
+			cpu_physical_memory_write(0x0000316c, &zero, 4);
+		}
 		break;
 		
-		case TPU_RAM0 ... TPU_RAM0 + (TPU_RAM_SIZE * 4):
-			value = p->ram[(haddr - TPU_RAM0) / 4];
+		case TPU_RAM0 ... (TPU_RAM0 + TPU_RAM_SIZE):
+			value = tpu_ram_read(p, haddr, size);
+		break;
+		
+		case TPU_UNK_SRC0:
+		case TPU_UNK_SRC1:
+		case TPU_UNK_SRC2:
+		case TPU_UNK_SRC3:
+		case TPU_UNK_SRC4:
+		case TPU_UNK_SRC5:
+			value = pmb887x_src_get(&p->unk_src[tpu_unk_by_reg(haddr)]);
 		break;
 		
 		case TPU_UNK0:
@@ -270,7 +318,7 @@ static uint64_t tpu_io_read(void *opaque, hwaddr haddr, unsigned size) {
 		break;
 	}
 	
-	//pmb887x_dump_io(haddr + p->mmio.addr, size, value, false);
+	pmb887x_dump_io(haddr + p->mmio.addr, size, value, false);
 	
 	return value;
 }
@@ -278,7 +326,7 @@ static uint64_t tpu_io_read(void *opaque, hwaddr haddr, unsigned size) {
 static void tpu_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned size) {
 	struct pmb887x_tpu_t *p = (struct pmb887x_tpu_t *) opaque;
 	
-	//pmb887x_dump_io(haddr + p->mmio.addr, size, value, true);
+	pmb887x_dump_io(haddr + p->mmio.addr, size, value, true);
 	
 	switch (haddr) {
 		case TPU_CLC:
@@ -333,8 +381,17 @@ static void tpu_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned si
 			p->pllcon2 = value;
 		break;
 		
-		case TPU_RAM0 ... TPU_RAM0 + (TPU_RAM_SIZE * 4):
-			p->ram[(haddr - TPU_RAM0) / 4] = value;
+		case TPU_RAM0 ... (TPU_RAM0 + TPU_RAM_SIZE):
+			tpu_ram_write(p, haddr, value, size);
+		break;
+		
+		case TPU_UNK_SRC0:
+		case TPU_UNK_SRC1:
+		case TPU_UNK_SRC2:
+		case TPU_UNK_SRC3:
+		case TPU_UNK_SRC4:
+		case TPU_UNK_SRC5:
+			pmb887x_src_set(&p->unk_src[tpu_unk_by_reg(haddr)], value);
 		break;
 		
 		case TPU_UNK0:
@@ -362,17 +419,20 @@ static const MemoryRegionOps io_ops = {
 	.write			= tpu_io_write,
 	.endianness		= DEVICE_NATIVE_ENDIAN,
 	.valid			= {
-		.min_access_size	= 4,
+		.min_access_size	= 1,
 		.max_access_size	= 4
 	}
 };
 
 static void tpu_init(Object *obj) {
 	struct pmb887x_tpu_t *p = PMB887X_TPU(obj);
-	memory_region_init_io(&p->mmio, obj, &io_ops, p, "pmb887x-tpu", TPU_IO_SIZE);
+	memory_region_init_io(&p->mmio, obj, &io_ops, p, "pmb887x-tpu", TPU_RAM0 + TPU_RAM_SIZE);
 	sysbus_init_mmio(SYS_BUS_DEVICE(obj), &p->mmio);
-	sysbus_init_irq(SYS_BUS_DEVICE(obj), &p->irq[0]);
-	sysbus_init_irq(SYS_BUS_DEVICE(obj), &p->irq[1]);
+	
+	for (int i = 0; i < ARRAY_SIZE(p->src); i++)
+		sysbus_init_irq(SYS_BUS_DEVICE(obj), &p->irq[i]);
+	for (int i = 0; i < ARRAY_SIZE(p->unk_src); i++)
+		sysbus_init_irq(SYS_BUS_DEVICE(obj), &p->unk_irq[i]);
 }
 
 static void tpu_realize(DeviceState *dev, Error **errp) {
@@ -380,13 +440,24 @@ static void tpu_realize(DeviceState *dev, Error **errp) {
 	
 	pmb887x_clc_init(&p->clc);
 	
+	int index = 0;
+	
 	for (int i = 0; i < ARRAY_SIZE(p->src); i++) {
 		if (!p->irq[i]) {
-			error_report("pmb887x-tpu: irq %d (TPU_INT%d) not set", i, i);
+			error_report("pmb887x-tpu: irq %d (TPU_INT%d) not set", index++, i);
 			abort();
 		}
 		
 		pmb887x_src_init(&p->src[i], p->irq[i]);
+	}
+	
+	for (int i = 0; i < ARRAY_SIZE(p->unk_src); i++) {
+		if (!p->unk_irq[i]) {
+			error_report("pmb887x-tpu: irq %d (TPU_UNK%d) not set", index++, i);
+			abort();
+		}
+		
+		pmb887x_src_init(&p->unk_src[i], p->unk_irq[i]);
 	}
 	
     p->timer = timer_new_ns(QEMU_CLOCK_VIRTUAL, tpu_ptimer_reset, p);

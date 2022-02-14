@@ -56,7 +56,17 @@ static const struct pmb887x_dev pmb8876_devices[] = {
 		.name	= "TPU",
 		.dev	= "pmb887x-tpu",
 		.base	= PMB8876_TPU_BASE,
-		.irqs	= { PMB8876_TPU_INT0_IRQ, PMB8876_TPU_INT1_IRQ, 0 }
+		.irqs	= {
+			PMB8876_TPU_INT0_IRQ,
+			PMB8876_TPU_INT1_IRQ,
+			PMB8876_TPU_INT_UNK0_IRQ,
+			PMB8876_TPU_INT_UNK1_IRQ,
+			PMB8876_TPU_INT_UNK2_IRQ,
+			PMB8876_TPU_INT_UNK3_IRQ,
+			PMB8876_TPU_INT_UNK4_IRQ,
+			PMB8876_TPU_INT_UNK5_IRQ,
+			0
+		}
 	},
 	{
 		.name	= "CAPCOM0",
@@ -193,6 +203,12 @@ static const struct pmb887x_dev pmb8876_devices[] = {
 		.dev	= "pmb887x-ebu",
 		.base	= PMB8876_EBU_BASE,
 		.irqs	= { 0 }
+	},
+	{
+		.name	= "DSP",
+		.dev	= "pmb887x-dsp",
+		.base	= PMB8876_DSP_BASE,
+		.irqs	= { 0 }
 	}
 };
 
@@ -243,7 +259,16 @@ static const struct pmb887x_dev pmb8875_devices[] = {
 		.name	= "TPU",
 		.dev	= "pmb887x-tpu",
 		.base	= PMB8875_TPU_BASE,
-		.irqs	= { PMB8875_TPU_INT0_IRQ, PMB8875_TPU_INT1_IRQ, 0 }
+		.irqs	= {
+			PMB8875_TPU_INT0_IRQ,
+			PMB8875_TPU_INT1_IRQ,
+			PMB8875_TPU_INT_UNK0_IRQ,
+			PMB8875_TPU_INT_UNK1_IRQ,
+			PMB8875_TPU_INT_UNK2_IRQ,
+			PMB8875_TPU_INT_UNK3_IRQ,
+			PMB8875_TPU_INT_UNK4_IRQ,
+			PMB8875_TPU_INT_UNK5_IRQ,
+		}
 	},
 	{
 		.name	= "CAPCOM0",
@@ -368,6 +393,12 @@ static const struct pmb887x_dev pmb8875_devices[] = {
 		.dev	= "pmb887x-ebu",
 		.base	= PMB8875_EBU_BASE,
 		.irqs	= { 0 }
+	},
+	{
+		.name	= "DSP",
+		.dev	= "pmb887x-dsp",
+		.base	= PMB8875_DSP_BASE,
+		.irqs	= { 0 }
 	}
 };
 
@@ -406,12 +437,7 @@ DeviceState *pmb887x_new_dev(uint32_t cpu_type, const char *name, DeviceState *n
 			irq_n++;
 		}
 		
-		#if defined(PMB887X_IO_BRIDGE)
-		if (strcmp(name, "NVIC") != 0)
-			sysbus_mmio_map(SYS_BUS_DEVICE(dev), 0, device->base);
-		#else
 		sysbus_mmio_map(SYS_BUS_DEVICE(dev), 0, device->base);
-		#endif
 		
 		return dev;
 	}

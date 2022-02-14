@@ -219,7 +219,7 @@ static void usart_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned 
 		break;
 		
 		case USART_TXB:
-			fprintf(stderr, "%c", value & 0xFF);
+			// fprintf(stderr, "%c", value & 0xFF);
 			p->txb = value;
 		break;
 		
@@ -297,7 +297,7 @@ static const MemoryRegionOps io_ops = {
 	.write			= usart_io_write,
 	.endianness		= DEVICE_NATIVE_ENDIAN,
 	.valid			= {
-		.min_access_size	= 4,
+		.min_access_size	= 1,
 		.max_access_size	= 4
 	}
 };

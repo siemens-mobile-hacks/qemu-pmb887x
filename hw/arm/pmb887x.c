@@ -93,7 +93,7 @@ static uint64_t cpu_io_read(void *opaque, hwaddr offset, unsigned size) {
 		value = 0;
 	
 	#ifdef PMB887X_IO_BRIDGE
-	value = pmb8876_io_bridge_read(addr, size, cpu->env.regs[15]);
+	value = pmb8876_io_bridge_read(addr, size);
 	pmb887x_dump_io(addr, size, value, false);
 	return value;
 	#endif
@@ -112,7 +112,7 @@ static void cpu_io_write(void *opaque, hwaddr offset, uint64_t value, unsigned s
 	pmb887x_dump_io(addr, size, value, true);
 	
 	#ifdef PMB887X_IO_BRIDGE
-	pmb8876_io_bridge_write(addr, size, value, cpu->env.regs[15]);
+	pmb8876_io_bridge_write(addr, size, value);
 	return;
 	#endif
 	
@@ -210,6 +210,11 @@ static void pmb887x_init(MachineState *machine, uint32_t cpu_type) {
     memory_region_init_io(unmapped_io, NULL, &unmapped_io_opts, (void *) 0x00000000, "UNMAPPED_IO", 0xFFFFFFFF);
 	memory_region_add_subregion(sysmem, 0x00000000, unmapped_io);
 	
+	// 0x00000000-0xFFFFFFFF (Unmapped IO access)
+    MemoryRegion *img = g_new(MemoryRegion, 1);
+    memory_region_init_io(img, NULL, &cpu_io_opts, (void *) 0xa8da8080, "UNMAPPED_IO", 240*320*3);
+	memory_region_add_subregion_overlap(sysmem, 0xA8DA8080, img, 9999999);
+	
 	// 0xF0000000-0xFFFFFFFF (CPU IO)
 	MemoryRegion *io = g_new(MemoryRegion, 1);
     memory_region_init_io(io, NULL, &cpu_io_opts, (void *) 0xF0000000, "IO", 0x0FFFFFFF);
@@ -295,12 +300,16 @@ static void pmb887x_init(MachineState *machine, uint32_t cpu_type) {
 	object_property_set_link(OBJECT(stm), "pll", OBJECT(pll), &error_fatal);
 	sysbus_realize_and_unref(SYS_BUS_DEVICE(stm), &error_fatal);
 	
-	#ifndef PMB887X_IO_BRIDGE
 	// Time Processing Unit
 	DeviceState *tpu = pmb887x_new_dev(cpu_type, "TPU", nvic);
 	object_property_set_link(OBJECT(tpu), "pll", OBJECT(pll), &error_fatal);
 	sysbus_realize_and_unref(SYS_BUS_DEVICE(tpu), &error_fatal);
 	
+	// DSP
+	DeviceState *dsp = pmb887x_new_dev(cpu_type, "DSP", nvic);
+	sysbus_realize_and_unref(SYS_BUS_DEVICE(dsp), &error_fatal);
+	
+	#ifndef PMB887X_IO_BRIDGE
 	// System Control Unit
 	DeviceState *scu = pmb887x_new_dev(cpu_type, "SCU", nvic);
 	object_property_set_link(OBJECT(scu), "brom_mirror", OBJECT(brom_mirror), &error_fatal);
@@ -317,6 +326,9 @@ static void pmb887x_init(MachineState *machine, uint32_t cpu_type) {
 	// Port Control Logic
 	DeviceState *pcl = pmb887x_new_dev(cpu_type, "PCL", nvic);
 	sysbus_realize_and_unref(SYS_BUS_DEVICE(pcl), &error_fatal);
+	
+	// HW_DET4=1
+	qemu_set_irq(qdev_get_gpio_in(pcl, 69), 1);
 	
 	// RTC
 	DeviceState *rtc = pmb887x_new_dev(cpu_type, "RTC", nvic);
@@ -349,7 +361,7 @@ static void pmb887x_init(MachineState *machine, uint32_t cpu_type) {
 	object_property_set_link(OBJECT(dmac), "downstream", OBJECT(sysmem), &error_fatal);
 	sysbus_realize_and_unref(SYS_BUS_DEVICE(dmac), &error_fatal);
 	#else
-	pmb8876_io_bridge_set_irqc(DEVICE(cpu));
+	pmb8876_io_bridge_set_nvic(nvic);
 	#endif
 	
 	// External Bus Unit

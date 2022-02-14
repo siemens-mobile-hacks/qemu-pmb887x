@@ -169,7 +169,7 @@ static const MemoryRegionOps io_ops = {
 	.write			= stm_io_write,
 	.endianness		= DEVICE_NATIVE_ENDIAN,
 	.valid			= {
-		.min_access_size	= 4,
+		.min_access_size	= 1,
 		.max_access_size	= 4
 	}
 };

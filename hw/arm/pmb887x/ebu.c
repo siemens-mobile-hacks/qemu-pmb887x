@@ -227,7 +227,7 @@ static uint64_t ebu_io_read(void *opaque, hwaddr haddr, unsigned size) {
 		
 		case EBU_SDRMREF0:
 		case EBU_SDRMREF1:
-			value = p->sdrmref[ebu_get_index_from_reg(haddr)];
+			value = p->sdrmref[ebu_get_index_from_reg(haddr)] | EBU_SDRMREF_SELFRENST | EBU_SDRMREF_SELFREXST;
 		break;
 		
 		case EBU_SDRSTAT0:
@@ -250,7 +250,7 @@ static uint64_t ebu_io_read(void *opaque, hwaddr haddr, unsigned size) {
 	pmb887x_dump_io(haddr + p->mmio.addr, size, value, false);
 	
 	#ifdef PMB887X_IO_BRIDGE
-	pmb8876_io_bridge_write(haddr + p->mmio.addr, size, value, ARM_CPU(qemu_get_cpu(0))->env.regs[15]);
+	pmb8876_io_bridge_write(haddr + p->mmio.addr, size, value);
 	#endif
 	
 	return value;
@@ -337,7 +337,7 @@ static void ebu_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned si
 	}
 	
 	#ifdef PMB887X_IO_BRIDGE
-	pmb8876_io_bridge_read(haddr + p->mmio.addr, size, ARM_CPU(qemu_get_cpu(0))->env.regs[15]);
+	pmb8876_io_bridge_read(haddr + p->mmio.addr, size);
 	#endif
 	
 	ebu_update_state(p);
@@ -348,7 +348,7 @@ static const MemoryRegionOps io_ops = {
 	.write			= ebu_io_write,
 	.endianness		= DEVICE_NATIVE_ENDIAN,
 	.valid			= {
-		.min_access_size	= 4,
+		.min_access_size	= 1,
 		.max_access_size	= 4
 	}
 };

@@ -15,6 +15,7 @@
 #include "qemu/thread.h"
 #include "qemu/main-loop.h"
 #include "cpu.h"
+#include "sysemu/cpu-timers.h"
 
 #include "hw/arm/pmb887x/regs.h"
 
@@ -35,7 +36,9 @@ static int _async_read_chunk(int sock, uint8_t *data, int size);
 static int _async_write_chunk(int sock, uint8_t *data, int size);
 static void *_irq_loop_thread(void *arg);
 
-static qemu_irq cpu_irq_signal;
+static DeviceState *nvic = NULL;
+
+int current_irq = 0;
 
 static QemuThread irq_trhead_id;
 
@@ -70,11 +73,10 @@ static void *_irq_loop_thread(void *arg) {
 		if (!locked)
 			qemu_mutex_lock_iothread();
 		
-		if (irq)
-			qemu_set_irq(cpu_irq_signal, 1);
-		
-//		uint32_t zero = 0;
-//		cpu_physical_memory_write(0x0000316c, &zero, 4);
+		if (irq) {
+			qemu_set_irq(qdev_get_gpio_in(nvic, irq), 100000);
+			current_irq = irq;
+		}
 		
 		if (!locked)
 			qemu_mutex_unlock_iothread();
@@ -82,11 +84,17 @@ static void *_irq_loop_thread(void *arg) {
 	return NULL;
 }
 
-void pmb8876_io_bridge_set_irqc(DeviceState *cpu) {
-	cpu_irq_signal = qdev_get_gpio_in(cpu, ARM_CPU_IRQ);
+void pmb8876_io_bridge_set_nvic(DeviceState *nvic_ref) {
+	nvic = nvic_ref;
 }
 
-unsigned int pmb8876_io_bridge_read(unsigned int addr, unsigned int size, unsigned int from) {
+unsigned int pmb8876_io_bridge_read(unsigned int addr, unsigned int size) {
+	cpu_disable_ticks();
+	
+	uint32_t from = ARM_CPU(qemu_get_cpu(0))->env.regs[15];
+	
+	cpu_disable_ticks();
+	
 	if (from % 4 == 0)
 		from -= 4;
 	else
@@ -96,9 +104,6 @@ unsigned int pmb8876_io_bridge_read(unsigned int addr, unsigned int size, unsign
 	_async_write(sock_client_io, &addr, 4);
 	_async_write(sock_client_io, &from, 4);
 	
-//	uint32_t zero = 0;
-//	cpu_physical_memory_write(0x0000316c, &zero, 4);
-	
 	uint8_t buf[5];
 	_async_read(sock_client_io, &buf, 5);
 	
@@ -107,31 +112,32 @@ unsigned int pmb8876_io_bridge_read(unsigned int addr, unsigned int size, unsign
 		exit(1);
 	}
 	
+	cpu_enable_ticks();
+	
 	return buf[4] << 24 | buf[3] << 16 | buf[2] << 8 | buf[1];
 }
 
-void pmb8876_io_bridge_write(unsigned int addr, unsigned int size, unsigned int value, unsigned int from) {
+void pmb8876_io_bridge_write(unsigned int addr, unsigned int size, unsigned int value) {
+	cpu_disable_ticks();
+	
+	uint32_t from = ARM_CPU(qemu_get_cpu(0))->env.regs[15];
+	
 	if (from % 4 == 0)
 		from -= 4;
 	else
 		from -= 2;
 	
+	/*
 	if (addr == 0xF280020C && value)
 		value = 1;
 	
 	if (addr == 0xF2800210 && value)
 		value = 1;
+	*/
 	
 	if ((addr == PMB8876_I2C_BASE + I2C_CLC) && (value & 1)) {
 		value = 0x100;
 	}
-	
-	if (addr == PMB8876_NVIC_BASE + NVIC_IRQ_ACK) {
-		qemu_set_irq(cpu_irq_signal, 0);
-	}
-	
-//	uint32_t zero = 0;
-//	cpu_physical_memory_write(0x0000316c, &zero, 4);
 	
 	_async_write(sock_client_io, &cmd_w_size[size], 1);
 	_async_write(sock_client_io, &addr, 4);
@@ -145,6 +151,8 @@ void pmb8876_io_bridge_write(unsigned int addr, unsigned int size, unsigned int 
 		fprintf(stderr, "[io bridge] invalid ACK: %02X\n", buf);
 		exit(1);
 	}
+	
+	cpu_enable_ticks();
 }
 
 static int _open_unix_sock(const char *name) {

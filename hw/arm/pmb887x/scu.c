@@ -115,6 +115,7 @@ static uint64_t scu_io_read(void *opaque, hwaddr haddr, unsigned size) {
 		
 		case SCU_RST_SR:
 			value = SCU_RST_SR_RSSTM | SCU_RST_SR_HDRST | SCU_RST_SR_RSEXT | 0x5000;
+			// value = SCU_RST_SR_PWDRST | SCU_RST_SR_RSSTM | SCU_RST_SR_RSEXT;
 		break;
 		
 		case SCU_WDT_SR:
@@ -305,7 +306,7 @@ static const MemoryRegionOps io_ops = {
 	.write			= scu_io_write,
 	.endianness		= DEVICE_NATIVE_ENDIAN,
 	.valid			= {
-		.min_access_size	= 4,
+		.min_access_size	= 1,
 		.max_access_size	= 4
 	}
 };

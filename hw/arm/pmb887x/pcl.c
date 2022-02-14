@@ -38,6 +38,9 @@ struct pmb887x_pcl_t {
 	struct pmb887x_clc_reg_t clc;
 	uint32_t pins[GPIOS_COUNT];
 	uint32_t mon_cr[4];
+	
+	bool pins_input_state[GPIOS_COUNT];
+	qemu_irq pins_out[GPIOS_COUNT];
 };
 
 static void pcl_update_state(struct pmb887x_pcl_t *p) {
@@ -59,7 +62,15 @@ static uint64_t pcl_io_read(void *opaque, hwaddr haddr, unsigned size) {
 		break;
 		
 		case GPIO_PIN0 ... GPIO_PIN113:
-			value = p->pins[(haddr - GPIO_PIN0) / 4];
+		{
+			uint32_t id = (haddr - GPIO_PIN0) / 4;
+			value = p->pins[id];
+			
+			if ((value & GPIO_DIR) == GPIO_DIR_IN) {
+				value &= ~GPIO_DATA;
+				value |= (p->pins_input_state[id] ? GPIO_DATA_HIGH : GPIO_DATA_LOW);
+			}
+		}
 		break;
 		
 		case GPIO_MON_CR1 ... GPIO_MON_CR4:
@@ -89,7 +100,13 @@ static void pcl_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned si
 		break;
 		
 		case GPIO_PIN0 ... GPIO_PIN113:
-			p->pins[(haddr - GPIO_PIN0) / 4] = value;
+		{
+			uint32_t id = (haddr - GPIO_PIN0) / 4;
+			p->pins[id] = value;
+			
+			if ((value & GPIO_DIR) == GPIO_DIR_OUT)
+				qemu_set_irq(p->pins_out[id], (value & GPIO_DATA) == GPIO_DATA_HIGH);
+		}
 		break;
 		
 		case GPIO_MON_CR1 ... GPIO_MON_CR4:
@@ -110,10 +127,15 @@ static const MemoryRegionOps io_ops = {
 	.write			= pcl_io_write,
 	.endianness		= DEVICE_NATIVE_ENDIAN,
 	.valid			= {
-		.min_access_size	= 4,
+		.min_access_size	= 1,
 		.max_access_size	= 4
 	}
 };
+
+static void pcl_input_handler(void *opaque, int irq, int level) {
+	struct pmb887x_pcl_t *p = (struct pmb887x_pcl_t *) opaque;
+	p->pins_input_state[irq] = level;
+}
 
 static void pcl_init(Object *obj) {
 	struct pmb887x_pcl_t *p = PMB887X_PCL(obj);
@@ -127,6 +149,9 @@ static void pcl_realize(DeviceState *dev, Error **errp) {
 	struct pmb887x_pcl_t *p = PMB887X_PCL(dev);
 	
 	pmb887x_clc_init(&p->clc);
+	
+	qdev_init_gpio_in(dev, pcl_input_handler, GPIOS_COUNT);
+	qdev_init_gpio_out(dev, p->pins_out, GPIOS_COUNT);
 	
 	pcl_update_state(p);
 }

@@ -16,7 +16,7 @@
 #include "hw/arm/pmb887x/io_bridge.h"
 #include "hw/arm/pmb887x/regs_dump.h"
 
-// #define NVIC_DEBUG
+#define NVIC_DEBUG
 
 #ifdef NVIC_DEBUG
 #define DPRINTF(fmt, ...) do { fprintf(stderr, "[pmb887x-nvic]: " fmt , ## __VA_ARGS__); } while (0)
@@ -32,6 +32,7 @@ struct pmb887x_nvic_irq_t {
 	bool fiq;
 	uint8_t priority;
 	uint8_t level;
+	bool bridge;
 };
 
 struct pmb887x_nvic_t {
@@ -92,6 +93,12 @@ static void nvic_update_state(struct pmb887x_nvic_t *p) {
 
 static void nvic_irq_handler(void *opaque, int irq, int level) {
 	struct pmb887x_nvic_t *p = (struct pmb887x_nvic_t *) opaque;
+	
+	if (level == 100000) {
+		p->irq_state[irq].bridge = true;
+		level = 1;
+	}
+	
 	p->irq_state[irq].level = level;
 	nvic_update_state(p);
 }
@@ -149,6 +156,13 @@ static void nvic_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned s
 		break;
 		
 		case NVIC_IRQ_ACK:
+			#ifdef PMB887X_IO_BRIDGE
+			if (p->current_irq != -1 && p->irq_state[p->current_irq].bridge) {
+				p->irq_state[p->current_irq].level = 0;
+				pmb8876_io_bridge_write(haddr + p->mmio.addr, size, value);
+			}
+			#endif
+			
 			if (value)
 				p->lock_irq = false;
 		break;
@@ -163,6 +177,10 @@ static void nvic_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned s
 			int irq_n = (haddr - NVIC_CON0) / 4;
 			p->irq_state[irq_n].fiq = (value & NVIC_CON_FIQ) != 0;
 			p->irq_state[irq_n].priority = (value & NVIC_CON_PRIORITY) >> NVIC_CON_PRIORITY_SHIFT;
+			
+			#ifdef PMB887X_IO_BRIDGE
+			pmb8876_io_bridge_write(haddr + p->mmio.addr, size, value);
+			#endif
 		}
 		break;
 	}
@@ -175,7 +193,7 @@ static const MemoryRegionOps io_ops = {
 	.write			= nvic_io_write,
 	.endianness		= DEVICE_NATIVE_ENDIAN,
 	.valid			= {
-		.min_access_size	= 4,
+		.min_access_size	= 1,
 		.max_access_size	= 4
 	}
 };
