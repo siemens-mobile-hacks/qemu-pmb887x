@@ -1,5 +1,5 @@
 /*
- * System Timer (56 bit)
+ * I2C
  * */
 #include "qemu/osdep.h"
 #include "hw/sysbus.h"

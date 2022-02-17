@@ -209,6 +209,12 @@ static const struct pmb887x_dev pmb8876_devices[] = {
 		.dev	= "pmb887x-dsp",
 		.base	= PMB8876_DSP_BASE,
 		.irqs	= { 0 }
+	},
+	{
+		.name	= "DIF",
+		.dev	= "pmb887x-dif",
+		.base	= PMB8876_DIF_BASE,
+		.irqs	= { 0 }
 	}
 };
 
@@ -399,6 +405,12 @@ static const struct pmb887x_dev pmb8875_devices[] = {
 		.dev	= "pmb887x-dsp",
 		.base	= PMB8875_DSP_BASE,
 		.irqs	= { 0 }
+	},
+	{
+		.name	= "DIF",
+		.dev	= "pmb887x-dif",
+		.base	= PMB8875_DIF_BASE,
+		.irqs	= { 0 }
 	}
 };
 
@@ -407,12 +419,12 @@ DeviceState *pmb887x_new_dev(uint32_t cpu_type, const char *name, DeviceState *n
 	uint32_t devices_count = 0;
 	
 	switch (cpu_type) {
-		case PMB8875:
+		case CPU_PMB8875:
 			devices = pmb8875_devices;
 			devices_count = ARRAY_SIZE(pmb8875_devices);
 		break;
 		
-		case PMB8876:
+		case CPU_PMB8876:
 			devices = pmb8876_devices;
 			devices_count = ARRAY_SIZE(pmb8876_devices);
 		break;

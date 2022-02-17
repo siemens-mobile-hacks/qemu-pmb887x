@@ -3,9 +3,11 @@
 #include "cpu.h"
 #include "sysemu/cpu-timers.h"
 
-static pmb887x_module_t *find_cpu_module(pmb887x_cpu_meta_t *cpu_meta, uint32_t addr) {
-	for (int i = 0; i < cpu_meta->modules_count; i++) {
-		pmb887x_module_t *module = &cpu_meta->modules[i];
+static pmb887x_board_meta_t *current_board = NULL;
+
+static pmb887x_module_t *find_cpu_module(pmb887x_cpu_meta_t *cpu, uint32_t addr) {
+	for (int i = 0; i < cpu->modules_count; i++) {
+		pmb887x_module_t *module = &cpu->modules[i];
 		if (addr >= module->base && addr <= (module->base + module->size))
 			return module;
 	}
@@ -30,38 +32,45 @@ static const char *find_cpu_module_field_enum(pmb887x_module_field_t *field, uin
 	return NULL;
 }
 
-static const char *find_cpu_irq_num_name(pmb887x_cpu_meta_t *cpu_meta, uint32_t field_value) {
-	for (int i = 0; i < cpu_meta->irqs_count; i++) {
-		pmb887x_cpu_meta_irq_t *v = &cpu_meta->irqs[i];
+static const char *find_cpu_irq_num_name(pmb887x_cpu_meta_t *cpu, uint32_t field_value) {
+	for (int i = 0; i < cpu->irqs_count; i++) {
+		pmb887x_cpu_meta_irq_t *v = &cpu->irqs[i];
 		if (field_value == v->id)
 			return v->name;
 	}
 	return NULL;
 }
 
-static const char *find_cpu_irq_name(pmb887x_cpu_meta_t *cpu_meta, uint32_t field_value) {
-	for (int i = 0; i < cpu_meta->irqs_count; i++) {
-		pmb887x_cpu_meta_irq_t *v = &cpu_meta->irqs[i];
+static const char *find_cpu_irq_name(pmb887x_cpu_meta_t *cpu, uint32_t field_value) {
+	for (int i = 0; i < cpu->irqs_count; i++) {
+		pmb887x_cpu_meta_irq_t *v = &cpu->irqs[i];
 		if (field_value == v->addr)
 			return v->name;
 	}
 	return NULL;
 }
 
-static const char *find_cpu_gpio_name(pmb887x_cpu_meta_t *cpu_meta, uint32_t field_value) {
-	for (int i = 0; i < cpu_meta->gpios_count; i++) {
-		pmb887x_cpu_meta_gpio_t *v = &cpu_meta->gpios[i];
+static const char *find_cpu_gpio_name(pmb887x_board_meta_t *board, uint32_t field_value) {
+	for (int i = 0; i < board->gpios_count; i++) {
+		pmb887x_cpu_meta_gpio_t *v = &board->gpios[i];
 		if (field_value == v->addr)
 			return v->name;
 	}
 	return NULL;
+}
+
+void pmb887x_dump_set_board(int id) {
+	current_board = pmb887x_get_board_meta(id);
 }
 
 void pmb887x_dump_io(uint32_t addr, uint32_t size, uint32_t value, bool is_w) {
+	if (!current_board)
+		return;
+	
 	cpu_disable_ticks();
 	
-	pmb887x_cpu_meta_t *cpu_meta = pmb887x_get_metadata(PMB8876);
-	pmb887x_module_t *module = find_cpu_module(cpu_meta, addr);
+	pmb887x_cpu_meta_t *cpu = current_board->cpu;
+	pmb887x_module_t *module = find_cpu_module(cpu, addr);
 	
 	if (is_w) {
 		fprintf(stderr, "WRITE[%d] %08X: %08X", size, addr, value);
@@ -73,14 +82,14 @@ void pmb887x_dump_io(uint32_t addr, uint32_t size, uint32_t value, bool is_w) {
 		pmb887x_module_reg_t *reg = find_cpu_module_reg(module, addr);
 		if (reg) {
 			if (reg->special == PMB887X_REG_IS_GPIO_PIN) {
-				const char *gpio_name = find_cpu_gpio_name(cpu_meta, addr - module->base);
+				const char *gpio_name = find_cpu_gpio_name(current_board, addr - module->base);
 				if (gpio_name) {
 					fprintf(stderr, " (%s)", gpio_name);
 				} else {
 					fprintf(stderr, " (%s_%s)", module->name, reg->name);
 				}
 			} else if (reg->special == PMB887X_REG_IS_IRQ_CON) {
-				const char *irq_name = find_cpu_irq_name(cpu_meta, addr - module->base);
+				const char *irq_name = find_cpu_irq_name(cpu, addr - module->base);
 				if (irq_name) {
 					fprintf(stderr, " (%s_%s_%s)",  module->name, reg->name, irq_name);
 				} else {
@@ -91,7 +100,7 @@ void pmb887x_dump_io(uint32_t addr, uint32_t size, uint32_t value, bool is_w) {
 			}
 			
 			if (reg->special == PMB887X_REG_IS_IRQ_NUM) {
-				const char *irq_name = find_cpu_irq_num_name(cpu_meta, value);
+				const char *irq_name = find_cpu_irq_num_name(cpu, value);
 				if (irq_name) {
 					fprintf(stderr, ": NUM(0x%02X)=%s", value, irq_name);
 				} else {

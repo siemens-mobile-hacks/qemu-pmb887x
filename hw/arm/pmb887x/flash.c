@@ -161,9 +161,10 @@ struct pmb887x_flash_t {
 	char *name;
 	
 	uint16_t vendor_id;
+	uint32_t bank_id;
+	
 	uint32_t banks_n;
-	uint32_t bank_sizes_n;
-	uint32_t *bank_sizes;
+	uint32_t *banks;
 	
 	uint16_t otp0_lock;
 	char *otp0_data;
@@ -609,21 +610,15 @@ static const MemoryRegionOps io_ops = {
 	.endianness		= DEVICE_NATIVE_ENDIAN
 };
 
-static uint16_t flash_dev_id_by_size(uint32_t vendor_id, uint32_t size) {
-	if (vendor_id == FLASH_VENDOR_INTEL) {
-		// Intel
-		switch (size) {
-			case 0x800000:	return 0x880B; // 8M
-			case 0x1000000:	return 0x880C; // 16M
-			case 0x2000000:	return 0x880D; // 32M
-		}
-	} else if (vendor_id == FLASH_VENDOR_ST) {
-		// ST
-		switch (size) {
-			case 0x2000000:	return 0x8818; // 32M
-			case 0x4000000:	return 0x8819; // 64M
-			case 0x8000000:	return 0x880F; // 128M
-		}
+static uint32_t flash_size_by_id(uint32_t id) {
+	switch (id) {
+		case 0x0089880B:	return 0x800000; // 8M
+		case 0x0089880C:	return 0x1000000; // 16M
+		case 0x0089880D:	return 0x2000000; // 32M
+		
+		case 0x00208818:	return 0x2000000; // 32M
+		case 0x00208819:	return 0x4000000; // 64M
+		case 0x0020880F:	return 0x8000000; // 128M
 	}
 	return 0;
 }
@@ -689,18 +684,12 @@ static void flash_init_part(pmb887x_flash_bank_t *bank, uint32_t offset, uint32_
 	p->erase_regions = erase_regions;
 }
 
-static void flash_init_bank(pmb887x_flash_t *flash, uint32_t offset, uint32_t size) {
-	flash_trace(flash, "bank %d: 0x%08X ... 0x%08X", flash->banks_n, offset, offset + size - 1);
+static void flash_init_bank(pmb887x_flash_t *flash, uint32_t dev_id, uint32_t offset, uint32_t size) {
+	flash_trace(flash, "bank %d: 0x%08X ... 0x%08X", flash->bank_id, offset, offset + size - 1);
 	
 	pmb887x_flash_bank_t *bank = g_new0(pmb887x_flash_bank_t, 1);
 	
-	uint16_t dev_id = flash_dev_id_by_size(flash->vendor_id, size);
-	if (!dev_id) {
-		flash_trace(bank->flash, "unknown flash size: %08lX", size);
-		abort();
-	}
-	
-	bank->n = flash->banks_n++;
+	bank->n = flash->bank_id++;
 	bank->flash = flash;
 	bank->device_id = dev_id;
 	bank->offset = offset;
@@ -875,7 +864,7 @@ static void flash_init_bank(pmb887x_flash_t *flash, uint32_t offset, uint32_t si
 static void flash_realize(DeviceState *dev, Error **errp) {
 	pmb887x_flash_t *flash = PMB887X_FLASH(dev);
 	flash->dev = dev;
-	flash->banks_n = 0;
+	flash->bank_id = 0;
 	
 	if (!flash->blk) {
 		flash_error(flash, "'drive' is not set");
@@ -894,12 +883,26 @@ static void flash_realize(DeviceState *dev, Error **errp) {
 	}
 	
 	uint32_t bank_offset = 0;
-	for (int i = 0; i < flash->bank_sizes_n; i++) {
-		if (!flash->bank_sizes[i])
-			break;
+	for (int i = 0; i < flash->banks_n; i++) {
+		uint32_t flash_size = flash_size_by_id(flash->banks[i]);
+		uint32_t vendor_id = ((flash->banks[i] >> 16) & 0xFFFF);
 		
-		flash_init_bank(flash, bank_offset, flash->bank_sizes[i]);
-		bank_offset += flash->bank_sizes[i];
+		if (!flash->vendor_id)
+			flash->vendor_id = vendor_id;
+		
+		if (!flash_size) {
+			flash_error(flash, "unknown flash id: %08X", flash->banks[i]);
+			abort();
+		}
+		
+		
+		if (vendor_id != flash->vendor_id) {
+			flash_error(flash, "banks with different vendor id not supported [%04X != %04X]", vendor_id, flash->vendor_id);
+			abort();
+		}
+		
+		flash_init_bank(flash, flash->banks[i] & 0xFFFF, bank_offset, flash_size);
+		bank_offset += flash_size;
 	}
 }
 
@@ -940,9 +943,7 @@ static Property flash_properties[] = {
 	DEFINE_PROP_DRIVE("drive", pmb887x_flash_t, blk),
 	
 	DEFINE_PROP_STRING("name", pmb887x_flash_t, name),
-	DEFINE_PROP_ARRAY("bank-size", pmb887x_flash_t, bank_sizes_n, bank_sizes, qdev_prop_uint32, uint32_t),
-	
-	DEFINE_PROP_UINT16("vendor-id", pmb887x_flash_t, vendor_id, FLASH_VENDOR_INTEL),
+	DEFINE_PROP_ARRAY("banks", pmb887x_flash_t, banks_n, banks, qdev_prop_uint32, uint32_t),
 	
 	/* OTP0 Initial Data */
 	DEFINE_PROP_STRING("otp0-data", pmb887x_flash_t, otp0_data),

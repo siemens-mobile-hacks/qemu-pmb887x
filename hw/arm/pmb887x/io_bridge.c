@@ -71,8 +71,6 @@ static void *_irq_loop_thread(void *arg) {
 		uint8_t irq;
 		_async_read(sock_client_irq, &irq, 1, 0);
 		
-		fprintf(stderr, "irq (bridge): %d\n", irq);
-		
 		bool locked = qemu_mutex_iothread_locked();
 		if (!locked)
 			qemu_mutex_lock_iothread();

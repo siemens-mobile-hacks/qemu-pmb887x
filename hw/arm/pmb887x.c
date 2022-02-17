@@ -22,11 +22,14 @@
 #include "hw/arm/pmb887x/io_bridge.h"
 #include "hw/arm/pmb887x/regs_dump.h"
 #include "hw/arm/pmb887x/devices.h"
+#include "hw/arm/pmb887x/boards.h"
+#include "hw/arm/pmb887x/qemu-machines.h"
 
 static MemoryRegion tcm_memory[2];
 static uint32_t tcm_regs[2] = {0x10, 0x10};
 
-static ARMCPU *cpu;
+static pmb887x_board_t *board = NULL;
+static ARMCPU *cpu = NULL;
 
 /*
 	TCM
@@ -161,18 +164,17 @@ static void memory_dump_at_exit(void) {
 	qmp_pmemsave(0x00080000, 96 * 1024, "/tmp/sram.bin", NULL);
 }
 
-static DeviceState *create_flash(BlockBackend *blk, uint16_t vendor_id, uint32_t *banks, int banks_n) {
+static DeviceState *create_flash(BlockBackend *blk, uint32_t *banks, int banks_n) {
 	DeviceState *flash = qdev_new("pmb887x-flash");
 	qdev_prop_set_string(flash, "name", "fullflash");
 	qdev_prop_set_drive(flash, "drive", blk);
 	qdev_prop_set_string(flash, "otp0-data", getenv("OTP_ESN") ?: ""); // ESN
 	qdev_prop_set_string(flash, "otp1-data", getenv("OTP_IMEI") ?: ""); // IMEI
-	qdev_prop_set_uint16(flash, "vendor-id", vendor_id);
-	qdev_prop_set_uint32(flash, "len-bank-size", banks_n);
+	qdev_prop_set_uint32(flash, "len-banks", banks_n);
 	
 	char bank_name[32];
 	for (int i = 0; i < banks_n; i++) {
-		sprintf(bank_name, "bank-size[%d]", i);
+		sprintf(bank_name, "banks[%d]", i);
 		qdev_prop_set_uint32(flash, bank_name, banks[i]);
 	}
 	
@@ -181,11 +183,15 @@ static DeviceState *create_flash(BlockBackend *blk, uint16_t vendor_id, uint32_t
 	return flash;
 }
 
-static void pmb887x_init(MachineState *machine, uint32_t cpu_type) {
+void pmb887x_init(MachineState *machine, uint32_t board_id) {
+	board = pmb887x_get_board(board_id);
+	
 	#ifdef PMB887X_IO_BRIDGE
-	fprintf(stderr, "Wait for IO bridge...\n");
+	fprintf(stderr, "Waiting for IO bridge...\n");
 	pmb8876_io_bridge_init();
 	#endif
+	
+	pmb887x_dump_set_board(board_id);
 	
 	MemoryRegion *sysmem = get_system_memory();
 	
@@ -286,79 +292,83 @@ static void pmb887x_init(MachineState *machine, uint32_t cpu_type) {
 	memory_region_init_ram(sdram, NULL, "SDRAM", machine->ram_size, &error_fatal);
 	
 	// NVIC
-	DeviceState *nvic = pmb887x_new_dev(cpu_type, "NVIC", NULL);
+	DeviceState *nvic = pmb887x_new_dev(board->cpu, "NVIC", NULL);
 	sysbus_connect_irq(SYS_BUS_DEVICE(nvic), 0, qdev_get_gpio_in(DEVICE(cpu), ARM_CPU_IRQ));
 	sysbus_connect_irq(SYS_BUS_DEVICE(nvic), 1, qdev_get_gpio_in(DEVICE(cpu), ARM_CPU_FIQ));
 	sysbus_realize_and_unref(SYS_BUS_DEVICE(nvic), &error_fatal);
 	
 	// PLL
-	DeviceState *pll = pmb887x_new_dev(cpu_type, "PLL", nvic);
+	DeviceState *pll = pmb887x_new_dev(board->cpu, "PLL", nvic);
 	qdev_prop_set_uint32(pll, "hw-ns-throttle", 10);
 	sysbus_realize_and_unref(SYS_BUS_DEVICE(pll), &error_fatal);
 	
 	// System Timer
-	DeviceState *stm = pmb887x_new_dev(cpu_type, "STM", nvic);
+	DeviceState *stm = pmb887x_new_dev(board->cpu, "STM", nvic);
 	object_property_set_link(OBJECT(stm), "pll", OBJECT(pll), &error_fatal);
 	sysbus_realize_and_unref(SYS_BUS_DEVICE(stm), &error_fatal);
 	
 	// Time Processing Unit
-	DeviceState *tpu = pmb887x_new_dev(cpu_type, "TPU", nvic);
+	DeviceState *tpu = pmb887x_new_dev(board->cpu, "TPU", nvic);
 	object_property_set_link(OBJECT(tpu), "pll", OBJECT(pll), &error_fatal);
 	sysbus_realize_and_unref(SYS_BUS_DEVICE(tpu), &error_fatal);
 	
 	// DSP
-	DeviceState *dsp = pmb887x_new_dev(cpu_type, "DSP", nvic);
+	DeviceState *dsp = pmb887x_new_dev(board->cpu, "DSP", nvic);
 	sysbus_realize_and_unref(SYS_BUS_DEVICE(dsp), &error_fatal);
+	
+	// DIF
+	DeviceState *dif = pmb887x_new_dev(board->cpu, "DIF", nvic);
+	sysbus_realize_and_unref(SYS_BUS_DEVICE(dif), &error_fatal);
 	
 	#ifndef PMB887X_IO_BRIDGE
 	// System Control Unit
-	DeviceState *scu = pmb887x_new_dev(cpu_type, "SCU", nvic);
+	DeviceState *scu = pmb887x_new_dev(board->cpu, "SCU", nvic);
 	object_property_set_link(OBJECT(scu), "brom_mirror", OBJECT(brom_mirror), &error_fatal);
 	sysbus_realize_and_unref(SYS_BUS_DEVICE(scu), &error_fatal);
 	
 	// CAPCOM0
-	DeviceState *capcom0 = pmb887x_new_dev(cpu_type, "CAPCOM0", nvic);
+	DeviceState *capcom0 = pmb887x_new_dev(board->cpu, "CAPCOM0", nvic);
 	sysbus_realize_and_unref(SYS_BUS_DEVICE(capcom0), &error_fatal);
 	
 	// CAPCOM1
-	DeviceState *capcom1 = pmb887x_new_dev(cpu_type, "CAPCOM1", nvic);
+	DeviceState *capcom1 = pmb887x_new_dev(board->cpu, "CAPCOM1", nvic);
 	sysbus_realize_and_unref(SYS_BUS_DEVICE(capcom1), &error_fatal);
 	
 	// Port Control Logic
-	DeviceState *pcl = pmb887x_new_dev(cpu_type, "PCL", nvic);
+	DeviceState *pcl = pmb887x_new_dev(board->cpu, "PCL", nvic);
 	sysbus_realize_and_unref(SYS_BUS_DEVICE(pcl), &error_fatal);
 	
 	// HW_DET4=1
 	qemu_set_irq(qdev_get_gpio_in(pcl, 69), 1);
 	
 	// RTC
-	DeviceState *rtc = pmb887x_new_dev(cpu_type, "RTC", nvic);
+	DeviceState *rtc = pmb887x_new_dev(board->cpu, "RTC", nvic);
 	sysbus_realize_and_unref(SYS_BUS_DEVICE(rtc), &error_fatal);
 	
-	if (cpu_type == PMB8876) {
+	if (board->cpu == CPU_PMB8876) {
 		// I2C
-		DeviceState *i2c = pmb887x_new_dev(cpu_type, "I2C", nvic);
+		DeviceState *i2c = pmb887x_new_dev(board->cpu, "I2C", nvic);
 		sysbus_realize_and_unref(SYS_BUS_DEVICE(i2c), &error_fatal);
 	}
 	
 	// USART0
-	DeviceState *usart0 = pmb887x_new_dev(cpu_type, "USART0", nvic);
+	DeviceState *usart0 = pmb887x_new_dev(board->cpu, "USART0", nvic);
 	sysbus_realize_and_unref(SYS_BUS_DEVICE(usart0), &error_fatal);
 	
 	// USART1
-	DeviceState *usart1 = pmb887x_new_dev(cpu_type, "USART1", nvic);
+	DeviceState *usart1 = pmb887x_new_dev(board->cpu, "USART1", nvic);
 	sysbus_realize_and_unref(SYS_BUS_DEVICE(usart1), &error_fatal);
 	
 	// GPTU0
-	DeviceState *gptu0 = pmb887x_new_dev(cpu_type, "GPTU0", nvic);
+	DeviceState *gptu0 = pmb887x_new_dev(board->cpu, "GPTU0", nvic);
 	sysbus_realize_and_unref(SYS_BUS_DEVICE(gptu0), &error_fatal);
 	
 	// GPTU1
-	DeviceState *gptu1 = pmb887x_new_dev(cpu_type, "GPTU1", nvic);
+	DeviceState *gptu1 = pmb887x_new_dev(board->cpu, "GPTU1", nvic);
 	sysbus_realize_and_unref(SYS_BUS_DEVICE(gptu1), &error_fatal);
 	
 	// DMA Controller
-	DeviceState *dmac = pmb887x_new_dev(cpu_type, "DMA", nvic);
+	DeviceState *dmac = pmb887x_new_dev(board->cpu, "DMA", nvic);
 	object_property_set_link(OBJECT(dmac), "downstream", OBJECT(sysmem), &error_fatal);
 	sysbus_realize_and_unref(SYS_BUS_DEVICE(dmac), &error_fatal);
 	#else
@@ -366,72 +376,26 @@ static void pmb887x_init(MachineState *machine, uint32_t cpu_type) {
 	#endif
 	
 	// External Bus Unit
-	DeviceState *ebuc = pmb887x_new_dev(cpu_type, "EBU", NULL);
+	DeviceState *ebuc = pmb887x_new_dev(board->cpu, "EBU", NULL);
 	
 	// RAM always CS1
 	object_property_set_link(OBJECT(ebuc), "cs1", OBJECT(sdram), &error_fatal);
 	
-	// Flash depends on size
-	switch (flash_sz) {
-		case 0x1000000: // 16M
-		case 0x2000000: // 32M
-		{
-			uint32_t banks[] = {flash_sz};
-			DeviceState *flash = create_flash(blk_by_legacy_dinfo(flash_dinfo), 0x0089, banks, ARRAY_SIZE(banks));
-			
-			MemoryRegion *bank0 = sysbus_mmio_get_region(SYS_BUS_DEVICE(flash), 0);
-			
-			object_property_set_link(OBJECT(ebuc), "cs0", OBJECT(bank0), &error_fatal);
-			object_property_set_link(OBJECT(ebuc), "cs4", OBJECT(bank0), &error_fatal);
-		}
-		break;
-		
-		case 0x4000000: // 64M
-		{
-			uint32_t banks[] = {0x4000000};
-			DeviceState *flash = create_flash(blk_by_legacy_dinfo(flash_dinfo), 0x0020, banks, ARRAY_SIZE(banks));
-			
-			MemoryRegion *bank0 = sysbus_mmio_get_region(SYS_BUS_DEVICE(flash), 0);
-			
-			object_property_set_link(OBJECT(ebuc), "cs0", OBJECT(bank0), &error_fatal);
-			object_property_set_link(OBJECT(ebuc), "cs4", OBJECT(bank0), &error_fatal);
-		}
-		break;
-		
-		case 0x6000000: // 96M
-		{
-			uint32_t banks[] = {0x2000000, 0x2000000, 0x2000000};
-			DeviceState *flash = create_flash(blk_by_legacy_dinfo(flash_dinfo), 0x0089, banks, ARRAY_SIZE(banks));
-			
-			MemoryRegion *bank0 = sysbus_mmio_get_region(SYS_BUS_DEVICE(flash), 0);
-			MemoryRegion *bank1 = sysbus_mmio_get_region(SYS_BUS_DEVICE(flash), 1);
-			MemoryRegion *bank2 = sysbus_mmio_get_region(SYS_BUS_DEVICE(flash), 2);
-			
-			object_property_set_link(OBJECT(ebuc), "cs0", OBJECT(bank0), &error_fatal);
-			object_property_set_link(OBJECT(ebuc), "cs2", OBJECT(bank1), &error_fatal);
-			object_property_set_link(OBJECT(ebuc), "cs3", OBJECT(bank2), &error_fatal);
-			object_property_set_link(OBJECT(ebuc), "cs4", OBJECT(bank0), &error_fatal);
-			object_property_set_link(OBJECT(ebuc), "cs6", OBJECT(bank1), &error_fatal);
-			object_property_set_link(OBJECT(ebuc), "cs7", OBJECT(bank2), &error_fatal);
-		}
-		break;
-		
-		default:
-			error_report("Invalid flash ROM size (%ld bytes). Valid only: 16M, 32M, 64M, 96M", flash_sz);
-			exit(1);
-		break;
+	// Flash
+	const char *cs_names[] = {"cs0", "cs4", "cs2", "cs6", "cs3", "cs7"};
+	if (!board->flash_banks_cnt || board->flash_banks_cnt > (ARRAY_SIZE(cs_names) / 2)) {
+		error_report("Invalid flash bank count: %d\n", board->flash_banks_cnt);
+		abort();
+	}
+	
+	DeviceState *flash = create_flash(blk_by_legacy_dinfo(flash_dinfo), board->flash_banks, board->flash_banks_cnt);
+	for (int i = 0; i < board->flash_banks_cnt; i++) {
+		MemoryRegion *bank = sysbus_mmio_get_region(SYS_BUS_DEVICE(flash), i);
+		object_property_set_link(OBJECT(ebuc), cs_names[i * 2], OBJECT(bank), &error_fatal);
+		object_property_set_link(OBJECT(ebuc), cs_names[i * 2 + 1], OBJECT(bank), &error_fatal);
 	}
 	
 	sysbus_realize_and_unref(SYS_BUS_DEVICE(ebuc), &error_fatal);
-	
-	// 0x00000000-0xFFFFFFFF (Unmapped IO access)
-  //  MemoryRegion *img = g_new(MemoryRegion, 1);
- //   memory_region_init_io(img, NULL, &cpu_io_opts, (void *) 0xA825B020, "IMG", 240*320*3);
-//	memory_region_add_subregion_overlap(sysmem, 0xA825B020, img, 999999);
-//	 memory_region_init_io(img, NULL, &cpu_io_opts, (void *) 0xa8f59384, "IMG", 4);
-//	memory_region_add_subregion_overlap(sysmem, 0xa8f59384, img, 999999);
-	
-	// cpu_throttle_set(1);
 	
 	#ifdef PMB887X_IO_BRIDGE
 	// Exec BootROM
@@ -441,50 +405,3 @@ static void pmb887x_init(MachineState *machine, uint32_t cpu_type) {
 	cpu_set_pc(CPU(cpu), 0x00000000);
 	#endif
 }
-
-static void pmb8876_init(MachineState *machine) {
-	return pmb887x_init(machine, PMB8876);
-}
-
-static void pmb8875_init(MachineState *machine) {
-	return pmb887x_init(machine, PMB8875);
-}
-
-static void pmb8876_class_init(ObjectClass *oc, void *data) {
-	MachineClass *mc = MACHINE_CLASS(oc);
-	mc->desc = "Infineon PMB8876 (ARM926EJ-S)";
-	mc->init = pmb8876_init;
-	mc->block_default_type = IF_PFLASH;
-	mc->ignore_memory_transaction_failures = true;
-	mc->default_cpu_type = ARM_CPU_TYPE_NAME("arm926");
-	mc->default_ram_size = 16 * 1024 * 1024;
-}
-
-static void pmb8875_class_init(ObjectClass *oc, void *data) {
-	MachineClass *mc = MACHINE_CLASS(oc);
-	mc->desc = "Infineon PMB8875 (ARM926EJ-S)";
-	mc->init = pmb8875_init;
-	mc->block_default_type = IF_PFLASH;
-	mc->ignore_memory_transaction_failures = true;
-	mc->default_cpu_type = ARM_CPU_TYPE_NAME("arm926");
-	mc->default_ram_size = 16 * 1024 * 1024;
-}
-
-static const TypeInfo pmb8876_type = {
-	.name = MACHINE_TYPE_NAME("pmb8876"),
-	.parent = TYPE_MACHINE,
-	.class_init = pmb8876_class_init,
-};
-
-static const TypeInfo pmb8875_type = {
-	.name = MACHINE_TYPE_NAME("pmb8875"),
-	.parent = TYPE_MACHINE,
-	.class_init = pmb8875_class_init,
-};
-
-static void versatile_machine_init(void) {
-	type_register_static(&pmb8876_type);
-	type_register_static(&pmb8875_type);
-}
-
-type_init(versatile_machine_init)
