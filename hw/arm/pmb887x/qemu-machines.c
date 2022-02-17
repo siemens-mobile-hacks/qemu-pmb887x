@@ -2,6 +2,33 @@
 #include "hw/arm/pmb887x/qemu-machines.h"
 #include "hw/arm/pmb887x/regs.h"
 
+static void pmb887x_siemens_c81_init(MachineState *machine) {
+	return pmb887x_init(machine, BOARD_C81);
+}
+
+static void pmb887x_siemens_c81_class_init(ObjectClass *oc, void *data) {
+	MachineClass *mc = MACHINE_CLASS(oc);
+	mc->desc = "Siemens C81 (PMB8876)";
+	mc->init = pmb887x_siemens_c81_init;
+	mc->block_default_type = IF_PFLASH;
+	mc->ignore_memory_transaction_failures = true;
+	mc->default_cpu_type = ARM_CPU_TYPE_NAME("arm926");
+	mc->default_ram_size = 16 * 1024 * 1024;
+}
+
+static const TypeInfo pmb887x_siemens_c81_type = {
+	.name = MACHINE_TYPE_NAME("siemens-c81"),
+	.parent = TYPE_MACHINE,
+	.class_init = pmb887x_siemens_c81_class_init
+};
+
+static void pmb887x_siemens_c81_machine_init(void) {
+	type_register_static(&pmb887x_siemens_c81_type);
+}
+
+type_init(pmb887x_siemens_c81_machine_init);
+
+
 static void pmb887x_siemens_cx75_init(MachineState *machine) {
 	return pmb887x_init(machine, BOARD_CX75);
 }

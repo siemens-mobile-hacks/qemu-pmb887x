@@ -1,5 +1,57 @@
 #include "hw/arm/pmb887x/boards.h"
 
+static uint32_t board_c81_keymap[] = {
+	[Q_KEY_CODE_KP_1]			= C81_KP_NUM1,
+	[Q_KEY_CODE_1]				= C81_KP_NUM1,
+	[Q_KEY_CODE_KP_4]			= C81_KP_NUM4,
+	[Q_KEY_CODE_4]				= C81_KP_NUM4,
+	[Q_KEY_CODE_KP_7]			= C81_KP_NUM7,
+	[Q_KEY_CODE_7]				= C81_KP_NUM7,
+	[Q_KEY_CODE_KP_DIVIDE]		= C81_KP_STAR,
+	[Q_KEY_CODE_KP_2]			= C81_KP_NUM2,
+	[Q_KEY_CODE_2]				= C81_KP_NUM2,
+	[Q_KEY_CODE_KP_5]			= C81_KP_NUM5,
+	[Q_KEY_CODE_5]				= C81_KP_NUM5,
+	[Q_KEY_CODE_KP_8]			= C81_KP_NUM8,
+	[Q_KEY_CODE_8]				= C81_KP_NUM8,
+	[Q_KEY_CODE_KP_0]			= C81_KP_NUM0,
+	[Q_KEY_CODE_0]				= C81_KP_NUM0,
+	[Q_KEY_CODE_KP_3]			= C81_KP_NUM3,
+	[Q_KEY_CODE_3]				= C81_KP_NUM3,
+	[Q_KEY_CODE_KP_6]			= C81_KP_NUM6,
+	[Q_KEY_CODE_6]				= C81_KP_NUM6,
+	[Q_KEY_CODE_KP_9]			= C81_KP_NUM9,
+	[Q_KEY_CODE_9]				= C81_KP_NUM9,
+	[Q_KEY_CODE_KP_MULTIPLY]	= C81_KP_HASH,
+	[Q_KEY_CODE_UP]				= C81_KP_NAV_UP,
+	[Q_KEY_CODE_DOWN]			= C81_KP_NAV_RIGHT,
+	[Q_KEY_CODE_RET]			= C81_KP_NAV_CENTER,
+	[Q_KEY_CODE_LEFT]			= C81_KP_NAV_LEFT,
+	[Q_KEY_CODE_DOWN]			= C81_KP_NAV_DOWN,
+	[Q_KEY_CODE_F3]				= C81_KP_SEND,
+	[Q_KEY_CODE_F5]				= C81_KP_BROWSER,
+	[Q_KEY_CODE_F6]				= C81_KP_MUSIC,
+	[Q_KEY_CODE_F1]				= C81_KP_SOFT_LEFT,
+	[Q_KEY_CODE_F2]				= C81_KP_SOFT_RIGHT,
+	[Q_KEY_CODE_F4]				= C81_KP_END_CALL,
+	[Q_KEY_CODE_KP_SUBTRACT]	= C81_KP_VOLUME_DOWN,
+	[Q_KEY_CODE_KP_ADD]			= C81_KP_VOLUME_UP,
+};
+
+static pmb887x_fixed_gpio_t board_c81_fixed_gpio[] = {
+	{C81_GPIO_HW_DET_MOB_TYPE3,	1},
+	{C81_GPIO_HW_DET_MOB_TYPE2,	0},
+	{C81_GPIO_HW_DET_MOB_TYPE1,	0},
+	{C81_GPIO_HW_DET_MOB_TYPE4,	1},
+	{C81_GPIO_HW_DET_BLUETOOTH,	0},
+	{C81_GPIO_HW_DET_BAND_SEL,	0},
+};
+
+static uint32_t board_c81_flashes[] = {
+	0x0089880D,
+	0x0089880D,
+};
+
 static uint32_t board_cx75_keymap[] = {
 	[Q_KEY_CODE_KP_1]	= CX75_KP_NUM1,
 	[Q_KEY_CODE_1]		= CX75_KP_NUM1,
@@ -82,6 +134,7 @@ static uint32_t board_el71_flashes[] = {
 };
 
 static pmb887x_board_t boards_list[] = {
+	{"C81",		CPU_PMB8876,	board_c81_flashes,	ARRAY_SIZE(board_c81_flashes),	board_c81_keymap,	ARRAY_SIZE(board_c81_keymap),	board_c81_fixed_gpio,	ARRAY_SIZE(board_c81_fixed_gpio)},
 	{"CX75",	CPU_PMB8875,	board_cx75_flashes,	ARRAY_SIZE(board_cx75_flashes),	board_cx75_keymap,	ARRAY_SIZE(board_cx75_keymap),	board_cx75_fixed_gpio,	ARRAY_SIZE(board_cx75_fixed_gpio)},
 	{"EL71",	CPU_PMB8876,	board_el71_flashes,	ARRAY_SIZE(board_el71_flashes),	board_el71_keymap,	ARRAY_SIZE(board_el71_keymap),	board_el71_fixed_gpio,	ARRAY_SIZE(board_el71_fixed_gpio)},
 };
