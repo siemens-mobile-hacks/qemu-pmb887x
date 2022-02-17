@@ -48,7 +48,7 @@ struct pmb887x_stm_t {
 
 static uint64_t stm_get_time(struct pmb887x_stm_t *p) {
 	if (p->enabled) {
-		uint64_t delta_ns = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) - p->start;
+		uint64_t delta_ns = pmb887x_pll_get_hw_ns(p->pll) - p->start;
 		return p->counter + muldiv64(delta_ns, p->freq, NANOSECONDS_PER_SECOND);
 	}
 	return p->counter;
@@ -56,7 +56,7 @@ static uint64_t stm_get_time(struct pmb887x_stm_t *p) {
 
 static void stm_update_state(struct pmb887x_stm_t *p) {
 	uint32_t div = pmb887x_clc_get_rmc(&p->clc);
-	uint32_t new_freq = div > 0 ? pmb887x_pll_get_fsys(p->pll) / div : 0;
+	uint32_t new_freq = div > 0 ? pmb887x_pll_get_fstm(p->pll) / div : 0;
 	bool new_enabled = new_freq > 0 && pmb887x_clc_is_enabled(&p->clc);
 	
 	if (new_enabled != p->enabled || new_freq != p->freq) {
@@ -67,12 +67,12 @@ static void stm_update_state(struct pmb887x_stm_t *p) {
 			p->counter = stm_get_time(p);
 		
 		if (p->enabled) {
-			p->start = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
+			p->start = pmb887x_pll_get_hw_ns(p->pll);
 		} else {
 			p->start = 0;
 		}
 		
-		DPRINTF("fsys=%d, fstm=%d [%s]\n", pmb887x_pll_get_fsys(p->pll), p->freq, p->enabled ? "ON" : "OFF");
+		DPRINTF("fstm=%d, fstm / RMC=%d [%s]\n", pmb887x_pll_get_fstm(p->pll), p->freq, p->enabled ? "ON" : "OFF");
 	}
 }
 
@@ -144,6 +144,7 @@ static uint64_t stm_io_read(void *opaque, hwaddr haddr, unsigned size) {
 	
 	return value;
 }
+// WRITE[4] F7608000: 00140E62 (I2C_TXD) (PC: A04F995C, LR: A04F9944)
 
 static void stm_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned size) {
 	struct pmb887x_stm_t *p = (struct pmb887x_stm_t *) opaque;

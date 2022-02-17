@@ -19,6 +19,8 @@
 
 #include "hw/arm/pmb887x/regs.h"
 
+#define IO_BRIDGE_TIMEOUT	1000
+
 static int sock_server_io = -1;
 static int sock_server_irq = -1;
 
@@ -30,8 +32,8 @@ static char cmd_r_size[] = {0, 'i', 'r', 'I', 'R'};
 
 static int _open_unix_sock(const char *name);
 static int _wait_for_client(int sock);
-static void _async_read(int sock, void *data, int size);
-static void _async_write(int sock, void *data, int size);
+static void _async_read(int sock, void *data, int size, int64_t timeout);
+static void _async_write(int sock, void *data, int size, int64_t timeout);
 static int _async_read_chunk(int sock, uint8_t *data, int size);
 static int _async_write_chunk(int sock, uint8_t *data, int size);
 static void *_irq_loop_thread(void *arg);
@@ -67,7 +69,9 @@ void pmb8876_io_bridge_init(void) {
 static void *_irq_loop_thread(void *arg) {
 	while (true) {
 		uint8_t irq;
-		_async_read(sock_client_irq, &irq, 1);
+		_async_read(sock_client_irq, &irq, 1, 0);
+		
+		fprintf(stderr, "irq (bridge): %d\n", irq);
 		
 		bool locked = qemu_mutex_iothread_locked();
 		if (!locked)
@@ -100,12 +104,12 @@ unsigned int pmb8876_io_bridge_read(unsigned int addr, unsigned int size) {
 	else
 		from -= 2;
 	
-	_async_write(sock_client_io, &cmd_r_size[size], 1);
-	_async_write(sock_client_io, &addr, 4);
-	_async_write(sock_client_io, &from, 4);
+	_async_write(sock_client_io, &cmd_r_size[size], 1, IO_BRIDGE_TIMEOUT);
+	_async_write(sock_client_io, &addr, 4, IO_BRIDGE_TIMEOUT);
+	_async_write(sock_client_io, &from, 4, IO_BRIDGE_TIMEOUT);
 	
 	uint8_t buf[5];
-	_async_read(sock_client_io, &buf, 5);
+	_async_read(sock_client_io, &buf, 5, IO_BRIDGE_TIMEOUT);
 	
 	if (buf[0] != 0x21) {
 		fprintf(stderr, "[io bridge] invalid ACK: %02X\n", buf[0]);
@@ -139,13 +143,13 @@ void pmb8876_io_bridge_write(unsigned int addr, unsigned int size, unsigned int 
 		value = 0x100;
 	}
 	
-	_async_write(sock_client_io, &cmd_w_size[size], 1);
-	_async_write(sock_client_io, &addr, 4);
-	_async_write(sock_client_io, &value, 4);
-	_async_write(sock_client_io, &from, 4);
+	_async_write(sock_client_io, &cmd_w_size[size], 1, IO_BRIDGE_TIMEOUT);
+	_async_write(sock_client_io, &addr, 4, IO_BRIDGE_TIMEOUT);
+	_async_write(sock_client_io, &value, 4, IO_BRIDGE_TIMEOUT);
+	_async_write(sock_client_io, &from, 4, IO_BRIDGE_TIMEOUT);
 	
 	uint8_t buf;
-	_async_read(sock_client_io, &buf, 1);
+	_async_read(sock_client_io, &buf, 1, IO_BRIDGE_TIMEOUT);
 	
 	if (buf != 0x21) {
 		fprintf(stderr, "[io bridge] invalid ACK: %02X\n", buf);
@@ -289,9 +293,15 @@ static int _async_read_chunk(int sock, uint8_t *data, int size) {
 	return 0;
 }
 
-static void _async_write(int sock, void *data, int size) {
+static void _async_write(int sock, void *data, int size, int64_t timeout) {
 	int written = 0;
+	int64_t start = qemu_clock_get_ms(QEMU_CLOCK_REALTIME);
 	do {
+		if (timeout && qemu_clock_get_ms(QEMU_CLOCK_REALTIME) - start > timeout) {
+			fprintf(stderr, "[io bridge] timeout\r\n");
+			exit(1);
+		}
+		
 		int ret = _async_write_chunk(sock, (uint8_t *) (data + written), size - written);
 		if (ret < 0) {
 			fprintf(stderr, "[io bridge] IO error\r\n");
@@ -302,9 +312,15 @@ static void _async_write(int sock, void *data, int size) {
 	} while (written < size);
 }
 
-static void _async_read(int sock, void *data, int size) {
+static void _async_read(int sock, void *data, int size, int64_t timeout) {
 	int readed = 0;
+	int64_t start = qemu_clock_get_ms(QEMU_CLOCK_REALTIME);
 	do {
+		if (timeout && qemu_clock_get_ms(QEMU_CLOCK_REALTIME) - start > timeout) {
+			fprintf(stderr, "[io bridge] timeout\r\n");
+			exit(1);
+		}
+		
 		int ret = _async_read_chunk(sock, (uint8_t *) (data + readed), size - readed);
 		if (ret < 0) {
 			fprintf(stderr, "[io bridge] IO error\r\n");
@@ -314,99 +330,3 @@ static void _async_read(int sock, void *data, int size) {
 		readed += ret;
 	} while (readed < size);
 }
-
-/*
-
-static FILE *bridge_fp = NULL;
-
-static char cmd_w_size[] = {0, 'o', 'w', 'O', 'W'};
-static char cmd_r_size[] = {0, 'i', 'r', 'I', 'R'};
-
-static FILE *sie_bridge_fp(void) {
-	if (!bridge_fp)
-		bridge_fp = fopen("/dev/shm/pmb8876_io_bridge.sock", "w+");
-	return bridge_fp;
-}
-
-void pmb8876_io_bridge_write(unsigned int addr, unsigned int size, unsigned int value, unsigned int from) {
-	if (from % 4 == 0)
-		from -= 4;
-	else
-		from -= 2;
-	
-	FILE *fp = sie_bridge_fp();
-	while (ftruncate(fileno(fp), 0) == 0) break;
-	fseek(fp, 0, SEEK_SET);
-	fwrite(&cmd_w_size[size], 1, 1, fp);
-	fwrite(&addr, 4, 1, fp);
-	fwrite(&value, 4, 1, fp);
-	fwrite(&from, 4, 1, fp);
-	
-	int tell;
-	unsigned char buf;
-	while (1) {
-		fseek(fp, 0, SEEK_END);
-		tell = ftell(fp);
-		if (tell == 1 || tell == 2) {
-			fseek(fp, 0, SEEK_SET);
-			fflush(fp);
-			if (fread(&buf, 1, 1, fp) == 1) {
-				if (buf == 0x2B) { // IRQ
-					if (fread(&buf, 1, 1, fp) == 1) {
-					//	fprintf(stderr, "**** NEW IRQ: %02X\n", buf);
-						pmb8876_trigger_irq(buf);
-					} else {
-						fprintf(stderr, "%s(%08X, %08X, %08X): Read IRQ error\n", __func__, addr, value, from);
-						exit(1);
-					}
-				} else if (buf != 0x21) {
-					fprintf(stderr, "%s(%08X, %08X, %08X): Invalid ACK: 0x%02X\n", __func__, addr, value, from, buf);
-					exit(1);
-				}
-				break;
-			}
-		}
-	}
-}
-
-unsigned int pmb8876_io_bridge_read(unsigned int addr, unsigned int size, unsigned int from) {
-	if (from % 4 == 0)
-		from -= 4;
-	else
-		from -= 2;
-	
-	FILE *fp = sie_bridge_fp();
-	while (ftruncate(fileno(fp), 0) == 0) break;
-	fseek(fp, 0, SEEK_SET);
-	fwrite(&cmd_r_size[size], 1, 1, fp);
-	fwrite(&addr, 4, 1, fp);
-	fwrite(&from, 4, 1, fp);
-	
-	int tell;
-	unsigned char irq;
-	unsigned char buf[5];
-	while (1) {
-		fseek(fp, 0, SEEK_END);
-		tell = ftell(fp);
-		if (tell == 5 || tell == 6) {
-			fseek(fp, 0, SEEK_SET);
-			fflush(fp);
-			if (fread(buf, 5, 1, fp) == 1) {
-				if (buf[0] == 0x2B) { // IRQ
-					if (fread(&irq, 1, 1, fp) == 1) {
-					//	fprintf(stderr, "**** NEW IRQ: %02X\n", irq);
-						pmb8876_trigger_irq(irq);
-					} else {
-						fprintf(stderr, "%s(%08X, %08X): Read IRQ error\n", __func__, addr, from);
-						exit(1);
-					}
-				} else if (buf[0] != 0x21) {
-					fprintf(stderr, "%s(%08X, %08X): Invalid ACK: 0x%02X\n", __func__, addr, from, buf[0]);
-					exit(1);
-				}
-				return buf[4] << 24 | buf[3] << 16 | buf[2] << 8 | buf[1];
-			}
-		}
-	}
-}
-* */

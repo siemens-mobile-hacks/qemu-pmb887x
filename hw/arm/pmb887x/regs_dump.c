@@ -58,10 +58,10 @@ static const char *find_cpu_gpio_name(pmb887x_cpu_meta_t *cpu_meta, uint32_t fie
 }
 
 void pmb887x_dump_io(uint32_t addr, uint32_t size, uint32_t value, bool is_w) {
+	cpu_disable_ticks();
+	
 	pmb887x_cpu_meta_t *cpu_meta = pmb887x_get_metadata(PMB8876);
 	pmb887x_module_t *module = find_cpu_module(cpu_meta, addr);
-	
-	cpu_disable_ticks();
 	
 	if (is_w) {
 		fprintf(stderr, "WRITE[%d] %08X: %08X", size, addr, value);

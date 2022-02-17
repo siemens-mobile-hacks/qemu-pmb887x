@@ -16,6 +16,7 @@
 #include "hw/loader.h"
 #include "sysemu/block-backend.h"
 #include "qapi/qapi-commands-machine.h"
+#include "sysemu/cpu-throttle.h"
 
 #include "hw/arm/pmb887x/regs.h"
 #include "hw/arm/pmb887x/io_bridge.h"
@@ -124,6 +125,10 @@ static const MemoryRegionOps cpu_io_opts = {
 	.read			= cpu_io_read,
 	.write			= cpu_io_write,
 	.endianness		= DEVICE_NATIVE_ENDIAN,
+	.valid			= {
+		.min_access_size	= 1,
+		.max_access_size	= 4
+	}
 };
 
 static uint64_t unmapped_io_read(void *opaque, hwaddr offset, unsigned size) {
@@ -210,11 +215,6 @@ static void pmb887x_init(MachineState *machine, uint32_t cpu_type) {
     memory_region_init_io(unmapped_io, NULL, &unmapped_io_opts, (void *) 0x00000000, "UNMAPPED_IO", 0xFFFFFFFF);
 	memory_region_add_subregion(sysmem, 0x00000000, unmapped_io);
 	
-	// 0x00000000-0xFFFFFFFF (Unmapped IO access)
-    MemoryRegion *img = g_new(MemoryRegion, 1);
-    memory_region_init_io(img, NULL, &cpu_io_opts, (void *) 0xa8da8080, "UNMAPPED_IO", 240*320*3);
-	memory_region_add_subregion_overlap(sysmem, 0xA8DA8080, img, 9999999);
-	
 	// 0xF0000000-0xFFFFFFFF (CPU IO)
 	MemoryRegion *io = g_new(MemoryRegion, 1);
     memory_region_init_io(io, NULL, &cpu_io_opts, (void *) 0xF0000000, "IO", 0x0FFFFFFF);
@@ -293,6 +293,7 @@ static void pmb887x_init(MachineState *machine, uint32_t cpu_type) {
 	
 	// PLL
 	DeviceState *pll = pmb887x_new_dev(cpu_type, "PLL", nvic);
+	qdev_prop_set_uint32(pll, "hw-ns-throttle", 10);
 	sysbus_realize_and_unref(SYS_BUS_DEVICE(pll), &error_fatal);
 	
 	// System Timer
@@ -422,6 +423,15 @@ static void pmb887x_init(MachineState *machine, uint32_t cpu_type) {
 	}
 	
 	sysbus_realize_and_unref(SYS_BUS_DEVICE(ebuc), &error_fatal);
+	
+	// 0x00000000-0xFFFFFFFF (Unmapped IO access)
+  //  MemoryRegion *img = g_new(MemoryRegion, 1);
+ //   memory_region_init_io(img, NULL, &cpu_io_opts, (void *) 0xA825B020, "IMG", 240*320*3);
+//	memory_region_add_subregion_overlap(sysmem, 0xA825B020, img, 999999);
+//	 memory_region_init_io(img, NULL, &cpu_io_opts, (void *) 0xa8f59384, "IMG", 4);
+//	memory_region_add_subregion_overlap(sysmem, 0xa8f59384, img, 999999);
+	
+	// cpu_throttle_set(1);
 	
 	#ifdef PMB887X_IO_BRIDGE
 	// Exec BootROM

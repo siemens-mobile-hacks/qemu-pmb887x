@@ -4869,215 +4869,274 @@
 
 // NVIC [MOD_NUM=0031, MOD_REV=00, MOD_32BIT=C0]
 // NVIC module, registers collected using tests on real hardware (using "black box" method).
-#define NVIC_IO_SIZE			0x000002D8
+#define NVIC_IO_SIZE				0x000002D8
 /* Module Identifier Register */
-#define NVIC_ID					0x00
+#define NVIC_ID						0x00
 
-#define NVIC_FIQ_ACK			0x08
+#define NVIC_FIQ_STAT				0x08
+#define NVIC_FIQ_STAT_NUM			(0xFF << 0)	 // Current fiq num
+#define NVIC_FIQ_STAT_NUM_SHIFT		0
+#define NVIC_FIQ_STAT_UNREAD		(1 << 16)
+#define NVIC_FIQ_STAT_UNREAD_SHIFT	16
+#define NVIC_FIQ_STAT_NOT_ACK		(1 << 24)
+#define NVIC_FIQ_STAT_NOT_ACK_SHIFT	24
 
-#define NVIC_IRQ_ACK			0x14
+#define NVIC_IRQ_STAT				0x0C
+#define NVIC_IRQ_STAT_NUM			(0xFF << 0)	 // Current irq num
+#define NVIC_IRQ_STAT_NUM_SHIFT		0
+#define NVIC_IRQ_STAT_UNREAD		(1 << 16)
+#define NVIC_IRQ_STAT_UNREAD_SHIFT	16
+#define NVIC_IRQ_STAT_NOT_ACK		(1 << 24)
+#define NVIC_IRQ_STAT_NOT_ACK_SHIFT	24
 
-#define NVIC_CURRENT_FIQ		0x18
+#define NVIC_FIQ_ACK				0x10
 
-#define NVIC_CURRENT_IRQ		0x1C
+#define NVIC_IRQ_ACK				0x14
 
-#define NVIC_CON0				0x30
-#define NVIC_CON1				0x34
-#define NVIC_CON2				0x38
-#define NVIC_CON3				0x3C
-#define NVIC_CON4				0x40
-#define NVIC_CON5				0x44
-#define NVIC_CON6				0x48
-#define NVIC_CON7				0x4C
-#define NVIC_CON8				0x50
-#define NVIC_CON9				0x54
-#define NVIC_CON10				0x58
-#define NVIC_CON11				0x5C
-#define NVIC_CON12				0x60
-#define NVIC_CON13				0x64
-#define NVIC_CON14				0x68
-#define NVIC_CON15				0x6C
-#define NVIC_CON16				0x70
-#define NVIC_CON17				0x74
-#define NVIC_CON18				0x78
-#define NVIC_CON19				0x7C
-#define NVIC_CON20				0x80
-#define NVIC_CON21				0x84
-#define NVIC_CON22				0x88
-#define NVIC_CON23				0x8C
-#define NVIC_CON24				0x90
-#define NVIC_CON25				0x94
-#define NVIC_CON26				0x98
-#define NVIC_CON27				0x9C
-#define NVIC_CON28				0xA0
-#define NVIC_CON29				0xA4
-#define NVIC_CON30				0xA8
-#define NVIC_CON31				0xAC
-#define NVIC_CON32				0xB0
-#define NVIC_CON33				0xB4
-#define NVIC_CON34				0xB8
-#define NVIC_CON35				0xBC
-#define NVIC_CON36				0xC0
-#define NVIC_CON37				0xC4
-#define NVIC_CON38				0xC8
-#define NVIC_CON39				0xCC
-#define NVIC_CON40				0xD0
-#define NVIC_CON41				0xD4
-#define NVIC_CON42				0xD8
-#define NVIC_CON43				0xDC
-#define NVIC_CON44				0xE0
-#define NVIC_CON45				0xE4
-#define NVIC_CON46				0xE8
-#define NVIC_CON47				0xEC
-#define NVIC_CON48				0xF0
-#define NVIC_CON49				0xF4
-#define NVIC_CON50				0xF8
-#define NVIC_CON51				0xFC
-#define NVIC_CON52				0x100
-#define NVIC_CON53				0x104
-#define NVIC_CON54				0x108
-#define NVIC_CON55				0x10C
-#define NVIC_CON56				0x110
-#define NVIC_CON57				0x114
-#define NVIC_CON58				0x118
-#define NVIC_CON59				0x11C
-#define NVIC_CON60				0x120
-#define NVIC_CON61				0x124
-#define NVIC_CON62				0x128
-#define NVIC_CON63				0x12C
-#define NVIC_CON64				0x130
-#define NVIC_CON65				0x134
-#define NVIC_CON66				0x138
-#define NVIC_CON67				0x13C
-#define NVIC_CON68				0x140
-#define NVIC_CON69				0x144
-#define NVIC_CON70				0x148
-#define NVIC_CON71				0x14C
-#define NVIC_CON72				0x150
-#define NVIC_CON73				0x154
-#define NVIC_CON74				0x158
-#define NVIC_CON75				0x15C
-#define NVIC_CON76				0x160
-#define NVIC_CON77				0x164
-#define NVIC_CON78				0x168
-#define NVIC_CON79				0x16C
-#define NVIC_CON80				0x170
-#define NVIC_CON81				0x174
-#define NVIC_CON82				0x178
-#define NVIC_CON83				0x17C
-#define NVIC_CON84				0x180
-#define NVIC_CON85				0x184
-#define NVIC_CON86				0x188
-#define NVIC_CON87				0x18C
-#define NVIC_CON88				0x190
-#define NVIC_CON89				0x194
-#define NVIC_CON90				0x198
-#define NVIC_CON91				0x19C
-#define NVIC_CON92				0x1A0
-#define NVIC_CON93				0x1A4
-#define NVIC_CON94				0x1A8
-#define NVIC_CON95				0x1AC
-#define NVIC_CON96				0x1B0
-#define NVIC_CON97				0x1B4
-#define NVIC_CON98				0x1B8
-#define NVIC_CON99				0x1BC
-#define NVIC_CON100				0x1C0
-#define NVIC_CON101				0x1C4
-#define NVIC_CON102				0x1C8
-#define NVIC_CON103				0x1CC
-#define NVIC_CON104				0x1D0
-#define NVIC_CON105				0x1D4
-#define NVIC_CON106				0x1D8
-#define NVIC_CON107				0x1DC
-#define NVIC_CON108				0x1E0
-#define NVIC_CON109				0x1E4
-#define NVIC_CON110				0x1E8
-#define NVIC_CON111				0x1EC
-#define NVIC_CON112				0x1F0
-#define NVIC_CON113				0x1F4
-#define NVIC_CON114				0x1F8
-#define NVIC_CON115				0x1FC
-#define NVIC_CON116				0x200
-#define NVIC_CON117				0x204
-#define NVIC_CON118				0x208
-#define NVIC_CON119				0x20C
-#define NVIC_CON120				0x210
-#define NVIC_CON121				0x214
-#define NVIC_CON122				0x218
-#define NVIC_CON123				0x21C
-#define NVIC_CON124				0x220
-#define NVIC_CON125				0x224
-#define NVIC_CON126				0x228
-#define NVIC_CON127				0x22C
-#define NVIC_CON128				0x230
-#define NVIC_CON129				0x234
-#define NVIC_CON130				0x238
-#define NVIC_CON131				0x23C
-#define NVIC_CON132				0x240
-#define NVIC_CON133				0x244
-#define NVIC_CON134				0x248
-#define NVIC_CON135				0x24C
-#define NVIC_CON136				0x250
-#define NVIC_CON137				0x254
-#define NVIC_CON138				0x258
-#define NVIC_CON139				0x25C
-#define NVIC_CON140				0x260
-#define NVIC_CON141				0x264
-#define NVIC_CON142				0x268
-#define NVIC_CON143				0x26C
-#define NVIC_CON144				0x270
-#define NVIC_CON145				0x274
-#define NVIC_CON146				0x278
-#define NVIC_CON147				0x27C
-#define NVIC_CON148				0x280
-#define NVIC_CON149				0x284
-#define NVIC_CON150				0x288
-#define NVIC_CON151				0x28C
-#define NVIC_CON152				0x290
-#define NVIC_CON153				0x294
-#define NVIC_CON154				0x298
-#define NVIC_CON155				0x29C
-#define NVIC_CON156				0x2A0
-#define NVIC_CON157				0x2A4
-#define NVIC_CON158				0x2A8
-#define NVIC_CON159				0x2AC
-#define NVIC_CON160				0x2B0
-#define NVIC_CON161				0x2B4
-#define NVIC_CON162				0x2B8
-#define NVIC_CON163				0x2BC
-#define NVIC_CON164				0x2C0
-#define NVIC_CON165				0x2C4
-#define NVIC_CON166				0x2C8
-#define NVIC_CON167				0x2CC
-#define NVIC_CON168				0x2D0
-#define NVIC_CON169				0x2D4
-#define NVIC_CON_PRIORITY		(0xFF << 0)
-#define NVIC_CON_PRIORITY_SHIFT	0
-#define NVIC_CON_FIQ			(1 << 8)
-#define NVIC_CON_FIQ_SHIFT		8
+#define NVIC_CURRENT_FIQ			0x18
+
+#define NVIC_CURRENT_IRQ			0x1C
+
+#define NVIC_CON0					0x30
+#define NVIC_CON1					0x34
+#define NVIC_CON2					0x38
+#define NVIC_CON3					0x3C
+#define NVIC_CON4					0x40
+#define NVIC_CON5					0x44
+#define NVIC_CON6					0x48
+#define NVIC_CON7					0x4C
+#define NVIC_CON8					0x50
+#define NVIC_CON9					0x54
+#define NVIC_CON10					0x58
+#define NVIC_CON11					0x5C
+#define NVIC_CON12					0x60
+#define NVIC_CON13					0x64
+#define NVIC_CON14					0x68
+#define NVIC_CON15					0x6C
+#define NVIC_CON16					0x70
+#define NVIC_CON17					0x74
+#define NVIC_CON18					0x78
+#define NVIC_CON19					0x7C
+#define NVIC_CON20					0x80
+#define NVIC_CON21					0x84
+#define NVIC_CON22					0x88
+#define NVIC_CON23					0x8C
+#define NVIC_CON24					0x90
+#define NVIC_CON25					0x94
+#define NVIC_CON26					0x98
+#define NVIC_CON27					0x9C
+#define NVIC_CON28					0xA0
+#define NVIC_CON29					0xA4
+#define NVIC_CON30					0xA8
+#define NVIC_CON31					0xAC
+#define NVIC_CON32					0xB0
+#define NVIC_CON33					0xB4
+#define NVIC_CON34					0xB8
+#define NVIC_CON35					0xBC
+#define NVIC_CON36					0xC0
+#define NVIC_CON37					0xC4
+#define NVIC_CON38					0xC8
+#define NVIC_CON39					0xCC
+#define NVIC_CON40					0xD0
+#define NVIC_CON41					0xD4
+#define NVIC_CON42					0xD8
+#define NVIC_CON43					0xDC
+#define NVIC_CON44					0xE0
+#define NVIC_CON45					0xE4
+#define NVIC_CON46					0xE8
+#define NVIC_CON47					0xEC
+#define NVIC_CON48					0xF0
+#define NVIC_CON49					0xF4
+#define NVIC_CON50					0xF8
+#define NVIC_CON51					0xFC
+#define NVIC_CON52					0x100
+#define NVIC_CON53					0x104
+#define NVIC_CON54					0x108
+#define NVIC_CON55					0x10C
+#define NVIC_CON56					0x110
+#define NVIC_CON57					0x114
+#define NVIC_CON58					0x118
+#define NVIC_CON59					0x11C
+#define NVIC_CON60					0x120
+#define NVIC_CON61					0x124
+#define NVIC_CON62					0x128
+#define NVIC_CON63					0x12C
+#define NVIC_CON64					0x130
+#define NVIC_CON65					0x134
+#define NVIC_CON66					0x138
+#define NVIC_CON67					0x13C
+#define NVIC_CON68					0x140
+#define NVIC_CON69					0x144
+#define NVIC_CON70					0x148
+#define NVIC_CON71					0x14C
+#define NVIC_CON72					0x150
+#define NVIC_CON73					0x154
+#define NVIC_CON74					0x158
+#define NVIC_CON75					0x15C
+#define NVIC_CON76					0x160
+#define NVIC_CON77					0x164
+#define NVIC_CON78					0x168
+#define NVIC_CON79					0x16C
+#define NVIC_CON80					0x170
+#define NVIC_CON81					0x174
+#define NVIC_CON82					0x178
+#define NVIC_CON83					0x17C
+#define NVIC_CON84					0x180
+#define NVIC_CON85					0x184
+#define NVIC_CON86					0x188
+#define NVIC_CON87					0x18C
+#define NVIC_CON88					0x190
+#define NVIC_CON89					0x194
+#define NVIC_CON90					0x198
+#define NVIC_CON91					0x19C
+#define NVIC_CON92					0x1A0
+#define NVIC_CON93					0x1A4
+#define NVIC_CON94					0x1A8
+#define NVIC_CON95					0x1AC
+#define NVIC_CON96					0x1B0
+#define NVIC_CON97					0x1B4
+#define NVIC_CON98					0x1B8
+#define NVIC_CON99					0x1BC
+#define NVIC_CON100					0x1C0
+#define NVIC_CON101					0x1C4
+#define NVIC_CON102					0x1C8
+#define NVIC_CON103					0x1CC
+#define NVIC_CON104					0x1D0
+#define NVIC_CON105					0x1D4
+#define NVIC_CON106					0x1D8
+#define NVIC_CON107					0x1DC
+#define NVIC_CON108					0x1E0
+#define NVIC_CON109					0x1E4
+#define NVIC_CON110					0x1E8
+#define NVIC_CON111					0x1EC
+#define NVIC_CON112					0x1F0
+#define NVIC_CON113					0x1F4
+#define NVIC_CON114					0x1F8
+#define NVIC_CON115					0x1FC
+#define NVIC_CON116					0x200
+#define NVIC_CON117					0x204
+#define NVIC_CON118					0x208
+#define NVIC_CON119					0x20C
+#define NVIC_CON120					0x210
+#define NVIC_CON121					0x214
+#define NVIC_CON122					0x218
+#define NVIC_CON123					0x21C
+#define NVIC_CON124					0x220
+#define NVIC_CON125					0x224
+#define NVIC_CON126					0x228
+#define NVIC_CON127					0x22C
+#define NVIC_CON128					0x230
+#define NVIC_CON129					0x234
+#define NVIC_CON130					0x238
+#define NVIC_CON131					0x23C
+#define NVIC_CON132					0x240
+#define NVIC_CON133					0x244
+#define NVIC_CON134					0x248
+#define NVIC_CON135					0x24C
+#define NVIC_CON136					0x250
+#define NVIC_CON137					0x254
+#define NVIC_CON138					0x258
+#define NVIC_CON139					0x25C
+#define NVIC_CON140					0x260
+#define NVIC_CON141					0x264
+#define NVIC_CON142					0x268
+#define NVIC_CON143					0x26C
+#define NVIC_CON144					0x270
+#define NVIC_CON145					0x274
+#define NVIC_CON146					0x278
+#define NVIC_CON147					0x27C
+#define NVIC_CON148					0x280
+#define NVIC_CON149					0x284
+#define NVIC_CON150					0x288
+#define NVIC_CON151					0x28C
+#define NVIC_CON152					0x290
+#define NVIC_CON153					0x294
+#define NVIC_CON154					0x298
+#define NVIC_CON155					0x29C
+#define NVIC_CON156					0x2A0
+#define NVIC_CON157					0x2A4
+#define NVIC_CON158					0x2A8
+#define NVIC_CON159					0x2AC
+#define NVIC_CON160					0x2B0
+#define NVIC_CON161					0x2B4
+#define NVIC_CON162					0x2B8
+#define NVIC_CON163					0x2BC
+#define NVIC_CON164					0x2C0
+#define NVIC_CON165					0x2C4
+#define NVIC_CON166					0x2C8
+#define NVIC_CON167					0x2CC
+#define NVIC_CON168					0x2D0
+#define NVIC_CON169					0x2D4
+#define NVIC_CON_PRIORITY			(0xFF << 0)
+#define NVIC_CON_PRIORITY_SHIFT		0
+#define NVIC_CON_FIQ				(1 << 8)
+#define NVIC_CON_FIQ_SHIFT			8
 
 
 // PLL
 // Looks like CGU module, registers collected using tests on real hardware (using "black box" method).
-#define PLL_IO_SIZE					0x00000200
-#define PLL_OSC						0xA0
+#define PLL_IO_SIZE						0x00000200
+#define PLL_OSC							0xA0
+#define PLL_OSC_LOCK					(1 << 0)
+#define PLL_OSC_LOCK_SHIFT				0
+#define PLL_OSC_NDIV					(0x7 << 16)	 // Feedback divider (multiply by N+1)
+#define PLL_OSC_NDIV_SHIFT				16
 
-#define PLL_CON0					0xA4
+#define PLL_CON0						0xA4
+#define PLL_CON0_PLL1_K2				(0x7 << 0)	 // div by (K1 * 6 + (K2 - 1))
+#define PLL_CON0_PLL1_K2_SHIFT			0
+#define PLL_CON0_PLL1_K1				(0xF << 3)
+#define PLL_CON0_PLL1_K1_SHIFT			3
+#define PLL_CON0_PLL2_K2				(0x7 << 8)	 // div by (K1 * 6 + (K2 - 1))
+#define PLL_CON0_PLL2_K2_SHIFT			8
+#define PLL_CON0_PLL2_K1				(0xF << 11)
+#define PLL_CON0_PLL2_K1_SHIFT			11
+#define PLL_CON0_PLL3_K2				(0x7 << 16)	 // div by (K1 * 6 + (K2 - 1))
+#define PLL_CON0_PLL3_K2_SHIFT			16
+#define PLL_CON0_PLL3_K1				(0xF << 19)
+#define PLL_CON0_PLL3_K1_SHIFT			19
+#define PLL_CON0_PLL4_K2				(0x7 << 24)	 // div by (K1 * 6 + (K2 - 1))
+#define PLL_CON0_PLL4_K2_SHIFT			24
+#define PLL_CON0_PLL4_K1				(0xF << 27)
+#define PLL_CON0_PLL4_K1_SHIFT			27
 
-#define PLL_CON1					0xA8
-#define PLL_CON1_FSYS_DIV_EN		(1 << 25)	 // Enable fsys divider and div fsys by 4
-#define PLL_CON1_FSYS_DIV_EN_SHIFT	25
-#define PLL_CON1_FSYS_DIV			(0x3 << 28)	 // Fsys diviver (work if FSYS_DIV_EN=1)
-#define PLL_CON1_FSYS_DIV_SHIFT		28
+#define PLL_CON1						0xA8
+#define PLL_CON1_FSYS_CLKSEL			(0x3 << 16)	 // Source clock for fSYS (BYPASS: fSYS=fOSC, PLL: fSYS=fPLL / 2)
+#define PLL_CON1_FSYS_CLKSEL_SHIFT		16
+#define PLL_CON1_FSYS_CLKSEL_BYPASS		0x0
+#define PLL_CON1_FSYS_CLKSEL_PLL		0x20000
+#define PLL_CON1_FSYS_CLKSEL_DISABLE	0x30000
+#define PLL_CON1_AHB_CLKSEL				(0x7 << 20)	 // Source clock for fPLL
+#define PLL_CON1_AHB_CLKSEL_SHIFT		20
+#define PLL_CON1_AHB_CLKSEL_BYPASS		0x0
+#define PLL_CON1_AHB_CLKSEL_PLL0		0x200000
+#define PLL_CON1_AHB_CLKSEL_PLL1		0x300000
+#define PLL_CON1_AHB_CLKSEL_PLL2		0x400000
+#define PLL_CON1_AHB_CLKSEL_PLL3		0x500000
+#define PLL_CON1_AHB_CLKSEL_PLL4		0x600000
+#define PLL_CON1_FSTM_DIV_EN			(1 << 25)	 // Enable fSTM divider
+#define PLL_CON1_FSTM_DIV_EN_SHIFT		25
+#define PLL_CON1_FSTM_DIV				(0x3 << 28)	 // fSTM divider value (n^2)
+#define PLL_CON1_FSTM_DIV_SHIFT			28
+#define PLL_CON1_FSTM_DIV_1				0x0
+#define PLL_CON1_FSTM_DIV_2				0x10000000
+#define PLL_CON1_FSTM_DIV_4				0x20000000
+#define PLL_CON1_FSTM_DIV_8				0x30000000
 
-#define PLL_CON2					0xAC
+#define PLL_CON2						0xAC
+#define PLL_CON2_CPU_DIV				(0x3 << 8)
+#define PLL_CON2_CPU_DIV_SHIFT			8
+#define PLL_CON2_CPU_DIV_EN				(1 << 12)
+#define PLL_CON2_CPU_DIV_EN_SHIFT		12
 
-#define PLL_STAT					0xB0
+#define PLL_STAT						0xB0
+#define PLL_STAT_LOCK					(1 << 13)
+#define PLL_STAT_LOCK_SHIFT				13
 
-#define PLL_CON3					0xB4
+#define PLL_CON3						0xB4
 
 /* Service Routing Control Register */
-#define PLL_SRC						0xCC
+#define PLL_SRC							0xCC
 
 
 // RTC [MOD_NUM=F049, MOD_REV=00, MOD_32BIT=C0]

@@ -47,8 +47,11 @@ struct pmb887x_nvic_t {
 	int current_irq;
 	int current_fiq;
 	
-	bool lock_irq;
-	bool lock_fiq;
+	bool irq_lock;
+	bool fiq_lock;
+	
+	bool irq_readed;
+	bool fiq_readed;
 };
 
 static int32_t nvic_current_irq(struct pmb887x_nvic_t *p, bool fiq) {
@@ -72,22 +75,22 @@ static int32_t nvic_current_irq(struct pmb887x_nvic_t *p, bool fiq) {
 }
 
 static void nvic_update_state(struct pmb887x_nvic_t *p) {
-	if (!p->lock_irq) {
+	if (!p->irq_lock) {
 		p->current_irq = nvic_current_irq(p, false);
 		qemu_set_irq(p->parent_irq, p->current_irq != -1);
-		p->lock_irq = p->current_irq != -1;
+		p->irq_lock = p->current_irq != -1;
 		
-		if (p->current_irq != -1)
-			DPRINTF("irq: %d\n", p->current_irq);
+	//	if (p->current_irq != -1)
+	//		DPRINTF("irq: %d\n", p->current_irq);
 	}
 	
-	if (!p->lock_fiq) {
+	if (!p->fiq_lock) {
 		p->current_fiq = nvic_current_irq(p, true);
 		qemu_set_irq(p->parent_fiq, p->current_fiq != -1);
-		p->lock_fiq = p->current_fiq != -1;
+		p->fiq_lock = p->current_fiq != -1;
 		
-		if (p->current_fiq != -1)
-			DPRINTF("fiq: %d\n", p->current_fiq);
+	//	if (p->current_fiq != -1)
+	//		DPRINTF("fiq: %d\n", p->current_fiq);
 	}
 }
 
@@ -113,12 +116,48 @@ static uint64_t nvic_io_read(void *opaque, hwaddr haddr, unsigned size) {
 			value = 0x0031C011;
 		break;
 		
+		case NVIC_FIQ_STAT:
+			if (p->fiq_lock) {
+				if (!p->fiq_readed) {
+					value |= NVIC_FIQ_STAT_UNREAD;
+					value |= p->current_fiq;
+				} else {
+					value |= NVIC_FIQ_STAT_NOT_ACK;
+				}
+			} else {
+				value = 0;
+			}
+		break;
+		
+		case NVIC_IRQ_STAT:
+			if (p->irq_lock) {
+				if (!p->irq_readed) {
+					value |= NVIC_IRQ_STAT_UNREAD;
+					value |= p->current_irq;
+				} else {
+					value |= NVIC_IRQ_STAT_NOT_ACK;
+				}
+			} else {
+				value = 0;
+			}
+		break;
+		
 		case NVIC_CURRENT_IRQ:
-			value = p->current_irq != -1 ? p->current_irq : 0;
+			if (p->current_irq != -1 && !p->irq_readed) {
+				value = p->current_irq;
+				p->irq_readed = true;
+			} else {
+				value = 0;
+			}
 		break;
 		
 		case NVIC_CURRENT_FIQ:
-			value = p->current_fiq != -1 ? p->current_fiq : 0;
+			if (p->current_fiq != -1 && !p->fiq_readed) {
+				value = p->current_fiq;
+				p->fiq_readed = true;
+			} else {
+				value = 0;
+			}
 		break;
 		
 		case NVIC_CON0 ... NVIC_CON169:
@@ -139,7 +178,7 @@ static uint64_t nvic_io_read(void *opaque, hwaddr haddr, unsigned size) {
 		break;
 	}
 	
-	//pmb887x_dump_io(haddr + p->mmio.addr, size, value, false);
+	// pmb887x_dump_io(haddr + p->mmio.addr, size, value, false);
 	
 	return value;
 }
@@ -147,7 +186,7 @@ static uint64_t nvic_io_read(void *opaque, hwaddr haddr, unsigned size) {
 static void nvic_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned size) {
 	struct pmb887x_nvic_t *p = (struct pmb887x_nvic_t *) opaque;
 	
-	//pmb887x_dump_io(haddr + p->mmio.addr, size, value, true);
+	// pmb887x_dump_io(haddr + p->mmio.addr, size, value, true);
 	
 	switch (haddr) {
 		default:
@@ -163,13 +202,17 @@ static void nvic_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned s
 			}
 			#endif
 			
-			if (value)
-				p->lock_irq = false;
+			if (value) {
+				p->irq_lock = false;
+				p->irq_readed = false;
+			}
 		break;
 		
 		case NVIC_FIQ_ACK:
-			if (value)
-				p->lock_fiq = false;
+			if (value) {
+				p->fiq_readed = false;
+				p->fiq_lock = false;
+			}
 		break;
 		
 		case NVIC_CON0 ... NVIC_CON169:
