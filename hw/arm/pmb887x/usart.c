@@ -355,7 +355,7 @@ static uint64_t usart_io_read(void *opaque, hwaddr haddr, unsigned size) {
 		break;
 	}
 	
-	//if (!no_dump)
+	if (!no_dump)
 		pmb887x_dump_io(haddr + p->mmio.addr, size, value, false);
 	
 	return value;
@@ -467,7 +467,7 @@ static void usart_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned 
 		break;
 	}
 	
-	//if (!no_dump)
+	if (!no_dump)
 		pmb887x_dump_io(haddr + p->mmio.addr, size, value, true);
 }
 
