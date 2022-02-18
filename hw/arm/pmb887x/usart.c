@@ -93,10 +93,6 @@ struct pmb887x_usart_t {
 
 static void usart_transmit_fifo(struct pmb887x_usart_t *p);
 
-static void usart_update_state(struct pmb887x_usart_t *p) {
-	
-}
-
 static void usart_set_rx_fifo(struct pmb887x_usart_t *p, bool buffered) {
 	pmb887x_fifo_reset(&p->rx_fifo_buffered);
 	pmb887x_fifo_reset(&p->rx_fifo_single);
@@ -115,13 +111,30 @@ static void usart_set_tx_fifo(struct pmb887x_usart_t *p, bool buffered) {
 	if (p->watch_tag) {
 		g_source_remove(p->watch_tag);
 		p->watch_tag = 0;
-		abort();
 	}
 	
 	if (buffered) {
 		p->tx_fifo = &p->tx_fifo_buffered;
 	} else {
 		p->tx_fifo = &p->tx_fifo_single;
+	}
+}
+
+static void usart_update_state(struct pmb887x_usart_t *p) {
+	if ((p->rxfcon & USART_RXFCON_RXFEN)) {
+		if ((p->rxfcon & USART_RXFCON_RXFFLU)) {
+			usart_set_rx_fifo(p, false);
+			usart_set_rx_fifo(p, true);
+			p->rxfcon &= ~USART_RXFCON_RXFFLU;
+		}
+	}
+	
+	if ((p->txfcon & USART_TXFCON_TXFEN)) {
+		if ((p->txfcon & USART_TXFCON_TXFFLU)) {
+			usart_set_tx_fifo(p, false);
+			usart_set_tx_fifo(p, true);
+			p->txfcon &= ~USART_TXFCON_TXFFLU;
+		}
 	}
 }
 
@@ -153,9 +166,6 @@ static void usart_receive(void *opaque, const uint8_t *buf, int size) {
 	} else {
 		pmb887x_srb_set_isr(&p->srb, USART_ISR_RX);
 	}
-	
-//	for (int i = 0; i < size; i++)
-//		DPRINTF("rx: %02X\n", buf[i]);
 }
 
 static gboolean usart_transmit_delayed(void *do_not_use, GIOCondition cond, void *opaque) {
@@ -276,7 +286,11 @@ static uint64_t usart_io_read(void *opaque, hwaddr haddr, unsigned size) {
 		break;
 		
 		case USART_FSTAT:
-			value = p->fstat;
+			if ((p->txfcon & USART_TXFCON_TXFEN))
+				value |= pmb887x_fifo_count(p->tx_fifo) << USART_FSTAT_TXFFL_SHIFT;
+			
+			if ((p->txfcon & USART_RXFCON_RXFEN))
+				value |= pmb887x_fifo_count(p->rx_fifo) << USART_FSTAT_RXFFL_SHIFT;
 		break;
 		
 		case USART_WHBCON:
@@ -341,7 +355,7 @@ static uint64_t usart_io_read(void *opaque, hwaddr haddr, unsigned size) {
 		break;
 	}
 	
-	if (!no_dump)
+	//if (!no_dump)
 		pmb887x_dump_io(haddr + p->mmio.addr, size, value, false);
 	
 	return value;
@@ -399,26 +413,18 @@ static void usart_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned 
 			p->abcon = value;
 		break;
 		
-		case USART_ABSTAT:
-			p->abstat = value;
-		break;
-		
 		case USART_RXFCON:
 			if ((value & USART_RXFCON_RXFEN) != (p->rxfcon & USART_RXFCON_RXFEN))
 				usart_set_rx_fifo(p, (value & USART_RXFCON_RXFEN) != 0);
 			p->rxfcon = value;
-			abort();
+			usart_update_state(p);
 		break;
 		
 		case USART_TXFCON:
 			if ((value & USART_TXFCON_TXFEN) != (p->txfcon & USART_TXFCON_TXFEN))
 				usart_set_tx_fifo(p, (value & USART_TXFCON_TXFEN) != 0);
 			p->txfcon = value;
-			abort();
-		break;
-		
-		case USART_FSTAT:
-			p->fstat = value;
+			usart_update_state(p);
 		break;
 		
 		case USART_WHBCON:
@@ -435,10 +441,6 @@ static void usart_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned 
 		
 		case USART_FCCON:
 			p->fccon = value;
-		break;
-		
-		case USART_FCSTAT:
-			p->fcstat = value;
 		break;
 		
 		case USART_IMSC:
@@ -465,10 +467,8 @@ static void usart_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned 
 		break;
 	}
 	
-	if (!no_dump)
+	//if (!no_dump)
 		pmb887x_dump_io(haddr + p->mmio.addr, size, value, true);
-	
-	usart_update_state(p);
 }
 
 static const MemoryRegionOps io_ops = {
