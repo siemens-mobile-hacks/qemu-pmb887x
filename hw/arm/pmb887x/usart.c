@@ -324,7 +324,7 @@ static uint64_t usart_io_read(void *opaque, hwaddr haddr, unsigned size) {
 			// workaround for broken firmwares
 			if (p->apply_workarounds) {
 				if (p->last_is_icr_tx) {
-					DPRINTF("apply USART_RIS_TX workaround");
+					DPRINTF("apply USART_RIS_TX workaround\n");
 					value |= USART_RIS_TX;
 				}
 			}

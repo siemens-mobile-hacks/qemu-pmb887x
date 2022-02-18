@@ -6145,12 +6145,12 @@
 #define USART_IMSC_RX_SHIFT					2
 #define USART_IMSC_ERR						(1 << 3)	 // Error interrupt mask
 #define USART_IMSC_ERR_SHIFT				3
-#define USART_IMSC_ABSTART					(1 << 4)	 // Autobaud start interrupt mask
-#define USART_IMSC_ABSTART_SHIFT			4
+#define USART_IMSC_CTS						(1 << 4)	 // CTS interrupt mask
+#define USART_IMSC_CTS_SHIFT				4
 #define USART_IMSC_ABDET					(1 << 5)	 // Autobaud detected interrupt mask
 #define USART_IMSC_ABDET_SHIFT				5
-#define USART_IMSC_CTS						(1 << 6)	 // CTS interrupt mask
-#define USART_IMSC_CTS_SHIFT				6
+#define USART_IMSC_ABSTART					(1 << 6)	 // Autobaud start interrupt mask
+#define USART_IMSC_ABSTART_SHIFT			6
 #define USART_IMSC_TMO						(1 << 7)	 // RX timeout interrupt mask
 #define USART_IMSC_TMO_SHIFT				7
 
@@ -6163,12 +6163,12 @@
 #define USART_RIS_RX_SHIFT					2
 #define USART_RIS_ERR						(1 << 3)	 // Error interrupt mask
 #define USART_RIS_ERR_SHIFT					3
-#define USART_RIS_ABSTART					(1 << 4)	 // Autobaud start interrupt mask
-#define USART_RIS_ABSTART_SHIFT				4
+#define USART_RIS_CTS						(1 << 4)	 // CTS interrupt mask
+#define USART_RIS_CTS_SHIFT					4
 #define USART_RIS_ABDET						(1 << 5)	 // Autobaud detected interrupt mask
 #define USART_RIS_ABDET_SHIFT				5
-#define USART_RIS_CTS						(1 << 6)	 // CTS interrupt mask
-#define USART_RIS_CTS_SHIFT					6
+#define USART_RIS_ABSTART					(1 << 6)	 // Autobaud start interrupt mask
+#define USART_RIS_ABSTART_SHIFT				6
 #define USART_RIS_TMO						(1 << 7)	 // RX timeout interrupt mask
 #define USART_RIS_TMO_SHIFT					7
 
@@ -6181,12 +6181,12 @@
 #define USART_MIS_RX_SHIFT					2
 #define USART_MIS_ERR						(1 << 3)	 // Error interrupt mask
 #define USART_MIS_ERR_SHIFT					3
-#define USART_MIS_ABSTART					(1 << 4)	 // Autobaud start interrupt mask
-#define USART_MIS_ABSTART_SHIFT				4
+#define USART_MIS_CTS						(1 << 4)	 // CTS interrupt mask
+#define USART_MIS_CTS_SHIFT					4
 #define USART_MIS_ABDET						(1 << 5)	 // Autobaud detected interrupt mask
 #define USART_MIS_ABDET_SHIFT				5
-#define USART_MIS_CTS						(1 << 6)	 // CTS interrupt mask
-#define USART_MIS_CTS_SHIFT					6
+#define USART_MIS_ABSTART					(1 << 6)	 // Autobaud start interrupt mask
+#define USART_MIS_ABSTART_SHIFT				6
 #define USART_MIS_TMO						(1 << 7)	 // RX timeout interrupt mask
 #define USART_MIS_TMO_SHIFT					7
 
@@ -6199,12 +6199,12 @@
 #define USART_ICR_RX_SHIFT					2
 #define USART_ICR_ERR						(1 << 3)	 // Error interrupt mask
 #define USART_ICR_ERR_SHIFT					3
-#define USART_ICR_ABSTART					(1 << 4)	 // Autobaud start interrupt mask
-#define USART_ICR_ABSTART_SHIFT				4
+#define USART_ICR_CTS						(1 << 4)	 // CTS interrupt mask
+#define USART_ICR_CTS_SHIFT					4
 #define USART_ICR_ABDET						(1 << 5)	 // Autobaud detected interrupt mask
 #define USART_ICR_ABDET_SHIFT				5
-#define USART_ICR_CTS						(1 << 6)	 // CTS interrupt mask
-#define USART_ICR_CTS_SHIFT					6
+#define USART_ICR_ABSTART					(1 << 6)	 // Autobaud start interrupt mask
+#define USART_ICR_ABSTART_SHIFT				6
 #define USART_ICR_TMO						(1 << 7)	 // RX timeout interrupt mask
 #define USART_ICR_TMO_SHIFT					7
 
@@ -6217,12 +6217,12 @@
 #define USART_ISR_RX_SHIFT					2
 #define USART_ISR_ERR						(1 << 3)	 // Error interrupt mask
 #define USART_ISR_ERR_SHIFT					3
-#define USART_ISR_ABSTART					(1 << 4)	 // Autobaud start interrupt mask
-#define USART_ISR_ABSTART_SHIFT				4
+#define USART_ISR_CTS						(1 << 4)	 // CTS interrupt mask
+#define USART_ISR_CTS_SHIFT					4
 #define USART_ISR_ABDET						(1 << 5)	 // Autobaud detected interrupt mask
 #define USART_ISR_ABDET_SHIFT				5
-#define USART_ISR_CTS						(1 << 6)	 // CTS interrupt mask
-#define USART_ISR_CTS_SHIFT					6
+#define USART_ISR_ABSTART					(1 << 6)	 // Autobaud start interrupt mask
+#define USART_ISR_ABSTART_SHIFT				6
 #define USART_ISR_TMO						(1 << 7)	 // RX timeout interrupt mask
 #define USART_ISR_TMO_SHIFT					7
 

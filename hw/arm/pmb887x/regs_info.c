@@ -1055,8 +1055,8 @@ static pmb887x_module_field_t capcom_t0_src_fields[] = {
 
 static pmb887x_module_reg_t capcom_regs[] = {
 	{"CLC",		CAPCOM_CLC,		capcom_clc_fields,		ARRAY_SIZE(capcom_clc_fields),		0},
-	{"CPISEL",	CAPCOM_CPISEL,	capcom_cpisel_fields,	ARRAY_SIZE(capcom_cpisel_fields),	0},
 	{"PISEL",	CAPCOM_PISEL,	NULL,					0,									0},
+	{"CPISEL",	CAPCOM_CPISEL,	capcom_cpisel_fields,	ARRAY_SIZE(capcom_cpisel_fields),	0},
 	{"ID",		CAPCOM_ID,		capcom_id_fields,		ARRAY_SIZE(capcom_id_fields),		0},
 	{"T01CON",	CAPCOM_T01CON,	capcom_t01con_fields,	ARRAY_SIZE(capcom_t01con_fields),	0},
 	{"CCM0",	CAPCOM_CCM0,	capcom_ccm0_fields,		ARRAY_SIZE(capcom_ccm0_fields),		0},
@@ -1112,8 +1112,8 @@ static pmb887x_module_field_t cif_id_fields[] = {
 };
 
 static pmb887x_module_reg_t cif_regs[] = {
-	{"UNK0",	CIF_UNK0,	NULL,			0,							0},
 	{"CLC",		CIF_CLC,	cif_clc_fields,	ARRAY_SIZE(cif_clc_fields),	0},
+	{"UNK0",	CIF_UNK0,	NULL,			0,							0},
 	{"ID",		CIF_ID,		cif_id_fields,	ARRAY_SIZE(cif_id_fields),	0},
 	{"UNK1",	CIF_UNK1,	NULL,			0,							0},
 	{"UNK2",	CIF_UNK2,	NULL,			0,							0},
@@ -5335,9 +5335,9 @@ static pmb887x_module_field_t usart_imsc_fields[] = {
 	{"TB",		USART_IMSC_TB,		USART_IMSC_TB_SHIFT,		NULL,	0},
 	{"RX",		USART_IMSC_RX,		USART_IMSC_RX_SHIFT,		NULL,	0},
 	{"ERR",		USART_IMSC_ERR,		USART_IMSC_ERR_SHIFT,		NULL,	0},
-	{"ABSTART",	USART_IMSC_ABSTART,	USART_IMSC_ABSTART_SHIFT,	NULL,	0},
-	{"ABDET",	USART_IMSC_ABDET,	USART_IMSC_ABDET_SHIFT,		NULL,	0},
 	{"CTS",		USART_IMSC_CTS,		USART_IMSC_CTS_SHIFT,		NULL,	0},
+	{"ABDET",	USART_IMSC_ABDET,	USART_IMSC_ABDET_SHIFT,		NULL,	0},
+	{"ABSTART",	USART_IMSC_ABSTART,	USART_IMSC_ABSTART_SHIFT,	NULL,	0},
 	{"TMO",		USART_IMSC_TMO,		USART_IMSC_TMO_SHIFT,		NULL,	0},
 };
 
@@ -5346,9 +5346,9 @@ static pmb887x_module_field_t usart_ris_fields[] = {
 	{"TB",		USART_RIS_TB,		USART_RIS_TB_SHIFT,			NULL,	0},
 	{"RX",		USART_RIS_RX,		USART_RIS_RX_SHIFT,			NULL,	0},
 	{"ERR",		USART_RIS_ERR,		USART_RIS_ERR_SHIFT,		NULL,	0},
-	{"ABSTART",	USART_RIS_ABSTART,	USART_RIS_ABSTART_SHIFT,	NULL,	0},
-	{"ABDET",	USART_RIS_ABDET,	USART_RIS_ABDET_SHIFT,		NULL,	0},
 	{"CTS",		USART_RIS_CTS,		USART_RIS_CTS_SHIFT,		NULL,	0},
+	{"ABDET",	USART_RIS_ABDET,	USART_RIS_ABDET_SHIFT,		NULL,	0},
+	{"ABSTART",	USART_RIS_ABSTART,	USART_RIS_ABSTART_SHIFT,	NULL,	0},
 	{"TMO",		USART_RIS_TMO,		USART_RIS_TMO_SHIFT,		NULL,	0},
 };
 
@@ -5357,9 +5357,9 @@ static pmb887x_module_field_t usart_mis_fields[] = {
 	{"TB",		USART_MIS_TB,		USART_MIS_TB_SHIFT,			NULL,	0},
 	{"RX",		USART_MIS_RX,		USART_MIS_RX_SHIFT,			NULL,	0},
 	{"ERR",		USART_MIS_ERR,		USART_MIS_ERR_SHIFT,		NULL,	0},
-	{"ABSTART",	USART_MIS_ABSTART,	USART_MIS_ABSTART_SHIFT,	NULL,	0},
-	{"ABDET",	USART_MIS_ABDET,	USART_MIS_ABDET_SHIFT,		NULL,	0},
 	{"CTS",		USART_MIS_CTS,		USART_MIS_CTS_SHIFT,		NULL,	0},
+	{"ABDET",	USART_MIS_ABDET,	USART_MIS_ABDET_SHIFT,		NULL,	0},
+	{"ABSTART",	USART_MIS_ABSTART,	USART_MIS_ABSTART_SHIFT,	NULL,	0},
 	{"TMO",		USART_MIS_TMO,		USART_MIS_TMO_SHIFT,		NULL,	0},
 };
 
@@ -5368,9 +5368,9 @@ static pmb887x_module_field_t usart_icr_fields[] = {
 	{"TB",		USART_ICR_TB,		USART_ICR_TB_SHIFT,			NULL,	0},
 	{"RX",		USART_ICR_RX,		USART_ICR_RX_SHIFT,			NULL,	0},
 	{"ERR",		USART_ICR_ERR,		USART_ICR_ERR_SHIFT,		NULL,	0},
-	{"ABSTART",	USART_ICR_ABSTART,	USART_ICR_ABSTART_SHIFT,	NULL,	0},
-	{"ABDET",	USART_ICR_ABDET,	USART_ICR_ABDET_SHIFT,		NULL,	0},
 	{"CTS",		USART_ICR_CTS,		USART_ICR_CTS_SHIFT,		NULL,	0},
+	{"ABDET",	USART_ICR_ABDET,	USART_ICR_ABDET_SHIFT,		NULL,	0},
+	{"ABSTART",	USART_ICR_ABSTART,	USART_ICR_ABSTART_SHIFT,	NULL,	0},
 	{"TMO",		USART_ICR_TMO,		USART_ICR_TMO_SHIFT,		NULL,	0},
 };
 
@@ -5379,9 +5379,9 @@ static pmb887x_module_field_t usart_isr_fields[] = {
 	{"TB",		USART_ISR_TB,		USART_ISR_TB_SHIFT,			NULL,	0},
 	{"RX",		USART_ISR_RX,		USART_ISR_RX_SHIFT,			NULL,	0},
 	{"ERR",		USART_ISR_ERR,		USART_ISR_ERR_SHIFT,		NULL,	0},
-	{"ABSTART",	USART_ISR_ABSTART,	USART_ISR_ABSTART_SHIFT,	NULL,	0},
-	{"ABDET",	USART_ISR_ABDET,	USART_ISR_ABDET_SHIFT,		NULL,	0},
 	{"CTS",		USART_ISR_CTS,		USART_ISR_CTS_SHIFT,		NULL,	0},
+	{"ABDET",	USART_ISR_ABDET,	USART_ISR_ABDET_SHIFT,		NULL,	0},
+	{"ABSTART",	USART_ISR_ABSTART,	USART_ISR_ABSTART_SHIFT,	NULL,	0},
 	{"TMO",		USART_ISR_TMO,		USART_ISR_TMO_SHIFT,		NULL,	0},
 };
 
