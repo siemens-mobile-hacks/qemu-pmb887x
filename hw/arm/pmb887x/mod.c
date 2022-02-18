@@ -167,7 +167,19 @@ static void pmb887x_srb_set_event(struct pmb887x_srb_reg_t *reg, int n, int leve
 }
 
 void pmb887x_srb_set_imsc(struct pmb887x_srb_reg_t *reg, uint32_t value) {
+	uint32_t new_enabled = value & ~reg->imsc;
 	reg->imsc = value;
+	
+	if (!new_enabled)
+		return;
+	
+	for (int i = 0; i < 32; i++) {
+		uint8_t mask = 1 << i;
+		if ((new_enabled & mask)) {
+			if ((reg->ris & mask) != 0)
+				pmb887x_srb_set_event(reg, i, 1);
+		}
+	}
 }
 
 void pmb887x_srb_set_icr(struct pmb887x_srb_reg_t *reg, uint32_t value) {
