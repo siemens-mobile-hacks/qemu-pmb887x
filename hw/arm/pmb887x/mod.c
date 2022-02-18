@@ -118,7 +118,7 @@ uint32_t pmb887x_srb_get_mis(struct pmb887x_srb_reg_t *reg) {
 }
 
 uint32_t pmb887x_srb_get_ris(struct pmb887x_srb_reg_t *reg) {
-	return reg->ris|0xFFFFFF;
+	return reg->ris;
 }
 
 static void pmb887x_srb_set_irq(struct pmb887x_srb_reg_t *reg, int n, int level) {
@@ -149,7 +149,7 @@ static void pmb887x_srb_set_event(struct pmb887x_srb_reg_t *reg, int n, int leve
 	
 	if (has_irq != last_has_irq) {
 		if (has_irq) {
-			if ((reg->imsc & mask)||1) {
+			if ((reg->imsc & mask)) {
 				pmb887x_srb_set_irq(reg, n, level);
 				reg->last_state |= mask;
 			}

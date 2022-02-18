@@ -1112,8 +1112,8 @@ static pmb887x_module_field_t cif_id_fields[] = {
 };
 
 static pmb887x_module_reg_t cif_regs[] = {
-	{"CLC",		CIF_CLC,	cif_clc_fields,	ARRAY_SIZE(cif_clc_fields),	0},
 	{"UNK0",	CIF_UNK0,	NULL,			0,							0},
+	{"CLC",		CIF_CLC,	cif_clc_fields,	ARRAY_SIZE(cif_clc_fields),	0},
 	{"ID",		CIF_ID,		cif_id_fields,	ARRAY_SIZE(cif_id_fields),	0},
 	{"UNK1",	CIF_UNK1,	NULL,			0,							0},
 	{"UNK2",	CIF_UNK2,	NULL,			0,							0},

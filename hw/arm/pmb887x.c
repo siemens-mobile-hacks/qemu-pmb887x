@@ -139,14 +139,14 @@ static uint64_t unmapped_io_read(void *opaque, hwaddr offset, unsigned size) {
 	fprintf(stderr, "UNMAPPED READ[%d] %08X (PC: %08X)\n", size, addr, cpu->env.regs[15]);
 	if (addr >= 0xA0000000 && addr <= 0xA4000000)
 		return 0xFFFFFFFF;
-	exit(1);
+//	exit(1);
 	return 0xFFFFFFFF;
 }
 
 static void unmapped_io_write(void *opaque, hwaddr offset, uint64_t value, unsigned size) {
 	uint32_t addr = (size_t) opaque + offset;
 	fprintf(stderr, "UNMAPPED WRITE[%d] %08X = %08lX (from: %08X)\n", size, addr, value, cpu->env.regs[15]);
-	exit(1);
+//	exit(1);
 }
 
 static const MemoryRegionOps unmapped_io_opts = {
@@ -159,9 +159,9 @@ __attribute__((destructor))
 static void memory_dump_at_exit(void) {
 	fprintf(stderr, "sorry died\n");
 	
-	qmp_pmemsave(0xA8000000, 16 * 1024 * 1024, "/tmp/ram.bin", NULL);
-	qmp_pmemsave(0x00000000, 0x4000, "/tmp/tcm.bin", NULL);
-	qmp_pmemsave(0x00080000, 96 * 1024, "/tmp/sram.bin", NULL);
+//	qmp_pmemsave(0xA8000000, 16 * 1024 * 1024, "/tmp/ram.bin", NULL);
+//	qmp_pmemsave(0x00000000, 0x4000, "/tmp/tcm.bin", NULL);
+//	qmp_pmemsave(0x00080000, 96 * 1024, "/tmp/sram.bin", NULL);
 }
 
 static DeviceState *create_flash(BlockBackend *blk, uint32_t *banks, int banks_n) {
@@ -317,8 +317,18 @@ void pmb887x_init(MachineState *machine, uint32_t board_id) {
 	sysbus_realize_and_unref(SYS_BUS_DEVICE(dsp), &error_fatal);
 	
 	// DIF
-	DeviceState *dif = pmb887x_new_dev(board->cpu, "DIF", nvic);
-	sysbus_realize_and_unref(SYS_BUS_DEVICE(dif), &error_fatal);
+//	DeviceState *dif = pmb887x_new_dev(board->cpu, "DIF", nvic);
+//	sysbus_realize_and_unref(SYS_BUS_DEVICE(dif), &error_fatal);
+	
+	// USART0
+	DeviceState *usart0 = pmb887x_new_dev(board->cpu, "USART0", nvic);
+	qdev_prop_set_chr(DEVICE(usart0), "chardev", serial_hd(0));
+	sysbus_realize_and_unref(SYS_BUS_DEVICE(usart0), &error_fatal);
+	
+	// USART1
+	DeviceState *usart1 = pmb887x_new_dev(board->cpu, "USART1", nvic);
+	qdev_prop_set_chr(DEVICE(usart1), "chardev", serial_hd(1));
+	sysbus_realize_and_unref(SYS_BUS_DEVICE(usart1), &error_fatal);
 	
 	#ifndef PMB887X_IO_BRIDGE
 	// System Control Unit
@@ -338,8 +348,8 @@ void pmb887x_init(MachineState *machine, uint32_t board_id) {
 	DeviceState *pcl = pmb887x_new_dev(board->cpu, "PCL", nvic);
 	sysbus_realize_and_unref(SYS_BUS_DEVICE(pcl), &error_fatal);
 	
-	// HW_DET4=1
-	qemu_set_irq(qdev_get_gpio_in(pcl, 69), 1);
+	for (int i = 0; i < board->fixed_gpios_cnt; i++)
+		qemu_set_irq(qdev_get_gpio_in(pcl, board->fixed_gpios[i].id), board->fixed_gpios[i].value);
 	
 	// RTC
 	DeviceState *rtc = pmb887x_new_dev(board->cpu, "RTC", nvic);
@@ -350,14 +360,6 @@ void pmb887x_init(MachineState *machine, uint32_t board_id) {
 		DeviceState *i2c = pmb887x_new_dev(board->cpu, "I2C", nvic);
 		sysbus_realize_and_unref(SYS_BUS_DEVICE(i2c), &error_fatal);
 	}
-	
-	// USART0
-	DeviceState *usart0 = pmb887x_new_dev(board->cpu, "USART0", nvic);
-	sysbus_realize_and_unref(SYS_BUS_DEVICE(usart0), &error_fatal);
-	
-	// USART1
-	DeviceState *usart1 = pmb887x_new_dev(board->cpu, "USART1", nvic);
-	sysbus_realize_and_unref(SYS_BUS_DEVICE(usart1), &error_fatal);
 	
 	// GPTU0
 	DeviceState *gptu0 = pmb887x_new_dev(board->cpu, "GPTU0", nvic);
@@ -396,6 +398,15 @@ void pmb887x_init(MachineState *machine, uint32_t board_id) {
 	}
 	
 	sysbus_realize_and_unref(SYS_BUS_DEVICE(ebuc), &error_fatal);
+	
+//	MemoryRegion *img = g_new(MemoryRegion, 1);
+//	memory_region_init_io(img, NULL, &cpu_io_opts, (void *) 0xa8d94c9c, "IMG", 4);
+//	memory_region_add_subregion_overlap(sysmem, 0xa8d94c9c, img, 999999);
+	
+ //   memory_region_init_io(img, NULL, &cpu_io_opts, (void *) 0xA825B020, "IMG", 240*320*3);
+//	memory_region_add_subregion_overlap(sysmem, 0xA825B020, img, 999999);
+//	 memory_region_init_io(img, NULL, &cpu_io_opts, (void *) 0xa8f59384, "IMG", 4);
+//	memory_region_add_subregion_overlap(sysmem, 0xa8f59384, img, 999999);
 	
 	#ifdef PMB887X_IO_BRIDGE
 	// Exec BootROM

@@ -314,7 +314,7 @@ static uint64_t flash_io_read(void *opaque, hwaddr part_offset, unsigned size) {
 					default:
 						value = 0xFF;
 						flash_trace_part(p, "%08lX: read unknown cfi index 0x%02X", offset, index);
-						abort();
+					//	abort();
 					break;
 				}
 			}
@@ -355,6 +355,26 @@ static void flash_io_write(void *opaque, hwaddr part_offset, uint64_t value, uns
 		switch (value) {
 			// Read
 			case 0xFF:
+				flash_reset(p);
+			break;
+			
+			case 0x00:
+				flash_trace_part(p, "cmd AMD probe (%02lX)", value);
+				flash_reset(p);
+			break;
+			
+			case 0xAA:
+				flash_trace_part(p, "cmd AMD probe (%02lX)", value);
+				flash_reset(p);
+			break;
+			
+			case 0x55:
+				flash_trace_part(p, "cmd AMD probe (%02lX)", value);
+				flash_reset(p);
+			break;
+			
+			case 0xF0:
+				flash_trace_part(p, "cmd AMD probe (%02lX)", value);
 				flash_reset(p);
 			break;
 			
@@ -764,6 +784,7 @@ static void flash_init_bank(pmb887x_flash_t *flash, uint32_t dev_id, uint32_t of
 	bank->otp0_size = MAX(otp0_size_f, otp0_size_u) / 2 + 1;
 	bank->otp0_data = g_new(uint16_t, bank->otp0_size);
 	memset(bank->otp0_data, 0xFF, bank->otp0_size * 2);
+	bank->otp0_data[0] = 0x0002;
 	if (!fill_data_from_hex((uint8_t *) bank->otp0_data, bank->otp0_size * 2, flash->otp0_data)) {
 		flash_error(bank->flash, "Invalid OTP0 hex data: %s [max_size=%d, len=%d]", flash->otp0_data, bank->otp0_size * 2, strlen(flash->otp0_data) / 2);
 		abort();

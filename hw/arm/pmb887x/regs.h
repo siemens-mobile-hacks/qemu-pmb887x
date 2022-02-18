@@ -1879,10 +1879,10 @@
 // CIF [MOD_NUM=F052, MOD_REV=00, MOD_32BIT=C0]
 // Looks like DIF (Camera Interface) module, but not sure.
 #define CIF_IO_SIZE	0x00000200
+#define CIF_UNK0	0x00
+
 /* Clock Control Register */
 #define CIF_CLC		0x00
-
-#define CIF_UNK0	0x00
 
 /* Module Identifier Register */
 #define CIF_ID		0x08

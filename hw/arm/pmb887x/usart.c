@@ -12,13 +12,17 @@
 #include "qemu/timer.h"
 #include "qemu/main-loop.h"
 #include "hw/qdev-properties.h"
+#include "hw/qdev-properties-system.h"
 #include "qapi/error.h"
+#include "chardev/char-fe.h"
+#include "chardev/char-serial.h"
 
 #include "hw/arm/pmb887x/pll.h"
 #include "hw/arm/pmb887x/regs.h"
 #include "hw/arm/pmb887x/io_bridge.h"
 #include "hw/arm/pmb887x/regs_dump.h"
 #include "hw/arm/pmb887x/mod.h"
+#include "hw/arm/pmb887x/fifo.h"
 
 #define USART_DEBUG
 
@@ -30,6 +34,8 @@
 
 #define TYPE_PMB887X_USART	"pmb887x-usart"
 #define PMB887X_USART(obj)	OBJECT_CHECK(struct pmb887x_usart_t, (obj), TYPE_PMB887X_USART)
+
+#define FIFO_SIZE	8
 
 enum {
 	USART_IRQ_TX,
@@ -51,12 +57,27 @@ struct pmb887x_usart_t {
 	struct pmb887x_srb_reg_t srb;
 	qemu_irq irq[USART_IRQ_NR];
 	
+	bool apply_workarounds;
+	
+	guint watch_tag;
+	CharBackend chr;
+	
+	pmb887x_fifo_t tx_fifo_buffered;
+	pmb887x_fifo_t rx_fifo_buffered;
+	
+	pmb887x_fifo_t tx_fifo_single;
+	pmb887x_fifo_t rx_fifo_single;
+	
+	pmb887x_fifo_t *rx_fifo;
+	pmb887x_fifo_t *tx_fifo;
+	
+	bool last_is_icr_tx;
+	
 	uint32_t con;
 	uint32_t bg;
 	uint32_t fdv;
 	uint32_t pmw;
-	uint32_t txb;
-	uint32_t rxb;
+	uint8_t txb;
 	uint32_t abcon;
 	uint32_t abstat;
 	uint32_t rxfcon;
@@ -70,14 +91,132 @@ struct pmb887x_usart_t {
 	uint32_t tmo;
 };
 
+static void usart_transmit_fifo(struct pmb887x_usart_t *p);
+
 static void usart_update_state(struct pmb887x_usart_t *p) {
-	// TODO
+	
+}
+
+static void usart_set_rx_fifo(struct pmb887x_usart_t *p, bool buffered) {
+	pmb887x_fifo_reset(&p->rx_fifo_buffered);
+	pmb887x_fifo_reset(&p->rx_fifo_single);
+	
+	if (buffered) {
+		p->rx_fifo = &p->rx_fifo_buffered;
+	} else {
+		p->rx_fifo = &p->rx_fifo_single;
+	}
+}
+
+static void usart_set_tx_fifo(struct pmb887x_usart_t *p, bool buffered) {
+	pmb887x_fifo_reset(&p->tx_fifo_buffered);
+	pmb887x_fifo_reset(&p->tx_fifo_single);
+	
+	if (p->watch_tag) {
+		g_source_remove(p->watch_tag);
+		p->watch_tag = 0;
+		abort();
+	}
+	
+	if (buffered) {
+		p->tx_fifo = &p->tx_fifo_buffered;
+	} else {
+		p->tx_fifo = &p->tx_fifo_single;
+	}
+}
+
+static int usart_can_receive(void *opaque) {
+	struct pmb887x_usart_t *p = (struct pmb887x_usart_t *) opaque;
+	if (!pmb887x_clc_is_enabled(&p->clc))
+		return 0;
+	return pmb887x_fifo_free_count(p->rx_fifo);
+}
+
+static void usart_receive(void *opaque, const uint8_t *buf, int size) {
+	struct pmb887x_usart_t *p = (struct pmb887x_usart_t *) opaque;
+	
+	if (!pmb887x_clc_is_enabled(&p->clc)) {
+		DPRINTF("usart not enabled, drop %d rx chars\n", size);
+		pmb887x_fifo_reset(p->rx_fifo);
+		return;
+	}
+	
+	g_assert(size <= pmb887x_fifo_free_count(p->rx_fifo));
+	pmb887x_fifo_push_all(p->rx_fifo, buf, size);
+	
+	if ((p->rxfcon & USART_RXFCON_RXFEN)) {
+		uint32_t rx_level = (p->rxfcon & USART_RXFCON_RXFITL) >> USART_RXFCON_RXFITL_SHIFT;
+		rx_level = MAX(1, MIN(FIFO_SIZE, rx_level));
+		
+		if (pmb887x_fifo_count(p->rx_fifo) >= rx_level)
+			pmb887x_srb_set_isr(&p->srb, USART_ISR_RX);
+	} else {
+		pmb887x_srb_set_isr(&p->srb, USART_ISR_RX);
+	}
+	
+//	for (int i = 0; i < size; i++)
+//		DPRINTF("rx: %02X\n", buf[i]);
+}
+
+static gboolean usart_transmit_delayed(void *do_not_use, GIOCondition cond, void *opaque) {
+	struct pmb887x_usart_t *p = (struct pmb887x_usart_t *) opaque;
+	p->watch_tag = 0;
+	usart_transmit_fifo(p);
+	return false;
+}
+
+static void usart_transmit_fifo(struct pmb887x_usart_t *p) {
+	if (p->watch_tag)
+		return;
+	
+	if (!pmb887x_clc_is_enabled(&p->clc)) {
+		pmb887x_fifo_reset(p->tx_fifo);
+		return;
+	}
+	
+	bool is_full = pmb887x_fifo_is_full(p->tx_fifo);
+	
+	const uint8_t *buff = pmb887x_fifo_data(p->tx_fifo);
+	uint32_t size = pmb887x_fifo_count(p->tx_fifo);
+	
+	int ret = qemu_chr_fe_write(&p->chr, buff, size);
+	if (ret > 0) {
+		pmb887x_fifo_cut(p->tx_fifo, ret);
+		
+		if (is_full)
+			pmb887x_srb_set_isr(&p->srb, USART_ISR_TB);
+		
+		if ((p->txfcon & USART_TXFCON_TXFEN)) {
+			uint32_t tx_level = (p->txfcon & USART_TXFCON_TXFITL) >> USART_TXFCON_TXFITL_SHIFT;
+			tx_level = MAX(1, MIN(FIFO_SIZE, tx_level));
+			
+			if (pmb887x_fifo_count(p->tx_fifo) <= tx_level)
+				pmb887x_srb_set_isr(&p->srb, USART_ISR_TX);
+		} else {
+			if (pmb887x_fifo_is_empty(p->tx_fifo))
+				pmb887x_srb_set_isr(&p->srb, USART_ISR_TX);
+		}
+	}
+	
+	if (!pmb887x_fifo_is_empty(p->tx_fifo)) {
+		p->watch_tag = qemu_chr_fe_add_watch(&p->chr, G_IO_OUT | G_IO_HUP, usart_transmit_delayed, p);
+		if (!p->watch_tag) {
+			pmb887x_srb_set_isr(&p->srb, USART_ISR_TB | USART_ISR_TX);
+			pmb887x_fifo_reset(p->tx_fifo);
+		}
+	}
 }
 
 static uint64_t usart_io_read(void *opaque, hwaddr haddr, unsigned size) {
 	struct pmb887x_usart_t *p = (struct pmb887x_usart_t *) opaque;
 	
 	uint64_t value = 0;
+	
+	// Workaround for broken firmwares
+	if (haddr != USART_RIS)
+		p->last_is_icr_tx = false;
+	
+	bool no_dump = true;
 	
 	switch (haddr) {
 		case USART_CLC:
@@ -105,11 +244,19 @@ static uint64_t usart_io_read(void *opaque, hwaddr haddr, unsigned size) {
 		break;
 		
 		case USART_TXB:
+			no_dump = true;
 			value = p->txb;
 		break;
 		
 		case USART_RXB:
-			value = p->rxb;
+			no_dump = true;
+			
+			if (!pmb887x_fifo_is_empty(p->rx_fifo)) {
+				bool is_full = pmb887x_fifo_is_full(p->rx_fifo);
+				value = pmb887x_fifo_pop(p->rx_fifo);
+				if (is_full)
+					qemu_chr_fe_accept_input(&p->chr);
+			}
 		break;
 		
 		case USART_ABCON:
@@ -157,14 +304,25 @@ static uint64_t usart_io_read(void *opaque, hwaddr haddr, unsigned size) {
 		break;
 		
 		case USART_RIS:
-			value = USART_RIS_TX;//pmb887x_srb_get_ris(&p->srb);
+			no_dump = true;
+			value = pmb887x_srb_get_ris(&p->srb);
+			
+			// workaround for broken firmwares
+			if (p->apply_workarounds) {
+				if (p->last_is_icr_tx) {
+					DPRINTF("apply USART_RIS_TX workaround");
+					value |= USART_RIS_TX;
+				}
+			}
 		break;
 		
 		case USART_MIS:
+			no_dump = true;
 			value = pmb887x_srb_get_mis(&p->srb);
 		break;
 		
 		case USART_ICR:
+			no_dump = true;
 			value = 0;
 		break;
 		
@@ -183,7 +341,8 @@ static uint64_t usart_io_read(void *opaque, hwaddr haddr, unsigned size) {
 		break;
 	}
 	
-	//pmb887x_dump_io(haddr + p->mmio.addr, size, value, false);
+	if (!no_dump)
+		pmb887x_dump_io(haddr + p->mmio.addr, size, value, false);
 	
 	return value;
 }
@@ -191,7 +350,10 @@ static uint64_t usart_io_read(void *opaque, hwaddr haddr, unsigned size) {
 static void usart_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned size) {
 	struct pmb887x_usart_t *p = (struct pmb887x_usart_t *) opaque;
 	
-	//pmb887x_dump_io(haddr + p->mmio.addr, size, value, true);
+	// Workaround for broken firmwares
+	p->last_is_icr_tx = (haddr == USART_ICR && (value & USART_ICR_TX));
+	
+	bool no_dump = false;
 	
 	switch (haddr) {
 		case USART_CLC:
@@ -219,12 +381,18 @@ static void usart_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned 
 		break;
 		
 		case USART_TXB:
-			// fprintf(stderr, "%c", value & 0xFF);
-			p->txb = value;
-		break;
-		
-		case USART_RXB:
-			p->rxb = value;
+			p->txb = value & 0xFF;
+			
+			no_dump = true;
+			
+			if (!pmb887x_fifo_is_full(p->tx_fifo)) {
+				pmb887x_fifo_push(p->tx_fifo, p->txb);
+				
+				if (!pmb887x_fifo_is_full(p->tx_fifo))
+					pmb887x_srb_set_isr(&p->srb, USART_ISR_TB);
+				
+				usart_transmit_fifo(p);
+			}
 		break;
 		
 		case USART_ABCON:
@@ -236,11 +404,17 @@ static void usart_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned 
 		break;
 		
 		case USART_RXFCON:
+			if ((value & USART_RXFCON_RXFEN) != (p->rxfcon & USART_RXFCON_RXFEN))
+				usart_set_rx_fifo(p, (value & USART_RXFCON_RXFEN) != 0);
 			p->rxfcon = value;
+			abort();
 		break;
 		
 		case USART_TXFCON:
+			if ((value & USART_TXFCON_TXFEN) != (p->txfcon & USART_TXFCON_TXFEN))
+				usart_set_tx_fifo(p, (value & USART_TXFCON_TXFEN) != 0);
 			p->txfcon = value;
+			abort();
 		break;
 		
 		case USART_FSTAT:
@@ -272,6 +446,8 @@ static void usart_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned 
 		break;
 		
 		case USART_ICR:
+			no_dump = true;
+			
 			pmb887x_srb_set_icr(&p->srb, value);
 		break;
 		
@@ -288,6 +464,9 @@ static void usart_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned 
 			exit(1);
 		break;
 	}
+	
+	if (!no_dump)
+		pmb887x_dump_io(haddr + p->mmio.addr, size, value, true);
 	
 	usart_update_state(p);
 }
@@ -323,14 +502,26 @@ static void usart_realize(DeviceState *dev, Error **errp) {
 		}
 	}
 	
+    pmb887x_fifo_init(&p->tx_fifo_buffered, FIFO_SIZE);
+    pmb887x_fifo_init(&p->rx_fifo_buffered, FIFO_SIZE);
+	
+    pmb887x_fifo_init(&p->tx_fifo_single, 2);
+    pmb887x_fifo_init(&p->rx_fifo_single, 1);
+	
+	usart_set_rx_fifo(p, false);
+	usart_set_tx_fifo(p, false);
+	
 	pmb887x_srb_init(&p->srb, p->irq, ARRAY_SIZE(p->irq));
-	// pmb887x_srb_set_irq_router(usart_irq_router);
+	
+	qemu_chr_fe_set_handlers(&p->chr, usart_can_receive, usart_receive, NULL, NULL, p, NULL, true);
 	
 	usart_update_state(p);
 }
 
 static Property usart_properties[] = {
-    DEFINE_PROP_END_OF_LIST(),
+    DEFINE_PROP_CHR("chardev", struct pmb887x_usart_t, chr),
+    DEFINE_PROP_BOOL("apply-workarounds", struct pmb887x_usart_t, apply_workarounds, true),
+	DEFINE_PROP_END_OF_LIST(),
 };
 
 static void usart_class_init(ObjectClass *klass, void *data) {

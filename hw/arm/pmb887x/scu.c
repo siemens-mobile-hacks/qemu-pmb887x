@@ -114,8 +114,8 @@ static uint64_t scu_io_read(void *opaque, hwaddr haddr, unsigned size) {
 		break;
 		
 		case SCU_RST_SR:
-			value = SCU_RST_SR_RSSTM | SCU_RST_SR_HDRST | SCU_RST_SR_RSEXT | 0x5000;
-			// value = SCU_RST_SR_PWDRST | SCU_RST_SR_RSSTM | SCU_RST_SR_RSEXT;
+			// value = SCU_RST_SR_RSSTM | SCU_RST_SR_HDRST | SCU_RST_SR_RSEXT | 0x5000;
+			value = SCU_RST_SR_PWDRST | SCU_RST_SR_RSSTM | SCU_RST_SR_RSEXT;
 		break;
 		
 		case SCU_WDT_SR:

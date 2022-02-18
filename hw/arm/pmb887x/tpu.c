@@ -333,7 +333,7 @@ static uint64_t tpu_io_read(void *opaque, hwaddr haddr, unsigned size) {
 		break;
 	}
 	
-	// pmb887x_dump_io(haddr + p->mmio.addr, size, value, false);
+	pmb887x_dump_io(haddr + p->mmio.addr, size, value, false);
 	
 	return value;
 }
@@ -341,7 +341,7 @@ static uint64_t tpu_io_read(void *opaque, hwaddr haddr, unsigned size) {
 static void tpu_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned size) {
 	struct pmb887x_tpu_t *p = (struct pmb887x_tpu_t *) opaque;
 	
-	// pmb887x_dump_io(haddr + p->mmio.addr, size, value, true);
+	pmb887x_dump_io(haddr + p->mmio.addr, size, value, true);
 	
 	switch (haddr) {
 		case TPU_CLC:
