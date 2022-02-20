@@ -13,8 +13,9 @@
 #include "qemu/main-loop.h"
 #include "hw/qdev-properties.h"
 #include "qapi/error.h"
+#include "hw/i2c/i2c.h"
 
-#include "hw/arm/pmb887x/pll.h"
+#include "hw/arm/pmb887x/i2c.h"
 #include "hw/arm/pmb887x/regs.h"
 #include "hw/arm/pmb887x/io_bridge.h"
 #include "hw/arm/pmb887x/regs_dump.h"
@@ -32,22 +33,24 @@
 #define PMB887X_I2C(obj)	OBJECT_CHECK(struct pmb887x_i2c_t, (obj), TYPE_PMB887X_I2C)
 
 enum {
-	I2C_IRQ_SINGLE_REQ	= 0,
-	I2C_IRQ_BURST_REQ	= 1,
+	I2C_SINGLE_REQ_IRQ = 0,
+	I2C_BURST_REQ_IRQ,
+	I2C_ERROR_IRQ,
+	I2C_PROTOCOL_IRQ,
 };
 
 struct pmb887x_i2c_t {
 	SysBusDevice parent_obj;
 	MemoryRegion mmio;
 	
+    I2CBus *bus;
+    
 	struct pmb887x_clc_reg_t clc;
 	struct pmb887x_srb_reg_t srb;
 	struct pmb887x_srb_reg_t srb_proto;
 	struct pmb887x_srb_reg_t srb_err;
 	
-	qemu_irq irq[2];
-	qemu_irq irq_proto;
-	qemu_irq irq_err;
+	qemu_irq irq[4];
 	
 	uint32_t runctrl;
 	uint32_t enddctrl;
@@ -70,15 +73,23 @@ static void i2c_update_state(struct pmb887x_i2c_t *p) {
 }
 
 static int i2c_irq_router(void *opaque, int event_id) {
-	return 0;
+	switch ((1 << event_id)) {
+		case I2C_ISR_LSREQ_INT:		return I2C_SINGLE_REQ_IRQ;
+		case I2C_ISR_SREQ_INT:		return I2C_SINGLE_REQ_IRQ;
+		case I2C_ISR_LBREQ_INT:		return I2C_SINGLE_REQ_IRQ;
+		case I2C_ISR_BREQ_INT:		return I2C_BURST_REQ_IRQ;
+		case I2C_ISR_I2C_ERR_INT:	return I2C_PROTOCOL_IRQ;
+		case I2C_ISR_I2C_P_INT:		return I2C_PROTOCOL_IRQ;
+	}
+	return I2C_ISR_I2C_P_INT;
 }
 
 static int i2c_err_irq_router(void *opaque, int event_id) {
-	return 0;
+	return I2C_ERROR_IRQ;
 }
 
 static int i2c_proto_irq_router(void *opaque, int event_id) {
-	return 0;
+	return I2C_PROTOCOL_IRQ;
 }
 
 static uint64_t i2c_io_read(void *opaque, hwaddr haddr, unsigned size) {
@@ -260,7 +271,6 @@ static void i2c_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned si
 		
 		case I2C_TPSCTRL:
 			p->tpsctrl = value;
-			pmb887x_srb_set_isr(&p->srb_proto, I2C_PIRQSC_NACK);
 		break;
 		
 		case I2C_FFSSTAT:
@@ -321,16 +331,20 @@ static const MemoryRegionOps io_ops = {
 	}
 };
 
+I2CBus *pmb887x_i2c_bus(DeviceState *dev) {
+    struct pmb887x_i2c_t *p = PMB887X_I2C(dev);
+    return p->bus;
+}
+
 static void i2c_init(Object *obj) {
 	struct pmb887x_i2c_t *p = PMB887X_I2C(obj);
 	memory_region_init_io(&p->mmio, obj, &io_ops, p, "pmb887x-i2c", I2C_IO_SIZE);
 	sysbus_init_mmio(SYS_BUS_DEVICE(obj), &p->mmio);
 	
+	p->bus = i2c_init_bus(DEVICE(obj), NULL);
+	
 	for (int i = 0; i < ARRAY_SIZE(p->irq); i++)
 		sysbus_init_irq(SYS_BUS_DEVICE(obj), &p->irq[i]);
-	
-	sysbus_init_irq(SYS_BUS_DEVICE(obj), &p->irq_err);
-	sysbus_init_irq(SYS_BUS_DEVICE(obj), &p->irq_proto);
 }
 
 static void i2c_realize(DeviceState *dev, Error **errp) {
@@ -341,10 +355,10 @@ static void i2c_realize(DeviceState *dev, Error **errp) {
 	pmb887x_srb_init(&p->srb, p->irq, ARRAY_SIZE(p->irq));
 	pmb887x_srb_set_irq_router(&p->srb, p, i2c_irq_router);
 	
-	pmb887x_srb_init(&p->srb_err, &p->irq_err, 1);
+	pmb887x_srb_init(&p->srb_err, p->irq, ARRAY_SIZE(p->irq));
 	pmb887x_srb_set_irq_router(&p->srb_proto, p, i2c_err_irq_router);
 	
-	pmb887x_srb_init(&p->srb_proto, &p->irq_proto, 1);
+	pmb887x_srb_init(&p->srb_proto, p->irq, ARRAY_SIZE(p->irq));
 	pmb887x_srb_set_irq_router(&p->srb_proto, p, i2c_proto_irq_router);
 	
 	i2c_update_state(p);

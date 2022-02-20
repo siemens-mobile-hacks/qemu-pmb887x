@@ -16,7 +16,7 @@ struct pmb887x_srb_reg_t {
 	qemu_irq *irq;
 	int irq_n;
 	bool *last_irq_state;
-	int *irq_lock;
+	uint32_t *irq_events;
 	
 	uint32_t last_state;
 	uint32_t imsc;

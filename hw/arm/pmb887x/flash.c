@@ -783,7 +783,7 @@ static void flash_init_bank(pmb887x_flash_t *flash, uint32_t dev_id, uint32_t of
 	bank->otp0_addr = (bank->pri_table[0x10] << 8) | bank->pri_table[0x0F];
 	bank->otp0_size = MAX(otp0_size_f, otp0_size_u) / 2 + 1;
 	bank->otp0_data = g_new(uint16_t, bank->otp0_size);
-	memset(bank->otp0_data, 0xFF, bank->otp0_size * 2);
+	memset(bank->otp0_data, 0xFFFF, bank->otp0_size * 2);
 	bank->otp0_data[0] = 0x0002;
 	if (!fill_data_from_hex((uint8_t *) bank->otp0_data, bank->otp0_size * 2, flash->otp0_data)) {
 		flash_error(bank->flash, "Invalid OTP0 hex data: %s [max_size=%d, len=%d]", flash->otp0_data, bank->otp0_size * 2, strlen(flash->otp0_data) / 2);
@@ -798,7 +798,8 @@ static void flash_init_bank(pmb887x_flash_t *flash, uint32_t dev_id, uint32_t of
 	bank->otp1_addr = (bank->pri_table[0x16] << 24) | (bank->pri_table[0x15] << 16) | (bank->pri_table[0x14] << 8) | bank->pri_table[0x13];
 	bank->otp1_size = MAX(otp1_groups_f * otp1_size_f, otp1_groups_u * otp1_size_u) / 2 + 1;
 	bank->otp1_data = g_new(uint16_t, bank->otp1_size);
-	memset(bank->otp1_data, 0xFF, bank->otp1_size * 2);
+	memset(bank->otp1_data, 0xFFFF, bank->otp1_size * 2);
+	bank->otp1_data[0] = 0xFFFF;
 	if (!fill_data_from_hex((uint8_t *) bank->otp1_data, bank->otp1_size * 2, flash->otp1_data)) {
 		flash_error(bank->flash, "Invalid OTP1 hex data: %s [max_size=%d, len=%d]", flash->otp1_data, bank->otp1_size * 2, strlen(flash->otp1_data) / 2);
 		abort();

@@ -97,7 +97,7 @@ void pmb887x_srb_init(struct pmb887x_srb_reg_t *reg, qemu_irq *irq, int irq_n) {
 	reg->irq = irq;
 	reg->irq_n = irq_n;
 	reg->last_irq_state = g_new0(bool, reg->irq_n);
-	reg->irq_lock = g_new0(int, reg->irq_n);
+	reg->irq_events = g_new0(uint32_t, reg->irq_n);
 	reg->irq_router = pmb887x_srb_irq_router;
 	reg->irq_router_opaque = reg;
 	reg->imsc = 0;
@@ -123,6 +123,7 @@ uint32_t pmb887x_srb_get_ris(struct pmb887x_srb_reg_t *reg) {
 
 static void pmb887x_srb_set_irq(struct pmb887x_srb_reg_t *reg, int n, int level) {
 	int irq_n = reg->irq_router(reg->irq_router_opaque, n);
+	uint8_t mask = 1 << n;
 	
 	if (irq_n < 0 || irq_n >= reg->irq_n) {
 		error_report("[pmb887x-mod] invalid irq index: %d\n", irq_n);
@@ -130,12 +131,12 @@ static void pmb887x_srb_set_irq(struct pmb887x_srb_reg_t *reg, int n, int level)
 	}
 	
 	if (level != 0) {
-		reg->irq_lock[irq_n]++;
+		reg->irq_events[irq_n] |= mask;
 	} else {
-		reg->irq_lock[irq_n]--;
+		reg->irq_events[irq_n] &= ~mask;
 	}
 	
-	int state = reg->irq_lock[irq_n] != 0 ? 1 : 0;
+	int state = reg->irq_events[irq_n] ? 1 : 0;
 	if (reg->last_irq_state[irq_n] != state) {
 		qemu_set_irq(reg->irq[irq_n], state);
 		reg->last_irq_state[irq_n] = state;

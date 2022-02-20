@@ -146,6 +146,7 @@ static uint64_t nvic_io_read(void *opaque, hwaddr haddr, unsigned size) {
 			if (p->current_irq != -1 && !p->irq_readed) {
 				value = p->current_irq;
 				p->irq_readed = true;
+				qemu_set_irq(p->parent_irq, 0);
 			} else {
 				value = 0;
 			}
@@ -155,6 +156,7 @@ static uint64_t nvic_io_read(void *opaque, hwaddr haddr, unsigned size) {
 			if (p->current_fiq != -1 && !p->fiq_readed) {
 				value = p->current_fiq;
 				p->fiq_readed = true;
+				qemu_set_irq(p->parent_fiq, 0);
 			} else {
 				value = 0;
 			}

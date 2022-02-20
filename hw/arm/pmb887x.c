@@ -22,6 +22,7 @@
 #include "hw/arm/pmb887x/io_bridge.h"
 #include "hw/arm/pmb887x/regs_dump.h"
 #include "hw/arm/pmb887x/devices.h"
+#include "hw/arm/pmb887x/i2c.h"
 #include "hw/arm/pmb887x/boards.h"
 #include "hw/arm/pmb887x/qemu-machines.h"
 
@@ -159,9 +160,9 @@ __attribute__((destructor))
 static void memory_dump_at_exit(void) {
 	fprintf(stderr, "sorry died\n");
 	
-//	qmp_pmemsave(0xA8000000, 16 * 1024 * 1024, "/tmp/ram.bin", NULL);
-//	qmp_pmemsave(0x00000000, 0x4000, "/tmp/tcm.bin", NULL);
-//	qmp_pmemsave(0x00080000, 96 * 1024, "/tmp/sram.bin", NULL);
+	qmp_pmemsave(0xA8000000, 16 * 1024 * 1024, "/tmp/ram.bin", NULL);
+	qmp_pmemsave(0x00000000, 0x4000, "/tmp/tcm.bin", NULL);
+	qmp_pmemsave(0x00080000, 96 * 1024, "/tmp/sram.bin", NULL);
 }
 
 static DeviceState *create_flash(BlockBackend *blk, uint32_t *banks, int banks_n) {
@@ -359,6 +360,10 @@ void pmb887x_init(MachineState *machine, uint32_t board_id) {
 		// I2C
 		DeviceState *i2c = pmb887x_new_dev(board->cpu, "I2C", nvic);
 		sysbus_realize_and_unref(SYS_BUS_DEVICE(i2c), &error_fatal);
+		
+		// Power ASIC
+		I2CSlave *pasic = i2c_slave_new("pmb887x-pasic", 0x31);
+		i2c_slave_realize_and_unref(pasic, pmb887x_i2c_bus(i2c), &error_fatal);
 	}
 	
 	// GPTU0

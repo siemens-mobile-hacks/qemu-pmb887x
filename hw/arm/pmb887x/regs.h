@@ -67,7 +67,7 @@
 #define PMB8875_GPIO_RF_STR1		57
 #define PMB8875_GPIO_CLKOUT0		58
 #define PMB8875_GPIO_RF_CLK			59
-#define PMB8875_GPIO_DSPOUT			62
+#define PMB8875_GPIO_DSPOUT1		62
 #define PMB8875_GPIO_DSPIN1			63
 #define PMB8875_GPIO_PIPESTAT2		66
 #define PMB8875_GPIO_PIPESTAT1		67
@@ -139,9 +139,9 @@
 #define PMB8875_SCU_EXTI6_IRQ		62
 #define PMB8875_SCU_EXTI7_IRQ		63
 #define PMB8875_PLL_IRQ				65
-#define PMB8875_I2C_INT0_IRQ		66
-#define PMB8875_I2C_INT1_IRQ		67
-#define PMB8875_I2C_INT2_IRQ		68
+#define PMB8875_I2C_DATA_IRQ		66
+#define PMB8875_I2C_PROTO_IRQ		67
+#define PMB8875_I2C_ERR_IRQ			68
 #define PMB8875_AMC_INT0_IRQ		70
 #define PMB8875_AMC_INT1_IRQ		71
 #define PMB8875_CAPCOM0_T0_IRQ		72
@@ -548,7 +548,7 @@
 #define CX75_GPIO_RF_STR1		PMB8875_GPIO_RF_STR1
 #define CX75_GPIO_CLKOUT0		PMB8875_GPIO_CLKOUT0
 #define CX75_GPIO_RF_CLK		PMB8875_GPIO_RF_CLK
-#define CX75_GPIO_DSPOUT		PMB8875_GPIO_DSPOUT
+#define CX75_GPIO_PM_WADOG		PMB8875_GPIO_DSPOUT1
 #define CX75_GPIO_DSPIN1		PMB8875_GPIO_DSPIN1
 #define CX75_GPIO_PIPESTAT2		PMB8875_GPIO_PIPESTAT2
 #define CX75_GPIO_PIPESTAT1		PMB8875_GPIO_PIPESTAT1
@@ -1527,6 +1527,8 @@
 /* Clock Control Register */
 #define CAPCOM_CLC						0x00
 
+#define CAPCOM_PISEL					0x04
+
 #define CAPCOM_CPISEL					0x04
 #define CAPCOM_CPISEL_C1C0IS			(1 << 0)
 #define CAPCOM_CPISEL_C1C0IS_SHIFT		0
@@ -1540,8 +1542,6 @@
 #define CAPCOM_CPISEL_T0INIS_SHIFT		4
 #define CAPCOM_CPISEL_T1INIS			(1 << 5)
 #define CAPCOM_CPISEL_T1INIS_SHIFT		5
-
-#define CAPCOM_PISEL					0x04
 
 /* Module Identifier Register */
 #define CAPCOM_ID						0x08
@@ -1879,10 +1879,10 @@
 // CIF [MOD_NUM=F052, MOD_REV=00, MOD_32BIT=C0]
 // Looks like DIF (Camera Interface) module, but not sure.
 #define CIF_IO_SIZE	0x00000200
-#define CIF_UNK0	0x00
-
 /* Clock Control Register */
 #define CIF_CLC		0x00
+
+#define CIF_UNK0	0x00
 
 /* Module Identifier Register */
 #define CIF_ID		0x08
@@ -5279,19 +5279,188 @@
 
 /* Transmission Data Register */
 #define I2C_TXD								0x8000
+#define I2C_TXD_BYTE1						(0xFF << 8)
+#define I2C_TXD_BYTE1_SHIFT					8
+#define I2C_TXD_BYTE0						(0xFF << 8)
+#define I2C_TXD_BYTE0_SHIFT					8
+#define I2C_TXD_BYTE2						(0xFF << 16)
+#define I2C_TXD_BYTE2_SHIFT					16
+#define I2C_TXD_BYTE3						(0xFF << 24)
+#define I2C_TXD_BYTE3_SHIFT					24
 
 /* Reception Data Register */
 #define I2C_RXD								0xC000
+#define I2C_RXD_BYTE0						(0xFF << 8)
+#define I2C_RXD_BYTE0_SHIFT					8
+#define I2C_RXD_BYTE1						(0xFF << 8)
+#define I2C_RXD_BYTE1_SHIFT					8
+#define I2C_RXD_BYTE2						(0xFF << 16)
+#define I2C_RXD_BYTE2_SHIFT					16
+#define I2C_RXD_BYTE3						(0xFF << 24)
+#define I2C_RXD_BYTE3_SHIFT					24
 
 
 // I2Cv2 [MOD_NUM=0046, MOD_REV=00, MOD_32BIT=00]
-// Looks like I2C module, but not sure.
-#define I2Cv2_IO_SIZE	0x00000200
+// I2C from TC1100 official public datasheet.
+#define I2Cv2_IO_SIZE					0x00000200
 /* Clock Control Register */
-#define I2Cv2_CLC		0x00
+#define I2Cv2_CLC						0x00
+
+/* Port Input Select Register */
+#define I2Cv2_PISEL						0x04
+#define I2Cv2_PISEL_SCL_IS0				(1 << 0)
+#define I2Cv2_PISEL_SCL_IS0_SHIFT		0
+#define I2Cv2_PISEL_SCL_IS1				(1 << 1)
+#define I2Cv2_PISEL_SCL_IS1_SHIFT		1
+#define I2Cv2_PISEL_SDA_IS0				(1 << 4)
+#define I2Cv2_PISEL_SDA_IS0_SHIFT		4
+#define I2Cv2_PISEL_SDA_IS1				(1 << 5)
+#define I2Cv2_PISEL_SDA_IS1_SHIFT		5
 
 /* Module Identifier Register */
-#define I2Cv2_ID		0x08
+#define I2Cv2_ID						0x08
+
+/* System Control Register */
+#define I2Cv2_SYSCON					0x10
+#define I2Cv2_SYSCON_ADR				(1 << 0)		 // Bit ADR is set after a start condition in slave mode
+#define I2Cv2_SYSCON_ADR_SHIFT			0
+#define I2Cv2_SYSCON_AL					(1 << 1)		 // Arbitration Lost
+#define I2Cv2_SYSCON_AL_SHIFT			1
+#define I2Cv2_SYSCON_SLA				(1 << 2)		 // Slave
+#define I2Cv2_SYSCON_SLA_SHIFT			2
+#define I2Cv2_SYSCON_LRB				(1 << 3)		 // Last Received Bit
+#define I2Cv2_SYSCON_LRB_SHIFT			3
+#define I2Cv2_SYSCON_BB					(1 << 4)		 // Bus Busy
+#define I2Cv2_SYSCON_BB_SHIFT			4
+#define I2Cv2_SYSCON_IRQD				(1 << 5)		 // IIC Interrupt Request Bit for Data Transfer Events
+#define I2Cv2_SYSCON_IRQD_SHIFT			5
+#define I2Cv2_SYSCON_IRQP				(1 << 6)		 // IIC Interrupt Request Bit for Protocol Events
+#define I2Cv2_SYSCON_IRQP_SHIFT			6
+#define I2Cv2_SYSCON_IRQE				(1 << 7)		 // IIC Interrupt Request Bit for Data Transmission End
+#define I2Cv2_SYSCON_IRQE_SHIFT			7
+#define I2Cv2_SYSCON_CO					(0x7 << 8)		 // Counter of Transmitted Bytes Since Last Data Interrupt.
+#define I2Cv2_SYSCON_CO_SHIFT			8
+#define I2Cv2_SYSCON_RMEN				(1 << 15)		 // Read Mirror Enable
+#define I2Cv2_SYSCON_RMEN_SHIFT			15
+#define I2Cv2_SYSCON_M10				(1 << 16)		 // 10-bit address mode
+#define I2Cv2_SYSCON_M10_SHIFT			16
+#define I2Cv2_SYSCON_RSC				(1 << 17)		 // Repeated Start Condition
+#define I2Cv2_SYSCON_RSC_SHIFT			17
+#define I2Cv2_SYSCON_MOD				(0x3 << 18)		 // Basic Operating Mode
+#define I2Cv2_SYSCON_MOD_SHIFT			18
+#define I2Cv2_SYSCON_MOD_DISABLED		0x0
+#define I2Cv2_SYSCON_MOD_SLAVE			0x40000
+#define I2Cv2_SYSCON_MOD_MASTER			0x80000
+#define I2Cv2_SYSCON_MOD_MULTI_MASTER	0xC0000
+#define I2Cv2_SYSCON_BUM				(1 << 20)		 // Busy Master
+#define I2Cv2_SYSCON_BUM_SHIFT			20
+#define I2Cv2_SYSCON_ACKDIS				(1 << 21)		 // Acknowledge Pulse Disable
+#define I2Cv2_SYSCON_ACKDIS_SHIFT		21
+#define I2Cv2_SYSCON_INT				(1 << 22)		 // Interrupt Delete Select
+#define I2Cv2_SYSCON_INT_SHIFT			22
+#define I2Cv2_SYSCON_TRX				(1 << 23)		 // Transmit Select
+#define I2Cv2_SYSCON_TRX_SHIFT			23
+#define I2Cv2_SYSCON_IGE				(1 << 24)		 // Ignore IRQE
+#define I2Cv2_SYSCON_IGE_SHIFT			24
+#define I2Cv2_SYSCON_STP				(1 << 25)		 // Stop Master
+#define I2Cv2_SYSCON_STP_SHIFT			25
+#define I2Cv2_SYSCON_CI					(0x3 << 26)		 // Length of the Receive/Transmit Buffer
+#define I2Cv2_SYSCON_CI_SHIFT			26
+#define I2Cv2_SYSCON_CI_1				0x0
+#define I2Cv2_SYSCON_CI_2				0x4000000
+#define I2Cv2_SYSCON_CI_3				0x8000000
+#define I2Cv2_SYSCON_CI_4				0xC000000
+#define I2Cv2_SYSCON_WMEN				(1 << 31)		 // Write Mirror Enable
+#define I2Cv2_SYSCON_WMEN_SHIFT			31
+
+/* Bus Control Register */
+#define I2Cv2_BUSCON					0x14
+#define I2Cv2_BUSCON_SDAEN0				(1 << 0)		 // Enable Input for Data Pin 0
+#define I2Cv2_BUSCON_SDAEN0_SHIFT		0
+#define I2Cv2_BUSCON_SDAEN1				(1 << 1)		 // Enable Input for Data Pin 1
+#define I2Cv2_BUSCON_SDAEN1_SHIFT		1
+#define I2Cv2_BUSCON_SCLEN0				(1 << 4)		 // Enable Input for Clock Pin 0
+#define I2Cv2_BUSCON_SCLEN0_SHIFT		4
+#define I2Cv2_BUSCON_SCLEN1				(1 << 5)		 // Enable Input for Clock Pin 1
+#define I2Cv2_BUSCON_SCLEN1_SHIFT		5
+#define I2Cv2_BUSCON_BRP				(0xFF << 8)		 // Baud Rate Prescaler
+#define I2Cv2_BUSCON_BRP_SHIFT			8
+#define I2Cv2_BUSCON_ICA				(0x3FF << 16)	 // Node Address
+#define I2Cv2_BUSCON_ICA_SHIFT			16
+#define I2Cv2_BUSCON_PREDIV				(0x3 << 29)		 // Pre Divider for Baud Rate Generation
+#define I2Cv2_BUSCON_PREDIV_SHIFT		29
+#define I2Cv2_BUSCON_PREDIV_1			0x0
+#define I2Cv2_BUSCON_PREDIV_8			0x20000000
+#define I2Cv2_BUSCON_PREDIV_64			0x40000000
+#define I2Cv2_BUSCON_BRPMOD				(1 << 31)		 // Baud Rate Prescaler Mode
+#define I2Cv2_BUSCON_BRPMOD_SHIFT		31
+#define I2Cv2_BUSCON_BRPMOD_MODE0		0x0
+#define I2Cv2_BUSCON_BRPMOD_MODE1		0x80000000
+
+/* Receive Transmit Buffer */
+#define I2Cv2_RTB						0x18
+#define I2Cv2_RTB_BYTE0					(0xFF << 8)
+#define I2Cv2_RTB_BYTE0_SHIFT			8
+#define I2Cv2_RTB_BYTE1					(0xFF << 8)
+#define I2Cv2_RTB_BYTE1_SHIFT			8
+#define I2Cv2_RTB_BYTE2					(0xFF << 16)
+#define I2Cv2_RTB_BYTE2_SHIFT			16
+#define I2Cv2_RTB_BYTE3					(0xFF << 24)
+#define I2Cv2_RTB_BYTE3_SHIFT			24
+
+/* Write Hardware Bits Control Register */
+#define I2Cv2_WHBSYSCON					0x20
+#define I2Cv2_WHBSYSCON_CLRAL			(1 << 1)		 // Clear Arbitration Lost Bit
+#define I2Cv2_WHBSYSCON_CLRAL_SHIFT		1
+#define I2Cv2_WHBSYSCON_SETAL			(1 << 2)		 // Set Arbitration Lost Bit
+#define I2Cv2_WHBSYSCON_SETAL_SHIFT		2
+#define I2Cv2_WHBSYSCON_CLRIRQD			(1 << 5)		 // Clear IIC Interrupt Request Bit for Data Transfer Events Bit
+#define I2Cv2_WHBSYSCON_CLRIRQD_SHIFT	5
+#define I2Cv2_WHBSYSCON_CLRIRQP			(1 << 6)		 // Clear IIC Interrupt Request Bit for Protocol Events Bit
+#define I2Cv2_WHBSYSCON_CLRIRQP_SHIFT	6
+#define I2Cv2_WHBSYSCON_CLRIRQE			(1 << 7)		 // Clear IIC Interrupt Request Bit for Data Transmission End Bit
+#define I2Cv2_WHBSYSCON_CLRIRQE_SHIFT	7
+#define I2Cv2_WHBSYSCON_SETIRQD			(1 << 8)		 // Set IIC Interrupt Request Bit for Data Transfer Events Bit
+#define I2Cv2_WHBSYSCON_SETIRQD_SHIFT	8
+#define I2Cv2_WHBSYSCON_SETIRQP			(1 << 9)		 // Set IIC Interrupt Request Bit for Protocol Events Bit
+#define I2Cv2_WHBSYSCON_SETIRQP_SHIFT	9
+#define I2Cv2_WHBSYSCON_SETIRQE			(1 << 10)		 // Set IIC Interrupt Request Bit for Data Transmission End Bit
+#define I2Cv2_WHBSYSCON_SETIRQE_SHIFT	10
+#define I2Cv2_WHBSYSCON_CLRRMEN			(1 << 14)		 // Clear Read Mirror Enable Bit
+#define I2Cv2_WHBSYSCON_CLRRMEN_SHIFT	14
+#define I2Cv2_WHBSYSCON_SETRMEN			(1 << 15)		 // Set Read Mirror Enable Bit
+#define I2Cv2_WHBSYSCON_SETRMEN_SHIFT	15
+#define I2Cv2_WHBSYSCON_CLRRSC			(1 << 16)		 // Clear Repeated Start Condition Bit
+#define I2Cv2_WHBSYSCON_CLRRSC_SHIFT	16
+#define I2Cv2_WHBSYSCON_SETRSC			(1 << 17)		 // Set Repeated Start Condition Bit
+#define I2Cv2_WHBSYSCON_SETRSC_SHIFT	17
+#define I2Cv2_WHBSYSCON_CLRBUM			(1 << 19)		 // Clear Busy Master Bit
+#define I2Cv2_WHBSYSCON_CLRBUM_SHIFT	19
+#define I2Cv2_WHBSYSCON_SETBUM			(1 << 20)		 // Set Busy Master Bit
+#define I2Cv2_WHBSYSCON_SETBUM_SHIFT	20
+#define I2Cv2_WHBSYSCON_CLRACKDIS		(1 << 21)		 // Clear Acknowledge Pulse Disable Bit
+#define I2Cv2_WHBSYSCON_CLRACKDIS_SHIFT	21
+#define I2Cv2_WHBSYSCON_SETACKDIS		(1 << 22)		 // Set Acknowledge Pulse Disable Bit
+#define I2Cv2_WHBSYSCON_SETACKDIS_SHIFT	22
+#define I2Cv2_WHBSYSCON_CLRTRX			(1 << 23)		 // Clear Transmit Select Bit
+#define I2Cv2_WHBSYSCON_CLRTRX_SHIFT	23
+#define I2Cv2_WHBSYSCON_SETTRX			(1 << 24)		 // Set Transmit Select Bit
+#define I2Cv2_WHBSYSCON_SETTRX_SHIFT	24
+#define I2Cv2_WHBSYSCON_CLRSTP			(1 << 25)		 // Clear Stop Master Bit
+#define I2Cv2_WHBSYSCON_CLRSTP_SHIFT	25
+#define I2Cv2_WHBSYSCON_CLRWMEN			(1 << 30)		 // Set Write Mirror Enable Bit
+#define I2Cv2_WHBSYSCON_CLRWMEN_SHIFT	30
+#define I2Cv2_WHBSYSCON_SETWMEN			(1 << 31)		 // Clear Write Mirror Enable Bit
+#define I2Cv2_WHBSYSCON_SETWMEN_SHIFT	31
+
+/* Service Routing Control Register */
+#define I2Cv2_ERR_SRC					0xF4
+
+/* Service Routing Control Register */
+#define I2Cv2_PROTO_SRC					0xF8
+
+/* Service Routing Control Register */
+#define I2Cv2_DATA_SRC					0xFC
 
 
 // KEYPAD [MOD_NUM=F046, MOD_REV=00, MOD_32BIT=C0]

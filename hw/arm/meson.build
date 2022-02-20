@@ -43,6 +43,7 @@ arm_ss.add(when: 'CONFIG_PMB887X', if_true: files(
 	'pmb887x/tpu.c',
 	'pmb887x/rtc.c',
 	'pmb887x/i2c.c',
+	'pmb887x/i2c_pasic.c',
 	'pmb887x/capcom.c',
 	'pmb887x/dsp.c',
 	'pmb887x/dif.c',
