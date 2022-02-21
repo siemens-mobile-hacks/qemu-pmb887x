@@ -54,6 +54,7 @@ typedef struct {
 	
 	qemu_irq irq[4];
 	bool wait_for_sreq;
+	uint32_t tx_cnt;
 	
 	uint32_t runctrl;
 	uint32_t enddctrl;
@@ -163,7 +164,25 @@ static void i2c_fifo_write(pmb887x_i2c_t *p, uint64_t value) {
 	uint32_t tx_size = MIN(4, p->tpsctrl);
 	for (uint32_t i = 0; i < tx_size; i += align) {
 		uint8_t byte = (value >> (8 * i)) & 0xFF;
-		DPRINTF("TX: %02X\n", byte);
+		
+		if (p->tx_cnt == 0) {
+			if ((value & 1)) {
+				DPRINTF("start: %02X (read)\n", byte >> 1);
+			} else {
+				DPRINTF("start: %02X (write)\n", byte >> 1);
+			}
+			
+			bool nack = i2c_start_transfer(p->bus, byte >> 1, (byte & 1) != 0);
+			if (nack) {
+				pmb887x_srb_ext_set_isr(&p->srb_proto, I2C_PIRQSS_NACK);
+				return;
+			}
+		} else {
+			DPRINTF("TX: %02X\n", byte);
+			i2c_send(p->bus, byte);
+		}
+		
+		p->tx_cnt++;
 		p->tpsctrl--;
 	}
 	
@@ -184,7 +203,7 @@ static void i2c_fifo_read(pmb887x_i2c_t *p, uint64_t *value) {
 	
 	uint32_t rx_size = MIN(4, p->mrpsctrl);
 	for (uint32_t i = 0; i < rx_size; i += align) {
-		uint8_t byte = i;
+		uint8_t byte = i2c_recv(p->bus);
 		DPRINTF("RX: %02X\n", byte);
 		*value |= byte << (8 * i);
 		p->mrpsctrl--;
@@ -212,6 +231,8 @@ static void i2c_timer_reset(void *opaque) {
 		}
 	} else {
 		pmb887x_srb_ext_set_isr(&p->srb_proto, I2C_PIRQSS_TX_END);
+		i2c_end_transfer(p->bus);
+		DPRINTF("stop\n");
 	}
 }
 
@@ -393,6 +414,7 @@ static void i2c_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned si
 		break;
 		
 		case I2C_TPSCTRL:
+			p->tx_cnt = 0;
 			p->tpsctrl = value;
 			i2c_trigger_sreq(p);
 		break;

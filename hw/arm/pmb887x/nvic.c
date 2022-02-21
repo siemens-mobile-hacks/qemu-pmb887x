@@ -55,11 +55,6 @@ typedef struct {
 static uint32_t nvic_get_priority(pmb887x_nvic_irq_t *line) {
 	if (!line->level)
 		return 0;
-	
-	if (line->id >= 155 && line->id <= 158) {
-		DPRINTF("i2c: %d: %08X\n", line->id, (line->priority << 16) | (line->level << 8) | ((IRQS_COUNT - line->id)));
-	}
-	
 	return (line->priority << 16) | (line->level << 8) | ((IRQS_COUNT - line->id));
 }
 
