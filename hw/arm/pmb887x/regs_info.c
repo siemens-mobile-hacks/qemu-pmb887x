@@ -1055,8 +1055,8 @@ static pmb887x_module_field_t capcom_t0_src_fields[] = {
 
 static pmb887x_module_reg_t capcom_regs[] = {
 	{"CLC",		CAPCOM_CLC,		capcom_clc_fields,		ARRAY_SIZE(capcom_clc_fields),		0},
-	{"CPISEL",	CAPCOM_CPISEL,	capcom_cpisel_fields,	ARRAY_SIZE(capcom_cpisel_fields),	0},
 	{"PISEL",	CAPCOM_PISEL,	NULL,					0,									0},
+	{"CPISEL",	CAPCOM_CPISEL,	capcom_cpisel_fields,	ARRAY_SIZE(capcom_cpisel_fields),	0},
 	{"ID",		CAPCOM_ID,		capcom_id_fields,		ARRAY_SIZE(capcom_id_fields),		0},
 	{"T01CON",	CAPCOM_T01CON,	capcom_t01con_fields,	ARRAY_SIZE(capcom_t01con_fields),	0},
 	{"CCM0",	CAPCOM_CCM0,	capcom_ccm0_fields,		ARRAY_SIZE(capcom_ccm0_fields),		0},
@@ -1112,8 +1112,8 @@ static pmb887x_module_field_t cif_id_fields[] = {
 };
 
 static pmb887x_module_reg_t cif_regs[] = {
-	{"UNK0",	CIF_UNK0,	NULL,			0,							0},
 	{"CLC",		CIF_CLC,	cif_clc_fields,	ARRAY_SIZE(cif_clc_fields),	0},
+	{"UNK0",	CIF_UNK0,	NULL,			0,							0},
 	{"ID",		CIF_ID,		cif_id_fields,	ARRAY_SIZE(cif_id_fields),	0},
 	{"UNK1",	CIF_UNK1,	NULL,			0,							0},
 	{"UNK2",	CIF_UNK2,	NULL,			0,							0},

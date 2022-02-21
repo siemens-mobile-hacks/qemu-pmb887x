@@ -5407,10 +5407,10 @@
 
 /* Receive Transmit Buffer */
 #define I2Cv2_RTB						0x18
-#define I2Cv2_RTB_BYTE1					(0xFF << 8)
-#define I2Cv2_RTB_BYTE1_SHIFT			8
 #define I2Cv2_RTB_BYTE0					(0xFF << 8)
 #define I2Cv2_RTB_BYTE0_SHIFT			8
+#define I2Cv2_RTB_BYTE1					(0xFF << 8)
+#define I2Cv2_RTB_BYTE1_SHIFT			8
 #define I2Cv2_RTB_BYTE2					(0xFF << 16)
 #define I2Cv2_RTB_BYTE2_SHIFT			16
 #define I2Cv2_RTB_BYTE3					(0xFF << 24)
