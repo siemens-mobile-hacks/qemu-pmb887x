@@ -52,21 +52,23 @@ typedef struct {
 	pmb887x_srb_ext_reg_t srb_proto;
 	pmb887x_srb_ext_reg_t srb_err;
 	
+	bool last_mode;
+	uint8_t last_addr;
+	
 	qemu_irq irq[4];
+	bool busy;
 	bool wait_for_sreq;
 	uint32_t tx_cnt;
+	uint32_t rx_cnt;
 	
 	uint32_t runctrl;
 	uint32_t enddctrl;
 	uint32_t fdivcfg;
 	uint32_t fdivhighcfg;
 	uint32_t addrcfg;
-	uint32_t busstat;
 	uint32_t mrpsctrl;
 	uint32_t fifocfg;
-	uint32_t rpsstat;
 	uint32_t tpsctrl;
-	uint32_t ffsstat;
 	uint32_t timcfg;
 } pmb887x_i2c_t;
 
@@ -172,7 +174,10 @@ static void i2c_fifo_write(pmb887x_i2c_t *p, uint64_t value) {
 				DPRINTF("start: %02X (write)\n", byte >> 1);
 			}
 			
-			bool nack = i2c_start_transfer(p->bus, byte >> 1, (byte & 1) != 0);
+			p->last_addr = byte >> 1;
+			p->last_mode = (byte & 1) != 0;
+			
+			bool nack = i2c_start_transfer(p->bus, p->last_addr, p->last_mode);
 			if (nack) {
 				pmb887x_srb_ext_set_isr(&p->srb_proto, I2C_PIRQSS_NACK);
 				return;
@@ -206,6 +211,7 @@ static void i2c_fifo_read(pmb887x_i2c_t *p, uint64_t *value) {
 		uint8_t byte = i2c_recv(p->bus);
 		DPRINTF("RX: %02X\n", byte);
 		*value |= byte << (8 * i);
+		p->rx_cnt++;
 		p->mrpsctrl--;
 	}
 	
@@ -231,8 +237,11 @@ static void i2c_timer_reset(void *opaque) {
 		}
 	} else {
 		pmb887x_srb_ext_set_isr(&p->srb_proto, I2C_PIRQSS_TX_END);
-		i2c_end_transfer(p->bus);
-		DPRINTF("stop\n");
+		
+		if (!p->last_mode) {
+			i2c_end_transfer(p->bus);
+			DPRINTF("stop\n");
+		}
 	}
 }
 
@@ -271,11 +280,17 @@ static uint64_t i2c_io_read(void *opaque, hwaddr haddr, unsigned size) {
 		break;
 		
 		case I2C_BUSSTAT:
-			value = p->busstat;
+			if (p->busy) {
+				value = I2C_BUSSTAT_BS_BUSY_MASTER;
+			} else if (i2c_bus_busy(p->bus)) {
+				value = I2C_BUSSTAT_BS_BUSY_OTHER_MASTER;
+			} else {
+				value = I2C_BUSSTAT_BS_FREE;
+			}
 		break;
 		
 		case I2C_MRPSCTRL:
-			value = p->mrpsctrl;
+			value = 0;
 		break;
 		
 		case I2C_FIFOCFG:
@@ -283,15 +298,15 @@ static uint64_t i2c_io_read(void *opaque, hwaddr haddr, unsigned size) {
 		break;
 		
 		case I2C_RPSSTAT:
-			value = p->rpsstat;
+			value = p->rx_cnt;
 		break;
 		
 		case I2C_TPSCTRL:
-			value = p->tpsctrl;
+			value = 0;
 		break;
 		
 		case I2C_FFSSTAT:
-			value = p->ffsstat;
+			value = p->mrpsctrl > 0 ? 1 : 0;
 		break;
 		
 		case I2C_TIMCFG:
@@ -382,7 +397,22 @@ static void i2c_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned si
 		break;
 		
 		case I2C_ENDDCTRL:
-			p->enddctrl = value;
+			if ((value & I2C_ENDDCTRL_SETEND)) {
+				if (p->last_mode) {
+					i2c_end_transfer(p->bus);
+					DPRINTF("stop\n");
+				}
+				p->busy = false;
+			}
+			
+			if ((value & I2C_ENDDCTRL_SETRSC)) {
+				bool nack = i2c_start_transfer(p->bus, p->last_addr, p->last_mode);
+				if (nack) {
+					pmb887x_srb_ext_set_isr(&p->srb_proto, I2C_PIRQSS_NACK);
+				} else {
+					p->busy = true;
+				}
+			}
 		break;
 		
 		case I2C_FDIVCFG:
@@ -397,11 +427,8 @@ static void i2c_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned si
 			p->addrcfg = value;
 		break;
 		
-		case I2C_BUSSTAT:
-			p->busstat = value;
-		break;
-		
 		case I2C_MRPSCTRL:
+			p->rx_cnt = 0;
 			p->mrpsctrl = value;
 		break;
 		
@@ -409,18 +436,10 @@ static void i2c_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned si
 			p->fifocfg = value;
 		break;
 		
-		case I2C_RPSSTAT:
-			p->rpsstat = value;
-		break;
-		
 		case I2C_TPSCTRL:
 			p->tx_cnt = 0;
 			p->tpsctrl = value;
 			i2c_trigger_sreq(p);
-		break;
-		
-		case I2C_FFSSTAT:
-			p->ffsstat = value;
 		break;
 		
 		case I2C_TIMCFG:

@@ -1055,8 +1055,8 @@ static pmb887x_module_field_t capcom_t0_src_fields[] = {
 
 static pmb887x_module_reg_t capcom_regs[] = {
 	{"CLC",		CAPCOM_CLC,		capcom_clc_fields,		ARRAY_SIZE(capcom_clc_fields),		0},
-	{"PISEL",	CAPCOM_PISEL,	NULL,					0,									0},
 	{"CPISEL",	CAPCOM_CPISEL,	capcom_cpisel_fields,	ARRAY_SIZE(capcom_cpisel_fields),	0},
+	{"PISEL",	CAPCOM_PISEL,	NULL,					0,									0},
 	{"ID",		CAPCOM_ID,		capcom_id_fields,		ARRAY_SIZE(capcom_id_fields),		0},
 	{"T01CON",	CAPCOM_T01CON,	capcom_t01con_fields,	ARRAY_SIZE(capcom_t01con_fields),	0},
 	{"CCM0",	CAPCOM_CCM0,	capcom_ccm0_fields,		ARRAY_SIZE(capcom_ccm0_fields),		0},
@@ -4211,9 +4211,16 @@ static pmb887x_module_field_t i2c_addrcfg_fields[] = {
 	{"SOPE",	I2C_ADDRCFG_SOPE,	I2C_ADDRCFG_SOPE_SHIFT,	NULL,	0},
 };
 
+static pmb887x_module_value_t i2c_i2c_busstat_bs_values[] = {
+	{"FREE",				I2C_BUSSTAT_BS_FREE},
+	{"BUSY_OTHER_MASTER",	I2C_BUSSTAT_BS_BUSY_OTHER_MASTER},
+	{"BUSY_MASTER",			I2C_BUSSTAT_BS_BUSY_MASTER},
+	{"BUSY_SLAVE",			I2C_BUSSTAT_BS_BUSY_SLAVE},
+};
+
 static pmb887x_module_field_t i2c_busstat_fields[] = {
-	{"BS",	I2C_BUSSTAT_BS,		I2C_BUSSTAT_BS_SHIFT,	NULL,	0},
-	{"RnW",	I2C_BUSSTAT_RnW,	I2C_BUSSTAT_RnW_SHIFT,	NULL,	0},
+	{"BS",	I2C_BUSSTAT_BS,		I2C_BUSSTAT_BS_SHIFT,	i2c_i2c_busstat_bs_values,	ARRAY_SIZE(i2c_i2c_busstat_bs_values)},
+	{"RnW",	I2C_BUSSTAT_RnW,	I2C_BUSSTAT_RnW_SHIFT,	NULL,						0},
 };
 
 static pmb887x_module_value_t i2c_i2c_fifocfg_rxbs_values[] = {
@@ -4499,8 +4506,8 @@ static pmb887x_module_field_t i2cv2_buscon_fields[] = {
 };
 
 static pmb887x_module_field_t i2cv2_rtb_fields[] = {
-	{"BYTE0",	I2Cv2_RTB_BYTE0,	I2Cv2_RTB_BYTE0_SHIFT,	NULL,	0},
 	{"BYTE1",	I2Cv2_RTB_BYTE1,	I2Cv2_RTB_BYTE1_SHIFT,	NULL,	0},
+	{"BYTE0",	I2Cv2_RTB_BYTE0,	I2Cv2_RTB_BYTE0_SHIFT,	NULL,	0},
 	{"BYTE2",	I2Cv2_RTB_BYTE2,	I2Cv2_RTB_BYTE2_SHIFT,	NULL,	0},
 	{"BYTE3",	I2Cv2_RTB_BYTE3,	I2Cv2_RTB_BYTE3_SHIFT,	NULL,	0},
 };

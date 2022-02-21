@@ -1879,10 +1879,10 @@
 // CIF [MOD_NUM=F052, MOD_REV=00, MOD_32BIT=C0]
 // Looks like DIF (Camera Interface) module, but not sure.
 #define CIF_IO_SIZE	0x00000200
+#define CIF_UNK0	0x00
+
 /* Clock Control Register */
 #define CIF_CLC		0x00
-
-#define CIF_UNK0	0x00
 
 /* Module Identifier Register */
 #define CIF_ID		0x08
@@ -5055,6 +5055,10 @@
 #define I2C_BUSSTAT							0x24
 #define I2C_BUSSTAT_BS						(0x3 << 1)		 // Bus Status
 #define I2C_BUSSTAT_BS_SHIFT				1
+#define I2C_BUSSTAT_BS_FREE					0x0
+#define I2C_BUSSTAT_BS_BUSY_OTHER_MASTER	0x2
+#define I2C_BUSSTAT_BS_BUSY_MASTER			0x4
+#define I2C_BUSSTAT_BS_BUSY_SLAVE			0x6
 #define I2C_BUSSTAT_RnW						(1 << 3)		 // Read/not Write
 #define I2C_BUSSTAT_RnW_SHIFT				3
 
