@@ -39,7 +39,7 @@ struct pmb887x_dsp_t {
 	uint32_t unk[2];
 	uint8_t ram[DSP_RAM_SIZE];
 	
-	struct pmb887x_clc_reg_t clc;
+	pmb887x_clc_reg_t clc;
 };
 
 static void dsp_update_state(struct pmb887x_dsp_t *p) {

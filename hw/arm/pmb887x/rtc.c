@@ -34,8 +34,8 @@ struct pmb887x_rtc_t {
 	SysBusDevice parent_obj;
 	MemoryRegion mmio;
 	
-	struct pmb887x_clc_reg_t clc;
-	struct pmb887x_src_reg_t src;
+	pmb887x_clc_reg_t clc;
+	pmb887x_src_reg_t src;
 	qemu_irq irq;
 	
 	uint32_t ctrl;

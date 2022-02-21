@@ -37,8 +37,8 @@ struct pmb887x_gptu_t {
 	
 	qemu_irq irq[8];
 	
-	struct pmb887x_clc_reg_t clc;
-	struct pmb887x_src_reg_t src[8];
+	pmb887x_clc_reg_t clc;
+	pmb887x_src_reg_t src[8];
 	
 	uint32_t t01irs;
 	uint32_t t01ots;

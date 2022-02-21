@@ -34,7 +34,7 @@ struct pmb887x_dif_t {
 	MemoryRegion mmio;
     QemuConsole *con;
 	
-	struct pmb887x_clc_reg_t clc;
+	pmb887x_clc_reg_t clc;
 };
 
 static void dif_update_state(struct pmb887x_dif_t *p) {

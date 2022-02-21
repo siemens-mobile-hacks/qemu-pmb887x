@@ -43,7 +43,7 @@ struct pmb887x_ebu_t {
 	MemoryRegion *cs[8];
 	MemoryRegion regions[8];
 	struct pmb887x_ebu_user_data_t user_data[8];
-	struct pmb887x_clc_reg_t clc;
+	pmb887x_clc_reg_t clc;
 	
 	uint32_t con;
 	uint32_t bfcon;

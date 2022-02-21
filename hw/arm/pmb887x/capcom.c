@@ -38,10 +38,10 @@ struct pmb887x_capcom_t {
 	qemu_irq t_irq[2];
 	qemu_irq cc_irq[8];
 	
-	struct pmb887x_src_reg_t t_src[2];
-	struct pmb887x_src_reg_t cc_src[8];
+	pmb887x_src_reg_t t_src[2];
+	pmb887x_src_reg_t cc_src[8];
 	
-	struct pmb887x_clc_reg_t clc;
+	pmb887x_clc_reg_t clc;
 };
 
 static void capcom_update_state(struct pmb887x_capcom_t *p) {

@@ -25,21 +25,22 @@
 #endif
 
 #define TYPE_PMB887X_NVIC	"pmb887x-nvic"
-#define PMB887X_NVIC(obj)	OBJECT_CHECK(struct pmb887x_nvic_t, (obj), TYPE_PMB887X_NVIC)
+#define PMB887X_NVIC(obj)	OBJECT_CHECK(pmb887x_nvic_t, (obj), TYPE_PMB887X_NVIC)
 #define IRQS_COUNT			((NVIC_CON169 - NVIC_CON0) / 4 + 1)
 
-struct pmb887x_nvic_irq_t {
+typedef struct {
+	uint8_t id;
 	bool fiq;
 	uint8_t priority;
 	uint8_t level;
 	bool bridge;
-};
+} pmb887x_nvic_irq_t;
 
-struct pmb887x_nvic_t {
+typedef struct {
 	SysBusDevice parent_obj;
 	MemoryRegion mmio;
 	
-	struct pmb887x_nvic_irq_t irq_state[IRQS_COUNT];
+	pmb887x_nvic_irq_t irq_state[IRQS_COUNT];
 	
 	qemu_irq parent_irq;
 	qemu_irq parent_fiq;
@@ -49,53 +50,53 @@ struct pmb887x_nvic_t {
 	
 	bool irq_lock;
 	bool fiq_lock;
-	
-	bool irq_readed;
-	bool fiq_readed;
-};
+} pmb887x_nvic_t;
 
-static int32_t nvic_current_irq(struct pmb887x_nvic_t *p, bool fiq) {
-	int irq_n = -1;
+static uint32_t nvic_get_priority(pmb887x_nvic_irq_t *line) {
+	if (!line->level)
+		return 0;
+	
+	if (line->id >= 155 && line->id <= 158) {
+		DPRINTF("i2c: %d: %08X\n", line->id, (line->priority << 16) | (line->level << 8) | ((IRQS_COUNT - line->id)));
+	}
+	
+	return (line->priority << 16) | (line->level << 8) | ((IRQS_COUNT - line->id));
+}
+
+static int nvic_current_irq(pmb887x_nvic_t *p, bool fiq) {
+	int irq_n = 0;
 	uint32_t max_priority = 0;
 	
 	for (int i = 0; i < IRQS_COUNT; ++i) {
-		struct pmb887x_nvic_irq_t *line = &p->irq_state[i];
+		pmb887x_nvic_irq_t *line = &p->irq_state[i];
 		
-		if (fiq != line->fiq)
+		if (fiq != line->fiq || !line->level)
 			continue;
 		
-		uint32_t level = line->level ? (line->priority << 8) | line->level : 0;
-		if (level && (irq_n == -1 || max_priority >= level)) {
+		uint32_t priority = nvic_get_priority(line);
+		if (max_priority < priority) {
 			irq_n = i;
-			max_priority = level;
+			max_priority = priority;
 		}
 	}
 	
 	return irq_n;
 }
 
-static void nvic_update_state(struct pmb887x_nvic_t *p) {
+static void nvic_update_state(pmb887x_nvic_t *p) {
 	if (!p->irq_lock) {
 		p->current_irq = nvic_current_irq(p, false);
-		qemu_set_irq(p->parent_irq, p->current_irq != -1);
-		p->irq_lock = p->current_irq != -1;
-		
-	//	if (p->current_irq != -1)
-	//		DPRINTF("irq: %d\n", p->current_irq);
+		qemu_set_irq(p->parent_irq, p->current_irq > 0);
 	}
 	
 	if (!p->fiq_lock) {
 		p->current_fiq = nvic_current_irq(p, true);
-		qemu_set_irq(p->parent_fiq, p->current_fiq != -1);
-		p->fiq_lock = p->current_fiq != -1;
-		
-	//	if (p->current_fiq != -1)
-	//		DPRINTF("fiq: %d\n", p->current_fiq);
+		qemu_set_irq(p->parent_fiq, p->current_fiq > 0);
 	}
 }
 
 static void nvic_irq_handler(void *opaque, int irq, int level) {
-	struct pmb887x_nvic_t *p = (struct pmb887x_nvic_t *) opaque;
+	pmb887x_nvic_t *p = (pmb887x_nvic_t *) opaque;
 	
 	if (level == 100000) {
 		p->irq_state[irq].bridge = true;
@@ -107,7 +108,7 @@ static void nvic_irq_handler(void *opaque, int irq, int level) {
 }
 
 static uint64_t nvic_io_read(void *opaque, hwaddr haddr, unsigned size) {
-	struct pmb887x_nvic_t *p = (struct pmb887x_nvic_t *) opaque;
+	pmb887x_nvic_t *p = (pmb887x_nvic_t *) opaque;
 	
 	uint64_t value = 0;
 	
@@ -117,8 +118,8 @@ static uint64_t nvic_io_read(void *opaque, hwaddr haddr, unsigned size) {
 		break;
 		
 		case NVIC_FIQ_STAT:
-			if (p->fiq_lock) {
-				if (!p->fiq_readed) {
+			if (p->current_fiq > 0) {
+				if (!p->fiq_lock) {
 					value |= NVIC_FIQ_STAT_UNREAD;
 					value |= p->current_fiq;
 				} else {
@@ -130,8 +131,8 @@ static uint64_t nvic_io_read(void *opaque, hwaddr haddr, unsigned size) {
 		break;
 		
 		case NVIC_IRQ_STAT:
-			if (p->irq_lock) {
-				if (!p->irq_readed) {
+			if (p->current_irq > 0) {
+				if (!p->irq_lock) {
 					value |= NVIC_IRQ_STAT_UNREAD;
 					value |= p->current_irq;
 				} else {
@@ -143,9 +144,9 @@ static uint64_t nvic_io_read(void *opaque, hwaddr haddr, unsigned size) {
 		break;
 		
 		case NVIC_CURRENT_IRQ:
-			if (p->current_irq != -1 && !p->irq_readed) {
+			if (p->current_irq > 0 && !p->irq_lock) {
 				value = p->current_irq;
-				p->irq_readed = true;
+				p->irq_lock = true;
 				qemu_set_irq(p->parent_irq, 0);
 			} else {
 				value = 0;
@@ -153,9 +154,9 @@ static uint64_t nvic_io_read(void *opaque, hwaddr haddr, unsigned size) {
 		break;
 		
 		case NVIC_CURRENT_FIQ:
-			if (p->current_fiq != -1 && !p->fiq_readed) {
+			if (p->current_fiq > 0 && !p->fiq_lock) {
 				value = p->current_fiq;
-				p->fiq_readed = true;
+				p->fiq_lock = true;
 				qemu_set_irq(p->parent_fiq, 0);
 			} else {
 				value = 0;
@@ -186,7 +187,7 @@ static uint64_t nvic_io_read(void *opaque, hwaddr haddr, unsigned size) {
 }
 
 static void nvic_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned size) {
-	struct pmb887x_nvic_t *p = (struct pmb887x_nvic_t *) opaque;
+	pmb887x_nvic_t *p = (pmb887x_nvic_t *) opaque;
 	
 	pmb887x_dump_io(haddr + p->mmio.addr, size, value, true);
 	
@@ -198,23 +199,19 @@ static void nvic_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned s
 		
 		case NVIC_IRQ_ACK:
 			#ifdef PMB887X_IO_BRIDGE
-			if (p->current_irq != -1 && p->irq_state[p->current_irq].bridge) {
+			if (p->current_irq > 0 && p->irq_state[p->current_irq].bridge) {
 				p->irq_state[p->current_irq].level = 0;
 				pmb8876_io_bridge_write(haddr + p->mmio.addr, size, value);
 			}
 			#endif
 			
-			if (value) {
+			if (value)
 				p->irq_lock = false;
-				p->irq_readed = false;
-			}
 		break;
 		
 		case NVIC_FIQ_ACK:
-			if (value) {
-				p->fiq_readed = false;
+			if (value)
 				p->fiq_lock = false;
-			}
 		break;
 		
 		case NVIC_CON0 ... NVIC_CON169:
@@ -244,12 +241,12 @@ static const MemoryRegionOps io_ops = {
 };
 
 static void nvic_init(Object *obj) {
-	struct pmb887x_nvic_t *p = PMB887X_NVIC(obj);
+	pmb887x_nvic_t *p = PMB887X_NVIC(obj);
 	memory_region_init_io(&p->mmio, obj, &io_ops, p, "pmb887x-nvic", NVIC_IO_SIZE);
 	sysbus_init_mmio(SYS_BUS_DEVICE(obj), &p->mmio);
 	
-	p->current_irq = -1;
-	p->current_fiq = -1;
+	for (int i = 0; i < ARRAY_SIZE(p->irq_state); i++)
+		p->irq_state[i].id = i;
 	
 	DPRINTF("irq count: %d\n", IRQS_COUNT);
 	
@@ -259,7 +256,7 @@ static void nvic_init(Object *obj) {
 }
 
 static void nvic_realize(DeviceState *dev, Error **errp) {
-	struct pmb887x_nvic_t *p = PMB887X_NVIC(dev);
+	pmb887x_nvic_t *p = PMB887X_NVIC(dev);
 	
 	nvic_update_state(p);
 }
@@ -277,7 +274,7 @@ static void nvic_class_init(ObjectClass *klass, void *data) {
 static const TypeInfo nvic_info = {
     .name          	= TYPE_PMB887X_NVIC,
     .parent        	= TYPE_SYS_BUS_DEVICE,
-    .instance_size 	= sizeof(struct pmb887x_nvic_t),
+    .instance_size 	= sizeof(pmb887x_nvic_t),
     .instance_init 	= nvic_init,
     .class_init    	= nvic_class_init,
 };

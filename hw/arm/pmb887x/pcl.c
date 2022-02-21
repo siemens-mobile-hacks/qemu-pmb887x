@@ -35,7 +35,7 @@ struct pmb887x_pcl_t {
 	SysBusDevice parent_obj;
 	MemoryRegion mmio;
 	
-	struct pmb887x_clc_reg_t clc;
+	pmb887x_clc_reg_t clc;
 	uint32_t pins[GPIOS_COUNT];
 	uint32_t mon_cr[4];
 	

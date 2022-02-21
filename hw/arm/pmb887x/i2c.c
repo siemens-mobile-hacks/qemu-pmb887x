@@ -30,7 +30,8 @@
 #endif
 
 #define TYPE_PMB887X_I2C	"pmb887x-i2c"
-#define PMB887X_I2C(obj)	OBJECT_CHECK(struct pmb887x_i2c_t, (obj), TYPE_PMB887X_I2C)
+#define PMB887X_I2C(obj)	OBJECT_CHECK(pmb887x_i2c_t, (obj), TYPE_PMB887X_I2C)
+#define I2C_TX_BYTE_TIME	40000
 
 enum {
 	I2C_SINGLE_REQ_IRQ = 0,
@@ -39,18 +40,20 @@ enum {
 	I2C_PROTOCOL_IRQ,
 };
 
-struct pmb887x_i2c_t {
+typedef struct {
 	SysBusDevice parent_obj;
 	MemoryRegion mmio;
 	
     I2CBus *bus;
+	QEMUTimer *timer;
     
-	struct pmb887x_clc_reg_t clc;
-	struct pmb887x_srb_reg_t srb;
-	struct pmb887x_srb_reg_t srb_proto;
-	struct pmb887x_srb_reg_t srb_err;
+	pmb887x_clc_reg_t clc;
+	pmb887x_srb_reg_t srb;
+	pmb887x_srb_ext_reg_t srb_proto;
+	pmb887x_srb_ext_reg_t srb_err;
 	
 	qemu_irq irq[4];
+	bool wait_for_sreq;
 	
 	uint32_t runctrl;
 	uint32_t enddctrl;
@@ -64,11 +67,9 @@ struct pmb887x_i2c_t {
 	uint32_t tpsctrl;
 	uint32_t ffsstat;
 	uint32_t timcfg;
-	uint32_t txd;
-	uint32_t rxd;
-};
+} pmb887x_i2c_t;
 
-static void i2c_update_state(struct pmb887x_i2c_t *p) {
+static void i2c_update_state(pmb887x_i2c_t *p) {
 	// TODO
 }
 
@@ -78,22 +79,144 @@ static int i2c_irq_router(void *opaque, int event_id) {
 		case I2C_ISR_SREQ_INT:		return I2C_SINGLE_REQ_IRQ;
 		case I2C_ISR_LBREQ_INT:		return I2C_SINGLE_REQ_IRQ;
 		case I2C_ISR_BREQ_INT:		return I2C_BURST_REQ_IRQ;
-		case I2C_ISR_I2C_ERR_INT:	return I2C_PROTOCOL_IRQ;
 		case I2C_ISR_I2C_P_INT:		return I2C_PROTOCOL_IRQ;
+		case I2C_ISR_I2C_ERR_INT:	return I2C_ERROR_IRQ;
 	}
-	return I2C_ISR_I2C_P_INT;
+	
+	error_report("Unknown event id: %d\n", event_id);
+	abort();
+	
+	return 0;
 }
 
-static int i2c_err_irq_router(void *opaque, int event_id) {
-	return I2C_ERROR_IRQ;
+static uint32_t i2c_get_txbs(pmb887x_i2c_t *p) {
+	switch (p->fifocfg & I2C_FIFOCFG_TXBS) {
+		case I2C_FIFOCFG_TXBS_4_WORD:		return 4;
+		case I2C_FIFOCFG_TXBS_2_WORD:		return 2;
+		case I2C_FIFOCFG_TXBS_1_WORD:		return 1;
+	}
+	
+	error_report("Unknown TXSB value: %08X\n", (p->fifocfg & I2C_FIFOCFG_TXBS));
+	abort();
 }
 
-static int i2c_proto_irq_router(void *opaque, int event_id) {
-	return I2C_PROTOCOL_IRQ;
+static uint32_t i2c_get_rxbs(pmb887x_i2c_t *p) {
+	switch (p->fifocfg & I2C_FIFOCFG_RXBS) {
+		case I2C_FIFOCFG_RXBS_4_WORD:		return 4;
+		case I2C_FIFOCFG_RXBS_2_WORD:		return 2;
+		case I2C_FIFOCFG_RXBS_1_WORD:		return 1;
+	}
+	
+	error_report("Unknown RXBS value: %08X\n", (p->fifocfg & I2C_FIFOCFG_RXBS));
+	abort();
+}
+
+static uint32_t i2c_get_rx_align(pmb887x_i2c_t *p) {
+	switch (p->fifocfg & I2C_FIFOCFG_RXFA) {
+		case I2C_FIFOCFG_RXFA_BYTE:			return 1;
+		case I2C_FIFOCFG_RXFA_HALF_WORLD:	return 2;
+		case I2C_FIFOCFG_RXFA_WORD:			return 4;
+	}
+	
+	error_report("Unknown RXFA value: %08X\n", (p->fifocfg & I2C_FIFOCFG_RXFA));
+	abort();
+}
+
+static uint32_t i2c_get_tx_align(pmb887x_i2c_t *p) {
+	switch (p->fifocfg & I2C_FIFOCFG_TXFA) {
+		case I2C_FIFOCFG_TXFA_BYTE:			return 1;
+		case I2C_FIFOCFG_TXFA_HALF_WORLD:	return 2;
+		case I2C_FIFOCFG_TXFA_WORD:			return 4;
+	}
+	
+	error_report("Unknown TXFA value: %08X\n", (p->fifocfg & I2C_FIFOCFG_TXFA));
+	abort();
+}
+
+static uint32_t i2c_get_rx_burst_size(pmb887x_i2c_t *p) {
+	return 4 / i2c_get_rx_align(p);
+}
+
+static uint32_t i2c_get_tx_burst_size(pmb887x_i2c_t *p) {
+	return 4 / i2c_get_tx_align(p);
+}
+
+static void i2c_trigger_sreq(pmb887x_i2c_t *p) {
+	if (p->wait_for_sreq) {
+		DPRINTF("double i2c_trigger_sreq\n");
+		abort();
+	}
+	
+	p->wait_for_sreq = true;
+	timer_mod(p->timer, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + I2C_TX_BYTE_TIME);
+}
+
+static void i2c_fifo_write(pmb887x_i2c_t *p, uint64_t value) {
+	uint32_t align = i2c_get_tx_align(p);
+	
+	if (!p->tpsctrl || p->wait_for_sreq) {
+		DPRINTF("TX fifo overflow!\n");
+		pmb887x_srb_ext_set_isr(&p->srb_err, I2C_ERRIRQSS_TXF_OFL);
+		return;
+	}
+	
+	uint32_t tx_size = MIN(4, p->tpsctrl);
+	for (uint32_t i = 0; i < tx_size; i += align) {
+		uint8_t byte = (value >> (8 * i)) & 0xFF;
+		DPRINTF("TX: %02X\n", byte);
+		p->tpsctrl--;
+	}
+	
+	i2c_trigger_sreq(p);
+	
+	if (!p->tpsctrl && p->mrpsctrl)
+		pmb887x_srb_ext_set_isr(&p->srb_proto, I2C_PIRQSS_RX);
+}
+
+static void i2c_fifo_read(pmb887x_i2c_t *p, uint64_t *value) {
+	uint32_t align = i2c_get_tx_align(p);
+	
+	if (!p->mrpsctrl || p->wait_for_sreq) {
+		DPRINTF("RX fifo overflow!\n");
+		pmb887x_srb_ext_set_isr(&p->srb_err, I2C_ERRIRQSS_RXF_UFL);
+		return;
+	}
+	
+	uint32_t rx_size = MIN(4, p->mrpsctrl);
+	for (uint32_t i = 0; i < rx_size; i += align) {
+		uint8_t byte = i;
+		DPRINTF("RX: %02X\n", byte);
+		*value |= byte << (8 * i);
+		p->mrpsctrl--;
+	}
+	
+	i2c_trigger_sreq(p);
+}
+
+static void i2c_timer_reset(void *opaque) {
+	pmb887x_i2c_t *p = (pmb887x_i2c_t *) opaque;
+	
+	p->wait_for_sreq = false;
+	
+	if (p->tpsctrl > 0) {
+		if (p->tpsctrl <= i2c_get_tx_burst_size(p)) {
+			pmb887x_srb_set_isr(&p->srb, I2C_ISR_LSREQ_INT);
+		} else {
+			pmb887x_srb_set_isr(&p->srb, I2C_ISR_SREQ_INT);
+		}
+	} else if (p->mrpsctrl > 0) {
+		if (p->mrpsctrl <= i2c_get_rx_burst_size(p)) {
+			pmb887x_srb_set_isr(&p->srb, I2C_ISR_LSREQ_INT);
+		} else {
+			pmb887x_srb_set_isr(&p->srb, I2C_ISR_SREQ_INT);
+		}
+	} else {
+		pmb887x_srb_ext_set_isr(&p->srb_proto, I2C_PIRQSS_TX_END);
+	}
 }
 
 static uint64_t i2c_io_read(void *opaque, hwaddr haddr, unsigned size) {
-	struct pmb887x_i2c_t *p = (struct pmb887x_i2c_t *) opaque;
+	pmb887x_i2c_t *p = (pmb887x_i2c_t *) opaque;
 	
 	uint64_t value = 0;
 	
@@ -155,11 +278,11 @@ static uint64_t i2c_io_read(void *opaque, hwaddr haddr, unsigned size) {
 		break;
 		
 		case I2C_TXD:
-			value = p->txd;
+			value = 0;
 		break;
 		
 		case I2C_RXD:
-			value = p->rxd;
+			i2c_fifo_read(p, &value);
 		break;
 		
 		case I2C_IMSC:
@@ -183,11 +306,11 @@ static uint64_t i2c_io_read(void *opaque, hwaddr haddr, unsigned size) {
 		break;
 		
 		case I2C_PIRQSS:
-			value = pmb887x_srb_get_ris(&p->srb_proto);
+			value = pmb887x_srb_ext_get_ris(&p->srb_proto);
 		break;
 		
 		case I2C_PIRQSM:
-			value = pmb887x_srb_get_imsc(&p->srb_proto);
+			value = pmb887x_srb_ext_get_imsc(&p->srb_proto);
 		break;
 		
 		case I2C_PIRQSC:
@@ -195,11 +318,11 @@ static uint64_t i2c_io_read(void *opaque, hwaddr haddr, unsigned size) {
 		break;
 		
 		case I2C_ERRIRQSS:
-			value = pmb887x_srb_get_mis(&p->srb_proto);
+			value = pmb887x_srb_ext_get_mis(&p->srb_err);
 		break;
 		
 		case I2C_ERRIRQSM:
-			value = pmb887x_srb_get_imsc(&p->srb_err);
+			value = pmb887x_srb_ext_get_imsc(&p->srb_err);
 		break;
 		
 		case I2C_ERRIRQSC:
@@ -219,7 +342,7 @@ static uint64_t i2c_io_read(void *opaque, hwaddr haddr, unsigned size) {
 }
 
 static void i2c_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned size) {
-	struct pmb887x_i2c_t *p = (struct pmb887x_i2c_t *) opaque;
+	pmb887x_i2c_t *p = (pmb887x_i2c_t *) opaque;
 	
 	pmb887x_dump_io(haddr + p->mmio.addr, size, value, true);
 	
@@ -271,6 +394,7 @@ static void i2c_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned si
 		
 		case I2C_TPSCTRL:
 			p->tpsctrl = value;
+			i2c_trigger_sreq(p);
 		break;
 		
 		case I2C_FFSSTAT:
@@ -282,11 +406,7 @@ static void i2c_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned si
 		break;
 		
 		case I2C_TXD:
-			p->txd = value;
-		break;
-		
-		case I2C_RXD:
-			p->rxd = value;
+			i2c_fifo_write(p, value);
 		break;
 		
 		case I2C_IMSC:
@@ -302,19 +422,19 @@ static void i2c_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned si
 		break;
 		
 		case I2C_PIRQSM:
-			pmb887x_srb_set_imsc(&p->srb_proto, value);
+			pmb887x_srb_ext_set_imsc(&p->srb_proto, value);
 		break;
 		
 		case I2C_PIRQSC:
-			pmb887x_srb_set_icr(&p->srb_proto, value);
+			pmb887x_srb_ext_set_icr(&p->srb_proto, value);
 		break;
 		
 		case I2C_ERRIRQSM:
-			pmb887x_srb_set_imsc(&p->srb_err, value);
+			pmb887x_srb_ext_set_imsc(&p->srb_err, value);
 		break;
 		
 		case I2C_ERRIRQSC:
-			pmb887x_srb_set_icr(&p->srb_err, value);
+			pmb887x_srb_ext_set_icr(&p->srb_err, value);
 		break;
 	}
 	
@@ -332,12 +452,12 @@ static const MemoryRegionOps io_ops = {
 };
 
 I2CBus *pmb887x_i2c_bus(DeviceState *dev) {
-    struct pmb887x_i2c_t *p = PMB887X_I2C(dev);
+    pmb887x_i2c_t *p = PMB887X_I2C(dev);
     return p->bus;
 }
 
 static void i2c_init(Object *obj) {
-	struct pmb887x_i2c_t *p = PMB887X_I2C(obj);
+	pmb887x_i2c_t *p = PMB887X_I2C(obj);
 	memory_region_init_io(&p->mmio, obj, &io_ops, p, "pmb887x-i2c", I2C_IO_SIZE);
 	sysbus_init_mmio(SYS_BUS_DEVICE(obj), &p->mmio);
 	
@@ -348,18 +468,17 @@ static void i2c_init(Object *obj) {
 }
 
 static void i2c_realize(DeviceState *dev, Error **errp) {
-	struct pmb887x_i2c_t *p = PMB887X_I2C(dev);
+	pmb887x_i2c_t *p = PMB887X_I2C(dev);
 	
 	pmb887x_clc_init(&p->clc);
 	
 	pmb887x_srb_init(&p->srb, p->irq, ARRAY_SIZE(p->irq));
 	pmb887x_srb_set_irq_router(&p->srb, p, i2c_irq_router);
 	
-	pmb887x_srb_init(&p->srb_err, p->irq, ARRAY_SIZE(p->irq));
-	pmb887x_srb_set_irq_router(&p->srb_proto, p, i2c_err_irq_router);
+	pmb887x_srb_ext_init(&p->srb_err, &p->srb, I2C_ISR_I2C_ERR_INT);
+	pmb887x_srb_ext_init(&p->srb_proto, &p->srb, I2C_ISR_I2C_P_INT);
 	
-	pmb887x_srb_init(&p->srb_proto, p->irq, ARRAY_SIZE(p->irq));
-	pmb887x_srb_set_irq_router(&p->srb_proto, p, i2c_proto_irq_router);
+	p->timer = timer_new_ns(QEMU_CLOCK_VIRTUAL, i2c_timer_reset, p);
 	
 	i2c_update_state(p);
 }
@@ -377,7 +496,7 @@ static void i2c_class_init(ObjectClass *klass, void *data) {
 static const TypeInfo i2c_info = {
     .name          	= TYPE_PMB887X_I2C,
     .parent        	= TYPE_SYS_BUS_DEVICE,
-    .instance_size 	= sizeof(struct pmb887x_i2c_t),
+    .instance_size 	= sizeof(pmb887x_i2c_t),
     .instance_init 	= i2c_init,
     .class_init    	= i2c_class_init,
 };

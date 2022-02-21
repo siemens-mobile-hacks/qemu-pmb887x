@@ -35,7 +35,7 @@ struct pmb887x_stm_t {
 	SysBusDevice parent_obj;
 	MemoryRegion mmio;
 	
-	struct pmb887x_clc_reg_t clc;
+	pmb887x_clc_reg_t clc;
 	
 	bool enabled;
 	uint32_t freq;

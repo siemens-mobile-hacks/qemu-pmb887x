@@ -32,11 +32,11 @@ struct pmb887x_scu_t {
 	SysBusDevice parent_obj;
 	MemoryRegion mmio;
 	
-	struct pmb887x_clc_reg_t clc;
+	pmb887x_clc_reg_t clc;
 	
-	struct pmb887x_src_reg_t exti_src[8];
-	struct pmb887x_src_reg_t dsp_src[5];
-	struct pmb887x_src_reg_t unk_src[3];
+	pmb887x_src_reg_t exti_src[8];
+	pmb887x_src_reg_t dsp_src[5];
+	pmb887x_src_reg_t unk_src[3];
 	
 	qemu_irq exti_irq[8];
 	qemu_irq dsp_irq[5];

@@ -40,7 +40,7 @@ struct pmb887x_pll_t {
 	struct pmb887x_pll_callback_t *callbacks;
 	int callbacks_count;
 	
-	struct pmb887x_src_reg_t src;
+	pmb887x_src_reg_t src;
 	qemu_irq irq;
 	
 	uint32_t xtal;

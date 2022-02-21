@@ -38,7 +38,7 @@ struct pmb887x_tpu_t {
 	MemoryRegion mmio;
 	
 	// regs
-	struct pmb887x_clc_reg_t clc;
+	pmb887x_clc_reg_t clc;
 	uint8_t ram[TPU_RAM_SIZE];
 	uint32_t correction;
 	uint32_t overflow;
@@ -47,8 +47,8 @@ struct pmb887x_tpu_t {
 	uint32_t skip;
 	uint32_t intr[2];
 	
-	struct pmb887x_src_reg_t src[2];
-	struct pmb887x_src_reg_t unk_src[6];
+	pmb887x_src_reg_t src[2];
+	pmb887x_src_reg_t unk_src[6];
 	
 	qemu_irq irq[2];
 	qemu_irq unk_irq[6];

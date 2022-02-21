@@ -10,23 +10,23 @@
 #define DPRINTF(fmt, ...) do { } while (0)
 #endif
 
-void pmb887x_clc_init(struct pmb887x_clc_reg_t *reg) {
+void pmb887x_clc_init(pmb887x_clc_reg_t *reg) {
 	pmb887x_clc_set(reg, 1 << MOD_CLC_RMC_SHIFT);
 }
 
-uint8_t pmb887x_clc_get_rmc(struct pmb887x_clc_reg_t *reg) {
+uint8_t pmb887x_clc_get_rmc(pmb887x_clc_reg_t *reg) {
 	return (reg->value & MOD_CLC_RMC) >> MOD_CLC_RMC_SHIFT;
 }
 
-uint8_t pmb887x_clc_is_enabled(struct pmb887x_clc_reg_t *reg) {
+uint8_t pmb887x_clc_is_enabled(pmb887x_clc_reg_t *reg) {
 	return (reg->value & MOD_CLC_DISR) == 0;
 }
 
-uint32_t pmb887x_clc_get(struct pmb887x_clc_reg_t *reg) {
+uint32_t pmb887x_clc_get(pmb887x_clc_reg_t *reg) {
 	return reg->value;
 }
 
-void pmb887x_clc_set(struct pmb887x_clc_reg_t *reg, uint32_t value) {
+void pmb887x_clc_set(pmb887x_clc_reg_t *reg, uint32_t value) {
 	if ((value & MOD_CLC_DISR)) {
 		value |= MOD_CLC_DISS;
 	} else {
@@ -35,7 +35,7 @@ void pmb887x_clc_set(struct pmb887x_clc_reg_t *reg, uint32_t value) {
 	reg->value = value;
 }
 
-void pmb887x_src_init(struct pmb887x_src_reg_t *reg, qemu_irq irq) {
+void pmb887x_src_init(pmb887x_src_reg_t *reg, qemu_irq irq) {
 	reg->irq = irq;
 	reg->value = 0;
 	reg->last_irq_state = false;
@@ -46,15 +46,15 @@ void pmb887x_src_init(struct pmb887x_src_reg_t *reg, qemu_irq irq) {
 	}
 }
 
-uint32_t pmb887x_src_get(struct pmb887x_src_reg_t *reg) {
+uint32_t pmb887x_src_get(pmb887x_src_reg_t *reg) {
 	return reg->value;
 }
 
-void pmb887x_src_update(struct pmb887x_src_reg_t *reg, uint32_t clear, uint32_t set) {
+void pmb887x_src_update(pmb887x_src_reg_t *reg, uint32_t clear, uint32_t set) {
 	pmb887x_src_set(reg, (reg->value & ~clear) | set);
 }
 
-void pmb887x_src_set(struct pmb887x_src_reg_t *reg, uint32_t value) {
+void pmb887x_src_set(pmb887x_src_reg_t *reg, uint32_t value) {
 	bool has_irq = (reg->value & MOD_SRC_SRR) != 0;
 	
 	if ((value & MOD_SRC_CLRR)) {
@@ -93,7 +93,7 @@ static int pmb887x_srb_irq_router(void *opaque, int event_id) {
 	return event_id;
 }
 
-void pmb887x_srb_init(struct pmb887x_srb_reg_t *reg, qemu_irq *irq, int irq_n) {
+void pmb887x_srb_init(pmb887x_srb_reg_t *reg, qemu_irq *irq, int irq_n) {
 	reg->irq = irq;
 	reg->irq_n = irq_n;
 	reg->last_irq_state = g_new0(bool, reg->irq_n);
@@ -104,24 +104,24 @@ void pmb887x_srb_init(struct pmb887x_srb_reg_t *reg, qemu_irq *irq, int irq_n) {
 	reg->ris = 0;
 }
 
-void pmb887x_srb_set_irq_router(struct pmb887x_srb_reg_t *reg, void *opaque, int (*callback)(void *, int)) {
+void pmb887x_srb_set_irq_router(pmb887x_srb_reg_t *reg, void *opaque, int (*callback)(void *, int)) {
 	reg->irq_router = callback;
 	reg->irq_router_opaque = opaque;
 }
 
-uint32_t pmb887x_srb_get_imsc(struct pmb887x_srb_reg_t *reg) {
+uint32_t pmb887x_srb_get_imsc(pmb887x_srb_reg_t *reg) {
 	return reg->imsc;
 }
 
-uint32_t pmb887x_srb_get_mis(struct pmb887x_srb_reg_t *reg) {
+uint32_t pmb887x_srb_get_mis(pmb887x_srb_reg_t *reg) {
 	return (reg->ris & reg->imsc);
 }
 
-uint32_t pmb887x_srb_get_ris(struct pmb887x_srb_reg_t *reg) {
+uint32_t pmb887x_srb_get_ris(pmb887x_srb_reg_t *reg) {
 	return reg->ris;
 }
 
-static void pmb887x_srb_set_irq(struct pmb887x_srb_reg_t *reg, int n, int level) {
+static void pmb887x_srb_set_irq(pmb887x_srb_reg_t *reg, int n, int level) {
 	int irq_n = reg->irq_router(reg->irq_router_opaque, n);
 	uint8_t mask = 1 << n;
 	
@@ -143,7 +143,7 @@ static void pmb887x_srb_set_irq(struct pmb887x_srb_reg_t *reg, int n, int level)
 	}
 }
 
-static void pmb887x_srb_set_event(struct pmb887x_srb_reg_t *reg, int n, int level) {
+static void pmb887x_srb_set_event(pmb887x_srb_reg_t *reg, int n, int level) {
 	uint8_t mask = 1 << n;
 	bool has_irq = level != 0;
 	bool last_has_irq = (reg->last_state & mask) != 0;
@@ -167,7 +167,7 @@ static void pmb887x_srb_set_event(struct pmb887x_srb_reg_t *reg, int n, int leve
 	}
 }
 
-void pmb887x_srb_set_imsc(struct pmb887x_srb_reg_t *reg, uint32_t value) {
+void pmb887x_srb_set_imsc(pmb887x_srb_reg_t *reg, uint32_t value) {
 	uint32_t new_enabled = value & ~reg->imsc;
 	reg->imsc = value;
 	
@@ -183,7 +183,7 @@ void pmb887x_srb_set_imsc(struct pmb887x_srb_reg_t *reg, uint32_t value) {
 	}
 }
 
-void pmb887x_srb_set_icr(struct pmb887x_srb_reg_t *reg, uint32_t value) {
+void pmb887x_srb_set_icr(pmb887x_srb_reg_t *reg, uint32_t value) {
 	for (int i = 0; i < 32; i++) {
 		uint8_t mask = 1 << i;
 		if ((value & mask))
@@ -191,10 +191,53 @@ void pmb887x_srb_set_icr(struct pmb887x_srb_reg_t *reg, uint32_t value) {
 	}
 }
 
-void pmb887x_srb_set_isr(struct pmb887x_srb_reg_t *reg, uint32_t value) {
+void pmb887x_srb_set_isr(pmb887x_srb_reg_t *reg, uint32_t value) {
 	for (int i = 0; i < 32; i++) {
 		uint8_t mask = 1 << i;
 		if ((value & mask))
 			pmb887x_srb_set_event(reg, i, 1);
 	}
+}
+
+void pmb887x_srb_ext_init(pmb887x_srb_ext_reg_t *reg, pmb887x_srb_reg_t *parent, uint32_t events) {
+	reg->parent = parent;
+	reg->events = events;
+	reg->ris = 0;
+	reg->imsc = 0;
+}
+
+uint32_t pmb887x_srb_ext_get_imsc(pmb887x_srb_ext_reg_t *reg) {
+	return reg->imsc;
+}
+
+uint32_t pmb887x_srb_ext_get_mis(pmb887x_srb_ext_reg_t *reg) {
+	return reg->ris & reg->imsc;
+}
+
+uint32_t pmb887x_srb_ext_get_ris(pmb887x_srb_ext_reg_t *reg) {
+	return reg->ris;
+}
+
+void pmb887x_srb_ext_set_imsc(pmb887x_srb_ext_reg_t *reg, uint32_t value) {
+	uint32_t new_enabled = value & ~reg->imsc;
+	reg->imsc = value;
+	
+	if (!new_enabled)
+		return;
+	
+	pmb887x_srb_ext_set_isr(reg, reg->ris & new_enabled);
+}
+
+void pmb887x_srb_ext_set_icr(pmb887x_srb_ext_reg_t *reg, uint32_t value) {
+	reg->ris &= ~value;
+	
+	if (!reg->ris)
+		pmb887x_srb_set_icr(reg->parent, reg->events);
+}
+
+void pmb887x_srb_ext_set_isr(pmb887x_srb_ext_reg_t *reg, uint32_t value) {
+	reg->ris |= value;
+	
+	if (reg->ris)
+		pmb887x_srb_set_isr(reg->parent, reg->events);
 }

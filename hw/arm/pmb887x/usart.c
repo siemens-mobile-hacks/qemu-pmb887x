@@ -53,8 +53,8 @@ struct pmb887x_usart_t {
 	SysBusDevice parent_obj;
 	MemoryRegion mmio;
 	
-	struct pmb887x_clc_reg_t clc;
-	struct pmb887x_srb_reg_t srb;
+	pmb887x_clc_reg_t clc;
+	pmb887x_srb_reg_t srb;
 	qemu_irq irq[USART_IRQ_NR];
 	
 	bool apply_workarounds;

@@ -5261,6 +5261,10 @@
 #define I2C_ICR_LBREQ_INT_SHIFT				2
 #define I2C_ICR_BREQ_INT					(1 << 3)		 // Burst Request Interrupt
 #define I2C_ICR_BREQ_INT_SHIFT				3
+#define I2C_ICR_I2C_ERR_INT					(1 << 4)		 // I2C Error Interrupt
+#define I2C_ICR_I2C_ERR_INT_SHIFT			4
+#define I2C_ICR_I2C_P_INT					(1 << 5)		 // I2C Protocol Interrupt
+#define I2C_ICR_I2C_P_INT_SHIFT				5
 
 /* Interrupt Set Register */
 #define I2C_ISR								0x90
@@ -5279,10 +5283,10 @@
 
 /* Transmission Data Register */
 #define I2C_TXD								0x8000
+#define I2C_TXD_BYTE0						(0xFF << 0)
+#define I2C_TXD_BYTE0_SHIFT					0
 #define I2C_TXD_BYTE1						(0xFF << 8)
 #define I2C_TXD_BYTE1_SHIFT					8
-#define I2C_TXD_BYTE0						(0xFF << 8)
-#define I2C_TXD_BYTE0_SHIFT					8
 #define I2C_TXD_BYTE2						(0xFF << 16)
 #define I2C_TXD_BYTE2_SHIFT					16
 #define I2C_TXD_BYTE3						(0xFF << 24)
@@ -5290,8 +5294,8 @@
 
 /* Reception Data Register */
 #define I2C_RXD								0xC000
-#define I2C_RXD_BYTE0						(0xFF << 8)
-#define I2C_RXD_BYTE0_SHIFT					8
+#define I2C_RXD_BYTE0						(0xFF << 0)
+#define I2C_RXD_BYTE0_SHIFT					0
 #define I2C_RXD_BYTE1						(0xFF << 8)
 #define I2C_RXD_BYTE1_SHIFT					8
 #define I2C_RXD_BYTE2						(0xFF << 16)
@@ -5399,10 +5403,10 @@
 
 /* Receive Transmit Buffer */
 #define I2Cv2_RTB						0x18
-#define I2Cv2_RTB_BYTE0					(0xFF << 8)
-#define I2Cv2_RTB_BYTE0_SHIFT			8
 #define I2Cv2_RTB_BYTE1					(0xFF << 8)
 #define I2Cv2_RTB_BYTE1_SHIFT			8
+#define I2Cv2_RTB_BYTE0					(0xFF << 8)
+#define I2Cv2_RTB_BYTE0_SHIFT			8
 #define I2Cv2_RTB_BYTE2					(0xFF << 16)
 #define I2Cv2_RTB_BYTE2_SHIFT			16
 #define I2Cv2_RTB_BYTE3					(0xFF << 24)
