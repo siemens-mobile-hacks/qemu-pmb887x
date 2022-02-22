@@ -1125,8 +1125,8 @@ static pmb887x_module_field_t cif_id_fields[] = {
 };
 
 static pmb887x_module_reg_t cif_regs[] = {
-	{"UNK0",	CIF_UNK0,	NULL,			0,							0},
 	{"CLC",		CIF_CLC,	cif_clc_fields,	ARRAY_SIZE(cif_clc_fields),	0},
+	{"UNK0",	CIF_UNK0,	NULL,			0,							0},
 	{"ID",		CIF_ID,		cif_id_fields,	ARRAY_SIZE(cif_id_fields),	0},
 	{"UNK1",	CIF_UNK1,	NULL,			0,							0},
 	{"UNK2",	CIF_UNK2,	NULL,			0,							0},
@@ -1246,14 +1246,14 @@ static pmb887x_module_reg_t dif_regs[] = {
 	{"CON11",	DIF_CON11,		NULL,				0,								0},
 	{"CON12",	DIF_CON12,		NULL,				0,								0},
 	{"CON13",	DIF_CON13,		NULL,				0,								0},
-	{"CON14",	DIF_CON14,		NULL,				0,								0},
+	{"TX_SIZE",	DIF_TX_SIZE,	NULL,				0,								0},
 	{"RIS",		DIF_RIS,		dif_ris_fields,		ARRAY_SIZE(dif_ris_fields),		0},
 	{"IMSC",	DIF_IMSC,		dif_imsc_fields,	ARRAY_SIZE(dif_imsc_fields),	0},
 	{"MIS",		DIF_MIS,		dif_mis_fields,		ARRAY_SIZE(dif_mis_fields),		0},
 	{"ICR",		DIF_ICR,		dif_icr_fields,		ARRAY_SIZE(dif_icr_fields),		0},
 	{"ISR",		DIF_ISR,		dif_isr_fields,		ARRAY_SIZE(dif_isr_fields),		0},
-	{"CON15",	DIF_CON15,		NULL,				0,								0},
-	{"TXD",		DIF_TXD,		NULL,				0,								0},
+	{"CON14",	DIF_CON14,		NULL,				0,								0},
+	{"FIFO",	DIF_FIFO,		NULL,				0,								0},
 };
 
 static pmb887x_module_field_t ebu_clc_fields[] = {
@@ -4598,8 +4598,8 @@ static pmb887x_module_field_t i2cv2_buscon_fields[] = {
 };
 
 static pmb887x_module_field_t i2cv2_rtb_fields[] = {
-	{"BYTE1",	I2Cv2_RTB_BYTE1,	I2Cv2_RTB_BYTE1_SHIFT,	NULL,	0},
 	{"BYTE0",	I2Cv2_RTB_BYTE0,	I2Cv2_RTB_BYTE0_SHIFT,	NULL,	0},
+	{"BYTE1",	I2Cv2_RTB_BYTE1,	I2Cv2_RTB_BYTE1_SHIFT,	NULL,	0},
 	{"BYTE2",	I2Cv2_RTB_BYTE2,	I2Cv2_RTB_BYTE2_SHIFT,	NULL,	0},
 	{"BYTE3",	I2Cv2_RTB_BYTE3,	I2Cv2_RTB_BYTE3_SHIFT,	NULL,	0},
 };

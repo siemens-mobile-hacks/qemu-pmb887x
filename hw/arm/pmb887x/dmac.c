@@ -17,6 +17,7 @@
 #include "hw/arm/pmb887x/io_bridge.h"
 #include "hw/arm/pmb887x/regs_dump.h"
 #include "hw/arm/pmb887x/mod.h"
+#include "hw/arm/pmb887x/dmac.h"
 
 #define DMAC_DEBUG
 
@@ -43,7 +44,7 @@ typedef struct {
 	uint32_t config;
 } pmb887x_dmac_ch_t;
 
-typedef struct {
+struct pmb887x_dmac_t {
 	SysBusDevice parent_obj;
 	MemoryRegion mmio;
 	
@@ -60,18 +61,10 @@ typedef struct {
 	
 	uint32_t config;
 	uint32_t enabled_channels;
-} pmb887x_dmac_t;
-
-static uint32_t dmac_get_block_size(uint32_t s) {
-	if (s > 7) {
-		error_report("pmb887x-dmac: unknown block size %d", s);
-		abort();
-	}
+	uint32_t used_peripherals;
 	
-	if (!s)
-		return 1;
-	return 1 << (s + 1);
-}
+	uint32_t periph_request[16];
+};
 
 static uint32_t dmac_get_width(uint32_t s) {
 	if (s > 2) {
@@ -82,18 +75,59 @@ static uint32_t dmac_get_width(uint32_t s) {
 }
 
 static void dmac_channel_run(pmb887x_dmac_t *p, pmb887x_dmac_ch_t *ch) {
-	uint32_t src_block = dmac_get_block_size((ch->control & DMAC_CH_CONTROL_SB_SIZE) >> DMAC_CH_CONTROL_SB_SIZE_SHIFT);
-	uint32_t dst_block = dmac_get_block_size((ch->control & DMAC_CH_CONTROL_DB_SIZE) >> DMAC_CH_CONTROL_DB_SIZE_SHIFT);
+	if (!(ch->config & DMAC_CH_CONFIG_ENABLE) || !(p->config & DMAC_CONFIG_ENABLE))
+		return;
+	
 	uint32_t src_width = dmac_get_width((ch->control & DMAC_CH_CONTROL_S_WIDTH) >> DMAC_CH_CONTROL_S_WIDTH_SHIFT);
 	uint32_t dst_width = dmac_get_width((ch->control & DMAC_CH_CONTROL_D_WIDTH) >> DMAC_CH_CONTROL_D_WIDTH_SHIFT);
+	uint8_t src_periph = (ch->config & DMAC_CH_CONFIG_SRC_PERIPH) >> DMAC_CH_CONFIG_SRC_PERIPH_SHIFT;
+	uint8_t dst_periph = (ch->config & DMAC_CH_CONFIG_DST_PERIPH) >> DMAC_CH_CONFIG_DST_PERIPH_SHIFT;
 	uint32_t tx_size = 0;
+	bool is_periph_controlled = false;
 	
 	switch ((ch->config & DMAC_CH_CONFIG_FLOW_CTRL)) {
 		case DMAC_CH_CONFIG_FLOW_CTRL_MEM2MEM:
-		case DMAC_CH_CONFIG_FLOW_CTRL_MEM2PER:
-		case DMAC_CH_CONFIG_FLOW_CTRL_PER2MEM:
-		case DMAC_CH_CONFIG_FLOW_CTRL_PER2PER:
 			tx_size = (ch->config & DMAC_CH_CONTROL_TRANSFER_SIZE) >> DMAC_CH_CONTROL_TRANSFER_SIZE_SHIFT;
+		break;
+		
+		case DMAC_CH_CONFIG_FLOW_CTRL_MEM2PER:
+			tx_size = (ch->config & DMAC_CH_CONTROL_TRANSFER_SIZE) >> DMAC_CH_CONTROL_TRANSFER_SIZE_SHIFT;
+			
+			if (!p->periph_request[dst_periph])
+				return;
+			
+			p->periph_request[dst_periph] = 0;
+		break;
+		
+		case DMAC_CH_CONFIG_FLOW_CTRL_PER2MEM:
+			tx_size = (ch->config & DMAC_CH_CONTROL_TRANSFER_SIZE) >> DMAC_CH_CONTROL_TRANSFER_SIZE_SHIFT;
+			
+			if (!p->periph_request[src_periph])
+				return;
+			
+			p->periph_request[src_periph] = 0;
+		break;
+		
+		case DMAC_CH_CONFIG_FLOW_CTRL_MEM2PER_PER:
+			is_periph_controlled = true;
+			
+			if (!p->periph_request[dst_periph])
+				return;
+			
+			tx_size = p->periph_request[dst_periph];
+			
+			p->periph_request[dst_periph] = 0;
+		break;
+		
+		case DMAC_CH_CONFIG_FLOW_CTRL_PER2MEM_PER:
+			is_periph_controlled = true;
+			
+			if (!p->periph_request[src_periph])
+				return;
+			
+			tx_size = p->periph_request[src_periph];
+			
+			p->periph_request[src_periph] = 0;
 		break;
 		
 		default:
@@ -101,6 +135,9 @@ static void dmac_channel_run(pmb887x_dmac_t *p, pmb887x_dmac_ch_t *ch) {
 			abort();
 		break;
 	}
+	
+	if (!tx_size)
+		return;
 	
 	DPRINTF("CH%d: %08X [%dx%d] -> %08X [%dx%d]\n", ch->id, ch->src_addr, src_width, tx_size, ch->dst_addr, dst_width, tx_size);
 	
@@ -139,11 +176,12 @@ static void dmac_channel_run(pmb887x_dmac_t *p, pmb887x_dmac_ch_t *ch) {
 		tx_size--;
 		
 		ch->control &= ~DMAC_CH_CONTROL_TRANSFER_SIZE;
-		ch->control |= (tx_size << DMAC_CH_CONTROL_TRANSFER_SIZE_SHIFT);
+		
+		if (!is_periph_controlled)
+			ch->control |= (tx_size << DMAC_CH_CONTROL_TRANSFER_SIZE_SHIFT);
 	}
 	
 	pmb887x_srb_set_isr(&p->srb_tc, (1 << ch->id));
-	
 	ch->config &= ~DMAC_CH_CONFIG_ENABLE;
 }
 
@@ -151,8 +189,14 @@ static void dmac_update(pmb887x_dmac_t *p) {
 	uint32_t err_mask = 0;
 	uint32_t tc_mask = 0;
 	
+	p->enabled_channels = 0;
+	p->used_peripherals = 0;
+	
 	for (int i = 0; i < DMAC_CHANNELS; i++) {
 		pmb887x_dmac_ch_t *ch = &p->ch[i];
+		
+		uint32_t src_width = dmac_get_width((ch->control & DMAC_CH_CONTROL_S_WIDTH) >> DMAC_CH_CONTROL_S_WIDTH_SHIFT);
+		uint32_t dst_width = dmac_get_width((ch->control & DMAC_CH_CONTROL_D_WIDTH) >> DMAC_CH_CONTROL_D_WIDTH_SHIFT);
 		
 		uint8_t mask = 1 << i;
 		
@@ -168,16 +212,27 @@ static void dmac_update(pmb887x_dmac_t *p) {
 			tc_mask &= ~mask;
 		}
 		
-		if ((ch->config & DMAC_CH_CONFIG_ENABLE)) {
+		if ((ch->config & DMAC_CH_CONFIG_ENABLE))
 			p->enabled_channels |= mask;
-			dmac_channel_run(p, ch);
-		} else {
-			p->enabled_channels &= ~mask;
-		}
+		
+		p->used_peripherals |= (1 << src_width) | (1 << dst_width);
+		
+		dmac_channel_run(p, ch);
 	}
 	
 	pmb887x_srb_set_imsc(&p->srb_tc, tc_mask);
 	pmb887x_srb_set_imsc(&p->srb_err, err_mask);
+}
+
+void pmb887x_dmac_request(pmb887x_dmac_t *p, int per_id, uint32_t size) {
+	p->periph_request[per_id] = size;
+	
+	if (size) {
+		if (p->used_peripherals & (1 << per_id)) {
+			for (int i = 0; i < DMAC_CHANNELS; i++)
+				dmac_channel_run(p, &p->ch[i]);
+		}
+	}
 }
 
 static int dmac_get_index_by_reg(uint32_t reg) {
@@ -465,10 +520,10 @@ static void dmac_realize(DeviceState *dev, Error **errp) {
 		p->ch[i].id = i;
 	
 	pmb887x_srb_init(&p->srb_err, &p->irq_err, 1);
-	pmb887x_srb_set_irq_router(&p->srb_err, p, dmac_tc_irq_router);
+	pmb887x_srb_set_irq_router(&p->srb_err, p, dmac_err_irq_router);
 	
 	pmb887x_srb_init(&p->srb_tc, p->irq_tc, ARRAY_SIZE(p->irq_tc));
-	pmb887x_srb_set_irq_router(&p->srb_tc, p, dmac_err_irq_router);
+	pmb887x_srb_set_irq_router(&p->srb_tc, p, dmac_tc_irq_router);
 }
 
 static Property dmac_properties[] = {

@@ -17,6 +17,7 @@
 #include "hw/arm/pmb887x/io_bridge.h"
 #include "hw/arm/pmb887x/regs_dump.h"
 #include "hw/arm/pmb887x/mod.h"
+#include "hw/arm/pmb887x/dmac.h"
 
 #define DIF_DEBUG
 
@@ -27,9 +28,11 @@
 #endif
 
 #define TYPE_PMB887X_DIF	"pmb887x-dif"
-#define PMB887X_DIF(obj)	OBJECT_CHECK(struct pmb887x_dif_t, (obj), TYPE_PMB887X_DIF)
+#define PMB887X_DIF(obj)	OBJECT_CHECK(pmb887x_dif_t, (obj), TYPE_PMB887X_DIF)
 
-struct pmb887x_dif_t {
+#define DIF_FIFO_SIZE	0xBFFC
+
+typedef struct {
 	SysBusDevice parent_obj;
 	MemoryRegion mmio;
     QemuConsole *console;
@@ -38,23 +41,27 @@ struct pmb887x_dif_t {
 	
 	uint32_t runctrl;
 	uint32_t prog[6];
-	uint32_t con[16];
+	uint32_t con[15];
+	uint32_t tx_size;
+	
+	uint32_t dmac_tx_periph_id;
+	pmb887x_dmac_t *dmac;
 	
 	pmb887x_clc_reg_t clc;
 	pmb887x_srb_reg_t srb;
-};
+} pmb887x_dif_t;
 
-static void dif_update_state(struct pmb887x_dif_t *p) {
+static void dif_update_state(pmb887x_dif_t *p) {
 	// TODO
 }
 
 static void dif_update_display(void *opaque) {
-	struct pmb887x_dif_t *p = (struct pmb887x_dif_t *) opaque;
+	pmb887x_dif_t *p = (pmb887x_dif_t *) opaque;
 	// TODO
 }
 
 static void dif_invalidate_display(void * opaque) {
-	struct pmb887x_dif_t *p = (struct pmb887x_dif_t *) opaque;
+	pmb887x_dif_t *p = (pmb887x_dif_t *) opaque;
 	// TODO
 }
 
@@ -82,7 +89,6 @@ static int dif_get_index_from_reg(uint32_t reg) {
 		case DIF_CON12:		return 12;
 		case DIF_CON13:		return 13;
 		case DIF_CON14:		return 14;
-		case DIF_CON15:		return 15;
 	};
 	error_report("pmb887x-dif: unknown reg %d", reg);
 	abort();
@@ -90,7 +96,7 @@ static int dif_get_index_from_reg(uint32_t reg) {
 }
 
 static uint64_t dif_io_read(void *opaque, hwaddr haddr, unsigned size) {
-	struct pmb887x_dif_t *p = (struct pmb887x_dif_t *) opaque;
+	pmb887x_dif_t *p = (pmb887x_dif_t *) opaque;
 	
 	uint64_t value = 0;
 	
@@ -135,11 +141,14 @@ static uint64_t dif_io_read(void *opaque, hwaddr haddr, unsigned size) {
 		case DIF_CON12:
 		case DIF_CON13:
 		case DIF_CON14:
-		case DIF_CON15:
 			value = p->con[dif_get_index_from_reg(haddr)];
 		break;
 		
-		case DIF_TXD:
+		case DIF_TX_SIZE:
+			value = p->tx_size;
+		break;
+		
+		case DIF_FIFO ... (DIF_FIFO + DIF_FIFO_SIZE):
 			value = 0;
 		break;
 		
@@ -176,7 +185,12 @@ static uint64_t dif_io_read(void *opaque, hwaddr haddr, unsigned size) {
 }
 
 static void dif_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned size) {
-	struct pmb887x_dif_t *p = (struct pmb887x_dif_t *) opaque;
+	pmb887x_dif_t *p = (pmb887x_dif_t *) opaque;
+	
+	if (haddr >= DIF_FIFO && haddr < DIF_FIFO + DIF_FIFO_SIZE) {
+		
+		return;
+	}
 	
 	pmb887x_dump_io(haddr + p->mmio.addr, size, value, true);
 	
@@ -213,12 +227,14 @@ static void dif_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned si
 		case DIF_CON12:
 		case DIF_CON13:
 		case DIF_CON14:
-		case DIF_CON15:
 			p->con[dif_get_index_from_reg(haddr)] = value;
 		break;
 		
-		case DIF_TXD:
-			DPRINTF("TX: %08lX\n", value);
+		case DIF_TX_SIZE:
+			p->tx_size = value;
+			
+			if (p->dmac)
+				pmb887x_dmac_request(p->dmac, p->dmac_tx_periph_id, p->tx_size);
 		break;
 		
 		case DIF_IMSC:
@@ -258,7 +274,7 @@ static const GraphicHwOps dif_gfx_ops = {
 };
 
 static void dif_init(Object *obj) {
-	struct pmb887x_dif_t *p = PMB887X_DIF(obj);
+	pmb887x_dif_t *p = PMB887X_DIF(obj);
 	memory_region_init_io(&p->mmio, obj, &io_ops, p, "pmb887x-dif", DIF_IO_SIZE);
 	sysbus_init_mmio(SYS_BUS_DEVICE(obj), &p->mmio);
 	
@@ -267,7 +283,7 @@ static void dif_init(Object *obj) {
 }
 
 static void dif_realize(DeviceState *dev, Error **errp) {
-	struct pmb887x_dif_t *p = PMB887X_DIF(dev);
+	pmb887x_dif_t *p = PMB887X_DIF(dev);
 	
 	pmb887x_clc_init(&p->clc);
 	pmb887x_srb_init(&p->srb, p->irq, ARRAY_SIZE(p->irq));
@@ -279,6 +295,8 @@ static void dif_realize(DeviceState *dev, Error **errp) {
 }
 
 static Property dif_properties[] = {
+	DEFINE_PROP_LINK("dmac", pmb887x_dif_t, dmac, "pmb887x-dmac", pmb887x_dmac_t *),
+	DEFINE_PROP_UINT32("dmac-tx-periph-id", pmb887x_dif_t, dmac_tx_periph_id, 4),
     DEFINE_PROP_END_OF_LIST(),
 };
 
@@ -291,7 +309,7 @@ static void dif_class_init(ObjectClass *klass, void *data) {
 static const TypeInfo dif_info = {
     .name          	= TYPE_PMB887X_DIF,
     .parent        	= TYPE_SYS_BUS_DEVICE,
-    .instance_size 	= sizeof(struct pmb887x_dif_t),
+    .instance_size 	= sizeof(pmb887x_dif_t),
     .instance_init 	= dif_init,
     .class_init    	= dif_class_init,
 };

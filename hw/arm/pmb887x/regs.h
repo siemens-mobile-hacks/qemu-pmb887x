@@ -1198,8 +1198,8 @@
 #define DMAC_CH_CONFIG_ENABLE_SHIFT				0
 #define DMAC_CH_CONFIG_SRC_PERIPH				(0xF << 1)			 // Source peripheral.
 #define DMAC_CH_CONFIG_SRC_PERIPH_SHIFT			1
-#define DMAC_CH_CONFIG_DST_PERIPH				(0x3F << 5)			 // Destination peripheral.
-#define DMAC_CH_CONFIG_DST_PERIPH_SHIFT			5
+#define DMAC_CH_CONFIG_DST_PERIPH				(0xF << 6)			 // Destination peripheral.
+#define DMAC_CH_CONFIG_DST_PERIPH_SHIFT			6
 #define DMAC_CH_CONFIG_FLOW_CTRL				(0x7 << 11)			 // Flow control and transfer type
 #define DMAC_CH_CONFIG_FLOW_CTRL_SHIFT			11
 #define DMAC_CH_CONFIG_FLOW_CTRL_MEM2MEM		0x0
@@ -1899,10 +1899,10 @@
 // CIF [MOD_NUM=F052, MOD_REV=00, MOD_32BIT=C0]
 // Looks like DIF (Camera Interface) module, but not sure.
 #define CIF_IO_SIZE	0x00000200
+#define CIF_UNK0	0x00
+
 /* Clock Control Register */
 #define CIF_CLC		0x00
-
-#define CIF_UNK0	0x00
 
 /* Module Identifier Register */
 #define CIF_ID		0x08
@@ -1924,7 +1924,7 @@
 
 // DIF [MOD_NUM=F043, MOD_REV=00, MOD_32BIT=C0]
 // DIF (Display Interface)
-#define DIF_IO_SIZE				0x00008004
+#define DIF_IO_SIZE				0x0000C000
 /* Clock Control Register */
 #define DIF_CLC					0x00
 
@@ -1975,7 +1975,7 @@
 
 #define DIF_CON13				0xA0
 
-#define DIF_CON14				0xA4
+#define DIF_TX_SIZE				0xA4
 
 /* Raw Interrupt Status Register */
 #define DIF_RIS					0xC0
@@ -2082,9 +2082,9 @@
 #define DIF_ISR_EVENT8			(1 << 8)
 #define DIF_ISR_EVENT8_SHIFT	8
 
-#define DIF_CON15				0xD4
+#define DIF_CON14				0xD4
 
-#define DIF_TXD					0x8000
+#define DIF_FIFO				0x8000
 
 
 // EBU [MOD_NUM=0014, MOD_REV=00, MOD_32BIT=C0]

@@ -318,12 +318,18 @@ void pmb887x_init(MachineState *machine, uint32_t board_id) {
 	object_property_set_link(OBJECT(tpu), "pll", OBJECT(pll), &error_fatal);
 	sysbus_realize_and_unref(SYS_BUS_DEVICE(tpu), &error_fatal);
 	
+	// DMA Controller
+	DeviceState *dmac = pmb887x_new_dev(board->cpu, "DMA", nvic);
+	object_property_set_link(OBJECT(dmac), "downstream", OBJECT(sysmem), &error_fatal);
+	sysbus_realize_and_unref(SYS_BUS_DEVICE(dmac), &error_fatal);
+	
 	// DSP
 	DeviceState *dsp = pmb887x_new_dev(board->cpu, "DSP", nvic);
 	sysbus_realize_and_unref(SYS_BUS_DEVICE(dsp), &error_fatal);
 	
 	// DIF
 	DeviceState *dif = pmb887x_new_dev(board->cpu, "DIF", nvic);
+	object_property_set_link(OBJECT(dif), "dmac", OBJECT(dmac), &error_fatal);
 	sysbus_realize_and_unref(SYS_BUS_DEVICE(dif), &error_fatal);
 	
 	// USART0
@@ -335,11 +341,6 @@ void pmb887x_init(MachineState *machine, uint32_t board_id) {
 	DeviceState *usart1 = pmb887x_new_dev(board->cpu, "USART1", nvic);
 	qdev_prop_set_chr(DEVICE(usart1), "chardev", serial_hd(1));
 	sysbus_realize_and_unref(SYS_BUS_DEVICE(usart1), &error_fatal);
-	
-	// DMA Controller
-	DeviceState *dmac = pmb887x_new_dev(board->cpu, "DMA", nvic);
-	object_property_set_link(OBJECT(dmac), "downstream", OBJECT(sysmem), &error_fatal);
-	sysbus_realize_and_unref(SYS_BUS_DEVICE(dmac), &error_fatal);
 	
 	if (board->cpu == CPU_PMB8876) {
 		// I2C
