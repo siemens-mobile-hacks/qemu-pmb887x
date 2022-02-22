@@ -32,6 +32,11 @@
 
 #define DIF_FIFO_SIZE	0xBFFC
 
+enum {
+	DIF_BPP_RGB565	= 16,
+	DIF_BPP_RGB888	= 24
+};
+
 typedef struct {
 	SysBusDevice parent_obj;
 	MemoryRegion mmio;
@@ -39,10 +44,20 @@ typedef struct {
 	
 	qemu_irq irq[4];
 	
+	bool invalidate;
+	
+	uint32_t width;
+	uint32_t height;
+	uint8_t bpp;
+	
 	uint32_t runctrl;
 	uint32_t prog[6];
 	uint32_t con[15];
 	uint32_t tx_size;
+	
+	uint8_t *buffer;
+	uint32_t buffer_size;
+	uint32_t buffer_index;
 	
 	uint32_t dmac_tx_periph_id;
 	pmb887x_dmac_t *dmac;
@@ -52,17 +67,38 @@ typedef struct {
 } pmb887x_dif_t;
 
 static void dif_update_state(pmb887x_dif_t *p) {
-	// TODO
+	if (!p->buffer) {
+		p->buffer_index = 0;
+		p->buffer_size = (p->width * p->height * p->bpp) / 8;
+		p->buffer = g_new0(uint8_t, p->buffer_size);
+		
+		pixman_format_code_t format = PIXMAN_r5g6b5;
+		if (p->bpp == 24)
+			format = PIXMAN_r8g8b8;
+		
+		uint32_t linesize = (p->width * p->bpp) / 8;
+		DisplaySurface *ds = qemu_create_displaysurface_from(p->width, p->height, format, linesize, (uint8_t *) p->buffer);
+        dpy_gfx_replace_surface(p->console, ds);
+		
+		p->invalidate = true;
+	}
 }
 
 static void dif_update_display(void *opaque) {
 	pmb887x_dif_t *p = (pmb887x_dif_t *) opaque;
-	// TODO
+	
+	if (!p->invalidate)
+		return;
+	
+	DPRINTF("dif_update_display\n");
+	
+	dpy_gfx_update(p->console, 0, 0, p->width, p->height);
+	p->invalidate = false;
 }
 
 static void dif_invalidate_display(void * opaque) {
 	pmb887x_dif_t *p = (pmb887x_dif_t *) opaque;
-	// TODO
+	p->invalidate = true;
 }
 
 static int dif_get_index_from_reg(uint32_t reg) {
@@ -188,7 +224,18 @@ static void dif_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned si
 	pmb887x_dif_t *p = (pmb887x_dif_t *) opaque;
 	
 	if (haddr >= DIF_FIFO && haddr < DIF_FIFO + DIF_FIFO_SIZE) {
-		
+		switch (p->bpp) {
+			case DIF_BPP_RGB565:
+				if (p->buffer_index + 4 <= p->buffer_size) {
+					uint32_t *buffer32 = (uint32_t *) &p->buffer[p->buffer_index];
+					*buffer32 = value;
+					p->buffer_index += 4;
+				} else {
+					
+				}
+			break;
+		}
+		p->invalidate = true;
 		return;
 	}
 	
@@ -200,6 +247,7 @@ static void dif_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned si
 		break;
 		
 		case DIF_RUNCTRL:
+			p->buffer_index = 0;
 			p->runctrl = value;
 		break;
 		
@@ -278,6 +326,8 @@ static void dif_init(Object *obj) {
 	memory_region_init_io(&p->mmio, obj, &io_ops, p, "pmb887x-dif", DIF_IO_SIZE);
 	sysbus_init_mmio(SYS_BUS_DEVICE(obj), &p->mmio);
 	
+	p->bpp = DIF_BPP_RGB565;
+	
 	for (int i = 0; i < ARRAY_SIZE(p->irq); i++)
 		sysbus_init_irq(SYS_BUS_DEVICE(obj), &p->irq[i]);
 }
@@ -289,7 +339,7 @@ static void dif_realize(DeviceState *dev, Error **errp) {
 	pmb887x_srb_init(&p->srb, p->irq, ARRAY_SIZE(p->irq));
 	
 	p->console = graphic_console_init(dev, 0, &dif_gfx_ops, p);
-	qemu_console_resize(p->console, 240, 320);
+	qemu_console_resize(p->console, p->width, p->height);
 	
 	dif_update_state(p);
 }
@@ -297,6 +347,8 @@ static void dif_realize(DeviceState *dev, Error **errp) {
 static Property dif_properties[] = {
 	DEFINE_PROP_LINK("dmac", pmb887x_dif_t, dmac, "pmb887x-dmac", pmb887x_dmac_t *),
 	DEFINE_PROP_UINT32("dmac-tx-periph-id", pmb887x_dif_t, dmac_tx_periph_id, 4),
+	DEFINE_PROP_UINT32("width", pmb887x_dif_t, width, 240),
+	DEFINE_PROP_UINT32("height", pmb887x_dif_t, height, 320),
     DEFINE_PROP_END_OF_LIST(),
 };
 
