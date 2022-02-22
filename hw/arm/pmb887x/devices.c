@@ -215,7 +215,7 @@ static const struct pmb887x_dev pmb8876_devices[] = {
 		.dev	= "pmb887x-dmac",
 		.base	= PMB8876_DMAC_BASE,
 		.irqs	= {
-			PMB8876_DMAC_IRQ,
+			PMB8876_DMAC_ERR_IRQ,
 			PMB8876_DMAC_CH0_IRQ,
 			PMB8876_DMAC_CH1_IRQ,
 			PMB8876_DMAC_CH2_IRQ,
@@ -422,7 +422,7 @@ static const struct pmb887x_dev pmb8875_devices[] = {
 		.dev	= "pmb887x-dmac",
 		.base	= PMB8875_DMAC_BASE,
 		.irqs	= {
-			PMB8875_DMAC_IRQ,
+			PMB8875_DMAC_ERR_IRQ,
 			PMB8875_DMAC_CH0_IRQ,
 			PMB8875_DMAC_CH1_IRQ,
 			PMB8875_DMAC_CH2_IRQ,

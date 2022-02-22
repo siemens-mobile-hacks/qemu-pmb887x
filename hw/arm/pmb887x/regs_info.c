@@ -205,8 +205,8 @@ static pmb887x_module_value_t dmac_dmac_ch_lli_lm_values[] = {
 };
 
 static pmb887x_module_field_t dmac_ch_lli_fields[] = {
-	{"LM",	DMAC_CH_LLI_LM,		DMAC_CH_LLI_LM_SHIFT,	dmac_dmac_ch_lli_lm_values,	ARRAY_SIZE(dmac_dmac_ch_lli_lm_values)},
-	{"LLI",	DMAC_CH_LLI_LLI,	DMAC_CH_LLI_LLI_SHIFT,	NULL,						0},
+	{"LM",		DMAC_CH_LLI_LM,		DMAC_CH_LLI_LM_SHIFT,	dmac_dmac_ch_lli_lm_values,	ARRAY_SIZE(dmac_dmac_ch_lli_lm_values)},
+	{"ITEM",	DMAC_CH_LLI_ITEM,	DMAC_CH_LLI_ITEM_SHIFT,	NULL,						0},
 };
 
 static pmb887x_module_value_t dmac_dmac_ch_control_sb_size_values[] = {
@@ -254,7 +254,7 @@ static pmb887x_module_value_t dmac_dmac_ch_control_d_values[] = {
 };
 
 static pmb887x_module_field_t dmac_ch_control_fields[] = {
-	{"TRANSFER_SZIE",	DMAC_CH_CONTROL_TRANSFER_SZIE,	DMAC_CH_CONTROL_TRANSFER_SZIE_SHIFT,	NULL,									0},
+	{"TRANSFER_SIZE",	DMAC_CH_CONTROL_TRANSFER_SIZE,	DMAC_CH_CONTROL_TRANSFER_SIZE_SHIFT,	NULL,									0},
 	{"SB_SIZE",			DMAC_CH_CONTROL_SB_SIZE,		DMAC_CH_CONTROL_SB_SIZE_SHIFT,			dmac_dmac_ch_control_sb_size_values,	ARRAY_SIZE(dmac_dmac_ch_control_sb_size_values)},
 	{"DB_SIZE",			DMAC_CH_CONTROL_DB_SIZE,		DMAC_CH_CONTROL_DB_SIZE_SHIFT,			dmac_dmac_ch_control_db_size_values,	ARRAY_SIZE(dmac_dmac_ch_control_db_size_values)},
 	{"S_WIDTH",			DMAC_CH_CONTROL_S_WIDTH,		DMAC_CH_CONTROL_S_WIDTH_SHIFT,			dmac_dmac_ch_control_s_width_values,	ARRAY_SIZE(dmac_dmac_ch_control_s_width_values)},
@@ -4598,8 +4598,8 @@ static pmb887x_module_field_t i2cv2_buscon_fields[] = {
 };
 
 static pmb887x_module_field_t i2cv2_rtb_fields[] = {
-	{"BYTE0",	I2Cv2_RTB_BYTE0,	I2Cv2_RTB_BYTE0_SHIFT,	NULL,	0},
 	{"BYTE1",	I2Cv2_RTB_BYTE1,	I2Cv2_RTB_BYTE1_SHIFT,	NULL,	0},
+	{"BYTE0",	I2Cv2_RTB_BYTE0,	I2Cv2_RTB_BYTE0_SHIFT,	NULL,	0},
 	{"BYTE2",	I2Cv2_RTB_BYTE2,	I2Cv2_RTB_BYTE2_SHIFT,	NULL,	0},
 	{"BYTE3",	I2Cv2_RTB_BYTE3,	I2Cv2_RTB_BYTE3_SHIFT,	NULL,	0},
 };
@@ -5701,7 +5701,7 @@ static pmb887x_cpu_meta_irq_t pmb8875_irqs[] = {
 	{"USART1_ABDET",	PMB8875_USART1_ABDET_IRQ,	NVIC_CON31},
 	{"USART1_ABSTART",	PMB8875_USART1_ABSTART_IRQ,	NVIC_CON32},
 	{"USART1_TMO",		PMB8875_USART1_TMO_IRQ,		NVIC_CON33},
-	{"DMAC",			PMB8875_DMAC_IRQ,			NVIC_CON35},
+	{"DMAC_ERR",		PMB8875_DMAC_ERR_IRQ,		NVIC_CON35},
 	{"DMAC_CH0",		PMB8875_DMAC_CH0_IRQ,		NVIC_CON36},
 	{"DMAC_CH1",		PMB8875_DMAC_CH1_IRQ,		NVIC_CON37},
 	{"DMAC_CH2",		PMB8875_DMAC_CH2_IRQ,		NVIC_CON38},
@@ -5836,7 +5836,7 @@ static pmb887x_cpu_meta_irq_t pmb8876_irqs[] = {
 	{"USART1_ABDET",	PMB8876_USART1_ABDET_IRQ,	NVIC_CON31},
 	{"USART1_ABSTART",	PMB8876_USART1_ABSTART_IRQ,	NVIC_CON32},
 	{"USART1_TMO",		PMB8876_USART1_TMO_IRQ,		NVIC_CON33},
-	{"DMAC",			PMB8876_DMAC_IRQ,			NVIC_CON35},
+	{"DMAC_ERR",		PMB8876_DMAC_ERR_IRQ,		NVIC_CON35},
 	{"DMAC_CH0",		PMB8876_DMAC_CH0_IRQ,		NVIC_CON36},
 	{"DMAC_CH1",		PMB8876_DMAC_CH1_IRQ,		NVIC_CON37},
 	{"DMAC_CH2",		PMB8876_DMAC_CH2_IRQ,		NVIC_CON38},
