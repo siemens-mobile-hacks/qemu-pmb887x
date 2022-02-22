@@ -193,12 +193,6 @@ static const struct pmb887x_dev pmb8876_devices[] = {
 		}
 	},
 	{
-		.name	= "DMA",
-		.dev	= "pl080",
-		.base	= PMB8876_DMAC_BASE,
-		.irqs	= { 0 }
-	},
-	{
 		.name	= "EBU",
 		.dev	= "pmb887x-ebu",
 		.base	= PMB8876_EBU_BASE,
@@ -215,6 +209,23 @@ static const struct pmb887x_dev pmb8876_devices[] = {
 		.dev	= "pmb887x-dif",
 		.base	= PMB8876_DIF_BASE,
 		.irqs	= { 0 }
+	},
+	{
+		.name	= "DMA",
+		.dev	= "pmb887x-dmac",
+		.base	= PMB8876_DMAC_BASE,
+		.irqs	= {
+			PMB8876_DMAC_IRQ,
+			PMB8876_DMAC_CH0_IRQ,
+			PMB8876_DMAC_CH1_IRQ,
+			PMB8876_DMAC_CH2_IRQ,
+			PMB8876_DMAC_CH3_IRQ,
+			PMB8876_DMAC_CH4_IRQ,
+			PMB8876_DMAC_CH5_IRQ,
+			PMB8876_DMAC_CH6_IRQ,
+			PMB8876_DMAC_CH7_IRQ,
+			0
+		}
 	}
 };
 
@@ -389,12 +400,6 @@ static const struct pmb887x_dev pmb8875_devices[] = {
 		}
 	},
 	{
-		.name	= "DMA",
-		.dev	= "pl080",
-		.base	= PMB8875_DMAC_BASE,
-		.irqs	= { 0 }
-	},
-	{
 		.name	= "EBU",
 		.dev	= "pmb887x-ebu",
 		.base	= PMB8875_EBU_BASE,
@@ -411,6 +416,23 @@ static const struct pmb887x_dev pmb8875_devices[] = {
 		.dev	= "pmb887x-dif",
 		.base	= PMB8875_DIF_BASE,
 		.irqs	= { 0 }
+	},
+	{
+		.name	= "DMA",
+		.dev	= "pmb887x-dmac",
+		.base	= PMB8875_DMAC_BASE,
+		.irqs	= {
+			PMB8875_DMAC_IRQ,
+			PMB8875_DMAC_CH0_IRQ,
+			PMB8875_DMAC_CH1_IRQ,
+			PMB8875_DMAC_CH2_IRQ,
+			PMB8875_DMAC_CH3_IRQ,
+			PMB8875_DMAC_CH4_IRQ,
+			PMB8875_DMAC_CH5_IRQ,
+			PMB8875_DMAC_CH6_IRQ,
+			PMB8875_DMAC_CH7_IRQ,
+			0
+		}
 	}
 };
 

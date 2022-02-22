@@ -92,10 +92,13 @@ static const ARMCPRegInfo cp_reginfo[] = {
 
 static uint64_t cpu_io_read(void *opaque, hwaddr offset, unsigned size) {
 	hwaddr addr = (size_t) opaque + offset;
-	uint32_t value = 0xFFFFFFFF;
+	uint32_t value = 0;
 	
 	if (addr == 0xF4C0001C)
 		value = 0;
+	
+	if (addr == 0xF4C00000)
+		value = 0xFFFFFFFF;
 	
 	#ifdef PMB887X_IO_BRIDGE
 	value = pmb8876_io_bridge_read(addr, size);
@@ -103,7 +106,7 @@ static uint64_t cpu_io_read(void *opaque, hwaddr offset, unsigned size) {
 	return value;
 	#endif
 	
-	pmb887x_dump_io(addr, size, 0xFFFFFFFF, false);
+	pmb887x_dump_io(addr, size, value, false);
 	
 	fprintf(stderr, "READ: unknown reg access: %08lX\n", addr);
 	//exit(1);
@@ -137,11 +140,13 @@ static const MemoryRegionOps cpu_io_opts = {
 
 static uint64_t unmapped_io_read(void *opaque, hwaddr offset, unsigned size) {
 	uint32_t addr = (size_t) opaque + offset;
+	
+	if (addr >= 0xA0000000 && addr < 0xB0000000)
+		return 0;
+	
 	fprintf(stderr, "UNMAPPED READ[%d] %08X (PC: %08X)\n", size, addr, cpu->env.regs[15]);
-	if (addr >= 0xA0000000 && addr <= 0xA4000000)
-		return 0xFFFFFFFF;
 //	exit(1);
-	return 0xFFFFFFFF;
+	return 0;
 }
 
 static void unmapped_io_write(void *opaque, hwaddr offset, uint64_t value, unsigned size) {
@@ -318,8 +323,8 @@ void pmb887x_init(MachineState *machine, uint32_t board_id) {
 	sysbus_realize_and_unref(SYS_BUS_DEVICE(dsp), &error_fatal);
 	
 	// DIF
-//	DeviceState *dif = pmb887x_new_dev(board->cpu, "DIF", nvic);
-//	sysbus_realize_and_unref(SYS_BUS_DEVICE(dif), &error_fatal);
+	DeviceState *dif = pmb887x_new_dev(board->cpu, "DIF", nvic);
+	sysbus_realize_and_unref(SYS_BUS_DEVICE(dif), &error_fatal);
 	
 	// USART0
 	DeviceState *usart0 = pmb887x_new_dev(board->cpu, "USART0", nvic);
@@ -330,6 +335,21 @@ void pmb887x_init(MachineState *machine, uint32_t board_id) {
 	DeviceState *usart1 = pmb887x_new_dev(board->cpu, "USART1", nvic);
 	qdev_prop_set_chr(DEVICE(usart1), "chardev", serial_hd(1));
 	sysbus_realize_and_unref(SYS_BUS_DEVICE(usart1), &error_fatal);
+	
+	// DMA Controller
+	DeviceState *dmac = pmb887x_new_dev(board->cpu, "DMA", nvic);
+	object_property_set_link(OBJECT(dmac), "downstream", OBJECT(sysmem), &error_fatal);
+	sysbus_realize_and_unref(SYS_BUS_DEVICE(dmac), &error_fatal);
+	
+	if (board->cpu == CPU_PMB8876) {
+		// I2C
+		DeviceState *i2c = pmb887x_new_dev(board->cpu, "I2C", nvic);
+		sysbus_realize_and_unref(SYS_BUS_DEVICE(i2c), &error_fatal);
+		
+		// Power ASIC
+		I2CSlave *pasic = i2c_slave_new("pmb887x-pasic", 0x31);
+		i2c_slave_realize_and_unref(pasic, pmb887x_i2c_bus(i2c), &error_fatal);
+	}
 	
 	#ifndef PMB887X_IO_BRIDGE
 	// System Control Unit
@@ -356,16 +376,6 @@ void pmb887x_init(MachineState *machine, uint32_t board_id) {
 	DeviceState *rtc = pmb887x_new_dev(board->cpu, "RTC", nvic);
 	sysbus_realize_and_unref(SYS_BUS_DEVICE(rtc), &error_fatal);
 	
-	if (board->cpu == CPU_PMB8876) {
-		// I2C
-		DeviceState *i2c = pmb887x_new_dev(board->cpu, "I2C", nvic);
-		sysbus_realize_and_unref(SYS_BUS_DEVICE(i2c), &error_fatal);
-		
-		// Power ASIC
-		I2CSlave *pasic = i2c_slave_new("pmb887x-pasic", 0x31);
-		i2c_slave_realize_and_unref(pasic, pmb887x_i2c_bus(i2c), &error_fatal);
-	}
-	
 	// GPTU0
 	DeviceState *gptu0 = pmb887x_new_dev(board->cpu, "GPTU0", nvic);
 	sysbus_realize_and_unref(SYS_BUS_DEVICE(gptu0), &error_fatal);
@@ -374,10 +384,6 @@ void pmb887x_init(MachineState *machine, uint32_t board_id) {
 	DeviceState *gptu1 = pmb887x_new_dev(board->cpu, "GPTU1", nvic);
 	sysbus_realize_and_unref(SYS_BUS_DEVICE(gptu1), &error_fatal);
 	
-	// DMA Controller
-	DeviceState *dmac = pmb887x_new_dev(board->cpu, "DMA", nvic);
-	object_property_set_link(OBJECT(dmac), "downstream", OBJECT(sysmem), &error_fatal);
-	sysbus_realize_and_unref(SYS_BUS_DEVICE(dmac), &error_fatal);
 	#else
 	pmb8876_io_bridge_set_nvic(nvic);
 	#endif

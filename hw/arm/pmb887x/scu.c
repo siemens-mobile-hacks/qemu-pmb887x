@@ -54,6 +54,7 @@ struct pmb887x_scu_t {
 	uint32_t dmars;
 	uint32_t rst_req;
 	uint32_t boot_cfg;
+	uint32_t dsp_unk0;
 	
 	MemoryRegion *brom_mirror;
 };
@@ -172,6 +173,10 @@ static uint64_t scu_io_read(void *opaque, hwaddr haddr, unsigned size) {
 			value = p->exti;
 		break;
 		
+		case SCU_DSP_UNK0:
+			value = p->dsp_unk0;
+		break;
+		
 		case SCU_EXTI0_SRC:
 		case SCU_EXTI1_SRC:
 		case SCU_EXTI2_SRC:
@@ -265,6 +270,10 @@ static void scu_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned si
 		
 		case SCU_EXTI:
 			p->exti = value;
+		break;
+		
+		case SCU_DSP_UNK0:
+			p->dsp_unk0 = value;
 		break;
 		
 		case SCU_EXTI0_SRC:

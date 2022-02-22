@@ -32,9 +32,16 @@
 struct pmb887x_dif_t {
 	SysBusDevice parent_obj;
 	MemoryRegion mmio;
-    QemuConsole *con;
+    QemuConsole *console;
+	
+	qemu_irq irq[4];
+	
+	uint32_t runctrl;
+	uint32_t prog[6];
+	uint32_t con[16];
 	
 	pmb887x_clc_reg_t clc;
+	pmb887x_srb_reg_t srb;
 };
 
 static void dif_update_state(struct pmb887x_dif_t *p) {
@@ -51,6 +58,37 @@ static void dif_invalidate_display(void * opaque) {
 	// TODO
 }
 
+static int dif_get_index_from_reg(uint32_t reg) {
+	switch (reg) {
+		case DIF_PROG0:		return 0;
+		case DIF_PROG1:		return 1;
+		case DIF_PROG2:		return 2;
+		case DIF_PROG3:		return 3;
+		case DIF_PROG4:		return 4;
+		case DIF_PROG5:		return 5;
+		
+		case DIF_CON0:		return 0;
+		case DIF_CON1:		return 1;
+		case DIF_CON2:		return 2;
+		case DIF_CON3:		return 3;
+		case DIF_CON4:		return 4;
+		case DIF_CON5:		return 5;
+		case DIF_CON6:		return 6;
+		case DIF_CON7:		return 7;
+		case DIF_CON8:		return 8;
+		case DIF_CON9:		return 9;
+		case DIF_CON10:		return 10;
+		case DIF_CON11:		return 11;
+		case DIF_CON12:		return 12;
+		case DIF_CON13:		return 13;
+		case DIF_CON14:		return 14;
+		case DIF_CON15:		return 15;
+	};
+	error_report("pmb887x-dif: unknown reg %d", reg);
+	abort();
+	return -1;
+}
+
 static uint64_t dif_io_read(void *opaque, hwaddr haddr, unsigned size) {
 	struct pmb887x_dif_t *p = (struct pmb887x_dif_t *) opaque;
 	
@@ -63,6 +101,66 @@ static uint64_t dif_io_read(void *opaque, hwaddr haddr, unsigned size) {
 		
 		case DIF_ID:
 			value = 0xF043C012;
+		break;
+		
+		case DIF_RUNCTRL:
+			value = p->runctrl;
+		break;
+		
+		case DIF_STAT:
+			value = 0;
+		break;
+		
+		case DIF_PROG0:
+		case DIF_PROG1:
+		case DIF_PROG2:
+		case DIF_PROG3:
+		case DIF_PROG4:
+		case DIF_PROG5:
+			value = p->prog[dif_get_index_from_reg(haddr)];
+		break;
+		
+		case DIF_CON0:
+		case DIF_CON1:
+		case DIF_CON2:
+		case DIF_CON3:
+		case DIF_CON4:
+		case DIF_CON5:
+		case DIF_CON6:
+		case DIF_CON7:
+		case DIF_CON8:
+		case DIF_CON9:
+		case DIF_CON10:
+		case DIF_CON11:
+		case DIF_CON12:
+		case DIF_CON13:
+		case DIF_CON14:
+		case DIF_CON15:
+			value = p->con[dif_get_index_from_reg(haddr)];
+		break;
+		
+		case DIF_TXD:
+			value = 0;
+		break;
+		
+		case DIF_IMSC:
+			value = pmb887x_srb_get_imsc(&p->srb);
+		break;
+		
+		case DIF_RIS:
+			value = pmb887x_srb_get_ris(&p->srb);
+		break;
+		
+		case DIF_MIS:
+			value = pmb887x_srb_get_mis(&p->srb);
+		break;
+		
+		case DIF_ICR:
+			value = 0;
+		break;
+		
+		case DIF_ISR:
+			value = 0;
 		break;
 		
 		default:
@@ -85,6 +183,54 @@ static void dif_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned si
 	switch (haddr) {
 		case DIF_CLC:
 			pmb887x_clc_set(&p->clc, value);
+		break;
+		
+		case DIF_RUNCTRL:
+			p->runctrl = value;
+		break;
+		
+		case DIF_PROG0:
+		case DIF_PROG1:
+		case DIF_PROG2:
+		case DIF_PROG3:
+		case DIF_PROG4:
+		case DIF_PROG5:
+			p->prog[dif_get_index_from_reg(haddr)] = value;
+		break;
+		
+		case DIF_CON0:
+		case DIF_CON1:
+		case DIF_CON2:
+		case DIF_CON3:
+		case DIF_CON4:
+		case DIF_CON5:
+		case DIF_CON6:
+		case DIF_CON7:
+		case DIF_CON8:
+		case DIF_CON9:
+		case DIF_CON10:
+		case DIF_CON11:
+		case DIF_CON12:
+		case DIF_CON13:
+		case DIF_CON14:
+		case DIF_CON15:
+			p->con[dif_get_index_from_reg(haddr)] = value;
+		break;
+		
+		case DIF_TXD:
+			DPRINTF("TX: %08lX\n", value);
+		break;
+		
+		case DIF_IMSC:
+			pmb887x_srb_set_imsc(&p->srb, value);
+		break;
+		
+		case DIF_ICR:
+			pmb887x_srb_set_icr(&p->srb, value);
+		break;
+		
+		case DIF_ISR:
+			pmb887x_srb_set_isr(&p->srb, value);
 		break;
 		
 		default:
@@ -115,14 +261,19 @@ static void dif_init(Object *obj) {
 	struct pmb887x_dif_t *p = PMB887X_DIF(obj);
 	memory_region_init_io(&p->mmio, obj, &io_ops, p, "pmb887x-dif", DIF_IO_SIZE);
 	sysbus_init_mmio(SYS_BUS_DEVICE(obj), &p->mmio);
+	
+	for (int i = 0; i < ARRAY_SIZE(p->irq); i++)
+		sysbus_init_irq(SYS_BUS_DEVICE(obj), &p->irq[i]);
 }
 
 static void dif_realize(DeviceState *dev, Error **errp) {
 	struct pmb887x_dif_t *p = PMB887X_DIF(dev);
 	
 	pmb887x_clc_init(&p->clc);
-	p->con = graphic_console_init(dev, 0, &dif_gfx_ops, p);
-	qemu_console_resize(p->con, 240, 320);
+	pmb887x_srb_init(&p->srb, p->irq, ARRAY_SIZE(p->irq));
+	
+	p->console = graphic_console_init(dev, 0, &dif_gfx_ops, p);
+	qemu_console_resize(p->console, 240, 320);
 	
 	dif_update_state(p);
 }

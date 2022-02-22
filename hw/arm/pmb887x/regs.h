@@ -194,6 +194,10 @@
 #define PMB8875_TPU_INT1_IRQ		120
 #define PMB8875_GPRSCU_INT0_IRQ		121
 #define PMB8875_GPRSCU_INT1_IRQ		122
+#define PMB8875_DIF_INT0_IRQ		134
+#define PMB8875_DIF_INT1_IRQ		135
+#define PMB8875_DIF_INT2_IRQ		136
+#define PMB8875_DIF_INT3_IRQ		137
 
 /* CPU: pmb8876 */
 #define CPU_PMB8876					1
@@ -394,6 +398,10 @@
 #define PMB8876_TPU_INT1_IRQ		120
 #define PMB8876_GPRSCU_INT0_IRQ		121
 #define PMB8876_GPRSCU_INT1_IRQ		122
+#define PMB8876_DIF_INT0_IRQ		134
+#define PMB8876_DIF_INT1_IRQ		135
+#define PMB8876_DIF_INT2_IRQ		136
+#define PMB8876_DIF_INT3_IRQ		137
 #define PMB8876_CIF_UNK0_IRQ		138
 #define PMB8876_CIF_UNK1_IRQ		139
 #define PMB8876_CIF_UNK2_IRQ		140
@@ -1097,9 +1105,23 @@
 #define DMAC_CH_SRC_ADDR6						0x1C0
 #define DMAC_CH_SRC_ADDR7						0x1E0
 
-#define DMAC_CH_DST_ADDR						0x104
+#define DMAC_CH_DST_ADDR0						0x104
+#define DMAC_CH_DST_ADDR1						0x124
+#define DMAC_CH_DST_ADDR2						0x144
+#define DMAC_CH_DST_ADDR3						0x164
+#define DMAC_CH_DST_ADDR4						0x184
+#define DMAC_CH_DST_ADDR5						0x1A4
+#define DMAC_CH_DST_ADDR6						0x1C4
+#define DMAC_CH_DST_ADDR7						0x1E4
 
-#define DMAC_CH_LLI								0x108
+#define DMAC_CH_LLI0							0x108
+#define DMAC_CH_LLI1							0x128
+#define DMAC_CH_LLI2							0x148
+#define DMAC_CH_LLI3							0x168
+#define DMAC_CH_LLI4							0x188
+#define DMAC_CH_LLI5							0x1A8
+#define DMAC_CH_LLI6							0x1C8
+#define DMAC_CH_LLI7							0x1E8
 #define DMAC_CH_LLI_LM							(1 << 0)			 // AHB master select for loading the next LLI
 #define DMAC_CH_LLI_LM_SHIFT					0
 #define DMAC_CH_LLI_LM_AHB1						0x0
@@ -1528,20 +1550,18 @@
 #define CAPCOM_CLC						0x00
 
 #define CAPCOM_PISEL					0x04
-
-#define CAPCOM_CPISEL					0x04
-#define CAPCOM_CPISEL_C1C0IS			(1 << 0)
-#define CAPCOM_CPISEL_C1C0IS_SHIFT		0
-#define CAPCOM_CPISEL_C3C2IS			(1 << 1)
-#define CAPCOM_CPISEL_C3C2IS_SHIFT		1
-#define CAPCOM_CPISEL_C5C4IS			(1 << 2)
-#define CAPCOM_CPISEL_C5C4IS_SHIFT		2
-#define CAPCOM_CPISEL_C7C6IS			(1 << 3)
-#define CAPCOM_CPISEL_C7C6IS_SHIFT		3
-#define CAPCOM_CPISEL_T0INIS			(1 << 4)
-#define CAPCOM_CPISEL_T0INIS_SHIFT		4
-#define CAPCOM_CPISEL_T1INIS			(1 << 5)
-#define CAPCOM_CPISEL_T1INIS_SHIFT		5
+#define CAPCOM_PISEL_C1C0IS				(1 << 0)
+#define CAPCOM_PISEL_C1C0IS_SHIFT		0
+#define CAPCOM_PISEL_C3C2IS				(1 << 1)
+#define CAPCOM_PISEL_C3C2IS_SHIFT		1
+#define CAPCOM_PISEL_C5C4IS				(1 << 2)
+#define CAPCOM_PISEL_C5C4IS_SHIFT		2
+#define CAPCOM_PISEL_C7C6IS				(1 << 3)
+#define CAPCOM_PISEL_C7C6IS_SHIFT		3
+#define CAPCOM_PISEL_T0INIS				(1 << 4)
+#define CAPCOM_PISEL_T0INIS_SHIFT		4
+#define CAPCOM_PISEL_T1INIS				(1 << 5)
+#define CAPCOM_PISEL_T1INIS_SHIFT		5
 
 /* Module Identifier Register */
 #define CAPCOM_ID						0x08
@@ -1904,50 +1924,167 @@
 
 // DIF [MOD_NUM=F043, MOD_REV=00, MOD_32BIT=C0]
 // DIF (Display Interface)
-#define DIF_IO_SIZE	0x00008004
+#define DIF_IO_SIZE				0x00008004
 /* Clock Control Register */
-#define DIF_CLC		0x00
+#define DIF_CLC					0x00
 
 /* Module Identifier Register */
-#define DIF_ID		0x08
+#define DIF_ID					0x08
 
-#define DIF_UNK0	0x10
+/* RUN Control Register */
+#define DIF_RUNCTRL				0x10
+#define DIF_RUNCTRL_RUN			(1 << 0)	 // Enable DIF Interface
+#define DIF_RUNCTRL_RUN_SHIFT	0
 
-#define DIF_UNK1	0x24
+#define DIF_CON0				0x20
 
-#define DIF_UNK2	0x28
+#define DIF_CON1				0x24
 
-#define DIF_UNK3	0x2C
+#define DIF_CON2				0x28
 
-#define DIF_UNK4	0x30
+#define DIF_CON3				0x2C
 
-#define DIF_UNK5	0x38
+#define DIF_CON4				0x30
 
-#define DIF_UNK6	0x4C
+#define DIF_STAT				0x38
+#define DIF_STAT_BUSY			(1 << 0)
+#define DIF_STAT_BUSY_SHIFT		0
 
-#define DIF_UNK7	0x50
+#define DIF_CON5				0x3C
 
-#define DIF_UNK8	0x54
+#define DIF_CON6				0x40
 
-#define DIF_UNK9	0x58
+#define DIF_CON7				0x44
 
-#define DIF_UNK10	0x5C
+#define DIF_CON8				0x48
 
-#define DIF_UNK11	0x60
+#define DIF_CON9				0x4C
 
-#define DIF_UNK12	0x64
+#define DIF_PROG0				0x50
+#define DIF_PROG1				0x54
+#define DIF_PROG2				0x58
+#define DIF_PROG3				0x5C
+#define DIF_PROG4				0x60
+#define DIF_PROG5				0x64
 
-#define DIF_UNK13	0xA0
+#define DIF_CON10				0x68
 
-#define DIF_UNK14	0xA4
+#define DIF_CON11				0x6C
 
-#define DIF_UNK15	0xC4
+#define DIF_CON12				0x70
 
-#define DIF_UNK16	0xCC
+#define DIF_CON13				0xA0
 
-#define DIF_UNK17	0xD4
+#define DIF_CON14				0xA4
 
-#define DIF_TXD		0x8000
+/* Raw Interrupt Status Register */
+#define DIF_RIS					0xC0
+#define DIF_RIS_EVENT0			(1 << 0)
+#define DIF_RIS_EVENT0_SHIFT	0
+#define DIF_RIS_EVENT1			(1 << 1)
+#define DIF_RIS_EVENT1_SHIFT	1
+#define DIF_RIS_EVENT2			(1 << 2)
+#define DIF_RIS_EVENT2_SHIFT	2
+#define DIF_RIS_EVENT3			(1 << 3)
+#define DIF_RIS_EVENT3_SHIFT	3
+#define DIF_RIS_EVENT4			(1 << 4)
+#define DIF_RIS_EVENT4_SHIFT	4
+#define DIF_RIS_EVENT5			(1 << 5)
+#define DIF_RIS_EVENT5_SHIFT	5
+#define DIF_RIS_EVENT6			(1 << 6)
+#define DIF_RIS_EVENT6_SHIFT	6
+#define DIF_RIS_EVENT7			(1 << 7)
+#define DIF_RIS_EVENT7_SHIFT	7
+#define DIF_RIS_EVENT8			(1 << 8)
+#define DIF_RIS_EVENT8_SHIFT	8
+
+/* Interrupt Mask Control Register */
+#define DIF_IMSC				0xC4
+#define DIF_IMSC_EVENT0			(1 << 0)
+#define DIF_IMSC_EVENT0_SHIFT	0
+#define DIF_IMSC_EVENT1			(1 << 1)
+#define DIF_IMSC_EVENT1_SHIFT	1
+#define DIF_IMSC_EVENT2			(1 << 2)
+#define DIF_IMSC_EVENT2_SHIFT	2
+#define DIF_IMSC_EVENT3			(1 << 3)
+#define DIF_IMSC_EVENT3_SHIFT	3
+#define DIF_IMSC_EVENT4			(1 << 4)
+#define DIF_IMSC_EVENT4_SHIFT	4
+#define DIF_IMSC_EVENT5			(1 << 5)
+#define DIF_IMSC_EVENT5_SHIFT	5
+#define DIF_IMSC_EVENT6			(1 << 6)
+#define DIF_IMSC_EVENT6_SHIFT	6
+#define DIF_IMSC_EVENT7			(1 << 7)
+#define DIF_IMSC_EVENT7_SHIFT	7
+#define DIF_IMSC_EVENT8			(1 << 8)
+#define DIF_IMSC_EVENT8_SHIFT	8
+
+/* Masked Interrupt Status */
+#define DIF_MIS					0xC8
+#define DIF_MIS_EVENT0			(1 << 0)
+#define DIF_MIS_EVENT0_SHIFT	0
+#define DIF_MIS_EVENT1			(1 << 1)
+#define DIF_MIS_EVENT1_SHIFT	1
+#define DIF_MIS_EVENT2			(1 << 2)
+#define DIF_MIS_EVENT2_SHIFT	2
+#define DIF_MIS_EVENT3			(1 << 3)
+#define DIF_MIS_EVENT3_SHIFT	3
+#define DIF_MIS_EVENT4			(1 << 4)
+#define DIF_MIS_EVENT4_SHIFT	4
+#define DIF_MIS_EVENT5			(1 << 5)
+#define DIF_MIS_EVENT5_SHIFT	5
+#define DIF_MIS_EVENT6			(1 << 6)
+#define DIF_MIS_EVENT6_SHIFT	6
+#define DIF_MIS_EVENT7			(1 << 7)
+#define DIF_MIS_EVENT7_SHIFT	7
+#define DIF_MIS_EVENT8			(1 << 8)
+#define DIF_MIS_EVENT8_SHIFT	8
+
+/* Interrupt Clear Register */
+#define DIF_ICR					0xCC
+#define DIF_ICR_EVENT0			(1 << 0)
+#define DIF_ICR_EVENT0_SHIFT	0
+#define DIF_ICR_EVENT1			(1 << 1)
+#define DIF_ICR_EVENT1_SHIFT	1
+#define DIF_ICR_EVENT2			(1 << 2)
+#define DIF_ICR_EVENT2_SHIFT	2
+#define DIF_ICR_EVENT3			(1 << 3)
+#define DIF_ICR_EVENT3_SHIFT	3
+#define DIF_ICR_EVENT4			(1 << 4)
+#define DIF_ICR_EVENT4_SHIFT	4
+#define DIF_ICR_EVENT5			(1 << 5)
+#define DIF_ICR_EVENT5_SHIFT	5
+#define DIF_ICR_EVENT6			(1 << 6)
+#define DIF_ICR_EVENT6_SHIFT	6
+#define DIF_ICR_EVENT7			(1 << 7)
+#define DIF_ICR_EVENT7_SHIFT	7
+#define DIF_ICR_EVENT8			(1 << 8)
+#define DIF_ICR_EVENT8_SHIFT	8
+
+/* Interrupt Set Register */
+#define DIF_ISR					0xD0
+#define DIF_ISR_EVENT0			(1 << 0)
+#define DIF_ISR_EVENT0_SHIFT	0
+#define DIF_ISR_EVENT1			(1 << 1)
+#define DIF_ISR_EVENT1_SHIFT	1
+#define DIF_ISR_EVENT2			(1 << 2)
+#define DIF_ISR_EVENT2_SHIFT	2
+#define DIF_ISR_EVENT3			(1 << 3)
+#define DIF_ISR_EVENT3_SHIFT	3
+#define DIF_ISR_EVENT4			(1 << 4)
+#define DIF_ISR_EVENT4_SHIFT	4
+#define DIF_ISR_EVENT5			(1 << 5)
+#define DIF_ISR_EVENT5_SHIFT	5
+#define DIF_ISR_EVENT6			(1 << 6)
+#define DIF_ISR_EVENT6_SHIFT	6
+#define DIF_ISR_EVENT7			(1 << 7)
+#define DIF_ISR_EVENT7_SHIFT	7
+#define DIF_ISR_EVENT8			(1 << 8)
+#define DIF_ISR_EVENT8_SHIFT	8
+
+#define DIF_CON15				0xD4
+
+#define DIF_TXD					0x8000
 
 
 // EBU [MOD_NUM=0014, MOD_REV=00, MOD_32BIT=C0]
@@ -5968,6 +6105,8 @@
 #define SCU_WDT_SR_WDTPR_SHIFT			5
 #define SCU_WDT_SR_WDTTIM				(0xFFFF << 16)	 // Watchdog Timer Value
 #define SCU_WDT_SR_WDTTIM_SHIFT			16
+
+#define SCU_DSP_UNK0					0x30
 
 #define SCU_EXTI						0x3C
 #define SCU_EXTI_EXT0_FALLING			(1 << 0)

@@ -92,28 +92,6 @@ static int i2c_irq_router(void *opaque, int event_id) {
 	return 0;
 }
 
-static uint32_t i2c_get_txbs(pmb887x_i2c_t *p) {
-	switch (p->fifocfg & I2C_FIFOCFG_TXBS) {
-		case I2C_FIFOCFG_TXBS_4_WORD:		return 4;
-		case I2C_FIFOCFG_TXBS_2_WORD:		return 2;
-		case I2C_FIFOCFG_TXBS_1_WORD:		return 1;
-	}
-	
-	error_report("Unknown TXSB value: %08X\n", (p->fifocfg & I2C_FIFOCFG_TXBS));
-	abort();
-}
-
-static uint32_t i2c_get_rxbs(pmb887x_i2c_t *p) {
-	switch (p->fifocfg & I2C_FIFOCFG_RXBS) {
-		case I2C_FIFOCFG_RXBS_4_WORD:		return 4;
-		case I2C_FIFOCFG_RXBS_2_WORD:		return 2;
-		case I2C_FIFOCFG_RXBS_1_WORD:		return 1;
-	}
-	
-	error_report("Unknown RXBS value: %08X\n", (p->fifocfg & I2C_FIFOCFG_RXBS));
-	abort();
-}
-
 static uint32_t i2c_get_rx_align(pmb887x_i2c_t *p) {
 	switch (p->fifocfg & I2C_FIFOCFG_RXFA) {
 		case I2C_FIFOCFG_RXFA_BYTE:			return 1;

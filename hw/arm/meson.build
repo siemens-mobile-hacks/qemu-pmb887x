@@ -33,6 +33,7 @@ arm_ss.add(when: 'CONFIG_PMB887X', if_true: files(
 	'pmb887x/devices.c',
 	'pmb887x/flash.c',
 	'pmb887x/ebu.c',
+	'pmb887x/dmac.c',
 	'pmb887x/stm.c',
 	'pmb887x/pll.c',
 	'pmb887x/scu.c',

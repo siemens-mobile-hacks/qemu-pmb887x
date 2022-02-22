@@ -332,8 +332,22 @@ static pmb887x_module_reg_t dmac_regs[] = {
 	{"CH_SRC_ADDR5",	DMAC_CH_SRC_ADDR5,	NULL,						0,										0},
 	{"CH_SRC_ADDR6",	DMAC_CH_SRC_ADDR6,	NULL,						0,										0},
 	{"CH_SRC_ADDR7",	DMAC_CH_SRC_ADDR7,	NULL,						0,										0},
-	{"CH_DST_ADDR",		DMAC_CH_DST_ADDR,	NULL,						0,										0},
-	{"CH_LLI",			DMAC_CH_LLI,		dmac_ch_lli_fields,			ARRAY_SIZE(dmac_ch_lli_fields),			0},
+	{"CH_DST_ADDR0",	DMAC_CH_DST_ADDR0,	NULL,						0,										0},
+	{"CH_DST_ADDR1",	DMAC_CH_DST_ADDR1,	NULL,						0,										0},
+	{"CH_DST_ADDR2",	DMAC_CH_DST_ADDR2,	NULL,						0,										0},
+	{"CH_DST_ADDR3",	DMAC_CH_DST_ADDR3,	NULL,						0,										0},
+	{"CH_DST_ADDR4",	DMAC_CH_DST_ADDR4,	NULL,						0,										0},
+	{"CH_DST_ADDR5",	DMAC_CH_DST_ADDR5,	NULL,						0,										0},
+	{"CH_DST_ADDR6",	DMAC_CH_DST_ADDR6,	NULL,						0,										0},
+	{"CH_DST_ADDR7",	DMAC_CH_DST_ADDR7,	NULL,						0,										0},
+	{"CH_LLI0",			DMAC_CH_LLI0,		dmac_ch_lli_fields,			ARRAY_SIZE(dmac_ch_lli_fields),			0},
+	{"CH_LLI1",			DMAC_CH_LLI1,		dmac_ch_lli_fields,			ARRAY_SIZE(dmac_ch_lli_fields),			0},
+	{"CH_LLI2",			DMAC_CH_LLI2,		dmac_ch_lli_fields,			ARRAY_SIZE(dmac_ch_lli_fields),			0},
+	{"CH_LLI3",			DMAC_CH_LLI3,		dmac_ch_lli_fields,			ARRAY_SIZE(dmac_ch_lli_fields),			0},
+	{"CH_LLI4",			DMAC_CH_LLI4,		dmac_ch_lli_fields,			ARRAY_SIZE(dmac_ch_lli_fields),			0},
+	{"CH_LLI5",			DMAC_CH_LLI5,		dmac_ch_lli_fields,			ARRAY_SIZE(dmac_ch_lli_fields),			0},
+	{"CH_LLI6",			DMAC_CH_LLI6,		dmac_ch_lli_fields,			ARRAY_SIZE(dmac_ch_lli_fields),			0},
+	{"CH_LLI7",			DMAC_CH_LLI7,		dmac_ch_lli_fields,			ARRAY_SIZE(dmac_ch_lli_fields),			0},
 	{"CH_CONTROL0",		DMAC_CH_CONTROL0,	dmac_ch_control_fields,		ARRAY_SIZE(dmac_ch_control_fields),		0},
 	{"CH_CONTROL1",		DMAC_CH_CONTROL1,	dmac_ch_control_fields,		ARRAY_SIZE(dmac_ch_control_fields),		0},
 	{"CH_CONTROL2",		DMAC_CH_CONTROL2,	dmac_ch_control_fields,		ARRAY_SIZE(dmac_ch_control_fields),		0},
@@ -633,13 +647,13 @@ static pmb887x_module_field_t capcom_clc_fields[] = {
 	{"RMC",		MOD_CLC_RMC,	MOD_CLC_RMC_SHIFT,	NULL,	0},
 };
 
-static pmb887x_module_field_t capcom_cpisel_fields[] = {
-	{"C1C0IS",	CAPCOM_CPISEL_C1C0IS,	CAPCOM_CPISEL_C1C0IS_SHIFT,	NULL,	0},
-	{"C3C2IS",	CAPCOM_CPISEL_C3C2IS,	CAPCOM_CPISEL_C3C2IS_SHIFT,	NULL,	0},
-	{"C5C4IS",	CAPCOM_CPISEL_C5C4IS,	CAPCOM_CPISEL_C5C4IS_SHIFT,	NULL,	0},
-	{"C7C6IS",	CAPCOM_CPISEL_C7C6IS,	CAPCOM_CPISEL_C7C6IS_SHIFT,	NULL,	0},
-	{"T0INIS",	CAPCOM_CPISEL_T0INIS,	CAPCOM_CPISEL_T0INIS_SHIFT,	NULL,	0},
-	{"T1INIS",	CAPCOM_CPISEL_T1INIS,	CAPCOM_CPISEL_T1INIS_SHIFT,	NULL,	0},
+static pmb887x_module_field_t capcom_pisel_fields[] = {
+	{"C1C0IS",	CAPCOM_PISEL_C1C0IS,	CAPCOM_PISEL_C1C0IS_SHIFT,	NULL,	0},
+	{"C3C2IS",	CAPCOM_PISEL_C3C2IS,	CAPCOM_PISEL_C3C2IS_SHIFT,	NULL,	0},
+	{"C5C4IS",	CAPCOM_PISEL_C5C4IS,	CAPCOM_PISEL_C5C4IS_SHIFT,	NULL,	0},
+	{"C7C6IS",	CAPCOM_PISEL_C7C6IS,	CAPCOM_PISEL_C7C6IS_SHIFT,	NULL,	0},
+	{"T0INIS",	CAPCOM_PISEL_T0INIS,	CAPCOM_PISEL_T0INIS_SHIFT,	NULL,	0},
+	{"T1INIS",	CAPCOM_PISEL_T1INIS,	CAPCOM_PISEL_T1INIS_SHIFT,	NULL,	0},
 };
 
 static pmb887x_module_field_t capcom_id_fields[] = {
@@ -1055,8 +1069,7 @@ static pmb887x_module_field_t capcom_t0_src_fields[] = {
 
 static pmb887x_module_reg_t capcom_regs[] = {
 	{"CLC",		CAPCOM_CLC,		capcom_clc_fields,		ARRAY_SIZE(capcom_clc_fields),		0},
-	{"PISEL",	CAPCOM_PISEL,	NULL,					0,									0},
-	{"CPISEL",	CAPCOM_CPISEL,	capcom_cpisel_fields,	ARRAY_SIZE(capcom_cpisel_fields),	0},
+	{"PISEL",	CAPCOM_PISEL,	capcom_pisel_fields,	ARRAY_SIZE(capcom_pisel_fields),	0},
 	{"ID",		CAPCOM_ID,		capcom_id_fields,		ARRAY_SIZE(capcom_id_fields),		0},
 	{"T01CON",	CAPCOM_T01CON,	capcom_t01con_fields,	ARRAY_SIZE(capcom_t01con_fields),	0},
 	{"CCM0",	CAPCOM_CCM0,	capcom_ccm0_fields,		ARRAY_SIZE(capcom_ccm0_fields),		0},
@@ -1140,28 +1153,107 @@ static pmb887x_module_field_t dif_id_fields[] = {
 	{"NUMBER",	MOD_ID_NUMBER,	MOD_ID_NUMBER_SHIFT,	NULL,	0},
 };
 
+static pmb887x_module_field_t dif_runctrl_fields[] = {
+	{"RUN",	DIF_RUNCTRL_RUN,	DIF_RUNCTRL_RUN_SHIFT,	NULL,	0},
+};
+
+static pmb887x_module_field_t dif_stat_fields[] = {
+	{"BUSY",	DIF_STAT_BUSY,	DIF_STAT_BUSY_SHIFT,	NULL,	0},
+};
+
+static pmb887x_module_field_t dif_ris_fields[] = {
+	{"EVENT0",	DIF_RIS_EVENT0,	DIF_RIS_EVENT0_SHIFT,	NULL,	0},
+	{"EVENT1",	DIF_RIS_EVENT1,	DIF_RIS_EVENT1_SHIFT,	NULL,	0},
+	{"EVENT2",	DIF_RIS_EVENT2,	DIF_RIS_EVENT2_SHIFT,	NULL,	0},
+	{"EVENT3",	DIF_RIS_EVENT3,	DIF_RIS_EVENT3_SHIFT,	NULL,	0},
+	{"EVENT4",	DIF_RIS_EVENT4,	DIF_RIS_EVENT4_SHIFT,	NULL,	0},
+	{"EVENT5",	DIF_RIS_EVENT5,	DIF_RIS_EVENT5_SHIFT,	NULL,	0},
+	{"EVENT6",	DIF_RIS_EVENT6,	DIF_RIS_EVENT6_SHIFT,	NULL,	0},
+	{"EVENT7",	DIF_RIS_EVENT7,	DIF_RIS_EVENT7_SHIFT,	NULL,	0},
+	{"EVENT8",	DIF_RIS_EVENT8,	DIF_RIS_EVENT8_SHIFT,	NULL,	0},
+};
+
+static pmb887x_module_field_t dif_imsc_fields[] = {
+	{"EVENT0",	DIF_IMSC_EVENT0,	DIF_IMSC_EVENT0_SHIFT,	NULL,	0},
+	{"EVENT1",	DIF_IMSC_EVENT1,	DIF_IMSC_EVENT1_SHIFT,	NULL,	0},
+	{"EVENT2",	DIF_IMSC_EVENT2,	DIF_IMSC_EVENT2_SHIFT,	NULL,	0},
+	{"EVENT3",	DIF_IMSC_EVENT3,	DIF_IMSC_EVENT3_SHIFT,	NULL,	0},
+	{"EVENT4",	DIF_IMSC_EVENT4,	DIF_IMSC_EVENT4_SHIFT,	NULL,	0},
+	{"EVENT5",	DIF_IMSC_EVENT5,	DIF_IMSC_EVENT5_SHIFT,	NULL,	0},
+	{"EVENT6",	DIF_IMSC_EVENT6,	DIF_IMSC_EVENT6_SHIFT,	NULL,	0},
+	{"EVENT7",	DIF_IMSC_EVENT7,	DIF_IMSC_EVENT7_SHIFT,	NULL,	0},
+	{"EVENT8",	DIF_IMSC_EVENT8,	DIF_IMSC_EVENT8_SHIFT,	NULL,	0},
+};
+
+static pmb887x_module_field_t dif_mis_fields[] = {
+	{"EVENT0",	DIF_MIS_EVENT0,	DIF_MIS_EVENT0_SHIFT,	NULL,	0},
+	{"EVENT1",	DIF_MIS_EVENT1,	DIF_MIS_EVENT1_SHIFT,	NULL,	0},
+	{"EVENT2",	DIF_MIS_EVENT2,	DIF_MIS_EVENT2_SHIFT,	NULL,	0},
+	{"EVENT3",	DIF_MIS_EVENT3,	DIF_MIS_EVENT3_SHIFT,	NULL,	0},
+	{"EVENT4",	DIF_MIS_EVENT4,	DIF_MIS_EVENT4_SHIFT,	NULL,	0},
+	{"EVENT5",	DIF_MIS_EVENT5,	DIF_MIS_EVENT5_SHIFT,	NULL,	0},
+	{"EVENT6",	DIF_MIS_EVENT6,	DIF_MIS_EVENT6_SHIFT,	NULL,	0},
+	{"EVENT7",	DIF_MIS_EVENT7,	DIF_MIS_EVENT7_SHIFT,	NULL,	0},
+	{"EVENT8",	DIF_MIS_EVENT8,	DIF_MIS_EVENT8_SHIFT,	NULL,	0},
+};
+
+static pmb887x_module_field_t dif_icr_fields[] = {
+	{"EVENT0",	DIF_ICR_EVENT0,	DIF_ICR_EVENT0_SHIFT,	NULL,	0},
+	{"EVENT1",	DIF_ICR_EVENT1,	DIF_ICR_EVENT1_SHIFT,	NULL,	0},
+	{"EVENT2",	DIF_ICR_EVENT2,	DIF_ICR_EVENT2_SHIFT,	NULL,	0},
+	{"EVENT3",	DIF_ICR_EVENT3,	DIF_ICR_EVENT3_SHIFT,	NULL,	0},
+	{"EVENT4",	DIF_ICR_EVENT4,	DIF_ICR_EVENT4_SHIFT,	NULL,	0},
+	{"EVENT5",	DIF_ICR_EVENT5,	DIF_ICR_EVENT5_SHIFT,	NULL,	0},
+	{"EVENT6",	DIF_ICR_EVENT6,	DIF_ICR_EVENT6_SHIFT,	NULL,	0},
+	{"EVENT7",	DIF_ICR_EVENT7,	DIF_ICR_EVENT7_SHIFT,	NULL,	0},
+	{"EVENT8",	DIF_ICR_EVENT8,	DIF_ICR_EVENT8_SHIFT,	NULL,	0},
+};
+
+static pmb887x_module_field_t dif_isr_fields[] = {
+	{"EVENT0",	DIF_ISR_EVENT0,	DIF_ISR_EVENT0_SHIFT,	NULL,	0},
+	{"EVENT1",	DIF_ISR_EVENT1,	DIF_ISR_EVENT1_SHIFT,	NULL,	0},
+	{"EVENT2",	DIF_ISR_EVENT2,	DIF_ISR_EVENT2_SHIFT,	NULL,	0},
+	{"EVENT3",	DIF_ISR_EVENT3,	DIF_ISR_EVENT3_SHIFT,	NULL,	0},
+	{"EVENT4",	DIF_ISR_EVENT4,	DIF_ISR_EVENT4_SHIFT,	NULL,	0},
+	{"EVENT5",	DIF_ISR_EVENT5,	DIF_ISR_EVENT5_SHIFT,	NULL,	0},
+	{"EVENT6",	DIF_ISR_EVENT6,	DIF_ISR_EVENT6_SHIFT,	NULL,	0},
+	{"EVENT7",	DIF_ISR_EVENT7,	DIF_ISR_EVENT7_SHIFT,	NULL,	0},
+	{"EVENT8",	DIF_ISR_EVENT8,	DIF_ISR_EVENT8_SHIFT,	NULL,	0},
+};
+
 static pmb887x_module_reg_t dif_regs[] = {
-	{"CLC",		DIF_CLC,	dif_clc_fields,	ARRAY_SIZE(dif_clc_fields),	0},
-	{"ID",		DIF_ID,		dif_id_fields,	ARRAY_SIZE(dif_id_fields),	0},
-	{"UNK0",	DIF_UNK0,	NULL,			0,							0},
-	{"UNK1",	DIF_UNK1,	NULL,			0,							0},
-	{"UNK2",	DIF_UNK2,	NULL,			0,							0},
-	{"UNK3",	DIF_UNK3,	NULL,			0,							0},
-	{"UNK4",	DIF_UNK4,	NULL,			0,							0},
-	{"UNK5",	DIF_UNK5,	NULL,			0,							0},
-	{"UNK6",	DIF_UNK6,	NULL,			0,							0},
-	{"UNK7",	DIF_UNK7,	NULL,			0,							0},
-	{"UNK8",	DIF_UNK8,	NULL,			0,							0},
-	{"UNK9",	DIF_UNK9,	NULL,			0,							0},
-	{"UNK10",	DIF_UNK10,	NULL,			0,							0},
-	{"UNK11",	DIF_UNK11,	NULL,			0,							0},
-	{"UNK12",	DIF_UNK12,	NULL,			0,							0},
-	{"UNK13",	DIF_UNK13,	NULL,			0,							0},
-	{"UNK14",	DIF_UNK14,	NULL,			0,							0},
-	{"UNK15",	DIF_UNK15,	NULL,			0,							0},
-	{"UNK16",	DIF_UNK16,	NULL,			0,							0},
-	{"UNK17",	DIF_UNK17,	NULL,			0,							0},
-	{"TXD",		DIF_TXD,	NULL,			0,							0},
+	{"CLC",		DIF_CLC,		dif_clc_fields,		ARRAY_SIZE(dif_clc_fields),		0},
+	{"ID",		DIF_ID,			dif_id_fields,		ARRAY_SIZE(dif_id_fields),		0},
+	{"RUNCTRL",	DIF_RUNCTRL,	dif_runctrl_fields,	ARRAY_SIZE(dif_runctrl_fields),	0},
+	{"CON0",	DIF_CON0,		NULL,				0,								0},
+	{"CON1",	DIF_CON1,		NULL,				0,								0},
+	{"CON2",	DIF_CON2,		NULL,				0,								0},
+	{"CON3",	DIF_CON3,		NULL,				0,								0},
+	{"CON4",	DIF_CON4,		NULL,				0,								0},
+	{"STAT",	DIF_STAT,		dif_stat_fields,	ARRAY_SIZE(dif_stat_fields),	0},
+	{"CON5",	DIF_CON5,		NULL,				0,								0},
+	{"CON6",	DIF_CON6,		NULL,				0,								0},
+	{"CON7",	DIF_CON7,		NULL,				0,								0},
+	{"CON8",	DIF_CON8,		NULL,				0,								0},
+	{"CON9",	DIF_CON9,		NULL,				0,								0},
+	{"PROG0",	DIF_PROG0,		NULL,				0,								0},
+	{"PROG1",	DIF_PROG1,		NULL,				0,								0},
+	{"PROG2",	DIF_PROG2,		NULL,				0,								0},
+	{"PROG3",	DIF_PROG3,		NULL,				0,								0},
+	{"PROG4",	DIF_PROG4,		NULL,				0,								0},
+	{"PROG5",	DIF_PROG5,		NULL,				0,								0},
+	{"CON10",	DIF_CON10,		NULL,				0,								0},
+	{"CON11",	DIF_CON11,		NULL,				0,								0},
+	{"CON12",	DIF_CON12,		NULL,				0,								0},
+	{"CON13",	DIF_CON13,		NULL,				0,								0},
+	{"CON14",	DIF_CON14,		NULL,				0,								0},
+	{"RIS",		DIF_RIS,		dif_ris_fields,		ARRAY_SIZE(dif_ris_fields),		0},
+	{"IMSC",	DIF_IMSC,		dif_imsc_fields,	ARRAY_SIZE(dif_imsc_fields),	0},
+	{"MIS",		DIF_MIS,		dif_mis_fields,		ARRAY_SIZE(dif_mis_fields),		0},
+	{"ICR",		DIF_ICR,		dif_icr_fields,		ARRAY_SIZE(dif_icr_fields),		0},
+	{"ISR",		DIF_ISR,		dif_isr_fields,		ARRAY_SIZE(dif_isr_fields),		0},
+	{"CON15",	DIF_CON15,		NULL,				0,								0},
+	{"TXD",		DIF_TXD,		NULL,				0,								0},
 };
 
 static pmb887x_module_field_t ebu_clc_fields[] = {
@@ -5291,6 +5383,7 @@ static pmb887x_module_reg_t scu_regs[] = {
 	{"WDTCON0",		SCU_WDTCON0,	scu_wdtcon0_fields,		ARRAY_SIZE(scu_wdtcon0_fields),		0},
 	{"WDTCON1",		SCU_WDTCON1,	scu_wdtcon1_fields,		ARRAY_SIZE(scu_wdtcon1_fields),		0},
 	{"WDT_SR",		SCU_WDT_SR,		scu_wdt_sr_fields,		ARRAY_SIZE(scu_wdt_sr_fields),		0},
+	{"DSP_UNK0",	SCU_DSP_UNK0,	NULL,					0,									0},
 	{"EXTI",		SCU_EXTI,		scu_exti_fields,		ARRAY_SIZE(scu_exti_fields),		0},
 	{"EBUCLC1",		SCU_EBUCLC1,	scu_ebuclc1_fields,		ARRAY_SIZE(scu_ebuclc1_fields),		0},
 	{"EBUCLC2",		SCU_EBUCLC2,	scu_ebuclc2_fields,		ARRAY_SIZE(scu_ebuclc2_fields),		0},
@@ -5690,6 +5783,10 @@ static pmb887x_cpu_meta_irq_t pmb8875_irqs[] = {
 	{"TPU_INT1",		PMB8875_TPU_INT1_IRQ,		NVIC_CON120},
 	{"GPRSCU_INT0",		PMB8875_GPRSCU_INT0_IRQ,	NVIC_CON121},
 	{"GPRSCU_INT1",		PMB8875_GPRSCU_INT1_IRQ,	NVIC_CON122},
+	{"DIF_INT0",		PMB8875_DIF_INT0_IRQ,		NVIC_CON134},
+	{"DIF_INT1",		PMB8875_DIF_INT1_IRQ,		NVIC_CON135},
+	{"DIF_INT2",		PMB8875_DIF_INT2_IRQ,		NVIC_CON136},
+	{"DIF_INT3",		PMB8875_DIF_INT3_IRQ,		NVIC_CON137},
 };
 
 static pmb887x_module_t pmb8875_modules[] = {
@@ -5818,6 +5915,10 @@ static pmb887x_cpu_meta_irq_t pmb8876_irqs[] = {
 	{"TPU_INT1",		PMB8876_TPU_INT1_IRQ,		NVIC_CON120},
 	{"GPRSCU_INT0",		PMB8876_GPRSCU_INT0_IRQ,	NVIC_CON121},
 	{"GPRSCU_INT1",		PMB8876_GPRSCU_INT1_IRQ,	NVIC_CON122},
+	{"DIF_INT0",		PMB8876_DIF_INT0_IRQ,		NVIC_CON134},
+	{"DIF_INT1",		PMB8876_DIF_INT1_IRQ,		NVIC_CON135},
+	{"DIF_INT2",		PMB8876_DIF_INT2_IRQ,		NVIC_CON136},
+	{"DIF_INT3",		PMB8876_DIF_INT3_IRQ,		NVIC_CON137},
 	{"CIF_UNK0",		PMB8876_CIF_UNK0_IRQ,		NVIC_CON138},
 	{"CIF_UNK1",		PMB8876_CIF_UNK1_IRQ,		NVIC_CON139},
 	{"CIF_UNK2",		PMB8876_CIF_UNK2_IRQ,		NVIC_CON140},

@@ -42,10 +42,47 @@ struct pmb887x_capcom_t {
 	pmb887x_src_reg_t cc_src[8];
 	
 	pmb887x_clc_reg_t clc;
+	
+	uint32_t pisel;
+	uint32_t t01con;
+	uint32_t ccm0;
+	uint32_t ccm1;
+	uint32_t out;
+	uint32_t ioc;
+	uint32_t sem;
+	uint32_t see;
+	uint32_t drm;
+	uint32_t whbssee;
+	uint32_t whbcsee;
+	uint32_t t0;
+	uint32_t t0rel;
+	uint32_t t1;
+	uint32_t t1rel;
+	uint32_t t01ocr;
+	uint32_t whbsout;
+	uint32_t whbcout;
 };
 
 static void capcom_update_state(struct pmb887x_capcom_t *p) {
 	// TODO
+}
+
+static int capcom_get_index_from_reg(uint32_t reg) {
+	switch (reg) {
+		case CAPCOM_CC7_SRC:	return 7;
+		case CAPCOM_CC6_SRC:	return 6;
+		case CAPCOM_CC5_SRC:	return 5;
+		case CAPCOM_CC4_SRC:	return 4;
+		case CAPCOM_CC3_SRC:	return 3;
+		case CAPCOM_CC2_SRC:	return 2;
+		case CAPCOM_CC1_SRC:	return 1;
+		case CAPCOM_CC0_SRC:	return 0;
+		case CAPCOM_T1_SRC:		return 1;
+		case CAPCOM_T0_SRC:		return 0;
+	};
+	error_report("pmb887x-capcom: unknown reg %d", reg);
+	abort();
+	return -1;
 }
 
 static uint64_t capcom_io_read(void *opaque, hwaddr haddr, unsigned size) {
@@ -60,6 +97,94 @@ static uint64_t capcom_io_read(void *opaque, hwaddr haddr, unsigned size) {
 		
 		case CAPCOM_ID:
 			value = 0x00005011;
+		break;
+		
+		case CAPCOM_PISEL:
+			value = p->pisel;
+		break;
+		
+		case CAPCOM_T01CON:
+			value = p->t01con;
+		break;
+		
+		case CAPCOM_CCM0:
+			value = p->ccm0;
+		break;
+		
+		case CAPCOM_CCM1:
+			value = p->ccm1;
+		break;
+		
+		case CAPCOM_OUT:
+			value = p->out;
+		break;
+		
+		case CAPCOM_IOC:
+			value = p->ioc;
+		break;
+		
+		case CAPCOM_SEM:
+			value = p->sem;
+		break;
+		
+		case CAPCOM_SEE:
+			value = p->see;
+		break;
+		
+		case CAPCOM_DRM:
+			value = p->drm;
+		break;
+		
+		case CAPCOM_WHBSSEE:
+			value = p->whbssee;
+		break;
+		
+		case CAPCOM_WHBCSEE:
+			value = p->whbcsee;
+		break;
+		
+		case CAPCOM_T0:
+			value = p->t0;
+		break;
+		
+		case CAPCOM_T0REL:
+			value = p->t0rel;
+		break;
+		
+		case CAPCOM_T1:
+			value = p->t1;
+		break;
+		
+		case CAPCOM_T1REL:
+			value = p->t1rel;
+		break;
+		
+		case CAPCOM_T01OCR:
+			value = p->t01ocr;
+		break;
+		
+		case CAPCOM_WHBSOUT:
+			value = p->whbsout;
+		break;
+		
+		case CAPCOM_WHBCOUT:
+			value = p->whbcout;
+		break;
+		
+		case CAPCOM_CC7_SRC:
+		case CAPCOM_CC6_SRC:
+		case CAPCOM_CC5_SRC:
+		case CAPCOM_CC4_SRC:
+		case CAPCOM_CC3_SRC:
+		case CAPCOM_CC2_SRC:
+		case CAPCOM_CC1_SRC:
+		case CAPCOM_CC0_SRC:
+			value = pmb887x_src_get(&p->cc_src[capcom_get_index_from_reg(haddr)]);
+		break;
+		
+		case CAPCOM_T1_SRC:
+		case CAPCOM_T0_SRC:
+			value = pmb887x_src_get(&p->t_src[capcom_get_index_from_reg(haddr)]);
 		break;
 		
 		default:
@@ -82,6 +207,94 @@ static void capcom_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned
 	switch (haddr) {
 		case CAPCOM_CLC:
 			pmb887x_clc_set(&p->clc, value);
+		break;
+		
+		case CAPCOM_PISEL:
+			p->pisel = value;
+		break;
+		
+		case CAPCOM_T01CON:
+			p->t01con = value;
+		break;
+		
+		case CAPCOM_CCM0:
+			p->ccm0 = value;
+		break;
+		
+		case CAPCOM_CCM1:
+			p->ccm1 = value;
+		break;
+		
+		case CAPCOM_OUT:
+			p->out = value;
+		break;
+		
+		case CAPCOM_IOC:
+			p->ioc = value;
+		break;
+		
+		case CAPCOM_SEM:
+			p->sem = value;
+		break;
+		
+		case CAPCOM_SEE:
+			p->see = value;
+		break;
+		
+		case CAPCOM_DRM:
+			p->drm = value;
+		break;
+		
+		case CAPCOM_WHBSSEE:
+			p->whbssee = value;
+		break;
+		
+		case CAPCOM_WHBCSEE:
+			p->whbcsee = value;
+		break;
+		
+		case CAPCOM_T0:
+			p->t0 = value;
+		break;
+		
+		case CAPCOM_T0REL:
+			p->t0rel = value;
+		break;
+		
+		case CAPCOM_T1:
+			p->t1 = value;
+		break;
+		
+		case CAPCOM_T1REL:
+			p->t1rel = value;
+		break;
+		
+		case CAPCOM_T01OCR:
+			p->t01ocr = value;
+		break;
+		
+		case CAPCOM_WHBSOUT:
+			p->whbsout = value;
+		break;
+		
+		case CAPCOM_WHBCOUT:
+			p->whbcout = value;
+		break;
+		
+		case CAPCOM_CC7_SRC:
+		case CAPCOM_CC6_SRC:
+		case CAPCOM_CC5_SRC:
+		case CAPCOM_CC4_SRC:
+		case CAPCOM_CC3_SRC:
+		case CAPCOM_CC2_SRC:
+		case CAPCOM_CC1_SRC:
+		case CAPCOM_CC0_SRC:
+			pmb887x_src_set(&p->cc_src[capcom_get_index_from_reg(haddr)], value);
+		break;
+		
+		case CAPCOM_T1_SRC:
+		case CAPCOM_T0_SRC:
+			pmb887x_src_set(&p->t_src[capcom_get_index_from_reg(haddr)], value);
 		break;
 		
 		default:
