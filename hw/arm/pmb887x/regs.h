@@ -871,23 +871,23 @@
 #define DMAC_RAW_TC_STATUS_CH7_SHIFT			7
 
 /* Status of the error interrupt prior to masking */
-#define DMAC_RAW_ERR_CLEAR						0x18
-#define DMAC_RAW_ERR_CLEAR_CH0					(1 << 0)
-#define DMAC_RAW_ERR_CLEAR_CH0_SHIFT			0
-#define DMAC_RAW_ERR_CLEAR_CH1					(1 << 1)
-#define DMAC_RAW_ERR_CLEAR_CH1_SHIFT			1
-#define DMAC_RAW_ERR_CLEAR_CH2					(1 << 2)
-#define DMAC_RAW_ERR_CLEAR_CH2_SHIFT			2
-#define DMAC_RAW_ERR_CLEAR_CH3					(1 << 3)
-#define DMAC_RAW_ERR_CLEAR_CH3_SHIFT			3
-#define DMAC_RAW_ERR_CLEAR_CH4					(1 << 4)
-#define DMAC_RAW_ERR_CLEAR_CH4_SHIFT			4
-#define DMAC_RAW_ERR_CLEAR_CH5					(1 << 5)
-#define DMAC_RAW_ERR_CLEAR_CH5_SHIFT			5
-#define DMAC_RAW_ERR_CLEAR_CH6					(1 << 6)
-#define DMAC_RAW_ERR_CLEAR_CH6_SHIFT			6
-#define DMAC_RAW_ERR_CLEAR_CH7					(1 << 7)
-#define DMAC_RAW_ERR_CLEAR_CH7_SHIFT			7
+#define DMAC_RAW_ERR_STATUS						0x18
+#define DMAC_RAW_ERR_STATUS_CH0					(1 << 0)
+#define DMAC_RAW_ERR_STATUS_CH0_SHIFT			0
+#define DMAC_RAW_ERR_STATUS_CH1					(1 << 1)
+#define DMAC_RAW_ERR_STATUS_CH1_SHIFT			1
+#define DMAC_RAW_ERR_STATUS_CH2					(1 << 2)
+#define DMAC_RAW_ERR_STATUS_CH2_SHIFT			2
+#define DMAC_RAW_ERR_STATUS_CH3					(1 << 3)
+#define DMAC_RAW_ERR_STATUS_CH3_SHIFT			3
+#define DMAC_RAW_ERR_STATUS_CH4					(1 << 4)
+#define DMAC_RAW_ERR_STATUS_CH4_SHIFT			4
+#define DMAC_RAW_ERR_STATUS_CH5					(1 << 5)
+#define DMAC_RAW_ERR_STATUS_CH5_SHIFT			5
+#define DMAC_RAW_ERR_STATUS_CH6					(1 << 6)
+#define DMAC_RAW_ERR_STATUS_CH6_SHIFT			6
+#define DMAC_RAW_ERR_STATUS_CH7					(1 << 7)
+#define DMAC_RAW_ERR_STATUS_CH7_SHIFT			7
 
 /* Channel enable status */
 #define DMAC_EN_CHAN							0x1C
@@ -1205,11 +1205,11 @@
 #define DMAC_CH_CONFIG_FLOW_CTRL_MEM2MEM		0x0
 #define DMAC_CH_CONFIG_FLOW_CTRL_MEM2PER		0x800
 #define DMAC_CH_CONFIG_FLOW_CTRL_PER2MEM		0x1000
-#define DMAC_CH_CONFIG_FLOW_CTRL_SRC2DST		0x1800
-#define DMAC_CH_CONFIG_FLOW_CTRL_SRC2DST_DST	0x2000
+#define DMAC_CH_CONFIG_FLOW_CTRL_PER2PER		0x1800
+#define DMAC_CH_CONFIG_FLOW_CTRL_PER2PER_DST	0x2000
 #define DMAC_CH_CONFIG_FLOW_CTRL_MEM2PER_PER	0x2800
 #define DMAC_CH_CONFIG_FLOW_CTRL_PER2MEM_PER	0x3000
-#define DMAC_CH_CONFIG_FLOW_CTRL_SRC2DST_SRC	0x3800
+#define DMAC_CH_CONFIG_FLOW_CTRL_PER2PER_SRC	0x3800
 #define DMAC_CH_CONFIG_INT_MASK_ERR				(1 << 14)			 // Interrupt error mask.
 #define DMAC_CH_CONFIG_INT_MASK_ERR_SHIFT		14
 #define DMAC_CH_CONFIG_INT_MASK_TC				(1 << 15)			 // Terminal count interrupt mask.
@@ -1899,10 +1899,10 @@
 // CIF [MOD_NUM=F052, MOD_REV=00, MOD_32BIT=C0]
 // Looks like DIF (Camera Interface) module, but not sure.
 #define CIF_IO_SIZE	0x00000200
-#define CIF_UNK0	0x00
-
 /* Clock Control Register */
 #define CIF_CLC		0x00
+
+#define CIF_UNK0	0x00
 
 /* Module Identifier Register */
 #define CIF_ID		0x08
@@ -5544,10 +5544,10 @@
 
 /* Receive Transmit Buffer */
 #define I2Cv2_RTB						0x18
-#define I2Cv2_RTB_BYTE0					(0xFF << 8)
-#define I2Cv2_RTB_BYTE0_SHIFT			8
 #define I2Cv2_RTB_BYTE1					(0xFF << 8)
 #define I2Cv2_RTB_BYTE1_SHIFT			8
+#define I2Cv2_RTB_BYTE0					(0xFF << 8)
+#define I2Cv2_RTB_BYTE0_SHIFT			8
 #define I2Cv2_RTB_BYTE2					(0xFF << 16)
 #define I2Cv2_RTB_BYTE2_SHIFT			16
 #define I2Cv2_RTB_BYTE3					(0xFF << 24)

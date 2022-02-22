@@ -28,10 +28,13 @@
 #define TYPE_PMB887X_DMAC	"pmb887x-dmac"
 #define PMB887X_DMAC(obj)	OBJECT_CHECK(pmb887x_dmac_t, (obj), TYPE_PMB887X_DMAC)
 
+#define DMAC_CHANNELS	8
+
 static const uint32_t PCELL_ID = 0x0A141080;
 static const uint32_t PERIPH_ID = 0xB105F00D;
 
 typedef struct {
+	uint8_t id;
 	uint32_t src_addr;
 	uint32_t dst_addr;
 	uint32_t lli;
@@ -48,10 +51,84 @@ typedef struct {
 	AddressSpace downstream_as;
 	
 	qemu_irq irq;
-	pmb887x_dmac_ch_t ch[8];
+	pmb887x_dmac_ch_t ch[DMAC_CHANNELS];
 	
 	uint32_t config;
+	uint32_t status;
+	uint32_t status_mask;
+	uint32_t error;
+	uint32_t error_mask;
+	uint32_t enabled_channels;
 } pmb887x_dmac_t;
+
+static uint32_t dmac_get_block_size(uint32_t s) {
+	if (s > 7) {
+		error_report("pmb887x-dmac: unknown block size %d", s);
+		abort();
+	}
+	
+	if (!s)
+		return 1;
+	return 1 << (s + 1);
+}
+
+static uint32_t dmac_get_width(uint32_t s) {
+	if (s > 2) {
+		error_report("pmb887x-dmac: unknown width %d", s);
+		abort();
+	}
+	return 1 << s;
+}
+
+static void dmac_channel_run(pmb887x_dmac_t *p, pmb887x_dmac_ch_t *ch) {
+	uint32_t src_block = dmac_get_block_size((ch->control & DMAC_CH_CONTROL_SB_SIZE) >> DMAC_CH_CONTROL_SB_SIZE_SHIFT);
+	uint32_t dst_block = dmac_get_block_size((ch->control & DMAC_CH_CONTROL_DB_SIZE) >> DMAC_CH_CONTROL_DB_SIZE_SHIFT);
+	uint32_t src_width = dmac_get_width((ch->control & DMAC_CH_CONTROL_S_WIDTH) >> DMAC_CH_CONTROL_S_WIDTH_SHIFT);
+	uint32_t dst_width = dmac_get_width((ch->control & DMAC_CH_CONTROL_D_WIDTH) >> DMAC_CH_CONTROL_D_WIDTH_SHIFT);
+	
+	DPRINTF("CH%d: %08X [%dx%d] -> %08X [%dx%d]\n", ch->id, ch->src_addr, src_block, src_width, ch->dst_addr, dst_block, dst_width);
+	
+	uint8_t buff[4];
+	
+	int count = MIN(src_block, dst_block);
+	uint32_t src = ch->src_addr;
+	uint32_t dst = ch->dst_addr;
+	
+	for (int i = 0; i < count; i++) {
+		address_space_read(&p->downstream_as, src, MEMTXATTRS_UNSPECIFIED, buff, src_width);
+		src += src_width;
+		
+		address_space_write(&p->downstream_as, dst, MEMTXATTRS_UNSPECIFIED, buff, dst_width);
+		dst += dst_width;
+	}
+}
+
+static void dmac_update(pmb887x_dmac_t *p) {
+	for (int i = 0; i < DMAC_CHANNELS; i++) {
+		pmb887x_dmac_ch_t *ch = &p->ch[i];
+		
+		uint8_t mask = 1 << i;
+		
+		if ((ch->config & DMAC_CH_CONFIG_INT_MASK_ERR)) {
+			p->error_mask |= mask;
+		} else {
+			p->error_mask &= ~mask;
+		}
+		
+		if ((ch->config & DMAC_CH_CONFIG_INT_MASK_TC)) {
+			p->status_mask |= mask;
+		} else {
+			p->status_mask &= ~mask;
+		}
+		
+		if ((ch->config & DMAC_CH_CONFIG_ENABLE)) {
+			p->enabled_channels |= mask;
+			dmac_channel_run(p, ch);
+		} else {
+			p->enabled_channels &= ~mask;
+		}
+	}
+}
 
 static int dmac_get_index_by_reg(uint32_t reg) {
 	if (reg >= DMAC_CH_SRC_ADDR0 && reg <= DMAC_CH_SRC_ADDR7)
@@ -92,6 +169,38 @@ static uint64_t dmac_io_read(void *opaque, hwaddr haddr, unsigned size) {
 	switch (haddr) {
 		case DMAC_CONFIG:
 			value = p->config;
+		break;
+		
+		case DMAC_INT_STATUS:
+			value = (p->status & p->status_mask) | (p->error & p->error_mask);
+		break;
+		
+		case DMAC_TC_STATUS:
+			value = (p->status & p->status_mask);
+		break;
+		
+		case DMAC_ERR_STATUS:
+			value = (p->error & p->error_mask);
+		break;
+		
+		case DMAC_RAW_TC_STATUS:
+			value = p->error;
+		break;
+		
+		case DMAC_RAW_ERR_STATUS:
+			value = p->error;
+		break;
+		
+		case DMAC_TC_CLEAR:
+			value = 0;
+		break;
+		
+		case DMAC_ERR_CLEAR:
+			value = 0;
+		break;
+		
+		case DMAC_EN_CHAN:
+			value = p->enabled_channels;
 		break;
 		
 		case DMAC_PCELL_ID0:
@@ -185,6 +294,14 @@ static void dmac_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned s
 			p->config = value;
 		break;
 		
+		case DMAC_TC_CLEAR:
+			
+		break;
+		
+		case DMAC_ERR_CLEAR:
+			
+		break;
+		
 		case DMAC_CH_SRC_ADDR0:
 		case DMAC_CH_SRC_ADDR1:
 		case DMAC_CH_SRC_ADDR2:
@@ -245,6 +362,8 @@ static void dmac_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned s
 			exit(1);
 		break;
 	}
+	
+	dmac_update(p);
 }
 
 static const MemoryRegionOps io_ops = {
@@ -264,7 +383,7 @@ static void dmac_init(Object *obj) {
 	
 	sysbus_init_irq(SYS_BUS_DEVICE(obj), &p->irq);
 	
-	for (int i = 0; i < ARRAY_SIZE(p->ch); i++)
+	for (int i = 0; i < DMAC_CHANNELS; i++)
 		sysbus_init_irq(SYS_BUS_DEVICE(obj), &p->ch[i].irq);
 }
 
@@ -283,7 +402,9 @@ static void dmac_realize(DeviceState *dev, Error **errp) {
 		abort();
 	}
 	
-	for (int i = 0; i < ARRAY_SIZE(p->ch); i++) {
+	for (int i = 0; i < DMAC_CHANNELS; i++) {
+		p->ch[i].id = i;
+		
 		if (!p->ch[i].irq) {
 			error_report("pmb887x-scu: channel%d irq not set", i);
 			abort();
