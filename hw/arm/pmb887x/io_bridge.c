@@ -141,6 +141,10 @@ void pmb8876_io_bridge_write(unsigned int addr, unsigned int size, unsigned int 
 		value = 0x100;
 	}
 	
+	if ((addr == 0xF1300000) && (value & 1)) {
+		value = 0x100;
+	}
+	
 	_async_write(sock_client_io, &cmd_w_size[size], 1, IO_BRIDGE_TIMEOUT);
 	_async_write(sock_client_io, &addr, 4, IO_BRIDGE_TIMEOUT);
 	_async_write(sock_client_io, &value, 4, IO_BRIDGE_TIMEOUT);

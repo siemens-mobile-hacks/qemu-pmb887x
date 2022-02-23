@@ -330,6 +330,8 @@ void pmb887x_init(MachineState *machine, uint32_t board_id) {
 	// DIF
 	DeviceState *dif = pmb887x_new_dev(board->cpu, "DIF", nvic);
 	object_property_set_link(OBJECT(dif), "dmac", OBJECT(dmac), &error_fatal);
+	qdev_prop_set_uint32(dif, "width", board->width);
+	qdev_prop_set_uint32(dif, "height", board->height);
 	sysbus_realize_and_unref(SYS_BUS_DEVICE(dif), &error_fatal);
 	
 	// USART0

@@ -31,7 +31,7 @@
 
 #define TYPE_PMB887X_I2C	"pmb887x-i2c"
 #define PMB887X_I2C(obj)	OBJECT_CHECK(pmb887x_i2c_t, (obj), TYPE_PMB887X_I2C)
-#define I2C_TX_BYTE_TIME	40000
+#define I2C_TX_BYTE_TIME	10
 
 enum {
 	I2C_SINGLE_REQ_IRQ = 0,

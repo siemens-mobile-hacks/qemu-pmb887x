@@ -216,7 +216,9 @@ static void nvic_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned s
 			p->irq_state[irq_n].priority = (value & NVIC_CON_PRIORITY) >> NVIC_CON_PRIORITY_SHIFT;
 			
 			#ifdef PMB887X_IO_BRIDGE
-			pmb8876_io_bridge_write(haddr + p->mmio.addr, size, value);
+			if (irq_n != 22 && irq_n != 23 && irq_n != 24) {
+				pmb8876_io_bridge_write(haddr + p->mmio.addr, size, value);
+			}
 			#endif
 		}
 		break;

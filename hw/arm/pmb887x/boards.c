@@ -134,9 +134,9 @@ static uint32_t board_el71_flashes[] = {
 };
 
 static pmb887x_board_t boards_list[] = {
-	{"C81",		CPU_PMB8876,	board_c81_flashes,	ARRAY_SIZE(board_c81_flashes),	board_c81_keymap,	ARRAY_SIZE(board_c81_keymap),	board_c81_fixed_gpio,	ARRAY_SIZE(board_c81_fixed_gpio)},
-	{"CX75",	CPU_PMB8875,	board_cx75_flashes,	ARRAY_SIZE(board_cx75_flashes),	board_cx75_keymap,	ARRAY_SIZE(board_cx75_keymap),	board_cx75_fixed_gpio,	ARRAY_SIZE(board_cx75_fixed_gpio)},
-	{"EL71",	CPU_PMB8876,	board_el71_flashes,	ARRAY_SIZE(board_el71_flashes),	board_el71_keymap,	ARRAY_SIZE(board_el71_keymap),	board_el71_fixed_gpio,	ARRAY_SIZE(board_el71_fixed_gpio)},
+	{"C81",		132,	176,	CPU_PMB8876,	board_c81_flashes,	ARRAY_SIZE(board_c81_flashes),	board_c81_keymap,	ARRAY_SIZE(board_c81_keymap),	board_c81_fixed_gpio,	ARRAY_SIZE(board_c81_fixed_gpio)},
+	{"CX75",	132,	176,	CPU_PMB8875,	board_cx75_flashes,	ARRAY_SIZE(board_cx75_flashes),	board_cx75_keymap,	ARRAY_SIZE(board_cx75_keymap),	board_cx75_fixed_gpio,	ARRAY_SIZE(board_cx75_fixed_gpio)},
+	{"EL71",	240,	320,	CPU_PMB8876,	board_el71_flashes,	ARRAY_SIZE(board_el71_flashes),	board_el71_keymap,	ARRAY_SIZE(board_el71_keymap),	board_el71_fixed_gpio,	ARRAY_SIZE(board_el71_fixed_gpio)},
 };
 
 pmb887x_board_t *pmb887x_get_board(int board) {
