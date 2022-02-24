@@ -90,8 +90,6 @@ static void dif_update_display(void *opaque) {
 	if (!p->invalidate)
 		return;
 	
-	DPRINTF("dif_update_display\n");
-	
 	dpy_gfx_update(p->console, 0, 0, p->width, p->height);
 	p->invalidate = false;
 }

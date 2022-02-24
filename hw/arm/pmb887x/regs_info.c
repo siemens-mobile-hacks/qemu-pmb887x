@@ -1683,42 +1683,182 @@ static pmb887x_module_field_t gptu_id_fields[] = {
 	{"NUMBER",	MOD_ID_NUMBER,	MOD_ID_NUMBER_SHIFT,	NULL,	0},
 };
 
+static pmb887x_module_value_t gptu_gptu_t01irs_t0ains_values[] = {
+	{"BYPASS",	GPTU_T01IRS_T0AINS_BYPASS},
+	{"CNT0",	GPTU_T01IRS_T0AINS_CNT0},
+	{"CNT1",	GPTU_T01IRS_T0AINS_CNT1},
+	{"CONCAT",	GPTU_T01IRS_T0AINS_CONCAT},
+};
+
+static pmb887x_module_value_t gptu_gptu_t01irs_t0bins_values[] = {
+	{"BYPASS",	GPTU_T01IRS_T0BINS_BYPASS},
+	{"CNT0",	GPTU_T01IRS_T0BINS_CNT0},
+	{"CNT1",	GPTU_T01IRS_T0BINS_CNT1},
+	{"CONCAT",	GPTU_T01IRS_T0BINS_CONCAT},
+};
+
+static pmb887x_module_value_t gptu_gptu_t01irs_t0cins_values[] = {
+	{"BYPASS",	GPTU_T01IRS_T0CINS_BYPASS},
+	{"CNT0",	GPTU_T01IRS_T0CINS_CNT0},
+	{"CNT1",	GPTU_T01IRS_T0CINS_CNT1},
+	{"CONCAT",	GPTU_T01IRS_T0CINS_CONCAT},
+};
+
+static pmb887x_module_value_t gptu_gptu_t01irs_t0dins_values[] = {
+	{"BYPASS",	GPTU_T01IRS_T0DINS_BYPASS},
+	{"CNT0",	GPTU_T01IRS_T0DINS_CNT0},
+	{"CNT1",	GPTU_T01IRS_T0DINS_CNT1},
+	{"CONCAT",	GPTU_T01IRS_T0DINS_CONCAT},
+};
+
+static pmb887x_module_value_t gptu_gptu_t01irs_t1ains_values[] = {
+	{"BYPASS",	GPTU_T01IRS_T1AINS_BYPASS},
+	{"CNT0",	GPTU_T01IRS_T1AINS_CNT0},
+	{"CNT1",	GPTU_T01IRS_T1AINS_CNT1},
+	{"CONCAT",	GPTU_T01IRS_T1AINS_CONCAT},
+};
+
+static pmb887x_module_value_t gptu_gptu_t01irs_t1bins_values[] = {
+	{"BYPASS",	GPTU_T01IRS_T1BINS_BYPASS},
+	{"CNT0",	GPTU_T01IRS_T1BINS_CNT0},
+	{"CNT1",	GPTU_T01IRS_T1BINS_CNT1},
+	{"CONCAT",	GPTU_T01IRS_T1BINS_CONCAT},
+};
+
+static pmb887x_module_value_t gptu_gptu_t01irs_t1cins_values[] = {
+	{"BYPASS",	GPTU_T01IRS_T1CINS_BYPASS},
+	{"CNT0",	GPTU_T01IRS_T1CINS_CNT0},
+	{"CNT1",	GPTU_T01IRS_T1CINS_CNT1},
+	{"CONCAT",	GPTU_T01IRS_T1CINS_CONCAT},
+};
+
+static pmb887x_module_value_t gptu_gptu_t01irs_t1dins_values[] = {
+	{"BYPASS",	GPTU_T01IRS_T1DINS_BYPASS},
+	{"CNT0",	GPTU_T01IRS_T1DINS_CNT0},
+	{"CNT1",	GPTU_T01IRS_T1DINS_CNT1},
+	{"CONCAT",	GPTU_T01IRS_T1DINS_CONCAT},
+};
+
 static pmb887x_module_field_t gptu_t01irs_fields[] = {
-	{"T0AINS",	GPTU_T01IRS_T0AINS,	GPTU_T01IRS_T0AINS_SHIFT,	NULL,	0},
-	{"T0BINS",	GPTU_T01IRS_T0BINS,	GPTU_T01IRS_T0BINS_SHIFT,	NULL,	0},
-	{"T0CINS",	GPTU_T01IRS_T0CINS,	GPTU_T01IRS_T0CINS_SHIFT,	NULL,	0},
-	{"T0DINS",	GPTU_T01IRS_T0DINS,	GPTU_T01IRS_T0DINS_SHIFT,	NULL,	0},
-	{"T1AINS",	GPTU_T01IRS_T1AINS,	GPTU_T01IRS_T1AINS_SHIFT,	NULL,	0},
-	{"T1BINS",	GPTU_T01IRS_T1BINS,	GPTU_T01IRS_T1BINS_SHIFT,	NULL,	0},
-	{"T1CINS",	GPTU_T01IRS_T1CINS,	GPTU_T01IRS_T1CINS_SHIFT,	NULL,	0},
-	{"T1DINS",	GPTU_T01IRS_T1DINS,	GPTU_T01IRS_T1DINS_SHIFT,	NULL,	0},
-	{"T0AREL",	GPTU_T01IRS_T0AREL,	GPTU_T01IRS_T0AREL_SHIFT,	NULL,	0},
-	{"T0BREL",	GPTU_T01IRS_T0BREL,	GPTU_T01IRS_T0BREL_SHIFT,	NULL,	0},
-	{"T0CREL",	GPTU_T01IRS_T0CREL,	GPTU_T01IRS_T0CREL_SHIFT,	NULL,	0},
-	{"T0DREL",	GPTU_T01IRS_T0DREL,	GPTU_T01IRS_T0DREL_SHIFT,	NULL,	0},
-	{"T1AREL",	GPTU_T01IRS_T1AREL,	GPTU_T01IRS_T1AREL_SHIFT,	NULL,	0},
-	{"T1BREL",	GPTU_T01IRS_T1BREL,	GPTU_T01IRS_T1BREL_SHIFT,	NULL,	0},
-	{"T1CREL",	GPTU_T01IRS_T1CREL,	GPTU_T01IRS_T1CREL_SHIFT,	NULL,	0},
-	{"T1DREL",	GPTU_T01IRS_T1DREL,	GPTU_T01IRS_T1DREL_SHIFT,	NULL,	0},
-	{"T0INC",	GPTU_T01IRS_T0INC,	GPTU_T01IRS_T0INC_SHIFT,	NULL,	0},
-	{"T1INC",	GPTU_T01IRS_T1INC,	GPTU_T01IRS_T1INC_SHIFT,	NULL,	0},
-	{"T01IN0",	GPTU_T01IRS_T01IN0,	GPTU_T01IRS_T01IN0_SHIFT,	NULL,	0},
-	{"T01IN1",	GPTU_T01IRS_T01IN1,	GPTU_T01IRS_T01IN1_SHIFT,	NULL,	0},
+	{"T0AINS",	GPTU_T01IRS_T0AINS,	GPTU_T01IRS_T0AINS_SHIFT,	gptu_gptu_t01irs_t0ains_values,	ARRAY_SIZE(gptu_gptu_t01irs_t0ains_values)},
+	{"T0BINS",	GPTU_T01IRS_T0BINS,	GPTU_T01IRS_T0BINS_SHIFT,	gptu_gptu_t01irs_t0bins_values,	ARRAY_SIZE(gptu_gptu_t01irs_t0bins_values)},
+	{"T0CINS",	GPTU_T01IRS_T0CINS,	GPTU_T01IRS_T0CINS_SHIFT,	gptu_gptu_t01irs_t0cins_values,	ARRAY_SIZE(gptu_gptu_t01irs_t0cins_values)},
+	{"T0DINS",	GPTU_T01IRS_T0DINS,	GPTU_T01IRS_T0DINS_SHIFT,	gptu_gptu_t01irs_t0dins_values,	ARRAY_SIZE(gptu_gptu_t01irs_t0dins_values)},
+	{"T1AINS",	GPTU_T01IRS_T1AINS,	GPTU_T01IRS_T1AINS_SHIFT,	gptu_gptu_t01irs_t1ains_values,	ARRAY_SIZE(gptu_gptu_t01irs_t1ains_values)},
+	{"T1BINS",	GPTU_T01IRS_T1BINS,	GPTU_T01IRS_T1BINS_SHIFT,	gptu_gptu_t01irs_t1bins_values,	ARRAY_SIZE(gptu_gptu_t01irs_t1bins_values)},
+	{"T1CINS",	GPTU_T01IRS_T1CINS,	GPTU_T01IRS_T1CINS_SHIFT,	gptu_gptu_t01irs_t1cins_values,	ARRAY_SIZE(gptu_gptu_t01irs_t1cins_values)},
+	{"T1DINS",	GPTU_T01IRS_T1DINS,	GPTU_T01IRS_T1DINS_SHIFT,	gptu_gptu_t01irs_t1dins_values,	ARRAY_SIZE(gptu_gptu_t01irs_t1dins_values)},
+	{"T0AREL",	GPTU_T01IRS_T0AREL,	GPTU_T01IRS_T0AREL_SHIFT,	NULL,							0},
+	{"T0BREL",	GPTU_T01IRS_T0BREL,	GPTU_T01IRS_T0BREL_SHIFT,	NULL,							0},
+	{"T0CREL",	GPTU_T01IRS_T0CREL,	GPTU_T01IRS_T0CREL_SHIFT,	NULL,							0},
+	{"T0DREL",	GPTU_T01IRS_T0DREL,	GPTU_T01IRS_T0DREL_SHIFT,	NULL,							0},
+	{"T1AREL",	GPTU_T01IRS_T1AREL,	GPTU_T01IRS_T1AREL_SHIFT,	NULL,							0},
+	{"T1BREL",	GPTU_T01IRS_T1BREL,	GPTU_T01IRS_T1BREL_SHIFT,	NULL,							0},
+	{"T1CREL",	GPTU_T01IRS_T1CREL,	GPTU_T01IRS_T1CREL_SHIFT,	NULL,							0},
+	{"T1DREL",	GPTU_T01IRS_T1DREL,	GPTU_T01IRS_T1DREL_SHIFT,	NULL,							0},
+	{"T0INC",	GPTU_T01IRS_T0INC,	GPTU_T01IRS_T0INC_SHIFT,	NULL,							0},
+	{"T1INC",	GPTU_T01IRS_T1INC,	GPTU_T01IRS_T1INC_SHIFT,	NULL,							0},
+	{"T01IN0",	GPTU_T01IRS_T01IN0,	GPTU_T01IRS_T01IN0_SHIFT,	NULL,							0},
+	{"T01IN1",	GPTU_T01IRS_T01IN1,	GPTU_T01IRS_T01IN1_SHIFT,	NULL,							0},
+};
+
+static pmb887x_module_value_t gptu_gptu_t01ots_sout00_values[] = {
+	{"A",	GPTU_T01OTS_SOUT00_A},
+	{"B",	GPTU_T01OTS_SOUT00_B},
+	{"C",	GPTU_T01OTS_SOUT00_C},
+	{"D",	GPTU_T01OTS_SOUT00_D},
+};
+
+static pmb887x_module_value_t gptu_gptu_t01ots_sout01_values[] = {
+	{"A",	GPTU_T01OTS_SOUT01_A},
+	{"B",	GPTU_T01OTS_SOUT01_B},
+	{"C",	GPTU_T01OTS_SOUT01_C},
+	{"D",	GPTU_T01OTS_SOUT01_D},
+};
+
+static pmb887x_module_value_t gptu_gptu_t01ots_strg00_values[] = {
+	{"A",	GPTU_T01OTS_STRG00_A},
+	{"B",	GPTU_T01OTS_STRG00_B},
+	{"C",	GPTU_T01OTS_STRG00_C},
+	{"D",	GPTU_T01OTS_STRG00_D},
+};
+
+static pmb887x_module_value_t gptu_gptu_t01ots_strg01_values[] = {
+	{"A",	GPTU_T01OTS_STRG01_A},
+	{"B",	GPTU_T01OTS_STRG01_B},
+	{"C",	GPTU_T01OTS_STRG01_C},
+	{"D",	GPTU_T01OTS_STRG01_D},
+};
+
+static pmb887x_module_value_t gptu_gptu_t01ots_ssr00_values[] = {
+	{"A",	GPTU_T01OTS_SSR00_A},
+	{"B",	GPTU_T01OTS_SSR00_B},
+	{"C",	GPTU_T01OTS_SSR00_C},
+	{"D",	GPTU_T01OTS_SSR00_D},
+};
+
+static pmb887x_module_value_t gptu_gptu_t01ots_ssr01_values[] = {
+	{"A",	GPTU_T01OTS_SSR01_A},
+	{"B",	GPTU_T01OTS_SSR01_B},
+	{"C",	GPTU_T01OTS_SSR01_C},
+	{"D",	GPTU_T01OTS_SSR01_D},
+};
+
+static pmb887x_module_value_t gptu_gptu_t01ots_sout10_values[] = {
+	{"A",	GPTU_T01OTS_SOUT10_A},
+	{"B",	GPTU_T01OTS_SOUT10_B},
+	{"C",	GPTU_T01OTS_SOUT10_C},
+	{"D",	GPTU_T01OTS_SOUT10_D},
+};
+
+static pmb887x_module_value_t gptu_gptu_t01ots_sout11_values[] = {
+	{"A",	GPTU_T01OTS_SOUT11_A},
+	{"B",	GPTU_T01OTS_SOUT11_B},
+	{"C",	GPTU_T01OTS_SOUT11_C},
+	{"D",	GPTU_T01OTS_SOUT11_D},
+};
+
+static pmb887x_module_value_t gptu_gptu_t01ots_strg10_values[] = {
+	{"A",	GPTU_T01OTS_STRG10_A},
+	{"B",	GPTU_T01OTS_STRG10_B},
+	{"C",	GPTU_T01OTS_STRG10_C},
+	{"D",	GPTU_T01OTS_STRG10_D},
+};
+
+static pmb887x_module_value_t gptu_gptu_t01ots_strg11_values[] = {
+	{"A",	GPTU_T01OTS_STRG11_A},
+	{"B",	GPTU_T01OTS_STRG11_B},
+	{"C",	GPTU_T01OTS_STRG11_C},
+	{"D",	GPTU_T01OTS_STRG11_D},
+};
+
+static pmb887x_module_value_t gptu_gptu_t01ots_ssr10_values[] = {
+	{"A",	GPTU_T01OTS_SSR10_A},
+	{"B",	GPTU_T01OTS_SSR10_B},
+	{"C",	GPTU_T01OTS_SSR10_C},
+	{"D",	GPTU_T01OTS_SSR10_D},
+};
+
+static pmb887x_module_value_t gptu_gptu_t01ots_ssr11_values[] = {
+	{"A",	GPTU_T01OTS_SSR11_A},
+	{"B",	GPTU_T01OTS_SSR11_B},
+	{"C",	GPTU_T01OTS_SSR11_C},
+	{"D",	GPTU_T01OTS_SSR11_D},
 };
 
 static pmb887x_module_field_t gptu_t01ots_fields[] = {
-	{"SOUT00",	GPTU_T01OTS_SOUT00,	GPTU_T01OTS_SOUT00_SHIFT,	NULL,	0},
-	{"SOUT01",	GPTU_T01OTS_SOUT01,	GPTU_T01OTS_SOUT01_SHIFT,	NULL,	0},
-	{"STRG00",	GPTU_T01OTS_STRG00,	GPTU_T01OTS_STRG00_SHIFT,	NULL,	0},
-	{"STRG01",	GPTU_T01OTS_STRG01,	GPTU_T01OTS_STRG01_SHIFT,	NULL,	0},
-	{"SSR00",	GPTU_T01OTS_SSR00,	GPTU_T01OTS_SSR00_SHIFT,	NULL,	0},
-	{"SSR01",	GPTU_T01OTS_SSR01,	GPTU_T01OTS_SSR01_SHIFT,	NULL,	0},
-	{"SOUT10",	GPTU_T01OTS_SOUT10,	GPTU_T01OTS_SOUT10_SHIFT,	NULL,	0},
-	{"SOUT11",	GPTU_T01OTS_SOUT11,	GPTU_T01OTS_SOUT11_SHIFT,	NULL,	0},
-	{"STRG10",	GPTU_T01OTS_STRG10,	GPTU_T01OTS_STRG10_SHIFT,	NULL,	0},
-	{"STRG11",	GPTU_T01OTS_STRG11,	GPTU_T01OTS_STRG11_SHIFT,	NULL,	0},
-	{"SSR10",	GPTU_T01OTS_SSR10,	GPTU_T01OTS_SSR10_SHIFT,	NULL,	0},
-	{"SSR11",	GPTU_T01OTS_SSR11,	GPTU_T01OTS_SSR11_SHIFT,	NULL,	0},
+	{"SOUT00",	GPTU_T01OTS_SOUT00,	GPTU_T01OTS_SOUT00_SHIFT,	gptu_gptu_t01ots_sout00_values,	ARRAY_SIZE(gptu_gptu_t01ots_sout00_values)},
+	{"SOUT01",	GPTU_T01OTS_SOUT01,	GPTU_T01OTS_SOUT01_SHIFT,	gptu_gptu_t01ots_sout01_values,	ARRAY_SIZE(gptu_gptu_t01ots_sout01_values)},
+	{"STRG00",	GPTU_T01OTS_STRG00,	GPTU_T01OTS_STRG00_SHIFT,	gptu_gptu_t01ots_strg00_values,	ARRAY_SIZE(gptu_gptu_t01ots_strg00_values)},
+	{"STRG01",	GPTU_T01OTS_STRG01,	GPTU_T01OTS_STRG01_SHIFT,	gptu_gptu_t01ots_strg01_values,	ARRAY_SIZE(gptu_gptu_t01ots_strg01_values)},
+	{"SSR00",	GPTU_T01OTS_SSR00,	GPTU_T01OTS_SSR00_SHIFT,	gptu_gptu_t01ots_ssr00_values,	ARRAY_SIZE(gptu_gptu_t01ots_ssr00_values)},
+	{"SSR01",	GPTU_T01OTS_SSR01,	GPTU_T01OTS_SSR01_SHIFT,	gptu_gptu_t01ots_ssr01_values,	ARRAY_SIZE(gptu_gptu_t01ots_ssr01_values)},
+	{"SOUT10",	GPTU_T01OTS_SOUT10,	GPTU_T01OTS_SOUT10_SHIFT,	gptu_gptu_t01ots_sout10_values,	ARRAY_SIZE(gptu_gptu_t01ots_sout10_values)},
+	{"SOUT11",	GPTU_T01OTS_SOUT11,	GPTU_T01OTS_SOUT11_SHIFT,	gptu_gptu_t01ots_sout11_values,	ARRAY_SIZE(gptu_gptu_t01ots_sout11_values)},
+	{"STRG10",	GPTU_T01OTS_STRG10,	GPTU_T01OTS_STRG10_SHIFT,	gptu_gptu_t01ots_strg10_values,	ARRAY_SIZE(gptu_gptu_t01ots_strg10_values)},
+	{"STRG11",	GPTU_T01OTS_STRG11,	GPTU_T01OTS_STRG11_SHIFT,	gptu_gptu_t01ots_strg11_values,	ARRAY_SIZE(gptu_gptu_t01ots_strg11_values)},
+	{"SSR10",	GPTU_T01OTS_SSR10,	GPTU_T01OTS_SSR10_SHIFT,	gptu_gptu_t01ots_ssr10_values,	ARRAY_SIZE(gptu_gptu_t01ots_ssr10_values)},
+	{"SSR11",	GPTU_T01OTS_SSR11,	GPTU_T01OTS_SSR11_SHIFT,	gptu_gptu_t01ots_ssr11_values,	ARRAY_SIZE(gptu_gptu_t01ots_ssr11_values)},
 };
 
 static pmb887x_module_field_t gptu_t2con_fields[] = {
@@ -1903,63 +2043,170 @@ static pmb887x_module_field_t gptu_t012run_fields[] = {
 	{"T2BCLRR",	GPTU_T012RUN_T2BCLRR,	GPTU_T012RUN_T2BCLRR_SHIFT,	NULL,	0},
 };
 
+static pmb887x_module_value_t gptu_gptu_srsel_ssr7_values[] = {
+	{"START_A",		GPTU_SRSEL_SSR7_START_A},
+	{"STOP_A",		GPTU_SRSEL_SSR7_STOP_A},
+	{"UPDOWN_A",	GPTU_SRSEL_SSR7_UPDOWN_A},
+	{"CLEAR_A",		GPTU_SRSEL_SSR7_CLEAR_A},
+	{"RLCP0_A",		GPTU_SRSEL_SSR7_RLCP0_A},
+	{"RLCP1_A",		GPTU_SRSEL_SSR7_RLCP1_A},
+	{"OUV_T2A",		GPTU_SRSEL_SSR7_OUV_T2A},
+	{"OUV_T2B",		GPTU_SRSEL_SSR7_OUV_T2B},
+	{"START_B",		GPTU_SRSEL_SSR7_START_B},
+	{"STOP_B",		GPTU_SRSEL_SSR7_STOP_B},
+	{"RLCP0_B",		GPTU_SRSEL_SSR7_RLCP0_B},
+	{"RLCP1_B",		GPTU_SRSEL_SSR7_RLCP1_B},
+	{"SR00",		GPTU_SRSEL_SSR7_SR00},
+	{"SR01",		GPTU_SRSEL_SSR7_SR01},
+	{"SR10",		GPTU_SRSEL_SSR7_SR10},
+	{"SR11",		GPTU_SRSEL_SSR7_SR11},
+};
+
+static pmb887x_module_value_t gptu_gptu_srsel_ssr6_values[] = {
+	{"START_A",		GPTU_SRSEL_SSR6_START_A},
+	{"STOP_A",		GPTU_SRSEL_SSR6_STOP_A},
+	{"UPDOWN_A",	GPTU_SRSEL_SSR6_UPDOWN_A},
+	{"CLEAR_A",		GPTU_SRSEL_SSR6_CLEAR_A},
+	{"RLCP0_A",		GPTU_SRSEL_SSR6_RLCP0_A},
+	{"RLCP1_A",		GPTU_SRSEL_SSR6_RLCP1_A},
+	{"OUV_T2A",		GPTU_SRSEL_SSR6_OUV_T2A},
+	{"OUV_T2B",		GPTU_SRSEL_SSR6_OUV_T2B},
+	{"START_B",		GPTU_SRSEL_SSR6_START_B},
+	{"STOP_B",		GPTU_SRSEL_SSR6_STOP_B},
+	{"RLCP0_B",		GPTU_SRSEL_SSR6_RLCP0_B},
+	{"RLCP1_B",		GPTU_SRSEL_SSR6_RLCP1_B},
+	{"SR00",		GPTU_SRSEL_SSR6_SR00},
+	{"SR01",		GPTU_SRSEL_SSR6_SR01},
+	{"SR10",		GPTU_SRSEL_SSR6_SR10},
+	{"SR11",		GPTU_SRSEL_SSR6_SR11},
+};
+
+static pmb887x_module_value_t gptu_gptu_srsel_ssr5_values[] = {
+	{"START_A",		GPTU_SRSEL_SSR5_START_A},
+	{"STOP_A",		GPTU_SRSEL_SSR5_STOP_A},
+	{"UPDOWN_A",	GPTU_SRSEL_SSR5_UPDOWN_A},
+	{"CLEAR_A",		GPTU_SRSEL_SSR5_CLEAR_A},
+	{"RLCP0_A",		GPTU_SRSEL_SSR5_RLCP0_A},
+	{"RLCP1_A",		GPTU_SRSEL_SSR5_RLCP1_A},
+	{"OUV_T2A",		GPTU_SRSEL_SSR5_OUV_T2A},
+	{"OUV_T2B",		GPTU_SRSEL_SSR5_OUV_T2B},
+	{"START_B",		GPTU_SRSEL_SSR5_START_B},
+	{"STOP_B",		GPTU_SRSEL_SSR5_STOP_B},
+	{"RLCP0_B",		GPTU_SRSEL_SSR5_RLCP0_B},
+	{"RLCP1_B",		GPTU_SRSEL_SSR5_RLCP1_B},
+	{"SR00",		GPTU_SRSEL_SSR5_SR00},
+	{"SR01",		GPTU_SRSEL_SSR5_SR01},
+	{"SR10",		GPTU_SRSEL_SSR5_SR10},
+	{"SR11",		GPTU_SRSEL_SSR5_SR11},
+};
+
+static pmb887x_module_value_t gptu_gptu_srsel_ssr4_values[] = {
+	{"START_A",		GPTU_SRSEL_SSR4_START_A},
+	{"STOP_A",		GPTU_SRSEL_SSR4_STOP_A},
+	{"UPDOWN_A",	GPTU_SRSEL_SSR4_UPDOWN_A},
+	{"CLEAR_A",		GPTU_SRSEL_SSR4_CLEAR_A},
+	{"RLCP0_A",		GPTU_SRSEL_SSR4_RLCP0_A},
+	{"RLCP1_A",		GPTU_SRSEL_SSR4_RLCP1_A},
+	{"OUV_T2A",		GPTU_SRSEL_SSR4_OUV_T2A},
+	{"OUV_T2B",		GPTU_SRSEL_SSR4_OUV_T2B},
+	{"START_B",		GPTU_SRSEL_SSR4_START_B},
+	{"STOP_B",		GPTU_SRSEL_SSR4_STOP_B},
+	{"RLCP0_B",		GPTU_SRSEL_SSR4_RLCP0_B},
+	{"RLCP1_B",		GPTU_SRSEL_SSR4_RLCP1_B},
+	{"SR00",		GPTU_SRSEL_SSR4_SR00},
+	{"SR01",		GPTU_SRSEL_SSR4_SR01},
+	{"SR10",		GPTU_SRSEL_SSR4_SR10},
+	{"SR11",		GPTU_SRSEL_SSR4_SR11},
+};
+
+static pmb887x_module_value_t gptu_gptu_srsel_ssr3_values[] = {
+	{"START_A",		GPTU_SRSEL_SSR3_START_A},
+	{"STOP_A",		GPTU_SRSEL_SSR3_STOP_A},
+	{"UPDOWN_A",	GPTU_SRSEL_SSR3_UPDOWN_A},
+	{"CLEAR_A",		GPTU_SRSEL_SSR3_CLEAR_A},
+	{"RLCP0_A",		GPTU_SRSEL_SSR3_RLCP0_A},
+	{"RLCP1_A",		GPTU_SRSEL_SSR3_RLCP1_A},
+	{"OUV_T2A",		GPTU_SRSEL_SSR3_OUV_T2A},
+	{"OUV_T2B",		GPTU_SRSEL_SSR3_OUV_T2B},
+	{"START_B",		GPTU_SRSEL_SSR3_START_B},
+	{"STOP_B",		GPTU_SRSEL_SSR3_STOP_B},
+	{"RLCP0_B",		GPTU_SRSEL_SSR3_RLCP0_B},
+	{"RLCP1_B",		GPTU_SRSEL_SSR3_RLCP1_B},
+	{"SR00",		GPTU_SRSEL_SSR3_SR00},
+	{"SR01",		GPTU_SRSEL_SSR3_SR01},
+	{"SR10",		GPTU_SRSEL_SSR3_SR10},
+	{"SR11",		GPTU_SRSEL_SSR3_SR11},
+};
+
+static pmb887x_module_value_t gptu_gptu_srsel_ssr2_values[] = {
+	{"START_A",		GPTU_SRSEL_SSR2_START_A},
+	{"STOP_A",		GPTU_SRSEL_SSR2_STOP_A},
+	{"UPDOWN_A",	GPTU_SRSEL_SSR2_UPDOWN_A},
+	{"CLEAR_A",		GPTU_SRSEL_SSR2_CLEAR_A},
+	{"RLCP0_A",		GPTU_SRSEL_SSR2_RLCP0_A},
+	{"RLCP1_A",		GPTU_SRSEL_SSR2_RLCP1_A},
+	{"OUV_T2A",		GPTU_SRSEL_SSR2_OUV_T2A},
+	{"OUV_T2B",		GPTU_SRSEL_SSR2_OUV_T2B},
+	{"START_B",		GPTU_SRSEL_SSR2_START_B},
+	{"STOP_B",		GPTU_SRSEL_SSR2_STOP_B},
+	{"RLCP0_B",		GPTU_SRSEL_SSR2_RLCP0_B},
+	{"RLCP1_B",		GPTU_SRSEL_SSR2_RLCP1_B},
+	{"SR00",		GPTU_SRSEL_SSR2_SR00},
+	{"SR01",		GPTU_SRSEL_SSR2_SR01},
+	{"SR10",		GPTU_SRSEL_SSR2_SR10},
+	{"SR11",		GPTU_SRSEL_SSR2_SR11},
+};
+
+static pmb887x_module_value_t gptu_gptu_srsel_ssr1_values[] = {
+	{"START_A",		GPTU_SRSEL_SSR1_START_A},
+	{"STOP_A",		GPTU_SRSEL_SSR1_STOP_A},
+	{"UPDOWN_A",	GPTU_SRSEL_SSR1_UPDOWN_A},
+	{"CLEAR_A",		GPTU_SRSEL_SSR1_CLEAR_A},
+	{"RLCP0_A",		GPTU_SRSEL_SSR1_RLCP0_A},
+	{"RLCP1_A",		GPTU_SRSEL_SSR1_RLCP1_A},
+	{"OUV_T2A",		GPTU_SRSEL_SSR1_OUV_T2A},
+	{"OUV_T2B",		GPTU_SRSEL_SSR1_OUV_T2B},
+	{"START_B",		GPTU_SRSEL_SSR1_START_B},
+	{"STOP_B",		GPTU_SRSEL_SSR1_STOP_B},
+	{"RLCP0_B",		GPTU_SRSEL_SSR1_RLCP0_B},
+	{"RLCP1_B",		GPTU_SRSEL_SSR1_RLCP1_B},
+	{"SR00",		GPTU_SRSEL_SSR1_SR00},
+	{"SR01",		GPTU_SRSEL_SSR1_SR01},
+	{"SR10",		GPTU_SRSEL_SSR1_SR10},
+	{"SR11",		GPTU_SRSEL_SSR1_SR11},
+};
+
+static pmb887x_module_value_t gptu_gptu_srsel_ssr0_values[] = {
+	{"START_A",		GPTU_SRSEL_SSR0_START_A},
+	{"STOP_A",		GPTU_SRSEL_SSR0_STOP_A},
+	{"UPDOWN_A",	GPTU_SRSEL_SSR0_UPDOWN_A},
+	{"CLEAR_A",		GPTU_SRSEL_SSR0_CLEAR_A},
+	{"RLCP0_A",		GPTU_SRSEL_SSR0_RLCP0_A},
+	{"RLCP1_A",		GPTU_SRSEL_SSR0_RLCP1_A},
+	{"OUV_T2A",		GPTU_SRSEL_SSR0_OUV_T2A},
+	{"OUV_T2B",		GPTU_SRSEL_SSR0_OUV_T2B},
+	{"START_B",		GPTU_SRSEL_SSR0_START_B},
+	{"STOP_B",		GPTU_SRSEL_SSR0_STOP_B},
+	{"RLCP0_B",		GPTU_SRSEL_SSR0_RLCP0_B},
+	{"RLCP1_B",		GPTU_SRSEL_SSR0_RLCP1_B},
+	{"SR00",		GPTU_SRSEL_SSR0_SR00},
+	{"SR01",		GPTU_SRSEL_SSR0_SR01},
+	{"SR10",		GPTU_SRSEL_SSR0_SR10},
+	{"SR11",		GPTU_SRSEL_SSR0_SR11},
+};
+
 static pmb887x_module_field_t gptu_srsel_fields[] = {
-	{"SSR7",	GPTU_SRSEL_SSR7,	GPTU_SRSEL_SSR7_SHIFT,	NULL,	0},
-	{"SSR6",	GPTU_SRSEL_SSR6,	GPTU_SRSEL_SSR6_SHIFT,	NULL,	0},
-	{"SSR5",	GPTU_SRSEL_SSR5,	GPTU_SRSEL_SSR5_SHIFT,	NULL,	0},
-	{"SSR4",	GPTU_SRSEL_SSR4,	GPTU_SRSEL_SSR4_SHIFT,	NULL,	0},
-	{"SSR3",	GPTU_SRSEL_SSR3,	GPTU_SRSEL_SSR3_SHIFT,	NULL,	0},
-	{"SSR2",	GPTU_SRSEL_SSR2,	GPTU_SRSEL_SSR2_SHIFT,	NULL,	0},
-	{"SSR1",	GPTU_SRSEL_SSR1,	GPTU_SRSEL_SSR1_SHIFT,	NULL,	0},
-	{"SSR0",	GPTU_SRSEL_SSR0,	GPTU_SRSEL_SSR0_SHIFT,	NULL,	0},
+	{"SSR7",	GPTU_SRSEL_SSR7,	GPTU_SRSEL_SSR7_SHIFT,	gptu_gptu_srsel_ssr7_values,	ARRAY_SIZE(gptu_gptu_srsel_ssr7_values)},
+	{"SSR6",	GPTU_SRSEL_SSR6,	GPTU_SRSEL_SSR6_SHIFT,	gptu_gptu_srsel_ssr6_values,	ARRAY_SIZE(gptu_gptu_srsel_ssr6_values)},
+	{"SSR5",	GPTU_SRSEL_SSR5,	GPTU_SRSEL_SSR5_SHIFT,	gptu_gptu_srsel_ssr5_values,	ARRAY_SIZE(gptu_gptu_srsel_ssr5_values)},
+	{"SSR4",	GPTU_SRSEL_SSR4,	GPTU_SRSEL_SSR4_SHIFT,	gptu_gptu_srsel_ssr4_values,	ARRAY_SIZE(gptu_gptu_srsel_ssr4_values)},
+	{"SSR3",	GPTU_SRSEL_SSR3,	GPTU_SRSEL_SSR3_SHIFT,	gptu_gptu_srsel_ssr3_values,	ARRAY_SIZE(gptu_gptu_srsel_ssr3_values)},
+	{"SSR2",	GPTU_SRSEL_SSR2,	GPTU_SRSEL_SSR2_SHIFT,	gptu_gptu_srsel_ssr2_values,	ARRAY_SIZE(gptu_gptu_srsel_ssr2_values)},
+	{"SSR1",	GPTU_SRSEL_SSR1,	GPTU_SRSEL_SSR1_SHIFT,	gptu_gptu_srsel_ssr1_values,	ARRAY_SIZE(gptu_gptu_srsel_ssr1_values)},
+	{"SSR0",	GPTU_SRSEL_SSR0,	GPTU_SRSEL_SSR0_SHIFT,	gptu_gptu_srsel_ssr0_values,	ARRAY_SIZE(gptu_gptu_srsel_ssr0_values)},
 };
 
-static pmb887x_module_field_t gptu_src7_fields[] = {
-	{"SRPN",	MOD_SRC_SRPN,	MOD_SRC_SRPN_SHIFT,	NULL,	0},
-	{"TOS",		MOD_SRC_TOS,	MOD_SRC_TOS_SHIFT,	NULL,	0},
-	{"SRE",		MOD_SRC_SRE,	MOD_SRC_SRE_SHIFT,	NULL,	0},
-	{"SRR",		MOD_SRC_SRR,	MOD_SRC_SRR_SHIFT,	NULL,	0},
-	{"CLRR",	MOD_SRC_CLRR,	MOD_SRC_CLRR_SHIFT,	NULL,	0},
-	{"SETR",	MOD_SRC_SETR,	MOD_SRC_SETR_SHIFT,	NULL,	0},
-};
-
-static pmb887x_module_field_t gptu_src6_fields[] = {
-	{"SRPN",	MOD_SRC_SRPN,	MOD_SRC_SRPN_SHIFT,	NULL,	0},
-	{"TOS",		MOD_SRC_TOS,	MOD_SRC_TOS_SHIFT,	NULL,	0},
-	{"SRE",		MOD_SRC_SRE,	MOD_SRC_SRE_SHIFT,	NULL,	0},
-	{"SRR",		MOD_SRC_SRR,	MOD_SRC_SRR_SHIFT,	NULL,	0},
-	{"CLRR",	MOD_SRC_CLRR,	MOD_SRC_CLRR_SHIFT,	NULL,	0},
-	{"SETR",	MOD_SRC_SETR,	MOD_SRC_SETR_SHIFT,	NULL,	0},
-};
-
-static pmb887x_module_field_t gptu_src5_fields[] = {
-	{"SRPN",	MOD_SRC_SRPN,	MOD_SRC_SRPN_SHIFT,	NULL,	0},
-	{"TOS",		MOD_SRC_TOS,	MOD_SRC_TOS_SHIFT,	NULL,	0},
-	{"SRE",		MOD_SRC_SRE,	MOD_SRC_SRE_SHIFT,	NULL,	0},
-	{"SRR",		MOD_SRC_SRR,	MOD_SRC_SRR_SHIFT,	NULL,	0},
-	{"CLRR",	MOD_SRC_CLRR,	MOD_SRC_CLRR_SHIFT,	NULL,	0},
-	{"SETR",	MOD_SRC_SETR,	MOD_SRC_SETR_SHIFT,	NULL,	0},
-};
-
-static pmb887x_module_field_t gptu_src4_fields[] = {
-	{"SRPN",	MOD_SRC_SRPN,	MOD_SRC_SRPN_SHIFT,	NULL,	0},
-	{"TOS",		MOD_SRC_TOS,	MOD_SRC_TOS_SHIFT,	NULL,	0},
-	{"SRE",		MOD_SRC_SRE,	MOD_SRC_SRE_SHIFT,	NULL,	0},
-	{"SRR",		MOD_SRC_SRR,	MOD_SRC_SRR_SHIFT,	NULL,	0},
-	{"CLRR",	MOD_SRC_CLRR,	MOD_SRC_CLRR_SHIFT,	NULL,	0},
-	{"SETR",	MOD_SRC_SETR,	MOD_SRC_SETR_SHIFT,	NULL,	0},
-};
-
-static pmb887x_module_field_t gptu_src3_fields[] = {
-	{"SRPN",	MOD_SRC_SRPN,	MOD_SRC_SRPN_SHIFT,	NULL,	0},
-	{"TOS",		MOD_SRC_TOS,	MOD_SRC_TOS_SHIFT,	NULL,	0},
-	{"SRE",		MOD_SRC_SRE,	MOD_SRC_SRE_SHIFT,	NULL,	0},
-	{"SRR",		MOD_SRC_SRR,	MOD_SRC_SRR_SHIFT,	NULL,	0},
-	{"CLRR",	MOD_SRC_CLRR,	MOD_SRC_CLRR_SHIFT,	NULL,	0},
-	{"SETR",	MOD_SRC_SETR,	MOD_SRC_SETR_SHIFT,	NULL,	0},
-};
-
-static pmb887x_module_field_t gptu_src2_fields[] = {
+static pmb887x_module_field_t gptu_src0_fields[] = {
 	{"SRPN",	MOD_SRC_SRPN,	MOD_SRC_SRPN_SHIFT,	NULL,	0},
 	{"TOS",		MOD_SRC_TOS,	MOD_SRC_TOS_SHIFT,	NULL,	0},
 	{"SRE",		MOD_SRC_SRE,	MOD_SRC_SRE_SHIFT,	NULL,	0},
@@ -1977,7 +2224,52 @@ static pmb887x_module_field_t gptu_src1_fields[] = {
 	{"SETR",	MOD_SRC_SETR,	MOD_SRC_SETR_SHIFT,	NULL,	0},
 };
 
-static pmb887x_module_field_t gptu_src0_fields[] = {
+static pmb887x_module_field_t gptu_src2_fields[] = {
+	{"SRPN",	MOD_SRC_SRPN,	MOD_SRC_SRPN_SHIFT,	NULL,	0},
+	{"TOS",		MOD_SRC_TOS,	MOD_SRC_TOS_SHIFT,	NULL,	0},
+	{"SRE",		MOD_SRC_SRE,	MOD_SRC_SRE_SHIFT,	NULL,	0},
+	{"SRR",		MOD_SRC_SRR,	MOD_SRC_SRR_SHIFT,	NULL,	0},
+	{"CLRR",	MOD_SRC_CLRR,	MOD_SRC_CLRR_SHIFT,	NULL,	0},
+	{"SETR",	MOD_SRC_SETR,	MOD_SRC_SETR_SHIFT,	NULL,	0},
+};
+
+static pmb887x_module_field_t gptu_src3_fields[] = {
+	{"SRPN",	MOD_SRC_SRPN,	MOD_SRC_SRPN_SHIFT,	NULL,	0},
+	{"TOS",		MOD_SRC_TOS,	MOD_SRC_TOS_SHIFT,	NULL,	0},
+	{"SRE",		MOD_SRC_SRE,	MOD_SRC_SRE_SHIFT,	NULL,	0},
+	{"SRR",		MOD_SRC_SRR,	MOD_SRC_SRR_SHIFT,	NULL,	0},
+	{"CLRR",	MOD_SRC_CLRR,	MOD_SRC_CLRR_SHIFT,	NULL,	0},
+	{"SETR",	MOD_SRC_SETR,	MOD_SRC_SETR_SHIFT,	NULL,	0},
+};
+
+static pmb887x_module_field_t gptu_src4_fields[] = {
+	{"SRPN",	MOD_SRC_SRPN,	MOD_SRC_SRPN_SHIFT,	NULL,	0},
+	{"TOS",		MOD_SRC_TOS,	MOD_SRC_TOS_SHIFT,	NULL,	0},
+	{"SRE",		MOD_SRC_SRE,	MOD_SRC_SRE_SHIFT,	NULL,	0},
+	{"SRR",		MOD_SRC_SRR,	MOD_SRC_SRR_SHIFT,	NULL,	0},
+	{"CLRR",	MOD_SRC_CLRR,	MOD_SRC_CLRR_SHIFT,	NULL,	0},
+	{"SETR",	MOD_SRC_SETR,	MOD_SRC_SETR_SHIFT,	NULL,	0},
+};
+
+static pmb887x_module_field_t gptu_src5_fields[] = {
+	{"SRPN",	MOD_SRC_SRPN,	MOD_SRC_SRPN_SHIFT,	NULL,	0},
+	{"TOS",		MOD_SRC_TOS,	MOD_SRC_TOS_SHIFT,	NULL,	0},
+	{"SRE",		MOD_SRC_SRE,	MOD_SRC_SRE_SHIFT,	NULL,	0},
+	{"SRR",		MOD_SRC_SRR,	MOD_SRC_SRR_SHIFT,	NULL,	0},
+	{"CLRR",	MOD_SRC_CLRR,	MOD_SRC_CLRR_SHIFT,	NULL,	0},
+	{"SETR",	MOD_SRC_SETR,	MOD_SRC_SETR_SHIFT,	NULL,	0},
+};
+
+static pmb887x_module_field_t gptu_src6_fields[] = {
+	{"SRPN",	MOD_SRC_SRPN,	MOD_SRC_SRPN_SHIFT,	NULL,	0},
+	{"TOS",		MOD_SRC_TOS,	MOD_SRC_TOS_SHIFT,	NULL,	0},
+	{"SRE",		MOD_SRC_SRE,	MOD_SRC_SRE_SHIFT,	NULL,	0},
+	{"SRR",		MOD_SRC_SRR,	MOD_SRC_SRR_SHIFT,	NULL,	0},
+	{"CLRR",	MOD_SRC_CLRR,	MOD_SRC_CLRR_SHIFT,	NULL,	0},
+	{"SETR",	MOD_SRC_SETR,	MOD_SRC_SETR_SHIFT,	NULL,	0},
+};
+
+static pmb887x_module_field_t gptu_src7_fields[] = {
 	{"SRPN",	MOD_SRC_SRPN,	MOD_SRC_SRPN_SHIFT,	NULL,	0},
 	{"TOS",		MOD_SRC_TOS,	MOD_SRC_TOS_SHIFT,	NULL,	0},
 	{"SRE",		MOD_SRC_SRE,	MOD_SRC_SRE_SHIFT,	NULL,	0},
@@ -2011,14 +2303,14 @@ static pmb887x_module_reg_t gptu_regs[] = {
 	{"T2RC1",	GPTU_T2RC1,		gptu_t2rc1_fields,		ARRAY_SIZE(gptu_t2rc1_fields),		0},
 	{"T012RUN",	GPTU_T012RUN,	gptu_t012run_fields,	ARRAY_SIZE(gptu_t012run_fields),	0},
 	{"SRSEL",	GPTU_SRSEL,		gptu_srsel_fields,		ARRAY_SIZE(gptu_srsel_fields),		0},
-	{"SRC7",	GPTU_SRC7,		gptu_src7_fields,		ARRAY_SIZE(gptu_src7_fields),		0},
-	{"SRC6",	GPTU_SRC6,		gptu_src6_fields,		ARRAY_SIZE(gptu_src6_fields),		0},
-	{"SRC5",	GPTU_SRC5,		gptu_src5_fields,		ARRAY_SIZE(gptu_src5_fields),		0},
-	{"SRC4",	GPTU_SRC4,		gptu_src4_fields,		ARRAY_SIZE(gptu_src4_fields),		0},
-	{"SRC3",	GPTU_SRC3,		gptu_src3_fields,		ARRAY_SIZE(gptu_src3_fields),		0},
-	{"SRC2",	GPTU_SRC2,		gptu_src2_fields,		ARRAY_SIZE(gptu_src2_fields),		0},
-	{"SRC1",	GPTU_SRC1,		gptu_src1_fields,		ARRAY_SIZE(gptu_src1_fields),		0},
 	{"SRC0",	GPTU_SRC0,		gptu_src0_fields,		ARRAY_SIZE(gptu_src0_fields),		0},
+	{"SRC1",	GPTU_SRC1,		gptu_src1_fields,		ARRAY_SIZE(gptu_src1_fields),		0},
+	{"SRC2",	GPTU_SRC2,		gptu_src2_fields,		ARRAY_SIZE(gptu_src2_fields),		0},
+	{"SRC3",	GPTU_SRC3,		gptu_src3_fields,		ARRAY_SIZE(gptu_src3_fields),		0},
+	{"SRC4",	GPTU_SRC4,		gptu_src4_fields,		ARRAY_SIZE(gptu_src4_fields),		0},
+	{"SRC5",	GPTU_SRC5,		gptu_src5_fields,		ARRAY_SIZE(gptu_src5_fields),		0},
+	{"SRC6",	GPTU_SRC6,		gptu_src6_fields,		ARRAY_SIZE(gptu_src6_fields),		0},
+	{"SRC7",	GPTU_SRC7,		gptu_src7_fields,		ARRAY_SIZE(gptu_src7_fields),		0},
 };
 
 static pmb887x_module_field_t afc_clc_fields[] = {

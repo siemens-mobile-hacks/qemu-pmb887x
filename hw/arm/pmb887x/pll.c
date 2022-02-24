@@ -50,6 +50,7 @@ struct pmb887x_pll_t {
 	uint32_t fstm;
 	uint32_t fahb;
 	uint32_t fcpu;
+	uint32_t fgpu;
 	
 	uint32_t osc;
 	uint32_t con0;
@@ -310,6 +311,10 @@ uint32_t pmb887x_pll_get_fahb(struct pmb887x_pll_t *p) {
 	return p->fahb;
 }
 
+uint32_t pmb887x_pll_get_fgptu(struct pmb887x_pll_t *p) {
+	return p->fgptu;
+}
+
 void pmb887x_pll_add_freq_update_callback(struct pmb887x_pll_t *p, void (*callback)(void *), void *opaque) {
 	p->callbacks = g_realloc(p->callbacks, (p->callbacks_count + 1) * sizeof(struct pmb887x_pll_callback_t));
 	p->callbacks[p->callbacks_count].opaque = opaque;
@@ -335,6 +340,7 @@ static void pll_realize(DeviceState *dev, Error **errp) {
 	pmb887x_src_init(&p->src, p->irq);
 	pmb887x_src_set(&p->src, MOD_SRC_SRE);
 	
+	p->fgptu = 1000000000;
 	p->fsys = p->xtal;
 	
 	p->callbacks = NULL;
