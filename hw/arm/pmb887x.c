@@ -381,11 +381,17 @@ void pmb887x_init(MachineState *machine, uint32_t board_id) {
 	
 	// GPTU0
 	DeviceState *gptu0 = pmb887x_new_dev(board->cpu, "GPTU0", nvic);
+	object_property_set_link(OBJECT(gptu0), "pll", OBJECT(pll), &error_fatal);
 	sysbus_realize_and_unref(SYS_BUS_DEVICE(gptu0), &error_fatal);
 	
 	// GPTU1
 	DeviceState *gptu1 = pmb887x_new_dev(board->cpu, "GPTU1", nvic);
+	object_property_set_link(OBJECT(gptu1), "pll", OBJECT(pll), &error_fatal);
 	sysbus_realize_and_unref(SYS_BUS_DEVICE(gptu1), &error_fatal);
+	
+	// AMC
+	DeviceState *amc = pmb887x_new_dev(board->cpu, "AMC", nvic);
+	sysbus_realize_and_unref(SYS_BUS_DEVICE(amc), &error_fatal);
 	
 	#else
 	pmb8876_io_bridge_set_nvic(nvic);

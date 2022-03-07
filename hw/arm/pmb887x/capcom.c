@@ -80,8 +80,7 @@ static int capcom_get_index_from_reg(uint32_t reg) {
 		case CAPCOM_T1_SRC:		return 1;
 		case CAPCOM_T0_SRC:		return 0;
 	};
-	error_report("pmb887x-capcom: unknown reg %d", reg);
-	abort();
+	hw_error("pmb887x-capcom: unknown reg %d", reg);
 	return -1;
 }
 
@@ -336,19 +335,15 @@ static void capcom_realize(DeviceState *dev, Error **errp) {
 	int irqn = 0;
 	
 	for (int i = 0; i < ARRAY_SIZE(p->t_src); i++) {
-		if (!p->t_irq[i]) {
-			error_report("pmb887x-scu: irq %d (T%d) not set", irqn, i);
-			abort();
-		}
+		if (!p->t_irq[i])
+			hw_error("pmb887x-scu: irq %d (T%d) not set", irqn, i);
 		pmb887x_src_init(&p->t_src[i], p->t_irq[i]);
 		irqn++;
 	}
 	
 	for (int i = 0; i < ARRAY_SIZE(p->cc_src); i++) {
-		if (!p->cc_irq[i]) {
-			error_report("pmb887x-scu: irq %d (CC%d) not set", irqn, i);
-			abort();
-		}
+		if (!p->cc_irq[i])
+			hw_error("pmb887x-scu: irq %d (CC%d) not set", irqn, i);
 		pmb887x_src_init(&p->cc_src[i], p->cc_irq[i]);
 		irqn++;
 	}

@@ -50,7 +50,7 @@ struct pmb887x_pll_t {
 	uint32_t fstm;
 	uint32_t fahb;
 	uint32_t fcpu;
-	uint32_t fgpu;
+	uint32_t fgptu;
 	
 	uint32_t osc;
 	uint32_t con0;
@@ -332,10 +332,8 @@ static void pll_init(Object *obj) {
 static void pll_realize(DeviceState *dev, Error **errp) {
 	struct pmb887x_pll_t *p = PMB887X_PLL(dev);
 	
-	if (!p->irq) {
-		error_report("pmb887x-pll: irq not set");
-		abort();
-	}
+	if (!p->irq)
+		hw_error("pmb887x-pll: irq not set");
 	
 	pmb887x_src_init(&p->src, p->irq);
 	pmb887x_src_set(&p->src, MOD_SRC_SRE);

@@ -45,6 +45,7 @@ struct pmb887x_rtc_t {
 	uint32_t rel;
 	uint32_t isnc;
 	uint32_t alarm;
+	uint32_t unk0;
 };
 
 static void rtc_update_state(struct pmb887x_rtc_t *p) {
@@ -70,7 +71,7 @@ static uint64_t rtc_io_read(void *opaque, hwaddr haddr, unsigned size) {
 		break;
 		
 		case RTC_CON:
-			value = p->con;
+			value = p->con | RTC_CON_ACCPOS;
 		break;
 		
 		case RTC_T14:
@@ -78,7 +79,7 @@ static uint64_t rtc_io_read(void *opaque, hwaddr haddr, unsigned size) {
 		break;
 		
 		case RTC_CNT:
-			value = p->cnt;
+			value = get_clock_realtime() / NANOSECONDS_PER_SECOND;
 		break;
 		
 		case RTC_REL:
@@ -91,6 +92,10 @@ static uint64_t rtc_io_read(void *opaque, hwaddr haddr, unsigned size) {
 		
 		case RTC_ALARM:
 			value = p->alarm;
+		break;
+		
+		case RTC_UNK0:
+			value = p->unk0;
 		break;
 		
 		case RTC_SRC:
@@ -147,6 +152,10 @@ static void rtc_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned si
 			p->alarm = value;
 		break;
 		
+		case RTC_UNK0:
+			p->unk0 = value;
+		break;
+		
 		case RTC_SRC:
 			pmb887x_src_set(&p->src, value);
 		break;
@@ -180,10 +189,8 @@ static void rtc_init(Object *obj) {
 static void rtc_realize(DeviceState *dev, Error **errp) {
 	struct pmb887x_rtc_t *p = PMB887X_RTC(dev);
 	
-	if (!p->irq) {
-		error_report("pmb887x-rtc: irq not set");
-		abort();
-	}
+	if (!p->irq)
+		hw_error("pmb887x-rtc: irq not set");
 	
 	pmb887x_clc_init(&p->clc);
 	pmb887x_src_init(&p->src, p->irq);

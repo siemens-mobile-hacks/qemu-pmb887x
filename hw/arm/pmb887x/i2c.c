@@ -86,8 +86,7 @@ static int i2c_irq_router(void *opaque, int event_id) {
 		case I2C_ISR_I2C_ERR_INT:	return I2C_ERROR_IRQ;
 	}
 	
-	error_report("Unknown event id: %d\n", event_id);
-	abort();
+	hw_error("Unknown event id: %d\n", event_id);
 	
 	return 0;
 }
@@ -99,8 +98,7 @@ static uint32_t i2c_get_rx_align(pmb887x_i2c_t *p) {
 		case I2C_FIFOCFG_RXFA_WORD:			return 4;
 	}
 	
-	error_report("Unknown RXFA value: %08X\n", (p->fifocfg & I2C_FIFOCFG_RXFA));
-	abort();
+	hw_error("Unknown RXFA value: %08X\n", (p->fifocfg & I2C_FIFOCFG_RXFA));
 }
 
 static uint32_t i2c_get_tx_align(pmb887x_i2c_t *p) {
@@ -110,8 +108,7 @@ static uint32_t i2c_get_tx_align(pmb887x_i2c_t *p) {
 		case I2C_FIFOCFG_TXFA_WORD:			return 4;
 	}
 	
-	error_report("Unknown TXFA value: %08X\n", (p->fifocfg & I2C_FIFOCFG_TXFA));
-	abort();
+	hw_error("Unknown TXFA value: %08X\n", (p->fifocfg & I2C_FIFOCFG_TXFA));
 }
 
 static uint32_t i2c_get_rx_burst_size(pmb887x_i2c_t *p) {
@@ -123,10 +120,8 @@ static uint32_t i2c_get_tx_burst_size(pmb887x_i2c_t *p) {
 }
 
 static void i2c_trigger_sreq(pmb887x_i2c_t *p) {
-	if (p->wait_for_sreq) {
-		DPRINTF("double i2c_trigger_sreq\n");
-		abort();
-	}
+	if (p->wait_for_sreq)
+		hw_error("double i2c_trigger_sreq\n");
 	
 	p->wait_for_sreq = true;
 	timer_mod(p->timer, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + I2C_TX_BYTE_TIME);
@@ -218,6 +213,7 @@ static void i2c_timer_reset(void *opaque) {
 		
 		if (!p->last_mode) {
 			i2c_end_transfer(p->bus);
+			p->busy = false;
 			DPRINTF("stop\n");
 		}
 	}
@@ -378,9 +374,9 @@ static void i2c_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned si
 			if ((value & I2C_ENDDCTRL_SETEND)) {
 				if (p->last_mode) {
 					i2c_end_transfer(p->bus);
+					p->busy = false;
 					DPRINTF("stop\n");
 				}
-				p->busy = false;
 			}
 			
 			if ((value & I2C_ENDDCTRL_SETRSC)) {
@@ -417,6 +413,7 @@ static void i2c_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned si
 		case I2C_TPSCTRL:
 			p->tx_cnt = 0;
 			p->tpsctrl = value;
+			p->busy = true;
 			i2c_trigger_sreq(p);
 		break;
 		

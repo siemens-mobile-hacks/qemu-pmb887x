@@ -343,28 +343,22 @@ static void scu_realize(DeviceState *dev, Error **errp) {
 	int irqn = 0;
 	
 	for (int i = 0; i < ARRAY_SIZE(p->exti_src); i++) {
-		if (!p->exti_irq[i]) {
-			error_report("pmb887x-scu: irq %d (EXTI_%d) not set", irqn, i);
-			abort();
-		}
+		if (!p->exti_irq[i])
+			hw_error("pmb887x-scu: irq %d (EXTI_%d) not set", irqn, i);
 		pmb887x_src_init(&p->exti_src[i], p->exti_irq[i]);
 		irqn++;
 	}
 	
 	for (int i = 0; i < ARRAY_SIZE(p->dsp_src); i++) {
-		if (!p->dsp_irq[i]) {
-			error_report("pmb887x-scu: irq %d (DSP_%d) not set", irqn, i);
-			abort();
-		}
+		if (!p->dsp_irq[i])
+			hw_error("pmb887x-scu: irq %d (DSP_%d) not set", irqn, i);
 		pmb887x_src_init(&p->dsp_src[i], p->dsp_irq[i]);
 		irqn++;
 	}
 	
 	for (int i = 0; i < ARRAY_SIZE(p->unk_src); i++) {
-		if (!p->unk_irq[i]) {
-			error_report("pmb887x-scu: irq %d (UNK_%d) not set", irqn, i);
-			abort();
-		}
+		if (!p->unk_irq[i])
+			hw_error("pmb887x-scu: irq %d (UNK_%d) not set", irqn, i);
 		pmb887x_src_init(&p->unk_src[i], p->unk_irq[i]);
 		irqn++;
 	}

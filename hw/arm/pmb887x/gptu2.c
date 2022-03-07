@@ -31,15 +31,15 @@
 #define TYPE_PMB887X_GPTU	"pmb887x-gptu"
 #define PMB887X_GPTU(obj)	OBJECT_CHECK(pmb887x_gptu_t, (obj), TYPE_PMB887X_GPTU)
 
-#define GPTU_OVERFLOW	0x100
-
-const char *TIMER_NAMES[] = {"T0A", "T0B", "T0C", "T0D", "T1A", "T1B", "T1C", "T1D"};
-
 enum {
-	INPUT_BYPASS = 0,
-	INPUT_CNT0,
-	INPUT_CNT1,
-	INPUT_CONCAT
+	T0A = 0,
+	T0B,
+	T0C,
+	T0D,
+	T1A,
+	T1B,
+	T1C,
+	T1D,
 };
 
 enum {
@@ -58,7 +58,23 @@ enum {
 	EV_SR00			= 12,
 	EV_SR01			= 13,
 	EV_SR10			= 14,
-	EV_SR11			= 15,
+	EV_SR11			= 15
+};
+
+const char *TIMER_NAMES[] = {"T0A", "T0B", "T0C", "T0D", "T1A", "T1B", "T1C", "T1D"};
+
+enum {
+	INPUT_BYPASS = 0,
+	INPUT_CNT0,
+	INPUT_CNT1,
+	INPUT_CONCAT
+};
+
+enum {
+	EV_OVERFLOW_A	= 1 << 0,
+	EV_OVERFLOW_B	= 1 << 1,
+	EV_OVERFLOW_C	= 1 << 2,
+	EV_OVERFLOW_D	= 1 << 3,
 };
 
 typedef struct {
@@ -67,40 +83,44 @@ typedef struct {
 } pmb887x_gptu_ev_t;
 
 typedef struct {
-	int id;
-	int prev;
-	int next;
 	bool enabled;
-	bool concat;
-	bool ev_ssr[2];
+	uint8_t width;
 	uint64_t start;
 	uint64_t counter;
 	uint64_t reload;
+	uint64_t overflow;
+	uint32_t events;
+	
+	int from;
+	int to;
 } pmb887x_gptu_timer_t;
+
+typedef struct {
+	int id;
+	uint32_t shift;
+	bool overflow_ev;
+} pmb887x_gptu_map_t;
 
 typedef struct {
 	SysBusDevice parent_obj;
 	MemoryRegion mmio;
 	
 	qemu_irq irq[8];
-	QEMUTimer *timer;
 	
 	bool enabled;
 	uint32_t freq;
 	
-	int from;
-	int to;
-	
 	pmb887x_clc_reg_t clc;
 	pmb887x_src_reg_t src[8];
 	
-	pmb887x_gptu_timer_t timers[8];
+	pmb887x_gptu_map_t timer_map[8];
+	pmb887x_gptu_timer_t timer[8];
+	
 	pmb887x_gptu_ev_t events[16];
-	int events_ssr[2][2];
+	int ssr[2][2];
+	uint32_t wait_overflow;
 	
 	struct pmb887x_pll_t *pll;
-	
-	uint64_t next;
 	
 	uint32_t t01irs;
 	uint32_t t01ots;
@@ -118,50 +138,87 @@ typedef struct {
 	uint32_t srsel;
 } pmb887x_gptu_t;
 
-static void gptu_update_freq(pmb887x_gptu_t *p) {
-	uint8_t rmc = pmb887x_clc_get_rmc(&p->clc);
+static uint64_t gptpu_get_timer_counter(pmb887x_gptu_t *p, pmb887x_gptu_timer_t *timer, uint64_t now, bool real) {
+	uint64_t counter = timer->counter;
+	uint64_t overflow = 1 << timer->width;
 	
-	p->freq = rmc > 0 ? pmb887x_pll_get_fsys(p->pll) / rmc : 0;
-	p->enabled = pmb887x_clc_is_enabled(&p->clc) && p->freq > 0;
+	if (p->enabled) {
+		uint64_t delta_ns = now - timer->start;
+		counter += muldiv64(delta_ns, p->freq, NANOSECONDS_PER_SECOND);
+	}
 	
-	DPRINTF("fgptu=%d %s\n", p->freq, p->enabled ? "[ON]" : "[OFF]");
+	return real ? counter : counter % overflow;
 }
 
-static uint64_t gptu_ticks_to_ns(pmb887x_gptu_t *p, uint64_t ticks) {
+static uint64_t gptpu_ticks_to_ns(pmb887x_gptu_t *p, uint64_t ticks) {
     return muldiv64(ticks, NANOSECONDS_PER_SECOND, p->freq);
 }
 
-static uint64_t gptu_reload_counter(pmb887x_gptu_timer_t *timer, uint64_t counter) {
-	if (!timer->reload)
-		return counter % GPTU_OVERFLOW;
+static uint32_t gptu_get_counter(pmb887x_gptu_t *p, int timer, int size) {
+	uint32_t value = 0;
+	uint64_t now = pmb887x_pll_get_hw_ns(p->pll);
+	uint64_t timer_counter_cache[8] = {0};
 	
-	while (counter > GPTU_OVERFLOW) {
-		counter -= GPTU_OVERFLOW;
-		counter += timer->reload;
+	for (int i = 0; i < size; i++) {
+		pmb887x_gptu_map_t *map = &p->timer_map[timer * 4 + i];
+		pmb887x_gptu_timer_t *timer = &p->timer[map->id];
+		
+		if (!timer_counter_cache[map->id])
+			timer_counter_cache[map->id] = gptpu_get_timer_counter(p, timer, now, false);
+		
+		value |= (timer_counter_cache[map->id] >> map->shift) & 0xFF;
+	}
+	return value;
+}
+
+static void gptu_set_counter(pmb887x_gptu_t *p, int timer, uint32_t value, int size) {
+	for (int i = 0; i < size; i++) {
+		pmb887x_gptu_map_t *map = &p->timer_map[timer * 4 + i];
+		pmb887x_gptu_timer_t *timer = &p->timer[map->id];
+		timer->counter = (timer->counter & (0xFF << map->shift)) | ((value >> (i * 8)) & 0xFF);
+	}
+}
+
+static uint32_t gptu_get_reload(pmb887x_gptu_t *p, int timer, int size) {
+	uint32_t value = 0;
+	for (int i = 0; i < size; i++) {
+		pmb887x_gptu_map_t *map = &p->timer_map[timer * 4 + i];
+		pmb887x_gptu_timer_t *timer = &p->timer[map->id];
+		value |= (timer->reload >> map->shift) & 0xFF;
+	}
+	return value;
+}
+
+static void gptu_set_reload(pmb887x_gptu_t *p, int timer, uint32_t value, int size) {
+	if (value != 0) {
+	//	hw_error("reload value not supported");
+	}
+	
+	for (int i = 0; i < size; i++) {
+		pmb887x_gptu_map_t *map = &p->timer_map[timer * 4 + i];
+		pmb887x_gptu_timer_t *timer = &p->timer[map->id];
+		timer->reload = (timer->reload & (0xFF << map->shift)) | ((value >> (i * 8)) & 0xFF);
+	}
+}
+
+static void gptu_update_freq(pmb887x_gptu_t *p) {
+	uint8_t rmc = pmb887x_clc_get_rmc(&p->clc);
+	
+	p->freq = rmc > 0 ? pmb887x_pll_get_fgptu(p->pll) / rmc : 0;
+	p->enabled = pmb887x_clc_is_enabled(&p->clc) && p->freq > 0;
+	
+	DPRINTF("fgptu=%d, fgptu / RMC=%d %s\n", pmb887x_pll_get_fgptu(p->pll), p->freq, p->enabled ? "[ON]" : "[OFF]");
+}
+
+static uint64_t gptu_reload_counter(uint64_t counter, uint64_t overflow, uint64_t reload) {
+	if (!reload)
+		return counter % overflow;
+	
+	while (counter > overflow) {
+		counter -= overflow;
+		counter += reload;
 	}
 	return counter;
-}
-
-static uint64_t gptu_get_timer_counter(pmb887x_gptu_t *p, pmb887x_gptu_timer_t *timer, uint64_t now, bool real) {
-	uint64_t counter = timer->counter;
-	
-	if (timer->enabled) {
-		if (timer->concat) {
-			counter += gptu_get_timer_counter(p, &p->timers[timer->prev], now, true) / GPTU_OVERFLOW;
-		} else {
-			counter += muldiv64(now - timer->start, p->freq, NANOSECONDS_PER_SECOND);
-		}
-	}
-	
-	return real ? counter : gptu_reload_counter(timer, counter);
-}
-
-static void gptu_trigger_ev_irq(pmb887x_gptu_t *p, int ev_id) {
-	pmb887x_gptu_ev_t *ev = &p->events[ev_id];
-	for (int i = 0; i < 8; i++) {
-		if ((ev->mask) & (1 << i))
-			pmb887x_src_set(&p->src[i], MOD_SRC_SETR);
-	}
 }
 
 static int gptu_get_ssr_ev(int id, int n) {
@@ -178,50 +235,13 @@ static int gptu_get_ssr_ev(int id, int n) {
 	return -1;
 }
 
-static void gptu_sync_timer(pmb887x_gptu_t *p) {
-	if (p->from == -1)
-		return;
-	
-	uint64_t now = pmb887x_pll_get_hw_ns(p->pll);
-	
-	p->next = now + p->freq;
-	
-	for (int i = p->from; i < p->to; i++) {
-		int timer_id = i % 8;
-		pmb887x_gptu_timer_t *timer = &p->timers[timer_id];
-		
-		if (timer->enabled && !timer->start && !timer->concat)
-			timer->start = now;
-		
-		uint64_t counter = gptu_get_timer_counter(p, timer, now, true);
-		if (counter >= GPTU_OVERFLOW) {
-			int timer_group = timer_id / 4;
-			for (int j = 0; j < 2; j++) {
-				if (timer->ev_ssr[j] && p->events_ssr[timer_group][j] == timer_id)
-					gptu_trigger_ev_irq(p, gptu_get_ssr_ev(timer_group, j));
-			}
-			
-			pmb887x_gptu_timer_t *next_timer = &p->timers[timer->next];
-			if (next_timer->concat)
-				next_timer->counter += counter / GPTU_OVERFLOW;
-			
-			if (timer->concat) {
-				timer->counter = gptu_reload_counter(timer, counter);
-				counter = timer->counter;
-			} else {
-				timer->start = timer->enabled ? now : 0;
-				timer->counter = gptu_reload_counter(timer, counter);
-				counter = timer->counter;
-			}
-		} else {
-			if (!timer->concat && p->enabled) {
-				p->next = MIN(p->next, now + gptu_ticks_to_ns(p, GPTU_OVERFLOW - counter));
-			}
-		}
+static bool gptu_is_wait_overflow(pmb887x_gptu_t *p, int id, int timer_id) {
+	for (int i = 0; i < 2; i++) {
+		int ev_id = gptu_get_ssr_ev(id, i);
+		if (p->events[ev_id].mask)
+			return p->ssr[id][i] == timer_id;
 	}
-	
-	if (p->enabled)
-		timer_mod(p->timer, pmb887x_pll_hw_to_real_ns(p->pll, p->next));
+	return false;
 }
 
 static void gptu_update_events(pmb887x_gptu_t *p) {
@@ -232,119 +252,134 @@ static void gptu_update_events(pmb887x_gptu_t *p) {
 	
 	for (int i = 0; i < 8; i++) {
 		int source_id = 8 - i - 1;
-		int event_id = (p->srsel >> (4 * i)) & 0xF;
+		int event_id = (p->srsel >> (4 * source_id)) & 0xF;
 		p->events[event_id].mask |= (1 << source_id);
 	}
 	
-	p->events_ssr[0][0] = (p->t01ots & GPTU_T01OTS_SSR00) >> GPTU_T01OTS_SSR00_SHIFT;
-	p->events_ssr[0][1] = (p->t01ots & GPTU_T01OTS_SSR01) >> GPTU_T01OTS_SSR01_SHIFT;
-	p->events_ssr[1][0] = ((p->t01ots & GPTU_T01OTS_SSR10) >> GPTU_T01OTS_SSR10_SHIFT) + 4;
-	p->events_ssr[1][1] = ((p->t01ots & GPTU_T01OTS_SSR11) >> GPTU_T01OTS_SSR11_SHIFT) + 4;
+	p->ssr[0][0] = (p->t01ots & GPTU_T01OTS_SSR00) >> GPTU_T01OTS_SSR00_SHIFT;
+	p->ssr[0][1] = (p->t01ots & GPTU_T01OTS_SSR01) >> GPTU_T01OTS_SSR01_SHIFT;
+	p->ssr[1][0] = (p->t01ots & GPTU_T01OTS_SSR00) >> GPTU_T01OTS_SSR10_SHIFT;
+	p->ssr[1][1] = (p->t01ots & GPTU_T01OTS_SSR01) >> GPTU_T01OTS_SSR11_SHIFT;
+	
+	for (int i = 0; i < 8; i++)
+		p->timer_map[i].overflow_ev = gptu_is_wait_overflow(p, i / 4, i % 4);
+}
+
+static void gptu_ptimer_reset(void *opaque) {
+	pmb887x_gptu_t *p = (pmb887x_gptu_t *) opaque;
+	
+	if (!p->enabled)
+		return;
+	
+	uint64_t now = pmb887x_pll_get_hw_ns(p->pll);
+	uint64_t next = p->freq * 60;
 	
 	for (int i = 0; i < 8; i++) {
-		for (int j = 0; j < 2; j++) {
-			int timer_group = i / 4;
-			int ev_id = gptu_get_ssr_ev(timer_group, j);
-			p->timers[i].ev_ssr[j] = p->events[ev_id].mask && p->events_ssr[timer_group][j] == i;
+		pmb887x_gptu_timer_t *timer = &p->timer[i];
+		if (!timer->start)
+			timer->start = now;
+		
+		uint64_t counter = gptpu_get_timer_counter(p, timer, now, true);
+		if (counter >= timer->overflow) {
+			timer->start = now;
+			timer->counter = gptu_reload_counter(timer->counter, timer->overflow, timer->reload);
+			counter = timer->counter;
 		}
+		
+		for (int i = timer->from; i <= timer->to; i++) {
+			if (p->timer_map[i].overflow_ev) {
+				
+			}
+		}
+		
+		next = MIN(next, now + gptpu_ticks_to_ns(p, timer->overflow - counter));
 	}
 	
-	gptu_sync_timer(p);
-}
-
-static uint32_t gptu_get_counter(pmb887x_gptu_t *p, int id, int size) {
+	DPRINTF("next=%ld\n", pmb887x_pll_hw_to_real_ns(p->pll, next-now));
+	//timer_mod(p->timer, pmb887x_pll_hw_to_real_ns(p->pll, next));
+	
+	/*
+	
 	uint64_t now = pmb887x_pll_get_hw_ns(p->pll);
-	uint32_t value = 0;
-	for (int i = 0; i < size; i++) {
-		pmb887x_gptu_timer_t *timer = &p->timers[id * 4 + i];
-		value |= gptu_get_timer_counter(p, timer, now, false) << (i * 8);
+	uint64_t overflow = p->overflow + 1;
+	
+	if (!p->start)
+		p->start = now;
+	
+	uint64_t counter = tpu_get_time(p, true);
+	if (counter >= overflow) {
+		p->start = now;
+		p->counter = p->counter % overflow;
+		p->irq_fired = 0;
+		
+		counter = p->counter;
 	}
-	return value;
-}
-
-static void gptu_set_counter(pmb887x_gptu_t *p, int id, uint32_t value, int size) {
-	gptu_sync_timer(p);
-	for (int i = 0; i < size; i++) {
-		pmb887x_gptu_timer_t *timer = &p->timers[id * 4 + i];
-		timer->counter = (value >> (i * 8)) & 0xFF;
-		timer->start = 0;
-	}
-	gptu_sync_timer(p);
-}
-
-static uint32_t gptu_get_reload(pmb887x_gptu_t *p, int id, int size) {
-	uint32_t value = 0;
-	for (int i = 0; i < size; i++) {
-		pmb887x_gptu_timer_t *timer = &p->timers[id * 4 + i];
-		value |= timer->reload << (i * 8);
-	}
-	return value;
-}
-
-static void gptu_set_reload(pmb887x_gptu_t *p, int id, uint32_t value, int size) {
-	gptu_sync_timer(p);
-	for (int i = 0; i < size; i++) {
-		pmb887x_gptu_timer_t *timer = &p->timers[id * 4 + i];
-		timer->reload = (value >> (i * 8)) & 0xFF;
-	}
+	
+	p->next = now + tpu_ticks_to_ns(p, overflow - counter);
+	p->next = tpu_run_irq(p, counter, now, p->next);
+	
+	// Schedule timer for next INTx or overflow
+	timer_mod(p->timer, pmb887x_pll_hw_to_real_ns(p->pll, p->next));*/
 }
 
 static void gptu_rebuild_timers(pmb887x_gptu_t *p) {
-	int last_head = -1;
-	bool processed[8] = {false};
-	int prev_timer_id = 7;
+	uint32_t save_counter[2];
+	uint32_t save_reload[2];
+	for (int i = 0; i < 2; i++) {
+		save_counter[i] = gptu_get_counter(p, i, 4);
+		save_reload[i] = gptu_get_reload(p, i, 4);
+	}
 	
-	p->from = -1;
-	p->to = -1;
-		
-	for (int i = 0; i < 16; i++) {
+	for (int i = 0; i < 8; i++) {
+		p->timer_map[i].id = -1;
+		p->timer_map[i].shift = 0;
+		p->timer[i].enabled = false;
+		p->timer[i].width = 0;
+	}
+	
+	int last_head = -1;
+	for (size_t i = 0; i < 16; i++) {
 		int timer_id = i % 8;
 		
-		if (processed[timer_id])
+		if (p->timer_map[timer_id].id != -1)
 			continue;
 		
 		uint32_t shift = timer_id * 2;
 		uint32_t input = (p->t01irs >> shift) & 3;
 		
-		p->timers[timer_id].id = timer_id;
-		p->timers[timer_id].enabled = p->enabled && (p->t012run & (1 << timer_id)) != 0;
-		
 		if (input == INPUT_BYPASS) {
 			last_head = timer_id;
-			
-			if (p->from == -1)
-				p->from = i;
-			
-			p->to = i;
-			
-			p->timers[timer_id].concat = false;
-			p->timers[timer_id].next = (i + 1) % 8;
-			p->timers[timer_id].prev = prev_timer_id;
-			processed[timer_id] = true;
+			p->timer_map[timer_id].id = last_head;
+			p->timer_map[timer_id].shift = 0;
+			p->timer[timer_id].enabled = true;
+			p->timer[timer_id].width = 8;
+			p->timer[timer_id].from = timer_id;
+			p->timer[timer_id].to = timer_id;
 		} else if (input == INPUT_CONCAT) {
 			if (last_head != -1) {
-				p->timers[timer_id].concat = true;
-				p->timers[timer_id].next = (i + 1) % 8;
-				p->timers[timer_id].prev = prev_timer_id;
-				processed[timer_id] = true;
-				p->to = i;
+				p->timer[last_head].width += 8;
+				p->timer[last_head].to = timer_id;
+				p->timer_map[timer_id].id = last_head;
+				p->timer_map[timer_id].shift = p->timer[last_head].width;
 			}
 		} else {
 			hw_error("Unsupported gptu input source: %08X", input);
 		}
 		
-		prev_timer_id = timer_id;
+		if (last_head >= 0)
+			p->timer[last_head].overflow = 1ULL << p->timer[last_head].width;
 	}
 	
-	if (last_head == -1)
-		hw_error("Main timer not found!");
+	for (int i = 0; i < 2; i++) {
+		gptu_set_counter(p, i, save_counter[i], 4);
+		gptu_set_reload(p, i, save_reload[i], 4);
+	}
 	
-	gptu_sync_timer(p);
-}
-
-static void gptu_ptimer_reset(void *opaque) {
-	pmb887x_gptu_t *p = (pmb887x_gptu_t *) opaque;
-	gptu_sync_timer(p);
+	for (int i = 0; i < 8; i++) {
+		if (p->timer[i].enabled) {
+			DPRINTF("%s: %dbit\n", TIMER_NAMES[i], p->timer[i].width);
+		}
+	}
 }
 
 static int get_src_index_by_addr(hwaddr haddr) {
@@ -494,9 +529,7 @@ static void gptu_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned s
 	switch (haddr) {
 		case GPTU_CLC:
 			pmb887x_clc_set(&p->clc, value);
-			gptu_sync_timer(p);
 			gptu_update_freq(p);
-			gptu_rebuild_timers(p);
 		break;
 		
 		case GPTU_ID:
@@ -505,7 +538,6 @@ static void gptu_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned s
 		
 		case GPTU_T01IRS:
 			p->t01irs = value;
-			gptu_sync_timer(p);
 			gptu_rebuild_timers(p);
 		break;
 		
@@ -588,8 +620,6 @@ static void gptu_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned s
 		
 		case GPTU_T012RUN:
 			p->t012run = value;
-			gptu_sync_timer(p);
-			gptu_rebuild_timers(p);
 		break;
 		
 		case GPTU_SRSEL:
@@ -648,12 +678,10 @@ static void gptu_realize(DeviceState *dev, Error **errp) {
 		pmb887x_src_init(&p->src[i], p->irq[i]);
 	}
 	
-    p->timer = timer_new_ns(QEMU_CLOCK_VIRTUAL, gptu_ptimer_reset, p);
-    
 	gptu_update_freq(p);
 	gptu_update_events(p);
 	gptu_rebuild_timers(p);
-	gptu_sync_timer(p);
+	gptu_ptimer_reset(p);
 }
 
 static Property gptu_properties[] = {

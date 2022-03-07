@@ -129,8 +129,7 @@ static void pasic_realize(DeviceState *dev, Error **errp) {
 	} else if (p->revision == 1094) {
 		memcpy(p->regs, regs_d1094xx, sizeof(regs_d1094xx));
 	} else {
-		error_report("pmb887x-pasic: unknown revision %d", p->revision);
-		abort();
+		hw_error("pmb887x-pasic: unknown revision %d", p->revision);
 	}
 }
 

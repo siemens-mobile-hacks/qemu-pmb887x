@@ -458,19 +458,15 @@ static void tpu_realize(DeviceState *dev, Error **errp) {
 	int index = 0;
 	
 	for (int i = 0; i < ARRAY_SIZE(p->src); i++) {
-		if (!p->irq[i]) {
-			error_report("pmb887x-tpu: irq %d (TPU_INT%d) not set", index++, i);
-			abort();
-		}
+		if (!p->irq[i])
+			hw_error("pmb887x-tpu: irq %d (TPU_INT%d) not set", index++, i);
 		
 		pmb887x_src_init(&p->src[i], p->irq[i]);
 	}
 	
 	for (int i = 0; i < ARRAY_SIZE(p->unk_src); i++) {
-		if (!p->unk_irq[i]) {
-			error_report("pmb887x-tpu: irq %d (TPU_UNK%d) not set", index++, i);
-			abort();
-		}
+		if (!p->unk_irq[i])
+			hw_error("pmb887x-tpu: irq %d (TPU_UNK%d) not set", index++, i);
 		
 		pmb887x_src_init(&p->unk_src[i], p->unk_irq[i]);
 	}

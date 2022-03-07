@@ -3,6 +3,7 @@
  * */
 #include "qemu/osdep.h"
 #include "hw/irq.h"
+#include "hw/hw.h"
 #include "hw/sysbus.h"
 #include "migration/vmstate.h"
 #include "ui/console.h"
@@ -124,8 +125,7 @@ static int dif_get_index_from_reg(uint32_t reg) {
 		case DIF_CON13:		return 13;
 		case DIF_CON14:		return 14;
 	};
-	error_report("pmb887x-dif: unknown reg %d", reg);
-	abort();
+	hw_error("pmb887x-dif: unknown reg %d", reg);
 	return -1;
 }
 

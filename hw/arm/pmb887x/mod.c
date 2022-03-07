@@ -1,5 +1,6 @@
 #include "hw/arm/pmb887x/mod.h"
 #include "hw/arm/pmb887x/regs.h"
+#include "hw/hw.h"
 #include "qemu/error-report.h"
 
 #define MOD_DEBUG
@@ -40,10 +41,8 @@ void pmb887x_src_init(pmb887x_src_reg_t *reg, qemu_irq irq) {
 	reg->value = 0;
 	reg->last_irq_state = false;
 	
-	if (!reg->irq) {
-		error_report("[pmb887x-mod] irq is not set\n");
-		abort();
-	}
+	if (!reg->irq)
+		hw_error("[pmb887x-mod] irq is not set\n");
 }
 
 uint32_t pmb887x_src_get(pmb887x_src_reg_t *reg) {
@@ -125,10 +124,8 @@ static void pmb887x_srb_set_irq(pmb887x_srb_reg_t *reg, int n, int level) {
 	int irq_n = reg->irq_router(reg->irq_router_opaque, n);
 	uint8_t mask = 1 << n;
 	
-	if (irq_n < 0 || irq_n >= reg->irq_n) {
-		error_report("[pmb887x-mod] invalid irq index: %d\n", irq_n);
-		abort();
-	}
+	if (irq_n < 0 || irq_n >= reg->irq_n)
+		hw_error("[pmb887x-mod] invalid irq index: %d\n", irq_n);
 	
 	if (level != 0) {
 		reg->irq_events[irq_n] |= mask;

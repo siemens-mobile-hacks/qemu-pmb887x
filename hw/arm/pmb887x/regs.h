@@ -1531,16 +1531,41 @@
 
 // AMC [MOD_NUM=F024, MOD_REV=00, MOD_32BIT=C0]
 // Looks like AMC (Analog Measurement Controller? ADC?) module, but not sure.
-#define AMC_IO_SIZE	0x00000200
+#define AMC_IO_SIZE				0x00000200
 /* Clock Control Register */
-#define AMC_CLC		0x00
+#define AMC_CLC					0x00
 
 /* Module Identifier Register */
-#define AMC_ID		0x08
+#define AMC_ID					0x08
+
+#define AMC_CON0				0x14
+#define AMC_CON0_CH				(0xF << 28)
+#define AMC_CON0_CH_SHIFT		28
+
+#define AMC_CON1				0x18
+
+#define AMC_STAT				0x1C
+#define AMC_STAT_AVAIL			(0x7 << 0)
+#define AMC_STAT_AVAIL_SHIFT	0
+#define AMC_STAT_BUSY			(1 << 30)
+#define AMC_STAT_BUSY_SHIFT		30
+#define AMC_STAT_READY			(1 << 31)
+#define AMC_STAT_READY_SHIFT	31
+
+#define AMC_FIFO0				0x20
+#define AMC_FIFO1				0x24
+#define AMC_FIFO2				0x28
+#define AMC_FIFO3				0x2C
+#define AMC_FIFO4				0x30
+#define AMC_FIFO5				0x34
+#define AMC_FIFO6				0x38
+#define AMC_FIFO7				0x3C
+
+#define AMC_CON2				0x40
 
 /* Service Routing Control Register */
-#define AMC_SRC0	0xF0
-#define AMC_SRC1	0xF4
+#define AMC_SRC0				0xF0
+#define AMC_SRC1				0xF4
 
 
 // CAPCOM [MOD_NUM=0050, MOD_REV=00, MOD_32BIT=00]
@@ -2551,627 +2576,717 @@
 
 // GPTU [MOD_NUM=0001, MOD_REV=00, MOD_32BIT=C0]
 // GPTU from Tricore TC1765 official public datasheet
-#define GPTU_IO_SIZE				0x00000100
+#define GPTU_IO_SIZE						0x00000100
 /* Clock Control Register */
-#define GPTU_CLC					0x00
+#define GPTU_CLC							0x00
 
 /* Module Identifier Register */
-#define GPTU_ID						0x08
+#define GPTU_ID								0x08
 
-#define GPTU_T01IRS					0x10
-#define GPTU_T01IRS_T0AINS			(0x3 << 0)		 // T0A Input Selection
-#define GPTU_T01IRS_T0AINS_SHIFT	0
-#define GPTU_T01IRS_T0AINS_BYPASS	0x0
-#define GPTU_T01IRS_T0AINS_CNT0		0x1
-#define GPTU_T01IRS_T0AINS_CNT1		0x2
-#define GPTU_T01IRS_T0AINS_CONCAT	0x3
-#define GPTU_T01IRS_T0BINS			(0x3 << 2)		 // T0B Input Selection
-#define GPTU_T01IRS_T0BINS_SHIFT	2
-#define GPTU_T01IRS_T0BINS_BYPASS	0x0
-#define GPTU_T01IRS_T0BINS_CNT0		0x4
-#define GPTU_T01IRS_T0BINS_CNT1		0x8
-#define GPTU_T01IRS_T0BINS_CONCAT	0xC
-#define GPTU_T01IRS_T0CINS			(0x3 << 4)		 // T0C Input Selection
-#define GPTU_T01IRS_T0CINS_SHIFT	4
-#define GPTU_T01IRS_T0CINS_BYPASS	0x0
-#define GPTU_T01IRS_T0CINS_CNT0		0x10
-#define GPTU_T01IRS_T0CINS_CNT1		0x20
-#define GPTU_T01IRS_T0CINS_CONCAT	0x30
-#define GPTU_T01IRS_T0DINS			(0x3 << 6)		 // T0D Input Selection
-#define GPTU_T01IRS_T0DINS_SHIFT	6
-#define GPTU_T01IRS_T0DINS_BYPASS	0x0
-#define GPTU_T01IRS_T0DINS_CNT0		0x40
-#define GPTU_T01IRS_T0DINS_CNT1		0x80
-#define GPTU_T01IRS_T0DINS_CONCAT	0xC0
-#define GPTU_T01IRS_T1AINS			(0x3 << 8)		 // T1A Input Selection
-#define GPTU_T01IRS_T1AINS_SHIFT	8
-#define GPTU_T01IRS_T1AINS_BYPASS	0x0
-#define GPTU_T01IRS_T1AINS_CNT0		0x100
-#define GPTU_T01IRS_T1AINS_CNT1		0x200
-#define GPTU_T01IRS_T1AINS_CONCAT	0x300
-#define GPTU_T01IRS_T1BINS			(0x3 << 10)		 // T1B Input Selection
-#define GPTU_T01IRS_T1BINS_SHIFT	10
-#define GPTU_T01IRS_T1BINS_BYPASS	0x0
-#define GPTU_T01IRS_T1BINS_CNT0		0x400
-#define GPTU_T01IRS_T1BINS_CNT1		0x800
-#define GPTU_T01IRS_T1BINS_CONCAT	0xC00
-#define GPTU_T01IRS_T1CINS			(0x3 << 12)		 // T1C Input Selection
-#define GPTU_T01IRS_T1CINS_SHIFT	12
-#define GPTU_T01IRS_T1CINS_BYPASS	0x0
-#define GPTU_T01IRS_T1CINS_CNT0		0x1000
-#define GPTU_T01IRS_T1CINS_CNT1		0x2000
-#define GPTU_T01IRS_T1CINS_CONCAT	0x3000
-#define GPTU_T01IRS_T1DINS			(0x3 << 14)		 // T1D Input Selection
-#define GPTU_T01IRS_T1DINS_SHIFT	14
-#define GPTU_T01IRS_T1DINS_BYPASS	0x0
-#define GPTU_T01IRS_T1DINS_CNT0		0x4000
-#define GPTU_T01IRS_T1DINS_CNT1		0x8000
-#define GPTU_T01IRS_T1DINS_CONCAT	0xC000
-#define GPTU_T01IRS_T0AREL			(1 << 16)		 // T0A Reload Source Selection
-#define GPTU_T01IRS_T0AREL_SHIFT	16
-#define GPTU_T01IRS_T0BREL			(1 << 17)		 // T0B Reload Source Selection
-#define GPTU_T01IRS_T0BREL_SHIFT	17
-#define GPTU_T01IRS_T0CREL			(1 << 18)		 // T0C Reload Source Selection
-#define GPTU_T01IRS_T0CREL_SHIFT	18
-#define GPTU_T01IRS_T0DREL			(1 << 19)		 // T0D Reload Source Selection
-#define GPTU_T01IRS_T0DREL_SHIFT	19
-#define GPTU_T01IRS_T1AREL			(1 << 20)		 // T1A Reload Source Selection
-#define GPTU_T01IRS_T1AREL_SHIFT	20
-#define GPTU_T01IRS_T1BREL			(1 << 21)		 // T1B Reload Source Selection
-#define GPTU_T01IRS_T1BREL_SHIFT	21
-#define GPTU_T01IRS_T1CREL			(1 << 22)		 // T1C Reload Source Selection
-#define GPTU_T01IRS_T1CREL_SHIFT	22
-#define GPTU_T01IRS_T1DREL			(1 << 23)		 // T1D Reload Source Selection
-#define GPTU_T01IRS_T1DREL_SHIFT	23
-#define GPTU_T01IRS_T0INC			(1 << 24)		 // T0 Carry Input Selection
-#define GPTU_T01IRS_T0INC_SHIFT		24
-#define GPTU_T01IRS_T1INC			(1 << 25)		 // T1 Carry Input Selection
-#define GPTU_T01IRS_T1INC_SHIFT		25
-#define GPTU_T01IRS_T01IN0			(0x3 << 28)		 // T0 and T1 Global Input CNT0 Selection
-#define GPTU_T01IRS_T01IN0_SHIFT	28
-#define GPTU_T01IRS_T01IN1			(0x3 << 30)		 // T0 and T1 Global Input CNT1 Selection
-#define GPTU_T01IRS_T01IN1_SHIFT	30
+#define GPTU_T01IRS							0x10
+#define GPTU_T01IRS_T0AINS					(0x3 << 0)		 // T0A Input Selection
+#define GPTU_T01IRS_T0AINS_SHIFT			0
+#define GPTU_T01IRS_T0AINS_BYPASS			0x0
+#define GPTU_T01IRS_T0AINS_CNT0				0x1
+#define GPTU_T01IRS_T0AINS_CNT1				0x2
+#define GPTU_T01IRS_T0AINS_CONCAT			0x3
+#define GPTU_T01IRS_T0BINS					(0x3 << 2)		 // T0B Input Selection
+#define GPTU_T01IRS_T0BINS_SHIFT			2
+#define GPTU_T01IRS_T0BINS_BYPASS			0x0
+#define GPTU_T01IRS_T0BINS_CNT0				0x4
+#define GPTU_T01IRS_T0BINS_CNT1				0x8
+#define GPTU_T01IRS_T0BINS_CONCAT			0xC
+#define GPTU_T01IRS_T0CINS					(0x3 << 4)		 // T0C Input Selection
+#define GPTU_T01IRS_T0CINS_SHIFT			4
+#define GPTU_T01IRS_T0CINS_BYPASS			0x0
+#define GPTU_T01IRS_T0CINS_CNT0				0x10
+#define GPTU_T01IRS_T0CINS_CNT1				0x20
+#define GPTU_T01IRS_T0CINS_CONCAT			0x30
+#define GPTU_T01IRS_T0DINS					(0x3 << 6)		 // T0D Input Selection
+#define GPTU_T01IRS_T0DINS_SHIFT			6
+#define GPTU_T01IRS_T0DINS_BYPASS			0x0
+#define GPTU_T01IRS_T0DINS_CNT0				0x40
+#define GPTU_T01IRS_T0DINS_CNT1				0x80
+#define GPTU_T01IRS_T0DINS_CONCAT			0xC0
+#define GPTU_T01IRS_T1AINS					(0x3 << 8)		 // T1A Input Selection
+#define GPTU_T01IRS_T1AINS_SHIFT			8
+#define GPTU_T01IRS_T1AINS_BYPASS			0x0
+#define GPTU_T01IRS_T1AINS_CNT0				0x100
+#define GPTU_T01IRS_T1AINS_CNT1				0x200
+#define GPTU_T01IRS_T1AINS_CONCAT			0x300
+#define GPTU_T01IRS_T1BINS					(0x3 << 10)		 // T1B Input Selection
+#define GPTU_T01IRS_T1BINS_SHIFT			10
+#define GPTU_T01IRS_T1BINS_BYPASS			0x0
+#define GPTU_T01IRS_T1BINS_CNT0				0x400
+#define GPTU_T01IRS_T1BINS_CNT1				0x800
+#define GPTU_T01IRS_T1BINS_CONCAT			0xC00
+#define GPTU_T01IRS_T1CINS					(0x3 << 12)		 // T1C Input Selection
+#define GPTU_T01IRS_T1CINS_SHIFT			12
+#define GPTU_T01IRS_T1CINS_BYPASS			0x0
+#define GPTU_T01IRS_T1CINS_CNT0				0x1000
+#define GPTU_T01IRS_T1CINS_CNT1				0x2000
+#define GPTU_T01IRS_T1CINS_CONCAT			0x3000
+#define GPTU_T01IRS_T1DINS					(0x3 << 14)		 // T1D Input Selection
+#define GPTU_T01IRS_T1DINS_SHIFT			14
+#define GPTU_T01IRS_T1DINS_BYPASS			0x0
+#define GPTU_T01IRS_T1DINS_CNT0				0x4000
+#define GPTU_T01IRS_T1DINS_CNT1				0x8000
+#define GPTU_T01IRS_T1DINS_CONCAT			0xC000
+#define GPTU_T01IRS_T0AREL					(1 << 16)		 // T0A Reload Source Selection
+#define GPTU_T01IRS_T0AREL_SHIFT			16
+#define GPTU_T01IRS_T0BREL					(1 << 17)		 // T0B Reload Source Selection
+#define GPTU_T01IRS_T0BREL_SHIFT			17
+#define GPTU_T01IRS_T0CREL					(1 << 18)		 // T0C Reload Source Selection
+#define GPTU_T01IRS_T0CREL_SHIFT			18
+#define GPTU_T01IRS_T0DREL					(1 << 19)		 // T0D Reload Source Selection
+#define GPTU_T01IRS_T0DREL_SHIFT			19
+#define GPTU_T01IRS_T1AREL					(1 << 20)		 // T1A Reload Source Selection
+#define GPTU_T01IRS_T1AREL_SHIFT			20
+#define GPTU_T01IRS_T1BREL					(1 << 21)		 // T1B Reload Source Selection
+#define GPTU_T01IRS_T1BREL_SHIFT			21
+#define GPTU_T01IRS_T1CREL					(1 << 22)		 // T1C Reload Source Selection
+#define GPTU_T01IRS_T1CREL_SHIFT			22
+#define GPTU_T01IRS_T1DREL					(1 << 23)		 // T1D Reload Source Selection
+#define GPTU_T01IRS_T1DREL_SHIFT			23
+#define GPTU_T01IRS_T0INC					(1 << 24)		 // T0 Carry Input Selection
+#define GPTU_T01IRS_T0INC_SHIFT				24
+#define GPTU_T01IRS_T1INC					(1 << 25)		 // T1 Carry Input Selection
+#define GPTU_T01IRS_T1INC_SHIFT				25
+#define GPTU_T01IRS_T01IN0					(0x3 << 28)		 // T0 and T1 Global Input CNT0 Selection
+#define GPTU_T01IRS_T01IN0_SHIFT			28
+#define GPTU_T01IRS_T01IN0_OUV_T2A			0x0
+#define GPTU_T01IRS_T01IN0_POS_IN0			0x10000000
+#define GPTU_T01IRS_T01IN0_NEG_IN0			0x20000000
+#define GPTU_T01IRS_T01IN0_BOTH_IN0			0x30000000
+#define GPTU_T01IRS_T01IN1					(0x3 << 30)		 // T0 and T1 Global Input CNT1 Selection
+#define GPTU_T01IRS_T01IN1_SHIFT			30
+#define GPTU_T01IRS_T01IN1_OUV_T2B			0x0
+#define GPTU_T01IRS_T01IN1_POS_IN1			0x40000000
+#define GPTU_T01IRS_T01IN1_NEG_IN1			0x80000000
+#define GPTU_T01IRS_T01IN1_BOTH_IN1			0xC0000000
 
-#define GPTU_T01OTS					0x14
-#define GPTU_T01OTS_SOUT00			(0x3 << 0)		 // T0 Output 0 Source Selection
-#define GPTU_T01OTS_SOUT00_SHIFT	0
-#define GPTU_T01OTS_SOUT00_A		0x0
-#define GPTU_T01OTS_SOUT00_B		0x1
-#define GPTU_T01OTS_SOUT00_C		0x2
-#define GPTU_T01OTS_SOUT00_D		0x3
-#define GPTU_T01OTS_SOUT01			(0x3 << 2)		 // T0 Output 1 Source Selection
-#define GPTU_T01OTS_SOUT01_SHIFT	2
-#define GPTU_T01OTS_SOUT01_A		0x0
-#define GPTU_T01OTS_SOUT01_B		0x4
-#define GPTU_T01OTS_SOUT01_C		0x8
-#define GPTU_T01OTS_SOUT01_D		0xC
-#define GPTU_T01OTS_STRG00			(0x3 << 4)		 // T0 Trigger Output 0 Source Selection
-#define GPTU_T01OTS_STRG00_SHIFT	4
-#define GPTU_T01OTS_STRG00_A		0x0
-#define GPTU_T01OTS_STRG00_B		0x10
-#define GPTU_T01OTS_STRG00_C		0x20
-#define GPTU_T01OTS_STRG00_D		0x30
-#define GPTU_T01OTS_STRG01			(0x3 << 6)		 // T0 Trigger Output 1 Source Selection
-#define GPTU_T01OTS_STRG01_SHIFT	6
-#define GPTU_T01OTS_STRG01_A		0x0
-#define GPTU_T01OTS_STRG01_B		0x40
-#define GPTU_T01OTS_STRG01_C		0x80
-#define GPTU_T01OTS_STRG01_D		0xC0
-#define GPTU_T01OTS_SSR00			(0x3 << 8)		 // T0 Service Request 0 Source Selection
-#define GPTU_T01OTS_SSR00_SHIFT		8
-#define GPTU_T01OTS_SSR00_A			0x0
-#define GPTU_T01OTS_SSR00_B			0x100
-#define GPTU_T01OTS_SSR00_C			0x200
-#define GPTU_T01OTS_SSR00_D			0x300
-#define GPTU_T01OTS_SSR01			(0x3 << 10)		 // T0 Service Request 1 Source Selection
-#define GPTU_T01OTS_SSR01_SHIFT		10
-#define GPTU_T01OTS_SSR01_A			0x0
-#define GPTU_T01OTS_SSR01_B			0x400
-#define GPTU_T01OTS_SSR01_C			0x800
-#define GPTU_T01OTS_SSR01_D			0xC00
-#define GPTU_T01OTS_SOUT10			(0x3 << 16)		 // T1 Output 0 Source Selection
-#define GPTU_T01OTS_SOUT10_SHIFT	16
-#define GPTU_T01OTS_SOUT10_A		0x0
-#define GPTU_T01OTS_SOUT10_B		0x10000
-#define GPTU_T01OTS_SOUT10_C		0x20000
-#define GPTU_T01OTS_SOUT10_D		0x30000
-#define GPTU_T01OTS_SOUT11			(0x3 << 18)		 // T1 Output 1 Source Selection
-#define GPTU_T01OTS_SOUT11_SHIFT	18
-#define GPTU_T01OTS_SOUT11_A		0x0
-#define GPTU_T01OTS_SOUT11_B		0x40000
-#define GPTU_T01OTS_SOUT11_C		0x80000
-#define GPTU_T01OTS_SOUT11_D		0xC0000
-#define GPTU_T01OTS_STRG10			(0x3 << 20)		 // T1 Trigger Output 0 Source Selection
-#define GPTU_T01OTS_STRG10_SHIFT	20
-#define GPTU_T01OTS_STRG10_A		0x0
-#define GPTU_T01OTS_STRG10_B		0x100000
-#define GPTU_T01OTS_STRG10_C		0x200000
-#define GPTU_T01OTS_STRG10_D		0x300000
-#define GPTU_T01OTS_STRG11			(0x3 << 22)		 // T1 Trigger Output 1 Source Selection
-#define GPTU_T01OTS_STRG11_SHIFT	22
-#define GPTU_T01OTS_STRG11_A		0x0
-#define GPTU_T01OTS_STRG11_B		0x400000
-#define GPTU_T01OTS_STRG11_C		0x800000
-#define GPTU_T01OTS_STRG11_D		0xC00000
-#define GPTU_T01OTS_SSR10			(0x3 << 24)		 // T1 Service Request 0 Source Selection
-#define GPTU_T01OTS_SSR10_SHIFT		24
-#define GPTU_T01OTS_SSR10_A			0x0
-#define GPTU_T01OTS_SSR10_B			0x1000000
-#define GPTU_T01OTS_SSR10_C			0x2000000
-#define GPTU_T01OTS_SSR10_D			0x3000000
-#define GPTU_T01OTS_SSR11			(0x3 << 26)		 // T1 Service Request 1 Source Selection.
-#define GPTU_T01OTS_SSR11_SHIFT		26
-#define GPTU_T01OTS_SSR11_A			0x0
-#define GPTU_T01OTS_SSR11_B			0x4000000
-#define GPTU_T01OTS_SSR11_C			0x8000000
-#define GPTU_T01OTS_SSR11_D			0xC000000
+#define GPTU_T01OTS							0x14
+#define GPTU_T01OTS_SOUT00					(0x3 << 0)		 // T0 Output 0 Source Selection
+#define GPTU_T01OTS_SOUT00_SHIFT			0
+#define GPTU_T01OTS_SOUT00_A				0x0
+#define GPTU_T01OTS_SOUT00_B				0x1
+#define GPTU_T01OTS_SOUT00_C				0x2
+#define GPTU_T01OTS_SOUT00_D				0x3
+#define GPTU_T01OTS_SOUT01					(0x3 << 2)		 // T0 Output 1 Source Selection
+#define GPTU_T01OTS_SOUT01_SHIFT			2
+#define GPTU_T01OTS_SOUT01_A				0x0
+#define GPTU_T01OTS_SOUT01_B				0x4
+#define GPTU_T01OTS_SOUT01_C				0x8
+#define GPTU_T01OTS_SOUT01_D				0xC
+#define GPTU_T01OTS_STRG00					(0x3 << 4)		 // T0 Trigger Output 0 Source Selection
+#define GPTU_T01OTS_STRG00_SHIFT			4
+#define GPTU_T01OTS_STRG00_A				0x0
+#define GPTU_T01OTS_STRG00_B				0x10
+#define GPTU_T01OTS_STRG00_C				0x20
+#define GPTU_T01OTS_STRG00_D				0x30
+#define GPTU_T01OTS_STRG01					(0x3 << 6)		 // T0 Trigger Output 1 Source Selection
+#define GPTU_T01OTS_STRG01_SHIFT			6
+#define GPTU_T01OTS_STRG01_A				0x0
+#define GPTU_T01OTS_STRG01_B				0x40
+#define GPTU_T01OTS_STRG01_C				0x80
+#define GPTU_T01OTS_STRG01_D				0xC0
+#define GPTU_T01OTS_SSR00					(0x3 << 8)		 // T0 Service Request 0 Source Selection
+#define GPTU_T01OTS_SSR00_SHIFT				8
+#define GPTU_T01OTS_SSR00_A					0x0
+#define GPTU_T01OTS_SSR00_B					0x100
+#define GPTU_T01OTS_SSR00_C					0x200
+#define GPTU_T01OTS_SSR00_D					0x300
+#define GPTU_T01OTS_SSR01					(0x3 << 10)		 // T0 Service Request 1 Source Selection
+#define GPTU_T01OTS_SSR01_SHIFT				10
+#define GPTU_T01OTS_SSR01_A					0x0
+#define GPTU_T01OTS_SSR01_B					0x400
+#define GPTU_T01OTS_SSR01_C					0x800
+#define GPTU_T01OTS_SSR01_D					0xC00
+#define GPTU_T01OTS_SOUT10					(0x3 << 16)		 // T1 Output 0 Source Selection
+#define GPTU_T01OTS_SOUT10_SHIFT			16
+#define GPTU_T01OTS_SOUT10_A				0x0
+#define GPTU_T01OTS_SOUT10_B				0x10000
+#define GPTU_T01OTS_SOUT10_C				0x20000
+#define GPTU_T01OTS_SOUT10_D				0x30000
+#define GPTU_T01OTS_SOUT11					(0x3 << 18)		 // T1 Output 1 Source Selection
+#define GPTU_T01OTS_SOUT11_SHIFT			18
+#define GPTU_T01OTS_SOUT11_A				0x0
+#define GPTU_T01OTS_SOUT11_B				0x40000
+#define GPTU_T01OTS_SOUT11_C				0x80000
+#define GPTU_T01OTS_SOUT11_D				0xC0000
+#define GPTU_T01OTS_STRG10					(0x3 << 20)		 // T1 Trigger Output 0 Source Selection
+#define GPTU_T01OTS_STRG10_SHIFT			20
+#define GPTU_T01OTS_STRG10_A				0x0
+#define GPTU_T01OTS_STRG10_B				0x100000
+#define GPTU_T01OTS_STRG10_C				0x200000
+#define GPTU_T01OTS_STRG10_D				0x300000
+#define GPTU_T01OTS_STRG11					(0x3 << 22)		 // T1 Trigger Output 1 Source Selection
+#define GPTU_T01OTS_STRG11_SHIFT			22
+#define GPTU_T01OTS_STRG11_A				0x0
+#define GPTU_T01OTS_STRG11_B				0x400000
+#define GPTU_T01OTS_STRG11_C				0x800000
+#define GPTU_T01OTS_STRG11_D				0xC00000
+#define GPTU_T01OTS_SSR10					(0x3 << 24)		 // T1 Service Request 0 Source Selection
+#define GPTU_T01OTS_SSR10_SHIFT				24
+#define GPTU_T01OTS_SSR10_A					0x0
+#define GPTU_T01OTS_SSR10_B					0x1000000
+#define GPTU_T01OTS_SSR10_C					0x2000000
+#define GPTU_T01OTS_SSR10_D					0x3000000
+#define GPTU_T01OTS_SSR11					(0x3 << 26)		 // T1 Service Request 1 Source Selection.
+#define GPTU_T01OTS_SSR11_SHIFT				26
+#define GPTU_T01OTS_SSR11_A					0x0
+#define GPTU_T01OTS_SSR11_B					0x4000000
+#define GPTU_T01OTS_SSR11_C					0x8000000
+#define GPTU_T01OTS_SSR11_D					0xC000000
 
-#define GPTU_T2CON					0x18
-#define GPTU_T2CON_T2ACSRC			(0x3 << 0)		 // Timer T2A Count Input Source Control
-#define GPTU_T2CON_T2ACSRC_SHIFT	0
-#define GPTU_T2CON_T2ACDIR			(0x3 << 2)		 // Timer T2A Direction Control
-#define GPTU_T2CON_T2ACDIR_SHIFT	2
-#define GPTU_T2CON_T2ACCLR			(0x3 << 4)		 // Timer T2A Clear Control
-#define GPTU_T2CON_T2ACCLR_SHIFT	4
-#define GPTU_T2CON_T2ACOV			(0x3 << 6)		 // Timer T2A Overflow/Underflow Generation Control
-#define GPTU_T2CON_T2ACOV_SHIFT		6
-#define GPTU_T2CON_T2ACOS			(1 << 8)		 // Timer T2A One-Shot Control.
-#define GPTU_T2CON_T2ACOS_SHIFT		8
-#define GPTU_T2CON_T2ADIR			(1 << 12)		 // Timer T2A Direction Status Bit.
-#define GPTU_T2CON_T2ADIR_SHIFT		12
-#define GPTU_T2CON_T2SPLIT			(1 << 15)		 // Timer T2 Split Control.
-#define GPTU_T2CON_T2SPLIT_SHIFT	15
-#define GPTU_T2CON_T2BCSRC			(0x3 << 16)		 // Timer T2B Count Input Source Control.
-#define GPTU_T2CON_T2BCSRC_SHIFT	16
-#define GPTU_T2CON_T2BCDIR			(0x3 << 18)		 // Timer T2B Direction Control.
-#define GPTU_T2CON_T2BCDIR_SHIFT	18
-#define GPTU_T2CON_T2BCCLR			(0x3 << 20)		 // Timer T2B Clear Control.
-#define GPTU_T2CON_T2BCCLR_SHIFT	20
-#define GPTU_T2CON_T2BCOV			(0x3 << 22)		 // Timer T2B Overflow/Underflow Generation Control.
-#define GPTU_T2CON_T2BCOV_SHIFT		22
-#define GPTU_T2CON_T2BCOS			(1 << 24)		 // Timer T2B One-Shot Control.
-#define GPTU_T2CON_T2BCOS_SHIFT		24
-#define GPTU_T2CON_T2BDIR			(1 << 28)		 // Timer T2B Direction Status Bit.
-#define GPTU_T2CON_T2BDIR_SHIFT		28
+#define GPTU_T2CON							0x18
+#define GPTU_T2CON_T2ACSRC					(0x3 << 0)		 // Timer T2A Count Input Source Control
+#define GPTU_T2CON_T2ACSRC_SHIFT			0
+#define GPTU_T2CON_T2ACSRC_BYPASS			0x0
+#define GPTU_T2CON_T2ACSRC_EXT_COUNT		0x1
+#define GPTU_T2CON_T2ACSRC_QUADRATURE		0x2
+#define GPTU_T2CON_T2ACDIR					(0x3 << 2)		 // Timer T2A Direction Control
+#define GPTU_T2CON_T2ACDIR_SHIFT			2
+#define GPTU_T2CON_T2ACDIR_COUNT_UP			0x0
+#define GPTU_T2CON_T2ACDIR_COUNT_DOWN		0x4
+#define GPTU_T2CON_T2ACDIR_EXT_CONT_UP		0x8
+#define GPTU_T2CON_T2ACDIR_EXT_COUNT_DOWN	0xC
+#define GPTU_T2CON_T2ACCLR					(0x3 << 4)		 // Timer T2A Clear Control
+#define GPTU_T2CON_T2ACCLR_SHIFT			4
+#define GPTU_T2CON_T2ACCLR_EXT				0x0
+#define GPTU_T2CON_T2ACCLR_CP0_T2			0x10
+#define GPTU_T2CON_T2ACCLR_CP1_T2			0x20
+#define GPTU_T2CON_T2ACOV					(0x3 << 6)		 // Timer T2A Overflow/Underflow Generation Control
+#define GPTU_T2CON_T2ACOV_SHIFT				6
+#define GPTU_T2CON_T2ACOV_MODE0				0x0
+#define GPTU_T2CON_T2ACOV_MODE1				0x40
+#define GPTU_T2CON_T2ACOV_MODE2				0x80
+#define GPTU_T2CON_T2ACOV_MODE3				0xC0
+#define GPTU_T2CON_T2ACOS					(1 << 8)		 // Timer T2A One-Shot Control.
+#define GPTU_T2CON_T2ACOS_SHIFT				8
+#define GPTU_T2CON_T2ADIR					(1 << 12)		 // Timer T2A Direction Status Bit.
+#define GPTU_T2CON_T2ADIR_SHIFT				12
+#define GPTU_T2CON_T2ADIR_COUNT_UP			0x0
+#define GPTU_T2CON_T2ADIR_COUNT_DOWN		0x1000
+#define GPTU_T2CON_T2SPLIT					(1 << 15)		 // Timer T2 Split Control.
+#define GPTU_T2CON_T2SPLIT_SHIFT			15
+#define GPTU_T2CON_T2BCSRC					(0x3 << 16)		 // Timer T2B Count Input Source Control.
+#define GPTU_T2CON_T2BCSRC_SHIFT			16
+#define GPTU_T2CON_T2BCSRC_BYPASS			0x0
+#define GPTU_T2CON_T2BCSRC_EXT_COUNT		0x10000
+#define GPTU_T2CON_T2BCSRC_QUADRATURE		0x20000
+#define GPTU_T2CON_T2BCDIR					(0x3 << 18)		 // Timer T2B Direction Control.
+#define GPTU_T2CON_T2BCDIR_SHIFT			18
+#define GPTU_T2CON_T2BCDIR_COUNT_UP			0x0
+#define GPTU_T2CON_T2BCDIR_COUNT_DOWN		0x40000
+#define GPTU_T2CON_T2BCDIR_EXT_CONT_UP		0x80000
+#define GPTU_T2CON_T2BCDIR_EXT_COUNT_DOWN	0xC0000
+#define GPTU_T2CON_T2BCCLR					(0x3 << 20)		 // Timer T2B Clear Control.
+#define GPTU_T2CON_T2BCCLR_SHIFT			20
+#define GPTU_T2CON_T2BCCLR_EXT				0x0
+#define GPTU_T2CON_T2BCCLR_CP0_T2			0x100000
+#define GPTU_T2CON_T2BCCLR_CP1_T2			0x200000
+#define GPTU_T2CON_T2BCOV					(0x3 << 22)		 // Timer T2B Overflow/Underflow Generation Control.
+#define GPTU_T2CON_T2BCOV_SHIFT				22
+#define GPTU_T2CON_T2BCOV_MODE0				0x0
+#define GPTU_T2CON_T2BCOV_MODE1				0x400000
+#define GPTU_T2CON_T2BCOV_MODE2				0x800000
+#define GPTU_T2CON_T2BCOV_MODE3				0xC00000
+#define GPTU_T2CON_T2BCOS					(1 << 24)		 // Timer T2B One-Shot Control.
+#define GPTU_T2CON_T2BCOS_SHIFT				24
+#define GPTU_T2CON_T2BDIR					(1 << 28)		 // Timer T2B Direction Status Bit.
+#define GPTU_T2CON_T2BDIR_SHIFT				28
+#define GPTU_T2CON_T2BDIR_COUNT_UP			0x0
+#define GPTU_T2CON_T2BDIR_COUNT_DOWN		0x10000000
 
-#define GPTU_T2RCCON				0x1C
-#define GPTU_T2RCCON_T2AMRC0		(0x7 << 0)		 // Timer T2A Reload/Capture 0 Mode Control
-#define GPTU_T2RCCON_T2AMRC0_SHIFT	0
-#define GPTU_T2RCCON_T2AMRC1		(0x7 << 4)		 // Timer T2A Reload/Capture 1 Mode Control
-#define GPTU_T2RCCON_T2AMRC1_SHIFT	4
-#define GPTU_T2RCCON_T2BMRC0		(0x7 << 16)		 // Timer T2B Reload/Capture 0 Mode Control
-#define GPTU_T2RCCON_T2BMRC0_SHIFT	16
-#define GPTU_T2RCCON_T2BMRC1		(0x7 << 20)		 // Timer T2B Reload/Capture 1 Mode Control
-#define GPTU_T2RCCON_T2BMRC1_SHIFT	20
+#define GPTU_T2RCCON						0x1C
+#define GPTU_T2RCCON_T2AMRC0				(0x7 << 0)		 // Timer T2A Reload/Capture 0 Mode Control
+#define GPTU_T2RCCON_T2AMRC0_SHIFT			0
+#define GPTU_T2RCCON_T2AMRC1				(0x7 << 4)		 // Timer T2A Reload/Capture 1 Mode Control
+#define GPTU_T2RCCON_T2AMRC1_SHIFT			4
+#define GPTU_T2RCCON_T2BMRC0				(0x7 << 16)		 // Timer T2B Reload/Capture 0 Mode Control
+#define GPTU_T2RCCON_T2BMRC0_SHIFT			16
+#define GPTU_T2RCCON_T2BMRC1				(0x7 << 20)		 // Timer T2B Reload/Capture 1 Mode Control
+#define GPTU_T2RCCON_T2BMRC1_SHIFT			20
 
-#define GPTU_T2AIS					0x20
-#define GPTU_T2AIS_T2AICNT			(0x7 << 0)		 // Timer T2A External Count Input Selection
-#define GPTU_T2AIS_T2AICNT_SHIFT	0
-#define GPTU_T2AIS_T2AISTR			(0x7 << 4)		 // Timer T2A External Start Input Selection
-#define GPTU_T2AIS_T2AISTR_SHIFT	4
-#define GPTU_T2AIS_T2AISTP			(0x7 << 8)		 // Timer T2A External Stop Input Selection
-#define GPTU_T2AIS_T2AISTP_SHIFT	8
-#define GPTU_T2AIS_T2AIUD			(0x7 << 12)		 // Timer T2A External Up/Down Input Selection
-#define GPTU_T2AIS_T2AIUD_SHIFT		12
-#define GPTU_T2AIS_T2AICLR			(0x7 << 16)		 // Timer T2A External Clear Input Selection
-#define GPTU_T2AIS_T2AICLR_SHIFT	16
-#define GPTU_T2AIS_T2AIRC0			(0x7 << 20)		 // Timer T2A External Reload/Capture 0 Input Selection
-#define GPTU_T2AIS_T2AIRC0_SHIFT	20
-#define GPTU_T2AIS_T2AIRC1			(0x7 << 24)		 // Timer T2A External Reload/Capture 1 Input Selection
-#define GPTU_T2AIS_T2AIRC1_SHIFT	24
+#define GPTU_T2AIS							0x20
+#define GPTU_T2AIS_T2AICNT					(0x7 << 0)		 // Timer T2A External Count Input Selection
+#define GPTU_T2AIS_T2AICNT_SHIFT			0
+#define GPTU_T2AIS_T2AISTR					(0x7 << 4)		 // Timer T2A External Start Input Selection
+#define GPTU_T2AIS_T2AISTR_SHIFT			4
+#define GPTU_T2AIS_T2AISTP					(0x7 << 8)		 // Timer T2A External Stop Input Selection
+#define GPTU_T2AIS_T2AISTP_SHIFT			8
+#define GPTU_T2AIS_T2AIUD					(0x7 << 12)		 // Timer T2A External Up/Down Input Selection
+#define GPTU_T2AIS_T2AIUD_SHIFT				12
+#define GPTU_T2AIS_T2AICLR					(0x7 << 16)		 // Timer T2A External Clear Input Selection
+#define GPTU_T2AIS_T2AICLR_SHIFT			16
+#define GPTU_T2AIS_T2AIRC0					(0x7 << 20)		 // Timer T2A External Reload/Capture 0 Input Selection
+#define GPTU_T2AIS_T2AIRC0_SHIFT			20
+#define GPTU_T2AIS_T2AIRC1					(0x7 << 24)		 // Timer T2A External Reload/Capture 1 Input Selection
+#define GPTU_T2AIS_T2AIRC1_SHIFT			24
 
-#define GPTU_T2BIS					0x24
-#define GPTU_T2BIS_T2BICNT			(0x7 << 0)		 // Timer T2B External Count Input Selection
-#define GPTU_T2BIS_T2BICNT_SHIFT	0
-#define GPTU_T2BIS_T2BISTR			(0x7 << 4)		 // Timer T2B External Start Input Selection
-#define GPTU_T2BIS_T2BISTR_SHIFT	4
-#define GPTU_T2BIS_T2BISTP			(0x7 << 8)		 // Timer T2B External Stop Input Selection
-#define GPTU_T2BIS_T2BISTP_SHIFT	8
-#define GPTU_T2BIS_T2BIUD			(0x7 << 12)		 // Timer T2B External Up/Down Input Selection
-#define GPTU_T2BIS_T2BIUD_SHIFT		12
-#define GPTU_T2BIS_T2BICLR			(0x7 << 16)		 // Timer T2B External Clear Input Selection
-#define GPTU_T2BIS_T2BICLR_SHIFT	16
-#define GPTU_T2BIS_T2BIRC0			(0x7 << 20)		 // Timer T2B External Reload/Capture 0 Input Selection
-#define GPTU_T2BIS_T2BIRC0_SHIFT	20
-#define GPTU_T2BIS_T2BIRC1			(0x7 << 24)		 // Timer T2B External Reload/Capture 1 Input Selection
-#define GPTU_T2BIS_T2BIRC1_SHIFT	24
+#define GPTU_T2BIS							0x24
+#define GPTU_T2BIS_T2BICNT					(0x7 << 0)		 // Timer T2B External Count Input Selection
+#define GPTU_T2BIS_T2BICNT_SHIFT			0
+#define GPTU_T2BIS_T2BISTR					(0x7 << 4)		 // Timer T2B External Start Input Selection
+#define GPTU_T2BIS_T2BISTR_SHIFT			4
+#define GPTU_T2BIS_T2BISTP					(0x7 << 8)		 // Timer T2B External Stop Input Selection
+#define GPTU_T2BIS_T2BISTP_SHIFT			8
+#define GPTU_T2BIS_T2BIUD					(0x7 << 12)		 // Timer T2B External Up/Down Input Selection
+#define GPTU_T2BIS_T2BIUD_SHIFT				12
+#define GPTU_T2BIS_T2BICLR					(0x7 << 16)		 // Timer T2B External Clear Input Selection
+#define GPTU_T2BIS_T2BICLR_SHIFT			16
+#define GPTU_T2BIS_T2BIRC0					(0x7 << 20)		 // Timer T2B External Reload/Capture 0 Input Selection
+#define GPTU_T2BIS_T2BIRC0_SHIFT			20
+#define GPTU_T2BIS_T2BIRC1					(0x7 << 24)		 // Timer T2B External Reload/Capture 1 Input Selection
+#define GPTU_T2BIS_T2BIRC1_SHIFT			24
 
-#define GPTU_T2ES					0x28
-#define GPTU_T2ES_T2AECNT			(0x3 << 0)		 // Timer T2A External Count Input Active Edge Selection
-#define GPTU_T2ES_T2AECNT_SHIFT		0
-#define GPTU_T2ES_T2AESTR			(0x3 << 2)		 // Timer T2A External Start Input Active Edge Selection
-#define GPTU_T2ES_T2AESTR_SHIFT		2
-#define GPTU_T2ES_T2AESTP			(0x3 << 4)		 // Timer T2A External Stop Input Active Edge Selection
-#define GPTU_T2ES_T2AESTP_SHIFT		4
-#define GPTU_T2ES_T2AEUD			(0x3 << 6)		 // Timer T2A External Up/Down Input Active Edge Selection
-#define GPTU_T2ES_T2AEUD_SHIFT		6
-#define GPTU_T2ES_T2AECLR			(0x3 << 8)		 // Timer T2A External Clear Input Active Edge Selection
-#define GPTU_T2ES_T2AECLR_SHIFT		8
-#define GPTU_T2ES_T2AERC0			(0x3 << 10)		 // Timer T2A External Reload/Capture 0 Input Active Edge Selection
-#define GPTU_T2ES_T2AERC0_SHIFT		10
-#define GPTU_T2ES_T2AERC1			(0x3 << 12)		 // Timer T2A External Reload/Capture 1 Input Active Edge Selection
-#define GPTU_T2ES_T2AERC1_SHIFT		12
-#define GPTU_T2ES_T2BECNT			(0x3 << 16)		 // Timer T2B External Count Input Active Edge Selection
-#define GPTU_T2ES_T2BECNT_SHIFT		16
-#define GPTU_T2ES_T2BESTR			(0x3 << 18)		 // Timer T2B External Start Input Active Edge Selection
-#define GPTU_T2ES_T2BESTR_SHIFT		18
-#define GPTU_T2ES_T2BESTP			(0x3 << 20)		 // Timer T2B External Stop Input Active Edge Selection
-#define GPTU_T2ES_T2BESTP_SHIFT		20
-#define GPTU_T2ES_T2BEUD			(0x3 << 22)		 // Timer T2B External Up/Down Input Active Edge Selection
-#define GPTU_T2ES_T2BEUD_SHIFT		22
-#define GPTU_T2ES_T2BECLR			(0x3 << 24)		 // Timer T2B External Clear Input Active Edge Selection
-#define GPTU_T2ES_T2BECLR_SHIFT		24
-#define GPTU_T2ES_T2BERC0			(0x3 << 26)		 // Timer T2B External Reload/Capture 0 Input Active Edge Selection
-#define GPTU_T2ES_T2BERC0_SHIFT		26
-#define GPTU_T2ES_T2BERC1			(0x3 << 28)		 // Timer T2B External Reload/Capture 1 Input Active Edge Selection
-#define GPTU_T2ES_T2BERC1_SHIFT		28
+#define GPTU_T2ES							0x28
+#define GPTU_T2ES_T2AECNT					(0x3 << 0)		 // Timer T2A External Count Input Active Edge Selection
+#define GPTU_T2ES_T2AECNT_SHIFT				0
+#define GPTU_T2ES_T2AESTR					(0x3 << 2)		 // Timer T2A External Start Input Active Edge Selection
+#define GPTU_T2ES_T2AESTR_SHIFT				2
+#define GPTU_T2ES_T2AESTP					(0x3 << 4)		 // Timer T2A External Stop Input Active Edge Selection
+#define GPTU_T2ES_T2AESTP_SHIFT				4
+#define GPTU_T2ES_T2AEUD					(0x3 << 6)		 // Timer T2A External Up/Down Input Active Edge Selection
+#define GPTU_T2ES_T2AEUD_SHIFT				6
+#define GPTU_T2ES_T2AECLR					(0x3 << 8)		 // Timer T2A External Clear Input Active Edge Selection
+#define GPTU_T2ES_T2AECLR_SHIFT				8
+#define GPTU_T2ES_T2AERC0					(0x3 << 10)		 // Timer T2A External Reload/Capture 0 Input Active Edge Selection
+#define GPTU_T2ES_T2AERC0_SHIFT				10
+#define GPTU_T2ES_T2AERC1					(0x3 << 12)		 // Timer T2A External Reload/Capture 1 Input Active Edge Selection
+#define GPTU_T2ES_T2AERC1_SHIFT				12
+#define GPTU_T2ES_T2BECNT					(0x3 << 16)		 // Timer T2B External Count Input Active Edge Selection
+#define GPTU_T2ES_T2BECNT_SHIFT				16
+#define GPTU_T2ES_T2BESTR					(0x3 << 18)		 // Timer T2B External Start Input Active Edge Selection
+#define GPTU_T2ES_T2BESTR_SHIFT				18
+#define GPTU_T2ES_T2BESTP					(0x3 << 20)		 // Timer T2B External Stop Input Active Edge Selection
+#define GPTU_T2ES_T2BESTP_SHIFT				20
+#define GPTU_T2ES_T2BEUD					(0x3 << 22)		 // Timer T2B External Up/Down Input Active Edge Selection
+#define GPTU_T2ES_T2BEUD_SHIFT				22
+#define GPTU_T2ES_T2BECLR					(0x3 << 24)		 // Timer T2B External Clear Input Active Edge Selection
+#define GPTU_T2ES_T2BECLR_SHIFT				24
+#define GPTU_T2ES_T2BERC0					(0x3 << 26)		 // Timer T2B External Reload/Capture 0 Input Active Edge Selection
+#define GPTU_T2ES_T2BERC0_SHIFT				26
+#define GPTU_T2ES_T2BERC1					(0x3 << 28)		 // Timer T2B External Reload/Capture 1 Input Active Edge Selection
+#define GPTU_T2ES_T2BERC1_SHIFT				28
 
-#define GPTU_OSEL					0x2C
-#define GPTU_OSEL_GTSO0				(0x7 << 0)		 // GPTU Output 0 Source Selection
-#define GPTU_OSEL_GTSO0_SHIFT		0
-#define GPTU_OSEL_GTSO1				(0x7 << 4)		 // GPTU Output 1 Source Selection
-#define GPTU_OSEL_GTSO1_SHIFT		4
-#define GPTU_OSEL_GTSO2				(0x7 << 8)		 // GPTU Output 2 Source Selection
-#define GPTU_OSEL_GTSO2_SHIFT		8
-#define GPTU_OSEL_GTSO3				(0x7 << 12)		 // GPTU Output 3 Source Selection
-#define GPTU_OSEL_GTSO3_SHIFT		12
-#define GPTU_OSEL_GTSO4				(0x7 << 16)		 // GPTU Output 4 Source Selection
-#define GPTU_OSEL_GTSO4_SHIFT		16
-#define GPTU_OSEL_GTSO5				(0x7 << 20)		 // GPTU Output 5 Source Selection
-#define GPTU_OSEL_GTSO5_SHIFT		20
-#define GPTU_OSEL_GTSO6				(0x7 << 24)		 // GPTU Output 6 Source Selection
-#define GPTU_OSEL_GTSO6_SHIFT		24
-#define GPTU_OSEL_GTSO7				(0x7 << 28)		 // GPTU Output 7 Source Selection
-#define GPTU_OSEL_GTSO7_SHIFT		28
+#define GPTU_OSEL							0x2C
+#define GPTU_OSEL_SO0						(0x7 << 0)		 // GPTU Output 0 Source Selection
+#define GPTU_OSEL_SO0_SHIFT					0
+#define GPTU_OSEL_SO0_OUT00					0x0
+#define GPTU_OSEL_SO0_OUT01					0x1
+#define GPTU_OSEL_SO0_OUT10					0x2
+#define GPTU_OSEL_SO0_OUT11					0x3
+#define GPTU_OSEL_SO0_OUV_T2A				0x4
+#define GPTU_OSEL_SO0_OUV_T2B				0x5
+#define GPTU_OSEL_SO0_UNK0					0x6
+#define GPTU_OSEL_SO0_UNK1					0x7
+#define GPTU_OSEL_SO1						(0x7 << 4)		 // GPTU Output 1 Source Selection
+#define GPTU_OSEL_SO1_SHIFT					4
+#define GPTU_OSEL_SO1_OUT00					0x0
+#define GPTU_OSEL_SO1_OUT01					0x10
+#define GPTU_OSEL_SO1_OUT10					0x20
+#define GPTU_OSEL_SO1_OUT11					0x30
+#define GPTU_OSEL_SO1_OUV_T2A				0x40
+#define GPTU_OSEL_SO1_OUV_T2B				0x50
+#define GPTU_OSEL_SO1_UNK0					0x60
+#define GPTU_OSEL_SO1_UNK1					0x70
+#define GPTU_OSEL_SO2						(0x7 << 8)		 // GPTU Output 2 Source Selection
+#define GPTU_OSEL_SO2_SHIFT					8
+#define GPTU_OSEL_SO2_OUT00					0x0
+#define GPTU_OSEL_SO2_OUT01					0x100
+#define GPTU_OSEL_SO2_OUT10					0x200
+#define GPTU_OSEL_SO2_OUT11					0x300
+#define GPTU_OSEL_SO2_OUV_T2A				0x400
+#define GPTU_OSEL_SO2_OUV_T2B				0x500
+#define GPTU_OSEL_SO2_UNK0					0x600
+#define GPTU_OSEL_SO2_UNK1					0x700
+#define GPTU_OSEL_SO3						(0x7 << 12)		 // GPTU Output 3 Source Selection
+#define GPTU_OSEL_SO3_SHIFT					12
+#define GPTU_OSEL_SO3_OUT00					0x0
+#define GPTU_OSEL_SO3_OUT01					0x1000
+#define GPTU_OSEL_SO3_OUT10					0x2000
+#define GPTU_OSEL_SO3_OUT11					0x3000
+#define GPTU_OSEL_SO3_OUV_T2A				0x4000
+#define GPTU_OSEL_SO3_OUV_T2B				0x5000
+#define GPTU_OSEL_SO3_UNK0					0x6000
+#define GPTU_OSEL_SO3_UNK1					0x7000
+#define GPTU_OSEL_SO4						(0x7 << 16)		 // GPTU Output 4 Source Selection
+#define GPTU_OSEL_SO4_SHIFT					16
+#define GPTU_OSEL_SO4_OUT00					0x0
+#define GPTU_OSEL_SO4_OUT01					0x10000
+#define GPTU_OSEL_SO4_OUT10					0x20000
+#define GPTU_OSEL_SO4_OUT11					0x30000
+#define GPTU_OSEL_SO4_OUV_T2A				0x40000
+#define GPTU_OSEL_SO4_OUV_T2B				0x50000
+#define GPTU_OSEL_SO4_UNK0					0x60000
+#define GPTU_OSEL_SO4_UNK1					0x70000
+#define GPTU_OSEL_SO5						(0x7 << 20)		 // GPTU Output 5 Source Selection
+#define GPTU_OSEL_SO5_SHIFT					20
+#define GPTU_OSEL_SO5_OUT00					0x0
+#define GPTU_OSEL_SO5_OUT01					0x100000
+#define GPTU_OSEL_SO5_OUT10					0x200000
+#define GPTU_OSEL_SO5_OUT11					0x300000
+#define GPTU_OSEL_SO5_OUV_T2A				0x400000
+#define GPTU_OSEL_SO5_OUV_T2B				0x500000
+#define GPTU_OSEL_SO5_UNK0					0x600000
+#define GPTU_OSEL_SO5_UNK1					0x700000
+#define GPTU_OSEL_SO6						(0x7 << 24)		 // GPTU Output 6 Source Selection
+#define GPTU_OSEL_SO6_SHIFT					24
+#define GPTU_OSEL_SO6_OUT00					0x0
+#define GPTU_OSEL_SO6_OUT01					0x1000000
+#define GPTU_OSEL_SO6_OUT10					0x2000000
+#define GPTU_OSEL_SO6_OUT11					0x3000000
+#define GPTU_OSEL_SO6_OUV_T2A				0x4000000
+#define GPTU_OSEL_SO6_OUV_T2B				0x5000000
+#define GPTU_OSEL_SO6_UNK0					0x6000000
+#define GPTU_OSEL_SO6_UNK1					0x7000000
+#define GPTU_OSEL_SO7						(0x7 << 28)		 // GPTU Output 7 Source Selection
+#define GPTU_OSEL_SO7_SHIFT					28
+#define GPTU_OSEL_SO7_OUT00					0x0
+#define GPTU_OSEL_SO7_OUT01					0x10000000
+#define GPTU_OSEL_SO7_OUT10					0x20000000
+#define GPTU_OSEL_SO7_OUT11					0x30000000
+#define GPTU_OSEL_SO7_OUV_T2A				0x40000000
+#define GPTU_OSEL_SO7_OUV_T2B				0x50000000
+#define GPTU_OSEL_SO7_UNK0					0x60000000
+#define GPTU_OSEL_SO7_UNK1					0x70000000
 
-#define GPTU_OUT					0x30
-#define GPTU_OUT_OUT0				(1 << 0)		 // GPTU Output State Bit 0
-#define GPTU_OUT_OUT0_SHIFT			0
-#define GPTU_OUT_OUT1				(1 << 1)		 // GPTU Output State Bit 1
-#define GPTU_OUT_OUT1_SHIFT			1
-#define GPTU_OUT_OUT2				(1 << 2)		 // GPTU Output State Bit 2
-#define GPTU_OUT_OUT2_SHIFT			2
-#define GPTU_OUT_OUT3				(1 << 3)		 // GPTU Output State Bit 3
-#define GPTU_OUT_OUT3_SHIFT			3
-#define GPTU_OUT_OUT4				(1 << 4)		 // GPTU Output State Bit 4
-#define GPTU_OUT_OUT4_SHIFT			4
-#define GPTU_OUT_OUT5				(1 << 5)		 // GPTU Output State Bit 5
-#define GPTU_OUT_OUT5_SHIFT			5
-#define GPTU_OUT_OUT6				(1 << 6)		 // GPTU Output State Bit 6
-#define GPTU_OUT_OUT6_SHIFT			6
-#define GPTU_OUT_OUT7				(1 << 7)		 // GPTU Output State Bit 7
-#define GPTU_OUT_OUT7_SHIFT			7
-#define GPTU_OUT_CLRO0				(1 << 8)		 // GPTU Output 0 Clear Bit
-#define GPTU_OUT_CLRO0_SHIFT		8
-#define GPTU_OUT_CLRO1				(1 << 9)		 // GPTU Output 1 Clear Bit
-#define GPTU_OUT_CLRO1_SHIFT		9
-#define GPTU_OUT_CLRO2				(1 << 10)		 // GPTU Output 2 Clear Bit
-#define GPTU_OUT_CLRO2_SHIFT		10
-#define GPTU_OUT_CLRO3				(1 << 11)		 // GPTU Output 3 Clear Bit
-#define GPTU_OUT_CLRO3_SHIFT		11
-#define GPTU_OUT_CLRO4				(1 << 12)		 // GPTU Output 4 Clear Bit
-#define GPTU_OUT_CLRO4_SHIFT		12
-#define GPTU_OUT_CLRO5				(1 << 13)		 // GPTU Output 5 Clear Bit
-#define GPTU_OUT_CLRO5_SHIFT		13
-#define GPTU_OUT_CLRO6				(1 << 14)		 // GPTU Output 6 Clear Bit
-#define GPTU_OUT_CLRO6_SHIFT		14
-#define GPTU_OUT_CLRO7				(1 << 15)		 // GPTU Output 7 Clear Bit
-#define GPTU_OUT_CLRO7_SHIFT		15
-#define GPTU_OUT_SETO0				(1 << 16)		 // GPTU Output 0 Set Bit
-#define GPTU_OUT_SETO0_SHIFT		16
-#define GPTU_OUT_SETO1				(1 << 17)		 // GPTU Output 1 Set Bit
-#define GPTU_OUT_SETO1_SHIFT		17
-#define GPTU_OUT_SETO2				(1 << 18)		 // GPTU Output 2 Set Bit
-#define GPTU_OUT_SETO2_SHIFT		18
-#define GPTU_OUT_SETO3				(1 << 19)		 // GPTU Output 3 Set Bit
-#define GPTU_OUT_SETO3_SHIFT		19
-#define GPTU_OUT_SETO4				(1 << 20)		 // GPTU Output 4 Set Bit
-#define GPTU_OUT_SETO4_SHIFT		20
-#define GPTU_OUT_SETO5				(1 << 21)		 // GPTU Output 5 Set Bit
-#define GPTU_OUT_SETO5_SHIFT		21
-#define GPTU_OUT_SETO6				(1 << 22)		 // GPTU Output 6 Set Bit
-#define GPTU_OUT_SETO6_SHIFT		22
-#define GPTU_OUT_SETO7				(1 << 23)		 // GPTU Output 7 Set Bit
-#define GPTU_OUT_SETO7_SHIFT		23
+#define GPTU_OUT							0x30
+#define GPTU_OUT_OUT0						(1 << 0)		 // GPTU Output State Bit 0
+#define GPTU_OUT_OUT0_SHIFT					0
+#define GPTU_OUT_OUT1						(1 << 1)		 // GPTU Output State Bit 1
+#define GPTU_OUT_OUT1_SHIFT					1
+#define GPTU_OUT_OUT2						(1 << 2)		 // GPTU Output State Bit 2
+#define GPTU_OUT_OUT2_SHIFT					2
+#define GPTU_OUT_OUT3						(1 << 3)		 // GPTU Output State Bit 3
+#define GPTU_OUT_OUT3_SHIFT					3
+#define GPTU_OUT_OUT4						(1 << 4)		 // GPTU Output State Bit 4
+#define GPTU_OUT_OUT4_SHIFT					4
+#define GPTU_OUT_OUT5						(1 << 5)		 // GPTU Output State Bit 5
+#define GPTU_OUT_OUT5_SHIFT					5
+#define GPTU_OUT_OUT6						(1 << 6)		 // GPTU Output State Bit 6
+#define GPTU_OUT_OUT6_SHIFT					6
+#define GPTU_OUT_OUT7						(1 << 7)		 // GPTU Output State Bit 7
+#define GPTU_OUT_OUT7_SHIFT					7
+#define GPTU_OUT_CLRO0						(1 << 8)		 // GPTU Output 0 Clear Bit
+#define GPTU_OUT_CLRO0_SHIFT				8
+#define GPTU_OUT_CLRO1						(1 << 9)		 // GPTU Output 1 Clear Bit
+#define GPTU_OUT_CLRO1_SHIFT				9
+#define GPTU_OUT_CLRO2						(1 << 10)		 // GPTU Output 2 Clear Bit
+#define GPTU_OUT_CLRO2_SHIFT				10
+#define GPTU_OUT_CLRO3						(1 << 11)		 // GPTU Output 3 Clear Bit
+#define GPTU_OUT_CLRO3_SHIFT				11
+#define GPTU_OUT_CLRO4						(1 << 12)		 // GPTU Output 4 Clear Bit
+#define GPTU_OUT_CLRO4_SHIFT				12
+#define GPTU_OUT_CLRO5						(1 << 13)		 // GPTU Output 5 Clear Bit
+#define GPTU_OUT_CLRO5_SHIFT				13
+#define GPTU_OUT_CLRO6						(1 << 14)		 // GPTU Output 6 Clear Bit
+#define GPTU_OUT_CLRO6_SHIFT				14
+#define GPTU_OUT_CLRO7						(1 << 15)		 // GPTU Output 7 Clear Bit
+#define GPTU_OUT_CLRO7_SHIFT				15
+#define GPTU_OUT_SETO0						(1 << 16)		 // GPTU Output 0 Set Bit
+#define GPTU_OUT_SETO0_SHIFT				16
+#define GPTU_OUT_SETO1						(1 << 17)		 // GPTU Output 1 Set Bit
+#define GPTU_OUT_SETO1_SHIFT				17
+#define GPTU_OUT_SETO2						(1 << 18)		 // GPTU Output 2 Set Bit
+#define GPTU_OUT_SETO2_SHIFT				18
+#define GPTU_OUT_SETO3						(1 << 19)		 // GPTU Output 3 Set Bit
+#define GPTU_OUT_SETO3_SHIFT				19
+#define GPTU_OUT_SETO4						(1 << 20)		 // GPTU Output 4 Set Bit
+#define GPTU_OUT_SETO4_SHIFT				20
+#define GPTU_OUT_SETO5						(1 << 21)		 // GPTU Output 5 Set Bit
+#define GPTU_OUT_SETO5_SHIFT				21
+#define GPTU_OUT_SETO6						(1 << 22)		 // GPTU Output 6 Set Bit
+#define GPTU_OUT_SETO6_SHIFT				22
+#define GPTU_OUT_SETO7						(1 << 23)		 // GPTU Output 7 Set Bit
+#define GPTU_OUT_SETO7_SHIFT				23
 
 /* T0 Count register (32 bit) */
-#define GPTU_T0DCBA					0x34
-#define GPTU_T0DCBA_T0A				(0xFF << 0)
-#define GPTU_T0DCBA_T0A_SHIFT		0
-#define GPTU_T0DCBA_T0B				(0xFF << 8)
-#define GPTU_T0DCBA_T0B_SHIFT		8
-#define GPTU_T0DCBA_T0C				(0xFF << 16)
-#define GPTU_T0DCBA_T0C_SHIFT		16
-#define GPTU_T0DCBA_T0D				(0xFF << 24)
-#define GPTU_T0DCBA_T0D_SHIFT		24
+#define GPTU_T0DCBA							0x34
+#define GPTU_T0DCBA_T0A						(0xFF << 0)
+#define GPTU_T0DCBA_T0A_SHIFT				0
+#define GPTU_T0DCBA_T0B						(0xFF << 8)
+#define GPTU_T0DCBA_T0B_SHIFT				8
+#define GPTU_T0DCBA_T0C						(0xFF << 16)
+#define GPTU_T0DCBA_T0C_SHIFT				16
+#define GPTU_T0DCBA_T0D						(0xFF << 24)
+#define GPTU_T0DCBA_T0D_SHIFT				24
 
 /* T0 Count register (24 bit) */
-#define GPTU_T0CBA					0x38
-#define GPTU_T0CBA_T0A				(0xFF << 0)
-#define GPTU_T0CBA_T0A_SHIFT		0
-#define GPTU_T0CBA_T0B				(0xFF << 8)
-#define GPTU_T0CBA_T0B_SHIFT		8
-#define GPTU_T0CBA_T0C				(0xFF << 16)
-#define GPTU_T0CBA_T0C_SHIFT		16
+#define GPTU_T0CBA							0x38
+#define GPTU_T0CBA_T0A						(0xFF << 0)
+#define GPTU_T0CBA_T0A_SHIFT				0
+#define GPTU_T0CBA_T0B						(0xFF << 8)
+#define GPTU_T0CBA_T0B_SHIFT				8
+#define GPTU_T0CBA_T0C						(0xFF << 16)
+#define GPTU_T0CBA_T0C_SHIFT				16
 
 /* T0 Reload register (32 bit) */
-#define GPTU_T0RDCBA				0x3C
-#define GPTU_T0RDCBA_T0RA			(0xFF << 0)
-#define GPTU_T0RDCBA_T0RA_SHIFT		0
-#define GPTU_T0RDCBA_T0RB			(0xFF << 8)
-#define GPTU_T0RDCBA_T0RB_SHIFT		8
-#define GPTU_T0RDCBA_T0RC			(0xFF << 16)
-#define GPTU_T0RDCBA_T0RC_SHIFT		16
-#define GPTU_T0RDCBA_T0RD			(0xFF << 24)
-#define GPTU_T0RDCBA_T0RD_SHIFT		24
+#define GPTU_T0RDCBA						0x3C
+#define GPTU_T0RDCBA_T0RA					(0xFF << 0)
+#define GPTU_T0RDCBA_T0RA_SHIFT				0
+#define GPTU_T0RDCBA_T0RB					(0xFF << 8)
+#define GPTU_T0RDCBA_T0RB_SHIFT				8
+#define GPTU_T0RDCBA_T0RC					(0xFF << 16)
+#define GPTU_T0RDCBA_T0RC_SHIFT				16
+#define GPTU_T0RDCBA_T0RD					(0xFF << 24)
+#define GPTU_T0RDCBA_T0RD_SHIFT				24
 
 /* T0 Reload register (24 bit) */
-#define GPTU_T0RCBA					0x40
-#define GPTU_T0RCBA_T0RA			(0xFF << 0)
-#define GPTU_T0RCBA_T0RA_SHIFT		0
-#define GPTU_T0RCBA_T0RB			(0xFF << 8)
-#define GPTU_T0RCBA_T0RB_SHIFT		8
-#define GPTU_T0RCBA_T0RC			(0xFF << 16)
-#define GPTU_T0RCBA_T0RC_SHIFT		16
+#define GPTU_T0RCBA							0x40
+#define GPTU_T0RCBA_T0RA					(0xFF << 0)
+#define GPTU_T0RCBA_T0RA_SHIFT				0
+#define GPTU_T0RCBA_T0RB					(0xFF << 8)
+#define GPTU_T0RCBA_T0RB_SHIFT				8
+#define GPTU_T0RCBA_T0RC					(0xFF << 16)
+#define GPTU_T0RCBA_T0RC_SHIFT				16
 
 /* T1 Count register (32 bit) */
-#define GPTU_T1DCBA					0x44
-#define GPTU_T1DCBA_T1A				(0xFF << 0)
-#define GPTU_T1DCBA_T1A_SHIFT		0
-#define GPTU_T1DCBA_T1B				(0xFF << 8)
-#define GPTU_T1DCBA_T1B_SHIFT		8
-#define GPTU_T1DCBA_T1C				(0xFF << 16)
-#define GPTU_T1DCBA_T1C_SHIFT		16
-#define GPTU_T1DCBA_T1D				(0xFF << 24)
-#define GPTU_T1DCBA_T1D_SHIFT		24
+#define GPTU_T1DCBA							0x44
+#define GPTU_T1DCBA_T1A						(0xFF << 0)
+#define GPTU_T1DCBA_T1A_SHIFT				0
+#define GPTU_T1DCBA_T1B						(0xFF << 8)
+#define GPTU_T1DCBA_T1B_SHIFT				8
+#define GPTU_T1DCBA_T1C						(0xFF << 16)
+#define GPTU_T1DCBA_T1C_SHIFT				16
+#define GPTU_T1DCBA_T1D						(0xFF << 24)
+#define GPTU_T1DCBA_T1D_SHIFT				24
 
 /* T1 Count register (24 bit) */
-#define GPTU_T1CBA					0x48
-#define GPTU_T1CBA_T1A				(0xFF << 0)
-#define GPTU_T1CBA_T1A_SHIFT		0
-#define GPTU_T1CBA_T1B				(0xFF << 8)
-#define GPTU_T1CBA_T1B_SHIFT		8
-#define GPTU_T1CBA_T1C				(0xFF << 16)
-#define GPTU_T1CBA_T1C_SHIFT		16
+#define GPTU_T1CBA							0x48
+#define GPTU_T1CBA_T1A						(0xFF << 0)
+#define GPTU_T1CBA_T1A_SHIFT				0
+#define GPTU_T1CBA_T1B						(0xFF << 8)
+#define GPTU_T1CBA_T1B_SHIFT				8
+#define GPTU_T1CBA_T1C						(0xFF << 16)
+#define GPTU_T1CBA_T1C_SHIFT				16
 
 /* T1 Reload register (32 bit) */
-#define GPTU_T1RDCBA				0x4C
-#define GPTU_T1RDCBA_T1RA			(0xFF << 0)
-#define GPTU_T1RDCBA_T1RA_SHIFT		0
-#define GPTU_T1RDCBA_T1RB			(0xFF << 8)
-#define GPTU_T1RDCBA_T1RB_SHIFT		8
-#define GPTU_T1RDCBA_T1RC			(0xFF << 16)
-#define GPTU_T1RDCBA_T1RC_SHIFT		16
-#define GPTU_T1RDCBA_T1RD			(0xFF << 24)
-#define GPTU_T1RDCBA_T1RD_SHIFT		24
+#define GPTU_T1RDCBA						0x4C
+#define GPTU_T1RDCBA_T1RA					(0xFF << 0)
+#define GPTU_T1RDCBA_T1RA_SHIFT				0
+#define GPTU_T1RDCBA_T1RB					(0xFF << 8)
+#define GPTU_T1RDCBA_T1RB_SHIFT				8
+#define GPTU_T1RDCBA_T1RC					(0xFF << 16)
+#define GPTU_T1RDCBA_T1RC_SHIFT				16
+#define GPTU_T1RDCBA_T1RD					(0xFF << 24)
+#define GPTU_T1RDCBA_T1RD_SHIFT				24
 
 /* T1 Reload register (24 bit) */
-#define GPTU_T1RCBA					0x50
-#define GPTU_T1RCBA_T1RA			(0xFF << 0)
-#define GPTU_T1RCBA_T1RA_SHIFT		0
-#define GPTU_T1RCBA_T1RB			(0xFF << 8)
-#define GPTU_T1RCBA_T1RB_SHIFT		8
-#define GPTU_T1RCBA_T1RC			(0xFF << 16)
-#define GPTU_T1RCBA_T1RC_SHIFT		16
+#define GPTU_T1RCBA							0x50
+#define GPTU_T1RCBA_T1RA					(0xFF << 0)
+#define GPTU_T1RCBA_T1RA_SHIFT				0
+#define GPTU_T1RCBA_T1RB					(0xFF << 8)
+#define GPTU_T1RCBA_T1RB_SHIFT				8
+#define GPTU_T1RCBA_T1RC					(0xFF << 16)
+#define GPTU_T1RCBA_T1RC_SHIFT				16
 
-#define GPTU_T2						0x54
-#define GPTU_T2_T2A					(0xFFFF << 0)	 // T2A Contents
-#define GPTU_T2_T2A_SHIFT			0
-#define GPTU_T2_T2B					(0xFFFF << 16)	 // T2B Contents
-#define GPTU_T2_T2B_SHIFT			16
+#define GPTU_T2								0x54
+#define GPTU_T2_T2A							(0xFFFF << 0)	 // T2A Contents
+#define GPTU_T2_T2A_SHIFT					0
+#define GPTU_T2_T2B							(0xFFFF << 16)	 // T2B Contents
+#define GPTU_T2_T2B_SHIFT					16
 
-#define GPTU_T2RC0					0x58
-#define GPTU_T2RC0_T2ARC0			(0xFFFF << 0)	 // T2A Reload/Capture Value
-#define GPTU_T2RC0_T2ARC0_SHIFT		0
-#define GPTU_T2RC0_T2BRC0			(0xFFFF << 16)	 // T2B Reload/Capture Value
-#define GPTU_T2RC0_T2BRC0_SHIFT		16
+#define GPTU_T2RC0							0x58
+#define GPTU_T2RC0_T2ARC0					(0xFFFF << 0)	 // T2A Reload/Capture Value
+#define GPTU_T2RC0_T2ARC0_SHIFT				0
+#define GPTU_T2RC0_T2BRC0					(0xFFFF << 16)	 // T2B Reload/Capture Value
+#define GPTU_T2RC0_T2BRC0_SHIFT				16
 
-#define GPTU_T2RC1					0x5C
-#define GPTU_T2RC1_T2ARC1			(0xFFFF << 0)	 // T2A Reload/Capture Value
-#define GPTU_T2RC1_T2ARC1_SHIFT		0
-#define GPTU_T2RC1_T2BRC1			(0xFFFF << 16)	 // T2B Reload/Capture Value
-#define GPTU_T2RC1_T2BRC1_SHIFT		16
+#define GPTU_T2RC1							0x5C
+#define GPTU_T2RC1_T2ARC1					(0xFFFF << 0)	 // T2A Reload/Capture Value
+#define GPTU_T2RC1_T2ARC1_SHIFT				0
+#define GPTU_T2RC1_T2BRC1					(0xFFFF << 16)	 // T2B Reload/Capture Value
+#define GPTU_T2RC1_T2BRC1_SHIFT				16
 
-#define GPTU_T012RUN				0x60
-#define GPTU_T012RUN_T0ARUN			(1 << 0)		 // Timer T0D Run Control.
-#define GPTU_T012RUN_T0ARUN_SHIFT	0
-#define GPTU_T012RUN_T0BRUN			(1 << 1)		 // Timer T0B Run Control.
-#define GPTU_T012RUN_T0BRUN_SHIFT	1
-#define GPTU_T012RUN_T0CRUN			(1 << 2)		 // Timer T0C Run Control.
-#define GPTU_T012RUN_T0CRUN_SHIFT	2
-#define GPTU_T012RUN_T0DRUN			(1 << 3)		 // Timer T0D Run Control.
-#define GPTU_T012RUN_T0DRUN_SHIFT	3
-#define GPTU_T012RUN_T1ARUN			(1 << 4)		 // Timer T1A Run Control.
-#define GPTU_T012RUN_T1ARUN_SHIFT	4
-#define GPTU_T012RUN_T1BRUN			(1 << 5)		 // Timer T1B Run Control.
-#define GPTU_T012RUN_T1BRUN_SHIFT	5
-#define GPTU_T012RUN_T1CRUN			(1 << 6)		 // Timer T1C Run Control.
-#define GPTU_T012RUN_T1CRUN_SHIFT	6
-#define GPTU_T012RUN_T1DRUN			(1 << 7)		 // Timer T1D Run Control.
-#define GPTU_T012RUN_T1DRUN_SHIFT	7
-#define GPTU_T012RUN_T2ARUN			(1 << 8)		 // Timer T2A Run Status Bit.
-#define GPTU_T012RUN_T2ARUN_SHIFT	8
-#define GPTU_T012RUN_T2ASETR		(1 << 9)		 // Timer T2A Run Set Bit.
-#define GPTU_T012RUN_T2ASETR_SHIFT	9
-#define GPTU_T012RUN_T2ACLRR		(1 << 10)		 // Timer T2A Run Clear Bit.
-#define GPTU_T012RUN_T2ACLRR_SHIFT	10
-#define GPTU_T012RUN_T2BRUN			(1 << 12)		 // Timer T2B Run Status Bit.
-#define GPTU_T012RUN_T2BRUN_SHIFT	12
-#define GPTU_T012RUN_T2BSETR		(1 << 13)		 // Timer T2B Run Set Bit.
-#define GPTU_T012RUN_T2BSETR_SHIFT	13
-#define GPTU_T012RUN_T2BCLRR		(1 << 14)		 // Timer T2B Run Clear Bit.
-#define GPTU_T012RUN_T2BCLRR_SHIFT	14
+#define GPTU_T012RUN						0x60
+#define GPTU_T012RUN_T0ARUN					(1 << 0)		 // Timer T0A Run Control.
+#define GPTU_T012RUN_T0ARUN_SHIFT			0
+#define GPTU_T012RUN_T0BRUN					(1 << 1)		 // Timer T0B Run Control.
+#define GPTU_T012RUN_T0BRUN_SHIFT			1
+#define GPTU_T012RUN_T0CRUN					(1 << 2)		 // Timer T0C Run Control.
+#define GPTU_T012RUN_T0CRUN_SHIFT			2
+#define GPTU_T012RUN_T0DRUN					(1 << 3)		 // Timer T0D Run Control.
+#define GPTU_T012RUN_T0DRUN_SHIFT			3
+#define GPTU_T012RUN_T1ARUN					(1 << 4)		 // Timer T1A Run Control.
+#define GPTU_T012RUN_T1ARUN_SHIFT			4
+#define GPTU_T012RUN_T1BRUN					(1 << 5)		 // Timer T1B Run Control.
+#define GPTU_T012RUN_T1BRUN_SHIFT			5
+#define GPTU_T012RUN_T1CRUN					(1 << 6)		 // Timer T1C Run Control.
+#define GPTU_T012RUN_T1CRUN_SHIFT			6
+#define GPTU_T012RUN_T1DRUN					(1 << 7)		 // Timer T1D Run Control.
+#define GPTU_T012RUN_T1DRUN_SHIFT			7
+#define GPTU_T012RUN_T2ARUN					(1 << 8)		 // Timer T2A Run Status Bit.
+#define GPTU_T012RUN_T2ARUN_SHIFT			8
+#define GPTU_T012RUN_T2ASETR				(1 << 9)		 // Timer T2A Run Set Bit.
+#define GPTU_T012RUN_T2ASETR_SHIFT			9
+#define GPTU_T012RUN_T2ACLRR				(1 << 10)		 // Timer T2A Run Clear Bit.
+#define GPTU_T012RUN_T2ACLRR_SHIFT			10
+#define GPTU_T012RUN_T2BRUN					(1 << 12)		 // Timer T2B Run Status Bit.
+#define GPTU_T012RUN_T2BRUN_SHIFT			12
+#define GPTU_T012RUN_T2BSETR				(1 << 13)		 // Timer T2B Run Set Bit.
+#define GPTU_T012RUN_T2BSETR_SHIFT			13
+#define GPTU_T012RUN_T2BCLRR				(1 << 14)		 // Timer T2B Run Clear Bit.
+#define GPTU_T012RUN_T2BCLRR_SHIFT			14
 
 /* Service Request Source Selection Register */
-#define GPTU_SRSEL					0xDC
-#define GPTU_SRSEL_SSR7				(0xF << 0)		 // GPTU IRQ 7 Source Selection
-#define GPTU_SRSEL_SSR7_SHIFT		0
-#define GPTU_SRSEL_SSR7_START_A		0x0
-#define GPTU_SRSEL_SSR7_STOP_A		0x1
-#define GPTU_SRSEL_SSR7_UPDOWN_A	0x2
-#define GPTU_SRSEL_SSR7_CLEAR_A		0x3
-#define GPTU_SRSEL_SSR7_RLCP0_A		0x4
-#define GPTU_SRSEL_SSR7_RLCP1_A		0x5
-#define GPTU_SRSEL_SSR7_OUV_T2A		0x6
-#define GPTU_SRSEL_SSR7_OUV_T2B		0x7
-#define GPTU_SRSEL_SSR7_START_B		0x8
-#define GPTU_SRSEL_SSR7_STOP_B		0x9
-#define GPTU_SRSEL_SSR7_RLCP0_B		0xA
-#define GPTU_SRSEL_SSR7_RLCP1_B		0xB
-#define GPTU_SRSEL_SSR7_SR00		0xC
-#define GPTU_SRSEL_SSR7_SR01		0xD
-#define GPTU_SRSEL_SSR7_SR10		0xE
-#define GPTU_SRSEL_SSR7_SR11		0xF
-#define GPTU_SRSEL_SSR6				(0xF << 4)		 // GPTU IRQ 6 Source Selection
-#define GPTU_SRSEL_SSR6_SHIFT		4
-#define GPTU_SRSEL_SSR6_START_A		0x0
-#define GPTU_SRSEL_SSR6_STOP_A		0x10
-#define GPTU_SRSEL_SSR6_UPDOWN_A	0x20
-#define GPTU_SRSEL_SSR6_CLEAR_A		0x30
-#define GPTU_SRSEL_SSR6_RLCP0_A		0x40
-#define GPTU_SRSEL_SSR6_RLCP1_A		0x50
-#define GPTU_SRSEL_SSR6_OUV_T2A		0x60
-#define GPTU_SRSEL_SSR6_OUV_T2B		0x70
-#define GPTU_SRSEL_SSR6_START_B		0x80
-#define GPTU_SRSEL_SSR6_STOP_B		0x90
-#define GPTU_SRSEL_SSR6_RLCP0_B		0xA0
-#define GPTU_SRSEL_SSR6_RLCP1_B		0xB0
-#define GPTU_SRSEL_SSR6_SR00		0xC0
-#define GPTU_SRSEL_SSR6_SR01		0xD0
-#define GPTU_SRSEL_SSR6_SR10		0xE0
-#define GPTU_SRSEL_SSR6_SR11		0xF0
-#define GPTU_SRSEL_SSR5				(0xF << 8)		 // GPTU IRQ 5 Source Selection
-#define GPTU_SRSEL_SSR5_SHIFT		8
-#define GPTU_SRSEL_SSR5_START_A		0x0
-#define GPTU_SRSEL_SSR5_STOP_A		0x100
-#define GPTU_SRSEL_SSR5_UPDOWN_A	0x200
-#define GPTU_SRSEL_SSR5_CLEAR_A		0x300
-#define GPTU_SRSEL_SSR5_RLCP0_A		0x400
-#define GPTU_SRSEL_SSR5_RLCP1_A		0x500
-#define GPTU_SRSEL_SSR5_OUV_T2A		0x600
-#define GPTU_SRSEL_SSR5_OUV_T2B		0x700
-#define GPTU_SRSEL_SSR5_START_B		0x800
-#define GPTU_SRSEL_SSR5_STOP_B		0x900
-#define GPTU_SRSEL_SSR5_RLCP0_B		0xA00
-#define GPTU_SRSEL_SSR5_RLCP1_B		0xB00
-#define GPTU_SRSEL_SSR5_SR00		0xC00
-#define GPTU_SRSEL_SSR5_SR01		0xD00
-#define GPTU_SRSEL_SSR5_SR10		0xE00
-#define GPTU_SRSEL_SSR5_SR11		0xF00
-#define GPTU_SRSEL_SSR4				(0xF << 12)		 // GPTU IRQ 4 Source Selection
-#define GPTU_SRSEL_SSR4_SHIFT		12
-#define GPTU_SRSEL_SSR4_START_A		0x0
-#define GPTU_SRSEL_SSR4_STOP_A		0x1000
-#define GPTU_SRSEL_SSR4_UPDOWN_A	0x2000
-#define GPTU_SRSEL_SSR4_CLEAR_A		0x3000
-#define GPTU_SRSEL_SSR4_RLCP0_A		0x4000
-#define GPTU_SRSEL_SSR4_RLCP1_A		0x5000
-#define GPTU_SRSEL_SSR4_OUV_T2A		0x6000
-#define GPTU_SRSEL_SSR4_OUV_T2B		0x7000
-#define GPTU_SRSEL_SSR4_START_B		0x8000
-#define GPTU_SRSEL_SSR4_STOP_B		0x9000
-#define GPTU_SRSEL_SSR4_RLCP0_B		0xA000
-#define GPTU_SRSEL_SSR4_RLCP1_B		0xB000
-#define GPTU_SRSEL_SSR4_SR00		0xC000
-#define GPTU_SRSEL_SSR4_SR01		0xD000
-#define GPTU_SRSEL_SSR4_SR10		0xE000
-#define GPTU_SRSEL_SSR4_SR11		0xF000
-#define GPTU_SRSEL_SSR3				(0xF << 16)		 // GPTU IRQ 3 Source Selection
-#define GPTU_SRSEL_SSR3_SHIFT		16
-#define GPTU_SRSEL_SSR3_START_A		0x0
-#define GPTU_SRSEL_SSR3_STOP_A		0x10000
-#define GPTU_SRSEL_SSR3_UPDOWN_A	0x20000
-#define GPTU_SRSEL_SSR3_CLEAR_A		0x30000
-#define GPTU_SRSEL_SSR3_RLCP0_A		0x40000
-#define GPTU_SRSEL_SSR3_RLCP1_A		0x50000
-#define GPTU_SRSEL_SSR3_OUV_T2A		0x60000
-#define GPTU_SRSEL_SSR3_OUV_T2B		0x70000
-#define GPTU_SRSEL_SSR3_START_B		0x80000
-#define GPTU_SRSEL_SSR3_STOP_B		0x90000
-#define GPTU_SRSEL_SSR3_RLCP0_B		0xA0000
-#define GPTU_SRSEL_SSR3_RLCP1_B		0xB0000
-#define GPTU_SRSEL_SSR3_SR00		0xC0000
-#define GPTU_SRSEL_SSR3_SR01		0xD0000
-#define GPTU_SRSEL_SSR3_SR10		0xE0000
-#define GPTU_SRSEL_SSR3_SR11		0xF0000
-#define GPTU_SRSEL_SSR2				(0xF << 20)		 // GPTU IRQ 2 Source Selection
-#define GPTU_SRSEL_SSR2_SHIFT		20
-#define GPTU_SRSEL_SSR2_START_A		0x0
-#define GPTU_SRSEL_SSR2_STOP_A		0x100000
-#define GPTU_SRSEL_SSR2_UPDOWN_A	0x200000
-#define GPTU_SRSEL_SSR2_CLEAR_A		0x300000
-#define GPTU_SRSEL_SSR2_RLCP0_A		0x400000
-#define GPTU_SRSEL_SSR2_RLCP1_A		0x500000
-#define GPTU_SRSEL_SSR2_OUV_T2A		0x600000
-#define GPTU_SRSEL_SSR2_OUV_T2B		0x700000
-#define GPTU_SRSEL_SSR2_START_B		0x800000
-#define GPTU_SRSEL_SSR2_STOP_B		0x900000
-#define GPTU_SRSEL_SSR2_RLCP0_B		0xA00000
-#define GPTU_SRSEL_SSR2_RLCP1_B		0xB00000
-#define GPTU_SRSEL_SSR2_SR00		0xC00000
-#define GPTU_SRSEL_SSR2_SR01		0xD00000
-#define GPTU_SRSEL_SSR2_SR10		0xE00000
-#define GPTU_SRSEL_SSR2_SR11		0xF00000
-#define GPTU_SRSEL_SSR1				(0xF << 24)		 // GPTU IRQ 1 Source Selection
-#define GPTU_SRSEL_SSR1_SHIFT		24
-#define GPTU_SRSEL_SSR1_START_A		0x0
-#define GPTU_SRSEL_SSR1_STOP_A		0x1000000
-#define GPTU_SRSEL_SSR1_UPDOWN_A	0x2000000
-#define GPTU_SRSEL_SSR1_CLEAR_A		0x3000000
-#define GPTU_SRSEL_SSR1_RLCP0_A		0x4000000
-#define GPTU_SRSEL_SSR1_RLCP1_A		0x5000000
-#define GPTU_SRSEL_SSR1_OUV_T2A		0x6000000
-#define GPTU_SRSEL_SSR1_OUV_T2B		0x7000000
-#define GPTU_SRSEL_SSR1_START_B		0x8000000
-#define GPTU_SRSEL_SSR1_STOP_B		0x9000000
-#define GPTU_SRSEL_SSR1_RLCP0_B		0xA000000
-#define GPTU_SRSEL_SSR1_RLCP1_B		0xB000000
-#define GPTU_SRSEL_SSR1_SR00		0xC000000
-#define GPTU_SRSEL_SSR1_SR01		0xD000000
-#define GPTU_SRSEL_SSR1_SR10		0xE000000
-#define GPTU_SRSEL_SSR1_SR11		0xF000000
-#define GPTU_SRSEL_SSR0				(0xF << 28)		 // GPTU IRQ 0 Source Selection
-#define GPTU_SRSEL_SSR0_SHIFT		28
-#define GPTU_SRSEL_SSR0_START_A		0x0
-#define GPTU_SRSEL_SSR0_STOP_A		0x10000000
-#define GPTU_SRSEL_SSR0_UPDOWN_A	0x20000000
-#define GPTU_SRSEL_SSR0_CLEAR_A		0x30000000
-#define GPTU_SRSEL_SSR0_RLCP0_A		0x40000000
-#define GPTU_SRSEL_SSR0_RLCP1_A		0x50000000
-#define GPTU_SRSEL_SSR0_OUV_T2A		0x60000000
-#define GPTU_SRSEL_SSR0_OUV_T2B		0x70000000
-#define GPTU_SRSEL_SSR0_START_B		0x80000000
-#define GPTU_SRSEL_SSR0_STOP_B		0x90000000
-#define GPTU_SRSEL_SSR0_RLCP0_B		0xA0000000
-#define GPTU_SRSEL_SSR0_RLCP1_B		0xB0000000
-#define GPTU_SRSEL_SSR0_SR00		0xC0000000
-#define GPTU_SRSEL_SSR0_SR01		0xD0000000
-#define GPTU_SRSEL_SSR0_SR10		0xE0000000
-#define GPTU_SRSEL_SSR0_SR11		0xF0000000
+#define GPTU_SRSEL							0xDC
+#define GPTU_SRSEL_SSR7						(0xF << 0)		 // GPTU IRQ 7 Source Selection
+#define GPTU_SRSEL_SSR7_SHIFT				0
+#define GPTU_SRSEL_SSR7_START_A				0x0
+#define GPTU_SRSEL_SSR7_STOP_A				0x1
+#define GPTU_SRSEL_SSR7_UPDOWN_A			0x2
+#define GPTU_SRSEL_SSR7_CLEAR_A				0x3
+#define GPTU_SRSEL_SSR7_RLCP0_A				0x4
+#define GPTU_SRSEL_SSR7_RLCP1_A				0x5
+#define GPTU_SRSEL_SSR7_OUV_T2A				0x6
+#define GPTU_SRSEL_SSR7_OUV_T2B				0x7
+#define GPTU_SRSEL_SSR7_START_B				0x8
+#define GPTU_SRSEL_SSR7_STOP_B				0x9
+#define GPTU_SRSEL_SSR7_RLCP0_B				0xA
+#define GPTU_SRSEL_SSR7_RLCP1_B				0xB
+#define GPTU_SRSEL_SSR7_SR00				0xC
+#define GPTU_SRSEL_SSR7_SR01				0xD
+#define GPTU_SRSEL_SSR7_SR10				0xE
+#define GPTU_SRSEL_SSR7_SR11				0xF
+#define GPTU_SRSEL_SSR6						(0xF << 4)		 // GPTU IRQ 6 Source Selection
+#define GPTU_SRSEL_SSR6_SHIFT				4
+#define GPTU_SRSEL_SSR6_START_A				0x0
+#define GPTU_SRSEL_SSR6_STOP_A				0x10
+#define GPTU_SRSEL_SSR6_UPDOWN_A			0x20
+#define GPTU_SRSEL_SSR6_CLEAR_A				0x30
+#define GPTU_SRSEL_SSR6_RLCP0_A				0x40
+#define GPTU_SRSEL_SSR6_RLCP1_A				0x50
+#define GPTU_SRSEL_SSR6_OUV_T2A				0x60
+#define GPTU_SRSEL_SSR6_OUV_T2B				0x70
+#define GPTU_SRSEL_SSR6_START_B				0x80
+#define GPTU_SRSEL_SSR6_STOP_B				0x90
+#define GPTU_SRSEL_SSR6_RLCP0_B				0xA0
+#define GPTU_SRSEL_SSR6_RLCP1_B				0xB0
+#define GPTU_SRSEL_SSR6_SR00				0xC0
+#define GPTU_SRSEL_SSR6_SR01				0xD0
+#define GPTU_SRSEL_SSR6_SR10				0xE0
+#define GPTU_SRSEL_SSR6_SR11				0xF0
+#define GPTU_SRSEL_SSR5						(0xF << 8)		 // GPTU IRQ 5 Source Selection
+#define GPTU_SRSEL_SSR5_SHIFT				8
+#define GPTU_SRSEL_SSR5_START_A				0x0
+#define GPTU_SRSEL_SSR5_STOP_A				0x100
+#define GPTU_SRSEL_SSR5_UPDOWN_A			0x200
+#define GPTU_SRSEL_SSR5_CLEAR_A				0x300
+#define GPTU_SRSEL_SSR5_RLCP0_A				0x400
+#define GPTU_SRSEL_SSR5_RLCP1_A				0x500
+#define GPTU_SRSEL_SSR5_OUV_T2A				0x600
+#define GPTU_SRSEL_SSR5_OUV_T2B				0x700
+#define GPTU_SRSEL_SSR5_START_B				0x800
+#define GPTU_SRSEL_SSR5_STOP_B				0x900
+#define GPTU_SRSEL_SSR5_RLCP0_B				0xA00
+#define GPTU_SRSEL_SSR5_RLCP1_B				0xB00
+#define GPTU_SRSEL_SSR5_SR00				0xC00
+#define GPTU_SRSEL_SSR5_SR01				0xD00
+#define GPTU_SRSEL_SSR5_SR10				0xE00
+#define GPTU_SRSEL_SSR5_SR11				0xF00
+#define GPTU_SRSEL_SSR4						(0xF << 12)		 // GPTU IRQ 4 Source Selection
+#define GPTU_SRSEL_SSR4_SHIFT				12
+#define GPTU_SRSEL_SSR4_START_A				0x0
+#define GPTU_SRSEL_SSR4_STOP_A				0x1000
+#define GPTU_SRSEL_SSR4_UPDOWN_A			0x2000
+#define GPTU_SRSEL_SSR4_CLEAR_A				0x3000
+#define GPTU_SRSEL_SSR4_RLCP0_A				0x4000
+#define GPTU_SRSEL_SSR4_RLCP1_A				0x5000
+#define GPTU_SRSEL_SSR4_OUV_T2A				0x6000
+#define GPTU_SRSEL_SSR4_OUV_T2B				0x7000
+#define GPTU_SRSEL_SSR4_START_B				0x8000
+#define GPTU_SRSEL_SSR4_STOP_B				0x9000
+#define GPTU_SRSEL_SSR4_RLCP0_B				0xA000
+#define GPTU_SRSEL_SSR4_RLCP1_B				0xB000
+#define GPTU_SRSEL_SSR4_SR00				0xC000
+#define GPTU_SRSEL_SSR4_SR01				0xD000
+#define GPTU_SRSEL_SSR4_SR10				0xE000
+#define GPTU_SRSEL_SSR4_SR11				0xF000
+#define GPTU_SRSEL_SSR3						(0xF << 16)		 // GPTU IRQ 3 Source Selection
+#define GPTU_SRSEL_SSR3_SHIFT				16
+#define GPTU_SRSEL_SSR3_START_A				0x0
+#define GPTU_SRSEL_SSR3_STOP_A				0x10000
+#define GPTU_SRSEL_SSR3_UPDOWN_A			0x20000
+#define GPTU_SRSEL_SSR3_CLEAR_A				0x30000
+#define GPTU_SRSEL_SSR3_RLCP0_A				0x40000
+#define GPTU_SRSEL_SSR3_RLCP1_A				0x50000
+#define GPTU_SRSEL_SSR3_OUV_T2A				0x60000
+#define GPTU_SRSEL_SSR3_OUV_T2B				0x70000
+#define GPTU_SRSEL_SSR3_START_B				0x80000
+#define GPTU_SRSEL_SSR3_STOP_B				0x90000
+#define GPTU_SRSEL_SSR3_RLCP0_B				0xA0000
+#define GPTU_SRSEL_SSR3_RLCP1_B				0xB0000
+#define GPTU_SRSEL_SSR3_SR00				0xC0000
+#define GPTU_SRSEL_SSR3_SR01				0xD0000
+#define GPTU_SRSEL_SSR3_SR10				0xE0000
+#define GPTU_SRSEL_SSR3_SR11				0xF0000
+#define GPTU_SRSEL_SSR2						(0xF << 20)		 // GPTU IRQ 2 Source Selection
+#define GPTU_SRSEL_SSR2_SHIFT				20
+#define GPTU_SRSEL_SSR2_START_A				0x0
+#define GPTU_SRSEL_SSR2_STOP_A				0x100000
+#define GPTU_SRSEL_SSR2_UPDOWN_A			0x200000
+#define GPTU_SRSEL_SSR2_CLEAR_A				0x300000
+#define GPTU_SRSEL_SSR2_RLCP0_A				0x400000
+#define GPTU_SRSEL_SSR2_RLCP1_A				0x500000
+#define GPTU_SRSEL_SSR2_OUV_T2A				0x600000
+#define GPTU_SRSEL_SSR2_OUV_T2B				0x700000
+#define GPTU_SRSEL_SSR2_START_B				0x800000
+#define GPTU_SRSEL_SSR2_STOP_B				0x900000
+#define GPTU_SRSEL_SSR2_RLCP0_B				0xA00000
+#define GPTU_SRSEL_SSR2_RLCP1_B				0xB00000
+#define GPTU_SRSEL_SSR2_SR00				0xC00000
+#define GPTU_SRSEL_SSR2_SR01				0xD00000
+#define GPTU_SRSEL_SSR2_SR10				0xE00000
+#define GPTU_SRSEL_SSR2_SR11				0xF00000
+#define GPTU_SRSEL_SSR1						(0xF << 24)		 // GPTU IRQ 1 Source Selection
+#define GPTU_SRSEL_SSR1_SHIFT				24
+#define GPTU_SRSEL_SSR1_START_A				0x0
+#define GPTU_SRSEL_SSR1_STOP_A				0x1000000
+#define GPTU_SRSEL_SSR1_UPDOWN_A			0x2000000
+#define GPTU_SRSEL_SSR1_CLEAR_A				0x3000000
+#define GPTU_SRSEL_SSR1_RLCP0_A				0x4000000
+#define GPTU_SRSEL_SSR1_RLCP1_A				0x5000000
+#define GPTU_SRSEL_SSR1_OUV_T2A				0x6000000
+#define GPTU_SRSEL_SSR1_OUV_T2B				0x7000000
+#define GPTU_SRSEL_SSR1_START_B				0x8000000
+#define GPTU_SRSEL_SSR1_STOP_B				0x9000000
+#define GPTU_SRSEL_SSR1_RLCP0_B				0xA000000
+#define GPTU_SRSEL_SSR1_RLCP1_B				0xB000000
+#define GPTU_SRSEL_SSR1_SR00				0xC000000
+#define GPTU_SRSEL_SSR1_SR01				0xD000000
+#define GPTU_SRSEL_SSR1_SR10				0xE000000
+#define GPTU_SRSEL_SSR1_SR11				0xF000000
+#define GPTU_SRSEL_SSR0						(0xF << 28)		 // GPTU IRQ 0 Source Selection
+#define GPTU_SRSEL_SSR0_SHIFT				28
+#define GPTU_SRSEL_SSR0_START_A				0x0
+#define GPTU_SRSEL_SSR0_STOP_A				0x10000000
+#define GPTU_SRSEL_SSR0_UPDOWN_A			0x20000000
+#define GPTU_SRSEL_SSR0_CLEAR_A				0x30000000
+#define GPTU_SRSEL_SSR0_RLCP0_A				0x40000000
+#define GPTU_SRSEL_SSR0_RLCP1_A				0x50000000
+#define GPTU_SRSEL_SSR0_OUV_T2A				0x60000000
+#define GPTU_SRSEL_SSR0_OUV_T2B				0x70000000
+#define GPTU_SRSEL_SSR0_START_B				0x80000000
+#define GPTU_SRSEL_SSR0_STOP_B				0x90000000
+#define GPTU_SRSEL_SSR0_RLCP0_B				0xA0000000
+#define GPTU_SRSEL_SSR0_RLCP1_B				0xB0000000
+#define GPTU_SRSEL_SSR0_SR00				0xC0000000
+#define GPTU_SRSEL_SSR0_SR01				0xD0000000
+#define GPTU_SRSEL_SSR0_SR10				0xE0000000
+#define GPTU_SRSEL_SSR0_SR11				0xF0000000
 
 /* Service Routing Control Register */
-#define GPTU_SRC0					0xE0
-
-/* Service Routing Control Register */
-#define GPTU_SRC1					0xE4
-
-/* Service Routing Control Register */
-#define GPTU_SRC2					0xE8
-
-/* Service Routing Control Register */
-#define GPTU_SRC3					0xEC
-
-/* Service Routing Control Register */
-#define GPTU_SRC4					0xF0
-
-/* Service Routing Control Register */
-#define GPTU_SRC5					0xF4
-
-/* Service Routing Control Register */
-#define GPTU_SRC6					0xF8
-
-/* Service Routing Control Register */
-#define GPTU_SRC7					0xFC
+#define GPTU_SRC0							0xE0
+#define GPTU_SRC1							0xE4
+#define GPTU_SRC2							0xE8
+#define GPTU_SRC3							0xEC
+#define GPTU_SRC4							0xF0
+#define GPTU_SRC5							0xF4
+#define GPTU_SRC6							0xF8
+#define GPTU_SRC7							0xFC
 
 
 // AFC [MOD_NUM=F004, MOD_REV=00, MOD_32BIT=C0]
@@ -5761,10 +5876,10 @@
 
 /* Receive Transmit Buffer */
 #define I2Cv2_RTB						0x18
-#define I2Cv2_RTB_BYTE1					(0xFF << 8)
-#define I2Cv2_RTB_BYTE1_SHIFT			8
 #define I2Cv2_RTB_BYTE0					(0xFF << 8)
 #define I2Cv2_RTB_BYTE0_SHIFT			8
+#define I2Cv2_RTB_BYTE1					(0xFF << 8)
+#define I2Cv2_RTB_BYTE1_SHIFT			8
 #define I2Cv2_RTB_BYTE2					(0xFF << 16)
 #define I2Cv2_RTB_BYTE2_SHIFT			16
 #define I2Cv2_RTB_BYTE3					(0xFF << 24)
@@ -6178,16 +6293,18 @@
 
 /* RTC Control Register */
 #define RTC_CON						0x14
-#define RTC_CON_RUN					(1 << 0)			 // RTC Enable
+#define RTC_CON_RUN					(1 << 0)			 // RTC Run Bit
 #define RTC_CON_RUN_SHIFT			0
-#define RTC_CON_PRE					(1 << 1)			 // RTC Input Source Pre-Scaler Enable
+#define RTC_CON_PRE					(1 << 1)			 // RTC Input Source Prescaler (8:1) Enable
 #define RTC_CON_PRE_SHIFT			1
-#define RTC_CON_T14DEC				(1 << 2)			 // Decrement T14 Timer Value
+#define RTC_CON_T14DEC				(1 << 2)			 // Decrement Timer T14 Value
 #define RTC_CON_T14DEC_SHIFT		2
-#define RTC_CON_T14INC				(1 << 3)			 // Increment T14 Timer Value
+#define RTC_CON_T14INC				(1 << 3)			 // Increment Timer T14 Value
 #define RTC_CON_T14INC_SHIFT		3
-#define RTC_CON_ACCPOS				(1 << 4)			 // RTC Register Access Possible
-#define RTC_CON_ACCPOS_SHIFT		4
+#define RTC_CON_REFCLK				(1 << 4)			 // RTC Input Source Prescaler (32:1) Disable
+#define RTC_CON_REFCLK_SHIFT		4
+#define RTC_CON_ACCPOS				(1 << 15)			 // RTC Register Access Possible
+#define RTC_CON_ACCPOS_SHIFT		15
 
 /* Timer T14 Count/Reload Register */
 #define RTC_T14						0x18
@@ -6208,30 +6325,32 @@
 
 /* Interrupt Sub-Node Control Register */
 #define RTC_ISNC					0x24
-#define RTC_ISNC_T14IE				(1 << 0)			 // T14 Overflow Interrupt Enable Control
+#define RTC_ISNC_T14IE				(1 << 0)			 // T14 Overflow Interrupt Enable Control Bit
 #define RTC_ISNC_T14IE_SHIFT		0
-#define RTC_ISNC_T14IR				(1 << 1)			 // T14 Overflow Interrupt Request
+#define RTC_ISNC_T14IR				(1 << 1)			 // T14 Overflow Interrupt Request Flag
 #define RTC_ISNC_T14IR_SHIFT		1
-#define RTC_ISNC_RTC0IE				(1 << 2)			 // Interrupt Enable Control
+#define RTC_ISNC_RTC0IE				(1 << 2)			 // Section CNTx Interrupt Enable Control Bit
 #define RTC_ISNC_RTC0IE_SHIFT		2
-#define RTC_ISNC_RTC0IR				(1 << 3)			 // Interrupt Request
+#define RTC_ISNC_RTC0IR				(1 << 3)			 // Section CNTx Interrupt Request Flag
 #define RTC_ISNC_RTC0IR_SHIFT		3
-#define RTC_ISNC_RTC1IE				(1 << 4)			 // Interrupt Enable Control
+#define RTC_ISNC_RTC1IE				(1 << 4)			 // Section CNTx Interrupt Enable Control Bit
 #define RTC_ISNC_RTC1IE_SHIFT		4
-#define RTC_ISNC_RTC1IR				(1 << 5)			 // Interrupt Request
+#define RTC_ISNC_RTC1IR				(1 << 5)			 // Section CNTx Interrupt Request Flag
 #define RTC_ISNC_RTC1IR_SHIFT		5
-#define RTC_ISNC_RTC2IE				(1 << 6)			 // Interrupt Enable Control
+#define RTC_ISNC_RTC2IE				(1 << 6)			 // Section CNTx Interrupt Enable Control Bit
 #define RTC_ISNC_RTC2IE_SHIFT		6
-#define RTC_ISNC_RTC2IR				(1 << 7)			 // Interrupt Request
+#define RTC_ISNC_RTC2IR				(1 << 7)			 // Section CNTx Interrupt Request Flag
 #define RTC_ISNC_RTC2IR_SHIFT		7
-#define RTC_ISNC_RTC3IE				(1 << 8)			 // Interrupt Enable Control
+#define RTC_ISNC_RTC3IE				(1 << 8)			 // Section CNTx Interrupt Enable Control Bit
 #define RTC_ISNC_RTC3IE_SHIFT		8
-#define RTC_ISNC_RTC3IR				(1 << 9)			 // Interrupt Request
+#define RTC_ISNC_RTC3IR				(1 << 9)			 // Section CNTx Interrupt Request Flag
 #define RTC_ISNC_RTC3IR_SHIFT		9
-#define RTC_ISNC_ALARMIE			(1 << 10)			 // Alarm Interrupt Enable Control
+#define RTC_ISNC_ALARMIE			(1 << 10)			 // Alarm Interrupt Enable Control Bit
 #define RTC_ISNC_ALARMIE_SHIFT		10
-#define RTC_ISNC_ALARMIR			(1 << 11)			 // Alarm Interrupt Request
+#define RTC_ISNC_ALARMIR			(1 << 11)			 // Alarm Interrupt Request Flag
 #define RTC_ISNC_ALARMIR_SHIFT		11
+
+#define RTC_UNK0					0x28
 
 /* RTC Alarm Register */
 #define RTC_ALARM					0x2C

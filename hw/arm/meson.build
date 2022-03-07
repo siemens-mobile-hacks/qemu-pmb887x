@@ -28,6 +28,7 @@ arm_ss.add(when: 'CONFIG_VERSATILE', if_true: files('versatilepb.c'))
 arm_ss.add(when: 'CONFIG_PMB887X', if_true: files(
 	'pmb887x.c',
 	'pmb887x/qemu-machines.c',
+	'pmb887x/amc.c',
 	'pmb887x/fifo.c',
 	'pmb887x/boards.c',
 	'pmb887x/devices.c',

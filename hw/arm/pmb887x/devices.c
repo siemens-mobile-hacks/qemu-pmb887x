@@ -5,6 +5,7 @@
 #include "hw/qdev-core.h"
 #include "hw/irq.h"
 #include "hw/sysbus.h"
+#include "hw/hw.h"
 
 #include "hw/arm/pmb887x/regs.h"
 #include "hw/arm/pmb887x/io_bridge.h"
@@ -226,6 +227,16 @@ static const struct pmb887x_dev pmb8876_devices[] = {
 			PMB8876_DMAC_CH7_IRQ,
 			0
 		}
+	},
+	{
+		.name	= "AMC",
+		.dev	= "pmb887x-amc",
+		.base	= PMB8876_AMC_BASE,
+		.irqs	= {
+			PMB8876_AMC_INT0_IRQ,
+			PMB8876_AMC_INT1_IRQ,
+			0
+		}
 	}
 };
 
@@ -433,6 +444,16 @@ static const struct pmb887x_dev pmb8875_devices[] = {
 			PMB8875_DMAC_CH7_IRQ,
 			0
 		}
+	},
+	{
+		.name	= "AMC",
+		.dev	= "pmb887x-amc",
+		.base	= PMB8875_AMC_BASE,
+		.irqs	= {
+			PMB8875_AMC_INT0_IRQ,
+			PMB8875_AMC_INT1_IRQ,
+			0
+		}
 	}
 };
 
@@ -462,10 +483,8 @@ DeviceState *pmb887x_new_dev(uint32_t cpu_type, const char *name, DeviceState *n
 		
 		uint32_t irq_n = 0;
 		while (device->irqs[irq_n]) {
-			if (!nvic) {
-				error_report("Can't find nvic for: %s\n", name);
-				abort();
-			}
+			if (!nvic)
+				hw_error("Can't find nvic for: %s\n", name);
 			
 			sysbus_connect_irq(SYS_BUS_DEVICE(dev), irq_n, qdev_get_gpio_in(nvic, device->irqs[irq_n]));
 			irq_n++;
@@ -476,8 +495,7 @@ DeviceState *pmb887x_new_dev(uint32_t cpu_type, const char *name, DeviceState *n
 		return dev;
 	}
 	
-	error_report("Can't find device: %s\n", name);
-	abort();
+	hw_error("Can't find device: %s\n", name);
 	
 	return NULL;
 }

@@ -67,10 +67,8 @@ struct pmb887x_dmac_t {
 };
 
 static uint32_t dmac_get_width(uint32_t s) {
-	if (s > 2) {
-		error_report("pmb887x-dmac: unknown width %d", s);
-		abort();
-	}
+	if (s > 2)
+		hw_error("pmb887x-dmac: unknown width %d", s);
 	return 1 << s;
 }
 
@@ -131,8 +129,7 @@ static void dmac_channel_run(pmb887x_dmac_t *p, pmb887x_dmac_ch_t *ch) {
 		break;
 		
 		default:
-			error_report("pmb887x-dmac: unsupported flow type %08X", (ch->config & DMAC_CH_CONFIG_FLOW_CTRL));
-			abort();
+			hw_error("pmb887x-dmac: unsupported flow type %08X", (ch->config & DMAC_CH_CONFIG_FLOW_CTRL));
 		break;
 	}
 	
@@ -261,8 +258,7 @@ static int dmac_get_index_by_reg(uint32_t reg) {
 		case DMAC_PERIPH_ID2:	return 2;
 		case DMAC_PERIPH_ID3:	return 3;
 	}
-	error_report("pmb887x-dmac: unknown reg %d", reg);
-	abort();
+	hw_error("pmb887x-dmac: unknown reg %d", reg);
 	return -1;
 }
 
@@ -496,8 +492,7 @@ static int dmac_tc_irq_router(void *opaque, int event_id) {
 	if (event_id < DMAC_CHANNELS)
 		return event_id;
 	
-	error_report("Unknown event id: %d\n", event_id);
-	abort();
+	hw_error("Unknown event id: %d\n", event_id);
 	
 	return 0;
 }

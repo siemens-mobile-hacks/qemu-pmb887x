@@ -496,10 +496,8 @@ static void usart_realize(DeviceState *dev, Error **errp) {
 	pmb887x_clc_init(&p->clc);
 	
 	for (int i = 0; i < ARRAY_SIZE(p->irq); i++) {
-		if (!p->irq[i]) {
-			error_report("pmb887x-usart: irq %d not set", i);
-			abort();
-		}
+		if (!p->irq[i])
+			hw_error("pmb887x-usart: irq %d not set", i);
 	}
 	
     pmb887x_fifo_init(&p->tx_fifo_buffered, FIFO_SIZE);

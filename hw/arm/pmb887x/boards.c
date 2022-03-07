@@ -127,6 +127,7 @@ static pmb887x_fixed_gpio_t board_el71_fixed_gpio[] = {
 	{EL71_GPIO_HW_DET_MOB_TYPE4,	1},
 	{EL71_GPIO_HW_DET_BLUETOOTH,	0},
 	{EL71_GPIO_HW_DET_BAND_SEL,		0},
+	{EL71_GPIO_OPEN_CLOSE_SW2,		1},
 };
 
 static uint32_t board_el71_flashes[] = {
