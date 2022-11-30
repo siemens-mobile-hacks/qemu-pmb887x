@@ -1,5 +1,5 @@
 /*
- * General Purpose Timer Unit
+ * GPTU (General Purpose Timer Unit)
  * */
 #include "qemu/osdep.h"
 #include "hw/sysbus.h"
@@ -95,6 +95,7 @@ typedef struct {
 	pmb887x_src_reg_t src[8];
 	
 	pmb887x_gptu_timer_t timers[8];
+	pmb887x_gptu_timer_t timers_t2[2];
 	pmb887x_gptu_ev_t events[16];
 	int events_ssr[2][2];
 	

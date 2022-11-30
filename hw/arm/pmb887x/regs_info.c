@@ -1147,8 +1147,8 @@ static pmb887x_module_field_t cif_id_fields[] = {
 };
 
 static pmb887x_module_reg_t cif_regs[] = {
-	{"UNK0",	CIF_UNK0,	NULL,			0,							0},
 	{"CLC",		CIF_CLC,	cif_clc_fields,	ARRAY_SIZE(cif_clc_fields),	0},
+	{"UNK0",	CIF_UNK0,	NULL,			0,							0},
 	{"ID",		CIF_ID,		cif_id_fields,	ARRAY_SIZE(cif_id_fields),	0},
 	{"UNK1",	CIF_UNK1,	NULL,			0,							0},
 	{"UNK2",	CIF_UNK2,	NULL,			0,							0},
@@ -5013,8 +5013,8 @@ static pmb887x_module_field_t i2cv2_buscon_fields[] = {
 };
 
 static pmb887x_module_field_t i2cv2_rtb_fields[] = {
-	{"BYTE0",	I2Cv2_RTB_BYTE0,	I2Cv2_RTB_BYTE0_SHIFT,	NULL,	0},
 	{"BYTE1",	I2Cv2_RTB_BYTE1,	I2Cv2_RTB_BYTE1_SHIFT,	NULL,	0},
+	{"BYTE0",	I2Cv2_RTB_BYTE0,	I2Cv2_RTB_BYTE0_SHIFT,	NULL,	0},
 	{"BYTE2",	I2Cv2_RTB_BYTE2,	I2Cv2_RTB_BYTE2_SHIFT,	NULL,	0},
 	{"BYTE3",	I2Cv2_RTB_BYTE3,	I2Cv2_RTB_BYTE3_SHIFT,	NULL,	0},
 };

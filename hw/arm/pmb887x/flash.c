@@ -1,5 +1,5 @@
 /*
- * NOR FLASH (Intel CFI)
+ * NOR FLASH (Intel/ST CFI)
  * */
 #include "qemu/osdep.h"
 #include "hw/sysbus.h"
