@@ -7653,16 +7653,16 @@ static CPAccessResult access_joscr_jmcr(CPUARMState *env,
 static const ARMCPRegInfo jazelle_regs[] = {
     { .name = "JIDR",
       .cp = 14, .crn = 0, .crm = 0, .opc1 = 7, .opc2 = 0,
-      .access = PL1_R, .accessfn = access_jazelle,
+      .access = PL0_R, .accessfn = access_jazelle,
       .type = ARM_CP_CONST, .resetvalue = 0 },
     { .name = "JOSCR",
       .cp = 14, .crn = 1, .crm = 0, .opc1 = 7, .opc2 = 0,
       .accessfn = access_joscr_jmcr,
-      .access = PL1_RW, .type = ARM_CP_CONST, .resetvalue = 0 },
+      .access = PL0_RW, .type = ARM_CP_CONST, .resetvalue = 0 },
     { .name = "JMCR",
       .cp = 14, .crn = 2, .crm = 0, .opc1 = 7, .opc2 = 0,
       .accessfn = access_joscr_jmcr,
-      .access = PL1_RW, .type = ARM_CP_CONST, .resetvalue = 0 },
+      .access = PL0_RW, .type = ARM_CP_CONST, .resetvalue = 0 },
 };
 
 static const ARMCPRegInfo contextidr_el2 = {
