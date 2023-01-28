@@ -694,7 +694,11 @@ static void flash_init_part(pmb887x_flash_bank_t *bank, uint32_t offset, uint32_
 	
 	p->storage = memory_region_get_ram_ptr(&p->mem);
 	
-	int ret = blk_pread(p->flash->blk, offset, p->storage, size);
+	int co_wrapper_mixed blk_pread(BlockBackend *blk, int64_t offset,
+                               int64_t bytes, void *buf,
+                               BdrvRequestFlags flags);
+	
+	int ret = blk_pread(p->flash->blk, offset, size, p->storage, 0);
 	if (ret < 0) {
 		flash_error(p->flash, "failed to read the initial flash content [offset=%08X, size=%08X]", offset, size);
 		abort();

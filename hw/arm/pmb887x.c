@@ -19,6 +19,7 @@
 #include "sysemu/cpu-throttle.h"
 #include "sysemu/accel-ops.h"
 #include "sysemu/cpu-timers.h"
+#include "target/arm/cpregs.h"
 
 #include "hw/arm/pmb887x/regs.h"
 #include "hw/arm/pmb887x/io_bridge.h"
@@ -91,7 +92,6 @@ static const ARMCPRegInfo cp_reginfo[] = {
 		.access = PL1_RW, .readfn = pmb8876_atcm_read, .writefn = pmb8876_atcm_write },
 	{ .name = "BTCM", .cp = 15, .opc1 = 0, .crn = 9, .crm = 1, .opc2 = 1,
 		.access = PL1_RW, .readfn = pmb8876_btcm_read, .writefn = pmb8876_btcm_write },
-	REGINFO_SENTINEL
 };
 
 static uint64_t cpu_io_read(void *opaque, hwaddr offset, unsigned size) {
