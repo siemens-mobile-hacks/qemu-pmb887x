@@ -18,11 +18,10 @@
 #include "hw/arm/pmb887x/regs_dump.h"
 #include "hw/arm/pmb887x/mod.h"
 #include "hw/arm/pmb887x/dmac.h"
+#include "hw/arm/pmb887x/trace.h"
 
-#define DMAC_DEBUG
-
-#ifdef DMAC_DEBUG
-#define DPRINTF(fmt, ...) do { fprintf(stderr, "[pmb887x-dmac]: " fmt , ## __VA_ARGS__); } while (0)
+#ifdef PMB887X_DMAC_DEBUG
+#define DPRINTF(fmt, ...) do { qemu_log_mask(LOG_TRACE, "[pmb887x-dmac]: " fmt , ## __VA_ARGS__); } while (0)
 #else
 #define DPRINTF(fmt, ...) do { } while (0)
 #endif

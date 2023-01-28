@@ -940,6 +940,8 @@ void flash_error(pmb887x_flash_t *flash, const char *format, ...) {
 }
 
 void flash_trace_part(pmb887x_flash_part_t *p, const char *format, ...) {
+	return;
+	
 	fprintf(stderr, "[pmb887x-flash %d/%02d] ", p->bank->n, p->n);
 	
 	va_list args;
@@ -951,6 +953,8 @@ void flash_trace_part(pmb887x_flash_part_t *p, const char *format, ...) {
 }
 
 void flash_trace(pmb887x_flash_t *flash, const char *format, ...) {
+	return;
+	
 	fprintf(stderr, "[pmb887x-flash] ");
 	
 	va_list args;

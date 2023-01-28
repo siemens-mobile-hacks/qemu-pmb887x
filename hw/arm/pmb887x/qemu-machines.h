@@ -6,3 +6,4 @@
 #include "target/arm/cpu.h"
 
 void pmb887x_init(MachineState *machine, uint32_t board_id);
+void pmb887x_class_init(ObjectClass *oc, void *data);

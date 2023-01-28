@@ -13,11 +13,10 @@
 #include "hw/arm/pmb887x/io_bridge.h"
 #include "hw/arm/pmb887x/regs_dump.h"
 #include "hw/arm/pmb887x/mod.h"
+#include "hw/arm/pmb887x/trace.h"
 
-#define EBU_DEBUG
-
-#ifdef EBU_DEBUG
-#define DPRINTF(fmt, ...) do { fprintf(stderr, "[pmb887x-ebu]: " fmt , ## __VA_ARGS__); } while (0)
+#ifdef PMB887X_EBU_DEBUG
+#define DPRINTF(fmt, ...) do { qemu_log_mask(LOG_TRACE, "[pmb887x-ebu]: " fmt , ## __VA_ARGS__); } while (0)
 #else
 #define DPRINTF(fmt, ...) do { } while (0)
 #endif

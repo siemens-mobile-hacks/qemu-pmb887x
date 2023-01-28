@@ -2,11 +2,10 @@
 #include "hw/arm/pmb887x/regs.h"
 #include "hw/hw.h"
 #include "qemu/error-report.h"
+#include "hw/arm/pmb887x/trace.h"
 
-#define MOD_DEBUG
-
-#ifdef MOD_DEBUG
-#define DPRINTF(fmt, ...) do { fprintf(stderr, "[pmb887x-mod]: " fmt, ## __VA_ARGS__); } while (0)
+#ifdef PMB887X_MOD_DEBUG
+#define DPRINTF(fmt, ...) do { qemu_log_mask(LOG_TRACE, "[pmb887x-mod]: " fmt, ## __VA_ARGS__); } while (0)
 #else
 #define DPRINTF(fmt, ...) do { } while (0)
 #endif

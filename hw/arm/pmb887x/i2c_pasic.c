@@ -14,11 +14,10 @@
 #include "hw/qdev-properties.h"
 #include "qapi/error.h"
 #include "hw/i2c/i2c.h"
+#include "hw/arm/pmb887x/trace.h"
 
-#define PASIC_DEBUG
-
-#ifdef PASIC_DEBUG
-#define DPRINTF(fmt, ...) do { fprintf(stderr, "[pmb887x-pasic]: " fmt , ## __VA_ARGS__); } while (0)
+#ifdef PMB887X_PASIC_DEBUG
+#define DPRINTF(fmt, ...) do { qemu_log_mask(LOG_TRACE, "[pmb887x-pasic]: " fmt , ## __VA_ARGS__); } while (0)
 #else
 #define DPRINTF(fmt, ...) do { } while (0)
 #endif

@@ -17,12 +17,15 @@
 #include "sysemu/block-backend.h"
 #include "qapi/qapi-commands-machine.h"
 #include "sysemu/cpu-throttle.h"
+#include "sysemu/accel-ops.h"
+#include "sysemu/cpu-timers.h"
 
 #include "hw/arm/pmb887x/regs.h"
 #include "hw/arm/pmb887x/io_bridge.h"
 #include "hw/arm/pmb887x/regs_dump.h"
 #include "hw/arm/pmb887x/devices.h"
 #include "hw/arm/pmb887x/i2c.h"
+#include "hw/arm/pmb887x/pll.h"
 #include "hw/arm/pmb887x/boards.h"
 #include "hw/arm/pmb887x/qemu-machines.h"
 
@@ -30,6 +33,7 @@ static MemoryRegion tcm_memory[2];
 static uint32_t tcm_regs[2] = {0x10, 0x10};
 
 static pmb887x_board_t *board = NULL;
+static struct pmb887x_pll_t *cpu_pll = NULL;
 static ARMCPU *cpu = NULL;
 
 /*
@@ -100,6 +104,9 @@ static uint64_t cpu_io_read(void *opaque, hwaddr offset, unsigned size) {
 	if (addr == 0xF4C00000)
 		value = 0xFFFFFFFF;
 	
+	if (addr == 0xf4600024)
+		value = 0x800000 | 0x11;
+	
 	#ifdef PMB887X_IO_BRIDGE
 	value = pmb8876_io_bridge_read(addr, size);
 	pmb887x_dump_io(addr, size, value, false);
@@ -108,7 +115,7 @@ static uint64_t cpu_io_read(void *opaque, hwaddr offset, unsigned size) {
 	
 	pmb887x_dump_io(addr, size, value, false);
 	
-	fprintf(stderr, "READ: unknown reg access: %08lX\n", addr);
+	//fprintf(stderr, "READ: unknown reg access: %08lX\n", addr);
 	//exit(1);
 	
 	return value;
@@ -124,7 +131,7 @@ static void cpu_io_write(void *opaque, hwaddr offset, uint64_t value, unsigned s
 	return;
 	#endif
 	
-	fprintf(stderr, "WRITE: unknown reg access: %08lX\n", addr);
+	//fprintf(stderr, "WRITE: unknown reg access: %08lX\n", addr);
 	//exit(1);
 }
 
@@ -189,15 +196,24 @@ static DeviceState *create_flash(BlockBackend *blk, uint32_t *banks, int banks_n
 	return flash;
 }
 
+void pmb887x_class_init(ObjectClass *oc, void *data) {
+	// Nothing todo
+}
+
 void pmb887x_init(MachineState *machine, uint32_t board_id) {
 	board = pmb887x_get_board(board_id);
+	
+	if (!icount_enabled()) {
+		error_report("Icount must be enabled with: -icount shift=0");
+		exit(1);
+	}
 	
 	#ifdef PMB887X_IO_BRIDGE
 	fprintf(stderr, "Waiting for IO bridge...\n");
 	pmb8876_io_bridge_init();
 	#endif
 	
-	pmb887x_dump_set_board(board_id);
+	pmb887x_io_dump_init(board_id);
 	
 	MemoryRegion *sysmem = get_system_memory();
 	
@@ -278,22 +294,12 @@ void pmb887x_init(MachineState *machine, uint32_t board_id) {
 		exit(1);
 	}
 	
-	// FLASH image
-	DriveInfo *flash_dinfo = drive_get(IF_PFLASH, 0, 0);
-	if (!flash_dinfo) {
-		error_report("Flash ROM must be specified with -drive if=pflash,format=raw,file=fullflash.bin");
-		exit(1);
-	}
-	
-	BlockBackend *flash_blk = blk_by_legacy_dinfo(flash_dinfo);
-	uint64_t flash_sz = blk_getlength(flash_blk);
-	
-	if (machine->ram_size != 0x800000 && machine->ram_size != 0x1000000 && machine->ram_size != 0x2000000) {
-		error_report("Invalid flash RAM size (%ld bytes). Valid only: 8M, 16M or 32M", flash_sz);
-		exit(1);
-	}
-	
 	// SDRAM
+	if (machine->ram_size != 0x800000 && machine->ram_size != 0x1000000 && machine->ram_size != 0x2000000) {
+		error_report("Invalid RAM size (%ld bytes). Valid only: 8M, 16M or 32M", machine->ram_size);
+		exit(1);
+	}
+	
 	MemoryRegion *sdram = g_new(MemoryRegion, 1);
 	memory_region_init_ram(sdram, NULL, "SDRAM", machine->ram_size, &error_fatal);
 	
@@ -305,8 +311,9 @@ void pmb887x_init(MachineState *machine, uint32_t board_id) {
 	
 	// PLL
 	DeviceState *pll = pmb887x_new_dev(board->cpu, "PLL", nvic);
-	qdev_prop_set_uint32(pll, "hw-ns-throttle", 10);
+	//qdev_prop_set_uint32(pll, "hw-ns-throttle", 10);
 	sysbus_realize_and_unref(SYS_BUS_DEVICE(pll), &error_fatal);
+	cpu_pll = pmb887x_pll_get_self(pll);
 	
 	// System Timer
 	DeviceState *stm = pmb887x_new_dev(board->cpu, "STM", nvic);
@@ -354,7 +361,6 @@ void pmb887x_init(MachineState *machine, uint32_t board_id) {
 		i2c_slave_realize_and_unref(pasic, pmb887x_i2c_bus(i2c), &error_fatal);
 	}
 	
-	#ifndef PMB887X_IO_BRIDGE
 	// System Control Unit
 	DeviceState *scu = pmb887x_new_dev(board->cpu, "SCU", nvic);
 	object_property_set_link(OBJECT(scu), "brom_mirror", OBJECT(brom_mirror), &error_fatal);
@@ -393,6 +399,7 @@ void pmb887x_init(MachineState *machine, uint32_t board_id) {
 	DeviceState *amc = pmb887x_new_dev(board->cpu, "AMC", nvic);
 	sysbus_realize_and_unref(SYS_BUS_DEVICE(amc), &error_fatal);
 	
+	#ifndef PMB887X_IO_BRIDGE
 	#else
 	pmb8876_io_bridge_set_nvic(nvic);
 	#endif
@@ -404,6 +411,12 @@ void pmb887x_init(MachineState *machine, uint32_t board_id) {
 	object_property_set_link(OBJECT(ebuc), "cs1", OBJECT(sdram), &error_fatal);
 	
 	// Flash
+	DriveInfo *flash_dinfo = drive_get(IF_PFLASH, 0, 0);
+	if (!flash_dinfo) {
+		error_report("Flash ROM must be specified with -drive if=pflash,format=raw,file=fullflash.bin");
+		exit(1);
+	}
+	
 	const char *cs_names[] = {"cs0", "cs4", "cs2", "cs6", "cs3", "cs7"};
 	if (!board->flash_banks_cnt || board->flash_banks_cnt > (ARRAY_SIZE(cs_names) / 2)) {
 		error_report("Invalid flash bank count: %d\n", board->flash_banks_cnt);

@@ -10,17 +10,17 @@
 #include "cpu.h"
 #include "qemu/timer.h"
 #include "hw/ptimer.h"
+#include "sysemu/cpu-timers.h"
 
 #include "hw/arm/pmb887x/pll.h"
 #include "hw/arm/pmb887x/regs.h"
 #include "hw/arm/pmb887x/io_bridge.h"
 #include "hw/arm/pmb887x/regs_dump.h"
 #include "hw/arm/pmb887x/mod.h"
+#include "hw/arm/pmb887x/trace.h"
 
-#define PLL_DEBUG
-
-#ifdef PLL_DEBUG
-#define DPRINTF(fmt, ...) do { fprintf(stderr, "[pmb887x-pll]: " fmt , ## __VA_ARGS__); } while (0)
+#ifdef PMB887X_PLL_DEBUG
+#define DPRINTF(fmt, ...) do { qemu_log_mask(LOG_TRACE, "[pmb887x-pll]: " fmt , ## __VA_ARGS__); } while (0)
 #else
 #define DPRINTF(fmt, ...) do { } while (0)
 #endif
@@ -42,6 +42,8 @@ struct pmb887x_pll_t {
 	
 	pmb887x_src_reg_t src;
 	qemu_irq irq;
+	
+	int32_t ns_per_tick;
 	
 	uint32_t xtal;
 	uint32_t hw_ns_div;
@@ -172,8 +174,11 @@ static void pll_update_state(struct pmb887x_pll_t *p) {
 		new_fsys != p->fsys ||
 		new_fstm != p->fstm ||
 		new_fcpu != p->fcpu ||
-		new_fahb != p->fahb
+		new_fahb != p->fahb ||
+		!p->ns_per_tick
 	);
+	
+	bool recalc_clock = new_fcpu != p->fcpu;
 	
 	if (is_changed) {
 		p->fsys = new_fsys;
@@ -181,7 +186,12 @@ static void pll_update_state(struct pmb887x_pll_t *p) {
 		p->fcpu = new_fcpu;
 		p->fahb = new_fahb;
 		
-		DPRINTF("fCPU: %d Hz, fAHB: %d Hz, fSYS: %d Hz, fSTM: %d Hz\n", p->fcpu, p->fahb, p->fsys, p->fstm);
+		if (recalc_clock) {
+			p->ns_per_tick = 1000000000 / p->fcpu;
+			icount_set_ns_per_tick(p->ns_per_tick);
+		}
+		
+		DPRINTF("fCPU: %d Hz, fAHB: %d Hz, fSYS: %d Hz, fSTM: %d Hz, ns_per_tick=%d\n", p->fcpu, p->fahb, p->fsys, p->fstm, p->ns_per_tick);
 		
 		for (int i = 0; i < p->callbacks_count; ++i)
 			p->callbacks[i].callback(p->callbacks[i].opaque);
@@ -283,6 +293,10 @@ static const MemoryRegionOps io_ops = {
 	}
 };
 
+struct pmb887x_pll_t *pmb887x_pll_get_self(DeviceState *dev) {
+	return PMB887X_PLL(dev);
+}
+
 uint64_t pmb887x_pll_get_hw_ns(struct pmb887x_pll_t *p) {
 	return qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) / p->hw_ns_div;
 }
@@ -337,6 +351,8 @@ static void pll_realize(DeviceState *dev, Error **errp) {
 	
 	pmb887x_src_init(&p->src, p->irq);
 	pmb887x_src_set(&p->src, MOD_SRC_SRE);
+	
+	p->ns_per_tick = 0;
 	
 	p->fgptu = 1000000000;
 	p->fsys = p->xtal;

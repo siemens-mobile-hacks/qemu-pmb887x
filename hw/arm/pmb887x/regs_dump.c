@@ -1,9 +1,22 @@
 #include "regs_dump.h"
 
+#include "trace.h"
 #include "cpu.h"
 #include "sysemu/cpu-timers.h"
 
+static GAsyncQueue *io_dump_queue = NULL;
+static QemuThread io_dump_thread_id;
+static GCond io_dump_cond = {};
 static pmb887x_board_meta_t *current_board = NULL;
+
+typedef struct {
+	uint32_t addr;
+	uint32_t value;
+	uint8_t size;
+	uint32_t pc;
+	uint32_t lr;
+	bool is_write;
+} pmb887x_io_operation_t;
 
 static pmb887x_module_t *find_cpu_module(pmb887x_cpu_meta_t *cpu, uint32_t addr) {
 	for (int i = 0; i < cpu->modules_count; i++) {
@@ -59,23 +72,49 @@ static const char *find_cpu_gpio_name(pmb887x_board_meta_t *board, uint32_t fiel
 	return NULL;
 }
 
-void pmb887x_dump_set_board(int id) {
-	current_board = pmb887x_get_board_meta(id);
+static void *_dump_io_thread(void *arg) {
+	while (true) {
+		pmb887x_io_operation_t *entry = g_async_queue_pop(io_dump_queue);
+		if (entry) {
+			pmb887x_print_dump_io(entry->addr, entry->size, entry->value, entry->is_write, entry->pc, entry->lr);
+			g_free(entry);
+		}
+	}
+	return NULL;
 }
 
-void pmb887x_dump_io(uint32_t addr, uint32_t size, uint32_t value, bool is_w) {
+void pmb887x_io_dump_init(int id) {
+	io_dump_queue = g_async_queue_new();
+	current_board = pmb887x_get_board_meta(id);
+	g_cond_init(&io_dump_cond);
+	
+	qemu_thread_create(&io_dump_thread_id, "io_dump", _dump_io_thread, NULL, QEMU_THREAD_JOINABLE);
+}
+
+void pmb887x_dump_io(uint32_t addr, uint32_t size, uint32_t value, bool is_write) {
 	if (!current_board)
 		return;
 	
-	cpu_disable_ticks();
+	return;
 	
+	pmb887x_io_operation_t *entry = g_new0(pmb887x_io_operation_t, 1);
+	entry->addr = addr;
+	entry->size = size;
+	entry->value = value;
+	entry->is_write = is_write;
+	entry->pc = ARM_CPU(qemu_get_cpu(0))->env.regs[15];
+	entry->lr = ARM_CPU(qemu_get_cpu(0))->env.regs[14];
+	g_async_queue_push_front(io_dump_queue, entry);
+}
+
+void pmb887x_print_dump_io(uint32_t addr, uint32_t size, uint32_t value, bool is_write, uint32_t pc, uint32_t lr) {
 	pmb887x_cpu_meta_t *cpu = current_board->cpu;
 	pmb887x_module_t *module = find_cpu_module(cpu, addr);
 	
-	if (is_w) {
-		fprintf(stderr, "WRITE[%d] %08X: %08X", size, addr, value);
+	if (is_write) {
+		qemu_log_mask(LOG_TRACE, "WRITE[%d] %08X: %08X", size, addr, value);
 	} else {
-		fprintf(stderr, " READ[%d] %08X: %08X", size, addr, value);
+		qemu_log_mask(LOG_TRACE, " READ[%d] %08X: %08X", size, addr, value);
 	}
 	
 	if (module) {
@@ -84,27 +123,27 @@ void pmb887x_dump_io(uint32_t addr, uint32_t size, uint32_t value, bool is_w) {
 			if (reg->special == PMB887X_REG_IS_GPIO_PIN) {
 				const char *gpio_name = find_cpu_gpio_name(current_board, addr - module->base);
 				if (gpio_name) {
-					fprintf(stderr, " (%s)", gpio_name);
+					qemu_log_mask(LOG_TRACE, " (%s)", gpio_name);
 				} else {
-					fprintf(stderr, " (%s_%s)", module->name, reg->name);
+					qemu_log_mask(LOG_TRACE, " (%s_%s)", module->name, reg->name);
 				}
 			} else if (reg->special == PMB887X_REG_IS_IRQ_CON) {
 				const char *irq_name = find_cpu_irq_name(cpu, addr - module->base);
 				if (irq_name) {
-					fprintf(stderr, " (%s_%s_%s)",  module->name, reg->name, irq_name);
+					qemu_log_mask(LOG_TRACE, " (%s_%s_%s)",  module->name, reg->name, irq_name);
 				} else {
-					fprintf(stderr, " (%s_%s)", module->name, reg->name);
+					qemu_log_mask(LOG_TRACE, " (%s_%s)", module->name, reg->name);
 				}
 			} else {
-				fprintf(stderr, " (%s_%s)", module->name, reg->name);
+				qemu_log_mask(LOG_TRACE, " (%s_%s)", module->name, reg->name);
 			}
 			
 			if (reg->special == PMB887X_REG_IS_IRQ_NUM) {
 				const char *irq_name = find_cpu_irq_num_name(cpu, value);
 				if (irq_name) {
-					fprintf(stderr, ": NUM(0x%02X)=%s", value, irq_name);
+					qemu_log_mask(LOG_TRACE, ": NUM(0x%02X)=%s", value, irq_name);
 				} else {
-					fprintf(stderr, ": NUM(0x%02X)", value);
+					qemu_log_mask(LOG_TRACE, ": NUM(0x%02X)", value);
 				}
 			} else if (reg->fields_count) {
 				bool first = true;
@@ -120,18 +159,18 @@ void pmb887x_dump_io(uint32_t addr, uint32_t size, uint32_t value, bool is_w) {
 						continue;
 					
 					if (first) {
-						fprintf(stderr, ": ");
+						qemu_log_mask(LOG_TRACE, ": ");
 						first = false;
 					} else {
-						fprintf(stderr, " | ");
+						qemu_log_mask(LOG_TRACE, " | ");
 					}
 					
 					if (enum_name) {
-						fprintf(stderr, "%s(%s)", field->name, enum_name);
+						qemu_log_mask(LOG_TRACE, "%s(%s)", field->name, enum_name);
 					} else if ((field->mask >> field->shift) == 1) {
-						fprintf(stderr, "%s", field->name);
+						qemu_log_mask(LOG_TRACE, "%s", field->name);
 					} else {
-						fprintf(stderr, "%s(0x%02X)", field->name, field_value);
+						qemu_log_mask(LOG_TRACE, "%s(0x%02X)", field->name, field_value);
 					}
 				}
 				
@@ -140,22 +179,20 @@ void pmb887x_dump_io(uint32_t addr, uint32_t size, uint32_t value, bool is_w) {
 					for (int i = 0; i < 32; i++) {
 						if ((unknown_bits & (1 << i))) {
 							if (first) {
-								fprintf(stderr, ": ");
+								qemu_log_mask(LOG_TRACE, ": ");
 								first = false;
 							} else {
-								fprintf(stderr, " | ");
+								qemu_log_mask(LOG_TRACE, " | ");
 							}
-							fprintf(stderr, "UNK_%d", i);
+							qemu_log_mask(LOG_TRACE, "UNK_%d", i);
 						}
 					}
 				}
 			}
 		} else {
-			fprintf(stderr, " (%s_*)", module->name);
+			qemu_log_mask(LOG_TRACE, " (%s_*)", module->name);
 		}
 	}
 	
-	fprintf(stderr, " (PC: %08X, LR: %08X)\n", ARM_CPU(qemu_get_cpu(0))->env.regs[15], ARM_CPU(qemu_get_cpu(0))->env.regs[14]);
-	
-	cpu_enable_ticks();
+	qemu_log_mask(LOG_TRACE, " (PC: %08X, LR: %08X)\n", pc, lr);
 }

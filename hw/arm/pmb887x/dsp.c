@@ -19,11 +19,10 @@
 #include "hw/arm/pmb887x/io_bridge.h"
 #include "hw/arm/pmb887x/regs_dump.h"
 #include "hw/arm/pmb887x/mod.h"
+#include "hw/arm/pmb887x/trace.h"
 
-#define DSP_DEBUG
-
-#ifdef DSP_DEBUG
-#define DPRINTF(fmt, ...) do { fprintf(stderr, "[pmb887x-dsp]: " fmt , ## __VA_ARGS__); } while (0)
+#ifdef PMB887X_DSP_DEBUG
+#define DPRINTF(fmt, ...) do { qemu_log_mask(LOG_TRACE, "[pmb887x-dsp]: " fmt , ## __VA_ARGS__); } while (0)
 #else
 #define DPRINTF(fmt, ...) do { } while (0)
 #endif
