@@ -8218,10 +8218,10 @@ static bool do_ldm(DisasContext *s, arg_ldst_block *a, int min_n)
             user = false;
         } else {
             /* LDM (user) does not allow writeback.  */
-            if (a->w) {
-                unallocated_encoding(s);
-                return true;
-            }
+            //if (a->w) {
+            //    unallocated_encoding(s);
+            //    return true;
+            //}
         }
     }
 
