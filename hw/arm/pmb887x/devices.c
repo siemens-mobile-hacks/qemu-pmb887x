@@ -237,6 +237,18 @@ static const struct pmb887x_dev pmb8876_devices[] = {
 			PMB8876_AMC_INT1_IRQ,
 			0
 		}
+	},
+	{
+		.name	= "KEYPAD",
+		.dev	= "pmb887x-keypad",
+		.base	= PMB8876_KEYPAD_BASE,
+		.irqs	= {
+			PMB8876_KEYPAD_PRESS_IRQ,
+			PMB8876_KEYPAD_UNK0_IRQ,
+			PMB8876_KEYPAD_UNK1_IRQ,
+			PMB8876_KEYPAD_RELEASE_IRQ,
+			0
+		}
 	}
 };
 
@@ -452,6 +464,18 @@ static const struct pmb887x_dev pmb8875_devices[] = {
 		.irqs	= {
 			PMB8875_AMC_INT0_IRQ,
 			PMB8875_AMC_INT1_IRQ,
+			0
+		}
+	},
+	{
+		.name	= "KEYPAD",
+		.dev	= "pmb887x-keypad",
+		.base	= PMB8875_KEYPAD_BASE,
+		.irqs	= {
+			PMB8875_KEYPAD_PRESS_IRQ,
+			PMB8875_KEYPAD_UNK0_IRQ,
+			PMB8875_KEYPAD_UNK1_IRQ,
+			PMB8875_KEYPAD_RELEASE_IRQ,
 			0
 		}
 	}

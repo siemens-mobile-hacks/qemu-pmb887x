@@ -2154,10 +2154,10 @@
 // CIF [MOD_NUM=F052, MOD_REV=00, MOD_32BIT=C0]
 // Looks like DIF (Camera Interface) module, but not sure.
 #define CIF_IO_SIZE	0x00000200
-#define CIF_UNK0	0x00
-
 /* Clock Control Register */
 #define CIF_CLC		0x00
+
+#define CIF_UNK0	0x00
 
 /* Module Identifier Register */
 #define CIF_ID		0x08
@@ -6106,10 +6106,10 @@
 
 /* Receive Transmit Buffer */
 #define I2Cv2_RTB						0x18
-#define I2Cv2_RTB_BYTE1					(0xFF << 8)
-#define I2Cv2_RTB_BYTE1_SHIFT			8
 #define I2Cv2_RTB_BYTE0					(0xFF << 8)
 #define I2Cv2_RTB_BYTE0_SHIFT			8
+#define I2Cv2_RTB_BYTE1					(0xFF << 8)
+#define I2Cv2_RTB_BYTE1_SHIFT			8
 #define I2Cv2_RTB_BYTE2					(0xFF << 16)
 #define I2Cv2_RTB_BYTE2_SHIFT			16
 #define I2Cv2_RTB_BYTE3					(0xFF << 24)

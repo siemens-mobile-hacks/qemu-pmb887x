@@ -79,6 +79,11 @@ static void *_dump_io_thread(void *arg) {
 			pmb887x_print_dump_io(entry->addr, entry->size, entry->value, entry->is_write, entry->pc, entry->lr);
 			g_free(entry);
 		}
+		
+		if (g_async_queue_length(io_dump_queue) > 100000) {
+			error_report("IO dump queue overflow (%d)! Something wrong!\n", g_async_queue_length(io_dump_queue));
+			exit(1);
+		}
 	}
 	return NULL;
 }

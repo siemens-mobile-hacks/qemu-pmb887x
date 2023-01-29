@@ -175,7 +175,7 @@ static uint64_t nvic_io_read(void *opaque, hwaddr haddr, unsigned size) {
 		break;
 	}
 	
-	pmb887x_dump_io(haddr + p->mmio.addr, size, value, false);
+	// pmb887x_dump_io(haddr + p->mmio.addr, size, value, false);
 	
 	return value;
 }
@@ -183,7 +183,7 @@ static uint64_t nvic_io_read(void *opaque, hwaddr haddr, unsigned size) {
 static void nvic_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned size) {
 	pmb887x_nvic_t *p = (pmb887x_nvic_t *) opaque;
 	
-	pmb887x_dump_io(haddr + p->mmio.addr, size, value, true);
+	// pmb887x_dump_io(haddr + p->mmio.addr, size, value, true);
 	
 	switch (haddr) {
 		default:

@@ -50,6 +50,7 @@ arm_ss.add(when: 'CONFIG_PMB887X', if_true: files(
 	'pmb887x/dsp.c',
 	'pmb887x/dif.c',
 	'pmb887x/mod.c',
+	'pmb887x/keypad.c',
 	'pmb887x/io_bridge.c',
 	'pmb887x/regs_dump.c',
 	'pmb887x/regs_info.c',

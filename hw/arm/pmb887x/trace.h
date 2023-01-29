@@ -1,7 +1,7 @@
 #pragma once
 
 #include "qemu/log.h"
-
+/*
 #define PMB887X_GPTU_DEBUG
 #define PMB887X_TPU_DEBUG
 #define PMB887X_PASIC_DEBUG
@@ -19,3 +19,5 @@
 #define PMB887X_RTC_DEBUG
 #define PMB887X_SCU_DEBUG
 #define PMB887X_USART_DEBUG
+*/
+#define PMB887X_KEYPAD_DEBUG

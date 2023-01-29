@@ -94,6 +94,8 @@ static const ARMCPRegInfo cp_reginfo[] = {
 		.access = PL1_RW, .readfn = pmb8876_btcm_read, .writefn = pmb8876_btcm_write },
 };
 
+static uint32_t unk_reg_F4600040 = 1;
+
 static uint64_t cpu_io_read(void *opaque, hwaddr offset, unsigned size) {
 	hwaddr addr = (size_t) opaque + offset;
 	uint32_t value = 0;
@@ -104,8 +106,11 @@ static uint64_t cpu_io_read(void *opaque, hwaddr offset, unsigned size) {
 	if (addr == 0xF4C00000)
 		value = 0xFFFFFFFF;
 	
-	if (addr == 0xf4600024)
+	if (addr == 0xF4600024)
 		value = 0x800000 | 0x11;
+	
+	if (addr == 0xF4600040)
+		value = unk_reg_F4600040;
 	
 	#ifdef PMB887X_IO_BRIDGE
 	value = pmb8876_io_bridge_read(addr, size);
@@ -125,6 +130,22 @@ static void cpu_io_write(void *opaque, hwaddr offset, uint64_t value, unsigned s
 	hwaddr addr = (size_t) opaque + offset;
 	
 	pmb887x_dump_io(addr, size, value, true);
+	
+	if (addr == 0xf460001c) {
+		if (value == 0x8) {
+			unk_reg_F4600040 = 2;
+		} else {
+			unk_reg_F4600040 = 1;
+		}
+	}
+	
+	if (addr == 0xF460002C) {
+		if (value == 2) {
+			unk_reg_F4600040 = 1;
+		} else {
+			unk_reg_F4600040 = 0;
+		}
+	}
 	
 	#ifdef PMB887X_IO_BRIDGE
 	pmb8876_io_bridge_write(addr, size, value);
@@ -177,7 +198,7 @@ static void memory_dump_at_exit(void) {
 	qmp_pmemsave(0x00080000, 96 * 1024, "/tmp/sram.bin", NULL);
 }
 
-static DeviceState *create_flash(BlockBackend *blk, uint32_t *banks, int banks_n) {
+static DeviceState *pmb887x_create_flash(BlockBackend *blk, uint32_t *banks, int banks_n) {
 	DeviceState *flash = qdev_new("pmb887x-flash");
 	qdev_prop_set_string(flash, "name", "fullflash");
 	qdev_prop_set_drive(flash, "drive", blk);
@@ -194,6 +215,16 @@ static DeviceState *create_flash(BlockBackend *blk, uint32_t *banks, int banks_n
 	sysbus_realize_and_unref(SYS_BUS_DEVICE(flash), &error_fatal);
 	
 	return flash;
+}
+
+static void pmb887x_init_keymap(DeviceState *keypad, uint32_t *map, int map_size) {
+	qdev_prop_set_uint32(keypad, "len-map", map_size);
+	
+	char key[32];
+	for (int i = 0; i < map_size; i++) {
+		sprintf(key, "map[%d]", i);
+		qdev_prop_set_uint32(keypad, key, map[i]);
+	}
 }
 
 void pmb887x_class_init(ObjectClass *oc, void *data) {
@@ -399,10 +430,10 @@ void pmb887x_init(MachineState *machine, uint32_t board_id) {
 	DeviceState *amc = pmb887x_new_dev(board->cpu, "AMC", nvic);
 	sysbus_realize_and_unref(SYS_BUS_DEVICE(amc), &error_fatal);
 	
-	#ifndef PMB887X_IO_BRIDGE
-	#else
-	pmb8876_io_bridge_set_nvic(nvic);
-	#endif
+	// KEYPAD
+	DeviceState *keypad = pmb887x_new_dev(board->cpu, "KEYPAD", nvic);
+	pmb887x_init_keymap(keypad, board->keymap, board->keymap_cnt);
+	sysbus_realize_and_unref(SYS_BUS_DEVICE(keypad), &error_fatal);
 	
 	// External Bus Unit
 	DeviceState *ebuc = pmb887x_new_dev(board->cpu, "EBU", NULL);
@@ -423,7 +454,7 @@ void pmb887x_init(MachineState *machine, uint32_t board_id) {
 		abort();
 	}
 	
-	DeviceState *flash = create_flash(blk_by_legacy_dinfo(flash_dinfo), board->flash_banks, board->flash_banks_cnt);
+	DeviceState *flash = pmb887x_create_flash(blk_by_legacy_dinfo(flash_dinfo), board->flash_banks, board->flash_banks_cnt);
 	for (int i = 0; i < board->flash_banks_cnt; i++) {
 		MemoryRegion *bank = sysbus_mmio_get_region(SYS_BUS_DEVICE(flash), i);
 		object_property_set_link(OBJECT(ebuc), cs_names[i * 2], OBJECT(bank), &error_fatal);
@@ -432,14 +463,9 @@ void pmb887x_init(MachineState *machine, uint32_t board_id) {
 	
 	sysbus_realize_and_unref(SYS_BUS_DEVICE(ebuc), &error_fatal);
 	
-//	MemoryRegion *img = g_new(MemoryRegion, 1);
-//	memory_region_init_io(img, NULL, &cpu_io_opts, (void *) 0xa8d94c9c, "IMG", 4);
-//	memory_region_add_subregion_overlap(sysmem, 0xa8d94c9c, img, 999999);
-	
- //   memory_region_init_io(img, NULL, &cpu_io_opts, (void *) 0xA825B020, "IMG", 240*320*3);
-//	memory_region_add_subregion_overlap(sysmem, 0xA825B020, img, 999999);
-//	 memory_region_init_io(img, NULL, &cpu_io_opts, (void *) 0xa8f59384, "IMG", 4);
-//	memory_region_add_subregion_overlap(sysmem, 0xa8f59384, img, 999999);
+	#ifdef PMB887X_IO_BRIDGE
+	pmb8876_io_bridge_set_nvic(nvic);
+	#endif
 	
 	#ifdef PMB887X_IO_BRIDGE
 	// Exec BootROM
