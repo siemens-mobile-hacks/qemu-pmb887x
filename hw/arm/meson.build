@@ -54,6 +54,8 @@ arm_ss.add(when: 'CONFIG_PMB887X', if_true: files(
 	'pmb887x/io_bridge.c',
 	'pmb887x/regs_dump.c',
 	'pmb887x/regs_info.c',
+	'pmb887x/dif/lcd_common.c',
+	'pmb887x/dif/lcd_jbt6k71.c',
 ))
 arm_ss.add(when: 'CONFIG_VEXPRESS', if_true: files('vexpress.c'))
 arm_ss.add(when: 'CONFIG_ZYNQ', if_true: files('xilinx_zynq.c'))

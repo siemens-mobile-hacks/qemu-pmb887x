@@ -76,7 +76,7 @@ static int pasic_event(I2CSlave *s, enum i2c_event event) {
 
     switch (event) {
 		case I2C_START_SEND:
-			
+			// Nothing
 		break;
 		
 		case I2C_START_RECV:
@@ -88,7 +88,11 @@ static int pasic_event(I2CSlave *s, enum i2c_event event) {
 		break;
 		
 		case I2C_FINISH:
-			
+			// Nothing
+		break;
+		
+		case I2C_START_SEND_ASYNC:
+			// Nothing
 		break;
 	}
     

@@ -10,3 +10,4 @@ struct pmb887x_dev {
 };
 
 DeviceState *pmb887x_new_dev(uint32_t cpu_type, const char *name, DeviceState *nvic);
+DeviceState *pmb887x_new_lcd_dev(const char *name);

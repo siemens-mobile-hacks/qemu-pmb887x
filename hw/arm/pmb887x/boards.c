@@ -135,9 +135,51 @@ static uint32_t board_el71_flashes[] = {
 };
 
 static pmb887x_board_t boards_list[] = {
-	{"C81",		132,	176,	CPU_PMB8876,	board_c81_flashes,	ARRAY_SIZE(board_c81_flashes),	board_c81_keymap,	ARRAY_SIZE(board_c81_keymap),	board_c81_fixed_gpio,	ARRAY_SIZE(board_c81_fixed_gpio)},
-	{"CX75",	132,	176,	CPU_PMB8875,	board_cx75_flashes,	ARRAY_SIZE(board_cx75_flashes),	board_cx75_keymap,	ARRAY_SIZE(board_cx75_keymap),	board_cx75_fixed_gpio,	ARRAY_SIZE(board_cx75_fixed_gpio)},
-	{"EL71",	240,	320,	CPU_PMB8876,	board_el71_flashes,	ARRAY_SIZE(board_el71_flashes),	board_el71_keymap,	ARRAY_SIZE(board_el71_keymap),	board_el71_fixed_gpio,	ARRAY_SIZE(board_el71_fixed_gpio)},
+	{
+		.name				= "C81",
+		.width				= 132,
+		.height				= 176,
+		.display			= NULL,
+		.display_rotation	= 0,
+		.cpu				= CPU_PMB8876,
+		.flash_banks		= board_c81_flashes,
+		.flash_banks_cnt	= ARRAY_SIZE(board_c81_flashes),
+		.keymap				= board_c81_keymap,
+		.keymap_cnt			= ARRAY_SIZE(board_c81_keymap),
+		.fixed_gpios		= board_c81_fixed_gpio,
+		.fixed_gpios_cnt	= ARRAY_SIZE(board_c81_fixed_gpio),
+
+	},
+	{
+		.name				= "CX75",
+		.width				= 132,
+		.height				= 176,
+		.display			= NULL,
+		.display_rotation	= 0,
+		.cpu				= CPU_PMB8875,
+		.flash_banks		= board_cx75_flashes,
+		.flash_banks_cnt	= ARRAY_SIZE(board_cx75_flashes),
+		.keymap				= board_cx75_keymap,
+		.keymap_cnt			= ARRAY_SIZE(board_cx75_keymap),
+		.fixed_gpios		= board_cx75_fixed_gpio,
+		.fixed_gpios_cnt	= ARRAY_SIZE(board_cx75_fixed_gpio),
+
+	},
+	{
+		.name				= "EL71",
+		.width				= 240,
+		.height				= 320,
+		.display			= "jbt6k71",
+		.display_rotation	= 180,
+		.cpu				= CPU_PMB8876,
+		.flash_banks		= board_el71_flashes,
+		.flash_banks_cnt	= ARRAY_SIZE(board_el71_flashes),
+		.keymap				= board_el71_keymap,
+		.keymap_cnt			= ARRAY_SIZE(board_el71_keymap),
+		.fixed_gpios		= board_el71_fixed_gpio,
+		.fixed_gpios_cnt	= ARRAY_SIZE(board_el71_fixed_gpio),
+
+	},
 };
 
 pmb887x_board_t *pmb887x_get_board(int board) {

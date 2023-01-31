@@ -6,8 +6,6 @@
 #include "hw/hw.h"
 #include "hw/sysbus.h"
 #include "migration/vmstate.h"
-#include "ui/console.h"
-#include "ui/pixel_ops.h"
 #include "qemu/timer.h"
 #include "qemu/log.h"
 #include "qemu/module.h"
@@ -20,6 +18,7 @@
 #include "hw/arm/pmb887x/mod.h"
 #include "hw/arm/pmb887x/dmac.h"
 #include "hw/arm/pmb887x/trace.h"
+#include "hw/arm/pmb887x/dif/lcd_common.h"
 
 #ifdef PMB887X_DIF_DEBUG
 #define DPRINTF(fmt, ...) do { qemu_log_mask(LOG_TRACE, "[pmb887x-dif]: " fmt , ## __VA_ARGS__); } while (0)
@@ -32,71 +31,28 @@
 
 #define DIF_FIFO_SIZE	0xBFFC
 
-enum {
-	DIF_BPP_RGB565	= 16,
-	DIF_BPP_RGB888	= 24
-};
-
 typedef struct {
 	SysBusDevice parent_obj;
 	MemoryRegion mmio;
-    QemuConsole *console;
 	
 	qemu_irq irq[4];
-	
-	bool invalidate;
-	
-	uint32_t width;
-	uint32_t height;
-	uint8_t bpp;
 	
 	uint32_t runctrl;
 	uint32_t prog[6];
 	uint32_t con[15];
+	uint32_t fifocfg;
 	uint32_t tx_size;
-	
-	uint8_t *buffer;
-	uint32_t buffer_size;
-	uint32_t buffer_index;
 	
 	uint32_t dmac_tx_periph_id;
 	pmb887x_dmac_t *dmac;
+	pmb887x_lcd_t *lcd;
 	
 	pmb887x_clc_reg_t clc;
 	pmb887x_srb_reg_t srb;
 } pmb887x_dif_t;
 
 static void dif_update_state(pmb887x_dif_t *p) {
-	if (!p->buffer) {
-		p->buffer_index = 0;
-		p->buffer_size = (p->width * p->height * p->bpp) / 8;
-		p->buffer = g_new0(uint8_t, p->buffer_size);
-		
-		pixman_format_code_t format = PIXMAN_r5g6b5;
-		if (p->bpp == 24)
-			format = PIXMAN_r8g8b8;
-		
-		uint32_t linesize = (p->width * p->bpp) / 8;
-		DisplaySurface *ds = qemu_create_displaysurface_from(p->width, p->height, format, linesize, (uint8_t *) p->buffer);
-        dpy_gfx_replace_surface(p->console, ds);
-		
-		p->invalidate = true;
-	}
-}
-
-static void dif_update_display(void *opaque) {
-	pmb887x_dif_t *p = (pmb887x_dif_t *) opaque;
 	
-	if (!p->invalidate)
-		return;
-	
-	dpy_gfx_update(p->console, 0, 0, p->width, p->height);
-	p->invalidate = false;
-}
-
-static void dif_invalidate_display(void * opaque) {
-	pmb887x_dif_t *p = (pmb887x_dif_t *) opaque;
-	p->invalidate = true;
 }
 
 static int dif_get_index_from_reg(uint32_t reg) {
@@ -110,7 +66,6 @@ static int dif_get_index_from_reg(uint32_t reg) {
 		
 		case DIF_CON0:		return 0;
 		case DIF_CON1:		return 1;
-		case DIF_CON2:		return 2;
 		case DIF_CON3:		return 3;
 		case DIF_CON4:		return 4;
 		case DIF_CON5:		return 5;
@@ -159,9 +114,12 @@ static uint64_t dif_io_read(void *opaque, hwaddr haddr, unsigned size) {
 			value = p->prog[dif_get_index_from_reg(haddr)];
 		break;
 		
+		case DIF_FIFOCFG:
+			value = p->fifocfg;
+		break;
+		
 		case DIF_CON0:
 		case DIF_CON1:
-		case DIF_CON2:
 		case DIF_CON3:
 		case DIF_CON4:
 		case DIF_CON5:
@@ -220,23 +178,10 @@ static uint64_t dif_io_read(void *opaque, hwaddr haddr, unsigned size) {
 static void dif_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned size) {
 	pmb887x_dif_t *p = (pmb887x_dif_t *) opaque;
 	
-	if (haddr >= DIF_FIFO && haddr < DIF_FIFO + DIF_FIFO_SIZE) {
-		switch (p->bpp) {
-			case DIF_BPP_RGB565:
-				if (p->buffer_index + 4 <= p->buffer_size) {
-					uint32_t *buffer32 = (uint32_t *) &p->buffer[p->buffer_index];
-					*buffer32 = value;
-					p->buffer_index += 4;
-				} else {
-					
-				}
-			break;
-		}
-		p->invalidate = true;
-		return;
-	}
+	bool supress = (haddr >= DIF_FIFO && haddr < DIF_FIFO + DIF_FIFO_SIZE);
 	
-	pmb887x_dump_io(haddr + p->mmio.addr, size, value, true);
+	if (!supress)
+		pmb887x_dump_io(haddr + p->mmio.addr, size, value, true);
 	
 	switch (haddr) {
 		case DIF_CLC:
@@ -244,8 +189,11 @@ static void dif_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned si
 		break;
 		
 		case DIF_RUNCTRL:
-			p->buffer_index = 0;
 			p->runctrl = value;
+		break;
+		
+		case DIF_FIFO ... (DIF_FIFO + DIF_FIFO_SIZE - 1):
+			pmb887x_lcd_write(p->lcd, value, ((p->fifocfg & DIF_FIFOCFG_BS) >> DIF_FIFOCFG_BS_SHIFT) + 1);
 		break;
 		
 		case DIF_PROG0:
@@ -257,9 +205,13 @@ static void dif_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned si
 			p->prog[dif_get_index_from_reg(haddr)] = value;
 		break;
 		
+		case DIF_FIFOCFG:
+			p->fifocfg = value;
+			pmb887x_lcd_set_cd(p->lcd, (p->fifocfg & DIF_FIFOCFG_MODE) == DIF_FIFOCFG_MODE_CMD);
+		break;
+		
 		case DIF_CON0:
 		case DIF_CON1:
-		case DIF_CON2:
 		case DIF_CON3:
 		case DIF_CON4:
 		case DIF_CON5:
@@ -313,17 +265,10 @@ static const MemoryRegionOps io_ops = {
 	}
 };
 
-static const GraphicHwOps dif_gfx_ops = {
-	.invalidate = dif_invalidate_display,
-	.gfx_update = dif_update_display,
-};
-
 static void dif_init(Object *obj) {
 	pmb887x_dif_t *p = PMB887X_DIF(obj);
 	memory_region_init_io(&p->mmio, obj, &io_ops, p, "pmb887x-dif", DIF_IO_SIZE);
 	sysbus_init_mmio(SYS_BUS_DEVICE(obj), &p->mmio);
-	
-	p->bpp = DIF_BPP_RGB565;
 	
 	for (int i = 0; i < ARRAY_SIZE(p->irq); i++)
 		sysbus_init_irq(SYS_BUS_DEVICE(obj), &p->irq[i]);
@@ -331,21 +276,14 @@ static void dif_init(Object *obj) {
 
 static void dif_realize(DeviceState *dev, Error **errp) {
 	pmb887x_dif_t *p = PMB887X_DIF(dev);
-	
 	pmb887x_clc_init(&p->clc);
 	pmb887x_srb_init(&p->srb, p->irq, ARRAY_SIZE(p->irq));
-	
-	p->console = graphic_console_init(dev, 0, &dif_gfx_ops, p);
-	qemu_console_resize(p->console, p->width, p->height);
-	
-	dif_update_state(p);
 }
 
 static Property dif_properties[] = {
 	DEFINE_PROP_LINK("dmac", pmb887x_dif_t, dmac, "pmb887x-dmac", pmb887x_dmac_t *),
+	DEFINE_PROP_LINK("lcd", pmb887x_dif_t, lcd, "pmb887x-lcd", pmb887x_lcd_t *),
 	DEFINE_PROP_UINT32("dmac-tx-periph-id", pmb887x_dif_t, dmac_tx_periph_id, 4),
-	DEFINE_PROP_UINT32("width", pmb887x_dif_t, width, 240),
-	DEFINE_PROP_UINT32("height", pmb887x_dif_t, height, 320),
     DEFINE_PROP_END_OF_LIST(),
 };
 

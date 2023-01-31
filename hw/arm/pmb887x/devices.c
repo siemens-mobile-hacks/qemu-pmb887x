@@ -481,6 +481,12 @@ static const struct pmb887x_dev pmb8875_devices[] = {
 	}
 };
 
+DeviceState *pmb887x_new_lcd_dev(const char *name) {
+	char tmp[64];
+	snprintf(tmp, sizeof(tmp), "pmb887x-lcd-%s", name);
+	return qdev_new(tmp);
+}
+
 DeviceState *pmb887x_new_dev(uint32_t cpu_type, const char *name, DeviceState *nvic) {
 	const struct pmb887x_dev *devices = NULL;
 	uint32_t devices_count = 0;

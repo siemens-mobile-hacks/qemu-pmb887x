@@ -4,7 +4,8 @@
 #include "cpu.h"
 #include "sysemu/cpu-timers.h"
 
-static GAsyncQueue *io_dump_queue = NULL;
+static QemuMutex io_dump_queue_lock;
+static GQueue *io_dump_queue = NULL;
 static QemuThread io_dump_thread_id;
 static GCond io_dump_cond = {};
 static pmb887x_board_meta_t *current_board = NULL;
@@ -74,14 +75,22 @@ static const char *find_cpu_gpio_name(pmb887x_board_meta_t *board, uint32_t fiel
 
 static void *_dump_io_thread(void *arg) {
 	while (true) {
-		pmb887x_io_operation_t *entry = g_async_queue_pop(io_dump_queue);
+		pmb887x_io_operation_t *entry = NULL;
+		size_t queue_size;
+		
+		qemu_mutex_lock(&io_dump_queue_lock);
+		queue_size = g_queue_get_length(io_dump_queue);
+		if (queue_size > 0)
+			entry = g_queue_pop_head(io_dump_queue);
+		qemu_mutex_unlock(&io_dump_queue_lock);
+		
 		if (entry) {
 			pmb887x_print_dump_io(entry->addr, entry->size, entry->value, entry->is_write, entry->pc, entry->lr);
 			g_free(entry);
 		}
 		
-		if (g_async_queue_length(io_dump_queue) > 100000) {
-			error_report("IO dump queue overflow (%d)! Something wrong!\n", g_async_queue_length(io_dump_queue));
+		if (queue_size > 200000) {
+			error_report("IO dump queue overflow (%d)! Something wrong!\n", g_queue_get_length(io_dump_queue));
 			exit(1);
 		}
 	}
@@ -89,7 +98,8 @@ static void *_dump_io_thread(void *arg) {
 }
 
 void pmb887x_io_dump_init(int id) {
-	io_dump_queue = g_async_queue_new();
+	io_dump_queue = g_queue_new();
+	qemu_mutex_init(&io_dump_queue_lock);
 	current_board = pmb887x_get_board_meta(id);
 	g_cond_init(&io_dump_cond);
 	
@@ -100,8 +110,6 @@ void pmb887x_dump_io(uint32_t addr, uint32_t size, uint32_t value, bool is_write
 	if (!current_board)
 		return;
 	
-	return;
-	
 	pmb887x_io_operation_t *entry = g_new0(pmb887x_io_operation_t, 1);
 	entry->addr = addr;
 	entry->size = size;
@@ -109,17 +117,21 @@ void pmb887x_dump_io(uint32_t addr, uint32_t size, uint32_t value, bool is_write
 	entry->is_write = is_write;
 	entry->pc = ARM_CPU(qemu_get_cpu(0))->env.regs[15];
 	entry->lr = ARM_CPU(qemu_get_cpu(0))->env.regs[14];
-	g_async_queue_push_front(io_dump_queue, entry);
+	
+	qemu_mutex_lock(&io_dump_queue_lock);
+	g_queue_push_tail(io_dump_queue, entry);
+	qemu_mutex_unlock(&io_dump_queue_lock);
 }
 
 void pmb887x_print_dump_io(uint32_t addr, uint32_t size, uint32_t value, bool is_write, uint32_t pc, uint32_t lr) {
 	pmb887x_cpu_meta_t *cpu = current_board->cpu;
 	pmb887x_module_t *module = find_cpu_module(cpu, addr);
+	g_autoptr(GString) s = g_string_new("");
 	
 	if (is_write) {
-		qemu_log_mask(LOG_TRACE, "WRITE[%d] %08X: %08X", size, addr, value);
+		g_string_append_printf(s, "WRITE[%d] %08X: %08X", size, addr, value);
 	} else {
-		qemu_log_mask(LOG_TRACE, " READ[%d] %08X: %08X", size, addr, value);
+		g_string_append_printf(s, " READ[%d] %08X: %08X", size, addr, value);
 	}
 	
 	if (module) {
@@ -128,27 +140,27 @@ void pmb887x_print_dump_io(uint32_t addr, uint32_t size, uint32_t value, bool is
 			if (reg->special == PMB887X_REG_IS_GPIO_PIN) {
 				const char *gpio_name = find_cpu_gpio_name(current_board, addr - module->base);
 				if (gpio_name) {
-					qemu_log_mask(LOG_TRACE, " (%s)", gpio_name);
+					g_string_append_printf(s, " (%s)", gpio_name);
 				} else {
-					qemu_log_mask(LOG_TRACE, " (%s_%s)", module->name, reg->name);
+					g_string_append_printf(s, " (%s_%s)", module->name, reg->name);
 				}
 			} else if (reg->special == PMB887X_REG_IS_IRQ_CON) {
 				const char *irq_name = find_cpu_irq_name(cpu, addr - module->base);
 				if (irq_name) {
-					qemu_log_mask(LOG_TRACE, " (%s_%s_%s)",  module->name, reg->name, irq_name);
+					g_string_append_printf(s, " (%s_%s_%s)",  module->name, reg->name, irq_name);
 				} else {
-					qemu_log_mask(LOG_TRACE, " (%s_%s)", module->name, reg->name);
+					g_string_append_printf(s, " (%s_%s)", module->name, reg->name);
 				}
 			} else {
-				qemu_log_mask(LOG_TRACE, " (%s_%s)", module->name, reg->name);
+				g_string_append_printf(s, " (%s_%s)", module->name, reg->name);
 			}
 			
 			if (reg->special == PMB887X_REG_IS_IRQ_NUM) {
 				const char *irq_name = find_cpu_irq_num_name(cpu, value);
 				if (irq_name) {
-					qemu_log_mask(LOG_TRACE, ": NUM(0x%02X)=%s", value, irq_name);
+					g_string_append_printf(s, ": NUM(0x%02X)=%s", value, irq_name);
 				} else {
-					qemu_log_mask(LOG_TRACE, ": NUM(0x%02X)", value);
+					g_string_append_printf(s, ": NUM(0x%02X)", value);
 				}
 			} else if (reg->fields_count) {
 				bool first = true;
@@ -164,18 +176,18 @@ void pmb887x_print_dump_io(uint32_t addr, uint32_t size, uint32_t value, bool is
 						continue;
 					
 					if (first) {
-						qemu_log_mask(LOG_TRACE, ": ");
+						g_string_append_printf(s, ": ");
 						first = false;
 					} else {
-						qemu_log_mask(LOG_TRACE, " | ");
+						g_string_append_printf(s, " | ");
 					}
 					
 					if (enum_name) {
-						qemu_log_mask(LOG_TRACE, "%s(%s)", field->name, enum_name);
+						g_string_append_printf(s, "%s(%s)", field->name, enum_name);
 					} else if ((field->mask >> field->shift) == 1) {
-						qemu_log_mask(LOG_TRACE, "%s", field->name);
+						g_string_append_printf(s, "%s", field->name);
 					} else {
-						qemu_log_mask(LOG_TRACE, "%s(0x%02X)", field->name, field_value);
+						g_string_append_printf(s, "%s(0x%02X)", field->name, field_value);
 					}
 				}
 				
@@ -184,20 +196,20 @@ void pmb887x_print_dump_io(uint32_t addr, uint32_t size, uint32_t value, bool is
 					for (int i = 0; i < 32; i++) {
 						if ((unknown_bits & (1 << i))) {
 							if (first) {
-								qemu_log_mask(LOG_TRACE, ": ");
+								g_string_append_printf(s, ": ");
 								first = false;
 							} else {
-								qemu_log_mask(LOG_TRACE, " | ");
+								g_string_append_printf(s, " | ");
 							}
-							qemu_log_mask(LOG_TRACE, "UNK_%d", i);
+							g_string_append_printf(s, "UNK_%d", i);
 						}
 					}
 				}
 			}
 		} else {
-			qemu_log_mask(LOG_TRACE, " (%s_*)", module->name);
+			g_string_append_printf(s, " (%s_*)", module->name);
 		}
 	}
 	
-	qemu_log_mask(LOG_TRACE, " (PC: %08X, LR: %08X)\n", pc, lr);
+	qemu_log_mask(LOG_TRACE, "%s (PC: %08X, LR: %08X)\n", s->str, pc, lr);
 }

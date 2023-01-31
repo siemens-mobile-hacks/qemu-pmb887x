@@ -26,6 +26,7 @@
 #include "hw/arm/pmb887x/regs_dump.h"
 #include "hw/arm/pmb887x/devices.h"
 #include "hw/arm/pmb887x/i2c.h"
+#include "hw/arm/pmb887x/dif/lcd_common.h"
 #include "hw/arm/pmb887x/pll.h"
 #include "hw/arm/pmb887x/boards.h"
 #include "hw/arm/pmb887x/qemu-machines.h"
@@ -365,11 +366,17 @@ void pmb887x_init(MachineState *machine, uint32_t board_id) {
 	DeviceState *dsp = pmb887x_new_dev(board->cpu, "DSP", nvic);
 	sysbus_realize_and_unref(SYS_BUS_DEVICE(dsp), &error_fatal);
 	
+	// LCD panel
+	DeviceState *lcd = pmb887x_new_lcd_dev(board->display);
+	qdev_prop_set_uint32(lcd, "width", board->width);
+	qdev_prop_set_uint32(lcd, "height", board->height);
+	qdev_prop_set_uint32(lcd, "rotation", board->display_rotation);
+	qdev_realize_and_unref(DEVICE(lcd), NULL, &error_fatal);
+	
 	// DIF
 	DeviceState *dif = pmb887x_new_dev(board->cpu, "DIF", nvic);
 	object_property_set_link(OBJECT(dif), "dmac", OBJECT(dmac), &error_fatal);
-	qdev_prop_set_uint32(dif, "width", board->width);
-	qdev_prop_set_uint32(dif, "height", board->height);
+	object_property_set_link(OBJECT(dif), "lcd", OBJECT(lcd), &error_fatal);
 	sysbus_realize_and_unref(SYS_BUS_DEVICE(dif), &error_fatal);
 	
 	// USART0

@@ -14,6 +14,8 @@ typedef struct {
 	
 	uint32_t width;
 	uint32_t height;
+	const char *display;
+	uint32_t display_rotation;
 	
 	uint32_t cpu;
 	
