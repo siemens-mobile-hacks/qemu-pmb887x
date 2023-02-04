@@ -1,23 +1,26 @@
 #pragma once
 
-#include "qemu/log.h"
+#include "trace_common.h"
 
-#define PMB887X_GPTU_DEBUG
-#define PMB887X_TPU_DEBUG
-#define PMB887X_PASIC_DEBUG
-#define PMB887X_DMAC_DEBUG
-#define PMB887X_EBU_DEBUG
-#define PMB887X_STM_DEBUG
-#define PMB887X_PLL_DEBUG
-#define PMB887X_AMC_DEBUG
-#define PMB887X_CAPCOM_DEBUG
-#define PMB887X_DIF_DEBUG
-#define PMB887X_LCD_DEBUG
-#define PMB887X_DSP_DEBUG
-#define PMB887X_MOD_DEBUG
-#define PMB887X_NVIC_DEBUG
-#define PMB887X_PCL_DEBUG
-#define PMB887X_RTC_DEBUG
-#define PMB887X_SCU_DEBUG
-#define PMB887X_USART_DEBUG
-#define PMB887X_KEYPAD_DEBUG
+#ifndef PMB887X_TRACE_ID
+#error "PMB887X_TRACE_ID not defined!"
+#endif
+
+#ifndef PMB887X_TRACE_PREFIX
+#error "PMB887X_TRACE_PREFIX not defined!"
+#endif
+
+#define PMB887X_MOD_CONST_NAME_(a, b) a ## b
+#define PMB887X_MOD_CONST_NAME(b) PMB887X_MOD_CONST_NAME_(PMB887X_TRACE_, b)
+
+#define DPRINTF(fmt, ...) do { \
+		if (pmb887x_trace_log_enabled(PMB887X_MOD_CONST_NAME(PMB887X_TRACE_ID))) { \
+			qemu_log_mask(LOG_TRACE, "[" PMB887X_TRACE_PREFIX "]: " fmt , ## __VA_ARGS__); \
+		} \
+	} while (0)
+
+#define IO_DUMP(...) do { \
+		if (pmb887x_trace_io_enabled(PMB887X_MOD_CONST_NAME(PMB887X_TRACE_ID))) { \
+			pmb887x_dump_io(__VA_ARGS__); \
+		} \
+	} while (0)

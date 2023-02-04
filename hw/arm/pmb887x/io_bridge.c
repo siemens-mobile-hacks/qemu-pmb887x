@@ -1,3 +1,4 @@
+#ifdef PMB887X_IO_BRIDGE
 #include <errno.h>
 #include <stdio.h>
 #include <poll.h>
@@ -332,3 +333,4 @@ static void _async_read(int sock, void *data, int size, int64_t timeout) {
 		readed += ret;
 	} while (readed < size);
 }
+#endif

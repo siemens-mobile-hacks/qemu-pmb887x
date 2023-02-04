@@ -1,14 +1,14 @@
+/*
+ * Standart parts for all modules: CLC, SRB, SRC
+ * */
+#define PMB887X_TRACE_ID		MOD
+#define PMB887X_TRACE_PREFIX	"pmb887x-mod"
+
 #include "hw/arm/pmb887x/mod.h"
 #include "hw/arm/pmb887x/regs.h"
 #include "hw/hw.h"
 #include "qemu/error-report.h"
 #include "hw/arm/pmb887x/trace.h"
-
-#ifdef PMB887X_MOD_DEBUG
-#define DPRINTF(fmt, ...) do { qemu_log_mask(LOG_TRACE, "[pmb887x-mod]: " fmt, ## __VA_ARGS__); } while (0)
-#else
-#define DPRINTF(fmt, ...) do { } while (0)
-#endif
 
 void pmb887x_clc_init(pmb887x_clc_reg_t *reg) {
 	pmb887x_clc_set(reg, 1 << MOD_CLC_RMC_SHIFT);

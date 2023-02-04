@@ -1,6 +1,9 @@
 /*
  * Dialog D1601XX or similar Power ASIC IC
  * */
+#define PMB887X_TRACE_ID		D1601XX
+#define PMB887X_TRACE_PREFIX	"pmb887x-d1601xx"
+
 #include "qemu/osdep.h"
 #include "hw/sysbus.h"
 #include "hw/hw.h"
@@ -15,12 +18,6 @@
 #include "qapi/error.h"
 #include "hw/i2c/i2c.h"
 #include "hw/arm/pmb887x/trace.h"
-
-#ifdef PMB887X_PASIC_DEBUG
-#define DPRINTF(fmt, ...) do { qemu_log_mask(LOG_TRACE, "[pmb887x-pasic]: " fmt , ## __VA_ARGS__); } while (0)
-#else
-#define DPRINTF(fmt, ...) do { } while (0)
-#endif
 
 #define TYPE_PMB887X_PASIC	"pmb887x-pasic"
 #define PMB887X_PASIC(obj)	OBJECT_CHECK(pmb887x_pasic_t, (obj), TYPE_PMB887X_PASIC)

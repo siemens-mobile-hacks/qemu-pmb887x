@@ -1,6 +1,9 @@
 /*
  * NOR FLASH (Intel/ST CFI)
  * */
+#define PMB887X_TRACE_ID		FLASH
+#define PMB887X_TRACE_PREFIX	"pmb887x-flash"
+
 #include "qemu/osdep.h"
 #include "hw/sysbus.h"
 #include "hw/hw.h"
@@ -25,6 +28,7 @@
 #include "hw/arm/pmb887x/io_bridge.h"
 #include "hw/arm/pmb887x/regs_dump.h"
 #include "hw/arm/pmb887x/mod.h"
+#include "hw/arm/pmb887x/trace.h"
 
 #define TYPE_PMB887X_FLASH	"pmb887x-flash"
 #define PMB887X_FLASH(obj)	OBJECT_CHECK(struct pmb887x_flash_t, (obj), TYPE_PMB887X_FLASH)
@@ -179,9 +183,9 @@ typedef struct pmb887x_flash_part_t pmb887x_flash_part_t;
 typedef struct pmb887x_flash_buffer_t pmb887x_flash_buffer_t;
 typedef struct pmb887x_flash_erase_region_t pmb887x_flash_erase_region_t;
 
-void flash_trace(pmb887x_flash_t *reg, const char *format, ...);
-void flash_trace_part(pmb887x_flash_part_t *reg, const char *format, ...);
-void flash_error(pmb887x_flash_t *reg, const char *format, ...);
+static void flash_trace(pmb887x_flash_t *flash, const char *format, ...) G_GNUC_PRINTF(2, 3);
+static void flash_trace_part(pmb887x_flash_part_t *p, const char *format, ...) G_GNUC_PRINTF(2, 3);
+static void flash_error(pmb887x_flash_t *flash, const char *format, ...) G_GNUC_PRINTF(2, 3);
 
 static void flash_reset(pmb887x_flash_part_t *p) {
 	flash_trace_part(p, "back to read array mode");
@@ -203,6 +207,7 @@ static uint32_t flash_find_sector_size(pmb887x_flash_part_t *p, uint32_t offset)
 	abort();
 }
 
+/*
 static uint32_t flash_data_read(pmb887x_flash_part_t *p, uint32_t offset, unsigned size) {
 	uint8_t *data = p->storage;
 	
@@ -224,6 +229,7 @@ static uint32_t flash_data_read(pmb887x_flash_part_t *p, uint32_t offset, unsign
 	
     return 0;
 }
+*/
 
 static void flash_data_write(pmb887x_flash_part_t *p, uint32_t offset, uint32_t value, unsigned size) {
 	uint8_t *data = p->storage;
@@ -452,7 +458,7 @@ static void flash_io_write(void *opaque, hwaddr part_offset, uint64_t value, uns
 			break;
 			
 			default:
-				flash_trace_part(p, "cmd unknown (%02lX) at %08X", value, offset);
+				flash_trace_part(p, "cmd unknown (%02lX) at %08lX", value, offset);
 				abort();
 			break;
 		}
@@ -499,10 +505,10 @@ static void flash_io_write(void *opaque, hwaddr part_offset, uint64_t value, uns
 					uint32_t mask = ~(sector_size - 1);
 					uint32_t base = (p->cmd_addr & mask);
 					
-					flash_trace_part(p, "confirm erase block %08lX...%08lX (sector: %08X)", base, base + sector_size - 1, sector_size);
+					flash_trace_part(p, "confirm erase block %08X...%08X (sector: %08X)", base, base + sector_size - 1, sector_size);
 					
 					if ((offset & mask) != (p->cmd_addr & mask)) {
-						flash_trace_part(p, "erase sector mismatch: %08X != %08X\n", offset, p->cmd_addr);
+						flash_trace_part(p, "erase sector mismatch: %08lX != %08X\n", offset, p->cmd_addr);
 						abort();
 					}
 					
@@ -550,12 +556,12 @@ static void flash_io_write(void *opaque, hwaddr part_offset, uint64_t value, uns
 				flash_trace_part(p, "program word [%d]: %08lX to %08lX", size, value, offset);
 				
 				if ((offset & mask) != (p->cmd_addr & mask)) {
-					flash_trace_part(p, "program sector mismatch: %08X != %08X", offset, p->cmd_addr);
+					flash_trace_part(p, "program sector mismatch: %08lX != %08X", offset, p->cmd_addr);
 					abort();
 				}
 				
 				if (size != 2 && size != 4) {
-					flash_trace_part(p, "invalid write size", size);
+					flash_trace_part(p, "invalid write size: %d", size);
 					abort();
 				}
 				
@@ -694,10 +700,6 @@ static void flash_init_part(pmb887x_flash_bank_t *bank, uint32_t offset, uint32_
 	
 	p->storage = memory_region_get_ram_ptr(&p->mem);
 	
-	int co_wrapper_mixed blk_pread(BlockBackend *blk, int64_t offset,
-                               int64_t bytes, void *buf,
-                               BdrvRequestFlags flags);
-	
 	int ret = blk_pread(p->flash->blk, offset, size, p->storage, 0);
 	if (ret < 0) {
 		flash_error(p->flash, "failed to read the initial flash content [offset=%08X, size=%08X]", offset, size);
@@ -790,7 +792,7 @@ static void flash_init_bank(pmb887x_flash_t *flash, uint32_t dev_id, uint32_t of
 	memset(bank->otp0_data, 0xFFFF, bank->otp0_size * 2);
 	bank->otp0_data[0] = 0x0002;
 	if (!fill_data_from_hex((uint8_t *) bank->otp0_data, bank->otp0_size * 2, flash->otp0_data)) {
-		flash_error(bank->flash, "Invalid OTP0 hex data: %s [max_size=%d, len=%d]", flash->otp0_data, bank->otp0_size * 2, strlen(flash->otp0_data) / 2);
+		flash_error(bank->flash, "Invalid OTP0 hex data: %s [max_size=%d, len=%ld]", flash->otp0_data, bank->otp0_size * 2, strlen(flash->otp0_data) / 2);
 		abort();
 	}
 	
@@ -805,7 +807,7 @@ static void flash_init_bank(pmb887x_flash_t *flash, uint32_t dev_id, uint32_t of
 	memset(bank->otp1_data, 0xFFFF, bank->otp1_size * 2);
 	bank->otp1_data[0] = 0xFFFF;
 	if (!fill_data_from_hex((uint8_t *) bank->otp1_data, bank->otp1_size * 2, flash->otp1_data)) {
-		flash_error(bank->flash, "Invalid OTP1 hex data: %s [max_size=%d, len=%d]", flash->otp1_data, bank->otp1_size * 2, strlen(flash->otp1_data) / 2);
+		flash_error(bank->flash, "Invalid OTP1 hex data: %s [max_size=%d, len=%ld]", flash->otp1_data, bank->otp1_size * 2, strlen(flash->otp1_data) / 2);
 		abort();
 	}
 	
@@ -932,41 +934,43 @@ static void flash_realize(DeviceState *dev, Error **errp) {
 	}
 }
 
-void flash_error(pmb887x_flash_t *flash, const char *format, ...) {
-	fprintf(stderr, "[pmb887x-flash] ");
+static void flash_error(pmb887x_flash_t *flash, const char *format, ...) {
+	g_autoptr(GString) s = g_string_new("");
 	
 	va_list args;
 	va_start(args, format);
-	vfprintf(stderr, format, args);
+	g_string_append_vprintf(s, format, args);
 	va_end(args);
 	
-	fprintf(stderr, "\n");
+	error_report("[%s] %s\n", PMB887X_TRACE_PREFIX, s->str);
 }
 
-void flash_trace_part(pmb887x_flash_part_t *p, const char *format, ...) {
-	return;
+static void flash_trace_part(pmb887x_flash_part_t *p, const char *format, ...) {
+	if (!pmb887x_trace_log_enabled(PMB887X_TRACE_FLASH))
+		return;
 	
-	fprintf(stderr, "[pmb887x-flash %d/%02d] ", p->bank->n, p->n);
+	g_autoptr(GString) s = g_string_new("");
 	
 	va_list args;
 	va_start(args, format);
-	vfprintf(stderr, format, args);
+	g_string_append_vprintf(s, format, args);
 	va_end(args);
 	
-	fprintf(stderr, "\n");
+	qemu_log_mask(LOG_TRACE, "[%s] <%d/%02d> %s\n", PMB887X_TRACE_PREFIX, p->bank->n, p->n, s->str);
 }
 
-void flash_trace(pmb887x_flash_t *flash, const char *format, ...) {
-	return;
+static void flash_trace(pmb887x_flash_t *flash, const char *format, ...) {
+	if (!pmb887x_trace_log_enabled(PMB887X_TRACE_FLASH))
+		return;
 	
-	fprintf(stderr, "[pmb887x-flash] ");
+	g_autoptr(GString) s = g_string_new("");
 	
 	va_list args;
 	va_start(args, format);
-	vfprintf(stderr, format, args);
+	g_string_append_vprintf(s, format, args);
 	va_end(args);
 	
-	fprintf(stderr, "\n");
+	qemu_log_mask(LOG_TRACE, "[%s] %s\n", PMB887X_TRACE_PREFIX, s->str);
 }
 
 static Property flash_properties[] = {

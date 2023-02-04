@@ -1,7 +1,7 @@
 #include "regs_dump.h"
 
-#include "trace.h"
-#include "cpu.h"
+#include "target/arm/cpu.h"
+#include "qemu/log.h"
 #include "sysemu/cpu-timers.h"
 
 static QemuMutex io_dump_queue_lock;

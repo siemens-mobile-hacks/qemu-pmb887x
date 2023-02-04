@@ -1,6 +1,9 @@
 /*
  * System Timer (56 bit)
  * */
+#define PMB887X_TRACE_ID		STM
+#define PMB887X_TRACE_PREFIX	"pmb887x-stm"
+
 #include "qemu/osdep.h"
 #include "hw/sysbus.h"
 #include "hw/hw.h"
@@ -20,12 +23,6 @@
 #include "hw/arm/pmb887x/regs_dump.h"
 #include "hw/arm/pmb887x/mod.h"
 #include "hw/arm/pmb887x/trace.h"
-
-#ifdef PMB887X_STM_DEBUG
-#define DPRINTF(fmt, ...) do { qemu_log_mask(LOG_TRACE, "[pmb887x-stm]: " fmt , ## __VA_ARGS__); } while (0)
-#else
-#define DPRINTF(fmt, ...) do { } while (0)
-#endif
 
 #define TYPE_PMB887X_STM	"pmb887x-stm"
 #define PMB887X_STM(obj)	OBJECT_CHECK(struct pmb887x_stm_t, (obj), TYPE_PMB887X_STM)
@@ -133,22 +130,21 @@ static uint64_t stm_io_read(void *opaque, hwaddr haddr, unsigned size) {
 		break;
 		
 		default:
-			pmb887x_dump_io(haddr + p->mmio.addr, size, 0xFFFFFFFF, false);
+			IO_DUMP(haddr + p->mmio.addr, size, 0xFFFFFFFF, false);
 			DPRINTF("unknown reg access: %02lX\n", haddr);
 			exit(1);
 		break;
 	}
 	
-	// pmb887x_dump_io(haddr + p->mmio.addr, size, value, false);
+	IO_DUMP(haddr + p->mmio.addr, size, value, false);
 	
 	return value;
 }
-// WRITE[4] F7608000: 00140E62 (I2C_TXD) (PC: A04F995C, LR: A04F9944)
 
 static void stm_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned size) {
 	struct pmb887x_stm_t *p = (struct pmb887x_stm_t *) opaque;
 	
-	pmb887x_dump_io(haddr + p->mmio.addr, size, value, true);
+	IO_DUMP(haddr + p->mmio.addr, size, value, true);
 	
 	switch (haddr) {
 		case STM_CLC:

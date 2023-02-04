@@ -58,6 +58,34 @@ static void pmb887x_siemens_cx75_machine_init(void) {
 type_init(pmb887x_siemens_cx75_machine_init);
 
 
+static void pmb887x_siemens_sl75_init(MachineState *machine) {
+	return pmb887x_init(machine, BOARD_SL75);
+}
+
+static void pmb887x_siemens_sl75_class_init(ObjectClass *oc, void *data) {
+	MachineClass *mc = MACHINE_CLASS(oc);
+	mc->desc = "Siemens SL75 (PMB8876)";
+	mc->init = pmb887x_siemens_sl75_init;
+	mc->block_default_type = IF_PFLASH;
+	mc->ignore_memory_transaction_failures = true;
+	mc->default_cpu_type = ARM_CPU_TYPE_NAME("arm926");
+	mc->default_ram_size = 16 * 1024 * 1024;
+	pmb887x_class_init(oc, data);
+}
+
+static const TypeInfo pmb887x_siemens_sl75_type = {
+	.name = MACHINE_TYPE_NAME("siemens-sl75"),
+	.parent = TYPE_MACHINE,
+	.class_init = pmb887x_siemens_sl75_class_init
+};
+
+static void pmb887x_siemens_sl75_machine_init(void) {
+	type_register_static(&pmb887x_siemens_sl75_type);
+}
+
+type_init(pmb887x_siemens_sl75_machine_init);
+
+
 static void pmb887x_siemens_el71_init(MachineState *machine) {
 	return pmb887x_init(machine, BOARD_EL71);
 }

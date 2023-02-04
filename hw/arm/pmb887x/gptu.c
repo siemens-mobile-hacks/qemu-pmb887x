@@ -1,6 +1,9 @@
 /*
  * GPTU (General Purpose Timer Unit)
  * */
+#define PMB887X_TRACE_ID		GPTU
+#define PMB887X_TRACE_PREFIX	"pmb887x-gptu"
+
 #include "qemu/osdep.h"
 #include "hw/sysbus.h"
 #include "hw/hw.h"
@@ -20,12 +23,6 @@
 #include "hw/arm/pmb887x/regs_dump.h"
 #include "hw/arm/pmb887x/mod.h"
 #include "hw/arm/pmb887x/trace.h"
-
-#ifdef PMB887X_GPTU_DEBUG
-#define DPRINTF(fmt, ...) do { qemu_log_mask(LOG_TRACE, "[pmb887x-gptu]: " fmt , ## __VA_ARGS__); } while (0)
-#else
-#define DPRINTF(fmt, ...) do { } while (0)
-#endif
 
 #define TYPE_PMB887X_GPTU	"pmb887x-gptu"
 #define PMB887X_GPTU(obj)	OBJECT_CHECK(pmb887x_gptu_t, (obj), TYPE_PMB887X_GPTU)
@@ -475,13 +472,13 @@ static uint64_t gptu_io_read(void *opaque, hwaddr haddr, unsigned size) {
 		break;
 		
 		default:
-			pmb887x_dump_io(haddr + p->mmio.addr, size, 0xFFFFFFFF, false);
+			IO_DUMP(haddr + p->mmio.addr, size, 0xFFFFFFFF, false);
 			DPRINTF("unknown reg access: %02lX\n", haddr);
 			exit(1);
 		break;
 	}
 	
-	pmb887x_dump_io(haddr + p->mmio.addr, size, value, false);
+	IO_DUMP(haddr + p->mmio.addr, size, value, false);
 	
 	return value;
 }
@@ -489,7 +486,7 @@ static uint64_t gptu_io_read(void *opaque, hwaddr haddr, unsigned size) {
 static void gptu_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned size) {
 	pmb887x_gptu_t *p = (pmb887x_gptu_t *) opaque;
 	
-	pmb887x_dump_io(haddr + p->mmio.addr, size, value, true);
+	IO_DUMP(haddr + p->mmio.addr, size, value, true);
 	
 	switch (haddr) {
 		case GPTU_CLC:

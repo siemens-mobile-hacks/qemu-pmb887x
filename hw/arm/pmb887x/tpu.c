@@ -1,6 +1,9 @@
 /*
  * Time Processing Unit
  * */
+#define PMB887X_TRACE_ID		TPU
+#define PMB887X_TRACE_PREFIX	"pmb887x-tpu"
+
 #include "qemu/osdep.h"
 #include "hw/sysbus.h"
 #include "hw/hw.h"
@@ -21,12 +24,6 @@
 #include "hw/arm/pmb887x/regs_dump.h"
 #include "hw/arm/pmb887x/mod.h"
 #include "hw/arm/pmb887x/trace.h"
-
-#ifdef PMB887X_TPU_DEBUG
-#define DPRINTF(fmt, ...) do { qemu_log_mask(LOG_TRACE, "[pmb887x-tpu]: " fmt , ## __VA_ARGS__); } while (0)
-#else
-#define DPRINTF(fmt, ...) do { } while (0)
-#endif
 
 #define TYPE_PMB887X_TPU	"pmb887x-tpu"
 #define PMB887X_TPU(obj)	OBJECT_CHECK(struct pmb887x_tpu_t, (obj), TYPE_PMB887X_TPU)
@@ -326,13 +323,13 @@ static uint64_t tpu_io_read(void *opaque, hwaddr haddr, unsigned size) {
 		break;
 		
 		default:
-			pmb887x_dump_io(haddr + p->mmio.addr, size, 0xFFFFFFFF, false);
+			IO_DUMP(haddr + p->mmio.addr, size, 0xFFFFFFFF, false);
 			DPRINTF("unknown reg access: %02lX\n", haddr);
 			exit(1);
 		break;
 	}
 	
-	// pmb887x_dump_io(haddr + p->mmio.addr, size, value, false);
+	IO_DUMP(haddr + p->mmio.addr, size, value, false);
 	
 	return value;
 }
@@ -340,7 +337,7 @@ static uint64_t tpu_io_read(void *opaque, hwaddr haddr, unsigned size) {
 static void tpu_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned size) {
 	struct pmb887x_tpu_t *p = (struct pmb887x_tpu_t *) opaque;
 	
-	// pmb887x_dump_io(haddr + p->mmio.addr, size, value, true);
+	IO_DUMP(haddr + p->mmio.addr, size, value, true);
 	
 	switch (haddr) {
 		case TPU_CLC:

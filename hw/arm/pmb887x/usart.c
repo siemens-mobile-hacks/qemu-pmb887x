@@ -1,6 +1,9 @@
 /*
  * USART
  * */
+#define PMB887X_TRACE_ID		USART
+#define PMB887X_TRACE_PREFIX	"pmb887x-usart"
+
 #include "qemu/osdep.h"
 #include "hw/sysbus.h"
 #include "hw/hw.h"
@@ -24,12 +27,6 @@
 #include "hw/arm/pmb887x/mod.h"
 #include "hw/arm/pmb887x/fifo.h"
 #include "hw/arm/pmb887x/trace.h"
-
-#ifdef PMB887X_USART_DEBUG
-#define DPRINTF(fmt, ...) do { qemu_log_mask(LOG_TRACE, "[pmb887x-usart]: " fmt , ## __VA_ARGS__); } while (0)
-#else
-#define DPRINTF(fmt, ...) do { } while (0)
-#endif
 
 #define TYPE_PMB887X_USART	"pmb887x-usart"
 #define PMB887X_USART(obj)	OBJECT_CHECK(struct pmb887x_usart_t, (obj), TYPE_PMB887X_USART)
@@ -348,14 +345,14 @@ static uint64_t usart_io_read(void *opaque, hwaddr haddr, unsigned size) {
 		break;
 		
 		default:
-			pmb887x_dump_io(haddr + p->mmio.addr, size, 0xFFFFFFFF, false);
+			IO_DUMP(haddr + p->mmio.addr, size, 0xFFFFFFFF, false);
 			DPRINTF("unknown reg access: %02lX\n", haddr);
 			exit(1);
 		break;
 	}
 	
 	if (!no_dump)
-		pmb887x_dump_io(haddr + p->mmio.addr, size, value, false);
+		IO_DUMP(haddr + p->mmio.addr, size, value, false);
 	
 	return value;
 }
@@ -467,7 +464,7 @@ static void usart_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned 
 	}
 	
 	if (!no_dump)
-		pmb887x_dump_io(haddr + p->mmio.addr, size, value, true);
+		IO_DUMP(haddr + p->mmio.addr, size, value, true);
 }
 
 static const MemoryRegionOps io_ops = {

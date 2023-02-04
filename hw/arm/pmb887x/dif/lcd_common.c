@@ -1,3 +1,6 @@
+#define PMB887X_TRACE_ID		LCD
+#define PMB887X_TRACE_PREFIX	"pmb887x-lcd-common"
+
 #include "qemu/osdep.h"
 #include "hw/qdev-properties.h"
 #include "qapi/error.h"
@@ -10,12 +13,6 @@
 #include <math.h>
 
 #define PMB887X_LCD(obj)	OBJECT_CHECK(pmb887x_lcd_t, (obj), TYPE_PMB887X_LCD)
-
-#ifdef PMB887X_LCD_DEBUG
-#define DPRINTF(fmt, ...) do { qemu_log_mask(LOG_TRACE, "[pmb887x-lcd-common]: " fmt , ## __VA_ARGS__); } while (0)
-#else
-#define DPRINTF(fmt, ...) do { } while (0)
-#endif
 
 #define LCD_PIXMAN_TRANSFORM(v00, v01, v10, v11, WIDTH, HEIGHT) \
 	{ \
