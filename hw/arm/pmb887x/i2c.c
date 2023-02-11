@@ -27,7 +27,7 @@
 
 #define TYPE_PMB887X_I2C	"pmb887x-i2c"
 #define PMB887X_I2C(obj)	OBJECT_CHECK(pmb887x_i2c_t, (obj), TYPE_PMB887X_I2C)
-#define I2C_TX_BYTE_TIME	10
+#define I2C_TX_BYTE_TIME	(20 * 1000000)
 
 enum {
 	I2C_SINGLE_REQ_IRQ = 0,
@@ -116,8 +116,10 @@ static uint32_t i2c_get_tx_burst_size(pmb887x_i2c_t *p) {
 }
 
 static void i2c_trigger_sreq(pmb887x_i2c_t *p) {
-	if (p->wait_for_sreq)
-		hw_error("double i2c_trigger_sreq\n");
+	if (p->wait_for_sreq) {
+		error_report("[pmb887x-i2c] double i2c_trigger_sreq\n");
+		return;
+	}
 	
 	p->wait_for_sreq = true;
 	timer_mod(p->timer, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + I2C_TX_BYTE_TIME);

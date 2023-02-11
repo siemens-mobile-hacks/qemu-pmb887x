@@ -45,6 +45,7 @@ struct pmb887x_pll_t {
 	uint32_t xtal;
 	uint32_t hw_ns_div;
 	
+	uint32_t frtc;
 	uint32_t fsys;
 	uint32_t fstm;
 	uint32_t fahb;
@@ -294,16 +295,12 @@ struct pmb887x_pll_t *pmb887x_pll_get_self(DeviceState *dev) {
 	return PMB887X_PLL(dev);
 }
 
-uint64_t pmb887x_pll_get_hw_ns(struct pmb887x_pll_t *p) {
-	return qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) / p->hw_ns_div;
+uint32_t pmb887x_pll_get_fosc(struct pmb887x_pll_t *p) {
+	return p->xtal;
 }
 
-uint64_t pmb887x_pll_get_real_ns(struct pmb887x_pll_t *p) {
-	return qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
-}
-
-uint64_t pmb887x_pll_hw_to_real_ns(struct pmb887x_pll_t *p, uint64_t hw_ns) {
-	return hw_ns * p->hw_ns_div;
+uint32_t pmb887x_pll_get_frtc(struct pmb887x_pll_t *p) {
+	return p->frtc;
 }
 
 uint32_t pmb887x_pll_get_fsys(struct pmb887x_pll_t *p) {
@@ -351,6 +348,7 @@ static void pll_realize(DeviceState *dev, Error **errp) {
 	
 	p->ns_per_tick = 0;
 	
+	p->frtc = 32768;
 	p->fgptu = 1000000000;
 	p->fsys = p->xtal;
 	

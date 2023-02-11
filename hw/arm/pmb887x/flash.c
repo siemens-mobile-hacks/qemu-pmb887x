@@ -184,8 +184,10 @@ typedef struct pmb887x_flash_buffer_t pmb887x_flash_buffer_t;
 typedef struct pmb887x_flash_erase_region_t pmb887x_flash_erase_region_t;
 
 static void flash_trace(pmb887x_flash_t *flash, const char *format, ...) G_GNUC_PRINTF(2, 3);
-static void flash_trace_part(pmb887x_flash_part_t *p, const char *format, ...) G_GNUC_PRINTF(2, 3);
 static void flash_error(pmb887x_flash_t *flash, const char *format, ...) G_GNUC_PRINTF(2, 3);
+
+static void flash_trace_part(pmb887x_flash_part_t *p, const char *format, ...) G_GNUC_PRINTF(2, 3);
+static void flash_error_part(pmb887x_flash_part_t *p, const char *format, ...) G_GNUC_PRINTF(2, 3);
 
 static void flash_reset(pmb887x_flash_part_t *p) {
 	flash_trace_part(p, "back to read array mode");
@@ -203,8 +205,8 @@ static uint32_t flash_find_sector_size(pmb887x_flash_part_t *p, uint32_t offset)
 			return region->sector;
 	}
 	
-	flash_trace_part(p, "[data] Unknown sector size for addr %08X\n", offset);
-	abort();
+	flash_error_part(p, "[data] Unknown sector size for addr %08X\n", offset);
+	exit(1);
 }
 
 /*
@@ -212,8 +214,8 @@ static uint32_t flash_data_read(pmb887x_flash_part_t *p, uint32_t offset, unsign
 	uint8_t *data = p->storage;
 	
 	if (offset < p->offset || (offset + size) > p->offset + p->size) {
-		flash_trace_part(p, "[data] Unknown read addr %08X\n", offset);
-		abort();
+		flash_error_part(p, "[data] Unknown read addr %08X\n", offset);
+		exit(1);
 	}
 	
 	offset -= p->offset;
@@ -224,8 +226,8 @@ static uint32_t flash_data_read(pmb887x_flash_part_t *p, uint32_t offset, unsign
 		case 4:		return data[offset] | (data[offset + 1] << 8) | (data[offset + 2] << 16) | (data[offset + 3] << 24);
 	}
 	
-	flash_trace_part(p, "[data] Unknown read size %d\n", size);
-	abort();
+	flash_error_part(p, "[data] Unknown read size %d\n", size);
+	exit(1);
 	
     return 0;
 }
@@ -235,8 +237,8 @@ static void flash_data_write(pmb887x_flash_part_t *p, uint32_t offset, uint32_t 
 	uint8_t *data = p->storage;
 	
 	if (offset < p->offset || (offset + size) > p->offset + p->size) {
-		flash_trace_part(p, "[data] Unknown write addr %08X [part %08X-%08X]\n", offset, p->offset, p->offset + p->size - 1);
-		abort();
+		flash_error_part(p, "[data] Unknown write addr %08X [part %08X-%08X]\n", offset, p->offset, p->offset + p->size - 1);
+		exit(1);
 	}
 	
 	offset -= p->offset;
@@ -259,8 +261,8 @@ static void flash_data_write(pmb887x_flash_part_t *p, uint32_t offset, uint32_t 
 		break;
 		
 		default:
-			flash_trace_part(p, "[data] Unknown write size %d\n", size);
-			abort();
+			flash_error_part(p, "[data] Unknown write size %d\n", size);
+			exit(1);
 		break;
 	}
 }
@@ -319,8 +321,8 @@ static uint64_t flash_io_read(void *opaque, hwaddr part_offset, unsigned size) {
 					
 					default:
 						value = 0xFF;
-						flash_trace_part(p, "%08lX: read unknown cfi index 0x%02X", offset, index);
-					//	abort();
+						flash_error_part(p, "%08lX: read unknown cfi index 0x%02X", offset, index);
+					//	exit(1);
 					break;
 				}
 			}
@@ -337,8 +339,8 @@ static uint64_t flash_io_read(void *opaque, hwaddr part_offset, unsigned size) {
 		break;
 		
 		default:
-			flash_trace_part(p, "not implemented read for command %02X [addr: %08lX]", p->cmd, offset);
-			abort();
+			flash_error_part(p, "not implemented read for command %02X [addr: %08lX]", p->cmd, offset);
+			exit(1);
 		break;
 	}
 	
@@ -458,8 +460,8 @@ static void flash_io_write(void *opaque, hwaddr part_offset, uint64_t value, uns
 			break;
 			
 			default:
-				flash_trace_part(p, "cmd unknown (%02lX) at %08lX", value, offset);
-				abort();
+				flash_error_part(p, "cmd unknown (%02lX) at %08lX", value, offset);
+				exit(1);
 			break;
 		}
 	} else if (p->wcycle == 1) {
@@ -508,8 +510,8 @@ static void flash_io_write(void *opaque, hwaddr part_offset, uint64_t value, uns
 					flash_trace_part(p, "confirm erase block %08X...%08X (sector: %08X)", base, base + sector_size - 1, sector_size);
 					
 					if ((offset & mask) != (p->cmd_addr & mask)) {
-						flash_trace_part(p, "erase sector mismatch: %08lX != %08X\n", offset, p->cmd_addr);
-						abort();
+						flash_error_part(p, "erase sector mismatch: %08lX != %08X\n", offset, p->cmd_addr);
+						exit(1);
 					}
 					
 					// fill sector with 0xFF's
@@ -556,13 +558,13 @@ static void flash_io_write(void *opaque, hwaddr part_offset, uint64_t value, uns
 				flash_trace_part(p, "program word [%d]: %08lX to %08lX", size, value, offset);
 				
 				if ((offset & mask) != (p->cmd_addr & mask)) {
-					flash_trace_part(p, "program sector mismatch: %08lX != %08X", offset, p->cmd_addr);
-					abort();
+					flash_error_part(p, "program sector mismatch: %08lX != %08X", offset, p->cmd_addr);
+					exit(1);
 				}
 				
 				if (size != 2 && size != 4) {
-					flash_trace_part(p, "invalid write size: %d", size);
-					abort();
+					flash_error_part(p, "invalid write size: %d", size);
+					exit(1);
 				}
 				
 				for (int i = 0; i < size; i += 2) {
@@ -603,8 +605,8 @@ static void flash_io_write(void *opaque, hwaddr part_offset, uint64_t value, uns
 	}
 	
 	if (!valid_cmd) {
-		flash_trace_part(p, "not implemented %d cycle for command %02X [addr: %08lX, value: %08lX]", p->wcycle, p->cmd, offset, value);
-		abort();
+		flash_error_part(p, "not implemented %d cycle for command %02X [addr: %08lX, value: %08lX]", p->wcycle, p->cmd, offset, value);
+		exit(1);
 	}
 }
 
@@ -703,7 +705,7 @@ static void flash_init_part(pmb887x_flash_bank_t *bank, uint32_t offset, uint32_
 	int ret = blk_pread(p->flash->blk, offset, size, p->storage, 0);
 	if (ret < 0) {
 		flash_error(p->flash, "failed to read the initial flash content [offset=%08X, size=%08X]", offset, size);
-		abort();
+		exit(1);
 	}
 	
 	p->erase_regions_cnt = erase_regions_cnt;
@@ -753,7 +755,7 @@ static void flash_init_bank(pmb887x_flash_t *flash, uint32_t dev_id, uint32_t of
 			bank->pri_table[0x38] = 0x0E;
 		} else {
 			flash_error(bank->flash, "unimplemented");
-			abort();
+			exit(1);
 		}
 	} else if (flash->vendor_id == FLASH_VENDOR_ST) {
 		memcpy(bank->cfi_table, default_st_cfi, sizeof(default_st_cfi));
@@ -773,11 +775,11 @@ static void flash_init_bank(pmb887x_flash_t *flash, uint32_t dev_id, uint32_t of
 			bank->cfi_table[0x2E] = 0x01;
 		} else {
 			flash_error(bank->flash, "unimplemented");
-			abort();
+			exit(1);
 		}
 	} else {
 		flash_error(bank->flash, "unimplemented");
-		abort();
+		exit(1);
 	}
 	
 	bank->pri_addr = (bank->cfi_table[0x16] << 8) | bank->cfi_table[0x15];
@@ -793,7 +795,7 @@ static void flash_init_bank(pmb887x_flash_t *flash, uint32_t dev_id, uint32_t of
 	bank->otp0_data[0] = 0x0002;
 	if (!fill_data_from_hex((uint8_t *) bank->otp0_data, bank->otp0_size * 2, flash->otp0_data)) {
 		flash_error(bank->flash, "Invalid OTP0 hex data: %s [max_size=%d, len=%ld]", flash->otp0_data, bank->otp0_size * 2, strlen(flash->otp0_data) / 2);
-		abort();
+		exit(1);
 	}
 	
 	// OTP1
@@ -808,7 +810,7 @@ static void flash_init_bank(pmb887x_flash_t *flash, uint32_t dev_id, uint32_t of
 	bank->otp1_data[0] = 0xFFFF;
 	if (!fill_data_from_hex((uint8_t *) bank->otp1_data, bank->otp1_size * 2, flash->otp1_data)) {
 		flash_error(bank->flash, "Invalid OTP1 hex data: %s [max_size=%d, len=%ld]", flash->otp1_data, bank->otp1_size * 2, strlen(flash->otp1_data) / 2);
-		abort();
+		exit(1);
 	}
 	
 	if (flash->vendor_id == FLASH_VENDOR_INTEL) {
@@ -845,7 +847,7 @@ static void flash_init_bank(pmb887x_flash_t *flash, uint32_t dev_id, uint32_t of
 		
 		if (flash_offset != bank->size) {
 			flash_error(bank->flash, "invalid PRI table");
-			abort();
+			exit(1);
 		}
 	} else if (flash->vendor_id == FLASH_VENDOR_ST) {
 		// Partitions
@@ -882,7 +884,7 @@ static void flash_init_bank(pmb887x_flash_t *flash, uint32_t dev_id, uint32_t of
 		
 		if (flash_offset != bank->size) {
 			flash_error(bank->flash, "invalid PRI table");
-			abort();
+			exit(1);
 		}
 	}
 	
@@ -896,18 +898,18 @@ static void flash_realize(DeviceState *dev, Error **errp) {
 	
 	if (!flash->blk) {
 		flash_error(flash, "'drive' is not set");
-		abort();
+		exit(1);
 	}
 	
 	if (!blk_supports_write_perm(flash->blk)) {
 		flash_error(flash, "readonly flash not supported");
-		abort();
+		exit(1);
 	}
 	
 	int ret = blk_set_perm(flash->blk, BLK_PERM_CONSISTENT_READ | BLK_PERM_WRITE, BLK_PERM_ALL, errp);
 	if (ret < 0) {
 		flash_error(flash, "failed to set block dev permissions");
-		abort();
+		exit(1);
 	}
 	
 	uint32_t bank_offset = 0;
@@ -920,13 +922,13 @@ static void flash_realize(DeviceState *dev, Error **errp) {
 		
 		if (!flash_size) {
 			flash_error(flash, "unknown flash id: %08X", flash->banks[i]);
-			abort();
+			exit(1);
 		}
 		
 		
 		if (vendor_id != flash->vendor_id) {
 			flash_error(flash, "banks with different vendor id not supported [%04X != %04X]", vendor_id, flash->vendor_id);
-			abort();
+			exit(1);
 		}
 		
 		flash_init_bank(flash, flash->banks[i] & 0xFFFF, bank_offset, flash_size);
@@ -943,6 +945,17 @@ static void flash_error(pmb887x_flash_t *flash, const char *format, ...) {
 	va_end(args);
 	
 	error_report("[%s] %s\n", PMB887X_TRACE_PREFIX, s->str);
+}
+
+static void flash_error_part(pmb887x_flash_part_t *p, const char *format, ...) {
+	g_autoptr(GString) s = g_string_new("");
+	
+	va_list args;
+	va_start(args, format);
+	g_string_append_vprintf(s, format, args);
+	va_end(args);
+	
+	error_report("[%s] <%d/%02d> %s\n", PMB887X_TRACE_PREFIX, p->bank->n, p->n, s->str);
 }
 
 static void flash_trace_part(pmb887x_flash_part_t *p, const char *format, ...) {

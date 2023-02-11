@@ -19,6 +19,7 @@
 #include "hw/arm/pmb887x/io_bridge.h"
 #include "hw/arm/pmb887x/regs_dump.h"
 #include "hw/arm/pmb887x/mod.h"
+#include "hw/arm/pmb887x/sccu.h"
 #include "hw/arm/pmb887x/trace.h"
 
 #define TYPE_PMB887X_SCU	"pmb887x-scu"
@@ -27,8 +28,6 @@
 struct pmb887x_scu_t {
 	SysBusDevice parent_obj;
 	MemoryRegion mmio;
-	
-	pmb887x_clc_reg_t clc;
 	
 	pmb887x_src_reg_t exti_src[8];
 	pmb887x_src_reg_t dsp_src[5];
@@ -52,6 +51,7 @@ struct pmb887x_scu_t {
 	uint32_t boot_cfg;
 	uint32_t dsp_unk0;
 	
+	struct pmb887x_sccu_t *sccu;
 	MemoryRegion *brom_mirror;
 };
 
@@ -91,7 +91,7 @@ static uint64_t scu_io_read(void *opaque, hwaddr haddr, unsigned size) {
 	
 	switch (haddr) {
 		case SCU_CLC:
-			value = pmb887x_clc_get(&p->clc);
+			value = pmb887x_sccu_clc_get(p->sccu);
 		break;
 		
 		case SCU_ID:
@@ -217,7 +217,7 @@ static void scu_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned si
 	
 	switch (haddr) {
 		case SCU_CLC:
-			pmb887x_clc_set(&p->clc, value);
+			pmb887x_sccu_clc_set(p->sccu, value);
 		break;
 		
 		case SCU_RST_REQ:
@@ -334,8 +334,6 @@ static void scu_init(Object *obj) {
 static void scu_realize(DeviceState *dev, Error **errp) {
 	struct pmb887x_scu_t *p = PMB887X_SCU(dev);
 	
-	pmb887x_clc_init(&p->clc);
-	
 	int irqn = 0;
 	
 	for (int i = 0; i < ARRAY_SIZE(p->exti_src); i++) {
@@ -368,6 +366,7 @@ static void scu_realize(DeviceState *dev, Error **errp) {
 }
 
 static Property scu_properties[] = {
+	DEFINE_PROP_LINK("sccu", struct pmb887x_scu_t, sccu, "pmb887x-sccu", struct pmb887x_sccu_t *),
 	DEFINE_PROP_LINK("brom_mirror", struct pmb887x_scu_t, brom_mirror, TYPE_MEMORY_REGION, MemoryRegion *),
     DEFINE_PROP_END_OF_LIST(),
 };

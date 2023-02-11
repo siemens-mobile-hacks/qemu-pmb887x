@@ -249,6 +249,16 @@ static const struct pmb887x_dev pmb8876_devices[] = {
 			PMB8876_KEYPAD_RELEASE_IRQ,
 			0
 		}
+	},
+	{
+		.name	= "SCCU",
+		.dev	= "pmb887x-sccu",
+		.base	= PMB8876_SCCU_BASE,
+		.irqs	= {
+			PMB8876_SCCU_WAKE_IRQ,
+			PMB8876_SCCU_UNK_IRQ,
+			0
+		}
 	}
 };
 
@@ -476,6 +486,16 @@ static const struct pmb887x_dev pmb8875_devices[] = {
 			PMB8875_KEYPAD_UNK0_IRQ,
 			PMB8875_KEYPAD_UNK1_IRQ,
 			PMB8875_KEYPAD_RELEASE_IRQ,
+			0
+		}
+	},
+	{
+		.name	= "SCCU",
+		.dev	= "pmb887x-sccu",
+		.base	= PMB8875_SCCU_BASE,
+		.irqs	= {
+			PMB8875_SCCU_WAKE_IRQ,
+			PMB8875_SCCU_UNK_IRQ,
 			0
 		}
 	}

@@ -89,7 +89,7 @@ static void *_dump_io_thread(void *arg) {
 			g_free(entry);
 		}
 		
-		if (queue_size > 200000) {
+		if (queue_size > 2000000) {
 			error_report("IO dump queue overflow (%d)! Something wrong!\n", g_queue_get_length(io_dump_queue));
 			exit(1);
 		}

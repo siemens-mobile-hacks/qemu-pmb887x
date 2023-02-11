@@ -14,6 +14,7 @@
 #define PMB8875_GPIO_BASE			0xF4300000
 #define PMB8875_SCU_BASE			0xF4400000
 #define PMB8875_PLL_BASE			0xF4500000
+#define PMB8875_SCCU_BASE			0xF4600000
 #define PMB8875_RTC_BASE			0xF4700000
 #define PMB8875_I2C_BASE			0xF4800000
 #define PMB8875_GPTU0_BASE			0xF4900000
@@ -184,6 +185,8 @@
 #define PMB8875_SCU_EXTI5_IRQ		61
 #define PMB8875_SCU_EXTI6_IRQ		62
 #define PMB8875_SCU_EXTI7_IRQ		63
+#define PMB8875_SCCU_UNK_IRQ		63
+#define PMB8875_SCCU_WAKE_IRQ		64
 #define PMB8875_PLL_IRQ				65
 #define PMB8875_I2C_DATA_IRQ		66
 #define PMB8875_I2C_PROTO_IRQ		67
@@ -259,6 +262,7 @@
 #define PMB8876_GPIO_BASE			0xF4300000
 #define PMB8876_SCU_BASE			0xF4400000
 #define PMB8876_PLL_BASE			0xF4500000
+#define PMB8876_SCCU_BASE			0xF4600000
 #define PMB8876_RTC_BASE			0xF4700000
 #define PMB8876_GPTU0_BASE			0xF4900000
 #define PMB8876_GPTU1_BASE			0xF4A00000
@@ -436,7 +440,9 @@
 #define PMB8876_SCU_UNK2_IRQ		60
 #define PMB8876_SCU_EXTI5_IRQ		61
 #define PMB8876_SCU_EXTI6_IRQ		62
+#define PMB8876_SCCU_UNK_IRQ		63
 #define PMB8876_SCU_EXTI7_IRQ		63
+#define PMB8876_SCCU_WAKE_IRQ		64
 #define PMB8876_PLL_IRQ				65
 #define PMB8876_AMC_INT0_IRQ		70
 #define PMB8876_AMC_INT1_IRQ		71
@@ -2302,10 +2308,10 @@
 // CIF [MOD_NUM=F052, MOD_REV=00, MOD_32BIT=C0]
 // Looks like DIF (Camera Interface) module, but not sure.
 #define CIF_IO_SIZE	0x00000200
-#define CIF_UNK0	0x00
-
 /* Clock Control Register */
 #define CIF_CLC		0x00
+
+#define CIF_UNK0	0x00
 
 /* Module Identifier Register */
 #define CIF_ID		0x08
@@ -6599,7 +6605,7 @@
 
 
 // PLL
-// Looks like CGU module, registers collected using tests on real hardware (using "black box" method).
+// Looks like a CGU module, registers collected using tests on real hardware (using "black box" method).
 #define PLL_IO_SIZE						0x00000200
 #define PLL_OSC							0xA0
 #define PLL_OSC_LOCK					(1 << 0)
@@ -6760,6 +6766,70 @@
 
 /* Service Routing Control Register */
 #define RTC_SRC						0xF0
+
+
+// SCCU
+// Controlling MCU sleep. Very similar to "SCCU" description in the Teltonika TM1Q user manual.
+#define SCCU_IO_SIZE					0x00000200
+#define SCCU_CON0						0x10
+
+/* Sleep timer reload */
+#define SCCU_TIMER_REL					0x14
+#define SCCU_TIMER_REL_VALUE			(0x1FFF << 0)
+#define SCCU_TIMER_REL_VALUE_SHIFT		0
+
+/* Sleep timer counter */
+#define SCCU_TIMER_CNT					0x18
+#define SCCU_TIMER_CNT_VALUE			(0x1FFF << 0)
+#define SCCU_TIMER_CNT_VALUE_SHIFT		0
+
+#define SCCU_CON1						0x1C
+#define SCCU_CON1_CAL					(1 << 0)		 // Calibration?
+#define SCCU_CON1_CAL_SHIFT				0
+#define SCCU_CON1_TIMER_START			(1 << 1)		 // Start sleep timer
+#define SCCU_CON1_TIMER_START_SHIFT		1
+#define SCCU_CON1_TIMER_RESET			(1 << 2)		 // Reset sleep timer
+#define SCCU_CON1_TIMER_RESET_SHIFT		2
+
+#define SCCU_CAL						0x24
+#define SCCU_CAL_VALUE0					(0x1FFF << 0)
+#define SCCU_CAL_VALUE0_SHIFT			0
+#define SCCU_CAL_VALUE1					(0x1FFF << 13)
+#define SCCU_CAL_VALUE1_SHIFT			13
+
+#define SCCU_TIMER_DIV					0x28
+#define SCCU_TIMER_DIV_VALUE			(0xFF << 0)
+#define SCCU_TIMER_DIV_VALUE_SHIFT		0
+
+#define SCCU_SLEEP_CTRL					0x2C
+#define SCCU_SLEEP_CTRL_SLEEP			(1 << 0)		 // Enter sleep
+#define SCCU_SLEEP_CTRL_SLEEP_SHIFT		0
+#define SCCU_SLEEP_CTRL_WAKEUP			(1 << 1)		 // Force exit sleep
+#define SCCU_SLEEP_CTRL_WAKEUP_SHIFT	1
+
+#define SCCU_CON2						0x30
+#define SCCU_CON2_UNK					(0xFF << 0)
+#define SCCU_CON2_UNK_SHIFT				0
+#define SCCU_CON2_REL_SUB				(0x3 << 16)		 // Substract this value from TIMER_REL (???)
+#define SCCU_CON2_REL_SUB_SHIFT			16
+
+#define SCCU_CON3						0x34
+
+#define SCCU_STAT						0x40
+#define SCCU_STAT_CPU					(1 << 0)		 // CPU sleep status
+#define SCCU_STAT_CPU_SHIFT				0
+#define SCCU_STAT_CPU_SLEEP				0x0
+#define SCCU_STAT_CPU_NORMAL			0x1
+#define SCCU_STAT_TPU					(1 << 1)		 // TPU sleep status
+#define SCCU_STAT_TPU_SHIFT				1
+#define SCCU_STAT_TPU_SLEEP				0x0
+#define SCCU_STAT_TPU_NORMAL			0x2
+
+/* Service Routing Control Register */
+#define SCCU_WAKE_SRC					0xA0
+
+/* Service Routing Control Register */
+#define SCCU_UNK_SRC					0xA8
 
 
 // SCU [MOD_NUM=F040, MOD_REV=00, MOD_32BIT=C0]

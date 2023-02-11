@@ -5582,6 +5582,87 @@ static pmb887x_module_reg_t rtc_regs[] = {
 	{"SRC",		RTC_SRC,	rtc_src_fields,		ARRAY_SIZE(rtc_src_fields),		0},
 };
 
+static pmb887x_module_field_t sccu_timer_rel_fields[] = {
+	{"VALUE",	SCCU_TIMER_REL_VALUE,	SCCU_TIMER_REL_VALUE_SHIFT,	NULL,	0},
+};
+
+static pmb887x_module_field_t sccu_timer_cnt_fields[] = {
+	{"VALUE",	SCCU_TIMER_CNT_VALUE,	SCCU_TIMER_CNT_VALUE_SHIFT,	NULL,	0},
+};
+
+static pmb887x_module_field_t sccu_con1_fields[] = {
+	{"CAL",			SCCU_CON1_CAL,			SCCU_CON1_CAL_SHIFT,			NULL,	0},
+	{"TIMER_START",	SCCU_CON1_TIMER_START,	SCCU_CON1_TIMER_START_SHIFT,	NULL,	0},
+	{"TIMER_RESET",	SCCU_CON1_TIMER_RESET,	SCCU_CON1_TIMER_RESET_SHIFT,	NULL,	0},
+};
+
+static pmb887x_module_field_t sccu_cal_fields[] = {
+	{"VALUE0",	SCCU_CAL_VALUE0,	SCCU_CAL_VALUE0_SHIFT,	NULL,	0},
+	{"VALUE1",	SCCU_CAL_VALUE1,	SCCU_CAL_VALUE1_SHIFT,	NULL,	0},
+};
+
+static pmb887x_module_field_t sccu_timer_div_fields[] = {
+	{"VALUE",	SCCU_TIMER_DIV_VALUE,	SCCU_TIMER_DIV_VALUE_SHIFT,	NULL,	0},
+};
+
+static pmb887x_module_field_t sccu_sleep_ctrl_fields[] = {
+	{"SLEEP",	SCCU_SLEEP_CTRL_SLEEP,	SCCU_SLEEP_CTRL_SLEEP_SHIFT,	NULL,	0},
+	{"WAKEUP",	SCCU_SLEEP_CTRL_WAKEUP,	SCCU_SLEEP_CTRL_WAKEUP_SHIFT,	NULL,	0},
+};
+
+static pmb887x_module_field_t sccu_con2_fields[] = {
+	{"UNK",		SCCU_CON2_UNK,		SCCU_CON2_UNK_SHIFT,		NULL,	0},
+	{"REL_SUB",	SCCU_CON2_REL_SUB,	SCCU_CON2_REL_SUB_SHIFT,	NULL,	0},
+};
+
+static pmb887x_module_value_t sccu_sccu_stat_cpu_values[] = {
+	{"SLEEP",	SCCU_STAT_CPU_SLEEP},
+	{"NORMAL",	SCCU_STAT_CPU_NORMAL},
+};
+
+static pmb887x_module_value_t sccu_sccu_stat_tpu_values[] = {
+	{"SLEEP",	SCCU_STAT_TPU_SLEEP},
+	{"NORMAL",	SCCU_STAT_TPU_NORMAL},
+};
+
+static pmb887x_module_field_t sccu_stat_fields[] = {
+	{"CPU",	SCCU_STAT_CPU,	SCCU_STAT_CPU_SHIFT,	sccu_sccu_stat_cpu_values,	ARRAY_SIZE(sccu_sccu_stat_cpu_values)},
+	{"TPU",	SCCU_STAT_TPU,	SCCU_STAT_TPU_SHIFT,	sccu_sccu_stat_tpu_values,	ARRAY_SIZE(sccu_sccu_stat_tpu_values)},
+};
+
+static pmb887x_module_field_t sccu_wake_src_fields[] = {
+	{"SRPN",	MOD_SRC_SRPN,	MOD_SRC_SRPN_SHIFT,	NULL,	0},
+	{"TOS",		MOD_SRC_TOS,	MOD_SRC_TOS_SHIFT,	NULL,	0},
+	{"SRE",		MOD_SRC_SRE,	MOD_SRC_SRE_SHIFT,	NULL,	0},
+	{"SRR",		MOD_SRC_SRR,	MOD_SRC_SRR_SHIFT,	NULL,	0},
+	{"CLRR",	MOD_SRC_CLRR,	MOD_SRC_CLRR_SHIFT,	NULL,	0},
+	{"SETR",	MOD_SRC_SETR,	MOD_SRC_SETR_SHIFT,	NULL,	0},
+};
+
+static pmb887x_module_field_t sccu_unk_src_fields[] = {
+	{"SRPN",	MOD_SRC_SRPN,	MOD_SRC_SRPN_SHIFT,	NULL,	0},
+	{"TOS",		MOD_SRC_TOS,	MOD_SRC_TOS_SHIFT,	NULL,	0},
+	{"SRE",		MOD_SRC_SRE,	MOD_SRC_SRE_SHIFT,	NULL,	0},
+	{"SRR",		MOD_SRC_SRR,	MOD_SRC_SRR_SHIFT,	NULL,	0},
+	{"CLRR",	MOD_SRC_CLRR,	MOD_SRC_CLRR_SHIFT,	NULL,	0},
+	{"SETR",	MOD_SRC_SETR,	MOD_SRC_SETR_SHIFT,	NULL,	0},
+};
+
+static pmb887x_module_reg_t sccu_regs[] = {
+	{"CON0",		SCCU_CON0,			NULL,					0,									0},
+	{"TIMER_REL",	SCCU_TIMER_REL,		sccu_timer_rel_fields,	ARRAY_SIZE(sccu_timer_rel_fields),	0},
+	{"TIMER_CNT",	SCCU_TIMER_CNT,		sccu_timer_cnt_fields,	ARRAY_SIZE(sccu_timer_cnt_fields),	0},
+	{"CON1",		SCCU_CON1,			sccu_con1_fields,		ARRAY_SIZE(sccu_con1_fields),		0},
+	{"CAL",			SCCU_CAL,			sccu_cal_fields,		ARRAY_SIZE(sccu_cal_fields),		0},
+	{"TIMER_DIV",	SCCU_TIMER_DIV,		sccu_timer_div_fields,	ARRAY_SIZE(sccu_timer_div_fields),	0},
+	{"SLEEP_CTRL",	SCCU_SLEEP_CTRL,	sccu_sleep_ctrl_fields,	ARRAY_SIZE(sccu_sleep_ctrl_fields),	0},
+	{"CON2",		SCCU_CON2,			sccu_con2_fields,		ARRAY_SIZE(sccu_con2_fields),		0},
+	{"CON3",		SCCU_CON3,			NULL,					0,									0},
+	{"STAT",		SCCU_STAT,			sccu_stat_fields,		ARRAY_SIZE(sccu_stat_fields),		0},
+	{"WAKE_SRC",	SCCU_WAKE_SRC,		sccu_wake_src_fields,	ARRAY_SIZE(sccu_wake_src_fields),	0},
+	{"UNK_SRC",		SCCU_UNK_SRC,		sccu_unk_src_fields,	ARRAY_SIZE(sccu_unk_src_fields),	0},
+};
+
 static pmb887x_module_field_t scu_clc_fields[] = {
 	{"DISR",	MOD_CLC_DISR,	MOD_CLC_DISR_SHIFT,	NULL,	0},
 	{"DISS",	MOD_CLC_DISS,	MOD_CLC_DISS_SHIFT,	NULL,	0},
@@ -6174,6 +6255,8 @@ static pmb887x_cpu_meta_irq_t pmb8875_irqs[] = {
 	{"SCU_EXTI5",		PMB8875_SCU_EXTI5_IRQ,		NVIC_CON61},
 	{"SCU_EXTI6",		PMB8875_SCU_EXTI6_IRQ,		NVIC_CON62},
 	{"SCU_EXTI7",		PMB8875_SCU_EXTI7_IRQ,		NVIC_CON63},
+	{"SCCU_UNK",		PMB8875_SCCU_UNK_IRQ,		NVIC_CON63},
+	{"SCCU_WAKE",		PMB8875_SCCU_WAKE_IRQ,		NVIC_CON64},
 	{"PLL",				PMB8875_PLL_IRQ,			NVIC_CON65},
 	{"I2C_DATA",		PMB8875_I2C_DATA_IRQ,		NVIC_CON66},
 	{"I2C_PROTO",		PMB8875_I2C_PROTO_IRQ,		NVIC_CON67},
@@ -6249,6 +6332,7 @@ static pmb887x_module_t pmb8875_modules[] = {
 	{"GPIO",	PMB8875_GPIO_BASE,		GPIO_IO_SIZE,	gpio_regs,		ARRAY_SIZE(gpio_regs)},
 	{"SCU",		PMB8875_SCU_BASE,		SCU_IO_SIZE,	scu_regs,		ARRAY_SIZE(scu_regs)},
 	{"PLL",		PMB8875_PLL_BASE,		PLL_IO_SIZE,	pll_regs,		ARRAY_SIZE(pll_regs)},
+	{"SCCU",	PMB8875_SCCU_BASE,		SCCU_IO_SIZE,	sccu_regs,		ARRAY_SIZE(sccu_regs)},
 	{"RTC",		PMB8875_RTC_BASE,		RTC_IO_SIZE,	rtc_regs,		ARRAY_SIZE(rtc_regs)},
 	{"I2C",		PMB8875_I2C_BASE,		I2Cv2_IO_SIZE,	i2cv2_regs,		ARRAY_SIZE(i2cv2_regs)},
 	{"GPTU0",	PMB8875_GPTU0_BASE,		GPTU_IO_SIZE,	gptu_regs,		ARRAY_SIZE(gptu_regs)},
@@ -6308,7 +6392,9 @@ static pmb887x_cpu_meta_irq_t pmb8876_irqs[] = {
 	{"SCU_UNK2",		PMB8876_SCU_UNK2_IRQ,		NVIC_CON60},
 	{"SCU_EXTI5",		PMB8876_SCU_EXTI5_IRQ,		NVIC_CON61},
 	{"SCU_EXTI6",		PMB8876_SCU_EXTI6_IRQ,		NVIC_CON62},
+	{"SCCU_UNK",		PMB8876_SCCU_UNK_IRQ,		NVIC_CON63},
 	{"SCU_EXTI7",		PMB8876_SCU_EXTI7_IRQ,		NVIC_CON63},
+	{"SCCU_WAKE",		PMB8876_SCCU_WAKE_IRQ,		NVIC_CON64},
 	{"PLL",				PMB8876_PLL_IRQ,			NVIC_CON65},
 	{"AMC_INT0",		PMB8876_AMC_INT0_IRQ,		NVIC_CON70},
 	{"AMC_INT1",		PMB8876_AMC_INT1_IRQ,		NVIC_CON71},
@@ -6389,6 +6475,7 @@ static pmb887x_module_t pmb8876_modules[] = {
 	{"GPIO",	PMB8876_GPIO_BASE,		GPIO_IO_SIZE,	gpio_regs,		ARRAY_SIZE(gpio_regs)},
 	{"SCU",		PMB8876_SCU_BASE,		SCU_IO_SIZE,	scu_regs,		ARRAY_SIZE(scu_regs)},
 	{"PLL",		PMB8876_PLL_BASE,		PLL_IO_SIZE,	pll_regs,		ARRAY_SIZE(pll_regs)},
+	{"SCCU",	PMB8876_SCCU_BASE,		SCCU_IO_SIZE,	sccu_regs,		ARRAY_SIZE(sccu_regs)},
 	{"RTC",		PMB8876_RTC_BASE,		RTC_IO_SIZE,	rtc_regs,		ARRAY_SIZE(rtc_regs)},
 	{"GPTU0",	PMB8876_GPTU0_BASE,		GPTU_IO_SIZE,	gptu_regs,		ARRAY_SIZE(gptu_regs)},
 	{"GPTU1",	PMB8876_GPTU1_BASE,		GPTU_IO_SIZE,	gptu_regs,		ARRAY_SIZE(gptu_regs)},

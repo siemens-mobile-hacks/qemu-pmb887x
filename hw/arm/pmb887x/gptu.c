@@ -179,7 +179,7 @@ static void gptu_sync_timer(pmb887x_gptu_t *p) {
 	if (p->from == -1)
 		return;
 	
-	uint64_t now = pmb887x_pll_get_hw_ns(p->pll);
+	uint64_t now = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
 	
 	p->next = now + p->freq;
 	
@@ -218,7 +218,7 @@ static void gptu_sync_timer(pmb887x_gptu_t *p) {
 	}
 	
 	if (p->enabled)
-		timer_mod(p->timer, pmb887x_pll_hw_to_real_ns(p->pll, p->next));
+		timer_mod(p->timer, p->next);
 }
 
 static void gptu_update_events(pmb887x_gptu_t *p) {
@@ -250,7 +250,7 @@ static void gptu_update_events(pmb887x_gptu_t *p) {
 }
 
 static uint32_t gptu_get_counter(pmb887x_gptu_t *p, int id, int size) {
-	uint64_t now = pmb887x_pll_get_hw_ns(p->pll);
+	uint64_t now = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
 	uint32_t value = 0;
 	for (int i = 0; i < size; i++) {
 		pmb887x_gptu_timer_t *timer = &p->timers[id * 4 + i];

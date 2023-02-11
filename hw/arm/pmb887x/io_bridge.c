@@ -1,3 +1,5 @@
+#include "hw/arm/pmb887x/io_bridge.h"
+
 #ifdef PMB887X_IO_BRIDGE
 #include <errno.h>
 #include <stdio.h>
@@ -8,8 +10,6 @@
 #include <sys/un.h>
 #include <stdlib.h>
 #include <stdint.h>
-
-#include "hw/arm/pmb887x/io_bridge.h"
 
 #include "hw/qdev-core.h"
 #include "hw/irq.h"

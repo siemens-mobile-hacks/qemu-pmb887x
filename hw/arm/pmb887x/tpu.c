@@ -71,13 +71,15 @@ struct pmb887x_tpu_t {
 };
 
 static uint64_t tpu_get_time(struct pmb887x_tpu_t *p, bool real) {
+	uint64_t next = p->counter;
+	uint64_t overflow = p->overflow + 1;
+	
 	if (p->enabled) {
-		uint64_t delta_ns = pmb887x_pll_get_hw_ns(p->pll) - p->start;
-		return p->counter + muldiv64(delta_ns, p->freq, NANOSECONDS_PER_SECOND);
+		uint64_t delta_ns = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) - p->start;
+		next += muldiv64(delta_ns, p->freq, NANOSECONDS_PER_SECOND);
 	}
 	
-	uint64_t overflow = p->overflow + 1;
-	return real ? p->counter : (p->counter % overflow);
+	return real ? next : (next % overflow);
 }
 
 static uint64_t tpu_ticks_to_ns(struct pmb887x_tpu_t *p, uint64_t ticks) {
@@ -104,18 +106,13 @@ static void tpu_ptimer_reset(void *opaque) {
 	if (!p->enabled)
 		return;
 	
-	uint64_t now = pmb887x_pll_get_hw_ns(p->pll);
+	uint64_t now = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
 	uint64_t overflow = p->overflow + 1;
 	
-	if (!p->start)
+	if (!p->start) {
 		p->start = now;
-	
-	/*
-	if (p->next && now >= p->next && (now - p->next) >= 2000000) {
-		DPRINTF("error: %ld ns [%ld ms]\n", (now - p->next), (now - p->next) / 1000000);
-		abort();
+		p->next = 0;
 	}
-	*/
 	
 	uint64_t counter = tpu_get_time(p, true);
 	if (counter >= overflow) {
@@ -129,8 +126,20 @@ static void tpu_ptimer_reset(void *opaque) {
 	p->next = now + tpu_ticks_to_ns(p, overflow - counter);
 	p->next = tpu_run_irq(p, counter, now, p->next);
 	
-	// Schedule timer for next INTx or overflow
-	timer_mod(p->timer, pmb887x_pll_hw_to_real_ns(p->pll, p->next));
+	timer_mod(p->timer, p->next);
+}
+
+static void tpu_ptimer_reset2(void *opaque) {
+	struct pmb887x_tpu_t *p = (struct pmb887x_tpu_t *) opaque;
+	
+	uint64_t now = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
+	if (p->next && (now - p->next) / 1000000) {
+		DPRINTF("delta=%ld ms\n", (now - p->next) / 1000000);
+		// error_report("error: %ld ns [%ld ms]\n", (now - p->next), (now - p->next) / 1000000);
+		// abort();
+	}
+	
+	tpu_ptimer_reset(p);
 }
 
 static void tpu_update_state(struct pmb887x_tpu_t *p) {
@@ -291,11 +300,7 @@ static uint64_t tpu_io_read(void *opaque, hwaddr haddr, unsigned size) {
 		break;
 		
 		case TPU_COUNTER:
-		{
 			value = tpu_get_time(p, false);
-			uint32_t zero = 0;
-			cpu_physical_memory_write(0x0000316c, &zero, 4);
-		}
 		break;
 		
 		case TPU_RAM0 ... (TPU_RAM0 + TPU_RAM_SIZE):
@@ -467,7 +472,7 @@ static void tpu_realize(DeviceState *dev, Error **errp) {
 		pmb887x_src_init(&p->unk_src[i], p->unk_irq[i]);
 	}
 	
-    p->timer = timer_new_ns(QEMU_CLOCK_VIRTUAL, tpu_ptimer_reset, p);
+    p->timer = timer_new_ns(QEMU_CLOCK_VIRTUAL, tpu_ptimer_reset2, p);
 	p->enabled = false;
 	
 	tpu_update_state(p);

@@ -44,7 +44,7 @@ struct pmb887x_stm_t {
 
 static uint64_t stm_get_time(struct pmb887x_stm_t *p) {
 	if (p->enabled) {
-		uint64_t delta_ns = pmb887x_pll_get_hw_ns(p->pll) - p->start;
+		uint64_t delta_ns = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) - p->start;
 		return p->counter + muldiv64(delta_ns, p->freq, NANOSECONDS_PER_SECOND);
 	}
 	return p->counter;
@@ -63,7 +63,7 @@ static void stm_update_state(struct pmb887x_stm_t *p) {
 			p->counter = stm_get_time(p);
 		
 		if (p->enabled) {
-			p->start = pmb887x_pll_get_hw_ns(p->pll);
+			p->start = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
 		} else {
 			p->start = 0;
 		}
