@@ -50,9 +50,6 @@ int64_t icount_get(void);
  */
 int64_t icount_to_ns(int64_t icount);
 
-/* change ns per tick */
-void icount_set_ns_per_tick(int64_t ns_per_tick);
-
 /* configure the icount options, including "shift" */
 void icount_configure(QemuOpts *opts, Error **errp);
 

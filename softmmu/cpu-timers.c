@@ -191,7 +191,6 @@ static const VMStateDescription icount_vmstate_shift = {
     .needed = icount_shift_state_needed,
     .fields = (VMStateField[]) {
         VMSTATE_INT16(icount_time_shift, TimersState),
-        VMSTATE_INT16(icount_time_mult, TimersState),
         VMSTATE_INT64(last_delta, TimersState),
         VMSTATE_END_OF_LIST()
     }

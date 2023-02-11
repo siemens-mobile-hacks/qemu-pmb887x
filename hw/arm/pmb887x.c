@@ -190,15 +190,6 @@ static const MemoryRegionOps unmapped_io_opts = {
 	.endianness		= DEVICE_NATIVE_ENDIAN,
 };
 
-__attribute__((destructor))
-static void memory_dump_at_exit(void) {
-	fprintf(stderr, "sorry died at %08X\n", ARM_CPU(qemu_get_cpu(0))->env.regs[15]);
-	
-	qmp_pmemsave(0xA8000000, 16 * 1024 * 1024, "/tmp/ram.bin", NULL);
-	qmp_pmemsave(0x00000000, 0x4000, "/tmp/tcm.bin", NULL);
-	qmp_pmemsave(0x00080000, 96 * 1024, "/tmp/sram.bin", NULL);
-}
-
 static DeviceState *pmb887x_create_flash(BlockBackend *blk, uint32_t *banks, int banks_n) {
 	DeviceState *flash = qdev_new("pmb887x-flash");
 	qdev_prop_set_string(flash, "name", "fullflash");

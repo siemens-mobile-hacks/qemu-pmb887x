@@ -158,24 +158,7 @@ int64_t icount_get(void)
 
 int64_t icount_to_ns(int64_t icount)
 {
-    if (timers_state.icount_time_mult) {
-        return icount * qatomic_read(&timers_state.icount_time_mult);
-    } else {
-        return icount << qatomic_read(&timers_state.icount_time_shift);
-    }
-}
-
-void icount_set_ns_per_tick(int64_t ns_per_tick)
-{
-    CPUState *cpu = current_cpu;
-
-    seqlock_write_lock(&timers_state.vm_clock_seqlock,
-                       &timers_state.vm_clock_lock);
-    if (cpu)
-        icount_update_locked(cpu);
-    timers_state.icount_time_mult = ns_per_tick;
-    seqlock_write_unlock(&timers_state.vm_clock_seqlock,
-                         &timers_state.vm_clock_lock);
+    return icount << qatomic_read(&timers_state.icount_time_shift);
 }
 
 /*
