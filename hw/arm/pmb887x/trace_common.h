@@ -34,6 +34,8 @@ enum pmb887x_modules_t {
 //extern uint32_t pmb887x_trace_flags;
 
 static inline bool pmb887x_trace_log_enabled(uint32_t id) {
+	return ((id & (PMB887X_TRACE_TPU)) != 0);
+	return false;
 	return ((
 		PMB887X_TRACE_GPTU |
 		PMB887X_TRACE_TPU |
@@ -62,7 +64,8 @@ static inline bool pmb887x_trace_log_enabled(uint32_t id) {
 }
 
 static inline bool pmb887x_trace_io_enabled(uint32_t id) {
-	return ((id & (PMB887X_TRACE_SCCU)) != 0);
+	return false;
+	return ((id & (PMB887X_TRACE_SCCU | PMB887X_TRACE_TPU)) != 0);
 	return ((
 		PMB887X_TRACE_GPTU |
 		PMB887X_TRACE_TPU |

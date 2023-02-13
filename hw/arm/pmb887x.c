@@ -42,10 +42,6 @@ static ARMCPU *cpu = NULL;
 	TCM
 */
 static void pmb8876_tcm_update(void) {
-	bool locked = qemu_mutex_iothread_locked();
-	if (!locked)
-		qemu_mutex_lock_iothread();
-	
 	for (int i = 0; i < 2; ++i) {
 		uint32_t base = tcm_regs[i] & 0xFFFFF000;
 		uint32_t size = (tcm_regs[i] >> 2) & 0x1F;
@@ -54,7 +50,7 @@ static void pmb8876_tcm_update(void) {
 		if (size > 0)
 			size = (1 << (size - 1)) * 1024;
 		
-		fprintf(stderr, "TCM%d: %08X (%08X, enabled=%d)\n", i, base, size, enabled);
+		// fprintf(stderr, "TCM%d: %08X (%08X, enabled=%d)\n", i, base, size, enabled);
 		
 		if (memory_region_is_mapped(&tcm_memory[i])) 
 			memory_region_del_subregion(get_system_memory(), &tcm_memory[i]);
@@ -64,9 +60,6 @@ static void pmb8876_tcm_update(void) {
 			memory_region_add_subregion_overlap(get_system_memory(), base, &tcm_memory[i], 20002 - i);
 		}
 	}
-	
-	if (!locked)
-		qemu_mutex_unlock_iothread();
 }
 
 static uint64_t pmb8876_atcm_read(CPUARMState *env, const ARMCPRegInfo *ri) {
@@ -90,9 +83,9 @@ static void pmb8876_btcm_write(CPUARMState *env, const ARMCPRegInfo *ri, uint64_
 static const ARMCPRegInfo cp_reginfo[] = {
 	// TCM
 	{ .name = "ATCM", .cp = 15, .opc1 = 0, .crn = 9, .crm = 1, .opc2 = 0,
-		.access = PL1_RW, .readfn = pmb8876_atcm_read, .writefn = pmb8876_atcm_write },
+		.access = PL1_RW, .type = ARM_CP_IO, .readfn = pmb8876_atcm_read, .writefn = pmb8876_atcm_write },
 	{ .name = "BTCM", .cp = 15, .opc1 = 0, .crn = 9, .crm = 1, .opc2 = 1,
-		.access = PL1_RW, .readfn = pmb8876_btcm_read, .writefn = pmb8876_btcm_write },
+		.access = PL1_RW, .type = ARM_CP_IO, .readfn = pmb8876_btcm_read, .writefn = pmb8876_btcm_write },
 };
 
 static uint32_t unk_reg_F4600040 = 1;
@@ -189,6 +182,15 @@ static const MemoryRegionOps unmapped_io_opts = {
 	.write			= unmapped_io_write,
 	.endianness		= DEVICE_NATIVE_ENDIAN,
 };
+
+__attribute__((destructor))
+static void memory_dump_at_exit(void) {
+	fprintf(stderr, "sorry died at %08X\n", ARM_CPU(qemu_get_cpu(0))->env.regs[15]);
+	
+//	qmp_pmemsave(0xA8000000, 16 * 1024 * 1024, "/tmp/ram.bin", NULL);
+//	qmp_pmemsave(0x00000000, 0x4000, "/tmp/tcm.bin", NULL);
+//	qmp_pmemsave(0x00080000, 96 * 1024, "/tmp/sram.bin", NULL);
+}
 
 static DeviceState *pmb887x_create_flash(BlockBackend *blk, uint32_t *banks, int banks_n) {
 	DeviceState *flash = qdev_new("pmb887x-flash");

@@ -34,6 +34,7 @@
 #include "exec/helper-gen.h"
 #include "exec/log.h"
 #include "cpregs.h"
+#include "sysemu/cpu-timers.h"
 
 
 #define ENABLE_ARCH_4T    arm_dc_feature(s, ARM_FEATURE_V4T)
@@ -9141,6 +9142,10 @@ static void disas_arm_insn(DisasContext *s, unsigned int insn)
 {
     unsigned int cond = insn >> 28;
 
+	if (icount2_enabled()) {
+		gen_helper_instructions_counter(cpu_env);
+	}
+
     /* M variants do not implement ARM mode; this must raise the INVSTATE
      * UsageFault exception.
      */
@@ -9259,6 +9264,10 @@ static bool thumb_insn_is_16bit(DisasContext *s, uint32_t pc, uint32_t insn)
 /* Translate a 32-bit thumb instruction. */
 static void disas_thumb2_insn(DisasContext *s, uint32_t insn)
 {
+	if (icount2_enabled()) {
+		gen_helper_instructions_counter(cpu_env);
+	}
+
     /*
      * ARMv6-M supports a limited subset of Thumb2 instructions.
      * Other Thumb1 architectures allow only 32-bit
@@ -9356,6 +9365,10 @@ illegal_op:
 
 static void disas_thumb_insn(DisasContext *s, uint32_t insn)
 {
+	if (icount2_enabled()) {
+		gen_helper_instructions_counter(cpu_env);
+	}
+
     if (!disas_t16(s, insn)) {
         unallocated_encoding(s);
     }

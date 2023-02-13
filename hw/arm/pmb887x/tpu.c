@@ -134,7 +134,7 @@ static void tpu_ptimer_reset2(void *opaque) {
 	
 	uint64_t now = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
 	if (p->next && (now - p->next) / 1000000) {
-		DPRINTF("delta=%ld ms\n", (now - p->next) / 1000000);
+		DPRINTF("delta=%ld ms / %ld us\n", (now - p->next) / 1000000, (now - p->next) / 1000);
 		// error_report("error: %ld ns [%ld ms]\n", (now - p->next), (now - p->next) / 1000000);
 		// abort();
 	}
@@ -163,6 +163,8 @@ static void tpu_update_state(struct pmb887x_tpu_t *p) {
 	} else {
 		new_freq = ftpu > 0 ? (ftpu / p->L * p->K) / 6 : 0;
 	}
+	
+	// new_freq = new_freq / 6;
 	
 	// Reset counter when TPU_PARAM_TINI=0
 	if (!(p->param & TPU_PARAM_TINI)) {

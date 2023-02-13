@@ -24,6 +24,7 @@
 #include "exec/exec-all.h"
 #include "exec/cpu_ldst.h"
 #include "cpregs.h"
+#include "sysemu/cpu-timers.h"
 
 #define SIGNBIT (uint32_t)0x80000000
 #define SIGNBIT64 ((uint64_t)1 << 63)
@@ -390,6 +391,12 @@ void HELPER(exception_internal)(CPUARMState *env, uint32_t excp)
     assert(excp_is_internal(excp));
     cs->exception_index = excp;
     cpu_loop_exit(cs);
+}
+
+/* Instruction counter */
+void HELPER(instructions_counter)(CPUARMState *env)
+{
+    icount2_on_tick();
 }
 
 /* Raise an exception with the specified syndrome register value */

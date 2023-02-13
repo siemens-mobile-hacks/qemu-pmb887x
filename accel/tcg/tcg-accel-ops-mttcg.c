@@ -120,7 +120,14 @@ static void *mttcg_cpu_thread_fn(void *arg)
         }
 
         qatomic_mb_set(&cpu->exit_request, 0);
+
+        if (icount2_enabled()) {
+            icount2_enter_sleep();
+        }
         qemu_wait_io_event(cpu);
+        if (icount2_enabled()) {
+            icount2_exit_sleep();
+        }
     } while (!cpu->unplug || cpu_can_run(cpu));
 
     tcg_cpus_destroy(cpu);

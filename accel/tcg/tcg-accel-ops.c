@@ -203,6 +203,11 @@ static void tcg_accel_ops_init(AccelOpsClass *ops)
         }
     }
 
+    if (icount2_enabled()) {
+        ops->get_virtual_clock = icount2_get;
+        ops->get_elapsed_ticks = icount2_get;
+    }
+
     ops->supports_guest_debug = tcg_supports_guest_debug;
     ops->insert_breakpoint = tcg_insert_breakpoint;
     ops->remove_breakpoint = tcg_remove_breakpoint;

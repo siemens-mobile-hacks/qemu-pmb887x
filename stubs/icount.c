@@ -47,3 +47,38 @@ void icount_account_warp_timer(void)
 void icount_notify_exit(void)
 {
 }
+
+/*
+ * Precise clocks
+ * */
+bool use_icount2;
+
+void icount2_on_tick(void) {
+	abort();
+}
+
+void icount2_sync(void)
+{
+	abort();
+}
+
+int64_t icount2_get(void)
+{
+	abort();
+	return 0;
+}
+
+void icount2_enter_sleep(void)
+{
+	abort();
+}
+
+void icount2_exit_sleep(void)
+{
+	abort();
+}
+
+void icount2_set_ns_per_tick(int64_t ns_per_tick)
+{
+	abort();
+}

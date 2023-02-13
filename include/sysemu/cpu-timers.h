@@ -88,4 +88,22 @@ void qemu_timer_notify_cb(void *opaque, QEMUClockType type);
 int64_t cpus_get_virtual_clock(void);
 int64_t cpus_get_elapsed_ticks(void);
 
+/*
+ * Precise QEMU_CLOCK_VIRUAL
+ * */
+extern bool use_icount2;
+
+#ifdef CONFIG_TCG
+#define icount2_enabled() (use_icount2)
+#else
+#define icount2_enabled() (0)
+#endif
+
+void icount2_configure(QemuOpts *opts, Error **errp);
+void icount2_on_tick(void);
+void icount2_sync(void);
+int64_t icount2_get(void);
+void icount2_enter_sleep(void);
+void icount2_exit_sleep(void);
+void icount2_set_ns_per_tick(int64_t ns_per_tick);
 #endif /* SYSEMU_CPU_TIMERS_H */

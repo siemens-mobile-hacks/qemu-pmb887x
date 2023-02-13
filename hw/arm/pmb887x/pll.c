@@ -186,7 +186,10 @@ static void pll_update_state(struct pmb887x_pll_t *p) {
 		
 		if (recalc_clock) {
 			p->ns_per_tick = 1000000000 / p->fcpu;
-			// icount_set_ns_per_tick(p->ns_per_tick);
+			
+			if (icount2_enabled()) {
+				icount2_set_ns_per_tick(p->ns_per_tick);
+			}
 		}
 		
 		DPRINTF("fCPU: %d Hz, fAHB: %d Hz, fSYS: %d Hz, fSTM: %d Hz, ns_per_tick=%d\n", p->fcpu, p->fahb, p->fsys, p->fstm, p->ns_per_tick);

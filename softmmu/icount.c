@@ -422,6 +422,15 @@ void icount_configure(QemuOpts *opts, Error **errp)
     bool align = qemu_opt_get_bool(opts, "align", false);
     long time_shift = -1;
 
+    if (qemu_opt_get_bool(opts, "precise-clocks", false)) {
+        if (option || qemu_opt_get(opts, "align") || qemu_opt_get(opts, "sleep")) {
+            error_setg(errp, "precise-clocks=on and other options are incompatible");
+            return;
+        }
+        icount2_configure(opts, errp);
+        return;
+    }
+
     if (!option) {
         if (qemu_opt_get(opts, "align") != NULL) {
             error_setg(errp, "Please specify shift option when using align");

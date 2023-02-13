@@ -135,7 +135,7 @@ static void qemu_clock_init(QEMUClockType type, QEMUTimerListNotifyCB *notify_cb
 
 bool qemu_clock_use_for_deadline(QEMUClockType type)
 {
-    return !(icount_enabled() && (type == QEMU_CLOCK_VIRTUAL));
+    return !((icount_enabled() || icount2_enabled()) && (type == QEMU_CLOCK_VIRTUAL));
 }
 
 void qemu_clock_notify(QEMUClockType type)
@@ -422,6 +422,9 @@ static void timerlist_rearm(QEMUTimerList *timer_list)
     /* Interrupt execution to force deadline recalculation.  */
     if (icount_enabled() && timer_list->clock->type == QEMU_CLOCK_VIRTUAL) {
         icount_start_warp_timer();
+    }
+    if (icount2_enabled() && timer_list->clock->type == QEMU_CLOCK_VIRTUAL) {
+        icount2_sync();
     }
     timerlist_notify(timer_list);
 }

@@ -55,6 +55,16 @@ typedef struct TimersState {
     /* Only written by TCG thread */
     int64_t qemu_icount;
 
+    /* Precise icount */
+    int64_t icount2_ticks;
+    int64_t icount2_offset;
+    int64_t icount2_bias;
+    int64_t icount2_deadline;
+    int64_t icount2_ns_per_tick;
+    int64_t icount2_idle_deadline;
+    bool icount2_idle;
+    QEMUTimer *icount2_idle_timer;
+
     /* for adjusting icount */
     QEMUTimer *icount_rt_timer;
     QEMUTimer *icount_vm_timer;
