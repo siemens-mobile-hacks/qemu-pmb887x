@@ -56,6 +56,7 @@ struct pmb887x_sccu_t {
 	uint32_t stat;
 	
 	QEMUTimer *timer;
+	QEMUTimer *cal_timer;
 	struct pmb887x_pll_t *pll;
 };
 
@@ -72,6 +73,11 @@ static uint64_t sccu_get_counter(struct pmb887x_sccu_t *p, bool real) {
 
 static uint64_t sccu_ticks_to_ns(struct pmb887x_sccu_t *p, uint64_t ticks) {
     return muldiv64(ticks, NANOSECONDS_PER_SECOND, p->timer_freq);
+}
+
+static void sccu_cal_timer_reset(void *opaque) {
+	struct pmb887x_sccu_t *p = (struct pmb887x_sccu_t *) opaque;
+	
 }
 
 static void sccu_ptimer_reset(void *opaque) {
@@ -124,7 +130,7 @@ static void sccu_update_timer_timer(struct pmb887x_sccu_t *p) {
 	
 	// Calibration
 	if ((p->con[1] & SCCU_CON1_CAL)) {
-	//	DPRINTF("SCCU_SLEEP_CON0_CAL\n");
+		DPRINTF("SCCU_SLEEP_CON0_CAL\n");
 		// Unknown magic, similar to hardware value
 		uint32_t timer_freq = pmb887x_pll_get_frtc(p->pll) / p->timer_div;
 		uint32_t sccu_freq = pmb887x_pll_get_fosc(p->pll) / pmb887x_clc_get_rmc(&p->clc);
@@ -294,6 +300,7 @@ static void sccu_realize(DeviceState *dev, Error **errp) {
 	}
 	
     p->timer = timer_new_ns(QEMU_CLOCK_VIRTUAL, sccu_ptimer_reset, p);
+    p->cal_timer = timer_new_ns(QEMU_CLOCK_VIRTUAL, sccu_cal_timer_reset, p);
 	
 	p->timer_div = 0x97;
 	p->con[2] = 3 << SCCU_CON2_REL_SUB_SHIFT;

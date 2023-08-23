@@ -483,6 +483,10 @@ static void flash_io_write(void *opaque, hwaddr part_offset, uint64_t value, uns
 					valid_cmd = true;
 					flash_trace_part(p, "program read configuration register (%02lX)", offset);
 					flash_reset(p);
+				} else if (value == 0x04) {
+					valid_cmd = true;
+					flash_trace_part(p, "program read enhanced configuration register (%02lX)", offset);
+					flash_reset(p);
 				} else if (value == 0x01) {
 					valid_cmd = true;
 					flash_trace_part(p, "lock block %08lX", offset);

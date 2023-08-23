@@ -112,7 +112,7 @@ static uint64_t cpu_io_read(void *opaque, hwaddr offset, unsigned size) {
 	return value;
 	#endif
 	
-	pmb887x_dump_io(addr, size, value, false);
+	//pmb887x_dump_io(addr, size, value, false);
 	
 	//fprintf(stderr, "READ: unknown reg access: %08lX\n", addr);
 	//exit(1);
@@ -123,7 +123,7 @@ static uint64_t cpu_io_read(void *opaque, hwaddr offset, unsigned size) {
 static void cpu_io_write(void *opaque, hwaddr offset, uint64_t value, unsigned size) {
 	hwaddr addr = (size_t) opaque + offset;
 	
-	pmb887x_dump_io(addr, size, value, true);
+	//pmb887x_dump_io(addr, size, value, true);
 	
 	if (addr == 0xf460001c) {
 		if (value == 0x8) {

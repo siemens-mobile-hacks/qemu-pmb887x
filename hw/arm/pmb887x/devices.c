@@ -540,8 +540,7 @@ DeviceState *pmb887x_new_dev(uint32_t cpu_type, const char *name, DeviceState *n
 			irq_n++;
 		}
 		
-		if (strcmp(name, "SCCU") != 0)
-			sysbus_mmio_map(SYS_BUS_DEVICE(dev), 0, device->base);
+		sysbus_mmio_map(SYS_BUS_DEVICE(dev), 0, device->base);
 		
 		return dev;
 	}

@@ -145,7 +145,7 @@ static uint32_t pll_get_stm_freq(struct pmb887x_pll_t *p) {
 	uint32_t freq = p->xtal;
 	if ((p->con1 & PLL_CON1_FSTM_DIV_EN)) {
 		uint32_t div = (PLL_CON1 & PLL_CON1_FSTM_DIV) >> PLL_CON1_FSTM_DIV_SHIFT;
-		return freq / div;
+		return div ? freq / div : freq;
 	}
 	return freq;
 }
