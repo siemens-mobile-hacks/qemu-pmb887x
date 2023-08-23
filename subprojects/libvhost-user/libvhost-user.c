@@ -32,6 +32,12 @@
 #include <sys/mman.h>
 #include <endian.h>
 
+/* Necessary to provide VIRTIO_F_VERSION_1 on system
+ * with older linux headers. Must appear before
+ * <linux/vhost.h> below.
+ */
+#include "standard-headers/linux/virtio_config.h"
+
 #if defined(__linux__)
 #include <sys/syscall.h>
 #include <fcntl.h>
@@ -140,7 +146,7 @@ vu_request_to_string(unsigned int req)
         REQ(VHOST_USER_SET_VRING_ENABLE),
         REQ(VHOST_USER_SEND_RARP),
         REQ(VHOST_USER_NET_SET_MTU),
-        REQ(VHOST_USER_SET_SLAVE_REQ_FD),
+        REQ(VHOST_USER_SET_BACKEND_REQ_FD),
         REQ(VHOST_USER_IOTLB_MSG),
         REQ(VHOST_USER_SET_VRING_ENDIAN),
         REQ(VHOST_USER_GET_CONFIG),
@@ -415,8 +421,8 @@ vu_send_reply(VuDev *dev, int conn_fd, VhostUserMsg *vmsg)
 }
 
 /*
- * Processes a reply on the slave channel.
- * Entered with slave_mutex held and releases it before exit.
+ * Processes a reply on the backend channel.
+ * Entered with backend_mutex held and releases it before exit.
  * Returns true on success.
  */
 static bool
@@ -430,7 +436,7 @@ vu_process_message_reply(VuDev *dev, const VhostUserMsg *vmsg)
         goto out;
     }
 
-    if (!vu_message_read_default(dev, dev->slave_fd, &msg_reply)) {
+    if (!vu_message_read_default(dev, dev->backend_fd, &msg_reply)) {
         goto out;
     }
 
@@ -443,7 +449,7 @@ vu_process_message_reply(VuDev *dev, const VhostUserMsg *vmsg)
     result = msg_reply.payload.u64 == 0;
 
 out:
-    pthread_mutex_unlock(&dev->slave_mutex);
+    pthread_mutex_unlock(&dev->backend_mutex);
     return result;
 }
 
@@ -1365,7 +1371,7 @@ bool vu_set_queue_host_notifier(VuDev *dev, VuVirtq *vq, int fd,
     int qidx = vq - dev->vq;
     int fd_num = 0;
     VhostUserMsg vmsg = {
-        .request = VHOST_USER_SLAVE_VRING_HOST_NOTIFIER_MSG,
+        .request = VHOST_USER_BACKEND_VRING_HOST_NOTIFIER_MSG,
         .flags = VHOST_USER_VERSION | VHOST_USER_NEED_REPLY_MASK,
         .size = sizeof(vmsg.payload.area),
         .payload.area = {
@@ -1383,17 +1389,17 @@ bool vu_set_queue_host_notifier(VuDev *dev, VuVirtq *vq, int fd,
 
     vmsg.fd_num = fd_num;
 
-    if (!vu_has_protocol_feature(dev, VHOST_USER_PROTOCOL_F_SLAVE_SEND_FD)) {
+    if (!vu_has_protocol_feature(dev, VHOST_USER_PROTOCOL_F_BACKEND_SEND_FD)) {
         return false;
     }
 
-    pthread_mutex_lock(&dev->slave_mutex);
-    if (!vu_message_write(dev, dev->slave_fd, &vmsg)) {
-        pthread_mutex_unlock(&dev->slave_mutex);
+    pthread_mutex_lock(&dev->backend_mutex);
+    if (!vu_message_write(dev, dev->backend_fd, &vmsg)) {
+        pthread_mutex_unlock(&dev->backend_mutex);
         return false;
     }
 
-    /* Also unlocks the slave_mutex */
+    /* Also unlocks the backend_mutex */
     return vu_process_message_reply(dev, &vmsg);
 }
 
@@ -1457,13 +1463,13 @@ vu_get_protocol_features_exec(VuDev *dev, VhostUserMsg *vmsg)
      * a device implementation can return it in its callback
      * (get_protocol_features) if it wants to use this for
      * simulation, but it is otherwise not desirable (if even
-     * implemented by the master.)
+     * implemented by the frontend.)
      */
     uint64_t features = 1ULL << VHOST_USER_PROTOCOL_F_MQ |
                         1ULL << VHOST_USER_PROTOCOL_F_LOG_SHMFD |
-                        1ULL << VHOST_USER_PROTOCOL_F_SLAVE_REQ |
+                        1ULL << VHOST_USER_PROTOCOL_F_BACKEND_REQ |
                         1ULL << VHOST_USER_PROTOCOL_F_HOST_NOTIFIER |
-                        1ULL << VHOST_USER_PROTOCOL_F_SLAVE_SEND_FD |
+                        1ULL << VHOST_USER_PROTOCOL_F_BACKEND_SEND_FD |
                         1ULL << VHOST_USER_PROTOCOL_F_REPLY_ACK |
                         1ULL << VHOST_USER_PROTOCOL_F_CONFIGURE_MEM_SLOTS;
 
@@ -1494,7 +1500,7 @@ vu_set_protocol_features_exec(VuDev *dev, VhostUserMsg *vmsg)
 
     if (vu_has_protocol_feature(dev,
                                 VHOST_USER_PROTOCOL_F_INBAND_NOTIFICATIONS) &&
-        (!vu_has_protocol_feature(dev, VHOST_USER_PROTOCOL_F_SLAVE_REQ) ||
+        (!vu_has_protocol_feature(dev, VHOST_USER_PROTOCOL_F_BACKEND_REQ) ||
          !vu_has_protocol_feature(dev, VHOST_USER_PROTOCOL_F_REPLY_ACK))) {
         /*
          * The use case for using messages for kick/call is simulation, to make
@@ -1502,12 +1508,12 @@ vu_set_protocol_features_exec(VuDev *dev, VhostUserMsg *vmsg)
          * of the other features are required.
          * Theoretically, one could use only kick messages, or do them without
          * having F_REPLY_ACK, but too many (possibly pending) messages on the
-         * socket will eventually cause the master to hang, to avoid this in
+         * socket will eventually cause the frontend to hang, to avoid this in
          * scenarios where not desired enforce that the settings are in a way
          * that actually enables the simulation case.
          */
         vu_panic(dev,
-                 "F_IN_BAND_NOTIFICATIONS requires F_SLAVE_REQ && F_REPLY_ACK");
+                 "F_IN_BAND_NOTIFICATIONS requires F_BACKEND_REQ && F_REPLY_ACK");
         return false;
     }
 
@@ -1544,18 +1550,18 @@ vu_set_vring_enable_exec(VuDev *dev, VhostUserMsg *vmsg)
 }
 
 static bool
-vu_set_slave_req_fd(VuDev *dev, VhostUserMsg *vmsg)
+vu_set_backend_req_fd(VuDev *dev, VhostUserMsg *vmsg)
 {
     if (vmsg->fd_num != 1) {
-        vu_panic(dev, "Invalid slave_req_fd message (%d fd's)", vmsg->fd_num);
+        vu_panic(dev, "Invalid backend_req_fd message (%d fd's)", vmsg->fd_num);
         return false;
     }
 
-    if (dev->slave_fd != -1) {
-        close(dev->slave_fd);
+    if (dev->backend_fd != -1) {
+        close(dev->backend_fd);
     }
-    dev->slave_fd = vmsg->fds[0];
-    DPRINT("Got slave_fd: %d\n", vmsg->fds[0]);
+    dev->backend_fd = vmsg->fds[0];
+    DPRINT("Got backend_fd: %d\n", vmsg->fds[0]);
 
     return false;
 }
@@ -1571,7 +1577,7 @@ vu_get_config(VuDev *dev, VhostUserMsg *vmsg)
     }
 
     if (ret) {
-        /* resize to zero to indicate an error to master */
+        /* resize to zero to indicate an error to frontend */
         vmsg->size = 0;
     }
 
@@ -1910,8 +1916,8 @@ vu_process_message(VuDev *dev, VhostUserMsg *vmsg)
         return vu_get_queue_num_exec(dev, vmsg);
     case VHOST_USER_SET_VRING_ENABLE:
         return vu_set_vring_enable_exec(dev, vmsg);
-    case VHOST_USER_SET_SLAVE_REQ_FD:
-        return vu_set_slave_req_fd(dev, vmsg);
+    case VHOST_USER_SET_BACKEND_REQ_FD:
+        return vu_set_backend_req_fd(dev, vmsg);
     case VHOST_USER_GET_CONFIG:
         return vu_get_config(dev, vmsg);
     case VHOST_USER_SET_CONFIG:
@@ -2032,11 +2038,11 @@ vu_deinit(VuDev *dev)
     }
 
     vu_close_log(dev);
-    if (dev->slave_fd != -1) {
-        close(dev->slave_fd);
-        dev->slave_fd = -1;
+    if (dev->backend_fd != -1) {
+        close(dev->backend_fd);
+        dev->backend_fd = -1;
     }
-    pthread_mutex_destroy(&dev->slave_mutex);
+    pthread_mutex_destroy(&dev->backend_mutex);
 
     if (dev->sock != -1) {
         close(dev->sock);
@@ -2074,8 +2080,8 @@ vu_init(VuDev *dev,
     dev->remove_watch = remove_watch;
     dev->iface = iface;
     dev->log_call_fd = -1;
-    pthread_mutex_init(&dev->slave_mutex, NULL);
-    dev->slave_fd = -1;
+    pthread_mutex_init(&dev->backend_mutex, NULL);
+    dev->backend_fd = -1;
     dev->max_queues = max_queues;
 
     dev->vq = malloc(max_queues * sizeof(dev->vq[0]));
@@ -2416,9 +2422,9 @@ static void _vu_queue_notify(VuDev *dev, VuVirtq *vq, bool sync)
     if (vq->call_fd < 0 &&
         vu_has_protocol_feature(dev,
                                 VHOST_USER_PROTOCOL_F_INBAND_NOTIFICATIONS) &&
-        vu_has_protocol_feature(dev, VHOST_USER_PROTOCOL_F_SLAVE_REQ)) {
+        vu_has_protocol_feature(dev, VHOST_USER_PROTOCOL_F_BACKEND_REQ)) {
         VhostUserMsg vmsg = {
-            .request = VHOST_USER_SLAVE_VRING_CALL,
+            .request = VHOST_USER_BACKEND_VRING_CALL,
             .flags = VHOST_USER_VERSION,
             .size = sizeof(vmsg.payload.state),
             .payload.state = {
@@ -2433,9 +2439,9 @@ static void _vu_queue_notify(VuDev *dev, VuVirtq *vq, bool sync)
             vmsg.flags |= VHOST_USER_NEED_REPLY_MASK;
         }
 
-        vu_message_write(dev, dev->slave_fd, &vmsg);
+        vu_message_write(dev, dev->backend_fd, &vmsg);
         if (ack) {
-            vu_message_read_default(dev, dev->slave_fd, &vmsg);
+            vu_message_read_default(dev, dev->backend_fd, &vmsg);
         }
         return;
     }
@@ -2453,6 +2459,16 @@ void vu_queue_notify(VuDev *dev, VuVirtq *vq)
 void vu_queue_notify_sync(VuDev *dev, VuVirtq *vq)
 {
     _vu_queue_notify(dev, vq, true);
+}
+
+void vu_config_change_msg(VuDev *dev)
+{
+    VhostUserMsg vmsg = {
+        .request = VHOST_USER_BACKEND_CONFIG_CHANGE_MSG,
+        .flags = VHOST_USER_VERSION,
+    };
+
+    vu_message_write(dev, dev->backend_fd, &vmsg);
 }
 
 static inline void
@@ -2553,6 +2569,10 @@ virtqueue_alloc_element(size_t sz,
 
     assert(sz >= sizeof(VuVirtqElement));
     elem = malloc(out_sg_end);
+    if (!elem) {
+        DPRINT("%s: failed to malloc virtqueue element\n", __func__);
+        return NULL;
+    }
     elem->out_num = out_num;
     elem->in_num = in_num;
     elem->in_sg = (void *)elem + in_sg_ofs;
@@ -2639,6 +2659,9 @@ vu_queue_map_desc(VuDev *dev, VuVirtq *vq, unsigned int idx, size_t sz)
 
     /* Now copy what we have collected and mapped */
     elem = virtqueue_alloc_element(sz, out_num, in_num);
+    if (!elem) {
+        return NULL;
+    }
     elem->index = idx;
     for (i = 0; i < out_num; i++) {
         elem->out_sg[i] = iov[i];

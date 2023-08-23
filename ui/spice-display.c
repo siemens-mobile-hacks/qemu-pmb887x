@@ -17,6 +17,7 @@
 
 #include "qemu/osdep.h"
 #include "ui/qemu-spice.h"
+#include "qemu/error-report.h"
 #include "qemu/timer.h"
 #include "qemu/lockable.h"
 #include "qemu/main-loop.h"
@@ -459,11 +460,11 @@ void qemu_spice_cursor_refresh_bh(void *opaque)
     if (ssd->cursor) {
         QEMUCursor *c = ssd->cursor;
         assert(ssd->dcl.con);
-        cursor_get(c);
+        cursor_ref(c);
         qemu_mutex_unlock(&ssd->lock);
         dpy_cursor_define(ssd->dcl.con, c);
         qemu_mutex_lock(&ssd->lock);
-        cursor_put(c);
+        cursor_unref(c);
     }
 
     if (ssd->mouse_x != -1 && ssd->mouse_y != -1) {
@@ -764,8 +765,8 @@ static void display_mouse_define(DisplayChangeListener *dcl,
     SimpleSpiceDisplay *ssd = container_of(dcl, SimpleSpiceDisplay, dcl);
 
     qemu_mutex_lock(&ssd->lock);
-    cursor_get(c);
-    cursor_put(ssd->cursor);
+    cursor_ref(c);
+    cursor_unref(ssd->cursor);
     ssd->cursor = c;
     ssd->hot_x = c->hot_x;
     ssd->hot_y = c->hot_y;
@@ -934,7 +935,8 @@ static void qemu_spice_gl_scanout_texture(DisplayChangeListener *dcl,
                                           uint32_t backing_width,
                                           uint32_t backing_height,
                                           uint32_t x, uint32_t y,
-                                          uint32_t w, uint32_t h)
+                                          uint32_t w, uint32_t h,
+                                          void *d3d_tex2d)
 {
     SimpleSpiceDisplay *ssd = container_of(dcl, SimpleSpiceDisplay, dcl);
     EGLint stride = 0, fourcc = 0;

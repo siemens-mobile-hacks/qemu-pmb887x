@@ -24,6 +24,7 @@
 #include "exec/exec-all.h"
 #include "cpu.h"
 #include "disas/dis-asm.h"
+#include "tcg/debug-assert.h"
 
 static void avr_cpu_set_pc(CPUState *cs, vaddr value)
 {
@@ -54,7 +55,8 @@ static void avr_cpu_synchronize_from_tb(CPUState *cs,
     AVRCPU *cpu = AVR_CPU(cs);
     CPUAVRState *env = &cpu->env;
 
-    env->pc_w = tb_pc(tb) / 2; /* internally PC points to words */
+    tcg_debug_assert(!(cs->tcg_cflags & CF_PCREL));
+    env->pc_w = tb->pc / 2; /* internally PC points to words */
 }
 
 static void avr_restore_state_to_opc(CPUState *cs,

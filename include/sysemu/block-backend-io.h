@@ -46,6 +46,16 @@ BlockAIOCB *blk_aio_pwritev(BlockBackend *blk, int64_t offset,
                             BlockCompletionFunc *cb, void *opaque);
 BlockAIOCB *blk_aio_flush(BlockBackend *blk,
                           BlockCompletionFunc *cb, void *opaque);
+BlockAIOCB *blk_aio_zone_report(BlockBackend *blk, int64_t offset,
+                                unsigned int *nr_zones,
+                                BlockZoneDescriptor *zones,
+                                BlockCompletionFunc *cb, void *opaque);
+BlockAIOCB *blk_aio_zone_mgmt(BlockBackend *blk, BlockZoneOp op,
+                              int64_t offset, int64_t len,
+                              BlockCompletionFunc *cb, void *opaque);
+BlockAIOCB *blk_aio_zone_append(BlockBackend *blk, int64_t *offset,
+                                QEMUIOVector *qiov, BdrvRequestFlags flags,
+                                BlockCompletionFunc *cb, void *opaque);
 BlockAIOCB *blk_aio_pdiscard(BlockBackend *blk, int64_t offset, int64_t bytes,
                              BlockCompletionFunc *cb, void *opaque);
 void blk_aio_cancel_async(BlockAIOCB *acb);
@@ -55,10 +65,11 @@ BlockAIOCB *blk_aio_ioctl(BlockBackend *blk, unsigned long int req, void *buf,
 void blk_inc_in_flight(BlockBackend *blk);
 void blk_dec_in_flight(BlockBackend *blk);
 
-bool coroutine_fn blk_co_is_inserted(BlockBackend *blk);
-bool co_wrapper_mixed blk_is_inserted(BlockBackend *blk);
+bool coroutine_fn GRAPH_RDLOCK blk_co_is_inserted(BlockBackend *blk);
+bool co_wrapper_mixed_bdrv_rdlock blk_is_inserted(BlockBackend *blk);
 
-bool blk_is_available(BlockBackend *blk);
+bool coroutine_fn GRAPH_RDLOCK blk_co_is_available(BlockBackend *blk);
+bool co_wrapper_mixed_bdrv_rdlock blk_is_available(BlockBackend *blk);
 
 void coroutine_fn blk_co_lock_medium(BlockBackend *blk, bool locked);
 void co_wrapper blk_lock_medium(BlockBackend *blk, bool locked);
@@ -69,10 +80,12 @@ void co_wrapper blk_eject(BlockBackend *blk, bool eject_flag);
 int64_t coroutine_fn blk_co_getlength(BlockBackend *blk);
 int64_t co_wrapper_mixed blk_getlength(BlockBackend *blk);
 
+void coroutine_fn blk_co_get_geometry(BlockBackend *blk,
+                                      uint64_t *nb_sectors_ptr);
 void blk_get_geometry(BlockBackend *blk, uint64_t *nb_sectors_ptr);
 
 int64_t coroutine_fn blk_co_nb_sectors(BlockBackend *blk);
-int64_t co_wrapper_mixed blk_nb_sectors(BlockBackend *blk);
+int64_t blk_nb_sectors(BlockBackend *blk);
 
 void *blk_try_blockalign(BlockBackend *blk, size_t size);
 void *blk_blockalign(BlockBackend *blk, size_t size);
@@ -87,11 +100,9 @@ void blk_iostatus_set_err(BlockBackend *blk, int error);
 int blk_get_max_iov(BlockBackend *blk);
 int blk_get_max_hw_iov(BlockBackend *blk);
 
-void coroutine_fn blk_co_io_plug(BlockBackend *blk);
-void co_wrapper blk_io_plug(BlockBackend *blk);
-
-void coroutine_fn blk_co_io_unplug(BlockBackend *blk);
-void co_wrapper blk_io_unplug(BlockBackend *blk);
+void blk_io_plug(void);
+void blk_io_unplug(void);
+void blk_io_plug_call(void (*fn)(void *), void *opaque);
 
 AioContext *blk_get_aio_context(BlockBackend *blk);
 BlockAcctStats *blk_get_stats(BlockBackend *blk);
@@ -182,6 +193,23 @@ int co_wrapper_mixed blk_pwrite_zeroes(BlockBackend *blk, int64_t offset,
                                        BdrvRequestFlags flags);
 int coroutine_fn blk_co_pwrite_zeroes(BlockBackend *blk, int64_t offset,
                                       int64_t bytes, BdrvRequestFlags flags);
+
+int coroutine_fn blk_co_zone_report(BlockBackend *blk, int64_t offset,
+                                    unsigned int *nr_zones,
+                                    BlockZoneDescriptor *zones);
+int co_wrapper_mixed blk_zone_report(BlockBackend *blk, int64_t offset,
+                                         unsigned int *nr_zones,
+                                         BlockZoneDescriptor *zones);
+int coroutine_fn blk_co_zone_mgmt(BlockBackend *blk, BlockZoneOp op,
+                                  int64_t offset, int64_t len);
+int co_wrapper_mixed blk_zone_mgmt(BlockBackend *blk, BlockZoneOp op,
+                                       int64_t offset, int64_t len);
+int coroutine_fn blk_co_zone_append(BlockBackend *blk, int64_t *offset,
+                                    QEMUIOVector *qiov,
+                                    BdrvRequestFlags flags);
+int co_wrapper_mixed blk_zone_append(BlockBackend *blk, int64_t *offset,
+                                         QEMUIOVector *qiov,
+                                         BdrvRequestFlags flags);
 
 int co_wrapper_mixed blk_pdiscard(BlockBackend *blk, int64_t offset,
                                   int64_t bytes);

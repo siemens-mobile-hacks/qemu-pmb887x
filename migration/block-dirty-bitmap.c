@@ -79,6 +79,7 @@
 #include "qapi/qapi-visit-migration.h"
 #include "qapi/clone-visitor.h"
 #include "trace.h"
+#include "options.h"
 
 #define CHUNK_SIZE     (1 << 10)
 
@@ -604,11 +605,10 @@ static int init_dirty_bitmap_migration(DBMSaveState *s)
     SaveBitmapState *dbms;
     GHashTable *handled_by_blk = g_hash_table_new(NULL, NULL);
     BlockBackend *blk;
-    const MigrationParameters *mig_params = &migrate_get_current()->parameters;
     GHashTable *alias_map = NULL;
 
-    if (mig_params->has_block_bitmap_mapping) {
-        alias_map = construct_alias_map(mig_params->block_bitmap_mapping, true,
+    if (migrate_has_block_bitmap_mapping()) {
+        alias_map = construct_alias_map(migrate_block_bitmap_mapping(), true,
                                         &error_abort);
     }
 
@@ -706,7 +706,7 @@ static void bulk_phase(QEMUFile *f, DBMSaveState *s, bool limit)
     QSIMPLEQ_FOREACH(dbms, &s->dbms_list, entry) {
         while (!dbms->bulk_completed) {
             bulk_phase_send_chunk(f, s, dbms);
-            if (limit && qemu_file_rate_limit(f)) {
+            if (limit && migration_rate_exceeded(f)) {
                 return;
             }
         }
@@ -763,9 +763,8 @@ static int dirty_bitmap_save_complete(QEMUFile *f, void *opaque)
 }
 
 static void dirty_bitmap_state_pending(void *opaque,
-                                       uint64_t *res_precopy_only,
-                                       uint64_t *res_compatible,
-                                       uint64_t *res_postcopy_only)
+                                       uint64_t *must_precopy,
+                                       uint64_t *can_postcopy)
 {
     DBMSaveState *s = &((DBMState *)opaque)->save;
     SaveBitmapState *dbms;
@@ -785,7 +784,7 @@ static void dirty_bitmap_state_pending(void *opaque,
 
     trace_dirty_bitmap_state_pending(pending);
 
-    *res_postcopy_only += pending;
+    *can_postcopy += pending;
 }
 
 /* First occurrence of this bitmap. It should be created if doesn't exist */
@@ -1158,7 +1157,6 @@ static int dirty_bitmap_load_header(QEMUFile *f, DBMLoadState *s,
 static int dirty_bitmap_load(QEMUFile *f, void *opaque, int version_id)
 {
     GHashTable *alias_map = NULL;
-    const MigrationParameters *mig_params = &migrate_get_current()->parameters;
     DBMLoadState *s = &((DBMState *)opaque)->load;
     int ret = 0;
 
@@ -1170,9 +1168,9 @@ static int dirty_bitmap_load(QEMUFile *f, void *opaque, int version_id)
         return -EINVAL;
     }
 
-    if (mig_params->has_block_bitmap_mapping) {
-        alias_map = construct_alias_map(mig_params->block_bitmap_mapping,
-                                        false, &error_abort);
+    if (migrate_has_block_bitmap_mapping()) {
+        alias_map = construct_alias_map(migrate_block_bitmap_mapping(), false,
+                                        &error_abort);
     }
 
     do {

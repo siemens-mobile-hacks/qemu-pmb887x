@@ -18,7 +18,6 @@
 #include "block/block_int.h"
 #include "block/blockjob_int.h"
 #include "qapi/error.h"
-#include "qapi/qmp/qerror.h"
 #include "qemu/ratelimit.h"
 #include "qemu/memalign.h"
 #include "sysemu/block-backend.h"
@@ -117,7 +116,6 @@ static int coroutine_fn commit_run(Job *job, Error **errp)
 {
     CommitBlockJob *s = container_of(job, CommitBlockJob, common.job);
     int64_t offset;
-    uint64_t delay_ns = 0;
     int ret = 0;
     int64_t n = 0; /* bytes */
     QEMU_AUTO_VFREE void *buf = NULL;
@@ -150,7 +148,7 @@ static int coroutine_fn commit_run(Job *job, Error **errp)
         /* Note that even when no rate limit is applied we need to yield
          * with no pending I/O here so that bdrv_drain_all() returns.
          */
-        job_sleep_ns(&s->common.job, delay_ns);
+        block_job_ratelimit_sleep(&s->common);
         if (job_is_cancelled(&s->common.job)) {
             break;
         }
@@ -185,9 +183,7 @@ static int coroutine_fn commit_run(Job *job, Error **errp)
         job_progress_update(&s->common.job, n);
 
         if (copy) {
-            delay_ns = block_job_ratelimit_get_delay(&s->common, n);
-        } else {
-            delay_ns = 0;
+            block_job_ratelimit_processed_bytes(&s->common, n);
         }
     }
 
@@ -207,8 +203,9 @@ static const BlockJobDriver commit_job_driver = {
     },
 };
 
-static int coroutine_fn bdrv_commit_top_preadv(BlockDriverState *bs,
-    int64_t offset, int64_t bytes, QEMUIOVector *qiov, BdrvRequestFlags flags)
+static int coroutine_fn GRAPH_RDLOCK
+bdrv_commit_top_preadv(BlockDriverState *bs, int64_t offset, int64_t bytes,
+                       QEMUIOVector *qiov, BdrvRequestFlags flags)
 {
     return bdrv_co_preadv(bs->backing, offset, bytes, qiov, flags);
 }

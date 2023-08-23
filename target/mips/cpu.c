@@ -21,6 +21,7 @@
 #include "qemu/osdep.h"
 #include "qemu/cutils.h"
 #include "qemu/qemu-print.h"
+#include "qemu/error-report.h"
 #include "qapi/error.h"
 #include "cpu.h"
 #include "internal.h"
@@ -143,11 +144,13 @@ static bool mips_cpu_has_work(CPUState *cs)
     /*
      * Prior to MIPS Release 6 it is implementation dependent if non-enabled
      * interrupts wake-up the CPU, however most of the implementations only
-     * check for interrupts that can be taken.
+     * check for interrupts that can be taken. For pre-release 6 CPUs,
+     * check for CP0 Config7 'Wait IE ignore' bit.
      */
     if ((cs->interrupt_request & CPU_INTERRUPT_HARD) &&
         cpu_mips_hw_interrupts_pending(env)) {
         if (cpu_mips_hw_interrupts_enabled(env) ||
+            (env->CP0_Config7 & (1 << CP0C7_WII)) ||
             (env->insn_flags & ISA_MIPS_R6)) {
             has_work = true;
         }
@@ -241,6 +244,8 @@ static void mips_cpu_reset_hold(Object *obj)
     env->CP0_PageGrain_rw_bitmask = env->cpu_model->CP0_PageGrain_rw_bitmask;
     env->CP0_PageGrain = env->cpu_model->CP0_PageGrain;
     env->CP0_EBaseWG_rw_bitmask = env->cpu_model->CP0_EBaseWG_rw_bitmask;
+    env->lcsr_cpucfg1 = env->cpu_model->lcsr_cpucfg1;
+    env->lcsr_cpucfg2 = env->cpu_model->lcsr_cpucfg2;
     env->active_fpu.fcr0 = env->cpu_model->CP1_fcr0;
     env->active_fpu.fcr31_rw_bitmask = env->cpu_model->CP1_fcr31_rw_bitmask;
     env->active_fpu.fcr31 = env->cpu_model->CP1_fcr31;
@@ -446,9 +451,9 @@ static void mips_cp0_period_set(MIPSCPU *cpu)
 {
     CPUMIPSState *env = &cpu->env;
 
-    env->cp0_count_ns = clock_ticks_to_ns(MIPS_CPU(cpu)->clock,
-                                          env->cpu_model->CCRes);
-    assert(env->cp0_count_ns);
+    clock_set_mul_div(cpu->count_div, env->cpu_model->CCRes, 1);
+    clock_set_source(cpu->count_div, cpu->clock);
+    clock_set_source(env->count_clock, cpu->count_div);
 }
 
 static void mips_cpu_realizefn(DeviceState *dev, Error **errp)
@@ -501,7 +506,17 @@ static void mips_cpu_initfn(Object *obj)
 
     cpu_set_cpustate_pointers(cpu);
     cpu->clock = qdev_init_clock_in(DEVICE(obj), "clk-in", NULL, cpu, 0);
+    cpu->count_div = clock_new(OBJECT(obj), "clk-div-count");
+    env->count_clock = clock_new(OBJECT(obj), "clk-count");
     env->cpu_model = mcc->cpu_def;
+#ifndef CONFIG_USER_ONLY
+    if (mcc->cpu_def->lcsr_cpucfg2 & (1 << CPUCFG2_LCSRP)) {
+        memory_region_init_io(&env->iocsr.mr, OBJECT(cpu), NULL,
+                                env, "iocsr", UINT64_MAX);
+        address_space_init(&env->iocsr.as,
+                            &env->iocsr.mr, "IOCSR");
+    }
+#endif
 }
 
 static char *mips_cpu_type_name(const char *cpu_model)

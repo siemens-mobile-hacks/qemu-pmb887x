@@ -462,6 +462,10 @@ class QemuStorageDaemon:
         assert self._qmp is not None
         return self._qmp.cmd(cmd, args)
 
+    def get_qmp(self) -> QEMUMonitorProtocol:
+        assert self._qmp is not None
+        return self._qmp
+
     def stop(self, kill_signal=15):
         self._p.send_signal(kill_signal)
         self._p.wait()
@@ -720,7 +724,7 @@ class Timeout:
         signal.setitimer(signal.ITIMER_REAL, 0)
         return False
     def timeout(self, signum, frame):
-        raise Exception(self.errmsg)
+        raise TimeoutError(self.errmsg)
 
 def file_pattern(name):
     return "{0}-{1}".format(os.getpid(), name)
@@ -804,7 +808,7 @@ def remote_filename(path):
     elif imgproto == 'ssh':
         return "ssh://%s@127.0.0.1:22%s" % (os.environ.get('USER'), path)
     else:
-        raise Exception("Protocol %s not supported" % (imgproto))
+        raise ValueError("Protocol %s not supported" % (imgproto))
 
 class VM(qtest.QEMUQtestMachine):
     '''A QEMU VM'''
@@ -1417,7 +1421,7 @@ def _verify_virtio_blk() -> None:
     if 'virtio-blk' not in out:
         notrun('Missing virtio-blk in QEMU binary')
 
-def _verify_virtio_scsi_pci_or_ccw() -> None:
+def verify_virtio_scsi_pci_or_ccw() -> None:
     out = qemu_pipe('-M', 'none', '-device', 'help')
     if 'virtio-scsi-pci' not in out and 'virtio-scsi-ccw' not in out:
         notrun('Missing virtio-scsi-pci or virtio-scsi-ccw in QEMU binary')

@@ -37,6 +37,8 @@
 #include "qemu/cutils.h"
 #include "qom/object.h"
 #include "hw/net/mv88w8618_eth.h"
+#include "qemu/error-report.h"
+
 
 #define MP_MISC_BASE            0x80002000
 #define MP_MISC_SIZE            0x00001000
@@ -98,7 +100,7 @@
 #define MP_LCD_SPI_CMD          0x00104011
 #define MP_LCD_SPI_INVALID      0x00000000
 
-/* Commmands */
+/* Commands */
 #define MP_LCD_INST_SETPAGE0    0xB0
 /* ... */
 #define MP_LCD_INST_SETPAGE7    0xB7
@@ -1072,7 +1074,6 @@ struct musicpal_key_state {
     SysBusDevice parent_obj;
     /*< public >*/
 
-    MemoryRegion iomem;
     uint32_t kbd_extended;
     uint32_t pressed_keys;
     qemu_irq out[8];
@@ -1160,9 +1161,6 @@ static void musicpal_key_init(Object *obj)
     SysBusDevice *sbd = SYS_BUS_DEVICE(obj);
     DeviceState *dev = DEVICE(sbd);
     musicpal_key_state *s = MUSICPAL_KEY(dev);
-
-    memory_region_init(&s->iomem, obj, "dummy", 0);
-    sysbus_init_mmio(sbd, &s->iomem);
 
     s->kbd_extended = 0;
     s->pressed_keys = 0;
@@ -1252,7 +1250,7 @@ static void musicpal_init(MachineState *machine)
     uart_orgate = DEVICE(object_new(TYPE_OR_IRQ));
     object_property_set_int(OBJECT(uart_orgate), "num-lines", 2, &error_fatal);
     qdev_realize_and_unref(uart_orgate, NULL, &error_fatal);
-    qdev_connect_gpio_out(DEVICE(uart_orgate), 0,
+    qdev_connect_gpio_out(uart_orgate, 0,
                           qdev_get_gpio_in(pic, MP_UART_SHARED_IRQ));
 
     serial_mm_init(address_space_mem, MP_UART1_BASE, 2,

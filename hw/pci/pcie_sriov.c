@@ -211,6 +211,7 @@ static void unregister_vfs(PCIDevice *dev)
             error_free(local_err);
         }
         object_unparent(OBJECT(vf));
+        object_unref(OBJECT(vf));
     }
     g_free(dev->exp.sriov_pf.vf);
     dev->exp.sriov_pf.vf = NULL;
@@ -299,4 +300,9 @@ PCIDevice *pcie_sriov_get_vf_at_index(PCIDevice *dev, int n)
         return dev->exp.sriov_pf.vf[n];
     }
     return NULL;
+}
+
+uint16_t pcie_sriov_num_vfs(PCIDevice *dev)
+{
+    return dev->exp.sriov_pf.num_vfs;
 }

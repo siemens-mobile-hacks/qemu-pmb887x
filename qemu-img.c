@@ -1991,7 +1991,9 @@ static void coroutine_fn convert_co_do_copy(void *opaque)
             qemu_co_mutex_unlock(&s->lock);
             break;
         }
-        n = convert_iteration_sectors(s, s->sector_num);
+        WITH_GRAPH_RDLOCK_GUARD() {
+            n = convert_iteration_sectors(s, s->sector_num);
+        }
         if (n < 0) {
             qemu_co_mutex_unlock(&s->lock);
             s->ret = n;
@@ -2039,7 +2041,9 @@ retry:
 
         if (s->ret == -EINPROGRESS) {
             if (copy_range) {
-                ret = convert_co_copy_range(s, sector_num, n);
+                WITH_GRAPH_RDLOCK_GUARD() {
+                    ret = convert_co_copy_range(s, sector_num, n);
+                }
                 if (ret) {
                     s->copy_range = false;
                     goto retry;
@@ -2941,7 +2945,10 @@ static BlockGraphInfoList *collect_image_info_list(bool image_opts,
          * duplicate the backing chain information that we obtain by walking
          * the chain manually here.
          */
+        bdrv_graph_rdlock_main_loop();
         bdrv_query_block_graph_info(bs, &info, &err);
+        bdrv_graph_rdunlock_main_loop();
+
         if (err) {
             error_report_err(err);
             blk_unref(blk);

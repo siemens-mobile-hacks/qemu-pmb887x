@@ -78,9 +78,9 @@ typedef struct BDRVCopyBeforeWriteState {
     int snapshot_error;
 } BDRVCopyBeforeWriteState;
 
-static coroutine_fn int cbw_co_preadv(
-        BlockDriverState *bs, int64_t offset, int64_t bytes,
-        QEMUIOVector *qiov, BdrvRequestFlags flags)
+static int coroutine_fn GRAPH_RDLOCK
+cbw_co_preadv(BlockDriverState *bs, int64_t offset, int64_t bytes,
+              QEMUIOVector *qiov, BdrvRequestFlags flags)
 {
     return bdrv_co_preadv(bs->file, offset, bytes, qiov, flags);
 }
@@ -149,8 +149,8 @@ static coroutine_fn int cbw_do_copy_before_write(BlockDriverState *bs,
     return 0;
 }
 
-static int coroutine_fn cbw_co_pdiscard(BlockDriverState *bs,
-                                        int64_t offset, int64_t bytes)
+static int coroutine_fn GRAPH_RDLOCK
+cbw_co_pdiscard(BlockDriverState *bs, int64_t offset, int64_t bytes)
 {
     int ret = cbw_do_copy_before_write(bs, offset, bytes, 0);
     if (ret < 0) {
@@ -160,8 +160,9 @@ static int coroutine_fn cbw_co_pdiscard(BlockDriverState *bs,
     return bdrv_co_pdiscard(bs->file, offset, bytes);
 }
 
-static int coroutine_fn cbw_co_pwrite_zeroes(BlockDriverState *bs,
-        int64_t offset, int64_t bytes, BdrvRequestFlags flags)
+static int coroutine_fn GRAPH_RDLOCK
+cbw_co_pwrite_zeroes(BlockDriverState *bs, int64_t offset, int64_t bytes,
+                     BdrvRequestFlags flags)
 {
     int ret = cbw_do_copy_before_write(bs, offset, bytes, flags);
     if (ret < 0) {
@@ -171,11 +172,9 @@ static int coroutine_fn cbw_co_pwrite_zeroes(BlockDriverState *bs,
     return bdrv_co_pwrite_zeroes(bs->file, offset, bytes, flags);
 }
 
-static coroutine_fn int cbw_co_pwritev(BlockDriverState *bs,
-                                       int64_t offset,
-                                       int64_t bytes,
-                                       QEMUIOVector *qiov,
-                                       BdrvRequestFlags flags)
+static coroutine_fn GRAPH_RDLOCK
+int cbw_co_pwritev(BlockDriverState *bs, int64_t offset, int64_t bytes,
+                   QEMUIOVector *qiov, BdrvRequestFlags flags)
 {
     int ret = cbw_do_copy_before_write(bs, offset, bytes, flags);
     if (ret < 0) {
@@ -185,7 +184,7 @@ static coroutine_fn int cbw_co_pwritev(BlockDriverState *bs,
     return bdrv_co_pwritev(bs->file, offset, bytes, qiov, flags);
 }
 
-static int coroutine_fn cbw_co_flush(BlockDriverState *bs)
+static int coroutine_fn GRAPH_RDLOCK cbw_co_flush(BlockDriverState *bs)
 {
     if (!bs->file) {
         return 0;
@@ -257,7 +256,7 @@ cbw_snapshot_read_unlock(BlockDriverState *bs, BlockReq *req)
     g_free(req);
 }
 
-static coroutine_fn int
+static int coroutine_fn GRAPH_RDLOCK
 cbw_co_preadv_snapshot(BlockDriverState *bs, int64_t offset, int64_t bytes,
                        QEMUIOVector *qiov, size_t qiov_offset)
 {
@@ -289,7 +288,7 @@ cbw_co_preadv_snapshot(BlockDriverState *bs, int64_t offset, int64_t bytes,
     return 0;
 }
 
-static int coroutine_fn
+static int coroutine_fn GRAPH_RDLOCK
 cbw_co_snapshot_block_status(BlockDriverState *bs,
                              bool want_zero, int64_t offset, int64_t bytes,
                              int64_t *pnum, int64_t *map,
@@ -322,8 +321,8 @@ cbw_co_snapshot_block_status(BlockDriverState *bs,
     return ret;
 }
 
-static int coroutine_fn cbw_co_pdiscard_snapshot(BlockDriverState *bs,
-                                                 int64_t offset, int64_t bytes)
+static int coroutine_fn GRAPH_RDLOCK
+cbw_co_pdiscard_snapshot(BlockDriverState *bs, int64_t offset, int64_t bytes)
 {
     BDRVCopyBeforeWriteState *s = bs->opaque;
 
@@ -413,6 +412,7 @@ static int cbw_open(BlockDriverState *bs, QDict *options, int flags,
     int64_t cluster_size;
     g_autoptr(BlockdevOptions) full_opts = NULL;
     BlockdevOptionsCbw *opts;
+    AioContext *ctx;
     int ret;
 
     full_opts = cbw_parse_options(options, errp);
@@ -433,11 +433,15 @@ static int cbw_open(BlockDriverState *bs, QDict *options, int flags,
         return -EINVAL;
     }
 
+    ctx = bdrv_get_aio_context(bs);
+    aio_context_acquire(ctx);
+
     if (opts->bitmap) {
         bitmap = block_dirty_bitmap_lookup(opts->bitmap->node,
                                            opts->bitmap->name, NULL, errp);
         if (!bitmap) {
-            return -EINVAL;
+            ret = -EINVAL;
+            goto out;
         }
     }
     s->on_cbw_error = opts->has_on_cbw_error ? opts->on_cbw_error :
@@ -455,21 +459,24 @@ static int cbw_open(BlockDriverState *bs, QDict *options, int flags,
     s->bcs = block_copy_state_new(bs->file, s->target, bitmap, errp);
     if (!s->bcs) {
         error_prepend(errp, "Cannot create block-copy-state: ");
-        return -EINVAL;
+        ret = -EINVAL;
+        goto out;
     }
 
     cluster_size = block_copy_cluster_size(s->bcs);
 
     s->done_bitmap = bdrv_create_dirty_bitmap(bs, cluster_size, NULL, errp);
     if (!s->done_bitmap) {
-        return -EINVAL;
+        ret = -EINVAL;
+        goto out;
     }
     bdrv_disable_dirty_bitmap(s->done_bitmap);
 
     /* s->access_bitmap starts equal to bcs bitmap */
     s->access_bitmap = bdrv_create_dirty_bitmap(bs, cluster_size, NULL, errp);
     if (!s->access_bitmap) {
-        return -EINVAL;
+        ret = -EINVAL;
+        goto out;
     }
     bdrv_disable_dirty_bitmap(s->access_bitmap);
     bdrv_dirty_bitmap_merge_internal(s->access_bitmap,
@@ -479,7 +486,10 @@ static int cbw_open(BlockDriverState *bs, QDict *options, int flags,
     qemu_co_mutex_init(&s->lock);
     QLIST_INIT(&s->frozen_read_reqs);
 
-    return 0;
+    ret = 0;
+out:
+    aio_context_release(ctx);
+    return ret;
 }
 
 static void cbw_close(BlockDriverState *bs)

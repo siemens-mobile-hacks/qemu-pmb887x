@@ -203,9 +203,9 @@ static inline int raw_adjust_offset(BlockDriverState *bs, int64_t *offset,
     return 0;
 }
 
-static int coroutine_fn raw_co_preadv(BlockDriverState *bs, int64_t offset,
-                                      int64_t bytes, QEMUIOVector *qiov,
-                                      BdrvRequestFlags flags)
+static int coroutine_fn GRAPH_RDLOCK
+raw_co_preadv(BlockDriverState *bs, int64_t offset, int64_t bytes,
+              QEMUIOVector *qiov, BdrvRequestFlags flags)
 {
     int ret;
 
@@ -214,13 +214,13 @@ static int coroutine_fn raw_co_preadv(BlockDriverState *bs, int64_t offset,
         return ret;
     }
 
-    BLKDBG_EVENT(bs->file, BLKDBG_READ_AIO);
+    BLKDBG_CO_EVENT(bs->file, BLKDBG_READ_AIO);
     return bdrv_co_preadv(bs->file, offset, bytes, qiov, flags);
 }
 
-static int coroutine_fn raw_co_pwritev(BlockDriverState *bs, int64_t offset,
-                                       int64_t bytes, QEMUIOVector *qiov,
-                                       BdrvRequestFlags flags)
+static int coroutine_fn GRAPH_RDLOCK
+raw_co_pwritev(BlockDriverState *bs, int64_t offset, int64_t bytes,
+               QEMUIOVector *qiov, BdrvRequestFlags flags)
 {
     void *buf = NULL;
     BlockDriver *drv;
@@ -268,7 +268,7 @@ static int coroutine_fn raw_co_pwritev(BlockDriverState *bs, int64_t offset,
         goto fail;
     }
 
-    BLKDBG_EVENT(bs->file, BLKDBG_WRITE_AIO);
+    BLKDBG_CO_EVENT(bs->file, BLKDBG_WRITE_AIO);
     ret = bdrv_co_pwritev(bs->file, offset, bytes, qiov, flags);
 
 fail:
@@ -292,9 +292,9 @@ static int coroutine_fn raw_co_block_status(BlockDriverState *bs,
     return BDRV_BLOCK_RAW | BDRV_BLOCK_OFFSET_VALID;
 }
 
-static int coroutine_fn raw_co_pwrite_zeroes(BlockDriverState *bs,
-                                             int64_t offset, int64_t bytes,
-                                             BdrvRequestFlags flags)
+static int coroutine_fn GRAPH_RDLOCK
+raw_co_pwrite_zeroes(BlockDriverState *bs, int64_t offset, int64_t bytes,
+                     BdrvRequestFlags flags)
 {
     int ret;
 
@@ -305,8 +305,8 @@ static int coroutine_fn raw_co_pwrite_zeroes(BlockDriverState *bs,
     return bdrv_co_pwrite_zeroes(bs->file, offset, bytes, flags);
 }
 
-static int coroutine_fn raw_co_pdiscard(BlockDriverState *bs,
-                                        int64_t offset, int64_t bytes)
+static int coroutine_fn GRAPH_RDLOCK
+raw_co_pdiscard(BlockDriverState *bs, int64_t offset, int64_t bytes)
 {
     int ret;
 
@@ -317,7 +317,30 @@ static int coroutine_fn raw_co_pdiscard(BlockDriverState *bs,
     return bdrv_co_pdiscard(bs->file, offset, bytes);
 }
 
-static int64_t coroutine_fn raw_co_getlength(BlockDriverState *bs)
+static int coroutine_fn GRAPH_RDLOCK
+raw_co_zone_report(BlockDriverState *bs, int64_t offset,
+                   unsigned int *nr_zones,
+                   BlockZoneDescriptor *zones)
+{
+    return bdrv_co_zone_report(bs->file->bs, offset, nr_zones, zones);
+}
+
+static int coroutine_fn GRAPH_RDLOCK
+raw_co_zone_mgmt(BlockDriverState *bs, BlockZoneOp op,
+                 int64_t offset, int64_t len)
+{
+    return bdrv_co_zone_mgmt(bs->file->bs, op, offset, len);
+}
+
+static int coroutine_fn GRAPH_RDLOCK
+raw_co_zone_append(BlockDriverState *bs,int64_t *offset, QEMUIOVector *qiov,
+                   BdrvRequestFlags flags)
+{
+    return bdrv_co_zone_append(bs->file->bs, offset, qiov, flags);
+}
+
+static int64_t coroutine_fn GRAPH_RDLOCK
+raw_co_getlength(BlockDriverState *bs)
 {
     int64_t len;
     BDRVRawState *s = bs->opaque;
@@ -368,7 +391,7 @@ static BlockMeasureInfo *raw_measure(QemuOpts *opts, BlockDriverState *in_bs,
     return info;
 }
 
-static int coroutine_fn
+static int coroutine_fn GRAPH_RDLOCK
 raw_co_get_info(BlockDriverState *bs, BlockDriverInfo *bdi)
 {
     return bdrv_co_get_info(bs->file->bs, bdi);
@@ -376,6 +399,8 @@ raw_co_get_info(BlockDriverState *bs, BlockDriverInfo *bdi)
 
 static void raw_refresh_limits(BlockDriverState *bs, Error **errp)
 {
+    bs->bl.has_variable_length = bs->file->bs->bl.has_variable_length;
+
     if (bs->probed) {
         /* To make it easier to protect the first sector, any probed
          * image is restricted to read-modify-write on sub-sector
@@ -384,9 +409,9 @@ static void raw_refresh_limits(BlockDriverState *bs, Error **errp)
     }
 }
 
-static int coroutine_fn raw_co_truncate(BlockDriverState *bs, int64_t offset,
-                                        bool exact, PreallocMode prealloc,
-                                        BdrvRequestFlags flags, Error **errp)
+static int coroutine_fn GRAPH_RDLOCK
+raw_co_truncate(BlockDriverState *bs, int64_t offset, bool exact,
+                PreallocMode prealloc, BdrvRequestFlags flags, Error **errp)
 {
     BDRVRawState *s = bs->opaque;
 
@@ -405,18 +430,20 @@ static int coroutine_fn raw_co_truncate(BlockDriverState *bs, int64_t offset,
     return bdrv_co_truncate(bs->file, offset, exact, prealloc, flags, errp);
 }
 
-static void coroutine_fn raw_co_eject(BlockDriverState *bs, bool eject_flag)
+static void coroutine_fn GRAPH_RDLOCK
+raw_co_eject(BlockDriverState *bs, bool eject_flag)
 {
     bdrv_co_eject(bs->file->bs, eject_flag);
 }
 
-static void coroutine_fn raw_co_lock_medium(BlockDriverState *bs, bool locked)
+static void coroutine_fn GRAPH_RDLOCK
+raw_co_lock_medium(BlockDriverState *bs, bool locked)
 {
     bdrv_co_lock_medium(bs->file->bs, locked);
 }
 
-static int coroutine_fn raw_co_ioctl(BlockDriverState *bs,
-                                     unsigned long int req, void *buf)
+static int coroutine_fn GRAPH_RDLOCK
+raw_co_ioctl(BlockDriverState *bs, unsigned long int req, void *buf)
 {
     BDRVRawState *s = bs->opaque;
     if (s->offset || s->has_size) {
@@ -430,10 +457,9 @@ static int raw_has_zero_init(BlockDriverState *bs)
     return bdrv_has_zero_init(bs->file->bs);
 }
 
-static int coroutine_fn raw_co_create_opts(BlockDriver *drv,
-                                           const char *filename,
-                                           QemuOpts *opts,
-                                           Error **errp)
+static int coroutine_fn GRAPH_UNLOCKED
+raw_co_create_opts(BlockDriver *drv, const char *filename,
+                   QemuOpts *opts, Error **errp)
 {
     return bdrv_co_create_file(filename, opts, errp);
 }
@@ -442,6 +468,7 @@ static int raw_open(BlockDriverState *bs, QDict *options, int flags,
                     Error **errp)
 {
     BDRVRawState *s = bs->opaque;
+    AioContext *ctx;
     bool has_size;
     uint64_t offset, size;
     BdrvChildRole file_role;
@@ -489,7 +516,11 @@ static int raw_open(BlockDriverState *bs, QDict *options, int flags,
                 bs->file->bs->filename);
     }
 
+    ctx = bdrv_get_aio_context(bs);
+    aio_context_acquire(ctx);
     ret = raw_apply_options(bs, s, offset, has_size, size, errp);
+    aio_context_release(ctx);
+
     if (ret < 0) {
         return ret;
     }
@@ -536,14 +567,12 @@ static int raw_probe_geometry(BlockDriverState *bs, HDGeometry *geo)
     return bdrv_probe_geometry(bs->file->bs, geo);
 }
 
-static int coroutine_fn raw_co_copy_range_from(BlockDriverState *bs,
-                                               BdrvChild *src,
-                                               int64_t src_offset,
-                                               BdrvChild *dst,
-                                               int64_t dst_offset,
-                                               int64_t bytes,
-                                               BdrvRequestFlags read_flags,
-                                               BdrvRequestFlags write_flags)
+static int coroutine_fn GRAPH_RDLOCK
+raw_co_copy_range_from(BlockDriverState *bs,
+                       BdrvChild *src, int64_t src_offset,
+                       BdrvChild *dst, int64_t dst_offset,
+                       int64_t bytes, BdrvRequestFlags read_flags,
+                       BdrvRequestFlags write_flags)
 {
     int ret;
 
@@ -555,14 +584,12 @@ static int coroutine_fn raw_co_copy_range_from(BlockDriverState *bs,
                                    bytes, read_flags, write_flags);
 }
 
-static int coroutine_fn raw_co_copy_range_to(BlockDriverState *bs,
-                                             BdrvChild *src,
-                                             int64_t src_offset,
-                                             BdrvChild *dst,
-                                             int64_t dst_offset,
-                                             int64_t bytes,
-                                             BdrvRequestFlags read_flags,
-                                             BdrvRequestFlags write_flags)
+static int coroutine_fn GRAPH_RDLOCK
+raw_co_copy_range_to(BlockDriverState *bs,
+                     BdrvChild *src, int64_t src_offset,
+                     BdrvChild *dst, int64_t dst_offset,
+                     int64_t bytes, BdrvRequestFlags read_flags,
+                     BdrvRequestFlags write_flags)
 {
     int ret;
 
@@ -608,6 +635,7 @@ static void raw_child_perm(BlockDriverState *bs, BdrvChild *c,
 BlockDriver bdrv_raw = {
     .format_name          = "raw",
     .instance_size        = sizeof(BDRVRawState),
+    .supports_zoned_children = true,
     .bdrv_probe           = &raw_probe,
     .bdrv_reopen_prepare  = &raw_reopen_prepare,
     .bdrv_reopen_commit   = &raw_reopen_commit,
@@ -619,13 +647,15 @@ BlockDriver bdrv_raw = {
     .bdrv_co_pwritev      = &raw_co_pwritev,
     .bdrv_co_pwrite_zeroes = &raw_co_pwrite_zeroes,
     .bdrv_co_pdiscard     = &raw_co_pdiscard,
+    .bdrv_co_zone_report  = &raw_co_zone_report,
+    .bdrv_co_zone_mgmt  = &raw_co_zone_mgmt,
+    .bdrv_co_zone_append = &raw_co_zone_append,
     .bdrv_co_block_status = &raw_co_block_status,
     .bdrv_co_copy_range_from = &raw_co_copy_range_from,
     .bdrv_co_copy_range_to  = &raw_co_copy_range_to,
     .bdrv_co_truncate     = &raw_co_truncate,
     .bdrv_co_getlength    = &raw_co_getlength,
     .is_format            = true,
-    .has_variable_length  = true,
     .bdrv_measure         = &raw_measure,
     .bdrv_co_get_info     = &raw_co_get_info,
     .bdrv_refresh_limits  = &raw_refresh_limits,

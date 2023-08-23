@@ -182,6 +182,7 @@ static const char *log_file;
 static bool list_data_dirs;
 static const char *qtest_chrdev;
 static const char *qtest_log;
+static bool opt_one_insn_per_tb;
 
 static int has_defaults = 1;
 static int default_serial = 1;
@@ -886,7 +887,7 @@ static const QEMUOption qemu_options[] = {
 #define ARCHHEADING(text, arch_mask)
 
 #include "qemu-options.def"
-    { NULL },
+    { /* end of list */ }
 };
 
 typedef struct VGAInterfaceInfo {
@@ -959,7 +960,18 @@ static const char *
 get_default_vga_model(const MachineClass *machine_class)
 {
     if (machine_class->default_display) {
-        return machine_class->default_display;
+        for (int t = 0; t < VGA_TYPE_MAX; t++) {
+            const VGAInterfaceInfo *ti = &vga_interfaces[t];
+
+            if (ti->opt_name && vga_interface_available(t) &&
+                g_str_equal(ti->opt_name, machine_class->default_display)) {
+                return machine_class->default_display;
+            }
+        }
+
+        warn_report_once("Default display '%s' is not available in this binary",
+                         machine_class->default_display);
+        return NULL;
     } else if (vga_interface_available(VGA_CIRRUS)) {
         return "cirrus";
     } else if (vga_interface_available(VGA_STD)) {
@@ -1285,6 +1297,13 @@ static void qemu_disable_default_devices(void)
         default_monitor = 0;
         default_net = 0;
         default_vga = 0;
+    } else {
+        if (default_net && machine_class->default_nic &&
+            !module_object_class_by_name(machine_class->default_nic)) {
+            warn_report("Default NIC '%s' is not available in this binary",
+                        machine_class->default_nic);
+            default_net = 0;
+        }
     }
 }
 
@@ -1855,9 +1874,7 @@ static void qemu_apply_machine_options(QDict *qdict)
     }
 
     if (current_machine->smp.cpus > 1) {
-        Error *blocker = NULL;
-        error_setg(&blocker, QERR_REPLAY_NOT_SUPPORTED, "smp");
-        replay_add_blocker(blocker);
+        replay_add_blocker("smp");
     }
 }
 
@@ -2207,31 +2224,50 @@ static int do_configure_accelerator(void *opaque, QemuOpts *opts, Error **errp)
     int ret;
     bool qtest_with_kvm;
 
+    if (!acc) {
+        error_setg(errp, QERR_MISSING_PARAMETER, "accel");
+        goto bad;
+    }
+
     qtest_with_kvm = g_str_equal(acc, "kvm") && qtest_chrdev != NULL;
 
     if (!ac) {
-        *p_init_failed = true;
         if (!qtest_with_kvm) {
             error_report("invalid accelerator %s", acc);
         }
-        return 0;
+        goto bad;
     }
     accel = ACCEL(object_new_with_class(OBJECT_CLASS(ac)));
     object_apply_compat_props(OBJECT(accel));
     qemu_opt_foreach(opts, accelerator_set_property,
                      accel,
                      &error_fatal);
-
+    /*
+     * If legacy -singlestep option is set, honour it for TCG and
+     * silently ignore for any other accelerator (which is how this
+     * option has always behaved).
+     */
+    if (opt_one_insn_per_tb) {
+        /*
+         * This will always succeed for TCG, and we want to ignore
+         * the error from trying to set a nonexistent property
+         * on any other accelerator.
+         */
+        object_property_set_bool(OBJECT(accel), "one-insn-per-tb", true, NULL);
+    }
     ret = accel_init_machine(accel, current_machine);
     if (ret < 0) {
-        *p_init_failed = true;
         if (!qtest_with_kvm || ret != -ENOENT) {
             error_report("failed to initialize %s: %s", acc, strerror(-ret));
         }
-        return 0;
+        goto bad;
     }
 
     return 1;
+
+bad:
+    *p_init_failed = true;
+    return 0;
 }
 
 static void configure_accelerators(const char *progname)
@@ -2430,7 +2466,7 @@ static void qemu_process_help_options(void)
      * to say '-cpu help -machine something'.
      */
     if (cpu_option && is_help_option(cpu_option)) {
-        list_cpus(cpu_option);
+        list_cpus();
         exit(0);
     }
 
@@ -2463,10 +2499,11 @@ static void qemu_maybe_daemonize(const char *pid_file)
 
         pid_file_realpath = g_malloc0(PATH_MAX);
         if (!realpath(pid_file, pid_file_realpath)) {
-            error_report("cannot resolve PID file path: %s: %s",
-                         pid_file, strerror(errno));
-            unlink(pid_file);
-            exit(1);
+            if (errno != ENOENT) {
+                warn_report("not removing PID file on exit: cannot resolve PID "
+                            "file path: %s: %s", pid_file, strerror(errno));
+            }
+            return;
         }
 
         qemu_unlink_pidfile_notifier = (struct UnlinkPidfileNotifier) {
@@ -2770,13 +2807,8 @@ void qemu_init(int argc, char **argv)
                 drive_add(IF_PFLASH, -1, optarg, PFLASH_OPTS);
                 break;
             case QEMU_OPTION_snapshot:
-                {
-                    Error *blocker = NULL;
-                    snapshot = 1;
-                    error_setg(&blocker, QERR_REPLAY_NOT_SUPPORTED,
-                               "-snapshot");
-                    replay_add_blocker(blocker);
-                }
+                snapshot = 1;
+                replay_add_blocker("-snapshot");
                 break;
             case QEMU_OPTION_numa:
                 opts = qemu_opts_parse_noisily(qemu_find_opts("numa"),
@@ -2957,7 +2989,7 @@ void qemu_init(int argc, char **argv)
                 qdict_put_str(machine_opts_dict, "firmware", optarg);
                 break;
             case QEMU_OPTION_singlestep:
-                singlestep = 1;
+                opt_one_insn_per_tb = true;
                 break;
             case QEMU_OPTION_S:
                 autostart = 0;
@@ -3267,6 +3299,7 @@ void qemu_init(int argc, char **argv)
                 vnc_parse(optarg);
                 break;
             case QEMU_OPTION_no_acpi:
+                warn_report("-no-acpi is deprecated, use '-machine acpi=off' instead");
                 qdict_put_str(machine_opts_dict, "acpi", "off");
                 break;
             case QEMU_OPTION_no_hpet:
@@ -3362,7 +3395,7 @@ void qemu_init(int argc, char **argv)
                 has_defaults = 0;
                 break;
             case QEMU_OPTION_xen_domid:
-                if (!(accel_find("xen"))) {
+                if (!(accel_find("xen")) && !(accel_find("kvm"))) {
                     error_report("Option not supported for this target");
                     exit(1);
                 }
@@ -3585,12 +3618,17 @@ void qemu_init(int argc, char **argv)
     }
 
     /*
+     * Create backends before creating migration objects, so that it can
+     * check against compatibilities on the backend memories (e.g. postcopy
+     * over memory-backend-file objects).
+     */
+    qemu_create_late_backends();
+
+    /*
      * Note: creates a QOM object, must run only after global and
      * compat properties have been set up.
      */
     migration_object_init();
-
-    qemu_create_late_backends();
 
     /* parse features once if machine provides default cpu_type */
     current_machine->cpu_type = machine_class->default_cpu_type;
