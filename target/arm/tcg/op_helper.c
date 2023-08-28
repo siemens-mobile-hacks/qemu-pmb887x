@@ -316,6 +316,7 @@ static inline int check_wfx_trap(CPUARMState *env, bool is_wfe)
 
 void HELPER(wfi)(CPUARMState *env, uint32_t insn_len)
 {
+    return;
 #ifdef CONFIG_USER_ONLY
     /*
      * WFI in the user-mode emulator is technically permitted but not

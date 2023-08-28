@@ -89,10 +89,12 @@ static void nvic_update_state(pmb887x_nvic_t *p) {
 static void nvic_irq_handler(void *opaque, int irq, int level) {
 	pmb887x_nvic_t *p = (pmb887x_nvic_t *) opaque;
 	
+	#ifdef PMB887X_IO_BRIDGE
 	if (level == 100000) {
 		p->irq_state[irq].bridge = true;
 		level = 1;
 	}
+	#endif
 	
 	p->irq_state[irq].level = level;
 	nvic_update_state(p);
@@ -106,6 +108,14 @@ static uint64_t nvic_io_read(void *opaque, hwaddr haddr, unsigned size) {
 	switch (haddr) {
 		case NVIC_ID:
 			value = 0x0031C011;
+		break;
+		
+		case NVIC_IRQ_ACK: // for debug
+			return p->irq_lock ? p->current_irq : 0;
+		break;
+		
+		case NVIC_FIQ_ACK: // for debug
+			return p->fiq_lock ? p->current_fiq : 0;
 		break;
 		
 		case NVIC_FIQ_STAT:

@@ -217,6 +217,9 @@ static void scu_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned si
 	
 	switch (haddr) {
 		case SCU_CLC:
+			#ifdef PMB887X_IO_BRIDGE
+			pmb8876_io_bridge_write(haddr + p->mmio.addr, size, value);
+			#endif
 			pmb887x_sccu_clc_set(p->sccu, value);
 		break;
 		

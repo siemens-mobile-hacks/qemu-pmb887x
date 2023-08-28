@@ -67,6 +67,8 @@ struct pmb887x_tpu_t {
 	uint32_t L;
 	uint32_t K;
 	
+	uint32_t last_fsys;
+	
 	struct pmb887x_pll_t *pll;
 };
 
@@ -184,7 +186,12 @@ static void tpu_update_state(struct pmb887x_tpu_t *p) {
 }
 
 static void tpu_update_state_callback(void *opaque) {
-	tpu_update_state((struct pmb887x_tpu_t *) opaque);
+	struct pmb887x_tpu_t *p = (struct pmb887x_tpu_t *) opaque;
+	uint32_t fsys = pmb887x_pll_get_fsys(p->pll);
+	if (p->last_fsys != fsys) {
+		tpu_update_state(p);
+		p->last_fsys = fsys;
+	}
 }
 
 static uint32_t tpu_ram_read(struct pmb887x_tpu_t *p, uint32_t offset, unsigned size) {

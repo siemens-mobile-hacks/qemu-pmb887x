@@ -335,6 +335,8 @@ config VERSATILE
 
 config PMB887X
     bool
+    default y
+    depends on TCG && ARM
 
 config VEXPRESS
     bool

@@ -187,9 +187,9 @@ __attribute__((destructor))
 static void memory_dump_at_exit(void) {
 	fprintf(stderr, "sorry died at %08X\n", ARM_CPU(qemu_get_cpu(0))->env.regs[15]);
 	
-//	qmp_pmemsave(0xA8000000, 16 * 1024 * 1024, "/tmp/ram.bin", NULL);
-//	qmp_pmemsave(0x00000000, 0x4000, "/tmp/tcm.bin", NULL);
-//	qmp_pmemsave(0x00080000, 96 * 1024, "/tmp/sram.bin", NULL);
+	qmp_pmemsave(0xA8000000, 16 * 1024 * 1024, "/tmp/ram.bin", NULL);
+	qmp_pmemsave(0x00000000, 0x4000, "/tmp/tcm.bin", NULL);
+	qmp_pmemsave(0x00080000, 96 * 1024, "/tmp/sram.bin", NULL);
 }
 
 static DeviceState *pmb887x_create_flash(BlockBackend *blk, uint32_t *banks, int banks_n) {
@@ -354,11 +354,9 @@ void pmb887x_init(MachineState *machine, uint32_t board_id) {
 	object_property_set_link(OBJECT(dmac), "downstream", OBJECT(sysmem), &error_fatal);
 	sysbus_realize_and_unref(SYS_BUS_DEVICE(dmac), &error_fatal);
 	
-	#ifndef PMB887X_IO_BRIDGE
 	// DSP
 	DeviceState *dsp = pmb887x_new_dev(board->cpu, "DSP", nvic);
 	sysbus_realize_and_unref(SYS_BUS_DEVICE(dsp), &error_fatal);
-	#endif
 	
 	// LCD panel
 	DeviceState *lcd = pmb887x_new_lcd_dev(board->display);
@@ -383,7 +381,6 @@ void pmb887x_init(MachineState *machine, uint32_t board_id) {
 	qdev_prop_set_chr(DEVICE(usart1), "chardev", serial_hd(1));
 	sysbus_realize_and_unref(SYS_BUS_DEVICE(usart1), &error_fatal);
 	
-	#ifndef PMB887X_IO_BRIDGE
 	if (board->cpu == CPU_PMB8876) {
 		// I2C
 		DeviceState *i2c = pmb887x_new_dev(board->cpu, "I2C", nvic);
@@ -393,7 +390,6 @@ void pmb887x_init(MachineState *machine, uint32_t board_id) {
 		I2CSlave *pasic = i2c_slave_new("pmb887x-pasic", 0x31);
 		i2c_slave_realize_and_unref(pasic, pmb887x_i2c_bus(i2c), &error_fatal);
 	}
-	#endif
 	
 	// Standby Clock Control Unit
 	DeviceState *sccu = pmb887x_new_dev(board->cpu, "SCCU", nvic);
@@ -423,9 +419,11 @@ void pmb887x_init(MachineState *machine, uint32_t board_id) {
 		qemu_set_irq(qdev_get_gpio_in(pcl, board->fixed_gpios[i].id), board->fixed_gpios[i].value);
 	#endif
 	
+	#ifndef PMB887X_IO_BRIDGE
 	// RTC
 	DeviceState *rtc = pmb887x_new_dev(board->cpu, "RTC", nvic);
 	sysbus_realize_and_unref(SYS_BUS_DEVICE(rtc), &error_fatal);
+	#endif
 	
 	// GPTU0
 	DeviceState *gptu0 = pmb887x_new_dev(board->cpu, "GPTU0", nvic);
@@ -437,9 +435,11 @@ void pmb887x_init(MachineState *machine, uint32_t board_id) {
 	object_property_set_link(OBJECT(gptu1), "pll", OBJECT(pll), &error_fatal);
 	sysbus_realize_and_unref(SYS_BUS_DEVICE(gptu1), &error_fatal);
 	
+	#ifndef PMB887X_IO_BRIDGE
 	// AMC
 	DeviceState *amc = pmb887x_new_dev(board->cpu, "AMC", nvic);
 	sysbus_realize_and_unref(SYS_BUS_DEVICE(amc), &error_fatal);
+	#endif
 	
 	// KEYPAD
 	DeviceState *keypad = pmb887x_new_dev(board->cpu, "KEYPAD", nvic);

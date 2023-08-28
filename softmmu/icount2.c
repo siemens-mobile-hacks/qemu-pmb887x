@@ -46,8 +46,10 @@ void icount2_sync(void) {
 		return;
 	
 	int64_t deadline = qemu_clock_deadline_ns_all(QEMU_CLOCK_VIRTUAL, QEMU_TIMER_ATTR_ALL);
-	if (deadline < 0)
+	if (deadline < 0) {
+		qatomic_set_i64(&timers_state.icount2_deadline, 0);
 		return;
+	}
 	
 	if (deadline == 0) {
 		qemu_clock_run_timers(QEMU_CLOCK_VIRTUAL);
@@ -55,8 +57,10 @@ void icount2_sync(void) {
 		deadline = qemu_clock_deadline_ns_all(QEMU_CLOCK_VIRTUAL, QEMU_TIMER_ATTR_ALL);
 	}
 	
-	if (deadline < 0)
+	if (deadline < 0) {
+		qatomic_set_i64(&timers_state.icount2_deadline, 0);
 		return;
+	}
 	
 	int64_t ticks = qatomic_read_i64(&timers_state.icount2_ticks);
 	int64_t ns_per_tick = qatomic_read_i64(&timers_state.icount2_ns_per_tick);
@@ -102,6 +106,7 @@ void icount2_set_ns_per_tick(int64_t ns_per_tick) {
 	qatomic_set_i64(&timers_state.icount2_bias, bias + ((ticks - offset) * old_ns_per_tick));
 	qatomic_set_i64(&timers_state.icount2_offset, ticks);
 	qatomic_set_i64(&timers_state.icount2_ns_per_tick, ns_per_tick);
+	qatomic_set_i64(&timers_state.icount2_deadline, ticks);
 	seqlock_write_unlock(&timers_state.vm_clock_seqlock, &timers_state.vm_clock_lock);
 }
 

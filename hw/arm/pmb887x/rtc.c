@@ -42,6 +42,9 @@ struct pmb887x_rtc_t {
 	uint32_t isnc;
 	uint32_t alarm;
 	uint32_t unk0;
+	
+	uint64_t realtime_start;
+	uint64_t virtual_start;
 };
 
 static void rtc_update_state(struct pmb887x_rtc_t *p) {
@@ -75,7 +78,11 @@ static uint64_t rtc_io_read(void *opaque, hwaddr haddr, unsigned size) {
 		break;
 		
 		case RTC_CNT:
-			value = get_clock_realtime() / NANOSECONDS_PER_SECOND;
+		{
+			uint64_t elapsed = p->realtime_start + (qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) - p->virtual_start) / NANOSECONDS_PER_SECOND;
+			value = elapsed;
+			// value = get_clock_realtime() / NANOSECONDS_PER_SECOND;
+		}
 		break;
 		
 		case RTC_REL:
@@ -187,6 +194,9 @@ static void rtc_realize(DeviceState *dev, Error **errp) {
 	
 	if (!p->irq)
 		hw_error("pmb887x-rtc: irq not set");
+	
+	p->virtual_start = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
+	p->realtime_start = qemu_clock_get_ns(QEMU_CLOCK_REALTIME);
 	
 	pmb887x_clc_init(&p->clc);
 	pmb887x_src_init(&p->src, p->irq);

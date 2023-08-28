@@ -118,15 +118,18 @@ static void *mttcg_cpu_thread_fn(void *arg)
                 break;
             }
         }
-
+		
         qatomic_set_mb(&cpu->exit_request, 0);
-
-        if (icount2_enabled()) {
+		
+        bool can_run = cpu_can_run(cpu);
+        
+        if (icount2_enabled() && can_run) {
             icount2_enter_sleep();
         }
         
         qemu_wait_io_event(cpu);
-        if (icount2_enabled()) {
+        
+        if (icount2_enabled() && can_run) {
             icount2_exit_sleep();
         }
     } while (!cpu->unplug || cpu_can_run(cpu));

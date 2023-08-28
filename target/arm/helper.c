@@ -30,6 +30,8 @@
 #endif
 #include "cpregs.h"
 
+#define DEBUG_LONG_CPSR_I 8000 /* FIXME: PMB887X DEBUG */
+
 #define ARM_CPU_FREQ 1000000000 /* FIXME: 1 GHz, should be configurable */
 
 static void switch_mode(CPUARMState *env, int mode);
@@ -9969,6 +9971,32 @@ void cpsr_write(CPUARMState *env, uint32_t val, uint32_t mask,
             switch_mode(env, val & CPSR_M);
         }
     }
+
+#ifdef DEBUG_LONG_CPSR_I
+    if ((mask & CPSR_I)) {
+		static uint64_t last_irq_off_time = 0;
+		static bool last_irq_flag = true;
+		static uint32_t last_disable_pc = 0;
+		static uint32_t last_disable_lr = 0;
+		
+		bool irq_flag = (val & CPSR_I) == 0;
+		if (irq_flag != last_irq_flag) {
+			if (irq_flag) {
+				uint64_t elapsed = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) - last_irq_off_time;
+				if (elapsed > DEBUG_LONG_CPSR_I) {
+					fprintf(stderr, "Long CPSR_I: %ld ns from PC: %08X ... %08X, LR: %08X ... %08X\n",
+						elapsed, last_disable_pc, env->regs[15], last_disable_lr, env->regs[14]);
+				}
+			} else {
+				last_irq_off_time = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
+				last_disable_pc = env->regs[15];
+				last_disable_lr = env->regs[14];
+			}
+			last_irq_flag = irq_flag;
+		}
+	}
+#endif
+
     mask &= ~CACHED_CPSR_BITS;
     env->uncached_cpsr = (env->uncached_cpsr & ~mask) | (val & mask);
     if (tcg_enabled() && rebuild_hflags) {

@@ -8,6 +8,7 @@
 #include "hw/hw.h"
 #include "hw/qdev-properties.h"
 #include "qapi/error.h"
+#include "qemu/error-report.h"
 #include "hw/arm/pmb887x/trace.h"
 #include "hw/arm/pmb887x/dif/lcd_common.h"
 

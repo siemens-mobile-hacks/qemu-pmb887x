@@ -11,6 +11,7 @@
 #include "exec/address-spaces.h"
 #include "exec/memory.h"
 #include "cpu.h"
+#include "qemu/error-report.h"
 #include "qapi/error.h"
 #include "qemu/timer.h"
 #include "qemu/main-loop.h"
@@ -117,7 +118,7 @@ static uint32_t i2c_get_tx_burst_size(pmb887x_i2c_t *p) {
 
 static void i2c_trigger_sreq(pmb887x_i2c_t *p) {
 	if (p->wait_for_sreq) {
-		error_report("[pmb887x-i2c] double i2c_trigger_sreq\n");
+		DPRINTF("double i2c_trigger_sreq\n");
 		return;
 	}
 	
