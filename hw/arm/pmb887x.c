@@ -183,21 +183,23 @@ static const MemoryRegionOps unmapped_io_opts = {
 	.endianness		= DEVICE_NATIVE_ENDIAN,
 };
 
+/*
 __attribute__((destructor))
 static void memory_dump_at_exit(void) {
 	fprintf(stderr, "sorry died at %08X\n", ARM_CPU(qemu_get_cpu(0))->env.regs[15]);
 	
-	qmp_pmemsave(0xA8000000, 16 * 1024 * 1024, "/tmp/ram.bin", NULL);
-	qmp_pmemsave(0x00000000, 0x4000, "/tmp/tcm.bin", NULL);
-	qmp_pmemsave(0x00080000, 96 * 1024, "/tmp/sram.bin", NULL);
+//	qmp_pmemsave(0xA8000000, 16 * 1024 * 1024, "/tmp/ram.bin", NULL);
+//	qmp_pmemsave(0x00000000, 0x4000, "/tmp/tcm.bin", NULL);
+//	qmp_pmemsave(0x00080000, 96 * 1024, "/tmp/sram.bin", NULL);
 }
+*/
 
 static DeviceState *pmb887x_create_flash(BlockBackend *blk, uint32_t *banks, int banks_n) {
 	DeviceState *flash = qdev_new("pmb887x-flash");
 	qdev_prop_set_string(flash, "name", "fullflash");
 	qdev_prop_set_drive(flash, "drive", blk);
-	qdev_prop_set_string(flash, "otp0-data", getenv("OTP_ESN") ?: ""); // ESN
-	qdev_prop_set_string(flash, "otp1-data", getenv("OTP_IMEI") ?: ""); // IMEI
+	qdev_prop_set_string(flash, "otp0-data", getenv("PMB887X_FLASH_OTP0") ?: ""); // ESN
+	qdev_prop_set_string(flash, "otp1-data", getenv("PMB887X_FLASH_OTP1") ?: ""); // IMEI
 	qdev_prop_set_uint32(flash, "len-banks", banks_n);
 	
 	char bank_name[32];
@@ -227,11 +229,6 @@ void pmb887x_class_init(ObjectClass *oc, void *data) {
 
 void pmb887x_init(MachineState *machine, uint32_t board_id) {
 	board = pmb887x_get_board(board_id);
-	
-	if (!icount_enabled()) {
-		//error_report("Icount must be enabled with: -icount shift=0");
-		//exit(1);
-	}
 	
 	#ifdef PMB887X_IO_BRIDGE
 	fprintf(stderr, "Waiting for IO bridge...\n");
@@ -298,7 +295,7 @@ void pmb887x_init(MachineState *machine, uint32_t board_id) {
 	memory_region_set_enabled(brom_mirror, true);
 	memory_region_add_subregion(sysmem, 0x00000000, brom_mirror);
 	
-	// BootROM image
+	// Custom BootROM
 	const char *bios_name = machine->firmware;
 	if (bios_name) {
 		char *fn = qemu_find_file(QEMU_FILE_TYPE_BIOS, bios_name);
@@ -307,16 +304,22 @@ void pmb887x_init(MachineState *machine, uint32_t board_id) {
 			exit(1);
 		}
 		
-		int image_size = load_image_targphys(fn, 0, 0x8000);
+		int image_size = load_image_targphys(fn, 0x00400000, 0x8000);
 		g_free(fn);
 		
 		if (image_size < 0) {
 			error_report("Could not load BootROM image '%s'", bios_name);
 			exit(1);
 		}
-    } else {
-		error_report("BootROM must be specified with -bios");
-		exit(1);
+    }
+    // Built-in BootROM
+    else {
+		size_t brom_size;
+		const uint8_t *brom_data = pmb887x_get_brom_image(board->cpu, &brom_size);
+		
+		AddressSpace brom_as;
+		address_space_init(&brom_as, brom, "BROM_AS");
+		address_space_write_rom(&brom_as, 0x00400000, MEMTXATTRS_UNSPECIFIED, brom_data, brom_size);
 	}
 	
 	// SDRAM

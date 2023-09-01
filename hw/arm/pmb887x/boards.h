@@ -30,3 +30,4 @@ typedef struct {
 } pmb887x_board_t;
 
 pmb887x_board_t *pmb887x_get_board(int board);
+const uint8_t *pmb887x_get_brom_image(uint32_t cpu, size_t *size);
