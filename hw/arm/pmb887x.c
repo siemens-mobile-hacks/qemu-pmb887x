@@ -316,10 +316,7 @@ void pmb887x_init(MachineState *machine, uint32_t board_id) {
     else {
 		size_t brom_size;
 		const uint8_t *brom_data = pmb887x_get_brom_image(board->cpu, &brom_size);
-		
-		AddressSpace brom_as;
-		address_space_init(&brom_as, brom, "BROM_AS");
-		address_space_write_rom(&brom_as, 0x00400000, MEMTXATTRS_UNSPECIFIED, brom_data, brom_size);
+		rom_add_blob_fixed("BROM", brom_data, brom_size, 0x00400000);
 	}
 	
 	// SDRAM
