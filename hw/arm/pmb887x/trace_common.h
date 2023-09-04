@@ -35,7 +35,7 @@ enum pmb887x_modules_t {
 
 static inline bool pmb887x_trace_log_enabled(uint32_t id) {
 //	return true;
-	return ((id & (PMB887X_TRACE_TPU | PMB887X_TRACE_SCCU)) != 0);
+	return ((id & (PMB887X_TRACE_TPU | PMB887X_TRACE_LCD)) != 0);
 //	return false;
 	return ((
 		PMB887X_TRACE_GPTU |

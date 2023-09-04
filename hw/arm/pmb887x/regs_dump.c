@@ -1,14 +1,21 @@
 #include "regs_dump.h"
 
 #include "target/arm/cpu.h"
-#include "qemu/log.h"
 #include "sysemu/cpu-timers.h"
+#include "qemu/log.h"
+#include "qemu/error-report.h"
 
 static QemuMutex io_dump_queue_lock;
 static GQueue *io_dump_queue = NULL;
 static QemuThread io_dump_thread_id;
 static GCond io_dump_cond = {};
-static pmb887x_board_meta_t *current_board = NULL;
+static uint32_t gpio_base = 0;
+static const pmb887x_board_t *board_info = NULL;
+static const pmb887x_cpu_meta_t *cpu_info = NULL;
+static struct {
+	uint32_t count;
+	const pmb887x_module_t **modules;
+} addr2modules[0xFFF] = {0};
 
 typedef struct {
 	uint32_t addr;
@@ -19,54 +26,46 @@ typedef struct {
 	bool is_write;
 } pmb887x_io_operation_t;
 
-static pmb887x_module_t *find_cpu_module(pmb887x_cpu_meta_t *cpu, uint32_t addr) {
-	for (int i = 0; i < cpu->modules_count; i++) {
-		pmb887x_module_t *module = &cpu->modules[i];
+static const pmb887x_module_t *_find_cpu_module(uint32_t addr) {
+	uint32_t prefix = (addr & 0xFFF00000) >> 20;
+	for (int i = 0; i < addr2modules[prefix].count; i++) {
+		const pmb887x_module_t *module = addr2modules[prefix].modules[i];
 		if (addr >= module->base && addr <= (module->base + module->size))
 			return module;
 	}
 	return NULL;
 }
 
-static pmb887x_module_reg_t *find_cpu_module_reg(pmb887x_module_t *module, uint32_t addr) {
+static const pmb887x_module_reg_t *_find_cpu_module_reg(const pmb887x_module_t *module, uint32_t addr) {
 	for (int i = 0; i < module->regs_count; i++) {
-		pmb887x_module_reg_t *reg = &module->regs[i];
+		const pmb887x_module_reg_t *reg = &module->regs[i];
 		if (addr == (module->base + reg->addr))
 			return reg;
 	}
 	return NULL;
 }
 
-static const char *find_cpu_module_field_enum(pmb887x_module_field_t *field, uint32_t field_value) {
+static const char *_find_cpu_module_field_enum(const pmb887x_module_field_t *field, uint32_t field_value) {
 	for (int i = 0; i < field->values_count; i++) {
-		pmb887x_module_value_t *v = &field->values[i];
+		const pmb887x_module_value_t *v = &field->values[i];
 		if (field_value == v->value)
 			return v->name;
 	}
 	return NULL;
 }
 
-static const char *find_cpu_irq_num_name(pmb887x_cpu_meta_t *cpu, uint32_t field_value) {
+static const char *_find_cpu_irq_num_name(const pmb887x_cpu_meta_t *cpu, uint32_t field_value) {
 	for (int i = 0; i < cpu->irqs_count; i++) {
-		pmb887x_cpu_meta_irq_t *v = &cpu->irqs[i];
+		const pmb887x_cpu_meta_irq_t *v = &cpu->irqs[i];
 		if (field_value == v->id)
 			return v->name;
 	}
 	return NULL;
 }
 
-static const char *find_cpu_irq_name(pmb887x_cpu_meta_t *cpu, uint32_t field_value) {
+static const char *_find_cpu_irq_name(const pmb887x_cpu_meta_t *cpu, uint32_t field_value) {
 	for (int i = 0; i < cpu->irqs_count; i++) {
-		pmb887x_cpu_meta_irq_t *v = &cpu->irqs[i];
-		if (field_value == v->addr)
-			return v->name;
-	}
-	return NULL;
-}
-
-static const char *find_cpu_gpio_name(pmb887x_board_meta_t *board, uint32_t field_value) {
-	for (int i = 0; i < board->gpios_count; i++) {
-		pmb887x_cpu_meta_gpio_t *v = &board->gpios[i];
+		const pmb887x_cpu_meta_irq_t *v = &cpu->irqs[i];
 		if (field_value == v->addr)
 			return v->name;
 	}
@@ -97,19 +96,32 @@ static void *_dump_io_thread(void *arg) {
 	return NULL;
 }
 
-void pmb887x_io_dump_init(int id) {
+void pmb887x_io_dump_init(const pmb887x_board_t *board) {
+	board_info = board;
+	cpu_info = pmb887x_get_cpu_meta(board->cpu);
+	
 	io_dump_queue = g_queue_new();
 	qemu_mutex_init(&io_dump_queue_lock);
-	current_board = pmb887x_get_board_meta(id);
 	g_cond_init(&io_dump_cond);
 	
 	qemu_thread_create(&io_dump_thread_id, "io_dump", _dump_io_thread, NULL, QEMU_THREAD_JOINABLE);
+	
+	// Module search index
+	for (int i = 0; i < cpu_info->modules_count; i++) {
+		const pmb887x_module_t *module = &cpu_info->modules[i];
+		uint32_t prefix = (module->base & 0xFFF00000) >> 20;
+		addr2modules[prefix].count++;
+		addr2modules[prefix].modules = g_realloc(addr2modules[prefix].modules, sizeof(pmb887x_io_operation_t *) * addr2modules[prefix].count);
+		addr2modules[prefix].modules[addr2modules[prefix].count - 1] = module;
+		
+		if (strcmp(module->name, "GPIO") == 0)
+			gpio_base = module->base;
+	}
+	
+	assert(gpio_base != 0);
 }
 
 void pmb887x_dump_io(uint32_t addr, uint32_t size, uint32_t value, bool is_write) {
-	if (!current_board)
-		return;
-	
 	pmb887x_io_operation_t *entry = g_new0(pmb887x_io_operation_t, 1);
 	entry->addr = addr;
 	entry->size = size;
@@ -124,8 +136,7 @@ void pmb887x_dump_io(uint32_t addr, uint32_t size, uint32_t value, bool is_write
 }
 
 void pmb887x_print_dump_io(uint32_t addr, uint32_t size, uint32_t value, bool is_write, uint32_t pc, uint32_t lr) {
-	pmb887x_cpu_meta_t *cpu = current_board->cpu;
-	pmb887x_module_t *module = find_cpu_module(cpu, addr);
+	const pmb887x_module_t *module = _find_cpu_module(addr);
 	g_autoptr(GString) s = g_string_new("");
 	
 	if (is_write) {
@@ -135,17 +146,13 @@ void pmb887x_print_dump_io(uint32_t addr, uint32_t size, uint32_t value, bool is
 	}
 	
 	if (module) {
-		pmb887x_module_reg_t *reg = find_cpu_module_reg(module, addr);
+		const pmb887x_module_reg_t *reg = _find_cpu_module_reg(module, addr);
 		if (reg) {
 			if (reg->special == PMB887X_REG_IS_GPIO_PIN) {
-				const char *gpio_name = find_cpu_gpio_name(current_board, addr - module->base);
-				if (gpio_name) {
-					g_string_append_printf(s, " (%s)", gpio_name);
-				} else {
-					g_string_append_printf(s, " (%s_%s)", module->name, reg->name);
-				}
+				uint32_t gpio_id = (addr - (gpio_base + GPIO_PIN0)) / 4;
+				g_string_append_printf(s, " (%s)", board_info->gpios[gpio_id].full_name);
 			} else if (reg->special == PMB887X_REG_IS_IRQ_CON) {
-				const char *irq_name = find_cpu_irq_name(cpu, addr - module->base);
+				const char *irq_name = _find_cpu_irq_name(cpu_info, addr - module->base);
 				if (irq_name) {
 					g_string_append_printf(s, " (%s_%s_%s)",  module->name, reg->name, irq_name);
 				} else {
@@ -156,7 +163,7 @@ void pmb887x_print_dump_io(uint32_t addr, uint32_t size, uint32_t value, bool is
 			}
 			
 			if (reg->special == PMB887X_REG_IS_IRQ_NUM) {
-				const char *irq_name = find_cpu_irq_num_name(cpu, value);
+				const char *irq_name = _find_cpu_irq_num_name(cpu_info, value);
 				if (irq_name) {
 					g_string_append_printf(s, ": NUM(0x%02X)=%s", value, irq_name);
 				} else {
@@ -166,9 +173,9 @@ void pmb887x_print_dump_io(uint32_t addr, uint32_t size, uint32_t value, bool is
 				bool first = true;
 				uint32_t known_bits = 0;
 				for (int i = 0; i < reg->fields_count; i++) {
-					pmb887x_module_field_t *field = &reg->fields[i];
+					const pmb887x_module_field_t *field = &reg->fields[i];
 					uint32_t field_value = (value & field->mask) >> field->shift;
-					const char *enum_name = find_cpu_module_field_enum(field, (value & field->mask));
+					const char *enum_name = _find_cpu_module_field_enum(field, (value & field->mask));
 					
 					known_bits |= field->mask;
 					

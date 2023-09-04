@@ -46,6 +46,8 @@ static void lcd_update_state(pmb887x_lcd_t *lcd) {
 	pmb887x_lcd_set_addr_mode_y(lcd, id1 ? LCD_ADDR_MODE_INCR : LCD_ADDR_MODE_DECR);
 	pmb887x_lcd_set_vflip(lcd, !shift_select);
 	
+	// DPRINTF("id0=%d, id1=%d, bgr=%d, dfm0=%d, dfm1=%d, tri=%d\n", id0, id1, bgr, dfm0, dfm1, tri);
+	
 	enum pmb887x_lcd_pixel_mode_t new_mode;
 	if (tri && dfm0 && dfm1) {
 		new_mode = bgr ? LCD_MODE_BGR666 : LCD_MODE_RGB666;

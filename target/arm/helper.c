@@ -30,7 +30,7 @@
 #endif
 #include "cpregs.h"
 
-#define DEBUG_LONG_CPSR_I 8000 /* FIXME: PMB887X DEBUG */
+// #define DEBUG_LONG_CPSR_I 8000 /* FIXME: PMB887X DEBUG */
 
 #define ARM_CPU_FREQ 1000000000 /* FIXME: 1 GHz, should be configurable */
 

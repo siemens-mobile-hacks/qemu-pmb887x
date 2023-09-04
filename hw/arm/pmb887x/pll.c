@@ -189,6 +189,7 @@ static void pll_update_state(struct pmb887x_pll_t *p) {
 			
 			if (icount2_enabled()) {
 				icount2_set_ns_per_tick(p->ns_per_tick);
+				// icount2_set_ns_per_tick(1000000000 / 8000000);
 			}
 		}
 		

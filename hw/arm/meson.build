@@ -27,7 +27,6 @@ arm_ss.add(when: 'CONFIG_COLLIE', if_true: files('collie.c'))
 arm_ss.add(when: 'CONFIG_VERSATILE', if_true: files('versatilepb.c'))
 arm_ss.add(when: 'CONFIG_PMB887X', if_true: files(
 	'pmb887x.c',
-	'pmb887x/qemu-machines.c',
 	'pmb887x/amc.c',
 	'pmb887x/fifo.c',
 	'pmb887x/boards.c',
@@ -53,6 +52,7 @@ arm_ss.add(when: 'CONFIG_PMB887X', if_true: files(
 	'pmb887x/dif.c',
 	'pmb887x/mod.c',
 	'pmb887x/keypad.c',
+	'pmb887x/config.c',
 	'pmb887x/io_bridge.c',
 	'pmb887x/regs_dump.c',
 	'pmb887x/regs_info.c',

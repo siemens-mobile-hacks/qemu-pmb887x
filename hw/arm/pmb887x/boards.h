@@ -4,30 +4,49 @@
 #include "qapi/qapi-types-ui.h"
 #include "regs.h"
 
+enum {
+	PMB887X_MEMORY_TYPE_NONE = 0,
+	PMB887X_MEMORY_TYPE_RAM,
+	PMB887X_MEMORY_TYPE_FLASH,
+};
+
 typedef struct {
 	uint32_t id;
-	int value;
-} pmb887x_fixed_gpio_t;
+	char name[64];
+	char func_name[64];
+	char full_name[64];
+	bool value;
+} pmb887x_board_gpio_t;
 
 typedef struct {
-	const char *name;
-	
+	uint32_t type;
+	uint32_t size;
+	uint16_t vid;
+	uint16_t pid;
+} pmb887x_board_memory_t;
+
+typedef struct {
+	char type[32];
 	uint32_t width;
 	uint32_t height;
-	const char *display;
-	uint32_t display_rotation;
-	
+	uint32_t rotation;
+} pmb887x_board_display_t;
+
+typedef struct {
+	char vendor[64];
+	char model[64];
 	uint32_t cpu;
 	
-	uint32_t *flash_banks;
-	int flash_banks_cnt;
+	// Hardware CSx to memory
+	pmb887x_board_memory_t cs2memory[4];
 	
-	uint32_t *keymap;
-	int keymap_cnt;
+	pmb887x_board_display_t display;
 	
-	pmb887x_fixed_gpio_t *fixed_gpios;
-	int fixed_gpios_cnt;
+	uint32_t keymap[Q_KEY_CODE__MAX];
+	
+	pmb887x_board_gpio_t *gpios;
+	uint32_t gpios_count;
 } pmb887x_board_t;
 
-pmb887x_board_t *pmb887x_get_board(int board);
+const pmb887x_board_t *pmb887x_get_board(const char *config);
 const uint8_t *pmb887x_get_brom_image(uint32_t cpu, size_t *size);

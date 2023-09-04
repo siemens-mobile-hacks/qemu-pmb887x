@@ -29,12 +29,11 @@
 #include "hw/arm/pmb887x/dif/lcd_common.h"
 #include "hw/arm/pmb887x/pll.h"
 #include "hw/arm/pmb887x/boards.h"
-#include "hw/arm/pmb887x/qemu-machines.h"
 
 static MemoryRegion tcm_memory[2];
 static uint32_t tcm_regs[2] = {0x10, 0x10};
 
-static pmb887x_board_t *board = NULL;
+static const pmb887x_board_t *board = NULL;
 static struct pmb887x_pll_t *cpu_pll = NULL;
 static ARMCPU *cpu = NULL;
 
@@ -194,26 +193,82 @@ static void memory_dump_at_exit(void) {
 }
 */
 
-static DeviceState *pmb887x_create_flash(BlockBackend *blk, uint32_t *banks, int banks_n) {
+static void pmb887x_create_sdram(DeviceState *ebuc, const pmb887x_board_memory_t *memory_list) {
+	char bank_name[32];
+	char cs_name[32];
+	int bank_id = 0;
+	
+	for (int cs = 0; cs < 4; cs++) {
+		const pmb887x_board_memory_t *memory = &memory_list[cs];
+		if (memory->type == PMB887X_MEMORY_TYPE_RAM) {
+			sprintf(bank_name, "SDRAM[%d]", bank_id);
+			
+			MemoryRegion *sdram = g_new(MemoryRegion, 1);
+			memory_region_init_ram(sdram, NULL, bank_name, memory->size, &error_fatal);
+			
+			// Main EBU_CSx
+			sprintf(cs_name, "cs%d", cs);
+			object_property_set_link(OBJECT(ebuc), cs_name, OBJECT(sdram), &error_fatal);
+			
+			// Mirror EBU_CSx
+			sprintf(cs_name, "cs%d", cs + 4);
+			object_property_set_link(OBJECT(ebuc), cs_name, OBJECT(sdram), &error_fatal);
+		}
+	}
+}	
+
+static void pmb887x_create_flash(BlockBackend *blk, DeviceState *ebuc, const pmb887x_board_memory_t *memory_list) {
 	DeviceState *flash = qdev_new("pmb887x-flash");
 	qdev_prop_set_string(flash, "name", "fullflash");
 	qdev_prop_set_drive(flash, "drive", blk);
 	qdev_prop_set_string(flash, "otp0-data", getenv("PMB887X_FLASH_OTP0") ?: ""); // ESN
 	qdev_prop_set_string(flash, "otp1-data", getenv("PMB887X_FLASH_OTP1") ?: ""); // IMEI
-	qdev_prop_set_uint32(flash, "len-banks", banks_n);
 	
+	int bank_id;
 	char bank_name[32];
-	for (int i = 0; i < banks_n; i++) {
-		sprintf(bank_name, "banks[%d]", i);
-		qdev_prop_set_uint32(flash, bank_name, banks[i]);
-	}
+	char cs_name[32];
 	
+	// Count flash banks
+	int banks_cnt = 0;
+	for (int cs = 0; cs < 4; cs++) {
+		if (memory_list[cs].type == PMB887X_MEMORY_TYPE_FLASH)
+			banks_cnt++;
+	}
+	qdev_prop_set_uint32(flash, "len-banks", banks_cnt);
+	
+	// Init banks
+	bank_id = 0;
+	for (int cs = 0; cs < 4; cs++) {
+		const pmb887x_board_memory_t *memory = &memory_list[cs];
+		if (memory->type == PMB887X_MEMORY_TYPE_FLASH) {
+			sprintf(bank_name, "banks[%d]", bank_id);
+			qdev_prop_set_uint32(flash, bank_name, (memory->vid << 16) | memory->pid);
+			bank_id++;
+		}
+	}
 	sysbus_realize_and_unref(SYS_BUS_DEVICE(flash), &error_fatal);
 	
-	return flash;
+	// Connect banks to EBU_CSx
+	bank_id = 0;
+	for (int cs = 0; cs < 4; cs++) {
+		const pmb887x_board_memory_t *memory = &memory_list[cs];
+		if (memory->type == PMB887X_MEMORY_TYPE_FLASH) {
+			MemoryRegion *bank = sysbus_mmio_get_region(SYS_BUS_DEVICE(flash), bank_id);
+			
+			// Main EBU_CSx
+			sprintf(cs_name, "cs%d", cs);
+			object_property_set_link(OBJECT(ebuc), cs_name, OBJECT(bank), &error_fatal);
+			
+			// Mirror EBU_CSx
+			sprintf(cs_name, "cs%d", cs + 4);
+			object_property_set_link(OBJECT(ebuc), cs_name, OBJECT(bank), &error_fatal);
+			
+			bank_id++;
+		}
+	}
 }
 
-static void pmb887x_init_keymap(DeviceState *keypad, uint32_t *map, int map_size) {
+static void pmb887x_init_keymap(DeviceState *keypad, const uint32_t *map, int map_size) {
 	qdev_prop_set_uint32(keypad, "len-map", map_size);
 	
 	char key[32];
@@ -223,19 +278,24 @@ static void pmb887x_init_keymap(DeviceState *keypad, uint32_t *map, int map_size
 	}
 }
 
-void pmb887x_class_init(ObjectClass *oc, void *data) {
-	// Nothing todo
-}
-
-void pmb887x_init(MachineState *machine, uint32_t board_id) {
-	board = pmb887x_get_board(board_id);
+static void pmb887x_init(MachineState *machine) {
+	const char *board_config = getenv("PMB887X_BOARD");
+	if (!board_config) {
+		error_report("Please, set board config with env PMB887X_BOARD=path/to/board.cfg");
+		exit(1);
+	}
+	
+	if (!(board = pmb887x_get_board(board_config))) {
+		error_report("Invalid board specified.");
+		exit(1);
+	}
 	
 	#ifdef PMB887X_IO_BRIDGE
 	fprintf(stderr, "Waiting for IO bridge...\n");
 	pmb8876_io_bridge_init();
 	#endif
 	
-	pmb887x_io_dump_init(board_id);
+	pmb887x_io_dump_init(board);
 	
 	MemoryRegion *sysmem = get_system_memory();
 	
@@ -319,15 +379,6 @@ void pmb887x_init(MachineState *machine, uint32_t board_id) {
 		rom_add_blob_fixed("BROM", brom_data, brom_size, 0x00400000);
 	}
 	
-	// SDRAM
-	if (machine->ram_size != 0x800000 && machine->ram_size != 0x1000000 && machine->ram_size != 0x2000000) {
-		error_report("Invalid RAM size (%ld bytes). Valid only: 8M, 16M or 32M", machine->ram_size);
-		exit(1);
-	}
-	
-	MemoryRegion *sdram = g_new(MemoryRegion, 1);
-	memory_region_init_ram(sdram, NULL, "SDRAM", machine->ram_size, &error_fatal);
-	
 	// NVIC
 	DeviceState *nvic = pmb887x_new_dev(board->cpu, "NVIC", NULL);
 	sysbus_connect_irq(SYS_BUS_DEVICE(nvic), 0, qdev_get_gpio_in(DEVICE(cpu), ARM_CPU_IRQ));
@@ -359,10 +410,10 @@ void pmb887x_init(MachineState *machine, uint32_t board_id) {
 	sysbus_realize_and_unref(SYS_BUS_DEVICE(dsp), &error_fatal);
 	
 	// LCD panel
-	DeviceState *lcd = pmb887x_new_lcd_dev(board->display);
-	qdev_prop_set_uint32(lcd, "width", board->width);
-	qdev_prop_set_uint32(lcd, "height", board->height);
-	qdev_prop_set_uint32(lcd, "rotation", board->display_rotation);
+	DeviceState *lcd = pmb887x_new_lcd_dev(board->display.type);
+	qdev_prop_set_uint32(lcd, "width", board->display.width);
+	qdev_prop_set_uint32(lcd, "height", board->display.height);
+	qdev_prop_set_uint32(lcd, "rotation", board->display.rotation);
 	qdev_realize_and_unref(DEVICE(lcd), NULL, &error_fatal);
 	
 	// DIF
@@ -415,8 +466,11 @@ void pmb887x_init(MachineState *machine, uint32_t board_id) {
 	DeviceState *pcl = pmb887x_new_dev(board->cpu, "PCL", nvic);
 	sysbus_realize_and_unref(SYS_BUS_DEVICE(pcl), &error_fatal);
 	
-	for (int i = 0; i < board->fixed_gpios_cnt; i++)
-		qemu_set_irq(qdev_get_gpio_in(pcl, board->fixed_gpios[i].id), board->fixed_gpios[i].value);
+	// Fixed values for some GPIO's
+	for (int i = 0; i < board->gpios_count; i++) {
+		const pmb887x_board_gpio_t *gpio = &board->gpios[i];
+		qemu_set_irq(qdev_get_gpio_in(pcl, gpio->id), gpio->value);
+	}
 	#endif
 	
 	#ifndef PMB887X_IO_BRIDGE
@@ -443,14 +497,11 @@ void pmb887x_init(MachineState *machine, uint32_t board_id) {
 	
 	// KEYPAD
 	DeviceState *keypad = pmb887x_new_dev(board->cpu, "KEYPAD", nvic);
-	pmb887x_init_keymap(keypad, board->keymap, board->keymap_cnt);
+	pmb887x_init_keymap(keypad, board->keymap, Q_KEY_CODE__MAX);
 	sysbus_realize_and_unref(SYS_BUS_DEVICE(keypad), &error_fatal);
 	
 	// External Bus Unit
 	DeviceState *ebuc = pmb887x_new_dev(board->cpu, "EBU", NULL);
-	
-	// RAM always CS1
-	object_property_set_link(OBJECT(ebuc), "cs1", OBJECT(sdram), &error_fatal);
 	
 	// Flash
 	DriveInfo *flash_dinfo = drive_get(IF_PFLASH, 0, 0);
@@ -458,31 +509,43 @@ void pmb887x_init(MachineState *machine, uint32_t board_id) {
 		error_report("Flash ROM must be specified with -drive if=pflash,format=raw,file=fullflash.bin");
 		exit(1);
 	}
+	pmb887x_create_flash(blk_by_legacy_dinfo(flash_dinfo), ebuc, board->cs2memory);
 	
-	const char *cs_names[] = {"cs0", "cs4", "cs2", "cs6", "cs3", "cs7"};
-	if (!board->flash_banks_cnt || board->flash_banks_cnt > (ARRAY_SIZE(cs_names) / 2)) {
-		error_report("Invalid flash bank count: %d\n", board->flash_banks_cnt);
-		abort();
-	}
-	
-	DeviceState *flash = pmb887x_create_flash(blk_by_legacy_dinfo(flash_dinfo), board->flash_banks, board->flash_banks_cnt);
-	for (int i = 0; i < board->flash_banks_cnt; i++) {
-		MemoryRegion *bank = sysbus_mmio_get_region(SYS_BUS_DEVICE(flash), i);
-		object_property_set_link(OBJECT(ebuc), cs_names[i * 2], OBJECT(bank), &error_fatal);
-		object_property_set_link(OBJECT(ebuc), cs_names[i * 2 + 1], OBJECT(bank), &error_fatal);
-	}
+	// SDRAM
+	pmb887x_create_sdram(ebuc, board->cs2memory);
 	
 	sysbus_realize_and_unref(SYS_BUS_DEVICE(ebuc), &error_fatal);
 	
+	// Exec BootROM
 	#ifdef PMB887X_IO_BRIDGE
 	pmb8876_io_bridge_set_nvic(nvic);
-	#endif
-	
-	#ifdef PMB887X_IO_BRIDGE
-	// Exec BootROM
 	cpu_set_pc(CPU(cpu), 0x00400000);
 	#else
-	// Exec BootROM
 	cpu_set_pc(CPU(cpu), 0x00000000);
 	#endif
 }
+
+/*
+ * Generic PMB887X machine
+ * */
+static void pmb887x_class_init(ObjectClass *oc, void *data) {
+	MachineClass *mc = MACHINE_CLASS(oc);
+	mc->desc = "Generic PMB8875/PMB8876 board";
+	mc->init = pmb887x_init;
+	mc->block_default_type = IF_PFLASH;
+	mc->ignore_memory_transaction_failures = true;
+	mc->default_cpu_type = ARM_CPU_TYPE_NAME("arm926");
+	mc->default_ram_size = 16 * 1024 * 1024;
+}
+
+static const TypeInfo pmb887x_type = {
+	.name = MACHINE_TYPE_NAME("pmb887x"),
+	.parent = TYPE_MACHINE,
+	.class_init = pmb887x_class_init
+};
+
+static void pmb887x_type_init(void) {
+	type_register_static(&pmb887x_type);
+}
+
+type_init(pmb887x_type_init);

@@ -1,7 +1,8 @@
 #pragma once
 
 #include "qemu/osdep.h"
-#include "regs.h"
+#include "hw/arm/pmb887x/regs.h"
+#include "hw/arm/pmb887x/boards.h"
 
 #define PMB887X_REG_IS_IRQ_NUM		1
 #define PMB887X_REG_IS_GPIO_PIN		2
@@ -17,14 +18,14 @@ typedef struct {
 	const char *name;
 	uint32_t mask;
 	uint32_t shift;
-	pmb887x_module_value_t *values;
+	const pmb887x_module_value_t *values;
 	int values_count;
 } pmb887x_module_field_t;
 
 typedef struct {
 	const char *name;
 	uint32_t addr;
-	pmb887x_module_field_t *fields;
+	const pmb887x_module_field_t *fields;
 	int fields_count;
 	int special;
 } pmb887x_module_reg_t;
@@ -33,7 +34,7 @@ typedef struct {
 	const char *name;
 	uint32_t base;
 	uint32_t size;
-	pmb887x_module_reg_t *regs;
+	const pmb887x_module_reg_t *regs;
 	int regs_count;
 } pmb887x_module_t;
 
@@ -45,30 +46,25 @@ typedef struct {
 
 typedef struct {
 	const char *name;
+	const char *func_name;
+	const char *full_name;
 	uint32_t id;
-	uint32_t addr;
 } pmb887x_cpu_meta_gpio_t;
 
 typedef struct {
 	const char *name;
 	
-	pmb887x_cpu_meta_irq_t *irqs;
+	const pmb887x_cpu_meta_irq_t *irqs;
 	int irqs_count;
 	
-	pmb887x_module_t *modules;
+	const pmb887x_cpu_meta_gpio_t *gpios;
+	int gpios_count;
+	
+	const pmb887x_module_t *modules;
 	int modules_count;
 } pmb887x_cpu_meta_t;
 
-typedef struct {
-	const char *name;
-	pmb887x_cpu_meta_t *cpu;
-	
-	pmb887x_cpu_meta_gpio_t *gpios;
-	int gpios_count;
-} pmb887x_board_meta_t;
-
 void pmb887x_dump_io(uint32_t addr, uint32_t size, uint32_t value, bool is_write);
 void pmb887x_print_dump_io(uint32_t addr, uint32_t size, uint32_t value, bool is_write, uint32_t pc, uint32_t lr);
-pmb887x_cpu_meta_t *pmb887x_get_cpu_meta(int cpu);
-pmb887x_board_meta_t *pmb887x_get_board_meta(int cpu);
-void pmb887x_io_dump_init(int id);
+const pmb887x_cpu_meta_t *pmb887x_get_cpu_meta(int cpu);
+void pmb887x_io_dump_init(const pmb887x_board_t *board);
