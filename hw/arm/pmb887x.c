@@ -218,42 +218,32 @@ static void pmb887x_create_sdram(DeviceState *ebuc, const pmb887x_board_memory_t
 }	
 
 static void pmb887x_create_flash(BlockBackend *blk, DeviceState *ebuc, const pmb887x_board_memory_t *memory_list) {
-	DeviceState *flash = qdev_new("pmb887x-flash");
-	qdev_prop_set_string(flash, "name", "fullflash");
-	qdev_prop_set_drive(flash, "drive", blk);
-	qdev_prop_set_string(flash, "otp0-data", getenv("PMB887X_FLASH_OTP0") ?: ""); // ESN
-	qdev_prop_set_string(flash, "otp1-data", getenv("PMB887X_FLASH_OTP1") ?: ""); // IMEI
-	
-	int bank_id;
-	char bank_name[32];
+	int flash_id = 0;
+	char flash_name[32];
 	char cs_name[32];
 	
-	// Count flash banks
-	int banks_cnt = 0;
-	for (int cs = 0; cs < 4; cs++) {
-		if (memory_list[cs].type == PMB887X_MEMORY_TYPE_FLASH)
-			banks_cnt++;
-	}
-	qdev_prop_set_uint32(flash, "len-banks", banks_cnt);
+	DeviceState *flash_blk = qdev_new("pmb887x-flash-blk");
+	qdev_prop_set_drive(flash_blk, "drive", blk);
+	sysbus_realize_and_unref(SYS_BUS_DEVICE(flash_blk), &error_fatal);
 	
-	// Init banks
-	bank_id = 0;
+	uint32_t flash_offset = 0;
+	
 	for (int cs = 0; cs < 4; cs++) {
 		const pmb887x_board_memory_t *memory = &memory_list[cs];
 		if (memory->type == PMB887X_MEMORY_TYPE_FLASH) {
-			sprintf(bank_name, "banks[%d]", bank_id);
-			qdev_prop_set_uint32(flash, bank_name, (memory->vid << 16) | memory->pid);
-			bank_id++;
-		}
-	}
-	sysbus_realize_and_unref(SYS_BUS_DEVICE(flash), &error_fatal);
-	
-	// Connect banks to EBU_CSx
-	bank_id = 0;
-	for (int cs = 0; cs < 4; cs++) {
-		const pmb887x_board_memory_t *memory = &memory_list[cs];
-		if (memory->type == PMB887X_MEMORY_TYPE_FLASH) {
-			MemoryRegion *bank = sysbus_mmio_get_region(SYS_BUS_DEVICE(flash), bank_id);
+			sprintf(flash_name, "flash%d", flash_id);
+			
+			DeviceState *flash = qdev_new("pmb887x-flash");
+			qdev_prop_set_string(flash, "name", flash_name);
+			qdev_prop_set_string(flash, "otp0-data", getenv("PMB887X_FLASH_OTP0") ?: ""); // ESN
+			qdev_prop_set_string(flash, "otp1-data", getenv("PMB887X_FLASH_OTP1") ?: ""); // IMEI
+			qdev_prop_set_uint16(flash, "vid", memory->vid);
+			qdev_prop_set_uint16(flash, "pid", memory->pid);
+			qdev_prop_set_uint32(flash, "offset", flash_offset);
+			object_property_set_link(OBJECT(flash), "blk", OBJECT(flash_blk), &error_fatal);
+			sysbus_realize_and_unref(SYS_BUS_DEVICE(flash), &error_fatal);
+			
+			MemoryRegion *bank = sysbus_mmio_get_region(SYS_BUS_DEVICE(flash), 0);
 			
 			// Main EBU_CSx
 			sprintf(cs_name, "cs%d", cs);
@@ -263,7 +253,10 @@ static void pmb887x_create_flash(BlockBackend *blk, DeviceState *ebuc, const pmb
 			sprintf(cs_name, "cs%d", cs + 4);
 			object_property_set_link(OBJECT(ebuc), cs_name, OBJECT(bank), &error_fatal);
 			
-			bank_id++;
+			fprintf(stderr, "flash_offset=%08X\n", flash_offset);
+			
+			flash_offset += object_property_get_uint(OBJECT(flash), "size", &error_fatal);
+			flash_id++;
 		}
 	}
 }
