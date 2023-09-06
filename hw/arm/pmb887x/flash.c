@@ -22,6 +22,7 @@
 #include "sysemu/blockdev.h"
 
 #include "hw/arm/pmb887x/trace.h"
+#include "hw/arm/pmb887x/flash.h"
 #include "hw/arm/pmb887x/flash-blk.h"
 
 #define TYPE_PMB887X_FLASH	"pmb887x-flash"
@@ -91,12 +92,6 @@ struct pmb887x_flash_buffer_t {
 	uint8_t size;
 };
 
-struct pmb887x_flash_erase_region_t {
-	uint32_t offset;
-	uint32_t size;
-	uint32_t sector;
-};
-
 struct pmb887x_flash_part_t {
 	uint16_t n;
 	uint32_t size;
@@ -112,8 +107,7 @@ struct pmb887x_flash_part_t {
 	uint32_t buffer_size;
 	uint32_t buffer_index;
 	struct pmb887x_flash_buffer_t *buffer;
-	struct pmb887x_flash_erase_region_t *erase_regions;
-	int erase_regions_cnt;
+	const pmb887x_flash_cfg_part_t *cfg;
 	
 	MemoryRegion mem;
 	struct pmb887x_flash_t *flash;
@@ -125,6 +119,7 @@ struct pmb887x_flash_t {
 	MemoryRegion mmio;
 	
 	pmb887x_flash_blk_t *blk;
+	const pmb887x_flash_cfg_t *cfg;
 	
 	char *name;
 	
@@ -140,20 +135,8 @@ struct pmb887x_flash_t {
 	uint32_t size;
 	uint32_t offset;
 	
-	uint8_t cfi_table[CFI_ADDR + CFI_SIZE];
-	
-	uint16_t pri_addr;
-	uint8_t pri_table[PRI_SIZE];
-	
-	uint16_t otp0_addr;
 	uint16_t *otp0_data;
-	uint16_t otp0_size;
-	
-	uint16_t otp1_addr;
 	uint16_t *otp1_data;
-	uint16_t otp1_size;
-	
-	uint32_t writeblock_size;
 	
 	uint32_t parts_n;
 };
@@ -161,7 +144,6 @@ struct pmb887x_flash_t {
 typedef struct pmb887x_flash_t pmb887x_flash_t;
 typedef struct pmb887x_flash_part_t pmb887x_flash_part_t;
 typedef struct pmb887x_flash_buffer_t pmb887x_flash_buffer_t;
-typedef struct pmb887x_flash_erase_region_t pmb887x_flash_erase_region_t;
 
 static void flash_trace(pmb887x_flash_t *flash, const char *format, ...) G_GNUC_PRINTF(2, 3);
 static void flash_error(pmb887x_flash_t *flash, const char *format, ...) G_GNUC_PRINTF(2, 3);
@@ -179,8 +161,8 @@ static void flash_reset(pmb887x_flash_part_t *p) {
 static uint32_t flash_find_sector_size(pmb887x_flash_part_t *p, uint32_t offset) {
 	offset -= p->offset;
 	
-	for (int i = 0; i < p->erase_regions_cnt; i++) {
-		pmb887x_flash_erase_region_t *region = &p->erase_regions[i];
+	for (int i = 0; i < p->cfg->erase_regions_cnt; i++) {
+		const pmb887x_flash_erase_region_t *region = &p->cfg->erase_regions[i];
 		if (offset >= region->offset && offset < region->offset + region->size)
 			return region->sector;
 	}
@@ -249,6 +231,7 @@ static void flash_data_write(pmb887x_flash_part_t *p, uint32_t offset, uint32_t 
 
 static uint64_t flash_io_read(void *opaque, hwaddr part_offset, unsigned size) {
 	pmb887x_flash_part_t *p = (pmb887x_flash_part_t *) opaque;
+	const pmb887x_flash_cfg_t *cfg = p->flash->cfg;
 	
 	hwaddr offset = p->offset + part_offset;
 	
@@ -260,19 +243,28 @@ static uint64_t flash_io_read(void *opaque, hwaddr part_offset, unsigned size) {
 		case 0x98:
 			index = offset >> 1;
 			
-			if (index >= CFI_ADDR && index < CFI_ADDR + CFI_SIZE) {
-				value = p->flash->cfi_table[index];
+			// CFI
+			if (index >= CFI_ADDR && index < CFI_ADDR + cfg->cfi_size) {
+				value = cfg->cfi[index - CFI_ADDR];
 				flash_trace_part(p, "CFI %02X: %02X", index, value);
-			} else if (index >= p->flash->pri_addr && index < p->flash->pri_addr + PRI_SIZE) {
-				value = p->flash->pri_table[index - p->flash->pri_addr];
-				flash_trace_part(p, "PRI %02X: %02X", index - p->flash->pri_addr, value);
-			} else if (index >= p->flash->otp0_addr && index < p->flash->otp0_addr + p->flash->otp0_size) {
-				value = p->flash->otp0_data[index - p->flash->otp0_addr];
-				flash_trace_part(p, "OTP0 %02X: %04X", index - p->flash->otp0_addr, value);
-			} else if (index >= p->flash->otp1_addr && index < p->flash->otp1_addr + p->flash->otp1_size) {
-				value = p->flash->otp1_data[index - p->flash->otp1_addr];
-				flash_trace_part(p, "OTP1 %02X: %04X", index - p->flash->otp1_addr, value);
-			} else {
+			}
+			// PRI
+			else if (index >= cfg->pri_addr && index < cfg->pri_addr + cfg->pri_size) {
+				value = cfg->pri[index - cfg->pri_addr];
+				flash_trace_part(p, "PRI %02X: %02X", index - cfg->pri_addr, value);
+			}
+			// OTP0
+			else if (index >= cfg->otp0_addr && index < cfg->otp0_addr + (cfg->otp0_size / 2)) {
+				value = p->flash->otp0_data[index - cfg->otp0_addr];
+				flash_trace_part(p, "OTP0 %02X: %04X", index - cfg->otp0_addr, value);
+			}
+			// OTP1
+			else if (index >= cfg->otp1_addr && index < cfg->otp1_addr + (cfg->otp1_size / 2)) {
+				value = p->flash->otp1_data[index - cfg->otp1_addr];
+				flash_trace_part(p, "OTP1 %02X: %04X", index - cfg->otp1_addr, value);
+			}
+			// Other info
+			else {
 				switch (index) {
 					case 0x00:
 						value = p->flash->vid;
@@ -285,17 +277,17 @@ static uint64_t flash_io_read(void *opaque, hwaddr part_offset, unsigned size) {
 					break;
 					
 					case 0x02:
-						value = 0x11;
+						value = cfg->lock;
 						flash_trace_part(p, "lock status: %02X", value);
 					break;
 					
 					case 0x05:
-						value = 0xF907;
+						value = cfg->cr;
 						flash_trace_part(p, "configuration register: %02X", value);
 					break;
 					
 					case 0x06:
-						value = 0x0004;
+						value = cfg->ehcr;
 						flash_trace_part(p, "enhanced configuration register: %02X", value);
 					break;
 					
@@ -622,19 +614,6 @@ static const MemoryRegionOps io_ops = {
 	.endianness		= DEVICE_NATIVE_ENDIAN
 };
 
-static uint32_t flash_size_by_id(uint32_t id) {
-	switch (id) {
-		case 0x0089880B:	return 0x800000; // 8M
-		case 0x0089880C:	return 0x1000000; // 16M
-		case 0x0089880D:	return 0x2000000; // 32M
-		
-		case 0x00208818:	return 0x2000000; // 32M
-		case 0x00208819:	return 0x4000000; // 64M
-		case 0x0020880F:	return 0x8000000; // 128M
-	}
-	return 0;
-}
-
 static bool fill_data_from_hex(uint8_t *dst, uint32_t max_size, const char *src_hex) {
 	uint32_t len = strlen(src_hex);
 	
@@ -670,29 +649,27 @@ static bool fill_data_from_hex(uint8_t *dst, uint32_t max_size, const char *src_
 	return true;
 }
 
-static void flash_init_part(pmb887x_flash_t *flash, uint32_t offset, uint32_t size, pmb887x_flash_erase_region_t *erase_regions, int erase_regions_cnt) {
+static void flash_init_part(pmb887x_flash_t *flash, const pmb887x_flash_cfg_part_t *part_cfg) {
 	pmb887x_flash_part_t *p = g_new0(pmb887x_flash_part_t, 1);
 	p->n = flash->parts_n++;
 	p->flash = flash;
-	p->offset = offset;
-	p->size = size;
+	p->offset = part_cfg->offset;
+	p->size = part_cfg->size;
+	p->cfg = part_cfg;
 	
 	char *name = g_strdup_printf("pmb887x-flash[%s][%d]", p->flash->name, p->n);
-	memory_region_init_rom_device(&p->mem, OBJECT(p->flash->dev), &io_ops, p, name, size, NULL);
+	memory_region_init_rom_device(&p->mem, OBJECT(p->flash->dev), &io_ops, p, name, p->size, NULL);
 	memory_region_rom_device_set_romd(&p->mem, true);
-	memory_region_add_subregion(&flash->mmio, offset, &p->mem);
+	memory_region_add_subregion(&flash->mmio, p->offset, &p->mem);
 	g_free(name);
 	
 	p->storage = memory_region_get_ram_ptr(&p->mem);
 	
-	int ret = pmb887x_flash_blk_pread(p->flash->blk, offset, size, p->storage);
+	int ret = pmb887x_flash_blk_pread(p->flash->blk, p->offset, p->size, p->storage);
 	if (ret < 0) {
-		flash_error(p->flash, "failed to read the initial flash content [offset=%08X, size=%08X]", offset, size);
+		flash_error(p->flash, "failed to read the initial flash content [offset=%08X, size=%08X]", p->offset, p->size);
 		exit(1);
 	}
-	
-	p->erase_regions_cnt = erase_regions_cnt;
-	p->erase_regions = erase_regions;
 }
 
 static void flash_realize(DeviceState *dev, Error **errp) {
@@ -707,166 +684,37 @@ static void flash_realize(DeviceState *dev, Error **errp) {
 	memory_region_init(&flash->mmio, OBJECT(flash->dev), mmio_name, flash->size);
 	g_free(mmio_name);
 	
-	// Init default values for all tables
-	memset(flash->cfi_table, 0xFF, sizeof(flash->cfi_table));
-	memset(flash->pri_table, 0xFF, sizeof(flash->pri_table));
-	
-	if (flash->vid == FLASH_VENDOR_INTEL) {
-		memcpy(flash->cfi_table, default_intel_cfi, sizeof(default_intel_cfi));
-		memcpy(flash->pri_table, default_intel_pri, sizeof(default_intel_pri));
-		
-		// Override size
-		flash->cfi_table[0x27] = ctz32(flash->size);
-		
-		if (flash->pid == 0x880B) { // 8M
-			flash->cfi_table[0x31] = 0x3E;
-			flash->pri_table[0x24] = 0x07;
-			flash->pri_table[0x2A] = 0x07;
-			flash->pri_table[0x38] = 0x06;
-		} else if (flash->pid == 0x880C) { // 16M
-			flash->cfi_table[0x31] = 0x7E;
-			flash->pri_table[0x24] = 0x0F;
-			flash->pri_table[0x2A] = 0x07;
-			flash->pri_table[0x38] = 0x06;
-		} else if (flash->pid == 0x880D) { // 32M
-			flash->cfi_table[0x31] = 0xFE;
-			flash->pri_table[0x24] = 0x0F;
-			flash->pri_table[0x2A] = 0x0F;
-			flash->pri_table[0x38] = 0x0E;
-		} else {
-			flash_error(flash, "unimplemented %04X:%04X", flash->vid, flash->pid);
-			exit(1);
-		}
-	} else if (flash->vid == FLASH_VENDOR_ST) {
-		memcpy(flash->cfi_table, default_st_cfi, sizeof(default_st_cfi));
-		memcpy(flash->pri_table, default_st_pri, sizeof(default_st_pri));
-		
-		// Override size
-		flash->cfi_table[0x27] = ctz32(flash->size);
-		
-		if (flash->pid == 0x8818) { // 32M
-			flash->cfi_table[0x2D] = 0x7F;
-			flash->cfi_table[0x2E] = 0x00;
-		} else if (flash->pid == 0x8819) { // 64M
-			flash->cfi_table[0x2D] = 0xFF;
-			flash->cfi_table[0x2E] = 0x00;
-		} else if (flash->pid == 0x880F) { // 128M
-			flash->cfi_table[0x2D] = 0xFF;
-			flash->cfi_table[0x2E] = 0x01;
-		} else {
-			flash_error(flash, "unimplemented %04X:%04X", flash->vid, flash->pid);
-			exit(1);
-		}
-	} else {
+	const pmb887x_flash_cfg_t *cfg = pmb887x_flash_find(flash->vid, flash->pid);
+	if (!cfg) {
 		flash_error(flash, "unimplemented %04X:%04X", flash->vid, flash->pid);
 		exit(1);
 	}
 	
-	flash->pri_addr = (flash->cfi_table[0x16] << 8) | flash->cfi_table[0x15];
-	flash->writeblock_size = 1 << flash->cfi_table[0x2A];
+	flash->cfg = cfg;
+	flash->size = cfg->size;
 	
 	// OTP0
-	uint32_t otp0_size_f = 1 << flash->pri_table[0x11];
-	uint32_t otp0_size_u = 1 << flash->pri_table[0x12];
-	flash->otp0_addr = (flash->pri_table[0x10] << 8) | flash->pri_table[0x0F];
-	flash->otp0_size = MAX(otp0_size_f, otp0_size_u) / 2 + 1;
-	flash->otp0_data = g_new(uint16_t, flash->otp0_size);
-	memset(flash->otp0_data, 0xFFFF, flash->otp0_size * 2);
+	flash->otp0_data = g_new(uint16_t, cfg->otp0_size / 2);
+	memset(flash->otp0_data, 0xFF, cfg->otp0_size);
 	flash->otp0_data[0] = 0x0002;
-	if (!fill_data_from_hex((uint8_t *) flash->otp0_data, flash->otp0_size * 2, flash->hex_otp0_data)) {
-		flash_error(flash, "Invalid OTP0 hex data: %s [max_size=%d, len=%ld]", flash->hex_otp0_data, flash->otp0_size * 2, strlen(flash->hex_otp0_data) / 2);
+	
+	if (!fill_data_from_hex((uint8_t *) flash->otp0_data, cfg->otp0_size, flash->hex_otp0_data)) {
+		flash_error(flash, "Invalid OTP0 hex data: %s [max_size=%d, len=%ld]", flash->hex_otp0_data, cfg->otp0_size, strlen(flash->hex_otp0_data) / 2);
 		exit(1);
 	}
 	
 	// OTP1
-	uint32_t otp1_groups_f = (flash->pri_table[0x18] << 8) | flash->pri_table[0x17];
-	uint32_t otp1_groups_u = (flash->pri_table[0x1B] << 8) | flash->pri_table[0x1A];
-	uint32_t otp1_size_f = 1 << flash->pri_table[0x19];
-	uint32_t otp1_size_u = 1 << flash->pri_table[0x1C];
-	flash->otp1_addr = (flash->pri_table[0x16] << 24) | (flash->pri_table[0x15] << 16) | (flash->pri_table[0x14] << 8) | flash->pri_table[0x13];
-	flash->otp1_size = MAX(otp1_groups_f * otp1_size_f, otp1_groups_u * otp1_size_u) / 2 + 1;
-	flash->otp1_data = g_new(uint16_t, flash->otp1_size);
-	memset(flash->otp1_data, 0xFFFF, flash->otp1_size * 2);
+	flash->otp1_data = g_new(uint16_t, cfg->otp1_size / 2);
+	memset(flash->otp1_data, 0xFF, cfg->otp1_size);
 	flash->otp1_data[0] = 0xFFFF;
-	if (!fill_data_from_hex((uint8_t *) flash->otp1_data, flash->otp1_size * 2, flash->hex_otp1_data)) {
-		flash_error(flash, "Invalid OTP1 hex data: %s [max_size=%d, len=%ld]", flash->hex_otp1_data, flash->otp1_size * 2, strlen(flash->hex_otp1_data) / 2);
+	if (!fill_data_from_hex((uint8_t *) flash->otp1_data, cfg->otp1_size, flash->hex_otp1_data)) {
+		flash_error(flash, "Invalid OTP1 hex data: %s [max_size=%d, len=%ld]", flash->hex_otp1_data, cfg->otp1_size, strlen(flash->hex_otp1_data) / 2);
 		exit(1);
 	}
 	
-	if (flash->vid == FLASH_VENDOR_INTEL) {
-		// Partitions
-		uint32_t info_offset = 0;
-		uint32_t flash_offset = 0;
-		
-		int hw_regions = flash->pri_table[0x23];
-		for (int i = 0; i < hw_regions; i++) {
-			int identical_cnt = (flash->pri_table[info_offset + 0x25] << 8) | flash->pri_table[info_offset + 0x24];
-			
-			uint32_t part_size = 0;
-			int erase_regions_cnt = flash->pri_table[info_offset + 0x29];
-			pmb887x_flash_erase_region_t *erase_regions = g_new0(pmb887x_flash_erase_region_t, erase_regions_cnt);
-			
-			for (int j = 0; j < erase_regions_cnt; j++) {
-				uint32_t blocks = ((flash->pri_table[info_offset + 0x2B + j * 8] << 8) | flash->pri_table[info_offset + 0x2A + j * 8]) + 1;
-				uint32_t sector_len = (flash->pri_table[info_offset + 0x2D + j * 8] << 16) | (flash->pri_table[info_offset + 0x2C + j * 8] << 8);
-				
-				erase_regions[j].offset = part_size;
-				erase_regions[j].size = sector_len * blocks;
-				erase_regions[j].sector = sector_len;
-				
-				part_size += sector_len * blocks;
-			}
-			
-			for (int j = 0; j < identical_cnt; j++) {
-				flash_init_part(flash, flash_offset, part_size, erase_regions, erase_regions_cnt);
-				flash_offset += part_size;
-			}
-			
-			info_offset += 0x6 + 0x8 * erase_regions_cnt;
-		}
-		
-		if (flash_offset != flash->size) {
-			flash_error(flash, "invalid PRI table");
-			exit(1);
-		}
-	} else if (flash->vid == FLASH_VENDOR_ST) {
-		// Partitions
-		uint32_t info_offset = 0;
-		uint32_t flash_offset = 0;
-		
-		int hw_regions = flash->pri_table[0x22];
-		for (int i = 0; i < hw_regions; i++) {
-			int self_size = (flash->pri_table[info_offset + 0x24] << 8) | flash->pri_table[info_offset + 0x23];
-			int identical_cnt = (flash->pri_table[info_offset + 0x26] << 8) | flash->pri_table[info_offset + 0x25];
-			
-			uint32_t part_size = 0;
-			int erase_regions_cnt = flash->pri_table[info_offset + 0x2A];
-			pmb887x_flash_erase_region_t *erase_regions = g_new0(pmb887x_flash_erase_region_t, erase_regions_cnt);
-			
-			for (int j = 0; j < erase_regions_cnt; j++) {
-				uint32_t blocks = ((flash->pri_table[info_offset + 0x2C + j * 8] << 8) | flash->pri_table[info_offset + 0x2B + j * 8]) + 1;
-				uint32_t sector_len = (flash->pri_table[info_offset + 0x2E + j * 8] << 16) | (flash->pri_table[info_offset + 0x2D + j * 8] << 8);
-				
-				erase_regions[j].offset = part_size;
-				erase_regions[j].size = sector_len * blocks;
-				erase_regions[j].sector = sector_len;
-				
-				part_size += sector_len * blocks;
-			}
-			
-			for (int j = 0; j < identical_cnt; j++) {
-				flash_init_part(flash, flash_offset, part_size, erase_regions, erase_regions_cnt);
-				flash_offset += part_size;
-			}
-			
-			info_offset += self_size;
-		}
-		
-		if (flash_offset != flash->size) {
-			flash_error(flash, "invalid PRI table");
-			exit(1);
-		}
-	}
+	// Init hw partitions
+	for (size_t i = 0; i < cfg->parts_count; i++)
+		flash_init_part(flash, &cfg->parts[i]);
 	
 	sysbus_init_mmio(SYS_BUS_DEVICE(flash->dev), &flash->mmio);
 }
