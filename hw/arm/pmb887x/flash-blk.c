@@ -29,6 +29,14 @@ bool pmb887x_flash_blk_is_raw(pmb887x_flash_blk_t *flash) {
 	return blk_supports_write_perm(flash->blk);
 }
 
+int64_t pmb887x_flash_blk_size(pmb887x_flash_blk_t *flash) {
+	return blk_co_getlength(flash->blk);
+}
+
+pmb887x_flash_blk_t *pmb887x_flash_blk_self(DeviceState *dev) {
+	return PMB887X_FLASH_BLK(dev);
+}
+
 static void flash_blk_realize(DeviceState *dev, Error **errp) {
 	pmb887x_flash_blk_t *flash = PMB887X_FLASH_BLK(dev);
 	
@@ -36,6 +44,8 @@ static void flash_blk_realize(DeviceState *dev, Error **errp) {
 		EPRINTF("Property 'drive' is not set");
 		exit(1);
 	}
+	
+	DPRINTF("Drive size: %08"PRIX64"\n", blk_co_getlength(flash->blk));
 	
 	if (pmb887x_flash_blk_is_raw(flash)) {
 		int ret = blk_set_perm(flash->blk, BLK_PERM_CONSISTENT_READ | BLK_PERM_WRITE, BLK_PERM_ALL, errp);

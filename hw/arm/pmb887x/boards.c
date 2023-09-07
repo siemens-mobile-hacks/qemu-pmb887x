@@ -197,8 +197,8 @@ static bool _parse_gpio_aliases(pmb887x_board_t *board, pmb887x_cfg_section_t *s
 		board->gpios[i].id = cpu_gpio->id;
 		board->gpios[i].value = false;
 		strncpy(board->gpios[i].name, cpu_gpio->name, sizeof(board->gpios[i].name) - 1);
-		strncpy(board->gpios[i].func_name, cpu_gpio->name, sizeof(board->gpios[i].func_name) - 1);
-		strncpy(board->gpios[i].full_name, cpu_gpio->name, sizeof(board->gpios[i].full_name) - 1);
+		strncpy(board->gpios[i].func_name, cpu_gpio->func_name, sizeof(board->gpios[i].func_name) - 1);
+		strncpy(board->gpios[i].full_name, cpu_gpio->full_name, sizeof(board->gpios[i].full_name) - 1);
 	}
 	
 	// Set board-specific gpio names

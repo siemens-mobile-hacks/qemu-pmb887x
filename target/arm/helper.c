@@ -9974,27 +9974,27 @@ void cpsr_write(CPUARMState *env, uint32_t val, uint32_t mask,
 
 #ifdef DEBUG_LONG_CPSR_I
     if ((mask & CPSR_I)) {
-		static uint64_t last_irq_off_time = 0;
-		static bool last_irq_flag = true;
-		static uint32_t last_disable_pc = 0;
-		static uint32_t last_disable_lr = 0;
-		
-		bool irq_flag = (val & CPSR_I) == 0;
-		if (irq_flag != last_irq_flag) {
-			if (irq_flag) {
-				uint64_t elapsed = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) - last_irq_off_time;
-				if (elapsed > DEBUG_LONG_CPSR_I) {
-					fprintf(stderr, "Long CPSR_I: %ld ns from PC: %08X ... %08X, LR: %08X ... %08X\n",
-						elapsed, last_disable_pc, env->regs[15], last_disable_lr, env->regs[14]);
-				}
-			} else {
-				last_irq_off_time = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
-				last_disable_pc = env->regs[15];
-				last_disable_lr = env->regs[14];
-			}
-			last_irq_flag = irq_flag;
-		}
-	}
+        static uint64_t last_irq_off_time = 0;
+        static bool last_irq_flag = true;
+        static uint32_t last_disable_pc = 0;
+        static uint32_t last_disable_lr = 0;
+        
+        bool irq_flag = (val & CPSR_I) == 0;
+        if (irq_flag != last_irq_flag) {
+            if (irq_flag) {
+                uint64_t elapsed = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) - last_irq_off_time;
+                if (elapsed > DEBUG_LONG_CPSR_I) {
+                    fprintf(stderr, "Long CPSR_I: %ld ns from PC: %08X ... %08X, LR: %08X ... %08X\n",
+                        elapsed, last_disable_pc, env->regs[15], last_disable_lr, env->regs[14]);
+                }
+            } else {
+                last_irq_off_time = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
+                last_disable_pc = env->regs[15];
+                last_disable_lr = env->regs[14];
+            }
+            last_irq_flag = irq_flag;
+        }
+    }
 #endif
 
     mask &= ~CACHED_CPSR_BITS;
@@ -10230,7 +10230,8 @@ void arm_log_exception(CPUState *cs)
 {
     int idx = cs->exception_index;
 
-    if (qemu_loglevel_mask(CPU_LOG_INT)) {
+    bool is_fatal = idx == EXCP_UDEF || idx == EXCP_PREFETCH_ABORT || idx == EXCP_DATA_ABORT;
+    if (qemu_loglevel_mask(CPU_LOG_INT) || is_fatal) {
         const char *exc = NULL;
         static const char * const excnames[] = {
             [EXCP_UDEF] = "Undefined Instruction",
@@ -10267,6 +10268,14 @@ void arm_log_exception(CPUState *cs)
         }
         qemu_log_mask(CPU_LOG_INT, "Taking exception %d [%s] on CPU %d\n",
                       idx, exc, cs->cpu_index);
+        if (is_fatal) {
+            const char *need_stop = getenv("QEMU_ARM_STOP_ON_EXCP");
+            if (need_stop && strcmp(need_stop, "1") == 0) {
+                CPUARMState *env = cs->env_ptr;
+                fprintf(stderr, "Exception: %s, died at %08X (LR %08X)\n", exc, env->regs[15], env->regs[14]);
+                exit(0);
+            }
+        }
     }
 }
 

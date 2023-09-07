@@ -75,7 +75,7 @@ static uint64_t pcl_io_read(void *opaque, hwaddr haddr, unsigned size) {
 		
 		default:
 			IO_DUMP(haddr + p->mmio.addr, size, 0xFFFFFFFF, false);
-			DPRINTF("unknown reg access: %02lX\n", haddr);
+			EPRINTF("unknown reg access: %02lX\n", haddr);
 			exit(1);
 		break;
 	}
@@ -110,7 +110,7 @@ static void pcl_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned si
 		break;
 		
 		default:
-			DPRINTF("unknown reg access: %02lX\n", haddr);
+			EPRINTF("unknown reg access: %02lX\n", haddr);
 			exit(1);
 		break;
 	}

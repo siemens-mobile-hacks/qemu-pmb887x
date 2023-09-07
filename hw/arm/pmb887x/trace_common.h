@@ -1,6 +1,8 @@
 #pragma once
 
 #include "qemu/log.h"
+#include "qapi/error.h"
+#include "qemu/error-report.h"
 #include "hw/arm/pmb887x/regs_dump.h"
 
 enum pmb887x_modules_t {
@@ -34,8 +36,8 @@ enum pmb887x_modules_t {
 //extern uint32_t pmb887x_trace_flags;
 
 static inline bool pmb887x_trace_log_enabled(uint32_t id) {
-//	return true;
-	return ((id & (PMB887X_TRACE_TPU | PMB887X_TRACE_LCD)) != 0);
+	return ((id & PMB887X_TRACE_I2C));
+	return ((id & (PMB887X_TRACE_TPU | PMB887X_TRACE_FLASH | PMB887X_TRACE_LCD | PMB887X_TRACE_EBU | PMB887X_TRACE_I2C)) != 0);
 //	return false;
 	return ((
 		PMB887X_TRACE_GPTU |
@@ -65,8 +67,8 @@ static inline bool pmb887x_trace_log_enabled(uint32_t id) {
 }
 
 static inline bool pmb887x_trace_io_enabled(uint32_t id) {
-//	return false;
-	return ((id & (PMB887X_TRACE_SCCU)) != 0);
+	return ((id & (PMB887X_TRACE_I2C)) != 0);
+	return ((id & (PMB887X_TRACE_SCCU | PMB887X_TRACE_SCU)) != 0);
 	return ((
 		PMB887X_TRACE_GPTU |
 		PMB887X_TRACE_TPU |

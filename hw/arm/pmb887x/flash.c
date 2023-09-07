@@ -292,7 +292,7 @@ static uint64_t flash_io_read(void *opaque, hwaddr part_offset, unsigned size) {
 					break;
 					
 					default:
-						value = 0xFF;
+						value = 0xFFFF;
 						flash_error_part(p, "%08lX: read unknown cfi index 0x%02X", offset, index);
 					//	exit(1);
 					break;
@@ -676,14 +676,6 @@ static void flash_realize(DeviceState *dev, Error **errp) {
 	pmb887x_flash_t *flash = PMB887X_FLASH(dev);
 	flash->dev = dev;
 	
-	flash->size = flash_size_by_id((flash->vid << 16) | flash->pid);
-	
-	flash_trace(flash, "FLASH %04X:%04X, 0x%08X ... 0x%08X", flash->vid, flash->pid, flash->offset, flash->offset + flash->size - 1);
-	
-	char *mmio_name = g_strdup_printf("pmb887x-flash[%s]", flash->name);
-	memory_region_init(&flash->mmio, OBJECT(flash->dev), mmio_name, flash->size);
-	g_free(mmio_name);
-	
 	const pmb887x_flash_cfg_t *cfg = pmb887x_flash_find(flash->vid, flash->pid);
 	if (!cfg) {
 		flash_error(flash, "unimplemented %04X:%04X", flash->vid, flash->pid);
@@ -692,6 +684,12 @@ static void flash_realize(DeviceState *dev, Error **errp) {
 	
 	flash->cfg = cfg;
 	flash->size = cfg->size;
+	
+	flash_trace(flash, "FLASH %04X:%04X, 0x%08X ... 0x%08X", flash->vid, flash->pid, flash->offset, flash->offset + flash->size - 1);
+	
+	char *mmio_name = g_strdup_printf("pmb887x-flash[%s]", flash->name);
+	memory_region_init(&flash->mmio, OBJECT(flash->dev), mmio_name, flash->size);
+	g_free(mmio_name);
 	
 	// OTP0
 	flash->otp0_data = g_new(uint16_t, cfg->otp0_size / 2);

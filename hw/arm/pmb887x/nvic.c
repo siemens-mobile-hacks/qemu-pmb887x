@@ -110,14 +110,6 @@ static uint64_t nvic_io_read(void *opaque, hwaddr haddr, unsigned size) {
 			value = 0x0031C011;
 		break;
 		
-		case NVIC_IRQ_ACK: // for debug
-			return p->irq_lock ? p->current_irq : 0;
-		break;
-		
-		case NVIC_FIQ_ACK: // for debug
-			return p->fiq_lock ? p->current_fiq : 0;
-		break;
-		
 		case NVIC_FIQ_STAT:
 			if (p->current_fiq > 0) {
 				if (!p->fiq_lock) {
@@ -177,7 +169,7 @@ static uint64_t nvic_io_read(void *opaque, hwaddr haddr, unsigned size) {
 		
 		default:
 			IO_DUMP(haddr + p->mmio.addr, size, 0xFFFFFFFF, false);
-			DPRINTF("unknown reg access: %02lX\n", haddr);
+			EPRINTF("unknown reg access: %02lX\n", haddr);
 			exit(1);
 		break;
 	}
@@ -194,7 +186,7 @@ static void nvic_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned s
 	
 	switch (haddr) {
 		default:
-			DPRINTF("unknown reg access: %02lX\n", haddr);
+			EPRINTF("unknown reg access: %02lX\n", haddr);
 			exit(1);
 		break;
 		

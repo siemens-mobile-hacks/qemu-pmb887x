@@ -42,6 +42,11 @@ static void lcd_update_state(pmb887x_lcd_t *lcd) {
 	bool dfm1 = (priv->regs[0x003] & (1 << 14)) != 0; /* DFM1 */
 	bool tri = (priv->regs[0x003] & (1 << 15)) != 0; /* TRI */
 	
+	#ifdef WIN32
+	id0 = 1;
+	id1 = 1;
+	#endif
+	
 	pmb887x_lcd_set_addr_mode_x(lcd, id0 ? LCD_ADDR_MODE_INCR : LCD_ADDR_MODE_DECR);
 	pmb887x_lcd_set_addr_mode_y(lcd, id1 ? LCD_ADDR_MODE_INCR : LCD_ADDR_MODE_DECR);
 	pmb887x_lcd_set_vflip(lcd, !shift_select);

@@ -5,18 +5,6 @@
 #include "qemu/log.h"
 #include "qemu/error-report.h"
 
-static QemuMutex io_dump_queue_lock;
-static GQueue *io_dump_queue = NULL;
-static QemuThread io_dump_thread_id;
-static GCond io_dump_cond = {};
-static uint32_t gpio_base = 0;
-static const pmb887x_board_t *board_info = NULL;
-static const pmb887x_cpu_meta_t *cpu_info = NULL;
-static struct {
-	uint32_t count;
-	const pmb887x_module_t **modules;
-} addr2modules[0xFFF] = {0};
-
 typedef struct {
 	uint32_t addr;
 	uint32_t value;
@@ -24,7 +12,21 @@ typedef struct {
 	uint32_t pc;
 	uint32_t lr;
 	bool is_write;
+	uint32_t count;
 } pmb887x_io_operation_t;
+
+static QemuMutex io_dump_queue_lock;
+static GQueue *io_dump_queue = NULL;
+static QemuThread io_dump_thread_id;
+static GCond io_dump_cond = {};
+static uint32_t gpio_base = 0;
+static const pmb887x_board_t *board_info = NULL;
+static const pmb887x_cpu_meta_t *cpu_info = NULL;
+static pmb887x_io_operation_t *last_log_entry = NULL;
+static struct {
+	uint32_t count;
+	const pmb887x_module_t **modules;
+} addr2modules[0xFFF] = {0};
 
 static const pmb887x_module_t *_find_cpu_module(uint32_t addr) {
 	uint32_t prefix = (addr & 0xFFF00000) >> 20;
@@ -81,6 +83,10 @@ static void *_dump_io_thread(void *arg) {
 		queue_size = g_queue_get_length(io_dump_queue);
 		if (queue_size > 0)
 			entry = g_queue_pop_head(io_dump_queue);
+		
+		if (entry == last_log_entry)
+			last_log_entry = NULL;
+		
 		qemu_mutex_unlock(&io_dump_queue_lock);
 		
 		if (entry) {
@@ -121,6 +127,17 @@ void pmb887x_io_dump_init(const pmb887x_board_t *board) {
 	assert(gpio_base != 0);
 }
 
+static bool _is_log_entry_same(const pmb887x_io_operation_t *a, const pmb887x_io_operation_t *b) {
+	return (
+		a->addr == b->addr &&
+		a->value == b->value &&
+		a->size == b->size &&
+		a->pc == b->pc &&
+		a->lr == b->lr &&
+		a->is_write == b->is_write
+	);
+}
+
 void pmb887x_dump_io(uint32_t addr, uint32_t size, uint32_t value, bool is_write) {
 	pmb887x_io_operation_t *entry = g_new0(pmb887x_io_operation_t, 1);
 	entry->addr = addr;
@@ -129,9 +146,15 @@ void pmb887x_dump_io(uint32_t addr, uint32_t size, uint32_t value, bool is_write
 	entry->is_write = is_write;
 	entry->pc = ARM_CPU(qemu_get_cpu(0))->env.regs[15];
 	entry->lr = ARM_CPU(qemu_get_cpu(0))->env.regs[14];
+	entry->count = 1;
 	
 	qemu_mutex_lock(&io_dump_queue_lock);
-	g_queue_push_tail(io_dump_queue, entry);
+	if (last_log_entry && _is_log_entry_same(last_log_entry, entry)) {
+		last_log_entry->count++;
+	} else {
+		last_log_entry = entry;
+		g_queue_push_tail(io_dump_queue, entry);
+	}
 	qemu_mutex_unlock(&io_dump_queue_lock);
 }
 

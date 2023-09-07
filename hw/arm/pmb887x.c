@@ -21,6 +21,7 @@
 #include "sysemu/cpu-timers.h"
 #include "target/arm/cpregs.h"
 
+#include "hw/arm/pmb887x/flash-blk.h"
 #include "hw/arm/pmb887x/regs.h"
 #include "hw/arm/pmb887x/io_bridge.h"
 #include "hw/arm/pmb887x/regs_dump.h"
@@ -122,7 +123,7 @@ static uint64_t cpu_io_read(void *opaque, hwaddr offset, unsigned size) {
 static void cpu_io_write(void *opaque, hwaddr offset, uint64_t value, unsigned size) {
 	hwaddr addr = (size_t) opaque + offset;
 	
-	//pmb887x_dump_io(addr, size, value, true);
+	// pmb887x_dump_io(addr, size, value, true);
 	
 	if (addr == 0xf460001c) {
 		if (value == 0x8) {
@@ -182,16 +183,14 @@ static const MemoryRegionOps unmapped_io_opts = {
 	.endianness		= DEVICE_NATIVE_ENDIAN,
 };
 
-/*
 __attribute__((destructor))
 static void memory_dump_at_exit(void) {
-	fprintf(stderr, "sorry died at %08X\n", ARM_CPU(qemu_get_cpu(0))->env.regs[15]);
+//	fprintf(stderr, "sorry died at %08X\n", ARM_CPU(qemu_get_cpu(0))->env.regs[15]);
 	
 //	qmp_pmemsave(0xA8000000, 16 * 1024 * 1024, "/tmp/ram.bin", NULL);
 //	qmp_pmemsave(0x00000000, 0x4000, "/tmp/tcm.bin", NULL);
 //	qmp_pmemsave(0x00080000, 96 * 1024, "/tmp/sram.bin", NULL);
 }
-*/
 
 static void pmb887x_create_sdram(DeviceState *ebuc, const pmb887x_board_memory_t *memory_list) {
 	char bank_name[32];
@@ -213,9 +212,11 @@ static void pmb887x_create_sdram(DeviceState *ebuc, const pmb887x_board_memory_t
 			// Mirror EBU_CSx
 			sprintf(cs_name, "cs%d", cs + 4);
 			object_property_set_link(OBJECT(ebuc), cs_name, OBJECT(sdram), &error_fatal);
+			
+			bank_id++;
 		}
 	}
-}	
+}
 
 static void pmb887x_create_flash(BlockBackend *blk, DeviceState *ebuc, const pmb887x_board_memory_t *memory_list) {
 	int flash_id = 0;
@@ -253,11 +254,15 @@ static void pmb887x_create_flash(BlockBackend *blk, DeviceState *ebuc, const pmb
 			sprintf(cs_name, "cs%d", cs + 4);
 			object_property_set_link(OBJECT(ebuc), cs_name, OBJECT(bank), &error_fatal);
 			
-			fprintf(stderr, "flash_offset=%08X\n", flash_offset);
-			
 			flash_offset += object_property_get_uint(OBJECT(flash), "size", &error_fatal);
 			flash_id++;
 		}
+	}
+	
+	int64_t total_flash_size = pmb887x_flash_blk_size(pmb887x_flash_blk_self(flash_blk));
+	if (flash_offset != total_flash_size) {
+		error_report("Invalid fullflash size=0x%08"PRIX64". Please, specify fullflash with size=0x%08X", total_flash_size, flash_offset);
+		exit(1);
 	}
 }
 
@@ -446,7 +451,6 @@ static void pmb887x_init(MachineState *machine) {
 	object_property_set_link(OBJECT(scu), "sccu", OBJECT(sccu), &error_fatal);
 	sysbus_realize_and_unref(SYS_BUS_DEVICE(scu), &error_fatal);
 	
-	#ifndef PMB887X_IO_BRIDGE
 	// CAPCOM0
 	DeviceState *capcom0 = pmb887x_new_dev(board->cpu, "CAPCOM0", nvic);
 	sysbus_realize_and_unref(SYS_BUS_DEVICE(capcom0), &error_fatal);
@@ -464,13 +468,10 @@ static void pmb887x_init(MachineState *machine) {
 		const pmb887x_board_gpio_t *gpio = &board->gpios[i];
 		qemu_set_irq(qdev_get_gpio_in(pcl, gpio->id), gpio->value);
 	}
-	#endif
 	
-	#ifndef PMB887X_IO_BRIDGE
 	// RTC
 	DeviceState *rtc = pmb887x_new_dev(board->cpu, "RTC", nvic);
 	sysbus_realize_and_unref(SYS_BUS_DEVICE(rtc), &error_fatal);
-	#endif
 	
 	// GPTU0
 	DeviceState *gptu0 = pmb887x_new_dev(board->cpu, "GPTU0", nvic);
@@ -482,11 +483,9 @@ static void pmb887x_init(MachineState *machine) {
 	object_property_set_link(OBJECT(gptu1), "pll", OBJECT(pll), &error_fatal);
 	sysbus_realize_and_unref(SYS_BUS_DEVICE(gptu1), &error_fatal);
 	
-	#ifndef PMB887X_IO_BRIDGE
 	// AMC
 	DeviceState *amc = pmb887x_new_dev(board->cpu, "AMC", nvic);
 	sysbus_realize_and_unref(SYS_BUS_DEVICE(amc), &error_fatal);
-	#endif
 	
 	// KEYPAD
 	DeviceState *keypad = pmb887x_new_dev(board->cpu, "KEYPAD", nvic);

@@ -28,7 +28,7 @@
 
 #define TYPE_PMB887X_I2C	"pmb887x-i2c"
 #define PMB887X_I2C(obj)	OBJECT_CHECK(pmb887x_i2c_t, (obj), TYPE_PMB887X_I2C)
-#define I2C_TX_BYTE_TIME	(20 * 1000000)
+#define I2C_TX_BYTE_TIME	100000
 
 enum {
 	I2C_SINGLE_REQ_IRQ = 0,
@@ -118,7 +118,7 @@ static uint32_t i2c_get_tx_burst_size(pmb887x_i2c_t *p) {
 
 static void i2c_trigger_sreq(pmb887x_i2c_t *p) {
 	if (p->wait_for_sreq) {
-		DPRINTF("double i2c_trigger_sreq\n");
+		hw_error("double i2c_trigger_sreq\n");
 		return;
 	}
 	
@@ -173,7 +173,7 @@ static void i2c_fifo_read(pmb887x_i2c_t *p, uint64_t *value) {
 	uint32_t align = i2c_get_tx_align(p);
 	
 	if (!p->mrpsctrl || p->wait_for_sreq) {
-		DPRINTF("RX fifo overflow!\n");
+		DPRINTF("RX fifo underflow!\n");
 		pmb887x_srb_ext_set_isr(&p->srb_err, I2C_ERRIRQSS_RXF_UFL);
 		return;
 	}
@@ -279,7 +279,7 @@ static uint64_t i2c_io_read(void *opaque, hwaddr haddr, unsigned size) {
 		break;
 		
 		case I2C_FFSSTAT:
-			value = p->mrpsctrl > 0 ? 1 : 0;
+			value = !p->wait_for_sreq && p->mrpsctrl > 0 ? 1 : 0;
 		break;
 		
 		case I2C_TIMCFG:
@@ -340,7 +340,7 @@ static uint64_t i2c_io_read(void *opaque, hwaddr haddr, unsigned size) {
 		
 		default:
 			IO_DUMP(haddr + p->mmio.addr, size, 0xFFFFFFFF, false);
-			DPRINTF("unknown reg access: %02lX\n", haddr);
+			EPRINTF("unknown reg access: %02lX\n", haddr);
 			exit(1);
 		break;
 	}
@@ -361,7 +361,7 @@ static void i2c_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned si
 		break;
 		
 		default:
-			DPRINTF("unknown reg access: %02lX\n", haddr);
+			EPRINTF("unknown reg access: %02lX\n", haddr);
 			exit(1);
 		break;
 		
@@ -375,6 +375,8 @@ static void i2c_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned si
 					i2c_end_transfer(p->bus);
 					p->busy = false;
 					DPRINTF("stop\n");
+				} else {
+					pmb887x_srb_ext_set_isr(&p->srb_proto, I2C_PIRQSS_TX_END);
 				}
 			}
 			
@@ -429,6 +431,7 @@ static void i2c_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned si
 		break;
 		
 		case I2C_ICR:
+			value &= ~(I2C_ICR_I2C_ERR_INT | I2C_ICR_I2C_P_INT); // unclearable IRQ's
 			pmb887x_srb_set_icr(&p->srb, value);
 		break;
 		

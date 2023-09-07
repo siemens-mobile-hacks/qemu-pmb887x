@@ -79,9 +79,7 @@ static uint64_t rtc_io_read(void *opaque, hwaddr haddr, unsigned size) {
 		
 		case RTC_CNT:
 		{
-			uint64_t elapsed = p->realtime_start + (qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) - p->virtual_start) / NANOSECONDS_PER_SECOND;
-			value = elapsed;
-			// value = get_clock_realtime() / NANOSECONDS_PER_SECOND;
+			value = get_clock_realtime() / NANOSECONDS_PER_SECOND;
 		}
 		break;
 		
@@ -107,7 +105,7 @@ static uint64_t rtc_io_read(void *opaque, hwaddr haddr, unsigned size) {
 		
 		default:
 			IO_DUMP(haddr + p->mmio.addr, size, 0xFFFFFFFF, false);
-			DPRINTF("unknown reg access: %02lX\n", haddr);
+			EPRINTF("unknown reg access: %02lX\n", haddr);
 			exit(1);
 		break;
 	}
@@ -164,7 +162,7 @@ static void rtc_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned si
 		break;
 		
 		default:
-			DPRINTF("unknown reg access: %02lX\n", haddr);
+			EPRINTF("unknown reg access: %02lX\n", haddr);
 			exit(1);
 		break;
 	}
