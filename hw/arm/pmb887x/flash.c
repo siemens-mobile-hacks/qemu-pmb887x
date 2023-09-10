@@ -29,60 +29,6 @@
 #define PMB887X_FLASH(obj)	OBJECT_CHECK(struct pmb887x_flash_t, (obj), TYPE_PMB887X_FLASH)
 
 #define CFI_ADDR	0x10
-#define CFI_SIZE	0x22
-#define PRI_SIZE	0x50
-
-#define OTP0_SIZE	16
-#define OTP1_SIZE	0xFF
-
-#define FLASH_VENDOR_INTEL	0x0089
-#define FLASH_VENDOR_ST		0x0020
-
-const uint8_t default_intel_cfi[] = {
-	0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
-	0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 
-	0x51, 0x52, 0x59, 0x01, 0x00, 0x0A, 0x01, 0x00,
-	0x00, 0x00, 0x00, 0x17, 0x20, 0x85, 0x95, 0x08,
-	0x09, 0x0A, 0x00, 0x01, 0x01, 0x02, 0x00, 0x19,
-	0x01, 0x00, 0x06, 0x00, 0x02, 0xFE, 0x00, 0x00,
-	0x02, 0x03, 
-};
-
-const uint8_t default_intel_pri[] = {
-	0x50, 0x52, 0x49, 0x31, 0x33, 0xE6, 0x03, 0x00,
-	0x40, 0x01, 0x03, 0x00, 0x18, 0x90, 0x02, 0x80,
-	0x00, 0x03, 0x03, 0x89, 0x00, 0x00, 0x00, 0x00,
-	0x00, 0x00, 0x10, 0x00, 0x04, 0x03, 0x04, 0x01,
-	0x02, 0x03, 0x07, 0x02, 0x0F, 0x00, 0x11, 0x00,
-	0x00, 0x01, 0x0F, 0x00, 0x00, 0x02, 0x64, 0x00,
-	0x02, 0x03, 0x01, 0x00, 0x11, 0x00, 0x00, 0x02,
-	0x0E, 0x00, 0x00, 0x02, 0x64, 0x00, 0x02, 0x03,
-	0x03, 0x00, 0x80, 0x00, 0x64, 0x00, 0x02, 0x03,
-	0x10, 0x00, 0x00, 0x40, 0x30, 0xFF, 0xFF, 0xFF,
-};
-
-const uint8_t default_st_cfi[] = {
-	0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
-	0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
-	0x51, 0x52, 0x59, 0x00, 0x02, 0x0A, 0x01, 0x00,
-	0x00, 0x00, 0x00, 0x17, 0x20, 0x85, 0x95, 0x06,
-	0x0B, 0x0A, 0x00, 0x02, 0x02, 0x02, 0x00, 0x1A,
-	0x01, 0x00, 0x0A, 0x00, 0x01, 0xFF, 0x00, 0x00,
-	0x04, 0xFF
-};
-
-const uint8_t default_st_pri[] = {
-	0x50, 0x52, 0x49, 0x31, 0x34, 0xE6, 0x07, 0x00,
-	0x00, 0x01, 0x33, 0x00, 0x18, 0x90, 0x02, 0x80,
-	0x00, 0x03, 0x03, 0x89, 0x00, 0x00, 0x00, 0x00,
-	0x00, 0x00, 0x10, 0x00, 0x04, 0x05, 0x03, 0x02,
-	0x03, 0x07, 0x01, 0x16, 0x00, 0x08, 0x00, 0x11,
-	0x00, 0x00, 0x01, 0x1F, 0x00, 0x00, 0x04, 0x64,
-	0x00, 0x12, 0x03, 0x0A, 0x00, 0x10, 0x00, 0x10,
-	0x00, 0x01, 0x16, 0x00, 0x01, 0x00, 0x11, 0x00,
-	0x00, 0x01, 0x03, 0x00, 0x20, 0x00, 0x64, 0x00,
-	0x01, 0x03, 0x00, 0x80, 0x00, 0x00, 0x00, 0x80,
-};
 
 struct pmb887x_flash_t;
 
@@ -692,22 +638,27 @@ static void flash_realize(DeviceState *dev, Error **errp) {
 	g_free(mmio_name);
 	
 	// OTP0
-	flash->otp0_data = g_new(uint16_t, cfg->otp0_size / 2);
-	memset(flash->otp0_data, 0xFF, cfg->otp0_size);
-	flash->otp0_data[0] = 0x0002;
-	
-	if (!fill_data_from_hex((uint8_t *) flash->otp0_data, cfg->otp0_size, flash->hex_otp0_data)) {
-		flash_error(flash, "Invalid OTP0 hex data: %s [max_size=%d, len=%ld]", flash->hex_otp0_data, cfg->otp0_size, strlen(flash->hex_otp0_data) / 2);
-		exit(1);
+	if (cfg->otp0_size > 0) {
+		flash->otp0_data = g_new(uint16_t, cfg->otp0_size / 2);
+		memset(flash->otp0_data, 0xFF, cfg->otp0_size);
+		flash->otp0_data[0] = 0x0002;
+		
+		if (!fill_data_from_hex((uint8_t *) flash->otp0_data, cfg->otp0_size, flash->hex_otp0_data)) {
+			flash_error(flash, "Invalid OTP0 hex data: %s [max_size=%d, len=%ld]", flash->hex_otp0_data, cfg->otp0_size, strlen(flash->hex_otp0_data) / 2);
+			exit(1);
+		}
 	}
 	
 	// OTP1
-	flash->otp1_data = g_new(uint16_t, cfg->otp1_size / 2);
-	memset(flash->otp1_data, 0xFF, cfg->otp1_size);
-	flash->otp1_data[0] = 0xFFFF;
-	if (!fill_data_from_hex((uint8_t *) flash->otp1_data, cfg->otp1_size, flash->hex_otp1_data)) {
-		flash_error(flash, "Invalid OTP1 hex data: %s [max_size=%d, len=%ld]", flash->hex_otp1_data, cfg->otp1_size, strlen(flash->hex_otp1_data) / 2);
-		exit(1);
+	if (cfg->otp1_size > 0) {
+		flash->otp1_data = g_new(uint16_t, cfg->otp1_size / 2);
+		memset(flash->otp1_data, 0xFF, cfg->otp1_size);
+		flash->otp1_data[0] = 0xFFFF;
+		
+		if (!fill_data_from_hex((uint8_t *) flash->otp1_data, cfg->otp1_size, flash->hex_otp1_data)) {
+			flash_error(flash, "Invalid OTP1 hex data: %s [max_size=%d, len=%ld]", flash->hex_otp1_data, cfg->otp1_size, strlen(flash->hex_otp1_data) / 2);
+			exit(1);
+		}
 	}
 	
 	// Init hw partitions
@@ -725,7 +676,7 @@ static void flash_error(pmb887x_flash_t *flash, const char *format, ...) {
 	g_string_append_vprintf(s, format, args);
 	va_end(args);
 	
-	error_report("[%s] %s\n", PMB887X_TRACE_PREFIX, s->str);
+	error_report("[%s] %s %s\n", PMB887X_TRACE_PREFIX, flash->name, s->str);
 }
 
 static void flash_error_part(pmb887x_flash_part_t *p, const char *format, ...) {
@@ -736,7 +687,7 @@ static void flash_error_part(pmb887x_flash_part_t *p, const char *format, ...) {
 	g_string_append_vprintf(s, format, args);
 	va_end(args);
 	
-	error_report("[%s] <%d> %s\n", PMB887X_TRACE_PREFIX, p->n, s->str);
+	error_report("[%s] %s <%d> %s\n", PMB887X_TRACE_PREFIX, p->flash->name, p->n, s->str);
 }
 
 static void flash_trace_part(pmb887x_flash_part_t *p, const char *format, ...) {
@@ -750,7 +701,7 @@ static void flash_trace_part(pmb887x_flash_part_t *p, const char *format, ...) {
 	g_string_append_vprintf(s, format, args);
 	va_end(args);
 	
-	qemu_log_mask(LOG_TRACE, "[%s] <%d> %s\n", PMB887X_TRACE_PREFIX, p->n, s->str);
+	qemu_log_mask(LOG_TRACE, "[%s] %s <%d> %s\n", PMB887X_TRACE_PREFIX, p->flash->name, p->n, s->str);
 }
 
 static void flash_trace(pmb887x_flash_t *flash, const char *format, ...) {
@@ -764,7 +715,7 @@ static void flash_trace(pmb887x_flash_t *flash, const char *format, ...) {
 	g_string_append_vprintf(s, format, args);
 	va_end(args);
 	
-	qemu_log_mask(LOG_TRACE, "[%s] %s\n", PMB887X_TRACE_PREFIX, s->str);
+	qemu_log_mask(LOG_TRACE, "[%s] %s %s\n", PMB887X_TRACE_PREFIX, flash->name, s->str);
 }
 
 static Property flash_properties[] = {

@@ -58,14 +58,14 @@ struct pmb887x_usart_t {
 	guint watch_tag;
 	CharBackend chr;
 	
-	pmb887x_fifo_t tx_fifo_buffered;
-	pmb887x_fifo_t rx_fifo_buffered;
+	pmb887x_fifo8_t tx_fifo_buffered;
+	pmb887x_fifo8_t rx_fifo_buffered;
 	
-	pmb887x_fifo_t tx_fifo_single;
-	pmb887x_fifo_t rx_fifo_single;
+	pmb887x_fifo8_t tx_fifo_single;
+	pmb887x_fifo8_t rx_fifo_single;
 	
-	pmb887x_fifo_t *rx_fifo;
-	pmb887x_fifo_t *tx_fifo;
+	pmb887x_fifo8_t *rx_fifo;
+	pmb887x_fifo8_t *tx_fifo;
 	
 	bool last_is_icr_tx;
 	
@@ -151,7 +151,7 @@ static void usart_receive(void *opaque, const uint8_t *buf, int size) {
 	}
 	
 	g_assert(size <= pmb887x_fifo_free_count(p->rx_fifo));
-	pmb887x_fifo_push_all(p->rx_fifo, buf, size);
+	pmb887x_fifo8_write(p->rx_fifo, buf, size);
 	
 	if ((p->rxfcon & USART_RXFCON_RXFEN)) {
 		uint32_t rx_level = (p->rxfcon & USART_RXFCON_RXFITL) >> USART_RXFCON_RXFITL_SHIFT;
@@ -182,12 +182,16 @@ static void usart_transmit_fifo(struct pmb887x_usart_t *p) {
 	
 	bool is_full = pmb887x_fifo_is_full(p->tx_fifo);
 	
-	const uint8_t *buff = pmb887x_fifo_data(p->tx_fifo);
+	uint8_t buff[FIFO_SIZE];
 	uint32_t size = pmb887x_fifo_count(p->tx_fifo);
+	pmb887x_fifo8_read(p->tx_fifo, buff, size);
 	
 	int ret = qemu_chr_fe_write(&p->chr, buff, size);
 	if (ret > 0) {
-		pmb887x_fifo_cut(p->tx_fifo, ret);
+		if (ret < size) {
+			// possible?
+			pmb887x_fifo8_write(p->tx_fifo, buff + ret, size - ret);
+		}
 		
 		if (is_full)
 			pmb887x_srb_set_isr(&p->srb, USART_ISR_TB);
@@ -259,7 +263,7 @@ static uint64_t usart_io_read(void *opaque, hwaddr haddr, unsigned size) {
 			
 			if (!pmb887x_fifo_is_empty(p->rx_fifo)) {
 				bool is_full = pmb887x_fifo_is_full(p->rx_fifo);
-				value = pmb887x_fifo_pop(p->rx_fifo);
+				value = pmb887x_fifo8_pop(p->rx_fifo);
 				if (is_full)
 					qemu_chr_fe_accept_input(&p->chr);
 			}
@@ -396,7 +400,7 @@ static void usart_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned 
 			no_dump = true;
 			
 			if (!pmb887x_fifo_is_full(p->tx_fifo)) {
-				pmb887x_fifo_push(p->tx_fifo, p->txb);
+				pmb887x_fifo8_push(p->tx_fifo, p->txb);
 				
 				if (!pmb887x_fifo_is_full(p->tx_fifo))
 					pmb887x_srb_set_isr(&p->srb, USART_ISR_TB);
@@ -496,11 +500,11 @@ static void usart_realize(DeviceState *dev, Error **errp) {
 			hw_error("pmb887x-usart: irq %d not set", i);
 	}
 	
-    pmb887x_fifo_init(&p->tx_fifo_buffered, FIFO_SIZE);
-    pmb887x_fifo_init(&p->rx_fifo_buffered, FIFO_SIZE);
+    pmb887x_fifo8_init(&p->tx_fifo_buffered, FIFO_SIZE);
+    pmb887x_fifo8_init(&p->rx_fifo_buffered, FIFO_SIZE);
 	
-    pmb887x_fifo_init(&p->tx_fifo_single, 2);
-    pmb887x_fifo_init(&p->rx_fifo_single, 1);
+    pmb887x_fifo8_init(&p->tx_fifo_single, 2);
+    pmb887x_fifo8_init(&p->rx_fifo_single, 1);
 	
 	usart_set_rx_fifo(p, false);
 	usart_set_tx_fifo(p, false);

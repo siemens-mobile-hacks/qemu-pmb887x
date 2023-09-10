@@ -30,7 +30,7 @@ enum pmb887x_lcd_pixel_mode_t {
 
 struct pmb887x_lcd_t {
 	DeviceState qdev;
-	pmb887x_fifo_t write_fifo;
+	pmb887x_fifo8_t write_fifo;
 	bool cd;
 	bool write_to_ram;
 	bool v_flip;

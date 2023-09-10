@@ -49,6 +49,8 @@ typedef struct {
 	pmb887x_srb_ext_reg_t srb_proto;
 	pmb887x_srb_ext_reg_t srb_err;
 	
+	//pmb887x_fifo8_t fifo;
+	
 	bool last_mode;
 	uint8_t last_addr;
 	
@@ -118,7 +120,7 @@ static uint32_t i2c_get_tx_burst_size(pmb887x_i2c_t *p) {
 
 static void i2c_trigger_sreq(pmb887x_i2c_t *p) {
 	if (p->wait_for_sreq) {
-		hw_error("double i2c_trigger_sreq\n");
+		DPRINTF("double i2c_trigger_sreq\n");
 		return;
 	}
 	
@@ -163,6 +165,7 @@ static void i2c_fifo_write(pmb887x_i2c_t *p, uint64_t value) {
 		p->tpsctrl--;
 	}
 	
+	DPRINTF("trigger i2c_trigger_sreq by write\n");
 	i2c_trigger_sreq(p);
 	
 	if (!p->tpsctrl && p->mrpsctrl)
@@ -187,6 +190,7 @@ static void i2c_fifo_read(pmb887x_i2c_t *p, uint64_t *value) {
 		p->mrpsctrl--;
 	}
 	
+	DPRINTF("trigger i2c_trigger_sreq by read\n");
 	i2c_trigger_sreq(p);
 }
 
@@ -194,6 +198,31 @@ static void i2c_timer_reset(void *opaque) {
 	pmb887x_i2c_t *p = (pmb887x_i2c_t *) opaque;
 	
 	p->wait_for_sreq = false;
+	
+	if (p->tpsctrl > 0) {
+		if (p->tpsctrl <= i2c_get_tx_burst_size(p)) {
+			pmb887x_srb_set_isr(&p->srb, I2C_ISR_LSREQ_INT);
+		} else {
+			pmb887x_srb_set_isr(&p->srb, I2C_ISR_SREQ_INT);
+		}
+	} else if (p->mrpsctrl > 0) {
+		if (p->mrpsctrl <= i2c_get_rx_burst_size(p)) {
+			pmb887x_srb_set_isr(&p->srb, I2C_ISR_LSREQ_INT);
+		} else {
+			pmb887x_srb_set_isr(&p->srb, I2C_ISR_SREQ_INT);
+		}
+	} else {
+		pmb887x_srb_ext_set_isr(&p->srb_proto, I2C_PIRQSS_TX_END);
+		
+		if (!p->last_mode) {
+			i2c_end_transfer(p->bus);
+			p->busy = false;
+			DPRINTF("stop\n");
+		}
+	}
+}
+
+static void i2c_work(pmb887x_i2c_t *p) {
 	
 	if (p->tpsctrl > 0) {
 		if (p->tpsctrl <= i2c_get_tx_burst_size(p)) {
@@ -495,6 +524,8 @@ static void i2c_realize(DeviceState *dev, Error **errp) {
 	
 	pmb887x_srb_ext_init(&p->srb_err, &p->srb, I2C_ISR_I2C_ERR_INT);
 	pmb887x_srb_ext_init(&p->srb_proto, &p->srb, I2C_ISR_I2C_P_INT);
+	
+	// pmb887x_fifo8_init(&p->fifo, FIFO_SIZE);
 	
 	p->timer = timer_new_ns(QEMU_CLOCK_VIRTUAL, i2c_timer_reset, p);
 	

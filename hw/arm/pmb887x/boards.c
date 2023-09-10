@@ -33,6 +33,7 @@ static struct {
 	{"PLAY_PAUSE",		Q_KEY_CODE_F6},
 	{"PTT",				Q_KEY_CODE_F7},
 	{"CAMERA",			Q_KEY_CODE_F8},
+	{"BROWSER",			Q_KEY_CODE_F9},
 	
 	{"VOLUME_UP",		Q_KEY_CODE_KP_ADD},
 	{"VOLUME_DOWN",		Q_KEY_CODE_KP_SUBTRACT},

@@ -225,13 +225,13 @@ void pmb887x_lcd_write(pmb887x_lcd_t *lcd, uint32_t value, uint32_t size) {
 	} else {
 		for (int i = 0; i < size; i++) {
 			uint8_t b = (value >> (i * 8)) & 0xFF;
-			pmb887x_fifo_push(&lcd->write_fifo, b);
+			pmb887x_fifo8_push(&lcd->write_fifo, b);
 		}
 		
 		while (pmb887x_fifo_count(&lcd->write_fifo) >= k->bus_width) {
 			uint32_t bus_value = 0;
 			for (int i = 0; i < k->bus_width; i++)
-				bus_value |= pmb887x_fifo_pop(&lcd->write_fifo) << ((k->bus_width - i - 1) * 8);
+				bus_value |= pmb887x_fifo8_pop(&lcd->write_fifo) << ((k->bus_width - i - 1) * 8);
 			k->write(lcd, bus_value);
 		}
 	}
@@ -260,7 +260,7 @@ static const GraphicHwOps pmb887x_lcd_gfx_ops = {
 };
 
 void pmb887x_lcd_init(pmb887x_lcd_t *lcd, DeviceState *dev) {
-	pmb887x_fifo_init(&lcd->write_fifo, 8);
+	pmb887x_fifo8_init(&lcd->write_fifo, 8);
 	
 	lcd->console = graphic_console_init(dev, 0, &pmb887x_lcd_gfx_ops, lcd);
 	qemu_console_resize(lcd->console, lcd->width, lcd->height);

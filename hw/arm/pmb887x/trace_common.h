@@ -36,7 +36,7 @@ enum pmb887x_modules_t {
 //extern uint32_t pmb887x_trace_flags;
 
 static inline bool pmb887x_trace_log_enabled(uint32_t id) {
-	return ((id & PMB887X_TRACE_I2C));
+	return ((id & (PMB887X_TRACE_I2C | PMB887X_TRACE_USART)) != 0);
 	return ((id & (PMB887X_TRACE_TPU | PMB887X_TRACE_FLASH | PMB887X_TRACE_LCD | PMB887X_TRACE_EBU | PMB887X_TRACE_I2C)) != 0);
 //	return false;
 	return ((
