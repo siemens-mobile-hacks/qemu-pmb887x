@@ -67,6 +67,7 @@ static inline bool pmb887x_trace_log_enabled(uint32_t id) {
 }
 
 static inline bool pmb887x_trace_io_enabled(uint32_t id) {
+	//return false;
 	return ((id & (PMB887X_TRACE_I2C)) != 0);
 	return ((id & (PMB887X_TRACE_SCCU | PMB887X_TRACE_SCU)) != 0);
 	return ((
