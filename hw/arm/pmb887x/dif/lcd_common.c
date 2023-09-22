@@ -186,7 +186,7 @@ static void pmb887x_lcd_write_control_byte(pmb887x_lcd_t *lcd, uint8_t value) {
 			uint32_t cmd = pmb887x_lcd_read_from_fifo(lcd, k->cmd_width);
 			lcd->wr_state = LCD_WR_STATE_PARAM;
 			lcd->current_cmd = cmd;
-			// DPRINTF("CMD: %04X\n", lcd->current_cmd);
+			DPRINTF("CMD: %04X\n", lcd->current_cmd);
 			lcd->current_cmd_params = k->on_cmd(lcd, cmd);
 			g_assert(lcd->current_cmd_params <= LCD_CMD_MAX_PARAMS);
 			

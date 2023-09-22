@@ -1,8 +1,8 @@
 /*
- * Toshiba JBT6K71
+ * Solomon SSD1286
  * */
 #define PMB887X_TRACE_ID		LCD
-#define PMB887X_TRACE_PREFIX	"pmb887x-lcd-jbt6k71"
+#define PMB887X_TRACE_PREFIX	"pmb887x-lcd-ssd1286"
 
 #include "qemu/osdep.h"
 #include "hw/hw.h"
@@ -12,44 +12,32 @@
 #include "hw/arm/pmb887x/trace.h"
 #include "hw/arm/pmb887x/dif/lcd_common.h"
 
-#define TYPE_PMB887X_LCD_JBT6K71	"pmb887x-lcd-jbt6k71"
-#define PMB887X_LCD_JBT6K71(obj)	OBJECT_CHECK(pmb887x_lcd_jbt6k71_t, (obj), TYPE_PMB887X_LCD_JBT6K71)
+#define TYPE_PMB887X_LCD_SSD1286	"pmb887x-lcd-ssd1286"
+#define PMB887X_LCD_SSD1286(obj)	OBJECT_CHECK(pmb887x_lcd_ssd1286_t, (obj), TYPE_PMB887X_LCD_SSD1286)
 
-#define JBT6K71_MAX_BPP		18
-#define JBT6K71_BUS_WIDTH	2
-#define JBT6K71_MAX_REGS	0x800
+#define SSD1286_MAX_BPP		18
+#define SSD1286_BUS_WIDTH	2
+#define SSD1286_MAX_REGS	0x100
 
-static const uint16_t DEFAULT_REGS[] = {
-	[0x001]	= 0x27, /* Driver output control setting */
-	[0x003]	= 0x30, /* Entry mode  */
-	[0x100] = 0x800, /* Display control */
-};
+static const uint16_t DEFAULT_REGS[] = { 0 };
 
 typedef struct {
 	pmb887x_lcd_t parent;
-	uint16_t regs[JBT6K71_MAX_REGS];
-} pmb887x_lcd_jbt6k71_t;
+	uint16_t regs[SSD1286_MAX_REGS];
+} pmb887x_lcd_ssd1286_t;
 
 static void lcd_update_state(pmb887x_lcd_t *lcd) {
-	pmb887x_lcd_jbt6k71_t *priv = PMB887X_LCD_JBT6K71(lcd);
+	pmb887x_lcd_ssd1286_t *priv = PMB887X_LCD_SSD1286(lcd);
 	
 	bool ss = (priv->regs[0x001] & (1 << 8)) != 0; /* SS */
+	bool sm = (priv->regs[0x001] & (1 << 10)) != 0; /* SM */
+	
 	bool am = (priv->regs[0x003] & (1 << 3)) != 0; /* AM */
 	bool id0 = (priv->regs[0x003] & (1 << 4)) != 0; /* ID0 */
 	bool id1 = (priv->regs[0x003] & (1 << 5)) != 0; /* ID1 */
-	bool bgr = (priv->regs[0x003] & (1 << 12)) != 0; /* BGR */
-	bool dfm0 = (priv->regs[0x003] & (1 << 13)) != 0; /* DFM0 */
-	bool dfm1 = (priv->regs[0x003] & (1 << 14)) != 0; /* DFM1 */
-	bool tri = (priv->regs[0x003] & (1 << 15)) != 0; /* TRI */
-	bool ud = (priv->regs[0x100] & (1 << 11)) != 0; /* UD */
+	bool bgr = (priv->regs[0x001] & (1 << 11)) != 0; /* BGR */
 	
-	// Horizontal flip
-	if (ss)
-		id0 = !id0;
-	
-	// Vertical flip
-	if (ud)
-		id1 = !id1;
+	DPRINTF("ss=%d, sm=%d\n", ss, sm);
 	
 	pmb887x_lcd_set_addr_mode(
 		lcd,
@@ -58,21 +46,12 @@ static void lcd_update_state(pmb887x_lcd_t *lcd) {
 		(id1 ? LCD_AC_INC : LCD_AC_DEC)
 	);
 	
-	enum pmb887x_lcd_pixel_mode_t new_mode;
-	if (tri && dfm0 && dfm1) {
-		new_mode = bgr ? LCD_MODE_BGR666 : LCD_MODE_RGB666;
-	} else if (!tri && !dfm0 && !dfm1) {
-		new_mode = bgr ? LCD_MODE_BGR565 : LCD_MODE_RGB565;
-	} else {
-		error_report("[pmb887x-lcd-jbt6k71]: invalid config: dfm0=%d, dfm1=%d, tri=%d", dfm0, dfm1, tri);
-		exit(1);
-	}
-	
+	enum pmb887x_lcd_pixel_mode_t new_mode = bgr ? LCD_MODE_BGR565 : LCD_MODE_RGB565;
 	pmb887x_lcd_set_mode(lcd, new_mode);
 }
 
 static uint32_t lcd_on_cmd(pmb887x_lcd_t *lcd, uint32_t cmd) {
-	if (cmd == 0x202) {
+	if (cmd == 0x22) {
 		pmb887x_lcd_set_ram_mode(lcd, true);
 		return 0;
 	}
@@ -80,51 +59,42 @@ static uint32_t lcd_on_cmd(pmb887x_lcd_t *lcd, uint32_t cmd) {
 }
 
 static void lcd_on_cmd_with_params(pmb887x_lcd_t *lcd, uint32_t cmd, const uint32_t *params, uint32_t params_n) {
-	pmb887x_lcd_jbt6k71_t *priv = PMB887X_LCD_JBT6K71(lcd);
+	pmb887x_lcd_ssd1286_t *priv = PMB887X_LCD_SSD1286(lcd);
 	
 	g_assert(params_n == 1);
-	g_assert(cmd < JBT6K71_MAX_REGS);
+	g_assert(cmd < SSD1286_MAX_REGS);
 	
 	priv->regs[cmd] = params[0];
 	
 	DPRINTF("write reg 0x%04X -> 0x%04X\n", cmd, params[0]);
 	
 	switch (cmd) {
-		case 0x001:
-		case 0x003:
-		case 0x100:
+		case 0x01:
+		case 0x03:
 			lcd_update_state(lcd);
 		break;
 		
-		case 0x200:
-			pmb887x_lcd_set_x(lcd, params[0]);
+		case 0x21:
+			g_assert(params[0] == 0); // only 0 supported!
+			pmb887x_lcd_set_x(lcd, 0);
+			pmb887x_lcd_set_y(lcd, 0);
 		break;
 		
-		case 0x201:
-			pmb887x_lcd_set_y(lcd, params[0]);
+		case 0x44:
+			pmb887x_lcd_set_window_x1(lcd, params[0] & 0xFF);
+			pmb887x_lcd_set_window_x2(lcd, params[0] >> 8);
 		break;
 		
-		case 0x406:
-			pmb887x_lcd_set_window_x1(lcd, params[0]);
-		break;
-		
-		case 0x407:
-			pmb887x_lcd_set_window_x2(lcd, params[0]);
-		break;
-		
-		case 0x408:
-			pmb887x_lcd_set_window_y1(lcd, params[0]);
-		break;
-		
-		case 0x409:
-			pmb887x_lcd_set_window_y2(lcd, params[0]);
+		case 0x45:
+			pmb887x_lcd_set_window_y1(lcd, params[0] & 0xFF);
+			pmb887x_lcd_set_window_y2(lcd, params[0] >> 8);
 		break;
 	}
 }
 
 static void lcd_realize(DeviceState *dev, Error **errp) {
 	pmb887x_lcd_t *lcd = PMB887X_LCD(dev);
-	pmb887x_lcd_jbt6k71_t *priv = PMB887X_LCD_JBT6K71(dev);
+	pmb887x_lcd_ssd1286_t *priv = PMB887X_LCD_SSD1286(dev);
 	
 	memset(priv->regs, 0, sizeof(priv->regs));
 	memcpy(priv->regs, DEFAULT_REGS, sizeof(DEFAULT_REGS));
@@ -143,16 +113,16 @@ static void lcd_class_init(ObjectClass *oc, void *data) {
 	dc->realize = lcd_realize;
 	
 	pmb887x_lcd_class_t *k = PMB887X_LCD_CLASS(oc);
-	k->cmd_width = 2;
+	k->cmd_width = 1;
 	k->param_width = 2;
 	k->on_cmd = lcd_on_cmd;
 	k->on_cmd_with_params = lcd_on_cmd_with_params;
 }
 
 static const TypeInfo lcd_info = {
-	.name			= TYPE_PMB887X_LCD_JBT6K71,
+	.name			= TYPE_PMB887X_LCD_SSD1286,
 	.parent			= TYPE_PMB887X_LCD,
-	.instance_size	= sizeof(pmb887x_lcd_jbt6k71_t),
+	.instance_size	= sizeof(pmb887x_lcd_ssd1286_t),
 	.class_init		= lcd_class_init,
 };
 
