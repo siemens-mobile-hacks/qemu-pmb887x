@@ -412,6 +412,8 @@ static void pmb887x_init(MachineState *machine) {
 	qdev_prop_set_uint32(lcd, "width", board->display.width);
 	qdev_prop_set_uint32(lcd, "height", board->display.height);
 	qdev_prop_set_uint32(lcd, "rotation", board->display.rotation);
+	object_property_set_bool(OBJECT(lcd), "flip_horizontal", board->display.flip_horizontal, &error_fatal);
+	object_property_set_bool(OBJECT(lcd), "flip_vertical", board->display.flip_vertical, &error_fatal);
 	qdev_realize_and_unref(DEVICE(lcd), NULL, &error_fatal);
 	
 	// DIF

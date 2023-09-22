@@ -138,23 +138,33 @@ static bool _parse_memory(pmb887x_board_t *board, pmb887x_cfg_section_t *section
 }
 
 static bool _parse_display(pmb887x_board_t *board, pmb887x_cfg_section_t *section) {
-	const char *type, *rotation, *width, *height;
+	const char *type, *rotation, *width, *height, *flip_horizontal, *flip_vertical;
 	
 	if (!(type = pmb887x_cfg_section_get(section, "type", true)))
-		return false;
-	if (!(rotation = pmb887x_cfg_section_get(section, "rotation", true)))
 		return false;
 	if (!(width = pmb887x_cfg_section_get(section, "width", true)))
 		return false;
 	if (!(height = pmb887x_cfg_section_get(section, "height", true)))
 		return false;
 	
+	rotation = pmb887x_cfg_section_get(section, "rotation", false);
+	flip_horizontal = pmb887x_cfg_section_get(section, "flip_horizontal", false);
+	flip_vertical = pmb887x_cfg_section_get(section, "flip_vertical", false);
+	
 	strncpy(board->display.type, type, sizeof(board->display.type) - 1);
 	
-	board->display.rotation = strtol(rotation, NULL, 10);
-	if (board->display.rotation != 0 && board->display.rotation != 90 && board->display.rotation != 180 && board->display.rotation == 270) {
-		error_report("Invalid display rotation: %s", rotation);
-		return false;
+	if (flip_horizontal)
+		board->display.flip_horizontal = strtol(flip_horizontal, NULL, 10) != 0;
+	
+	if (flip_vertical)
+		board->display.flip_vertical = strtol(flip_vertical, NULL, 10) != 0;
+	
+	if (rotation) {
+		board->display.rotation = strtol(rotation, NULL, 10);
+		if (board->display.rotation != 0 && board->display.rotation != 90 && board->display.rotation != 180 && board->display.rotation == 270) {
+			error_report("Invalid display rotation: %s", rotation);
+			return false;
+		}
 	}
 	
 	board->display.width = strtol(width, NULL, 10);

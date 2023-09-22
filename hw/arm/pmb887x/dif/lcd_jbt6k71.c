@@ -22,11 +22,11 @@
 static const uint16_t DEFAULT_REGS[] = {
 	[0x001]	= 0x27, /* Driver output control setting */
 	[0x003]	= 0x30, /* Entry mode  */
+	[0x100] = 0x800, /* Display control */
 };
 
 typedef struct {
 	pmb887x_lcd_t parent;
-	int current_reg;
 	uint16_t regs[JBT6K71_MAX_REGS];
 } pmb887x_lcd_jbt6k71_t;
 
@@ -41,17 +41,22 @@ static void lcd_update_state(pmb887x_lcd_t *lcd) {
 	bool dfm0 = (priv->regs[0x003] & (1 << 13)) != 0; /* DFM0 */
 	bool dfm1 = (priv->regs[0x003] & (1 << 14)) != 0; /* DFM1 */
 	bool tri = (priv->regs[0x003] & (1 << 15)) != 0; /* TRI */
+	bool ud = (priv->regs[0x100] & (1 << 11)) != 0; /* UD */
 	
-	#ifdef WIN32
-	id0 = 1;
-	id1 = 1;
-	#endif
+	// Horizontal flip
+	if (shift_select)
+		id0 = !id0;
 	
-	pmb887x_lcd_set_addr_mode_x(lcd, id0 ? LCD_ADDR_MODE_INCR : LCD_ADDR_MODE_DECR);
-	pmb887x_lcd_set_addr_mode_y(lcd, id1 ? LCD_ADDR_MODE_INCR : LCD_ADDR_MODE_DECR);
-	pmb887x_lcd_set_vflip(lcd, !shift_select);
+	// Vertical flip
+	if (ud)
+		id1 = !id1;
 	
-	// DPRINTF("id0=%d, id1=%d, bgr=%d, dfm0=%d, dfm1=%d, tri=%d\n", id0, id1, bgr, dfm0, dfm1, tri);
+	pmb887x_lcd_set_addr_mode(
+		lcd,
+		(am ? LCD_AM_VERTICAL : LCD_AM_HORIZONTAL),
+		(id0 ? LCD_AC_INC : LCD_AC_DEC),
+		(id1 ? LCD_AC_INC : LCD_AC_DEC)
+	);
 	
 	enum pmb887x_lcd_pixel_mode_t new_mode;
 	if (tri && dfm0 && dfm1) {
@@ -66,63 +71,54 @@ static void lcd_update_state(pmb887x_lcd_t *lcd) {
 	pmb887x_lcd_set_mode(lcd, new_mode);
 }
 
-static void lcd_write_ram(pmb887x_lcd_t *lcd, uint32_t value, uint32_t size) {
-	for (int i = 0; i < size; i++)
-		pmb887x_lcd_put_pixel_byte(lcd, (value >> (i * 8)) & 0xFF);
+static uint32_t lcd_on_cmd(pmb887x_lcd_t *lcd, uint32_t cmd) {
+	if (cmd == 0x202) {
+		pmb887x_lcd_set_ram_mode(lcd, true);
+		return 0;
+	}
+	return 1;
 }
 
-static void lcd_write_reg(pmb887x_lcd_t *lcd, uint16_t reg, uint16_t value) {
+static void lcd_on_cmd_with_params(pmb887x_lcd_t *lcd, uint32_t cmd, const uint32_t *params, uint32_t params_n) {
 	pmb887x_lcd_jbt6k71_t *priv = PMB887X_LCD_JBT6K71(lcd);
-	priv->regs[reg] = value;
 	
-	switch (reg) {
+	g_assert(params_n == 1);
+	g_assert(cmd < JBT6K71_MAX_REGS);
+	
+	priv->regs[cmd] = params[0];
+	
+	DPRINTF("write reg 0x%04X -> 0x%04X\n", cmd, params[0]);
+	
+	switch (cmd) {
 		case 0x001:
 		case 0x003:
+		case 0x100:
 			lcd_update_state(lcd);
 		break;
 		
 		case 0x200:
-			pmb887x_lcd_set_x(lcd, value);
+			pmb887x_lcd_set_x(lcd, params[0]);
 		break;
 		
 		case 0x201:
-			pmb887x_lcd_set_y(lcd, value);
+			pmb887x_lcd_set_y(lcd, params[0]);
 		break;
 		
 		case 0x406:
-			pmb887x_lcd_set_window_x1(lcd, value);
+			pmb887x_lcd_set_window_x1(lcd, params[0]);
 		break;
 		
 		case 0x407:
-			pmb887x_lcd_set_window_x2(lcd, value);
+			pmb887x_lcd_set_window_x2(lcd, params[0]);
 		break;
 		
 		case 0x408:
-			pmb887x_lcd_set_window_y1(lcd, value);
+			pmb887x_lcd_set_window_y1(lcd, params[0]);
 		break;
 		
 		case 0x409:
-			pmb887x_lcd_set_window_y2(lcd, value);
+			pmb887x_lcd_set_window_y2(lcd, params[0]);
 		break;
-	}
-}
-
-static void lcd_write(pmb887x_lcd_t *lcd, uint32_t value) {
-	pmb887x_lcd_jbt6k71_t *priv = PMB887X_LCD_JBT6K71(lcd);
-	
-	if (pmb887x_lcd_get_cd(lcd)) {
-		if (value == 0x202) {
-			priv->current_reg = -1;
-			pmb887x_lcd_set_ram_mode(lcd, true);
-		} else {
-			priv->current_reg = value;
-			pmb887x_lcd_set_ram_mode(lcd, false);
-		}
-	} else if (priv->current_reg != -1) {
-		lcd_write_reg(lcd, priv->current_reg, value);
-		priv->current_reg = -1;
-	} else if (value) {
-		DPRINTF("Unexpected data write: %08X\n", value);
 	}
 }
 
@@ -132,9 +128,9 @@ static void lcd_realize(DeviceState *dev, Error **errp) {
 	
 	memset(priv->regs, 0, sizeof(priv->regs));
 	memcpy(priv->regs, DEFAULT_REGS, sizeof(DEFAULT_REGS));
-	priv->current_reg = -1;
 	
 	pmb887x_lcd_init(lcd, dev);
+	lcd_update_state(lcd);
 }
 
 static Property lcd_properties[] = {
@@ -147,9 +143,10 @@ static void lcd_class_init(ObjectClass *oc, void *data) {
 	dc->realize = lcd_realize;
 	
 	pmb887x_lcd_class_t *k = PMB887X_LCD_CLASS(oc);
-	k->bus_width = JBT6K71_BUS_WIDTH;
-	k->write = lcd_write;
-	k->write_ram = lcd_write_ram;
+	k->cmd_width = 2;
+	k->param_width = 2;
+	k->on_cmd = lcd_on_cmd;
+	k->on_cmd_with_params = lcd_on_cmd_with_params;
 }
 
 static const TypeInfo lcd_info = {

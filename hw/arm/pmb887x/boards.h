@@ -30,6 +30,8 @@ typedef struct {
 	uint32_t width;
 	uint32_t height;
 	uint32_t rotation;
+	bool flip_horizontal;
+	bool flip_vertical;
 } pmb887x_board_display_t;
 
 typedef struct {
