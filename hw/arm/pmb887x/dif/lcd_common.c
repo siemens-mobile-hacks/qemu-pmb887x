@@ -360,6 +360,9 @@ void pmb887x_lcd_init(pmb887x_lcd_t *lcd, DeviceState *dev) {
 	lcd->console = graphic_console_init(dev, 0, &pmb887x_lcd_gfx_ops, lcd);
 	qemu_console_resize(lcd->console, lcd->width, lcd->height);
 	
+	lcd->phys_width = lcd->width;
+	lcd->phys_height = lcd->height;
+	
 	pmb887x_lcd_set_window_x2(lcd, lcd->width - 1);
 	pmb887x_lcd_set_window_y2(lcd, lcd->height - 1);
 }

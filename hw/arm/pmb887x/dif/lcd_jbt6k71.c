@@ -43,12 +43,14 @@ static void lcd_update_state(pmb887x_lcd_t *lcd) {
 	bool tri = (priv->regs[0x003] & (1 << 15)) != 0; /* TRI */
 	bool ud = (priv->regs[0x100] & (1 << 11)) != 0; /* UD */
 	
+	DPRINTF("am=%d, id1=%d, id0=%d, ss=%d, ud=%d\n", am, id1, id0, ss, ud);
+	
 	// Horizontal flip
 	if (ss)
 		id0 = !id0;
 	
 	// Vertical flip
-	if (ud)
+	if (!ud)
 		id1 = !id1;
 	
 	pmb887x_lcd_set_addr_mode(
