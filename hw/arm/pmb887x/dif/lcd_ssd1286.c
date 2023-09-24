@@ -58,37 +58,6 @@ static uint32_t lcd_on_cmd(pmb887x_lcd_t *lcd, uint32_t cmd) {
 	return 1;
 }
 
-static void lcd_set_ram_addr(pmb887x_lcd_t *lcd, uint32_t addr) {
-	pmb887x_lcd_ssd1286_t *priv = PMB887X_LCD_SSD1286(lcd);
-	
-	bool am = (priv->regs[0x003] & (1 << 3)) != 0; /* AM */
-	bool id0 = (priv->regs[0x003] & (1 << 4)) != 0; /* ID0 */
-	bool id1 = (priv->regs[0x003] & (1 << 5)) != 0; /* ID1 */
-	
-	addr = MIN(addr, lcd->phys_width * lcd->phys_height);
-	
-	uint32_t x, y;
-	
-	if (am) {
-		x = addr / lcd->phys_height;
-		y = addr - x * lcd->phys_height;
-	} else {
-		y = addr / lcd->phys_width;
-		x = addr - y * lcd->phys_width;
-	}
-	
-	if (!id0)
-		x = lcd->phys_width - x - 1;
-	
-	if (!id1)
-		y = lcd->phys_height - y - 1;
-	
-	DPRINTF("x=%d, y=%d\n", x, y);
-	
-	pmb887x_lcd_set_x(lcd, addr & 0xFF);
-	pmb887x_lcd_set_y(lcd, addr >> 8);
-}
-
 static void lcd_on_cmd_with_params(pmb887x_lcd_t *lcd, uint32_t cmd, const uint32_t *params, uint32_t params_n) {
 	pmb887x_lcd_ssd1286_t *priv = PMB887X_LCD_SSD1286(lcd);
 	

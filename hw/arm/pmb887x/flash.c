@@ -611,7 +611,9 @@ static void flash_init_part(pmb887x_flash_t *flash, const pmb887x_flash_cfg_part
 	
 	p->storage = memory_region_get_ram_ptr(&p->mem);
 	
-	int ret = pmb887x_flash_blk_pread(p->flash->blk, p->offset, p->size, p->storage);
+	flash_trace_part(p, "hw partition 0x%08X ... 0x%08X", p->offset, p->offset + p->size - 1);
+	
+	int ret = pmb887x_flash_blk_pread(p->flash->blk, flash->offset + p->offset, p->size, p->storage);
 	if (ret < 0) {
 		flash_error(p->flash, "failed to read the initial flash content [offset=%08X, size=%08X]", p->offset, p->size);
 		exit(1);
