@@ -186,7 +186,13 @@ static void usart_transmit_fifo(struct pmb887x_usart_t *p) {
 	uint32_t size = pmb887x_fifo_count(p->tx_fifo);
 	pmb887x_fifo8_read(p->tx_fifo, buff, size);
 	
-	int ret = qemu_chr_fe_write(&p->chr, buff, size);
+	/*
+	for (uint32_t i = 0; i < size; i++) {
+		DPRINTF("TX=%02X\n", buff[i]);
+	}
+	*/
+	
+	int ret = qemu_chr_fe_write_all(&p->chr, buff, size);
 	if (ret > 0) {
 		if (ret < size) {
 			// possible?
@@ -206,6 +212,9 @@ static void usart_transmit_fifo(struct pmb887x_usart_t *p) {
 			if (pmb887x_fifo_is_empty(p->tx_fifo))
 				pmb887x_srb_set_isr(&p->srb, USART_ISR_TX);
 		}
+	} else {
+		EPRINTF("qemu_chr_fe_write_all failed!\n");
+		abort();
 	}
 	
 	if (!pmb887x_fifo_is_empty(p->tx_fifo)) {
@@ -264,6 +273,13 @@ static uint64_t usart_io_read(void *opaque, hwaddr haddr, unsigned size) {
 			if (!pmb887x_fifo_is_empty(p->rx_fifo)) {
 				bool is_full = pmb887x_fifo_is_full(p->rx_fifo);
 				value = pmb887x_fifo8_pop(p->rx_fifo);
+				/*
+				if (isprint(value)) {
+					DPRINTF("RX=%02X '%c' [read]\n", value, value);
+				} else {
+					DPRINTF("RX=%02X [read]\n", value);
+				}
+				*/
 				if (is_full)
 					qemu_chr_fe_accept_input(&p->chr);
 			}
@@ -406,6 +422,9 @@ static void usart_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned 
 					pmb887x_srb_set_isr(&p->srb, USART_ISR_TB);
 				
 				usart_transmit_fifo(p);
+			} else {
+				EPRINTF("TX FIFO is FULL :(\n");
+				abort();
 			}
 		break;
 		
