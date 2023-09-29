@@ -2,6 +2,7 @@
 
 #include "qemu/osdep.h"
 #include "qapi/qapi-types-ui.h"
+#include "adc.h"
 #include "regs.h"
 
 enum {
@@ -19,7 +20,7 @@ typedef struct {
 } pmb887x_board_gpio_t;
 
 typedef struct {
-	uint32_t type;
+	int type;
 	uint32_t size;
 	uint16_t vid;
 	uint16_t pid;
@@ -38,6 +39,9 @@ typedef struct {
 	char vendor[64];
 	char model[64];
 	uint32_t cpu;
+	
+	// ADC inputs
+	pmb887x_adc_input_t adc_inputs[PMB887X_ADC_MAX_INPUTS];
 	
 	// Hardware CSx to memory
 	pmb887x_board_memory_t cs2memory[4];

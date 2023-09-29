@@ -25,7 +25,11 @@ int pmb887x_flash_blk_pread(pmb887x_flash_blk_t *flash, int64_t offset, int64_t 
 	return blk_pread(flash->blk, offset, size, storage, 0);
 }
 
-bool pmb887x_flash_blk_is_raw(pmb887x_flash_blk_t *flash) {
+int pmb887x_flash_blk_pwrite(pmb887x_flash_blk_t *flash, int64_t offset, int64_t size, void *value) {
+	return blk_pwrite(flash->blk, offset, size, value, 0);
+}
+
+bool pmb887x_flash_blk_is_rw(pmb887x_flash_blk_t *flash) {
 	return blk_supports_write_perm(flash->blk);
 }
 
@@ -47,7 +51,7 @@ static void flash_blk_realize(DeviceState *dev, Error **errp) {
 	
 	DPRINTF("Drive size: %08"PRIX64"\n", blk_co_getlength(flash->blk));
 	
-	if (pmb887x_flash_blk_is_raw(flash)) {
+	if (pmb887x_flash_blk_is_rw(flash)) {
 		int ret = blk_set_perm(flash->blk, BLK_PERM_CONSISTENT_READ | BLK_PERM_WRITE, BLK_PERM_ALL, errp);
 		if (ret < 0) {
 			EPRINTF("Failed to set block dev permissions");

@@ -20,7 +20,7 @@
 #define PMB8875_GPTU0_BASE			0xF4900000
 #define PMB8875_GPTU1_BASE			0xF4A00000
 #define PMB8875_STM_BASE			0xF4B00000
-#define PMB8875_AMC_BASE			0xF4C00000
+#define PMB8875_ADC_BASE			0xF4C00000
 #define PMB8875_KEYPAD_BASE			0xF4D00000
 #define PMB8875_DSP_BASE			0xF6000000
 #define PMB8875_GPRSCU_BASE			0xF6200000
@@ -255,15 +255,15 @@
 #define PMB8875_SCU_UNK2_IRQ		60
 #define PMB8875_SCU_EXTI5_IRQ		61
 #define PMB8875_SCU_EXTI6_IRQ		62
-#define PMB8875_SCU_EXTI7_IRQ		63
 #define PMB8875_SCCU_UNK_IRQ		63
+#define PMB8875_SCU_EXTI7_IRQ		63
 #define PMB8875_SCCU_WAKE_IRQ		64
 #define PMB8875_PLL_IRQ				65
 #define PMB8875_I2C_DATA_IRQ		66
 #define PMB8875_I2C_PROTO_IRQ		67
 #define PMB8875_I2C_ERR_IRQ			68
-#define PMB8875_AMC_INT0_IRQ		70
-#define PMB8875_AMC_INT1_IRQ		71
+#define PMB8875_ADC_INT0_IRQ		70
+#define PMB8875_ADC_INT1_IRQ		71
 #define PMB8875_CAPCOM0_T0_IRQ		72
 #define PMB8875_CAPCOM0_T1_IRQ		73
 #define PMB8875_CAPCOM0_CC0_IRQ		74
@@ -338,7 +338,7 @@
 #define PMB8876_GPTU0_BASE			0xF4900000
 #define PMB8876_GPTU1_BASE			0xF4A00000
 #define PMB8876_STM_BASE			0xF4B00000
-#define PMB8876_AMC_BASE			0xF4C00000
+#define PMB8876_ADC_BASE			0xF4C00000
 #define PMB8876_KEYPAD_BASE			0xF4D00000
 #define PMB8876_DSP_BASE			0xF6000000
 #define PMB8876_GPRSCU_BASE			0xF6200000
@@ -596,12 +596,12 @@
 #define PMB8876_SCU_UNK2_IRQ		60
 #define PMB8876_SCU_EXTI5_IRQ		61
 #define PMB8876_SCU_EXTI6_IRQ		62
-#define PMB8876_SCU_EXTI7_IRQ		63
 #define PMB8876_SCCU_UNK_IRQ		63
+#define PMB8876_SCU_EXTI7_IRQ		63
 #define PMB8876_SCCU_WAKE_IRQ		64
 #define PMB8876_PLL_IRQ				65
-#define PMB8876_AMC_INT0_IRQ		70
-#define PMB8876_AMC_INT1_IRQ		71
+#define PMB8876_ADC_INT0_IRQ		70
+#define PMB8876_ADC_INT1_IRQ		71
 #define PMB8876_CAPCOM0_T0_IRQ		72
 #define PMB8876_CAPCOM0_T1_IRQ		73
 #define PMB8876_CAPCOM0_CC0_IRQ		74
@@ -719,6 +719,97 @@
 
 #define AMBA_PERIPH_ID3_CONFIGURATION		(0xFF << 0)
 #define AMBA_PERIPH_ID3_CONFIGURATION_SHIFT	0
+
+
+// ADC [MOD_NUM=F024, MOD_REV=00, MOD_32BIT=C0]
+// ADC. Datasheet not found.
+#define ADC_IO_SIZE					0x00000200
+/* Clock Control Register */
+#define ADC_CLC						0x00
+
+/* Module Identifier Register */
+#define ADC_ID						0x08
+
+#define ADC_CON0					0x14
+#define ADC_CON0_EN_VREF			(1 << 1)
+#define ADC_CON0_EN_VREF_SHIFT		1
+
+#define ADC_CON1					0x18
+#define ADC_CON1_CH					(0x3F << 0)	 // Gains: M0=0.5, M1=0.44, M2=0.5, M9=0.5, M0_M9=1
+#define ADC_CON1_CH_SHIFT			0
+#define ADC_CON1_CH_OFF				0x0
+#define ADC_CON1_CH_M0_P			0x1
+#define ADC_CON1_CH_M1_P			0x2
+#define ADC_CON1_CH_M2_P			0x3
+#define ADC_CON1_CH_M7_N			0x8
+#define ADC_CON1_CH_M8_N			0x9
+#define ADC_CON1_CH_M9_N			0xA
+#define ADC_CON1_CH_M10_N			0xB
+#define ADC_CON1_CH_M0_M9_N			0x12
+#define ADC_CON1_PREAMP_INV			(1 << 6)
+#define ADC_CON1_PREAMP_INV_SHIFT	6
+#define ADC_CON1_PREAMP_FAST		(1 << 11)
+#define ADC_CON1_PREAMP_FAST_SHIFT	11
+#define ADC_CON1_MODE				(0x7 << 12)
+#define ADC_CON1_MODE_SHIFT			12
+#define ADC_CON1_MODE_V				0x0
+#define ADC_CON1_MODE_I_30			0x1000
+#define ADC_CON1_MODE_I_60			0x2000
+#define ADC_CON1_MODE_I_90			0x3000
+#define ADC_CON1_MODE_I_120			0x4000
+#define ADC_CON1_MODE_I_150			0x5000
+#define ADC_CON1_MODE_I_180			0x6000
+#define ADC_CON1_MODE_I_210			0x7000
+#define ADC_CON1_FREQ				(0x7 << 16)
+#define ADC_CON1_FREQ_SHIFT			16
+#define ADC_CON1_COUNT				(0x7 << 19)
+#define ADC_CON1_COUNT_SHIFT		19
+#define ADC_CON1_REF_CH				(0x7 << 22)
+#define ADC_CON1_REF_CH_SHIFT		22
+#define ADC_CON1_REF_CH_OFF			0x0
+#define ADC_CON1_REF_CH_M0_P		0x400000
+#define ADC_CON1_REF_CH_M1_P		0x800000
+#define ADC_CON1_REF_CH_M2_P		0xC00000
+#define ADC_CON1_REF_CH_M7_N		0x2000000
+#define ADC_CON1_REF_CH_M8_N		0x2400000
+#define ADC_CON1_REF_CH_M9_N		0x2800000
+#define ADC_CON1_REF_CH_M10_N		0x2C00000
+#define ADC_CON1_REF_CH_M0_M9_N		0x4800000
+#define ADC_CON1_SINGLE				(1 << 27)
+#define ADC_CON1_SINGLE_SHIFT		27
+#define ADC_CON1_TRIG				(1 << 28)
+#define ADC_CON1_TRIG_SHIFT			28
+#define ADC_CON1_ON					(1 << 29)
+#define ADC_CON1_ON_SHIFT			29
+#define ADC_CON1_START				(1 << 31)
+#define ADC_CON1_START_SHIFT		31
+
+#define ADC_STAT					0x1C
+#define ADC_STAT_INDEX				(0x7 << 0)
+#define ADC_STAT_INDEX_SHIFT		0
+#define ADC_STAT_BUSY				(1 << 30)
+#define ADC_STAT_BUSY_SHIFT			30
+#define ADC_STAT_READY				(1 << 31)
+#define ADC_STAT_READY_SHIFT		31
+
+#define ADC_FIFO0					0x20
+#define ADC_FIFO1					0x24
+#define ADC_FIFO2					0x28
+#define ADC_FIFO3					0x2C
+#define ADC_FIFO4					0x30
+#define ADC_FIFO5					0x34
+#define ADC_FIFO6					0x38
+#define ADC_FIFO7					0x3C
+
+#define ADC_PLLCON					0x40
+#define ADC_PLLCON_K				(0xFF << 0)
+#define ADC_PLLCON_K_SHIFT			0
+#define ADC_PLLCON_L				(0xFF << 8)
+#define ADC_PLLCON_L_SHIFT			8
+
+/* Service Routing Control Register */
+#define ADC_SRC0					0xF0
+#define ADC_SRC1					0xF4
 
 
 // DMAC [AMBA PL080]
@@ -1495,45 +1586,6 @@
 #define MCI_PCELL_ID2						0xFF8
 
 #define MCI_PCELL_ID3						0xFFC
-
-
-// AMC [MOD_NUM=F024, MOD_REV=00, MOD_32BIT=C0]
-// Looks like AMC (Analog Measurement Controller? ADC?) module, but not sure.
-#define AMC_IO_SIZE				0x00000200
-/* Clock Control Register */
-#define AMC_CLC					0x00
-
-/* Module Identifier Register */
-#define AMC_ID					0x08
-
-#define AMC_CON0				0x14
-#define AMC_CON0_CH				(0xF << 28)
-#define AMC_CON0_CH_SHIFT		28
-
-#define AMC_CON1				0x18
-
-#define AMC_STAT				0x1C
-#define AMC_STAT_AVAIL			(0x7 << 0)
-#define AMC_STAT_AVAIL_SHIFT	0
-#define AMC_STAT_BUSY			(1 << 30)
-#define AMC_STAT_BUSY_SHIFT		30
-#define AMC_STAT_READY			(1 << 31)
-#define AMC_STAT_READY_SHIFT	31
-
-#define AMC_FIFO0				0x20
-#define AMC_FIFO1				0x24
-#define AMC_FIFO2				0x28
-#define AMC_FIFO3				0x2C
-#define AMC_FIFO4				0x30
-#define AMC_FIFO5				0x34
-#define AMC_FIFO6				0x38
-#define AMC_FIFO7				0x3C
-
-#define AMC_CON2				0x40
-
-/* Service Routing Control Register */
-#define AMC_SRC0				0xF0
-#define AMC_SRC1				0xF4
 
 
 // CAPCOM [MOD_NUM=0050, MOD_REV=00, MOD_32BIT=00]

@@ -173,6 +173,14 @@ static void flash_data_write(pmb887x_flash_part_t *p, uint32_t offset, uint32_t 
 			exit(1);
 		break;
 	}
+	
+	if (pmb887x_flash_blk_is_rw(p->flash->blk)) {
+		int ret = pmb887x_flash_blk_pwrite(p->flash->blk, p->flash->offset + p->offset + offset, size, p->storage + offset);
+		if (ret < 0) {
+			flash_error_part(p, "Can't read to flash file: %d, %s\n", ret, strerror(ret));
+			exit(1);
+		}
+	}
 }
 
 static uint64_t flash_io_read(void *opaque, hwaddr part_offset, unsigned size) {
@@ -378,7 +386,7 @@ static void flash_io_write(void *opaque, hwaddr part_offset, uint64_t value, uns
 			break;
 			
 			default:
-				flash_error_part(p, "cmd unknown (%02lX) at %08lX", value, offset);
+				flash_error_part(p, "cmd unknown (%02lX) at %08lX", value, p->flash->offset + offset);
 				exit(1);
 			break;
 		}
@@ -399,25 +407,25 @@ static void flash_io_write(void *opaque, hwaddr part_offset, uint64_t value, uns
 					flash_reset(p);
 				} else if (value == 0x03) {
 					valid_cmd = true;
-					flash_trace_part(p, "program read configuration register (%02lX)", offset);
+					flash_trace_part(p, "program read configuration register (%02lX)", p->flash->offset + offset);
 					flash_reset(p);
 				} else if (value == 0x04) {
 					valid_cmd = true;
-					flash_trace_part(p, "program read enhanced configuration register (%02lX)", offset);
+					flash_trace_part(p, "program read enhanced configuration register (%02lX)", p->flash->offset + offset);
 					flash_reset(p);
 				} else if (value == 0x01) {
 					valid_cmd = true;
-					flash_trace_part(p, "lock block %08lX", offset);
+					flash_trace_part(p, "lock block %08lX", p->flash->offset + offset);
 					p->wcycle = 0;
 					p->status |= 0x80;
 				} else if (value == 0xD0) {
 					valid_cmd = true;
-					flash_trace_part(p, "unlock block %08lX", offset);
+					flash_trace_part(p, "unlock block %08lX", p->flash->offset + offset);
 					p->wcycle = 0;
 					p->status |= 0x80;
 				} else if (value == 0x2F) {
 					valid_cmd = true;
-					flash_trace_part(p, "lock-down block %08lX", offset);
+					flash_trace_part(p, "lock-down block %08lX", p->flash->offset + offset);
 					p->wcycle = 0;
 					p->status |= 0x80;
 				}
@@ -429,15 +437,24 @@ static void flash_io_write(void *opaque, hwaddr part_offset, uint64_t value, uns
 					uint32_t mask = ~(sector_size - 1);
 					uint32_t base = (p->cmd_addr & mask);
 					
-					flash_trace_part(p, "confirm erase block %08X...%08X (sector: %08X)", base, base + sector_size - 1, sector_size);
+					flash_trace_part(p, "confirm erase block %08X...%08X (sector: %08X)", p->flash->offset + base, p->flash->offset + base + sector_size - 1, sector_size);
 					
 					if ((offset & mask) != (p->cmd_addr & mask)) {
-						flash_error_part(p, "erase sector mismatch: %08lX != %08X\n", offset, p->cmd_addr);
+						flash_error_part(p, "erase sector mismatch: %08lX != %08X\n", p->flash->offset + offset, p->flash->offset + p->cmd_addr);
 						exit(1);
 					}
 					
 					// fill sector with 0xFF's
-					memset(p->storage + (base - p->offset), 0xFF, sector_size);
+					uint32_t erase_offset = (base - p->offset);
+					memset(p->storage + erase_offset, 0xFF, sector_size);
+					
+					if (pmb887x_flash_blk_is_rw(p->flash->blk)) {
+						int ret = pmb887x_flash_blk_pwrite(p->flash->blk, p->flash->offset + p->offset + erase_offset, sector_size, p->storage + erase_offset);
+						if (ret < 0) {
+							flash_error_part(p, "Can't read to flash file: %d, %s\n", ret, strerror(ret));
+							exit(1);
+						}
+					}
 					
 					valid_cmd = true;
 					p->wcycle = 0;
@@ -461,7 +478,7 @@ static void flash_io_write(void *opaque, hwaddr part_offset, uint64_t value, uns
 			case 0x40:	// program word
 			case 0x41:	// program word
 				valid_cmd = true;
-				flash_trace_part(p, "program single word [%d]: %08lX to %08lX", size, value, offset);
+				flash_trace_part(p, "program single word [%d]: %08lX to %08lX", size, value, p->flash->offset + offset);
 				flash_data_write(p, offset, value, size);
 				p->wcycle = 0;
 				p->status |= 0x80;
@@ -477,7 +494,7 @@ static void flash_io_write(void *opaque, hwaddr part_offset, uint64_t value, uns
 				
 				valid_cmd = true;
 				
-				flash_trace_part(p, "program word [%d]: %08lX to %08lX", size, value, offset);
+				flash_trace_part(p, "program word [%d]: %08lX to %08lX", size, value, p->flash->offset + offset);
 				
 				if ((offset & mask) != (p->cmd_addr & mask)) {
 					flash_error_part(p, "program sector mismatch: %08lX != %08X", offset, p->cmd_addr);
@@ -527,7 +544,7 @@ static void flash_io_write(void *opaque, hwaddr part_offset, uint64_t value, uns
 	}
 	
 	if (!valid_cmd) {
-		flash_error_part(p, "not implemented %d cycle for command %02X [addr: %08lX, value: %08lX]", p->wcycle, p->cmd, offset, value);
+		flash_error_part(p, "not implemented %d cycle for command %02X [addr: %08lX, value: %08lX]", p->wcycle, p->cmd, p->flash->offset + offset, value);
 		exit(1);
 	}
 }
@@ -550,7 +567,7 @@ static uint64_t flash_io_unaligned_read(void *opaque, hwaddr offset, unsigned si
 	
 	value &= ((1 << (size * 8)) - 1);
 	// pmb887x_flash_part_t *p = (pmb887x_flash_part_t *) opaque;
-	// flash_trace_part(p, "unaligned %08lX[%d] = %08lX", offset, size, value);
+	// flash_trace_part(p, "unaligned %08lX[%d] = %08lX", p->flash->offset + offset, size, value);
 	return value;
 }
 
@@ -611,11 +628,11 @@ static void flash_init_part(pmb887x_flash_t *flash, const pmb887x_flash_cfg_part
 	
 	p->storage = memory_region_get_ram_ptr(&p->mem);
 	
-	flash_trace_part(p, "hw partition 0x%08X ... 0x%08X", p->offset, p->offset + p->size - 1);
+	flash_trace_part(p, "hw partition 0x%08X ... 0x%08X", p->flash->offset + p->offset, p->flash->offset + p->offset + p->size - 1);
 	
 	int ret = pmb887x_flash_blk_pread(p->flash->blk, flash->offset + p->offset, p->size, p->storage);
 	if (ret < 0) {
-		flash_error(p->flash, "failed to read the initial flash content [offset=%08X, size=%08X]", p->offset, p->size);
+		flash_error(p->flash, "failed to read the initial flash content [offset=%08X, size=%08X]", p->flash->offset + p->offset, p->size);
 		exit(1);
 	}
 }

@@ -137,6 +137,44 @@ static bool _parse_memory(pmb887x_board_t *board, pmb887x_cfg_section_t *section
 	return true;
 }
 
+static bool _parse_analog(pmb887x_board_t *board, pmb887x_cfg_section_t *section) {
+	char name[32];
+	int channels[] = { 0, 1, 2, 7, 8, 9, 10 };
+	for (int i = 0; i < ARRAY_SIZE(channels); i++) {
+		sprintf(name, "M_%d", i);
+		
+		const char *value;
+		if (!(value = pmb887x_cfg_section_get(section, name, false)))
+			continue;
+		
+		g_autoptr(GMatchInfo) resistor_match = _regexp_match("^resistor,(\\d+)$", value);
+		g_autoptr(GMatchInfo) resistor_divider_match = _regexp_match("^resistor_divider,(\\d+),(\\d+),(\\d+)$", value);
+		g_autoptr(GMatchInfo) voltage_match = _regexp_match("^(\\d+)$", value);
+		
+		if (resistor_match) {
+			uint32_t r1 = strtol(g_match_info_fetch(resistor_match, 1), NULL, 10);
+			board->adc_inputs[i].r1 = r1;
+			board->adc_inputs[i].type = PMB887X_ADC_INPUT_RESISTOR;
+		} else if (resistor_divider_match) {
+			uint32_t r1 = strtol(g_match_info_fetch(resistor_divider_match, 1), NULL, 10);
+			uint32_t r2 = strtol(g_match_info_fetch(resistor_divider_match, 1), NULL, 10);
+			uint32_t input = strtol(g_match_info_fetch(resistor_divider_match, 1), NULL, 10);
+			board->adc_inputs[i].r1 = r1;
+			board->adc_inputs[i].r2 = r2;
+			board->adc_inputs[i].input = input;
+			board->adc_inputs[i].type = PMB887X_ADC_INPUT_RESISTOR_DIV;
+		} else if (voltage_match) {
+			uint32_t input = strtol(g_match_info_fetch(resistor_match, 1), NULL, 10);
+			board->adc_inputs[i].input = input;
+			board->adc_inputs[i].type = PMB887X_ADC_INPUT_VOLTAGE;
+		} else {
+			error_report("Invalid ADC channel value: %s", value);
+			return false;
+		}
+	}
+	return true;
+}
+
 static bool _parse_display(pmb887x_board_t *board, pmb887x_cfg_section_t *section) {
 	const char *type, *rotation, *width, *height, *flip_horizontal, *flip_vertical;
 	
@@ -292,6 +330,7 @@ const pmb887x_board_t *pmb887x_get_board(const char *config_file) {
 	} parsers[] = {
 		{"device", _parse_device},
 		{"memory", _parse_memory},
+		{"analog", _parse_analog},
 		{"display", _parse_display},
 		{"gpio-aliases", _parse_gpio_aliases},
 		{"gpio-inputs", _parse_gpio_inputs},

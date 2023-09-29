@@ -13,7 +13,7 @@ enum pmb887x_modules_t {
 	PMB887X_TRACE_EBU		= 1 << 3,
 	PMB887X_TRACE_STM		= 1 << 4,
 	PMB887X_TRACE_PLL		= 1 << 5,
-	PMB887X_TRACE_AMC		= 1 << 6,
+	PMB887X_TRACE_ADC		= 1 << 6,
 	PMB887X_TRACE_CAPCOM	= 1 << 7,
 	PMB887X_TRACE_DIF		= 1 << 8,
 	PMB887X_TRACE_DSP		= 1 << 9,
@@ -36,6 +36,9 @@ enum pmb887x_modules_t {
 //extern uint32_t pmb887x_trace_flags;
 
 static inline bool pmb887x_trace_log_enabled(uint32_t id) {
+	return false;
+	return ((id & (PMB887X_TRACE_FLASH)) != 0);
+	return false;
 	return ((id & (PMB887X_TRACE_LCD)) != 0);
 	return ((id & (PMB887X_TRACE_TPU | PMB887X_TRACE_FLASH | PMB887X_TRACE_LCD | PMB887X_TRACE_EBU | PMB887X_TRACE_I2C)) != 0);
 //	return false;
@@ -46,7 +49,7 @@ static inline bool pmb887x_trace_log_enabled(uint32_t id) {
 		PMB887X_TRACE_EBU |
 //		PMB887X_TRACE_STM |
 		PMB887X_TRACE_PLL |
-		PMB887X_TRACE_AMC |
+		PMB887X_TRACE_ADC |
 		PMB887X_TRACE_CAPCOM |
 		PMB887X_TRACE_DIF |
 		PMB887X_TRACE_DSP |
@@ -67,6 +70,7 @@ static inline bool pmb887x_trace_log_enabled(uint32_t id) {
 }
 
 static inline bool pmb887x_trace_io_enabled(uint32_t id) {
+	//return ((id & (PMB887X_TRACE_ADC)) != 0);
 	return false;
 	return ((id & (PMB887X_TRACE_PCL)) != 0);
 	return ((id & (PMB887X_TRACE_SCCU | PMB887X_TRACE_SCU)) != 0);
@@ -77,7 +81,7 @@ static inline bool pmb887x_trace_io_enabled(uint32_t id) {
 		PMB887X_TRACE_EBU |
 		PMB887X_TRACE_STM |
 		PMB887X_TRACE_PLL |
-		PMB887X_TRACE_AMC |
+		PMB887X_TRACE_ADC |
 		PMB887X_TRACE_CAPCOM |
 		PMB887X_TRACE_DIF |
 		PMB887X_TRACE_DSP |

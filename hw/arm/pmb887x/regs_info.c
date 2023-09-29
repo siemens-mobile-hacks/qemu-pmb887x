@@ -1,5 +1,113 @@
 #include "hw/arm/pmb887x/regs_dump.h"
 
+static const pmb887x_module_field_t adc_clc_fields[] = {
+	{"DISR",	MOD_CLC_DISR,	MOD_CLC_DISR_SHIFT,	NULL,	0},
+	{"DISS",	MOD_CLC_DISS,	MOD_CLC_DISS_SHIFT,	NULL,	0},
+	{"SPEN",	MOD_CLC_SPEN,	MOD_CLC_SPEN_SHIFT,	NULL,	0},
+	{"EDIS",	MOD_CLC_EDIS,	MOD_CLC_EDIS_SHIFT,	NULL,	0},
+	{"SBWE",	MOD_CLC_SBWE,	MOD_CLC_SBWE_SHIFT,	NULL,	0},
+	{"FSOE",	MOD_CLC_FSOE,	MOD_CLC_FSOE_SHIFT,	NULL,	0},
+	{"RMC",		MOD_CLC_RMC,	MOD_CLC_RMC_SHIFT,	NULL,	0},
+};
+
+static const pmb887x_module_field_t adc_id_fields[] = {
+	{"REV",		MOD_ID_REV,		MOD_ID_REV_SHIFT,		NULL,	0},
+	{"32B",		MOD_ID_32B,		MOD_ID_32B_SHIFT,		NULL,	0},
+	{"NUMBER",	MOD_ID_NUMBER,	MOD_ID_NUMBER_SHIFT,	NULL,	0},
+};
+
+static const pmb887x_module_field_t adc_con0_fields[] = {
+	{"EN_VREF",	ADC_CON0_EN_VREF,	ADC_CON0_EN_VREF_SHIFT,	NULL,	0},
+};
+
+static const pmb887x_module_value_t adc_adc_con1_ch_values[] = {
+	{"OFF",		ADC_CON1_CH_OFF},
+	{"M0_P",	ADC_CON1_CH_M0_P},
+	{"M1_P",	ADC_CON1_CH_M1_P},
+	{"M2_P",	ADC_CON1_CH_M2_P},
+	{"M7_N",	ADC_CON1_CH_M7_N},
+	{"M8_N",	ADC_CON1_CH_M8_N},
+	{"M9_N",	ADC_CON1_CH_M9_N},
+	{"M10_N",	ADC_CON1_CH_M10_N},
+	{"M0_M9_N",	ADC_CON1_CH_M0_M9_N},
+};
+
+static const pmb887x_module_value_t adc_adc_con1_mode_values[] = {
+	{"V",		ADC_CON1_MODE_V},
+	{"I_30",	ADC_CON1_MODE_I_30},
+	{"I_60",	ADC_CON1_MODE_I_60},
+	{"I_90",	ADC_CON1_MODE_I_90},
+	{"I_120",	ADC_CON1_MODE_I_120},
+	{"I_150",	ADC_CON1_MODE_I_150},
+	{"I_180",	ADC_CON1_MODE_I_180},
+	{"I_210",	ADC_CON1_MODE_I_210},
+};
+
+static const pmb887x_module_value_t adc_adc_con1_ref_ch_values[] = {
+	{"OFF",		ADC_CON1_REF_CH_OFF},
+	{"M0_P",	ADC_CON1_REF_CH_M0_P},
+	{"M1_P",	ADC_CON1_REF_CH_M1_P},
+	{"M2_P",	ADC_CON1_REF_CH_M2_P},
+	{"M7_N",	ADC_CON1_REF_CH_M7_N},
+	{"M8_N",	ADC_CON1_REF_CH_M8_N},
+	{"M9_N",	ADC_CON1_REF_CH_M9_N},
+	{"M10_N",	ADC_CON1_REF_CH_M10_N},
+	{"M0_M9_N",	ADC_CON1_REF_CH_M0_M9_N},
+};
+
+static const pmb887x_module_field_t adc_con1_fields[] = {
+	{"CH",			ADC_CON1_CH,			ADC_CON1_CH_SHIFT,			adc_adc_con1_ch_values,		ARRAY_SIZE(adc_adc_con1_ch_values)},
+	{"PREAMP_INV",	ADC_CON1_PREAMP_INV,	ADC_CON1_PREAMP_INV_SHIFT,	NULL,						0},
+	{"PREAMP_FAST",	ADC_CON1_PREAMP_FAST,	ADC_CON1_PREAMP_FAST_SHIFT,	NULL,						0},
+	{"MODE",		ADC_CON1_MODE,			ADC_CON1_MODE_SHIFT,		adc_adc_con1_mode_values,	ARRAY_SIZE(adc_adc_con1_mode_values)},
+	{"FREQ",		ADC_CON1_FREQ,			ADC_CON1_FREQ_SHIFT,		NULL,						0},
+	{"COUNT",		ADC_CON1_COUNT,			ADC_CON1_COUNT_SHIFT,		NULL,						0},
+	{"REF_CH",		ADC_CON1_REF_CH,		ADC_CON1_REF_CH_SHIFT,		adc_adc_con1_ref_ch_values,	ARRAY_SIZE(adc_adc_con1_ref_ch_values)},
+	{"SINGLE",		ADC_CON1_SINGLE,		ADC_CON1_SINGLE_SHIFT,		NULL,						0},
+	{"TRIG",		ADC_CON1_TRIG,			ADC_CON1_TRIG_SHIFT,		NULL,						0},
+	{"ON",			ADC_CON1_ON,			ADC_CON1_ON_SHIFT,			NULL,						0},
+	{"START",		ADC_CON1_START,			ADC_CON1_START_SHIFT,		NULL,						0},
+};
+
+static const pmb887x_module_field_t adc_stat_fields[] = {
+	{"INDEX",	ADC_STAT_INDEX,	ADC_STAT_INDEX_SHIFT,	NULL,	0},
+	{"BUSY",	ADC_STAT_BUSY,	ADC_STAT_BUSY_SHIFT,	NULL,	0},
+	{"READY",	ADC_STAT_READY,	ADC_STAT_READY_SHIFT,	NULL,	0},
+};
+
+static const pmb887x_module_field_t adc_pllcon_fields[] = {
+	{"K",	ADC_PLLCON_K,	ADC_PLLCON_K_SHIFT,	NULL,	0},
+	{"L",	ADC_PLLCON_L,	ADC_PLLCON_L_SHIFT,	NULL,	0},
+};
+
+static const pmb887x_module_field_t adc_src_fields[] = {
+	{"SRPN",	MOD_SRC_SRPN,	MOD_SRC_SRPN_SHIFT,	NULL,	0},
+	{"TOS",		MOD_SRC_TOS,	MOD_SRC_TOS_SHIFT,	NULL,	0},
+	{"SRE",		MOD_SRC_SRE,	MOD_SRC_SRE_SHIFT,	NULL,	0},
+	{"SRR",		MOD_SRC_SRR,	MOD_SRC_SRR_SHIFT,	NULL,	0},
+	{"CLRR",	MOD_SRC_CLRR,	MOD_SRC_CLRR_SHIFT,	NULL,	0},
+	{"SETR",	MOD_SRC_SETR,	MOD_SRC_SETR_SHIFT,	NULL,	0},
+};
+
+static const pmb887x_module_reg_t adc_regs[] = {
+	{"CLC",		ADC_CLC,	adc_clc_fields,		ARRAY_SIZE(adc_clc_fields),		0},
+	{"ID",		ADC_ID,		adc_id_fields,		ARRAY_SIZE(adc_id_fields),		0},
+	{"CON0",	ADC_CON0,	adc_con0_fields,	ARRAY_SIZE(adc_con0_fields),	0},
+	{"CON1",	ADC_CON1,	adc_con1_fields,	ARRAY_SIZE(adc_con1_fields),	0},
+	{"STAT",	ADC_STAT,	adc_stat_fields,	ARRAY_SIZE(adc_stat_fields),	0},
+	{"FIFO0",	ADC_FIFO0,	NULL,				0,								0},
+	{"FIFO1",	ADC_FIFO1,	NULL,				0,								0},
+	{"FIFO2",	ADC_FIFO2,	NULL,				0,								0},
+	{"FIFO3",	ADC_FIFO3,	NULL,				0,								0},
+	{"FIFO4",	ADC_FIFO4,	NULL,				0,								0},
+	{"FIFO5",	ADC_FIFO5,	NULL,				0,								0},
+	{"FIFO6",	ADC_FIFO6,	NULL,				0,								0},
+	{"FIFO7",	ADC_FIFO7,	NULL,				0,								0},
+	{"PLLCON",	ADC_PLLCON,	adc_pllcon_fields,	ARRAY_SIZE(adc_pllcon_fields),	0},
+	{"SRC0",	ADC_SRC0,	adc_src_fields,		ARRAY_SIZE(adc_src_fields),		0},
+	{"SRC1",	ADC_SRC1,	adc_src_fields,		ARRAY_SIZE(adc_src_fields),		0},
+};
+
 static const pmb887x_module_field_t dmac_int_status_fields[] = {
 	{"CH0",	DMAC_INT_STATUS_CH0,	DMAC_INT_STATUS_CH0_SHIFT,	NULL,	0},
 	{"CH1",	DMAC_INT_STATUS_CH1,	DMAC_INT_STATUS_CH1_SHIFT,	NULL,	0},
@@ -605,60 +713,6 @@ static const pmb887x_module_reg_t mci_regs[] = {
 	{"PCELL_ID3",	MCI_PCELL_ID3,	NULL,					0,									0},
 };
 
-static const pmb887x_module_field_t amc_clc_fields[] = {
-	{"DISR",	MOD_CLC_DISR,	MOD_CLC_DISR_SHIFT,	NULL,	0},
-	{"DISS",	MOD_CLC_DISS,	MOD_CLC_DISS_SHIFT,	NULL,	0},
-	{"SPEN",	MOD_CLC_SPEN,	MOD_CLC_SPEN_SHIFT,	NULL,	0},
-	{"EDIS",	MOD_CLC_EDIS,	MOD_CLC_EDIS_SHIFT,	NULL,	0},
-	{"SBWE",	MOD_CLC_SBWE,	MOD_CLC_SBWE_SHIFT,	NULL,	0},
-	{"FSOE",	MOD_CLC_FSOE,	MOD_CLC_FSOE_SHIFT,	NULL,	0},
-	{"RMC",		MOD_CLC_RMC,	MOD_CLC_RMC_SHIFT,	NULL,	0},
-};
-
-static const pmb887x_module_field_t amc_id_fields[] = {
-	{"REV",		MOD_ID_REV,		MOD_ID_REV_SHIFT,		NULL,	0},
-	{"32B",		MOD_ID_32B,		MOD_ID_32B_SHIFT,		NULL,	0},
-	{"NUMBER",	MOD_ID_NUMBER,	MOD_ID_NUMBER_SHIFT,	NULL,	0},
-};
-
-static const pmb887x_module_field_t amc_con0_fields[] = {
-	{"CH",	AMC_CON0_CH,	AMC_CON0_CH_SHIFT,	NULL,	0},
-};
-
-static const pmb887x_module_field_t amc_stat_fields[] = {
-	{"AVAIL",	AMC_STAT_AVAIL,	AMC_STAT_AVAIL_SHIFT,	NULL,	0},
-	{"BUSY",	AMC_STAT_BUSY,	AMC_STAT_BUSY_SHIFT,	NULL,	0},
-	{"READY",	AMC_STAT_READY,	AMC_STAT_READY_SHIFT,	NULL,	0},
-};
-
-static const pmb887x_module_field_t amc_src_fields[] = {
-	{"SRPN",	MOD_SRC_SRPN,	MOD_SRC_SRPN_SHIFT,	NULL,	0},
-	{"TOS",		MOD_SRC_TOS,	MOD_SRC_TOS_SHIFT,	NULL,	0},
-	{"SRE",		MOD_SRC_SRE,	MOD_SRC_SRE_SHIFT,	NULL,	0},
-	{"SRR",		MOD_SRC_SRR,	MOD_SRC_SRR_SHIFT,	NULL,	0},
-	{"CLRR",	MOD_SRC_CLRR,	MOD_SRC_CLRR_SHIFT,	NULL,	0},
-	{"SETR",	MOD_SRC_SETR,	MOD_SRC_SETR_SHIFT,	NULL,	0},
-};
-
-static const pmb887x_module_reg_t amc_regs[] = {
-	{"CLC",		AMC_CLC,	amc_clc_fields,		ARRAY_SIZE(amc_clc_fields),		0},
-	{"ID",		AMC_ID,		amc_id_fields,		ARRAY_SIZE(amc_id_fields),		0},
-	{"CON0",	AMC_CON0,	amc_con0_fields,	ARRAY_SIZE(amc_con0_fields),	0},
-	{"CON1",	AMC_CON1,	NULL,				0,								0},
-	{"STAT",	AMC_STAT,	amc_stat_fields,	ARRAY_SIZE(amc_stat_fields),	0},
-	{"FIFO0",	AMC_FIFO0,	NULL,				0,								0},
-	{"FIFO1",	AMC_FIFO1,	NULL,				0,								0},
-	{"FIFO2",	AMC_FIFO2,	NULL,				0,								0},
-	{"FIFO3",	AMC_FIFO3,	NULL,				0,								0},
-	{"FIFO4",	AMC_FIFO4,	NULL,				0,								0},
-	{"FIFO5",	AMC_FIFO5,	NULL,				0,								0},
-	{"FIFO6",	AMC_FIFO6,	NULL,				0,								0},
-	{"FIFO7",	AMC_FIFO7,	NULL,				0,								0},
-	{"CON2",	AMC_CON2,	NULL,				0,								0},
-	{"SRC0",	AMC_SRC0,	amc_src_fields,		ARRAY_SIZE(amc_src_fields),		0},
-	{"SRC1",	AMC_SRC1,	amc_src_fields,		ARRAY_SIZE(amc_src_fields),		0},
-};
-
 static const pmb887x_module_field_t capcom_clc_fields[] = {
 	{"DISR",	MOD_CLC_DISR,	MOD_CLC_DISR_SHIFT,	NULL,	0},
 	{"DISS",	MOD_CLC_DISS,	MOD_CLC_DISS_SHIFT,	NULL,	0},
@@ -1147,8 +1201,8 @@ static const pmb887x_module_field_t cif_id_fields[] = {
 };
 
 static const pmb887x_module_reg_t cif_regs[] = {
-	{"UNK0",	CIF_UNK0,	NULL,			0,							0},
 	{"CLC",		CIF_CLC,	cif_clc_fields,	ARRAY_SIZE(cif_clc_fields),	0},
+	{"UNK0",	CIF_UNK0,	NULL,			0,							0},
 	{"ID",		CIF_ID,		cif_id_fields,	ARRAY_SIZE(cif_id_fields),	0},
 	{"UNK1",	CIF_UNK1,	NULL,			0,							0},
 	{"UNK2",	CIF_UNK2,	NULL,			0,							0},
@@ -6261,8 +6315,8 @@ static const pmb887x_cpu_meta_irq_t pmb8875_irqs[] = {
 	{"I2C_DATA",		PMB8875_I2C_DATA_IRQ,		NVIC_CON66},
 	{"I2C_PROTO",		PMB8875_I2C_PROTO_IRQ,		NVIC_CON67},
 	{"I2C_ERR",			PMB8875_I2C_ERR_IRQ,		NVIC_CON68},
-	{"AMC_INT0",		PMB8875_AMC_INT0_IRQ,		NVIC_CON70},
-	{"AMC_INT1",		PMB8875_AMC_INT1_IRQ,		NVIC_CON71},
+	{"ADC_INT0",		PMB8875_ADC_INT0_IRQ,		NVIC_CON70},
+	{"ADC_INT1",		PMB8875_ADC_INT1_IRQ,		NVIC_CON71},
 	{"CAPCOM0_T0",		PMB8875_CAPCOM0_T0_IRQ,		NVIC_CON72},
 	{"CAPCOM0_T1",		PMB8875_CAPCOM0_T1_IRQ,		NVIC_CON73},
 	{"CAPCOM0_CC0",		PMB8875_CAPCOM0_CC0_IRQ,	NVIC_CON74},
@@ -6455,7 +6509,7 @@ static const pmb887x_module_t pmb8875_modules[] = {
 	{"GPTU0",	PMB8875_GPTU0_BASE,		GPTU_IO_SIZE,	gptu_regs,		ARRAY_SIZE(gptu_regs)},
 	{"GPTU1",	PMB8875_GPTU1_BASE,		GPTU_IO_SIZE,	gptu_regs,		ARRAY_SIZE(gptu_regs)},
 	{"STM",		PMB8875_STM_BASE,		STM_IO_SIZE,	stm_regs,		ARRAY_SIZE(stm_regs)},
-	{"AMC",		PMB8875_AMC_BASE,		AMC_IO_SIZE,	amc_regs,		ARRAY_SIZE(amc_regs)},
+	{"ADC",		PMB8875_ADC_BASE,		ADC_IO_SIZE,	adc_regs,		ARRAY_SIZE(adc_regs)},
 	{"KEYPAD",	PMB8875_KEYPAD_BASE,	KEYPAD_IO_SIZE,	keypad_regs,	ARRAY_SIZE(keypad_regs)},
 	{"DSP",		PMB8875_DSP_BASE,		DSP_IO_SIZE,	dsp_regs,		ARRAY_SIZE(dsp_regs)},
 	{"GPRSCU",	PMB8875_GPRSCU_BASE,	GPRSCU_IO_SIZE,	gprscu_regs,	ARRAY_SIZE(gprscu_regs)},
@@ -6509,12 +6563,12 @@ static const pmb887x_cpu_meta_irq_t pmb8876_irqs[] = {
 	{"SCU_UNK2",		PMB8876_SCU_UNK2_IRQ,		NVIC_CON60},
 	{"SCU_EXTI5",		PMB8876_SCU_EXTI5_IRQ,		NVIC_CON61},
 	{"SCU_EXTI6",		PMB8876_SCU_EXTI6_IRQ,		NVIC_CON62},
-	{"SCU_EXTI7",		PMB8876_SCU_EXTI7_IRQ,		NVIC_CON63},
 	{"SCCU_UNK",		PMB8876_SCCU_UNK_IRQ,		NVIC_CON63},
+	{"SCU_EXTI7",		PMB8876_SCU_EXTI7_IRQ,		NVIC_CON63},
 	{"SCCU_WAKE",		PMB8876_SCCU_WAKE_IRQ,		NVIC_CON64},
 	{"PLL",				PMB8876_PLL_IRQ,			NVIC_CON65},
-	{"AMC_INT0",		PMB8876_AMC_INT0_IRQ,		NVIC_CON70},
-	{"AMC_INT1",		PMB8876_AMC_INT1_IRQ,		NVIC_CON71},
+	{"ADC_INT0",		PMB8876_ADC_INT0_IRQ,		NVIC_CON70},
+	{"ADC_INT1",		PMB8876_ADC_INT1_IRQ,		NVIC_CON71},
 	{"CAPCOM0_T0",		PMB8876_CAPCOM0_T0_IRQ,		NVIC_CON72},
 	{"CAPCOM0_T1",		PMB8876_CAPCOM0_T1_IRQ,		NVIC_CON73},
 	{"CAPCOM0_CC0",		PMB8876_CAPCOM0_CC0_IRQ,	NVIC_CON74},
@@ -6714,7 +6768,7 @@ static const pmb887x_module_t pmb8876_modules[] = {
 	{"GPTU0",	PMB8876_GPTU0_BASE,		GPTU_IO_SIZE,	gptu_regs,		ARRAY_SIZE(gptu_regs)},
 	{"GPTU1",	PMB8876_GPTU1_BASE,		GPTU_IO_SIZE,	gptu_regs,		ARRAY_SIZE(gptu_regs)},
 	{"STM",		PMB8876_STM_BASE,		STM_IO_SIZE,	stm_regs,		ARRAY_SIZE(stm_regs)},
-	{"AMC",		PMB8876_AMC_BASE,		AMC_IO_SIZE,	amc_regs,		ARRAY_SIZE(amc_regs)},
+	{"ADC",		PMB8876_ADC_BASE,		ADC_IO_SIZE,	adc_regs,		ARRAY_SIZE(adc_regs)},
 	{"KEYPAD",	PMB8876_KEYPAD_BASE,	KEYPAD_IO_SIZE,	keypad_regs,	ARRAY_SIZE(keypad_regs)},
 	{"DSP",		PMB8876_DSP_BASE,		DSP_IO_SIZE,	dsp_regs,		ARRAY_SIZE(dsp_regs)},
 	{"GPRSCU",	PMB8876_GPRSCU_BASE,	GPRSCU_IO_SIZE,	gprscu_regs,	ARRAY_SIZE(gprscu_regs)},

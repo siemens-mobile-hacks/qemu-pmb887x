@@ -229,12 +229,12 @@ static const struct pmb887x_dev pmb8876_devices[] = {
 		}
 	},
 	{
-		.name	= "AMC",
-		.dev	= "pmb887x-amc",
-		.base	= PMB8876_AMC_BASE,
+		.name	= "ADC",
+		.dev	= "pmb887x-adc",
+		.base	= PMB8876_ADC_BASE,
 		.irqs	= {
-			PMB8876_AMC_INT0_IRQ,
-			PMB8876_AMC_INT1_IRQ,
+			PMB8876_ADC_INT0_IRQ,
+			PMB8876_ADC_INT1_IRQ,
 			0
 		}
 	},
@@ -468,12 +468,12 @@ static const struct pmb887x_dev pmb8875_devices[] = {
 		}
 	},
 	{
-		.name	= "AMC",
-		.dev	= "pmb887x-amc",
-		.base	= PMB8875_AMC_BASE,
+		.name	= "ADC",
+		.dev	= "pmb887x-adc",
+		.base	= PMB8875_ADC_BASE,
 		.irqs	= {
-			PMB8875_AMC_INT0_IRQ,
-			PMB8875_AMC_INT1_IRQ,
+			PMB8875_ADC_INT0_IRQ,
+			PMB8875_ADC_INT1_IRQ,
 			0
 		}
 	},
@@ -540,9 +540,7 @@ DeviceState *pmb887x_new_dev(uint32_t cpu_type, const char *name, DeviceState *n
 			irq_n++;
 		}
 		
-		
-		if (strcmp("SCCU", device->name) != 0)
-			sysbus_mmio_map(SYS_BUS_DEVICE(dev), 0, device->base);
+		sysbus_mmio_map(SYS_BUS_DEVICE(dev), 0, device->base);
 		
 		return dev;
 	}

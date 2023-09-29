@@ -485,9 +485,15 @@ static void pmb887x_init(MachineState *machine) {
 	object_property_set_link(OBJECT(gptu1), "pll", OBJECT(pll), &error_fatal);
 	sysbus_realize_and_unref(SYS_BUS_DEVICE(gptu1), &error_fatal);
 	
-	// AMC
-	DeviceState *amc = pmb887x_new_dev(board->cpu, "AMC", nvic);
-	sysbus_realize_and_unref(SYS_BUS_DEVICE(amc), &error_fatal);
+	#ifndef PMB887X_IO_BRIDGE
+	// ADC
+	DeviceState *adc = pmb887x_new_dev(board->cpu, "ADC", nvic);
+	sysbus_realize_and_unref(SYS_BUS_DEVICE(adc), &error_fatal);
+	
+	// Fixed values for some GPIO's
+	for (int i = 0; i < ARRAY_SIZE(board->adc_inputs); i++)
+		pmb887x_adc_set_input(adc, i, &board->adc_inputs[i]);
+	#endif
 	
 	// KEYPAD
 	DeviceState *keypad = pmb887x_new_dev(board->cpu, "KEYPAD", nvic);

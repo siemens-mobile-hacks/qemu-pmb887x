@@ -27,7 +27,6 @@ arm_ss.add(when: 'CONFIG_COLLIE', if_true: files('collie.c'))
 arm_ss.add(when: 'CONFIG_VERSATILE', if_true: files('versatilepb.c'))
 arm_ss.add(when: 'CONFIG_PMB887X', if_true: files(
 	'pmb887x.c',
-	'pmb887x/amc.c',
 	'pmb887x/fifo.c',
 	'pmb887x/boards.c',
 	'pmb887x/devices.c',
@@ -35,6 +34,7 @@ arm_ss.add(when: 'CONFIG_PMB887X', if_true: files(
 	'pmb887x/flash.c',
 	'pmb887x/flash-blk.c',
 	'pmb887x/flash-info.c',
+	'pmb887x/adc.c',
 	'pmb887x/ebu.c',
 	'pmb887x/dmac.c',
 	'pmb887x/stm.c',
