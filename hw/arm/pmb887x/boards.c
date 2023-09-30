@@ -139,34 +139,47 @@ static bool _parse_memory(pmb887x_board_t *board, pmb887x_cfg_section_t *section
 
 static bool _parse_analog(pmb887x_board_t *board, pmb887x_cfg_section_t *section) {
 	char name[32];
-	int channels[] = { 0, 1, 2, 7, 8, 9, 10 };
+	int channels[] = {
+		PMB887X_ADC_INPUT_M0,
+		PMB887X_ADC_INPUT_M1,
+		PMB887X_ADC_INPUT_M2,
+		PMB887X_ADC_INPUT_M3,
+		PMB887X_ADC_INPUT_M4,
+		PMB887X_ADC_INPUT_M5,
+		PMB887X_ADC_INPUT_M6,
+		PMB887X_ADC_INPUT_M7,
+		PMB887X_ADC_INPUT_M8,
+		PMB887X_ADC_INPUT_M9,
+		PMB887X_ADC_INPUT_M10,
+	};
 	for (int i = 0; i < ARRAY_SIZE(channels); i++) {
-		sprintf(name, "M_%d", i);
+		int ch = channels[i];
+		sprintf(name, "M_%d", ch);
 		
 		const char *value;
 		if (!(value = pmb887x_cfg_section_get(section, name, false)))
 			continue;
 		
 		g_autoptr(GMatchInfo) resistor_match = _regexp_match("^resistor,(\\d+)$", value);
-		g_autoptr(GMatchInfo) resistor_divider_match = _regexp_match("^resistor_divider,(\\d+),(\\d+),(\\d+)$", value);
-		g_autoptr(GMatchInfo) voltage_match = _regexp_match("^(\\d+)$", value);
+		g_autoptr(GMatchInfo) resistor_divider_match = _regexp_match("^resistor_divider,(\\d+),(\\d+),(-?\\d+)$", value);
+		g_autoptr(GMatchInfo) voltage_match = _regexp_match("^(-?\\d+)$", value);
 		
 		if (resistor_match) {
 			uint32_t r1 = strtol(g_match_info_fetch(resistor_match, 1), NULL, 10);
-			board->adc_inputs[i].r1 = r1;
-			board->adc_inputs[i].type = PMB887X_ADC_INPUT_RESISTOR;
+			board->adc_inputs[ch].r1 = r1;
+			board->adc_inputs[ch].type = PMB887X_ADC_INPUT_RESISTOR;
 		} else if (resistor_divider_match) {
 			uint32_t r1 = strtol(g_match_info_fetch(resistor_divider_match, 1), NULL, 10);
-			uint32_t r2 = strtol(g_match_info_fetch(resistor_divider_match, 1), NULL, 10);
-			uint32_t input = strtol(g_match_info_fetch(resistor_divider_match, 1), NULL, 10);
-			board->adc_inputs[i].r1 = r1;
-			board->adc_inputs[i].r2 = r2;
-			board->adc_inputs[i].input = input;
-			board->adc_inputs[i].type = PMB887X_ADC_INPUT_RESISTOR_DIV;
+			uint32_t r2 = strtol(g_match_info_fetch(resistor_divider_match, 2), NULL, 10);
+			uint32_t input = strtol(g_match_info_fetch(resistor_divider_match, 3), NULL, 10);
+			board->adc_inputs[ch].r1 = r1;
+			board->adc_inputs[ch].r2 = r2;
+			board->adc_inputs[ch].value = input;
+			board->adc_inputs[ch].type = PMB887X_ADC_INPUT_RESISTOR_DIV;
 		} else if (voltage_match) {
 			uint32_t input = strtol(g_match_info_fetch(resistor_match, 1), NULL, 10);
-			board->adc_inputs[i].input = input;
-			board->adc_inputs[i].type = PMB887X_ADC_INPUT_VOLTAGE;
+			board->adc_inputs[ch].value = input;
+			board->adc_inputs[ch].type = PMB887X_ADC_INPUT_VOLTAGE;
 		} else {
 			error_report("Invalid ADC channel value: %s", value);
 			return false;
