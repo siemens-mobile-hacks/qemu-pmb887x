@@ -47,6 +47,13 @@ enum {
 };
 
 enum {
+	ADC_MEASURE_MODE_NONE,
+	ADC_MEASURE_MODE_SIGNLE,
+	ADC_MEASURE_MODE_TRIG,
+	ADC_MEASURE_MODE_CONTINUOUS,
+};
+
+enum {
 	ADC_CH_TYPE_NORMAL,
 	ADC_CH_TYPE_DIFFERENTIAL,
 };
@@ -65,6 +72,8 @@ typedef struct {
 	SysBusDevice parent_obj;
 	MemoryRegion mmio;
 	
+	int measure_mode;
+	
 	qemu_irq irq[2];
 	
 	pmb887x_clc_reg_t clc;
@@ -75,6 +84,7 @@ typedef struct {
 	uint32_t con1;
 	
 	pmb887x_adc_input_t inputs[PMB887X_ADC_MAX_INPUTS];
+	struct pmb887x_pll_t *pll;
 } pmb887x_adc_t;
 
 // Known channels with known parameters
@@ -181,7 +191,25 @@ static uint16_t adc_read_channel(pmb887x_adc_t *p) {
 }
 
 static void adc_update_state(pmb887x_adc_t *p) {
-	// TODO
+	uint32_t div = pmb887x_clc_get_rmc(&p->clc);
+	uint32_t fadc = div > 0 ? pmb887x_pll_get_fsys(p->pll) / div : 0;
+	bool is_enabled = fadc > 0 && pmb887x_clc_is_enabled(&p->clc);
+	
+	if ((p->con1 & ADC_CON1_TRIG)) {
+		p->measure_mode = ADC_MEASURE_MODE_TRIG;
+	} else if ((p->con1 & ADC_CON1_SINGLE)) {
+		p->measure_mode = ADC_MEASURE_MODE_SIGNLE;
+	} else if ((p->con1 & ADC_CON1_FREQ)) {
+		p->measure_mode = ADC_MEASURE_MODE_CONTINUOUS;
+	} else {
+		p->measure_mode = ADC_MEASURE_MODE_NONE;
+	}
+	
+	DPRINTF("is_enabled=%d, fADC=%d, measure_mode=%d, start=%d\n", is_enabled, fadc, p->measure_mode, p->con1 & ADC_CON1_START ? 1 : 0);
+}
+
+static void adc_update_state_callback(void *opaque) {
+	adc_update_state((pmb887x_adc_t *) opaque);
 }
 
 static uint64_t adc_io_read(void *opaque, hwaddr haddr, unsigned size) {
@@ -310,9 +338,11 @@ static void adc_realize(DeviceState *dev, Error **errp) {
 		pmb887x_src_init(&p->src[i], p->irq[i]);
 	
 	adc_update_state(p);
+	// pmb887x_pll_add_freq_update_callback(p->pll, adc_update_state_callback, p);
 }
 
 static Property adc_properties[] = {
+	DEFINE_PROP_LINK("pll", pmb887x_adc_t, pll, "pmb887x-pll", struct pmb887x_pll_t *),
     DEFINE_PROP_END_OF_LIST(),
 };
 

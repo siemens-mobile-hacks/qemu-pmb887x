@@ -540,6 +540,9 @@ DeviceState *pmb887x_new_dev(uint32_t cpu_type, const char *name, DeviceState *n
 			irq_n++;
 		}
 		
+		if (object_property_find(dev, "cpu_type"))
+			qdev_prop_set_uint32(dev, "cpu_type", cpu_type);
+		
 		sysbus_mmio_map(SYS_BUS_DEVICE(dev), 0, device->base);
 		
 		return dev;

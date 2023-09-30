@@ -20,16 +20,16 @@
 #include "hw/arm/pmb887x/regs_dump.h"
 #include "hw/arm/pmb887x/mod.h"
 #include "hw/arm/pmb887x/sccu.h"
+#include "hw/arm/pmb887x/pcl.h"
 #include "hw/arm/pmb887x/trace.h"
 
 #define TYPE_PMB887X_SCU	"pmb887x-scu"
-#define PMB887X_SCU(obj)	OBJECT_CHECK(struct pmb887x_scu_t, (obj), TYPE_PMB887X_SCU)
+#define PMB887X_SCU(obj)	OBJECT_CHECK(pmb887x_scu_t, (obj), TYPE_PMB887X_SCU)
 
-struct pmb887x_scu_t {
+typedef struct {
 	SysBusDevice parent_obj;
 	MemoryRegion mmio;
 	
-	pmb887x_src_reg_t exti_src[8];
 	pmb887x_src_reg_t dsp_src[5];
 	pmb887x_src_reg_t unk_src[3];
 	
@@ -37,7 +37,8 @@ struct pmb887x_scu_t {
 	qemu_irq dsp_irq[5];
 	qemu_irq unk_irq[3];
 	
-	uint32_t exti;
+	uint32_t cpu_type;
+	
 	uint32_t wdtcon0;
 	uint32_t wdtcon1;
 	uint32_t romamcr;
@@ -51,11 +52,12 @@ struct pmb887x_scu_t {
 	uint32_t boot_cfg;
 	uint32_t dsp_unk0;
 	
+	pmb887x_pcl_t *pcl;
 	struct pmb887x_sccu_t *sccu;
 	MemoryRegion *brom_mirror;
-};
+} pmb887x_scu_t;
 
-static void scu_update_state(struct pmb887x_scu_t *p) {
+static void scu_update_state(pmb887x_scu_t *p) {
 	// Mount BROM image to 0x00000000?
 	memory_region_set_enabled(p->brom_mirror, (p->romamcr & SCU_ROMAMCR_MOUNT_BROM) != 0);
 }
@@ -85,7 +87,7 @@ static int get_src_index_by_addr(hwaddr haddr) {
 }
 
 static uint64_t scu_io_read(void *opaque, hwaddr haddr, unsigned size) {
-	struct pmb887x_scu_t *p = (struct pmb887x_scu_t *) opaque;
+	pmb887x_scu_t *p = (pmb887x_scu_t *) opaque;
 	
 	uint64_t value = 0;
 	
@@ -103,7 +105,11 @@ static uint64_t scu_io_read(void *opaque, hwaddr haddr, unsigned size) {
 		break;
 		
 		case SCU_CHIPID:
-			value = 0x1B10;
+			if (p->cpu_type == CPU_PMB8876) {
+				value = 0x1B10;
+			} else if (p->cpu_type == CPU_PMB8875) {
+				value = 0x1A05;
+			}
 		break;
 		
 		case SCU_RST_REQ:
@@ -166,7 +172,7 @@ static uint64_t scu_io_read(void *opaque, hwaddr haddr, unsigned size) {
 		break;
 		
 		case SCU_EXTI:
-			value = p->exti;
+			value = pmb887x_pcl_exti_read(p->pcl);
 		break;
 		
 		case SCU_DSP_UNK0:
@@ -181,7 +187,7 @@ static uint64_t scu_io_read(void *opaque, hwaddr haddr, unsigned size) {
 		case SCU_EXTI5_SRC:
 		case SCU_EXTI6_SRC:
 		case SCU_EXTI7_SRC:
-			value = pmb887x_src_get(&p->exti_src[get_src_index_by_addr(haddr)]);
+			value = pmb887x_pcl_exti_src_read(p->pcl, get_src_index_by_addr(haddr));
 		break;
 		
 		case SCU_DSP_SRC0:
@@ -211,7 +217,7 @@ static uint64_t scu_io_read(void *opaque, hwaddr haddr, unsigned size) {
 }
 
 static void scu_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned size) {
-	struct pmb887x_scu_t *p = (struct pmb887x_scu_t *) opaque;
+	pmb887x_scu_t *p = (pmb887x_scu_t *) opaque;
 	
 	IO_DUMP(haddr + p->mmio.addr, size, value, true);
 	
@@ -268,7 +274,7 @@ static void scu_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned si
 		break;
 		
 		case SCU_EXTI:
-			p->exti = value;
+			pmb887x_pcl_exti_write(p->pcl, value);
 		break;
 		
 		case SCU_DSP_UNK0:
@@ -283,7 +289,7 @@ static void scu_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned si
 		case SCU_EXTI5_SRC:
 		case SCU_EXTI6_SRC:
 		case SCU_EXTI7_SRC:
-			pmb887x_src_set(&p->exti_src[get_src_index_by_addr(haddr)], value);
+			pmb887x_pcl_exti_src_write(p->pcl, get_src_index_by_addr(haddr), value);
 		break;
 		
 		case SCU_DSP_SRC0:
@@ -320,45 +326,30 @@ static const MemoryRegionOps io_ops = {
 };
 
 static void scu_init(Object *obj) {
-	struct pmb887x_scu_t *p = PMB887X_SCU(obj);
+	pmb887x_scu_t *p = PMB887X_SCU(obj);
 	memory_region_init_io(&p->mmio, obj, &io_ops, p, "pmb887x-scu", SCU_IO_SIZE);
 	sysbus_init_mmio(SYS_BUS_DEVICE(obj), &p->mmio);
 	
-	for (int i = 0; i < ARRAY_SIZE(p->exti_src); i++)
+	for (size_t i = 0; i < ARRAY_SIZE(p->exti_irq); i++)
 		sysbus_init_irq(SYS_BUS_DEVICE(obj), &p->exti_irq[i]);
 	
-	for (int i = 0; i < ARRAY_SIZE(p->dsp_src); i++)
+	for (size_t i = 0; i < ARRAY_SIZE(p->dsp_irq); i++)
 		sysbus_init_irq(SYS_BUS_DEVICE(obj), &p->dsp_irq[i]);
 	
-	for (int i = 0; i < ARRAY_SIZE(p->unk_src); i++)
+	for (size_t i = 0; i < ARRAY_SIZE(p->unk_irq); i++)
 		sysbus_init_irq(SYS_BUS_DEVICE(obj), &p->unk_irq[i]);
 }
 
 static void scu_realize(DeviceState *dev, Error **errp) {
-	struct pmb887x_scu_t *p = PMB887X_SCU(dev);
+	pmb887x_scu_t *p = PMB887X_SCU(dev);
 	
-	int irqn = 0;
+	pmb887x_pcl_init_exti(p->pcl, p->exti_irq, ARRAY_SIZE(p->exti_irq));
 	
-	for (int i = 0; i < ARRAY_SIZE(p->exti_src); i++) {
-		if (!p->exti_irq[i])
-			hw_error("pmb887x-scu: irq %d (EXTI_%d) not set", irqn, i);
-		pmb887x_src_init(&p->exti_src[i], p->exti_irq[i]);
-		irqn++;
-	}
-	
-	for (int i = 0; i < ARRAY_SIZE(p->dsp_src); i++) {
-		if (!p->dsp_irq[i])
-			hw_error("pmb887x-scu: irq %d (DSP_%d) not set", irqn, i);
+	for (size_t i = 0; i < ARRAY_SIZE(p->dsp_src); i++)
 		pmb887x_src_init(&p->dsp_src[i], p->dsp_irq[i]);
-		irqn++;
-	}
 	
-	for (int i = 0; i < ARRAY_SIZE(p->unk_src); i++) {
-		if (!p->unk_irq[i])
-			hw_error("pmb887x-scu: irq %d (UNK_%d) not set", irqn, i);
+	for (size_t i = 0; i < ARRAY_SIZE(p->unk_src); i++)
 		pmb887x_src_init(&p->unk_src[i], p->unk_irq[i]);
-		irqn++;
-	}
 	
 	// Default values
 	p->wdtcon0		= SCU_WDTCON0_WDTLCK | (0xED68 << SCU_WDTCON0_WDTREL_SHIFT) | SCU_WDTCON0_ENDINIT;
@@ -369,8 +360,10 @@ static void scu_realize(DeviceState *dev, Error **errp) {
 }
 
 static Property scu_properties[] = {
-	DEFINE_PROP_LINK("sccu", struct pmb887x_scu_t, sccu, "pmb887x-sccu", struct pmb887x_sccu_t *),
-	DEFINE_PROP_LINK("brom_mirror", struct pmb887x_scu_t, brom_mirror, TYPE_MEMORY_REGION, MemoryRegion *),
+	DEFINE_PROP_UINT32("cpu_type", pmb887x_scu_t, cpu_type, 0),
+	DEFINE_PROP_LINK("sccu", pmb887x_scu_t, sccu, "pmb887x-sccu", struct pmb887x_sccu_t *),
+	DEFINE_PROP_LINK("pcl", pmb887x_scu_t, pcl, "pmb887x-pcl", pmb887x_pcl_t *),
+	DEFINE_PROP_LINK("brom_mirror", pmb887x_scu_t, brom_mirror, TYPE_MEMORY_REGION, MemoryRegion *),
     DEFINE_PROP_END_OF_LIST(),
 };
 
@@ -383,7 +376,7 @@ static void scu_class_init(ObjectClass *klass, void *data) {
 static const TypeInfo scu_info = {
     .name          	= TYPE_PMB887X_SCU,
     .parent        	= TYPE_SYS_BUS_DEVICE,
-    .instance_size 	= sizeof(struct pmb887x_scu_t),
+    .instance_size 	= sizeof(pmb887x_scu_t),
     .instance_init 	= scu_init,
     .class_init    	= scu_class_init,
 };

@@ -212,9 +212,10 @@ static void usart_transmit_fifo(struct pmb887x_usart_t *p) {
 			if (pmb887x_fifo_is_empty(p->tx_fifo))
 				pmb887x_srb_set_isr(&p->srb, USART_ISR_TX);
 		}
-	} else {
-		EPRINTF("qemu_chr_fe_write_all failed!\n");
-		abort();
+	} else if (size > 0) {
+		WPRINTF("qemu_chr_fe_write_all failed! size=%d, ret=%d", size, ret);
+		for (uint32_t i = 0; i < size; i++)
+			WPRINTF("Lost data: %02X\n", buff[i]);
 	}
 	
 	if (!pmb887x_fifo_is_empty(p->tx_fifo)) {

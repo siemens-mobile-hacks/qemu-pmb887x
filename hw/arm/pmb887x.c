@@ -447,10 +447,15 @@ static void pmb887x_init(MachineState *machine) {
 	object_property_set_link(OBJECT(sccu), "pll", OBJECT(pll), &error_fatal);
 	sysbus_realize_and_unref(SYS_BUS_DEVICE(sccu), &error_fatal);
 	
+	// Port Control Logic
+	DeviceState *pcl = pmb887x_new_dev(board->cpu, "PCL", nvic);
+	sysbus_realize_and_unref(SYS_BUS_DEVICE(pcl), &error_fatal);
+	
 	// System Control Unit
 	DeviceState *scu = pmb887x_new_dev(board->cpu, "SCU", nvic);
 	object_property_set_link(OBJECT(scu), "brom_mirror", OBJECT(brom_mirror), &error_fatal);
 	object_property_set_link(OBJECT(scu), "sccu", OBJECT(sccu), &error_fatal);
+	object_property_set_link(OBJECT(scu), "pcl", OBJECT(pcl), &error_fatal);
 	sysbus_realize_and_unref(SYS_BUS_DEVICE(scu), &error_fatal);
 	
 	// CAPCOM0
@@ -460,10 +465,6 @@ static void pmb887x_init(MachineState *machine) {
 	// CAPCOM1
 	DeviceState *capcom1 = pmb887x_new_dev(board->cpu, "CAPCOM1", nvic);
 	sysbus_realize_and_unref(SYS_BUS_DEVICE(capcom1), &error_fatal);
-	
-	// Port Control Logic
-	DeviceState *pcl = pmb887x_new_dev(board->cpu, "PCL", nvic);
-	sysbus_realize_and_unref(SYS_BUS_DEVICE(pcl), &error_fatal);
 	
 	// Fixed values for some GPIO's
 	for (int i = 0; i < board->gpios_count; i++) {
@@ -488,6 +489,7 @@ static void pmb887x_init(MachineState *machine) {
 	#ifndef PMB887X_IO_BRIDGE
 	// ADC
 	DeviceState *adc = pmb887x_new_dev(board->cpu, "ADC", nvic);
+	object_property_set_link(OBJECT(adc), "pll", OBJECT(pll), &error_fatal);
 	sysbus_realize_and_unref(SYS_BUS_DEVICE(adc), &error_fatal);
 	
 	// Fixed values for some GPIO's
