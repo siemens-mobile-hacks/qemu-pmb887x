@@ -270,7 +270,7 @@ static uint64_t flash_io_read(void *opaque, hwaddr part_offset, unsigned size) {
 					
 					default:
 						value = 0xFFFF;
-						flash_error_part(p, "%08lX: read unknown cfi index 0x%02X", offset, index);
+						flash_error_part(p, "%08"PRIX64": read unknown cfi index 0x%02X", offset, index);
 					//	exit(1);
 					break;
 				}
@@ -288,7 +288,7 @@ static uint64_t flash_io_read(void *opaque, hwaddr part_offset, unsigned size) {
 		break;
 		
 		default:
-			flash_error_part(p, "not implemented read for command %02X [addr: %08lX]", p->cmd, offset);
+			flash_error_part(p, "not implemented read for command %02X [addr: %08"PRIX64"]", p->cmd, offset);
 			exit(1);
 		break;
 	}
@@ -316,42 +316,42 @@ static void flash_io_write(void *opaque, hwaddr part_offset, uint64_t value, uns
 			break;
 			
 			case 0x00:
-				flash_trace_part(p, "cmd AMD probe (%02lX)", value);
+				flash_trace_part(p, "cmd AMD probe (%02"PRIX64")", value);
 				flash_reset(p);
 			break;
 			
 			case 0xAA:
-				flash_trace_part(p, "cmd AMD probe (%02lX)", value);
+				flash_trace_part(p, "cmd AMD probe (%02"PRIX64")", value);
 				flash_reset(p);
 			break;
 			
 			case 0x55:
-				flash_trace_part(p, "cmd AMD probe (%02lX)", value);
+				flash_trace_part(p, "cmd AMD probe (%02"PRIX64")", value);
 				flash_reset(p);
 			break;
 			
 			case 0xF0:
-				flash_trace_part(p, "cmd AMD probe (%02lX)", value);
+				flash_trace_part(p, "cmd AMD probe (%02"PRIX64")", value);
 				flash_reset(p);
 			break;
 			
 			case 0x70:
-				flash_trace_part(p, "cmd read status (%02lX)", value);
+				flash_trace_part(p, "cmd read status (%02"PRIX64")", value);
 				p->cmd = value;
 			break;
 			
 			case 0x90:
-				flash_trace_part(p, "cmd read devid (%02lX)", value);
+				flash_trace_part(p, "cmd read devid (%02"PRIX64")", value);
 				p->cmd = value;
 			break;
 			
 			case 0x98:
-				flash_trace_part(p, "cmd read cfi (%02lX)", value);
+				flash_trace_part(p, "cmd read cfi (%02"PRIX64")", value);
 				p->cmd = value;
 			break;
 			
 			case 0x50:
-				flash_trace_part(p, "cmd clear status (%02lX)", value);
+				flash_trace_part(p, "cmd clear status (%02"PRIX64")", value);
 				p->cmd = value;
 				p->wcycle++;
 			break;
@@ -360,28 +360,28 @@ static void flash_io_write(void *opaque, hwaddr part_offset, uint64_t value, uns
 			case 0x41:
 			case 0x40:
 			case 0x10:
-				flash_trace_part(p, "cmd program word (%02lX)", value);
+				flash_trace_part(p, "cmd program word (%02"PRIX64")", value);
 				p->cmd = value;
 				p->wcycle++;
 			break;
 			
 			case 0xE9:
 			case 0xE8:
-				flash_trace_part(p, "cmd buffered program (%02lX)", value);
+				flash_trace_part(p, "cmd buffered program (%02"PRIX64")", value);
 				p->cmd = value;
 				p->wcycle++;
 				p->status |= 0x80;
 			break;
 			
 			case 0x80:
-				flash_trace_part(p, "cmd buffered EFP (%02lX)", value);
+				flash_trace_part(p, "cmd buffered EFP (%02"PRIX64")", value);
 				p->cmd = value;
 				p->wcycle++;
 			break;
 			
 			// Erase
 			case 0x20:
-				flash_trace_part(p, "cmd block erase (%02lX)", value);
+				flash_trace_part(p, "cmd block erase (%02"PRIX64")", value);
 				p->cmd = value;
 				p->wcycle++;
 				p->status |= 0x80;
@@ -389,27 +389,27 @@ static void flash_io_write(void *opaque, hwaddr part_offset, uint64_t value, uns
 			
 			// Suspend
 			case 0xB0:
-				flash_trace_part(p, "cmd suspend (%02lX)", value);
+				flash_trace_part(p, "cmd suspend (%02"PRIX64")", value);
 				p->cmd = value;
 				p->wcycle++;
 			break;
 			
 			// Lock / Configuration
 			case 0x60:
-				flash_trace_part(p, "cmd block lock or read configuration (%02lX)", value);
+				flash_trace_part(p, "cmd block lock or read configuration (%02"PRIX64")", value);
 				p->cmd = value;
 				p->wcycle++;
 			break;
 			
 			// Protection
 			case 0xC0:
-				flash_trace_part(p, "cmd protection program (%02lX)", value);
+				flash_trace_part(p, "cmd protection program (%02"PRIX64")", value);
 				p->cmd = value;
 				p->wcycle++;
 			break;
 			
 			default:
-				flash_error_part(p, "cmd unknown (%02lX) at %08lX", value, p->flash->offset + offset);
+				flash_error_part(p, "cmd unknown (%02"PRIX64") at %08"PRIX64"", value, p->flash->offset + offset);
 				exit(1);
 			break;
 		}
@@ -430,16 +430,16 @@ static void flash_io_write(void *opaque, hwaddr part_offset, uint64_t value, uns
 					flash_reset(p);
 				} else if (value == 0x03) {
 					valid_cmd = true;
-					flash_trace_part(p, "program read configuration register (%02lX)", p->flash->offset + offset);
+					flash_trace_part(p, "program read configuration register (%02"PRIX64")", p->flash->offset + offset);
 					flash_reset(p);
 				} else if (value == 0x04) {
 					valid_cmd = true;
-					flash_trace_part(p, "program read enhanced configuration register (%02lX)", p->flash->offset + offset);
+					flash_trace_part(p, "program read enhanced configuration register (%02"PRIX64")", p->flash->offset + offset);
 					flash_reset(p);
 				} else if (value == 0x01) {
 					valid_cmd = true;
 					
-					flash_trace_part(p, "lock block %08lX", p->flash->offset + offset);
+					flash_trace_part(p, "lock block %08"PRIX64"", p->flash->offset + offset);
 					pmb887x_flash_block_t *blk = flash_part_find_block(p, offset);
 					blk->locked = true;
 					
@@ -448,7 +448,7 @@ static void flash_io_write(void *opaque, hwaddr part_offset, uint64_t value, uns
 				} else if (value == 0xD0) {
 					valid_cmd = true;
 					
-					flash_trace_part(p, "unlock block %08lX", p->flash->offset + offset);
+					flash_trace_part(p, "unlock block %08"PRIX64"", p->flash->offset + offset);
 					pmb887x_flash_block_t *blk = flash_part_find_block(p, offset);
 					blk->locked = false;
 					
@@ -456,7 +456,7 @@ static void flash_io_write(void *opaque, hwaddr part_offset, uint64_t value, uns
 					p->status |= 0x80;
 				} else if (value == 0x2F) {
 					valid_cmd = true;
-					flash_trace_part(p, "lock-down block %08lX", p->flash->offset + offset);
+					flash_trace_part(p, "lock-down block %08"PRIX64"", p->flash->offset + offset);
 					p->wcycle = 0;
 					p->status |= 0x80;
 				}
@@ -471,7 +471,7 @@ static void flash_io_write(void *opaque, hwaddr part_offset, uint64_t value, uns
 					flash_trace_part(p, "confirm erase block %08X...%08X (sector: %08X)", p->flash->offset + base, p->flash->offset + base + sector_size - 1, sector_size);
 					
 					if ((offset & mask) != (p->cmd_addr & mask)) {
-						flash_error_part(p, "erase sector mismatch: %08lX != %08X\n", p->flash->offset + offset, p->flash->offset + p->cmd_addr);
+						flash_error_part(p, "erase sector mismatch: %08"PRIX64" != %08X\n", p->flash->offset + offset, p->flash->offset + p->cmd_addr);
 						exit(1);
 					}
 					
@@ -509,7 +509,7 @@ static void flash_io_write(void *opaque, hwaddr part_offset, uint64_t value, uns
 			case 0x40:	// program word
 			case 0x41:	// program word
 				valid_cmd = true;
-				flash_trace_part(p, "program single word [%d]: %08lX to %08lX", size, value, p->flash->offset + offset);
+				flash_trace_part(p, "program single word [%d]: %08"PRIX64" to %08"PRIX64"", size, value, p->flash->offset + offset);
 				flash_data_write(p, offset, value, size);
 				p->wcycle = 0;
 				p->status |= 0x80;
@@ -525,10 +525,10 @@ static void flash_io_write(void *opaque, hwaddr part_offset, uint64_t value, uns
 				
 				valid_cmd = true;
 				
-				flash_trace_part(p, "program word [%d]: %08lX to %08lX", size, value, p->flash->offset + offset);
+				flash_trace_part(p, "program word [%d]: %08"PRIX64" to %08"PRIX64"", size, value, p->flash->offset + offset);
 				
 				if ((offset & mask) != (p->cmd_addr & mask)) {
-					flash_error_part(p, "program sector mismatch: %08lX != %08X", offset, p->cmd_addr);
+					flash_error_part(p, "program sector mismatch: %08"PRIX64" != %08X", offset, p->cmd_addr);
 				//	exit(1);
 				}
 				
@@ -575,7 +575,7 @@ static void flash_io_write(void *opaque, hwaddr part_offset, uint64_t value, uns
 	}
 	
 	if (!valid_cmd) {
-		flash_error_part(p, "not implemented %d cycle for command %02X [addr: %08lX, value: %08lX]", p->wcycle, p->cmd, p->flash->offset + offset, value);
+		flash_error_part(p, "not implemented %d cycle for command %02X [addr: %08"PRIX64", value: %08"PRIX64"]", p->wcycle, p->cmd, p->flash->offset + offset, value);
 		exit(1);
 	}
 }
@@ -598,7 +598,7 @@ static uint64_t flash_io_unaligned_read(void *opaque, hwaddr offset, unsigned si
 	
 	value &= ((1 << (size * 8)) - 1);
 	// pmb887x_flash_part_t *p = (pmb887x_flash_part_t *) opaque;
-	// flash_trace_part(p, "unaligned %08lX[%d] = %08lX", p->flash->offset + offset, size, value);
+	// flash_trace_part(p, "unaligned %08"PRIX64"[%d] = %08"PRIX64"", p->flash->offset + offset, size, value);
 	return value;
 }
 
@@ -715,7 +715,7 @@ static void flash_realize(DeviceState *dev, Error **errp) {
 		flash->otp0_data[0] = 0x0002;
 		
 		if (!fill_data_from_hex((uint8_t *) flash->otp0_data, cfg->otp0_size, flash->hex_otp0_data)) {
-			flash_error(flash, "Invalid OTP0 hex data: %s [max_size=%d, len=%ld]", flash->hex_otp0_data, cfg->otp0_size, strlen(flash->hex_otp0_data) / 2);
+			flash_error(flash, "Invalid OTP0 hex data: %s [max_size=%d, len=%"PRId64"d]", flash->hex_otp0_data, cfg->otp0_size, strlen(flash->hex_otp0_data) / 2);
 			exit(1);
 		}
 	}
@@ -727,7 +727,7 @@ static void flash_realize(DeviceState *dev, Error **errp) {
 		flash->otp1_data[0] = 0xFFFF;
 		
 		if (!fill_data_from_hex((uint8_t *) flash->otp1_data, cfg->otp1_size, flash->hex_otp1_data)) {
-			flash_error(flash, "Invalid OTP1 hex data: %s [max_size=%d, len=%ld]", flash->hex_otp1_data, cfg->otp1_size, strlen(flash->hex_otp1_data) / 2);
+			flash_error(flash, "Invalid OTP1 hex data: %s [max_size=%d, len=%"PRId64"d]", flash->hex_otp1_data, cfg->otp1_size, strlen(flash->hex_otp1_data) / 2);
 			exit(1);
 		}
 	}

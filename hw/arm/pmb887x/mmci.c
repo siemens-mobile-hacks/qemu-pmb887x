@@ -46,7 +46,7 @@ static uint64_t mmci_io_read(void *opaque, hwaddr haddr, unsigned size) {
 		break;
 		
 		default:
-			EPRINTF("unknown reg access: %02lX\n", haddr);
+			EPRINTF("unknown reg access: %02"PRIX64"\n", haddr);
 			exit(1);
 		break;
 	}
@@ -67,7 +67,7 @@ static void mmci_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned s
 		break;
 		
 		default:
-			EPRINTF("unknown reg access: %02lX\n", haddr);
+			EPRINTF("unknown reg access: %02"PRIX64"\n", haddr);
 			exit(1);
 		break;
 	}

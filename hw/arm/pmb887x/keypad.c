@@ -133,7 +133,7 @@ static uint64_t keypad_io_read(void *opaque, hwaddr haddr, unsigned size) {
 		
 		default:
 			IO_DUMP(haddr + p->mmio.addr, size, 0xFFFFFFFF, false);
-			EPRINTF("unknown reg access: %02lX\n", haddr);
+			EPRINTF("unknown reg access: %02"PRIX64"\n", haddr);
 			exit(1);
 		break;
 	}
@@ -161,7 +161,7 @@ static void keypad_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned
 		break;
 		
 		default:
-			EPRINTF("unknown reg access: %02lX\n", haddr);
+			EPRINTF("unknown reg access: %02"PRIX64"\n", haddr);
 			exit(1);
 		break;
 	}

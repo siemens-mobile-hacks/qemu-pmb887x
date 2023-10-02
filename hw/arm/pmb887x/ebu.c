@@ -238,7 +238,7 @@ static uint64_t ebu_io_read(void *opaque, hwaddr haddr, unsigned size) {
 		
 		default:
 			IO_DUMP(haddr + p->mmio.addr, size, 0xFFFFFFFF, false);
-			EPRINTF("unknown reg access: %02lX\n", haddr);
+			EPRINTF("unknown reg access: %02"PRIX64"\n", haddr);
 			exit(1);
 		break;
 	}
@@ -327,7 +327,7 @@ static void ebu_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned si
 		break;
 		
 		default:
-			EPRINTF("unknown reg access: %02lX\n", haddr);
+			EPRINTF("unknown reg access: %02"PRIX64"\n", haddr);
 			exit(1);
 		break;
 	}
@@ -352,7 +352,7 @@ static const MemoryRegionOps io_ops = {
 static uint64_t ebu_unammped_io_read(void *opaque, hwaddr haddr, unsigned size) {
 	struct pmb887x_ebu_user_data_t *user_data = (struct pmb887x_ebu_user_data_t *) opaque;
 	
-	DPRINTF("read[%d] undefiend memory at %08lX [CS%d]\n", size, user_data->p->regions[user_data->cs].addr + haddr, user_data->cs);
+	DPRINTF("read[%d] undefiend memory at %08"PRIX64" [CS%d]\n", size, user_data->p->regions[user_data->cs].addr + haddr, user_data->cs);
 	
 	switch (size) {
 		case 1:		return 0xFF;
@@ -366,7 +366,7 @@ static uint64_t ebu_unammped_io_read(void *opaque, hwaddr haddr, unsigned size) 
 
 static void ebu_unammped_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned size) {
 	struct pmb887x_ebu_user_data_t *user_data = (struct pmb887x_ebu_user_data_t *) opaque;
-	DPRINTF("write[%d] undefiend memory at %08lX [CS%d]\n", size, user_data->p->regions[user_data->cs].addr + haddr, user_data->cs);
+	DPRINTF("write[%d] undefiend memory at %08"PRIX64" [CS%d]\n", size, user_data->p->regions[user_data->cs].addr + haddr, user_data->cs);
 }
 
 static const MemoryRegionOps unmapped_io_ops = {

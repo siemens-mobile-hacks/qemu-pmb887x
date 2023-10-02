@@ -136,8 +136,7 @@ static void tpu_ptimer_reset2(void *opaque) {
 	
 	uint64_t now = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
 	if (p->next && (now - p->next) / 1000000) {
-		DPRINTF("delta=%ld ms / %ld us\n", (now - p->next) / 1000000, (now - p->next) / 1000);
-		// error_report("error: %ld ns [%ld ms]\n", (now - p->next), (now - p->next) / 1000000);
+		EPRINTF("delta=%"PRId64"d ms / %"PRId64" us\n", (now - p->next) / 1000000, (now - p->next) / 1000);
 		// abort();
 	}
 	
@@ -338,7 +337,7 @@ static uint64_t tpu_io_read(void *opaque, hwaddr haddr, unsigned size) {
 		
 		default:
 			IO_DUMP(haddr + p->mmio.addr, size, 0xFFFFFFFF, false);
-			EPRINTF("unknown reg access: %02lX\n", haddr);
+			EPRINTF("unknown reg access: %02"PRIX64"\n", haddr);
 			exit(1);
 		break;
 	}
@@ -431,7 +430,7 @@ static void tpu_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned si
 		break;
 		
 		default:
-			EPRINTF("unknown reg access: %02lX\n", haddr);
+			EPRINTF("unknown reg access: %02"PRIX64"\n", haddr);
 			exit(1);
 		break;
 	}

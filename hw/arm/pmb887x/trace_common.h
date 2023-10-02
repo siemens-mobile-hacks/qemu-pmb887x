@@ -5,7 +5,7 @@
 #include "qemu/error-report.h"
 #include "hw/arm/pmb887x/regs_dump.h"
 
-#define PMB887X_TRACE_UNHANDLED_IO 1
+#define PMB887X_TRACE_UNHANDLED_IO 0
 
 enum pmb887x_modules_t {
 	// CPU modules
