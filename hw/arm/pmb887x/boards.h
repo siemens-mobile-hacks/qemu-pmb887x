@@ -36,6 +36,11 @@ typedef struct {
 } pmb887x_board_display_t;
 
 typedef struct {
+	char type[64];
+	uint8_t addr;
+} pmb887x_board_pmic_t;
+
+typedef struct {
 	char vendor[64];
 	char model[64];
 	uint32_t cpu;
@@ -49,6 +54,8 @@ typedef struct {
 	pmb887x_board_display_t display;
 	
 	uint32_t keymap[Q_KEY_CODE__MAX];
+	
+	pmb887x_board_pmic_t pmic;
 	
 	pmb887x_board_gpio_t *gpios;
 	uint32_t gpios_count;

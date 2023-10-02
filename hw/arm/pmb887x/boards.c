@@ -137,6 +137,20 @@ static bool _parse_memory(pmb887x_board_t *board, pmb887x_cfg_section_t *section
 	return true;
 }
 
+static bool _parse_pmic(pmb887x_board_t *board, pmb887x_cfg_section_t *section) {
+	const char *type, *addr;
+	
+	if (!(type = pmb887x_cfg_section_get(section, "type", true)))
+		return false;
+	if (!(addr = pmb887x_cfg_section_get(section, "addr", true)))
+		return false;
+	
+	strncpy(board->pmic.type, type, sizeof(board->pmic.type) - 1);
+	board->pmic.addr = strtol(addr, NULL, 16);
+	
+	return true;
+}
+
 static bool _parse_analog(pmb887x_board_t *board, pmb887x_cfg_section_t *section) {
 	char name[32];
 	int channels[] = {
@@ -343,6 +357,7 @@ const pmb887x_board_t *pmb887x_get_board(const char *config_file) {
 	} parsers[] = {
 		{"device", _parse_device},
 		{"memory", _parse_memory},
+		{"pmic", _parse_pmic},
 		{"analog", _parse_analog},
 		{"display", _parse_display},
 		{"gpio-aliases", _parse_gpio_aliases},

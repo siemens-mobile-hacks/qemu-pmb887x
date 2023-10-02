@@ -112,10 +112,11 @@ static uint64_t cpu_io_read(void *opaque, hwaddr offset, unsigned size) {
 	return value;
 	#endif
 	
-	//pmb887x_dump_io(addr, size, value, false);
+	#ifdef PMB887X_TRACE_UNHANDLED_IO
+	pmb887x_dump_io(addr, size, value, false);
+	#endif
 	
-	//fprintf(stderr, "READ: unknown reg access: %08lX\n", addr);
-	//exit(1);
+	// hw_error("READ: unknown reg access: %08lX\n", addr);
 	
 	return value;
 }
@@ -123,7 +124,9 @@ static uint64_t cpu_io_read(void *opaque, hwaddr offset, unsigned size) {
 static void cpu_io_write(void *opaque, hwaddr offset, uint64_t value, unsigned size) {
 	hwaddr addr = (size_t) opaque + offset;
 	
-	// pmb887x_dump_io(addr, size, value, true);
+	#ifdef PMB887X_TRACE_UNHANDLED_IO
+	pmb887x_dump_io(addr, size, value, true);
+	#endif
 	
 	if (addr == 0xf460001c) {
 		if (value == 0x8) {
@@ -142,6 +145,7 @@ static void cpu_io_write(void *opaque, hwaddr offset, uint64_t value, unsigned s
 	}
 	
 	#ifdef PMB887X_IO_BRIDGE
+	pmb887x_dump_io(addr, size, value, true);
 	pmb8876_io_bridge_write(addr, size, value);
 	return;
 	#endif
@@ -162,10 +166,6 @@ static const MemoryRegionOps cpu_io_opts = {
 
 static uint64_t unmapped_io_read(void *opaque, hwaddr offset, unsigned size) {
 	uint32_t addr = (size_t) opaque + offset;
-	
-	if (addr >= 0xA0000000 && addr < 0xB0000000)
-		return 0;
-	
 	fprintf(stderr, "UNMAPPED READ[%d] %08X (PC: %08X)\n", size, addr, cpu->env.regs[15]);
 //	exit(1);
 	return 0;
@@ -186,7 +186,11 @@ static const MemoryRegionOps unmapped_io_opts = {
 __attribute__((destructor))
 static void memory_dump_at_exit(void) {
 //	fprintf(stderr, "sorry died at %08X\n", ARM_CPU(qemu_get_cpu(0))->env.regs[15]);
-	
+//	
+//	qmp_pmemsave(0xB0000000, 16 * 1024 * 1024, "/tmp/ram.bin", NULL);
+//	qmp_pmemsave(0xFFFF0000, 0x4000, "/tmp/tcm.bin", NULL);
+//	qmp_pmemsave(0x00080000, 96 * 1024, "/tmp/sram.bin", NULL);
+//	
 //	qmp_pmemsave(0xA8000000, 16 * 1024 * 1024, "/tmp/ram.bin", NULL);
 //	qmp_pmemsave(0x00000000, 0x4000, "/tmp/tcm.bin", NULL);
 //	qmp_pmemsave(0x00080000, 96 * 1024, "/tmp/sram.bin", NULL);
@@ -323,9 +327,9 @@ static void pmb887x_init(MachineState *machine) {
     memory_region_init_io(unmapped_io, NULL, &unmapped_io_opts, (void *) 0x00000000, "UNMAPPED_IO", 0xFFFFFFFF);
 	memory_region_add_subregion(sysmem, 0x00000000, unmapped_io);
 	
-	// 0xF0000000-0xFFFFFFFF (CPU IO)
+	// 0xF0000000-0xFF000000 (CPU IO)
 	MemoryRegion *io = g_new(MemoryRegion, 1);
-    memory_region_init_io(io, NULL, &cpu_io_opts, (void *) 0xF0000000, "IO", 0x0FFFFFFF);
+    memory_region_init_io(io, NULL, &cpu_io_opts, (void *) 0xF0000000, "IO", 0xF000000);
 	memory_region_add_subregion(sysmem, 0xF0000000, io);
 	
 	// 0x00800000 (Internal SRAM, 96k)
@@ -407,6 +411,12 @@ static void pmb887x_init(MachineState *machine) {
 	DeviceState *dsp = pmb887x_new_dev(board->cpu, "DSP", nvic);
 	sysbus_realize_and_unref(SYS_BUS_DEVICE(dsp), &error_fatal);
 	
+	if (board->cpu == CPU_PMB8876) {
+		// MMCI
+		DeviceState *mmci = pmb887x_new_dev(board->cpu, "MMCI", nvic);
+		sysbus_realize_and_unref(SYS_BUS_DEVICE(mmci), &error_fatal);
+	}
+	
 	// LCD panel
 	DeviceState *lcd = pmb887x_new_lcd_dev(board->display.type);
 	qdev_prop_set_uint32(lcd, "width", board->display.width);
@@ -437,9 +447,9 @@ static void pmb887x_init(MachineState *machine) {
 		DeviceState *i2c = pmb887x_new_dev(board->cpu, "I2C", nvic);
 		sysbus_realize_and_unref(SYS_BUS_DEVICE(i2c), &error_fatal);
 		
-		// Power ASIC
-		I2CSlave *pasic = i2c_slave_new("pmb887x-pasic", 0x31);
-		i2c_slave_realize_and_unref(pasic, pmb887x_i2c_bus(i2c), &error_fatal);
+		// PMIC
+		I2CSlave *pmic = pmb887x_new_pmic_dev(board->pmic.type, board->pmic.addr);
+		i2c_slave_realize_and_unref(pmic, pmb887x_i2c_bus(i2c), &error_fatal);
 	}
 	
 	// Standby Clock Control Unit
@@ -476,6 +486,7 @@ static void pmb887x_init(MachineState *machine) {
 	DeviceState *rtc = pmb887x_new_dev(board->cpu, "RTC", nvic);
 	sysbus_realize_and_unref(SYS_BUS_DEVICE(rtc), &error_fatal);
 	
+	#ifndef PMB887X_IO_BRIDGE
 	// GPTU0
 	DeviceState *gptu0 = pmb887x_new_dev(board->cpu, "GPTU0", nvic);
 	object_property_set_link(OBJECT(gptu0), "pll", OBJECT(pll), &error_fatal);
@@ -485,8 +496,8 @@ static void pmb887x_init(MachineState *machine) {
 	DeviceState *gptu1 = pmb887x_new_dev(board->cpu, "GPTU1", nvic);
 	object_property_set_link(OBJECT(gptu1), "pll", OBJECT(pll), &error_fatal);
 	sysbus_realize_and_unref(SYS_BUS_DEVICE(gptu1), &error_fatal);
+	#endif
 	
-	#ifndef PMB887X_IO_BRIDGE
 	// ADC
 	DeviceState *adc = pmb887x_new_dev(board->cpu, "ADC", nvic);
 	object_property_set_link(OBJECT(adc), "pll", OBJECT(pll), &error_fatal);
@@ -495,7 +506,6 @@ static void pmb887x_init(MachineState *machine) {
 	// Fixed values for some GPIO's
 	for (int i = 0; i < ARRAY_SIZE(board->adc_inputs); i++)
 		pmb887x_adc_set_input(adc, i, &board->adc_inputs[i]);
-	#endif
 	
 	// KEYPAD
 	DeviceState *keypad = pmb887x_new_dev(board->cpu, "KEYPAD", nvic);

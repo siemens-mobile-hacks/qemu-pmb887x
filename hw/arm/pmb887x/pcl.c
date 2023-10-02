@@ -54,6 +54,14 @@ static uint64_t pcl_io_read(void *opaque, hwaddr haddr, unsigned size) {
 	
 	uint64_t value = 0;
 	
+	/*
+	#ifdef PMB887X_IO_BRIDGE
+	value = pmb8876_io_bridge_read(haddr + p->mmio.addr, size);
+	IO_DUMP(haddr + p->mmio.addr, size, value, false);
+	return value;
+	#endif
+	*/
+	
 	switch (haddr) {
 		case GPIO_CLC:
 			value = pmb887x_clc_get(&p->clc);
@@ -95,6 +103,13 @@ static void pcl_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned si
 	pmb887x_pcl_t *p = (pmb887x_pcl_t *) opaque;
 	
 	IO_DUMP(haddr + p->mmio.addr, size, value, true);
+	
+	/*
+	#ifdef PMB887X_IO_BRIDGE
+	pmb8876_io_bridge_write(haddr + p->mmio.addr, size, value);
+	return;
+	#endif
+	*/
 	
 	switch (haddr) {
 		case GPIO_CLC:

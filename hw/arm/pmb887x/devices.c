@@ -3,6 +3,7 @@
 #include "qemu/error-report.h"
 #include "qom/object.h"
 #include "hw/qdev-core.h"
+#include "hw/qdev-properties.h"
 #include "hw/irq.h"
 #include "hw/sysbus.h"
 #include "hw/hw.h"
@@ -259,6 +260,14 @@ static const struct pmb887x_dev pmb8876_devices[] = {
 			PMB8876_SCCU_UNK_IRQ,
 			0
 		}
+	},
+	{
+		.name	= "MMCI",
+		.dev	= "pmb887x-mmci",
+		.base	= PMB8876_MMCI_BASE,
+		.irqs	= {
+			0
+		}
 	}
 };
 
@@ -507,6 +516,27 @@ DeviceState *pmb887x_new_lcd_dev(const char *name) {
 	return qdev_new(tmp);
 }
 
+I2CSlave *pmb887x_new_pmic_dev(const char *type, uint8_t addr) {
+	if (strcmp(type, "D1094EC") == 0) {
+		I2CSlave *dev = i2c_slave_new("pmb887x-d1094xx", addr);
+		qdev_prop_set_uint32(DEVICE(dev), "revision", 0xEC);
+		return dev;
+	} else if (strcmp(type, "D1094ED") == 0) {
+		I2CSlave *dev = i2c_slave_new("pmb887x-d1094xx", addr);
+		qdev_prop_set_uint32(DEVICE(dev), "revision", 0xED);
+		return dev;
+	} else if (strcmp(type, "D1601AA") == 0) {
+		I2CSlave *dev = i2c_slave_new("pmb887x-d1094xx", addr);
+		qdev_prop_set_uint32(DEVICE(dev), "revision", 0xAA);
+		return dev;
+	} else if (strcmp(type, "PMB6812") == 0) {
+		I2CSlave *dev = i2c_slave_new("pmb887x-pmb6812", addr);
+		return dev;
+	}
+	hw_error("Unknown PMIC: %s\n", type);
+	return NULL;
+}
+
 DeviceState *pmb887x_new_dev(uint32_t cpu_type, const char *name, DeviceState *nvic) {
 	const struct pmb887x_dev *devices = NULL;
 	uint32_t devices_count = 0;
@@ -540,7 +570,7 @@ DeviceState *pmb887x_new_dev(uint32_t cpu_type, const char *name, DeviceState *n
 			irq_n++;
 		}
 		
-		if (object_property_find(dev, "cpu_type"))
+		if (object_property_find(OBJECT(dev), "cpu_type"))
 			qdev_prop_set_uint32(dev, "cpu_type", cpu_type);
 		
 		sysbus_mmio_map(SYS_BUS_DEVICE(dev), 0, device->base);

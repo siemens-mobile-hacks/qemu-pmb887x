@@ -38,6 +38,12 @@ struct pmb887x_flash_buffer_t {
 	uint8_t size;
 };
 
+struct pmb887x_flash_block_t {
+	uint32_t offset;
+	uint32_t size;
+	bool locked;
+};
+
 struct pmb887x_flash_part_t {
 	uint16_t n;
 	uint32_t size;
@@ -54,6 +60,9 @@ struct pmb887x_flash_part_t {
 	uint32_t buffer_index;
 	struct pmb887x_flash_buffer_t *buffer;
 	const pmb887x_flash_cfg_part_t *cfg;
+	
+	uint32_t blocks_n;
+	struct pmb887x_flash_block_t *blocks;
 	
 	MemoryRegion mem;
 	struct pmb887x_flash_t *flash;
@@ -90,6 +99,7 @@ struct pmb887x_flash_t {
 typedef struct pmb887x_flash_t pmb887x_flash_t;
 typedef struct pmb887x_flash_part_t pmb887x_flash_part_t;
 typedef struct pmb887x_flash_buffer_t pmb887x_flash_buffer_t;
+typedef struct pmb887x_flash_block_t pmb887x_flash_block_t;
 
 static void flash_trace(pmb887x_flash_t *flash, const char *format, ...) G_GNUC_PRINTF(2, 3);
 static void flash_error(pmb887x_flash_t *flash, const char *format, ...) G_GNUC_PRINTF(2, 3);
@@ -104,6 +114,18 @@ static void flash_reset(pmb887x_flash_part_t *p) {
 	memory_region_rom_device_set_romd(&p->mem, true);
 }
 
+static pmb887x_flash_block_t *flash_part_find_block(pmb887x_flash_part_t *p, uint32_t offset) {
+	offset -= p->offset;
+	for (uint32_t i = 0; i < p->blocks_n; i++) {
+		pmb887x_flash_block_t *blk = &p->blocks[i];
+		if (offset >= blk->offset && offset < blk->offset + blk->size)
+			return blk;
+	}
+	flash_error_part(p, "[data] Unknown addr %08X\n", p->flash->offset + p->offset + offset);
+	exit(1);
+	return NULL;
+}
+
 static uint32_t flash_find_sector_size(pmb887x_flash_part_t *p, uint32_t offset) {
 	offset -= p->offset;
 	
@@ -113,7 +135,7 @@ static uint32_t flash_find_sector_size(pmb887x_flash_part_t *p, uint32_t offset)
 			return region->sector;
 	}
 	
-	flash_error_part(p, "[data] Unknown sector size for addr %08X\n", offset);
+	flash_error_part(p, "[data] Unknown sector size for addr %08X\n", p->flash->offset + p->offset + offset);
 	exit(1);
 }
 
@@ -231,7 +253,8 @@ static uint64_t flash_io_read(void *opaque, hwaddr part_offset, unsigned size) {
 					break;
 					
 					case 0x02:
-						value = cfg->lock;
+						pmb887x_flash_block_t *blk = flash_part_find_block(p, offset);
+						value = blk->locked ? cfg->lock : 0;
 						flash_trace_part(p, "lock status: %02X", value);
 					break;
 					
@@ -415,12 +438,20 @@ static void flash_io_write(void *opaque, hwaddr part_offset, uint64_t value, uns
 					flash_reset(p);
 				} else if (value == 0x01) {
 					valid_cmd = true;
+					
 					flash_trace_part(p, "lock block %08lX", p->flash->offset + offset);
+					pmb887x_flash_block_t *blk = flash_part_find_block(p, offset);
+					blk->locked = true;
+					
 					p->wcycle = 0;
 					p->status |= 0x80;
 				} else if (value == 0xD0) {
 					valid_cmd = true;
+					
 					flash_trace_part(p, "unlock block %08lX", p->flash->offset + offset);
+					pmb887x_flash_block_t *blk = flash_part_find_block(p, offset);
+					blk->locked = false;
+					
 					p->wcycle = 0;
 					p->status |= 0x80;
 				} else if (value == 0x2F) {
@@ -498,7 +529,7 @@ static void flash_io_write(void *opaque, hwaddr part_offset, uint64_t value, uns
 				
 				if ((offset & mask) != (p->cmd_addr & mask)) {
 					flash_error_part(p, "program sector mismatch: %08lX != %08X", offset, p->cmd_addr);
-					exit(1);
+				//	exit(1);
 				}
 				
 				if (size != 2 && size != 4) {
@@ -634,6 +665,27 @@ static void flash_init_part(pmb887x_flash_t *flash, const pmb887x_flash_cfg_part
 	if (ret < 0) {
 		flash_error(p->flash, "failed to read the initial flash content [offset=%08X, size=%08X]", p->flash->offset + p->offset, p->size);
 		exit(1);
+	}
+	
+	p->blocks_n = 0;
+	for (uint32_t i = 0; i < p->cfg->erase_regions_cnt; i++)
+		p->blocks_n += p->cfg->erase_regions[i].size / p->cfg->erase_regions[i].sector;
+	
+	p->blocks = g_new0(pmb887x_flash_block_t, p->blocks_n);
+	
+	uint32_t block_id = 0;
+	uint32_t block_offset = 0;
+	
+	for (uint32_t i = 0; i < p->cfg->erase_regions_cnt; i++) {
+		const pmb887x_flash_erase_region_t *region = &p->cfg->erase_regions[i];
+		uint32_t sectors = region->size / region->sector;
+		for (uint32_t j = 0; j < sectors; j++) {
+			p->blocks[block_id].offset = block_offset;
+			p->blocks[block_id].size = region->sector;
+			p->blocks[block_id].locked = true;
+			block_offset += region->sector;
+			block_id++;
+		}
 	}
 }
 

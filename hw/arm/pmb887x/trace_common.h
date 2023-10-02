@@ -5,6 +5,8 @@
 #include "qemu/error-report.h"
 #include "hw/arm/pmb887x/regs_dump.h"
 
+#define PMB887X_TRACE_UNHANDLED_IO 1
+
 enum pmb887x_modules_t {
 	// CPU modules
 	PMB887X_TRACE_GPTU		= 1 << 0,
@@ -26,17 +28,18 @@ enum pmb887x_modules_t {
 	PMB887X_TRACE_KEYPAD	= 1 << 16,
 	PMB887X_TRACE_I2C		= 1 << 17,
 	PMB887X_TRACE_SCCU		= 1 << 18,
+	PMB887X_TRACE_MMCI		= 1 << 19,
 	
 	// External
 	PMB887X_TRACE_FLASH		= 1 << 29,
 	PMB887X_TRACE_LCD		= 1 << 30,
-	PMB887X_TRACE_D1601XX	= 1 << 31,
+	PMB887X_TRACE_PMIC		= 1 << 31,
 };
 
 //extern uint32_t pmb887x_trace_flags;
 
 static inline bool pmb887x_trace_log_enabled(uint32_t id) {
-	return ((id & (PMB887X_TRACE_PCL)) != 0);
+	//return ((id & (PMB887X_TRACE_FLASH)) != 0);
 	return false;
 	return ((id & (PMB887X_TRACE_ADC)) != 0);
 	return ((id & (PMB887X_TRACE_FLASH)) != 0);
@@ -62,15 +65,20 @@ static inline bool pmb887x_trace_log_enabled(uint32_t id) {
 		PMB887X_TRACE_USART |
 		PMB887X_TRACE_KEYPAD |
 		PMB887X_TRACE_I2C |
+		PMB887X_TRACE_SCCU |
+		PMB887X_TRACE_MMCI |
 		
 		PMB887X_TRACE_FLASH |
 		PMB887X_TRACE_LCD |
-		PMB887X_TRACE_D1601XX |
+		PMB887X_TRACE_PMIC |
 		0
 	) & id) != 0;
 }
 
 static inline bool pmb887x_trace_io_enabled(uint32_t id) {
+	//return ((id & (PMB887X_TRACE_PCL)) != 0);
+	//return true;
+	//return ((id & (PMB887X_TRACE_GPTU)) != 0);
 	//return ((id & (PMB887X_TRACE_ADC)) != 0);
 	return false;
 	return ((id & (PMB887X_TRACE_PCL)) != 0);
@@ -94,10 +102,12 @@ static inline bool pmb887x_trace_io_enabled(uint32_t id) {
 		PMB887X_TRACE_USART |
 		PMB887X_TRACE_KEYPAD |
 		PMB887X_TRACE_I2C |
+		PMB887X_TRACE_SCCU |
+		PMB887X_TRACE_MMCI |
 		
 //		PMB887X_TRACE_FLASH |
 		PMB887X_TRACE_LCD |
-		PMB887X_TRACE_D1601XX |
+		PMB887X_TRACE_PMIC |
 		0
 	) & id) != 0;
 }

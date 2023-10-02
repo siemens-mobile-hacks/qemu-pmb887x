@@ -220,6 +220,10 @@ static void nvic_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned s
 			#endif
 		}
 		break;
+		
+		case NVIC_IRQ_STAT:
+			// Ignore write...
+		break;
 	}
 	
 	nvic_update_state(p);
