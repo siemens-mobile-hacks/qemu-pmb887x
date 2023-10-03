@@ -51,11 +51,13 @@ size_t pmb887x_cfg_sections_cnt(pmb887x_cfg_t *cfg, const char *name) {
 }
 
 pmb887x_cfg_section_t *pmb887x_cfg_section(pmb887x_cfg_t *cfg, const char *name, ssize_t index, bool required) {
+	uint32_t section_n = 0;
 	for (size_t i = 0; i < cfg->sections_count; i++) {
 		pmb887x_cfg_section_t *s = &cfg->sections[i];
 		if (strcmp(s->name, name) == 0) {
-			if (index == -1 || i == index)
+			if (index == -1 || section_n == index)
 				return s;
+			section_n++;
 		}
 	}
 	

@@ -11,6 +11,20 @@
 #include "hw/arm/pmb887x/regs.h"
 #include "hw/arm/pmb887x/io_bridge.h"
 
+struct  pmb887x_i2c_dev_map {
+	const char *type;
+	const char *device;
+	uint32_t revision;
+};
+
+static const struct pmb887x_i2c_dev_map i2c_map[] = {
+	{ "D1094EC",	"pmb887x-d1094xx",		0xEC },
+	{ "D1094ED",	"pmb887x-d1094xx",		0xED },
+	{ "D1601AA",	"pmb887x-d1094xx",		0xAA },
+	{ "PMB6812",	"pmb887x-pmb6812",		0x00 },
+	{ "TEA5761UK",	"pmb887x-tea5761uk",	0x00 },
+};
+
 static const struct pmb887x_dev pmb8876_devices[] = {
 	{
 		.name	= "SCU",
@@ -516,24 +530,19 @@ DeviceState *pmb887x_new_lcd_dev(const char *name) {
 	return qdev_new(tmp);
 }
 
-I2CSlave *pmb887x_new_pmic_dev(const char *type, uint8_t addr) {
-	if (strcmp(type, "D1094EC") == 0) {
-		I2CSlave *dev = i2c_slave_new("pmb887x-d1094xx", addr);
-		qdev_prop_set_uint32(DEVICE(dev), "revision", 0xEC);
-		return dev;
-	} else if (strcmp(type, "D1094ED") == 0) {
-		I2CSlave *dev = i2c_slave_new("pmb887x-d1094xx", addr);
-		qdev_prop_set_uint32(DEVICE(dev), "revision", 0xED);
-		return dev;
-	} else if (strcmp(type, "D1601AA") == 0) {
-		I2CSlave *dev = i2c_slave_new("pmb887x-d1094xx", addr);
-		qdev_prop_set_uint32(DEVICE(dev), "revision", 0xAA);
-		return dev;
-	} else if (strcmp(type, "PMB6812") == 0) {
-		I2CSlave *dev = i2c_slave_new("pmb887x-pmb6812", addr);
-		return dev;
+I2CSlave *pmb887x_new_i2c_dev(const pmb887x_board_i2c_dev_t *i2c_dev) {
+	I2CSlave *dev = NULL;
+	for (size_t i = 0; i < ARRAY_SIZE(i2c_map); i++) {
+		if (strcmp(i2c_map[i].type, i2c_dev->type) == 0) {
+			dev = i2c_slave_new(i2c_map[i].device, i2c_dev->addr);
+			
+			if (object_property_find(OBJECT(dev), "revision"))
+				qdev_prop_set_uint32(DEVICE(dev), "revision", i2c_map[i].revision);
+			
+			return dev;
+		}
 	}
-	hw_error("Unknown PMIC: %s\n", type);
+	hw_error("Unknown i2c device: %s\n", i2c_dev->type);
 	return NULL;
 }
 

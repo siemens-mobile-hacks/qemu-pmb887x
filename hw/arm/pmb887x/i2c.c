@@ -248,16 +248,21 @@ static void i2c_rx_fifo(pmb887x_i2c_t *p, uint32_t rx_size) {
 }
 
 static void i2c_trigger_fifo_irq(pmb887x_i2c_t *p, uint32_t avail, uint32_t size, uint32_t burst_size) {
+	DPRINTF("avail=%d, size=%d, burst_size=%d\n", avail, size, burst_size);
 	if (size < burst_size) {
 		if (avail > size) {
+			DPRINTF("I2C_ISR_SREQ_INT\n");
 			pmb887x_srb_set_isr(&p->srb, I2C_ISR_SREQ_INT);
 		} else {
+			DPRINTF("I2C_ISR_LSREQ_INT\n");
 			pmb887x_srb_set_isr(&p->srb, I2C_ISR_LSREQ_INT);	
 		}
 	} else {
 		if (avail > size) {
+			DPRINTF("I2C_ISR_BREQ_INT\n");
 			pmb887x_srb_set_isr(&p->srb, I2C_ISR_BREQ_INT);
 		} else {
+			DPRINTF("I2C_ISR_LBREQ_INT\n");
 			pmb887x_srb_set_isr(&p->srb, I2C_ISR_LBREQ_INT);	
 		}
 	}
@@ -265,8 +270,9 @@ static void i2c_trigger_fifo_irq(pmb887x_i2c_t *p, uint32_t avail, uint32_t size
 
 static void i2c_work(pmb887x_i2c_t *p) {
 	if (p->state == I2C_STATE_TX) {
+		uint32_t max_tx_size = p->tpsctrl >= i2c_get_tx_burst_size(p) ? i2c_get_tx_burst_size(p) : (4 / i2c_get_tx_align(p));
 		uint32_t tx_fifo_bytes = (4 / i2c_get_tx_align(p)) * pmb887x_fifo_count(&p->fifo);
-		uint32_t tx_size = MIN(i2c_get_tx_burst_size(p), p->tpsctrl);
+		uint32_t tx_size = MIN(max_tx_size, p->tpsctrl);
 		
 		if (p->tpsctrl > 0 && tx_fifo_bytes >= tx_size)
 			i2c_tx_fifo(p, tx_size);
@@ -287,12 +293,13 @@ static void i2c_work(pmb887x_i2c_t *p) {
 			}
 		}
 	} else if (p->state == I2C_STATE_RX) {
-		uint32_t rx_size = MIN(i2c_get_tx_burst_size(p), p->mrpsctrl);
+		uint32_t max_rx_size = p->mrpsctrl >= i2c_get_rx_burst_size(p) ? i2c_get_rx_burst_size(p) : (4 / i2c_get_rx_align(p));
+		uint32_t rx_size = MIN(max_rx_size, p->mrpsctrl);
 		if (p->rx_buffer_cnt == 0 && rx_size > 0) {
 			i2c_rx_fifo(p, rx_size);
 			
 			if (p->rx_buffer_cnt > 0) {
-				uint32_t next_read_size = MIN(i2c_get_rx_burst_size(p), p->rx_buffer_cnt);
+				uint32_t next_read_size = MIN(rx_size, p->rx_buffer_cnt);
 				i2c_trigger_fifo_irq(p, p->mrpsctrl + p->rx_buffer_cnt, next_read_size, i2c_get_rx_burst_size(p));
 			}
 		}

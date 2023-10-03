@@ -253,9 +253,11 @@ static uint64_t flash_io_read(void *opaque, hwaddr part_offset, unsigned size) {
 					break;
 					
 					case 0x02:
+					{
 						pmb887x_flash_block_t *blk = flash_part_find_block(p, offset);
 						value = blk->locked ? cfg->lock : 0;
 						flash_trace_part(p, "lock status: %02X", value);
+					}
 					break;
 					
 					case 0x05:

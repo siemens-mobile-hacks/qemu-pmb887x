@@ -447,9 +447,10 @@ static void pmb887x_init(MachineState *machine) {
 		DeviceState *i2c = pmb887x_new_dev(board->cpu, "I2C", nvic);
 		sysbus_realize_and_unref(SYS_BUS_DEVICE(i2c), &error_fatal);
 		
-		// PMIC
-		I2CSlave *pmic = pmb887x_new_pmic_dev(board->pmic.type, board->pmic.addr);
-		i2c_slave_realize_and_unref(pmic, pmb887x_i2c_bus(i2c), &error_fatal);
+		for (uint32_t i = 0; i < board->i2c_devices_count; i++) {
+			I2CSlave *dev = pmb887x_new_i2c_dev(&board->i2c_devices[i]);
+			i2c_slave_realize_and_unref(dev, pmb887x_i2c_bus(i2c), &error_fatal);
+		}
 	}
 	
 	// Standby Clock Control Unit

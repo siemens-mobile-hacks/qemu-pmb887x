@@ -137,7 +137,7 @@ static bool _parse_memory(pmb887x_board_t *board, pmb887x_cfg_section_t *section
 	return true;
 }
 
-static bool _parse_pmic(pmb887x_board_t *board, pmb887x_cfg_section_t *section) {
+static bool _parse_i2c(pmb887x_board_t *board, pmb887x_cfg_section_t *section) {
 	const char *type, *addr;
 	
 	if (!(type = pmb887x_cfg_section_get(section, "type", true)))
@@ -145,8 +145,12 @@ static bool _parse_pmic(pmb887x_board_t *board, pmb887x_cfg_section_t *section) 
 	if (!(addr = pmb887x_cfg_section_get(section, "addr", true)))
 		return false;
 	
-	strncpy(board->pmic.type, type, sizeof(board->pmic.type) - 1);
-	board->pmic.addr = strtol(addr, NULL, 16);
+	board->i2c_devices_count++;
+	board->i2c_devices = g_realloc_n(board->i2c_devices, board->i2c_devices_count, sizeof(pmb887x_board_i2c_dev_t));
+	
+	pmb887x_board_i2c_dev_t *i2c_dev = &board->i2c_devices[board->i2c_devices_count - 1];
+	strncpy(i2c_dev->type, type, sizeof(i2c_dev->type) - 1);
+	i2c_dev->addr = strtol(addr, NULL, 16);
 	
 	return true;
 }
@@ -354,27 +358,38 @@ const pmb887x_board_t *pmb887x_get_board(const char *config_file) {
 	struct {
 		const char *section;
 		bool (*parser)(pmb887x_board_t *, pmb887x_cfg_section_t *);
+		bool multile;
 	} parsers[] = {
-		{"device", _parse_device},
-		{"memory", _parse_memory},
-		{"pmic", _parse_pmic},
-		{"analog", _parse_analog},
-		{"display", _parse_display},
-		{"gpio-aliases", _parse_gpio_aliases},
-		{"gpio-inputs", _parse_gpio_inputs},
-		{"keyboard", _parse_keyboard},
+		{"device", _parse_device, false},
+		{"memory", _parse_memory, false},
+		{"i2c", _parse_i2c, true},
+		{"analog", _parse_analog, false},
+		{"display", _parse_display, false},
+		{"gpio-aliases", _parse_gpio_aliases, false},
+		{"gpio-inputs", _parse_gpio_inputs, false},
+		{"keyboard", _parse_keyboard, false},
 	};
 	
-	for (size_t i = 0; i < ARRAY_SIZE(parsers); i++) {
-		pmb887x_cfg_section_t *section = pmb887x_cfg_section(cfg, parsers[i].section, -1, true);
-		if (!section) {
+	for (size_t i = 0; i < ARRAY_SIZE(parsers); i++) {		
+		uint32_t sections_n = pmb887x_cfg_sections_cnt(cfg, parsers[i].section);
+		
+		if (sections_n > 1 && !parsers[i].multile) {
+			error_report("[pmb887x-config] %s: multiple [%s] sections is not allowed!", config_file, parsers[i].section);
 			pmb887x_cfg_free(cfg);
 			return NULL;
 		}
-		if (!parsers[i].parser(board, section)) {
-			error_report("[pmb887x-config] %s: invalid settings in [%s]", config_file, parsers[i].section);
-			pmb887x_cfg_free(cfg);
-			return NULL;
+		
+		for (uint32_t j = 0; j < sections_n; j++) {
+			pmb887x_cfg_section_t *section = pmb887x_cfg_section(cfg, parsers[i].section, j, true);
+			if (!section) {
+				pmb887x_cfg_free(cfg);
+				return NULL;
+			}
+			if (!parsers[i].parser(board, section)) {
+				error_report("[pmb887x-config] %s: invalid settings in [%s]", config_file, parsers[i].section);
+				pmb887x_cfg_free(cfg);
+				return NULL;
+			}
 		}
 	}
 	

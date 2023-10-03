@@ -5,41 +5,42 @@
 #include "qemu/error-report.h"
 #include "hw/arm/pmb887x/regs_dump.h"
 
-#define PMB887X_TRACE_UNHANDLED_IO 0
+// #define PMB887X_TRACE_UNHANDLED_IO 1
 
 enum pmb887x_modules_t {
 	// CPU modules
-	PMB887X_TRACE_GPTU		= 1 << 0,
-	PMB887X_TRACE_TPU		= 1 << 1,
-	PMB887X_TRACE_DMAC		= 1 << 2,
-	PMB887X_TRACE_EBU		= 1 << 3,
-	PMB887X_TRACE_STM		= 1 << 4,
-	PMB887X_TRACE_PLL		= 1 << 5,
-	PMB887X_TRACE_ADC		= 1 << 6,
-	PMB887X_TRACE_CAPCOM	= 1 << 7,
-	PMB887X_TRACE_DIF		= 1 << 8,
-	PMB887X_TRACE_DSP		= 1 << 9,
-	PMB887X_TRACE_MOD		= 1 << 10,
-	PMB887X_TRACE_NVIC		= 1 << 11,
-	PMB887X_TRACE_PCL		= 1 << 12,
-	PMB887X_TRACE_RTC		= 1 << 13,
-	PMB887X_TRACE_SCU		= 1 << 14,
-	PMB887X_TRACE_USART		= 1 << 15,
-	PMB887X_TRACE_KEYPAD	= 1 << 16,
-	PMB887X_TRACE_I2C		= 1 << 17,
-	PMB887X_TRACE_SCCU		= 1 << 18,
-	PMB887X_TRACE_MMCI		= 1 << 19,
+	PMB887X_TRACE_GPTU		= 1ULL << 0,
+	PMB887X_TRACE_TPU		= 1ULL << 1,
+	PMB887X_TRACE_DMAC		= 1ULL << 2,
+	PMB887X_TRACE_EBU		= 1ULL << 3,
+	PMB887X_TRACE_STM		= 1ULL << 4,
+	PMB887X_TRACE_PLL		= 1ULL << 5,
+	PMB887X_TRACE_ADC		= 1ULL << 6,
+	PMB887X_TRACE_CAPCOM	= 1ULL << 7,
+	PMB887X_TRACE_DIF		= 1ULL << 8,
+	PMB887X_TRACE_DSP		= 1ULL << 9,
+	PMB887X_TRACE_MOD		= 1ULL << 10,
+	PMB887X_TRACE_NVIC		= 1ULL << 11,
+	PMB887X_TRACE_PCL		= 1ULL << 12,
+	PMB887X_TRACE_RTC		= 1ULL << 13,
+	PMB887X_TRACE_SCU		= 1ULL << 14,
+	PMB887X_TRACE_USART		= 1ULL << 15,
+	PMB887X_TRACE_KEYPAD	= 1ULL << 16,
+	PMB887X_TRACE_I2C		= 1ULL << 17,
+	PMB887X_TRACE_SCCU		= 1ULL << 18,
+	PMB887X_TRACE_MMCI		= 1ULL << 19,
 	
 	// External
-	PMB887X_TRACE_FLASH		= 1 << 29,
-	PMB887X_TRACE_LCD		= 1 << 30,
-	PMB887X_TRACE_PMIC		= 1 << 31,
+	PMB887X_TRACE_FM_RADIO	= 1ULL << 28,
+	PMB887X_TRACE_FLASH		= 1ULL << 29,
+	PMB887X_TRACE_LCD		= 1ULL << 30,
+	PMB887X_TRACE_PMIC		= 1ULL << 31,
 };
 
 //extern uint32_t pmb887x_trace_flags;
 
-static inline bool pmb887x_trace_log_enabled(uint32_t id) {
-	//return ((id & (PMB887X_TRACE_FLASH)) != 0);
+static inline bool pmb887x_trace_log_enabled(uint64_t id) {
+	//return ((id & (PMB887X_TRACE_I2C | PMB887X_TRACE_FM_RADIO | PMB887X_TRACE_DIF)) != 0);
 	return false;
 	return ((id & (PMB887X_TRACE_ADC)) != 0);
 	return ((id & (PMB887X_TRACE_FLASH)) != 0);
@@ -71,12 +72,13 @@ static inline bool pmb887x_trace_log_enabled(uint32_t id) {
 		PMB887X_TRACE_FLASH |
 		PMB887X_TRACE_LCD |
 		PMB887X_TRACE_PMIC |
+		PMB887X_TRACE_FM_RADIO |
 		0
 	) & id) != 0;
 }
 
-static inline bool pmb887x_trace_io_enabled(uint32_t id) {
-	//return ((id & (PMB887X_TRACE_PCL)) != 0);
+static inline bool pmb887x_trace_io_enabled(uint64_t id) {
+	//return ((id & (PMB887X_TRACE_I2C)) != 0);
 	//return true;
 	//return ((id & (PMB887X_TRACE_GPTU)) != 0);
 	//return ((id & (PMB887X_TRACE_ADC)) != 0);
@@ -108,6 +110,7 @@ static inline bool pmb887x_trace_io_enabled(uint32_t id) {
 //		PMB887X_TRACE_FLASH |
 		PMB887X_TRACE_LCD |
 		PMB887X_TRACE_PMIC |
+		PMB887X_TRACE_FM_RADIO |
 		0
 	) & id) != 0;
 }

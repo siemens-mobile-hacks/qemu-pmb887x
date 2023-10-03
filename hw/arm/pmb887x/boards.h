@@ -38,7 +38,7 @@ typedef struct {
 typedef struct {
 	char type[64];
 	uint8_t addr;
-} pmb887x_board_pmic_t;
+} pmb887x_board_i2c_dev_t;
 
 typedef struct {
 	char vendor[64];
@@ -55,7 +55,8 @@ typedef struct {
 	
 	uint32_t keymap[Q_KEY_CODE__MAX];
 	
-	pmb887x_board_pmic_t pmic;
+	pmb887x_board_i2c_dev_t *i2c_devices;
+	uint32_t i2c_devices_count;
 	
 	pmb887x_board_gpio_t *gpios;
 	uint32_t gpios_count;
