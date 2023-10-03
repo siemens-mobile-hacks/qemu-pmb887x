@@ -243,6 +243,10 @@ static void dif_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned si
 			pmb887x_srb_set_isr(&p->srb, value);
 		break;
 		
+		case 0x80:
+			// ???
+		break;
+		
 		default:
 			EPRINTF("unknown reg access: %02"PRIX64"\n", haddr);
 			exit(1);
