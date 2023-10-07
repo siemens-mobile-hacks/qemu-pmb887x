@@ -24,15 +24,6 @@
 		b = temp;				\
 	} while(0)
 
-#define LCD_PIXMAN_TRANSFORM(v00, v01, v10, v11, WIDTH, HEIGHT) \
-	{ \
-		{ \
-			{ v00, v01, WIDTH * pixman_fixed_1 / 2 }, \
-			{ v10, v11, HEIGHT * pixman_fixed_1 / 2 }, \
-			{ 0, 0, pixman_fixed_1 } \
-		} \
-	}
-
 static uint32_t pmb887x_lcd_get_px_index(pmb887x_lcd_t *lcd);
 static void pmb887x_lcd_incr_px(pmb887x_lcd_t *lcd);
 
@@ -171,6 +162,9 @@ static void pmb887x_lcd_write_pixel_byte(pmb887x_lcd_t *lcd, uint8_t byte) {
 
 static void pmb887x_lcd_write_control_byte(pmb887x_lcd_t *lcd, uint8_t value) {
 	pmb887x_lcd_class_t *k = PMB887X_LCD_GET_CLASS(lcd);
+	
+	
+	DPRINTF("pmb887x_lcd_write_control_byte %d / %02X\n", lcd->cd, value);
 	
 	if (lcd->cd) {
 		if (lcd->wr_state != LCD_WR_STATE_CMD) {

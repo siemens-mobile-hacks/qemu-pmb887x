@@ -1,8 +1,8 @@
 /*
- * Solomon SSD1286
+ * Philips HX5050A (WIP)
  * */
 #define PMB887X_TRACE_ID		LCD
-#define PMB887X_TRACE_PREFIX	"pmb887x-lcd-ssd1286"
+#define PMB887X_TRACE_PREFIX	"pmb887x-lcd-hx5050a"
 
 #include "qemu/osdep.h"
 #include "hw/hw.h"
@@ -12,21 +12,21 @@
 #include "hw/arm/pmb887x/trace.h"
 #include "hw/arm/pmb887x/dif/lcd_common.h"
 
-#define TYPE_PMB887X_LCD_SSD1286	"pmb887x-lcd-ssd1286"
-#define PMB887X_LCD_SSD1286(obj)	OBJECT_CHECK(pmb887x_lcd_ssd1286_t, (obj), TYPE_PMB887X_LCD_SSD1286)
+#define TYPE_PMB887X_LCD_HX5050A	"pmb887x-lcd-hx5050a"
+#define PMB887X_LCD_HX5050A(obj)	OBJECT_CHECK(pmb887x_lcd_hx5050a_t, (obj), TYPE_PMB887X_LCD_HX5050A)
 
-#define SSD1286_MAX_BPP		18
-#define SSD1286_MAX_REGS	0x100
+#define HX5050A_MAX_BPP		18
+#define HX5050A_MAX_REGS	0x100
 
 static const uint16_t DEFAULT_REGS[] = { 0 };
 
 typedef struct {
 	pmb887x_lcd_t parent;
-	uint16_t regs[SSD1286_MAX_REGS];
-} pmb887x_lcd_ssd1286_t;
+	uint16_t regs[HX5050A_MAX_REGS];
+} pmb887x_lcd_hx5050a_t;
 
 static void lcd_update_state(pmb887x_lcd_t *lcd) {
-	pmb887x_lcd_ssd1286_t *priv = PMB887X_LCD_SSD1286(lcd);
+	pmb887x_lcd_hx5050a_t *priv = PMB887X_LCD_HX5050A(lcd);
 	
 	bool ss = (priv->regs[0x001] & (1 << 8)) != 0; /* SS */
 	bool sm = (priv->regs[0x001] & (1 << 10)) != 0; /* SM */
@@ -50,7 +50,7 @@ static void lcd_update_state(pmb887x_lcd_t *lcd) {
 }
 
 static uint32_t lcd_on_cmd(pmb887x_lcd_t *lcd, uint32_t cmd) {
-	if (cmd == 0x22) {
+	if (cmd == 0x2c) {
 		pmb887x_lcd_set_ram_mode(lcd, true);
 		return 0;
 	}
@@ -58,10 +58,10 @@ static uint32_t lcd_on_cmd(pmb887x_lcd_t *lcd, uint32_t cmd) {
 }
 
 static void lcd_on_cmd_with_params(pmb887x_lcd_t *lcd, uint32_t cmd, const uint32_t *params, uint32_t params_n) {
-	pmb887x_lcd_ssd1286_t *priv = PMB887X_LCD_SSD1286(lcd);
+	pmb887x_lcd_hx5050a_t *priv = PMB887X_LCD_HX5050A(lcd);
 	
 	g_assert(params_n == 1);
-	g_assert(cmd < SSD1286_MAX_REGS);
+	g_assert(cmd < HX5050A_MAX_REGS);
 	
 	priv->regs[cmd] = params[0];
 	
@@ -92,7 +92,7 @@ static void lcd_on_cmd_with_params(pmb887x_lcd_t *lcd, uint32_t cmd, const uint3
 
 static void lcd_realize(DeviceState *dev, Error **errp) {
 	pmb887x_lcd_t *lcd = PMB887X_LCD(dev);
-	pmb887x_lcd_ssd1286_t *priv = PMB887X_LCD_SSD1286(dev);
+	pmb887x_lcd_hx5050a_t *priv = PMB887X_LCD_HX5050A(dev);
 	
 	memset(priv->regs, 0, sizeof(priv->regs));
 	memcpy(priv->regs, DEFAULT_REGS, sizeof(DEFAULT_REGS));
@@ -112,15 +112,15 @@ static void lcd_class_init(ObjectClass *oc, void *data) {
 	
 	pmb887x_lcd_class_t *k = PMB887X_LCD_CLASS(oc);
 	k->cmd_width = 1;
-	k->param_width = 2;
+	k->param_width = 1;
 	k->on_cmd = lcd_on_cmd;
 	k->on_cmd_with_params = lcd_on_cmd_with_params;
 }
 
 static const TypeInfo lcd_info = {
-	.name			= TYPE_PMB887X_LCD_SSD1286,
+	.name			= TYPE_PMB887X_LCD_HX5050A,
 	.parent			= TYPE_PMB887X_LCD,
-	.instance_size	= sizeof(pmb887x_lcd_ssd1286_t),
+	.instance_size	= sizeof(pmb887x_lcd_hx5050a_t),
 	.class_init		= lcd_class_init,
 };
 
