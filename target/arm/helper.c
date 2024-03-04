@@ -9847,6 +9847,9 @@ void cpsr_write(CPUARMState *env, uint32_t val, uint32_t mask,
     bool rebuild_hflags = (write_type != CPSRWriteRaw) &&
         (mask & (CPSR_M | CPSR_E | CPSR_IL));
 
+    // PMB887X: real hardware just ignores M4
+    val |= 0x10;
+
     if (mask & CPSR_NZCV) {
         env->ZF = (~val) & CPSR_Z;
         env->NF = val;
@@ -9932,6 +9935,7 @@ void cpsr_write(CPUARMState *env, uint32_t val, uint32_t mask,
 
     if (write_type != CPSRWriteRaw &&
         ((env->uncached_cpsr ^ val) & mask & CPSR_M)) {
+        
         if ((env->uncached_cpsr & CPSR_M) == ARM_CPU_MODE_USR) {
             /*
              * Note that we can only get here in USR mode if this is a
