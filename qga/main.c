@@ -261,9 +261,9 @@ QEMU_COPYRIGHT "\n"
 "  -s, --service     service commands: install, uninstall, vss-install, vss-uninstall\n"
 #endif
 "  -b, --block-rpcs  comma-separated list of RPCs to disable (no spaces,\n"
-"                    use \"help\" to list available RPCs)\n"
+"                    use \"--block-rpcs=help\" to list available RPCs)\n"
 "  -a, --allow-rpcs  comma-separated list of RPCs to enable (no spaces,\n"
-"                    use \"help\" to list available RPCs)\n"
+"                    use \"--allow-rpcs=help\" to list available RPCs)\n"
 "  -D, --dump-conf   dump a qemu-ga config file based on current config\n"
 "                    options / command-line parameters to stdout\n"
 "  -r, --retry-path  attempt re-opening path if it's unavailable or closed\n"
@@ -1333,7 +1333,7 @@ static bool check_is_frozen(GAState *s)
     /* check if a previous instance of qemu-ga exited with filesystems' state
      * marked as frozen. this could be a stale value (a non-qemu-ga process
      * or reboot may have since unfrozen them), but better to require an
-     * uneeded unfreeze than to risk hanging on start-up
+     * unneeded unfreeze than to risk hanging on start-up
      */
     struct stat st;
     if (stat(s->state_filepath_isfrozen, &st) == -1) {

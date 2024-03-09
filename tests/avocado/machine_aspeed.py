@@ -18,7 +18,7 @@ from avocado_qemu import exec_command_and_wait_for_pattern
 from avocado_qemu import interrupt_interactive_console_until_pattern
 from avocado_qemu import has_cmd
 from avocado.utils import archive
-from avocado import skipIf
+from avocado import skipUnless
 from avocado import skipUnless
 
 
@@ -155,6 +155,7 @@ class AST2x00Machine(QemuSystemTest):
         time.sleep(0.1)
         exec_command(self, 'root')
         time.sleep(0.1)
+        exec_command(self, "passw0rd")
 
     def do_test_arm_aspeed_buildroot_poweroff(self):
         exec_command_and_wait_for_pattern(self, 'poweroff',
@@ -167,22 +168,22 @@ class AST2x00Machine(QemuSystemTest):
         """
 
         image_url = ('https://github.com/legoater/qemu-aspeed-boot/raw/master/'
-                     'images/ast2500-evb/buildroot-2022.11-2-g15d3648df9/flash.img')
-        image_hash = ('f96d11db521fe7a2787745e9e391225deeeec3318ee0fc07c8b799b8833dd474')
+                     'images/ast2500-evb/buildroot-2023.11/flash.img')
+        image_hash = ('c23db6160cf77d0258397eb2051162c8473a56c441417c52a91ba217186e715f')
         image_path = self.fetch_asset(image_url, asset_hash=image_hash,
                                       algorithm='sha256')
 
         self.vm.add_args('-device',
                          'tmp105,bus=aspeed.i2c.bus.3,address=0x4d,id=tmp-test');
-        self.do_test_arm_aspeed_buildroot_start(image_path, '0x0')
+        self.do_test_arm_aspeed_buildroot_start(image_path, '0x0', 'Aspeed AST2500 EVB')
 
         exec_command_and_wait_for_pattern(self,
              'echo lm75 0x4d > /sys/class/i2c-dev/i2c-3/device/new_device',
              'i2c i2c-3: new_device: Instantiated device lm75 at 0x4d');
         exec_command_and_wait_for_pattern(self,
                              'cat /sys/class/hwmon/hwmon1/temp1_input', '0')
-        self.vm.command('qom-set', path='/machine/peripheral/tmp-test',
-                        property='temperature', value=18000);
+        self.vm.cmd('qom-set', path='/machine/peripheral/tmp-test',
+                    property='temperature', value=18000);
         exec_command_and_wait_for_pattern(self,
                              'cat /sys/class/hwmon/hwmon1/temp1_input', '18000')
 
@@ -195,8 +196,8 @@ class AST2x00Machine(QemuSystemTest):
         """
 
         image_url = ('https://github.com/legoater/qemu-aspeed-boot/raw/master/'
-                     'images/ast2600-evb/buildroot-2022.11-2-g15d3648df9/flash.img')
-        image_hash = ('e598d86e5ea79671ca8b59212a326c911bc8bea728dec1a1f5390d717a28bb8b')
+                     'images/ast2600-evb/buildroot-2023.11/flash.img')
+        image_hash = ('b62808daef48b438d0728ee07662290490ecfa65987bb91294cafb1bb7ad1a68')
         image_path = self.fetch_asset(image_url, asset_hash=image_hash,
                                       algorithm='sha256')
 
@@ -206,17 +207,17 @@ class AST2x00Machine(QemuSystemTest):
                          'ds1338,bus=aspeed.i2c.bus.3,address=0x32');
         self.vm.add_args('-device',
                          'i2c-echo,bus=aspeed.i2c.bus.3,address=0x42');
-        self.do_test_arm_aspeed_buildroot_start(image_path, '0xf00')
+        self.do_test_arm_aspeed_buildroot_start(image_path, '0xf00', 'Aspeed AST2600 EVB')
 
         exec_command_and_wait_for_pattern(self,
              'echo lm75 0x4d > /sys/class/i2c-dev/i2c-3/device/new_device',
              'i2c i2c-3: new_device: Instantiated device lm75 at 0x4d');
         exec_command_and_wait_for_pattern(self,
-                             'cat /sys/class/hwmon/hwmon0/temp1_input', '0')
-        self.vm.command('qom-set', path='/machine/peripheral/tmp-test',
-                        property='temperature', value=18000);
+                             'cat /sys/class/hwmon/hwmon1/temp1_input', '0')
+        self.vm.cmd('qom-set', path='/machine/peripheral/tmp-test',
+                    property='temperature', value=18000);
         exec_command_and_wait_for_pattern(self,
-                             'cat /sys/class/hwmon/hwmon0/temp1_input', '18000')
+                             'cat /sys/class/hwmon/hwmon1/temp1_input', '18000')
 
         exec_command_and_wait_for_pattern(self,
              'echo ds1307 0x32 > /sys/class/i2c-dev/i2c-3/device/new_device',
@@ -247,7 +248,10 @@ class AST2x00Machine(QemuSystemTest):
         image_path = self.fetch_asset(image_url, asset_hash=image_hash,
                                       algorithm='sha256')
 
-        socket = os.path.join(self.vm.sock_dir, 'swtpm-socket')
+        # force creation of VM object, which also defines self._sd
+        vm = self.vm
+
+        socket = os.path.join(self._sd.name, 'swtpm-socket')
 
         subprocess.run(['swtpm', 'socket', '-d', '--tpm2',
                         '--tpmstate', f'dir={self.vm.temp_dir}',
@@ -258,7 +262,6 @@ class AST2x00Machine(QemuSystemTest):
         self.vm.add_args('-device',
                          'tpm-tis-i2c,tpmdev=tpm0,bus=aspeed.i2c.bus.12,address=0x2e')
         self.do_test_arm_aspeed_buildroot_start(image_path, '0xf00', 'Aspeed AST2600 EVB')
-        exec_command(self, "passw0rd")
 
         exec_command_and_wait_for_pattern(self,
             'echo tpm_tis_i2c 0x2e > /sys/bus/i2c/devices/i2c-12/new_device',
@@ -308,16 +311,18 @@ class AST2x00MachineSDK(QemuSystemTest, LinuxSSHMixIn):
             self, 'boot', '## Loading kernel from FIT Image')
         self.wait_for_console_pattern('Starting kernel ...')
 
-    @skipIf(os.getenv('GITLAB_CI'), 'Running on GitLab')
+    @skipUnless(os.getenv('QEMU_TEST_FLAKY_TESTS'), 'Test is unstable on GitLab')
+
     def test_arm_ast2500_evb_sdk(self):
         """
         :avocado: tags=arch:arm
         :avocado: tags=machine:ast2500-evb
+        :avocado: tags=flaky
         """
 
         image_url = ('https://github.com/AspeedTech-BMC/openbmc/releases/'
-                     'download/v08.01/ast2500-default-obmc.tar.gz')
-        image_hash = ('5375f82b4c43a79427909342a1e18b4e48bd663e38466862145d27bb358796fd')
+                     'download/v08.06/ast2500-default-obmc.tar.gz')
+        image_hash = ('e1755f3cadff69190438c688d52dd0f0d399b70a1e14b1d3d5540fc4851d38ca')
         image_path = self.fetch_asset(image_url, asset_hash=image_hash,
                                       algorithm='sha256')
         archive.extract(image_path, self.workdir)
@@ -326,16 +331,18 @@ class AST2x00MachineSDK(QemuSystemTest, LinuxSSHMixIn):
             self.workdir + '/ast2500-default/image-bmc')
         self.wait_for_console_pattern('nodistro.0 ast2500-default ttyS4')
 
-    @skipIf(os.getenv('GITLAB_CI'), 'Running on GitLab')
+    @skipUnless(os.getenv('QEMU_TEST_FLAKY_TESTS'), 'Test is unstable on GitLab')
+
     def test_arm_ast2600_evb_sdk(self):
         """
         :avocado: tags=arch:arm
         :avocado: tags=machine:ast2600-evb
+        :avocado: tags=flaky
         """
 
         image_url = ('https://github.com/AspeedTech-BMC/openbmc/releases/'
-                     'download/v08.01/ast2600-default-obmc.tar.gz')
-        image_hash = ('f12ef15e8c1f03a214df3b91c814515c5e2b2f56119021398c1dbdd626817d15')
+                     'download/v08.06/ast2600-a2-obmc.tar.gz')
+        image_hash = ('9083506135f622d5e7351fcf7d4e1c7125cee5ba16141220c0ba88931f3681a4')
         image_path = self.fetch_asset(image_url, asset_hash=image_hash,
                                       algorithm='sha256')
         archive.extract(image_path, self.workdir)
@@ -345,8 +352,8 @@ class AST2x00MachineSDK(QemuSystemTest, LinuxSSHMixIn):
         self.vm.add_args('-device',
                          'ds1338,bus=aspeed.i2c.bus.5,address=0x32');
         self.do_test_arm_aspeed_sdk_start(
-            self.workdir + '/ast2600-default/image-bmc')
-        self.wait_for_console_pattern('nodistro.0 ast2600-default ttyS4')
+            self.workdir + '/ast2600-a2/image-bmc')
+        self.wait_for_console_pattern('nodistro.0 ast2600-a2 ttyS4')
 
         self.ssh_connect('root', '0penBmc', False)
         self.ssh_command('dmesg -c > /dev/null')
@@ -357,8 +364,8 @@ class AST2x00MachineSDK(QemuSystemTest, LinuxSSHMixIn):
              'i2c i2c-5: new_device: Instantiated device lm75 at 0x4d');
         self.ssh_command_output_contains(
                              'cat /sys/class/hwmon/hwmon19/temp1_input', '0')
-        self.vm.command('qom-set', path='/machine/peripheral/tmp-test',
-                        property='temperature', value=18000);
+        self.vm.cmd('qom-set', path='/machine/peripheral/tmp-test',
+                    property='temperature', value=18000);
         self.ssh_command_output_contains(
                              'cat /sys/class/hwmon/hwmon19/temp1_input', '18000')
 

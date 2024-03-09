@@ -1,5 +1,5 @@
 /*
- * Translation Block Maintaince
+ * Translation Block Maintenance
  *
  *  Copyright (c) 2003 Fabrice Bellard
  *
@@ -29,7 +29,8 @@
 #include "tcg/tcg.h"
 #include "tb-hash.h"
 #include "tb-context.h"
-#include "internal.h"
+#include "internal-common.h"
+#include "internal-target.h"
 
 
 /* List iterators for lists of tagged pointers in TranslationBlock. */
@@ -207,13 +208,12 @@ static PageDesc *page_find_alloc(tb_page_addr_t index, bool alloc)
 {
     PageDesc *pd;
     void **lp;
-    int i;
 
     /* Level 1.  Always allocated.  */
     lp = l1_map + ((index >> v_l1_shift) & (v_l1_size - 1));
 
     /* Level 2..N-1.  */
-    for (i = v_l2_levels; i > 0; i--) {
+    for (int i = v_l2_levels; i > 0; i--) {
         void **p = qatomic_rcu_read(lp);
 
         if (p == NULL) {
@@ -1021,7 +1021,7 @@ void tb_invalidate_phys_range(tb_page_addr_t start, tb_page_addr_t last)
  * Called with mmap_lock held for user-mode emulation
  * NOTE: this function must not be called while a TB is running.
  */
-void tb_invalidate_phys_page(tb_page_addr_t addr)
+static void tb_invalidate_phys_page(tb_page_addr_t addr)
 {
     tb_page_addr_t start, last;
 
@@ -1158,28 +1158,6 @@ tb_invalidate_phys_page_range__locked(struct page_collection *pages,
         cpu_loop_exit_noexc(current_cpu);
     }
 #endif
-}
-
-/*
- * Invalidate all TBs which intersect with the target physical
- * address page @addr.
- */
-void tb_invalidate_phys_page(tb_page_addr_t addr)
-{
-    struct page_collection *pages;
-    tb_page_addr_t start, last;
-    PageDesc *p;
-
-    p = page_find(addr >> TARGET_PAGE_BITS);
-    if (p == NULL) {
-        return;
-    }
-
-    start = addr & TARGET_PAGE_MASK;
-    last = addr | ~TARGET_PAGE_MASK;
-    pages = page_collection_lock(start, last);
-    tb_invalidate_phys_page_range__locked(pages, p, start, last, 0);
-    page_collection_unlock(pages);
 }
 
 /*

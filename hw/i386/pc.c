@@ -24,79 +24,43 @@
 
 #include "qemu/osdep.h"
 #include "qemu/units.h"
-#include "hw/i386/x86.h"
 #include "hw/i386/pc.h"
 #include "hw/char/serial.h"
 #include "hw/char/parallel.h"
-#include "hw/i386/topology.h"
+#include "hw/hyperv/hv-balloon.h"
 #include "hw/i386/fw_cfg.h"
 #include "hw/i386/vmport.h"
 #include "sysemu/cpus.h"
-#include "hw/block/fdc.h"
-#include "hw/ide/internal.h"
-#include "hw/ide/isa.h"
-#include "hw/pci/pci.h"
-#include "hw/pci/pci_bus.h"
-#include "hw/pci-bridge/pci_expander_bridge.h"
-#include "hw/nvram/fw_cfg.h"
+#include "hw/ide/ide-bus.h"
 #include "hw/timer/hpet.h"
-#include "hw/firmware/smbios.h"
 #include "hw/loader.h"
-#include "elf.h"
-#include "migration/vmstate.h"
-#include "multiboot.h"
 #include "hw/rtc/mc146818rtc.h"
 #include "hw/intc/i8259.h"
-#include "hw/intc/ioapic.h"
 #include "hw/timer/i8254.h"
 #include "hw/input/i8042.h"
-#include "hw/irq.h"
 #include "hw/audio/pcspk.h"
-#include "hw/pci/msi.h"
-#include "hw/sysbus.h"
 #include "sysemu/sysemu.h"
-#include "sysemu/tcg.h"
-#include "sysemu/numa.h"
-#include "sysemu/kvm.h"
 #include "sysemu/xen.h"
 #include "sysemu/reset.h"
-#include "sysemu/runstate.h"
 #include "kvm/kvm_i386.h"
 #include "hw/xen/xen.h"
-#include "hw/xen/start_info.h"
-#include "ui/qemu-spice.h"
-#include "exec/memory.h"
-#include "qemu/bitmap.h"
-#include "qemu/config-file.h"
+#include "qapi/qmp/qlist.h"
 #include "qemu/error-report.h"
-#include "qemu/option.h"
-#include "qemu/cutils.h"
-#include "hw/acpi/acpi.h"
 #include "hw/acpi/cpu_hotplug.h"
 #include "acpi-build.h"
-#include "hw/mem/pc-dimm.h"
 #include "hw/mem/nvdimm.h"
-#include "hw/cxl/cxl.h"
 #include "hw/cxl/cxl_host.h"
-#include "qapi/error.h"
-#include "qapi/qapi-visit-common.h"
-#include "qapi/qapi-visit-machine.h"
-#include "qapi/visitor.h"
-#include "hw/core/cpu.h"
 #include "hw/usb.h"
 #include "hw/i386/intel_iommu.h"
 #include "hw/net/ne2000-isa.h"
-#include "standard-headers/asm-x86/bootparam.h"
 #include "hw/virtio/virtio-iommu.h"
 #include "hw/virtio/virtio-md-pci.h"
 #include "hw/i386/kvm/xen_overlay.h"
 #include "hw/i386/kvm/xen_evtchn.h"
 #include "hw/i386/kvm/xen_gnttab.h"
 #include "hw/i386/kvm/xen_xenstore.h"
-#include "sysemu/replay.h"
-#include "target/i386/cpu.h"
+#include "hw/mem/memory-device.h"
 #include "e820_memory_layout.h"
-#include "fw_cfg.h"
 #include "trace.h"
 #include CONFIG_DEVICES
 
@@ -113,6 +77,12 @@
     { "qemu32-" TYPE_X86_CPU, "model-id", "QEMU Virtual CPU version " v, },\
     { "qemu64-" TYPE_X86_CPU, "model-id", "QEMU Virtual CPU version " v, },\
     { "athlon-" TYPE_X86_CPU, "model-id", "QEMU Virtual CPU version " v, },
+
+GlobalProperty pc_compat_8_2[] = {};
+const size_t pc_compat_8_2_len = G_N_ELEMENTS(pc_compat_8_2);
+
+GlobalProperty pc_compat_8_1[] = {};
+const size_t pc_compat_8_1_len = G_N_ELEMENTS(pc_compat_8_1);
 
 GlobalProperty pc_compat_8_0[] = {
     { "virtio-mem", "unplugged-inaccessible", "auto" },
@@ -356,60 +326,6 @@ GlobalProperty pc_compat_2_0[] = {
 };
 const size_t pc_compat_2_0_len = G_N_ELEMENTS(pc_compat_2_0);
 
-GlobalProperty pc_compat_1_7[] = {
-    PC_CPU_MODEL_IDS("1.7.0")
-    { TYPE_USB_DEVICE, "msos-desc", "no" },
-    { "PIIX4_PM", ACPI_PM_PROP_ACPI_PCIHP_BRIDGE, "off" },
-    { "hpet", HPET_INTCAP, "4" },
-};
-const size_t pc_compat_1_7_len = G_N_ELEMENTS(pc_compat_1_7);
-
-GlobalProperty pc_compat_1_6[] = {
-    PC_CPU_MODEL_IDS("1.6.0")
-    { "e1000", "mitigation", "off" },
-    { "qemu64-" TYPE_X86_CPU, "model", "2" },
-    { "qemu32-" TYPE_X86_CPU, "model", "3" },
-    { "i440FX-pcihost", "short_root_bus", "1" },
-    { "q35-pcihost", "short_root_bus", "1" },
-};
-const size_t pc_compat_1_6_len = G_N_ELEMENTS(pc_compat_1_6);
-
-GlobalProperty pc_compat_1_5[] = {
-    PC_CPU_MODEL_IDS("1.5.0")
-    { "Conroe-" TYPE_X86_CPU, "model", "2" },
-    { "Conroe-" TYPE_X86_CPU, "min-level", "2" },
-    { "Penryn-" TYPE_X86_CPU, "model", "2" },
-    { "Penryn-" TYPE_X86_CPU, "min-level", "2" },
-    { "Nehalem-" TYPE_X86_CPU, "model", "2" },
-    { "Nehalem-" TYPE_X86_CPU, "min-level", "2" },
-    { "virtio-net-pci", "any_layout", "off" },
-    { TYPE_X86_CPU, "pmu", "on" },
-    { "i440FX-pcihost", "short_root_bus", "0" },
-    { "q35-pcihost", "short_root_bus", "0" },
-};
-const size_t pc_compat_1_5_len = G_N_ELEMENTS(pc_compat_1_5);
-
-GlobalProperty pc_compat_1_4[] = {
-    PC_CPU_MODEL_IDS("1.4.0")
-    { "scsi-hd", "discard_granularity", "0" },
-    { "scsi-cd", "discard_granularity", "0" },
-    { "ide-hd", "discard_granularity", "0" },
-    { "ide-cd", "discard_granularity", "0" },
-    { "virtio-blk-pci", "discard_granularity", "0" },
-    /* DEV_NVECTORS_UNSPECIFIED as a uint32_t string: */
-    { "virtio-serial-pci", "vectors", "0xFFFFFFFF" },
-    { "virtio-net-pci", "ctrl_guest_offloads", "off" },
-    { "e1000", "romfile", "pxe-e1000.rom" },
-    { "ne2k_pci", "romfile", "pxe-ne2k_pci.rom" },
-    { "pcnet", "romfile", "pxe-pcnet.rom" },
-    { "rtl8139", "romfile", "pxe-rtl8139.rom" },
-    { "virtio-net-pci", "romfile", "pxe-virtio.rom" },
-    { "486-" TYPE_X86_CPU, "model", "0" },
-    { "n270" "-" TYPE_X86_CPU, "movbe", "off" },
-    { "Westmere" "-" TYPE_X86_CPU, "pclmulqdq", "off" },
-};
-const size_t pc_compat_1_4_len = G_N_ELEMENTS(pc_compat_1_4);
-
 GSIState *pc_gsi_create(qemu_irq **irqs, bool pci_enabled)
 {
     GSIState *s;
@@ -433,7 +349,7 @@ static uint64_t ioport80_read(void *opaque, hwaddr addr, unsigned size)
     return 0xffffffffffffffffULL;
 }
 
-/* MSDOS compatibility mode FPU exception support */
+/* MS-DOS compatibility mode FPU exception support */
 static void ioportF0_write(void *opaque, hwaddr addr, uint64_t data,
                            unsigned size)
 {
@@ -483,8 +399,8 @@ static int boot_device2nibble(char boot_device)
     return 0;
 }
 
-static void set_boot_dev(MC146818RtcState *s, const char *boot_device,
-                         Error **errp)
+static void set_boot_dev(PCMachineState *pcms, MC146818RtcState *s,
+                         const char *boot_device, Error **errp)
 {
 #define PC_MAX_BOOT_DEVICES 3
     int nbds, bds[3] = { 0, };
@@ -504,12 +420,14 @@ static void set_boot_dev(MC146818RtcState *s, const char *boot_device,
         }
     }
     mc146818rtc_set_cmos_data(s, 0x3d, (bds[1] << 4) | bds[0]);
-    mc146818rtc_set_cmos_data(s, 0x38, (bds[2] << 4) | (fd_bootchk ? 0x0 : 0x1));
+    mc146818rtc_set_cmos_data(s, 0x38, (bds[2] << 4) | !pcms->fd_bootchk);
 }
 
 static void pc_boot_set(void *opaque, const char *boot_device, Error **errp)
 {
-    set_boot_dev(opaque, boot_device, errp);
+    PCMachineState *pcms = PC_MACHINE(current_machine);
+
+    set_boot_dev(pcms, opaque, boot_device, errp);
 }
 
 static void pc_cmos_init_floppy(MC146818RtcState *rtc_state, ISADevice *floppy)
@@ -548,11 +466,6 @@ static void pc_cmos_init_floppy(MC146818RtcState *rtc_state, ISADevice *floppy)
     }
     mc146818rtc_set_cmos_data(rtc_state, REG_EQUIPMENT_BYTE, val);
 }
-
-typedef struct pc_cmos_init_late_arg {
-    MC146818RtcState *rtc_state;
-    BusState *idebus[2];
-} pc_cmos_init_late_arg;
 
 typedef struct check_fdc_state {
     ISADevice *floppy;
@@ -614,23 +527,25 @@ static ISADevice *pc_find_fdc0(void)
     return state.floppy;
 }
 
-static void pc_cmos_init_late(void *opaque)
+static void pc_cmos_init_late(PCMachineState *pcms)
 {
-    pc_cmos_init_late_arg *arg = opaque;
-    MC146818RtcState *s = arg->rtc_state;
+    X86MachineState *x86ms = X86_MACHINE(pcms);
+    MC146818RtcState *s = MC146818_RTC(x86ms->rtc);
     int16_t cylinders;
     int8_t heads, sectors;
     int val;
     int i, trans;
 
     val = 0;
-    if (arg->idebus[0] && ide_get_geometry(arg->idebus[0], 0,
-                                           &cylinders, &heads, &sectors) >= 0) {
+    if (pcms->idebus[0] &&
+        ide_get_geometry(pcms->idebus[0], 0,
+                         &cylinders, &heads, &sectors) >= 0) {
         cmos_init_hd(s, 0x19, 0x1b, cylinders, heads, sectors);
         val |= 0xf0;
     }
-    if (arg->idebus[0] && ide_get_geometry(arg->idebus[0], 1,
-                                           &cylinders, &heads, &sectors) >= 0) {
+    if (pcms->idebus[0] &&
+        ide_get_geometry(pcms->idebus[0], 1,
+                         &cylinders, &heads, &sectors) >= 0) {
         cmos_init_hd(s, 0x1a, 0x24, cylinders, heads, sectors);
         val |= 0x0f;
     }
@@ -642,10 +557,11 @@ static void pc_cmos_init_late(void *opaque)
            geometry.  It is always such that: 1 <= sects <= 63, 1
            <= heads <= 16, 1 <= cylinders <= 16383. The BIOS
            geometry can be different if a translation is done. */
-        if (arg->idebus[i / 2] &&
-            ide_get_geometry(arg->idebus[i / 2], i % 2,
+        BusState *idebus = pcms->idebus[i / 2];
+        if (idebus &&
+            ide_get_geometry(idebus, i % 2,
                              &cylinders, &heads, &sectors) >= 0) {
-            trans = ide_get_bios_chs_trans(arg->idebus[i / 2], i % 2) - 1;
+            trans = ide_get_bios_chs_trans(idebus, i % 2) - 1;
             assert((trans & ~3) == 0);
             val |= trans << (i * 2);
         }
@@ -653,16 +569,12 @@ static void pc_cmos_init_late(void *opaque)
     mc146818rtc_set_cmos_data(s, 0x39, val);
 
     pc_cmos_init_floppy(s, pc_find_fdc0());
-
-    qemu_unregister_reset(pc_cmos_init_late, opaque);
 }
 
 void pc_cmos_init(PCMachineState *pcms,
-                  BusState *idebus0, BusState *idebus1,
                   ISADevice *rtc)
 {
     int val;
-    static pc_cmos_init_late_arg arg;
     X86MachineState *x86ms = X86_MACHINE(pcms);
     MC146818RtcState *s = MC146818_RTC(rtc);
 
@@ -709,18 +621,14 @@ void pc_cmos_init(PCMachineState *pcms,
     object_property_set_link(OBJECT(pcms), "rtc_state", OBJECT(s),
                              &error_abort);
 
-    set_boot_dev(s, MACHINE(pcms)->boot_config.order, &error_fatal);
+    set_boot_dev(pcms, s, MACHINE(pcms)->boot_config.order, &error_fatal);
 
     val = 0;
     val |= 0x02; /* FPU is there */
     val |= 0x04; /* PS/2 mouse installed */
     mc146818rtc_set_cmos_data(s, REG_EQUIPMENT_BYTE, val);
 
-    /* hard drives and FDC */
-    arg.rtc_state = s;
-    arg.idebus[0] = idebus0;
-    arg.idebus[1] = idebus1;
-    qemu_register_reset(pc_cmos_init_late, &arg);
+    /* hard drives and FDC are handled by pc_cmos_init_late() */
 }
 
 static void handle_a20_line_change(void *opaque, int irq, int level)
@@ -738,15 +646,19 @@ static const int ne2000_io[NE2000_NB_MAX] = { 0x300, 0x320, 0x340, 0x360,
                                               0x280, 0x380 };
 static const int ne2000_irq[NE2000_NB_MAX] = { 9, 10, 11, 3, 4, 5 };
 
-static void pc_init_ne2k_isa(ISABus *bus, NICInfo *nd)
+static gboolean pc_init_ne2k_isa(ISABus *bus, NICInfo *nd, Error **errp)
 {
     static int nb_ne2k = 0;
 
-    if (nb_ne2k == NE2000_NB_MAX)
-        return;
+    if (nb_ne2k == NE2000_NB_MAX) {
+        error_setg(errp,
+                   "maximum number of ISA NE2000 devices exceeded");
+        return false;
+    }
     isa_ne2000_init(bus, ne2000_io[nb_ne2k],
                     ne2000_irq[nb_ne2k], nd);
     nb_ne2k++;
+    return true;
 }
 
 void pc_acpi_smi_interrupt(void *opaque, int irq, int level)
@@ -765,7 +677,7 @@ void pc_machine_done(Notifier *notifier, void *data)
                                         PCMachineState, machine_done);
     X86MachineState *x86ms = X86_MACHINE(pcms);
 
-    cxl_hook_up_pxb_registers(pcms->bus, &pcms->cxl_devices_state,
+    cxl_hook_up_pxb_registers(pcms->pcibus, &pcms->cxl_devices_state,
                               &error_fatal);
 
     if (pcms->cxl_devices_state.is_enabled) {
@@ -775,24 +687,17 @@ void pc_machine_done(Notifier *notifier, void *data)
     /* set the number of CPUs */
     x86_rtc_set_cpus_count(x86ms->rtc, x86ms->boot_cpus);
 
-    fw_cfg_add_extra_pci_roots(pcms->bus, x86ms->fw_cfg);
+    fw_cfg_add_extra_pci_roots(pcms->pcibus, x86ms->fw_cfg);
 
     acpi_setup();
     if (x86ms->fw_cfg) {
-        fw_cfg_build_smbios(MACHINE(pcms), x86ms->fw_cfg);
+        fw_cfg_build_smbios(pcms, x86ms->fw_cfg);
         fw_cfg_build_feature_control(MACHINE(pcms), x86ms->fw_cfg);
         /* update FW_CFG_NB_CPUS to account for -device added CPUs */
         fw_cfg_modify_i16(x86ms->fw_cfg, FW_CFG_NB_CPUS, x86ms->boot_cpus);
     }
-}
 
-void pc_guest_info_init(PCMachineState *pcms)
-{
-    X86MachineState *x86ms = X86_MACHINE(pcms);
-
-    x86ms->apic_xrupt_override = true;
-    pcms->machine_done.notify = pc_machine_done;
-    qemu_add_machine_init_done_notifier(&pcms->machine_done);
+    pc_cmos_init_late(pcms);
 }
 
 /* setup pci memory address space mapping into system address space */
@@ -871,10 +776,12 @@ static void pc_get_device_memory_range(PCMachineState *pcms,
 static uint64_t pc_get_cxl_range_start(PCMachineState *pcms)
 {
     PCMachineClass *pcmc = PC_MACHINE_GET_CLASS(pcms);
+    MachineState *ms = MACHINE(pcms);
     hwaddr cxl_base;
     ram_addr_t size;
 
-    if (pcmc->has_reserved_memory) {
+    if (pcmc->has_reserved_memory &&
+        (ms->ram_size < ms->maxram_size)) {
         pc_get_device_memory_range(pcms, &cxl_base, &size);
         cxl_base += size;
     } else {
@@ -904,13 +811,39 @@ static uint64_t pc_get_cxl_range_end(PCMachineState *pcms)
 static hwaddr pc_max_used_gpa(PCMachineState *pcms, uint64_t pci_hole64_size)
 {
     X86CPU *cpu = X86_CPU(first_cpu);
+    PCMachineClass *pcmc = PC_MACHINE_GET_CLASS(pcms);
+    MachineState *ms = MACHINE(pcms);
 
-    /* 32-bit systems don't have hole64 thus return max CPU address */
-    if (cpu->phys_bits <= 32) {
+    if (cpu->env.features[FEAT_8000_0001_EDX] & CPUID_EXT2_LM) {
+        /* 64-bit systems */
+        return pc_pci_hole64_start() + pci_hole64_size - 1;
+    }
+
+    /* 32-bit systems */
+    if (pcmc->broken_32bit_mem_addr_check) {
+        /* old value for compatibility reasons */
         return ((hwaddr)1 << cpu->phys_bits) - 1;
     }
 
-    return pc_pci_hole64_start() + pci_hole64_size - 1;
+    /*
+     * 32-bit systems don't have hole64 but they might have a region for
+     * memory devices. Even if additional hotplugged memory devices might
+     * not be usable by most guest OSes, we need to still consider them for
+     * calculating the highest possible GPA so that we can properly report
+     * if someone configures them on a CPU that cannot possibly address them.
+     */
+    if (pcmc->has_reserved_memory &&
+        (ms->ram_size < ms->maxram_size)) {
+        hwaddr devmem_start;
+        ram_addr_t devmem_size;
+
+        pc_get_device_memory_range(pcms, &devmem_start, &devmem_size);
+        devmem_start += devmem_size;
+        return devmem_start - 1;
+    }
+
+    /* configuration without any memory hotplug */
+    return pc_above_4g_end(pcms) - 1;
 }
 
 /*
@@ -1113,7 +1046,6 @@ void pc_memory_init(PCMachineState *pcms,
 
     if (machine->device_memory) {
         uint64_t *val = g_malloc(sizeof(*val));
-        PCMachineClass *pcmc = PC_MACHINE_GET_CLASS(pcms);
         uint64_t res_mem_end = machine->device_memory->base;
 
         if (!pcmc->broken_reserved_end) {
@@ -1248,7 +1180,8 @@ static void pc_superio_init(ISABus *isa_bus, bool create_fdctrl,
     port92 = isa_create_simple(isa_bus, TYPE_PORT92);
 
     a20_line = qemu_allocate_irqs(handle_a20_line_change, first_cpu, 2);
-    i8042_setup_a20_line(i8042, a20_line[0]);
+    qdev_connect_gpio_out_named(DEVICE(i8042),
+                                I8042_A20_LINE, 0, a20_line[0]);
     qdev_connect_gpio_out_named(DEVICE(port92),
                                 PORT92_A20_LINE, 0, a20_line[1]);
     g_free(a20_line);
@@ -1264,7 +1197,6 @@ void pc_basic_device_init(struct PCMachineState *pcms,
     DeviceState *hpet = NULL;
     int pit_isa_irq = 0;
     qemu_irq pit_alt_irq = NULL;
-    qemu_irq rtc_irq = NULL;
     ISADevice *pit = NULL;
     MemoryRegion *ioport80_io = g_new(MemoryRegion, 1);
     MemoryRegion *ioportF0_io = g_new(MemoryRegion, 1);
@@ -1278,21 +1210,19 @@ void pc_basic_device_init(struct PCMachineState *pcms,
 
     /*
      * Check if an HPET shall be created.
-     *
-     * Without KVM_CAP_PIT_STATE2, we cannot switch off the in-kernel PIT
-     * when the HPET wants to take over. Thus we have to disable the latter.
      */
-    if (pcms->hpet_enabled && (!kvm_irqchip_in_kernel() ||
-                               kvm_has_pit_state2())) {
+    if (pcms->hpet_enabled) {
+        qemu_irq rtc_irq;
+
         hpet = qdev_try_new(TYPE_HPET);
         if (!hpet) {
             error_report("couldn't create HPET device");
             exit(1);
         }
         /*
-         * For pc-piix-*, hpet's intcap is always IRQ2. For pc-q35-1.7 and
-         * earlier, use IRQ2 for compat. Otherwise, use IRQ16~23, IRQ8 and
-         * IRQ2.
+         * For pc-piix-*, hpet's intcap is always IRQ2. For pc-q35-*,
+         * use IRQ16~23, IRQ8 and IRQ2.  If the user has already set
+         * the property, use whatever mask they specified.
          */
         uint8_t compat = object_property_get_uint(OBJECT(hpet),
                 HPET_INTCAP, NULL);
@@ -1308,16 +1238,11 @@ void pc_basic_device_init(struct PCMachineState *pcms,
         pit_isa_irq = -1;
         pit_alt_irq = qdev_get_gpio_in(hpet, HPET_LEGACY_PIT_INT);
         rtc_irq = qdev_get_gpio_in(hpet, HPET_LEGACY_RTC_INT);
+
+        /* overwrite connection created by south bridge */
+        qdev_connect_gpio_out(DEVICE(rtc_state), 0, rtc_irq);
     }
 
-    if (rtc_irq) {
-        qdev_connect_gpio_out(DEVICE(rtc_state), 0, rtc_irq);
-    } else {
-        uint32_t irq = object_property_get_uint(OBJECT(rtc_state),
-                                                "irq",
-                                                &error_fatal);
-        isa_connect_gpio_out(rtc_state, 0, irq);
-    }
     object_property_add_alias(OBJECT(pcms), "rtc-time", OBJECT(rtc_state),
                               "date");
 
@@ -1327,8 +1252,8 @@ void pc_basic_device_init(struct PCMachineState *pcms,
         xen_evtchn_create(IOAPIC_NUM_PINS, gsi);
         xen_gnttab_create();
         xen_xenstore_create();
-        if (pcms->bus) {
-            pci_create_simple(pcms->bus, -1, "xen-platform");
+        if (pcms->pcibus) {
+            pci_create_simple(pcms->pcibus, -1, "xen-platform");
         }
         xen_bus_init();
         xen_be_init();
@@ -1348,7 +1273,9 @@ void pc_basic_device_init(struct PCMachineState *pcms,
             /* connect PIT to output control line of the HPET */
             qdev_connect_gpio_out(hpet, 0, qdev_get_gpio_in(DEVICE(pit), 0));
         }
-        pcspk_init(pcms->pcspk, isa_bus, pit);
+        object_property_set_link(OBJECT(pcms->pcspk), "pit",
+                                 OBJECT(pit), &error_fatal);
+        isa_realize_and_unref(pcms->pcspk, isa_bus, &error_fatal);
     }
 
     /* Super I/O */
@@ -1359,19 +1286,18 @@ void pc_basic_device_init(struct PCMachineState *pcms,
 void pc_nic_init(PCMachineClass *pcmc, ISABus *isa_bus, PCIBus *pci_bus)
 {
     MachineClass *mc = MACHINE_CLASS(pcmc);
-    int i;
+    bool default_is_ne2k = g_str_equal(mc->default_nic, TYPE_ISA_NE2000);
+    NICInfo *nd;
 
     rom_set_order_override(FW_CFG_ORDER_OVERRIDE_NIC);
-    for (i = 0; i < nb_nics; i++) {
-        NICInfo *nd = &nd_table[i];
-        const char *model = nd->model ? nd->model : mc->default_nic;
 
-        if (g_str_equal(model, "ne2k_isa")) {
-            pc_init_ne2k_isa(isa_bus, nd);
-        } else {
-            pci_nic_init_nofail(nd, pci_bus, model, NULL);
-        }
+    while ((nd = qemu_find_nic_info(TYPE_ISA_NE2000, default_is_ne2k, NULL))) {
+        pc_init_ne2k_isa(isa_bus, nd, &error_fatal);
     }
+
+    /* Anything remaining should be a PCI NIC */
+    pci_init_nic_devices(pci_bus, mc->default_nic);
+
     rom_reset_order_override();
 }
 
@@ -1406,7 +1332,7 @@ static void pc_memory_pre_plug(HotplugHandler *hotplug_dev, DeviceState *dev,
     Error *local_err = NULL;
 
     /*
-     * When -no-acpi is used with Q35 machine type, no ACPI is built,
+     * When "acpi=off" is used with the Q35 machine type, no ACPI is built,
      * but pcms->acpi_dev is still created. Check !acpi_enabled in
      * addition to cover this case.
      */
@@ -1454,7 +1380,7 @@ static void pc_memory_unplug_request(HotplugHandler *hotplug_dev,
     X86MachineState *x86ms = X86_MACHINE(hotplug_dev);
 
     /*
-     * When -no-acpi is used with Q35 machine type, no ACPI is built,
+     * When "acpi=off" is used with the Q35 machine type, no ACPI is built,
      * but pcms->acpi_dev is still created. Check !acpi_enabled in
      * addition to cover this case.
      */
@@ -1491,6 +1417,21 @@ static void pc_memory_unplug(HotplugHandler *hotplug_dev,
     error_propagate(errp, local_err);
 }
 
+static void pc_hv_balloon_pre_plug(HotplugHandler *hotplug_dev,
+                                   DeviceState *dev, Error **errp)
+{
+    /* The vmbus handler has no hotplug handler; we should never end up here. */
+    g_assert(!dev->hotplugged);
+    memory_device_pre_plug(MEMORY_DEVICE(dev), MACHINE(hotplug_dev), NULL,
+                           errp);
+}
+
+static void pc_hv_balloon_plug(HotplugHandler *hotplug_dev,
+                               DeviceState *dev, Error **errp)
+{
+    memory_device_plug(MEMORY_DEVICE(dev), MACHINE(hotplug_dev));
+}
+
 static void pc_machine_device_pre_plug_cb(HotplugHandler *hotplug_dev,
                                           DeviceState *dev, Error **errp)
 {
@@ -1504,10 +1445,11 @@ static void pc_machine_device_pre_plug_cb(HotplugHandler *hotplug_dev,
         /* Declare the APIC range as the reserved MSI region */
         char *resv_prop_str = g_strdup_printf("0xfee00000:0xfeefffff:%d",
                                               VIRTIO_IOMMU_RESV_MEM_T_MSI);
+        QList *reserved_regions = qlist_new();
 
-        object_property_set_uint(OBJECT(dev), "len-reserved-regions", 1, errp);
-        object_property_set_str(OBJECT(dev), "reserved-regions[0]",
-                                resv_prop_str, errp);
+        qlist_append_str(reserved_regions, resv_prop_str);
+        qdev_prop_set_array(dev, "reserved-regions", reserved_regions);
+
         g_free(resv_prop_str);
     }
 
@@ -1521,6 +1463,8 @@ static void pc_machine_device_pre_plug_cb(HotplugHandler *hotplug_dev,
             return;
         }
         pcms->iommu = dev;
+    } else if (object_dynamic_cast(OBJECT(dev), TYPE_HV_BALLOON)) {
+        pc_hv_balloon_pre_plug(hotplug_dev, dev, errp);
     }
 }
 
@@ -1533,6 +1477,8 @@ static void pc_machine_device_plug_cb(HotplugHandler *hotplug_dev,
         x86_cpu_plug(hotplug_dev, dev, errp);
     } else if (object_dynamic_cast(OBJECT(dev), TYPE_VIRTIO_MD_PCI)) {
         virtio_md_pci_plug(VIRTIO_MD_PCI(dev), MACHINE(hotplug_dev), errp);
+    } else if (object_dynamic_cast(OBJECT(dev), TYPE_HV_BALLOON)) {
+        pc_hv_balloon_plug(hotplug_dev, dev, errp);
     }
 }
 
@@ -1574,6 +1520,7 @@ static HotplugHandler *pc_get_hotplug_handler(MachineState *machine,
         object_dynamic_cast(OBJECT(dev), TYPE_CPU) ||
         object_dynamic_cast(OBJECT(dev), TYPE_VIRTIO_MD_PCI) ||
         object_dynamic_cast(OBJECT(dev), TYPE_VIRTIO_IOMMU_PCI) ||
+        object_dynamic_cast(OBJECT(dev), TYPE_HV_BALLOON) ||
         object_dynamic_cast(OBJECT(dev), TYPE_X86_IOMMU_DEVICE)) {
         return HOTPLUG_HANDLER(machine);
     }
@@ -1596,6 +1543,20 @@ static void pc_machine_set_vmport(Object *obj, Visitor *v, const char *name,
     PCMachineState *pcms = PC_MACHINE(obj);
 
     visit_type_OnOffAuto(v, name, &pcms->vmport, errp);
+}
+
+static bool pc_machine_get_fd_bootchk(Object *obj, Error **errp)
+{
+    PCMachineState *pcms = PC_MACHINE(obj);
+
+    return pcms->fd_bootchk;
+}
+
+static void pc_machine_set_fd_bootchk(Object *obj, bool value, Error **errp)
+{
+    PCMachineState *pcms = PC_MACHINE(obj);
+
+    pcms->fd_bootchk = value;
 }
 
 static bool pc_machine_get_smbus(Object *obj, Error **errp)
@@ -1743,16 +1704,16 @@ static void pc_machine_set_max_fw_size(Object *obj, Visitor *v,
     }
 
     /*
-    * We don't have a theoretically justifiable exact lower bound on the base
-    * address of any flash mapping. In practice, the IO-APIC MMIO range is
-    * [0xFEE00000..0xFEE01000] -- see IO_APIC_DEFAULT_ADDRESS --, leaving free
-    * only 18MB-4KB below 4G. For now, restrict the cumulative mapping to 8MB in
-    * size.
-    */
+     * We don't have a theoretically justifiable exact lower bound on the base
+     * address of any flash mapping. In practice, the IO-APIC MMIO range is
+     * [0xFEE00000..0xFEE01000] -- see IO_APIC_DEFAULT_ADDRESS --, leaving free
+     * only 18MiB-4KiB below 4GiB. For now, restrict the cumulative mapping to
+     * 16MiB in size.
+     */
     if (value > 16 * MiB) {
         error_setg(errp,
                    "User specified max allowed firmware size %" PRIu64 " is "
-                   "greater than 16MiB. If combined firwmare size exceeds "
+                   "greater than 16MiB. If combined firmware size exceeds "
                    "16MiB the system may not boot, or experience intermittent"
                    "stability issues.",
                    value);
@@ -1775,6 +1736,7 @@ static void pc_machine_initfn(Object *obj)
 #endif /* CONFIG_VMPORT */
     pcms->max_ram_below_4g = 0; /* use default */
     pcms->smbios_entry_point_type = pcmc->default_smbios_ep_type;
+    pcms->south_bridge = pcmc->default_south_bridge;
 
     /* acpi build is enabled by default if machine supports it */
     pcms->acpi_build_enabled = pcmc->has_acpi_build;
@@ -1785,18 +1747,16 @@ static void pc_machine_initfn(Object *obj)
 #ifdef CONFIG_HPET
     pcms->hpet_enabled = true;
 #endif
+    pcms->fd_bootchk = true;
     pcms->default_bus_bypass_iommu = false;
 
-    pc_system_flash_create(pcms);
     pcms->pcspk = isa_new(TYPE_PC_SPEAKER);
     object_property_add_alias(OBJECT(pcms), "pcspk-audiodev",
                               OBJECT(pcms->pcspk), "audiodev");
     cxl_machine_init(obj, &pcms->cxl_devices_state);
-}
 
-int pc_machine_kvm_type(MachineState *machine, const char *kvm_type)
-{
-    return 0;
+    pcms->machine_done.notify = pc_machine_done;
+    qemu_add_machine_init_done_notifier(&pcms->machine_done);
 }
 
 static void pc_machine_reset(MachineState *machine, ShutdownCause reason)
@@ -1845,6 +1805,7 @@ static bool pc_hotplug_allowed(MachineState *ms, DeviceState *dev, Error **errp)
 static void pc_machine_class_init(ObjectClass *oc, void *data)
 {
     MachineClass *mc = MACHINE_CLASS(oc);
+    X86MachineClass *x86mc = X86_MACHINE_CLASS(oc);
     PCMachineClass *pcmc = PC_MACHINE_CLASS(oc);
     HotplugHandlerClass *hc = HOTPLUG_HANDLER_CLASS(oc);
 
@@ -1855,7 +1816,6 @@ static void pc_machine_class_init(ObjectClass *oc, void *data)
     pcmc->smbios_uuid_encoded = true;
     pcmc->gigabyte_align = true;
     pcmc->has_reserved_memory = true;
-    pcmc->kvmclock_enabled = true;
     pcmc->enforce_aligned_dimm = true;
     pcmc->enforce_amd_1tb_hole = true;
     /* BIOS ACPI tables: 128K. Other BIOS datastructures: less than 4K reported
@@ -1864,6 +1824,7 @@ static void pc_machine_class_init(ObjectClass *oc, void *data)
     pcmc->pvh_enabled = true;
     pcmc->kvmclock_create_always = true;
     pcmc->resizable_acpi_blob = true;
+    x86mc->apic_xrupt_override = true;
     assert(!mc->get_hotplug_handler);
     mc->get_hotplug_handler = pc_get_hotplug_handler;
     mc->hotplug_allowed = pc_hotplug_allowed;
@@ -1933,6 +1894,10 @@ static void pc_machine_class_init(ObjectClass *oc, void *data)
         NULL, NULL);
     object_class_property_set_description(oc, PC_MACHINE_SMBIOS_EP,
         "SMBIOS Entry Point type [32, 64]");
+
+    object_class_property_add_bool(oc, "fd-bootchk",
+        pc_machine_get_fd_bootchk,
+        pc_machine_set_fd_bootchk);
 }
 
 static const TypeInfo pc_machine_info = {

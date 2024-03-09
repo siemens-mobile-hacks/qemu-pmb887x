@@ -424,11 +424,10 @@ static void *hvf_cpu_thread_fn(void *arg)
 
     rcu_register_thread();
 
-    qemu_mutex_lock_iothread();
+    bql_lock();
     qemu_thread_get_self(cpu->thread);
 
     cpu->thread_id = qemu_get_thread_id();
-    cpu->can_do_io = 1;
     current_cpu = cpu;
 
     hvf_init_vcpu(cpu);
@@ -449,7 +448,7 @@ static void *hvf_cpu_thread_fn(void *arg)
 
     hvf_vcpu_destroy(cpu);
     cpu_thread_signal_destroyed(cpu);
-    qemu_mutex_unlock_iothread();
+    bql_unlock();
     rcu_unregister_thread();
     return NULL;
 }
@@ -474,7 +473,7 @@ static void hvf_start_vcpu_thread(CPUState *cpu)
                        cpu, QEMU_THREAD_JOINABLE);
 }
 
-static int hvf_insert_breakpoint(CPUState *cpu, int type, hwaddr addr, hwaddr len)
+static int hvf_insert_breakpoint(CPUState *cpu, int type, vaddr addr, vaddr len)
 {
     struct hvf_sw_breakpoint *bp;
     int err;
@@ -512,7 +511,7 @@ static int hvf_insert_breakpoint(CPUState *cpu, int type, hwaddr addr, hwaddr le
     return 0;
 }
 
-static int hvf_remove_breakpoint(CPUState *cpu, int type, hwaddr addr, hwaddr len)
+static int hvf_remove_breakpoint(CPUState *cpu, int type, vaddr addr, vaddr len)
 {
     struct hvf_sw_breakpoint *bp;
     int err;

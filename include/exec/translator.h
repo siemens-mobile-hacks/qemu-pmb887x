@@ -33,7 +33,7 @@
  * the target-specific DisasContext, and then invoke translator_loop.
  */
 void gen_intermediate_code(CPUState *cpu, TranslationBlock *tb, int *max_insns,
-                           target_ulong pc, void *host_pc);
+                           vaddr pc, void *host_pc);
 
 /**
  * DisasJumpType:
@@ -72,17 +72,21 @@ typedef enum DisasJumpType {
  * @num_insns: Number of translated instructions (including current).
  * @max_insns: Maximum number of instructions to be translated in this TB.
  * @singlestep_enabled: "Hardware" single stepping enabled.
+ * @saved_can_do_io: Known value of cpu->neg.can_do_io, or -1 for unknown.
+ * @plugin_enabled: TCG plugin enabled in this TB.
  *
  * Architecture-agnostic disassembly context.
  */
 typedef struct DisasContextBase {
     TranslationBlock *tb;
-    target_ulong pc_first;
-    target_ulong pc_next;
+    vaddr pc_first;
+    vaddr pc_next;
     DisasJumpType is_jmp;
     int num_insns;
     int max_insns;
     bool singlestep_enabled;
+    int8_t saved_can_do_io;
+    bool plugin_enabled;
     void *host_addr[2];
 } DisasContextBase;
 
@@ -159,7 +163,7 @@ bool translator_use_goto_tb(DisasContextBase *db, vaddr dest);
  * translator_io_start
  * @db: Disassembly context
  *
- * If icount is enabled, set cpu->can_to_io, adjust db->is_jmp to
+ * If icount is enabled, set cpu->can_do_io, adjust db->is_jmp to
  * DISAS_TOO_MANY if it is still DISAS_NEXT, and return true.
  * Otherwise return false.
  */
@@ -231,7 +235,7 @@ void translator_fake_ldb(uint8_t insn8, abi_ptr pc);
  * Translators can use this to enforce the rule that only single-insn
  * translation blocks are allowed to cross page boundaries.
  */
-static inline bool is_same_page(const DisasContextBase *db, target_ulong addr)
+static inline bool is_same_page(const DisasContextBase *db, vaddr addr)
 {
     return ((addr ^ db->pc_first) & TARGET_PAGE_MASK) == 0;
 }

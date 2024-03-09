@@ -52,7 +52,7 @@ throwaway:
     sp += 2;
     env->pc = cpu_ldl_mmuidx_ra(env, sp, MMU_KERNEL_IDX, 0);
     sp += 4;
-    if (m68k_feature(env, M68K_FEATURE_QUAD_MULDIV)) {
+    if (m68k_feature(env, M68K_FEATURE_EXCEPTION_FORMAT_VEC)) {
         /*  all except 68000 */
         fmt = cpu_lduw_mmuidx_ra(env, sp, MMU_KERNEL_IDX, 0);
         sp += 2;
@@ -256,7 +256,7 @@ static inline void do_stack_frame(CPUM68KState *env, uint32_t *sp,
                                   uint16_t format, uint16_t sr,
                                   uint32_t addr, uint32_t retaddr)
 {
-    if (m68k_feature(env, M68K_FEATURE_QUAD_MULDIV)) {
+    if (m68k_feature(env, M68K_FEATURE_EXCEPTION_FORMAT_VEC)) {
         /*  all except 68000 */
         CPUState *cs = env_cpu(env);
         switch (format) {
@@ -811,7 +811,7 @@ static void do_cas2l(CPUM68KState *env, uint32_t regs, uint32_t a1, uint32_t a2,
     uint32_t l1, l2;
     uintptr_t ra = GETPC();
 #if defined(CONFIG_ATOMIC64)
-    int mmu_idx = cpu_mmu_index(env, 0);
+    int mmu_idx = cpu_mmu_index(env_cpu(env), 0);
     MemOpIdx oi = make_memop_idx(MO_BEUQ, mmu_idx);
 #endif
 

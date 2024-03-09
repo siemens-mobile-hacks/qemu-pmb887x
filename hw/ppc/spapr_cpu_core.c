@@ -74,6 +74,8 @@ static void spapr_reset_vcpu(PowerPCCPU *cpu)
 
     kvm_check_mmu(cpu, &error_fatal);
 
+    cpu_ppc_tb_reset(env);
+
     spapr_irq_cpu_intc_reset(spapr, cpu);
 }
 
@@ -125,7 +127,7 @@ static const VMStateDescription vmstate_spapr_cpu_slb_shadow = {
     .version_id = 1,
     .minimum_version_id = 1,
     .needed = slb_shadow_needed,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_UINT64(slb_shadow_addr, SpaprCpuState),
         VMSTATE_UINT64(slb_shadow_size, SpaprCpuState),
         VMSTATE_END_OF_LIST()
@@ -144,7 +146,7 @@ static const VMStateDescription vmstate_spapr_cpu_dtl = {
     .version_id = 1,
     .minimum_version_id = 1,
     .needed = dtl_needed,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_UINT64(dtl_addr, SpaprCpuState),
         VMSTATE_UINT64(dtl_size, SpaprCpuState),
         VMSTATE_END_OF_LIST()
@@ -163,11 +165,11 @@ static const VMStateDescription vmstate_spapr_cpu_vpa = {
     .version_id = 1,
     .minimum_version_id = 1,
     .needed = vpa_needed,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_UINT64(vpa_addr, SpaprCpuState),
         VMSTATE_END_OF_LIST()
     },
-    .subsections = (const VMStateDescription * []) {
+    .subsections = (const VMStateDescription * const []) {
         &vmstate_spapr_cpu_slb_shadow,
         &vmstate_spapr_cpu_dtl,
         NULL
@@ -178,10 +180,10 @@ static const VMStateDescription vmstate_spapr_cpu_state = {
     .name = "spapr_cpu",
     .version_id = 1,
     .minimum_version_id = 1,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_END_OF_LIST()
     },
-    .subsections = (const VMStateDescription * []) {
+    .subsections = (const VMStateDescription * const []) {
         &vmstate_spapr_cpu_vpa,
         NULL
     }
@@ -243,8 +245,7 @@ static void spapr_cpu_core_unrealize(DeviceState *dev)
              * spapr_cpu_core_realize(), make sure we only unrealize
              * vCPUs that have already been realized.
              */
-            if (object_property_get_bool(OBJECT(sc->threads[i]), "realized",
-                                         &error_abort)) {
+            if (qdev_is_realized(DEVICE(sc->threads[i]))) {
                 spapr_unrealize_vcpu(sc->threads[i], sc);
             }
             spapr_delete_vcpu(sc->threads[i]);
@@ -304,7 +305,7 @@ static PowerPCCPU *spapr_create_vcpu(SpaprCpuCore *sc, int i, Error **errp)
      * All CPUs start halted. CPU0 is unhalted from the machine level reset code
      * and the rest are explicitly started up by the guest using an RTAS call.
      */
-    cs->start_powered_off = true;
+    qdev_prop_set_bit(DEVICE(obj), "start-powered-off", true);
     cs->cpu_index = cc->core_id + i;
     if (!spapr_set_vcpu_id(cpu, cs->cpu_index, errp)) {
         return NULL;
@@ -387,9 +388,9 @@ static const TypeInfo spapr_cpu_core_type_infos[] = {
     DEFINE_SPAPR_CPU_CORE_TYPE("970_v2.2"),
     DEFINE_SPAPR_CPU_CORE_TYPE("970mp_v1.0"),
     DEFINE_SPAPR_CPU_CORE_TYPE("970mp_v1.1"),
-    DEFINE_SPAPR_CPU_CORE_TYPE("power5+_v2.1"),
+    DEFINE_SPAPR_CPU_CORE_TYPE("power5p_v2.1"),
     DEFINE_SPAPR_CPU_CORE_TYPE("power7_v2.3"),
-    DEFINE_SPAPR_CPU_CORE_TYPE("power7+_v2.1"),
+    DEFINE_SPAPR_CPU_CORE_TYPE("power7p_v2.1"),
     DEFINE_SPAPR_CPU_CORE_TYPE("power8_v2.0"),
     DEFINE_SPAPR_CPU_CORE_TYPE("power8e_v2.1"),
     DEFINE_SPAPR_CPU_CORE_TYPE("power8nvl_v1.0"),

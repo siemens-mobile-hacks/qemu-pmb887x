@@ -160,7 +160,6 @@ typedef struct BDRVRawState {
     bool has_write_zeroes:1;
     bool use_linux_aio:1;
     bool use_linux_io_uring:1;
-    int64_t *offset; /* offset of zone append operation */
     int page_cache_inconsistent; /* errno from fdatasync failure */
     bool has_fallocate;
     bool needs_alignment;
@@ -713,17 +712,11 @@ static int raw_open_common(BlockDriverState *bs, QDict *options,
 
 #ifdef CONFIG_LINUX_AIO
      /* Currently Linux does AIO only for files opened with O_DIRECT */
-    if (s->use_linux_aio) {
-        if (!(s->open_flags & O_DIRECT)) {
-            error_setg(errp, "aio=native was specified, but it requires "
-                             "cache.direct=on, which was not specified.");
-            ret = -EINVAL;
-            goto fail;
-        }
-        if (!aio_setup_linux_aio(bdrv_get_aio_context(bs), errp)) {
-            error_prepend(errp, "Unable to use native AIO: ");
-            goto fail;
-        }
+    if (s->use_linux_aio && !(s->open_flags & O_DIRECT)) {
+        error_setg(errp, "aio=native was specified, but it requires "
+                         "cache.direct=on, which was not specified.");
+        ret = -EINVAL;
+        goto fail;
     }
 #else
     if (s->use_linux_aio) {
@@ -734,14 +727,7 @@ static int raw_open_common(BlockDriverState *bs, QDict *options,
     }
 #endif /* !defined(CONFIG_LINUX_AIO) */
 
-#ifdef CONFIG_LINUX_IO_URING
-    if (s->use_linux_io_uring) {
-        if (!aio_setup_linux_io_uring(bdrv_get_aio_context(bs), errp)) {
-            error_prepend(errp, "Unable to use io_uring: ");
-            goto fail;
-        }
-    }
-#else
+#ifndef CONFIG_LINUX_IO_URING
     if (s->use_linux_io_uring) {
         error_setg(errp, "aio=io_uring was specified, but is not supported "
                          "in this build.");
@@ -1159,9 +1145,9 @@ static int raw_reopen_prepare(BDRVReopenState *state,
      * As part of reopen prepare we also want to create new fd by
      * raw_reconfigure_getfd(). But it wants updated "perm", when in
      * bdrv_reopen_multiple() .bdrv_reopen_prepare() callback called prior to
-     * permission update. Happily, permission update is always a part (a seprate
-     * stage) of bdrv_reopen_multiple() so we can rely on this fact and
-     * reconfigure fd in raw_check_perm().
+     * permission update. Happily, permission update is always a part
+     * (a separate stage) of bdrv_reopen_multiple() so we can rely on this
+     * fact and reconfigure fd in raw_check_perm().
      */
 
     s->reopen_state = state;
@@ -1412,11 +1398,9 @@ static void raw_refresh_zoned_limits(BlockDriverState *bs, struct stat *st,
     BlockZoneModel zoned;
     int ret;
 
-    bs->bl.zoned = BLK_Z_NONE;
-
     ret = get_sysfs_zoned_model(st, &zoned);
     if (ret < 0 || zoned == BLK_Z_NONE) {
-        return;
+        goto no_zoned;
     }
     bs->bl.zoned = zoned;
 
@@ -1437,10 +1421,10 @@ static void raw_refresh_zoned_limits(BlockDriverState *bs, struct stat *st,
     if (ret < 0) {
         error_setg_errno(errp, -ret, "Unable to read chunk_sectors "
                                      "sysfs attribute");
-        return;
+        goto no_zoned;
     } else if (!ret) {
         error_setg(errp, "Read 0 from chunk_sectors sysfs attribute");
-        return;
+        goto no_zoned;
     }
     bs->bl.zone_size = ret << BDRV_SECTOR_BITS;
 
@@ -1448,10 +1432,10 @@ static void raw_refresh_zoned_limits(BlockDriverState *bs, struct stat *st,
     if (ret < 0) {
         error_setg_errno(errp, -ret, "Unable to read nr_zones "
                                      "sysfs attribute");
-        return;
+        goto no_zoned;
     } else if (!ret) {
         error_setg(errp, "Read 0 from nr_zones sysfs attribute");
-        return;
+        goto no_zoned;
     }
     bs->bl.nr_zones = ret;
 
@@ -1472,10 +1456,15 @@ static void raw_refresh_zoned_limits(BlockDriverState *bs, struct stat *st,
     ret = get_zones_wp(bs, s->fd, 0, bs->bl.nr_zones, 0);
     if (ret < 0) {
         error_setg_errno(errp, -ret, "report wps failed");
-        bs->wps = NULL;
-        return;
+        goto no_zoned;
     }
     qemu_co_mutex_init(&bs->wps->colock);
+    return;
+
+no_zoned:
+    bs->bl.zoned = BLK_Z_NONE;
+    g_free(bs->wps);
+    bs->wps = NULL;
 }
 #else /* !defined(CONFIG_BLKZONED) */
 static void raw_refresh_zoned_limits(BlockDriverState *bs, struct stat *st,
@@ -2442,19 +2431,63 @@ static bool bdrv_qiov_is_aligned(BlockDriverState *bs, QEMUIOVector *qiov)
     return true;
 }
 
-static int coroutine_fn raw_co_prw(BlockDriverState *bs, uint64_t offset,
+#ifdef CONFIG_LINUX_IO_URING
+static inline bool raw_check_linux_io_uring(BDRVRawState *s)
+{
+    Error *local_err = NULL;
+    AioContext *ctx;
+
+    if (!s->use_linux_io_uring) {
+        return false;
+    }
+
+    ctx = qemu_get_current_aio_context();
+    if (unlikely(!aio_setup_linux_io_uring(ctx, &local_err))) {
+        error_reportf_err(local_err, "Unable to use linux io_uring, "
+                                     "falling back to thread pool: ");
+        s->use_linux_io_uring = false;
+        return false;
+    }
+    return true;
+}
+#endif
+
+#ifdef CONFIG_LINUX_AIO
+static inline bool raw_check_linux_aio(BDRVRawState *s)
+{
+    Error *local_err = NULL;
+    AioContext *ctx;
+
+    if (!s->use_linux_aio) {
+        return false;
+    }
+
+    ctx = qemu_get_current_aio_context();
+    if (unlikely(!aio_setup_linux_aio(ctx, &local_err))) {
+        error_reportf_err(local_err, "Unable to use Linux AIO, "
+                                     "falling back to thread pool: ");
+        s->use_linux_aio = false;
+        return false;
+    }
+    return true;
+}
+#endif
+
+static int coroutine_fn raw_co_prw(BlockDriverState *bs, int64_t *offset_ptr,
                                    uint64_t bytes, QEMUIOVector *qiov, int type)
 {
     BDRVRawState *s = bs->opaque;
     RawPosixAIOData acb;
     int ret;
+    uint64_t offset = *offset_ptr;
 
     if (fd_open(bs) < 0)
         return -EIO;
 #if defined(CONFIG_BLKZONED)
-    if ((type & (QEMU_AIO_WRITE | QEMU_AIO_ZONE_APPEND)) && bs->wps) {
+    if ((type & (QEMU_AIO_WRITE | QEMU_AIO_ZONE_APPEND)) &&
+        bs->bl.zoned != BLK_Z_NONE) {
         qemu_co_mutex_lock(&bs->wps->colock);
-        if (type & QEMU_AIO_ZONE_APPEND && bs->bl.zone_size) {
+        if (type & QEMU_AIO_ZONE_APPEND) {
             int index = offset / bs->bl.zone_size;
             offset = bs->wps->wp[index];
         }
@@ -2470,13 +2503,13 @@ static int coroutine_fn raw_co_prw(BlockDriverState *bs, uint64_t offset,
     if (s->needs_alignment && !bdrv_qiov_is_aligned(bs, qiov)) {
         type |= QEMU_AIO_MISALIGNED;
 #ifdef CONFIG_LINUX_IO_URING
-    } else if (s->use_linux_io_uring) {
+    } else if (raw_check_linux_io_uring(s)) {
         assert(qiov->size == bytes);
         ret = luring_co_submit(bs, s->fd, offset, qiov, type);
         goto out;
 #endif
 #ifdef CONFIG_LINUX_AIO
-    } else if (s->use_linux_aio) {
+    } else if (raw_check_linux_aio(s)) {
         assert(qiov->size == bytes);
         ret = laio_co_submit(s->fd, offset, qiov, type,
                               s->aio_max_batch);
@@ -2502,16 +2535,15 @@ static int coroutine_fn raw_co_prw(BlockDriverState *bs, uint64_t offset,
 
 out:
 #if defined(CONFIG_BLKZONED)
-{
-    BlockZoneWps *wps = bs->wps;
-    if (ret == 0) {
-        if ((type & (QEMU_AIO_WRITE | QEMU_AIO_ZONE_APPEND))
-            && wps && bs->bl.zone_size) {
+    if ((type & (QEMU_AIO_WRITE | QEMU_AIO_ZONE_APPEND)) &&
+        bs->bl.zoned != BLK_Z_NONE) {
+        BlockZoneWps *wps = bs->wps;
+        if (ret == 0) {
             uint64_t *wp = &wps->wp[offset / bs->bl.zone_size];
             if (!BDRV_ZT_IS_CONV(*wp)) {
                 if (type & QEMU_AIO_ZONE_APPEND) {
-                    *s->offset = *wp;
-                    trace_zbd_zone_append_complete(bs, *s->offset
+                    *offset_ptr = *wp;
+                    trace_zbd_zone_append_complete(bs, *offset_ptr
                         >> BDRV_SECTOR_BITS);
                 }
                 /* Advance the wp if needed */
@@ -2519,17 +2551,15 @@ out:
                     *wp = offset + bytes;
                 }
             }
+        } else {
+            /*
+             * write and append write are not allowed to cross zone boundaries
+             */
+            update_zones_wp(bs, s->fd, offset, 1);
         }
-    } else {
-        if (type & (QEMU_AIO_WRITE | QEMU_AIO_ZONE_APPEND)) {
-            update_zones_wp(bs, s->fd, 0, 1);
-        }
-    }
 
-    if ((type & (QEMU_AIO_WRITE | QEMU_AIO_ZONE_APPEND)) && wps) {
         qemu_co_mutex_unlock(&wps->colock);
     }
-}
 #endif
     return ret;
 }
@@ -2538,14 +2568,14 @@ static int coroutine_fn raw_co_preadv(BlockDriverState *bs, int64_t offset,
                                       int64_t bytes, QEMUIOVector *qiov,
                                       BdrvRequestFlags flags)
 {
-    return raw_co_prw(bs, offset, bytes, qiov, QEMU_AIO_READ);
+    return raw_co_prw(bs, &offset, bytes, qiov, QEMU_AIO_READ);
 }
 
 static int coroutine_fn raw_co_pwritev(BlockDriverState *bs, int64_t offset,
                                        int64_t bytes, QEMUIOVector *qiov,
                                        BdrvRequestFlags flags)
 {
-    return raw_co_prw(bs, offset, bytes, qiov, QEMU_AIO_WRITE);
+    return raw_co_prw(bs, &offset, bytes, qiov, QEMU_AIO_WRITE);
 }
 
 static int coroutine_fn raw_co_flush_to_disk(BlockDriverState *bs)
@@ -2566,37 +2596,11 @@ static int coroutine_fn raw_co_flush_to_disk(BlockDriverState *bs)
     };
 
 #ifdef CONFIG_LINUX_IO_URING
-    if (s->use_linux_io_uring) {
+    if (raw_check_linux_io_uring(s)) {
         return luring_co_submit(bs, s->fd, 0, NULL, QEMU_AIO_FLUSH);
     }
 #endif
     return raw_thread_pool_submit(handle_aiocb_flush, &acb);
-}
-
-static void raw_aio_attach_aio_context(BlockDriverState *bs,
-                                       AioContext *new_context)
-{
-    BDRVRawState __attribute__((unused)) *s = bs->opaque;
-#ifdef CONFIG_LINUX_AIO
-    if (s->use_linux_aio) {
-        Error *local_err = NULL;
-        if (!aio_setup_linux_aio(new_context, &local_err)) {
-            error_reportf_err(local_err, "Unable to use native AIO, "
-                                         "falling back to thread pool: ");
-            s->use_linux_aio = false;
-        }
-    }
-#endif
-#ifdef CONFIG_LINUX_IO_URING
-    if (s->use_linux_io_uring) {
-        Error *local_err = NULL;
-        if (!aio_setup_linux_io_uring(new_context, &local_err)) {
-            error_reportf_err(local_err, "Unable to use linux io_uring, "
-                                         "falling back to thread pool: ");
-            s->use_linux_io_uring = false;
-        }
-    }
-#endif
 }
 
 static void raw_close(BlockDriverState *bs)
@@ -3374,7 +3378,7 @@ static void raw_account_discard(BDRVRawState *s, uint64_t nbytes, int ret)
  * of an array of zone descriptors.
  * zones is an array of zone descriptors to hold zone information on reply;
  * offset can be any byte within the entire size of the device;
- * nr_zones is the maxium number of sectors the command should operate on.
+ * nr_zones is the maximum number of sectors the command should operate on.
  */
 #if defined(CONFIG_BLKZONED)
 static int coroutine_fn raw_co_zone_report(BlockDriverState *bs, int64_t offset,
@@ -3472,7 +3476,7 @@ static int coroutine_fn raw_co_zone_mgmt(BlockDriverState *bs, BlockZoneOp op,
                         len >> BDRV_SECTOR_BITS);
     ret = raw_thread_pool_submit(handle_aiocb_zone_mgmt, &acb);
     if (ret != 0) {
-        update_zones_wp(bs, s->fd, offset, i);
+        update_zones_wp(bs, s->fd, offset, nrz);
         error_report("ioctl %s failed %d", op_name, ret);
         return ret;
     }
@@ -3508,8 +3512,6 @@ static int coroutine_fn raw_co_zone_append(BlockDriverState *bs,
     int64_t zone_size_mask = bs->bl.zone_size - 1;
     int64_t iov_len = 0;
     int64_t len = 0;
-    BDRVRawState *s = bs->opaque;
-    s->offset = offset;
 
     if (*offset & zone_size_mask) {
         error_report("sector offset %" PRId64 " is not aligned to zone size "
@@ -3530,7 +3532,7 @@ static int coroutine_fn raw_co_zone_append(BlockDriverState *bs,
     }
 
     trace_zbd_zone_append(bs, *offset >> BDRV_SECTOR_BITS);
-    return raw_co_prw(bs, *offset, len, qiov, QEMU_AIO_ZONE_APPEND);
+    return raw_co_prw(bs, offset, len, qiov, QEMU_AIO_ZONE_APPEND);
 }
 #endif
 
@@ -3897,7 +3899,6 @@ BlockDriver bdrv_file = {
     .bdrv_co_copy_range_from = raw_co_copy_range_from,
     .bdrv_co_copy_range_to  = raw_co_copy_range_to,
     .bdrv_refresh_limits = raw_refresh_limits,
-    .bdrv_attach_aio_context = raw_aio_attach_aio_context,
 
     .bdrv_co_truncate                   = raw_co_truncate,
     .bdrv_co_getlength                  = raw_co_getlength,
@@ -4267,7 +4268,6 @@ static BlockDriver bdrv_host_device = {
     .bdrv_co_copy_range_from = raw_co_copy_range_from,
     .bdrv_co_copy_range_to  = raw_co_copy_range_to,
     .bdrv_refresh_limits = raw_refresh_limits,
-    .bdrv_attach_aio_context = raw_aio_attach_aio_context,
 
     .bdrv_co_truncate                   = raw_co_truncate,
     .bdrv_co_getlength                  = raw_co_getlength,
@@ -4403,7 +4403,6 @@ static BlockDriver bdrv_host_cdrom = {
     .bdrv_co_pwritev        = raw_co_pwritev,
     .bdrv_co_flush_to_disk  = raw_co_flush_to_disk,
     .bdrv_refresh_limits    = cdrom_refresh_limits,
-    .bdrv_attach_aio_context = raw_aio_attach_aio_context,
 
     .bdrv_co_truncate                   = raw_co_truncate,
     .bdrv_co_getlength                  = raw_co_getlength,
@@ -4529,7 +4528,6 @@ static BlockDriver bdrv_host_cdrom = {
     .bdrv_co_pwritev        = raw_co_pwritev,
     .bdrv_co_flush_to_disk  = raw_co_flush_to_disk,
     .bdrv_refresh_limits    = cdrom_refresh_limits,
-    .bdrv_attach_aio_context = raw_aio_attach_aio_context,
 
     .bdrv_co_truncate                   = raw_co_truncate,
     .bdrv_co_getlength                  = raw_co_getlength,

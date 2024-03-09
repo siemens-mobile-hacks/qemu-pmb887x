@@ -20,38 +20,8 @@ they were first deprecated in the 2.10.0 release.
 What follows is a list of all features currently marked as
 deprecated.
 
-Build options
--------------
-
-``gprof`` builds (since 8.0)
-''''''''''''''''''''''''''''
-
-The ``--enable-gprof`` configure setting relies on compiler
-instrumentation to gather its data which can distort the generated
-profile. As other non-instrumenting tools are available that give a
-more holistic view of the system with non-instrumented binaries we are
-deprecating the build option and no longer defend it in CI. The
-``--enable-gcov`` build option remains for analysis test case
-coverage.
-
 System emulator command line arguments
 --------------------------------------
-
-``QEMU_AUDIO_`` environment variables and ``-audio-help`` (since 4.0)
-'''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
-
-The ``-audiodev`` argument is now the preferred way to specify audio
-backend settings instead of environment variables.  To ease migration to
-the new format, the ``-audiodev-help`` option can be used to convert
-the current values of the environment variables to ``-audiodev`` options.
-
-Creating sound card devices and vnc without ``audiodev=`` property (since 4.2)
-''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
-
-When not using the deprecated legacy audio config, each sound card
-should specify an ``audiodev=`` property.  Additionally, when using
-vnc, you should specify an ``audiodev=`` property if you plan to
-transmit audio through the VNC protocol.
 
 Short-form boolean options (since 6.0)
 ''''''''''''''''''''''''''''''''''''''
@@ -93,50 +63,15 @@ as short-form boolean values, and passed to plugins as ``arg_name=on``.
 However, short-form booleans are deprecated and full explicit ``arg_name=on``
 form is preferred.
 
-``-no-hpet`` (since 8.0)
-''''''''''''''''''''''''
-
-The HPET setting has been turned into a machine property.
-Use ``-machine hpet=off`` instead.
-
-``-no-acpi`` (since 8.0)
-''''''''''''''''''''''''
-
-The ``-no-acpi`` setting has been turned into a machine property.
-Use ``-machine acpi=off`` instead.
-
-``-accel hax`` (since 8.0)
-''''''''''''''''''''''''''
-
-The HAXM project has been retired (see https://github.com/intel/haxm#status).
-Use "whpx" (on Windows) or "hvf" (on macOS) instead.
-
-``-async-teardown`` (since 8.1)
-'''''''''''''''''''''''''''''''
-
-Use ``-run-with async-teardown=on`` instead.
-
-``-chroot`` (since 8.1)
-'''''''''''''''''''''''
-
-Use ``-run-with chroot=dir`` instead.
-
-``-singlestep`` (since 8.1)
-'''''''''''''''''''''''''''
-
-The ``-singlestep`` option has been turned into an accelerator property,
-and given a name that better reflects what it actually does.
-Use ``-accel tcg,one-insn-per-tb=on`` instead.
-
 User-mode emulator command line arguments
 -----------------------------------------
 
-``-singlestep`` (since 8.1)
-'''''''''''''''''''''''''''
+``-p`` (since 9.0)
+''''''''''''''''''
 
-The ``-singlestep`` option has been given a name that better reflects
-what it actually does. For both linux-user and bsd-user, use the
-new ``-one-insn-per-tb`` option instead.
+The ``-p`` option pretends to control the host page size.  However,
+it is not possible to change the host page size, and using the
+option only causes failures.
 
 QEMU Machine Protocol (QMP) commands
 ------------------------------------
@@ -209,20 +144,6 @@ accepted incorrect commands will return an error. Users should make sure that
 all arguments passed to ``device_add`` are consistent with the documented
 property types.
 
-``StatusInfo`` member ``singlestep`` (since 8.1)
-''''''''''''''''''''''''''''''''''''''''''''''''
-
-The ``singlestep`` member of the ``StatusInfo`` returned from the
-``query-status`` command is deprecated. This member has a confusing
-name and it never did what the documentation claimed or what its name
-suggests. We do not believe that anybody is actually using the
-information provided in this member.
-
-The information it reports is whether the TCG JIT is in "one
-instruction per translated block" mode (which can be set on the
-command line or via the HMP, but not via QMP). The information remains
-available via the HMP 'info jit' command.
-
 QEMU Machine Protocol (QMP) events
 ----------------------------------
 
@@ -238,15 +159,6 @@ The ability to instrument QEMU helper functions with vCPU-aware trace
 points was removed in 7.0. However QMP still exposed the vcpu
 parameter. This argument has now been deprecated and the remaining
 remaining trace points that used it are selected just by name.
-
-Human Monitor Protocol (HMP) commands
--------------------------------------
-
-``singlestep`` (since 8.1)
-''''''''''''''''''''''''''
-
-The ``singlestep`` command has been replaced by the ``one-insn-per-tb``
-command, which has the same behaviour but a less misleading name.
 
 Host Architectures
 ------------------
@@ -272,6 +184,32 @@ it. Since all recent x86 hardware from the past >10 years is capable of the
 64-bit x86 extensions, a corresponding 64-bit OS should be used instead.
 
 
+System emulator CPUs
+--------------------
+
+Nios II CPU (since 8.2)
+'''''''''''''''''''''''
+
+The Nios II architecture is orphan. The ``nios2`` guest CPU support is
+deprecated and will be removed in a future version of QEMU.
+
+``power5+`` and ``power7+`` CPU names (since 9.0)
+'''''''''''''''''''''''''''''''''''''''''''''''''
+
+The character "+" in device (and thus also CPU) names is not allowed
+in the QEMU object model anymore. ``power5+``, ``power5+_v2.1``,
+``power7+`` and ``power7+_v2.1`` are currently still supported via
+an alias, but for consistency these will get removed in a future
+release, too. Use ``power5p_v2.1`` and ``power7p_v2.1`` instead.
+
+CRIS CPU architecture (since 9.0)
+'''''''''''''''''''''''''''''''''
+
+The CRIS architecture was pulled from Linux in 4.17 and the compiler
+is no longer packaged in any distro making it harder to run the
+``check-tcg`` tests. Unless we can improve the testing situation there
+is a chance the code will bitrot without anyone noticing.
+
 System emulator machines
 ------------------------
 
@@ -283,13 +221,31 @@ deprecated; use the new name ``dtb-randomness`` instead. The new name
 better reflects the way this property affects all random data within
 the device tree blob, not just the ``kaslr-seed`` node.
 
-``pc-i440fx-1.4`` up to ``pc-i440fx-1.7`` (since 7.0)
+``pc-i440fx-2.0`` up to ``pc-i440fx-2.3`` (since 8.2)
 '''''''''''''''''''''''''''''''''''''''''''''''''''''
 
 These old machine types are quite neglected nowadays and thus might have
 various pitfalls with regards to live migration. Use a newer machine type
 instead.
 
+Nios II ``10m50-ghrd`` and ``nios2-generic-nommu`` machines (since 8.2)
+'''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''''
+
+The Nios II architecture is orphan.
+
+``shix`` (since 9.0)
+''''''''''''''''''''
+
+The machine is no longer in existence and has been long unmaintained
+in QEMU. This also holds for the TC51828 16MiB flash that it uses.
+
+``pseries-2.1`` up to ``pseries-2.11`` (since 9.0)
+''''''''''''''''''''''''''''''''''''''''''''''''''
+
+Older pseries machines before version 2.12 have undergone many changes
+to correct issues, mostly regarding migration compatibility. These are
+no longer maintained and removing them will make the code easier to
+read and maintain. Use versions 2.12 and above as a replacement.
 
 Backend options
 ---------------
@@ -371,6 +327,50 @@ QEMU's ``vhost`` feature, which would eliminate the high latency costs under
 which the 9p ``proxy`` backend currently suffers. However as of to date nobody
 has indicated plans for such kind of reimplementation unfortunately.
 
+RISC-V 'any' CPU type ``-cpu any`` (since 8.2)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+The 'any' CPU type was introduced back in 2018 and has been around since the
+initial RISC-V QEMU port. Its usage has always been unclear: users don't know
+what to expect from a CPU called 'any', and in fact the CPU does not do anything
+special that isn't already done by the default CPUs rv32/rv64.
+
+After the introduction of the 'max' CPU type, RISC-V now has a good coverage
+of generic CPUs: rv32 and rv64 as default CPUs and 'max' as a feature complete
+CPU for both 32 and 64 bit builds. Users are then discouraged to use the 'any'
+CPU type starting in 8.2.
+
+RISC-V CPU properties which start with capital 'Z' (since 8.2)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+All RISC-V CPU properties which start with capital 'Z' are being deprecated
+starting in 8.2. The reason is that they were wrongly added with capital 'Z'
+in the past. CPU properties were later added with lower-case names, which
+is the format we want to use from now on.
+
+Users which try to use these deprecated properties will receive a warning
+recommending to switch to their stable counterparts:
+
+- "Zifencei" should be replaced with "zifencei"
+- "Zicsr" should be replaced with "zicsr"
+- "Zihintntl" should be replaced with "zihintntl"
+- "Zihintpause" should be replaced with "zihintpause"
+- "Zawrs" should be replaced with "zawrs"
+- "Zfa" should be replaced with "zfa"
+- "Zfh" should be replaced with "zfh"
+- "Zfhmin" should be replaced with "zfhmin"
+- "Zve32f" should be replaced with "zve32f"
+- "Zve64f" should be replaced with "zve64f"
+- "Zve64d" should be replaced with "zve64d"
+
+``-device pvrdma`` and the rdma subsystem (since 8.2)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+The pvrdma device and the whole rdma subsystem are in a bad shape and
+without active maintenance. The QEMU project intends to remove this
+device and subsystem from the code base in a future release without
+replacement unless somebody steps up and improves the situation.
+
 
 Block device options
 ''''''''''''''''''''
@@ -404,6 +404,26 @@ Specifying the iSCSI password in plain text on the command line using the
 ``password`` option is insecure. The ``password-secret`` option should be
 used instead, to refer to a ``--object secret...`` instance that provides
 a password via a file, or encrypted.
+
+Character device options
+''''''''''''''''''''''''
+
+Backend ``memory`` (since 9.0)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+``memory`` is a deprecated synonym for ``ringbuf``.
+
+CPU device properties
+'''''''''''''''''''''
+
+``pmu-num=n`` on RISC-V CPUs (since 8.2)
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+In order to support more flexible counter configurations this has been replaced
+by a ``pmu-mask`` property. If set of counters is continuous then the mask can
+be calculated with ``((2 ^ n) - 1) << 3``. The least significant three bits
+must be left clear.
+
 
 Backwards compatibility
 -----------------------
@@ -461,3 +481,38 @@ Migration
 ``skipped`` field in Migration stats has been deprecated.  It hasn't
 been used for more than 10 years.
 
+``inc`` migrate command option (since 8.2)
+''''''''''''''''''''''''''''''''''''''''''
+
+Use blockdev-mirror with NBD instead.
+
+As an intermediate step the ``inc`` functionality can be achieved by
+setting the ``block-incremental`` migration parameter to ``true``.
+But this parameter is also deprecated.
+
+``blk`` migrate command option (since 8.2)
+''''''''''''''''''''''''''''''''''''''''''
+
+Use blockdev-mirror with NBD instead.
+
+As an intermediate step the ``blk`` functionality can be achieved by
+setting the ``block`` migration capability to ``true``.  But this
+capability is also deprecated.
+
+block migration (since 8.2)
+'''''''''''''''''''''''''''
+
+Block migration is too inflexible.  It needs to migrate all block
+devices or none.
+
+Please see "QMP invocation for live storage migration with
+``blockdev-mirror`` + NBD" in docs/interop/live-block-operations.rst
+for a detailed explanation.
+
+old compression method (since 8.2)
+''''''''''''''''''''''''''''''''''
+
+Compression method fails too much.  Too many races.  We are going to
+remove it if nobody fixes it.  For starters, migration-test
+compression tests are disabled because they fail randomly.  If you need
+compression, use multifd compression methods.

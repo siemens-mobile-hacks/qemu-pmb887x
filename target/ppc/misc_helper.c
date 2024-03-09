@@ -199,6 +199,21 @@ void helper_store_pcr(CPUPPCState *env, target_ulong value)
     env->spr[SPR_PCR] = value & pcc->pcr_mask;
 }
 
+void helper_store_ciabr(CPUPPCState *env, target_ulong value)
+{
+    ppc_store_ciabr(env, value);
+}
+
+void helper_store_dawr0(CPUPPCState *env, target_ulong value)
+{
+    ppc_store_dawr0(env, value);
+}
+
+void helper_store_dawrx0(CPUPPCState *env, target_ulong value)
+{
+    ppc_store_dawrx0(env, value);
+}
+
 /*
  * DPDES register is shared. Each bit reflects the state of the
  * doorbell interrupt of a thread of the same core.
@@ -223,7 +238,7 @@ target_ulong helper_load_dpdes(CPUPPCState *env)
         return dpdes;
     }
 
-    qemu_mutex_lock_iothread();
+    bql_lock();
     THREAD_SIBLING_FOREACH(cs, ccs) {
         PowerPCCPU *ccpu = POWERPC_CPU(ccs);
         CPUPPCState *cenv = &ccpu->env;
@@ -233,7 +248,7 @@ target_ulong helper_load_dpdes(CPUPPCState *env)
             dpdes |= (0x1 << thread_id);
         }
     }
-    qemu_mutex_unlock_iothread();
+    bql_unlock();
 
     return dpdes;
 }
@@ -263,14 +278,14 @@ void helper_store_dpdes(CPUPPCState *env, target_ulong val)
     }
 
     /* Does iothread need to be locked for walking CPU list? */
-    qemu_mutex_lock_iothread();
+    bql_lock();
     THREAD_SIBLING_FOREACH(cs, ccs) {
         PowerPCCPU *ccpu = POWERPC_CPU(ccs);
         uint32_t thread_id = ppc_cpu_tir(ccpu);
 
         ppc_set_irq(cpu, PPC_INTERRUPT_DOORBELL, val & (0x1 << thread_id));
     }
-    qemu_mutex_unlock_iothread();
+    bql_unlock();
 }
 #endif /* defined(TARGET_PPC64) */
 

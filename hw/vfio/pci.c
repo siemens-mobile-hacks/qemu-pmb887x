@@ -19,6 +19,7 @@
  */
 
 #include "qemu/osdep.h"
+#include CONFIG_DEVICES /* CONFIG_IOMMUFD */
 #include <linux/vfio.h>
 #include <sys/ioctl.h>
 
@@ -42,6 +43,7 @@
 #include "qapi/error.h"
 #include "migration/blocker.h"
 #include "migration/qemu-file.h"
+#include "sysemu/iommufd.h"
 
 #define TYPE_VFIO_PCI_NOHOTPLUG "vfio-pci-nohotplug"
 
@@ -369,11 +371,55 @@ static void vfio_msi_interrupt(void *opaque)
     notify(&vdev->pdev, nr);
 }
 
+/*
+ * Get MSI-X enabled, but no vector enabled, by setting vector 0 with an invalid
+ * fd to kernel.
+ */
+static int vfio_enable_msix_no_vec(VFIOPCIDevice *vdev)
+{
+    g_autofree struct vfio_irq_set *irq_set = NULL;
+    int ret = 0, argsz;
+    int32_t *fd;
+
+    argsz = sizeof(*irq_set) + sizeof(*fd);
+
+    irq_set = g_malloc0(argsz);
+    irq_set->argsz = argsz;
+    irq_set->flags = VFIO_IRQ_SET_DATA_EVENTFD |
+                     VFIO_IRQ_SET_ACTION_TRIGGER;
+    irq_set->index = VFIO_PCI_MSIX_IRQ_INDEX;
+    irq_set->start = 0;
+    irq_set->count = 1;
+    fd = (int32_t *)&irq_set->data;
+    *fd = -1;
+
+    ret = ioctl(vdev->vbasedev.fd, VFIO_DEVICE_SET_IRQS, irq_set);
+
+    return ret;
+}
+
 static int vfio_enable_vectors(VFIOPCIDevice *vdev, bool msix)
 {
     struct vfio_irq_set *irq_set;
     int ret = 0, i, argsz;
     int32_t *fds;
+
+    /*
+     * If dynamic MSI-X allocation is supported, the vectors to be allocated
+     * and enabled can be scattered. Before kernel enabling MSI-X, setting
+     * nr_vectors causes all these vectors to be allocated on host.
+     *
+     * To keep allocation as needed, use vector 0 with an invalid fd to get
+     * MSI-X enabled first, then set vectors with a potentially sparse set of
+     * eventfds to enable interrupts only when enabled in guest.
+     */
+    if (msix && !vdev->msix->noresize) {
+        ret = vfio_enable_msix_no_vec(vdev);
+
+        if (ret) {
+            return ret;
+        }
+    }
 
     argsz = sizeof(*irq_set) + (vdev->nr_vectors * sizeof(*fds));
 
@@ -470,6 +516,7 @@ static int vfio_msix_vector_do_use(PCIDevice *pdev, unsigned int nr,
     VFIOPCIDevice *vdev = VFIO_PCI(pdev);
     VFIOMSIVector *vector;
     int ret;
+    bool resizing = !!(vdev->nr_vectors < nr + 1);
 
     trace_vfio_msix_vector_do_use(vdev->vbasedev.name, nr);
 
@@ -512,33 +559,42 @@ static int vfio_msix_vector_do_use(PCIDevice *pdev, unsigned int nr,
     }
 
     /*
-     * We don't want to have the host allocate all possible MSI vectors
-     * for a device if they're not in use, so we shutdown and incrementally
-     * increase them as needed.
+     * When dynamic allocation is not supported, we don't want to have the
+     * host allocate all possible MSI vectors for a device if they're not
+     * in use, so we shutdown and incrementally increase them as needed.
+     * nr_vectors represents the total number of vectors allocated.
+     *
+     * When dynamic allocation is supported, let the host only allocate
+     * and enable a vector when it is in use in guest. nr_vectors represents
+     * the upper bound of vectors being enabled (but not all of the ranges
+     * is allocated or enabled).
      */
-    if (vdev->nr_vectors < nr + 1) {
+    if (resizing) {
         vdev->nr_vectors = nr + 1;
-        if (!vdev->defer_kvm_irq_routing) {
+    }
+
+    if (!vdev->defer_kvm_irq_routing) {
+        if (vdev->msix->noresize && resizing) {
             vfio_disable_irqindex(&vdev->vbasedev, VFIO_PCI_MSIX_IRQ_INDEX);
             ret = vfio_enable_vectors(vdev, true);
             if (ret) {
                 error_report("vfio: failed to enable vectors, %d", ret);
             }
-        }
-    } else {
-        Error *err = NULL;
-        int32_t fd;
-
-        if (vector->virq >= 0) {
-            fd = event_notifier_get_fd(&vector->kvm_interrupt);
         } else {
-            fd = event_notifier_get_fd(&vector->interrupt);
-        }
+            Error *err = NULL;
+            int32_t fd;
 
-        if (vfio_set_irq_signaling(&vdev->vbasedev,
-                                     VFIO_PCI_MSIX_IRQ_INDEX, nr,
-                                     VFIO_IRQ_SET_ACTION_TRIGGER, fd, &err)) {
-            error_reportf_err(err, VFIO_MSG_PREFIX, vdev->vbasedev.name);
+            if (vector->virq >= 0) {
+                fd = event_notifier_get_fd(&vector->kvm_interrupt);
+            } else {
+                fd = event_notifier_get_fd(&vector->interrupt);
+            }
+
+            if (vfio_set_irq_signaling(&vdev->vbasedev,
+                                       VFIO_PCI_MSIX_IRQ_INDEX, nr,
+                                       VFIO_IRQ_SET_ACTION_TRIGGER, fd, &err)) {
+                error_reportf_err(err, VFIO_MSG_PREFIX, vdev->vbasedev.name);
+            }
         }
     }
 
@@ -608,6 +664,8 @@ static void vfio_commit_kvm_msi_virq_batch(VFIOPCIDevice *vdev)
 
 static void vfio_msix_enable(VFIOPCIDevice *vdev)
 {
+    int ret;
+
     vfio_disable_interrupts(vdev);
 
     vdev->msi_vectors = g_new0(VFIOMSIVector, vdev->msix->entries);
@@ -630,8 +688,6 @@ static void vfio_msix_enable(VFIOPCIDevice *vdev)
     vfio_commit_kvm_msi_virq_batch(vdev);
 
     if (vdev->nr_vectors) {
-        int ret;
-
         ret = vfio_enable_vectors(vdev, true);
         if (ret) {
             error_report("vfio: failed to enable vectors, %d", ret);
@@ -645,13 +701,14 @@ static void vfio_msix_enable(VFIOPCIDevice *vdev)
          * MSI-X capability, but leaves the vector table masked.  We therefore
          * can't rely on a vector_use callback (from request_irq() in the guest)
          * to switch the physical device into MSI-X mode because that may come a
-         * long time after pci_enable_msix().  This code enables vector 0 with
-         * triggering to userspace, then immediately release the vector, leaving
-         * the physical device with no vectors enabled, but MSI-X enabled, just
-         * like the guest view.
+         * long time after pci_enable_msix().  This code sets vector 0 with an
+         * invalid fd to make the physical device MSI-X enabled, but with no
+         * vectors enabled, just like the guest view.
          */
-        vfio_msix_vector_do_use(&vdev->pdev, 0, NULL, NULL);
-        vfio_msix_vector_release(&vdev->pdev, 0);
+        ret = vfio_enable_msix_no_vec(vdev);
+        if (ret) {
+            error_report("vfio: failed to enable MSI-X, %d", ret);
+        }
     }
 
     trace_vfio_msix_enable(vdev->vbasedev.name);
@@ -769,9 +826,11 @@ static void vfio_msix_disable(VFIOPCIDevice *vdev)
         }
     }
 
-    if (vdev->nr_vectors) {
-        vfio_disable_irqindex(&vdev->vbasedev, VFIO_PCI_MSIX_IRQ_INDEX);
-    }
+    /*
+     * Always clear MSI-X IRQ index. A PF device could have enabled
+     * MSI-X with no vectors. See vfio_msix_enable().
+     */
+    vfio_disable_irqindex(&vdev->vbasedev, VFIO_PCI_MSIX_IRQ_INDEX);
 
     vfio_msi_disable_common(vdev);
     vfio_intx_enable(vdev, &err);
@@ -1493,7 +1552,9 @@ static void vfio_msix_early_setup(VFIOPCIDevice *vdev, Error **errp)
     uint8_t pos;
     uint16_t ctrl;
     uint32_t table, pba;
-    int fd = vdev->vbasedev.fd;
+    int ret, fd = vdev->vbasedev.fd;
+    struct vfio_irq_info irq_info = { .argsz = sizeof(irq_info),
+                                      .index = VFIO_PCI_MSIX_IRQ_INDEX };
     VFIOMSIXInfo *msix;
 
     pos = pci_find_capability(&vdev->pdev, PCI_CAP_ID_MSIX);
@@ -1530,6 +1591,15 @@ static void vfio_msix_early_setup(VFIOPCIDevice *vdev, Error **errp)
     msix->pba_offset = pba & ~PCI_MSIX_FLAGS_BIRMASK;
     msix->entries = (ctrl & PCI_MSIX_FLAGS_QSIZE) + 1;
 
+    ret = ioctl(vdev->vbasedev.fd, VFIO_DEVICE_GET_IRQ_INFO, &irq_info);
+    if (ret < 0) {
+        error_setg_errno(errp, -ret, "failed to get MSI-X irq info");
+        g_free(msix);
+        return;
+    }
+
+    msix->noresize = !!(irq_info.flags & VFIO_IRQ_INFO_NORESIZE);
+
     /*
      * Test the size of the pba_offset variable and catch if it extends outside
      * of the specified BAR. If it is the case, we need to apply a hardware
@@ -1562,7 +1632,8 @@ static void vfio_msix_early_setup(VFIOPCIDevice *vdev, Error **errp)
     }
 
     trace_vfio_msix_early_setup(vdev->vbasedev.name, pos, msix->table_bar,
-                                msix->table_offset, msix->entries);
+                                msix->table_offset, msix->entries,
+                                msix->noresize);
     vdev->msix = msix;
 
     vfio_pci_fixup_msix_region(vdev);
@@ -2307,7 +2378,7 @@ static int vfio_add_capabilities(VFIOPCIDevice *vdev, Error **errp)
     return 0;
 }
 
-static void vfio_pci_pre_reset(VFIOPCIDevice *vdev)
+void vfio_pci_pre_reset(VFIOPCIDevice *vdev)
 {
     PCIDevice *pdev = &vdev->pdev;
     uint16_t cmd;
@@ -2344,7 +2415,7 @@ static void vfio_pci_pre_reset(VFIOPCIDevice *vdev)
     vfio_pci_write_config(pdev, PCI_COMMAND, cmd, 2);
 }
 
-static void vfio_pci_post_reset(VFIOPCIDevice *vdev)
+void vfio_pci_post_reset(VFIOPCIDevice *vdev)
 {
     Error *err = NULL;
     int nr;
@@ -2368,7 +2439,7 @@ static void vfio_pci_post_reset(VFIOPCIDevice *vdev)
     vfio_quirk_reset(vdev);
 }
 
-static bool vfio_pci_host_match(PCIHostDeviceAddress *addr, const char *name)
+bool vfio_pci_host_match(PCIHostDeviceAddress *addr, const char *name)
 {
     char tmp[13];
 
@@ -2378,22 +2449,13 @@ static bool vfio_pci_host_match(PCIHostDeviceAddress *addr, const char *name)
     return (strcmp(tmp, name) == 0);
 }
 
-static int vfio_pci_hot_reset(VFIOPCIDevice *vdev, bool single)
+int vfio_pci_get_pci_hot_reset_info(VFIOPCIDevice *vdev,
+                                    struct vfio_pci_hot_reset_info **info_p)
 {
-    VFIOGroup *group;
     struct vfio_pci_hot_reset_info *info;
-    struct vfio_pci_dependent_device *devices;
-    struct vfio_pci_hot_reset *reset;
-    int32_t *fds;
-    int ret, i, count;
-    bool multi = false;
+    int ret, count;
 
-    trace_vfio_pci_hot_reset(vdev->vbasedev.name, single ? "one" : "multi");
-
-    if (!single) {
-        vfio_pci_pre_reset(vdev);
-    }
-    vdev->vbasedev.needs_reset = false;
+    assert(info_p && !*info_p);
 
     info = g_malloc0(sizeof(*info));
     info->argsz = sizeof(*info);
@@ -2401,163 +2463,36 @@ static int vfio_pci_hot_reset(VFIOPCIDevice *vdev, bool single)
     ret = ioctl(vdev->vbasedev.fd, VFIO_DEVICE_GET_PCI_HOT_RESET_INFO, info);
     if (ret && errno != ENOSPC) {
         ret = -errno;
+        g_free(info);
         if (!vdev->has_pm_reset) {
             error_report("vfio: Cannot reset device %s, "
                          "no available reset mechanism.", vdev->vbasedev.name);
         }
-        goto out_single;
+        return ret;
     }
 
     count = info->count;
-    info = g_realloc(info, sizeof(*info) + (count * sizeof(*devices)));
-    info->argsz = sizeof(*info) + (count * sizeof(*devices));
-    devices = &info->devices[0];
+    info = g_realloc(info, sizeof(*info) + (count * sizeof(info->devices[0])));
+    info->argsz = sizeof(*info) + (count * sizeof(info->devices[0]));
 
     ret = ioctl(vdev->vbasedev.fd, VFIO_DEVICE_GET_PCI_HOT_RESET_INFO, info);
     if (ret) {
         ret = -errno;
+        g_free(info);
         error_report("vfio: hot reset info failed: %m");
-        goto out_single;
+        return ret;
     }
 
-    trace_vfio_pci_hot_reset_has_dep_devices(vdev->vbasedev.name);
+    *info_p = info;
+    return 0;
+}
 
-    /* Verify that we have all the groups required */
-    for (i = 0; i < info->count; i++) {
-        PCIHostDeviceAddress host;
-        VFIOPCIDevice *tmp;
-        VFIODevice *vbasedev_iter;
+static int vfio_pci_hot_reset(VFIOPCIDevice *vdev, bool single)
+{
+    VFIODevice *vbasedev = &vdev->vbasedev;
+    const VFIOIOMMUClass *ops = vbasedev->bcontainer->ops;
 
-        host.domain = devices[i].segment;
-        host.bus = devices[i].bus;
-        host.slot = PCI_SLOT(devices[i].devfn);
-        host.function = PCI_FUNC(devices[i].devfn);
-
-        trace_vfio_pci_hot_reset_dep_devices(host.domain,
-                host.bus, host.slot, host.function, devices[i].group_id);
-
-        if (vfio_pci_host_match(&host, vdev->vbasedev.name)) {
-            continue;
-        }
-
-        QLIST_FOREACH(group, &vfio_group_list, next) {
-            if (group->groupid == devices[i].group_id) {
-                break;
-            }
-        }
-
-        if (!group) {
-            if (!vdev->has_pm_reset) {
-                error_report("vfio: Cannot reset device %s, "
-                             "depends on group %d which is not owned.",
-                             vdev->vbasedev.name, devices[i].group_id);
-            }
-            ret = -EPERM;
-            goto out;
-        }
-
-        /* Prep dependent devices for reset and clear our marker. */
-        QLIST_FOREACH(vbasedev_iter, &group->device_list, next) {
-            if (!vbasedev_iter->dev->realized ||
-                vbasedev_iter->type != VFIO_DEVICE_TYPE_PCI) {
-                continue;
-            }
-            tmp = container_of(vbasedev_iter, VFIOPCIDevice, vbasedev);
-            if (vfio_pci_host_match(&host, tmp->vbasedev.name)) {
-                if (single) {
-                    ret = -EINVAL;
-                    goto out_single;
-                }
-                vfio_pci_pre_reset(tmp);
-                tmp->vbasedev.needs_reset = false;
-                multi = true;
-                break;
-            }
-        }
-    }
-
-    if (!single && !multi) {
-        ret = -EINVAL;
-        goto out_single;
-    }
-
-    /* Determine how many group fds need to be passed */
-    count = 0;
-    QLIST_FOREACH(group, &vfio_group_list, next) {
-        for (i = 0; i < info->count; i++) {
-            if (group->groupid == devices[i].group_id) {
-                count++;
-                break;
-            }
-        }
-    }
-
-    reset = g_malloc0(sizeof(*reset) + (count * sizeof(*fds)));
-    reset->argsz = sizeof(*reset) + (count * sizeof(*fds));
-    fds = &reset->group_fds[0];
-
-    /* Fill in group fds */
-    QLIST_FOREACH(group, &vfio_group_list, next) {
-        for (i = 0; i < info->count; i++) {
-            if (group->groupid == devices[i].group_id) {
-                fds[reset->count++] = group->fd;
-                break;
-            }
-        }
-    }
-
-    /* Bus reset! */
-    ret = ioctl(vdev->vbasedev.fd, VFIO_DEVICE_PCI_HOT_RESET, reset);
-    g_free(reset);
-
-    trace_vfio_pci_hot_reset_result(vdev->vbasedev.name,
-                                    ret ? strerror(errno) : "Success");
-
-out:
-    /* Re-enable INTx on affected devices */
-    for (i = 0; i < info->count; i++) {
-        PCIHostDeviceAddress host;
-        VFIOPCIDevice *tmp;
-        VFIODevice *vbasedev_iter;
-
-        host.domain = devices[i].segment;
-        host.bus = devices[i].bus;
-        host.slot = PCI_SLOT(devices[i].devfn);
-        host.function = PCI_FUNC(devices[i].devfn);
-
-        if (vfio_pci_host_match(&host, vdev->vbasedev.name)) {
-            continue;
-        }
-
-        QLIST_FOREACH(group, &vfio_group_list, next) {
-            if (group->groupid == devices[i].group_id) {
-                break;
-            }
-        }
-
-        if (!group) {
-            break;
-        }
-
-        QLIST_FOREACH(vbasedev_iter, &group->device_list, next) {
-            if (!vbasedev_iter->dev->realized ||
-                vbasedev_iter->type != VFIO_DEVICE_TYPE_PCI) {
-                continue;
-            }
-            tmp = container_of(vbasedev_iter, VFIOPCIDevice, vbasedev);
-            if (vfio_pci_host_match(&host, tmp->vbasedev.name)) {
-                vfio_pci_post_reset(tmp);
-                break;
-            }
-        }
-    }
-out_single:
-    if (!single) {
-        vfio_pci_post_reset(vdev);
-    }
-    g_free(info);
-
-    return ret;
+    return ops->pci_hot_reset(vbasedev, single);
 }
 
 /*
@@ -2608,14 +2543,45 @@ static bool vfio_msix_present(void *opaque, int version_id)
     return msix_present(pdev);
 }
 
+static bool vfio_display_migration_needed(void *opaque)
+{
+    VFIOPCIDevice *vdev = opaque;
+
+    /*
+     * We need to migrate the VFIODisplay object if ramfb *migration* was
+     * explicitly requested (in which case we enforced both ramfb=on and
+     * display=on), or ramfb migration was left at the default "auto"
+     * setting, and *ramfb* was explicitly requested (in which case we
+     * enforced display=on).
+     */
+    return vdev->ramfb_migrate == ON_OFF_AUTO_ON ||
+        (vdev->ramfb_migrate == ON_OFF_AUTO_AUTO && vdev->enable_ramfb);
+}
+
+const VMStateDescription vmstate_vfio_display = {
+    .name = "VFIOPCIDevice/VFIODisplay",
+    .version_id = 1,
+    .minimum_version_id = 1,
+    .needed = vfio_display_migration_needed,
+    .fields = (const VMStateField[]){
+        VMSTATE_STRUCT_POINTER(dpy, VFIOPCIDevice, vfio_display_vmstate,
+                               VFIODisplay),
+        VMSTATE_END_OF_LIST()
+    }
+};
+
 const VMStateDescription vmstate_vfio_pci_config = {
     .name = "VFIOPCIDevice",
     .version_id = 1,
     .minimum_version_id = 1,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_PCI_DEVICE(pdev, VFIOPCIDevice),
         VMSTATE_MSIX_TEST(pdev, VFIOPCIDevice, vfio_msix_present),
         VMSTATE_END_OF_LIST()
+    },
+    .subsections = (const VMStateDescription * const []) {
+        &vmstate_vfio_display,
+        NULL
     }
 };
 
@@ -2826,12 +2792,12 @@ static void vfio_populate_device(VFIOPCIDevice *vdev, Error **errp)
     }
 }
 
-static void vfio_put_device(VFIOPCIDevice *vdev)
+static void vfio_pci_put_device(VFIOPCIDevice *vdev)
 {
+    vfio_detach_device(&vdev->vbasedev);
+
     g_free(vdev->vbasedev.name);
     g_free(vdev->msix);
-
-    vfio_put_base_device(&vdev->vbasedev);
 }
 
 static void vfio_err_notifier_handler(void *opaque)
@@ -2978,23 +2944,21 @@ static void vfio_realize(PCIDevice *pdev, Error **errp)
 {
     VFIOPCIDevice *vdev = VFIO_PCI(pdev);
     VFIODevice *vbasedev = &vdev->vbasedev;
-    VFIODevice *vbasedev_iter;
-    VFIOGroup *group;
-    char *tmp, *subsys, group_path[PATH_MAX], *group_name;
+    char *tmp, *subsys;
     Error *err = NULL;
-    ssize_t len;
-    struct stat st;
-    int groupid;
     int i, ret;
     bool is_mdev;
-    char uuid[UUID_FMT_LEN];
+    char uuid[UUID_STR_LEN];
     char *name;
 
-    if (!vbasedev->sysfsdev) {
+    if (vbasedev->fd < 0 && !vbasedev->sysfsdev) {
         if (!(~vdev->host.domain || ~vdev->host.bus ||
               ~vdev->host.slot || ~vdev->host.function)) {
             error_setg(errp, "No provided host device");
             error_append_hint(errp, "Use -device vfio-pci,host=DDDD:BB:DD.F "
+#ifdef CONFIG_IOMMUFD
+                              "or -device vfio-pci,fd=DEVICE_FD "
+#endif
                               "or -device vfio-pci,sysfsdev=PATH_TO_DEVICE\n");
             return;
         }
@@ -3004,48 +2968,8 @@ static void vfio_realize(PCIDevice *pdev, Error **errp)
                             vdev->host.slot, vdev->host.function);
     }
 
-    if (stat(vbasedev->sysfsdev, &st) < 0) {
-        error_setg_errno(errp, errno, "no such host device");
-        error_prepend(errp, VFIO_MSG_PREFIX, vbasedev->sysfsdev);
+    if (vfio_device_get_name(vbasedev, errp) < 0) {
         return;
-    }
-
-    vbasedev->name = g_path_get_basename(vbasedev->sysfsdev);
-    vbasedev->ops = &vfio_pci_ops;
-    vbasedev->type = VFIO_DEVICE_TYPE_PCI;
-    vbasedev->dev = DEVICE(vdev);
-
-    tmp = g_strdup_printf("%s/iommu_group", vbasedev->sysfsdev);
-    len = readlink(tmp, group_path, sizeof(group_path));
-    g_free(tmp);
-
-    if (len <= 0 || len >= sizeof(group_path)) {
-        error_setg_errno(errp, len < 0 ? errno : ENAMETOOLONG,
-                         "no iommu_group found");
-        goto error;
-    }
-
-    group_path[len] = 0;
-
-    group_name = basename(group_path);
-    if (sscanf(group_name, "%d", &groupid) != 1) {
-        error_setg_errno(errp, errno, "failed to read %s", group_path);
-        goto error;
-    }
-
-    trace_vfio_realize(vbasedev->name, groupid);
-
-    group = vfio_get_group(groupid, pci_device_iommu_address_space(pdev), errp);
-    if (!group) {
-        goto error;
-    }
-
-    QLIST_FOREACH(vbasedev_iter, &group->device_list, next) {
-        if (strcmp(vbasedev_iter->name, vbasedev->name) == 0) {
-            error_setg(errp, "device is already attached");
-            vfio_put_group(group);
-            goto error;
-        }
     }
 
     /*
@@ -3065,7 +2989,6 @@ static void vfio_realize(PCIDevice *pdev, Error **errp)
     if (vbasedev->ram_block_discard_allowed && !is_mdev) {
         error_setg(errp, "x-balloon-allowed only potentially compatible "
                    "with mdev devices");
-        vfio_put_group(group);
         goto error;
     }
 
@@ -3076,10 +2999,10 @@ static void vfio_realize(PCIDevice *pdev, Error **errp)
         name = g_strdup(vbasedev->name);
     }
 
-    ret = vfio_get_device(group, name, vbasedev, errp);
+    ret = vfio_attach_device(name, vbasedev,
+                             pci_device_iommu_address_space(pdev), errp);
     g_free(name);
     if (ret) {
-        vfio_put_group(group);
         goto error;
     }
 
@@ -3271,17 +3194,17 @@ static void vfio_realize(PCIDevice *pdev, Error **errp)
         }
     }
 
-    if (vfio_pci_is(vdev, PCI_VENDOR_ID_NVIDIA, PCI_ANY_ID)) {
-        ret = vfio_pci_nvidia_v100_ram_init(vdev, errp);
-        if (ret && ret != -ENODEV) {
-            error_report("Failed to setup NVIDIA V100 GPU RAM");
-        }
+    if (vdev->ramfb_migrate == ON_OFF_AUTO_ON && !vdev->enable_ramfb) {
+        warn_report("x-ramfb-migrate=on but ramfb=off. "
+                    "Forcing x-ramfb-migrate to off.");
+        vdev->ramfb_migrate = ON_OFF_AUTO_OFF;
     }
-
-    if (vfio_pci_is(vdev, PCI_VENDOR_ID_IBM, PCI_ANY_ID)) {
-        ret = vfio_pci_nvlink2_init(vdev, errp);
-        if (ret && ret != -ENODEV) {
-            error_report("Failed to setup NVlink2 bridge");
+    if (vbasedev->enable_migration == ON_OFF_AUTO_OFF) {
+        if (vdev->ramfb_migrate == ON_OFF_AUTO_AUTO) {
+            vdev->ramfb_migrate = ON_OFF_AUTO_OFF;
+        } else if (vdev->ramfb_migrate == ON_OFF_AUTO_ON) {
+            error_setg(errp, "x-ramfb-migrate requires enable-migration");
+            goto out_deregister;
         }
     }
 
@@ -3318,7 +3241,6 @@ error:
 static void vfio_instance_finalize(Object *obj)
 {
     VFIOPCIDevice *vdev = VFIO_PCI(obj);
-    VFIOGroup *group = vdev->vbasedev.group;
 
     vfio_display_finalize(vdev);
     vfio_bars_finalize(vdev);
@@ -3331,8 +3253,7 @@ static void vfio_instance_finalize(Object *obj)
      *
      * g_free(vdev->igd_opregion);
      */
-    vfio_put_device(vdev);
-    vfio_put_group(group);
+    vfio_pci_put_device(vdev);
 }
 
 static void vfio_exitfn(PCIDevice *pdev)
@@ -3398,6 +3319,7 @@ static void vfio_instance_init(Object *obj)
 {
     PCIDevice *pci_dev = PCI_DEVICE(obj);
     VFIOPCIDevice *vdev = VFIO_PCI(obj);
+    VFIODevice *vbasedev = &vdev->vbasedev;
 
     device_add_bootindex_property(obj, &vdev->bootindex,
                                   "bootindex", NULL,
@@ -3406,6 +3328,9 @@ static void vfio_instance_init(Object *obj)
     vdev->host.bus = ~0U;
     vdev->host.slot = ~0U;
     vdev->host.function = ~0U;
+
+    vfio_device_init(vbasedev, VFIO_DEVICE_TYPE_PCI, &vfio_pci_ops,
+                     DEVICE(vdev), false);
 
     vdev->nv_gpudirect_clique = 0xFF;
 
@@ -3459,13 +3384,19 @@ static Property vfio_pci_dev_properties[] = {
                                    qdev_prop_nv_gpudirect_clique, uint8_t),
     DEFINE_PROP_OFF_AUTO_PCIBAR("x-msix-relocation", VFIOPCIDevice, msix_relo,
                                 OFF_AUTOPCIBAR_OFF),
-    /*
-     * TODO - support passed fds... is this necessary?
-     * DEFINE_PROP_STRING("vfiofd", VFIOPCIDevice, vfiofd_name),
-     * DEFINE_PROP_STRING("vfiogroupfd, VFIOPCIDevice, vfiogroupfd_name),
-     */
+#ifdef CONFIG_IOMMUFD
+    DEFINE_PROP_LINK("iommufd", VFIOPCIDevice, vbasedev.iommufd,
+                     TYPE_IOMMUFD_BACKEND, IOMMUFDBackend *),
+#endif
     DEFINE_PROP_END_OF_LIST(),
 };
+
+#ifdef CONFIG_IOMMUFD
+static void vfio_pci_set_fd(Object *obj, const char *str, Error **errp)
+{
+    vfio_device_set_fd(&VFIO_PCI(obj)->vbasedev, str, errp);
+}
+#endif
 
 static void vfio_pci_dev_class_init(ObjectClass *klass, void *data)
 {
@@ -3474,6 +3405,9 @@ static void vfio_pci_dev_class_init(ObjectClass *klass, void *data)
 
     dc->reset = vfio_pci_reset;
     device_class_set_props(dc, vfio_pci_dev_properties);
+#ifdef CONFIG_IOMMUFD
+    object_class_property_add_str(klass, "fd", NULL, vfio_pci_set_fd);
+#endif
     dc->desc = "VFIO-based PCI device assignment";
     set_bit(DEVICE_CATEGORY_MISC, dc->categories);
     pdc->realize = vfio_realize;
@@ -3498,6 +3432,8 @@ static const TypeInfo vfio_pci_dev_info = {
 
 static Property vfio_pci_dev_nohotplug_properties[] = {
     DEFINE_PROP_BOOL("ramfb", VFIOPCIDevice, enable_ramfb, false),
+    DEFINE_PROP_ON_OFF_AUTO("x-ramfb-migrate", VFIOPCIDevice, ramfb_migrate,
+                            ON_OFF_AUTO_AUTO),
     DEFINE_PROP_END_OF_LIST(),
 };
 

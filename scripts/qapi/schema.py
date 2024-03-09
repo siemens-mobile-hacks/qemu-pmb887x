@@ -73,6 +73,12 @@ class QAPISchemaEntity:
         self.features = features or []
         self._checked = False
 
+    def __repr__(self):
+        if self.name is None:
+            return "<%s at 0x%x>" % (type(self).__name__, id(self))
+        return "<%s:%s at 0x%x>" % (type(self).__name__, self.name,
+                                    id(self))
+
     def c_name(self):
         return c_name(self.name)
 
@@ -88,10 +94,6 @@ class QAPISchemaEntity:
         if doc:
             for f in self.features:
                 doc.connect_feature(f)
-
-    def check_doc(self):
-        if self.doc:
-            self.doc.check()
 
     def _set_module(self, schema, info):
         assert self._checked
@@ -1217,9 +1219,10 @@ class QAPISchema:
         for ent in self._entity_list:
             ent.check(self)
             ent.connect_doc()
-            ent.check_doc()
         for ent in self._entity_list:
             ent.set_module(self)
+        for doc in self.docs:
+            doc.check()
 
     def visit(self, visitor):
         visitor.visit_begin(self)

@@ -615,7 +615,7 @@ int shpc_init(PCIDevice *d, PCIBus *sec_bus, MemoryRegion *bar,
     }
     if (nslots > SHPC_MAX_SLOTS ||
         SHPC_IDX_TO_PCI(nslots) > PCI_SLOT_MAX) {
-        /* TODO: report an error mesage that makes sense. */
+        /* TODO: report an error message that makes sense. */
         return -EINVAL;
     }
     shpc->nslots = nslots;
@@ -736,7 +736,7 @@ static int shpc_load(QEMUFile *f, void *pv, size_t size,
     return 0;
 }
 
-VMStateInfo shpc_vmstate_info = {
+const VMStateInfo shpc_vmstate_info = {
     .name = "shpc",
     .get  = shpc_load,
     .put  = shpc_save,

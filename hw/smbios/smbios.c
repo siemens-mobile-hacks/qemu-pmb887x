@@ -102,6 +102,7 @@ static struct {
 #define DEFAULT_CPU_SPEED 2000
 
 static struct {
+    uint16_t processor_family;
     const char *sock_pfx, *manufacturer, *version, *serial, *asset, *part;
     uint64_t max_speed;
     uint64_t current_speed;
@@ -110,6 +111,7 @@ static struct {
     .max_speed = DEFAULT_CPU_SPEED,
     .current_speed = DEFAULT_CPU_SPEED,
     .processor_id = 0,
+    .processor_family = 0x01, /* Other */
 };
 
 struct type8_instance {
@@ -338,6 +340,10 @@ static const QemuOptDesc qemu_smbios_type4_opts[] = {
         .type = QEMU_OPT_STRING,
         .help = "part number",
     }, {
+        .name = "processor-family",
+        .type = QEMU_OPT_NUMBER,
+        .help = "processor family",
+    }, {
         .name = "processor-id",
         .type = QEMU_OPT_NUMBER,
         .help = "processor id",
@@ -346,6 +352,11 @@ static const QemuOptDesc qemu_smbios_type4_opts[] = {
 };
 
 static const QemuOptDesc qemu_smbios_type8_opts[] = {
+    {
+        .name = "type",
+        .type = QEMU_OPT_NUMBER,
+        .help = "SMBIOS element type",
+    },
     {
         .name = "internal_reference",
         .type = QEMU_OPT_STRING,
@@ -366,9 +377,15 @@ static const QemuOptDesc qemu_smbios_type8_opts[] = {
         .type = QEMU_OPT_NUMBER,
         .help = "port type",
     },
+    { /* end of list */ }
 };
 
 static const QemuOptDesc qemu_smbios_type11_opts[] = {
+    {
+        .name = "type",
+        .type = QEMU_OPT_NUMBER,
+        .help = "SMBIOS element type",
+    },
     {
         .name = "value",
         .type = QEMU_OPT_STRING,
@@ -379,6 +396,7 @@ static const QemuOptDesc qemu_smbios_type11_opts[] = {
         .type = QEMU_OPT_STRING,
         .help = "OEM string data from file",
     },
+    { /* end of list */ }
 };
 
 static const QemuOptDesc qemu_smbios_type17_opts[] = {
@@ -726,7 +744,7 @@ static void smbios_build_type_4_table(MachineState *ms, unsigned instance)
     snprintf(sock_str, sizeof(sock_str), "%s%2x", type4.sock_pfx, instance);
     SMBIOS_TABLE_SET_STR(4, socket_designation_str, sock_str);
     t->processor_type = 0x03; /* CPU */
-    t->processor_family = 0x01; /* Other */
+    t->processor_family = 0xfe; /* use Processor Family 2 field */
     SMBIOS_TABLE_SET_STR(4, processor_manufacturer_str, type4.manufacturer);
     if (type4.processor_id == 0) {
         t->processor_id[0] = cpu_to_le32(smbios_cpuid_version);
@@ -758,7 +776,7 @@ static void smbios_build_type_4_table(MachineState *ms, unsigned instance)
     t->thread_count = (threads_per_socket > 255) ? 0xFF : threads_per_socket;
 
     t->processor_characteristics = cpu_to_le16(0x02); /* Unknown */
-    t->processor_family2 = cpu_to_le16(0x01); /* Other */
+    t->processor_family2 = cpu_to_le16(type4.processor_family);
 
     if (tbl_len == SMBIOS_TYPE_4_LEN_V30) {
         t->core_count2 = t->core_enabled2 = cpu_to_le16(cores_per_socket);
@@ -983,6 +1001,13 @@ void smbios_set_cpuid(uint32_t version, uint32_t features)
         field = value;                                                    \
     }
 
+void smbios_set_default_processor_family(uint16_t processor_family)
+{
+    if (type4.processor_family <= 0x01) {
+        type4.processor_family = processor_family;
+    }
+}
+
 void smbios_set_defaults(const char *manufacturer, const char *product,
                          const char *version, bool legacy_mode,
                          bool uuid_encoded, SmbiosEntryPointType ep_type)
@@ -1110,7 +1135,7 @@ void smbios_get_tables(MachineState *ms,
         dimm_cnt = QEMU_ALIGN_UP(current_machine->ram_size, MAX_DIMM_SZ) / MAX_DIMM_SZ;
 
         /*
-         * The offset determines if we need to keep additional space betweeen
+         * The offset determines if we need to keep additional space between
          * table 17 and table 19 header handle numbers so that they do
          * not overlap. For example, for a VM with larger than 8 TB guest
          * memory and DIMM like chunks of 16 GiB, the default space between
@@ -1402,6 +1427,9 @@ void smbios_entry_add(QemuOpts *opts, Error **errp)
                 return;
             }
             save_opt(&type4.sock_pfx, opts, "sock_pfx");
+            type4.processor_family = qemu_opt_get_number(opts,
+                                                         "processor-family",
+                                                         0x01 /* Other */);
             save_opt(&type4.manufacturer, opts, "manufacturer");
             save_opt(&type4.version, opts, "version");
             save_opt(&type4.serial, opts, "serial");
@@ -1423,13 +1451,14 @@ void smbios_entry_add(QemuOpts *opts, Error **errp)
             if (!qemu_opts_validate(opts, qemu_smbios_type8_opts, errp)) {
                 return;
             }
-            struct type8_instance *t;
-            t = g_new0(struct type8_instance, 1);
-            save_opt(&t->internal_reference, opts, "internal_reference");
-            save_opt(&t->external_reference, opts, "external_reference");
-            t->connector_type = qemu_opt_get_number(opts, "connector_type", 0);
-            t->port_type = qemu_opt_get_number(opts, "port_type", 0);
-            QTAILQ_INSERT_TAIL(&type8, t, next);
+            struct type8_instance *t8_i;
+            t8_i = g_new0(struct type8_instance, 1);
+            save_opt(&t8_i->internal_reference, opts, "internal_reference");
+            save_opt(&t8_i->external_reference, opts, "external_reference");
+            t8_i->connector_type = qemu_opt_get_number(opts,
+                                                       "connector_type", 0);
+            t8_i->port_type = qemu_opt_get_number(opts, "port_type", 0);
+            QTAILQ_INSERT_TAIL(&type8, t8_i, next);
             return;
         case 11:
             if (!qemu_opts_validate(opts, qemu_smbios_type11_opts, errp)) {
@@ -1452,27 +1481,27 @@ void smbios_entry_add(QemuOpts *opts, Error **errp)
             type17.speed = qemu_opt_get_number(opts, "speed", 0);
             return;
         case 41: {
-            struct type41_instance *t;
+            struct type41_instance *t41_i;
             Error *local_err = NULL;
 
             if (!qemu_opts_validate(opts, qemu_smbios_type41_opts, errp)) {
                 return;
             }
-            t = g_new0(struct type41_instance, 1);
-            save_opt(&t->designation, opts, "designation");
-            t->kind = qapi_enum_parse(&type41_kind_lookup,
-                                      qemu_opt_get(opts, "kind"),
-                                      0, &local_err) + 1;
-            t->kind |= 0x80;     /* enabled */
+            t41_i = g_new0(struct type41_instance, 1);
+            save_opt(&t41_i->designation, opts, "designation");
+            t41_i->kind = qapi_enum_parse(&type41_kind_lookup,
+                                          qemu_opt_get(opts, "kind"),
+                                          0, &local_err) + 1;
+            t41_i->kind |= 0x80;     /* enabled */
             if (local_err != NULL) {
                 error_propagate(errp, local_err);
-                g_free(t);
+                g_free(t41_i);
                 return;
             }
-            t->instance = qemu_opt_get_number(opts, "instance", 1);
-            save_opt(&t->pcidev, opts, "pcidev");
+            t41_i->instance = qemu_opt_get_number(opts, "instance", 1);
+            save_opt(&t41_i->pcidev, opts, "pcidev");
 
-            QTAILQ_INSERT_TAIL(&type41, t, next);
+            QTAILQ_INSERT_TAIL(&type41, t41_i, next);
             return;
         }
         default:

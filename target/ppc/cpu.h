@@ -27,6 +27,8 @@
 #include "qom/object.h"
 #include "hw/registerfields.h"
 
+#define CPU_RESOLVING_TYPE TYPE_POWERPC_CPU
+
 #define TCG_GUEST_DEFAULT_MO 0
 
 #define TARGET_PAGE_BITS_64K 16
@@ -190,6 +192,95 @@ enum {
     POWERPC_EXCP_TRAP          = 0x40,
 };
 
+/* Exception model                                                           */
+typedef enum powerpc_excp_t {
+    POWERPC_EXCP_UNKNOWN   = 0,
+    /* Standard PowerPC exception model */
+    POWERPC_EXCP_STD,
+    /* PowerPC 40x exception model      */
+    POWERPC_EXCP_40x,
+    /* PowerPC 603/604/G2 exception model */
+    POWERPC_EXCP_6xx,
+    /* PowerPC 7xx exception model      */
+    POWERPC_EXCP_7xx,
+    /* PowerPC 74xx exception model     */
+    POWERPC_EXCP_74xx,
+    /* BookE exception model            */
+    POWERPC_EXCP_BOOKE,
+    /* PowerPC 970 exception model      */
+    POWERPC_EXCP_970,
+    /* POWER7 exception model           */
+    POWERPC_EXCP_POWER7,
+    /* POWER8 exception model           */
+    POWERPC_EXCP_POWER8,
+    /* POWER9 exception model           */
+    POWERPC_EXCP_POWER9,
+    /* POWER10 exception model           */
+    POWERPC_EXCP_POWER10,
+} powerpc_excp_t;
+
+/*****************************************************************************/
+/* MMU model                                                                 */
+typedef enum powerpc_mmu_t {
+    POWERPC_MMU_UNKNOWN    = 0x00000000,
+    /* Standard 32 bits PowerPC MMU                            */
+    POWERPC_MMU_32B        = 0x00000001,
+    /* PowerPC 6xx MMU with software TLB                       */
+    POWERPC_MMU_SOFT_6xx   = 0x00000002,
+    /*
+     * PowerPC 74xx MMU with software TLB (this has been
+     * disabled, see git history for more information.
+     * keywords: tlbld tlbli TLBMISS PTEHI PTELO)
+     */
+    POWERPC_MMU_SOFT_74xx  = 0x00000003,
+    /* PowerPC 4xx MMU with software TLB                       */
+    POWERPC_MMU_SOFT_4xx   = 0x00000004,
+    /* PowerPC MMU in real mode only                           */
+    POWERPC_MMU_REAL       = 0x00000006,
+    /* Freescale MPC8xx MMU model                              */
+    POWERPC_MMU_MPC8xx     = 0x00000007,
+    /* BookE MMU model                                         */
+    POWERPC_MMU_BOOKE      = 0x00000008,
+    /* BookE 2.06 MMU model                                    */
+    POWERPC_MMU_BOOKE206   = 0x00000009,
+#define POWERPC_MMU_64       0x00010000
+    /* 64 bits PowerPC MMU                                     */
+    POWERPC_MMU_64B        = POWERPC_MMU_64 | 0x00000001,
+    /* Architecture 2.03 and later (has LPCR) */
+    POWERPC_MMU_2_03       = POWERPC_MMU_64 | 0x00000002,
+    /* Architecture 2.06 variant                               */
+    POWERPC_MMU_2_06       = POWERPC_MMU_64 | 0x00000003,
+    /* Architecture 2.07 variant                               */
+    POWERPC_MMU_2_07       = POWERPC_MMU_64 | 0x00000004,
+    /* Architecture 3.00 variant                               */
+    POWERPC_MMU_3_00       = POWERPC_MMU_64 | 0x00000005,
+} powerpc_mmu_t;
+
+static inline bool mmu_is_64bit(powerpc_mmu_t mmu_model)
+{
+    return mmu_model & POWERPC_MMU_64;
+}
+
+/*****************************************************************************/
+/* Input pins model                                                          */
+typedef enum powerpc_input_t {
+    PPC_FLAGS_INPUT_UNKNOWN = 0,
+    /* PowerPC 6xx bus                  */
+    PPC_FLAGS_INPUT_6xx,
+    /* BookE bus                        */
+    PPC_FLAGS_INPUT_BookE,
+    /* PowerPC 405 bus                  */
+    PPC_FLAGS_INPUT_405,
+    /* PowerPC 970 bus                  */
+    PPC_FLAGS_INPUT_970,
+    /* PowerPC POWER7 bus               */
+    PPC_FLAGS_INPUT_POWER7,
+    /* PowerPC POWER9 bus               */
+    PPC_FLAGS_INPUT_POWER9,
+    /* Freescale RCPU bus               */
+    PPC_FLAGS_INPUT_RCPU,
+} powerpc_input_t;
+
 #define PPC_INPUT(env) ((env)->bus_model)
 
 /*****************************************************************************/
@@ -198,9 +289,14 @@ typedef struct opc_handler_t opc_handler_t;
 /*****************************************************************************/
 /* Types used to describe some PowerPC registers etc. */
 typedef struct DisasContext DisasContext;
+typedef struct ppc_dcr_t ppc_dcr_t;
 typedef struct ppc_spr_t ppc_spr_t;
+typedef struct ppc_tb_t ppc_tb_t;
 typedef union ppc_tlb_t ppc_tlb_t;
 typedef struct ppc_hash_pte64 ppc_hash_pte64_t;
+typedef struct PPCHash64Options PPCHash64Options;
+
+typedef struct CPUArchState CPUPPCState;
 
 /* SPR access micro-ops generations callbacks */
 struct ppc_spr_t {
@@ -428,7 +524,7 @@ FIELD(MSR, LE, MSR_LE, 1)
 
 /* PMU bits */
 #define MMCR0_FC     PPC_BIT(32)         /* Freeze Counters  */
-#define MMCR0_PMAO   PPC_BIT(56)         /* Perf Monitor Alert Ocurred */
+#define MMCR0_PMAO   PPC_BIT(56)         /* Perf Monitor Alert Occurred */
 #define MMCR0_PMAE   PPC_BIT(37)         /* Perf Monitor Alert Enable */
 #define MMCR0_EBE    PPC_BIT(43)         /* Perf Monitor EBB Enable */
 #define MMCR0_FCECE  PPC_BIT(38)         /* FC on Enabled Cond or Event */
@@ -1088,6 +1184,21 @@ DEXCR_ASPECT(NPHIE, 5)
 DEXCR_ASPECT(PHIE, 6)
 
 /*****************************************************************************/
+/* PowerNV ChipTOD and TimeBase State Machine */
+struct pnv_tod_tbst {
+    int tb_ready_for_tod; /* core TB ready to receive TOD from chiptod */
+    int tod_sent_to_tb;   /* chiptod sent TOD to the core TB */
+
+    /*
+     * "Timers" for async TBST events are simulated by mfTFAC because TFAC
+     * is polled for such events. These are just used to ensure firmware
+     * performs the polling at least a few times.
+     */
+    int tb_state_timer;
+    int tb_sync_pulse_timer;
+};
+
+/*****************************************************************************/
 /* The whole PowerPC CPU context */
 
 /*
@@ -1121,7 +1232,9 @@ struct CPUArchState {
     target_ulong reserve_addr;   /* Reservation address */
     target_ulong reserve_length; /* Reservation larx op size (bytes) */
     target_ulong reserve_val;    /* Reservation value */
+#if defined(TARGET_PPC64)
     target_ulong reserve_val2;
+#endif
 
     /* These are used in supervisor mode only */
     target_ulong msr;      /* machine state register */
@@ -1137,6 +1250,8 @@ struct CPUArchState {
     /* MMU context, only relevant for full system emulation */
 #if defined(TARGET_PPC64)
     ppc_slb_t slb[MAX_SLB_ENTRIES]; /* PowerPC 64 SLB area */
+    struct CPUBreakpoint *ciabr_breakpoint;
+    struct CPUWatchpoint *dawr0_watchpoint;
 #endif
     target_ulong sr[32];   /* segment registers */
     uint32_t nb_BATs;      /* number of BATs */
@@ -1158,6 +1273,12 @@ struct CPUArchState {
     uint32_t tlb_need_flush; /* Delayed flush needed */
 #define TLB_NEED_LOCAL_FLUSH   0x1
 #define TLB_NEED_GLOBAL_FLUSH  0x2
+
+#if defined(TARGET_PPC64)
+    /* PowerNV chiptod / timebase facility state. */
+    /* Would be nice to put these into PnvCore */
+    struct pnv_tod_tbst pnv_tod_tbst;
+#endif
 #endif
 
     /* Other registers */
@@ -1309,11 +1430,8 @@ typedef struct PPCVirtualHypervisorClass PPCVirtualHypervisorClass;
  * A PowerPC CPU.
  */
 struct ArchCPU {
-    /*< private >*/
     CPUState parent_obj;
-    /*< public >*/
 
-    CPUNegativeOffsetState neg;
     CPUPPCState env;
 
     int vcpu_id;
@@ -1338,7 +1456,53 @@ struct ArchCPU {
     int32_t mig_slb_nr;
 };
 
+/**
+ * PowerPCCPUClass:
+ * @parent_realize: The parent class' realize handler.
+ * @parent_phases: The parent class' reset phase handlers.
+ *
+ * A PowerPC CPU model.
+ */
+struct PowerPCCPUClass {
+    CPUClass parent_class;
 
+    DeviceRealize parent_realize;
+    DeviceUnrealize parent_unrealize;
+    ResettablePhases parent_phases;
+    void (*parent_parse_features)(const char *type, char *str, Error **errp);
+
+    uint32_t pvr;
+    /*
+     * If @best is false, match if pcc is in the family of pvr
+     * Else match only if pcc is the best match for pvr in this family.
+     */
+    bool (*pvr_match)(struct PowerPCCPUClass *pcc, uint32_t pvr, bool best);
+    uint64_t pcr_mask;          /* Available bits in PCR register */
+    uint64_t pcr_supported;     /* Bits for supported PowerISA versions */
+    uint32_t svr;
+    uint64_t insns_flags;
+    uint64_t insns_flags2;
+    uint64_t msr_mask;
+    uint64_t lpcr_mask;         /* Available bits in the LPCR */
+    uint64_t lpcr_pm;           /* Power-saving mode Exit Cause Enable bits */
+    powerpc_mmu_t   mmu_model;
+    powerpc_excp_t  excp_model;
+    powerpc_input_t bus_model;
+    uint32_t flags;
+    int bfd_mach;
+    uint32_t l1_dcache_size, l1_icache_size;
+#ifndef CONFIG_USER_ONLY
+    GDBFeature gdb_spr;
+#endif
+    const PPCHash64Options *hash64_opts;
+    struct ppc_radix_page_info *radix_page_info;
+    uint32_t lrg_decr_bits;
+    int n_host_threads;
+    void (*init_proc)(CPUPPCState *env);
+    int  (*check_pow)(CPUPPCState *env);
+};
+
+ObjectClass *ppc_cpu_class_by_name(const char *name);
 PowerPCCPUClass *ppc_cpu_class_by_pvr(uint32_t pvr);
 PowerPCCPUClass *ppc_cpu_class_by_pvr_mask(uint32_t pvr);
 PowerPCCPUClass *ppc_cpu_get_family_class(PowerPCCPUClass *pcc);
@@ -1381,8 +1545,6 @@ int ppc_cpu_gdb_write_register(CPUState *cpu, uint8_t *buf, int reg);
 int ppc_cpu_gdb_write_register_apple(CPUState *cpu, uint8_t *buf, int reg);
 #ifndef CONFIG_USER_ONLY
 hwaddr ppc_cpu_get_phys_page_debug(CPUState *cpu, vaddr addr);
-void ppc_gdb_gen_spr_xml(PowerPCCPU *cpu);
-const char *ppc_gdb_get_dynamic_xml(CPUState *cs, const char *xml_name);
 #endif
 int ppc64_cpu_write_elf64_note(WriteCoreDumpFunction f, CPUState *cs,
                                int cpuid, DumpState *s);
@@ -1403,6 +1565,11 @@ void ppc_translate_init(void);
 #if !defined(CONFIG_USER_ONLY)
 void ppc_store_sdr1(CPUPPCState *env, target_ulong value);
 void ppc_store_lpcr(PowerPCCPU *cpu, target_ulong val);
+void ppc_update_ciabr(CPUPPCState *env);
+void ppc_store_ciabr(CPUPPCState *env, target_ulong value);
+void ppc_update_daw0(CPUPPCState *env);
+void ppc_store_dawr0(CPUPPCState *env, target_ulong value);
+void ppc_store_dawrx0(CPUPPCState *env, uint32_t value);
 #endif /* !defined(CONFIG_USER_ONLY) */
 void ppc_store_msr(CPUPPCState *env, target_ulong value);
 
@@ -1475,7 +1642,7 @@ int ppc_dcr_write(ppc_dcr_t *dcr_env, int dcrn, uint32_t val);
 
 /* MMU modes definitions */
 #define MMU_USER_IDX 0
-static inline int cpu_mmu_index(CPUPPCState *env, bool ifetch)
+static inline int ppc_env_mmu_index(CPUPPCState *env, bool ifetch)
 {
 #ifdef CONFIG_USER_ONLY
     return MMU_USER_IDX;
@@ -1495,6 +1662,7 @@ int ppc_set_compat(PowerPCCPU *cpu, uint32_t compat_pvr, Error **errp);
 
 #if !defined(CONFIG_USER_ONLY)
 int ppc_set_compat_all(uint32_t compat_pvr, Error **errp);
+int ppc_init_compat_all(uint32_t compat_pvr, Error **errp);
 #endif
 int ppc_compat_max_vthreads(PowerPCCPU *cpu);
 void ppc_compat_add_property(Object *obj, const char *name,
@@ -1600,8 +1768,8 @@ void ppc_compat_add_property(Object *obj, const char *name,
 #define SPR_USPRG5            (0x105)
 #define SPR_USPRG6            (0x106)
 #define SPR_USPRG7            (0x107)
-#define SPR_VTBL              (0x10C)
-#define SPR_VTBU              (0x10D)
+#define SPR_TBL               (0x10C)
+#define SPR_TBU               (0x10D)
 #define SPR_SPRG0             (0x110)
 #define SPR_SPRG1             (0x111)
 #define SPR_SPRG2             (0x112)
@@ -1614,8 +1782,8 @@ void ppc_compat_add_property(Object *obj, const char *name,
 #define SPR_SPRG7             (0x117)
 #define SPR_ASR               (0x118)
 #define SPR_EAR               (0x11A)
-#define SPR_TBL               (0x11C)
-#define SPR_TBU               (0x11D)
+#define SPR_WR_TBL            (0x11C)
+#define SPR_WR_TBU            (0x11D)
 #define SPR_TBU40             (0x11E)
 #define SPR_SVR               (0x11E)
 #define SPR_BOOKE_PIR         (0x11E)
@@ -1897,7 +2065,9 @@ void ppc_compat_add_property(Object *obj, const char *name,
 #define SPR_PSSCR             (0x357)
 #define SPR_440_INV0          (0x370)
 #define SPR_440_INV1          (0x371)
+#define SPR_TRIG1             (0x371)
 #define SPR_440_INV2          (0x372)
+#define SPR_TRIG2             (0x372)
 #define SPR_440_INV3          (0x373)
 #define SPR_440_ITV0          (0x374)
 #define SPR_440_ITV1          (0x375)
@@ -2494,6 +2664,34 @@ enum {
     HMER_TRIG_FIR_HMI           = PPC_BIT(17),
     HMER_HYP_RESOURCE_ERR       = PPC_BIT(20),
     HMER_XSCOM_STATUS_MASK      = PPC_BITMASK(21, 23),
+};
+
+/* TFMR */
+enum {
+    TFMR_CONTROL_MASK           = PPC_BITMASK(0, 24),
+    TFMR_MASK_HMI               = PPC_BIT(10),
+    TFMR_TB_ECLIPZ              = PPC_BIT(14),
+    TFMR_LOAD_TOD_MOD           = PPC_BIT(16),
+    TFMR_MOVE_CHIP_TOD_TO_TB    = PPC_BIT(18),
+    TFMR_CLEAR_TB_ERRORS        = PPC_BIT(24),
+    TFMR_STATUS_MASK            = PPC_BITMASK(25, 63),
+    TFMR_TBST_ENCODED           = PPC_BITMASK(28, 31), /* TBST = TB State */
+    TFMR_TBST_LAST              = PPC_BITMASK(32, 35), /* Previous TBST */
+    TFMR_TB_ENABLED             = PPC_BIT(40),
+    TFMR_TB_VALID               = PPC_BIT(41),
+    TFMR_TB_SYNC_OCCURED        = PPC_BIT(42),
+    TFMR_FIRMWARE_CONTROL_ERROR = PPC_BIT(46),
+};
+
+/* TFMR TBST (Time Base State Machine). */
+enum {
+    TBST_RESET                  = 0x0,
+    TBST_SEND_TOD_MOD           = 0x1,
+    TBST_NOT_SET                = 0x2,
+    TBST_SYNC_WAIT              = 0x6,
+    TBST_GET_TOD                = 0x7,
+    TBST_TB_RUNNING             = 0x8,
+    TBST_TB_ERROR               = 0x9,
 };
 
 /*****************************************************************************/

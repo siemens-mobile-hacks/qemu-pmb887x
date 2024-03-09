@@ -459,7 +459,7 @@ static bool try_find_variable(Context *c, YYLTYPE *locp,
     return false;
 }
 
-/* Calls `try_find_variable` and asserts succcess. */
+/* Calls `try_find_variable` and asserts success. */
 static void find_variable(Context *c, YYLTYPE *locp,
                           HexValue *dst,
                           HexValue *varid)
@@ -549,7 +549,7 @@ HexValue gen_bin_cmp(Context *c,
             ");\n");
         break;
     default:
-        fprintf(stderr, "Error in evalutating immediateness!");
+        fprintf(stderr, "Error in evaluating immediateness!");
         abort();
     }
     return res;
@@ -1164,7 +1164,7 @@ void gen_rdeposit_op(Context *c,
 {
     /*
      * Otherwise if the width is not known, we fallback on reimplementing
-     * desposit in TCG.
+     * deposit in TCG.
      */
     HexValue begin_m = *begin;
     HexValue value_m = *value;
@@ -1541,10 +1541,8 @@ void gen_circ_op(Context *c,
                  HexValue *increment,
                  HexValue *modifier)
 {
-    HexValue cs = gen_tmp(c, locp, 32, UNSIGNED);
     HexValue increment_m = *increment;
     increment_m = rvalue_materialize(c, locp, &increment_m);
-    OUT(c, locp, "gen_read_reg(", &cs, ", HEX_REG_CS0 + MuN);\n");
     OUT(c,
         locp,
         "gen_helper_fcircadd(",
@@ -1555,7 +1553,7 @@ void gen_circ_op(Context *c,
         &increment_m,
         ", ",
         modifier);
-    OUT(c, locp, ", ", &cs, ");\n");
+    OUT(c, locp, ", CS);\n");
 }
 
 HexValue gen_locnt_op(Context *c, YYLTYPE *locp, HexValue *src)
@@ -1773,7 +1771,7 @@ void gen_store(Context *c, YYLTYPE *locp, HexValue *width, HexValue *ea,
     /* Lookup the effective address EA */
     find_variable(c, locp, ea, ea);
     src_m = rvalue_materialize(c, locp, &src_m);
-    OUT(c, locp, "gen_store", &mem_width, "(cpu_env, ", ea, ", ", &src_m);
+    OUT(c, locp, "gen_store", &mem_width, "(tcg_env, ", ea, ", ", &src_m);
     OUT(c, locp, ", insn->slot);\n");
 }
 
@@ -2080,9 +2078,9 @@ void emit_arg(Context *c, YYLTYPE *locp, HexValue *arg)
             char reg_id[5];
             reg_compose(c, locp, &(arg->reg), reg_id);
             EMIT_SIG(c, ", %s %s", type, reg_id);
-            /* MuV register requires also MuN to provide its index */
+            /* MuV register requires also CS for circular addressing*/
             if (arg->reg.type == MODIFIER) {
-                EMIT_SIG(c, ", int MuN");
+                EMIT_SIG(c, ", TCGv CS");
             }
         }
         break;

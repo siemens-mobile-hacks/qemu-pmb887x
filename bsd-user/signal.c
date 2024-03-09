@@ -44,7 +44,7 @@ static inline int sas_ss_flags(TaskState *ts, unsigned long sp)
 }
 
 /*
- * The BSD ABIs use the same singal numbers across all the CPU architectures, so
+ * The BSD ABIs use the same signal numbers across all the CPU architectures, so
  * (unlike Linux) these functions are just the identity mapping. This might not
  * be true for XyzBSD running on AbcBSD, which doesn't currently work.
  */
@@ -241,7 +241,7 @@ static inline void host_to_target_siginfo_noswap(target_siginfo_t *tinfo,
 #endif
         /*
          * Unsure that this can actually be generated, and our support for
-         * capsicum is somewhere between weak and non-existant, but if we get
+         * capsicum is somewhere between weak and non-existent, but if we get
          * one, then we know what to save.
          */
 #ifdef QEMU_SI_CAPSICUM
@@ -311,15 +311,21 @@ static void tswap_siginfo(target_siginfo_t *tinfo, const target_siginfo_t *info)
     }
 }
 
+void host_to_target_siginfo(target_siginfo_t *tinfo, const siginfo_t *info)
+{
+    host_to_target_siginfo_noswap(tinfo, info);
+    tswap_siginfo(tinfo, tinfo);
+}
+
 int block_signals(void)
 {
-    TaskState *ts = (TaskState *)thread_cpu->opaque;
+    TaskState *ts = get_task_state(thread_cpu);
     sigset_t set;
 
     /*
      * It's OK to block everything including SIGSEGV, because we won't run any
      * further guest code before unblocking signals in
-     * process_pending_signals(). We depend on the FreeBSD behaivor here where
+     * process_pending_signals(). We depend on the FreeBSD behavior here where
      * this will only affect this thread's signal mask. We don't use
      * pthread_sigmask which might seem more correct because that routine also
      * does odd things with SIGCANCEL to implement pthread_cancel().
@@ -351,9 +357,9 @@ static int core_dump_signal(int sig)
 static G_NORETURN
 void dump_core_and_abort(int target_sig)
 {
-    CPUArchState *env = thread_cpu->env_ptr;
-    CPUState *cpu = env_cpu(env);
-    TaskState *ts = cpu->opaque;
+    CPUState *cpu = thread_cpu;
+    CPUArchState *env = cpu_env(cpu);
+    TaskState *ts = get_task_state(cpu);
     int core_dumped = 0;
     int host_sig;
     struct sigaction act;
@@ -415,7 +421,7 @@ void queue_signal(CPUArchState *env, int sig, int si_type,
                   target_siginfo_t *info)
 {
     CPUState *cpu = env_cpu(env);
-    TaskState *ts = cpu->opaque;
+    TaskState *ts = get_task_state(cpu);
 
     trace_user_queue_signal(env, sig);
 
@@ -457,7 +463,7 @@ static int fatal_signal(int sig)
 void force_sig_fault(int sig, int code, abi_ulong addr)
 {
     CPUState *cpu = thread_cpu;
-    CPUArchState *env = cpu->env_ptr;
+    CPUArchState *env = cpu_env(cpu);
     target_siginfo_t info = {};
 
     info.si_signo = sig;
@@ -469,9 +475,8 @@ void force_sig_fault(int sig, int code, abi_ulong addr)
 
 static void host_signal_handler(int host_sig, siginfo_t *info, void *puc)
 {
-    CPUArchState *env = thread_cpu->env_ptr;
-    CPUState *cpu = env_cpu(env);
-    TaskState *ts = cpu->opaque;
+    CPUState *cpu = thread_cpu;
+    TaskState *ts = get_task_state(cpu);
     target_siginfo_t tinfo;
     ucontext_t *uc = puc;
     struct emulated_sigtable *k;
@@ -580,7 +585,7 @@ static void host_signal_handler(int host_sig, siginfo_t *info, void *puc)
 /* compare to kern/kern_sig.c sys_sigaltstack() and kern_sigaltstack() */
 abi_long do_sigaltstack(abi_ulong uss_addr, abi_ulong uoss_addr, abi_ulong sp)
 {
-    TaskState *ts = (TaskState *)thread_cpu->opaque;
+    TaskState *ts = get_task_state(thread_cpu);
     int ret;
     target_stack_t oss;
 
@@ -709,7 +714,7 @@ int do_sigaction(int sig, const struct target_sigaction *act,
 static inline abi_ulong get_sigframe(struct target_sigaction *ka,
         CPUArchState *env, size_t frame_size)
 {
-    TaskState *ts = (TaskState *)thread_cpu->opaque;
+    TaskState *ts = get_task_state(thread_cpu);
     abi_ulong sp;
 
     /* Use default user stack */
@@ -784,13 +789,10 @@ static int reset_signal_mask(target_ucontext_t *ucontext)
     int i;
     sigset_t blocked;
     target_sigset_t target_set;
-    TaskState *ts = (TaskState *)thread_cpu->opaque;
+    TaskState *ts = get_task_state(thread_cpu);
 
     for (i = 0; i < TARGET_NSIG_WORDS; i++) {
-        if (__get_user(target_set.__bits[i],
-                    &ucontext->uc_sigmask.__bits[i])) {
-            return -TARGET_EFAULT;
-        }
+        __get_user(target_set.__bits[i], &ucontext->uc_sigmask.__bits[i]);
     }
     target_to_host_sigset_internal(&blocked, &target_set);
     ts->signal_mask = blocked;
@@ -837,7 +839,7 @@ badframe:
 
 void signal_init(void)
 {
-    TaskState *ts = (TaskState *)thread_cpu->opaque;
+    TaskState *ts = get_task_state(thread_cpu);
     struct sigaction act;
     struct sigaction oact;
     int i;
@@ -851,11 +853,6 @@ void signal_init(void)
     act.sa_flags = SA_SIGINFO;
 
     for (i = 1; i <= TARGET_NSIG; i++) {
-#ifdef CONFIG_GPROF
-        if (i == TARGET_SIGPROF) {
-            continue;
-        }
-#endif
         host_sig = target_to_host_signal(i);
         sigaction(host_sig, NULL, &oact);
         if (oact.sa_sigaction == (void *)SIG_IGN) {
@@ -881,7 +878,7 @@ static void handle_pending_signal(CPUArchState *env, int sig,
                                   struct emulated_sigtable *k)
 {
     CPUState *cpu = env_cpu(env);
-    TaskState *ts = cpu->opaque;
+    TaskState *ts = get_task_state(cpu);
     struct target_sigaction *sa;
     int code;
     sigset_t set;
@@ -970,7 +967,7 @@ void process_pending_signals(CPUArchState *env)
     int sig;
     sigset_t *blocked_set, set;
     struct emulated_sigtable *k;
-    TaskState *ts = cpu->opaque;
+    TaskState *ts = get_task_state(cpu);
 
     while (qatomic_read(&ts->signal_pending)) {
         sigfillset(&set);
@@ -1025,7 +1022,7 @@ void process_pending_signals(CPUArchState *env)
 void cpu_loop_exit_sigsegv(CPUState *cpu, target_ulong addr,
                            MMUAccessType access_type, bool maperr, uintptr_t ra)
 {
-    const struct TCGCPUOps *tcg_ops = CPU_GET_CLASS(cpu)->tcg_ops;
+    const TCGCPUOps *tcg_ops = CPU_GET_CLASS(cpu)->tcg_ops;
 
     if (tcg_ops->record_sigsegv) {
         tcg_ops->record_sigsegv(cpu, addr, access_type, maperr, ra);
@@ -1041,7 +1038,7 @@ void cpu_loop_exit_sigsegv(CPUState *cpu, target_ulong addr,
 void cpu_loop_exit_sigbus(CPUState *cpu, target_ulong addr,
                           MMUAccessType access_type, uintptr_t ra)
 {
-    const struct TCGCPUOps *tcg_ops = CPU_GET_CLASS(cpu)->tcg_ops;
+    const TCGCPUOps *tcg_ops = CPU_GET_CLASS(cpu)->tcg_ops;
 
     if (tcg_ops->record_sigbus) {
         tcg_ops->record_sigbus(cpu, addr, access_type, ra);

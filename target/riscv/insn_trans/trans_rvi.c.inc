@@ -266,12 +266,20 @@ static bool gen_load_i128(DisasContext *ctx, arg_lb *a, MemOp memop)
 
 static bool gen_load(DisasContext *ctx, arg_lb *a, MemOp memop)
 {
+    bool out;
+
     decode_save_opc(ctx);
     if (get_xl(ctx) == MXL_RV128) {
-        return gen_load_i128(ctx, a, memop);
+        out = gen_load_i128(ctx, a, memop);
     } else {
-        return gen_load_tl(ctx, a, memop);
+        out = gen_load_tl(ctx, a, memop);
     }
+
+    if (ctx->ztso) {
+        tcg_gen_mb(TCG_MO_ALL | TCG_BAR_LDAQ);
+    }
+
+    return out;
 }
 
 static bool trans_lb(DisasContext *ctx, arg_lb *a)
@@ -327,6 +335,10 @@ static bool gen_store_tl(DisasContext *ctx, arg_sb *a, MemOp memop)
 {
     TCGv addr = get_address(ctx, a->rs1, a->imm);
     TCGv data = get_gpr(ctx, a->rs2, EXT_NONE);
+
+    if (ctx->ztso) {
+        tcg_gen_mb(TCG_MO_ALL | TCG_BAR_STRL);
+    }
 
     tcg_gen_qemu_st_tl(data, addr, ctx->mem_idx, memop);
     return true;
@@ -799,7 +811,7 @@ static bool trans_fence(DisasContext *ctx, arg_fence *a)
 
 static bool trans_fence_i(DisasContext *ctx, arg_fence_i *a)
 {
-    if (!ctx->cfg_ptr->ext_ifencei) {
+    if (!ctx->cfg_ptr->ext_zifencei) {
         return false;
     }
 
@@ -830,7 +842,7 @@ static bool do_csrr(DisasContext *ctx, int rd, int rc)
     TCGv_i32 csr = tcg_constant_i32(rc);
 
     translator_io_start(&ctx->base);
-    gen_helper_csrr(dest, cpu_env, csr);
+    gen_helper_csrr(dest, tcg_env, csr);
     gen_set_gpr(ctx, rd, dest);
     return do_csr_post(ctx);
 }
@@ -840,7 +852,7 @@ static bool do_csrw(DisasContext *ctx, int rc, TCGv src)
     TCGv_i32 csr = tcg_constant_i32(rc);
 
     translator_io_start(&ctx->base);
-    gen_helper_csrw(cpu_env, csr, src);
+    gen_helper_csrw(tcg_env, csr, src);
     return do_csr_post(ctx);
 }
 
@@ -850,7 +862,7 @@ static bool do_csrrw(DisasContext *ctx, int rd, int rc, TCGv src, TCGv mask)
     TCGv_i32 csr = tcg_constant_i32(rc);
 
     translator_io_start(&ctx->base);
-    gen_helper_csrrw(dest, cpu_env, csr, src, mask);
+    gen_helper_csrrw(dest, tcg_env, csr, src, mask);
     gen_set_gpr(ctx, rd, dest);
     return do_csr_post(ctx);
 }
@@ -862,8 +874,8 @@ static bool do_csrr_i128(DisasContext *ctx, int rd, int rc)
     TCGv_i32 csr = tcg_constant_i32(rc);
 
     translator_io_start(&ctx->base);
-    gen_helper_csrr_i128(destl, cpu_env, csr);
-    tcg_gen_ld_tl(desth, cpu_env, offsetof(CPURISCVState, retxh));
+    gen_helper_csrr_i128(destl, tcg_env, csr);
+    tcg_gen_ld_tl(desth, tcg_env, offsetof(CPURISCVState, retxh));
     gen_set_gpr128(ctx, rd, destl, desth);
     return do_csr_post(ctx);
 }
@@ -873,7 +885,7 @@ static bool do_csrw_i128(DisasContext *ctx, int rc, TCGv srcl, TCGv srch)
     TCGv_i32 csr = tcg_constant_i32(rc);
 
     translator_io_start(&ctx->base);
-    gen_helper_csrw_i128(cpu_env, csr, srcl, srch);
+    gen_helper_csrw_i128(tcg_env, csr, srcl, srch);
     return do_csr_post(ctx);
 }
 
@@ -885,8 +897,8 @@ static bool do_csrrw_i128(DisasContext *ctx, int rd, int rc,
     TCGv_i32 csr = tcg_constant_i32(rc);
 
     translator_io_start(&ctx->base);
-    gen_helper_csrrw_i128(destl, cpu_env, csr, srcl, srch, maskl, maskh);
-    tcg_gen_ld_tl(desth, cpu_env, offsetof(CPURISCVState, retxh));
+    gen_helper_csrrw_i128(destl, tcg_env, csr, srcl, srch, maskl, maskh);
+    tcg_gen_ld_tl(desth, tcg_env, offsetof(CPURISCVState, retxh));
     gen_set_gpr128(ctx, rd, destl, desth);
     return do_csr_post(ctx);
 }

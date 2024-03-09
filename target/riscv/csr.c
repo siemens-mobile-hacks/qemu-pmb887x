@@ -21,14 +21,15 @@
 #include "qemu/log.h"
 #include "qemu/timer.h"
 #include "cpu.h"
+#include "tcg/tcg-cpu.h"
 #include "pmu.h"
 #include "time_helper.h"
-#include "qemu/main-loop.h"
 #include "exec/exec-all.h"
 #include "exec/tb-flush.h"
 #include "sysemu/cpu-timers.h"
 #include "qemu/guest-random.h"
 #include "qapi/error.h"
+
 
 /* CSR function table public API */
 void riscv_get_csr_ops(int csrno, riscv_csr_operations *ops)
@@ -121,6 +122,10 @@ static RISCVException ctr(CPURISCVState *env, int csrno)
 
     if ((csrno >= CSR_CYCLE && csrno <= CSR_INSTRET) ||
         (csrno >= CSR_CYCLEH && csrno <= CSR_INSTRETH)) {
+        if (!riscv_cpu_cfg(env)->ext_zicntr) {
+            return RISCV_EXCP_ILLEGAL_INST;
+        }
+
         goto skip_ext_pmu_check;
     }
 
@@ -183,16 +188,20 @@ static RISCVException zcmt(CPURISCVState *env, int csrno)
 #if !defined(CONFIG_USER_ONLY)
 static RISCVException mctr(CPURISCVState *env, int csrno)
 {
-    int pmu_num = riscv_cpu_cfg(env)->pmu_num;
+    RISCVCPU *cpu = env_archcpu(env);
+    uint32_t pmu_avail_ctrs = cpu->pmu_avail_ctrs;
     int ctr_index;
     int base_csrno = CSR_MHPMCOUNTER3;
 
     if ((riscv_cpu_mxl(env) == MXL_RV32) && csrno >= CSR_MCYCLEH) {
         /* Offset for RV32 mhpmcounternh counters */
-        base_csrno += 0x80;
+        csrno -= 0x80;
     }
+
+    g_assert(csrno >= CSR_MHPMCOUNTER3 && csrno <= CSR_MHPMCOUNTER31);
+
     ctr_index = csrno - base_csrno;
-    if (!pmu_num || ctr_index >= pmu_num) {
+    if ((BIT(ctr_index) & pmu_avail_ctrs >> 3) == 0) {
         /* The PMU is not enabled or counter is out of range */
         return RISCV_EXCP_ILLEGAL_INST;
     }
@@ -233,7 +242,7 @@ static RISCVException any32(CPURISCVState *env, int csrno)
 
 }
 
-static int aia_any(CPURISCVState *env, int csrno)
+static RISCVException aia_any(CPURISCVState *env, int csrno)
 {
     if (!riscv_cpu_cfg(env)->ext_smaia) {
         return RISCV_EXCP_ILLEGAL_INST;
@@ -242,7 +251,7 @@ static int aia_any(CPURISCVState *env, int csrno)
     return any(env, csrno);
 }
 
-static int aia_any32(CPURISCVState *env, int csrno)
+static RISCVException aia_any32(CPURISCVState *env, int csrno)
 {
     if (!riscv_cpu_cfg(env)->ext_smaia) {
         return RISCV_EXCP_ILLEGAL_INST;
@@ -260,7 +269,7 @@ static RISCVException smode(CPURISCVState *env, int csrno)
     return RISCV_EXCP_ILLEGAL_INST;
 }
 
-static int smode32(CPURISCVState *env, int csrno)
+static RISCVException smode32(CPURISCVState *env, int csrno)
 {
     if (riscv_cpu_mxl(env) != MXL_RV32) {
         return RISCV_EXCP_ILLEGAL_INST;
@@ -269,7 +278,7 @@ static int smode32(CPURISCVState *env, int csrno)
     return smode(env, csrno);
 }
 
-static int aia_smode(CPURISCVState *env, int csrno)
+static RISCVException aia_smode(CPURISCVState *env, int csrno)
 {
     if (!riscv_cpu_cfg(env)->ext_ssaia) {
         return RISCV_EXCP_ILLEGAL_INST;
@@ -278,7 +287,7 @@ static int aia_smode(CPURISCVState *env, int csrno)
     return smode(env, csrno);
 }
 
-static int aia_smode32(CPURISCVState *env, int csrno)
+static RISCVException aia_smode32(CPURISCVState *env, int csrno)
 {
     if (!riscv_cpu_cfg(env)->ext_ssaia) {
         return RISCV_EXCP_ILLEGAL_INST;
@@ -487,7 +496,7 @@ static RISCVException pointer_masking(CPURISCVState *env, int csrno)
     return RISCV_EXCP_ILLEGAL_INST;
 }
 
-static int aia_hmode(CPURISCVState *env, int csrno)
+static RISCVException aia_hmode(CPURISCVState *env, int csrno)
 {
     if (!riscv_cpu_cfg(env)->ext_ssaia) {
         return RISCV_EXCP_ILLEGAL_INST;
@@ -496,7 +505,7 @@ static int aia_hmode(CPURISCVState *env, int csrno)
      return hmode(env, csrno);
 }
 
-static int aia_hmode32(CPURISCVState *env, int csrno)
+static RISCVException aia_hmode32(CPURISCVState *env, int csrno)
 {
     if (!riscv_cpu_cfg(env)->ext_ssaia) {
         return RISCV_EXCP_ILLEGAL_INST;
@@ -523,9 +532,12 @@ static RISCVException pmp(CPURISCVState *env, int csrno)
     return RISCV_EXCP_ILLEGAL_INST;
 }
 
-static RISCVException epmp(CPURISCVState *env, int csrno)
+static RISCVException have_mseccfg(CPURISCVState *env, int csrno)
 {
-    if (riscv_cpu_cfg(env)->epmp) {
+    if (riscv_cpu_cfg(env)->ext_smepmp) {
+        return RISCV_EXCP_NONE;
+    }
+    if (riscv_cpu_cfg(env)->ext_zkr) {
         return RISCV_EXCP_NONE;
     }
 
@@ -669,9 +681,10 @@ static RISCVException read_vl(CPURISCVState *env, int csrno,
     return RISCV_EXCP_NONE;
 }
 
-static int read_vlenb(CPURISCVState *env, int csrno, target_ulong *val)
+static RISCVException read_vlenb(CPURISCVState *env, int csrno,
+                                 target_ulong *val)
 {
-    *val = riscv_cpu_cfg(env)->vlen >> 3;
+    *val = riscv_cpu_cfg(env)->vlenb;
     return RISCV_EXCP_NONE;
 }
 
@@ -726,17 +739,19 @@ static RISCVException write_vstart(CPURISCVState *env, int csrno,
      * The vstart CSR is defined to have only enough writable bits
      * to hold the largest element index, i.e. lg2(VLEN) bits.
      */
-    env->vstart = val & ~(~0ULL << ctzl(riscv_cpu_cfg(env)->vlen));
+    env->vstart = val & ~(~0ULL << ctzl(riscv_cpu_cfg(env)->vlenb << 3));
     return RISCV_EXCP_NONE;
 }
 
-static int read_vcsr(CPURISCVState *env, int csrno, target_ulong *val)
+static RISCVException read_vcsr(CPURISCVState *env, int csrno,
+                                target_ulong *val)
 {
     *val = (env->vxrm << VCSR_VXRM_SHIFT) | (env->vxsat << VCSR_VXSAT_SHIFT);
     return RISCV_EXCP_NONE;
 }
 
-static int write_vcsr(CPURISCVState *env, int csrno, target_ulong val)
+static RISCVException write_vcsr(CPURISCVState *env, int csrno,
+                                 target_ulong val)
 {
 #if !defined(CONFIG_USER_ONLY)
     env->mstatus |= MSTATUS_VS;
@@ -786,13 +801,15 @@ static RISCVException read_timeh(CPURISCVState *env, int csrno,
     return RISCV_EXCP_NONE;
 }
 
-static int read_hpmcounter(CPURISCVState *env, int csrno, target_ulong *val)
+static RISCVException read_hpmcounter(CPURISCVState *env, int csrno,
+                                      target_ulong *val)
 {
     *val = get_ticks(false);
     return RISCV_EXCP_NONE;
 }
 
-static int read_hpmcounterh(CPURISCVState *env, int csrno, target_ulong *val)
+static RISCVException read_hpmcounterh(CPURISCVState *env, int csrno,
+                                       target_ulong *val)
 {
     *val = get_ticks(true);
     return RISCV_EXCP_NONE;
@@ -800,7 +817,8 @@ static int read_hpmcounterh(CPURISCVState *env, int csrno, target_ulong *val)
 
 #else /* CONFIG_USER_ONLY */
 
-static int read_mhpmevent(CPURISCVState *env, int csrno, target_ulong *val)
+static RISCVException read_mhpmevent(CPURISCVState *env, int csrno,
+                                     target_ulong *val)
 {
     int evt_index = csrno - CSR_MCOUNTINHIBIT;
 
@@ -809,7 +827,8 @@ static int read_mhpmevent(CPURISCVState *env, int csrno, target_ulong *val)
     return RISCV_EXCP_NONE;
 }
 
-static int write_mhpmevent(CPURISCVState *env, int csrno, target_ulong val)
+static RISCVException write_mhpmevent(CPURISCVState *env, int csrno,
+                                      target_ulong val)
 {
     int evt_index = csrno - CSR_MCOUNTINHIBIT;
     uint64_t mhpmevt_val = val;
@@ -825,7 +844,8 @@ static int write_mhpmevent(CPURISCVState *env, int csrno, target_ulong val)
     return RISCV_EXCP_NONE;
 }
 
-static int read_mhpmeventh(CPURISCVState *env, int csrno, target_ulong *val)
+static RISCVException read_mhpmeventh(CPURISCVState *env, int csrno,
+                                      target_ulong *val)
 {
     int evt_index = csrno - CSR_MHPMEVENT3H + 3;
 
@@ -834,7 +854,8 @@ static int read_mhpmeventh(CPURISCVState *env, int csrno, target_ulong *val)
     return RISCV_EXCP_NONE;
 }
 
-static int write_mhpmeventh(CPURISCVState *env, int csrno, target_ulong val)
+static RISCVException write_mhpmeventh(CPURISCVState *env, int csrno,
+                                       target_ulong val)
 {
     int evt_index = csrno - CSR_MHPMEVENT3H + 3;
     uint64_t mhpmevth_val = val;
@@ -848,7 +869,8 @@ static int write_mhpmeventh(CPURISCVState *env, int csrno, target_ulong val)
     return RISCV_EXCP_NONE;
 }
 
-static int write_mhpmcounter(CPURISCVState *env, int csrno, target_ulong val)
+static RISCVException write_mhpmcounter(CPURISCVState *env, int csrno,
+                                        target_ulong val)
 {
     int ctr_idx = csrno - CSR_MCYCLE;
     PMUCTRState *counter = &env->pmu_ctrs[ctr_idx];
@@ -873,7 +895,8 @@ static int write_mhpmcounter(CPURISCVState *env, int csrno, target_ulong val)
     return RISCV_EXCP_NONE;
 }
 
-static int write_mhpmcounterh(CPURISCVState *env, int csrno, target_ulong val)
+static RISCVException write_mhpmcounterh(CPURISCVState *env, int csrno,
+                                         target_ulong val)
 {
     int ctr_idx = csrno - CSR_MCYCLEH;
     PMUCTRState *counter = &env->pmu_ctrs[ctr_idx];
@@ -898,11 +921,11 @@ static int write_mhpmcounterh(CPURISCVState *env, int csrno, target_ulong val)
 static RISCVException riscv_pmu_read_ctr(CPURISCVState *env, target_ulong *val,
                                          bool upper_half, uint32_t ctr_idx)
 {
-    PMUCTRState counter = env->pmu_ctrs[ctr_idx];
-    target_ulong ctr_prev = upper_half ? counter.mhpmcounterh_prev :
-                                         counter.mhpmcounter_prev;
-    target_ulong ctr_val = upper_half ? counter.mhpmcounterh_val :
-                                        counter.mhpmcounter_val;
+    PMUCTRState *counter = &env->pmu_ctrs[ctr_idx];
+    target_ulong ctr_prev = upper_half ? counter->mhpmcounterh_prev :
+                                         counter->mhpmcounter_prev;
+    target_ulong ctr_val = upper_half ? counter->mhpmcounterh_val :
+                                        counter->mhpmcounter_val;
 
     if (get_field(env->mcountinhibit, BIT(ctr_idx))) {
         /*
@@ -910,12 +933,12 @@ static RISCVException riscv_pmu_read_ctr(CPURISCVState *env, target_ulong *val,
          * stop the icount counting. Just return the counter value written by
          * the supervisor to indicate that counter was not incremented.
          */
-        if (!counter.started) {
+        if (!counter->started) {
             *val = ctr_val;
             return RISCV_EXCP_NONE;
         } else {
             /* Mark that the counter has been stopped */
-            counter.started = false;
+            counter->started = false;
         }
     }
 
@@ -933,7 +956,8 @@ static RISCVException riscv_pmu_read_ctr(CPURISCVState *env, target_ulong *val,
     return RISCV_EXCP_NONE;
 }
 
-static int read_hpmcounter(CPURISCVState *env, int csrno, target_ulong *val)
+static RISCVException read_hpmcounter(CPURISCVState *env, int csrno,
+                                      target_ulong *val)
 {
     uint16_t ctr_index;
 
@@ -948,7 +972,8 @@ static int read_hpmcounter(CPURISCVState *env, int csrno, target_ulong *val)
     return riscv_pmu_read_ctr(env, val, false, ctr_index);
 }
 
-static int read_hpmcounterh(CPURISCVState *env, int csrno, target_ulong *val)
+static RISCVException read_hpmcounterh(CPURISCVState *env, int csrno,
+                                       target_ulong *val)
 {
     uint16_t ctr_index;
 
@@ -963,7 +988,8 @@ static int read_hpmcounterh(CPURISCVState *env, int csrno, target_ulong *val)
     return riscv_pmu_read_ctr(env, val, true, ctr_index);
 }
 
-static int read_scountovf(CPURISCVState *env, int csrno, target_ulong *val)
+static RISCVException read_scountovf(CPURISCVState *env, int csrno,
+                                     target_ulong *val)
 {
     int mhpmevt_start = CSR_MHPMEVENT3 - CSR_MCOUNTINHIBIT;
     int i;
@@ -1117,21 +1143,16 @@ static RISCVException write_stimecmph(CPURISCVState *env, int csrno,
     return RISCV_EXCP_NONE;
 }
 
-/* Machine constants */
-
-#define M_MODE_INTERRUPTS  ((uint64_t)(MIP_MSIP | MIP_MTIP | MIP_MEIP))
-#define S_MODE_INTERRUPTS  ((uint64_t)(MIP_SSIP | MIP_STIP | MIP_SEIP | \
-                                      MIP_LCOFIP))
-#define VS_MODE_INTERRUPTS ((uint64_t)(MIP_VSSIP | MIP_VSTIP | MIP_VSEIP))
-#define HS_MODE_INTERRUPTS ((uint64_t)(MIP_SGEIP | VS_MODE_INTERRUPTS))
-
 #define VSTOPI_NUM_SRCS 5
 
-static const uint64_t delegable_ints = S_MODE_INTERRUPTS |
-                                           VS_MODE_INTERRUPTS;
-static const uint64_t vs_delegable_ints = VS_MODE_INTERRUPTS;
+#define LOCAL_INTERRUPTS (~0x1FFF)
+
+static const uint64_t delegable_ints =
+    S_MODE_INTERRUPTS | VS_MODE_INTERRUPTS | MIP_LCOFIP;
+static const uint64_t vs_delegable_ints =
+    (VS_MODE_INTERRUPTS | LOCAL_INTERRUPTS) & ~MIP_LCOFIP;
 static const uint64_t all_ints = M_MODE_INTERRUPTS | S_MODE_INTERRUPTS |
-                                     HS_MODE_INTERRUPTS;
+                                     HS_MODE_INTERRUPTS | LOCAL_INTERRUPTS;
 #define DELEGABLE_EXCPS ((1ULL << (RISCV_EXCP_INST_ADDR_MIS)) | \
                          (1ULL << (RISCV_EXCP_INST_ACCESS_FAULT)) | \
                          (1ULL << (RISCV_EXCP_ILLEGAL_INST)) | \
@@ -1162,12 +1183,32 @@ static const target_ulong vs_delegable_excps = DELEGABLE_EXCPS &
 static const target_ulong sstatus_v1_10_mask = SSTATUS_SIE | SSTATUS_SPIE |
     SSTATUS_UIE | SSTATUS_UPIE | SSTATUS_SPP | SSTATUS_FS | SSTATUS_XS |
     SSTATUS_SUM | SSTATUS_MXR | SSTATUS_VS;
-static const target_ulong sip_writable_mask = SIP_SSIP | MIP_USIP | MIP_UEIP |
-                                              SIP_LCOFIP;
+
+/*
+ * Spec allows for bits 13:63 to be either read-only or writable.
+ * So far we have interrupt LCOFIP in that region which is writable.
+ *
+ * Also, spec allows to inject virtual interrupts in this region even
+ * without any hardware interrupts for that interrupt number.
+ *
+ * For now interrupt in 13:63 region are all kept writable. 13 being
+ * LCOFIP and 14:63 being virtual only. Change this in future if we
+ * introduce more interrupts that are not writable.
+ */
+
+/* Bit STIP can be an alias of mip.STIP that's why it's writable in mvip. */
+static const target_ulong mvip_writable_mask = MIP_SSIP | MIP_STIP | MIP_SEIP |
+                                    LOCAL_INTERRUPTS;
+static const target_ulong mvien_writable_mask = MIP_SSIP | MIP_SEIP |
+                                    LOCAL_INTERRUPTS;
+
+static const target_ulong sip_writable_mask = SIP_SSIP | LOCAL_INTERRUPTS;
 static const target_ulong hip_writable_mask = MIP_VSSIP;
 static const target_ulong hvip_writable_mask = MIP_VSSIP | MIP_VSTIP |
-                                               MIP_VSEIP;
-static const target_ulong vsip_writable_mask = MIP_VSSIP;
+                                    MIP_VSEIP | LOCAL_INTERRUPTS;
+static const target_ulong hvien_writable_mask = LOCAL_INTERRUPTS;
+
+static const target_ulong vsip_writable_mask = MIP_VSSIP | LOCAL_INTERRUPTS;
 
 const bool valid_vm_1_10_32[16] = {
     [VM_1_10_MBARE] = true,
@@ -1254,8 +1295,34 @@ static RISCVException read_mstatus(CPURISCVState *env, int csrno,
 
 static bool validate_vm(CPURISCVState *env, target_ulong vm)
 {
-    return (vm & 0xf) <=
-           satp_mode_max_from_map(riscv_cpu_cfg(env)->satp_mode.map);
+    uint64_t mode_supported = riscv_cpu_cfg(env)->satp_mode.map;
+    return get_field(mode_supported, (1 << vm));
+}
+
+static target_ulong legalize_xatp(CPURISCVState *env, target_ulong old_xatp,
+                                  target_ulong val)
+{
+    target_ulong mask;
+    bool vm;
+    if (riscv_cpu_mxl(env) == MXL_RV32) {
+        vm = validate_vm(env, get_field(val, SATP32_MODE));
+        mask = (val ^ old_xatp) & (SATP32_MODE | SATP32_ASID | SATP32_PPN);
+    } else {
+        vm = validate_vm(env, get_field(val, SATP64_MODE));
+        mask = (val ^ old_xatp) & (SATP64_MODE | SATP64_ASID | SATP64_PPN);
+    }
+
+    if (vm && mask) {
+        /*
+         * The ISA defines SATP.MODE=Bare as "no translation", but we still
+         * pass these through QEMU's TLB emulation as it improves
+         * performance.  Flushing the TLB on SATP writes with paging
+         * enabled avoids leaking those invalid cached mappings.
+         */
+        tlb_flush(env_cpu(env));
+        return val;
+    }
+    return old_xatp;
 }
 
 static target_ulong legalize_mpp(CPURISCVState *env, target_ulong old_mpp,
@@ -1304,10 +1371,13 @@ static RISCVException write_mstatus(CPURISCVState *env, int csrno,
     mask = MSTATUS_SIE | MSTATUS_SPIE | MSTATUS_MIE | MSTATUS_MPIE |
         MSTATUS_SPP | MSTATUS_MPRV | MSTATUS_SUM |
         MSTATUS_MPP | MSTATUS_MXR | MSTATUS_TVM | MSTATUS_TSR |
-        MSTATUS_TW | MSTATUS_VS;
+        MSTATUS_TW;
 
     if (riscv_has_ext(env, RVF)) {
         mask |= MSTATUS_FS;
+    }
+    if (riscv_has_ext(env, RVV)) {
+        mask |= MSTATUS_VS;
     }
 
     if (xl != MXL_RV32 || env->debugger) {
@@ -1525,7 +1595,7 @@ static RISCVException rmw_mie64(CPURISCVState *env, int csrno,
     env->mie = (env->mie & ~mask) | (new_val & mask);
 
     if (!riscv_has_ext(env, RVH)) {
-        env->mie &= ~((uint64_t)MIP_SGEIP);
+        env->mie &= ~((uint64_t)HS_MODE_INTERRUPTS);
     }
 
     return RISCV_EXCP_NONE;
@@ -1562,7 +1632,54 @@ static RISCVException rmw_mieh(CPURISCVState *env, int csrno,
     return ret;
 }
 
-static int read_mtopi(CPURISCVState *env, int csrno, target_ulong *val)
+static RISCVException rmw_mvien64(CPURISCVState *env, int csrno,
+                                uint64_t *ret_val,
+                                uint64_t new_val, uint64_t wr_mask)
+{
+    uint64_t mask = wr_mask & mvien_writable_mask;
+
+    if (ret_val) {
+        *ret_val = env->mvien;
+    }
+
+    env->mvien = (env->mvien & ~mask) | (new_val & mask);
+
+    return RISCV_EXCP_NONE;
+}
+
+static RISCVException rmw_mvien(CPURISCVState *env, int csrno,
+                              target_ulong *ret_val,
+                              target_ulong new_val, target_ulong wr_mask)
+{
+    uint64_t rval;
+    RISCVException ret;
+
+    ret = rmw_mvien64(env, csrno, &rval, new_val, wr_mask);
+    if (ret_val) {
+        *ret_val = rval;
+    }
+
+    return ret;
+}
+
+static RISCVException rmw_mvienh(CPURISCVState *env, int csrno,
+                                target_ulong *ret_val,
+                                target_ulong new_val, target_ulong wr_mask)
+{
+    uint64_t rval;
+    RISCVException ret;
+
+    ret = rmw_mvien64(env, csrno, &rval,
+        ((uint64_t)new_val) << 32, ((uint64_t)wr_mask) << 32);
+    if (ret_val) {
+        *ret_val = rval >> 32;
+    }
+
+    return ret;
+}
+
+static RISCVException read_mtopi(CPURISCVState *env, int csrno,
+                                 target_ulong *val)
 {
     int irq;
     uint8_t iprio;
@@ -1602,8 +1719,9 @@ static int aia_xlate_vs_csrno(CPURISCVState *env, int csrno)
     };
 }
 
-static int rmw_xiselect(CPURISCVState *env, int csrno, target_ulong *val,
-                        target_ulong new_val, target_ulong wr_mask)
+static RISCVException rmw_xiselect(CPURISCVState *env, int csrno,
+                                   target_ulong *val, target_ulong new_val,
+                                   target_ulong wr_mask)
 {
     target_ulong *iselect;
 
@@ -1682,10 +1800,11 @@ static int rmw_iprio(target_ulong xlen,
     return 0;
 }
 
-static int rmw_xireg(CPURISCVState *env, int csrno, target_ulong *val,
-                     target_ulong new_val, target_ulong wr_mask)
+static RISCVException rmw_xireg(CPURISCVState *env, int csrno,
+                                target_ulong *val, target_ulong new_val,
+                                target_ulong wr_mask)
 {
-    bool virt;
+    bool virt, isel_reserved;
     uint8_t *iprio;
     int ret = -EINVAL;
     target_ulong priv, isel, vgein;
@@ -1695,6 +1814,7 @@ static int rmw_xireg(CPURISCVState *env, int csrno, target_ulong *val,
 
     /* Decode register details from CSR number */
     virt = false;
+    isel_reserved = false;
     switch (csrno) {
     case CSR_MIREG:
         iprio = env->miprio;
@@ -1702,6 +1822,11 @@ static int rmw_xireg(CPURISCVState *env, int csrno, target_ulong *val,
         priv = PRV_M;
         break;
     case CSR_SIREG:
+        if (env->priv == PRV_S && env->mvien & MIP_SEIP &&
+            env->siselect >= ISELECT_IMSIC_EIDELIVERY &&
+            env->siselect <= ISELECT_IMSIC_EIE63) {
+            goto done;
+        }
         iprio = env->siprio;
         isel = env->siselect;
         priv = PRV_S;
@@ -1739,18 +1864,21 @@ static int rmw_xireg(CPURISCVState *env, int csrno, target_ulong *val,
                                                   riscv_cpu_mxl_bits(env)),
                                     val, new_val, wr_mask);
         }
+    } else {
+        isel_reserved = true;
     }
 
 done:
     if (ret) {
-        return (env->virt_enabled && virt) ?
+        return (env->virt_enabled && virt && !isel_reserved) ?
                RISCV_EXCP_VIRT_INSTRUCTION_FAULT : RISCV_EXCP_ILLEGAL_INST;
     }
     return RISCV_EXCP_NONE;
 }
 
-static int rmw_xtopei(CPURISCVState *env, int csrno, target_ulong *val,
-                      target_ulong new_val, target_ulong wr_mask)
+static RISCVException rmw_xtopei(CPURISCVState *env, int csrno,
+                                 target_ulong *val, target_ulong new_val,
+                                 target_ulong wr_mask)
 {
     bool virt;
     int ret = -EINVAL;
@@ -1766,6 +1894,9 @@ static int rmw_xtopei(CPURISCVState *env, int csrno, target_ulong *val,
         priv = PRV_M;
         break;
     case CSR_STOPEI:
+        if (env->mvien & MIP_SEIP && env->priv == PRV_S) {
+            goto done;
+        }
         priv = PRV_S;
         break;
     case CSR_VSTOPEI:
@@ -1834,8 +1965,11 @@ static RISCVException write_mcountinhibit(CPURISCVState *env, int csrno,
 {
     int cidx;
     PMUCTRState *counter;
+    RISCVCPU *cpu = env_archcpu(env);
 
-    env->mcountinhibit = val;
+    /* WARL register - disable unavailable counters; TM bit is always 0 */
+    env->mcountinhibit =
+        val & (cpu->pmu_avail_ctrs | COUNTEREN_CY | COUNTEREN_IR);
 
     /* Check if any other counter is also monitoring cycles/instructions */
     for (cidx = 0; cidx < RV_MAX_MHPMCOUNTERS; cidx++) {
@@ -1858,7 +1992,11 @@ static RISCVException read_mcounteren(CPURISCVState *env, int csrno,
 static RISCVException write_mcounteren(CPURISCVState *env, int csrno,
                                        target_ulong val)
 {
-    env->mcounteren = val;
+    RISCVCPU *cpu = env_archcpu(env);
+
+    /* WARL register - disable unavailable counters */
+    env->mcounteren = val & (cpu->pmu_avail_ctrs | COUNTEREN_CY | COUNTEREN_TM |
+                             COUNTEREN_IR);
     return RISCV_EXCP_NONE;
 }
 
@@ -1951,7 +2089,7 @@ static RISCVException write_menvcfg(CPURISCVState *env, int csrno,
     if (riscv_cpu_mxl(env) == MXL_RV64) {
         mask |= (cfg->ext_svpbmt ? MENVCFG_PBMTE : 0) |
                 (cfg->ext_sstc ? MENVCFG_STCE : 0) |
-                (cfg->ext_svadu ? MENVCFG_HADE : 0);
+                (cfg->ext_svadu ? MENVCFG_ADUE : 0);
     }
     env->menvcfg = (env->menvcfg & ~mask) | (val & mask);
 
@@ -1971,7 +2109,7 @@ static RISCVException write_menvcfgh(CPURISCVState *env, int csrno,
     const RISCVCPUConfig *cfg = riscv_cpu_cfg(env);
     uint64_t mask = (cfg->ext_svpbmt ? MENVCFG_PBMTE : 0) |
                     (cfg->ext_sstc ? MENVCFG_STCE : 0) |
-                    (cfg->ext_svadu ? MENVCFG_HADE : 0);
+                    (cfg->ext_svadu ? MENVCFG_ADUE : 0);
     uint64_t valh = (uint64_t)val << 32;
 
     env->menvcfg = (env->menvcfg & ~mask) | (valh & mask);
@@ -2021,9 +2159,9 @@ static RISCVException read_henvcfg(CPURISCVState *env, int csrno,
     /*
      * henvcfg.pbmte is read_only 0 when menvcfg.pbmte = 0
      * henvcfg.stce is read_only 0 when menvcfg.stce = 0
-     * henvcfg.hade is read_only 0 when menvcfg.hade = 0
+     * henvcfg.adue is read_only 0 when menvcfg.adue = 0
      */
-    *val = env->henvcfg & (~(HENVCFG_PBMTE | HENVCFG_STCE | HENVCFG_HADE) |
+    *val = env->henvcfg & (~(HENVCFG_PBMTE | HENVCFG_STCE | HENVCFG_ADUE) |
                            env->menvcfg);
     return RISCV_EXCP_NONE;
 }
@@ -2040,7 +2178,7 @@ static RISCVException write_henvcfg(CPURISCVState *env, int csrno,
     }
 
     if (riscv_cpu_mxl(env) == MXL_RV64) {
-        mask |= env->menvcfg & (HENVCFG_PBMTE | HENVCFG_STCE | HENVCFG_HADE);
+        mask |= env->menvcfg & (HENVCFG_PBMTE | HENVCFG_STCE | HENVCFG_ADUE);
     }
 
     env->henvcfg = (env->henvcfg & ~mask) | (val & mask);
@@ -2058,7 +2196,7 @@ static RISCVException read_henvcfgh(CPURISCVState *env, int csrno,
         return ret;
     }
 
-    *val = (env->henvcfg & (~(HENVCFG_PBMTE | HENVCFG_STCE | HENVCFG_HADE) |
+    *val = (env->henvcfg & (~(HENVCFG_PBMTE | HENVCFG_STCE | HENVCFG_ADUE) |
                             env->menvcfg)) >> 32;
     return RISCV_EXCP_NONE;
 }
@@ -2067,7 +2205,7 @@ static RISCVException write_henvcfgh(CPURISCVState *env, int csrno,
                                      target_ulong val)
 {
     uint64_t mask = env->menvcfg & (HENVCFG_PBMTE | HENVCFG_STCE |
-                                    HENVCFG_HADE);
+                                    HENVCFG_ADUE);
     uint64_t valh = (uint64_t)val << 32;
     RISCVException ret;
 
@@ -2350,6 +2488,143 @@ static RISCVException rmw_miph(CPURISCVState *env, int csrno,
     return ret;
 }
 
+/*
+ * The function is written for two use-cases:
+ * 1- To access mvip csr as is for m-mode access.
+ * 2- To access sip as a combination of mip and mvip for s-mode.
+ *
+ * Both report bits 1, 5, 9 and 13:63 but with the exception of
+ * STIP being read-only zero in case of mvip when sstc extension
+ * is present.
+ * Also, sip needs to be read-only zero when both mideleg[i] and
+ * mvien[i] are zero but mvip needs to be an alias of mip.
+ */
+static RISCVException rmw_mvip64(CPURISCVState *env, int csrno,
+                                uint64_t *ret_val,
+                                uint64_t new_val, uint64_t wr_mask)
+{
+    RISCVCPU *cpu = env_archcpu(env);
+    target_ulong ret_mip = 0;
+    RISCVException ret;
+    uint64_t old_mvip;
+
+    /*
+     * mideleg[i]  mvien[i]
+     *   0           0      No delegation. mvip[i] is alias of mip[i].
+     *   0           1      mvip[i] becomes source of interrupt, mip bypassed.
+     *   1           X      mip[i] is source of interrupt and mvip[i] aliases
+     *                      mip[i].
+     *
+     *   So alias condition would be for bits:
+     *      ((S_MODE_INTERRUPTS | LOCAL_INTERRUPTS) & (mideleg | ~mvien)) |
+     *          (!sstc & MIP_STIP)
+     *
+     *   Non-alias condition will be for bits:
+     *      (S_MODE_INTERRUPTS | LOCAL_INTERRUPTS) & (~mideleg & mvien)
+     *
+     *  alias_mask denotes the bits that come from mip nalias_mask denotes bits
+     *  that come from hvip.
+     */
+    uint64_t alias_mask = ((S_MODE_INTERRUPTS | LOCAL_INTERRUPTS) &
+        (env->mideleg | ~env->mvien)) | MIP_STIP;
+    uint64_t nalias_mask = (S_MODE_INTERRUPTS | LOCAL_INTERRUPTS) &
+        (~env->mideleg & env->mvien);
+    uint64_t wr_mask_mvip;
+    uint64_t wr_mask_mip;
+
+    /*
+     * mideleg[i]  mvien[i]
+     *   0           0      sip[i] read-only zero.
+     *   0           1      sip[i] alias of mvip[i].
+     *   1           X      sip[i] alias of mip[i].
+     *
+     *  Both alias and non-alias mask remain same for sip except for bits
+     *  which are zero in both mideleg and mvien.
+     */
+    if (csrno == CSR_SIP) {
+        /* Remove bits that are zero in both mideleg and mvien. */
+        alias_mask &= (env->mideleg | env->mvien);
+        nalias_mask &= (env->mideleg | env->mvien);
+    }
+
+    /*
+     * If sstc is present, mvip.STIP is not an alias of mip.STIP so clear
+     * that our in mip returned value.
+     */
+    if (cpu->cfg.ext_sstc && (env->priv == PRV_M) &&
+        get_field(env->menvcfg, MENVCFG_STCE)) {
+        alias_mask &= ~MIP_STIP;
+    }
+
+    wr_mask_mip = wr_mask & alias_mask & mvip_writable_mask;
+    wr_mask_mvip = wr_mask & nalias_mask & mvip_writable_mask;
+
+    /*
+     * For bits set in alias_mask, mvip needs to be alias of mip, so forward
+     * this to rmw_mip.
+     */
+    ret = rmw_mip(env, CSR_MIP, &ret_mip, new_val, wr_mask_mip);
+    if (ret != RISCV_EXCP_NONE) {
+        return ret;
+    }
+
+    old_mvip = env->mvip;
+
+    /*
+     * Write to mvip. Update only non-alias bits. Alias bits were updated
+     * in mip in rmw_mip above.
+     */
+    if (wr_mask_mvip) {
+        env->mvip = (env->mvip & ~wr_mask_mvip) | (new_val & wr_mask_mvip);
+
+        /*
+         * Given mvip is separate source from mip, we need to trigger interrupt
+         * from here separately. Normally this happen from riscv_cpu_update_mip.
+         */
+        riscv_cpu_interrupt(env);
+    }
+
+    if (ret_val) {
+        ret_mip &= alias_mask;
+        old_mvip &= nalias_mask;
+
+        *ret_val = old_mvip | ret_mip;
+    }
+
+    return RISCV_EXCP_NONE;
+}
+
+static RISCVException rmw_mvip(CPURISCVState *env, int csrno,
+                              target_ulong *ret_val,
+                              target_ulong new_val, target_ulong wr_mask)
+{
+    uint64_t rval;
+    RISCVException ret;
+
+    ret = rmw_mvip64(env, csrno, &rval, new_val, wr_mask);
+    if (ret_val) {
+        *ret_val = rval;
+    }
+
+    return ret;
+}
+
+static RISCVException rmw_mviph(CPURISCVState *env, int csrno,
+                               target_ulong *ret_val,
+                               target_ulong new_val, target_ulong wr_mask)
+{
+    uint64_t rval;
+    RISCVException ret;
+
+    ret = rmw_mvip64(env, csrno, &rval,
+        ((uint64_t)new_val) << 32, ((uint64_t)wr_mask) << 32);
+    if (ret_val) {
+        *ret_val = rval >> 32;
+    }
+
+    return ret;
+}
+
 /* Supervisor Trap Setup */
 static RISCVException read_sstatus_i128(CPURISCVState *env, int csrno,
                                         Int128 *val)
@@ -2394,16 +2669,36 @@ static RISCVException rmw_vsie64(CPURISCVState *env, int csrno,
                                  uint64_t *ret_val,
                                  uint64_t new_val, uint64_t wr_mask)
 {
+    uint64_t alias_mask = (LOCAL_INTERRUPTS | VS_MODE_INTERRUPTS) &
+                            env->hideleg;
+    uint64_t nalias_mask = LOCAL_INTERRUPTS & (~env->hideleg & env->hvien);
+    uint64_t rval, rval_vs, vsbits;
+    uint64_t wr_mask_vsie;
+    uint64_t wr_mask_mie;
     RISCVException ret;
-    uint64_t rval, mask = env->hideleg & VS_MODE_INTERRUPTS;
 
     /* Bring VS-level bits to correct position */
-    new_val = (new_val & (VS_MODE_INTERRUPTS >> 1)) << 1;
-    wr_mask = (wr_mask & (VS_MODE_INTERRUPTS >> 1)) << 1;
+    vsbits = new_val & (VS_MODE_INTERRUPTS >> 1);
+    new_val &= ~(VS_MODE_INTERRUPTS >> 1);
+    new_val |= vsbits << 1;
 
-    ret = rmw_mie64(env, csrno, &rval, new_val, wr_mask & mask);
+    vsbits = wr_mask & (VS_MODE_INTERRUPTS >> 1);
+    wr_mask &= ~(VS_MODE_INTERRUPTS >> 1);
+    wr_mask |= vsbits << 1;
+
+    wr_mask_mie = wr_mask & alias_mask;
+    wr_mask_vsie = wr_mask & nalias_mask;
+
+    ret = rmw_mie64(env, csrno, &rval, new_val, wr_mask_mie);
+
+    rval_vs = env->vsie & nalias_mask;
+    env->vsie = (env->vsie & ~wr_mask_vsie) | (new_val & wr_mask_vsie);
+
     if (ret_val) {
-        *ret_val = (rval & mask) >> 1;
+        rval &= alias_mask;
+        vsbits = rval & VS_MODE_INTERRUPTS;
+        rval &= ~VS_MODE_INTERRUPTS;
+        *ret_val = rval | (vsbits >> 1) | rval_vs;
     }
 
     return ret;
@@ -2444,20 +2739,37 @@ static RISCVException rmw_sie64(CPURISCVState *env, int csrno,
                                 uint64_t *ret_val,
                                 uint64_t new_val, uint64_t wr_mask)
 {
+    uint64_t nalias_mask = (S_MODE_INTERRUPTS | LOCAL_INTERRUPTS) &
+        (~env->mideleg & env->mvien);
+    uint64_t alias_mask = (S_MODE_INTERRUPTS | LOCAL_INTERRUPTS) & env->mideleg;
+    uint64_t sie_mask = wr_mask & nalias_mask;
     RISCVException ret;
-    uint64_t mask = env->mideleg & S_MODE_INTERRUPTS;
 
+    /*
+     * mideleg[i]  mvien[i]
+     *   0           0      sie[i] read-only zero.
+     *   0           1      sie[i] is a separate writable bit.
+     *   1           X      sie[i] alias of mie[i].
+     *
+     *  Both alias and non-alias mask remain same for sip except for bits
+     *  which are zero in both mideleg and mvien.
+     */
     if (env->virt_enabled) {
         if (env->hvictl & HVICTL_VTI) {
             return RISCV_EXCP_VIRT_INSTRUCTION_FAULT;
         }
         ret = rmw_vsie64(env, CSR_VSIE, ret_val, new_val, wr_mask);
+        if (ret_val) {
+            *ret_val &= alias_mask;
+        }
     } else {
-        ret = rmw_mie64(env, csrno, ret_val, new_val, wr_mask & mask);
-    }
+        ret = rmw_mie64(env, csrno, ret_val, new_val, wr_mask & alias_mask);
+        if (ret_val) {
+            *ret_val &= alias_mask;
+            *ret_val |= env->sie & nalias_mask;
+        }
 
-    if (ret_val) {
-        *ret_val &= mask;
+        env->sie = (env->sie & ~sie_mask) | (new_val & sie_mask);
     }
 
     return ret;
@@ -2599,21 +2911,36 @@ static RISCVException write_stval(CPURISCVState *env, int csrno,
     return RISCV_EXCP_NONE;
 }
 
+static RISCVException rmw_hvip64(CPURISCVState *env, int csrno,
+                                 uint64_t *ret_val,
+                                 uint64_t new_val, uint64_t wr_mask);
+
 static RISCVException rmw_vsip64(CPURISCVState *env, int csrno,
                                  uint64_t *ret_val,
                                  uint64_t new_val, uint64_t wr_mask)
 {
     RISCVException ret;
     uint64_t rval, mask = env->hideleg & VS_MODE_INTERRUPTS;
+    uint64_t vsbits;
+
+    /* Add virtualized bits into vsip mask. */
+    mask |= env->hvien & ~env->hideleg;
 
     /* Bring VS-level bits to correct position */
-    new_val = (new_val & (VS_MODE_INTERRUPTS >> 1)) << 1;
-    wr_mask = (wr_mask & (VS_MODE_INTERRUPTS >> 1)) << 1;
+    vsbits = new_val & (VS_MODE_INTERRUPTS >> 1);
+    new_val &= ~(VS_MODE_INTERRUPTS >> 1);
+    new_val |= vsbits << 1;
+    vsbits = wr_mask & (VS_MODE_INTERRUPTS >> 1);
+    wr_mask &= ~(VS_MODE_INTERRUPTS >> 1);
+    wr_mask |= vsbits << 1;
 
-    ret = rmw_mip64(env, csrno, &rval, new_val,
-                    wr_mask & mask & vsip_writable_mask);
+    ret = rmw_hvip64(env, csrno, &rval, new_val,
+                     wr_mask & mask & vsip_writable_mask);
     if (ret_val) {
-        *ret_val = (rval & mask) >> 1;
+        rval &= mask;
+        vsbits = rval & VS_MODE_INTERRUPTS;
+        rval &= ~VS_MODE_INTERRUPTS;
+        *ret_val = rval | (vsbits >> 1);
     }
 
     return ret;
@@ -2655,7 +2982,7 @@ static RISCVException rmw_sip64(CPURISCVState *env, int csrno,
                                 uint64_t new_val, uint64_t wr_mask)
 {
     RISCVException ret;
-    uint64_t mask = env->mideleg & sip_writable_mask;
+    uint64_t mask = (env->mideleg | env->mvien) & sip_writable_mask;
 
     if (env->virt_enabled) {
         if (env->hvictl & HVICTL_VTI) {
@@ -2663,11 +2990,12 @@ static RISCVException rmw_sip64(CPURISCVState *env, int csrno,
         }
         ret = rmw_vsip64(env, CSR_VSIP, ret_val, new_val, wr_mask);
     } else {
-        ret = rmw_mip64(env, csrno, ret_val, new_val, wr_mask & mask);
+        ret = rmw_mvip64(env, csrno, ret_val, new_val, wr_mask & mask);
     }
 
     if (ret_val) {
-        *ret_val &= env->mideleg & S_MODE_INTERRUPTS;
+        *ret_val &= (env->mideleg | env->mvien) &
+            (S_MODE_INTERRUPTS | LOCAL_INTERRUPTS);
     }
 
     return ret;
@@ -2719,35 +3047,16 @@ static RISCVException read_satp(CPURISCVState *env, int csrno,
 static RISCVException write_satp(CPURISCVState *env, int csrno,
                                  target_ulong val)
 {
-    target_ulong mask;
-    bool vm;
-
     if (!riscv_cpu_cfg(env)->mmu) {
         return RISCV_EXCP_NONE;
     }
 
-    if (riscv_cpu_mxl(env) == MXL_RV32) {
-        vm = validate_vm(env, get_field(val, SATP32_MODE));
-        mask = (val ^ env->satp) & (SATP32_MODE | SATP32_ASID | SATP32_PPN);
-    } else {
-        vm = validate_vm(env, get_field(val, SATP64_MODE));
-        mask = (val ^ env->satp) & (SATP64_MODE | SATP64_ASID | SATP64_PPN);
-    }
-
-    if (vm && mask) {
-        /*
-         * The ISA defines SATP.MODE=Bare as "no translation", but we still
-         * pass these through QEMU's TLB emulation as it improves
-         * performance.  Flushing the TLB on SATP writes with paging
-         * enabled avoids leaking those invalid cached mappings.
-         */
-        tlb_flush(env_cpu(env));
-        env->satp = val;
-    }
+    env->satp = legalize_xatp(env, env->satp, val);
     return RISCV_EXCP_NONE;
 }
 
-static int read_vstopi(CPURISCVState *env, int csrno, target_ulong *val)
+static RISCVException read_vstopi(CPURISCVState *env, int csrno,
+                                  target_ulong *val)
 {
     int irq, ret;
     target_ulong topei;
@@ -2832,10 +3141,12 @@ static int read_vstopi(CPURISCVState *env, int csrno, target_ulong *val)
 
     *val = (iid & TOPI_IID_MASK) << TOPI_IID_SHIFT;
     *val |= iprio;
+
     return RISCV_EXCP_NONE;
 }
 
-static int read_stopi(CPURISCVState *env, int csrno, target_ulong *val)
+static RISCVException read_stopi(CPURISCVState *env, int csrno,
+                                 target_ulong *val)
 {
     int irq;
     uint8_t iprio;
@@ -2903,6 +3214,52 @@ static RISCVException write_hedeleg(CPURISCVState *env, int csrno,
     return RISCV_EXCP_NONE;
 }
 
+static RISCVException rmw_hvien64(CPURISCVState *env, int csrno,
+                                    uint64_t *ret_val,
+                                    uint64_t new_val, uint64_t wr_mask)
+{
+    uint64_t mask = wr_mask & hvien_writable_mask;
+
+    if (ret_val) {
+        *ret_val = env->hvien;
+    }
+
+    env->hvien = (env->hvien & ~mask) | (new_val & mask);
+
+    return RISCV_EXCP_NONE;
+}
+
+static RISCVException rmw_hvien(CPURISCVState *env, int csrno,
+                               target_ulong *ret_val,
+                               target_ulong new_val, target_ulong wr_mask)
+{
+    uint64_t rval;
+    RISCVException ret;
+
+    ret = rmw_hvien64(env, csrno, &rval, new_val, wr_mask);
+    if (ret_val) {
+        *ret_val = rval;
+    }
+
+    return ret;
+}
+
+static RISCVException rmw_hvienh(CPURISCVState *env, int csrno,
+                                   target_ulong *ret_val,
+                                   target_ulong new_val, target_ulong wr_mask)
+{
+    uint64_t rval;
+    RISCVException ret;
+
+    ret = rmw_hvien64(env, csrno, &rval,
+        ((uint64_t)new_val) << 32, ((uint64_t)wr_mask) << 32);
+    if (ret_val) {
+        *ret_val = rval >> 32;
+    }
+
+    return ret;
+}
+
 static RISCVException rmw_hideleg64(CPURISCVState *env, int csrno,
                                     uint64_t *ret_val,
                                     uint64_t new_val, uint64_t wr_mask)
@@ -2948,16 +3305,94 @@ static RISCVException rmw_hidelegh(CPURISCVState *env, int csrno,
     return ret;
 }
 
+/*
+ * The function is written for two use-cases:
+ * 1- To access hvip csr as is for HS-mode access.
+ * 2- To access vsip as a combination of hvip, and mip for vs-mode.
+ *
+ * Both report bits 2, 6, 10 and 13:63.
+ * vsip needs to be read-only zero when both hideleg[i] and
+ * hvien[i] are zero.
+ */
 static RISCVException rmw_hvip64(CPURISCVState *env, int csrno,
                                  uint64_t *ret_val,
                                  uint64_t new_val, uint64_t wr_mask)
 {
     RISCVException ret;
+    uint64_t old_hvip;
+    uint64_t ret_mip;
 
-    ret = rmw_mip64(env, csrno, ret_val, new_val,
-                    wr_mask & hvip_writable_mask);
+    /*
+     * For bits 10, 6 and 2, vsip[i] is an alias of hip[i]. These bits are
+     * present in hip, hvip and mip. Where mip[i] is alias of hip[i] and hvip[i]
+     * is OR'ed in hip[i] to inject virtual interrupts from hypervisor. These
+     * bits are actually being maintained in mip so we read them from there.
+     * This way we have a single source of truth and allows for easier
+     * implementation.
+     *
+     * For bits 13:63 we have:
+     *
+     * hideleg[i]  hvien[i]
+     *   0           0      No delegation. vsip[i] readonly zero.
+     *   0           1      vsip[i] is alias of hvip[i], sip bypassed.
+     *   1           X      vsip[i] is alias of sip[i], hvip bypassed.
+     *
+     *  alias_mask denotes the bits that come from sip (mip here given we
+     *  maintain all bits there). nalias_mask denotes bits that come from
+     *  hvip.
+     */
+    uint64_t alias_mask = (env->hideleg | ~env->hvien) | VS_MODE_INTERRUPTS;
+    uint64_t nalias_mask = (~env->hideleg & env->hvien);
+    uint64_t wr_mask_hvip;
+    uint64_t wr_mask_mip;
+
+    /*
+     * Both alias and non-alias mask remain same for vsip except:
+     *  1- For VS* bits if they are zero in hideleg.
+     *  2- For 13:63 bits if they are zero in both hideleg and hvien.
+     */
+    if (csrno == CSR_VSIP) {
+        /* zero-out VS* bits that are not delegated to VS mode. */
+        alias_mask &= (env->hideleg | ~VS_MODE_INTERRUPTS);
+
+        /*
+         * zero-out 13:63 bits that are zero in both hideleg and hvien.
+         * nalias_mask mask can not contain any VS* bits so only second
+         * condition applies on it.
+         */
+        nalias_mask &= (env->hideleg | env->hvien);
+        alias_mask &= (env->hideleg | env->hvien);
+    }
+
+    wr_mask_hvip = wr_mask & nalias_mask & hvip_writable_mask;
+    wr_mask_mip = wr_mask & alias_mask & hvip_writable_mask;
+
+    /* Aliased bits, bits 10, 6, 2 need to come from mip. */
+    ret = rmw_mip64(env, csrno, &ret_mip, new_val, wr_mask_mip);
+    if (ret != RISCV_EXCP_NONE) {
+        return ret;
+    }
+
+    old_hvip = env->hvip;
+
+    if (wr_mask_hvip) {
+        env->hvip = (env->hvip & ~wr_mask_hvip) | (new_val & wr_mask_hvip);
+
+        /*
+         * Given hvip is separate source from mip, we need to trigger interrupt
+         * from here separately. Normally this happen from riscv_cpu_update_mip.
+         */
+        riscv_cpu_interrupt(env);
+    }
+
     if (ret_val) {
-        *ret_val &= VS_MODE_INTERRUPTS;
+        /* Only take VS* bits from mip. */
+        ret_mip &= alias_mask;
+
+        /* Take in non-delegated 13:63 bits from hvip. */
+        old_hvip &= nalias_mask;
+
+        *ret_val = ret_mip | old_hvip;
     }
 
     return ret;
@@ -3103,7 +3538,7 @@ static RISCVException read_hgatp(CPURISCVState *env, int csrno,
 static RISCVException write_hgatp(CPURISCVState *env, int csrno,
                                   target_ulong val)
 {
-    env->hgatp = val;
+    env->hgatp = legalize_xatp(env, env->hgatp, val);
     return RISCV_EXCP_NONE;
 }
 
@@ -3167,19 +3602,21 @@ static RISCVException write_htimedeltah(CPURISCVState *env, int csrno,
     return RISCV_EXCP_NONE;
 }
 
-static int read_hvictl(CPURISCVState *env, int csrno, target_ulong *val)
+static RISCVException read_hvictl(CPURISCVState *env, int csrno,
+                                  target_ulong *val)
 {
     *val = env->hvictl;
     return RISCV_EXCP_NONE;
 }
 
-static int write_hvictl(CPURISCVState *env, int csrno, target_ulong val)
+static RISCVException write_hvictl(CPURISCVState *env, int csrno,
+                                   target_ulong val)
 {
     env->hvictl = val & HVICTL_VALID_MASK;
     return RISCV_EXCP_NONE;
 }
 
-static int read_hvipriox(CPURISCVState *env, int first_index,
+static RISCVException read_hvipriox(CPURISCVState *env, int first_index,
                          uint8_t *iprio, target_ulong *val)
 {
     int i, irq, rdzero, num_irqs = 4 * (riscv_cpu_mxl_bits(env) / 32);
@@ -3205,7 +3642,7 @@ static int read_hvipriox(CPURISCVState *env, int first_index,
     return RISCV_EXCP_NONE;
 }
 
-static int write_hvipriox(CPURISCVState *env, int first_index,
+static RISCVException write_hvipriox(CPURISCVState *env, int first_index,
                           uint8_t *iprio, target_ulong val)
 {
     int i, irq, rdzero, num_irqs = 4 * (riscv_cpu_mxl_bits(env) / 32);
@@ -3216,7 +3653,7 @@ static int write_hvipriox(CPURISCVState *env, int first_index,
                RISCV_EXCP_VIRT_INSTRUCTION_FAULT : RISCV_EXCP_ILLEGAL_INST;
     }
 
-    /* Fill-up priority arrary */
+    /* Fill-up priority array */
     for (i = 0; i < num_irqs; i++) {
         if (riscv_cpu_hviprio_index2irq(first_index + i, &irq, &rdzero)) {
             continue;
@@ -3231,42 +3668,50 @@ static int write_hvipriox(CPURISCVState *env, int first_index,
     return RISCV_EXCP_NONE;
 }
 
-static int read_hviprio1(CPURISCVState *env, int csrno, target_ulong *val)
+static RISCVException read_hviprio1(CPURISCVState *env, int csrno,
+                                    target_ulong *val)
 {
     return read_hvipriox(env, 0, env->hviprio, val);
 }
 
-static int write_hviprio1(CPURISCVState *env, int csrno, target_ulong val)
+static RISCVException write_hviprio1(CPURISCVState *env, int csrno,
+                                     target_ulong val)
 {
     return write_hvipriox(env, 0, env->hviprio, val);
 }
 
-static int read_hviprio1h(CPURISCVState *env, int csrno, target_ulong *val)
+static RISCVException read_hviprio1h(CPURISCVState *env, int csrno,
+                                     target_ulong *val)
 {
     return read_hvipriox(env, 4, env->hviprio, val);
 }
 
-static int write_hviprio1h(CPURISCVState *env, int csrno, target_ulong val)
+static RISCVException write_hviprio1h(CPURISCVState *env, int csrno,
+                                      target_ulong val)
 {
     return write_hvipriox(env, 4, env->hviprio, val);
 }
 
-static int read_hviprio2(CPURISCVState *env, int csrno, target_ulong *val)
+static RISCVException read_hviprio2(CPURISCVState *env, int csrno,
+                                    target_ulong *val)
 {
     return read_hvipriox(env, 8, env->hviprio, val);
 }
 
-static int write_hviprio2(CPURISCVState *env, int csrno, target_ulong val)
+static RISCVException write_hviprio2(CPURISCVState *env, int csrno,
+                                     target_ulong val)
 {
     return write_hvipriox(env, 8, env->hviprio, val);
 }
 
-static int read_hviprio2h(CPURISCVState *env, int csrno, target_ulong *val)
+static RISCVException read_hviprio2h(CPURISCVState *env, int csrno,
+                                     target_ulong *val)
 {
     return read_hvipriox(env, 12, env->hviprio, val);
 }
 
-static int write_hviprio2h(CPURISCVState *env, int csrno, target_ulong val)
+static RISCVException write_hviprio2h(CPURISCVState *env, int csrno,
+                                      target_ulong val)
 {
     return write_hvipriox(env, 12, env->hviprio, val);
 }
@@ -3290,7 +3735,8 @@ static RISCVException write_vsstatus(CPURISCVState *env, int csrno,
     return RISCV_EXCP_NONE;
 }
 
-static int read_vstvec(CPURISCVState *env, int csrno, target_ulong *val)
+static RISCVException read_vstvec(CPURISCVState *env, int csrno,
+                                  target_ulong *val)
 {
     *val = env->vstvec;
     return RISCV_EXCP_NONE;
@@ -3369,7 +3815,7 @@ static RISCVException read_vsatp(CPURISCVState *env, int csrno,
 static RISCVException write_vsatp(CPURISCVState *env, int csrno,
                                   target_ulong val)
 {
-    env->vsatp = val;
+    env->vsatp = legalize_xatp(env, env->vsatp, val);
     return RISCV_EXCP_NONE;
 }
 
@@ -3494,6 +3940,31 @@ static RISCVException read_tinfo(CPURISCVState *env, int csrno,
                                  target_ulong *val)
 {
     *val = tinfo_csr_read(env);
+    return RISCV_EXCP_NONE;
+}
+
+static RISCVException read_mcontext(CPURISCVState *env, int csrno,
+                                    target_ulong *val)
+{
+    *val = env->mcontext;
+    return RISCV_EXCP_NONE;
+}
+
+static RISCVException write_mcontext(CPURISCVState *env, int csrno,
+                                     target_ulong val)
+{
+    bool rv32 = riscv_cpu_mxl(env) == MXL_RV32 ? true : false;
+    int32_t mask;
+
+    if (riscv_has_ext(env, RVH)) {
+        /* Spec suggest 7-bit for RV32 and 14-bit for RV64 w/ H extension */
+        mask = rv32 ? MCONTEXT32_HCONTEXT : MCONTEXT64_HCONTEXT;
+    } else {
+        /* Spec suggest 6-bit for RV32 and 13-bit for RV64 w/o H extension */
+        mask = rv32 ? MCONTEXT32 : MCONTEXT64;
+    }
+
+    env->mcontext = val & mask;
     return RISCV_EXCP_NONE;
 }
 
@@ -3848,7 +4319,7 @@ static inline RISCVException riscv_csrrw_check(CPURISCVState *env,
     int csr_min_priv = csr_ops[csrno].min_priv_ver;
 
     /* ensure the CSR extension is enabled */
-    if (!riscv_cpu_cfg(env)->ext_icsr) {
+    if (!riscv_cpu_cfg(env)->ext_zicsr) {
         return RISCV_EXCP_ILLEGAL_INST;
     }
 
@@ -3885,7 +4356,7 @@ static inline RISCVException riscv_csrrw_check(CPURISCVState *env,
     if (riscv_has_ext(env, RVH) && env->priv == PRV_S &&
         !env->virt_enabled) {
         /*
-         * We are in HS mode. Add 1 to the effective privledge level to
+         * We are in HS mode. Add 1 to the effective privilege level to
          * allow us to access the Hypervisor CSRs.
          */
         effective_priv++;
@@ -3908,21 +4379,27 @@ static RISCVException riscv_csrrw_do64(CPURISCVState *env, int csrno,
                                        target_ulong write_mask)
 {
     RISCVException ret;
-    target_ulong old_value;
+    target_ulong old_value = 0;
 
     /* execute combined read/write operation if it exists */
     if (csr_ops[csrno].op) {
         return csr_ops[csrno].op(env, csrno, ret_value, new_value, write_mask);
     }
 
-    /* if no accessor exists then return failure */
-    if (!csr_ops[csrno].read) {
-        return RISCV_EXCP_ILLEGAL_INST;
-    }
-    /* read old value */
-    ret = csr_ops[csrno].read(env, csrno, &old_value);
-    if (ret != RISCV_EXCP_NONE) {
-        return ret;
+    /*
+     * ret_value == NULL means that rd=x0 and we're coming from helper_csrw()
+     * and we can't throw side effects caused by CSR reads.
+     */
+    if (ret_value) {
+        /* if no accessor exists then return failure */
+        if (!csr_ops[csrno].read) {
+            return RISCV_EXCP_ILLEGAL_INST;
+        }
+        /* read old value */
+        ret = csr_ops[csrno].read(env, csrno, &old_value);
+        if (ret != RISCV_EXCP_NONE) {
+            return ret;
+        }
     }
 
     /* write value if writable and write mask set, otherwise drop writes */
@@ -4149,14 +4626,14 @@ riscv_csr_operations csr_ops[CSR_TABLE_SIZE] = {
     [CSR_MTOPI]    = { "mtopi",    aia_any, read_mtopi },
 
     /* Virtual Interrupts for Supervisor Level (AIA) */
-    [CSR_MVIEN]    = { "mvien",    aia_any, read_zero, write_ignore },
-    [CSR_MVIP]     = { "mvip",     aia_any, read_zero, write_ignore },
+    [CSR_MVIEN]    = { "mvien",    aia_any, NULL, NULL, rmw_mvien   },
+    [CSR_MVIP]     = { "mvip",     aia_any, NULL, NULL, rmw_mvip    },
 
     /* Machine-Level High-Half CSRs (AIA) */
     [CSR_MIDELEGH] = { "midelegh", aia_any32, NULL, NULL, rmw_midelegh },
     [CSR_MIEH]     = { "mieh",     aia_any32, NULL, NULL, rmw_mieh     },
-    [CSR_MVIENH]   = { "mvienh",   aia_any32, read_zero,  write_ignore },
-    [CSR_MVIPH]    = { "mviph",    aia_any32, read_zero,  write_ignore },
+    [CSR_MVIENH]   = { "mvienh",   aia_any32, NULL, NULL, rmw_mvienh   },
+    [CSR_MVIPH]    = { "mviph",    aia_any32, NULL, NULL, rmw_mviph    },
     [CSR_MIPH]     = { "miph",     aia_any32, NULL, NULL, rmw_miph     },
 
     /* Execution environment configuration */
@@ -4330,14 +4807,13 @@ riscv_csr_operations csr_ops[CSR_TABLE_SIZE] = {
                           .min_priv_ver = PRIV_VERSION_1_12_0                },
 
     /* Virtual Interrupts and Interrupt Priorities (H-extension with AIA) */
-    [CSR_HVIEN]       = { "hvien",       aia_hmode, read_zero, write_ignore },
+    [CSR_HVIEN]       = { "hvien",       aia_hmode, NULL, NULL, rmw_hvien },
     [CSR_HVICTL]      = { "hvictl",      aia_hmode, read_hvictl,
                           write_hvictl                                      },
     [CSR_HVIPRIO1]    = { "hviprio1",    aia_hmode, read_hviprio1,
                           write_hviprio1                                    },
     [CSR_HVIPRIO2]    = { "hviprio2",    aia_hmode, read_hviprio2,
                           write_hviprio2                                    },
-
     /*
      * VS-Level Window to Indirectly Accessed Registers (H-extension with AIA)
      */
@@ -4352,8 +4828,7 @@ riscv_csr_operations csr_ops[CSR_TABLE_SIZE] = {
     /* Hypervisor and VS-Level High-Half CSRs (H-extension with AIA) */
     [CSR_HIDELEGH]    = { "hidelegh",    aia_hmode32, NULL, NULL,
                           rmw_hidelegh                                      },
-    [CSR_HVIENH]      = { "hvienh",      aia_hmode32, read_zero,
-                          write_ignore                                      },
+    [CSR_HVIENH]      = { "hvienh",      aia_hmode32, NULL, NULL, rmw_hvienh },
     [CSR_HVIPH]       = { "hviph",       aia_hmode32, NULL, NULL, rmw_hviph },
     [CSR_HVIPRIO1H]   = { "hviprio1h",   aia_hmode32, read_hviprio1h,
                           write_hviprio1h                                   },
@@ -4363,7 +4838,7 @@ riscv_csr_operations csr_ops[CSR_TABLE_SIZE] = {
     [CSR_VSIPH]       = { "vsiph",       aia_hmode32, NULL, NULL, rmw_vsiph },
 
     /* Physical Memory Protection */
-    [CSR_MSECCFG]    = { "mseccfg",  epmp, read_mseccfg, write_mseccfg,
+    [CSR_MSECCFG]    = { "mseccfg",   have_mseccfg, read_mseccfg, write_mseccfg,
                          .min_priv_ver = PRIV_VERSION_1_11_0           },
     [CSR_PMPCFG0]    = { "pmpcfg0",   pmp, read_pmpcfg,  write_pmpcfg  },
     [CSR_PMPCFG1]    = { "pmpcfg1",   pmp, read_pmpcfg,  write_pmpcfg  },
@@ -4387,11 +4862,12 @@ riscv_csr_operations csr_ops[CSR_TABLE_SIZE] = {
     [CSR_PMPADDR15] =  { "pmpaddr15", pmp, read_pmpaddr, write_pmpaddr },
 
     /* Debug CSRs */
-    [CSR_TSELECT]   =  { "tselect", debug, read_tselect, write_tselect },
-    [CSR_TDATA1]    =  { "tdata1",  debug, read_tdata,   write_tdata   },
-    [CSR_TDATA2]    =  { "tdata2",  debug, read_tdata,   write_tdata   },
-    [CSR_TDATA3]    =  { "tdata3",  debug, read_tdata,   write_tdata   },
-    [CSR_TINFO]     =  { "tinfo",   debug, read_tinfo,   write_ignore  },
+    [CSR_TSELECT]   =  { "tselect",  debug, read_tselect,  write_tselect  },
+    [CSR_TDATA1]    =  { "tdata1",   debug, read_tdata,    write_tdata    },
+    [CSR_TDATA2]    =  { "tdata2",   debug, read_tdata,    write_tdata    },
+    [CSR_TDATA3]    =  { "tdata3",   debug, read_tdata,    write_tdata    },
+    [CSR_TINFO]     =  { "tinfo",    debug, read_tinfo,    write_ignore   },
+    [CSR_MCONTEXT]  =  { "mcontext", debug, read_mcontext, write_mcontext },
 
     /* User Pointer Masking */
     [CSR_UMTE]    =    { "umte",    pointer_masking, read_umte,  write_umte },

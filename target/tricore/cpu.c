@@ -29,9 +29,9 @@ static inline void set_feature(CPUTriCoreState *env, int feature)
     env->features |= 1ULL << feature;
 }
 
-static gchar *tricore_gdb_arch_name(CPUState *cs)
+static const gchar *tricore_gdb_arch_name(CPUState *cs)
 {
-    return g_strdup("tricore");
+    return "tricore";
 }
 
 static void tricore_cpu_set_pc(CPUState *cs, vaddr value)
@@ -89,6 +89,11 @@ static bool tricore_cpu_has_work(CPUState *cs)
     return true;
 }
 
+static int tricore_cpu_mmu_index(CPUState *cs, bool ifetch)
+{
+    return 0;
+}
+
 static void tricore_cpu_realizefn(DeviceState *dev, Error **errp)
 {
     CPUState *cs = CPU(dev);
@@ -124,14 +129,6 @@ static void tricore_cpu_realizefn(DeviceState *dev, Error **errp)
     tcc->parent_realize(dev, errp);
 }
 
-
-static void tricore_cpu_initfn(Object *obj)
-{
-    TriCoreCPU *cpu = TRICORE_CPU(obj);
-
-    cpu_set_cpustate_pointers(cpu);
-}
-
 static ObjectClass *tricore_cpu_class_by_name(const char *cpu_model)
 {
     ObjectClass *oc;
@@ -140,10 +137,7 @@ static ObjectClass *tricore_cpu_class_by_name(const char *cpu_model)
     typename = g_strdup_printf(TRICORE_CPU_TYPE_NAME("%s"), cpu_model);
     oc = object_class_by_name(typename);
     g_free(typename);
-    if (!oc || !object_class_dynamic_cast(oc, TYPE_TRICORE_CPU) ||
-        object_class_is_abstract(oc)) {
-        return NULL;
-    }
+
     return oc;
 }
 
@@ -184,7 +178,7 @@ static const struct SysemuCPUOps tricore_sysemu_ops = {
 
 #include "hw/core/tcg-cpu-ops.h"
 
-static const struct TCGCPUOps tricore_tcg_ops = {
+static const TCGCPUOps tricore_tcg_ops = {
     .initialize = tricore_tcg_init,
     .synchronize_from_tb = tricore_cpu_synchronize_from_tb,
     .restore_state_to_opc = tricore_restore_state_to_opc,
@@ -205,6 +199,7 @@ static void tricore_cpu_class_init(ObjectClass *c, void *data)
                                        &mcc->parent_phases);
     cc->class_by_name = tricore_cpu_class_by_name;
     cc->has_work = tricore_cpu_has_work;
+    cc->mmu_index = tricore_cpu_mmu_index;
 
     cc->gdb_read_register = tricore_cpu_gdb_read_register;
     cc->gdb_write_register = tricore_cpu_gdb_write_register;
@@ -230,7 +225,7 @@ static const TypeInfo tricore_cpu_type_infos[] = {
         .name = TYPE_TRICORE_CPU,
         .parent = TYPE_CPU,
         .instance_size = sizeof(TriCoreCPU),
-        .instance_init = tricore_cpu_initfn,
+        .instance_align = __alignof(TriCoreCPU),
         .abstract = true,
         .class_size = sizeof(TriCoreCPUClass),
         .class_init = tricore_cpu_class_init,

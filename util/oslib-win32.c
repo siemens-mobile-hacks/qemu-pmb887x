@@ -264,8 +264,8 @@ int getpagesize(void)
     return system_info.dwPageSize;
 }
 
-void qemu_prealloc_mem(int fd, char *area, size_t sz, int max_threads,
-                       ThreadContext *tc, Error **errp)
+bool qemu_prealloc_mem(int fd, char *area, size_t sz, int max_threads,
+                       ThreadContext *tc, bool async, Error **errp)
 {
     int i;
     size_t pagesize = qemu_real_host_page_size();
@@ -274,6 +274,14 @@ void qemu_prealloc_mem(int fd, char *area, size_t sz, int max_threads,
     for (i = 0; i < sz / pagesize; i++) {
         memset(area + pagesize * i, 0, 1);
     }
+
+    return true;
+}
+
+bool qemu_finish_async_prealloc_mem(Error **errp)
+{
+    /* async prealloc not supported, there is nothing to finish */
+    return true;
 }
 
 char *qemu_get_pid_name(pid_t pid)
@@ -479,7 +487,7 @@ int qemu_bind_wrap(int sockfd, const struct sockaddr *addr,
     return ret;
 }
 
-EXCEPTION_DISPOSITION
+QEMU_USED EXCEPTION_DISPOSITION
 win32_close_exception_handler(struct _EXCEPTION_RECORD *exception_record,
                               void *registration, struct _CONTEXT *context,
                               void *dispatcher)

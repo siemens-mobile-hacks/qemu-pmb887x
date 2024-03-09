@@ -487,7 +487,7 @@ static GuestDiskBusType win2qemu[] = {
     [BusTypeVirtual] = GUEST_DISK_BUS_TYPE_VIRTUAL,
     [BusTypeFileBackedVirtual] = GUEST_DISK_BUS_TYPE_FILE_BACKED_VIRTUAL,
     /*
-     * BusTypeSpaces currently is not suported
+     * BusTypeSpaces currently is not supported
      */
     [BusTypeSpaces] = GUEST_DISK_BUS_TYPE_UNKNOWN,
     [BusTypeNvme] = GUEST_DISK_BUS_TYPE_NVME,
@@ -500,13 +500,6 @@ static GuestDiskBusType find_bus_type(STORAGE_BUS_TYPE bus)
     }
     return win2qemu[(int)bus];
 }
-
-DEFINE_GUID(GUID_DEVINTERFACE_DISK,
-        0x53f56307L, 0xb6bf, 0x11d0, 0x94, 0xf2,
-        0x00, 0xa0, 0xc9, 0x1e, 0xfb, 0x8b);
-DEFINE_GUID(GUID_DEVINTERFACE_STORAGEPORT,
-        0x2accfe60L, 0xc130, 0x11d2, 0xb0, 0x82,
-        0x00, 0xa0, 0xc9, 0x1e, 0xfb, 0x8b);
 
 static void get_pci_address_for_device(GuestPCIAddress *pci,
                                        HDEVINFO dev_info)
@@ -942,6 +935,8 @@ static GuestDiskAddressList *build_guest_disk_info(char *guid, Error **errp)
         DWORD last_err = GetLastError();
         if (last_err == ERROR_MORE_DATA) {
             /* Try once more with big enough buffer */
+            size = sizeof(VOLUME_DISK_EXTENTS) +
+               (sizeof(DISK_EXTENT) * (extents->NumberOfDiskExtents - 1));
             g_free(extents);
             extents = g_malloc0(size);
             if (!DeviceIoControl(
@@ -2259,7 +2254,7 @@ static char *ga_get_win_product_name(Error **errp)
         }
     }
     if (err != ERROR_SUCCESS) {
-        error_setg_win32(errp, err, "failed to retrive ProductName");
+        error_setg_win32(errp, err, "failed to retrieve ProductName");
         goto fail;
     }
 

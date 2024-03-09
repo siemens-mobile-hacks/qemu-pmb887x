@@ -30,9 +30,9 @@ struct image_info {
         abi_ulong       start_data;
         abi_ulong       end_data;
         abi_ulong       brk;
-        abi_ulong       start_mmap;
         abi_ulong       start_stack;
         abi_ulong       stack_limit;
+        abi_ulong       vdso;
         abi_ulong       entry;
         abi_ulong       code_offset;
         abi_ulong       data_offset;
@@ -161,6 +161,11 @@ typedef struct TaskState {
     /* Start time of task after system boot in clock ticks */
     uint64_t start_boottime;
 } TaskState;
+
+static inline TaskState *get_task_state(CPUState *cs)
+{
+    return cs->opaque;
+}
 
 abi_long do_brk(abi_ulong new_brk);
 int do_guest_openat(CPUArchState *cpu_env, int dirfd, const char *pathname,

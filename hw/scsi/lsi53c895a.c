@@ -1159,6 +1159,7 @@ again:
         lsi_script_scsi_interrupt(s, LSI_SIST0_UDC, 0);
         lsi_disconnect(s);
         trace_lsi_execute_script_stop();
+        reentrancy_level--;
         return;
     }
     insn = read_dword(s, s->dsp);
@@ -1321,7 +1322,7 @@ again:
                 }
                 trace_lsi_execute_script_io_selected(id,
                                              insn & (1 << 3) ? " ATN" : "");
-                /* ??? Linux drivers compain when this is set.  Maybe
+                /* ??? Linux drivers complain when this is set.  Maybe
                    it only applies in low-level mode (unimplemented).
                 lsi_script_scsi_interrupt(s, LSI_SIST0_CMP, 0); */
                 s->select_tag = id << 8;
@@ -2205,7 +2206,7 @@ static const VMStateDescription vmstate_lsi_scsi = {
     .minimum_version_id = 0,
     .pre_save = lsi_pre_save,
     .post_load = lsi_post_load,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_PCI_DEVICE(parent_obj, LSIState),
 
         VMSTATE_INT32(carry, LSIState),

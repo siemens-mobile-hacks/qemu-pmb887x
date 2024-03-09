@@ -34,6 +34,7 @@
 #include "qemu/timer.h"
 #include "exec/exec-all.h"
 #include "exec/hwaddr.h"
+#include "exec/tb-flush.h"
 #include "exec/gdbstub.h"
 
 #include "tcg-accel-ops.h"
@@ -62,12 +63,12 @@ void tcg_cpu_init_cflags(CPUState *cpu, bool parallel)
     cpu->tcg_cflags |= cflags;
 }
 
-void tcg_cpus_destroy(CPUState *cpu)
+void tcg_cpu_destroy(CPUState *cpu)
 {
     cpu_thread_signal_destroyed(cpu);
 }
 
-int tcg_cpus_exec(CPUState *cpu)
+int tcg_cpu_exec(CPUState *cpu)
 {
     int ret;
     assert(tcg_enabled());
@@ -77,10 +78,17 @@ int tcg_cpus_exec(CPUState *cpu)
     return ret;
 }
 
+static void tcg_cpu_reset_hold(CPUState *cpu)
+{
+    tcg_flush_jmp_cache(cpu);
+
+    tlb_flush(cpu);
+}
+
 /* mask must never be zero, except for A20 change call */
 void tcg_handle_interrupt(CPUState *cpu, int mask)
 {
-    g_assert(qemu_mutex_iothread_locked());
+    g_assert(bql_locked());
 
     cpu->interrupt_request |= mask;
 
@@ -91,7 +99,7 @@ void tcg_handle_interrupt(CPUState *cpu, int mask)
     if (!qemu_cpu_is_self(cpu)) {
         qemu_cpu_kick(cpu);
     } else {
-        qatomic_set(&cpu_neg(cpu)->icount_decr.u16.high, -1);
+        qatomic_set(&cpu->neg.icount_decr.u16.high, -1);
     }
 }
 
@@ -210,6 +218,7 @@ static void tcg_accel_ops_init(AccelOpsClass *ops)
         ops->get_elapsed_ticks = icount2_get;
     }
 
+    ops->cpu_reset_hold = tcg_cpu_reset_hold;
     ops->supports_guest_debug = tcg_supports_guest_debug;
     ops->insert_breakpoint = tcg_insert_breakpoint;
     ops->remove_breakpoint = tcg_remove_breakpoint;

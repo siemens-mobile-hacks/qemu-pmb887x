@@ -52,7 +52,7 @@ Those hosts are officially supported, with various accelerators:
    * - SPARC
      - tcg
    * - x86
-     - hax, hvf (64 bit only), kvm, nvmm, tcg, whpx (64 bit only), xen
+     - hvf (64 bit only), kvm, nvmm, tcg, whpx (64 bit only), xen
 
 Other host architectures are not supported. It is possible to build QEMU system
 emulation on an unsupported host architecture using the configure
@@ -138,6 +138,8 @@ build process to successfully complete. On newer versions of Windows 10,
 unprivileged accounts can create symlinks if Developer Mode is enabled.
 When Developer Mode is not available/enabled, the SeCreateSymbolicLinkPrivilege
 privilege is required, or the process must be run as an administrator.
+
+Only 64-bit Windows is supported.
 
 .. _Homebrew: https://brew.sh/
 .. _MacPorts: https://www.macports.org/

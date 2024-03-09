@@ -5062,7 +5062,7 @@ static void register_970_hid_sprs(CPUPPCState *env)
 
 static void register_970_hior_sprs(CPUPPCState *env)
 {
-    spr_register(env, SPR_HIOR, "SPR_HIOR",
+    spr_register(env, SPR_HIOR, "HIOR",
                  SPR_NOACCESS, SPR_NOACCESS,
                  &spr_read_hior, &spr_write_hior,
                  0x00000000);
@@ -5070,11 +5070,11 @@ static void register_970_hior_sprs(CPUPPCState *env)
 
 static void register_book3s_ctrl_sprs(CPUPPCState *env)
 {
-    spr_register(env, SPR_CTRL, "SPR_CTRL",
+    spr_register(env, SPR_CTRL, "CTRL",
                  SPR_NOACCESS, SPR_NOACCESS,
                  SPR_NOACCESS, &spr_write_CTRL,
                  0x00000000);
-    spr_register(env, SPR_UCTRL, "SPR_UCTRL",
+    spr_register(env, SPR_UCTRL, "UCTRL",
                  &spr_read_ureg, SPR_NOACCESS,
                  &spr_read_ureg, SPR_NOACCESS,
                  0x00000000);
@@ -5117,17 +5117,17 @@ static void register_book3s_207_dbg_sprs(CPUPPCState *env)
     spr_register_kvm_hv(env, SPR_DAWR0, "DAWR0",
                         SPR_NOACCESS, SPR_NOACCESS,
                         SPR_NOACCESS, SPR_NOACCESS,
-                        &spr_read_generic, &spr_write_generic,
+                        &spr_read_generic, &spr_write_dawr0,
                         KVM_REG_PPC_DAWR, 0x00000000);
     spr_register_kvm_hv(env, SPR_DAWRX0, "DAWRX0",
                         SPR_NOACCESS, SPR_NOACCESS,
                         SPR_NOACCESS, SPR_NOACCESS,
-                        &spr_read_generic, &spr_write_generic32,
+                        &spr_read_generic, &spr_write_dawrx0,
                         KVM_REG_PPC_DAWRX, 0x00000000);
     spr_register_kvm_hv(env, SPR_CIABR, "CIABR",
                         SPR_NOACCESS, SPR_NOACCESS,
                         SPR_NOACCESS, SPR_NOACCESS,
-                        &spr_read_generic, &spr_write_generic,
+                        &spr_read_generic, &spr_write_ciabr,
                         KVM_REG_PPC_CIABR, 0x00000000);
 }
 
@@ -5347,7 +5347,7 @@ static void register_970_lpar_sprs(CPUPPCState *env)
 static void register_power5p_lpar_sprs(CPUPPCState *env)
 {
 #if !defined(CONFIG_USER_ONLY)
-    /* Logical partitionning */
+    /* Logical partitioning */
     spr_register_kvm_hv(env, SPR_LPCR, "LPCR",
                         SPR_NOACCESS, SPR_NOACCESS,
                         SPR_NOACCESS, SPR_NOACCESS,
@@ -5465,7 +5465,7 @@ static void register_book3s_purr_sprs(CPUPPCState *env)
 static void register_power6_dbg_sprs(CPUPPCState *env)
 {
 #if !defined(CONFIG_USER_ONLY)
-    spr_register(env, SPR_CFAR, "SPR_CFAR",
+    spr_register(env, SPR_CFAR, "CFAR",
                  SPR_NOACCESS, SPR_NOACCESS,
                  &spr_read_cfar, &spr_write_cfar,
                  0x00000000);
@@ -5483,7 +5483,7 @@ static void register_power5p_common_sprs(CPUPPCState *env)
 static void register_power6_common_sprs(CPUPPCState *env)
 {
 #if !defined(CONFIG_USER_ONLY)
-    spr_register_kvm(env, SPR_DSCR, "SPR_DSCR",
+    spr_register_kvm(env, SPR_DSCR, "DSCR",
                      SPR_NOACCESS, SPR_NOACCESS,
                      &spr_read_generic, &spr_write_generic,
                      KVM_REG_PPC_DSCR, 0x00000000);
@@ -5660,6 +5660,16 @@ static void register_power_common_book4_sprs(CPUPPCState *env)
                  SPR_NOACCESS, SPR_NOACCESS,
                  &spr_read_tfmr, &spr_write_tfmr,
                  0x00000000);
+    spr_register_hv(env, SPR_TRIG1, "TRIG1",
+                 SPR_NOACCESS, SPR_NOACCESS,
+                 &spr_access_nop, &spr_write_generic,
+                 &spr_access_nop, &spr_write_generic,
+                 0x00000000);
+    spr_register_hv(env, SPR_TRIG2, "TRIG2",
+                 SPR_NOACCESS, SPR_NOACCESS,
+                 &spr_access_nop, &spr_write_generic,
+                 &spr_access_nop, &spr_write_generic,
+                 0x00000000);
 #endif
 }
 
@@ -5685,7 +5695,7 @@ static void register_power8_book4_sprs(CPUPPCState *env)
                      &spr_read_generic, &spr_write_generic,
                      KVM_REG_PPC_ACOP, 0);
     /* PID is only in BookE in ISA v2.07 */
-    spr_register_kvm(env, SPR_BOOKS_PID, "PID",
+    spr_register_kvm(env, SPR_BOOKS_PID, "PIDR",
                      SPR_NOACCESS, SPR_NOACCESS,
                      &spr_read_generic, &spr_write_pidr,
                      KVM_REG_PPC_PID, 0);
@@ -5706,7 +5716,7 @@ static void register_power7_book4_sprs(CPUPPCState *env)
                      &spr_read_generic, &spr_write_generic,
                      KVM_REG_PPC_ACOP, 0);
     /* PID is only in BookE in ISA v2.06 */
-    spr_register_kvm(env, SPR_BOOKS_PID, "PID",
+    spr_register_kvm(env, SPR_BOOKS_PID, "PIDR",
                      SPR_NOACCESS, SPR_NOACCESS,
                      &spr_read_generic, &spr_write_generic32,
                      KVM_REG_PPC_PID, 0);
@@ -5740,7 +5750,7 @@ static void register_power9_mmu_sprs(CPUPPCState *env)
                     &spr_read_generic, &spr_write_generic,
                     0x0000000000000000);
     /* PID is part of the BookS ISA from v3.0 */
-    spr_register_kvm(env, SPR_BOOKS_PID, "PID",
+    spr_register_kvm(env, SPR_BOOKS_PID, "PIDR",
                      SPR_NOACCESS, SPR_NOACCESS,
                      &spr_read_generic, &spr_write_pidr,
                      KVM_REG_PPC_PID, 0);
@@ -5750,7 +5760,7 @@ static void register_power9_mmu_sprs(CPUPPCState *env)
 static void register_power10_hash_sprs(CPUPPCState *env)
 {
     /*
-     * it's the OS responsability to generate a random value for the registers
+     * it's the OS responsibility to generate a random value for the registers
      * in each process' context. So, initialize it with 0 here.
      */
     uint64_t hashkeyr_initial_value = 0, hashpkeyr_initial_value = 0;
@@ -5781,7 +5791,7 @@ static void register_power10_dexcr_sprs(CPUPPCState *env)
             &spr_read_generic, &spr_write_generic32,
             0);
 
-    spr_register(env, SPR_UDEXCR, "DEXCR",
+    spr_register(env, SPR_UDEXCR, "UDEXCR",
             &spr_read_dexcr_ureg, SPR_NOACCESS,
             &spr_read_dexcr_ureg, SPR_NOACCESS,
             0);
@@ -5792,7 +5802,7 @@ static void register_power10_dexcr_sprs(CPUPPCState *env)
             &spr_read_generic, &spr_write_generic32,
             0);
 
-    spr_register(env, SPR_UHDEXCR, "HDEXCR",
+    spr_register(env, SPR_UHDEXCR, "UHDEXCR",
             &spr_read_dexcr_ureg, SPR_NOACCESS,
             &spr_read_dexcr_ureg, SPR_NOACCESS,
             0);
@@ -6672,10 +6682,6 @@ static void init_ppc_proc(PowerPCCPU *cpu)
     /* PowerPC implementation specific initialisations (SPRs, timers, ...) */
     (*pcc->init_proc)(env);
 
-#if !defined(CONFIG_USER_ONLY)
-    ppc_gdb_gen_spr_xml(cpu);
-#endif
-
     /* MSR bits & flags consistency checks */
     if (env->msr_mask & (1 << 25)) {
         switch (env->flags & (POWERPC_FLAG_SPE | POWERPC_FLAG_VRE)) {
@@ -7026,8 +7032,7 @@ static void ppc_cpu_list_entry(gpointer data, gpointer user_data)
         return;
     }
 
-    name = g_strndup(typename,
-                     strlen(typename) - strlen(POWERPC_CPU_TYPE_SUFFIX));
+    name = cpu_model_from_type(typename);
     qemu_printf("PowerPC %-16s PVR %08x\n", name, pcc->pvr);
     for (i = 0; ppc_cpu_aliases[i].alias != NULL; i++) {
         PowerPCCPUAlias *alias = &ppc_cpu_aliases[i];
@@ -7096,6 +7101,11 @@ static bool ppc_cpu_has_work(CPUState *cs)
     return cs->interrupt_request & CPU_INTERRUPT_HARD;
 }
 
+static int ppc_cpu_mmu_index(CPUState *cs, bool ifetch)
+{
+    return ppc_env_mmu_index(cpu_env(cs), ifetch);
+}
+
 static void ppc_cpu_reset_hold(Object *obj)
 {
     CPUState *s = CPU(obj);
@@ -7149,6 +7159,8 @@ static void ppc_cpu_reset_hold(Object *obj)
     env->nip = env->hreset_vector | env->excp_prefix;
 
     if (tcg_enabled()) {
+        cpu_breakpoint_remove_all(s, BP_CPU);
+        cpu_watchpoint_remove_all(s, BP_CPU);
         if (env->mmu_model != POWERPC_MMU_REAL) {
             ppc_tlb_invalidate_all(env);
         }
@@ -7234,7 +7246,6 @@ static void ppc_cpu_instance_init(Object *obj)
     PowerPCCPUClass *pcc = POWERPC_CPU_GET_CLASS(cpu);
     CPUPPCState *env = &cpu->env;
 
-    cpu_set_cpustate_pointers(cpu);
     cpu->vcpu_id = UNASSIGNED_CPU_INDEX;
 
     env->msr_mask = pcc->msr_mask;
@@ -7322,7 +7333,7 @@ static const struct SysemuCPUOps ppc_sysemu_ops = {
 #ifdef CONFIG_TCG
 #include "hw/core/tcg-cpu-ops.h"
 
-static const struct TCGCPUOps ppc_tcg_ops = {
+static const TCGCPUOps ppc_tcg_ops = {
   .initialize = ppc_translate_init,
   .restore_state_to_opc = ppc_restore_state_to_opc,
 
@@ -7336,6 +7347,9 @@ static const struct TCGCPUOps ppc_tcg_ops = {
   .cpu_exec_exit = ppc_cpu_exec_exit,
   .do_unaligned_access = ppc_cpu_do_unaligned_access,
   .do_transaction_failed = ppc_cpu_do_transaction_failed,
+  .debug_excp_handler = ppc_cpu_debug_excp_handler,
+  .debug_check_breakpoint = ppc_cpu_debug_check_breakpoint,
+  .debug_check_watchpoint = ppc_cpu_debug_check_watchpoint,
 #endif /* !CONFIG_USER_ONLY */
 };
 #endif /* CONFIG_TCG */
@@ -7359,6 +7373,7 @@ static void ppc_cpu_class_init(ObjectClass *oc, void *data)
 
     cc->class_by_name = ppc_cpu_class_by_name;
     cc->has_work = ppc_cpu_has_work;
+    cc->mmu_index = ppc_cpu_mmu_index;
     cc->dump_state = ppc_cpu_dump_state;
     cc->set_pc = ppc_cpu_set_pc;
     cc->get_pc = ppc_cpu_get_pc;
@@ -7370,9 +7385,6 @@ static void ppc_cpu_class_init(ObjectClass *oc, void *data)
 #endif
 
     cc->gdb_num_core_regs = 71;
-#ifndef CONFIG_USER_ONLY
-    cc->gdb_get_dynamic_xml = ppc_gdb_get_dynamic_xml;
-#endif
 #ifdef USE_APPLE_GDB
     cc->gdb_read_register = ppc_cpu_gdb_read_register_apple;
     cc->gdb_write_register = ppc_cpu_gdb_write_register_apple;
@@ -7444,7 +7456,7 @@ void ppc_cpu_dump_state(CPUState *cs, FILE *f, int flags)
     qemu_fprintf(f, "MSR " TARGET_FMT_lx " HID0 " TARGET_FMT_lx "  HF "
                  "%08x iidx %d didx %d\n",
                  env->msr, env->spr[SPR_HID0], env->hflags,
-                 cpu_mmu_index(env, true), cpu_mmu_index(env, false));
+                 ppc_env_mmu_index(env, true), ppc_env_mmu_index(env, false));
 #if !defined(CONFIG_USER_ONLY)
     if (env->tb_env) {
         qemu_fprintf(f, "TB %08" PRIu32 " %08" PRIu64

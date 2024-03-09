@@ -364,6 +364,17 @@ static int smmu_ptw_64_s1(SMMUTransCfg *cfg,
                                      pte_addr, pte, iova, gpa,
                                      block_size >> 20);
         }
+
+        /*
+         * QEMU does not currently implement HTTU, so if AFFD and PTE.AF
+         * are 0 we take an Access flag fault. (5.4. Context Descriptor)
+         * An Access flag fault takes priority over a Permission fault.
+         */
+        if (!PTE_AF(pte) && !cfg->affd) {
+            info->type = SMMU_PTW_ERR_ACCESS;
+            goto error;
+        }
+
         ap = PTE_AP(pte);
         if (is_permission_fault(ap, perm)) {
             info->type = SMMU_PTW_ERR_PERMISSION;
@@ -605,6 +616,10 @@ static AddressSpace *smmu_find_add_as(PCIBus *bus, void *opaque, int devfn)
     return &sdev->as;
 }
 
+static const PCIIOMMUOps smmu_ops = {
+    .get_address_space = smmu_find_add_as,
+};
+
 IOMMUMemoryRegion *smmu_iommu_mr(SMMUState *s, uint32_t sid)
 {
     uint8_t bus_n, devfn;
@@ -661,7 +676,7 @@ static void smmu_base_realize(DeviceState *dev, Error **errp)
     s->smmu_pcibus_by_busptr = g_hash_table_new(NULL, NULL);
 
     if (s->primary_bus) {
-        pci_setup_iommu(s->primary_bus, smmu_find_add_as, s);
+        pci_setup_iommu(s->primary_bus, &smmu_ops, s);
     } else {
         error_setg(errp, "SMMU is not attached to any PCI bus!");
     }
@@ -670,6 +685,8 @@ static void smmu_base_realize(DeviceState *dev, Error **errp)
 static void smmu_base_reset_hold(Object *obj)
 {
     SMMUState *s = ARM_SMMU(obj);
+
+    memset(s->smmu_pcibus_by_bus_num, 0, sizeof(s->smmu_pcibus_by_bus_num));
 
     g_hash_table_remove_all(s->configs);
     g_hash_table_remove_all(s->iotlb);

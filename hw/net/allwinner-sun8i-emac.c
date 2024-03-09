@@ -824,7 +824,8 @@ static void allwinner_sun8i_emac_realize(DeviceState *dev, Error **errp)
 
     qemu_macaddr_default_if_unset(&s->conf.macaddr);
     s->nic = qemu_new_nic(&net_allwinner_sun8i_emac_info, &s->conf,
-                           object_get_typename(OBJECT(dev)), dev->id, s);
+                          object_get_typename(OBJECT(dev)), dev->id,
+                          &dev->mem_reentrancy_guard, s);
     qemu_format_nic_info_str(qemu_get_queue(s->nic), s->conf.macaddr.a);
 }
 
@@ -850,7 +851,7 @@ static const VMStateDescription vmstate_aw_emac = {
     .version_id = 1,
     .minimum_version_id = 1,
     .post_load = allwinner_sun8i_emac_post_load,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_UINT8(mii_phy_addr, AwSun8iEmacState),
         VMSTATE_UINT32(mii_cmd, AwSun8iEmacState),
         VMSTATE_UINT32(mii_data, AwSun8iEmacState),

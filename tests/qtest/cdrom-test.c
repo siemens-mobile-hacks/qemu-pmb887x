@@ -37,17 +37,17 @@ static int exec_xorrisofs(const char **args)
     return exit_status;
 }
 
-static int prepare_image(const char *arch, char *isoimage)
+static int prepare_image(const char *arch, char *isoimagepath)
 {
     char srcdir[] = "cdrom-test-dir-XXXXXX";
     char *codefile = NULL;
     int ifh, ret = -1;
     const char *args[] = {
         "xorrisofs", "-quiet", "-l", "-no-emul-boot",
-        "-b", NULL, "-o", isoimage, srcdir, NULL
+        "-b", NULL, "-o", isoimagepath, srcdir, NULL
     };
 
-    ifh = mkstemp(isoimage);
+    ifh = mkstemp(isoimagepath);
     if (ifh < 0) {
         perror("Error creating temporary iso image file");
         return -1;
@@ -267,6 +267,11 @@ int main(int argc, char **argv)
             "vexpress-a9", NULL
         };
         add_cdrom_param_tests(armmachines);
+        if (qtest_has_device("virtio-blk-pci")) {
+            const char *virtmachine[] = { "virt", NULL };
+            add_cdrom_param_tests(virtmachine);
+        }
+    } else if (g_str_equal(arch, "loongarch64")) {
         if (qtest_has_device("virtio-blk-pci")) {
             const char *virtmachine[] = { "virt", NULL };
             add_cdrom_param_tests(virtmachine);

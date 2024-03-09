@@ -62,7 +62,7 @@ void aa32_max_features(ARMCPU *cpu)
     cpu->isar.id_mmfr3 = t;
 
     t = cpu->isar.id_mmfr4;
-    t = FIELD_DP32(t, ID_MMFR4, HPDS, 1);         /* FEAT_AA32HPD */
+    t = FIELD_DP32(t, ID_MMFR4, HPDS, 2);         /* FEAT_HPDS2 */
     t = FIELD_DP32(t, ID_MMFR4, AC2, 1);          /* ACTLR2, HACTLR2 */
     t = FIELD_DP32(t, ID_MMFR4, CNP, 1);          /* FEAT_TTCNP */
     t = FIELD_DP32(t, ID_MMFR4, XNX, 1);          /* FEAT_XNX */
@@ -89,6 +89,10 @@ void aa32_max_features(ARMCPU *cpu)
     t = FIELD_DP32(t, ID_DFR0, COPSDBG, 9);       /* FEAT_Debugv8p4 */
     t = FIELD_DP32(t, ID_DFR0, PERFMON, 6);       /* FEAT_PMUv3p5 */
     cpu->isar.id_dfr0 = t;
+
+    t = cpu->isar.id_dfr1;
+    t = FIELD_DP32(t, ID_DFR1, HPMN0, 1);         /* FEAT_HPMN0 */
+    cpu->isar.id_dfr1 = t;
 }
 
 /* CPU models. These are not needed for the AArch64 linux-user build. */
@@ -347,6 +351,7 @@ static void cortex_a8_initfn(Object *obj)
     set_feature(&cpu->env, ARM_FEATURE_THUMB2EE);
     set_feature(&cpu->env, ARM_FEATURE_DUMMY_C15_REGS);
     set_feature(&cpu->env, ARM_FEATURE_EL3);
+    set_feature(&cpu->env, ARM_FEATURE_PMU);
     cpu->midr = 0x410fc080;
     cpu->reset_fpsid = 0x410330c0;
     cpu->isar.mvfr0 = 0x11110222;
@@ -414,6 +419,7 @@ static void cortex_a9_initfn(Object *obj)
     set_feature(&cpu->env, ARM_FEATURE_NEON);
     set_feature(&cpu->env, ARM_FEATURE_THUMB2EE);
     set_feature(&cpu->env, ARM_FEATURE_EL3);
+    set_feature(&cpu->env, ARM_FEATURE_PMU);
     /*
      * Note that A9 supports the MP extensions even for
      * A9UP and single-core A9MP (which are both different
@@ -794,6 +800,111 @@ static void cortex_r5_initfn(Object *obj)
     define_arm_cp_regs(cpu, cortexr5_cp_reginfo);
 }
 
+static const ARMCPRegInfo cortex_r52_cp_reginfo[] = {
+    { .name = "CPUACTLR", .cp = 15, .opc1 = 0, .crm = 15,
+      .access = PL1_RW, .type = ARM_CP_CONST | ARM_CP_64BIT, .resetvalue = 0 },
+    { .name = "IMP_ATCMREGIONR",
+      .cp = 15, .opc1 = 0, .crn = 9, .crm = 1, .opc2 = 0,
+      .access = PL1_RW, .type = ARM_CP_CONST, .resetvalue = 0 },
+    { .name = "IMP_BTCMREGIONR",
+      .cp = 15, .opc1 = 0, .crn = 9, .crm = 1, .opc2 = 1,
+      .access = PL1_RW, .type = ARM_CP_CONST, .resetvalue = 0 },
+    { .name = "IMP_CTCMREGIONR",
+      .cp = 15, .opc1 = 0, .crn = 9, .crm = 1, .opc2 = 2,
+      .access = PL1_RW, .type = ARM_CP_CONST, .resetvalue = 0 },
+    { .name = "IMP_CSCTLR",
+      .cp = 15, .opc1 = 1, .crn = 9, .crm = 1, .opc2 = 0,
+      .access = PL1_RW, .type = ARM_CP_CONST, .resetvalue = 0 },
+    { .name = "IMP_BPCTLR",
+      .cp = 15, .opc1 = 1, .crn = 9, .crm = 1, .opc2 = 1,
+      .access = PL1_RW, .type = ARM_CP_CONST, .resetvalue = 0 },
+    { .name = "IMP_MEMPROTCLR",
+      .cp = 15, .opc1 = 1, .crn = 9, .crm = 1, .opc2 = 2,
+      .access = PL1_RW, .type = ARM_CP_CONST, .resetvalue = 0 },
+    { .name = "IMP_SLAVEPCTLR",
+      .cp = 15, .opc1 = 0, .crn = 11, .crm = 0, .opc2 = 0,
+      .access = PL1_RW, .type = ARM_CP_CONST, .resetvalue = 0 },
+    { .name = "IMP_PERIPHREGIONR",
+      .cp = 15, .opc1 = 0, .crn = 15, .crm = 0, .opc2 = 0,
+      .access = PL1_RW, .type = ARM_CP_CONST, .resetvalue = 0 },
+    { .name = "IMP_FLASHIFREGIONR",
+      .cp = 15, .opc1 = 0, .crn = 15, .crm = 0, .opc2 = 1,
+      .access = PL1_RW, .type = ARM_CP_CONST, .resetvalue = 0 },
+    { .name = "IMP_BUILDOPTR",
+      .cp = 15, .opc1 = 0, .crn = 15, .crm = 2, .opc2 = 0,
+      .access = PL1_R, .type = ARM_CP_CONST, .resetvalue = 0 },
+    { .name = "IMP_PINOPTR",
+      .cp = 15, .opc1 = 0, .crn = 15, .crm = 2, .opc2 = 7,
+      .access = PL1_R, .type = ARM_CP_CONST, .resetvalue = 0 },
+    { .name = "IMP_QOSR",
+      .cp = 15, .opc1 = 1, .crn = 15, .crm = 3, .opc2 = 1,
+      .access = PL1_RW, .type = ARM_CP_CONST, .resetvalue = 0 },
+    { .name = "IMP_BUSTIMEOUTR",
+      .cp = 15, .opc1 = 1, .crn = 15, .crm = 3, .opc2 = 2,
+      .access = PL1_RW, .type = ARM_CP_CONST, .resetvalue = 0 },
+    { .name = "IMP_INTMONR",
+      .cp = 15, .opc1 = 1, .crn = 15, .crm = 3, .opc2 = 4,
+      .access = PL1_RW, .type = ARM_CP_CONST, .resetvalue = 0 },
+    { .name = "IMP_ICERR0",
+      .cp = 15, .opc1 = 2, .crn = 15, .crm = 0, .opc2 = 0,
+      .access = PL1_RW, .type = ARM_CP_CONST, .resetvalue = 0 },
+    { .name = "IMP_ICERR1",
+      .cp = 15, .opc1 = 2, .crn = 15, .crm = 0, .opc2 = 1,
+      .access = PL1_RW, .type = ARM_CP_CONST, .resetvalue = 0 },
+    { .name = "IMP_DCERR0",
+      .cp = 15, .opc1 = 2, .crn = 15, .crm = 1, .opc2 = 0,
+      .access = PL1_RW, .type = ARM_CP_CONST, .resetvalue = 0 },
+    { .name = "IMP_DCERR1",
+      .cp = 15, .opc1 = 2, .crn = 15, .crm = 1, .opc2 = 1,
+      .access = PL1_RW, .type = ARM_CP_CONST, .resetvalue = 0 },
+    { .name = "IMP_TCMERR0",
+      .cp = 15, .opc1 = 2, .crn = 15, .crm = 2, .opc2 = 0,
+      .access = PL1_RW, .type = ARM_CP_CONST, .resetvalue = 0 },
+    { .name = "IMP_TCMERR1",
+      .cp = 15, .opc1 = 2, .crn = 15, .crm = 2, .opc2 = 1,
+      .access = PL1_RW, .type = ARM_CP_CONST, .resetvalue = 0 },
+    { .name = "IMP_TCMSYNDR0",
+      .cp = 15, .opc1 = 2, .crn = 15, .crm = 2, .opc2 = 2,
+      .access = PL1_R, .type = ARM_CP_CONST, .resetvalue = 0 },
+    { .name = "IMP_TCMSYNDR1",
+      .cp = 15, .opc1 = 2, .crn = 15, .crm = 2, .opc2 = 3,
+      .access = PL1_R, .type = ARM_CP_CONST, .resetvalue = 0 },
+    { .name = "IMP_FLASHERR0",
+      .cp = 15, .opc1 = 2, .crn = 15, .crm = 3, .opc2 = 0,
+      .access = PL1_RW, .type = ARM_CP_CONST, .resetvalue = 0 },
+    { .name = "IMP_FLASHERR1",
+      .cp = 15, .opc1 = 2, .crn = 15, .crm = 3, .opc2 = 1,
+      .access = PL1_RW, .type = ARM_CP_CONST, .resetvalue = 0 },
+    { .name = "IMP_CDBGDR0",
+      .cp = 15, .opc1 = 3, .crn = 15, .crm = 0, .opc2 = 0,
+      .access = PL1_R, .type = ARM_CP_CONST, .resetvalue = 0 },
+    { .name = "IMP_CBDGBR1",
+      .cp = 15, .opc1 = 3, .crn = 15, .crm = 0, .opc2 = 1,
+      .access = PL1_R, .type = ARM_CP_CONST, .resetvalue = 0 },
+    { .name = "IMP_TESTR0",
+      .cp = 15, .opc1 = 4, .crn = 15, .crm = 0, .opc2 = 0,
+      .access = PL1_R, .type = ARM_CP_CONST, .resetvalue = 0 },
+    { .name = "IMP_TESTR1",
+      .cp = 15, .opc1 = 4, .crn = 15, .crm = 0, .opc2 = 1,
+      .access = PL1_W, .type = ARM_CP_NOP, .resetvalue = 0 },
+    { .name = "IMP_CDBGDCI",
+      .cp = 15, .opc1 = 0, .crn = 15, .crm = 15, .opc2 = 0,
+      .access = PL1_W, .type = ARM_CP_NOP, .resetvalue = 0 },
+    { .name = "IMP_CDBGDCT",
+      .cp = 15, .opc1 = 3, .crn = 15, .crm = 2, .opc2 = 0,
+      .access = PL1_W, .type = ARM_CP_NOP, .resetvalue = 0 },
+    { .name = "IMP_CDBGICT",
+      .cp = 15, .opc1 = 3, .crn = 15, .crm = 2, .opc2 = 1,
+      .access = PL1_W, .type = ARM_CP_NOP, .resetvalue = 0 },
+    { .name = "IMP_CDBGDCD",
+      .cp = 15, .opc1 = 3, .crn = 15, .crm = 4, .opc2 = 0,
+      .access = PL1_W, .type = ARM_CP_NOP, .resetvalue = 0 },
+    { .name = "IMP_CDBGICD",
+      .cp = 15, .opc1 = 3, .crn = 15, .crm = 4, .opc2 = 1,
+      .access = PL1_W, .type = ARM_CP_NOP, .resetvalue = 0 },
+};
+
+
 static void cortex_r52_initfn(Object *obj)
 {
     ARMCPU *cpu = ARM_CPU(obj);
@@ -803,6 +914,8 @@ static void cortex_r52_initfn(Object *obj)
     set_feature(&cpu->env, ARM_FEATURE_PMSA);
     set_feature(&cpu->env, ARM_FEATURE_NEON);
     set_feature(&cpu->env, ARM_FEATURE_GENERIC_TIMER);
+    set_feature(&cpu->env, ARM_FEATURE_CBAR_RO);
+    set_feature(&cpu->env, ARM_FEATURE_AUXCR);
     cpu->midr = 0x411fd133; /* r1p3 */
     cpu->revidr = 0x00000000;
     cpu->reset_fpsid = 0x41034023;
@@ -833,6 +946,8 @@ static void cortex_r52_initfn(Object *obj)
 
     cpu->pmsav7_dregion = 16;
     cpu->pmsav8r_hdregion = 16;
+
+    define_arm_cp_regs(cpu, cortex_r52_cp_reginfo);
 }
 
 static void cortex_r5f_initfn(Object *obj)
@@ -1012,7 +1127,7 @@ static void pxa270c5_initfn(Object *obj)
     cpu->reset_sctlr = 0x00000078;
 }
 
-static const struct TCGCPUOps arm_v7m_tcg_ops = {
+static const TCGCPUOps arm_v7m_tcg_ops = {
     .initialize = arm_translate_init,
     .synchronize_from_tb = arm_cpu_synchronize_from_tb,
     .debug_excp_handler = arm_debug_excp_handler,

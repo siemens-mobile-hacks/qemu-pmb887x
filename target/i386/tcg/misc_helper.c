@@ -41,9 +41,9 @@ void helper_into(CPUX86State *env, int next_eip_addend)
 {
     int eflags;
 
-    eflags = cpu_cc_compute_all(env, CC_OP);
+    eflags = cpu_cc_compute_all(env);
     if (eflags & CC_O) {
-        raise_interrupt(env, EXCP04_INTO, 1, 0, next_eip_addend);
+        raise_interrupt(env, EXCP04_INTO, next_eip_addend);
     }
 }
 
@@ -134,7 +134,7 @@ void helper_wrpkru(CPUX86State *env, uint32_t ecx, uint64_t val)
 
 target_ulong HELPER(rdpid)(CPUX86State *env)
 {
-#if defined CONFIG_SOFTMMU
+#if !defined CONFIG_USER_ONLY
     return env->tsc_aux;
 #elif defined CONFIG_LINUX && defined CONFIG_GETCPU
     unsigned cpu, node;

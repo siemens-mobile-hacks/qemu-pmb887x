@@ -143,11 +143,16 @@ static bool pre_2_10_vmstate_dummy_icp_needed(void *opaque)
 }
 
 static const VMStateDescription pre_2_10_vmstate_dummy_icp = {
+    /*
+     * Hack ahead.  We can't have two devices with the same name and
+     * instance id.  So I rename this to pass make check.
+     * Real help from people who knows the hardware is needed.
+     */
     .name = "icp/server",
     .version_id = 1,
     .minimum_version_id = 1,
     .needed = pre_2_10_vmstate_dummy_icp_needed,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_UNUSED(4), /* uint32_t xirr */
         VMSTATE_UNUSED(1), /* uint8_t pending_priority */
         VMSTATE_UNUSED(1), /* uint8_t mfrr */
@@ -155,16 +160,32 @@ static const VMStateDescription pre_2_10_vmstate_dummy_icp = {
     },
 };
 
+/*
+ * See comment in hw/intc/xics.c:icp_realize()
+ *
+ * You have to remove vmstate_replace_hack_for_ppc() when you remove
+ * the machine types that need the following function.
+ */
 static void pre_2_10_vmstate_register_dummy_icp(int i)
 {
     vmstate_register(NULL, i, &pre_2_10_vmstate_dummy_icp,
                      (void *)(uintptr_t) i);
 }
 
+/*
+ * See comment in hw/intc/xics.c:icp_realize()
+ *
+ * You have to remove vmstate_replace_hack_for_ppc() when you remove
+ * the machine types that need the following function.
+ */
 static void pre_2_10_vmstate_unregister_dummy_icp(int i)
 {
-    vmstate_unregister(NULL, &pre_2_10_vmstate_dummy_icp,
-                       (void *)(uintptr_t) i);
+    /*
+     * This used to be:
+     *
+     *    vmstate_unregister(NULL, &pre_2_10_vmstate_dummy_icp,
+     *                      (void *)(uintptr_t) i);
+     */
 }
 
 int spapr_max_server_number(SpaprMachineState *spapr)
@@ -780,6 +801,26 @@ static void spapr_dt_cpu(CPUState *cs, void *fdt, int offset,
                               pcc->lrg_decr_bits)));
 }
 
+static void spapr_dt_one_cpu(void *fdt, SpaprMachineState *spapr, CPUState *cs,
+                             int cpus_offset)
+{
+    PowerPCCPU *cpu = POWERPC_CPU(cs);
+    int index = spapr_get_vcpu_id(cpu);
+    DeviceClass *dc = DEVICE_GET_CLASS(cs);
+    g_autofree char *nodename = NULL;
+    int offset;
+
+    if (!spapr_is_thread0_in_vcore(spapr, cpu)) {
+        return;
+    }
+
+    nodename = g_strdup_printf("%s@%x", dc->fw_name, index);
+    offset = fdt_add_subnode(fdt, cpus_offset, nodename);
+    _FDT(offset);
+    spapr_dt_cpu(cs, fdt, offset, spapr);
+}
+
+
 static void spapr_dt_cpus(void *fdt, SpaprMachineState *spapr)
 {
     CPUState **rev;
@@ -809,21 +850,7 @@ static void spapr_dt_cpus(void *fdt, SpaprMachineState *spapr)
     }
 
     for (i = n_cpus - 1; i >= 0; i--) {
-        CPUState *cs = rev[i];
-        PowerPCCPU *cpu = POWERPC_CPU(cs);
-        int index = spapr_get_vcpu_id(cpu);
-        DeviceClass *dc = DEVICE_GET_CLASS(cs);
-        g_autofree char *nodename = NULL;
-        int offset;
-
-        if (!spapr_is_thread0_in_vcore(spapr, cpu)) {
-            continue;
-        }
-
-        nodename = g_strdup_printf("%s@%x", dc->fw_name, index);
-        offset = fdt_add_subnode(fdt, cpus_offset, nodename);
-        _FDT(offset);
-        spapr_dt_cpu(cs, fdt, offset, spapr);
+        spapr_dt_one_cpu(fdt, spapr, rev[i], cpus_offset);
     }
 
     g_free(rev);
@@ -1022,7 +1049,6 @@ static void spapr_dt_chosen(SpaprMachineState *spapr, void *fdt, bool reset)
 {
     MachineState *machine = MACHINE(spapr);
     SpaprMachineClass *smc = SPAPR_MACHINE_GET_CLASS(machine);
-    uint8_t rng_seed[32];
     int chosen;
 
     _FDT(chosen = fdt_add_subnode(fdt, 0, "chosen"));
@@ -1100,8 +1126,7 @@ static void spapr_dt_chosen(SpaprMachineState *spapr, void *fdt, bool reset)
         spapr_dt_ov5_platform_support(spapr, fdt, chosen);
     }
 
-    qemu_guest_getrandom_nofail(rng_seed, sizeof(rng_seed));
-    _FDT(fdt_setprop(fdt, chosen, "rng-seed", rng_seed, sizeof(rng_seed)));
+    _FDT(fdt_setprop(fdt, chosen, "rng-seed", spapr->fdt_rng_seed, 32));
 
     _FDT(spapr_dt_ovec(fdt, chosen, spapr->ov5_cas, "ibm,architecture-vec-5"));
 }
@@ -1121,7 +1146,7 @@ static void spapr_dt_hypervisor(SpaprMachineState *spapr, void *fdt)
          * Older KVM versions with older guest kernels were broken
          * with the magic page, don't allow the guest to map it.
          */
-        if (!kvmppc_get_hypercall(first_cpu->env_ptr, hypercall,
+        if (!kvmppc_get_hypercall(cpu_env(first_cpu), hypercall,
                                   sizeof(hypercall))) {
             _FDT(fdt_setprop(fdt, hypervisor, "hcall-instructions",
                              hypercall, sizeof(hypercall)));
@@ -1279,7 +1304,7 @@ static void emulate_spapr_hypercall(PPCVirtualHypervisor *vhyp,
     CPUPPCState *env = &cpu->env;
 
     /* The TCG path should also be holding the BQL at this point */
-    g_assert(qemu_mutex_iothread_locked());
+    g_assert(bql_locked());
 
     g_assert(!vhyp_cpu_in_nested(cpu));
 
@@ -1321,6 +1346,22 @@ void spapr_set_all_lpcrs(target_ulong value, target_ulong mask)
         run_on_cpu(cs, do_lpcr_sync, RUN_ON_CPU_HOST_PTR(&s));
     }
 }
+
+/* May be used when the machine is not running */
+void spapr_init_all_lpcrs(target_ulong value, target_ulong mask)
+{
+    CPUState *cs;
+    CPU_FOREACH(cs) {
+        PowerPCCPU *cpu = POWERPC_CPU(cs);
+        CPUPPCState *env = &cpu->env;
+        target_ulong lpcr;
+
+        lpcr = env->spr[SPR_LPCR];
+        lpcr &= ~(LPCR_HR | LPCR_UPRT);
+        ppc_store_lpcr(cpu, lpcr);
+    }
+}
+
 
 static bool spapr_get_pate(PPCVirtualHypervisor *vhyp, PowerPCCPU *cpu,
                            target_ulong lpid, ppc_v3_pate_t *entry)
@@ -1583,7 +1624,7 @@ int spapr_reallocate_hpt(SpaprMachineState *spapr, int shift, Error **errp)
     }
     /* We're setting up a hash table, so that means we're not radix */
     spapr->patb_entry = 0;
-    spapr_set_all_lpcrs(0, LPCR_HR | LPCR_UPRT);
+    spapr_init_all_lpcrs(0, LPCR_HR | LPCR_UPRT);
     return 0;
 }
 
@@ -1638,6 +1679,14 @@ static void spapr_machine_reset(MachineState *machine, ShutdownCause reason)
     void *fdt;
     int rc;
 
+    if (reason != SHUTDOWN_CAUSE_SNAPSHOT_LOAD) {
+        /*
+         * Record-replay snapshot load must not consume random, this was
+         * already replayed from initial machine reset.
+         */
+        qemu_guest_getrandom_nofail(spapr->fdt_rng_seed, 32);
+    }
+
     pef_kvm_reset(machine->cgs, &error_fatal);
     spapr_caps_apply(spapr);
 
@@ -1661,7 +1710,7 @@ static void spapr_machine_reset(MachineState *machine, ShutdownCause reason)
     spapr_ovec_cleanup(spapr->ov5_cas);
     spapr->ov5_cas = spapr_ovec_new();
 
-    ppc_set_compat_all(spapr->max_compat_pvr, &error_fatal);
+    ppc_init_compat_all(spapr->max_compat_pvr, &error_fatal);
 
     /*
      * This is fixing some of the default configuration of the XIVE
@@ -1733,7 +1782,7 @@ static void spapr_machine_reset(MachineState *machine, ShutdownCause reason)
     /* Signal all vCPUs waiting on this condition */
     qemu_cond_broadcast(&spapr->fwnmi_machine_check_interlock_cond);
 
-    migrate_del_blocker(spapr->fwnmi_migration_blocker);
+    migrate_del_blocker(&spapr->fwnmi_migration_blocker);
 }
 
 static void spapr_create_nvram(SpaprMachineState *spapr)
@@ -1870,7 +1919,7 @@ static const VMStateDescription vmstate_spapr_event_entry = {
     .name = "spapr_event_log_entry",
     .version_id = 1,
     .minimum_version_id = 1,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_UINT32(summary, SpaprEventLogEntry),
         VMSTATE_UINT32(extended_length, SpaprEventLogEntry),
         VMSTATE_VBUFFER_ALLOC_UINT32(extended_log, SpaprEventLogEntry, 0,
@@ -1884,7 +1933,7 @@ static const VMStateDescription vmstate_spapr_pending_events = {
     .version_id = 1,
     .minimum_version_id = 1,
     .needed = spapr_pending_events_needed,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_QTAILQ_V(pending_events, SpaprMachineState, 1,
                          vmstate_spapr_event_entry, SpaprEventLogEntry, next),
         VMSTATE_END_OF_LIST()
@@ -1940,7 +1989,7 @@ static const VMStateDescription vmstate_spapr_ov5_cas = {
     .version_id = 1,
     .minimum_version_id = 1,
     .needed = spapr_ov5_cas_needed,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_STRUCT_POINTER_V(ov5_cas, SpaprMachineState, 1,
                                  vmstate_spapr_ovec, SpaprOptionVector),
         VMSTATE_END_OF_LIST()
@@ -1959,7 +2008,7 @@ static const VMStateDescription vmstate_spapr_patb_entry = {
     .version_id = 1,
     .minimum_version_id = 1,
     .needed = spapr_patb_entry_needed,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_UINT64(patb_entry, SpaprMachineState),
         VMSTATE_END_OF_LIST()
     },
@@ -1977,7 +2026,7 @@ static const VMStateDescription vmstate_spapr_irq_map = {
     .version_id = 1,
     .minimum_version_id = 1,
     .needed = spapr_irq_map_needed,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_BITMAP(irq_map, SpaprMachineState, 0, irq_map_nr),
         VMSTATE_END_OF_LIST()
     },
@@ -2007,7 +2056,7 @@ static const VMStateDescription vmstate_spapr_dtb = {
     .minimum_version_id = 1,
     .needed = spapr_dtb_needed,
     .pre_load = spapr_dtb_pre_load,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_UINT32(fdt_initial_size, SpaprMachineState),
         VMSTATE_UINT32(fdt_size, SpaprMachineState),
         VMSTATE_VBUFFER_ALLOC_UINT32(fdt_blob, SpaprMachineState, 0, NULL,
@@ -2045,7 +2094,7 @@ static const VMStateDescription vmstate_spapr_fwnmi = {
     .minimum_version_id = 1,
     .needed = spapr_fwnmi_needed,
     .pre_save = spapr_fwnmi_pre_save,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_UINT64(fwnmi_system_reset_addr, SpaprMachineState),
         VMSTATE_UINT64(fwnmi_machine_check_addr, SpaprMachineState),
         VMSTATE_INT32(fwnmi_machine_check_interlock, SpaprMachineState),
@@ -2060,7 +2109,7 @@ static const VMStateDescription vmstate_spapr = {
     .pre_load = spapr_pre_load,
     .post_load = spapr_post_load,
     .pre_save = spapr_pre_save,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         /* used to be @next_irq */
         VMSTATE_UNUSED_BUFFER(version_before_3, 0, 4),
 
@@ -2070,7 +2119,7 @@ static const VMStateDescription vmstate_spapr = {
         VMSTATE_PPC_TIMEBASE_V(tb, SpaprMachineState, 2),
         VMSTATE_END_OF_LIST()
     },
-    .subsections = (const VMStateDescription*[]) {
+    .subsections = (const VMStateDescription * const []) {
         &vmstate_spapr_ov5_cas,
         &vmstate_spapr_patb_entry,
         &vmstate_spapr_pending_events,
@@ -2551,7 +2600,7 @@ static void spapr_set_vsmt_mode(SpaprMachineState *spapr, Error **errp)
         return;
     }
 
-    /* Detemine the VSMT mode to use: */
+    /* Determine the VSMT mode to use: */
     if (vsmt_user) {
         if (spapr->vsmt < smp_threads) {
             error_setg(errp, "Cannot support VSMT mode %d"
@@ -2637,8 +2686,6 @@ static void spapr_init_cpus(SpaprMachineState *spapr)
     }
 
     if (smc->pre_2_10_has_unused_icps) {
-        int i;
-
         for (i = 0; i < spapr_max_server_number(spapr); i++) {
             /* Dummy entries get deregistered when real ICPState objects
              * are registered during CPU core hotplug.
@@ -2749,6 +2796,7 @@ static void spapr_machine_init(MachineState *machine)
     MemoryRegion *sysmem = get_system_memory();
     long load_limit, fw_size;
     Error *resize_hpt_err = NULL;
+    NICInfo *nd;
 
     if (!filename) {
         error_report("Could not find LPAR firmware '%s'", bios_name);
@@ -2853,8 +2901,6 @@ static void spapr_machine_init(MachineState *machine)
     /* init CPUs */
     spapr_init_cpus(spapr);
 
-    spapr->gpu_numa_id = spapr_numa_initial_nvgpu_numa_id(machine);
-
     /* Init numa_assoc_array */
     spapr_numa_associativity_init(spapr, machine);
 
@@ -2913,13 +2959,6 @@ static void spapr_machine_init(MachineState *machine)
         spapr_create_lmb_dr_connectors(spapr);
     }
 
-    if (spapr_get_cap(spapr, SPAPR_CAP_FWNMI) == SPAPR_CAP_ON) {
-        /* Create the error string for live migration blocker */
-        error_setg(&spapr->fwnmi_migration_blocker,
-            "A machine check is being handled during migration. The handler"
-            "may run and log hardware error on the destination");
-    }
-
     if (mc->nvdimm_supported) {
         spapr_create_nvdimm_dr_connectors(spapr);
     }
@@ -2958,20 +2997,11 @@ static void spapr_machine_init(MachineState *machine)
 
     phb = spapr_create_default_phb();
 
-    for (i = 0; i < nb_nics; i++) {
-        NICInfo *nd = &nd_table[i];
-
-        if (!nd->model) {
-            nd->model = g_strdup("spapr-vlan");
-        }
-
-        if (g_str_equal(nd->model, "spapr-vlan") ||
-            g_str_equal(nd->model, "ibmveth")) {
-            spapr_vlan_create(spapr->vio_bus, nd);
-        } else {
-            pci_nic_init_nofail(&nd_table[i], phb->bus, nd->model, NULL);
-        }
+    while ((nd = qemu_find_nic_info("spapr-vlan", true, "ibmveth"))) {
+        spapr_vlan_create(spapr->vio_bus, nd);
     }
+
+    pci_init_nic_devices(phb->bus, NULL);
 
     for (i = 0; i <= drive_get_max_bus(IF_SCSI); i++) {
         spapr_vscsi_create(spapr->vio_bus);
@@ -2994,8 +3024,10 @@ static void spapr_machine_init(MachineState *machine)
         }
 
         if (has_vga) {
-            USBBus *usb_bus = usb_bus_find(-1);
+            USBBus *usb_bus;
 
+            usb_bus = USB_BUS(object_resolve_type_unambiguous(TYPE_USB_BUS,
+                                                              &error_abort));
             usb_create_simple(usb_bus, "usb-kbd");
             usb_create_simple(usb_bus, "usb-mouse");
         }
@@ -3087,7 +3119,7 @@ static int spapr_kvm_type(MachineState *machine, const char *vm_type)
 {
     /*
      * The use of g_ascii_strcasecmp() for 'hv' and 'pr' is to
-     * accomodate the 'HV' and 'PV' formats that exists in the
+     * accommodate the 'HV' and 'PV' formats that exists in the
      * wild. The 'auto' mode is being introduced already as
      * lower-case, thus we don't need to bother checking for
      * "AUTO".
@@ -3105,7 +3137,7 @@ static int spapr_kvm_type(MachineState *machine, const char *vm_type)
     }
 
     error_report("Unknown kvm-type specified '%s'", vm_type);
-    exit(1);
+    return -1;
 }
 
 /*
@@ -3190,8 +3222,8 @@ static char *spapr_get_fw_dev_path(FWPathProvider *p, BusState *bus,
 
     if (g_str_equal("pci-bridge", qdev_fw_name(dev))) {
         /* SLOF uses "pci" instead of "pci-bridge" for PCI bridges */
-        PCIDevice *pcidev = CAST(PCIDevice, dev, TYPE_PCI_DEVICE);
-        return g_strdup_printf("pci@%x", PCI_SLOT(pcidev->devfn));
+        PCIDevice *pdev = CAST(PCIDevice, dev, TYPE_PCI_DEVICE);
+        return g_strdup_printf("pci@%x", PCI_SLOT(pdev->devfn));
     }
 
     if (pcidev) {
@@ -4112,7 +4144,6 @@ static bool spapr_phb_pre_plug(HotplugHandler *hotplug_dev, DeviceState *dev,
                            &sphb->buid, &sphb->io_win_addr,
                            &sphb->mem_win_addr, &sphb->mem64_win_addr,
                            windows_supported, sphb->dma_liobn,
-                           &sphb->nv2_gpa_win_addr, &sphb->nv2_atsd_win_addr,
                            errp);
 }
 
@@ -4321,7 +4352,7 @@ spapr_cpu_index_to_props(MachineState *machine, unsigned cpu_index)
     CPUArchId *core_slot;
     MachineClass *mc = MACHINE_GET_CLASS(machine);
 
-    /* make sure possible_cpu are intialized */
+    /* make sure possible_cpu are initialized */
     mc->possible_cpu_arch_ids(machine);
     /* get CPU core slot containing thread that matches cpu_index */
     core_slot = spapr_find_cpu_slot(machine, cpu_index, NULL);
@@ -4375,8 +4406,7 @@ static const CPUArchIdList *spapr_possible_cpu_arch_ids(MachineState *machine)
 static bool spapr_phb_placement(SpaprMachineState *spapr, uint32_t index,
                                 uint64_t *buid, hwaddr *pio,
                                 hwaddr *mmio32, hwaddr *mmio64,
-                                unsigned n_dma, uint32_t *liobns,
-                                hwaddr *nv2gpa, hwaddr *nv2atsd, Error **errp)
+                                unsigned n_dma, uint32_t *liobns, Error **errp)
 {
     /*
      * New-style PHB window placement.
@@ -4421,9 +4451,6 @@ static bool spapr_phb_placement(SpaprMachineState *spapr, uint32_t index,
     *pio = SPAPR_PCI_BASE + index * SPAPR_PCI_IO_WIN_SIZE;
     *mmio32 = SPAPR_PCI_BASE + (index + 1) * SPAPR_PCI_MEM32_WIN_SIZE;
     *mmio64 = SPAPR_PCI_BASE + (index + 1) * SPAPR_PCI_MEM64_WIN_SIZE;
-
-    *nv2gpa = SPAPR_PCI_NV2RAM64_WIN_BASE + index * SPAPR_PCI_NV2RAM64_WIN_SIZE;
-    *nv2atsd = SPAPR_PCI_NV2ATSD_WIN_BASE + index * SPAPR_PCI_NV2ATSD_WIN_SIZE;
     return true;
 }
 
@@ -4614,13 +4641,10 @@ static void spapr_machine_class_init(ObjectClass *oc, void *data)
     mc->block_default_type = IF_SCSI;
 
     /*
-     * Setting max_cpus to INT32_MAX. Both KVM and TCG max_cpus values
-     * should be limited by the host capability instead of hardcoded.
-     * max_cpus for KVM guests will be checked in kvm_init(), and TCG
-     * guests are welcome to have as many CPUs as the host are capable
-     * of emulate.
+     * While KVM determines max cpus in kvm_init() using kvm_max_vcpus(),
+     * In TCG the limit is restricted by the range of CPU IPIs available.
      */
-    mc->max_cpus = INT32_MAX;
+    mc->max_cpus = SPAPR_IRQ_NR_IPIS;
 
     mc->no_parallel = 1;
     mc->default_boot_order = "";
@@ -4642,7 +4666,7 @@ static void spapr_machine_class_init(ObjectClass *oc, void *data)
 
     smc->dr_lmb_enabled = true;
     smc->update_dt_enabled = true;
-    mc->default_cpu_type = POWERPC_CPU_TYPE_NAME("power9_v2.2");
+    mc->default_cpu_type = POWERPC_CPU_TYPE_NAME("power10_v2.0");
     mc->has_hotpluggable_cpus = true;
     mc->nvdimm_supported = true;
     smc->resize_hpt_default = SPAPR_RESIZE_HPT_ENABLED;
@@ -4753,14 +4777,36 @@ static void spapr_machine_latest_class_options(MachineClass *mc)
     type_init(spapr_machine_register_##suffix)
 
 /*
- * pseries-8.1
+ * pseries-9.0
  */
-static void spapr_machine_8_1_class_options(MachineClass *mc)
+static void spapr_machine_9_0_class_options(MachineClass *mc)
 {
     /* Defaults for the latest behaviour inherited from the base class */
 }
 
-DEFINE_SPAPR_MACHINE(8_1, "8.1", true);
+DEFINE_SPAPR_MACHINE(9_0, "9.0", true);
+
+/*
+ * pseries-8.2
+ */
+static void spapr_machine_8_2_class_options(MachineClass *mc)
+{
+    spapr_machine_9_0_class_options(mc);
+    compat_props_add(mc->compat_props, hw_compat_8_2, hw_compat_8_2_len);
+}
+
+DEFINE_SPAPR_MACHINE(8_2, "8.2", false);
+
+/*
+ * pseries-8.1
+ */
+static void spapr_machine_8_1_class_options(MachineClass *mc)
+{
+    spapr_machine_8_2_class_options(mc);
+    compat_props_add(mc->compat_props, hw_compat_8_1, hw_compat_8_1_len);
+}
+
+DEFINE_SPAPR_MACHINE(8_1, "8.1", false);
 
 /*
  * pseries-8.0
@@ -4930,16 +4976,12 @@ DEFINE_SPAPR_MACHINE(4_1, "4.1", false);
 static bool phb_placement_4_0(SpaprMachineState *spapr, uint32_t index,
                               uint64_t *buid, hwaddr *pio,
                               hwaddr *mmio32, hwaddr *mmio64,
-                              unsigned n_dma, uint32_t *liobns,
-                              hwaddr *nv2gpa, hwaddr *nv2atsd, Error **errp)
+                              unsigned n_dma, uint32_t *liobns, Error **errp)
 {
     if (!spapr_phb_placement(spapr, index, buid, pio, mmio32, mmio64, n_dma,
-                             liobns, nv2gpa, nv2atsd, errp)) {
+                             liobns, errp)) {
         return false;
     }
-
-    *nv2gpa = 0;
-    *nv2atsd = 0;
     return true;
 }
 static void spapr_machine_4_0_class_options(MachineClass *mc)
@@ -5012,7 +5054,7 @@ static void spapr_machine_2_12_class_options(MachineClass *mc)
 
     /* We depend on kvm_enabled() to choose a default value for the
      * hpt-max-page-size capability. Of course we can't do it here
-     * because this is too early and the HW accelerator isn't initialzed
+     * because this is too early and the HW accelerator isn't initialized
      * yet. Postpone this to machine init (see default_caps_with_cpu()).
      */
     smc->default_caps.caps[SPAPR_CAP_HPT_MAXPAGESIZE] = 0;
@@ -5043,6 +5085,7 @@ static void spapr_machine_2_11_class_options(MachineClass *mc)
     spapr_machine_2_12_class_options(mc);
     smc->default_caps.caps[SPAPR_CAP_HTM] = SPAPR_CAP_ON;
     compat_props_add(mc->compat_props, hw_compat_2_11, hw_compat_2_11_len);
+    mc->deprecation_reason = "old and not maintained - use a 2.12+ version";
 }
 
 DEFINE_SPAPR_MACHINE(2_11, "2.11", false);
@@ -5104,8 +5147,7 @@ DEFINE_SPAPR_MACHINE(2_8, "2.8", false);
 static bool phb_placement_2_7(SpaprMachineState *spapr, uint32_t index,
                               uint64_t *buid, hwaddr *pio,
                               hwaddr *mmio32, hwaddr *mmio64,
-                              unsigned n_dma, uint32_t *liobns,
-                              hwaddr *nv2gpa, hwaddr *nv2atsd, Error **errp)
+                              unsigned n_dma, uint32_t *liobns, Error **errp)
 {
     /* Legacy PHB placement for pseries-2.7 and earlier machine types */
     const uint64_t base_buid = 0x800000020000000ULL;
@@ -5150,8 +5192,6 @@ static bool phb_placement_2_7(SpaprMachineState *spapr, uint32_t index,
      * window into contiguous 32-bit and 64-bit windows
      */
 
-    *nv2gpa = 0;
-    *nv2atsd = 0;
     return true;
 }
 

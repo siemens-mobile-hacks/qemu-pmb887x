@@ -17,14 +17,20 @@
 #include "hw/vmstate-if.h"
 
 typedef struct SaveVMHandlers {
-    /* This runs inside the iothread lock.  */
+    /* This runs inside the BQL.  */
     SaveStateHandler *save_state;
 
+    /*
+     * save_prepare is called early, even before migration starts, and can be
+     * used to perform early checks.
+     */
+    int (*save_prepare)(void *opaque, Error **errp);
+    int (*save_setup)(QEMUFile *f, void *opaque);
     void (*save_cleanup)(void *opaque);
     int (*save_live_complete_postcopy)(QEMUFile *f, void *opaque);
     int (*save_live_complete_precopy)(QEMUFile *f, void *opaque);
 
-    /* This runs both outside and inside the iothread lock.  */
+    /* This runs both outside and inside the BQL.  */
     bool (*is_active)(void *opaque);
     bool (*has_postcopy)(void *opaque);
 
@@ -37,15 +43,14 @@ typedef struct SaveVMHandlers {
      */
     bool (*is_active_iterate)(void *opaque);
 
-    /* This runs outside the iothread lock in the migration case, and
+    /* This runs outside the BQL in the migration case, and
      * within the lock in the savevm case.  The callback had better only
      * use data that is local to the migration thread or protected
      * by other locks.
      */
     int (*save_live_iterate)(QEMUFile *f, void *opaque);
 
-    /* This runs outside the iothread lock!  */
-    int (*save_setup)(QEMUFile *f, void *opaque);
+    /* This runs outside the BQL!  */
     /* Note for save_live_pending:
      * must_precopy:
      * - must be migrated in precopy or in stopped state

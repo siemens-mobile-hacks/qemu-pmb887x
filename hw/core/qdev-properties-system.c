@@ -18,6 +18,7 @@
 #include "qapi/qapi-types-block.h"
 #include "qapi/qapi-types-machine.h"
 #include "qapi/qapi-types-migration.h"
+#include "qapi/qapi-visit-virtio.h"
 #include "qapi/qmp/qerror.h"
 #include "qemu/ctype.h"
 #include "qemu/cutils.h"
@@ -107,7 +108,7 @@ static void set_drive_helper(Object *obj, Visitor *v, const char *name,
     }
 
     if (*ptr) {
-        /* BlockBackend alread exists. So, we want to change attached node */
+        /* BlockBackend already exists. So, we want to change attached node */
         blk = *ptr;
         ctx = blk_get_aio_context(blk);
         bs = bdrv_lookup_bs(NULL, str, errp);
@@ -120,9 +121,7 @@ static void set_drive_helper(Object *obj, Visitor *v, const char *name,
                        "node");
         }
 
-        aio_context_acquire(ctx);
         blk_replace_bs(blk, bs, errp);
-        aio_context_release(ctx);
         return;
     }
 
@@ -148,10 +147,7 @@ static void set_drive_helper(Object *obj, Visitor *v, const char *name,
                           0, BLK_PERM_ALL);
             blk_created = true;
 
-            aio_context_acquire(ctx);
             ret = blk_insert_bs(blk, bs, errp);
-            aio_context_release(ctx);
-
             if (ret < 0) {
                 goto fail;
             }
@@ -207,12 +203,8 @@ static void release_drive(Object *obj, const char *name, void *opaque)
     BlockBackend **ptr = object_field_prop_ptr(obj, prop);
 
     if (*ptr) {
-        AioContext *ctx = blk_get_aio_context(*ptr);
-
-        aio_context_acquire(ctx);
         blockdev_auto_del(*ptr);
         blk_detach_dev(*ptr, dev);
-        aio_context_release(ctx);
     }
 }
 
@@ -450,7 +442,7 @@ static void set_netdev(Object *obj, Visitor *v, const char *name,
     peers_ptr->queues = queues;
 
 out:
-    error_set_from_qdev_prop_error(errp, err, obj, name, str);
+    error_set_from_qdev_prop_error(errp, err, obj, prop->name, str);
     g_free(str);
 }
 
@@ -480,24 +472,16 @@ static void set_audiodev(Object *obj, Visitor *v, const char* name,
     Property *prop = opaque;
     QEMUSoundCard *card = object_field_prop_ptr(obj, prop);
     AudioState *state;
-    int err = 0;
-    char *str;
+    g_autofree char *str = NULL;
 
     if (!visit_type_str(v, name, &str, errp)) {
         return;
     }
 
-    state = audio_state_by_name(str);
-
-    if (!state) {
-        err = -ENOENT;
-        goto out;
+    state = audio_state_by_name(str, errp);
+    if (state) {
+        card->state = state;
     }
-    card->state = state;
-
-out:
-    error_set_from_qdev_prop_error(errp, err, obj, name, str);
-    g_free(str);
 }
 
 const PropertyInfo qdev_prop_audiodev = {
@@ -681,6 +665,20 @@ const PropertyInfo qdev_prop_multifd_compression = {
     .set_default_value = qdev_propinfo_set_default_value_enum,
 };
 
+/* --- MigMode --- */
+
+QEMU_BUILD_BUG_ON(sizeof(MigMode) != sizeof(int));
+
+const PropertyInfo qdev_prop_mig_mode = {
+    .name = "MigMode",
+    .description = "mig_mode values, "
+                   "normal,cpr-reboot",
+    .enum_table = &MigMode_lookup,
+    .get = qdev_propinfo_get_enum,
+    .set = qdev_propinfo_set_enum,
+    .set_default_value = qdev_propinfo_set_default_value_enum,
+};
+
 /* --- Reserved Region --- */
 
 /*
@@ -699,7 +697,7 @@ static void get_reserved_region(Object *obj, Visitor *v, const char *name,
     int rc;
 
     rc = snprintf(buffer, sizeof(buffer), "0x%"PRIx64":0x%"PRIx64":%u",
-                  rr->low, rr->high, rr->type);
+                  range_lob(&rr->range), range_upb(&rr->range), rr->type);
     assert(rc < sizeof(buffer));
 
     visit_type_str(v, name, &p, errp);
@@ -711,6 +709,7 @@ static void set_reserved_region(Object *obj, Visitor *v, const char *name,
     Property *prop = opaque;
     ReservedRegion *rr = object_field_prop_ptr(obj, prop);
     const char *endptr;
+    uint64_t lob, upb;
     char *str;
     int ret;
 
@@ -718,7 +717,7 @@ static void set_reserved_region(Object *obj, Visitor *v, const char *name,
         return;
     }
 
-    ret = qemu_strtou64(str, &endptr, 16, &rr->low);
+    ret = qemu_strtou64(str, &endptr, 16, &lob);
     if (ret) {
         error_setg(errp, "start address of '%s'"
                    " must be a hexadecimal integer", name);
@@ -728,7 +727,7 @@ static void set_reserved_region(Object *obj, Visitor *v, const char *name,
         goto separator_error;
     }
 
-    ret = qemu_strtou64(endptr + 1, &endptr, 16, &rr->high);
+    ret = qemu_strtou64(endptr + 1, &endptr, 16, &upb);
     if (ret) {
         error_setg(errp, "end address of '%s'"
                    " must be a hexadecimal integer", name);
@@ -737,6 +736,8 @@ static void set_reserved_region(Object *obj, Visitor *v, const char *name,
     if (*endptr != ':') {
         goto separator_error;
     }
+
+    range_set_bounds(&rr->range, lob, upb);
 
     ret = qemu_strtoui(endptr + 1, &endptr, 10, &rr->type);
     if (ret) {
@@ -1105,7 +1106,7 @@ static void get_uuid(Object *obj, Visitor *v, const char *name, void *opaque,
 {
     Property *prop = opaque;
     QemuUUID *uuid = object_field_prop_ptr(obj, prop);
-    char buffer[UUID_FMT_LEN + 1];
+    char buffer[UUID_STR_LEN];
     char *p = buffer;
 
     qemu_uuid_unparse(uuid, buffer);
@@ -1146,4 +1147,62 @@ const PropertyInfo qdev_prop_uuid = {
     .get   = get_uuid,
     .set   = set_uuid,
     .set_default_value = set_default_uuid_auto,
+};
+
+/* --- s390 cpu entitlement policy --- */
+
+QEMU_BUILD_BUG_ON(sizeof(CpuS390Entitlement) != sizeof(int));
+
+const PropertyInfo qdev_prop_cpus390entitlement = {
+    .name  = "CpuS390Entitlement",
+    .description = "low/medium (default)/high",
+    .enum_table  = &CpuS390Entitlement_lookup,
+    .get   = qdev_propinfo_get_enum,
+    .set   = qdev_propinfo_set_enum,
+    .set_default_value = qdev_propinfo_set_default_value_enum,
+};
+
+/* --- IOThreadVirtQueueMappingList --- */
+
+static void get_iothread_vq_mapping_list(Object *obj, Visitor *v,
+        const char *name, void *opaque, Error **errp)
+{
+    IOThreadVirtQueueMappingList **prop_ptr =
+        object_field_prop_ptr(obj, opaque);
+
+    visit_type_IOThreadVirtQueueMappingList(v, name, prop_ptr, errp);
+}
+
+static void set_iothread_vq_mapping_list(Object *obj, Visitor *v,
+        const char *name, void *opaque, Error **errp)
+{
+    IOThreadVirtQueueMappingList **prop_ptr =
+        object_field_prop_ptr(obj, opaque);
+    IOThreadVirtQueueMappingList *list;
+
+    if (!visit_type_IOThreadVirtQueueMappingList(v, name, &list, errp)) {
+        return;
+    }
+
+    qapi_free_IOThreadVirtQueueMappingList(*prop_ptr);
+    *prop_ptr = list;
+}
+
+static void release_iothread_vq_mapping_list(Object *obj,
+        const char *name, void *opaque)
+{
+    IOThreadVirtQueueMappingList **prop_ptr =
+        object_field_prop_ptr(obj, opaque);
+
+    qapi_free_IOThreadVirtQueueMappingList(*prop_ptr);
+    *prop_ptr = NULL;
+}
+
+const PropertyInfo qdev_prop_iothread_vq_mapping_list = {
+    .name = "IOThreadVirtQueueMappingList",
+    .description = "IOThread virtqueue mapping list [{\"iothread\":\"<id>\", "
+                   "\"vqs\":[1,2,3,...]},...]",
+    .get = get_iothread_vq_mapping_list,
+    .set = set_iothread_vq_mapping_list,
+    .release = release_iothread_vq_mapping_list,
 };

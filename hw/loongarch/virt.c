@@ -47,7 +47,16 @@
 #include "qemu/error-report.h"
 
 
-static void virt_flash_create(LoongArchMachineState *lams)
+struct loaderparams {
+    uint64_t ram_size;
+    const char *kernel_filename;
+    const char *kernel_cmdline;
+    const char *initrd_filename;
+};
+
+static PFlashCFI01 *virt_flash_create1(LoongArchMachineState *lams,
+                                       const char *name,
+                                       const char *alias_prop_name)
 {
     DeviceState *dev = qdev_new(TYPE_PFLASH_CFI01);
 
@@ -59,45 +68,78 @@ static void virt_flash_create(LoongArchMachineState *lams)
     qdev_prop_set_uint16(dev, "id1", 0x18);
     qdev_prop_set_uint16(dev, "id2", 0x00);
     qdev_prop_set_uint16(dev, "id3", 0x00);
-    qdev_prop_set_string(dev, "name", "virt.flash");
-    object_property_add_child(OBJECT(lams), "virt.flash", OBJECT(dev));
-    object_property_add_alias(OBJECT(lams), "pflash",
+    qdev_prop_set_string(dev, "name", name);
+    object_property_add_child(OBJECT(lams), name, OBJECT(dev));
+    object_property_add_alias(OBJECT(lams), alias_prop_name,
                               OBJECT(dev), "drive");
+    return PFLASH_CFI01(dev);
+}
 
-    lams->flash = PFLASH_CFI01(dev);
+static void virt_flash_create(LoongArchMachineState *lams)
+{
+    lams->flash[0] = virt_flash_create1(lams, "virt.flash0", "pflash0");
+    lams->flash[1] = virt_flash_create1(lams, "virt.flash1", "pflash1");
+}
+
+static void virt_flash_map1(PFlashCFI01 *flash,
+                            hwaddr base, hwaddr size,
+                            MemoryRegion *sysmem)
+{
+    DeviceState *dev = DEVICE(flash);
+    BlockBackend *blk;
+    hwaddr real_size = size;
+
+    blk = pflash_cfi01_get_blk(flash);
+    if (blk) {
+        real_size = blk_getlength(blk);
+        assert(real_size && real_size <= size);
+    }
+
+    assert(QEMU_IS_ALIGNED(real_size, VIRT_FLASH_SECTOR_SIZE));
+    assert(real_size / VIRT_FLASH_SECTOR_SIZE <= UINT32_MAX);
+
+    qdev_prop_set_uint32(dev, "num-blocks", real_size / VIRT_FLASH_SECTOR_SIZE);
+    sysbus_realize_and_unref(SYS_BUS_DEVICE(dev), &error_fatal);
+    memory_region_add_subregion(sysmem, base,
+                                sysbus_mmio_get_region(SYS_BUS_DEVICE(dev), 0));
 }
 
 static void virt_flash_map(LoongArchMachineState *lams,
                            MemoryRegion *sysmem)
 {
-    PFlashCFI01 *flash = lams->flash;
-    DeviceState *dev = DEVICE(flash);
-    hwaddr base = VIRT_FLASH_BASE;
-    hwaddr size = VIRT_FLASH_SIZE;
+    PFlashCFI01 *flash0 = lams->flash[0];
+    PFlashCFI01 *flash1 = lams->flash[1];
 
-    assert(QEMU_IS_ALIGNED(size, VIRT_FLASH_SECTOR_SIZE));
-    assert(size / VIRT_FLASH_SECTOR_SIZE <= UINT32_MAX);
-
-    qdev_prop_set_uint32(dev, "num-blocks", size / VIRT_FLASH_SECTOR_SIZE);
-    sysbus_realize_and_unref(SYS_BUS_DEVICE(dev), &error_fatal);
-    memory_region_add_subregion(sysmem, base,
-                                sysbus_mmio_get_region(SYS_BUS_DEVICE(dev), 0));
-
+    virt_flash_map1(flash0, VIRT_FLASH0_BASE, VIRT_FLASH0_SIZE, sysmem);
+    virt_flash_map1(flash1, VIRT_FLASH1_BASE, VIRT_FLASH1_SIZE, sysmem);
 }
 
 static void fdt_add_flash_node(LoongArchMachineState *lams)
 {
     MachineState *ms = MACHINE(lams);
     char *nodename;
+    MemoryRegion *flash_mem;
 
-    hwaddr flash_base = VIRT_FLASH_BASE;
-    hwaddr flash_size = VIRT_FLASH_SIZE;
+    hwaddr flash0_base;
+    hwaddr flash0_size;
 
-    nodename = g_strdup_printf("/flash@%" PRIx64, flash_base);
+    hwaddr flash1_base;
+    hwaddr flash1_size;
+
+    flash_mem = pflash_cfi01_get_memory(lams->flash[0]);
+    flash0_base = flash_mem->addr;
+    flash0_size = memory_region_size(flash_mem);
+
+    flash_mem = pflash_cfi01_get_memory(lams->flash[1]);
+    flash1_base = flash_mem->addr;
+    flash1_size = memory_region_size(flash_mem);
+
+    nodename = g_strdup_printf("/flash@%" PRIx64, flash0_base);
     qemu_fdt_add_subnode(ms->fdt, nodename);
     qemu_fdt_setprop_string(ms->fdt, nodename, "compatible", "cfi-flash");
     qemu_fdt_setprop_sized_cells(ms->fdt, nodename, "reg",
-                                 2, flash_base, 2, flash_size);
+                                 2, flash0_base, 2, flash0_size,
+                                 2, flash1_base, 2, flash1_size);
     qemu_fdt_setprop_cell(ms->fdt, nodename, "bank-width", 4);
     g_free(nodename);
 }
@@ -301,10 +343,6 @@ static void fdt_add_memory_node(MachineState *ms,
     g_free(nodename);
 }
 
-#define PM_BASE 0x10080000
-#define PM_SIZE 0x100
-#define PM_CTRL 0x10
-
 static void virt_build_smbios(LoongArchMachineState *lams)
 {
     MachineState *ms = MACHINE(lams);
@@ -373,62 +411,17 @@ static void memmap_add_entry(uint64_t address, uint64_t length, uint32_t type)
     memmap_entries++;
 }
 
-/*
- * This is a placeholder for missing ACPI,
- * and will eventually be replaced.
- */
-static uint64_t loongarch_virt_pm_read(void *opaque, hwaddr addr, unsigned size)
-{
-    return 0;
-}
-
-static void loongarch_virt_pm_write(void *opaque, hwaddr addr,
-                               uint64_t val, unsigned size)
-{
-    if (addr != PM_CTRL) {
-        return;
-    }
-
-    switch (val) {
-    case 0x00:
-        qemu_system_reset_request(SHUTDOWN_CAUSE_GUEST_RESET);
-        return;
-    case 0xff:
-        qemu_system_shutdown_request(SHUTDOWN_CAUSE_GUEST_SHUTDOWN);
-        return;
-    default:
-        return;
-    }
-}
-
-static const MemoryRegionOps loongarch_virt_pm_ops = {
-    .read  = loongarch_virt_pm_read,
-    .write = loongarch_virt_pm_write,
-    .endianness = DEVICE_NATIVE_ENDIAN,
-    .valid = {
-        .min_access_size = 1,
-        .max_access_size = 1
-    }
-};
-
-static struct _loaderparams {
-    uint64_t ram_size;
-    const char *kernel_filename;
-    const char *kernel_cmdline;
-    const char *initrd_filename;
-} loaderparams;
-
 static uint64_t cpu_loongarch_virt_to_phys(void *opaque, uint64_t addr)
 {
     return addr & MAKE_64BIT_MASK(0, TARGET_PHYS_ADDR_SPACE_BITS);
 }
 
-static int64_t load_kernel_info(void)
+static int64_t load_kernel_info(const struct loaderparams *loaderparams)
 {
     uint64_t kernel_entry, kernel_low, kernel_high;
     ssize_t kernel_size;
 
-    kernel_size = load_elf(loaderparams.kernel_filename, NULL,
+    kernel_size = load_elf(loaderparams->kernel_filename, NULL,
                            cpu_loongarch_virt_to_phys, NULL,
                            &kernel_entry, &kernel_low,
                            &kernel_high, NULL, 0,
@@ -436,7 +429,7 @@ static int64_t load_kernel_info(void)
 
     if (kernel_size < 0) {
         error_report("could not load kernel '%s': %s",
-                     loaderparams.kernel_filename,
+                     loaderparams->kernel_filename,
                      load_elf_strerror(kernel_size));
         exit(1);
     }
@@ -454,6 +447,7 @@ static DeviceState *create_acpi_ged(DeviceState *pch_pic, LoongArchMachineState 
     }
     dev = qdev_new(TYPE_ACPI_GED);
     qdev_prop_set_uint32(dev, "ged-event", event);
+    sysbus_realize_and_unref(SYS_BUS_DEVICE(dev), &error_fatal);
 
     /* ged event */
     sysbus_mmio_map(SYS_BUS_DEVICE(dev), 0, VIRT_GED_EVT_ADDR);
@@ -464,7 +458,6 @@ static DeviceState *create_acpi_ged(DeviceState *pch_pic, LoongArchMachineState 
 
     sysbus_connect_irq(SYS_BUS_DEVICE(dev), 0,
                        qdev_get_gpio_in(pch_pic, VIRT_SCI_IRQ - VIRT_GSI_BASE));
-    sysbus_realize_and_unref(SYS_BUS_DEVICE(dev), &error_fatal);
     return dev;
 }
 
@@ -500,7 +493,7 @@ static void loongarch_devices_init(DeviceState *pch_pic, LoongArchMachineState *
     SysBusDevice *d;
     PCIBus *pci_bus;
     MemoryRegion *ecam_alias, *ecam_reg, *pio_alias, *pio_reg;
-    MemoryRegion *mmio_alias, *mmio_reg, *pm_mem;
+    MemoryRegion *mmio_alias, *mmio_reg;
     int i;
 
     gpex_dev = qdev_new(TYPE_GPEX_HOST);
@@ -546,9 +539,7 @@ static void loongarch_devices_init(DeviceState *pch_pic, LoongArchMachineState *
     fdt_add_uart_node(lams);
 
     /* Network init */
-    for (i = 0; i < nb_nics; i++) {
-        pci_nic_init_nofail(&nd_table[i], pci_bus, mc->default_nic, NULL);
-    }
+    pci_init_nic_devices(pci_bus, mc->default_nic);
 
     /*
      * There are some invalid guest memory access.
@@ -560,10 +551,6 @@ static void loongarch_devices_init(DeviceState *pch_pic, LoongArchMachineState *
                          VIRT_RTC_IRQ - VIRT_GSI_BASE));
     fdt_add_rtc_node(lams);
 
-    pm_mem = g_new(MemoryRegion, 1);
-    memory_region_init_io(pm_mem, NULL, &loongarch_virt_pm_ops,
-                          NULL, "loongarch_virt_pm", PM_SIZE);
-    memory_region_add_subregion(get_system_memory(), PM_BASE, pm_mem);
     /* acpi ged */
     lams->acpi_ged = create_acpi_ged(pch_pic, lams);
     /* platform bus */
@@ -580,9 +567,6 @@ static void loongarch_irq_init(LoongArchMachineState *lams)
     CPULoongArchState *env;
     CPUState *cpu_state;
     int cpu, pin, i, start, num;
-
-    extioi = qdev_new(TYPE_LOONGARCH_EXTIOI);
-    sysbus_realize_and_unref(SYS_BUS_DEVICE(extioi), &error_fatal);
 
     /*
      * The connection of interrupts:
@@ -605,41 +589,42 @@ static void loongarch_irq_init(LoongArchMachineState *lams)
      * | UARTs  | | Devices | | Devices |
      * +--------+ +---------+ +---------+
      */
+
+    /* Create IPI device */
+    ipi = qdev_new(TYPE_LOONGARCH_IPI);
+    qdev_prop_set_uint32(ipi, "num-cpu", ms->smp.cpus);
+    sysbus_realize_and_unref(SYS_BUS_DEVICE(ipi), &error_fatal);
+
+    /* IPI iocsr memory region */
+    memory_region_add_subregion(&lams->system_iocsr, SMP_IPI_MAILBOX,
+                   sysbus_mmio_get_region(SYS_BUS_DEVICE(ipi), 0));
+    memory_region_add_subregion(&lams->system_iocsr, MAIL_SEND_ADDR,
+                   sysbus_mmio_get_region(SYS_BUS_DEVICE(ipi), 1));
+
     for (cpu = 0; cpu < ms->smp.cpus; cpu++) {
         cpu_state = qemu_get_cpu(cpu);
         cpudev = DEVICE(cpu_state);
         lacpu = LOONGARCH_CPU(cpu_state);
         env = &(lacpu->env);
-
-        ipi = qdev_new(TYPE_LOONGARCH_IPI);
-        sysbus_realize_and_unref(SYS_BUS_DEVICE(ipi), &error_fatal);
+        env->address_space_iocsr = &lams->as_iocsr;
 
         /* connect ipi irq to cpu irq */
-        qdev_connect_gpio_out(ipi, 0, qdev_get_gpio_in(cpudev, IRQ_IPI));
-        /* IPI iocsr memory region */
-        memory_region_add_subregion(&env->system_iocsr, SMP_IPI_MAILBOX,
-                                    sysbus_mmio_get_region(SYS_BUS_DEVICE(ipi),
-                                    0));
-        memory_region_add_subregion(&env->system_iocsr, MAIL_SEND_ADDR,
-                                    sysbus_mmio_get_region(SYS_BUS_DEVICE(ipi),
-                                    1));
-        /*
-	 * extioi iocsr memory region
-	 * only one extioi is added on loongarch virt machine
-	 * external device interrupt can only be routed to cpu 0-3
-	 */
-	if (cpu < EXTIOI_CPUS)
-            memory_region_add_subregion(&env->system_iocsr, APIC_BASE,
-                                sysbus_mmio_get_region(SYS_BUS_DEVICE(extioi),
-                                cpu));
+        qdev_connect_gpio_out(ipi, cpu, qdev_get_gpio_in(cpudev, IRQ_IPI));
         env->ipistate = ipi;
     }
+
+    /* Create EXTIOI device */
+    extioi = qdev_new(TYPE_LOONGARCH_EXTIOI);
+    qdev_prop_set_uint32(extioi, "num-cpu", ms->smp.cpus);
+    sysbus_realize_and_unref(SYS_BUS_DEVICE(extioi), &error_fatal);
+    memory_region_add_subregion(&lams->system_iocsr, APIC_BASE,
+                   sysbus_mmio_get_region(SYS_BUS_DEVICE(extioi), 0));
 
     /*
      * connect ext irq to the cpu irq
      * cpu_pin[9:2] <= intc_pin[7:0]
      */
-    for (cpu = 0; cpu < MIN(ms->smp.cpus, EXTIOI_CPUS); cpu++) {
+    for (cpu = 0; cpu < ms->smp.cpus; cpu++) {
         cpudev = DEVICE(qemu_get_cpu(cpu));
         for (pin = 0; pin < LS3A_INTC_IP; pin++) {
             qdev_connect_gpio_out(extioi, (cpu * 8 + pin),
@@ -662,7 +647,7 @@ static void loongarch_irq_init(LoongArchMachineState *lams)
                             sysbus_mmio_get_region(d, 2));
 
     /* Connect pch_pic irqs to extioi */
-    for (int i = 0; i < num; i++) {
+    for (i = 0; i < num; i++) {
         qdev_connect_gpio_out(DEVICE(d), i, qdev_get_gpio_in(extioi, i));
     }
 
@@ -687,11 +672,31 @@ static void loongarch_firmware_init(LoongArchMachineState *lams)
 {
     char *filename = MACHINE(lams)->firmware;
     char *bios_name = NULL;
-    int bios_size;
+    int bios_size, i;
+    BlockBackend *pflash_blk0;
+    MemoryRegion *mr;
 
     lams->bios_loaded = false;
 
+    /* Map legacy -drive if=pflash to machine properties */
+    for (i = 0; i < ARRAY_SIZE(lams->flash); i++) {
+        pflash_cfi01_legacy_drive(lams->flash[i],
+                                  drive_get(IF_PFLASH, 0, i));
+    }
+
     virt_flash_map(lams, get_system_memory());
+
+    pflash_blk0 = pflash_cfi01_get_blk(lams->flash[0]);
+
+    if (pflash_blk0) {
+        if (filename) {
+            error_report("cannot use both '-bios' and '-drive if=pflash'"
+                         "options at once");
+            exit(1);
+        }
+        lams->bios_loaded = true;
+        return;
+    }
 
     if (filename) {
         bios_name = qemu_find_file(QEMU_FILE_TYPE_BIOS, filename);
@@ -700,21 +705,15 @@ static void loongarch_firmware_init(LoongArchMachineState *lams)
             exit(1);
         }
 
-        bios_size = load_image_targphys(bios_name, VIRT_BIOS_BASE, VIRT_BIOS_SIZE);
+        mr = sysbus_mmio_get_region(SYS_BUS_DEVICE(lams->flash[0]), 0);
+        bios_size = load_image_mr(bios_name, mr);
         if (bios_size < 0) {
             error_report("Could not load ROM image '%s'", bios_name);
             exit(1);
         }
-
         g_free(bios_name);
-
-        memory_region_init_ram(&lams->bios, NULL, "loongarch.bios",
-                               VIRT_BIOS_SIZE, &error_fatal);
-        memory_region_set_readonly(&lams->bios, true);
-        memory_region_add_subregion(get_system_memory(), VIRT_BIOS_BASE, &lams->bios);
         lams->bios_loaded = true;
     }
-
 }
 
 static void reset_load_elf(void *opaque)
@@ -728,7 +727,8 @@ static void reset_load_elf(void *opaque)
     }
 }
 
-static void fw_cfg_add_kernel_info(FWCfgState *fw_cfg)
+static void fw_cfg_add_kernel_info(const struct loaderparams *loaderparams,
+                                   FWCfgState *fw_cfg)
 {
     /*
      * Expose the kernel, the command line, and the initrd in fw_cfg.
@@ -737,36 +737,38 @@ static void fw_cfg_add_kernel_info(FWCfgState *fw_cfg)
      */
     load_image_to_fw_cfg(fw_cfg,
                          FW_CFG_KERNEL_SIZE, FW_CFG_KERNEL_DATA,
-                         loaderparams.kernel_filename,
+                         loaderparams->kernel_filename,
                          false);
 
-    if (loaderparams.initrd_filename) {
+    if (loaderparams->initrd_filename) {
         load_image_to_fw_cfg(fw_cfg,
                              FW_CFG_INITRD_SIZE, FW_CFG_INITRD_DATA,
-                             loaderparams.initrd_filename, false);
+                             loaderparams->initrd_filename, false);
     }
 
-    if (loaderparams.kernel_cmdline) {
+    if (loaderparams->kernel_cmdline) {
         fw_cfg_add_i32(fw_cfg, FW_CFG_CMDLINE_SIZE,
-                       strlen(loaderparams.kernel_cmdline) + 1);
+                       strlen(loaderparams->kernel_cmdline) + 1);
         fw_cfg_add_string(fw_cfg, FW_CFG_CMDLINE_DATA,
-                          loaderparams.kernel_cmdline);
+                          loaderparams->kernel_cmdline);
     }
 }
 
-static void loongarch_firmware_boot(LoongArchMachineState *lams)
+static void loongarch_firmware_boot(LoongArchMachineState *lams,
+                                    const struct loaderparams *loaderparams)
 {
-    fw_cfg_add_kernel_info(lams->fw_cfg);
+    fw_cfg_add_kernel_info(loaderparams, lams->fw_cfg);
 }
 
-static void loongarch_direct_kernel_boot(LoongArchMachineState *lams)
+static void loongarch_direct_kernel_boot(LoongArchMachineState *lams,
+                                         const struct loaderparams *loaderparams)
 {
     MachineState *machine = MACHINE(lams);
     int64_t kernel_addr = 0;
     LoongArchCPU *lacpu;
     int i;
 
-    kernel_addr = load_kernel_info();
+    kernel_addr = load_kernel_info(loaderparams);
     if (!machine->firmware) {
         for (i = 0; i < machine->smp.cpus; i++) {
             lacpu = LOONGARCH_CPU(qemu_get_cpu(i));
@@ -775,6 +777,43 @@ static void loongarch_direct_kernel_boot(LoongArchMachineState *lams)
         }
     }
 }
+
+static void loongarch_qemu_write(void *opaque, hwaddr addr,
+                                 uint64_t val, unsigned size)
+{
+}
+
+static uint64_t loongarch_qemu_read(void *opaque, hwaddr addr, unsigned size)
+{
+    switch (addr) {
+    case VERSION_REG:
+        return 0x11ULL;
+    case FEATURE_REG:
+        return 1ULL << IOCSRF_MSI | 1ULL << IOCSRF_EXTIOI |
+               1ULL << IOCSRF_CSRIPI;
+    case VENDOR_REG:
+        return 0x6e6f73676e6f6f4cULL; /* "Loongson" */
+    case CPUNAME_REG:
+        return 0x303030354133ULL;     /* "3A5000" */
+    case MISC_FUNC_REG:
+        return 1ULL << IOCSRM_EXTIOI_EN;
+    }
+    return 0ULL;
+}
+
+static const MemoryRegionOps loongarch_qemu_ops = {
+    .read = loongarch_qemu_read,
+    .write = loongarch_qemu_write,
+    .endianness = DEVICE_LITTLE_ENDIAN,
+    .valid = {
+        .min_access_size = 4,
+        .max_access_size = 8,
+    },
+    .impl = {
+        .min_access_size = 8,
+        .max_access_size = 8,
+    },
+};
 
 static void loongarch_init(MachineState *machine)
 {
@@ -793,14 +832,10 @@ static void loongarch_init(MachineState *machine)
     MachineClass *mc = MACHINE_GET_CLASS(machine);
     CPUState *cpu;
     char *ramName = NULL;
+    struct loaderparams loaderparams = { };
 
     if (!cpu_model) {
         cpu_model = LOONGARCH_CPU_TYPE_NAME("la464");
-    }
-
-    if (!strstr(cpu_model, "la464")) {
-        error_report("LoongArch/TCG needs cpu type la464");
-        exit(1);
     }
 
     if (ram_size < 1 * GiB) {
@@ -808,13 +843,24 @@ static void loongarch_init(MachineState *machine)
         exit(1);
     }
     create_fdt(lams);
-    /* Init CPUs */
 
+    /* Create IOCSR space */
+    memory_region_init_io(&lams->system_iocsr, OBJECT(machine), NULL,
+                          machine, "iocsr", UINT64_MAX);
+    address_space_init(&lams->as_iocsr, &lams->system_iocsr, "IOCSR");
+    memory_region_init_io(&lams->iocsr_mem, OBJECT(machine),
+                          &loongarch_qemu_ops,
+                          machine, "iocsr_misc", 0x428);
+    memory_region_add_subregion(&lams->system_iocsr, 0, &lams->iocsr_mem);
+
+    /* Init CPUs */
     possible_cpus = mc->possible_cpu_arch_ids(machine);
     for (i = 0; i < possible_cpus->len; i++) {
         cpu = cpu_create(machine->cpu_type);
         cpu->cpu_index = i;
         machine->possible_cpus->cpus[i].cpu = OBJECT(cpu);
+        lacpu = LOONGARCH_CPU(cpu);
+        lacpu->phy_id = machine->possible_cpus->cpus[i].arch_id;
     }
     fdt_add_cpu_nodes(lams);
 
@@ -877,11 +923,6 @@ static void loongarch_init(MachineState *machine)
         machine_memory_devices_init(machine, device_mem_base, device_mem_size);
     }
 
-    /* Add isa io region */
-    memory_region_init_alias(&lams->isa_io, NULL, "isa-io",
-                             get_system_io(), 0, VIRT_ISA_IO_SIZE);
-    memory_region_add_subregion(address_space_mem, VIRT_ISA_IO_BASE,
-                                &lams->isa_io);
     /* load the BIOS image. */
     loongarch_firmware_init(lams);
 
@@ -901,9 +942,9 @@ static void loongarch_init(MachineState *machine)
     /* load the kernel. */
     if (loaderparams.kernel_filename) {
         if (lams->bios_loaded) {
-            loongarch_firmware_boot(lams);
+            loongarch_firmware_boot(lams, &loaderparams);
         } else {
-            loongarch_direct_kernel_boot(lams);
+            loongarch_direct_kernel_boot(lams, &loaderparams);
         }
     }
     fdt_add_flash_node(lams);

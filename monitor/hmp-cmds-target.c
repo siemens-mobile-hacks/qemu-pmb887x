@@ -25,6 +25,7 @@
 #include "qemu/osdep.h"
 #include "disas/disas.h"
 #include "exec/address-spaces.h"
+#include "exec/memory.h"
 #include "monitor/hmp-target.h"
 #include "monitor/monitor-internal.h"
 #include "qapi/error.h"
@@ -81,7 +82,7 @@ CPUArchState *mon_get_cpu_env(Monitor *mon)
 {
     CPUState *cs = mon_get_cpu(mon);
 
-    return cs ? cs->env_ptr : NULL;
+    return cs ? cpu_env(cs) : NULL;
 }
 
 int monitor_get_cpu_index(Monitor *mon)

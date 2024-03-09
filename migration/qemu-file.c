@@ -32,17 +32,15 @@
 #include "trace.h"
 #include "options.h"
 #include "qapi/error.h"
+#include "rdma.h"
+#include "io/channel-file.h"
 
 #define IO_BUF_SIZE 32768
 #define MAX_IOV_SIZE MIN_CONST(IOV_MAX, 64)
 
 struct QEMUFile {
-    const QEMUFileHooks *hooks;
     QIOChannel *ioc;
     bool is_writable;
-
-    /* The sum of bytes transferred on the wire */
-    uint64_t total_transferred;
 
     int buf_index;
     int buf_size; /* 0 when writing */
@@ -132,25 +130,29 @@ QEMUFile *qemu_file_new_input(QIOChannel *ioc)
     return qemu_file_new_impl(ioc, false);
 }
 
-void qemu_file_set_hooks(QEMUFile *f, const QEMUFileHooks *hooks)
-{
-    f->hooks = hooks;
-}
-
 /*
  * Get last error for stream f with optional Error*
  *
  * Return negative error value if there has been an error on previous
  * operations, return 0 if no error happened.
- * Optional, it returns Error* in errp, but it may be NULL even if return value
- * is not 0.
  *
+ * If errp is specified, a verbose error message will be copied over.
  */
-static int qemu_file_get_error_obj(QEMUFile *f, Error **errp)
+int qemu_file_get_error_obj(QEMUFile *f, Error **errp)
 {
-    if (errp) {
-        *errp = f->last_error_obj ? error_copy(f->last_error_obj) : NULL;
+    if (!f->last_error) {
+        return 0;
     }
+
+    /* There is an error */
+    if (errp) {
+        if (f->last_error_obj) {
+            *errp = error_copy(f->last_error_obj);
+        } else {
+            error_setg_errno(errp, -f->last_error, "Channel error");
+        }
+    }
+
     return f->last_error;
 }
 
@@ -203,7 +205,7 @@ void qemu_file_set_error_obj(QEMUFile *f, int ret, Error *err)
  */
 int qemu_file_get_error(QEMUFile *f)
 {
-    return qemu_file_get_error_obj(f, NULL);
+    return f->last_error;
 }
 
 /*
@@ -254,6 +256,10 @@ static void qemu_iovec_release_ram(QEMUFile *f)
     memset(f->may_free, 0, sizeof(f->may_free));
 }
 
+bool qemu_file_is_seekable(QEMUFile *f)
+{
+    return qio_channel_has_feature(f->ioc, QIO_CHANNEL_FEATURE_SEEKABLE);
+}
 
 /**
  * Flushes QEMUFile buffer
@@ -261,14 +267,14 @@ static void qemu_iovec_release_ram(QEMUFile *f)
  * This will flush all pending data. If data was only partially flushed, it
  * will set an error state.
  */
-void qemu_fflush(QEMUFile *f)
+int qemu_fflush(QEMUFile *f)
 {
     if (!qemu_file_is_writable(f)) {
-        return;
+        return f->last_error;
     }
 
-    if (qemu_file_get_error(f)) {
-        return;
+    if (f->last_error) {
+        return f->last_error;
     }
     if (f->iovcnt > 0) {
         Error *local_error = NULL;
@@ -278,7 +284,7 @@ void qemu_fflush(QEMUFile *f)
             qemu_file_set_error_obj(f, -EIO, local_error);
         } else {
             uint64_t size = iov_size(f->iov, f->iovcnt);
-            f->total_transferred += size;
+            stat64_add(&mig_stats.qemu_file_transferred, size);
         }
 
         qemu_iovec_release_ram(f);
@@ -286,63 +292,7 @@ void qemu_fflush(QEMUFile *f)
 
     f->buf_index = 0;
     f->iovcnt = 0;
-}
-
-void ram_control_before_iterate(QEMUFile *f, uint64_t flags)
-{
-    int ret = 0;
-
-    if (f->hooks && f->hooks->before_ram_iterate) {
-        ret = f->hooks->before_ram_iterate(f, flags, NULL);
-        if (ret < 0) {
-            qemu_file_set_error(f, ret);
-        }
-    }
-}
-
-void ram_control_after_iterate(QEMUFile *f, uint64_t flags)
-{
-    int ret = 0;
-
-    if (f->hooks && f->hooks->after_ram_iterate) {
-        ret = f->hooks->after_ram_iterate(f, flags, NULL);
-        if (ret < 0) {
-            qemu_file_set_error(f, ret);
-        }
-    }
-}
-
-void ram_control_load_hook(QEMUFile *f, uint64_t flags, void *data)
-{
-    if (f->hooks && f->hooks->hook_ram_load) {
-        int ret = f->hooks->hook_ram_load(f, flags, data);
-        if (ret < 0) {
-            qemu_file_set_error(f, ret);
-        }
-    }
-}
-
-size_t ram_control_save_page(QEMUFile *f, ram_addr_t block_offset,
-                             ram_addr_t offset, size_t size,
-                             uint64_t *bytes_sent)
-{
-    if (f->hooks && f->hooks->save_page) {
-        int ret = f->hooks->save_page(f, block_offset,
-                                      offset, size, bytes_sent);
-
-        if (ret != RAM_SAVE_CONTROL_DELAYED &&
-            ret != RAM_SAVE_CONTROL_NOT_SUPP) {
-            if (bytes_sent && *bytes_sent > 0) {
-                qemu_file_credit_transfer(f, *bytes_sent);
-            } else if (ret < 0) {
-                qemu_file_set_error(f, ret);
-            }
-        }
-
-        return ret;
-    }
-
-    return RAM_SAVE_CONTROL_NOT_SUPP;
+    return f->last_error;
 }
 
 /*
@@ -390,7 +340,6 @@ static ssize_t coroutine_mixed_fn qemu_fill_buffer(QEMUFile *f)
 
     if (len > 0) {
         f->buf_size += len;
-        f->total_transferred += len;
     } else if (len == 0) {
         qemu_file_set_error_obj(f, -EIO, local_error);
     } else {
@@ -398,11 +347,6 @@ static ssize_t coroutine_mixed_fn qemu_fill_buffer(QEMUFile *f)
     }
 
     return len;
-}
-
-void qemu_file_credit_transfer(QEMUFile *f, size_t size)
-{
-    f->total_transferred += size;
 }
 
 /** Closes the file
@@ -415,22 +359,12 @@ void qemu_file_credit_transfer(QEMUFile *f, size_t size)
  */
 int qemu_fclose(QEMUFile *f)
 {
-    int ret, ret2;
-    qemu_fflush(f);
-    ret = qemu_file_get_error(f);
-
-    ret2 = qio_channel_close(f->ioc, NULL);
+    int ret = qemu_fflush(f);
+    int ret2 = qio_channel_close(f->ioc, NULL);
     if (ret >= 0) {
         ret = ret2;
     }
     g_clear_pointer(&f->ioc, object_unref);
-
-    /* If any error was spotted before closing, we should report it
-     * instead of the close() return value.
-     */
-    if (f->last_error) {
-        ret = f->last_error;
-    }
     error_free(f->last_error_obj);
     g_free(f);
     trace_qemu_file_fclose();
@@ -517,6 +451,107 @@ void qemu_put_buffer(QEMUFile *f, const uint8_t *buf, size_t size)
         size -= l;
     }
 }
+
+void qemu_put_buffer_at(QEMUFile *f, const uint8_t *buf, size_t buflen,
+                        off_t pos)
+{
+    Error *err = NULL;
+    size_t ret;
+
+    if (f->last_error) {
+        return;
+    }
+
+    qemu_fflush(f);
+    ret = qio_channel_pwrite(f->ioc, (char *)buf, buflen, pos, &err);
+
+    if (err) {
+        qemu_file_set_error_obj(f, -EIO, err);
+        return;
+    }
+
+    if ((ssize_t)ret == QIO_CHANNEL_ERR_BLOCK) {
+        qemu_file_set_error_obj(f, -EAGAIN, NULL);
+        return;
+    }
+
+    if (ret != buflen) {
+        error_setg(&err, "Partial write of size %zu, expected %zu", ret,
+                   buflen);
+        qemu_file_set_error_obj(f, -EIO, err);
+        return;
+    }
+
+    stat64_add(&mig_stats.qemu_file_transferred, buflen);
+
+    return;
+}
+
+
+size_t qemu_get_buffer_at(QEMUFile *f, const uint8_t *buf, size_t buflen,
+                          off_t pos)
+{
+    Error *err = NULL;
+    size_t ret;
+
+    if (f->last_error) {
+        return 0;
+    }
+
+    ret = qio_channel_pread(f->ioc, (char *)buf, buflen, pos, &err);
+
+    if ((ssize_t)ret == -1 || err) {
+        qemu_file_set_error_obj(f, -EIO, err);
+        return 0;
+    }
+
+    if ((ssize_t)ret == QIO_CHANNEL_ERR_BLOCK) {
+        qemu_file_set_error_obj(f, -EAGAIN, NULL);
+        return 0;
+    }
+
+    if (ret != buflen) {
+        error_setg(&err, "Partial read of size %zu, expected %zu", ret, buflen);
+        qemu_file_set_error_obj(f, -EIO, err);
+        return 0;
+    }
+
+    return ret;
+}
+
+void qemu_set_offset(QEMUFile *f, off_t off, int whence)
+{
+    Error *err = NULL;
+    off_t ret;
+
+    if (qemu_file_is_writable(f)) {
+        qemu_fflush(f);
+    } else {
+        /* Drop all cached buffers if existed; will trigger a re-fill later */
+        f->buf_index = 0;
+        f->buf_size = 0;
+    }
+
+    ret = qio_channel_io_seek(f->ioc, off, whence, &err);
+    if (ret == (off_t)-1) {
+        qemu_file_set_error_obj(f, -EIO, err);
+    }
+}
+
+off_t qemu_get_offset(QEMUFile *f)
+{
+    Error *err = NULL;
+    off_t ret;
+
+    qemu_fflush(f);
+
+    ret = qio_channel_io_seek(f->ioc, 0, SEEK_CUR, &err);
+    if (ret == (off_t)-1) {
+        qemu_file_set_error_obj(f, -EIO, err);
+    }
+    return ret;
+}
+
 
 void qemu_put_byte(QEMUFile *f, int v)
 {
@@ -680,22 +715,18 @@ int coroutine_mixed_fn qemu_get_byte(QEMUFile *f)
     return result;
 }
 
-uint64_t qemu_file_transferred_noflush(QEMUFile *f)
+uint64_t qemu_file_transferred(QEMUFile *f)
 {
-    uint64_t ret = f->total_transferred;
+    uint64_t ret = stat64_get(&mig_stats.qemu_file_transferred);
     int i;
+
+    g_assert(qemu_file_is_writable(f));
 
     for (i = 0; i < f->iovcnt; i++) {
         ret += f->iov[i].iov_len;
     }
 
     return ret;
-}
-
-uint64_t qemu_file_transferred(QEMUFile *f)
-{
-    qemu_fflush(f);
-    return f->total_transferred;
 }
 
 void qemu_put_be16(QEMUFile *f, unsigned int v)

@@ -929,7 +929,7 @@ static int unix_listen_saddr(UnixSocketAddress *saddr,
 
     if (pathbuf != NULL) {
         /*
-         * This dummy fd usage silences the mktemp() unsecure warning.
+         * This dummy fd usage silences the mktemp() insecure warning.
          * Using mkstemp() doesn't make things more secure here
          * though.  bind() complains about existing files, so we have
          * to unlink first and thus re-open the race window.  The
@@ -1464,7 +1464,8 @@ SocketAddress *socket_address_flatten(SocketAddressLegacy *addr_legacy)
         break;
     case SOCKET_ADDRESS_TYPE_FD:
         addr->type = SOCKET_ADDRESS_TYPE_FD;
-        QAPI_CLONE_MEMBERS(String, &addr->u.fd, addr_legacy->u.fd.data);
+        QAPI_CLONE_MEMBERS(FdSocketAddress, &addr->u.fd,
+                           addr_legacy->u.fd.data);
         break;
     default:
         abort();

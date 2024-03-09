@@ -36,7 +36,7 @@
 #include "qemu/help_option.h"
 #include "qemu/module.h"
 #include "exec/exec-all.h"
-#include "tcg/tcg.h"
+#include "tcg/startup.h"
 #include "qemu/timer.h"
 #include "qemu/envlist.h"
 #include "qemu/cutils.h"
@@ -48,6 +48,13 @@
 
 #include "host-os.h"
 #include "target_arch_cpu.h"
+
+
+/*
+ * TODO: Remove these and rely only on qemu_real_host_page_size().
+ */
+uintptr_t qemu_host_page_size;
+intptr_t qemu_host_page_mask;
 
 static bool opt_one_insn_per_tb;
 uintptr_t guest_base;
@@ -88,7 +95,7 @@ unsigned long reserved_va = MAX_RESERVED_VA;
 unsigned long reserved_va;
 #endif
 
-static const char *interp_prefix = CONFIG_QEMU_INTERP_PREFIX;
+const char *interp_prefix = CONFIG_QEMU_INTERP_PREFIX;
 const char *qemu_uname_release;
 char qemu_proc_pathname[PATH_MAX];  /* full path to exeutable */
 
@@ -106,10 +113,13 @@ void fork_start(void)
     start_exclusive();
     cpu_list_lock();
     mmap_fork_start();
+    gdbserver_fork_start();
 }
 
-void fork_end(int child)
+void fork_end(pid_t pid)
 {
+    bool child = pid == 0;
+
     if (child) {
         CPUState *cpu, *next_cpu;
         /*
@@ -118,7 +128,7 @@ void fork_end(int child)
          */
         CPU_FOREACH_SAFE(cpu, next_cpu) {
             if (cpu != thread_cpu) {
-                QTAILQ_REMOVE_RCU(&cpus, cpu, node);
+                QTAILQ_REMOVE_RCU(&cpus_queue, cpu, node);
             }
         }
         mmap_fork_end(child);
@@ -127,10 +137,12 @@ void fork_end(int child)
          * state, so we don't need to end_exclusive() here.
          */
         qemu_init_cpu_list();
-        gdbserver_fork(thread_cpu);
+        get_task_state(thread_cpu)->ts_tid = qemu_get_thread_id();
+        gdbserver_fork_end(thread_cpu, pid);
     } else {
         mmap_fork_end(child);
         cpu_list_unlock();
+        gdbserver_fork_end(thread_cpu, pid);
         end_exclusive();
     }
 }
@@ -163,7 +175,6 @@ static void usage(void)
            "                  (use '-d help' for a list of log items)\n"
            "-D logfile        write logs to 'logfile' (default stderr)\n"
            "-one-insn-per-tb  run with one guest instruction per emulated TB\n"
-           "-singlestep       deprecated synonym for -one-insn-per-tb\n"
            "-strace           log system calls\n"
            "-trace            [[enable=]<pattern>][,events=<file>][,file=<file>]\n"
            "                  specify tracing options\n"
@@ -308,6 +319,9 @@ int main(int argc, char **argv)
         (void) envlist_setenv(envlist, *wrk);
     }
 
+    qemu_host_page_size = getpagesize();
+    qemu_host_page_size = MAX(qemu_host_page_size, TARGET_PAGE_SIZE);
+
     cpu_model = NULL;
 
     qemu_add_opts(&qemu_trace_opts);
@@ -365,11 +379,12 @@ int main(int argc, char **argv)
         } else if (!strcmp(r, "L")) {
             interp_prefix = argv[optind++];
         } else if (!strcmp(r, "p")) {
-            qemu_host_page_size = atoi(argv[optind++]);
-            if (qemu_host_page_size == 0 ||
-                (qemu_host_page_size & (qemu_host_page_size - 1)) != 0) {
-                fprintf(stderr, "page size must be a power of two\n");
-                exit(1);
+            unsigned size, want = qemu_real_host_page_size();
+
+            r = argv[optind++];
+            if (qemu_strtoui(r, NULL, 10, &size) || size != want) {
+                warn_report("Deprecated page size option cannot "
+                            "change host page size (%u)", want);
             }
         } else if (!strcmp(r, "g")) {
             gdbstub = g_strdup(argv[optind++]);
@@ -378,10 +393,7 @@ int main(int argc, char **argv)
         } else if (!strcmp(r, "cpu")) {
             cpu_model = argv[optind++];
             if (is_help_option(cpu_model)) {
-                /* XXX: implement xxx_cpu_list for targets that still miss it */
-#if defined(cpu_list)
-                cpu_list();
-#endif
+                list_cpus();
                 exit(1);
             }
         } else if (!strcmp(r, "B")) {
@@ -394,7 +406,7 @@ int main(int argc, char **argv)
             (void) envlist_unsetenv(envlist, "LD_PRELOAD");
         } else if (!strcmp(r, "seed")) {
             seed_optarg = optarg;
-        } else if (!strcmp(r, "singlestep") || !strcmp(r, "one-insn-per-tb")) {
+        } else if (!strcmp(r, "one-insn-per-tb")) {
             opt_one_insn_per_tb = true;
         } else if (!strcmp(r, "strace")) {
             do_strace = 1;
@@ -406,6 +418,8 @@ int main(int argc, char **argv)
             usage();
         }
     }
+
+    qemu_host_page_mask = -qemu_host_page_size;
 
     /* init debug */
     {
@@ -462,7 +476,7 @@ int main(int argc, char **argv)
         ac->init_machine(NULL);
     }
     cpu = cpu_create(cpu_type);
-    env = cpu->env_ptr;
+    env = cpu_env(cpu);
     cpu_reset(cpu);
     thread_cpu = cpu;
 
@@ -553,8 +567,6 @@ int main(int argc, char **argv)
             fprintf(f, "page layout changed following binary load\n");
             page_dump(f);
 
-            fprintf(f, "start_brk   0x" TARGET_ABI_FMT_lx "\n",
-                    info->start_brk);
             fprintf(f, "end_code    0x" TARGET_ABI_FMT_lx "\n",
                     info->end_code);
             fprintf(f, "start_code  0x" TARGET_ABI_FMT_lx "\n",
@@ -588,7 +600,7 @@ int main(int argc, char **argv)
      * generating the prologue until now so that the prologue can take
      * the real value of GUEST_BASE into account.
      */
-    tcg_prologue_init(tcg_ctx);
+    tcg_prologue_init();
 
     target_cpu_init(env, regs);
 

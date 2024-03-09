@@ -8,13 +8,13 @@
 #include "qemu/osdep.h"
 #include "cpu.h"
 #include "migration/cpu.h"
-#include "internals.h"
+#include "vec.h"
 
 static const VMStateDescription vmstate_fpu_reg = {
     .name = "fpu_reg",
     .version_id = 1,
     .minimum_version_id = 1,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_UINT64(UD(0), VReg),
         VMSTATE_END_OF_LIST()
     }
@@ -36,7 +36,7 @@ static const VMStateDescription vmstate_fpu = {
     .version_id = 1,
     .minimum_version_id = 1,
     .needed = fpu_needed,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_FPU_REGS(env.fpr, LoongArchCPU, 0),
         VMSTATE_UINT32(env.fcsr0, LoongArchCPU),
         VMSTATE_BOOL_ARRAY(env.cf, LoongArchCPU, 8),
@@ -48,7 +48,7 @@ static const VMStateDescription vmstate_lsxh_reg = {
     .name = "lsxh_reg",
     .version_id = 1,
     .minimum_version_id = 1,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_UINT64(UD(1), VReg),
         VMSTATE_END_OF_LIST()
     }
@@ -70,8 +70,41 @@ static const VMStateDescription vmstate_lsx = {
     .version_id = 1,
     .minimum_version_id = 1,
     .needed = lsx_needed,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_LSXH_REGS(env.fpr, LoongArchCPU, 0),
+        VMSTATE_END_OF_LIST()
+    },
+};
+
+static const VMStateDescription vmstate_lasxh_reg = {
+    .name = "lasxh_reg",
+    .version_id = 1,
+    .minimum_version_id = 1,
+    .fields = (const VMStateField[]) {
+        VMSTATE_UINT64(UD(2), VReg),
+        VMSTATE_UINT64(UD(3), VReg),
+        VMSTATE_END_OF_LIST()
+    }
+};
+
+#define VMSTATE_LASXH_REGS(_field, _state, _start)          \
+    VMSTATE_STRUCT_SUB_ARRAY(_field, _state, _start, 32, 0, \
+                             vmstate_lasxh_reg, fpr_t)
+
+static bool lasx_needed(void *opaque)
+{
+    LoongArchCPU *cpu = opaque;
+
+    return FIELD_EX64(cpu->env.cpucfg[2], CPUCFG2, LASX);
+}
+
+static const VMStateDescription vmstate_lasx = {
+    .name = "cpu/lasx",
+    .version_id = 1,
+    .minimum_version_id = 1,
+    .needed = lasx_needed,
+    .fields = (const VMStateField[]) {
+        VMSTATE_LASXH_REGS(env.fpr, LoongArchCPU, 0),
         VMSTATE_END_OF_LIST()
     },
 };
@@ -81,7 +114,7 @@ const VMStateDescription vmstate_tlb = {
     .name = "cpu/tlb",
     .version_id = 0,
     .minimum_version_id = 0,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_UINT64(tlb_misc, LoongArchTLB),
         VMSTATE_UINT64(tlb_entry0, LoongArchTLB),
         VMSTATE_UINT64(tlb_entry1, LoongArchTLB),
@@ -94,7 +127,7 @@ const VMStateDescription vmstate_loongarch_cpu = {
     .name = "cpu",
     .version_id = 1,
     .minimum_version_id = 1,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_UINTTL_ARRAY(env.gpr, LoongArchCPU, 32),
         VMSTATE_UINTTL(env.pc, LoongArchCPU),
 
@@ -160,9 +193,10 @@ const VMStateDescription vmstate_loongarch_cpu = {
 
         VMSTATE_END_OF_LIST()
     },
-    .subsections = (const VMStateDescription*[]) {
+    .subsections = (const VMStateDescription * const []) {
         &vmstate_fpu,
         &vmstate_lsx,
+        &vmstate_lasx,
         NULL
     }
 };

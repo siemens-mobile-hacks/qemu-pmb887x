@@ -45,9 +45,12 @@
 #include <arpa/inet.h>
 #include <sys/socket.h>
 #include <net/if.h>
-#if defined(__NetBSD__) || defined(__OpenBSD__)
+#if defined(__NetBSD__) || defined(__OpenBSD__) || defined(CONFIG_SOLARIS)
 #include <net/if_arp.h>
 #include <netinet/if_ether.h>
+#if !defined(ETHER_ADDR_LEN) && defined(ETHERADDRL)
+#define ETHER_ADDR_LEN ETHERADDRL
+#endif
 #else
 #include <net/ethernet.h>
 #endif
@@ -3249,7 +3252,7 @@ GuestUserList *qmp_guest_get_users(Error **errp)
 
 #endif
 
-/* Replace escaped special characters with theire real values. The replacement
+/* Replace escaped special characters with their real values. The replacement
  * is done in place -- returned value is in the original string.
  */
 static void ga_osrelease_replace_special(gchar *value)

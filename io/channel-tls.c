@@ -381,6 +381,7 @@ static int qio_channel_tls_close(QIOChannel *ioc,
     QIOChannelTLS *tioc = QIO_CHANNEL_TLS(ioc);
 
     if (tioc->hs_ioc_tag) {
+        trace_qio_channel_tls_handshake_cancel(ioc);
         g_clear_handle_id(&tioc->hs_ioc_tag, g_source_remove);
     }
 
@@ -388,14 +389,16 @@ static int qio_channel_tls_close(QIOChannel *ioc,
 }
 
 static void qio_channel_tls_set_aio_fd_handler(QIOChannel *ioc,
-                                               AioContext *ctx,
+                                               AioContext *read_ctx,
                                                IOHandler *io_read,
+                                               AioContext *write_ctx,
                                                IOHandler *io_write,
                                                void *opaque)
 {
     QIOChannelTLS *tioc = QIO_CHANNEL_TLS(ioc);
 
-    qio_channel_set_aio_fd_handler(tioc->master, ctx, io_read, io_write, opaque);
+    qio_channel_set_aio_fd_handler(tioc->master, read_ctx, io_read,
+            write_ctx, io_write, opaque);
 }
 
 typedef struct QIOChannelTLSSource QIOChannelTLSSource;

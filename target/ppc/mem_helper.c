@@ -21,7 +21,6 @@
 #include "cpu.h"
 #include "exec/exec-all.h"
 #include "qemu/host-utils.h"
-#include "qemu/main-loop.h"
 #include "exec/helper-proto.h"
 #include "helper_regs.h"
 #include "exec/cpu_ldst.h"
@@ -84,7 +83,7 @@ static void *probe_contiguous(CPUPPCState *env, target_ulong addr, uint32_t nb,
 void helper_lmw(CPUPPCState *env, target_ulong addr, uint32_t reg)
 {
     uintptr_t raddr = GETPC();
-    int mmu_idx = cpu_mmu_index(env, false);
+    int mmu_idx = ppc_env_mmu_index(env, false);
     void *host = probe_contiguous(env, addr, (32 - reg) * 4,
                                   MMU_DATA_LOAD, mmu_idx, raddr);
 
@@ -106,7 +105,7 @@ void helper_lmw(CPUPPCState *env, target_ulong addr, uint32_t reg)
 void helper_stmw(CPUPPCState *env, target_ulong addr, uint32_t reg)
 {
     uintptr_t raddr = GETPC();
-    int mmu_idx = cpu_mmu_index(env, false);
+    int mmu_idx = ppc_env_mmu_index(env, false);
     void *host = probe_contiguous(env, addr, (32 - reg) * 4,
                                   MMU_DATA_STORE, mmu_idx, raddr);
 
@@ -136,7 +135,7 @@ static void do_lsw(CPUPPCState *env, target_ulong addr, uint32_t nb,
         return;
     }
 
-    mmu_idx = cpu_mmu_index(env, false);
+    mmu_idx = ppc_env_mmu_index(env, false);
     host = probe_contiguous(env, addr, nb, MMU_DATA_LOAD, mmu_idx, raddr);
 
     if (likely(host)) {
@@ -225,7 +224,7 @@ void helper_stsw(CPUPPCState *env, target_ulong addr, uint32_t nb,
         return;
     }
 
-    mmu_idx = cpu_mmu_index(env, false);
+    mmu_idx = ppc_env_mmu_index(env, false);
     host = probe_contiguous(env, addr, nb, MMU_DATA_STORE, mmu_idx, raddr);
 
     if (likely(host)) {
@@ -277,7 +276,7 @@ static void dcbz_common(CPUPPCState *env, target_ulong addr,
     target_ulong mask, dcbz_size = env->dcache_line_size;
     uint32_t i;
     void *haddr;
-    int mmu_idx = epid ? PPC_TLB_EPID_STORE : cpu_mmu_index(env, false);
+    int mmu_idx = epid ? PPC_TLB_EPID_STORE : ppc_env_mmu_index(env, false);
 
 #if defined(TARGET_PPC64)
     /* Check for dcbz vs dcbzl on 970 */

@@ -278,15 +278,19 @@ static void smmuv3_init_regs(SMMUv3State *s)
     s->idr[1] = FIELD_DP32(s->idr[1], IDR1, EVENTQS, SMMU_EVENTQS);
     s->idr[1] = FIELD_DP32(s->idr[1], IDR1, CMDQS,   SMMU_CMDQS);
 
-    s->idr[3] = FIELD_DP32(s->idr[3], IDR3, RIL, 1);
     s->idr[3] = FIELD_DP32(s->idr[3], IDR3, HAD, 1);
+    if (FIELD_EX32(s->idr[0], IDR0, S2P)) {
+        /* XNX is a stage-2-specific feature */
+        s->idr[3] = FIELD_DP32(s->idr[3], IDR3, XNX, 1);
+    }
+    s->idr[3] = FIELD_DP32(s->idr[3], IDR3, RIL, 1);
     s->idr[3] = FIELD_DP32(s->idr[3], IDR3, BBML, 2);
 
+    s->idr[5] = FIELD_DP32(s->idr[5], IDR5, OAS, SMMU_IDR5_OAS); /* 44 bits */
     /* 4K, 16K and 64K granule support */
     s->idr[5] = FIELD_DP32(s->idr[5], IDR5, GRAN4K, 1);
     s->idr[5] = FIELD_DP32(s->idr[5], IDR5, GRAN16K, 1);
     s->idr[5] = FIELD_DP32(s->idr[5], IDR5, GRAN64K, 1);
-    s->idr[5] = FIELD_DP32(s->idr[5], IDR5, OAS, SMMU_IDR5_OAS); /* 44 bits */
 
     s->cmdq.base = deposit64(s->cmdq.base, 0, 5, SMMU_CMDQS);
     s->cmdq.prod = 0;
@@ -680,6 +684,7 @@ static int decode_cd(SMMUTransCfg *cfg, CD *cd, SMMUEventInfo *event)
     cfg->oas = MIN(oas2bits(SMMU_IDR5_OAS), cfg->oas);
     cfg->tbi = CD_TBI(cd);
     cfg->asid = CD_ASID(cd);
+    cfg->affd = CD_AFFD(cd);
 
     trace_smmuv3_decode_cd(cfg->oas);
 
@@ -1040,8 +1045,8 @@ static void smmuv3_notify_iova(IOMMUMemoryRegion *mr,
     SMMUv3State *s = sdev->smmu;
 
     if (!tg) {
-        SMMUEventInfo event = {.inval_ste_allowed = true};
-        SMMUTransCfg *cfg = smmuv3_get_config(sdev, &event);
+        SMMUEventInfo eventinfo = {.inval_ste_allowed = true};
+        SMMUTransCfg *cfg = smmuv3_get_config(sdev, &eventinfo);
         SMMUTransTableInfo *tt;
 
         if (!cfg) {
@@ -1764,7 +1769,7 @@ static const VMStateDescription vmstate_smmuv3_queue = {
     .name = "smmuv3_queue",
     .version_id = 1,
     .minimum_version_id = 1,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_UINT64(base, SMMUQueue),
         VMSTATE_UINT32(prod, SMMUQueue),
         VMSTATE_UINT32(cons, SMMUQueue),
@@ -1786,7 +1791,7 @@ static const VMStateDescription vmstate_gbpa = {
     .version_id = 1,
     .minimum_version_id = 1,
     .needed = smmuv3_gbpa_needed,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_UINT32(gbpa, SMMUv3State),
         VMSTATE_END_OF_LIST()
     }
@@ -1797,7 +1802,7 @@ static const VMStateDescription vmstate_smmuv3 = {
     .version_id = 1,
     .minimum_version_id = 1,
     .priority = MIG_PRI_IOMMU,
-    .fields = (VMStateField[]) {
+    .fields = (const VMStateField[]) {
         VMSTATE_UINT32(features, SMMUv3State),
         VMSTATE_UINT8(sid_size, SMMUv3State),
         VMSTATE_UINT8(sid_split, SMMUv3State),
@@ -1822,7 +1827,7 @@ static const VMStateDescription vmstate_smmuv3 = {
 
         VMSTATE_END_OF_LIST(),
     },
-    .subsections = (const VMStateDescription * []) {
+    .subsections = (const VMStateDescription * const []) {
         &vmstate_gbpa,
         NULL
     }
@@ -1853,8 +1858,8 @@ static void smmuv3_class_init(ObjectClass *klass, void *data)
     dc->vmsd = &vmstate_smmuv3;
     resettable_class_set_parent_phases(rc, NULL, smmu_reset_hold, NULL,
                                        &c->parent_phases);
-    c->parent_realize = dc->realize;
-    dc->realize = smmu_realize;
+    device_class_set_parent_realize(dc, smmu_realize,
+                                    &c->parent_realize);
     device_class_set_props(dc, smmuv3_properties);
 }
 
