@@ -60,24 +60,7 @@ arm_ss.add(when: 'CONFIG_FSL_IMX6UL', if_true: files('fsl-imx6ul.c', 'mcimx6ul-e
 arm_ss.add(when: 'CONFIG_NRF51_SOC', if_true: files('nrf51_soc.c'))
 arm_ss.add(when: 'CONFIG_XEN', if_true: files('xen_arm.c'))
 
-system_ss.add(when: 'CONFIG_ARM_SMMUV3', if_true: files('smmu-common.c'))
-system_ss.add(when: 'CONFIG_CHEETAH', if_true: files('palm.c'))
-system_ss.add(when: 'CONFIG_COLLIE', if_true: files('collie.c'))
-system_ss.add(when: 'CONFIG_EXYNOS4', if_true: files('exynos4_boards.c'))
-system_ss.add(when: 'CONFIG_GUMSTIX', if_true: files('gumstix.c'))
-system_ss.add(when: 'CONFIG_NETDUINO2', if_true: files('netduino2.c'))
-system_ss.add(when: 'CONFIG_OMAP', if_true: files('omap2.c'))
-system_ss.add(when: 'CONFIG_RASPI', if_true: files('bcm2835_peripherals.c'))
-system_ss.add(when: 'CONFIG_RASPI', if_true: files('bcm2838_peripherals.c'))
-system_ss.add(when: 'CONFIG_SPITZ', if_true: files('spitz.c'))
-system_ss.add(when: 'CONFIG_STRONGARM', if_true: files('strongarm.c'))
-system_ss.add(when: 'CONFIG_SX1', if_true: files('omap_sx1.c'))
-system_ss.add(when: 'CONFIG_TOSA', if_true: files('tosa.c'))
-system_ss.add(when: 'CONFIG_VERSATILE', if_true: files('versatilepb.c'))
-system_ss.add(when: 'CONFIG_VEXPRESS', if_true: files('vexpress.c'))
-system_ss.add(when: 'CONFIG_Z2', if_true: files('z2.c'))
-
-system_ss.add(when: 'CONFIG_PMB887X', if_true: files(
+arm_ss.add(when: 'CONFIG_PMB887X', if_true: files(
 	'pmb887x.c',
 	'pmb887x/fifo.c',
 	'pmb887x/boards.c',
@@ -117,5 +100,22 @@ system_ss.add(when: 'CONFIG_PMB887X', if_true: files(
 	'pmb887x/dif/lcd_jbt6k71.c',
 	'pmb887x/dif/lcd_ssd1286.c',
 ))
+
+system_ss.add(when: 'CONFIG_ARM_SMMUV3', if_true: files('smmu-common.c'))
+system_ss.add(when: 'CONFIG_CHEETAH', if_true: files('palm.c'))
+system_ss.add(when: 'CONFIG_COLLIE', if_true: files('collie.c'))
+system_ss.add(when: 'CONFIG_EXYNOS4', if_true: files('exynos4_boards.c'))
+system_ss.add(when: 'CONFIG_GUMSTIX', if_true: files('gumstix.c'))
+system_ss.add(when: 'CONFIG_NETDUINO2', if_true: files('netduino2.c'))
+system_ss.add(when: 'CONFIG_OMAP', if_true: files('omap2.c'))
+system_ss.add(when: 'CONFIG_RASPI', if_true: files('bcm2835_peripherals.c'))
+system_ss.add(when: 'CONFIG_RASPI', if_true: files('bcm2838_peripherals.c'))
+system_ss.add(when: 'CONFIG_SPITZ', if_true: files('spitz.c'))
+system_ss.add(when: 'CONFIG_STRONGARM', if_true: files('strongarm.c'))
+system_ss.add(when: 'CONFIG_SX1', if_true: files('omap_sx1.c'))
+system_ss.add(when: 'CONFIG_TOSA', if_true: files('tosa.c'))
+system_ss.add(when: 'CONFIG_VERSATILE', if_true: files('versatilepb.c'))
+system_ss.add(when: 'CONFIG_VEXPRESS', if_true: files('vexpress.c'))
+system_ss.add(when: 'CONFIG_Z2', if_true: files('z2.c'))
 
 hw_arch += {'arm': arm_ss}

@@ -8864,7 +8864,7 @@ static void disas_arm_insn(DisasContext *s, unsigned int insn)
     unsigned int cond = insn >> 28;
 
 	if (icount2_enabled()) {
-		gen_helper_instructions_counter(cpu_env);
+		gen_helper_instructions_counter(tcg_env);
 	}
 
     /* M variants do not implement ARM mode; this must raise the INVSTATE
@@ -8986,7 +8986,7 @@ static bool thumb_insn_is_16bit(DisasContext *s, uint32_t pc, uint32_t insn)
 static void disas_thumb2_insn(DisasContext *s, uint32_t insn)
 {
 	if (icount2_enabled()) {
-		gen_helper_instructions_counter(cpu_env);
+		gen_helper_instructions_counter(tcg_env);
 	}
 
     /*
@@ -9087,7 +9087,7 @@ illegal_op:
 static void disas_thumb_insn(DisasContext *s, uint32_t insn)
 {
 	if (icount2_enabled()) {
-		gen_helper_instructions_counter(cpu_env);
+		gen_helper_instructions_counter(tcg_env);
 	}
 
     if (!disas_t16(s, insn)) {

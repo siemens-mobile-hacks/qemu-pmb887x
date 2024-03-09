@@ -7,7 +7,6 @@ specific_ss.add(when: 'CONFIG_SYSTEM_ONLY', if_true: [files(
 )])
 
 specific_ss.add(when: ['CONFIG_SYSTEM_ONLY', 'CONFIG_TCG'], if_true: [files(
-  'icount.c',
   'icount2.c',
 )])
 

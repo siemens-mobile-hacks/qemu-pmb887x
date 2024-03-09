@@ -427,10 +427,10 @@ bool icount_configure(QemuOpts *opts, Error **errp)
     if (qemu_opt_get_bool(opts, "precise-clocks", false)) {
         if (option || qemu_opt_get(opts, "align") || qemu_opt_get(opts, "sleep")) {
             error_setg(errp, "precise-clocks=on and other options are incompatible");
-            return;
+            return false;
         }
         icount2_configure(opts, errp);
-        return;
+        return true;
     }
 
     if (!option) {

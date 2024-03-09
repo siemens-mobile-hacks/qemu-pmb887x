@@ -72,9 +72,9 @@ static void *_irq_loop_thread(void *arg) {
 		uint8_t irq;
 		_async_read(sock_client_irq, &irq, 1, 0);
 		
-		bool locked = qemu_mutex_iothread_locked();
+		bool locked = bql_locked();
 		if (!locked)
-			qemu_mutex_lock_iothread();
+			bql_lock();
 		
 		if (irq) {
 			qemu_set_irq(qdev_get_gpio_in(nvic, irq), 100000);
@@ -82,7 +82,7 @@ static void *_irq_loop_thread(void *arg) {
 		}
 		
 		if (!locked)
-			qemu_mutex_unlock_iothread();
+			bql_unlock();
 	}
 	return NULL;
 }

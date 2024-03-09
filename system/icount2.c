@@ -14,7 +14,7 @@
 #include "hw/core/cpu.h"
 #include "sysemu/cpu-timers.h"
 #include "sysemu/cpu-throttle.h"
-#include "timers-state.h"
+#include "sysemu/cpu-timers-internal.h"
 
 bool use_icount2 = false;
 
@@ -73,9 +73,9 @@ void icount2_on_tick(void) {
 	
 	int64_t deadline = qatomic_read_i64(&timers_state.icount2_deadline);
 	if (deadline > 0 && ticks >= deadline) {
-		qemu_mutex_lock_iothread();
+		bql_lock();
 		icount2_sync();
-		qemu_mutex_unlock_iothread();
+		bql_unlock();
 	}
 }
 

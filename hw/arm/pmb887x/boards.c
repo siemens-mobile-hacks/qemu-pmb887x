@@ -327,17 +327,17 @@ static bool _parse_keyboard(pmb887x_board_t *board, pmb887x_cfg_section_t *secti
 		char **kp_out_arr = g_strsplit(parts[1], ",", -1);
 		
 		uint32_t kp_in_arr_len = g_strv_length(kp_in_arr);
-		for (uint32_t i = 0; i < kp_in_arr_len; i++)
-			keycode |= 1 << strtoll(kp_in_arr[i], NULL, 10);
+		for (uint32_t j = 0; j < kp_in_arr_len; j++)
+			keycode |= 1 << strtoll(kp_in_arr[j], NULL, 10);
 		
 		uint32_t kp_out_arr_len = g_strv_length(kp_out_arr);
-		for (uint32_t i = 0; i < kp_out_arr_len; i++)
-			keycode |= 1 << (8 + strtoll(kp_out_arr[i], NULL, 10));
+		for (uint32_t j = 0; j < kp_out_arr_len; j++)
+			keycode |= 1 << (8 + strtoll(kp_out_arr[j], NULL, 10));
 		
 		bool found = false;
-		for (size_t i = 0; i < ARRAY_SIZE(keyboard_map); i++) {
-			if (strcmp(item->key, keyboard_map[i].name) == 0) {
-				board->keymap[keyboard_map[i].id] = keycode;
+		for (size_t j = 0; j < ARRAY_SIZE(keyboard_map); j++) {
+			if (strcmp(item->key, keyboard_map[j].name) == 0) {
+				board->keymap[keyboard_map[j].id] = keycode;
 				found = true;
 			}
 		}

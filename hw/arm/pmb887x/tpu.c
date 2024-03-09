@@ -136,7 +136,7 @@ static void tpu_ptimer_reset2(void *opaque) {
 	
 	uint64_t now = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
 	if (p->next && (now - p->next) / 1000000) {
-		EPRINTF("delta=%"PRId64"d ms / %"PRId64" us\n", (now - p->next) / 1000000, (now - p->next) / 1000);
+		EPRINTF("delta=%"PRId64" ms / %"PRId64" us\n", (now - p->next) / 1000000, (now - p->next) / 1000);
 		// abort();
 	}
 	

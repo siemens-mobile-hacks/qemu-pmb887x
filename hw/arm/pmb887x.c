@@ -11,6 +11,7 @@
 #include "hw/block/flash.h"
 #include "qemu/error-report.h"
 #include "qom/object.h"
+#include "qapi/qmp/qlist.h"
 #include "exec/address-spaces.h"
 #include "qemu/datadir.h"
 #include "hw/loader.h"
@@ -271,13 +272,10 @@ static void pmb887x_create_flash(BlockBackend *blk, DeviceState *ebuc, const pmb
 }
 
 static void pmb887x_init_keymap(DeviceState *keypad, const uint32_t *map, int map_size) {
-	qdev_prop_set_uint32(keypad, "len-map", map_size);
-	
-	char key[32];
-	for (int i = 0; i < map_size; i++) {
-		sprintf(key, "map[%d]", i);
-		qdev_prop_set_uint32(keypad, key, map[i]);
-	}
+	QList *list = qlist_new();
+	for (int i = 0; i < map_size; i++)
+		qlist_append_int(list, map[i]);
+    qdev_prop_set_array(keypad, "map", list);
 }
 
 static void pmb887x_init(MachineState *machine) {

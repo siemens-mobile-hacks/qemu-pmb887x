@@ -10635,7 +10635,7 @@ void arm_log_exception(CPUState *cs)
         if (is_fatal) {
             const char *need_stop = getenv("QEMU_ARM_STOP_ON_EXCP");
             if (need_stop && strcmp(need_stop, "1") == 0) {
-                CPUARMState *env = cs->env_ptr;
+                CPUARMState *env = cpu_env(cs);
                 fprintf(stderr, "Exception: %s, died at %08X (LR %08X)\n", exc, env->regs[15], env->regs[14]);
                 exit(0);
             }
