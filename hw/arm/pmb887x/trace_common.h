@@ -40,8 +40,8 @@ enum pmb887x_modules_t {
 //extern uint32_t pmb887x_trace_flags;
 
 static inline bool pmb887x_trace_log_enabled(uint64_t id) {
-	return ((id & (PMB887X_TRACE_GPTU)) != 0);
-	//return ((id & (PMB887X_TRACE_LCD)) != 0);
+	//return ((id & (PMB887X_TRACE_GPTU)) != 0);
+	return ((id & (PMB887X_TRACE_PMIC)) != 0);
 	return false;
 	return ((id & (PMB887X_TRACE_ADC)) != 0);
 	return ((id & (PMB887X_TRACE_FLASH)) != 0);
@@ -79,13 +79,14 @@ static inline bool pmb887x_trace_log_enabled(uint64_t id) {
 }
 
 static inline bool pmb887x_trace_io_enabled(uint64_t id) {
-	return ((id & (PMB887X_TRACE_GPTU)) != 0);
+	//return ((id & (PMB887X_TRACE_GPTU)) != 0);
 	//return true;
 	//return ((id & (PMB887X_TRACE_GPTU)) != 0);
 	//return ((id & (PMB887X_TRACE_ADC)) != 0);
 	//return ((id & (PMB887X_TRACE_PCL)) != 0);
+	//return ((id & (PMB887X_TRACE_I2C)) != 0);
 	return false;
-	return ((id & (PMB887X_TRACE_SCCU | PMB887X_TRACE_SCU)) != 0);
+	return ((id & (PMB887X_TRACE_I2C)) != 0);
 	return ((
 		PMB887X_TRACE_GPTU |
 		PMB887X_TRACE_TPU |

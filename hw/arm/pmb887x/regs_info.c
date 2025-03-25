@@ -4759,7 +4759,7 @@ static const pmb887x_module_reg_t tpu_regs[] = {
 	{"RAM1024",		TPU_RAM1024,	NULL,					0,									0},
 };
 
-static const pmb887x_module_field_t i2c_clc_fields[] = {
+static const pmb887x_module_field_t i2cv1_clc_fields[] = {
 	{"DISR",	MOD_CLC_DISR,	MOD_CLC_DISR_SHIFT,	NULL,	0},
 	{"DISS",	MOD_CLC_DISS,	MOD_CLC_DISS_SHIFT,	NULL,	0},
 	{"SPEN",	MOD_CLC_SPEN,	MOD_CLC_SPEN_SHIFT,	NULL,	0},
@@ -4769,250 +4769,151 @@ static const pmb887x_module_field_t i2c_clc_fields[] = {
 	{"RMC",		MOD_CLC_RMC,	MOD_CLC_RMC_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_module_field_t i2c_id_fields[] = {
+static const pmb887x_module_field_t i2cv1_pisel_fields[] = {
+	{"SCL_IS0",	I2Cv1_PISEL_SCL_IS0,	I2Cv1_PISEL_SCL_IS0_SHIFT,	NULL,	0},
+	{"SCL_IS1",	I2Cv1_PISEL_SCL_IS1,	I2Cv1_PISEL_SCL_IS1_SHIFT,	NULL,	0},
+	{"SDA_IS0",	I2Cv1_PISEL_SDA_IS0,	I2Cv1_PISEL_SDA_IS0_SHIFT,	NULL,	0},
+	{"SDA_IS1",	I2Cv1_PISEL_SDA_IS1,	I2Cv1_PISEL_SDA_IS1_SHIFT,	NULL,	0},
+};
+
+static const pmb887x_module_field_t i2cv1_id_fields[] = {
 	{"REV",		MOD_ID_REV,		MOD_ID_REV_SHIFT,		NULL,	0},
 	{"32B",		MOD_ID_32B,		MOD_ID_32B_SHIFT,		NULL,	0},
 	{"NUMBER",	MOD_ID_NUMBER,	MOD_ID_NUMBER_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_module_field_t i2c_runctrl_fields[] = {
-	{"RUN",	I2C_RUNCTRL_RUN,	I2C_RUNCTRL_RUN_SHIFT,	NULL,	0},
+static const pmb887x_module_value_t i2cv1_i2cv1_syscon_mod_values[] = {
+	{"DISABLED",		I2Cv1_SYSCON_MOD_DISABLED},
+	{"SLAVE",			I2Cv1_SYSCON_MOD_SLAVE},
+	{"MASTER",			I2Cv1_SYSCON_MOD_MASTER},
+	{"MULTI_MASTER",	I2Cv1_SYSCON_MOD_MULTI_MASTER},
 };
 
-static const pmb887x_module_field_t i2c_enddctrl_fields[] = {
-	{"SETRSC",	I2C_ENDDCTRL_SETRSC,	I2C_ENDDCTRL_SETRSC_SHIFT,	NULL,	0},
-	{"SETEND",	I2C_ENDDCTRL_SETEND,	I2C_ENDDCTRL_SETEND_SHIFT,	NULL,	0},
+static const pmb887x_module_value_t i2cv1_i2cv1_syscon_ci_values[] = {
+	{"1",	I2Cv1_SYSCON_CI_1},
+	{"2",	I2Cv1_SYSCON_CI_2},
+	{"3",	I2Cv1_SYSCON_CI_3},
+	{"4",	I2Cv1_SYSCON_CI_4},
 };
 
-static const pmb887x_module_field_t i2c_fdivcfg_fields[] = {
-	{"DEC",	I2C_FDIVCFG_DEC,	I2C_FDIVCFG_DEC_SHIFT,	NULL,	0},
-	{"INC",	I2C_FDIVCFG_INC,	I2C_FDIVCFG_INC_SHIFT,	NULL,	0},
+static const pmb887x_module_field_t i2cv1_syscon_fields[] = {
+	{"ADR",		I2Cv1_SYSCON_ADR,		I2Cv1_SYSCON_ADR_SHIFT,		NULL,							0},
+	{"AL",		I2Cv1_SYSCON_AL,		I2Cv1_SYSCON_AL_SHIFT,		NULL,							0},
+	{"SLA",		I2Cv1_SYSCON_SLA,		I2Cv1_SYSCON_SLA_SHIFT,		NULL,							0},
+	{"LRB",		I2Cv1_SYSCON_LRB,		I2Cv1_SYSCON_LRB_SHIFT,		NULL,							0},
+	{"BB",		I2Cv1_SYSCON_BB,		I2Cv1_SYSCON_BB_SHIFT,		NULL,							0},
+	{"IRQD",	I2Cv1_SYSCON_IRQD,		I2Cv1_SYSCON_IRQD_SHIFT,	NULL,							0},
+	{"IRQP",	I2Cv1_SYSCON_IRQP,		I2Cv1_SYSCON_IRQP_SHIFT,	NULL,							0},
+	{"IRQE",	I2Cv1_SYSCON_IRQE,		I2Cv1_SYSCON_IRQE_SHIFT,	NULL,							0},
+	{"CO",		I2Cv1_SYSCON_CO,		I2Cv1_SYSCON_CO_SHIFT,		NULL,							0},
+	{"WM",		I2Cv1_SYSCON_WM,		I2Cv1_SYSCON_WM_SHIFT,		NULL,							0},
+	{"RMEN",	I2Cv1_SYSCON_RMEN,		I2Cv1_SYSCON_RMEN_SHIFT,	NULL,							0},
+	{"M10",		I2Cv1_SYSCON_M10,		I2Cv1_SYSCON_M10_SHIFT,		NULL,							0},
+	{"RSC",		I2Cv1_SYSCON_RSC,		I2Cv1_SYSCON_RSC_SHIFT,		NULL,							0},
+	{"MOD",		I2Cv1_SYSCON_MOD,		I2Cv1_SYSCON_MOD_SHIFT,		i2cv1_i2cv1_syscon_mod_values,	ARRAY_SIZE(i2cv1_i2cv1_syscon_mod_values)},
+	{"BUM",		I2Cv1_SYSCON_BUM,		I2Cv1_SYSCON_BUM_SHIFT,		NULL,							0},
+	{"ACKDIS",	I2Cv1_SYSCON_ACKDIS,	I2Cv1_SYSCON_ACKDIS_SHIFT,	NULL,							0},
+	{"INT",		I2Cv1_SYSCON_INT,		I2Cv1_SYSCON_INT_SHIFT,		NULL,							0},
+	{"TRX",		I2Cv1_SYSCON_TRX,		I2Cv1_SYSCON_TRX_SHIFT,		NULL,							0},
+	{"IGE",		I2Cv1_SYSCON_IGE,		I2Cv1_SYSCON_IGE_SHIFT,		NULL,							0},
+	{"RM",		I2Cv1_SYSCON_RM,		I2Cv1_SYSCON_RM_SHIFT,		NULL,							0},
+	{"STP",		I2Cv1_SYSCON_STP,		I2Cv1_SYSCON_STP_SHIFT,		NULL,							0},
+	{"CI",		I2Cv1_SYSCON_CI,		I2Cv1_SYSCON_CI_SHIFT,		i2cv1_i2cv1_syscon_ci_values,	ARRAY_SIZE(i2cv1_i2cv1_syscon_ci_values)},
+	{"WMEN",	I2Cv1_SYSCON_WMEN,		I2Cv1_SYSCON_WMEN_SHIFT,	NULL,							0},
 };
 
-static const pmb887x_module_field_t i2c_fdivhighcfg_fields[] = {
-	{"DEC",	I2C_FDIVHIGHCFG_DEC,	I2C_FDIVHIGHCFG_DEC_SHIFT,	NULL,	0},
-	{"INC",	I2C_FDIVHIGHCFG_INC,	I2C_FDIVHIGHCFG_INC_SHIFT,	NULL,	0},
+static const pmb887x_module_value_t i2cv1_i2cv1_buscon_prediv_values[] = {
+	{"1",	I2Cv1_BUSCON_PREDIV_1},
+	{"8",	I2Cv1_BUSCON_PREDIV_8},
+	{"64",	I2Cv1_BUSCON_PREDIV_64},
 };
 
-static const pmb887x_module_field_t i2c_addrcfg_fields[] = {
-	{"ADR",		I2C_ADDRCFG_ADR,	I2C_ADDRCFG_ADR_SHIFT,	NULL,	0},
-	{"TBAM",	I2C_ADDRCFG_TBAM,	I2C_ADDRCFG_TBAM_SHIFT,	NULL,	0},
-	{"GCE",		I2C_ADDRCFG_GCE,	I2C_ADDRCFG_GCE_SHIFT,	NULL,	0},
-	{"MCE",		I2C_ADDRCFG_MCE,	I2C_ADDRCFG_MCE_SHIFT,	NULL,	0},
-	{"MnS",		I2C_ADDRCFG_MnS,	I2C_ADDRCFG_MnS_SHIFT,	NULL,	0},
-	{"SONA",	I2C_ADDRCFG_SONA,	I2C_ADDRCFG_SONA_SHIFT,	NULL,	0},
-	{"SOPE",	I2C_ADDRCFG_SOPE,	I2C_ADDRCFG_SOPE_SHIFT,	NULL,	0},
+static const pmb887x_module_value_t i2cv1_i2cv1_buscon_brpmod_values[] = {
+	{"MODE0",	I2Cv1_BUSCON_BRPMOD_MODE0},
+	{"MODE1",	I2Cv1_BUSCON_BRPMOD_MODE1},
 };
 
-static const pmb887x_module_value_t i2c_i2c_busstat_bs_values[] = {
-	{"FREE",				I2C_BUSSTAT_BS_FREE},
-	{"BUSY_OTHER_MASTER",	I2C_BUSSTAT_BS_BUSY_OTHER_MASTER},
-	{"BUSY_MASTER",			I2C_BUSSTAT_BS_BUSY_MASTER},
-	{"BUSY_SLAVE",			I2C_BUSSTAT_BS_BUSY_SLAVE},
+static const pmb887x_module_field_t i2cv1_buscon_fields[] = {
+	{"SDAEN0",	I2Cv1_BUSCON_SDAEN0,	I2Cv1_BUSCON_SDAEN0_SHIFT,	NULL,								0},
+	{"SDAEN1",	I2Cv1_BUSCON_SDAEN1,	I2Cv1_BUSCON_SDAEN1_SHIFT,	NULL,								0},
+	{"SCLEN0",	I2Cv1_BUSCON_SCLEN0,	I2Cv1_BUSCON_SCLEN0_SHIFT,	NULL,								0},
+	{"SCLEN1",	I2Cv1_BUSCON_SCLEN1,	I2Cv1_BUSCON_SCLEN1_SHIFT,	NULL,								0},
+	{"BRP",		I2Cv1_BUSCON_BRP,		I2Cv1_BUSCON_BRP_SHIFT,		NULL,								0},
+	{"ICA",		I2Cv1_BUSCON_ICA,		I2Cv1_BUSCON_ICA_SHIFT,		NULL,								0},
+	{"PREDIV",	I2Cv1_BUSCON_PREDIV,	I2Cv1_BUSCON_PREDIV_SHIFT,	i2cv1_i2cv1_buscon_prediv_values,	ARRAY_SIZE(i2cv1_i2cv1_buscon_prediv_values)},
+	{"BRPMOD",	I2Cv1_BUSCON_BRPMOD,	I2Cv1_BUSCON_BRPMOD_SHIFT,	i2cv1_i2cv1_buscon_brpmod_values,	ARRAY_SIZE(i2cv1_i2cv1_buscon_brpmod_values)},
 };
 
-static const pmb887x_module_field_t i2c_busstat_fields[] = {
-	{"BS",	I2C_BUSSTAT_BS,		I2C_BUSSTAT_BS_SHIFT,	i2c_i2c_busstat_bs_values,	ARRAY_SIZE(i2c_i2c_busstat_bs_values)},
-	{"RnW",	I2C_BUSSTAT_RnW,	I2C_BUSSTAT_RnW_SHIFT,	NULL,						0},
+static const pmb887x_module_field_t i2cv1_rtb_fields[] = {
+	{"BYTE0",	I2Cv1_RTB_BYTE0,	I2Cv1_RTB_BYTE0_SHIFT,	NULL,	0},
+	{"BYTE1",	I2Cv1_RTB_BYTE1,	I2Cv1_RTB_BYTE1_SHIFT,	NULL,	0},
+	{"BYTE2",	I2Cv1_RTB_BYTE2,	I2Cv1_RTB_BYTE2_SHIFT,	NULL,	0},
+	{"BYTE3",	I2Cv1_RTB_BYTE3,	I2Cv1_RTB_BYTE3_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_module_value_t i2c_i2c_fifocfg_rxbs_values[] = {
-	{"1_WORD",	I2C_FIFOCFG_RXBS_1_WORD},
-	{"2_WORD",	I2C_FIFOCFG_RXBS_2_WORD},
-	{"4_WORD",	I2C_FIFOCFG_RXBS_4_WORD},
+static const pmb887x_module_field_t i2cv1_whbsyscon_fields[] = {
+	{"CLRAL",		I2Cv1_WHBSYSCON_CLRAL,		I2Cv1_WHBSYSCON_CLRAL_SHIFT,		NULL,	0},
+	{"SETAL",		I2Cv1_WHBSYSCON_SETAL,		I2Cv1_WHBSYSCON_SETAL_SHIFT,		NULL,	0},
+	{"CLRIRQD",		I2Cv1_WHBSYSCON_CLRIRQD,	I2Cv1_WHBSYSCON_CLRIRQD_SHIFT,		NULL,	0},
+	{"CLRIRQP",		I2Cv1_WHBSYSCON_CLRIRQP,	I2Cv1_WHBSYSCON_CLRIRQP_SHIFT,		NULL,	0},
+	{"CLRIRQE",		I2Cv1_WHBSYSCON_CLRIRQE,	I2Cv1_WHBSYSCON_CLRIRQE_SHIFT,		NULL,	0},
+	{"SETIRQD",		I2Cv1_WHBSYSCON_SETIRQD,	I2Cv1_WHBSYSCON_SETIRQD_SHIFT,		NULL,	0},
+	{"SETIRQP",		I2Cv1_WHBSYSCON_SETIRQP,	I2Cv1_WHBSYSCON_SETIRQP_SHIFT,		NULL,	0},
+	{"SETIRQE",		I2Cv1_WHBSYSCON_SETIRQE,	I2Cv1_WHBSYSCON_SETIRQE_SHIFT,		NULL,	0},
+	{"CLRRMEN",		I2Cv1_WHBSYSCON_CLRRMEN,	I2Cv1_WHBSYSCON_CLRRMEN_SHIFT,		NULL,	0},
+	{"SETRMEN",		I2Cv1_WHBSYSCON_SETRMEN,	I2Cv1_WHBSYSCON_SETRMEN_SHIFT,		NULL,	0},
+	{"CLRRSC",		I2Cv1_WHBSYSCON_CLRRSC,		I2Cv1_WHBSYSCON_CLRRSC_SHIFT,		NULL,	0},
+	{"SETRSC",		I2Cv1_WHBSYSCON_SETRSC,		I2Cv1_WHBSYSCON_SETRSC_SHIFT,		NULL,	0},
+	{"CLRBUM",		I2Cv1_WHBSYSCON_CLRBUM,		I2Cv1_WHBSYSCON_CLRBUM_SHIFT,		NULL,	0},
+	{"SETBUM",		I2Cv1_WHBSYSCON_SETBUM,		I2Cv1_WHBSYSCON_SETBUM_SHIFT,		NULL,	0},
+	{"CLRACKDIS",	I2Cv1_WHBSYSCON_CLRACKDIS,	I2Cv1_WHBSYSCON_CLRACKDIS_SHIFT,	NULL,	0},
+	{"SETACKDIS",	I2Cv1_WHBSYSCON_SETACKDIS,	I2Cv1_WHBSYSCON_SETACKDIS_SHIFT,	NULL,	0},
+	{"CLRTRX",		I2Cv1_WHBSYSCON_CLRTRX,		I2Cv1_WHBSYSCON_CLRTRX_SHIFT,		NULL,	0},
+	{"SETTRX",		I2Cv1_WHBSYSCON_SETTRX,		I2Cv1_WHBSYSCON_SETTRX_SHIFT,		NULL,	0},
+	{"CLRSTP",		I2Cv1_WHBSYSCON_CLRSTP,		I2Cv1_WHBSYSCON_CLRSTP_SHIFT,		NULL,	0},
+	{"SETSTP",		I2Cv1_WHBSYSCON_SETSTP,		I2Cv1_WHBSYSCON_SETSTP_SHIFT,		NULL,	0},
+	{"CLRWMEN",		I2Cv1_WHBSYSCON_CLRWMEN,	I2Cv1_WHBSYSCON_CLRWMEN_SHIFT,		NULL,	0},
+	{"SETWMEN",		I2Cv1_WHBSYSCON_SETWMEN,	I2Cv1_WHBSYSCON_SETWMEN_SHIFT,		NULL,	0},
 };
 
-static const pmb887x_module_value_t i2c_i2c_fifocfg_txbs_values[] = {
-	{"1_WORD",	I2C_FIFOCFG_TXBS_1_WORD},
-	{"2_WORD",	I2C_FIFOCFG_TXBS_2_WORD},
-	{"4_WORD",	I2C_FIFOCFG_TXBS_4_WORD},
+static const pmb887x_module_field_t i2cv1_end_src_fields[] = {
+	{"SRPN",	MOD_SRC_SRPN,	MOD_SRC_SRPN_SHIFT,	NULL,	0},
+	{"TOS",		MOD_SRC_TOS,	MOD_SRC_TOS_SHIFT,	NULL,	0},
+	{"SRE",		MOD_SRC_SRE,	MOD_SRC_SRE_SHIFT,	NULL,	0},
+	{"SRR",		MOD_SRC_SRR,	MOD_SRC_SRR_SHIFT,	NULL,	0},
+	{"CLRR",	MOD_SRC_CLRR,	MOD_SRC_CLRR_SHIFT,	NULL,	0},
+	{"SETR",	MOD_SRC_SETR,	MOD_SRC_SETR_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_module_value_t i2c_i2c_fifocfg_rxfa_values[] = {
-	{"BYTE",		I2C_FIFOCFG_RXFA_BYTE},
-	{"HALF_WORLD",	I2C_FIFOCFG_RXFA_HALF_WORLD},
-	{"WORD",		I2C_FIFOCFG_RXFA_WORD},
+static const pmb887x_module_field_t i2cv1_proto_src_fields[] = {
+	{"SRPN",	MOD_SRC_SRPN,	MOD_SRC_SRPN_SHIFT,	NULL,	0},
+	{"TOS",		MOD_SRC_TOS,	MOD_SRC_TOS_SHIFT,	NULL,	0},
+	{"SRE",		MOD_SRC_SRE,	MOD_SRC_SRE_SHIFT,	NULL,	0},
+	{"SRR",		MOD_SRC_SRR,	MOD_SRC_SRR_SHIFT,	NULL,	0},
+	{"CLRR",	MOD_SRC_CLRR,	MOD_SRC_CLRR_SHIFT,	NULL,	0},
+	{"SETR",	MOD_SRC_SETR,	MOD_SRC_SETR_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_module_value_t i2c_i2c_fifocfg_txfa_values[] = {
-	{"BYTE",		I2C_FIFOCFG_TXFA_BYTE},
-	{"HALF_WORLD",	I2C_FIFOCFG_TXFA_HALF_WORLD},
-	{"WORD",		I2C_FIFOCFG_TXFA_WORD},
+static const pmb887x_module_field_t i2cv1_data_src_fields[] = {
+	{"SRPN",	MOD_SRC_SRPN,	MOD_SRC_SRPN_SHIFT,	NULL,	0},
+	{"TOS",		MOD_SRC_TOS,	MOD_SRC_TOS_SHIFT,	NULL,	0},
+	{"SRE",		MOD_SRC_SRE,	MOD_SRC_SRE_SHIFT,	NULL,	0},
+	{"SRR",		MOD_SRC_SRR,	MOD_SRC_SRR_SHIFT,	NULL,	0},
+	{"CLRR",	MOD_SRC_CLRR,	MOD_SRC_CLRR_SHIFT,	NULL,	0},
+	{"SETR",	MOD_SRC_SETR,	MOD_SRC_SETR_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_module_field_t i2c_fifocfg_fields[] = {
-	{"RXBS",	I2C_FIFOCFG_RXBS,	I2C_FIFOCFG_RXBS_SHIFT,	i2c_i2c_fifocfg_rxbs_values,	ARRAY_SIZE(i2c_i2c_fifocfg_rxbs_values)},
-	{"TXBS",	I2C_FIFOCFG_TXBS,	I2C_FIFOCFG_TXBS_SHIFT,	i2c_i2c_fifocfg_txbs_values,	ARRAY_SIZE(i2c_i2c_fifocfg_txbs_values)},
-	{"RXFA",	I2C_FIFOCFG_RXFA,	I2C_FIFOCFG_RXFA_SHIFT,	i2c_i2c_fifocfg_rxfa_values,	ARRAY_SIZE(i2c_i2c_fifocfg_rxfa_values)},
-	{"TXFA",	I2C_FIFOCFG_TXFA,	I2C_FIFOCFG_TXFA_SHIFT,	i2c_i2c_fifocfg_txfa_values,	ARRAY_SIZE(i2c_i2c_fifocfg_txfa_values)},
-	{"RXFC",	I2C_FIFOCFG_RXFC,	I2C_FIFOCFG_RXFC_SHIFT,	NULL,							0},
-	{"TXFC",	I2C_FIFOCFG_TXFC,	I2C_FIFOCFG_TXFC_SHIFT,	NULL,							0},
-};
-
-static const pmb887x_module_field_t i2c_mrpsctrl_fields[] = {
-	{"MRPS",	I2C_MRPSCTRL_MRPS,	I2C_MRPSCTRL_MRPS_SHIFT,	NULL,	0},
-};
-
-static const pmb887x_module_field_t i2c_rpsstat_fields[] = {
-	{"RPS",	I2C_RPSSTAT_RPS,	I2C_RPSSTAT_RPS_SHIFT,	NULL,	0},
-};
-
-static const pmb887x_module_field_t i2c_tpsctrl_fields[] = {
-	{"TPS",	I2C_TPSCTRL_TPS,	I2C_TPSCTRL_TPS_SHIFT,	NULL,	0},
-};
-
-static const pmb887x_module_field_t i2c_ffsstat_fields[] = {
-	{"FFS",	I2C_FFSSTAT_FFS,	I2C_FFSSTAT_FFS_SHIFT,	NULL,	0},
-};
-
-static const pmb887x_module_field_t i2c_timcfg_fields[] = {
-	{"SDA_DEL_HD_DAT",		I2C_TIMCFG_SDA_DEL_HD_DAT,		I2C_TIMCFG_SDA_DEL_HD_DAT_SHIFT,	NULL,	0},
-	{"HS_SDA_DEL_HD_DAT",	I2C_TIMCFG_HS_SDA_DEL_HD_DAT,	I2C_TIMCFG_HS_SDA_DEL_HD_DAT_SHIFT,	NULL,	0},
-	{"SCL_DEL_HD_STA",		I2C_TIMCFG_SCL_DEL_HD_STA,		I2C_TIMCFG_SCL_DEL_HD_STA_SHIFT,	NULL,	0},
-	{"EN_SCL_LOW_LEN",		I2C_TIMCFG_EN_SCL_LOW_LEN,		I2C_TIMCFG_EN_SCL_LOW_LEN_SHIFT,	NULL,	0},
-	{"FS_SCL_LOW",			I2C_TIMCFG_FS_SCL_LOW,			I2C_TIMCFG_FS_SCL_LOW_SHIFT,		NULL,	0},
-	{"HS_SDA_DEL",			I2C_TIMCFG_HS_SDA_DEL,			I2C_TIMCFG_HS_SDA_DEL_SHIFT,		NULL,	0},
-	{"SCL_LOW_LEN",			I2C_TIMCFG_SCL_LOW_LEN,			I2C_TIMCFG_SCL_LOW_LEN_SHIFT,		NULL,	0},
-};
-
-static const pmb887x_module_field_t i2c_errirqsm_fields[] = {
-	{"RXF_UFL",	I2C_ERRIRQSM_RXF_UFL,	I2C_ERRIRQSM_RXF_UFL_SHIFT,	NULL,	0},
-	{"RXF_OFL",	I2C_ERRIRQSM_RXF_OFL,	I2C_ERRIRQSM_RXF_OFL_SHIFT,	NULL,	0},
-	{"TXF_UFL",	I2C_ERRIRQSM_TXF_UFL,	I2C_ERRIRQSM_TXF_UFL_SHIFT,	NULL,	0},
-	{"TXF_OFL",	I2C_ERRIRQSM_TXF_OFL,	I2C_ERRIRQSM_TXF_OFL_SHIFT,	NULL,	0},
-};
-
-static const pmb887x_module_field_t i2c_errirqss_fields[] = {
-	{"RXF_UFL",	I2C_ERRIRQSS_RXF_UFL,	I2C_ERRIRQSS_RXF_UFL_SHIFT,	NULL,	0},
-	{"RXF_OFL",	I2C_ERRIRQSS_RXF_OFL,	I2C_ERRIRQSS_RXF_OFL_SHIFT,	NULL,	0},
-	{"TXF_UFL",	I2C_ERRIRQSS_TXF_UFL,	I2C_ERRIRQSS_TXF_UFL_SHIFT,	NULL,	0},
-	{"TXF_OFL",	I2C_ERRIRQSS_TXF_OFL,	I2C_ERRIRQSS_TXF_OFL_SHIFT,	NULL,	0},
-};
-
-static const pmb887x_module_field_t i2c_errirqsc_fields[] = {
-	{"RXF_UFL",	I2C_ERRIRQSC_RXF_UFL,	I2C_ERRIRQSC_RXF_UFL_SHIFT,	NULL,	0},
-	{"RXF_OFL",	I2C_ERRIRQSC_RXF_OFL,	I2C_ERRIRQSC_RXF_OFL_SHIFT,	NULL,	0},
-	{"TXF_UFL",	I2C_ERRIRQSC_TXF_UFL,	I2C_ERRIRQSC_TXF_UFL_SHIFT,	NULL,	0},
-	{"TXF_OFL",	I2C_ERRIRQSC_TXF_OFL,	I2C_ERRIRQSC_TXF_OFL_SHIFT,	NULL,	0},
-};
-
-static const pmb887x_module_field_t i2c_pirqsm_fields[] = {
-	{"AM",		I2C_PIRQSM_AM,		I2C_PIRQSM_AM_SHIFT,		NULL,	0},
-	{"GC",		I2C_PIRQSM_GC,		I2C_PIRQSM_GC_SHIFT,		NULL,	0},
-	{"MC",		I2C_PIRQSM_MC,		I2C_PIRQSM_MC_SHIFT,		NULL,	0},
-	{"AL",		I2C_PIRQSM_AL,		I2C_PIRQSM_AL_SHIFT,		NULL,	0},
-	{"NACK",	I2C_PIRQSM_NACK,	I2C_PIRQSM_NACK_SHIFT,		NULL,	0},
-	{"TX_END",	I2C_PIRQSM_TX_END,	I2C_PIRQSM_TX_END_SHIFT,	NULL,	0},
-	{"RX",		I2C_PIRQSM_RX,		I2C_PIRQSM_RX_SHIFT,		NULL,	0},
-};
-
-static const pmb887x_module_field_t i2c_pirqss_fields[] = {
-	{"AM",		I2C_PIRQSS_AM,		I2C_PIRQSS_AM_SHIFT,		NULL,	0},
-	{"GC",		I2C_PIRQSS_GC,		I2C_PIRQSS_GC_SHIFT,		NULL,	0},
-	{"MC",		I2C_PIRQSS_MC,		I2C_PIRQSS_MC_SHIFT,		NULL,	0},
-	{"AL",		I2C_PIRQSS_AL,		I2C_PIRQSS_AL_SHIFT,		NULL,	0},
-	{"NACK",	I2C_PIRQSS_NACK,	I2C_PIRQSS_NACK_SHIFT,		NULL,	0},
-	{"TX_END",	I2C_PIRQSS_TX_END,	I2C_PIRQSS_TX_END_SHIFT,	NULL,	0},
-	{"RX",		I2C_PIRQSS_RX,		I2C_PIRQSS_RX_SHIFT,		NULL,	0},
-};
-
-static const pmb887x_module_field_t i2c_pirqsc_fields[] = {
-	{"AM",		I2C_PIRQSC_AM,		I2C_PIRQSC_AM_SHIFT,		NULL,	0},
-	{"GC",		I2C_PIRQSC_GC,		I2C_PIRQSC_GC_SHIFT,		NULL,	0},
-	{"MC",		I2C_PIRQSC_MC,		I2C_PIRQSC_MC_SHIFT,		NULL,	0},
-	{"AL",		I2C_PIRQSC_AL,		I2C_PIRQSC_AL_SHIFT,		NULL,	0},
-	{"NACK",	I2C_PIRQSC_NACK,	I2C_PIRQSC_NACK_SHIFT,		NULL,	0},
-	{"TX_END",	I2C_PIRQSC_TX_END,	I2C_PIRQSC_TX_END_SHIFT,	NULL,	0},
-	{"RX",		I2C_PIRQSC_RX,		I2C_PIRQSC_RX_SHIFT,		NULL,	0},
-};
-
-static const pmb887x_module_field_t i2c_ris_fields[] = {
-	{"LSREQ_INT",	I2C_RIS_LSREQ_INT,		I2C_RIS_LSREQ_INT_SHIFT,	NULL,	0},
-	{"SREQ_INT",	I2C_RIS_SREQ_INT,		I2C_RIS_SREQ_INT_SHIFT,		NULL,	0},
-	{"LBREQ_INT",	I2C_RIS_LBREQ_INT,		I2C_RIS_LBREQ_INT_SHIFT,	NULL,	0},
-	{"BREQ_INT",	I2C_RIS_BREQ_INT,		I2C_RIS_BREQ_INT_SHIFT,		NULL,	0},
-	{"I2C_ERR_INT",	I2C_RIS_I2C_ERR_INT,	I2C_RIS_I2C_ERR_INT_SHIFT,	NULL,	0},
-	{"I2C_P_INT",	I2C_RIS_I2C_P_INT,		I2C_RIS_I2C_P_INT_SHIFT,	NULL,	0},
-};
-
-static const pmb887x_module_field_t i2c_imsc_fields[] = {
-	{"LSREQ_INT",	I2C_IMSC_LSREQ_INT,		I2C_IMSC_LSREQ_INT_SHIFT,	NULL,	0},
-	{"SREQ_INT",	I2C_IMSC_SREQ_INT,		I2C_IMSC_SREQ_INT_SHIFT,	NULL,	0},
-	{"LBREQ_INT",	I2C_IMSC_LBREQ_INT,		I2C_IMSC_LBREQ_INT_SHIFT,	NULL,	0},
-	{"BREQ_INT",	I2C_IMSC_BREQ_INT,		I2C_IMSC_BREQ_INT_SHIFT,	NULL,	0},
-	{"I2C_ERR_INT",	I2C_IMSC_I2C_ERR_INT,	I2C_IMSC_I2C_ERR_INT_SHIFT,	NULL,	0},
-	{"I2C_P_INT",	I2C_IMSC_I2C_P_INT,		I2C_IMSC_I2C_P_INT_SHIFT,	NULL,	0},
-};
-
-static const pmb887x_module_field_t i2c_mis_fields[] = {
-	{"LSREQ_INT",	I2C_MIS_LSREQ_INT,		I2C_MIS_LSREQ_INT_SHIFT,	NULL,	0},
-	{"SREQ_INT",	I2C_MIS_SREQ_INT,		I2C_MIS_SREQ_INT_SHIFT,		NULL,	0},
-	{"LBREQ_INT",	I2C_MIS_LBREQ_INT,		I2C_MIS_LBREQ_INT_SHIFT,	NULL,	0},
-	{"BREQ_INT",	I2C_MIS_BREQ_INT,		I2C_MIS_BREQ_INT_SHIFT,		NULL,	0},
-	{"I2C_ERR_INT",	I2C_MIS_I2C_ERR_INT,	I2C_MIS_I2C_ERR_INT_SHIFT,	NULL,	0},
-	{"I2C_P_INT",	I2C_MIS_I2C_P_INT,		I2C_MIS_I2C_P_INT_SHIFT,	NULL,	0},
-};
-
-static const pmb887x_module_field_t i2c_icr_fields[] = {
-	{"LSREQ_INT",	I2C_ICR_LSREQ_INT,		I2C_ICR_LSREQ_INT_SHIFT,	NULL,	0},
-	{"SREQ_INT",	I2C_ICR_SREQ_INT,		I2C_ICR_SREQ_INT_SHIFT,		NULL,	0},
-	{"LBREQ_INT",	I2C_ICR_LBREQ_INT,		I2C_ICR_LBREQ_INT_SHIFT,	NULL,	0},
-	{"BREQ_INT",	I2C_ICR_BREQ_INT,		I2C_ICR_BREQ_INT_SHIFT,		NULL,	0},
-	{"I2C_ERR_INT",	I2C_ICR_I2C_ERR_INT,	I2C_ICR_I2C_ERR_INT_SHIFT,	NULL,	0},
-	{"I2C_P_INT",	I2C_ICR_I2C_P_INT,		I2C_ICR_I2C_P_INT_SHIFT,	NULL,	0},
-};
-
-static const pmb887x_module_field_t i2c_isr_fields[] = {
-	{"LSREQ_INT",	I2C_ISR_LSREQ_INT,		I2C_ISR_LSREQ_INT_SHIFT,	NULL,	0},
-	{"SREQ_INT",	I2C_ISR_SREQ_INT,		I2C_ISR_SREQ_INT_SHIFT,		NULL,	0},
-	{"LBREQ_INT",	I2C_ISR_LBREQ_INT,		I2C_ISR_LBREQ_INT_SHIFT,	NULL,	0},
-	{"BREQ_INT",	I2C_ISR_BREQ_INT,		I2C_ISR_BREQ_INT_SHIFT,		NULL,	0},
-	{"I2C_ERR_INT",	I2C_ISR_I2C_ERR_INT,	I2C_ISR_I2C_ERR_INT_SHIFT,	NULL,	0},
-	{"I2C_P_INT",	I2C_ISR_I2C_P_INT,		I2C_ISR_I2C_P_INT_SHIFT,	NULL,	0},
-};
-
-static const pmb887x_module_field_t i2c_txd_fields[] = {
-	{"BYTE0",	I2C_TXD_BYTE0,	I2C_TXD_BYTE0_SHIFT,	NULL,	0},
-	{"BYTE1",	I2C_TXD_BYTE1,	I2C_TXD_BYTE1_SHIFT,	NULL,	0},
-	{"BYTE2",	I2C_TXD_BYTE2,	I2C_TXD_BYTE2_SHIFT,	NULL,	0},
-	{"BYTE3",	I2C_TXD_BYTE3,	I2C_TXD_BYTE3_SHIFT,	NULL,	0},
-};
-
-static const pmb887x_module_field_t i2c_rxd_fields[] = {
-	{"BYTE0",	I2C_RXD_BYTE0,	I2C_RXD_BYTE0_SHIFT,	NULL,	0},
-	{"BYTE1",	I2C_RXD_BYTE1,	I2C_RXD_BYTE1_SHIFT,	NULL,	0},
-	{"BYTE2",	I2C_RXD_BYTE2,	I2C_RXD_BYTE2_SHIFT,	NULL,	0},
-	{"BYTE3",	I2C_RXD_BYTE3,	I2C_RXD_BYTE3_SHIFT,	NULL,	0},
-};
-
-static const pmb887x_module_reg_t i2c_regs[] = {
-	{"CLC",			I2C_CLC,			i2c_clc_fields,			ARRAY_SIZE(i2c_clc_fields),			0},
-	{"ID",			I2C_ID,				i2c_id_fields,			ARRAY_SIZE(i2c_id_fields),			0},
-	{"RUNCTRL",		I2C_RUNCTRL,		i2c_runctrl_fields,		ARRAY_SIZE(i2c_runctrl_fields),		0},
-	{"ENDDCTRL",	I2C_ENDDCTRL,		i2c_enddctrl_fields,	ARRAY_SIZE(i2c_enddctrl_fields),	0},
-	{"FDIVCFG",		I2C_FDIVCFG,		i2c_fdivcfg_fields,		ARRAY_SIZE(i2c_fdivcfg_fields),		0},
-	{"FDIVHIGHCFG",	I2C_FDIVHIGHCFG,	i2c_fdivhighcfg_fields,	ARRAY_SIZE(i2c_fdivhighcfg_fields),	0},
-	{"ADDRCFG",		I2C_ADDRCFG,		i2c_addrcfg_fields,		ARRAY_SIZE(i2c_addrcfg_fields),		0},
-	{"BUSSTAT",		I2C_BUSSTAT,		i2c_busstat_fields,		ARRAY_SIZE(i2c_busstat_fields),		0},
-	{"FIFOCFG",		I2C_FIFOCFG,		i2c_fifocfg_fields,		ARRAY_SIZE(i2c_fifocfg_fields),		0},
-	{"MRPSCTRL",	I2C_MRPSCTRL,		i2c_mrpsctrl_fields,	ARRAY_SIZE(i2c_mrpsctrl_fields),	0},
-	{"RPSSTAT",		I2C_RPSSTAT,		i2c_rpsstat_fields,		ARRAY_SIZE(i2c_rpsstat_fields),		0},
-	{"TPSCTRL",		I2C_TPSCTRL,		i2c_tpsctrl_fields,		ARRAY_SIZE(i2c_tpsctrl_fields),		0},
-	{"FFSSTAT",		I2C_FFSSTAT,		i2c_ffsstat_fields,		ARRAY_SIZE(i2c_ffsstat_fields),		0},
-	{"TIMCFG",		I2C_TIMCFG,			i2c_timcfg_fields,		ARRAY_SIZE(i2c_timcfg_fields),		0},
-	{"ERRIRQSM",	I2C_ERRIRQSM,		i2c_errirqsm_fields,	ARRAY_SIZE(i2c_errirqsm_fields),	0},
-	{"ERRIRQSS",	I2C_ERRIRQSS,		i2c_errirqss_fields,	ARRAY_SIZE(i2c_errirqss_fields),	0},
-	{"ERRIRQSC",	I2C_ERRIRQSC,		i2c_errirqsc_fields,	ARRAY_SIZE(i2c_errirqsc_fields),	0},
-	{"PIRQSM",		I2C_PIRQSM,			i2c_pirqsm_fields,		ARRAY_SIZE(i2c_pirqsm_fields),		0},
-	{"PIRQSS",		I2C_PIRQSS,			i2c_pirqss_fields,		ARRAY_SIZE(i2c_pirqss_fields),		0},
-	{"PIRQSC",		I2C_PIRQSC,			i2c_pirqsc_fields,		ARRAY_SIZE(i2c_pirqsc_fields),		0},
-	{"RIS",			I2C_RIS,			i2c_ris_fields,			ARRAY_SIZE(i2c_ris_fields),			0},
-	{"IMSC",		I2C_IMSC,			i2c_imsc_fields,		ARRAY_SIZE(i2c_imsc_fields),		0},
-	{"MIS",			I2C_MIS,			i2c_mis_fields,			ARRAY_SIZE(i2c_mis_fields),			0},
-	{"ICR",			I2C_ICR,			i2c_icr_fields,			ARRAY_SIZE(i2c_icr_fields),			0},
-	{"ISR",			I2C_ISR,			i2c_isr_fields,			ARRAY_SIZE(i2c_isr_fields),			0},
-	{"TXD",			I2C_TXD,			i2c_txd_fields,			ARRAY_SIZE(i2c_txd_fields),			0},
-	{"RXD",			I2C_RXD,			i2c_rxd_fields,			ARRAY_SIZE(i2c_rxd_fields),			0},
+static const pmb887x_module_reg_t i2cv1_regs[] = {
+	{"CLC",			I2Cv1_CLC,			i2cv1_clc_fields,		ARRAY_SIZE(i2cv1_clc_fields),		0},
+	{"PISEL",		I2Cv1_PISEL,		i2cv1_pisel_fields,		ARRAY_SIZE(i2cv1_pisel_fields),		0},
+	{"ID",			I2Cv1_ID,			i2cv1_id_fields,		ARRAY_SIZE(i2cv1_id_fields),		0},
+	{"SYSCON",		I2Cv1_SYSCON,		i2cv1_syscon_fields,	ARRAY_SIZE(i2cv1_syscon_fields),	0},
+	{"BUSCON",		I2Cv1_BUSCON,		i2cv1_buscon_fields,	ARRAY_SIZE(i2cv1_buscon_fields),	0},
+	{"RTB",			I2Cv1_RTB,			i2cv1_rtb_fields,		ARRAY_SIZE(i2cv1_rtb_fields),		0},
+	{"WHBSYSCON",	I2Cv1_WHBSYSCON,	i2cv1_whbsyscon_fields,	ARRAY_SIZE(i2cv1_whbsyscon_fields),	0},
+	{"END_SRC",		I2Cv1_END_SRC,		i2cv1_end_src_fields,	ARRAY_SIZE(i2cv1_end_src_fields),	0},
+	{"PROTO_SRC",	I2Cv1_PROTO_SRC,	i2cv1_proto_src_fields,	ARRAY_SIZE(i2cv1_proto_src_fields),	0},
+	{"DATA_SRC",	I2Cv1_DATA_SRC,		i2cv1_data_src_fields,	ARRAY_SIZE(i2cv1_data_src_fields),	0},
 };
 
 static const pmb887x_module_field_t i2cv2_clc_fields[] = {
@@ -5025,148 +4926,250 @@ static const pmb887x_module_field_t i2cv2_clc_fields[] = {
 	{"RMC",		MOD_CLC_RMC,	MOD_CLC_RMC_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_module_field_t i2cv2_pisel_fields[] = {
-	{"SCL_IS0",	I2Cv2_PISEL_SCL_IS0,	I2Cv2_PISEL_SCL_IS0_SHIFT,	NULL,	0},
-	{"SCL_IS1",	I2Cv2_PISEL_SCL_IS1,	I2Cv2_PISEL_SCL_IS1_SHIFT,	NULL,	0},
-	{"SDA_IS0",	I2Cv2_PISEL_SDA_IS0,	I2Cv2_PISEL_SDA_IS0_SHIFT,	NULL,	0},
-	{"SDA_IS1",	I2Cv2_PISEL_SDA_IS1,	I2Cv2_PISEL_SDA_IS1_SHIFT,	NULL,	0},
-};
-
 static const pmb887x_module_field_t i2cv2_id_fields[] = {
 	{"REV",		MOD_ID_REV,		MOD_ID_REV_SHIFT,		NULL,	0},
 	{"32B",		MOD_ID_32B,		MOD_ID_32B_SHIFT,		NULL,	0},
 	{"NUMBER",	MOD_ID_NUMBER,	MOD_ID_NUMBER_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_module_value_t i2cv2_i2cv2_syscon_mod_values[] = {
-	{"DISABLED",		I2Cv2_SYSCON_MOD_DISABLED},
-	{"SLAVE",			I2Cv2_SYSCON_MOD_SLAVE},
-	{"MASTER",			I2Cv2_SYSCON_MOD_MASTER},
-	{"MULTI_MASTER",	I2Cv2_SYSCON_MOD_MULTI_MASTER},
+static const pmb887x_module_field_t i2cv2_runctrl_fields[] = {
+	{"RUN",	I2Cv2_RUNCTRL_RUN,	I2Cv2_RUNCTRL_RUN_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_module_value_t i2cv2_i2cv2_syscon_ci_values[] = {
-	{"1",	I2Cv2_SYSCON_CI_1},
-	{"2",	I2Cv2_SYSCON_CI_2},
-	{"3",	I2Cv2_SYSCON_CI_3},
-	{"4",	I2Cv2_SYSCON_CI_4},
+static const pmb887x_module_field_t i2cv2_enddctrl_fields[] = {
+	{"SETRSC",	I2Cv2_ENDDCTRL_SETRSC,	I2Cv2_ENDDCTRL_SETRSC_SHIFT,	NULL,	0},
+	{"SETEND",	I2Cv2_ENDDCTRL_SETEND,	I2Cv2_ENDDCTRL_SETEND_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_module_field_t i2cv2_syscon_fields[] = {
-	{"ADR",		I2Cv2_SYSCON_ADR,		I2Cv2_SYSCON_ADR_SHIFT,		NULL,							0},
-	{"AL",		I2Cv2_SYSCON_AL,		I2Cv2_SYSCON_AL_SHIFT,		NULL,							0},
-	{"SLA",		I2Cv2_SYSCON_SLA,		I2Cv2_SYSCON_SLA_SHIFT,		NULL,							0},
-	{"LRB",		I2Cv2_SYSCON_LRB,		I2Cv2_SYSCON_LRB_SHIFT,		NULL,							0},
-	{"BB",		I2Cv2_SYSCON_BB,		I2Cv2_SYSCON_BB_SHIFT,		NULL,							0},
-	{"IRQD",	I2Cv2_SYSCON_IRQD,		I2Cv2_SYSCON_IRQD_SHIFT,	NULL,							0},
-	{"IRQP",	I2Cv2_SYSCON_IRQP,		I2Cv2_SYSCON_IRQP_SHIFT,	NULL,							0},
-	{"IRQE",	I2Cv2_SYSCON_IRQE,		I2Cv2_SYSCON_IRQE_SHIFT,	NULL,							0},
-	{"CO",		I2Cv2_SYSCON_CO,		I2Cv2_SYSCON_CO_SHIFT,		NULL,							0},
-	{"RMEN",	I2Cv2_SYSCON_RMEN,		I2Cv2_SYSCON_RMEN_SHIFT,	NULL,							0},
-	{"M10",		I2Cv2_SYSCON_M10,		I2Cv2_SYSCON_M10_SHIFT,		NULL,							0},
-	{"RSC",		I2Cv2_SYSCON_RSC,		I2Cv2_SYSCON_RSC_SHIFT,		NULL,							0},
-	{"MOD",		I2Cv2_SYSCON_MOD,		I2Cv2_SYSCON_MOD_SHIFT,		i2cv2_i2cv2_syscon_mod_values,	ARRAY_SIZE(i2cv2_i2cv2_syscon_mod_values)},
-	{"BUM",		I2Cv2_SYSCON_BUM,		I2Cv2_SYSCON_BUM_SHIFT,		NULL,							0},
-	{"ACKDIS",	I2Cv2_SYSCON_ACKDIS,	I2Cv2_SYSCON_ACKDIS_SHIFT,	NULL,							0},
-	{"INT",		I2Cv2_SYSCON_INT,		I2Cv2_SYSCON_INT_SHIFT,		NULL,							0},
-	{"TRX",		I2Cv2_SYSCON_TRX,		I2Cv2_SYSCON_TRX_SHIFT,		NULL,							0},
-	{"IGE",		I2Cv2_SYSCON_IGE,		I2Cv2_SYSCON_IGE_SHIFT,		NULL,							0},
-	{"STP",		I2Cv2_SYSCON_STP,		I2Cv2_SYSCON_STP_SHIFT,		NULL,							0},
-	{"CI",		I2Cv2_SYSCON_CI,		I2Cv2_SYSCON_CI_SHIFT,		i2cv2_i2cv2_syscon_ci_values,	ARRAY_SIZE(i2cv2_i2cv2_syscon_ci_values)},
-	{"WMEN",	I2Cv2_SYSCON_WMEN,		I2Cv2_SYSCON_WMEN_SHIFT,	NULL,							0},
+static const pmb887x_module_field_t i2cv2_fdivcfg_fields[] = {
+	{"DEC",	I2Cv2_FDIVCFG_DEC,	I2Cv2_FDIVCFG_DEC_SHIFT,	NULL,	0},
+	{"INC",	I2Cv2_FDIVCFG_INC,	I2Cv2_FDIVCFG_INC_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_module_value_t i2cv2_i2cv2_buscon_prediv_values[] = {
-	{"1",	I2Cv2_BUSCON_PREDIV_1},
-	{"8",	I2Cv2_BUSCON_PREDIV_8},
-	{"64",	I2Cv2_BUSCON_PREDIV_64},
+static const pmb887x_module_field_t i2cv2_fdivhighcfg_fields[] = {
+	{"DEC",	I2Cv2_FDIVHIGHCFG_DEC,	I2Cv2_FDIVHIGHCFG_DEC_SHIFT,	NULL,	0},
+	{"INC",	I2Cv2_FDIVHIGHCFG_INC,	I2Cv2_FDIVHIGHCFG_INC_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_module_value_t i2cv2_i2cv2_buscon_brpmod_values[] = {
-	{"MODE0",	I2Cv2_BUSCON_BRPMOD_MODE0},
-	{"MODE1",	I2Cv2_BUSCON_BRPMOD_MODE1},
+static const pmb887x_module_field_t i2cv2_addrcfg_fields[] = {
+	{"ADR",		I2Cv2_ADDRCFG_ADR,	I2Cv2_ADDRCFG_ADR_SHIFT,	NULL,	0},
+	{"TBAM",	I2Cv2_ADDRCFG_TBAM,	I2Cv2_ADDRCFG_TBAM_SHIFT,	NULL,	0},
+	{"GCE",		I2Cv2_ADDRCFG_GCE,	I2Cv2_ADDRCFG_GCE_SHIFT,	NULL,	0},
+	{"MCE",		I2Cv2_ADDRCFG_MCE,	I2Cv2_ADDRCFG_MCE_SHIFT,	NULL,	0},
+	{"MnS",		I2Cv2_ADDRCFG_MnS,	I2Cv2_ADDRCFG_MnS_SHIFT,	NULL,	0},
+	{"SONA",	I2Cv2_ADDRCFG_SONA,	I2Cv2_ADDRCFG_SONA_SHIFT,	NULL,	0},
+	{"SOPE",	I2Cv2_ADDRCFG_SOPE,	I2Cv2_ADDRCFG_SOPE_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_module_field_t i2cv2_buscon_fields[] = {
-	{"SDAEN0",	I2Cv2_BUSCON_SDAEN0,	I2Cv2_BUSCON_SDAEN0_SHIFT,	NULL,								0},
-	{"SDAEN1",	I2Cv2_BUSCON_SDAEN1,	I2Cv2_BUSCON_SDAEN1_SHIFT,	NULL,								0},
-	{"SCLEN0",	I2Cv2_BUSCON_SCLEN0,	I2Cv2_BUSCON_SCLEN0_SHIFT,	NULL,								0},
-	{"SCLEN1",	I2Cv2_BUSCON_SCLEN1,	I2Cv2_BUSCON_SCLEN1_SHIFT,	NULL,								0},
-	{"BRP",		I2Cv2_BUSCON_BRP,		I2Cv2_BUSCON_BRP_SHIFT,		NULL,								0},
-	{"ICA",		I2Cv2_BUSCON_ICA,		I2Cv2_BUSCON_ICA_SHIFT,		NULL,								0},
-	{"PREDIV",	I2Cv2_BUSCON_PREDIV,	I2Cv2_BUSCON_PREDIV_SHIFT,	i2cv2_i2cv2_buscon_prediv_values,	ARRAY_SIZE(i2cv2_i2cv2_buscon_prediv_values)},
-	{"BRPMOD",	I2Cv2_BUSCON_BRPMOD,	I2Cv2_BUSCON_BRPMOD_SHIFT,	i2cv2_i2cv2_buscon_brpmod_values,	ARRAY_SIZE(i2cv2_i2cv2_buscon_brpmod_values)},
+static const pmb887x_module_value_t i2cv2_i2cv2_busstat_bs_values[] = {
+	{"FREE",				I2Cv2_BUSSTAT_BS_FREE},
+	{"BUSY_OTHER_MASTER",	I2Cv2_BUSSTAT_BS_BUSY_OTHER_MASTER},
+	{"BUSY_MASTER",			I2Cv2_BUSSTAT_BS_BUSY_MASTER},
+	{"BUSY_SLAVE",			I2Cv2_BUSSTAT_BS_BUSY_SLAVE},
 };
 
-static const pmb887x_module_field_t i2cv2_rtb_fields[] = {
-	{"BYTE0",	I2Cv2_RTB_BYTE0,	I2Cv2_RTB_BYTE0_SHIFT,	NULL,	0},
-	{"BYTE1",	I2Cv2_RTB_BYTE1,	I2Cv2_RTB_BYTE1_SHIFT,	NULL,	0},
-	{"BYTE2",	I2Cv2_RTB_BYTE2,	I2Cv2_RTB_BYTE2_SHIFT,	NULL,	0},
-	{"BYTE3",	I2Cv2_RTB_BYTE3,	I2Cv2_RTB_BYTE3_SHIFT,	NULL,	0},
+static const pmb887x_module_field_t i2cv2_busstat_fields[] = {
+	{"BS",	I2Cv2_BUSSTAT_BS,	I2Cv2_BUSSTAT_BS_SHIFT,		i2cv2_i2cv2_busstat_bs_values,	ARRAY_SIZE(i2cv2_i2cv2_busstat_bs_values)},
+	{"RnW",	I2Cv2_BUSSTAT_RnW,	I2Cv2_BUSSTAT_RnW_SHIFT,	NULL,							0},
 };
 
-static const pmb887x_module_field_t i2cv2_whbsyscon_fields[] = {
-	{"CLRAL",		I2Cv2_WHBSYSCON_CLRAL,		I2Cv2_WHBSYSCON_CLRAL_SHIFT,		NULL,	0},
-	{"SETAL",		I2Cv2_WHBSYSCON_SETAL,		I2Cv2_WHBSYSCON_SETAL_SHIFT,		NULL,	0},
-	{"CLRIRQD",		I2Cv2_WHBSYSCON_CLRIRQD,	I2Cv2_WHBSYSCON_CLRIRQD_SHIFT,		NULL,	0},
-	{"CLRIRQP",		I2Cv2_WHBSYSCON_CLRIRQP,	I2Cv2_WHBSYSCON_CLRIRQP_SHIFT,		NULL,	0},
-	{"CLRIRQE",		I2Cv2_WHBSYSCON_CLRIRQE,	I2Cv2_WHBSYSCON_CLRIRQE_SHIFT,		NULL,	0},
-	{"SETIRQD",		I2Cv2_WHBSYSCON_SETIRQD,	I2Cv2_WHBSYSCON_SETIRQD_SHIFT,		NULL,	0},
-	{"SETIRQP",		I2Cv2_WHBSYSCON_SETIRQP,	I2Cv2_WHBSYSCON_SETIRQP_SHIFT,		NULL,	0},
-	{"SETIRQE",		I2Cv2_WHBSYSCON_SETIRQE,	I2Cv2_WHBSYSCON_SETIRQE_SHIFT,		NULL,	0},
-	{"CLRRMEN",		I2Cv2_WHBSYSCON_CLRRMEN,	I2Cv2_WHBSYSCON_CLRRMEN_SHIFT,		NULL,	0},
-	{"SETRMEN",		I2Cv2_WHBSYSCON_SETRMEN,	I2Cv2_WHBSYSCON_SETRMEN_SHIFT,		NULL,	0},
-	{"CLRRSC",		I2Cv2_WHBSYSCON_CLRRSC,		I2Cv2_WHBSYSCON_CLRRSC_SHIFT,		NULL,	0},
-	{"SETRSC",		I2Cv2_WHBSYSCON_SETRSC,		I2Cv2_WHBSYSCON_SETRSC_SHIFT,		NULL,	0},
-	{"CLRBUM",		I2Cv2_WHBSYSCON_CLRBUM,		I2Cv2_WHBSYSCON_CLRBUM_SHIFT,		NULL,	0},
-	{"SETBUM",		I2Cv2_WHBSYSCON_SETBUM,		I2Cv2_WHBSYSCON_SETBUM_SHIFT,		NULL,	0},
-	{"CLRACKDIS",	I2Cv2_WHBSYSCON_CLRACKDIS,	I2Cv2_WHBSYSCON_CLRACKDIS_SHIFT,	NULL,	0},
-	{"SETACKDIS",	I2Cv2_WHBSYSCON_SETACKDIS,	I2Cv2_WHBSYSCON_SETACKDIS_SHIFT,	NULL,	0},
-	{"CLRTRX",		I2Cv2_WHBSYSCON_CLRTRX,		I2Cv2_WHBSYSCON_CLRTRX_SHIFT,		NULL,	0},
-	{"SETTRX",		I2Cv2_WHBSYSCON_SETTRX,		I2Cv2_WHBSYSCON_SETTRX_SHIFT,		NULL,	0},
-	{"CLRSTP",		I2Cv2_WHBSYSCON_CLRSTP,		I2Cv2_WHBSYSCON_CLRSTP_SHIFT,		NULL,	0},
-	{"CLRWMEN",		I2Cv2_WHBSYSCON_CLRWMEN,	I2Cv2_WHBSYSCON_CLRWMEN_SHIFT,		NULL,	0},
-	{"SETWMEN",		I2Cv2_WHBSYSCON_SETWMEN,	I2Cv2_WHBSYSCON_SETWMEN_SHIFT,		NULL,	0},
+static const pmb887x_module_value_t i2cv2_i2cv2_fifocfg_rxbs_values[] = {
+	{"1_WORD",	I2Cv2_FIFOCFG_RXBS_1_WORD},
+	{"2_WORD",	I2Cv2_FIFOCFG_RXBS_2_WORD},
+	{"4_WORD",	I2Cv2_FIFOCFG_RXBS_4_WORD},
 };
 
-static const pmb887x_module_field_t i2cv2_err_src_fields[] = {
-	{"SRPN",	MOD_SRC_SRPN,	MOD_SRC_SRPN_SHIFT,	NULL,	0},
-	{"TOS",		MOD_SRC_TOS,	MOD_SRC_TOS_SHIFT,	NULL,	0},
-	{"SRE",		MOD_SRC_SRE,	MOD_SRC_SRE_SHIFT,	NULL,	0},
-	{"SRR",		MOD_SRC_SRR,	MOD_SRC_SRR_SHIFT,	NULL,	0},
-	{"CLRR",	MOD_SRC_CLRR,	MOD_SRC_CLRR_SHIFT,	NULL,	0},
-	{"SETR",	MOD_SRC_SETR,	MOD_SRC_SETR_SHIFT,	NULL,	0},
+static const pmb887x_module_value_t i2cv2_i2cv2_fifocfg_txbs_values[] = {
+	{"1_WORD",	I2Cv2_FIFOCFG_TXBS_1_WORD},
+	{"2_WORD",	I2Cv2_FIFOCFG_TXBS_2_WORD},
+	{"4_WORD",	I2Cv2_FIFOCFG_TXBS_4_WORD},
 };
 
-static const pmb887x_module_field_t i2cv2_proto_src_fields[] = {
-	{"SRPN",	MOD_SRC_SRPN,	MOD_SRC_SRPN_SHIFT,	NULL,	0},
-	{"TOS",		MOD_SRC_TOS,	MOD_SRC_TOS_SHIFT,	NULL,	0},
-	{"SRE",		MOD_SRC_SRE,	MOD_SRC_SRE_SHIFT,	NULL,	0},
-	{"SRR",		MOD_SRC_SRR,	MOD_SRC_SRR_SHIFT,	NULL,	0},
-	{"CLRR",	MOD_SRC_CLRR,	MOD_SRC_CLRR_SHIFT,	NULL,	0},
-	{"SETR",	MOD_SRC_SETR,	MOD_SRC_SETR_SHIFT,	NULL,	0},
+static const pmb887x_module_value_t i2cv2_i2cv2_fifocfg_rxfa_values[] = {
+	{"BYTE",		I2Cv2_FIFOCFG_RXFA_BYTE},
+	{"HALF_WORLD",	I2Cv2_FIFOCFG_RXFA_HALF_WORLD},
+	{"WORD",		I2Cv2_FIFOCFG_RXFA_WORD},
 };
 
-static const pmb887x_module_field_t i2cv2_data_src_fields[] = {
-	{"SRPN",	MOD_SRC_SRPN,	MOD_SRC_SRPN_SHIFT,	NULL,	0},
-	{"TOS",		MOD_SRC_TOS,	MOD_SRC_TOS_SHIFT,	NULL,	0},
-	{"SRE",		MOD_SRC_SRE,	MOD_SRC_SRE_SHIFT,	NULL,	0},
-	{"SRR",		MOD_SRC_SRR,	MOD_SRC_SRR_SHIFT,	NULL,	0},
-	{"CLRR",	MOD_SRC_CLRR,	MOD_SRC_CLRR_SHIFT,	NULL,	0},
-	{"SETR",	MOD_SRC_SETR,	MOD_SRC_SETR_SHIFT,	NULL,	0},
+static const pmb887x_module_value_t i2cv2_i2cv2_fifocfg_txfa_values[] = {
+	{"BYTE",		I2Cv2_FIFOCFG_TXFA_BYTE},
+	{"HALF_WORLD",	I2Cv2_FIFOCFG_TXFA_HALF_WORLD},
+	{"WORD",		I2Cv2_FIFOCFG_TXFA_WORD},
+};
+
+static const pmb887x_module_field_t i2cv2_fifocfg_fields[] = {
+	{"RXBS",	I2Cv2_FIFOCFG_RXBS,	I2Cv2_FIFOCFG_RXBS_SHIFT,	i2cv2_i2cv2_fifocfg_rxbs_values,	ARRAY_SIZE(i2cv2_i2cv2_fifocfg_rxbs_values)},
+	{"TXBS",	I2Cv2_FIFOCFG_TXBS,	I2Cv2_FIFOCFG_TXBS_SHIFT,	i2cv2_i2cv2_fifocfg_txbs_values,	ARRAY_SIZE(i2cv2_i2cv2_fifocfg_txbs_values)},
+	{"RXFA",	I2Cv2_FIFOCFG_RXFA,	I2Cv2_FIFOCFG_RXFA_SHIFT,	i2cv2_i2cv2_fifocfg_rxfa_values,	ARRAY_SIZE(i2cv2_i2cv2_fifocfg_rxfa_values)},
+	{"TXFA",	I2Cv2_FIFOCFG_TXFA,	I2Cv2_FIFOCFG_TXFA_SHIFT,	i2cv2_i2cv2_fifocfg_txfa_values,	ARRAY_SIZE(i2cv2_i2cv2_fifocfg_txfa_values)},
+	{"RXFC",	I2Cv2_FIFOCFG_RXFC,	I2Cv2_FIFOCFG_RXFC_SHIFT,	NULL,								0},
+	{"TXFC",	I2Cv2_FIFOCFG_TXFC,	I2Cv2_FIFOCFG_TXFC_SHIFT,	NULL,								0},
+};
+
+static const pmb887x_module_field_t i2cv2_mrpsctrl_fields[] = {
+	{"MRPS",	I2Cv2_MRPSCTRL_MRPS,	I2Cv2_MRPSCTRL_MRPS_SHIFT,	NULL,	0},
+};
+
+static const pmb887x_module_field_t i2cv2_rpsstat_fields[] = {
+	{"RPS",	I2Cv2_RPSSTAT_RPS,	I2Cv2_RPSSTAT_RPS_SHIFT,	NULL,	0},
+};
+
+static const pmb887x_module_field_t i2cv2_tpsctrl_fields[] = {
+	{"TPS",	I2Cv2_TPSCTRL_TPS,	I2Cv2_TPSCTRL_TPS_SHIFT,	NULL,	0},
+};
+
+static const pmb887x_module_field_t i2cv2_ffsstat_fields[] = {
+	{"FFS",	I2Cv2_FFSSTAT_FFS,	I2Cv2_FFSSTAT_FFS_SHIFT,	NULL,	0},
+};
+
+static const pmb887x_module_field_t i2cv2_timcfg_fields[] = {
+	{"SDA_DEL_HD_DAT",		I2Cv2_TIMCFG_SDA_DEL_HD_DAT,	I2Cv2_TIMCFG_SDA_DEL_HD_DAT_SHIFT,		NULL,	0},
+	{"HS_SDA_DEL_HD_DAT",	I2Cv2_TIMCFG_HS_SDA_DEL_HD_DAT,	I2Cv2_TIMCFG_HS_SDA_DEL_HD_DAT_SHIFT,	NULL,	0},
+	{"SCL_DEL_HD_STA",		I2Cv2_TIMCFG_SCL_DEL_HD_STA,	I2Cv2_TIMCFG_SCL_DEL_HD_STA_SHIFT,		NULL,	0},
+	{"EN_SCL_LOW_LEN",		I2Cv2_TIMCFG_EN_SCL_LOW_LEN,	I2Cv2_TIMCFG_EN_SCL_LOW_LEN_SHIFT,		NULL,	0},
+	{"FS_SCL_LOW",			I2Cv2_TIMCFG_FS_SCL_LOW,		I2Cv2_TIMCFG_FS_SCL_LOW_SHIFT,			NULL,	0},
+	{"HS_SDA_DEL",			I2Cv2_TIMCFG_HS_SDA_DEL,		I2Cv2_TIMCFG_HS_SDA_DEL_SHIFT,			NULL,	0},
+	{"SCL_LOW_LEN",			I2Cv2_TIMCFG_SCL_LOW_LEN,		I2Cv2_TIMCFG_SCL_LOW_LEN_SHIFT,			NULL,	0},
+};
+
+static const pmb887x_module_field_t i2cv2_errirqsm_fields[] = {
+	{"RXF_UFL",	I2Cv2_ERRIRQSM_RXF_UFL,	I2Cv2_ERRIRQSM_RXF_UFL_SHIFT,	NULL,	0},
+	{"RXF_OFL",	I2Cv2_ERRIRQSM_RXF_OFL,	I2Cv2_ERRIRQSM_RXF_OFL_SHIFT,	NULL,	0},
+	{"TXF_UFL",	I2Cv2_ERRIRQSM_TXF_UFL,	I2Cv2_ERRIRQSM_TXF_UFL_SHIFT,	NULL,	0},
+	{"TXF_OFL",	I2Cv2_ERRIRQSM_TXF_OFL,	I2Cv2_ERRIRQSM_TXF_OFL_SHIFT,	NULL,	0},
+};
+
+static const pmb887x_module_field_t i2cv2_errirqss_fields[] = {
+	{"RXF_UFL",	I2Cv2_ERRIRQSS_RXF_UFL,	I2Cv2_ERRIRQSS_RXF_UFL_SHIFT,	NULL,	0},
+	{"RXF_OFL",	I2Cv2_ERRIRQSS_RXF_OFL,	I2Cv2_ERRIRQSS_RXF_OFL_SHIFT,	NULL,	0},
+	{"TXF_UFL",	I2Cv2_ERRIRQSS_TXF_UFL,	I2Cv2_ERRIRQSS_TXF_UFL_SHIFT,	NULL,	0},
+	{"TXF_OFL",	I2Cv2_ERRIRQSS_TXF_OFL,	I2Cv2_ERRIRQSS_TXF_OFL_SHIFT,	NULL,	0},
+};
+
+static const pmb887x_module_field_t i2cv2_errirqsc_fields[] = {
+	{"RXF_UFL",	I2Cv2_ERRIRQSC_RXF_UFL,	I2Cv2_ERRIRQSC_RXF_UFL_SHIFT,	NULL,	0},
+	{"RXF_OFL",	I2Cv2_ERRIRQSC_RXF_OFL,	I2Cv2_ERRIRQSC_RXF_OFL_SHIFT,	NULL,	0},
+	{"TXF_UFL",	I2Cv2_ERRIRQSC_TXF_UFL,	I2Cv2_ERRIRQSC_TXF_UFL_SHIFT,	NULL,	0},
+	{"TXF_OFL",	I2Cv2_ERRIRQSC_TXF_OFL,	I2Cv2_ERRIRQSC_TXF_OFL_SHIFT,	NULL,	0},
+};
+
+static const pmb887x_module_field_t i2cv2_pirqsm_fields[] = {
+	{"AM",		I2Cv2_PIRQSM_AM,		I2Cv2_PIRQSM_AM_SHIFT,		NULL,	0},
+	{"GC",		I2Cv2_PIRQSM_GC,		I2Cv2_PIRQSM_GC_SHIFT,		NULL,	0},
+	{"MC",		I2Cv2_PIRQSM_MC,		I2Cv2_PIRQSM_MC_SHIFT,		NULL,	0},
+	{"AL",		I2Cv2_PIRQSM_AL,		I2Cv2_PIRQSM_AL_SHIFT,		NULL,	0},
+	{"NACK",	I2Cv2_PIRQSM_NACK,		I2Cv2_PIRQSM_NACK_SHIFT,	NULL,	0},
+	{"TX_END",	I2Cv2_PIRQSM_TX_END,	I2Cv2_PIRQSM_TX_END_SHIFT,	NULL,	0},
+	{"RX",		I2Cv2_PIRQSM_RX,		I2Cv2_PIRQSM_RX_SHIFT,		NULL,	0},
+};
+
+static const pmb887x_module_field_t i2cv2_pirqss_fields[] = {
+	{"AM",		I2Cv2_PIRQSS_AM,		I2Cv2_PIRQSS_AM_SHIFT,		NULL,	0},
+	{"GC",		I2Cv2_PIRQSS_GC,		I2Cv2_PIRQSS_GC_SHIFT,		NULL,	0},
+	{"MC",		I2Cv2_PIRQSS_MC,		I2Cv2_PIRQSS_MC_SHIFT,		NULL,	0},
+	{"AL",		I2Cv2_PIRQSS_AL,		I2Cv2_PIRQSS_AL_SHIFT,		NULL,	0},
+	{"NACK",	I2Cv2_PIRQSS_NACK,		I2Cv2_PIRQSS_NACK_SHIFT,	NULL,	0},
+	{"TX_END",	I2Cv2_PIRQSS_TX_END,	I2Cv2_PIRQSS_TX_END_SHIFT,	NULL,	0},
+	{"RX",		I2Cv2_PIRQSS_RX,		I2Cv2_PIRQSS_RX_SHIFT,		NULL,	0},
+};
+
+static const pmb887x_module_field_t i2cv2_pirqsc_fields[] = {
+	{"AM",		I2Cv2_PIRQSC_AM,		I2Cv2_PIRQSC_AM_SHIFT,		NULL,	0},
+	{"GC",		I2Cv2_PIRQSC_GC,		I2Cv2_PIRQSC_GC_SHIFT,		NULL,	0},
+	{"MC",		I2Cv2_PIRQSC_MC,		I2Cv2_PIRQSC_MC_SHIFT,		NULL,	0},
+	{"AL",		I2Cv2_PIRQSC_AL,		I2Cv2_PIRQSC_AL_SHIFT,		NULL,	0},
+	{"NACK",	I2Cv2_PIRQSC_NACK,		I2Cv2_PIRQSC_NACK_SHIFT,	NULL,	0},
+	{"TX_END",	I2Cv2_PIRQSC_TX_END,	I2Cv2_PIRQSC_TX_END_SHIFT,	NULL,	0},
+	{"RX",		I2Cv2_PIRQSC_RX,		I2Cv2_PIRQSC_RX_SHIFT,		NULL,	0},
+};
+
+static const pmb887x_module_field_t i2cv2_ris_fields[] = {
+	{"LSREQ_INT",	I2Cv2_RIS_LSREQ_INT,	I2Cv2_RIS_LSREQ_INT_SHIFT,		NULL,	0},
+	{"SREQ_INT",	I2Cv2_RIS_SREQ_INT,		I2Cv2_RIS_SREQ_INT_SHIFT,		NULL,	0},
+	{"LBREQ_INT",	I2Cv2_RIS_LBREQ_INT,	I2Cv2_RIS_LBREQ_INT_SHIFT,		NULL,	0},
+	{"BREQ_INT",	I2Cv2_RIS_BREQ_INT,		I2Cv2_RIS_BREQ_INT_SHIFT,		NULL,	0},
+	{"I2C_ERR_INT",	I2Cv2_RIS_I2C_ERR_INT,	I2Cv2_RIS_I2C_ERR_INT_SHIFT,	NULL,	0},
+	{"I2C_P_INT",	I2Cv2_RIS_I2C_P_INT,	I2Cv2_RIS_I2C_P_INT_SHIFT,		NULL,	0},
+};
+
+static const pmb887x_module_field_t i2cv2_imsc_fields[] = {
+	{"LSREQ_INT",	I2Cv2_IMSC_LSREQ_INT,	I2Cv2_IMSC_LSREQ_INT_SHIFT,		NULL,	0},
+	{"SREQ_INT",	I2Cv2_IMSC_SREQ_INT,	I2Cv2_IMSC_SREQ_INT_SHIFT,		NULL,	0},
+	{"LBREQ_INT",	I2Cv2_IMSC_LBREQ_INT,	I2Cv2_IMSC_LBREQ_INT_SHIFT,		NULL,	0},
+	{"BREQ_INT",	I2Cv2_IMSC_BREQ_INT,	I2Cv2_IMSC_BREQ_INT_SHIFT,		NULL,	0},
+	{"I2C_ERR_INT",	I2Cv2_IMSC_I2C_ERR_INT,	I2Cv2_IMSC_I2C_ERR_INT_SHIFT,	NULL,	0},
+	{"I2C_P_INT",	I2Cv2_IMSC_I2C_P_INT,	I2Cv2_IMSC_I2C_P_INT_SHIFT,		NULL,	0},
+};
+
+static const pmb887x_module_field_t i2cv2_mis_fields[] = {
+	{"LSREQ_INT",	I2Cv2_MIS_LSREQ_INT,	I2Cv2_MIS_LSREQ_INT_SHIFT,		NULL,	0},
+	{"SREQ_INT",	I2Cv2_MIS_SREQ_INT,		I2Cv2_MIS_SREQ_INT_SHIFT,		NULL,	0},
+	{"LBREQ_INT",	I2Cv2_MIS_LBREQ_INT,	I2Cv2_MIS_LBREQ_INT_SHIFT,		NULL,	0},
+	{"BREQ_INT",	I2Cv2_MIS_BREQ_INT,		I2Cv2_MIS_BREQ_INT_SHIFT,		NULL,	0},
+	{"I2C_ERR_INT",	I2Cv2_MIS_I2C_ERR_INT,	I2Cv2_MIS_I2C_ERR_INT_SHIFT,	NULL,	0},
+	{"I2C_P_INT",	I2Cv2_MIS_I2C_P_INT,	I2Cv2_MIS_I2C_P_INT_SHIFT,		NULL,	0},
+};
+
+static const pmb887x_module_field_t i2cv2_icr_fields[] = {
+	{"LSREQ_INT",	I2Cv2_ICR_LSREQ_INT,	I2Cv2_ICR_LSREQ_INT_SHIFT,		NULL,	0},
+	{"SREQ_INT",	I2Cv2_ICR_SREQ_INT,		I2Cv2_ICR_SREQ_INT_SHIFT,		NULL,	0},
+	{"LBREQ_INT",	I2Cv2_ICR_LBREQ_INT,	I2Cv2_ICR_LBREQ_INT_SHIFT,		NULL,	0},
+	{"BREQ_INT",	I2Cv2_ICR_BREQ_INT,		I2Cv2_ICR_BREQ_INT_SHIFT,		NULL,	0},
+	{"I2C_ERR_INT",	I2Cv2_ICR_I2C_ERR_INT,	I2Cv2_ICR_I2C_ERR_INT_SHIFT,	NULL,	0},
+	{"I2C_P_INT",	I2Cv2_ICR_I2C_P_INT,	I2Cv2_ICR_I2C_P_INT_SHIFT,		NULL,	0},
+};
+
+static const pmb887x_module_field_t i2cv2_isr_fields[] = {
+	{"LSREQ_INT",	I2Cv2_ISR_LSREQ_INT,	I2Cv2_ISR_LSREQ_INT_SHIFT,		NULL,	0},
+	{"SREQ_INT",	I2Cv2_ISR_SREQ_INT,		I2Cv2_ISR_SREQ_INT_SHIFT,		NULL,	0},
+	{"LBREQ_INT",	I2Cv2_ISR_LBREQ_INT,	I2Cv2_ISR_LBREQ_INT_SHIFT,		NULL,	0},
+	{"BREQ_INT",	I2Cv2_ISR_BREQ_INT,		I2Cv2_ISR_BREQ_INT_SHIFT,		NULL,	0},
+	{"I2C_ERR_INT",	I2Cv2_ISR_I2C_ERR_INT,	I2Cv2_ISR_I2C_ERR_INT_SHIFT,	NULL,	0},
+	{"I2C_P_INT",	I2Cv2_ISR_I2C_P_INT,	I2Cv2_ISR_I2C_P_INT_SHIFT,		NULL,	0},
+};
+
+static const pmb887x_module_field_t i2cv2_txd_fields[] = {
+	{"BYTE0",	I2Cv2_TXD_BYTE0,	I2Cv2_TXD_BYTE0_SHIFT,	NULL,	0},
+	{"BYTE1",	I2Cv2_TXD_BYTE1,	I2Cv2_TXD_BYTE1_SHIFT,	NULL,	0},
+	{"BYTE2",	I2Cv2_TXD_BYTE2,	I2Cv2_TXD_BYTE2_SHIFT,	NULL,	0},
+	{"BYTE3",	I2Cv2_TXD_BYTE3,	I2Cv2_TXD_BYTE3_SHIFT,	NULL,	0},
+};
+
+static const pmb887x_module_field_t i2cv2_rxd_fields[] = {
+	{"BYTE0",	I2Cv2_RXD_BYTE0,	I2Cv2_RXD_BYTE0_SHIFT,	NULL,	0},
+	{"BYTE1",	I2Cv2_RXD_BYTE1,	I2Cv2_RXD_BYTE1_SHIFT,	NULL,	0},
+	{"BYTE2",	I2Cv2_RXD_BYTE2,	I2Cv2_RXD_BYTE2_SHIFT,	NULL,	0},
+	{"BYTE3",	I2Cv2_RXD_BYTE3,	I2Cv2_RXD_BYTE3_SHIFT,	NULL,	0},
 };
 
 static const pmb887x_module_reg_t i2cv2_regs[] = {
-	{"CLC",			I2Cv2_CLC,			i2cv2_clc_fields,		ARRAY_SIZE(i2cv2_clc_fields),		0},
-	{"PISEL",		I2Cv2_PISEL,		i2cv2_pisel_fields,		ARRAY_SIZE(i2cv2_pisel_fields),		0},
-	{"ID",			I2Cv2_ID,			i2cv2_id_fields,		ARRAY_SIZE(i2cv2_id_fields),		0},
-	{"SYSCON",		I2Cv2_SYSCON,		i2cv2_syscon_fields,	ARRAY_SIZE(i2cv2_syscon_fields),	0},
-	{"BUSCON",		I2Cv2_BUSCON,		i2cv2_buscon_fields,	ARRAY_SIZE(i2cv2_buscon_fields),	0},
-	{"RTB",			I2Cv2_RTB,			i2cv2_rtb_fields,		ARRAY_SIZE(i2cv2_rtb_fields),		0},
-	{"WHBSYSCON",	I2Cv2_WHBSYSCON,	i2cv2_whbsyscon_fields,	ARRAY_SIZE(i2cv2_whbsyscon_fields),	0},
-	{"ERR_SRC",		I2Cv2_ERR_SRC,		i2cv2_err_src_fields,	ARRAY_SIZE(i2cv2_err_src_fields),	0},
-	{"PROTO_SRC",	I2Cv2_PROTO_SRC,	i2cv2_proto_src_fields,	ARRAY_SIZE(i2cv2_proto_src_fields),	0},
-	{"DATA_SRC",	I2Cv2_DATA_SRC,		i2cv2_data_src_fields,	ARRAY_SIZE(i2cv2_data_src_fields),	0},
+	{"CLC",			I2Cv2_CLC,			i2cv2_clc_fields,			ARRAY_SIZE(i2cv2_clc_fields),			0},
+	{"ID",			I2Cv2_ID,			i2cv2_id_fields,			ARRAY_SIZE(i2cv2_id_fields),			0},
+	{"RUNCTRL",		I2Cv2_RUNCTRL,		i2cv2_runctrl_fields,		ARRAY_SIZE(i2cv2_runctrl_fields),		0},
+	{"ENDDCTRL",	I2Cv2_ENDDCTRL,		i2cv2_enddctrl_fields,		ARRAY_SIZE(i2cv2_enddctrl_fields),		0},
+	{"FDIVCFG",		I2Cv2_FDIVCFG,		i2cv2_fdivcfg_fields,		ARRAY_SIZE(i2cv2_fdivcfg_fields),		0},
+	{"FDIVHIGHCFG",	I2Cv2_FDIVHIGHCFG,	i2cv2_fdivhighcfg_fields,	ARRAY_SIZE(i2cv2_fdivhighcfg_fields),	0},
+	{"ADDRCFG",		I2Cv2_ADDRCFG,		i2cv2_addrcfg_fields,		ARRAY_SIZE(i2cv2_addrcfg_fields),		0},
+	{"BUSSTAT",		I2Cv2_BUSSTAT,		i2cv2_busstat_fields,		ARRAY_SIZE(i2cv2_busstat_fields),		0},
+	{"FIFOCFG",		I2Cv2_FIFOCFG,		i2cv2_fifocfg_fields,		ARRAY_SIZE(i2cv2_fifocfg_fields),		0},
+	{"MRPSCTRL",	I2Cv2_MRPSCTRL,		i2cv2_mrpsctrl_fields,		ARRAY_SIZE(i2cv2_mrpsctrl_fields),		0},
+	{"RPSSTAT",		I2Cv2_RPSSTAT,		i2cv2_rpsstat_fields,		ARRAY_SIZE(i2cv2_rpsstat_fields),		0},
+	{"TPSCTRL",		I2Cv2_TPSCTRL,		i2cv2_tpsctrl_fields,		ARRAY_SIZE(i2cv2_tpsctrl_fields),		0},
+	{"FFSSTAT",		I2Cv2_FFSSTAT,		i2cv2_ffsstat_fields,		ARRAY_SIZE(i2cv2_ffsstat_fields),		0},
+	{"TIMCFG",		I2Cv2_TIMCFG,		i2cv2_timcfg_fields,		ARRAY_SIZE(i2cv2_timcfg_fields),		0},
+	{"ERRIRQSM",	I2Cv2_ERRIRQSM,		i2cv2_errirqsm_fields,		ARRAY_SIZE(i2cv2_errirqsm_fields),		0},
+	{"ERRIRQSS",	I2Cv2_ERRIRQSS,		i2cv2_errirqss_fields,		ARRAY_SIZE(i2cv2_errirqss_fields),		0},
+	{"ERRIRQSC",	I2Cv2_ERRIRQSC,		i2cv2_errirqsc_fields,		ARRAY_SIZE(i2cv2_errirqsc_fields),		0},
+	{"PIRQSM",		I2Cv2_PIRQSM,		i2cv2_pirqsm_fields,		ARRAY_SIZE(i2cv2_pirqsm_fields),		0},
+	{"PIRQSS",		I2Cv2_PIRQSS,		i2cv2_pirqss_fields,		ARRAY_SIZE(i2cv2_pirqss_fields),		0},
+	{"PIRQSC",		I2Cv2_PIRQSC,		i2cv2_pirqsc_fields,		ARRAY_SIZE(i2cv2_pirqsc_fields),		0},
+	{"RIS",			I2Cv2_RIS,			i2cv2_ris_fields,			ARRAY_SIZE(i2cv2_ris_fields),			0},
+	{"IMSC",		I2Cv2_IMSC,			i2cv2_imsc_fields,			ARRAY_SIZE(i2cv2_imsc_fields),			0},
+	{"MIS",			I2Cv2_MIS,			i2cv2_mis_fields,			ARRAY_SIZE(i2cv2_mis_fields),			0},
+	{"ICR",			I2Cv2_ICR,			i2cv2_icr_fields,			ARRAY_SIZE(i2cv2_icr_fields),			0},
+	{"ISR",			I2Cv2_ISR,			i2cv2_isr_fields,			ARRAY_SIZE(i2cv2_isr_fields),			0},
+	{"TXD",			I2Cv2_TXD,			i2cv2_txd_fields,			ARRAY_SIZE(i2cv2_txd_fields),			0},
+	{"RXD",			I2Cv2_RXD,			i2cv2_rxd_fields,			ARRAY_SIZE(i2cv2_rxd_fields),			0},
 };
 
 static const pmb887x_module_field_t keypad_id_fields[] = {
@@ -6316,7 +6319,7 @@ static const pmb887x_cpu_meta_irq_t pmb8875_irqs[] = {
 	{"PLL",				PMB8875_PLL_IRQ,			NVIC_CON65},
 	{"I2C_DATA",		PMB8875_I2C_DATA_IRQ,		NVIC_CON66},
 	{"I2C_PROTO",		PMB8875_I2C_PROTO_IRQ,		NVIC_CON67},
-	{"I2C_ERR",			PMB8875_I2C_ERR_IRQ,		NVIC_CON68},
+	{"I2C_END",			PMB8875_I2C_END_IRQ,		NVIC_CON68},
 	{"ADC_INT0",		PMB8875_ADC_INT0_IRQ,		NVIC_CON70},
 	{"ADC_INT1",		PMB8875_ADC_INT1_IRQ,		NVIC_CON71},
 	{"CAPCOM0_T0",		PMB8875_CAPCOM0_T0_IRQ,		NVIC_CON72},
@@ -6507,7 +6510,7 @@ static const pmb887x_module_t pmb8875_modules[] = {
 	{"PLL",		PMB8875_PLL_BASE,		PLL_IO_SIZE,	pll_regs,		ARRAY_SIZE(pll_regs)},
 	{"SCCU",	PMB8875_SCCU_BASE,		SCCU_IO_SIZE,	sccu_regs,		ARRAY_SIZE(sccu_regs)},
 	{"RTC",		PMB8875_RTC_BASE,		RTC_IO_SIZE,	rtc_regs,		ARRAY_SIZE(rtc_regs)},
-	{"I2C",		PMB8875_I2C_BASE,		I2Cv2_IO_SIZE,	i2cv2_regs,		ARRAY_SIZE(i2cv2_regs)},
+	{"I2C",		PMB8875_I2C_BASE,		I2Cv1_IO_SIZE,	i2cv1_regs,		ARRAY_SIZE(i2cv1_regs)},
 	{"GPTU0",	PMB8875_GPTU0_BASE,		GPTU_IO_SIZE,	gptu_regs,		ARRAY_SIZE(gptu_regs)},
 	{"GPTU1",	PMB8875_GPTU1_BASE,		GPTU_IO_SIZE,	gptu_regs,		ARRAY_SIZE(gptu_regs)},
 	{"STM",		PMB8875_STM_BASE,		STM_IO_SIZE,	stm_regs,		ARRAY_SIZE(stm_regs)},
@@ -6780,7 +6783,7 @@ static const pmb887x_module_t pmb8876_modules[] = {
 	{"DIF",		PMB8876_DIF_BASE,		DIF_IO_SIZE,	dif_regs,		ARRAY_SIZE(dif_regs)},
 	{"MMCI",	PMB8876_MMCI_BASE,		MMCI_IO_SIZE,	mmci_regs,		ARRAY_SIZE(mmci_regs)},
 	{"MCI",		PMB8876_MCI_BASE,		MCI_IO_SIZE,	mci_regs,		ARRAY_SIZE(mci_regs)},
-	{"I2C",		PMB8876_I2C_BASE,		I2C_IO_SIZE,	i2c_regs,		ARRAY_SIZE(i2c_regs)},
+	{"I2C",		PMB8876_I2C_BASE,		I2Cv2_IO_SIZE,	i2cv2_regs,		ARRAY_SIZE(i2cv2_regs)},
 	{"MMICIF",	PMB8876_MMICIF_BASE,	MMCIF_IO_SIZE,	mmcif_regs,		ARRAY_SIZE(mmcif_regs)},
 };
 

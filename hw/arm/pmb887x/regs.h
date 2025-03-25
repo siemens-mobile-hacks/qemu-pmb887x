@@ -255,13 +255,13 @@
 #define PMB8875_SCU_UNK2_IRQ		60
 #define PMB8875_SCU_EXTI5_IRQ		61
 #define PMB8875_SCU_EXTI6_IRQ		62
-#define PMB8875_SCU_EXTI7_IRQ		63
 #define PMB8875_SCCU_UNK_IRQ		63
+#define PMB8875_SCU_EXTI7_IRQ		63
 #define PMB8875_SCCU_WAKE_IRQ		64
 #define PMB8875_PLL_IRQ				65
 #define PMB8875_I2C_DATA_IRQ		66
 #define PMB8875_I2C_PROTO_IRQ		67
-#define PMB8875_I2C_ERR_IRQ			68
+#define PMB8875_I2C_END_IRQ			68
 #define PMB8875_ADC_INT0_IRQ		70
 #define PMB8875_ADC_INT1_IRQ		71
 #define PMB8875_CAPCOM0_T0_IRQ		72
@@ -5513,476 +5513,482 @@
 #define TPU_RAM1024					0x2000
 
 
-// I2C [MOD_NUM=F057, MOD_REV=00, MOD_32BIT=C0]
-// I2C from Tricore TC27x official public datasheet
-#define I2C_IO_SIZE							0x0000C004
-/* Clock Control Register */
-#define I2C_CLC								0x00
-
-/* Module Identifier Register */
-#define I2C_ID								0x08
-
-/* RUN Control Register */
-#define I2C_RUNCTRL							0x10
-#define I2C_RUNCTRL_RUN						(1 << 0)		 // Enable I2C-bus Interface
-#define I2C_RUNCTRL_RUN_SHIFT				0
-
-/* End Data Control Register */
-#define I2C_ENDDCTRL						0x14
-#define I2C_ENDDCTRL_SETRSC					(1 << 0)		 // Set Restart Condition
-#define I2C_ENDDCTRL_SETRSC_SHIFT			0
-#define I2C_ENDDCTRL_SETEND					(1 << 1)		 // Set End of Transmission
-#define I2C_ENDDCTRL_SETEND_SHIFT			1
-
-/* Fractional Divider Configuration Register */
-#define I2C_FDIVCFG							0x18
-#define I2C_FDIVCFG_DEC						(0x7FF << 0)	 // Decrement Value of Fractional Divider
-#define I2C_FDIVCFG_DEC_SHIFT				0
-#define I2C_FDIVCFG_INC						(0xFF << 16)	 // Increment Value of Fractional Divider
-#define I2C_FDIVCFG_INC_SHIFT				16
-
-/* Fractional Divider High-speed Mode Configuration Register */
-#define I2C_FDIVHIGHCFG						0x1C
-#define I2C_FDIVHIGHCFG_DEC					(0x7FF << 0)	 // Decrement Value of Fractional Divider
-#define I2C_FDIVHIGHCFG_DEC_SHIFT			0
-#define I2C_FDIVHIGHCFG_INC					(0xFF << 16)	 // Increment Value of Fractional Divider
-#define I2C_FDIVHIGHCFG_INC_SHIFT			16
-
-/* Address Configuration Register */
-#define I2C_ADDRCFG							0x20
-#define I2C_ADDRCFG_ADR						(0x3FF << 0)	 // I2C-bus Device Address (slave)
-#define I2C_ADDRCFG_ADR_SHIFT				0
-#define I2C_ADDRCFG_TBAM					(1 << 16)		 // Ten Bit Address Mode
-#define I2C_ADDRCFG_TBAM_SHIFT				16
-#define I2C_ADDRCFG_GCE						(1 << 17)		 // General Call Enable
-#define I2C_ADDRCFG_GCE_SHIFT				17
-#define I2C_ADDRCFG_MCE						(1 << 18)		 // Master Code Enable
-#define I2C_ADDRCFG_MCE_SHIFT				18
-#define I2C_ADDRCFG_MnS						(1 << 19)		 // Master / not Slave
-#define I2C_ADDRCFG_MnS_SHIFT				19
-#define I2C_ADDRCFG_SONA					(1 << 20)		 // Stop on Not-acknowledge
-#define I2C_ADDRCFG_SONA_SHIFT				20
-#define I2C_ADDRCFG_SOPE					(1 << 21)		 // Stop on Packet End
-#define I2C_ADDRCFG_SOPE_SHIFT				21
-
-/* Bus Status Register */
-#define I2C_BUSSTAT							0x24
-#define I2C_BUSSTAT_BS						(0x3 << 1)		 // Bus Status
-#define I2C_BUSSTAT_BS_SHIFT				1
-#define I2C_BUSSTAT_BS_FREE					0x0
-#define I2C_BUSSTAT_BS_BUSY_OTHER_MASTER	0x2
-#define I2C_BUSSTAT_BS_BUSY_MASTER			0x4
-#define I2C_BUSSTAT_BS_BUSY_SLAVE			0x6
-#define I2C_BUSSTAT_RnW						(1 << 3)		 // Read/not Write
-#define I2C_BUSSTAT_RnW_SHIFT				3
-
-/* FIFO Configuration Register */
-#define I2C_FIFOCFG							0x28
-#define I2C_FIFOCFG_RXBS					(0x3 << 0)		 // RX Burst Size
-#define I2C_FIFOCFG_RXBS_SHIFT				0
-#define I2C_FIFOCFG_RXBS_1_WORD				0x0
-#define I2C_FIFOCFG_RXBS_2_WORD				0x1
-#define I2C_FIFOCFG_RXBS_4_WORD				0x2
-#define I2C_FIFOCFG_TXBS					(0x3 << 4)		 // TX Burst Size
-#define I2C_FIFOCFG_TXBS_SHIFT				4
-#define I2C_FIFOCFG_TXBS_1_WORD				0x0
-#define I2C_FIFOCFG_TXBS_2_WORD				0x10
-#define I2C_FIFOCFG_TXBS_4_WORD				0x20
-#define I2C_FIFOCFG_RXFA					(0x3 << 8)		 // RX FIFO Alignment
-#define I2C_FIFOCFG_RXFA_SHIFT				8
-#define I2C_FIFOCFG_RXFA_BYTE				0x0
-#define I2C_FIFOCFG_RXFA_HALF_WORLD			0x100
-#define I2C_FIFOCFG_RXFA_WORD				0x200
-#define I2C_FIFOCFG_TXFA					(0x3 << 12)		 // TX FIFO Alignment
-#define I2C_FIFOCFG_TXFA_SHIFT				12
-#define I2C_FIFOCFG_TXFA_BYTE				0x0
-#define I2C_FIFOCFG_TXFA_HALF_WORLD			0x1000
-#define I2C_FIFOCFG_TXFA_WORD				0x2000
-#define I2C_FIFOCFG_RXFC					(1 << 16)		 // RX FIFO Flow Control
-#define I2C_FIFOCFG_RXFC_SHIFT				16
-#define I2C_FIFOCFG_TXFC					(1 << 17)		 // TX FIFO Flow Control
-#define I2C_FIFOCFG_TXFC_SHIFT				17
-
-/* Maximum Received Packet Size Control Register */
-#define I2C_MRPSCTRL						0x2C
-#define I2C_MRPSCTRL_MRPS					(0x3FFF << 0)	 // Maximum Received Packet Size
-#define I2C_MRPSCTRL_MRPS_SHIFT				0
-
-/* Received Packet Size Status Register */
-#define I2C_RPSSTAT							0x30
-#define I2C_RPSSTAT_RPS						(0x3FFF << 0)	 // Received Packet Size
-#define I2C_RPSSTAT_RPS_SHIFT				0
-
-/* Transmit Packet Size Control Register */
-#define I2C_TPSCTRL							0x34
-#define I2C_TPSCTRL_TPS						(0x3FFF << 0)	 // Transmit Packet Size
-#define I2C_TPSCTRL_TPS_SHIFT				0
-
-/* Filled FIFO Stages Status Register */
-#define I2C_FFSSTAT							0x38
-#define I2C_FFSSTAT_FFS						(0x3F << 0)		 // Filled FIFO Stages
-#define I2C_FFSSTAT_FFS_SHIFT				0
-
-/* Timing Configuration Register */
-#define I2C_TIMCFG							0x40
-#define I2C_TIMCFG_SDA_DEL_HD_DAT			(0x3F << 0)		 // SDA Delay Stages for Data Hold Time
-#define I2C_TIMCFG_SDA_DEL_HD_DAT_SHIFT		0
-#define I2C_TIMCFG_HS_SDA_DEL_HD_DAT		(0x7 << 6)		 // SDA Delay Stages for Data Hold Time in Highspeed Mode
-#define I2C_TIMCFG_HS_SDA_DEL_HD_DAT_SHIFT	6
-#define I2C_TIMCFG_SCL_DEL_HD_STA			(0x7 << 9)		 // SCL Delay Stages for Hold Time Start (Restart) Bit
-#define I2C_TIMCFG_SCL_DEL_HD_STA_SHIFT		9
-#define I2C_TIMCFG_EN_SCL_LOW_LEN			(1 << 14)		 // Enable Direct Configuration of SCL Low Period Length in Fast Mode
-#define I2C_TIMCFG_EN_SCL_LOW_LEN_SHIFT		14
-#define I2C_TIMCFG_FS_SCL_LOW				(1 << 15)		 // Set Fast Mode SCL Low Period Timing
-#define I2C_TIMCFG_FS_SCL_LOW_SHIFT			15
-#define I2C_TIMCFG_HS_SDA_DEL				(0x7 << 16)		 // SDA Delay Stages for Start/Stop bit in Highspeed Mode
-#define I2C_TIMCFG_HS_SDA_DEL_SHIFT			16
-#define I2C_TIMCFG_SCL_LOW_LEN				(0xFF << 24)	 // SCL Low Length in Fast Mode
-#define I2C_TIMCFG_SCL_LOW_LEN_SHIFT		24
-
-/* Error Interrupt Request Source Mask Register */
-#define I2C_ERRIRQSM						0x60
-#define I2C_ERRIRQSM_RXF_UFL				(1 << 0)		 // RX FIFO Underflow
-#define I2C_ERRIRQSM_RXF_UFL_SHIFT			0
-#define I2C_ERRIRQSM_RXF_OFL				(1 << 1)		 // RX FIFO Overflow
-#define I2C_ERRIRQSM_RXF_OFL_SHIFT			1
-#define I2C_ERRIRQSM_TXF_UFL				(1 << 2)		 // TX FIFO Underflow
-#define I2C_ERRIRQSM_TXF_UFL_SHIFT			2
-#define I2C_ERRIRQSM_TXF_OFL				(1 << 3)		 // TX FIFO Overflow
-#define I2C_ERRIRQSM_TXF_OFL_SHIFT			3
-
-/* Error Interrupt Request Source Status Register */
-#define I2C_ERRIRQSS						0x64
-#define I2C_ERRIRQSS_RXF_UFL				(1 << 0)		 // RX FIFO Underflow
-#define I2C_ERRIRQSS_RXF_UFL_SHIFT			0
-#define I2C_ERRIRQSS_RXF_OFL				(1 << 1)		 // RX FIFO Overflow
-#define I2C_ERRIRQSS_RXF_OFL_SHIFT			1
-#define I2C_ERRIRQSS_TXF_UFL				(1 << 2)		 // TX FIFO Underflow
-#define I2C_ERRIRQSS_TXF_UFL_SHIFT			2
-#define I2C_ERRIRQSS_TXF_OFL				(1 << 3)		 // TX FIFO Overflow
-#define I2C_ERRIRQSS_TXF_OFL_SHIFT			3
-
-/* Error Interrupt Request Source Clear Register */
-#define I2C_ERRIRQSC						0x68
-#define I2C_ERRIRQSC_RXF_UFL				(1 << 0)		 // RX FIFO Underflow
-#define I2C_ERRIRQSC_RXF_UFL_SHIFT			0
-#define I2C_ERRIRQSC_RXF_OFL				(1 << 1)		 // RX FIFO Overflow
-#define I2C_ERRIRQSC_RXF_OFL_SHIFT			1
-#define I2C_ERRIRQSC_TXF_UFL				(1 << 2)		 // TX FIFO Underflow
-#define I2C_ERRIRQSC_TXF_UFL_SHIFT			2
-#define I2C_ERRIRQSC_TXF_OFL				(1 << 3)		 // TX FIFO Overflow
-#define I2C_ERRIRQSC_TXF_OFL_SHIFT			3
-
-/* Protocol Interrupt Request Source Mask Register */
-#define I2C_PIRQSM							0x70
-#define I2C_PIRQSM_AM						(1 << 0)		 // Address Match
-#define I2C_PIRQSM_AM_SHIFT					0
-#define I2C_PIRQSM_GC						(1 << 1)		 // General Call
-#define I2C_PIRQSM_GC_SHIFT					1
-#define I2C_PIRQSM_MC						(1 << 2)		 // Master Code
-#define I2C_PIRQSM_MC_SHIFT					2
-#define I2C_PIRQSM_AL						(1 << 3)		 // Arbitration Lost
-#define I2C_PIRQSM_AL_SHIFT					3
-#define I2C_PIRQSM_NACK						(1 << 4)		 // Not-acknowledge Received
-#define I2C_PIRQSM_NACK_SHIFT				4
-#define I2C_PIRQSM_TX_END					(1 << 5)		 // Transmission End
-#define I2C_PIRQSM_TX_END_SHIFT				5
-#define I2C_PIRQSM_RX						(1 << 6)		 // Receive Mode
-#define I2C_PIRQSM_RX_SHIFT					6
-
-/* Protocol Interrupt Request Source Status Register */
-#define I2C_PIRQSS							0x74
-#define I2C_PIRQSS_AM						(1 << 0)		 // Address Match
-#define I2C_PIRQSS_AM_SHIFT					0
-#define I2C_PIRQSS_GC						(1 << 1)		 // General Call
-#define I2C_PIRQSS_GC_SHIFT					1
-#define I2C_PIRQSS_MC						(1 << 2)		 // Master Code
-#define I2C_PIRQSS_MC_SHIFT					2
-#define I2C_PIRQSS_AL						(1 << 3)		 // Arbitration Lost
-#define I2C_PIRQSS_AL_SHIFT					3
-#define I2C_PIRQSS_NACK						(1 << 4)		 // Not-acknowledge Received
-#define I2C_PIRQSS_NACK_SHIFT				4
-#define I2C_PIRQSS_TX_END					(1 << 5)		 // Transmission End
-#define I2C_PIRQSS_TX_END_SHIFT				5
-#define I2C_PIRQSS_RX						(1 << 6)		 // Receive Mode
-#define I2C_PIRQSS_RX_SHIFT					6
-
-/* Protocol Interrupt Request Source Clear Register */
-#define I2C_PIRQSC							0x78
-#define I2C_PIRQSC_AM						(1 << 0)		 // Address Match
-#define I2C_PIRQSC_AM_SHIFT					0
-#define I2C_PIRQSC_GC						(1 << 1)		 // General Call
-#define I2C_PIRQSC_GC_SHIFT					1
-#define I2C_PIRQSC_MC						(1 << 2)		 // Master Code
-#define I2C_PIRQSC_MC_SHIFT					2
-#define I2C_PIRQSC_AL						(1 << 3)		 // Arbitration Lost
-#define I2C_PIRQSC_AL_SHIFT					3
-#define I2C_PIRQSC_NACK						(1 << 4)		 // Not-acknowledge Received
-#define I2C_PIRQSC_NACK_SHIFT				4
-#define I2C_PIRQSC_TX_END					(1 << 5)		 // Transmission End
-#define I2C_PIRQSC_TX_END_SHIFT				5
-#define I2C_PIRQSC_RX						(1 << 6)		 // Receive Mode
-#define I2C_PIRQSC_RX_SHIFT					6
-
-/* Raw Interrupt Status Register */
-#define I2C_RIS								0x80
-#define I2C_RIS_LSREQ_INT					(1 << 0)		 // Last Single Request Interrupt
-#define I2C_RIS_LSREQ_INT_SHIFT				0
-#define I2C_RIS_SREQ_INT					(1 << 1)		 // Single Request Interrupt
-#define I2C_RIS_SREQ_INT_SHIFT				1
-#define I2C_RIS_LBREQ_INT					(1 << 2)		 // Last Burst Request Interrupt
-#define I2C_RIS_LBREQ_INT_SHIFT				2
-#define I2C_RIS_BREQ_INT					(1 << 3)		 // Burst Request Interrupt
-#define I2C_RIS_BREQ_INT_SHIFT				3
-#define I2C_RIS_I2C_ERR_INT					(1 << 4)		 // I2C Error Interrupt
-#define I2C_RIS_I2C_ERR_INT_SHIFT			4
-#define I2C_RIS_I2C_P_INT					(1 << 5)		 // I2C Protocol Interrupt
-#define I2C_RIS_I2C_P_INT_SHIFT				5
-
-/* Interrupt Mask Control Register */
-#define I2C_IMSC							0x84
-#define I2C_IMSC_LSREQ_INT					(1 << 0)		 // Last Single Request Interrupt
-#define I2C_IMSC_LSREQ_INT_SHIFT			0
-#define I2C_IMSC_SREQ_INT					(1 << 1)		 // Single Request Interrupt
-#define I2C_IMSC_SREQ_INT_SHIFT				1
-#define I2C_IMSC_LBREQ_INT					(1 << 2)		 // Last Burst Request Interrupt
-#define I2C_IMSC_LBREQ_INT_SHIFT			2
-#define I2C_IMSC_BREQ_INT					(1 << 3)		 // Burst Request Interrupt
-#define I2C_IMSC_BREQ_INT_SHIFT				3
-#define I2C_IMSC_I2C_ERR_INT				(1 << 4)		 // I2C Error Interrupt
-#define I2C_IMSC_I2C_ERR_INT_SHIFT			4
-#define I2C_IMSC_I2C_P_INT					(1 << 5)		 // I2C Protocol Interrupt
-#define I2C_IMSC_I2C_P_INT_SHIFT			5
-
-/* Masked Interrupt Status */
-#define I2C_MIS								0x88
-#define I2C_MIS_LSREQ_INT					(1 << 0)		 // Last Single Request Interrupt
-#define I2C_MIS_LSREQ_INT_SHIFT				0
-#define I2C_MIS_SREQ_INT					(1 << 1)		 // Single Request Interrupt
-#define I2C_MIS_SREQ_INT_SHIFT				1
-#define I2C_MIS_LBREQ_INT					(1 << 2)		 // Last Burst Request Interrupt
-#define I2C_MIS_LBREQ_INT_SHIFT				2
-#define I2C_MIS_BREQ_INT					(1 << 3)		 // Burst Request Interrupt
-#define I2C_MIS_BREQ_INT_SHIFT				3
-#define I2C_MIS_I2C_ERR_INT					(1 << 4)		 // I2C Error Interrupt
-#define I2C_MIS_I2C_ERR_INT_SHIFT			4
-#define I2C_MIS_I2C_P_INT					(1 << 5)		 // I2C Protocol Interrupt
-#define I2C_MIS_I2C_P_INT_SHIFT				5
-
-/* Interrupt Clear Register */
-#define I2C_ICR								0x8C
-#define I2C_ICR_LSREQ_INT					(1 << 0)		 // Last Single Request Interrupt
-#define I2C_ICR_LSREQ_INT_SHIFT				0
-#define I2C_ICR_SREQ_INT					(1 << 1)		 // Single Request Interrupt
-#define I2C_ICR_SREQ_INT_SHIFT				1
-#define I2C_ICR_LBREQ_INT					(1 << 2)		 // Last Burst Request Interrupt
-#define I2C_ICR_LBREQ_INT_SHIFT				2
-#define I2C_ICR_BREQ_INT					(1 << 3)		 // Burst Request Interrupt
-#define I2C_ICR_BREQ_INT_SHIFT				3
-#define I2C_ICR_I2C_ERR_INT					(1 << 4)		 // I2C Error Interrupt
-#define I2C_ICR_I2C_ERR_INT_SHIFT			4
-#define I2C_ICR_I2C_P_INT					(1 << 5)		 // I2C Protocol Interrupt
-#define I2C_ICR_I2C_P_INT_SHIFT				5
-
-/* Interrupt Set Register */
-#define I2C_ISR								0x90
-#define I2C_ISR_LSREQ_INT					(1 << 0)		 // Last Single Request Interrupt
-#define I2C_ISR_LSREQ_INT_SHIFT				0
-#define I2C_ISR_SREQ_INT					(1 << 1)		 // Single Request Interrupt
-#define I2C_ISR_SREQ_INT_SHIFT				1
-#define I2C_ISR_LBREQ_INT					(1 << 2)		 // Last Burst Request Interrupt
-#define I2C_ISR_LBREQ_INT_SHIFT				2
-#define I2C_ISR_BREQ_INT					(1 << 3)		 // Burst Request Interrupt
-#define I2C_ISR_BREQ_INT_SHIFT				3
-#define I2C_ISR_I2C_ERR_INT					(1 << 4)		 // I2C Error Interrupt
-#define I2C_ISR_I2C_ERR_INT_SHIFT			4
-#define I2C_ISR_I2C_P_INT					(1 << 5)		 // I2C Protocol Interrupt
-#define I2C_ISR_I2C_P_INT_SHIFT				5
-
-/* Transmission Data Register */
-#define I2C_TXD								0x8000
-#define I2C_TXD_BYTE0						(0xFF << 0)
-#define I2C_TXD_BYTE0_SHIFT					0
-#define I2C_TXD_BYTE1						(0xFF << 8)
-#define I2C_TXD_BYTE1_SHIFT					8
-#define I2C_TXD_BYTE2						(0xFF << 16)
-#define I2C_TXD_BYTE2_SHIFT					16
-#define I2C_TXD_BYTE3						(0xFF << 24)
-#define I2C_TXD_BYTE3_SHIFT					24
-
-/* Reception Data Register */
-#define I2C_RXD								0xC000
-#define I2C_RXD_BYTE0						(0xFF << 0)
-#define I2C_RXD_BYTE0_SHIFT					0
-#define I2C_RXD_BYTE1						(0xFF << 8)
-#define I2C_RXD_BYTE1_SHIFT					8
-#define I2C_RXD_BYTE2						(0xFF << 16)
-#define I2C_RXD_BYTE2_SHIFT					16
-#define I2C_RXD_BYTE3						(0xFF << 24)
-#define I2C_RXD_BYTE3_SHIFT					24
-
-
-// I2Cv2 [MOD_NUM=0046, MOD_REV=00, MOD_32BIT=00]
+// I2Cv1 [MOD_NUM=0046, MOD_REV=00, MOD_32BIT=00]
 // I2C from TC1100 official public datasheet.
-#define I2Cv2_IO_SIZE					0x00000200
+#define I2Cv1_IO_SIZE					0x00000200
 /* Clock Control Register */
-#define I2Cv2_CLC						0x00
+#define I2Cv1_CLC						0x00
 
 /* Port Input Select Register */
-#define I2Cv2_PISEL						0x04
-#define I2Cv2_PISEL_SCL_IS0				(1 << 0)
-#define I2Cv2_PISEL_SCL_IS0_SHIFT		0
-#define I2Cv2_PISEL_SCL_IS1				(1 << 1)
-#define I2Cv2_PISEL_SCL_IS1_SHIFT		1
-#define I2Cv2_PISEL_SDA_IS0				(1 << 4)
-#define I2Cv2_PISEL_SDA_IS0_SHIFT		4
-#define I2Cv2_PISEL_SDA_IS1				(1 << 5)
-#define I2Cv2_PISEL_SDA_IS1_SHIFT		5
+#define I2Cv1_PISEL						0x04
+#define I2Cv1_PISEL_SCL_IS0				(1 << 0)
+#define I2Cv1_PISEL_SCL_IS0_SHIFT		0
+#define I2Cv1_PISEL_SCL_IS1				(1 << 1)
+#define I2Cv1_PISEL_SCL_IS1_SHIFT		1
+#define I2Cv1_PISEL_SDA_IS0				(1 << 4)
+#define I2Cv1_PISEL_SDA_IS0_SHIFT		4
+#define I2Cv1_PISEL_SDA_IS1				(1 << 5)
+#define I2Cv1_PISEL_SDA_IS1_SHIFT		5
 
 /* Module Identifier Register */
-#define I2Cv2_ID						0x08
+#define I2Cv1_ID						0x08
 
 /* System Control Register */
-#define I2Cv2_SYSCON					0x10
-#define I2Cv2_SYSCON_ADR				(1 << 0)		 // Bit ADR is set after a start condition in slave mode
-#define I2Cv2_SYSCON_ADR_SHIFT			0
-#define I2Cv2_SYSCON_AL					(1 << 1)		 // Arbitration Lost
-#define I2Cv2_SYSCON_AL_SHIFT			1
-#define I2Cv2_SYSCON_SLA				(1 << 2)		 // Slave
-#define I2Cv2_SYSCON_SLA_SHIFT			2
-#define I2Cv2_SYSCON_LRB				(1 << 3)		 // Last Received Bit
-#define I2Cv2_SYSCON_LRB_SHIFT			3
-#define I2Cv2_SYSCON_BB					(1 << 4)		 // Bus Busy
-#define I2Cv2_SYSCON_BB_SHIFT			4
-#define I2Cv2_SYSCON_IRQD				(1 << 5)		 // IIC Interrupt Request Bit for Data Transfer Events
-#define I2Cv2_SYSCON_IRQD_SHIFT			5
-#define I2Cv2_SYSCON_IRQP				(1 << 6)		 // IIC Interrupt Request Bit for Protocol Events
-#define I2Cv2_SYSCON_IRQP_SHIFT			6
-#define I2Cv2_SYSCON_IRQE				(1 << 7)		 // IIC Interrupt Request Bit for Data Transmission End
-#define I2Cv2_SYSCON_IRQE_SHIFT			7
-#define I2Cv2_SYSCON_CO					(0x7 << 8)		 // Counter of Transmitted Bytes Since Last Data Interrupt.
-#define I2Cv2_SYSCON_CO_SHIFT			8
-#define I2Cv2_SYSCON_RMEN				(1 << 15)		 // Read Mirror Enable
-#define I2Cv2_SYSCON_RMEN_SHIFT			15
-#define I2Cv2_SYSCON_M10				(1 << 16)		 // 10-bit address mode
-#define I2Cv2_SYSCON_M10_SHIFT			16
-#define I2Cv2_SYSCON_RSC				(1 << 17)		 // Repeated Start Condition
-#define I2Cv2_SYSCON_RSC_SHIFT			17
-#define I2Cv2_SYSCON_MOD				(0x3 << 18)		 // Basic Operating Mode
-#define I2Cv2_SYSCON_MOD_SHIFT			18
-#define I2Cv2_SYSCON_MOD_DISABLED		0x0
-#define I2Cv2_SYSCON_MOD_SLAVE			0x40000
-#define I2Cv2_SYSCON_MOD_MASTER			0x80000
-#define I2Cv2_SYSCON_MOD_MULTI_MASTER	0xC0000
-#define I2Cv2_SYSCON_BUM				(1 << 20)		 // Busy Master
-#define I2Cv2_SYSCON_BUM_SHIFT			20
-#define I2Cv2_SYSCON_ACKDIS				(1 << 21)		 // Acknowledge Pulse Disable
-#define I2Cv2_SYSCON_ACKDIS_SHIFT		21
-#define I2Cv2_SYSCON_INT				(1 << 22)		 // Interrupt Delete Select
-#define I2Cv2_SYSCON_INT_SHIFT			22
-#define I2Cv2_SYSCON_TRX				(1 << 23)		 // Transmit Select
-#define I2Cv2_SYSCON_TRX_SHIFT			23
-#define I2Cv2_SYSCON_IGE				(1 << 24)		 // Ignore IRQE
-#define I2Cv2_SYSCON_IGE_SHIFT			24
-#define I2Cv2_SYSCON_STP				(1 << 25)		 // Stop Master
-#define I2Cv2_SYSCON_STP_SHIFT			25
-#define I2Cv2_SYSCON_CI					(0x3 << 26)		 // Length of the Receive/Transmit Buffer
-#define I2Cv2_SYSCON_CI_SHIFT			26
-#define I2Cv2_SYSCON_CI_1				0x0
-#define I2Cv2_SYSCON_CI_2				0x4000000
-#define I2Cv2_SYSCON_CI_3				0x8000000
-#define I2Cv2_SYSCON_CI_4				0xC000000
-#define I2Cv2_SYSCON_WMEN				(1 << 31)		 // Write Mirror Enable
-#define I2Cv2_SYSCON_WMEN_SHIFT			31
+#define I2Cv1_SYSCON					0x10
+#define I2Cv1_SYSCON_ADR				(1 << 0)		 // Bit ADR is set after a start condition in slave mode
+#define I2Cv1_SYSCON_ADR_SHIFT			0
+#define I2Cv1_SYSCON_AL					(1 << 1)		 // Arbitration Lost
+#define I2Cv1_SYSCON_AL_SHIFT			1
+#define I2Cv1_SYSCON_SLA				(1 << 2)		 // The IIC module has been selected as a slave (device address received).
+#define I2Cv1_SYSCON_SLA_SHIFT			2
+#define I2Cv1_SYSCON_LRB				(1 << 3)		 // Last Received Bit
+#define I2Cv1_SYSCON_LRB_SHIFT			3
+#define I2Cv1_SYSCON_BB					(1 << 4)		 // Bus Busy
+#define I2Cv1_SYSCON_BB_SHIFT			4
+#define I2Cv1_SYSCON_IRQD				(1 << 5)		 // IIC Interrupt Request Bit for Data Transfer Events
+#define I2Cv1_SYSCON_IRQD_SHIFT			5
+#define I2Cv1_SYSCON_IRQP				(1 << 6)		 // IIC Interrupt Request Bit for Protocol Events
+#define I2Cv1_SYSCON_IRQP_SHIFT			6
+#define I2Cv1_SYSCON_IRQE				(1 << 7)		 // IIC Interrupt Request Bit for Data Transmission End
+#define I2Cv1_SYSCON_IRQE_SHIFT			7
+#define I2Cv1_SYSCON_WM					(0xFF << 8)		 // Write Mirror (WMEN=1)
+#define I2Cv1_SYSCON_WM_SHIFT			8
+#define I2Cv1_SYSCON_CO					(0x7 << 8)		 // Counter of Transmitted Bytes Since Last Data Interrupt.
+#define I2Cv1_SYSCON_CO_SHIFT			8
+#define I2Cv1_SYSCON_RMEN				(1 << 15)		 // Read Mirror Enable
+#define I2Cv1_SYSCON_RMEN_SHIFT			15
+#define I2Cv1_SYSCON_M10				(1 << 16)		 // 10-bit address mode
+#define I2Cv1_SYSCON_M10_SHIFT			16
+#define I2Cv1_SYSCON_RSC				(1 << 17)		 // Repeated Start Condition
+#define I2Cv1_SYSCON_RSC_SHIFT			17
+#define I2Cv1_SYSCON_MOD				(0x3 << 18)		 // Basic Operating Mode
+#define I2Cv1_SYSCON_MOD_SHIFT			18
+#define I2Cv1_SYSCON_MOD_DISABLED		0x0
+#define I2Cv1_SYSCON_MOD_SLAVE			0x40000
+#define I2Cv1_SYSCON_MOD_MASTER			0x80000
+#define I2Cv1_SYSCON_MOD_MULTI_MASTER	0xC0000
+#define I2Cv1_SYSCON_BUM				(1 << 20)		 // Busy Master
+#define I2Cv1_SYSCON_BUM_SHIFT			20
+#define I2Cv1_SYSCON_ACKDIS				(1 << 21)		 // Acknowledge Pulse Disable
+#define I2Cv1_SYSCON_ACKDIS_SHIFT		21
+#define I2Cv1_SYSCON_INT				(1 << 22)		 // Interrupt Delete Select
+#define I2Cv1_SYSCON_INT_SHIFT			22
+#define I2Cv1_SYSCON_TRX				(1 << 23)		 // Transmit Select
+#define I2Cv1_SYSCON_TRX_SHIFT			23
+#define I2Cv1_SYSCON_RM					(0xFF << 24)	 // Read Mirror (RMEN=1)
+#define I2Cv1_SYSCON_RM_SHIFT			24
+#define I2Cv1_SYSCON_IGE				(1 << 24)		 // Ignore IRQE
+#define I2Cv1_SYSCON_IGE_SHIFT			24
+#define I2Cv1_SYSCON_STP				(1 << 25)		 // Stop Master
+#define I2Cv1_SYSCON_STP_SHIFT			25
+#define I2Cv1_SYSCON_CI					(0x3 << 26)		 // Length of the Receive/Transmit Buffer
+#define I2Cv1_SYSCON_CI_SHIFT			26
+#define I2Cv1_SYSCON_CI_1				0x0
+#define I2Cv1_SYSCON_CI_2				0x4000000
+#define I2Cv1_SYSCON_CI_3				0x8000000
+#define I2Cv1_SYSCON_CI_4				0xC000000
+#define I2Cv1_SYSCON_WMEN				(1 << 31)		 // Write Mirror Enable
+#define I2Cv1_SYSCON_WMEN_SHIFT			31
 
 /* Bus Control Register */
-#define I2Cv2_BUSCON					0x14
-#define I2Cv2_BUSCON_SDAEN0				(1 << 0)		 // Enable Input for Data Pin 0
-#define I2Cv2_BUSCON_SDAEN0_SHIFT		0
-#define I2Cv2_BUSCON_SDAEN1				(1 << 1)		 // Enable Input for Data Pin 1
-#define I2Cv2_BUSCON_SDAEN1_SHIFT		1
-#define I2Cv2_BUSCON_SCLEN0				(1 << 4)		 // Enable Input for Clock Pin 0
-#define I2Cv2_BUSCON_SCLEN0_SHIFT		4
-#define I2Cv2_BUSCON_SCLEN1				(1 << 5)		 // Enable Input for Clock Pin 1
-#define I2Cv2_BUSCON_SCLEN1_SHIFT		5
-#define I2Cv2_BUSCON_BRP				(0xFF << 8)		 // Baud Rate Prescaler
-#define I2Cv2_BUSCON_BRP_SHIFT			8
-#define I2Cv2_BUSCON_ICA				(0x3FF << 16)	 // Node Address
-#define I2Cv2_BUSCON_ICA_SHIFT			16
-#define I2Cv2_BUSCON_PREDIV				(0x3 << 29)		 // Pre Divider for Baud Rate Generation
-#define I2Cv2_BUSCON_PREDIV_SHIFT		29
-#define I2Cv2_BUSCON_PREDIV_1			0x0
-#define I2Cv2_BUSCON_PREDIV_8			0x20000000
-#define I2Cv2_BUSCON_PREDIV_64			0x40000000
-#define I2Cv2_BUSCON_BRPMOD				(1 << 31)		 // Baud Rate Prescaler Mode
-#define I2Cv2_BUSCON_BRPMOD_SHIFT		31
-#define I2Cv2_BUSCON_BRPMOD_MODE0		0x0
-#define I2Cv2_BUSCON_BRPMOD_MODE1		0x80000000
+#define I2Cv1_BUSCON					0x14
+#define I2Cv1_BUSCON_SDAEN0				(1 << 0)		 // Enable Input for Data Pin 0
+#define I2Cv1_BUSCON_SDAEN0_SHIFT		0
+#define I2Cv1_BUSCON_SDAEN1				(1 << 1)		 // Enable Input for Data Pin 1
+#define I2Cv1_BUSCON_SDAEN1_SHIFT		1
+#define I2Cv1_BUSCON_SCLEN0				(1 << 4)		 // Enable Input for Clock Pin 0
+#define I2Cv1_BUSCON_SCLEN0_SHIFT		4
+#define I2Cv1_BUSCON_SCLEN1				(1 << 5)		 // Enable Input for Clock Pin 1
+#define I2Cv1_BUSCON_SCLEN1_SHIFT		5
+#define I2Cv1_BUSCON_BRP				(0xFF << 8)		 // Baud Rate Prescaler
+#define I2Cv1_BUSCON_BRP_SHIFT			8
+#define I2Cv1_BUSCON_ICA				(0x3FF << 16)	 // Node Address
+#define I2Cv1_BUSCON_ICA_SHIFT			16
+#define I2Cv1_BUSCON_PREDIV				(0x3 << 29)		 // Pre Divider for Baud Rate Generation
+#define I2Cv1_BUSCON_PREDIV_SHIFT		29
+#define I2Cv1_BUSCON_PREDIV_1			0x0
+#define I2Cv1_BUSCON_PREDIV_8			0x20000000
+#define I2Cv1_BUSCON_PREDIV_64			0x40000000
+#define I2Cv1_BUSCON_BRPMOD				(1 << 31)		 // Baud Rate Prescaler Mode
+#define I2Cv1_BUSCON_BRPMOD_SHIFT		31
+#define I2Cv1_BUSCON_BRPMOD_MODE0		0x0
+#define I2Cv1_BUSCON_BRPMOD_MODE1		0x80000000
 
 /* Receive Transmit Buffer */
-#define I2Cv2_RTB						0x18
-#define I2Cv2_RTB_BYTE0					(0xFF << 0)
-#define I2Cv2_RTB_BYTE0_SHIFT			0
-#define I2Cv2_RTB_BYTE1					(0xFF << 8)
-#define I2Cv2_RTB_BYTE1_SHIFT			8
-#define I2Cv2_RTB_BYTE2					(0xFF << 16)
-#define I2Cv2_RTB_BYTE2_SHIFT			16
-#define I2Cv2_RTB_BYTE3					(0xFF << 24)
-#define I2Cv2_RTB_BYTE3_SHIFT			24
+#define I2Cv1_RTB						0x18
+#define I2Cv1_RTB_BYTE0					(0xFF << 0)
+#define I2Cv1_RTB_BYTE0_SHIFT			0
+#define I2Cv1_RTB_BYTE1					(0xFF << 8)
+#define I2Cv1_RTB_BYTE1_SHIFT			8
+#define I2Cv1_RTB_BYTE2					(0xFF << 16)
+#define I2Cv1_RTB_BYTE2_SHIFT			16
+#define I2Cv1_RTB_BYTE3					(0xFF << 24)
+#define I2Cv1_RTB_BYTE3_SHIFT			24
 
 /* Write Hardware Bits Control Register */
-#define I2Cv2_WHBSYSCON					0x20
-#define I2Cv2_WHBSYSCON_CLRAL			(1 << 1)		 // Clear Arbitration Lost Bit
-#define I2Cv2_WHBSYSCON_CLRAL_SHIFT		1
-#define I2Cv2_WHBSYSCON_SETAL			(1 << 2)		 // Set Arbitration Lost Bit
-#define I2Cv2_WHBSYSCON_SETAL_SHIFT		2
-#define I2Cv2_WHBSYSCON_CLRIRQD			(1 << 5)		 // Clear IIC Interrupt Request Bit for Data Transfer Events Bit
-#define I2Cv2_WHBSYSCON_CLRIRQD_SHIFT	5
-#define I2Cv2_WHBSYSCON_CLRIRQP			(1 << 6)		 // Clear IIC Interrupt Request Bit for Protocol Events Bit
-#define I2Cv2_WHBSYSCON_CLRIRQP_SHIFT	6
-#define I2Cv2_WHBSYSCON_CLRIRQE			(1 << 7)		 // Clear IIC Interrupt Request Bit for Data Transmission End Bit
-#define I2Cv2_WHBSYSCON_CLRIRQE_SHIFT	7
-#define I2Cv2_WHBSYSCON_SETIRQD			(1 << 8)		 // Set IIC Interrupt Request Bit for Data Transfer Events Bit
-#define I2Cv2_WHBSYSCON_SETIRQD_SHIFT	8
-#define I2Cv2_WHBSYSCON_SETIRQP			(1 << 9)		 // Set IIC Interrupt Request Bit for Protocol Events Bit
-#define I2Cv2_WHBSYSCON_SETIRQP_SHIFT	9
-#define I2Cv2_WHBSYSCON_SETIRQE			(1 << 10)		 // Set IIC Interrupt Request Bit for Data Transmission End Bit
-#define I2Cv2_WHBSYSCON_SETIRQE_SHIFT	10
-#define I2Cv2_WHBSYSCON_CLRRMEN			(1 << 14)		 // Clear Read Mirror Enable Bit
-#define I2Cv2_WHBSYSCON_CLRRMEN_SHIFT	14
-#define I2Cv2_WHBSYSCON_SETRMEN			(1 << 15)		 // Set Read Mirror Enable Bit
-#define I2Cv2_WHBSYSCON_SETRMEN_SHIFT	15
-#define I2Cv2_WHBSYSCON_CLRRSC			(1 << 16)		 // Clear Repeated Start Condition Bit
-#define I2Cv2_WHBSYSCON_CLRRSC_SHIFT	16
-#define I2Cv2_WHBSYSCON_SETRSC			(1 << 17)		 // Set Repeated Start Condition Bit
-#define I2Cv2_WHBSYSCON_SETRSC_SHIFT	17
-#define I2Cv2_WHBSYSCON_CLRBUM			(1 << 19)		 // Clear Busy Master Bit
-#define I2Cv2_WHBSYSCON_CLRBUM_SHIFT	19
-#define I2Cv2_WHBSYSCON_SETBUM			(1 << 20)		 // Set Busy Master Bit
-#define I2Cv2_WHBSYSCON_SETBUM_SHIFT	20
-#define I2Cv2_WHBSYSCON_CLRACKDIS		(1 << 21)		 // Clear Acknowledge Pulse Disable Bit
-#define I2Cv2_WHBSYSCON_CLRACKDIS_SHIFT	21
-#define I2Cv2_WHBSYSCON_SETACKDIS		(1 << 22)		 // Set Acknowledge Pulse Disable Bit
-#define I2Cv2_WHBSYSCON_SETACKDIS_SHIFT	22
-#define I2Cv2_WHBSYSCON_CLRTRX			(1 << 23)		 // Clear Transmit Select Bit
-#define I2Cv2_WHBSYSCON_CLRTRX_SHIFT	23
-#define I2Cv2_WHBSYSCON_SETTRX			(1 << 24)		 // Set Transmit Select Bit
-#define I2Cv2_WHBSYSCON_SETTRX_SHIFT	24
-#define I2Cv2_WHBSYSCON_CLRSTP			(1 << 25)		 // Clear Stop Master Bit
-#define I2Cv2_WHBSYSCON_CLRSTP_SHIFT	25
-#define I2Cv2_WHBSYSCON_CLRWMEN			(1 << 30)		 // Set Write Mirror Enable Bit
-#define I2Cv2_WHBSYSCON_CLRWMEN_SHIFT	30
-#define I2Cv2_WHBSYSCON_SETWMEN			(1 << 31)		 // Clear Write Mirror Enable Bit
-#define I2Cv2_WHBSYSCON_SETWMEN_SHIFT	31
+#define I2Cv1_WHBSYSCON					0x20
+#define I2Cv1_WHBSYSCON_CLRAL			(1 << 1)		 // Clear Arbitration Lost Bit
+#define I2Cv1_WHBSYSCON_CLRAL_SHIFT		1
+#define I2Cv1_WHBSYSCON_SETAL			(1 << 2)		 // Set Arbitration Lost Bit
+#define I2Cv1_WHBSYSCON_SETAL_SHIFT		2
+#define I2Cv1_WHBSYSCON_CLRIRQD			(1 << 5)		 // Clear IIC Interrupt Request Bit for Data Transfer Events Bit
+#define I2Cv1_WHBSYSCON_CLRIRQD_SHIFT	5
+#define I2Cv1_WHBSYSCON_CLRIRQP			(1 << 6)		 // Clear IIC Interrupt Request Bit for Protocol Events Bit
+#define I2Cv1_WHBSYSCON_CLRIRQP_SHIFT	6
+#define I2Cv1_WHBSYSCON_CLRIRQE			(1 << 7)		 // Clear IIC Interrupt Request Bit for Data Transmission End Bit
+#define I2Cv1_WHBSYSCON_CLRIRQE_SHIFT	7
+#define I2Cv1_WHBSYSCON_SETIRQD			(1 << 8)		 // Set IIC Interrupt Request Bit for Data Transfer Events Bit
+#define I2Cv1_WHBSYSCON_SETIRQD_SHIFT	8
+#define I2Cv1_WHBSYSCON_SETIRQP			(1 << 9)		 // Set IIC Interrupt Request Bit for Protocol Events Bit
+#define I2Cv1_WHBSYSCON_SETIRQP_SHIFT	9
+#define I2Cv1_WHBSYSCON_SETIRQE			(1 << 10)		 // Set IIC Interrupt Request Bit for Data Transmission End Bit
+#define I2Cv1_WHBSYSCON_SETIRQE_SHIFT	10
+#define I2Cv1_WHBSYSCON_CLRRMEN			(1 << 14)		 // Clear Read Mirror Enable Bit
+#define I2Cv1_WHBSYSCON_CLRRMEN_SHIFT	14
+#define I2Cv1_WHBSYSCON_SETRMEN			(1 << 15)		 // Set Read Mirror Enable Bit
+#define I2Cv1_WHBSYSCON_SETRMEN_SHIFT	15
+#define I2Cv1_WHBSYSCON_CLRRSC			(1 << 16)		 // Clear Repeated Start Condition Bit
+#define I2Cv1_WHBSYSCON_CLRRSC_SHIFT	16
+#define I2Cv1_WHBSYSCON_SETRSC			(1 << 17)		 // Set Repeated Start Condition Bit
+#define I2Cv1_WHBSYSCON_SETRSC_SHIFT	17
+#define I2Cv1_WHBSYSCON_CLRBUM			(1 << 19)		 // Clear Busy Master Bit
+#define I2Cv1_WHBSYSCON_CLRBUM_SHIFT	19
+#define I2Cv1_WHBSYSCON_SETBUM			(1 << 20)		 // Set Busy Master Bit
+#define I2Cv1_WHBSYSCON_SETBUM_SHIFT	20
+#define I2Cv1_WHBSYSCON_CLRACKDIS		(1 << 21)		 // Clear Acknowledge Pulse Disable Bit
+#define I2Cv1_WHBSYSCON_CLRACKDIS_SHIFT	21
+#define I2Cv1_WHBSYSCON_SETACKDIS		(1 << 22)		 // Set Acknowledge Pulse Disable Bit
+#define I2Cv1_WHBSYSCON_SETACKDIS_SHIFT	22
+#define I2Cv1_WHBSYSCON_CLRTRX			(1 << 23)		 // Clear Transmit Select Bit
+#define I2Cv1_WHBSYSCON_CLRTRX_SHIFT	23
+#define I2Cv1_WHBSYSCON_SETTRX			(1 << 24)		 // Set Transmit Select Bit
+#define I2Cv1_WHBSYSCON_SETTRX_SHIFT	24
+#define I2Cv1_WHBSYSCON_CLRSTP			(1 << 25)		 // Clear Stop Master Bit
+#define I2Cv1_WHBSYSCON_CLRSTP_SHIFT	25
+#define I2Cv1_WHBSYSCON_SETSTP			(1 << 26)		 // Set Stop Master Bit
+#define I2Cv1_WHBSYSCON_SETSTP_SHIFT	26
+#define I2Cv1_WHBSYSCON_CLRWMEN			(1 << 30)		 // Set Write Mirror Enable Bit
+#define I2Cv1_WHBSYSCON_CLRWMEN_SHIFT	30
+#define I2Cv1_WHBSYSCON_SETWMEN			(1 << 31)		 // Clear Write Mirror Enable Bit
+#define I2Cv1_WHBSYSCON_SETWMEN_SHIFT	31
 
 /* Service Routing Control Register */
-#define I2Cv2_ERR_SRC					0xF4
+#define I2Cv1_END_SRC					0xF4
 
 /* Service Routing Control Register */
-#define I2Cv2_PROTO_SRC					0xF8
+#define I2Cv1_PROTO_SRC					0xF8
 
 /* Service Routing Control Register */
-#define I2Cv2_DATA_SRC					0xFC
+#define I2Cv1_DATA_SRC					0xFC
+
+
+// I2Cv2 [MOD_NUM=F057, MOD_REV=00, MOD_32BIT=C0]
+// I2C from Tricore TC27x official public datasheet
+#define I2Cv2_IO_SIZE							0x0000C004
+/* Clock Control Register */
+#define I2Cv2_CLC								0x00
+
+/* Module Identifier Register */
+#define I2Cv2_ID								0x08
+
+/* RUN Control Register */
+#define I2Cv2_RUNCTRL							0x10
+#define I2Cv2_RUNCTRL_RUN						(1 << 0)		 // Enable I2C-bus Interface
+#define I2Cv2_RUNCTRL_RUN_SHIFT					0
+
+/* End Data Control Register */
+#define I2Cv2_ENDDCTRL							0x14
+#define I2Cv2_ENDDCTRL_SETRSC					(1 << 0)		 // Set Restart Condition
+#define I2Cv2_ENDDCTRL_SETRSC_SHIFT				0
+#define I2Cv2_ENDDCTRL_SETEND					(1 << 1)		 // Set End of Transmission
+#define I2Cv2_ENDDCTRL_SETEND_SHIFT				1
+
+/* Fractional Divider Configuration Register */
+#define I2Cv2_FDIVCFG							0x18
+#define I2Cv2_FDIVCFG_DEC						(0x7FF << 0)	 // Decrement Value of Fractional Divider
+#define I2Cv2_FDIVCFG_DEC_SHIFT					0
+#define I2Cv2_FDIVCFG_INC						(0xFF << 16)	 // Increment Value of Fractional Divider
+#define I2Cv2_FDIVCFG_INC_SHIFT					16
+
+/* Fractional Divider High-speed Mode Configuration Register */
+#define I2Cv2_FDIVHIGHCFG						0x1C
+#define I2Cv2_FDIVHIGHCFG_DEC					(0x7FF << 0)	 // Decrement Value of Fractional Divider
+#define I2Cv2_FDIVHIGHCFG_DEC_SHIFT				0
+#define I2Cv2_FDIVHIGHCFG_INC					(0xFF << 16)	 // Increment Value of Fractional Divider
+#define I2Cv2_FDIVHIGHCFG_INC_SHIFT				16
+
+/* Address Configuration Register */
+#define I2Cv2_ADDRCFG							0x20
+#define I2Cv2_ADDRCFG_ADR						(0x3FF << 0)	 // I2C-bus Device Address (slave)
+#define I2Cv2_ADDRCFG_ADR_SHIFT					0
+#define I2Cv2_ADDRCFG_TBAM						(1 << 16)		 // Ten Bit Address Mode
+#define I2Cv2_ADDRCFG_TBAM_SHIFT				16
+#define I2Cv2_ADDRCFG_GCE						(1 << 17)		 // General Call Enable
+#define I2Cv2_ADDRCFG_GCE_SHIFT					17
+#define I2Cv2_ADDRCFG_MCE						(1 << 18)		 // Master Code Enable
+#define I2Cv2_ADDRCFG_MCE_SHIFT					18
+#define I2Cv2_ADDRCFG_MnS						(1 << 19)		 // Master / not Slave
+#define I2Cv2_ADDRCFG_MnS_SHIFT					19
+#define I2Cv2_ADDRCFG_SONA						(1 << 20)		 // Stop on Not-acknowledge
+#define I2Cv2_ADDRCFG_SONA_SHIFT				20
+#define I2Cv2_ADDRCFG_SOPE						(1 << 21)		 // Stop on Packet End
+#define I2Cv2_ADDRCFG_SOPE_SHIFT				21
+
+/* Bus Status Register */
+#define I2Cv2_BUSSTAT							0x24
+#define I2Cv2_BUSSTAT_BS						(0x3 << 1)		 // Bus Status
+#define I2Cv2_BUSSTAT_BS_SHIFT					1
+#define I2Cv2_BUSSTAT_BS_FREE					0x0
+#define I2Cv2_BUSSTAT_BS_BUSY_OTHER_MASTER		0x2
+#define I2Cv2_BUSSTAT_BS_BUSY_MASTER			0x4
+#define I2Cv2_BUSSTAT_BS_BUSY_SLAVE				0x6
+#define I2Cv2_BUSSTAT_RnW						(1 << 3)		 // Read/not Write
+#define I2Cv2_BUSSTAT_RnW_SHIFT					3
+
+/* FIFO Configuration Register */
+#define I2Cv2_FIFOCFG							0x28
+#define I2Cv2_FIFOCFG_RXBS						(0x3 << 0)		 // RX Burst Size
+#define I2Cv2_FIFOCFG_RXBS_SHIFT				0
+#define I2Cv2_FIFOCFG_RXBS_1_WORD				0x0
+#define I2Cv2_FIFOCFG_RXBS_2_WORD				0x1
+#define I2Cv2_FIFOCFG_RXBS_4_WORD				0x2
+#define I2Cv2_FIFOCFG_TXBS						(0x3 << 4)		 // TX Burst Size
+#define I2Cv2_FIFOCFG_TXBS_SHIFT				4
+#define I2Cv2_FIFOCFG_TXBS_1_WORD				0x0
+#define I2Cv2_FIFOCFG_TXBS_2_WORD				0x10
+#define I2Cv2_FIFOCFG_TXBS_4_WORD				0x20
+#define I2Cv2_FIFOCFG_RXFA						(0x3 << 8)		 // RX FIFO Alignment
+#define I2Cv2_FIFOCFG_RXFA_SHIFT				8
+#define I2Cv2_FIFOCFG_RXFA_BYTE					0x0
+#define I2Cv2_FIFOCFG_RXFA_HALF_WORLD			0x100
+#define I2Cv2_FIFOCFG_RXFA_WORD					0x200
+#define I2Cv2_FIFOCFG_TXFA						(0x3 << 12)		 // TX FIFO Alignment
+#define I2Cv2_FIFOCFG_TXFA_SHIFT				12
+#define I2Cv2_FIFOCFG_TXFA_BYTE					0x0
+#define I2Cv2_FIFOCFG_TXFA_HALF_WORLD			0x1000
+#define I2Cv2_FIFOCFG_TXFA_WORD					0x2000
+#define I2Cv2_FIFOCFG_RXFC						(1 << 16)		 // RX FIFO Flow Control
+#define I2Cv2_FIFOCFG_RXFC_SHIFT				16
+#define I2Cv2_FIFOCFG_TXFC						(1 << 17)		 // TX FIFO Flow Control
+#define I2Cv2_FIFOCFG_TXFC_SHIFT				17
+
+/* Maximum Received Packet Size Control Register */
+#define I2Cv2_MRPSCTRL							0x2C
+#define I2Cv2_MRPSCTRL_MRPS						(0x3FFF << 0)	 // Maximum Received Packet Size
+#define I2Cv2_MRPSCTRL_MRPS_SHIFT				0
+
+/* Received Packet Size Status Register */
+#define I2Cv2_RPSSTAT							0x30
+#define I2Cv2_RPSSTAT_RPS						(0x3FFF << 0)	 // Received Packet Size
+#define I2Cv2_RPSSTAT_RPS_SHIFT					0
+
+/* Transmit Packet Size Control Register */
+#define I2Cv2_TPSCTRL							0x34
+#define I2Cv2_TPSCTRL_TPS						(0x3FFF << 0)	 // Transmit Packet Size
+#define I2Cv2_TPSCTRL_TPS_SHIFT					0
+
+/* Filled FIFO Stages Status Register */
+#define I2Cv2_FFSSTAT							0x38
+#define I2Cv2_FFSSTAT_FFS						(0x3F << 0)		 // Filled FIFO Stages
+#define I2Cv2_FFSSTAT_FFS_SHIFT					0
+
+/* Timing Configuration Register */
+#define I2Cv2_TIMCFG							0x40
+#define I2Cv2_TIMCFG_SDA_DEL_HD_DAT				(0x3F << 0)		 // SDA Delay Stages for Data Hold Time
+#define I2Cv2_TIMCFG_SDA_DEL_HD_DAT_SHIFT		0
+#define I2Cv2_TIMCFG_HS_SDA_DEL_HD_DAT			(0x7 << 6)		 // SDA Delay Stages for Data Hold Time in Highspeed Mode
+#define I2Cv2_TIMCFG_HS_SDA_DEL_HD_DAT_SHIFT	6
+#define I2Cv2_TIMCFG_SCL_DEL_HD_STA				(0x7 << 9)		 // SCL Delay Stages for Hold Time Start (Restart) Bit
+#define I2Cv2_TIMCFG_SCL_DEL_HD_STA_SHIFT		9
+#define I2Cv2_TIMCFG_EN_SCL_LOW_LEN				(1 << 14)		 // Enable Direct Configuration of SCL Low Period Length in Fast Mode
+#define I2Cv2_TIMCFG_EN_SCL_LOW_LEN_SHIFT		14
+#define I2Cv2_TIMCFG_FS_SCL_LOW					(1 << 15)		 // Set Fast Mode SCL Low Period Timing
+#define I2Cv2_TIMCFG_FS_SCL_LOW_SHIFT			15
+#define I2Cv2_TIMCFG_HS_SDA_DEL					(0x7 << 16)		 // SDA Delay Stages for Start/Stop bit in Highspeed Mode
+#define I2Cv2_TIMCFG_HS_SDA_DEL_SHIFT			16
+#define I2Cv2_TIMCFG_SCL_LOW_LEN				(0xFF << 24)	 // SCL Low Length in Fast Mode
+#define I2Cv2_TIMCFG_SCL_LOW_LEN_SHIFT			24
+
+/* Error Interrupt Request Source Mask Register */
+#define I2Cv2_ERRIRQSM							0x60
+#define I2Cv2_ERRIRQSM_RXF_UFL					(1 << 0)		 // RX FIFO Underflow
+#define I2Cv2_ERRIRQSM_RXF_UFL_SHIFT			0
+#define I2Cv2_ERRIRQSM_RXF_OFL					(1 << 1)		 // RX FIFO Overflow
+#define I2Cv2_ERRIRQSM_RXF_OFL_SHIFT			1
+#define I2Cv2_ERRIRQSM_TXF_UFL					(1 << 2)		 // TX FIFO Underflow
+#define I2Cv2_ERRIRQSM_TXF_UFL_SHIFT			2
+#define I2Cv2_ERRIRQSM_TXF_OFL					(1 << 3)		 // TX FIFO Overflow
+#define I2Cv2_ERRIRQSM_TXF_OFL_SHIFT			3
+
+/* Error Interrupt Request Source Status Register */
+#define I2Cv2_ERRIRQSS							0x64
+#define I2Cv2_ERRIRQSS_RXF_UFL					(1 << 0)		 // RX FIFO Underflow
+#define I2Cv2_ERRIRQSS_RXF_UFL_SHIFT			0
+#define I2Cv2_ERRIRQSS_RXF_OFL					(1 << 1)		 // RX FIFO Overflow
+#define I2Cv2_ERRIRQSS_RXF_OFL_SHIFT			1
+#define I2Cv2_ERRIRQSS_TXF_UFL					(1 << 2)		 // TX FIFO Underflow
+#define I2Cv2_ERRIRQSS_TXF_UFL_SHIFT			2
+#define I2Cv2_ERRIRQSS_TXF_OFL					(1 << 3)		 // TX FIFO Overflow
+#define I2Cv2_ERRIRQSS_TXF_OFL_SHIFT			3
+
+/* Error Interrupt Request Source Clear Register */
+#define I2Cv2_ERRIRQSC							0x68
+#define I2Cv2_ERRIRQSC_RXF_UFL					(1 << 0)		 // RX FIFO Underflow
+#define I2Cv2_ERRIRQSC_RXF_UFL_SHIFT			0
+#define I2Cv2_ERRIRQSC_RXF_OFL					(1 << 1)		 // RX FIFO Overflow
+#define I2Cv2_ERRIRQSC_RXF_OFL_SHIFT			1
+#define I2Cv2_ERRIRQSC_TXF_UFL					(1 << 2)		 // TX FIFO Underflow
+#define I2Cv2_ERRIRQSC_TXF_UFL_SHIFT			2
+#define I2Cv2_ERRIRQSC_TXF_OFL					(1 << 3)		 // TX FIFO Overflow
+#define I2Cv2_ERRIRQSC_TXF_OFL_SHIFT			3
+
+/* Protocol Interrupt Request Source Mask Register */
+#define I2Cv2_PIRQSM							0x70
+#define I2Cv2_PIRQSM_AM							(1 << 0)		 // Address Match
+#define I2Cv2_PIRQSM_AM_SHIFT					0
+#define I2Cv2_PIRQSM_GC							(1 << 1)		 // General Call
+#define I2Cv2_PIRQSM_GC_SHIFT					1
+#define I2Cv2_PIRQSM_MC							(1 << 2)		 // Master Code
+#define I2Cv2_PIRQSM_MC_SHIFT					2
+#define I2Cv2_PIRQSM_AL							(1 << 3)		 // Arbitration Lost
+#define I2Cv2_PIRQSM_AL_SHIFT					3
+#define I2Cv2_PIRQSM_NACK						(1 << 4)		 // Not-acknowledge Received
+#define I2Cv2_PIRQSM_NACK_SHIFT					4
+#define I2Cv2_PIRQSM_TX_END						(1 << 5)		 // Transmission End
+#define I2Cv2_PIRQSM_TX_END_SHIFT				5
+#define I2Cv2_PIRQSM_RX							(1 << 6)		 // Receive Mode
+#define I2Cv2_PIRQSM_RX_SHIFT					6
+
+/* Protocol Interrupt Request Source Status Register */
+#define I2Cv2_PIRQSS							0x74
+#define I2Cv2_PIRQSS_AM							(1 << 0)		 // Address Match
+#define I2Cv2_PIRQSS_AM_SHIFT					0
+#define I2Cv2_PIRQSS_GC							(1 << 1)		 // General Call
+#define I2Cv2_PIRQSS_GC_SHIFT					1
+#define I2Cv2_PIRQSS_MC							(1 << 2)		 // Master Code
+#define I2Cv2_PIRQSS_MC_SHIFT					2
+#define I2Cv2_PIRQSS_AL							(1 << 3)		 // Arbitration Lost
+#define I2Cv2_PIRQSS_AL_SHIFT					3
+#define I2Cv2_PIRQSS_NACK						(1 << 4)		 // Not-acknowledge Received
+#define I2Cv2_PIRQSS_NACK_SHIFT					4
+#define I2Cv2_PIRQSS_TX_END						(1 << 5)		 // Transmission End
+#define I2Cv2_PIRQSS_TX_END_SHIFT				5
+#define I2Cv2_PIRQSS_RX							(1 << 6)		 // Receive Mode
+#define I2Cv2_PIRQSS_RX_SHIFT					6
+
+/* Protocol Interrupt Request Source Clear Register */
+#define I2Cv2_PIRQSC							0x78
+#define I2Cv2_PIRQSC_AM							(1 << 0)		 // Address Match
+#define I2Cv2_PIRQSC_AM_SHIFT					0
+#define I2Cv2_PIRQSC_GC							(1 << 1)		 // General Call
+#define I2Cv2_PIRQSC_GC_SHIFT					1
+#define I2Cv2_PIRQSC_MC							(1 << 2)		 // Master Code
+#define I2Cv2_PIRQSC_MC_SHIFT					2
+#define I2Cv2_PIRQSC_AL							(1 << 3)		 // Arbitration Lost
+#define I2Cv2_PIRQSC_AL_SHIFT					3
+#define I2Cv2_PIRQSC_NACK						(1 << 4)		 // Not-acknowledge Received
+#define I2Cv2_PIRQSC_NACK_SHIFT					4
+#define I2Cv2_PIRQSC_TX_END						(1 << 5)		 // Transmission End
+#define I2Cv2_PIRQSC_TX_END_SHIFT				5
+#define I2Cv2_PIRQSC_RX							(1 << 6)		 // Receive Mode
+#define I2Cv2_PIRQSC_RX_SHIFT					6
+
+/* Raw Interrupt Status Register */
+#define I2Cv2_RIS								0x80
+#define I2Cv2_RIS_LSREQ_INT						(1 << 0)		 // Last Single Request Interrupt
+#define I2Cv2_RIS_LSREQ_INT_SHIFT				0
+#define I2Cv2_RIS_SREQ_INT						(1 << 1)		 // Single Request Interrupt
+#define I2Cv2_RIS_SREQ_INT_SHIFT				1
+#define I2Cv2_RIS_LBREQ_INT						(1 << 2)		 // Last Burst Request Interrupt
+#define I2Cv2_RIS_LBREQ_INT_SHIFT				2
+#define I2Cv2_RIS_BREQ_INT						(1 << 3)		 // Burst Request Interrupt
+#define I2Cv2_RIS_BREQ_INT_SHIFT				3
+#define I2Cv2_RIS_I2C_ERR_INT					(1 << 4)		 // I2C Error Interrupt
+#define I2Cv2_RIS_I2C_ERR_INT_SHIFT				4
+#define I2Cv2_RIS_I2C_P_INT						(1 << 5)		 // I2C Protocol Interrupt
+#define I2Cv2_RIS_I2C_P_INT_SHIFT				5
+
+/* Interrupt Mask Control Register */
+#define I2Cv2_IMSC								0x84
+#define I2Cv2_IMSC_LSREQ_INT					(1 << 0)		 // Last Single Request Interrupt
+#define I2Cv2_IMSC_LSREQ_INT_SHIFT				0
+#define I2Cv2_IMSC_SREQ_INT						(1 << 1)		 // Single Request Interrupt
+#define I2Cv2_IMSC_SREQ_INT_SHIFT				1
+#define I2Cv2_IMSC_LBREQ_INT					(1 << 2)		 // Last Burst Request Interrupt
+#define I2Cv2_IMSC_LBREQ_INT_SHIFT				2
+#define I2Cv2_IMSC_BREQ_INT						(1 << 3)		 // Burst Request Interrupt
+#define I2Cv2_IMSC_BREQ_INT_SHIFT				3
+#define I2Cv2_IMSC_I2C_ERR_INT					(1 << 4)		 // I2C Error Interrupt
+#define I2Cv2_IMSC_I2C_ERR_INT_SHIFT			4
+#define I2Cv2_IMSC_I2C_P_INT					(1 << 5)		 // I2C Protocol Interrupt
+#define I2Cv2_IMSC_I2C_P_INT_SHIFT				5
+
+/* Masked Interrupt Status */
+#define I2Cv2_MIS								0x88
+#define I2Cv2_MIS_LSREQ_INT						(1 << 0)		 // Last Single Request Interrupt
+#define I2Cv2_MIS_LSREQ_INT_SHIFT				0
+#define I2Cv2_MIS_SREQ_INT						(1 << 1)		 // Single Request Interrupt
+#define I2Cv2_MIS_SREQ_INT_SHIFT				1
+#define I2Cv2_MIS_LBREQ_INT						(1 << 2)		 // Last Burst Request Interrupt
+#define I2Cv2_MIS_LBREQ_INT_SHIFT				2
+#define I2Cv2_MIS_BREQ_INT						(1 << 3)		 // Burst Request Interrupt
+#define I2Cv2_MIS_BREQ_INT_SHIFT				3
+#define I2Cv2_MIS_I2C_ERR_INT					(1 << 4)		 // I2C Error Interrupt
+#define I2Cv2_MIS_I2C_ERR_INT_SHIFT				4
+#define I2Cv2_MIS_I2C_P_INT						(1 << 5)		 // I2C Protocol Interrupt
+#define I2Cv2_MIS_I2C_P_INT_SHIFT				5
+
+/* Interrupt Clear Register */
+#define I2Cv2_ICR								0x8C
+#define I2Cv2_ICR_LSREQ_INT						(1 << 0)		 // Last Single Request Interrupt
+#define I2Cv2_ICR_LSREQ_INT_SHIFT				0
+#define I2Cv2_ICR_SREQ_INT						(1 << 1)		 // Single Request Interrupt
+#define I2Cv2_ICR_SREQ_INT_SHIFT				1
+#define I2Cv2_ICR_LBREQ_INT						(1 << 2)		 // Last Burst Request Interrupt
+#define I2Cv2_ICR_LBREQ_INT_SHIFT				2
+#define I2Cv2_ICR_BREQ_INT						(1 << 3)		 // Burst Request Interrupt
+#define I2Cv2_ICR_BREQ_INT_SHIFT				3
+#define I2Cv2_ICR_I2C_ERR_INT					(1 << 4)		 // I2C Error Interrupt
+#define I2Cv2_ICR_I2C_ERR_INT_SHIFT				4
+#define I2Cv2_ICR_I2C_P_INT						(1 << 5)		 // I2C Protocol Interrupt
+#define I2Cv2_ICR_I2C_P_INT_SHIFT				5
+
+/* Interrupt Set Register */
+#define I2Cv2_ISR								0x90
+#define I2Cv2_ISR_LSREQ_INT						(1 << 0)		 // Last Single Request Interrupt
+#define I2Cv2_ISR_LSREQ_INT_SHIFT				0
+#define I2Cv2_ISR_SREQ_INT						(1 << 1)		 // Single Request Interrupt
+#define I2Cv2_ISR_SREQ_INT_SHIFT				1
+#define I2Cv2_ISR_LBREQ_INT						(1 << 2)		 // Last Burst Request Interrupt
+#define I2Cv2_ISR_LBREQ_INT_SHIFT				2
+#define I2Cv2_ISR_BREQ_INT						(1 << 3)		 // Burst Request Interrupt
+#define I2Cv2_ISR_BREQ_INT_SHIFT				3
+#define I2Cv2_ISR_I2C_ERR_INT					(1 << 4)		 // I2C Error Interrupt
+#define I2Cv2_ISR_I2C_ERR_INT_SHIFT				4
+#define I2Cv2_ISR_I2C_P_INT						(1 << 5)		 // I2C Protocol Interrupt
+#define I2Cv2_ISR_I2C_P_INT_SHIFT				5
+
+/* Transmission Data Register */
+#define I2Cv2_TXD								0x8000
+#define I2Cv2_TXD_BYTE0							(0xFF << 0)
+#define I2Cv2_TXD_BYTE0_SHIFT					0
+#define I2Cv2_TXD_BYTE1							(0xFF << 8)
+#define I2Cv2_TXD_BYTE1_SHIFT					8
+#define I2Cv2_TXD_BYTE2							(0xFF << 16)
+#define I2Cv2_TXD_BYTE2_SHIFT					16
+#define I2Cv2_TXD_BYTE3							(0xFF << 24)
+#define I2Cv2_TXD_BYTE3_SHIFT					24
+
+/* Reception Data Register */
+#define I2Cv2_RXD								0xC000
+#define I2Cv2_RXD_BYTE0							(0xFF << 0)
+#define I2Cv2_RXD_BYTE0_SHIFT					0
+#define I2Cv2_RXD_BYTE1							(0xFF << 8)
+#define I2Cv2_RXD_BYTE1_SHIFT					8
+#define I2Cv2_RXD_BYTE2							(0xFF << 16)
+#define I2Cv2_RXD_BYTE2_SHIFT					16
+#define I2Cv2_RXD_BYTE3							(0xFF << 24)
+#define I2Cv2_RXD_BYTE3_SHIFT					24
 
 
 // KEYPAD [MOD_NUM=F046, MOD_REV=00, MOD_32BIT=C0]

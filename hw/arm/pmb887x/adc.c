@@ -208,10 +208,6 @@ static void adc_update_state(pmb887x_adc_t *p) {
 	DPRINTF("is_enabled=%d, fADC=%d, measure_mode=%d, start=%d\n", is_enabled, fadc, p->measure_mode, p->con1 & ADC_CON1_START ? 1 : 0);
 }
 
-static void adc_update_state_callback(void *opaque) {
-	adc_update_state((pmb887x_adc_t *) opaque);
-}
-
 static uint64_t adc_io_read(void *opaque, hwaddr haddr, unsigned size) {
 	pmb887x_adc_t *p = (pmb887x_adc_t *) opaque;
 	
@@ -338,7 +334,6 @@ static void adc_realize(DeviceState *dev, Error **errp) {
 		pmb887x_src_init(&p->src[i], p->irq[i]);
 	
 	adc_update_state(p);
-	// pmb887x_pll_add_freq_update_callback(p->pll, adc_update_state_callback, p);
 }
 
 static Property adc_properties[] = {

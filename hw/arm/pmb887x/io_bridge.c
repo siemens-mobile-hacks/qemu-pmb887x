@@ -138,10 +138,6 @@ void pmb8876_io_bridge_write(unsigned int addr, unsigned int size, unsigned int 
 		value = 1;
 	*/
 	
-	if ((addr == PMB8876_I2C_BASE + I2C_CLC) && (value & 1)) {
-		value = 0x100;
-	}
-	
 	if ((addr == 0xF1300000) && (value & 1)) {
 		value = 0x100;
 	}

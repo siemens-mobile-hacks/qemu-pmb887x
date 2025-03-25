@@ -10,6 +10,8 @@
 
 #include "hw/arm/pmb887x/regs.h"
 #include "hw/arm/pmb887x/io_bridge.h"
+#include "hw/arm/pmb887x/i2c_v1.h"
+#include "hw/arm/pmb887x/i2c_v2.h"
 
 struct  pmb887x_i2c_dev_map {
 	const char *type;
@@ -134,7 +136,7 @@ static const struct pmb887x_dev pmb8876_devices[] = {
 	},
 	{
 		.name	= "I2C",
-		.dev	= "pmb887x-i2c",
+		.dev	= "pmb887x-i2c-v2",
 		.base	= PMB8876_I2C_BASE,
 		.irqs	= {
 			PMB8876_I2C_SINGLE_REQ_IRQ,
@@ -392,6 +394,17 @@ static const struct pmb887x_dev pmb8875_devices[] = {
 		.irqs	= { PMB8875_RTC_IRQ, 0 }
 	},
 	{
+		.name	= "I2C",
+		.dev	= "pmb887x-i2c-v1",
+		.base	= PMB8875_I2C_BASE,
+		.irqs	= {
+			PMB8875_I2C_DATA_IRQ,
+			PMB8875_I2C_PROTO_IRQ,
+			PMB8875_I2C_END_IRQ,
+			0
+		}
+	},
+	{
 		.name	= "USART0",
 		.dev	= "pmb887x-usart",
 		.base	= PMB8875_USART0_BASE,
@@ -589,5 +602,15 @@ DeviceState *pmb887x_new_dev(uint32_t cpu_type, const char *name, DeviceState *n
 	
 	hw_error("Can't find device: %s\n", name);
 	
+	return NULL;
+}
+
+I2CBus *pmb887x_i2c_bus(DeviceState *dev) {
+	const char *typename = object_get_typename(OBJECT(dev));
+	if (strcmp(typename, "pmb887x-i2c-v1") == 0)
+		return pmb887x_i2c_v1_bus(dev);
+	if (strcmp(typename, "pmb887x-i2c-v2") == 0)
+		return pmb887x_i2c_v2_bus(dev);
+	hw_error("Unknown I2C HW: %s", typename);
 	return NULL;
 }

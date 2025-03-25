@@ -61,7 +61,7 @@ arm_ss.add(when: 'CONFIG_NRF51_SOC', if_true: files('nrf51_soc.c'))
 arm_ss.add(when: 'CONFIG_XEN', if_true: files('xen_arm.c'))
 
 arm_ss.add(when: 'CONFIG_PMB887X', if_true: files(
-	'pmb887x.c',
+	'pmb887x/board.c',
 	'pmb887x/fifo.c',
 	'pmb887x/boards.c',
 	'pmb887x/devices.c',
@@ -83,7 +83,8 @@ arm_ss.add(when: 'CONFIG_PMB887X', if_true: files(
 	'pmb887x/nvic.c',
 	'pmb887x/tpu.c',
 	'pmb887x/rtc.c',
-	'pmb887x/i2c.c',
+	'pmb887x/i2c_v1.c',
+	'pmb887x/i2c_v2.c',
 	'pmb887x/i2c/d1094xx.c',
 	'pmb887x/i2c/pmb6812.c',
 	'pmb887x/i2c/tea5761uk.c',

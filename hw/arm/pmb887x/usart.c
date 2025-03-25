@@ -32,6 +32,8 @@
 #define PMB887X_USART(obj)	OBJECT_CHECK(struct pmb887x_usart_t, (obj), TYPE_PMB887X_USART)
 
 #define FIFO_SIZE	8
+#define USART_LOG_TRX false
+#define USART_DUMP_TRX_IO true
 
 enum {
 	USART_IRQ_TX,
@@ -186,11 +188,11 @@ static void usart_transmit_fifo(struct pmb887x_usart_t *p) {
 	uint32_t size = pmb887x_fifo_count(p->tx_fifo);
 	pmb887x_fifo8_read(p->tx_fifo, buff, size);
 	
-	/*
-	for (uint32_t i = 0; i < size; i++) {
-		DPRINTF("TX=%02X\n", buff[i]);
+	if (USART_LOG_TRX) {
+		for (uint32_t i = 0; i < size; i++) {
+			DPRINTF("TX=%02X\n", buff[i]);
+		}
 	}
-	*/
 	
 	int ret = qemu_chr_fe_write_all(&p->chr, buff, size);
 	if (ret > 0) {
@@ -229,115 +231,115 @@ static void usart_transmit_fifo(struct pmb887x_usart_t *p) {
 
 static uint64_t usart_io_read(void *opaque, hwaddr haddr, unsigned size) {
 	struct pmb887x_usart_t *p = (struct pmb887x_usart_t *) opaque;
-	
+
 	uint64_t value = 0;
-	
+
 	// Workaround for broken firmwares
 	if (haddr != USART_RIS)
 		p->last_is_icr_tx = false;
-	
+
 	bool no_dump = true;
-	
+
 	switch (haddr) {
 		case USART_CLC:
 			value = pmb887x_clc_get(&p->clc);
-		break;
-		
+			break;
+
 		case USART_ID:
 			value = 0x000044F1;
-		break;
-		
+			break;
+
 		case USART_CON:
 			value = p->con;
-		break;
-		
+			break;
+
 		case USART_BG:
 			value = p->bg;
-		break;
-		
+			break;
+
 		case USART_FDV:
 			value = p->fdv;
-		break;
-		
+			break;
+
 		case USART_PMW:
 			value = p->pmw;
-		break;
-		
+			break;
+
 		case USART_TXB:
-			no_dump = true;
+			no_dump = !USART_DUMP_TRX_IO;
 			value = p->txb;
-		break;
-		
+			break;
+
 		case USART_RXB:
-			no_dump = true;
-			
+			no_dump = !USART_DUMP_TRX_IO;
+
 			if (!pmb887x_fifo_is_empty(p->rx_fifo)) {
 				bool is_full = pmb887x_fifo_is_full(p->rx_fifo);
 				value = pmb887x_fifo8_pop(p->rx_fifo);
-				/*
-				if (isprint(value)) {
-					DPRINTF("RX=%02X '%c' [read]\n", value, value);
-				} else {
-					DPRINTF("RX=%02X [read]\n", value);
+				if (USART_LOG_TRX) {
+					if (isprint(value)) {
+						DPRINTF("RX=%02X '%c'\n", (uint8_t) value, (uint8_t) value);
+					} else {
+						DPRINTF("RX=%02X\n", (uint8_t) value);
+					}
 				}
-				*/
 				if (is_full)
 					qemu_chr_fe_accept_input(&p->chr);
 			}
-		break;
-		
+			break;
+
 		case USART_ABCON:
 			value = p->abcon;
-		break;
-		
+			break;
+
 		case USART_ABSTAT:
 			value = p->abstat;
-		break;
-		
+			break;
+
 		case USART_RXFCON:
 			value = p->rxfcon;
-		break;
-		
+			break;
+
 		case USART_TXFCON:
 			value = p->txfcon;
-		break;
-		
+			break;
+
 		case USART_FSTAT:
 			if ((p->txfcon & USART_TXFCON_TXFEN))
 				value |= pmb887x_fifo_count(p->tx_fifo) << USART_FSTAT_TXFFL_SHIFT;
-			
+
 			if ((p->txfcon & USART_RXFCON_RXFEN))
 				value |= pmb887x_fifo_count(p->rx_fifo) << USART_FSTAT_RXFFL_SHIFT;
-		break;
-		
+			break;
+
 		case USART_WHBCON:
 			value = p->whbcon;
-		break;
-		
+			break;
+
 		case USART_WHBABCON:
 			value = p->whbabcon;
-		break;
-		
+			break;
+
 		case USART_WHBABSTAT:
 			value = p->whbabstat;
-		break;
-		
+			break;
+
 		case USART_FCCON:
 			value = p->fccon;
-		break;
-		
+			break;
+
 		case USART_FCSTAT:
 			value = p->fcstat;
-		break;
-		
+			break;
+
 		case USART_IMSC:
 			value = pmb887x_srb_get_imsc(&p->srb);
-		break;
-		
+			break;
+
 		case USART_RIS:
 			no_dump = true;
 			value = pmb887x_srb_get_ris(&p->srb);
-			
+
 			// workaround for broken firmwares
 			if (p->apply_workarounds) {
 				if (p->last_is_icr_tx) {
@@ -345,148 +347,146 @@ static uint64_t usart_io_read(void *opaque, hwaddr haddr, unsigned size) {
 					value |= USART_RIS_TX;
 				}
 			}
-		break;
-		
+			break;
+
 		case USART_MIS:
 			no_dump = true;
 			value = pmb887x_srb_get_mis(&p->srb);
-		break;
-		
+			break;
+
 		case USART_ICR:
 			no_dump = true;
 			value = 0;
-		break;
-		
+			break;
+
 		case USART_ISR:
 			value = 0;
-		break;
-		
+			break;
+
 		case USART_TMO:
 			value = p->tmo;
-		break;
-		
+			break;
+
 		default:
 			IO_DUMP(haddr + p->mmio.addr, size, 0xFFFFFFFF, false);
 			EPRINTF("unknown reg access: %02"PRIX64"\n", haddr);
 			exit(1);
-		break;
 	}
-	
+
 	if (!no_dump)
 		IO_DUMP(haddr + p->mmio.addr, size, value, false);
-	
+
 	return value;
 }
 
 static void usart_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned size) {
 	struct pmb887x_usart_t *p = (struct pmb887x_usart_t *) opaque;
-	
+
 	// Workaround for broken firmwares
 	p->last_is_icr_tx = (haddr == USART_ICR && (value & USART_ICR_TX));
-	
+
 	bool no_dump = false;
-	
+
 	switch (haddr) {
 		case USART_CLC:
 			pmb887x_clc_set(&p->clc, value);
-		break;
-		
+			break;
+
 		case USART_ID:
 			value = 0x000044F1;
-		break;
-		
+			break;
+
 		case USART_CON:
 			p->con = value;
-		break;
-		
+			break;
+
 		case USART_BG:
 			p->bg = value;
-		break;
-		
+			break;
+
 		case USART_FDV:
 			p->fdv = value;
-		break;
-		
+			break;
+
 		case USART_PMW:
 			p->pmw = value;
-		break;
-		
+			break;
+
 		case USART_TXB:
 			p->txb = value & 0xFF;
-			
-			no_dump = true;
-			
+
+			no_dump = !USART_DUMP_TRX_IO;
+
 			if (!pmb887x_fifo_is_full(p->tx_fifo)) {
 				pmb887x_fifo8_push(p->tx_fifo, p->txb);
-				
+
 				if (!pmb887x_fifo_is_full(p->tx_fifo))
 					pmb887x_srb_set_isr(&p->srb, USART_ISR_TB);
-				
+
 				usart_transmit_fifo(p);
 			} else {
 				EPRINTF("TX FIFO is FULL :(\n");
 				abort();
 			}
-		break;
-		
+			break;
+
 		case USART_ABCON:
 			p->abcon = value;
-		break;
-		
+			break;
+
 		case USART_RXFCON:
 			if ((value & USART_RXFCON_RXFEN) != (p->rxfcon & USART_RXFCON_RXFEN))
 				usart_set_rx_fifo(p, (value & USART_RXFCON_RXFEN) != 0);
 			p->rxfcon = value;
 			usart_update_state(p);
-		break;
-		
+			break;
+
 		case USART_TXFCON:
 			if ((value & USART_TXFCON_TXFEN) != (p->txfcon & USART_TXFCON_TXFEN))
 				usart_set_tx_fifo(p, (value & USART_TXFCON_TXFEN) != 0);
 			p->txfcon = value;
 			usart_update_state(p);
-		break;
-		
+			break;
+
 		case USART_WHBCON:
 			p->whbcon = value;
-		break;
-		
+			break;
+
 		case USART_WHBABCON:
 			p->whbabcon = value;
-		break;
-		
+			break;
+
 		case USART_WHBABSTAT:
 			p->whbabstat = value;
-		break;
-		
+			break;
+
 		case USART_FCCON:
 			p->fccon = value;
-		break;
-		
+			break;
+
 		case USART_IMSC:
 			pmb887x_srb_set_imsc(&p->srb, value);
-		break;
-		
+			break;
+
 		case USART_ICR:
 			no_dump = true;
-			
+
 			pmb887x_srb_set_icr(&p->srb, value);
-		break;
-		
+			break;
+
 		case USART_ISR:
 			pmb887x_srb_set_isr(&p->srb, value);
-		break;
-		
+			break;
+
 		case USART_TMO:
 			p->tmo = value;
-		break;
-		
+			break;
+
 		default:
 			EPRINTF("unknown reg access: %02"PRIX64"\n", haddr);
 			exit(1);
-		break;
 	}
-	
+
 	if (!no_dump)
 		IO_DUMP(haddr + p->mmio.addr, size, value, true);
 }

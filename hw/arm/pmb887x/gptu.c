@@ -111,7 +111,7 @@ typedef struct {
 	
 	uint64_t next;
 	uint64_t next_t2;
-	
+
 	uint32_t t01irs;
 	uint32_t t01ots;
 	uint32_t t2con;
@@ -408,7 +408,7 @@ static void gptu_sync_timer(pmb887x_gptu_t *p) {
 		if (counter >= GPTU_OVERFLOW) {
 			int timer_group = timer_id / 4;
 			for (int j = 0; j < 2; j++) {
-				if (timer->ev_ssr[j] && p->events_ssr[timer_group][j] == timer_id)
+				if (timer->ev_ssr[j] && p->events_ssr[timer_group][j] == timer_id && timer->enabled)
 					gptu_trigger_ev_irq(p, gptu_get_ssr_ev(timer_group, j));
 			}
 			
@@ -546,116 +546,116 @@ static int get_src_index_by_addr(hwaddr haddr) {
 
 static uint64_t gptu_io_read(void *opaque, hwaddr haddr, unsigned size) {
 	pmb887x_gptu_t *p = (pmb887x_gptu_t *) opaque;
-	
+
 	uint64_t value = 0;
-	
+
 	switch (haddr) {
 		case GPTU_CLC:
 			value = pmb887x_clc_get(&p->clc);
-		break;
-		
+			break;
+
 		case GPTU_ID:
 			value = 0x0001C011;
-		break;
-		
+			break;
+
 		case GPTU_T01IRS:
 			value = p->t01irs;
-		break;
-		
+			break;
+
 		case GPTU_T01OTS:
 			value = p->t01ots;
-		break;
-		
+			break;
+
 		case GPTU_T2CON:
 			value = p->t2con;
 			gptu_t2_sync_timer(p);
 			gptu_t2_update_state(p);
-		break;
-		
+			break;
+
 		case GPTU_T2RCCON:
 			value = p->t2rccon;
-		break;
-		
+			break;
+
 		case GPTU_T2AIS:
 			value = p->t2ais;
-		break;
-		
+			break;
+
 		case GPTU_T2BIS:
 			value = p->t2bis;
-		break;
-		
+			break;
+
 		case GPTU_T2ES:
 			value = p->t2es;
-		break;
-		
+			break;
+
 		case GPTU_OSEL:
 			value = p->osel;
-		break;
-		
+			break;
+
 		case GPTU_OUT:
 			value = p->out;
-		break;
-		
+			break;
+
 		case GPTU_T0DCBA:
 			value = gptu_get_counter(p, 0, 4);
-		break;
-		
+			break;
+
 		case GPTU_T0CBA:
 			value = gptu_get_counter(p, 0, 3);
-		break;
-		
+			break;
+
 		case GPTU_T0RDCBA:
 			value = gptu_get_reload(p, 0, 4);
-		break;
-		
+			break;
+
 		case GPTU_T0RCBA:
 			value = gptu_get_reload(p, 0, 3);
-		break;
-		
+			break;
+
 		case GPTU_T1DCBA:
 			value = gptu_get_counter(p, 1, 4);
-		break;
-		
+			break;
+
 		case GPTU_T1CBA:
 			value = gptu_get_counter(p, 1, 3);
-		break;
-		
+			break;
+
 		case GPTU_T1RDCBA:
 			value = gptu_get_reload(p, 1, 4);
-		break;
-		
+			break;
+
 		case GPTU_T1RCBA:
 			value = gptu_get_reload(p, 1, 3);
-		break;
-		
+			break;
+
 		case GPTU_T2:
 			value = gptu_t2_get_counter(p);
-		break;
-		
+			break;
+
 		case GPTU_T2RC0:
 			value = p->t2rc0;
-		break;
-		
+			break;
+
 		case GPTU_T2RC1:
 			value = p->t2rc1;
-		break;
-		
+			break;
+
 		case GPTU_T012RUN:
 			value = p->t012run;
 			value &= ~(GPTU_T012RUN_T2ARUN | GPTU_T012RUN_T2BRUN);
-			
+
 			if ((p->t2con & GPTU_T2CON_T2SPLIT)) {
 				value |= (p->timers_t2[0].enabled && !p->timers_t2[0].stopped ? GPTU_T012RUN_T2ARUN : 0);
 				value |= (p->timers_t2[1].enabled && !p->timers_t2[1].stopped ? GPTU_T012RUN_T2BRUN : 0);
 			} else {
 				value |= (p->timers_t2[1].enabled && !p->timers_t2[1].stopped ? GPTU_T012RUN_T2ARUN : 0);
 			}
-		break;
-		
+			break;
+
 		case GPTU_SRSEL:
 			value = p->srsel;
-		break;
-		
+			break;
+
 		case GPTU_SRC0:
 		case GPTU_SRC1:
 		case GPTU_SRC2:
@@ -665,25 +665,24 @@ static uint64_t gptu_io_read(void *opaque, hwaddr haddr, unsigned size) {
 		case GPTU_SRC6:
 		case GPTU_SRC7:
 			value = pmb887x_src_get(&p->src[get_src_index_by_addr(haddr)]);
-		break;
-		
+			break;
+
 		default:
 			IO_DUMP(haddr + p->mmio.addr, size, 0xFFFFFFFF, false);
 			EPRINTF("unknown reg access: %02"PRIX64"\n", haddr);
 			exit(1);
-		break;
 	}
-	
+
 	IO_DUMP(haddr + p->mmio.addr, size, value, false);
-	
+
 	return value;
 }
 
 static void gptu_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned size) {
 	pmb887x_gptu_t *p = (pmb887x_gptu_t *) opaque;
-	
+
 	IO_DUMP(haddr + p->mmio.addr, size, value, true);
-	
+
 	switch (haddr) {
 		case GPTU_CLC:
 			pmb887x_clc_set(&p->clc, value);
@@ -692,108 +691,108 @@ static void gptu_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned s
 			gptu_rebuild_timers(p);
 			gptu_t2_sync_timer(p);
 			gptu_t2_update_state(p);
-		break;
-		
+			break;
+
 		case GPTU_ID:
 			value = 0x0001C011;
-		break;
-		
+			break;
+
 		case GPTU_T01IRS:
 			p->t01irs = value;
 			gptu_sync_timer(p);
 			gptu_rebuild_timers(p);
-		break;
-		
+			break;
+
 		case GPTU_T01OTS:
 			p->t01ots = value;
 			gptu_update_events(p);
-		break;
-		
+			break;
+
 		case GPTU_T2CON:
 			p->t2con = value;
-		break;
-		
+			break;
+
 		case GPTU_T2RCCON:
 			p->t2rccon = value;
-		break;
-		
+			break;
+
 		case GPTU_T2AIS:
 			p->t2ais = value;
-		break;
-		
+			break;
+
 		case GPTU_T2BIS:
 			p->t2bis = value;
-		break;
-		
+			break;
+
 		case GPTU_T2ES:
 			p->t2es = value;
-		break;
-		
+			break;
+
 		case GPTU_OSEL:
 			p->osel = value;
-		break;
-		
+			break;
+
 		case GPTU_OUT:
 			p->out = value;
-		break;
-		
+			break;
+
 		case GPTU_T0DCBA:
 			gptu_set_counter(p, 0, value, 4);
-		break;
-		
+			break;
+
 		case GPTU_T0CBA:
 			gptu_set_counter(p, 0, value, 3);
-		break;
-		
+			break;
+
 		case GPTU_T0RDCBA:
 			gptu_set_reload(p, 0, value, 4);
-		break;
-		
+			break;
+
 		case GPTU_T0RCBA:
 			gptu_set_reload(p, 0, value, 3);
-		break;
-		
+			break;
+
 		case GPTU_T1DCBA:
 			gptu_set_counter(p, 1, value, 4);
-		break;
-		
+			break;
+
 		case GPTU_T1CBA:
 			gptu_set_counter(p, 1, value, 3);
-		break;
-		
+			break;
+
 		case GPTU_T1RDCBA:
 			gptu_set_reload(p, 1, value, 4);
-		break;
-		
+			break;
+
 		case GPTU_T1RCBA:
 			gptu_set_reload(p, 1, value, 3);
-		break;
-		
+			break;
+
 		case GPTU_T2:
 			gptu_t2_set_counter(p, value);
-		break;
-		
+			break;
+
 		case GPTU_T2RC0:
 			p->t2rc0 = value;
-		break;
-		
+			break;
+
 		case GPTU_T2RC1:
 			p->t2rc1 = value;
-		break;
-		
+			break;
+
 		case GPTU_T012RUN:
 			p->t012run = value;
 			gptu_sync_timer(p);
 			gptu_rebuild_timers(p);
 			gptu_t2_sync_timer(p);
 			gptu_t2_update_state(p);
-		break;
-		
+			break;
+
 		case GPTU_SRSEL:
 			p->srsel = value;
 			gptu_update_events(p);
-		break;
-		
+			break;
+
 		case GPTU_SRC0:
 		case GPTU_SRC1:
 		case GPTU_SRC2:
@@ -803,12 +802,12 @@ static void gptu_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned s
 		case GPTU_SRC6:
 		case GPTU_SRC7:
 			pmb887x_src_update(&p->src[get_src_index_by_addr(haddr)], 0, value);
-		break;
-		
+			break;
+
 		default:
 			EPRINTF("unknown reg access: %02"PRIX64"\n", haddr);
 			exit(1);
-		break;
+			break;
 	}
 }
 

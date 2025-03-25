@@ -1,0 +1,38 @@
+root = true
+
+[*]
+end_of_line = lf
+insert_final_newline = true
+charset = utf-8
+
+[*.mak]
+indent_style = tab
+indent_size = 4
+emacs_mode = makefile
+
+[Makefile*]
+indent_style = tab
+indent_size = 4
+emacs_mode = makefile
+
+[*.{c,h,c.inc,h.inc}]
+indent_style = tab
+indent_size = 4
+emacs_mode = c
+indent_switch_labels = true
+
+[*.sh]
+indent_style = tab
+indent_size = 4
+
+[*.{s,S}]
+indent_style = tab
+indent_size = 4
+emacs_mode = asm
+
+[*.{vert,frag}]
+emacs_mode = glsl
+
+[*.json]
+indent_style = space
+emacs_mode = python

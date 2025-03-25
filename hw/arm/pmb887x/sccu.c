@@ -76,8 +76,7 @@ static uint64_t sccu_ticks_to_ns(struct pmb887x_sccu_t *p, uint64_t ticks) {
 }
 
 static void sccu_cal_timer_reset(void *opaque) {
-	struct pmb887x_sccu_t *p = (struct pmb887x_sccu_t *) opaque;
-	
+	// struct pmb887x_sccu_t *p = (struct pmb887x_sccu_t *) opaque;
 }
 
 static void sccu_ptimer_reset(void *opaque) {

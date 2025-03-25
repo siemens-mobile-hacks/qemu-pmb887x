@@ -27,10 +27,10 @@
 #include "hw/arm/pmb887x/io_bridge.h"
 #include "hw/arm/pmb887x/regs_dump.h"
 #include "hw/arm/pmb887x/devices.h"
-#include "hw/arm/pmb887x/i2c.h"
 #include "hw/arm/pmb887x/dif/lcd_common.h"
 #include "hw/arm/pmb887x/pll.h"
 #include "hw/arm/pmb887x/boards.h"
+#include <stdio.h>
 
 static MemoryRegion tcm_memory[2];
 static uint32_t tcm_regs[2] = {0x10, 0x10};
@@ -194,7 +194,7 @@ static void memory_dump_at_exit(void) {
 //	
 //	qmp_pmemsave(0xA8000000, 16 * 1024 * 1024, "/tmp/ram.bin", NULL);
 //	qmp_pmemsave(0x00000000, 0x4000, "/tmp/tcm.bin", NULL);
-//	qmp_pmemsave(0x00080000, 96 * 1024, "/tmp/sram.bin", NULL);
+//	qmp_pmemsave(0x00000000, 96 * 1024, "/tmp/sram.bin", NULL);
 }
 
 static void pmb887x_create_sdram(DeviceState *ebuc, const pmb887x_board_memory_t *memory_list) {
@@ -344,41 +344,21 @@ static void pmb887x_init(MachineState *machine) {
 		memory_region_add_subregion(sysmem, i, sram_alias);
 	}
 	
-	// 0x00400000 (BROM, 32k)
+	// 0x00400000 (BROM)
+	size_t brom_size;
+	const uint8_t *brom_data = pmb887x_get_brom_image(board->cpu, &brom_size);
 	MemoryRegion *brom = g_new(MemoryRegion, 1);
-	memory_region_init_rom(brom, NULL, "BROM", 0x8000, &error_fatal);
+	memory_region_init_rom(brom, NULL, "BROM", brom_size, &error_fatal);
 	memory_region_add_subregion(sysmem, 0x00400000, brom);
-	
+
 	// Mirror of BROM at top of IO (enabled/disabled by SCU)
 	MemoryRegion *brom_mirror = g_new(MemoryRegion, 1);
 	memory_region_init_alias(brom_mirror, NULL, "BROM_MIRROR", brom, 0, memory_region_size(brom));
 	memory_region_set_enabled(brom_mirror, true);
 	memory_region_add_subregion(sysmem, 0x00000000, brom_mirror);
-	
-	// Custom BootROM
-	const char *bios_name = machine->firmware;
-	if (bios_name) {
-		char *fn = qemu_find_file(QEMU_FILE_TYPE_BIOS, bios_name);
-		if (!fn) {
-			error_report("Could not find BootROM image '%s'", bios_name);
-			exit(1);
-		}
-		
-		int image_size = load_image_targphys(fn, 0x00400000, 0x8000);
-		g_free(fn);
-		
-		if (image_size < 0) {
-			error_report("Could not load BootROM image '%s'", bios_name);
-			exit(1);
-		}
-    }
-    // Built-in BootROM
-    else {
-		size_t brom_size;
-		const uint8_t *brom_data = pmb887x_get_brom_image(board->cpu, &brom_size);
-		rom_add_blob_fixed("BROM", brom_data, brom_size, 0x00400000);
-	}
-	
+
+	rom_add_blob_fixed("BROM", brom_data, brom_size, 0x00400000);
+
 	// NVIC
 	DeviceState *nvic = pmb887x_new_dev(board->cpu, "NVIC", NULL);
 	sysbus_connect_irq(SYS_BUS_DEVICE(nvic), 0, qdev_get_gpio_in(DEVICE(cpu), ARM_CPU_IRQ));
@@ -440,16 +420,14 @@ static void pmb887x_init(MachineState *machine) {
 	qdev_prop_set_chr(DEVICE(usart1), "chardev", serial_hd(1));
 	sysbus_realize_and_unref(SYS_BUS_DEVICE(usart1), &error_fatal);
 	
-	if (board->cpu == CPU_PMB8876) {
-		// I2C
-		DeviceState *i2c = pmb887x_new_dev(board->cpu, "I2C", nvic);
-		sysbus_realize_and_unref(SYS_BUS_DEVICE(i2c), &error_fatal);
-		
-		for (uint32_t i = 0; i < board->i2c_devices_count; i++) {
-			I2CSlave *dev = pmb887x_new_i2c_dev(&board->i2c_devices[i]);
-			i2c_slave_realize_and_unref(dev, pmb887x_i2c_bus(i2c), &error_fatal);
-		}
-	}
+    // I2C
+    DeviceState *i2c = pmb887x_new_dev(board->cpu, "I2C", nvic);
+    sysbus_realize_and_unref(SYS_BUS_DEVICE(i2c), &error_fatal);
+
+    for (uint32_t i = 0; i < board->i2c_devices_count; i++) {
+        I2CSlave *dev = pmb887x_new_i2c_dev(&board->i2c_devices[i]);
+        i2c_slave_realize_and_unref(dev, pmb887x_i2c_bus(i2c), &error_fatal);
+    }
 	
 	// Standby Clock Control Unit
 	DeviceState *sccu = pmb887x_new_dev(board->cpu, "SCCU", nvic);
@@ -484,8 +462,8 @@ static void pmb887x_init(MachineState *machine) {
 	// RTC
 	DeviceState *rtc = pmb887x_new_dev(board->cpu, "RTC", nvic);
 	sysbus_realize_and_unref(SYS_BUS_DEVICE(rtc), &error_fatal);
-	
-	#ifndef PMB887X_IO_BRIDGE
+
+#ifndef PMB887X_IO_BRIDGE
 	// GPTU0
 	DeviceState *gptu0 = pmb887x_new_dev(board->cpu, "GPTU0", nvic);
 	object_property_set_link(OBJECT(gptu0), "pll", OBJECT(pll), &error_fatal);
@@ -495,7 +473,7 @@ static void pmb887x_init(MachineState *machine) {
 	DeviceState *gptu1 = pmb887x_new_dev(board->cpu, "GPTU1", nvic);
 	object_property_set_link(OBJECT(gptu1), "pll", OBJECT(pll), &error_fatal);
 	sysbus_realize_and_unref(SYS_BUS_DEVICE(gptu1), &error_fatal);
-	#endif
+#endif
 	
 	// ADC
 	DeviceState *adc = pmb887x_new_dev(board->cpu, "ADC", nvic);
