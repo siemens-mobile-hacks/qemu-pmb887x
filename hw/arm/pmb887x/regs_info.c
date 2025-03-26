@@ -1215,7 +1215,7 @@ static const pmb887x_module_reg_t cif_regs[] = {
 	{"UNK7",	CIF_UNK7,	NULL,			0,							0},
 };
 
-static const pmb887x_module_field_t dif_clc_fields[] = {
+static const pmb887x_module_field_t difv1_clc_fields[] = {
 	{"DISR",	MOD_CLC_DISR,	MOD_CLC_DISR_SHIFT,	NULL,	0},
 	{"DISS",	MOD_CLC_DISS,	MOD_CLC_DISS_SHIFT,	NULL,	0},
 	{"SPEN",	MOD_CLC_SPEN,	MOD_CLC_SPEN_SHIFT,	NULL,	0},
@@ -1225,143 +1225,178 @@ static const pmb887x_module_field_t dif_clc_fields[] = {
 	{"RMC",		MOD_CLC_RMC,	MOD_CLC_RMC_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_module_field_t dif_id_fields[] = {
+static const pmb887x_module_field_t difv1_id_fields[] = {
 	{"REV",		MOD_ID_REV,		MOD_ID_REV_SHIFT,		NULL,	0},
 	{"32B",		MOD_ID_32B,		MOD_ID_32B_SHIFT,		NULL,	0},
 	{"NUMBER",	MOD_ID_NUMBER,	MOD_ID_NUMBER_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_module_field_t dif_runctrl_fields[] = {
-	{"RUN",	DIF_RUNCTRL_RUN,	DIF_RUNCTRL_RUN_SHIFT,	NULL,	0},
+static const pmb887x_module_reg_t difv1_regs[] = {
+	{"CLC",			DIFv1_CLC,		difv1_clc_fields,	ARRAY_SIZE(difv1_clc_fields),	0},
+	{"ID",			DIFv1_ID,		difv1_id_fields,	ARRAY_SIZE(difv1_id_fields),	0},
+	{"STAT",		DIFv1_STAT,		NULL,				0,								0},
+	{"TB",			DIFv1_TB,		NULL,				0,								0},
+	{"RB",			DIFv1_RB,		NULL,				0,								0},
+	{"RXFCON",		DIFv1_RXFCON,	NULL,				0,								0},
+	{"TXFCON",		DIFv1_TXFCON,	NULL,				0,								0},
+	{"FSTAT",		DIFv1_FSTAT,	NULL,				0,								0},
+	{"TXDMACON",	DIFv1_TXDMACON,	NULL,				0,								0},
+	{"RXDMACON",	DIFv1_RXDMACON,	NULL,				0,								0},
+	{"PROG0",		DIFv1_PROG0,	NULL,				0,								0},
+	{"PROG1",		DIFv1_PROG1,	NULL,				0,								0},
+	{"PROG2",		DIFv1_PROG2,	NULL,				0,								0},
+	{"PROG3",		DIFv1_PROG3,	NULL,				0,								0},
+	{"PROG4",		DIFv1_PROG4,	NULL,				0,								0},
+	{"PROG5",		DIFv1_PROG5,	NULL,				0,								0},
 };
 
-static const pmb887x_module_value_t dif_dif_con1_cs_values[] = {
-	{"CS1",	DIF_CON1_CS_CS1},
-	{"CS2",	DIF_CON1_CS_CS2},
+static const pmb887x_module_field_t difv2_clc_fields[] = {
+	{"DISR",	MOD_CLC_DISR,	MOD_CLC_DISR_SHIFT,	NULL,	0},
+	{"DISS",	MOD_CLC_DISS,	MOD_CLC_DISS_SHIFT,	NULL,	0},
+	{"SPEN",	MOD_CLC_SPEN,	MOD_CLC_SPEN_SHIFT,	NULL,	0},
+	{"EDIS",	MOD_CLC_EDIS,	MOD_CLC_EDIS_SHIFT,	NULL,	0},
+	{"SBWE",	MOD_CLC_SBWE,	MOD_CLC_SBWE_SHIFT,	NULL,	0},
+	{"FSOE",	MOD_CLC_FSOE,	MOD_CLC_FSOE_SHIFT,	NULL,	0},
+	{"RMC",		MOD_CLC_RMC,	MOD_CLC_RMC_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_module_field_t dif_con1_fields[] = {
-	{"UNK0",	DIF_CON1_UNK0,	DIF_CON1_UNK0_SHIFT,	NULL,					0},
-	{"UNK1",	DIF_CON1_UNK1,	DIF_CON1_UNK1_SHIFT,	NULL,					0},
-	{"CS",		DIF_CON1_CS,	DIF_CON1_CS_SHIFT,		dif_dif_con1_cs_values,	ARRAY_SIZE(dif_dif_con1_cs_values)},
+static const pmb887x_module_field_t difv2_id_fields[] = {
+	{"REV",		MOD_ID_REV,		MOD_ID_REV_SHIFT,		NULL,	0},
+	{"32B",		MOD_ID_32B,		MOD_ID_32B_SHIFT,		NULL,	0},
+	{"NUMBER",	MOD_ID_NUMBER,	MOD_ID_NUMBER_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_module_value_t dif_dif_fifocfg_mode_values[] = {
-	{"DATA",	DIF_FIFOCFG_MODE_DATA},
-	{"CMD",		DIF_FIFOCFG_MODE_CMD},
+static const pmb887x_module_field_t difv2_runctrl_fields[] = {
+	{"RUN",	DIFv2_RUNCTRL_RUN,	DIFv2_RUNCTRL_RUN_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_module_value_t dif_dif_fifocfg_bs_values[] = {
-	{"8",	DIF_FIFOCFG_BS_8},
-	{"16",	DIF_FIFOCFG_BS_16},
-	{"24",	DIF_FIFOCFG_BS_24},
-	{"32",	DIF_FIFOCFG_BS_32},
+static const pmb887x_module_value_t difv2_difv2_con1_cs_values[] = {
+	{"CS1",	DIFv2_CON1_CS_CS1},
+	{"CS2",	DIFv2_CON1_CS_CS2},
 };
 
-static const pmb887x_module_field_t dif_fifocfg_fields[] = {
-	{"MODE",	DIF_FIFOCFG_MODE,	DIF_FIFOCFG_MODE_SHIFT,	dif_dif_fifocfg_mode_values,	ARRAY_SIZE(dif_dif_fifocfg_mode_values)},
-	{"UNK0",	DIF_FIFOCFG_UNK0,	DIF_FIFOCFG_UNK0_SHIFT,	NULL,							0},
-	{"UNK1",	DIF_FIFOCFG_UNK1,	DIF_FIFOCFG_UNK1_SHIFT,	NULL,							0},
-	{"BS",		DIF_FIFOCFG_BS,		DIF_FIFOCFG_BS_SHIFT,	dif_dif_fifocfg_bs_values,		ARRAY_SIZE(dif_dif_fifocfg_bs_values)},
+static const pmb887x_module_field_t difv2_con1_fields[] = {
+	{"UNK0",	DIFv2_CON1_UNK0,	DIFv2_CON1_UNK0_SHIFT,	NULL,						0},
+	{"UNK1",	DIFv2_CON1_UNK1,	DIFv2_CON1_UNK1_SHIFT,	NULL,						0},
+	{"CS",		DIFv2_CON1_CS,		DIFv2_CON1_CS_SHIFT,	difv2_difv2_con1_cs_values,	ARRAY_SIZE(difv2_difv2_con1_cs_values)},
 };
 
-static const pmb887x_module_field_t dif_stat_fields[] = {
-	{"BUSY",	DIF_STAT_BUSY,	DIF_STAT_BUSY_SHIFT,	NULL,	0},
+static const pmb887x_module_value_t difv2_difv2_fifocfg_mode_values[] = {
+	{"DATA",	DIFv2_FIFOCFG_MODE_DATA},
+	{"CMD",		DIFv2_FIFOCFG_MODE_CMD},
 };
 
-static const pmb887x_module_field_t dif_ris_fields[] = {
-	{"EVENT0",	DIF_RIS_EVENT0,	DIF_RIS_EVENT0_SHIFT,	NULL,	0},
-	{"EVENT1",	DIF_RIS_EVENT1,	DIF_RIS_EVENT1_SHIFT,	NULL,	0},
-	{"EVENT2",	DIF_RIS_EVENT2,	DIF_RIS_EVENT2_SHIFT,	NULL,	0},
-	{"EVENT3",	DIF_RIS_EVENT3,	DIF_RIS_EVENT3_SHIFT,	NULL,	0},
-	{"EVENT4",	DIF_RIS_EVENT4,	DIF_RIS_EVENT4_SHIFT,	NULL,	0},
-	{"EVENT5",	DIF_RIS_EVENT5,	DIF_RIS_EVENT5_SHIFT,	NULL,	0},
-	{"EVENT6",	DIF_RIS_EVENT6,	DIF_RIS_EVENT6_SHIFT,	NULL,	0},
-	{"EVENT7",	DIF_RIS_EVENT7,	DIF_RIS_EVENT7_SHIFT,	NULL,	0},
-	{"EVENT8",	DIF_RIS_EVENT8,	DIF_RIS_EVENT8_SHIFT,	NULL,	0},
+static const pmb887x_module_value_t difv2_difv2_fifocfg_bs_values[] = {
+	{"8",	DIFv2_FIFOCFG_BS_8},
+	{"16",	DIFv2_FIFOCFG_BS_16},
+	{"24",	DIFv2_FIFOCFG_BS_24},
+	{"32",	DIFv2_FIFOCFG_BS_32},
 };
 
-static const pmb887x_module_field_t dif_imsc_fields[] = {
-	{"EVENT0",	DIF_IMSC_EVENT0,	DIF_IMSC_EVENT0_SHIFT,	NULL,	0},
-	{"EVENT1",	DIF_IMSC_EVENT1,	DIF_IMSC_EVENT1_SHIFT,	NULL,	0},
-	{"EVENT2",	DIF_IMSC_EVENT2,	DIF_IMSC_EVENT2_SHIFT,	NULL,	0},
-	{"EVENT3",	DIF_IMSC_EVENT3,	DIF_IMSC_EVENT3_SHIFT,	NULL,	0},
-	{"EVENT4",	DIF_IMSC_EVENT4,	DIF_IMSC_EVENT4_SHIFT,	NULL,	0},
-	{"EVENT5",	DIF_IMSC_EVENT5,	DIF_IMSC_EVENT5_SHIFT,	NULL,	0},
-	{"EVENT6",	DIF_IMSC_EVENT6,	DIF_IMSC_EVENT6_SHIFT,	NULL,	0},
-	{"EVENT7",	DIF_IMSC_EVENT7,	DIF_IMSC_EVENT7_SHIFT,	NULL,	0},
-	{"EVENT8",	DIF_IMSC_EVENT8,	DIF_IMSC_EVENT8_SHIFT,	NULL,	0},
+static const pmb887x_module_field_t difv2_fifocfg_fields[] = {
+	{"MODE",	DIFv2_FIFOCFG_MODE,	DIFv2_FIFOCFG_MODE_SHIFT,	difv2_difv2_fifocfg_mode_values,	ARRAY_SIZE(difv2_difv2_fifocfg_mode_values)},
+	{"UNK0",	DIFv2_FIFOCFG_UNK0,	DIFv2_FIFOCFG_UNK0_SHIFT,	NULL,								0},
+	{"UNK1",	DIFv2_FIFOCFG_UNK1,	DIFv2_FIFOCFG_UNK1_SHIFT,	NULL,								0},
+	{"BS",		DIFv2_FIFOCFG_BS,	DIFv2_FIFOCFG_BS_SHIFT,		difv2_difv2_fifocfg_bs_values,		ARRAY_SIZE(difv2_difv2_fifocfg_bs_values)},
 };
 
-static const pmb887x_module_field_t dif_mis_fields[] = {
-	{"EVENT0",	DIF_MIS_EVENT0,	DIF_MIS_EVENT0_SHIFT,	NULL,	0},
-	{"EVENT1",	DIF_MIS_EVENT1,	DIF_MIS_EVENT1_SHIFT,	NULL,	0},
-	{"EVENT2",	DIF_MIS_EVENT2,	DIF_MIS_EVENT2_SHIFT,	NULL,	0},
-	{"EVENT3",	DIF_MIS_EVENT3,	DIF_MIS_EVENT3_SHIFT,	NULL,	0},
-	{"EVENT4",	DIF_MIS_EVENT4,	DIF_MIS_EVENT4_SHIFT,	NULL,	0},
-	{"EVENT5",	DIF_MIS_EVENT5,	DIF_MIS_EVENT5_SHIFT,	NULL,	0},
-	{"EVENT6",	DIF_MIS_EVENT6,	DIF_MIS_EVENT6_SHIFT,	NULL,	0},
-	{"EVENT7",	DIF_MIS_EVENT7,	DIF_MIS_EVENT7_SHIFT,	NULL,	0},
-	{"EVENT8",	DIF_MIS_EVENT8,	DIF_MIS_EVENT8_SHIFT,	NULL,	0},
+static const pmb887x_module_field_t difv2_stat_fields[] = {
+	{"BUSY",	DIFv2_STAT_BUSY,	DIFv2_STAT_BUSY_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_module_field_t dif_icr_fields[] = {
-	{"EVENT0",	DIF_ICR_EVENT0,	DIF_ICR_EVENT0_SHIFT,	NULL,	0},
-	{"EVENT1",	DIF_ICR_EVENT1,	DIF_ICR_EVENT1_SHIFT,	NULL,	0},
-	{"EVENT2",	DIF_ICR_EVENT2,	DIF_ICR_EVENT2_SHIFT,	NULL,	0},
-	{"EVENT3",	DIF_ICR_EVENT3,	DIF_ICR_EVENT3_SHIFT,	NULL,	0},
-	{"EVENT4",	DIF_ICR_EVENT4,	DIF_ICR_EVENT4_SHIFT,	NULL,	0},
-	{"EVENT5",	DIF_ICR_EVENT5,	DIF_ICR_EVENT5_SHIFT,	NULL,	0},
-	{"EVENT6",	DIF_ICR_EVENT6,	DIF_ICR_EVENT6_SHIFT,	NULL,	0},
-	{"EVENT7",	DIF_ICR_EVENT7,	DIF_ICR_EVENT7_SHIFT,	NULL,	0},
-	{"EVENT8",	DIF_ICR_EVENT8,	DIF_ICR_EVENT8_SHIFT,	NULL,	0},
+static const pmb887x_module_field_t difv2_ris_fields[] = {
+	{"EVENT0",	DIFv2_RIS_EVENT0,	DIFv2_RIS_EVENT0_SHIFT,	NULL,	0},
+	{"EVENT1",	DIFv2_RIS_EVENT1,	DIFv2_RIS_EVENT1_SHIFT,	NULL,	0},
+	{"EVENT2",	DIFv2_RIS_EVENT2,	DIFv2_RIS_EVENT2_SHIFT,	NULL,	0},
+	{"EVENT3",	DIFv2_RIS_EVENT3,	DIFv2_RIS_EVENT3_SHIFT,	NULL,	0},
+	{"EVENT4",	DIFv2_RIS_EVENT4,	DIFv2_RIS_EVENT4_SHIFT,	NULL,	0},
+	{"EVENT5",	DIFv2_RIS_EVENT5,	DIFv2_RIS_EVENT5_SHIFT,	NULL,	0},
+	{"EVENT6",	DIFv2_RIS_EVENT6,	DIFv2_RIS_EVENT6_SHIFT,	NULL,	0},
+	{"EVENT7",	DIFv2_RIS_EVENT7,	DIFv2_RIS_EVENT7_SHIFT,	NULL,	0},
+	{"EVENT8",	DIFv2_RIS_EVENT8,	DIFv2_RIS_EVENT8_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_module_field_t dif_isr_fields[] = {
-	{"EVENT0",	DIF_ISR_EVENT0,	DIF_ISR_EVENT0_SHIFT,	NULL,	0},
-	{"EVENT1",	DIF_ISR_EVENT1,	DIF_ISR_EVENT1_SHIFT,	NULL,	0},
-	{"EVENT2",	DIF_ISR_EVENT2,	DIF_ISR_EVENT2_SHIFT,	NULL,	0},
-	{"EVENT3",	DIF_ISR_EVENT3,	DIF_ISR_EVENT3_SHIFT,	NULL,	0},
-	{"EVENT4",	DIF_ISR_EVENT4,	DIF_ISR_EVENT4_SHIFT,	NULL,	0},
-	{"EVENT5",	DIF_ISR_EVENT5,	DIF_ISR_EVENT5_SHIFT,	NULL,	0},
-	{"EVENT6",	DIF_ISR_EVENT6,	DIF_ISR_EVENT6_SHIFT,	NULL,	0},
-	{"EVENT7",	DIF_ISR_EVENT7,	DIF_ISR_EVENT7_SHIFT,	NULL,	0},
-	{"EVENT8",	DIF_ISR_EVENT8,	DIF_ISR_EVENT8_SHIFT,	NULL,	0},
+static const pmb887x_module_field_t difv2_imsc_fields[] = {
+	{"EVENT0",	DIFv2_IMSC_EVENT0,	DIFv2_IMSC_EVENT0_SHIFT,	NULL,	0},
+	{"EVENT1",	DIFv2_IMSC_EVENT1,	DIFv2_IMSC_EVENT1_SHIFT,	NULL,	0},
+	{"EVENT2",	DIFv2_IMSC_EVENT2,	DIFv2_IMSC_EVENT2_SHIFT,	NULL,	0},
+	{"EVENT3",	DIFv2_IMSC_EVENT3,	DIFv2_IMSC_EVENT3_SHIFT,	NULL,	0},
+	{"EVENT4",	DIFv2_IMSC_EVENT4,	DIFv2_IMSC_EVENT4_SHIFT,	NULL,	0},
+	{"EVENT5",	DIFv2_IMSC_EVENT5,	DIFv2_IMSC_EVENT5_SHIFT,	NULL,	0},
+	{"EVENT6",	DIFv2_IMSC_EVENT6,	DIFv2_IMSC_EVENT6_SHIFT,	NULL,	0},
+	{"EVENT7",	DIFv2_IMSC_EVENT7,	DIFv2_IMSC_EVENT7_SHIFT,	NULL,	0},
+	{"EVENT8",	DIFv2_IMSC_EVENT8,	DIFv2_IMSC_EVENT8_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_module_reg_t dif_regs[] = {
-	{"CLC",		DIF_CLC,		dif_clc_fields,		ARRAY_SIZE(dif_clc_fields),		0},
-	{"ID",		DIF_ID,			dif_id_fields,		ARRAY_SIZE(dif_id_fields),		0},
-	{"RUNCTRL",	DIF_RUNCTRL,	dif_runctrl_fields,	ARRAY_SIZE(dif_runctrl_fields),	0},
-	{"CON0",	DIF_CON0,		NULL,				0,								0},
-	{"CON1",	DIF_CON1,		dif_con1_fields,	ARRAY_SIZE(dif_con1_fields),	0},
-	{"FIFOCFG",	DIF_FIFOCFG,	dif_fifocfg_fields,	ARRAY_SIZE(dif_fifocfg_fields),	0},
-	{"CON3",	DIF_CON3,		NULL,				0,								0},
-	{"CON4",	DIF_CON4,		NULL,				0,								0},
-	{"STAT",	DIF_STAT,		dif_stat_fields,	ARRAY_SIZE(dif_stat_fields),	0},
-	{"CON5",	DIF_CON5,		NULL,				0,								0},
-	{"CON6",	DIF_CON6,		NULL,				0,								0},
-	{"CON7",	DIF_CON7,		NULL,				0,								0},
-	{"CON8",	DIF_CON8,		NULL,				0,								0},
-	{"CON9",	DIF_CON9,		NULL,				0,								0},
-	{"PROG0",	DIF_PROG0,		NULL,				0,								0},
-	{"PROG1",	DIF_PROG1,		NULL,				0,								0},
-	{"PROG2",	DIF_PROG2,		NULL,				0,								0},
-	{"PROG3",	DIF_PROG3,		NULL,				0,								0},
-	{"PROG4",	DIF_PROG4,		NULL,				0,								0},
-	{"PROG5",	DIF_PROG5,		NULL,				0,								0},
-	{"CON10",	DIF_CON10,		NULL,				0,								0},
-	{"CON11",	DIF_CON11,		NULL,				0,								0},
-	{"CON12",	DIF_CON12,		NULL,				0,								0},
-	{"CON13",	DIF_CON13,		NULL,				0,								0},
-	{"TX_SIZE",	DIF_TX_SIZE,	NULL,				0,								0},
-	{"RIS",		DIF_RIS,		dif_ris_fields,		ARRAY_SIZE(dif_ris_fields),		0},
-	{"IMSC",	DIF_IMSC,		dif_imsc_fields,	ARRAY_SIZE(dif_imsc_fields),	0},
-	{"MIS",		DIF_MIS,		dif_mis_fields,		ARRAY_SIZE(dif_mis_fields),		0},
-	{"ICR",		DIF_ICR,		dif_icr_fields,		ARRAY_SIZE(dif_icr_fields),		0},
-	{"ISR",		DIF_ISR,		dif_isr_fields,		ARRAY_SIZE(dif_isr_fields),		0},
-	{"CON14",	DIF_CON14,		NULL,				0,								0},
-	{"FIFO",	DIF_FIFO,		NULL,				0,								0},
+static const pmb887x_module_field_t difv2_mis_fields[] = {
+	{"EVENT0",	DIFv2_MIS_EVENT0,	DIFv2_MIS_EVENT0_SHIFT,	NULL,	0},
+	{"EVENT1",	DIFv2_MIS_EVENT1,	DIFv2_MIS_EVENT1_SHIFT,	NULL,	0},
+	{"EVENT2",	DIFv2_MIS_EVENT2,	DIFv2_MIS_EVENT2_SHIFT,	NULL,	0},
+	{"EVENT3",	DIFv2_MIS_EVENT3,	DIFv2_MIS_EVENT3_SHIFT,	NULL,	0},
+	{"EVENT4",	DIFv2_MIS_EVENT4,	DIFv2_MIS_EVENT4_SHIFT,	NULL,	0},
+	{"EVENT5",	DIFv2_MIS_EVENT5,	DIFv2_MIS_EVENT5_SHIFT,	NULL,	0},
+	{"EVENT6",	DIFv2_MIS_EVENT6,	DIFv2_MIS_EVENT6_SHIFT,	NULL,	0},
+	{"EVENT7",	DIFv2_MIS_EVENT7,	DIFv2_MIS_EVENT7_SHIFT,	NULL,	0},
+	{"EVENT8",	DIFv2_MIS_EVENT8,	DIFv2_MIS_EVENT8_SHIFT,	NULL,	0},
+};
+
+static const pmb887x_module_field_t difv2_icr_fields[] = {
+	{"EVENT0",	DIFv2_ICR_EVENT0,	DIFv2_ICR_EVENT0_SHIFT,	NULL,	0},
+	{"EVENT1",	DIFv2_ICR_EVENT1,	DIFv2_ICR_EVENT1_SHIFT,	NULL,	0},
+	{"EVENT2",	DIFv2_ICR_EVENT2,	DIFv2_ICR_EVENT2_SHIFT,	NULL,	0},
+	{"EVENT3",	DIFv2_ICR_EVENT3,	DIFv2_ICR_EVENT3_SHIFT,	NULL,	0},
+	{"EVENT4",	DIFv2_ICR_EVENT4,	DIFv2_ICR_EVENT4_SHIFT,	NULL,	0},
+	{"EVENT5",	DIFv2_ICR_EVENT5,	DIFv2_ICR_EVENT5_SHIFT,	NULL,	0},
+	{"EVENT6",	DIFv2_ICR_EVENT6,	DIFv2_ICR_EVENT6_SHIFT,	NULL,	0},
+	{"EVENT7",	DIFv2_ICR_EVENT7,	DIFv2_ICR_EVENT7_SHIFT,	NULL,	0},
+	{"EVENT8",	DIFv2_ICR_EVENT8,	DIFv2_ICR_EVENT8_SHIFT,	NULL,	0},
+};
+
+static const pmb887x_module_field_t difv2_isr_fields[] = {
+	{"EVENT0",	DIFv2_ISR_EVENT0,	DIFv2_ISR_EVENT0_SHIFT,	NULL,	0},
+	{"EVENT1",	DIFv2_ISR_EVENT1,	DIFv2_ISR_EVENT1_SHIFT,	NULL,	0},
+	{"EVENT2",	DIFv2_ISR_EVENT2,	DIFv2_ISR_EVENT2_SHIFT,	NULL,	0},
+	{"EVENT3",	DIFv2_ISR_EVENT3,	DIFv2_ISR_EVENT3_SHIFT,	NULL,	0},
+	{"EVENT4",	DIFv2_ISR_EVENT4,	DIFv2_ISR_EVENT4_SHIFT,	NULL,	0},
+	{"EVENT5",	DIFv2_ISR_EVENT5,	DIFv2_ISR_EVENT5_SHIFT,	NULL,	0},
+	{"EVENT6",	DIFv2_ISR_EVENT6,	DIFv2_ISR_EVENT6_SHIFT,	NULL,	0},
+	{"EVENT7",	DIFv2_ISR_EVENT7,	DIFv2_ISR_EVENT7_SHIFT,	NULL,	0},
+	{"EVENT8",	DIFv2_ISR_EVENT8,	DIFv2_ISR_EVENT8_SHIFT,	NULL,	0},
+};
+
+static const pmb887x_module_reg_t difv2_regs[] = {
+	{"CLC",		DIFv2_CLC,		difv2_clc_fields,		ARRAY_SIZE(difv2_clc_fields),		0},
+	{"ID",		DIFv2_ID,		difv2_id_fields,		ARRAY_SIZE(difv2_id_fields),		0},
+	{"RUNCTRL",	DIFv2_RUNCTRL,	difv2_runctrl_fields,	ARRAY_SIZE(difv2_runctrl_fields),	0},
+	{"CON0",	DIFv2_CON0,		NULL,					0,									0},
+	{"CON1",	DIFv2_CON1,		difv2_con1_fields,		ARRAY_SIZE(difv2_con1_fields),		0},
+	{"FIFOCFG",	DIFv2_FIFOCFG,	difv2_fifocfg_fields,	ARRAY_SIZE(difv2_fifocfg_fields),	0},
+	{"CON3",	DIFv2_CON3,		NULL,					0,									0},
+	{"CON4",	DIFv2_CON4,		NULL,					0,									0},
+	{"STAT",	DIFv2_STAT,		difv2_stat_fields,		ARRAY_SIZE(difv2_stat_fields),		0},
+	{"CON5",	DIFv2_CON5,		NULL,					0,									0},
+	{"CON6",	DIFv2_CON6,		NULL,					0,									0},
+	{"CON7",	DIFv2_CON7,		NULL,					0,									0},
+	{"CON8",	DIFv2_CON8,		NULL,					0,									0},
+	{"CON9",	DIFv2_CON9,		NULL,					0,									0},
+	{"PROG0",	DIFv2_PROG0,	NULL,					0,									0},
+	{"PROG1",	DIFv2_PROG1,	NULL,					0,									0},
+	{"PROG2",	DIFv2_PROG2,	NULL,					0,									0},
+	{"PROG3",	DIFv2_PROG3,	NULL,					0,									0},
+	{"PROG4",	DIFv2_PROG4,	NULL,					0,									0},
+	{"PROG5",	DIFv2_PROG5,	NULL,					0,									0},
+	{"CON10",	DIFv2_CON10,	NULL,					0,									0},
+	{"CON11",	DIFv2_CON11,	NULL,					0,									0},
+	{"CON12",	DIFv2_CON12,	NULL,					0,									0},
+	{"CON13",	DIFv2_CON13,	NULL,					0,									0},
+	{"TX_SIZE",	DIFv2_TX_SIZE,	NULL,					0,									0},
+	{"RIS",		DIFv2_RIS,		difv2_ris_fields,		ARRAY_SIZE(difv2_ris_fields),		0},
+	{"IMSC",	DIFv2_IMSC,		difv2_imsc_fields,		ARRAY_SIZE(difv2_imsc_fields),		0},
+	{"MIS",		DIFv2_MIS,		difv2_mis_fields,		ARRAY_SIZE(difv2_mis_fields),		0},
+	{"ICR",		DIFv2_ICR,		difv2_icr_fields,		ARRAY_SIZE(difv2_icr_fields),		0},
+	{"ISR",		DIFv2_ISR,		difv2_isr_fields,		ARRAY_SIZE(difv2_isr_fields),		0},
+	{"CON14",	DIFv2_CON14,	NULL,					0,									0},
+	{"FIFO",	DIFv2_FIFO,		NULL,					0,									0},
 };
 
 static const pmb887x_module_field_t ebu_clc_fields[] = {
@@ -4805,8 +4840,8 @@ static const pmb887x_module_field_t i2cv1_syscon_fields[] = {
 	{"IRQD",	I2Cv1_SYSCON_IRQD,		I2Cv1_SYSCON_IRQD_SHIFT,	NULL,							0},
 	{"IRQP",	I2Cv1_SYSCON_IRQP,		I2Cv1_SYSCON_IRQP_SHIFT,	NULL,							0},
 	{"IRQE",	I2Cv1_SYSCON_IRQE,		I2Cv1_SYSCON_IRQE_SHIFT,	NULL,							0},
-	{"CO",		I2Cv1_SYSCON_CO,		I2Cv1_SYSCON_CO_SHIFT,		NULL,							0},
 	{"WM",		I2Cv1_SYSCON_WM,		I2Cv1_SYSCON_WM_SHIFT,		NULL,							0},
+	{"CO",		I2Cv1_SYSCON_CO,		I2Cv1_SYSCON_CO_SHIFT,		NULL,							0},
 	{"RMEN",	I2Cv1_SYSCON_RMEN,		I2Cv1_SYSCON_RMEN_SHIFT,	NULL,							0},
 	{"M10",		I2Cv1_SYSCON_M10,		I2Cv1_SYSCON_M10_SHIFT,		NULL,							0},
 	{"RSC",		I2Cv1_SYSCON_RSC,		I2Cv1_SYSCON_RSC_SHIFT,		NULL,							0},
@@ -6022,6 +6057,33 @@ static const pmb887x_module_reg_t sim_regs[] = {
 	{"ID",	SIM_ID,		sim_id_fields,	ARRAY_SIZE(sim_id_fields),	0},
 };
 
+static const pmb887x_module_field_t ssc_clc_fields[] = {
+	{"DISR",	MOD_CLC_DISR,	MOD_CLC_DISR_SHIFT,	NULL,	0},
+	{"DISS",	MOD_CLC_DISS,	MOD_CLC_DISS_SHIFT,	NULL,	0},
+	{"SPEN",	MOD_CLC_SPEN,	MOD_CLC_SPEN_SHIFT,	NULL,	0},
+	{"EDIS",	MOD_CLC_EDIS,	MOD_CLC_EDIS_SHIFT,	NULL,	0},
+	{"SBWE",	MOD_CLC_SBWE,	MOD_CLC_SBWE_SHIFT,	NULL,	0},
+	{"FSOE",	MOD_CLC_FSOE,	MOD_CLC_FSOE_SHIFT,	NULL,	0},
+	{"RMC",		MOD_CLC_RMC,	MOD_CLC_RMC_SHIFT,	NULL,	0},
+};
+
+static const pmb887x_module_field_t ssc_id_fields[] = {
+	{"REV",		MOD_ID_REV,		MOD_ID_REV_SHIFT,		NULL,	0},
+	{"32B",		MOD_ID_32B,		MOD_ID_32B_SHIFT,		NULL,	0},
+	{"NUMBER",	MOD_ID_NUMBER,	MOD_ID_NUMBER_SHIFT,	NULL,	0},
+};
+
+static const pmb887x_module_reg_t ssc_regs[] = {
+	{"CLC",		SSC_CLC,	ssc_clc_fields,	ARRAY_SIZE(ssc_clc_fields),	0},
+	{"ID",		SSC_ID,		ssc_id_fields,	ARRAY_SIZE(ssc_id_fields),	0},
+	{"STAT",	SSC_STAT,	NULL,			0,							0},
+	{"TB",		SSC_TB,		NULL,			0,							0},
+	{"RB",		SSC_RB,		NULL,			0,							0},
+	{"RXFCON",	SSC_RXFCON,	NULL,			0,							0},
+	{"TXFCON",	SSC_TXFCON,	NULL,			0,							0},
+	{"FSTAT",	SSC_FSTAT,	NULL,			0,							0},
+};
+
 static const pmb887x_module_field_t stm_clc_fields[] = {
 	{"DISR",	MOD_CLC_DISR,	MOD_CLC_DISR_SHIFT,	NULL,	0},
 	{"DISS",	MOD_CLC_DISS,	MOD_CLC_DISS_SHIFT,	NULL,	0},
@@ -6246,6 +6308,7 @@ static const pmb887x_module_reg_t usart_regs[] = {
 	{"MIS",			USART_MIS,			usart_mis_fields,		ARRAY_SIZE(usart_mis_fields),		0},
 	{"ICR",			USART_ICR,			usart_icr_fields,		ARRAY_SIZE(usart_icr_fields),		0},
 	{"ISR",			USART_ISR,			usart_isr_fields,		ARRAY_SIZE(usart_isr_fields),		0},
+	{"UNK",			USART_UNK,			NULL,					0,									0},
 	{"TMO",			USART_TMO,			NULL,					0,									0},
 };
 
@@ -6498,8 +6561,9 @@ static const pmb887x_cpu_meta_gpio_t pmb8875_gpios[] = {
 static const pmb887x_module_t pmb8875_modules[] = {
 	{"EBU",		PMB8875_EBU_BASE,		EBU_IO_SIZE,	ebu_regs,		ARRAY_SIZE(ebu_regs)},
 	{"USART0",	PMB8875_USART0_BASE,	USART_IO_SIZE,	usart_regs,		ARRAY_SIZE(usart_regs)},
+	{"SSC",		PMB8875_SSC_BASE,		SSC_IO_SIZE,	ssc_regs,		ARRAY_SIZE(ssc_regs)},
 	{"USART1",	PMB8875_USART1_BASE,	USART_IO_SIZE,	usart_regs,		ARRAY_SIZE(usart_regs)},
-	{"DIF",		PMB8875_DIF_BASE,		DIF_IO_SIZE,	dif_regs,		ARRAY_SIZE(dif_regs)},
+	{"DIF",		PMB8875_DIF_BASE,		DIFv1_IO_SIZE,	difv1_regs,		ARRAY_SIZE(difv1_regs)},
 	{"USB",		PMB8875_USB_BASE,		USB_IO_SIZE,	usb_regs,		ARRAY_SIZE(usb_regs)},
 	{"NVIC",	PMB8875_NVIC_BASE,		NVIC_IO_SIZE,	nvic_regs,		ARRAY_SIZE(nvic_regs)},
 	{"DMAC",	PMB8875_DMAC_BASE,		DMAC_IO_SIZE,	dmac_regs,		ARRAY_SIZE(dmac_regs)},
@@ -6780,7 +6844,7 @@ static const pmb887x_module_t pmb8876_modules[] = {
 	{"AFC",		PMB8876_AFC_BASE,		AFC_IO_SIZE,	afc_regs,		ARRAY_SIZE(afc_regs)},
 	{"TPU",		PMB8876_TPU_BASE,		TPU_IO_SIZE,	tpu_regs,		ARRAY_SIZE(tpu_regs)},
 	{"CIF",		PMB8876_CIF_BASE,		CIF_IO_SIZE,	cif_regs,		ARRAY_SIZE(cif_regs)},
-	{"DIF",		PMB8876_DIF_BASE,		DIF_IO_SIZE,	dif_regs,		ARRAY_SIZE(dif_regs)},
+	{"DIF",		PMB8876_DIF_BASE,		DIFv2_IO_SIZE,	difv2_regs,		ARRAY_SIZE(difv2_regs)},
 	{"MMCI",	PMB8876_MMCI_BASE,		MMCI_IO_SIZE,	mmci_regs,		ARRAY_SIZE(mmci_regs)},
 	{"MCI",		PMB8876_MCI_BASE,		MCI_IO_SIZE,	mci_regs,		ARRAY_SIZE(mci_regs)},
 	{"I2C",		PMB8876_I2C_BASE,		I2Cv2_IO_SIZE,	i2cv2_regs,		ARRAY_SIZE(i2cv2_regs)},

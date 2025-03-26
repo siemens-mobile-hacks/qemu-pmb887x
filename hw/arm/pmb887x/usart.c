@@ -1,6 +1,7 @@
 /*
  * USART
  * */
+#include <stdint.h>
 #define PMB887X_TRACE_ID		USART
 #define PMB887X_TRACE_PREFIX	"pmb887x-usart"
 
@@ -87,6 +88,7 @@ struct pmb887x_usart_t {
 	uint32_t fccon;
 	uint32_t fcstat;
 	uint32_t tmo;
+	uint32_t unk;
 };
 
 static void usart_transmit_fifo(struct pmb887x_usart_t *p);
@@ -363,6 +365,10 @@ static uint64_t usart_io_read(void *opaque, hwaddr haddr, unsigned size) {
 			value = 0;
 			break;
 
+		case USART_UNK:
+			value = p->unk;
+			break;
+
 		case USART_TMO:
 			value = p->tmo;
 			break;
@@ -476,6 +482,10 @@ static void usart_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned 
 
 		case USART_ISR:
 			pmb887x_srb_set_isr(&p->srb, value);
+			break;
+
+		case USART_UNK:
+			p->unk = value;
 			break;
 
 		case USART_TMO:

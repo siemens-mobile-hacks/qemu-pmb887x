@@ -26,7 +26,7 @@
 #define TYPE_PMB887X_DIF	"pmb887x-dif"
 #define PMB887X_DIF(obj)	OBJECT_CHECK(pmb887x_dif_t, (obj), TYPE_PMB887X_DIF)
 
-#define DIF_FIFO_SIZE	0xBFFC
+#define DIFv2_FIFO_SIZE	0xBFFC
 
 typedef struct {
 	SysBusDevice parent_obj;
@@ -54,27 +54,27 @@ static void dif_update_state(pmb887x_dif_t *p) {
 
 static int dif_get_index_from_reg(uint32_t reg) {
 	switch (reg) {
-		case DIF_PROG0:		return 0;
-		case DIF_PROG1:		return 1;
-		case DIF_PROG2:		return 2;
-		case DIF_PROG3:		return 3;
-		case DIF_PROG4:		return 4;
-		case DIF_PROG5:		return 5;
+		case DIFv2_PROG0:		return 0;
+		case DIFv2_PROG1:		return 1;
+		case DIFv2_PROG2:		return 2;
+		case DIFv2_PROG3:		return 3;
+		case DIFv2_PROG4:		return 4;
+		case DIFv2_PROG5:		return 5;
 		
-		case DIF_CON0:		return 0;
-		case DIF_CON1:		return 1;
-		case DIF_CON3:		return 3;
-		case DIF_CON4:		return 4;
-		case DIF_CON5:		return 5;
-		case DIF_CON6:		return 6;
-		case DIF_CON7:		return 7;
-		case DIF_CON8:		return 8;
-		case DIF_CON9:		return 9;
-		case DIF_CON10:		return 10;
-		case DIF_CON11:		return 11;
-		case DIF_CON12:		return 12;
-		case DIF_CON13:		return 13;
-		case DIF_CON14:		return 14;
+		case DIFv2_CON0:		return 0;
+		case DIFv2_CON1:		return 1;
+		case DIFv2_CON3:		return 3;
+		case DIFv2_CON4:		return 4;
+		case DIFv2_CON5:		return 5;
+		case DIFv2_CON6:		return 6;
+		case DIFv2_CON7:		return 7;
+		case DIFv2_CON8:		return 8;
+		case DIFv2_CON9:		return 9;
+		case DIFv2_CON10:		return 10;
+		case DIFv2_CON11:		return 11;
+		case DIFv2_CON12:		return 12;
+		case DIFv2_CON13:		return 13;
+		case DIFv2_CON14:		return 14;
 	};
 	hw_error("pmb887x-dif: unknown reg %d", reg);
 	return -1;
@@ -86,77 +86,77 @@ static uint64_t dif_io_read(void *opaque, hwaddr haddr, unsigned size) {
 	uint64_t value = 0;
 	
 	switch (haddr) {
-		case DIF_CLC:
+		case DIFv2_CLC:
 			value = pmb887x_clc_get(&p->clc);
 		break;
 		
-		case DIF_ID:
+		case DIFv2_ID:
 			value = 0xF043C012;
 		break;
 		
-		case DIF_RUNCTRL:
+		case DIFv2_RUNCTRL:
 			value = p->runctrl;
 		break;
 		
-		case DIF_STAT:
+		case DIFv2_STAT:
 			value = 0;
 		break;
 		
-		case DIF_PROG0:
-		case DIF_PROG1:
-		case DIF_PROG2:
-		case DIF_PROG3:
-		case DIF_PROG4:
-		case DIF_PROG5:
+		case DIFv2_PROG0:
+		case DIFv2_PROG1:
+		case DIFv2_PROG2:
+		case DIFv2_PROG3:
+		case DIFv2_PROG4:
+		case DIFv2_PROG5:
 			value = p->prog[dif_get_index_from_reg(haddr)];
 		break;
 		
-		case DIF_FIFOCFG:
+		case DIFv2_FIFOCFG:
 			value = p->fifocfg;
 		break;
 		
-		case DIF_CON0:
-		case DIF_CON1:
-		case DIF_CON3:
-		case DIF_CON4:
-		case DIF_CON5:
-		case DIF_CON6:
-		case DIF_CON7:
-		case DIF_CON8:
-		case DIF_CON9:
-		case DIF_CON10:
-		case DIF_CON11:
-		case DIF_CON12:
-		case DIF_CON13:
-		case DIF_CON14:
+		case DIFv2_CON0:
+		case DIFv2_CON1:
+		case DIFv2_CON3:
+		case DIFv2_CON4:
+		case DIFv2_CON5:
+		case DIFv2_CON6:
+		case DIFv2_CON7:
+		case DIFv2_CON8:
+		case DIFv2_CON9:
+		case DIFv2_CON10:
+		case DIFv2_CON11:
+		case DIFv2_CON12:
+		case DIFv2_CON13:
+		case DIFv2_CON14:
 			value = p->con[dif_get_index_from_reg(haddr)];
 		break;
 		
-		case DIF_TX_SIZE:
+		case DIFv2_TX_SIZE:
 			value = p->tx_size;
 		break;
 		
-		case DIF_FIFO ... (DIF_FIFO + DIF_FIFO_SIZE):
+		case DIFv2_FIFO ... (DIFv2_FIFO + DIFv2_FIFO_SIZE):
 			value = 0;
 		break;
 		
-		case DIF_IMSC:
+		case DIFv2_IMSC:
 			value = pmb887x_srb_get_imsc(&p->srb);
 		break;
 		
-		case DIF_RIS:
+		case DIFv2_RIS:
 			value = pmb887x_srb_get_ris(&p->srb);
 		break;
 		
-		case DIF_MIS:
+		case DIFv2_MIS:
 			value = pmb887x_srb_get_mis(&p->srb);
 		break;
 		
-		case DIF_ICR:
+		case DIFv2_ICR:
 			value = 0;
 		break;
 		
-		case DIF_ISR:
+		case DIFv2_ISR:
 			value = 0;
 		break;
 		
@@ -175,71 +175,71 @@ static uint64_t dif_io_read(void *opaque, hwaddr haddr, unsigned size) {
 static void dif_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned size) {
 	pmb887x_dif_t *p = (pmb887x_dif_t *) opaque;
 	
-	bool supress = (haddr >= DIF_FIFO && haddr < DIF_FIFO + DIF_FIFO_SIZE);
+	bool supress = (haddr >= DIFv2_FIFO && haddr < DIFv2_FIFO + DIFv2_FIFO_SIZE);
 	
 	if (!supress)
 		IO_DUMP(haddr + p->mmio.addr, size, value, true);
 	
 	switch (haddr) {
-		case DIF_CLC:
+		case DIFv2_CLC:
 			pmb887x_clc_set(&p->clc, value);
 		break;
 		
-		case DIF_RUNCTRL:
+		case DIFv2_RUNCTRL:
 			p->runctrl = value;
 		break;
 		
-		case DIF_FIFO ... (DIF_FIFO + DIF_FIFO_SIZE - 1):
-			pmb887x_lcd_write(p->lcd, value, ((p->fifocfg & DIF_FIFOCFG_BS) >> DIF_FIFOCFG_BS_SHIFT) + 1);
+		case DIFv2_FIFO ... (DIFv2_FIFO + DIFv2_FIFO_SIZE - 1):
+			pmb887x_lcd_write(p->lcd, value, ((p->fifocfg & DIFv2_FIFOCFG_BS) >> DIFv2_FIFOCFG_BS_SHIFT) + 1);
 		break;
 		
-		case DIF_PROG0:
-		case DIF_PROG1:
-		case DIF_PROG2:
-		case DIF_PROG3:
-		case DIF_PROG4:
-		case DIF_PROG5:
+		case DIFv2_PROG0:
+		case DIFv2_PROG1:
+		case DIFv2_PROG2:
+		case DIFv2_PROG3:
+		case DIFv2_PROG4:
+		case DIFv2_PROG5:
 			p->prog[dif_get_index_from_reg(haddr)] = value;
 		break;
 		
-		case DIF_FIFOCFG:
+		case DIFv2_FIFOCFG:
 			p->fifocfg = value;
-			pmb887x_lcd_set_cd(p->lcd, (p->fifocfg & DIF_FIFOCFG_MODE) == DIF_FIFOCFG_MODE_CMD);
+			pmb887x_lcd_set_cd(p->lcd, (p->fifocfg & DIFv2_FIFOCFG_MODE) == DIFv2_FIFOCFG_MODE_CMD);
 		break;
 		
-		case DIF_CON0:
-		case DIF_CON1:
-		case DIF_CON3:
-		case DIF_CON4:
-		case DIF_CON5:
-		case DIF_CON6:
-		case DIF_CON7:
-		case DIF_CON8:
-		case DIF_CON9:
-		case DIF_CON10:
-		case DIF_CON11:
-		case DIF_CON12:
-		case DIF_CON13:
-		case DIF_CON14:
+		case DIFv2_CON0:
+		case DIFv2_CON1:
+		case DIFv2_CON3:
+		case DIFv2_CON4:
+		case DIFv2_CON5:
+		case DIFv2_CON6:
+		case DIFv2_CON7:
+		case DIFv2_CON8:
+		case DIFv2_CON9:
+		case DIFv2_CON10:
+		case DIFv2_CON11:
+		case DIFv2_CON12:
+		case DIFv2_CON13:
+		case DIFv2_CON14:
 			p->con[dif_get_index_from_reg(haddr)] = value;
 		break;
 		
-		case DIF_TX_SIZE:
+		case DIFv2_TX_SIZE:
 			p->tx_size = value;
 			
 			if (p->dmac)
 				pmb887x_dmac_request(p->dmac, p->dmac_tx_periph_id, p->tx_size);
 		break;
 		
-		case DIF_IMSC:
+		case DIFv2_IMSC:
 			pmb887x_srb_set_imsc(&p->srb, value);
 		break;
 		
-		case DIF_ICR:
+		case DIFv2_ICR:
 			pmb887x_srb_set_icr(&p->srb, value);
 		break;
 		
-		case DIF_ISR:
+		case DIFv2_ISR:
 			pmb887x_srb_set_isr(&p->srb, value);
 		break;
 		
@@ -268,7 +268,7 @@ static const MemoryRegionOps io_ops = {
 
 static void dif_init(Object *obj) {
 	pmb887x_dif_t *p = PMB887X_DIF(obj);
-	memory_region_init_io(&p->mmio, obj, &io_ops, p, "pmb887x-dif", DIF_IO_SIZE);
+	memory_region_init_io(&p->mmio, obj, &io_ops, p, "pmb887x-dif", DIFv2_IO_SIZE);
 	sysbus_init_mmio(SYS_BUS_DEVICE(obj), &p->mmio);
 	
 	for (int i = 0; i < ARRAY_SIZE(p->irq); i++)

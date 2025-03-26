@@ -4,6 +4,7 @@
 #define CPU_PMB8875					0
 #define PMB8875_EBU_BASE			0xF0000000
 #define PMB8875_USART0_BASE			0xF1000000
+#define PMB8875_SSC_BASE			0xF1100000
 #define PMB8875_USART1_BASE			0xF1800000
 #define PMB8875_DIF_BASE			0xF1B00000
 #define PMB8875_USB_BASE			0xF2200800
@@ -255,8 +256,8 @@
 #define PMB8875_SCU_UNK2_IRQ		60
 #define PMB8875_SCU_EXTI5_IRQ		61
 #define PMB8875_SCU_EXTI6_IRQ		62
-#define PMB8875_SCCU_UNK_IRQ		63
 #define PMB8875_SCU_EXTI7_IRQ		63
+#define PMB8875_SCCU_UNK_IRQ		63
 #define PMB8875_SCCU_WAKE_IRQ		64
 #define PMB8875_PLL_IRQ				65
 #define PMB8875_I2C_DATA_IRQ		66
@@ -721,7 +722,8 @@
 #define AMBA_PERIPH_ID3_CONFIGURATION_SHIFT	0
 
 
-// ADC [MOD_NUM=F024, MOD_REV=00, MOD_32BIT=C0]
+// ADC [MOD_NUM=F024, MOD_REV=10, MOD_32BIT=C0]
+// ADC [MOD_NUM=F024, MOD_REV=21, MOD_32BIT=C0]
 // ADC. Datasheet not found.
 #define ADC_IO_SIZE					0x00000200
 /* Clock Control Register */
@@ -1590,7 +1592,8 @@
 #define MCI_PCELL_ID3						0xFFC
 
 
-// CAPCOM [MOD_NUM=0050, MOD_REV=00, MOD_32BIT=00]
+// CAPCOM [MOD_NUM=0050, MOD_REV=03, MOD_32BIT=00]
+// CAPCOM [MOD_NUM=0050, MOD_REV=11, MOD_32BIT=00]
 // CAPCOM from drivers/clocksource/xgold_capcom_timer.c (GPL2)
 #define CAPCOM_IO_SIZE					0x00000100
 /* Clock Control Register */
@@ -1943,7 +1946,7 @@
 #define CAPCOM_T0_SRC					0xFC
 
 
-// CIF [MOD_NUM=F052, MOD_REV=00, MOD_32BIT=C0]
+// CIF [MOD_NUM=F052, MOD_REV=12, MOD_32BIT=C0]
 // Looks like DIF (Camera Interface) module, but not sure.
 #define CIF_IO_SIZE	0x00000200
 #define CIF_UNK0	0x00
@@ -1969,195 +1972,229 @@
 #define CIF_UNK7	0xAC
 
 
-// DIF [MOD_NUM=F043, MOD_REV=00, MOD_32BIT=C0]
+// DIFv1 [MOD_NUM=F043, MOD_REV=00, MOD_32BIT=C0]
 // DIF (Display Interface)
-#define DIF_IO_SIZE				0x0000C000
+#define DIFv1_IO_SIZE	0x0000C000
 /* Clock Control Register */
-#define DIF_CLC					0x00
+#define DIFv1_CLC		0x00
 
 /* Module Identifier Register */
-#define DIF_ID					0x08
+#define DIFv1_ID		0x08
+
+#define DIFv1_STAT		0x10
+
+#define DIFv1_TB		0x20
+
+#define DIFv1_RB		0x24
+
+#define DIFv1_RXFCON	0x30
+
+#define DIFv1_TXFCON	0x34
+
+#define DIFv1_FSTAT		0x38
+
+#define DIFv1_TXDMACON	0x58
+
+#define DIFv1_RXDMACON	0x5C
+
+#define DIFv1_PROG0		0x74
+#define DIFv1_PROG1		0x78
+#define DIFv1_PROG2		0x7C
+#define DIFv1_PROG3		0x80
+#define DIFv1_PROG4		0x84
+#define DIFv1_PROG5		0x88
+
+
+// DIFv2 [MOD_NUM=F043, MOD_REV=12, MOD_32BIT=C0]
+// DIF (Display Interface)
+#define DIFv2_IO_SIZE				0x0000C000
+/* Clock Control Register */
+#define DIFv2_CLC					0x00
+
+/* Module Identifier Register */
+#define DIFv2_ID					0x08
 
 /* RUN Control Register */
-#define DIF_RUNCTRL				0x10
-#define DIF_RUNCTRL_RUN			(1 << 0)	 // Enable DIF Interface
-#define DIF_RUNCTRL_RUN_SHIFT	0
+#define DIFv2_RUNCTRL				0x10
+#define DIFv2_RUNCTRL_RUN			(1 << 0)	 // Enable DIF Interface
+#define DIFv2_RUNCTRL_RUN_SHIFT		0
 
-#define DIF_CON0				0x20
+#define DIFv2_CON0					0x20
 
-#define DIF_CON1				0x24
-#define DIF_CON1_UNK0			(1 << 0)
-#define DIF_CON1_UNK0_SHIFT		0
-#define DIF_CON1_UNK1			(1 << 1)
-#define DIF_CON1_UNK1_SHIFT		1
-#define DIF_CON1_CS				(1 << 6)	 // Use CS1 or CS2
-#define DIF_CON1_CS_SHIFT		6
-#define DIF_CON1_CS_CS1			0x0
-#define DIF_CON1_CS_CS2			0x40
+#define DIFv2_CON1					0x24
+#define DIFv2_CON1_UNK0				(1 << 0)
+#define DIFv2_CON1_UNK0_SHIFT		0
+#define DIFv2_CON1_UNK1				(1 << 1)
+#define DIFv2_CON1_UNK1_SHIFT		1
+#define DIFv2_CON1_CS				(1 << 6)	 // Use CS1 or CS2
+#define DIFv2_CON1_CS_SHIFT			6
+#define DIFv2_CON1_CS_CS1			0x0
+#define DIFv2_CON1_CS_CS2			0x40
 
 /* FIFO config */
-#define DIF_FIFOCFG				0x28
-#define DIF_FIFOCFG_MODE		(1 << 0)	 // DATA: CD=1, CMD: CD=0
-#define DIF_FIFOCFG_MODE_SHIFT	0
-#define DIF_FIFOCFG_MODE_DATA	0x0
-#define DIF_FIFOCFG_MODE_CMD	0x1
-#define DIF_FIFOCFG_UNK0		(1 << 1)
-#define DIF_FIFOCFG_UNK0_SHIFT	1
-#define DIF_FIFOCFG_UNK1		(1 << 4)
-#define DIF_FIFOCFG_UNK1_SHIFT	4
-#define DIF_FIFOCFG_BS			(0x3 << 5)	 // Rx/Tx burst size
-#define DIF_FIFOCFG_BS_SHIFT	5
-#define DIF_FIFOCFG_BS_8		0x0
-#define DIF_FIFOCFG_BS_16		0x20
-#define DIF_FIFOCFG_BS_24		0x40
-#define DIF_FIFOCFG_BS_32		0x60
+#define DIFv2_FIFOCFG				0x28
+#define DIFv2_FIFOCFG_MODE			(1 << 0)	 // DATA: CD=1, CMD: CD=0
+#define DIFv2_FIFOCFG_MODE_SHIFT	0
+#define DIFv2_FIFOCFG_MODE_DATA		0x0
+#define DIFv2_FIFOCFG_MODE_CMD		0x1
+#define DIFv2_FIFOCFG_UNK0			(1 << 1)
+#define DIFv2_FIFOCFG_UNK0_SHIFT	1
+#define DIFv2_FIFOCFG_UNK1			(1 << 4)
+#define DIFv2_FIFOCFG_UNK1_SHIFT	4
+#define DIFv2_FIFOCFG_BS			(0x3 << 5)	 // Rx/Tx burst size
+#define DIFv2_FIFOCFG_BS_SHIFT		5
+#define DIFv2_FIFOCFG_BS_8			0x0
+#define DIFv2_FIFOCFG_BS_16			0x20
+#define DIFv2_FIFOCFG_BS_24			0x40
+#define DIFv2_FIFOCFG_BS_32			0x60
 
-#define DIF_CON3				0x2C
+#define DIFv2_CON3					0x2C
 
-#define DIF_CON4				0x30
+#define DIFv2_CON4					0x30
 
-#define DIF_STAT				0x38
-#define DIF_STAT_BUSY			(1 << 0)
-#define DIF_STAT_BUSY_SHIFT		0
+#define DIFv2_STAT					0x38
+#define DIFv2_STAT_BUSY				(1 << 0)
+#define DIFv2_STAT_BUSY_SHIFT		0
 
-#define DIF_CON5				0x3C
+#define DIFv2_CON5					0x3C
 
-#define DIF_CON6				0x40
+#define DIFv2_CON6					0x40
 
-#define DIF_CON7				0x44
+#define DIFv2_CON7					0x44
 
-#define DIF_CON8				0x48
+#define DIFv2_CON8					0x48
 
-#define DIF_CON9				0x4C
+#define DIFv2_CON9					0x4C
 
-#define DIF_PROG0				0x50
-#define DIF_PROG1				0x54
-#define DIF_PROG2				0x58
-#define DIF_PROG3				0x5C
-#define DIF_PROG4				0x60
-#define DIF_PROG5				0x64
+#define DIFv2_PROG0					0x50
+#define DIFv2_PROG1					0x54
+#define DIFv2_PROG2					0x58
+#define DIFv2_PROG3					0x5C
+#define DIFv2_PROG4					0x60
+#define DIFv2_PROG5					0x64
 
-#define DIF_CON10				0x68
+#define DIFv2_CON10					0x68
 
-#define DIF_CON11				0x6C
+#define DIFv2_CON11					0x6C
 
-#define DIF_CON12				0x70
+#define DIFv2_CON12					0x70
 
-#define DIF_CON13				0xA0
+#define DIFv2_CON13					0xA0
 
-#define DIF_TX_SIZE				0xA4
+#define DIFv2_TX_SIZE				0xA4
 
 /* Raw Interrupt Status Register */
-#define DIF_RIS					0xC0
-#define DIF_RIS_EVENT0			(1 << 0)
-#define DIF_RIS_EVENT0_SHIFT	0
-#define DIF_RIS_EVENT1			(1 << 1)
-#define DIF_RIS_EVENT1_SHIFT	1
-#define DIF_RIS_EVENT2			(1 << 2)
-#define DIF_RIS_EVENT2_SHIFT	2
-#define DIF_RIS_EVENT3			(1 << 3)
-#define DIF_RIS_EVENT3_SHIFT	3
-#define DIF_RIS_EVENT4			(1 << 4)
-#define DIF_RIS_EVENT4_SHIFT	4
-#define DIF_RIS_EVENT5			(1 << 5)
-#define DIF_RIS_EVENT5_SHIFT	5
-#define DIF_RIS_EVENT6			(1 << 6)
-#define DIF_RIS_EVENT6_SHIFT	6
-#define DIF_RIS_EVENT7			(1 << 7)
-#define DIF_RIS_EVENT7_SHIFT	7
-#define DIF_RIS_EVENT8			(1 << 8)
-#define DIF_RIS_EVENT8_SHIFT	8
+#define DIFv2_RIS					0xC0
+#define DIFv2_RIS_EVENT0			(1 << 0)
+#define DIFv2_RIS_EVENT0_SHIFT		0
+#define DIFv2_RIS_EVENT1			(1 << 1)
+#define DIFv2_RIS_EVENT1_SHIFT		1
+#define DIFv2_RIS_EVENT2			(1 << 2)
+#define DIFv2_RIS_EVENT2_SHIFT		2
+#define DIFv2_RIS_EVENT3			(1 << 3)
+#define DIFv2_RIS_EVENT3_SHIFT		3
+#define DIFv2_RIS_EVENT4			(1 << 4)
+#define DIFv2_RIS_EVENT4_SHIFT		4
+#define DIFv2_RIS_EVENT5			(1 << 5)
+#define DIFv2_RIS_EVENT5_SHIFT		5
+#define DIFv2_RIS_EVENT6			(1 << 6)
+#define DIFv2_RIS_EVENT6_SHIFT		6
+#define DIFv2_RIS_EVENT7			(1 << 7)
+#define DIFv2_RIS_EVENT7_SHIFT		7
+#define DIFv2_RIS_EVENT8			(1 << 8)
+#define DIFv2_RIS_EVENT8_SHIFT		8
 
 /* Interrupt Mask Control Register */
-#define DIF_IMSC				0xC4
-#define DIF_IMSC_EVENT0			(1 << 0)
-#define DIF_IMSC_EVENT0_SHIFT	0
-#define DIF_IMSC_EVENT1			(1 << 1)
-#define DIF_IMSC_EVENT1_SHIFT	1
-#define DIF_IMSC_EVENT2			(1 << 2)
-#define DIF_IMSC_EVENT2_SHIFT	2
-#define DIF_IMSC_EVENT3			(1 << 3)
-#define DIF_IMSC_EVENT3_SHIFT	3
-#define DIF_IMSC_EVENT4			(1 << 4)
-#define DIF_IMSC_EVENT4_SHIFT	4
-#define DIF_IMSC_EVENT5			(1 << 5)
-#define DIF_IMSC_EVENT5_SHIFT	5
-#define DIF_IMSC_EVENT6			(1 << 6)
-#define DIF_IMSC_EVENT6_SHIFT	6
-#define DIF_IMSC_EVENT7			(1 << 7)
-#define DIF_IMSC_EVENT7_SHIFT	7
-#define DIF_IMSC_EVENT8			(1 << 8)
-#define DIF_IMSC_EVENT8_SHIFT	8
+#define DIFv2_IMSC					0xC4
+#define DIFv2_IMSC_EVENT0			(1 << 0)
+#define DIFv2_IMSC_EVENT0_SHIFT		0
+#define DIFv2_IMSC_EVENT1			(1 << 1)
+#define DIFv2_IMSC_EVENT1_SHIFT		1
+#define DIFv2_IMSC_EVENT2			(1 << 2)
+#define DIFv2_IMSC_EVENT2_SHIFT		2
+#define DIFv2_IMSC_EVENT3			(1 << 3)
+#define DIFv2_IMSC_EVENT3_SHIFT		3
+#define DIFv2_IMSC_EVENT4			(1 << 4)
+#define DIFv2_IMSC_EVENT4_SHIFT		4
+#define DIFv2_IMSC_EVENT5			(1 << 5)
+#define DIFv2_IMSC_EVENT5_SHIFT		5
+#define DIFv2_IMSC_EVENT6			(1 << 6)
+#define DIFv2_IMSC_EVENT6_SHIFT		6
+#define DIFv2_IMSC_EVENT7			(1 << 7)
+#define DIFv2_IMSC_EVENT7_SHIFT		7
+#define DIFv2_IMSC_EVENT8			(1 << 8)
+#define DIFv2_IMSC_EVENT8_SHIFT		8
 
 /* Masked Interrupt Status */
-#define DIF_MIS					0xC8
-#define DIF_MIS_EVENT0			(1 << 0)
-#define DIF_MIS_EVENT0_SHIFT	0
-#define DIF_MIS_EVENT1			(1 << 1)
-#define DIF_MIS_EVENT1_SHIFT	1
-#define DIF_MIS_EVENT2			(1 << 2)
-#define DIF_MIS_EVENT2_SHIFT	2
-#define DIF_MIS_EVENT3			(1 << 3)
-#define DIF_MIS_EVENT3_SHIFT	3
-#define DIF_MIS_EVENT4			(1 << 4)
-#define DIF_MIS_EVENT4_SHIFT	4
-#define DIF_MIS_EVENT5			(1 << 5)
-#define DIF_MIS_EVENT5_SHIFT	5
-#define DIF_MIS_EVENT6			(1 << 6)
-#define DIF_MIS_EVENT6_SHIFT	6
-#define DIF_MIS_EVENT7			(1 << 7)
-#define DIF_MIS_EVENT7_SHIFT	7
-#define DIF_MIS_EVENT8			(1 << 8)
-#define DIF_MIS_EVENT8_SHIFT	8
+#define DIFv2_MIS					0xC8
+#define DIFv2_MIS_EVENT0			(1 << 0)
+#define DIFv2_MIS_EVENT0_SHIFT		0
+#define DIFv2_MIS_EVENT1			(1 << 1)
+#define DIFv2_MIS_EVENT1_SHIFT		1
+#define DIFv2_MIS_EVENT2			(1 << 2)
+#define DIFv2_MIS_EVENT2_SHIFT		2
+#define DIFv2_MIS_EVENT3			(1 << 3)
+#define DIFv2_MIS_EVENT3_SHIFT		3
+#define DIFv2_MIS_EVENT4			(1 << 4)
+#define DIFv2_MIS_EVENT4_SHIFT		4
+#define DIFv2_MIS_EVENT5			(1 << 5)
+#define DIFv2_MIS_EVENT5_SHIFT		5
+#define DIFv2_MIS_EVENT6			(1 << 6)
+#define DIFv2_MIS_EVENT6_SHIFT		6
+#define DIFv2_MIS_EVENT7			(1 << 7)
+#define DIFv2_MIS_EVENT7_SHIFT		7
+#define DIFv2_MIS_EVENT8			(1 << 8)
+#define DIFv2_MIS_EVENT8_SHIFT		8
 
 /* Interrupt Clear Register */
-#define DIF_ICR					0xCC
-#define DIF_ICR_EVENT0			(1 << 0)
-#define DIF_ICR_EVENT0_SHIFT	0
-#define DIF_ICR_EVENT1			(1 << 1)
-#define DIF_ICR_EVENT1_SHIFT	1
-#define DIF_ICR_EVENT2			(1 << 2)
-#define DIF_ICR_EVENT2_SHIFT	2
-#define DIF_ICR_EVENT3			(1 << 3)
-#define DIF_ICR_EVENT3_SHIFT	3
-#define DIF_ICR_EVENT4			(1 << 4)
-#define DIF_ICR_EVENT4_SHIFT	4
-#define DIF_ICR_EVENT5			(1 << 5)
-#define DIF_ICR_EVENT5_SHIFT	5
-#define DIF_ICR_EVENT6			(1 << 6)
-#define DIF_ICR_EVENT6_SHIFT	6
-#define DIF_ICR_EVENT7			(1 << 7)
-#define DIF_ICR_EVENT7_SHIFT	7
-#define DIF_ICR_EVENT8			(1 << 8)
-#define DIF_ICR_EVENT8_SHIFT	8
+#define DIFv2_ICR					0xCC
+#define DIFv2_ICR_EVENT0			(1 << 0)
+#define DIFv2_ICR_EVENT0_SHIFT		0
+#define DIFv2_ICR_EVENT1			(1 << 1)
+#define DIFv2_ICR_EVENT1_SHIFT		1
+#define DIFv2_ICR_EVENT2			(1 << 2)
+#define DIFv2_ICR_EVENT2_SHIFT		2
+#define DIFv2_ICR_EVENT3			(1 << 3)
+#define DIFv2_ICR_EVENT3_SHIFT		3
+#define DIFv2_ICR_EVENT4			(1 << 4)
+#define DIFv2_ICR_EVENT4_SHIFT		4
+#define DIFv2_ICR_EVENT5			(1 << 5)
+#define DIFv2_ICR_EVENT5_SHIFT		5
+#define DIFv2_ICR_EVENT6			(1 << 6)
+#define DIFv2_ICR_EVENT6_SHIFT		6
+#define DIFv2_ICR_EVENT7			(1 << 7)
+#define DIFv2_ICR_EVENT7_SHIFT		7
+#define DIFv2_ICR_EVENT8			(1 << 8)
+#define DIFv2_ICR_EVENT8_SHIFT		8
 
 /* Interrupt Set Register */
-#define DIF_ISR					0xD0
-#define DIF_ISR_EVENT0			(1 << 0)
-#define DIF_ISR_EVENT0_SHIFT	0
-#define DIF_ISR_EVENT1			(1 << 1)
-#define DIF_ISR_EVENT1_SHIFT	1
-#define DIF_ISR_EVENT2			(1 << 2)
-#define DIF_ISR_EVENT2_SHIFT	2
-#define DIF_ISR_EVENT3			(1 << 3)
-#define DIF_ISR_EVENT3_SHIFT	3
-#define DIF_ISR_EVENT4			(1 << 4)
-#define DIF_ISR_EVENT4_SHIFT	4
-#define DIF_ISR_EVENT5			(1 << 5)
-#define DIF_ISR_EVENT5_SHIFT	5
-#define DIF_ISR_EVENT6			(1 << 6)
-#define DIF_ISR_EVENT6_SHIFT	6
-#define DIF_ISR_EVENT7			(1 << 7)
-#define DIF_ISR_EVENT7_SHIFT	7
-#define DIF_ISR_EVENT8			(1 << 8)
-#define DIF_ISR_EVENT8_SHIFT	8
+#define DIFv2_ISR					0xD0
+#define DIFv2_ISR_EVENT0			(1 << 0)
+#define DIFv2_ISR_EVENT0_SHIFT		0
+#define DIFv2_ISR_EVENT1			(1 << 1)
+#define DIFv2_ISR_EVENT1_SHIFT		1
+#define DIFv2_ISR_EVENT2			(1 << 2)
+#define DIFv2_ISR_EVENT2_SHIFT		2
+#define DIFv2_ISR_EVENT3			(1 << 3)
+#define DIFv2_ISR_EVENT3_SHIFT		3
+#define DIFv2_ISR_EVENT4			(1 << 4)
+#define DIFv2_ISR_EVENT4_SHIFT		4
+#define DIFv2_ISR_EVENT5			(1 << 5)
+#define DIFv2_ISR_EVENT5_SHIFT		5
+#define DIFv2_ISR_EVENT6			(1 << 6)
+#define DIFv2_ISR_EVENT6_SHIFT		6
+#define DIFv2_ISR_EVENT7			(1 << 7)
+#define DIFv2_ISR_EVENT7_SHIFT		7
+#define DIFv2_ISR_EVENT8			(1 << 8)
+#define DIFv2_ISR_EVENT8_SHIFT		8
 
-#define DIF_CON14				0xD4
+#define DIFv2_CON14					0xD4
 
-#define DIF_FIFO				0x8000
+#define DIFv2_FIFO					0x8000
 
 
-// EBU [MOD_NUM=0014, MOD_REV=00, MOD_32BIT=C0]
+// EBU [MOD_NUM=0014, MOD_REV=04, MOD_32BIT=C0]
+// EBU [MOD_NUM=0014, MOD_REV=05, MOD_32BIT=C0]
 // EBU from XMC4500 official public datasheet
 #define EBU_IO_SIZE					0x00000194
 /* Clock Control Register */
@@ -2442,6 +2479,7 @@
 
 
 // GPIO [MOD_NUM=F023, MOD_REV=00, MOD_32BIT=C0]
+// GPIO [MOD_NUM=F023, MOD_REV=32, MOD_32BIT=C0]
 // GPIO module, registers found on some "siemens club" forum, dont known source.
 #define GPIO_IO_SIZE		0x000001E8
 /* Clock Control Register */
@@ -2619,7 +2657,8 @@
 #define GPIO_ENAQ_ON		0x8000
 
 
-// GPTU [MOD_NUM=0001, MOD_REV=00, MOD_32BIT=C0]
+// GPTU [MOD_NUM=0001, MOD_REV=02, MOD_32BIT=C0]
+// GPTU [MOD_NUM=0001, MOD_REV=11, MOD_32BIT=C0]
 // GPTU from Tricore TC1765 official public datasheet
 #define GPTU_IO_SIZE						0x00000100
 /* Clock Control Register */
@@ -3335,6 +3374,7 @@
 
 
 // AFC [MOD_NUM=F004, MOD_REV=00, MOD_32BIT=C0]
+// AFC [MOD_NUM=F004, MOD_REV=11, MOD_32BIT=C0]
 // Looks like AFC (Automatic Frequency Correction???) module, but not sure.
 #define AFC_IO_SIZE	0x00000200
 /* Clock Control Register */
@@ -3344,7 +3384,8 @@
 #define AFC_ID		0x08
 
 
-// DSP [MOD_NUM=F022, MOD_REV=00, MOD_32BIT=C0]
+// DSP [MOD_NUM=F022, MOD_REV=10, MOD_32BIT=C0]
+// DSP [MOD_NUM=F022, MOD_REV=31, MOD_32BIT=C0]
 // Looks like DSP module, but not sure.
 #define DSP_IO_SIZE	0x00002004
 /* Clock Control Register */
@@ -4384,7 +4425,8 @@
 #define DSP_RAM1024	0x2000
 
 
-// GPRSCU [MOD_NUM=F003, MOD_REV=00, MOD_32BIT=C0]
+// GPRSCU [MOD_NUM=F003, MOD_REV=10, MOD_32BIT=C0]
+// GPRSCU [MOD_NUM=F003, MOD_REV=22, MOD_32BIT=C0]
 // Looks like GPRS Cypher Uinit module, but not sure.
 #define GPRSCU_IO_SIZE	0x00000200
 /* Clock Control Register */
@@ -4399,6 +4441,7 @@
 
 
 // TPU [MOD_NUM=F021, MOD_REV=00, MOD_32BIT=C0]
+// TPU [MOD_NUM=F021, MOD_REV=12, MOD_32BIT=C0]
 // Looks like TPU (time processing module) module, registers collected using tests on real hardware (using "black box" method).
 #define TPU_IO_SIZE					0x00002004
 /* Clock Control Register */
@@ -5513,7 +5556,7 @@
 #define TPU_RAM1024					0x2000
 
 
-// I2Cv1 [MOD_NUM=0046, MOD_REV=00, MOD_32BIT=00]
+// I2Cv1 [MOD_NUM=0046, MOD_REV=04, MOD_32BIT=00]
 // I2C from TC1100 official public datasheet.
 #define I2Cv1_IO_SIZE					0x00000200
 /* Clock Control Register */
@@ -5551,10 +5594,10 @@
 #define I2Cv1_SYSCON_IRQP_SHIFT			6
 #define I2Cv1_SYSCON_IRQE				(1 << 7)		 // IIC Interrupt Request Bit for Data Transmission End
 #define I2Cv1_SYSCON_IRQE_SHIFT			7
-#define I2Cv1_SYSCON_WM					(0xFF << 8)		 // Write Mirror (WMEN=1)
-#define I2Cv1_SYSCON_WM_SHIFT			8
 #define I2Cv1_SYSCON_CO					(0x7 << 8)		 // Counter of Transmitted Bytes Since Last Data Interrupt.
 #define I2Cv1_SYSCON_CO_SHIFT			8
+#define I2Cv1_SYSCON_WM					(0xFF << 8)		 // Write Mirror (WMEN=1)
+#define I2Cv1_SYSCON_WM_SHIFT			8
 #define I2Cv1_SYSCON_RMEN				(1 << 15)		 // Read Mirror Enable
 #define I2Cv1_SYSCON_RMEN_SHIFT			15
 #define I2Cv1_SYSCON_M10				(1 << 16)		 // 10-bit address mode
@@ -5575,10 +5618,10 @@
 #define I2Cv1_SYSCON_INT_SHIFT			22
 #define I2Cv1_SYSCON_TRX				(1 << 23)		 // Transmit Select
 #define I2Cv1_SYSCON_TRX_SHIFT			23
-#define I2Cv1_SYSCON_RM					(0xFF << 24)	 // Read Mirror (RMEN=1)
-#define I2Cv1_SYSCON_RM_SHIFT			24
 #define I2Cv1_SYSCON_IGE				(1 << 24)		 // Ignore IRQE
 #define I2Cv1_SYSCON_IGE_SHIFT			24
+#define I2Cv1_SYSCON_RM					(0xFF << 24)	 // Read Mirror (RMEN=1)
+#define I2Cv1_SYSCON_RM_SHIFT			24
 #define I2Cv1_SYSCON_STP				(1 << 25)		 // Stop Master
 #define I2Cv1_SYSCON_STP_SHIFT			25
 #define I2Cv1_SYSCON_CI					(0x3 << 26)		 // Length of the Receive/Transmit Buffer
@@ -5682,7 +5725,7 @@
 #define I2Cv1_DATA_SRC					0xFC
 
 
-// I2Cv2 [MOD_NUM=F057, MOD_REV=00, MOD_32BIT=C0]
+// I2Cv2 [MOD_NUM=F057, MOD_REV=12, MOD_32BIT=C0]
 // I2C from Tricore TC27x official public datasheet
 #define I2Cv2_IO_SIZE							0x0000C004
 /* Clock Control Register */
@@ -5992,6 +6035,7 @@
 
 
 // KEYPAD [MOD_NUM=F046, MOD_REV=00, MOD_32BIT=C0]
+// KEYPAD [MOD_NUM=F046, MOD_REV=21, MOD_32BIT=C0]
 // Keypad scaner module, registers collected using tests on real hardware (using "black box" method).
 #define KEYPAD_IO_SIZE				0x00000200
 /* Module Identifier Register */
@@ -6022,7 +6066,7 @@
 #define KEYPAD_RELEASE_SRC			0xFC
 
 
-// MMCI [MOD_NUM=F041, MOD_REV=00, MOD_32BIT=C0]
+// MMCI [MOD_NUM=F041, MOD_REV=22, MOD_32BIT=C0]
 // Module wrapper for AMBA PL180 (MMC/SD controller)
 #define MMCI_IO_SIZE	0x0000000C
 /* Clock Control Register */
@@ -6032,7 +6076,7 @@
 #define MMCI_ID			0x08
 
 
-// MMCIF [MOD_NUM=F053, MOD_REV=00, MOD_32BIT=C0]
+// MMCIF [MOD_NUM=F053, MOD_REV=12, MOD_32BIT=C0]
 // Looks like "Multi Media Controller Interface" module, but not sure.
 #define MMCIF_IO_SIZE	0x00000200
 /* Clock Control Register */
@@ -6042,7 +6086,8 @@
 #define MMCIF_ID		0x08
 
 
-// NVIC [MOD_NUM=0031, MOD_REV=00, MOD_32BIT=C0]
+// NVIC [MOD_NUM=0031, MOD_REV=01, MOD_32BIT=C0]
+// NVIC [MOD_NUM=0031, MOD_REV=11, MOD_32BIT=C0]
 // NVIC module, registers collected using tests on real hardware (using "black box" method).
 #define NVIC_IO_SIZE				0x000002D8
 /* Module Identifier Register */
@@ -6315,6 +6360,7 @@
 
 
 // RTC [MOD_NUM=F049, MOD_REV=00, MOD_32BIT=C0]
+// RTC [MOD_NUM=F049, MOD_REV=11, MOD_32BIT=C0]
 // RTC from XC27x5X official public datasheet
 #define RTC_IO_SIZE					0x000000F4
 /* Clock Control Register */
@@ -6477,6 +6523,7 @@
 
 
 // SCU [MOD_NUM=F040, MOD_REV=00, MOD_32BIT=C0]
+// SCU [MOD_NUM=F040, MOD_REV=12, MOD_32BIT=C0]
 // Looks like SCU module, registers collected using TC1766 official public datasheet and tests on real hardware (using "black box" method).
 #define SCU_IO_SIZE						0x00000200
 /* Clock Control Register */
@@ -6707,7 +6754,7 @@
 #define SCU_EXTI7_SRC					0xFC
 
 
-// SIM [MOD_NUM=F000, MOD_REV=00, MOD_32BIT=C0]
+// SIM [MOD_NUM=F000, MOD_REV=32, MOD_32BIT=C0]
 // Looks like SIM IO module, but not sure.
 #define SIM_IO_SIZE	0x00000200
 /* Clock Control Register */
@@ -6717,7 +6764,30 @@
 #define SIM_ID		0x08
 
 
-// STM [MOD_NUM=0000, MOD_REV=00, MOD_32BIT=C0]
+// SSC [MOD_NUM=0045, MOD_REV=25, MOD_32BIT=00]
+// SSC (SPI)
+#define SSC_IO_SIZE	0x0000C000
+/* Clock Control Register */
+#define SSC_CLC		0x00
+
+/* Module Identifier Register */
+#define SSC_ID		0x08
+
+#define SSC_STAT	0x10
+
+#define SSC_TB		0x20
+
+#define SSC_RB		0x24
+
+#define SSC_RXFCON	0x30
+
+#define SSC_TXFCON	0x34
+
+#define SSC_FSTAT	0x38
+
+
+// STM [MOD_NUM=0000, MOD_REV=02, MOD_32BIT=C0]
+// STM [MOD_NUM=0000, MOD_REV=11, MOD_32BIT=C0]
 // STM from Tricore TC1766 official public datasheet
 #define STM_IO_SIZE	0x00000030
 /* Clock Control Register */
@@ -6743,7 +6813,8 @@
 #define STM_CAP		0x2C
 
 
-// USART [MOD_NUM=0044, MOD_REV=00, MOD_32BIT=00]
+// USART [MOD_NUM=0044, MOD_REV=F1, MOD_32BIT=00]
+// USART [MOD_NUM=0044, MOD_REV=E2, MOD_32BIT=00]
 // ASC0 from Tricore TC1766 official public datasheet
 #define USART_IO_SIZE						0x00000080
 /* Clock Control Register */
@@ -6993,10 +7064,13 @@
 #define USART_ISR_TMO						(1 << 7)	 // RX timeout interrupt mask
 #define USART_ISR_TMO_SHIFT					7
 
+#define USART_UNK							0x78
+
 #define USART_TMO							0x7C
 
 
 // USB [MOD_NUM=F047, MOD_REV=00, MOD_32BIT=C0]
+// USB [MOD_NUM=F047, MOD_REV=12, MOD_32BIT=C0]
 // Looks like USB module, but not sure.
 #define USB_IO_SIZE	0x00000100
 /* Clock Control Register */
