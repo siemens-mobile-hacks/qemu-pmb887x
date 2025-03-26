@@ -11,10 +11,10 @@
 #include "qemu/error-report.h"
 #include "qapi/error.h"
 #include "channel.h"
-#include "fd.h"
 #include "file.h"
 #include "migration.h"
 #include "io/channel-file.h"
+#include "io/channel-socket.h"
 #include "io/channel-util.h"
 #include "options.h"
 #include "trace.h"
@@ -50,24 +50,38 @@ void file_cleanup_outgoing_migration(void)
     outgoing_args.fname = NULL;
 }
 
+static void file_enable_direct_io(int *flags)
+{
+#ifdef O_DIRECT
+    *flags |= O_DIRECT;
+#else
+    /* it should have been rejected when setting the parameter */
+    g_assert_not_reached();
+#endif
+}
+
 bool file_send_channel_create(gpointer opaque, Error **errp)
 {
     QIOChannelFile *ioc;
     int flags = O_WRONLY;
-    bool ret = false;
-    int fd = fd_args_get_fd();
+    bool ret = true;
 
-    if (fd && fd != -1) {
-        ioc = qio_channel_file_new_fd(dup(fd));
-    } else {
-        ioc = qio_channel_file_new_path(outgoing_args.fname, flags, 0, errp);
-        if (!ioc) {
-            goto out;
-        }
+    if (migrate_direct_io()) {
+        /*
+         * Enable O_DIRECT for the secondary channels. These are used
+         * for sending ram pages and writes should be guaranteed to be
+         * aligned to at least page size.
+         */
+        file_enable_direct_io(&flags);
+    }
+
+    ioc = qio_channel_file_new_path(outgoing_args.fname, flags, 0, errp);
+    if (!ioc) {
+        ret = false;
+        goto out;
     }
 
     multifd_channel_connect(opaque, QIO_CHANNEL(ioc));
-    ret = true;
 
 out:
     /*
@@ -89,9 +103,15 @@ void file_start_outgoing_migration(MigrationState *s,
 
     trace_migration_file_outgoing(filename);
 
-    fioc = qio_channel_file_new_path(filename, O_CREAT | O_WRONLY | O_TRUNC,
-                                     0600, errp);
+    fioc = qio_channel_file_new_path(filename, O_CREAT | O_WRONLY, 0600, errp);
     if (!fioc) {
+        return;
+    }
+
+    if (ftruncate(fioc->fd, offset)) {
+        error_setg_errno(errp, errno,
+                         "failed to truncate migration file to offset %" PRIx64,
+                         offset);
         return;
     }
 
@@ -114,13 +134,50 @@ static gboolean file_accept_incoming_migration(QIOChannel *ioc,
     return G_SOURCE_REMOVE;
 }
 
+static void file_create_incoming_channels(QIOChannel *ioc, char *filename,
+                                          Error **errp)
+{
+    int i, channels = 1;
+    g_autofree QIOChannel **iocs = NULL;
+    int flags = O_RDONLY;
+
+    if (migrate_multifd()) {
+        channels += migrate_multifd_channels();
+        if (migrate_direct_io()) {
+            file_enable_direct_io(&flags);
+        }
+    }
+
+    iocs = g_new0(QIOChannel *, channels);
+    iocs[0] = ioc;
+
+    for (i = 1; i < channels; i++) {
+        QIOChannelFile *fioc = qio_channel_file_new_path(filename, flags, 0, errp);
+
+        if (!fioc) {
+            while (i) {
+                object_unref(iocs[--i]);
+            }
+            return;
+        }
+
+        iocs[i] = QIO_CHANNEL(fioc);
+    }
+
+    for (i = 0; i < channels; i++) {
+        qio_channel_set_name(iocs[i], "migration-file-incoming");
+        qio_channel_add_watch_full(iocs[i], G_IO_IN,
+                                   file_accept_incoming_migration,
+                                   NULL, NULL,
+                                   g_main_context_get_thread_default());
+    }
+}
+
 void file_start_incoming_migration(FileMigrationArgs *file_args, Error **errp)
 {
     g_autofree char *filename = g_strdup(file_args->filename);
     QIOChannelFile *fioc = NULL;
     uint64_t offset = file_args->offset;
-    int channels = 1;
-    int i = 0;
 
     trace_migration_file_incoming(filename);
 
@@ -131,38 +188,21 @@ void file_start_incoming_migration(FileMigrationArgs *file_args, Error **errp)
 
     if (offset &&
         qio_channel_io_seek(QIO_CHANNEL(fioc), offset, SEEK_SET, errp) < 0) {
+        object_unref(OBJECT(fioc));
         return;
     }
 
-    if (migrate_multifd()) {
-        channels += migrate_multifd_channels();
-    }
-
-    do {
-        QIOChannel *ioc = QIO_CHANNEL(fioc);
-
-        qio_channel_set_name(ioc, "migration-file-incoming");
-        qio_channel_add_watch_full(ioc, G_IO_IN,
-                                   file_accept_incoming_migration,
-                                   NULL, NULL,
-                                   g_main_context_get_thread_default());
-
-        fioc = qio_channel_file_new_fd(dup(fioc->fd));
-
-        if (!fioc || fioc->fd == -1) {
-            error_setg(errp, "Error creating migration incoming channel");
-            break;
-        }
-    } while (++i < channels);
+    file_create_incoming_channels(QIO_CHANNEL(fioc), filename, errp);
 }
 
 int file_write_ramblock_iov(QIOChannel *ioc, const struct iovec *iov,
-                            int niov, RAMBlock *block, Error **errp)
+                            int niov, MultiFDPages_t *pages, Error **errp)
 {
-    ssize_t ret = -1;
+    ssize_t ret = 0;
     int i, slice_idx, slice_num;
     uintptr_t base, next, offset;
     size_t len;
+    RAMBlock *block = pages->block;
 
     slice_idx = 0;
     slice_num = 1;
@@ -191,7 +231,7 @@ int file_write_ramblock_iov(QIOChannel *ioc, const struct iovec *iov,
          */
         offset = (uintptr_t) iov[slice_idx].iov_base - (uintptr_t) block->host;
         if (offset >= block->used_length) {
-            error_setg(errp, "offset " RAM_ADDR_FMT
+            error_setg(errp, "offset %" PRIxPTR
                        "outside of ramblock %s range", offset, block->idstr);
             ret = -1;
             break;

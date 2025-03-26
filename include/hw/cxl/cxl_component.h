@@ -25,6 +25,7 @@ enum reg_type {
     CXL2_TYPE3_DEVICE,
     CXL2_LOGICAL_DEVICE,
     CXL2_ROOT_PORT,
+    CXL2_RC,
     CXL2_UPSTREAM_PORT,
     CXL2_DOWNSTREAM_PORT,
     CXL3_SWITCH_MAILBOX_CCI,
@@ -272,7 +273,7 @@ hwaddr cxl_decode_ig(int ig);
 CXLComponentState *cxl_get_hb_cstate(PCIHostState *hb);
 bool cxl_get_hb_passthrough(PCIHostState *hb);
 
-void cxl_doe_cdat_init(CXLComponentState *cxl_cstate, Error **errp);
+bool cxl_doe_cdat_init(CXLComponentState *cxl_cstate, Error **errp);
 void cxl_doe_cdat_release(CXLComponentState *cxl_cstate);
 void cxl_doe_cdat_update(CXLComponentState *cxl_cstate, Error **errp);
 

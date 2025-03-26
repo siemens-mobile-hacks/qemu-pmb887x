@@ -333,7 +333,7 @@ void setup_rt_frame(int sig, struct target_sigaction *ka,
 
     __put_user(0, &sf->rwin_save);  /* TODO: save_rwin_state */
 
-    tswap_siginfo(&sf->info, info);
+    sf->info = *info;
     tswap_sigset(&sf->mask, set);
     target_save_altstack(&sf->stack, env);
 
@@ -545,11 +545,6 @@ void setup_sigtramp(abi_ulong sigtramp_page)
 
 typedef abi_ulong target_mc_greg_t;
 typedef target_mc_greg_t target_mc_gregset_t[SPARC_MC_NGREG];
-
-struct target_mc_fq {
-    abi_ulong mcfq_addr;
-    uint32_t mcfq_insn;
-};
 
 /*
  * Note the manual 16-alignment; the kernel gets this because it

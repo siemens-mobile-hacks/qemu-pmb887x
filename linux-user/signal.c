@@ -18,8 +18,10 @@
  */
 #include "qemu/osdep.h"
 #include "qemu/bitops.h"
+#include "qemu/cutils.h"
 #include "gdbstub/user.h"
-#include "hw/core/tcg-cpu-ops.h"
+#include "exec/page-protection.h"
+#include "accel/tcg/cpu-ops.h"
 
 #include <sys/ucontext.h>
 #include <sys/resource.h>
@@ -31,8 +33,14 @@
 #include "trace.h"
 #include "signal-common.h"
 #include "host-signal.h"
+#include "user/cpu_loop.h"
+#include "user/page-protection.h"
 #include "user/safe-syscall.h"
+#include "user/signal.h"
 #include "tcg/tcg.h"
+
+/* target_siginfo_t must fit in gdbstub's siginfo save area. */
+QEMU_BUILD_BUG_ON(sizeof(target_siginfo_t) > MAX_SIGINFO_LENGTH);
 
 static struct target_sigaction sigact_table[TARGET_NSIG];
 
@@ -409,8 +417,8 @@ static inline void host_to_target_siginfo_noswap(target_siginfo_t *tinfo,
     tinfo->si_code = deposit32(si_code, 16, 16, si_type);
 }
 
-void tswap_siginfo(target_siginfo_t *tinfo,
-                   const target_siginfo_t *info)
+static void tswap_siginfo(target_siginfo_t *tinfo,
+                          const target_siginfo_t *info)
 {
     int si_type = extract32(info->si_code, 16, 16);
     int si_code = sextract32(info->si_code, 0, 16);
@@ -509,20 +517,83 @@ static int core_dump_signal(int sig)
     }
 }
 
-static void signal_table_init(void)
+int host_interrupt_signal;
+
+static void signal_table_init(const char *rtsig_map)
 {
     int hsig, tsig, count;
 
+    if (rtsig_map) {
+        /*
+         * Map host RT signals to target RT signals according to the
+         * user-provided specification.
+         */
+        const char *s = rtsig_map;
+
+        while (true) {
+            int i;
+
+            if (qemu_strtoi(s, &s, 10, &tsig) || *s++ != ' ') {
+                fprintf(stderr, "Malformed target signal in QEMU_RTSIG_MAP\n");
+                exit(EXIT_FAILURE);
+            }
+            if (qemu_strtoi(s, &s, 10, &hsig) || *s++ != ' ') {
+                fprintf(stderr, "Malformed host signal in QEMU_RTSIG_MAP\n");
+                exit(EXIT_FAILURE);
+            }
+            if (qemu_strtoi(s, &s, 10, &count) || (*s && *s != ',')) {
+                fprintf(stderr, "Malformed signal count in QEMU_RTSIG_MAP\n");
+                exit(EXIT_FAILURE);
+            }
+
+            for (i = 0; i < count; i++, tsig++, hsig++) {
+                if (tsig < TARGET_SIGRTMIN || tsig > TARGET_NSIG) {
+                    fprintf(stderr, "%d is not a target rt signal\n", tsig);
+                    exit(EXIT_FAILURE);
+                }
+                if (hsig < SIGRTMIN || hsig > SIGRTMAX) {
+                    fprintf(stderr, "%d is not a host rt signal\n", hsig);
+                    exit(EXIT_FAILURE);
+                }
+                if (host_to_target_signal_table[hsig]) {
+                    fprintf(stderr, "%d already maps %d\n",
+                            hsig, host_to_target_signal_table[hsig]);
+                    exit(EXIT_FAILURE);
+                }
+                host_to_target_signal_table[hsig] = tsig;
+            }
+
+            if (*s) {
+                s++;
+            } else {
+                break;
+            }
+        }
+    } else {
+        /*
+         * Default host-to-target RT signal mapping.
+         *
+         * Signals are supported starting from TARGET_SIGRTMIN and going up
+         * until we run out of host realtime signals.  Glibc uses the lower 2
+         * RT signals and (hopefully) nobody uses the upper ones.
+         * This is why SIGRTMIN (34) is generally greater than __SIGRTMIN (32).
+         * To fix this properly we would need to do manual signal delivery
+         * multiplexed over a single host signal.
+         * Attempts for configure "missing" signals via sigaction will be
+         * silently ignored.
+         *
+         * Reserve two signals for internal usage (see below).
+         */
+
+        hsig = SIGRTMIN + 2;
+        for (tsig = TARGET_SIGRTMIN;
+             hsig <= SIGRTMAX && tsig <= TARGET_NSIG;
+             hsig++, tsig++) {
+            host_to_target_signal_table[hsig] = tsig;
+        }
+    }
+
     /*
-     * Signals are supported starting from TARGET_SIGRTMIN and going up
-     * until we run out of host realtime signals.  Glibc uses the lower 2
-     * RT signals and (hopefully) nobody uses the upper ones.
-     * This is why SIGRTMIN (34) is generally greater than __SIGRTMIN (32).
-     * To fix this properly we would need to do manual signal delivery
-     * multiplexed over a single host signal.
-     * Attempts for configure "missing" signals via sigaction will be
-     * silently ignored.
-     *
      * Remap the target SIGABRT, so that we can distinguish host abort
      * from guest abort.  When the guest registers a signal handler or
      * calls raise(SIGABRT), the host will raise SIG_RTn.  If the guest
@@ -532,21 +603,32 @@ static void signal_table_init(void)
      * parent sees the correct mapping from wait status.
      */
 
-    hsig = SIGRTMIN;
     host_to_target_signal_table[SIGABRT] = 0;
-    host_to_target_signal_table[hsig++] = TARGET_SIGABRT;
-
-    for (tsig = TARGET_SIGRTMIN;
-         hsig <= SIGRTMAX && tsig <= TARGET_NSIG;
-         hsig++, tsig++) {
-        host_to_target_signal_table[hsig] = tsig;
+    for (hsig = SIGRTMIN; hsig <= SIGRTMAX; hsig++) {
+        if (!host_to_target_signal_table[hsig]) {
+            if (host_interrupt_signal) {
+                host_to_target_signal_table[hsig] = TARGET_SIGABRT;
+                break;
+            } else {
+                host_interrupt_signal = hsig;
+            }
+        }
+    }
+    if (hsig > SIGRTMAX) {
+        fprintf(stderr,
+                "No rt signals left for interrupt and SIGABRT mapping\n");
+        exit(EXIT_FAILURE);
     }
 
     /* Invert the mapping that has already been assigned. */
     for (hsig = 1; hsig < _NSIG; hsig++) {
         tsig = host_to_target_signal_table[hsig];
         if (tsig) {
-            assert(target_to_host_signal_table[tsig] == 0);
+            if (target_to_host_signal_table[tsig]) {
+                fprintf(stderr, "%d is already mapped to %d\n",
+                        tsig, target_to_host_signal_table[tsig]);
+                exit(EXIT_FAILURE);
+            }
             target_to_host_signal_table[tsig] = hsig;
         }
     }
@@ -569,13 +651,13 @@ static void signal_table_init(void)
     trace_signal_table_init(count);
 }
 
-void signal_init(void)
+void signal_init(const char *rtsig_map)
 {
     TaskState *ts = get_task_state(thread_cpu);
     struct sigaction act, oact;
 
     /* initialize signal conversion tables */
-    signal_table_init();
+    signal_table_init(rtsig_map);
 
     /* Set the signal mask from the host mask. */
     sigprocmask(0, 0, &ts->signal_mask);
@@ -614,6 +696,8 @@ void signal_init(void)
         }
         sigact_table[tsig - 1]._sa_handler = thand;
     }
+
+    sigaction(host_interrupt_signal, &act, NULL);
 }
 
 /* Force a synchronously taken signal. The kernel force_sig() function
@@ -623,7 +707,6 @@ void signal_init(void)
 void force_sig(int sig)
 {
     CPUState *cpu = thread_cpu;
-    CPUArchState *env = cpu_env(cpu);
     target_siginfo_t info = {};
 
     info.si_signo = sig;
@@ -631,7 +714,7 @@ void force_sig(int sig)
     info.si_code = TARGET_SI_KERNEL;
     info._sifields._kill._pid = 0;
     info._sifields._kill._uid = 0;
-    queue_signal(env, info.si_signo, QEMU_SI_KILL, &info);
+    queue_signal(cpu_env(cpu), info.si_signo, QEMU_SI_KILL, &info);
 }
 
 /*
@@ -641,14 +724,13 @@ void force_sig(int sig)
 void force_sig_fault(int sig, int code, abi_ulong addr)
 {
     CPUState *cpu = thread_cpu;
-    CPUArchState *env = cpu_env(cpu);
     target_siginfo_t info = {};
 
     info.si_signo = sig;
     info.si_errno = 0;
     info.si_code = code;
     info._sifields._sigfault._addr = addr;
-    queue_signal(env, sig, QEMU_SI_FAULT, &info);
+    queue_signal(cpu_env(cpu), sig, QEMU_SI_FAULT, &info);
 }
 
 /* Force a SIGSEGV if we couldn't write to memory trying to set
@@ -671,7 +753,7 @@ void force_sigsegv(int oldsig)
 void cpu_loop_exit_sigsegv(CPUState *cpu, target_ulong addr,
                            MMUAccessType access_type, bool maperr, uintptr_t ra)
 {
-    const TCGCPUOps *tcg_ops = CPU_GET_CLASS(cpu)->tcg_ops;
+    const TCGCPUOps *tcg_ops = cpu->cc->tcg_ops;
 
     if (tcg_ops->record_sigsegv) {
         tcg_ops->record_sigsegv(cpu, addr, access_type, maperr, ra);
@@ -687,7 +769,7 @@ void cpu_loop_exit_sigsegv(CPUState *cpu, target_ulong addr,
 void cpu_loop_exit_sigbus(CPUState *cpu, target_ulong addr,
                           MMUAccessType access_type, uintptr_t ra)
 {
-    const TCGCPUOps *tcg_ops = CPU_GET_CLASS(cpu)->tcg_ops;
+    const TCGCPUOps *tcg_ops = cpu->cc->tcg_ops;
 
     if (tcg_ops->record_sigbus) {
         tcg_ops->record_sigbus(cpu, addr, access_type, ra);
@@ -963,6 +1045,12 @@ static void host_signal_handler(int host_sig, siginfo_t *info, void *puc)
     bool sync_sig = false;
     void *sigmask;
 
+    if (host_sig == host_interrupt_signal) {
+        ts->signal_pending = 1;
+        cpu_exit(thread_cpu);
+        return;
+    }
+
     /*
      * Non-spoofed SIGSEGV and SIGBUS are synchronous, and need special
      * handling wrt signal blocking and unwinding.  Non-spoofed SIGILL,
@@ -1172,6 +1260,7 @@ static void handle_pending_signal(CPUArchState *cpu_env, int sig,
     CPUState *cpu = env_cpu(cpu_env);
     abi_ulong handler;
     sigset_t set;
+    target_siginfo_t unswapped;
     target_sigset_t target_old_set;
     struct target_sigaction *sa;
     TaskState *ts = get_task_state(cpu);
@@ -1180,7 +1269,18 @@ static void handle_pending_signal(CPUArchState *cpu_env, int sig,
     /* dequeue signal */
     k->pending = 0;
 
-    sig = gdb_handlesig(cpu, sig);
+    /*
+     * Writes out siginfo values byteswapped, accordingly to the target.
+     * It also cleans the si_type from si_code making it correct for
+     * the target.  We must hold on to the original unswapped copy for
+     * strace below, because si_type is still required there.
+     */
+    if (unlikely(qemu_loglevel_mask(LOG_STRACE))) {
+        unswapped = k->info;
+    }
+    tswap_siginfo(&k->info, &k->info);
+
+    sig = gdb_handlesig(cpu, sig, NULL, &k->info, sizeof(k->info));
     if (!sig) {
         sa = NULL;
         handler = TARGET_SIG_IGN;
@@ -1190,7 +1290,7 @@ static void handle_pending_signal(CPUArchState *cpu_env, int sig,
     }
 
     if (unlikely(qemu_loglevel_mask(LOG_STRACE))) {
-        print_taken_signal(sig, &k->info);
+        print_taken_signal(sig, &unswapped);
     }
 
     if (handler == TARGET_SIG_DFL) {

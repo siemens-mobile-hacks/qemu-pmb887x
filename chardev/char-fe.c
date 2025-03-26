@@ -24,8 +24,7 @@
 #include "qemu/osdep.h"
 #include "qemu/error-report.h"
 #include "qapi/error.h"
-#include "qapi/qmp/qerror.h"
-#include "sysemu/replay.h"
+#include "system/replay.h"
 
 #include "chardev/char-fe.h"
 #include "chardev/char-io.h"
@@ -192,20 +191,18 @@ bool qemu_chr_fe_backend_open(CharBackend *be)
 
 bool qemu_chr_fe_init(CharBackend *b, Chardev *s, Error **errp)
 {
-    int tag = 0;
+    unsigned int tag = 0;
 
     if (s) {
         if (CHARDEV_IS_MUX(s)) {
             MuxChardev *d = MUX_CHARDEV(s);
 
-            if (d->mux_cnt >= MAX_MUX) {
-                goto unavailable;
+            if (!mux_chr_attach_frontend(d, b, &tag, errp)) {
+                return false;
             }
-
-            d->backends[d->mux_cnt] = b;
-            tag = d->mux_cnt++;
         } else if (s->be) {
-            goto unavailable;
+            error_setg(errp, "chardev '%s' is already in use", s->label);
+            return false;
         } else {
             s->be = b;
         }
@@ -215,10 +212,6 @@ bool qemu_chr_fe_init(CharBackend *b, Chardev *s, Error **errp)
     b->tag = tag;
     b->chr = s;
     return true;
-
-unavailable:
-    error_setg(errp, QERR_DEVICE_IN_USE, s->label);
-    return false;
 }
 
 void qemu_chr_fe_deinit(CharBackend *b, bool del)
@@ -232,7 +225,7 @@ void qemu_chr_fe_deinit(CharBackend *b, bool del)
         }
         if (CHARDEV_IS_MUX(b->chr)) {
             MuxChardev *d = MUX_CHARDEV(b->chr);
-            d->backends[b->tag] = NULL;
+            mux_chr_detach_frontend(d, b->tag);
         }
         if (del) {
             Object *obj = OBJECT(b->chr);

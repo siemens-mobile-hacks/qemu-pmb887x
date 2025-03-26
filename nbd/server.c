@@ -124,12 +124,14 @@ struct NBDMetaContexts {
 struct NBDClient {
     int refcount; /* atomic */
     void (*close_fn)(NBDClient *client, bool negotiated);
+    void *owner;
 
     QemuMutex lock;
 
     NBDExport *exp;
     QCryptoTLSCreds *tlscreds;
     char *tlsauthz;
+    uint32_t handshake_max_secs;
     QIOChannelSocket *sioc; /* The underlying data channel */
     QIOChannel *ioc; /* The current I/O channel which may differ (eg TLS) */
 
@@ -195,8 +197,9 @@ static inline void set_be_option_rep(NBDOptionReply *rep, uint32_t option,
 
 /* Send a reply header, including length, but no payload.
  * Return -errno on error, 0 on success. */
-static int nbd_negotiate_send_rep_len(NBDClient *client, uint32_t type,
-                                      uint32_t len, Error **errp)
+static coroutine_fn int
+nbd_negotiate_send_rep_len(NBDClient *client, uint32_t type,
+                           uint32_t len, Error **errp)
 {
     NBDOptionReply rep;
 
@@ -211,15 +214,15 @@ static int nbd_negotiate_send_rep_len(NBDClient *client, uint32_t type,
 
 /* Send a reply header with default 0 length.
  * Return -errno on error, 0 on success. */
-static int nbd_negotiate_send_rep(NBDClient *client, uint32_t type,
-                                  Error **errp)
+static coroutine_fn int
+nbd_negotiate_send_rep(NBDClient *client, uint32_t type, Error **errp)
 {
     return nbd_negotiate_send_rep_len(client, type, 0, errp);
 }
 
 /* Send an error reply.
  * Return -errno on error, 0 on success. */
-static int G_GNUC_PRINTF(4, 0)
+static coroutine_fn int G_GNUC_PRINTF(4, 0)
 nbd_negotiate_send_rep_verr(NBDClient *client, uint32_t type,
                             Error **errp, const char *fmt, va_list va)
 {
@@ -259,7 +262,7 @@ nbd_sanitize_name(const char *name)
 
 /* Send an error reply.
  * Return -errno on error, 0 on success. */
-static int G_GNUC_PRINTF(4, 5)
+static coroutine_fn int G_GNUC_PRINTF(4, 5)
 nbd_negotiate_send_rep_err(NBDClient *client, uint32_t type,
                            Error **errp, const char *fmt, ...)
 {
@@ -275,7 +278,7 @@ nbd_negotiate_send_rep_err(NBDClient *client, uint32_t type,
 /* Drop remainder of the current option, and send a reply with the
  * given error type and message. Return -errno on read or write
  * failure; or 0 if connection is still live. */
-static int G_GNUC_PRINTF(4, 0)
+static coroutine_fn int G_GNUC_PRINTF(4, 0)
 nbd_opt_vdrop(NBDClient *client, uint32_t type, Error **errp,
               const char *fmt, va_list va)
 {
@@ -288,7 +291,7 @@ nbd_opt_vdrop(NBDClient *client, uint32_t type, Error **errp,
     return ret;
 }
 
-static int G_GNUC_PRINTF(4, 5)
+static coroutine_fn int G_GNUC_PRINTF(4, 5)
 nbd_opt_drop(NBDClient *client, uint32_t type, Error **errp,
              const char *fmt, ...)
 {
@@ -302,7 +305,7 @@ nbd_opt_drop(NBDClient *client, uint32_t type, Error **errp,
     return ret;
 }
 
-static int G_GNUC_PRINTF(3, 4)
+static coroutine_fn int G_GNUC_PRINTF(3, 4)
 nbd_opt_invalid(NBDClient *client, Error **errp, const char *fmt, ...)
 {
     int ret;
@@ -319,8 +322,9 @@ nbd_opt_invalid(NBDClient *client, Error **errp, const char *fmt, ...)
  * If @check_nul, require that no NUL bytes appear in buffer.
  * Return -errno on I/O error, 0 if option was completely handled by
  * sending a reply about inconsistent lengths, or 1 on success. */
-static int nbd_opt_read(NBDClient *client, void *buffer, size_t size,
-                        bool check_nul, Error **errp)
+static coroutine_fn int
+nbd_opt_read(NBDClient *client, void *buffer, size_t size,
+             bool check_nul, Error **errp)
 {
     if (size > client->optlen) {
         return nbd_opt_invalid(client, errp,
@@ -343,7 +347,8 @@ static int nbd_opt_read(NBDClient *client, void *buffer, size_t size,
 /* Drop size bytes from the unparsed payload of the current option.
  * Return -errno on I/O error, 0 if option was completely handled by
  * sending a reply about inconsistent lengths, or 1 on success. */
-static int nbd_opt_skip(NBDClient *client, size_t size, Error **errp)
+static coroutine_fn int
+nbd_opt_skip(NBDClient *client, size_t size, Error **errp)
 {
     if (size > client->optlen) {
         return nbd_opt_invalid(client, errp,
@@ -366,8 +371,9 @@ static int nbd_opt_skip(NBDClient *client, size_t size, Error **errp)
  * Return -errno on I/O error, 0 if option was completely handled by
  * sending a reply about inconsistent lengths, or 1 on success.
  */
-static int nbd_opt_read_name(NBDClient *client, char **name, uint32_t *length,
-                             Error **errp)
+static coroutine_fn int
+nbd_opt_read_name(NBDClient *client, char **name, uint32_t *length,
+                  Error **errp)
 {
     int ret;
     uint32_t len;
@@ -402,8 +408,8 @@ static int nbd_opt_read_name(NBDClient *client, char **name, uint32_t *length,
 
 /* Send a single NBD_REP_SERVER reply to NBD_OPT_LIST, including payload.
  * Return -errno on error, 0 on success. */
-static int nbd_negotiate_send_rep_list(NBDClient *client, NBDExport *exp,
-                                       Error **errp)
+static coroutine_fn int
+nbd_negotiate_send_rep_list(NBDClient *client, NBDExport *exp, Error **errp)
 {
     ERRP_GUARD();
     size_t name_len, desc_len;
@@ -444,7 +450,8 @@ static int nbd_negotiate_send_rep_list(NBDClient *client, NBDExport *exp,
 
 /* Process the NBD_OPT_LIST command, with a potential series of replies.
  * Return -errno on error, 0 on success. */
-static int nbd_negotiate_handle_list(NBDClient *client, Error **errp)
+static coroutine_fn int
+nbd_negotiate_handle_list(NBDClient *client, Error **errp)
 {
     NBDExport *exp;
     assert(client->opt == NBD_OPT_LIST);
@@ -459,7 +466,8 @@ static int nbd_negotiate_handle_list(NBDClient *client, Error **errp)
     return nbd_negotiate_send_rep(client, NBD_REP_ACK, errp);
 }
 
-static void nbd_check_meta_export(NBDClient *client, NBDExport *exp)
+static coroutine_fn void
+nbd_check_meta_export(NBDClient *client, NBDExport *exp)
 {
     if (exp != client->contexts.exp) {
         client->contexts.count = 0;
@@ -468,8 +476,9 @@ static void nbd_check_meta_export(NBDClient *client, NBDExport *exp)
 
 /* Send a reply to NBD_OPT_EXPORT_NAME.
  * Return -errno on error, 0 on success. */
-static int nbd_negotiate_handle_export_name(NBDClient *client, bool no_zeroes,
-                                            Error **errp)
+static coroutine_fn int
+nbd_negotiate_handle_export_name(NBDClient *client, bool no_zeroes,
+                                 Error **errp)
 {
     ERRP_GUARD();
     g_autofree char *name = NULL;
@@ -536,9 +545,9 @@ static int nbd_negotiate_handle_export_name(NBDClient *client, bool no_zeroes,
 /* Send a single NBD_REP_INFO, with a buffer @buf of @length bytes.
  * The buffer does NOT include the info type prefix.
  * Return -errno on error, 0 if ready to send more. */
-static int nbd_negotiate_send_info(NBDClient *client,
-                                   uint16_t info, uint32_t length, void *buf,
-                                   Error **errp)
+static coroutine_fn int
+nbd_negotiate_send_info(NBDClient *client, uint16_t info, uint32_t length,
+                        void *buf, Error **errp)
 {
     int rc;
 
@@ -565,7 +574,8 @@ static int nbd_negotiate_send_info(NBDClient *client,
  * -errno  transmission error occurred or @fatal was requested, errp is set
  * 0       error message successfully sent to client, errp is not set
  */
-static int nbd_reject_length(NBDClient *client, bool fatal, Error **errp)
+static coroutine_fn int
+nbd_reject_length(NBDClient *client, bool fatal, Error **errp)
 {
     int ret;
 
@@ -583,7 +593,8 @@ static int nbd_reject_length(NBDClient *client, bool fatal, Error **errp)
 /* Handle NBD_OPT_INFO and NBD_OPT_GO.
  * Return -errno on error, 0 if ready for next option, and 1 to move
  * into transmission phase.  */
-static int nbd_negotiate_handle_info(NBDClient *client, Error **errp)
+static coroutine_fn int
+nbd_negotiate_handle_info(NBDClient *client, Error **errp)
 {
     int rc;
     g_autofree char *name = NULL;
@@ -748,15 +759,33 @@ static int nbd_negotiate_handle_info(NBDClient *client, Error **errp)
     return rc;
 }
 
+/* Callback to learn when QIO TLS upgrade is complete */
+struct NBDTLSServerHandshakeData {
+    bool complete;
+    Error *error;
+    Coroutine *co;
+};
+
+static void
+nbd_server_tls_handshake(QIOTask *task, void *opaque)
+{
+    struct NBDTLSServerHandshakeData *data = opaque;
+
+    qio_task_propagate_error(task, &data->error);
+    data->complete = true;
+    if (!qemu_coroutine_entered(data->co)) {
+        aio_co_wake(data->co);
+    }
+}
 
 /* Handle NBD_OPT_STARTTLS. Return NULL to drop connection, or else the
  * new channel for all further (now-encrypted) communication. */
-static QIOChannel *nbd_negotiate_handle_starttls(NBDClient *client,
-                                                 Error **errp)
+static coroutine_fn QIOChannel *
+nbd_negotiate_handle_starttls(NBDClient *client, Error **errp)
 {
     QIOChannel *ioc;
     QIOChannelTLS *tioc;
-    struct NBDTLSHandshakeData data = { 0 };
+    struct NBDTLSServerHandshakeData data = { 0 };
 
     assert(client->opt == NBD_OPT_STARTTLS);
 
@@ -777,17 +806,18 @@ static QIOChannel *nbd_negotiate_handle_starttls(NBDClient *client,
 
     qio_channel_set_name(QIO_CHANNEL(tioc), "nbd-server-tls");
     trace_nbd_negotiate_handle_starttls_handshake();
-    data.loop = g_main_loop_new(g_main_context_default(), FALSE);
+    data.co = qemu_coroutine_self();
     qio_channel_tls_handshake(tioc,
-                              nbd_tls_handshake,
+                              nbd_server_tls_handshake,
                               &data,
                               NULL,
                               NULL);
 
     if (!data.complete) {
-        g_main_loop_run(data.loop);
+        qemu_coroutine_yield();
+        assert(data.complete);
     }
-    g_main_loop_unref(data.loop);
+
     if (data.error) {
         object_unref(OBJECT(tioc));
         error_propagate(errp, data.error);
@@ -803,10 +833,9 @@ static QIOChannel *nbd_negotiate_handle_starttls(NBDClient *client,
  *
  * For NBD_OPT_LIST_META_CONTEXT @context_id is ignored, 0 is used instead.
  */
-static int nbd_negotiate_send_meta_context(NBDClient *client,
-                                           const char *context,
-                                           uint32_t context_id,
-                                           Error **errp)
+static coroutine_fn int
+nbd_negotiate_send_meta_context(NBDClient *client, const char *context,
+                                uint32_t context_id, Error **errp)
 {
     NBDOptionReplyMetaContext opt;
     struct iovec iov[] = {
@@ -831,8 +860,9 @@ static int nbd_negotiate_send_meta_context(NBDClient *client,
  * Return true if @query matches @pattern, or if @query is empty when
  * the @client is performing _LIST_.
  */
-static bool nbd_meta_empty_or_pattern(NBDClient *client, const char *pattern,
-                                      const char *query)
+static coroutine_fn bool
+nbd_meta_empty_or_pattern(NBDClient *client, const char *pattern,
+                          const char *query)
 {
     if (!*query) {
         trace_nbd_negotiate_meta_query_parse("empty");
@@ -849,7 +879,8 @@ static bool nbd_meta_empty_or_pattern(NBDClient *client, const char *pattern,
 /*
  * Return true and adjust @str in place if it begins with @prefix.
  */
-static bool nbd_strshift(const char **str, const char *prefix)
+static coroutine_fn bool
+nbd_strshift(const char **str, const char *prefix)
 {
     size_t len = strlen(prefix);
 
@@ -865,8 +896,9 @@ static bool nbd_strshift(const char **str, const char *prefix)
  * Handle queries to 'base' namespace. For now, only the base:allocation
  * context is available.  Return true if @query has been handled.
  */
-static bool nbd_meta_base_query(NBDClient *client, NBDMetaContexts *meta,
-                                const char *query)
+static coroutine_fn bool
+nbd_meta_base_query(NBDClient *client, NBDMetaContexts *meta,
+                    const char *query)
 {
     if (!nbd_strshift(&query, "base:")) {
         return false;
@@ -885,8 +917,9 @@ static bool nbd_meta_base_query(NBDClient *client, NBDMetaContexts *meta,
  * and qemu:allocation-depth contexts are available.  Return true if @query
  * has been handled.
  */
-static bool nbd_meta_qemu_query(NBDClient *client, NBDMetaContexts *meta,
-                                const char *query)
+static coroutine_fn bool
+nbd_meta_qemu_query(NBDClient *client, NBDMetaContexts *meta,
+                    const char *query)
 {
     size_t i;
 
@@ -950,8 +983,9 @@ static bool nbd_meta_qemu_query(NBDClient *client, NBDMetaContexts *meta,
  *
  * Return -errno on I/O error, 0 if option was completely handled by
  * sending a reply about inconsistent lengths, or 1 on success. */
-static int nbd_negotiate_meta_query(NBDClient *client,
-                                    NBDMetaContexts *meta, Error **errp)
+static coroutine_fn int
+nbd_negotiate_meta_query(NBDClient *client,
+                         NBDMetaContexts *meta, Error **errp)
 {
     int ret;
     g_autofree char *query = NULL;
@@ -990,7 +1024,8 @@ static int nbd_negotiate_meta_query(NBDClient *client,
  * Handle NBD_OPT_LIST_META_CONTEXT and NBD_OPT_SET_META_CONTEXT
  *
  * Return -errno on I/O error, or 0 if option was completely handled. */
-static int nbd_negotiate_meta_queries(NBDClient *client, Error **errp)
+static coroutine_fn int
+nbd_negotiate_meta_queries(NBDClient *client, Error **errp)
 {
     int ret;
     g_autofree char *export_name = NULL;
@@ -1115,10 +1150,11 @@ static int nbd_negotiate_meta_queries(NBDClient *client, Error **errp)
  * Return:
  * -errno  on error, errp is set
  * 0       on successful negotiation, errp is not set
- * 1       if client sent NBD_OPT_ABORT, i.e. on valid disconnect,
- *         errp is not set
+ * 1       if client sent NBD_OPT_ABORT (i.e. on valid disconnect) or never
+ *         wrote anything (i.e. port probe); errp is not set
  */
-static int nbd_negotiate_options(NBDClient *client, Error **errp)
+static coroutine_fn int
+nbd_negotiate_options(NBDClient *client, Error **errp)
 {
     uint32_t flags;
     bool fixedNewstyle = false;
@@ -1139,8 +1175,13 @@ static int nbd_negotiate_options(NBDClient *client, Error **errp)
         ...           Rest of request
     */
 
-    if (nbd_read32(client->ioc, &flags, "flags", errp) < 0) {
-        return -EIO;
+    /*
+     * Intentionally ignore errors on this first read - we do not want
+     * to be noisy about a mere port probe, but only for clients that
+     * start talking the protocol and then quit abruptly.
+     */
+    if (nbd_read32(client->ioc, &flags, "flags", NULL) < 0) {
+        return 1;
     }
     client->mode = NBD_MODE_EXPORT_NAME;
     trace_nbd_negotiate_options_flags(flags);
@@ -1347,8 +1388,8 @@ static int nbd_negotiate_options(NBDClient *client, Error **errp)
  * Return:
  * -errno  on error, errp is set
  * 0       on successful negotiation, errp is not set
- * 1       if client sent NBD_OPT_ABORT, i.e. on valid disconnect,
- *         errp is not set
+ * 1       if client sent NBD_OPT_ABORT (i.e. on valid disconnect) or never
+ *         wrote anything (i.e. port probe); errp is not set
  */
 static coroutine_fn int nbd_negotiate(NBDClient *client, Error **errp)
 {
@@ -1379,9 +1420,12 @@ static coroutine_fn int nbd_negotiate(NBDClient *client, Error **errp)
     stq_be_p(buf + 8, NBD_OPTS_MAGIC);
     stw_be_p(buf + 16, NBD_FLAG_FIXED_NEWSTYLE | NBD_FLAG_NO_ZEROES);
 
-    if (nbd_write(client->ioc, buf, 18, errp) < 0) {
-        error_prepend(errp, "write failed: ");
-        return -EINVAL;
+    /*
+     * Be silent about failure to write our greeting: there is nothing
+     * wrong with a client testing if our port is alive.
+     */
+    if (nbd_write(client->ioc, buf, 18, NULL) < 0) {
+        return 1;
     }
     ret = nbd_negotiate_options(client, errp);
     if (ret != 0) {
@@ -1938,7 +1982,7 @@ static void nbd_export_request_shutdown(BlockExport *blk_exp)
 
     blk_exp_ref(&exp->common);
     /*
-     * TODO: Should we expand QMP NbdServerRemoveNode enum to allow a
+     * TODO: Should we expand QMP BlockExportRemoveMode enum to allow a
      * close mode that stops advertising the export to new clients but
      * still permits existing clients to run to completion? Because of
      * that possibility, nbd_export_close() can be called more than
@@ -1982,6 +2026,7 @@ static void nbd_export_delete(BlockExport *blk_exp)
 const BlockExportDriver blk_exp_nbd = {
     .type               = BLOCK_EXPORT_TYPE_NBD,
     .instance_size      = sizeof(NBDExport),
+    .supports_inactive  = true,
     .create             = nbd_export_create,
     .delete             = nbd_export_delete,
     .request_shutdown   = nbd_export_request_shutdown,
@@ -2876,6 +2921,22 @@ static coroutine_fn int nbd_handle_request(NBDClient *client,
     NBDExport *exp = client->exp;
     char *msg;
     size_t i;
+    bool inactive;
+
+    WITH_GRAPH_RDLOCK_GUARD() {
+        inactive = bdrv_is_inactive(blk_bs(exp->common.blk));
+        if (inactive) {
+            switch (request->type) {
+            case NBD_CMD_READ:
+                /* These commands are allowed on inactive nodes */
+                break;
+            default:
+                /* Return an error for the rest */
+                return nbd_send_generic_reply(client, request, -EPERM,
+                                              "export is inactive", errp);
+            }
+        }
+    }
 
     switch (request->type) {
     case NBD_CMD_CACHE:
@@ -3007,8 +3068,8 @@ static coroutine_fn int nbd_handle_request(NBDClient *client,
 /* Owns a reference to the NBDClient passed as opaque.  */
 static coroutine_fn void nbd_trip(void *opaque)
 {
-    NBDClient *client = opaque;
-    NBDRequestData *req = NULL;
+    NBDRequestData *req = opaque;
+    NBDClient *client = req->client;
     NBDRequest request = { 0 };    /* GCC thinks it can be used uninitialized */
     int ret;
     Error *local_err = NULL;
@@ -3036,8 +3097,6 @@ static coroutine_fn void nbd_trip(void *opaque)
         aio_wait_kick();
         goto done;
     }
-
-    req = nbd_request_get(client);
 
     /*
      * nbd_co_receive_request() returns -EAGAIN when nbd_drained_begin() has
@@ -3112,9 +3171,7 @@ static coroutine_fn void nbd_trip(void *opaque)
     }
 
 done:
-    if (req) {
-        nbd_request_put(req);
-    }
+    nbd_request_put(req);
 
     qemu_mutex_unlock(&client->lock);
 
@@ -3143,43 +3200,76 @@ disconnect:
  */
 static void nbd_client_receive_next_request(NBDClient *client)
 {
+    NBDRequestData *req;
+
     if (!client->recv_coroutine && client->nb_requests < MAX_NBD_REQUESTS &&
         !client->quiescing) {
         nbd_client_get(client);
-        client->recv_coroutine = qemu_coroutine_create(nbd_trip, client);
+        req = nbd_request_get(client);
+        client->recv_coroutine = qemu_coroutine_create(nbd_trip, req);
         aio_co_schedule(client->exp->common.ctx, client->recv_coroutine);
     }
+}
+
+static void nbd_handshake_timer_cb(void *opaque)
+{
+    QIOChannel *ioc = opaque;
+
+    trace_nbd_handshake_timer_cb();
+    qio_channel_shutdown(ioc, QIO_CHANNEL_SHUTDOWN_BOTH, NULL);
 }
 
 static coroutine_fn void nbd_co_client_start(void *opaque)
 {
     NBDClient *client = opaque;
     Error *local_err = NULL;
+    QEMUTimer *handshake_timer = NULL;
 
     qemu_co_mutex_init(&client->send_lock);
+
+    /*
+     * Create a timer to bound the time spent in negotiation. If the
+     * timer expires, it is likely nbd_negotiate will fail because the
+     * socket was shutdown.
+     */
+    if (client->handshake_max_secs > 0) {
+        handshake_timer = aio_timer_new(qemu_get_aio_context(),
+                                        QEMU_CLOCK_REALTIME,
+                                        SCALE_NS,
+                                        nbd_handshake_timer_cb,
+                                        client->sioc);
+        timer_mod(handshake_timer,
+                  qemu_clock_get_ns(QEMU_CLOCK_REALTIME) +
+                  client->handshake_max_secs * NANOSECONDS_PER_SECOND);
+    }
 
     if (nbd_negotiate(client, &local_err)) {
         if (local_err) {
             error_report_err(local_err);
         }
+        timer_free(handshake_timer);
         client_close(client, false);
         return;
     }
 
+    timer_free(handshake_timer);
     WITH_QEMU_LOCK_GUARD(&client->lock) {
         nbd_client_receive_next_request(client);
     }
 }
 
 /*
- * Create a new client listener using the given channel @sioc.
+ * Create a new client listener using the given channel @sioc and @owner.
  * Begin servicing it in a coroutine.  When the connection closes, call
- * @close_fn with an indication of whether the client completed negotiation.
+ * @close_fn with an indication of whether the client completed negotiation
+ * within @handshake_max_secs seconds (0 for unbounded).
  */
 void nbd_client_new(QIOChannelSocket *sioc,
+                    uint32_t handshake_max_secs,
                     QCryptoTLSCreds *tlscreds,
                     const char *tlsauthz,
-                    void (*close_fn)(NBDClient *, bool))
+                    void (*close_fn)(NBDClient *, bool),
+                    void *owner)
 {
     NBDClient *client;
     Coroutine *co;
@@ -3192,13 +3282,21 @@ void nbd_client_new(QIOChannelSocket *sioc,
         object_ref(OBJECT(client->tlscreds));
     }
     client->tlsauthz = g_strdup(tlsauthz);
+    client->handshake_max_secs = handshake_max_secs;
     client->sioc = sioc;
     qio_channel_set_delay(QIO_CHANNEL(sioc), false);
     object_ref(OBJECT(client->sioc));
     client->ioc = QIO_CHANNEL(sioc);
     object_ref(OBJECT(client->ioc));
     client->close_fn = close_fn;
+    client->owner = owner;
 
     co = qemu_coroutine_create(nbd_co_client_start, client);
     qemu_coroutine_enter(co);
+}
+
+void *
+nbd_client_owner(NBDClient *client)
+{
+    return client->owner;
 }

@@ -5,6 +5,8 @@
 #
 # This document describes all commands currently supported by QMP.
 #
+# For locating a particular item, please see the `qapi-qmp-index`.
+#
 # Most of the time their usage is exactly the same as in the user
 # Monitor, this means that any other document which also describe
 # commands (the manpage, QEMU's manual, etc) can and should be
@@ -53,7 +55,7 @@
 { 'include': 'char.json' }
 { 'include': 'dump.json' }
 { 'include': 'net.json' }
-{ 'include': 'rdma.json' }
+{ 'include': 'ebpf.json' }
 { 'include': 'rocker.json' }
 { 'include': 'tpm.json' }
 { 'include': 'ui.json' }
@@ -78,5 +80,7 @@
 { 'include': 'pci.json' }
 { 'include': 'stats.json' }
 { 'include': 'virtio.json' }
+{ 'include': 'vfio.json' }
 { 'include': 'cryptodev.json' }
 { 'include': 'cxl.json' }
+{ 'include': 'uefi.json' }

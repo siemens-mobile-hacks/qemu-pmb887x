@@ -5,14 +5,14 @@
 
 static bool gen_ll(DisasContext *ctx, arg_rr_i *a, MemOp mop)
 {
-    TCGv dest = gpr_dst(ctx, a->rd, EXT_NONE);
+    TCGv t1 = tcg_temp_new();
     TCGv src1 = gpr_src(ctx, a->rj, EXT_NONE);
     TCGv t0 = make_address_i(ctx, src1, a->imm);
 
-    tcg_gen_qemu_ld_i64(dest, t0, ctx->mem_idx, mop);
+    tcg_gen_qemu_ld_i64(t1, t0, ctx->mem_idx, mop);
     tcg_gen_st_tl(t0, tcg_env, offsetof(CPULoongArchState, lladdr));
-    tcg_gen_st_tl(dest, tcg_env, offsetof(CPULoongArchState, llval));
-    gen_set_gpr(a->rd, dest, EXT_NONE);
+    tcg_gen_st_tl(t1, tcg_env, offsetof(CPULoongArchState, llval));
+    gen_set_gpr(a->rd, t1, EXT_NONE);
 
     return true;
 }
@@ -56,7 +56,7 @@ static bool gen_am(DisasContext *ctx, arg_rrr *a,
     if (a->rd != 0 && (a->rj == a->rd || a->rk == a->rd)) {
         qemu_log_mask(LOG_GUEST_ERROR,
                       "Warning: source register overlaps destination register"
-                      "in atomic insn at pc=0x" TARGET_FMT_lx "\n",
+                      "in atomic insn at pc=0x%" VADDR_PRIx "\n",
                       ctx->base.pc_next - 4);
         return false;
     }

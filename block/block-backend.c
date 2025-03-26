@@ -11,15 +11,15 @@
  */
 
 #include "qemu/osdep.h"
-#include "sysemu/block-backend.h"
+#include "system/block-backend.h"
 #include "block/block_int.h"
 #include "block/blockjob.h"
 #include "block/coroutines.h"
 #include "block/throttle-groups.h"
 #include "hw/qdev-core.h"
-#include "sysemu/blockdev.h"
-#include "sysemu/runstate.h"
-#include "sysemu/replay.h"
+#include "system/blockdev.h"
+#include "system/runstate.h"
+#include "system/replay.h"
 #include "qapi/error.h"
 #include "qapi/qapi-events-block.h"
 #include "qemu/id.h"
@@ -253,7 +253,7 @@ static bool blk_can_inactivate(BlockBackend *blk)
      * guest.  For block job BBs that satisfy this, we can just allow
      * it.  This is the case for mirror job source, which is required
      * by libvirt non-shared block migration. */
-    if (!(blk->perm & (BLK_PERM_WRITE | BLK_PERM_WRITE_UNCHANGED))) {
+    if (!(blk->perm & ~BLK_PERM_CONSISTENT_READ)) {
         return true;
     }
 
@@ -599,13 +599,13 @@ BlockDriverState *bdrv_next(BdrvNextIterator *it)
     /* Must be called from the main loop */
     assert(qemu_get_current_aio_context() == qemu_get_aio_context());
 
+    old_bs = it->bs;
+
     /* First, return all root nodes of BlockBackends. In order to avoid
      * returning a BDS twice when multiple BBs refer to it, we only return it
      * if the BB is the first one in the parent list of the BDS. */
     if (it->phase == BDRV_NEXT_BACKEND_ROOTS) {
         BlockBackend *old_blk = it->blk;
-
-        old_bs = old_blk ? blk_bs(old_blk) : NULL;
 
         do {
             it->blk = blk_all_next(it->blk);
@@ -620,11 +620,10 @@ BlockDriverState *bdrv_next(BdrvNextIterator *it)
         if (bs) {
             bdrv_ref(bs);
             bdrv_unref(old_bs);
+            it->bs = bs;
             return bs;
         }
         it->phase = BDRV_NEXT_MONITOR_OWNED;
-    } else {
-        old_bs = it->bs;
     }
 
     /* Then return the monitor-owned BDSes without a BB attached. Ignore all
@@ -664,13 +663,10 @@ void bdrv_next_cleanup(BdrvNextIterator *it)
     /* Must be called from the main loop */
     assert(qemu_get_current_aio_context() == qemu_get_aio_context());
 
-    if (it->phase == BDRV_NEXT_BACKEND_ROOTS) {
-        if (it->blk) {
-            bdrv_unref(blk_bs(it->blk));
-            blk_unref(it->blk);
-        }
-    } else {
-        bdrv_unref(it->bs);
+    bdrv_unref(it->bs);
+
+    if (it->phase == BDRV_NEXT_BACKEND_ROOTS && it->blk) {
+        blk_unref(it->blk);
     }
 
     bdrv_next_reset(it);
@@ -858,15 +854,6 @@ BlockBackendPublic *blk_get_public(BlockBackend *blk)
 }
 
 /*
- * Returns a BlockBackend given the associated @public fields.
- */
-BlockBackend *blk_by_public(BlockBackendPublic *public)
-{
-    GLOBAL_STATE_CODE();
-    return container_of(public, BlockBackend, public);
-}
-
-/*
  * Disassociates the currently associated BlockDriverState from @blk.
  */
 void blk_remove_bs(BlockBackend *blk)
@@ -913,14 +900,24 @@ void blk_remove_bs(BlockBackend *blk)
 int blk_insert_bs(BlockBackend *blk, BlockDriverState *bs, Error **errp)
 {
     ThrottleGroupMember *tgm = &blk->public.throttle_group_member;
+    uint64_t perm, shared_perm;
 
     GLOBAL_STATE_CODE();
     bdrv_ref(bs);
     bdrv_graph_wrlock();
+
+    if ((bs->open_flags & BDRV_O_INACTIVE) && blk_can_inactivate(blk)) {
+        blk->disable_perm = true;
+        perm = 0;
+        shared_perm = BLK_PERM_ALL;
+    } else {
+        perm = blk->perm;
+        shared_perm = blk->shared_perm;
+    }
+
     blk->root = bdrv_root_attach_child(bs, "root", &child_root,
                                        BDRV_CHILD_FILTERED | BDRV_CHILD_PRIMARY,
-                                       blk->perm, blk->shared_perm,
-                                       blk, errp);
+                                       perm, shared_perm, blk, errp);
     bdrv_graph_wrunlock();
     if (blk->root == NULL) {
         return -EPERM;
@@ -1032,20 +1029,36 @@ DeviceState *blk_get_attached_dev(BlockBackend *blk)
     return blk->dev;
 }
 
-/* Return the qdev ID, or if no ID is assigned the QOM path, of the block
- * device attached to the BlockBackend. */
-char *blk_get_attached_dev_id(BlockBackend *blk)
+/*
+ * The caller is responsible for releasing the value returned
+ * with g_free() after use.
+ */
+static char *blk_get_attached_dev_id_or_path(BlockBackend *blk, bool want_id)
 {
     DeviceState *dev = blk->dev;
     IO_CODE();
 
     if (!dev) {
         return g_strdup("");
-    } else if (dev->id) {
+    } else if (want_id && dev->id) {
         return g_strdup(dev->id);
     }
 
     return object_get_canonical_path(OBJECT(dev)) ?: g_strdup("");
+}
+
+char *blk_get_attached_dev_id(BlockBackend *blk)
+{
+    return blk_get_attached_dev_id_or_path(blk, true);
+}
+
+/*
+ * The caller is responsible for releasing the value returned
+ * with g_free() after use.
+ */
+static char *blk_get_attached_dev_path(BlockBackend *blk)
+{
+    return blk_get_attached_dev_id_or_path(blk, false);
 }
 
 /*
@@ -1216,12 +1229,6 @@ BlockDeviceIoStatus blk_iostatus(const BlockBackend *blk)
 {
     GLOBAL_STATE_CODE();
     return blk->iostatus;
-}
-
-void blk_iostatus_disable(BlockBackend *blk)
-{
-    GLOBAL_STATE_CODE();
-    blk->iostatus_enabled = false;
 }
 
 void blk_iostatus_reset(BlockBackend *blk)
@@ -2141,9 +2148,10 @@ static void send_qmp_error_event(BlockBackend *blk,
 {
     IoOperationType optype;
     BlockDriverState *bs = blk_bs(blk);
+    g_autofree char *path = blk_get_attached_dev_path(blk);
 
     optype = is_read ? IO_OPERATION_TYPE_READ : IO_OPERATION_TYPE_WRITE;
-    qapi_event_send_block_io_error(blk_name(blk),
+    qapi_event_send_block_io_error(path, blk_name(blk),
                                    bs ? bdrv_get_node_name(bs) : NULL, optype,
                                    action, blk_iostatus_is_enabled(blk),
                                    error == ENOSPC, strerror(error));
@@ -2230,28 +2238,6 @@ void blk_set_enable_write_cache(BlockBackend *blk, bool wce)
 {
     IO_CODE();
     blk->enable_write_cache = wce;
-}
-
-void blk_activate(BlockBackend *blk, Error **errp)
-{
-    BlockDriverState *bs = blk_bs(blk);
-    GLOBAL_STATE_CODE();
-
-    if (!bs) {
-        error_setg(errp, "Device '%s' has no medium", blk->name);
-        return;
-    }
-
-    /*
-     * Migration code can call this function in coroutine context, so leave
-     * coroutine context if necessary.
-     */
-    if (qemu_in_coroutine()) {
-        bdrv_co_activate(bs, errp);
-    } else {
-        GRAPH_RDLOCK_GUARD_MAINLOOP();
-        bdrv_activate(bs, errp);
-    }
 }
 
 bool coroutine_fn blk_co_is_inserted(BlockBackend *blk)
@@ -2371,48 +2357,6 @@ void *blk_blockalign(BlockBackend *blk, size_t size)
     return qemu_blockalign(blk ? blk_bs(blk) : NULL, size);
 }
 
-bool blk_op_is_blocked(BlockBackend *blk, BlockOpType op, Error **errp)
-{
-    BlockDriverState *bs = blk_bs(blk);
-    GLOBAL_STATE_CODE();
-    GRAPH_RDLOCK_GUARD_MAINLOOP();
-
-    if (!bs) {
-        return false;
-    }
-
-    return bdrv_op_is_blocked(bs, op, errp);
-}
-
-void blk_op_unblock(BlockBackend *blk, BlockOpType op, Error *reason)
-{
-    BlockDriverState *bs = blk_bs(blk);
-    GLOBAL_STATE_CODE();
-
-    if (bs) {
-        bdrv_op_unblock(bs, op, reason);
-    }
-}
-
-void blk_op_block_all(BlockBackend *blk, Error *reason)
-{
-    BlockDriverState *bs = blk_bs(blk);
-    GLOBAL_STATE_CODE();
-
-    if (bs) {
-        bdrv_op_block_all(bs, reason);
-    }
-}
-
-void blk_op_unblock_all(BlockBackend *blk, Error *reason)
-{
-    BlockDriverState *bs = blk_bs(blk);
-    GLOBAL_STATE_CODE();
-
-    if (bs) {
-        bdrv_op_unblock_all(bs, reason);
-    }
-}
 
 /**
  * Return BB's current AioContext.  Note that this context may change
@@ -2566,12 +2510,6 @@ void blk_add_remove_bs_notifier(BlockBackend *blk, Notifier *notify)
 {
     GLOBAL_STATE_CODE();
     notifier_list_add(&blk->remove_bs_notifiers, notify);
-}
-
-void blk_add_insert_bs_notifier(BlockBackend *blk, Notifier *notify)
-{
-    GLOBAL_STATE_CODE();
-    notifier_list_add(&blk->insert_bs_notifiers, notify);
 }
 
 BlockAcctStats *blk_get_stats(BlockBackend *blk)

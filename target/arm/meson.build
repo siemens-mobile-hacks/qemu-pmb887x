@@ -4,7 +4,7 @@ arm_ss.add(files(
   'debug_helper.c',
   'gdbstub.c',
   'helper.c',
-  'vfp_helper.c',
+  'vfp_fpscr.c',
 ))
 arm_ss.add(zlib)
 
@@ -26,6 +26,8 @@ arm_system_ss.add(files(
   'ptw.c',
 ))
 
+arm_user_ss = ss.source_set()
+
 subdir('hvf')
 
 if 'CONFIG_TCG' in config_all_accel
@@ -36,3 +38,4 @@ endif
 
 target_arch += {'arm': arm_ss}
 target_system_arch += {'arm': arm_system_ss}
+target_user_arch += {'arm': arm_user_ss}
