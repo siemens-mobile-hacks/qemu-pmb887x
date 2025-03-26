@@ -41,6 +41,10 @@ typedef struct {
 } pmb887x_board_i2c_dev_t;
 
 typedef struct {
+	uint32_t ram0_value;
+} pmb887x_board_dsp_dev_t;
+
+typedef struct {
 	char vendor[64];
 	char model[64];
 	uint32_t cpu;
@@ -55,6 +59,8 @@ typedef struct {
 	
 	uint32_t keymap[Q_KEY_CODE__MAX];
 	
+	pmb887x_board_dsp_dev_t dsp;
+
 	pmb887x_board_i2c_dev_t *i2c_devices;
 	uint32_t i2c_devices_count;
 	

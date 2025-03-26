@@ -217,7 +217,7 @@ static uint64_t flash_io_read(void *opaque, hwaddr part_offset, unsigned size) {
 	switch (p->cmd) {
 		case 0x90:
 		case 0x98:
-			index = offset >> 1;
+			index = (offset >> 1) & 0xFFF;
 			
 			// CFI
 			if (index >= CFI_ADDR && index < CFI_ADDR + cfg->cfi_size) {
@@ -269,11 +269,11 @@ static uint64_t flash_io_read(void *opaque, hwaddr part_offset, unsigned size) {
 						value = cfg->ehcr;
 						flash_trace_part(p, "enhanced configuration register: %02X", value);
 					break;
-					
+
 					default:
 						value = 0xFFFF;
 						flash_error_part(p, "%08"PRIX64": read unknown cfi index 0x%02X", offset, index);
-					//	exit(1);
+						// exit(1);
 					break;
 				}
 			}

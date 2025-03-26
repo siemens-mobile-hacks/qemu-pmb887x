@@ -1,6 +1,7 @@
 /*
  * DSP
  * */
+#include <stdint.h>
 #define PMB887X_TRACE_ID		DSP
 #define PMB887X_TRACE_PREFIX	"pmb887x-dsp"
 
@@ -34,6 +35,7 @@ struct pmb887x_dsp_t {
 	
 	uint32_t unk[2];
 	uint8_t ram[DSP_RAM_SIZE];
+	uint32_t ram0_value;
 	
 	pmb887x_clc_reg_t clc;
 };
@@ -158,6 +160,10 @@ static void dsp_init(Object *obj) {
 	sysbus_init_mmio(SYS_BUS_DEVICE(obj), &p->mmio);
 }
 
+static const Property dsp_properties[] = {
+	DEFINE_PROP_UINT32("ram0_value", struct pmb887x_dsp_t, ram0_value, 0x0801),
+};
+
 static void dsp_realize(DeviceState *dev, Error **errp) {
 	struct pmb887x_dsp_t *p = PMB887X_DSP(dev);
 	
@@ -166,13 +172,14 @@ static void dsp_realize(DeviceState *dev, Error **errp) {
 	p->unk[0] = 0x01;
 	p->unk[1] = 0x00;
 	
-	dsp_ram_write(p, 0, 0x0801, 2);
-	
+	dsp_ram_write(p, 0, p->ram0_value, 2);
+
 	dsp_update_state(p);
 }
 
 static void dsp_class_init(ObjectClass *klass, void *data) {
 	DeviceClass *dc = DEVICE_CLASS(klass);
+	device_class_set_props(dc, dsp_properties);
 	dc->realize = dsp_realize;
 }
 

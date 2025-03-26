@@ -90,7 +90,8 @@ static const ARMCPRegInfo cp_reginfo[] = {
 
 __attribute__((destructor))
 static void memory_dump_at_exit(void) {
-//	fprintf(stderr, "sorry died at %08X\n", ARM_CPU(qemu_get_cpu(0))->env.regs[15]);
+	if (qemu_get_cpu(0))
+		fprintf(stderr, "sorry died at %08X\n", ARM_CPU(qemu_get_cpu(0))->env.regs[15]);
 //	
 //	qmp_pmemsave(0xB0000000, 16 * 1024 * 1024, "/tmp/ram.bin", NULL);
 //	qmp_pmemsave(0xFFFF0000, 0x4000, "/tmp/tcm.bin", NULL);
@@ -298,6 +299,7 @@ static void pmb887x_init(MachineState *machine) {
 	
 	// DSP
 	DeviceState *dsp = pmb887x_new_dev(board->cpu, "DSP", nvic);
+	object_property_set_uint(OBJECT(dsp), "ram0_value", board->dsp.ram0_value, &error_fatal);
 	sysbus_realize_and_unref(SYS_BUS_DEVICE(dsp), &error_fatal);
 	
 	if (board->cpu == CPU_PMB8876) {

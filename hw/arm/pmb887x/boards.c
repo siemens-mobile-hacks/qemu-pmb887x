@@ -155,6 +155,14 @@ static bool _parse_i2c(pmb887x_board_t *board, pmb887x_cfg_section_t *section) {
 	return true;
 }
 
+static bool _parse_dsp(pmb887x_board_t *board, pmb887x_cfg_section_t *section) {
+	const char *addr;
+	if (!(addr = pmb887x_cfg_section_get(section, "ram0_value", true)))
+		return false;
+	board->dsp.ram0_value = strtol(addr, NULL, 16);
+	return true;
+}
+
 static bool _parse_analog(pmb887x_board_t *board, pmb887x_cfg_section_t *section) {
 	char name[32];
 	int channels[] = {
@@ -363,6 +371,7 @@ const pmb887x_board_t *pmb887x_get_board(const char *config_file) {
 		{"device", _parse_device, false},
 		{"memory", _parse_memory, false},
 		{"i2c", _parse_i2c, true},
+		{"dsp", _parse_dsp, false},
 		{"analog", _parse_analog, false},
 		{"display", _parse_display, false},
 		{"gpio-aliases", _parse_gpio_aliases, false},

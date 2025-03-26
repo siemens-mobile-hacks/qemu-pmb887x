@@ -32,8 +32,8 @@
 #define PMB887X_USART(obj)	OBJECT_CHECK(struct pmb887x_usart_t, (obj), TYPE_PMB887X_USART)
 
 #define FIFO_SIZE	8
-#define USART_LOG_TRX false
-#define USART_DUMP_TRX_IO true
+#define USART_LOG_TRX true
+#define USART_DUMP_TRX_IO false
 
 enum {
 	USART_IRQ_TX,
