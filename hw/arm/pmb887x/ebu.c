@@ -409,7 +409,7 @@ static void ebu_realize(DeviceState *dev, Error **errp) {
 	ebu_update_state(p);
 }
 
-static Property ebu_properties[] = {
+static const Property ebu_properties[] = {
 	DEFINE_PROP_LINK("cs0", struct pmb887x_ebu_t, cs[0], TYPE_MEMORY_REGION, MemoryRegion *),
 	DEFINE_PROP_LINK("cs1", struct pmb887x_ebu_t, cs[1], TYPE_MEMORY_REGION, MemoryRegion *),
 	DEFINE_PROP_LINK("cs2", struct pmb887x_ebu_t, cs[2], TYPE_MEMORY_REGION, MemoryRegion *),
@@ -418,7 +418,6 @@ static Property ebu_properties[] = {
 	DEFINE_PROP_LINK("cs5", struct pmb887x_ebu_t, cs[5], TYPE_MEMORY_REGION, MemoryRegion *),
 	DEFINE_PROP_LINK("cs6", struct pmb887x_ebu_t, cs[6], TYPE_MEMORY_REGION, MemoryRegion *),
 	DEFINE_PROP_LINK("cs7", struct pmb887x_ebu_t, cs[7], TYPE_MEMORY_REGION, MemoryRegion *),
-    DEFINE_PROP_END_OF_LIST(),
 };
 
 static void ebu_class_init(ObjectClass *klass, void *data) {

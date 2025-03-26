@@ -347,13 +347,8 @@ static void capcom_realize(DeviceState *dev, Error **errp) {
 	capcom_update_state(p);
 }
 
-static Property capcom_properties[] = {
-    DEFINE_PROP_END_OF_LIST(),
-};
-
 static void capcom_class_init(ObjectClass *klass, void *data) {
 	DeviceClass *dc = DEVICE_CLASS(klass);
-	device_class_set_props(dc, capcom_properties);
 	dc->realize = capcom_realize;
 }
 

@@ -210,13 +210,8 @@ static void pcl_realize(DeviceState *dev, Error **errp) {
 	pcl_update_state(p);
 }
 
-static Property pcl_properties[] = {
-    DEFINE_PROP_END_OF_LIST(),
-};
-
 static void pcl_class_init(ObjectClass *klass, void *data) {
 	DeviceClass *dc = DEVICE_CLASS(klass);
-	device_class_set_props(dc, pcl_properties);
 	dc->realize = pcl_realize;
 }
 

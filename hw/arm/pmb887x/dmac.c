@@ -517,9 +517,8 @@ static void dmac_realize(DeviceState *dev, Error **errp) {
 	pmb887x_srb_set_irq_router(&p->srb_tc, p, dmac_tc_irq_router);
 }
 
-static Property dmac_properties[] = {
+static const Property dmac_properties[] = {
 	DEFINE_PROP_LINK("downstream", pmb887x_dmac_t, downstream, TYPE_MEMORY_REGION, MemoryRegion *),
-    DEFINE_PROP_END_OF_LIST(),
 };
 
 static void dmac_class_init(ObjectClass *klass, void *data) {

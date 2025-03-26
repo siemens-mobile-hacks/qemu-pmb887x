@@ -359,12 +359,11 @@ static void scu_realize(DeviceState *dev, Error **errp) {
 	scu_update_state(p);
 }
 
-static Property scu_properties[] = {
+static const Property scu_properties[] = {
 	DEFINE_PROP_UINT32("cpu_type", pmb887x_scu_t, cpu_type, 0),
 	DEFINE_PROP_LINK("sccu", pmb887x_scu_t, sccu, "pmb887x-sccu", struct pmb887x_sccu_t *),
 	DEFINE_PROP_LINK("pcl", pmb887x_scu_t, pcl, "pmb887x-pcl", pmb887x_pcl_t *),
 	DEFINE_PROP_LINK("brom_mirror", pmb887x_scu_t, brom_mirror, TYPE_MEMORY_REGION, MemoryRegion *),
-    DEFINE_PROP_END_OF_LIST(),
 };
 
 static void scu_class_init(ObjectClass *klass, void *data) {

@@ -16,7 +16,7 @@
 #include "qemu/thread.h"
 #include "qemu/main-loop.h"
 #include "cpu.h"
-#include "sysemu/cpu-timers.h"
+#include "system/cpu-timers.h"
 
 #include "hw/arm/pmb887x/regs.h"
 

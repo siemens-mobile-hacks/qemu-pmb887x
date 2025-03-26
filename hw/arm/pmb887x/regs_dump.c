@@ -1,7 +1,7 @@
 #include "regs_dump.h"
 
 #include "target/arm/cpu.h"
-#include "sysemu/cpu-timers.h"
+#include "system/cpu-timers.h"
 #include "qemu/log.h"
 #include "qemu/error-report.h"
 

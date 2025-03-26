@@ -27,7 +27,7 @@
 #include "semihosting/semihost.h"
 #include "cpregs.h"
 #include "exec/helper-proto.h"
-#include "sysemu/cpu-timers.h"
+#include "system/cpu-timers.h"
 
 #define HELPER_H "helper.h"
 #include "exec/helper-info.c.inc"

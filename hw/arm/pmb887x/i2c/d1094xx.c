@@ -155,9 +155,8 @@ static void pmic_realize(DeviceState *dev, Error **errp) {
 	}
 }
 
-static Property pmic_properties[] = {
+static const Property pmic_properties[] = {
 	DEFINE_PROP_UINT32("revision", pmb887x_pmic_t, revision, 0xAA),
-    DEFINE_PROP_END_OF_LIST(),
 };
 
 static void pmic_class_init(ObjectClass *klass, void *data) {

@@ -13,7 +13,7 @@
 #include "cpu.h"
 #include "qemu/timer.h"
 #include "hw/ptimer.h"
-#include "sysemu/cpu-timers.h"
+#include "system/cpu-timers.h"
 
 #include "hw/arm/pmb887x/pll.h"
 #include "hw/arm/pmb887x/regs.h"
@@ -369,10 +369,9 @@ static void pll_realize(DeviceState *dev, Error **errp) {
 	pll_update_state(p);
 }
 
-static Property pll_properties[] = {
+static const Property pll_properties[] = {
 	DEFINE_PROP_UINT32("xtal", struct pmb887x_pll_t, xtal, 26000000),
 	DEFINE_PROP_UINT32("hw-ns-throttle", struct pmb887x_pll_t, hw_ns_div, 1),
-    DEFINE_PROP_END_OF_LIST(),
 };
 
 static void pll_class_init(ObjectClass *klass, void *data) {

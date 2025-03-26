@@ -216,9 +216,8 @@ static void keypad_realize(DeviceState *dev, Error **errp) {
     qemu_input_handler_register(dev, &keypad_input_handler);
 }
 
-static Property keypad_properties[] = {
+static const Property keypad_properties[] = {
 	DEFINE_PROP_ARRAY("map", struct pmb887x_keypad_t, map_size, map, qdev_prop_uint32, uint32_t),
-    DEFINE_PROP_END_OF_LIST(),
 };
 
 static void keypad_class_init(ObjectClass *klass, void *data) {

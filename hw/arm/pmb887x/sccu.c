@@ -308,9 +308,8 @@ static void sccu_realize(DeviceState *dev, Error **errp) {
 	sccu_update_timer_timer(p);
 }
 
-static Property sccu_properties[] = {
+static const Property sccu_properties[] = {
 	DEFINE_PROP_LINK("pll", struct pmb887x_sccu_t, pll, "pmb887x-pll", struct pmb887x_pll_t *),
-    DEFINE_PROP_END_OF_LIST(),
 };
 
 static void sccu_class_init(ObjectClass *klass, void *data) {

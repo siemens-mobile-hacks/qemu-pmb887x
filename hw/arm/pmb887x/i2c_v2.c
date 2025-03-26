@@ -29,7 +29,7 @@
 
 #define TYPE_PMB887X_I2C	"pmb887x-i2c-v2"
 #define PMB887X_I2C(obj)	OBJECT_CHECK(pmb887x_i2c_t, (obj), TYPE_PMB887X_I2C)
-#define I2C_TX_BYTE_TIME	100
+#define I2C_TX_BYTE_TIME	100000
 
 #define FIFO_SIZE 8
 
@@ -610,13 +610,8 @@ static void i2c_realize(DeviceState *dev, Error **errp) {
 	i2c_update_state(p);
 }
 
-static Property i2c_properties[] = {
-    DEFINE_PROP_END_OF_LIST(),
-};
-
 static void i2c_class_init(ObjectClass *klass, void *data) {
 	DeviceClass *dc = DEVICE_CLASS(klass);
-	device_class_set_props(dc, i2c_properties);
 	dc->realize = i2c_realize;
 }
 

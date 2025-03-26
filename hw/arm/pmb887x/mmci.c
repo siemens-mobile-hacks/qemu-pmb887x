@@ -94,13 +94,8 @@ static void mmci_realize(DeviceState *dev, Error **errp) {
 	pmb887x_clc_init(&p->clc);
 }
 
-static Property mmci_properties[] = {
-    DEFINE_PROP_END_OF_LIST(),
-};
-
 static void mmci_class_init(ObjectClass *klass, void *data) {
 	DeviceClass *dc = DEVICE_CLASS(klass);
-	device_class_set_props(dc, mmci_properties);
 	dc->realize = mmci_realize;
 }
 

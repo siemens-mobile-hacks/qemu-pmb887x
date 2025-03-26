@@ -135,13 +135,8 @@ static void lcd_realize(DeviceState *dev, Error **errp) {
 	lcd_update_state(lcd);
 }
 
-static Property lcd_properties[] = {
-	DEFINE_PROP_END_OF_LIST(),
-};
-
 static void lcd_class_init(ObjectClass *oc, void *data) {
 	DeviceClass *dc = DEVICE_CLASS(oc);
-	device_class_set_props(dc, lcd_properties);
 	dc->realize = lcd_realize;
 	
 	pmb887x_lcd_class_t *k = PMB887X_LCD_CLASS(oc);

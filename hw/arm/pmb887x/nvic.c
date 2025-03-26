@@ -260,13 +260,8 @@ static void nvic_realize(DeviceState *dev, Error **errp) {
 	nvic_update_state(p);
 }
 
-static Property nvic_properties[] = {
-    DEFINE_PROP_END_OF_LIST(),
-};
-
 static void nvic_class_init(ObjectClass *klass, void *data) {
 	DeviceClass *dc = DEVICE_CLASS(klass);
-	device_class_set_props(dc, nvic_properties);
 	dc->realize = nvic_realize;
 }
 

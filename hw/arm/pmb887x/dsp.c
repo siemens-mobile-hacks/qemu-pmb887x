@@ -171,13 +171,8 @@ static void dsp_realize(DeviceState *dev, Error **errp) {
 	dsp_update_state(p);
 }
 
-static Property dsp_properties[] = {
-    DEFINE_PROP_END_OF_LIST(),
-};
-
 static void dsp_class_init(ObjectClass *klass, void *data) {
 	DeviceClass *dc = DEVICE_CLASS(klass);
-	device_class_set_props(dc, dsp_properties);
 	dc->realize = dsp_realize;
 }
 

@@ -18,8 +18,8 @@
 #include "hw/qdev-properties.h"
 #include "hw/qdev-properties-system.h"
 #include "hw/block/block.h"
-#include "sysemu/block-backend.h"
-#include "sysemu/blockdev.h"
+#include "system/block-backend.h"
+#include "system/blockdev.h"
 
 #include "hw/arm/pmb887x/trace.h"
 #include "hw/arm/pmb887x/flash.h"
@@ -791,7 +791,7 @@ static void flash_trace(pmb887x_flash_t *flash, const char *format, ...) {
 	qemu_log_mask(LOG_TRACE, "[%s] %s %s\n", PMB887X_TRACE_PREFIX, flash->name, s->str);
 }
 
-static Property flash_properties[] = {
+static const Property flash_properties[] = {
 	DEFINE_PROP_LINK("blk", struct pmb887x_flash_t, blk, "pmb887x-flash-blk", struct pmb887x_flash_blk_t *),
 	
 	DEFINE_PROP_STRING("name", pmb887x_flash_t, name),
@@ -805,8 +805,6 @@ static Property flash_properties[] = {
 	
 	/* OTP1 Initial Data */
 	DEFINE_PROP_STRING("otp1-data", pmb887x_flash_t, hex_otp1_data),
-	
-	DEFINE_PROP_END_OF_LIST(),
 };
 
 static void flash_class_init(ObjectClass *klass, void *data) {

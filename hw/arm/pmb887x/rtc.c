@@ -202,13 +202,8 @@ static void rtc_realize(DeviceState *dev, Error **errp) {
 	rtc_update_state(p);
 }
 
-static Property rtc_properties[] = {
-    DEFINE_PROP_END_OF_LIST(),
-};
-
 static void rtc_class_init(ObjectClass *klass, void *data) {
 	DeviceClass *dc = DEVICE_CLASS(klass);
-	device_class_set_props(dc, rtc_properties);
 	dc->realize = rtc_realize;
 }
 

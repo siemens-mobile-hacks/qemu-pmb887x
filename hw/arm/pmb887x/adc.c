@@ -336,9 +336,8 @@ static void adc_realize(DeviceState *dev, Error **errp) {
 	adc_update_state(p);
 }
 
-static Property adc_properties[] = {
+static const Property adc_properties[] = {
 	DEFINE_PROP_LINK("pll", pmb887x_adc_t, pll, "pmb887x-pll", struct pmb887x_pll_t *),
-    DEFINE_PROP_END_OF_LIST(),
 };
 
 static void adc_class_init(ObjectClass *klass, void *data) {

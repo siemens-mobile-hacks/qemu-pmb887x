@@ -855,9 +855,8 @@ static void gptu_realize(DeviceState *dev, Error **errp) {
 	gptu_t2_sync_timer(p);
 }
 
-static Property gptu_properties[] = {
+static const Property gptu_properties[] = {
 	DEFINE_PROP_LINK("pll", pmb887x_gptu_t, pll, "pmb887x-pll", struct pmb887x_pll_t *),
-    DEFINE_PROP_END_OF_LIST(),
 };
 
 static void gptu_class_init(ObjectClass *klass, void *data) {

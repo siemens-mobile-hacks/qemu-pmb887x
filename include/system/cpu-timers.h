@@ -121,4 +121,3 @@ void icount2_exit_sleep(void);
 void icount2_set_ns_per_tick(int64_t ns_per_tick);
 
 #endif /* SYSTEM_CPU_TIMERS_H */
->>>>>>> upstream/master:include/system/cpu-timers.h

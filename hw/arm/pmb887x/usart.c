@@ -536,10 +536,9 @@ static void usart_realize(DeviceState *dev, Error **errp) {
 	usart_update_state(p);
 }
 
-static Property usart_properties[] = {
+static const Property usart_properties[] = {
     DEFINE_PROP_CHR("chardev", struct pmb887x_usart_t, chr),
     DEFINE_PROP_BOOL("apply-workarounds", struct pmb887x_usart_t, apply_workarounds, true),
-	DEFINE_PROP_END_OF_LIST(),
 };
 
 static void usart_class_init(ObjectClass *klass, void *data) {

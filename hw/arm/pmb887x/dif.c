@@ -281,11 +281,10 @@ static void dif_realize(DeviceState *dev, Error **errp) {
 	pmb887x_srb_init(&p->srb, p->irq, ARRAY_SIZE(p->irq));
 }
 
-static Property dif_properties[] = {
+static const Property dif_properties[] = {
 	DEFINE_PROP_LINK("dmac", pmb887x_dif_t, dmac, "pmb887x-dmac", pmb887x_dmac_t *),
 	DEFINE_PROP_LINK("lcd", pmb887x_dif_t, lcd, "pmb887x-lcd", pmb887x_lcd_t *),
 	DEFINE_PROP_UINT32("dmac-tx-periph-id", pmb887x_dif_t, dmac_tx_periph_id, 4),
-    DEFINE_PROP_END_OF_LIST(),
 };
 
 static void dif_class_init(ObjectClass *klass, void *data) {

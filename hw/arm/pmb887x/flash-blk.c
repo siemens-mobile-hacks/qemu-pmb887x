@@ -5,10 +5,9 @@
 #include "qapi/error.h"
 #include "qemu/error-report.h"
 #include "hw/sysbus.h"
+#include "system/block-backend.h"
 #include "hw/qdev-properties.h"
 #include "hw/qdev-properties-system.h"
-#include "sysemu/block-backend.h"
-#include "sysemu/blockdev.h"
 #include "hw/arm/pmb887x/trace.h"
 #include "hw/arm/pmb887x/flash-blk.h"
 
@@ -66,9 +65,8 @@ static void flash_blk_realize(DeviceState *dev, Error **errp) {
 	}
 }
 
-static Property flash_blk_properties[] = {
+static const Property flash_blk_properties[] = {
 	DEFINE_PROP_DRIVE("drive", pmb887x_flash_blk_t, blk),
-	DEFINE_PROP_END_OF_LIST(),
 };
 
 static void flash_blk_class_init(ObjectClass *klass, void *data) {

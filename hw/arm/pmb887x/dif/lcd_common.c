@@ -361,13 +361,12 @@ void pmb887x_lcd_init(pmb887x_lcd_t *lcd, DeviceState *dev) {
 	pmb887x_lcd_set_window_y2(lcd, lcd->height - 1);
 }
 
-static Property pmb887x_lcd_props[] = {
+static const Property pmb887x_lcd_props[] = {
 	DEFINE_PROP_UINT32("width", pmb887x_lcd_t, width, 240),
 	DEFINE_PROP_UINT32("height", pmb887x_lcd_t, height, 320),
 	DEFINE_PROP_UINT32("rotation", pmb887x_lcd_t, rotation, 0),
 	DEFINE_PROP_BOOL("flip_horizontal", pmb887x_lcd_t, flip_horizontal, false),
 	DEFINE_PROP_BOOL("flip_vertical", pmb887x_lcd_t, flip_vertical, false),
-	DEFINE_PROP_END_OF_LIST(),
 };
 
 static void pmb887x_lcd_class_init(ObjectClass *oc, void *data) {

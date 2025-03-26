@@ -91,13 +91,8 @@ static void pmic_realize(DeviceState *dev, Error **errp) {
 	memcpy(p->regs, regs_PMB6812, sizeof(regs_PMB6812));
 }
 
-static Property pmic_properties[] = {
-    DEFINE_PROP_END_OF_LIST(),
-};
-
 static void pmic_class_init(ObjectClass *klass, void *data) {
 	DeviceClass *dc = DEVICE_CLASS(klass);
-	device_class_set_props(dc, pmic_properties);
 	dc->realize = pmic_realize;
 	
     I2CSlaveClass *k = I2C_SLAVE_CLASS(klass);

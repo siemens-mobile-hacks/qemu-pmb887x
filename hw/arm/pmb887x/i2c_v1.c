@@ -536,13 +536,8 @@ static void i2c_realize(DeviceState *dev, Error **errp) {
 	p->timer = timer_new_ns(QEMU_CLOCK_VIRTUAL, i2c_timer_reset, p);
 }
 
-static Property i2c_properties[] = {
-	DEFINE_PROP_END_OF_LIST(),
-};
-
 static void i2c_class_init(ObjectClass *klass, void *data) {
 	DeviceClass *dc = DEVICE_CLASS(klass);
-	device_class_set_props(dc, i2c_properties);
 	dc->realize = i2c_realize;
 }
 

@@ -487,9 +487,8 @@ static void tpu_realize(DeviceState *dev, Error **errp) {
 	pmb887x_pll_add_freq_update_callback(p->pll, tpu_update_state_callback, p);
 }
 
-static Property tpu_properties[] = {
+static const Property tpu_properties[] = {
 	DEFINE_PROP_LINK("pll", struct pmb887x_tpu_t, pll, "pmb887x-pll", struct pmb887x_pll_t *),
-    DEFINE_PROP_END_OF_LIST(),
 };
 
 static void tpu_class_init(ObjectClass *klass, void *data) {

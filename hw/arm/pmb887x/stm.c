@@ -185,9 +185,8 @@ static void stm_realize(DeviceState *dev, Error **errp) {
 	pmb887x_pll_add_freq_update_callback(p->pll, stm_update_state_callback, p);
 }
 
-static Property stm_properties[] = {
+static const Property stm_properties[] = {
 	DEFINE_PROP_LINK("pll", struct pmb887x_stm_t, pll, "pmb887x-pll", struct pmb887x_pll_t *),
-    DEFINE_PROP_END_OF_LIST(),
 };
 
 static void stm_class_init(ObjectClass *klass, void *data) {
