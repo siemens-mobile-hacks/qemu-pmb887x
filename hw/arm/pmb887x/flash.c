@@ -121,7 +121,7 @@ static pmb887x_flash_block_t *flash_part_find_block(pmb887x_flash_part_t *p, uin
 		if (offset >= blk->offset && offset < blk->offset + blk->size)
 			return blk;
 	}
-	flash_error_part(p, "[data] Unknown addr %08X\n", p->flash->offset + p->offset + offset);
+	flash_error_part(p, "[data] Unknown addr %08X", p->flash->offset + p->offset + offset);
 	exit(1);
 	return NULL;
 }
@@ -135,7 +135,7 @@ static uint32_t flash_find_sector_size(pmb887x_flash_part_t *p, uint32_t offset)
 			return region->sector;
 	}
 	
-	flash_error_part(p, "[data] Unknown sector size for addr %08X\n", p->flash->offset + p->offset + offset);
+	flash_error_part(p, "[data] Unknown sector size for addr %08X", p->flash->offset + p->offset + offset);
 	exit(1);
 }
 
@@ -144,7 +144,7 @@ static uint32_t flash_data_read(pmb887x_flash_part_t *p, uint32_t offset, unsign
 	uint8_t *data = p->storage;
 	
 	if (offset < p->offset || (offset + size) > p->offset + p->size) {
-		flash_error_part(p, "[data] Unknown read addr %08X\n", offset);
+		flash_error_part(p, "[data] Unknown read addr %08X", offset);
 		exit(1);
 	}
 	
@@ -156,7 +156,7 @@ static uint32_t flash_data_read(pmb887x_flash_part_t *p, uint32_t offset, unsign
 		case 4:		return data[offset] | (data[offset + 1] << 8) | (data[offset + 2] << 16) | (data[offset + 3] << 24);
 	}
 	
-	flash_error_part(p, "[data] Unknown read size %d\n", size);
+	flash_error_part(p, "[data] Unknown read size %d", size);
 	exit(1);
 	
     return 0;
@@ -167,7 +167,7 @@ static void flash_data_write(pmb887x_flash_part_t *p, uint32_t offset, uint32_t 
 	uint8_t *data = p->storage;
 	
 	if (offset < p->offset || (offset + size) > p->offset + p->size) {
-		flash_error_part(p, "[data] Unknown write addr %08X [part %08X-%08X]\n", offset, p->offset, p->offset + p->size - 1);
+		flash_error_part(p, "[data] Unknown write addr %08X [part %08X-%08X]", offset, p->offset, p->offset + p->size - 1);
 		exit(1);
 	}
 	
@@ -191,7 +191,7 @@ static void flash_data_write(pmb887x_flash_part_t *p, uint32_t offset, uint32_t 
 		break;
 		
 		default:
-			flash_error_part(p, "[data] Unknown write size %d\n", size);
+			flash_error_part(p, "[data] Unknown write size %d", size);
 			exit(1);
 		break;
 	}
@@ -199,7 +199,7 @@ static void flash_data_write(pmb887x_flash_part_t *p, uint32_t offset, uint32_t 
 	if (pmb887x_flash_blk_is_rw(p->flash->blk)) {
 		int ret = pmb887x_flash_blk_pwrite(p->flash->blk, p->flash->offset + p->offset + offset, size, p->storage + offset);
 		if (ret < 0) {
-			flash_error_part(p, "Can't read to flash file: %d, %s\n", ret, strerror(ret));
+			flash_error_part(p, "Can't read to flash file: %d, %s", ret, strerror(ret));
 			exit(1);
 		}
 	}
@@ -473,7 +473,7 @@ static void flash_io_write(void *opaque, hwaddr part_offset, uint64_t value, uns
 					flash_trace_part(p, "confirm erase block %08X...%08X (sector: %08X)", p->flash->offset + base, p->flash->offset + base + sector_size - 1, sector_size);
 					
 					if ((offset & mask) != (p->cmd_addr & mask)) {
-						flash_error_part(p, "erase sector mismatch: %08"PRIX64" != %08X\n", p->flash->offset + offset, p->flash->offset + p->cmd_addr);
+						flash_error_part(p, "erase sector mismatch: %08"PRIX64" != %08X", p->flash->offset + offset, p->flash->offset + p->cmd_addr);
 						exit(1);
 					}
 					
@@ -484,7 +484,7 @@ static void flash_io_write(void *opaque, hwaddr part_offset, uint64_t value, uns
 					if (pmb887x_flash_blk_is_rw(p->flash->blk)) {
 						int ret = pmb887x_flash_blk_pwrite(p->flash->blk, p->flash->offset + p->offset + erase_offset, sector_size, p->storage + erase_offset);
 						if (ret < 0) {
-							flash_error_part(p, "Can't read to flash file: %d, %s\n", ret, strerror(ret));
+							flash_error_part(p, "Can't read to flash file: %d, %s", ret, strerror(ret));
 							exit(1);
 						}
 					}
@@ -749,7 +749,7 @@ static void flash_error(pmb887x_flash_t *flash, const char *format, ...) {
 	g_string_append_vprintf(s, format, args);
 	va_end(args);
 	
-	error_report("[%s] %s %s\n", PMB887X_TRACE_PREFIX, flash->name, s->str);
+	error_report("[%s] %s %s", PMB887X_TRACE_PREFIX, flash->name, s->str);
 }
 
 static void flash_error_part(pmb887x_flash_part_t *p, const char *format, ...) {
@@ -760,7 +760,7 @@ static void flash_error_part(pmb887x_flash_part_t *p, const char *format, ...) {
 	g_string_append_vprintf(s, format, args);
 	va_end(args);
 	
-	error_report("[%s] %s <%d> %s\n", PMB887X_TRACE_PREFIX, p->flash->name, p->n, s->str);
+	error_report("[%s] %s <%d> %s", PMB887X_TRACE_PREFIX, p->flash->name, p->n, s->str);
 }
 
 static void flash_trace_part(pmb887x_flash_part_t *p, const char *format, ...) {
@@ -774,7 +774,7 @@ static void flash_trace_part(pmb887x_flash_part_t *p, const char *format, ...) {
 	g_string_append_vprintf(s, format, args);
 	va_end(args);
 	
-	qemu_log_mask(LOG_TRACE, "[%s] %s <%d> %s\n", PMB887X_TRACE_PREFIX, p->flash->name, p->n, s->str);
+	qemu_log_mask(LOG_TRACE, "[%s] %s <%d> %s", PMB887X_TRACE_PREFIX, p->flash->name, p->n, s->str);
 }
 
 static void flash_trace(pmb887x_flash_t *flash, const char *format, ...) {
@@ -788,7 +788,7 @@ static void flash_trace(pmb887x_flash_t *flash, const char *format, ...) {
 	g_string_append_vprintf(s, format, args);
 	va_end(args);
 	
-	qemu_log_mask(LOG_TRACE, "[%s] %s %s\n", PMB887X_TRACE_PREFIX, flash->name, s->str);
+	qemu_log_mask(LOG_TRACE, "[%s] %s %s", PMB887X_TRACE_PREFIX, flash->name, s->str);
 }
 
 static const Property flash_properties[] = {

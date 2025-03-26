@@ -341,8 +341,9 @@ bool arm_cpu_tlb_fill_align(CPUState *cs, CPUTLBEntryFull *out, vaddr address,
      * Per R_XCHFJ, alignment fault not due to memory type has
      * highest precedence.  Otherwise, walk the page table and
      * and collect the page description.
+     * PMB887x quirks: skip check for ARMv5
      */
-    if (address & ((1 << memop_alignment_bits(memop)) - 1)) {
+    if (!arm_feature(&cpu->env, ARM_FEATURE_V5) && (address & ((1 << memop_alignment_bits(memop)) - 1))) {
         fi->type = ARMFault_Alignment;
     } else if (!get_phys_addr(&cpu->env, address, access_type, memop,
                               core_to_arm_mmu_idx(&cpu->env, mmu_idx),
