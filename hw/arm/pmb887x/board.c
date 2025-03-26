@@ -88,101 +88,6 @@ static const ARMCPRegInfo cp_reginfo[] = {
 		.access = PL1_RW, .type = ARM_CP_IO, .readfn = pmb8876_btcm_read, .writefn = pmb8876_btcm_write },
 };
 
-static uint32_t unk_reg_F4600040 = 1;
-
-static uint64_t cpu_io_read(void *opaque, hwaddr offset, unsigned size) {
-	hwaddr addr = (size_t) opaque + offset;
-	uint32_t value = 0;
-	
-	if (addr == 0xF4C0001C)
-		value = 0;
-	
-	if (addr == 0xF4C00000)
-		value = 0xFFFFFFFF;
-	
-	if (addr == 0xF4600024)
-		value = 0x800000 | 0x11;
-	
-	if (addr == 0xF4600040)
-		value = unk_reg_F4600040;
-	
-	#ifdef PMB887X_IO_BRIDGE
-	value = pmb8876_io_bridge_read(addr, size);
-	pmb887x_dump_io(addr, size, value, false);
-	return value;
-	#endif
-	
-	#ifdef PMB887X_TRACE_UNHANDLED_IO
-	pmb887x_dump_io(addr, size, value, false);
-	#endif
-	
-	// hw_error("READ: unknown reg access: %08lX\n", addr);
-	
-	return value;
-}
-
-static void cpu_io_write(void *opaque, hwaddr offset, uint64_t value, unsigned size) {
-	hwaddr addr = (size_t) opaque + offset;
-	
-	#ifdef PMB887X_TRACE_UNHANDLED_IO
-	pmb887x_dump_io(addr, size, value, true);
-	#endif
-	
-	if (addr == 0xf460001c) {
-		if (value == 0x8) {
-			unk_reg_F4600040 = 2;
-		} else {
-			unk_reg_F4600040 = 1;
-		}
-	}
-	
-	if (addr == 0xF460002C) {
-		if (value == 2) {
-			unk_reg_F4600040 = 1;
-		} else {
-			unk_reg_F4600040 = 0;
-		}
-	}
-	
-	#ifdef PMB887X_IO_BRIDGE
-	pmb887x_dump_io(addr, size, value, true);
-	pmb8876_io_bridge_write(addr, size, value);
-	return;
-	#endif
-	
-	//fprintf(stderr, "WRITE: unknown reg access: %08lX\n", addr);
-	//exit(1);
-}
-
-static const MemoryRegionOps cpu_io_opts = {
-	.read			= cpu_io_read,
-	.write			= cpu_io_write,
-	.endianness		= DEVICE_NATIVE_ENDIAN,
-	.valid			= {
-		.min_access_size	= 1,
-		.max_access_size	= 4
-	}
-};
-
-static uint64_t unmapped_io_read(void *opaque, hwaddr offset, unsigned size) {
-	uint32_t addr = (size_t) opaque + offset;
-	fprintf(stderr, "UNMAPPED READ[%d] %08X (PC: %08X)\n", size, addr, cpu->env.regs[15]);
-//	exit(1);
-	return 0;
-}
-
-static void unmapped_io_write(void *opaque, hwaddr offset, uint64_t value, unsigned size) {
-	uint32_t addr = (size_t) opaque + offset;
-	fprintf(stderr, "UNMAPPED WRITE[%d] %08X = %08lX (from: %08X)\n", size, addr, value, cpu->env.regs[15]);
-//	exit(1);
-}
-
-static const MemoryRegionOps unmapped_io_opts = {
-	.read			= unmapped_io_read,
-	.write			= unmapped_io_write,
-	.endianness		= DEVICE_NATIVE_ENDIAN,
-};
-
 __attribute__((destructor))
 static void memory_dump_at_exit(void) {
 //	fprintf(stderr, "sorry died at %08X\n", ARM_CPU(qemu_get_cpu(0))->env.regs[15]);
@@ -320,6 +225,12 @@ static void pmb887x_init(MachineState *machine) {
 	pmb8876_tcm_update();
 	
 	// 0x00000000-0xFFFFFFFF (Unmapped IO access)
+	DeviceState *unknown_io = qdev_new("pmb887x-unknown");
+	sysbus_mmio_map(SYS_BUS_DEVICE(unknown_io), 0, 0);
+	sysbus_realize_and_unref(SYS_BUS_DEVICE(unknown_io), &error_fatal);
+
+	/*
+	// 0x00000000-0xFFFFFFFF (Unmapped IO access)
     MemoryRegion *unmapped_io = g_new(MemoryRegion, 1);
     memory_region_init_io(unmapped_io, NULL, &unmapped_io_opts, (void *) 0x00000000, "UNMAPPED_IO", 0xFFFFFFFF);
 	memory_region_add_subregion(sysmem, 0x00000000, unmapped_io);
@@ -328,11 +239,12 @@ static void pmb887x_init(MachineState *machine) {
 	MemoryRegion *io = g_new(MemoryRegion, 1);
     memory_region_init_io(io, NULL, &cpu_io_opts, (void *) 0xF0000000, "IO", 0xF000000);
 	memory_region_add_subregion(sysmem, 0xF0000000, io);
-	
+	*/
+
 	// 0x00800000 (Internal SRAM, 96k)
 	MemoryRegion *sram = g_new(MemoryRegion, 1);
 	memory_region_init_ram(sram, NULL, "SRAM", 0x18000, &error_fatal);
-	memory_region_add_subregion(sysmem, 0x00800000, sram);
+	memory_region_add_subregion_overlap(sysmem, 0x00800000, sram, 1);
 	
 	// Mirrors of SRAM
 	for (uint32_t i = 0x00000000; i < 0x00800000; i += 0x20000) {
@@ -340,7 +252,7 @@ static void pmb887x_init(MachineState *machine) {
 		sprintf(salias_name, "SRAM_MIRROR_%X", i / 0x20000);
 		MemoryRegion *sram_alias = g_new(MemoryRegion, 1);
 		memory_region_init_alias(sram_alias, NULL, salias_name, sram, 0, memory_region_size(sram));
-		memory_region_add_subregion(sysmem, i, sram_alias);
+		memory_region_add_subregion_overlap(sysmem, i, sram_alias, 1);
 	}
 	
 	// 0x00400000 (BROM)
@@ -348,13 +260,13 @@ static void pmb887x_init(MachineState *machine) {
 	const uint8_t *brom_data = pmb887x_get_brom_image(board->cpu, &brom_size);
 	MemoryRegion *brom = g_new(MemoryRegion, 1);
 	memory_region_init_rom(brom, NULL, "BROM", brom_size, &error_fatal);
-	memory_region_add_subregion(sysmem, 0x00400000, brom);
+	memory_region_add_subregion_overlap(sysmem, 0x00400000, brom, 1);
 
 	// Mirror of BROM at top of IO (enabled/disabled by SCU)
 	MemoryRegion *brom_mirror = g_new(MemoryRegion, 1);
 	memory_region_init_alias(brom_mirror, NULL, "BROM_MIRROR", brom, 0, memory_region_size(brom));
 	memory_region_set_enabled(brom_mirror, true);
-	memory_region_add_subregion(sysmem, 0x00000000, brom_mirror);
+	memory_region_add_subregion_overlap(sysmem, 0x00000000, brom_mirror, 1);
 
 	rom_add_blob_fixed("BROM", brom_data, brom_size, 0x00400000);
 

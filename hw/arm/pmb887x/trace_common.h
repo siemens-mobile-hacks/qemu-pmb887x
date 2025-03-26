@@ -1,5 +1,6 @@
 #pragma once
 
+#include "qemu/osdep.h"
 #include "qemu/log.h"
 #include "qapi/error.h"
 #include "qemu/error-report.h"
@@ -31,6 +32,7 @@ enum pmb887x_modules_t {
 	PMB887X_TRACE_MMCI		= 1ULL << 19,
 	
 	// External
+	PMB887X_TRACE_UNKNOWN	= 1ULL << 27,
 	PMB887X_TRACE_FM_RADIO	= 1ULL << 28,
 	PMB887X_TRACE_FLASH		= 1ULL << 29,
 	PMB887X_TRACE_LCD		= 1ULL << 30,
@@ -40,6 +42,10 @@ enum pmb887x_modules_t {
 //extern uint32_t pmb887x_trace_flags;
 
 static inline bool pmb887x_trace_log_enabled(uint64_t id) {
+	if (id == PMB887X_TRACE_UNKNOWN)
+		return true;
+
+
 	//return ((id & (PMB887X_TRACE_GPTU)) != 0);
 	return ((id & (PMB887X_TRACE_PMIC)) != 0);
 	return false;
@@ -79,6 +85,9 @@ static inline bool pmb887x_trace_log_enabled(uint64_t id) {
 }
 
 static inline bool pmb887x_trace_io_enabled(uint64_t id) {
+	if (id == PMB887X_TRACE_UNKNOWN)
+		return true;
+
 	//return ((id & (PMB887X_TRACE_GPTU)) != 0);
 	//return true;
 	//return ((id & (PMB887X_TRACE_GPTU)) != 0);
