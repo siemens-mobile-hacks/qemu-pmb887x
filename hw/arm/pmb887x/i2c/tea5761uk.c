@@ -6,30 +6,27 @@
 
 #include "qemu/osdep.h"
 #include "hw/sysbus.h"
-#include "hw/hw.h"
-#include "hw/ptimer.h"
-#include "exec/address-spaces.h"
 #include "exec/memory.h"
 #include "cpu.h"
 #include "qapi/error.h"
-#include "qemu/timer.h"
 #include "qemu/main-loop.h"
 #include "hw/qdev-properties.h"
-#include "qapi/error.h"
 #include "hw/i2c/i2c.h"
 #include "hw/arm/pmb887x/trace.h"
 
 #define TYPE_PMB887X_PMIC	"pmb887x-tea5761uk"
 #define PMB887X_PMIC(obj)	OBJECT_CHECK(pmb887x_fmradio_t, (obj), TYPE_PMB887X_PMIC)
 
-typedef struct {
+typedef struct pmb887x_fmradio_t pmb887x_fmradio_t;
+
+struct pmb887x_fmradio_t {
 	I2CSlave parent_obj;
-	int reg_id;
+	uint32_t reg_id;
 	uint8_t rcycle;
 	uint8_t wcycle;
 	uint8_t regs[256];
 	uint32_t revision;
-} pmb887x_fmradio_t;
+};
 
 static const uint8_t default_regs[256] = {
 	0x00, 0x00, 0x80, 0x00, 0x08, 0xD2, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x40, 0x2B, 0x57, 0x61
@@ -44,21 +41,12 @@ static int pmic_event(I2CSlave *s, enum i2c_event event) {
 		break;
 		
 		case I2C_START_RECV:
-			p->rcycle = 0;
-			p->wcycle = 0;
-		break;
-		
 		case I2C_NACK:
-			p->rcycle = 0;
-			p->wcycle = 0;
-		break;
-		
 		case I2C_FINISH:
-			// Nothing
 			p->rcycle = 0;
 			p->wcycle = 0;
 		break;
-		
+
 		case I2C_START_SEND_ASYNC:
 			// Nothing
 		break;

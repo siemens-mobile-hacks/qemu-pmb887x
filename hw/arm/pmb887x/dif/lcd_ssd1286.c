@@ -5,7 +5,6 @@
 #define PMB887X_TRACE_PREFIX	"pmb887x-lcd-ssd1286"
 
 #include "qemu/osdep.h"
-#include "hw/hw.h"
 #include "hw/qdev-properties.h"
 #include "qapi/error.h"
 #include "qemu/error-report.h"
@@ -20,10 +19,12 @@
 
 static const uint16_t DEFAULT_REGS[] = { 0 };
 
-typedef struct {
+typedef struct pmb887x_lcd_ssd1286_t pmb887x_lcd_ssd1286_t;
+
+struct pmb887x_lcd_ssd1286_t {
 	pmb887x_lcd_t parent;
 	uint16_t regs[SSD1286_MAX_REGS];
-} pmb887x_lcd_ssd1286_t;
+};
 
 static void lcd_update_state(pmb887x_lcd_t *lcd) {
 	pmb887x_lcd_ssd1286_t *priv = PMB887X_LCD_SSD1286(lcd);
@@ -71,22 +72,26 @@ static void lcd_on_cmd_with_params(pmb887x_lcd_t *lcd, uint32_t cmd, const uint3
 		case 0x01:
 		case 0x03:
 			lcd_update_state(lcd);
-		break;
+			break;
 		
 		case 0x21:
 			pmb887x_lcd_set_x(lcd, params[0] & 0xFF);
 			pmb887x_lcd_set_y(lcd, params[0] >> 8);
-		break;
+			break;
 		
 		case 0x44:
 			pmb887x_lcd_set_window_x1(lcd, params[0] & 0xFF);
 			pmb887x_lcd_set_window_x2(lcd, params[0] >> 8);
-		break;
+			break;
 		
 		case 0x45:
 			pmb887x_lcd_set_window_y1(lcd, params[0] & 0xFF);
 			pmb887x_lcd_set_window_y2(lcd, params[0] >> 8);
-		break;
+			break;
+
+		default:
+			// Nothing
+			break;
 	}
 }
 

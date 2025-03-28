@@ -2,17 +2,22 @@
 #include "qemu/osdep.h"
 #include "hw/irq.h"
 
-typedef struct pmb887x_clc_reg_t {
-	uint32_t value;
-} pmb887x_clc_reg_t;
+typedef struct pmb887x_clc_reg_t pmb887x_clc_reg_t;
+typedef struct pmb887x_src_reg_t pmb887x_src_reg_t;
+typedef struct pmb887x_srb_reg_t pmb887x_srb_reg_t;
+typedef struct pmb887x_srb_ext_reg_t pmb887x_srb_ext_reg_t;
 
-typedef struct pmb887x_src_reg_t {
+struct pmb887x_clc_reg_t {
+	uint32_t value;
+};
+
+struct pmb887x_src_reg_t {
 	uint32_t value;
 	qemu_irq irq;
 	bool last_irq_state;
-} pmb887x_src_reg_t;
+};
 
-typedef struct {
+struct pmb887x_srb_reg_t {
 	qemu_irq *irq;
 	int irq_n;
 	bool *last_irq_state;
@@ -24,14 +29,14 @@ typedef struct {
 	
 	int (*irq_router)(void *, int);
 	void *irq_router_opaque;
-} pmb887x_srb_reg_t;
+};
 
-typedef struct {
+struct pmb887x_srb_ext_reg_t {
 	pmb887x_srb_reg_t *parent;
 	uint32_t events;
 	uint32_t imsc;
 	uint32_t ris;
-} pmb887x_srb_ext_reg_t;
+};
 
 // Clock Control Register
 void pmb887x_clc_init(pmb887x_clc_reg_t *reg);

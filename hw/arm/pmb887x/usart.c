@@ -1,36 +1,28 @@
 /*
  * USART
  * */
-#include <stdint.h>
 #define PMB887X_TRACE_ID		USART
 #define PMB887X_TRACE_PREFIX	"pmb887x-usart"
 
 #include "qemu/osdep.h"
 #include "hw/sysbus.h"
 #include "hw/hw.h"
-#include "hw/ptimer.h"
-#include "exec/address-spaces.h"
 #include "exec/memory.h"
 #include "cpu.h"
-#include "qapi/error.h"
-#include "qemu/timer.h"
 #include "qemu/main-loop.h"
 #include "hw/qdev-properties.h"
 #include "hw/qdev-properties-system.h"
-#include "qapi/error.h"
 #include "chardev/char-fe.h"
 #include "chardev/char-serial.h"
 
-#include "hw/arm/pmb887x/pll.h"
 #include "hw/arm/pmb887x/regs.h"
-#include "hw/arm/pmb887x/io_bridge.h"
 #include "hw/arm/pmb887x/regs_dump.h"
 #include "hw/arm/pmb887x/mod.h"
 #include "hw/arm/pmb887x/fifo.h"
 #include "hw/arm/pmb887x/trace.h"
 
 #define TYPE_PMB887X_USART	"pmb887x-usart"
-#define PMB887X_USART(obj)	OBJECT_CHECK(struct pmb887x_usart_t, (obj), TYPE_PMB887X_USART)
+#define PMB887X_USART(obj)	OBJECT_CHECK(pmb887x_usart_t, (obj), TYPE_PMB887X_USART)
 
 #define FIFO_SIZE	8
 #define USART_LOG_TRX true
@@ -47,6 +39,8 @@ enum {
 	USART_IRQ_TMO,
 	USART_IRQ_NR
 };
+
+typedef struct pmb887x_usart_t pmb887x_usart_t;
 
 struct pmb887x_usart_t {
 	SysBusDevice parent_obj;
@@ -91,9 +85,9 @@ struct pmb887x_usart_t {
 	uint32_t unk;
 };
 
-static void usart_transmit_fifo(struct pmb887x_usart_t *p);
+static void usart_transmit_fifo(pmb887x_usart_t *p);
 
-static void usart_set_rx_fifo(struct pmb887x_usart_t *p, bool buffered) {
+static void usart_set_rx_fifo(pmb887x_usart_t *p, bool buffered) {
 	pmb887x_fifo_reset(&p->rx_fifo_buffered);
 	pmb887x_fifo_reset(&p->rx_fifo_single);
 	
@@ -104,7 +98,7 @@ static void usart_set_rx_fifo(struct pmb887x_usart_t *p, bool buffered) {
 	}
 }
 
-static void usart_set_tx_fifo(struct pmb887x_usart_t *p, bool buffered) {
+static void usart_set_tx_fifo(pmb887x_usart_t *p, bool buffered) {
 	pmb887x_fifo_reset(&p->tx_fifo_buffered);
 	pmb887x_fifo_reset(&p->tx_fifo_single);
 	
@@ -120,7 +114,7 @@ static void usart_set_tx_fifo(struct pmb887x_usart_t *p, bool buffered) {
 	}
 }
 
-static void usart_update_state(struct pmb887x_usart_t *p) {
+static void usart_update_state(pmb887x_usart_t *p) {
 	if ((p->rxfcon & USART_RXFCON_RXFEN)) {
 		if ((p->rxfcon & USART_RXFCON_RXFFLU)) {
 			usart_set_rx_fifo(p, false);
@@ -139,14 +133,14 @@ static void usart_update_state(struct pmb887x_usart_t *p) {
 }
 
 static int usart_can_receive(void *opaque) {
-	struct pmb887x_usart_t *p = (struct pmb887x_usart_t *) opaque;
+	pmb887x_usart_t *p = opaque;
 	if (!pmb887x_clc_is_enabled(&p->clc))
 		return 0;
 	return pmb887x_fifo_free_count(p->rx_fifo);
 }
 
 static void usart_receive(void *opaque, const uint8_t *buf, int size) {
-	struct pmb887x_usart_t *p = (struct pmb887x_usart_t *) opaque;
+	pmb887x_usart_t *p = opaque;
 	
 	if (!pmb887x_clc_is_enabled(&p->clc)) {
 		DPRINTF("usart not enabled, drop %d rx chars\n", size);
@@ -169,13 +163,13 @@ static void usart_receive(void *opaque, const uint8_t *buf, int size) {
 }
 
 static gboolean usart_transmit_delayed(void *do_not_use, GIOCondition cond, void *opaque) {
-	struct pmb887x_usart_t *p = (struct pmb887x_usart_t *) opaque;
+	pmb887x_usart_t *p = opaque;
 	p->watch_tag = 0;
 	usart_transmit_fifo(p);
 	return false;
 }
 
-static void usart_transmit_fifo(struct pmb887x_usart_t *p) {
+static void usart_transmit_fifo(pmb887x_usart_t *p) {
 	if (p->watch_tag)
 		return;
 	
@@ -187,7 +181,7 @@ static void usart_transmit_fifo(struct pmb887x_usart_t *p) {
 	bool is_full = pmb887x_fifo_is_full(p->tx_fifo);
 	
 	uint8_t buff[FIFO_SIZE];
-	uint32_t size = pmb887x_fifo_count(p->tx_fifo);
+	int size = pmb887x_fifo_count(p->tx_fifo);
 	pmb887x_fifo8_read(p->tx_fifo, buff, size);
 	
 	if (USART_LOG_TRX) {
@@ -232,7 +226,7 @@ static void usart_transmit_fifo(struct pmb887x_usart_t *p) {
 }
 
 static uint64_t usart_io_read(void *opaque, hwaddr haddr, unsigned size) {
-	struct pmb887x_usart_t *p = (struct pmb887x_usart_t *) opaque;
+	pmb887x_usart_t *p = opaque;
 
 	uint64_t value = 0;
 
@@ -240,7 +234,7 @@ static uint64_t usart_io_read(void *opaque, hwaddr haddr, unsigned size) {
 	if (haddr != USART_RIS)
 		p->last_is_icr_tx = false;
 
-	bool no_dump = true;
+	bool no_dump = false;
 
 	switch (haddr) {
 		case USART_CLC:
@@ -386,7 +380,7 @@ static uint64_t usart_io_read(void *opaque, hwaddr haddr, unsigned size) {
 }
 
 static void usart_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned size) {
-	struct pmb887x_usart_t *p = (struct pmb887x_usart_t *) opaque;
+	pmb887x_usart_t *p = opaque;
 
 	// Workaround for broken firmwares
 	p->last_is_icr_tx = (haddr == USART_ICR && (value & USART_ICR_TX));

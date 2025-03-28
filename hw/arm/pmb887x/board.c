@@ -2,22 +2,15 @@
 #include "qapi/error.h"
 #include "cpu.h"
 #include "hw/sysbus.h"
-#include "migration/vmstate.h"
 #include "hw/arm/boot.h"
 #include "net/net.h"
-#include "hw/irq.h"
 #include "hw/boards.h"
-#include "hw/block/flash.h"
 #include "qemu/error-report.h"
 #include "qobject/qlist.h"
 #include "qom/object.h"
 #include "exec/address-spaces.h"
-#include "qemu/datadir.h"
 #include "hw/loader.h"
-#include "qapi/qapi-commands-machine.h"
-#include "system/cpu-throttle.h"
-#include "system/accel-ops.h"
-#include "system/cpu-timers.h"
+#include "hw/irq.h"
 #include "system/system.h"
 #include "target/arm/cpregs.h"
 
@@ -29,13 +22,12 @@
 #include "hw/arm/pmb887x/dif/lcd_common.h"
 #include "hw/arm/pmb887x/pll.h"
 #include "hw/arm/pmb887x/boards.h"
-#include <stdio.h>
 
 static MemoryRegion tcm_memory[2];
 static uint32_t tcm_regs[2] = {0x10, 0x10};
 
 static const pmb887x_board_t *board = NULL;
-static struct pmb887x_pll_t *cpu_pll = NULL;
+static pmb887x_pll_t *cpu_pll = NULL;
 static ARMCPU *cpu = NULL;
 
 /*
@@ -130,24 +122,44 @@ static void pmb887x_create_sdram(DeviceState *ebuc, const pmb887x_board_memory_t
 
 static void pmb887x_create_flash(BlockBackend *blk, DeviceState *ebuc, const pmb887x_board_memory_t *memory_list) {
 	int flash_id = 0;
-	char flash_name[32];
-	char cs_name[32];
-	
+
 	DeviceState *flash_blk = qdev_new("pmb887x-flash-blk");
 	qdev_prop_set_drive(flash_blk, "drive", blk);
 	sysbus_realize_and_unref(SYS_BUS_DEVICE(flash_blk), &error_fatal);
 	
 	uint32_t flash_offset = 0;
-	
+
+	const char *flash_otp0 = getenv("PMB887X_FLASH_OTP0");
+	const char *flash_otp1 = getenv("PMB887X_FLASH_OTP1");
+
+	if (!flash_otp0)
+		flash_otp0 = "";
+	if (!flash_otp1)
+		flash_otp1 = "";
+
 	for (int cs = 0; cs < 4; cs++) {
 		const pmb887x_board_memory_t *memory = &memory_list[cs];
 		if (memory->type == PMB887X_MEMORY_TYPE_FLASH) {
+			char cs_name[32];
+			char flash_name[32];
+			char flash_otp0_env[32];
+			char flash_otp1_env[32];
 			sprintf(flash_name, "flash%d", flash_id);
-			
+			sprintf(flash_otp0_env, "PMB887X_FLASH%d_OTP0", flash_id);
+			sprintf(flash_otp1_env, "PMB887X_FLASH%d_OTP1", flash_id);
+
+			const char *bank_otp0 = getenv(flash_otp0_env);
+			const char *bank_otp1 = getenv(flash_otp1_env);
+
+			if (!bank_otp0)
+				bank_otp0 = flash_otp0;
+			if (!bank_otp1)
+				bank_otp1 = flash_otp1;
+
 			DeviceState *flash = qdev_new("pmb887x-flash");
 			qdev_prop_set_string(flash, "name", flash_name);
-			qdev_prop_set_string(flash, "otp0-data", getenv("PMB887X_FLASH_OTP0") ?: ""); // ESN
-			qdev_prop_set_string(flash, "otp1-data", getenv("PMB887X_FLASH_OTP1") ?: ""); // IMEI
+			qdev_prop_set_string(flash, "otp0-data", bank_otp0); // ESN
+			qdev_prop_set_string(flash, "otp1-data", bank_otp1); // IMEI
 			qdev_prop_set_uint16(flash, "vid", memory->vid);
 			qdev_prop_set_uint16(flash, "pid", memory->pid);
 			qdev_prop_set_uint32(flash, "offset", flash_offset);
@@ -189,13 +201,14 @@ static void pmb887x_init(MachineState *machine) {
 		error_report("Please, set board config with env PMB887X_BOARD=path/to/board.cfg");
 		exit(1);
 	}
-	
-	if (!(board = pmb887x_get_board(board_config))) {
+
+	board = pmb887x_get_board(board_config);
+	if (!board) {
 		error_report("Invalid board specified.");
 		exit(1);
 	}
 	
-	#ifdef PMB887X_IO_BRIDGE
+	#if PMB887X_IO_BRIDGE
 	fprintf(stderr, "Waiting for IO bridge...\n");
 	pmb8876_io_bridge_init();
 	#endif
@@ -229,18 +242,6 @@ static void pmb887x_init(MachineState *machine) {
 	DeviceState *unknown_io = qdev_new("pmb887x-unknown");
 	sysbus_mmio_map(SYS_BUS_DEVICE(unknown_io), 0, 0);
 	sysbus_realize_and_unref(SYS_BUS_DEVICE(unknown_io), &error_fatal);
-
-	/*
-	// 0x00000000-0xFFFFFFFF (Unmapped IO access)
-    MemoryRegion *unmapped_io = g_new(MemoryRegion, 1);
-    memory_region_init_io(unmapped_io, NULL, &unmapped_io_opts, (void *) 0x00000000, "UNMAPPED_IO", 0xFFFFFFFF);
-	memory_region_add_subregion(sysmem, 0x00000000, unmapped_io);
-	
-	// 0xF0000000-0xFF000000 (CPU IO)
-	MemoryRegion *io = g_new(MemoryRegion, 1);
-    memory_region_init_io(io, NULL, &cpu_io_opts, (void *) 0xF0000000, "IO", 0xF000000);
-	memory_region_add_subregion(sysmem, 0xF0000000, io);
-	*/
 
 	// 0x00800000 (Internal SRAM, 96k)
 	MemoryRegion *sram = g_new(MemoryRegion, 1);
@@ -292,15 +293,19 @@ static void pmb887x_init(MachineState *machine) {
 	object_property_set_link(OBJECT(tpu), "pll", OBJECT(pll), &error_fatal);
 	sysbus_realize_and_unref(SYS_BUS_DEVICE(tpu), &error_fatal);
 	
+	#if !PMB887X_IO_BRIDGE
 	// DMA Controller
 	DeviceState *dmac = pmb887x_new_dev(board->cpu, "DMA", nvic);
 	object_property_set_link(OBJECT(dmac), "downstream", OBJECT(sysmem), &error_fatal);
 	sysbus_realize_and_unref(SYS_BUS_DEVICE(dmac), &error_fatal);
+	#endif
 	
+	#if !PMB887X_IO_BRIDGE
 	// DSP
 	DeviceState *dsp = pmb887x_new_dev(board->cpu, "DSP", nvic);
 	object_property_set_uint(OBJECT(dsp), "ram0_value", board->dsp.ram0_value, &error_fatal);
 	sysbus_realize_and_unref(SYS_BUS_DEVICE(dsp), &error_fatal);
+	#endif
 	
 	if (board->cpu == CPU_PMB8876) {
 		// MMCI
@@ -317,11 +322,14 @@ static void pmb887x_init(MachineState *machine) {
 	object_property_set_bool(OBJECT(lcd), "flip_vertical", board->display.flip_vertical, &error_fatal);
 	qdev_realize_and_unref(DEVICE(lcd), NULL, &error_fatal);
 	
+	#if !PMB887X_IO_BRIDGE
 	// DIF
 	DeviceState *dif = pmb887x_new_dev(board->cpu, "DIF", nvic);
-	object_property_set_link(OBJECT(dif), "dmac", OBJECT(dmac), &error_fatal);
+	if (object_property_find(OBJECT(dif), "dmac"))
+		object_property_set_link(OBJECT(dif), "dmac", OBJECT(dmac), &error_fatal);
 	object_property_set_link(OBJECT(dif), "lcd", OBJECT(lcd), &error_fatal);
 	sysbus_realize_and_unref(SYS_BUS_DEVICE(dif), &error_fatal);
+	#endif
 	
 	// USART0
 	DeviceState *usart0 = pmb887x_new_dev(board->cpu, "USART0", nvic);
@@ -333,6 +341,7 @@ static void pmb887x_init(MachineState *machine) {
 	qdev_prop_set_chr(DEVICE(usart1), "chardev", serial_hd(1));
 	sysbus_realize_and_unref(SYS_BUS_DEVICE(usart1), &error_fatal);
 	
+	#if !PMB887X_IO_BRIDGE
     // I2C
     DeviceState *i2c = pmb887x_new_dev(board->cpu, "I2C", nvic);
     sysbus_realize_and_unref(SYS_BUS_DEVICE(i2c), &error_fatal);
@@ -340,13 +349,15 @@ static void pmb887x_init(MachineState *machine) {
     for (uint32_t i = 0; i < board->i2c_devices_count; i++) {
         I2CSlave *dev = pmb887x_new_i2c_dev(&board->i2c_devices[i]);
         i2c_slave_realize_and_unref(dev, pmb887x_i2c_bus(i2c), &error_fatal);
-    }
+	}
+	#endif
 	
 	// Standby Clock Control Unit
 	DeviceState *sccu = pmb887x_new_dev(board->cpu, "SCCU", nvic);
 	object_property_set_link(OBJECT(sccu), "pll", OBJECT(pll), &error_fatal);
 	sysbus_realize_and_unref(SYS_BUS_DEVICE(sccu), &error_fatal);
 	
+	#if !PMB887X_IO_BRIDGE
 	// Port Control Logic
 	DeviceState *pcl = pmb887x_new_dev(board->cpu, "PCL", nvic);
 	sysbus_realize_and_unref(SYS_BUS_DEVICE(pcl), &error_fatal);
@@ -365,18 +376,21 @@ static void pmb887x_init(MachineState *machine) {
 	// CAPCOM1
 	DeviceState *capcom1 = pmb887x_new_dev(board->cpu, "CAPCOM1", nvic);
 	sysbus_realize_and_unref(SYS_BUS_DEVICE(capcom1), &error_fatal);
+	#endif
 	
+	#if !PMB887X_IO_BRIDGE
 	// Fixed values for some GPIO's
 	for (int i = 0; i < board->gpios_count; i++) {
 		const pmb887x_board_gpio_t *gpio = &board->gpios[i];
 		qemu_set_irq(qdev_get_gpio_in(pcl, gpio->id), gpio->value);
 	}
+	#endif
 	
 	// RTC
 	DeviceState *rtc = pmb887x_new_dev(board->cpu, "RTC", nvic);
 	sysbus_realize_and_unref(SYS_BUS_DEVICE(rtc), &error_fatal);
 
-#ifndef PMB887X_IO_BRIDGE
+	#if !PMB887X_IO_BRIDGE
 	// GPTU0
 	DeviceState *gptu0 = pmb887x_new_dev(board->cpu, "GPTU0", nvic);
 	object_property_set_link(OBJECT(gptu0), "pll", OBJECT(pll), &error_fatal);
@@ -386,16 +400,18 @@ static void pmb887x_init(MachineState *machine) {
 	DeviceState *gptu1 = pmb887x_new_dev(board->cpu, "GPTU1", nvic);
 	object_property_set_link(OBJECT(gptu1), "pll", OBJECT(pll), &error_fatal);
 	sysbus_realize_and_unref(SYS_BUS_DEVICE(gptu1), &error_fatal);
-#endif
+	#endif
 	
+	#if !PMB887X_IO_BRIDGE
 	// ADC
 	DeviceState *adc = pmb887x_new_dev(board->cpu, "ADC", nvic);
 	object_property_set_link(OBJECT(adc), "pll", OBJECT(pll), &error_fatal);
 	sysbus_realize_and_unref(SYS_BUS_DEVICE(adc), &error_fatal);
 	
-	// Fixed values for some GPIO's
+	// Fixed values for some ADC's'
 	for (int i = 0; i < ARRAY_SIZE(board->adc_inputs); i++)
 		pmb887x_adc_set_input(adc, i, &board->adc_inputs[i]);
+	#endif
 	
 	// KEYPAD
 	DeviceState *keypad = pmb887x_new_dev(board->cpu, "KEYPAD", nvic);
@@ -419,7 +435,7 @@ static void pmb887x_init(MachineState *machine) {
 	sysbus_realize_and_unref(SYS_BUS_DEVICE(ebuc), &error_fatal);
 	
 	// Exec BootROM
-	#ifdef PMB887X_IO_BRIDGE
+	#if PMB887X_IO_BRIDGE
 	pmb8876_io_bridge_set_nvic(nvic);
 	cpu_set_pc(CPU(cpu), 0x00400000);
 	#else

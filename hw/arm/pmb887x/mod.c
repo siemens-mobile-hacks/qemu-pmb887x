@@ -7,7 +7,6 @@
 #include "hw/arm/pmb887x/mod.h"
 #include "hw/arm/pmb887x/regs.h"
 #include "hw/hw.h"
-#include "qemu/error-report.h"
 #include "hw/arm/pmb887x/trace.h"
 
 void pmb887x_clc_init(pmb887x_clc_reg_t *reg) {
@@ -76,8 +75,8 @@ void pmb887x_src_set(pmb887x_src_reg_t *reg, uint32_t value) {
 	if (has_irq != reg->last_irq_state) {
 		if (has_irq) {
 			if ((reg->value & MOD_SRC_SRE)) {
-				int priority = (reg->value & MOD_SRC_SRPN) >> MOD_SRC_SRPN_SHIFT;
-				qemu_set_irq(reg->irq, 1 + priority);
+				uint32_t priority = (reg->value & MOD_SRC_SRPN) >> MOD_SRC_SRPN_SHIFT;
+				qemu_set_irq(reg->irq, 1 + (int) priority);
 				reg->last_irq_state = true;
 			}
 		} else {

@@ -1,7 +1,6 @@
 #pragma once
 
 #include "qemu/osdep.h"
-#include "qapi/qapi-types-ui.h"
 
 #define PMB887X_ADC_MAX_INPUTS 10
 

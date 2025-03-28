@@ -2,7 +2,6 @@
 #include "hw/arm/pmb887x/config.h"
 #include "hw/arm/pmb887x/regs_dump.h"
 #include "qemu/osdep.h"
-#include "qapi/error.h"
 #include "qemu/error-report.h"
 
 static struct {
@@ -66,7 +65,7 @@ static struct {
 	{"HASH",			Q_KEY_CODE_KP_DIVIDE},
 };
 
-static GMatchInfo *_regexp_match(const char *pattern, const char *input) {
+static GMatchInfo *regexp_match(const char *pattern, const char *input) {
 	g_autoptr(GRegex) regexp = g_regex_new(pattern, G_REGEX_CASELESS, 0, NULL);
 	
 	if (!regexp)
@@ -80,16 +79,11 @@ static GMatchInfo *_regexp_match(const char *pattern, const char *input) {
 	return NULL;
 }
 
-static bool _parse_device(pmb887x_board_t *board, pmb887x_cfg_section_t *section) {
-	const char *cpu, *vendor, *model;
-	
-	if (!(cpu = pmb887x_cfg_section_get(section, "cpu", true)))
-		return false;
-	if (!(vendor = pmb887x_cfg_section_get(section, "vendor", true)))
-		return false;
-	if (!(model = pmb887x_cfg_section_get(section, "model", true)))
-		return false;
-	
+static bool parse_device(pmb887x_board_t *board, pmb887x_cfg_section_t *section) {
+	const char *cpu = pmb887x_cfg_section_get(section, "cpu", true);
+	const char *vendor = pmb887x_cfg_section_get(section, "vendor", true);
+	const char *model = pmb887x_cfg_section_get(section, "model", true);
+
 	for (size_t i = 0; i < ARRAY_SIZE(cpu_list); i++) {
 		if (strcmp(cpu, cpu_list[i].name) == 0) {
 			board->cpu = cpu_list[i].id;
@@ -103,16 +97,16 @@ static bool _parse_device(pmb887x_board_t *board, pmb887x_cfg_section_t *section
 	return true;
 }
 
-static bool _parse_memory(pmb887x_board_t *board, pmb887x_cfg_section_t *section) {
+static bool parse_memory(pmb887x_board_t *board, pmb887x_cfg_section_t *section) {
 	for (size_t i = 0; i < section->items_count; i++) {
 		pmb887x_cfg_item_t *item = &section->items[i];
 		
-		g_autoptr(GMatchInfo) cs_match = _regexp_match("^cs(\\d+)$", item->key);
+		g_autoptr(GMatchInfo) cs_match = regexp_match("^cs(\\d+)$", item->key);
 		if (cs_match) {
 			int cs = strtol(g_match_info_fetch(cs_match, 1), NULL, 10);
 			if (cs >= 0 && cs < ARRAY_SIZE(board->cs2memory)) {
-				g_autoptr(GMatchInfo) flash_match = _regexp_match("^flash:([a-f0-9]+):([a-f0-9]+)$", item->value);
-				g_autoptr(GMatchInfo) ram_match = _regexp_match("^ram:(\\d+)m$", item->value);
+				g_autoptr(GMatchInfo) flash_match = regexp_match("^flash:([a-f0-9]+):([a-f0-9]+)$", item->value);
+				g_autoptr(GMatchInfo) ram_match = regexp_match("^ram:(\\d+)m$", item->value);
 				
 				if (flash_match) {
 					board->cs2memory[cs].type = PMB887X_MEMORY_TYPE_FLASH;
@@ -137,13 +131,9 @@ static bool _parse_memory(pmb887x_board_t *board, pmb887x_cfg_section_t *section
 	return true;
 }
 
-static bool _parse_i2c(pmb887x_board_t *board, pmb887x_cfg_section_t *section) {
-	const char *type, *addr;
-	
-	if (!(type = pmb887x_cfg_section_get(section, "type", true)))
-		return false;
-	if (!(addr = pmb887x_cfg_section_get(section, "addr", true)))
-		return false;
+static bool parse_i2c(pmb887x_board_t *board, pmb887x_cfg_section_t *section) {
+	const char* type = pmb887x_cfg_section_get(section, "type", true);
+	const char* addr = pmb887x_cfg_section_get(section, "addr", true);
 	
 	board->i2c_devices_count++;
 	board->i2c_devices = g_realloc_n(board->i2c_devices, board->i2c_devices_count, sizeof(pmb887x_board_i2c_dev_t));
@@ -155,16 +145,13 @@ static bool _parse_i2c(pmb887x_board_t *board, pmb887x_cfg_section_t *section) {
 	return true;
 }
 
-static bool _parse_dsp(pmb887x_board_t *board, pmb887x_cfg_section_t *section) {
-	const char *addr;
-	if (!(addr = pmb887x_cfg_section_get(section, "ram0_value", true)))
-		return false;
+static bool parse_dsp(pmb887x_board_t *board, pmb887x_cfg_section_t *section) {
+	const char *addr = pmb887x_cfg_section_get(section, "ram0_value", true);
 	board->dsp.ram0_value = strtol(addr, NULL, 16);
 	return true;
 }
 
-static bool _parse_analog(pmb887x_board_t *board, pmb887x_cfg_section_t *section) {
-	char name[32];
+static bool parse_analog(pmb887x_board_t *board, pmb887x_cfg_section_t *section) {
 	int channels[] = {
 		PMB887X_ADC_INPUT_M0,
 		PMB887X_ADC_INPUT_M1,
@@ -179,16 +166,17 @@ static bool _parse_analog(pmb887x_board_t *board, pmb887x_cfg_section_t *section
 		PMB887X_ADC_INPUT_M10,
 	};
 	for (int i = 0; i < ARRAY_SIZE(channels); i++) {
+		char name[32];
 		int ch = channels[i];
 		sprintf(name, "M_%d", ch);
 		
-		const char *value;
-		if (!(value = pmb887x_cfg_section_get(section, name, false)))
+		const char *value = pmb887x_cfg_section_get(section, name, false);
+		if (!value)
 			continue;
 		
-		g_autoptr(GMatchInfo) resistor_match = _regexp_match("^resistor,(\\d+)$", value);
-		g_autoptr(GMatchInfo) resistor_divider_match = _regexp_match("^resistor_divider,(\\d+),(\\d+),(-?\\d+)$", value);
-		g_autoptr(GMatchInfo) voltage_match = _regexp_match("^(-?\\d+)$", value);
+		g_autoptr(GMatchInfo) resistor_match = regexp_match("^resistor,(\\d+)$", value);
+		g_autoptr(GMatchInfo) resistor_divider_match = regexp_match("^resistor_divider,(\\d+),(\\d+),(-?\\d+)$", value);
+		g_autoptr(GMatchInfo) voltage_match = regexp_match("^(-?\\d+)$", value);
 		
 		if (resistor_match) {
 			uint32_t r1 = strtol(g_match_info_fetch(resistor_match, 1), NULL, 10);
@@ -214,19 +202,13 @@ static bool _parse_analog(pmb887x_board_t *board, pmb887x_cfg_section_t *section
 	return true;
 }
 
-static bool _parse_display(pmb887x_board_t *board, pmb887x_cfg_section_t *section) {
-	const char *type, *rotation, *width, *height, *flip_horizontal, *flip_vertical;
-	
-	if (!(type = pmb887x_cfg_section_get(section, "type", true)))
-		return false;
-	if (!(width = pmb887x_cfg_section_get(section, "width", true)))
-		return false;
-	if (!(height = pmb887x_cfg_section_get(section, "height", true)))
-		return false;
-	
-	rotation = pmb887x_cfg_section_get(section, "rotation", false);
-	flip_horizontal = pmb887x_cfg_section_get(section, "flip_horizontal", false);
-	flip_vertical = pmb887x_cfg_section_get(section, "flip_vertical", false);
+static bool parse_display(pmb887x_board_t *board, pmb887x_cfg_section_t *section) {
+	const char *type = pmb887x_cfg_section_get(section, "type", true);
+	const char *width = pmb887x_cfg_section_get(section, "width", true);
+	const char *height = pmb887x_cfg_section_get(section, "height", true);
+	const char *rotation = pmb887x_cfg_section_get(section, "rotation", false);
+	const char *flip_horizontal = pmb887x_cfg_section_get(section, "flip_horizontal", false);
+	const char *flip_vertical = pmb887x_cfg_section_get(section, "flip_vertical", false);
 	
 	strncpy(board->display.type, type, sizeof(board->display.type) - 1);
 	
@@ -255,7 +237,7 @@ static bool _parse_display(pmb887x_board_t *board, pmb887x_cfg_section_t *sectio
 	return true;
 }
 
-static const pmb887x_cpu_meta_gpio_t *_find_cpu_gpio_by_name(pmb887x_board_t *board, const char *name) {
+static const pmb887x_cpu_meta_gpio_t *find_cpu_gpio_by_name(pmb887x_board_t *board, const char *name) {
 	const pmb887x_cpu_meta_t *cpu_info = pmb887x_get_cpu_meta(board->cpu);
 	for (int i = 0; i < cpu_info->gpios_count; i++) {
 		const pmb887x_cpu_meta_gpio_t *cpu_gpio = &cpu_info->gpios[i];
@@ -265,7 +247,7 @@ static const pmb887x_cpu_meta_gpio_t *_find_cpu_gpio_by_name(pmb887x_board_t *bo
 	return NULL;
 }
 
-static pmb887x_board_gpio_t *_find_board_gpio_by_name(pmb887x_board_t *board, const char *name) {
+static pmb887x_board_gpio_t *find_board_gpio_by_name(pmb887x_board_t *board, const char *name) {
 	for (int i = 0; i < board->gpios_count; i++) {
 		pmb887x_board_gpio_t *board_gpio = &board->gpios[i];
 		if (strcmp(board_gpio->name, name) == 0 || strcmp(board_gpio->func_name, name) == 0)
@@ -274,7 +256,7 @@ static pmb887x_board_gpio_t *_find_board_gpio_by_name(pmb887x_board_t *board, co
 	return NULL;
 }
 
-static bool _parse_gpio_aliases(pmb887x_board_t *board, pmb887x_cfg_section_t *section) {
+static bool parse_gpio_aliases(pmb887x_board_t *board, pmb887x_cfg_section_t *section) {
 	// Init default GPIO's
 	const pmb887x_cpu_meta_t *cpu_info = pmb887x_get_cpu_meta(board->cpu);
 	board->gpios_count = cpu_info->gpios_count;
@@ -293,7 +275,7 @@ static bool _parse_gpio_aliases(pmb887x_board_t *board, pmb887x_cfg_section_t *s
 	for (size_t i = 0; i < section->items_count; i++) {
 		pmb887x_cfg_item_t *item = &section->items[i];
 		
-		const pmb887x_cpu_meta_gpio_t *cpu_gpio = _find_cpu_gpio_by_name(board, item->key);
+		const pmb887x_cpu_meta_gpio_t *cpu_gpio = find_cpu_gpio_by_name(board, item->key);
 		if (cpu_gpio) {
 			pmb887x_board_gpio_t *board_gpio = &board->gpios[cpu_gpio->id];
 			strncpy(board_gpio->func_name, item->value, sizeof(board_gpio->func_name) - 1);
@@ -306,11 +288,11 @@ static bool _parse_gpio_aliases(pmb887x_board_t *board, pmb887x_cfg_section_t *s
 	return true;
 }
 
-static bool _parse_gpio_inputs(pmb887x_board_t *board, pmb887x_cfg_section_t *section) {
+static bool parse_gpio_inputs(pmb887x_board_t *board, pmb887x_cfg_section_t *section) {
 	for (size_t i = 0; i < section->items_count; i++) {
 		pmb887x_cfg_item_t *item = &section->items[i];
 		
-		pmb887x_board_gpio_t *board_gpio = _find_board_gpio_by_name(board, item->key);
+		pmb887x_board_gpio_t *board_gpio = find_board_gpio_by_name(board, item->key);
 		if (board_gpio) {
 			board_gpio->value = strtoll(item->value, NULL, 10) != 0;
 		} else {
@@ -320,7 +302,7 @@ static bool _parse_gpio_inputs(pmb887x_board_t *board, pmb887x_cfg_section_t *se
 	return true;
 }
 
-static bool _parse_keyboard(pmb887x_board_t *board, pmb887x_cfg_section_t *section) {
+static bool parse_keyboard(pmb887x_board_t *board, pmb887x_cfg_section_t *section) {
 	for (size_t i = 0; i < section->items_count; i++) {
 		pmb887x_cfg_item_t *item = &section->items[i];
 		
@@ -366,23 +348,23 @@ const pmb887x_board_t *pmb887x_get_board(const char *config_file) {
 	struct {
 		const char *section;
 		bool (*parser)(pmb887x_board_t *, pmb887x_cfg_section_t *);
-		bool multile;
+		bool multiple;
 	} parsers[] = {
-		{"device", _parse_device, false},
-		{"memory", _parse_memory, false},
-		{"i2c", _parse_i2c, true},
-		{"dsp", _parse_dsp, false},
-		{"analog", _parse_analog, false},
-		{"display", _parse_display, false},
-		{"gpio-aliases", _parse_gpio_aliases, false},
-		{"gpio-inputs", _parse_gpio_inputs, false},
-		{"keyboard", _parse_keyboard, false},
+		{"device", parse_device, false},
+		{"memory", parse_memory, false},
+		{"i2c", parse_i2c, true},
+		{"dsp", parse_dsp, false},
+		{"analog", parse_analog, false},
+		{"display", parse_display, false},
+		{"gpio-aliases", parse_gpio_aliases, false},
+		{"gpio-inputs", parse_gpio_inputs, false},
+		{"keyboard", parse_keyboard, false},
 	};
-	
-	for (size_t i = 0; i < ARRAY_SIZE(parsers); i++) {		
+
+	for (size_t i = 0; i < ARRAY_SIZE(parsers); i++) {
 		uint32_t sections_n = pmb887x_cfg_sections_cnt(cfg, parsers[i].section);
-		
-		if (sections_n > 1 && !parsers[i].multile) {
+
+		if (sections_n > 1 && !parsers[i].multiple) {
 			error_report("[pmb887x-config] %s: multiple [%s] sections is not allowed!", config_file, parsers[i].section);
 			pmb887x_cfg_free(cfg);
 			return NULL;

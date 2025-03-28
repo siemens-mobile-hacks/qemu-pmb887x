@@ -8,16 +8,12 @@
 
 #include "qemu/osdep.h"
 #include "hw/sysbus.h"
-#include "hw/hw.h"
-#include "hw/ptimer.h"
-#include "exec/address-spaces.h"
 #include "exec/memory.h"
 #include "hw/qdev-properties.h"
 #include "qapi/error.h"
 #include "cpu.h"
 
 #include "hw/arm/pmb887x/regs.h"
-#include "hw/arm/pmb887x/io_bridge.h"
 #include "hw/arm/pmb887x/regs_dump.h"
 #include "hw/arm/pmb887x/mod.h"
 #include "hw/arm/pmb887x/trace.h"
@@ -25,30 +21,31 @@
 #define TYPE_PMB887X_MMCI	"pmb887x-mmci"
 #define PMB887X_MMCI(obj)	OBJECT_CHECK(pmb887x_mmci_t, (obj), TYPE_PMB887X_MMCI)
 
-typedef struct {
+typedef struct pmb887x_mmci_t pmb887x_mmci_t;
+
+struct pmb887x_mmci_t {
 	SysBusDevice parent_obj;
 	MemoryRegion mmio;
 	pmb887x_clc_reg_t clc;
-} pmb887x_mmci_t;
+};
 
 static uint64_t mmci_io_read(void *opaque, hwaddr haddr, unsigned size) {
-	pmb887x_mmci_t *p = (pmb887x_mmci_t *) opaque;
+	pmb887x_mmci_t *p = opaque;
 	
 	uint64_t value = 0;
 	
 	switch (haddr) {
 		case MMCI_CLC:
 			value = pmb887x_clc_get(&p->clc);
-		break;
+			break;
 		
 		case MMCI_ID:
 			value = 0xF041C022;
-		break;
+			break;
 		
 		default:
 			EPRINTF("unknown reg access: %02"PRIX64"\n", haddr);
 			exit(1);
-		break;
 	}
 	
 	IO_DUMP(haddr + p->mmio.addr, size, value, false);
@@ -57,19 +54,18 @@ static uint64_t mmci_io_read(void *opaque, hwaddr haddr, unsigned size) {
 }
 
 static void mmci_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned size) {
-	pmb887x_mmci_t *p = (pmb887x_mmci_t *) opaque;
+	pmb887x_mmci_t *p = opaque;
 	
 	IO_DUMP(haddr + p->mmio.addr, size, value, true);
 	
 	switch (haddr) {
 		case GPIO_CLC:
 			pmb887x_clc_set(&p->clc, value);
-		break;
+			break;
 		
 		default:
 			EPRINTF("unknown reg access: %02"PRIX64"\n", haddr);
 			exit(1);
-		break;
 	}
 }
 

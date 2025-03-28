@@ -8,25 +8,19 @@
 #include "qemu/osdep.h"
 #include "hw/sysbus.h"
 #include "hw/hw.h"
-#include "hw/ptimer.h"
-#include "exec/address-spaces.h"
 #include "exec/memory.h"
 #include "cpu.h"
 #include "qemu/error-report.h"
-#include "qapi/error.h"
 #include "qemu/timer.h"
 #include "qemu/main-loop.h"
 #include "hw/qdev-properties.h"
-#include "qapi/error.h"
 #include "hw/i2c/i2c.h"
 
 #include "hw/arm/pmb887x/i2c_v1.h"
 #include "hw/arm/pmb887x/regs.h"
-#include "hw/arm/pmb887x/io_bridge.h"
 #include "hw/arm/pmb887x/regs_dump.h"
 #include "hw/arm/pmb887x/mod.h"
 #include "hw/arm/pmb887x/trace.h"
-#include "hw/arm/pmb887x/fifo.h"
 
 #define TYPE_PMB887X_I2C	"pmb887x-i2c-v1"
 #define PMB887X_I2C(obj)	OBJECT_CHECK(pmb887x_i2c_t, (obj), TYPE_PMB887X_I2C)
@@ -179,7 +173,7 @@ static void i2c_update_syscon(pmb887x_i2c_t *p, uint32_t value) {
 		i2c_timer_schedule(p);
 }
 
-static int i2c_get_trx_size(pmb887x_i2c_t *p) {
+static uint32_t i2c_get_trx_size(pmb887x_i2c_t *p) {
 	return ((p->syscon & I2Cv1_SYSCON_CI) >> I2Cv1_SYSCON_CI_SHIFT) + 1;
 }
 
@@ -315,7 +309,7 @@ static void i2c_work(pmb887x_i2c_t *p) {
 }
 
 static uint64_t i2c_io_read(void *opaque, hwaddr haddr, unsigned size) {
-	pmb887x_i2c_t *p = (pmb887x_i2c_t *) opaque;
+	pmb887x_i2c_t *p = opaque;
 
 	uint64_t value = 0;
 
@@ -380,7 +374,7 @@ static uint64_t i2c_io_read(void *opaque, hwaddr haddr, unsigned size) {
 }
 
 static void i2c_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned size) {
-	pmb887x_i2c_t *p = (pmb887x_i2c_t *) opaque;
+	pmb887x_i2c_t *p = opaque;
 
 	IO_DUMP(haddr + p->mmio.addr, size, value, true);
 

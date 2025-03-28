@@ -6,7 +6,7 @@
 #include "qemu/error-report.h"
 #include "hw/arm/pmb887x/regs_dump.h"
 
-// #define PMB887X_TRACE_UNHANDLED_IO 1
+#define PMB887X_TRACE_UNHANDLED_IO false
 
 enum pmb887x_modules_t {
 	// CPU modules
@@ -93,7 +93,7 @@ static inline bool pmb887x_trace_io_enabled(uint64_t id) {
 	//return ((id & (PMB887X_TRACE_GPTU)) != 0);
 	//return ((id & (PMB887X_TRACE_ADC)) != 0);
 	//return ((id & (PMB887X_TRACE_PCL)) != 0);
-	return ((id & (PMB887X_TRACE_USART)) != 0);
+	return ((id & (PMB887X_TRACE_DIF)) != 0);
 	return false;
 	return ((id & (PMB887X_TRACE_I2C)) != 0);
 	return ((

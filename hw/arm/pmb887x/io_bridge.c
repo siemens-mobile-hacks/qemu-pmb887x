@@ -1,6 +1,6 @@
 #include "hw/arm/pmb887x/io_bridge.h"
 
-#ifdef PMB887X_IO_BRIDGE
+#if PMB887X_IO_BRIDGE
 #include <errno.h>
 #include <stdio.h>
 #include <poll.h>
@@ -18,8 +18,6 @@
 #include "cpu.h"
 #include "system/cpu-timers.h"
 
-#include "hw/arm/pmb887x/regs.h"
-
 #define IO_BRIDGE_TIMEOUT	1000
 
 static int sock_server_io = -1;
@@ -31,46 +29,44 @@ static int sock_client_irq = -1;
 static char cmd_w_size[] = {0, 'o', 'w', 'O', 'W'};
 static char cmd_r_size[] = {0, 'i', 'r', 'I', 'R'};
 
-static int _open_unix_sock(const char *name);
-static int _wait_for_client(int sock);
-static void _async_read(int sock, void *data, int size, int64_t timeout);
-static void _async_write(int sock, void *data, int size, int64_t timeout);
-static int _async_read_chunk(int sock, uint8_t *data, int size);
-static int _async_write_chunk(int sock, uint8_t *data, int size);
-static void *_irq_loop_thread(void *arg);
+static int io_bridge_open_unix_sock(const char *name);
+static int io_bridge_wait_for_client(int sock);
+static void io_bridge_async_read(int sock, void *data, ssize_t size, int64_t timeout);
+static void io_bridge_async_write(int sock, void *data, ssize_t size, int64_t timeout);
+static ssize_t io_bridge_async_read_chunk(int sock, uint8_t *data, int64_t size);
+static ssize_t io_bridge_async_write_chunk(int sock, uint8_t *data, int64_t size);
+static void *io_bridge_irq_loop_thread(void *arg);
 
 static DeviceState *nvic = NULL;
-
-int current_irq = 0;
-
-static QemuThread irq_trhead_id;
+static int current_irq = 0;
+static QemuThread irq_thread_id;
 
 void pmb8876_io_bridge_init(void) {
-	sock_server_io = _open_unix_sock("/dev/shm/pmb8876_io_bridge.sock");
-	sock_server_irq = _open_unix_sock("/dev/shm/pmb8876_io_bridge_irq.sock");
+	sock_server_io = io_bridge_open_unix_sock("/dev/shm/pmb8876_io_bridge.sock");
+	sock_server_irq = io_bridge_open_unix_sock("/dev/shm/pmb8876_io_bridge_irq.sock");
 	
 	if (sock_server_io < 0 || sock_server_irq < 0) {
 		fprintf(stderr, "[io bridge] Can't open sockets...\r\n");
 		exit(1);
 	}
 	
-	sock_client_io = _wait_for_client(sock_server_io);
-	sock_client_irq = _wait_for_client(sock_server_irq);
+	sock_client_io = io_bridge_wait_for_client(sock_server_io);
+	sock_client_irq = io_bridge_wait_for_client(sock_server_irq);
 	
-	if (sock_server_io < 0 || sock_server_irq < 0) {
+	if (sock_client_io < 0 || sock_client_irq < 0) {
 		fprintf(stderr, "[io bridge] Can't wait clients...\r\n");
 		exit(1);
 	}
 	
-	qemu_thread_create(&irq_trhead_id, "irq_loop", _irq_loop_thread, NULL, QEMU_THREAD_JOINABLE);
+	qemu_thread_create(&irq_thread_id, "irq_loop", io_bridge_irq_loop_thread, NULL, QEMU_THREAD_JOINABLE);
 	
 	fprintf(stderr, "[io bridge] IO bridge started...\r\n");
 }
 
-static void *_irq_loop_thread(void *arg) {
+static void *io_bridge_irq_loop_thread(void *arg) {
 	while (true) {
 		uint8_t irq;
-		_async_read(sock_client_irq, &irq, 1, 0);
+		io_bridge_async_read(sock_client_irq, &irq, 1, 0);
 		
 		bool locked = bql_locked();
 		if (!locked)
@@ -103,12 +99,12 @@ unsigned int pmb8876_io_bridge_read(unsigned int addr, unsigned int size) {
 	else
 		from -= 2;
 	
-	_async_write(sock_client_io, &cmd_r_size[size], 1, IO_BRIDGE_TIMEOUT);
-	_async_write(sock_client_io, &addr, 4, IO_BRIDGE_TIMEOUT);
-	_async_write(sock_client_io, &from, 4, IO_BRIDGE_TIMEOUT);
+	io_bridge_async_write(sock_client_io, &cmd_r_size[size], 1, IO_BRIDGE_TIMEOUT);
+	io_bridge_async_write(sock_client_io, &addr, 4, IO_BRIDGE_TIMEOUT);
+	io_bridge_async_write(sock_client_io, &from, 4, IO_BRIDGE_TIMEOUT);
 	
 	uint8_t buf[5];
-	_async_read(sock_client_io, &buf, 5, IO_BRIDGE_TIMEOUT);
+	io_bridge_async_read(sock_client_io, &buf, 5, IO_BRIDGE_TIMEOUT);
 	
 	if (buf[0] != 0x21) {
 		fprintf(stderr, "[io bridge] invalid ACK: %02X\n", buf[0]);
@@ -142,13 +138,13 @@ void pmb8876_io_bridge_write(unsigned int addr, unsigned int size, unsigned int 
 		value = 0x100;
 	}
 	
-	_async_write(sock_client_io, &cmd_w_size[size], 1, IO_BRIDGE_TIMEOUT);
-	_async_write(sock_client_io, &addr, 4, IO_BRIDGE_TIMEOUT);
-	_async_write(sock_client_io, &value, 4, IO_BRIDGE_TIMEOUT);
-	_async_write(sock_client_io, &from, 4, IO_BRIDGE_TIMEOUT);
+	io_bridge_async_write(sock_client_io, &cmd_w_size[size], 1, IO_BRIDGE_TIMEOUT);
+	io_bridge_async_write(sock_client_io, &addr, 4, IO_BRIDGE_TIMEOUT);
+	io_bridge_async_write(sock_client_io, &value, 4, IO_BRIDGE_TIMEOUT);
+	io_bridge_async_write(sock_client_io, &from, 4, IO_BRIDGE_TIMEOUT);
 	
 	uint8_t buf;
-	_async_read(sock_client_io, &buf, 1, IO_BRIDGE_TIMEOUT);
+	io_bridge_async_read(sock_client_io, &buf, 1, IO_BRIDGE_TIMEOUT);
 	
 	if (buf != 0x21) {
 		fprintf(stderr, "[io bridge] invalid ACK: %02X\n", buf);
@@ -158,22 +154,21 @@ void pmb8876_io_bridge_write(unsigned int addr, unsigned int size, unsigned int 
 	cpu_enable_ticks();
 }
 
-static int _open_unix_sock(const char *name) {
+static int io_bridge_open_unix_sock(const char *name) {
 	int sock;
 	if ((sock = socket(AF_UNIX, SOCK_STREAM, 0)) < 0) {
 		perror("[io bridge] socket");
 		return -1;
 	}
 	
-	struct sockaddr_un sock_un;
-	memset(&sock_un, 0, sizeof(struct sockaddr_un));
-	
+	struct sockaddr_un sock_un = {0};
+
 	sock_un.sun_family = AF_UNIX;
 	strcpy(sock_un.sun_path, name);
 	
 	unlink(name);
 	
-	int socket_length = strlen(sock_un.sun_path) + sizeof(sock_un.sun_family);
+	uint32_t socket_length = strlen(sock_un.sun_path) + sizeof(sock_un.sun_family);
 	if (bind(sock, (struct sockaddr *) &sock_un, socket_length) < 0) {
 		perror("[io bridge] bind");
 		close(sock);
@@ -189,11 +184,10 @@ static int _open_unix_sock(const char *name) {
 	return sock;
 }
 
-static int _wait_for_client(int sock) {
+static int io_bridge_wait_for_client(int sock) {
 	struct pollfd pfd[1] = {
 		{.fd = sock, .events = POLLIN},
 	};
-	
 	while (1) {
 		int ret;
 		do {
@@ -220,16 +214,14 @@ static int _wait_for_client(int sock) {
 			return new_client;
 		}
 	}
-	
-	return -1;
 }
 
-static int _async_write_chunk(int sock, uint8_t *data, int size) {
+static ssize_t io_bridge_async_write_chunk(int sock, uint8_t *data, ssize_t size) {
 	struct pollfd pfd[1] = {
 		{.fd = sock, .events = POLLOUT}
 	};
 	
-	int ret;
+	ssize_t ret;
 	do {
 		ret = poll(pfd, 1, 1000);
 	} while (ret < 0 && errno == EINTR);
@@ -258,12 +250,12 @@ static int _async_write_chunk(int sock, uint8_t *data, int size) {
 	return 0;
 }
 
-static int _async_read_chunk(int sock, uint8_t *data, int size) {
+static ssize_t io_bridge_async_read_chunk(int sock, uint8_t *data, ssize_t size) {
 	struct pollfd pfd[1] = {
 		{.fd = sock, .events = POLLIN}
 	};
 	
-	int ret;
+	ssize_t ret;
 	do {
 		ret = poll(pfd, 1, 1000);
 	} while (ret < 0 && errno == EINTR);
@@ -292,41 +284,41 @@ static int _async_read_chunk(int sock, uint8_t *data, int size) {
 	return 0;
 }
 
-static void _async_write(int sock, void *data, int size, int64_t timeout) {
-	int written = 0;
+static void io_bridge_async_write(int sock, void *data, ssize_t size, int64_t timeout) {
+	ssize_t writtenBytesCount = 0;
 	int64_t start = qemu_clock_get_ms(QEMU_CLOCK_REALTIME);
 	do {
 		if (timeout && qemu_clock_get_ms(QEMU_CLOCK_REALTIME) - start > timeout) {
 			fprintf(stderr, "[io bridge] timeout\r\n");
 			exit(1);
 		}
-		
-		int ret = _async_write_chunk(sock, (uint8_t *) (data + written), size - written);
+
+		ssize_t ret = io_bridge_async_write_chunk(sock, (uint8_t *) (data + writtenBytesCount), size - writtenBytesCount);
 		if (ret < 0) {
 			fprintf(stderr, "[io bridge] IO error\r\n");
 			exit(1);
 		}
-		
-		written += ret;
-	} while (written < size);
+
+		writtenBytesCount += ret;
+	} while (writtenBytesCount < size);
 }
 
-static void _async_read(int sock, void *data, int size, int64_t timeout) {
-	int readed = 0;
+static void io_bridge_async_read(int sock, void *data, ssize_t size, int64_t timeout) {
+	ssize_t readBytesCount = 0;
 	int64_t start = qemu_clock_get_ms(QEMU_CLOCK_REALTIME);
 	do {
 		if (timeout && qemu_clock_get_ms(QEMU_CLOCK_REALTIME) - start > timeout) {
 			fprintf(stderr, "[io bridge] timeout\r\n");
 			exit(1);
 		}
-		
-		int ret = _async_read_chunk(sock, (uint8_t *) (data + readed), size - readed);
+
+		ssize_t ret = io_bridge_async_read_chunk(sock, (uint8_t *) (data + readBytesCount), size - readBytesCount);
 		if (ret < 0) {
 			fprintf(stderr, "[io bridge] IO error\r\n");
 			exit(1);
 		}
-		
-		readed += ret;
-	} while (readed < size);
+
+		readBytesCount += ret;
+	} while (readBytesCount < size);
 }
 #endif

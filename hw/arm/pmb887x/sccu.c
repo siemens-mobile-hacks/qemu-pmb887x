@@ -7,15 +7,12 @@
 #include "qemu/osdep.h"
 #include "hw/sysbus.h"
 #include "hw/hw.h"
-#include "hw/ptimer.h"
-#include "exec/address-spaces.h"
 #include "exec/memory.h"
 #include "cpu.h"
 #include "qapi/error.h"
 #include "qemu/timer.h"
 #include "qemu/main-loop.h"
 #include "hw/qdev-properties.h"
-#include "qapi/error.h"
 
 #include "hw/arm/pmb887x/sccu.h"
 #include "hw/arm/pmb887x/pll.h"
@@ -24,12 +21,14 @@
 #include "hw/arm/pmb887x/trace.h"
 
 #define TYPE_PMB887X_RTC	"pmb887x-sccu"
-#define PMB887X_RTC(obj)	OBJECT_CHECK(struct pmb887x_sccu_t, (obj), TYPE_PMB887X_RTC)
+#define PMB887X_RTC(obj)	OBJECT_CHECK(pmb887x_sccu_t, (obj), TYPE_PMB887X_RTC)
 
 enum {
 	SCCU_IRQ_WAKE = 0,
 	SCCU_IRQ_UNK
 };
+
+typedef struct pmb887x_sccu_t pmb887x_sccu_t;
 
 struct pmb887x_sccu_t {
 	SysBusDevice parent_obj;
@@ -42,8 +41,8 @@ struct pmb887x_sccu_t {
 	
 	bool irq_fired;
 	uint32_t timer_freq;
-	uint64_t start;
-	uint64_t next;
+	int64_t start;
+	int64_t next;
 	bool enabled;
 	
 	uint32_t con[4];
@@ -57,10 +56,10 @@ struct pmb887x_sccu_t {
 	
 	QEMUTimer *timer;
 	QEMUTimer *cal_timer;
-	struct pmb887x_pll_t *pll;
+	pmb887x_pll_t *pll;
 };
 
-static uint64_t sccu_get_counter(struct pmb887x_sccu_t *p, bool real) {
+static uint64_t sccu_get_counter(pmb887x_sccu_t *p, bool real) {
 	uint64_t next = p->timer_cnt;
 	
 	if (p->enabled) {
@@ -71,21 +70,21 @@ static uint64_t sccu_get_counter(struct pmb887x_sccu_t *p, bool real) {
 	return real ? next : MIN(next, p->timer_rel);
 }
 
-static uint64_t sccu_ticks_to_ns(struct pmb887x_sccu_t *p, uint64_t ticks) {
-    return muldiv64(ticks, NANOSECONDS_PER_SECOND, p->timer_freq);
+static int64_t sccu_ticks_to_ns(pmb887x_sccu_t *p, uint64_t ticks) {
+    return (int64_t) muldiv64(ticks, NANOSECONDS_PER_SECOND, p->timer_freq);
 }
 
 static void sccu_cal_timer_reset(void *opaque) {
-	// struct pmb887x_sccu_t *p = (struct pmb887x_sccu_t *) opaque;
+	// nothing
 }
 
 static void sccu_ptimer_reset(void *opaque) {
-	struct pmb887x_sccu_t *p = (struct pmb887x_sccu_t *) opaque;
+	pmb887x_sccu_t *p = opaque;
 	
 	if (!p->enabled)
 		return;
 	
-	uint64_t now = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
+	int64_t now = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
 	uint32_t overflow = p->timer_rel + 1;
 	
 	if (!p->start) {
@@ -150,11 +149,11 @@ static void sccu_update_timer_timer(struct pmb887x_sccu_t *p) {
 	sccu_ptimer_reset(p);
 }
 
-uint32_t pmb887x_sccu_clc_get(struct pmb887x_sccu_t *p) {
+uint32_t pmb887x_sccu_clc_get(pmb887x_sccu_t *p) {
 	return pmb887x_clc_get(&p->clc);
 }
 
-void pmb887x_sccu_clc_set(struct pmb887x_sccu_t *p, uint32_t value) {
+void pmb887x_sccu_clc_set(pmb887x_sccu_t *p, uint32_t value) {
 	pmb887x_clc_set(&p->clc, value);
 	sccu_update_timer_timer(p);
 	
@@ -169,57 +168,56 @@ static int sccu_get_reg_index(hwaddr haddr) {
 		
 		case SCCU_WAKE_SRC:	return 0;
 		case SCCU_UNK_SRC:	return 1;
+		default:			abort();
 	}
-	abort();
 }
 
 static uint64_t sccu_io_read(void *opaque, hwaddr haddr, unsigned size) {
-	struct pmb887x_sccu_t *p = (struct pmb887x_sccu_t *) opaque;
+	pmb887x_sccu_t *p = opaque;
 	
 	uint64_t value = 0;
 	
 	switch (haddr) {
 		case SCCU_CAL:
 			value = p->cal;
-		break;
+			break;
 		
 		case SCCU_TIMER_REL:
 			value = p->timer_rel;
-		break;
+			break;
 		
 		case SCCU_TIMER_CNT:
 			value = sccu_get_counter(p, false);
-		break;
+			break;
 		
 		case SCCU_TIMER_DIV:
 			value = p->timer_div;
-		break;
+			break;
 		
 		case SCCU_SLEEP_CTRL:
 			value = p->sleep_ctrl;
-		break;
+			break;
 		
 		case SCCU_CON0:
 		case SCCU_CON1:
 		case SCCU_CON2:
 		case SCCU_CON3:
 			value = p->con[sccu_get_reg_index(haddr)];
-		break;
+			break;
 		
 		case SCCU_STAT:
 			value = p->stat;
-		break;
+			break;
 		
 		case SCCU_WAKE_SRC:
 		case SCCU_UNK_SRC:
 			value = pmb887x_src_get(&p->src[sccu_get_reg_index(haddr)]);
-		break;
+			break;
 		
 		default:
 			IO_DUMP(haddr + p->mmio.addr, size, 0xFFFFFFFF, false);
 			EPRINTF("unknown reg access: %02"PRIX64"\n", haddr);
 			exit(1);
-		break;
 	}
 	
 	IO_DUMP(haddr + p->mmio.addr, size, value, false);
@@ -228,7 +226,7 @@ static uint64_t sccu_io_read(void *opaque, hwaddr haddr, unsigned size) {
 }
 
 static void sccu_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned size) {
-	struct pmb887x_sccu_t *p = (struct pmb887x_sccu_t *) opaque;
+	pmb887x_sccu_t *p = opaque;
 	
 	IO_DUMP(haddr + p->mmio.addr, size, value, true);
 	
@@ -236,12 +234,12 @@ static void sccu_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned s
 		case SCCU_TIMER_REL:
 			p->timer_rel = value;
 			sccu_update_timer_timer(p);
-		break;
+			break;
 		
 		case SCCU_TIMER_DIV:
 			p->timer_div = value;
 			sccu_update_timer_timer(p);
-		break;
+			break;
 		
 		case SCCU_CON0:
 		case SCCU_CON1:
@@ -249,21 +247,20 @@ static void sccu_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned s
 		case SCCU_CON3:
 			p->con[sccu_get_reg_index(haddr)] = value;
 			sccu_update_timer_timer(p);
-		break;
+			break;
 		
 		case SCCU_SLEEP_CTRL:
 			p->sleep_ctrl = value;
-		break;
+			break;
 		
 		case SCCU_WAKE_SRC:
 		case SCCU_UNK_SRC:
 			pmb887x_src_set(&p->src[sccu_get_reg_index(haddr)], value);
-		break;
+			break;
 		
 		default:
 			EPRINTF("unknown reg access: %02"PRIX64"\n", haddr);
 			exit(1);
-		break;
 	}
 }
 
@@ -278,7 +275,7 @@ static const MemoryRegionOps io_ops = {
 };
 
 static void sccu_init(Object *obj) {
-	struct pmb887x_sccu_t *p = PMB887X_RTC(obj);
+	pmb887x_sccu_t *p = PMB887X_RTC(obj);
 	memory_region_init_io(&p->mmio, obj, &io_ops, p, "pmb887x-sccu", SCCU_IO_SIZE);
 	sysbus_init_mmio(SYS_BUS_DEVICE(obj), &p->mmio);
 	
@@ -287,7 +284,7 @@ static void sccu_init(Object *obj) {
 }
 
 static void sccu_realize(DeviceState *dev, Error **errp) {
-	struct pmb887x_sccu_t *p = PMB887X_RTC(dev);
+	pmb887x_sccu_t *p = PMB887X_RTC(dev);
 	
 	pmb887x_clc_init(&p->clc);
 	

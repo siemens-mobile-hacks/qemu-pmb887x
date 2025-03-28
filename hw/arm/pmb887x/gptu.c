@@ -7,19 +7,15 @@
 #include "qemu/osdep.h"
 #include "hw/sysbus.h"
 #include "hw/hw.h"
-#include "hw/ptimer.h"
-#include "exec/address-spaces.h"
 #include "exec/memory.h"
 #include "cpu.h"
 #include "qapi/error.h"
 #include "qemu/timer.h"
 #include "qemu/main-loop.h"
 #include "hw/qdev-properties.h"
-#include "qapi/error.h"
 
 #include "hw/arm/pmb887x/pll.h"
 #include "hw/arm/pmb887x/regs.h"
-#include "hw/arm/pmb887x/io_bridge.h"
 #include "hw/arm/pmb887x/regs_dump.h"
 #include "hw/arm/pmb887x/mod.h"
 #include "hw/arm/pmb887x/trace.h"
@@ -57,12 +53,17 @@ enum {
 	EV_SR11			= 15,
 };
 
-typedef struct {
+typedef struct pmb887x_gptu_ev_t pmb887x_gptu_ev_t;
+typedef struct pmb887x_gptu_timer_t pmb887x_gptu_timer_t;
+typedef struct pmb887x_gptu_timer_t2_t pmb887x_gptu_timer_t2_t;
+typedef struct pmb887x_gptu_t pmb887x_gptu_t;
+
+struct pmb887x_gptu_ev_t {
 	int id;
 	uint32_t mask;
-} pmb887x_gptu_ev_t;
+};
 
-typedef struct {
+struct pmb887x_gptu_timer_t {
 	int id;
 	int prev;
 	int next;
@@ -72,9 +73,9 @@ typedef struct {
 	uint64_t start;
 	uint64_t counter;
 	uint64_t reload;
-} pmb887x_gptu_timer_t;
+};
 
-typedef struct {
+struct pmb887x_gptu_timer_t2_t {
 	bool enabled;
 	bool oneshot;
 	bool count_down;
@@ -83,9 +84,9 @@ typedef struct {
 	int64_t counter;
 	int64_t reload;
 	int64_t overflow;
-} pmb887x_gptu_timer_t2_t;
+};
 
-typedef struct {
+struct pmb887x_gptu_t {
 	SysBusDevice parent_obj;
 	MemoryRegion mmio;
 	
@@ -105,12 +106,12 @@ typedef struct {
 	pmb887x_gptu_timer_t timers[8];
 	pmb887x_gptu_timer_t2_t timers_t2[2];
 	pmb887x_gptu_ev_t events[16];
-	int events_ssr[2][2];
+	uint32_t events_ssr[2][2];
 	
 	struct pmb887x_pll_t *pll;
 	
-	uint64_t next;
-	uint64_t next_t2;
+	int64_t next;
+	int64_t next_t2;
 
 	uint32_t t01irs;
 	uint32_t t01ots;
@@ -125,7 +126,7 @@ typedef struct {
 	uint32_t t2rc1;
 	uint32_t t012run;
 	uint32_t srsel;
-} pmb887x_gptu_t;
+};
 
 static void gptu_sync_timer(pmb887x_gptu_t *p);
 static void gptu_t2_sync_timer(pmb887x_gptu_t *p);
@@ -142,8 +143,8 @@ static void gptu_update_freq(pmb887x_gptu_t *p) {
 	DPRINTF("fgptu=%d %s\n", p->freq, p->enabled ? "[ON]" : "[OFF]");
 }
 
-static uint64_t gptu_ticks_to_ns(pmb887x_gptu_t *p, uint64_t ticks) {
-    return muldiv64(ticks, NANOSECONDS_PER_SECOND, p->freq);
+static int64_t gptu_ticks_to_ns(pmb887x_gptu_t *p, uint64_t ticks) {
+    return (int64_t) muldiv64(ticks, NANOSECONDS_PER_SECOND, p->freq);
 }
 
 static void gptu_trigger_ev_irq(pmb887x_gptu_t *p, int ev_id) {
@@ -165,7 +166,6 @@ static int gptu_get_ssr_ev(int id, int n) {
 		return EV_SR11;
 	
 	hw_error("gptu_get_ssr_ev(%d, %d)", id, n);
-	return -1;
 }
 
 static void gptu_update_events(pmb887x_gptu_t *p) {
@@ -176,7 +176,7 @@ static void gptu_update_events(pmb887x_gptu_t *p) {
 	
 	for (int i = 0; i < 8; i++) {
 		int source_id = 8 - i - 1;
-		int event_id = (p->srsel >> (4 * i)) & 0xF;
+		uint32_t event_id = (p->srsel >> (4 * i)) & 0xF;
 		p->events[event_id].mask |= (1 << source_id);
 	}
 	
@@ -219,7 +219,7 @@ static int64_t gptu_t2_reload_counter(pmb887x_gptu_timer_t2_t *timer, int64_t co
 static int64_t gptu_t2_get_timer_counter(pmb887x_gptu_t *p, pmb887x_gptu_timer_t2_t *timer, uint64_t now, bool real) {
 	int64_t counter = timer->counter;
 	if (timer->enabled && !timer->stopped) {
-		int64_t elapsed = muldiv64(now - timer->start, p->freq, NANOSECONDS_PER_SECOND);
+		int64_t elapsed = (int64_t) muldiv64(now - timer->start, p->freq, NANOSECONDS_PER_SECOND);
 		counter += timer->count_down ? -elapsed : elapsed;
 	}
 	return real ? counter : gptu_t2_reload_counter(timer, counter);
@@ -229,8 +229,7 @@ static void gptu_t2_sync_timer(pmb887x_gptu_t *p) {
 	if (!p->enabled)
 		return;
 	
-	uint64_t now = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
-	
+	int64_t now = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
 	p->next_t2 = now + gptu_ticks_to_ns(p, 0xFFFFFFFF);
 	
 	const int timer2ev[] = { EV_OUV_T2A, EV_OUV_T2B };
@@ -393,8 +392,7 @@ static void gptu_sync_timer(pmb887x_gptu_t *p) {
 	if (p->from == -1)
 		return;
 	
-	uint64_t now = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
-	
+	int64_t now = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
 	p->next = now + p->freq;
 	
 	for (int i = p->from; i < p->to; i++) {
@@ -418,11 +416,11 @@ static void gptu_sync_timer(pmb887x_gptu_t *p) {
 			
 			if (timer->concat) {
 				timer->counter = gptu_reload_counter(timer, counter);
-				counter = timer->counter;
+				// counter = timer->counter;
 			} else {
 				timer->start = timer->enabled ? now : 0;
 				timer->counter = gptu_reload_counter(timer, counter);
-				counter = timer->counter;
+				// counter = timer->counter;
 			}
 		} else {
 			if (!timer->concat && p->enabled) {
@@ -530,7 +528,7 @@ static void gptu_ptimer_reset(void *opaque) {
 	gptu_sync_timer(p);
 }
 
-static int get_src_index_by_addr(hwaddr haddr) {
+static uint32_t get_src_index_by_addr(hwaddr haddr) {
 	switch (haddr) {
 		case GPTU_SRC0:		return 0;
 		case GPTU_SRC1:		return 1;
@@ -540,8 +538,9 @@ static int get_src_index_by_addr(hwaddr haddr) {
 		case GPTU_SRC5:		return 5;
 		case GPTU_SRC6:		return 6;
 		case GPTU_SRC7:		return 7;
+		default:
+			hw_error("Invalid reg: %08lX", haddr);
 	}
-	return -1;
 }
 
 static uint64_t gptu_io_read(void *opaque, hwaddr haddr, unsigned size) {
@@ -679,7 +678,7 @@ static uint64_t gptu_io_read(void *opaque, hwaddr haddr, unsigned size) {
 }
 
 static void gptu_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned size) {
-	pmb887x_gptu_t *p = (pmb887x_gptu_t *) opaque;
+	pmb887x_gptu_t *p = opaque;
 
 	IO_DUMP(haddr + p->mmio.addr, size, value, true);
 
@@ -691,10 +690,6 @@ static void gptu_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned s
 			gptu_rebuild_timers(p);
 			gptu_t2_sync_timer(p);
 			gptu_t2_update_state(p);
-			break;
-
-		case GPTU_ID:
-			value = 0x0001C011;
 			break;
 
 		case GPTU_T01IRS:
@@ -807,7 +802,6 @@ static void gptu_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned s
 		default:
 			EPRINTF("unknown reg access: %02"PRIX64"\n", haddr);
 			exit(1);
-			break;
 	}
 }
 

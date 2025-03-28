@@ -7,24 +7,22 @@
 #include "qemu/osdep.h"
 #include "hw/sysbus.h"
 #include "hw/hw.h"
-#include "hw/ptimer.h"
-#include "exec/address-spaces.h"
 #include "exec/memory.h"
 #include "cpu.h"
 #include "qapi/error.h"
 #include "qemu/timer.h"
 #include "qemu/main-loop.h"
 #include "hw/qdev-properties.h"
-#include "qapi/error.h"
 
 #include "hw/arm/pmb887x/regs.h"
-#include "hw/arm/pmb887x/io_bridge.h"
 #include "hw/arm/pmb887x/regs_dump.h"
 #include "hw/arm/pmb887x/mod.h"
 #include "hw/arm/pmb887x/trace.h"
 
 #define TYPE_PMB887X_RTC	"pmb887x-rtc"
-#define PMB887X_RTC(obj)	OBJECT_CHECK(struct pmb887x_rtc_t, (obj), TYPE_PMB887X_RTC)
+#define PMB887X_RTC(obj)	OBJECT_CHECK(pmb887x_rtc_t, (obj), TYPE_PMB887X_RTC)
+
+typedef struct pmb887x_rtc_t pmb887x_rtc_t;
 
 struct pmb887x_rtc_t {
 	SysBusDevice parent_obj;
@@ -47,67 +45,60 @@ struct pmb887x_rtc_t {
 	uint64_t virtual_start;
 };
 
-static void rtc_update_state(struct pmb887x_rtc_t *p) {
-	// TODO
-}
-
 static uint64_t rtc_io_read(void *opaque, hwaddr haddr, unsigned size) {
-	struct pmb887x_rtc_t *p = (struct pmb887x_rtc_t *) opaque;
+	pmb887x_rtc_t *p = opaque;
 	
 	uint64_t value = 0;
 	
 	switch (haddr) {
 		case RTC_CLC:
 			value = pmb887x_clc_get(&p->clc);
-		break;
+			break;
 		
 		case RTC_ID:
 			value = 0xF049C011;
-		break;
+			break;
 		
 		case RTC_CTRL:
 			value = p->ctrl;
-		break;
+			break;
 		
 		case RTC_CON:
 			value = p->con | RTC_CON_ACCPOS;
-		break;
+			break;
 		
 		case RTC_T14:
 			value = p->t14;
-		break;
+			break;
 		
 		case RTC_CNT:
-		{
 			value = get_clock_realtime() / NANOSECONDS_PER_SECOND;
-		}
-		break;
+			break;
 		
 		case RTC_REL:
 			value = p->rel;
-		break;
+			break;
 		
 		case RTC_ISNC:
 			value = p->isnc;
-		break;
+			break;
 		
 		case RTC_ALARM:
 			value = p->alarm;
-		break;
+			break;
 		
 		case RTC_UNK0:
 			value = p->unk0;
-		break;
+			break;
 		
 		case RTC_SRC:
 			value = pmb887x_src_get(&p->src);
-		break;
+			break;
 		
 		default:
 			IO_DUMP(haddr + p->mmio.addr, size, 0xFFFFFFFF, false);
 			EPRINTF("unknown reg access: %02"PRIX64"\n", haddr);
 			exit(1);
-		break;
 	}
 	
 	IO_DUMP(haddr + p->mmio.addr, size, value, false);
@@ -116,58 +107,55 @@ static uint64_t rtc_io_read(void *opaque, hwaddr haddr, unsigned size) {
 }
 
 static void rtc_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned size) {
-	struct pmb887x_rtc_t *p = (struct pmb887x_rtc_t *) opaque;
+	pmb887x_rtc_t *p = opaque;
 	
 	IO_DUMP(haddr + p->mmio.addr, size, value, true);
 	
 	switch (haddr) {
 		case RTC_CLC:
 			pmb887x_clc_set(&p->clc, value);
-		break;
+			break;
 		
 		case RTC_CTRL:
 			p->ctrl = value;
-		break;
+			break;
 		
 		case RTC_CON:
 			p->con = value;
-		break;
+			break;
 		
 		case RTC_T14:
 			p->t14 = value;
-		break;
+			break;
 		
 		case RTC_CNT:
 			p->cnt = value;
-		break;
+			break;
 		
 		case RTC_REL:
 			p->rel = value;
-		break;
+			break;
 		
 		case RTC_ISNC:
 			p->isnc = value;
-		break;
+			break;
 		
 		case RTC_ALARM:
 			p->alarm = value;
-		break;
+			break;
 		
 		case RTC_UNK0:
 			p->unk0 = value;
-		break;
+			break;
 		
 		case RTC_SRC:
 			pmb887x_src_set(&p->src, value);
-		break;
+			break;
 		
 		default:
 			EPRINTF("unknown reg access: %02"PRIX64"\n", haddr);
 			exit(1);
-		break;
 	}
-	
-	rtc_update_state(p);
 }
 
 static const MemoryRegionOps io_ops = {
@@ -181,14 +169,14 @@ static const MemoryRegionOps io_ops = {
 };
 
 static void rtc_init(Object *obj) {
-	struct pmb887x_rtc_t *p = PMB887X_RTC(obj);
+	pmb887x_rtc_t *p = PMB887X_RTC(obj);
 	memory_region_init_io(&p->mmio, obj, &io_ops, p, "pmb887x-rtc", RTC_IO_SIZE);
 	sysbus_init_mmio(SYS_BUS_DEVICE(obj), &p->mmio);
 	sysbus_init_irq(SYS_BUS_DEVICE(obj), &p->irq);
 }
 
 static void rtc_realize(DeviceState *dev, Error **errp) {
-	struct pmb887x_rtc_t *p = PMB887X_RTC(dev);
+	pmb887x_rtc_t *p = PMB887X_RTC(dev);
 	
 	if (!p->irq)
 		hw_error("pmb887x-rtc: irq not set");
@@ -198,8 +186,6 @@ static void rtc_realize(DeviceState *dev, Error **errp) {
 	
 	pmb887x_clc_init(&p->clc);
 	pmb887x_src_init(&p->src, p->irq);
-	
-	rtc_update_state(p);
 }
 
 static void rtc_class_init(ObjectClass *klass, void *data) {

@@ -12,13 +12,12 @@
 #include "ui/input.h"
 
 #include "hw/arm/pmb887x/regs.h"
-#include "hw/arm/pmb887x/io_bridge.h"
 #include "hw/arm/pmb887x/regs_dump.h"
 #include "hw/arm/pmb887x/mod.h"
 #include "hw/arm/pmb887x/trace.h"
 
 #define TYPE_PMB887X_KEYPAD	"pmb887x-keypad"
-#define PMB887X_KEYPAD(obj)	OBJECT_CHECK(struct pmb887x_keypad_t, (obj), TYPE_PMB887X_KEYPAD)
+#define PMB887X_KEYPAD(obj)	OBJECT_CHECK(pmb887x_keypad_t, (obj), TYPE_PMB887X_KEYPAD)
 
 #define KEYPAD_PORTS	3
 #define KEYPAD_MAX_IN	8
@@ -30,6 +29,8 @@ enum {
 	IRQ_KEY_UNK1,
 	IRQ_KEY_RELEASE,
 };
+
+typedef struct pmb887x_keypad_t pmb887x_keypad_t;
 
 struct pmb887x_keypad_t {
 	SysBusDevice parent_obj;
@@ -50,7 +51,7 @@ struct pmb887x_keypad_t {
 };
 
 static void keypad_handle_event(DeviceState *dev, QemuConsole *src, InputEvent *evt) {
-	struct pmb887x_keypad_t *p = PMB887X_KEYPAD(dev);
+	pmb887x_keypad_t *p = PMB887X_KEYPAD(dev);
 	
 	bool pressed = evt->u.key.data->down;
 	int keycode = qemu_input_key_value_to_qcode(evt->u.key.data->key);
@@ -91,7 +92,7 @@ static void keypad_handle_event(DeviceState *dev, QemuConsole *src, InputEvent *
 	}
 }
 
-static int get_reg_index_by_addr(hwaddr haddr) {
+static uint32_t get_reg_index_by_addr(hwaddr haddr) {
 	switch (haddr) {
 		case KEYPAD_PORT0:			return 0;
 		case KEYPAD_PORT1:			return 1;
@@ -100,42 +101,41 @@ static int get_reg_index_by_addr(hwaddr haddr) {
 		case KEYPAD_UNK0_SRC:		return 1;
 		case KEYPAD_UNK1_SRC:		return 2;
 		case KEYPAD_RELEASE_SRC:	return 3;
+		default:					hw_error("Unknown reg: %08lx", haddr);
 	}
-	return -1;
 }
 
 static uint64_t keypad_io_read(void *opaque, hwaddr haddr, unsigned size) {
-	struct pmb887x_keypad_t *p = (struct pmb887x_keypad_t *) opaque;
+	pmb887x_keypad_t *p = opaque;
 	
 	uint64_t value = 0;
 	
 	switch (haddr) {
 		case KEYPAD_ID:
 			value = 0xF046C021;
-		break;
+			break;
 		
 		case KEYPAD_CON:
 			value = p->con;
-		break;
+			break;
 		
 		case KEYPAD_PORT0:
 		case KEYPAD_PORT1:
 		case KEYPAD_PORT2:
 			value = p->port[get_reg_index_by_addr(haddr)];
-		break;
+			break;
 		
 		case KEYPAD_PRESS_SRC:
 		case KEYPAD_UNK0_SRC:
 		case KEYPAD_UNK1_SRC:
 		case KEYPAD_RELEASE_SRC:
 			value = pmb887x_src_get(&p->src[get_reg_index_by_addr(haddr)]);
-		break;
+			break;
 		
 		default:
 			IO_DUMP(haddr + p->mmio.addr, size, 0xFFFFFFFF, false);
 			EPRINTF("unknown reg access: %02"PRIX64"\n", haddr);
 			exit(1);
-		break;
 	}
 	
 	IO_DUMP(haddr + p->mmio.addr, size, value, false);
@@ -144,26 +144,25 @@ static uint64_t keypad_io_read(void *opaque, hwaddr haddr, unsigned size) {
 }
 
 static void keypad_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned size) {
-	struct pmb887x_keypad_t *p = (struct pmb887x_keypad_t *) opaque;
+	pmb887x_keypad_t *p = opaque;
 	
 	IO_DUMP(haddr + p->mmio.addr, size, value, true);
 	
 	switch (haddr) {
 		case KEYPAD_CON:
 			p->con = value;
-		break;
+			break;
 		
 		case KEYPAD_PRESS_SRC:
 		case KEYPAD_UNK0_SRC:
 		case KEYPAD_UNK1_SRC:
 		case KEYPAD_RELEASE_SRC:
 			pmb887x_src_set(&p->src[get_reg_index_by_addr(haddr)], value);
-		break;
+			break;
 		
 		default:
 			EPRINTF("unknown reg access: %02"PRIX64"\n", haddr);
 			exit(1);
-		break;
 	}
 }
 
@@ -184,7 +183,7 @@ static QemuInputHandler keypad_input_handler = {
 };
 
 static void keypad_init(Object *obj) {
-	struct pmb887x_keypad_t *p = PMB887X_KEYPAD(obj);
+	pmb887x_keypad_t *p = PMB887X_KEYPAD(obj);
 	memory_region_init_io(&p->mmio, obj, &io_ops, p, "pmb887x-keypad", KEYPAD_IO_SIZE);
 	sysbus_init_mmio(SYS_BUS_DEVICE(obj), &p->mmio);
 	
@@ -193,7 +192,7 @@ static void keypad_init(Object *obj) {
 }
 
 static void keypad_realize(DeviceState *dev, Error **errp) {
-	struct pmb887x_keypad_t *p = PMB887X_KEYPAD(dev);
+	pmb887x_keypad_t *p = PMB887X_KEYPAD(dev);
 	
 	p->con = 0;
 	p->extension = 0;
@@ -217,7 +216,7 @@ static void keypad_realize(DeviceState *dev, Error **errp) {
 }
 
 static const Property keypad_properties[] = {
-	DEFINE_PROP_ARRAY("map", struct pmb887x_keypad_t, map_size, map, qdev_prop_uint32, uint32_t),
+	DEFINE_PROP_ARRAY("map", pmb887x_keypad_t, map_size, map, qdev_prop_uint32, uint32_t),
 };
 
 static void keypad_class_init(ObjectClass *klass, void *data) {
@@ -229,7 +228,7 @@ static void keypad_class_init(ObjectClass *klass, void *data) {
 static const TypeInfo keypad_info = {
     .name          	= TYPE_PMB887X_KEYPAD,
     .parent        	= TYPE_SYS_BUS_DEVICE,
-    .instance_size 	= sizeof(struct pmb887x_keypad_t),
+    .instance_size 	= sizeof(pmb887x_keypad_t),
     .instance_init 	= keypad_init,
     .class_init    	= keypad_class_init,
 };

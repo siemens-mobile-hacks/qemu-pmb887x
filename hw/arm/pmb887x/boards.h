@@ -3,7 +3,6 @@
 #include "qemu/osdep.h"
 #include "qapi/qapi-types-ui.h"
 #include "adc.h"
-#include "regs.h"
 
 enum {
 	PMB887X_MEMORY_TYPE_NONE = 0,

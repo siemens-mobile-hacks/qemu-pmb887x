@@ -7,17 +7,13 @@
 #include "qemu/osdep.h"
 #include "hw/sysbus.h"
 #include "hw/hw.h"
-#include "hw/ptimer.h"
-#include "exec/address-spaces.h"
 #include "exec/memory.h"
 #include "cpu.h"
 #include "qapi/error.h"
 #include "qemu/main-loop.h"
 #include "hw/qdev-properties.h"
-#include "qapi/error.h"
 
 #include "hw/arm/pmb887x/regs.h"
-#include "hw/arm/pmb887x/io_bridge.h"
 #include "hw/arm/pmb887x/regs_dump.h"
 #include "hw/arm/pmb887x/mod.h"
 #include "hw/arm/pmb887x/dmac.h"
@@ -31,14 +27,16 @@
 static const uint32_t PCELL_ID = 0x0A141080;
 static const uint32_t PERIPH_ID = 0xB105F00D;
 
-typedef struct {
+typedef struct pmb887x_dmac_ch_t pmb887x_dmac_ch_t;
+
+struct pmb887x_dmac_ch_t {
 	uint8_t id;
 	uint32_t src_addr;
 	uint32_t dst_addr;
 	uint32_t lli;
 	uint32_t control;
 	uint32_t config;
-} pmb887x_dmac_ch_t;
+};
 
 struct pmb887x_dmac_t {
 	SysBusDevice parent_obj;
@@ -82,62 +80,51 @@ static void dmac_channel_run(pmb887x_dmac_t *p, pmb887x_dmac_ch_t *ch) {
 	switch ((ch->config & DMAC_CH_CONFIG_FLOW_CTRL)) {
 		case DMAC_CH_CONFIG_FLOW_CTRL_MEM2MEM:
 			tx_size = (ch->config & DMAC_CH_CONTROL_TRANSFER_SIZE) >> DMAC_CH_CONTROL_TRANSFER_SIZE_SHIFT;
-		break;
-		
+			break;
+
 		case DMAC_CH_CONFIG_FLOW_CTRL_MEM2PER:
 			tx_size = (ch->config & DMAC_CH_CONTROL_TRANSFER_SIZE) >> DMAC_CH_CONTROL_TRANSFER_SIZE_SHIFT;
-			
 			if (!p->periph_request[dst_periph])
 				return;
-			
 			p->periph_request[dst_periph] = 0;
-		break;
-		
+			break;
+
 		case DMAC_CH_CONFIG_FLOW_CTRL_PER2MEM:
 			tx_size = (ch->config & DMAC_CH_CONTROL_TRANSFER_SIZE) >> DMAC_CH_CONTROL_TRANSFER_SIZE_SHIFT;
-			
 			if (!p->periph_request[src_periph])
 				return;
-			
 			p->periph_request[src_periph] = 0;
-		break;
-		
+			break;
+
 		case DMAC_CH_CONFIG_FLOW_CTRL_MEM2PER_PER:
 			is_periph_controlled = true;
-			
 			if (!p->periph_request[dst_periph])
 				return;
-			
 			tx_size = p->periph_request[dst_periph];
-			
 			p->periph_request[dst_periph] = 0;
-		break;
-		
+			break;
+
 		case DMAC_CH_CONFIG_FLOW_CTRL_PER2MEM_PER:
 			is_periph_controlled = true;
-			
 			if (!p->periph_request[src_periph])
 				return;
-			
 			tx_size = p->periph_request[src_periph];
-			
 			p->periph_request[src_periph] = 0;
-		break;
-		
+			break;
+
 		default:
 			hw_error("pmb887x-dmac: unsupported flow type %08X", (ch->config & DMAC_CH_CONFIG_FLOW_CTRL));
-		break;
 	}
 	
 	if (!tx_size)
 		return;
 	
 	DPRINTF("CH%d: %08X [%dx%d] -> %08X [%dx%d]\n", ch->id, ch->src_addr, src_width, tx_size, ch->dst_addr, dst_width, tx_size);
-	
-	uint8_t buffer[4];
+
 	uint8_t buffer_size = 0;
 	
 	while (tx_size > 0) {
+		uint8_t buffer[4];
 		if (dst_width >= src_width) {
 			address_space_read(&p->downstream_as, ch->src_addr, MEMTXATTRS_UNSPECIFIED, buffer + buffer_size, src_width);
 			buffer_size += src_width;
@@ -158,7 +145,7 @@ static void dmac_channel_run(pmb887x_dmac_t *p, pmb887x_dmac_ch_t *ch) {
 			if ((ch->control & DMAC_CH_CONTROL_SI))
 				ch->src_addr += src_width;
 			
-			for (int j = 0; j < src_width; j += dst_width) {
+			for (uint32_t j = 0; j < src_width; j += dst_width) {
 				address_space_write(&p->downstream_as, ch->dst_addr, MEMTXATTRS_UNSPECIFIED, buffer + j, dst_width);
 				
 				if ((ch->control & DMAC_CH_CONTROL_DI))
@@ -217,7 +204,7 @@ static void dmac_update(pmb887x_dmac_t *p) {
 	pmb887x_srb_set_imsc(&p->srb_err, err_mask);
 }
 
-void pmb887x_dmac_request(pmb887x_dmac_t *p, int per_id, uint32_t size) {
+void pmb887x_dmac_request(pmb887x_dmac_t *p, uint32_t per_id, uint32_t size) {
 	p->periph_request[per_id] = size;
 	
 	if (size) {
@@ -228,7 +215,7 @@ void pmb887x_dmac_request(pmb887x_dmac_t *p, int per_id, uint32_t size) {
 	}
 }
 
-static int dmac_get_index_by_reg(uint32_t reg) {
+static uint32_t dmac_get_index_by_reg(uint32_t reg) {
 	if (reg >= DMAC_CH_SRC_ADDR0 && reg <= DMAC_CH_SRC_ADDR7)
 		return (reg - DMAC_CH_SRC_ADDR0) / 0x20;
 	
@@ -253,67 +240,64 @@ static int dmac_get_index_by_reg(uint32_t reg) {
 		case DMAC_PERIPH_ID1:	return 1;
 		case DMAC_PERIPH_ID2:	return 2;
 		case DMAC_PERIPH_ID3:	return 3;
+		default:
+			hw_error("pmb887x-dmac: unknown reg %d", reg);
 	}
-	hw_error("pmb887x-dmac: unknown reg %d", reg);
-	return -1;
 }
 
 static uint64_t dmac_io_read(void *opaque, hwaddr haddr, unsigned size) {
-	pmb887x_dmac_t *p = (pmb887x_dmac_t *) opaque;
+	pmb887x_dmac_t *p = opaque;
 	
 	uint64_t value = 0;
-	
+
 	switch (haddr) {
 		case DMAC_CONFIG:
 			value = p->config;
-		break;
-		
+			break;
+
 		case DMAC_INT_STATUS:
 			value = pmb887x_srb_get_mis(&p->srb_tc) | pmb887x_srb_get_mis(&p->srb_err);
-		break;
-		
+			break;
+
 		case DMAC_TC_STATUS:
 			value = pmb887x_srb_get_mis(&p->srb_tc);
-		break;
-		
+			break;
+
 		case DMAC_ERR_STATUS:
 			value = pmb887x_srb_get_mis(&p->srb_err);
-		break;
-		
+			break;
+
 		case DMAC_RAW_TC_STATUS:
 			value = pmb887x_srb_get_ris(&p->srb_tc);
-		break;
-		
+			break;
+
 		case DMAC_RAW_ERR_STATUS:
 			value = pmb887x_srb_get_ris(&p->srb_err);
-		break;
-		
+			break;
+
 		case DMAC_TC_CLEAR:
-			value = 0;
-		break;
-		
 		case DMAC_ERR_CLEAR:
 			value = 0;
-		break;
-		
+			break;
+
 		case DMAC_EN_CHAN:
 			value = p->enabled_channels;
-		break;
-		
+			break;
+
 		case DMAC_PCELL_ID0:
 		case DMAC_PCELL_ID1:
 		case DMAC_PCELL_ID2:
 		case DMAC_PCELL_ID3:
 			value = (PCELL_ID >> dmac_get_index_by_reg(haddr) * 8) & 0xFF;
-		break;
-		
+			break;
+
 		case DMAC_PERIPH_ID0:
 		case DMAC_PERIPH_ID1:
 		case DMAC_PERIPH_ID2:
 		case DMAC_PERIPH_ID3:
 			value = (PERIPH_ID >> dmac_get_index_by_reg(haddr) * 8) & 0xFF;
-		break;
-		
+			break;
+
 		case DMAC_CH_SRC_ADDR0:
 		case DMAC_CH_SRC_ADDR1:
 		case DMAC_CH_SRC_ADDR2:
@@ -323,8 +307,8 @@ static uint64_t dmac_io_read(void *opaque, hwaddr haddr, unsigned size) {
 		case DMAC_CH_SRC_ADDR6:
 		case DMAC_CH_SRC_ADDR7:
 			value = p->ch[dmac_get_index_by_reg(haddr)].src_addr;
-		break;
-		
+			break;
+
 		case DMAC_CH_DST_ADDR0:
 		case DMAC_CH_DST_ADDR1:
 		case DMAC_CH_DST_ADDR2:
@@ -334,8 +318,8 @@ static uint64_t dmac_io_read(void *opaque, hwaddr haddr, unsigned size) {
 		case DMAC_CH_DST_ADDR6:
 		case DMAC_CH_DST_ADDR7:
 			value = p->ch[dmac_get_index_by_reg(haddr)].dst_addr;
-		break;
-		
+			break;
+
 		case DMAC_CH_CONFIG0:
 		case DMAC_CH_CONFIG1:
 		case DMAC_CH_CONFIG2:
@@ -345,8 +329,8 @@ static uint64_t dmac_io_read(void *opaque, hwaddr haddr, unsigned size) {
 		case DMAC_CH_CONFIG6:
 		case DMAC_CH_CONFIG7:
 			value = p->ch[dmac_get_index_by_reg(haddr)].config;
-		break;
-		
+			break;
+
 		case DMAC_CH_CONTROL0:
 		case DMAC_CH_CONTROL1:
 		case DMAC_CH_CONTROL2:
@@ -356,8 +340,8 @@ static uint64_t dmac_io_read(void *opaque, hwaddr haddr, unsigned size) {
 		case DMAC_CH_CONTROL6:
 		case DMAC_CH_CONTROL7:
 			value = p->ch[dmac_get_index_by_reg(haddr)].control;
-		break;
-		
+			break;
+
 		case DMAC_CH_LLI0:
 		case DMAC_CH_LLI1:
 		case DMAC_CH_LLI2:
@@ -367,37 +351,36 @@ static uint64_t dmac_io_read(void *opaque, hwaddr haddr, unsigned size) {
 		case DMAC_CH_LLI6:
 		case DMAC_CH_LLI7:
 			value = p->ch[dmac_get_index_by_reg(haddr)].lli;
-		break;
-		
+			break;
+
 		default:
 			IO_DUMP(haddr + p->mmio.addr, size, 0xFFFFFFFF, false);
 			EPRINTF("unknown reg access: %02"PRIX64"\n", haddr);
 			exit(1);
-		break;
 	}
-	
+
 	IO_DUMP(haddr + p->mmio.addr, size, value, false);
 	
 	return value;
 }
 
 static void dmac_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned size) {
-	pmb887x_dmac_t *p = (pmb887x_dmac_t *) opaque;
+	pmb887x_dmac_t *p = opaque;
 	
 	IO_DUMP(haddr + p->mmio.addr, size, value, true);
 	
 	switch (haddr) {
 		case DMAC_CONFIG:
 			p->config = value;
-		break;
+			break;
 		
 		case DMAC_TC_CLEAR:
 			pmb887x_srb_set_icr(&p->srb_tc, value);
-		break;
+			break;
 		
 		case DMAC_ERR_CLEAR:
 			pmb887x_srb_set_icr(&p->srb_err, value);
-		break;
+			break;
 		
 		case DMAC_CH_SRC_ADDR0:
 		case DMAC_CH_SRC_ADDR1:
@@ -408,7 +391,7 @@ static void dmac_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned s
 		case DMAC_CH_SRC_ADDR6:
 		case DMAC_CH_SRC_ADDR7:
 			p->ch[dmac_get_index_by_reg(haddr)].src_addr = value;
-		break;
+			break;
 		
 		case DMAC_CH_DST_ADDR0:
 		case DMAC_CH_DST_ADDR1:
@@ -419,7 +402,7 @@ static void dmac_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned s
 		case DMAC_CH_DST_ADDR6:
 		case DMAC_CH_DST_ADDR7:
 			p->ch[dmac_get_index_by_reg(haddr)].dst_addr = value;
-		break;
+			break;
 		
 		case DMAC_CH_CONFIG0:
 		case DMAC_CH_CONFIG1:
@@ -430,7 +413,7 @@ static void dmac_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned s
 		case DMAC_CH_CONFIG6:
 		case DMAC_CH_CONFIG7:
 			p->ch[dmac_get_index_by_reg(haddr)].config = value;
-		break;
+			break;
 		
 		case DMAC_CH_CONTROL0:
 		case DMAC_CH_CONTROL1:
@@ -441,7 +424,7 @@ static void dmac_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned s
 		case DMAC_CH_CONTROL6:
 		case DMAC_CH_CONTROL7:
 			p->ch[dmac_get_index_by_reg(haddr)].control = value;
-		break;
+			break;
 		
 		case DMAC_CH_LLI0:
 		case DMAC_CH_LLI1:
@@ -452,12 +435,11 @@ static void dmac_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned s
 		case DMAC_CH_LLI6:
 		case DMAC_CH_LLI7:
 			p->ch[dmac_get_index_by_reg(haddr)].lli = value;
-		break;
+			break;
 		
 		default:
 			EPRINTF("unknown reg access: %02"PRIX64"\n", haddr);
 			exit(1);
-		break;
 	}
 	
 	dmac_update(p);
@@ -489,8 +471,6 @@ static int dmac_tc_irq_router(void *opaque, int event_id) {
 		return event_id;
 	
 	hw_error("Unknown event id: %d\n", event_id);
-	
-	return 0;
 }
 
 static int dmac_err_irq_router(void *opaque, int event_id) {

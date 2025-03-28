@@ -7,23 +7,22 @@
 #include "qemu/osdep.h"
 #include "hw/sysbus.h"
 #include "hw/hw.h"
-#include "exec/address-spaces.h"
 #include "exec/memory.h"
 #include "hw/qdev-properties.h"
 #include "cpu.h"
 #include "qemu/timer.h"
-#include "hw/ptimer.h"
 #include "system/cpu-timers.h"
 
 #include "hw/arm/pmb887x/pll.h"
 #include "hw/arm/pmb887x/regs.h"
-#include "hw/arm/pmb887x/io_bridge.h"
 #include "hw/arm/pmb887x/regs_dump.h"
 #include "hw/arm/pmb887x/mod.h"
 #include "hw/arm/pmb887x/trace.h"
 
 #define TYPE_PMB887X_PLL	"pmb887x-pll"
-#define PMB887X_PLL(obj)	OBJECT_CHECK(struct pmb887x_pll_t, (obj), TYPE_PMB887X_PLL)
+#define PMB887X_PLL(obj)	OBJECT_CHECK(pmb887x_pll_t, (obj), TYPE_PMB887X_PLL)
+
+typedef struct pmb887x_pll_callback_t pmb887x_pll_callback_t;
 
 struct pmb887x_pll_callback_t {
 	void *opaque;
@@ -34,13 +33,13 @@ struct pmb887x_pll_t {
 	SysBusDevice parent_obj;
 	MemoryRegion mmio;
 	
-	struct pmb887x_pll_callback_t *callbacks;
+	pmb887x_pll_callback_t *callbacks;
 	int callbacks_count;
 	
 	pmb887x_src_reg_t src;
 	qemu_irq irq;
 	
-	int32_t ns_per_tick;
+	int64_t ns_per_tick;
 	
 	uint32_t xtal;
 	uint32_t hw_ns_div;
@@ -69,25 +68,23 @@ static uint32_t pll_ahb_div(uint32_t freq, uint32_t k1, uint32_t k2) {
 }
 
 // Freq after PLL
-static uint32_t pll_freq(struct pmb887x_pll_t *p) {
+static uint32_t pll_freq(pmb887x_pll_t *p) {
 	// fPLL = fOSC * (NDIV + 1)
 	uint32_t ndiv = (p->osc & PLL_OSC_NDIV) >> PLL_OSC_NDIV_SHIFT;
 	return p->xtal * (ndiv + 1);
 }
 
 // Get AHB bus freq
-static uint32_t pll_get_ahb_freq(struct pmb887x_pll_t *p) {
+static uint32_t pll_get_ahb_freq(pmb887x_pll_t *p) {
 	uint32_t k1, k2;
 	switch ((p->con1 & PLL_CON1_AHB_CLKSEL)) {
 		case PLL_CON1_AHB_CLKSEL_BYPASS:
 			// fAHB = fOSC
 			return p->xtal;
-		break;
 		
 		case PLL_CON1_AHB_CLKSEL_PLL0:
 			// fAHB = fOSC * (NDIV + 1)
 			return pll_freq(p);
-		break;
 		
 		case PLL_CON1_AHB_CLKSEL_PLL1:
 			// PLL1_K1 > 0:		fAHB = (fOSC * (NDIV + 1) * 12) / (PLL1_K1 * 6 + (PLL1_K2 - 1))
@@ -95,7 +92,6 @@ static uint32_t pll_get_ahb_freq(struct pmb887x_pll_t *p) {
 			k1 = (p->con0 & PLL_CON0_PLL1_K1) >> PLL_CON0_PLL1_K1_SHIFT;
 			k2 = (p->con0 & PLL_CON0_PLL1_K2) >> PLL_CON0_PLL1_K2_SHIFT;
 			return pll_ahb_div(pll_freq(p), k1, k2);
-		break;
 		
 		case PLL_CON1_AHB_CLKSEL_PLL2:
 			// PLL2_K1 > 0:		fAHB = (fOSC * (NDIV + 1) * 12) / (PLL1_K2 * 6 + (PLL2_K2 - 1))
@@ -103,7 +99,6 @@ static uint32_t pll_get_ahb_freq(struct pmb887x_pll_t *p) {
 			k1 = (p->con0 & PLL_CON0_PLL2_K1) >> PLL_CON0_PLL2_K1_SHIFT;
 			k2 = (p->con0 & PLL_CON0_PLL2_K2) >> PLL_CON0_PLL2_K2_SHIFT;
 			return pll_ahb_div(pll_freq(p), k1, k2);
-		break;
 		
 		case PLL_CON1_AHB_CLKSEL_PLL3:
 			// PLL3_K1 > 0:		fAHB = (fOSC * (NDIV + 1) * 12) / (PLL1_K3 * 6 + (PLL3_K2 - 1))
@@ -111,7 +106,6 @@ static uint32_t pll_get_ahb_freq(struct pmb887x_pll_t *p) {
 			k1 = (p->con0 & PLL_CON0_PLL3_K1) >> PLL_CON0_PLL3_K1_SHIFT;
 			k2 = (p->con0 & PLL_CON0_PLL3_K2) >> PLL_CON0_PLL3_K2_SHIFT;
 			return pll_ahb_div(pll_freq(p), k1, k2);
-		break;
 		
 		case PLL_CON1_AHB_CLKSEL_PLL4:
 			// PLL4_K1 > 0:		fAHB = (fOSC * (NDIV + 1) * 12) / (PLL4_K1 * 6 + (PLL4_K2 - 1))
@@ -119,12 +113,11 @@ static uint32_t pll_get_ahb_freq(struct pmb887x_pll_t *p) {
 			k1 = (p->con0 & PLL_CON0_PLL4_K1) >> PLL_CON0_PLL4_K1_SHIFT;
 			k2 = (p->con0 & PLL_CON0_PLL4_K2) >> PLL_CON0_PLL4_K2_SHIFT;
 			return pll_ahb_div(pll_freq(p), k1, k2);
-		break;
 	}
 	return 0;
 }
 
-static uint32_t pll_get_sys_freq(struct pmb887x_pll_t *p) {
+static uint32_t pll_get_sys_freq(pmb887x_pll_t *p) {
 	uint32_t freq = pll_freq(p);
 	uint32_t clksel = p->con1 & PLL_CON1_FSYS_CLKSEL;
 	
@@ -141,17 +134,17 @@ static uint32_t pll_get_sys_freq(struct pmb887x_pll_t *p) {
 	return p->xtal;
 }
 
-static uint32_t pll_get_stm_freq(struct pmb887x_pll_t *p) {
+static uint32_t pll_get_stm_freq(pmb887x_pll_t *p) {
 	uint32_t freq = p->xtal;
 	if ((p->con1 & PLL_CON1_FSTM_DIV_EN)) {
-		uint32_t div = (PLL_CON1 & PLL_CON1_FSTM_DIV) >> PLL_CON1_FSTM_DIV_SHIFT;
+		uint32_t div = (p->con1 & PLL_CON1_FSTM_DIV) >> PLL_CON1_FSTM_DIV_SHIFT;
 		return div ? freq / div : freq;
 	}
 	return freq;
 }
 
 // CPU freq from AHB
-static uint32_t pll_get_cpu_freq(struct pmb887x_pll_t *p) {
+static uint32_t pll_get_cpu_freq(pmb887x_pll_t *p) {
 	uint32_t ahb_freq = pll_get_ahb_freq(p);
 	if ((p->con2 & PLL_CON2_CPU_DIV_EN)) {
 		// fCPU = fAHB / (CPU_DIV + 1)
@@ -193,7 +186,7 @@ static void pll_update_state(struct pmb887x_pll_t *p) {
 			}
 		}
 		
-		DPRINTF("fCPU: %d Hz, fAHB: %d Hz, fSYS: %d Hz, fSTM: %d Hz, ns_per_tick=%d\n", p->fcpu, p->fahb, p->fsys, p->fstm, p->ns_per_tick);
+		DPRINTF("fCPU: %d Hz, fAHB: %d Hz, fSYS: %d Hz, fSTM: %d Hz, ns_per_tick=%ld\n", p->fcpu, p->fahb, p->fsys, p->fstm, p->ns_per_tick);
 		
 		for (int i = 0; i < p->callbacks_count; ++i)
 			p->callbacks[i].callback(p->callbacks[i].opaque);
@@ -201,44 +194,43 @@ static void pll_update_state(struct pmb887x_pll_t *p) {
 }
 
 static uint64_t pll_io_read(void *opaque, hwaddr haddr, unsigned size) {
-	struct pmb887x_pll_t *p = (struct pmb887x_pll_t *) opaque;
+	pmb887x_pll_t *p = opaque;
 	
 	uint64_t value = 0;
 	
 	switch (haddr) {
 		case PLL_OSC:
 			value = p->osc;
-		break;
+			break;
 		
 		case PLL_CON0:
 			value = p->con0;
-		break;
+			break;
 		
 		case PLL_CON1:
 			value = p->con1;
-		break;
+			break;
 		
 		case PLL_CON2:
 			value = p->con2;
-		break;
+			break;
 		
 		case PLL_STAT:
 			value = PLL_STAT_LOCK;
-		break;
+			break;
 		
 		case PLL_CON3:
 			value = p->con3;
-		break;
+			break;
 		
 		case PLL_SRC:
 			value = pmb887x_src_get(&p->src);
-		break;
+			break;
 		
 		default:
 			IO_DUMP(haddr + p->mmio.addr, size, 0xFFFFFFFF, false);
 			EPRINTF("unknown reg access: %02"PRIX64"\n", haddr);
 			exit(1);
-		break;
 	}
 	
 	IO_DUMP(haddr + p->mmio.addr, size, value, false);
@@ -247,39 +239,38 @@ static uint64_t pll_io_read(void *opaque, hwaddr haddr, unsigned size) {
 }
 
 static void pll_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned size) {
-	struct pmb887x_pll_t *p = (struct pmb887x_pll_t *) opaque;
+	pmb887x_pll_t *p = opaque;
 	
 	IO_DUMP(haddr + p->mmio.addr, size, value, true);
 	
 	switch (haddr) {
 		case PLL_OSC:
 			p->osc = value;
-		break;
+			break;
 		
 		case PLL_CON0:
 			p->con0 = value;
-		break;
+			break;
 		
 		case PLL_CON1:
 			p->con1 = value;
-		break;
+			break;
 		
 		case PLL_CON2:
 			p->con2 = value;
-		break;
+			break;
 		
 		case PLL_CON3:
 			p->con3 = value;
-		break;
+			break;
 		
 		case PLL_SRC:
 			pmb887x_src_set(&p->src, value);
-		break;
+			break;
 		
 		default:
 			EPRINTF("unknown reg access: %02"PRIX64"\n", haddr);
 			exit(1);
-		break;
 	}
 	
 	pll_update_state(p);
@@ -295,39 +286,39 @@ static const MemoryRegionOps io_ops = {
 	}
 };
 
-struct pmb887x_pll_t *pmb887x_pll_get_self(DeviceState *dev) {
+pmb887x_pll_t *pmb887x_pll_get_self(DeviceState *dev) {
 	return PMB887X_PLL(dev);
 }
 
-uint32_t pmb887x_pll_get_fosc(struct pmb887x_pll_t *p) {
+uint32_t pmb887x_pll_get_fosc(pmb887x_pll_t *p) {
 	return p->xtal;
 }
 
-uint32_t pmb887x_pll_get_frtc(struct pmb887x_pll_t *p) {
+uint32_t pmb887x_pll_get_frtc(pmb887x_pll_t *p) {
 	return p->frtc;
 }
 
-uint32_t pmb887x_pll_get_fsys(struct pmb887x_pll_t *p) {
+uint32_t pmb887x_pll_get_fsys(pmb887x_pll_t *p) {
 	return p->fsys;
 }
 
-uint32_t pmb887x_pll_get_fstm(struct pmb887x_pll_t *p) {
+uint32_t pmb887x_pll_get_fstm(pmb887x_pll_t *p) {
 	return p->fstm;
 }
 
-uint32_t pmb887x_pll_get_fcpu(struct pmb887x_pll_t *p) {
+uint32_t pmb887x_pll_get_fcpu(pmb887x_pll_t *p) {
 	return p->fcpu;
 }
 
-uint32_t pmb887x_pll_get_fahb(struct pmb887x_pll_t *p) {
+uint32_t pmb887x_pll_get_fahb(pmb887x_pll_t *p) {
 	return p->fahb;
 }
 
-uint32_t pmb887x_pll_get_fgptu(struct pmb887x_pll_t *p) {
+uint32_t pmb887x_pll_get_fgptu(pmb887x_pll_t *p) {
 	return p->fgptu;
 }
 
-void pmb887x_pll_add_freq_update_callback(struct pmb887x_pll_t *p, void (*callback)(void *), void *opaque) {
+void pmb887x_pll_add_freq_update_callback(pmb887x_pll_t *p, void (*callback)(void *), void *opaque) {
 	p->callbacks = g_realloc(p->callbacks, (p->callbacks_count + 1) * sizeof(struct pmb887x_pll_callback_t));
 	p->callbacks[p->callbacks_count].opaque = opaque;
 	p->callbacks[p->callbacks_count].callback = callback;
@@ -335,14 +326,14 @@ void pmb887x_pll_add_freq_update_callback(struct pmb887x_pll_t *p, void (*callba
 }
 
 static void pll_init(Object *obj) {
-	struct pmb887x_pll_t *p = PMB887X_PLL(obj);
+	pmb887x_pll_t *p = PMB887X_PLL(obj);
 	memory_region_init_io(&p->mmio, obj, &io_ops, p, "pmb887x-pll", PLL_IO_SIZE);
 	sysbus_init_mmio(SYS_BUS_DEVICE(obj), &p->mmio);
 	sysbus_init_irq(SYS_BUS_DEVICE(obj), &p->irq);
 }
 
 static void pll_realize(DeviceState *dev, Error **errp) {
-	struct pmb887x_pll_t *p = PMB887X_PLL(dev);
+	pmb887x_pll_t *p = PMB887X_PLL(dev);
 	
 	if (!p->irq)
 		hw_error("pmb887x-pll: irq not set");

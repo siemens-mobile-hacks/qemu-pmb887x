@@ -6,29 +6,26 @@
 
 #include "qemu/osdep.h"
 #include "hw/irq.h"
-#include "hw/hw.h"
 #include "hw/sysbus.h"
-#include "migration/vmstate.h"
-#include "qemu/timer.h"
-#include "qemu/log.h"
 #include "qemu/module.h"
 #include "qom/object.h"
 #include "hw/qdev-properties.h"
 
 #include "hw/arm/pmb887x/regs.h"
-#include "hw/arm/pmb887x/io_bridge.h"
 #include "hw/arm/pmb887x/regs_dump.h"
 #include "hw/arm/pmb887x/mod.h"
 #include "hw/arm/pmb887x/dmac.h"
 #include "hw/arm/pmb887x/trace.h"
 #include "hw/arm/pmb887x/dif/lcd_common.h"
 
-#define TYPE_PMB887X_DIF	"pmb887x-dif"
-#define PMB887X_DIF(obj)	OBJECT_CHECK(pmb887x_dif_t, (obj), TYPE_PMB887X_DIF)
+#define TYPE_PMB887X_DIF	"pmb887x-dif-v2"
+#define PMB887X_DIF(obj)	OBJECT_CHECK(pmb887x_dif_v2_t, (obj), TYPE_PMB887X_DIF)
 
 #define DIFv2_FIFO_SIZE	0xBFFC
 
-typedef struct {
+typedef struct pmb887x_dif_v2_t pmb887x_dif_v2_t;
+
+struct pmb887x_dif_v2_t {
 	SysBusDevice parent_obj;
 	MemoryRegion mmio;
 	
@@ -46,13 +43,9 @@ typedef struct {
 	
 	pmb887x_clc_reg_t clc;
 	pmb887x_srb_reg_t srb;
-} pmb887x_dif_t;
+};
 
-static void dif_update_state(pmb887x_dif_t *p) {
-	
-}
-
-static int dif_get_index_from_reg(uint32_t reg) {
+static int dif_v2_get_prog_index_from_reg(uint32_t reg) {
 	switch (reg) {
 		case DIFv2_PROG0:		return 0;
 		case DIFv2_PROG1:		return 1;
@@ -60,7 +53,12 @@ static int dif_get_index_from_reg(uint32_t reg) {
 		case DIFv2_PROG3:		return 3;
 		case DIFv2_PROG4:		return 4;
 		case DIFv2_PROG5:		return 5;
-		
+		default:				abort();
+	};
+}
+
+static int dif_v2_get_con_index_from_reg(uint32_t reg) {
+	switch (reg) {
 		case DIFv2_CON0:		return 0;
 		case DIFv2_CON1:		return 1;
 		case DIFv2_CON3:		return 3;
@@ -75,46 +73,44 @@ static int dif_get_index_from_reg(uint32_t reg) {
 		case DIFv2_CON12:		return 12;
 		case DIFv2_CON13:		return 13;
 		case DIFv2_CON14:		return 14;
+		default:				abort();
 	};
-	hw_error("pmb887x-dif: unknown reg %d", reg);
-	return -1;
 }
 
-static uint64_t dif_io_read(void *opaque, hwaddr haddr, unsigned size) {
-	pmb887x_dif_t *p = (pmb887x_dif_t *) opaque;
+static uint64_t dif_v2_io_read(void *opaque, hwaddr haddr, unsigned size) {
+	pmb887x_dif_v2_t *p = opaque;
 	
 	uint64_t value = 0;
-	
 	switch (haddr) {
 		case DIFv2_CLC:
 			value = pmb887x_clc_get(&p->clc);
-		break;
-		
+			break;
+
 		case DIFv2_ID:
 			value = 0xF043C012;
-		break;
-		
+			break;
+
 		case DIFv2_RUNCTRL:
 			value = p->runctrl;
-		break;
-		
+			break;
+
 		case DIFv2_STAT:
 			value = 0;
-		break;
-		
+			break;
+
 		case DIFv2_PROG0:
 		case DIFv2_PROG1:
 		case DIFv2_PROG2:
 		case DIFv2_PROG3:
 		case DIFv2_PROG4:
 		case DIFv2_PROG5:
-			value = p->prog[dif_get_index_from_reg(haddr)];
-		break;
-		
+			value = p->prog[dif_v2_get_prog_index_from_reg(haddr)];
+			break;
+
 		case DIFv2_FIFOCFG:
 			value = p->fifocfg;
-		break;
-		
+			break;
+
 		case DIFv2_CON0:
 		case DIFv2_CON1:
 		case DIFv2_CON3:
@@ -129,42 +125,38 @@ static uint64_t dif_io_read(void *opaque, hwaddr haddr, unsigned size) {
 		case DIFv2_CON12:
 		case DIFv2_CON13:
 		case DIFv2_CON14:
-			value = p->con[dif_get_index_from_reg(haddr)];
-		break;
-		
+			value = p->con[dif_v2_get_con_index_from_reg(haddr)];
+			break;
+
 		case DIFv2_TX_SIZE:
 			value = p->tx_size;
-		break;
-		
+			break;
+
 		case DIFv2_FIFO ... (DIFv2_FIFO + DIFv2_FIFO_SIZE):
 			value = 0;
-		break;
-		
+			break;
+
 		case DIFv2_IMSC:
 			value = pmb887x_srb_get_imsc(&p->srb);
-		break;
-		
+			break;
+
 		case DIFv2_RIS:
 			value = pmb887x_srb_get_ris(&p->srb);
-		break;
-		
+			break;
+
 		case DIFv2_MIS:
 			value = pmb887x_srb_get_mis(&p->srb);
-		break;
-		
+			break;
+
 		case DIFv2_ICR:
-			value = 0;
-		break;
-		
 		case DIFv2_ISR:
 			value = 0;
-		break;
-		
+			break;
+
 		default:
 			IO_DUMP(haddr + p->mmio.addr, size, 0xFFFFFFFF, false);
 			EPRINTF("unknown reg access: %02"PRIX64"\n", haddr);
 			exit(1);
-		break;
 	}
 	
 	IO_DUMP(haddr + p->mmio.addr, size, value, false);
@@ -172,8 +164,8 @@ static uint64_t dif_io_read(void *opaque, hwaddr haddr, unsigned size) {
 	return value;
 }
 
-static void dif_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned size) {
-	pmb887x_dif_t *p = (pmb887x_dif_t *) opaque;
+static void dif_v2_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned size) {
+	pmb887x_dif_v2_t *p = opaque;
 	
 	bool supress = (haddr >= DIFv2_FIFO && haddr < DIFv2_FIFO + DIFv2_FIFO_SIZE);
 	
@@ -183,30 +175,30 @@ static void dif_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned si
 	switch (haddr) {
 		case DIFv2_CLC:
 			pmb887x_clc_set(&p->clc, value);
-		break;
-		
+			break;
+
 		case DIFv2_RUNCTRL:
 			p->runctrl = value;
-		break;
-		
+			break;
+
 		case DIFv2_FIFO ... (DIFv2_FIFO + DIFv2_FIFO_SIZE - 1):
 			pmb887x_lcd_write(p->lcd, value, ((p->fifocfg & DIFv2_FIFOCFG_BS) >> DIFv2_FIFOCFG_BS_SHIFT) + 1);
-		break;
-		
+			break;
+
 		case DIFv2_PROG0:
 		case DIFv2_PROG1:
 		case DIFv2_PROG2:
 		case DIFv2_PROG3:
 		case DIFv2_PROG4:
 		case DIFv2_PROG5:
-			p->prog[dif_get_index_from_reg(haddr)] = value;
-		break;
-		
+			p->prog[dif_v2_get_prog_index_from_reg(haddr)] = value;
+			break;
+
 		case DIFv2_FIFOCFG:
 			p->fifocfg = value;
 			pmb887x_lcd_set_cd(p->lcd, (p->fifocfg & DIFv2_FIFOCFG_MODE) == DIFv2_FIFOCFG_MODE_CMD);
-		break;
-		
+			break;
+
 		case DIFv2_CON0:
 		case DIFv2_CON1:
 		case DIFv2_CON3:
@@ -221,44 +213,41 @@ static void dif_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned si
 		case DIFv2_CON12:
 		case DIFv2_CON13:
 		case DIFv2_CON14:
-			p->con[dif_get_index_from_reg(haddr)] = value;
-		break;
-		
+			p->con[dif_v2_get_con_index_from_reg(haddr)] = value;
+			break;
+
 		case DIFv2_TX_SIZE:
 			p->tx_size = value;
-			
+
 			if (p->dmac)
 				pmb887x_dmac_request(p->dmac, p->dmac_tx_periph_id, p->tx_size);
-		break;
-		
+			break;
+
 		case DIFv2_IMSC:
 			pmb887x_srb_set_imsc(&p->srb, value);
-		break;
-		
+			break;
+
 		case DIFv2_ICR:
 			pmb887x_srb_set_icr(&p->srb, value);
-		break;
-		
+			break;
+
 		case DIFv2_ISR:
 			pmb887x_srb_set_isr(&p->srb, value);
-		break;
-		
+			break;
+
 		case 0x80:
 			// ???
-		break;
-		
+			break;
+
 		default:
 			EPRINTF("unknown reg access: %02"PRIX64"\n", haddr);
 			exit(1);
-		break;
 	}
-	
-	dif_update_state(p);
 }
 
 static const MemoryRegionOps io_ops = {
-	.read			= dif_io_read,
-	.write			= dif_io_write,
+	.read			= dif_v2_io_read,
+	.write			= dif_v2_io_write,
 	.endianness		= DEVICE_NATIVE_ENDIAN,
 	.valid			= {
 		.min_access_size	= 1,
@@ -266,42 +255,42 @@ static const MemoryRegionOps io_ops = {
 	}
 };
 
-static void dif_init(Object *obj) {
-	pmb887x_dif_t *p = PMB887X_DIF(obj);
-	memory_region_init_io(&p->mmio, obj, &io_ops, p, "pmb887x-dif", DIFv2_IO_SIZE);
+static void dif_v2_init(Object *obj) {
+	pmb887x_dif_v2_t *p = PMB887X_DIF(obj);
+	memory_region_init_io(&p->mmio, obj, &io_ops, p, "pmb887x-dif-v2", DIFv2_IO_SIZE);
 	sysbus_init_mmio(SYS_BUS_DEVICE(obj), &p->mmio);
 	
 	for (int i = 0; i < ARRAY_SIZE(p->irq); i++)
 		sysbus_init_irq(SYS_BUS_DEVICE(obj), &p->irq[i]);
 }
 
-static void dif_realize(DeviceState *dev, Error **errp) {
-	pmb887x_dif_t *p = PMB887X_DIF(dev);
+static void dif_v2_realize(DeviceState *dev, Error **errp) {
+	pmb887x_dif_v2_t *p = PMB887X_DIF(dev);
 	pmb887x_clc_init(&p->clc);
 	pmb887x_srb_init(&p->srb, p->irq, ARRAY_SIZE(p->irq));
 }
 
-static const Property dif_properties[] = {
-	DEFINE_PROP_LINK("dmac", pmb887x_dif_t, dmac, "pmb887x-dmac", pmb887x_dmac_t *),
-	DEFINE_PROP_LINK("lcd", pmb887x_dif_t, lcd, "pmb887x-lcd", pmb887x_lcd_t *),
-	DEFINE_PROP_UINT32("dmac-tx-periph-id", pmb887x_dif_t, dmac_tx_periph_id, 4),
+static const Property dif_v2_properties[] = {
+	DEFINE_PROP_LINK("dmac", pmb887x_dif_v2_t, dmac, "pmb887x-dmac", pmb887x_dmac_t *),
+	DEFINE_PROP_LINK("lcd", pmb887x_dif_v2_t, lcd, "pmb887x-lcd", pmb887x_lcd_t *),
+	DEFINE_PROP_UINT32("dmac-tx-periph-id", pmb887x_dif_v2_t, dmac_tx_periph_id, 4),
 };
 
-static void dif_class_init(ObjectClass *klass, void *data) {
+static void dif_v2_class_init(ObjectClass *klass, void *data) {
 	DeviceClass *dc = DEVICE_CLASS(klass);
-	device_class_set_props(dc, dif_properties);
-	dc->realize = dif_realize;
+	device_class_set_props(dc, dif_v2_properties);
+	dc->realize = dif_v2_realize;
 }
 
-static const TypeInfo dif_info = {
+static const TypeInfo dif_v2_info = {
     .name          	= TYPE_PMB887X_DIF,
     .parent        	= TYPE_SYS_BUS_DEVICE,
-    .instance_size 	= sizeof(pmb887x_dif_t),
-    .instance_init 	= dif_init,
-    .class_init    	= dif_class_init,
+    .instance_size 	= sizeof(pmb887x_dif_v2_t),
+    .instance_init 	= dif_v2_init,
+    .class_init    	= dif_v2_class_init,
 };
 
-static void dif_register_types(void) {
-	type_register_static(&dif_info);
+static void dif_v2_register_types(void) {
+	type_register_static(&dif_v2_info);
 }
-type_init(dif_register_types)
+type_init(dif_v2_register_types)

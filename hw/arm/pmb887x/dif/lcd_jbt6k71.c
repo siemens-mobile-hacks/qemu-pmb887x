@@ -5,7 +5,6 @@
 #define PMB887X_TRACE_PREFIX	"pmb887x-lcd-jbt6k71"
 
 #include "qemu/osdep.h"
-#include "hw/hw.h"
 #include "hw/qdev-properties.h"
 #include "qapi/error.h"
 #include "qemu/error-report.h"
@@ -25,10 +24,12 @@ static const uint16_t DEFAULT_REGS[] = {
 	[0x100] = 0x800, /* Display control */
 };
 
-typedef struct {
+typedef struct pmb887x_lcd_jbt6k71_t pmb887x_lcd_jbt6k71_t;
+
+struct pmb887x_lcd_jbt6k71_t {
 	pmb887x_lcd_t parent;
 	uint16_t regs[JBT6K71_MAX_REGS];
-} pmb887x_lcd_jbt6k71_t;
+};
 
 static void lcd_update_state(pmb887x_lcd_t *lcd) {
 	pmb887x_lcd_jbt6k71_t *priv = PMB887X_LCD_JBT6K71(lcd);
@@ -96,31 +97,35 @@ static void lcd_on_cmd_with_params(pmb887x_lcd_t *lcd, uint32_t cmd, const uint3
 		case 0x003:
 		case 0x100:
 			lcd_update_state(lcd);
-		break;
+			break;
 		
 		case 0x200:
 			pmb887x_lcd_set_x(lcd, params[0]);
-		break;
+			break;
 		
 		case 0x201:
 			pmb887x_lcd_set_y(lcd, params[0]);
-		break;
+			break;
 		
 		case 0x406:
 			pmb887x_lcd_set_window_x1(lcd, params[0]);
-		break;
+			break;
 		
 		case 0x407:
 			pmb887x_lcd_set_window_x2(lcd, params[0]);
-		break;
+			break;
 		
 		case 0x408:
 			pmb887x_lcd_set_window_y1(lcd, params[0]);
-		break;
+			break;
 		
 		case 0x409:
 			pmb887x_lcd_set_window_y2(lcd, params[0]);
-		break;
+			break;
+
+		default:
+			// Nothing
+			break;
 	}
 }
 

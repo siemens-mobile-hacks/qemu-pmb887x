@@ -222,6 +222,14 @@
 #define PMB8875_USART0_ABDET_IRQ	9
 #define PMB8875_USART0_ABSTART_IRQ	10
 #define PMB8875_USART0_TMO_IRQ		11
+#define PMB8875_SSC_INT0_IRQ		12
+#define PMB8875_SSC_INT1_IRQ		13
+#define PMB8875_SSC_INT2_IRQ		14
+#define PMB8875_SSC_INT3_IRQ		15
+#define PMB8875_DIF_INT0_IRQ		18
+#define PMB8875_DIF_INT1_IRQ		19
+#define PMB8875_DIF_INT2_IRQ		20
+#define PMB8875_DIF_INT3_IRQ		21
 #define PMB8875_USB_IRQ				25
 #define PMB8875_USART1_TX_IRQ		26
 #define PMB8875_USART1_TBUF_IRQ		27
@@ -256,8 +264,8 @@
 #define PMB8875_SCU_UNK2_IRQ		60
 #define PMB8875_SCU_EXTI5_IRQ		61
 #define PMB8875_SCU_EXTI6_IRQ		62
-#define PMB8875_SCU_EXTI7_IRQ		63
 #define PMB8875_SCCU_UNK_IRQ		63
+#define PMB8875_SCU_EXTI7_IRQ		63
 #define PMB8875_SCCU_WAKE_IRQ		64
 #define PMB8875_PLL_IRQ				65
 #define PMB8875_I2C_DATA_IRQ		66
@@ -315,10 +323,6 @@
 #define PMB8875_TPU_INT1_IRQ		120
 #define PMB8875_GPRSCU_INT0_IRQ		121
 #define PMB8875_GPRSCU_INT1_IRQ		122
-#define PMB8875_DIF_INT0_IRQ		134
-#define PMB8875_DIF_INT1_IRQ		135
-#define PMB8875_DIF_INT2_IRQ		136
-#define PMB8875_DIF_INT3_IRQ		137
 
 /* CPU: pmb8876 */
 #define CPU_PMB8876					1
@@ -597,8 +601,8 @@
 #define PMB8876_SCU_UNK2_IRQ		60
 #define PMB8876_SCU_EXTI5_IRQ		61
 #define PMB8876_SCU_EXTI6_IRQ		62
-#define PMB8876_SCCU_UNK_IRQ		63
 #define PMB8876_SCU_EXTI7_IRQ		63
+#define PMB8876_SCCU_UNK_IRQ		63
 #define PMB8876_SCCU_WAKE_IRQ		64
 #define PMB8876_PLL_IRQ				65
 #define PMB8876_ADC_INT0_IRQ		70
@@ -1974,35 +1978,171 @@
 
 // DIFv1 [MOD_NUM=F043, MOD_REV=00, MOD_32BIT=C0]
 // DIF (Display Interface)
-#define DIFv1_IO_SIZE	0x0000C000
+#define DIFv1_IO_SIZE				0x00000200
 /* Clock Control Register */
-#define DIFv1_CLC		0x00
+#define DIFv1_CLC					0x00
+
+/* Port Input Select Register */
+#define DIFv1_PISEL					0x04
+#define DIFv1_PISEL_MRIS			(1 << 0)		 // Master Mode Receive Input Select
+#define DIFv1_PISEL_MRIS_SHIFT		0
+#define DIFv1_PISEL_SRIS			(1 << 1)		 // Slave Mode Receive Input Select
+#define DIFv1_PISEL_SRIS_SHIFT		1
+#define DIFv1_PISEL_SCIS			(1 << 2)		 // Slave Mode Clock Input Select
+#define DIFv1_PISEL_SCIS_SHIFT		2
+#define DIFv1_PISEL_SLSIS			(0x7 << 3)		 // Slave Mode Slave Select Input Selection
+#define DIFv1_PISEL_SLSIS_SHIFT		3
+#define DIFv1_PISEL_STIP			(1 << 8)		 // Slave Transmit Idle State Polarity
+#define DIFv1_PISEL_STIP_SHIFT		8
 
 /* Module Identifier Register */
-#define DIFv1_ID		0x08
+#define DIFv1_ID					0x08
 
-#define DIFv1_STAT		0x10
+/* Control Register */
+#define DIFv1_CON					0x10
+#define DIFv1_CON_BC				(0xF << 0)		 // Bit Count Status
+#define DIFv1_CON_BC_SHIFT			0
+#define DIFv1_CON_BM				(0xF << 0)		 // Data Width Selection
+#define DIFv1_CON_BM_SHIFT			0
+#define DIFv1_CON_HB				(1 << 4)		 // Heading Bit Control
+#define DIFv1_CON_HB_SHIFT			4
+#define DIFv1_CON_PH				(1 << 5)		 // Clock Phase Control
+#define DIFv1_CON_PH_SHIFT			5
+#define DIFv1_CON_PO				(1 << 6)		 // Clock Polarity Control
+#define DIFv1_CON_PO_SHIFT			6
+#define DIFv1_CON_LB				(1 << 7)		 // Loop-Back Control
+#define DIFv1_CON_LB_SHIFT			7
+#define DIFv1_CON_TEN				(1 << 8)		 // Transmit Error Enable
+#define DIFv1_CON_TEN_SHIFT			8
+#define DIFv1_CON_TE				(1 << 8)		 // Transmit Error Flag
+#define DIFv1_CON_TE_SHIFT			8
+#define DIFv1_CON_REN				(1 << 9)		 // Receive Error Enable
+#define DIFv1_CON_REN_SHIFT			9
+#define DIFv1_CON_RE				(1 << 9)		 // Receive Error Flag
+#define DIFv1_CON_RE_SHIFT			9
+#define DIFv1_CON_PE				(1 << 10)		 // Phase Error Flag
+#define DIFv1_CON_PE_SHIFT			10
+#define DIFv1_CON_PEN				(1 << 10)		 // Phase Error Enable
+#define DIFv1_CON_PEN_SHIFT			10
+#define DIFv1_CON_BE				(1 << 11)		 // Baud Rate Error Flag
+#define DIFv1_CON_BE_SHIFT			11
+#define DIFv1_CON_BEN				(1 << 11)		 // Baud Rate Error Enable
+#define DIFv1_CON_BEN_SHIFT			11
+#define DIFv1_CON_AREN				(1 << 12)		 // Automatic Reset Enable
+#define DIFv1_CON_AREN_SHIFT		12
+#define DIFv1_CON_BSY				(1 << 12)		 // Busy Flag
+#define DIFv1_CON_BSY_SHIFT			12
+#define DIFv1_CON_MS				(1 << 14)		 // Master Select
+#define DIFv1_CON_MS_SHIFT			14
+#define DIFv1_CON_EN				(1 << 15)		 // Enable Bit
+#define DIFv1_CON_EN_SHIFT			15
 
-#define DIFv1_TB		0x20
+/* Baud Rate Timer Reload Register */
+#define DIFv1_BR					0x14
+#define DIFv1_BR_BR_VALUE			(0xFFFF << 0)	 // Baud Rate Timer/Reload Register Value
+#define DIFv1_BR_BR_VALUE_SHIFT		0
 
-#define DIFv1_RB		0x24
+/* Transmit Buffer Register */
+#define DIFv1_TB					0x20
+#define DIFv1_TB_TB_VALUE			(0xFFFF << 0)	 // Transmit Data Register Value
+#define DIFv1_TB_TB_VALUE_SHIFT		0
 
-#define DIFv1_RXFCON	0x30
+/* Receive Buffer Register */
+#define DIFv1_RB					0x24
+#define DIFv1_RB_RB_VALUE			(0xFFFF << 0)	 // Receive Data Register Value
+#define DIFv1_RB_RB_VALUE_SHIFT		0
 
-#define DIFv1_TXFCON	0x34
+/* Receive FIFO Control Register */
+#define DIFv1_RXFCON				0x30
+#define DIFv1_RXFCON_RXFEN			(1 << 0)		 // Receive FIFO Enable
+#define DIFv1_RXFCON_RXFEN_SHIFT	0
+#define DIFv1_RXFCON_RXFLU			(1 << 1)		 // Receive FIFO Flush
+#define DIFv1_RXFCON_RXFLU_SHIFT	1
+#define DIFv1_RXFCON_RXTMEN			(1 << 2)		 // Receive FIFO Transparent Mode Enable
+#define DIFv1_RXFCON_RXTMEN_SHIFT	2
+#define DIFv1_RXFCON_RXFITL			(0x3F << 8)		 // Receive FIFO Interrupt Trigger Level
+#define DIFv1_RXFCON_RXFITL_SHIFT	8
 
-#define DIFv1_FSTAT		0x38
+#define DIFv1_TXFCON				0x34
+#define DIFv1_TXFCON_TXFEN			(1 << 0)		 // Receive FIFO Enable
+#define DIFv1_TXFCON_TXFEN_SHIFT	0
+#define DIFv1_TXFCON_TXFLU			(1 << 1)		 // Receive FIFO Flush
+#define DIFv1_TXFCON_TXFLU_SHIFT	1
+#define DIFv1_TXFCON_TXTMEN			(1 << 2)		 // Receive FIFO Transparent Mode Enable
+#define DIFv1_TXFCON_TXTMEN_SHIFT	2
+#define DIFv1_TXFCON_TXFITL			(0x3F << 8)		 // Receive FIFO Interrupt Trigger Level
+#define DIFv1_TXFCON_TXFITL_SHIFT	8
 
-#define DIFv1_TXDMACON	0x58
+#define DIFv1_FSTAT					0x38
+#define DIFv1_FSTAT_RXFFL			(0x3F << 0)		 // Receive FIFO Filling Level
+#define DIFv1_FSTAT_RXFFL_SHIFT		0
+#define DIFv1_FSTAT_TXFFL			(0x3F << 8)		 // Transmit FIFO Filling Level
+#define DIFv1_FSTAT_TXFFL_SHIFT		8
 
-#define DIFv1_RXDMACON	0x5C
+#define DIFv1_UNK0					0x40
 
-#define DIFv1_PROG0		0x74
-#define DIFv1_PROG1		0x78
-#define DIFv1_PROG2		0x7C
-#define DIFv1_PROG3		0x80
-#define DIFv1_PROG4		0x84
-#define DIFv1_PROG5		0x88
+#define DIFv1_UNK1					0x44
+
+#define DIFv1_IMSC					0x48
+#define DIFv1_IMSC_TX				(1 << 0)		 // Transmit interrupt mask
+#define DIFv1_IMSC_TX_SHIFT			0
+#define DIFv1_IMSC_TB				(1 << 1)		 // Transmit buffer interrupt mask
+#define DIFv1_IMSC_TB_SHIFT			1
+#define DIFv1_IMSC_RX				(1 << 2)		 // Receive interrupt mask
+#define DIFv1_IMSC_RX_SHIFT			2
+#define DIFv1_IMSC_ERR				(1 << 3)		 // Error interrupt mask
+#define DIFv1_IMSC_ERR_SHIFT		3
+
+#define DIFv1_RIS					0x4C
+#define DIFv1_RIS_TX				(1 << 0)		 // Transmit interrupt mask
+#define DIFv1_RIS_TX_SHIFT			0
+#define DIFv1_RIS_TB				(1 << 1)		 // Transmit buffer interrupt mask
+#define DIFv1_RIS_TB_SHIFT			1
+#define DIFv1_RIS_RX				(1 << 2)		 // Receive interrupt mask
+#define DIFv1_RIS_RX_SHIFT			2
+
+#define DIFv1_MIS					0x50
+#define DIFv1_MIS_TX				(1 << 0)		 // Transmit interrupt mask
+#define DIFv1_MIS_TX_SHIFT			0
+#define DIFv1_MIS_TB				(1 << 1)		 // Transmit buffer interrupt mask
+#define DIFv1_MIS_TB_SHIFT			1
+#define DIFv1_MIS_RX				(1 << 2)		 // Receive interrupt mask
+#define DIFv1_MIS_RX_SHIFT			2
+#define DIFv1_MIS_ERR				(1 << 3)		 // Error interrupt mask
+#define DIFv1_MIS_ERR_SHIFT			3
+
+#define DIFv1_ICR					0x54
+#define DIFv1_ICR_TX				(1 << 0)		 // Transmit interrupt mask
+#define DIFv1_ICR_TX_SHIFT			0
+#define DIFv1_ICR_TB				(1 << 1)		 // Transmit buffer interrupt mask
+#define DIFv1_ICR_TB_SHIFT			1
+#define DIFv1_ICR_RX				(1 << 2)		 // Receive interrupt mask
+#define DIFv1_ICR_RX_SHIFT			2
+#define DIFv1_ICR_ERR				(1 << 3)		 // Error interrupt mask
+#define DIFv1_ICR_ERR_SHIFT			3
+
+#define DIFv1_ISR					0x58
+#define DIFv1_ISR_TX				(1 << 0)		 // Transmit interrupt mask
+#define DIFv1_ISR_TX_SHIFT			0
+#define DIFv1_ISR_TB				(1 << 1)		 // Transmit buffer interrupt mask
+#define DIFv1_ISR_TB_SHIFT			1
+#define DIFv1_ISR_RX				(1 << 2)		 // Receive interrupt mask
+#define DIFv1_ISR_RX_SHIFT			2
+#define DIFv1_ISR_ERR				(1 << 3)		 // Error interrupt mask
+#define DIFv1_ISR_ERR_SHIFT			3
+
+#define DIFv1_DMACON				0x5C
+#define DIFv1_DMACON_CH				(0x7 << 0)		 // DMA channel
+#define DIFv1_DMACON_CH_SHIFT		0
+
+#define DIFv1_UNK2					0x60
+
+#define DIFv1_PROG0					0x74
+#define DIFv1_PROG1					0x78
+#define DIFv1_PROG2					0x7C
+#define DIFv1_PROG3					0x80
+#define DIFv1_PROG4					0x84
+#define DIFv1_PROG5					0x88
 
 
 // DIFv2 [MOD_NUM=F043, MOD_REV=12, MOD_32BIT=C0]
@@ -6766,24 +6906,164 @@
 
 // SSC [MOD_NUM=0045, MOD_REV=25, MOD_32BIT=00]
 // SSC (SPI)
-#define SSC_IO_SIZE	0x0000C000
+#define SSC_IO_SIZE				0x0000C000
 /* Clock Control Register */
-#define SSC_CLC		0x00
+#define SSC_CLC					0x00
+
+/* Port Input Select Register */
+#define SSC_PISEL				0x04
+#define SSC_PISEL_MRIS			(1 << 0)		 // Master Mode Receive Input Select
+#define SSC_PISEL_MRIS_SHIFT	0
+#define SSC_PISEL_SRIS			(1 << 1)		 // Slave Mode Receive Input Select
+#define SSC_PISEL_SRIS_SHIFT	1
+#define SSC_PISEL_SCIS			(1 << 2)		 // Slave Mode Clock Input Select
+#define SSC_PISEL_SCIS_SHIFT	2
+#define SSC_PISEL_SLSIS			(0x7 << 3)		 // Slave Mode Slave Select Input Selection
+#define SSC_PISEL_SLSIS_SHIFT	3
+#define SSC_PISEL_STIP			(1 << 8)		 // Slave Transmit Idle State Polarity
+#define SSC_PISEL_STIP_SHIFT	8
 
 /* Module Identifier Register */
-#define SSC_ID		0x08
+#define SSC_ID					0x08
 
-#define SSC_STAT	0x10
+/* Control Register */
+#define SSC_CON					0x10
+#define SSC_CON_BC				(0xF << 0)		 // Bit Count Status
+#define SSC_CON_BC_SHIFT		0
+#define SSC_CON_BM				(0xF << 0)		 // Data Width Selection
+#define SSC_CON_BM_SHIFT		0
+#define SSC_CON_HB				(1 << 4)		 // Heading Bit Control
+#define SSC_CON_HB_SHIFT		4
+#define SSC_CON_PH				(1 << 5)		 // Clock Phase Control
+#define SSC_CON_PH_SHIFT		5
+#define SSC_CON_PO				(1 << 6)		 // Clock Polarity Control
+#define SSC_CON_PO_SHIFT		6
+#define SSC_CON_LB				(1 << 7)		 // Loop-Back Control
+#define SSC_CON_LB_SHIFT		7
+#define SSC_CON_TEN				(1 << 8)		 // Transmit Error Enable
+#define SSC_CON_TEN_SHIFT		8
+#define SSC_CON_TE				(1 << 8)		 // Transmit Error Flag
+#define SSC_CON_TE_SHIFT		8
+#define SSC_CON_REN				(1 << 9)		 // Receive Error Enable
+#define SSC_CON_REN_SHIFT		9
+#define SSC_CON_RE				(1 << 9)		 // Receive Error Flag
+#define SSC_CON_RE_SHIFT		9
+#define SSC_CON_PE				(1 << 10)		 // Phase Error Flag
+#define SSC_CON_PE_SHIFT		10
+#define SSC_CON_PEN				(1 << 10)		 // Phase Error Enable
+#define SSC_CON_PEN_SHIFT		10
+#define SSC_CON_BE				(1 << 11)		 // Baud Rate Error Flag
+#define SSC_CON_BE_SHIFT		11
+#define SSC_CON_BEN				(1 << 11)		 // Baud Rate Error Enable
+#define SSC_CON_BEN_SHIFT		11
+#define SSC_CON_AREN			(1 << 12)		 // Automatic Reset Enable
+#define SSC_CON_AREN_SHIFT		12
+#define SSC_CON_BSY				(1 << 12)		 // Busy Flag
+#define SSC_CON_BSY_SHIFT		12
+#define SSC_CON_MS				(1 << 14)		 // Master Select
+#define SSC_CON_MS_SHIFT		14
+#define SSC_CON_EN				(1 << 15)		 // Enable Bit
+#define SSC_CON_EN_SHIFT		15
 
-#define SSC_TB		0x20
+/* Baud Rate Timer Reload Register */
+#define SSC_BR					0x14
+#define SSC_BR_BR_VALUE			(0xFFFF << 0)	 // Baud Rate Timer/Reload Register Value
+#define SSC_BR_BR_VALUE_SHIFT	0
 
-#define SSC_RB		0x24
+/* Transmit Buffer Register */
+#define SSC_TB					0x20
+#define SSC_TB_TB_VALUE			(0xFFFF << 0)	 // Transmit Data Register Value
+#define SSC_TB_TB_VALUE_SHIFT	0
 
-#define SSC_RXFCON	0x30
+/* Receive Buffer Register */
+#define SSC_RB					0x24
+#define SSC_RB_RB_VALUE			(0xFFFF << 0)	 // Receive Data Register Value
+#define SSC_RB_RB_VALUE_SHIFT	0
 
-#define SSC_TXFCON	0x34
+/* Receive FIFO Control Register */
+#define SSC_RXFCON				0x30
+#define SSC_RXFCON_RXFEN		(1 << 0)		 // Receive FIFO Enable
+#define SSC_RXFCON_RXFEN_SHIFT	0
+#define SSC_RXFCON_RXFLU		(1 << 1)		 // Receive FIFO Flush
+#define SSC_RXFCON_RXFLU_SHIFT	1
+#define SSC_RXFCON_RXTMEN		(1 << 2)		 // Receive FIFO Transparent Mode Enable
+#define SSC_RXFCON_RXTMEN_SHIFT	2
+#define SSC_RXFCON_RXFITL		(0x3F << 8)		 // Receive FIFO Interrupt Trigger Level
+#define SSC_RXFCON_RXFITL_SHIFT	8
 
-#define SSC_FSTAT	0x38
+#define SSC_TXFCON				0x34
+#define SSC_TXFCON_TXFEN		(1 << 0)		 // Receive FIFO Enable
+#define SSC_TXFCON_TXFEN_SHIFT	0
+#define SSC_TXFCON_TXFLU		(1 << 1)		 // Receive FIFO Flush
+#define SSC_TXFCON_TXFLU_SHIFT	1
+#define SSC_TXFCON_TXTMEN		(1 << 2)		 // Receive FIFO Transparent Mode Enable
+#define SSC_TXFCON_TXTMEN_SHIFT	2
+#define SSC_TXFCON_TXFITL		(0x3F << 8)		 // Receive FIFO Interrupt Trigger Level
+#define SSC_TXFCON_TXFITL_SHIFT	8
+
+#define SSC_FSTAT				0x38
+#define SSC_FSTAT_RXFFL			(0x3F << 0)		 // Receive FIFO Filling Level
+#define SSC_FSTAT_RXFFL_SHIFT	0
+#define SSC_FSTAT_TXFFL			(0x3F << 8)		 // Transmit FIFO Filling Level
+#define SSC_FSTAT_TXFFL_SHIFT	8
+
+#define SSC_UNK0				0x40
+
+#define SSC_UNK1				0x44
+
+#define SSC_IMSC				0x48
+#define SSC_IMSC_TX				(1 << 0)		 // Transmit interrupt mask
+#define SSC_IMSC_TX_SHIFT		0
+#define SSC_IMSC_TB				(1 << 1)		 // Transmit buffer interrupt mask
+#define SSC_IMSC_TB_SHIFT		1
+#define SSC_IMSC_RX				(1 << 2)		 // Receive interrupt mask
+#define SSC_IMSC_RX_SHIFT		2
+#define SSC_IMSC_ERR			(1 << 3)		 // Error interrupt mask
+#define SSC_IMSC_ERR_SHIFT		3
+
+#define SSC_RIS					0x4C
+#define SSC_RIS_TX				(1 << 0)		 // Transmit interrupt mask
+#define SSC_RIS_TX_SHIFT		0
+#define SSC_RIS_TB				(1 << 1)		 // Transmit buffer interrupt mask
+#define SSC_RIS_TB_SHIFT		1
+#define SSC_RIS_RX				(1 << 2)		 // Receive interrupt mask
+#define SSC_RIS_RX_SHIFT		2
+
+#define SSC_MIS					0x50
+#define SSC_MIS_TX				(1 << 0)		 // Transmit interrupt mask
+#define SSC_MIS_TX_SHIFT		0
+#define SSC_MIS_TB				(1 << 1)		 // Transmit buffer interrupt mask
+#define SSC_MIS_TB_SHIFT		1
+#define SSC_MIS_RX				(1 << 2)		 // Receive interrupt mask
+#define SSC_MIS_RX_SHIFT		2
+#define SSC_MIS_ERR				(1 << 3)		 // Error interrupt mask
+#define SSC_MIS_ERR_SHIFT		3
+
+#define SSC_ICR					0x54
+#define SSC_ICR_TX				(1 << 0)		 // Transmit interrupt mask
+#define SSC_ICR_TX_SHIFT		0
+#define SSC_ICR_TB				(1 << 1)		 // Transmit buffer interrupt mask
+#define SSC_ICR_TB_SHIFT		1
+#define SSC_ICR_RX				(1 << 2)		 // Receive interrupt mask
+#define SSC_ICR_RX_SHIFT		2
+#define SSC_ICR_ERR				(1 << 3)		 // Error interrupt mask
+#define SSC_ICR_ERR_SHIFT		3
+
+#define SSC_ISR					0x58
+#define SSC_ISR_TX				(1 << 0)		 // Transmit interrupt mask
+#define SSC_ISR_TX_SHIFT		0
+#define SSC_ISR_TB				(1 << 1)		 // Transmit buffer interrupt mask
+#define SSC_ISR_TB_SHIFT		1
+#define SSC_ISR_RX				(1 << 2)		 // Receive interrupt mask
+#define SSC_ISR_RX_SHIFT		2
+#define SSC_ISR_ERR				(1 << 3)		 // Error interrupt mask
+#define SSC_ISR_ERR_SHIFT		3
+
+#define SSC_DMACON				0x5C
+#define SSC_DMACON_CH			(0x7 << 0)		 // DMA channel
+#define SSC_DMACON_CH_SHIFT		0
+
+#define SSC_UNK2				0x60
 
 
 // STM [MOD_NUM=0000, MOD_REV=02, MOD_32BIT=C0]

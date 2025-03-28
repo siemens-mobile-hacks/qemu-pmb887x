@@ -6,7 +6,6 @@
 #include "qapi/error.h"
 #include "qemu/module.h"
 #include "qemu/error-report.h"
-#include "migration/vmstate.h"
 #include "hw/arm/pmb887x/trace.h"
 #include "hw/arm/pmb887x/fifo.h"
 #include "hw/arm/pmb887x/dif/lcd_common.h"
@@ -17,7 +16,7 @@
 
 #define LCD_CMD_MAX_PARAMS 64
 
-#define __SWAP_VALUES(a, b)		\
+#define SWAP_VALUES(a, b)		\
 	do {						\
 		typeof(a) temp = a;		\
 		a = b;					\
@@ -63,42 +62,41 @@ void pmb887x_lcd_set_mode(pmb887x_lcd_t *lcd, enum pmb887x_lcd_pixel_mode_t mode
 			lcd->bpp = 16;
 			lcd->byte_pp = 2;
 			lcd->format = PIXMAN_b5g6r5;
-		break;
+			break;
 		
 		case LCD_MODE_BGR666:
 			lcd->bpp = 18;
 			lcd->byte_pp = 3;
 			lcd->format = PIXMAN_b8g8r8;
-		break;
+			break;
 		
 		case LCD_MODE_BGR888:
 			lcd->bpp = 24;
 			lcd->byte_pp = 3;
 			lcd->format = PIXMAN_b8g8r8;
-		break;
+			break;
 		
 		case LCD_MODE_RGB565:
 			lcd->bpp = 16;
 			lcd->byte_pp = 2;
 			lcd->format = PIXMAN_r5g6b5;
-		break;
+			break;
 		
 		case LCD_MODE_RGB666:
 			lcd->bpp = 18;
 			lcd->byte_pp = 3;
 			lcd->format = PIXMAN_r8g8b8;
-		break;
+			break;
 		
 		case LCD_MODE_RGB888:
 			lcd->bpp = 24;
 			lcd->byte_pp = 3;
 			lcd->format = PIXMAN_r8g8b8;
-		break;
+			break;
 		
 		default:
 			error_report("Invalid LCD mode: %d\n", mode);
 			exit(1);
-		break;
 	}
 	
 	lcd->mode = mode;
@@ -162,8 +160,6 @@ static void pmb887x_lcd_write_pixel_byte(pmb887x_lcd_t *lcd, uint8_t byte) {
 
 static void pmb887x_lcd_write_control_byte(pmb887x_lcd_t *lcd, uint8_t value) {
 	pmb887x_lcd_class_t *k = PMB887X_LCD_GET_CLASS(lcd);
-	
-	
 	DPRINTF("pmb887x_lcd_write_control_byte %d / %02X\n", lcd->cd, value);
 	
 	if (lcd->cd) {
@@ -230,10 +226,10 @@ void pmb887x_lcd_write(pmb887x_lcd_t *lcd, uint32_t value, uint32_t size) {
 
 static void pmb887x_lcd_set_mirror(pmb887x_lcd_t *lcd, bool flag) {
 	if (lcd->mirror_xy != flag) {
-		__SWAP_VALUES(lcd->width, lcd->height);
-		__SWAP_VALUES(lcd->buffer_x, lcd->buffer_y);
-		__SWAP_VALUES(lcd->window_x1, lcd->window_y1);
-		__SWAP_VALUES(lcd->window_x2, lcd->window_y2);
+		SWAP_VALUES(lcd->width, lcd->height);
+		SWAP_VALUES(lcd->buffer_x, lcd->buffer_y);
+		SWAP_VALUES(lcd->window_x1, lcd->window_y1);
+		SWAP_VALUES(lcd->window_x2, lcd->window_y2);
 		lcd->mirror_xy = flag;
 	}
 }

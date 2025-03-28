@@ -7,28 +7,26 @@
 #include "qemu/osdep.h"
 #include "hw/sysbus.h"
 #include "hw/hw.h"
-#include "hw/ptimer.h"
-#include "exec/address-spaces.h"
 #include "exec/memory.h"
 #include "cpu.h"
 #include "qapi/error.h"
-#include "qemu/timer.h"
 #include "qemu/main-loop.h"
 #include "hw/qdev-properties.h"
-#include "qapi/error.h"
 #include "hw/i2c/i2c.h"
 #include "hw/arm/pmb887x/trace.h"
 
 #define TYPE_PMB887X_PMIC	"pmb887x-d1094xx"
 #define PMB887X_PMIC(obj)	OBJECT_CHECK(pmb887x_pmic_t, (obj), TYPE_PMB887X_PMIC)
 
-typedef struct {
+typedef struct pmb887x_pmic_t pmb887x_pmic_t;
+
+struct pmb887x_pmic_t {
 	I2CSlave parent_obj;
-	int reg_id;
-	int wcycle;
+	uint32_t reg_id;
+	uint8_t wcycle;
 	uint8_t regs[256];
 	uint32_t revision;
-} pmb887x_pmic_t;
+};
 
 static const uint8_t regs_D1094EC[256] = { // Siemens CX75 & M75
 	0x94, 0x00, 0x00, 0x00, 0x00, 0x08, 0x2F, 0x09, 0x00, 0xFF, 0x0E, 0x01, 0x06, 0x00, 0x10, 0x00,
@@ -93,24 +91,17 @@ static int pmic_event(I2CSlave *s, enum i2c_event event) {
     switch (event) {
 		case I2C_START_SEND:
 			// Nothing
-		break;
+			break;
 		
 		case I2C_START_RECV:
-			p->wcycle = 0;
-		break;
-		
 		case I2C_NACK:
-			p->wcycle = 0;
-		break;
-		
 		case I2C_FINISH:
-			// Nothing
 			p->wcycle = 0;
-		break;
-		
+			break;
+
 		case I2C_START_SEND_ASYNC:
 			// Nothing
-		break;
+			break;
 	}
     
     return 0;

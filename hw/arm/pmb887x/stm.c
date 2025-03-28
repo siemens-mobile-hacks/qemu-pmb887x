@@ -6,26 +6,23 @@
 
 #include "qemu/osdep.h"
 #include "hw/sysbus.h"
-#include "hw/hw.h"
-#include "hw/ptimer.h"
-#include "exec/address-spaces.h"
 #include "exec/memory.h"
 #include "cpu.h"
 #include "qapi/error.h"
 #include "qemu/timer.h"
 #include "qemu/main-loop.h"
 #include "hw/qdev-properties.h"
-#include "qapi/error.h"
 
 #include "hw/arm/pmb887x/pll.h"
 #include "hw/arm/pmb887x/regs.h"
-#include "hw/arm/pmb887x/io_bridge.h"
 #include "hw/arm/pmb887x/regs_dump.h"
 #include "hw/arm/pmb887x/mod.h"
 #include "hw/arm/pmb887x/trace.h"
 
 #define TYPE_PMB887X_STM	"pmb887x-stm"
-#define PMB887X_STM(obj)	OBJECT_CHECK(struct pmb887x_stm_t, (obj), TYPE_PMB887X_STM)
+#define PMB887X_STM(obj)	OBJECT_CHECK(pmb887x_stm_t, (obj), TYPE_PMB887X_STM)
+
+typedef struct pmb887x_stm_t pmb887x_stm_t;
 
 struct pmb887x_stm_t {
 	SysBusDevice parent_obj;
@@ -35,14 +32,14 @@ struct pmb887x_stm_t {
 	
 	bool enabled;
 	uint32_t freq;
-	uint64_t start;
-	uint64_t capture;
-	uint64_t counter;
-	
-	struct pmb887x_pll_t *pll;
+	int64_t start;
+	int64_t capture;
+	int64_t counter;
+
+	pmb887x_pll_t *pll;
 };
 
-static uint64_t stm_get_time(struct pmb887x_stm_t *p) {
+static int64_t stm_get_time(pmb887x_stm_t *p) {
 	if (p->enabled) {
 		uint64_t delta_ns = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) - p->start;
 		return p->counter + muldiv64(delta_ns, p->freq, NANOSECONDS_PER_SECOND);
@@ -50,7 +47,7 @@ static uint64_t stm_get_time(struct pmb887x_stm_t *p) {
 	return p->counter;
 }
 
-static void stm_update_state(struct pmb887x_stm_t *p) {
+static void stm_update_state(pmb887x_stm_t *p) {
 	uint32_t div = pmb887x_clc_get_rmc(&p->clc);
 	uint32_t new_freq = div > 0 ? pmb887x_pll_get_fstm(p->pll) / div : 0;
 	bool new_enabled = new_freq > 0 && pmb887x_clc_is_enabled(&p->clc);
@@ -73,67 +70,65 @@ static void stm_update_state(struct pmb887x_stm_t *p) {
 }
 
 static void stm_update_state_callback(void *opaque) {
-	stm_update_state((struct pmb887x_stm_t *) opaque);
+	stm_update_state(opaque);
 }
 
 static uint64_t stm_io_read(void *opaque, hwaddr haddr, unsigned size) {
-	struct pmb887x_stm_t *p = (struct pmb887x_stm_t *) opaque;
+	pmb887x_stm_t *p = opaque;
 	
 	uint64_t value = 0;
-	
 	switch (haddr) {
 		case STM_CLC:
 			value = pmb887x_clc_get(&p->clc);
-		break;
+			break;
 		
 		case STM_ID:
 			value = 0x0000C011;
-		break;
+			break;
 		
 		case STM_TIM0:
 			p->capture = stm_get_time(p);
 			value = (p->capture >> 0) & 0xFFFFFFFF;
-		break;
+			break;
 		
 		case STM_TIM1:
 			p->capture = stm_get_time(p);
 			value = (p->capture >> 4) & 0xFFFFFFFF;
-		break;
+			break;
 		
 		case STM_TIM2:
 			p->capture = stm_get_time(p);
 			value = (p->capture >> 8) & 0xFFFFFFFF;
-		break;
+			break;
 		
 		case STM_TIM3:
 			p->capture = stm_get_time(p);
 			value = (p->capture >> 12) & 0xFFFFFFFF;
-		break;
+			break;
 		
 		case STM_TIM4:
 			p->capture = stm_get_time(p);
 			value = (p->capture >> 16) & 0xFFFFFFFF;
-		break;
+			break;
 		
 		case STM_TIM5:
 			p->capture = stm_get_time(p);
 			value = (p->capture >> 20) & 0xFFFFFFFF;
-		break;
+			break;
 		
 		case STM_TIM6:
 			p->capture = stm_get_time(p);
 			value = (p->capture >> 32) & 0x00FFFFFF;
-		break;
+			break;
 		
 		case STM_CAP:
 			value = (p->capture >> 32) & 0x00FFFFFF;
-		break;
+			break;
 		
 		default:
 			IO_DUMP(haddr + p->mmio.addr, size, 0xFFFFFFFF, false);
 			EPRINTF("unknown reg access: %02"PRIX64"\n", haddr);
 			exit(1);
-		break;
 	}
 	
 	IO_DUMP(haddr + p->mmio.addr, size, value, false);
@@ -142,7 +137,7 @@ static uint64_t stm_io_read(void *opaque, hwaddr haddr, unsigned size) {
 }
 
 static void stm_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned size) {
-	struct pmb887x_stm_t *p = (struct pmb887x_stm_t *) opaque;
+	pmb887x_stm_t *p = opaque;
 	
 	IO_DUMP(haddr + p->mmio.addr, size, value, true);
 	
@@ -154,7 +149,6 @@ static void stm_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned si
 		default:
 			EPRINTF("unknown reg access: %02"PRIX64"\n", haddr);
 			exit(1);
-		break;
 	}
 	
 	stm_update_state(p);

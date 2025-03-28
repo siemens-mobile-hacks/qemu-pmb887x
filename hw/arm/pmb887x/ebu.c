@@ -21,7 +21,9 @@
 #define TYPE_PMB887X_EBU	"pmb887x-ebu"
 #define PMB887X_EBU(obj)	OBJECT_CHECK(struct pmb887x_ebu_t, (obj), TYPE_PMB887X_EBU)
 
-struct pmb887x_ebu_t;
+typedef struct pmb887x_ebu_t pmb887x_ebu_t;
+typedef struct pmb887x_ebu_regions_t pmb887x_ebu_regions_t;
+typedef struct pmb887x_ebu_user_data_t pmb887x_ebu_user_data_t;
 
 struct pmb887x_ebu_regions_t {
 	MemoryRegion memory;
@@ -29,7 +31,7 @@ struct pmb887x_ebu_regions_t {
 };
 
 struct pmb887x_ebu_user_data_t {
-	struct pmb887x_ebu_t *p;
+	pmb887x_ebu_t *p;
 	int cs;
 };
 
@@ -38,7 +40,7 @@ struct pmb887x_ebu_t {
 	MemoryRegion mmio;
 	MemoryRegion *cs[8];
 	MemoryRegion regions[8];
-	struct pmb887x_ebu_user_data_t user_data[8];
+	pmb887x_ebu_user_data_t user_data[8];
 	pmb887x_clc_reg_t clc;
 	
 	uint32_t con;
@@ -53,7 +55,7 @@ struct pmb887x_ebu_t {
 	uint32_t sdrmod[2];
 };
 
-static void ebu_update_state(struct pmb887x_ebu_t *p) {
+static void ebu_update_state(pmb887x_ebu_t *p) {
 	bool is_ebu_enabled = pmb887x_clc_is_enabled(&p->clc);
 	
 	for (int i = 0; i < 8; ++i) {
@@ -96,93 +98,95 @@ static void ebu_update_state(struct pmb887x_ebu_t *p) {
 	}
 }
 
-static int ebu_get_index_from_reg(hwaddr haddr) {
+static uint32_t ebu_get_index_from_reg(hwaddr haddr) {
 	switch (haddr) {
 		case EBU_ADDRSEL0:
 		case EBU_BUSCON0:
 		case EBU_BUSAP0:
 			return 0;
-		
+
 		case EBU_ADDRSEL1:
 		case EBU_BUSCON1:
 		case EBU_BUSAP1:
 			return 1;
-		
+
 		case EBU_ADDRSEL2:
 		case EBU_BUSCON2:
 		case EBU_BUSAP2:
 			return 2;
-		
+
 		case EBU_ADDRSEL3:
 		case EBU_BUSCON3:
 		case EBU_BUSAP3:
 			return 3;
-		
+
 		case EBU_ADDRSEL4:
 		case EBU_BUSCON4:
 		case EBU_BUSAP4:
 			return 4;
-		
+
 		case EBU_ADDRSEL5:
 		case EBU_BUSCON5:
 		case EBU_BUSAP5:
 			return 5;
-		
+
 		case EBU_ADDRSEL6:
 		case EBU_BUSCON6:
 		case EBU_BUSAP6:
 			return 6;
-		
+
 		case EBU_EMUAS:
 		case EBU_EMUBC:
 		case EBU_EMUBAP:
 			return 7;
-		
+
 		case EBU_SDRMCON0:
 		case EBU_SDRMREF0:
 		case EBU_SDRSTAT0:
 		case EBU_SDRMOD0:
 			return 0;
-		
+
 		case EBU_SDRMCON1:
 		case EBU_SDRMREF1:
 		case EBU_SDRSTAT1:
 		case EBU_SDRMOD1:
 			return 1;
+
+		default:
+			hw_error("Invalid reg: %08lX", haddr);
+			exit(0);
 	}
-	return -1;
 }
 
 static uint64_t ebu_io_read(void *opaque, hwaddr haddr, unsigned size) {
-	struct pmb887x_ebu_t *p = (struct pmb887x_ebu_t *) opaque;
+	pmb887x_ebu_t *p = opaque;
 	
 	uint64_t value = 0;
-	
 	switch (haddr) {
 		case EBU_CLC:
 			value = pmb887x_clc_get(&p->clc);
-		break;
-		
+			break;
+
 		case EBU_ID:
 			value = 0x0014C004;
-		break;
-		
+			break;
+
 		case EBU_CON:
 			value = p->con;
-		break;
-		
+			break;
+
 		case EBU_BFCON:
 			value = p->bfcon;
-		break;
-		
+			break;
+
 		case EBU_EMUOVL:
 			value = p->emuovl;
-		break;
-		
+			break;
+
 		case EBU_USERCON:
 			value = p->usercon;
-		break;
-		
+			break;
+
 		case EBU_ADDRSEL0:
 		case EBU_ADDRSEL1:
 		case EBU_ADDRSEL2:
@@ -192,8 +196,8 @@ static uint64_t ebu_io_read(void *opaque, hwaddr haddr, unsigned size) {
 		case EBU_ADDRSEL6:
 		case EBU_EMUAS:
 			value = p->addrsel[ebu_get_index_from_reg(haddr)];
-		break;
-		
+			break;
+
 		case EBU_BUSCON0:
 		case EBU_BUSCON1:
 		case EBU_BUSCON2:
@@ -203,8 +207,8 @@ static uint64_t ebu_io_read(void *opaque, hwaddr haddr, unsigned size) {
 		case EBU_BUSCON6:
 		case EBU_EMUBC:
 			value = p->buscon[ebu_get_index_from_reg(haddr)];
-		break;
-		
+			break;
+
 		case EBU_BUSAP0:
 		case EBU_BUSAP1:
 		case EBU_BUSAP2:
@@ -214,38 +218,37 @@ static uint64_t ebu_io_read(void *opaque, hwaddr haddr, unsigned size) {
 		case EBU_BUSAP6:
 		case EBU_EMUBAP:
 			value = p->busap[ebu_get_index_from_reg(haddr)];
-		break;
-		
+			break;
+
 		case EBU_SDRMCON0:
 		case EBU_SDRMCON1:
 			value = p->sdrmcon[ebu_get_index_from_reg(haddr)];
-		break;
-		
+			break;
+
 		case EBU_SDRMREF0:
 		case EBU_SDRMREF1:
 			value = p->sdrmref[ebu_get_index_from_reg(haddr)] | EBU_SDRMREF_SELFRENST | EBU_SDRMREF_SELFREXST;
-		break;
-		
+			break;
+
 		case EBU_SDRSTAT0:
 		case EBU_SDRSTAT1:
 			value = 0; // no errors
-		break;
-		
+			break;
+
 		case EBU_SDRMOD0:
 		case EBU_SDRMOD1:
 			value = p->sdrmod[ebu_get_index_from_reg(haddr)];
-		break;
-		
+			break;
+
 		default:
 			IO_DUMP(haddr + p->mmio.addr, size, 0xFFFFFFFF, false);
 			EPRINTF("unknown reg access: %02"PRIX64"\n", haddr);
 			exit(1);
-		break;
 	}
 	
 	IO_DUMP(haddr + p->mmio.addr, size, value, false);
 	
-	#ifdef PMB887X_IO_BRIDGE
+	#if PMB887X_IO_BRIDGE
 	pmb8876_io_bridge_write(haddr + p->mmio.addr, size, value);
 	#endif
 	
@@ -253,31 +256,31 @@ static uint64_t ebu_io_read(void *opaque, hwaddr haddr, unsigned size) {
 }
 
 static void ebu_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned size) {
-	struct pmb887x_ebu_t *p = (struct pmb887x_ebu_t *) opaque;
+	pmb887x_ebu_t *p = opaque;
 	
 	IO_DUMP(haddr + p->mmio.addr, size, value, true);
 	
 	switch (haddr) {
 		case EBU_CLC:
 			pmb887x_clc_set(&p->clc, value);
-		break;
-		
+			break;
+
 		case EBU_CON:
 			p->con = value;
-		break;
-		
+			break;
+
 		case EBU_BFCON:
 			p->bfcon = value;
-		break;
-		
+			break;
+
 		case EBU_EMUOVL:
 			p->emuovl = value;
-		break;
-		
+			break;
+
 		case EBU_USERCON:
 			p->usercon = value;
-		break;
-		
+			break;
+
 		case EBU_ADDRSEL0:
 		case EBU_ADDRSEL1:
 		case EBU_ADDRSEL2:
@@ -287,8 +290,8 @@ static void ebu_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned si
 		case EBU_ADDRSEL6:
 		case EBU_EMUAS:
 			p->addrsel[ebu_get_index_from_reg(haddr)] = value;
-		break;
-		
+			break;
+
 		case EBU_BUSCON0:
 		case EBU_BUSCON1:
 		case EBU_BUSCON2:
@@ -298,8 +301,8 @@ static void ebu_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned si
 		case EBU_BUSCON6:
 		case EBU_EMUBC:
 			p->buscon[ebu_get_index_from_reg(haddr)] = value;
-		break;
-		
+			break;
+
 		case EBU_BUSAP0:
 		case EBU_BUSAP1:
 		case EBU_BUSAP2:
@@ -309,30 +312,29 @@ static void ebu_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned si
 		case EBU_BUSAP6:
 		case EBU_EMUBAP:
 			p->busap[ebu_get_index_from_reg(haddr)] = value;
-		break;
-		
+			break;
+
 		case EBU_SDRMCON0:
 		case EBU_SDRMCON1:
 			p->sdrmcon[ebu_get_index_from_reg(haddr)] = value;
-		break;
-		
+			break;
+
 		case EBU_SDRMREF0:
 		case EBU_SDRMREF1:
 			p->sdrmref[ebu_get_index_from_reg(haddr)] = value;
-		break;
-		
+			break;
+
 		case EBU_SDRMOD0:
 		case EBU_SDRMOD1:
 			p->sdrmod[ebu_get_index_from_reg(haddr)] = value;
-		break;
-		
+			break;
+
 		default:
 			EPRINTF("unknown reg access: %02"PRIX64"\n", haddr);
 			exit(1);
-		break;
 	}
 	
-	#ifdef PMB887X_IO_BRIDGE
+	#if PMB887X_IO_BRIDGE
 	pmb8876_io_bridge_read(haddr + p->mmio.addr, size);
 	#endif
 	
@@ -349,29 +351,28 @@ static const MemoryRegionOps io_ops = {
 	}
 };
 
-static uint64_t ebu_unammped_io_read(void *opaque, hwaddr haddr, unsigned size) {
-	struct pmb887x_ebu_user_data_t *user_data = (struct pmb887x_ebu_user_data_t *) opaque;
+static uint64_t ebu_unmapped_io_read(void *opaque, hwaddr haddr, unsigned size) {
+	pmb887x_ebu_user_data_t *user_data = opaque;
 	
-	DPRINTF("read[%d] undefiend memory at %08"PRIX64" [CS%d]\n", size, user_data->p->regions[user_data->cs].addr + haddr, user_data->cs);
+	DPRINTF("read[%d] undefined memory at %08"PRIX64" [CS%d]\n", size, user_data->p->regions[user_data->cs].addr + haddr, user_data->cs);
 	
 	switch (size) {
 		case 1:		return 0xFF;
 		case 2:		return 0xFFFF;
 		case 3:		return 0xFFFFFF;
-		case 4:		return 0xFFFFFFFF;
+		default:	return 0xFFFFFFFF;
 	}
-	
 	return 0xFFFFFFFF;
 }
 
-static void ebu_unammped_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned size) {
-	struct pmb887x_ebu_user_data_t *user_data = (struct pmb887x_ebu_user_data_t *) opaque;
-	DPRINTF("write[%d] undefiend memory at %08"PRIX64" [CS%d]\n", size, user_data->p->regions[user_data->cs].addr + haddr, user_data->cs);
+static void ebu_unmapped_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned size) {
+	pmb887x_ebu_user_data_t *user_data = opaque;
+	DPRINTF("write[%d] undefined memory at %08"PRIX64" [CS%d]\n", size, user_data->p->regions[user_data->cs].addr + haddr, user_data->cs);
 }
 
 static const MemoryRegionOps unmapped_io_ops = {
-	.read			= ebu_unammped_io_read,
-	.write			= ebu_unammped_io_write,
+	.read			= ebu_unmapped_io_read,
+	.write			= ebu_unmapped_io_write,
 	.endianness		= DEVICE_NATIVE_ENDIAN,
 	.valid			= {
 		.min_access_size	= 1,
@@ -386,12 +387,12 @@ static void ebu_init(Object *obj) {
 }
 
 static void ebu_realize(DeviceState *dev, Error **errp) {
-	struct pmb887x_ebu_t *p = PMB887X_EBU(dev);
+	pmb887x_ebu_t *p = PMB887X_EBU(dev);
 	
 	pmb887x_clc_init(&p->clc);
-	
-	char memory_region_name[32];
+
 	for (int i = 0; i < 8; i++) {
+		char memory_region_name[32];
 		sprintf(memory_region_name, "EBU_CS%d", i);
 		
 		p->user_data[i].p = p;
@@ -410,14 +411,14 @@ static void ebu_realize(DeviceState *dev, Error **errp) {
 }
 
 static const Property ebu_properties[] = {
-	DEFINE_PROP_LINK("cs0", struct pmb887x_ebu_t, cs[0], TYPE_MEMORY_REGION, MemoryRegion *),
-	DEFINE_PROP_LINK("cs1", struct pmb887x_ebu_t, cs[1], TYPE_MEMORY_REGION, MemoryRegion *),
-	DEFINE_PROP_LINK("cs2", struct pmb887x_ebu_t, cs[2], TYPE_MEMORY_REGION, MemoryRegion *),
-	DEFINE_PROP_LINK("cs3", struct pmb887x_ebu_t, cs[3], TYPE_MEMORY_REGION, MemoryRegion *),
-	DEFINE_PROP_LINK("cs4", struct pmb887x_ebu_t, cs[4], TYPE_MEMORY_REGION, MemoryRegion *),
-	DEFINE_PROP_LINK("cs5", struct pmb887x_ebu_t, cs[5], TYPE_MEMORY_REGION, MemoryRegion *),
-	DEFINE_PROP_LINK("cs6", struct pmb887x_ebu_t, cs[6], TYPE_MEMORY_REGION, MemoryRegion *),
-	DEFINE_PROP_LINK("cs7", struct pmb887x_ebu_t, cs[7], TYPE_MEMORY_REGION, MemoryRegion *),
+	DEFINE_PROP_LINK("cs0", pmb887x_ebu_t, cs[0], TYPE_MEMORY_REGION, MemoryRegion *),
+	DEFINE_PROP_LINK("cs1", pmb887x_ebu_t, cs[1], TYPE_MEMORY_REGION, MemoryRegion *),
+	DEFINE_PROP_LINK("cs2", pmb887x_ebu_t, cs[2], TYPE_MEMORY_REGION, MemoryRegion *),
+	DEFINE_PROP_LINK("cs3", pmb887x_ebu_t, cs[3], TYPE_MEMORY_REGION, MemoryRegion *),
+	DEFINE_PROP_LINK("cs4", pmb887x_ebu_t, cs[4], TYPE_MEMORY_REGION, MemoryRegion *),
+	DEFINE_PROP_LINK("cs5", pmb887x_ebu_t, cs[5], TYPE_MEMORY_REGION, MemoryRegion *),
+	DEFINE_PROP_LINK("cs6", pmb887x_ebu_t, cs[6], TYPE_MEMORY_REGION, MemoryRegion *),
+	DEFINE_PROP_LINK("cs7", pmb887x_ebu_t, cs[7], TYPE_MEMORY_REGION, MemoryRegion *),
 };
 
 static void ebu_class_init(ObjectClass *klass, void *data) {
@@ -429,7 +430,7 @@ static void ebu_class_init(ObjectClass *klass, void *data) {
 static const TypeInfo ebu_info = {
     .name          	= TYPE_PMB887X_EBU,
     .parent        	= TYPE_SYS_BUS_DEVICE,
-    .instance_size 	= sizeof(struct pmb887x_ebu_t),
+    .instance_size 	= sizeof(pmb887x_ebu_t),
     .instance_init 	= ebu_init,
     .class_init    	= ebu_class_init,
 };

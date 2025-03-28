@@ -7,25 +7,21 @@
 #include "qemu/osdep.h"
 #include "hw/sysbus.h"
 #include "hw/hw.h"
-#include "hw/ptimer.h"
-#include "exec/address-spaces.h"
 #include "exec/memory.h"
 #include "cpu.h"
 #include "qapi/error.h"
-#include "qemu/timer.h"
 #include "qemu/main-loop.h"
 #include "hw/qdev-properties.h"
-#include "qapi/error.h"
 
-#include "hw/arm/pmb887x/pll.h"
 #include "hw/arm/pmb887x/regs.h"
-#include "hw/arm/pmb887x/io_bridge.h"
 #include "hw/arm/pmb887x/regs_dump.h"
 #include "hw/arm/pmb887x/mod.h"
 #include "hw/arm/pmb887x/trace.h"
 
 #define TYPE_PMB887X_CAPCOM	"pmb887x-capcom"
-#define PMB887X_CAPCOM(obj)	OBJECT_CHECK(struct pmb887x_capcom_t, (obj), TYPE_PMB887X_CAPCOM)
+#define PMB887X_CAPCOM(obj)	OBJECT_CHECK(pmb887x_capcom_t, (obj), TYPE_PMB887X_CAPCOM)
+
+typedef struct pmb887x_capcom_t pmb887x_capcom_t;
 
 struct pmb887x_capcom_t {
 	SysBusDevice parent_obj;
@@ -59,7 +55,7 @@ struct pmb887x_capcom_t {
 	uint32_t whbcout;
 };
 
-static void capcom_update_state(struct pmb887x_capcom_t *p) {
+static void capcom_update_state(pmb887x_capcom_t *p) {
 	// TODO
 }
 
@@ -75,96 +71,95 @@ static int capcom_get_index_from_reg(uint32_t reg) {
 		case CAPCOM_CC0_SRC:	return 0;
 		case CAPCOM_T1_SRC:		return 1;
 		case CAPCOM_T0_SRC:		return 0;
+		default:				abort();
 	};
-	hw_error("pmb887x-capcom: unknown reg %d", reg);
-	return -1;
 }
 
 static uint64_t capcom_io_read(void *opaque, hwaddr haddr, unsigned size) {
-	struct pmb887x_capcom_t *p = (struct pmb887x_capcom_t *) opaque;
+	pmb887x_capcom_t *p = opaque;
 	
 	uint64_t value = 0;
 	
 	switch (haddr) {
 		case CAPCOM_CLC:
 			value = pmb887x_clc_get(&p->clc);
-		break;
+			break;
 		
 		case CAPCOM_ID:
 			value = 0x00005011;
-		break;
+			break;
 		
 		case CAPCOM_PISEL:
 			value = p->pisel;
-		break;
+			break;
 		
 		case CAPCOM_T01CON:
 			value = p->t01con;
-		break;
+			break;
 		
 		case CAPCOM_CCM0:
 			value = p->ccm0;
-		break;
+			break;
 		
 		case CAPCOM_CCM1:
 			value = p->ccm1;
-		break;
+			break;
 		
 		case CAPCOM_OUT:
 			value = p->out;
-		break;
+			break;
 		
 		case CAPCOM_IOC:
 			value = p->ioc;
-		break;
+			break;
 		
 		case CAPCOM_SEM:
 			value = p->sem;
-		break;
+			break;
 		
 		case CAPCOM_SEE:
 			value = p->see;
-		break;
+			break;
 		
 		case CAPCOM_DRM:
 			value = p->drm;
-		break;
+			break;
 		
 		case CAPCOM_WHBSSEE:
 			value = p->whbssee;
-		break;
+			break;
 		
 		case CAPCOM_WHBCSEE:
 			value = p->whbcsee;
-		break;
+			break;
 		
 		case CAPCOM_T0:
 			value = p->t0;
-		break;
+			break;
 		
 		case CAPCOM_T0REL:
 			value = p->t0rel;
-		break;
+			break;
 		
 		case CAPCOM_T1:
 			value = p->t1;
-		break;
+			break;
 		
 		case CAPCOM_T1REL:
 			value = p->t1rel;
-		break;
+			break;
 		
 		case CAPCOM_T01OCR:
 			value = p->t01ocr;
-		break;
+			break;
 		
 		case CAPCOM_WHBSOUT:
 			value = p->whbsout;
-		break;
+			break;
 		
 		case CAPCOM_WHBCOUT:
 			value = p->whbcout;
-		break;
+			break;
 		
 		case CAPCOM_CC7_SRC:
 		case CAPCOM_CC6_SRC:
@@ -175,18 +170,17 @@ static uint64_t capcom_io_read(void *opaque, hwaddr haddr, unsigned size) {
 		case CAPCOM_CC1_SRC:
 		case CAPCOM_CC0_SRC:
 			value = pmb887x_src_get(&p->cc_src[capcom_get_index_from_reg(haddr)]);
-		break;
+			break;
 		
 		case CAPCOM_T1_SRC:
 		case CAPCOM_T0_SRC:
 			value = pmb887x_src_get(&p->t_src[capcom_get_index_from_reg(haddr)]);
-		break;
+			break;
 		
 		default:
 			IO_DUMP(haddr + p->mmio.addr, size, 0xFFFFFFFF, false);
 			EPRINTF("unknown reg access: %02"PRIX64"\n", haddr);
-			// exit(1);
-		break;
+			break;
 	}
 	
 	IO_DUMP(haddr + p->mmio.addr, size, value, false);
@@ -195,86 +189,86 @@ static uint64_t capcom_io_read(void *opaque, hwaddr haddr, unsigned size) {
 }
 
 static void capcom_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned size) {
-	struct pmb887x_capcom_t *p = (struct pmb887x_capcom_t *) opaque;
+	pmb887x_capcom_t *p = opaque;
 	
 	IO_DUMP(haddr + p->mmio.addr, size, value, true);
 	
 	switch (haddr) {
 		case CAPCOM_CLC:
 			pmb887x_clc_set(&p->clc, value);
-		break;
+			break;
 		
 		case CAPCOM_PISEL:
 			p->pisel = value;
-		break;
+			break;
 		
 		case CAPCOM_T01CON:
 			p->t01con = value;
-		break;
+			break;
 		
 		case CAPCOM_CCM0:
 			p->ccm0 = value;
-		break;
+			break;
 		
 		case CAPCOM_CCM1:
 			p->ccm1 = value;
-		break;
+			break;
 		
 		case CAPCOM_OUT:
 			p->out = value;
-		break;
+			break;
 		
 		case CAPCOM_IOC:
 			p->ioc = value;
-		break;
+			break;
 		
 		case CAPCOM_SEM:
 			p->sem = value;
-		break;
+			break;
 		
 		case CAPCOM_SEE:
 			p->see = value;
-		break;
+			break;
 		
 		case CAPCOM_DRM:
 			p->drm = value;
-		break;
+			break;
 		
 		case CAPCOM_WHBSSEE:
 			p->whbssee = value;
-		break;
+			break;
 		
 		case CAPCOM_WHBCSEE:
 			p->whbcsee = value;
-		break;
+			break;
 		
 		case CAPCOM_T0:
 			p->t0 = value;
-		break;
+			break;
 		
 		case CAPCOM_T0REL:
 			p->t0rel = value;
-		break;
+			break;
 		
 		case CAPCOM_T1:
 			p->t1 = value;
-		break;
+			break;
 		
 		case CAPCOM_T1REL:
 			p->t1rel = value;
-		break;
+			break;
 		
 		case CAPCOM_T01OCR:
 			p->t01ocr = value;
-		break;
+			break;
 		
 		case CAPCOM_WHBSOUT:
 			p->whbsout = value;
-		break;
+			break;
 		
 		case CAPCOM_WHBCOUT:
 			p->whbcout = value;
-		break;
+			break;
 		
 		case CAPCOM_CC7_SRC:
 		case CAPCOM_CC6_SRC:
@@ -285,17 +279,16 @@ static void capcom_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned
 		case CAPCOM_CC1_SRC:
 		case CAPCOM_CC0_SRC:
 			pmb887x_src_set(&p->cc_src[capcom_get_index_from_reg(haddr)], value);
-		break;
+			break;
 		
 		case CAPCOM_T1_SRC:
 		case CAPCOM_T0_SRC:
 			pmb887x_src_set(&p->t_src[capcom_get_index_from_reg(haddr)], value);
-		break;
+			break;
 		
 		default:
 			EPRINTF("unknown reg access: %02"PRIX64"\n", haddr);
-			// exit(1);
-		break;
+			break;
 	}
 	
 	capcom_update_state(p);
@@ -312,7 +305,7 @@ static const MemoryRegionOps io_ops = {
 };
 
 static void capcom_init(Object *obj) {
-	struct pmb887x_capcom_t *p = PMB887X_CAPCOM(obj);
+	pmb887x_capcom_t *p = PMB887X_CAPCOM(obj);
 	memory_region_init_io(&p->mmio, obj, &io_ops, p, "pmb887x-capcom", CAPCOM_IO_SIZE);
 	sysbus_init_mmio(SYS_BUS_DEVICE(obj), &p->mmio);
 	
@@ -324,7 +317,7 @@ static void capcom_init(Object *obj) {
 }
 
 static void capcom_realize(DeviceState *dev, Error **errp) {
-	struct pmb887x_capcom_t *p = PMB887X_CAPCOM(dev);
+	pmb887x_capcom_t *p = PMB887X_CAPCOM(dev);
 	
 	pmb887x_clc_init(&p->clc);
 	

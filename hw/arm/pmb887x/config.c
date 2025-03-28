@@ -1,9 +1,8 @@
 #include "hw/arm/pmb887x/config.h"
 #include "qemu/osdep.h"
-#include "qapi/error.h"
 #include "qemu/error-report.h"
 
-enum {
+enum InitParserState {
 	// States
 	INI_STATE_NONE,
 	INI_STATE_COMMENT,
@@ -18,19 +17,19 @@ enum {
 	INI_STATE_ERROR,
 };
 
-static bool _is_valid_key(char c) {
+static bool is_valid_key(char c) {
 	return isdigit(c) || isalpha(c) || c == '_' || c == '-' || c == '.';
 }
 
-static GString *_read_file(const char *file) {
+static GString *read_file(const char *file) {
 	GString *text = g_string_new("");
-	char buffer[4096];
 	FILE *fp = fopen(file, "r");
 	if (fp) {
 		while (!feof(fp)) {
-			int readed = fread(buffer, 1, sizeof(buffer), fp);
-			if (readed > 0)
-				g_string_append_len(text, buffer, readed);
+			char buffer[4096];
+			int readBytesCount = fread(buffer, 1, sizeof(buffer), fp);
+			if (readBytesCount > 0)
+				g_string_append_len(text, buffer, readBytesCount);
 		}
 		fclose(fp);
 	} else {
@@ -60,10 +59,12 @@ pmb887x_cfg_section_t *pmb887x_cfg_section(pmb887x_cfg_t *cfg, const char *name,
 			section_n++;
 		}
 	}
-	
-	if (required)
+
+	if (required) {
 		error_report("[pmb887x-config] %s: [%s] not found.", cfg->file, name);
-	
+		exit(1);
+	}
+
 	return NULL;
 }
 
@@ -72,9 +73,11 @@ const char *pmb887x_cfg_get(pmb887x_cfg_t *cfg, const char *section_name, const 
 	if (section)
 		return pmb887x_cfg_section_get(section, key, required);
 	
-	if (required)
+	if (required) {
 		error_report("[pmb887x-config] %s: %s.%s not found.", cfg->file, section_name, key);
-	
+		exit(1);
+	}
+
 	return NULL;
 }
 
@@ -84,17 +87,19 @@ const char *pmb887x_cfg_section_get(pmb887x_cfg_section_t *section, const char *
 		if (strcmp(item->key, key) == 0)
 			return item->value;
 	}
-	
-	if (required)
+
+	if (required) {
 		error_report("[pmb887x-config] %s: %s.%s not found.", section->parent->file, section->name, key);
-	
+		exit(1);
+	}
+
 	return NULL;
 }
 
 pmb887x_cfg_t *pmb887x_cfg_parse(const char *file) {
-	int state = INI_STATE_NONE;
+	enum InitParserState state = INI_STATE_NONE;
 	
-	g_autoptr(GString) text = _read_file(file);
+	g_autoptr(GString) text = read_file(file);
 	if (!text)
 		return NULL;
 	
@@ -121,19 +126,19 @@ pmb887x_cfg_t *pmb887x_cfg_parse(const char *file) {
 				} else if (c == '[') {
 					g_string_assign(section_name, "");
 					state = INI_STATE_SECTION;
-				} else if (_is_valid_key(c)) {
+				} else if (is_valid_key(c)) {
 					g_string_truncate(key, 0);
 					g_string_append_len(key, &c, 1);
 					state = INI_STATE_KEY;
 				} else if (!isspace(c)) {
 					state = INI_STATE_ERROR;
 				}
-			break;
+				break;
 			
 			case INI_STATE_COMMENT:
 				if (c == '\r' || c == '\n' || c == '\0')
 					state = INI_STATE_NONE;
-			break;
+				break;
 			
 			case INI_STATE_SECTION:
 				if (c == ']') {
@@ -144,24 +149,24 @@ pmb887x_cfg_t *pmb887x_cfg_parse(const char *file) {
 					cfg->sections[cfg->sections_count - 1].items_count = 0;
 					cfg->sections[cfg->sections_count - 1].parent = cfg;
 					state = INI_STATE_NONE;
-				} else if (_is_valid_key(c)) {
+				} else if (is_valid_key(c)) {
 					g_string_append_len(section_name, &c, 1);
 				} else {
 					state = INI_STATE_ERROR;
 				}
-			break;
+				break;
 			
 			case INI_STATE_KEY:
 				if (!cfg->sections_count) {
 					state = INI_STATE_ERROR;
 				} else if (isspace(c) || c == '=') {
 					state = c == '=' ? INI_STATE_VALUE_START : INI_STATE_DELIM;
-				} else if (_is_valid_key(c)) {
+				} else if (is_valid_key(c)) {
 					g_string_append_len(key, &c, 1);
 				} else {
 					state = INI_STATE_ERROR;
 				}
-			break;
+				break;
 			
 			case INI_STATE_DELIM:
 				if (c == '=') {
@@ -169,7 +174,7 @@ pmb887x_cfg_t *pmb887x_cfg_parse(const char *file) {
 				} else if (!isspace(c)) {
 					state = INI_STATE_ERROR;
 				}
-			break;
+				break;
 			
 			case INI_STATE_VALUE_START:
 				if (c == '\'' || c == '"') {
@@ -187,7 +192,7 @@ pmb887x_cfg_t *pmb887x_cfg_parse(const char *file) {
 					g_string_append_len(value, &c, 1);
 					state = INI_STATE_VALUE_RAW;
 				}
-			break;
+				break;
 			
 			case INI_STATE_VALUE_RAW:
 				if (c == '\r' || c == '\n' || c == '\0' || c == ';' || c == '#') {
@@ -210,7 +215,7 @@ pmb887x_cfg_t *pmb887x_cfg_parse(const char *file) {
 				} else {
 					g_string_append_len(value, &c, 1);
 				}
-			break;
+				break;
 			
 			case INI_STATE_VALUE_QUOTED:
 				if (escape) {
@@ -235,13 +240,12 @@ pmb887x_cfg_t *pmb887x_cfg_parse(const char *file) {
 						g_string_append_len(value, &c, 1);
 					}
 				}
-			break;
+				break;
 			
 			case INI_STATE_ERROR:
 				error_report("[pmb887x-config] Invalid char '%c' at: %s:%d:%d", c, file, line_n, char_n);
 				pmb887x_cfg_free(cfg);
 				return NULL;
-			break;
 		}
 		
 		if (state < INI_STATE_ERROR) {

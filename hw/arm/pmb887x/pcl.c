@@ -8,22 +8,17 @@
 
 #include "qemu/osdep.h"
 #include "hw/sysbus.h"
-#include "hw/hw.h"
-#include "hw/ptimer.h"
 #include "hw/arm/pmb887x/regs.h"
-#include "hw/arm/pmb887x/pll.h"
-#include "exec/address-spaces.h"
 #include "exec/memory.h"
 #include "hw/qdev-properties.h"
 #include "qapi/error.h"
 #include "cpu.h"
 
-#include "hw/arm/pmb887x/regs.h"
-#include "hw/arm/pmb887x/io_bridge.h"
 #include "hw/arm/pmb887x/regs_dump.h"
 #include "hw/arm/pmb887x/mod.h"
 #include "hw/arm/pmb887x/trace.h"
 #include "hw/arm/pmb887x/pcl.h"
+#include "hw/arm/pmb887x/io_bridge.h"
 
 #define TYPE_PMB887X_PCL	"pmb887x-pcl"
 #define PMB887X_PCL(obj)	OBJECT_CHECK(pmb887x_pcl_t, (obj), TYPE_PMB887X_PCL)
@@ -50,29 +45,26 @@ static void pcl_update_state(pmb887x_pcl_t *p) {
 }
 
 static uint64_t pcl_io_read(void *opaque, hwaddr haddr, unsigned size) {
-	pmb887x_pcl_t *p = (pmb887x_pcl_t *) opaque;
+	pmb887x_pcl_t *p = opaque;
 	
 	uint64_t value = 0;
-	
-	/*
-	#ifdef PMB887X_IO_BRIDGE
+
+	#if PMB887X_IO_BRIDGE
 	value = pmb8876_io_bridge_read(haddr + p->mmio.addr, size);
 	IO_DUMP(haddr + p->mmio.addr, size, value, false);
 	return value;
 	#endif
-	*/
 	
 	switch (haddr) {
 		case GPIO_CLC:
 			value = pmb887x_clc_get(&p->clc);
-		break;
+			break;
 		
 		case GPIO_ID:
 			value = 0xF023C032;
-		break;
+			break;
 		
-		case GPIO_PIN0 ... GPIO_PIN113:
-		{
+		case GPIO_PIN0 ... GPIO_PIN113: {
 			uint32_t id = (haddr - GPIO_PIN0) / 4;
 			value = p->pins[id];
 			
@@ -80,8 +72,8 @@ static uint64_t pcl_io_read(void *opaque, hwaddr haddr, unsigned size) {
 				value &= ~GPIO_DATA;
 				value |= (p->pins_input_state[id] ? GPIO_DATA_HIGH : GPIO_DATA_LOW);
 			}
+			break;
 		}
-		break;
 		
 		case GPIO_MON_CR1 ... GPIO_MON_CR4:
 			value = p->mon_cr[(haddr - GPIO_MON_CR1) / 4];
@@ -91,7 +83,6 @@ static uint64_t pcl_io_read(void *opaque, hwaddr haddr, unsigned size) {
 			IO_DUMP(haddr + p->mmio.addr, size, 0xFFFFFFFF, false);
 			EPRINTF("unknown reg access: %02"PRIX64"\n", haddr);
 			exit(1);
-		break;
 	}
 	
 	IO_DUMP(haddr + p->mmio.addr, size, value, false);
@@ -100,21 +91,19 @@ static uint64_t pcl_io_read(void *opaque, hwaddr haddr, unsigned size) {
 }
 
 static void pcl_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned size) {
-	pmb887x_pcl_t *p = (pmb887x_pcl_t *) opaque;
+	pmb887x_pcl_t *p = opaque;
 	
 	IO_DUMP(haddr + p->mmio.addr, size, value, true);
-	
-	/*
-	#ifdef PMB887X_IO_BRIDGE
+
+	#if PMB887X_IO_BRIDGE
 	pmb8876_io_bridge_write(haddr + p->mmio.addr, size, value);
 	return;
 	#endif
-	*/
 	
 	switch (haddr) {
 		case GPIO_CLC:
 			pmb887x_clc_set(&p->clc, value);
-		break;
+			break;
 		
 		case GPIO_PIN0 ... GPIO_PIN113:
 		{
@@ -123,17 +112,16 @@ static void pcl_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned si
 			
 			if ((value & GPIO_DIR) == GPIO_DIR_OUT)
 				qemu_set_irq(p->pins_out[id], (value & GPIO_DATA) == GPIO_DATA_HIGH);
+			break;
 		}
-		break;
 		
 		case GPIO_MON_CR1 ... GPIO_MON_CR4:
 			p->mon_cr[(haddr - GPIO_MON_CR1) / 4] = value;
-		break;
+			break;
 		
 		default:
 			EPRINTF("unknown reg access: %02"PRIX64"\n", haddr);
 			exit(1);
-		break;
 	}
 	
 	pcl_update_state(p);
@@ -141,7 +129,6 @@ static void pcl_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned si
 
 void pmb887x_pcl_init_exti(pmb887x_pcl_t *p, qemu_irq *irqs, size_t irqs_n) {
 	g_assert(irqs_n == ARRAY_SIZE(p->exti_src));
-	
 	for (size_t i = 0; i < ARRAY_SIZE(p->exti_src); i++)
 		pmb887x_src_init(&p->exti_src[i], irqs[i]);
 }
@@ -187,7 +174,7 @@ static const MemoryRegionOps io_ops = {
 };
 
 static void pcl_input_handler(void *opaque, int irq, int level) {
-	pmb887x_pcl_t *p = (pmb887x_pcl_t *) opaque;
+	pmb887x_pcl_t *p = opaque;
 	p->pins_input_state[irq] = level;
 }
 

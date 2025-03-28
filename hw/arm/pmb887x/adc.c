@@ -6,21 +6,14 @@
 
 #include "qemu/osdep.h"
 #include "hw/sysbus.h"
-#include "hw/hw.h"
-#include "hw/ptimer.h"
-#include "exec/address-spaces.h"
 #include "exec/memory.h"
 #include "cpu.h"
-#include "qapi/error.h"
-#include "qemu/timer.h"
 #include "qemu/main-loop.h"
 #include "hw/qdev-properties.h"
-#include "qapi/error.h"
 
 #include "hw/arm/pmb887x/adc.h"
 #include "hw/arm/pmb887x/pll.h"
 #include "hw/arm/pmb887x/regs.h"
-#include "hw/arm/pmb887x/io_bridge.h"
 #include "hw/arm/pmb887x/regs_dump.h"
 #include "hw/arm/pmb887x/mod.h"
 #include "hw/arm/pmb887x/trace.h"
@@ -58,7 +51,10 @@ enum {
 	ADC_CH_TYPE_DIFFERENTIAL,
 };
 
-typedef struct {
+typedef struct pmb887x_adc_ch_cfg_t pmb887x_adc_ch_cfg_t;
+typedef struct pmb887x_adc_t pmb887x_adc_t;
+
+struct pmb887x_adc_ch_cfg_t {
 	const char *name;
 	uint8_t gain; // 100 - 1.0
 	int8_t polarity_a;
@@ -66,9 +62,9 @@ typedef struct {
 	uint8_t type;
 	uint8_t input_a;
 	uint8_t input_b;
-} pmb887x_adc_ch_cfg_t;
+};
 
-typedef struct {
+struct pmb887x_adc_t {
 	SysBusDevice parent_obj;
 	MemoryRegion mmio;
 	
@@ -84,49 +80,46 @@ typedef struct {
 	uint32_t con1;
 	
 	pmb887x_adc_input_t inputs[PMB887X_ADC_MAX_INPUTS];
-	struct pmb887x_pll_t *pll;
-} pmb887x_adc_t;
+	pmb887x_pll_t *pll;
+};
 
 // Known channels with known parameters
 static const pmb887x_adc_ch_cfg_t channels_cfg[0xFF] = {
-	[ADC_CH_M0]			= { "+M0",			50,		1,	1,		ADC_CH_TYPE_NORMAL,			PMB887X_ADC_INPUT_M0,	PMB887X_ADC_INPUT_M0 },
-	[ADC_CH_M1]			= { "+M1",			44,		1,	1,		ADC_CH_TYPE_NORMAL,			PMB887X_ADC_INPUT_M1,	PMB887X_ADC_INPUT_M1 },
-	[ADC_CH_M2]			= { "+M2",			50,		1,	1,		ADC_CH_TYPE_NORMAL,			PMB887X_ADC_INPUT_M2,	PMB887X_ADC_INPUT_M2 },
-	[ADC_CH_M7]			= { "-M7",			100,	-1,	-1,		ADC_CH_TYPE_NORMAL,			PMB887X_ADC_INPUT_M7,	PMB887X_ADC_INPUT_M7 },
-	[ADC_CH_M8]			= { "-M8",			50,		-1,	-1,		ADC_CH_TYPE_NORMAL,			PMB887X_ADC_INPUT_M8,	PMB887X_ADC_INPUT_M8 },
-	[ADC_CH_M9]			= { "-M9",			50,		-1,	-1,		ADC_CH_TYPE_NORMAL,			PMB887X_ADC_INPUT_M9,	PMB887X_ADC_INPUT_M9 },
-	[ADC_CH_M10]		= { "-M10",			50,		1,	1,		ADC_CH_TYPE_NORMAL,			PMB887X_ADC_INPUT_M10,	PMB887X_ADC_INPUT_M10 },
-	[ADC_CH_M0_M9_A]	= { "+M0,-M9(A)",	50,		1,	-1,		ADC_CH_TYPE_DIFFERENTIAL,	PMB887X_ADC_INPUT_M0,	PMB887X_ADC_INPUT_M9 },
-	[ADC_CH_M0_M9_B]	= { "+M0,-M9(B)",	100,	1,	-1,		ADC_CH_TYPE_DIFFERENTIAL,	PMB887X_ADC_INPUT_M0,	PMB887X_ADC_INPUT_M9 },
+	[ADC_CH_M0] = {"+M0", 50, 1, 1, ADC_CH_TYPE_NORMAL, PMB887X_ADC_INPUT_M0, PMB887X_ADC_INPUT_M0},
+	[ADC_CH_M1] = {"+M1", 44, 1, 1, ADC_CH_TYPE_NORMAL, PMB887X_ADC_INPUT_M1, PMB887X_ADC_INPUT_M1},
+	[ADC_CH_M2] = {"+M2", 50, 1, 1, ADC_CH_TYPE_NORMAL, PMB887X_ADC_INPUT_M2, PMB887X_ADC_INPUT_M2},
+	[ADC_CH_M7] = {"-M7", 100, -1, -1, ADC_CH_TYPE_NORMAL, PMB887X_ADC_INPUT_M7, PMB887X_ADC_INPUT_M7},
+	[ADC_CH_M8] = {"-M8", 50, -1, -1, ADC_CH_TYPE_NORMAL, PMB887X_ADC_INPUT_M8, PMB887X_ADC_INPUT_M8},
+	[ADC_CH_M9] = {"-M9", 50, -1, -1, ADC_CH_TYPE_NORMAL, PMB887X_ADC_INPUT_M9, PMB887X_ADC_INPUT_M9},
+	[ADC_CH_M10] = {"-M10", 50, 1, 1, ADC_CH_TYPE_NORMAL, PMB887X_ADC_INPUT_M10, PMB887X_ADC_INPUT_M10},
+	[ADC_CH_M0_M9_A] = {"+M0,-M9(A)", 50, 1, -1, ADC_CH_TYPE_DIFFERENTIAL, PMB887X_ADC_INPUT_M0, PMB887X_ADC_INPUT_M9},
+	[ADC_CH_M0_M9_B] = {"+M0,-M9(B)", 100, 1, -1, ADC_CH_TYPE_DIFFERENTIAL, PMB887X_ADC_INPUT_M0, PMB887X_ADC_INPUT_M9},
 };
 
 static int32_t adc_get_input_voltage(pmb887x_adc_t *p, uint8_t input_n, uint8_t current) {
 	const pmb887x_adc_input_t *input = &p->inputs[input_n];
-	
+
 	switch (input->type) {
 		case PMB887X_ADC_INPUT_RESISTOR_DIV:
 			// INPUT -[ R1 ]- ADC_INPUT -[ R2 ]- GND
-			return DIV_ROUND_UP(input->value * input->r2, (input->r1 + input->r2));
-		break;
-		
+			return (int) DIV_ROUND_UP(input->value * input->r2, (input->r1 + input->r2));
+
 		case PMB887X_ADC_INPUT_RESISTOR:
 			// ADC_INPUT -[ R1 ]- GND
-			return current ? DIV_ROUND_UP(current * input->r1, 1000) : 0;
-		break;
-		
+			return current ? (int) DIV_ROUND_UP(current * input->r1, 1000) : 0;
+
 		case PMB887X_ADC_INPUT_VOLTAGE:
-			return input->value;
-		break;
-		
+			return (int) input->value;
+
 		case PMB887X_ADC_INPUT_NONE:
 			// Not connected
-		break;
-		
+			break;
+
 		default:
 			EPRINTF("Unknown adc input type: %d\n", input->type);
-		break;
+			break;
 	}
-	
+
 	return current > 0 ? CPU_VCC_VOLTAGE : 0;
 }
 
@@ -139,8 +132,8 @@ static uint16_t adc_get_ch_current(pmb887x_adc_t *p) {
 		case ADC_CON1_MODE_I_150:		return 150;
 		case ADC_CON1_MODE_I_180:		return 180;
 		case ADC_CON1_MODE_I_210:		return 210;
+		default:						return 0;
 	}
-	return 0;
 }
 
 static uint16_t adc_read_channel(pmb887x_adc_t *p) {
@@ -209,52 +202,50 @@ static void adc_update_state(pmb887x_adc_t *p) {
 }
 
 static uint64_t adc_io_read(void *opaque, hwaddr haddr, unsigned size) {
-	pmb887x_adc_t *p = (pmb887x_adc_t *) opaque;
+	pmb887x_adc_t *p = opaque;
 	
 	uint64_t value = 0;
-	
 	switch (haddr) {
 		case ADC_CLC:
 			value = pmb887x_clc_get(&p->clc);
-		break;
-		
+			break;
+
 		case ADC_ID:
 			value = 0x0000C011;
-		break;
-		
+			break;
+
 		case ADC_STAT:
 			value = ADC_STAT_READY;
-		break;
-		
+			break;
+
 		case ADC_FIFO0 ... ADC_FIFO7:
 			value = adc_read_channel(p);
-		break;
-		
+			break;
+
 		case ADC_PLLCON:
 			value = p->pllcon;
-		break;
-		
+			break;
+
 		case ADC_CON0:
 			value = p->con0;
-		break;
-		
+			break;
+
 		case ADC_CON1:
 			value = p->con1;
-		break;
-		
+			break;
+
 		case ADC_SRC0:
 			value = pmb887x_src_get(&p->src[0]);
-		break;
-		
+			break;
+
 		case ADC_SRC1:
 			value = pmb887x_src_get(&p->src[1]);
-		break;
-		
+			break;
+
 		default:
 			IO_DUMP(haddr + p->mmio.addr, size, 0xFFFFFFFF, false);
 			EPRINTF("unknown reg access: %02"PRIX64"\n", haddr);
 			exit(1);
-		break;
 	}
 	
 	IO_DUMP(haddr + p->mmio.addr, size, value, false);
@@ -263,39 +254,38 @@ static uint64_t adc_io_read(void *opaque, hwaddr haddr, unsigned size) {
 }
 
 static void adc_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned size) {
-	pmb887x_adc_t *p = (pmb887x_adc_t *) opaque;
+	pmb887x_adc_t *p = opaque;
 	
 	IO_DUMP(haddr + p->mmio.addr, size, value, true);
 	
 	switch (haddr) {
 		case ADC_CLC:
 			pmb887x_clc_set(&p->clc, value);
-		break;
-		
+			break;
+
 		case ADC_PLLCON:
 			p->pllcon = value;
-		break;
-		
+			break;
+
 		case ADC_CON0:
 			p->con0 = value;
-		break;
-		
+			break;
+
 		case ADC_CON1:
 			p->con1 = value;
-		break;
-		
+			break;
+
 		case ADC_SRC0:
 			pmb887x_src_set(&p->src[0], value);
-		break;
-		
+			break;
+
 		case ADC_SRC1:
 			pmb887x_src_set(&p->src[1], value);
-		break;
-		
+			break;
+
 		default:
 			EPRINTF("unknown reg access: %02"PRIX64"\n", haddr);
 			exit(1);
-		break;
 	}
 	
 	adc_update_state(p);

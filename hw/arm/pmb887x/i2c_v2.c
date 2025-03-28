@@ -7,21 +7,16 @@
 #include "qemu/osdep.h"
 #include "hw/sysbus.h"
 #include "hw/hw.h"
-#include "hw/ptimer.h"
-#include "exec/address-spaces.h"
 #include "exec/memory.h"
 #include "cpu.h"
 #include "qemu/error-report.h"
-#include "qapi/error.h"
 #include "qemu/timer.h"
 #include "qemu/main-loop.h"
 #include "hw/qdev-properties.h"
-#include "qapi/error.h"
 #include "hw/i2c/i2c.h"
 
 #include "hw/arm/pmb887x/i2c_v2.h"
 #include "hw/arm/pmb887x/regs.h"
-#include "hw/arm/pmb887x/io_bridge.h"
 #include "hw/arm/pmb887x/regs_dump.h"
 #include "hw/arm/pmb887x/mod.h"
 #include "hw/arm/pmb887x/trace.h"
@@ -86,23 +81,21 @@ typedef struct {
 
 static void i2c_work(pmb887x_i2c_t *p);
 
-static void i2c_update_state(pmb887x_i2c_t *p) {
-	// TODO
-}
-
 static int i2c_irq_router(void *opaque, int event_id) {
 	switch ((1 << event_id)) {
-		case I2Cv2_ISR_LSREQ_INT:		return I2C_SINGLE_REQ_IRQ;
-		case I2Cv2_ISR_SREQ_INT:		return I2C_SINGLE_REQ_IRQ;
-		case I2Cv2_ISR_LBREQ_INT:		return I2C_SINGLE_REQ_IRQ;
-		case I2Cv2_ISR_BREQ_INT:		return I2C_BURST_REQ_IRQ;
-		case I2Cv2_ISR_I2C_P_INT:		return I2C_PROTOCOL_IRQ;
-		case I2Cv2_ISR_I2C_ERR_INT:		return I2C_ERROR_IRQ;
+		case I2Cv2_ISR_LSREQ_INT:
+		case I2Cv2_ISR_SREQ_INT:
+		case I2Cv2_ISR_LBREQ_INT:
+			return I2C_SINGLE_REQ_IRQ;
+		case I2Cv2_ISR_BREQ_INT:
+			return I2C_BURST_REQ_IRQ;
+		case I2Cv2_ISR_I2C_P_INT:
+			return I2C_PROTOCOL_IRQ;
+		case I2Cv2_ISR_I2C_ERR_INT:
+			return I2C_ERROR_IRQ;
+		default:
+			hw_error("Unknown event id: %d\n", event_id);
 	}
-	
-	hw_error("Unknown event id: %d\n", event_id);
-	
-	return 0;
 }
 
 static uint32_t i2c_get_rx_align(pmb887x_i2c_t *p) {
@@ -110,8 +103,9 @@ static uint32_t i2c_get_rx_align(pmb887x_i2c_t *p) {
 		case I2Cv2_FIFOCFG_RXFA_BYTE:			return 1;
 		case I2Cv2_FIFOCFG_RXFA_HALF_WORLD:		return 2;
 		case I2Cv2_FIFOCFG_RXFA_WORD:			return 4;
+		default:
+			hw_error("Unknown RXFA value: %08X\n", (p->fifocfg & I2Cv2_FIFOCFG_RXFA));
 	}
-	hw_error("Unknown RXFA value: %08X\n", (p->fifocfg & I2Cv2_FIFOCFG_RXFA));
 }
 
 static uint32_t i2c_get_tx_align(pmb887x_i2c_t *p) {
@@ -119,8 +113,9 @@ static uint32_t i2c_get_tx_align(pmb887x_i2c_t *p) {
 		case I2Cv2_FIFOCFG_TXFA_BYTE:			return 1;
 		case I2Cv2_FIFOCFG_TXFA_HALF_WORLD:		return 2;
 		case I2Cv2_FIFOCFG_TXFA_WORD:			return 4;
+		default:
+			hw_error("Unknown TXFA value: %08X\n", (p->fifocfg & I2Cv2_FIFOCFG_TXFA));
 	}
-	hw_error("Unknown TXFA value: %08X\n", (p->fifocfg & I2Cv2_FIFOCFG_TXFA));
 }
 
 static uint32_t i2c_get_rx_burst_size(pmb887x_i2c_t *p) {
@@ -128,8 +123,9 @@ static uint32_t i2c_get_rx_burst_size(pmb887x_i2c_t *p) {
 		case I2Cv2_FIFOCFG_RXBS_1_WORD:		return 1 * (4 / i2c_get_rx_align(p));
 		case I2Cv2_FIFOCFG_RXBS_2_WORD:		return 2 * (4 / i2c_get_rx_align(p));
 		case I2Cv2_FIFOCFG_RXBS_4_WORD:		return 4 * (4 / i2c_get_rx_align(p));
+		default:
+			hw_error("Unknown RXBS value: %08X\n", (p->fifocfg & I2Cv2_FIFOCFG_RXBS));
 	}
-	hw_error("Unknown RXBS value: %08X\n", (p->fifocfg & I2Cv2_FIFOCFG_RXBS));
 }
 
 static uint32_t i2c_get_tx_burst_size(pmb887x_i2c_t *p) {
@@ -137,8 +133,9 @@ static uint32_t i2c_get_tx_burst_size(pmb887x_i2c_t *p) {
 		case I2Cv2_FIFOCFG_TXBS_1_WORD:		return 1 * (4 / i2c_get_tx_align(p));
 		case I2Cv2_FIFOCFG_TXBS_2_WORD:		return 2 * (4 / i2c_get_tx_align(p));
 		case I2Cv2_FIFOCFG_TXBS_4_WORD:		return 4 * (4 / i2c_get_tx_align(p));
+		default:
+			hw_error("Unknown TXBS value: %08X\n", (p->fifocfg & I2Cv2_FIFOCFG_TXBS));
 	}
-	hw_error("Unknown TXBS value: %08X\n", (p->fifocfg & I2Cv2_FIFOCFG_TXBS));
 }
 
 static void i2c_reset(pmb887x_i2c_t *p) {
@@ -317,7 +314,7 @@ static void i2c_work(pmb887x_i2c_t *p) {
 }
 
 static uint64_t i2c_io_read(void *opaque, hwaddr haddr, unsigned size) {
-	pmb887x_i2c_t *p = (pmb887x_i2c_t *) opaque;
+	pmb887x_i2c_t *p = opaque;
 
 	uint64_t value = 0;
 
@@ -408,9 +405,6 @@ static uint64_t i2c_io_read(void *opaque, hwaddr haddr, unsigned size) {
 			break;
 
 		case I2Cv2_ICR:
-			value = 0;
-			break;
-
 		case I2Cv2_ISR:
 			value = 0;
 			break;
@@ -451,7 +445,7 @@ static uint64_t i2c_io_read(void *opaque, hwaddr haddr, unsigned size) {
 }
 
 static void i2c_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned size) {
-	pmb887x_i2c_t *p = (pmb887x_i2c_t *) opaque;
+	pmb887x_i2c_t *p = opaque;
 
 	IO_DUMP(haddr + p->mmio.addr, size, value, true);
 
@@ -463,7 +457,6 @@ static void i2c_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned si
 		default:
 			EPRINTF("unknown reg access: %02"PRIX64"\n", haddr);
 			exit(1);
-			break;
 
 		case I2Cv2_RUNCTRL:
 			p->runctrl = value;
@@ -562,8 +555,6 @@ static void i2c_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned si
 			pmb887x_srb_ext_set_icr(&p->srb_err, value);
 			break;
 	}
-
-	i2c_update_state(p);
 }
 
 static const MemoryRegionOps io_ops = {
@@ -606,8 +597,6 @@ static void i2c_realize(DeviceState *dev, Error **errp) {
 	pmb887x_fifo32_init(&p->fifo, FIFO_SIZE);
 	
 	p->timer = timer_new_ns(QEMU_CLOCK_VIRTUAL, i2c_timer_reset, p);
-	
-	i2c_update_state(p);
 }
 
 static void i2c_class_init(ObjectClass *klass, void *data) {

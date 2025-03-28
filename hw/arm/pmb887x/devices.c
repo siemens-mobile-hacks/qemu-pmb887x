@@ -1,10 +1,8 @@
 #include "hw/arm/pmb887x/devices.h"
 
-#include "qemu/error-report.h"
 #include "qom/object.h"
 #include "hw/qdev-core.h"
 #include "hw/qdev-properties.h"
-#include "hw/irq.h"
 #include "hw/sysbus.h"
 #include "hw/hw.h"
 
@@ -224,7 +222,7 @@ static const struct pmb887x_dev pmb8876_devices[] = {
 	},
 	{
 		.name	= "DIF",
-		.dev	= "pmb887x-dif",
+		.dev	= "pmb887x-dif-v2",
 		.base	= PMB8876_DIF_BASE,
 		.irqs	= { 0 }
 	},
@@ -482,7 +480,7 @@ static const struct pmb887x_dev pmb8875_devices[] = {
 	},
 	{
 		.name	= "DIF",
-		.dev	= "pmb887x-dif",
+		.dev	= "pmb887x-dif-v1",
 		.base	= PMB8875_DIF_BASE,
 		.irqs	= { 0 }
 	},
@@ -556,7 +554,6 @@ I2CSlave *pmb887x_new_i2c_dev(const pmb887x_board_i2c_dev_t *i2c_dev) {
 		}
 	}
 	hw_error("Unknown i2c device: %s\n", i2c_dev->type);
-	return NULL;
 }
 
 DeviceState *pmb887x_new_dev(uint32_t cpu_type, const char *name, DeviceState *nvic) {
@@ -573,6 +570,9 @@ DeviceState *pmb887x_new_dev(uint32_t cpu_type, const char *name, DeviceState *n
 			devices = pmb8876_devices;
 			devices_count = ARRAY_SIZE(pmb8876_devices);
 		break;
+
+		default:
+			hw_error("Unknown CPU: %d", cpu_type);
 	}
 	
 	for (int i = 0; i < devices_count; i++) {
@@ -583,7 +583,7 @@ DeviceState *pmb887x_new_dev(uint32_t cpu_type, const char *name, DeviceState *n
 		
 		DeviceState *dev = qdev_new(device->dev);
 		
-		uint32_t irq_n = 0;
+		int irq_n = 0;
 		while (device->irqs[irq_n]) {
 			if (!nvic)
 				hw_error("Can't find nvic for: %s\n", name);
@@ -601,8 +601,6 @@ DeviceState *pmb887x_new_dev(uint32_t cpu_type, const char *name, DeviceState *n
 	}
 	
 	hw_error("Can't find device: %s\n", name);
-	
-	return NULL;
 }
 
 I2CBus *pmb887x_i2c_bus(DeviceState *dev) {
@@ -612,5 +610,4 @@ I2CBus *pmb887x_i2c_bus(DeviceState *dev) {
 	if (strcmp(typename, "pmb887x-i2c-v2") == 0)
 		return pmb887x_i2c_v2_bus(dev);
 	hw_error("Unknown I2C HW: %s", typename);
-	return NULL;
 }
