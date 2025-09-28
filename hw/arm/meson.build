@@ -69,7 +69,6 @@ arm_ss.add(when: 'CONFIG_PMB887X', if_true: files(
 	'pmb887x/fifo.c',
 	'pmb887x/flash.c',
 	'pmb887x/flash-blk.c',
-	'pmb887x/flash-info.c',
 	'pmb887x/adc.c',
 	'pmb887x/ebu.c',
 	'pmb887x/dmac.c',
@@ -100,6 +99,7 @@ arm_ss.add(when: 'CONFIG_PMB887X', if_true: files(
 	'pmb887x/gen/brom.c',
 	'pmb887x/gen/cpu_meta.c',
 	'pmb887x/gen/cpu_modules.c',
+	'pmb887x/gen/flash-info.c',
 
 	'pmb887x/board/analog.c',
 	'pmb887x/board/board.c',
