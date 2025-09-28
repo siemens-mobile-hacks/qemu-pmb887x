@@ -719,7 +719,7 @@ static void flash_trace_part(pmb887x_flash_part_t *p, const char *format, ...) {
 	g_string_append_vprintf(s, format, args);
 	va_end(args);
 	
-	qemu_log_mask(LOG_TRACE, "[%s] %s <%d> %s", PMB887X_TRACE_PREFIX, p->flash->name, p->n, s->str);
+	qemu_log_mask(LOG_TRACE, "[%s] %s <%d> %s\n", PMB887X_TRACE_PREFIX, p->flash->name, p->n, s->str);
 }
 
 static void flash_trace(pmb887x_flash_t *flash, const char *format, ...) {
@@ -733,7 +733,7 @@ static void flash_trace(pmb887x_flash_t *flash, const char *format, ...) {
 	g_string_append_vprintf(s, format, args);
 	va_end(args);
 	
-	qemu_log_mask(LOG_TRACE, "[%s] %s %s", PMB887X_TRACE_PREFIX, flash->name, s->str);
+	qemu_log_mask(LOG_TRACE, "[%s] %s %s\n", PMB887X_TRACE_PREFIX, flash->name, s->str);
 }
 
 static const Property flash_properties[] = {

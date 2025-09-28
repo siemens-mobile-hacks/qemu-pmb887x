@@ -5,7 +5,7 @@
 #define PMB887X_TRACE_PREFIX	"pmb887x-mod"
 
 #include "hw/arm/pmb887x/mod.h"
-#include "hw/arm/pmb887x/regs.h"
+#include "hw/arm/pmb887x/gen/cpu_regs.h"
 #include "hw/hw.h"
 #include "hw/arm/pmb887x/trace.h"
 

@@ -1,4 +1,4 @@
-#include "hw/arm/pmb887x/config.h"
+#include "hw/arm/pmb887x/utils/config.h"
 #include "qemu/osdep.h"
 #include "qemu/error-report.h"
 
@@ -18,7 +18,7 @@ enum InitParserState {
 };
 
 static bool is_valid_key(char c) {
-	return isdigit(c) || isalpha(c) || c == '_' || c == '-' || c == '.';
+	return isdigit(c) || isalpha(c) || c == '_' || c == '-' || c == '.' || c == ':';
 }
 
 static GString *read_file(const char *file) {
@@ -68,10 +68,10 @@ pmb887x_cfg_section_t *pmb887x_cfg_section(pmb887x_cfg_t *cfg, const char *name,
 	return NULL;
 }
 
-const char *pmb887x_cfg_get(pmb887x_cfg_t *cfg, const char *section_name, const char *key, bool required) {
+const char *pmb887x_cfg_get(pmb887x_cfg_t *cfg, const char *section_name, const char *key, const char *def, bool required) {
 	pmb887x_cfg_section_t *section = pmb887x_cfg_section(cfg, section_name, -1, false);
 	if (section)
-		return pmb887x_cfg_section_get(section, key, required);
+		return pmb887x_cfg_section_get(section, key, NULL, required);
 	
 	if (required) {
 		error_report("[pmb887x-config] %s: %s.%s not found.", cfg->file, section_name, key);
@@ -81,7 +81,33 @@ const char *pmb887x_cfg_get(pmb887x_cfg_t *cfg, const char *section_name, const 
 	return NULL;
 }
 
-const char *pmb887x_cfg_section_get(pmb887x_cfg_section_t *section, const char *key, bool required) {
+int32_t pmb887x_cfg_get_int(pmb887x_cfg_t *cfg, const char *section_name, const char *key, int32_t def, bool required) {
+	const char *value = pmb887x_cfg_get(cfg, section_name, key, NULL, required);
+	if (!value)
+		return def;
+	char *end = NULL;
+	int32_t parsed = strtol(value, &end, 0);
+	if (*end != '\0') {
+		error_report("[pmb887x-config] %s: %s.%s has invalid int32_t value: %s", cfg->file, section_name, key, value);
+		exit(1);
+	}
+	return parsed;
+}
+
+uint32_t pmb887x_cfg_get_uint(pmb887x_cfg_t *cfg, const char *section_name, const char *key, uint32_t def, bool required) {
+	const char *value = pmb887x_cfg_get(cfg, section_name, key, NULL, required);
+	if (!value)
+		return def;
+	char *end = NULL;
+	uint32_t parsed = strtoul(value, &end, 0);
+	if (*end != '\0') {
+		error_report("[pmb887x-config] %s: %s.%s has invalid uint32_t value: %s", cfg->file, section_name, key, value);
+		exit(1);
+	}
+	return parsed;
+}
+
+const char *pmb887x_cfg_section_get(pmb887x_cfg_section_t *section, const char *key, const char *def, bool required) {
 	for (size_t i = 0; i < section->items_count; i++) {
 		pmb887x_cfg_item_t *item = &section->items[i];
 		if (strcmp(item->key, key) == 0)
@@ -89,11 +115,37 @@ const char *pmb887x_cfg_section_get(pmb887x_cfg_section_t *section, const char *
 	}
 
 	if (required) {
-		error_report("[pmb887x-config] %s: %s.%s not found.", section->parent->file, section->name, key);
+		error_report("[pmb887x-config] %s:%d: %s.%s not found.", section->parent->file, section->line, section->name, key);
 		exit(1);
 	}
 
-	return NULL;
+	return def;
+}
+
+int32_t pmb887x_cfg_section_get_int(pmb887x_cfg_section_t *section, const char *key, int32_t def, bool required) {
+	const char *value = pmb887x_cfg_section_get(section, key, NULL, required);
+	if (!value)
+		return def;
+	char *end = NULL;
+	int32_t parsed = strtol(value, &end, 0);
+	if (*end != '\0') {
+		error_report("[pmb887x-config] %s: %s.%s has invalid int32_t value: %s", section->parent->file, section->name, key, value);
+		exit(1);
+	}
+	return parsed;
+}
+
+uint32_t pmb887x_cfg_section_get_uint(pmb887x_cfg_section_t *section, const char *key, uint32_t def, bool required) {
+	const char *value = pmb887x_cfg_section_get(section, key, NULL, required);
+	if (!value)
+		return def;
+	char *end = NULL;
+	uint32_t parsed = strtoul(value, &end, 0);
+	if (*end != '\0') {
+		error_report("[pmb887x-config] %s: %s.%s has invalid uint32_t value: %s", section->parent->file, section->name, key, value);
+		exit(1);
+	}
+	return parsed;
 }
 
 pmb887x_cfg_t *pmb887x_cfg_parse(const char *file) {
@@ -148,6 +200,7 @@ pmb887x_cfg_t *pmb887x_cfg_parse(const char *file) {
 					cfg->sections[cfg->sections_count - 1].items = NULL;
 					cfg->sections[cfg->sections_count - 1].items_count = 0;
 					cfg->sections[cfg->sections_count - 1].parent = cfg;
+					cfg->sections[cfg->sections_count - 1].line = line_n;
 					state = INI_STATE_NONE;
 				} else if (is_valid_key(c)) {
 					g_string_append_len(section_name, &c, 1);
@@ -161,7 +214,7 @@ pmb887x_cfg_t *pmb887x_cfg_parse(const char *file) {
 					state = INI_STATE_ERROR;
 				} else if (isspace(c) || c == '=') {
 					state = c == '=' ? INI_STATE_VALUE_START : INI_STATE_DELIM;
-				} else if (is_valid_key(c)) {
+				} else if (is_valid_key(c) || c == '[' || c == ']') {
 					g_string_append_len(key, &c, 1);
 				} else {
 					state = INI_STATE_ERROR;
@@ -234,6 +287,7 @@ pmb887x_cfg_t *pmb887x_cfg_parse(const char *file) {
 						pmb887x_cfg_item_t *item = &section->items[section->items_count - 1];
 						item->key = g_strdup(key->str);
 						item->value = g_strdup(value->str);
+						item->line = line_n;
 						
 						state = INI_STATE_NONE;
 					} else {

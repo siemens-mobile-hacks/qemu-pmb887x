@@ -13,14 +13,11 @@
 #include "qemu/main-loop.h"
 #include "hw/qdev-properties.h"
 
-#include "hw/arm/pmb887x/regs.h"
+#include "hw/arm/pmb887x/gen/cpu_regs.h"
 #include "hw/arm/pmb887x/regs_dump.h"
 #include "hw/arm/pmb887x/mod.h"
 #include "hw/arm/pmb887x/dmac.h"
 #include "hw/arm/pmb887x/trace.h"
-
-#define TYPE_PMB887X_DMAC	"pmb887x-dmac"
-#define PMB887X_DMAC(obj)	OBJECT_CHECK(pmb887x_dmac_t, (obj), TYPE_PMB887X_DMAC)
 
 #define DMAC_CHANNELS	8
 
@@ -52,7 +49,8 @@ struct pmb887x_dmac_t {
 	pmb887x_srb_reg_t srb_err;
 	
 	pmb887x_dmac_ch_t ch[DMAC_CHANNELS];
-	
+
+	bool is_busy;
 	uint32_t config;
 	uint32_t enabled_channels;
 	uint32_t used_peripherals;
@@ -69,7 +67,7 @@ static uint32_t dmac_get_width(uint32_t s) {
 static void dmac_channel_run(pmb887x_dmac_t *p, pmb887x_dmac_ch_t *ch) {
 	if (!(ch->config & DMAC_CH_CONFIG_ENABLE) || !(p->config & DMAC_CONFIG_ENABLE))
 		return;
-	
+
 	uint32_t src_width = dmac_get_width((ch->control & DMAC_CH_CONTROL_S_WIDTH) >> DMAC_CH_CONTROL_S_WIDTH_SHIFT);
 	uint32_t dst_width = dmac_get_width((ch->control & DMAC_CH_CONTROL_D_WIDTH) >> DMAC_CH_CONTROL_D_WIDTH_SHIFT);
 	uint8_t src_periph = (ch->config & DMAC_CH_CONFIG_SRC_PERIPH) >> DMAC_CH_CONFIG_SRC_PERIPH_SHIFT;
@@ -79,18 +77,18 @@ static void dmac_channel_run(pmb887x_dmac_t *p, pmb887x_dmac_ch_t *ch) {
 	
 	switch ((ch->config & DMAC_CH_CONFIG_FLOW_CTRL)) {
 		case DMAC_CH_CONFIG_FLOW_CTRL_MEM2MEM:
-			tx_size = (ch->config & DMAC_CH_CONTROL_TRANSFER_SIZE) >> DMAC_CH_CONTROL_TRANSFER_SIZE_SHIFT;
+			tx_size = (ch->control & DMAC_CH_CONTROL_TRANSFER_SIZE) >> DMAC_CH_CONTROL_TRANSFER_SIZE_SHIFT;
 			break;
 
 		case DMAC_CH_CONFIG_FLOW_CTRL_MEM2PER:
-			tx_size = (ch->config & DMAC_CH_CONTROL_TRANSFER_SIZE) >> DMAC_CH_CONTROL_TRANSFER_SIZE_SHIFT;
+			tx_size = (ch->control & DMAC_CH_CONTROL_TRANSFER_SIZE) >> DMAC_CH_CONTROL_TRANSFER_SIZE_SHIFT;
 			if (!p->periph_request[dst_periph])
 				return;
 			p->periph_request[dst_periph] = 0;
 			break;
 
 		case DMAC_CH_CONFIG_FLOW_CTRL_PER2MEM:
-			tx_size = (ch->config & DMAC_CH_CONTROL_TRANSFER_SIZE) >> DMAC_CH_CONTROL_TRANSFER_SIZE_SHIFT;
+			tx_size = (ch->control & DMAC_CH_CONTROL_TRANSFER_SIZE) >> DMAC_CH_CONTROL_TRANSFER_SIZE_SHIFT;
 			if (!p->periph_request[src_periph])
 				return;
 			p->periph_request[src_periph] = 0;
@@ -115,10 +113,12 @@ static void dmac_channel_run(pmb887x_dmac_t *p, pmb887x_dmac_ch_t *ch) {
 		default:
 			hw_error("pmb887x-dmac: unsupported flow type %08X", (ch->config & DMAC_CH_CONFIG_FLOW_CTRL));
 	}
-	
+
 	if (!tx_size)
 		return;
-	
+
+	p->is_busy = true;
+
 	DPRINTF("CH%d: %08X [%dx%d] -> %08X [%dx%d]\n", ch->id, ch->src_addr, src_width, tx_size, ch->dst_addr, dst_width, tx_size);
 
 	uint8_t buffer_size = 0;
@@ -163,6 +163,8 @@ static void dmac_channel_run(pmb887x_dmac_t *p, pmb887x_dmac_ch_t *ch) {
 	
 	pmb887x_srb_set_isr(&p->srb_tc, (1 << ch->id));
 	ch->config &= ~DMAC_CH_CONFIG_ENABLE;
+
+	p->is_busy = false;
 }
 
 static void dmac_update(pmb887x_dmac_t *p) {
@@ -204,9 +206,14 @@ static void dmac_update(pmb887x_dmac_t *p) {
 	pmb887x_srb_set_imsc(&p->srb_err, err_mask);
 }
 
+bool pmb887x_dmac_is_busy(pmb887x_dmac_t *p) {
+	return p->is_busy;
+}
+
 void pmb887x_dmac_request(pmb887x_dmac_t *p, uint32_t per_id, uint32_t size) {
+	// DPRINTF("pmb887x_dmac_request(%d, %d)\n", per_id, size);
 	p->periph_request[per_id] = size;
-	
+
 	if (size) {
 		if (p->used_peripherals & (1 << per_id)) {
 			for (int i = 0; i < DMAC_CHANNELS; i++)

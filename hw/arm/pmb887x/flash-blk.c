@@ -66,7 +66,7 @@ static void flash_blk_realize(DeviceState *dev, Error **errp) {
 }
 
 static const Property flash_blk_properties[] = {
-	DEFINE_PROP_DRIVE("drive", pmb887x_flash_blk_t, blk),
+	DEFINE_PROP_DRIVE("drive", pmb887x_flash_blk_t, blk)
 };
 
 static void flash_blk_class_init(ObjectClass *klass, void *data) {

@@ -21,7 +21,7 @@ enum pmb887x_modules_t {
 	PMB887X_TRACE_DIF		= 1ULL << 8,
 	PMB887X_TRACE_DSP		= 1ULL << 9,
 	PMB887X_TRACE_MOD		= 1ULL << 10,
-	PMB887X_TRACE_NVIC		= 1ULL << 11,
+	PMB887X_TRACE_VIC		= 1ULL << 11,
 	PMB887X_TRACE_PCL		= 1ULL << 12,
 	PMB887X_TRACE_RTC		= 1ULL << 13,
 	PMB887X_TRACE_SCU		= 1ULL << 14,
@@ -30,13 +30,16 @@ enum pmb887x_modules_t {
 	PMB887X_TRACE_I2C		= 1ULL << 17,
 	PMB887X_TRACE_SCCU		= 1ULL << 18,
 	PMB887X_TRACE_MMCI		= 1ULL << 19,
-	
+	PMB887X_TRACE_SSC		= 1ULL << 20,
+
 	// External
-	PMB887X_TRACE_UNKNOWN	= 1ULL << 27,
-	PMB887X_TRACE_FM_RADIO	= 1ULL << 28,
-	PMB887X_TRACE_FLASH		= 1ULL << 29,
-	PMB887X_TRACE_LCD		= 1ULL << 30,
-	PMB887X_TRACE_PMIC		= 1ULL << 31,
+	PMB887X_TRACE_ACODEC	= 1ULL << 57,
+	PMB887X_TRACE_GIMMICK	= 1ULL << 58,
+	PMB887X_TRACE_FM_RADIO	= 1ULL << 59,
+	PMB887X_TRACE_FLASH		= 1ULL << 60,
+	PMB887X_TRACE_LCD		= 1ULL << 61,
+	PMB887X_TRACE_PMIC		= 1ULL << 62,
+	PMB887X_TRACE_UNKNOWN	= 1ULL << 63,
 };
 
 //extern uint32_t pmb887x_trace_flags;
@@ -45,9 +48,8 @@ static inline bool pmb887x_trace_log_enabled(uint64_t id) {
 	if (id == PMB887X_TRACE_UNKNOWN)
 		return true;
 
-
 	//return ((id & (PMB887X_TRACE_GPTU)) != 0);
-	return ((id & (PMB887X_TRACE_PMIC)) != 0);
+	return ((id & (PMB887X_TRACE_PMIC | PMB887X_TRACE_DIF | PMB887X_TRACE_DMAC | PMB887X_TRACE_GIMMICK | PMB887X_TRACE_PCL | PMB887X_TRACE_ACODEC)) != 0);
 	return false;
 	return ((id & (PMB887X_TRACE_ADC)) != 0);
 	return ((id & (PMB887X_TRACE_FLASH)) != 0);
@@ -66,7 +68,7 @@ static inline bool pmb887x_trace_log_enabled(uint64_t id) {
 		PMB887X_TRACE_DIF |
 		PMB887X_TRACE_DSP |
 		PMB887X_TRACE_MOD |
-		PMB887X_TRACE_NVIC |
+		PMB887X_TRACE_VIC |
 		PMB887X_TRACE_PCL |
 		PMB887X_TRACE_RTC |
 		PMB887X_TRACE_SCU |
@@ -93,7 +95,7 @@ static inline bool pmb887x_trace_io_enabled(uint64_t id) {
 	//return ((id & (PMB887X_TRACE_GPTU)) != 0);
 	//return ((id & (PMB887X_TRACE_ADC)) != 0);
 	//return ((id & (PMB887X_TRACE_PCL)) != 0);
-	return ((id & (PMB887X_TRACE_DIF)) != 0);
+	return ((id & (PMB887X_TRACE_GIMMICK | PMB887X_TRACE_DMAC | PMB887X_TRACE_SSC | PMB887X_TRACE_CAPCOM)) != 0);
 	return false;
 	return ((id & (PMB887X_TRACE_I2C)) != 0);
 	return ((
@@ -108,7 +110,7 @@ static inline bool pmb887x_trace_io_enabled(uint64_t id) {
 		PMB887X_TRACE_DIF |
 		PMB887X_TRACE_DSP |
 		PMB887X_TRACE_MOD |
-		PMB887X_TRACE_NVIC |
+		PMB887X_TRACE_VIC |
 		PMB887X_TRACE_PCL |
 		PMB887X_TRACE_RTC |
 		PMB887X_TRACE_SCU |

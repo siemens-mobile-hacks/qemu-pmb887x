@@ -2,20 +2,18 @@
  * Dialog d1094xx / d1601xx
  * */
 #define PMB887X_TRACE_ID		PMIC
-#define PMB887X_TRACE_PREFIX	"pmb887x-d1094xx"
+#define PMB887X_TRACE_PREFIX	"d1094xx"
 
 #include "qemu/osdep.h"
 #include "hw/sysbus.h"
 #include "hw/hw.h"
 #include "exec/memory.h"
-#include "cpu.h"
-#include "qapi/error.h"
 #include "qemu/main-loop.h"
 #include "hw/qdev-properties.h"
 #include "hw/i2c/i2c.h"
 #include "hw/arm/pmb887x/trace.h"
 
-#define TYPE_PMB887X_PMIC	"pmb887x-d1094xx"
+#define TYPE_PMB887X_PMIC	"d1094xx"
 #define PMB887X_PMIC(obj)	OBJECT_CHECK(pmb887x_pmic_t, (obj), TYPE_PMB887X_PMIC)
 
 typedef struct pmb887x_pmic_t pmb887x_pmic_t;

@@ -15,7 +15,7 @@
 #include "chardev/char-fe.h"
 #include "chardev/char-serial.h"
 
-#include "hw/arm/pmb887x/regs.h"
+#include "hw/arm/pmb887x/gen/cpu_regs.h"
 #include "hw/arm/pmb887x/regs_dump.h"
 #include "hw/arm/pmb887x/mod.h"
 #include "hw/arm/pmb887x/fifo.h"
@@ -25,8 +25,8 @@
 #define PMB887X_USART(obj)	OBJECT_CHECK(pmb887x_usart_t, (obj), TYPE_PMB887X_USART)
 
 #define FIFO_SIZE	8
-#define USART_LOG_TRX true
-#define USART_DUMP_TRX_IO false
+#define USART_LOG_TRX false
+#define USART_DUMP_TRX_IO true
 
 enum {
 	USART_IRQ_TX,

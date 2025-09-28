@@ -16,16 +16,15 @@
 #include "hw/qdev-properties.h"
 #include "hw/i2c/i2c.h"
 
-#include "hw/arm/pmb887x/i2c_v1.h"
-#include "hw/arm/pmb887x/regs.h"
+#include "hw/arm/pmb887x/gen/cpu_regs.h"
 #include "hw/arm/pmb887x/regs_dump.h"
 #include "hw/arm/pmb887x/mod.h"
 #include "hw/arm/pmb887x/trace.h"
 
 #define TYPE_PMB887X_I2C	"pmb887x-i2c-v1"
-#define PMB887X_I2C(obj)	OBJECT_CHECK(pmb887x_i2c_t, (obj), TYPE_PMB887X_I2C)
-#define I2C_TX_BYTE_TIME	100
+OBJECT_DECLARE_SIMPLE_TYPE(pmb887x_i2c_t, PMB887X_I2C);
 
+#define I2C_TX_BYTE_TIME	100
 #define FIFO_SIZE 4
 
 enum {
@@ -44,7 +43,7 @@ enum {
 	I2C_PROTOCOL_IRQ,
 };
 
-typedef struct {
+struct pmb887x_i2c_t {
 	SysBusDevice parent_obj;
 	MemoryRegion mmio;
 
@@ -69,7 +68,7 @@ typedef struct {
 	uint32_t buscon;
 	uint32_t syscon;
 	uint32_t pisel;
-} pmb887x_i2c_t;
+};
 
 static void i2c_work(pmb887x_i2c_t *p);
 
@@ -502,11 +501,6 @@ static const MemoryRegionOps io_ops = {
 	}
 };
 
-I2CBus *pmb887x_i2c_v1_bus(DeviceState *dev) {
-	pmb887x_i2c_t *p = PMB887X_I2C(dev);
-	return p->bus;
-}
-
 static void i2c_init(Object *obj) {
 	pmb887x_i2c_t *p = PMB887X_I2C(obj);
 	memory_region_init_io(&p->mmio, obj, &io_ops, p, "pmb887x-i2c-v1", I2Cv2_IO_SIZE);
@@ -530,8 +524,13 @@ static void i2c_realize(DeviceState *dev, Error **errp) {
 	p->timer = timer_new_ns(QEMU_CLOCK_VIRTUAL, i2c_timer_reset, p);
 }
 
+static const Property i2c_properties[] = {
+	DEFINE_PROP_LINK("bus", pmb887x_i2c_t, bus, TYPE_I2C_BUS, I2CBus *)
+};
+
 static void i2c_class_init(ObjectClass *klass, void *data) {
 	DeviceClass *dc = DEVICE_CLASS(klass);
+	device_class_set_props(dc, i2c_properties);
 	dc->realize = i2c_realize;
 }
 

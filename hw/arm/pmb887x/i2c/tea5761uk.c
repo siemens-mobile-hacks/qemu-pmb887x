@@ -2,7 +2,7 @@
  * Philips TEA5761UK
  * */
 #define PMB887X_TRACE_ID		FM_RADIO
-#define PMB887X_TRACE_PREFIX	"pmb887x-tea5761uk"
+#define PMB887X_TRACE_PREFIX	"tea5761uk"
 
 #include "qemu/osdep.h"
 #include "hw/sysbus.h"
@@ -14,7 +14,7 @@
 #include "hw/i2c/i2c.h"
 #include "hw/arm/pmb887x/trace.h"
 
-#define TYPE_PMB887X_PMIC	"pmb887x-tea5761uk"
+#define TYPE_PMB887X_PMIC	"tea5761uk"
 #define PMB887X_PMIC(obj)	OBJECT_CHECK(pmb887x_fmradio_t, (obj), TYPE_PMB887X_PMIC)
 
 typedef struct pmb887x_fmradio_t pmb887x_fmradio_t;

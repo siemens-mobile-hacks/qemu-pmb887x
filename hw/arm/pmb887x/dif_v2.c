@@ -11,12 +11,12 @@
 #include "qom/object.h"
 #include "hw/qdev-properties.h"
 
-#include "hw/arm/pmb887x/regs.h"
+#include "hw/arm/pmb887x/gen/cpu_regs.h"
 #include "hw/arm/pmb887x/regs_dump.h"
 #include "hw/arm/pmb887x/mod.h"
 #include "hw/arm/pmb887x/dmac.h"
 #include "hw/arm/pmb887x/trace.h"
-#include "hw/arm/pmb887x/dif/lcd_common.h"
+#include "hw/arm/pmb887x/ssc/lcd_common.h"
 
 #define TYPE_PMB887X_DIF	"pmb887x-dif-v2"
 #define PMB887X_DIF(obj)	OBJECT_CHECK(pmb887x_dif_v2_t, (obj), TYPE_PMB887X_DIF)
@@ -271,7 +271,7 @@ static void dif_v2_realize(DeviceState *dev, Error **errp) {
 }
 
 static const Property dif_v2_properties[] = {
-	DEFINE_PROP_LINK("dmac", pmb887x_dif_v2_t, dmac, "pmb887x-dmac", pmb887x_dmac_t *),
+	DEFINE_PROP_LINK("dmac", pmb887x_dif_v2_t, dmac, TYPE_PMB887X_DMAC, pmb887x_dmac_t *),
 	DEFINE_PROP_LINK("lcd", pmb887x_dif_v2_t, lcd, "pmb887x-lcd", pmb887x_lcd_t *),
 	DEFINE_PROP_UINT32("dmac-tx-periph-id", pmb887x_dif_v2_t, dmac_tx_periph_id, 4),
 };

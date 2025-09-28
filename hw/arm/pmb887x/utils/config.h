@@ -9,6 +9,7 @@ typedef struct pmb887x_cfg_section_t pmb887x_cfg_section_t;
 struct pmb887x_cfg_item_t {
 	char *key;
 	char *value;
+	int line;
 };
 
 struct pmb887x_cfg_section_t {
@@ -16,6 +17,7 @@ struct pmb887x_cfg_section_t {
 	pmb887x_cfg_item_t *items;
 	size_t items_count;
 	pmb887x_cfg_t *parent;
+	int line;
 };
 
 struct pmb887x_cfg_t {
@@ -26,7 +28,13 @@ struct pmb887x_cfg_t {
 
 pmb887x_cfg_t *pmb887x_cfg_parse(const char *file);
 pmb887x_cfg_section_t *pmb887x_cfg_section(pmb887x_cfg_t *cfg, const char *name, ssize_t index, bool required);
-const char *pmb887x_cfg_get(pmb887x_cfg_t *cfg, const char *section_name, const char *key, bool required);
-const char *pmb887x_cfg_section_get(pmb887x_cfg_section_t *section, const char *key, bool required);
 size_t pmb887x_cfg_sections_cnt(pmb887x_cfg_t *cfg, const char *name);
 void pmb887x_cfg_free(pmb887x_cfg_t  *cfg);
+
+const char *pmb887x_cfg_get(pmb887x_cfg_t *cfg, const char *section_name, const char *key, const char *def, bool required);
+int32_t pmb887x_cfg_get_int(pmb887x_cfg_t *cfg, const char *section_name, const char *key, int32_t def, bool required);
+uint32_t pmb887x_cfg_get_uint(pmb887x_cfg_t *cfg, const char *section_name, const char *key, uint32_t def, bool required);
+
+const char *pmb887x_cfg_section_get(pmb887x_cfg_section_t *section, const char *key, const char *def, bool required);
+int32_t pmb887x_cfg_section_get_int(pmb887x_cfg_section_t *section, const char *key, int32_t def, bool required);
+uint32_t pmb887x_cfg_section_get_uint(pmb887x_cfg_section_t *section, const char *key, uint32_t def, bool required);

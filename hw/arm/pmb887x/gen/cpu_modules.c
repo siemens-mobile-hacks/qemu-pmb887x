@@ -1,31 +1,11 @@
-#include "hw/arm/pmb887x/devices.h"
+#include "hw/arm/pmb887x/gen/cpu_modules.h"
 
-#include "qom/object.h"
-#include "hw/qdev-core.h"
-#include "hw/qdev-properties.h"
-#include "hw/sysbus.h"
+#include "hw/arm/pmb887x/gen/cpu_meta.h"
+#include "hw/arm/pmb887x/gen/cpu_regs.h"
+
 #include "hw/hw.h"
 
-#include "hw/arm/pmb887x/regs.h"
-#include "hw/arm/pmb887x/io_bridge.h"
-#include "hw/arm/pmb887x/i2c_v1.h"
-#include "hw/arm/pmb887x/i2c_v2.h"
-
-struct  pmb887x_i2c_dev_map {
-	const char *type;
-	const char *device;
-	uint32_t revision;
-};
-
-static const struct pmb887x_i2c_dev_map i2c_map[] = {
-	{ "D1094EC",	"pmb887x-d1094xx",		0xEC },
-	{ "D1094ED",	"pmb887x-d1094xx",		0xED },
-	{ "D1601AA",	"pmb887x-d1094xx",		0xAA },
-	{ "PMB6812",	"pmb887x-pmb6812",		0x00 },
-	{ "TEA5761UK",	"pmb887x-tea5761uk",	0x00 },
-};
-
-static const struct pmb887x_dev pmb8876_devices[] = {
+static const pmb887x_cpu_module_t pmb8876_modules[] = {
 	{
 		.name	= "SCU",
 		.dev	= "pmb887x-scu",
@@ -51,9 +31,9 @@ static const struct pmb887x_dev pmb8876_devices[] = {
 		}
 	},
 	{
-		.name	= "NVIC",
-		.dev	= "pmb887x-nvic",
-		.base	= PMB8876_NVIC_BASE,
+		.name	= "VIC",
+		.dev	= "pmb887x-vic",
+		.base	= PMB8876_VIC_BASE,
 		.irqs	= { 0 }
 	},
 	{
@@ -282,10 +262,11 @@ static const struct pmb887x_dev pmb8876_devices[] = {
 		.irqs	= {
 			0
 		}
-	}
+	},
+	{ }
 };
 
-static const struct pmb887x_dev pmb8875_devices[] = {
+const struct pmb887x_cpu_module_t pmb8875_modules[] = {
 	{
 		.name	= "SCU",
 		.dev	= "pmb887x-scu",
@@ -311,9 +292,9 @@ static const struct pmb887x_dev pmb8875_devices[] = {
 		}
 	},
 	{
-		.name	= "NVIC",
-		.dev	= "pmb887x-nvic",
-		.base	= PMB8875_NVIC_BASE,
+		.name	= "VIC",
+		.dev	= "pmb887x-vic",
+		.base	= PMB8875_VIC_BASE,
 		.irqs	= { 0 }
 	},
 	{
@@ -485,6 +466,12 @@ static const struct pmb887x_dev pmb8875_devices[] = {
 		.irqs	= { 0 }
 	},
 	{
+		.name	= "SSC",
+		.dev	= "pmb887x-ssc",
+		.base	= PMB8875_SSC_BASE,
+		.irqs	= { 0 }
+	},
+	{
 		.name	= "DMA",
 		.dev	= "pmb887x-dmac",
 		.base	= PMB8875_DMAC_BASE,
@@ -532,82 +519,20 @@ static const struct pmb887x_dev pmb8875_devices[] = {
 			PMB8875_SCCU_UNK_IRQ,
 			0
 		}
-	}
+	},
+	{ }
 };
 
-DeviceState *pmb887x_new_lcd_dev(const char *name) {
-	char tmp[64];
-	snprintf(tmp, sizeof(tmp), "pmb887x-lcd-%s", name);
-	return qdev_new(tmp);
-}
-
-I2CSlave *pmb887x_new_i2c_dev(const pmb887x_board_i2c_dev_t *i2c_dev) {
-	I2CSlave *dev = NULL;
-	for (size_t i = 0; i < ARRAY_SIZE(i2c_map); i++) {
-		if (strcmp(i2c_map[i].type, i2c_dev->type) == 0) {
-			dev = i2c_slave_new(i2c_map[i].device, i2c_dev->addr);
-			
-			if (object_property_find(OBJECT(dev), "revision"))
-				qdev_prop_set_uint32(DEVICE(dev), "revision", i2c_map[i].revision);
-			
-			return dev;
-		}
-	}
-	hw_error("Unknown i2c device: %s\n", i2c_dev->type);
-}
-
-DeviceState *pmb887x_new_dev(uint32_t cpu_type, const char *name, DeviceState *nvic) {
-	const struct pmb887x_dev *devices = NULL;
-	uint32_t devices_count = 0;
-	
-	switch (cpu_type) {
+const pmb887x_cpu_module_t *pmb887x_cpu_get_modules_list(int cpu_id) {
+	switch (cpu_id) {
 		case CPU_PMB8875:
-			devices = pmb8875_devices;
-			devices_count = ARRAY_SIZE(pmb8875_devices);
-		break;
-		
+			return pmb8875_modules;
+
 		case CPU_PMB8876:
-			devices = pmb8876_devices;
-			devices_count = ARRAY_SIZE(pmb8876_devices);
-		break;
+			return pmb8876_modules;
 
 		default:
-			hw_error("Unknown CPU: %d", cpu_type);
+			hw_error("Invalid CPU type: %d", cpu_id);
 	}
-	
-	for (int i = 0; i < devices_count; i++) {
-		const struct pmb887x_dev *device = &devices[i];
-		
-		if (strcmp(name, device->name) != 0)
-			continue;
-		
-		DeviceState *dev = qdev_new(device->dev);
-		
-		int irq_n = 0;
-		while (device->irqs[irq_n]) {
-			if (!nvic)
-				hw_error("Can't find nvic for: %s\n", name);
-			
-			sysbus_connect_irq(SYS_BUS_DEVICE(dev), irq_n, qdev_get_gpio_in(nvic, device->irqs[irq_n]));
-			irq_n++;
-		}
-		
-		if (object_property_find(OBJECT(dev), "cpu_type"))
-			qdev_prop_set_uint32(dev, "cpu_type", cpu_type);
-		
-		sysbus_mmio_map(SYS_BUS_DEVICE(dev), 0, device->base);
-		
-		return dev;
-	}
-	
-	hw_error("Can't find device: %s\n", name);
-}
-
-I2CBus *pmb887x_i2c_bus(DeviceState *dev) {
-	const char *typename = object_get_typename(OBJECT(dev));
-	if (strcmp(typename, "pmb887x-i2c-v1") == 0)
-		return pmb887x_i2c_v1_bus(dev);
-	if (strcmp(typename, "pmb887x-i2c-v2") == 0)
-		return pmb887x_i2c_v2_bus(dev);
-	hw_error("Unknown I2C HW: %s", typename);
+	return NULL;
 }

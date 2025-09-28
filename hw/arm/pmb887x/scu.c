@@ -6,7 +6,7 @@
 
 #include "qemu/osdep.h"
 #include "hw/sysbus.h"
-#include "hw/arm/pmb887x/regs.h"
+#include "hw/arm/pmb887x/gen/cpu_regs.h"
 #include "hw/arm/pmb887x/io_bridge.h"
 #include "exec/memory.h"
 #include "cpu.h"
@@ -16,7 +16,7 @@
 #include "hw/arm/pmb887x/regs_dump.h"
 #include "hw/arm/pmb887x/mod.h"
 #include "hw/arm/pmb887x/sccu.h"
-#include "hw/arm/pmb887x/pcl.h"
+#include "hw/arm/pmb887x/gpio.h"
 #include "hw/arm/pmb887x/trace.h"
 
 #define TYPE_PMB887X_SCU	"pmb887x-scu"

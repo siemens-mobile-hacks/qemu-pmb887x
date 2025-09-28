@@ -37,7 +37,7 @@ static ssize_t io_bridge_async_read_chunk(int sock, uint8_t *data, int64_t size)
 static ssize_t io_bridge_async_write_chunk(int sock, uint8_t *data, int64_t size);
 static void *io_bridge_irq_loop_thread(void *arg);
 
-static DeviceState *nvic = NULL;
+static DeviceState *vic = NULL;
 static int current_irq = 0;
 static QemuThread irq_thread_id;
 
@@ -73,7 +73,7 @@ static void *io_bridge_irq_loop_thread(void *arg) {
 			bql_lock();
 		
 		if (irq) {
-			qemu_set_irq(qdev_get_gpio_in(nvic, irq), 100000);
+			qemu_set_irq(qdev_get_gpio_in(vic, irq), 100000);
 			current_irq = irq;
 		}
 		
@@ -83,8 +83,8 @@ static void *io_bridge_irq_loop_thread(void *arg) {
 	return NULL;
 }
 
-void pmb8876_io_bridge_set_nvic(DeviceState *nvic_ref) {
-	nvic = nvic_ref;
+void pmb8876_io_bridge_set_vic(DeviceState *vic_ref) {
+	vic = vic_ref;
 }
 
 unsigned int pmb8876_io_bridge_read(unsigned int addr, unsigned int size) {

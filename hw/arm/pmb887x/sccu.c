@@ -16,7 +16,7 @@
 
 #include "hw/arm/pmb887x/sccu.h"
 #include "hw/arm/pmb887x/pll.h"
-#include "hw/arm/pmb887x/regs.h"
+#include "hw/arm/pmb887x/gen/cpu_regs.h"
 #include "hw/arm/pmb887x/mod.h"
 #include "hw/arm/pmb887x/trace.h"
 

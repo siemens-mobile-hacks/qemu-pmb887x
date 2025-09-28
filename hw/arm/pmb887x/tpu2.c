@@ -19,12 +19,12 @@
 #include "qapi/error.h"
 
 #include "hw/arm/pmb887x/pll.h"
-#include "hw/arm/pmb887x/regs.h"
+#include "hw/arm/pmb887x/gen/cpu_regs.h"
 #include "hw/arm/pmb887x/io_bridge.h"
 #include "hw/arm/pmb887x/regs_dump.h"
 #include "hw/arm/pmb887x/mod.h"
 #include "hw/arm/pmb887x/trace.h"
-#include "hw/arm/pmb887x/nvic.h"
+#include "hw/arm/pmb887x/vic.h"
 #include "hw/arm/pmb887x/dyn_timer.h"
 
 #define TYPE_PMB887X_TPU	"pmb887x-tpu"
@@ -64,7 +64,7 @@ struct pmb887x_tpu_t {
 	uint32_t last_fsys;
 
 	struct pmb887x_pll_t *pll;
-	pmb887x_nvic_t *nvic;
+	pmb887x_vic_t *vic;
 };
 
 /*
@@ -137,10 +137,10 @@ static void tpu_update_state(struct pmb887x_tpu_t *p) {
 	//	pmb887x_dyn_timer_run(p->timer);
 }
 
-static void tpu_nvic_callback(void *opaque, int action, int irq) {
+static void tpu_vic_callback(void *opaque, int action, int irq) {
 	// struct pmb887x_tpu_t *p = (struct pmb887x_tpu_t *) opaque;
 
-	DPRINTF("{{{{ NVIC }}}} - %d %d\n", action, irq);
+	DPRINTF("{{{{ VIC }}}} - %d %d\n", action, irq);
 }
 
 static void tpu_update_state_callback(void *opaque) {
@@ -436,8 +436,8 @@ static void tpu_realize(DeviceState *dev, Error **errp) {
 		if (!p->irq[i])
 			hw_error("pmb887x-tpu: irq %d (TPU_INT%d) not set", index++, i);
 		pmb887x_src_init(&p->src[i], p->irq[i]);
-		DPRINTF("pmb887x_nvic_get_irq_id(p->nvic, p->irq[i])=%d\n", pmb887x_nvic_get_irq_id(p->nvic, p->irq[i]));
-		pmb887x_nvic_set_callback(p->nvic, pmb887x_nvic_get_irq_id(p->nvic, p->irq[i]), tpu_nvic_callback, p);
+		DPRINTF("pmb887x_vic_get_irq_id(p->vic, p->irq[i])=%d\n", pmb887x_vic_get_irq_id(p->vic, p->irq[i]));
+		pmb887x_vic_set_callback(p->vic, pmb887x_vic_get_irq_id(p->vic, p->irq[i]), tpu_vic_callback, p);
 	}
 
 	for (int i = 0; i < ARRAY_SIZE(p->unk_src); i++) {
@@ -454,7 +454,7 @@ static void tpu_realize(DeviceState *dev, Error **errp) {
 
 static const Property tpu_properties[] = {
 	DEFINE_PROP_LINK("pll", struct pmb887x_tpu_t, pll, "pmb887x-pll", struct pmb887x_pll_t *),
-	DEFINE_PROP_LINK("nvic", struct pmb887x_tpu_t, nvic, "pmb887x-nvic", struct pmb887x_nvic_t *),
+	DEFINE_PROP_LINK("vic", struct pmb887x_tpu_t, vic, "pmb887x-vic", struct pmb887x_vic_t *),
 };
 
 static void tpu_class_init(ObjectClass *klass, void *data) {

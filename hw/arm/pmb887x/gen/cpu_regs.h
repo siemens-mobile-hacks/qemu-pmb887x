@@ -8,7 +8,7 @@
 #define PMB8875_USART1_BASE			0xF1800000
 #define PMB8875_DIF_BASE			0xF1B00000
 #define PMB8875_USB_BASE			0xF2200800
-#define PMB8875_NVIC_BASE			0xF2800000
+#define PMB8875_VIC_BASE			0xF2800000
 #define PMB8875_DMAC_BASE			0xF3000000
 #define PMB8875_CAPCOM0_BASE		0xF4000000
 #define PMB8875_CAPCOM1_BASE		0xF4100000
@@ -105,43 +105,6 @@
 #define PMB8875_GPIO_PIN74			74
 #define PMB8875_GPIO_PIN75			75
 #define PMB8875_GPIO_PIN76			76
-#define PMB8875_GPIO_PIN77			77
-#define PMB8875_GPIO_PIN78			78
-#define PMB8875_GPIO_PIN79			79
-#define PMB8875_GPIO_PIN80			80
-#define PMB8875_GPIO_PIN81			81
-#define PMB8875_GPIO_PIN82			82
-#define PMB8875_GPIO_PIN83			83
-#define PMB8875_GPIO_PIN84			84
-#define PMB8875_GPIO_PIN85			85
-#define PMB8875_GPIO_PIN86			86
-#define PMB8875_GPIO_PIN87			87
-#define PMB8875_GPIO_PIN88			88
-#define PMB8875_GPIO_PIN89			89
-#define PMB8875_GPIO_PIN90			90
-#define PMB8875_GPIO_PIN91			91
-#define PMB8875_GPIO_PIN92			92
-#define PMB8875_GPIO_PIN93			93
-#define PMB8875_GPIO_PIN94			94
-#define PMB8875_GPIO_PIN95			95
-#define PMB8875_GPIO_PIN96			96
-#define PMB8875_GPIO_PIN97			97
-#define PMB8875_GPIO_PIN98			98
-#define PMB8875_GPIO_PIN99			99
-#define PMB8875_GPIO_PIN100			100
-#define PMB8875_GPIO_PIN101			101
-#define PMB8875_GPIO_PIN102			102
-#define PMB8875_GPIO_PIN103			103
-#define PMB8875_GPIO_PIN104			104
-#define PMB8875_GPIO_PIN105			105
-#define PMB8875_GPIO_PIN106			106
-#define PMB8875_GPIO_PIN107			107
-#define PMB8875_GPIO_PIN108			108
-#define PMB8875_GPIO_PIN109			109
-#define PMB8875_GPIO_PIN110			110
-#define PMB8875_GPIO_PIN111			111
-#define PMB8875_GPIO_PIN112			112
-#define PMB8875_GPIO_PIN113			113
 
 #define PMB8875_GPIO_KP_IN0			PMB8875_GPIO_PIN0
 #define PMB8875_GPIO_KP_IN1			PMB8875_GPIO_PIN1
@@ -163,11 +126,16 @@
 #define PMB8875_GPIO_USART1_TXD		PMB8875_GPIO_PIN17
 #define PMB8875_GPIO_USART1_RTS		PMB8875_GPIO_PIN18
 #define PMB8875_GPIO_USART1_CTS		PMB8875_GPIO_PIN19
-#define PMB8875_GPIO_USB_DPLUS		PMB8875_GPIO_PIN20
-#define PMB8875_GPIO_USB_DMINUS		PMB8875_GPIO_PIN21
+#define PMB8875_GPIO_SSC2_SCLK		PMB8875_GPIO_PIN20
+#define PMB8875_GPIO_SSC2_MTSR		PMB8875_GPIO_PIN21
+#define PMB8875_GPIO_SSC2_MRST		PMB8875_GPIO_PIN22
+#define PMB8875_GPIO_DIF_CLK		PMB8875_GPIO_PIN23
+#define PMB8875_GPIO_DIF_DAT		PMB8875_GPIO_PIN24
+#define PMB8875_GPIO_DIF_RS			PMB8875_GPIO_PIN25
+#define PMB8875_GPIO_DIF_CS			PMB8875_GPIO_PIN26
+#define PMB8875_GPIO_DIF_RESET		PMB8875_GPIO_PIN27
 #define PMB8875_GPIO_I2C_SCL		PMB8875_GPIO_PIN28
 #define PMB8875_GPIO_I2C_SDA		PMB8875_GPIO_PIN29
-#define PMB8875_GPIO_DIF_HD			PMB8875_GPIO_PIN39
 #define PMB8875_GPIO_T_OUT0			PMB8875_GPIO_PIN43
 #define PMB8875_GPIO_T_OUT1			PMB8875_GPIO_PIN44
 #define PMB8875_GPIO_T_OUT2			PMB8875_GPIO_PIN45
@@ -194,25 +162,6 @@
 #define PMB8875_GPIO_TRACEPKT1		PMB8875_GPIO_PIN70
 #define PMB8875_GPIO_TRACEPKT2		PMB8875_GPIO_PIN71
 #define PMB8875_GPIO_TRACEPKT3		PMB8875_GPIO_PIN72
-#define PMB8875_GPIO_FCDP_RB		PMB8875_GPIO_PIN77
-#define PMB8875_GPIO_CIF_D0			PMB8875_GPIO_PIN78
-#define PMB8875_GPIO_CIF_D1			PMB8875_GPIO_PIN79
-#define PMB8875_GPIO_CIF_D2			PMB8875_GPIO_PIN80
-#define PMB8875_GPIO_CIF_D3			PMB8875_GPIO_PIN81
-#define PMB8875_GPIO_CIF_D4			PMB8875_GPIO_PIN82
-#define PMB8875_GPIO_CIF_D5			PMB8875_GPIO_PIN83
-#define PMB8875_GPIO_CIF_D6			PMB8875_GPIO_PIN84
-#define PMB8875_GPIO_CIF_D7			PMB8875_GPIO_PIN85
-#define PMB8875_GPIO_CIF_PCLK		PMB8875_GPIO_PIN86
-#define PMB8875_GPIO_CIF_HSYNC		PMB8875_GPIO_PIN87
-#define PMB8875_GPIO_CIF_VSYNC		PMB8875_GPIO_PIN88
-#define PMB8875_GPIO_CLKOUT2		PMB8875_GPIO_PIN89
-#define PMB8875_GPIO_MMCI_DAT1		PMB8875_GPIO_PIN99
-#define PMB8875_GPIO_MMCI_CMD		PMB8875_GPIO_PIN104
-#define PMB8875_GPIO_MMCI_DAT0		PMB8875_GPIO_PIN105
-#define PMB8875_GPIO_MMCI_CLK		PMB8875_GPIO_PIN106
-#define PMB8875_GPIO_I2S1_CLK1		PMB8875_GPIO_PIN112
-#define PMB8875_GPIO_CIF_PD			PMB8875_GPIO_PIN113
 
 #define PMB8875_USART0_TX_IRQ		4
 #define PMB8875_USART0_TBUF_IRQ		5
@@ -222,14 +171,14 @@
 #define PMB8875_USART0_ABDET_IRQ	9
 #define PMB8875_USART0_ABSTART_IRQ	10
 #define PMB8875_USART0_TMO_IRQ		11
-#define PMB8875_SSC_INT0_IRQ		12
-#define PMB8875_SSC_INT1_IRQ		13
-#define PMB8875_SSC_INT2_IRQ		14
-#define PMB8875_SSC_INT3_IRQ		15
-#define PMB8875_DIF_INT0_IRQ		18
-#define PMB8875_DIF_INT1_IRQ		19
-#define PMB8875_DIF_INT2_IRQ		20
-#define PMB8875_DIF_INT3_IRQ		21
+#define PMB8875_SSC_TX_IRQ			12
+#define PMB8875_SSC_RX_IRQ			13
+#define PMB8875_SSC_ERR_IRQ			14
+#define PMB8875_SSC_UNK_IRQ			15
+#define PMB8875_DIF_TX_IRQ			18
+#define PMB8875_DIF_RX_IRQ			19
+#define PMB8875_DIF_ERR_IRQ			20
+#define PMB8875_DIF_UNK_IRQ			21
 #define PMB8875_USB_IRQ				25
 #define PMB8875_USART1_TX_IRQ		26
 #define PMB8875_USART1_TBUF_IRQ		27
@@ -331,7 +280,7 @@
 #define PMB8876_SIM_BASE			0xF1300000
 #define PMB8876_USART1_BASE			0xF1800000
 #define PMB8876_USB_BASE			0xF2200800
-#define PMB8876_NVIC_BASE			0xF2800000
+#define PMB8876_VIC_BASE			0xF2800000
 #define PMB8876_DMAC_BASE			0xF3000000
 #define PMB8876_CAPCOM0_BASE		0xF4000000
 #define PMB8876_CAPCOM1_BASE		0xF4100000
@@ -728,7 +677,7 @@
 
 // ADC [MOD_NUM=F024, MOD_REV=10, MOD_32BIT=C0]
 // ADC [MOD_NUM=F024, MOD_REV=21, MOD_32BIT=C0]
-// ADC. Datasheet not found.
+// Measurement Interface
 #define ADC_IO_SIZE					0x00000200
 /* Clock Control Register */
 #define ADC_CLC						0x00
@@ -1953,10 +1902,10 @@
 // CIF [MOD_NUM=F052, MOD_REV=12, MOD_32BIT=C0]
 // Looks like DIF (Camera Interface) module, but not sure.
 #define CIF_IO_SIZE	0x00000200
-#define CIF_UNK0	0x00
-
 /* Clock Control Register */
 #define CIF_CLC		0x00
+
+#define CIF_UNK0	0x00
 
 /* Module Identifier Register */
 #define CIF_ID		0x08
@@ -2000,42 +1949,68 @@
 
 /* Control Register */
 #define DIFv1_CON					0x10
-#define DIFv1_CON_BC				(0xF << 0)		 // Bit Count Status
-#define DIFv1_CON_BC_SHIFT			0
-#define DIFv1_CON_BM				(0xF << 0)		 // Data Width Selection
-#define DIFv1_CON_BM_SHIFT			0
 #define DIFv1_CON_HB				(1 << 4)		 // Heading Bit Control
 #define DIFv1_CON_HB_SHIFT			4
-#define DIFv1_CON_PH				(1 << 5)		 // Clock Phase Control
+#define DIFv1_CON_HB_LSB			0x0
+#define DIFv1_CON_HB_MSB			0x10
+#define DIFv1_CON_PH				(1 << 5)		 // Clock Phase Control (CPHA)
 #define DIFv1_CON_PH_SHIFT			5
-#define DIFv1_CON_PO				(1 << 6)		 // Clock Polarity Control
+#define DIFv1_CON_PH_0				0x0
+#define DIFv1_CON_PH_1				0x20
+#define DIFv1_CON_PO				(1 << 6)		 // Clock Polarity Control (CPOL)
 #define DIFv1_CON_PO_SHIFT			6
+#define DIFv1_CON_PO_0				0x0
+#define DIFv1_CON_PO_1				0x40
 #define DIFv1_CON_LB				(1 << 7)		 // Loop-Back Control
 #define DIFv1_CON_LB_SHIFT			7
-#define DIFv1_CON_TEN				(1 << 8)		 // Transmit Error Enable
-#define DIFv1_CON_TEN_SHIFT			8
 #define DIFv1_CON_TE				(1 << 8)		 // Transmit Error Flag
 #define DIFv1_CON_TE_SHIFT			8
+#define DIFv1_CON_TEN				(1 << 8)		 // Transmit Error Enable
+#define DIFv1_CON_TEN_SHIFT			8
 #define DIFv1_CON_REN				(1 << 9)		 // Receive Error Enable
 #define DIFv1_CON_REN_SHIFT			9
 #define DIFv1_CON_RE				(1 << 9)		 // Receive Error Flag
 #define DIFv1_CON_RE_SHIFT			9
-#define DIFv1_CON_PE				(1 << 10)		 // Phase Error Flag
-#define DIFv1_CON_PE_SHIFT			10
 #define DIFv1_CON_PEN				(1 << 10)		 // Phase Error Enable
 #define DIFv1_CON_PEN_SHIFT			10
-#define DIFv1_CON_BE				(1 << 11)		 // Baud Rate Error Flag
-#define DIFv1_CON_BE_SHIFT			11
+#define DIFv1_CON_PE				(1 << 10)		 // Phase Error Flag
+#define DIFv1_CON_PE_SHIFT			10
 #define DIFv1_CON_BEN				(1 << 11)		 // Baud Rate Error Enable
 #define DIFv1_CON_BEN_SHIFT			11
-#define DIFv1_CON_AREN				(1 << 12)		 // Automatic Reset Enable
-#define DIFv1_CON_AREN_SHIFT		12
+#define DIFv1_CON_BE				(1 << 11)		 // Baud Rate Error Flag
+#define DIFv1_CON_BE_SHIFT			11
 #define DIFv1_CON_BSY				(1 << 12)		 // Busy Flag
 #define DIFv1_CON_BSY_SHIFT			12
+#define DIFv1_CON_AREN				(1 << 12)		 // Automatic Reset Enable
+#define DIFv1_CON_AREN_SHIFT		12
+#define DIFv1_CON_LOCK				(1 << 13)		 // Lock bit for the 8 MSB bits of the Transmist data register
+#define DIFv1_CON_LOCK_SHIFT		13
 #define DIFv1_CON_MS				(1 << 14)		 // Master Select
 #define DIFv1_CON_MS_SHIFT			14
+#define DIFv1_CON_MS_SLAVE			0x0
+#define DIFv1_CON_MS_MASTER			0x4000
 #define DIFv1_CON_EN				(1 << 15)		 // Enable Bit
 #define DIFv1_CON_EN_SHIFT			15
+#define DIFv1_CON_BC				(0xF << 16)		 // Bit Count Status
+#define DIFv1_CON_BC_SHIFT			16
+#define DIFv1_CON_BM				(0xF << 16)		 // Data Width Selection
+#define DIFv1_CON_BM_SHIFT			16
+#define DIFv1_CON_BM_1				0x0
+#define DIFv1_CON_BM_2				0x10000
+#define DIFv1_CON_BM_3				0x20000
+#define DIFv1_CON_BM_4				0x30000
+#define DIFv1_CON_BM_5				0x40000
+#define DIFv1_CON_BM_6				0x50000
+#define DIFv1_CON_BM_7				0x60000
+#define DIFv1_CON_BM_8				0x70000
+#define DIFv1_CON_BM_9				0x80000
+#define DIFv1_CON_BM_10				0x90000
+#define DIFv1_CON_BM_11				0xA0000
+#define DIFv1_CON_BM_12				0xB0000
+#define DIFv1_CON_BM_13				0xC0000
+#define DIFv1_CON_BM_14				0xD0000
+#define DIFv1_CON_BM_15				0xE0000
+#define DIFv1_CON_BM_16				0xF0000
 
 /* Baud Rate Timer Reload Register */
 #define DIFv1_BR					0x14
@@ -2086,56 +2061,62 @@
 #define DIFv1_IMSC					0x48
 #define DIFv1_IMSC_TX				(1 << 0)		 // Transmit interrupt mask
 #define DIFv1_IMSC_TX_SHIFT			0
-#define DIFv1_IMSC_TB				(1 << 1)		 // Transmit buffer interrupt mask
-#define DIFv1_IMSC_TB_SHIFT			1
-#define DIFv1_IMSC_RX				(1 << 2)		 // Receive interrupt mask
-#define DIFv1_IMSC_RX_SHIFT			2
+#define DIFv1_IMSC_RX				(1 << 1)		 // Receive interrupt mask
+#define DIFv1_IMSC_RX_SHIFT			1
 #define DIFv1_IMSC_ERR				(1 << 3)		 // Error interrupt mask
 #define DIFv1_IMSC_ERR_SHIFT		3
+#define DIFv1_IMSC_TB				(1 << 4)		 // Transmit buffer interrupt mask
+#define DIFv1_IMSC_TB_SHIFT			4
 
 #define DIFv1_RIS					0x4C
-#define DIFv1_RIS_TX				(1 << 0)		 // Transmit interrupt mask
+#define DIFv1_RIS_TX				(1 << 0)		 // Transmit interrupt raw status
 #define DIFv1_RIS_TX_SHIFT			0
-#define DIFv1_RIS_TB				(1 << 1)		 // Transmit buffer interrupt mask
-#define DIFv1_RIS_TB_SHIFT			1
-#define DIFv1_RIS_RX				(1 << 2)		 // Receive interrupt mask
-#define DIFv1_RIS_RX_SHIFT			2
+#define DIFv1_RIS_RX				(1 << 1)		 // Receive interrupt raw status
+#define DIFv1_RIS_RX_SHIFT			1
+#define DIFv1_RIS_ERR				(1 << 2)		 // Error interrupt raw status
+#define DIFv1_RIS_ERR_SHIFT			2
+#define DIFv1_RIS_TB				(1 << 3)		 // Transmit buffer raw interrupt status
+#define DIFv1_RIS_TB_SHIFT			3
 
 #define DIFv1_MIS					0x50
-#define DIFv1_MIS_TX				(1 << 0)		 // Transmit interrupt mask
+#define DIFv1_MIS_TX				(1 << 0)		 // Transmit interrupt status
 #define DIFv1_MIS_TX_SHIFT			0
-#define DIFv1_MIS_TB				(1 << 1)		 // Transmit buffer interrupt mask
-#define DIFv1_MIS_TB_SHIFT			1
-#define DIFv1_MIS_RX				(1 << 2)		 // Receive interrupt mask
-#define DIFv1_MIS_RX_SHIFT			2
-#define DIFv1_MIS_ERR				(1 << 3)		 // Error interrupt mask
-#define DIFv1_MIS_ERR_SHIFT			3
+#define DIFv1_MIS_RX				(1 << 1)		 // Receive interrupt status
+#define DIFv1_MIS_RX_SHIFT			1
+#define DIFv1_MIS_ERR				(1 << 2)		 // Error interrupt status
+#define DIFv1_MIS_ERR_SHIFT			2
+#define DIFv1_MIS_TB				(1 << 3)		 // Transmit buffer interrupt status
+#define DIFv1_MIS_TB_SHIFT			3
 
 #define DIFv1_ICR					0x54
 #define DIFv1_ICR_TX				(1 << 0)		 // Transmit interrupt mask
 #define DIFv1_ICR_TX_SHIFT			0
-#define DIFv1_ICR_TB				(1 << 1)		 // Transmit buffer interrupt mask
-#define DIFv1_ICR_TB_SHIFT			1
-#define DIFv1_ICR_RX				(1 << 2)		 // Receive interrupt mask
-#define DIFv1_ICR_RX_SHIFT			2
-#define DIFv1_ICR_ERR				(1 << 3)		 // Error interrupt mask
-#define DIFv1_ICR_ERR_SHIFT			3
+#define DIFv1_ICR_RX				(1 << 1)		 // Receive interrupt mask
+#define DIFv1_ICR_RX_SHIFT			1
+#define DIFv1_ICR_ERR				(1 << 2)		 // Error interrupt mask
+#define DIFv1_ICR_ERR_SHIFT			2
+#define DIFv1_ICR_TB				(1 << 3)		 // Transmit buffer interrupt mask
+#define DIFv1_ICR_TB_SHIFT			3
 
 #define DIFv1_ISR					0x58
-#define DIFv1_ISR_TX				(1 << 0)		 // Transmit interrupt mask
+#define DIFv1_ISR_TX				(1 << 0)		 // Transmit interrupt set
 #define DIFv1_ISR_TX_SHIFT			0
-#define DIFv1_ISR_TB				(1 << 1)		 // Transmit buffer interrupt mask
-#define DIFv1_ISR_TB_SHIFT			1
-#define DIFv1_ISR_RX				(1 << 2)		 // Receive interrupt mask
-#define DIFv1_ISR_RX_SHIFT			2
-#define DIFv1_ISR_ERR				(1 << 3)		 // Error interrupt mask
-#define DIFv1_ISR_ERR_SHIFT			3
+#define DIFv1_ISR_RX				(1 << 1)		 // Receive interrupt set
+#define DIFv1_ISR_RX_SHIFT			1
+#define DIFv1_ISR_ERR				(1 << 2)		 // Error interrupt set
+#define DIFv1_ISR_ERR_SHIFT			2
+#define DIFv1_ISR_TB				(1 << 3)		 // Transmit buffer interrupt set
+#define DIFv1_ISR_TB_SHIFT			3
 
 #define DIFv1_DMACON				0x5C
-#define DIFv1_DMACON_CH				(0x7 << 0)		 // DMA channel
-#define DIFv1_DMACON_CH_SHIFT		0
+#define DIFv1_DMACON_TX				(1 << 0)		 // Transmit DMA Enable. If this bit is set to 1, DMA for the transmit FIFO is enabled
+#define DIFv1_DMACON_TX_SHIFT		0
+#define DIFv1_DMACON_RX				(1 << 1)		 // Receive DMA Enable. If this bit is set to 1, DMA for the receive FIFO is enabled.
+#define DIFv1_DMACON_RX_SHIFT		1
 
 #define DIFv1_UNK2					0x60
+
+#define DIFv1_UNK3					0x70
 
 #define DIFv1_PROG0					0x74
 #define DIFv1_PROG1					0x78
@@ -2143,6 +2124,16 @@
 #define DIFv1_PROG3					0x80
 #define DIFv1_PROG4					0x84
 #define DIFv1_PROG5					0x88
+
+#define DIFv1_UNK4					0x8C
+
+#define DIFv1_UNK5					0x90
+
+#define DIFv1_UNK6					0x94
+
+#define DIFv1_UNK7					0x98
+
+#define DIFv1_UNK8					0x9C
 
 
 // DIFv2 [MOD_NUM=F043, MOD_REV=12, MOD_32BIT=C0]
@@ -2620,7 +2611,7 @@
 
 // GPIO [MOD_NUM=F023, MOD_REV=00, MOD_32BIT=C0]
 // GPIO [MOD_NUM=F023, MOD_REV=32, MOD_32BIT=C0]
-// GPIO module, registers found on some "siemens club" forum, dont known source.
+// PCL (Port Control Logic), registers from drivers/pinctrl/pinctrl-thunderbay.c
 #define GPIO_IO_SIZE		0x000001E8
 /* Clock Control Register */
 #define GPIO_CLC			0x00
@@ -5734,10 +5725,10 @@
 #define I2Cv1_SYSCON_IRQP_SHIFT			6
 #define I2Cv1_SYSCON_IRQE				(1 << 7)		 // IIC Interrupt Request Bit for Data Transmission End
 #define I2Cv1_SYSCON_IRQE_SHIFT			7
-#define I2Cv1_SYSCON_CO					(0x7 << 8)		 // Counter of Transmitted Bytes Since Last Data Interrupt.
-#define I2Cv1_SYSCON_CO_SHIFT			8
 #define I2Cv1_SYSCON_WM					(0xFF << 8)		 // Write Mirror (WMEN=1)
 #define I2Cv1_SYSCON_WM_SHIFT			8
+#define I2Cv1_SYSCON_CO					(0x7 << 8)		 // Counter of Transmitted Bytes Since Last Data Interrupt.
+#define I2Cv1_SYSCON_CO_SHIFT			8
 #define I2Cv1_SYSCON_RMEN				(1 << 15)		 // Read Mirror Enable
 #define I2Cv1_SYSCON_RMEN_SHIFT			15
 #define I2Cv1_SYSCON_M10				(1 << 16)		 // 10-bit address mode
@@ -5758,10 +5749,10 @@
 #define I2Cv1_SYSCON_INT_SHIFT			22
 #define I2Cv1_SYSCON_TRX				(1 << 23)		 // Transmit Select
 #define I2Cv1_SYSCON_TRX_SHIFT			23
-#define I2Cv1_SYSCON_IGE				(1 << 24)		 // Ignore IRQE
-#define I2Cv1_SYSCON_IGE_SHIFT			24
 #define I2Cv1_SYSCON_RM					(0xFF << 24)	 // Read Mirror (RMEN=1)
 #define I2Cv1_SYSCON_RM_SHIFT			24
+#define I2Cv1_SYSCON_IGE				(1 << 24)		 // Ignore IRQE
+#define I2Cv1_SYSCON_IGE_SHIFT			24
 #define I2Cv1_SYSCON_STP				(1 << 25)		 // Stop Master
 #define I2Cv1_SYSCON_STP_SHIFT			25
 #define I2Cv1_SYSCON_CI					(0x3 << 26)		 // Length of the Receive/Transmit Buffer
@@ -6226,213 +6217,6 @@
 #define MMCIF_ID		0x08
 
 
-// NVIC [MOD_NUM=0031, MOD_REV=01, MOD_32BIT=C0]
-// NVIC [MOD_NUM=0031, MOD_REV=11, MOD_32BIT=C0]
-// NVIC module, registers collected using tests on real hardware (using "black box" method).
-#define NVIC_IO_SIZE				0x000002D8
-/* Module Identifier Register */
-#define NVIC_ID						0x00
-
-#define NVIC_FIQ_STAT				0x08
-#define NVIC_FIQ_STAT_NUM			(0xFF << 0)	 // Current fiq num
-#define NVIC_FIQ_STAT_NUM_SHIFT		0
-#define NVIC_FIQ_STAT_UNREAD		(1 << 16)
-#define NVIC_FIQ_STAT_UNREAD_SHIFT	16
-#define NVIC_FIQ_STAT_NOT_ACK		(1 << 24)
-#define NVIC_FIQ_STAT_NOT_ACK_SHIFT	24
-
-#define NVIC_IRQ_STAT				0x0C
-#define NVIC_IRQ_STAT_NUM			(0xFF << 0)	 // Current irq num
-#define NVIC_IRQ_STAT_NUM_SHIFT		0
-#define NVIC_IRQ_STAT_UNREAD		(1 << 16)
-#define NVIC_IRQ_STAT_UNREAD_SHIFT	16
-#define NVIC_IRQ_STAT_NOT_ACK		(1 << 24)
-#define NVIC_IRQ_STAT_NOT_ACK_SHIFT	24
-
-#define NVIC_FIQ_ACK				0x10
-
-#define NVIC_IRQ_ACK				0x14
-
-#define NVIC_CURRENT_FIQ			0x18
-
-#define NVIC_CURRENT_IRQ			0x1C
-
-#define NVIC_CON0					0x30
-#define NVIC_CON1					0x34
-#define NVIC_CON2					0x38
-#define NVIC_CON3					0x3C
-#define NVIC_CON4					0x40
-#define NVIC_CON5					0x44
-#define NVIC_CON6					0x48
-#define NVIC_CON7					0x4C
-#define NVIC_CON8					0x50
-#define NVIC_CON9					0x54
-#define NVIC_CON10					0x58
-#define NVIC_CON11					0x5C
-#define NVIC_CON12					0x60
-#define NVIC_CON13					0x64
-#define NVIC_CON14					0x68
-#define NVIC_CON15					0x6C
-#define NVIC_CON16					0x70
-#define NVIC_CON17					0x74
-#define NVIC_CON18					0x78
-#define NVIC_CON19					0x7C
-#define NVIC_CON20					0x80
-#define NVIC_CON21					0x84
-#define NVIC_CON22					0x88
-#define NVIC_CON23					0x8C
-#define NVIC_CON24					0x90
-#define NVIC_CON25					0x94
-#define NVIC_CON26					0x98
-#define NVIC_CON27					0x9C
-#define NVIC_CON28					0xA0
-#define NVIC_CON29					0xA4
-#define NVIC_CON30					0xA8
-#define NVIC_CON31					0xAC
-#define NVIC_CON32					0xB0
-#define NVIC_CON33					0xB4
-#define NVIC_CON34					0xB8
-#define NVIC_CON35					0xBC
-#define NVIC_CON36					0xC0
-#define NVIC_CON37					0xC4
-#define NVIC_CON38					0xC8
-#define NVIC_CON39					0xCC
-#define NVIC_CON40					0xD0
-#define NVIC_CON41					0xD4
-#define NVIC_CON42					0xD8
-#define NVIC_CON43					0xDC
-#define NVIC_CON44					0xE0
-#define NVIC_CON45					0xE4
-#define NVIC_CON46					0xE8
-#define NVIC_CON47					0xEC
-#define NVIC_CON48					0xF0
-#define NVIC_CON49					0xF4
-#define NVIC_CON50					0xF8
-#define NVIC_CON51					0xFC
-#define NVIC_CON52					0x100
-#define NVIC_CON53					0x104
-#define NVIC_CON54					0x108
-#define NVIC_CON55					0x10C
-#define NVIC_CON56					0x110
-#define NVIC_CON57					0x114
-#define NVIC_CON58					0x118
-#define NVIC_CON59					0x11C
-#define NVIC_CON60					0x120
-#define NVIC_CON61					0x124
-#define NVIC_CON62					0x128
-#define NVIC_CON63					0x12C
-#define NVIC_CON64					0x130
-#define NVIC_CON65					0x134
-#define NVIC_CON66					0x138
-#define NVIC_CON67					0x13C
-#define NVIC_CON68					0x140
-#define NVIC_CON69					0x144
-#define NVIC_CON70					0x148
-#define NVIC_CON71					0x14C
-#define NVIC_CON72					0x150
-#define NVIC_CON73					0x154
-#define NVIC_CON74					0x158
-#define NVIC_CON75					0x15C
-#define NVIC_CON76					0x160
-#define NVIC_CON77					0x164
-#define NVIC_CON78					0x168
-#define NVIC_CON79					0x16C
-#define NVIC_CON80					0x170
-#define NVIC_CON81					0x174
-#define NVIC_CON82					0x178
-#define NVIC_CON83					0x17C
-#define NVIC_CON84					0x180
-#define NVIC_CON85					0x184
-#define NVIC_CON86					0x188
-#define NVIC_CON87					0x18C
-#define NVIC_CON88					0x190
-#define NVIC_CON89					0x194
-#define NVIC_CON90					0x198
-#define NVIC_CON91					0x19C
-#define NVIC_CON92					0x1A0
-#define NVIC_CON93					0x1A4
-#define NVIC_CON94					0x1A8
-#define NVIC_CON95					0x1AC
-#define NVIC_CON96					0x1B0
-#define NVIC_CON97					0x1B4
-#define NVIC_CON98					0x1B8
-#define NVIC_CON99					0x1BC
-#define NVIC_CON100					0x1C0
-#define NVIC_CON101					0x1C4
-#define NVIC_CON102					0x1C8
-#define NVIC_CON103					0x1CC
-#define NVIC_CON104					0x1D0
-#define NVIC_CON105					0x1D4
-#define NVIC_CON106					0x1D8
-#define NVIC_CON107					0x1DC
-#define NVIC_CON108					0x1E0
-#define NVIC_CON109					0x1E4
-#define NVIC_CON110					0x1E8
-#define NVIC_CON111					0x1EC
-#define NVIC_CON112					0x1F0
-#define NVIC_CON113					0x1F4
-#define NVIC_CON114					0x1F8
-#define NVIC_CON115					0x1FC
-#define NVIC_CON116					0x200
-#define NVIC_CON117					0x204
-#define NVIC_CON118					0x208
-#define NVIC_CON119					0x20C
-#define NVIC_CON120					0x210
-#define NVIC_CON121					0x214
-#define NVIC_CON122					0x218
-#define NVIC_CON123					0x21C
-#define NVIC_CON124					0x220
-#define NVIC_CON125					0x224
-#define NVIC_CON126					0x228
-#define NVIC_CON127					0x22C
-#define NVIC_CON128					0x230
-#define NVIC_CON129					0x234
-#define NVIC_CON130					0x238
-#define NVIC_CON131					0x23C
-#define NVIC_CON132					0x240
-#define NVIC_CON133					0x244
-#define NVIC_CON134					0x248
-#define NVIC_CON135					0x24C
-#define NVIC_CON136					0x250
-#define NVIC_CON137					0x254
-#define NVIC_CON138					0x258
-#define NVIC_CON139					0x25C
-#define NVIC_CON140					0x260
-#define NVIC_CON141					0x264
-#define NVIC_CON142					0x268
-#define NVIC_CON143					0x26C
-#define NVIC_CON144					0x270
-#define NVIC_CON145					0x274
-#define NVIC_CON146					0x278
-#define NVIC_CON147					0x27C
-#define NVIC_CON148					0x280
-#define NVIC_CON149					0x284
-#define NVIC_CON150					0x288
-#define NVIC_CON151					0x28C
-#define NVIC_CON152					0x290
-#define NVIC_CON153					0x294
-#define NVIC_CON154					0x298
-#define NVIC_CON155					0x29C
-#define NVIC_CON156					0x2A0
-#define NVIC_CON157					0x2A4
-#define NVIC_CON158					0x2A8
-#define NVIC_CON159					0x2AC
-#define NVIC_CON160					0x2B0
-#define NVIC_CON161					0x2B4
-#define NVIC_CON162					0x2B8
-#define NVIC_CON163					0x2BC
-#define NVIC_CON164					0x2C0
-#define NVIC_CON165					0x2C4
-#define NVIC_CON166					0x2C8
-#define NVIC_CON167					0x2CC
-#define NVIC_CON168					0x2D0
-#define NVIC_CON169					0x2D4
-#define NVIC_CON_PRIORITY			(0xFF << 0)
-#define NVIC_CON_PRIORITY_SHIFT		0
-#define NVIC_CON_FIQ				(1 << 8)
-#define NVIC_CON_FIQ_SHIFT			8
-
-
 // PLL
 // Looks like a CGU module, registers collected using tests on real hardware (using "black box" method).
 #define PLL_IO_SIZE						0x00000200
@@ -6488,6 +6272,8 @@
 #define PLL_CON2_CPU_DIV_SHIFT			8
 #define PLL_CON2_CPU_DIV_EN				(1 << 12)
 #define PLL_CON2_CPU_DIV_EN_SHIFT		12
+#define PLL_CON2_CLK32_EN				(1 << 24)
+#define PLL_CON2_CLK32_EN_SHIFT			24
 
 #define PLL_STAT						0xB0
 #define PLL_STAT_LOCK					(1 << 13)
@@ -6747,38 +6533,54 @@
 #define SCU_DSP_UNK0					0x30
 
 #define SCU_EXTI						0x3C
-#define SCU_EXTI_EXT0_FALLING			(1 << 0)
-#define SCU_EXTI_EXT0_FALLING_SHIFT		0
-#define SCU_EXTI_EXT0_RISING			(1 << 1)
-#define SCU_EXTI_EXT0_RISING_SHIFT		1
-#define SCU_EXTI_EXT1_FALLING			(1 << 2)
-#define SCU_EXTI_EXT1_FALLING_SHIFT		2
-#define SCU_EXTI_EXT1_RISING			(1 << 3)
-#define SCU_EXTI_EXT1_RISING_SHIFT		3
-#define SCU_EXTI_EXT2_FALLING			(1 << 4)
-#define SCU_EXTI_EXT2_FALLING_SHIFT		4
-#define SCU_EXTI_EXT2_RISING			(1 << 5)
-#define SCU_EXTI_EXT2_RISING_SHIFT		5
-#define SCU_EXTI_EXT3_FALLING			(1 << 6)
-#define SCU_EXTI_EXT3_FALLING_SHIFT		6
-#define SCU_EXTI_EXT3_RISING			(1 << 7)
-#define SCU_EXTI_EXT3_RISING_SHIFT		7
-#define SCU_EXTI_EXT4_FALLING			(1 << 8)
-#define SCU_EXTI_EXT4_FALLING_SHIFT		8
-#define SCU_EXTI_EXT4_RISING			(1 << 9)
-#define SCU_EXTI_EXT4_RISING_SHIFT		9
-#define SCU_EXTI_EXT5_FALLING			(1 << 10)
-#define SCU_EXTI_EXT5_FALLING_SHIFT		10
-#define SCU_EXTI_EXT5_RISING			(1 << 11)
-#define SCU_EXTI_EXT5_RISING_SHIFT		11
-#define SCU_EXTI_EXT6_FALLING			(1 << 12)
-#define SCU_EXTI_EXT6_FALLING_SHIFT		12
-#define SCU_EXTI_EXT6_RISING			(1 << 13)
-#define SCU_EXTI_EXT6_RISING_SHIFT		13
-#define SCU_EXTI_EXT7_FALLING			(1 << 14)
-#define SCU_EXTI_EXT7_FALLING_SHIFT		14
-#define SCU_EXTI_EXT7_RISING			(1 << 15)
-#define SCU_EXTI_EXT7_RISING_SHIFT		15
+#define SCU_EXTI_EXT0					(0x3 << 0)
+#define SCU_EXTI_EXT0_SHIFT				0
+#define SCU_EXTI_EXT0_OFF				0x0
+#define SCU_EXTI_EXT0_RISING			0x1
+#define SCU_EXTI_EXT0_FALLING			0x2
+#define SCU_EXTI_EXT0_ANY				0x3
+#define SCU_EXTI_EXT1					(0x3 << 2)
+#define SCU_EXTI_EXT1_SHIFT				2
+#define SCU_EXTI_EXT1_OFF				0x0
+#define SCU_EXTI_EXT1_RISING			0x4
+#define SCU_EXTI_EXT1_FALLING			0x8
+#define SCU_EXTI_EXT1_ANY				0xC
+#define SCU_EXTI_EXT2					(0x3 << 4)
+#define SCU_EXTI_EXT2_SHIFT				4
+#define SCU_EXTI_EXT2_OFF				0x0
+#define SCU_EXTI_EXT2_RISING			0x10
+#define SCU_EXTI_EXT2_FALLING			0x20
+#define SCU_EXTI_EXT2_ANY				0x30
+#define SCU_EXTI_EXT3					(0x3 << 6)
+#define SCU_EXTI_EXT3_SHIFT				6
+#define SCU_EXTI_EXT3_OFF				0x0
+#define SCU_EXTI_EXT3_RISING			0x40
+#define SCU_EXTI_EXT3_FALLING			0x80
+#define SCU_EXTI_EXT3_ANY				0xC0
+#define SCU_EXTI_EXT4					(0x3 << 8)
+#define SCU_EXTI_EXT4_SHIFT				8
+#define SCU_EXTI_EXT4_OFF				0x0
+#define SCU_EXTI_EXT4_RISING			0x100
+#define SCU_EXTI_EXT4_FALLING			0x200
+#define SCU_EXTI_EXT4_ANY				0x300
+#define SCU_EXTI_EXT5					(0x3 << 10)
+#define SCU_EXTI_EXT5_SHIFT				10
+#define SCU_EXTI_EXT5_OFF				0x0
+#define SCU_EXTI_EXT5_RISING			0x400
+#define SCU_EXTI_EXT5_FALLING			0x800
+#define SCU_EXTI_EXT5_ANY				0xC00
+#define SCU_EXTI_EXT6					(0x3 << 12)
+#define SCU_EXTI_EXT6_SHIFT				12
+#define SCU_EXTI_EXT6_OFF				0x0
+#define SCU_EXTI_EXT6_RISING			0x1000
+#define SCU_EXTI_EXT6_FALLING			0x2000
+#define SCU_EXTI_EXT6_ANY				0x3000
+#define SCU_EXTI_EXT7					(0x3 << 14)
+#define SCU_EXTI_EXT7_SHIFT				14
+#define SCU_EXTI_EXT7_OFF				0x0
+#define SCU_EXTI_EXT7_RISING			0x4000
+#define SCU_EXTI_EXT7_FALLING			0x8000
+#define SCU_EXTI_EXT7_ANY				0xC000
 
 #define SCU_EBUCLC1						0x40
 #define SCU_EBUCLC1_FLAG1				(0xF << 0)
@@ -6928,26 +6730,28 @@
 
 /* Control Register */
 #define SSC_CON					0x10
-#define SSC_CON_BC				(0xF << 0)		 // Bit Count Status
-#define SSC_CON_BC_SHIFT		0
-#define SSC_CON_BM				(0xF << 0)		 // Data Width Selection
-#define SSC_CON_BM_SHIFT		0
 #define SSC_CON_HB				(1 << 4)		 // Heading Bit Control
 #define SSC_CON_HB_SHIFT		4
-#define SSC_CON_PH				(1 << 5)		 // Clock Phase Control
+#define SSC_CON_HB_LSB			0x0
+#define SSC_CON_HB_MSB			0x10
+#define SSC_CON_PH				(1 << 5)		 // Clock Phase Control (CPHA)
 #define SSC_CON_PH_SHIFT		5
-#define SSC_CON_PO				(1 << 6)		 // Clock Polarity Control
+#define SSC_CON_PH_0			0x0
+#define SSC_CON_PH_1			0x20
+#define SSC_CON_PO				(1 << 6)		 // Clock Polarity Control (CPOL)
 #define SSC_CON_PO_SHIFT		6
+#define SSC_CON_PO_0			0x0
+#define SSC_CON_PO_1			0x40
 #define SSC_CON_LB				(1 << 7)		 // Loop-Back Control
 #define SSC_CON_LB_SHIFT		7
 #define SSC_CON_TEN				(1 << 8)		 // Transmit Error Enable
 #define SSC_CON_TEN_SHIFT		8
 #define SSC_CON_TE				(1 << 8)		 // Transmit Error Flag
 #define SSC_CON_TE_SHIFT		8
-#define SSC_CON_REN				(1 << 9)		 // Receive Error Enable
-#define SSC_CON_REN_SHIFT		9
 #define SSC_CON_RE				(1 << 9)		 // Receive Error Flag
 #define SSC_CON_RE_SHIFT		9
+#define SSC_CON_REN				(1 << 9)		 // Receive Error Enable
+#define SSC_CON_REN_SHIFT		9
 #define SSC_CON_PE				(1 << 10)		 // Phase Error Flag
 #define SSC_CON_PE_SHIFT		10
 #define SSC_CON_PEN				(1 << 10)		 // Phase Error Enable
@@ -6960,10 +6764,34 @@
 #define SSC_CON_AREN_SHIFT		12
 #define SSC_CON_BSY				(1 << 12)		 // Busy Flag
 #define SSC_CON_BSY_SHIFT		12
+#define SSC_CON_LOCK			(1 << 13)		 // Lock bit for the 8 MSB bits of the Transmist data register
+#define SSC_CON_LOCK_SHIFT		13
 #define SSC_CON_MS				(1 << 14)		 // Master Select
 #define SSC_CON_MS_SHIFT		14
+#define SSC_CON_MS_SLAVE		0x0
+#define SSC_CON_MS_MASTER		0x4000
 #define SSC_CON_EN				(1 << 15)		 // Enable Bit
 #define SSC_CON_EN_SHIFT		15
+#define SSC_CON_BM				(0xF << 16)		 // Data Width Selection
+#define SSC_CON_BM_SHIFT		16
+#define SSC_CON_BM_1			0x0
+#define SSC_CON_BM_2			0x10000
+#define SSC_CON_BM_3			0x20000
+#define SSC_CON_BM_4			0x30000
+#define SSC_CON_BM_5			0x40000
+#define SSC_CON_BM_6			0x50000
+#define SSC_CON_BM_7			0x60000
+#define SSC_CON_BM_8			0x70000
+#define SSC_CON_BM_9			0x80000
+#define SSC_CON_BM_10			0x90000
+#define SSC_CON_BM_11			0xA0000
+#define SSC_CON_BM_12			0xB0000
+#define SSC_CON_BM_13			0xC0000
+#define SSC_CON_BM_14			0xD0000
+#define SSC_CON_BM_15			0xE0000
+#define SSC_CON_BM_16			0xF0000
+#define SSC_CON_BC				(0xF << 16)		 // Bit Count Status
+#define SSC_CON_BC_SHIFT		16
 
 /* Baud Rate Timer Reload Register */
 #define SSC_BR					0x14
@@ -7014,54 +6842,58 @@
 #define SSC_IMSC				0x48
 #define SSC_IMSC_TX				(1 << 0)		 // Transmit interrupt mask
 #define SSC_IMSC_TX_SHIFT		0
-#define SSC_IMSC_TB				(1 << 1)		 // Transmit buffer interrupt mask
-#define SSC_IMSC_TB_SHIFT		1
-#define SSC_IMSC_RX				(1 << 2)		 // Receive interrupt mask
-#define SSC_IMSC_RX_SHIFT		2
+#define SSC_IMSC_RX				(1 << 1)		 // Receive interrupt mask
+#define SSC_IMSC_RX_SHIFT		1
 #define SSC_IMSC_ERR			(1 << 3)		 // Error interrupt mask
 #define SSC_IMSC_ERR_SHIFT		3
+#define SSC_IMSC_TB				(1 << 4)		 // Transmit buffer interrupt mask
+#define SSC_IMSC_TB_SHIFT		4
 
 #define SSC_RIS					0x4C
-#define SSC_RIS_TX				(1 << 0)		 // Transmit interrupt mask
+#define SSC_RIS_TX				(1 << 0)		 // Transmit interrupt raw status
 #define SSC_RIS_TX_SHIFT		0
-#define SSC_RIS_TB				(1 << 1)		 // Transmit buffer interrupt mask
-#define SSC_RIS_TB_SHIFT		1
-#define SSC_RIS_RX				(1 << 2)		 // Receive interrupt mask
-#define SSC_RIS_RX_SHIFT		2
+#define SSC_RIS_RX				(1 << 1)		 // Receive interrupt raw status
+#define SSC_RIS_RX_SHIFT		1
+#define SSC_RIS_ERR				(1 << 2)		 // Error interrupt raw status
+#define SSC_RIS_ERR_SHIFT		2
+#define SSC_RIS_TB				(1 << 3)		 // Transmit buffer raw interrupt status
+#define SSC_RIS_TB_SHIFT		3
 
 #define SSC_MIS					0x50
-#define SSC_MIS_TX				(1 << 0)		 // Transmit interrupt mask
+#define SSC_MIS_TX				(1 << 0)		 // Transmit interrupt status
 #define SSC_MIS_TX_SHIFT		0
-#define SSC_MIS_TB				(1 << 1)		 // Transmit buffer interrupt mask
-#define SSC_MIS_TB_SHIFT		1
-#define SSC_MIS_RX				(1 << 2)		 // Receive interrupt mask
-#define SSC_MIS_RX_SHIFT		2
-#define SSC_MIS_ERR				(1 << 3)		 // Error interrupt mask
-#define SSC_MIS_ERR_SHIFT		3
+#define SSC_MIS_RX				(1 << 1)		 // Receive interrupt status
+#define SSC_MIS_RX_SHIFT		1
+#define SSC_MIS_ERR				(1 << 2)		 // Error interrupt status
+#define SSC_MIS_ERR_SHIFT		2
+#define SSC_MIS_TB				(1 << 3)		 // Transmit buffer interrupt status
+#define SSC_MIS_TB_SHIFT		3
 
 #define SSC_ICR					0x54
 #define SSC_ICR_TX				(1 << 0)		 // Transmit interrupt mask
 #define SSC_ICR_TX_SHIFT		0
-#define SSC_ICR_TB				(1 << 1)		 // Transmit buffer interrupt mask
-#define SSC_ICR_TB_SHIFT		1
-#define SSC_ICR_RX				(1 << 2)		 // Receive interrupt mask
-#define SSC_ICR_RX_SHIFT		2
-#define SSC_ICR_ERR				(1 << 3)		 // Error interrupt mask
-#define SSC_ICR_ERR_SHIFT		3
+#define SSC_ICR_RX				(1 << 1)		 // Receive interrupt mask
+#define SSC_ICR_RX_SHIFT		1
+#define SSC_ICR_ERR				(1 << 2)		 // Error interrupt mask
+#define SSC_ICR_ERR_SHIFT		2
+#define SSC_ICR_TB				(1 << 3)		 // Transmit buffer interrupt mask
+#define SSC_ICR_TB_SHIFT		3
 
 #define SSC_ISR					0x58
-#define SSC_ISR_TX				(1 << 0)		 // Transmit interrupt mask
+#define SSC_ISR_TX				(1 << 0)		 // Transmit interrupt set
 #define SSC_ISR_TX_SHIFT		0
-#define SSC_ISR_TB				(1 << 1)		 // Transmit buffer interrupt mask
-#define SSC_ISR_TB_SHIFT		1
-#define SSC_ISR_RX				(1 << 2)		 // Receive interrupt mask
-#define SSC_ISR_RX_SHIFT		2
-#define SSC_ISR_ERR				(1 << 3)		 // Error interrupt mask
-#define SSC_ISR_ERR_SHIFT		3
+#define SSC_ISR_RX				(1 << 1)		 // Receive interrupt set
+#define SSC_ISR_RX_SHIFT		1
+#define SSC_ISR_ERR				(1 << 2)		 // Error interrupt set
+#define SSC_ISR_ERR_SHIFT		2
+#define SSC_ISR_TB				(1 << 3)		 // Transmit buffer interrupt set
+#define SSC_ISR_TB_SHIFT		3
 
 #define SSC_DMACON				0x5C
-#define SSC_DMACON_CH			(0x7 << 0)		 // DMA channel
-#define SSC_DMACON_CH_SHIFT		0
+#define SSC_DMACON_TX			(1 << 0)		 // Transmit DMA Enable. If this bit is set to 1, DMA for the transmit FIFO is enabled
+#define SSC_DMACON_TX_SHIFT		0
+#define SSC_DMACON_RX			(1 << 1)		 // Receive DMA Enable. If this bit is set to 1, DMA for the receive FIFO is enabled.
+#define SSC_DMACON_RX_SHIFT		1
 
 #define SSC_UNK2				0x60
 
@@ -7358,6 +7190,213 @@
 
 /* Module Identifier Register */
 #define USB_ID		0x08
+
+
+// VIC [MOD_NUM=0031, MOD_REV=01, MOD_32BIT=C0]
+// VIC [MOD_NUM=0031, MOD_REV=11, MOD_32BIT=C0]
+// Vectored Interrupt Controller, registers collected using tests on real hardware (using "black box" method).
+#define VIC_IO_SIZE					0x000002D8
+/* Module Identifier Register */
+#define VIC_ID						0x00
+
+#define VIC_FIQ_STAT				0x08
+#define VIC_FIQ_STAT_NUM			(0xFF << 0)	 // Current fiq num
+#define VIC_FIQ_STAT_NUM_SHIFT		0
+#define VIC_FIQ_STAT_UNREAD			(1 << 16)
+#define VIC_FIQ_STAT_UNREAD_SHIFT	16
+#define VIC_FIQ_STAT_NOT_ACK		(1 << 24)
+#define VIC_FIQ_STAT_NOT_ACK_SHIFT	24
+
+#define VIC_IRQ_STAT				0x0C
+#define VIC_IRQ_STAT_NUM			(0xFF << 0)	 // Current irq num
+#define VIC_IRQ_STAT_NUM_SHIFT		0
+#define VIC_IRQ_STAT_UNREAD			(1 << 16)
+#define VIC_IRQ_STAT_UNREAD_SHIFT	16
+#define VIC_IRQ_STAT_NOT_ACK		(1 << 24)
+#define VIC_IRQ_STAT_NOT_ACK_SHIFT	24
+
+#define VIC_FIQ_ACK					0x10
+
+#define VIC_IRQ_ACK					0x14
+
+#define VIC_CURRENT_FIQ				0x18
+
+#define VIC_CURRENT_IRQ				0x1C
+
+#define VIC_CON0					0x30
+#define VIC_CON1					0x34
+#define VIC_CON2					0x38
+#define VIC_CON3					0x3C
+#define VIC_CON4					0x40
+#define VIC_CON5					0x44
+#define VIC_CON6					0x48
+#define VIC_CON7					0x4C
+#define VIC_CON8					0x50
+#define VIC_CON9					0x54
+#define VIC_CON10					0x58
+#define VIC_CON11					0x5C
+#define VIC_CON12					0x60
+#define VIC_CON13					0x64
+#define VIC_CON14					0x68
+#define VIC_CON15					0x6C
+#define VIC_CON16					0x70
+#define VIC_CON17					0x74
+#define VIC_CON18					0x78
+#define VIC_CON19					0x7C
+#define VIC_CON20					0x80
+#define VIC_CON21					0x84
+#define VIC_CON22					0x88
+#define VIC_CON23					0x8C
+#define VIC_CON24					0x90
+#define VIC_CON25					0x94
+#define VIC_CON26					0x98
+#define VIC_CON27					0x9C
+#define VIC_CON28					0xA0
+#define VIC_CON29					0xA4
+#define VIC_CON30					0xA8
+#define VIC_CON31					0xAC
+#define VIC_CON32					0xB0
+#define VIC_CON33					0xB4
+#define VIC_CON34					0xB8
+#define VIC_CON35					0xBC
+#define VIC_CON36					0xC0
+#define VIC_CON37					0xC4
+#define VIC_CON38					0xC8
+#define VIC_CON39					0xCC
+#define VIC_CON40					0xD0
+#define VIC_CON41					0xD4
+#define VIC_CON42					0xD8
+#define VIC_CON43					0xDC
+#define VIC_CON44					0xE0
+#define VIC_CON45					0xE4
+#define VIC_CON46					0xE8
+#define VIC_CON47					0xEC
+#define VIC_CON48					0xF0
+#define VIC_CON49					0xF4
+#define VIC_CON50					0xF8
+#define VIC_CON51					0xFC
+#define VIC_CON52					0x100
+#define VIC_CON53					0x104
+#define VIC_CON54					0x108
+#define VIC_CON55					0x10C
+#define VIC_CON56					0x110
+#define VIC_CON57					0x114
+#define VIC_CON58					0x118
+#define VIC_CON59					0x11C
+#define VIC_CON60					0x120
+#define VIC_CON61					0x124
+#define VIC_CON62					0x128
+#define VIC_CON63					0x12C
+#define VIC_CON64					0x130
+#define VIC_CON65					0x134
+#define VIC_CON66					0x138
+#define VIC_CON67					0x13C
+#define VIC_CON68					0x140
+#define VIC_CON69					0x144
+#define VIC_CON70					0x148
+#define VIC_CON71					0x14C
+#define VIC_CON72					0x150
+#define VIC_CON73					0x154
+#define VIC_CON74					0x158
+#define VIC_CON75					0x15C
+#define VIC_CON76					0x160
+#define VIC_CON77					0x164
+#define VIC_CON78					0x168
+#define VIC_CON79					0x16C
+#define VIC_CON80					0x170
+#define VIC_CON81					0x174
+#define VIC_CON82					0x178
+#define VIC_CON83					0x17C
+#define VIC_CON84					0x180
+#define VIC_CON85					0x184
+#define VIC_CON86					0x188
+#define VIC_CON87					0x18C
+#define VIC_CON88					0x190
+#define VIC_CON89					0x194
+#define VIC_CON90					0x198
+#define VIC_CON91					0x19C
+#define VIC_CON92					0x1A0
+#define VIC_CON93					0x1A4
+#define VIC_CON94					0x1A8
+#define VIC_CON95					0x1AC
+#define VIC_CON96					0x1B0
+#define VIC_CON97					0x1B4
+#define VIC_CON98					0x1B8
+#define VIC_CON99					0x1BC
+#define VIC_CON100					0x1C0
+#define VIC_CON101					0x1C4
+#define VIC_CON102					0x1C8
+#define VIC_CON103					0x1CC
+#define VIC_CON104					0x1D0
+#define VIC_CON105					0x1D4
+#define VIC_CON106					0x1D8
+#define VIC_CON107					0x1DC
+#define VIC_CON108					0x1E0
+#define VIC_CON109					0x1E4
+#define VIC_CON110					0x1E8
+#define VIC_CON111					0x1EC
+#define VIC_CON112					0x1F0
+#define VIC_CON113					0x1F4
+#define VIC_CON114					0x1F8
+#define VIC_CON115					0x1FC
+#define VIC_CON116					0x200
+#define VIC_CON117					0x204
+#define VIC_CON118					0x208
+#define VIC_CON119					0x20C
+#define VIC_CON120					0x210
+#define VIC_CON121					0x214
+#define VIC_CON122					0x218
+#define VIC_CON123					0x21C
+#define VIC_CON124					0x220
+#define VIC_CON125					0x224
+#define VIC_CON126					0x228
+#define VIC_CON127					0x22C
+#define VIC_CON128					0x230
+#define VIC_CON129					0x234
+#define VIC_CON130					0x238
+#define VIC_CON131					0x23C
+#define VIC_CON132					0x240
+#define VIC_CON133					0x244
+#define VIC_CON134					0x248
+#define VIC_CON135					0x24C
+#define VIC_CON136					0x250
+#define VIC_CON137					0x254
+#define VIC_CON138					0x258
+#define VIC_CON139					0x25C
+#define VIC_CON140					0x260
+#define VIC_CON141					0x264
+#define VIC_CON142					0x268
+#define VIC_CON143					0x26C
+#define VIC_CON144					0x270
+#define VIC_CON145					0x274
+#define VIC_CON146					0x278
+#define VIC_CON147					0x27C
+#define VIC_CON148					0x280
+#define VIC_CON149					0x284
+#define VIC_CON150					0x288
+#define VIC_CON151					0x28C
+#define VIC_CON152					0x290
+#define VIC_CON153					0x294
+#define VIC_CON154					0x298
+#define VIC_CON155					0x29C
+#define VIC_CON156					0x2A0
+#define VIC_CON157					0x2A4
+#define VIC_CON158					0x2A8
+#define VIC_CON159					0x2AC
+#define VIC_CON160					0x2B0
+#define VIC_CON161					0x2B4
+#define VIC_CON162					0x2B8
+#define VIC_CON163					0x2BC
+#define VIC_CON164					0x2C0
+#define VIC_CON165					0x2C4
+#define VIC_CON166					0x2C8
+#define VIC_CON167					0x2CC
+#define VIC_CON168					0x2D0
+#define VIC_CON169					0x2D4
+#define VIC_CON_PRIORITY			(0xFF << 0)
+#define VIC_CON_PRIORITY_SHIFT		0
+#define VIC_CON_FIQ					(1 << 8)
+#define VIC_CON_FIQ_SHIFT			8
 
 
 

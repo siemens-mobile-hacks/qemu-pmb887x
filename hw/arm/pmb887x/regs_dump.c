@@ -1,8 +1,10 @@
 #include "regs_dump.h"
 
+#include "board/board.h"
 #include "target/arm/cpu.h"
 #include "qemu/log.h"
 #include "qemu/error-report.h"
+#include "hw/arm/pmb887x/gen/cpu_regs.h"
 
 typedef struct pmb887x_io_operation_t pmb887x_io_operation_t;
 
@@ -21,8 +23,6 @@ static GQueue *io_dump_queue = NULL;
 static QemuThread io_dump_thread_id;
 static GCond io_dump_cond = {};
 static uint32_t gpio_base = 0;
-static const pmb887x_board_t *board_info = NULL;
-static const pmb887x_cpu_meta_t *cpu_info = NULL;
 static pmb887x_io_operation_t *last_log_entry = NULL;
 static struct {
 	uint32_t count;
@@ -101,9 +101,8 @@ static void *regs_dump_dump_io_thread(void *arg) {
 	}
 }
 
-void pmb887x_io_dump_init(const pmb887x_board_t *board) {
-	board_info = board;
-	cpu_info = pmb887x_get_cpu_meta((int) board->cpu);
+void pmb887x_io_dump_init(void) {
+	const pmb887x_cpu_meta_t *cpu_info = pmb887x_get_cpu_meta(pmb887x_board()->cpu);
 	
 	io_dump_queue = g_queue_new();
 	qemu_mutex_init(&io_dump_queue_lock);
@@ -158,6 +157,9 @@ void pmb887x_dump_io(uint32_t addr, uint32_t size, uint32_t value, bool is_write
 }
 
 void pmb887x_print_dump_io(uint32_t addr, uint32_t size, uint32_t value, bool is_write, uint32_t pc, uint32_t lr) {
+	pmb887x_board_t *board = pmb887x_board();
+	const pmb887x_cpu_meta_t *cpu_info = pmb887x_get_cpu_meta(board->cpu);
+
 	const pmb887x_module_t *module = regs_dump_find_cpu_module(addr);
 	g_autoptr(GString) s = g_string_new("");
 	
@@ -172,7 +174,7 @@ void pmb887x_print_dump_io(uint32_t addr, uint32_t size, uint32_t value, bool is
 		if (reg) {
 			if (reg->special == PMB887X_REG_IS_GPIO_PIN) {
 				uint32_t gpio_id = (addr - (gpio_base + GPIO_PIN0)) / 4;
-				g_string_append_printf(s, " (%s)", board_info->gpios[gpio_id].full_name);
+				g_string_append_printf(s, " (%s)", board->gpios[gpio_id].full_name);
 			} else if (reg->special == PMB887X_REG_IS_IRQ_CON) {
 				const char *irq_name = regs_dump_find_cpu_irq_name(cpu_info, addr - module->base);
 				if (irq_name) {

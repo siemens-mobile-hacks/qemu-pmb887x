@@ -2,7 +2,7 @@
  * Infineon pmb6812
  * */
 #define PMB887X_TRACE_ID		PMIC
-#define PMB887X_TRACE_PREFIX	"pmb887x-pmb6812"
+#define PMB887X_TRACE_PREFIX	"pmb6812"
 
 #include "qemu/osdep.h"
 #include "hw/sysbus.h"
@@ -14,7 +14,7 @@
 #include "hw/i2c/i2c.h"
 #include "hw/arm/pmb887x/trace.h"
 
-#define TYPE_PMB887X_PMIC	"pmb887x-pmb6812"
+#define TYPE_PMB887X_PMIC	"pmb6812"
 #define PMB887X_PMIC(obj)	OBJECT_CHECK(pmb887x_pmic_t, (obj), TYPE_PMB887X_PMIC)
 
 typedef struct pmb887x_pmic_t pmb887x_pmic_t;

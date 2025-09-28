@@ -9,7 +9,7 @@
 #include "qapi/error.h"
 #include "qemu/error-report.h"
 #include "hw/arm/pmb887x/trace.h"
-#include "hw/arm/pmb887x/dif/lcd_common.h"
+#include "hw/arm/pmb887x/ssc/lcd_common.h"
 
 #define TYPE_PMB887X_LCD_JBT6K71	"pmb887x-lcd-jbt6k71"
 #define PMB887X_LCD_JBT6K71(obj)	OBJECT_CHECK(pmb887x_lcd_jbt6k71_t, (obj), TYPE_PMB887X_LCD_JBT6K71)
@@ -129,26 +129,20 @@ static void lcd_on_cmd_with_params(pmb887x_lcd_t *lcd, uint32_t cmd, const uint3
 	}
 }
 
-static void lcd_realize(DeviceState *dev, Error **errp) {
-	pmb887x_lcd_t *lcd = PMB887X_LCD(dev);
-	pmb887x_lcd_jbt6k71_t *priv = PMB887X_LCD_JBT6K71(dev);
-	
+static void lcd_realize(pmb887x_lcd_t *lcd, Error **errp) {
+	pmb887x_lcd_jbt6k71_t *priv = PMB887X_LCD_JBT6K71(lcd);
 	memset(priv->regs, 0, sizeof(priv->regs));
 	memcpy(priv->regs, DEFAULT_REGS, sizeof(DEFAULT_REGS));
-	
-	pmb887x_lcd_init(lcd, dev);
 	lcd_update_state(lcd);
 }
 
 static void lcd_class_init(ObjectClass *oc, void *data) {
-	DeviceClass *dc = DEVICE_CLASS(oc);
-	dc->realize = lcd_realize;
-	
 	pmb887x_lcd_class_t *k = PMB887X_LCD_CLASS(oc);
 	k->cmd_width = 2;
 	k->param_width = 2;
 	k->on_cmd = lcd_on_cmd;
 	k->on_cmd_with_params = lcd_on_cmd_with_params;
+	k->realize = lcd_realize;
 }
 
 static const TypeInfo lcd_info = {

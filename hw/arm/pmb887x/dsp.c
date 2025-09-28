@@ -12,7 +12,7 @@
 #include "qemu/main-loop.h"
 #include "hw/qdev-properties.h"
 
-#include "hw/arm/pmb887x/regs.h"
+#include "hw/arm/pmb887x/gen/cpu_regs.h"
 #include "hw/arm/pmb887x/regs_dump.h"
 #include "hw/arm/pmb887x/mod.h"
 #include "hw/arm/pmb887x/trace.h"
@@ -167,9 +167,8 @@ static void dsp_realize(DeviceState *dev, Error **errp) {
 	
 	p->unk[0] = 0x01;
 	p->unk[1] = 0x00;
-	
-	dsp_ram_write(p, 0, p->ram0_value, 2);
 
+	dsp_ram_write(p, 0, p->ram0_value, 2);
 	dsp_update_state(p);
 }
 

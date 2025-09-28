@@ -15,17 +15,16 @@
 #include "hw/qdev-properties.h"
 #include "hw/i2c/i2c.h"
 
-#include "hw/arm/pmb887x/i2c_v2.h"
-#include "hw/arm/pmb887x/regs.h"
+#include "hw/arm/pmb887x/gen/cpu_regs.h"
 #include "hw/arm/pmb887x/regs_dump.h"
 #include "hw/arm/pmb887x/mod.h"
 #include "hw/arm/pmb887x/trace.h"
 #include "hw/arm/pmb887x/fifo.h"
 
 #define TYPE_PMB887X_I2C	"pmb887x-i2c-v2"
-#define PMB887X_I2C(obj)	OBJECT_CHECK(pmb887x_i2c_t, (obj), TYPE_PMB887X_I2C)
-#define I2C_TX_BYTE_TIME	100000
+OBJECT_DECLARE_SIMPLE_TYPE(pmb887x_i2c_t, PMB887X_I2C);
 
+#define I2C_TX_BYTE_TIME	100000
 #define FIFO_SIZE 8
 
 enum {
@@ -42,7 +41,7 @@ enum {
 	I2C_PROTOCOL_IRQ,
 };
 
-typedef struct {
+struct pmb887x_i2c_t {
 	SysBusDevice parent_obj;
 	MemoryRegion mmio;
 	
@@ -77,7 +76,7 @@ typedef struct {
 	uint32_t fifocfg;
 	uint32_t tpsctrl;
 	uint32_t timcfg;
-} pmb887x_i2c_t;
+};
 
 static void i2c_work(pmb887x_i2c_t *p);
 
@@ -567,25 +566,20 @@ static const MemoryRegionOps io_ops = {
 	}
 };
 
-I2CBus *pmb887x_i2c_v2_bus(DeviceState *dev) {
-    pmb887x_i2c_t *p = PMB887X_I2C(dev);
-    return p->bus;
-}
-
 static void i2c_init(Object *obj) {
 	pmb887x_i2c_t *p = PMB887X_I2C(obj);
-	memory_region_init_io(&p->mmio, obj, &io_ops, p, "pmb887x-i2c-v2", I2Cv2_IO_SIZE);
+	memory_region_init_io(&p->mmio, obj, &io_ops, p, TYPE_PMB887X_I2C, I2Cv2_IO_SIZE);
 	sysbus_init_mmio(SYS_BUS_DEVICE(obj), &p->mmio);
-	
-	p->bus = i2c_init_bus(DEVICE(obj), NULL);
-	
+
 	for (int i = 0; i < ARRAY_SIZE(p->irq); i++)
 		sysbus_init_irq(SYS_BUS_DEVICE(obj), &p->irq[i]);
 }
 
 static void i2c_realize(DeviceState *dev, Error **errp) {
 	pmb887x_i2c_t *p = PMB887X_I2C(dev);
-	
+
+	p->bus = i2c_init_bus(dev, TYPE_PMB887X_I2C);
+
 	pmb887x_clc_init(&p->clc);
 	
 	pmb887x_srb_init(&p->srb, p->irq, ARRAY_SIZE(p->irq));
@@ -599,8 +593,13 @@ static void i2c_realize(DeviceState *dev, Error **errp) {
 	p->timer = timer_new_ns(QEMU_CLOCK_VIRTUAL, i2c_timer_reset, p);
 }
 
+static const Property i2c_properties[] = {
+	DEFINE_PROP_LINK("bus", pmb887x_i2c_t, bus, TYPE_I2C_BUS, I2CBus *)
+};
+
 static void i2c_class_init(ObjectClass *klass, void *data) {
 	DeviceClass *dc = DEVICE_CLASS(klass);
+	device_class_set_props(dc, i2c_properties);
 	dc->realize = i2c_realize;
 }
 
