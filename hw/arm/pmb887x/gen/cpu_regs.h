@@ -550,8 +550,8 @@
 #define PMB8876_SCU_UNK2_IRQ		60
 #define PMB8876_SCU_EXTI5_IRQ		61
 #define PMB8876_SCU_EXTI6_IRQ		62
-#define PMB8876_SCU_EXTI7_IRQ		63
 #define PMB8876_SCCU_UNK_IRQ		63
+#define PMB8876_SCU_EXTI7_IRQ		63
 #define PMB8876_SCCU_WAKE_IRQ		64
 #define PMB8876_PLL_IRQ				65
 #define PMB8876_ADC_INT0_IRQ		70
@@ -1967,22 +1967,22 @@
 #define DIFv1_CON_TE_SHIFT			8
 #define DIFv1_CON_TEN				(1 << 8)		 // Transmit Error Enable
 #define DIFv1_CON_TEN_SHIFT			8
-#define DIFv1_CON_REN				(1 << 9)		 // Receive Error Enable
-#define DIFv1_CON_REN_SHIFT			9
 #define DIFv1_CON_RE				(1 << 9)		 // Receive Error Flag
 #define DIFv1_CON_RE_SHIFT			9
-#define DIFv1_CON_PEN				(1 << 10)		 // Phase Error Enable
-#define DIFv1_CON_PEN_SHIFT			10
+#define DIFv1_CON_REN				(1 << 9)		 // Receive Error Enable
+#define DIFv1_CON_REN_SHIFT			9
 #define DIFv1_CON_PE				(1 << 10)		 // Phase Error Flag
 #define DIFv1_CON_PE_SHIFT			10
-#define DIFv1_CON_BEN				(1 << 11)		 // Baud Rate Error Enable
-#define DIFv1_CON_BEN_SHIFT			11
+#define DIFv1_CON_PEN				(1 << 10)		 // Phase Error Enable
+#define DIFv1_CON_PEN_SHIFT			10
 #define DIFv1_CON_BE				(1 << 11)		 // Baud Rate Error Flag
 #define DIFv1_CON_BE_SHIFT			11
-#define DIFv1_CON_BSY				(1 << 12)		 // Busy Flag
-#define DIFv1_CON_BSY_SHIFT			12
+#define DIFv1_CON_BEN				(1 << 11)		 // Baud Rate Error Enable
+#define DIFv1_CON_BEN_SHIFT			11
 #define DIFv1_CON_AREN				(1 << 12)		 // Automatic Reset Enable
 #define DIFv1_CON_AREN_SHIFT		12
+#define DIFv1_CON_BSY				(1 << 12)		 // Busy Flag
+#define DIFv1_CON_BSY_SHIFT			12
 #define DIFv1_CON_LOCK				(1 << 13)		 // Lock bit for the 8 MSB bits of the Transmist data register
 #define DIFv1_CON_LOCK_SHIFT		13
 #define DIFv1_CON_MS				(1 << 14)		 // Master Select
@@ -5725,10 +5725,10 @@
 #define I2Cv1_SYSCON_IRQP_SHIFT			6
 #define I2Cv1_SYSCON_IRQE				(1 << 7)		 // IIC Interrupt Request Bit for Data Transmission End
 #define I2Cv1_SYSCON_IRQE_SHIFT			7
-#define I2Cv1_SYSCON_WM					(0xFF << 8)		 // Write Mirror (WMEN=1)
-#define I2Cv1_SYSCON_WM_SHIFT			8
 #define I2Cv1_SYSCON_CO					(0x7 << 8)		 // Counter of Transmitted Bytes Since Last Data Interrupt.
 #define I2Cv1_SYSCON_CO_SHIFT			8
+#define I2Cv1_SYSCON_WM					(0xFF << 8)		 // Write Mirror (WMEN=1)
+#define I2Cv1_SYSCON_WM_SHIFT			8
 #define I2Cv1_SYSCON_RMEN				(1 << 15)		 // Read Mirror Enable
 #define I2Cv1_SYSCON_RMEN_SHIFT			15
 #define I2Cv1_SYSCON_M10				(1 << 16)		 // 10-bit address mode
@@ -5749,10 +5749,10 @@
 #define I2Cv1_SYSCON_INT_SHIFT			22
 #define I2Cv1_SYSCON_TRX				(1 << 23)		 // Transmit Select
 #define I2Cv1_SYSCON_TRX_SHIFT			23
-#define I2Cv1_SYSCON_RM					(0xFF << 24)	 // Read Mirror (RMEN=1)
-#define I2Cv1_SYSCON_RM_SHIFT			24
 #define I2Cv1_SYSCON_IGE				(1 << 24)		 // Ignore IRQE
 #define I2Cv1_SYSCON_IGE_SHIFT			24
+#define I2Cv1_SYSCON_RM					(0xFF << 24)	 // Read Mirror (RMEN=1)
+#define I2Cv1_SYSCON_RM_SHIFT			24
 #define I2Cv1_SYSCON_STP				(1 << 25)		 // Stop Master
 #define I2Cv1_SYSCON_STP_SHIFT			25
 #define I2Cv1_SYSCON_CI					(0x3 << 26)		 // Length of the Receive/Transmit Buffer
@@ -6744,10 +6744,10 @@
 #define SSC_CON_PO_1			0x40
 #define SSC_CON_LB				(1 << 7)		 // Loop-Back Control
 #define SSC_CON_LB_SHIFT		7
-#define SSC_CON_TEN				(1 << 8)		 // Transmit Error Enable
-#define SSC_CON_TEN_SHIFT		8
 #define SSC_CON_TE				(1 << 8)		 // Transmit Error Flag
 #define SSC_CON_TE_SHIFT		8
+#define SSC_CON_TEN				(1 << 8)		 // Transmit Error Enable
+#define SSC_CON_TEN_SHIFT		8
 #define SSC_CON_RE				(1 << 9)		 // Receive Error Flag
 #define SSC_CON_RE_SHIFT		9
 #define SSC_CON_REN				(1 << 9)		 // Receive Error Enable
@@ -6772,6 +6772,8 @@
 #define SSC_CON_MS_MASTER		0x4000
 #define SSC_CON_EN				(1 << 15)		 // Enable Bit
 #define SSC_CON_EN_SHIFT		15
+#define SSC_CON_BC				(0xF << 16)		 // Bit Count Status
+#define SSC_CON_BC_SHIFT		16
 #define SSC_CON_BM				(0xF << 16)		 // Data Width Selection
 #define SSC_CON_BM_SHIFT		16
 #define SSC_CON_BM_1			0x0
@@ -6790,8 +6792,6 @@
 #define SSC_CON_BM_14			0xD0000
 #define SSC_CON_BM_15			0xE0000
 #define SSC_CON_BM_16			0xF0000
-#define SSC_CON_BC				(0xF << 16)		 // Bit Count Status
-#define SSC_CON_BC_SHIFT		16
 
 /* Baud Rate Timer Reload Register */
 #define SSC_BR					0x14
