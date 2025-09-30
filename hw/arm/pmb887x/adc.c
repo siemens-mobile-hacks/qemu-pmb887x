@@ -310,7 +310,7 @@ static void adc_init(Object *obj) {
 	pmb887x_adc_t *p = PMB887X_ADC(obj);
 	memory_region_init_io(&p->mmio, obj, &io_ops, p, "pmb887x-adc", ADC_IO_SIZE);
 	sysbus_init_mmio(SYS_BUS_DEVICE(obj), &p->mmio);
-	
+
 	for (size_t i = 0; i < ARRAY_SIZE(p->irq); i++)
 		sysbus_init_irq(SYS_BUS_DEVICE(obj), &p->irq[i]);
 }

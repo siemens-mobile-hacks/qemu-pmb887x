@@ -22,7 +22,7 @@ bool pmb887x_qdev_is_gpio_exists(DeviceState *dev, const char *name, int n) {
 
 static char *find_internal_gpio(bool is_out, const char *name, DeviceState **dev, int *id) {
 	char **parts = g_strsplit(name, ":", 2);
-	const char *dev_name = "PCL";
+	const char *dev_name = "GPIO";
 	const char *pin_name = name;
 
 	if (g_strv_length(parts) > 1) {
@@ -35,7 +35,7 @@ static char *find_internal_gpio(bool is_out, const char *name, DeviceState **dev
 		hw_error("Device not found: %s", dev_name);
 
 	char *internal_name;
-	if (strcmp(dev_name, "PCL") == 0) {
+	if (strcmp(dev_name, "GPIO") == 0) {
 		*id = pmb887x_get_gpio_id_by_name(pin_name);
 		if (*id < 0)
 			hw_error("GPIO %s not found in device %s.", pin_name, dev_name);

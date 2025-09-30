@@ -327,14 +327,25 @@ static void scu_init(Object *obj) {
 	memory_region_init_io(&p->mmio, obj, &io_ops, p, "pmb887x-scu", SCU_IO_SIZE);
 	sysbus_init_mmio(SYS_BUS_DEVICE(obj), &p->mmio);
 	
-	for (size_t i = 0; i < ARRAY_SIZE(p->exti_irq); i++)
-		sysbus_init_irq(SYS_BUS_DEVICE(obj), &p->exti_irq[i]);
-	
-	for (size_t i = 0; i < ARRAY_SIZE(p->dsp_irq); i++)
-		sysbus_init_irq(SYS_BUS_DEVICE(obj), &p->dsp_irq[i]);
-	
-	for (size_t i = 0; i < ARRAY_SIZE(p->unk_irq); i++)
-		sysbus_init_irq(SYS_BUS_DEVICE(obj), &p->unk_irq[i]);
+	sysbus_init_irq(SYS_BUS_DEVICE(obj), &p->exti_irq[0]);
+	sysbus_init_irq(SYS_BUS_DEVICE(obj), &p->exti_irq[1]);
+	sysbus_init_irq(SYS_BUS_DEVICE(obj), &p->exti_irq[2]);
+	sysbus_init_irq(SYS_BUS_DEVICE(obj), &p->exti_irq[3]);
+	sysbus_init_irq(SYS_BUS_DEVICE(obj), &p->exti_irq[4]);
+
+	sysbus_init_irq(SYS_BUS_DEVICE(obj), &p->dsp_irq[0]);
+	sysbus_init_irq(SYS_BUS_DEVICE(obj), &p->dsp_irq[1]);
+	sysbus_init_irq(SYS_BUS_DEVICE(obj), &p->dsp_irq[2]);
+	sysbus_init_irq(SYS_BUS_DEVICE(obj), &p->dsp_irq[3]);
+	sysbus_init_irq(SYS_BUS_DEVICE(obj), &p->dsp_irq[4]);
+
+	sysbus_init_irq(SYS_BUS_DEVICE(obj), &p->unk_irq[0]);
+	sysbus_init_irq(SYS_BUS_DEVICE(obj), &p->unk_irq[1]);
+	sysbus_init_irq(SYS_BUS_DEVICE(obj), &p->unk_irq[2]);
+
+	sysbus_init_irq(SYS_BUS_DEVICE(obj), &p->exti_irq[5]);
+	sysbus_init_irq(SYS_BUS_DEVICE(obj), &p->exti_irq[6]);
+	sysbus_init_irq(SYS_BUS_DEVICE(obj), &p->exti_irq[7]);
 }
 
 static void scu_realize(DeviceState *dev, Error **errp) {

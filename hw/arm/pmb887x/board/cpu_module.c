@@ -31,15 +31,12 @@ DeviceState *pmb887x_new_cpu_module(const char *name) {
 	DeviceState *dev = qdev_new(mod->dev);
 	dev->id = g_strdup(name);
 
-	if (mod->irqs[0]) {
+	if (mod->irqs_count > 0) {
 		DeviceState *vic = qdev_find_recursive(sysbus_get_default(), "VIC");
 		g_assert(vic != NULL);
 
-		int irq_n = 0;
-		while (mod->irqs[irq_n]) {
-			sysbus_connect_irq(SYS_BUS_DEVICE(dev), irq_n, qdev_get_gpio_in(vic, mod->irqs[irq_n]));
-			irq_n++;
-		}
+		for (int i = 0; i < mod->irqs_count; i++)
+			sysbus_connect_irq(SYS_BUS_DEVICE(dev), i, qdev_get_gpio_in(vic, mod->irqs[i]));
 	}
 
 	if (object_property_find(OBJECT(dev), "cpu_type"))

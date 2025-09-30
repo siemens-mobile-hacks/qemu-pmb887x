@@ -419,10 +419,15 @@ static void tpu_init(Object *obj) {
 	memory_region_init_io(&p->mmio, obj, &io_ops, p, "pmb887x-tpu", TPU_RAM0 + TPU_RAM_SIZE);
 	sysbus_init_mmio(SYS_BUS_DEVICE(obj), &p->mmio);
 
-	for (int i = 0; i < ARRAY_SIZE(p->src); i++)
-		sysbus_init_irq(SYS_BUS_DEVICE(obj), &p->irq[i]);
-	for (int i = 0; i < ARRAY_SIZE(p->unk_src); i++)
-		sysbus_init_irq(SYS_BUS_DEVICE(obj), &p->unk_irq[i]);
+	sysbus_init_irq(SYS_BUS_DEVICE(obj), &p->unk_irq[0]);
+	sysbus_init_irq(SYS_BUS_DEVICE(obj), &p->unk_irq[1]);
+	sysbus_init_irq(SYS_BUS_DEVICE(obj), &p->unk_irq[2]);
+	sysbus_init_irq(SYS_BUS_DEVICE(obj), &p->unk_irq[3]);
+	sysbus_init_irq(SYS_BUS_DEVICE(obj), &p->unk_irq[4]);
+	sysbus_init_irq(SYS_BUS_DEVICE(obj), &p->unk_irq[5]);
+
+	sysbus_init_irq(SYS_BUS_DEVICE(obj), &p->irq[0]);
+	sysbus_init_irq(SYS_BUS_DEVICE(obj), &p->irq[1]);
 }
 
 static void tpu_realize(DeviceState *dev, Error **errp) {

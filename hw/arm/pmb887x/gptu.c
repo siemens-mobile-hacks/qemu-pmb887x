@@ -819,9 +819,15 @@ static void gptu_init(Object *obj) {
 	pmb887x_gptu_t *p = PMB887X_GPTU(obj);
 	memory_region_init_io(&p->mmio, obj, &io_ops, p, "pmb887x-gptu", GPTU_IO_SIZE);
 	sysbus_init_mmio(SYS_BUS_DEVICE(obj), &p->mmio);
-	
-	for (int i = 0; i < ARRAY_SIZE(p->src); i++)
-		sysbus_init_irq(SYS_BUS_DEVICE(obj), &p->irq[i]);
+
+	sysbus_init_irq(SYS_BUS_DEVICE(obj), &p->irq[7]);
+	sysbus_init_irq(SYS_BUS_DEVICE(obj), &p->irq[6]);
+	sysbus_init_irq(SYS_BUS_DEVICE(obj), &p->irq[5]);
+	sysbus_init_irq(SYS_BUS_DEVICE(obj), &p->irq[4]);
+	sysbus_init_irq(SYS_BUS_DEVICE(obj), &p->irq[3]);
+	sysbus_init_irq(SYS_BUS_DEVICE(obj), &p->irq[2]);
+	sysbus_init_irq(SYS_BUS_DEVICE(obj), &p->irq[1]);
+	sysbus_init_irq(SYS_BUS_DEVICE(obj), &p->irq[0]);
 }
 
 static void gptu_realize(DeviceState *dev, Error **errp) {

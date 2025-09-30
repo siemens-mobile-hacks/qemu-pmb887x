@@ -24,8 +24,8 @@
 #define PMB887X_RTC(obj)	OBJECT_CHECK(pmb887x_sccu_t, (obj), TYPE_PMB887X_RTC)
 
 enum {
-	SCCU_IRQ_WAKE = 0,
-	SCCU_IRQ_UNK
+	SCCU_IRQ_UNK = 0,
+	SCCU_IRQ_WAKE
 };
 
 typedef struct pmb887x_sccu_t pmb887x_sccu_t;
@@ -165,9 +165,9 @@ static int sccu_get_reg_index(hwaddr haddr) {
 		case SCCU_CON1:		return 1;
 		case SCCU_CON2:		return 2;
 		case SCCU_CON3:		return 3;
-		
-		case SCCU_WAKE_SRC:	return 0;
-		case SCCU_UNK_SRC:	return 1;
+
+		case SCCU_UNK_SRC:	return 0;
+		case SCCU_WAKE_SRC:	return 1;
 		default:			abort();
 	}
 }

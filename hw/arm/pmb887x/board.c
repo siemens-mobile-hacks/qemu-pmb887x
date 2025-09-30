@@ -203,7 +203,7 @@ static void pmb887x_init(MachineState *machine) {
 	sysbus_realize_and_unref(SYS_BUS_DEVICE(tpu), &error_fatal);
 
 	// DMA Controller
-	DeviceState *dmac = pmb887x_new_cpu_module("DMA");
+	DeviceState *dmac = pmb887x_new_cpu_module("DMAC");
 	object_property_set_link(OBJECT(dmac), "downstream", OBJECT(sysmem), &error_fatal);
 	sysbus_realize_and_unref(SYS_BUS_DEVICE(dmac), &error_fatal);
 
@@ -229,7 +229,7 @@ static void pmb887x_init(MachineState *machine) {
 	sysbus_realize_and_unref(SYS_BUS_DEVICE(usart1), &error_fatal);
 
 	// Port Control Logic
-	DeviceState *pcl = pmb887x_new_cpu_module("PCL");
+	DeviceState *pcl = pmb887x_new_cpu_module("GPIO");
 	sysbus_realize_and_unref(SYS_BUS_DEVICE(pcl), &error_fatal);
 
 	// DIF
