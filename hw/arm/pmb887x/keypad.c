@@ -48,6 +48,8 @@ struct pmb887x_keypad_t {
 	bool *pressed;
 	uint32_t *map;
 	uint32_t map_size;
+
+	qemu_irq gpio_out[4];
 };
 
 static void keypad_handle_event(DeviceState *dev, QemuConsole *src, InputEvent *evt) {
@@ -182,13 +184,31 @@ static QemuInputHandler keypad_input_handler = {
     .event = keypad_handle_event,
 };
 
+static void keypad_handle_gpio_input(void *opaque, int id, int level) {
+	// nothing
+}
+
 static void keypad_init(Object *obj) {
+	DeviceState *dev = DEVICE(obj);
 	pmb887x_keypad_t *p = PMB887X_KEYPAD(obj);
 	memory_region_init_io(&p->mmio, obj, &io_ops, p, "pmb887x-keypad", KEYPAD_IO_SIZE);
 	sysbus_init_mmio(SYS_BUS_DEVICE(obj), &p->mmio);
 	
 	for (int i = 0; i < ARRAY_SIZE(p->src); i++)
 		sysbus_init_irq(SYS_BUS_DEVICE(obj), &p->irq[i]);
+
+	qdev_init_gpio_in_named(dev, keypad_handle_gpio_input, "IN0_IN", 1);
+	qdev_init_gpio_in_named(dev, keypad_handle_gpio_input, "IN1_IN", 1);
+	qdev_init_gpio_in_named(dev, keypad_handle_gpio_input, "IN2_IN", 1);
+	qdev_init_gpio_in_named(dev, keypad_handle_gpio_input, "IN3_IN", 1);
+	qdev_init_gpio_in_named(dev, keypad_handle_gpio_input, "IN4_IN", 1);
+	qdev_init_gpio_in_named(dev, keypad_handle_gpio_input, "IN5_IN", 1);
+	qdev_init_gpio_in_named(dev, keypad_handle_gpio_input, "IN6_IN", 1);
+
+	qdev_init_gpio_out_named(dev, &p->gpio_out[0], "OUT0_OUT", 1);
+	qdev_init_gpio_out_named(dev, &p->gpio_out[1], "OUT1_OUT", 1);
+	qdev_init_gpio_out_named(dev, &p->gpio_out[2], "OUT2_OUT", 1);
+	qdev_init_gpio_out_named(dev, &p->gpio_out[3], "OUT3_OUT", 1);
 }
 
 static void keypad_realize(DeviceState *dev, Error **errp) {

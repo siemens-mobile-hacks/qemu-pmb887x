@@ -442,7 +442,7 @@ static void lcd_realize(SSIPeripheral *d, Error **errp) {
 
 	pmb887x_lcd_set_window_x2(p, p->width - 1);
 	pmb887x_lcd_set_window_y2(p, p->height - 1);
-	qdev_init_gpio_in_named(DEVICE(d), lcd_handle_cd, "cd", 1);
+	qdev_init_gpio_in_named(DEVICE(d), lcd_handle_cd, "CD_IN", 1);
 
 	if (p->k->realize)
 		p->k->realize(p, errp);

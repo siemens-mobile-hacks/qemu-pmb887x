@@ -111,6 +111,7 @@ arm_ss.add(when: 'CONFIG_PMB887X', if_true: files(
 
 	'pmb887x/utils/config.c',
 	'pmb887x/utils/regexp.c',
+	'pmb887x/utils/strings.c',
 
 	'pmb887x/ssc/s1d13705.c',
 	'pmb887x/ssc/b00b10b.c',

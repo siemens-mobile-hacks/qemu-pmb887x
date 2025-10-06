@@ -38,9 +38,10 @@ MemoryRegion *pmb887x_board_create_nor_flash(const char *id, uint32_t vid, uint3
 	const char *bank_otp1 = getenv(flash_otp1_env) ?: getenv("PMB887X_FLASH_OTP1");
 
 	DeviceState *flash = qdev_new("pmb887x-flash");
+	flash->id = g_strdup(id);
 	qdev_prop_set_string(flash, "name", id);
-	qdev_prop_set_string(flash, "otp0-data", bank_otp0); // ESN
-	qdev_prop_set_string(flash, "otp1-data", bank_otp1); // IMEI
+	qdev_prop_set_string(flash, "otp0-data", bank_otp0 ?: ""); // ESN
+	qdev_prop_set_string(flash, "otp1-data", bank_otp1 ?: ""); // IMEI
 	qdev_prop_set_uint16(flash, "vid", vid);
 	qdev_prop_set_uint16(flash, "pid", pid);
 	qdev_prop_set_uint32(flash, "offset", offset);

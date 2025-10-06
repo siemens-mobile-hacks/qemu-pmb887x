@@ -7,6 +7,7 @@
 #include "qemu/osdep.h"
 #include "hw/qdev-properties.h"
 #include "hw/ssi/ssi.h"
+#include "hw/irq.h"
 #include "qemu/module.h"
 #include "ui/console.h"
 #include "qom/object.h"
@@ -40,6 +41,7 @@ struct pmb887x_acodec_t {
 	uint32_t response_size;
 	uint8_t *response_payload;
 	int response_wait_cycles;
+	qemu_irq gpio_int;
 };
 
 #define TYPE_PMB887X_ACODEC "b00b10b"
@@ -123,6 +125,9 @@ static uint32_t acodec_transfer(SSIPeripheral *dev, uint32_t in) {
 			if (p->response_cursor == p->response_size) {
 				DPRINTF("response done\n");
 				p->state = STATE_NONE;
+
+				qemu_set_irq(p->gpio_int, 1);
+				qemu_set_irq(p->gpio_int, 0);
 			}
 		}
 	}
@@ -142,14 +147,10 @@ static void acodec_handle_reset(void *opaque, int n, int level) {
 	}
 }
 
-static void acodec_handle_int(void *opaque, int n, int level) {
-
-}
-
 static void acodec_realize(SSIPeripheral *d, Error **errp) {
 	pmb887x_acodec_t *p = PMB887X_ACODEC(d);
-	qdev_init_gpio_in_named(DEVICE(d), acodec_handle_reset, "reset", 1);
-	qdev_init_gpio_in_named(DEVICE(d), acodec_handle_int, "int", 1);
+	qdev_init_gpio_in_named(DEVICE(d), acodec_handle_reset, "RESET_IN", 1);
+	qdev_init_gpio_out_named(DEVICE(d), &p->gpio_int, "INT_OUT", 1);
 	p->response_payload = &p->response[6];
 }
 

@@ -71,6 +71,12 @@ struct pmb887x_dif_t {
     SSIBus *bus;
 
 	uint32_t dmac_tx_periph_id;
+
+	qemu_irq gpio_sclk;
+	qemu_irq gpio_mtsr;
+	qemu_irq gpio_rs;
+	qemu_irq gpio_cs;
+	qemu_irq gpio_reset;
 };
 
 static void dif_reset_fifo(pmb887x_dif_t *p, enum DIFFifoType fifo) {
@@ -413,7 +419,12 @@ static const MemoryRegionOps io_ops = {
 	}
 };
 
+static void dif_handle_gpio_input(void *opaque, int id, int level) {
+	// nothing
+}
+
 static void dif_init(Object *obj) {
+	DeviceState *dev = DEVICE(obj);
 	pmb887x_dif_t *p = PMB887X_DIF(obj);
 	memory_region_init_io(&p->mmio, obj, &io_ops, p, TYPE_PMB887X_DIF, DIFv1_IO_SIZE);
 	sysbus_init_mmio(SYS_BUS_DEVICE(obj), &p->mmio);
@@ -422,6 +433,13 @@ static void dif_init(Object *obj) {
 
 	for (int i = 0; i < ARRAY_SIZE(p->irq); i++)
 		sysbus_init_irq(SYS_BUS_DEVICE(obj), &p->irq[i]);
+
+	qdev_init_gpio_in_named(dev, dif_handle_gpio_input, "MRST_IN", 1);
+	qdev_init_gpio_out_named(dev, &p->gpio_sclk, "SCLK_OUT", 1);
+	qdev_init_gpio_out_named(dev, &p->gpio_mtsr, "MTSR_OUT", 1);
+	qdev_init_gpio_out_named(dev, &p->gpio_rs, "RS_OUT", 1);
+	qdev_init_gpio_out_named(dev, &p->gpio_cs, "CS_OUT", 1);
+	qdev_init_gpio_out_named(dev, &p->gpio_reset, "RESET_OUT", 1);
 }
 
 static void dif_realize(DeviceState *dev, Error **errp) {

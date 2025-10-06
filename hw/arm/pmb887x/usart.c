@@ -83,6 +83,9 @@ struct pmb887x_usart_t {
 	uint32_t fcstat;
 	uint32_t tmo;
 	uint32_t unk;
+
+	qemu_irq gpio_txd;
+	qemu_irq gpio_rts;
 };
 
 static void usart_transmit_fifo(pmb887x_usart_t *p);
@@ -505,13 +508,23 @@ static const MemoryRegionOps io_ops = {
 	}
 };
 
+static void usart_handle_gpio_input(void *opaque, int id, int level) {
+	// nothing
+}
+
 static void usart_init(Object *obj) {
+	DeviceState *dev = DEVICE(obj);
 	struct pmb887x_usart_t *p = PMB887X_USART(obj);
 	memory_region_init_io(&p->mmio, obj, &io_ops, p, "pmb887x-usart", USART_IO_SIZE);
 	sysbus_init_mmio(SYS_BUS_DEVICE(obj), &p->mmio);
 	
 	for (int i = 0; i < ARRAY_SIZE(p->irq); i++)
 		sysbus_init_irq(SYS_BUS_DEVICE(obj), &p->irq[i]);
+
+	qdev_init_gpio_in_named(dev, usart_handle_gpio_input, "RXD_IN", 1);
+	qdev_init_gpio_in_named(dev, usart_handle_gpio_input, "CTS_IN", 1);
+	qdev_init_gpio_out_named(dev, &p->gpio_txd, "TXD_OUT", 1);
+	qdev_init_gpio_out_named(dev, &p->gpio_rts, "RTS_OUT", 1);
 }
 
 static void usart_realize(DeviceState *dev, Error **errp) {

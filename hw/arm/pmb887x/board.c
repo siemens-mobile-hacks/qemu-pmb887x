@@ -181,6 +181,10 @@ static void pmb887x_init(MachineState *machine) {
 
 	rom_add_blob_fixed("BROM", brom_data, brom_size, 0x00400000);
 
+	// Port Control Logic
+	DeviceState *pcl = pmb887x_new_cpu_module("GPIO");
+	sysbus_realize_and_unref(SYS_BUS_DEVICE(pcl), &error_fatal);
+
 	// VIC
 	DeviceState *vic = pmb887x_new_cpu_module("VIC");
 	sysbus_connect_irq(SYS_BUS_DEVICE(vic), 0, qdev_get_gpio_in(DEVICE(cpu), ARM_CPU_IRQ));
@@ -227,10 +231,6 @@ static void pmb887x_init(MachineState *machine) {
 	DeviceState *usart1 = pmb887x_new_cpu_module("USART1");
 	qdev_prop_set_chr(DEVICE(usart1), "chardev", serial_hd(1));
 	sysbus_realize_and_unref(SYS_BUS_DEVICE(usart1), &error_fatal);
-
-	// Port Control Logic
-	DeviceState *pcl = pmb887x_new_cpu_module("GPIO");
-	sysbus_realize_and_unref(SYS_BUS_DEVICE(pcl), &error_fatal);
 
 	// DIF
 	DeviceState *dif = pmb887x_new_cpu_module("DIF");
@@ -301,8 +301,7 @@ static void pmb887x_init(MachineState *machine) {
 	qdev_prop_set_drive(flash_blk, "drive", blk_by_legacy_dinfo(flash_dinfo));
 	sysbus_realize_and_unref(SYS_BUS_DEVICE(flash_blk), &error_fatal);
 
-	fprintf(stderr, "pmb887x_board_gpio_init_fixed_inputs\n");
-
+	pmb887x_cpu_modules_post_init();
 	pmb887x_board_init_analog();
 	pmb887x_board_gpio_init_fixed_inputs();
 	pmb887x_board_init_devices(ebuc);

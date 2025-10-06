@@ -6,10 +6,11 @@
 
 #include "hw/hw.h"
 #include "hw/irq.h"
+#include "hw/ssi/ssi.h"
 #include "hw/qdev-core.h"
 #include "qemu/error-report.h"
 
-bool pmb887x_qdev_is_gpio_exists(DeviceState *dev, const char *name, int n) {
+bool pmb887x_qdev_is_gpio_in_exists(DeviceState *dev, const char *name, int n) {
 	if (n < 0)
 		return false;
 	NamedGPIOList *ngl;
@@ -18,6 +19,12 @@ bool pmb887x_qdev_is_gpio_exists(DeviceState *dev, const char *name, int n) {
 			return n < ngl->num_in;
 	}
 	return false;
+}
+
+bool pmb887x_qdev_is_gpio_out_exists(DeviceState *dev, const char *name, int n) {
+	char prop_name[64];
+	sprintf(prop_name, "%s[%d]", name ? name : "unnamed-gpio-out", n);
+	return object_property_find(OBJECT(dev), prop_name) != NULL;
 }
 
 static char *find_internal_gpio(bool is_out, const char *name, DeviceState **dev, int *id) {
@@ -34,20 +41,29 @@ static char *find_internal_gpio(bool is_out, const char *name, DeviceState **dev
 	if (!*dev)
 		hw_error("Device not found: %s", dev_name);
 
-	char *internal_name;
+	char *internal_name = g_new(char, 128);
 	if (strcmp(dev_name, "GPIO") == 0) {
 		*id = pmb887x_get_gpio_id_by_name(pin_name);
 		if (*id < 0)
-			hw_error("GPIO %s not found in device %s.", pin_name, dev_name);
-		internal_name = is_out ? g_strdup("pin_out") : g_strdup("pin_in");
+			hw_error("GPIO_%s '%s' not found in '%s'", is_out ? "OUT" : "IN", pin_name, dev_name);
+		sprintf(internal_name, "pin_%s", is_out ? "out" : "in");
 	} else {
-		internal_name = g_strdup(pin_name);
+		*id = 0;
+		if (strcmp(pin_name, "CS") == 0) {
+			sprintf(internal_name, "%s", SSI_GPIO_CS);
+		} else {
+			sprintf(internal_name, "%s_%s", pin_name, is_out ? "OUT" : "IN");
+		}
+
+		if (is_out) {
+			if (!pmb887x_qdev_is_gpio_out_exists(*dev, internal_name, *id))
+				hw_error("GPIO_OUT '%s' not found in '%s'", internal_name, dev_name);
+		} else {
+			if (!pmb887x_qdev_is_gpio_in_exists(*dev, internal_name, *id))
+				hw_error("GPIO_IN '%s' not found in '%s'", internal_name, dev_name);
+		}
 	}
 
-	char *prop_name = g_strdup_printf("%s[%d]", internal_name, *id);
-	if (!object_property_find(OBJECT(*dev), prop_name))
-		hw_error("GPIO %s not found in device %s.", pin_name, dev_name);
-	g_free(prop_name);
 	g_strfreev(parts);
 
 	return internal_name;
@@ -86,12 +102,13 @@ int pmb887x_get_gpio_id_by_name(const char *name) {
 	return -1;
 }
 
-void pmb887x_gpio_connect(const char *gpio_out_name, qemu_irq gpio_in) {
-	int id;
+void pmb887x_gpio_connect(const char *gpio_out_name, const char *gpio_in_name) {
+	int gpio_out_id;
 	DeviceState *dev;
-	char *internal_name = find_internal_gpio(true, gpio_out_name, &dev, &id);
-	qdev_connect_gpio_out_named(dev, internal_name, id, gpio_in);
-	g_free(internal_name);
+	qemu_irq gpio_in = pmb887x_gpio_get_input(gpio_in_name);
+	char *gpio_out_internal_name = find_internal_gpio(true, gpio_out_name, &dev, &gpio_out_id);
+	qdev_connect_gpio_out_named(dev, gpio_out_internal_name, gpio_out_id, gpio_in);
+	g_free(gpio_out_internal_name);
 }
 
 qemu_irq pmb887x_gpio_get_input(const char *name) {

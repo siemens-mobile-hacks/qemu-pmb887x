@@ -199,18 +199,14 @@ static void device_init_gpios_from_config(DeviceState *dev, pmb887x_cfg_section_
 		if (!match)
 			continue;
 
+		char dev_pin_name[64];
+		sprintf(dev_pin_name, "%s:%s", dev->id, g_match_info_fetch(match, 2));
+
 		const char *direction = g_match_info_fetch(match, 1);
 		if (strcmp(direction, "in") == 0) {
-			const char *gpio_in_name = g_match_info_fetch(match, 2);
-			if (strcmp(gpio_in_name, "cs") == 0)
-				gpio_in_name = SSI_GPIO_CS;
-			if (!pmb887x_qdev_is_gpio_exists(dev, gpio_in_name, 0))
-				hw_error("GPIO '%s' not found in '%s'", gpio_in_name, dev->id);
-			pmb887x_gpio_connect(item->value, qdev_get_gpio_in_named(dev, gpio_in_name, 0));
+			pmb887x_gpio_connect(item->value, dev_pin_name);
 		} else {
-			char gpio_out_name[64];
-			sprintf(gpio_out_name, "%s:%s", dev->id, g_match_info_fetch(match, 2));
-			pmb887x_gpio_connect(gpio_out_name, pmb887x_gpio_get_input(item->value));
+			pmb887x_gpio_connect(dev_pin_name, item->value);
 		}
 	}
 }

@@ -68,6 +68,9 @@ struct pmb887x_i2c_t {
 	uint32_t buscon;
 	uint32_t syscon;
 	uint32_t pisel;
+
+	qemu_irq gpio_scl;
+	qemu_irq gpio_sda;
 };
 
 static void i2c_work(pmb887x_i2c_t *p);
@@ -501,7 +504,12 @@ static const MemoryRegionOps io_ops = {
 	}
 };
 
+static void i2c_handle_gpio_input(void *opaque, int id, int level) {
+	// nothing
+}
+
 static void i2c_init(Object *obj) {
+	DeviceState *dev = DEVICE(obj);
 	pmb887x_i2c_t *p = PMB887X_I2C(obj);
 	memory_region_init_io(&p->mmio, obj, &io_ops, p, "pmb887x-i2c-v1", I2Cv2_IO_SIZE);
 	sysbus_init_mmio(SYS_BUS_DEVICE(obj), &p->mmio);
@@ -510,6 +518,11 @@ static void i2c_init(Object *obj) {
 
 	for (int i = 0; i < ARRAY_SIZE(p->irq); i++)
 		sysbus_init_irq(SYS_BUS_DEVICE(obj), &p->irq[i]);
+
+	qdev_init_gpio_in_named(dev, i2c_handle_gpio_input, "SCL_IN", 1);
+	qdev_init_gpio_out_named(dev, &p->gpio_scl, "SCL_OUT", 1);
+	qdev_init_gpio_in_named(dev, i2c_handle_gpio_input, "SDA_IN", 1);
+	qdev_init_gpio_out_named(dev, &p->gpio_sda, "SDA_OUT", 1);
 }
 
 static void i2c_realize(DeviceState *dev, Error **errp) {

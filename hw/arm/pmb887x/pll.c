@@ -56,6 +56,8 @@ struct pmb887x_pll_t {
 	uint32_t con1;
 	uint32_t con2;
 	uint32_t con3;
+
+	qemu_irq gpio_clk32;
 };
 
 // Apply dividers for AHB freq
@@ -326,10 +328,12 @@ void pmb887x_pll_add_freq_update_callback(pmb887x_pll_t *p, void (*callback)(voi
 }
 
 static void pll_init(Object *obj) {
+	DeviceState *dev = DEVICE(obj);
 	pmb887x_pll_t *p = PMB887X_PLL(obj);
 	memory_region_init_io(&p->mmio, obj, &io_ops, p, "pmb887x-pll", PLL_IO_SIZE);
 	sysbus_init_mmio(SYS_BUS_DEVICE(obj), &p->mmio);
 	sysbus_init_irq(SYS_BUS_DEVICE(obj), &p->irq);
+	qdev_init_gpio_out_named(dev, &p->gpio_clk32, "CLK32_OUT", 1);
 }
 
 static void pll_realize(DeviceState *dev, Error **errp) {

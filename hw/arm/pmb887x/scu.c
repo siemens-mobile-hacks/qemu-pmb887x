@@ -30,6 +30,7 @@ struct pmb887x_scu_t {
 	
 	pmb887x_src_reg_t dsp_src[5];
 	pmb887x_src_reg_t unk_src[3];
+	pmb887x_src_reg_t exti_src[8];
 	
 	qemu_irq exti_irq[8];
 	qemu_irq dsp_irq[5];
@@ -37,6 +38,7 @@ struct pmb887x_scu_t {
 	
 	uint32_t cpu_type;
 	
+	uint32_t exti;
 	uint32_t wdtcon0;
 	uint32_t wdtcon1;
 	uint32_t romamcr;
@@ -50,7 +52,7 @@ struct pmb887x_scu_t {
 	uint32_t boot_cfg;
 	uint32_t dsp_unk0;
 	
-	pmb887x_pcl_t *pcl;
+	pmb887x_scu_t *pcl;
 	struct pmb887x_sccu_t *sccu;
 	MemoryRegion *brom_mirror;
 };
@@ -171,7 +173,7 @@ static uint64_t scu_io_read(void *opaque, hwaddr haddr, unsigned size) {
 			break;
 		
 		case SCU_EXTI:
-			value = pmb887x_pcl_exti_read(p->pcl);
+			value = p->exti;
 			break;
 		
 		case SCU_DSP_UNK0:
@@ -186,7 +188,7 @@ static uint64_t scu_io_read(void *opaque, hwaddr haddr, unsigned size) {
 		case SCU_EXTI5_SRC:
 		case SCU_EXTI6_SRC:
 		case SCU_EXTI7_SRC:
-			value = pmb887x_pcl_exti_src_read(p->pcl, get_src_index_by_addr(haddr));
+			value = pmb887x_src_get(&p->exti_src[get_src_index_by_addr(haddr)]);
 			break;
 		
 		case SCU_DSP_SRC0:
@@ -271,9 +273,23 @@ static void scu_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned si
 			p->boot_cfg = value;
 		break;
 		
-		case SCU_EXTI:
-			pmb887x_pcl_exti_write(p->pcl, value);
-		break;
+		case SCU_EXTI: {
+			p->exti = value;
+			DPRINTF("EXTI=%08lX\n", value);
+			for (uint32_t i = 0; i < ARRAY_SIZE(p->exti_irq); i++) {
+				uint32_t falling = p->exti & (1 << (i * 2)) ? 1 : 0;
+				uint32_t rising = p->exti & (1 << (i * 2 + 1)) ? 1 : 0;
+
+				if (falling && rising) {
+					DPRINTF("EXTI_%d: FALLING | RISING\n", i);
+				} else if (falling) {
+					DPRINTF("EXTI_%d: FALLING\n", i);
+				} else if (rising) {
+					DPRINTF("EXTI_%d: RISING\n", i);
+				}
+			}
+			break;
+		}
 		
 		case SCU_DSP_UNK0:
 			p->dsp_unk0 = value;
@@ -287,7 +303,7 @@ static void scu_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned si
 		case SCU_EXTI5_SRC:
 		case SCU_EXTI6_SRC:
 		case SCU_EXTI7_SRC:
-			pmb887x_pcl_exti_src_write(p->pcl, get_src_index_by_addr(haddr), value);
+			pmb887x_src_set(&p->exti_src[get_src_index_by_addr(haddr)], value);
 		break;
 		
 		case SCU_DSP_SRC0:
@@ -312,6 +328,42 @@ static void scu_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned si
 	scu_update_state(p);
 }
 
+static void scu_handle_exti_change(pmb887x_scu_t *p, int id, int level) {
+	DPRINTF("EXTI%d level changed %d\n", id, level);
+}
+
+static void scu_input_exti0_handler(void *opaque, int id, int level) {
+	scu_handle_exti_change(opaque, 0, level);
+}
+
+static void scu_input_exti1_handler(void *opaque, int id, int level) {
+	scu_handle_exti_change(opaque, 1, level);
+}
+
+static void scu_input_exti2_handler(void *opaque, int id, int level) {
+	scu_handle_exti_change(opaque, 2, level);
+}
+
+static void scu_input_exti3_handler(void *opaque, int id, int level) {
+	scu_handle_exti_change(opaque, 3, level);
+}
+
+static void scu_input_exti4_handler(void *opaque, int id, int level) {
+	scu_handle_exti_change(opaque, 4, level);
+}
+
+static void scu_input_exti5_handler(void *opaque, int id, int level) {
+	scu_handle_exti_change(opaque, 5, level);
+}
+
+static void scu_input_exti6_handler(void *opaque, int id, int level) {
+	scu_handle_exti_change(opaque, 6, level);
+}
+
+static void scu_input_exti7_handler(void *opaque, int id, int level) {
+	scu_handle_exti_change(opaque, 7, level);
+}
+
 static const MemoryRegionOps io_ops = {
 	.read			= scu_io_read,
 	.write			= scu_io_write,
@@ -323,6 +375,7 @@ static const MemoryRegionOps io_ops = {
 };
 
 static void scu_init(Object *obj) {
+	DeviceState *dev = DEVICE(obj);
 	pmb887x_scu_t *p = PMB887X_SCU(obj);
 	memory_region_init_io(&p->mmio, obj, &io_ops, p, "pmb887x-scu", SCU_IO_SIZE);
 	sysbus_init_mmio(SYS_BUS_DEVICE(obj), &p->mmio);
@@ -346,13 +399,23 @@ static void scu_init(Object *obj) {
 	sysbus_init_irq(SYS_BUS_DEVICE(obj), &p->exti_irq[5]);
 	sysbus_init_irq(SYS_BUS_DEVICE(obj), &p->exti_irq[6]);
 	sysbus_init_irq(SYS_BUS_DEVICE(obj), &p->exti_irq[7]);
+
+	qdev_init_gpio_in_named(dev, scu_input_exti0_handler, "EXTI0_IN", 1);
+	qdev_init_gpio_in_named(dev, scu_input_exti1_handler, "EXTI1_IN", 1);
+	qdev_init_gpio_in_named(dev, scu_input_exti2_handler, "EXTI2_IN", 1);
+	qdev_init_gpio_in_named(dev, scu_input_exti3_handler, "EXTI3_IN", 1);
+	qdev_init_gpio_in_named(dev, scu_input_exti4_handler, "EXTI4_IN", 1);
+	qdev_init_gpio_in_named(dev, scu_input_exti5_handler, "EXTI5_IN", 1);
+	qdev_init_gpio_in_named(dev, scu_input_exti6_handler, "EXTI6_IN", 1);
+	qdev_init_gpio_in_named(dev, scu_input_exti7_handler, "EXTI7_IN", 1);
 }
 
 static void scu_realize(DeviceState *dev, Error **errp) {
 	pmb887x_scu_t *p = PMB887X_SCU(dev);
 	
-	pmb887x_pcl_init_exti(p->pcl, p->exti_irq, ARRAY_SIZE(p->exti_irq));
-	
+	for (size_t i = 0; i < ARRAY_SIZE(p->exti_src); i++)
+		pmb887x_src_init(&p->exti_src[i], p->exti_irq[i]);
+
 	for (size_t i = 0; i < ARRAY_SIZE(p->dsp_src); i++)
 		pmb887x_src_init(&p->dsp_src[i], p->dsp_irq[i]);
 	
@@ -370,7 +433,7 @@ static void scu_realize(DeviceState *dev, Error **errp) {
 static const Property scu_properties[] = {
 	DEFINE_PROP_UINT32("cpu_type", pmb887x_scu_t, cpu_type, 0),
 	DEFINE_PROP_LINK("sccu", pmb887x_scu_t, sccu, "pmb887x-sccu", struct pmb887x_sccu_t *),
-	DEFINE_PROP_LINK("pcl", pmb887x_scu_t, pcl, "pmb887x-pcl", pmb887x_pcl_t *),
+	DEFINE_PROP_LINK("pcl", pmb887x_scu_t, pcl, "pmb887x-pcl", pmb887x_scu_t *),
 	DEFINE_PROP_LINK("brom_mirror", pmb887x_scu_t, brom_mirror, TYPE_MEMORY_REGION, MemoryRegion *),
 };
 

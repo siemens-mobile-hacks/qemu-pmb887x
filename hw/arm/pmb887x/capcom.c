@@ -22,6 +22,8 @@
 #define PMB887X_CAPCOM(obj)	OBJECT_CHECK(pmb887x_capcom_t, (obj), TYPE_PMB887X_CAPCOM)
 
 typedef struct pmb887x_capcom_t pmb887x_capcom_t;
+typedef struct pmb887x_capcom_cc_t pmb887x_capcom_cc_t;
+typedef enum pmb887x_capcom_cc_mode_t pmb887x_capcom_cc_mode_t;
 
 struct pmb887x_capcom_t {
 	SysBusDevice parent_obj;
@@ -37,8 +39,7 @@ struct pmb887x_capcom_t {
 	
 	uint32_t pisel;
 	uint32_t t01con;
-	uint32_t ccm0;
-	uint32_t ccm1;
+	uint32_t ccm[2];
 	uint32_t out;
 	uint32_t ioc;
 	uint32_t sem;
@@ -54,6 +55,42 @@ struct pmb887x_capcom_t {
 	uint32_t whbsout;
 	uint32_t whbcout;
 };
+
+struct pmb887x_capcom_cc_t {
+	uint32_t ccm_index;
+	uint32_t acc_mask;
+	uint32_t acc_shift;
+	uint32_t mod_mask;
+	uint32_t mod_shift;
+};
+
+enum pmb887x_capcom_cc_mode_t {
+	CAPCOM_CC_MODE_DISABLED = 0,
+	CAPCOM_CC_MODE_RISING_EDGE,
+	CAPCOM_CC_MODE_FALLING_EDGE,
+	CAPCOM_CC_MODE_BOTH_EDGES,
+	CAPCOM_CC_MODE_0,
+	CAPCOM_CC_MODE_1,
+	CAPCOM_CC_MODE_2,
+	CAPCOM_CC_MODE_3,
+};
+
+const pmb887x_capcom_cc_t capcom_cc_list[] = {
+	{ 0, CAPCOM_CCM0_ACC0, CAPCOM_CCM0_ACC0_SHIFT, CAPCOM_CCM0_MOD0, CAPCOM_CCM0_MOD0_SHIFT },
+	{ 0, CAPCOM_CCM0_ACC1, CAPCOM_CCM0_ACC1_SHIFT, CAPCOM_CCM0_MOD1, CAPCOM_CCM0_MOD1_SHIFT },
+	{ 0, CAPCOM_CCM0_ACC2, CAPCOM_CCM0_ACC2_SHIFT, CAPCOM_CCM0_MOD2, CAPCOM_CCM0_MOD2_SHIFT },
+	{ 0, CAPCOM_CCM0_ACC3, CAPCOM_CCM0_ACC3_SHIFT, CAPCOM_CCM0_MOD3, CAPCOM_CCM0_MOD3_SHIFT },
+	{ 1, CAPCOM_CCM1_ACC4, CAPCOM_CCM1_ACC4_SHIFT, CAPCOM_CCM1_MOD4, CAPCOM_CCM1_MOD4_SHIFT },
+	{ 1, CAPCOM_CCM1_ACC5, CAPCOM_CCM1_ACC5_SHIFT, CAPCOM_CCM1_MOD5, CAPCOM_CCM1_MOD5_SHIFT },
+	{ 1, CAPCOM_CCM1_ACC6, CAPCOM_CCM1_ACC6_SHIFT, CAPCOM_CCM1_MOD6, CAPCOM_CCM1_MOD6_SHIFT },
+	{ 1, CAPCOM_CCM1_ACC7, CAPCOM_CCM1_ACC7_SHIFT, CAPCOM_CCM1_MOD7, CAPCOM_CCM1_MOD7_SHIFT },
+};
+
+static enum pmb887x_capcom_cc_mode_t capcom_get_mode(pmb887x_capcom_t *p, int id) {
+	const pmb887x_capcom_cc_t *cc = &capcom_cc_list[id];
+	uint32_t ccm = p->ccm[cc->ccm_index];
+	return (ccm & cc->mod_mask) >> cc->mod_shift;
+}
 
 static void capcom_update_state(pmb887x_capcom_t *p) {
 	// TODO
@@ -98,11 +135,11 @@ static uint64_t capcom_io_read(void *opaque, hwaddr haddr, unsigned size) {
 			break;
 		
 		case CAPCOM_CCM0:
-			value = p->ccm0;
+			value = p->ccm[0];
 			break;
 		
 		case CAPCOM_CCM1:
-			value = p->ccm1;
+			value = p->ccm[1];
 			break;
 		
 		case CAPCOM_OUT:
@@ -207,11 +244,11 @@ static void capcom_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned
 			break;
 		
 		case CAPCOM_CCM0:
-			p->ccm0 = value;
+			p->ccm[0] = value;
 			break;
 		
 		case CAPCOM_CCM1:
-			p->ccm1 = value;
+			p->ccm[1] = value;
 			break;
 		
 		case CAPCOM_OUT:
@@ -294,6 +331,51 @@ static void capcom_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned
 	capcom_update_state(p);
 }
 
+static void capcom_handle_input_change(pmb887x_capcom_t *p, int id, int level) {
+	DPRINTF("CC%d MODE=%d\n", id, capcom_get_mode(p, id));
+
+	if (capcom_get_mode(p, id) == CAPCOM_CC_MODE_RISING_EDGE && level == 1)
+		pmb887x_src_update(&p->cc_src[id], 0, MOD_SRC_SETR);
+
+	if (capcom_get_mode(p, id) == CAPCOM_CC_MODE_FALLING_EDGE && level == 0)
+		pmb887x_src_update(&p->cc_src[id], 0, MOD_SRC_SETR);
+
+	if (capcom_get_mode(p, id) == CAPCOM_CC_MODE_BOTH_EDGES)
+		pmb887x_src_update(&p->cc_src[id], 0, MOD_SRC_SETR);
+}
+
+static void capcom_input_cc0_handler(void *opaque, int id, int level) {
+	capcom_handle_input_change(opaque, 0, level);
+}
+
+static void capcom_input_cc1_handler(void *opaque, int id, int level) {
+	capcom_handle_input_change(opaque, 1, level);
+}
+
+static void capcom_input_cc2_handler(void *opaque, int id, int level) {
+	capcom_handle_input_change(opaque, 2, level);
+}
+
+static void capcom_input_cc3_handler(void *opaque, int id, int level) {
+	capcom_handle_input_change(opaque, 3, level);
+}
+
+static void capcom_input_cc4_handler(void *opaque, int id, int level) {
+	capcom_handle_input_change(opaque, 4, level);
+}
+
+static void capcom_input_cc5_handler(void *opaque, int id, int level) {
+	capcom_handle_input_change(opaque, 5, level);
+}
+
+static void capcom_input_cc6_handler(void *opaque, int id, int level) {
+	capcom_handle_input_change(opaque, 6, level);
+}
+
+static void capcom_input_cc7_handler(void *opaque, int id, int level) {
+	capcom_handle_input_change(opaque, 7, level);
+}
+
 static const MemoryRegionOps io_ops = {
 	.read			= capcom_io_read,
 	.write			= capcom_io_write,
@@ -305,6 +387,7 @@ static const MemoryRegionOps io_ops = {
 };
 
 static void capcom_init(Object *obj) {
+	DeviceState *dev = DEVICE(obj);
 	pmb887x_capcom_t *p = PMB887X_CAPCOM(obj);
 	memory_region_init_io(&p->mmio, obj, &io_ops, p, "pmb887x-capcom", CAPCOM_IO_SIZE);
 	sysbus_init_mmio(SYS_BUS_DEVICE(obj), &p->mmio);
@@ -314,6 +397,15 @@ static void capcom_init(Object *obj) {
 	
 	for (int i = 0; i < ARRAY_SIZE(p->cc_src); i++)
 		sysbus_init_irq(SYS_BUS_DEVICE(obj), &p->cc_irq[i]);
+
+	qdev_init_gpio_in_named(dev, capcom_input_cc0_handler, "CC0_IN", 1);
+	qdev_init_gpio_in_named(dev, capcom_input_cc1_handler, "CC1_IN", 1);
+	qdev_init_gpio_in_named(dev, capcom_input_cc2_handler, "CC2_IN", 1);
+	qdev_init_gpio_in_named(dev, capcom_input_cc3_handler, "CC3_IN", 1);
+	qdev_init_gpio_in_named(dev, capcom_input_cc4_handler, "CC4_IN", 1);
+	qdev_init_gpio_in_named(dev, capcom_input_cc5_handler, "CC5_IN", 1);
+	qdev_init_gpio_in_named(dev, capcom_input_cc6_handler, "CC6_IN", 1);
+	qdev_init_gpio_in_named(dev, capcom_input_cc7_handler, "CC7_IN", 1);
 }
 
 static void capcom_realize(DeviceState *dev, Error **errp) {

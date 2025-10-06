@@ -4,8 +4,6 @@
 #define PMB887X_TRACE_ID		PCL
 #define PMB887X_TRACE_PREFIX	"pmb887x-pcl"
 
-#define PCL_EXTI_COUNT 7
-
 #include "qemu/osdep.h"
 #include "hw/sysbus.h"
 #include "hw/arm/pmb887x/gen/cpu_regs.h"
@@ -25,12 +23,11 @@
 
 #define GPIOS_COUNT ((GPIO_PIN113 - GPIO_PIN0) / 4 + 1)
 
+typedef struct pmb887x_pcl_t pmb887x_pcl_t;
+
 struct pmb887x_pcl_t {
 	SysBusDevice parent_obj;
 	MemoryRegion mmio;
-	
-	uint32_t exti;
-	pmb887x_src_reg_t exti_src[8];
 	
 	pmb887x_clc_reg_t clc;
 	uint32_t pins[GPIOS_COUNT];
@@ -162,42 +159,6 @@ static void pcl_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned si
 	pcl_update_state(p);
 }
 
-void pmb887x_pcl_init_exti(pmb887x_pcl_t *p, qemu_irq *irqs, size_t irqs_n) {
-	g_assert(irqs_n == ARRAY_SIZE(p->exti_src));
-	for (size_t i = 0; i < ARRAY_SIZE(p->exti_src); i++)
-		pmb887x_src_init(&p->exti_src[i], irqs[i]);
-}
-
-uint32_t pmb887x_pcl_exti_read(pmb887x_pcl_t *p) {
-	return p->exti;
-}
-
-void pmb887x_pcl_exti_write(pmb887x_pcl_t *p, uint32_t value) {
-	p->exti = value;
-	
-	DPRINTF("EXTI=%08X\n", value);
-	for (uint32_t i = 0; i < PCL_EXTI_COUNT; i++) {
-		uint32_t falling = p->exti & (1 << (i * 2)) ? 1 : 0;
-		uint32_t rising = p->exti & (1 << (i * 2 + 1)) ? 1 : 0;
-		
-		if (falling && rising) {
-			DPRINTF("EXTI_%d: FALLING | RISING\n", i);
-		} else if (falling) {
-			DPRINTF("EXTI_%d: FALLING\n", i);
-		} else if (rising) {
-			DPRINTF("EXTI_%d: RISING\n", i);
-		}
-	}
-}
-
-uint32_t pmb887x_pcl_exti_src_read(pmb887x_pcl_t *p, uint32_t index) {
-	return pmb887x_src_get(&p->exti_src[index]);
-}
-
-void pmb887x_pcl_exti_src_write(pmb887x_pcl_t *p, uint32_t index, uint32_t value) {
-	pmb887x_src_set(&p->exti_src[index], value);
-}
-
 static const MemoryRegionOps io_ops = {
 	.read			= pcl_io_read,
 	.write			= pcl_io_write,
@@ -215,6 +176,8 @@ static void pcl_update_pin_state(pmb887x_pcl_t *p, int mux, int id) {
 		if (pin_mux_is != 0) {
 			// proxy GPIO_IN -> PERIPHERAL
 			qemu_set_irq(p->pins_out[pin_mux_is][id], p->input_state[0][id]);
+
+			printf("LNK GPIO_IN %d ALT%d -> %d\n", id, pin_mux_is - 1, p->input_state[0][id]);
 		}
 	} else {
 		if (pin_mux_os != 0 && pin_mux_os == mux) {
@@ -262,15 +225,11 @@ static void pcl_input_alt6_handler(void *opaque, int id, int level) {
 }
 
 static void pcl_init(Object *obj) {
+	DeviceState *dev = DEVICE(obj);
 	pmb887x_pcl_t *p = PMB887X_PCL(obj);
 	memory_region_init_io(&p->mmio, obj, &io_ops, p, "pmb887x-pcl", GPIO_IO_SIZE);
 	sysbus_init_mmio(SYS_BUS_DEVICE(obj), &p->mmio);
 	DPRINTF("gpio count: %d\n", GPIOS_COUNT);
-}
-
-static void pcl_realize(DeviceState *dev, Error **errp) {
-	pmb887x_pcl_t *p = PMB887X_PCL(dev);
-	pmb887x_clc_init(&p->clc);
 
 	qdev_init_gpio_in_named(dev, pcl_input_handler, "pin_in", GPIOS_COUNT);
 	qdev_init_gpio_out_named(dev, p->pins_out[0], "pin_out", GPIOS_COUNT);
@@ -295,7 +254,11 @@ static void pcl_realize(DeviceState *dev, Error **errp) {
 
 	qdev_init_gpio_in_named(dev, pcl_input_alt6_handler, "pin_alt6_in", GPIOS_COUNT);
 	qdev_init_gpio_out_named(dev, p->pins_out[7], "pin_alt6_out", GPIOS_COUNT);
+}
 
+static void pcl_realize(DeviceState *dev, Error **errp) {
+	pmb887x_pcl_t *p = PMB887X_PCL(dev);
+	pmb887x_clc_init(&p->clc);
 	pcl_update_state(p);
 }
 
