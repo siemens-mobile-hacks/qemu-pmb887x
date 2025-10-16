@@ -179,7 +179,7 @@ static void dif_update_state(pmb887x_dif_t *p) {
 	}
 
 	if ((p->dmacon & DIFv1_DMACON_RX)) {
-		hw_error("TX DMA not supported.");
+		hw_error("RX DMA not supported.");
 	}
 }
 

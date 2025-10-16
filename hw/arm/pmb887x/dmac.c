@@ -64,17 +64,14 @@ static uint32_t dmac_get_width(uint32_t s) {
 	return 1 << s;
 }
 
-static void dmac_channel_run(pmb887x_dmac_t *p, pmb887x_dmac_ch_t *ch) {
-	if (!(ch->config & DMAC_CH_CONFIG_ENABLE) || !(p->config & DMAC_CONFIG_ENABLE))
-		return;
-
+static void dmac_channel_run_internal(pmb887x_dmac_t *p, pmb887x_dmac_ch_t *ch) {
 	uint32_t src_width = dmac_get_width((ch->control & DMAC_CH_CONTROL_S_WIDTH) >> DMAC_CH_CONTROL_S_WIDTH_SHIFT);
 	uint32_t dst_width = dmac_get_width((ch->control & DMAC_CH_CONTROL_D_WIDTH) >> DMAC_CH_CONTROL_D_WIDTH_SHIFT);
 	uint8_t src_periph = (ch->config & DMAC_CH_CONFIG_SRC_PERIPH) >> DMAC_CH_CONFIG_SRC_PERIPH_SHIFT;
 	uint8_t dst_periph = (ch->config & DMAC_CH_CONFIG_DST_PERIPH) >> DMAC_CH_CONFIG_DST_PERIPH_SHIFT;
 	uint32_t tx_size = 0;
 	bool is_periph_controlled = false;
-	
+
 	switch ((ch->config & DMAC_CH_CONFIG_FLOW_CTRL)) {
 		case DMAC_CH_CONFIG_FLOW_CTRL_MEM2MEM:
 			tx_size = (ch->control & DMAC_CH_CONTROL_TRANSFER_SIZE) >> DMAC_CH_CONTROL_TRANSFER_SIZE_SHIFT;
@@ -82,30 +79,32 @@ static void dmac_channel_run(pmb887x_dmac_t *p, pmb887x_dmac_ch_t *ch) {
 
 		case DMAC_CH_CONFIG_FLOW_CTRL_MEM2PER:
 			tx_size = (ch->control & DMAC_CH_CONTROL_TRANSFER_SIZE) >> DMAC_CH_CONTROL_TRANSFER_SIZE_SHIFT;
-			if (!p->periph_request[dst_periph])
-				return;
-			p->periph_request[dst_periph] = 0;
 			break;
 
 		case DMAC_CH_CONFIG_FLOW_CTRL_PER2MEM:
 			tx_size = (ch->control & DMAC_CH_CONTROL_TRANSFER_SIZE) >> DMAC_CH_CONTROL_TRANSFER_SIZE_SHIFT;
-			if (!p->periph_request[src_periph])
-				return;
-			p->periph_request[src_periph] = 0;
 			break;
 
 		case DMAC_CH_CONFIG_FLOW_CTRL_MEM2PER_PER:
 			is_periph_controlled = true;
-			if (!p->periph_request[dst_periph])
+			if (ch->lli & DMAC_CH_LLI_ITEM)
+				hw_error("CH%d: scatter/gather is not supported in MEM2PER_PER", ch->id);
+			if (!p->periph_request[dst_periph]) {
+				DPRINTF("CH%d no periph request [MEM2PER_PER]\n", ch->id);
 				return;
+			}
 			tx_size = p->periph_request[dst_periph];
 			p->periph_request[dst_periph] = 0;
 			break;
 
 		case DMAC_CH_CONFIG_FLOW_CTRL_PER2MEM_PER:
 			is_periph_controlled = true;
-			if (!p->periph_request[src_periph])
+			if (ch->lli & DMAC_CH_LLI_ITEM)
+				hw_error("CH%d: scatter/gather is not supported in PER2MEM_PER", ch->id);
+			if (!p->periph_request[src_periph]) {
+				DPRINTF("CH%d no periph request [PER2MEM_PER]\n", ch->id);
 				return;
+			}
 			tx_size = p->periph_request[src_periph];
 			p->periph_request[src_periph] = 0;
 			break;
@@ -114,53 +113,76 @@ static void dmac_channel_run(pmb887x_dmac_t *p, pmb887x_dmac_ch_t *ch) {
 			hw_error("pmb887x-dmac: unsupported flow type %08X", (ch->config & DMAC_CH_CONFIG_FLOW_CTRL));
 	}
 
+	DPRINTF("CH%d: %08X [%dx%d] -> %08X [%dx%d]\n", ch->id, ch->src_addr, src_width, tx_size, ch->dst_addr, dst_width, tx_size);
+
 	if (!tx_size)
 		return;
 
-	p->is_busy = true;
-
-	DPRINTF("CH%d: %08X [%dx%d] -> %08X [%dx%d]\n", ch->id, ch->src_addr, src_width, tx_size, ch->dst_addr, dst_width, tx_size);
-
 	uint8_t buffer_size = 0;
-	
+
 	while (tx_size > 0) {
 		uint8_t buffer[4];
 		if (dst_width >= src_width) {
 			address_space_read(&p->downstream_as, ch->src_addr, MEMTXATTRS_UNSPECIFIED, buffer + buffer_size, src_width);
 			buffer_size += src_width;
-			
+
 			if ((ch->control & DMAC_CH_CONTROL_SI))
 				ch->src_addr += src_width;
-			
+
 			if (buffer_size == dst_width) {
 				address_space_write(&p->downstream_as, ch->dst_addr, MEMTXATTRS_UNSPECIFIED, buffer, dst_width);
 				buffer_size = 0;
-				
+
 				if ((ch->control & DMAC_CH_CONTROL_DI))
 					ch->dst_addr += dst_width;
 			}
 		} else {
 			address_space_read(&p->downstream_as, ch->src_addr, MEMTXATTRS_UNSPECIFIED, buffer, src_width);
-			
+
 			if ((ch->control & DMAC_CH_CONTROL_SI))
 				ch->src_addr += src_width;
-			
+
 			for (uint32_t j = 0; j < src_width; j += dst_width) {
 				address_space_write(&p->downstream_as, ch->dst_addr, MEMTXATTRS_UNSPECIFIED, buffer + j, dst_width);
-				
+
 				if ((ch->control & DMAC_CH_CONTROL_DI))
 					ch->dst_addr += dst_width;
 			}
 		}
-		
+
 		tx_size--;
-		
+
 		ch->control &= ~DMAC_CH_CONTROL_TRANSFER_SIZE;
-		
+
 		if (!is_periph_controlled)
 			ch->control |= (tx_size << DMAC_CH_CONTROL_TRANSFER_SIZE_SHIFT);
 	}
-	
+}
+
+static void dmac_channel_run(pmb887x_dmac_t *p, pmb887x_dmac_ch_t *ch) {
+	if (!(ch->config & DMAC_CH_CONFIG_ENABLE) || !(p->config & DMAC_CONFIG_ENABLE))
+		return;
+
+	p->is_busy = true;
+
+	uint32_t lli_addr;
+	do {
+		dmac_channel_run_internal(p, ch);
+
+		lli_addr = ch->lli & DMAC_CH_LLI_ITEM;
+		if (lli_addr) {
+			uint32_t lli[4];
+			address_space_read(&p->downstream_as, lli_addr, MEMTXATTRS_UNSPECIFIED, lli, sizeof(lli));
+
+			ch->src_addr = lli[0];
+			ch->dst_addr = lli[1];
+			ch->lli = lli[2];
+			ch->control = lli[3];
+
+			DPRINTF("CH%d LLI=%08X [%08X, %08X, %08X, %08X]\n", ch->id, lli_addr, lli[0], lli[1], lli[2], lli[3]);
+		}
+	} while (lli_addr != 0);
+
 	pmb887x_srb_set_isr(&p->srb_tc, (1 << ch->id));
 	ch->config &= ~DMAC_CH_CONFIG_ENABLE;
 
@@ -174,11 +196,17 @@ static void dmac_update(pmb887x_dmac_t *p) {
 	p->enabled_channels = 0;
 	p->used_peripherals = 0;
 	
+	if ((p->config & DMAC_CONFIG_M1) != DMAC_CONFIG_M1_LE)
+		hw_error("DMAC_CONFIG_M1: supported only LE mode.");
+
+	if ((p->config & DMAC_CONFIG_M2) != DMAC_CONFIG_M2_LE)
+		hw_error("DMAC_CONFIG_M2: supported only LE mode.");
+
 	for (int i = 0; i < DMAC_CHANNELS; i++) {
 		pmb887x_dmac_ch_t *ch = &p->ch[i];
 		
-		uint32_t src_width = dmac_get_width((ch->control & DMAC_CH_CONTROL_S_WIDTH) >> DMAC_CH_CONTROL_S_WIDTH_SHIFT);
-		uint32_t dst_width = dmac_get_width((ch->control & DMAC_CH_CONTROL_D_WIDTH) >> DMAC_CH_CONTROL_D_WIDTH_SHIFT);
+		uint8_t src_periph = (ch->config & DMAC_CH_CONFIG_SRC_PERIPH) >> DMAC_CH_CONFIG_SRC_PERIPH_SHIFT;
+		uint8_t dst_periph = (ch->config & DMAC_CH_CONFIG_DST_PERIPH) >> DMAC_CH_CONFIG_DST_PERIPH_SHIFT;
 		
 		uint8_t mask = 1 << i;
 		
@@ -197,7 +225,7 @@ static void dmac_update(pmb887x_dmac_t *p) {
 		if ((ch->config & DMAC_CH_CONFIG_ENABLE))
 			p->enabled_channels |= mask;
 		
-		p->used_peripherals |= (1 << src_width) | (1 << dst_width);
+		p->used_peripherals |= (1 << src_periph) | (1 << dst_periph);
 		
 		dmac_channel_run(p, ch);
 	}

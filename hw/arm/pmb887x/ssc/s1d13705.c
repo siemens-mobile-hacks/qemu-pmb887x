@@ -11,10 +11,27 @@
 #include "ui/console.h"
 #include "qom/object.h"
 #include "hw/irq.h"
+#include "hw/hw.h"
 #include "hw/arm/pmb887x/trace.h"
+
+// S1D13732
+// S1D13716
 
 typedef struct pmb887x_gimmick_t pmb887x_gimmick_t;
 
+/*
+	CMD: SA0=0, CS=0
+	ARGx: SA0=1, CS=0
+
+	TYPE	CMD		ARG0		ARG1
+	WRITE	0x0000	<REG_ID>	<VALUE>		write reg value
+	WRITE	0x4000	<REG_ID>	0x0000		select reg for read
+	READ	0x8000							read current reg
+
+	WRITE	0xD000							LCD data (bypass)
+	WRITE	0x3xx0							xx - LCD command (bypass)
+	WRITE	0x1xx0							xx - LCD data (bypass)
+*/
 enum GimmickCommands {
 	CMD_NOOP				= 0x8000,
 	CMD_READ_REG			= 0x4000,
@@ -46,19 +63,35 @@ struct pmb887x_gimmick_t {
 
 #define GIMMICK_BUS_WIDTH 16
 
-/*
-	CMD: SA0=0, CS=0
-	ARGx: SA0=1, CS=0
+static uint32_t gimmick_read_reg(pmb887x_gimmick_t *p, uint16_t reg) {
+	uint16_t value = 0;
 
-	TYPE	CMD		ARG0		ARG1
-	WRITE	0x0000	<REG_ID>	<VALUE>		write reg value
-	WRITE	0x4000	<REG_ID>	0x0000		select reg for read
-	READ	0x8000							read current reg
+	switch (reg) {
+		case 0x0000: // ID
+			value = 0x706B;
+			break;
 
-	WRITE	0xD000							LCD data (bypass)
-	WRITE	0x3xx0							xx - LCD command (bypass)
-	WRITE	0x1xx0							xx - LCD data (bypass)
-*/
+		case 0x0014:
+			value = 0x04D1;
+			break;
+
+		case 0x0202:
+			value = 0x0000;
+			break;
+
+		default:
+			// Unknown reg
+			break;
+	}
+
+	DPRINTF("read reg %04X: %04X\n", reg, value);
+	return value;
+}
+
+static void gimmick_write_reg(pmb887x_gimmick_t *p, uint16_t reg, uint16_t value) {
+	DPRINTF("write reg %04X: %04X\n", reg, value);
+}
+
 static uint32_t gimmick_transfer16(SSIPeripheral *dev, uint32_t data) {
 	pmb887x_gimmick_t *p = PMB887X_GIMMICK(dev);
 
@@ -86,9 +119,6 @@ static uint32_t gimmick_transfer16(SSIPeripheral *dev, uint32_t data) {
 		} else if (data == CMD_NOOP) {
 			// Just nothing
 			p->wcycle = 0;
-		} else {
-			EPRINTF("unknown command=%04X", p->cmd);
-			p->wcycle = 0;
 		}
 	} else if (p->wcycle != 0) {
 		if (p->cmd == CMD_WRITE_REG) {
@@ -96,28 +126,25 @@ static uint32_t gimmick_transfer16(SSIPeripheral *dev, uint32_t data) {
 				p->arg0 = data;
 				p->wcycle++;
 			} else if (p->wcycle == 2) {
-				DPRINTF("write reg %04X: %04X\n", p->arg0, data);
+				gimmick_write_reg(p, p->arg0, data);
 				p->wcycle = 0;
+			} else {
+				hw_error("Invalid CMD_WRITE_REG wcycle!");
 			}
 		} else if (p->cmd == CMD_READ_REG) {
 			if (p->wcycle == 1) {
 				p->arg0 = data;
 				p->wcycle++;
 			} else if (p->wcycle == 2) {
-				if (p->arg0 == 0x0000) {
-					value = 0x706B;
-				} else if (p->arg0 == 0x0014) {
-					value = 0x04D1;
-				} else if (p->arg0 == 0x0202) {
-					value = 0x0000;
-				}
-				DPRINTF("read reg %04X: %04X\n", p->arg0, value);
+				value = gimmick_read_reg(p, p->arg0);
 				p->wcycle = 0;
 			}
 		} else {
 			EPRINTF("invalid wcycle for cmd %04X\n", p->cmd);
 			exit(1);
 		}
+	} else {
+		hw_error("Ignored data: %02X [cmd=%04X]", data, p->cmd);
 	}
 
 	return value;

@@ -46,14 +46,6 @@ static void lcd_update_state(pmb887x_lcd_t *lcd) {
 	
 	DPRINTF("am=%d, id1=%d, id0=%d, ss=%d, ud=%d\n", am, id1, id0, ss, ud);
 	
-	// Horizontal flip
-	if (ss)
-		id0 = !id0;
-	
-	// Vertical flip
-	if (!ud)
-		id1 = !id1;
-	
 	pmb887x_lcd_set_addr_mode(
 		lcd,
 		(am ? LCD_AM_VERTICAL : LCD_AM_HORIZONTAL),
@@ -71,7 +63,7 @@ static void lcd_update_state(pmb887x_lcd_t *lcd) {
 		exit(1);
 	}
 	
-	pmb887x_lcd_set_mode(lcd, new_mode);
+	pmb887x_lcd_set_mode(lcd, new_mode, ss, ud);
 }
 
 static uint32_t lcd_on_cmd(pmb887x_lcd_t *lcd, uint32_t cmd) {

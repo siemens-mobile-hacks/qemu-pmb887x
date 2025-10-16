@@ -17,7 +17,10 @@
 #define SSD1286_MAX_BPP		18
 #define SSD1286_MAX_REGS	0x100
 
-static const uint16_t DEFAULT_REGS[] = { 0 };
+static const uint16_t DEFAULT_REGS[] = {
+	[0x001] = 0x0001,
+	[0x003] = 0x6830,
+};
 
 typedef struct pmb887x_lcd_ssd1286_t pmb887x_lcd_ssd1286_t;
 
@@ -36,8 +39,11 @@ static void lcd_update_state(pmb887x_lcd_t *lcd) {
 	bool id0 = (priv->regs[0x003] & (1 << 4)) != 0; /* ID0 */
 	bool id1 = (priv->regs[0x003] & (1 << 5)) != 0; /* ID1 */
 	bool bgr = (priv->regs[0x001] & (1 << 11)) != 0; /* BGR */
+
+	bool dfm0 = (priv->regs[0x003] & (1 << 13)) != 0; /* DFM0 */
+	bool dfm1 = (priv->regs[0x003] & (1 << 14)) != 0; /* DFM1 */
 	
-	DPRINTF("am=%d, id1=%d, id0=%d, ss=%d, sm=%d\n", am, id1, id0, ss, sm);
+	DPRINTF("am=%d, id1=%d, id0=%d, ss=%d, sm=%d, dfm0=%d, dfm1=%d, bgr=%d\n", am, id1, id0, ss, sm, dfm0, dfm1, bgr);
 	
 	pmb887x_lcd_set_addr_mode(
 		lcd,
@@ -46,8 +52,13 @@ static void lcd_update_state(pmb887x_lcd_t *lcd) {
 		(id1 ? LCD_AC_INC : LCD_AC_DEC)
 	);
 	
-	enum pmb887x_lcd_pixel_mode_t new_mode = bgr ? LCD_MODE_BGR565 : LCD_MODE_RGB565;
-	pmb887x_lcd_set_mode(lcd, new_mode);
+	if (dfm0 == 0 && dfm1 == 1) {
+		enum pmb887x_lcd_pixel_mode_t new_mode = bgr ? LCD_MODE_BGR666 : LCD_MODE_RGB666;
+		pmb887x_lcd_set_mode(lcd, new_mode, false, false);
+	} else {
+		enum pmb887x_lcd_pixel_mode_t new_mode = bgr ? LCD_MODE_BGR565 : LCD_MODE_RGB565;
+		pmb887x_lcd_set_mode(lcd, new_mode, false, false);
+	}
 }
 
 static uint32_t lcd_on_cmd(pmb887x_lcd_t *lcd, uint32_t cmd) {

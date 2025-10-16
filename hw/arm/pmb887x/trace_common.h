@@ -49,7 +49,7 @@ static inline bool pmb887x_trace_log_enabled(uint64_t id) {
 		return true;
 
 	//return ((id & (PMB887X_TRACE_GPTU)) != 0);
-	return ((id & (PMB887X_TRACE_PMIC | PMB887X_TRACE_CAPCOM | PMB887X_TRACE_DIF | PMB887X_TRACE_DMAC | PMB887X_TRACE_GIMMICK | PMB887X_TRACE_PCL | PMB887X_TRACE_ACODEC)) != 0);
+	return ((id & (PMB887X_TRACE_PMIC | PMB887X_TRACE_LCD | PMB887X_TRACE_DIF | PMB887X_TRACE_DMAC | PMB887X_TRACE_GIMMICK | PMB887X_TRACE_PCL | PMB887X_TRACE_ACODEC)) != 0);
 	return false;
 	return ((id & (PMB887X_TRACE_ADC)) != 0);
 	return ((id & (PMB887X_TRACE_FLASH)) != 0);
@@ -95,7 +95,7 @@ static inline bool pmb887x_trace_io_enabled(uint64_t id) {
 	//return ((id & (PMB887X_TRACE_GPTU)) != 0);
 	//return ((id & (PMB887X_TRACE_ADC)) != 0);
 	//return ((id & (PMB887X_TRACE_PCL)) != 0);
-	return ((id & (PMB887X_TRACE_GIMMICK | PMB887X_TRACE_DMAC | PMB887X_TRACE_SSC | PMB887X_TRACE_CAPCOM)) != 0);
+	return ((id & (PMB887X_TRACE_GIMMICK | PMB887X_TRACE_LCD | PMB887X_TRACE_DMAC | PMB887X_TRACE_SSC)) != 0);
 	return false;
 	return ((id & (PMB887X_TRACE_I2C)) != 0);
 	return ((
