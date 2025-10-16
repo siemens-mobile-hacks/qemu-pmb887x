@@ -7260,7 +7260,11 @@
 #define USART_ISR_TMO						(1 << 7)	 // RX timeout interrupt mask
 #define USART_ISR_TMO_SHIFT					7
 
-#define USART_UNK							0x78
+#define USART_DMACON						0x78
+#define USART_DMACON_TX						(1 << 0)	 // Transmit DMA Enable. If this bit is set to 1, DMA for the transmit FIFO is enabled
+#define USART_DMACON_TX_SHIFT				0
+#define USART_DMACON_RX						(1 << 1)	 // Receive DMA Enable. If this bit is set to 1, DMA for the receive FIFO is enabled.
+#define USART_DMACON_RX_SHIFT				1
 
 #define USART_TMO							0x7C
 
@@ -7279,208 +7283,216 @@
 // VIC [MOD_NUM=0031, MOD_REV=01, MOD_32BIT=C0]
 // VIC [MOD_NUM=0031, MOD_REV=11, MOD_32BIT=C0]
 // Vectored Interrupt Controller, registers collected using tests on real hardware (using "black box" method).
-#define VIC_IO_SIZE					0x000002D8
+#define VIC_IO_SIZE						0x000002D8
 /* Module Identifier Register */
-#define VIC_ID						0x00
+#define VIC_ID							0x00
 
-#define VIC_FIQ_STAT				0x08
-#define VIC_FIQ_STAT_NUM			(0xFF << 0)	 // Current fiq num
-#define VIC_FIQ_STAT_NUM_SHIFT		0
-#define VIC_FIQ_STAT_UNREAD			(1 << 16)
-#define VIC_FIQ_STAT_UNREAD_SHIFT	16
-#define VIC_FIQ_STAT_NOT_ACK		(1 << 24)
-#define VIC_FIQ_STAT_NOT_ACK_SHIFT	24
+#define VIC_FIQ_CON						0x08
+#define VIC_FIQ_CON_NUM					(0xFF << 0)	 // Pending fiq num
+#define VIC_FIQ_CON_NUM_SHIFT			0
+#define VIC_FIQ_CON_PRIORITY			(0xF << 16)	 // Pending fiq priority
+#define VIC_FIQ_CON_PRIORITY_SHIFT		16
+#define VIC_FIQ_CON_MASK_PRIORITY		(0xF << 24)	 // Mask fiq's' with priority <= MASK_PRIORITY
+#define VIC_FIQ_CON_MASK_PRIORITY_SHIFT	24
 
-#define VIC_IRQ_STAT				0x0C
-#define VIC_IRQ_STAT_NUM			(0xFF << 0)	 // Current irq num
-#define VIC_IRQ_STAT_NUM_SHIFT		0
-#define VIC_IRQ_STAT_UNREAD			(1 << 16)
-#define VIC_IRQ_STAT_UNREAD_SHIFT	16
-#define VIC_IRQ_STAT_NOT_ACK		(1 << 24)
-#define VIC_IRQ_STAT_NOT_ACK_SHIFT	24
+#define VIC_IRQ_CON						0x0C
+#define VIC_IRQ_CON_NUM					(0xFF << 0)	 // Pending irq num
+#define VIC_IRQ_CON_NUM_SHIFT			0
+#define VIC_IRQ_CON_PRIORITY			(0xF << 16)	 // Pending irq priority
+#define VIC_IRQ_CON_PRIORITY_SHIFT		16
+#define VIC_IRQ_CON_MASK_PRIORITY		(0xF << 24)	 // Mask irq's' with priority <= MASK_PRIORITY
+#define VIC_IRQ_CON_MASK_PRIORITY_SHIFT	24
 
-#define VIC_FIQ_ACK					0x10
+/* End of FIQ processing */
+#define VIC_FIQ_ACK						0x10
 
-#define VIC_IRQ_ACK					0x14
+/* End of IRQ processing */
+#define VIC_IRQ_ACK						0x14
 
-#define VIC_CURRENT_FIQ				0x18
+/* Start of FIQ processing */
+#define VIC_FIQ_CURRENT					0x18
+#define VIC_FIQ_CURRENT_NUM				(0xFF << 0)	 // fiq num
+#define VIC_FIQ_CURRENT_NUM_SHIFT		0
 
-#define VIC_CURRENT_IRQ				0x1C
+/* Start of IRQ processing */
+#define VIC_IRQ_CURRENT					0x1C
+#define VIC_IRQ_CURRENT_NUM				(0xFF << 0)	 // irq num
+#define VIC_IRQ_CURRENT_NUM_SHIFT		0
 
-#define VIC_CON0					0x30
-#define VIC_CON1					0x34
-#define VIC_CON2					0x38
-#define VIC_CON3					0x3C
-#define VIC_CON4					0x40
-#define VIC_CON5					0x44
-#define VIC_CON6					0x48
-#define VIC_CON7					0x4C
-#define VIC_CON8					0x50
-#define VIC_CON9					0x54
-#define VIC_CON10					0x58
-#define VIC_CON11					0x5C
-#define VIC_CON12					0x60
-#define VIC_CON13					0x64
-#define VIC_CON14					0x68
-#define VIC_CON15					0x6C
-#define VIC_CON16					0x70
-#define VIC_CON17					0x74
-#define VIC_CON18					0x78
-#define VIC_CON19					0x7C
-#define VIC_CON20					0x80
-#define VIC_CON21					0x84
-#define VIC_CON22					0x88
-#define VIC_CON23					0x8C
-#define VIC_CON24					0x90
-#define VIC_CON25					0x94
-#define VIC_CON26					0x98
-#define VIC_CON27					0x9C
-#define VIC_CON28					0xA0
-#define VIC_CON29					0xA4
-#define VIC_CON30					0xA8
-#define VIC_CON31					0xAC
-#define VIC_CON32					0xB0
-#define VIC_CON33					0xB4
-#define VIC_CON34					0xB8
-#define VIC_CON35					0xBC
-#define VIC_CON36					0xC0
-#define VIC_CON37					0xC4
-#define VIC_CON38					0xC8
-#define VIC_CON39					0xCC
-#define VIC_CON40					0xD0
-#define VIC_CON41					0xD4
-#define VIC_CON42					0xD8
-#define VIC_CON43					0xDC
-#define VIC_CON44					0xE0
-#define VIC_CON45					0xE4
-#define VIC_CON46					0xE8
-#define VIC_CON47					0xEC
-#define VIC_CON48					0xF0
-#define VIC_CON49					0xF4
-#define VIC_CON50					0xF8
-#define VIC_CON51					0xFC
-#define VIC_CON52					0x100
-#define VIC_CON53					0x104
-#define VIC_CON54					0x108
-#define VIC_CON55					0x10C
-#define VIC_CON56					0x110
-#define VIC_CON57					0x114
-#define VIC_CON58					0x118
-#define VIC_CON59					0x11C
-#define VIC_CON60					0x120
-#define VIC_CON61					0x124
-#define VIC_CON62					0x128
-#define VIC_CON63					0x12C
-#define VIC_CON64					0x130
-#define VIC_CON65					0x134
-#define VIC_CON66					0x138
-#define VIC_CON67					0x13C
-#define VIC_CON68					0x140
-#define VIC_CON69					0x144
-#define VIC_CON70					0x148
-#define VIC_CON71					0x14C
-#define VIC_CON72					0x150
-#define VIC_CON73					0x154
-#define VIC_CON74					0x158
-#define VIC_CON75					0x15C
-#define VIC_CON76					0x160
-#define VIC_CON77					0x164
-#define VIC_CON78					0x168
-#define VIC_CON79					0x16C
-#define VIC_CON80					0x170
-#define VIC_CON81					0x174
-#define VIC_CON82					0x178
-#define VIC_CON83					0x17C
-#define VIC_CON84					0x180
-#define VIC_CON85					0x184
-#define VIC_CON86					0x188
-#define VIC_CON87					0x18C
-#define VIC_CON88					0x190
-#define VIC_CON89					0x194
-#define VIC_CON90					0x198
-#define VIC_CON91					0x19C
-#define VIC_CON92					0x1A0
-#define VIC_CON93					0x1A4
-#define VIC_CON94					0x1A8
-#define VIC_CON95					0x1AC
-#define VIC_CON96					0x1B0
-#define VIC_CON97					0x1B4
-#define VIC_CON98					0x1B8
-#define VIC_CON99					0x1BC
-#define VIC_CON100					0x1C0
-#define VIC_CON101					0x1C4
-#define VIC_CON102					0x1C8
-#define VIC_CON103					0x1CC
-#define VIC_CON104					0x1D0
-#define VIC_CON105					0x1D4
-#define VIC_CON106					0x1D8
-#define VIC_CON107					0x1DC
-#define VIC_CON108					0x1E0
-#define VIC_CON109					0x1E4
-#define VIC_CON110					0x1E8
-#define VIC_CON111					0x1EC
-#define VIC_CON112					0x1F0
-#define VIC_CON113					0x1F4
-#define VIC_CON114					0x1F8
-#define VIC_CON115					0x1FC
-#define VIC_CON116					0x200
-#define VIC_CON117					0x204
-#define VIC_CON118					0x208
-#define VIC_CON119					0x20C
-#define VIC_CON120					0x210
-#define VIC_CON121					0x214
-#define VIC_CON122					0x218
-#define VIC_CON123					0x21C
-#define VIC_CON124					0x220
-#define VIC_CON125					0x224
-#define VIC_CON126					0x228
-#define VIC_CON127					0x22C
-#define VIC_CON128					0x230
-#define VIC_CON129					0x234
-#define VIC_CON130					0x238
-#define VIC_CON131					0x23C
-#define VIC_CON132					0x240
-#define VIC_CON133					0x244
-#define VIC_CON134					0x248
-#define VIC_CON135					0x24C
-#define VIC_CON136					0x250
-#define VIC_CON137					0x254
-#define VIC_CON138					0x258
-#define VIC_CON139					0x25C
-#define VIC_CON140					0x260
-#define VIC_CON141					0x264
-#define VIC_CON142					0x268
-#define VIC_CON143					0x26C
-#define VIC_CON144					0x270
-#define VIC_CON145					0x274
-#define VIC_CON146					0x278
-#define VIC_CON147					0x27C
-#define VIC_CON148					0x280
-#define VIC_CON149					0x284
-#define VIC_CON150					0x288
-#define VIC_CON151					0x28C
-#define VIC_CON152					0x290
-#define VIC_CON153					0x294
-#define VIC_CON154					0x298
-#define VIC_CON155					0x29C
-#define VIC_CON156					0x2A0
-#define VIC_CON157					0x2A4
-#define VIC_CON158					0x2A8
-#define VIC_CON159					0x2AC
-#define VIC_CON160					0x2B0
-#define VIC_CON161					0x2B4
-#define VIC_CON162					0x2B8
-#define VIC_CON163					0x2BC
-#define VIC_CON164					0x2C0
-#define VIC_CON165					0x2C4
-#define VIC_CON166					0x2C8
-#define VIC_CON167					0x2CC
-#define VIC_CON168					0x2D0
-#define VIC_CON169					0x2D4
-#define VIC_CON_PRIORITY			(0xFF << 0)
-#define VIC_CON_PRIORITY_SHIFT		0
-#define VIC_CON_FIQ					(1 << 8)
-#define VIC_CON_FIQ_SHIFT			8
+#define VIC_CON0						0x30
+#define VIC_CON1						0x34
+#define VIC_CON2						0x38
+#define VIC_CON3						0x3C
+#define VIC_CON4						0x40
+#define VIC_CON5						0x44
+#define VIC_CON6						0x48
+#define VIC_CON7						0x4C
+#define VIC_CON8						0x50
+#define VIC_CON9						0x54
+#define VIC_CON10						0x58
+#define VIC_CON11						0x5C
+#define VIC_CON12						0x60
+#define VIC_CON13						0x64
+#define VIC_CON14						0x68
+#define VIC_CON15						0x6C
+#define VIC_CON16						0x70
+#define VIC_CON17						0x74
+#define VIC_CON18						0x78
+#define VIC_CON19						0x7C
+#define VIC_CON20						0x80
+#define VIC_CON21						0x84
+#define VIC_CON22						0x88
+#define VIC_CON23						0x8C
+#define VIC_CON24						0x90
+#define VIC_CON25						0x94
+#define VIC_CON26						0x98
+#define VIC_CON27						0x9C
+#define VIC_CON28						0xA0
+#define VIC_CON29						0xA4
+#define VIC_CON30						0xA8
+#define VIC_CON31						0xAC
+#define VIC_CON32						0xB0
+#define VIC_CON33						0xB4
+#define VIC_CON34						0xB8
+#define VIC_CON35						0xBC
+#define VIC_CON36						0xC0
+#define VIC_CON37						0xC4
+#define VIC_CON38						0xC8
+#define VIC_CON39						0xCC
+#define VIC_CON40						0xD0
+#define VIC_CON41						0xD4
+#define VIC_CON42						0xD8
+#define VIC_CON43						0xDC
+#define VIC_CON44						0xE0
+#define VIC_CON45						0xE4
+#define VIC_CON46						0xE8
+#define VIC_CON47						0xEC
+#define VIC_CON48						0xF0
+#define VIC_CON49						0xF4
+#define VIC_CON50						0xF8
+#define VIC_CON51						0xFC
+#define VIC_CON52						0x100
+#define VIC_CON53						0x104
+#define VIC_CON54						0x108
+#define VIC_CON55						0x10C
+#define VIC_CON56						0x110
+#define VIC_CON57						0x114
+#define VIC_CON58						0x118
+#define VIC_CON59						0x11C
+#define VIC_CON60						0x120
+#define VIC_CON61						0x124
+#define VIC_CON62						0x128
+#define VIC_CON63						0x12C
+#define VIC_CON64						0x130
+#define VIC_CON65						0x134
+#define VIC_CON66						0x138
+#define VIC_CON67						0x13C
+#define VIC_CON68						0x140
+#define VIC_CON69						0x144
+#define VIC_CON70						0x148
+#define VIC_CON71						0x14C
+#define VIC_CON72						0x150
+#define VIC_CON73						0x154
+#define VIC_CON74						0x158
+#define VIC_CON75						0x15C
+#define VIC_CON76						0x160
+#define VIC_CON77						0x164
+#define VIC_CON78						0x168
+#define VIC_CON79						0x16C
+#define VIC_CON80						0x170
+#define VIC_CON81						0x174
+#define VIC_CON82						0x178
+#define VIC_CON83						0x17C
+#define VIC_CON84						0x180
+#define VIC_CON85						0x184
+#define VIC_CON86						0x188
+#define VIC_CON87						0x18C
+#define VIC_CON88						0x190
+#define VIC_CON89						0x194
+#define VIC_CON90						0x198
+#define VIC_CON91						0x19C
+#define VIC_CON92						0x1A0
+#define VIC_CON93						0x1A4
+#define VIC_CON94						0x1A8
+#define VIC_CON95						0x1AC
+#define VIC_CON96						0x1B0
+#define VIC_CON97						0x1B4
+#define VIC_CON98						0x1B8
+#define VIC_CON99						0x1BC
+#define VIC_CON100						0x1C0
+#define VIC_CON101						0x1C4
+#define VIC_CON102						0x1C8
+#define VIC_CON103						0x1CC
+#define VIC_CON104						0x1D0
+#define VIC_CON105						0x1D4
+#define VIC_CON106						0x1D8
+#define VIC_CON107						0x1DC
+#define VIC_CON108						0x1E0
+#define VIC_CON109						0x1E4
+#define VIC_CON110						0x1E8
+#define VIC_CON111						0x1EC
+#define VIC_CON112						0x1F0
+#define VIC_CON113						0x1F4
+#define VIC_CON114						0x1F8
+#define VIC_CON115						0x1FC
+#define VIC_CON116						0x200
+#define VIC_CON117						0x204
+#define VIC_CON118						0x208
+#define VIC_CON119						0x20C
+#define VIC_CON120						0x210
+#define VIC_CON121						0x214
+#define VIC_CON122						0x218
+#define VIC_CON123						0x21C
+#define VIC_CON124						0x220
+#define VIC_CON125						0x224
+#define VIC_CON126						0x228
+#define VIC_CON127						0x22C
+#define VIC_CON128						0x230
+#define VIC_CON129						0x234
+#define VIC_CON130						0x238
+#define VIC_CON131						0x23C
+#define VIC_CON132						0x240
+#define VIC_CON133						0x244
+#define VIC_CON134						0x248
+#define VIC_CON135						0x24C
+#define VIC_CON136						0x250
+#define VIC_CON137						0x254
+#define VIC_CON138						0x258
+#define VIC_CON139						0x25C
+#define VIC_CON140						0x260
+#define VIC_CON141						0x264
+#define VIC_CON142						0x268
+#define VIC_CON143						0x26C
+#define VIC_CON144						0x270
+#define VIC_CON145						0x274
+#define VIC_CON146						0x278
+#define VIC_CON147						0x27C
+#define VIC_CON148						0x280
+#define VIC_CON149						0x284
+#define VIC_CON150						0x288
+#define VIC_CON151						0x28C
+#define VIC_CON152						0x290
+#define VIC_CON153						0x294
+#define VIC_CON154						0x298
+#define VIC_CON155						0x29C
+#define VIC_CON156						0x2A0
+#define VIC_CON157						0x2A4
+#define VIC_CON158						0x2A8
+#define VIC_CON159						0x2AC
+#define VIC_CON160						0x2B0
+#define VIC_CON161						0x2B4
+#define VIC_CON162						0x2B8
+#define VIC_CON163						0x2BC
+#define VIC_CON164						0x2C0
+#define VIC_CON165						0x2C4
+#define VIC_CON166						0x2C8
+#define VIC_CON167						0x2CC
+#define VIC_CON168						0x2D0
+#define VIC_CON169						0x2D4
+#define VIC_CON_PRIORITY				(0xF << 0)
+#define VIC_CON_PRIORITY_SHIFT			0
+#define VIC_CON_FIQ						(1 << 8)
+#define VIC_CON_FIQ_SHIFT				8
 
 
 

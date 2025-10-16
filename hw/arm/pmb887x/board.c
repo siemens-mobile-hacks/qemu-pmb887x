@@ -213,7 +213,7 @@ static void pmb887x_init(MachineState *machine) {
 
 	// DSP
 	DeviceState *dsp = pmb887x_new_cpu_module("DSP");
-	object_property_set_uint(OBJECT(dsp), "ram0_value", pmb887x_board()->cpu == CPU_PMB8876 ? 0x0801 : 0x0602, &error_fatal);
+	object_property_set_uint(OBJECT(dsp), "ram0_value", pmb887x_board()->cpu == CPU_PMB8876 ? 0x0801 : 0x0603, &error_fatal);
 	sysbus_realize_and_unref(SYS_BUS_DEVICE(dsp), &error_fatal);
 
 	if (pmb887x_board()->cpu == CPU_PMB8876) {

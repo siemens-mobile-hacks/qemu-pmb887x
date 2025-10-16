@@ -82,7 +82,7 @@ struct pmb887x_usart_t {
 	uint32_t fccon;
 	uint32_t fcstat;
 	uint32_t tmo;
-	uint32_t unk;
+	uint32_t dmacon;
 
 	qemu_irq gpio_txd;
 	qemu_irq gpio_rts;
@@ -362,8 +362,8 @@ static uint64_t usart_io_read(void *opaque, hwaddr haddr, unsigned size) {
 			value = 0;
 			break;
 
-		case USART_UNK:
-			value = p->unk;
+		case USART_DMACON:
+			value = p->dmacon;
 			break;
 
 		case USART_TMO:
@@ -481,8 +481,9 @@ static void usart_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned 
 			pmb887x_srb_set_isr(&p->srb, value);
 			break;
 
-		case USART_UNK:
-			p->unk = value;
+		case USART_DMACON:
+			p->dmacon = value;
+			usart_update_state(p);
 			break;
 
 		case USART_TMO:

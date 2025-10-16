@@ -6561,6 +6561,11 @@ static const pmb887x_module_field_t usart_isr_fields[] = {
 	{"TMO",		USART_ISR_TMO,		USART_ISR_TMO_SHIFT,		NULL,	0},
 };
 
+static const pmb887x_module_field_t usart_dmacon_fields[] = {
+	{"TX",	USART_DMACON_TX,	USART_DMACON_TX_SHIFT,	NULL,	0},
+	{"RX",	USART_DMACON_RX,	USART_DMACON_RX_SHIFT,	NULL,	0},
+};
+
 static const pmb887x_module_reg_t usart_regs[] = {
 	{"CLC",			USART_CLC,			usart_clc_fields,		ARRAY_SIZE(usart_clc_fields),		0},
 	{"PISEL",		USART_PISEL,		NULL,					0,									0},
@@ -6586,7 +6591,7 @@ static const pmb887x_module_reg_t usart_regs[] = {
 	{"MIS",			USART_MIS,			usart_mis_fields,		ARRAY_SIZE(usart_mis_fields),		0},
 	{"ICR",			USART_ICR,			usart_icr_fields,		ARRAY_SIZE(usart_icr_fields),		0},
 	{"ISR",			USART_ISR,			usart_isr_fields,		ARRAY_SIZE(usart_isr_fields),		0},
-	{"UNK",			USART_UNK,			NULL,					0,									0},
+	{"DMACON",		USART_DMACON,		usart_dmacon_fields,	ARRAY_SIZE(usart_dmacon_fields),	0},
 	{"TMO",			USART_TMO,			NULL,					0,									0},
 };
 
@@ -6617,16 +6622,24 @@ static const pmb887x_module_field_t vic_id_fields[] = {
 	{"NUMBER",	MOD_ID_NUMBER,	MOD_ID_NUMBER_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_module_field_t vic_fiq_stat_fields[] = {
-	{"NUM",		VIC_FIQ_STAT_NUM,		VIC_FIQ_STAT_NUM_SHIFT,		NULL,	0},
-	{"UNREAD",	VIC_FIQ_STAT_UNREAD,	VIC_FIQ_STAT_UNREAD_SHIFT,	NULL,	0},
-	{"NOT_ACK",	VIC_FIQ_STAT_NOT_ACK,	VIC_FIQ_STAT_NOT_ACK_SHIFT,	NULL,	0},
+static const pmb887x_module_field_t vic_fiq_con_fields[] = {
+	{"NUM",				VIC_FIQ_CON_NUM,			VIC_FIQ_CON_NUM_SHIFT,				NULL,	0},
+	{"PRIORITY",		VIC_FIQ_CON_PRIORITY,		VIC_FIQ_CON_PRIORITY_SHIFT,			NULL,	0},
+	{"MASK_PRIORITY",	VIC_FIQ_CON_MASK_PRIORITY,	VIC_FIQ_CON_MASK_PRIORITY_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_module_field_t vic_irq_stat_fields[] = {
-	{"NUM",		VIC_IRQ_STAT_NUM,		VIC_IRQ_STAT_NUM_SHIFT,		NULL,	0},
-	{"UNREAD",	VIC_IRQ_STAT_UNREAD,	VIC_IRQ_STAT_UNREAD_SHIFT,	NULL,	0},
-	{"NOT_ACK",	VIC_IRQ_STAT_NOT_ACK,	VIC_IRQ_STAT_NOT_ACK_SHIFT,	NULL,	0},
+static const pmb887x_module_field_t vic_irq_con_fields[] = {
+	{"NUM",				VIC_IRQ_CON_NUM,			VIC_IRQ_CON_NUM_SHIFT,				NULL,	0},
+	{"PRIORITY",		VIC_IRQ_CON_PRIORITY,		VIC_IRQ_CON_PRIORITY_SHIFT,			NULL,	0},
+	{"MASK_PRIORITY",	VIC_IRQ_CON_MASK_PRIORITY,	VIC_IRQ_CON_MASK_PRIORITY_SHIFT,	NULL,	0},
+};
+
+static const pmb887x_module_field_t vic_fiq_current_fields[] = {
+	{"NUM",	VIC_FIQ_CURRENT_NUM,	VIC_FIQ_CURRENT_NUM_SHIFT,	NULL,	0},
+};
+
+static const pmb887x_module_field_t vic_irq_current_fields[] = {
+	{"NUM",	VIC_IRQ_CURRENT_NUM,	VIC_IRQ_CURRENT_NUM_SHIFT,	NULL,	0},
 };
 
 static const pmb887x_module_field_t vic_con_fields[] = {
@@ -6636,12 +6649,12 @@ static const pmb887x_module_field_t vic_con_fields[] = {
 
 static const pmb887x_module_reg_t vic_regs[] = {
 	{"ID",			VIC_ID,				vic_id_fields,			ARRAY_SIZE(vic_id_fields),			0},
-	{"FIQ_STAT",	VIC_FIQ_STAT,		vic_fiq_stat_fields,	ARRAY_SIZE(vic_fiq_stat_fields),	0},
-	{"IRQ_STAT",	VIC_IRQ_STAT,		vic_irq_stat_fields,	ARRAY_SIZE(vic_irq_stat_fields),	0},
+	{"FIQ_CON",		VIC_FIQ_CON,		vic_fiq_con_fields,		ARRAY_SIZE(vic_fiq_con_fields),		0},
+	{"IRQ_CON",		VIC_IRQ_CON,		vic_irq_con_fields,		ARRAY_SIZE(vic_irq_con_fields),		0},
 	{"FIQ_ACK",		VIC_FIQ_ACK,		NULL,					0,									0},
 	{"IRQ_ACK",		VIC_IRQ_ACK,		NULL,					0,									0},
-	{"CURRENT_FIQ",	VIC_CURRENT_FIQ,	NULL,					0,									PMB887X_REG_IS_IRQ_NUM},
-	{"CURRENT_IRQ",	VIC_CURRENT_IRQ,	NULL,					0,									PMB887X_REG_IS_IRQ_NUM},
+	{"FIQ_CURRENT",	VIC_FIQ_CURRENT,	vic_fiq_current_fields,	ARRAY_SIZE(vic_fiq_current_fields),	0},
+	{"IRQ_CURRENT",	VIC_IRQ_CURRENT,	vic_irq_current_fields,	ARRAY_SIZE(vic_irq_current_fields),	0},
 	{"CON0",		VIC_CON0,			vic_con_fields,			ARRAY_SIZE(vic_con_fields),			PMB887X_REG_IS_IRQ_CON},
 	{"CON1",		VIC_CON1,			vic_con_fields,			ARRAY_SIZE(vic_con_fields),			PMB887X_REG_IS_IRQ_CON},
 	{"CON2",		VIC_CON2,			vic_con_fields,			ARRAY_SIZE(vic_con_fields),			PMB887X_REG_IS_IRQ_CON},

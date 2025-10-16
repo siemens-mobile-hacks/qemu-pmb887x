@@ -38,33 +38,40 @@ struct pmb887x_vic_t {
 	
 	pmb887x_vic_irq_t irq_state[IRQS_COUNT];
 	
+	uint32_t fiq_con;
+	uint32_t irq_con;
+
 	qemu_irq parent_irq;
 	qemu_irq parent_fiq;
 	
-	int current_irq;
-	int current_fiq;
-	
+	int pending_irq;
+	int pending_fiq;
+
 	bool irq_lock;
 	bool fiq_lock;
 };
 
-static uint32_t vic_get_priority(pmb887x_vic_irq_t *line) {
+static uint32_t vic_get_nested_priority(pmb887x_vic_irq_t *line) {
 	if (!line->level)
 		return 0;
 	return (line->priority << 16) | (line->level << 8) | ((IRQS_COUNT - line->id));
 }
 
-static int vic_current_irq(pmb887x_vic_t *p, bool fiq) {
-	int irq_n = 0;
+static int vic_pending_irq(pmb887x_vic_t *p, bool fiq) {
+	int irq_n = -1;
 	uint32_t max_priority = 0;
 	
+	uint32_t mask_priority = fiq ?
+		((p->fiq_con & VIC_FIQ_CON_MASK_PRIORITY) >> VIC_FIQ_CON_MASK_PRIORITY_SHIFT) :
+		((p->irq_con & VIC_IRQ_CON_MASK_PRIORITY) >> VIC_IRQ_CON_MASK_PRIORITY_SHIFT);
+
 	for (int i = 0; i < IRQS_COUNT; ++i) {
 		pmb887x_vic_irq_t *line = &p->irq_state[i];
 		
-		if (fiq != line->fiq || !line->level)
+		if (fiq != line->fiq || !line->level || line->priority <= mask_priority)
 			continue;
 		
-		uint32_t priority = vic_get_priority(line);
+		uint32_t priority = vic_get_nested_priority(line);
 		if (max_priority < priority) {
 			irq_n = i;
 			max_priority = priority;
@@ -76,13 +83,13 @@ static int vic_current_irq(pmb887x_vic_t *p, bool fiq) {
 
 static void vic_update_state(pmb887x_vic_t *p) {
 	if (!p->irq_lock) {
-		p->current_irq = vic_current_irq(p, false);
-		qemu_set_irq(p->parent_irq, p->current_irq > 0);
+		p->pending_irq = vic_pending_irq(p, false);
+		qemu_set_irq(p->parent_irq, p->pending_irq >= 0);
 	}
 	
 	if (!p->fiq_lock) {
-		p->current_fiq = vic_current_irq(p, true);
-		qemu_set_irq(p->parent_fiq, p->current_fiq > 0);
+		p->pending_fiq = vic_pending_irq(p, true);
+		qemu_set_irq(p->parent_fiq, p->pending_fiq >= 0);
 	}
 }
 
@@ -110,35 +117,33 @@ static uint64_t vic_io_read(void *opaque, hwaddr haddr, unsigned size) {
 			value = 0x0031C011;
 			break;
 		
-		case VIC_FIQ_STAT:
-			if (p->current_fiq > 0) {
+		case VIC_FIQ_CON:
+			value = p->fiq_con;
+			if (p->pending_fiq >= 0) {
 				if (!p->fiq_lock) {
-					value |= VIC_FIQ_STAT_UNREAD;
-					value |= p->current_fiq;
-				} else {
-					value |= VIC_FIQ_STAT_NOT_ACK;
+					value |= p->irq_state[p->pending_fiq].priority << VIC_FIQ_CON_PRIORITY_SHIFT;
+					value |= p->pending_fiq;
 				}
 			} else {
 				value = 0;
 			}
 			break;
 		
-		case VIC_IRQ_STAT:
-			if (p->current_irq > 0) {
+		case VIC_IRQ_CON:
+			value = p->irq_con;
+			if (p->pending_irq >= 0) {
 				if (!p->irq_lock) {
-					value |= VIC_IRQ_STAT_UNREAD;
-					value |= p->current_irq;
-				} else {
-					value |= VIC_IRQ_STAT_NOT_ACK;
+					value |= p->irq_state[p->pending_irq].priority << VIC_IRQ_CON_PRIORITY_SHIFT;
+					value |= p->pending_irq;
 				}
 			} else {
 				value = 0;
 			}
 			break;
 		
-		case VIC_CURRENT_IRQ:
-			if (p->current_irq > 0 && !p->irq_lock) {
-				value = p->current_irq;
+		case VIC_IRQ_CURRENT:
+			if (p->pending_irq >= 0 && !p->irq_lock) {
+				value = p->pending_irq;
 				p->irq_lock = true;
 				qemu_set_irq(p->parent_irq, 0);
 			} else {
@@ -146,9 +151,9 @@ static uint64_t vic_io_read(void *opaque, hwaddr haddr, unsigned size) {
 			}
 			break;
 		
-		case VIC_CURRENT_FIQ:
-			if (p->current_fiq > 0 && !p->fiq_lock) {
-				value = p->current_fiq;
+		case VIC_FIQ_CURRENT:
+			if (p->pending_fiq >= 0 && !p->fiq_lock) {
+				value = p->pending_fiq;
 				p->fiq_lock = true;
 				qemu_set_irq(p->parent_fiq, 0);
 			} else {
@@ -188,19 +193,23 @@ static void vic_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned si
 		
 		case VIC_IRQ_ACK:
 			#if PMB887X_IO_BRIDGE
-			if (p->current_irq > 0 && p->irq_state[p->current_irq].bridge) {
-				p->irq_state[p->current_irq].level = 0;
+			if (p->pending_irq >= 0 && p->irq_state[p->pending_irq].bridge) {
+				p->irq_state[p->pending_irq].level = 0;
 				pmb8876_io_bridge_write(haddr + p->mmio.addr, size, value);
 			}
 			#endif
 			
-			if (value)
+			if (value) {
 				p->irq_lock = false;
+				p->irq_con &= ~VIC_IRQ_CON_MASK_PRIORITY;
+			}
 		break;
 		
 		case VIC_FIQ_ACK:
-			if (value)
+			if (value) {
 				p->fiq_lock = false;
+				p->fiq_con &= ~VIC_FIQ_CON_MASK_PRIORITY;
+			}
 		break;
 		
 		case VIC_CON0 ... VIC_CON169:
@@ -217,8 +226,12 @@ static void vic_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned si
 		}
 		break;
 		
-		case VIC_IRQ_STAT:
-			// Ignore write...
+		case VIC_IRQ_CON:
+			p->irq_con = value & VIC_IRQ_CON_MASK_PRIORITY;
+			break;
+
+		case VIC_FIQ_CON:
+			p->fiq_con = value & VIC_IRQ_CON_MASK_PRIORITY;
 			break;
 	}
 	
@@ -240,6 +253,9 @@ static void vic_init(Object *obj) {
 	memory_region_init_io(&p->mmio, obj, &io_ops, p, "pmb887x-vic", VIC_IO_SIZE);
 	sysbus_init_mmio(SYS_BUS_DEVICE(obj), &p->mmio);
 	
+	p->pending_fiq = -1;
+	p->pending_irq = -1;
+
 	for (int i = 0; i < ARRAY_SIZE(p->irq_state); i++)
 		p->irq_state[i].id = i;
 	

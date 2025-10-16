@@ -2,7 +2,7 @@
  * Generic serial display
  */
 #define PMB887X_TRACE_ID		LCD
-#define PMB887X_TRACE_PREFIX	"pmb887x-lcd-common"
+#define PMB887X_TRACE_PREFIX	"pmb887x-lcd"
 
 #include <math.h>
 #include "qemu/osdep.h"
@@ -207,6 +207,9 @@ void pmb887x_lcd_set_mode(pmb887x_lcd_t *lcd, enum pmb887x_lcd_pixel_mode_t mode
 	}
 
 	DPRINTF("mode %s, bpp: %d [%dB], buffer: %d\n", lcd_get_mode_name(lcd->mode), lcd->bpp, lcd->byte_pp, lcd->buffer_size);
+
+	if (need_transform)
+		DPRINTF("transform: %d deg, flip_h=%d, flip_v=%d\n", lcd->rotation, lcd->flip_horizontal, lcd->flip_vertical);
 }
 
 static inline bool lcd_incr_ac_x(pmb887x_lcd_t *lcd) {

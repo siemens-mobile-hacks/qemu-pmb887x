@@ -2,7 +2,7 @@
  * Toshiba JBT6K71
  * */
 #define PMB887X_TRACE_ID		LCD
-#define PMB887X_TRACE_PREFIX	"pmb887x-lcd-jbt6k71"
+#define PMB887X_TRACE_PREFIX	"jbt6k71"
 
 #include "qemu/osdep.h"
 #include "hw/qdev-properties.h"
@@ -11,7 +11,7 @@
 #include "hw/arm/pmb887x/trace.h"
 #include "hw/arm/pmb887x/ssc/lcd_common.h"
 
-#define TYPE_PMB887X_LCD_JBT6K71	"pmb887x-lcd-jbt6k71"
+#define TYPE_PMB887X_LCD_JBT6K71	"jbt6k71"
 #define PMB887X_LCD_JBT6K71(obj)	OBJECT_CHECK(pmb887x_lcd_jbt6k71_t, (obj), TYPE_PMB887X_LCD_JBT6K71)
 
 #define JBT6K71_MAX_BPP		18
