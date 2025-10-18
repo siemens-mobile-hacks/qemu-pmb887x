@@ -63,67 +63,6 @@ arm_ss.add(when: 'CONFIG_XEN', if_true: files(
   'xen-stubs.c',
   'xen-pvh.c',
 ))
-
-arm_ss.add(when: 'CONFIG_PMB887X', if_true: files(
-	'pmb887x/board.c',
-	'pmb887x/fifo.c',
-	'pmb887x/flash.c',
-	'pmb887x/flash-blk.c',
-	'pmb887x/adc.c',
-	'pmb887x/ebu.c',
-	'pmb887x/dmac.c',
-	'pmb887x/stm.c',
-	'pmb887x/pll.c',
-	'pmb887x/scu.c',
-	'pmb887x/sccu.c',
-	'pmb887x/gpio.c',
-	'pmb887x/usart.c',
-	'pmb887x/mmci.c',
-	'pmb887x/gptu.c',
-	'pmb887x/vic.c',
-	'pmb887x/tpu.c',
-	'pmb887x/rtc.c',
-	'pmb887x/i2c_v1.c',
-	'pmb887x/i2c_v2.c',
-	'pmb887x/capcom.c',
-	'pmb887x/dsp.c',
-	'pmb887x/ssc.c',
-	'pmb887x/dif_v1.c',
-	'pmb887x/dif_v2.c',
-	'pmb887x/mod.c',
-	'pmb887x/keypad.c',
-	'pmb887x/unknown.c',
-	'pmb887x/io_bridge.c',
-	'pmb887x/regs_dump.c',
-
-	'pmb887x/gen/brom.c',
-	'pmb887x/gen/cpu_meta.c',
-	'pmb887x/gen/cpu_modules.c',
-	'pmb887x/gen/flash-info.c',
-
-	'pmb887x/board/analog.c',
-	'pmb887x/board/board.c',
-	'pmb887x/board/cpu_module.c',
-	'pmb887x/board/devices.c',
-	'pmb887x/board/gpio.c',
-	'pmb887x/board/keyboard.c',
-	'pmb887x/board/memory.c',
-
-	'pmb887x/utils/config.c',
-	'pmb887x/utils/regexp.c',
-	'pmb887x/utils/strings.c',
-
-	'pmb887x/ssc/s1d13705.c',
-	'pmb887x/ssc/b00b10b.c',
-	'pmb887x/ssc/lcd_common.c',
-	'pmb887x/ssc/lcd_jbt6k71.c',
-	'pmb887x/ssc/lcd_ssd1286.c',
-
-	'pmb887x/i2c/d1094xx.c',
-	'pmb887x/i2c/pmb6812.c',
-	'pmb887x/i2c/tea5761uk.c',
-))
-
 system_ss.add(when: 'CONFIG_ARM_SMMUV3', if_true: files('smmu-common.c'))
 system_ss.add(when: 'CONFIG_COLLIE', if_true: files('collie.c'))
 system_ss.add(when: 'CONFIG_EXYNOS4', if_true: files('exynos4_boards.c'))
@@ -136,3 +75,5 @@ system_ss.add(when: 'CONFIG_VERSATILE', if_true: files('versatilepb.c'))
 system_ss.add(when: 'CONFIG_VEXPRESS', if_true: files('vexpress.c'))
 
 hw_arch += {'arm': arm_ss}
+
+subdir('pmb887x')

@@ -357,8 +357,11 @@ static void flash_io_write(void *opaque, hwaddr part_offset, uint64_t value, uns
 				break;
 
 			default:
-				flash_error_part(p, "cmd unknown (%02"PRIX64") at %08"PRIX64"", value, p->flash->offset + offset);
-				exit(1);
+				flash_trace_part(p, "cmd unknown (%02"PRIX64") at %08"PRIX64"", value, p->flash->offset + offset);
+				flash_reset(p);
+				// flash_error_part(p, "cmd unknown (%02"PRIX64") at %08"PRIX64"", value, p->flash->offset + offset);
+				// exit(1);
+				break;
 		}
 	} else if (p->wcycle == 1) {
 		switch (p->cmd) {

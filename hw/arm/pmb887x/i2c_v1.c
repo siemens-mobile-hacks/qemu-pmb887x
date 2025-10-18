@@ -365,9 +365,9 @@ static uint64_t i2c_io_read(void *opaque, hwaddr haddr, unsigned size) {
 			break;
 
 		default:
-			IO_DUMP(haddr + p->mmio.addr, size, 0xFFFFFFFF, false);
+			// IO_DUMP(haddr + p->mmio.addr, size, 0xFFFFFFFF, false);
 			EPRINTF("unknown reg access: %02"PRIX64"\n", haddr);
-			exit(1);
+			// exit(1);
 	}
 
 	IO_DUMP(haddr + p->mmio.addr, size, value, false);

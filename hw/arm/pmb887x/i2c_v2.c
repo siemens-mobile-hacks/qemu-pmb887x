@@ -76,6 +76,9 @@ struct pmb887x_i2c_t {
 	uint32_t fifocfg;
 	uint32_t tpsctrl;
 	uint32_t timcfg;
+
+	qemu_irq gpio_scl;
+	qemu_irq gpio_sda;
 };
 
 static void i2c_work(pmb887x_i2c_t *p);
@@ -455,7 +458,7 @@ static void i2c_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned si
 
 		default:
 			EPRINTF("unknown reg access: %02"PRIX64"\n", haddr);
-			exit(1);
+			// exit(1);
 
 		case I2Cv2_RUNCTRL:
 			p->runctrl = value;
@@ -566,13 +569,23 @@ static const MemoryRegionOps io_ops = {
 	}
 };
 
+static void i2c_handle_gpio_input(void *opaque, int id, int level) {
+	// nothing
+}
+
 static void i2c_init(Object *obj) {
+	DeviceState *dev = DEVICE(obj);
 	pmb887x_i2c_t *p = PMB887X_I2C(obj);
 	memory_region_init_io(&p->mmio, obj, &io_ops, p, TYPE_PMB887X_I2C, I2Cv2_IO_SIZE);
 	sysbus_init_mmio(SYS_BUS_DEVICE(obj), &p->mmio);
 
 	for (int i = 0; i < ARRAY_SIZE(p->irq); i++)
 		sysbus_init_irq(SYS_BUS_DEVICE(obj), &p->irq[i]);
+
+	qdev_init_gpio_in_named(dev, i2c_handle_gpio_input, "SCL_IN", 1);
+	qdev_init_gpio_out_named(dev, &p->gpio_scl, "SCL_OUT", 1);
+	qdev_init_gpio_in_named(dev, i2c_handle_gpio_input, "SDA_IN", 1);
+	qdev_init_gpio_out_named(dev, &p->gpio_sda, "SDA_OUT", 1);
 }
 
 static void i2c_realize(DeviceState *dev, Error **errp) {

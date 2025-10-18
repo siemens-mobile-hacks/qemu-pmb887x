@@ -6,6 +6,7 @@
 
 #include "qemu/osdep.h"
 #include "hw/irq.h"
+#include "hw/ssi/ssi.h"
 #include "hw/sysbus.h"
 #include "qemu/module.h"
 #include "qom/object.h"
@@ -28,6 +29,7 @@ typedef struct pmb887x_dif_v2_t pmb887x_dif_v2_t;
 struct pmb887x_dif_v2_t {
 	SysBusDevice parent_obj;
 	MemoryRegion mmio;
+	SSIBus *bus;
 	
 	qemu_irq irq[4];
 	
@@ -260,6 +262,8 @@ static void dif_v2_init(Object *obj) {
 	memory_region_init_io(&p->mmio, obj, &io_ops, p, "pmb887x-dif-v2", DIFv2_IO_SIZE);
 	sysbus_init_mmio(SYS_BUS_DEVICE(obj), &p->mmio);
 	
+	p->bus = ssi_create_bus(DEVICE(obj), TYPE_PMB887X_DIF);
+
 	for (int i = 0; i < ARRAY_SIZE(p->irq); i++)
 		sysbus_init_irq(SYS_BUS_DEVICE(obj), &p->irq[i]);
 }
@@ -271,6 +275,7 @@ static void dif_v2_realize(DeviceState *dev, Error **errp) {
 }
 
 static const Property dif_v2_properties[] = {
+	DEFINE_PROP_LINK("bus", pmb887x_dif_v2_t, bus, "SSI", SSIBus *),
 	DEFINE_PROP_LINK("dmac", pmb887x_dif_v2_t, dmac, TYPE_PMB887X_DMAC, pmb887x_dmac_t *),
 	DEFINE_PROP_LINK("lcd", pmb887x_dif_v2_t, lcd, "pmb887x-lcd", pmb887x_lcd_t *),
 	DEFINE_PROP_UINT32("dmac-tx-periph-id", pmb887x_dif_v2_t, dmac_tx_periph_id, 4),

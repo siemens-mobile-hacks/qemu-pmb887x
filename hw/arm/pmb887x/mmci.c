@@ -27,6 +27,10 @@ struct pmb887x_mmci_t {
 	SysBusDevice parent_obj;
 	MemoryRegion mmio;
 	pmb887x_clc_reg_t clc;
+	qemu_irq gpio_dat0;
+	qemu_irq gpio_dat1;
+	qemu_irq gpio_cmd;
+	qemu_irq gpio_clk;
 };
 
 static uint64_t mmci_io_read(void *opaque, hwaddr haddr, unsigned size) {
@@ -79,10 +83,24 @@ static const MemoryRegionOps io_ops = {
 	}
 };
 
+static void mmci_handle_gpio_input(void *opaque, int id, int level) {
+	// nothing
+}
+
 static void mmci_init(Object *obj) {
+	DeviceState *dev = DEVICE(obj);
 	pmb887x_mmci_t *p = PMB887X_MMCI(obj);
 	memory_region_init_io(&p->mmio, obj, &io_ops, p, "pmb887x-mmci", MMCI_IO_SIZE);
 	sysbus_init_mmio(SYS_BUS_DEVICE(obj), &p->mmio);
+
+	qdev_init_gpio_in_named(dev, mmci_handle_gpio_input, "DAT0_IN", 1);
+	qdev_init_gpio_in_named(dev, mmci_handle_gpio_input, "DAT1_IN", 1);
+	qdev_init_gpio_in_named(dev, mmci_handle_gpio_input, "CMD_IN", 1);
+	qdev_init_gpio_in_named(dev, mmci_handle_gpio_input, "CLK_IN", 1);
+	qdev_init_gpio_out_named(dev, &p->gpio_dat0, "DAT0_OUT", 1);
+	qdev_init_gpio_out_named(dev, &p->gpio_dat1, "DAT1_OUT", 1);
+	qdev_init_gpio_out_named(dev, &p->gpio_cmd, "CMD_OUT", 1);
+	qdev_init_gpio_out_named(dev, &p->gpio_clk, "CLK_OUT", 1);
 }
 
 static void mmci_realize(DeviceState *dev, Error **errp) {
