@@ -27,8 +27,8 @@
 
 #include "hw/arm/pmb887x/io_bridge.h"
 #include "hw/arm/pmb887x/regs_dump.h"
-#include "hw/arm/pmb887x/ssc/lcd_common.h"
 #include "hw/arm/pmb887x/pll.h"
+#include "hw/arm/pmb887x/trace_common.h"
 
 static MemoryRegion tcm_memory[2];
 static uint32_t tcm_regs[2] = {0x10, 0x10};
@@ -48,7 +48,7 @@ static void pmb8876_tcm_update(void) {
 		if (size > 0)
 			size = (1 << (size - 1)) * 1024;
 		
-		// fprintf(stderr, "TCM%d: %08X (%08X, enabled=%d)\n", i, base, size, enabled);
+		fprintf(stderr, "TCM%d: %08X (%08X, enabled=%d)\n", i, base, size, enabled);
 		
 		if (memory_region_is_mapped(&tcm_memory[i])) 
 			memory_region_del_subregion(get_system_memory(), &tcm_memory[i]);
@@ -116,6 +116,7 @@ static void pmb887x_init(MachineState *machine) {
 		exit(1);
 	}
 
+	pmb887x_trace_init();
 	pmb887x_board_init(board_config_file);
 
 #if PMB887X_IO_BRIDGE

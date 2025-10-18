@@ -1,6 +1,11 @@
 #pragma once
 
-#include "trace_common.h"
+#include "qemu/osdep.h"
+#include "qemu/log.h"
+#include "qapi/error.h"
+#include "qemu/error-report.h"
+#include "hw/arm/pmb887x/regs_dump.h"
+#include "hw/arm/pmb887x/trace_common.h"
 
 #ifndef PMB887X_TRACE_ID
 #error "PMB887X_TRACE_ID not defined!"

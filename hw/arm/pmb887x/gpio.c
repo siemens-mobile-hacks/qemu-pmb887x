@@ -176,8 +176,6 @@ static void pcl_update_pin_state(pmb887x_pcl_t *p, int mux, int id) {
 		if (pin_mux_is != 0) {
 			// proxy GPIO_IN -> PERIPHERAL
 			qemu_set_irq(p->pins_out[pin_mux_is][id], p->input_state[0][id]);
-
-			printf("LNK GPIO_IN %d ALT%d -> %d\n", id, pin_mux_is - 1, p->input_state[0][id]);
 		}
 	} else {
 		if (pin_mux_os != 0 && pin_mux_os == mux) {

@@ -29,6 +29,7 @@ arm_ss.add(when: 'CONFIG_PMB887X', if_true: files(
 	'unknown.c',
 	'io_bridge.c',
 	'regs_dump.c',
+	'trace_common.c',
 
 	'gen/brom.c',
 	'gen/cpu_meta.c',

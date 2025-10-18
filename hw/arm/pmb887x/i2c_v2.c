@@ -456,10 +456,6 @@ static void i2c_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned si
 			pmb887x_clc_set(&p->clc, value);
 			break;
 
-		default:
-			EPRINTF("unknown reg access: %02"PRIX64"\n", haddr);
-			// exit(1);
-
 		case I2Cv2_RUNCTRL:
 			p->runctrl = value;
 
@@ -555,6 +551,11 @@ static void i2c_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned si
 
 		case I2Cv2_ERRIRQSC:
 			pmb887x_srb_ext_set_icr(&p->srb_err, value);
+			break;
+
+		default:
+			EPRINTF("unknown reg access: %02"PRIX64"\n", haddr);
+			// exit(1);
 			break;
 	}
 }
