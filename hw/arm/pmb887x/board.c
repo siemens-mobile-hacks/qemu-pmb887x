@@ -32,18 +32,26 @@
 
 void qmp_pmemsave(uint64_t addr, uint64_t size, const char *filename, Error **errp);
 
+static bool machine_used = false;
+
 __attribute__((destructor))
 static void memory_dump_at_exit(void) {
-	if (qemu_get_cpu(0))
-		fprintf(stderr, "sorry died at %08X LR %08X\n", ARM_CPU(qemu_get_cpu(0))->env.regs[15], ARM_CPU(qemu_get_cpu(0))->env.regs[14]);
-//	
+	if (!machine_used)
+		return;
+
+	CPUState *cpu = qemu_get_cpu(0);
+	if (!cpu)
+		return;
+
+	fprintf(stderr, "sorry died at %08X LR %08X\n", ARM_CPU(cpu)->env.regs[15], ARM_CPU(cpu)->env.regs[14]);
+
 //	qmp_pmemsave(0xB0000000, 16 * 1024 * 1024, "/tmp/ram.bin", NULL);
 //	qmp_pmemsave(0xFFFF0000, 0x4000, "/tmp/tcm.bin", NULL);
 //	qmp_pmemsave(0x00080000, 96 * 1024, "/tmp/sram.bin", NULL);
 //	
 //	qmp_pmemsave(0xA8000000, 16 * 1024 * 1024, "/tmp/ram.bin", NULL);
 //	qmp_pmemsave(0x00000000, 0x4000, "/tmp/tcm.bin", NULL);
-	qmp_pmemsave(0x00000000, 96 * 1024, "/tmp/sram.bin", NULL);
+//	qmp_pmemsave(0x00000000, 96 * 1024, "/tmp/sram.bin", NULL);
 }
 
 static void pmb887x_init_keymap(DeviceState *keypad, const uint32_t *map, int map_size) {
@@ -54,6 +62,8 @@ static void pmb887x_init_keymap(DeviceState *keypad, const uint32_t *map, int ma
 }
 
 static void pmb887x_init(MachineState *machine) {
+	machine_used = true;
+
 	const char *board_config_file = getenv("PMB887X_BOARD");
 	if (!board_config_file) {
 		error_report("Please, set board config with env PMB887X_BOARD=path/to/board.cfg");

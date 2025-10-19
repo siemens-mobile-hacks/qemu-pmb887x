@@ -39,7 +39,7 @@ static void tcm_update_state(pmb887x_tcm_t *p, int i) {
 	if (size > 0)
 		size = (1 << (size - 1)) * 1024;
 
-	DPRINTF("TCM%c: %08X (%08X, enabled=%d)\n", tcm_names[i], base, size, enabled);
+	DPRINTF("TCM%c %08X (%08X, enabled=%d)\n", tcm_names[i], base, size, enabled);
 
 	if (memory_region_is_mapped(&p->memory[i]))
 		memory_region_del_subregion(p->cpu->memory, &p->memory[i]);
