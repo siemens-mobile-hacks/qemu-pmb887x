@@ -8,7 +8,7 @@ struct pmb887x_debug_channel_t {
 	uint64_t mask;
 };
 
-static uint64_t parse_trace_spec(const char *spec);
+static uint64_t parse_trace_spec(const char *spec, uint64_t mask);
 
 static const pmb887x_debug_channel_t debug_channels[] = {
 	// modules
@@ -33,6 +33,7 @@ static const pmb887x_debug_channel_t debug_channels[] = {
 	{ "sccu",		PMB887X_TRACE_SCCU },
 	{ "mmci",		PMB887X_TRACE_MMCI },
 	{ "ssc",		PMB887X_TRACE_SSC },
+	{ "tcm",		PMB887X_TRACE_TCM },
 
 	// peripherals
 	{ "acodec",		PMB887X_TRACE_ACODEC },
@@ -54,12 +55,13 @@ uint64_t pmb887x_trace_io_mask = 0;
 uint64_t pmb887x_trace_log_mask = 0;
 
 void pmb887x_trace_init(void) {
-	pmb887x_trace_io_mask = parse_trace_spec(getenv("PMB887X_TRACE_IO"));
-	pmb887x_trace_log_mask = parse_trace_spec(getenv("PMB887X_TRACE_LOG"));
+	pmb887x_trace_io_mask = parse_trace_spec(getenv("PMB887X_TRACE_IO"), 0);
+	pmb887x_trace_log_mask = parse_trace_spec(getenv("PMB887X_TRACE_LOG"), 0);
+	pmb887x_trace_io_mask = parse_trace_spec(getenv("PMB887X_TRACE_ALL"), pmb887x_trace_io_mask);
+	pmb887x_trace_log_mask = parse_trace_spec(getenv("PMB887X_TRACE_ALL"), pmb887x_trace_log_mask);
 }
 
-static uint64_t parse_trace_spec(const char *spec) {
-	uint64_t mask = 0;
+static uint64_t parse_trace_spec(const char *spec, uint64_t mask) {
 	char token[32] = {};
 	int token_idx = 0;
 

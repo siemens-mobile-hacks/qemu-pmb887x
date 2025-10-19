@@ -30,62 +30,6 @@
 #include "hw/arm/pmb887x/pll.h"
 #include "hw/arm/pmb887x/trace_common.h"
 
-static MemoryRegion tcm_memory[2];
-static uint32_t tcm_regs[2] = {0x10, 0x10};
-
-static pmb887x_pll_t *cpu_pll = NULL;
-static ARMCPU *cpu = NULL;
-
-/*
-	TCM
-*/
-static void pmb8876_tcm_update(void) {
-	for (int i = 0; i < 2; ++i) {
-		uint32_t base = tcm_regs[i] & 0xFFFFF000;
-		uint32_t size = (tcm_regs[i] >> 2) & 0x1F;
-		bool enabled = (tcm_regs[i] & 1) && size > 0;
-		
-		if (size > 0)
-			size = (1 << (size - 1)) * 1024;
-		
-		fprintf(stderr, "TCM%d: %08X (%08X, enabled=%d)\n", i, base, size, enabled);
-		
-		if (memory_region_is_mapped(&tcm_memory[i])) 
-			memory_region_del_subregion(get_system_memory(), &tcm_memory[i]);
-		
-		if (enabled && !memory_region_is_mapped(&tcm_memory[i])) {
-			memory_region_set_size(&tcm_memory[i], size);
-			memory_region_add_subregion_overlap(get_system_memory(), base, &tcm_memory[i], 20002 - i);
-		}
-	}
-}
-
-static uint64_t pmb8876_atcm_read(CPUARMState *env, const ARMCPRegInfo *ri) {
-	return tcm_regs[0];
-}
-
-static uint64_t pmb8876_btcm_read(CPUARMState *env, const ARMCPRegInfo *ri) {
-	return tcm_regs[1];
-}
-
-static void pmb8876_atcm_write(CPUARMState *env, const ARMCPRegInfo *ri, uint64_t value) {
-	tcm_regs[0] = value;
-	pmb8876_tcm_update();
-}
-
-static void pmb8876_btcm_write(CPUARMState *env, const ARMCPRegInfo *ri, uint64_t value) {
-	tcm_regs[1] = value;
-	pmb8876_tcm_update();
-}
-
-static const ARMCPRegInfo cp_reginfo[] = {
-	// TCM
-	{ .name = "ATCM", .cp = 15, .opc1 = 0, .crn = 9, .crm = 1, .opc2 = 0,
-		.access = PL1_RW, .type = ARM_CP_IO, .readfn = pmb8876_atcm_read, .writefn = pmb8876_atcm_write },
-	{ .name = "BTCM", .cp = 15, .opc1 = 0, .crn = 9, .crm = 1, .opc2 = 1,
-		.access = PL1_RW, .type = ARM_CP_IO, .readfn = pmb8876_btcm_read, .writefn = pmb8876_btcm_write },
-};
-
 void qmp_pmemsave(uint64_t addr, uint64_t size, const char *filename, Error **errp);
 
 __attribute__((destructor))
@@ -129,25 +73,18 @@ static void pmb887x_init(MachineState *machine) {
 	MemoryRegion *sysmem = get_system_memory();
 
 	Object *cpuobj = object_new(machine->cpu_type);
-	cpu = ARM_CPU(cpuobj);
+	ARMCPU *cpu = ARM_CPU(cpuobj);
 
 	if (object_property_find(cpuobj, "has_el3"))
 		object_property_set_bool(cpuobj, "has_el3", false, &error_fatal);
 	object_property_set_bool(cpuobj, "realized", false, &error_fatal);
 
-	// TCM regs
-	define_arm_cp_regs(cpu, cp_reginfo);
-
 	qdev_realize(DEVICE(cpuobj), NULL, &error_fatal);
 
-	// TCM cache memory (8k ATCM, 8k BTCM)
-	MemoryRegion *btcm = g_new(MemoryRegion, 1);
-	MemoryRegion *atcm = g_new(MemoryRegion, 1);
-	memory_region_init_ram(btcm, NULL, "BTCM", 8 * 1024, &error_fatal);
-	memory_region_init_ram(atcm, NULL, "ATCM", 8 * 1024, &error_fatal);
-	memory_region_init_alias(&tcm_memory[0], NULL, "BTCM_ALIAS", btcm, 0, memory_region_size(btcm));
-	memory_region_init_alias(&tcm_memory[1], NULL, "ATCM_ALIAS", atcm, 0, memory_region_size(atcm));
-	pmb8876_tcm_update();
+	// TCM
+	DeviceState *tcm = qdev_new("pmb887x-tcm");
+	object_property_set_link(OBJECT(tcm), "cpu", OBJECT(cpu), &error_fatal);
+	sysbus_realize_and_unref(SYS_BUS_DEVICE(tcm), &error_fatal);
 
 	// 0x00000000-0xFFFFFFFF (Unmapped IO access)
 	DeviceState *unknown_io = qdev_new("pmb887x-unknown");
@@ -196,7 +133,6 @@ static void pmb887x_init(MachineState *machine) {
 	// PLL
 	DeviceState *pll = pmb887x_new_cpu_module("PLL");
 	sysbus_realize_and_unref(SYS_BUS_DEVICE(pll), &error_fatal);
-	cpu_pll = pmb887x_pll_get_self(pll);
 
 	// System Timer
 	DeviceState *stm = pmb887x_new_cpu_module("STM");

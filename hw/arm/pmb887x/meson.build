@@ -26,6 +26,7 @@ arm_ss.add(when: 'CONFIG_PMB887X', if_true: files(
 	'dif_v2.c',
 	'mod.c',
 	'keypad.c',
+	'tcm.c',
 	'unknown.c',
 	'io_bridge.c',
 	'regs_dump.c',
