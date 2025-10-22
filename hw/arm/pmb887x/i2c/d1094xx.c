@@ -88,17 +88,19 @@ static int pmic_event(I2CSlave *s, enum i2c_event event) {
 
     switch (event) {
 		case I2C_START_SEND:
-			// Nothing
-			break;
-		
-		case I2C_START_RECV:
-		case I2C_NACK:
-		case I2C_FINISH:
 			p->wcycle = 0;
 			break;
-
 		case I2C_START_SEND_ASYNC:
-			// Nothing
+			p->wcycle = 0;
+			break;
+		case I2C_START_RECV:
+			p->wcycle = 0;
+			break;
+		case I2C_NACK:
+			p->wcycle = 0;
+			break;
+		case I2C_FINISH:
+			p->wcycle = 0;
 			break;
 	}
     

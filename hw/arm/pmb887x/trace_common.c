@@ -66,7 +66,7 @@ static uint64_t parse_trace_spec(const char *spec, uint64_t mask) {
 	int token_idx = 0;
 
 	if (!spec)
-		return 0;
+		return mask;
 
 	for (const char *p = spec; ; p++) {
 		char c = *p;

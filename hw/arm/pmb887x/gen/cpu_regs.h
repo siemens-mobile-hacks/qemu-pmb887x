@@ -333,10 +333,10 @@
 #define PMB8876_TPU_INT1_IRQ		120
 #define PMB8876_GPRSCU_INT0_IRQ		121
 #define PMB8876_GPRSCU_INT1_IRQ		122
-#define PMB8876_DIF_INT0_IRQ		134
-#define PMB8876_DIF_INT1_IRQ		135
-#define PMB8876_DIF_INT2_IRQ		136
-#define PMB8876_DIF_INT3_IRQ		137
+#define PMB8876_DIF_RX_SINGLE_IRQ	134
+#define PMB8876_DIF_RX_BURST_IRQ	135
+#define PMB8876_DIF_TX_IRQ			136
+#define PMB8876_DIF_ERR_IRQ			137
 #define PMB8876_CIF_UNK0_IRQ		138
 #define PMB8876_CIF_UNK1_IRQ		139
 #define PMB8876_CIF_UNK2_IRQ		140
@@ -524,7 +524,7 @@
 #define PMB8875_DIF_TX_IRQ			18
 #define PMB8875_DIF_RX_IRQ			19
 #define PMB8875_DIF_ERR_IRQ			20
-#define PMB8875_DIF_UNK_IRQ			21
+#define PMB8875_DIF_TMO_IRQ			21
 #define PMB8875_USB_IRQ				25
 #define PMB8875_USART1_TX_IRQ		26
 #define PMB8875_USART1_TBUF_IRQ		27
@@ -2011,401 +2011,1186 @@
 
 // DIFv1 [MOD_NUM=F043, MOD_REV=00, MOD_32BIT=C0]
 // DIF (Display Interface)
-#define DIFv1_IO_SIZE				0x00000200
+#define DIFv1_IO_SIZE					0x00000200
 /* Clock Control Register */
-#define DIFv1_CLC					0x00
+#define DIFv1_CLC						0x00
 
 /* Port Input Select Register */
-#define DIFv1_PISEL					0x04
-#define DIFv1_PISEL_MRIS			(1 << 0)		 // Master Mode Receive Input Select
-#define DIFv1_PISEL_MRIS_SHIFT		0
-#define DIFv1_PISEL_SRIS			(1 << 1)		 // Slave Mode Receive Input Select
-#define DIFv1_PISEL_SRIS_SHIFT		1
-#define DIFv1_PISEL_SCIS			(1 << 2)		 // Slave Mode Clock Input Select
-#define DIFv1_PISEL_SCIS_SHIFT		2
-#define DIFv1_PISEL_SLSIS			(0x7 << 3)		 // Slave Mode Slave Select Input Selection
-#define DIFv1_PISEL_SLSIS_SHIFT		3
-#define DIFv1_PISEL_STIP			(1 << 8)		 // Slave Transmit Idle State Polarity
-#define DIFv1_PISEL_STIP_SHIFT		8
+#define DIFv1_PISEL						0x04
+#define DIFv1_PISEL_MRIS				(1 << 0)		 // Master Mode Receive Input Select
+#define DIFv1_PISEL_MRIS_SHIFT			0
+#define DIFv1_PISEL_SRIS				(1 << 1)		 // Slave Mode Receive Input Select
+#define DIFv1_PISEL_SRIS_SHIFT			1
+#define DIFv1_PISEL_SCIS				(1 << 2)		 // Slave Mode Clock Input Select
+#define DIFv1_PISEL_SCIS_SHIFT			2
+#define DIFv1_PISEL_SLSIS				(0x7 << 3)		 // Slave Mode Slave Select Input Selection
+#define DIFv1_PISEL_SLSIS_SHIFT			3
+#define DIFv1_PISEL_STIP				(1 << 8)		 // Slave Transmit Idle State Polarity
+#define DIFv1_PISEL_STIP_SHIFT			8
 
 /* Module Identifier Register */
-#define DIFv1_ID					0x08
+#define DIFv1_ID						0x08
 
 /* Control Register */
-#define DIFv1_CON					0x10
-#define DIFv1_CON_HB				(1 << 4)		 // Heading Bit Control
-#define DIFv1_CON_HB_SHIFT			4
-#define DIFv1_CON_HB_LSB			0x0
-#define DIFv1_CON_HB_MSB			0x10
-#define DIFv1_CON_PH				(1 << 5)		 // Clock Phase Control (CPHA)
-#define DIFv1_CON_PH_SHIFT			5
-#define DIFv1_CON_PH_0				0x0
-#define DIFv1_CON_PH_1				0x20
-#define DIFv1_CON_PO				(1 << 6)		 // Clock Polarity Control (CPOL)
-#define DIFv1_CON_PO_SHIFT			6
-#define DIFv1_CON_PO_0				0x0
-#define DIFv1_CON_PO_1				0x40
-#define DIFv1_CON_LB				(1 << 7)		 // Loop-Back Control
-#define DIFv1_CON_LB_SHIFT			7
-#define DIFv1_CON_TE				(1 << 8)		 // Transmit Error Flag
-#define DIFv1_CON_TE_SHIFT			8
-#define DIFv1_CON_TEN				(1 << 8)		 // Transmit Error Enable
-#define DIFv1_CON_TEN_SHIFT			8
-#define DIFv1_CON_RE				(1 << 9)		 // Receive Error Flag
-#define DIFv1_CON_RE_SHIFT			9
-#define DIFv1_CON_REN				(1 << 9)		 // Receive Error Enable
-#define DIFv1_CON_REN_SHIFT			9
-#define DIFv1_CON_PE				(1 << 10)		 // Phase Error Flag
-#define DIFv1_CON_PE_SHIFT			10
-#define DIFv1_CON_PEN				(1 << 10)		 // Phase Error Enable
-#define DIFv1_CON_PEN_SHIFT			10
-#define DIFv1_CON_BE				(1 << 11)		 // Baud Rate Error Flag
-#define DIFv1_CON_BE_SHIFT			11
-#define DIFv1_CON_BEN				(1 << 11)		 // Baud Rate Error Enable
-#define DIFv1_CON_BEN_SHIFT			11
-#define DIFv1_CON_AREN				(1 << 12)		 // Automatic Reset Enable
-#define DIFv1_CON_AREN_SHIFT		12
-#define DIFv1_CON_BSY				(1 << 12)		 // Busy Flag
-#define DIFv1_CON_BSY_SHIFT			12
-#define DIFv1_CON_LOCK				(1 << 13)		 // Lock bit for the 8 MSB bits of the Transmist data register
-#define DIFv1_CON_LOCK_SHIFT		13
-#define DIFv1_CON_MS				(1 << 14)		 // Master Select
-#define DIFv1_CON_MS_SHIFT			14
-#define DIFv1_CON_MS_SLAVE			0x0
-#define DIFv1_CON_MS_MASTER			0x4000
-#define DIFv1_CON_EN				(1 << 15)		 // Enable Bit
-#define DIFv1_CON_EN_SHIFT			15
-#define DIFv1_CON_BC				(0xF << 16)		 // Bit Count Status
-#define DIFv1_CON_BC_SHIFT			16
-#define DIFv1_CON_BM				(0xF << 16)		 // Data Width Selection
-#define DIFv1_CON_BM_SHIFT			16
-#define DIFv1_CON_BM_1				0x0
-#define DIFv1_CON_BM_2				0x10000
-#define DIFv1_CON_BM_3				0x20000
-#define DIFv1_CON_BM_4				0x30000
-#define DIFv1_CON_BM_5				0x40000
-#define DIFv1_CON_BM_6				0x50000
-#define DIFv1_CON_BM_7				0x60000
-#define DIFv1_CON_BM_8				0x70000
-#define DIFv1_CON_BM_9				0x80000
-#define DIFv1_CON_BM_10				0x90000
-#define DIFv1_CON_BM_11				0xA0000
-#define DIFv1_CON_BM_12				0xB0000
-#define DIFv1_CON_BM_13				0xC0000
-#define DIFv1_CON_BM_14				0xD0000
-#define DIFv1_CON_BM_15				0xE0000
-#define DIFv1_CON_BM_16				0xF0000
+#define DIFv1_CON						0x10
+#define DIFv1_CON_HB					(1 << 4)		 // Heading Bit Control
+#define DIFv1_CON_HB_SHIFT				4
+#define DIFv1_CON_HB_LSB				0x0
+#define DIFv1_CON_HB_MSB				0x10
+#define DIFv1_CON_PH					(1 << 5)		 // Clock Phase Control (CPHA)
+#define DIFv1_CON_PH_SHIFT				5
+#define DIFv1_CON_PH_0					0x0
+#define DIFv1_CON_PH_1					0x20
+#define DIFv1_CON_PO					(1 << 6)		 // Clock Polarity Control (CPOL)
+#define DIFv1_CON_PO_SHIFT				6
+#define DIFv1_CON_PO_0					0x0
+#define DIFv1_CON_PO_1					0x40
+#define DIFv1_CON_LB					(1 << 7)		 // Loop-Back Control
+#define DIFv1_CON_LB_SHIFT				7
+#define DIFv1_CON_TE					(1 << 8)		 // Transmit Error Flag
+#define DIFv1_CON_TE_SHIFT				8
+#define DIFv1_CON_TEN					(1 << 8)		 // Transmit Error Enable
+#define DIFv1_CON_TEN_SHIFT				8
+#define DIFv1_CON_RE					(1 << 9)		 // Receive Error Flag
+#define DIFv1_CON_RE_SHIFT				9
+#define DIFv1_CON_REN					(1 << 9)		 // Receive Error Enable
+#define DIFv1_CON_REN_SHIFT				9
+#define DIFv1_CON_PE					(1 << 10)		 // Phase Error Flag
+#define DIFv1_CON_PE_SHIFT				10
+#define DIFv1_CON_PEN					(1 << 10)		 // Phase Error Enable
+#define DIFv1_CON_PEN_SHIFT				10
+#define DIFv1_CON_BE					(1 << 11)		 // Baud Rate Error Flag
+#define DIFv1_CON_BE_SHIFT				11
+#define DIFv1_CON_BEN					(1 << 11)		 // Baud Rate Error Enable
+#define DIFv1_CON_BEN_SHIFT				11
+#define DIFv1_CON_AREN					(1 << 12)		 // Automatic Reset Enable
+#define DIFv1_CON_AREN_SHIFT			12
+#define DIFv1_CON_BSY					(1 << 12)		 // Busy Flag
+#define DIFv1_CON_BSY_SHIFT				12
+#define DIFv1_CON_LOCK					(1 << 13)		 // Lock bit for the 8 MSB bits of the Transmist data register
+#define DIFv1_CON_LOCK_SHIFT			13
+#define DIFv1_CON_MS					(1 << 14)		 // Master Select
+#define DIFv1_CON_MS_SHIFT				14
+#define DIFv1_CON_MS_SLAVE				0x0
+#define DIFv1_CON_MS_MASTER				0x4000
+#define DIFv1_CON_EN					(1 << 15)		 // Enable Bit
+#define DIFv1_CON_EN_SHIFT				15
+#define DIFv1_CON_BC					(0xF << 16)		 // Bit Count Status
+#define DIFv1_CON_BC_SHIFT				16
+#define DIFv1_CON_BM					(0xF << 16)		 // Data Width Selection
+#define DIFv1_CON_BM_SHIFT				16
+#define DIFv1_CON_BM_1					0x0
+#define DIFv1_CON_BM_2					0x10000
+#define DIFv1_CON_BM_3					0x20000
+#define DIFv1_CON_BM_4					0x30000
+#define DIFv1_CON_BM_5					0x40000
+#define DIFv1_CON_BM_6					0x50000
+#define DIFv1_CON_BM_7					0x60000
+#define DIFv1_CON_BM_8					0x70000
+#define DIFv1_CON_BM_9					0x80000
+#define DIFv1_CON_BM_10					0x90000
+#define DIFv1_CON_BM_11					0xA0000
+#define DIFv1_CON_BM_12					0xB0000
+#define DIFv1_CON_BM_13					0xC0000
+#define DIFv1_CON_BM_14					0xD0000
+#define DIFv1_CON_BM_15					0xE0000
+#define DIFv1_CON_BM_16					0xF0000
 
 /* Baud Rate Timer Reload Register */
-#define DIFv1_BR					0x14
-#define DIFv1_BR_BR_VALUE			(0xFFFF << 0)	 // Baud Rate Timer/Reload Register Value
-#define DIFv1_BR_BR_VALUE_SHIFT		0
+#define DIFv1_BR						0x14
+#define DIFv1_BR_BR_VALUE				(0xFFFF << 0)	 // Baud Rate Timer/Reload Register Value
+#define DIFv1_BR_BR_VALUE_SHIFT			0
 
 /* Transmit Buffer Register */
-#define DIFv1_TB					0x20
-#define DIFv1_TB_TB_VALUE			(0xFFFF << 0)	 // Transmit Data Register Value
-#define DIFv1_TB_TB_VALUE_SHIFT		0
+#define DIFv1_TB						0x20
+#define DIFv1_TB_TB_VALUE				(0xFFFF << 0)	 // Transmit Data Register Value
+#define DIFv1_TB_TB_VALUE_SHIFT			0
 
 /* Receive Buffer Register */
-#define DIFv1_RB					0x24
-#define DIFv1_RB_RB_VALUE			(0xFFFF << 0)	 // Receive Data Register Value
-#define DIFv1_RB_RB_VALUE_SHIFT		0
+#define DIFv1_RB						0x24
+#define DIFv1_RB_RB_VALUE				(0xFFFF << 0)	 // Receive Data Register Value
+#define DIFv1_RB_RB_VALUE_SHIFT			0
 
 /* Receive FIFO Control Register */
-#define DIFv1_RXFCON				0x30
-#define DIFv1_RXFCON_RXFEN			(1 << 0)		 // Receive FIFO Enable
-#define DIFv1_RXFCON_RXFEN_SHIFT	0
-#define DIFv1_RXFCON_RXFLU			(1 << 1)		 // Receive FIFO Flush
-#define DIFv1_RXFCON_RXFLU_SHIFT	1
-#define DIFv1_RXFCON_RXTMEN			(1 << 2)		 // Receive FIFO Transparent Mode Enable
-#define DIFv1_RXFCON_RXTMEN_SHIFT	2
-#define DIFv1_RXFCON_RXFITL			(0x3F << 8)		 // Receive FIFO Interrupt Trigger Level
-#define DIFv1_RXFCON_RXFITL_SHIFT	8
+#define DIFv1_RXFCON					0x30
+#define DIFv1_RXFCON_RXFEN				(1 << 0)		 // Receive FIFO Enable
+#define DIFv1_RXFCON_RXFEN_SHIFT		0
+#define DIFv1_RXFCON_RXFLU				(1 << 1)		 // Receive FIFO Flush
+#define DIFv1_RXFCON_RXFLU_SHIFT		1
+#define DIFv1_RXFCON_RXTMEN				(1 << 2)		 // Receive FIFO Transparent Mode Enable
+#define DIFv1_RXFCON_RXTMEN_SHIFT		2
+#define DIFv1_RXFCON_RXFITL				(0x3F << 8)		 // Receive FIFO Interrupt Trigger Level
+#define DIFv1_RXFCON_RXFITL_SHIFT		8
 
-#define DIFv1_TXFCON				0x34
-#define DIFv1_TXFCON_TXFEN			(1 << 0)		 // Receive FIFO Enable
-#define DIFv1_TXFCON_TXFEN_SHIFT	0
-#define DIFv1_TXFCON_TXFLU			(1 << 1)		 // Receive FIFO Flush
-#define DIFv1_TXFCON_TXFLU_SHIFT	1
-#define DIFv1_TXFCON_TXTMEN			(1 << 2)		 // Receive FIFO Transparent Mode Enable
-#define DIFv1_TXFCON_TXTMEN_SHIFT	2
-#define DIFv1_TXFCON_TXFITL			(0x3F << 8)		 // Receive FIFO Interrupt Trigger Level
-#define DIFv1_TXFCON_TXFITL_SHIFT	8
+#define DIFv1_TXFCON					0x34
+#define DIFv1_TXFCON_TXFEN				(1 << 0)		 // Receive FIFO Enable
+#define DIFv1_TXFCON_TXFEN_SHIFT		0
+#define DIFv1_TXFCON_TXFLU				(1 << 1)		 // Receive FIFO Flush
+#define DIFv1_TXFCON_TXFLU_SHIFT		1
+#define DIFv1_TXFCON_TXTMEN				(1 << 2)		 // Receive FIFO Transparent Mode Enable
+#define DIFv1_TXFCON_TXTMEN_SHIFT		2
+#define DIFv1_TXFCON_TXFITL				(0x3F << 8)		 // Receive FIFO Interrupt Trigger Level
+#define DIFv1_TXFCON_TXFITL_SHIFT		8
 
-#define DIFv1_FSTAT					0x38
-#define DIFv1_FSTAT_RXFFL			(0x3F << 0)		 // Receive FIFO Filling Level
-#define DIFv1_FSTAT_RXFFL_SHIFT		0
-#define DIFv1_FSTAT_TXFFL			(0x3F << 8)		 // Transmit FIFO Filling Level
-#define DIFv1_FSTAT_TXFFL_SHIFT		8
+#define DIFv1_FSTAT						0x38
+#define DIFv1_FSTAT_RXFFL				(0x3F << 0)		 // Receive FIFO Filling Level
+#define DIFv1_FSTAT_RXFFL_SHIFT			0
+#define DIFv1_FSTAT_TXFFL				(0x3F << 8)		 // Transmit FIFO Filling Level
+#define DIFv1_FSTAT_TXFFL_SHIFT			8
 
-#define DIFv1_UNK0					0x40
+#define DIFv1_UNK0						0x40
 
-#define DIFv1_UNK1					0x44
+#define DIFv1_UNK1						0x44
 
-#define DIFv1_IMSC					0x48
-#define DIFv1_IMSC_TX				(1 << 0)		 // Transmit interrupt mask
-#define DIFv1_IMSC_TX_SHIFT			0
-#define DIFv1_IMSC_RX				(1 << 1)		 // Receive interrupt mask
-#define DIFv1_IMSC_RX_SHIFT			1
-#define DIFv1_IMSC_ERR				(1 << 3)		 // Error interrupt mask
-#define DIFv1_IMSC_ERR_SHIFT		3
-#define DIFv1_IMSC_TB				(1 << 4)		 // Transmit buffer interrupt mask
-#define DIFv1_IMSC_TB_SHIFT			4
+#define DIFv1_IMSC						0x48
+#define DIFv1_IMSC_TX					(1 << 0)		 // Transmit interrupt mask
+#define DIFv1_IMSC_TX_SHIFT				0
+#define DIFv1_IMSC_RX					(1 << 1)		 // Receive interrupt mask
+#define DIFv1_IMSC_RX_SHIFT				1
+#define DIFv1_IMSC_ERR					(1 << 3)		 // Error interrupt mask
+#define DIFv1_IMSC_ERR_SHIFT			3
+#define DIFv1_IMSC_TB					(1 << 4)		 // Transmit buffer interrupt mask
+#define DIFv1_IMSC_TB_SHIFT				4
 
-#define DIFv1_RIS					0x4C
-#define DIFv1_RIS_TX				(1 << 0)		 // Transmit interrupt raw status
-#define DIFv1_RIS_TX_SHIFT			0
-#define DIFv1_RIS_RX				(1 << 1)		 // Receive interrupt raw status
-#define DIFv1_RIS_RX_SHIFT			1
-#define DIFv1_RIS_ERR				(1 << 2)		 // Error interrupt raw status
-#define DIFv1_RIS_ERR_SHIFT			2
-#define DIFv1_RIS_TB				(1 << 3)		 // Transmit buffer raw interrupt status
-#define DIFv1_RIS_TB_SHIFT			3
+#define DIFv1_RIS						0x4C
+#define DIFv1_RIS_TX					(1 << 0)		 // Transmit interrupt raw status
+#define DIFv1_RIS_TX_SHIFT				0
+#define DIFv1_RIS_RX					(1 << 1)		 // Receive interrupt raw status
+#define DIFv1_RIS_RX_SHIFT				1
+#define DIFv1_RIS_ERR					(1 << 2)		 // Error interrupt raw status
+#define DIFv1_RIS_ERR_SHIFT				2
+#define DIFv1_RIS_TB					(1 << 3)		 // Transmit buffer raw interrupt status
+#define DIFv1_RIS_TB_SHIFT				3
 
-#define DIFv1_MIS					0x50
-#define DIFv1_MIS_TX				(1 << 0)		 // Transmit interrupt status
-#define DIFv1_MIS_TX_SHIFT			0
-#define DIFv1_MIS_RX				(1 << 1)		 // Receive interrupt status
-#define DIFv1_MIS_RX_SHIFT			1
-#define DIFv1_MIS_ERR				(1 << 2)		 // Error interrupt status
-#define DIFv1_MIS_ERR_SHIFT			2
-#define DIFv1_MIS_TB				(1 << 3)		 // Transmit buffer interrupt status
-#define DIFv1_MIS_TB_SHIFT			3
+#define DIFv1_MIS						0x50
+#define DIFv1_MIS_TX					(1 << 0)		 // Transmit interrupt status
+#define DIFv1_MIS_TX_SHIFT				0
+#define DIFv1_MIS_RX					(1 << 1)		 // Receive interrupt status
+#define DIFv1_MIS_RX_SHIFT				1
+#define DIFv1_MIS_ERR					(1 << 2)		 // Error interrupt status
+#define DIFv1_MIS_ERR_SHIFT				2
+#define DIFv1_MIS_TB					(1 << 3)		 // Transmit buffer interrupt status
+#define DIFv1_MIS_TB_SHIFT				3
 
-#define DIFv1_ICR					0x54
-#define DIFv1_ICR_TX				(1 << 0)		 // Transmit interrupt mask
-#define DIFv1_ICR_TX_SHIFT			0
-#define DIFv1_ICR_RX				(1 << 1)		 // Receive interrupt mask
-#define DIFv1_ICR_RX_SHIFT			1
-#define DIFv1_ICR_ERR				(1 << 2)		 // Error interrupt mask
-#define DIFv1_ICR_ERR_SHIFT			2
-#define DIFv1_ICR_TB				(1 << 3)		 // Transmit buffer interrupt mask
-#define DIFv1_ICR_TB_SHIFT			3
+#define DIFv1_ICR						0x54
+#define DIFv1_ICR_TX					(1 << 0)		 // Transmit interrupt mask
+#define DIFv1_ICR_TX_SHIFT				0
+#define DIFv1_ICR_RX					(1 << 1)		 // Receive interrupt mask
+#define DIFv1_ICR_RX_SHIFT				1
+#define DIFv1_ICR_ERR					(1 << 2)		 // Error interrupt mask
+#define DIFv1_ICR_ERR_SHIFT				2
+#define DIFv1_ICR_TB					(1 << 3)		 // Transmit buffer interrupt mask
+#define DIFv1_ICR_TB_SHIFT				3
 
-#define DIFv1_ISR					0x58
-#define DIFv1_ISR_TX				(1 << 0)		 // Transmit interrupt set
-#define DIFv1_ISR_TX_SHIFT			0
-#define DIFv1_ISR_RX				(1 << 1)		 // Receive interrupt set
-#define DIFv1_ISR_RX_SHIFT			1
-#define DIFv1_ISR_ERR				(1 << 2)		 // Error interrupt set
-#define DIFv1_ISR_ERR_SHIFT			2
-#define DIFv1_ISR_TB				(1 << 3)		 // Transmit buffer interrupt set
-#define DIFv1_ISR_TB_SHIFT			3
+#define DIFv1_ISR						0x58
+#define DIFv1_ISR_TX					(1 << 0)		 // Transmit interrupt set
+#define DIFv1_ISR_TX_SHIFT				0
+#define DIFv1_ISR_RX					(1 << 1)		 // Receive interrupt set
+#define DIFv1_ISR_RX_SHIFT				1
+#define DIFv1_ISR_ERR					(1 << 2)		 // Error interrupt set
+#define DIFv1_ISR_ERR_SHIFT				2
+#define DIFv1_ISR_TB					(1 << 3)		 // Transmit buffer interrupt set
+#define DIFv1_ISR_TB_SHIFT				3
 
-#define DIFv1_DMACON				0x5C
-#define DIFv1_DMACON_TX				(1 << 0)		 // Transmit DMA Enable. If this bit is set to 1, DMA for the transmit FIFO is enabled
-#define DIFv1_DMACON_TX_SHIFT		0
-#define DIFv1_DMACON_RX				(1 << 1)		 // Receive DMA Enable. If this bit is set to 1, DMA for the receive FIFO is enabled.
-#define DIFv1_DMACON_RX_SHIFT		1
+#define DIFv1_DMACON					0x5C
+#define DIFv1_DMACON_TX					(1 << 0)		 // Transmit DMA Enable. If this bit is set to 1, DMA for the transmit FIFO is enabled
+#define DIFv1_DMACON_TX_SHIFT			0
+#define DIFv1_DMACON_RX					(1 << 1)		 // Receive DMA Enable. If this bit is set to 1, DMA for the receive FIFO is enabled.
+#define DIFv1_DMACON_RX_SHIFT			1
 
-#define DIFv1_UNK2					0x60
+#define DIFv1_UNK2						0x60
 
-#define DIFv1_UNK3					0x70
+/* Pixel-Bit Conversion Register */
+#define DIFv1_PBCCON					0x70
+#define DIFv1_PBCCON_PBBCONV_MODE		(1 << 0)
+#define DIFv1_PBCCON_PBBCONV_MODE_SHIFT	0
 
-#define DIFv1_PROG0					0x74
-#define DIFv1_PROG1					0x78
-#define DIFv1_PROG2					0x7C
-#define DIFv1_PROG3					0x80
-#define DIFv1_PROG4					0x84
-#define DIFv1_PROG5					0x88
+/* Bit Multiplex Configuration Register 0 */
+#define DIFv1_BMREG0					0x74
+#define DIFv1_BMREG0_MUX0				(0x1F << 0)
+#define DIFv1_BMREG0_MUX0_SHIFT			0
+#define DIFv1_BMREG0_MUX1				(0x1F << 5)
+#define DIFv1_BMREG0_MUX1_SHIFT			5
+#define DIFv1_BMREG0_MUX2				(0x1F << 10)
+#define DIFv1_BMREG0_MUX2_SHIFT			10
+#define DIFv1_BMREG0_MUX3				(0x1F << 16)
+#define DIFv1_BMREG0_MUX3_SHIFT			16
+#define DIFv1_BMREG0_MUX4				(0x1F << 21)
+#define DIFv1_BMREG0_MUX4_SHIFT			21
+#define DIFv1_BMREG0_MUX5				(0x1F << 26)
+#define DIFv1_BMREG0_MUX5_SHIFT			26
 
-#define DIFv1_UNK4					0x8C
+/* Bit Multiplex Configuration Register 1 */
+#define DIFv1_BMREG1					0x78
+#define DIFv1_BMREG1_MUX6				(0x1F << 0)
+#define DIFv1_BMREG1_MUX6_SHIFT			0
+#define DIFv1_BMREG1_MUX7				(0x1F << 5)
+#define DIFv1_BMREG1_MUX7_SHIFT			5
+#define DIFv1_BMREG1_MUX8				(0x1F << 10)
+#define DIFv1_BMREG1_MUX8_SHIFT			10
+#define DIFv1_BMREG1_MUX9				(0x1F << 16)
+#define DIFv1_BMREG1_MUX9_SHIFT			16
+#define DIFv1_BMREG1_MUX10				(0x1F << 21)
+#define DIFv1_BMREG1_MUX10_SHIFT		21
+#define DIFv1_BMREG1_MUX11				(0x1F << 26)
+#define DIFv1_BMREG1_MUX11_SHIFT		26
 
-#define DIFv1_UNK5					0x90
+/* Bit Multiplex Configuration Register 2 */
+#define DIFv1_BMREG2					0x7C
+#define DIFv1_BMREG2_MUX12				(0x1F << 0)
+#define DIFv1_BMREG2_MUX12_SHIFT		0
+#define DIFv1_BMREG2_MUX13				(0x1F << 5)
+#define DIFv1_BMREG2_MUX13_SHIFT		5
+#define DIFv1_BMREG2_MUX14				(0x1F << 10)
+#define DIFv1_BMREG2_MUX14_SHIFT		10
+#define DIFv1_BMREG2_MUX15				(0x1F << 16)
+#define DIFv1_BMREG2_MUX15_SHIFT		16
+#define DIFv1_BMREG2_MUX16				(0x1F << 21)
+#define DIFv1_BMREG2_MUX16_SHIFT		21
+#define DIFv1_BMREG2_MUX17				(0x1F << 26)
+#define DIFv1_BMREG2_MUX17_SHIFT		26
 
-#define DIFv1_UNK6					0x94
+/* Bit Multiplex Configuration Register 3 */
+#define DIFv1_BMREG3					0x80
+#define DIFv1_BMREG3_MUX18				(0x1F << 0)
+#define DIFv1_BMREG3_MUX18_SHIFT		0
+#define DIFv1_BMREG3_MUX19				(0x1F << 5)
+#define DIFv1_BMREG3_MUX19_SHIFT		5
+#define DIFv1_BMREG3_MUX20				(0x1F << 10)
+#define DIFv1_BMREG3_MUX20_SHIFT		10
+#define DIFv1_BMREG3_MUX21				(0x1F << 16)
+#define DIFv1_BMREG3_MUX21_SHIFT		16
+#define DIFv1_BMREG3_MUX22				(0x1F << 21)
+#define DIFv1_BMREG3_MUX22_SHIFT		21
+#define DIFv1_BMREG3_MUX23				(0x1F << 26)
+#define DIFv1_BMREG3_MUX23_SHIFT		26
 
-#define DIFv1_UNK7					0x98
+/* Bit Multiplex Configuration Register 4 */
+#define DIFv1_BMREG4					0x84
+#define DIFv1_BMREG4_MUX24				(0x1F << 0)
+#define DIFv1_BMREG4_MUX24_SHIFT		0
+#define DIFv1_BMREG4_MUX25				(0x1F << 5)
+#define DIFv1_BMREG4_MUX25_SHIFT		5
+#define DIFv1_BMREG4_MUX26				(0x1F << 10)
+#define DIFv1_BMREG4_MUX26_SHIFT		10
+#define DIFv1_BMREG4_MUX27				(0x1F << 16)
+#define DIFv1_BMREG4_MUX27_SHIFT		16
+#define DIFv1_BMREG4_MUX28				(0x1F << 21)
+#define DIFv1_BMREG4_MUX28_SHIFT		21
+#define DIFv1_BMREG4_MUX29				(0x1F << 26)
+#define DIFv1_BMREG4_MUX29_SHIFT		26
 
-#define DIFv1_UNK8					0x9C
+/* Bit Multiplex Configuration Register 5 */
+#define DIFv1_BMREG5					0x88
+#define DIFv1_BMREG5_MUX30				(0x1F << 0)
+#define DIFv1_BMREG5_MUX30_SHIFT		0
+#define DIFv1_BMREG5_MUX31				(0x1F << 5)
+#define DIFv1_BMREG5_MUX31_SHIFT		5
+
+/* Bit Clamp Value Register */
+#define DIFv1_BCREG						0x8C
+#define DIFv1_BCREG_B0					(1 << 0)
+#define DIFv1_BCREG_B0_SHIFT			0
+#define DIFv1_BCREG_B16					(1 << 0)
+#define DIFv1_BCREG_B16_SHIFT			0
+#define DIFv1_BCREG_B1					(1 << 2)
+#define DIFv1_BCREG_B1_SHIFT			2
+#define DIFv1_BCREG_B17					(1 << 2)
+#define DIFv1_BCREG_B17_SHIFT			2
+#define DIFv1_BCREG_B18					(1 << 4)
+#define DIFv1_BCREG_B18_SHIFT			4
+#define DIFv1_BCREG_B2					(1 << 4)
+#define DIFv1_BCREG_B2_SHIFT			4
+#define DIFv1_BCREG_B19					(1 << 6)
+#define DIFv1_BCREG_B19_SHIFT			6
+#define DIFv1_BCREG_B3					(1 << 6)
+#define DIFv1_BCREG_B3_SHIFT			6
+#define DIFv1_BCREG_B20					(1 << 8)
+#define DIFv1_BCREG_B20_SHIFT			8
+#define DIFv1_BCREG_B4					(1 << 8)
+#define DIFv1_BCREG_B4_SHIFT			8
+#define DIFv1_BCREG_B21					(1 << 10)
+#define DIFv1_BCREG_B21_SHIFT			10
+#define DIFv1_BCREG_B5					(1 << 10)
+#define DIFv1_BCREG_B5_SHIFT			10
+#define DIFv1_BCREG_B22					(1 << 12)
+#define DIFv1_BCREG_B22_SHIFT			12
+#define DIFv1_BCREG_B6					(1 << 12)
+#define DIFv1_BCREG_B6_SHIFT			12
+#define DIFv1_BCREG_B23					(1 << 14)
+#define DIFv1_BCREG_B23_SHIFT			14
+#define DIFv1_BCREG_B7					(1 << 14)
+#define DIFv1_BCREG_B7_SHIFT			14
+#define DIFv1_BCREG_B24					(1 << 16)
+#define DIFv1_BCREG_B24_SHIFT			16
+#define DIFv1_BCREG_B8					(1 << 16)
+#define DIFv1_BCREG_B8_SHIFT			16
+#define DIFv1_BCREG_B25					(1 << 18)
+#define DIFv1_BCREG_B25_SHIFT			18
+#define DIFv1_BCREG_B9					(1 << 18)
+#define DIFv1_BCREG_B9_SHIFT			18
+#define DIFv1_BCREG_B10					(1 << 20)
+#define DIFv1_BCREG_B10_SHIFT			20
+#define DIFv1_BCREG_B26					(1 << 20)
+#define DIFv1_BCREG_B26_SHIFT			20
+#define DIFv1_BCREG_B11					(1 << 22)
+#define DIFv1_BCREG_B11_SHIFT			22
+#define DIFv1_BCREG_B27					(1 << 22)
+#define DIFv1_BCREG_B27_SHIFT			22
+#define DIFv1_BCREG_B12					(1 << 24)
+#define DIFv1_BCREG_B12_SHIFT			24
+#define DIFv1_BCREG_B28					(1 << 24)
+#define DIFv1_BCREG_B28_SHIFT			24
+#define DIFv1_BCREG_B13					(1 << 26)
+#define DIFv1_BCREG_B13_SHIFT			26
+#define DIFv1_BCREG_B29					(1 << 26)
+#define DIFv1_BCREG_B29_SHIFT			26
+#define DIFv1_BCREG_B14					(1 << 28)
+#define DIFv1_BCREG_B14_SHIFT			28
+#define DIFv1_BCREG_B30					(1 << 28)
+#define DIFv1_BCREG_B30_SHIFT			28
+#define DIFv1_BCREG_B15					(1 << 30)
+#define DIFv1_BCREG_B15_SHIFT			30
+#define DIFv1_BCREG_B31					(1 << 30)
+#define DIFv1_BCREG_B31_SHIFT			30
+
+/* Bit Control Register 0 */
+#define DIFv1_BCSEL0					0x90
+#define DIFv1_BCSEL0_B0					(0x3 << 0)
+#define DIFv1_BCSEL0_B0_SHIFT			0
+#define DIFv1_BCSEL0_B1					(0x3 << 2)
+#define DIFv1_BCSEL0_B1_SHIFT			2
+#define DIFv1_BCSEL0_B2					(0x3 << 4)
+#define DIFv1_BCSEL0_B2_SHIFT			4
+#define DIFv1_BCSEL0_B3					(0x3 << 6)
+#define DIFv1_BCSEL0_B3_SHIFT			6
+#define DIFv1_BCSEL0_B4					(0x3 << 8)
+#define DIFv1_BCSEL0_B4_SHIFT			8
+#define DIFv1_BCSEL0_B5					(0x3 << 10)
+#define DIFv1_BCSEL0_B5_SHIFT			10
+#define DIFv1_BCSEL0_B6					(0x3 << 12)
+#define DIFv1_BCSEL0_B6_SHIFT			12
+#define DIFv1_BCSEL0_B7					(0x3 << 14)
+#define DIFv1_BCSEL0_B7_SHIFT			14
+#define DIFv1_BCSEL0_B8					(0x3 << 16)
+#define DIFv1_BCSEL0_B8_SHIFT			16
+#define DIFv1_BCSEL0_B9					(0x3 << 18)
+#define DIFv1_BCSEL0_B9_SHIFT			18
+#define DIFv1_BCSEL0_B10				(0x3 << 20)
+#define DIFv1_BCSEL0_B10_SHIFT			20
+#define DIFv1_BCSEL0_B11				(0x3 << 22)
+#define DIFv1_BCSEL0_B11_SHIFT			22
+#define DIFv1_BCSEL0_B12				(0x3 << 24)
+#define DIFv1_BCSEL0_B12_SHIFT			24
+#define DIFv1_BCSEL0_B13				(0x3 << 26)
+#define DIFv1_BCSEL0_B13_SHIFT			26
+#define DIFv1_BCSEL0_B14				(0x3 << 28)
+#define DIFv1_BCSEL0_B14_SHIFT			28
+#define DIFv1_BCSEL0_B15				(0x3 << 30)
+#define DIFv1_BCSEL0_B15_SHIFT			30
+
+/* Bit Control Register 1 */
+#define DIFv1_BCSEL1					0x94
+#define DIFv1_BCSEL1_B16				(0x3 << 0)
+#define DIFv1_BCSEL1_B16_SHIFT			0
+#define DIFv1_BCSEL1_B17				(0x3 << 2)
+#define DIFv1_BCSEL1_B17_SHIFT			2
+#define DIFv1_BCSEL1_B18				(0x3 << 4)
+#define DIFv1_BCSEL1_B18_SHIFT			4
+#define DIFv1_BCSEL1_B19				(0x3 << 6)
+#define DIFv1_BCSEL1_B19_SHIFT			6
+#define DIFv1_BCSEL1_B20				(0x3 << 8)
+#define DIFv1_BCSEL1_B20_SHIFT			8
+#define DIFv1_BCSEL1_B21				(0x3 << 10)
+#define DIFv1_BCSEL1_B21_SHIFT			10
+#define DIFv1_BCSEL1_B22				(0x3 << 12)
+#define DIFv1_BCSEL1_B22_SHIFT			12
+#define DIFv1_BCSEL1_B23				(0x3 << 14)
+#define DIFv1_BCSEL1_B23_SHIFT			14
+#define DIFv1_BCSEL1_B24				(0x3 << 16)
+#define DIFv1_BCSEL1_B24_SHIFT			16
+#define DIFv1_BCSEL1_B25				(0x3 << 18)
+#define DIFv1_BCSEL1_B25_SHIFT			18
+#define DIFv1_BCSEL1_B26				(0x3 << 20)
+#define DIFv1_BCSEL1_B26_SHIFT			20
+#define DIFv1_BCSEL1_B27				(0x3 << 22)
+#define DIFv1_BCSEL1_B27_SHIFT			22
+#define DIFv1_BCSEL1_B28				(0x3 << 24)
+#define DIFv1_BCSEL1_B28_SHIFT			24
+#define DIFv1_BCSEL1_B29				(0x3 << 26)
+#define DIFv1_BCSEL1_B29_SHIFT			26
+#define DIFv1_BCSEL1_B30				(0x3 << 28)
+#define DIFv1_BCSEL1_B30_SHIFT			28
+#define DIFv1_BCSEL1_B31				(0x3 << 30)
+#define DIFv1_BCSEL1_B31_SHIFT			30
+
+#define DIFv1_UNK3						0x98
+
+#define DIFv1_UNK4						0x9C
 
 
 // DIFv2 [MOD_NUM=F043, MOD_REV=12, MOD_32BIT=C0]
-// DIF (Display Interface)
-#define DIFv2_IO_SIZE				0x0000C000
+// DIF (Display Interface), from linux-sofia-3gr/drivers/video/xgold/dcc/dcc-hwregs.h
+#define DIFv2_IO_SIZE						0x0000C004
 /* Clock Control Register */
-#define DIFv2_CLC					0x00
+#define DIFv2_CLC							0x00
 
-/* Module Identifier Register */
-#define DIFv2_ID					0x08
+/* Identification Register */
+#define DIFv2_ID							0x08
 
-/* RUN Control Register */
-#define DIFv2_RUNCTRL				0x10
-#define DIFv2_RUNCTRL_RUN			(1 << 0)	 // Enable DIF Interface
-#define DIFv2_RUNCTRL_RUN_SHIFT		0
+/* Run Control Register */
+#define DIFv2_RUNCTRL						0x10
+#define DIFv2_RUNCTRL_RUN					(1 << 0)		 // Enable DIF Interface
+#define DIFv2_RUNCTRL_RUN_SHIFT				0
 
-#define DIFv2_CON0					0x20
+/* Control Register */
+#define DIFv2_CON							0x20
+#define DIFv2_CON_TRI						(0x3 << 0)
+#define DIFv2_CON_TRI_SHIFT					0
+#define DIFv2_CON_HB						(1 << 4)		 // Heading Bit Control
+#define DIFv2_CON_HB_SHIFT					4
+#define DIFv2_CON_HB_LSB					0x0
+#define DIFv2_CON_HB_MSB					0x10
+#define DIFv2_CON_PH						(1 << 5)		 // Clock Phase Control (CPHA)
+#define DIFv2_CON_PH_SHIFT					5
+#define DIFv2_CON_PH_0						0x0
+#define DIFv2_CON_PH_1						0x20
+#define DIFv2_CON_PO						(1 << 6)		 // Clock Polarity Control (CPOL)
+#define DIFv2_CON_PO_SHIFT					6
+#define DIFv2_CON_PO_0						0x0
+#define DIFv2_CON_PO_1						0x40
+#define DIFv2_CON_LB						(1 << 7)		 // Loop-Back Control
+#define DIFv2_CON_LB_SHIFT					7
+#define DIFv2_CON_BM						(0x1F << 16)	 // Data Width Selection
+#define DIFv2_CON_BM_SHIFT					16
+#define DIFv2_CON_BM_1						0x0
+#define DIFv2_CON_BM_2						0x10000
+#define DIFv2_CON_BM_3						0x20000
+#define DIFv2_CON_BM_4						0x30000
+#define DIFv2_CON_BM_5						0x40000
+#define DIFv2_CON_BM_6						0x50000
+#define DIFv2_CON_BM_7						0x60000
+#define DIFv2_CON_BM_8						0x70000
+#define DIFv2_CON_BM_9						0x80000
+#define DIFv2_CON_BM_10						0x90000
+#define DIFv2_CON_BM_11						0xA0000
+#define DIFv2_CON_BM_12						0xB0000
+#define DIFv2_CON_BM_13						0xC0000
+#define DIFv2_CON_BM_14						0xD0000
+#define DIFv2_CON_BM_15						0xE0000
+#define DIFv2_CON_BM_16						0xF0000
 
-#define DIFv2_CON1					0x24
-#define DIFv2_CON1_UNK0				(1 << 0)
-#define DIFv2_CON1_UNK0_SHIFT		0
-#define DIFv2_CON1_UNK1				(1 << 1)
-#define DIFv2_CON1_UNK1_SHIFT		1
-#define DIFv2_CON1_CS				(1 << 6)	 // Use CS1 or CS2
-#define DIFv2_CON1_CS_SHIFT			6
-#define DIFv2_CON1_CS_CS1			0x0
-#define DIFv2_CON1_CS_CS2			0x40
+/* Peripheral Function Register */
+#define DIFv2_PERREG						0x24
+#define DIFv2_PERREG_DIFPERMODE				(1 << 0)
+#define DIFv2_PERREG_DIFPERMODE_SHIFT		0
+#define DIFv2_PERREG_DIFPERMODE_SERIAL		0x0
+#define DIFv2_PERREG_DIFPERMODE_PARALLEL	0x1
+#define DIFv2_PERREG_INBAND					(1 << 1)
+#define DIFv2_PERREG_INBAND_SHIFT			1
+#define DIFv2_PERREG_CS1POL					(1 << 2)
+#define DIFv2_PERREG_CS1POL_SHIFT			2
+#define DIFv2_PERREG_CS2POL					(1 << 3)
+#define DIFv2_PERREG_CS2POL_SHIFT			3
+#define DIFv2_PERREG_RDPOL					(1 << 4)
+#define DIFv2_PERREG_RDPOL_SHIFT			4
+#define DIFv2_PERREG_WRPOL					(1 << 5)
+#define DIFv2_PERREG_WRPOL_SHIFT			5
+#define DIFv2_PERREG_CDPOL					(1 << 6)
+#define DIFv2_PERREG_CDPOL_SHIFT			6
+#define DIFv2_PERREG_CS3POL					(1 << 7)
+#define DIFv2_PERREG_CS3POL_SHIFT			7
 
-/* FIFO config */
-#define DIFv2_FIFOCFG				0x28
-#define DIFv2_FIFOCFG_MODE			(1 << 0)	 // DATA: CD=1, CMD: CD=0
-#define DIFv2_FIFOCFG_MODE_SHIFT	0
-#define DIFv2_FIFOCFG_MODE_DATA		0x0
-#define DIFv2_FIFOCFG_MODE_CMD		0x1
-#define DIFv2_FIFOCFG_UNK0			(1 << 1)
-#define DIFv2_FIFOCFG_UNK0_SHIFT	1
-#define DIFv2_FIFOCFG_UNK1			(1 << 4)
-#define DIFv2_FIFOCFG_UNK1_SHIFT	4
-#define DIFv2_FIFOCFG_BS			(0x3 << 5)	 // Rx/Tx burst size
-#define DIFv2_FIFOCFG_BS_SHIFT		5
-#define DIFv2_FIFOCFG_BS_8			0x0
-#define DIFv2_FIFOCFG_BS_16			0x20
-#define DIFv2_FIFOCFG_BS_24			0x40
-#define DIFv2_FIFOCFG_BS_32			0x60
+/* Chip Select and Data Configuration Register */
+#define DIFv2_CSREG							0x28
+#define DIFv2_CSREG_CD						(1 << 0)
+#define DIFv2_CSREG_CD_SHIFT				0
+#define DIFv2_CSREG_CS1						(1 << 1)
+#define DIFv2_CSREG_CS1_SHIFT				1
+#define DIFv2_CSREG_CS2						(1 << 2)
+#define DIFv2_CSREG_CS2_SHIFT				2
+#define DIFv2_CSREG_CS3						(1 << 3)
+#define DIFv2_CSREG_CS3_SHIFT				3
+#define DIFv2_CSREG_BSCONF					(0x7 << 4)		 // Rx/Tx burst size
+#define DIFv2_CSREG_BSCONF_SHIFT			4
+#define DIFv2_CSREG_GRACMD					(1 << 7)
+#define DIFv2_CSREG_GRACMD_SHIFT			7
 
-#define DIFv2_CON3					0x2C
+/* LCD Timing Register 1 */
+#define DIFv2_LCDTIM1						0x2C
+#define DIFv2_LCDTIM1_ADDRDELAY				(0x7F << 0)
+#define DIFv2_LCDTIM1_ADDRDELAY_SHIFT		0
+#define DIFv2_LCDTIM1_ACCESSCYCLE			(0x7F << 8)
+#define DIFv2_LCDTIM1_ACCESSCYCLE_SHIFT		8
+#define DIFv2_LCDTIM1_DATADELAY				(0x7F << 16)
+#define DIFv2_LCDTIM1_DATADELAY_SHIFT		16
 
-#define DIFv2_CON4					0x30
+/* LCD Timing Register 2 */
+#define DIFv2_LCDTIM2						0x30
+#define DIFv2_LCDTIM2_CSACT					(0x7F << 0)
+#define DIFv2_LCDTIM2_CSACT_SHIFT			0
+#define DIFv2_LCDTIM2_CSDEACT				(0x7F << 8)
+#define DIFv2_LCDTIM2_CSDEACT_SHIFT			8
+#define DIFv2_LCDTIM2_WRRDACT				(0x7F << 16)
+#define DIFv2_LCDTIM2_WRRDACT_SHIFT			16
+#define DIFv2_LCDTIM2_WRRDDEACT				(0x7F << 24)
+#define DIFv2_LCDTIM2_WRRDDEACT_SHIFT		24
 
-#define DIFv2_STAT					0x38
-#define DIFv2_STAT_BUSY				(1 << 0)
-#define DIFv2_STAT_BUSY_SHIFT		0
+/* Start LCD Read Register */
+#define DIFv2_STARTLCDRD					0x34
+#define DIFv2_STARTLCDRD_STARTREAD			(1 << 0)
+#define DIFv2_STARTLCDRD_STARTREAD_SHIFT	0
+#define DIFv2_STARTLCDRD_READBYTES			(0x7FFF << 1)
+#define DIFv2_STARTLCDRD_READBYTES_SHIFT	1
 
-#define DIFv2_CON5					0x3C
+/* DIF Status Register */
+#define DIFv2_STAT							0x38
+#define DIFv2_STAT_BSY						(1 << 0)
+#define DIFv2_STAT_BSY_SHIFT				0
+#define DIFv2_STAT_GRABSY					(1 << 1)
+#define DIFv2_STAT_GRABSY_SHIFT				1
+#define DIFv2_STAT_DSIFULL					(1 << 2)
+#define DIFv2_STAT_DSIFULL_SHIFT			2
+#define DIFv2_STAT_DSIDIR					(1 << 3)
+#define DIFv2_STAT_DSIDIR_SHIFT				3
+#define DIFv2_STAT_DSILOCK					(1 << 4)
+#define DIFv2_STAT_DSILOCK_SHIFT			4
 
-#define DIFv2_CON6					0x40
+#define DIFv2_COEFF_REG1					0x3C
+#define DIFv2_COEFF_REG1_COEFF0				(0x3FF << 0)
+#define DIFv2_COEFF_REG1_COEFF0_SHIFT		0
+#define DIFv2_COEFF_REG1_COEFF1				(0x3FF << 10)
+#define DIFv2_COEFF_REG1_COEFF1_SHIFT		10
+#define DIFv2_COEFF_REG1_COEFF2				(0x3FF << 20)
+#define DIFv2_COEFF_REG1_COEFF2_SHIFT		20
 
-#define DIFv2_CON7					0x44
+#define DIFv2_COEFF_REG2					0x40
+#define DIFv2_COEFF_REG2_COEFF3				(0x3FF << 0)
+#define DIFv2_COEFF_REG2_COEFF3_SHIFT		0
+#define DIFv2_COEFF_REG2_COEFF4				(0x3FF << 10)
+#define DIFv2_COEFF_REG2_COEFF4_SHIFT		10
+#define DIFv2_COEFF_REG2_COEFF5				(0x3FF << 20)
+#define DIFv2_COEFF_REG2_COEFF5_SHIFT		20
 
-#define DIFv2_CON8					0x48
+#define DIFv2_COEFF_REG3					0x44
+#define DIFv2_COEFF_REG3_COEFF6				(0x3FF << 0)
+#define DIFv2_COEFF_REG3_COEFF6_SHIFT		0
+#define DIFv2_COEFF_REG3_COEFF7				(0x3FF << 10)
+#define DIFv2_COEFF_REG3_COEFF7_SHIFT		10
+#define DIFv2_COEFF_REG3_COEFF8				(0x3FF << 20)
+#define DIFv2_COEFF_REG3_COEFF8_SHIFT		20
 
-#define DIFv2_CON9					0x4C
+#define DIFv2_OFFSET						0x48
+#define DIFv2_OFFSET_OFF0					(0x3FF << 0)
+#define DIFv2_OFFSET_OFF0_SHIFT				0
+#define DIFv2_OFFSET_OFF1					(0x3FF << 10)
+#define DIFv2_OFFSET_OFF1_SHIFT				10
+#define DIFv2_OFFSET_OFF2					(0x3FF << 20)
+#define DIFv2_OFFSET_OFF2_SHIFT				20
 
-#define DIFv2_PROG0					0x50
-#define DIFv2_PROG1					0x54
-#define DIFv2_PROG2					0x58
-#define DIFv2_PROG3					0x5C
-#define DIFv2_PROG4					0x60
-#define DIFv2_PROG5					0x64
+/* Pixel-Bit Conversion Register */
+#define DIFv2_PBCCON						0x4C
+#define DIFv2_PBCCON_PBBCONV_MODE			(1 << 0)
+#define DIFv2_PBCCON_PBBCONV_MODE_SHIFT		0
 
-#define DIFv2_CON10					0x68
+/* Bit Multiplex Configuration Register 0 */
+#define DIFv2_BMREG0						0x50
+#define DIFv2_BMREG0_MUX0					(0x1F << 0)
+#define DIFv2_BMREG0_MUX0_SHIFT				0
+#define DIFv2_BMREG0_MUX1					(0x1F << 5)
+#define DIFv2_BMREG0_MUX1_SHIFT				5
+#define DIFv2_BMREG0_MUX2					(0x1F << 10)
+#define DIFv2_BMREG0_MUX2_SHIFT				10
+#define DIFv2_BMREG0_MUX3					(0x1F << 16)
+#define DIFv2_BMREG0_MUX3_SHIFT				16
+#define DIFv2_BMREG0_MUX4					(0x1F << 21)
+#define DIFv2_BMREG0_MUX4_SHIFT				21
+#define DIFv2_BMREG0_MUX5					(0x1F << 26)
+#define DIFv2_BMREG0_MUX5_SHIFT				26
 
-#define DIFv2_CON11					0x6C
+/* Bit Multiplex Configuration Register 1 */
+#define DIFv2_BMREG1						0x54
+#define DIFv2_BMREG1_MUX6					(0x1F << 0)
+#define DIFv2_BMREG1_MUX6_SHIFT				0
+#define DIFv2_BMREG1_MUX7					(0x1F << 5)
+#define DIFv2_BMREG1_MUX7_SHIFT				5
+#define DIFv2_BMREG1_MUX8					(0x1F << 10)
+#define DIFv2_BMREG1_MUX8_SHIFT				10
+#define DIFv2_BMREG1_MUX9					(0x1F << 16)
+#define DIFv2_BMREG1_MUX9_SHIFT				16
+#define DIFv2_BMREG1_MUX10					(0x1F << 21)
+#define DIFv2_BMREG1_MUX10_SHIFT			21
+#define DIFv2_BMREG1_MUX11					(0x1F << 26)
+#define DIFv2_BMREG1_MUX11_SHIFT			26
 
-#define DIFv2_CON12					0x70
+/* Bit Multiplex Configuration Register 2 */
+#define DIFv2_BMREG2						0x58
+#define DIFv2_BMREG2_MUX12					(0x1F << 0)
+#define DIFv2_BMREG2_MUX12_SHIFT			0
+#define DIFv2_BMREG2_MUX13					(0x1F << 5)
+#define DIFv2_BMREG2_MUX13_SHIFT			5
+#define DIFv2_BMREG2_MUX14					(0x1F << 10)
+#define DIFv2_BMREG2_MUX14_SHIFT			10
+#define DIFv2_BMREG2_MUX15					(0x1F << 16)
+#define DIFv2_BMREG2_MUX15_SHIFT			16
+#define DIFv2_BMREG2_MUX16					(0x1F << 21)
+#define DIFv2_BMREG2_MUX16_SHIFT			21
+#define DIFv2_BMREG2_MUX17					(0x1F << 26)
+#define DIFv2_BMREG2_MUX17_SHIFT			26
 
-#define DIFv2_CON13					0xA0
+/* Bit Multiplex Configuration Register 3 */
+#define DIFv2_BMREG3						0x5C
+#define DIFv2_BMREG3_MUX18					(0x1F << 0)
+#define DIFv2_BMREG3_MUX18_SHIFT			0
+#define DIFv2_BMREG3_MUX19					(0x1F << 5)
+#define DIFv2_BMREG3_MUX19_SHIFT			5
+#define DIFv2_BMREG3_MUX20					(0x1F << 10)
+#define DIFv2_BMREG3_MUX20_SHIFT			10
+#define DIFv2_BMREG3_MUX21					(0x1F << 16)
+#define DIFv2_BMREG3_MUX21_SHIFT			16
+#define DIFv2_BMREG3_MUX22					(0x1F << 21)
+#define DIFv2_BMREG3_MUX22_SHIFT			21
+#define DIFv2_BMREG3_MUX23					(0x1F << 26)
+#define DIFv2_BMREG3_MUX23_SHIFT			26
 
-#define DIFv2_TX_SIZE				0xA4
+/* Bit Multiplex Configuration Register 4 */
+#define DIFv2_BMREG4						0x60
+#define DIFv2_BMREG4_MUX24					(0x1F << 0)
+#define DIFv2_BMREG4_MUX24_SHIFT			0
+#define DIFv2_BMREG4_MUX25					(0x1F << 5)
+#define DIFv2_BMREG4_MUX25_SHIFT			5
+#define DIFv2_BMREG4_MUX26					(0x1F << 10)
+#define DIFv2_BMREG4_MUX26_SHIFT			10
+#define DIFv2_BMREG4_MUX27					(0x1F << 16)
+#define DIFv2_BMREG4_MUX27_SHIFT			16
+#define DIFv2_BMREG4_MUX28					(0x1F << 21)
+#define DIFv2_BMREG4_MUX28_SHIFT			21
+#define DIFv2_BMREG4_MUX29					(0x1F << 26)
+#define DIFv2_BMREG4_MUX29_SHIFT			26
+
+/* Bit Multiplex Configuration Register 5 */
+#define DIFv2_BMREG5						0x64
+#define DIFv2_BMREG5_MUX30					(0x1F << 0)
+#define DIFv2_BMREG5_MUX30_SHIFT			0
+#define DIFv2_BMREG5_MUX31					(0x1F << 5)
+#define DIFv2_BMREG5_MUX31_SHIFT			5
+
+/* Bit Control Register 0 */
+#define DIFv2_BCSEL0						0x68
+#define DIFv2_BCSEL0_B0						(0x3 << 0)
+#define DIFv2_BCSEL0_B0_SHIFT				0
+#define DIFv2_BCSEL0_B1						(0x3 << 2)
+#define DIFv2_BCSEL0_B1_SHIFT				2
+#define DIFv2_BCSEL0_B2						(0x3 << 4)
+#define DIFv2_BCSEL0_B2_SHIFT				4
+#define DIFv2_BCSEL0_B3						(0x3 << 6)
+#define DIFv2_BCSEL0_B3_SHIFT				6
+#define DIFv2_BCSEL0_B4						(0x3 << 8)
+#define DIFv2_BCSEL0_B4_SHIFT				8
+#define DIFv2_BCSEL0_B5						(0x3 << 10)
+#define DIFv2_BCSEL0_B5_SHIFT				10
+#define DIFv2_BCSEL0_B6						(0x3 << 12)
+#define DIFv2_BCSEL0_B6_SHIFT				12
+#define DIFv2_BCSEL0_B7						(0x3 << 14)
+#define DIFv2_BCSEL0_B7_SHIFT				14
+#define DIFv2_BCSEL0_B8						(0x3 << 16)
+#define DIFv2_BCSEL0_B8_SHIFT				16
+#define DIFv2_BCSEL0_B9						(0x3 << 18)
+#define DIFv2_BCSEL0_B9_SHIFT				18
+#define DIFv2_BCSEL0_B10					(0x3 << 20)
+#define DIFv2_BCSEL0_B10_SHIFT				20
+#define DIFv2_BCSEL0_B11					(0x3 << 22)
+#define DIFv2_BCSEL0_B11_SHIFT				22
+#define DIFv2_BCSEL0_B12					(0x3 << 24)
+#define DIFv2_BCSEL0_B12_SHIFT				24
+#define DIFv2_BCSEL0_B13					(0x3 << 26)
+#define DIFv2_BCSEL0_B13_SHIFT				26
+#define DIFv2_BCSEL0_B14					(0x3 << 28)
+#define DIFv2_BCSEL0_B14_SHIFT				28
+#define DIFv2_BCSEL0_B15					(0x3 << 30)
+#define DIFv2_BCSEL0_B15_SHIFT				30
+
+/* Bit Control Register 1 */
+#define DIFv2_BCSEL1						0x6C
+#define DIFv2_BCSEL1_B16					(0x3 << 0)
+#define DIFv2_BCSEL1_B16_SHIFT				0
+#define DIFv2_BCSEL1_B17					(0x3 << 2)
+#define DIFv2_BCSEL1_B17_SHIFT				2
+#define DIFv2_BCSEL1_B18					(0x3 << 4)
+#define DIFv2_BCSEL1_B18_SHIFT				4
+#define DIFv2_BCSEL1_B19					(0x3 << 6)
+#define DIFv2_BCSEL1_B19_SHIFT				6
+#define DIFv2_BCSEL1_B20					(0x3 << 8)
+#define DIFv2_BCSEL1_B20_SHIFT				8
+#define DIFv2_BCSEL1_B21					(0x3 << 10)
+#define DIFv2_BCSEL1_B21_SHIFT				10
+#define DIFv2_BCSEL1_B22					(0x3 << 12)
+#define DIFv2_BCSEL1_B22_SHIFT				12
+#define DIFv2_BCSEL1_B23					(0x3 << 14)
+#define DIFv2_BCSEL1_B23_SHIFT				14
+#define DIFv2_BCSEL1_B24					(0x3 << 16)
+#define DIFv2_BCSEL1_B24_SHIFT				16
+#define DIFv2_BCSEL1_B25					(0x3 << 18)
+#define DIFv2_BCSEL1_B25_SHIFT				18
+#define DIFv2_BCSEL1_B26					(0x3 << 20)
+#define DIFv2_BCSEL1_B26_SHIFT				20
+#define DIFv2_BCSEL1_B27					(0x3 << 22)
+#define DIFv2_BCSEL1_B27_SHIFT				22
+#define DIFv2_BCSEL1_B28					(0x3 << 24)
+#define DIFv2_BCSEL1_B28_SHIFT				24
+#define DIFv2_BCSEL1_B29					(0x3 << 26)
+#define DIFv2_BCSEL1_B29_SHIFT				26
+#define DIFv2_BCSEL1_B30					(0x3 << 28)
+#define DIFv2_BCSEL1_B30_SHIFT				28
+#define DIFv2_BCSEL1_B31					(0x3 << 30)
+#define DIFv2_BCSEL1_B31_SHIFT				30
+
+/* Bit Clamp Value Register */
+#define DIFv2_BCREG							0x70
+#define DIFv2_BCREG_B0						(1 << 0)
+#define DIFv2_BCREG_B0_SHIFT				0
+#define DIFv2_BCREG_B16						(1 << 0)
+#define DIFv2_BCREG_B16_SHIFT				0
+#define DIFv2_BCREG_B1						(1 << 2)
+#define DIFv2_BCREG_B1_SHIFT				2
+#define DIFv2_BCREG_B17						(1 << 2)
+#define DIFv2_BCREG_B17_SHIFT				2
+#define DIFv2_BCREG_B18						(1 << 4)
+#define DIFv2_BCREG_B18_SHIFT				4
+#define DIFv2_BCREG_B2						(1 << 4)
+#define DIFv2_BCREG_B2_SHIFT				4
+#define DIFv2_BCREG_B19						(1 << 6)
+#define DIFv2_BCREG_B19_SHIFT				6
+#define DIFv2_BCREG_B3						(1 << 6)
+#define DIFv2_BCREG_B3_SHIFT				6
+#define DIFv2_BCREG_B20						(1 << 8)
+#define DIFv2_BCREG_B20_SHIFT				8
+#define DIFv2_BCREG_B4						(1 << 8)
+#define DIFv2_BCREG_B4_SHIFT				8
+#define DIFv2_BCREG_B21						(1 << 10)
+#define DIFv2_BCREG_B21_SHIFT				10
+#define DIFv2_BCREG_B5						(1 << 10)
+#define DIFv2_BCREG_B5_SHIFT				10
+#define DIFv2_BCREG_B22						(1 << 12)
+#define DIFv2_BCREG_B22_SHIFT				12
+#define DIFv2_BCREG_B6						(1 << 12)
+#define DIFv2_BCREG_B6_SHIFT				12
+#define DIFv2_BCREG_B23						(1 << 14)
+#define DIFv2_BCREG_B23_SHIFT				14
+#define DIFv2_BCREG_B7						(1 << 14)
+#define DIFv2_BCREG_B7_SHIFT				14
+#define DIFv2_BCREG_B24						(1 << 16)
+#define DIFv2_BCREG_B24_SHIFT				16
+#define DIFv2_BCREG_B8						(1 << 16)
+#define DIFv2_BCREG_B8_SHIFT				16
+#define DIFv2_BCREG_B25						(1 << 18)
+#define DIFv2_BCREG_B25_SHIFT				18
+#define DIFv2_BCREG_B9						(1 << 18)
+#define DIFv2_BCREG_B9_SHIFT				18
+#define DIFv2_BCREG_B10						(1 << 20)
+#define DIFv2_BCREG_B10_SHIFT				20
+#define DIFv2_BCREG_B26						(1 << 20)
+#define DIFv2_BCREG_B26_SHIFT				20
+#define DIFv2_BCREG_B11						(1 << 22)
+#define DIFv2_BCREG_B11_SHIFT				22
+#define DIFv2_BCREG_B27						(1 << 22)
+#define DIFv2_BCREG_B27_SHIFT				22
+#define DIFv2_BCREG_B12						(1 << 24)
+#define DIFv2_BCREG_B12_SHIFT				24
+#define DIFv2_BCREG_B28						(1 << 24)
+#define DIFv2_BCREG_B28_SHIFT				24
+#define DIFv2_BCREG_B13						(1 << 26)
+#define DIFv2_BCREG_B13_SHIFT				26
+#define DIFv2_BCREG_B29						(1 << 26)
+#define DIFv2_BCREG_B29_SHIFT				26
+#define DIFv2_BCREG_B14						(1 << 28)
+#define DIFv2_BCREG_B14_SHIFT				28
+#define DIFv2_BCREG_B30						(1 << 28)
+#define DIFv2_BCREG_B30_SHIFT				28
+#define DIFv2_BCREG_B15						(1 << 30)
+#define DIFv2_BCREG_B15_SHIFT				30
+#define DIFv2_BCREG_B31						(1 << 30)
+#define DIFv2_BCREG_B31_SHIFT				30
+
+/* Bit Inversion Register */
+#define DIFv2_INVERT_BIT					0x74
+#define DIFv2_INVERT_BIT_B0					(1 << 0)
+#define DIFv2_INVERT_BIT_B0_SHIFT			0
+#define DIFv2_INVERT_BIT_B16				(1 << 0)
+#define DIFv2_INVERT_BIT_B16_SHIFT			0
+#define DIFv2_INVERT_BIT_B1					(1 << 2)
+#define DIFv2_INVERT_BIT_B1_SHIFT			2
+#define DIFv2_INVERT_BIT_B17				(1 << 2)
+#define DIFv2_INVERT_BIT_B17_SHIFT			2
+#define DIFv2_INVERT_BIT_B18				(1 << 4)
+#define DIFv2_INVERT_BIT_B18_SHIFT			4
+#define DIFv2_INVERT_BIT_B2					(1 << 4)
+#define DIFv2_INVERT_BIT_B2_SHIFT			4
+#define DIFv2_INVERT_BIT_B19				(1 << 6)
+#define DIFv2_INVERT_BIT_B19_SHIFT			6
+#define DIFv2_INVERT_BIT_B3					(1 << 6)
+#define DIFv2_INVERT_BIT_B3_SHIFT			6
+#define DIFv2_INVERT_BIT_B20				(1 << 8)
+#define DIFv2_INVERT_BIT_B20_SHIFT			8
+#define DIFv2_INVERT_BIT_B4					(1 << 8)
+#define DIFv2_INVERT_BIT_B4_SHIFT			8
+#define DIFv2_INVERT_BIT_B21				(1 << 10)
+#define DIFv2_INVERT_BIT_B21_SHIFT			10
+#define DIFv2_INVERT_BIT_B5					(1 << 10)
+#define DIFv2_INVERT_BIT_B5_SHIFT			10
+#define DIFv2_INVERT_BIT_B22				(1 << 12)
+#define DIFv2_INVERT_BIT_B22_SHIFT			12
+#define DIFv2_INVERT_BIT_B6					(1 << 12)
+#define DIFv2_INVERT_BIT_B6_SHIFT			12
+#define DIFv2_INVERT_BIT_B23				(1 << 14)
+#define DIFv2_INVERT_BIT_B23_SHIFT			14
+#define DIFv2_INVERT_BIT_B7					(1 << 14)
+#define DIFv2_INVERT_BIT_B7_SHIFT			14
+#define DIFv2_INVERT_BIT_B24				(1 << 16)
+#define DIFv2_INVERT_BIT_B24_SHIFT			16
+#define DIFv2_INVERT_BIT_B8					(1 << 16)
+#define DIFv2_INVERT_BIT_B8_SHIFT			16
+#define DIFv2_INVERT_BIT_B25				(1 << 18)
+#define DIFv2_INVERT_BIT_B25_SHIFT			18
+#define DIFv2_INVERT_BIT_B9					(1 << 18)
+#define DIFv2_INVERT_BIT_B9_SHIFT			18
+#define DIFv2_INVERT_BIT_B10				(1 << 20)
+#define DIFv2_INVERT_BIT_B10_SHIFT			20
+#define DIFv2_INVERT_BIT_B26				(1 << 20)
+#define DIFv2_INVERT_BIT_B26_SHIFT			20
+#define DIFv2_INVERT_BIT_B11				(1 << 22)
+#define DIFv2_INVERT_BIT_B11_SHIFT			22
+#define DIFv2_INVERT_BIT_B27				(1 << 22)
+#define DIFv2_INVERT_BIT_B27_SHIFT			22
+#define DIFv2_INVERT_BIT_B12				(1 << 24)
+#define DIFv2_INVERT_BIT_B12_SHIFT			24
+#define DIFv2_INVERT_BIT_B28				(1 << 24)
+#define DIFv2_INVERT_BIT_B28_SHIFT			24
+#define DIFv2_INVERT_BIT_B13				(1 << 26)
+#define DIFv2_INVERT_BIT_B13_SHIFT			26
+#define DIFv2_INVERT_BIT_B29				(1 << 26)
+#define DIFv2_INVERT_BIT_B29_SHIFT			26
+#define DIFv2_INVERT_BIT_B14				(1 << 28)
+#define DIFv2_INVERT_BIT_B14_SHIFT			28
+#define DIFv2_INVERT_BIT_B30				(1 << 28)
+#define DIFv2_INVERT_BIT_B30_SHIFT			28
+#define DIFv2_INVERT_BIT_B15				(1 << 30)
+#define DIFv2_INVERT_BIT_B15_SHIFT			30
+#define DIFv2_INVERT_BIT_B31				(1 << 30)
+#define DIFv2_INVERT_BIT_B31_SHIFT			30
+
+/* Transfer Synchronization Configuration Register */
+#define DIFv2_SYNC_CONFIG					0x78
+#define DIFv2_SYNC_CONFIG_SYNCEN			(1 << 0)
+#define DIFv2_SYNC_CONFIG_SYNCEN_SHIFT		0
+#define DIFv2_SYNC_CONFIG_HDPOL				(1 << 1)
+#define DIFv2_SYNC_CONFIG_HDPOL_SHIFT		1
+#define DIFv2_SYNC_CONFIG_VDPOL				(1 << 2)
+#define DIFv2_SYNC_CONFIG_VDPOL_SHIFT		2
+#define DIFv2_SYNC_CONFIG_SYNCCD			(1 << 3)
+#define DIFv2_SYNC_CONFIG_SYNCCD_SHIFT		3
+#define DIFv2_SYNC_CONFIG_SYNCCS1			(1 << 4)
+#define DIFv2_SYNC_CONFIG_SYNCCS1_SHIFT		4
+#define DIFv2_SYNC_CONFIG_SYNCCS2			(1 << 5)
+#define DIFv2_SYNC_CONFIG_SYNCCS2_SHIFT		5
+#define DIFv2_SYNC_CONFIG_SYNCCS3			(1 << 6)
+#define DIFv2_SYNC_CONFIG_SYNCCS3_SHIFT		6
+#define DIFv2_SYNC_CONFIG_EXTSTART			(0x3 << 8)
+#define DIFv2_SYNC_CONFIG_EXTSTART_SHIFT	8
+#define DIFv2_SYNC_CONFIG_EXTBYTES			(0x3 << 10)
+#define DIFv2_SYNC_CONFIG_EXTBYTES_SHIFT	10
+#define DIFv2_SYNC_CONFIG_EXTROWS			(0x3 << 12)
+#define DIFv2_SYNC_CONFIG_EXTROWS_SHIFT		12
+#define DIFv2_SYNC_CONFIG_COMP				(0xFF << 16)
+#define DIFv2_SYNC_CONFIG_COMP_SHIFT		16
+
+/* Transfer Synchronization Count Register */
+#define DIFv2_SYNC_COUNT					0x7C
+#define DIFv2_SYNC_COUNT_HDSTART			(0x3FF << 0)
+#define DIFv2_SYNC_COUNT_HDSTART_SHIFT		0
+#define DIFv2_SYNC_COUNT_NUMBYTES			(0xFFF << 10)
+#define DIFv2_SYNC_COUNT_NUMBYTES_SHIFT		10
+#define DIFv2_SYNC_COUNT_NUMROWS			(0x3FF << 22)
+#define DIFv2_SYNC_COUNT_NUMROWS_SHIFT		22
+
+/* Baud Rate Timer Reload Register */
+#define DIFv2_BR							0x80
+#define DIFv2_BR_VALUE						(0xFFFF << 0)
+#define DIFv2_BR_VALUE_SHIFT				0
+
+/* Baud Rate Timer Fractional Register (0x84) */
+#define DIFv2_FDIV							0x84
+#define DIFv2_FDIV_VALUE					(0x1FF << 0)
+#define DIFv2_FDIV_VALUE_SHIFT				0
+
+/* Debug */
+#define DIFv2_DEBUG							0x8C
+
+/* RX FIFO Configuration Register */
+#define DIFv2_RXFIFO_CFG					0x90
+#define DIFv2_RXFIFO_CFG_RXBS				(0x7 << 0)		 // RX Burst Size
+#define DIFv2_RXFIFO_CFG_RXBS_SHIFT			0
+#define DIFv2_RXFIFO_CFG_RXBS_1_WORD		0x0
+#define DIFv2_RXFIFO_CFG_RXBS_2_WORD		0x1
+#define DIFv2_RXFIFO_CFG_RXBS_4_WORD		0x2
+#define DIFv2_RXFIFO_CFG_RXBS_8_WORD		0x3
+#define DIFv2_RXFIFO_CFG_RXBS_16_WORD		0x4
+#define DIFv2_RXFIFO_CFG_RXBS_32_WORD		0x5
+#define DIFv2_RXFIFO_CFG_RXBS_64_WORD		0x6
+#define DIFv2_RXFIFO_CFG_RXBS_128_WORD		0x7
+#define DIFv2_RXFIFO_CFG_RXFA				(0x3 << 8)		 // RX FIFO Alignment
+#define DIFv2_RXFIFO_CFG_RXFA_SHIFT			8
+#define DIFv2_RXFIFO_CFG_RXFA_1				0x0
+#define DIFv2_RXFIFO_CFG_RXFA_2				0x100
+#define DIFv2_RXFIFO_CFG_RXFA_4				0x200
+#define DIFv2_RXFIFO_CFG_RXFC				(1 << 16)		 // RX FIFO Flow Control
+#define DIFv2_RXFIFO_CFG_RXFC_SHIFT			16
+
+/* Maximum Received Packet Size Control Register */
+#define DIFv2_MRPS_CTRL						0x94
+#define DIFv2_MRPS_CTRL_MRPS				(0x3FFF << 0)	 // Maximum Received Packet Size
+#define DIFv2_MRPS_CTRL_MRPS_SHIFT			0
+
+/* Received Packet Size Status Register */
+#define DIFv2_RPS_STAT						0x98
+#define DIFv2_RPS_STAT_RPS					(0x3FFF << 0)	 // Received Packet Size
+#define DIFv2_RPS_STAT_RPS_SHIFT			0
+
+/* Filled RX FIFO Stages Status Register */
+#define DIFv2_RXFFS_STAT					0x9C
+
+/* TX FIFO Configuration Register */
+#define DIFv2_TXFIFO_CFG					0xA0
+#define DIFv2_TXFIFO_CFG_TXBS				(0x7 << 0)		 // TX Burst Size
+#define DIFv2_TXFIFO_CFG_TXBS_SHIFT			0
+#define DIFv2_TXFIFO_CFG_TXBS_1_WORD		0x0
+#define DIFv2_TXFIFO_CFG_TXBS_2_WORD		0x1
+#define DIFv2_TXFIFO_CFG_TXBS_4_WORD		0x2
+#define DIFv2_TXFIFO_CFG_TXBS_8_WORD		0x3
+#define DIFv2_TXFIFO_CFG_TXBS_16_WORD		0x4
+#define DIFv2_TXFIFO_CFG_TXBS_32_WORD		0x5
+#define DIFv2_TXFIFO_CFG_TXBS_64_WORD		0x6
+#define DIFv2_TXFIFO_CFG_TXBS_128_WORD		0x7
+#define DIFv2_TXFIFO_CFG_TXFA				(0x3 << 8)		 // TX FIFO Alignment
+#define DIFv2_TXFIFO_CFG_TXFA_SHIFT			8
+#define DIFv2_TXFIFO_CFG_TXFA_1				0x0
+#define DIFv2_TXFIFO_CFG_TXFA_2				0x100
+#define DIFv2_TXFIFO_CFG_TXFA_4				0x200
+#define DIFv2_TXFIFO_CFG_TXFC				(1 << 16)		 // TX FIFO Flow Control
+#define DIFv2_TXFIFO_CFG_TXFC_SHIFT			16
+
+/* Transmit Packet Size Register */
+#define DIFv2_TPS_CTRL						0xA4
+#define DIFv2_TPS_CTRL_TPS					(0x3FFF << 0)	 // Transmit Packet Size
+#define DIFv2_TPS_CTRL_TPS_SHIFT			0
+
+/* Filled TX FIFO Stages Status Register */
+#define DIFv2_TXFFS_STAT					0xA8
+
+/* Error Interrupt Request Source Mask Register */
+#define DIFv2_ERRIRQSM						0xB0
+#define DIFv2_ERRIRQSM_RXFUFL				(1 << 0)
+#define DIFv2_ERRIRQSM_RXFUFL_SHIFT			0
+#define DIFv2_ERRIRQSM_RXFOFL				(1 << 1)
+#define DIFv2_ERRIRQSM_RXFOFL_SHIFT			1
+#define DIFv2_ERRIRQSM_TXFOFL				(1 << 2)
+#define DIFv2_ERRIRQSM_TXFOFL_SHIFT			2
+#define DIFv2_ERRIRQSM_PHASE				(1 << 3)
+#define DIFv2_ERRIRQSM_PHASE_SHIFT			3
+#define DIFv2_ERRIRQSM_CMD					(1 << 4)
+#define DIFv2_ERRIRQSM_CMD_SHIFT			4
+#define DIFv2_ERRIRQSM_MASTER				(1 << 5)
+#define DIFv2_ERRIRQSM_MASTER_SHIFT			5
+#define DIFv2_ERRIRQSM_TXUFL				(1 << 11)
+#define DIFv2_ERRIRQSM_TXUFL_SHIFT			11
+#define DIFv2_ERRIRQSM_MASTER2				(1 << 12)
+#define DIFv2_ERRIRQSM_MASTER2_SHIFT		12
+#define DIFv2_ERRIRQSM_IDLE					(1 << 13)
+#define DIFv2_ERRIRQSM_IDLE_SHIFT			13
+
+/* Error Interrupt Request Source Status Register */
+#define DIFv2_ERRIRQSS						0xB4
+#define DIFv2_ERRIRQSS_RXFUFL				(1 << 0)
+#define DIFv2_ERRIRQSS_RXFUFL_SHIFT			0
+#define DIFv2_ERRIRQSS_RXFOFL				(1 << 1)
+#define DIFv2_ERRIRQSS_RXFOFL_SHIFT			1
+#define DIFv2_ERRIRQSS_TXFOFL				(1 << 2)
+#define DIFv2_ERRIRQSS_TXFOFL_SHIFT			2
+#define DIFv2_ERRIRQSS_PHASE				(1 << 3)
+#define DIFv2_ERRIRQSS_PHASE_SHIFT			3
+#define DIFv2_ERRIRQSS_CMD					(1 << 4)
+#define DIFv2_ERRIRQSS_CMD_SHIFT			4
+#define DIFv2_ERRIRQSS_MASTER				(1 << 5)
+#define DIFv2_ERRIRQSS_MASTER_SHIFT			5
+#define DIFv2_ERRIRQSS_TXUFL				(1 << 11)
+#define DIFv2_ERRIRQSS_TXUFL_SHIFT			11
+#define DIFv2_ERRIRQSS_MASTER2				(1 << 12)
+#define DIFv2_ERRIRQSS_MASTER2_SHIFT		12
+#define DIFv2_ERRIRQSS_IDLE					(1 << 13)
+#define DIFv2_ERRIRQSS_IDLE_SHIFT			13
+
+/* Error Interrupt Request Source Clear Register */
+#define DIFv2_ERRIRQSC						0xB8
+#define DIFv2_ERRIRQSC_RXFUFL				(1 << 0)
+#define DIFv2_ERRIRQSC_RXFUFL_SHIFT			0
+#define DIFv2_ERRIRQSC_RXFOFL				(1 << 1)
+#define DIFv2_ERRIRQSC_RXFOFL_SHIFT			1
+#define DIFv2_ERRIRQSC_TXFOFL				(1 << 2)
+#define DIFv2_ERRIRQSC_TXFOFL_SHIFT			2
+#define DIFv2_ERRIRQSC_PHASE				(1 << 3)
+#define DIFv2_ERRIRQSC_PHASE_SHIFT			3
+#define DIFv2_ERRIRQSC_CMD					(1 << 4)
+#define DIFv2_ERRIRQSC_CMD_SHIFT			4
+#define DIFv2_ERRIRQSC_MASTER				(1 << 5)
+#define DIFv2_ERRIRQSC_MASTER_SHIFT			5
+#define DIFv2_ERRIRQSC_TXUFL				(1 << 11)
+#define DIFv2_ERRIRQSC_TXUFL_SHIFT			11
+#define DIFv2_ERRIRQSC_MASTER2				(1 << 12)
+#define DIFv2_ERRIRQSC_MASTER2_SHIFT		12
+#define DIFv2_ERRIRQSC_IDLE					(1 << 13)
+#define DIFv2_ERRIRQSC_IDLE_SHIFT			13
 
 /* Raw Interrupt Status Register */
-#define DIFv2_RIS					0xC0
-#define DIFv2_RIS_EVENT0			(1 << 0)
-#define DIFv2_RIS_EVENT0_SHIFT		0
-#define DIFv2_RIS_EVENT1			(1 << 1)
-#define DIFv2_RIS_EVENT1_SHIFT		1
-#define DIFv2_RIS_EVENT2			(1 << 2)
-#define DIFv2_RIS_EVENT2_SHIFT		2
-#define DIFv2_RIS_EVENT3			(1 << 3)
-#define DIFv2_RIS_EVENT3_SHIFT		3
-#define DIFv2_RIS_EVENT4			(1 << 4)
-#define DIFv2_RIS_EVENT4_SHIFT		4
-#define DIFv2_RIS_EVENT5			(1 << 5)
-#define DIFv2_RIS_EVENT5_SHIFT		5
-#define DIFv2_RIS_EVENT6			(1 << 6)
-#define DIFv2_RIS_EVENT6_SHIFT		6
-#define DIFv2_RIS_EVENT7			(1 << 7)
-#define DIFv2_RIS_EVENT7_SHIFT		7
-#define DIFv2_RIS_EVENT8			(1 << 8)
-#define DIFv2_RIS_EVENT8_SHIFT		8
+#define DIFv2_RIS							0xC0
+#define DIFv2_RIS_RXLSREQ					(1 << 0)
+#define DIFv2_RIS_RXLSREQ_SHIFT				0
+#define DIFv2_RIS_RXSREQ					(1 << 1)
+#define DIFv2_RIS_RXSREQ_SHIFT				1
+#define DIFv2_RIS_RXLBREQ					(1 << 2)
+#define DIFv2_RIS_RXLBREQ_SHIFT				2
+#define DIFv2_RIS_RXBREQ					(1 << 3)
+#define DIFv2_RIS_RXBREQ_SHIFT				3
+#define DIFv2_RIS_TXLSREQ					(1 << 4)
+#define DIFv2_RIS_TXLSREQ_SHIFT				4
+#define DIFv2_RIS_TXSREQ					(1 << 5)
+#define DIFv2_RIS_TXSREQ_SHIFT				5
+#define DIFv2_RIS_TXLBREQ					(1 << 6)
+#define DIFv2_RIS_TXLBREQ_SHIFT				6
+#define DIFv2_RIS_TXBREQ					(1 << 7)
+#define DIFv2_RIS_TXBREQ_SHIFT				7
+#define DIFv2_RIS_ERR						(1 << 8)
+#define DIFv2_RIS_ERR_SHIFT					8
+#define DIFv2_RIS_CMD						(1 << 9)
+#define DIFv2_RIS_CMD_SHIFT					9
+#define DIFv2_RIS_FRAME						(1 << 10)
+#define DIFv2_RIS_FRAME_SHIFT				10
 
 /* Interrupt Mask Control Register */
-#define DIFv2_IMSC					0xC4
-#define DIFv2_IMSC_EVENT0			(1 << 0)
-#define DIFv2_IMSC_EVENT0_SHIFT		0
-#define DIFv2_IMSC_EVENT1			(1 << 1)
-#define DIFv2_IMSC_EVENT1_SHIFT		1
-#define DIFv2_IMSC_EVENT2			(1 << 2)
-#define DIFv2_IMSC_EVENT2_SHIFT		2
-#define DIFv2_IMSC_EVENT3			(1 << 3)
-#define DIFv2_IMSC_EVENT3_SHIFT		3
-#define DIFv2_IMSC_EVENT4			(1 << 4)
-#define DIFv2_IMSC_EVENT4_SHIFT		4
-#define DIFv2_IMSC_EVENT5			(1 << 5)
-#define DIFv2_IMSC_EVENT5_SHIFT		5
-#define DIFv2_IMSC_EVENT6			(1 << 6)
-#define DIFv2_IMSC_EVENT6_SHIFT		6
-#define DIFv2_IMSC_EVENT7			(1 << 7)
-#define DIFv2_IMSC_EVENT7_SHIFT		7
-#define DIFv2_IMSC_EVENT8			(1 << 8)
-#define DIFv2_IMSC_EVENT8_SHIFT		8
+#define DIFv2_IMSC							0xC4
+#define DIFv2_IMSC_RXLSREQ					(1 << 0)
+#define DIFv2_IMSC_RXLSREQ_SHIFT			0
+#define DIFv2_IMSC_RXSREQ					(1 << 1)
+#define DIFv2_IMSC_RXSREQ_SHIFT				1
+#define DIFv2_IMSC_RXLBREQ					(1 << 2)
+#define DIFv2_IMSC_RXLBREQ_SHIFT			2
+#define DIFv2_IMSC_RXBREQ					(1 << 3)
+#define DIFv2_IMSC_RXBREQ_SHIFT				3
+#define DIFv2_IMSC_TXLSREQ					(1 << 4)
+#define DIFv2_IMSC_TXLSREQ_SHIFT			4
+#define DIFv2_IMSC_TXSREQ					(1 << 5)
+#define DIFv2_IMSC_TXSREQ_SHIFT				5
+#define DIFv2_IMSC_TXLBREQ					(1 << 6)
+#define DIFv2_IMSC_TXLBREQ_SHIFT			6
+#define DIFv2_IMSC_TXBREQ					(1 << 7)
+#define DIFv2_IMSC_TXBREQ_SHIFT				7
+#define DIFv2_IMSC_ERR						(1 << 8)
+#define DIFv2_IMSC_ERR_SHIFT				8
+#define DIFv2_IMSC_CMD						(1 << 9)
+#define DIFv2_IMSC_CMD_SHIFT				9
+#define DIFv2_IMSC_FRAME					(1 << 10)
+#define DIFv2_IMSC_FRAME_SHIFT				10
 
 /* Masked Interrupt Status */
-#define DIFv2_MIS					0xC8
-#define DIFv2_MIS_EVENT0			(1 << 0)
-#define DIFv2_MIS_EVENT0_SHIFT		0
-#define DIFv2_MIS_EVENT1			(1 << 1)
-#define DIFv2_MIS_EVENT1_SHIFT		1
-#define DIFv2_MIS_EVENT2			(1 << 2)
-#define DIFv2_MIS_EVENT2_SHIFT		2
-#define DIFv2_MIS_EVENT3			(1 << 3)
-#define DIFv2_MIS_EVENT3_SHIFT		3
-#define DIFv2_MIS_EVENT4			(1 << 4)
-#define DIFv2_MIS_EVENT4_SHIFT		4
-#define DIFv2_MIS_EVENT5			(1 << 5)
-#define DIFv2_MIS_EVENT5_SHIFT		5
-#define DIFv2_MIS_EVENT6			(1 << 6)
-#define DIFv2_MIS_EVENT6_SHIFT		6
-#define DIFv2_MIS_EVENT7			(1 << 7)
-#define DIFv2_MIS_EVENT7_SHIFT		7
-#define DIFv2_MIS_EVENT8			(1 << 8)
-#define DIFv2_MIS_EVENT8_SHIFT		8
+#define DIFv2_MIS							0xC8
+#define DIFv2_MIS_RXLSREQ					(1 << 0)
+#define DIFv2_MIS_RXLSREQ_SHIFT				0
+#define DIFv2_MIS_RXSREQ					(1 << 1)
+#define DIFv2_MIS_RXSREQ_SHIFT				1
+#define DIFv2_MIS_RXLBREQ					(1 << 2)
+#define DIFv2_MIS_RXLBREQ_SHIFT				2
+#define DIFv2_MIS_RXBREQ					(1 << 3)
+#define DIFv2_MIS_RXBREQ_SHIFT				3
+#define DIFv2_MIS_TXLSREQ					(1 << 4)
+#define DIFv2_MIS_TXLSREQ_SHIFT				4
+#define DIFv2_MIS_TXSREQ					(1 << 5)
+#define DIFv2_MIS_TXSREQ_SHIFT				5
+#define DIFv2_MIS_TXLBREQ					(1 << 6)
+#define DIFv2_MIS_TXLBREQ_SHIFT				6
+#define DIFv2_MIS_TXBREQ					(1 << 7)
+#define DIFv2_MIS_TXBREQ_SHIFT				7
+#define DIFv2_MIS_ERR						(1 << 8)
+#define DIFv2_MIS_ERR_SHIFT					8
 
 /* Interrupt Clear Register */
-#define DIFv2_ICR					0xCC
-#define DIFv2_ICR_EVENT0			(1 << 0)
-#define DIFv2_ICR_EVENT0_SHIFT		0
-#define DIFv2_ICR_EVENT1			(1 << 1)
-#define DIFv2_ICR_EVENT1_SHIFT		1
-#define DIFv2_ICR_EVENT2			(1 << 2)
-#define DIFv2_ICR_EVENT2_SHIFT		2
-#define DIFv2_ICR_EVENT3			(1 << 3)
-#define DIFv2_ICR_EVENT3_SHIFT		3
-#define DIFv2_ICR_EVENT4			(1 << 4)
-#define DIFv2_ICR_EVENT4_SHIFT		4
-#define DIFv2_ICR_EVENT5			(1 << 5)
-#define DIFv2_ICR_EVENT5_SHIFT		5
-#define DIFv2_ICR_EVENT6			(1 << 6)
-#define DIFv2_ICR_EVENT6_SHIFT		6
-#define DIFv2_ICR_EVENT7			(1 << 7)
-#define DIFv2_ICR_EVENT7_SHIFT		7
-#define DIFv2_ICR_EVENT8			(1 << 8)
-#define DIFv2_ICR_EVENT8_SHIFT		8
+#define DIFv2_ICR							0xCC
+#define DIFv2_ICR_RXLSREQ					(1 << 0)
+#define DIFv2_ICR_RXLSREQ_SHIFT				0
+#define DIFv2_ICR_RXSREQ					(1 << 1)
+#define DIFv2_ICR_RXSREQ_SHIFT				1
+#define DIFv2_ICR_RXLBREQ					(1 << 2)
+#define DIFv2_ICR_RXLBREQ_SHIFT				2
+#define DIFv2_ICR_RXBREQ					(1 << 3)
+#define DIFv2_ICR_RXBREQ_SHIFT				3
+#define DIFv2_ICR_TXLSREQ					(1 << 4)
+#define DIFv2_ICR_TXLSREQ_SHIFT				4
+#define DIFv2_ICR_TXSREQ					(1 << 5)
+#define DIFv2_ICR_TXSREQ_SHIFT				5
+#define DIFv2_ICR_TXLBREQ					(1 << 6)
+#define DIFv2_ICR_TXLBREQ_SHIFT				6
+#define DIFv2_ICR_TXBREQ					(1 << 7)
+#define DIFv2_ICR_TXBREQ_SHIFT				7
+#define DIFv2_ICR_ERR						(1 << 8)
+#define DIFv2_ICR_ERR_SHIFT					8
 
 /* Interrupt Set Register */
-#define DIFv2_ISR					0xD0
-#define DIFv2_ISR_EVENT0			(1 << 0)
-#define DIFv2_ISR_EVENT0_SHIFT		0
-#define DIFv2_ISR_EVENT1			(1 << 1)
-#define DIFv2_ISR_EVENT1_SHIFT		1
-#define DIFv2_ISR_EVENT2			(1 << 2)
-#define DIFv2_ISR_EVENT2_SHIFT		2
-#define DIFv2_ISR_EVENT3			(1 << 3)
-#define DIFv2_ISR_EVENT3_SHIFT		3
-#define DIFv2_ISR_EVENT4			(1 << 4)
-#define DIFv2_ISR_EVENT4_SHIFT		4
-#define DIFv2_ISR_EVENT5			(1 << 5)
-#define DIFv2_ISR_EVENT5_SHIFT		5
-#define DIFv2_ISR_EVENT6			(1 << 6)
-#define DIFv2_ISR_EVENT6_SHIFT		6
-#define DIFv2_ISR_EVENT7			(1 << 7)
-#define DIFv2_ISR_EVENT7_SHIFT		7
-#define DIFv2_ISR_EVENT8			(1 << 8)
-#define DIFv2_ISR_EVENT8_SHIFT		8
+#define DIFv2_ISR							0xD0
+#define DIFv2_ISR_RXLSREQ					(1 << 0)
+#define DIFv2_ISR_RXLSREQ_SHIFT				0
+#define DIFv2_ISR_RXSREQ					(1 << 1)
+#define DIFv2_ISR_RXSREQ_SHIFT				1
+#define DIFv2_ISR_RXLBREQ					(1 << 2)
+#define DIFv2_ISR_RXLBREQ_SHIFT				2
+#define DIFv2_ISR_RXBREQ					(1 << 3)
+#define DIFv2_ISR_RXBREQ_SHIFT				3
+#define DIFv2_ISR_TXLSREQ					(1 << 4)
+#define DIFv2_ISR_TXLSREQ_SHIFT				4
+#define DIFv2_ISR_TXSREQ					(1 << 5)
+#define DIFv2_ISR_TXSREQ_SHIFT				5
+#define DIFv2_ISR_TXLBREQ					(1 << 6)
+#define DIFv2_ISR_TXLBREQ_SHIFT				6
+#define DIFv2_ISR_TXBREQ					(1 << 7)
+#define DIFv2_ISR_TXBREQ_SHIFT				7
+#define DIFv2_ISR_ERR						(1 << 8)
+#define DIFv2_ISR_ERR_SHIFT					8
 
-#define DIFv2_CON14					0xD4
+/* DMA Control */
+#define DIFv2_DMAE							0xD4
+#define DIFv2_DMAE_TX						(1 << 0)		 // Transmit DMA Enable. If this bit is set to 1, DMA for the transmit FIFO is enabled
+#define DIFv2_DMAE_TX_SHIFT					0
+#define DIFv2_DMAE_RX						(1 << 1)		 // Receive DMA Enable. If this bit is set to 1, DMA for the receive FIFO is enabled.
+#define DIFv2_DMAE_RX_SHIFT					1
 
-#define DIFv2_FIFO					0x8000
+/* Transmission Data Register */
+#define DIFv2_TXD							0x8000
+#define DIFv2_TXD_BYTE0						(0xFF << 0)
+#define DIFv2_TXD_BYTE0_SHIFT				0
+#define DIFv2_TXD_BYTE1						(0xFF << 8)
+#define DIFv2_TXD_BYTE1_SHIFT				8
+#define DIFv2_TXD_BYTE2						(0xFF << 16)
+#define DIFv2_TXD_BYTE2_SHIFT				16
+#define DIFv2_TXD_BYTE3						(0xFF << 24)
+#define DIFv2_TXD_BYTE3_SHIFT				24
+
+/* Receive Data Register */
+#define DIFv2_RXD							0xC000
+#define DIFv2_RXD_BYTE0						(0xFF << 0)
+#define DIFv2_RXD_BYTE0_SHIFT				0
+#define DIFv2_RXD_BYTE1						(0xFF << 8)
+#define DIFv2_RXD_BYTE1_SHIFT				8
+#define DIFv2_RXD_BYTE2						(0xFF << 16)
+#define DIFv2_RXD_BYTE2_SHIFT				16
+#define DIFv2_RXD_BYTE3						(0xFF << 24)
+#define DIFv2_RXD_BYTE3_SHIFT				24
 
 
 // EBU [MOD_NUM=0014, MOD_REV=04, MOD_32BIT=C0]
@@ -5994,14 +6779,14 @@
 
 /* Bus Status Register */
 #define I2Cv2_BUSSTAT							0x24
-#define I2Cv2_BUSSTAT_BS						(0x3 << 1)		 // Bus Status
-#define I2Cv2_BUSSTAT_BS_SHIFT					1
+#define I2Cv2_BUSSTAT_BS						(0x3 << 0)		 // Bus Status
+#define I2Cv2_BUSSTAT_BS_SHIFT					0
 #define I2Cv2_BUSSTAT_BS_FREE					0x0
-#define I2Cv2_BUSSTAT_BS_BUSY_OTHER_MASTER		0x2
-#define I2Cv2_BUSSTAT_BS_BUSY_MASTER			0x4
-#define I2Cv2_BUSSTAT_BS_BUSY_SLAVE				0x6
-#define I2Cv2_BUSSTAT_RnW						(1 << 3)		 // Read/not Write
-#define I2Cv2_BUSSTAT_RnW_SHIFT					3
+#define I2Cv2_BUSSTAT_BS_BUSY_OTHER_MASTER		0x1
+#define I2Cv2_BUSSTAT_BS_BUSY_MASTER			0x2
+#define I2Cv2_BUSSTAT_BS_BUSY_SLAVE				0x3
+#define I2Cv2_BUSSTAT_RnW						(1 << 2)		 // Read/not Write
+#define I2Cv2_BUSSTAT_RnW_SHIFT					2
 
 /* FIFO Configuration Register */
 #define I2Cv2_FIFOCFG							0x28
@@ -6017,14 +6802,14 @@
 #define I2Cv2_FIFOCFG_TXBS_4_WORD				0x20
 #define I2Cv2_FIFOCFG_RXFA						(0x3 << 8)		 // RX FIFO Alignment
 #define I2Cv2_FIFOCFG_RXFA_SHIFT				8
-#define I2Cv2_FIFOCFG_RXFA_BYTE					0x0
-#define I2Cv2_FIFOCFG_RXFA_HALF_WORLD			0x100
-#define I2Cv2_FIFOCFG_RXFA_WORD					0x200
+#define I2Cv2_FIFOCFG_RXFA_1					0x0
+#define I2Cv2_FIFOCFG_RXFA_2					0x100
+#define I2Cv2_FIFOCFG_RXFA_4					0x200
 #define I2Cv2_FIFOCFG_TXFA						(0x3 << 12)		 // TX FIFO Alignment
 #define I2Cv2_FIFOCFG_TXFA_SHIFT				12
-#define I2Cv2_FIFOCFG_TXFA_BYTE					0x0
-#define I2Cv2_FIFOCFG_TXFA_HALF_WORLD			0x1000
-#define I2Cv2_FIFOCFG_TXFA_WORD					0x2000
+#define I2Cv2_FIFOCFG_TXFA_1					0x0
+#define I2Cv2_FIFOCFG_TXFA_2					0x1000
+#define I2Cv2_FIFOCFG_TXFA_4					0x2000
 #define I2Cv2_FIFOCFG_RXFC						(1 << 16)		 // RX FIFO Flow Control
 #define I2Cv2_FIFOCFG_RXFC_SHIFT				16
 #define I2Cv2_FIFOCFG_TXFC						(1 << 17)		 // TX FIFO Flow Control
@@ -6225,6 +7010,13 @@
 #define I2Cv2_ISR_I2C_ERR_INT_SHIFT				4
 #define I2Cv2_ISR_I2C_P_INT						(1 << 5)		 // I2C Protocol Interrupt
 #define I2Cv2_ISR_I2C_P_INT_SHIFT				5
+
+/* DMA Control */
+#define I2Cv2_DMAE								0x94
+#define I2Cv2_DMAE_TX							(1 << 0)		 // Transmit DMA Enable. If this bit is set to 1, DMA for the transmit FIFO is enabled
+#define I2Cv2_DMAE_TX_SHIFT						0
+#define I2Cv2_DMAE_RX							(1 << 1)		 // Receive DMA Enable. If this bit is set to 1, DMA for the receive FIFO is enabled.
+#define I2Cv2_DMAE_RX_SHIFT						1
 
 /* Transmission Data Register */
 #define I2Cv2_TXD								0x8000

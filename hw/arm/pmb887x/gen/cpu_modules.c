@@ -191,10 +191,33 @@ static const int pmb8876_tpu_irqs[] = {
 };
 
 static const int pmb8876_dif_irqs[] = {
-	PMB8876_DIF_INT0_IRQ,
-	PMB8876_DIF_INT1_IRQ,
-	PMB8876_DIF_INT2_IRQ,
-	PMB8876_DIF_INT3_IRQ
+	PMB8876_DIF_RX_SINGLE_IRQ,
+	PMB8876_DIF_RX_BURST_IRQ,
+	PMB8876_DIF_TX_IRQ,
+	PMB8876_DIF_ERR_IRQ
+};
+
+static const pmb887x_cpu_module_gpio_t pmb8876_dif_gpios[] = {
+	{"D2_IN",	PMB8876_GPIO_DIF_D2,	0},
+	{"D2_OUT",	PMB8876_GPIO_DIF_D2,	0},
+	{"D0_IN",	PMB8876_GPIO_DIF_D0,	0},
+	{"D0_OUT",	PMB8876_GPIO_DIF_D0,	0},
+	{"CD_OUT",	PMB8876_GPIO_DIF_CD,	0},
+	{"CS1_OUT",	PMB8876_GPIO_DIF_CS1,	0},
+	{"D1_IN",	PMB8876_GPIO_DIF_D1,	0},
+	{"D1_OUT",	PMB8876_GPIO_DIF_D1,	0},
+	{"D3_IN",	PMB8876_GPIO_DIF_D3,	0},
+	{"D3_OUT",	PMB8876_GPIO_DIF_D3,	0},
+	{"D4_IN",	PMB8876_GPIO_DIF_D4,	0},
+	{"D4_OUT",	PMB8876_GPIO_DIF_D4,	0},
+	{"D5_IN",	PMB8876_GPIO_DIF_D5,	0},
+	{"D5_OUT",	PMB8876_GPIO_DIF_D5,	0},
+	{"D6_IN",	PMB8876_GPIO_DIF_D6,	0},
+	{"D6_OUT",	PMB8876_GPIO_DIF_D6,	0},
+	{"D7_IN",	PMB8876_GPIO_DIF_D7,	0},
+	{"D7_OUT",	PMB8876_GPIO_DIF_D7,	0},
+	{"WR_OUT",	PMB8876_GPIO_DIF_WR,	0},
+	{"RD_OUT",	PMB8876_GPIO_DIF_RD,	0},
 };
 
 static const pmb887x_cpu_module_gpio_t pmb8876_mmci_gpios[] = {
@@ -242,7 +265,7 @@ static const pmb887x_cpu_module_t pmb8876_modules[] = {
 	{"KEYPAD",	0xF046C021,	PMB8876_KEYPAD_BASE,	"pmb887x-keypad",	pmb8876_keypad_irqs,	ARRAY_SIZE(pmb8876_keypad_irqs),	pmb8876_keypad_gpios,	ARRAY_SIZE(pmb8876_keypad_gpios)},
 	{"DSP",		0xF022C031,	PMB8876_DSP_BASE,		"pmb887x-dsp",		NULL,					0,									NULL,					0},
 	{"TPU",		0xF021C012,	PMB8876_TPU_BASE,		"pmb887x-tpu",		pmb8876_tpu_irqs,		ARRAY_SIZE(pmb8876_tpu_irqs),		NULL,					0},
-	{"DIF",		0xF043C012,	PMB8876_DIF_BASE,		"pmb887x-dif-v2",	pmb8876_dif_irqs,		ARRAY_SIZE(pmb8876_dif_irqs),		NULL,					0},
+	{"DIF",		0xF043C012,	PMB8876_DIF_BASE,		"pmb887x-dif-v2",	pmb8876_dif_irqs,		ARRAY_SIZE(pmb8876_dif_irqs),		pmb8876_dif_gpios,		ARRAY_SIZE(pmb8876_dif_gpios)},
 	{"MMCI",	0xF041C022,	PMB8876_MMCI_BASE,		"pmb887x-mmci",		NULL,					0,									pmb8876_mmci_gpios,		ARRAY_SIZE(pmb8876_mmci_gpios)},
 	{"I2C",		0xF057C012,	PMB8876_I2C_BASE,		"pmb887x-i2c-v2",	pmb8876_i2c_irqs,		ARRAY_SIZE(pmb8876_i2c_irqs),		pmb8876_i2c_gpios,		ARRAY_SIZE(pmb8876_i2c_gpios)},
 };
@@ -300,7 +323,7 @@ static const int pmb8875_dif_irqs[] = {
 	PMB8875_DIF_TX_IRQ,
 	PMB8875_DIF_RX_IRQ,
 	PMB8875_DIF_ERR_IRQ,
-	PMB8875_DIF_UNK_IRQ
+	PMB8875_DIF_TMO_IRQ
 };
 
 static const pmb887x_cpu_module_gpio_t pmb8875_dif_gpios[] = {

@@ -198,7 +198,7 @@ void pmb887x_srb_ext_init(pmb887x_srb_ext_reg_t *reg, pmb887x_srb_reg_t *parent,
 	reg->parent = parent;
 	reg->events = events;
 	reg->ris = 0;
-	reg->imsc = 0;
+	reg->imsc = 0xFFFFFFFF;
 }
 
 uint32_t pmb887x_srb_ext_get_imsc(pmb887x_srb_ext_reg_t *reg) {
@@ -226,13 +226,13 @@ void pmb887x_srb_ext_set_imsc(pmb887x_srb_ext_reg_t *reg, uint32_t value) {
 void pmb887x_srb_ext_set_icr(pmb887x_srb_ext_reg_t *reg, uint32_t value) {
 	reg->ris &= ~value;
 	
-	if (!reg->ris)
+	if (!(reg->ris & reg->imsc))
 		pmb887x_srb_set_icr(reg->parent, reg->events);
 }
 
 void pmb887x_srb_ext_set_isr(pmb887x_srb_ext_reg_t *reg, uint32_t value) {
 	reg->ris |= value;
 	
-	if (reg->ris)
+	if ((reg->ris & reg->imsc))
 		pmb887x_srb_set_isr(reg->parent, reg->events);
 }
