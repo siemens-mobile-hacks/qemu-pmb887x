@@ -1,5 +1,5 @@
 /*
- * Display Interface
+ * SSC (SPI)
  * */
 #define PMB887X_TRACE_ID		SSC
 #define PMB887X_TRACE_PREFIX	"pmb887x-ssc"
@@ -24,7 +24,7 @@
 OBJECT_DECLARE_SIMPLE_TYPE(pmb887x_ssc_t, PMB887X_SSC);
 
 #define SSC_CON_STATUS		(SSC_CON_EN | SSC_CON_MS)
-#define FIFO_SIZE	4
+#define FIFO_SIZE			32
 
 enum SSCIrqType {
 	SSC_IRQ_TX,
@@ -37,8 +37,6 @@ enum SSCFifoType {
 	SSC_FIFO_TX
 };
 
-typedef struct pmb887x_ssc_t pmb887x_ssc_t;
-
 struct pmb887x_ssc_t {
 	SysBusDevice parent_obj;
 	MemoryRegion mmio;
@@ -49,11 +47,15 @@ struct pmb887x_ssc_t {
 	uint32_t br;
 	uint32_t con;
 	uint32_t status;
-	uint32_t unk[3];
+	uint32_t bmreg[6];
+	uint32_t unk[5];
 	uint16_t tb;
 	uint32_t rxfcon;
 	uint32_t txfcon;
 	uint32_t dmacon;
+	uint32_t pbccon;
+	uint32_t bcreg;
+	uint32_t bcsel[2];
 
 	pmb887x_fifo16_t tx_fifo_buffered;
 	pmb887x_fifo16_t rx_fifo_buffered;
@@ -71,10 +73,19 @@ struct pmb887x_ssc_t {
 	pmb887x_srb_reg_t srb;
     SSIBus *bus;
 
-	uint32_t dmac_tx_periph_id;
-
 	qemu_irq gpio_sclk;
 	qemu_irq gpio_mtsr;
+	qemu_irq gpio_rs;
+	qemu_irq gpio_cs;
+	qemu_irq gpio_reset;
+
+	int dmac_tx_clr;
+	int dmac_rx_clr;
+
+	qemu_irq dmac_tx_sreq;
+	qemu_irq dmac_tx_breq;
+	qemu_irq dmac_rx_sreq;
+	qemu_irq dmac_rx_breq;
 };
 
 static void ssc_reset_fifo(pmb887x_ssc_t *p, enum SSCFifoType fifo) {
@@ -90,8 +101,17 @@ static void ssc_set_fifo(pmb887x_ssc_t *p, enum SSCFifoType fifo, bool buffered)
 		p->rx_fifo = buffered ? &p->rx_fifo_buffered : &p->rx_fifo_single;
 	} else {
 		p->tx_fifo = buffered ? &p->tx_fifo_buffered : &p->tx_fifo_single;
+		if (buffered && ((p->txfcon & SSC_TXFCON_TXTMEN)))
+			pmb887x_srb_set_isr(&p->srb, SSC_ISR_TX);
 	}
 	ssc_reset_fifo(p, fifo);
+}
+
+static void ssc_trigger_dma(pmb887x_ssc_t *p, uint32_t ris) {
+	if (!p->dmac_tx_clr && (ris & SSC_RIS_TX) != 0 && (p->dmacon & SSC_DMACON_TX))
+		qemu_set_irq(p->dmac_tx_breq, 1);
+	if (!p->dmac_rx_clr && (ris & SSC_RIS_RX) != 0 && (p->dmacon & SSC_DMACON_RX))
+		qemu_set_irq(p->dmac_rx_breq, 1);
 }
 
 static bool ssc_is_running(pmb887x_ssc_t *p) {
@@ -102,46 +122,90 @@ static bool ssc_is_running(pmb887x_ssc_t *p) {
 }
 
 static void ssc_transfer(pmb887x_ssc_t *p) {
-	if (!ssc_is_running(p))
+	if (!ssc_is_running(p) || !pmb887x_fifo_count(p->tx_fifo))
 		return;
 
 	p->status &= ~(SSC_CON_TE | SSC_CON_RE);
 
-	int size = pmb887x_fifo_count(p->tx_fifo);
-	for (uint32_t i = 0; i < size; i++) {
+	if (p->bits != 8 && p->bits != 16)
+		hw_error("Invalid data width: %d", p->bits);
+
+	bool is_first_rx = pmb887x_fifo_is_empty(p->rx_fifo);
+	while (!pmb887x_fifo_is_empty(p->tx_fifo)) {
 		uint16_t data = pmb887x_fifo16_pop(p->tx_fifo);
 		uint16_t received = 0;
-		if (!(p->con & SSC_CON_LB)) {
-			for (int shift = p->bits - 8; shift >= 0; shift -= 8)
-				received |= (ssi_transfer(p->bus, (data >> shift) & 0xFF) & 0xFF) << shift;
+		if ((p->con & SSC_CON_LB)) {
+			received = data;
+		} else {
+			if ((p->con & SSC_CON_HB_MSB) != 0) {
+				for (int shift = p->bits - 8; shift >= 0; shift -= 8)
+					received |= (ssi_transfer(p->bus, (data >> shift) & 0xFF) & 0xFF) << shift;
+			} else {
+				for (int shift = 0; shift < p->bits; shift += 8)
+					received |= (ssi_transfer(p->bus, (data >> shift) & 0xFF) & 0xFF) << shift;
+			}
 		}
 
-		if (!pmb887x_fifo_is_full(p->rx_fifo)) {
-			pmb887x_fifo16_push(p->rx_fifo, received & p->mask);
-		} else {
-			pmb887x_fifo16_pop(p->rx_fifo);
-			pmb887x_fifo16_push(p->rx_fifo, received & p->mask);
-
+		if (pmb887x_fifo_is_full(p->rx_fifo)) {
 			if ((p->con & SSC_CON_REN)) {
+				DPRINTF("RX FIFO overflow\n");
 				p->status |= SSC_CON_RE;
 				pmb887x_srb_set_isr(&p->srb, SSC_ISR_ERR);
 			}
+			pmb887x_fifo16_pop(p->rx_fifo); // overwrite last fifo stage
 		}
+
+		pmb887x_fifo16_push(p->rx_fifo, received & p->mask);
 	}
 
-	uint32_t rx_level = (p->rxfcon & SSC_RXFCON_RXFEN) ?
-		(p->rxfcon & SSC_RXFCON_RXFITL) >> SSC_RXFCON_RXFITL_SHIFT :
-		1;
+	if ((p->rxfcon & SSC_RXFCON_RXTMEN)) {
+		if (is_first_rx)
+			pmb887x_srb_set_isr(&p->srb, SSC_ISR_RX);
+	} else {
+		uint32_t rx_level = (p->rxfcon & SSC_RXFCON_RXFEN) ?
+			(p->rxfcon & SSC_RXFCON_RXFITL) >> SSC_RXFCON_RXFITL_SHIFT :
+			1;
+		if (pmb887x_fifo_count(p->rx_fifo) >= rx_level)
+			pmb887x_srb_set_isr(&p->srb, SSC_ISR_RX);
+	}
 
-	uint32_t tx_level = (p->rxfcon & SSC_TXFCON_TXFEN) ?
-		(p->txfcon & SSC_TXFCON_TXFITL) >> SSC_TXFCON_TXFITL_SHIFT :
-		1;
-
-	if (pmb887x_fifo_count(p->tx_fifo) <= tx_level)
+	if (((p->txfcon & SSC_TXFCON_TXTMEN))) {
 		pmb887x_srb_set_isr(&p->srb, SSC_ISR_TX);
+	} else {
+		uint32_t tx_level = (p->txfcon & SSC_TXFCON_TXFEN) ?
+			(p->txfcon & SSC_TXFCON_TXFITL) >> SSC_TXFCON_TXFITL_SHIFT :
+			1;
+		if (pmb887x_fifo_count(p->tx_fifo) <= tx_level)
+			pmb887x_srb_set_isr(&p->srb, SSC_ISR_TX);
+	}
+}
 
-	if (pmb887x_fifo_count(p->rx_fifo) >= rx_level)
+static uint16_t ssc_read_fifo(pmb887x_ssc_t *p) {
+	if (pmb887x_fifo_is_empty(p->rx_fifo)) {
+		if ((p->con & SSC_CON_REN)) {
+			DPRINTF("RX FIFO underflow\n");
+			p->status |= SSC_CON_RE;
+			pmb887x_srb_set_isr(&p->srb, SSC_ISR_ERR);
+		}
+		return 0;
+	}
+	uint16_t value = pmb887x_fifo16_pop(p->rx_fifo);
+	if ((p->rxfcon & SSC_RXFCON_RXTMEN) && !pmb887x_fifo_is_empty(p->rx_fifo))
 		pmb887x_srb_set_isr(&p->srb, SSC_ISR_RX);
+	return value;
+}
+
+static void ssc_write_fifo(pmb887x_ssc_t *p, uint16_t value) {
+	if (pmb887x_fifo_is_full(p->tx_fifo)) {
+		if ((p->con & SSC_CON_TEN)) {
+			DPRINTF("TX FIFO underflow\n");
+			p->status |= SSC_CON_TE;
+			pmb887x_srb_set_isr(&p->srb, SSC_ISR_ERR);
+		}
+		pmb887x_fifo16_pop(p->tx_fifo); // overwrite last fifo stage
+	}
+	pmb887x_fifo16_push(p->tx_fifo, p->tb & p->mask);
+	ssc_transfer(p);
 }
 
 static void ssc_update_state(pmb887x_ssc_t *p) {
@@ -149,45 +213,8 @@ static void ssc_update_state(pmb887x_ssc_t *p) {
 	p->bits = bits;
 	p->mask = (1 << bits) - 1;
 
-	if (ssc_is_running(p) && bits != 8 && bits != 16) {
-		hw_error("Invalid data width: %d", bits);
-	}
-
-	if (ssc_is_running(p) && !(p->con & SSC_CON_HB_MSB)) {
-		hw_error("Only MSB supported.");
-	}
-
-	if ((p->rxfcon & SSC_RXFCON_RXFLU)) {
-		ssc_reset_fifo(p, SSC_FIFO_RX);
-		p->rxfcon &= ~SSC_RXFCON_RXFLU;
-	}
-
-	if ((p->txfcon & SSC_TXFCON_TXFLU)) {
-		ssc_reset_fifo(p, SSC_FIFO_TX);
-		p->txfcon &= ~SSC_TXFCON_TXFLU;
-	}
-
-	if (ssc_is_running(p) && !pmb887x_fifo_is_empty(p->tx_fifo)) {
+	if (ssc_is_running(p) && !pmb887x_fifo_is_empty(p->tx_fifo))
 		ssc_transfer(p);
-	}
-
-	if ((p->dmacon & SSC_DMACON_TX)) {
-		if (!pmb887x_dmac_is_busy(p->dmac))
-			pmb887x_dmac_request(p->dmac, p->dmac_tx_periph_id, pmb887x_fifo_free_count(p->tx_fifo));
-	}
-
-	if ((p->dmacon & SSC_DMACON_RX)) {
-		hw_error("RX DMA not supported.");
-	}
-}
-
-static int ssc_get_unk_index_from_reg(uint32_t reg) {
-	switch (reg) {
-		case SSC_UNK0:		return 0;
-		case SSC_UNK1:		return 1;
-		case SSC_UNK2:		return 2;
-		default:			abort();
-	};
 }
 
 static uint64_t ssc_io_read(void *opaque, hwaddr haddr, unsigned size) {
@@ -201,7 +228,7 @@ static uint64_t ssc_io_read(void *opaque, hwaddr haddr, unsigned size) {
 			break;
 
 		case SSC_ID:
-			value = 0xF043C012;
+			value = 0x00004525;
 			break;
 
 		case SSC_CON:
@@ -217,14 +244,7 @@ static uint64_t ssc_io_read(void *opaque, hwaddr haddr, unsigned size) {
 			break;
 
 		case SSC_RB:
-			if (ssc_is_running(p) && !pmb887x_fifo_is_empty(p->rx_fifo)) {
-				value = pmb887x_fifo16_pop(p->rx_fifo);
-				if (!pmb887x_fifo_is_empty(p->tx_fifo))
-					ssc_transfer(p);
-			} else {
-				EPRINTF("RX fifo is empty!");
-				value = 0;
-			}
+			value = ssc_read_fifo(p);
 			break;
 
 		case SSC_RXFCON:
@@ -238,7 +258,7 @@ static uint64_t ssc_io_read(void *opaque, hwaddr haddr, unsigned size) {
 		case SSC_FSTAT:
 			if ((p->txfcon & SSC_TXFCON_TXFEN))
 				value |= pmb887x_fifo_count(p->tx_fifo) << SSC_FSTAT_TXFFL_SHIFT;
-			if ((p->txfcon & SSC_RXFCON_RXFEN))
+			if ((p->rxfcon & SSC_RXFCON_RXFEN))
 				value |= pmb887x_fifo_count(p->rx_fifo) << SSC_FSTAT_RXFFL_SHIFT;
 			break;
 
@@ -261,12 +281,6 @@ static uint64_t ssc_io_read(void *opaque, hwaddr haddr, unsigned size) {
 
 		case SSC_DMACON:
 			value = p->dmacon;
-			break;
-
-		case SSC_UNK0:
-		case SSC_UNK1:
-		case SSC_UNK2:
-			value = p->unk[ssc_get_unk_index_from_reg(haddr)];
 			break;
 
 		default:
@@ -301,31 +315,34 @@ static void ssc_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned si
 
 		case SSC_TB:
 			p->tb = value & p->mask;
-			if (!pmb887x_fifo_is_full(p->tx_fifo)) {
-				pmb887x_fifo16_push(p->tx_fifo, p->tb & p->mask);
-			} else {
-				pmb887x_fifo16_pop(p->rx_fifo);
-				pmb887x_fifo16_push(p->rx_fifo, p->tb & p->mask);
-				if ((p->con & SSC_CON_TEN)) {
-					p->status |= SSC_CON_TE;
-					pmb887x_srb_set_isr(&p->srb, SSC_ISR_ERR);
-				}
-			}
-			ssc_transfer(p);
+			ssc_write_fifo(p, value);
 			break;
 
 		case SSC_RXFCON:
 			if ((value & SSC_RXFCON_RXFEN) != (p->rxfcon & SSC_RXFCON_RXFEN))
 				ssc_set_fifo(p, SSC_FIFO_RX, (value & SSC_RXFCON_RXFEN) != 0);
+
+			if ((value & SSC_RXFCON_RXFLU)) {
+				ssc_reset_fifo(p, SSC_FIFO_RX);
+				value &= ~SSC_RXFCON_RXFLU;
+			}
+
 			p->rxfcon = value;
-			ssc_update_state(p);
 			break;
 
 		case SSC_TXFCON:
-			if ((value & SSC_TXFCON_TXFEN) != (p->rxfcon & SSC_TXFCON_TXFEN))
+			if ((value & SSC_TXFCON_TXFEN) != (p->txfcon & SSC_TXFCON_TXFEN))
 				ssc_set_fifo(p, SSC_FIFO_TX, (value & SSC_TXFCON_TXFEN) != 0);
+
+			if ((value & SSC_TXFCON_TXFLU)) {
+				ssc_reset_fifo(p, SSC_FIFO_TX);
+				value &= ~SSC_TXFCON_TXFLU;
+
+				if (((p->txfcon & SSC_TXFCON_TXTMEN)))
+					pmb887x_srb_set_isr(&p->srb, SSC_ISR_TX);
+			}
+
 			p->txfcon = value;
-			ssc_update_state(p);
 			break;
 
 		case SSC_IMSC:
@@ -342,21 +359,19 @@ static void ssc_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned si
 
 		case SSC_DMACON:
 			p->dmacon = value;
-			ssc_update_state(p);
-			break;
-
-		case SSC_UNK0:
-		case SSC_UNK1:
-		case SSC_UNK2:
-			p->unk[ssc_get_unk_index_from_reg(haddr)] = value;
 			break;
 
 		default:
 			EPRINTF("unknown reg access: %02"PRIX64"\n", haddr);
 			exit(1);
 	}
+}
 
-	ssc_update_state(p);
+static void ssc_event_handler(void *opaque, int event_id, int level) {
+	pmb887x_ssc_t *p = opaque;
+	if (level == 0)
+		return;
+	ssc_trigger_dma(p, 1 << event_id);
 }
 
 static const MemoryRegionOps io_ops = {
@@ -373,6 +388,28 @@ static void ssc_handle_gpio_input(void *opaque, int id, int level) {
 	// nothing
 }
 
+static void ssc_handle_dmac_tx_clr(void *opaque, int id, int level) {
+	pmb887x_ssc_t *p = opaque;
+	p->dmac_tx_clr = level;
+	if (level == 1) {
+		qemu_set_irq(p->dmac_tx_sreq, 0);
+		qemu_set_irq(p->dmac_tx_breq, 0);
+	} else {
+		ssc_trigger_dma(p, pmb887x_srb_get_ris(&p->srb) & SSC_RIS_TX);
+	}
+}
+
+static void ssc_handle_dmac_rx_clr(void *opaque, int id, int level) {
+	pmb887x_ssc_t *p = opaque;
+	p->dmac_rx_clr = level;
+	if (level == 1) {
+		qemu_set_irq(p->dmac_rx_sreq, 0);
+		qemu_set_irq(p->dmac_rx_breq, 0);
+	} else {
+		ssc_trigger_dma(p, pmb887x_srb_get_ris(&p->srb) & SSC_RIS_RX);
+	}
+}
+
 static void ssc_init(Object *obj) {
 	DeviceState *dev = DEVICE(obj);
 	pmb887x_ssc_t *p = PMB887X_SSC(obj);
@@ -384,15 +421,28 @@ static void ssc_init(Object *obj) {
 	for (int i = 0; i < ARRAY_SIZE(p->irq); i++)
 		sysbus_init_irq(SYS_BUS_DEVICE(obj), &p->irq[i]);
 
+	// DMAC
+	qdev_init_gpio_in_named(dev, ssc_handle_dmac_tx_clr, "DMAC_TX_CLR", 1);
+	qdev_init_gpio_out_named(dev, &p->dmac_tx_sreq, "DMAC_TX_SREQ", 1);
+	qdev_init_gpio_out_named(dev, &p->dmac_tx_breq, "DMAC_TX_BREQ", 1);
+
+	qdev_init_gpio_in_named(dev, ssc_handle_dmac_rx_clr, "DMAC_RX_CLR", 1);
+	qdev_init_gpio_out_named(dev, &p->dmac_rx_sreq, "DMAC_RX_SREQ", 1);
+	qdev_init_gpio_out_named(dev, &p->dmac_rx_breq, "DMAC_RX_BREQ", 1);
+
 	qdev_init_gpio_in_named(dev, ssc_handle_gpio_input, "MRST_IN", 1);
 	qdev_init_gpio_out_named(dev, &p->gpio_sclk, "SCLK_OUT", 1);
 	qdev_init_gpio_out_named(dev, &p->gpio_mtsr, "MTSR_OUT", 1);
+	qdev_init_gpio_out_named(dev, &p->gpio_rs, "RS_OUT", 1);
+	qdev_init_gpio_out_named(dev, &p->gpio_cs, "CS_OUT", 1);
+	qdev_init_gpio_out_named(dev, &p->gpio_reset, "RESET_OUT", 1);
 }
 
 static void ssc_realize(DeviceState *dev, Error **errp) {
 	pmb887x_ssc_t *p = PMB887X_SSC(dev);
 	pmb887x_clc_init(&p->clc);
 	pmb887x_srb_init(&p->srb, p->irq, ARRAY_SIZE(p->irq));
+	pmb887x_srb_set_event_handler(&p->srb, dev, ssc_event_handler);
 
 	pmb887x_fifo16_init(&p->tx_fifo_buffered, FIFO_SIZE);
 	pmb887x_fifo16_init(&p->rx_fifo_buffered, FIFO_SIZE);
@@ -409,7 +459,6 @@ static void ssc_realize(DeviceState *dev, Error **errp) {
 static const Property ssc_properties[] = {
 	DEFINE_PROP_LINK("bus", pmb887x_ssc_t, bus, "SSI", SSIBus *),
 	DEFINE_PROP_LINK("dmac", pmb887x_ssc_t, dmac, TYPE_PMB887X_DMAC, pmb887x_dmac_t *),
-	DEFINE_PROP_UINT32("dmac-tx-periph-id", pmb887x_ssc_t, dmac_tx_periph_id, 4),
 };
 
 static void ssc_class_init(ObjectClass *klass, void *data) {

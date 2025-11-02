@@ -482,9 +482,14 @@ static void lcd_handle_cd(void *opaque, int n, int level) {
 		pmb887x_lcd_set_ram_mode(lcd, false);
 }
 
+static void lcd_handle_reset(void *opaque, int n, int level) {
+	DPRINTF("reset!\n");
+}
+
 static void lcd_init(Object *obj) {
 	DeviceState *dev = DEVICE(obj);
 	qdev_init_gpio_in_named(DEVICE(dev), lcd_handle_cd, "CD_IN", 1);
+	qdev_init_gpio_in_named(DEVICE(dev), lcd_handle_reset, "RESET_IN", 1);
 }
 
 static void lcd_realize(SSIPeripheral *d, Error **errp) {

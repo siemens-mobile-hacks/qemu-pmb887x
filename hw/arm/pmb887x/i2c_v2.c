@@ -24,7 +24,7 @@
 #define TYPE_PMB887X_I2C	"pmb887x-i2c-v2"
 OBJECT_DECLARE_SIMPLE_TYPE(pmb887x_i2c_t, PMB887X_I2C);
 
-#define I2C_TX_BYTE_TIME	100000
+#define I2C_TX_BYTE_TIME	100
 #define FIFO_IO_SIZE		0x3FFF
 #define FIFO_SIZE			8
 
@@ -60,8 +60,6 @@ struct pmb887x_i2c_t {
 	pmb887x_srb_ext_reg_t srb_err;
 	
 	int state;
-	int next_byte_action;
-	
 	pmb887x_fifo32_t fifo;
 	
 	bool is_read;

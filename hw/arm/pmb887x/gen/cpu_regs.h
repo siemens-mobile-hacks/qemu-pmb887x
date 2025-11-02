@@ -4,6 +4,7 @@
 #define CPU_PMB8876					0
 #define PMB8876_EBU_BASE			0xF0000000
 #define PMB8876_USART0_BASE			0xF1000000
+#define PMB8876_SSC_BASE			0xF1100000
 #define PMB8876_SIM_BASE			0xF1300000
 #define PMB8876_USART1_BASE			0xF1800000
 #define PMB8876_USB_BASE			0xF2200800
@@ -240,6 +241,10 @@
 #define PMB8876_USART0_ABDET_IRQ	9
 #define PMB8876_USART0_ABSTART_IRQ	10
 #define PMB8876_USART0_TMO_IRQ		11
+#define PMB8876_SSC_TX_IRQ			12
+#define PMB8876_SSC_RX_IRQ			13
+#define PMB8876_SSC_ERR_IRQ			14
+#define PMB8876_SSC_UNK_IRQ			15
 #define PMB8876_SIM_UNK0_IRQ		22
 #define PMB8876_SIM_UNK1_IRQ		23
 #define PMB8876_SIM_UNK2_IRQ		24
@@ -351,6 +356,7 @@
 #define PMB8875_EBU_BASE			0xF0000000
 #define PMB8875_USART0_BASE			0xF1000000
 #define PMB8875_SSC_BASE			0xF1100000
+#define PMB8875_SIM_BASE			0xF1300000
 #define PMB8875_USART1_BASE			0xF1800000
 #define PMB8875_DIF_BASE			0xF1B00000
 #define PMB8875_USB_BASE			0xF2200800
@@ -525,6 +531,9 @@
 #define PMB8875_DIF_RX_IRQ			19
 #define PMB8875_DIF_ERR_IRQ			20
 #define PMB8875_DIF_TMO_IRQ			21
+#define PMB8875_SIM_UNK0_IRQ		22
+#define PMB8875_SIM_UNK1_IRQ		23
+#define PMB8875_SIM_UNK2_IRQ		24
 #define PMB8875_USB_IRQ				25
 #define PMB8875_USART1_TX_IRQ		26
 #define PMB8875_USART1_TBUF_IRQ		27
@@ -7490,6 +7499,10 @@
 
 #define SCU_RTCIF						0x64
 
+#define SCU_ID0							0x6C
+
+#define SCU_ID1							0x70
+
 #define SCU_BOOT_CFG					0x74
 #define SCU_BOOT_CFG_USART1				(1 << 28)		 // Allow boot from USART1
 #define SCU_BOOT_CFG_USART1_SHIFT		28
@@ -7508,28 +7521,40 @@
 
 #define SCU_RTID						0x80
 
-/* DMA Request Select Register */
-#define SCU_DMARS						0x84
-#define SCU_DMARS_SEL0					(1 << 0)		 // Request Select Bit 0
-#define SCU_DMARS_SEL0_SHIFT			0
-#define SCU_DMARS_SEL1					(1 << 1)		 // Request Select Bit 1
-#define SCU_DMARS_SEL1_SHIFT			1
-#define SCU_DMARS_SEL2					(1 << 2)		 // Request Select Bit 2
-#define SCU_DMARS_SEL2_SHIFT			2
-#define SCU_DMARS_SEL3					(1 << 3)		 // Request Select Bit 3
-#define SCU_DMARS_SEL3_SHIFT			3
-#define SCU_DMARS_SEL4					(1 << 4)		 // Request Select Bit 4
-#define SCU_DMARS_SEL4_SHIFT			4
-#define SCU_DMARS_SEL5					(1 << 5)		 // Request Select Bit 5
-#define SCU_DMARS_SEL5_SHIFT			5
-#define SCU_DMARS_SEL6					(1 << 6)		 // Request Select Bit 6
-#define SCU_DMARS_SEL6_SHIFT			6
-#define SCU_DMARS_SEL7					(1 << 7)		 // Request Select Bit 7
-#define SCU_DMARS_SEL7_SHIFT			7
-#define SCU_DMARS_SEL8					(1 << 8)		 // Request Select Bit 8
-#define SCU_DMARS_SEL8_SHIFT			8
-#define SCU_DMARS_SEL9					(1 << 9)		 // Request Select Bit 9
-#define SCU_DMARS_SEL9_SHIFT			9
+/* DMA Enable Channel */
+#define SCU_DMAE						0x84
+#define SCU_DMAE_CH0					(1 << 0)		 // Enable DMA CH0
+#define SCU_DMAE_CH0_SHIFT				0
+#define SCU_DMAE_CH1					(1 << 1)		 // Enable DMA CH1
+#define SCU_DMAE_CH1_SHIFT				1
+#define SCU_DMAE_CH2					(1 << 2)		 // Enable DMA CH2
+#define SCU_DMAE_CH2_SHIFT				2
+#define SCU_DMAE_CH3					(1 << 3)		 // Enable DMA CH3
+#define SCU_DMAE_CH3_SHIFT				3
+#define SCU_DMAE_CH4					(1 << 4)		 // Enable DMA CH4
+#define SCU_DMAE_CH4_SHIFT				4
+#define SCU_DMAE_CH5					(1 << 5)		 // Enable DMA CH5
+#define SCU_DMAE_CH5_SHIFT				5
+#define SCU_DMAE_CH6					(1 << 6)		 // Enable DMA CH6
+#define SCU_DMAE_CH6_SHIFT				6
+#define SCU_DMAE_CH7					(1 << 7)		 // Enable DMA CH7
+#define SCU_DMAE_CH7_SHIFT				7
+#define SCU_DMAE_CH8					(1 << 8)		 // Enable DMA CH8
+#define SCU_DMAE_CH8_SHIFT				8
+#define SCU_DMAE_CH9					(1 << 9)		 // Enable DMA CH9
+#define SCU_DMAE_CH9_SHIFT				9
+#define SCU_DMAE_CH10					(1 << 10)		 // Enable DMA CH10
+#define SCU_DMAE_CH10_SHIFT				10
+#define SCU_DMAE_CH11					(1 << 11)		 // Enable DMA CH11
+#define SCU_DMAE_CH11_SHIFT				11
+#define SCU_DMAE_CH12					(1 << 12)		 // Enable DMA CH12
+#define SCU_DMAE_CH12_SHIFT				12
+#define SCU_DMAE_CH13					(1 << 13)		 // Enable DMA CH13
+#define SCU_DMAE_CH13_SHIFT				13
+#define SCU_DMAE_CH14					(1 << 14)		 // Enable DMA CH14
+#define SCU_DMAE_CH14_SHIFT				14
+#define SCU_DMAE_CH15					(1 << 15)		 // Enable DMA CH15
+#define SCU_DMAE_CH15_SHIFT				15
 
 /* Service Routing Control Register */
 #define SCU_EXTI0_SRC					0xB8
@@ -7583,8 +7608,9 @@
 
 
 // SSC [MOD_NUM=0045, MOD_REV=25, MOD_32BIT=00]
+// SSC [MOD_NUM=0045, MOD_REV=31, MOD_32BIT=00]
 // SSC (SPI)
-#define SSC_IO_SIZE				0x0000C000
+#define SSC_IO_SIZE				0x00000100
 /* Clock Control Register */
 #define SSC_CLC					0x00
 

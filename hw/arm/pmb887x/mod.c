@@ -106,6 +106,11 @@ void pmb887x_srb_set_irq_router(pmb887x_srb_reg_t *reg, void *opaque, int (*call
 	reg->irq_router_opaque = opaque;
 }
 
+void pmb887x_srb_set_event_handler(pmb887x_srb_reg_t *reg, void *opaque, void (*callback)(void *, int, int)) {
+	reg->event_handler = callback;
+	reg->event_handler_opaque = opaque;
+}
+
 uint32_t pmb887x_srb_get_imsc(pmb887x_srb_reg_t *reg) {
 	return reg->imsc;
 }
@@ -144,6 +149,8 @@ static void pmb887x_srb_set_event(pmb887x_srb_reg_t *reg, int n, int level) {
 	bool last_has_irq = (reg->last_state & mask) != 0;
 	
 	if (has_irq != last_has_irq) {
+		if (reg->event_handler)
+			reg->event_handler(reg->event_handler_opaque, n, level);
 		if (has_irq) {
 			if ((reg->imsc & mask)) {
 				pmb887x_srb_set_irq(reg, n, level);

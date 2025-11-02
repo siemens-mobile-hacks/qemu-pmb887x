@@ -164,7 +164,7 @@ static uint64_t scu_io_read(void *opaque, hwaddr haddr, unsigned size) {
 			value = p->boot_flag;
 			break;
 		
-		case SCU_DMARS:
+		case SCU_DMAE:
 			value = p->dmars;
 			break;
 		
@@ -265,7 +265,7 @@ static void scu_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned si
 			p->boot_flag = value;
 		break;
 		
-		case SCU_DMARS:
+		case SCU_DMAE:
 			p->dmars = value;
 		break;
 		

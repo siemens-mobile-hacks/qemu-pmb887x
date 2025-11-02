@@ -338,6 +338,9 @@ static uint64_t tpu_io_read(void *opaque, hwaddr haddr, unsigned size) {
 			value = p->unk[tpu_unk_by_reg(haddr)];
 			break;
 		
+		case 0xD8: // ??
+			break;
+
 		default:
 			IO_DUMP(haddr + p->mmio.addr, size, 0xFFFFFFFF, false);
 			EPRINTF("unknown reg access: %02"PRIX64"\n", haddr);
@@ -430,7 +433,10 @@ static void tpu_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned si
 		case TPU_UNK7:
 			p->unk[tpu_unk_by_reg(haddr)] = value;
 			break;
-		
+
+		case 0xD8: // ??
+			break;
+
 		default:
 			EPRINTF("unknown reg access: %02"PRIX64"\n", haddr);
 			exit(1);

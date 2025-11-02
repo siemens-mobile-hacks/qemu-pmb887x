@@ -29,6 +29,9 @@ struct pmb887x_srb_reg_t {
 	
 	int (*irq_router)(void *, int);
 	void *irq_router_opaque;
+
+	void (*event_handler)(void *, int, int);
+	void *event_handler_opaque;
 };
 
 struct pmb887x_srb_ext_reg_t {
@@ -54,6 +57,7 @@ void pmb887x_src_update(pmb887x_src_reg_t *reg, uint32_t clear, uint32_t set);
 // Service Request Block
 void pmb887x_srb_init(pmb887x_srb_reg_t *reg, qemu_irq *irq, int irq_n);
 void pmb887x_srb_set_irq_router(pmb887x_srb_reg_t *reg, void *opaque, int (*callback)(void *, int));
+void pmb887x_srb_set_event_handler(pmb887x_srb_reg_t *reg, void *opaque, void (*callback)(void *, int, int)) ;
 
 uint32_t pmb887x_srb_get_imsc(pmb887x_srb_reg_t *reg);
 uint32_t pmb887x_srb_get_mis(pmb887x_srb_reg_t *reg);

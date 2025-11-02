@@ -50,11 +50,12 @@ DeviceState *pmb887x_new_cpu_module(const char *name) {
 	return dev;
 }
 
-static void pmb887x_cpu_module_post_init(DeviceState *dev, const pmb887x_cpu_module_t * mod) {
+static void pmb887x_cpu_module_post_init(DeviceState *dev, const pmb887x_cpu_module_t *mod) {
 	if (mod->gpios_count > 0) {
 		DeviceState *gpio = qdev_find_recursive(sysbus_get_default(), "GPIO");
 		g_assert(gpio != NULL);
 
+		// GPIO
 		for (int i = 0; i < mod->gpios_count; i++) {
 			const pmb887x_cpu_module_gpio_t *gpio_link = &mod->gpios[i];
 
@@ -94,6 +95,41 @@ static void pmb887x_cpu_module_post_init(DeviceState *dev, const pmb887x_cpu_mod
 				if (qdev_get_gpio_out_connector(dev, gpio_out_name, gpio_link->pin) != NULL)
 					hw_error("GPIO_OUT '%s[%d]' is already connected!", gpio_out_name, gpio_link->pin);
 				qdev_connect_gpio_out_named(gpio, gpio_out_name, gpio_link->pin, gpio_in);
+			}
+		}
+	}
+
+	if (mod->dma_count > 0) {
+		DeviceState *dmac = qdev_find_recursive(sysbus_get_default(), "DMAC");
+		g_assert(dmac != NULL);
+
+		const char *module_signals[] = { "SREQ", "LSREQ", "BREQ", "LBREQ" };
+		const char *dmac_signals[] = { "CLR", "TC" };
+
+		// DMA signals
+		for (int i = 0; i < mod->dma_count; i++) {
+			const pmb887x_cpu_module_dma_t *dma_channel = &mod->dma[i];
+
+			for (int j = 0; j < ARRAY_SIZE(module_signals); j++) {
+				char module_signal_out[128];
+				sprintf(module_signal_out, "DMAC_%s_%s", dma_channel->channel, module_signals[j]);
+
+				if (!pmb887x_qdev_is_gpio_out_exists(dev, module_signal_out, 0))
+					continue;
+
+				qemu_irq signal = qdev_get_gpio_in_named(dmac, module_signals[j], dma_channel->request);
+				qdev_connect_gpio_out_named(dev, module_signal_out, 0, signal);
+			}
+
+			for (int j = 0; j < ARRAY_SIZE(dmac_signals); j++) {
+				char module_signal_in[128];
+				sprintf(module_signal_in, "DMAC_%s_%s", dma_channel->channel, dmac_signals[j]);
+
+				if (!pmb887x_qdev_is_gpio_out_exists(dev, module_signal_in, 0))
+					continue;
+
+				qemu_irq signal = qdev_get_gpio_in_named(dev, module_signal_in, 0);
+				qdev_connect_gpio_out_named(dmac, dmac_signals[j], dma_channel->request, signal);
 			}
 		}
 	}

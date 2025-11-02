@@ -252,6 +252,7 @@ static uint64_t flash_io_read(void *opaque, hwaddr part_offset, unsigned size) {
 		case 0x40:	// program word
 		case 0x10:	// program word
 			value = p->status;
+			// flash_trace_part(p, "%08"PRIX64": status 0x%02X", offset, value);
 			break;
 
 		default:
