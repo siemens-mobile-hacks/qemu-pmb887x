@@ -41,7 +41,6 @@ struct pmb887x_ssc_t {
 	SysBusDevice parent_obj;
 	MemoryRegion mmio;
 
-	pmb887x_dmac_t *dmac;
 	qemu_irq irq[4];
 
 	uint32_t br;
@@ -52,7 +51,6 @@ struct pmb887x_ssc_t {
 	uint16_t tb;
 	uint32_t rxfcon;
 	uint32_t txfcon;
-	uint32_t dmacon;
 	uint32_t pbccon;
 	uint32_t bcreg;
 	uint32_t bcsel[2];
@@ -82,9 +80,7 @@ struct pmb887x_ssc_t {
 	int dmac_tx_clr;
 	int dmac_rx_clr;
 
-	qemu_irq dmac_tx_sreq;
 	qemu_irq dmac_tx_breq;
-	qemu_irq dmac_rx_sreq;
 	qemu_irq dmac_rx_breq;
 };
 
@@ -107,10 +103,11 @@ static void ssc_set_fifo(pmb887x_ssc_t *p, enum SSCFifoType fifo, bool buffered)
 	ssc_reset_fifo(p, fifo);
 }
 
-static void ssc_trigger_dma(pmb887x_ssc_t *p, uint32_t ris) {
-	if (!p->dmac_tx_clr && (ris & SSC_RIS_TX) != 0 && (p->dmacon & SSC_DMACON_TX))
+static void ssc_trigger_dma(pmb887x_ssc_t *p) {
+	uint32_t ris = pmb887x_srb_get_ris_dma(&p->srb);
+	if (!p->dmac_tx_clr && (ris & SSC_RIS_TX) != 0)
 		qemu_set_irq(p->dmac_tx_breq, 1);
-	if (!p->dmac_rx_clr && (ris & SSC_RIS_RX) != 0 && (p->dmacon & SSC_DMACON_RX))
+	if (!p->dmac_rx_clr && (ris & SSC_RIS_RX) != 0)
 		qemu_set_irq(p->dmac_rx_breq, 1);
 }
 
@@ -279,8 +276,8 @@ static uint64_t ssc_io_read(void *opaque, hwaddr haddr, unsigned size) {
 			value = 0;
 			break;
 
-		case SSC_DMACON:
-			value = p->dmacon;
+		case SSC_DMAE:
+			value = pmb887x_srb_get_dmae(&p->srb);
 			break;
 
 		default:
@@ -357,8 +354,8 @@ static void ssc_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned si
 			pmb887x_srb_set_isr(&p->srb, value);
 			break;
 
-		case SSC_DMACON:
-			p->dmacon = value;
+		case SSC_DMAE:
+			pmb887x_srb_set_dmae(&p->srb, value);
 			break;
 
 		default:
@@ -369,9 +366,8 @@ static void ssc_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned si
 
 static void ssc_event_handler(void *opaque, int event_id, int level) {
 	pmb887x_ssc_t *p = opaque;
-	if (level == 0)
-		return;
-	ssc_trigger_dma(p, 1 << event_id);
+	if (level != 0)
+		ssc_trigger_dma(p);
 }
 
 static const MemoryRegionOps io_ops = {
@@ -392,10 +388,9 @@ static void ssc_handle_dmac_tx_clr(void *opaque, int id, int level) {
 	pmb887x_ssc_t *p = opaque;
 	p->dmac_tx_clr = level;
 	if (level == 1) {
-		qemu_set_irq(p->dmac_tx_sreq, 0);
 		qemu_set_irq(p->dmac_tx_breq, 0);
 	} else {
-		ssc_trigger_dma(p, pmb887x_srb_get_ris(&p->srb) & SSC_RIS_TX);
+		ssc_trigger_dma(p);
 	}
 }
 
@@ -403,10 +398,9 @@ static void ssc_handle_dmac_rx_clr(void *opaque, int id, int level) {
 	pmb887x_ssc_t *p = opaque;
 	p->dmac_rx_clr = level;
 	if (level == 1) {
-		qemu_set_irq(p->dmac_rx_sreq, 0);
 		qemu_set_irq(p->dmac_rx_breq, 0);
 	} else {
-		ssc_trigger_dma(p, pmb887x_srb_get_ris(&p->srb) & SSC_RIS_RX);
+		ssc_trigger_dma(p);
 	}
 }
 
@@ -423,11 +417,9 @@ static void ssc_init(Object *obj) {
 
 	// DMAC
 	qdev_init_gpio_in_named(dev, ssc_handle_dmac_tx_clr, "DMAC_TX_CLR", 1);
-	qdev_init_gpio_out_named(dev, &p->dmac_tx_sreq, "DMAC_TX_SREQ", 1);
 	qdev_init_gpio_out_named(dev, &p->dmac_tx_breq, "DMAC_TX_BREQ", 1);
 
 	qdev_init_gpio_in_named(dev, ssc_handle_dmac_rx_clr, "DMAC_RX_CLR", 1);
-	qdev_init_gpio_out_named(dev, &p->dmac_rx_sreq, "DMAC_RX_SREQ", 1);
 	qdev_init_gpio_out_named(dev, &p->dmac_rx_breq, "DMAC_RX_BREQ", 1);
 
 	qdev_init_gpio_in_named(dev, ssc_handle_gpio_input, "MRST_IN", 1);
@@ -458,7 +450,6 @@ static void ssc_realize(DeviceState *dev, Error **errp) {
 
 static const Property ssc_properties[] = {
 	DEFINE_PROP_LINK("bus", pmb887x_ssc_t, bus, "SSI", SSIBus *),
-	DEFINE_PROP_LINK("dmac", pmb887x_ssc_t, dmac, TYPE_PMB887X_DMAC, pmb887x_dmac_t *),
 };
 
 static void ssc_class_init(ObjectClass *klass, void *data) {

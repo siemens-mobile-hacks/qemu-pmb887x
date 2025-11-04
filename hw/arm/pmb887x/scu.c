@@ -15,6 +15,7 @@
 
 #include "hw/arm/pmb887x/regs_dump.h"
 #include "hw/arm/pmb887x/mod.h"
+#include "hw/arm/pmb887x/dmac.h"
 #include "hw/arm/pmb887x/sccu.h"
 #include "hw/arm/pmb887x/gpio.h"
 #include "hw/arm/pmb887x/trace.h"
@@ -53,6 +54,7 @@ struct pmb887x_scu_t {
 	uint32_t dsp_unk0;
 	
 	pmb887x_scu_t *pcl;
+	pmb887x_dmac_t *dmac;
 	struct pmb887x_sccu_t *sccu;
 	MemoryRegion *brom_mirror;
 };
@@ -164,8 +166,8 @@ static uint64_t scu_io_read(void *opaque, hwaddr haddr, unsigned size) {
 			value = p->boot_flag;
 			break;
 		
-		case SCU_DMAE:
-			value = p->dmars;
+		case SCU_DMARS:
+			value = pmb887x_dmac_get_sel(p->dmac);
 			break;
 		
 		case SCU_BOOT_CFG:
@@ -265,8 +267,8 @@ static void scu_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned si
 			p->boot_flag = value;
 		break;
 		
-		case SCU_DMAE:
-			p->dmars = value;
+		case SCU_DMARS:
+			pmb887x_dmac_set_sel(p->dmac, value);
 		break;
 		
 		case SCU_BOOT_CFG:
@@ -433,6 +435,7 @@ static void scu_realize(DeviceState *dev, Error **errp) {
 static const Property scu_properties[] = {
 	DEFINE_PROP_UINT32("cpu_type", pmb887x_scu_t, cpu_type, 0),
 	DEFINE_PROP_LINK("sccu", pmb887x_scu_t, sccu, "pmb887x-sccu", struct pmb887x_sccu_t *),
+	DEFINE_PROP_LINK("dmac", pmb887x_scu_t, dmac, "pmb887x-dmac", pmb887x_dmac_t *),
 	DEFINE_PROP_LINK("pcl", pmb887x_scu_t, pcl, "pmb887x-pcl", pmb887x_scu_t *),
 	DEFINE_PROP_LINK("brom_mirror", pmb887x_scu_t, brom_mirror, TYPE_MEMORY_REGION, MemoryRegion *),
 };

@@ -27,7 +27,7 @@ static const int pmb8876_ssc_irqs[] = {
 	PMB8876_SSC_TX_IRQ,
 	PMB8876_SSC_RX_IRQ,
 	PMB8876_SSC_ERR_IRQ,
-	PMB8876_SSC_UNK_IRQ
+	PMB8876_SSC_TMO_IRQ
 };
 
 static const int pmb8876_usart1_irqs[] = {
@@ -228,7 +228,8 @@ static const pmb887x_cpu_module_gpio_t pmb8876_dif_gpios[] = {
 };
 
 static const pmb887x_cpu_module_dma_t pmb8876_dif_dma[] = {
-	{"TX",	PMB887X_DMAC_BUS_AHB2,	4},
+	{"TX",	PMB887X_DMAC_BUS_AHB2,	4,	0},
+	{"RX",	PMB887X_DMAC_BUS_AHB2,	5,	0},
 };
 
 static const pmb887x_cpu_module_gpio_t pmb8876_mmci_gpios[] = {
@@ -304,7 +305,7 @@ static const int pmb8875_ssc_irqs[] = {
 	PMB8875_SSC_TX_IRQ,
 	PMB8875_SSC_RX_IRQ,
 	PMB8875_SSC_ERR_IRQ,
-	PMB8875_SSC_UNK_IRQ
+	PMB8875_SSC_TMO_IRQ
 };
 
 static const pmb887x_cpu_module_gpio_t pmb8875_ssc_gpios[] = {
@@ -332,7 +333,7 @@ static const pmb887x_cpu_module_gpio_t pmb8875_usart1_gpios[] = {
 };
 
 static const pmb887x_cpu_module_dma_t pmb8875_usart1_dma[] = {
-	{"RX",	PMB887X_DMAC_BUS_AHB1,	7},
+	{"RX",	PMB887X_DMAC_BUS_AHB1,	7,	0},
 };
 
 static const int pmb8875_dif_irqs[] = {
@@ -352,7 +353,8 @@ static const pmb887x_cpu_module_gpio_t pmb8875_dif_gpios[] = {
 };
 
 static const pmb887x_cpu_module_dma_t pmb8875_dif_dma[] = {
-	{"TX",	PMB887X_DMAC_BUS_AHB1,	4},
+	{"TX",	PMB887X_DMAC_BUS_AHB1,	4,	0},
+	{"RX",	PMB887X_DMAC_BUS_AHB1,	5,	0},
 };
 
 static const int pmb8875_dmac_irqs[] = {

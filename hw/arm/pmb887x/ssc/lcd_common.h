@@ -46,10 +46,10 @@ enum pmb887x_lcd_pixel_mode_t {
 };
 
 struct pmb887x_lcd_rect_t {
-	uint32_t x1;
-	uint32_t y1;
-	uint32_t x2;
-	uint32_t y2;
+	int x1;
+	int y1;
+	int x2;
+	int y2;
 };
 
 struct pmb887x_lcd_t {
@@ -86,8 +86,8 @@ struct pmb887x_lcd_t {
 	uint32_t buffer_size;
 	uint32_t buffer_index;
 
-	uint32_t buffer_x;
-	uint32_t buffer_y;
+	int buffer_x;
+	int buffer_y;
 
 	pmb887x_lcd_rect_t window;
 	pmb887x_lcd_rect_t dirty;
@@ -119,7 +119,6 @@ struct pmb887x_lcd_class_t {
 	void (*realize)(pmb887x_lcd_t *, Error **errp);
 };
 
-void pmb887x_lcd_write(pmb887x_lcd_t *lcd, uint32_t value, uint32_t size);
 void pmb887x_lcd_set_mode(pmb887x_lcd_t *lcd, enum pmb887x_lcd_pixel_mode_t mode, bool flip_h_pins, bool flip_v_pins);
 void pmb887x_lcd_set_ram_mode(pmb887x_lcd_t *lcd, bool flag);
 void pmb887x_lcd_set_addr_mode(pmb887x_lcd_t *lcd, enum pmb887x_lcd_am_t am, enum pmb887x_lcd_ac_t ac_x, enum pmb887x_lcd_ac_t ac_y);

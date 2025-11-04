@@ -208,8 +208,11 @@ void pmb887x_lcd_set_mode(pmb887x_lcd_t *lcd, enum pmb887x_lcd_pixel_mode_t mode
 
 	DPRINTF("mode %s, bpp: %d [%dB], buffer: %d\n", lcd_get_mode_name(lcd->mode), lcd->bpp, lcd->byte_pp, lcd->buffer_size);
 
-	if (need_transform)
+	if (need_transform) {
 		DPRINTF("transform: %d deg, flip_h=%d, flip_v=%d\n", lcd->rotation, lcd->flip_horizontal, lcd->flip_vertical);
+	} else {
+		DPRINTF("transform: none\n");
+	}
 }
 
 static inline bool lcd_incr_ac_x(pmb887x_lcd_t *lcd) {
@@ -276,7 +279,6 @@ static void lcd_write_control_byte(pmb887x_lcd_t *lcd, uint8_t value) {
 			uint32_t cmd = lcd_read_from_fifo(lcd, lcd->k->cmd_width);
 			lcd->wr_state = LCD_WR_STATE_PARAM;
 			lcd->current_cmd = cmd;
-			DPRINTF("CMD: %04X\n", lcd->current_cmd);
 			lcd->current_cmd_params = lcd->k->on_cmd(lcd, cmd);
 			g_assert(lcd->current_cmd_params <= LCD_CMD_MAX_PARAMS);
 			
@@ -418,10 +420,6 @@ static void lcd_invalidate_display(void *opaque) {
 	lcd->dirty.y2 = lcd->height - 1;
 }
 
-void pmb887x_lcd_write(pmb887x_lcd_t *lcd, uint32_t value, uint32_t size) {
-
-}
-
 void pmb887x_lcd_set_addr_mode(pmb887x_lcd_t *lcd, enum pmb887x_lcd_am_t am, enum pmb887x_lcd_ac_t ac_x, enum pmb887x_lcd_ac_t ac_y) {
 	DPRINTF("[addr] am=%s, ac_x=%s, ac_y=%s [%d x %d]\n",
 		(am == LCD_AM_VERTICAL ? "vert" : "horiz"),
@@ -445,7 +443,6 @@ void pmb887x_lcd_set_ram_mode(pmb887x_lcd_t *lcd, bool flag) {
 
 static uint32_t lcd_transfer(SSIPeripheral *dev, uint32_t data) {
 	pmb887x_lcd_t *lcd = PMB887X_LCD(dev);
-
 	if (lcd->wr_state == LCD_WR_STATE_RAM) {
 		uint32_t index = lcd->buffer_y * lcd->width + lcd->buffer_x;
 		lcd->buffer[index * lcd->byte_pp + (lcd->byte_pp - lcd->tmp_index - 1)] = data | lcd->byte_fill;
@@ -475,9 +472,17 @@ static const Property lcd_props[] = {
 	DEFINE_PROP_BOOL("flip_vertical", pmb887x_lcd_t, default_flip_vertical, false),
 };
 
+static void lcd_handle_rd(void *opaque, int n, int level) {
+	// nothing
+}
+
+static void lcd_handle_wr(void *opaque, int n, int level) {
+	// nothing
+}
+
 static void lcd_handle_cd(void *opaque, int n, int level) {
 	pmb887x_lcd_t *lcd = PMB887X_LCD(opaque);
-	pmb887x_lcd_set_cd(lcd, level != 0);
+	pmb887x_lcd_set_cd(lcd, level == 0);
 	if (lcd->cd && lcd->wr_state == LCD_WR_STATE_RAM)
 		pmb887x_lcd_set_ram_mode(lcd, false);
 }
@@ -488,6 +493,8 @@ static void lcd_handle_reset(void *opaque, int n, int level) {
 
 static void lcd_init(Object *obj) {
 	DeviceState *dev = DEVICE(obj);
+	qdev_init_gpio_in_named(DEVICE(dev), lcd_handle_rd, "RD_IN", 1);
+	qdev_init_gpio_in_named(DEVICE(dev), lcd_handle_wr, "WR_IN", 1);
 	qdev_init_gpio_in_named(DEVICE(dev), lcd_handle_cd, "CD_IN", 1);
 	qdev_init_gpio_in_named(DEVICE(dev), lcd_handle_reset, "RESET_IN", 1);
 }

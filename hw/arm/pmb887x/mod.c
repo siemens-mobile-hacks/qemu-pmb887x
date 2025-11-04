@@ -99,6 +99,7 @@ void pmb887x_srb_init(pmb887x_srb_reg_t *reg, qemu_irq *irq, int irq_n) {
 	reg->irq_router_opaque = reg;
 	reg->imsc = 0;
 	reg->ris = 0;
+	reg->dmae = 0;
 }
 
 void pmb887x_srb_set_irq_router(pmb887x_srb_reg_t *reg, void *opaque, int (*callback)(void *, int)) {
@@ -121,6 +122,14 @@ uint32_t pmb887x_srb_get_mis(pmb887x_srb_reg_t *reg) {
 
 uint32_t pmb887x_srb_get_ris(pmb887x_srb_reg_t *reg) {
 	return reg->ris;
+}
+
+uint32_t pmb887x_srb_get_dmae(pmb887x_srb_reg_t *reg) {
+	return reg->dmae;
+}
+
+uint32_t pmb887x_srb_get_ris_dma(pmb887x_srb_reg_t *reg) {
+	return (reg->ris & reg->dmae);
 }
 
 static void pmb887x_srb_set_irq(pmb887x_srb_reg_t *reg, int n, int level) {
@@ -149,8 +158,6 @@ static void pmb887x_srb_set_event(pmb887x_srb_reg_t *reg, int n, int level) {
 	bool last_has_irq = (reg->last_state & mask) != 0;
 	
 	if (has_irq != last_has_irq) {
-		if (reg->event_handler)
-			reg->event_handler(reg->event_handler_opaque, n, level);
 		if (has_irq) {
 			if ((reg->imsc & mask)) {
 				pmb887x_srb_set_irq(reg, n, level);
@@ -167,6 +174,9 @@ static void pmb887x_srb_set_event(pmb887x_srb_reg_t *reg, int n, int level) {
 	} else {
 		reg->ris &= ~mask;
 	}
+
+	if (reg->event_handler)
+		reg->event_handler(reg->event_handler_opaque, n, level);
 }
 
 void pmb887x_srb_set_imsc(pmb887x_srb_reg_t *reg, uint32_t value) {
@@ -199,6 +209,10 @@ void pmb887x_srb_set_isr(pmb887x_srb_reg_t *reg, uint32_t value) {
 		if ((value & mask))
 			pmb887x_srb_set_event(reg, i, 1);
 	}
+}
+
+void pmb887x_srb_set_dmae(pmb887x_srb_reg_t *reg, uint32_t value) {
+	reg->dmae = value;
 }
 
 void pmb887x_srb_ext_init(pmb887x_srb_ext_reg_t *reg, pmb887x_srb_reg_t *parent, uint32_t events) {

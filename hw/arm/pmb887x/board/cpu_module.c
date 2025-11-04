@@ -117,7 +117,10 @@ static void pmb887x_cpu_module_post_init(DeviceState *dev, const pmb887x_cpu_mod
 				if (!pmb887x_qdev_is_gpio_out_exists(dev, module_signal_out, 0))
 					continue;
 
-				qemu_irq signal = qdev_get_gpio_in_named(dmac, module_signals[j], dma_channel->request);
+				char dmac_signal_in[128];
+				sprintf(dmac_signal_in, "SEL%d_%s", dma_channel->sel, module_signals[j]);
+
+				qemu_irq signal = qdev_get_gpio_in_named(dmac, dmac_signal_in, dma_channel->request);
 				qdev_connect_gpio_out_named(dev, module_signal_out, 0, signal);
 			}
 
@@ -128,8 +131,11 @@ static void pmb887x_cpu_module_post_init(DeviceState *dev, const pmb887x_cpu_mod
 				if (!pmb887x_qdev_is_gpio_out_exists(dev, module_signal_in, 0))
 					continue;
 
+				char dmac_signal_out[128];
+				sprintf(dmac_signal_out, "SEL%d_%s", dma_channel->sel, dmac_signals[j]);
+
 				qemu_irq signal = qdev_get_gpio_in_named(dev, module_signal_in, 0);
-				qdev_connect_gpio_out_named(dmac, dmac_signals[j], dma_channel->request, signal);
+				qdev_connect_gpio_out_named(dmac, dmac_signal_out, dma_channel->request, signal);
 			}
 		}
 	}

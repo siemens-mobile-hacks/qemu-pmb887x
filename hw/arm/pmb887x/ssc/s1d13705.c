@@ -51,6 +51,8 @@ struct pmb887x_gimmick_t {
 	uint16_t response;
 	bool lcd_data_bypass;
 
+	uint16_t regs[64 * 1024];
+
 	uint32_t wcycle;
 	uint32_t cmd;
 	uint32_t arg0;
@@ -81,6 +83,7 @@ static uint32_t gimmick_read_reg(pmb887x_gimmick_t *p, uint16_t reg) {
 
 		default:
 			// Unknown reg
+			// value = p->regs[reg];
 			break;
 	}
 
@@ -90,6 +93,7 @@ static uint32_t gimmick_read_reg(pmb887x_gimmick_t *p, uint16_t reg) {
 
 static void gimmick_write_reg(pmb887x_gimmick_t *p, uint16_t reg, uint16_t value) {
 	DPRINTF("write reg %04X: %04X\n", reg, value);
+	p->regs[reg] = value;
 }
 
 static uint32_t gimmick_transfer16(SSIPeripheral *dev, uint32_t data) {
@@ -101,9 +105,9 @@ static uint32_t gimmick_transfer16(SSIPeripheral *dev, uint32_t data) {
 		p->lcd_data_bypass = false;
 
 		if ((data & 0xF000) == CMD_LCD_SIGNLE_CMD) {
-			qemu_set_irq(p->fpline, 1);
-			value = ssi_transfer(p->bus, (data >> 4) & 0xFF);
 			qemu_set_irq(p->fpline, 0);
+			value = ssi_transfer(p->bus, (data >> 4) & 0xFF);
+			qemu_set_irq(p->fpline, 1);
 			p->wcycle = 0;
 		} else if ((data & 0xF000) == CMD_LCD_SINGLE_DATA) {
 			value = ssi_transfer(p->bus, (data >> 4) & 0xFF);

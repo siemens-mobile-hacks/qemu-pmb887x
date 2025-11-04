@@ -37,6 +37,7 @@ struct pmb887x_cpu_module_dma_t {
 	const char channel[64];
 	int bus;
 	int request;
+	int sel;
 };
 
 const pmb887x_cpu_module_t *pmb887x_cpu_get_modules_list(int cpu_id);

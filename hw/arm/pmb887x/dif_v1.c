@@ -1,5 +1,5 @@
 /*
- * Display Interface
+ * Display Interface (modified SSC)
  * */
 #define PMB887X_TRACE_ID		DIF
 #define PMB887X_TRACE_PREFIX	"pmb887x-dif"
@@ -43,7 +43,6 @@ struct pmb887x_dif_t {
 	SysBusDevice parent_obj;
 	MemoryRegion mmio;
 
-	pmb887x_dmac_t *dmac;
 	qemu_irq irq[4];
 
 	uint32_t br;
@@ -54,7 +53,6 @@ struct pmb887x_dif_t {
 	uint16_t tb;
 	uint32_t rxfcon;
 	uint32_t txfcon;
-	uint32_t dmacon;
 	uint32_t pbccon;
 	uint32_t bcreg;
 	uint32_t bcsel[2];
@@ -84,9 +82,7 @@ struct pmb887x_dif_t {
 	int dmac_tx_clr;
 	int dmac_rx_clr;
 
-	qemu_irq dmac_tx_sreq;
 	qemu_irq dmac_tx_breq;
-	qemu_irq dmac_rx_sreq;
 	qemu_irq dmac_rx_breq;
 };
 
@@ -109,10 +105,11 @@ static void dif_set_fifo(pmb887x_dif_t *p, enum DIFFifoType fifo, bool buffered)
 	dif_reset_fifo(p, fifo);
 }
 
-static void dif_trigger_dma(pmb887x_dif_t *p, uint32_t ris) {
-	if (!p->dmac_tx_clr && (ris & DIFv1_RIS_TX) != 0 && (p->dmacon & DIFv1_DMACON_TX))
+static void dif_trigger_dma(pmb887x_dif_t *p) {
+	uint32_t ris = pmb887x_srb_get_ris_dma(&p->srb);
+	if (!p->dmac_tx_clr && (ris & DIFv1_RIS_TX) != 0)
 		qemu_set_irq(p->dmac_tx_breq, 1);
-	if (!p->dmac_rx_clr && (ris & DIFv1_RIS_RX) != 0 && (p->dmacon & DIFv1_DMACON_RX))
+	if (!p->dmac_rx_clr && (ris & DIFv1_RIS_RX) != 0)
 		qemu_set_irq(p->dmac_rx_breq, 1);
 }
 
@@ -219,18 +216,6 @@ static void dif_update_state(pmb887x_dif_t *p) {
 		dif_transfer(p);
 }
 
-static int dif_get_bmreg_index_from_reg(uint32_t reg) {
-	switch (reg) {
-		case DIFv1_BMREG0:		return 0;
-		case DIFv1_BMREG1:		return 1;
-		case DIFv1_BMREG2:		return 2;
-		case DIFv1_BMREG3:		return 3;
-		case DIFv1_BMREG4:		return 4;
-		case DIFv1_BMREG5:		return 5;
-		default:				abort();
-	};
-}
-
 static int dif_get_unk_index_from_reg(uint32_t reg) {
 	switch (reg) {
 		case DIFv1_UNK0:		return 0;
@@ -238,14 +223,6 @@ static int dif_get_unk_index_from_reg(uint32_t reg) {
 		case DIFv1_UNK2:		return 2;
 		case DIFv1_UNK3:		return 3;
 		case DIFv1_UNK4:		return 4;
-		default:				abort();
-	};
-}
-
-static int dif_get_bcsel_index_from_reg(uint32_t reg) {
-	switch (reg) {
-		case DIFv1_BCSEL0:		return 0;
-		case DIFv1_BCSEL1:		return 1;
 		default:				abort();
 	};
 }
@@ -352,8 +329,8 @@ static uint64_t dif_io_read(void *opaque, hwaddr haddr, unsigned size) {
 			value = 0;
 			break;
 
-		case DIFv1_DMACON:
-			value = p->dmacon;
+		case DIFv1_DMAE:
+			value = pmb887x_srb_get_dmae(&p->srb);
 			break;
 
 		case DIFv1_UNK0:
@@ -370,7 +347,7 @@ static uint64_t dif_io_read(void *opaque, hwaddr haddr, unsigned size) {
 
 		case DIFv1_BCSEL0:
 		case DIFv1_BCSEL1:
-			value = p->bcsel[dif_get_bcsel_index_from_reg(haddr)];
+			value = p->bcsel[(haddr - DIFv1_BCSEL0) / 4];
 			break;
 
 		case DIFv1_BMREG0:
@@ -379,10 +356,11 @@ static uint64_t dif_io_read(void *opaque, hwaddr haddr, unsigned size) {
 		case DIFv1_BMREG3:
 		case DIFv1_BMREG4:
 		case DIFv1_BMREG5:
-			value = p->bmreg[dif_get_bmreg_index_from_reg(haddr)];
+			value = p->bmreg[(haddr - DIFv1_BMREG0) / 4];
 			break;
 
-		case 0x8C:
+		case DIFv1_BCREG:
+			value = p->bcreg;
 			break;
 
 		default:
@@ -459,8 +437,8 @@ static void dif_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned si
 			pmb887x_srb_set_isr(&p->srb, value);
 			break;
 
-		case DIFv1_DMACON:
-			p->dmacon = value;
+		case DIFv1_DMAE:
+			pmb887x_srb_set_dmae(&p->srb, value);
 			break;
 
 		case DIFv1_UNK0:
@@ -477,7 +455,7 @@ static void dif_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned si
 
 		case DIFv1_BCSEL0:
 		case DIFv1_BCSEL1:
-			p->bcsel[dif_get_bcsel_index_from_reg(haddr)] = value;
+			p->bcsel[(haddr - DIFv1_BCSEL0) / 4] = value;
 			dif_dump_bit_mux(p);
 			break;
 
@@ -487,11 +465,13 @@ static void dif_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned si
 		case DIFv1_BMREG3:
 		case DIFv1_BMREG4:
 		case DIFv1_BMREG5:
-			p->bmreg[dif_get_bmreg_index_from_reg(haddr)] = value;
+			p->bmreg[(haddr - DIFv1_BMREG0) / 4] = value;
 			dif_dump_bit_mux(p);
 			break;
 
-		case 0x8C:
+		case DIFv1_BCREG:
+			p->bcreg = value;
+			dif_dump_bit_mux(p);
 			break;
 
 		default:
@@ -502,9 +482,8 @@ static void dif_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned si
 
 static void dif_event_handler(void *opaque, int event_id, int level) {
 	pmb887x_dif_t *p = opaque;
-	if (level == 0)
-		return;
-	dif_trigger_dma(p, 1 << event_id);
+	if (level != 0)
+		dif_trigger_dma(p);
 }
 
 static const MemoryRegionOps io_ops = {
@@ -525,10 +504,9 @@ static void dif_handle_dmac_tx_clr(void *opaque, int id, int level) {
 	pmb887x_dif_t *p = opaque;
 	p->dmac_tx_clr = level;
 	if (level == 1) {
-		qemu_set_irq(p->dmac_tx_sreq, 0);
 		qemu_set_irq(p->dmac_tx_breq, 0);
 	} else {
-		dif_trigger_dma(p, pmb887x_srb_get_ris(&p->srb) & DIFv1_RIS_TX);
+		dif_trigger_dma(p);
 	}
 }
 
@@ -536,10 +514,9 @@ static void dif_handle_dmac_rx_clr(void *opaque, int id, int level) {
 	pmb887x_dif_t *p = opaque;
 	p->dmac_rx_clr = level;
 	if (level == 1) {
-		qemu_set_irq(p->dmac_rx_sreq, 0);
 		qemu_set_irq(p->dmac_rx_breq, 0);
 	} else {
-		dif_trigger_dma(p, pmb887x_srb_get_ris(&p->srb) & DIFv1_RIS_RX);
+		dif_trigger_dma(p);
 	}
 }
 
@@ -556,11 +533,9 @@ static void dif_init(Object *obj) {
 
 	// DMAC
 	qdev_init_gpio_in_named(dev, dif_handle_dmac_tx_clr, "DMAC_TX_CLR", 1);
-	qdev_init_gpio_out_named(dev, &p->dmac_tx_sreq, "DMAC_TX_SREQ", 1);
 	qdev_init_gpio_out_named(dev, &p->dmac_tx_breq, "DMAC_TX_BREQ", 1);
 
 	qdev_init_gpio_in_named(dev, dif_handle_dmac_rx_clr, "DMAC_RX_CLR", 1);
-	qdev_init_gpio_out_named(dev, &p->dmac_rx_sreq, "DMAC_RX_SREQ", 1);
 	qdev_init_gpio_out_named(dev, &p->dmac_rx_breq, "DMAC_RX_BREQ", 1);
 
 	qdev_init_gpio_in_named(dev, dif_handle_gpio_input, "MRST_IN", 1);
@@ -591,7 +566,6 @@ static void dif_realize(DeviceState *dev, Error **errp) {
 
 static const Property dif_properties[] = {
 	DEFINE_PROP_LINK("bus", pmb887x_dif_t, bus, "SSI", SSIBus *),
-	DEFINE_PROP_LINK("dmac", pmb887x_dif_t, dmac, TYPE_PMB887X_DMAC, pmb887x_dmac_t *),
 };
 
 static void dif_class_init(ObjectClass *klass, void *data) {

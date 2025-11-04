@@ -201,6 +201,7 @@ static void pmb887x_init(MachineState *machine) {
 	object_property_set_link(OBJECT(scu), "brom_mirror", OBJECT(brom_mirror), &error_fatal);
 	object_property_set_link(OBJECT(scu), "sccu", OBJECT(sccu), &error_fatal);
 	object_property_set_link(OBJECT(scu), "pcl", OBJECT(pcl), &error_fatal);
+	object_property_set_link(OBJECT(scu), "dmac", OBJECT(dmac), &error_fatal);
 	sysbus_realize_and_unref(SYS_BUS_DEVICE(scu), &error_fatal);
 	
 	// CAPCOM0
@@ -253,6 +254,7 @@ static void pmb887x_init(MachineState *machine) {
 	pmb887x_cpu_modules_post_init();
 	pmb887x_board_init_analog();
 	pmb887x_board_gpio_init_fixed_inputs();
+	pmb887x_board_gpio_init_fixed_connections();
 	pmb887x_board_init_devices(ebuc);
 
 	// Exec BootROM

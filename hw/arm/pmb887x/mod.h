@@ -26,6 +26,7 @@ struct pmb887x_srb_reg_t {
 	uint32_t last_state;
 	uint32_t imsc;
 	uint32_t ris;
+	uint32_t dmae;
 	
 	int (*irq_router)(void *, int);
 	void *irq_router_opaque;
@@ -62,10 +63,13 @@ void pmb887x_srb_set_event_handler(pmb887x_srb_reg_t *reg, void *opaque, void (*
 uint32_t pmb887x_srb_get_imsc(pmb887x_srb_reg_t *reg);
 uint32_t pmb887x_srb_get_mis(pmb887x_srb_reg_t *reg);
 uint32_t pmb887x_srb_get_ris(pmb887x_srb_reg_t *reg);
+uint32_t pmb887x_srb_get_dmae(pmb887x_srb_reg_t *reg);
+uint32_t pmb887x_srb_get_ris_dma(pmb887x_srb_reg_t *reg);
 
 void pmb887x_srb_set_imsc(pmb887x_srb_reg_t *reg, uint32_t value);
 void pmb887x_srb_set_icr(pmb887x_srb_reg_t *reg, uint32_t value);
 void pmb887x_srb_set_isr(pmb887x_srb_reg_t *reg, uint32_t value);
+void pmb887x_srb_set_dmae(pmb887x_srb_reg_t *reg, uint32_t value);
 
 // Service Request Block Extended
 void pmb887x_srb_ext_init(pmb887x_srb_ext_reg_t *reg, pmb887x_srb_reg_t *parent, uint32_t events);

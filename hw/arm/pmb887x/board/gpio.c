@@ -122,11 +122,24 @@ qemu_irq pmb887x_gpio_get_input(const char *name) {
 
 void pmb887x_board_gpio_init_fixed_inputs(void) {
 	pmb887x_board_t *board = pmb887x_board();
-	pmb887x_cfg_section_t *section = pmb887x_cfg_section(board->config, "gpio-inputs", 0, true);
+	pmb887x_cfg_section_t *section = pmb887x_cfg_section(board->config, "gpio-inputs", 0, false);
+	if (!section)
+		return;
 	for (size_t i = 0; i < section->items_count; i++) {
 		pmb887x_cfg_item_t *item = &section->items[i];
 		uint32_t gpio_value = strtoll(item->value, NULL, 10) ? 1 : 0;
 		qemu_set_irq(pmb887x_gpio_get_input(item->key), gpio_value);
+	}
+}
+
+void pmb887x_board_gpio_init_fixed_connections(void) {
+	pmb887x_board_t *board = pmb887x_board();
+	pmb887x_cfg_section_t *section = pmb887x_cfg_section(board->config, "gpio-connections", 0, false);
+	if (!section)
+		return;
+	for (size_t i = 0; i < section->items_count; i++) {
+		pmb887x_cfg_item_t *item = &section->items[i];
+		pmb887x_gpio_connect(item->key, item->value);
 	}
 }
 
@@ -146,18 +159,20 @@ void pmb887x_board_gpio_init(void) {
 	}
 
 	// Set board-specific GPIO
-	pmb887x_cfg_section_t *section = pmb887x_cfg_section(board->config, "gpio-aliases", 0, true);
-	for (size_t i = 0; i < section->items_count; i++) {
-		pmb887x_cfg_item_t *item = &section->items[i];
+	pmb887x_cfg_section_t *section = pmb887x_cfg_section(board->config, "gpio-aliases", 0, false);
+	if (section) {
+		for (size_t i = 0; i < section->items_count; i++) {
+			pmb887x_cfg_item_t *item = &section->items[i];
 
-		const pmb887x_cpu_meta_gpio_t *cpu_gpio = find_cpu_gpio_by_name(item->key);
-		if (cpu_gpio) {
-			pmb887x_cpu_meta_gpio_t *board_gpio = &board->gpios[cpu_gpio->id];
-			board_gpio->name = g_strdup(cpu_gpio->name);
-			board_gpio->func_name = g_strdup(item->value);
-			board_gpio->full_name = g_strdup_printf("GPIO_PIN%d_%s", cpu_gpio->id, item->value);
-		} else {
-			warn_report("Unknown cpu GPIO '%s' in %s", item->key, section->parent->file);
+			const pmb887x_cpu_meta_gpio_t *cpu_gpio = find_cpu_gpio_by_name(item->key);
+			if (cpu_gpio) {
+				pmb887x_cpu_meta_gpio_t *board_gpio = &board->gpios[cpu_gpio->id];
+				board_gpio->name = g_strdup(cpu_gpio->name);
+				board_gpio->func_name = g_strdup(item->value);
+				board_gpio->full_name = g_strdup_printf("GPIO_PIN%d_%s", cpu_gpio->id, item->value);
+			} else {
+				warn_report("Unknown cpu GPIO '%s' in %s", item->key, section->parent->file);
+			}
 		}
 	}
 }

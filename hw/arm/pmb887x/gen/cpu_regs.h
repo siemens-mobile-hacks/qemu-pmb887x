@@ -244,7 +244,7 @@
 #define PMB8876_SSC_TX_IRQ			12
 #define PMB8876_SSC_RX_IRQ			13
 #define PMB8876_SSC_ERR_IRQ			14
-#define PMB8876_SSC_UNK_IRQ			15
+#define PMB8876_SSC_TMO_IRQ			15
 #define PMB8876_SIM_UNK0_IRQ		22
 #define PMB8876_SIM_UNK1_IRQ		23
 #define PMB8876_SIM_UNK2_IRQ		24
@@ -526,7 +526,7 @@
 #define PMB8875_SSC_TX_IRQ			12
 #define PMB8875_SSC_RX_IRQ			13
 #define PMB8875_SSC_ERR_IRQ			14
-#define PMB8875_SSC_UNK_IRQ			15
+#define PMB8875_SSC_TMO_IRQ			15
 #define PMB8875_DIF_TX_IRQ			18
 #define PMB8875_DIF_RX_IRQ			19
 #define PMB8875_DIF_ERR_IRQ			20
@@ -2158,8 +2158,6 @@
 #define DIFv1_IMSC_RX_SHIFT				1
 #define DIFv1_IMSC_ERR					(1 << 3)		 // Error interrupt mask
 #define DIFv1_IMSC_ERR_SHIFT			3
-#define DIFv1_IMSC_TB					(1 << 4)		 // Transmit buffer interrupt mask
-#define DIFv1_IMSC_TB_SHIFT				4
 
 #define DIFv1_RIS						0x4C
 #define DIFv1_RIS_TX					(1 << 0)		 // Transmit interrupt raw status
@@ -2168,8 +2166,6 @@
 #define DIFv1_RIS_RX_SHIFT				1
 #define DIFv1_RIS_ERR					(1 << 2)		 // Error interrupt raw status
 #define DIFv1_RIS_ERR_SHIFT				2
-#define DIFv1_RIS_TB					(1 << 3)		 // Transmit buffer raw interrupt status
-#define DIFv1_RIS_TB_SHIFT				3
 
 #define DIFv1_MIS						0x50
 #define DIFv1_MIS_TX					(1 << 0)		 // Transmit interrupt status
@@ -2178,8 +2174,6 @@
 #define DIFv1_MIS_RX_SHIFT				1
 #define DIFv1_MIS_ERR					(1 << 2)		 // Error interrupt status
 #define DIFv1_MIS_ERR_SHIFT				2
-#define DIFv1_MIS_TB					(1 << 3)		 // Transmit buffer interrupt status
-#define DIFv1_MIS_TB_SHIFT				3
 
 #define DIFv1_ICR						0x54
 #define DIFv1_ICR_TX					(1 << 0)		 // Transmit interrupt mask
@@ -2188,8 +2182,6 @@
 #define DIFv1_ICR_RX_SHIFT				1
 #define DIFv1_ICR_ERR					(1 << 2)		 // Error interrupt mask
 #define DIFv1_ICR_ERR_SHIFT				2
-#define DIFv1_ICR_TB					(1 << 3)		 // Transmit buffer interrupt mask
-#define DIFv1_ICR_TB_SHIFT				3
 
 #define DIFv1_ISR						0x58
 #define DIFv1_ISR_TX					(1 << 0)		 // Transmit interrupt set
@@ -2198,14 +2190,12 @@
 #define DIFv1_ISR_RX_SHIFT				1
 #define DIFv1_ISR_ERR					(1 << 2)		 // Error interrupt set
 #define DIFv1_ISR_ERR_SHIFT				2
-#define DIFv1_ISR_TB					(1 << 3)		 // Transmit buffer interrupt set
-#define DIFv1_ISR_TB_SHIFT				3
 
-#define DIFv1_DMACON					0x5C
-#define DIFv1_DMACON_TX					(1 << 0)		 // Transmit DMA Enable. If this bit is set to 1, DMA for the transmit FIFO is enabled
-#define DIFv1_DMACON_TX_SHIFT			0
-#define DIFv1_DMACON_RX					(1 << 1)		 // Receive DMA Enable. If this bit is set to 1, DMA for the receive FIFO is enabled.
-#define DIFv1_DMACON_RX_SHIFT			1
+#define DIFv1_DMAE						0x5C
+#define DIFv1_DMAE_TX					(1 << 0)		 // Transmit interrupt mask
+#define DIFv1_DMAE_TX_SHIFT				0
+#define DIFv1_DMAE_RX					(1 << 1)		 // Receive interrupt mask
+#define DIFv1_DMAE_RX_SHIFT				1
 
 #define DIFv1_UNK2						0x60
 
@@ -2520,8 +2510,16 @@
 #define DIFv2_CSREG_CS2_SHIFT				2
 #define DIFv2_CSREG_CS3						(1 << 3)
 #define DIFv2_CSREG_CS3_SHIFT				3
-#define DIFv2_CSREG_BSCONF					(0x7 << 4)		 // Rx/Tx burst size
+#define DIFv2_CSREG_BSCONF					(0x7 << 4)
 #define DIFv2_CSREG_BSCONF_SHIFT			4
+#define DIFv2_CSREG_BSCONF_OFF				0x0
+#define DIFv2_CSREG_BSCONF_1x8BIT			0x10
+#define DIFv2_CSREG_BSCONF_1x9BIT			0x20
+#define DIFv2_CSREG_BSCONF_2x8BIT			0x30
+#define DIFv2_CSREG_BSCONF_2x9BIT			0x40
+#define DIFv2_CSREG_BSCONF_3x8BIT			0x50
+#define DIFv2_CSREG_BSCONF_3x9BIT			0x60
+#define DIFv2_CSREG_BSCONF_4x8BIT			0x70
 #define DIFv2_CSREG_GRACMD					(1 << 7)
 #define DIFv2_CSREG_GRACMD_SHIFT			7
 
@@ -3172,12 +3170,24 @@
 #define DIFv2_ISR_ERR						(1 << 8)
 #define DIFv2_ISR_ERR_SHIFT					8
 
-/* DMA Control */
+/* DMA Enable */
 #define DIFv2_DMAE							0xD4
-#define DIFv2_DMAE_TX						(1 << 0)		 // Transmit DMA Enable. If this bit is set to 1, DMA for the transmit FIFO is enabled
-#define DIFv2_DMAE_TX_SHIFT					0
-#define DIFv2_DMAE_RX						(1 << 1)		 // Receive DMA Enable. If this bit is set to 1, DMA for the receive FIFO is enabled.
-#define DIFv2_DMAE_RX_SHIFT					1
+#define DIFv2_DMAE_RXLSREQ					(1 << 0)
+#define DIFv2_DMAE_RXLSREQ_SHIFT			0
+#define DIFv2_DMAE_RXSREQ					(1 << 1)
+#define DIFv2_DMAE_RXSREQ_SHIFT				1
+#define DIFv2_DMAE_RXLBREQ					(1 << 2)
+#define DIFv2_DMAE_RXLBREQ_SHIFT			2
+#define DIFv2_DMAE_RXBREQ					(1 << 3)
+#define DIFv2_DMAE_RXBREQ_SHIFT				3
+#define DIFv2_DMAE_TXLSREQ					(1 << 4)
+#define DIFv2_DMAE_TXLSREQ_SHIFT			4
+#define DIFv2_DMAE_TXSREQ					(1 << 5)
+#define DIFv2_DMAE_TXSREQ_SHIFT				5
+#define DIFv2_DMAE_TXLBREQ					(1 << 6)
+#define DIFv2_DMAE_TXLBREQ_SHIFT			6
+#define DIFv2_DMAE_TXBREQ					(1 << 7)
+#define DIFv2_DMAE_TXBREQ_SHIFT				7
 
 /* Transmission Data Register */
 #define DIFv2_TXD							0x8000
@@ -7022,10 +7032,14 @@
 
 /* DMA Control */
 #define I2Cv2_DMAE								0x94
-#define I2Cv2_DMAE_TX							(1 << 0)		 // Transmit DMA Enable. If this bit is set to 1, DMA for the transmit FIFO is enabled
-#define I2Cv2_DMAE_TX_SHIFT						0
-#define I2Cv2_DMAE_RX							(1 << 1)		 // Receive DMA Enable. If this bit is set to 1, DMA for the receive FIFO is enabled.
-#define I2Cv2_DMAE_RX_SHIFT						1
+#define I2Cv2_DMAE_LSREQ_INT					(1 << 0)		 // Last Single Request Interrupt
+#define I2Cv2_DMAE_LSREQ_INT_SHIFT				0
+#define I2Cv2_DMAE_SREQ_INT						(1 << 1)		 // Single Request Interrupt
+#define I2Cv2_DMAE_SREQ_INT_SHIFT				1
+#define I2Cv2_DMAE_LBREQ_INT					(1 << 2)		 // Last Burst Request Interrupt
+#define I2Cv2_DMAE_LBREQ_INT_SHIFT				2
+#define I2Cv2_DMAE_BREQ_INT						(1 << 3)		 // Burst Request Interrupt
+#define I2Cv2_DMAE_BREQ_INT_SHIFT				3
 
 /* Transmission Data Register */
 #define I2Cv2_TXD								0x8000
@@ -7521,40 +7535,40 @@
 
 #define SCU_RTID						0x80
 
-/* DMA Enable Channel */
-#define SCU_DMAE						0x84
-#define SCU_DMAE_CH0					(1 << 0)		 // Enable DMA CH0
-#define SCU_DMAE_CH0_SHIFT				0
-#define SCU_DMAE_CH1					(1 << 1)		 // Enable DMA CH1
-#define SCU_DMAE_CH1_SHIFT				1
-#define SCU_DMAE_CH2					(1 << 2)		 // Enable DMA CH2
-#define SCU_DMAE_CH2_SHIFT				2
-#define SCU_DMAE_CH3					(1 << 3)		 // Enable DMA CH3
-#define SCU_DMAE_CH3_SHIFT				3
-#define SCU_DMAE_CH4					(1 << 4)		 // Enable DMA CH4
-#define SCU_DMAE_CH4_SHIFT				4
-#define SCU_DMAE_CH5					(1 << 5)		 // Enable DMA CH5
-#define SCU_DMAE_CH5_SHIFT				5
-#define SCU_DMAE_CH6					(1 << 6)		 // Enable DMA CH6
-#define SCU_DMAE_CH6_SHIFT				6
-#define SCU_DMAE_CH7					(1 << 7)		 // Enable DMA CH7
-#define SCU_DMAE_CH7_SHIFT				7
-#define SCU_DMAE_CH8					(1 << 8)		 // Enable DMA CH8
-#define SCU_DMAE_CH8_SHIFT				8
-#define SCU_DMAE_CH9					(1 << 9)		 // Enable DMA CH9
-#define SCU_DMAE_CH9_SHIFT				9
-#define SCU_DMAE_CH10					(1 << 10)		 // Enable DMA CH10
-#define SCU_DMAE_CH10_SHIFT				10
-#define SCU_DMAE_CH11					(1 << 11)		 // Enable DMA CH11
-#define SCU_DMAE_CH11_SHIFT				11
-#define SCU_DMAE_CH12					(1 << 12)		 // Enable DMA CH12
-#define SCU_DMAE_CH12_SHIFT				12
-#define SCU_DMAE_CH13					(1 << 13)		 // Enable DMA CH13
-#define SCU_DMAE_CH13_SHIFT				13
-#define SCU_DMAE_CH14					(1 << 14)		 // Enable DMA CH14
-#define SCU_DMAE_CH14_SHIFT				14
-#define SCU_DMAE_CH15					(1 << 15)		 // Enable DMA CH15
-#define SCU_DMAE_CH15_SHIFT				15
+/* DMA Request Select */
+#define SCU_DMARS						0x84
+#define SCU_DMARS_SEL0					(1 << 0)
+#define SCU_DMARS_SEL0_SHIFT			0
+#define SCU_DMARS_SEL1					(1 << 1)
+#define SCU_DMARS_SEL1_SHIFT			1
+#define SCU_DMARS_SEL2					(1 << 2)
+#define SCU_DMARS_SEL2_SHIFT			2
+#define SCU_DMARS_SEL3					(1 << 3)
+#define SCU_DMARS_SEL3_SHIFT			3
+#define SCU_DMARS_SEL4					(1 << 4)
+#define SCU_DMARS_SEL4_SHIFT			4
+#define SCU_DMARS_SEL5					(1 << 5)
+#define SCU_DMARS_SEL5_SHIFT			5
+#define SCU_DMARS_SEL6					(1 << 6)
+#define SCU_DMARS_SEL6_SHIFT			6
+#define SCU_DMARS_SEL7					(1 << 7)
+#define SCU_DMARS_SEL7_SHIFT			7
+#define SCU_DMARS_SEL8					(1 << 8)
+#define SCU_DMARS_SEL8_SHIFT			8
+#define SCU_DMARS_SEL9					(1 << 9)
+#define SCU_DMARS_SEL9_SHIFT			9
+#define SCU_DMARS_SEL10					(1 << 10)
+#define SCU_DMARS_SEL10_SHIFT			10
+#define SCU_DMARS_SEL11					(1 << 11)
+#define SCU_DMARS_SEL11_SHIFT			11
+#define SCU_DMARS_SEL12					(1 << 12)
+#define SCU_DMARS_SEL12_SHIFT			12
+#define SCU_DMARS_SEL13					(1 << 13)
+#define SCU_DMARS_SEL13_SHIFT			13
+#define SCU_DMARS_SEL14					(1 << 14)
+#define SCU_DMARS_SEL14_SHIFT			14
+#define SCU_DMARS_SEL15					(1 << 15)
+#define SCU_DMARS_SEL15_SHIFT			15
 
 /* Service Routing Control Register */
 #define SCU_EXTI0_SRC					0xB8
@@ -7748,8 +7762,6 @@
 #define SSC_IMSC_RX_SHIFT		1
 #define SSC_IMSC_ERR			(1 << 3)		 // Error interrupt mask
 #define SSC_IMSC_ERR_SHIFT		3
-#define SSC_IMSC_TB				(1 << 4)		 // Transmit buffer interrupt mask
-#define SSC_IMSC_TB_SHIFT		4
 
 #define SSC_RIS					0x4C
 #define SSC_RIS_TX				(1 << 0)		 // Transmit interrupt raw status
@@ -7758,8 +7770,6 @@
 #define SSC_RIS_RX_SHIFT		1
 #define SSC_RIS_ERR				(1 << 2)		 // Error interrupt raw status
 #define SSC_RIS_ERR_SHIFT		2
-#define SSC_RIS_TB				(1 << 3)		 // Transmit buffer raw interrupt status
-#define SSC_RIS_TB_SHIFT		3
 
 #define SSC_MIS					0x50
 #define SSC_MIS_TX				(1 << 0)		 // Transmit interrupt status
@@ -7768,8 +7778,6 @@
 #define SSC_MIS_RX_SHIFT		1
 #define SSC_MIS_ERR				(1 << 2)		 // Error interrupt status
 #define SSC_MIS_ERR_SHIFT		2
-#define SSC_MIS_TB				(1 << 3)		 // Transmit buffer interrupt status
-#define SSC_MIS_TB_SHIFT		3
 
 #define SSC_ICR					0x54
 #define SSC_ICR_TX				(1 << 0)		 // Transmit interrupt mask
@@ -7778,8 +7786,6 @@
 #define SSC_ICR_RX_SHIFT		1
 #define SSC_ICR_ERR				(1 << 2)		 // Error interrupt mask
 #define SSC_ICR_ERR_SHIFT		2
-#define SSC_ICR_TB				(1 << 3)		 // Transmit buffer interrupt mask
-#define SSC_ICR_TB_SHIFT		3
 
 #define SSC_ISR					0x58
 #define SSC_ISR_TX				(1 << 0)		 // Transmit interrupt set
@@ -7788,14 +7794,12 @@
 #define SSC_ISR_RX_SHIFT		1
 #define SSC_ISR_ERR				(1 << 2)		 // Error interrupt set
 #define SSC_ISR_ERR_SHIFT		2
-#define SSC_ISR_TB				(1 << 3)		 // Transmit buffer interrupt set
-#define SSC_ISR_TB_SHIFT		3
 
-#define SSC_DMACON				0x5C
-#define SSC_DMACON_TX			(1 << 0)		 // Transmit DMA Enable. If this bit is set to 1, DMA for the transmit FIFO is enabled
-#define SSC_DMACON_TX_SHIFT		0
-#define SSC_DMACON_RX			(1 << 1)		 // Receive DMA Enable. If this bit is set to 1, DMA for the receive FIFO is enabled.
-#define SSC_DMACON_RX_SHIFT		1
+#define SSC_DMAE				0x5C
+#define SSC_DMAE_TX				(1 << 0)		 // Transmit interrupt mask
+#define SSC_DMAE_TX_SHIFT		0
+#define SSC_DMAE_RX				(1 << 1)		 // Receive interrupt mask
+#define SSC_DMAE_RX_SHIFT		1
 
 #define SSC_UNK2				0x60
 

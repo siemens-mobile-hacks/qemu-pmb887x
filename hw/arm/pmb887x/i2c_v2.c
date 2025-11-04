@@ -35,8 +35,6 @@ enum {
 	I2C_STATE_MASTER_TX,
 	I2C_STATE_MASTER_RX,
 	I2C_STATE_MASTER_RESTART,
-	I2C_STATE_MASTER_TX_DONE,
-	I2C_STATE_DONE,
 };
 
 enum {
@@ -141,28 +139,35 @@ static void i2c_fifo_req(pmb887x_i2c_t *p) {
 	if (p->state == I2C_STATE_MASTER_TX) {
 		uint32_t burst_req_size = i2c_get_tx_burst_size(p);
 		uint32_t single_req_size = (4 / i2c_get_tx_align(p));
+		uint32_t burst_req_count = burst_req_size / single_req_size;
 
-		if (!p->tx_remaining)
+		uint32_t tx_remaining = p->tx_remaining - MIN(p->tx_remaining, pmb887x_fifo_count(&p->fifo));
+		if (!tx_remaining)
+			return;
+		if (tx_remaining >= burst_req_size && pmb887x_fifo_free_count(&p->fifo) < burst_req_count)
+			return;
+		if (tx_remaining < burst_req_size && pmb887x_fifo_free_count(&p->fifo) < 1)
 			return;
 
 		bool is_fc = (p->fifocfg & I2Cv2_FIFOCFG_TXFC) != 0;
 		if (is_fc) {
-			if (p->tx_remaining > burst_req_size) {
+			if (tx_remaining > burst_req_size) {
 				pmb887x_srb_set_isr(&p->srb, I2Cv2_ISR_BREQ_INT);
-			} else if (p->tx_remaining == burst_req_size) {
+			} else if (tx_remaining == burst_req_size) {
 				pmb887x_srb_set_isr(&p->srb, I2Cv2_ISR_LBREQ_INT);
-			} else if (p->tx_remaining > single_req_size) {
+			} else if (tx_remaining > single_req_size) {
 				pmb887x_srb_set_isr(&p->srb, I2Cv2_ISR_SREQ_INT);
-			} else if (p->tx_remaining > 0) {
+			} else {
 				pmb887x_srb_set_isr(&p->srb, I2Cv2_ISR_LSREQ_INT);
 			}
+			p->fifo_req = true;
 		} else {
 			if (pmb887x_fifo_free_count(&p->fifo) >= burst_req_size) {
 				pmb887x_srb_set_isr(&p->srb, I2Cv2_ISR_BREQ_INT);
+				p->fifo_req = true;
 			}
 		}
 
-		p->fifo_req = true;
 	} else if (p->state == I2C_STATE_MASTER_RX) {
 		uint32_t burst_req_size = i2c_get_rx_burst_size(p);
 		uint32_t single_req_size = (4 / i2c_get_rx_align(p));
@@ -402,7 +407,10 @@ static void i2c_transfer_done(pmb887x_i2c_t *p) {
 }
 
 static void i2c_work(pmb887x_i2c_t *p) {
-	if (p->state == I2C_STATE_MASTER_TX) {
+	if (p->state == I2C_STATE_NONE) {
+		if (p->tpsctrl > 0)
+			i2c_start_tx(p);
+	} else if (p->state == I2C_STATE_MASTER_TX) {
 		if (!i2c_tx_from_fifo(p)) {
 			DPRINTF("NACK!\n");
 			if ((p->addrcfg & I2Cv2_ADDRCFG_SONA))
@@ -453,11 +461,6 @@ static void i2c_work(pmb887x_i2c_t *p) {
 
 		if (p->rx_remaining == 0 && pmb887x_fifo_is_empty(&p->fifo))
 			i2c_transfer_done(p);
-	} else if (p->state == I2C_STATE_MASTER_TX_DONE) {
-
-	} else if (p->state == I2C_STATE_NONE) {
-		if (p->tpsctrl > 0)
-			i2c_start_tx(p);
 	} else if (p->state == I2C_STATE_MASTER_RESTART) {
 		if (p->enddctrl_end) {
 			i2c_transfer_done(p);
@@ -613,15 +616,13 @@ static void i2c_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned si
 			break;
 
 		case I2Cv2_RUNCTRL:
-			if (p->runctrl != value) {
-				p->runctrl = value;
-				if (!p->runctrl) {
-					if (p->state == I2C_STATE_MASTER_RX || p->state == I2C_STATE_MASTER_TX || p->state == I2C_STATE_MASTER_RESTART) {
-						DPRINTF("stop\n");
-						i2c_end_transfer(p->bus);
-						i2c_kernel_reset(p, I2C_STATE_NONE);
-						pmb887x_fifo_reset(&p->fifo);
-					}
+			p->runctrl = value;
+			if (!p->runctrl) {
+				if (p->state == I2C_STATE_MASTER_RX || p->state == I2C_STATE_MASTER_TX || p->state == I2C_STATE_MASTER_RESTART) {
+					DPRINTF("stop\n");
+					i2c_end_transfer(p->bus);
+					i2c_kernel_reset(p, I2C_STATE_NONE);
+					pmb887x_fifo_reset(&p->fifo);
 				}
 			}
 			break;

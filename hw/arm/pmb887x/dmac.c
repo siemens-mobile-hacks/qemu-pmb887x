@@ -1,7 +1,6 @@
 /*
  * DMA Controller (PL080)
  * */
-#include <stdint.h>
 #define PMB887X_TRACE_ID		DMAC
 #define PMB887X_TRACE_PREFIX	"pmb887x-dmac"
 
@@ -20,6 +19,7 @@
 #include "hw/arm/pmb887x/dmac.h"
 #include "hw/arm/pmb887x/trace.h"
 
+#define DMAC_MULTIPLEXOR	2
 #define DMAC_CHANNELS		8
 #define DMAC_REQUESTS		16
 #define DMAC_FIFO			16
@@ -59,13 +59,15 @@ struct pmb887x_dmac_t {
 	uint32_t config;
 	uint32_t sync;
 	
-	qemu_irq CLR[DMAC_REQUESTS];
-	qemu_irq TC[DMAC_REQUESTS];
+	int sel[DMAC_REQUESTS];
 
-	int SREQ[DMAC_REQUESTS];
-	int BREQ[DMAC_REQUESTS];
-	int LBREQ[DMAC_REQUESTS];
-	int LSREQ[DMAC_REQUESTS];
+	qemu_irq CLR[DMAC_MULTIPLEXOR][DMAC_REQUESTS];
+	qemu_irq TC[DMAC_MULTIPLEXOR][DMAC_REQUESTS];
+
+	int SREQ[DMAC_MULTIPLEXOR][DMAC_REQUESTS];
+	int BREQ[DMAC_MULTIPLEXOR][DMAC_REQUESTS];
+	int LBREQ[DMAC_MULTIPLEXOR][DMAC_REQUESTS];
+	int LSREQ[DMAC_MULTIPLEXOR][DMAC_REQUESTS];
 };
 
 static inline uint32_t dmac_get_width(uint32_t s) {
@@ -93,6 +95,8 @@ static void dmac_transfer_finish(pmb887x_dmac_t *p, pmb887x_dmac_ch_t *ch) {
 	uint32_t flow_ctrl = (ch->config & DMAC_CH_CONFIG_FLOW_CTRL);
 	uint8_t src_periph = (ch->config & DMAC_CH_CONFIG_SRC_PERIPH) >> DMAC_CH_CONFIG_SRC_PERIPH_SHIFT;
 	uint8_t dst_periph = (ch->config & DMAC_CH_CONFIG_DST_PERIPH) >> DMAC_CH_CONFIG_DST_PERIPH_SHIFT;
+	uint8_t src_sel = p->sel[src_periph];
+	uint8_t dst_sel = p->sel[dst_periph];
 
 	uint32_t lli_addr = ch->lli & DMAC_CH_LLI_ITEM;
 	if (lli_addr) {
@@ -124,10 +128,10 @@ static void dmac_transfer_finish(pmb887x_dmac_t *p, pmb887x_dmac_ch_t *ch) {
 	);
 
 	if (is_dst_fc)
-		qemu_set_irq(p->TC[dst_periph], 1);
+		qemu_set_irq(p->TC[dst_sel][dst_periph], 1);
 
 	if (is_src_fc)
-		qemu_set_irq(p->TC[src_periph], 1);
+		qemu_set_irq(p->TC[src_sel][src_periph], 1);
 }
 
 static void dmac_transfer_memory(pmb887x_dmac_t *p, pmb887x_dmac_ch_t *ch, uint32_t burst_size) {
@@ -236,6 +240,8 @@ static void dmac_channel_run(pmb887x_dmac_t *p, pmb887x_dmac_ch_t *ch) {
 	uint32_t dst_burst_size = dmac_get_burst_size((ch->control & DMAC_CH_CONTROL_DB_SIZE) >> DMAC_CH_CONTROL_DB_SIZE_SHIFT);
 	uint8_t src_periph = (ch->config & DMAC_CH_CONFIG_SRC_PERIPH) >> DMAC_CH_CONFIG_SRC_PERIPH_SHIFT;
 	uint8_t dst_periph = (ch->config & DMAC_CH_CONFIG_DST_PERIPH) >> DMAC_CH_CONFIG_DST_PERIPH_SHIFT;
+	uint8_t src_sel = p->sel[src_periph];
+	uint8_t dst_sel = p->sel[dst_periph];
 	uint32_t tx_size = (ch->control & DMAC_CH_CONTROL_TRANSFER_SIZE) >> DMAC_CH_CONTROL_TRANSFER_SIZE_SHIFT;
 
 	switch ((ch->config & DMAC_CH_CONFIG_FLOW_CTRL)) {
@@ -246,49 +252,49 @@ static void dmac_channel_run(pmb887x_dmac_t *p, pmb887x_dmac_ch_t *ch) {
 		}
 
 		case DMAC_CH_CONFIG_FLOW_CTRL_MEM2PER: {
-			if (p->BREQ[dst_periph]) {
+			if (p->BREQ[dst_sel][dst_periph]) {
 				dmac_transfer_memory(p, ch, MIN(tx_size, src_burst_size));
-				qemu_set_irq(p->CLR[dst_periph], 1);
+				qemu_set_irq(p->CLR[dst_sel][dst_periph], 1);
 			}
 			break;
 		}
 
 		case DMAC_CH_CONFIG_FLOW_CTRL_MEM2PER_PER: {
-			if (p->BREQ[dst_periph] || p->LBREQ[dst_periph]) {
+			if (p->BREQ[dst_sel][dst_periph] || p->LBREQ[dst_sel][dst_periph]) {
 				dmac_transfer_memory(p, ch, dst_burst_size);
-				if (p->LBREQ[dst_periph])
+				if (p->LBREQ[dst_sel][dst_periph])
 					dmac_transfer_finish(p, ch);
-				qemu_set_irq(p->CLR[dst_periph], 1);
-			} else if (p->SREQ[dst_periph] || p->LSREQ[dst_periph]) {
+				qemu_set_irq(p->CLR[dst_sel][dst_periph], 1);
+			} else if (p->SREQ[dst_sel][dst_periph] || p->LSREQ[dst_sel][dst_periph]) {
 				dmac_transfer_memory(p, ch, 1);
-				if (p->LSREQ[dst_periph])
+				if (p->LSREQ[dst_sel][dst_periph])
 					dmac_transfer_finish(p, ch);
-				qemu_set_irq(p->CLR[dst_periph], 1);
+				qemu_set_irq(p->CLR[dst_sel][dst_periph], 1);
 			}
 			break;
 		}
 
 		case DMAC_CH_CONFIG_FLOW_CTRL_PER2MEM:
-			if (p->BREQ[src_periph]) {
+			if (p->BREQ[src_sel][src_periph]) {
 				dmac_transfer_memory(p, ch, MIN(tx_size, src_burst_size));
-				qemu_set_irq(p->CLR[src_periph], 1);
-			} else if (p->SREQ[src_periph]) {
+				qemu_set_irq(p->CLR[src_sel][src_periph], 1);
+			} else if (p->SREQ[src_sel][src_periph]) {
 				dmac_transfer_memory(p, ch, MIN(tx_size, 1));
-				qemu_set_irq(p->CLR[src_periph], 1);
+				qemu_set_irq(p->CLR[src_sel][src_periph], 1);
 			}
 			break;
 
 		case DMAC_CH_CONFIG_FLOW_CTRL_PER2MEM_PER:
-			if (p->BREQ[src_periph] || p->LBREQ[src_periph]) {
+			if (p->BREQ[src_sel][src_periph] || p->LBREQ[src_sel][src_periph]) {
 				dmac_transfer_memory(p, ch, src_burst_size);
-				if (p->LBREQ[src_periph])
+				if (p->LBREQ[src_sel][src_periph])
 					dmac_transfer_finish(p, ch);
-				qemu_set_irq(p->CLR[src_periph], 1);
-			} else if (p->SREQ[src_periph] || p->LSREQ[src_periph]) {
+				qemu_set_irq(p->CLR[src_sel][src_periph], 1);
+			} else if (p->SREQ[src_sel][src_periph] || p->LSREQ[src_sel][src_periph]) {
 				dmac_transfer_memory(p, ch, 1);
-				if (p->LSREQ[src_periph])
+				if (p->LSREQ[src_sel][src_periph])
 					dmac_transfer_finish(p, ch);
-				qemu_set_irq(p->CLR[src_periph], 1);
+				qemu_set_irq(p->CLR[src_sel][src_periph], 1);
 			}
 			break;
 
@@ -338,15 +344,17 @@ void pmb887x_dmac_request(pmb887x_dmac_t *p, uint32_t per_id, uint32_t size) {
 	// DPRINTF("pmb887x_dmac_request(%d, %d)\n", per_id, size);
 }
 
-static inline const char *dmac_signal_name(pmb887x_dmac_t *p, const int signal[]) {
-	if (signal == p->SREQ) {
-		return "SREQ";
-	} else if (signal == p->LSREQ) {
-		return "LSREQ";
-	} else if (signal == p->BREQ) {
-		return "BREQ";
-	} else if (signal == p->LBREQ) {
-		return "LBREQ";
+static const char *dmac_signal_name(pmb887x_dmac_t *p, const int signal[]) {
+	for (int i = 0; i < ARRAY_SIZE(p->sel); i++) {
+		if (signal == p->SREQ[i]) {
+			return "SREQ";
+		} else if (signal == p->LSREQ[i]) {
+			return "LSREQ";
+		} else if (signal == p->BREQ[i]) {
+			return "BREQ";
+		} else if (signal == p->LBREQ[i]) {
+			return "LBREQ";
+		}
 	}
 	return "UNK";
 }
@@ -359,14 +367,15 @@ static void dmac_handle_signal(pmb887x_dmac_t *p, int signal[], int request, int
 	signal[request] = level;
 
 	if (level == 0) {
+		uint32_t sel = p->sel[request];
 		uint32_t signals = 0;
-		signals |= p->SREQ[request];
-		signals |= p->LSREQ[request];
-		signals |= p->BREQ[request];
-		signals |= p->LBREQ[request];
+		signals |= p->SREQ[sel][request];
+		signals |= p->LSREQ[sel][request];
+		signals |= p->BREQ[sel][request];
+		signals |= p->LBREQ[sel][request];
 		if (!signals) {
-			qemu_set_irq(p->CLR[request], 0);
-			qemu_set_irq(p->TC[request], 0);
+			qemu_set_irq(p->CLR[sel][request], 0);
+			qemu_set_irq(p->TC[sel][request], 0);
 		}
 	}
 
@@ -489,22 +498,22 @@ static uint64_t dmac_io_read(void *opaque, hwaddr haddr, unsigned size) {
 
 		case DMAC_SOFT_BREQ:
 			for (int i = 0; i < DMAC_REQUESTS; i++)
-				value |= p->BREQ[i] << i;
+				value |= p->BREQ[p->sel[i]][i] << i;
 			break;
 
 		case DMAC_SOFT_SREQ:
 			for (int i = 0; i < DMAC_REQUESTS; i++)
-				value |= p->SREQ[i] << i;
+				value |= p->SREQ[p->sel[i]][i] << i;
 			break;
 
 		case DMAC_SOFT_LBREQ:
 			for (int i = 0; i < DMAC_REQUESTS; i++)
-				value |= p->LBREQ[i] << i;
+				value |= p->LBREQ[p->sel[i]][i] << i;
 			break;
 
 		case DMAC_SOFT_LSREQ:
 			for (int i = 0; i < DMAC_REQUESTS; i++)
-				value |= p->LBREQ[i] << i;
+				value |= p->LBREQ[p->sel[i]][i] << i;
 			break;
 
 		case DMAC_SYNC:
@@ -598,28 +607,28 @@ static void dmac_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned s
 		case DMAC_SOFT_BREQ:
 			for (int i = 0; i < DMAC_REQUESTS; i++) {
 				if ((value & (1 << i)))
-					dmac_handle_signal(p, p->BREQ, i, 1);
+					dmac_handle_signal(p, p->BREQ[p->sel[i]], i, 1);
 			}
 			break;
 
 		case DMAC_SOFT_SREQ:
 			for (int i = 0; i < DMAC_REQUESTS; i++) {
 				if ((value & (1 << i)))
-					dmac_handle_signal(p, p->SREQ, i, 1);
+					dmac_handle_signal(p, p->SREQ[p->sel[i]], i, 1);
 			}
 			break;
 
 		case DMAC_SOFT_LBREQ:
 			for (int i = 0; i < DMAC_REQUESTS; i++) {
 				if ((value & (1 << i)))
-					dmac_handle_signal(p, p->LBREQ, i, 1);
+					dmac_handle_signal(p, p->LBREQ[p->sel[i]], i, 1);
 			}
 			break;
 
 		case DMAC_SOFT_LSREQ:
 			for (int i = 0; i < DMAC_REQUESTS; i++) {
 				if ((value & (1 << i)))
-					dmac_handle_signal(p, p->LSREQ, i, 1);
+					dmac_handle_signal(p, p->LSREQ[p->sel[i]], i, 1);
 			}
 			break;
 
@@ -635,6 +644,19 @@ static void dmac_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned s
 	dmac_update(p);
 }
 
+void pmb887x_dmac_set_sel(pmb887x_dmac_t *p, uint32_t value) {
+	for (int i = 0; i < DMAC_REQUESTS; i++)
+		p->sel[i] = (value & (1 << i)) ? 1 : 0;
+	dmac_schedule(p);
+}
+
+uint32_t pmb887x_dmac_get_sel(pmb887x_dmac_t *p) {
+	uint32_t value = 0;
+	for (int i = 0; i < DMAC_REQUESTS; i++)
+		value |= p->sel[i] << i;
+	return value;
+}
+
 static void dmac_timer_reset(void *opaque) {
 	pmb887x_dmac_t *p = opaque;
 	while (p->dmac_pending) {
@@ -646,24 +668,44 @@ static void dmac_timer_reset(void *opaque) {
 	}
 }
 
-static void dmac_handle_signal_sreq(void *opaque, int request, int level) {
+static void dmac_handle_signal_sel0_sreq(void *opaque, int request, int level) {
 	pmb887x_dmac_t *p = opaque;
-	dmac_handle_signal(p, p->SREQ, request, level);
+	dmac_handle_signal(p, p->SREQ[0], request, level);
 }
 
-static void dmac_handle_signal_breq(void *opaque, int request, int level) {
+static void dmac_handle_signal_sel0_breq(void *opaque, int request, int level) {
 	pmb887x_dmac_t *p = opaque;
-	dmac_handle_signal(p, p->BREQ, request, level);
+	dmac_handle_signal(p, p->BREQ[0], request, level);
 }
 
-static void dmac_handle_signal_lsreq(void *opaque, int request, int level) {
+static void dmac_handle_signal_sel0_lsreq(void *opaque, int request, int level) {
 	pmb887x_dmac_t *p = opaque;
-	dmac_handle_signal(p, p->LSREQ, request, level);
+	dmac_handle_signal(p, p->LSREQ[0], request, level);
 }
 
-static void dmac_handle_signal_lbreq(void *opaque, int request, int level) {
+static void dmac_handle_signal_sel0_lbreq(void *opaque, int request, int level) {
 	pmb887x_dmac_t *p = opaque;
-	dmac_handle_signal(p, p->LBREQ, request, level);
+	dmac_handle_signal(p, p->LBREQ[0], request, level);
+}
+
+static void dmac_handle_signal_sel1_sreq(void *opaque, int request, int level) {
+	pmb887x_dmac_t *p = opaque;
+	dmac_handle_signal(p, p->SREQ[1], request, level);
+}
+
+static void dmac_handle_signal_sel1_breq(void *opaque, int request, int level) {
+	pmb887x_dmac_t *p = opaque;
+	dmac_handle_signal(p, p->BREQ[1], request, level);
+}
+
+static void dmac_handle_signal_sel1_lsreq(void *opaque, int request, int level) {
+	pmb887x_dmac_t *p = opaque;
+	dmac_handle_signal(p, p->LSREQ[1], request, level);
+}
+
+static void dmac_handle_signal_sel1_lbreq(void *opaque, int request, int level) {
+	pmb887x_dmac_t *p = opaque;
+	dmac_handle_signal(p, p->LBREQ[1], request, level);
 }
 
 static const MemoryRegionOps io_ops = {
@@ -687,12 +729,21 @@ static void dmac_init(Object *obj) {
 	for (int i = 0; i < DMAC_CHANNELS; i++)
 		sysbus_init_irq(SYS_BUS_DEVICE(obj), &p->irq_tc[i]);
 
-	qdev_init_gpio_out_named(dev, p->TC, "TC", DMAC_REQUESTS);
-	qdev_init_gpio_out_named(dev, p->CLR, "CLR", DMAC_REQUESTS);
-	qdev_init_gpio_in_named(dev, dmac_handle_signal_sreq, "SREQ", DMAC_REQUESTS);
-	qdev_init_gpio_in_named(dev, dmac_handle_signal_breq, "BREQ", DMAC_REQUESTS);
-	qdev_init_gpio_in_named(dev, dmac_handle_signal_lsreq, "LSREQ", DMAC_REQUESTS);
-	qdev_init_gpio_in_named(dev, dmac_handle_signal_lbreq, "LBREQ", DMAC_REQUESTS);
+	qdev_init_gpio_out_named(dev, p->TC[0], "SEL0_TC", DMAC_REQUESTS);
+	qdev_init_gpio_out_named(dev, p->TC[1], "SEL1_TC", DMAC_REQUESTS);
+
+	qdev_init_gpio_out_named(dev, p->CLR[0], "SEL0_CLR", DMAC_REQUESTS);
+	qdev_init_gpio_out_named(dev, p->CLR[1], "SEL1_CLR", DMAC_REQUESTS);
+
+	qdev_init_gpio_in_named(dev, dmac_handle_signal_sel0_sreq, "SEL0_SREQ", DMAC_REQUESTS);
+	qdev_init_gpio_in_named(dev, dmac_handle_signal_sel0_breq, "SEL0_BREQ", DMAC_REQUESTS);
+	qdev_init_gpio_in_named(dev, dmac_handle_signal_sel0_lsreq, "SEL0_LSREQ", DMAC_REQUESTS);
+	qdev_init_gpio_in_named(dev, dmac_handle_signal_sel0_lbreq, "SEL0_LBREQ", DMAC_REQUESTS);
+
+	qdev_init_gpio_in_named(dev, dmac_handle_signal_sel1_sreq, "SEL1_SREQ", DMAC_REQUESTS);
+	qdev_init_gpio_in_named(dev, dmac_handle_signal_sel1_breq, "SEL1_BREQ", DMAC_REQUESTS);
+	qdev_init_gpio_in_named(dev, dmac_handle_signal_sel1_lsreq, "SEL1_LSREQ", DMAC_REQUESTS);
+	qdev_init_gpio_in_named(dev, dmac_handle_signal_sel1_lbreq, "SEL1_LBREQ", DMAC_REQUESTS);
 }
 
 static int dmac_tc_irq_router(void *opaque, int event_id) {
