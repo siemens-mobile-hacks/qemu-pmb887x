@@ -7,8 +7,6 @@
 #include "qemu/osdep.h"
 #include "hw/sysbus.h"
 #include "system/memory.h"
-#include "system/system.h"
-#include "system/address-spaces.h"
 #include "cpu.h"
 #include "cpregs.h"
 #include "hw/qdev-properties.h"

@@ -7,7 +7,6 @@
 #include "qemu/osdep.h"
 #include "hw/sysbus.h"
 #include "system/memory.h"
-#include "cpu.h"
 #include "qapi/error.h"
 #include "qemu/main-loop.h"
 #include "hw/qdev-properties.h"

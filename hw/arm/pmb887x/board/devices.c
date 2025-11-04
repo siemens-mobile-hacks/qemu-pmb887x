@@ -10,10 +10,8 @@
 #include "hw/sysbus.h"
 #include "hw/qdev-core.h"
 #include "qom/object.h"
-#include "hw/qdev-core.h"
 #include "hw/qdev-properties.h"
 #include "hw/i2c/i2c.h"
-#include "hw/ssi/ssi.h"
 #include "qapi/error.h"
 
 typedef enum pmb887x_dev_prop_type_t pmb887x_dev_prop_type_t;

@@ -1,8 +1,6 @@
 #include "hw/arm/pmb887x/board/memory.h"
 
-#include "qemu/error-report.h"
 #include "hw/sysbus.h"
-#include "hw/hw.h"
 #include "hw/qdev-core.h"
 #include "hw/qdev-properties.h"
 #include "qapi/error.h"

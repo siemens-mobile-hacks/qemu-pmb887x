@@ -3,7 +3,6 @@
 #include "hw/arm/pmb887x/utils/config.h"
 
 #include "qapi/qapi-types-ui.h"
-#include "qapi/error.h"
 #include "qemu/error-report.h"
 
 static struct {

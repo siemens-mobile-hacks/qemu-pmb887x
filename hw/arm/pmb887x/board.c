@@ -10,9 +10,7 @@
 #include "qom/object.h"
 #include "system/address-spaces.h"
 #include "hw/loader.h"
-#include "hw/irq.h"
 #include "hw/arm/machines-qom.h"
-#include "hw/ssi/ssi.h"
 #include "system/system.h"
 #include "target/arm/cpregs.h"
 
@@ -28,7 +26,6 @@
 
 #include "hw/arm/pmb887x/io_bridge.h"
 #include "hw/arm/pmb887x/regs_dump.h"
-#include "hw/arm/pmb887x/pll.h"
 #include "hw/arm/pmb887x/trace_common.h"
 
 void qmp_pmemsave(uint64_t addr, uint64_t size, const char *filename, Error **errp);

@@ -20,7 +20,6 @@
 #include "hw/arm/pmb887x/mod.h"
 #include "hw/arm/pmb887x/trace.h"
 #include "hw/arm/pmb887x/fifo.h"
-#include "hw/arm/pmb887x/dmac.h"
 
 #define TYPE_PMB887X_DIF	"pmb887x-dif-v1"
 OBJECT_DECLARE_SIMPLE_TYPE(pmb887x_dif_t, PMB887X_DIF);

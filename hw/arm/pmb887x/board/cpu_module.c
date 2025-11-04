@@ -2,8 +2,6 @@
 
 #include "hw/arm/pmb887x/board/board.h"
 #include "hw/arm/pmb887x/board/gpio.h"
-#include "hw/arm/pmb887x/gen/cpu_meta.h"
-#include "hw/arm/pmb887x/gen/cpu_regs.h"
 #include "hw/arm/pmb887x/gen/cpu_modules.h"
 
 #include "hw/arm/pmb887x/utils/strings.h"
@@ -12,9 +10,7 @@
 #include "hw/sysbus.h"
 #include "hw/qdev-core.h"
 #include "hw/qdev-properties.h"
-#include "qemu/error-report.h"
 #include "qom/object.h"
-#include "qapi/error.h"
 
 static const struct pmb887x_cpu_module_t *get_cpu_module_definition(const char *name) {
 	int i = 0;

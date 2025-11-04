@@ -2,7 +2,6 @@
 
 #include "hw/arm/pmb887x/board/gpio.h"
 #include "hw/arm/pmb887x/board/keyboard.h"
-#include "hw/arm/pmb887x/gen/cpu_meta.h"
 #include "hw/arm/pmb887x/gen/cpu_regs.h"
 #include "hw/hw.h"
 #include "qemu/error-report.h"

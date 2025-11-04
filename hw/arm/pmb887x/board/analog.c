@@ -5,7 +5,6 @@
 #include "hw/arm/pmb887x/utils/config.h"
 #include "hw/arm/pmb887x/utils/regexp.h"
 
-#include "qemu/error-report.h"
 #include "hw/hw.h"
 #include "hw/sysbus.h"
 

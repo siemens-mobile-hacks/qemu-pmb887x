@@ -18,7 +18,6 @@
 #include "hw/arm/pmb887x/mod.h"
 #include "hw/arm/pmb887x/trace.h"
 #include "hw/arm/pmb887x/fifo.h"
-#include "hw/arm/pmb887x/dmac.h"
 
 #define TYPE_PMB887X_SSC	"pmb887x-ssc"
 OBJECT_DECLARE_SIMPLE_TYPE(pmb887x_ssc_t, PMB887X_SSC);
