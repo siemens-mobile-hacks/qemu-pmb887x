@@ -6,7 +6,7 @@
 
 #include "qemu/osdep.h"
 #include "hw/sysbus.h"
-#include "exec/memory.h"
+#include "system/memory.h"
 #include "cpu.h"
 #include "qemu/main-loop.h"
 #include "hw/qdev-properties.h"
@@ -106,7 +106,7 @@ static void unknown_realize(DeviceState *dev, Error **errp) {
 	// Nothing
 }
 
-static void unknown_class_init(ObjectClass *klass, void *data) {
+static void unknown_class_init(ObjectClass *klass, const void *data) {
 	DeviceClass *dc = DEVICE_CLASS(klass);
 	dc->realize = unknown_realize;
 }

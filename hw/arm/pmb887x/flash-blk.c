@@ -69,7 +69,7 @@ static const Property flash_blk_properties[] = {
 	DEFINE_PROP_DRIVE("drive", pmb887x_flash_blk_t, blk)
 };
 
-static void flash_blk_class_init(ObjectClass *klass, void *data) {
+static void flash_blk_class_init(ObjectClass *klass, const void *data) {
 	DeviceClass *dc = DEVICE_CLASS(klass);
 	device_class_set_props(dc, flash_blk_properties);
 	dc->realize = flash_blk_realize;

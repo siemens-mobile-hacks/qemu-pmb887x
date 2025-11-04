@@ -8,8 +8,8 @@
 #include "hw/sysbus.h"
 #include "hw/hw.h"
 #include "hw/ptimer.h"
-#include "exec/address-spaces.h"
-#include "exec/memory.h"
+#include "system/address-spaces.h"
+#include "system/memory.h"
 #include "cpu.h"
 #include "qapi/error.h"
 #include "qemu/timer.h"
@@ -462,7 +462,7 @@ static const Property tpu_properties[] = {
 	DEFINE_PROP_LINK("vic", struct pmb887x_tpu_t, vic, "pmb887x-vic", struct pmb887x_vic_t *),
 };
 
-static void tpu_class_init(ObjectClass *klass, void *data) {
+static void tpu_class_init(ObjectClass *klass, const void *data) {
 	DeviceClass *dc = DEVICE_CLASS(klass);
 	device_class_set_props(dc, tpu_properties);
 	dc->realize = tpu_realize;

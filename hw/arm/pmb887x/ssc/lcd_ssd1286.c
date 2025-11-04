@@ -113,7 +113,7 @@ static void lcd_realize(pmb887x_lcd_t *lcd, Error **errp) {
 	lcd_update_state(lcd);
 }
 
-static void lcd_class_init(ObjectClass *oc, void *data) {
+static void lcd_class_init(ObjectClass *oc, const void *data) {
 	pmb887x_lcd_class_t *k = PMB887X_LCD_CLASS(oc);
 	k->cmd_width = 1;
 	k->param_width = 2;

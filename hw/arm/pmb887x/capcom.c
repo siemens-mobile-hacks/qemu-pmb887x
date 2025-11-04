@@ -7,7 +7,7 @@
 #include "qemu/osdep.h"
 #include "hw/sysbus.h"
 #include "hw/hw.h"
-#include "exec/memory.h"
+#include "system/memory.h"
 #include "cpu.h"
 #include "qapi/error.h"
 #include "qemu/main-loop.h"
@@ -432,7 +432,7 @@ static void capcom_realize(DeviceState *dev, Error **errp) {
 	capcom_update_state(p);
 }
 
-static void capcom_class_init(ObjectClass *klass, void *data) {
+static void capcom_class_init(ObjectClass *klass, const void *data) {
 	DeviceClass *dc = DEVICE_CLASS(klass);
 	dc->realize = capcom_realize;
 }

@@ -8,7 +8,7 @@
 #include "hw/sysbus.h"
 #include "hw/arm/pmb887x/gen/cpu_regs.h"
 #include "hw/arm/pmb887x/io_bridge.h"
-#include "exec/memory.h"
+#include "system/memory.h"
 #include "cpu.h"
 #include "qapi/error.h"
 #include "hw/qdev-properties.h"
@@ -440,7 +440,7 @@ static const Property scu_properties[] = {
 	DEFINE_PROP_LINK("brom_mirror", pmb887x_scu_t, brom_mirror, TYPE_MEMORY_REGION, MemoryRegion *),
 };
 
-static void scu_class_init(ObjectClass *klass, void *data) {
+static void scu_class_init(ObjectClass *klass, const void *data) {
 	DeviceClass *dc = DEVICE_CLASS(klass);
 	device_class_set_props(dc, scu_properties);
 	dc->realize = scu_realize;

@@ -6,9 +6,9 @@
 
 #include "qemu/osdep.h"
 #include "hw/sysbus.h"
-#include "exec/memory.h"
+#include "system/memory.h"
 #include "system/system.h"
-#include "exec/address-spaces.h"
+#include "system/address-spaces.h"
 #include "cpu.h"
 #include "cpregs.h"
 #include "hw/qdev-properties.h"
@@ -101,14 +101,20 @@ static void tcm_init(Object *obj) {
 
 static void tcm_realize(DeviceState *dev, Error **errp) {
 	struct pmb887x_tcm_t *p = PMB887X_TCM(dev);
-	define_arm_cp_regs_with_opaque(ARM_CPU(p->cpu), tcm_cp_reginfo, p);
+
+	for (int i = 0; i < ARRAY_SIZE(tcm_cp_reginfo); i++) {
+		ARMCPRegInfo cp_reg_info = tcm_cp_reginfo[i];
+		cp_reg_info.opaque = p;
+		define_arm_cp_regs_len(ARM_CPU(p->cpu), &cp_reg_info, 1);
+	}
+
 	p->regs[0] = 0x10;
 	p->regs[1] = 0x10;
 	tcm_update_state(p, 0);
 	tcm_update_state(p, 1);
 }
 
-static void tcm_class_init(ObjectClass *klass, void *data) {
+static void tcm_class_init(ObjectClass *klass, const void *data) {
 	DeviceClass *dc = DEVICE_CLASS(klass);
 	device_class_set_props(dc, tcm_properties);
 	dc->realize = tcm_realize;

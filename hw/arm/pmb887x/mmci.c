@@ -8,7 +8,7 @@
 
 #include "qemu/osdep.h"
 #include "hw/sysbus.h"
-#include "exec/memory.h"
+#include "system/memory.h"
 #include "hw/qdev-properties.h"
 #include "qapi/error.h"
 #include "cpu.h"
@@ -108,7 +108,7 @@ static void mmci_realize(DeviceState *dev, Error **errp) {
 	pmb887x_clc_init(&p->clc);
 }
 
-static void mmci_class_init(ObjectClass *klass, void *data) {
+static void mmci_class_init(ObjectClass *klass, const void *data) {
 	DeviceClass *dc = DEVICE_CLASS(klass);
 	dc->realize = mmci_realize;
 }

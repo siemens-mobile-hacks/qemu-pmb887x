@@ -568,7 +568,7 @@ static const Property dif_properties[] = {
 	DEFINE_PROP_LINK("bus", pmb887x_dif_t, bus, "SSI", SSIBus *),
 };
 
-static void dif_class_init(ObjectClass *klass, void *data) {
+static void dif_class_init(ObjectClass *klass, const void *data) {
 	DeviceClass *dc = DEVICE_CLASS(klass);
 	device_class_set_props(dc, dif_properties);
 	dc->realize = dif_realize;

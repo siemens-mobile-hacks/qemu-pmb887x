@@ -8,9 +8,10 @@
 #include "qemu/error-report.h"
 #include "qobject/qlist.h"
 #include "qom/object.h"
-#include "exec/address-spaces.h"
+#include "system/address-spaces.h"
 #include "hw/loader.h"
 #include "hw/irq.h"
+#include "hw/arm/machines-qom.h"
 #include "hw/ssi/ssi.h"
 #include "system/system.h"
 #include "target/arm/cpregs.h"
@@ -269,7 +270,7 @@ static void pmb887x_init(MachineState *machine) {
 /*
  * Generic PMB887X machine
  * */
-static void pmb887x_class_init(ObjectClass *oc, void *data) {
+static void pmb887x_class_init(ObjectClass *oc, const void *data) {
 	MachineClass *mc = MACHINE_CLASS(oc);
 	mc->desc = "Generic PMB8875/PMB8876 board";
 	mc->init = pmb887x_init;
@@ -282,7 +283,8 @@ static void pmb887x_class_init(ObjectClass *oc, void *data) {
 static const TypeInfo pmb887x_type = {
 	.name = MACHINE_TYPE_NAME("pmb887x"),
 	.parent = TYPE_MACHINE,
-	.class_init = pmb887x_class_init
+	.class_init = pmb887x_class_init,
+	.interfaces = arm_machine_interfaces,
 };
 
 static void pmb887x_type_init(void) {

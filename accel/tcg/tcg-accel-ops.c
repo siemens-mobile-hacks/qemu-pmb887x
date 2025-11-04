@@ -30,6 +30,7 @@
 #include "accel/accel-cpu-ops.h"
 #include "system/tcg.h"
 #include "system/replay.h"
+#include "system/cpu-timers.h"
 #include "exec/icount.h"
 #include "qemu/main-loop.h"
 #include "qemu/guest-random.h"

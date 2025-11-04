@@ -7,7 +7,7 @@
 #include "qemu/osdep.h"
 #include "hw/sysbus.h"
 #include "hw/hw.h"
-#include "exec/memory.h"
+#include "system/memory.h"
 #include "cpu.h"
 #include "qapi/error.h"
 #include "qemu/timer.h"
@@ -188,7 +188,7 @@ static void rtc_realize(DeviceState *dev, Error **errp) {
 	pmb887x_src_init(&p->src, p->irq);
 }
 
-static void rtc_class_init(ObjectClass *klass, void *data) {
+static void rtc_class_init(ObjectClass *klass, const void *data) {
 	DeviceClass *dc = DEVICE_CLASS(klass);
 	dc->realize = rtc_realize;
 }

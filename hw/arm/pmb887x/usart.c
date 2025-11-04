@@ -7,7 +7,7 @@
 #include "qemu/osdep.h"
 #include "hw/sysbus.h"
 #include "hw/hw.h"
-#include "exec/memory.h"
+#include "system/memory.h"
 #include "cpu.h"
 #include "qemu/main-loop.h"
 #include "hw/qdev-properties.h"
@@ -53,7 +53,7 @@ struct pmb887x_usart_t {
 	bool apply_workarounds;
 	
 	guint watch_tag;
-	CharBackend chr;
+	CharFrontend chr;
 	
 	pmb887x_fifo8_t tx_fifo_buffered;
 	pmb887x_fifo8_t rx_fifo_buffered;
@@ -559,7 +559,7 @@ static const Property usart_properties[] = {
     DEFINE_PROP_BOOL("apply-workarounds", struct pmb887x_usart_t, apply_workarounds, true),
 };
 
-static void usart_class_init(ObjectClass *klass, void *data) {
+static void usart_class_init(ObjectClass *klass, const void *data) {
 	DeviceClass *dc = DEVICE_CLASS(klass);
 	device_class_set_props(dc, usart_properties);
 	dc->realize = usart_realize;

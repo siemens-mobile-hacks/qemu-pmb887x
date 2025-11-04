@@ -1,4 +1,4 @@
-arm_ss.add(when: 'CONFIG_PMB887X', if_true: files(
+arm_common_ss.add(when: 'CONFIG_PMB887X', if_true: files(
 	'board.c',
 	'fifo.c',
 	'flash.c',

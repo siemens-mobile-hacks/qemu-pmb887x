@@ -27,6 +27,7 @@
 #include "migration/vmstate.h"
 #include "qapi/error.h"
 #include "qemu/error-report.h"
+#include "system/cpu-timers.h"
 #include "system/cpus.h"
 #include "system/qtest.h"
 #include "qemu/main-loop.h"

@@ -7,7 +7,7 @@
 #include "qemu/osdep.h"
 #include "hw/sysbus.h"
 #include "hw/hw.h"
-#include "exec/memory.h"
+#include "system/memory.h"
 #include "cpu.h"
 #include "qapi/error.h"
 #include "qemu/timer.h"
@@ -859,7 +859,7 @@ static const Property gptu_properties[] = {
 	DEFINE_PROP_LINK("pll", pmb887x_gptu_t, pll, "pmb887x-pll", struct pmb887x_pll_t *),
 };
 
-static void gptu_class_init(ObjectClass *klass, void *data) {
+static void gptu_class_init(ObjectClass *klass, const void *data) {
 	DeviceClass *dc = DEVICE_CLASS(klass);
 	device_class_set_props(dc, gptu_properties);
 	dc->realize = gptu_realize;

@@ -7,8 +7,8 @@
 #include "qemu/osdep.h"
 #include "hw/sysbus.h"
 #include "hw/hw.h"
-#include "exec/address-spaces.h"
-#include "exec/memory.h"
+#include "system/address-spaces.h"
+#include "system/memory.h"
 #include "hw/qdev-properties.h"
 #include "cpu.h"
 
@@ -421,7 +421,7 @@ static const Property ebu_properties[] = {
 	DEFINE_PROP_LINK("cs7", pmb887x_ebu_t, cs[7], TYPE_MEMORY_REGION, MemoryRegion *),
 };
 
-static void ebu_class_init(ObjectClass *klass, void *data) {
+static void ebu_class_init(ObjectClass *klass, const void *data) {
 	DeviceClass *dc = DEVICE_CLASS(klass);
 	device_class_set_props(dc, ebu_properties);
 	dc->realize = ebu_realize;

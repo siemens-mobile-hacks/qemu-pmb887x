@@ -6,7 +6,7 @@
 
 #include "qemu/osdep.h"
 #include "hw/sysbus.h"
-#include "exec/memory.h"
+#include "system/memory.h"
 #include "cpu.h"
 #include "qapi/error.h"
 #include "hw/qdev-properties.h"
@@ -271,7 +271,7 @@ static void vic_realize(DeviceState *dev, Error **errp) {
 	vic_update_state(p);
 }
 
-static void vic_class_init(ObjectClass *klass, void *data) {
+static void vic_class_init(ObjectClass *klass, const void *data) {
 	DeviceClass *dc = DEVICE_CLASS(klass);
 	dc->realize = vic_realize;
 }

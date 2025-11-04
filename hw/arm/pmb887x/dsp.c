@@ -6,7 +6,7 @@
 
 #include "qemu/osdep.h"
 #include "hw/sysbus.h"
-#include "exec/memory.h"
+#include "system/memory.h"
 #include "cpu.h"
 #include "qapi/error.h"
 #include "qemu/main-loop.h"
@@ -172,7 +172,7 @@ static void dsp_realize(DeviceState *dev, Error **errp) {
 	dsp_update_state(p);
 }
 
-static void dsp_class_init(ObjectClass *klass, void *data) {
+static void dsp_class_init(ObjectClass *klass, const void *data) {
 	DeviceClass *dc = DEVICE_CLASS(klass);
 	device_class_set_props(dc, dsp_properties);
 	dc->realize = dsp_realize;

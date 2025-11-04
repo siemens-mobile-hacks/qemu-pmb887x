@@ -6,7 +6,7 @@
 
 #include "qemu/osdep.h"
 #include "hw/sysbus.h"
-#include "exec/memory.h"
+#include "system/memory.h"
 #include "cpu.h"
 #include "qapi/error.h"
 #include "qemu/timer.h"
@@ -183,7 +183,7 @@ static const Property stm_properties[] = {
 	DEFINE_PROP_LINK("pll", struct pmb887x_stm_t, pll, "pmb887x-pll", struct pmb887x_pll_t *),
 };
 
-static void stm_class_init(ObjectClass *klass, void *data) {
+static void stm_class_init(ObjectClass *klass, const void *data) {
 	DeviceClass *dc = DEVICE_CLASS(klass);
 	device_class_set_props(dc, stm_properties);
 	dc->realize = stm_realize;

@@ -238,7 +238,7 @@ static const Property acodec_properties[] = {
 	DEFINE_PROP_LINK("bus", pmb887x_acodec_t, bus, TYPE_PMB887X_ACODEC, SSIBus *),
 };
 
-static void acodec_class_init(ObjectClass *klass, void *data) {
+static void acodec_class_init(ObjectClass *klass, const void *data) {
 	SSIPeripheralClass *k = SSI_PERIPHERAL_CLASS(klass);
 	DeviceClass *dc = DEVICE_CLASS(klass);
 	device_class_set_props(dc, acodec_properties);

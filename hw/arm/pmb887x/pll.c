@@ -7,7 +7,7 @@
 #include "qemu/osdep.h"
 #include "hw/sysbus.h"
 #include "hw/hw.h"
-#include "exec/memory.h"
+#include "system/memory.h"
 #include "hw/qdev-properties.h"
 #include "cpu.h"
 #include "qemu/timer.h"
@@ -369,7 +369,7 @@ static const Property pll_properties[] = {
 	DEFINE_PROP_UINT32("hw-ns-throttle", struct pmb887x_pll_t, hw_ns_div, 1),
 };
 
-static void pll_class_init(ObjectClass *klass, void *data) {
+static void pll_class_init(ObjectClass *klass, const void *data) {
 	DeviceClass *dc = DEVICE_CLASS(klass);
 	device_class_set_props(dc, pll_properties);
 	dc->realize = pll_realize;

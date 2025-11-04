@@ -7,7 +7,7 @@
 #include "qemu/osdep.h"
 #include "hw/sysbus.h"
 #include "hw/hw.h"
-#include "exec/memory.h"
+#include "system/memory.h"
 #include "qemu/main-loop.h"
 #include "hw/qdev-properties.h"
 #include "hw/i2c/i2c.h"
@@ -150,7 +150,7 @@ static const Property pmic_properties[] = {
 	DEFINE_PROP_UINT32("revision", pmb887x_pmic_t, revision, 0xAA),
 };
 
-static void pmic_class_init(ObjectClass *klass, void *data) {
+static void pmic_class_init(ObjectClass *klass, const void *data) {
 	DeviceClass *dc = DEVICE_CLASS(klass);
 	device_class_set_props(dc, pmic_properties);
 	dc->realize = pmic_realize;

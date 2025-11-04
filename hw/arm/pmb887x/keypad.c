@@ -239,7 +239,7 @@ static const Property keypad_properties[] = {
 	DEFINE_PROP_ARRAY("map", pmb887x_keypad_t, map_size, map, qdev_prop_uint32, uint32_t),
 };
 
-static void keypad_class_init(ObjectClass *klass, void *data) {
+static void keypad_class_init(ObjectClass *klass, const void *data) {
 	DeviceClass *dc = DEVICE_CLASS(klass);
 	device_class_set_props(dc, keypad_properties);
 	dc->realize = keypad_realize;

@@ -7,7 +7,7 @@
 #include "qemu/osdep.h"
 #include "hw/sysbus.h"
 #include "hw/hw.h"
-#include "exec/memory.h"
+#include "system/memory.h"
 #include "cpu.h"
 #include "qemu/error-report.h"
 #include "qemu/timer.h"
@@ -762,7 +762,7 @@ static const Property i2c_properties[] = {
 	DEFINE_PROP_LINK("bus", pmb887x_i2c_t, bus, TYPE_I2C_BUS, I2CBus *)
 };
 
-static void i2c_class_init(ObjectClass *klass, void *data) {
+static void i2c_class_init(ObjectClass *klass, const void *data) {
 	DeviceClass *dc = DEVICE_CLASS(klass);
 	device_class_set_props(dc, i2c_properties);
 	dc->realize = i2c_realize;

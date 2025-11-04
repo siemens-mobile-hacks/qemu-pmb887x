@@ -210,7 +210,7 @@ static const Property gimmick_properties[] = {
 	DEFINE_PROP_LINK("bus", pmb887x_gimmick_t, bus, TYPE_PMB887X_GIMMICK, SSIBus *)
 };
 
-static void gimmick_class_init(ObjectClass *klass, void *data) {
+static void gimmick_class_init(ObjectClass *klass, const void *data) {
 	SSIPeripheralClass *k = SSI_PERIPHERAL_CLASS(klass);
 	DeviceClass *dc = DEVICE_CLASS(klass);
 	device_class_set_props(dc, gimmick_properties);

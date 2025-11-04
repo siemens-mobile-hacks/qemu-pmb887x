@@ -452,7 +452,7 @@ static const Property ssc_properties[] = {
 	DEFINE_PROP_LINK("bus", pmb887x_ssc_t, bus, "SSI", SSIBus *),
 };
 
-static void ssc_class_init(ObjectClass *klass, void *data) {
+static void ssc_class_init(ObjectClass *klass, const void *data) {
 	DeviceClass *dc = DEVICE_CLASS(klass);
 	device_class_set_props(dc, ssc_properties);
 	dc->realize = ssc_realize;

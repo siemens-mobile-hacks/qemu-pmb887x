@@ -6,7 +6,7 @@
 
 #include "qemu/osdep.h"
 #include "hw/sysbus.h"
-#include "exec/memory.h"
+#include "system/memory.h"
 #include "cpu.h"
 #include "qemu/error-report.h"
 #include "qemu/timer.h"
@@ -756,7 +756,7 @@ static const Property flash_properties[] = {
 	DEFINE_PROP_STRING("otp1-data", pmb887x_flash_t, hex_otp1_data),
 };
 
-static void flash_class_init(ObjectClass *klass, void *data) {
+static void flash_class_init(ObjectClass *klass, const void *data) {
 	DeviceClass *dc = DEVICE_CLASS(klass);
 	device_class_set_props(dc, flash_properties);
 	dc->realize = flash_realize;

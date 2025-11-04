@@ -3,7 +3,6 @@
 #include "migration/vmstate.h"
 #include "qapi/error.h"
 #include "qemu/error-report.h"
-#include "exec/exec-all.h"
 #include "system/cpus.h"
 #include "system/qtest.h"
 #include "qemu/main-loop.h"

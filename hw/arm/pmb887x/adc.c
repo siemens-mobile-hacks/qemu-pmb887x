@@ -6,7 +6,7 @@
 
 #include "qemu/osdep.h"
 #include "hw/sysbus.h"
-#include "exec/memory.h"
+#include "system/memory.h"
 #include "cpu.h"
 #include "qemu/main-loop.h"
 #include "hw/qdev-properties.h"
@@ -330,7 +330,7 @@ static const Property adc_properties[] = {
 	DEFINE_PROP_LINK("pll", pmb887x_adc_t, pll, "pmb887x-pll", struct pmb887x_pll_t *),
 };
 
-static void adc_class_init(ObjectClass *klass, void *data) {
+static void adc_class_init(ObjectClass *klass, const void *data) {
 	DeviceClass *dc = DEVICE_CLASS(klass);
 	device_class_set_props(dc, adc_properties);
 	dc->realize = adc_realize;

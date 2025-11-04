@@ -7,7 +7,7 @@
 #include "qemu/osdep.h"
 #include "hw/sysbus.h"
 #include "hw/hw.h"
-#include "exec/memory.h"
+#include "system/memory.h"
 #include "cpu.h"
 #include "qapi/error.h"
 #include "qemu/timer.h"
@@ -309,7 +309,7 @@ static const Property sccu_properties[] = {
 	DEFINE_PROP_LINK("pll", struct pmb887x_sccu_t, pll, "pmb887x-pll", struct pmb887x_pll_t *),
 };
 
-static void sccu_class_init(ObjectClass *klass, void *data) {
+static void sccu_class_init(ObjectClass *klass, const void *data) {
 	DeviceClass *dc = DEVICE_CLASS(klass);
 	device_class_set_props(dc, sccu_properties);
 	dc->realize = sccu_realize;

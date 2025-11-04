@@ -528,7 +528,7 @@ static void lcd_realize(SSIPeripheral *d, Error **errp) {
 		lcd->k->realize(lcd, errp);
 }
 
-static void lcd_class_init(ObjectClass *klass, void *data) {
+static void lcd_class_init(ObjectClass *klass, const void *data) {
 	SSIPeripheralClass *k = SSI_PERIPHERAL_CLASS(klass);
 	DeviceClass *dc = DEVICE_CLASS(klass);
 	device_class_set_props(dc, lcd_props);
