@@ -28,7 +28,7 @@
 #include "system/cryptodev.h"
 #include "migration/postcopy-ram.h"
 #include "trace.h"
-#include "exec/ramblock.h"
+#include "system/ramblock.h"
 
 #include <sys/ioctl.h>
 #include <sys/socket.h>
@@ -275,7 +275,7 @@ struct scrub_regions {
 static int vhost_user_read_header(struct vhost_dev *dev, VhostUserMsg *msg)
 {
     struct vhost_user *u = dev->opaque;
-    CharBackend *chr = u->user->chr;
+    CharFrontend *chr = u->user->chr;
     uint8_t *p = (uint8_t *) msg;
     int r, size = VHOST_USER_HDR_SIZE;
 
@@ -303,7 +303,7 @@ static int vhost_user_read_header(struct vhost_dev *dev, VhostUserMsg *msg)
 static int vhost_user_read(struct vhost_dev *dev, VhostUserMsg *msg)
 {
     struct vhost_user *u = dev->opaque;
-    CharBackend *chr = u->user->chr;
+    CharFrontend *chr = u->user->chr;
     uint8_t *p = (uint8_t *) msg;
     int r, size;
 
@@ -383,7 +383,7 @@ static int vhost_user_write(struct vhost_dev *dev, VhostUserMsg *msg,
                             int *fds, int fd_num)
 {
     struct vhost_user *u = dev->opaque;
-    CharBackend *chr = u->user->chr;
+    CharFrontend *chr = u->user->chr;
     int ret, size = VHOST_USER_HDR_SIZE + msg->hdr.size;
 
     /*
@@ -654,8 +654,6 @@ static void scrub_shadow_regions(struct vhost_dev *dev,
     }
     *nr_rem_reg = rm_idx;
     *nr_add_reg = add_idx;
-
-    return;
 }
 
 static int send_remove_regions(struct vhost_dev *dev,
@@ -1682,7 +1680,7 @@ int vhost_user_get_shared_object(struct vhost_dev *dev, unsigned char *uuid,
                                  int *dmabuf_fd)
 {
     struct vhost_user *u = dev->opaque;
-    CharBackend *chr = u->user->chr;
+    CharFrontend *chr = u->user->chr;
     int ret;
     VhostUserMsg msg = {
         .hdr.request = VHOST_USER_GET_SHARED_OBJECT,
@@ -1723,7 +1721,7 @@ vhost_user_backend_handle_shared_object_lookup(struct vhost_user *u,
                                                VhostUserPayload *payload)
 {
     QemuUUID uuid;
-    CharBackend *chr = u->user->chr;
+    CharFrontend *chr = u->user->chr;
     Error *local_err = NULL;
     int dmabuf_fd = -1;
     int fd_num = 0;
@@ -2006,7 +2004,7 @@ static int vhost_user_postcopy_advise(struct vhost_dev *dev, Error **errp)
 {
 #ifdef CONFIG_LINUX
     struct vhost_user *u = dev->opaque;
-    CharBackend *chr = u->user->chr;
+    CharFrontend *chr = u->user->chr;
     int ufd;
     int ret;
     VhostUserMsg msg = {
@@ -2041,7 +2039,10 @@ static int vhost_user_postcopy_advise(struct vhost_dev *dev, Error **errp)
         error_setg(errp, "%s: Failed to get ufd", __func__);
         return -EIO;
     }
-    qemu_socket_set_nonblock(ufd);
+    if (!qemu_set_blocking(ufd, false, errp)) {
+        close(ufd);
+        return -EINVAL;
+    }
 
     /* register ufd with userfault thread */
     u->postcopy_fd.fd = ufd;
@@ -2669,7 +2670,7 @@ static int vhost_user_get_inflight_fd(struct vhost_dev *dev,
     int fd;
     int ret;
     struct vhost_user *u = dev->opaque;
-    CharBackend *chr = u->user->chr;
+    CharFrontend *chr = u->user->chr;
     VhostUserMsg msg = {
         .hdr.request = VHOST_USER_GET_INFLIGHT_FD,
         .hdr.flags = VHOST_USER_VERSION,
@@ -2760,7 +2761,7 @@ static void vhost_user_state_destroy(gpointer data)
     vhost_user_host_notifier_remove(n, NULL, true);
 }
 
-bool vhost_user_init(VhostUserState *user, CharBackend *chr, Error **errp)
+bool vhost_user_init(VhostUserState *user, CharFrontend *chr, Error **errp)
 {
     if (user->chr) {
         error_setg(errp, "Cannot initialize vhost-user state");
@@ -2786,7 +2787,7 @@ void vhost_user_cleanup(VhostUserState *user)
 typedef struct {
     vu_async_close_fn cb;
     DeviceState *dev;
-    CharBackend *cd;
+    CharFrontend *cd;
     struct vhost_dev *vhost;
 } VhostAsyncCallback;
 
@@ -2805,7 +2806,7 @@ static void vhost_user_async_close_bh(void *opaque)
  * purposes.
  */
 void vhost_user_async_close(DeviceState *d,
-                            CharBackend *chardev, struct vhost_dev *vhost,
+                            CharFrontend *chardev, struct vhost_dev *vhost,
                             vu_async_close_fn cb)
 {
     if (!runstate_check(RUN_STATE_SHUTDOWN)) {

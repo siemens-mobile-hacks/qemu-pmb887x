@@ -49,6 +49,12 @@ struct QIOChannelSocket {
     socklen_t remoteAddrLen;
     ssize_t zero_copy_queued;
     ssize_t zero_copy_sent;
+    bool blocking;
+    /**
+     * This flag indicates whether any new data was successfully sent with
+     * zerocopy since the last qio_channel_socket_flush() call.
+     */
+    bool new_zero_copy_sent_success;
 };
 
 
@@ -261,5 +267,18 @@ QIOChannelSocket *
 qio_channel_socket_accept(QIOChannelSocket *ioc,
                           Error **errp);
 
+/**
+ * qio_channel_socket_set_send_buffer:
+ * @ioc: the socket channel object
+ * @size: buffer size
+ * @errp: pointer to a NULL-initialized error object
+ *
+ * Set the underlying socket send buffer size.
+ *
+ * Retruns: 0 on success, or -1 on error.
+ */
+int qio_channel_socket_set_send_buffer(QIOChannelSocket *ioc,
+                                       size_t size,
+                                       Error **errp);
 
 #endif /* QIO_CHANNEL_SOCKET_H */

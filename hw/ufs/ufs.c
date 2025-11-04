@@ -25,6 +25,7 @@
 #include "qapi/error.h"
 #include "migration/vmstate.h"
 #include "scsi/constants.h"
+#include "hw/irq.h"
 #include "trace.h"
 #include "ufs.h"
 
@@ -1752,8 +1753,8 @@ static void ufs_init_hc(UfsHc *u)
     u->geometry_desc.length = sizeof(GeometryDescriptor);
     u->geometry_desc.descriptor_idn = UFS_QUERY_DESC_IDN_GEOMETRY;
     u->geometry_desc.max_number_lu = (UFS_MAX_LUS == 32) ? 0x1 : 0x0;
-    u->geometry_desc.segment_size = cpu_to_be32(0x2000); /* 4KB */
-    u->geometry_desc.allocation_unit_size = 0x1; /* 4KB */
+    u->geometry_desc.segment_size = cpu_to_be32(0x2000); /* 4MB: 8192 * 512B */
+    u->geometry_desc.allocation_unit_size = 0x1; /* 4MB: 1 segment */
     u->geometry_desc.min_addr_block_size = 0x8; /* 4KB */
     u->geometry_desc.max_in_buffer_size = 0x8;
     u->geometry_desc.max_out_buffer_size = 0x8;
@@ -1808,6 +1809,8 @@ static void ufs_exit(PCIDevice *pci_dev)
 {
     UfsHc *u = UFS(pci_dev);
 
+    qemu_free_irq(u->irq);
+
     qemu_bh_delete(u->doorbell_bh);
     qemu_bh_delete(u->complete_bh);
 
@@ -1841,7 +1844,7 @@ static const VMStateDescription ufs_vmstate = {
     .unmigratable = 1,
 };
 
-static void ufs_class_init(ObjectClass *oc, void *data)
+static void ufs_class_init(ObjectClass *oc, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(oc);
     PCIDeviceClass *pc = PCI_DEVICE_CLASS(oc);
@@ -1877,7 +1880,7 @@ static char *ufs_bus_get_dev_path(DeviceState *dev)
     return qdev_get_dev_path(bus->parent);
 }
 
-static void ufs_bus_class_init(ObjectClass *class, void *data)
+static void ufs_bus_class_init(ObjectClass *class, const void *data)
 {
     BusClass *bc = BUS_CLASS(class);
     bc->get_dev_path = ufs_bus_get_dev_path;
@@ -1889,7 +1892,7 @@ static const TypeInfo ufs_info = {
     .parent = TYPE_PCI_DEVICE,
     .class_init = ufs_class_init,
     .instance_size = sizeof(UfsHc),
-    .interfaces = (InterfaceInfo[]){ { INTERFACE_PCIE_DEVICE }, {} },
+    .interfaces = (const InterfaceInfo[]){ { INTERFACE_PCIE_DEVICE }, {} },
 };
 
 static const TypeInfo ufs_bus_info = {

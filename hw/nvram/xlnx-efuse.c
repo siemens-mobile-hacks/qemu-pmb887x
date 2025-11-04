@@ -274,12 +274,14 @@ static const Property efuse_properties[] = {
                       qdev_prop_uint32, uint32_t),
 };
 
-static void efuse_class_init(ObjectClass *klass, void *data)
+static void efuse_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
 
     dc->realize = efuse_realize;
     device_class_set_props(dc, efuse_properties);
+    /* Reason: Part of Xilinx SoC */
+    dc->user_creatable = false;
 }
 
 static const TypeInfo efuse_info = {

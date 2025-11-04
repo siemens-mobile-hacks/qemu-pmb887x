@@ -18,6 +18,7 @@
 #include "qemu/osdep.h"
 #include "qapi/error.h"
 #include "qemu/module.h"
+#include "hw/irq.h"
 #include "hw/qdev-properties.h"
 #include "hw/sd/sdhci.h"
 #include "sdhci-internal.h"
@@ -48,11 +49,12 @@ static void sdhci_pci_exit(PCIDevice *dev)
 {
     SDHCIState *s = PCI_SDHCI(dev);
 
+    qemu_free_irq(s->irq);
     sdhci_common_unrealize(s);
     sdhci_uninitfn(s);
 }
 
-static void sdhci_pci_class_init(ObjectClass *klass, void *data)
+static void sdhci_pci_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *dc = DEVICE_CLASS(klass);
     PCIDeviceClass *k = PCI_DEVICE_CLASS(klass);
@@ -73,7 +75,7 @@ static const TypeInfo sdhci_pci_types[] = {
         .parent         = TYPE_PCI_DEVICE,
         .instance_size  = sizeof(SDHCIState),
         .class_init     = sdhci_pci_class_init,
-        .interfaces     = (InterfaceInfo[]) {
+        .interfaces     = (const InterfaceInfo[]) {
             { INTERFACE_CONVENTIONAL_PCI_DEVICE },
             { },
         },

@@ -9,7 +9,7 @@ in Sphinx is provided by the QAPI Domain, located in
 `Python Domain
 <https://www.sphinx-doc.org/en/master/usage/domains/python.html>`_
 included with Sphinx, but provides special directives and roles
-speciically for annotating and documenting QAPI definitions
+for annotating and documenting QAPI definitions
 specifically.
 
 A `Domain
@@ -41,7 +41,7 @@ Schema or generating documentation from code that exists. It is merely
 the rST syntax used to describe things. For instance, the Sphinx Python
 domain adds syntax like ``:py:func:`` for describing Python functions in
 documentation, but it's the autodoc module that is responsible for
-reading python code and generating such syntax. QAPI is analagous here:
+reading Python code and generating such syntax. QAPI is analogous here:
 qapidoc.py is responsible for reading the QAPI Schema and generating rST
 syntax, and qapi_domain.py is responsible for translating that special
 syntax and providing APIs for Sphinx internals.
@@ -101,7 +101,7 @@ without types. The QAPI domain uses this class for features, returns,
 and enum values.
 
 TypedField:
-  * Creates a grouped, typed field. Multiple adjacent entres will be
+  * Creates a grouped, typed field. Multiple adjacent entries will be
     merged into one section, and the content will form a bulleted list.
   * *Must* take at least one argument, but supports up to two -
     nominally, a name and a type.
@@ -242,6 +242,37 @@ Example::
              }
 
 
+``:return-nodesc:``
+-------------------
+
+Document the return type of a QAPI command, without an accompanying
+description.
+
+:availability: This field list is only available in the body of the
+               Command directive.
+:syntax: ``:return-nodesc: type``
+:type: `sphinx.util.docfields.Field
+       <https://pydoc.dev/sphinx/latest/sphinx.util.docfields.Field.html?private=1>`_
+
+
+Example::
+
+   .. qapi:command:: query-replay
+      :since: 5.2
+
+      Retrieve the record/replay information.  It includes current
+      instruction count which may be used for ``replay-break`` and
+      ``replay-seek`` commands.
+
+      :return-nodesc: ReplayInfo
+
+      .. qmp-example::
+
+          -> { "execute": "query-replay" }
+          <- { "return": {
+                 "mode": "play", "filename": "log.rr", "icount": 220414 }
+             }
+
 ``:value:``
 -----------
 
@@ -344,6 +375,7 @@ Will allow you to add arbitrary field lists in QAPI directives::
 
       :see also: Lorem ipsum, dolor sit amet ...
 
+.. _QAPI-domain-cross-references:
 
 Cross-references
 ================
@@ -514,7 +546,7 @@ the definition's "fully qualified name", allowing two different
 namespaces to create an otherwise identically named definition.
 
 This directive also influences how reference resolution works for any
-references that do not explicity specify a namespace, so this directive
+references that do not explicitly specify a namespace, so this directive
 can be used to nudge references into preferring targets from within that
 namespace.
 

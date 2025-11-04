@@ -5,7 +5,7 @@ Codebase
 This section presents the various parts of QEMU and how the codebase is
 organized.
 
-Beyond giving succint descriptions, the goal is to offer links to various
+Beyond giving succinct descriptions, the goal is to offer links to various
 parts of the documentation/codebase.
 
 Subsystems
@@ -48,7 +48,7 @@ yet, so sometimes the source code is all you have.
 * `accel <https://gitlab.com/qemu-project/qemu/-/tree/master/accel>`_:
   Infrastructure and architecture agnostic code related to the various
   `accelerators <Accelerators>` supported by QEMU
-  (TCG, KVM, hvf, whpx, xen, nvmm).
+  (TCG, KVM, hvf, whpx, xen, nvmm, mshv).
   Contains interfaces for operations that will be implemented per
   `target <https://gitlab.com/qemu-project/qemu/-/tree/master/target>`_.
 * `audio <https://gitlab.com/qemu-project/qemu/-/tree/master/audio>`_:
@@ -67,7 +67,7 @@ yet, so sometimes the source code is all you have.
 * `chardev <https://gitlab.com/qemu-project/qemu/-/tree/master/chardev>`_:
   Various backends used by char devices.
 * `common-user <https://gitlab.com/qemu-project/qemu/-/tree/master/common-user>`_:
-  User-mode assembly code for dealing with signals occuring during syscalls.
+  User-mode assembly code for dealing with signals occurring during syscalls.
 * `configs <https://gitlab.com/qemu-project/qemu/-/tree/master/configs>`_:
   Makefiles defining configurations to build QEMU.
 * `contrib <https://gitlab.com/qemu-project/qemu/-/tree/master/contrib>`_:
@@ -102,7 +102,7 @@ yet, so sometimes the source code is all you have.
 * `.gitlab-ci.d <https://gitlab.com/qemu-project/qemu/-/tree/master/.gitlab-ci.d>`_:
   `CI <ci>` yaml and scripts.
 * `include <https://gitlab.com/qemu-project/qemu/-/tree/master/include>`_:
-  All headers associated to different subsystems in QEMU. The hierachy used
+  All headers associated to different subsystems in QEMU. The hierarchy used
   mirrors source code organization and naming.
 * `hw <https://gitlab.com/qemu-project/qemu/-/tree/master/hw>`_:
   `Devices <device-emulation>` and boards emulation. Devices are categorized by
@@ -116,7 +116,7 @@ yet, so sometimes the source code is all you have.
 * `monitor <https://gitlab.com/qemu-project/qemu/-/tree/master/monitor>`_:
   `Monitor <QEMU monitor>` implementation (HMP & QMP).
 * `nbd <https://gitlab.com/qemu-project/qemu/-/tree/master/nbd>`_:
-  QEMU `NBD (Network Block Device) <nbd>` server.
+  QEMU NBD (Network Block Device) server.
 * `net <https://gitlab.com/qemu-project/qemu/-/tree/master/net>`_:
   Network (host) support.
 * `pc-bios <https://gitlab.com/qemu-project/qemu/-/tree/master/pc-bios>`_:
@@ -175,11 +175,6 @@ yet, so sometimes the source code is all you have.
 * `tests <https://gitlab.com/qemu-project/qemu/-/tree/master/tests>`_:
   QEMU `test <testing>` suite
 
-  - `avocado <https://gitlab.com/qemu-project/qemu/-/tree/master/tests/avocado>`_:
-    Functional tests booting full VM using `Avocado framework <checkavocado-ref>`.
-    Those tests will be transformed and moved into
-    `tests/functional <https://gitlab.com/qemu-project/qemu/-/tree/master/tests/functional>`_
-    in the future.
   - `data <https://gitlab.com/qemu-project/qemu/-/tree/master/tests/data>`_:
     Data for various tests.
   - `decode <https://gitlab.com/qemu-project/qemu/-/tree/master/tests/decode>`_:
