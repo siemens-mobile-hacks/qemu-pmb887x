@@ -249,7 +249,7 @@ static void dif_fifo_req(pmb887x_dif_t *p) {
 		uint32_t single_req_size = (4 / dif_get_tx_align(p));
 		uint32_t burst_req_count = burst_req_size / single_req_size;
 
-		uint32_t tx_remaining = p->tx_remaining - MIN(p->tx_remaining, pmb887x_fifo_count(p->tx_fifo));
+		uint32_t tx_remaining = p->tx_remaining - MIN(p->tx_remaining, pmb887x_fifo_count(p->tx_fifo) * single_req_size);
 		if (!tx_remaining)
 			return;
 		if (tx_remaining >= burst_req_size && pmb887x_fifo_free_count(p->tx_fifo) < burst_req_count)
@@ -482,7 +482,6 @@ static void dif_timer_reset(void *opaque) {
 	while (p->transfer_pending) {
 		p->transfer_pending = false;
 		dif_work(p);
-
 		if (pmb887x_srb_get_ris(&p->srb) != 0)
 			break;
 	}

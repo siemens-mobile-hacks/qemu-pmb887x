@@ -50,7 +50,7 @@ struct pmb887x_i2c_t {
 	
     I2CBus *bus;
 	QEMUTimer *timer;
-	bool wait_for_next_tick;
+	bool transfer_pending;
     
 	pmb887x_clc_reg_t clc;
 	pmb887x_srb_reg_t srb;
@@ -141,7 +141,7 @@ static void i2c_fifo_req(pmb887x_i2c_t *p) {
 		uint32_t single_req_size = (4 / i2c_get_tx_align(p));
 		uint32_t burst_req_count = burst_req_size / single_req_size;
 
-		uint32_t tx_remaining = p->tx_remaining - MIN(p->tx_remaining, pmb887x_fifo_count(&p->fifo));
+		uint32_t tx_remaining = p->tx_remaining - MIN(p->tx_remaining, pmb887x_fifo_count(&p->fifo) * single_req_size);
 		if (!tx_remaining)
 			return;
 		if (tx_remaining >= burst_req_size && pmb887x_fifo_free_count(&p->fifo) < burst_req_count)
@@ -216,16 +216,18 @@ static void i2c_kernel_reset(pmb887x_i2c_t *p, uint32_t new_state) {
 
 static void i2c_timer_reset(void *opaque) {
 	pmb887x_i2c_t *p = (pmb887x_i2c_t *) opaque;
-	p->wait_for_next_tick = false;
-	
-	if (p->runctrl)
+	while (p->transfer_pending) {
+		p->transfer_pending = false;
 		i2c_work(p);
+		if (pmb887x_srb_get_ris(&p->srb) != 0)
+			break;
+	}
 }
 
 static void i2c_timer_schedule(pmb887x_i2c_t *p) {
-	if (!p->wait_for_next_tick) {
-		timer_mod(p->timer, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + I2C_TX_BYTE_TIME);
-		p->wait_for_next_tick = true;
+	if (!p->transfer_pending) {
+		timer_mod(p->timer, 0);
+		p->transfer_pending = true;
 	}
 }
 
@@ -251,7 +253,7 @@ static void i2c_fifo_read(pmb887x_i2c_t *p, uint64_t *value) {
 		i2c_transfer_error(p);
 		return;
 	}
-	
+
 	*value = pmb887x_fifo32_pop(&p->fifo);
 	p->rx_bytes_in_fifo -= MIN(p->rx_bytes_in_fifo, 4 / i2c_get_rx_align(p));
 
@@ -407,6 +409,9 @@ static void i2c_transfer_done(pmb887x_i2c_t *p) {
 }
 
 static void i2c_work(pmb887x_i2c_t *p) {
+	if (!i2c_is_running(p))
+		return;
+
 	if (p->state == I2C_STATE_NONE) {
 		if (p->tpsctrl > 0)
 			i2c_start_tx(p);
@@ -671,12 +676,6 @@ static void i2c_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned si
 
 		case I2Cv2_ICR:
 			value &= ~(I2Cv2_ICR_I2C_ERR_INT | I2Cv2_ICR_I2C_P_INT); // unclearable IRQ's
-
-			if ((value & FIFO_ICR_MASK) && (p->state == I2C_STATE_MASTER_RX || p->state == I2C_STATE_MASTER_TX)) {
-				i2c_fifo_clr_req(p);
-				i2c_fifo_req(p);
-			}
-
 			pmb887x_srb_set_icr(&p->srb, value);
 			break;
 
@@ -725,6 +724,17 @@ static void i2c_handle_gpio_input(void *opaque, int id, int level) {
 	// nothing
 }
 
+static void i2c_event_handler(void *opaque, int event_id, int level) {
+	pmb887x_i2c_t *p = opaque;
+	uint32_t mask = 1 << event_id;
+	if (level == 0 && (mask & FIFO_ICR_MASK) != 0) {
+		if (p->state == I2C_STATE_MASTER_RX || p->state == I2C_STATE_MASTER_TX) {
+			i2c_fifo_clr_req(p);
+			i2c_fifo_req(p);
+		}
+	}
+}
+
 static void i2c_init(Object *obj) {
 	DeviceState *dev = DEVICE(obj);
 	pmb887x_i2c_t *p = PMB887X_I2C(obj);
@@ -749,13 +759,14 @@ static void i2c_realize(DeviceState *dev, Error **errp) {
 	
 	pmb887x_srb_init(&p->srb, p->irq, ARRAY_SIZE(p->irq));
 	pmb887x_srb_set_irq_router(&p->srb, p, i2c_irq_router);
+	pmb887x_srb_set_event_handler(&p->srb, p, i2c_event_handler);
 	
 	pmb887x_srb_ext_init(&p->srb_err, &p->srb, I2Cv2_ISR_I2C_ERR_INT);
 	pmb887x_srb_ext_init(&p->srb_proto, &p->srb, I2Cv2_ISR_I2C_P_INT);
 	
 	pmb887x_fifo32_init(&p->fifo, FIFO_SIZE);
 	
-	p->timer = timer_new_ns(QEMU_CLOCK_VIRTUAL, i2c_timer_reset, p);
+	p->timer = timer_new_ns(QEMU_CLOCK_REALTIME, i2c_timer_reset, p);
 }
 
 static const Property i2c_properties[] = {
