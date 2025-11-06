@@ -40,6 +40,7 @@ typedef struct pmb887x_dif_t pmb887x_dif_t;
 static void dif_start_rx(pmb887x_dif_t *p);
 static void dif_start_tx(pmb887x_dif_t *p);
 static void dif_kernel_reset(pmb887x_dif_t *p, uint32_t new_state);
+static void dif_work(pmb887x_dif_t *p);
 
 enum DIFIrqType {
 	DIF_RX_SINGLE_IRQ = 0,

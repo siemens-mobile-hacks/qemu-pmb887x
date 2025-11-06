@@ -18,10 +18,11 @@ struct pmb887x_io_operation_t {
 	uint32_t count;
 };
 
+static bool stop = false;
 static QemuMutex io_dump_queue_lock;
 static GQueue *io_dump_queue = NULL;
 static QemuThread io_dump_thread_id;
-static GCond io_dump_cond = {};
+static QemuCond io_dump_cond;
 static uint32_t gpio_base = 0;
 static pmb887x_io_operation_t *last_log_entry = NULL;
 static struct {
@@ -80,25 +81,32 @@ static void *regs_dump_dump_io_thread(void *arg) {
 		pmb887x_io_operation_t *entry = NULL;
 
 		qemu_mutex_lock(&io_dump_queue_lock);
-		size_t queue_size = g_queue_get_length(io_dump_queue);
-		if (queue_size > 0)
-			entry = g_queue_pop_head(io_dump_queue);
-		
+		while (!stop && g_queue_is_empty(io_dump_queue)) {
+			qemu_cond_wait(&io_dump_cond, &io_dump_queue_lock);
+		}
+		if (stop) {
+			qemu_mutex_unlock(&io_dump_queue_lock);
+			break;
+		}
+
+		entry = g_queue_pop_head(io_dump_queue);
 		if (entry == last_log_entry)
 			last_log_entry = NULL;
-		
+
+		size_t queue_size = g_queue_get_length(io_dump_queue);
 		qemu_mutex_unlock(&io_dump_queue_lock);
-		
+
 		if (entry) {
 			pmb887x_print_dump_io(entry->addr, entry->size, entry->value, entry->is_write, entry->pc, entry->lr);
 			g_free(entry);
 		}
-		
+
 		if (queue_size > 2000000) {
-			error_report("IO dump queue overflow (%d)! Something wrong!\n", g_queue_get_length(io_dump_queue));
+			error_report("IO dump queue overflow (%d)! Something wrong!\n", (int) queue_size);
 			exit(1);
 		}
 	}
+	return NULL;
 }
 
 void pmb887x_io_dump_init(void) {
@@ -106,7 +114,7 @@ void pmb887x_io_dump_init(void) {
 	
 	io_dump_queue = g_queue_new();
 	qemu_mutex_init(&io_dump_queue_lock);
-	g_cond_init(&io_dump_cond);
+	qemu_cond_init(&io_dump_cond);
 	
 	qemu_thread_create(&io_dump_thread_id, "io_dump", regs_dump_dump_io_thread, NULL, QEMU_THREAD_JOINABLE);
 	
@@ -115,7 +123,7 @@ void pmb887x_io_dump_init(void) {
 		const pmb887x_module_t *module = &cpu_info->modules[i];
 		uint32_t prefix = (module->base & 0xFFF00000) >> 20;
 		addr2modules[prefix].count++;
-		addr2modules[prefix].modules = g_realloc(addr2modules[prefix].modules, sizeof(pmb887x_io_operation_t *) * addr2modules[prefix].count);
+		addr2modules[prefix].modules = g_realloc(addr2modules[prefix].modules, sizeof(pmb887x_module_t *) * addr2modules[prefix].count);
 		addr2modules[prefix].modules[addr2modules[prefix].count - 1] = module;
 		
 		if (strcmp(module->name, "GPIO") == 0)
@@ -123,6 +131,16 @@ void pmb887x_io_dump_init(void) {
 	}
 	
 	assert(gpio_base != 0);
+}
+
+void pmb887x_io_dump_finish(void) {
+	qemu_mutex_lock(&io_dump_queue_lock);
+	stop = true;
+	qemu_cond_broadcast(&io_dump_cond);
+	qemu_mutex_unlock(&io_dump_queue_lock);
+
+	if (io_dump_queue)
+		qemu_thread_join(&io_dump_thread_id);
 }
 
 static bool regs_dump_is_log_entry_same(const pmb887x_io_operation_t *a, const pmb887x_io_operation_t *b) {
@@ -149,9 +167,11 @@ void pmb887x_dump_io(uint32_t addr, uint32_t size, uint32_t value, bool is_write
 	qemu_mutex_lock(&io_dump_queue_lock);
 	if (last_log_entry && regs_dump_is_log_entry_same(last_log_entry, entry)) {
 		last_log_entry->count++;
+		g_free(entry);
 	} else {
 		last_log_entry = entry;
 		g_queue_push_tail(io_dump_queue, entry);
+		qemu_cond_signal(&io_dump_cond);
 	}
 	qemu_mutex_unlock(&io_dump_queue_lock);
 }

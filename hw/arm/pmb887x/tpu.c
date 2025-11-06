@@ -42,17 +42,23 @@ struct pmb887x_tpu_t {
 	uint32_t intr[2];
 	
 	pmb887x_src_reg_t src[2];
-	pmb887x_src_reg_t unk_src[6];
+	pmb887x_src_reg_t gp_src[6];
 	
 	qemu_irq irq[2];
-	qemu_irq unk_irq[6];
+	qemu_irq gp_irq[6];
 	
-	uint32_t pllcon0;
-	uint32_t pllcon1;
-	uint32_t pllcon2;
+	uint32_t gsmclk1;
+	uint32_t gsmclk2;
+	uint32_t gsmclk3;
 	
-	uint32_t unk[8];
-	
+	uint32_t ceap;
+	uint32_t eapt;
+	uint32_t eapb;
+	uint32_t tger;
+	uint32_t rfcon1;
+	uint32_t rfcon2;
+	uint32_t fade;
+
 	uint32_t irq_fired;
 	QEMUTimer *timer;
 	
@@ -148,11 +154,11 @@ static void tpu_update_state(pmb887x_tpu_t *p) {
 	uint32_t ftpu = div > 0 ? pmb887x_pll_get_fsys(p->pll) / div : 0;
 	
 	// Update clock
-	if ((p->pllcon2 & TPU_PLLCON2_INIT) || (p->pllcon2 & TPU_PLLCON2_LOAD)) {
-		p->K = (p->pllcon0 & TPU_PLLCON0_K_DIV) >> TPU_PLLCON0_K_DIV_SHIFT;
-		p->L = (p->pllcon1 & TPU_PLLCON1_L_DIV) >> TPU_PLLCON1_L_DIV_SHIFT;
+	if ((p->gsmclk3 & TPU_GSMCLK3_INIT) || (p->gsmclk3 & TPU_GSMCLK3_LOAD)) {
+		p->K = (p->gsmclk1 & TPU_GSMCLK1_K) >> TPU_GSMCLK1_K_SHIFT;
+		p->L = (p->gsmclk2 & TPU_GSMCLK2_L) >> TPU_GSMCLK2_L_SHIFT;
 		
-		p->pllcon2 &= ~(TPU_PLLCON2_INIT | TPU_PLLCON2_LOAD);
+		p->gsmclk3 &= ~(TPU_GSMCLK3_INIT | TPU_GSMCLK3_LOAD);
 	}
 	
 	// Input freq for TPU counter
@@ -225,29 +231,6 @@ static void tpu_ram_write(pmb887x_tpu_t *p, uint32_t offset, uint32_t value, uns
 	}
 }
 
-static int tpu_unk_by_reg(hwaddr haddr) {
-	switch (haddr) {
-		case TPU_UNK0:		return 0;
-		case TPU_UNK1:		return 1;
-		case TPU_UNK2:		return 2;
-		case TPU_UNK3:		return 3;
-		case TPU_UNK4:		return 4;
-		case TPU_UNK5:		return 5;
-		case TPU_UNK6:		return 6;
-		case TPU_UNK7:		return 7;
-		
-		case TPU_UNK_SRC0:	return 0;
-		case TPU_UNK_SRC1:	return 1;
-		case TPU_UNK_SRC2:	return 2;
-		case TPU_UNK_SRC3:	return 3;
-		case TPU_UNK_SRC4:	return 4;
-		case TPU_UNK_SRC5:	return 5;
-
-		default:
-			abort();
-	}
-}
-
 static uint64_t tpu_io_read(void *opaque, hwaddr haddr, unsigned size) {
 	pmb887x_tpu_t *p = opaque;
 	
@@ -261,7 +244,19 @@ static uint64_t tpu_io_read(void *opaque, hwaddr haddr, unsigned size) {
 		case TPU_ID:
 			value = 0xF021C012;
 			break;
-		
+
+		case TPU_RFCON1:
+			value = p->rfcon1;
+			break;
+
+		case TPU_RFCON2:
+			value = p->rfcon2;
+			break;
+
+		case TPU_RFSSCTB:
+			value = 0;
+			break;
+
 		case TPU_CORRECTION:
 			value = p->correction;
 			break;
@@ -297,48 +292,54 @@ static uint64_t tpu_io_read(void *opaque, hwaddr haddr, unsigned size) {
 		case TPU_PARAM:
 			value = p->param;
 			break;
-		
-		case TPU_PLLCON0:
-			value = p->pllcon0;
+
+		case TPU_FADE:
+			value = p->fade;
+			break;
+
+		case TPU_GSMCLK1:
+			value = p->gsmclk1;
 			break;
 		
-		case TPU_PLLCON1:
-			value = p->pllcon1;
+		case TPU_GSMCLK2:
+			value = p->gsmclk2;
 			break;
 		
-		case TPU_PLLCON2:
-			value = p->pllcon2;
+		case TPU_GSMCLK3:
+			value = p->gsmclk3;
 			break;
 		
 		case TPU_COUNTER:
 			value = tpu_get_time(p, false);
 			break;
-		
+
+		case TPU_CEAP:
+			value = p->ceap;
+			break;
+
+		case TPU_EAPT:
+			value = p->eapt;
+			break;
+
+		case TPU_EAPB:
+			value = p->eapb;
+			break;
+
+		case TPU_TGER:
+			value = p->tger;
+			break;
+
 		case TPU_RAM0 ... (TPU_RAM0 + TPU_RAM_SIZE):
 			value = tpu_ram_read(p, haddr, size);
 			break;
-		
-		case TPU_UNK_SRC0:
-		case TPU_UNK_SRC1:
-		case TPU_UNK_SRC2:
-		case TPU_UNK_SRC3:
-		case TPU_UNK_SRC4:
-		case TPU_UNK_SRC5:
-			value = pmb887x_src_get(&p->unk_src[tpu_unk_by_reg(haddr)]);
-			break;
-		
-		case TPU_UNK0:
-		case TPU_UNK1:
-		case TPU_UNK2:
-		case TPU_UNK3:
-		case TPU_UNK4:
-		case TPU_UNK5:
-		case TPU_UNK6:
-		case TPU_UNK7:
-			value = p->unk[tpu_unk_by_reg(haddr)];
-			break;
-		
-		case 0xD8: // ??
+
+		case TPU_GP_SRC0:
+		case TPU_GP_SRC1:
+		case TPU_GP_SRC2:
+		case TPU_GP_SRC3:
+		case TPU_GP_SRC4:
+		case TPU_GP_SRC5:
+			value = pmb887x_src_get(&p->gp_src[(haddr - TPU_GP_SRC0) / 4]);
 			break;
 
 		default:
@@ -361,7 +362,22 @@ static void tpu_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned si
 		case TPU_CLC:
 			pmb887x_clc_set(&p->clc, value);
 			break;
-		
+
+		case TPU_RFCON1:
+			p->rfcon1 = value;
+			break;
+
+		case TPU_RFCON2:
+			p->rfcon2 = value;
+			break;
+
+		case TPU_RFSSCTB:
+			if ((p->rfcon2 & TPU_RFCON2_SSCEN)) {
+				DPRINTF("RF control: %04X\n", (uint16_t) value);
+				p->rfcon2 &= ~TPU_RFCON2_SSCEN;
+			}
+			break;
+
 		case TPU_CORRECTION:
 			p->correction = value;
 			break;
@@ -397,46 +413,52 @@ static void tpu_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned si
 		case TPU_PARAM:
 			p->param = value;
 			break;
-		
-		case TPU_PLLCON0:
-			p->pllcon0 = value;
+
+		case TPU_FADE:
+			p->fade = value;
+			break;
+
+		case TPU_GSMCLK1:
+			p->gsmclk1 = value;
 			break;
 		
-		case TPU_PLLCON1:
-			p->pllcon1 = value;
+		case TPU_GSMCLK2:
+			p->gsmclk2 = value;
 			break;
 		
-		case TPU_PLLCON2:
-			p->pllcon2 = value;
+		case TPU_GSMCLK3:
+			p->gsmclk3 = value;
 			break;
-		
+
+		case TPU_CEAP:
+			p->ceap = value;
+			break;
+
+		case TPU_EAPT:
+			p->eapt = value;
+			break;
+
+		case TPU_EAPB:
+			p->eapb = value;
+			break;
+
+		case TPU_TGER:
+			p->tger = value;
+			break;
+
 		case TPU_RAM0 ... (TPU_RAM0 + TPU_RAM_SIZE):
 			tpu_ram_write(p, haddr, value, size);
 			break;
 		
-		case TPU_UNK_SRC0:
-		case TPU_UNK_SRC1:
-		case TPU_UNK_SRC2:
-		case TPU_UNK_SRC3:
-		case TPU_UNK_SRC4:
-		case TPU_UNK_SRC5:
-			pmb887x_src_set(&p->unk_src[tpu_unk_by_reg(haddr)], value);
+		case TPU_GP_SRC0:
+		case TPU_GP_SRC1:
+		case TPU_GP_SRC2:
+		case TPU_GP_SRC3:
+		case TPU_GP_SRC4:
+		case TPU_GP_SRC5:
+			pmb887x_src_set(&p->gp_src[(haddr - TPU_GP_SRC0) / 4], value);
 			break;
 		
-		case TPU_UNK0:
-		case TPU_UNK1:
-		case TPU_UNK2:
-		case TPU_UNK3:
-		case TPU_UNK4:
-		case TPU_UNK5:
-		case TPU_UNK6:
-		case TPU_UNK7:
-			p->unk[tpu_unk_by_reg(haddr)] = value;
-			break;
-
-		case 0xD8: // ??
-			break;
-
 		default:
 			EPRINTF("unknown reg access: %02"PRIX64"\n", haddr);
 			exit(1);
@@ -460,12 +482,12 @@ static void tpu_init(Object *obj) {
 	memory_region_init_io(&p->mmio, obj, &io_ops, p, "pmb887x-tpu", TPU_RAM0 + TPU_RAM_SIZE);
 	sysbus_init_mmio(SYS_BUS_DEVICE(obj), &p->mmio);
 	
-	sysbus_init_irq(SYS_BUS_DEVICE(obj), &p->unk_irq[0]);
-	sysbus_init_irq(SYS_BUS_DEVICE(obj), &p->unk_irq[1]);
-	sysbus_init_irq(SYS_BUS_DEVICE(obj), &p->unk_irq[2]);
-	sysbus_init_irq(SYS_BUS_DEVICE(obj), &p->unk_irq[3]);
-	sysbus_init_irq(SYS_BUS_DEVICE(obj), &p->unk_irq[4]);
-	sysbus_init_irq(SYS_BUS_DEVICE(obj), &p->unk_irq[5]);
+	sysbus_init_irq(SYS_BUS_DEVICE(obj), &p->gp_irq[0]);
+	sysbus_init_irq(SYS_BUS_DEVICE(obj), &p->gp_irq[1]);
+	sysbus_init_irq(SYS_BUS_DEVICE(obj), &p->gp_irq[2]);
+	sysbus_init_irq(SYS_BUS_DEVICE(obj), &p->gp_irq[3]);
+	sysbus_init_irq(SYS_BUS_DEVICE(obj), &p->gp_irq[4]);
+	sysbus_init_irq(SYS_BUS_DEVICE(obj), &p->gp_irq[5]);
 
 	sysbus_init_irq(SYS_BUS_DEVICE(obj), &p->irq[0]);
 	sysbus_init_irq(SYS_BUS_DEVICE(obj), &p->irq[1]);
@@ -478,14 +500,14 @@ static void tpu_realize(DeviceState *dev, Error **errp) {
 
 	for (int i = 0; i < ARRAY_SIZE(p->src); i++) {
 		if (!p->irq[i])
-			hw_error("pmb887x-tpu: irq %d (TPU_INT%d) not set", i, i);
+			hw_error("pmb887x-tpu: irq %d (INT%d) not set", i, i);
 		pmb887x_src_init(&p->src[i], p->irq[i]);
 	}
 	
-	for (int i = 0; i < ARRAY_SIZE(p->unk_src); i++) {
-		if (!p->unk_irq[i])
-			hw_error("pmb887x-tpu: irq %d (TPU_UNK%d) not set", i, i);
-		pmb887x_src_init(&p->unk_src[i], p->unk_irq[i]);
+	for (int i = 0; i < ARRAY_SIZE(p->gp_src); i++) {
+		if (!p->gp_irq[i])
+			hw_error("pmb887x-tpu: irq %d (INT_GP%d) not set", i, i);
+		pmb887x_src_init(&p->gp_src[i], p->gp_irq[i]);
 	}
 	
     p->timer = timer_new_ns(QEMU_CLOCK_VIRTUAL, tpu_ptimer_reset2, p);

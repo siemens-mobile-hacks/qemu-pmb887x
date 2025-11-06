@@ -4501,6 +4501,81 @@ static const pmb887x_module_field_t tpu_id_fields[] = {
 	{"NUMBER",	MOD_ID_NUMBER,	MOD_ID_NUMBER_SHIFT,	NULL,	0},
 };
 
+static const pmb887x_module_value_t tpu_tpu_rfcon1_stbsel_values[] = {
+	{"ACTIVE_LOW",	TPU_RFCON1_STBSEL_ACTIVE_LOW},
+	{"ACTIVE_HIGH",	TPU_RFCON1_STBSEL_ACTIVE_HIGH},
+};
+
+static const pmb887x_module_value_t tpu_tpu_rfcon1_rfisscp_values[] = {
+	{"IDLE_LOW_LEADING_RISE",	TPU_RFCON1_RFISSCP_IDLE_LOW_LEADING_RISE},
+	{"IDLE_HIGH_LEADING_FALL",	TPU_RFCON1_RFISSCP_IDLE_HIGH_LEADING_FALL},
+};
+
+static const pmb887x_module_value_t tpu_tpu_rfcon1_ramtype_values[] = {
+	{"1",	TPU_RFCON1_RAMTYPE_1},
+	{"2",	TPU_RFCON1_RAMTYPE_2},
+};
+
+static const pmb887x_module_field_t tpu_rfcon1_fields[] = {
+	{"STBSEL",	TPU_RFCON1_STBSEL,	TPU_RFCON1_STBSEL_SHIFT,	tpu_tpu_rfcon1_stbsel_values,	ARRAY_SIZE(tpu_tpu_rfcon1_stbsel_values)},
+	{"RFISSCP",	TPU_RFCON1_RFISSCP,	TPU_RFCON1_RFISSCP_SHIFT,	tpu_tpu_rfcon1_rfisscp_values,	ARRAY_SIZE(tpu_tpu_rfcon1_rfisscp_values)},
+	{"RAMTYPE",	TPU_RFCON1_RAMTYPE,	TPU_RFCON1_RAMTYPE_SHIFT,	tpu_tpu_rfcon1_ramtype_values,	ARRAY_SIZE(tpu_tpu_rfcon1_ramtype_values)},
+};
+
+static const pmb887x_module_value_t tpu_tpu_rfcon2_sscbm_values[] = {
+	{"1",	TPU_RFCON2_SSCBM_1},
+	{"2",	TPU_RFCON2_SSCBM_2},
+	{"3",	TPU_RFCON2_SSCBM_3},
+	{"4",	TPU_RFCON2_SSCBM_4},
+	{"5",	TPU_RFCON2_SSCBM_5},
+	{"6",	TPU_RFCON2_SSCBM_6},
+	{"7",	TPU_RFCON2_SSCBM_7},
+	{"8",	TPU_RFCON2_SSCBM_8},
+	{"9",	TPU_RFCON2_SSCBM_9},
+	{"10",	TPU_RFCON2_SSCBM_10},
+	{"11",	TPU_RFCON2_SSCBM_11},
+	{"12",	TPU_RFCON2_SSCBM_12},
+	{"13",	TPU_RFCON2_SSCBM_13},
+	{"14",	TPU_RFCON2_SSCBM_14},
+	{"15",	TPU_RFCON2_SSCBM_15},
+	{"16",	TPU_RFCON2_SSCBM_16},
+};
+
+static const pmb887x_module_value_t tpu_tpu_rfcon2_sschb_values[] = {
+	{"LSB",	TPU_RFCON2_SSCHB_LSB},
+	{"MSB",	TPU_RFCON2_SSCHB_MSB},
+};
+
+static const pmb887x_module_value_t tpu_tpu_rfcon2_sscpb_values[] = {
+	{"LEADING_EDGE",	TPU_RFCON2_SSCPB_LEADING_EDGE},
+	{"TRAILING_EDGE",	TPU_RFCON2_SSCPB_TRAILING_EDGE},
+};
+
+static const pmb887x_module_value_t tpu_tpu_rfcon2_sscsb_values[] = {
+	{"RFSTR0",	TPU_RFCON2_SSCSB_RFSTR0},
+	{"RFSTR1",	TPU_RFCON2_SSCSB_RFSTR1},
+	{"RFSTR2",	TPU_RFCON2_SSCSB_RFSTR2},
+	{"RFSTR3",	TPU_RFCON2_SSCSB_RFSTR3},
+};
+
+static const pmb887x_module_value_t tpu_tpu_rfcon2_sscfb_values[] = {
+	{"6_50MHZ",	TPU_RFCON2_SSCFB_6_50MHZ},
+	{"3_25MHZ",	TPU_RFCON2_SSCFB_3_25MHZ},
+};
+
+static const pmb887x_module_field_t tpu_rfcon2_fields[] = {
+	{"SSCBM",	TPU_RFCON2_SSCBM,	TPU_RFCON2_SSCBM_SHIFT,	tpu_tpu_rfcon2_sscbm_values,	ARRAY_SIZE(tpu_tpu_rfcon2_sscbm_values)},
+	{"SSCHB",	TPU_RFCON2_SSCHB,	TPU_RFCON2_SSCHB_SHIFT,	tpu_tpu_rfcon2_sschb_values,	ARRAY_SIZE(tpu_tpu_rfcon2_sschb_values)},
+	{"SSCPB",	TPU_RFCON2_SSCPB,	TPU_RFCON2_SSCPB_SHIFT,	tpu_tpu_rfcon2_sscpb_values,	ARRAY_SIZE(tpu_tpu_rfcon2_sscpb_values)},
+	{"SSCSB",	TPU_RFCON2_SSCSB,	TPU_RFCON2_SSCSB_SHIFT,	tpu_tpu_rfcon2_sscsb_values,	ARRAY_SIZE(tpu_tpu_rfcon2_sscsb_values)},
+	{"SSCFB",	TPU_RFCON2_SSCFB,	TPU_RFCON2_SSCFB_SHIFT,	tpu_tpu_rfcon2_sscfb_values,	ARRAY_SIZE(tpu_tpu_rfcon2_sscfb_values)},
+	{"SSCEN",	TPU_RFCON2_SSCEN,	TPU_RFCON2_SSCEN_SHIFT,	NULL,							0},
+};
+
+static const pmb887x_module_field_t tpu_rfssctb_fields[] = {
+	{"VALUE",	TPU_RFSSCTB_VALUE,	TPU_RFSSCTB_VALUE_SHIFT,	NULL,	0},
+};
+
 static const pmb887x_module_field_t tpu_correction_fields[] = {
 	{"VALUE",	TPU_CORRECTION_VALUE,	TPU_CORRECTION_VALUE_SHIFT,	NULL,	0},
 	{"CTRL",	TPU_CORRECTION_CTRL,	TPU_CORRECTION_CTRL_SHIFT,	NULL,	0},
@@ -4528,25 +4603,37 @@ static const pmb887x_module_field_t tpu_counter_fields[] = {
 	{"VALUE",	TPU_COUNTER_VALUE,	TPU_COUNTER_VALUE_SHIFT,	NULL,	0},
 };
 
+static const pmb887x_module_field_t tpu_ceap_fields[] = {
+	{"VALUE",	TPU_CEAP_VALUE,	TPU_CEAP_VALUE_SHIFT,	NULL,	0},
+};
+
+static const pmb887x_module_field_t tpu_eapt_fields[] = {
+	{"VALUE",	TPU_EAPT_VALUE,	TPU_EAPT_VALUE_SHIFT,	NULL,	0},
+};
+
+static const pmb887x_module_field_t tpu_eapb_fields[] = {
+	{"VALUE",	TPU_EAPB_VALUE,	TPU_EAPB_VALUE_SHIFT,	NULL,	0},
+};
+
 static const pmb887x_module_field_t tpu_param_fields[] = {
 	{"TINI",	TPU_PARAM_TINI,	TPU_PARAM_TINI_SHIFT,	NULL,	0},
 	{"FDIS",	TPU_PARAM_FDIS,	TPU_PARAM_FDIS_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_module_field_t tpu_pllcon0_fields[] = {
-	{"K_DIV",	TPU_PLLCON0_K_DIV,	TPU_PLLCON0_K_DIV_SHIFT,	NULL,	0},
+static const pmb887x_module_field_t tpu_gsmclk1_fields[] = {
+	{"K",	TPU_GSMCLK1_K,	TPU_GSMCLK1_K_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_module_field_t tpu_pllcon1_fields[] = {
-	{"L_DIV",	TPU_PLLCON1_L_DIV,	TPU_PLLCON1_L_DIV_SHIFT,	NULL,	0},
+static const pmb887x_module_field_t tpu_gsmclk2_fields[] = {
+	{"L",	TPU_GSMCLK2_L,	TPU_GSMCLK2_L_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_module_field_t tpu_pllcon2_fields[] = {
-	{"LOAD",	TPU_PLLCON2_LOAD,	TPU_PLLCON2_LOAD_SHIFT,	NULL,	0},
-	{"INIT",	TPU_PLLCON2_INIT,	TPU_PLLCON2_INIT_SHIFT,	NULL,	0},
+static const pmb887x_module_field_t tpu_gsmclk3_fields[] = {
+	{"LOAD",	TPU_GSMCLK3_LOAD,	TPU_GSMCLK3_LOAD_SHIFT,	NULL,	0},
+	{"INIT",	TPU_GSMCLK3_INIT,	TPU_GSMCLK3_INIT_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_module_field_t tpu_unk_src_fields[] = {
+static const pmb887x_module_field_t tpu_gp_src_fields[] = {
 	{"SRPN",	MOD_SRC_SRPN,	MOD_SRC_SRPN_SHIFT,	NULL,	0},
 	{"TOS",		MOD_SRC_TOS,	MOD_SRC_TOS_SHIFT,	NULL,	0},
 	{"SRE",		MOD_SRC_SRE,	MOD_SRC_SRE_SHIFT,	NULL,	0},
@@ -4567,9 +4654,9 @@ static const pmb887x_module_field_t tpu_src_fields[] = {
 static const pmb887x_module_reg_t tpu_regs[] = {
 	{"CLC",			TPU_CLC,		tpu_clc_fields,			ARRAY_SIZE(tpu_clc_fields),			0},
 	{"ID",			TPU_ID,			tpu_id_fields,			ARRAY_SIZE(tpu_id_fields),			0},
-	{"UNK0",		TPU_UNK0,		NULL,					0,									0},
-	{"UNK1",		TPU_UNK1,		NULL,					0,									0},
-	{"UNK2",		TPU_UNK2,		NULL,					0,									0},
+	{"RFCON1",		TPU_RFCON1,		tpu_rfcon1_fields,		ARRAY_SIZE(tpu_rfcon1_fields),		0},
+	{"RFCON2",		TPU_RFCON2,		tpu_rfcon2_fields,		ARRAY_SIZE(tpu_rfcon2_fields),		0},
+	{"RFSSCTB",		TPU_RFSSCTB,	tpu_rfssctb_fields,		ARRAY_SIZE(tpu_rfssctb_fields),		0},
 	{"CORRECTION",	TPU_CORRECTION,	tpu_correction_fields,	ARRAY_SIZE(tpu_correction_fields),	0},
 	{"OVERFLOW",	TPU_OVERFLOW,	tpu_overflow_fields,	ARRAY_SIZE(tpu_overflow_fields),	0},
 	{"INT0",		TPU_INT0,		tpu_int_fields,			ARRAY_SIZE(tpu_int_fields),			0},
@@ -4577,21 +4664,21 @@ static const pmb887x_module_reg_t tpu_regs[] = {
 	{"OFFSET",		TPU_OFFSET,		tpu_offset_fields,		ARRAY_SIZE(tpu_offset_fields),		0},
 	{"SKIP",		TPU_SKIP,		tpu_skip_fields,		ARRAY_SIZE(tpu_skip_fields),		0},
 	{"COUNTER",		TPU_COUNTER,	tpu_counter_fields,		ARRAY_SIZE(tpu_counter_fields),		0},
-	{"UNK3",		TPU_UNK3,		NULL,					0,									0},
-	{"UNK4",		TPU_UNK4,		NULL,					0,									0},
-	{"UNK5",		TPU_UNK5,		NULL,					0,									0},
-	{"UNK6",		TPU_UNK6,		NULL,					0,									0},
+	{"CEAP",		TPU_CEAP,		tpu_ceap_fields,		ARRAY_SIZE(tpu_ceap_fields),		0},
+	{"EAPT",		TPU_EAPT,		tpu_eapt_fields,		ARRAY_SIZE(tpu_eapt_fields),		0},
+	{"EAPB",		TPU_EAPB,		tpu_eapb_fields,		ARRAY_SIZE(tpu_eapb_fields),		0},
+	{"TGER",		TPU_TGER,		NULL,					0,									0},
 	{"PARAM",		TPU_PARAM,		tpu_param_fields,		ARRAY_SIZE(tpu_param_fields),		0},
-	{"UNK7",		TPU_UNK7,		NULL,					0,									0},
-	{"PLLCON0",		TPU_PLLCON0,	tpu_pllcon0_fields,		ARRAY_SIZE(tpu_pllcon0_fields),		0},
-	{"PLLCON1",		TPU_PLLCON1,	tpu_pllcon1_fields,		ARRAY_SIZE(tpu_pllcon1_fields),		0},
-	{"PLLCON2",		TPU_PLLCON2,	tpu_pllcon2_fields,		ARRAY_SIZE(tpu_pllcon2_fields),		0},
-	{"UNK_SRC0",	TPU_UNK_SRC0,	tpu_unk_src_fields,		ARRAY_SIZE(tpu_unk_src_fields),		0},
-	{"UNK_SRC1",	TPU_UNK_SRC1,	tpu_unk_src_fields,		ARRAY_SIZE(tpu_unk_src_fields),		0},
-	{"UNK_SRC2",	TPU_UNK_SRC2,	tpu_unk_src_fields,		ARRAY_SIZE(tpu_unk_src_fields),		0},
-	{"UNK_SRC3",	TPU_UNK_SRC3,	tpu_unk_src_fields,		ARRAY_SIZE(tpu_unk_src_fields),		0},
-	{"UNK_SRC4",	TPU_UNK_SRC4,	tpu_unk_src_fields,		ARRAY_SIZE(tpu_unk_src_fields),		0},
-	{"UNK_SRC5",	TPU_UNK_SRC5,	tpu_unk_src_fields,		ARRAY_SIZE(tpu_unk_src_fields),		0},
+	{"FADE",		TPU_FADE,		NULL,					0,									0},
+	{"GSMCLK1",		TPU_GSMCLK1,	tpu_gsmclk1_fields,		ARRAY_SIZE(tpu_gsmclk1_fields),		0},
+	{"GSMCLK2",		TPU_GSMCLK2,	tpu_gsmclk2_fields,		ARRAY_SIZE(tpu_gsmclk2_fields),		0},
+	{"GSMCLK3",		TPU_GSMCLK3,	tpu_gsmclk3_fields,		ARRAY_SIZE(tpu_gsmclk3_fields),		0},
+	{"GP_SRC0",		TPU_GP_SRC0,	tpu_gp_src_fields,		ARRAY_SIZE(tpu_gp_src_fields),		0},
+	{"GP_SRC1",		TPU_GP_SRC1,	tpu_gp_src_fields,		ARRAY_SIZE(tpu_gp_src_fields),		0},
+	{"GP_SRC2",		TPU_GP_SRC2,	tpu_gp_src_fields,		ARRAY_SIZE(tpu_gp_src_fields),		0},
+	{"GP_SRC3",		TPU_GP_SRC3,	tpu_gp_src_fields,		ARRAY_SIZE(tpu_gp_src_fields),		0},
+	{"GP_SRC4",		TPU_GP_SRC4,	tpu_gp_src_fields,		ARRAY_SIZE(tpu_gp_src_fields),		0},
+	{"GP_SRC5",		TPU_GP_SRC5,	tpu_gp_src_fields,		ARRAY_SIZE(tpu_gp_src_fields),		0},
 	{"SRC0",		TPU_SRC0,		tpu_src_fields,			ARRAY_SIZE(tpu_src_fields),			0},
 	{"SRC1",		TPU_SRC1,		tpu_src_fields,			ARRAY_SIZE(tpu_src_fields),			0},
 	{"RAM0",		TPU_RAM0,		NULL,					0,									0},
@@ -7480,12 +7567,12 @@ static const pmb887x_cpu_meta_irq_t pmb8876_irqs[] = {
 	{"KEYPAD_UNK0",		PMB8876_KEYPAD_UNK0_IRQ,	VIC_CON109},
 	{"KEYPAD_UNK1",		PMB8876_KEYPAD_UNK1_IRQ,	VIC_CON110},
 	{"KEYPAD_RELEASE",	PMB8876_KEYPAD_RELEASE_IRQ,	VIC_CON111},
-	{"TPU_INT_UNK0",	PMB8876_TPU_INT_UNK0_IRQ,	VIC_CON113},
-	{"TPU_INT_UNK1",	PMB8876_TPU_INT_UNK1_IRQ,	VIC_CON114},
-	{"TPU_INT_UNK2",	PMB8876_TPU_INT_UNK2_IRQ,	VIC_CON115},
-	{"TPU_INT_UNK3",	PMB8876_TPU_INT_UNK3_IRQ,	VIC_CON116},
-	{"TPU_INT_UNK4",	PMB8876_TPU_INT_UNK4_IRQ,	VIC_CON117},
-	{"TPU_INT_UNK5",	PMB8876_TPU_INT_UNK5_IRQ,	VIC_CON118},
+	{"TPU_INT_GP0",		PMB8876_TPU_INT_GP0_IRQ,	VIC_CON113},
+	{"TPU_INT_GP1",		PMB8876_TPU_INT_GP1_IRQ,	VIC_CON114},
+	{"TPU_INT_GP2",		PMB8876_TPU_INT_GP2_IRQ,	VIC_CON115},
+	{"TPU_INT_GP3",		PMB8876_TPU_INT_GP3_IRQ,	VIC_CON116},
+	{"TPU_INT_GP4",		PMB8876_TPU_INT_GP4_IRQ,	VIC_CON117},
+	{"TPU_INT_GP5",		PMB8876_TPU_INT_GP5_IRQ,	VIC_CON118},
 	{"TPU_INT0",		PMB8876_TPU_INT0_IRQ,		VIC_CON119},
 	{"TPU_INT1",		PMB8876_TPU_INT1_IRQ,		VIC_CON120},
 	{"GPRSCU_INT0",		PMB8876_GPRSCU_INT0_IRQ,	VIC_CON121},
@@ -7757,12 +7844,12 @@ static const pmb887x_cpu_meta_irq_t pmb8875_irqs[] = {
 	{"KEYPAD_UNK0",		PMB8875_KEYPAD_UNK0_IRQ,	VIC_CON109},
 	{"KEYPAD_UNK1",		PMB8875_KEYPAD_UNK1_IRQ,	VIC_CON110},
 	{"KEYPAD_RELEASE",	PMB8875_KEYPAD_RELEASE_IRQ,	VIC_CON111},
-	{"TPU_INT_UNK0",	PMB8875_TPU_INT_UNK0_IRQ,	VIC_CON113},
-	{"TPU_INT_UNK1",	PMB8875_TPU_INT_UNK1_IRQ,	VIC_CON114},
-	{"TPU_INT_UNK2",	PMB8875_TPU_INT_UNK2_IRQ,	VIC_CON115},
-	{"TPU_INT_UNK3",	PMB8875_TPU_INT_UNK3_IRQ,	VIC_CON116},
-	{"TPU_INT_UNK4",	PMB8875_TPU_INT_UNK4_IRQ,	VIC_CON117},
-	{"TPU_INT_UNK5",	PMB8875_TPU_INT_UNK5_IRQ,	VIC_CON118},
+	{"TPU_INT_GP0",		PMB8875_TPU_INT_GP0_IRQ,	VIC_CON113},
+	{"TPU_INT_GP1",		PMB8875_TPU_INT_GP1_IRQ,	VIC_CON114},
+	{"TPU_INT_GP2",		PMB8875_TPU_INT_GP2_IRQ,	VIC_CON115},
+	{"TPU_INT_GP3",		PMB8875_TPU_INT_GP3_IRQ,	VIC_CON116},
+	{"TPU_INT_GP4",		PMB8875_TPU_INT_GP4_IRQ,	VIC_CON117},
+	{"TPU_INT_GP5",		PMB8875_TPU_INT_GP5_IRQ,	VIC_CON118},
 	{"TPU_INT0",		PMB8875_TPU_INT0_IRQ,		VIC_CON119},
 	{"TPU_INT1",		PMB8875_TPU_INT1_IRQ,		VIC_CON120},
 	{"GPRSCU_INT0",		PMB8875_GPRSCU_INT0_IRQ,	VIC_CON121},

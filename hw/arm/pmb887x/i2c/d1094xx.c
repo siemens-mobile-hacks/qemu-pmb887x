@@ -135,6 +135,7 @@ static int pmic_send(I2CSlave *s, uint8_t data) {
 
 static void pmic_realize(DeviceState *dev, Error **errp) {
 	pmb887x_pmic_t *p = PMB887X_PMIC(dev);
+	DPRINTF("PMIC revision: %02X\n", p->revision);
 	if (p->revision == 0xEC) {
 		memcpy(p->regs, regs_D1094EC, sizeof(regs_D1094EC));
 	} else if (p->revision == 0xED) {
