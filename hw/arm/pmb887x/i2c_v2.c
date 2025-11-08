@@ -280,9 +280,9 @@ static bool i2c_tx_from_fifo(pmb887x_i2c_t *p) {
 				p->is_read = (byte & 1) != 0;
 
 				if (p->is_read) {
-					DPRINTF("TX: %02X (read)\n", p->addr);
+					DPRINTF("[START] %02X (read)\n", p->addr);
 				} else {
-					DPRINTF("TX: %02X (write)\n", p->addr);
+					DPRINTF("[START] %02X (write)\n", p->addr);
 				}
 
 				if (i2c_start_transfer(p->bus, p->addr, p->is_read) != 0)
@@ -351,13 +351,9 @@ static void i2c_start_tx(pmb887x_i2c_t *p) {
 	if (p->tpsctrl > 0) {
 		i2c_kernel_reset(p, I2C_STATE_MASTER_TX);
 		p->tx_remaining = p->tpsctrl;
-		p->rx_remaining = p->mrpsctrl;
-
-		DPRINTF("new transfer: tx=%d, rx=%d\n", p->tx_remaining, p->rx_remaining);
 
 		i2c_fifo_req(p);
 		p->tpsctrl = 0;
-		p->mrpsctrl = 0;
 
 		i2c_timer_schedule(p);
 	}
@@ -380,7 +376,7 @@ static void i2c_handle_enddctrl(pmb887x_i2c_t *p, uint32_t value) {
 
 static void i2c_transfer_error(pmb887x_i2c_t *p) {
 	pmb887x_srb_ext_set_isr(&p->srb_proto, I2Cv2_PIRQSS_TX_END);
-	DPRINTF("stop\n");
+	DPRINTF("------ STOP ------\n");
 	i2c_end_transfer(p->bus);
 	i2c_kernel_reset(p, I2C_STATE_NONE);
 	i2c_timer_schedule(p);
@@ -390,14 +386,14 @@ static void i2c_transfer_done(pmb887x_i2c_t *p) {
 	pmb887x_srb_ext_set_isr(&p->srb_proto, I2Cv2_PIRQSS_TX_END);
 
 	if (p->enddctrl_end) {
-		DPRINTF("stop\n");
+		DPRINTF("------ STOP ------\n");
 		i2c_end_transfer(p->bus);
 		i2c_kernel_reset(p, I2C_STATE_NONE);
 	} else if (p->enddctrl_restart) {
 		i2c_kernel_reset(p, I2C_STATE_MASTER_RESTART);
 	} else {
 		if ((p->addrcfg & I2Cv2_ADDRCFG_SONA)) {
-			DPRINTF("stop\n");
+			DPRINTF("------ STOP ------\n");
 			i2c_end_transfer(p->bus);
 			i2c_kernel_reset(p, I2C_STATE_NONE);
 		} else {
@@ -438,7 +434,9 @@ static void i2c_work(pmb887x_i2c_t *p) {
 		i2c_fifo_req(p);
 
 		if (p->tx_remaining == 0) {
-			if (p->is_read) {
+			if (p->mrpsctrl > 0) {
+				p->rx_remaining = p->mrpsctrl;
+				p->mrpsctrl = 0;
 				p->state = I2C_STATE_MASTER_RX;
 				pmb887x_srb_ext_set_isr(&p->srb_proto, I2Cv2_PIRQSS_RX);
 				i2c_fifo_clr_req(p);
@@ -623,7 +621,7 @@ static void i2c_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned si
 			p->runctrl = value;
 			if (!p->runctrl) {
 				if (p->state == I2C_STATE_MASTER_RX || p->state == I2C_STATE_MASTER_TX || p->state == I2C_STATE_MASTER_RESTART) {
-					DPRINTF("stop\n");
+					DPRINTF("------ STOP ------\n");
 					i2c_end_transfer(p->bus);
 					i2c_kernel_reset(p, I2C_STATE_NONE);
 					pmb887x_fifo_reset(&p->fifo);

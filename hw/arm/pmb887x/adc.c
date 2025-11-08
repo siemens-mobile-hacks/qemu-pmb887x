@@ -124,20 +124,20 @@ static int32_t adc_get_input_voltage(pmb887x_adc_t *p, uint8_t input_n, uint8_t 
 }
 
 static uint16_t adc_get_ch_current(pmb887x_adc_t *p) {
-	switch ((p->con1 & ADC_CON1_MODE)) {
-		case ADC_CON1_MODE_I_30:		return 30;
-		case ADC_CON1_MODE_I_60:		return 60;
-		case ADC_CON1_MODE_I_90:		return 90;
-		case ADC_CON1_MODE_I_120:		return 120;
-		case ADC_CON1_MODE_I_150:		return 150;
-		case ADC_CON1_MODE_I_180:		return 180;
-		case ADC_CON1_MODE_I_210:		return 210;
-		default:						return 0;
+	switch ((p->con1 & ADC_CTRL_TC)) {
+		case ADC_CTRL_TC_I_30:		return 30;
+		case ADC_CTRL_TC_I_60:		return 60;
+		case ADC_CTRL_TC_I_90:		return 90;
+		case ADC_CTRL_TC_I_120:	return 120;
+		case ADC_CTRL_TC_I_150:	return 150;
+		case ADC_CTRL_TC_I_180:	return 180;
+		case ADC_CTRL_TC_I_210:	return 210;
+		default:					return 0;
 	}
 }
 
 static uint16_t adc_read_channel(pmb887x_adc_t *p) {
-	uint8_t ch = (p->con1 & ADC_CON1_CH) >> ADC_CON1_CH_SHIFT;
+	uint8_t ch = (p->con1 & ADC_CTRL_MX) >> ADC_CTRL_MX_SHIFT;
 	uint16_t current_a = adc_get_ch_current(p);
 	uint16_t current_b = adc_get_ch_current(p);
 	const pmb887x_adc_ch_cfg_t *cfg = &channels_cfg[ch];
@@ -165,19 +165,19 @@ static uint16_t adc_read_channel(pmb887x_adc_t *p) {
 	input = MAX(-ADC_REF_VOLTAGE, MIN(ADC_REF_VOLTAGE, input));
 	
 	// Invert signal polarity
-	input = input * (p->con1 & ADC_CON1_PREAMP_INV ? -1 : 1);
+	input = input * (p->con1 & ADC_CTRL_INV ? -1 : 1);
 	
 	// [-1V, 1V] -> [0V, 2V] -> [0, 0xFFF]
 	uint16_t adc_value = DIV_ROUND_UP(((input + ADC_REF_VOLTAGE) * 0xFFF), (ADC_REF_VOLTAGE * 2));
 	
 	if (current_a > 0) {
 		if (cfg->type == ADC_CH_TYPE_DIFFERENTIAL) {
-			DPRINTF("ADC %02X (%s): input=%d mV, value=%03X%s (%duA, %duA)\n", ch, cfg->name, input, adc_value, (p->con1 & ADC_CON1_PREAMP_INV ? " [INV]" : ""), current_a, current_b);
+			DPRINTF("ADC %02X (%s): input=%d mV, value=%03X%s (%duA, %duA)\n", ch, cfg->name, input, adc_value, (p->con1 & ADC_CTRL_INV ? " [INV]" : ""), current_a, current_b);
 		} else {
-			DPRINTF("ADC %02X (%s): input=%d mV, value=%03X%s (%duA)\n", ch, cfg->name, input, adc_value, (p->con1 & ADC_CON1_PREAMP_INV ? " [INV]" : ""), current_a);
+			DPRINTF("ADC %02X (%s): input=%d mV, value=%03X%s (%duA)\n", ch, cfg->name, input, adc_value, (p->con1 & ADC_CTRL_INV ? " [INV]" : ""), current_a);
 		}
 	} else {
-		DPRINTF("ADC %02X (%s): input=%d mV, value=%03X%s (voltage)\n", ch, cfg->name, input, adc_value, (p->con1 & ADC_CON1_PREAMP_INV ? " [INV]" : ""));
+		DPRINTF("ADC %02X (%s): input=%d mV, value=%03X%s (voltage)\n", ch, cfg->name, input, adc_value, (p->con1 & ADC_CTRL_INV ? " [INV]" : ""));
 	}
 	
 	return adc_value;
@@ -188,17 +188,17 @@ static void adc_update_state(pmb887x_adc_t *p) {
 	uint32_t fadc = div > 0 ? pmb887x_pll_get_fsys(p->pll) / div : 0;
 	bool is_enabled = fadc > 0 && pmb887x_clc_is_enabled(&p->clc);
 	
-	if ((p->con1 & ADC_CON1_TRIG)) {
+	if ((p->con1 & ADC_CTRL_ENTRIG)) {
 		p->measure_mode = ADC_MEASURE_MODE_TRIG;
-	} else if ((p->con1 & ADC_CON1_SINGLE)) {
+	} else if ((p->con1 & ADC_CTRL_ENSTOP)) {
 		p->measure_mode = ADC_MEASURE_MODE_SIGNLE;
-	} else if ((p->con1 & ADC_CON1_FREQ)) {
+	} else if ((p->con1 & ADC_CTRL_FREQ)) {
 		p->measure_mode = ADC_MEASURE_MODE_CONTINUOUS;
 	} else {
 		p->measure_mode = ADC_MEASURE_MODE_NONE;
 	}
 	
-	DPRINTF("is_enabled=%d, fADC=%d, measure_mode=%d, start=%d\n", is_enabled, fadc, p->measure_mode, p->con1 & ADC_CON1_START ? 1 : 0);
+	DPRINTF("is_enabled=%d, fADC=%d, measure_mode=%d, start=%d\n", is_enabled, fadc, p->measure_mode, p->con1 & ADC_CTRL_START ? 1 : 0);
 }
 
 static uint64_t adc_io_read(void *opaque, hwaddr haddr, unsigned size) {
@@ -218,19 +218,19 @@ static uint64_t adc_io_read(void *opaque, hwaddr haddr, unsigned size) {
 			value = ADC_STAT_READY;
 			break;
 
-		case ADC_FIFO0 ... ADC_FIFO7:
+		case ADC_DATA0 ... ADC_DATA7:
 			value = adc_read_channel(p);
 			break;
 
-		case ADC_PLLCON:
+		case ADC_CLK:
 			value = p->pllcon;
 			break;
 
-		case ADC_CON0:
+		case ADC_ANA_CTRL:
 			value = p->con0;
 			break;
 
-		case ADC_CON1:
+		case ADC_CTRL:
 			value = p->con1;
 			break;
 
@@ -263,15 +263,15 @@ static void adc_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned si
 			pmb887x_clc_set(&p->clc, value);
 			break;
 
-		case ADC_PLLCON:
+		case ADC_CLK:
 			p->pllcon = value;
 			break;
 
-		case ADC_CON0:
+		case ADC_ANA_CTRL:
 			p->con0 = value;
 			break;
 
-		case ADC_CON1:
+		case ADC_CTRL:
 			p->con1 = value;
 			break;
 

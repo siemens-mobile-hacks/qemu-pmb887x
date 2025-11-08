@@ -17,7 +17,6 @@
 #include "hw/arm/pmb887x/mod.h"
 #include "hw/arm/pmb887x/dmac.h"
 #include "hw/arm/pmb887x/sccu.h"
-#include "hw/arm/pmb887x/gpio.h"
 #include "hw/arm/pmb887x/trace.h"
 
 #define TYPE_PMB887X_SCU	"pmb887x-scu"

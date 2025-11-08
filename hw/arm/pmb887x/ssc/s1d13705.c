@@ -101,6 +101,8 @@ static uint32_t gimmick_transfer16(SSIPeripheral *dev, uint32_t data) {
 
 	uint32_t value = 0;
 
+	DPRINTF("%04X // cmd=%d\n", data, p->is_command);
+
 	if (p->is_command) {
 		p->lcd_data_bypass = false;
 
@@ -139,9 +141,10 @@ static uint32_t gimmick_transfer16(SSIPeripheral *dev, uint32_t data) {
 			if (p->wcycle == 1) {
 				p->arg0 = data;
 				p->wcycle++;
-			} else if (p->wcycle == 2) {
+			} else {
 				value = gimmick_read_reg(p, p->arg0);
-				p->wcycle = 0;
+				p->wcycle++;
+				p->arg0 += 2;
 			}
 		} else {
 			EPRINTF("invalid wcycle for cmd %04X\n", p->cmd);
@@ -181,8 +184,11 @@ static void gimmick_handle_sa0(void *opaque, int n, int level) {
 		p->trx_bits = 0;
 		p->request = 0;
 
-		if (p->is_command)
+		if (p->is_command) {
+			p->wcycle = 0;
+			p->cmd = 0;
 			p->lcd_data_bypass = false;
+		}
 	}
 }
 
