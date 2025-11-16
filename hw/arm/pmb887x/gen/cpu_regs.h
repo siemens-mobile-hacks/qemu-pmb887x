@@ -6446,17 +6446,25 @@
 
 #define SCU_RTCIF						0x64
 
-#define SCU_ID0							0x6C
+#define SCU_UID0						0x6C
 
-#define SCU_ID1							0x70
+#define SCU_UID1						0x70
+#define SCU_UID1_SECBOOT				(1 << 24)		 // Secure boot
+#define SCU_UID1_SECBOOT_SHIFT			24
+#define SCU_UID1_PLATFORM				(0x3 << 25)
+#define SCU_UID1_PLATFORM_SHIFT			25
+#define SCU_UID1_PLATFORM_800			0x0
+#define SCU_UID1_PLATFORM_801			0x2000000
+#define SCU_UID1_PLATFORM_802			0x4000000
+#define SCU_UID1_PLATFORM_803			0x6000000
 
-#define SCU_BOOT_CFG					0x74
-#define SCU_BOOT_CFG_USART1				(1 << 28)		 // Allow boot from USART1
-#define SCU_BOOT_CFG_USART1_SHIFT		28
-#define SCU_BOOT_CFG_BYPASS_FW			(1 << 29)		 // Force boot from 0x82000, bypass firmware
-#define SCU_BOOT_CFG_BYPASS_FW_SHIFT	29
-#define SCU_BOOT_CFG_USB				(1 << 30)		 // Allow boot from USB
-#define SCU_BOOT_CFG_USB_SHIFT			30
+#define SCU_UID2						0x74
+#define SCU_UID2_BOOT_USART1			(1 << 28)		 // Allow boot from USART1
+#define SCU_UID2_BOOT_USART1_SHIFT		28
+#define SCU_UID2_BOOT_BSL				(1 << 29)		 // Force boot from BSL, bypass firmware
+#define SCU_UID2_BOOT_BSL_SHIFT			29
+#define SCU_UID2_BOOT_USB				(1 << 30)		 // Allow boot from USB
+#define SCU_UID2_BOOT_USB_SHIFT			30
 
 #define SCU_BOOT_FLAG					0x78
 #define SCU_BOOT_FLAG_BOOT_OK			(1 << 0)
@@ -6916,6 +6924,8 @@
 #define TPU_GSMCLK3_LOAD_SHIFT						0
 #define TPU_GSMCLK3_INIT							(1 << 1)			 // Init K and L value
 #define TPU_GSMCLK3_INIT_SHIFT						1
+
+#define TPU_UNK										0xD8
 
 /* Service Routing Control Register */
 #define TPU_GP_SRC0									0xE0

@@ -72,6 +72,7 @@ struct pmb887x_tpu_t {
 	uint32_t K;
 	
 	uint32_t last_fsys;
+	uint32_t unk;
 	
 	pmb887x_pll_t *pll;
 };
@@ -329,6 +330,10 @@ static uint64_t tpu_io_read(void *opaque, hwaddr haddr, unsigned size) {
 			value = p->tger;
 			break;
 
+		case TPU_UNK:
+			value = p->unk;
+			break;
+
 		case TPU_RAM0 ... (TPU_RAM0 + TPU_RAM_SIZE):
 			value = tpu_ram_read(p, haddr, size);
 			break;
@@ -444,6 +449,10 @@ static void tpu_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned si
 
 		case TPU_TGER:
 			p->tger = value;
+			break;
+
+		case TPU_UNK:
+			p->unk = value;
 			break;
 
 		case TPU_RAM0 ... (TPU_RAM0 + TPU_RAM_SIZE):

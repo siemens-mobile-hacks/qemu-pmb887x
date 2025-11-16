@@ -77,14 +77,17 @@ static const char *regs_dump_find_cpu_irq_name(const pmb887x_cpu_meta_t *cpu, ui
 }
 
 static void *regs_dump_dump_io_thread(void *arg) {
+	size_t queue_size = 0;
 	while (true) {
 		pmb887x_io_operation_t *entry = NULL;
 
+		bool can_stop = stop && queue_size == 0;
+
 		qemu_mutex_lock(&io_dump_queue_lock);
-		while (!stop && g_queue_is_empty(io_dump_queue)) {
+		while (!can_stop && g_queue_is_empty(io_dump_queue)) {
 			qemu_cond_wait(&io_dump_cond, &io_dump_queue_lock);
 		}
-		if (stop) {
+		if (can_stop) {
 			qemu_mutex_unlock(&io_dump_queue_lock);
 			break;
 		}
@@ -93,7 +96,7 @@ static void *regs_dump_dump_io_thread(void *arg) {
 		if (entry == last_log_entry)
 			last_log_entry = NULL;
 
-		size_t queue_size = g_queue_get_length(io_dump_queue);
+		queue_size = g_queue_get_length(io_dump_queue);
 		qemu_mutex_unlock(&io_dump_queue_lock);
 
 		if (entry) {

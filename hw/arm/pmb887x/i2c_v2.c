@@ -83,6 +83,7 @@ struct pmb887x_i2c_t {
 	uint32_t tpsctrl;
 	uint32_t timcfg;
 	uint32_t dma_control;
+	uint32_t rpsstat;
 
 	qemu_irq gpio_scl;
 	qemu_irq gpio_sda;
@@ -383,6 +384,7 @@ static void i2c_transfer_error(pmb887x_i2c_t *p) {
 }
 
 static void i2c_transfer_done(pmb887x_i2c_t *p) {
+	p->rpsstat = p->rx_total_bytes;
 	pmb887x_srb_ext_set_isr(&p->srb_proto, I2Cv2_PIRQSS_TX_END);
 
 	if (p->enddctrl_end) {
@@ -392,7 +394,7 @@ static void i2c_transfer_done(pmb887x_i2c_t *p) {
 	} else if (p->enddctrl_restart) {
 		i2c_kernel_reset(p, I2C_STATE_MASTER_RESTART);
 	} else {
-		if ((p->addrcfg & I2Cv2_ADDRCFG_SONA)) {
+		if ((p->addrcfg & I2Cv2_ADDRCFG_SOPE)) {
 			DPRINTF("------ STOP ------\n");
 			i2c_end_transfer(p->bus);
 			i2c_kernel_reset(p, I2C_STATE_NONE);
@@ -528,7 +530,7 @@ static uint64_t i2c_io_read(void *opaque, hwaddr haddr, unsigned size) {
 			break;
 
 		case I2Cv2_RPSSTAT:
-			value = p->rx_total_bytes;
+			value = p->rpsstat;
 			break;
 
 		case I2Cv2_TPSCTRL:

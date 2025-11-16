@@ -30,9 +30,6 @@ DeviceState *pmb887x_new_cpu_module(const char *name) {
 	DeviceState *dev = qdev_new(mod->dev);
 	dev->id = g_strdup(name);
 
-	if (object_property_find(OBJECT(dev), "cpu_type"))
-		qdev_prop_set_uint32(dev, "cpu_type", pmb887x_board()->cpu);
-
 	sysbus_mmio_map(SYS_BUS_DEVICE(dev), 0, mod->base);
 
 	if (mod->irqs_count > 0) {

@@ -12,6 +12,8 @@ struct pmb887x_board_t {
 	const char *vendor;
 	const char *model;
 	uint32_t cpu;
+	uint32_t cpu_rev;
+	uint32_t cpu_uid[3];
 
 	pmb887x_cfg_t *config;
 

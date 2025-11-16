@@ -41,14 +41,14 @@ static void memory_dump_at_exit(void) {
 	if (!cpu)
 		return;
 
-	pmb887x_io_dump_finish();
+	// pmb887x_io_dump_finish();
 	fprintf(stderr, "sorry died at %08X LR %08X\n", ARM_CPU(cpu)->env.regs[15], ARM_CPU(cpu)->env.regs[14]);
 
 //	qmp_pmemsave(0xB0000000, 32 * 1024 * 1024, "/tmp/ram.bin", NULL);
 //	qmp_pmemsave(0xFFFF0000, 0x4000, "/tmp/tcm.bin", NULL);
-//	qmp_pmemsave(0x00080000, 96 * 1024, "/tmp/sram.bin", NULL);
-//	qmp_pmemsave(0x00000000, 96 * 1024, "/tmp/sram2.bin", NULL);
-//	
+	qmp_pmemsave(0x00000000, 96 * 1024, "/tmp/sram.bin", NULL);
+	qmp_pmemsave(0x00020000, 96 * 1024, "/tmp/sram2.bin", NULL);
+//
 //	qmp_pmemsave(0xA8000000, 16 * 1024 * 1024, "/tmp/ram.bin", NULL);
 //	qmp_pmemsave(0x00000000, 0x4000, "/tmp/tcm.bin", NULL);
 //	qmp_pmemsave(0x00000000, 96 * 1024, "/tmp/sram.bin", NULL);
@@ -117,7 +117,7 @@ static void pmb887x_init(MachineState *machine) {
 
 	// 0x00400000 (BROM)
 	size_t brom_size;
-	const uint8_t *brom_data = pmb887x_get_brom_image(pmb887x_board()->cpu, &brom_size);
+	const uint8_t *brom_data = pmb887x_get_brom_image(pmb887x_board()->cpu, &brom_size, pmb887x_board()->cpu_rev);
 	MemoryRegion *brom = g_new(MemoryRegion, 1);
 	memory_region_init_rom(brom, NULL, "BROM", brom_size, &error_fatal);
 	memory_region_add_subregion_overlap(sysmem, 0x00400000, brom, 1);
@@ -131,8 +131,8 @@ static void pmb887x_init(MachineState *machine) {
 	rom_add_blob_fixed("BROM", brom_data, brom_size, 0x00400000);
 
 	// Port Control Logic
-	DeviceState *pcl = pmb887x_new_cpu_module("GPIO");
-	sysbus_realize_and_unref(SYS_BUS_DEVICE(pcl), &error_fatal);
+	DeviceState *gpio = pmb887x_new_cpu_module("GPIO");
+	sysbus_realize_and_unref(SYS_BUS_DEVICE(gpio), &error_fatal);
 
 	// VIC
 	DeviceState *vic = pmb887x_new_cpu_module("VIC");
@@ -199,10 +199,13 @@ static void pmb887x_init(MachineState *machine) {
 	DeviceState *scu = pmb887x_new_cpu_module("SCU");
 	object_property_set_link(OBJECT(scu), "brom_mirror", OBJECT(brom_mirror), &error_fatal);
 	object_property_set_link(OBJECT(scu), "sccu", OBJECT(sccu), &error_fatal);
-	object_property_set_link(OBJECT(scu), "pcl", OBJECT(pcl), &error_fatal);
 	object_property_set_link(OBJECT(scu), "dmac", OBJECT(dmac), &error_fatal);
+	object_property_set_uint(OBJECT(scu), "cpu_rev", pmb887x_board()->cpu_rev, &error_fatal);
+	object_property_set_uint(OBJECT(scu), "cpu_uid0", pmb887x_board()->cpu_uid[0], &error_fatal);
+	object_property_set_uint(OBJECT(scu), "cpu_uid1", pmb887x_board()->cpu_uid[1], &error_fatal);
+	object_property_set_uint(OBJECT(scu), "cpu_uid2", pmb887x_board()->cpu_uid[2], &error_fatal);
 	sysbus_realize_and_unref(SYS_BUS_DEVICE(scu), &error_fatal);
-	
+
 	// CAPCOM0
 	DeviceState *capcom0 = pmb887x_new_cpu_module("CAPCOM0");
 	sysbus_realize_and_unref(SYS_BUS_DEVICE(capcom0), &error_fatal);

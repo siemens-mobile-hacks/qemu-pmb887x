@@ -5458,10 +5458,22 @@ static const pmb887x_module_field_t scu_chipid_fields[] = {
 	{"MANUF",	SCU_CHIPID_MANUF,	SCU_CHIPID_MANUF_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_module_field_t scu_boot_cfg_fields[] = {
-	{"USART1",		SCU_BOOT_CFG_USART1,	SCU_BOOT_CFG_USART1_SHIFT,		NULL,	0},
-	{"BYPASS_FW",	SCU_BOOT_CFG_BYPASS_FW,	SCU_BOOT_CFG_BYPASS_FW_SHIFT,	NULL,	0},
-	{"USB",			SCU_BOOT_CFG_USB,		SCU_BOOT_CFG_USB_SHIFT,			NULL,	0},
+static const pmb887x_module_value_t scu_scu_uid1_platform_values[] = {
+	{"800",	SCU_UID1_PLATFORM_800},
+	{"801",	SCU_UID1_PLATFORM_801},
+	{"802",	SCU_UID1_PLATFORM_802},
+	{"803",	SCU_UID1_PLATFORM_803},
+};
+
+static const pmb887x_module_field_t scu_uid1_fields[] = {
+	{"SECBOOT",		SCU_UID1_SECBOOT,	SCU_UID1_SECBOOT_SHIFT,		NULL,							0},
+	{"PLATFORM",	SCU_UID1_PLATFORM,	SCU_UID1_PLATFORM_SHIFT,	scu_scu_uid1_platform_values,	ARRAY_SIZE(scu_scu_uid1_platform_values)},
+};
+
+static const pmb887x_module_field_t scu_uid2_fields[] = {
+	{"BOOT_USART1",	SCU_UID2_BOOT_USART1,	SCU_UID2_BOOT_USART1_SHIFT,	NULL,	0},
+	{"BOOT_BSL",	SCU_UID2_BOOT_BSL,		SCU_UID2_BOOT_BSL_SHIFT,	NULL,	0},
+	{"BOOT_USB",	SCU_UID2_BOOT_USB,		SCU_UID2_BOOT_USB_SHIFT,	NULL,	0},
 };
 
 static const pmb887x_module_field_t scu_boot_flag_fields[] = {
@@ -5615,9 +5627,9 @@ static const pmb887x_module_reg_t scu_regs[] = {
 	{"MANID",		SCU_MANID,		scu_manid_fields,		ARRAY_SIZE(scu_manid_fields),		0},
 	{"CHIPID",		SCU_CHIPID,		scu_chipid_fields,		ARRAY_SIZE(scu_chipid_fields),		0},
 	{"RTCIF",		SCU_RTCIF,		NULL,					0,									0},
-	{"ID0",			SCU_ID0,		NULL,					0,									0},
-	{"ID1",			SCU_ID1,		NULL,					0,									0},
-	{"BOOT_CFG",	SCU_BOOT_CFG,	scu_boot_cfg_fields,	ARRAY_SIZE(scu_boot_cfg_fields),	0},
+	{"UID0",		SCU_UID0,		NULL,					0,									0},
+	{"UID1",		SCU_UID1,		scu_uid1_fields,		ARRAY_SIZE(scu_uid1_fields),		0},
+	{"UID2",		SCU_UID2,		scu_uid2_fields,		ARRAY_SIZE(scu_uid2_fields),		0},
 	{"BOOT_FLAG",	SCU_BOOT_FLAG,	scu_boot_flag_fields,	ARRAY_SIZE(scu_boot_flag_fields),	0},
 	{"ROMAMCR",		SCU_ROMAMCR,	scu_romamcr_fields,		ARRAY_SIZE(scu_romamcr_fields),		0},
 	{"RTID",		SCU_RTID,		NULL,					0,									0},
@@ -6051,6 +6063,7 @@ static const pmb887x_module_reg_t tpu_regs[] = {
 	{"GSMCLK1",		TPU_GSMCLK1,	tpu_gsmclk1_fields,		ARRAY_SIZE(tpu_gsmclk1_fields),		0},
 	{"GSMCLK2",		TPU_GSMCLK2,	tpu_gsmclk2_fields,		ARRAY_SIZE(tpu_gsmclk2_fields),		0},
 	{"GSMCLK3",		TPU_GSMCLK3,	tpu_gsmclk3_fields,		ARRAY_SIZE(tpu_gsmclk3_fields),		0},
+	{"UNK",			TPU_UNK,		NULL,					0,									0},
 	{"GP_SRC0",		TPU_GP_SRC0,	tpu_gp_src_fields,		ARRAY_SIZE(tpu_gp_src_fields),		0},
 	{"GP_SRC1",		TPU_GP_SRC1,	tpu_gp_src_fields,		ARRAY_SIZE(tpu_gp_src_fields),		0},
 	{"GP_SRC2",		TPU_GP_SRC2,	tpu_gp_src_fields,		ARRAY_SIZE(tpu_gp_src_fields),		0},

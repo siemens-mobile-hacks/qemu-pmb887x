@@ -7,14 +7,19 @@
 #include "hw/arm/pmb887x/gen/cpu_regs.h"
 #include "hw/arm/pmb887x/gen/brom_data.h"
 
-const uint8_t *pmb887x_get_brom_image(uint32_t cpu_id, size_t *size) {
+const uint8_t *pmb887x_get_brom_image(uint32_t cpu_id, size_t *size, uint32_t rev) {
 	switch (cpu_id) {
 		case CPU_PMB8875:
 			*size = sizeof(pmb8875_brom);
 			return pmb8875_brom;
 		case CPU_PMB8876:
-			*size = sizeof(pmb8876_brom);
-			return pmb8876_brom;
+			if (rev >= 17) {
+				*size = sizeof(pmb8876_brom_r17);
+				return pmb8876_brom_r17;
+			} else {
+				*size = sizeof(pmb8876_brom_r16);
+				return pmb8876_brom_r16;
+			}
 		default:
 			hw_error("Invalid CPU type: %d", cpu_id);
 	}

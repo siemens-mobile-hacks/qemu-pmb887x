@@ -37,6 +37,8 @@ struct pmb887x_scu_t {
 	qemu_irq unk_irq[3];
 	
 	uint32_t cpu_type;
+	uint32_t cpu_uid[3];
+	uint32_t cpu_rev;
 	
 	uint32_t exti;
 	uint32_t wdtcon0;
@@ -52,7 +54,6 @@ struct pmb887x_scu_t {
 	uint32_t boot_cfg;
 	uint32_t dsp_unk0;
 	
-	pmb887x_scu_t *pcl;
 	pmb887x_dmac_t *dmac;
 	struct pmb887x_sccu_t *sccu;
 	MemoryRegion *brom_mirror;
@@ -108,9 +109,9 @@ static uint64_t scu_io_read(void *opaque, hwaddr haddr, unsigned size) {
 		
 		case SCU_CHIPID:
 			if (p->cpu_type == CPU_PMB8876) {
-				value = 0x1B10;
+				value = 0x1B00 | p->cpu_rev;
 			} else if (p->cpu_type == CPU_PMB8875) {
-				value = 0x1A05;
+				value = 0x1A05 | p->cpu_rev;
 			}
 			break;
 		
@@ -169,10 +170,10 @@ static uint64_t scu_io_read(void *opaque, hwaddr haddr, unsigned size) {
 			value = pmb887x_dmac_get_sel(p->dmac);
 			break;
 		
-		case SCU_BOOT_CFG:
-			value = p->boot_cfg;
+		case SCU_UID0 ... SCU_UID2:
+			value = p->cpu_uid[(haddr - SCU_UID0) / 4];
 			break;
-		
+
 		case SCU_EXTI:
 			value = p->exti;
 			break;
@@ -268,10 +269,6 @@ static void scu_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned si
 		
 		case SCU_DMARS:
 			pmb887x_dmac_set_sel(p->dmac, value);
-		break;
-		
-		case SCU_BOOT_CFG:
-			p->boot_cfg = value;
 		break;
 		
 		case SCU_EXTI: {
@@ -433,9 +430,12 @@ static void scu_realize(DeviceState *dev, Error **errp) {
 
 static const Property scu_properties[] = {
 	DEFINE_PROP_UINT32("cpu_type", pmb887x_scu_t, cpu_type, 0),
+	DEFINE_PROP_UINT32("cpu_rev", pmb887x_scu_t, cpu_rev, 0),
+	DEFINE_PROP_UINT32("cpu_uid0", pmb887x_scu_t, cpu_uid[0], 0),
+	DEFINE_PROP_UINT32("cpu_uid1", pmb887x_scu_t, cpu_uid[1], 0),
+	DEFINE_PROP_UINT32("cpu_uid2", pmb887x_scu_t, cpu_uid[2], 0),
 	DEFINE_PROP_LINK("sccu", pmb887x_scu_t, sccu, "pmb887x-sccu", struct pmb887x_sccu_t *),
 	DEFINE_PROP_LINK("dmac", pmb887x_scu_t, dmac, "pmb887x-dmac", pmb887x_dmac_t *),
-	DEFINE_PROP_LINK("pcl", pmb887x_scu_t, pcl, "pmb887x-pcl", pmb887x_scu_t *),
 	DEFINE_PROP_LINK("brom_mirror", pmb887x_scu_t, brom_mirror, TYPE_MEMORY_REGION, MemoryRegion *),
 };
 

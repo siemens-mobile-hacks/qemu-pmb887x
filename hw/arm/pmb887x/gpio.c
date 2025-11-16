@@ -256,6 +256,10 @@ static void gpio_init(Object *obj) {
 static void gpio_realize(DeviceState *dev, Error **errp) {
 	pmb887x_gpio_t *p = PMB887X_GPIO(dev);
 	pmb887x_clc_init(&p->clc);
+	for (int id = 0; id < GPIOS_COUNT; id++) {
+		p->pins[id] = GPIO_PS_MANUAL | GPIO_DIR_IN | GPIO_ENAQ_ON | GPIO_PDPU_PULLDOWN | GPIO_PPEN_PUSHPULL;
+		gpio_sync_pin_state(p, id);
+	}
 	gpio_update_state(p);
 }
 
