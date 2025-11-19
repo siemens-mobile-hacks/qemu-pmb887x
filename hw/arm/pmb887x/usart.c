@@ -25,8 +25,6 @@
 #define PMB887X_USART(obj)	OBJECT_CHECK(pmb887x_usart_t, (obj), TYPE_PMB887X_USART)
 
 #define FIFO_SIZE	8
-#define USART_LOG_TRX false
-#define USART_DUMP_TRX_IO true
 
 enum {
 	USART_IRQ_TX,
@@ -187,12 +185,6 @@ static void usart_transmit_fifo(pmb887x_usart_t *p) {
 	int size = pmb887x_fifo_count(p->tx_fifo);
 	pmb887x_fifo8_read(p->tx_fifo, buff, size);
 	
-	if (USART_LOG_TRX) {
-		for (uint32_t i = 0; i < size; i++) {
-			DPRINTF("TX=%02X\n", buff[i]);
-		}
-	}
-	
 	int ret = qemu_chr_fe_write_all(&p->chr, buff, size);
 	if (ret > 0) {
 		if (ret < size) {
@@ -237,8 +229,6 @@ static uint64_t usart_io_read(void *opaque, hwaddr haddr, unsigned size) {
 	if (haddr != USART_RIS)
 		p->last_is_icr_tx = false;
 
-	bool no_dump = false;
-
 	switch (haddr) {
 		case USART_CLC:
 			value = pmb887x_clc_get(&p->clc);
@@ -265,23 +255,13 @@ static uint64_t usart_io_read(void *opaque, hwaddr haddr, unsigned size) {
 			break;
 
 		case USART_TXB:
-			no_dump = !USART_DUMP_TRX_IO;
 			value = p->txb;
 			break;
 
 		case USART_RXB:
-			no_dump = !USART_DUMP_TRX_IO;
-
 			if (!pmb887x_fifo_is_empty(p->rx_fifo)) {
 				bool is_full = pmb887x_fifo_is_full(p->rx_fifo);
 				value = pmb887x_fifo8_pop(p->rx_fifo);
-				if (USART_LOG_TRX) {
-					if (isprint(value)) {
-						DPRINTF("RX=%02X '%c'\n", (uint8_t) value, (uint8_t) value);
-					} else {
-						DPRINTF("RX=%02X\n", (uint8_t) value);
-					}
-				}
 				if (is_full)
 					qemu_chr_fe_accept_input(&p->chr);
 			}
@@ -336,7 +316,6 @@ static uint64_t usart_io_read(void *opaque, hwaddr haddr, unsigned size) {
 			break;
 
 		case USART_RIS:
-			no_dump = true;
 			value = pmb887x_srb_get_ris(&p->srb);
 
 			// workaround for broken firmwares
@@ -349,12 +328,10 @@ static uint64_t usart_io_read(void *opaque, hwaddr haddr, unsigned size) {
 			break;
 
 		case USART_MIS:
-			no_dump = true;
 			value = pmb887x_srb_get_mis(&p->srb);
 			break;
 
 		case USART_ICR:
-			no_dump = true;
 			value = 0;
 			break;
 
@@ -376,8 +353,7 @@ static uint64_t usart_io_read(void *opaque, hwaddr haddr, unsigned size) {
 			exit(1);
 	}
 
-	if (!no_dump)
-		IO_DUMP(haddr + p->mmio.addr, size, value, false);
+	IO_DUMP(haddr + p->mmio.addr, size, value, false);
 
 	return value;
 }
@@ -387,8 +363,6 @@ static void usart_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned 
 
 	// Workaround for broken firmwares
 	p->last_is_icr_tx = (haddr == USART_ICR && (value & USART_ICR_TX));
-
-	bool no_dump = false;
 
 	switch (haddr) {
 		case USART_CLC:
@@ -417,8 +391,6 @@ static void usart_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned 
 
 		case USART_TXB:
 			p->txb = value & 0xFF;
-
-			no_dump = !USART_DUMP_TRX_IO;
 
 			if (!pmb887x_fifo_is_full(p->tx_fifo)) {
 				pmb887x_fifo8_push(p->tx_fifo, p->txb);
@@ -472,8 +444,6 @@ static void usart_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned 
 			break;
 
 		case USART_ICR:
-			no_dump = true;
-
 			pmb887x_srb_set_icr(&p->srb, value);
 			break;
 
@@ -495,8 +465,7 @@ static void usart_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned 
 			exit(1);
 	}
 
-	if (!no_dump)
-		IO_DUMP(haddr + p->mmio.addr, size, value, true);
+	IO_DUMP(haddr + p->mmio.addr, size, value, true);
 }
 
 static const MemoryRegionOps io_ops = {

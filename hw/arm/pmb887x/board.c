@@ -41,14 +41,14 @@ static void memory_dump_at_exit(void) {
 	if (!cpu)
 		return;
 
-	// pmb887x_io_dump_finish();
+//	pmb887x_io_dump_finish();
 	fprintf(stderr, "sorry died at %08X LR %08X\n", ARM_CPU(cpu)->env.regs[15], ARM_CPU(cpu)->env.regs[14]);
 
 //	qmp_pmemsave(0xB0000000, 32 * 1024 * 1024, "/tmp/ram.bin", NULL);
 //	qmp_pmemsave(0xFFFF0000, 0x4000, "/tmp/tcm.bin", NULL);
-	qmp_pmemsave(0x00000000, 96 * 1024, "/tmp/sram.bin", NULL);
-	qmp_pmemsave(0x00020000, 96 * 1024, "/tmp/sram2.bin", NULL);
-//
+//	qmp_pmemsave(0x00000000, 96 * 1024, "/tmp/sram.bin", NULL);
+//	qmp_pmemsave(0x00020000, 96 * 1024, "/tmp/sram2.bin", NULL);
+
 //	qmp_pmemsave(0xA8000000, 16 * 1024 * 1024, "/tmp/ram.bin", NULL);
 //	qmp_pmemsave(0x00000000, 0x4000, "/tmp/tcm.bin", NULL);
 //	qmp_pmemsave(0x00000000, 96 * 1024, "/tmp/sram.bin", NULL);

@@ -98,66 +98,6 @@ static void ebu_update_state(pmb887x_ebu_t *p) {
 	}
 }
 
-static uint32_t ebu_get_index_from_reg(hwaddr haddr) {
-	switch (haddr) {
-		case EBU_ADDRSEL0:
-		case EBU_BUSCON0:
-		case EBU_BUSAP0:
-			return 0;
-
-		case EBU_ADDRSEL1:
-		case EBU_BUSCON1:
-		case EBU_BUSAP1:
-			return 1;
-
-		case EBU_ADDRSEL2:
-		case EBU_BUSCON2:
-		case EBU_BUSAP2:
-			return 2;
-
-		case EBU_ADDRSEL3:
-		case EBU_BUSCON3:
-		case EBU_BUSAP3:
-			return 3;
-
-		case EBU_ADDRSEL4:
-		case EBU_BUSCON4:
-		case EBU_BUSAP4:
-			return 4;
-
-		case EBU_ADDRSEL5:
-		case EBU_BUSCON5:
-		case EBU_BUSAP5:
-			return 5;
-
-		case EBU_ADDRSEL6:
-		case EBU_BUSCON6:
-		case EBU_BUSAP6:
-			return 6;
-
-		case EBU_EMUAS:
-		case EBU_EMUBC:
-		case EBU_EMUBAP:
-			return 7;
-
-		case EBU_SDRMCON0:
-		case EBU_SDRMREF0:
-		case EBU_SDRSTAT0:
-		case EBU_SDRMOD0:
-			return 0;
-
-		case EBU_SDRMCON1:
-		case EBU_SDRMREF1:
-		case EBU_SDRSTAT1:
-		case EBU_SDRMOD1:
-			return 1;
-
-		default:
-			hw_error("Invalid reg: %08lX", haddr);
-			exit(0);
-	}
-}
-
 static uint64_t ebu_io_read(void *opaque, hwaddr haddr, unsigned size) {
 	pmb887x_ebu_t *p = opaque;
 	
@@ -187,6 +127,18 @@ static uint64_t ebu_io_read(void *opaque, hwaddr haddr, unsigned size) {
 			value = p->usercon;
 			break;
 
+		case EBU_EMUAS:
+			value = p->addrsel[7];
+			break;
+
+		case EBU_EMUBC:
+			value = p->buscon[7];
+			break;
+
+		case EBU_EMUBAP:
+			value = p->busap[7];
+			break;
+
 		case EBU_ADDRSEL0:
 		case EBU_ADDRSEL1:
 		case EBU_ADDRSEL2:
@@ -194,8 +146,7 @@ static uint64_t ebu_io_read(void *opaque, hwaddr haddr, unsigned size) {
 		case EBU_ADDRSEL4:
 		case EBU_ADDRSEL5:
 		case EBU_ADDRSEL6:
-		case EBU_EMUAS:
-			value = p->addrsel[ebu_get_index_from_reg(haddr)];
+			value = p->addrsel[(haddr - EBU_ADDRSEL0) / 8];
 			break;
 
 		case EBU_BUSCON0:
@@ -205,8 +156,7 @@ static uint64_t ebu_io_read(void *opaque, hwaddr haddr, unsigned size) {
 		case EBU_BUSCON4:
 		case EBU_BUSCON5:
 		case EBU_BUSCON6:
-		case EBU_EMUBC:
-			value = p->buscon[ebu_get_index_from_reg(haddr)];
+			value = p->buscon[(haddr - EBU_BUSCON0) / 8];
 			break;
 
 		case EBU_BUSAP0:
@@ -216,18 +166,17 @@ static uint64_t ebu_io_read(void *opaque, hwaddr haddr, unsigned size) {
 		case EBU_BUSAP4:
 		case EBU_BUSAP5:
 		case EBU_BUSAP6:
-		case EBU_EMUBAP:
-			value = p->busap[ebu_get_index_from_reg(haddr)];
+			value = p->busap[(haddr - EBU_BUSAP0) / 8];
 			break;
 
 		case EBU_SDRMCON0:
 		case EBU_SDRMCON1:
-			value = p->sdrmcon[ebu_get_index_from_reg(haddr)];
+			value = p->sdrmcon[(haddr - EBU_SDRMCON0) / 8];
 			break;
 
 		case EBU_SDRMREF0:
 		case EBU_SDRMREF1:
-			value = p->sdrmref[ebu_get_index_from_reg(haddr)] | EBU_SDRMREF_SELFRENST | EBU_SDRMREF_SELFREXST;
+			value = p->sdrmref[(haddr - EBU_SDRMREF0) / 8] | EBU_SDRMREF_SELFRENST | EBU_SDRMREF_SELFREXST;
 			break;
 
 		case EBU_SDRSTAT0:
@@ -237,7 +186,7 @@ static uint64_t ebu_io_read(void *opaque, hwaddr haddr, unsigned size) {
 
 		case EBU_SDRMOD0:
 		case EBU_SDRMOD1:
-			value = p->sdrmod[ebu_get_index_from_reg(haddr)];
+			value = p->sdrmod[(haddr - EBU_SDRMOD0) / 8];
 			break;
 
 		default:
@@ -281,6 +230,18 @@ static void ebu_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned si
 			p->usercon = value;
 			break;
 
+		case EBU_EMUAS:
+			p->addrsel[7] = value;
+			break;
+
+		case EBU_EMUBC:
+			p->buscon[7] = value;
+			break;
+
+		case EBU_EMUBAP:
+			p->busap[7] = value;
+			break;
+
 		case EBU_ADDRSEL0:
 		case EBU_ADDRSEL1:
 		case EBU_ADDRSEL2:
@@ -288,8 +249,7 @@ static void ebu_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned si
 		case EBU_ADDRSEL4:
 		case EBU_ADDRSEL5:
 		case EBU_ADDRSEL6:
-		case EBU_EMUAS:
-			p->addrsel[ebu_get_index_from_reg(haddr)] = value;
+			p->addrsel[(haddr - EBU_ADDRSEL0) / 8] = value;
 			break;
 
 		case EBU_BUSCON0:
@@ -299,8 +259,7 @@ static void ebu_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned si
 		case EBU_BUSCON4:
 		case EBU_BUSCON5:
 		case EBU_BUSCON6:
-		case EBU_EMUBC:
-			p->buscon[ebu_get_index_from_reg(haddr)] = value;
+			p->buscon[(haddr - EBU_BUSCON0) / 8] = value;
 			break;
 
 		case EBU_BUSAP0:
@@ -310,23 +269,22 @@ static void ebu_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned si
 		case EBU_BUSAP4:
 		case EBU_BUSAP5:
 		case EBU_BUSAP6:
-		case EBU_EMUBAP:
-			p->busap[ebu_get_index_from_reg(haddr)] = value;
+			p->busap[(haddr - EBU_BUSAP0) / 8] = value;
 			break;
 
 		case EBU_SDRMCON0:
 		case EBU_SDRMCON1:
-			p->sdrmcon[ebu_get_index_from_reg(haddr)] = value;
+			p->sdrmcon[(haddr - EBU_SDRMCON0) / 8] = value;
 			break;
 
 		case EBU_SDRMREF0:
 		case EBU_SDRMREF1:
-			p->sdrmref[ebu_get_index_from_reg(haddr)] = value;
+			p->sdrmref[(haddr - EBU_SDRMREF0) / 8] = value;
 			break;
 
 		case EBU_SDRMOD0:
 		case EBU_SDRMOD1:
-			p->sdrmod[ebu_get_index_from_reg(haddr)] = value;
+			p->sdrmod[(haddr - EBU_SDRMOD0) / 8] = value;
 			break;
 
 		default:

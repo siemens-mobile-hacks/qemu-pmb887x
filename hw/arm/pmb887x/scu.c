@@ -210,7 +210,7 @@ static uint64_t scu_io_read(void *opaque, hwaddr haddr, unsigned size) {
 		default:
 			IO_DUMP(haddr + p->mmio.addr, size, 0xFFFFFFFF, false);
 			EPRINTF("unknown reg access: %02"PRIX64"\n", haddr);
-			break;
+			exit(1);
 	}
 	
 	IO_DUMP(haddr + p->mmio.addr, size, value, false);
@@ -273,7 +273,7 @@ static void scu_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned si
 		
 		case SCU_EXTI: {
 			p->exti = value;
-			DPRINTF("EXTI=%08lX\n", value);
+			DPRINTF("EXTI=%08"PRIX64"\n", value);
 			for (uint32_t i = 0; i < ARRAY_SIZE(p->exti_irq); i++) {
 				uint32_t falling = p->exti & (1 << (i * 2)) ? 1 : 0;
 				uint32_t rising = p->exti & (1 << (i * 2 + 1)) ? 1 : 0;
@@ -320,7 +320,7 @@ static void scu_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned si
 		
 		default:
 			EPRINTF("unknown reg access: %02"PRIX64"\n", haddr);
-		break;
+			exit(1);
 	}
 	
 	scu_update_state(p);

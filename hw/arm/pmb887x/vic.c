@@ -187,10 +187,6 @@ static void vic_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned si
 	IO_DUMP(haddr + p->mmio.addr, size, value, true);
 	
 	switch (haddr) {
-		default:
-			EPRINTF("unknown reg access: %02"PRIX64"\n", haddr);
-			exit(1);
-		
 		case VIC_IRQ_ACK:
 			#if PMB887X_IO_BRIDGE
 			if (p->pending_irq >= 0 && p->irq_state[p->pending_irq].bridge) {
@@ -233,6 +229,10 @@ static void vic_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned si
 		case VIC_FIQ_CON:
 			p->fiq_con = value & VIC_IRQ_CON_MASK_PRIORITY;
 			break;
+
+		default:
+			EPRINTF("unknown reg access: %02"PRIX64"\n", haddr);
+			exit(1);
 	}
 	
 	vic_update_state(p);

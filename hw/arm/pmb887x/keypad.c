@@ -94,19 +94,6 @@ static void keypad_handle_event(DeviceState *dev, QemuConsole *src, InputEvent *
 	}
 }
 
-static uint32_t get_reg_index_by_addr(hwaddr haddr) {
-	switch (haddr) {
-		case KEYPAD_PORT0:			return 0;
-		case KEYPAD_PORT1:			return 1;
-		case KEYPAD_PORT2:			return 2;
-		case KEYPAD_PRESS_SRC:		return 0;
-		case KEYPAD_UNK0_SRC:		return 1;
-		case KEYPAD_UNK1_SRC:		return 2;
-		case KEYPAD_RELEASE_SRC:	return 3;
-		default:					hw_error("Unknown reg: %08lx", haddr);
-	}
-}
-
 static uint64_t keypad_io_read(void *opaque, hwaddr haddr, unsigned size) {
 	pmb887x_keypad_t *p = opaque;
 	
@@ -124,14 +111,14 @@ static uint64_t keypad_io_read(void *opaque, hwaddr haddr, unsigned size) {
 		case KEYPAD_PORT0:
 		case KEYPAD_PORT1:
 		case KEYPAD_PORT2:
-			value = p->port[get_reg_index_by_addr(haddr)];
+			value = p->port[(haddr - KEYPAD_PORT0) / 4];
 			break;
 		
 		case KEYPAD_PRESS_SRC:
 		case KEYPAD_UNK0_SRC:
 		case KEYPAD_UNK1_SRC:
 		case KEYPAD_RELEASE_SRC:
-			value = pmb887x_src_get(&p->src[get_reg_index_by_addr(haddr)]);
+			value = pmb887x_src_get(&p->src[(haddr - KEYPAD_PRESS_SRC) / 4]);
 			break;
 		
 		default:
@@ -159,7 +146,7 @@ static void keypad_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned
 		case KEYPAD_UNK0_SRC:
 		case KEYPAD_UNK1_SRC:
 		case KEYPAD_RELEASE_SRC:
-			pmb887x_src_set(&p->src[get_reg_index_by_addr(haddr)], value);
+			pmb887x_src_set(&p->src[(haddr - KEYPAD_PRESS_SRC) / 4], value);
 			break;
 		
 		default:

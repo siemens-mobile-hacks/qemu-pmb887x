@@ -528,21 +528,6 @@ static void gptu_ptimer_reset(void *opaque) {
 	gptu_sync_timer(p);
 }
 
-static uint32_t get_src_index_by_addr(hwaddr haddr) {
-	switch (haddr) {
-		case GPTU_SRC0:		return 0;
-		case GPTU_SRC1:		return 1;
-		case GPTU_SRC2:		return 2;
-		case GPTU_SRC3:		return 3;
-		case GPTU_SRC4:		return 4;
-		case GPTU_SRC5:		return 5;
-		case GPTU_SRC6:		return 6;
-		case GPTU_SRC7:		return 7;
-		default:
-			hw_error("Invalid reg: %08lX", haddr);
-	}
-}
-
 static uint64_t gptu_io_read(void *opaque, hwaddr haddr, unsigned size) {
 	pmb887x_gptu_t *p = (pmb887x_gptu_t *) opaque;
 
@@ -663,7 +648,7 @@ static uint64_t gptu_io_read(void *opaque, hwaddr haddr, unsigned size) {
 		case GPTU_SRC5:
 		case GPTU_SRC6:
 		case GPTU_SRC7:
-			value = pmb887x_src_get(&p->src[get_src_index_by_addr(haddr)]);
+			value = pmb887x_src_get(&p->src[(haddr - GPTU_SRC0) / 4]);
 			break;
 
 		default:
@@ -796,7 +781,7 @@ static void gptu_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned s
 		case GPTU_SRC5:
 		case GPTU_SRC6:
 		case GPTU_SRC7:
-			pmb887x_src_update(&p->src[get_src_index_by_addr(haddr)], 0, value);
+			pmb887x_src_update(&p->src[(haddr - GPTU_SRC0) / 4], 0, value);
 			break;
 
 		default:

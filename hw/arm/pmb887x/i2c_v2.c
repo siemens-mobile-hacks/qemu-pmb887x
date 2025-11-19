@@ -699,7 +699,6 @@ static void i2c_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned si
 		default:
 			EPRINTF("unknown reg access: %02"PRIX64"\n", haddr);
 			exit(1);
-			break;
 	}
 }
 

@@ -188,7 +188,7 @@ static void pll_update_state(struct pmb887x_pll_t *p) {
 			}
 		}
 		
-		DPRINTF("fCPU: %d Hz, fAHB: %d Hz, fSYS: %d Hz, fSTM: %d Hz, ns_per_tick=%ld\n", p->fcpu, p->fahb, p->fsys, p->fstm, p->ns_per_tick);
+		DPRINTF("fCPU: %d Hz, fAHB: %d Hz, fSYS: %d Hz, fSTM: %d Hz, ns_per_tick=%d\n", p->fcpu, p->fahb, p->fsys, p->fstm, (uint32_t) p->ns_per_tick);
 		
 		for (int i = 0; i < p->callbacks_count; ++i)
 			p->callbacks[i].callback(p->callbacks[i].opaque);
