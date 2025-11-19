@@ -216,19 +216,12 @@ static void i2c_kernel_reset(pmb887x_i2c_t *p, uint32_t new_state) {
 
 static void i2c_timer_reset(void *opaque) {
 	pmb887x_i2c_t *p = (pmb887x_i2c_t *) opaque;
-	while (p->transfer_pending) {
-		p->transfer_pending = false;
-		i2c_work(p);
-		if (pmb887x_srb_get_ris(&p->srb) != 0)
-			break;
-	}
+	p->transfer_pending = false;
+	i2c_work(p);
 }
 
 static void i2c_timer_schedule(pmb887x_i2c_t *p) {
-	if (!p->transfer_pending) {
-		timer_mod(p->timer, 0);
-		p->transfer_pending = true;
-	}
+	timer_mod(p->timer, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + 300);
 }
 
 static void i2c_fifo_write(pmb887x_i2c_t *p, uint64_t value) {
@@ -367,16 +360,16 @@ static void i2c_handle_enddctrl(pmb887x_i2c_t *p, uint32_t value) {
 		if ((value & I2Cv2_ENDDCTRL_SETRSC))
 			p->enddctrl_restart = true;
 	} else if (p->state == I2C_STATE_MASTER_RESTART) {
-		if ((value & I2Cv2_ENDDCTRL_SETEND)) {
+		if ((value & I2Cv2_ENDDCTRL_SETEND))
 			p->enddctrl_end = true;
-			i2c_transfer_done(p);
-		}
 	}
 	i2c_timer_schedule(p);
 }
 
 static void i2c_transfer_error(pmb887x_i2c_t *p) {
+	p->mrpsctrl = 0;
 	pmb887x_srb_ext_set_isr(&p->srb_proto, I2Cv2_PIRQSS_TX_END);
+	pmb887x_srb_ext_set_icr(&p->srb_proto, I2Cv2_PIRQSS_RX);
 	DPRINTF("------ STOP ------\n");
 	i2c_end_transfer(p->bus);
 	i2c_kernel_reset(p, I2C_STATE_NONE);
@@ -385,7 +378,9 @@ static void i2c_transfer_error(pmb887x_i2c_t *p) {
 
 static void i2c_transfer_done(pmb887x_i2c_t *p) {
 	p->rpsstat = p->rx_total_bytes;
+	p->mrpsctrl = 0;
 	pmb887x_srb_ext_set_isr(&p->srb_proto, I2Cv2_PIRQSS_TX_END);
+	pmb887x_srb_ext_set_icr(&p->srb_proto, I2Cv2_PIRQSS_RX);
 
 	if (p->enddctrl_end) {
 		DPRINTF("------ STOP ------\n");
@@ -438,7 +433,6 @@ static void i2c_work(pmb887x_i2c_t *p) {
 		if (p->tx_remaining == 0) {
 			if (p->mrpsctrl > 0) {
 				p->rx_remaining = p->mrpsctrl;
-				p->mrpsctrl = 0;
 				p->state = I2C_STATE_MASTER_RX;
 				pmb887x_srb_ext_set_isr(&p->srb_proto, I2Cv2_PIRQSS_RX);
 				i2c_fifo_clr_req(p);
@@ -765,7 +759,7 @@ static void i2c_realize(DeviceState *dev, Error **errp) {
 	
 	pmb887x_fifo32_init(&p->fifo, FIFO_SIZE);
 	
-	p->timer = timer_new_ns(QEMU_CLOCK_REALTIME, i2c_timer_reset, p);
+	p->timer = timer_new_ns(QEMU_CLOCK_VIRTUAL, i2c_timer_reset, p);
 }
 
 static const Property i2c_properties[] = {

@@ -49,9 +49,7 @@ static uint64_t unknown_io_read(void *opaque, hwaddr haddr, unsigned size) {
 	if (haddr == 0xF4600040)
 		value = p->unk_reg_F4600040;
 
-	if (PMB887X_TRACE_UNHANDLED_IO || haddr < 0xF0000000) {
-		IO_DUMP(haddr + p->mmio.addr, size, value, false);
-	}
+	IO_DUMP(haddr + p->mmio.addr, size, value, false);
 
 	return value;
 }
@@ -65,9 +63,7 @@ static void unknown_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigne
 	return;
 #endif
 
-	if (PMB887X_TRACE_UNHANDLED_IO || haddr < 0xF0000000) {
-		IO_DUMP(haddr + p->mmio.addr, size, value, true);
-	}
+	IO_DUMP(haddr + p->mmio.addr, size, value, true);
 
 	if (haddr == 0xf460001c) {
 		if (value == 0x8) {

@@ -111,7 +111,7 @@ static uint64_t scu_io_read(void *opaque, hwaddr haddr, unsigned size) {
 			if (p->cpu_type == CPU_PMB8876) {
 				value = 0x1B00 | p->cpu_rev;
 			} else if (p->cpu_type == CPU_PMB8875) {
-				value = 0x1A05 | p->cpu_rev;
+				value = 0x1A00 | p->cpu_rev;
 			}
 			break;
 		

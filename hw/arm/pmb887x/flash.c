@@ -489,15 +489,27 @@ static void flash_io_write(void *opaque, hwaddr part_offset, uint64_t value, uns
 				}
 				
 				for (int i = 0; i < size; i += 2) {
-					p->buffer[p->buffer_index].offset = offset + i;
-					p->buffer[p->buffer_index].value = (value >> (i * 8)) & 0xFFFF;
-					p->buffer[p->buffer_index].size = 2;
-					p->buffer_index++;
-					
+					int overwrite_buffer_index = -1;
+					for (int j = 0; j < p->buffer_size; j++) {
+						if (p->buffer[j].offset == offset + i && p->buffer[j].size == 2) {
+							overwrite_buffer_index = j;
+							break;
+						}
+					}
+
+					if (overwrite_buffer_index >= 0) {
+						p->buffer[overwrite_buffer_index].value = (value >> (i * 8)) & 0xFFFF;
+					} else {
+						p->buffer[p->buffer_index].offset = offset + i;
+						p->buffer[p->buffer_index].value = (value >> (i * 8)) & 0xFFFF;
+						p->buffer[p->buffer_index].size = 2;
+						p->buffer_index++;
+					}
+
 					if (p->buffer_index == p->buffer_size)
 						break;
 				}
-				
+
 				if (p->buffer_index == p->buffer_size) {
 					flash_trace_part(p, "buffered program finished");
 					p->wcycle++;

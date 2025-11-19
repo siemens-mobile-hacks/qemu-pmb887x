@@ -5455,7 +5455,7 @@ static const pmb887x_module_field_t scu_manid_fields[] = {
 
 static const pmb887x_module_field_t scu_chipid_fields[] = {
 	{"CHREV",	SCU_CHIPID_CHREV,	SCU_CHIPID_CHREV_SHIFT,	NULL,	0},
-	{"MANUF",	SCU_CHIPID_MANUF,	SCU_CHIPID_MANUF_SHIFT,	NULL,	0},
+	{"CHIPD",	SCU_CHIPID_CHIPD,	SCU_CHIPID_CHIPD_SHIFT,	NULL,	0},
 };
 
 static const pmb887x_module_value_t scu_scu_uid1_platform_values[] = {
@@ -6023,6 +6023,15 @@ static const pmb887x_module_field_t tpu_gsmclk3_fields[] = {
 	{"INIT",	TPU_GSMCLK3_INIT,	TPU_GSMCLK3_INIT_SHIFT,	NULL,	0},
 };
 
+static const pmb887x_module_field_t tpu_rfssc_src_fields[] = {
+	{"SRPN",	MOD_SRC_SRPN,	MOD_SRC_SRPN_SHIFT,	NULL,	0},
+	{"TOS",		MOD_SRC_TOS,	MOD_SRC_TOS_SHIFT,	NULL,	0},
+	{"SRE",		MOD_SRC_SRE,	MOD_SRC_SRE_SHIFT,	NULL,	0},
+	{"SRR",		MOD_SRC_SRR,	MOD_SRC_SRR_SHIFT,	NULL,	0},
+	{"CLRR",	MOD_SRC_CLRR,	MOD_SRC_CLRR_SHIFT,	NULL,	0},
+	{"SETR",	MOD_SRC_SETR,	MOD_SRC_SETR_SHIFT,	NULL,	0},
+};
+
 static const pmb887x_module_field_t tpu_gp_src_fields[] = {
 	{"SRPN",	MOD_SRC_SRPN,	MOD_SRC_SRPN_SHIFT,	NULL,	0},
 	{"TOS",		MOD_SRC_TOS,	MOD_SRC_TOS_SHIFT,	NULL,	0},
@@ -6064,12 +6073,12 @@ static const pmb887x_module_reg_t tpu_regs[] = {
 	{"GSMCLK2",		TPU_GSMCLK2,	tpu_gsmclk2_fields,		ARRAY_SIZE(tpu_gsmclk2_fields),		0},
 	{"GSMCLK3",		TPU_GSMCLK3,	tpu_gsmclk3_fields,		ARRAY_SIZE(tpu_gsmclk3_fields),		0},
 	{"UNK",			TPU_UNK,		NULL,					0,									0},
+	{"RFSSC_SRC",	TPU_RFSSC_SRC,	tpu_rfssc_src_fields,	ARRAY_SIZE(tpu_rfssc_src_fields),	0},
 	{"GP_SRC0",		TPU_GP_SRC0,	tpu_gp_src_fields,		ARRAY_SIZE(tpu_gp_src_fields),		0},
 	{"GP_SRC1",		TPU_GP_SRC1,	tpu_gp_src_fields,		ARRAY_SIZE(tpu_gp_src_fields),		0},
 	{"GP_SRC2",		TPU_GP_SRC2,	tpu_gp_src_fields,		ARRAY_SIZE(tpu_gp_src_fields),		0},
 	{"GP_SRC3",		TPU_GP_SRC3,	tpu_gp_src_fields,		ARRAY_SIZE(tpu_gp_src_fields),		0},
 	{"GP_SRC4",		TPU_GP_SRC4,	tpu_gp_src_fields,		ARRAY_SIZE(tpu_gp_src_fields),		0},
-	{"GP_SRC5",		TPU_GP_SRC5,	tpu_gp_src_fields,		ARRAY_SIZE(tpu_gp_src_fields),		0},
 	{"SRC0",		TPU_SRC0,		tpu_src_fields,			ARRAY_SIZE(tpu_src_fields),			0},
 	{"SRC1",		TPU_SRC1,		tpu_src_fields,			ARRAY_SIZE(tpu_src_fields),			0},
 	{"RAM0",		TPU_RAM0,		NULL,					0,									0},

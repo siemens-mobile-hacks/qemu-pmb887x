@@ -6441,8 +6441,8 @@
 #define SCU_CHIPID						0x60
 #define SCU_CHIPID_CHREV				(0xFF << 0)
 #define SCU_CHIPID_CHREV_SHIFT			0
-#define SCU_CHIPID_MANUF				(0xFF << 8)
-#define SCU_CHIPID_MANUF_SHIFT			8
+#define SCU_CHIPID_CHIPD				(0xFF << 8)
+#define SCU_CHIPID_CHIPD_SHIFT			8
 
 #define SCU_RTCIF						0x64
 
@@ -6928,12 +6928,14 @@
 #define TPU_UNK										0xD8
 
 /* Service Routing Control Register */
-#define TPU_GP_SRC0									0xE0
-#define TPU_GP_SRC1									0xE4
-#define TPU_GP_SRC2									0xE8
-#define TPU_GP_SRC3									0xEC
-#define TPU_GP_SRC4									0xF0
-#define TPU_GP_SRC5									0xF4
+#define TPU_RFSSC_SRC								0xE0
+
+/* Service Routing Control Register */
+#define TPU_GP_SRC0									0xE4
+#define TPU_GP_SRC1									0xE8
+#define TPU_GP_SRC2									0xEC
+#define TPU_GP_SRC3									0xF0
+#define TPU_GP_SRC4									0xF4
 
 /* Service Routing Control Register */
 #define TPU_SRC0									0xF8

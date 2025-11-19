@@ -42,10 +42,12 @@ struct pmb887x_tpu_t {
 	uint32_t intr[2];
 	
 	pmb887x_src_reg_t src[2];
-	pmb887x_src_reg_t gp_src[6];
+	pmb887x_src_reg_t gp_src[5];
+	pmb887x_src_reg_t rfssc_src;
 	
 	qemu_irq irq[2];
 	qemu_irq gp_irq[6];
+	qemu_irq rfssc_irq;
 	
 	uint32_t gsmclk1;
 	uint32_t gsmclk2;
@@ -338,12 +340,15 @@ static uint64_t tpu_io_read(void *opaque, hwaddr haddr, unsigned size) {
 			value = tpu_ram_read(p, haddr, size);
 			break;
 
+		case TPU_RFSSC_SRC:
+			value = pmb887x_src_get(&p->rfssc_src);
+			break;
+
 		case TPU_GP_SRC0:
 		case TPU_GP_SRC1:
 		case TPU_GP_SRC2:
 		case TPU_GP_SRC3:
 		case TPU_GP_SRC4:
-		case TPU_GP_SRC5:
 			value = pmb887x_src_get(&p->gp_src[(haddr - TPU_GP_SRC0) / 4]);
 			break;
 
@@ -377,10 +382,9 @@ static void tpu_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned si
 			break;
 
 		case TPU_RFSSCTB:
-			if ((p->rfcon2 & TPU_RFCON2_SSCEN)) {
-				DPRINTF("RF control: %04X\n", (uint16_t) value);
-				p->rfcon2 &= ~TPU_RFCON2_SSCEN;
-			}
+			DPRINTF("RF control: %04X\n", (uint16_t) value);
+			pmb887x_src_set(&p->rfssc_src, MOD_SRC_SETR);
+			p->rfcon2 &= ~TPU_RFCON2_SSCEN;
 			break;
 
 		case TPU_CORRECTION:
@@ -458,13 +462,16 @@ static void tpu_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned si
 		case TPU_RAM0 ... (TPU_RAM0 + TPU_RAM_SIZE):
 			tpu_ram_write(p, haddr, value, size);
 			break;
-		
+
+		case TPU_RFSSC_SRC:
+			pmb887x_src_set(&p->rfssc_src, value);
+			break;
+
 		case TPU_GP_SRC0:
 		case TPU_GP_SRC1:
 		case TPU_GP_SRC2:
 		case TPU_GP_SRC3:
 		case TPU_GP_SRC4:
-		case TPU_GP_SRC5:
 			pmb887x_src_set(&p->gp_src[(haddr - TPU_GP_SRC0) / 4], value);
 			break;
 		
@@ -491,12 +498,12 @@ static void tpu_init(Object *obj) {
 	memory_region_init_io(&p->mmio, obj, &io_ops, p, "pmb887x-tpu", TPU_RAM0 + TPU_RAM_SIZE);
 	sysbus_init_mmio(SYS_BUS_DEVICE(obj), &p->mmio);
 	
+	sysbus_init_irq(SYS_BUS_DEVICE(obj), &p->rfssc_irq);
 	sysbus_init_irq(SYS_BUS_DEVICE(obj), &p->gp_irq[0]);
 	sysbus_init_irq(SYS_BUS_DEVICE(obj), &p->gp_irq[1]);
 	sysbus_init_irq(SYS_BUS_DEVICE(obj), &p->gp_irq[2]);
 	sysbus_init_irq(SYS_BUS_DEVICE(obj), &p->gp_irq[3]);
 	sysbus_init_irq(SYS_BUS_DEVICE(obj), &p->gp_irq[4]);
-	sysbus_init_irq(SYS_BUS_DEVICE(obj), &p->gp_irq[5]);
 
 	sysbus_init_irq(SYS_BUS_DEVICE(obj), &p->irq[0]);
 	sysbus_init_irq(SYS_BUS_DEVICE(obj), &p->irq[1]);
@@ -506,6 +513,7 @@ static void tpu_realize(DeviceState *dev, Error **errp) {
 	pmb887x_tpu_t *p = PMB887X_TPU(dev);
 	
 	pmb887x_clc_init(&p->clc);
+	pmb887x_src_init(&p->rfssc_src, p->rfssc_irq);
 
 	for (int i = 0; i < ARRAY_SIZE(p->src); i++) {
 		if (!p->irq[i])
