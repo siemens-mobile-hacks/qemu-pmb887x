@@ -13,7 +13,10 @@ const uint8_t *pmb887x_get_brom_image(uint32_t cpu_id, size_t *size, uint32_t re
 			*size = sizeof(pmb8875_brom);
 			return pmb8875_brom;
 		case CPU_PMB8876:
-			if (rev >= 17) {
+			if (rev == 0) {
+				*size = sizeof(pmb8876_brom_r0);
+				return pmb8876_brom_r0;
+			} else if (rev >= 17) {
 				*size = sizeof(pmb8876_brom_r17);
 				return pmb8876_brom_r17;
 			} else {

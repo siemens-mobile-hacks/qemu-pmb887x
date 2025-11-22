@@ -10,6 +10,16 @@ static pmb887x_board_t *board = NULL;
 
 static int find_cpu_by_name(const char *cpu_name);
 
+static struct {
+	uint32_t rev;
+	uint32_t uid0;
+	uint32_t uid1;
+	uint32_t uid2;
+} default_cpu_id[] = {
+	[CPU_PMB8876] = { 0x05, 0x00000000, 0x00000000, 0x00000000 },
+	[CPU_PMB8876] = { 0x10, 0x006025DB, 0x180121A5, 0x00071303 }
+};
+
 void pmb887x_board_init(const char *config_file) {
 	board = g_new0(pmb887x_board_t, 1);
 
@@ -20,10 +30,11 @@ void pmb887x_board_init(const char *config_file) {
 	board->vendor = pmb887x_cfg_get(board->config, "device", "vendor", NULL, true);
 	board->model = pmb887x_cfg_get(board->config, "device", "model", NULL, true);
 	board->cpu = find_cpu_by_name(pmb887x_cfg_get(board->config, "device", "cpu", NULL, true));
-	board->cpu_rev = pmb887x_cfg_get_int(board->config, "device", "cpu_rev", 0xFFFFFFFF, true);
-	board->cpu_uid[0] = pmb887x_cfg_get_int(board->config, "device", "cpu_uid0", 0, false);
-	board->cpu_uid[1] = pmb887x_cfg_get_int(board->config, "device", "cpu_uid1", 0, false);
-	board->cpu_uid[2] = pmb887x_cfg_get_int(board->config, "device", "cpu_uid2", 0, false);
+
+	board->cpu_rev = pmb887x_cfg_get_int(board->config, "device", "cpu_rev", default_cpu_id[board->cpu].rev, false);
+	board->cpu_uid[0] = pmb887x_cfg_get_int(board->config, "device", "cpu_uid0", default_cpu_id[board->cpu].uid0, false);
+	board->cpu_uid[1] = pmb887x_cfg_get_int(board->config, "device", "cpu_uid1", default_cpu_id[board->cpu].uid1, false);
+	board->cpu_uid[2] = pmb887x_cfg_get_int(board->config, "device", "cpu_uid2", default_cpu_id[board->cpu].uid2, false);
 
 	pmb887x_board_keymap_init();
 	pmb887x_board_gpio_init();
