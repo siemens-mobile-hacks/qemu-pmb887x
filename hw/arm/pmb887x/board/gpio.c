@@ -2,8 +2,9 @@
 
 #include "hw/arm/pmb887x/board/board.h"
 #include "hw/arm/pmb887x/gen/cpu_meta.h"
-#include "hw/arm/pmb887x/utils/config.h"
 
+#include "hw/arm/pmb887x/utils/toml.h"
+#include "hw/arm/pmb887x/utils/tomlc17.h"
 #include "hw/hw.h"
 #include "hw/irq.h"
 #include "hw/ssi/ssi.h"
@@ -122,24 +123,43 @@ qemu_irq pmb887x_gpio_get_input(const char *name) {
 
 void pmb887x_board_gpio_init_fixed_inputs(void) {
 	pmb887x_board_t *board = pmb887x_board();
-	pmb887x_cfg_section_t *section = pmb887x_cfg_section(board->config, "gpio-inputs", 0, false);
-	if (!section)
+	toml_datum_t table = toml_table_get(board->config, TOML_TABLE, "gpio.inputs", false);
+	if (table.type == TOML_UNKNOWN)
 		return;
-	for (size_t i = 0; i < section->items_count; i++) {
-		pmb887x_cfg_item_t *item = &section->items[i];
-		uint32_t gpio_value = strtoll(item->value, NULL, 10) ? 1 : 0;
-		qemu_set_irq(pmb887x_gpio_get_input(item->key), gpio_value);
+	for (size_t i = 0; i < table.u.tab.size; i++) {
+		uint32_t gpio_value = toml_table_get_uint32(table, table.u.tab.key[i], false, true);
+		qemu_set_irq(pmb887x_gpio_get_input(table.u.tab.key[i]), gpio_value);
 	}
 }
 
 void pmb887x_board_gpio_init_fixed_connections(void) {
 	pmb887x_board_t *board = pmb887x_board();
-	pmb887x_cfg_section_t *section = pmb887x_cfg_section(board->config, "gpio-connections", 0, false);
-	if (!section)
+	toml_datum_t table = toml_table_get(board->config, TOML_TABLE, "gpio.connections", false);
+	if (table.type == TOML_UNKNOWN)
 		return;
-	for (size_t i = 0; i < section->items_count; i++) {
-		pmb887x_cfg_item_t *item = &section->items[i];
-		pmb887x_gpio_connect(item->key, item->value);
+	for (size_t i = 0; i < table.u.tab.size; i++) {
+		const char *value = toml_table_get_string(table, table.u.tab.key[i], false, true);
+		pmb887x_gpio_connect(table.u.tab.key[i], value);
+	}
+}
+
+static void _gpio_init_aliases(void) {
+	pmb887x_board_t *board = pmb887x_board();
+	toml_datum_t table = toml_table_get(board->config, TOML_TABLE, "gpio.aliases", false);
+	if (table.type == TOML_UNKNOWN)
+		return;
+	for (size_t i = 0; i < table.u.tab.size; i++) {
+		const char *key = table.u.tab.key[i];
+		const char *value = toml_table_get_string(table, key, false, true);
+		const pmb887x_cpu_meta_gpio_t *cpu_gpio = find_cpu_gpio_by_name(key);
+		if (cpu_gpio) {
+			pmb887x_cpu_meta_gpio_t *board_gpio = &board->gpios[cpu_gpio->id];
+			board_gpio->name = g_strdup(cpu_gpio->name);
+			board_gpio->func_name = g_strdup(value);
+			board_gpio->full_name = g_strdup_printf("GPIO_PIN%d_%s", cpu_gpio->id, value);
+		} else {
+			warn_report("Unknown cpu GPIO '%s'", key);
+		}
 	}
 }
 
@@ -159,20 +179,5 @@ void pmb887x_board_gpio_init(void) {
 	}
 
 	// Set board-specific GPIO
-	pmb887x_cfg_section_t *section = pmb887x_cfg_section(board->config, "gpio-aliases", 0, false);
-	if (section) {
-		for (size_t i = 0; i < section->items_count; i++) {
-			pmb887x_cfg_item_t *item = &section->items[i];
-
-			const pmb887x_cpu_meta_gpio_t *cpu_gpio = find_cpu_gpio_by_name(item->key);
-			if (cpu_gpio) {
-				pmb887x_cpu_meta_gpio_t *board_gpio = &board->gpios[cpu_gpio->id];
-				board_gpio->name = g_strdup(cpu_gpio->name);
-				board_gpio->func_name = g_strdup(item->value);
-				board_gpio->full_name = g_strdup_printf("GPIO_PIN%d_%s", cpu_gpio->id, item->value);
-			} else {
-				warn_report("Unknown cpu GPIO '%s' in %s", item->key, section->parent->file);
-			}
-		}
-	}
+	_gpio_init_aliases();
 }

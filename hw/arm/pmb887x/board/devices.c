@@ -5,7 +5,9 @@
 #include "hw/arm/pmb887x/board/gpio.h"
 #include "hw/arm/pmb887x/board/memory.h"
 #include "hw/arm/pmb887x/utils/regexp.h"
+#include "hw/arm/pmb887x/utils/toml.h"
 
+#include "hw/arm/pmb887x/utils/tomlc17.h"
 #include "hw/hw.h"
 #include "hw/sysbus.h"
 #include "hw/qdev-core.h"
@@ -111,7 +113,7 @@ static pmb887x_dev_t devices_meta[] = {
 
 	// NOR FLASH
 	{
-		.name = "nor_flash",
+		.name = "cfi-flash",
 		.props = {},
 	},
 
@@ -157,75 +159,64 @@ static pmb887x_dev_bus_type_t bus_get_type(Object *dev) {
 	return DEV_BUS_NONE;
 }
 
-static void device_init_props_from_config(DeviceState *dev, const pmb887x_dev_t *meta, pmb887x_cfg_section_t *section) {
+static void device_init_props_from_config(DeviceState *dev, const pmb887x_dev_t *meta, toml_datum_t table) {
 	for (int i = 0; i < ARRAY_SIZE(meta->props); i++) {
 		const pmb887x_dev_prop_t *prop = &meta->props[i];
-		if (!prop->required && !pmb887x_cfg_section_get(section, prop->name, NULL, false))
+		if (!prop->required && toml_seek(table, prop->name).type == TOML_UNKNOWN)
 			continue;
 
 		switch (prop->type) {
 			case DEV_PROP_INT: {
-				int value = pmb887x_cfg_section_get_int(section, prop->name, -1, true);
+				int value = toml_table_get_int32(table, prop->name, -1, true);
 				qdev_prop_set_uint32(dev, prop->name, value);
 				break;
 			}
 			case DEV_PROP_UINT: {
-				uint32_t value = pmb887x_cfg_section_get_uint(section, prop->name, 0, true);
+				uint32_t value = toml_table_get_uint32(table, prop->name, 0, true);
 				qdev_prop_set_uint32(dev, prop->name, value);
 				break;
 			}
 			case DEV_PROP_STRING: {
-				const char *value = pmb887x_cfg_section_get(section, prop->name, NULL, true);
+				const char *value = toml_table_get_string(table, prop->name, NULL, true);
 				qdev_prop_set_string(dev, prop->name, value);
 				break;
 			}
 			case DEV_PROP_BOOL: {
-				int value = pmb887x_cfg_section_get_int(section, prop->name, -1, true);
-				object_property_set_bool(OBJECT(dev), prop->name, value != 0, &error_fatal);
+				bool value = toml_table_get_bool(table, prop->name, false, true);
+				object_property_set_bool(OBJECT(dev), prop->name, value, &error_fatal);
 				break;
 			}
 		}
 	}
 }
 
-static void device_init_gpios_from_config(DeviceState *dev, pmb887x_cfg_section_t *section) {
-	g_autoptr(GRegex) regexp = g_regex_new("^gpio_(in|out)\\[(.*?)\\]$", G_REGEX_CASELESS, 0, NULL);
-	for (size_t i = 0; i < section->items_count; i++) {
-		pmb887x_cfg_item_t *item = &section->items[i];
-		g_autoptr(GMatchInfo) match = regexp_match(regexp, item->key);
+static void device_init_gpios_from_config(DeviceState *dev, toml_datum_t table) {
+	toml_datum_t gpio_in_tab = toml_table_get(table, TOML_TABLE, "in", false);
+	toml_datum_t gpio_out_tab = toml_table_get(table, TOML_TABLE, "out", false);
 
-		if (!match)
-			continue;
+	if (gpio_in_tab.type != TOML_UNKNOWN) {
+		for (size_t i = 0; i < gpio_in_tab.u.tab.size; i++) {
+			char dev_pin_name[64];
+			sprintf(dev_pin_name, "%s:%s", dev->id, gpio_in_tab.u.tab.key[i]);
+			const char *per_pin_name = toml_table_get_string(gpio_in_tab, gpio_in_tab.u.tab.key[i], NULL, true);
+			pmb887x_gpio_connect(per_pin_name, dev_pin_name);
+		}
+	}
 
-		char dev_pin_name[64];
-		sprintf(dev_pin_name, "%s:%s", dev->id, g_match_info_fetch(match, 2));
-
-		const char *direction = g_match_info_fetch(match, 1);
-		if (strcmp(direction, "in") == 0) {
-			pmb887x_gpio_connect(item->value, dev_pin_name);
-		} else {
-			pmb887x_gpio_connect(dev_pin_name, item->value);
+	if (gpio_out_tab.type != TOML_UNKNOWN) {
+		for (size_t i = 0; i < gpio_out_tab.u.tab.size; i++) {
+			char dev_pin_name[64];
+			sprintf(dev_pin_name, "%s:%s", dev->id, gpio_out_tab.u.tab.key[i]);
+			const char *per_pin_name = toml_table_get_string(gpio_out_tab, gpio_out_tab.u.tab.key[i], NULL, true);
+			pmb887x_gpio_connect(dev_pin_name, per_pin_name);
 		}
 	}
 }
 
-static void parse_flash_id(const char *flash_id, uint32_t *vid, uint32_t *pid) {
-	if (!flash_id)
-		hw_error("Invalid flash id: NULL");
-
-	const char *sep = strchr(flash_id, ':');
-	if (!sep)
-		hw_error("Invalid flash id: %s", flash_id);
-
-	*vid = strtoul(flash_id, NULL, 16);
-	*pid = strtoul(sep + 1, NULL, 16);
-}
-
-static DeviceState *device_create_from_config(DeviceState *ebuc, pmb887x_cfg_section_t *section) {
+static DeviceState *device_create_from_config(DeviceState *ebuc, const char *id, toml_datum_t table) {
 	pmb887x_board_t *board = pmb887x_board();
-	const char *id = pmb887x_cfg_section_get(section, "id", NULL, true);
-	const char *type = pmb887x_cfg_section_get(section, "type", NULL, true);
-	const char *bus_id = pmb887x_cfg_section_get(section, "bus", NULL, true);
+	const char *type = toml_table_get_string(table, "type", NULL, true);
+	const char *bus_id = toml_table_get_string(table, "bus", NULL, true);
 	const pmb887x_dev_t *meta = dev_get_metadata(type);
 
 	DeviceState *dev = NULL;
@@ -234,43 +225,44 @@ static DeviceState *device_create_from_config(DeviceState *ebuc, pmb887x_cfg_sec
 
 	switch (bus_type) {
 		case DEV_BUS_I2C: {
-			uint32_t addr = pmb887x_cfg_section_get_uint(section, "addr", 0, true);
+			uint32_t addr = toml_table_get_uint32(table, "addr", 0, true);
 			dev = DEVICE(i2c_slave_new(type, addr));
 			dev->id = g_strdup(id);
-			device_init_props_from_config(dev, meta, section);
+			device_init_props_from_config(dev, meta, table);
 			i2c_slave_realize_and_unref(I2C_SLAVE(dev), I2C_BUS(bus), &error_fatal);
-			device_init_gpios_from_config(dev, section);
+			device_init_gpios_from_config(dev, table);
 			break;
 		}
 		case DEV_BUS_SSI: {
 			dev = qdev_new(type);
 			qdev_prop_set_uint8(DEVICE(dev), "cs", global_cs_index++);
 			dev->id = g_strdup(id);
-			device_init_props_from_config(dev, meta, section);
+			device_init_props_from_config(dev, meta, table);
 			qdev_realize_and_unref(dev, BUS(bus), &error_fatal);
-			device_init_gpios_from_config(dev, section);
+			device_init_gpios_from_config(dev, table);
 			break;
 		}
 		case DEV_BUS_EBU: {
 			if (strcmp(type, "sdram") == 0) {
-				uint32_t size = pmb887x_cfg_section_get_uint(section, "size", 0, true) * 1024 * 1024;
-				uint32_t cs = pmb887x_cfg_section_get_uint(section, "cs", 0, true);
+				uint32_t cs = toml_table_get_uint32(table, "ebu.cs", 0, true);
+				uint32_t size = toml_table_get_uint32(table, "ram.size", 0, true);
 				pmb887x_board_ebu_connect(DEVICE(bus), cs, pmb887x_board_create_sdram(id, size));
-			} else if (strcmp(type, "nor_flash") == 0) {
-				const char *flash_id = pmb887x_cfg_section_get(section, "flash_id", 0, true);
-				uint32_t cs = pmb887x_cfg_section_get_uint(section, "cs", 0, true);
-				uint32_t pid, vid;
-				parse_flash_id(flash_id, &vid, &pid);
-
+			} else if (strcmp(type, "cfi-flash") == 0) {
+				uint32_t cs = toml_table_get_uint32(table, "ebu.cs", 0, true);
+				uint32_t vid = toml_table_get_uint32(table, "flash.vid", 0, true);
+				uint32_t pid = toml_table_get_uint32(table, "flash.pid", 0, true);
 				uint32_t bank_size;
 				pmb887x_board_ebu_connect(DEVICE(bus), cs, pmb887x_board_create_nor_flash(id, vid, pid, board->flash_offset, &bank_size));
 				board->flash_offset += bank_size;
+			} else {
+				error_report("Invalid dev type: %s", type);
+				exit(EXIT_FAILURE);
 			}
 			break;
 		}
 		default:
-			hw_error("Unknown bus type: %s", bus_id);
-			break;
+			error_report("Unknown bus type: %s", bus_id);
+			exit(EXIT_FAILURE);
 	}
 
 	return dev;
@@ -278,10 +270,14 @@ static DeviceState *device_create_from_config(DeviceState *ebuc, pmb887x_cfg_sec
 
 void pmb887x_board_init_devices(DeviceState *ebuc) {
 	pmb887x_board_t *board = pmb887x_board();
-	int count = pmb887x_cfg_sections_cnt(board->config, "peripheral");
-	for (int i = 0; i < count; i++) {
-		pmb887x_cfg_section_t *section = pmb887x_cfg_section(board->config, "peripheral", i, true);
-		device_create_from_config(ebuc, section);
+
+	toml_datum_t value = toml_table_get(board->config, TOML_TABLE, "peripheral", false);
+	if (value.type == TOML_UNKNOWN)
+		return;
+
+	for (int i = 0; i < value.u.tab.size; i++) {
+		const char *id = value.u.tab.key[i];
+		device_create_from_config(ebuc, id, toml_table_get(value, TOML_TABLE, id, true));
 	}
 
 	DeviceState *flash_blk = qdev_find_recursive(sysbus_get_default(), "FULLFLASH");

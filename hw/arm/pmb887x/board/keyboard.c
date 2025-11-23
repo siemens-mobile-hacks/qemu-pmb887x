@@ -1,7 +1,8 @@
 #include "hw/arm/pmb887x/board/keyboard.h"
 #include "hw/arm/pmb887x/board/board.h"
-#include "hw/arm/pmb887x/utils/config.h"
 
+#include "hw/arm/pmb887x/utils/toml.h"
+#include "hw/arm/pmb887x/utils/tomlc17.h"
 #include "qapi/qapi-types-ui.h"
 #include "qemu/error-report.h"
 
@@ -60,42 +61,36 @@ static struct {
 
 void pmb887x_board_keymap_init(void) {
 	pmb887x_board_t *board = pmb887x_board();
-	pmb887x_cfg_section_t *section = pmb887x_cfg_section(board->config, "keyboard", 0, true);
-	for (size_t i = 0; i < section->items_count; i++) {
-		pmb887x_cfg_item_t *item = &section->items[i];
 
-		char **parts = g_strsplit(item->value, ":", -1);
-		if (g_strv_length(parts) != 2) {
-			g_strfreev(parts);
-			error_report("Invalid [keyboard] config %s=%s", item->key, item->value);
-			exit(1);
+	toml_datum_t table = toml_table_get(board->config, TOML_TABLE, "keyboard", false);
+	if (table.type == TOML_UNKNOWN)
+		return;
+	for (int i = 0; i < table.u.tab.size; i++) {
+		const char *key_name = table.u.tab.key[i];
+		uint32_t keycode = 0;
+		toml_datum_t arr = toml_table_get(table, TOML_ARRAY, key_name, true);
+		if (arr.u.arr.size < 2) {
+			warn_report("Invalid key '%s' board config!", key_name);
+			continue;
 		}
 
-		uint32_t keycode = 0;
-		char **kp_in_arr = g_strsplit(parts[0], ",", -1);
-		char **kp_out_arr = g_strsplit(parts[1], ",", -1);
+		uint32_t kp_in = toml_array_get_uint32(arr, 0, 0, true);
+		keycode |= 1 << kp_in;
 
-		uint32_t kp_in_arr_len = g_strv_length(kp_in_arr);
-		for (uint32_t j = 0; j < kp_in_arr_len; j++)
-			keycode |= 1 << strtoll(kp_in_arr[j], NULL, 10);
-
-		uint32_t kp_out_arr_len = g_strv_length(kp_out_arr);
-		for (uint32_t j = 0; j < kp_out_arr_len; j++)
-			keycode |= 1 << (8 + strtoll(kp_out_arr[j], NULL, 10));
+		for (int j = 1; j < arr.u.arr.size; j++) {
+			uint32_t kp_out = toml_array_get_uint32(arr, j, 0, true);
+			keycode |= 1 << (8 + kp_out);
+		}
 
 		bool found = false;
 		for (size_t j = 0; j < ARRAY_SIZE(keyboard_map); j++) {
-			if (strcmp(item->key, keyboard_map[j].name) == 0) {
+			if (strcmp(key_name, keyboard_map[j].name) == 0) {
 				board->keymap[keyboard_map[j].id] = keycode;
 				found = true;
 			}
 		}
 
-		g_strfreev(parts);
-		g_strfreev(kp_in_arr);
-		g_strfreev(kp_out_arr);
-
 		if (!found)
-			warn_report("Unknown key '%s' in %s", item->key, section->parent->file);
+			warn_report("Unknown key '%s' in board config!", key_name);
 	}
 }

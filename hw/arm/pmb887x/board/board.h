@@ -1,10 +1,11 @@
 #pragma once
 
+#include "hw/arm/pmb887x/utils/tomlc17.h"
 #include "qemu/osdep.h"
 #include "qapi/qapi-types-ui.h"
 
 #include "hw/arm/pmb887x/gen/cpu_meta.h"
-#include "hw/arm/pmb887x/utils/config.h"
+#include "hw/arm/pmb887x/utils/toml.h"
 
 typedef struct pmb887x_board_t pmb887x_board_t;
 
@@ -15,7 +16,8 @@ struct pmb887x_board_t {
 	uint32_t cpu_rev;
 	uint32_t cpu_uid[3];
 
-	pmb887x_cfg_t *config;
+	toml_result_t config_result;
+	toml_datum_t config;
 
 	uint32_t keymap[Q_KEY_CODE__MAX];
 

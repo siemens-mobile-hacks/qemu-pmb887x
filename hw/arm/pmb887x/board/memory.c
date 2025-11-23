@@ -49,9 +49,4 @@ MemoryRegion *pmb887x_board_create_nor_flash(const char *id, uint32_t vid, uint3
 	*size = object_property_get_uint(OBJECT(flash), "size", &error_fatal);
 
 	return sysbus_mmio_get_region(SYS_BUS_DEVICE(flash), 0);
-
-
-//	int64_t total_flash_size = pmb887x_flash_blk_size(pmb887x_flash_blk_self(flash_blk));
-//	if (flash_offset != total_flash_size)
-//		hw_error("Invalid fullflash size=0x%08"PRIX64". Please, specify fullflash with size=0x%08X", total_flash_size, flash_offset);
 }
