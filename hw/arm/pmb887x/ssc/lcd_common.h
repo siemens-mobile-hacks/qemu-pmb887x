@@ -69,6 +69,7 @@ struct pmb887x_lcd_t {
 	uint32_t default_rotation;
 	bool default_flip_horizontal;
 	bool default_flip_vertical;
+	bool bgr_filter;
 
 	uint8_t bpp;
 	uint8_t byte_pp;

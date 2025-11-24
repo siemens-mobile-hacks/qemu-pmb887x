@@ -48,10 +48,9 @@ static void memory_dump_at_exit(void) {
 //	qmp_pmemsave(0xFFFF0000, 0x4000, "/tmp/tcm.bin", NULL);
 //	qmp_pmemsave(0x00000000, 96 * 1024, "/tmp/sram.bin", NULL);
 //	qmp_pmemsave(0x00020000, 96 * 1024, "/tmp/sram2.bin", NULL);
-
 //	qmp_pmemsave(0xA8000000, 16 * 1024 * 1024, "/tmp/ram.bin", NULL);
 //	qmp_pmemsave(0x00000000, 0x4000, "/tmp/tcm.bin", NULL);
-//	qmp_pmemsave(0x00000000, 96 * 1024, "/tmp/sram.bin", NULL);
+//	qmp_pmemsave(0x00080000, 96 * 1024, "/tmp/sram.bin", NULL);
 }
 
 static void pmb887x_init_keymap(DeviceState *keypad, const uint32_t *map, int map_size) {

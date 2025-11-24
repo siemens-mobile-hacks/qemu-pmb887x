@@ -15,7 +15,7 @@
 #include "hw/arm/pmb887x/trace.h"
 #include "hw/arm/pmb887x/ssc/lcd_common.h"
 
-#define LCD_CMD_MAX_PARAMS 64
+#define LCD_CMD_MAX_PARAMS 256
 
 static void lcd_incr_px(pmb887x_lcd_t *lcd);
 
@@ -29,12 +29,33 @@ static const char *lcd_get_mode_name(enum pmb887x_lcd_pixel_mode_t mode) {
 		case LCD_MODE_BGR565:	return "BGR565";
 		case LCD_MODE_BGR666:	return "BGR666";
 		case LCD_MODE_BGR888:	return "BGR888";
+
 		case LCD_MODE_RGB565:	return "RGB565";
 		case LCD_MODE_RGB666:	return "RGB666";
 		case LCD_MODE_RGB888:	return "RGB888";
 		case LCD_MODE_NONE:		return "NONE";
 	}
 	return "UNKNOWN";
+}
+
+static enum pmb887x_lcd_pixel_mode_t lcd_bgr_filter_mode(enum pmb887x_lcd_pixel_mode_t mode) {
+	switch (mode) {
+		case LCD_MODE_BGR565:
+			return LCD_MODE_RGB565;
+		case LCD_MODE_BGR666:
+			return LCD_MODE_RGB666;
+		case LCD_MODE_BGR888:
+			return LCD_MODE_RGB888;
+		case LCD_MODE_RGB565:
+			return LCD_MODE_BGR565;
+		case LCD_MODE_RGB666:
+			return LCD_MODE_BGR666;
+		case LCD_MODE_RGB888:
+			return LCD_MODE_BGR888;
+		default:
+			hw_error("Invalid LCD mode: %d\n", mode);
+	}
+	return mode;
 }
 
 void pmb887x_lcd_set_mode(pmb887x_lcd_t *lcd, enum pmb887x_lcd_pixel_mode_t mode, bool flip_h_pins, bool flip_v_pins) {
@@ -44,6 +65,10 @@ void pmb887x_lcd_set_mode(pmb887x_lcd_t *lcd, enum pmb887x_lcd_pixel_mode_t mode
 	uint32_t new_rotation = lcd->default_rotation;
 	bool new_flip_horizontal = lcd->default_flip_horizontal;
 	bool new_flip_vertical = lcd->default_flip_vertical;
+
+	// RGB <-> BGR
+	if (lcd->bgr_filter)
+		mode = lcd_bgr_filter_mode(mode);
 
 	// Apply HW ping remapping
 	if (flip_h_pins)
@@ -470,6 +495,7 @@ static const Property lcd_props[] = {
 	DEFINE_PROP_UINT32("rotation", pmb887x_lcd_t, default_rotation, 0),
 	DEFINE_PROP_BOOL("flip_horizontal", pmb887x_lcd_t, default_flip_horizontal, false),
 	DEFINE_PROP_BOOL("flip_vertical", pmb887x_lcd_t, default_flip_vertical, false),
+	DEFINE_PROP_BOOL("bgr_filter", pmb887x_lcd_t, bgr_filter, false),
 };
 
 static void lcd_handle_rd(void *opaque, int n, int level) {
@@ -503,7 +529,7 @@ static void lcd_realize(SSIPeripheral *d, Error **errp) {
 	pmb887x_lcd_t *lcd = PMB887X_LCD(d);
 	lcd->k = PMB887X_LCD_GET_CLASS(d);
 
-	pmb887x_fifo8_init(&lcd->fifo, 64);
+	pmb887x_fifo8_init(&lcd->fifo, LCD_CMD_MAX_PARAMS);
 
 	lcd->console = graphic_console_init(DEVICE(d), 0, &pmb887x_lcd_gfx_ops, lcd);
 

@@ -11,8 +11,8 @@
 #include "hw/arm/pmb887x/trace.h"
 #include "hw/arm/pmb887x/ssc/lcd_common.h"
 
-#define TYPE_PMB887X_LCD_JBT6K71	"jbt6k71"
-#define PMB887X_LCD_JBT6K71(obj)	OBJECT_CHECK(pmb887x_lcd_jbt6k71_t, (obj), TYPE_PMB887X_LCD_JBT6K71)
+#define TYPE_PMB887X_LCD_PANEL	"jbt6k71"
+#define PMB887X_LCD_PANEL(obj)	OBJECT_CHECK(pmb887x_lcd_panel_t, (obj), TYPE_PMB887X_LCD_PANEL)
 
 #define JBT6K71_MAX_BPP		18
 #define JBT6K71_BUS_WIDTH	2
@@ -24,15 +24,15 @@ static const uint16_t DEFAULT_REGS[] = {
 	[0x100] = 0x800, /* Display control */
 };
 
-typedef struct pmb887x_lcd_jbt6k71_t pmb887x_lcd_jbt6k71_t;
+typedef struct pmb887x_lcd_panel_t pmb887x_lcd_panel_t;
 
-struct pmb887x_lcd_jbt6k71_t {
+struct pmb887x_lcd_panel_t {
 	pmb887x_lcd_t parent;
 	uint16_t regs[JBT6K71_MAX_REGS];
 };
 
 static void lcd_update_state(pmb887x_lcd_t *lcd) {
-	pmb887x_lcd_jbt6k71_t *priv = PMB887X_LCD_JBT6K71(lcd);
+	pmb887x_lcd_panel_t *priv = PMB887X_LCD_PANEL(lcd);
 	
 	bool ss = (priv->regs[0x001] & (1 << 8)) != 0; /* SS */
 	bool am = (priv->regs[0x003] & (1 << 3)) != 0; /* AM */
@@ -75,7 +75,7 @@ static uint32_t lcd_on_cmd(pmb887x_lcd_t *lcd, uint32_t cmd) {
 }
 
 static void lcd_on_cmd_with_params(pmb887x_lcd_t *lcd, uint32_t cmd, const uint32_t *params, uint32_t params_n) {
-	pmb887x_lcd_jbt6k71_t *priv = PMB887X_LCD_JBT6K71(lcd);
+	pmb887x_lcd_panel_t *priv = PMB887X_LCD_PANEL(lcd);
 	
 	g_assert(params_n == 1);
 	g_assert(cmd < JBT6K71_MAX_REGS);
@@ -122,7 +122,7 @@ static void lcd_on_cmd_with_params(pmb887x_lcd_t *lcd, uint32_t cmd, const uint3
 }
 
 static void lcd_realize(pmb887x_lcd_t *lcd, Error **errp) {
-	pmb887x_lcd_jbt6k71_t *priv = PMB887X_LCD_JBT6K71(lcd);
+	pmb887x_lcd_panel_t *priv = PMB887X_LCD_PANEL(lcd);
 	memset(priv->regs, 0, sizeof(priv->regs));
 	memcpy(priv->regs, DEFAULT_REGS, sizeof(DEFAULT_REGS));
 	lcd_update_state(lcd);
@@ -138,9 +138,9 @@ static void lcd_class_init(ObjectClass *oc, const void *data) {
 }
 
 static const TypeInfo lcd_info = {
-	.name			= TYPE_PMB887X_LCD_JBT6K71,
+	.name			= TYPE_PMB887X_LCD_PANEL,
 	.parent			= TYPE_PMB887X_LCD,
-	.instance_size	= sizeof(pmb887x_lcd_jbt6k71_t),
+	.instance_size	= sizeof(pmb887x_lcd_panel_t),
 	.class_init		= lcd_class_init,
 };
 
