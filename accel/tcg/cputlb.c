@@ -1671,7 +1671,7 @@ static bool mmu_lookup1(CPUState *cpu, MMULookupPageData *data, MemOp memop,
         int a_bits = memop_tlb_alignment_bits(memop, flags & TLB_CHECK_ALIGNED);
         if (unlikely(addr & ((1 << a_bits) - 1))) {
             // PMB887x quirks
-            qemu_log_mask(LOG_GUEST_ERROR, "Ignored unaligned access to 0x%08" PRIx64, addr);
+            qemu_log_mask(LOG_GUEST_ERROR, "Ignored unaligned access to 0x%08"VADDR_PRIx, addr);
             // cpu_unaligned_access(cpu, addr, access_type, mmu_idx, ra);
         }
     }

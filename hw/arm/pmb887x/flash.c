@@ -678,7 +678,7 @@ static void flash_realize(DeviceState *dev, Error **errp) {
 		flash->otp0_data[0] = 0x0002;
 		
 		if (!fill_data_from_hex((uint8_t *) flash->otp0_data, cfg->otp0_size, flash->hex_otp0_data)) {
-			flash_error(flash, "Invalid OTP0 hex data: %s [max_size=%d, len=%"PRId64"d]", flash->hex_otp0_data, cfg->otp0_size, strlen(flash->hex_otp0_data) / 2);
+			flash_error(flash, "Invalid OTP0 hex data: %s [max_size=%d, len=%"PRIu64"]", flash->hex_otp0_data, cfg->otp0_size, strlen(flash->hex_otp0_data) / 2);
 			exit(1);
 		}
 	}
@@ -690,7 +690,7 @@ static void flash_realize(DeviceState *dev, Error **errp) {
 		flash->otp1_data[0] = 0xFFFF;
 		
 		if (!fill_data_from_hex((uint8_t *) flash->otp1_data, cfg->otp1_size, flash->hex_otp1_data)) {
-			flash_error(flash, "Invalid OTP1 hex data: %s [max_size=%d, len=%"PRId64"d]", flash->hex_otp1_data, cfg->otp1_size, strlen(flash->hex_otp1_data) / 2);
+			flash_error(flash, "Invalid OTP1 hex data: %s [max_size=%d, len=%"PRIu64"]", flash->hex_otp1_data, cfg->otp1_size, strlen(flash->hex_otp1_data) / 2);
 			exit(1);
 		}
 	}
