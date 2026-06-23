@@ -115,7 +115,8 @@ struct pmb887x_lcd_class_t {
 	SSIPeripheralClass parent_class;
 	uint16_t cmd_width;
 	uint16_t param_width;
-	uint32_t write_ram_cmd;
+	bool direct_data_write;
+	bool cd_polarity;
 	int (*on_cmd)(pmb887x_lcd_t *, uint32_t);
 	void (*on_cmd_with_params)(pmb887x_lcd_t *, uint32_t, const uint32_t *, uint32_t);
 	void (*realize)(pmb887x_lcd_t *, Error **errp);

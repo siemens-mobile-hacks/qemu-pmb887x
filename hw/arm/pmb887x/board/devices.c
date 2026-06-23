@@ -116,6 +116,17 @@ static pmb887x_dev_t devices_meta[] = {
 			{ "bgr_filter", DEV_PROP_BOOL, false },
 		},
 	},
+	{
+		.name = "lr38826",
+		.props = {
+			{ "width", DEV_PROP_UINT, true },
+			{ "height", DEV_PROP_UINT, true },
+			{ "rotation", DEV_PROP_UINT, false },
+			{ "flip_horizontal", DEV_PROP_BOOL, false },
+			{ "flip_vertical", DEV_PROP_BOOL, false },
+			{ "bgr_filter", DEV_PROP_BOOL, false },
+		},
+	},
 
 	// PMIC
 	{

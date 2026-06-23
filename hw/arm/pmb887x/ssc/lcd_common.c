@@ -289,55 +289,71 @@ static inline void lcd_incr_px(pmb887x_lcd_t *lcd) {
 	lcd->dirty.y2 = MAX(lcd->dirty.y2, lcd->buffer_y);
 }
 
-static void lcd_write_control_byte(pmb887x_lcd_t *lcd, uint8_t value) {
-	if (lcd->cd) {
-		if (lcd->wr_state != LCD_WR_STATE_CMD) {
-			if (lcd->wr_state == LCD_WR_STATE_PARAM)
-				DPRINTF("CMD %04X ignored, too few params.\n", lcd->current_cmd);
-			lcd_clear_fifo(lcd);
-			lcd->wr_state = LCD_WR_STATE_CMD;
-		}
-		
-		pmb887x_fifo8_push(&lcd->fifo, value);
-		
-		if (pmb887x_fifo_count(&lcd->fifo) >= lcd->k->cmd_width) {
-			uint32_t cmd = lcd_read_from_fifo(lcd, lcd->k->cmd_width);
-			lcd->wr_state = LCD_WR_STATE_PARAM;
-			lcd->current_cmd = cmd;
-			lcd->current_cmd_params = lcd->k->on_cmd(lcd, cmd);
+static void lcd_handle_command(pmb887x_lcd_t *lcd, uint8_t value) {
+	if (lcd->wr_state != LCD_WR_STATE_CMD) {
+		if (lcd->wr_state == LCD_WR_STATE_PARAM)
+			DPRINTF("CMD %04X ignored, too few params.\n", lcd->current_cmd);
+		lcd_clear_fifo(lcd);
+		lcd->wr_state = LCD_WR_STATE_CMD;
+	}
 
-			if (lcd->current_cmd_params < 0) {
-				lcd->wr_state = LCD_WR_STATE_IGNORE;
-			} else {
-				g_assert(lcd->current_cmd_params <= LCD_CMD_MAX_PARAMS);
-				if (lcd->current_cmd_params == 0 && lcd->wr_state == LCD_WR_STATE_PARAM)
-					lcd->wr_state = LCD_WR_STATE_NONE;
+	pmb887x_fifo8_push(&lcd->fifo, value);
+
+	if (pmb887x_fifo_count(&lcd->fifo) >= lcd->k->cmd_width) {
+		uint32_t cmd = lcd_read_from_fifo(lcd, lcd->k->cmd_width);
+		lcd->wr_state = LCD_WR_STATE_PARAM;
+		lcd->current_cmd = cmd;
+		lcd->current_cmd_params = lcd->k->on_cmd(lcd, cmd);
+
+		if (lcd->current_cmd_params < 0) {
+			lcd->wr_state = LCD_WR_STATE_IGNORE;
+		} else {
+			g_assert(lcd->current_cmd_params <= LCD_CMD_MAX_PARAMS);
+			if (lcd->current_cmd_params == 0 && lcd->wr_state == LCD_WR_STATE_PARAM)
+				lcd->wr_state = LCD_WR_STATE_NONE;
+		}
+	}
+}
+
+static void lcd_handle_param(pmb887x_lcd_t *lcd, uint8_t value) {
+	if (lcd->wr_state == LCD_WR_STATE_CMD) {
+		lcd_clear_fifo(lcd);
+		lcd->wr_state = LCD_WR_STATE_NONE;
+	} else if (lcd->wr_state == LCD_WR_STATE_NONE) {
+		// Unexpected data
+		DPRINTF("Unexpected PARAM: %02X (command=%02X)\n", value, lcd->current_cmd);
+	} else if (lcd->wr_state == LCD_WR_STATE_PARAM) {
+		pmb887x_fifo8_push(&lcd->fifo, value);
+
+		if (pmb887x_fifo_count(&lcd->fifo) >= (lcd->k->param_width * lcd->current_cmd_params)) {
+			uint32_t tmp_params[LCD_CMD_MAX_PARAMS];
+			uint32_t tmp_params_n = 0;
+			while (pmb887x_fifo_count(&lcd->fifo) >= lcd->k->param_width) {
+				tmp_params[tmp_params_n++] = lcd_read_from_fifo(lcd, lcd->k->param_width);
+				// DPRINTF("PARAM: %04X\n", tmp_params[tmp_params_n - 1]);
 			}
+
+			lcd->k->on_cmd_with_params(lcd, lcd->current_cmd, tmp_params, tmp_params_n);
+
+			lcd->current_cmd = 0;
+			lcd->current_cmd_params = 0;
+			lcd->wr_state = LCD_WR_STATE_NONE;
+		}
+	}
+}
+
+static void lcd_write_control_byte(pmb887x_lcd_t *lcd, uint8_t value) {
+	if (lcd->k->direct_data_write) {
+		if (lcd->wr_state == LCD_WR_STATE_NONE || lcd->wr_state == LCD_WR_STATE_CMD) {
+			lcd_handle_command(lcd, value);
+		} else if (lcd->wr_state == LCD_WR_STATE_PARAM) {
+			lcd_handle_param(lcd, value);
 		}
 	} else {
-		if (lcd->wr_state == LCD_WR_STATE_CMD) {
-			lcd_clear_fifo(lcd);
-			lcd->wr_state = LCD_WR_STATE_NONE;
-		} else if (lcd->wr_state == LCD_WR_STATE_NONE) {
-			// Unexpected data
-			DPRINTF("Unexpected PARAM: %02X (command=%02X)\n", value, lcd->current_cmd);
-		} else if (lcd->wr_state == LCD_WR_STATE_PARAM) {
-			pmb887x_fifo8_push(&lcd->fifo, value);
-			
-			if (pmb887x_fifo_count(&lcd->fifo) >= (lcd->k->param_width * lcd->current_cmd_params)) {
-				uint32_t tmp_params[LCD_CMD_MAX_PARAMS];
-				uint32_t tmp_params_n = 0;
-				while (pmb887x_fifo_count(&lcd->fifo) >= lcd->k->param_width) {
-					tmp_params[tmp_params_n++] = lcd_read_from_fifo(lcd, lcd->k->param_width);
-					// DPRINTF("PARAM: %04X\n", tmp_params[tmp_params_n - 1]);
-				}
-				
-				lcd->k->on_cmd_with_params(lcd, lcd->current_cmd, tmp_params, tmp_params_n);
-				
-				lcd->current_cmd = 0;
-				lcd->current_cmd_params = 0;
-				lcd->wr_state = LCD_WR_STATE_NONE;
-			}
+		if (lcd->cd) {
+			lcd_handle_command(lcd, value);
+		} else {
+			lcd_handle_param(lcd, value);
 		}
 	}
 }
@@ -512,9 +528,14 @@ static void lcd_handle_wr(void *opaque, int n, int level) {
 
 static void lcd_handle_cd(void *opaque, int n, int level) {
 	pmb887x_lcd_t *lcd = PMB887X_LCD(opaque);
-	pmb887x_lcd_set_cd(lcd, level == 0);
-	if (lcd->cd && lcd->wr_state == LCD_WR_STATE_RAM)
-		pmb887x_lcd_set_ram_mode(lcd, false);
+	pmb887x_lcd_set_cd(lcd, lcd->k->cd_polarity ? level == 1 : level == 0);
+
+	if (lcd->k->direct_data_write) {
+		pmb887x_lcd_set_ram_mode(lcd, !lcd->cd);
+	} else {
+		if (lcd->cd && lcd->wr_state == LCD_WR_STATE_RAM)
+			pmb887x_lcd_set_ram_mode(lcd, false);
+	}
 }
 
 static void lcd_handle_reset(void *opaque, int n, int level) {
