@@ -61,7 +61,7 @@ static void lcd_update_state(pmb887x_lcd_t *lcd) {
 	}
 }
 
-static uint32_t lcd_on_cmd(pmb887x_lcd_t *lcd, uint32_t cmd) {
+static int lcd_on_cmd(pmb887x_lcd_t *lcd, uint32_t cmd) {
 	if (cmd == 0x22) {
 		pmb887x_lcd_set_ram_mode(lcd, true);
 		return 0;

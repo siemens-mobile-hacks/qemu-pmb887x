@@ -1,8 +1,8 @@
 /*
- * Epson L2F50333T (OLED, 132x176)
+ * Epson L2F50126T (TFT, 132x176)
  * */
 #define PMB887X_TRACE_ID		LCD
-#define PMB887X_TRACE_PREFIX	"l2f50333t"
+#define PMB887X_TRACE_PREFIX	"l2f50126t"
 
 #include "qemu/osdep.h"
 #include "hw/qdev-properties.h"
@@ -11,7 +11,7 @@
 #include "hw/arm/pmb887x/trace.h"
 #include "hw/arm/pmb887x/ssc/lcd_common.h"
 
-#define TYPE_PMB887X_LCD_PANEL	"l2f50333t"
+#define TYPE_PMB887X_LCD_PANEL	"l2f50126t"
 #define PMB887X_LCD_PANEL(obj)	OBJECT_CHECK(pmb887x_lcd_panel_t, (obj), TYPE_PMB887X_LCD_PANEL)
 
 #define L2F50333T_MAX_BPP		18
@@ -72,23 +72,21 @@ static int lcd_on_cmd(pmb887x_lcd_t *lcd, uint32_t cmd) {
 	}
 
 	switch (cmd) {
-		case 0xB0: // DISCTL
-			return 15;
-		case 0xB1: // GCPSETx
-		case 0xB2: // GCPSETx
-		case 0xBA: // GCPSETx
-		case 0xBF: // GCPSETx
-			return 60;
 		case 0x2D: // RGBSET
-			return 128;
+			return 48;
+		case 0x36: // MADCTL
+		case 0x3A: // COLMOD
+			return 1;
 		case 0x2A: // CASET
 		case 0x2B: // PASET
+			return 2;
+		case 0xB4:
 			return 4;
-		case 0x36: // MADCTL
-		case 0x26: // GAMSET
-		case 0xC2: // IFMOD
-		case 0x3A: // COLMOD
-		case 0xBE: // VOLCNT
+		case 0xB5:
+			return 4;
+		case 0xBA:
+			return 2;
+		case 0x25:
 			return 1;
 	}
 
@@ -113,15 +111,15 @@ static void lcd_on_cmd_with_params(pmb887x_lcd_t *lcd, uint32_t cmd, const uint3
 			break;
 
 		case 0x2A:
-			pmb887x_lcd_set_x(lcd, (params[0] << 8) | params[1]);
-			pmb887x_lcd_set_window_x1(lcd, (params[0] << 8) | params[1]);
-			pmb887x_lcd_set_window_x2(lcd, (params[2] << 8) | params[3]);
+			pmb887x_lcd_set_x(lcd, params[0]);
+			pmb887x_lcd_set_window_x1(lcd, params[0]);
+			pmb887x_lcd_set_window_x2(lcd, params[1]);
 			break;
 
 		case 0x2B:
-			pmb887x_lcd_set_y(lcd, (params[0] << 8) | params[1]);
-			pmb887x_lcd_set_window_y1(lcd, (params[0] << 8) | params[1]);
-			pmb887x_lcd_set_window_y2(lcd, (params[2] << 8) | params[3]);
+			pmb887x_lcd_set_y(lcd, params[0]);
+			pmb887x_lcd_set_window_y1(lcd, params[0]);
+			pmb887x_lcd_set_window_y2(lcd, params[1]);
 			break;
 	}
 }

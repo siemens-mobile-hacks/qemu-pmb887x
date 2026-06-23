@@ -94,6 +94,28 @@ static pmb887x_dev_t devices_meta[] = {
 			{ "bgr_filter", DEV_PROP_BOOL, false },
 		},
 	},
+	{
+		.name = "l2f50126t",
+		.props = {
+			{ "width", DEV_PROP_UINT, true },
+			{ "height", DEV_PROP_UINT, true },
+			{ "rotation", DEV_PROP_UINT, false },
+			{ "flip_horizontal", DEV_PROP_BOOL, false },
+			{ "flip_vertical", DEV_PROP_BOOL, false },
+			{ "bgr_filter", DEV_PROP_BOOL, false },
+		},
+	},
+	{
+		.name = "l2f50250",
+		.props = {
+			{ "width", DEV_PROP_UINT, true },
+			{ "height", DEV_PROP_UINT, true },
+			{ "rotation", DEV_PROP_UINT, false },
+			{ "flip_horizontal", DEV_PROP_BOOL, false },
+			{ "flip_vertical", DEV_PROP_BOOL, false },
+			{ "bgr_filter", DEV_PROP_BOOL, false },
+		},
+	},
 
 	// PMIC
 	{
@@ -115,7 +137,11 @@ static pmb887x_dev_t devices_meta[] = {
 
 	// Gimmick
 	{
-		.name = "s1d13705",
+		.name = "s1d13732",
+		.props = {},
+	},
+	{
+		.name = "s1d13716",
 		.props = {},
 	},
 

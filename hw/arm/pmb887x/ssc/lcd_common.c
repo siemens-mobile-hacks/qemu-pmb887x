@@ -305,10 +305,14 @@ static void lcd_write_control_byte(pmb887x_lcd_t *lcd, uint8_t value) {
 			lcd->wr_state = LCD_WR_STATE_PARAM;
 			lcd->current_cmd = cmd;
 			lcd->current_cmd_params = lcd->k->on_cmd(lcd, cmd);
-			g_assert(lcd->current_cmd_params <= LCD_CMD_MAX_PARAMS);
-			
-			if (lcd->current_cmd_params == 0 && lcd->wr_state == LCD_WR_STATE_PARAM)
-				lcd->wr_state = LCD_WR_STATE_NONE;
+
+			if (lcd->current_cmd_params < 0) {
+				lcd->wr_state = LCD_WR_STATE_IGNORE;
+			} else {
+				g_assert(lcd->current_cmd_params <= LCD_CMD_MAX_PARAMS);
+				if (lcd->current_cmd_params == 0 && lcd->wr_state == LCD_WR_STATE_PARAM)
+					lcd->wr_state = LCD_WR_STATE_NONE;
+			}
 		}
 	} else {
 		if (lcd->wr_state == LCD_WR_STATE_CMD) {
@@ -316,8 +320,8 @@ static void lcd_write_control_byte(pmb887x_lcd_t *lcd, uint8_t value) {
 			lcd->wr_state = LCD_WR_STATE_NONE;
 		} else if (lcd->wr_state == LCD_WR_STATE_NONE) {
 			// Unexpected data
-			DPRINTF("Unexpected PARAM: %02X (no command)\n", value);
-		} else {
+			DPRINTF("Unexpected PARAM: %02X (command=%02X)\n", value, lcd->current_cmd);
+		} else if (lcd->wr_state == LCD_WR_STATE_PARAM) {
 			pmb887x_fifo8_push(&lcd->fifo, value);
 			
 			if (pmb887x_fifo_count(&lcd->fifo) >= (lcd->k->param_width * lcd->current_cmd_params)) {

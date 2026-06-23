@@ -51,12 +51,15 @@ arm_common_ss.add(when: 'CONFIG_PMB887X', if_true: files(
 	'utils/toml.c',
 	'utils/tomlc17.c',
 
-	'ssc/s1d13705.c',
+	'ssc/s1d13716.c',
+	'ssc/s1d13732.c',
 	'ssc/b00b10b.c',
 	'ssc/lcd_common.c',
 	'ssc/lcd_jbt6k71.c',
 	'ssc/lcd_ssd1286.c',
 	'ssc/lcd_l2f50333t.c',
+	'ssc/lcd_l2f50126t.c',
+	'ssc/lcd_l2f50250.c',
 
 	'i2c/d1094xx.c',
 	'i2c/pmb6812.c',

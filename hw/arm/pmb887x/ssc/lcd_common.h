@@ -18,7 +18,8 @@ enum pmb887x_lcd_wr_state_t {
 	LCD_WR_STATE_NONE,
 	LCD_WR_STATE_CMD,
 	LCD_WR_STATE_PARAM,
-	LCD_WR_STATE_RAM
+	LCD_WR_STATE_RAM,
+	LCD_WR_STATE_IGNORE,
 };
 
 enum pmb887x_lcd_ac_t {
@@ -95,7 +96,7 @@ struct pmb887x_lcd_t {
 
 	enum pmb887x_lcd_wr_state_t wr_state;
 	uint32_t current_cmd;
-	uint32_t current_cmd_params;
+	int current_cmd_params;
 
 	enum pmb887x_lcd_ac_t ac_x;
 	enum pmb887x_lcd_ac_t ac_y;
@@ -115,7 +116,7 @@ struct pmb887x_lcd_class_t {
 	uint16_t cmd_width;
 	uint16_t param_width;
 	uint32_t write_ram_cmd;
-	uint32_t (*on_cmd)(pmb887x_lcd_t *, uint32_t);
+	int (*on_cmd)(pmb887x_lcd_t *, uint32_t);
 	void (*on_cmd_with_params)(pmb887x_lcd_t *, uint32_t, const uint32_t *, uint32_t);
 	void (*realize)(pmb887x_lcd_t *, Error **errp);
 };

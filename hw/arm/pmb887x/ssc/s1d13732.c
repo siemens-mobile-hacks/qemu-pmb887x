@@ -1,8 +1,8 @@
 /*
-* Epson S1D13705
+* Epson S1D13732
  * */
 #define PMB887X_TRACE_ID		GIMMICK
-#define PMB887X_TRACE_PREFIX	"s1d13705"
+#define PMB887X_TRACE_PREFIX	"s1d13732"
 
 #include "qemu/osdep.h"
 #include "hw/qdev-properties.h"
@@ -13,9 +13,6 @@
 #include "hw/irq.h"
 #include "hw/hw.h"
 #include "hw/arm/pmb887x/trace.h"
-
-// S1D13732
-// S1D13716
 
 typedef struct pmb887x_gimmick_t pmb887x_gimmick_t;
 
@@ -60,7 +57,7 @@ struct pmb887x_gimmick_t {
 	qemu_irq fpline;
 };
 
-#define TYPE_PMB887X_GIMMICK "s1d13705"
+#define TYPE_PMB887X_GIMMICK "s1d13732"
 #define PMB887X_GIMMICK(obj)	OBJECT_CHECK(pmb887x_gimmick_t, (obj), TYPE_PMB887X_GIMMICK)
 
 #define GIMMICK_BUS_WIDTH 16
