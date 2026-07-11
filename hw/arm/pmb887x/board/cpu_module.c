@@ -121,7 +121,7 @@ static void pmb887x_cpu_module_post_init(DeviceState *dev, const pmb887x_cpu_mod
 				char module_signal_in[128];
 				sprintf(module_signal_in, "DMAC_%s_%s", dma_channel->channel, dmac_signals[j]);
 
-				if (!pmb887x_qdev_is_gpio_out_exists(dev, module_signal_in, 0))
+				if (!pmb887x_qdev_is_gpio_in_exists(dev, module_signal_in, 0))
 					continue;
 
 				char dmac_signal_out[128];

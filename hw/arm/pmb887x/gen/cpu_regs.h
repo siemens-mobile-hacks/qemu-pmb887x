@@ -6328,6 +6328,8 @@
 #define SCU_RST_REQ_SWBOOT				(1 << 24)		 // Software Boot Configuration Selection
 #define SCU_RST_REQ_SWBOOT_SHIFT		24
 
+#define SCU_UNK0						0x20
+
 #define SCU_WDTCON0						0x24
 #define SCU_WDTCON0_ENDINIT				(1 << 0)		 // End-of-Initialization Control Bit.
 #define SCU_WDTCON0_ENDINIT_SHIFT		0
@@ -6365,6 +6367,8 @@
 #define SCU_WDT_SR_WDTTIM_SHIFT			16
 
 #define SCU_DSP_UNK0					0x30
+
+#define SCU_EXTI_UNK					0x38
 
 #define SCU_EXTI						0x3C
 #define SCU_EXTI_EXT0					(0x3 << 0)
@@ -8221,11 +8225,11 @@
 #define USART_ISR_TMO						(1 << 7)	 // RX timeout interrupt mask
 #define USART_ISR_TMO_SHIFT					7
 
-#define USART_DMACON						0x78
-#define USART_DMACON_TX						(1 << 0)	 // Transmit DMA Enable. If this bit is set to 1, DMA for the transmit FIFO is enabled
-#define USART_DMACON_TX_SHIFT				0
-#define USART_DMACON_RX						(1 << 1)	 // Receive DMA Enable. If this bit is set to 1, DMA for the receive FIFO is enabled.
-#define USART_DMACON_RX_SHIFT				1
+#define USART_DMAE							0x78
+#define USART_DMAE_TX						(1 << 0)	 // Transmit DMA Enable. If this bit is set to 1, DMA for the transmit FIFO is enabled
+#define USART_DMAE_TX_SHIFT					0
+#define USART_DMAE_RX						(1 << 1)	 // Receive DMA Enable. If this bit is set to 1, DMA for the receive FIFO is enabled.
+#define USART_DMAE_RX_SHIFT					1
 
 #define USART_TMO							0x7C
 

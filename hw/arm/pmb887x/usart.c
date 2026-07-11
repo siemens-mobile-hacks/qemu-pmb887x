@@ -24,7 +24,9 @@
 #define TYPE_PMB887X_USART	"pmb887x-usart"
 #define PMB887X_USART(obj)	OBJECT_CHECK(pmb887x_usart_t, (obj), TYPE_PMB887X_USART)
 
-#define FIFO_SIZE	8
+#define USART_SEND_FULL_FIFO	1
+#define USART_FIFO_SIZE			8
+#define USART_TX_BYTE_TIME_NS	((NANOSECONDS_PER_SECOND * 10) / 1625000)
 
 enum {
 	USART_IRQ_TX,
@@ -47,23 +49,31 @@ struct pmb887x_usart_t {
 	pmb887x_clc_reg_t clc;
 	pmb887x_srb_reg_t srb;
 	qemu_irq irq[USART_IRQ_NR];
-	
-	bool apply_workarounds;
-	
-	guint watch_tag;
+
+	QEMUTimer *timer;
+	QEMUTimer *tmo_timer;
+	bool transfer_pending;
+
 	CharFrontend chr;
-	
+	guint watch_tag;
+
+	// FIFO enabled
 	pmb887x_fifo8_t tx_fifo_buffered;
 	pmb887x_fifo8_t rx_fifo_buffered;
-	
+
+	// FIFO disabled
 	pmb887x_fifo8_t tx_fifo_single;
 	pmb887x_fifo8_t rx_fifo_single;
-	
+
+	// Pending byte to transmit
+	pmb887x_fifo8_t tx_buffer;
+
+	// Pointer to current FIFO
 	pmb887x_fifo8_t *rx_fifo;
 	pmb887x_fifo8_t *tx_fifo;
-	
-	bool last_is_icr_tx;
-	
+
+	int ris_read_count;
+
 	uint32_t con;
 	uint32_t bg;
 	uint32_t fdv;
@@ -80,56 +90,181 @@ struct pmb887x_usart_t {
 	uint32_t fccon;
 	uint32_t fcstat;
 	uint32_t tmo;
-	uint32_t dmacon;
+	uint32_t dma_control;
 
 	qemu_irq gpio_txd;
 	qemu_irq gpio_rts;
+
+	int dmac_tx_clr;
+	int dmac_rx_clr;
+
+	qemu_irq dmac_tx_breq;
+	qemu_irq dmac_rx_breq;
 };
 
+static void usart_update_state(pmb887x_usart_t *p);
 static void usart_transmit_fifo(pmb887x_usart_t *p);
 
-static void usart_set_rx_fifo(pmb887x_usart_t *p, bool buffered) {
-	pmb887x_fifo_reset(&p->rx_fifo_buffered);
-	pmb887x_fifo_reset(&p->rx_fifo_single);
-	
-	if (buffered) {
-		p->rx_fifo = &p->rx_fifo_buffered;
+static bool usart_is_rx_fifo_enabled(pmb887x_usart_t *p) {
+	return (p->rxfcon & USART_RXFCON_RXFEN) != 0;
+}
+
+static bool usart_is_tx_fifo_enabled(pmb887x_usart_t *p) {
+	return (p->txfcon & USART_TXFCON_TXFEN) != 0;
+}
+
+static void usart_rx_fifo_config(pmb887x_usart_t *p, uint32_t value) {
+	bool old_fifo_enabled = (p->rxfcon & USART_RXFCON_RXFEN) != 0;
+	bool new_fifo_enabled = (value & USART_RXFCON_RXFEN) != 0;
+	if (old_fifo_enabled != new_fifo_enabled) {
+		p->rx_fifo = new_fifo_enabled ? &p->rx_fifo_buffered : &p->rx_fifo_single;
+		pmb887x_fifo_reset(p->rx_fifo);
+	}
+	p->rxfcon = value;
+	usart_update_state(p);
+}
+
+static void usart_tx_fifo_config(pmb887x_usart_t *p, uint32_t value) {
+	bool old_fifo_enabled = (p->txfcon & USART_TXFCON_TXFEN) != 0;
+	bool new_fifo_enabled = (value & USART_TXFCON_TXFEN) != 0;
+	if (old_fifo_enabled != new_fifo_enabled) {
+		p->tx_fifo = new_fifo_enabled ? &p->tx_fifo_buffered : &p->tx_fifo_single;
+		pmb887x_fifo_reset(p->tx_fifo);
+	}
+
+	bool old_transparent_mode = (p->txfcon & USART_TXFCON_TXTMEN) != 0 && old_fifo_enabled;
+	bool new_transparent_mode = (value & USART_TXFCON_TXTMEN) != 0 && new_fifo_enabled;
+	if (!old_transparent_mode && new_transparent_mode)
+		pmb887x_srb_set_isr(&p->srb, USART_ISR_TB);
+
+	p->txfcon = value;
+	usart_update_state(p);
+}
+
+static bool usart_tb_irq(pmb887x_usart_t *p) {
+	if (usart_is_tx_fifo_enabled(p)) {
+		if ((p->txfcon & USART_TXFCON_TXTMEN))
+			return !pmb887x_fifo_is_full(p->tx_fifo);
+		uint32_t tx_level = (p->txfcon & USART_TXFCON_TXFITL) >> USART_TXFCON_TXFITL_SHIFT;
+		tx_level = MAX(1, MIN(USART_FIFO_SIZE, tx_level));
+		return pmb887x_fifo_count(p->tx_fifo) <= tx_level;
+	}
+	return pmb887x_fifo_is_empty(p->tx_fifo);
+}
+
+static bool usart_tx_irq(pmb887x_usart_t *p) {
+	if (usart_is_tx_fifo_enabled(p)) {
+		if ((p->txfcon & USART_TXFCON_TXTMEN))
+			return true;
+		uint32_t tx_level = (p->txfcon & USART_TXFCON_TXFITL) >> USART_TXFCON_TXFITL_SHIFT;
+		tx_level = MAX(1, MIN(USART_FIFO_SIZE, tx_level));
+		return pmb887x_fifo_count(p->tx_fifo) <= tx_level;
+	}
+	return pmb887x_fifo_is_empty(p->tx_fifo);
+}
+
+static bool usart_rx_irq(pmb887x_usart_t *p) {
+	if (usart_is_rx_fifo_enabled(p)) {
+		if ((p->rxfcon & USART_RXFCON_RXTMEN))
+			return !pmb887x_fifo_is_empty(p->rx_fifo);
+		uint32_t rx_level = (p->rxfcon & USART_RXFCON_RXFITL) >> USART_RXFCON_RXFITL_SHIFT;
+		rx_level = MAX(1, MIN(USART_FIFO_SIZE, rx_level));
+		return pmb887x_fifo_count(p->rx_fifo) >= rx_level;
+	}
+	return !pmb887x_fifo_is_empty(p->rx_fifo);
+}
+
+static void usart_handle_dma(pmb887x_usart_t *p) {
+	if (p->dmac_tx_clr || !(p->dma_control & USART_DMAE_TX)) {
+		qemu_set_irq(p->dmac_tx_breq, 0);
 	} else {
-		p->rx_fifo = &p->rx_fifo_single;
+		if (usart_tx_irq(p))
+			qemu_set_irq(p->dmac_tx_breq, 1);
+	}
+
+	if (p->dmac_rx_clr || !(p->dma_control & USART_DMAE_RX)) {
+		qemu_set_irq(p->dmac_rx_breq, 0);
+	} else {
+		if (usart_rx_irq(p))
+			qemu_set_irq(p->dmac_rx_breq, 1);
 	}
 }
 
-static void usart_set_tx_fifo(pmb887x_usart_t *p, bool buffered) {
-	pmb887x_fifo_reset(&p->tx_fifo_buffered);
-	pmb887x_fifo_reset(&p->tx_fifo_single);
-	
-	if (p->watch_tag) {
-		g_source_remove(p->watch_tag);
-		p->watch_tag = 0;
-	}
-	
-	if (buffered) {
-		p->tx_fifo = &p->tx_fifo_buffered;
-	} else {
-		p->tx_fifo = &p->tx_fifo_single;
-	}
+static void usart_tmo_timer_reset(void *opaque) {
+	pmb887x_usart_t *p = opaque;
+	pmb887x_srb_set_isr(&p->srb, USART_ISR_TMO);
+}
+
+static void usart_timer_reset(void *opaque) {
+	pmb887x_usart_t *p = opaque;
+	usart_transmit_fifo(p);
+}
+
+static void usart_immediate_transfer(pmb887x_usart_t *p) {
+	if (p->watch_tag || !p->transfer_pending)
+		return;
+	timer_del(p->timer);
+	usart_transmit_fifo(p);
 }
 
 static void usart_update_state(pmb887x_usart_t *p) {
-	if ((p->rxfcon & USART_RXFCON_RXFEN)) {
+	if (usart_is_rx_fifo_enabled(p)) {
 		if ((p->rxfcon & USART_RXFCON_RXFFLU)) {
-			usart_set_rx_fifo(p, false);
-			usart_set_rx_fifo(p, true);
+			pmb887x_fifo_reset(p->rx_fifo);
 			p->rxfcon &= ~USART_RXFCON_RXFFLU;
 		}
 	}
-	
-	if ((p->txfcon & USART_TXFCON_TXFEN)) {
+
+	if (usart_is_tx_fifo_enabled(p)) {
 		if ((p->txfcon & USART_TXFCON_TXFFLU)) {
-			usart_set_tx_fifo(p, false);
-			usart_set_tx_fifo(p, true);
+			pmb887x_fifo_reset(p->tx_fifo);
 			p->txfcon &= ~USART_TXFCON_TXFFLU;
+			pmb887x_srb_set_isr(&p->srb, USART_ISR_TB);
 		}
+	}
+
+	if (!pmb887x_clc_is_enabled(&p->clc)) {
+		pmb887x_fifo_reset(&p->tx_buffer);
+		pmb887x_fifo_reset(p->tx_fifo);
+		pmb887x_fifo_reset(p->rx_fifo);
+
+		if (p->transfer_pending) {
+			timer_del(p->timer);
+			p->transfer_pending = false;
+		}
+
+		if (p->watch_tag) {
+			g_source_remove(p->watch_tag);
+			p->watch_tag = 0;
+		}
+	}
+
+	if (p->whbcon) {
+		if (p->whbcon & USART_WHBCON_CLRREN)
+			p->con &= ~USART_CON_REN;
+		if (p->whbcon & USART_WHBCON_SETREN)
+			p->con |= USART_CON_REN;
+
+		if (p->whbcon & USART_WHBCON_CLRPE)
+			p->con &= ~USART_CON_PE;
+		if (p->whbcon & USART_WHBCON_SETPE)
+			p->con |= USART_CON_PE;
+
+		if (p->whbcon & USART_WHBCON_CLRFE)
+			p->con &= ~USART_CON_FE;
+		if (p->whbcon & USART_WHBCON_SETFE)
+			p->con |= USART_CON_FE;
+
+		if (p->whbcon & USART_WHBCON_CLROE)
+			p->con &= ~USART_CON_OE;
+		if (p->whbcon & USART_WHBCON_SETOE)
+			p->con |= USART_CON_OE;
+
+		p->whbcon = 0;
+	}
+
+	if (!p->tmo) {
+		timer_del(p->tmo_timer);
 	}
 }
 
@@ -142,28 +277,39 @@ static int usart_can_receive(void *opaque) {
 
 static void usart_receive(void *opaque, const uint8_t *buf, int size) {
 	pmb887x_usart_t *p = opaque;
-	
-	if (!pmb887x_clc_is_enabled(&p->clc)) {
-		DPRINTF("usart not enabled, drop %d rx chars\n", size);
-		pmb887x_fifo_reset(p->rx_fifo);
-		return;
+
+	for (int i = 0; i < size; i++) {
+		if (pmb887x_fifo_is_full(p->rx_fifo)) {
+			pmb887x_fifo8_replace_last(p->rx_fifo, buf[i]);
+			p->con |= USART_CON_OE;
+			pmb887x_srb_set_isr(&p->srb, USART_ISR_RX | USART_ISR_ERR);
+		} else {
+			pmb887x_fifo8_push(p->rx_fifo, buf[i]);
+		}
 	}
-	
-	g_assert(size <= pmb887x_fifo_free_count(p->rx_fifo));
-	pmb887x_fifo8_write(p->rx_fifo, buf, size);
-	
-	if ((p->rxfcon & USART_RXFCON_RXFEN)) {
-		uint32_t rx_level = (p->rxfcon & USART_RXFCON_RXFITL) >> USART_RXFCON_RXFITL_SHIFT;
-		rx_level = MAX(1, MIN(FIFO_SIZE, rx_level));
-		
-		if (pmb887x_fifo_count(p->rx_fifo) >= rx_level)
-			pmb887x_srb_set_isr(&p->srb, USART_ISR_RX);
-	} else {
+
+	if (p->tmo > 0) {
+		timer_mod_ns(p->tmo_timer, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + USART_TX_BYTE_TIME_NS);
+	}
+
+	if (usart_rx_irq(p))
 		pmb887x_srb_set_isr(&p->srb, USART_ISR_RX);
-	}
+
+	usart_handle_dma(p);
 }
 
-static gboolean usart_transmit_delayed(void *do_not_use, GIOCondition cond, void *opaque) {
+static void usart_schedule_transmit(pmb887x_usart_t *p) {
+	uint8_t byte = pmb887x_fifo8_pop(p->tx_fifo);
+	pmb887x_fifo8_push(&p->tx_buffer, byte);
+	p->ris_read_count = 0;
+	p->transfer_pending = true;
+	timer_mod(p->timer, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + USART_TX_BYTE_TIME_NS);
+	if (usart_tb_irq(p))
+		pmb887x_srb_set_isr(&p->srb, USART_ISR_TB);
+	usart_handle_dma(p);
+}
+
+static gboolean usart_transmit_fifo_delayed(void *do_not_use, GIOCondition cond, void *opaque) {
 	pmb887x_usart_t *p = opaque;
 	p->watch_tag = 0;
 	usart_transmit_fifo(p);
@@ -171,63 +317,94 @@ static gboolean usart_transmit_delayed(void *do_not_use, GIOCondition cond, void
 }
 
 static void usart_transmit_fifo(pmb887x_usart_t *p) {
-	if (p->watch_tag)
+	if (!p->transfer_pending)
 		return;
-	
-	if (!pmb887x_clc_is_enabled(&p->clc)) {
-		pmb887x_fifo_reset(p->tx_fifo);
-		return;
+
+	p->transfer_pending = false;
+	p->ris_read_count = 0;
+
+	uint8_t buffer[USART_FIFO_SIZE * 2] = { };
+	int buffer_size = 0;
+
+	// Next byte to transmit
+	if (!pmb887x_fifo_is_empty(&p->tx_buffer)) {
+		buffer[0] = pmb887x_fifo8_pop(&p->tx_buffer);
+		buffer_size++;
 	}
-	
-	bool is_full = pmb887x_fifo_is_full(p->tx_fifo);
-	
-	uint8_t buff[FIFO_SIZE];
-	int size = pmb887x_fifo_count(p->tx_fifo);
-	pmb887x_fifo8_read(p->tx_fifo, buff, size);
-	
-	int ret = qemu_chr_fe_write_all(&p->chr, buff, size);
-	if (ret > 0) {
-		if (ret < size) {
-			// possible?
-			pmb887x_fifo8_write(p->tx_fifo, buff + ret, size - ret);
-		}
-		
-		if (is_full)
-			pmb887x_srb_set_isr(&p->srb, USART_ISR_TB);
-		
-		if ((p->txfcon & USART_TXFCON_TXFEN)) {
-			uint32_t tx_level = (p->txfcon & USART_TXFCON_TXFITL) >> USART_TXFCON_TXFITL_SHIFT;
-			tx_level = MAX(1, MIN(FIFO_SIZE, tx_level));
-			
-			if (pmb887x_fifo_count(p->tx_fifo) <= tx_level)
-				pmb887x_srb_set_isr(&p->srb, USART_ISR_TX);
-		} else {
-			if (pmb887x_fifo_is_empty(p->tx_fifo))
-				pmb887x_srb_set_isr(&p->srb, USART_ISR_TX);
-		}
-	} else if (size > 0) {
-		WPRINTF("qemu_chr_fe_write_all failed! size=%d, ret=%d", size, ret);
-		for (uint32_t i = 0; i < size; i++)
-			WPRINTF("Lost data: %02X\n", buff[i]);
-	}
-	
+
+#ifdef USART_SEND_FULL_FIFO
+	// Also, we can send more data from FIFO
 	if (!pmb887x_fifo_is_empty(p->tx_fifo)) {
-		p->watch_tag = qemu_chr_fe_add_watch(&p->chr, G_IO_OUT | G_IO_HUP, usart_transmit_delayed, p);
-		if (!p->watch_tag) {
-			pmb887x_srb_set_isr(&p->srb, USART_ISR_TB | USART_ISR_TX);
+		int size = pmb887x_fifo_count(p->tx_fifo);
+		pmb887x_fifo8_read(p->tx_fifo, buffer + buffer_size, size);
+		buffer_size += size;
+	}
+#endif
+
+	int ret = qemu_chr_fe_write(&p->chr, buffer, buffer_size);
+
+	// Transmission incomplete, schedule next transmission when char backend available again
+	int transmitted = MAX(0, ret);
+	if (transmitted < buffer_size) {
+		p->watch_tag = qemu_chr_fe_add_watch(&p->chr, G_IO_OUT | G_IO_HUP, usart_transmit_fifo_delayed, p);
+		if (p->watch_tag) {
+			pmb887x_fifo8_push(&p->tx_buffer, buffer[transmitted]);
+			if (transmitted + 1 < buffer_size)
+				pmb887x_fifo8_write(p->tx_fifo, buffer + transmitted + 1, buffer_size - transmitted - 1);
+			p->transfer_pending = true;
+			p->ris_read_count = 0;
+		} else {
+			// QEMU char backend is not connected, data is lost
 			pmb887x_fifo_reset(p->tx_fifo);
+			transmitted = buffer_size;
 		}
+	}
+
+	// Trigger IRQ/DMA if some data is transmitted
+	if (transmitted > 0) {
+		if (usart_tb_irq(p))
+			pmb887x_srb_set_isr(&p->srb, USART_ISR_TB);
+		if (usart_tx_irq(p))
+			pmb887x_srb_set_isr(&p->srb, USART_ISR_TX);
+		usart_handle_dma(p);
+	}
+
+	// If some data is still in the buffer, schedule transmission
+	if (!p->transfer_pending && !pmb887x_fifo_is_empty(p->tx_fifo))
+		usart_schedule_transmit(p);
+}
+
+static void usart_write_txb(pmb887x_usart_t *p, uint8_t value) {
+	p->txb = value;
+
+	if (pmb887x_fifo_is_full(p->tx_fifo)) {
+		pmb887x_fifo8_replace_last(p->tx_fifo, p->txb);
+		if (usart_is_tx_fifo_enabled(p)) {
+			p->con |= USART_CON_OE;
+			pmb887x_srb_set_isr(&p->srb, USART_ISR_ERR);
+		}
+		return;
+	}
+
+	pmb887x_fifo8_push(p->tx_fifo, p->txb);
+
+	if (p->transfer_pending) {
+		if (usart_tb_irq(p))
+			pmb887x_srb_set_isr(&p->srb, USART_ISR_TB);
+		usart_handle_dma(p);
+	} else {
+		usart_schedule_transmit(p);
 	}
 }
 
 static uint64_t usart_io_read(void *opaque, hwaddr haddr, unsigned size) {
 	pmb887x_usart_t *p = opaque;
-
 	uint64_t value = 0;
 
-	// Workaround for broken firmwares
-	if (haddr != USART_RIS)
-		p->last_is_icr_tx = false;
+	if (haddr != USART_ID && haddr != USART_CLC) {
+		if (!pmb887x_clc_is_enabled(&p->clc))
+			EPRINTF("usart clock not enabled\n");
+	}
 
 	switch (haddr) {
 		case USART_CLC:
@@ -264,6 +441,10 @@ static uint64_t usart_io_read(void *opaque, hwaddr haddr, unsigned size) {
 				value = pmb887x_fifo8_pop(p->rx_fifo);
 				if (is_full)
 					qemu_chr_fe_accept_input(&p->chr);
+				if ((p->rxfcon & USART_RXFCON_RXTMEN) && !pmb887x_fifo_is_empty(p->rx_fifo))
+					pmb887x_srb_set_isr(&p->srb, USART_ISR_RX);
+			} else {
+				pmb887x_srb_set_isr(&p->srb, USART_ISR_ERR);
 			}
 			break;
 
@@ -284,10 +465,10 @@ static uint64_t usart_io_read(void *opaque, hwaddr haddr, unsigned size) {
 			break;
 
 		case USART_FSTAT:
-			if ((p->txfcon & USART_TXFCON_TXFEN))
+			if (usart_is_tx_fifo_enabled(p))
 				value |= pmb887x_fifo_count(p->tx_fifo) << USART_FSTAT_TXFFL_SHIFT;
 
-			if ((p->txfcon & USART_RXFCON_RXFEN))
+			if (usart_is_rx_fifo_enabled(p))
 				value |= pmb887x_fifo_count(p->rx_fifo) << USART_FSTAT_RXFFL_SHIFT;
 			break;
 
@@ -318,17 +499,21 @@ static uint64_t usart_io_read(void *opaque, hwaddr haddr, unsigned size) {
 		case USART_RIS:
 			value = pmb887x_srb_get_ris(&p->srb);
 
-			// workaround for broken firmwares
-			if (p->apply_workarounds) {
-				if (p->last_is_icr_tx) {
-					DPRINTF("apply USART_RIS_TX workaround\n");
-					value |= USART_RIS_TX;
-				}
+			// Hack for speed-up emulation
+			if (p->transfer_pending && p->ris_read_count++ > 10) {
+				DPRINTF("immediate transfer RIS\n");
+				usart_immediate_transfer(p);
 			}
 			break;
 
 		case USART_MIS:
 			value = pmb887x_srb_get_mis(&p->srb);
+
+			// Hack for speed-up emulation
+			if (p->transfer_pending && p->ris_read_count++ > 10) {
+				DPRINTF("immediate transfer MIS\n");
+				usart_immediate_transfer(p);
+			}
 			break;
 
 		case USART_ICR:
@@ -339,8 +524,8 @@ static uint64_t usart_io_read(void *opaque, hwaddr haddr, unsigned size) {
 			value = 0;
 			break;
 
-		case USART_DMACON:
-			value = p->dmacon;
+		case USART_DMAE:
+			value = p->dma_control;
 			break;
 
 		case USART_TMO:
@@ -361,12 +546,15 @@ static uint64_t usart_io_read(void *opaque, hwaddr haddr, unsigned size) {
 static void usart_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned size) {
 	pmb887x_usart_t *p = opaque;
 
-	// Workaround for broken firmwares
-	p->last_is_icr_tx = (haddr == USART_ICR && (value & USART_ICR_TX));
+	if (haddr != USART_ID && haddr != USART_CLC) {
+		if (!pmb887x_clc_is_enabled(&p->clc))
+			EPRINTF("usart clock not enabled\n");
+	}
 
 	switch (haddr) {
 		case USART_CLC:
 			pmb887x_clc_set(&p->clc, value);
+			usart_update_state(p);
 			break;
 
 		case USART_ID:
@@ -390,19 +578,7 @@ static void usart_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned 
 			break;
 
 		case USART_TXB:
-			p->txb = value & 0xFF;
-
-			if (!pmb887x_fifo_is_full(p->tx_fifo)) {
-				pmb887x_fifo8_push(p->tx_fifo, p->txb);
-
-				if (!pmb887x_fifo_is_full(p->tx_fifo))
-					pmb887x_srb_set_isr(&p->srb, USART_ISR_TB);
-
-				usart_transmit_fifo(p);
-			} else {
-				EPRINTF("TX FIFO is FULL :(\n");
-				abort();
-			}
+			usart_write_txb(p, value & 0xFF);
 			break;
 
 		case USART_ABCON:
@@ -410,21 +586,16 @@ static void usart_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned 
 			break;
 
 		case USART_RXFCON:
-			if ((value & USART_RXFCON_RXFEN) != (p->rxfcon & USART_RXFCON_RXFEN))
-				usart_set_rx_fifo(p, (value & USART_RXFCON_RXFEN) != 0);
-			p->rxfcon = value;
-			usart_update_state(p);
+			usart_rx_fifo_config(p, value);
 			break;
 
 		case USART_TXFCON:
-			if ((value & USART_TXFCON_TXFEN) != (p->txfcon & USART_TXFCON_TXFEN))
-				usart_set_tx_fifo(p, (value & USART_TXFCON_TXFEN) != 0);
-			p->txfcon = value;
-			usart_update_state(p);
+			usart_tx_fifo_config(p, value);
 			break;
 
 		case USART_WHBCON:
 			p->whbcon = value;
+			usart_update_state(p);
 			break;
 
 		case USART_WHBABCON:
@@ -451,13 +622,15 @@ static void usart_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned 
 			pmb887x_srb_set_isr(&p->srb, value);
 			break;
 
-		case USART_DMACON:
-			p->dmacon = value;
+		case USART_DMAE:
+			p->dma_control = value;
 			usart_update_state(p);
+			usart_handle_dma(p);
 			break;
 
 		case USART_TMO:
 			p->tmo = value;
+			usart_update_state(p);
 			break;
 
 		default:
@@ -482,14 +655,39 @@ static void usart_handle_gpio_input(void *opaque, int id, int level) {
 	// nothing
 }
 
+static void usart_handle_dmac_tx_clr(void *opaque, int id, int level) {
+	pmb887x_usart_t *p = opaque;
+	p->dmac_tx_clr = level;
+	usart_handle_dma(p);
+}
+
+static void usart_handle_dmac_rx_clr(void *opaque, int id, int level) {
+	pmb887x_usart_t *p = opaque;
+	p->dmac_rx_clr = level;
+	usart_handle_dma(p);
+}
+
+static void usart_event_handler(void *opaque, int event_id, int level) {
+	pmb887x_usart_t *p = opaque;
+	if (event_id == USART_RIS_TX && !level)
+		usart_immediate_transfer(p);
+}
+
 static void usart_init(Object *obj) {
 	DeviceState *dev = DEVICE(obj);
-	struct pmb887x_usart_t *p = PMB887X_USART(obj);
+	pmb887x_usart_t *p = PMB887X_USART(obj);
 	memory_region_init_io(&p->mmio, obj, &io_ops, p, "pmb887x-usart", USART_IO_SIZE);
 	sysbus_init_mmio(SYS_BUS_DEVICE(obj), &p->mmio);
 	
 	for (int i = 0; i < ARRAY_SIZE(p->irq); i++)
 		sysbus_init_irq(SYS_BUS_DEVICE(obj), &p->irq[i]);
+
+	// DMAC
+	qdev_init_gpio_in_named(dev, usart_handle_dmac_tx_clr, "DMAC_TX_CLR", 1);
+	qdev_init_gpio_out_named(dev, &p->dmac_tx_breq, "DMAC_TX_BREQ", 1);
+
+	qdev_init_gpio_in_named(dev, usart_handle_dmac_rx_clr, "DMAC_RX_CLR", 1);
+	qdev_init_gpio_out_named(dev, &p->dmac_rx_breq, "DMAC_RX_BREQ", 1);
 
 	qdev_init_gpio_in_named(dev, usart_handle_gpio_input, "RXD_IN", 1);
 	qdev_init_gpio_in_named(dev, usart_handle_gpio_input, "CTS_IN", 1);
@@ -498,7 +696,7 @@ static void usart_init(Object *obj) {
 }
 
 static void usart_realize(DeviceState *dev, Error **errp) {
-	struct pmb887x_usart_t *p = PMB887X_USART(dev);
+	pmb887x_usart_t *p = PMB887X_USART(dev);
 	
 	pmb887x_clc_init(&p->clc);
 	
@@ -507,25 +705,30 @@ static void usart_realize(DeviceState *dev, Error **errp) {
 			hw_error("pmb887x-usart: irq %d not set", i);
 	}
 	
-    pmb887x_fifo8_init(&p->tx_fifo_buffered, FIFO_SIZE);
-    pmb887x_fifo8_init(&p->rx_fifo_buffered, FIFO_SIZE);
+    pmb887x_fifo8_init(&p->tx_fifo_buffered, USART_FIFO_SIZE);
+    pmb887x_fifo8_init(&p->rx_fifo_buffered, USART_FIFO_SIZE);
 	
-    pmb887x_fifo8_init(&p->tx_fifo_single, 2);
+    pmb887x_fifo8_init(&p->tx_fifo_single, 1);
     pmb887x_fifo8_init(&p->rx_fifo_single, 1);
-	
-	usart_set_rx_fifo(p, false);
-	usart_set_tx_fifo(p, false);
-	
+
+	pmb887x_fifo8_init(&p->tx_buffer, 1);
+
 	pmb887x_srb_init(&p->srb, p->irq, ARRAY_SIZE(p->irq));
-	
-	qemu_chr_fe_set_handlers(&p->chr, usart_can_receive, usart_receive, NULL, NULL, p, NULL, true);
-	
+	pmb887x_srb_set_event_handler(&p->srb, dev, usart_event_handler);
+
+	p->timer = timer_new_ns(QEMU_CLOCK_VIRTUAL, usart_timer_reset, p);
+	p->tmo_timer = timer_new_ns(QEMU_CLOCK_VIRTUAL, usart_tmo_timer_reset, p);
+	p->tx_fifo = &p->tx_fifo_single;
+	p->rx_fifo = &p->rx_fifo_single;
+	usart_tx_fifo_config(p, 0);
+	usart_rx_fifo_config(p, 0);
 	usart_update_state(p);
+
+	qemu_chr_fe_set_handlers(&p->chr, usart_can_receive, usart_receive, NULL, NULL, p, NULL, true);
 }
 
 static const Property usart_properties[] = {
     DEFINE_PROP_CHR("chardev", struct pmb887x_usart_t, chr),
-    DEFINE_PROP_BOOL("apply-workarounds", struct pmb887x_usart_t, apply_workarounds, true),
 };
 
 static void usart_class_init(ObjectClass *klass, const void *data) {

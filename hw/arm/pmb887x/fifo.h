@@ -20,6 +20,7 @@ typedef struct {
  * */
 void pmb887x_fifo_base_write(pmb887x_fifo_base_t *fifo, void *buffer, const void *items, uint32_t items_count, uint32_t item_size);
 void pmb887x_fifo_base_read(pmb887x_fifo_base_t *fifo, void *buffer, void *items, uint32_t items_count, uint32_t item_size);
+void pmb887x_fifo_base_replace_last(pmb887x_fifo_base_t *fifo, void *buffer, const void *item, uint32_t item_size);
 
 static inline bool pmb887x_fifo_base_is_full(pmb887x_fifo_base_t *fifo) {
 	return fifo->count >= fifo->total;
@@ -88,6 +89,10 @@ static inline void pmb887x_fifo8_read(pmb887x_fifo8_t *fifo, uint8_t *items, uin
 	pmb887x_fifo_base_read(&fifo->base, fifo->buffer, items, items_count, sizeof(uint8_t));
 }
 
+static inline void pmb887x_fifo8_replace_last(pmb887x_fifo8_t *fifo, uint8_t value) {
+	pmb887x_fifo_base_replace_last(&fifo->base, fifo->buffer, &value, sizeof(uint8_t));
+}
+
 static inline void pmb887x_fifo8_free(pmb887x_fifo8_t *fifo) {
 	g_free(fifo->buffer);
 	fifo->buffer = NULL;
@@ -126,6 +131,10 @@ static inline void pmb887x_fifo16_read(pmb887x_fifo16_t *fifo, uint16_t *items, 
 	pmb887x_fifo_base_read(&fifo->base, fifo->buffer, items, items_count, sizeof(uint16_t));
 }
 
+static inline void pmb887x_fifo16_replace_last(pmb887x_fifo16_t *fifo, uint16_t value) {
+	pmb887x_fifo_base_replace_last(&fifo->base, fifo->buffer, &value, sizeof(uint16_t));
+}
+
 static inline void pmb887x_fifo16_free(pmb887x_fifo16_t *fifo) {
 	g_free(fifo->buffer);
 	fifo->buffer = NULL;
@@ -162,6 +171,10 @@ static inline void pmb887x_fifo32_write(pmb887x_fifo32_t *fifo, const uint32_t *
 
 static inline void pmb887x_fifo32_read(pmb887x_fifo32_t *fifo, uint32_t *items, uint32_t items_count) {
 	pmb887x_fifo_base_read(&fifo->base, fifo->buffer, items, items_count, sizeof(uint32_t));
+}
+
+static inline void pmb887x_fifo32_replace_last(pmb887x_fifo32_t *fifo, uint32_t value) {
+	pmb887x_fifo_base_replace_last(&fifo->base, fifo->buffer, &value, sizeof(uint32_t));
 }
 
 static inline void pmb887x_fifo32_free(pmb887x_fifo32_t *fifo) {

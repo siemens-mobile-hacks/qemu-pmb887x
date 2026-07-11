@@ -143,8 +143,8 @@ static const TypeInfo gimmick_info = {
 	.class_init    = gimmick_class_init,
 };
 
-static void acodec_register_types(void) {
+static void gimmick_register_types(void) {
 	type_register_static(&gimmick_info);
 }
 
-type_init(acodec_register_types)
+type_init(gimmick_register_types)

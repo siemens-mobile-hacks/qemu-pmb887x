@@ -103,6 +103,9 @@ static void dmac_transfer_finish(pmb887x_dmac_t *p, pmb887x_dmac_ch_t *ch) {
 		uint32_t lli[4];
 		address_space_read(&p->downstream_as, lli_addr, MEMTXATTRS_UNSPECIFIED, lli, sizeof(lli));
 
+		if ((ch->control & DMAC_CH_CONTROL_I))
+			pmb887x_srb_set_isr(&p->srb_tc, (1 << ch->id));
+
 		ch->src_addr = lli[0];
 		ch->dst_addr = lli[1];
 		ch->lli = lli[2];
@@ -160,7 +163,7 @@ static void dmac_transfer_memory(pmb887x_dmac_t *p, pmb887x_dmac_ch_t *ch, uint3
 		flow_ctrl == DMAC_CH_CONFIG_FLOW_CTRL_MEM2PER_PER
 	);
 
-	DPRINTF("CH%d: %08X [%dx%d] -> %08X [%dx%d]\n", ch->id, ch->src_addr, src_width, burst_size, ch->dst_addr, dst_width, burst_size);
+	DPRINTF("CH%d: %08X [%dx%d] -> %08X [%dx%d] [%d]\n", ch->id, ch->src_addr, src_width, burst_size, ch->dst_addr, dst_width, burst_size, tx_size);
 
 	if (simple_memcpy) {
 		address_space_read(&p->downstream_as, ch->src_addr, MEMTXATTRS_UNSPECIFIED, buffer, src_width * burst_size);
@@ -168,7 +171,8 @@ static void dmac_transfer_memory(pmb887x_dmac_t *p, pmb887x_dmac_ch_t *ch, uint3
 		ch->src_addr += src_width * burst_size;
 		ch->dst_addr += dst_width * burst_size;
 	} else if (dst_width == src_width) {
-		while (burst_size > 0) {
+		uint32_t transfered = 0;
+		while (transfered < burst_size) {
 			address_space_read(&p->downstream_as, ch->src_addr, MEMTXATTRS_UNSPECIFIED, buffer, src_width);
 			address_space_write(&p->downstream_as, ch->dst_addr, MEMTXATTRS_UNSPECIFIED, buffer, dst_width);
 
@@ -178,7 +182,7 @@ static void dmac_transfer_memory(pmb887x_dmac_t *p, pmb887x_dmac_ch_t *ch, uint3
 			if ((ch->control & DMAC_CH_CONTROL_DI))
 				ch->dst_addr += dst_width;
 
-			burst_size--;
+			transfered++;
 		}
 	} else if (dst_width > src_width) {
 		uint32_t transfered = 0;
@@ -334,14 +338,6 @@ static void dmac_update(pmb887x_dmac_t *p) {
 	pmb887x_srb_set_imsc(&p->srb_err, err_mask);
 
 	dmac_schedule(p);
-}
-
-bool pmb887x_dmac_is_busy(pmb887x_dmac_t *p) {
-	return p->is_busy;
-}
-
-void pmb887x_dmac_request(pmb887x_dmac_t *p, uint32_t per_id, uint32_t size) {
-	// DPRINTF("pmb887x_dmac_request(%d, %d)\n", per_id, size);
 }
 
 static const char *dmac_signal_name(pmb887x_dmac_t *p, const int signal[]) {

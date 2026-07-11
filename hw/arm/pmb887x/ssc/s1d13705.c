@@ -1,14 +1,13 @@
 /*
-* Epson S1D13732
+* Epson S1D13705
  * */
 #define PMB887X_TRACE_ID		GIMMICK
-#define PMB887X_TRACE_PREFIX	"s1d13732"
+#define PMB887X_TRACE_PREFIX	"s1d13705"
 
 #include "qemu/osdep.h"
 #include "hw/qdev-properties.h"
 #include "hw/ssi/ssi.h"
 #include "qemu/module.h"
-#include "ui/console.h"
 #include "qom/object.h"
 #include "hw/irq.h"
 #include "hw/hw.h"
@@ -57,7 +56,7 @@ struct pmb887x_gimmick_t {
 	qemu_irq fpline;
 };
 
-#define TYPE_PMB887X_GIMMICK "s1d13732"
+#define TYPE_PMB887X_GIMMICK "s1d13705"
 #define PMB887X_GIMMICK(obj)	OBJECT_CHECK(pmb887x_gimmick_t, (obj), TYPE_PMB887X_GIMMICK)
 
 #define GIMMICK_BUS_WIDTH 16
@@ -67,7 +66,7 @@ static uint32_t gimmick_read_reg(pmb887x_gimmick_t *p, uint16_t reg) {
 
 	switch (reg) {
 		case 0x0000: // ID
-			value = 0x706B;
+			value = 0x8090;
 			break;
 
 		case 0x0014:
@@ -150,6 +149,8 @@ static uint32_t gimmick_transfer16(SSIPeripheral *dev, uint32_t data) {
 	} else {
 		hw_error("Ignored data: %02X [cmd=%04X]", data, p->cmd);
 	}
+
+	DPRINTF("value=%08X\n", value);
 
 	return value;
 }

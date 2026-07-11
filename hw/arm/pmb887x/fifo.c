@@ -41,3 +41,10 @@ void pmb887x_fifo_base_read(pmb887x_fifo_base_t *fifo, void *buffer, void *items
 		fifo->count -= items_count;
 	}
 }
+
+void pmb887x_fifo_base_replace_last(pmb887x_fifo_base_t *fifo, void *buffer, const void *item, uint32_t item_size) {
+	g_assert(fifo->count > 0);
+
+	uint32_t index = (fifo->write + fifo->total - 1) % fifo->total;
+	memcpy(buffer + (index * item_size), item, item_size);
+}

@@ -53,7 +53,10 @@ struct pmb887x_scu_t {
 	uint32_t rst_req;
 	uint32_t boot_cfg;
 	uint32_t dsp_unk0;
-	
+
+	uint32_t unk0;
+	uint32_t scu_exti_unk;
+
 	pmb887x_dmac_t *dmac;
 	struct pmb887x_sccu_t *sccu;
 	MemoryRegion *brom_mirror;
@@ -174,6 +177,10 @@ static uint64_t scu_io_read(void *opaque, hwaddr haddr, unsigned size) {
 			value = p->cpu_uid[(haddr - SCU_UID0) / 4];
 			break;
 
+		case SCU_EXTI_UNK:
+			value = p->scu_exti_unk;
+			break;
+
 		case SCU_EXTI:
 			value = p->exti;
 			break;
@@ -181,7 +188,7 @@ static uint64_t scu_io_read(void *opaque, hwaddr haddr, unsigned size) {
 		case SCU_DSP_UNK0:
 			value = p->dsp_unk0;
 			break;
-		
+
 		case SCU_EXTI0_SRC:
 		case SCU_EXTI1_SRC:
 		case SCU_EXTI2_SRC:
@@ -206,7 +213,11 @@ static uint64_t scu_io_read(void *opaque, hwaddr haddr, unsigned size) {
 		case SCU_UNK2_SRC:
 			value = pmb887x_src_get(&p->unk_src[get_src_index_by_addr(haddr)]);
 			break;
-		
+
+		case SCU_UNK0:
+			value = p->unk0;
+			break;
+
 		default:
 			IO_DUMP(haddr + p->mmio.addr, size, 0xFFFFFFFF, false);
 			EPRINTF("unknown reg access: %02"PRIX64"\n", haddr);
@@ -270,7 +281,11 @@ static void scu_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned si
 		case SCU_DMARS:
 			pmb887x_dmac_set_sel(p->dmac, value);
 		break;
-		
+
+		case SCU_EXTI_UNK:
+			p->scu_exti_unk = value;
+			break;
+
 		case SCU_EXTI: {
 			p->exti = value;
 			DPRINTF("EXTI=%08"PRIX64"\n", value);
@@ -317,7 +332,10 @@ static void scu_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned si
 		case SCU_UNK2_SRC:
 			pmb887x_src_set(&p->unk_src[get_src_index_by_addr(haddr)], value);
 		break;
-		
+
+		case SCU_UNK0:
+			p->unk0 = value;
+			break;
 		default:
 			EPRINTF("unknown reg access: %02"PRIX64"\n", haddr);
 			exit(1);

@@ -5616,10 +5616,12 @@ static const pmb887x_module_reg_t scu_regs[] = {
 	{"ID",			SCU_ID,			scu_id_fields,			ARRAY_SIZE(scu_id_fields),			0},
 	{"RST_SR",		SCU_RST_SR,		scu_rst_sr_fields,		ARRAY_SIZE(scu_rst_sr_fields),		0},
 	{"RST_REQ",		SCU_RST_REQ,	scu_rst_req_fields,		ARRAY_SIZE(scu_rst_req_fields),		0},
+	{"UNK0",		SCU_UNK0,		NULL,					0,									0},
 	{"WDTCON0",		SCU_WDTCON0,	scu_wdtcon0_fields,		ARRAY_SIZE(scu_wdtcon0_fields),		0},
 	{"WDTCON1",		SCU_WDTCON1,	scu_wdtcon1_fields,		ARRAY_SIZE(scu_wdtcon1_fields),		0},
 	{"WDT_SR",		SCU_WDT_SR,		scu_wdt_sr_fields,		ARRAY_SIZE(scu_wdt_sr_fields),		0},
 	{"DSP_UNK0",	SCU_DSP_UNK0,	NULL,					0,									0},
+	{"EXTI_UNK",	SCU_EXTI_UNK,	NULL,					0,									0},
 	{"EXTI",		SCU_EXTI,		scu_exti_fields,		ARRAY_SIZE(scu_exti_fields),		0},
 	{"EBUCLC1",		SCU_EBUCLC1,	scu_ebuclc1_fields,		ARRAY_SIZE(scu_ebuclc1_fields),		0},
 	{"EBUCLC2",		SCU_EBUCLC2,	scu_ebuclc2_fields,		ARRAY_SIZE(scu_ebuclc2_fields),		0},
@@ -7278,9 +7280,9 @@ static const pmb887x_module_field_t usart_isr_fields[] = {
 	{"TMO",		USART_ISR_TMO,		USART_ISR_TMO_SHIFT,		NULL,	0},
 };
 
-static const pmb887x_module_field_t usart_dmacon_fields[] = {
-	{"TX",	USART_DMACON_TX,	USART_DMACON_TX_SHIFT,	NULL,	0},
-	{"RX",	USART_DMACON_RX,	USART_DMACON_RX_SHIFT,	NULL,	0},
+static const pmb887x_module_field_t usart_dmae_fields[] = {
+	{"TX",	USART_DMAE_TX,	USART_DMAE_TX_SHIFT,	NULL,	0},
+	{"RX",	USART_DMAE_RX,	USART_DMAE_RX_SHIFT,	NULL,	0},
 };
 
 static const pmb887x_module_reg_t usart_regs[] = {
@@ -7308,7 +7310,7 @@ static const pmb887x_module_reg_t usart_regs[] = {
 	{"MIS",			USART_MIS,			usart_mis_fields,		ARRAY_SIZE(usart_mis_fields),		0},
 	{"ICR",			USART_ICR,			usart_icr_fields,		ARRAY_SIZE(usart_icr_fields),		0},
 	{"ISR",			USART_ISR,			usart_isr_fields,		ARRAY_SIZE(usart_isr_fields),		0},
-	{"DMACON",		USART_DMACON,		usart_dmacon_fields,	ARRAY_SIZE(usart_dmacon_fields),	0},
+	{"DMAE",		USART_DMAE,			usart_dmae_fields,		ARRAY_SIZE(usart_dmae_fields),		0},
 	{"TMO",			USART_TMO,			NULL,					0,									0},
 };
 

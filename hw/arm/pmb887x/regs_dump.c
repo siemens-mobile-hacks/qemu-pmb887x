@@ -223,10 +223,11 @@ void pmb887x_print_dump_io(uint32_t addr, uint32_t size, uint32_t value, bool is
 					const pmb887x_module_field_t *field = &reg->fields[i];
 					uint32_t field_value = (value & field->mask) >> field->shift;
 					const char *enum_name = regs_dump_find_cpu_module_field_enum(field, (value & field->mask));
+					uint32_t field_size = (field->mask >> field->shift);
 					
 					known_bits |= field->mask;
 					
-					if (!field_value && !enum_name)
+					if (field_size == 1 && field_value == 0 && !enum_name)
 						continue;
 					
 					if (first) {
@@ -238,7 +239,7 @@ void pmb887x_print_dump_io(uint32_t addr, uint32_t size, uint32_t value, bool is
 					
 					if (enum_name) {
 						g_string_append_printf(s, "%s(%s)", field->name, enum_name);
-					} else if ((field->mask >> field->shift) == 1) {
+					} else if (field_size == 1) {
 						g_string_append_printf(s, "%s", field->name);
 					} else {
 						g_string_append_printf(s, "%s(0x%02X)", field->name, field_value);
