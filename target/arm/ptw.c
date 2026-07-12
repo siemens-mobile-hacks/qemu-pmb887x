@@ -3894,14 +3894,26 @@ bool get_phys_addr(CPUARMState *env, vaddr address,
                    MMUAccessType access_type, MemOp memop, ARMMMUIdx mmu_idx,
                    GetPhysAddrResult *result, ARMMMUFaultInfo *fi)
 {
+    ARMCPU *cpu = env_archcpu(env);
     S1Translate ptw = {
         .in_mmu_idx = mmu_idx,
         .in_space = arm_mmu_idx_to_security_space(env, mmu_idx),
         .in_prot_check = 1 << access_type,
     };
 
-    return get_phys_addr_gpc(env, &ptw, address, access_type,
-                             memop, result, fi);
+    if (get_phys_addr_gpc(env, &ptw, address, access_type, memop, result, fi)) {
+        return true;
+    }
+
+    /* DTCM intercepts data accesses, while instruction fetches use system memory. */
+    if (cpu->dtcm_size &&
+        access_type != MMU_INST_FETCH &&
+        result->f.phys_addr >= cpu->dtcm_base &&
+        result->f.phys_addr - cpu->dtcm_base < cpu->dtcm_size) {
+        result->f.phys_addr = cpu->dtcm_phys_base + (result->f.phys_addr - cpu->dtcm_base);
+    }
+
+    return false;
 }
 
 static hwaddr arm_cpu_get_phys_page(CPUARMState *env, vaddr addr,

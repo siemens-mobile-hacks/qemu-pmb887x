@@ -9,12 +9,14 @@
 #include "system/memory.h"
 #include "cpu.h"
 #include "cpregs.h"
+#include "exec/cputlb.h"
 #include "hw/qdev-properties.h"
 
 #include "hw/arm/pmb887x/trace.h"
 
 #define TYPE_PMB887X_TCM	"pmb887x-tcm"
 #define PMB887X_TCM(obj)	OBJECT_CHECK(pmb887x_tcm_t, (obj), TYPE_PMB887X_TCM)
+#define DTCM_PHYS_BASE		(1ULL << 32)
 
 typedef struct pmb887x_tcm_t pmb887x_tcm_t;
 
@@ -38,6 +40,16 @@ static void tcm_update_state(pmb887x_tcm_t *p, int i) {
 		size = (1 << (size - 1)) * 1024;
 
 	DPRINTF("%cTCM %08X (%08X, enabled=%d)\n", tcm_names[i], base, size, enabled);
+
+	if (i == 0) {
+		ARMCPU *cpu = ARM_CPU(p->cpu);
+		memory_region_set_size(&p->memory[i], size);
+		cpu->dtcm_base = base;
+		cpu->dtcm_size = enabled ? size : 0;
+		cpu->dtcm_phys_base = DTCM_PHYS_BASE;
+		tlb_flush(p->cpu);
+		return;
+	}
 
 	if (memory_region_is_mapped(&p->memory[i]))
 		memory_region_del_subregion(p->cpu->memory, &p->memory[i]);
@@ -76,6 +88,10 @@ static void pmb8876_itcm_write(CPUARMState *env, const ARMCPRegInfo *ri, uint64_
 
 static const ARMCPRegInfo tcm_cp_reginfo[] = {
 	{
+		.name = "TCMTR", .cp = 15, .opc1 = 0, .crn = 0, .crm = 0, .opc2 = 2,
+		.access = PL1_R, .type = (ARM_CP_CONST | ARM_CP_OVERRIDE), .resetvalue = 0x00010001,
+	},
+	{
 		.name = "DTCM", .cp = 15, .opc1 = 0, .crn = 9, .crm = 1, .opc2 = 0,
 		.access = PL1_RW, .type = ARM_CP_IO,
 		.readfn = pmb8876_dtcm_read, .writefn = pmb8876_dtcm_write
@@ -99,6 +115,7 @@ static void tcm_init(Object *obj) {
 
 static void tcm_realize(DeviceState *dev, Error **errp) {
 	pmb887x_tcm_t *p = PMB887X_TCM(dev);
+	memory_region_add_subregion(p->cpu->memory, DTCM_PHYS_BASE, &p->memory[0]);
 
 	for (int i = 0; i < ARRAY_SIZE(tcm_cp_reginfo); i++) {
 		ARMCPRegInfo cp_reg_info = tcm_cp_reginfo[i];

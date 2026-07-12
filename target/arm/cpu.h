@@ -969,6 +969,11 @@ struct ArchCPU {
     MemoryRegion *tag_memory;
     MemoryRegion *secure_tag_memory;
 
+    /* Data TCM mapping supplied by the board. */
+    hwaddr dtcm_base;
+    hwaddr dtcm_size;
+    hwaddr dtcm_phys_base;
+
     /* For v8M, pointer to the IDAU interface provided by board/SoC */
     Object *idau;
 
