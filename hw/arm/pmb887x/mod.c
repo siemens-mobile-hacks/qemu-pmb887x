@@ -54,14 +54,14 @@ void pmb887x_src_update(pmb887x_src_reg_t *reg, uint32_t clear, uint32_t set) {
 void pmb887x_src_set(pmb887x_src_reg_t *reg, uint32_t value) {
 	bool has_irq = (reg->value & MOD_SRC_SRR) != 0;
 	
-	if ((value & MOD_SRC_CLRR)) {
-		has_irq = false;
-		value &= ~MOD_SRC_CLRR; // write only
-	}
-	
 	if ((value & MOD_SRC_SETR)) {
 		has_irq = true;
 		value &= ~MOD_SRC_SETR; // write only
+	}
+
+	if ((value & MOD_SRC_CLRR)) {
+		has_irq = false;
+		value &= ~MOD_SRC_CLRR; // write only
 	}
 	
 	if (has_irq) {
@@ -134,7 +134,7 @@ uint32_t pmb887x_srb_get_ris_dma(pmb887x_srb_reg_t *reg) {
 
 static void pmb887x_srb_set_irq(pmb887x_srb_reg_t *reg, int n, int level) {
 	int irq_n = reg->irq_router(reg->irq_router_opaque, n);
-	uint8_t mask = 1 << n;
+	uint32_t mask = 1U << n;
 	
 	if (irq_n < 0 || irq_n >= reg->irq_n)
 		hw_error("[pmb887x-mod] invalid irq index: %d\n", irq_n);
@@ -153,7 +153,7 @@ static void pmb887x_srb_set_irq(pmb887x_srb_reg_t *reg, int n, int level) {
 }
 
 static void pmb887x_srb_set_event(pmb887x_srb_reg_t *reg, int n, int level) {
-	uint8_t mask = 1 << n;
+	uint32_t mask = 1U << n;
 	bool has_irq = level != 0;
 	bool last_has_irq = (reg->last_state & mask) != 0;
 	
@@ -180,24 +180,28 @@ static void pmb887x_srb_set_event(pmb887x_srb_reg_t *reg, int n, int level) {
 }
 
 void pmb887x_srb_set_imsc(pmb887x_srb_reg_t *reg, uint32_t value) {
+	uint32_t disabled = reg->imsc & ~value;
 	uint32_t new_enabled = value & ~reg->imsc;
 	reg->imsc = value;
-	
-	if (!new_enabled)
-		return;
-	
+
 	for (int i = 0; i < 32; i++) {
-		uint8_t mask = 1 << i;
-		if ((new_enabled & mask)) {
-			if ((reg->ris & mask) != 0)
-				pmb887x_srb_set_event(reg, i, 1);
+		uint32_t mask = 1U << i;
+
+		if ((disabled & mask) && (reg->last_state & mask)) {
+			pmb887x_srb_set_irq(reg, i, 0);
+			reg->last_state &= ~mask;
+		}
+
+		if ((new_enabled & mask) && (reg->ris & mask)) {
+			pmb887x_srb_set_irq(reg, i, 1);
+			reg->last_state |= mask;
 		}
 	}
 }
 
 void pmb887x_srb_set_icr(pmb887x_srb_reg_t *reg, uint32_t value) {
 	for (int i = 0; i < 32; i++) {
-		uint8_t mask = 1 << i;
+		uint32_t mask = 1U << i;
 		if ((value & mask))
 			pmb887x_srb_set_event(reg, i, 0);
 	}
@@ -205,7 +209,7 @@ void pmb887x_srb_set_icr(pmb887x_srb_reg_t *reg, uint32_t value) {
 
 void pmb887x_srb_set_isr(pmb887x_srb_reg_t *reg, uint32_t value) {
 	for (int i = 0; i < 32; i++) {
-		uint8_t mask = 1 << i;
+		uint32_t mask = 1U << i;
 		if ((value & mask))
 			pmb887x_srb_set_event(reg, i, 1);
 	}
