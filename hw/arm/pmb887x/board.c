@@ -217,6 +217,7 @@ static void pmb887x_init(MachineState *machine) {
 
 	// RTC
 	DeviceState *rtc = pmb887x_new_cpu_module("RTC");
+	object_property_set_link(OBJECT(rtc), "pll", OBJECT(pll), &error_fatal);
 	sysbus_realize_and_unref(SYS_BUS_DEVICE(rtc), &error_fatal);
 
 	// GPTU0
