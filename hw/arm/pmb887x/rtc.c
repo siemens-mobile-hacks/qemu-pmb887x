@@ -312,7 +312,12 @@ static void rtc_realize(DeviceState *dev, Error **errp) {
 	pmb887x_clc_init(&p->clc);
 	pmb887x_src_init(&p->src, p->irq);
 	p->timer = timer_new_ns(QEMU_CLOCK_REALTIME, rtc_ptimer_reset, p);
+	p->con = RTC_CON_RUN | RTC_CON_PRE;
+	uint32_t t14_start = (UINT16_MAX + 1) - rtc_get_freq(p);
+	p->t14 = ((t14_start << RTC_T14_CNT_SHIFT) | (t14_start << RTC_T14_REL_SHIFT));
+	p->cnt = qemu_clock_get_ns(QEMU_CLOCK_HOST) / NANOSECONDS_PER_SECOND;
 	p->alarm = 0xFFFFFFFF;
+	rtc_sync(p);
 }
 
 static const Property rtc_properties[] = {
