@@ -29,7 +29,7 @@ struct pmb887x_tcm_t {
  *	TCM
  */
 static void tcm_update_state(pmb887x_tcm_t *p, int i) {
-	char tcm_names[] = { 'B', 'A' };
+	char tcm_names[] = { 'D', 'I' };
 	uint32_t base = p->regs[i] & 0xFFFFF000;
 	uint32_t size = (p->regs[i] >> 2) & 0x1F;
 	bool enabled = (p->regs[i] & 1) && size > 0;
@@ -37,7 +37,7 @@ static void tcm_update_state(pmb887x_tcm_t *p, int i) {
 	if (size > 0)
 		size = (1 << (size - 1)) * 1024;
 
-	DPRINTF("TCM%c %08X (%08X, enabled=%d)\n", tcm_names[i], base, size, enabled);
+	DPRINTF("%cTCM %08X (%08X, enabled=%d)\n", tcm_names[i], base, size, enabled);
 
 	if (memory_region_is_mapped(&p->memory[i]))
 		memory_region_del_subregion(p->cpu->memory, &p->memory[i]);
@@ -48,17 +48,17 @@ static void tcm_update_state(pmb887x_tcm_t *p, int i) {
 	}
 }
 
-static uint64_t pmb8876_atcm_read(CPUARMState *env, const ARMCPRegInfo *ri) {
+static uint64_t pmb8876_dtcm_read(CPUARMState *env, const ARMCPRegInfo *ri) {
 	pmb887x_tcm_t *p = ri->opaque;
 	return p->regs[0];
 }
 
-static uint64_t pmb8876_btcm_read(CPUARMState *env, const ARMCPRegInfo *ri) {
+static uint64_t pmb8876_itcm_read(CPUARMState *env, const ARMCPRegInfo *ri) {
 	pmb887x_tcm_t *p = ri->opaque;
 	return p->regs[1];
 }
 
-static void pmb8876_atcm_write(CPUARMState *env, const ARMCPRegInfo *ri, uint64_t value) {
+static void pmb8876_dtcm_write(CPUARMState *env, const ARMCPRegInfo *ri, uint64_t value) {
 	pmb887x_tcm_t *p = ri->opaque;
 	if (p->regs[0] != value) {
 		p->regs[0] = value;
@@ -66,7 +66,7 @@ static void pmb8876_atcm_write(CPUARMState *env, const ARMCPRegInfo *ri, uint64_
 	}
 }
 
-static void pmb8876_btcm_write(CPUARMState *env, const ARMCPRegInfo *ri, uint64_t value) {
+static void pmb8876_itcm_write(CPUARMState *env, const ARMCPRegInfo *ri, uint64_t value) {
 	pmb887x_tcm_t *p = ri->opaque;
 	if (p->regs[1] != value) {
 		p->regs[1] = value;
@@ -76,14 +76,14 @@ static void pmb8876_btcm_write(CPUARMState *env, const ARMCPRegInfo *ri, uint64_
 
 static const ARMCPRegInfo tcm_cp_reginfo[] = {
 	{
-		.name = "ATCM", .cp = 15, .opc1 = 0, .crn = 9, .crm = 1, .opc2 = 0,
+		.name = "DTCM", .cp = 15, .opc1 = 0, .crn = 9, .crm = 1, .opc2 = 0,
 		.access = PL1_RW, .type = ARM_CP_IO,
-		.readfn = pmb8876_atcm_read, .writefn = pmb8876_atcm_write
+		.readfn = pmb8876_dtcm_read, .writefn = pmb8876_dtcm_write
 	},
 	{
-		.name = "BTCM", .cp = 15, .opc1 = 0, .crn = 9, .crm = 1, .opc2 = 1,
+		.name = "ITCM", .cp = 15, .opc1 = 0, .crn = 9, .crm = 1, .opc2 = 1,
 		.access = PL1_RW, .type = ARM_CP_IO,
-		.readfn = pmb8876_btcm_read, .writefn = pmb8876_btcm_write
+		.readfn = pmb8876_itcm_read, .writefn = pmb8876_itcm_write
 	},
 };
 
@@ -92,13 +92,13 @@ static const Property tcm_properties[] = {
 };
 
 static void tcm_init(Object *obj) {
-	struct pmb887x_tcm_t *p = PMB887X_TCM(obj);
+	pmb887x_tcm_t *p = PMB887X_TCM(obj);
 	memory_region_init_ram(&p->memory[0], NULL, "BTCM", 8 * 1024, &error_fatal);
 	memory_region_init_ram(&p->memory[1], NULL, "ATCM", 8 * 1024, &error_fatal);
 }
 
 static void tcm_realize(DeviceState *dev, Error **errp) {
-	struct pmb887x_tcm_t *p = PMB887X_TCM(dev);
+	pmb887x_tcm_t *p = PMB887X_TCM(dev);
 
 	for (int i = 0; i < ARRAY_SIZE(tcm_cp_reginfo); i++) {
 		ARMCPRegInfo cp_reg_info = tcm_cp_reginfo[i];
