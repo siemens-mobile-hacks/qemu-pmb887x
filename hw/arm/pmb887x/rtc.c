@@ -39,7 +39,7 @@ struct pmb887x_rtc_t {
 	uint32_t rel;
 	uint32_t isnc;
 	uint32_t alarm;
-	uint32_t unk0;
+	uint32_t isnrc;
 	
 	uint64_t realtime_start;
 	uint64_t virtual_start;
@@ -87,8 +87,8 @@ static uint64_t rtc_io_read(void *opaque, hwaddr haddr, unsigned size) {
 			value = p->alarm;
 			break;
 		
-		case RTC_UNK0:
-			value = p->unk0;
+		case RTC_ISNRC:
+			value = p->isnrc;
 			break;
 		
 		case RTC_SRC:
@@ -143,9 +143,9 @@ static void rtc_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned si
 		case RTC_ALARM:
 			p->alarm = value;
 			break;
-		
-		case RTC_UNK0:
-			p->unk0 = value;
+
+		case RTC_ISNRC:
+			p->isnrc = value;
 			break;
 		
 		case RTC_SRC:

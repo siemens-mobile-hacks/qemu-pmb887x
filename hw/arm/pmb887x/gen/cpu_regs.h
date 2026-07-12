@@ -2218,8 +2218,8 @@
 #define DIFv1_IMSC_TX_SHIFT				0
 #define DIFv1_IMSC_RX					(1 << 1)		 // Receive interrupt mask
 #define DIFv1_IMSC_RX_SHIFT				1
-#define DIFv1_IMSC_ERR					(1 << 3)		 // Error interrupt mask
-#define DIFv1_IMSC_ERR_SHIFT			3
+#define DIFv1_IMSC_ERR					(1 << 2)		 // Error interrupt mask
+#define DIFv1_IMSC_ERR_SHIFT			2
 
 #define DIFv1_RIS						0x4C
 #define DIFv1_RIS_TX					(1 << 0)		 // Transmit interrupt raw status
@@ -6150,16 +6150,14 @@
 
 /* RTC Control Register */
 #define RTC_CON						0x14
-#define RTC_CON_RUN					(1 << 0)			 // RTC Run Bit
+#define RTC_CON_RUN					(1 << 0)			 // RTC Enable
 #define RTC_CON_RUN_SHIFT			0
-#define RTC_CON_PRE					(1 << 1)			 // RTC Input Source Prescaler (8:1) Enable
+#define RTC_CON_PRE					(1 << 1)			 // RTC Input Source Pre-Scaler Enable
 #define RTC_CON_PRE_SHIFT			1
-#define RTC_CON_T14DEC				(1 << 2)			 // Decrement Timer T14 Value
+#define RTC_CON_T14DEC				(1 << 2)			 // Decrement T14 Timer Value
 #define RTC_CON_T14DEC_SHIFT		2
-#define RTC_CON_T14INC				(1 << 3)			 // Increment Timer T14 Value
+#define RTC_CON_T14INC				(1 << 3)			 // Increment T14 Timer Value
 #define RTC_CON_T14INC_SHIFT		3
-#define RTC_CON_REFCLK				(1 << 4)			 // RTC Input Source Prescaler (32:1) Disable
-#define RTC_CON_REFCLK_SHIFT		4
 #define RTC_CON_ACCPOS				(1 << 15)			 // RTC Register Access Possible
 #define RTC_CON_ACCPOS_SHIFT		15
 
@@ -6207,7 +6205,20 @@
 #define RTC_ISNC_ALARMIR			(1 << 11)			 // Alarm Interrupt Request Flag
 #define RTC_ISNC_ALARMIR_SHIFT		11
 
-#define RTC_UNK0					0x28
+/* Interrupt Sub-Node Request Clear Register */
+#define RTC_ISNRC					0x28
+#define RTC_ISNRC_T14				(1 << 0)			 // Clear T14 Interrupt Request Flag
+#define RTC_ISNRC_T14_SHIFT			0
+#define RTC_ISNRC_RTC0				(1 << 2)			 // Clear RTC0 Interrupt Request Flag
+#define RTC_ISNRC_RTC0_SHIFT		2
+#define RTC_ISNRC_RTC1				(1 << 4)			 // Clear RTC1 Interrupt Request Flag
+#define RTC_ISNRC_RTC1_SHIFT		4
+#define RTC_ISNRC_RTC2				(1 << 6)			 // Clear RTC2 Interrupt Request Flag
+#define RTC_ISNRC_RTC2_SHIFT		6
+#define RTC_ISNRC_RTC3				(1 << 8)			 // Clear RTC3 Interrupt Request Flag
+#define RTC_ISNRC_RTC3_SHIFT		8
+#define RTC_ISNRC_ALARM				(1 << 10)			 // Clear Alarm Interrupt Request Flag
+#define RTC_ISNRC_ALARM_SHIFT		10
 
 /* RTC Alarm Register */
 #define RTC_ALARM					0x2C
@@ -6221,59 +6232,107 @@
 // SCCU
 // Standby Clock Control Unit
 #define SCCU_IO_SIZE					0x00000200
-#define SCCU_CON0						0x10
+/* Standby Power Control Register */
+#define SCCU_SPCR						0x10
+#define SCCU_SPCR_DPDN					(1 << 0)		 // VDD DSP Supply Domain Reset in Standby Mode
+#define SCCU_SPCR_DPDN_SHIFT			0
+#define SCCU_SPCR_APDN					(1 << 1)		 // Analog Supply Domain Reset in Standby Mode
+#define SCCU_SPCR_APDN_SHIFT			1
+#define SCCU_SPCR_DROFF					(1 << 5)		 // Force DSP ROM Off Immediately
+#define SCCU_SPCR_DROFF_SHIFT			5
+#define SCCU_SPCR_DREN					(1 << 6)		 // Enable DSP ROM Power-Off When VCXO and Shaper Power Are Off
+#define SCCU_SPCR_DREN_SHIFT			6
 
-/* Sleep timer reload */
-#define SCCU_TIMER_REL					0x14
-#define SCCU_TIMER_REL_VALUE			(0x1FFF << 0)
-#define SCCU_TIMER_REL_VALUE_SHIFT		0
+/* Sleep Duration Value Register */
+#define SCCU_TDMINI						0x14
+#define SCCU_TDMINI_TDMAIN				(0x1FFF << 0)	 // Duration (-1) of the Sleep Time in TDMA Frames
+#define SCCU_TDMINI_TDMAIN_SHIFT		0
 
-/* Sleep timer counter */
-#define SCCU_TIMER_CNT					0x18
-#define SCCU_TIMER_CNT_VALUE			(0x1FFF << 0)
-#define SCCU_TIMER_CNT_VALUE_SHIFT		0
+/* Sleep Duration Status Register */
+#define SCCU_TDMOUT						0x18
+#define SCCU_TDMOUT_TDMAOUT				(0x1FFF << 0)	 // Number of Frames Minus 1 During Which the GSM Timer Remained Frozen
+#define SCCU_TDMOUT_TDMAOUT_SHIFT		0
 
-#define SCCU_CON1						0x1C
-#define SCCU_CON1_CAL					(1 << 0)		 // Calibration?
-#define SCCU_CON1_CAL_SHIFT				0
-#define SCCU_CON1_TIMER_START			(1 << 1)		 // Start sleep timer
-#define SCCU_CON1_TIMER_START_SHIFT		1
-#define SCCU_CON1_TIMER_RESET			(1 << 2)		 // Reset sleep timer
-#define SCCU_CON1_TIMER_RESET_SHIFT		2
+/* Sleep Control Register */
+#define SCCU_SLPCTRL					0x1C
+#define SCCU_SLPCTRL_REFEN				(1 << 0)		 // Reference Enable
+#define SCCU_SLPCTRL_REFEN_SHIFT		0
+#define SCCU_SLPCTRL_SLPEN				(1 << 1)		 // Sleep Enable
+#define SCCU_SLPCTRL_SLPEN_SHIFT		1
+#define SCCU_SLPCTRL_SLPRST				(1 << 2)		 // Reset Sleep Counter
+#define SCCU_SLPCTRL_SLPRST_SHIFT		2
+#define SCCU_SLPCTRL_SLPSTP				(1 << 3)		 // Sleep Stop
+#define SCCU_SLPCTRL_SLPSTP_SHIFT		3
+#define SCCU_SLPCTRL_REFERR				(1 << 4)		 // Reference Error Flag
+#define SCCU_SLPCTRL_REFERR_SHIFT		4
+#define SCCU_SLPCTRL_HWACTDI			(1 << 5)		 // Sleep Start Activation Disable
+#define SCCU_SLPCTRL_HWACTDI_SHIFT		5
 
-#define SCCU_CAL						0x24
-#define SCCU_CAL_VALUE0					(0x1FFF << 0)
-#define SCCU_CAL_VALUE0_SHIFT			0
-#define SCCU_CAL_VALUE1					(0x1FFF << 13)
-#define SCCU_CAL_VALUE1_SHIFT			13
+/* Standby Clock Reference Input Register */
+#define SCCU_REFIN						0x20
+#define SCCU_REFIN_REFIN				(0x1FFF << 0)	 // MCU-Controlled Reference Value (1 LSB = 1.043 ppm)
+#define SCCU_REFIN_REFIN_SHIFT			0
 
-#define SCCU_TIMER_DIV					0x28
-#define SCCU_TIMER_DIV_VALUE			(0xFF << 0)
-#define SCCU_TIMER_DIV_VALUE_SHIFT		0
+/* Reference Calibration Output Values Register */
+#define SCCU_REF						0x24
+#define SCCU_REF_REFOUT					(0x1FFF << 0)	 // Fine Reference Frequency Measurement (1 LSB = 1.043 ppm)
+#define SCCU_REF_REFOUT_SHIFT			0
+#define SCCU_REF_REFPOS					(0x1FFF << 16)	 // Coarse Slow Crystal Frequency Measurement (1 LSB = 1/8 TDMA Frame)
+#define SCCU_REF_REFPOS_SHIFT			16
 
-#define SCCU_SLEEP_CTRL					0x2C
-#define SCCU_SLEEP_CTRL_SLEEP			(1 << 0)		 // Enter sleep
-#define SCCU_SLEEP_CTRL_SLEEP_SHIFT		0
-#define SCCU_SLEEP_CTRL_WAKEUP			(1 << 1)		 // Force exit sleep
-#define SCCU_SLEEP_CTRL_WAKEUP_SHIFT	1
+/* Xtal Oscillator Number Register */
+#define SCCU_NQTZ						0x28
+#define SCCU_NQTZ_NQTZ					(0xFF << 0)		 // Number of Slow Xtal Oscillator Periods in One TDMA Frame
+#define SCCU_NQTZ_NQTZ_SHIFT			0
 
-#define SCCU_CON2						0x30
-#define SCCU_CON2_UNK					(0xFF << 0)
-#define SCCU_CON2_UNK_SHIFT				0
-#define SCCU_CON2_REL_SUB				(0x3 << 16)		 // Substract this value from TIMER_REL (???)
-#define SCCU_CON2_REL_SUB_SHIFT			16
+/* Switch Control Register */
+#define SCCU_SCCTRL						0x2C
+#define SCCU_SCCTRL_UCSLP				(1 << 0)		 // Sleep Command
+#define SCCU_SCCTRL_UCSLP_SHIFT			0
+#define SCCU_SCCTRL_UCWUP				(1 << 1)		 // Wakeup Command
+#define SCCU_SCCTRL_UCWUP_SHIFT			1
+#define SCCU_SCCTRL_SSCRST				(1 << 2)		 // Reset Command
+#define SCCU_SCCTRL_SSCRST_SHIFT		2
 
-#define SCCU_CON3						0x34
+/* Wakeup Timing Register */
+#define SCCU_WAIT						0x30
+#define SCCU_WAIT_PREWUP				(0x3 << 0)		 // Pre-Wakeup Time in TDMA Frames Minus 1
+#define SCCU_WAIT_PREWUP_SHIFT			0
+#define SCCU_WAIT_WAIT					(0x3F << 16)	 // VCXO Wait Loop Duration
+#define SCCU_WAIT_WAIT_SHIFT			16
 
-#define SCCU_STAT						0x40
-#define SCCU_STAT_CPU					(1 << 0)		 // CPU sleep status
-#define SCCU_STAT_CPU_SHIFT				0
-#define SCCU_STAT_CPU_SLEEP				0x0
-#define SCCU_STAT_CPU_NORMAL			0x1
-#define SCCU_STAT_TPU					(1 << 1)		 // TPU sleep status
-#define SCCU_STAT_TPU_SHIFT				1
-#define SCCU_STAT_TPU_SLEEP				0x0
-#define SCCU_STAT_TPU_NORMAL			0x2
+/* Hardware Wakeup Control Register */
+#define SCCU_HWWAKEUP					0x34
+#define SCCU_HWWAKEUP_ICU_EN			(1 << 0)		 // Enable SCCU Wakeup by ICU Interrupt
+#define SCCU_HWWAKEUP_ICU_EN_SHIFT		0
+#define SCCU_HWWAKEUP_RTC_EN			(1 << 8)		 // Enable Sleep Mode Termination by RTC Block
+#define SCCU_HWWAKEUP_RTC_EN_SHIFT		8
+#define SCCU_HWWAKEUP_KPD_EN			(1 << 9)		 // Enable Sleep Mode Termination by Keypad
+#define SCCU_HWWAKEUP_KPD_EN_SHIFT		9
+#define SCCU_HWWAKEUP_SIM_EN			(1 << 10)		 // Enable Sleep Mode Termination by SIM Card Insertion/Removal
+#define SCCU_HWWAKEUP_SIM_EN_SHIFT		10
+#define SCCU_HWWAKEUP_EXT_EN			(1 << 12)		 // Enable Wakeup by CAPCOM or External Interrupt Pins
+#define SCCU_HWWAKEUP_EXT_EN_SHIFT		12
+
+/* Clock Status Register */
+#define SCCU_SCCUCLKSTA					0x40
+#define SCCU_SCCUCLKSTA_CPUCLK			(1 << 0)		 // Status of the MCU Clock
+#define SCCU_SCCUCLKSTA_CPUCLK_SHIFT	0
+#define SCCU_SCCUCLKSTA_GSMCLK			(1 << 1)		 // Status of the System Interface Clock
+#define SCCU_SCCUCLKSTA_GSMCLK_SHIFT	1
+
+/* State Machine Status Register */
+#define SCCU_SCCUMSTA					0x44
+#define SCCU_SCCUMSTA_UC_ON				(1 << 0)		 // SCCU State Machine Is in μC On State (S1)
+#define SCCU_SCCUMSTA_UC_ON_SHIFT		0
+#define SCCU_SCCUMSTA_UC_OFF			(1 << 1)		 // SCCU State Machine Is in μC Off State (S2)
+#define SCCU_SCCUMSTA_UC_OFF_SHIFT		1
+#define SCCU_SCCUMSTA_TCXO_OFF			(1 << 2)		 // SCCU State Machine Is in TCXO Off State (S3)
+#define SCCU_SCCUMSTA_TCXO_OFF_SHIFT	2
+#define SCCU_SCCUMSTA_TCXO_ON			(1 << 3)		 // SCCU State Machine Is in TCXO On State (S4)
+#define SCCU_SCCUMSTA_TCXO_ON_SHIFT		3
+#define SCCU_SCCUMSTA_SHAP_ON			(1 << 4)		 // SCCU State Machine Is in Shaper On State (S5)
+#define SCCU_SCCUMSTA_SHAP_ON_SHIFT		4
 
 /* Service Routing Control Register */
 #define SCCU_WAKE_SRC					0xA0
@@ -6593,6 +6652,26 @@
 
 /* Control Register */
 #define SSC_CON					0x10
+#define SSC_CON_BC				(0xF << 0)		 // Bit Count Status
+#define SSC_CON_BC_SHIFT		0
+#define SSC_CON_BM				(0xF << 0)		 // Data Width Selection
+#define SSC_CON_BM_SHIFT		0
+#define SSC_CON_BM_1			0x0
+#define SSC_CON_BM_2			0x1
+#define SSC_CON_BM_3			0x2
+#define SSC_CON_BM_4			0x3
+#define SSC_CON_BM_5			0x4
+#define SSC_CON_BM_6			0x5
+#define SSC_CON_BM_7			0x6
+#define SSC_CON_BM_8			0x7
+#define SSC_CON_BM_9			0x8
+#define SSC_CON_BM_10			0x9
+#define SSC_CON_BM_11			0xA
+#define SSC_CON_BM_12			0xB
+#define SSC_CON_BM_13			0xC
+#define SSC_CON_BM_14			0xD
+#define SSC_CON_BM_15			0xE
+#define SSC_CON_BM_16			0xF
 #define SSC_CON_HB				(1 << 4)		 // Heading Bit Control
 #define SSC_CON_HB_SHIFT		4
 #define SSC_CON_HB_LSB			0x0
@@ -6635,26 +6714,6 @@
 #define SSC_CON_MS_MASTER		0x4000
 #define SSC_CON_EN				(1 << 15)		 // Enable Bit
 #define SSC_CON_EN_SHIFT		15
-#define SSC_CON_BC				(0xF << 16)		 // Bit Count Status
-#define SSC_CON_BC_SHIFT		16
-#define SSC_CON_BM				(0xF << 16)		 // Data Width Selection
-#define SSC_CON_BM_SHIFT		16
-#define SSC_CON_BM_1			0x0
-#define SSC_CON_BM_2			0x10000
-#define SSC_CON_BM_3			0x20000
-#define SSC_CON_BM_4			0x30000
-#define SSC_CON_BM_5			0x40000
-#define SSC_CON_BM_6			0x50000
-#define SSC_CON_BM_7			0x60000
-#define SSC_CON_BM_8			0x70000
-#define SSC_CON_BM_9			0x80000
-#define SSC_CON_BM_10			0x90000
-#define SSC_CON_BM_11			0xA0000
-#define SSC_CON_BM_12			0xB0000
-#define SSC_CON_BM_13			0xC0000
-#define SSC_CON_BM_14			0xD0000
-#define SSC_CON_BM_15			0xE0000
-#define SSC_CON_BM_16			0xF0000
 
 /* Baud Rate Timer Reload Register */
 #define SSC_BR					0x14
@@ -6707,8 +6766,8 @@
 #define SSC_IMSC_TX_SHIFT		0
 #define SSC_IMSC_RX				(1 << 1)		 // Receive interrupt mask
 #define SSC_IMSC_RX_SHIFT		1
-#define SSC_IMSC_ERR			(1 << 3)		 // Error interrupt mask
-#define SSC_IMSC_ERR_SHIFT		3
+#define SSC_IMSC_ERR			(1 << 2)		 // Error interrupt mask
+#define SSC_IMSC_ERR_SHIFT		2
 
 #define SSC_RIS					0x4C
 #define SSC_RIS_TX				(1 << 0)		 // Transmit interrupt raw status
@@ -6807,7 +6866,6 @@
 #define TPU_RFCON2									0x14
 #define TPU_RFCON2_SSCBM							(0xF << 0)			 // RF SSC Unit Telegram Length Control (telegram length = SSCBM + 1 bits)
 #define TPU_RFCON2_SSCBM_SHIFT						0
-#define TPU_RFCON2_SSCBM_1							0x0
 #define TPU_RFCON2_SSCBM_2							0x1
 #define TPU_RFCON2_SSCBM_3							0x2
 #define TPU_RFCON2_SSCBM_4							0x3
@@ -6853,8 +6911,8 @@
 #define TPU_CORRECTION								0x1C
 #define TPU_CORRECTION_VALUE						(0x7FFF << 0)
 #define TPU_CORRECTION_VALUE_SHIFT					0
-#define TPU_CORRECTION_CTRL							(1 << 16)
-#define TPU_CORRECTION_CTRL_SHIFT					16
+#define TPU_CORRECTION_CTRL							(1 << 15)
+#define TPU_CORRECTION_CTRL_SHIFT					15
 
 /* RTDMA Counter Overflow Register */
 #define TPU_OVERFLOW								0x20
@@ -6871,8 +6929,8 @@
 #define TPU_OFFSET									0x2C
 #define TPU_OFFSET_VALUE							(0x7FFF << 0)
 #define TPU_OFFSET_VALUE_SHIFT						0
-#define TPU_OFFSET_CTRL								(1 << 16)
-#define TPU_OFFSET_CTRL_SHIFT						16
+#define TPU_OFFSET_CTRL								(1 << 15)
+#define TPU_OFFSET_CTRL_SHIFT						15
 
 /* RTDMA Frame Skip Register */
 #define TPU_SKIP									0x30
@@ -6888,17 +6946,17 @@
 
 /* Current Timer Event Address Pointer */
 #define TPU_CEAP									0x38
-#define TPU_CEAP_VALUE								(0xFF << 0)
+#define TPU_CEAP_VALUE								(0x1FF << 0)
 #define TPU_CEAP_VALUE_SHIFT						0
 
 /* Timer Event Top Address Pointer */
 #define TPU_EAPT									0x3C
-#define TPU_EAPT_VALUE								(0xFF << 0)
+#define TPU_EAPT_VALUE								(0x1FF << 0)
 #define TPU_EAPT_VALUE_SHIFT						0
 
 /* Timer Event Bottom Address Pointer */
 #define TPU_EAPB									0x40
-#define TPU_EAPB_VALUE								(0xFF << 0)
+#define TPU_EAPB_VALUE								(0x1FF << 0)
 #define TPU_EAPB_VALUE_SHIFT						0
 
 /* Time Group Enable Register */
