@@ -78,6 +78,8 @@ struct pmb887x_adc_t {
 	uint32_t pllcon;
 	uint32_t con0;
 	uint32_t con1;
+	uint32_t stat;
+	uint16_t data[8];
 	
 	pmb887x_adc_input_t inputs[PMB887X_ADC_MAX_INPUTS];
 	pmb887x_pll_t *pll;
@@ -183,6 +185,25 @@ static uint16_t adc_read_channel(pmb887x_adc_t *p) {
 	return adc_value;
 }
 
+static void adc_start_conversion(pmb887x_adc_t *p) {
+	uint32_t bufsize = (p->con1 & ADC_CTRL_BUFSIZE) >> ADC_CTRL_BUFSIZE_SHIFT;
+	bool repetitive = (p->con1 & ADC_CTRL_FREQ) != ADC_CTRL_FREQ_SINGLE_SHOT;
+	uint32_t samples = repetitive ? bufsize + 1 : 1;
+
+	p->stat = ADC_STAT_BUSY;
+	for (uint32_t i = 0; i < samples; i++)
+		p->data[i] = adc_read_channel(p);
+
+	p->stat = repetitive ? samples - 1 : 0;
+	if (repetitive || bufsize == 0) {
+		p->stat |= ADC_STAT_READY;
+		pmb887x_src_update(&p->src[0], 0, MOD_SRC_SETR);
+	}
+
+	if (p->con1 & ADC_CTRL_ENSTOP)
+		p->con1 &= ~ADC_CTRL_START;
+}
+
 static void adc_update_state(pmb887x_adc_t *p) {
 	uint32_t div = pmb887x_clc_get_rmc(&p->clc);
 	uint32_t fadc = div > 0 ? pmb887x_pll_get_fsys(p->pll) / div : 0;
@@ -211,16 +232,19 @@ static uint64_t adc_io_read(void *opaque, hwaddr haddr, unsigned size) {
 			break;
 
 		case ADC_ID:
-			value = 0x0000C011;
+			value = 0xF024C011;
 			break;
 
 		case ADC_STAT:
-			value = ADC_STAT_READY;
+			value = p->stat;
 			break;
 
-		case ADC_DATA0 ... ADC_DATA7:
-			value = adc_read_channel(p);
+		case ADC_DATA0 ... ADC_DATA7: {
+			uint32_t index = (haddr - ADC_DATA0) / 4;
+			value = p->data[index];
+			p->stat &= ~ADC_STAT_READY;
 			break;
+		}
 
 		case ADC_CLK:
 			value = p->pllcon;
@@ -273,6 +297,8 @@ static void adc_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned si
 
 		case ADC_CTRL:
 			p->con1 = value;
+			if ((p->con1 & ADC_CTRL_ADCON) && (p->con1 & ADC_CTRL_START))
+				adc_start_conversion(p);
 			break;
 
 		case ADC_SRC0:
