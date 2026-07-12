@@ -171,17 +171,20 @@ static void i2c_fifo_req(pmb887x_i2c_t *p) {
 	} else if (p->state == I2C_STATE_MASTER_RX) {
 		uint32_t burst_req_size = i2c_get_rx_burst_size(p);
 		uint32_t single_req_size = (4 / i2c_get_rx_align(p));
+		uint32_t rx_pending = p->rx_remaining + p->rx_bytes_in_fifo;
+		uint32_t pending_req_count = DIV_ROUND_UP(rx_pending, single_req_size);
+		uint32_t burst_req_count = burst_req_size / single_req_size;
 
 		if (!p->rx_bytes_in_fifo)
 			return;
 
 		bool is_fc = (p->fifocfg & I2Cv2_FIFOCFG_RXFC) != 0;
 		if (is_fc) {
-			if (p->rx_bytes_in_fifo > burst_req_size) {
+			if (rx_pending > burst_req_size) {
 				pmb887x_srb_set_isr(&p->srb, I2Cv2_ISR_BREQ_INT);
-			} else if (p->rx_bytes_in_fifo == burst_req_size) {
+			} else if (pending_req_count == burst_req_count) {
 				pmb887x_srb_set_isr(&p->srb, I2Cv2_ISR_LBREQ_INT);
-			} else if (p->rx_bytes_in_fifo > single_req_size) {
+			} else if (rx_pending > single_req_size) {
 				pmb887x_srb_set_isr(&p->srb, I2Cv2_ISR_SREQ_INT);
 			} else {
 				pmb887x_srb_set_isr(&p->srb, I2Cv2_ISR_LSREQ_INT);
@@ -333,6 +336,9 @@ static void i2c_rx_to_fifo(pmb887x_i2c_t *p) {
 	p->rx_remaining -= bytes_read;
 	p->rx_total_bytes += bytes_read;
 	p->rx_bytes_in_fifo += bytes_read;
+
+	if (bytes_read && !(p->fifocfg & I2Cv2_FIFOCFG_RXFC))
+		pmb887x_srb_ext_set_isr(&p->srb_err, I2Cv2_ERRIRQSS_RXF_OFL);
 }
 
 static void i2c_start_tx(pmb887x_i2c_t *p) {
