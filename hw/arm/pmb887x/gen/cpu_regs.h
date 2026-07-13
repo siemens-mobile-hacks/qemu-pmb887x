@@ -1212,7 +1212,7 @@
 #define DMAC_CH_LLI_LM_SHIFT					0
 #define DMAC_CH_LLI_LM_AHB1						0x0
 #define DMAC_CH_LLI_LM_AHB2						0x1
-#define DMAC_CH_LLI_ITEM						(0x1FFFFFFF << 2)	 // Linked list item
+#define DMAC_CH_LLI_ITEM						(0x3FFFFFFF << 2)	 // Linked list item
 #define DMAC_CH_LLI_ITEM_SHIFT					2
 
 #define DMAC_CH_CONTROL0						0x10C
