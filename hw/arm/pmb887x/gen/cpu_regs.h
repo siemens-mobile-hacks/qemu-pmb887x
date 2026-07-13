@@ -2659,7 +2659,7 @@
 
 /* Pixel-Bit Conversion Register */
 #define DIFv2_PBCCON						0x4C
-#define DIFv2_PBCCON_PBBCONV_MODE			(1 << 0)
+#define DIFv2_PBCCON_PBBCONV_MODE			(1 << 0)		 // Pair consecutive 16-bit word slots into one BMREG input; RUNCTRL=0 clears an incomplete pair
 #define DIFv2_PBCCON_PBBCONV_MODE_SHIFT		0
 
 /* Bit Multiplex Configuration Register 0 */
@@ -2818,135 +2818,135 @@
 #define DIFv2_BCREG							0x70
 #define DIFv2_BCREG_B0						(1 << 0)
 #define DIFv2_BCREG_B0_SHIFT				0
-#define DIFv2_BCREG_B16						(1 << 0)
-#define DIFv2_BCREG_B16_SHIFT				0
-#define DIFv2_BCREG_B1						(1 << 2)
-#define DIFv2_BCREG_B1_SHIFT				2
-#define DIFv2_BCREG_B17						(1 << 2)
-#define DIFv2_BCREG_B17_SHIFT				2
-#define DIFv2_BCREG_B18						(1 << 4)
-#define DIFv2_BCREG_B18_SHIFT				4
-#define DIFv2_BCREG_B2						(1 << 4)
-#define DIFv2_BCREG_B2_SHIFT				4
-#define DIFv2_BCREG_B19						(1 << 6)
-#define DIFv2_BCREG_B19_SHIFT				6
-#define DIFv2_BCREG_B3						(1 << 6)
-#define DIFv2_BCREG_B3_SHIFT				6
-#define DIFv2_BCREG_B20						(1 << 8)
-#define DIFv2_BCREG_B20_SHIFT				8
-#define DIFv2_BCREG_B4						(1 << 8)
-#define DIFv2_BCREG_B4_SHIFT				8
-#define DIFv2_BCREG_B21						(1 << 10)
-#define DIFv2_BCREG_B21_SHIFT				10
-#define DIFv2_BCREG_B5						(1 << 10)
-#define DIFv2_BCREG_B5_SHIFT				10
-#define DIFv2_BCREG_B22						(1 << 12)
-#define DIFv2_BCREG_B22_SHIFT				12
-#define DIFv2_BCREG_B6						(1 << 12)
-#define DIFv2_BCREG_B6_SHIFT				12
-#define DIFv2_BCREG_B23						(1 << 14)
-#define DIFv2_BCREG_B23_SHIFT				14
-#define DIFv2_BCREG_B7						(1 << 14)
-#define DIFv2_BCREG_B7_SHIFT				14
-#define DIFv2_BCREG_B24						(1 << 16)
-#define DIFv2_BCREG_B24_SHIFT				16
-#define DIFv2_BCREG_B8						(1 << 16)
-#define DIFv2_BCREG_B8_SHIFT				16
-#define DIFv2_BCREG_B25						(1 << 18)
-#define DIFv2_BCREG_B25_SHIFT				18
-#define DIFv2_BCREG_B9						(1 << 18)
-#define DIFv2_BCREG_B9_SHIFT				18
-#define DIFv2_BCREG_B10						(1 << 20)
-#define DIFv2_BCREG_B10_SHIFT				20
-#define DIFv2_BCREG_B26						(1 << 20)
-#define DIFv2_BCREG_B26_SHIFT				20
-#define DIFv2_BCREG_B11						(1 << 22)
-#define DIFv2_BCREG_B11_SHIFT				22
-#define DIFv2_BCREG_B27						(1 << 22)
-#define DIFv2_BCREG_B27_SHIFT				22
-#define DIFv2_BCREG_B12						(1 << 24)
-#define DIFv2_BCREG_B12_SHIFT				24
-#define DIFv2_BCREG_B28						(1 << 24)
-#define DIFv2_BCREG_B28_SHIFT				24
-#define DIFv2_BCREG_B13						(1 << 26)
-#define DIFv2_BCREG_B13_SHIFT				26
-#define DIFv2_BCREG_B29						(1 << 26)
-#define DIFv2_BCREG_B29_SHIFT				26
-#define DIFv2_BCREG_B14						(1 << 28)
-#define DIFv2_BCREG_B14_SHIFT				28
-#define DIFv2_BCREG_B30						(1 << 28)
-#define DIFv2_BCREG_B30_SHIFT				28
-#define DIFv2_BCREG_B15						(1 << 30)
-#define DIFv2_BCREG_B15_SHIFT				30
-#define DIFv2_BCREG_B31						(1 << 30)
-#define DIFv2_BCREG_B31_SHIFT				30
+#define DIFv2_BCREG_B1						(1 << 1)
+#define DIFv2_BCREG_B1_SHIFT				1
+#define DIFv2_BCREG_B2						(1 << 2)
+#define DIFv2_BCREG_B2_SHIFT				2
+#define DIFv2_BCREG_B3						(1 << 3)
+#define DIFv2_BCREG_B3_SHIFT				3
+#define DIFv2_BCREG_B4						(1 << 4)
+#define DIFv2_BCREG_B4_SHIFT				4
+#define DIFv2_BCREG_B5						(1 << 5)
+#define DIFv2_BCREG_B5_SHIFT				5
+#define DIFv2_BCREG_B6						(1 << 6)
+#define DIFv2_BCREG_B6_SHIFT				6
+#define DIFv2_BCREG_B7						(1 << 7)
+#define DIFv2_BCREG_B7_SHIFT				7
+#define DIFv2_BCREG_B8						(1 << 8)
+#define DIFv2_BCREG_B8_SHIFT				8
+#define DIFv2_BCREG_B9						(1 << 9)
+#define DIFv2_BCREG_B9_SHIFT				9
+#define DIFv2_BCREG_B10						(1 << 10)
+#define DIFv2_BCREG_B10_SHIFT				10
+#define DIFv2_BCREG_B11						(1 << 11)
+#define DIFv2_BCREG_B11_SHIFT				11
+#define DIFv2_BCREG_B12						(1 << 12)
+#define DIFv2_BCREG_B12_SHIFT				12
+#define DIFv2_BCREG_B13						(1 << 13)
+#define DIFv2_BCREG_B13_SHIFT				13
+#define DIFv2_BCREG_B14						(1 << 14)
+#define DIFv2_BCREG_B14_SHIFT				14
+#define DIFv2_BCREG_B15						(1 << 15)
+#define DIFv2_BCREG_B15_SHIFT				15
+#define DIFv2_BCREG_B16						(1 << 16)
+#define DIFv2_BCREG_B16_SHIFT				16
+#define DIFv2_BCREG_B17						(1 << 17)
+#define DIFv2_BCREG_B17_SHIFT				17
+#define DIFv2_BCREG_B18						(1 << 18)
+#define DIFv2_BCREG_B18_SHIFT				18
+#define DIFv2_BCREG_B19						(1 << 19)
+#define DIFv2_BCREG_B19_SHIFT				19
+#define DIFv2_BCREG_B20						(1 << 20)
+#define DIFv2_BCREG_B20_SHIFT				20
+#define DIFv2_BCREG_B21						(1 << 21)
+#define DIFv2_BCREG_B21_SHIFT				21
+#define DIFv2_BCREG_B22						(1 << 22)
+#define DIFv2_BCREG_B22_SHIFT				22
+#define DIFv2_BCREG_B23						(1 << 23)
+#define DIFv2_BCREG_B23_SHIFT				23
+#define DIFv2_BCREG_B24						(1 << 24)
+#define DIFv2_BCREG_B24_SHIFT				24
+#define DIFv2_BCREG_B25						(1 << 25)
+#define DIFv2_BCREG_B25_SHIFT				25
+#define DIFv2_BCREG_B26						(1 << 26)
+#define DIFv2_BCREG_B26_SHIFT				26
+#define DIFv2_BCREG_B27						(1 << 27)
+#define DIFv2_BCREG_B27_SHIFT				27
+#define DIFv2_BCREG_B28						(1 << 28)
+#define DIFv2_BCREG_B28_SHIFT				28
+#define DIFv2_BCREG_B29						(1 << 29)
+#define DIFv2_BCREG_B29_SHIFT				29
+#define DIFv2_BCREG_B30						(1 << 30)
+#define DIFv2_BCREG_B30_SHIFT				30
+#define DIFv2_BCREG_B31						(1 << 31)
+#define DIFv2_BCREG_B31_SHIFT				31
 
 /* Bit Inversion Register */
 #define DIFv2_INVERT_BIT					0x74
 #define DIFv2_INVERT_BIT_B0					(1 << 0)
 #define DIFv2_INVERT_BIT_B0_SHIFT			0
-#define DIFv2_INVERT_BIT_B16				(1 << 0)
-#define DIFv2_INVERT_BIT_B16_SHIFT			0
-#define DIFv2_INVERT_BIT_B1					(1 << 2)
-#define DIFv2_INVERT_BIT_B1_SHIFT			2
-#define DIFv2_INVERT_BIT_B17				(1 << 2)
-#define DIFv2_INVERT_BIT_B17_SHIFT			2
-#define DIFv2_INVERT_BIT_B18				(1 << 4)
-#define DIFv2_INVERT_BIT_B18_SHIFT			4
-#define DIFv2_INVERT_BIT_B2					(1 << 4)
-#define DIFv2_INVERT_BIT_B2_SHIFT			4
-#define DIFv2_INVERT_BIT_B19				(1 << 6)
-#define DIFv2_INVERT_BIT_B19_SHIFT			6
-#define DIFv2_INVERT_BIT_B3					(1 << 6)
-#define DIFv2_INVERT_BIT_B3_SHIFT			6
-#define DIFv2_INVERT_BIT_B20				(1 << 8)
-#define DIFv2_INVERT_BIT_B20_SHIFT			8
-#define DIFv2_INVERT_BIT_B4					(1 << 8)
-#define DIFv2_INVERT_BIT_B4_SHIFT			8
-#define DIFv2_INVERT_BIT_B21				(1 << 10)
-#define DIFv2_INVERT_BIT_B21_SHIFT			10
-#define DIFv2_INVERT_BIT_B5					(1 << 10)
-#define DIFv2_INVERT_BIT_B5_SHIFT			10
-#define DIFv2_INVERT_BIT_B22				(1 << 12)
-#define DIFv2_INVERT_BIT_B22_SHIFT			12
-#define DIFv2_INVERT_BIT_B6					(1 << 12)
-#define DIFv2_INVERT_BIT_B6_SHIFT			12
-#define DIFv2_INVERT_BIT_B23				(1 << 14)
-#define DIFv2_INVERT_BIT_B23_SHIFT			14
-#define DIFv2_INVERT_BIT_B7					(1 << 14)
-#define DIFv2_INVERT_BIT_B7_SHIFT			14
-#define DIFv2_INVERT_BIT_B24				(1 << 16)
-#define DIFv2_INVERT_BIT_B24_SHIFT			16
-#define DIFv2_INVERT_BIT_B8					(1 << 16)
-#define DIFv2_INVERT_BIT_B8_SHIFT			16
-#define DIFv2_INVERT_BIT_B25				(1 << 18)
-#define DIFv2_INVERT_BIT_B25_SHIFT			18
-#define DIFv2_INVERT_BIT_B9					(1 << 18)
-#define DIFv2_INVERT_BIT_B9_SHIFT			18
-#define DIFv2_INVERT_BIT_B10				(1 << 20)
-#define DIFv2_INVERT_BIT_B10_SHIFT			20
-#define DIFv2_INVERT_BIT_B26				(1 << 20)
-#define DIFv2_INVERT_BIT_B26_SHIFT			20
-#define DIFv2_INVERT_BIT_B11				(1 << 22)
-#define DIFv2_INVERT_BIT_B11_SHIFT			22
-#define DIFv2_INVERT_BIT_B27				(1 << 22)
-#define DIFv2_INVERT_BIT_B27_SHIFT			22
-#define DIFv2_INVERT_BIT_B12				(1 << 24)
-#define DIFv2_INVERT_BIT_B12_SHIFT			24
-#define DIFv2_INVERT_BIT_B28				(1 << 24)
-#define DIFv2_INVERT_BIT_B28_SHIFT			24
-#define DIFv2_INVERT_BIT_B13				(1 << 26)
-#define DIFv2_INVERT_BIT_B13_SHIFT			26
-#define DIFv2_INVERT_BIT_B29				(1 << 26)
-#define DIFv2_INVERT_BIT_B29_SHIFT			26
-#define DIFv2_INVERT_BIT_B14				(1 << 28)
-#define DIFv2_INVERT_BIT_B14_SHIFT			28
-#define DIFv2_INVERT_BIT_B30				(1 << 28)
-#define DIFv2_INVERT_BIT_B30_SHIFT			28
-#define DIFv2_INVERT_BIT_B15				(1 << 30)
-#define DIFv2_INVERT_BIT_B15_SHIFT			30
-#define DIFv2_INVERT_BIT_B31				(1 << 30)
-#define DIFv2_INVERT_BIT_B31_SHIFT			30
+#define DIFv2_INVERT_BIT_B1					(1 << 1)
+#define DIFv2_INVERT_BIT_B1_SHIFT			1
+#define DIFv2_INVERT_BIT_B2					(1 << 2)
+#define DIFv2_INVERT_BIT_B2_SHIFT			2
+#define DIFv2_INVERT_BIT_B3					(1 << 3)
+#define DIFv2_INVERT_BIT_B3_SHIFT			3
+#define DIFv2_INVERT_BIT_B4					(1 << 4)
+#define DIFv2_INVERT_BIT_B4_SHIFT			4
+#define DIFv2_INVERT_BIT_B5					(1 << 5)
+#define DIFv2_INVERT_BIT_B5_SHIFT			5
+#define DIFv2_INVERT_BIT_B6					(1 << 6)
+#define DIFv2_INVERT_BIT_B6_SHIFT			6
+#define DIFv2_INVERT_BIT_B7					(1 << 7)
+#define DIFv2_INVERT_BIT_B7_SHIFT			7
+#define DIFv2_INVERT_BIT_B8					(1 << 8)
+#define DIFv2_INVERT_BIT_B8_SHIFT			8
+#define DIFv2_INVERT_BIT_B9					(1 << 9)
+#define DIFv2_INVERT_BIT_B9_SHIFT			9
+#define DIFv2_INVERT_BIT_B10				(1 << 10)
+#define DIFv2_INVERT_BIT_B10_SHIFT			10
+#define DIFv2_INVERT_BIT_B11				(1 << 11)
+#define DIFv2_INVERT_BIT_B11_SHIFT			11
+#define DIFv2_INVERT_BIT_B12				(1 << 12)
+#define DIFv2_INVERT_BIT_B12_SHIFT			12
+#define DIFv2_INVERT_BIT_B13				(1 << 13)
+#define DIFv2_INVERT_BIT_B13_SHIFT			13
+#define DIFv2_INVERT_BIT_B14				(1 << 14)
+#define DIFv2_INVERT_BIT_B14_SHIFT			14
+#define DIFv2_INVERT_BIT_B15				(1 << 15)
+#define DIFv2_INVERT_BIT_B15_SHIFT			15
+#define DIFv2_INVERT_BIT_B16				(1 << 16)
+#define DIFv2_INVERT_BIT_B16_SHIFT			16
+#define DIFv2_INVERT_BIT_B17				(1 << 17)
+#define DIFv2_INVERT_BIT_B17_SHIFT			17
+#define DIFv2_INVERT_BIT_B18				(1 << 18)
+#define DIFv2_INVERT_BIT_B18_SHIFT			18
+#define DIFv2_INVERT_BIT_B19				(1 << 19)
+#define DIFv2_INVERT_BIT_B19_SHIFT			19
+#define DIFv2_INVERT_BIT_B20				(1 << 20)
+#define DIFv2_INVERT_BIT_B20_SHIFT			20
+#define DIFv2_INVERT_BIT_B21				(1 << 21)
+#define DIFv2_INVERT_BIT_B21_SHIFT			21
+#define DIFv2_INVERT_BIT_B22				(1 << 22)
+#define DIFv2_INVERT_BIT_B22_SHIFT			22
+#define DIFv2_INVERT_BIT_B23				(1 << 23)
+#define DIFv2_INVERT_BIT_B23_SHIFT			23
+#define DIFv2_INVERT_BIT_B24				(1 << 24)
+#define DIFv2_INVERT_BIT_B24_SHIFT			24
+#define DIFv2_INVERT_BIT_B25				(1 << 25)
+#define DIFv2_INVERT_BIT_B25_SHIFT			25
+#define DIFv2_INVERT_BIT_B26				(1 << 26)
+#define DIFv2_INVERT_BIT_B26_SHIFT			26
+#define DIFv2_INVERT_BIT_B27				(1 << 27)
+#define DIFv2_INVERT_BIT_B27_SHIFT			27
+#define DIFv2_INVERT_BIT_B28				(1 << 28)
+#define DIFv2_INVERT_BIT_B28_SHIFT			28
+#define DIFv2_INVERT_BIT_B29				(1 << 29)
+#define DIFv2_INVERT_BIT_B29_SHIFT			29
+#define DIFv2_INVERT_BIT_B30				(1 << 30)
+#define DIFv2_INVERT_BIT_B30_SHIFT			30
+#define DIFv2_INVERT_BIT_B31				(1 << 31)
+#define DIFv2_INVERT_BIT_B31_SHIFT			31
 
 /* Transfer Synchronization Configuration Register */
 #define DIFv2_SYNC_CONFIG					0x78
@@ -6298,13 +6298,11 @@
 #define SCCU_WAIT						0x30
 #define SCCU_WAIT_PREWUP				(0x3 << 0)		 // Pre-Wakeup Time in TDMA Frames Minus 1
 #define SCCU_WAIT_PREWUP_SHIFT			0
-#define SCCU_WAIT_WAIT					(0x3F << 16)	 // VCXO Wait Loop Duration
+#define SCCU_WAIT_WAIT					(0x3 << 16)		 // VCXO Wait Loop Duration
 #define SCCU_WAIT_WAIT_SHIFT			16
 
 /* Hardware Wakeup Control Register */
 #define SCCU_HWWAKEUP					0x34
-#define SCCU_HWWAKEUP_ICU_EN			(1 << 0)		 // Enable SCCU Wakeup by ICU Interrupt
-#define SCCU_HWWAKEUP_ICU_EN_SHIFT		0
 #define SCCU_HWWAKEUP_RTC_EN			(1 << 8)		 // Enable Sleep Mode Termination by RTC Block
 #define SCCU_HWWAKEUP_RTC_EN_SHIFT		8
 #define SCCU_HWWAKEUP_KPD_EN			(1 << 9)		 // Enable Sleep Mode Termination by Keypad
