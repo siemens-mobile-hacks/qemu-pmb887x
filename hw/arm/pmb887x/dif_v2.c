@@ -21,7 +21,6 @@
 #include "hw/arm/pmb887x/regs_dump.h"
 #include "hw/arm/pmb887x/mod.h"
 #include "hw/arm/pmb887x/trace.h"
-#include "hw/arm/pmb887x/ssc/lcd_common.h"
 
 #define TYPE_PMB887X_DIF	"pmb887x-dif-v2"
 #define PMB887X_DIF(obj)	OBJECT_CHECK(pmb887x_dif_t, (obj), TYPE_PMB887X_DIF)
@@ -40,6 +39,8 @@ typedef struct pmb887x_dif_t pmb887x_dif_t;
 static void dif_start_rx(pmb887x_dif_t *p);
 static void dif_start_tx(pmb887x_dif_t *p);
 static void dif_kernel_reset(pmb887x_dif_t *p, uint32_t new_state);
+static bool dif_is_running(pmb887x_dif_t *p);
+static void dif_tx_from_fifo(pmb887x_dif_t *p);
 static void dif_work(pmb887x_dif_t *p);
 
 enum DIFIrqType {
@@ -47,11 +48,6 @@ enum DIFIrqType {
 	DIF_RX_BURST_IRQ,
 	DIF_TX_IRQ,
 	DIF_ERROR_IRQ,
-};
-
-enum DIFFifoType {
-	DIF_FIFO_RX,
-	DIF_FIFO_TX
 };
 
 enum DIFWorkState {
@@ -64,7 +60,7 @@ struct pmb887x_dif_t {
 	SysBusDevice parent_obj;
 	MemoryRegion mmio;
 	SSIBus *bus;
-	
+
 	qemu_irq irq[4];
 
 	qemu_irq gpio_data[8];
@@ -76,12 +72,17 @@ struct pmb887x_dif_t {
 	QEMUTimer *timer;
 	bool transfer_pending;
 
-	bool fifo_req;
-	uint32_t tx_remaining;
-	uint32_t rx_remaining;
+	bool tx_fifo_req;
+	bool rx_fifo_req;
+	bool is_tx_started;
+	uint32_t tx_words_remaining;
+	uint32_t tx_words_preloaded;
+	uint32_t rx_words_remaining;
 
-	uint32_t rx_total_bytes;
-	uint32_t rx_bytes_in_fifo;
+	uint32_t rx_words_in_fifo;
+	uint16_t pbc_word;
+	bool is_pbc_word_valid;
+	bool is_pbc_pair_completed;
 
 	uint8_t bit_mux[32];
 	uint8_t bit_invert[32];
@@ -114,20 +115,12 @@ struct pmb887x_dif_t {
 	pmb887x_srb_reg_t srb;
 	pmb887x_srb_ext_reg_t srb_err;
 
-	uint32_t mask;
-	uint32_t bits;
+	pmb887x_fifo32_t tx_fifo;
+	pmb887x_fifo32_t rx_fifo;
 
-	pmb887x_fifo32_t tx_fifo_buffered;
-	pmb887x_fifo32_t rx_fifo_buffered;
-
-	pmb887x_fifo32_t tx_fifo_single;
-	pmb887x_fifo32_t rx_fifo_single;
-
-	pmb887x_fifo32_t *rx_fifo;
-	pmb887x_fifo32_t *tx_fifo;
-
-	uint32_t rx_cnt;
-	uint32_t rx_buffer_cnt;
+	uint32_t rx_packet_words;
+	uint32_t rx_buffer;
+	uint32_t rx_buffer_word_count;
 
 	enum DIFWorkState state;
 
@@ -163,21 +156,46 @@ static inline uint32_t dif_get_tx_burst_size(pmb887x_dif_t *p) {
 	return bs * (4 / dif_get_tx_align(p));
 }
 
-static inline uint32_t dif_get_bsconf_size(pmb887x_dif_t *p) {
-	switch (p->csreg & DIFv2_CSREG_BSCONF) {
+static inline uint32_t dif_get_bsconf_word_count(pmb887x_dif_t *p) {
+	switch ((p->csreg & DIFv2_CSREG_BSCONF)) {
 		case DIFv2_CSREG_BSCONF_OFF:
 			return 0;
 		case DIFv2_CSREG_BSCONF_1x8BIT:
+		case DIFv2_CSREG_BSCONF_1x9BIT:
 			return 1;
 		case DIFv2_CSREG_BSCONF_2x8BIT:
+		case DIFv2_CSREG_BSCONF_2x9BIT:
 			return 2;
 		case DIFv2_CSREG_BSCONF_3x8BIT:
+		case DIFv2_CSREG_BSCONF_3x9BIT:
 			return 3;
 		case DIFv2_CSREG_BSCONF_4x8BIT:
 			return 4;
 	}
 	hw_error("Invalid bsconf value: %08X", (p->csreg & DIFv2_CSREG_BSCONF) >> DIFv2_CSREG_BSCONF_SHIFT);
 	return 0;
+}
+
+static inline bool dif_is_bsconf_9bit(pmb887x_dif_t *p) {
+	uint32_t bsconf = (p->csreg & DIFv2_CSREG_BSCONF);
+
+	return bsconf == DIFv2_CSREG_BSCONF_1x9BIT || bsconf == DIFv2_CSREG_BSCONF_2x9BIT || bsconf == DIFv2_CSREG_BSCONF_3x9BIT;
+}
+
+static inline uint32_t dif_get_word_bits(pmb887x_dif_t *p) {
+	return ((p->con & DIFv2_CON_BM) >> DIFv2_CON_BM_SHIFT) + 1;
+}
+
+static inline uint32_t dif_get_tx_word_bits(pmb887x_dif_t *p) {
+	return MIN(dif_get_word_bits(p), dif_get_tx_align(p) * 8);
+}
+
+static inline bool dif_is_pbc_enabled(pmb887x_dif_t *p) {
+	return (p->pbccon & DIFv2_PBCCON_PBBCONV_MODE) != 0;
+}
+
+static inline bool dif_is_serial(pmb887x_dif_t *p) {
+	return (p->perreg & DIFv2_PERREG_DIFPERMODE) == DIFv2_PERREG_DIFPERMODE_SERIAL;
 }
 
 static void dif_update_gpio_state(pmb887x_dif_t *p) {
@@ -241,145 +259,149 @@ static void dif_trigger_dma(pmb887x_dif_t *p) {
 	}
 }
 
-static void dif_fifo_req(pmb887x_dif_t *p) {
-	if (p->fifo_req)
+static void dif_tx_fifo_req(pmb887x_dif_t *p) {
+	if (p->state != DIF_STATE_TX || p->tx_fifo_req)
 		return;
 
-	if (p->state == DIF_STATE_TX) {
-		uint32_t burst_req_size = dif_get_tx_burst_size(p);
-		uint32_t single_req_size = (4 / dif_get_tx_align(p));
-		uint32_t burst_req_count = burst_req_size / single_req_size;
+	uint32_t burst_req_size = dif_get_tx_burst_size(p);
+	uint32_t single_req_size = 4 / dif_get_tx_align(p);
+	uint32_t burst_req_count = burst_req_size / single_req_size;
+	uint32_t tx_words_remaining = p->tx_words_remaining - MIN(p->tx_words_remaining,
+		pmb887x_fifo_count(&p->tx_fifo) * single_req_size);
+	uint32_t pending_req_count = DIV_ROUND_UP(tx_words_remaining, single_req_size);
 
-		uint32_t tx_remaining = p->tx_remaining - MIN(p->tx_remaining, pmb887x_fifo_count(p->tx_fifo) * single_req_size);
-		if (!tx_remaining)
-			return;
-		if (tx_remaining >= burst_req_size && pmb887x_fifo_free_count(p->tx_fifo) < burst_req_count)
-			return;
-		if (tx_remaining < burst_req_size && pmb887x_fifo_free_count(p->tx_fifo) < 1)
-			return;
+	if (tx_words_remaining == 0)
+		return;
+	if (tx_words_remaining >= burst_req_size && pmb887x_fifo_free_count(&p->tx_fifo) < burst_req_count)
+		return;
+	if (tx_words_remaining < burst_req_size && pmb887x_fifo_free_count(&p->tx_fifo) < 1)
+		return;
 
-		bool is_fc = (p->txfifo_cfg & DIFv2_TXFIFO_CFG_TXFC) != 0;
-		if (is_fc) {
-			if (tx_remaining > burst_req_size) {
-				pmb887x_srb_set_isr(&p->srb, DIFv2_ISR_TXBREQ);
-			} else if (tx_remaining == burst_req_size) {
-				pmb887x_srb_set_isr(&p->srb, DIFv2_ISR_TXLBREQ);
-			} else if (tx_remaining > single_req_size) {
-				pmb887x_srb_set_isr(&p->srb, DIFv2_ISR_TXSREQ);
-			} else {
-				pmb887x_srb_set_isr(&p->srb, DIFv2_ISR_TXLSREQ);
-			}
-			p->fifo_req = true;
+	if ((p->txfifo_cfg & DIFv2_TXFIFO_CFG_TXFC) != 0) {
+		if (tx_words_remaining > burst_req_size) {
+			pmb887x_srb_set_isr(&p->srb, DIFv2_ISR_TXBREQ);
+		} else if (pending_req_count == burst_req_count) {
+			pmb887x_srb_set_isr(&p->srb, DIFv2_ISR_TXLBREQ);
+		} else if (tx_words_remaining > single_req_size) {
+			pmb887x_srb_set_isr(&p->srb, DIFv2_ISR_TXSREQ);
 		} else {
-			if (pmb887x_fifo_free_count(p->tx_fifo) >= burst_req_size) {
-				pmb887x_srb_set_isr(&p->srb, I2Cv2_ISR_BREQ_INT);
-				p->fifo_req = true;
-			}
+			pmb887x_srb_set_isr(&p->srb, DIFv2_ISR_TXLSREQ);
 		}
-	} else if (p->state == DIF_STATE_RX) {
-		uint32_t burst_req_size = dif_get_rx_burst_size(p);
-		uint32_t single_req_size = (4 / dif_get_rx_align(p));
-
-		if (!p->rx_bytes_in_fifo)
-			return;
-
-		bool is_fc = (p->rxfifo_cfg & DIFv2_RXFIFO_CFG_RXFC) != 0;
-		if (is_fc) {
-			if (p->rx_bytes_in_fifo > burst_req_size) {
-				pmb887x_srb_set_isr(&p->srb, DIFv2_ISR_RXBREQ);
-			} else if (p->rx_bytes_in_fifo == burst_req_size) {
-				pmb887x_srb_set_isr(&p->srb, DIFv2_ISR_RXLBREQ);
-			} else if (p->rx_bytes_in_fifo > single_req_size) {
-				pmb887x_srb_set_isr(&p->srb, DIFv2_ISR_RXSREQ);
-			} else {
-				pmb887x_srb_set_isr(&p->srb, DIFv2_ISR_RXLSREQ);
-			}
-		} else {
-			if (p->rx_bytes_in_fifo >= burst_req_size) {
-				pmb887x_srb_set_isr(&p->srb, DIFv2_ISR_RXBREQ);
-			} else {
-				pmb887x_srb_set_isr(&p->srb, DIFv2_ISR_RXSREQ);
-			}
-		}
-
-		p->fifo_req = true;
+		p->tx_fifo_req = true;
+	} else if (pmb887x_fifo_free_count(&p->tx_fifo) >= burst_req_count) {
+		pmb887x_srb_set_isr(&p->srb, DIFv2_ISR_TXBREQ);
+		p->tx_fifo_req = true;
 	}
 }
 
-static void dif_fifo_clr_req(pmb887x_dif_t *p) {
-	p->fifo_req = false;
+static void dif_rx_fifo_req(pmb887x_dif_t *p) {
+	if (p->state != DIF_STATE_TX && p->state != DIF_STATE_RX)
+		return;
+	if (p->rx_fifo_req)
+		return;
+	if (p->rx_words_in_fifo == 0)
+		return;
+
+	uint32_t burst_req_size = dif_get_rx_burst_size(p);
+	uint32_t single_req_size = 4 / dif_get_rx_align(p);
+	uint32_t pending_req_count = DIV_ROUND_UP(p->rx_words_in_fifo, single_req_size);
+	uint32_t burst_req_count = burst_req_size / single_req_size;
+	bool is_packet_complete = p->state == DIF_STATE_RX && p->rx_words_remaining == 0;
+
+	if ((p->rxfifo_cfg & DIFv2_RXFIFO_CFG_RXFC) != 0) {
+		if (!is_packet_complete) {
+			if (p->rx_words_in_fifo < burst_req_size)
+				return;
+			pmb887x_srb_set_isr(&p->srb, DIFv2_ISR_RXBREQ);
+		} else if (pending_req_count == burst_req_count) {
+			pmb887x_srb_set_isr(&p->srb, DIFv2_ISR_RXLBREQ);
+		} else if (p->rx_words_in_fifo > single_req_size) {
+			pmb887x_srb_set_isr(&p->srb, DIFv2_ISR_RXSREQ);
+		} else {
+			pmb887x_srb_set_isr(&p->srb, DIFv2_ISR_RXLSREQ);
+		}
+	} else if (p->rx_words_in_fifo >= burst_req_size) {
+		pmb887x_srb_set_isr(&p->srb, DIFv2_ISR_RXBREQ);
+	} else {
+		pmb887x_srb_set_isr(&p->srb, DIFv2_ISR_RXSREQ);
+	}
+	p->rx_fifo_req = true;
+}
+
+static void dif_fifo_req(pmb887x_dif_t *p) {
+	dif_tx_fifo_req(p);
+	dif_rx_fifo_req(p);
+}
+
+static void dif_fifo_clr_req(pmb887x_dif_t *p, uint32_t mask) {
+	if ((mask & (DIFv2_ICR_TXLSREQ | DIFv2_ICR_TXSREQ | DIFv2_ICR_TXLBREQ | DIFv2_ICR_TXBREQ)) != 0)
+		p->tx_fifo_req = false;
+	if ((mask & (DIFv2_ICR_RXLSREQ | DIFv2_ICR_RXSREQ | DIFv2_ICR_RXLBREQ | DIFv2_ICR_RXBREQ)) != 0)
+		p->rx_fifo_req = false;
 }
 
 static void dif_kernel_reset(pmb887x_dif_t *p, uint32_t new_state) {
 	p->state = new_state;
-	p->tx_remaining = 0;
-	p->rx_remaining = 0;
-	p->rx_total_bytes = 0;
-	p->rx_bytes_in_fifo = 0;
-	dif_fifo_clr_req(p);
+	p->tx_words_remaining = 0;
+	p->rx_words_remaining = 0;
+	p->tx_fifo_req = false;
+	p->rx_fifo_req = false;
+	p->is_tx_started = false;
 	dif_update_gpio_state(p);
 	dif_schedule(p);
 }
 
+static void dif_reset_rx_fifo(pmb887x_dif_t *p) {
+	pmb887x_fifo_reset(&p->rx_fifo);
+	p->rx_words_in_fifo = 0;
+	p->rx_buffer = 0;
+	p->rx_buffer_word_count = 0;
+}
+
 static inline uint32_t dif_mux(pmb887x_dif_t *p, uint32_t value) {
 	uint32_t new_value = 0;
-	for (uint32_t i = 0; i < 32; i++) {
-		uint32_t bit = (value >> i) & 1;
-		if (p->bit_invert[i])
+	for (uint32_t output_bit = 0; output_bit < 32; output_bit++) {
+		uint32_t bit = 0;
+
+		if (p->bit_bcsel[output_bit] == 0) {
+			bit = ((value >> p->bit_mux[output_bit]) & 1);
+		} else if (p->bit_bcsel[output_bit] == 1) {
+			bit = p->bit_bcreg[output_bit];
+		}
+		if (p->bit_invert[output_bit])
 			bit = bit ? 0 : 1;
-		new_value |= bit << p->bit_mux[i];
+		new_value |= (bit << output_bit);
 	}
 	return new_value;
 }
 
+static void dif_rx_from_bus(pmb887x_dif_t *p);
+
 static void dif_fifo_write(pmb887x_dif_t *p, uint32_t value) {
-	if (!pmb887x_fifo_free_count(p->tx_fifo)) {
+	if (!pmb887x_fifo_free_count(&p->tx_fifo)) {
 		DPRINTF("TX FIFO overflow!\n");
 		pmb887x_srb_ext_set_isr(&p->srb_err, DIFv2_ERRIRQSS_TXFOFL);
 		dif_kernel_reset(p, DIF_STATE_NONE);
 		return;
 	}
 
-	uint32_t bsconf = (p->csreg & DIFv2_CSREG_BSCONF);
-	if (bsconf != DIFv2_CSREG_BSCONF_OFF)
-		value = dif_mux(p, value);
-
-	pmb887x_fifo32_push(p->tx_fifo, value);
+	pmb887x_fifo32_push(&p->tx_fifo, value);
 	dif_schedule(p);
 }
 
 static void dif_fifo_read(pmb887x_dif_t *p, uint64_t *value) {
-	if (pmb887x_fifo_is_empty(p->rx_fifo)) {
+	if (pmb887x_fifo_is_empty(&p->rx_fifo)) {
 		DPRINTF("RX FIFO underflow!\n");
 		pmb887x_srb_ext_set_isr(&p->srb_err, DIFv2_ERRIRQSS_RXFUFL);
 		dif_kernel_reset(p, DIF_STATE_NONE);
 		return;
 	}
 
-	*value = pmb887x_fifo32_pop(p->rx_fifo);
-	p->rx_bytes_in_fifo -= MIN(p->rx_bytes_in_fifo, 4 / dif_get_rx_align(p));
+	*value = pmb887x_fifo32_pop(&p->rx_fifo);
+	p->rx_words_in_fifo -= MIN(p->rx_words_in_fifo, 4 / dif_get_rx_align(p));
 
-	if (!p->rx_bytes_in_fifo)
+	if (p->rx_words_remaining != 0 || p->rx_words_in_fifo == 0)
 		dif_schedule(p);
-}
-
-static void dif_reset_fifo(pmb887x_dif_t *p, enum DIFFifoType fifo) {
-	if (fifo == DIF_FIFO_RX) {
-		pmb887x_fifo_reset(p->rx_fifo);
-	} else {
-		pmb887x_fifo_reset(p->tx_fifo);
-	}
-}
-
-static void dif_set_fifo(pmb887x_dif_t *p, enum DIFFifoType fifo, bool buffered) {
-	if (fifo == DIF_FIFO_RX) {
-		DPRINTF("RX FIFO: %s\n", buffered ? "ON" : "OFF");
-		p->rx_fifo = buffered ? &p->rx_fifo_buffered : &p->rx_fifo_single;
-	} else {
-		DPRINTF("TX FIFO: %s\n", buffered ? "ON" : "OFF");
-		p->tx_fifo = buffered ? &p->tx_fifo_buffered : &p->tx_fifo_single;
-	}
-	dif_reset_fifo(p, fifo);
 }
 
 static bool dif_is_running(pmb887x_dif_t *p) {
@@ -390,15 +412,23 @@ static void dif_start_tx(pmb887x_dif_t *p) {
 	if (!dif_is_running(p) || p->state != DIF_STATE_NONE)
 		return;
 
-	uint32_t write_count = p->tps_ctrl;
+	uint32_t tx_word_count = p->tps_ctrl;
 	p->tps_ctrl = 0;
+	uint32_t preloaded_words = MIN(tx_word_count, p->tx_words_preloaded);
+	p->tx_words_preloaded -= preloaded_words;
+	tx_word_count -= preloaded_words;
 
-	if (!write_count)
+	if (!tx_word_count)
 		return;
 
-	DPRINTF("new transfer: tx=%d\n", write_count);
+	DPRINTF("new transfer: tx=%d\n", tx_word_count);
 	dif_kernel_reset(p, DIF_STATE_TX);
-	p->tx_remaining = write_count;
+	p->tx_words_remaining = tx_word_count;
+	p->is_tx_started = preloaded_words != 0;
+	p->rx_packet_words = 0;
+	p->rx_buffer = 0;
+	p->rx_buffer_word_count = 0;
+	p->is_pbc_pair_completed = false;
 	dif_fifo_req(p);
 }
 
@@ -406,72 +436,242 @@ static void dif_start_rx(pmb887x_dif_t *p) {
 	if (!dif_is_running(p) || p->state != DIF_STATE_NONE)
 		return;
 
-	uint32_t read_count = 0;
-	if ((p->startlcdrd & DIFv2_STARTLCDRD_STARTREAD)) {
-		read_count = (p->startlcdrd & DIFv2_STARTLCDRD_READBYTES) >> DIFv2_STARTLCDRD_READBYTES_SHIFT;
+	uint32_t rx_word_count = 0;
+	if ((p->startlcdrd & DIFv2_STARTLCDRD_STARTREAD) != 0) {
+		rx_word_count = ((p->startlcdrd & DIFv2_STARTLCDRD_READBYTES) >> DIFv2_STARTLCDRD_READBYTES_SHIFT) + 1;
 	} else if (p->mrps_ctrl > 0) {
-		read_count = p->mrps_ctrl;
+		rx_word_count = p->mrps_ctrl;
 		p->mrps_ctrl = 0;
 	}
 
-	if (!read_count)
+	if (!rx_word_count)
 		return;
 
-	DPRINTF("new transfer: rx=%d\n", read_count);
+	DPRINTF("new transfer: rx=%d\n", rx_word_count);
 	dif_kernel_reset(p, DIF_STATE_RX);
-	p->rx_remaining = read_count;
+	p->rx_words_remaining = rx_word_count;
+	p->rx_packet_words = rx_word_count;
+	p->rx_buffer = 0;
+	p->rx_buffer_word_count = 0;
+	dif_rx_from_bus(p);
 	dif_fifo_req(p);
 }
 
+static bool dif_push_rx_word(pmb887x_dif_t *p, uint16_t value) {
+	uint32_t align = dif_get_rx_align(p);
+	bool is_packed_9bit = dif_is_bsconf_9bit(p);
+	uint32_t words_per_stage = is_packed_9bit ? dif_get_bsconf_word_count(p) : 4 / align;
+	uint32_t word_shift = is_packed_9bit ? 9 : align * 8;
+
+	p->rx_buffer |= ((uint32_t) value << (p->rx_buffer_word_count * word_shift));
+	p->rx_buffer_word_count++;
+
+	if (p->rx_buffer_word_count == words_per_stage) {
+		uint32_t received_words = is_packed_9bit ? 1 : p->rx_buffer_word_count;
+
+		if (pmb887x_fifo_is_full(&p->rx_fifo)) {
+			DPRINTF("RX FIFO overflow!\n");
+			pmb887x_srb_ext_set_isr(&p->srb_err, DIFv2_ERRIRQSS_RXFOFL);
+			dif_kernel_reset(p, DIF_STATE_NONE);
+			return false;
+		}
+
+		if (p->state == DIF_STATE_RX) {
+			p->rx_words_remaining -= received_words;
+		} else {
+			p->rx_packet_words += received_words;
+		}
+		p->rx_words_in_fifo += received_words;
+		pmb887x_fifo32_push(&p->rx_fifo, p->rx_buffer);
+		p->rx_buffer = 0;
+		p->rx_buffer_word_count = 0;
+	}
+
+	return true;
+}
+
+static bool dif_flush_rx_buffer(pmb887x_dif_t *p) {
+	if (p->rx_buffer_word_count != 0) {
+		uint32_t received_words = dif_is_bsconf_9bit(p) ? 1 : p->rx_buffer_word_count;
+
+		if (pmb887x_fifo_is_full(&p->rx_fifo)) {
+			DPRINTF("RX FIFO overflow!\n");
+			pmb887x_srb_ext_set_isr(&p->srb_err, DIFv2_ERRIRQSS_RXFOFL);
+			dif_kernel_reset(p, DIF_STATE_NONE);
+			return false;
+		}
+
+		if (p->state == DIF_STATE_RX) {
+			p->rx_words_remaining -= received_words;
+		} else {
+			p->rx_packet_words += received_words;
+		}
+		p->rx_words_in_fifo += received_words;
+		pmb887x_fifo32_push(&p->rx_fifo, p->rx_buffer);
+		p->rx_buffer = 0;
+		p->rx_buffer_word_count = 0;
+	}
+
+	return true;
+}
+
+static void dif_rx_from_bus(pmb887x_dif_t *p) {
+	if (p->state != DIF_STATE_RX || (p->startlcdrd & DIFv2_STARTLCDRD_STARTREAD) == 0)
+		return;
+
+	uint32_t words_per_stage = 4 / dif_get_rx_align(p);
+	uint32_t words_to_receive = MIN(p->rx_words_remaining, dif_get_rx_burst_size(p));
+	while (words_to_receive != 0 && !pmb887x_fifo_is_full(&p->rx_fifo)) {
+		uint32_t word_count = MIN(words_per_stage, p->rx_words_remaining);
+		word_count = MIN(word_count, words_to_receive);
+
+		for (uint32_t i = 0; i < word_count; i++) {
+			if (!dif_push_rx_word(p, 0))
+				return;
+		}
+		if (word_count != words_per_stage)
+			dif_flush_rx_buffer(p);
+		words_to_receive -= word_count;
+	}
+}
+
+static uint16_t dif_bus_transfer(pmb887x_dif_t *p, uint16_t value) {
+	if (dif_is_serial(p) && (p->con & DIFv2_CON_LB) != 0)
+		return value;
+
+	return ssi_transfer(p->bus, value);
+}
+
+static bool dif_send_word(pmb887x_dif_t *p, uint16_t value) {
+	DPRINTF("TX: %03X\n", value);
+	uint16_t received = dif_bus_transfer(p, value);
+	if (dif_is_serial(p))
+		return dif_push_rx_word(p, received);
+
+	return true;
+}
+
+static bool dif_convert_word(pmb887x_dif_t *p, uint16_t value, uint16_t *output) {
+	if (!dif_is_pbc_enabled(p)) {
+		*output = dif_mux(p, value);
+		return true;
+	}
+
+	if (!p->is_pbc_word_valid) {
+		p->pbc_word = value;
+		p->is_pbc_word_valid = true;
+		return false;
+	}
+
+	uint32_t input = (p->pbc_word | ((uint32_t) value << 16));
+	uint32_t word_bits = dif_get_tx_word_bits(p);
+
+	*output = (dif_mux(p, input) & ((1 << word_bits) - 1));
+	p->is_pbc_word_valid = false;
+	p->is_pbc_pair_completed = true;
+	return true;
+}
+
+static bool dif_is_pbc_selection_valid(pmb887x_dif_t *p) {
+	uint32_t word_bits = dif_get_tx_word_bits(p);
+
+	for (uint32_t output_bit = 0; output_bit < word_bits; output_bit++) {
+		if (p->bit_bcsel[output_bit] > 1)
+			return false;
+	}
+
+	return true;
+}
+
 static void dif_tx_from_fifo(pmb887x_dif_t *p) {
+	if (p->state != DIF_STATE_TX && p->state != DIF_STATE_NONE)
+		return;
+
 	uint32_t align = dif_get_tx_align(p);
-	uint32_t bsconf_size = dif_get_bsconf_size(p);
+	uint32_t bsconf_word_count = dif_get_bsconf_word_count(p);
+	uint32_t bsconf_word_bits = dif_is_bsconf_9bit(p) ? 9 : 8;
+	uint32_t word_bits = dif_get_tx_word_bits(p);
 
-	while (pmb887x_fifo_count(p->tx_fifo) > 0) {
-		uint32_t value = pmb887x_fifo32_pop(p->tx_fifo);
-		uint32_t bytes_in_fifo_reg = MIN(4 / align, p->tx_remaining);
-		p->tx_remaining -= bytes_in_fifo_reg;
+	while (pmb887x_fifo_count(&p->tx_fifo) > 0) {
+		uint32_t value = pmb887x_fifo32_pop(&p->tx_fifo);
+		uint32_t words_in_fifo_reg = MIN(4 / align, p->tx_words_remaining);
 
-		if (bsconf_size != 0) {
-			for (uint32_t i = 0; i < bsconf_size; i++) {
-				uint8_t byte = (value >> (8 * i)) & 0xFF;
-				ssi_transfer(p->bus, byte);
+		if (p->state == DIF_STATE_TX)
+			p->is_tx_started = true;
+		p->tx_words_remaining -= words_in_fifo_reg;
+		if (bsconf_word_count == 0 && words_in_fifo_reg == 0)
+			words_in_fifo_reg = 4 / align; // Direct TXD writes do not require TPS_CTRL.
+		if (p->state == DIF_STATE_NONE)
+			p->tx_words_preloaded += bsconf_word_count != 0 ? 1 : words_in_fifo_reg;
+
+		if (bsconf_word_count != 0) {
+			if (dif_is_pbc_enabled(p)) {
+				uint16_t converted;
+
+				if (!dif_convert_word(p, value, &converted))
+					continue;
+				value = converted;
+			}
+			// BSCONF applies bit conversion to the PBCCON output.
+			value = dif_mux(p, value);
+			for (uint32_t i = 0; i < bsconf_word_count; i++) {
+				uint16_t word = (value >> (bsconf_word_bits * i)) & ((1 << bsconf_word_bits) - 1);
+
+				if (!dif_send_word(p, word))
+					return;
 			}
 		} else {
-			if (bytes_in_fifo_reg == 0)
-				bytes_in_fifo_reg = 4 / align; // shit from real HW
+			for (uint32_t i = 0; i < words_in_fifo_reg; i++) {
+				uint16_t converted;
+				uint16_t word = (value >> (8 * i * align)) & ((1 << word_bits) - 1);
 
-			for (uint32_t i = 0; i < bytes_in_fifo_reg; i += align) {
-				uint8_t byte = (value >> (8 * i)) & 0xFF;
-				DPRINTF("TX: %02X\n", byte);
-				ssi_transfer(p->bus, byte);
+				if (dif_convert_word(p, word, &converted) && !dif_send_word(p, converted))
+					return;
 			}
 		}
 	}
+
+	if (p->tx_words_remaining == 0 && dif_is_serial(p))
+		dif_flush_rx_buffer(p);
 }
 
 static void dif_work(pmb887x_dif_t *p) {
 	if (p->state == DIF_STATE_NONE) {
-		dif_tx_from_fifo(p);
-
 		if (p->tps_ctrl > 0) {
 			dif_start_tx(p);
-		} else if ((p->startlcdrd & DIFv2_STARTLCDRD_STARTREAD)) {
-			dif_start_rx(p);
 		} else if (p->mrps_ctrl > 0) {
 			dif_start_rx(p);
+		} else if (dif_is_running(p) && !dif_is_serial(p) && !pmb887x_fifo_is_empty(&p->tx_fifo)) {
+			dif_tx_from_fifo(p);
 		}
 	} else if (p->state == DIF_STATE_TX) {
 		dif_tx_from_fifo(p);
-		dif_fifo_req(p);
 
-		if (p->tx_remaining == 0) {
+		if (p->tx_words_remaining == 0) {
 			DPRINTF("transfer done\n");
-			dif_kernel_reset(p, DIF_STATE_NONE);
+			if (dif_is_serial(p)) {
+				p->state = DIF_STATE_RX;
+				bool is_phase_error = (
+					!dif_is_pbc_enabled(p) ||
+					(p->is_pbc_pair_completed && dif_is_pbc_selection_valid(p))
+				);
+				if (is_phase_error)
+					pmb887x_srb_ext_set_isr(&p->srb_err, DIFv2_ERRIRQSS_PHASE);
+				dif_fifo_req(p);
+				if (p->rx_words_remaining == 0 && p->rx_words_in_fifo == 0) {
+					p->state = DIF_STATE_NONE;
+					dif_update_gpio_state(p);
+				}
+			} else {
+				dif_kernel_reset(p, DIF_STATE_NONE);
+			}
+		} else {
+			dif_fifo_req(p);
 		}
 	} else if (p->state == DIF_STATE_RX) {
-		hw_error("DIF: RX is not supported!");
-		if (p->rx_remaining == 0) {
+		dif_rx_from_bus(p);
+		dif_fifo_req(p);
+		if (p->rx_words_remaining == 0 && p->rx_words_in_fifo == 0) {
 			DPRINTF("transfer done\n");
 			dif_kernel_reset(p, DIF_STATE_NONE);
 		}
@@ -486,10 +686,6 @@ static void dif_timer_reset(void *opaque) {
 		if (pmb887x_srb_get_ris(&p->srb) != 0)
 			break;
 	}
-}
-
-static void dif_update_state(pmb887x_dif_t *p) {
-	// ???
 }
 
 static void dif_update_mux(pmb887x_dif_t *p) {
@@ -544,7 +740,7 @@ static void dif_update_mux(pmb887x_dif_t *p) {
 
 static uint64_t dif_io_read(void *opaque, hwaddr haddr, unsigned size) {
 	pmb887x_dif_t *p = opaque;
-	
+
 	uint64_t value = 0;
 	switch (haddr) {
 		case DIFv2_CLC:
@@ -582,8 +778,12 @@ static uint64_t dif_io_read(void *opaque, hwaddr haddr, unsigned size) {
 
 		case DIFv2_STAT:
 			if (dif_is_running(p)) {
-				value |= p->state != DIF_STATE_NONE ? DIFv2_STAT_BSY : 0;
-				value |= pmb887x_fifo_count(p->tx_fifo) > 0 ? DIFv2_STAT_BSY : 0;
+				bool is_busy = (
+					(p->state == DIF_STATE_TX && p->is_tx_started) ||
+					(p->state == DIF_STATE_RX && (p->startlcdrd & DIFv2_STARTLCDRD_STARTREAD) != 0) ||
+					pmb887x_fifo_count(&p->tx_fifo) > 0
+				);
+				value |= is_busy ? DIFv2_STAT_BSY : 0;
 			}
 			break;
 
@@ -609,7 +809,7 @@ static uint64_t dif_io_read(void *opaque, hwaddr haddr, unsigned size) {
 
 		case DIFv2_BCSEL0:
 		case DIFv2_BCSEL1:
-			value = p->bmreg[(haddr - DIFv2_BCSEL0) / 4];
+			value = p->bcsel[(haddr - DIFv2_BCSEL0) / 4];
 			break;
 
 		case DIFv2_BCREG:
@@ -650,11 +850,11 @@ static uint64_t dif_io_read(void *opaque, hwaddr haddr, unsigned size) {
 			break;
 
 		case DIFv2_RPS_STAT:
-			value = p->rx_cnt;
+			value = p->rx_packet_words;
 			break;
 
 		case DIFv2_RXFFS_STAT:
-			value = pmb887x_fifo_count(p->rx_fifo);
+			value = pmb887x_fifo_count(&p->rx_fifo);
 			break;
 
 		case DIFv2_TXFIFO_CFG:
@@ -666,7 +866,7 @@ static uint64_t dif_io_read(void *opaque, hwaddr haddr, unsigned size) {
 			break;
 
 		case DIFv2_TXFFS_STAT:
-			value = pmb887x_fifo_count(p->tx_fifo);
+			value = pmb887x_fifo_count(&p->tx_fifo);
 			break;
 
 		case DIFv2_ERRIRQSM:
@@ -715,17 +915,17 @@ static uint64_t dif_io_read(void *opaque, hwaddr haddr, unsigned size) {
 			EPRINTF("unknown reg access: %02"PRIX64"\n", haddr);
 			exit(1);
 	}
-	
+
 	IO_DUMP(haddr + p->mmio.addr, size, value, false);
-	
+
 	return value;
 }
 
 static void dif_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned size) {
 	pmb887x_dif_t *p = opaque;
-	
+
 	IO_DUMP(haddr + p->mmio.addr, size, value, true);
-	
+
 	switch (haddr) {
 		case DIFv2_CLC:
 			pmb887x_clc_set(&p->clc, value);
@@ -733,10 +933,14 @@ static void dif_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned si
 
 		case DIFv2_RUNCTRL:
 			p->runctrl = value;
+			if (!p->runctrl) {
+				p->is_pbc_word_valid = false;
+				p->tx_words_preloaded = 0;
+			}
 			if (!p->runctrl && (p->state == DIF_STATE_RX || p->state == DIF_STATE_TX)) {
 				dif_kernel_reset(p, DIF_STATE_NONE);
-				pmb887x_fifo_reset(p->tx_fifo);
-				pmb887x_fifo_reset(p->rx_fifo);
+				pmb887x_fifo_reset(&p->tx_fifo);
+				dif_reset_rx_fifo(p);
 			}
 			break;
 
@@ -759,10 +963,20 @@ static void dif_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned si
 			p->lcdtim[(haddr - DIFv2_LCDTIM1) / 4] = value;
 			break;
 
-		case DIFv2_STARTLCDRD:
-			p->startlcdrd = value;
-			dif_start_rx(p);
+		case DIFv2_STARTLCDRD: {
+			bool is_read_stopped = (
+				(p->startlcdrd & DIFv2_STARTLCDRD_STARTREAD) != 0 &&
+				(value & DIFv2_STARTLCDRD_STARTREAD) == 0
+			);
+			p->startlcdrd = dif_is_running(p) ? value : (value & ~DIFv2_STARTLCDRD_STARTREAD);
+			if (is_read_stopped && p->state == DIF_STATE_RX) {
+				dif_kernel_reset(p, DIF_STATE_NONE);
+				dif_reset_rx_fifo(p);
+			} else if ((p->startlcdrd & DIFv2_STARTLCDRD_STARTREAD) != 0) {
+				dif_start_rx(p);
+			}
 			break;
+		}
 
 		case DIFv2_COEFF_REG1:
 		case DIFv2_COEFF_REG2:
@@ -787,7 +1001,7 @@ static void dif_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned si
 
 		case DIFv2_BCSEL0:
 		case DIFv2_BCSEL1:
-			p->bmreg[(haddr - DIFv2_BCSEL0) / 4] = value;
+			p->bcsel[(haddr - DIFv2_BCSEL0) / 4] = value;
 			dif_update_mux(p);
 			break;
 
@@ -798,6 +1012,7 @@ static void dif_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned si
 
 		case DIFv2_INVERT_BIT:
 			p->invert_bit = value;
+			dif_update_mux(p);
 			break;
 
 		case DIFv2_SYNC_CONFIG:
@@ -821,8 +1036,6 @@ static void dif_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned si
 			break;
 
 		case DIFv2_RXFIFO_CFG:
-			if ((value & DIFv2_RXFIFO_CFG_RXFC) != (p->rxfifo_cfg & DIFv2_RXFIFO_CFG_RXFC))
-				dif_set_fifo(p, DIF_FIFO_RX, (value & DIFv2_RXFIFO_CFG_RXFC) != 0);
 			p->rxfifo_cfg = value;
 			break;
 
@@ -832,8 +1045,6 @@ static void dif_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned si
 			break;
 
 		case DIFv2_TXFIFO_CFG:
-			if ((value & DIFv2_TXFIFO_CFG_TXFC) != (p->rxfifo_cfg & DIFv2_TXFIFO_CFG_TXFC))
-				dif_set_fifo(p, DIF_FIFO_TX, (value & DIFv2_TXFIFO_CFG_TXFC) != 0);
 			p->txfifo_cfg = value;
 			break;
 
@@ -848,10 +1059,6 @@ static void dif_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned si
 
 		case DIFv2_ERRIRQSC:
 			pmb887x_srb_ext_set_icr(&p->srb_err, value);
-			break;
-
-		case DIFv2_RIS:
-			value = pmb887x_srb_get_ris(&p->srb);
 			break;
 
 		case DIFv2_IMSC:
@@ -879,8 +1086,6 @@ static void dif_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned si
 			EPRINTF("unknown reg access: %02"PRIX64"\n", haddr);
 			exit(1);
 	}
-
-	dif_update_state(p);
 }
 
 static const MemoryRegionOps io_ops = {
@@ -939,7 +1144,7 @@ static void dif_event_handler(void *opaque, int event_id, int level) {
 	uint32_t mask = 1 << event_id;
 	if (level == 0 && (mask & FIFO_ICR_MASK) != 0) {
 		if (p->state == DIF_STATE_RX || p->state == DIF_STATE_TX) {
-			dif_fifo_clr_req(p);
+			dif_fifo_clr_req(p, mask);
 			dif_fifo_req(p);
 		}
 	}
@@ -952,7 +1157,7 @@ static void dif_init(Object *obj) {
 	pmb887x_dif_t *p = PMB887X_DIF(obj);
 	memory_region_init_io(&p->mmio, obj, &io_ops, p, "pmb887x-dif-v2", DIFv2_IO_SIZE);
 	sysbus_init_mmio(SYS_BUS_DEVICE(obj), &p->mmio);
-	
+
 	p->bus = ssi_create_bus(DEVICE(obj), TYPE_PMB887X_DIF);
 
 	for (int i = 0; i < ARRAY_SIZE(p->irq); i++)
@@ -998,6 +1203,7 @@ static void dif_init(Object *obj) {
 
 static void dif_realize(DeviceState *dev, Error **errp) {
 	pmb887x_dif_t *p = PMB887X_DIF(dev);
+
 	pmb887x_clc_init(&p->clc);
 	pmb887x_srb_init(&p->srb, p->irq, ARRAY_SIZE(p->irq));
 	pmb887x_srb_set_irq_router(&p->srb, p, dif_irq_router);
@@ -1006,14 +1212,16 @@ static void dif_realize(DeviceState *dev, Error **errp) {
 
 	dif_update_gpio_state(p);
 
-	pmb887x_fifo32_init(&p->tx_fifo_buffered, FIFO_SIZE);
-	pmb887x_fifo32_init(&p->rx_fifo_buffered, FIFO_SIZE);
-
-	pmb887x_fifo32_init(&p->tx_fifo_single, 1);
-	pmb887x_fifo32_init(&p->rx_fifo_single, 1);
-
-	dif_set_fifo(p, DIF_FIFO_RX, false);
-	dif_set_fifo(p, DIF_FIFO_TX, false);
+	pmb887x_fifo32_init(&p->tx_fifo, FIFO_SIZE);
+	pmb887x_fifo32_init(&p->rx_fifo, FIFO_SIZE);
+	for (uint32_t i = 0; i < ARRAY_SIZE(p->bit_mux); i++) {
+		uint32_t reg_index = i / 6;
+		uint32_t shift = (i % 6) * 5;
+		if (shift >= 15)
+			shift++;
+		p->bmreg[reg_index] |= (i << shift);
+	}
+	dif_update_mux(p);
 
 	p->timer = timer_new_ns(QEMU_CLOCK_REALTIME, dif_timer_reset, p);
 }
