@@ -58,19 +58,19 @@ struct pmb887x_usart_t {
 	guint watch_tag;
 
 	// FIFO enabled
-	pmb887x_fifo8_t tx_fifo_buffered;
-	pmb887x_fifo8_t rx_fifo_buffered;
+	pmb887x_fifo16_t tx_fifo_buffered;
+	pmb887x_fifo16_t rx_fifo_buffered;
 
 	// FIFO disabled
-	pmb887x_fifo8_t tx_fifo_single;
-	pmb887x_fifo8_t rx_fifo_single;
+	pmb887x_fifo16_t tx_fifo_single;
+	pmb887x_fifo16_t rx_fifo_single;
 
-	// Pending byte to transmit
-	pmb887x_fifo8_t tx_buffer;
+	// Pending frame to transmit
+	pmb887x_fifo16_t tx_buffer;
 
 	// Pointer to current FIFO
-	pmb887x_fifo8_t *rx_fifo;
-	pmb887x_fifo8_t *tx_fifo;
+	pmb887x_fifo16_t *rx_fifo;
+	pmb887x_fifo16_t *tx_fifo;
 
 	int ris_read_count;
 
@@ -78,7 +78,7 @@ struct pmb887x_usart_t {
 	uint32_t bg;
 	uint32_t fdv;
 	uint32_t pmw;
-	uint8_t txb;
+	uint16_t txb;
 	uint32_t abcon;
 	uint32_t abstat;
 	uint32_t rxfcon;
@@ -275,19 +275,17 @@ static int usart_can_receive(void *opaque) {
 	return pmb887x_fifo_free_count(p->rx_fifo);
 }
 
-static void usart_receive(void *opaque, const uint8_t *buf, int size) {
-	pmb887x_usart_t *p = opaque;
-
-	for (int i = 0; i < size; i++) {
-		if (pmb887x_fifo_is_full(p->rx_fifo)) {
-			pmb887x_fifo8_replace_last(p->rx_fifo, buf[i]);
-			p->con |= USART_CON_OE;
-			pmb887x_srb_set_isr(&p->srb, USART_ISR_RX | USART_ISR_ERR);
-		} else {
-			pmb887x_fifo8_push(p->rx_fifo, buf[i]);
-		}
+static void usart_receive_word(pmb887x_usart_t *p, uint16_t value) {
+	if (pmb887x_fifo_is_full(p->rx_fifo)) {
+		pmb887x_fifo16_replace_last(p->rx_fifo, value);
+		p->con |= USART_CON_OE;
+		pmb887x_srb_set_isr(&p->srb, USART_ISR_RX | USART_ISR_ERR);
+	} else {
+		pmb887x_fifo16_push(p->rx_fifo, value);
 	}
+}
 
+static void usart_receive_complete(pmb887x_usart_t *p) {
 	if (p->tmo > 0) {
 		timer_mod_ns(p->tmo_timer, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + USART_TX_BYTE_TIME_NS);
 	}
@@ -298,9 +296,19 @@ static void usart_receive(void *opaque, const uint8_t *buf, int size) {
 	usart_handle_dma(p);
 }
 
+static void usart_receive(void *opaque, const uint8_t *buf, int size) {
+	pmb887x_usart_t *p = opaque;
+
+	for (int i = 0; i < size; i++)
+		usart_receive_word(p, buf[i]);
+
+	if (size > 0)
+		usart_receive_complete(p);
+}
+
 static void usart_schedule_transmit(pmb887x_usart_t *p) {
-	uint8_t byte = pmb887x_fifo8_pop(p->tx_fifo);
-	pmb887x_fifo8_push(&p->tx_buffer, byte);
+	uint16_t word = pmb887x_fifo16_pop(p->tx_fifo);
+	pmb887x_fifo16_push(&p->tx_buffer, word);
 	p->ris_read_count = 0;
 	p->transfer_pending = true;
 	timer_mod(p->timer, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + USART_TX_BYTE_TIME_NS);
@@ -316,6 +324,29 @@ static gboolean usart_transmit_fifo_delayed(void *do_not_use, GIOCondition cond,
 	return false;
 }
 
+static uint8_t usart_get_parity_bit(pmb887x_usart_t *p, uint8_t value) {
+	bool is_odd_data = (ctpop8(value) % 2) != 0;
+	bool is_odd_parity = (p->con & USART_CON_ODD) != 0;
+	return is_odd_data != is_odd_parity ? 1 : 0;
+}
+
+static uint16_t usart_loopback_frame(pmb887x_usart_t *p, uint16_t value) {
+	uint32_t mode = (p->con & USART_CON_M);
+	if (mode == USART_CON_M_ASYNC_PARITY_7BIT) {
+		value &= 0x7F;
+		value |= (usart_get_parity_bit(p, value) << 7);
+	} else if (mode == USART_CON_M_ASYNC_PARITY_8BIT) {
+		value &= 0xFF;
+		value |= (usart_get_parity_bit(p, value) << 8);
+	} else if (mode == USART_CON_M_ASYNC_9BIT || mode == USART_CON_M_ASYNC_WAKE_UP_8BIT) {
+		value &= 0x1FF;
+	} else {
+		value &= 0xFF;
+	}
+
+	return value;
+}
+
 static void usart_transmit_fifo(pmb887x_usart_t *p) {
 	if (!p->transfer_pending)
 		return;
@@ -323,34 +354,53 @@ static void usart_transmit_fifo(pmb887x_usart_t *p) {
 	p->transfer_pending = false;
 	p->ris_read_count = 0;
 
-	uint8_t buffer[USART_FIFO_SIZE * 2] = { };
+	uint16_t buffer[USART_FIFO_SIZE * 2] = { };
 	int buffer_size = 0;
 
-	// Next byte to transmit
+	// Next frame to transmit
 	if (!pmb887x_fifo_is_empty(&p->tx_buffer)) {
-		buffer[0] = pmb887x_fifo8_pop(&p->tx_buffer);
+		buffer[0] = pmb887x_fifo16_pop(&p->tx_buffer);
 		buffer_size++;
 	}
 
 #ifdef USART_SEND_FULL_FIFO
 	// Also, we can send more data from FIFO
-	if (!pmb887x_fifo_is_empty(p->tx_fifo)) {
+	if ((p->con & USART_CON_LB) == 0 && !pmb887x_fifo_is_empty(p->tx_fifo)) {
 		int size = pmb887x_fifo_count(p->tx_fifo);
-		pmb887x_fifo8_read(p->tx_fifo, buffer + buffer_size, size);
+		pmb887x_fifo16_read(p->tx_fifo, buffer + buffer_size, size);
 		buffer_size += size;
 	}
 #endif
 
-	int ret = qemu_chr_fe_write(&p->chr, buffer, buffer_size);
+	uint8_t bytes[ARRAY_SIZE(buffer)];
+	for (int i = 0; i < buffer_size; i++)
+		bytes[i] = buffer[i];
+	int ret = qemu_chr_fe_write(&p->chr, bytes, buffer_size);
+
+	if ((p->con & USART_CON_LB) != 0) {
+		bool is_received = false;
+		if ((p->con & USART_CON_REN) != 0) {
+			for (int i = 0; i < buffer_size; i++) {
+				uint16_t frame = usart_loopback_frame(p, buffer[i]);
+				if ((p->con & USART_CON_M) == USART_CON_M_ASYNC_WAKE_UP_8BIT && (frame & BIT(8)) == 0)
+					continue;
+				usart_receive_word(p, frame);
+				is_received = true;
+			}
+		}
+		if (is_received)
+			usart_receive_complete(p);
+		ret = buffer_size;
+	}
 
 	// Transmission incomplete, schedule next transmission when char backend available again
 	int transmitted = MAX(0, ret);
 	if (transmitted < buffer_size) {
 		p->watch_tag = qemu_chr_fe_add_watch(&p->chr, G_IO_OUT | G_IO_HUP, usart_transmit_fifo_delayed, p);
 		if (p->watch_tag) {
-			pmb887x_fifo8_push(&p->tx_buffer, buffer[transmitted]);
+			pmb887x_fifo16_push(&p->tx_buffer, buffer[transmitted]);
 			if (transmitted + 1 < buffer_size)
-				pmb887x_fifo8_write(p->tx_fifo, buffer + transmitted + 1, buffer_size - transmitted - 1);
+				pmb887x_fifo16_write(p->tx_fifo, buffer + transmitted + 1, buffer_size - transmitted - 1);
 			p->transfer_pending = true;
 			p->ris_read_count = 0;
 		} else {
@@ -374,11 +424,11 @@ static void usart_transmit_fifo(pmb887x_usart_t *p) {
 		usart_schedule_transmit(p);
 }
 
-static void usart_write_txb(pmb887x_usart_t *p, uint8_t value) {
-	p->txb = value;
+static void usart_write_txb(pmb887x_usart_t *p, uint16_t value) {
+	p->txb = (value & 0x1FF);
 
 	if (pmb887x_fifo_is_full(p->tx_fifo)) {
-		pmb887x_fifo8_replace_last(p->tx_fifo, p->txb);
+		pmb887x_fifo16_replace_last(p->tx_fifo, p->txb);
 		if (usart_is_tx_fifo_enabled(p)) {
 			p->con |= USART_CON_OE;
 			pmb887x_srb_set_isr(&p->srb, USART_ISR_ERR);
@@ -386,7 +436,7 @@ static void usart_write_txb(pmb887x_usart_t *p, uint8_t value) {
 		return;
 	}
 
-	pmb887x_fifo8_push(p->tx_fifo, p->txb);
+	pmb887x_fifo16_push(p->tx_fifo, p->txb);
 
 	if (p->transfer_pending) {
 		if (usart_tb_irq(p))
@@ -438,7 +488,7 @@ static uint64_t usart_io_read(void *opaque, hwaddr haddr, unsigned size) {
 		case USART_RXB:
 			if (!pmb887x_fifo_is_empty(p->rx_fifo)) {
 				bool is_full = pmb887x_fifo_is_full(p->rx_fifo);
-				value = pmb887x_fifo8_pop(p->rx_fifo);
+				value = pmb887x_fifo16_pop(p->rx_fifo);
 				if (is_full)
 					qemu_chr_fe_accept_input(&p->chr);
 				if ((p->rxfcon & USART_RXFCON_RXTMEN) && !pmb887x_fifo_is_empty(p->rx_fifo))
@@ -578,7 +628,7 @@ static void usart_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned 
 			break;
 
 		case USART_TXB:
-			usart_write_txb(p, value & 0xFF);
+			usart_write_txb(p, value);
 			break;
 
 		case USART_ABCON:
@@ -705,13 +755,13 @@ static void usart_realize(DeviceState *dev, Error **errp) {
 			hw_error("pmb887x-usart: irq %d not set", i);
 	}
 	
-    pmb887x_fifo8_init(&p->tx_fifo_buffered, USART_FIFO_SIZE);
-    pmb887x_fifo8_init(&p->rx_fifo_buffered, USART_FIFO_SIZE);
+	pmb887x_fifo16_init(&p->tx_fifo_buffered, USART_FIFO_SIZE);
+	pmb887x_fifo16_init(&p->rx_fifo_buffered, USART_FIFO_SIZE);
 	
-    pmb887x_fifo8_init(&p->tx_fifo_single, 1);
-    pmb887x_fifo8_init(&p->rx_fifo_single, 1);
+	pmb887x_fifo16_init(&p->tx_fifo_single, 1);
+	pmb887x_fifo16_init(&p->rx_fifo_single, 1);
 
-	pmb887x_fifo8_init(&p->tx_buffer, 1);
+	pmb887x_fifo16_init(&p->tx_buffer, 1);
 
 	pmb887x_srb_init(&p->srb, p->irq, ARRAY_SIZE(p->irq));
 	pmb887x_srb_set_event_handler(&p->srb, dev, usart_event_handler);
