@@ -253,6 +253,9 @@ static void dmac_transfer_memory(pmb887x_dmac_t *p, pmb887x_dmac_ch_t *ch, uint3
 		flow_ctrl == DMAC_CH_CONFIG_FLOW_CTRL_MEM2PER_PER
 	);
 
+	ch->src_addr &= ~(src_width - 1);
+	ch->dst_addr &= ~(dst_width - 1);
+
 	DPRINTF("CH%d: %08X [%dx%d] -> %08X [%dx%d] [%d]\n", ch->id, ch->src_addr, src_width, burst_size, ch->dst_addr, dst_width, burst_size, tx_size);
 	ch->is_active = burst_size > 0;
 
