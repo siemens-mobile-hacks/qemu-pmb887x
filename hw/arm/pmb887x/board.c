@@ -9,6 +9,7 @@
 #include "qobject/qlist.h"
 #include "qom/object.h"
 #include "system/address-spaces.h"
+#include "system/reset.h"
 #include "hw/loader.h"
 #include "hw/arm/machines-qom.h"
 #include "system/system.h"
@@ -31,6 +32,24 @@
 void qmp_pmemsave(uint64_t addr, uint64_t size, const char *filename, Error **errp);
 
 static bool machine_used = false;
+static bool initial_cpu_reset = true;
+
+static uint32_t pmb887x_get_initial_pc(void) {
+#if PMB887X_IO_BRIDGE
+	return 0x00400000;
+#else
+	const char *wait_for_serial = getenv("PMB887X_WAIT_FOR_SERIAL");
+	return wait_for_serial && strcmp(wait_for_serial, "1") == 0 ? 0x00082000 : 0x00000000;
+#endif
+}
+
+static void pmb887x_cpu_reset(void *opaque) {
+	CPUState *cpu = opaque;
+
+	cpu_reset(cpu);
+	cpu_set_pc(cpu, initial_cpu_reset ? pmb887x_get_initial_pc() : 0x00000000);
+	initial_cpu_reset = false;
+}
 
 __attribute__((destructor))
 static void memory_dump_at_exit(void) {
@@ -91,6 +110,7 @@ static void pmb887x_init(MachineState *machine) {
 	object_property_set_bool(cpuobj, "realized", false, &error_fatal);
 
 	qdev_realize(DEVICE(cpuobj), NULL, &error_fatal);
+	qemu_register_reset(pmb887x_cpu_reset, CPU(cpu));
 
 	// TCM
 	DeviceState *tcm = qdev_new("pmb887x-tcm");
@@ -198,6 +218,10 @@ static void pmb887x_init(MachineState *machine) {
 
 	// System Control Unit
 	DeviceState *scu = pmb887x_new_cpu_module("SCU");
+	const char *stop_on_excp = getenv("QEMU_ARM_STOP_ON_EXCP");
+	if (stop_on_excp && strcmp(stop_on_excp, "1") == 0)
+		object_property_set_bool(OBJECT(scu), "stop_on_watchdog", true, &error_fatal);
+	object_property_set_link(OBJECT(scu), "pll", OBJECT(pll), &error_fatal);
 	object_property_set_link(OBJECT(scu), "brom_mirror", OBJECT(brom_mirror), &error_fatal);
 	object_property_set_link(OBJECT(scu), "sccu", OBJECT(sccu), &error_fatal);
 	object_property_set_link(OBJECT(scu), "dmac", OBJECT(dmac), &error_fatal);
@@ -263,7 +287,6 @@ static void pmb887x_init(MachineState *machine) {
 
 #if PMB887X_IO_BRIDGE
 	pmb8876_io_bridge_set_vic(vic);
-	cpu_set_pc(CPU(cpu), 0x00400000);
 #else
 	const char *wait_for_serial_flag = getenv("PMB887X_WAIT_FOR_SERIAL");
 	if (wait_for_serial_flag && strcmp(wait_for_serial_flag, "1") == 0) {
@@ -277,11 +300,9 @@ static void pmb887x_init(MachineState *machine) {
 			0x10, 0xff, 0x2f, 0xe1
 		};
 		rom_add_blob_fixed("BROM", wait_for_serial_rom, sizeof(wait_for_serial_rom), 0x00082000);
-		cpu_set_pc(CPU(cpu), 0x00082000);
-	} else {
-		cpu_set_pc(CPU(cpu), 0x00000000);
 	}
 #endif
+	cpu_set_pc(CPU(cpu), pmb887x_get_initial_pc());
 }
 
 /*

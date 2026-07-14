@@ -408,6 +408,37 @@ static void capcom_init(Object *obj) {
 	qdev_init_gpio_in_named(dev, capcom_input_cc7_handler, "CC7_IN", 1);
 }
 
+static void capcom_reset(DeviceState *dev) {
+	pmb887x_capcom_t *p = PMB887X_CAPCOM(dev);
+
+	pmb887x_clc_init(&p->clc);
+
+	for (size_t i = 0; i < ARRAY_SIZE(p->t_src); i++)
+		pmb887x_src_reset(&p->t_src[i]);
+	for (size_t i = 0; i < ARRAY_SIZE(p->cc_src); i++)
+		pmb887x_src_reset(&p->cc_src[i]);
+
+	p->pisel = 0;
+	p->t01con = 0;
+	memset(p->ccm, 0, sizeof(p->ccm));
+	p->out = 0;
+	p->ioc = 0;
+	p->sem = 0;
+	p->see = 0;
+	p->drm = 0;
+	p->whbssee = 0;
+	p->whbcsee = 0;
+	p->t0 = 0;
+	p->t0rel = 0;
+	p->t1 = 0;
+	p->t1rel = 0;
+	p->t01ocr = 0;
+	p->whbsout = 0;
+	p->whbcout = 0;
+
+	capcom_update_state(p);
+}
+
 static void capcom_realize(DeviceState *dev, Error **errp) {
 	pmb887x_capcom_t *p = PMB887X_CAPCOM(dev);
 	
@@ -434,6 +465,7 @@ static void capcom_realize(DeviceState *dev, Error **errp) {
 
 static void capcom_class_init(ObjectClass *klass, const void *data) {
 	DeviceClass *dc = DEVICE_CLASS(klass);
+	device_class_set_legacy_reset(dc, capcom_reset);
 	dc->realize = capcom_realize;
 }
 

@@ -103,6 +103,11 @@ static void mmci_init(Object *obj) {
 	qdev_init_gpio_out_named(dev, &p->gpio_clk, "CLK_OUT", 1);
 }
 
+static void mmci_reset(DeviceState *dev) {
+	pmb887x_mmci_t *p = PMB887X_MMCI(dev);
+	pmb887x_clc_init(&p->clc);
+}
+
 static void mmci_realize(DeviceState *dev, Error **errp) {
 	pmb887x_mmci_t *p = PMB887X_MMCI(dev);
 	pmb887x_clc_init(&p->clc);
@@ -110,6 +115,7 @@ static void mmci_realize(DeviceState *dev, Error **errp) {
 
 static void mmci_class_init(ObjectClass *klass, const void *data) {
 	DeviceClass *dc = DEVICE_CLASS(klass);
+	device_class_set_legacy_reset(dc, mmci_reset);
 	dc->realize = mmci_realize;
 }
 

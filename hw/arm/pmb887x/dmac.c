@@ -895,6 +895,35 @@ static void dmac_realize(DeviceState *dev, Error **errp) {
 	p->timer = timer_new_ns(QEMU_CLOCK_REALTIME, dmac_timer_reset, p);
 }
 
+static void dmac_reset(DeviceState *dev) {
+	pmb887x_dmac_t *p = PMB887X_DMAC(dev);
+
+	timer_del(p->timer);
+
+	pmb887x_srb_reset(&p->srb_err);
+	pmb887x_srb_reset(&p->srb_tc);
+
+	for (int i = 0; i < DMAC_CHANNELS; i++)
+		p->ch[i] = (pmb887x_dmac_ch_t) { .id = i };
+
+	p->dmac_pending = false;
+	p->is_busy = false;
+	p->config = 0;
+	p->sync = 0;
+	memset(p->sel, 0, sizeof(p->sel));
+	memset(&p->sreq, 0, sizeof(p->sreq));
+	memset(&p->breq, 0, sizeof(p->breq));
+	memset(&p->lbreq, 0, sizeof(p->lbreq));
+	memset(&p->lsreq, 0, sizeof(p->lsreq));
+
+	for (size_t sel = 0; sel < DMAC_MULTIPLEXOR; sel++) {
+		for (size_t request = 0; request < DMAC_REQUESTS; request++) {
+			qemu_set_irq(p->CLR[sel][request], 0);
+			qemu_set_irq(p->TC[sel][request], 0);
+		}
+	}
+}
+
 static const Property dmac_properties[] = {
 	DEFINE_PROP_LINK("downstream", pmb887x_dmac_t, downstream, TYPE_MEMORY_REGION, MemoryRegion *),
 };
@@ -902,6 +931,7 @@ static const Property dmac_properties[] = {
 static void dmac_class_init(ObjectClass *klass, const void *data) {
 	DeviceClass *dc = DEVICE_CLASS(klass);
 	device_class_set_props(dc, dmac_properties);
+	device_class_set_legacy_reset(dc, dmac_reset);
 	dc->realize = dmac_realize;
 }
 

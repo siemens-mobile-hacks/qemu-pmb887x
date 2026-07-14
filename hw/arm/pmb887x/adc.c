@@ -341,6 +341,24 @@ static void adc_init(Object *obj) {
 		sysbus_init_irq(SYS_BUS_DEVICE(obj), &p->irq[i]);
 }
 
+static void adc_reset(DeviceState *dev) {
+	pmb887x_adc_t *p = PMB887X_ADC(dev);
+
+	pmb887x_clc_init(&p->clc);
+
+	for (size_t i = 0; i < ARRAY_SIZE(p->src); i++)
+		pmb887x_src_reset(&p->src[i]);
+
+	p->measure_mode = ADC_MEASURE_MODE_NONE;
+	p->pllcon = 0;
+	p->con0 = 0;
+	p->con1 = 0;
+	p->stat = 0;
+	memset(p->data, 0, sizeof(p->data));
+
+	adc_update_state(p);
+}
+
 static void adc_realize(DeviceState *dev, Error **errp) {
 	pmb887x_adc_t *p = PMB887X_ADC(dev);
 	
@@ -359,6 +377,7 @@ static const Property adc_properties[] = {
 static void adc_class_init(ObjectClass *klass, const void *data) {
 	DeviceClass *dc = DEVICE_CLASS(klass);
 	device_class_set_props(dc, adc_properties);
+	device_class_set_legacy_reset(dc, adc_reset);
 	dc->realize = adc_realize;
 }
 

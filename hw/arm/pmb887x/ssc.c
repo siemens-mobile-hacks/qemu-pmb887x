@@ -447,6 +447,37 @@ static void ssc_realize(DeviceState *dev, Error **errp) {
 	ssc_update_state(p);
 }
 
+static void ssc_reset(DeviceState *dev) {
+	pmb887x_ssc_t *p = PMB887X_SSC(dev);
+
+	pmb887x_clc_init(&p->clc);
+	pmb887x_srb_reset(&p->srb);
+
+	p->br = 0;
+	p->con = 0;
+	p->status = 0;
+	memset(p->bmreg, 0, sizeof(p->bmreg));
+	memset(p->unk, 0, sizeof(p->unk));
+	p->tb = 0;
+	p->rxfcon = 0;
+	p->txfcon = 0;
+	p->pbccon = 0;
+	p->bcreg = 0;
+	memset(p->bcsel, 0, sizeof(p->bcsel));
+	p->mask = 0;
+	p->bits = 0;
+	p->dmac_tx_clr = 0;
+	p->dmac_rx_clr = 0;
+
+	qemu_set_irq(p->dmac_tx_breq, 0);
+	qemu_set_irq(p->dmac_rx_breq, 0);
+
+	ssc_set_fifo(p, SSC_FIFO_RX, false);
+	ssc_set_fifo(p, SSC_FIFO_TX, false);
+
+	ssc_update_state(p);
+}
+
 static const Property ssc_properties[] = {
 	DEFINE_PROP_LINK("bus", pmb887x_ssc_t, bus, "SSI", SSIBus *),
 };
@@ -454,6 +485,7 @@ static const Property ssc_properties[] = {
 static void ssc_class_init(ObjectClass *klass, const void *data) {
 	DeviceClass *dc = DEVICE_CLASS(klass);
 	device_class_set_props(dc, ssc_properties);
+	device_class_set_legacy_reset(dc, ssc_reset);
 	dc->realize = ssc_realize;
 }
 

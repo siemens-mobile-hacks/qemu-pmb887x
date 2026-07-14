@@ -301,6 +301,27 @@ static void rtc_init(Object *obj) {
 	sysbus_init_irq(SYS_BUS_DEVICE(obj), &p->irq);
 }
 
+static void rtc_reset(DeviceState *dev) {
+	pmb887x_rtc_t *p = PMB887X_RTC(dev);
+
+	timer_del(p->timer);
+
+	pmb887x_clc_init(&p->clc);
+	pmb887x_src_reset(&p->src);
+
+	p->ctrl = 0;
+	p->con = RTC_CON_RUN | RTC_CON_PRE;
+
+	uint32_t t14_start = (UINT16_MAX + 1) - rtc_get_freq(p);
+	p->t14 = ((t14_start << RTC_T14_CNT_SHIFT) | (t14_start << RTC_T14_REL_SHIFT));
+	p->cnt = qemu_clock_get_ns(QEMU_CLOCK_HOST) / NANOSECONDS_PER_SECOND;
+	p->rel = 0;
+	p->isnc = 0;
+	p->alarm = 0xFFFFFFFF;
+
+	rtc_sync(p);
+}
+
 static void rtc_realize(DeviceState *dev, Error **errp) {
 	pmb887x_rtc_t *p = PMB887X_RTC(dev);
 	
@@ -327,6 +348,7 @@ static const Property rtc_properties[] = {
 static void rtc_class_init(ObjectClass *klass, const void *data) {
 	DeviceClass *dc = DEVICE_CLASS(klass);
 	device_class_set_props(dc, rtc_properties);
+	device_class_set_legacy_reset(dc, rtc_reset);
 	dc->realize = rtc_realize;
 }
 

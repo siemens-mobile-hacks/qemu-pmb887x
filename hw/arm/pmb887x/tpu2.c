@@ -457,6 +457,40 @@ static void tpu_realize(DeviceState *dev, Error **errp) {
 	pmb887x_pll_add_freq_update_callback(p->pll, tpu_update_state_callback, p);
 }
 
+static void tpu_reset(DeviceState *dev) {
+	struct pmb887x_tpu_t *p = PMB887X_TPU(dev);
+
+	pmb887x_dyn_timer_stop(p->timer);
+	pmb887x_dyn_timer_reset(p->timer);
+	pmb887x_dyn_timer_set_overflow(p->timer, 0);
+	pmb887x_dyn_timer_irq_set_threshold(p->timer, 0, 0);
+	pmb887x_dyn_timer_irq_set_threshold(p->timer, 1, 0);
+
+	pmb887x_clc_init(&p->clc);
+
+	for (size_t i = 0; i < ARRAY_SIZE(p->src); i++)
+		pmb887x_src_reset(&p->src[i]);
+	for (size_t i = 0; i < ARRAY_SIZE(p->unk_src); i++)
+		pmb887x_src_reset(&p->unk_src[i]);
+
+	memset(p->ram, 0, sizeof(p->ram));
+	p->correction = 0;
+	p->offset = 0;
+	p->param = 0;
+	p->skip = 0;
+
+	p->enabled = false;
+	p->pllcon0 = 0;
+	p->pllcon1 = 0;
+	p->pllcon2 = 0;
+	memset(p->unk, 0, sizeof(p->unk));
+	p->L = 0;
+	p->K = 0;
+	p->last_fsys = 0;
+
+	tpu_update_state(p);
+}
+
 static const Property tpu_properties[] = {
 	DEFINE_PROP_LINK("pll", struct pmb887x_tpu_t, pll, "pmb887x-pll", struct pmb887x_pll_t *),
 	DEFINE_PROP_LINK("vic", struct pmb887x_tpu_t, vic, "pmb887x-vic", struct pmb887x_vic_t *),
@@ -465,6 +499,7 @@ static const Property tpu_properties[] = {
 static void tpu_class_init(ObjectClass *klass, const void *data) {
 	DeviceClass *dc = DEVICE_CLASS(klass);
 	device_class_set_props(dc, tpu_properties);
+	device_class_set_legacy_reset(dc, tpu_reset);
 	dc->realize = tpu_realize;
 }
 

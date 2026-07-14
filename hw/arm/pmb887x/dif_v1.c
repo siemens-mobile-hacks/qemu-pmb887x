@@ -563,6 +563,37 @@ static void dif_realize(DeviceState *dev, Error **errp) {
 	dif_update_state(p);
 }
 
+static void dif_reset(DeviceState *dev) {
+	pmb887x_dif_t *p = PMB887X_DIF(dev);
+
+	pmb887x_clc_init(&p->clc);
+	pmb887x_srb_reset(&p->srb);
+
+	p->br = 0;
+	p->con = 0;
+	p->status = 0;
+	memset(p->bmreg, 0, sizeof(p->bmreg));
+	memset(p->unk, 0, sizeof(p->unk));
+	p->tb = 0;
+	p->rxfcon = 0;
+	p->txfcon = 0;
+	p->pbccon = 0;
+	p->bcreg = 0;
+	memset(p->bcsel, 0, sizeof(p->bcsel));
+	p->mask = 0;
+	p->bits = 0;
+	p->dmac_tx_clr = 0;
+	p->dmac_rx_clr = 0;
+
+	qemu_set_irq(p->dmac_tx_breq, 0);
+	qemu_set_irq(p->dmac_rx_breq, 0);
+
+	dif_set_fifo(p, DIF_FIFO_RX, false);
+	dif_set_fifo(p, DIF_FIFO_TX, false);
+
+	dif_update_state(p);
+}
+
 static const Property dif_properties[] = {
 	DEFINE_PROP_LINK("bus", pmb887x_dif_t, bus, "SSI", SSIBus *),
 };
@@ -570,6 +601,7 @@ static const Property dif_properties[] = {
 static void dif_class_init(ObjectClass *klass, const void *data) {
 	DeviceClass *dc = DEVICE_CLASS(klass);
 	device_class_set_props(dc, dif_properties);
+	device_class_set_legacy_reset(dc, dif_reset);
 	dc->realize = dif_realize;
 }
 

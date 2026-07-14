@@ -156,6 +156,19 @@ static void dsp_init(Object *obj) {
 	sysbus_init_mmio(SYS_BUS_DEVICE(obj), &p->mmio);
 }
 
+static void dsp_reset(DeviceState *dev) {
+	pmb887x_dsp_t *p = PMB887X_DSP(dev);
+
+	pmb887x_clc_init(&p->clc);
+
+	p->unk[0] = 0x01;
+	p->unk[1] = 0x00;
+	memset(p->ram, 0, sizeof(p->ram));
+	dsp_ram_write(p, 0, p->ram0_value, 2);
+
+	dsp_update_state(p);
+}
+
 static const Property dsp_properties[] = {
 	DEFINE_PROP_UINT32("ram0_value", pmb887x_dsp_t, ram0_value, 0x0801),
 };
@@ -175,6 +188,7 @@ static void dsp_realize(DeviceState *dev, Error **errp) {
 static void dsp_class_init(ObjectClass *klass, const void *data) {
 	DeviceClass *dc = DEVICE_CLASS(klass);
 	device_class_set_props(dc, dsp_properties);
+	device_class_set_legacy_reset(dc, dsp_reset);
 	dc->realize = dsp_realize;
 }
 

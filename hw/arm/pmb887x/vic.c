@@ -320,6 +320,30 @@ static void vic_init(Object *obj) {
 	sysbus_init_irq(SYS_BUS_DEVICE(obj), &p->parent_fiq);
 }
 
+static void vic_reset(DeviceState *dev) {
+	pmb887x_vic_t *p = PMB887X_VIC(dev);
+
+	for (int i = 0; i < IRQS_COUNT; i++) {
+		p->irq_state[i].id = i;
+		p->irq_state[i].fiq = false;
+		p->irq_state[i].priority = 0;
+		p->irq_state[i].level = 0;
+		p->irq_state[i].bridge = false;
+	}
+
+	p->fiq_con = 0;
+	p->irq_con = 0;
+
+	p->pending_irq = -1;
+	p->pending_fiq = -1;
+	p->irq_depth = 0;
+	p->fiq_depth = 0;
+	memset(p->irq_frames, 0, sizeof(p->irq_frames));
+	memset(p->fiq_frames, 0, sizeof(p->fiq_frames));
+
+	vic_update_state(p);
+}
+
 static void vic_realize(DeviceState *dev, Error **errp) {
 	pmb887x_vic_t *p = PMB887X_VIC(dev);
 	vic_update_state(p);
@@ -327,6 +351,7 @@ static void vic_realize(DeviceState *dev, Error **errp) {
 
 static void vic_class_init(ObjectClass *klass, const void *data) {
 	DeviceClass *dc = DEVICE_CLASS(klass);
+	device_class_set_legacy_reset(dc, vic_reset);
 	dc->realize = vic_realize;
 }
 

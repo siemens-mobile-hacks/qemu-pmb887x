@@ -51,12 +51,14 @@ void pmb887x_clc_set(pmb887x_clc_reg_t *reg, uint32_t value);
 
 // Service Routing Config
 void pmb887x_src_init(pmb887x_src_reg_t *reg, qemu_irq irq);
+void pmb887x_src_reset(pmb887x_src_reg_t *reg);
 uint32_t pmb887x_src_get(pmb887x_src_reg_t *reg);
 void pmb887x_src_set(pmb887x_src_reg_t *reg, uint32_t value);
 void pmb887x_src_update(pmb887x_src_reg_t *reg, uint32_t clear, uint32_t set);
 
 // Service Request Block
 void pmb887x_srb_init(pmb887x_srb_reg_t *reg, qemu_irq *irq, int irq_n);
+void pmb887x_srb_reset(pmb887x_srb_reg_t *reg);
 void pmb887x_srb_set_irq_router(pmb887x_srb_reg_t *reg, void *opaque, int (*callback)(void *, int));
 void pmb887x_srb_set_event_handler(pmb887x_srb_reg_t *reg, void *opaque, void (*callback)(void *, int, int)) ;
 
@@ -73,6 +75,7 @@ void pmb887x_srb_set_dmae(pmb887x_srb_reg_t *reg, uint32_t value);
 
 // Service Request Block Extended
 void pmb887x_srb_ext_init(pmb887x_srb_ext_reg_t *reg, pmb887x_srb_reg_t *parent, uint32_t events);
+void pmb887x_srb_ext_reset(pmb887x_srb_ext_reg_t *reg);
 
 uint32_t pmb887x_srb_ext_get_imsc(pmb887x_srb_ext_reg_t *reg);
 uint32_t pmb887x_srb_ext_get_mis(pmb887x_srb_ext_reg_t *reg);

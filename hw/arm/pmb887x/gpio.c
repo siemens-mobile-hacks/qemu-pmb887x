@@ -253,6 +253,22 @@ static void gpio_init(Object *obj) {
 	qdev_init_gpio_out_named(dev, p->pins_out[7], "pin_alt6_out", GPIOS_COUNT);
 }
 
+static void gpio_reset(DeviceState *dev) {
+	pmb887x_gpio_t *p = PMB887X_GPIO(dev);
+
+	pmb887x_clc_init(&p->clc);
+	memset(p->mon_cr, 0, sizeof(p->mon_cr));
+
+	for (int id = 0; id < GPIOS_COUNT; id++) {
+		for (size_t mux = 0; mux < ARRAY_SIZE(p->pins_out); mux++)
+			qemu_set_irq(p->pins_out[mux][id], 0);
+		p->pins[id] = GPIO_PS_MANUAL | GPIO_DIR_IN | GPIO_ENAQ_ON | GPIO_PDPU_PULLDOWN | GPIO_PPEN_PUSHPULL;
+		gpio_sync_pin_state(p, id);
+	}
+
+	gpio_update_state(p);
+}
+
 static void gpio_realize(DeviceState *dev, Error **errp) {
 	pmb887x_gpio_t *p = PMB887X_GPIO(dev);
 	pmb887x_clc_init(&p->clc);
@@ -265,6 +281,7 @@ static void gpio_realize(DeviceState *dev, Error **errp) {
 
 static void gpio_class_init(ObjectClass *klass, const void *data) {
 	DeviceClass *dc = DEVICE_CLASS(klass);
+	device_class_set_legacy_reset(dc, gpio_reset);
 	dc->realize = gpio_realize;
 }
 

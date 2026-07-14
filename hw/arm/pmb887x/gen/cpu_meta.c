@@ -5364,6 +5364,12 @@ static const pmb887x_module_field_t scu_rst_sr_fields[] = {
 	{"PWDRST",	SCU_RST_SR_PWDRST,	SCU_RST_SR_PWDRST_SHIFT,	NULL,	0},
 };
 
+static const pmb887x_module_field_t scu_rst_con_fields[] = {
+	{"SWCFG",	SCU_RST_CON_SWCFG,		SCU_RST_CON_SWCFG_SHIFT,	NULL,	0},
+	{"SWBRKIN",	SCU_RST_CON_SWBRKIN,	SCU_RST_CON_SWBRKIN_SHIFT,	NULL,	0},
+	{"SWBOOT",	SCU_RST_CON_SWBOOT,		SCU_RST_CON_SWBOOT_SHIFT,	NULL,	0},
+};
+
 static const pmb887x_module_field_t scu_rst_req_fields[] = {
 	{"RRSTM",	SCU_RST_REQ_RRSTM,		SCU_RST_REQ_RRSTM_SHIFT,	NULL,	0},
 	{"RREXT",	SCU_RST_REQ_RREXT,		SCU_RST_REQ_RREXT_SHIFT,	NULL,	0},
@@ -5645,6 +5651,7 @@ static const pmb887x_module_reg_t scu_regs[] = {
 	{"CLC",			SCU_CLC,		scu_clc_fields,			ARRAY_SIZE(scu_clc_fields),			0},
 	{"ID",			SCU_ID,			scu_id_fields,			ARRAY_SIZE(scu_id_fields),			0},
 	{"RST_SR",		SCU_RST_SR,		scu_rst_sr_fields,		ARRAY_SIZE(scu_rst_sr_fields),		0},
+	{"RST_CON",		SCU_RST_CON,	scu_rst_con_fields,		ARRAY_SIZE(scu_rst_con_fields),		0},
 	{"RST_REQ",		SCU_RST_REQ,	scu_rst_req_fields,		ARRAY_SIZE(scu_rst_req_fields),		0},
 	{"UNK0",		SCU_UNK0,		NULL,					0,									0},
 	{"WDTCON0",		SCU_WDTCON0,	scu_wdtcon0_fields,		ARRAY_SIZE(scu_wdtcon0_fields),		0},

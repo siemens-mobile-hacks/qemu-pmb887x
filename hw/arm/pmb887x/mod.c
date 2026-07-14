@@ -36,11 +36,16 @@ void pmb887x_clc_set(pmb887x_clc_reg_t *reg, uint32_t value) {
 
 void pmb887x_src_init(pmb887x_src_reg_t *reg, qemu_irq irq) {
 	reg->irq = irq;
-	reg->value = 0;
-	reg->last_irq_state = false;
-	
 	if (!reg->irq)
 		hw_error("[pmb887x-mod] irq is not set\n");
+	pmb887x_src_reset(reg);
+}
+
+void pmb887x_src_reset(pmb887x_src_reg_t *reg) {
+	if (reg->last_irq_state)
+		qemu_set_irq(reg->irq, 0);
+	reg->value = 0;
+	reg->last_irq_state = false;
 }
 
 uint32_t pmb887x_src_get(pmb887x_src_reg_t *reg) {
@@ -97,6 +102,17 @@ void pmb887x_srb_init(pmb887x_srb_reg_t *reg, qemu_irq *irq, int irq_n) {
 	reg->irq_events = g_new0(uint32_t, reg->irq_n);
 	reg->irq_router = pmb887x_srb_irq_router;
 	reg->irq_router_opaque = reg;
+	pmb887x_srb_reset(reg);
+}
+
+void pmb887x_srb_reset(pmb887x_srb_reg_t *reg) {
+	for (int i = 0; i < reg->irq_n; i++) {
+		if (reg->last_irq_state[i])
+			qemu_set_irq(reg->irq[i], 0);
+		reg->last_irq_state[i] = false;
+		reg->irq_events[i] = 0;
+	}
+	reg->last_state = 0;
 	reg->imsc = 0;
 	reg->ris = 0;
 	reg->dmae = 0;
@@ -222,6 +238,10 @@ void pmb887x_srb_set_dmae(pmb887x_srb_reg_t *reg, uint32_t value) {
 void pmb887x_srb_ext_init(pmb887x_srb_ext_reg_t *reg, pmb887x_srb_reg_t *parent, uint32_t events) {
 	reg->parent = parent;
 	reg->events = events;
+	pmb887x_srb_ext_reset(reg);
+}
+
+void pmb887x_srb_ext_reset(pmb887x_srb_ext_reg_t *reg) {
 	reg->ris = 0;
 	reg->imsc = 0xFFFFFFFF;
 }

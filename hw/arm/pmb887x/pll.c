@@ -336,6 +336,25 @@ static void pll_init(Object *obj) {
 	qdev_init_gpio_out_named(dev, &p->gpio_clk32, "CLK32_OUT", 1);
 }
 
+static void pll_reset(DeviceState *dev) {
+	pmb887x_pll_t *p = PMB887X_PLL(dev);
+
+	pmb887x_src_reset(&p->src);
+	pmb887x_src_set(&p->src, MOD_SRC_SRE);
+
+	p->ns_per_tick = 0;
+	p->frtc = 32768;
+	p->fgptu = 1000000000;
+	p->fsys = p->xtal;
+	p->osc = 0x01070001;
+	p->con0 = 0x22000012;
+	p->con1 = 0;
+	p->con2 = 0;
+	p->con3 = 0;
+
+	pll_update_state(p);
+}
+
 static void pll_realize(DeviceState *dev, Error **errp) {
 	pmb887x_pll_t *p = PMB887X_PLL(dev);
 	
@@ -372,6 +391,7 @@ static const Property pll_properties[] = {
 static void pll_class_init(ObjectClass *klass, const void *data) {
 	DeviceClass *dc = DEVICE_CLASS(klass);
 	device_class_set_props(dc, pll_properties);
+	device_class_set_legacy_reset(dc, pll_reset);
 	dc->realize = pll_realize;
 }
 

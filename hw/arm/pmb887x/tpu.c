@@ -534,6 +534,52 @@ static void tpu_realize(DeviceState *dev, Error **errp) {
 	pmb887x_pll_add_freq_update_callback(p->pll, tpu_update_state_callback, p);
 }
 
+static void tpu_reset(DeviceState *dev) {
+	pmb887x_tpu_t *p = PMB887X_TPU(dev);
+
+	timer_del(p->timer);
+
+	pmb887x_clc_init(&p->clc);
+
+	pmb887x_src_reset(&p->rfssc_src);
+	for (size_t i = 0; i < ARRAY_SIZE(p->src); i++)
+		pmb887x_src_reset(&p->src[i]);
+	for (size_t i = 0; i < ARRAY_SIZE(p->gp_src); i++)
+		pmb887x_src_reset(&p->gp_src[i]);
+
+	memset(p->ram, 0, sizeof(p->ram));
+	p->correction = 0;
+	p->overflow = 0;
+	p->offset = 0;
+	p->param = 0;
+	p->skip = 0;
+	memset(p->intr, 0, sizeof(p->intr));
+
+	p->gsmclk1 = 0;
+	p->gsmclk2 = 0;
+	p->gsmclk3 = 0;
+	p->ceap = 0;
+	p->eapt = 0;
+	p->eapb = 0;
+	p->tger = 0;
+	p->rfcon1 = 0;
+	p->rfcon2 = 0;
+	p->fade = 0;
+	p->irq_fired = 0;
+
+	p->enabled = false;
+	p->freq = 0;
+	p->counter = 0;
+	p->start = 0;
+	p->next = 0;
+	p->L = 0;
+	p->K = 0;
+	p->last_fsys = 0;
+	p->unk = 0;
+
+	tpu_update_state(p);
+}
+
 static const Property tpu_properties[] = {
 	DEFINE_PROP_LINK("pll", struct pmb887x_tpu_t, pll, "pmb887x-pll", struct pmb887x_pll_t *),
 };
@@ -541,6 +587,7 @@ static const Property tpu_properties[] = {
 static void tpu_class_init(ObjectClass *klass, const void *data) {
 	DeviceClass *dc = DEVICE_CLASS(klass);
 	device_class_set_props(dc, tpu_properties);
+	device_class_set_legacy_reset(dc, tpu_reset);
 	dc->realize = tpu_realize;
 }
 

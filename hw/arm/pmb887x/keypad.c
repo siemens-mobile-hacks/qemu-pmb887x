@@ -222,6 +222,15 @@ static void keypad_realize(DeviceState *dev, Error **errp) {
     qemu_input_handler_register(dev, &keypad_input_handler);
 }
 
+static void keypad_reset(DeviceState *dev) {
+	pmb887x_keypad_t *p = PMB887X_KEYPAD(dev);
+
+	p->con = 0;
+	p->extension = 0;
+	for (size_t i = 0; i < ARRAY_SIZE(p->src); i++)
+		pmb887x_src_reset(&p->src[i]);
+}
+
 static const Property keypad_properties[] = {
 	DEFINE_PROP_ARRAY("map", pmb887x_keypad_t, map_size, map, qdev_prop_uint32, uint32_t),
 };
@@ -229,6 +238,7 @@ static const Property keypad_properties[] = {
 static void keypad_class_init(ObjectClass *klass, const void *data) {
 	DeviceClass *dc = DEVICE_CLASS(klass);
 	device_class_set_props(dc, keypad_properties);
+	device_class_set_legacy_reset(dc, keypad_reset);
 	dc->realize = keypad_realize;
 }
 

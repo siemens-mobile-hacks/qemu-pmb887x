@@ -113,6 +113,15 @@ static void tcm_init(Object *obj) {
 	memory_region_init_ram(&p->memory[1], NULL, "ATCM", 8 * 1024, &error_fatal);
 }
 
+static void tcm_reset(DeviceState *dev) {
+	pmb887x_tcm_t *p = PMB887X_TCM(dev);
+
+	p->regs[0] = 0x10;
+	p->regs[1] = 0x10;
+	tcm_update_state(p, 0);
+	tcm_update_state(p, 1);
+}
+
 static void tcm_realize(DeviceState *dev, Error **errp) {
 	pmb887x_tcm_t *p = PMB887X_TCM(dev);
 	memory_region_add_subregion(p->cpu->memory, DTCM_PHYS_BASE, &p->memory[0]);
@@ -122,16 +131,12 @@ static void tcm_realize(DeviceState *dev, Error **errp) {
 		cp_reg_info.opaque = p;
 		define_arm_cp_regs_len(ARM_CPU(p->cpu), &cp_reg_info, 1);
 	}
-
-	p->regs[0] = 0x10;
-	p->regs[1] = 0x10;
-	tcm_update_state(p, 0);
-	tcm_update_state(p, 1);
 }
 
 static void tcm_class_init(ObjectClass *klass, const void *data) {
 	DeviceClass *dc = DEVICE_CLASS(klass);
 	device_class_set_props(dc, tcm_properties);
+	device_class_set_legacy_reset(dc, tcm_reset);
 	dc->realize = tcm_realize;
 }
 

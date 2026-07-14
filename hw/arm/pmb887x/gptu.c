@@ -523,7 +523,6 @@ static bool gptu_t2_input_matches_trigger(pmb887x_gptu_t *p, int timer_id, int i
 	uint32_t es_shift = edge_shift + ((split && timer_id == 1) ? 16 : 0);
 	uint32_t edge = (p->t2es >> es_shift) & 3;
 	uint32_t source = (is >> is_shift) & 7;
-
 	return edge == 0 && (source & 3) == trigger_id;
 }
 
@@ -1229,6 +1228,49 @@ static void gptu_realize(DeviceState *dev, Error **errp) {
 	gptu_t2_sync_timer(p);
 }
 
+static void gptu_reset(DeviceState *dev) {
+	pmb887x_gptu_t *p = PMB887X_GPTU(dev);
+
+	timer_del(p->timer);
+	timer_del(p->timer_t2);
+
+	pmb887x_clc_init(&p->clc);
+
+	for (size_t i = 0; i < ARRAY_SIZE(p->src); i++)
+		pmb887x_src_reset(&p->src[i]);
+
+	p->enabled = false;
+	p->freq = 0;
+
+	memset(p->timers, 0, sizeof(p->timers));
+	memset(p->timers_t2, 0, sizeof(p->timers_t2));
+	memset(p->events, 0, sizeof(p->events));
+	memset(p->events_ssr, 0, sizeof(p->events_ssr));
+	p->next = 0;
+	p->next_t2 = 0;
+
+	p->t01irs = 0;
+	p->t01ots = 0;
+	p->t2con = 0;
+	p->t2rccon = 0;
+	p->t2ais = 0;
+	p->t2bis = 0;
+	p->t2es = 0;
+	p->osel = 0;
+	p->out = 0;
+	p->t2rc0 = 0;
+	p->t2rc1 = 0;
+	p->t012run = 0;
+	p->srsel = 0;
+	p->syncing_t01 = false;
+	p->syncing_t2 = false;
+
+	gptu_update_freq(p);
+	gptu_update_events(p);
+	gptu_rebuild_timers(p);
+	gptu_t2_update_state(p);
+}
+
 static const Property gptu_properties[] = {
 	DEFINE_PROP_LINK("pll", pmb887x_gptu_t, pll, "pmb887x-pll", struct pmb887x_pll_t *),
 };
@@ -1236,6 +1278,7 @@ static const Property gptu_properties[] = {
 static void gptu_class_init(ObjectClass *klass, const void *data) {
 	DeviceClass *dc = DEVICE_CLASS(klass);
 	device_class_set_props(dc, gptu_properties);
+	device_class_set_legacy_reset(dc, gptu_reset);
 	dc->realize = gptu_realize;
 }
 

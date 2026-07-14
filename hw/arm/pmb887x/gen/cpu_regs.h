@@ -6372,6 +6372,15 @@
 #define SCU_RST_SR_PWDRST				(1 << 31)		 // The last reset was a wake-up from power-down
 #define SCU_RST_SR_PWDRST_SHIFT			31
 
+/* Reset Control Register */
+#define SCU_RST_CON						0x14
+#define SCU_RST_CON_SWCFG				(0x7 << 16)		 // Software Boot Configuration
+#define SCU_RST_CON_SWCFG_SHIFT			16
+#define SCU_RST_CON_SWBRKIN				(1 << 21)		 // Software Break Signal Boot Value
+#define SCU_RST_CON_SWBRKIN_SHIFT		21
+#define SCU_RST_CON_SWBOOT				(1 << 24)		 // Software Boot Configuration Selection
+#define SCU_RST_CON_SWBOOT_SHIFT		24
+
 /* Reset Request Register */
 #define SCU_RST_REQ						0x18
 #define SCU_RST_REQ_RRSTM				(1 << 0)		 // Reset Request for the System Timer

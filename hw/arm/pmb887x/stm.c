@@ -170,6 +170,17 @@ static void stm_init(Object *obj) {
 	sysbus_init_mmio(SYS_BUS_DEVICE(obj), &p->mmio);
 }
 
+static void stm_reset(DeviceState *dev) {
+	pmb887x_stm_t *p = PMB887X_STM(dev);
+
+	pmb887x_clc_init(&p->clc);
+	p->enabled = false;
+	p->start = 0;
+	p->capture = 0;
+	p->counter = 0;
+	stm_update_state(p);
+}
+
 static void stm_realize(DeviceState *dev, Error **errp) {
 	struct pmb887x_stm_t *p = PMB887X_STM(dev);
 	
@@ -186,6 +197,7 @@ static const Property stm_properties[] = {
 static void stm_class_init(ObjectClass *klass, const void *data) {
 	DeviceClass *dc = DEVICE_CLASS(klass);
 	device_class_set_props(dc, stm_properties);
+	device_class_set_legacy_reset(dc, stm_reset);
 	dc->realize = stm_realize;
 }
 

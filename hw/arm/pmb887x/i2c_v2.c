@@ -767,6 +767,38 @@ static void i2c_realize(DeviceState *dev, Error **errp) {
 	p->timer = timer_new_ns(QEMU_CLOCK_VIRTUAL, i2c_timer_reset, p);
 }
 
+static void i2c_reset(DeviceState *dev) {
+	pmb887x_i2c_t *p = PMB887X_I2C(dev);
+
+	timer_del(p->timer);
+	if (p->state != I2C_STATE_NONE)
+		i2c_end_transfer(p->bus);
+
+	pmb887x_clc_init(&p->clc);
+	pmb887x_srb_reset(&p->srb);
+	pmb887x_srb_ext_reset(&p->srb_proto);
+	pmb887x_srb_ext_reset(&p->srb_err);
+	pmb887x_fifo_reset(&p->fifo);
+
+	p->transfer_pending = false;
+	p->is_read = false;
+	p->addr = 0;
+	p->busy = false;
+
+	p->runctrl = 0;
+	p->fdivcfg = 0;
+	p->fdivhighcfg = 0;
+	p->addrcfg = 0;
+	p->mrpsctrl = 0;
+	p->fifocfg = 0;
+	p->tpsctrl = 0;
+	p->timcfg = 0;
+	p->dma_control = 0;
+	p->rpsstat = 0;
+
+	i2c_kernel_reset(p, I2C_STATE_NONE);
+}
+
 static const Property i2c_properties[] = {
 	DEFINE_PROP_LINK("bus", pmb887x_i2c_t, bus, TYPE_I2C_BUS, I2CBus *)
 };
@@ -774,6 +806,7 @@ static const Property i2c_properties[] = {
 static void i2c_class_init(ObjectClass *klass, const void *data) {
 	DeviceClass *dc = DEVICE_CLASS(klass);
 	device_class_set_props(dc, i2c_properties);
+	device_class_set_legacy_reset(dc, i2c_reset);
 	dc->realize = i2c_realize;
 }
 

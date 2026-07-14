@@ -20,8 +20,8 @@
 #include "hw/arm/pmb887x/mod.h"
 #include "hw/arm/pmb887x/trace.h"
 
-#define TYPE_PMB887X_RTC	"pmb887x-sccu"
-#define PMB887X_RTC(obj)	OBJECT_CHECK(pmb887x_sccu_t, (obj), TYPE_PMB887X_RTC)
+#define TYPE_PMB887X_SCCU	"pmb887x-sccu"
+#define PMB887X_SCCU(obj)	OBJECT_CHECK(pmb887x_sccu_t, (obj), TYPE_PMB887X_SCCU)
 
 enum {
 	SCCU_IRQ_UNK = 0,
@@ -65,7 +65,6 @@ struct pmb887x_sccu_t {
 
 static uint32_t sccu_get_nqtz(pmb887x_sccu_t *p) {
 	uint32_t nqtz = (p->nqtz & SCCU_NQTZ_NQTZ) >> SCCU_NQTZ_NQTZ_SHIFT;
-
 	return nqtz ? nqtz : 1;
 }
 
@@ -347,7 +346,7 @@ static const MemoryRegionOps io_ops = {
 };
 
 static void sccu_init(Object *obj) {
-	pmb887x_sccu_t *p = PMB887X_RTC(obj);
+	pmb887x_sccu_t *p = PMB887X_SCCU(obj);
 	memory_region_init_io(&p->mmio, obj, &io_ops, p, "pmb887x-sccu", SCCU_IO_SIZE);
 	sysbus_init_mmio(SYS_BUS_DEVICE(obj), &p->mmio);
 
@@ -356,7 +355,7 @@ static void sccu_init(Object *obj) {
 }
 
 static void sccu_realize(DeviceState *dev, Error **errp) {
-	pmb887x_sccu_t *p = PMB887X_RTC(dev);
+	pmb887x_sccu_t *p = PMB887X_SCCU(dev);
 
 	pmb887x_clc_init(&p->clc);
 
@@ -377,6 +376,39 @@ static void sccu_realize(DeviceState *dev, Error **errp) {
 	sccu_set_active_state(p);
 }
 
+static void sccu_reset(DeviceState *dev) {
+	pmb887x_sccu_t *p = PMB887X_SCCU(dev);
+
+	timer_del(p->timer);
+	timer_del(p->cal_timer);
+	timer_del(p->sc_timer);
+
+	pmb887x_clc_init(&p->clc);
+
+	for (size_t i = 0; i < ARRAY_SIZE(p->src); i++)
+		pmb887x_src_reset(&p->src[i]);
+
+	p->irq_fired = false;
+	p->start = 0;
+	p->enabled = false;
+
+	p->spcr = 0;
+	p->slpctrl = 0;
+	p->refin = 0;
+	p->ref = 0;
+	p->nqtz = 0x97;
+	p->scctrl = 0;
+	p->wait = 3 << SCCU_WAIT_PREWUP_SHIFT;
+	p->hwwakeup = 0;
+	p->sccuclksta = 0;
+	p->sccumsta = 0;
+	p->timer_cnt = 0;
+	p->tdmini = 0;
+	p->timer_freq = pmb887x_pll_get_frtc(p->pll) / sccu_get_nqtz(p);
+
+	sccu_set_active_state(p);
+}
+
 static const Property sccu_properties[] = {
 	DEFINE_PROP_LINK("pll", struct pmb887x_sccu_t, pll, "pmb887x-pll", struct pmb887x_pll_t *),
 };
@@ -384,11 +416,12 @@ static const Property sccu_properties[] = {
 static void sccu_class_init(ObjectClass *klass, const void *data) {
 	DeviceClass *dc = DEVICE_CLASS(klass);
 	device_class_set_props(dc, sccu_properties);
+	device_class_set_legacy_reset(dc, sccu_reset);
 	dc->realize = sccu_realize;
 }
 
 static const TypeInfo sccu_info = {
-    .name          	= TYPE_PMB887X_RTC,
+    .name          	= TYPE_PMB887X_SCCU,
     .parent        	= TYPE_SYS_BUS_DEVICE,
     .instance_size 	= sizeof(struct pmb887x_sccu_t),
     .instance_init 	= sccu_init,

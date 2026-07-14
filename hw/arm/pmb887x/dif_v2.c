@@ -178,7 +178,6 @@ static inline uint32_t dif_get_bsconf_word_count(pmb887x_dif_t *p) {
 
 static inline bool dif_is_bsconf_9bit(pmb887x_dif_t *p) {
 	uint32_t bsconf = (p->csreg & DIFv2_CSREG_BSCONF);
-
 	return bsconf == DIFv2_CSREG_BSCONF_1x9BIT || bsconf == DIFv2_CSREG_BSCONF_2x9BIT || bsconf == DIFv2_CSREG_BSCONF_3x9BIT;
 }
 
@@ -1226,6 +1225,71 @@ static void dif_realize(DeviceState *dev, Error **errp) {
 	p->timer = timer_new_ns(QEMU_CLOCK_REALTIME, dif_timer_reset, p);
 }
 
+static void dif_reset(DeviceState *dev) {
+	pmb887x_dif_t *p = PMB887X_DIF(dev);
+
+	timer_del(p->timer);
+
+	pmb887x_clc_init(&p->clc);
+	pmb887x_srb_reset(&p->srb);
+	pmb887x_srb_ext_reset(&p->srb_err);
+	pmb887x_fifo_reset(&p->tx_fifo);
+	pmb887x_fifo_reset(&p->rx_fifo);
+
+	p->transfer_pending = false;
+	p->tx_words_preloaded = 0;
+	p->rx_words_in_fifo = 0;
+	p->pbc_word = 0;
+	p->is_pbc_word_valid = false;
+	p->is_pbc_pair_completed = false;
+
+	p->con = 0;
+	p->perreg = 0;
+	p->csreg = 0;
+	memset(p->lcdtim, 0, sizeof(p->lcdtim));
+	p->runctrl = 0;
+	p->startlcdrd = 0;
+	memset(p->coeff, 0, sizeof(p->coeff));
+	p->pbccon = 0;
+	memset(p->bmreg, 0, sizeof(p->bmreg));
+	memset(p->bcsel, 0, sizeof(p->bcsel));
+	p->bcreg = 0;
+	p->invert_bit = 0;
+	p->sync_config = 0;
+	p->sync_count = 0;
+	p->br = 0;
+	p->fdiv = 0;
+	p->debug = 0;
+	p->rxfifo_cfg = 0;
+	p->mrps_ctrl = 0;
+	p->txfifo_cfg = 0;
+	p->tps_ctrl = 0;
+	p->rx_packet_words = 0;
+	p->rx_buffer = 0;
+	p->rx_buffer_word_count = 0;
+	p->dmac_tx_clr = 0;
+	p->dmac_rx_clr = 0;
+
+	for (uint32_t i = 0; i < ARRAY_SIZE(p->bit_mux); i++) {
+		uint32_t reg_index = i / 6;
+		uint32_t shift = (i % 6) * 5;
+		if (shift >= 15)
+			shift++;
+		p->bmreg[reg_index] |= (i << shift);
+	}
+	dif_update_mux(p);
+
+	p->state = DIF_STATE_NONE;
+	p->tx_words_remaining = 0;
+	p->rx_words_remaining = 0;
+	p->tx_fifo_req = false;
+	p->rx_fifo_req = false;
+	p->is_tx_started = false;
+
+	dif_update_gpio_state(p);
+	dif_trigger_dma(p);
+}
+
 static const Property dif_properties[] = {
 	DEFINE_PROP_LINK("bus", pmb887x_dif_t, bus, "SSI", SSIBus *),
 };
@@ -1233,6 +1297,7 @@ static const Property dif_properties[] = {
 static void dif_class_init(ObjectClass *klass, const void *data) {
 	DeviceClass *dc = DEVICE_CLASS(klass);
 	device_class_set_props(dc, dif_properties);
+	device_class_set_legacy_reset(dc, dif_reset);
 	dc->realize = dif_realize;
 }
 

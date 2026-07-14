@@ -15,8 +15,8 @@
 #include "hw/arm/pmb887x/regs_dump.h"
 #include "hw/arm/pmb887x/trace.h"
 
-#define TYPE_PMB887X_RTC	"pmb887x-unknown"
-#define PMB887X_RTC(obj)	OBJECT_CHECK(pmb887x_unknown_t, (obj), TYPE_PMB887X_RTC)
+#define TYPE_PMB887X_UNKNOWN	"pmb887x-unknown"
+#define PMB887X_UNKNOWN(obj)	OBJECT_CHECK(pmb887x_unknown_t, (obj), TYPE_PMB887X_UNKNOWN)
 
 typedef struct pmb887x_unknown_t pmb887x_unknown_t;
 
@@ -93,7 +93,7 @@ static const MemoryRegionOps io_ops = {
 };
 
 static void unknown_init(Object *obj) {
-	pmb887x_unknown_t *p = PMB887X_RTC(obj);
+	pmb887x_unknown_t *p = PMB887X_UNKNOWN(obj);
 	memory_region_init_io(&p->mmio, obj, &io_ops, p, "pmb887x-unknown", 0x100000000);
 	sysbus_init_mmio(SYS_BUS_DEVICE(obj), &p->mmio);
 }
@@ -102,13 +102,19 @@ static void unknown_realize(DeviceState *dev, Error **errp) {
 	// Nothing
 }
 
+static void unknown_reset(DeviceState *dev) {
+	pmb887x_unknown_t *p = PMB887X_UNKNOWN(dev);
+	p->unk_reg_F4600040 = 0;
+}
+
 static void unknown_class_init(ObjectClass *klass, const void *data) {
 	DeviceClass *dc = DEVICE_CLASS(klass);
+	device_class_set_legacy_reset(dc, unknown_reset);
 	dc->realize = unknown_realize;
 }
 
 static const TypeInfo unknown_info = {
-	.name          	= TYPE_PMB887X_RTC,
+	.name          	= TYPE_PMB887X_UNKNOWN,
 	.parent        	= TYPE_SYS_BUS_DEVICE,
 	.instance_size 	= sizeof(struct pmb887x_unknown_t),
 	.instance_init 	= unknown_init,

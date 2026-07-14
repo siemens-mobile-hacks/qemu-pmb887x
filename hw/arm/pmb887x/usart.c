@@ -777,6 +777,55 @@ static void usart_realize(DeviceState *dev, Error **errp) {
 	qemu_chr_fe_set_handlers(&p->chr, usart_can_receive, usart_receive, NULL, NULL, p, NULL, true);
 }
 
+static void usart_reset(DeviceState *dev) {
+	pmb887x_usart_t *p = PMB887X_USART(dev);
+
+	timer_del(p->timer);
+	timer_del(p->tmo_timer);
+	if (p->watch_tag) {
+		g_source_remove(p->watch_tag);
+		p->watch_tag = 0;
+	}
+
+	pmb887x_clc_init(&p->clc);
+	pmb887x_srb_reset(&p->srb);
+
+	pmb887x_fifo_reset(&p->tx_fifo_buffered);
+	pmb887x_fifo_reset(&p->rx_fifo_buffered);
+	pmb887x_fifo_reset(&p->tx_fifo_single);
+	pmb887x_fifo_reset(&p->rx_fifo_single);
+	pmb887x_fifo_reset(&p->tx_buffer);
+
+	p->transfer_pending = false;
+	p->ris_read_count = 0;
+
+	p->con = 0;
+	p->bg = 0;
+	p->fdv = 0;
+	p->pmw = 0;
+	p->txb = 0;
+	p->abcon = 0;
+	p->abstat = 0;
+	p->rxfcon = 0;
+	p->txfcon = 0;
+	p->fstat = 0;
+	p->whbcon = 0;
+	p->whbabcon = 0;
+	p->whbabstat = 0;
+	p->fccon = 0;
+	p->fcstat = 0;
+	p->tmo = 0;
+	p->dma_control = 0;
+	p->dmac_tx_clr = 0;
+	p->dmac_rx_clr = 0;
+
+	p->tx_fifo = &p->tx_fifo_single;
+	p->rx_fifo = &p->rx_fifo_single;
+
+	usart_update_state(p);
+	usart_handle_dma(p);
+}
+
 static const Property usart_properties[] = {
     DEFINE_PROP_CHR("chardev", struct pmb887x_usart_t, chr),
 };
@@ -784,6 +833,7 @@ static const Property usart_properties[] = {
 static void usart_class_init(ObjectClass *klass, const void *data) {
 	DeviceClass *dc = DEVICE_CLASS(klass);
 	device_class_set_props(dc, usart_properties);
+	device_class_set_legacy_reset(dc, usart_reset);
 	dc->realize = usart_realize;
 }
 

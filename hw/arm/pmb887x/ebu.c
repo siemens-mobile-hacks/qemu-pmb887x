@@ -344,10 +344,27 @@ static void ebu_init(Object *obj) {
 	sysbus_init_mmio(SYS_BUS_DEVICE(obj), &p->mmio);
 }
 
+static void ebu_reset(DeviceState *dev) {
+	pmb887x_ebu_t *p = PMB887X_EBU(dev);
+
+	pmb887x_clc_init(&p->clc);
+
+	p->con = 0;
+	p->bfcon = 0;
+	p->emuovl = 0;
+	p->usercon = 0;
+	memset(p->addrsel, 0, sizeof(p->addrsel));
+	memset(p->buscon, 0, sizeof(p->buscon));
+	memset(p->busap, 0, sizeof(p->busap));
+	memset(p->sdrmcon, 0, sizeof(p->sdrmcon));
+	memset(p->sdrmref, 0, sizeof(p->sdrmref));
+	memset(p->sdrmod, 0, sizeof(p->sdrmod));
+
+	ebu_update_state(p);
+}
+
 static void ebu_realize(DeviceState *dev, Error **errp) {
 	pmb887x_ebu_t *p = PMB887X_EBU(dev);
-	
-	pmb887x_clc_init(&p->clc);
 
 	for (int i = 0; i < 8; i++) {
 		char memory_region_name[32];
@@ -364,8 +381,6 @@ static void ebu_realize(DeviceState *dev, Error **errp) {
 		
 		memory_region_set_enabled(&p->regions[i], false);
 	}
-	
-	ebu_update_state(p);
 }
 
 static const Property ebu_properties[] = {
@@ -382,6 +397,7 @@ static const Property ebu_properties[] = {
 static void ebu_class_init(ObjectClass *klass, const void *data) {
 	DeviceClass *dc = DEVICE_CLASS(klass);
 	device_class_set_props(dc, ebu_properties);
+	device_class_set_legacy_reset(dc, ebu_reset);
 	dc->realize = ebu_realize;
 }
 
