@@ -18,6 +18,7 @@
 #include "hw/arm/pmb887x/gen/cpu_regs.h"
 #include "hw/arm/pmb887x/regs_dump.h"
 #include "hw/arm/pmb887x/mod.h"
+#include "hw/arm/pmb887x/pll.h"
 #include "hw/arm/pmb887x/fifo.h"
 #include "hw/arm/pmb887x/trace.h"
 
@@ -26,7 +27,6 @@
 
 #define USART_SEND_FULL_FIFO	1
 #define USART_FIFO_SIZE			8
-#define USART_TX_BYTE_TIME_NS	((NANOSECONDS_PER_SECOND * 10) / 1625000)
 
 enum {
 	USART_IRQ_TX,
@@ -49,6 +49,7 @@ struct pmb887x_usart_t {
 	pmb887x_clc_reg_t clc;
 	pmb887x_srb_reg_t srb;
 	qemu_irq irq[USART_IRQ_NR];
+	pmb887x_pll_t *pll;
 
 	QEMUTimer *timer;
 	QEMUTimer *tmo_timer;
@@ -74,6 +75,7 @@ struct pmb887x_usart_t {
 
 	int ris_read_count;
 
+	uint32_t pisel;
 	uint32_t con;
 	uint32_t bg;
 	uint32_t fdv;
@@ -104,6 +106,55 @@ struct pmb887x_usart_t {
 
 static void usart_update_state(pmb887x_usart_t *p);
 static void usart_transmit_fifo(pmb887x_usart_t *p);
+
+static uint32_t usart_get_baud_rate(pmb887x_usart_t *p) {
+	uint32_t rmc = pmb887x_clc_get_rmc(&p->clc);
+	uint64_t frequency = rmc > 0 ? pmb887x_pll_get_fsys(p->pll) / rmc : 0;
+	uint64_t reload = (p->bg & 0x1FFF) + 1;
+	uint64_t numerator;
+	uint64_t denominator;
+
+	if (!pmb887x_clc_is_enabled(&p->clc) || frequency == 0)
+		return 0;
+
+	if ((p->con & USART_CON_M) == USART_CON_M_SYNC_8BIT) {
+		numerator = frequency;
+		denominator = ((p->con & USART_CON_BRS) ? 12 : 8) * reload;
+	} else if ((p->con & USART_CON_FDE)) {
+		uint64_t divider = (p->fdv & 0x1FF);
+		numerator = frequency * (divider ? divider : 512);
+		denominator = 512 * 16 * reload;
+	} else {
+		numerator = frequency;
+		denominator = ((p->con & USART_CON_BRS) ? 48 : 32) * reload;
+	}
+
+	return numerator / denominator;
+}
+
+static int64_t usart_baud_ticks_to_ns(pmb887x_usart_t *p, uint64_t ticks) {
+	uint32_t baud_rate = usart_get_baud_rate(p);
+	if (baud_rate == 0)
+		return 0;
+
+	return MAX(1, (int64_t) muldiv64(ticks, NANOSECONDS_PER_SECOND, baud_rate));
+}
+
+static uint32_t usart_frame_bits(pmb887x_usart_t *p) {
+	uint32_t mode = (p->con & USART_CON_M);
+	if (mode == USART_CON_M_SYNC_8BIT)
+		return 8;
+
+	uint32_t data_bits = 8;
+	bool has_ninth_bit = mode == USART_CON_M_ASYNC_PARITY_8BIT ||
+		mode == USART_CON_M_ASYNC_9BIT ||
+		mode == USART_CON_M_ASYNC_WAKE_UP_8BIT;
+	if (has_ninth_bit)
+		data_bits = 9;
+
+	uint32_t stop_bits = (p->con & USART_CON_STP) ? 2 : 1;
+	return 1 + data_bits + stop_bits;
+}
 
 static bool usart_is_rx_fifo_enabled(pmb887x_usart_t *p) {
 	return (p->rxfcon & USART_RXFCON_RXFEN) != 0;
@@ -175,19 +226,11 @@ static bool usart_rx_irq(pmb887x_usart_t *p) {
 }
 
 static void usart_handle_dma(pmb887x_usart_t *p) {
-	if (p->dmac_tx_clr || !(p->dma_control & USART_DMAE_TX)) {
-		qemu_set_irq(p->dmac_tx_breq, 0);
-	} else {
-		if (usart_tx_irq(p))
-			qemu_set_irq(p->dmac_tx_breq, 1);
-	}
+	bool tx_request = !p->dmac_tx_clr && (p->dma_control & USART_DMAE_TX) && pmb887x_fifo_is_empty(p->tx_fifo);
+	bool rx_request = !p->dmac_rx_clr && (p->dma_control & USART_DMAE_RX) && usart_rx_irq(p);
 
-	if (p->dmac_rx_clr || !(p->dma_control & USART_DMAE_RX)) {
-		qemu_set_irq(p->dmac_rx_breq, 0);
-	} else {
-		if (usart_rx_irq(p))
-			qemu_set_irq(p->dmac_rx_breq, 1);
-	}
+	qemu_set_irq(p->dmac_tx_breq, tx_request);
+	qemu_set_irq(p->dmac_rx_breq, rx_request);
 }
 
 static void usart_tmo_timer_reset(void *opaque) {
@@ -227,6 +270,7 @@ static void usart_update_state(pmb887x_usart_t *p) {
 		pmb887x_fifo_reset(&p->tx_buffer);
 		pmb887x_fifo_reset(p->tx_fifo);
 		pmb887x_fifo_reset(p->rx_fifo);
+		timer_del(p->tmo_timer);
 
 		if (p->transfer_pending) {
 			timer_del(p->timer);
@@ -287,7 +331,9 @@ static void usart_receive_word(pmb887x_usart_t *p, uint16_t value) {
 
 static void usart_receive_complete(pmb887x_usart_t *p) {
 	if (p->tmo > 0) {
-		timer_mod_ns(p->tmo_timer, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + USART_TX_BYTE_TIME_NS);
+		int64_t timeout_ns = usart_baud_ticks_to_ns(p, p->tmo);
+		if (timeout_ns > 0)
+			timer_mod_ns(p->tmo_timer, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + timeout_ns);
 	}
 
 	if (usart_rx_irq(p))
@@ -311,7 +357,8 @@ static void usart_schedule_transmit(pmb887x_usart_t *p) {
 	pmb887x_fifo16_push(&p->tx_buffer, word);
 	p->ris_read_count = 0;
 	p->transfer_pending = true;
-	timer_mod(p->timer, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + USART_TX_BYTE_TIME_NS);
+	int64_t frame_time_ns = usart_baud_ticks_to_ns(p, usart_frame_bits(p));
+	timer_mod(p->timer, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + frame_time_ns);
 	if (usart_tb_irq(p))
 		pmb887x_srb_set_isr(&p->srb, USART_ISR_TB);
 	usart_handle_dma(p);
@@ -372,7 +419,7 @@ static void usart_transmit_fifo(pmb887x_usart_t *p) {
 	}
 #endif
 
-	uint8_t bytes[ARRAY_SIZE(buffer)];
+	uint8_t bytes[ARRAY_SIZE(buffer)] = { };
 	for (int i = 0; i < buffer_size; i++)
 		bytes[i] = buffer[i];
 	int ret = qemu_chr_fe_write(&p->chr, bytes, buffer_size);
@@ -459,6 +506,10 @@ static uint64_t usart_io_read(void *opaque, hwaddr haddr, unsigned size) {
 	switch (haddr) {
 		case USART_CLC:
 			value = pmb887x_clc_get(&p->clc);
+			break;
+
+		case USART_PISEL:
+			value = p->pisel;
 			break;
 
 		case USART_ID:
@@ -607,13 +658,21 @@ static void usart_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned 
 			usart_update_state(p);
 			break;
 
+		case USART_PISEL:
+			p->pisel = value & 1;
+			break;
+
 		case USART_ID:
 			value = 0x000044F1;
 			break;
 
-		case USART_CON:
+		case USART_CON: {
+			bool baudrate_generator_start = (p->con & USART_CON_CON_R) == 0 && (value & USART_CON_CON_R) != 0;
 			p->con = value;
+			if (baudrate_generator_start)
+				DPRINTF("baudrate=%u\n", usart_get_baud_rate(p));
 			break;
+		}
 
 		case USART_BG:
 			p->bg = value;
@@ -787,7 +846,7 @@ static void usart_reset(DeviceState *dev) {
 		p->watch_tag = 0;
 	}
 
-	pmb887x_clc_init(&p->clc);
+	pmb887x_clc_set(&p->clc, MOD_CLC_DISR);
 	pmb887x_srb_reset(&p->srb);
 
 	pmb887x_fifo_reset(&p->tx_fifo_buffered);
@@ -799,6 +858,7 @@ static void usart_reset(DeviceState *dev) {
 	p->transfer_pending = false;
 	p->ris_read_count = 0;
 
+	p->pisel = 0;
 	p->con = 0;
 	p->bg = 0;
 	p->fdv = 0;
@@ -806,8 +866,8 @@ static void usart_reset(DeviceState *dev) {
 	p->txb = 0;
 	p->abcon = 0;
 	p->abstat = 0;
-	p->rxfcon = 0;
-	p->txfcon = 0;
+	p->rxfcon = 1 << USART_RXFCON_RXFITL_SHIFT;
+	p->txfcon = 1 << USART_TXFCON_TXFITL_SHIFT;
 	p->fstat = 0;
 	p->whbcon = 0;
 	p->whbabcon = 0;
@@ -827,6 +887,7 @@ static void usart_reset(DeviceState *dev) {
 }
 
 static const Property usart_properties[] = {
+	DEFINE_PROP_LINK("pll", pmb887x_usart_t, pll, "pmb887x-pll", pmb887x_pll_t *),
     DEFINE_PROP_CHR("chardev", struct pmb887x_usart_t, chr),
 };
 

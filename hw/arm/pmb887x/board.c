@@ -193,11 +193,13 @@ static void pmb887x_init(MachineState *machine) {
 
 	// USART0
 	DeviceState *usart0 = pmb887x_new_cpu_module("USART0");
+	object_property_set_link(OBJECT(usart0), "pll", OBJECT(pll), &error_fatal);
 	qdev_prop_set_chr(DEVICE(usart0), "chardev", serial_hd(0));
 	sysbus_realize_and_unref(SYS_BUS_DEVICE(usart0), &error_fatal);
 
 	// USART1
 	DeviceState *usart1 = pmb887x_new_cpu_module("USART1");
+	object_property_set_link(OBJECT(usart1), "pll", OBJECT(pll), &error_fatal);
 	qdev_prop_set_chr(DEVICE(usart1), "chardev", serial_hd(1));
 	sysbus_realize_and_unref(SYS_BUS_DEVICE(usart1), &error_fatal);
 
