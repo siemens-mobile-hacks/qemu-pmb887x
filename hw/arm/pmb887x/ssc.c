@@ -11,6 +11,7 @@
 #include "hw/sysbus.h"
 #include "hw/qdev-properties.h"
 #include "qemu/module.h"
+#include "qemu/timer.h"
 #include "qom/object.h"
 
 #include "hw/arm/pmb887x/gen/cpu_regs.h"
@@ -42,6 +43,7 @@ struct pmb887x_ssc_t {
 
 	qemu_irq irq[4];
 
+	uint32_t pisel;
 	uint32_t br;
 	uint32_t con;
 	uint32_t status;
@@ -62,6 +64,9 @@ struct pmb887x_ssc_t {
 
 	pmb887x_fifo16_t *rx_fifo;
 	pmb887x_fifo16_t *tx_fifo;
+	QEMUTimer *transfer_timer;
+	uint16_t tx_data;
+	bool transfer_pending;
 
 	uint32_t mask;
 	uint32_t bits;
@@ -96,18 +101,23 @@ static void ssc_set_fifo(pmb887x_ssc_t *p, enum SSCFifoType fifo, bool buffered)
 		p->rx_fifo = buffered ? &p->rx_fifo_buffered : &p->rx_fifo_single;
 	} else {
 		p->tx_fifo = buffered ? &p->tx_fifo_buffered : &p->tx_fifo_single;
-		if (buffered && ((p->txfcon & SSC_TXFCON_TXTMEN)))
-			pmb887x_srb_set_isr(&p->srb, SSC_ISR_TX);
 	}
 	ssc_reset_fifo(p, fifo);
 }
 
 static void ssc_trigger_dma(pmb887x_ssc_t *p) {
 	uint32_t ris = pmb887x_srb_get_ris_dma(&p->srb);
-	if (!p->dmac_tx_clr && (ris & SSC_RIS_TX) != 0)
-		qemu_set_irq(p->dmac_tx_breq, 1);
-	if (!p->dmac_rx_clr && (ris & SSC_RIS_RX) != 0)
-		qemu_set_irq(p->dmac_rx_breq, 1);
+	if (p->dmac_tx_clr) {
+		qemu_set_irq(p->dmac_tx_breq, 0);
+	} else {
+		qemu_set_irq(p->dmac_tx_breq, (ris & SSC_RIS_TX) != 0);
+	}
+
+	if (p->dmac_rx_clr) {
+		qemu_set_irq(p->dmac_rx_breq, 0);
+	} else {
+		qemu_set_irq(p->dmac_rx_breq, (ris & SSC_RIS_RX) != 0);
+	}
 }
 
 static bool ssc_is_running(pmb887x_ssc_t *p) {
@@ -117,62 +127,107 @@ static bool ssc_is_running(pmb887x_ssc_t *p) {
 		(p->con & SSC_CON_MS) == SSC_CON_MS_MASTER;
 }
 
-static void ssc_transfer(pmb887x_ssc_t *p) {
-	if (!ssc_is_running(p) || !pmb887x_fifo_count(p->tx_fifo))
+static void ssc_update_tx_request(pmb887x_ssc_t *p) {
+	if ((p->txfcon & SSC_TXFCON_TXTMEN)) {
+		pmb887x_srb_set_isr(&p->srb, SSC_ISR_TX);
 		return;
-
-	p->status &= ~(SSC_CON_TE | SSC_CON_RE);
-
-	if (p->bits != 8 && p->bits != 16)
-		hw_error("Invalid data width: %d", p->bits);
-
-	bool is_first_rx = pmb887x_fifo_is_empty(p->rx_fifo);
-	while (!pmb887x_fifo_is_empty(p->tx_fifo)) {
-		uint16_t data = pmb887x_fifo16_pop(p->tx_fifo);
-		uint16_t received = 0;
-		if ((p->con & SSC_CON_LB)) {
-			received = data;
-		} else {
-			if ((p->con & SSC_CON_HB_MSB) != 0) {
-				for (int shift = p->bits - 8; shift >= 0; shift -= 8)
-					received |= (ssi_transfer(p->bus, (data >> shift) & 0xFF) & 0xFF) << shift;
-			} else {
-				for (int shift = 0; shift < p->bits; shift += 8)
-					received |= (ssi_transfer(p->bus, (data >> shift) & 0xFF) & 0xFF) << shift;
-			}
-		}
-
-		if (pmb887x_fifo_is_full(p->rx_fifo)) {
-			if ((p->con & SSC_CON_REN)) {
-				DPRINTF("RX FIFO overflow\n");
-				p->status |= SSC_CON_RE;
-				pmb887x_srb_set_isr(&p->srb, SSC_ISR_ERR);
-			}
-			pmb887x_fifo16_pop(p->rx_fifo); // overwrite last fifo stage
-		}
-
-		pmb887x_fifo16_push(p->rx_fifo, received & p->mask);
 	}
 
-	if ((p->rxfcon & SSC_RXFCON_RXTMEN)) {
-		if (is_first_rx)
-			pmb887x_srb_set_isr(&p->srb, SSC_ISR_RX);
-	} else {
-		uint32_t rx_level = (p->rxfcon & SSC_RXFCON_RXFEN) ?
-			(p->rxfcon & SSC_RXFCON_RXFITL) >> SSC_RXFCON_RXFITL_SHIFT :
-			1;
-		if (pmb887x_fifo_count(p->rx_fifo) >= rx_level)
-			pmb887x_srb_set_isr(&p->srb, SSC_ISR_RX);
-	}
-
-	if (((p->txfcon & SSC_TXFCON_TXTMEN))) {
+	uint32_t tx_level = (p->txfcon & SSC_TXFCON_TXFEN) ?
+		(p->txfcon & SSC_TXFCON_TXFITL) >> SSC_TXFCON_TXFITL_SHIFT :
+		1;
+	if (pmb887x_fifo_count(p->tx_fifo) <= tx_level) {
 		pmb887x_srb_set_isr(&p->srb, SSC_ISR_TX);
 	} else {
-		uint32_t tx_level = (p->txfcon & SSC_TXFCON_TXFEN) ?
-			(p->txfcon & SSC_TXFCON_TXFITL) >> SSC_TXFCON_TXFITL_SHIFT :
-			1;
-		if (pmb887x_fifo_count(p->tx_fifo) <= tx_level)
-			pmb887x_srb_set_isr(&p->srb, SSC_ISR_TX);
+		pmb887x_srb_set_icr(&p->srb, SSC_ICR_TX);
+	}
+}
+
+static void ssc_update_rx_request(pmb887x_ssc_t *p) {
+	uint32_t rx_level = (p->rxfcon & SSC_RXFCON_RXFEN) ?
+		(p->rxfcon & SSC_RXFCON_RXFITL) >> SSC_RXFCON_RXFITL_SHIFT :
+		1;
+	bool request = (p->rxfcon & SSC_RXFCON_RXTMEN) ?
+		!pmb887x_fifo_is_empty(p->rx_fifo) :
+		pmb887x_fifo_count(p->rx_fifo) >= rx_level;
+
+	if (request) {
+		pmb887x_srb_set_isr(&p->srb, SSC_ISR_RX);
+	} else {
+		pmb887x_srb_set_icr(&p->srb, SSC_ICR_RX);
+	}
+}
+
+static void ssc_schedule_transfer(pmb887x_ssc_t *p);
+
+static void ssc_transfer_word(pmb887x_ssc_t *p) {
+	p->status &= ~(SSC_CON_TE | SSC_CON_RE);
+
+	uint16_t received = 0;
+	if ((p->con & SSC_CON_LB)) {
+		received = p->tx_data;
+	} else {
+		if ((p->con & SSC_CON_HB_MSB) != 0) {
+			for (int shift = p->bits - 8; shift >= 0; shift -= 8)
+				received |= (ssi_transfer(p->bus, (p->tx_data >> shift) & 0xFF) & 0xFF) << shift;
+		} else {
+			for (int shift = 0; shift < p->bits; shift += 8)
+				received |= (ssi_transfer(p->bus, (p->tx_data >> shift) & 0xFF) & 0xFF) << shift;
+		}
+	}
+
+	if (pmb887x_fifo_is_full(p->rx_fifo)) {
+		if ((p->con & SSC_CON_REN)) {
+			DPRINTF("RX FIFO overflow\n");
+			p->status |= SSC_CON_RE;
+			pmb887x_srb_set_isr(&p->srb, SSC_ISR_ERR);
+		}
+		pmb887x_fifo16_pop(p->rx_fifo); // overwrite last fifo stage
+	}
+	pmb887x_fifo16_push(p->rx_fifo, received & p->mask);
+	ssc_update_rx_request(p);
+}
+
+static void ssc_transfer_complete(void *opaque) {
+	pmb887x_ssc_t *p = opaque;
+	while (p->transfer_pending) {
+		p->transfer_pending = false;
+		if (!ssc_is_running(p))
+			break;
+
+		ssc_transfer_word(p);
+		ssc_schedule_transfer(p);
+		if (pmb887x_srb_get_ris(&p->srb) != 0)
+			break;
+	}
+	if (!p->transfer_pending)
+		p->status &= ~SSC_CON_BSY;
+}
+
+static void ssc_schedule_transfer(pmb887x_ssc_t *p) {
+	if (p->transfer_pending || !ssc_is_running(p) || pmb887x_fifo_is_empty(p->tx_fifo))
+		return;
+
+	p->tx_data = pmb887x_fifo16_pop(p->tx_fifo);
+	p->transfer_pending = true;
+	p->status |= SSC_CON_BSY;
+	ssc_update_tx_request(p);
+	timer_mod(p->transfer_timer, 0);
+}
+
+static void ssc_stop_transfer(pmb887x_ssc_t *p) {
+	if (p->transfer_pending) {
+		timer_del(p->transfer_timer);
+		p->transfer_pending = false;
+	}
+	p->status &= ~SSC_CON_BSY;
+}
+
+static void ssc_update_transfer(pmb887x_ssc_t *p) {
+	if (ssc_is_running(p)) {
+		ssc_schedule_transfer(p);
+	} else {
+		ssc_stop_transfer(p);
 	}
 }
 
@@ -186,8 +241,7 @@ static uint16_t ssc_read_fifo(pmb887x_ssc_t *p) {
 		return 0;
 	}
 	uint16_t value = pmb887x_fifo16_pop(p->rx_fifo);
-	if ((p->rxfcon & SSC_RXFCON_RXTMEN) && !pmb887x_fifo_is_empty(p->rx_fifo))
-		pmb887x_srb_set_isr(&p->srb, SSC_ISR_RX);
+	ssc_update_rx_request(p);
 	return value;
 }
 
@@ -201,7 +255,8 @@ static void ssc_write_fifo(pmb887x_ssc_t *p, uint16_t value) {
 		pmb887x_fifo16_pop(p->tx_fifo); // overwrite last fifo stage
 	}
 	pmb887x_fifo16_push(p->tx_fifo, p->tb & p->mask);
-	ssc_transfer(p);
+	ssc_update_tx_request(p);
+	ssc_schedule_transfer(p);
 }
 
 static void ssc_update_state(pmb887x_ssc_t *p) {
@@ -209,8 +264,7 @@ static void ssc_update_state(pmb887x_ssc_t *p) {
 	p->bits = bits;
 	p->mask = (1 << bits) - 1;
 
-	if (ssc_is_running(p) && !pmb887x_fifo_is_empty(p->tx_fifo))
-		ssc_transfer(p);
+	ssc_update_transfer(p);
 }
 
 static uint64_t ssc_io_read(void *opaque, hwaddr haddr, unsigned size) {
@@ -221,6 +275,10 @@ static uint64_t ssc_io_read(void *opaque, hwaddr haddr, unsigned size) {
 	switch (haddr) {
 		case SSC_CLC:
 			value = pmb887x_clc_get(&p->clc);
+			break;
+
+		case SSC_PISEL:
+			value = p->pisel;
 			break;
 
 		case SSC_ID:
@@ -298,6 +356,11 @@ static void ssc_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned si
 	switch (haddr) {
 		case SSC_CLC:
 			pmb887x_clc_set(&p->clc, value);
+			ssc_update_transfer(p);
+			break;
+
+		case SSC_PISEL:
+			p->pisel = value;
 			break;
 
 		case SSC_CON:
@@ -324,22 +387,22 @@ static void ssc_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned si
 			}
 
 			p->rxfcon = value;
+			ssc_update_rx_request(p);
 			break;
 
-		case SSC_TXFCON:
+		case SSC_TXFCON: {
 			if ((value & SSC_TXFCON_TXFEN) != (p->txfcon & SSC_TXFCON_TXFEN))
 				ssc_set_fifo(p, SSC_FIFO_TX, (value & SSC_TXFCON_TXFEN) != 0);
 
 			if ((value & SSC_TXFCON_TXFLU)) {
 				ssc_reset_fifo(p, SSC_FIFO_TX);
 				value &= ~SSC_TXFCON_TXFLU;
-
-				if (((p->txfcon & SSC_TXFCON_TXTMEN)))
-					pmb887x_srb_set_isr(&p->srb, SSC_ISR_TX);
 			}
 
 			p->txfcon = value;
+			ssc_update_tx_request(p);
 			break;
+		}
 
 		case SSC_IMSC:
 			pmb887x_srb_set_imsc(&p->srb, value);
@@ -347,6 +410,8 @@ static void ssc_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned si
 
 		case SSC_ICR:
 			pmb887x_srb_set_icr(&p->srb, value);
+			if ((value & SSC_ICR_RX))
+				ssc_update_rx_request(p);
 			break;
 
 		case SSC_ISR:
@@ -355,6 +420,7 @@ static void ssc_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned si
 
 		case SSC_DMAE:
 			pmb887x_srb_set_dmae(&p->srb, value);
+			ssc_trigger_dma(p);
 			break;
 
 		default:
@@ -365,8 +431,7 @@ static void ssc_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned si
 
 static void ssc_event_handler(void *opaque, int event_id, int level) {
 	pmb887x_ssc_t *p = opaque;
-	if (level != 0)
-		ssc_trigger_dma(p);
+	ssc_trigger_dma(p);
 }
 
 static const MemoryRegionOps io_ops = {
@@ -386,21 +451,13 @@ static void ssc_handle_gpio_input(void *opaque, int id, int level) {
 static void ssc_handle_dmac_tx_clr(void *opaque, int id, int level) {
 	pmb887x_ssc_t *p = opaque;
 	p->dmac_tx_clr = level;
-	if (level == 1) {
-		qemu_set_irq(p->dmac_tx_breq, 0);
-	} else {
-		ssc_trigger_dma(p);
-	}
+	ssc_trigger_dma(p);
 }
 
 static void ssc_handle_dmac_rx_clr(void *opaque, int id, int level) {
 	pmb887x_ssc_t *p = opaque;
 	p->dmac_rx_clr = level;
-	if (level == 1) {
-		qemu_set_irq(p->dmac_rx_breq, 0);
-	} else {
-		ssc_trigger_dma(p);
-	}
+	ssc_trigger_dma(p);
 }
 
 static void ssc_init(Object *obj) {
@@ -440,6 +497,7 @@ static void ssc_realize(DeviceState *dev, Error **errp) {
 
 	pmb887x_fifo16_init(&p->tx_fifo_single, 1);
 	pmb887x_fifo16_init(&p->rx_fifo_single, 1);
+	p->transfer_timer = timer_new_ns(QEMU_CLOCK_REALTIME, ssc_transfer_complete, p);
 
 	ssc_set_fifo(p, SSC_FIFO_RX, false);
 	ssc_set_fifo(p, SSC_FIFO_TX, false);
@@ -450,22 +508,26 @@ static void ssc_realize(DeviceState *dev, Error **errp) {
 static void ssc_reset(DeviceState *dev) {
 	pmb887x_ssc_t *p = PMB887X_SSC(dev);
 
-	pmb887x_clc_init(&p->clc);
+	ssc_stop_transfer(p);
+	pmb887x_clc_set(&p->clc, MOD_CLC_DISR);
 	pmb887x_srb_reset(&p->srb);
 
+	p->pisel = 0;
 	p->br = 0;
 	p->con = 0;
 	p->status = 0;
 	memset(p->bmreg, 0, sizeof(p->bmreg));
 	memset(p->unk, 0, sizeof(p->unk));
 	p->tb = 0;
-	p->rxfcon = 0;
-	p->txfcon = 0;
+	p->rxfcon = 1 << SSC_RXFCON_RXFITL_SHIFT;
+	p->txfcon = 1 << SSC_TXFCON_TXFITL_SHIFT;
 	p->pbccon = 0;
 	p->bcreg = 0;
 	memset(p->bcsel, 0, sizeof(p->bcsel));
 	p->mask = 0;
 	p->bits = 0;
+	p->tx_data = 0;
+	p->transfer_pending = false;
 	p->dmac_tx_clr = 0;
 	p->dmac_rx_clr = 0;
 

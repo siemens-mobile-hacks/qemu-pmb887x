@@ -13,6 +13,7 @@
 #include "hw/sysbus.h"
 #include "hw/qdev-properties.h"
 #include "qemu/module.h"
+#include "qemu/timer.h"
 #include "qom/object.h"
 
 #include "hw/arm/pmb887x/gen/cpu_regs.h"
@@ -25,7 +26,8 @@
 OBJECT_DECLARE_SIMPLE_TYPE(pmb887x_dif_t, PMB887X_DIF);
 
 #define DIF_CON_STATUS		(DIFv1_CON_EN | DIFv1_CON_MS)
-#define FIFO_SIZE			32
+#define TX_FIFO_SIZE		32
+#define RX_FIFO_SIZE		4
 
 enum DIFIrqType {
 	DIF_IRQ_TX,
@@ -44,6 +46,7 @@ struct pmb887x_dif_t {
 
 	qemu_irq irq[4];
 
+	uint32_t pisel;
 	uint32_t br;
 	uint32_t con;
 	uint32_t status;
@@ -64,9 +67,14 @@ struct pmb887x_dif_t {
 
 	pmb887x_fifo16_t *rx_fifo;
 	pmb887x_fifo16_t *tx_fifo;
+	QEMUTimer *transfer_timer;
+	uint16_t tx_data;
+	bool transfer_pending;
 
 	uint32_t mask;
 	uint32_t bits;
+	uint16_t pbc_word;
+	bool is_pbc_word_valid;
 
 	pmb887x_clc_reg_t clc;
 	pmb887x_srb_reg_t srb;
@@ -98,18 +106,35 @@ static void dif_set_fifo(pmb887x_dif_t *p, enum DIFFifoType fifo, bool buffered)
 		p->rx_fifo = buffered ? &p->rx_fifo_buffered : &p->rx_fifo_single;
 	} else {
 		p->tx_fifo = buffered ? &p->tx_fifo_buffered : &p->tx_fifo_single;
-		if (buffered && ((p->txfcon & DIFv1_TXFCON_TXTMEN)))
-			pmb887x_srb_set_isr(&p->srb, DIFv1_ISR_TX);
 	}
 	dif_reset_fifo(p, fifo);
 }
 
+static void dif_reset_bit_mapping(pmb887x_dif_t *p) {
+	memset(p->bmreg, 0, sizeof(p->bmreg));
+	for (uint32_t bit = 0; bit < 32; bit++) {
+		uint32_t reg_index = bit / 6;
+		uint32_t shift = (bit % 6) * 5;
+
+		if (shift >= 15)
+			shift++;
+		p->bmreg[reg_index] |= bit << shift;
+	}
+}
+
 static void dif_trigger_dma(pmb887x_dif_t *p) {
 	uint32_t ris = pmb887x_srb_get_ris_dma(&p->srb);
-	if (!p->dmac_tx_clr && (ris & DIFv1_RIS_TX) != 0)
-		qemu_set_irq(p->dmac_tx_breq, 1);
-	if (!p->dmac_rx_clr && (ris & DIFv1_RIS_RX) != 0)
-		qemu_set_irq(p->dmac_rx_breq, 1);
+	if (p->dmac_tx_clr) {
+		qemu_set_irq(p->dmac_tx_breq, 0);
+	} else {
+		qemu_set_irq(p->dmac_tx_breq, (ris & DIFv1_RIS_TX) != 0);
+	}
+
+	if (p->dmac_rx_clr) {
+		qemu_set_irq(p->dmac_rx_breq, 0);
+	} else {
+		qemu_set_irq(p->dmac_rx_breq, (ris & DIFv1_RIS_RX) != 0);
+	}
 }
 
 static bool dif_is_running(pmb887x_dif_t *p) {
@@ -119,28 +144,98 @@ static bool dif_is_running(pmb887x_dif_t *p) {
 		(p->con & DIFv1_CON_MS) == DIFv1_CON_MS_MASTER;
 }
 
-static void dif_transfer(pmb887x_dif_t *p) {
-	if (!dif_is_running(p) || !pmb887x_fifo_count(p->tx_fifo))
+static void dif_update_tx_request(pmb887x_dif_t *p) {
+	if ((p->txfcon & DIFv1_TXFCON_TXTMEN)) {
+		pmb887x_srb_set_isr(&p->srb, DIFv1_ISR_TX);
 		return;
+	}
 
+	uint32_t tx_level = (p->txfcon & DIFv1_TXFCON_TXFEN) ?
+		(p->txfcon & DIFv1_TXFCON_TXFITL) >> DIFv1_TXFCON_TXFITL_SHIFT :
+		1;
+	if (pmb887x_fifo_count(p->tx_fifo) <= tx_level) {
+		pmb887x_srb_set_isr(&p->srb, DIFv1_ISR_TX);
+	} else {
+		pmb887x_srb_set_icr(&p->srb, DIFv1_ICR_TX);
+	}
+}
+
+static void dif_update_rx_request(pmb887x_dif_t *p) {
+	uint32_t rx_level = (p->rxfcon & DIFv1_RXFCON_RXFEN) ?
+		(p->rxfcon & DIFv1_RXFCON_RXFITL) >> DIFv1_RXFCON_RXFITL_SHIFT :
+		1;
+	bool request = (p->rxfcon & DIFv1_RXFCON_RXTMEN) ?
+		!pmb887x_fifo_is_empty(p->rx_fifo) :
+		pmb887x_fifo_count(p->rx_fifo) >= rx_level;
+
+	if (request) {
+		pmb887x_srb_set_isr(&p->srb, DIFv1_ISR_RX);
+	} else {
+		pmb887x_srb_set_icr(&p->srb, DIFv1_ICR_RX);
+	}
+}
+
+static uint16_t dif_mux(pmb887x_dif_t *p, uint32_t value) {
+	uint16_t output = 0;
+
+	for (uint32_t output_bit = 0; output_bit < p->bits; output_bit++) {
+		uint32_t bmreg_index = output_bit / 6;
+		uint32_t bmreg_shift = (output_bit % 6) * 5;
+		uint32_t bcsel_index = output_bit / 16;
+		uint32_t bcsel_shift = (output_bit % 16) * 2;
+		uint32_t bit = 0;
+
+		if (bmreg_shift >= 15)
+			bmreg_shift++;
+
+		uint32_t mux = ((p->bmreg[bmreg_index] >> bmreg_shift) & 0x1F);
+		uint32_t bcsel = ((p->bcsel[bcsel_index] >> bcsel_shift) & 3);
+		if (bcsel == 0) {
+			bit = ((value >> mux) & 1);
+		} else if (bcsel == 1) {
+			bit = ((p->bcreg >> output_bit) & 1);
+		}
+		output |= (bit << output_bit);
+	}
+
+	return output;
+}
+
+static bool dif_convert_word(pmb887x_dif_t *p, uint16_t value, uint16_t *output) {
+	if ((p->pbccon & DIFv1_PBCCON_PBBCONV_MODE) == 0) {
+		*output = (dif_mux(p, value) & p->mask);
+		return true;
+	}
+
+	if (!p->is_pbc_word_valid) {
+		p->pbc_word = value;
+		p->is_pbc_word_valid = true;
+		return false;
+	}
+
+	uint32_t input = (p->pbc_word | ((uint32_t) value << 16));
+	*output = (dif_mux(p, input) & p->mask);
+	p->is_pbc_word_valid = false;
+	return true;
+}
+
+static void dif_schedule_transfer(pmb887x_dif_t *p);
+
+static void dif_transfer_word(pmb887x_dif_t *p) {
 	p->status &= ~(DIFv1_CON_TE | DIFv1_CON_RE);
 
-	if (p->bits != 8 && p->bits != 16)
-		hw_error("Invalid data width: %d", p->bits);
-
-	bool is_first_rx = pmb887x_fifo_is_empty(p->rx_fifo);
-	while (!pmb887x_fifo_is_empty(p->tx_fifo)) {
-		uint16_t data = pmb887x_fifo16_pop(p->tx_fifo);
+	uint16_t transmitted;
+	if (dif_convert_word(p, p->tx_data, &transmitted)) {
 		uint16_t received = 0;
 		if ((p->con & DIFv1_CON_LB)) {
-			received = data;
+			received = transmitted;
 		} else {
 			if ((p->con & DIFv1_CON_HB_MSB) != 0) {
 				for (int shift = p->bits - 8; shift >= 0; shift -= 8)
-					received |= (ssi_transfer(p->bus, (data >> shift) & 0xFF) & 0xFF) << shift;
+					received |= (ssi_transfer(p->bus, (transmitted >> shift) & 0xFF) & 0xFF) << shift;
 			} else {
 				for (int shift = 0; shift < p->bits; shift += 8)
-					received |= (ssi_transfer(p->bus, (data >> shift) & 0xFF) & 0xFF) << shift;
+					received |= (ssi_transfer(p->bus, (transmitted >> shift) & 0xFF) & 0xFF) << shift;
 			}
 		}
 
@@ -154,27 +249,50 @@ static void dif_transfer(pmb887x_dif_t *p) {
 		}
 
 		pmb887x_fifo16_push(p->rx_fifo, received & p->mask);
+		dif_update_rx_request(p);
 	}
+}
 
-	if ((p->rxfcon & DIFv1_RXFCON_RXTMEN)) {
-		if (is_first_rx)
-			pmb887x_srb_set_isr(&p->srb, DIFv1_ISR_RX);
-	} else {
-		uint32_t rx_level = (p->rxfcon & DIFv1_RXFCON_RXFEN) ?
-			(p->rxfcon & DIFv1_RXFCON_RXFITL) >> DIFv1_RXFCON_RXFITL_SHIFT :
-			1;
-		if (pmb887x_fifo_count(p->rx_fifo) >= rx_level)
-			pmb887x_srb_set_isr(&p->srb, DIFv1_ISR_RX);
+static void dif_transfer_complete(void *opaque) {
+	pmb887x_dif_t *p = opaque;
+	while (p->transfer_pending) {
+		p->transfer_pending = false;
+		if (!dif_is_running(p))
+			break;
+
+		dif_transfer_word(p);
+		dif_schedule_transfer(p);
+		if (pmb887x_srb_get_ris(&p->srb) != 0)
+			break;
 	}
+	if (!p->transfer_pending)
+		p->status &= ~DIFv1_CON_BSY;
+}
 
-	if (((p->txfcon & DIFv1_TXFCON_TXTMEN))) {
-		pmb887x_srb_set_isr(&p->srb, DIFv1_ISR_TX);
+static void dif_schedule_transfer(pmb887x_dif_t *p) {
+	if (p->transfer_pending || !dif_is_running(p) || pmb887x_fifo_is_empty(p->tx_fifo))
+		return;
+
+	p->tx_data = pmb887x_fifo16_pop(p->tx_fifo);
+	p->transfer_pending = true;
+	p->status |= DIFv1_CON_BSY;
+	dif_update_tx_request(p);
+	timer_mod(p->transfer_timer, 0);
+}
+
+static void dif_stop_transfer(pmb887x_dif_t *p) {
+	if (p->transfer_pending) {
+		timer_del(p->transfer_timer);
+		p->transfer_pending = false;
+	}
+	p->status &= ~DIFv1_CON_BSY;
+}
+
+static void dif_update_transfer(pmb887x_dif_t *p) {
+	if (dif_is_running(p)) {
+		dif_schedule_transfer(p);
 	} else {
-		uint32_t tx_level = (p->txfcon & DIFv1_TXFCON_TXFEN) ?
-			(p->txfcon & DIFv1_TXFCON_TXFITL) >> DIFv1_TXFCON_TXFITL_SHIFT :
-			1;
-		if (pmb887x_fifo_count(p->tx_fifo) <= tx_level)
-			pmb887x_srb_set_isr(&p->srb, DIFv1_ISR_TX);
+		dif_stop_transfer(p);
 	}
 }
 
@@ -188,8 +306,7 @@ static uint16_t dif_read_fifo(pmb887x_dif_t *p) {
 		return 0;
 	}
 	uint16_t value = pmb887x_fifo16_pop(p->rx_fifo);
-	if ((p->rxfcon & DIFv1_RXFCON_RXTMEN) && !pmb887x_fifo_is_empty(p->rx_fifo))
-		pmb887x_srb_set_isr(&p->srb, DIFv1_ISR_RX);
+	dif_update_rx_request(p);
 	return value;
 }
 
@@ -203,7 +320,8 @@ static void dif_write_fifo(pmb887x_dif_t *p, uint16_t value) {
 		pmb887x_fifo16_pop(p->tx_fifo); // overwrite last fifo stage
 	}
 	pmb887x_fifo16_push(p->tx_fifo, p->tb & p->mask);
-	dif_transfer(p);
+	dif_update_tx_request(p);
+	dif_schedule_transfer(p);
 }
 
 static void dif_update_state(pmb887x_dif_t *p) {
@@ -211,8 +329,7 @@ static void dif_update_state(pmb887x_dif_t *p) {
 	p->bits = bits;
 	p->mask = (1 << bits) - 1;
 
-	if (dif_is_running(p) && !pmb887x_fifo_is_empty(p->tx_fifo))
-		dif_transfer(p);
+	dif_update_transfer(p);
 }
 
 static int dif_get_unk_index_from_reg(uint32_t reg) {
@@ -274,6 +391,10 @@ static uint64_t dif_io_read(void *opaque, hwaddr haddr, unsigned size) {
 	switch (haddr) {
 		case DIFv1_CLC:
 			value = pmb887x_clc_get(&p->clc);
+			break;
+
+		case DIFv1_PISEL:
+			value = p->pisel;
 			break;
 
 		case DIFv1_ID:
@@ -381,6 +502,11 @@ static void dif_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned si
 	switch (haddr) {
 		case DIFv1_CLC:
 			pmb887x_clc_set(&p->clc, value);
+			dif_update_transfer(p);
+			break;
+
+		case DIFv1_PISEL:
+			p->pisel = value;
 			break;
 
 		case DIFv1_CON:
@@ -407,22 +533,22 @@ static void dif_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned si
 			}
 
 			p->rxfcon = value;
+			dif_update_rx_request(p);
 			break;
 
-		case DIFv1_TXFCON:
+		case DIFv1_TXFCON: {
 			if ((value & DIFv1_TXFCON_TXFEN) != (p->txfcon & DIFv1_TXFCON_TXFEN))
 				dif_set_fifo(p, DIF_FIFO_TX, (value & DIFv1_TXFCON_TXFEN) != 0);
 
 			if ((value & DIFv1_TXFCON_TXFLU)) {
 				dif_reset_fifo(p, DIF_FIFO_TX);
 				value &= ~DIFv1_TXFCON_TXFLU;
-
-				if (((p->txfcon & DIFv1_TXFCON_TXTMEN)))
-					pmb887x_srb_set_isr(&p->srb, DIFv1_ISR_TX);
 			}
 
 			p->txfcon = value;
+			dif_update_tx_request(p);
 			break;
+		}
 
 		case DIFv1_IMSC:
 			pmb887x_srb_set_imsc(&p->srb, value);
@@ -430,6 +556,8 @@ static void dif_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned si
 
 		case DIFv1_ICR:
 			pmb887x_srb_set_icr(&p->srb, value);
+			if ((value & DIFv1_ICR_RX))
+				dif_update_rx_request(p);
 			break;
 
 		case DIFv1_ISR:
@@ -438,6 +566,7 @@ static void dif_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned si
 
 		case DIFv1_DMAE:
 			pmb887x_srb_set_dmae(&p->srb, value);
+			dif_trigger_dma(p);
 			break;
 
 		case DIFv1_UNK0:
@@ -450,6 +579,8 @@ static void dif_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned si
 
 		case DIFv1_PBCCON:
 			p->pbccon = value;
+			p->pbc_word = 0;
+			p->is_pbc_word_valid = false;
 			break;
 
 		case DIFv1_BCSEL0:
@@ -481,8 +612,7 @@ static void dif_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned si
 
 static void dif_event_handler(void *opaque, int event_id, int level) {
 	pmb887x_dif_t *p = opaque;
-	if (level != 0)
-		dif_trigger_dma(p);
+	dif_trigger_dma(p);
 }
 
 static const MemoryRegionOps io_ops = {
@@ -502,21 +632,13 @@ static void dif_handle_gpio_input(void *opaque, int id, int level) {
 static void dif_handle_dmac_tx_clr(void *opaque, int id, int level) {
 	pmb887x_dif_t *p = opaque;
 	p->dmac_tx_clr = level;
-	if (level == 1) {
-		qemu_set_irq(p->dmac_tx_breq, 0);
-	} else {
-		dif_trigger_dma(p);
-	}
+	dif_trigger_dma(p);
 }
 
 static void dif_handle_dmac_rx_clr(void *opaque, int id, int level) {
 	pmb887x_dif_t *p = opaque;
 	p->dmac_rx_clr = level;
-	if (level == 1) {
-		qemu_set_irq(p->dmac_rx_breq, 0);
-	} else {
-		dif_trigger_dma(p);
-	}
+	dif_trigger_dma(p);
 }
 
 static void dif_init(Object *obj) {
@@ -551,11 +673,12 @@ static void dif_realize(DeviceState *dev, Error **errp) {
 	pmb887x_srb_init(&p->srb, p->irq, ARRAY_SIZE(p->irq));
 	pmb887x_srb_set_event_handler(&p->srb, dev, dif_event_handler);
 
-	pmb887x_fifo16_init(&p->tx_fifo_buffered, FIFO_SIZE);
-	pmb887x_fifo16_init(&p->rx_fifo_buffered, FIFO_SIZE);
+	pmb887x_fifo16_init(&p->tx_fifo_buffered, TX_FIFO_SIZE);
+	pmb887x_fifo16_init(&p->rx_fifo_buffered, RX_FIFO_SIZE);
 
 	pmb887x_fifo16_init(&p->tx_fifo_single, 1);
 	pmb887x_fifo16_init(&p->rx_fifo_single, 1);
+	p->transfer_timer = timer_new_ns(QEMU_CLOCK_REALTIME, dif_transfer_complete, p);
 
 	dif_set_fifo(p, DIF_FIFO_RX, false);
 	dif_set_fifo(p, DIF_FIFO_TX, false);
@@ -566,22 +689,28 @@ static void dif_realize(DeviceState *dev, Error **errp) {
 static void dif_reset(DeviceState *dev) {
 	pmb887x_dif_t *p = PMB887X_DIF(dev);
 
-	pmb887x_clc_init(&p->clc);
+	dif_stop_transfer(p);
+	pmb887x_clc_set(&p->clc, MOD_CLC_DISR);
 	pmb887x_srb_reset(&p->srb);
 
+	p->pisel = 0;
 	p->br = 0;
 	p->con = 0;
 	p->status = 0;
-	memset(p->bmreg, 0, sizeof(p->bmreg));
+	dif_reset_bit_mapping(p);
 	memset(p->unk, 0, sizeof(p->unk));
 	p->tb = 0;
-	p->rxfcon = 0;
-	p->txfcon = 0;
+	p->rxfcon = 1 << DIFv1_RXFCON_RXFITL_SHIFT;
+	p->txfcon = 1 << DIFv1_TXFCON_TXFITL_SHIFT;
 	p->pbccon = 0;
 	p->bcreg = 0;
 	memset(p->bcsel, 0, sizeof(p->bcsel));
 	p->mask = 0;
 	p->bits = 0;
+	p->tx_data = 0;
+	p->transfer_pending = false;
+	p->pbc_word = 0;
+	p->is_pbc_word_valid = false;
 	p->dmac_tx_clr = 0;
 	p->dmac_rx_clr = 0;
 

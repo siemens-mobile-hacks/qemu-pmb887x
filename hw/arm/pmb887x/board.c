@@ -211,6 +211,10 @@ static void pmb887x_init(MachineState *machine) {
     DeviceState *i2c = pmb887x_new_cpu_module("I2C");
     sysbus_realize_and_unref(SYS_BUS_DEVICE(i2c), &error_fatal);
 
+	// Synchronous Serial Controller
+	DeviceState *ssc = pmb887x_new_cpu_module("SSC");
+	sysbus_realize_and_unref(SYS_BUS_DEVICE(ssc), &error_fatal);
+
 	// Standby Clock Control Unit
 	DeviceState *sccu = pmb887x_new_cpu_module("SCCU");
 	object_property_set_link(OBJECT(sccu), "pll", OBJECT(pll), &error_fatal);
@@ -225,6 +229,7 @@ static void pmb887x_init(MachineState *machine) {
 	object_property_set_link(OBJECT(scu), "brom_mirror", OBJECT(brom_mirror), &error_fatal);
 	object_property_set_link(OBJECT(scu), "sccu", OBJECT(sccu), &error_fatal);
 	object_property_set_link(OBJECT(scu), "dmac", OBJECT(dmac), &error_fatal);
+	object_property_set_uint(OBJECT(scu), "cpu_type", pmb887x_board()->cpu, &error_fatal);
 	object_property_set_uint(OBJECT(scu), "cpu_rev", pmb887x_board()->cpu_rev, &error_fatal);
 	object_property_set_uint(OBJECT(scu), "cpu_uid0", pmb887x_board()->cpu_uid[0], &error_fatal);
 	object_property_set_uint(OBJECT(scu), "cpu_uid1", pmb887x_board()->cpu_uid[1], &error_fatal);
