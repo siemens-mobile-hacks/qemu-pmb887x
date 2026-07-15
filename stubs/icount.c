@@ -37,7 +37,7 @@ void icount_notify_exit(void)
  * */
 bool use_icount2;
 
-void icount2_on_tick(void) {
+void icount2_advance(uint32_t cycles) {
 	abort();
 }
 
@@ -62,7 +62,7 @@ void icount2_exit_sleep(void)
 	abort();
 }
 
-void icount2_set_ns_per_tick(int64_t ns_per_tick)
+void icount2_wakeup(int cpu_index, bool halted, int mask, int interrupt_request)
 {
 	abort();
 }

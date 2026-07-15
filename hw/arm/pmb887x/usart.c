@@ -26,6 +26,7 @@
 #define PMB887X_USART(obj)	OBJECT_CHECK(pmb887x_usart_t, (obj), TYPE_PMB887X_USART)
 
 #define USART_SEND_FULL_FIFO	1
+#define USART_IMMEDIATE_TRANSFER	1
 #define USART_FIFO_SIZE			8
 
 enum {
@@ -73,7 +74,9 @@ struct pmb887x_usart_t {
 	pmb887x_fifo16_t *rx_fifo;
 	pmb887x_fifo16_t *tx_fifo;
 
+#if USART_IMMEDIATE_TRANSFER
 	int ris_read_count;
+#endif
 
 	uint32_t pisel;
 	uint32_t con;
@@ -243,12 +246,14 @@ static void usart_timer_reset(void *opaque) {
 	usart_transmit_fifo(p);
 }
 
+#if USART_IMMEDIATE_TRANSFER
 static void usart_immediate_transfer(pmb887x_usart_t *p) {
 	if (p->watch_tag || !p->transfer_pending)
 		return;
 	timer_del(p->timer);
 	usart_transmit_fifo(p);
 }
+#endif
 
 static void usart_update_state(pmb887x_usart_t *p) {
 	if (usart_is_rx_fifo_enabled(p)) {
@@ -332,8 +337,10 @@ static void usart_receive_word(pmb887x_usart_t *p, uint16_t value) {
 static void usart_receive_complete(pmb887x_usart_t *p) {
 	if (p->tmo > 0) {
 		int64_t timeout_ns = usart_baud_ticks_to_ns(p, p->tmo);
-		if (timeout_ns > 0)
-			timer_mod_ns(p->tmo_timer, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + timeout_ns);
+		if (timeout_ns > 0) {
+			int64_t virtual = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
+			timer_mod_ns(p->tmo_timer, virtual + timeout_ns);
+		}
 	}
 
 	if (usart_rx_irq(p))
@@ -355,10 +362,13 @@ static void usart_receive(void *opaque, const uint8_t *buf, int size) {
 static void usart_schedule_transmit(pmb887x_usart_t *p) {
 	uint16_t word = pmb887x_fifo16_pop(p->tx_fifo);
 	pmb887x_fifo16_push(&p->tx_buffer, word);
+#if USART_IMMEDIATE_TRANSFER
 	p->ris_read_count = 0;
+#endif
 	p->transfer_pending = true;
 	int64_t frame_time_ns = usart_baud_ticks_to_ns(p, usart_frame_bits(p));
-	timer_mod(p->timer, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + frame_time_ns);
+	int64_t virtual = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
+	timer_mod(p->timer, virtual + frame_time_ns);
 	if (usart_tb_irq(p))
 		pmb887x_srb_set_isr(&p->srb, USART_ISR_TB);
 	usart_handle_dma(p);
@@ -399,7 +409,9 @@ static void usart_transmit_fifo(pmb887x_usart_t *p) {
 		return;
 
 	p->transfer_pending = false;
+#if USART_IMMEDIATE_TRANSFER
 	p->ris_read_count = 0;
+#endif
 
 	uint16_t buffer[USART_FIFO_SIZE * 2] = { };
 	int buffer_size = 0;
@@ -449,7 +461,9 @@ static void usart_transmit_fifo(pmb887x_usart_t *p) {
 			if (transmitted + 1 < buffer_size)
 				pmb887x_fifo16_write(p->tx_fifo, buffer + transmitted + 1, buffer_size - transmitted - 1);
 			p->transfer_pending = true;
+#if USART_IMMEDIATE_TRANSFER
 			p->ris_read_count = 0;
+#endif
 		} else {
 			// QEMU char backend is not connected, data is lost
 			pmb887x_fifo_reset(p->tx_fifo);
@@ -600,21 +614,25 @@ static uint64_t usart_io_read(void *opaque, hwaddr haddr, unsigned size) {
 		case USART_RIS:
 			value = pmb887x_srb_get_ris(&p->srb);
 
+#if USART_IMMEDIATE_TRANSFER
 			// Hack for speed-up emulation
 			if (p->transfer_pending && p->ris_read_count++ > 10) {
 				DPRINTF("immediate transfer RIS\n");
 				usart_immediate_transfer(p);
 			}
+#endif
 			break;
 
 		case USART_MIS:
 			value = pmb887x_srb_get_mis(&p->srb);
 
+#if USART_IMMEDIATE_TRANSFER
 			// Hack for speed-up emulation
 			if (p->transfer_pending && p->ris_read_count++ > 10) {
 				DPRINTF("immediate transfer MIS\n");
 				usart_immediate_transfer(p);
 			}
+#endif
 			break;
 
 		case USART_ICR:
@@ -777,9 +795,11 @@ static void usart_handle_dmac_rx_clr(void *opaque, int id, int level) {
 }
 
 static void usart_event_handler(void *opaque, int event_id, int level) {
+#if USART_IMMEDIATE_TRANSFER
 	pmb887x_usart_t *p = opaque;
 	if (event_id == USART_RIS_TX && !level)
 		usart_immediate_transfer(p);
+#endif
 }
 
 static void usart_init(Object *obj) {
@@ -856,7 +876,9 @@ static void usart_reset(DeviceState *dev) {
 	pmb887x_fifo_reset(&p->tx_buffer);
 
 	p->transfer_pending = false;
+#if USART_IMMEDIATE_TRANSFER
 	p->ris_read_count = 0;
+#endif
 
 	p->pisel = 0;
 	p->con = 0;

@@ -239,7 +239,8 @@ static void do_nothing(CPUState *cpu, run_on_cpu_data unused)
 
 void qemu_timer_notify_cb(void *opaque, QEMUClockType type)
 {
-    if (!icount_enabled() || type != QEMU_CLOCK_VIRTUAL) {
+    if ((!icount_enabled() && !icount2_enabled()) ||
+        type != QEMU_CLOCK_VIRTUAL) {
         qemu_notify_event();
         return;
     }

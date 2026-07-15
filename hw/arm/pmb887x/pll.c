@@ -11,7 +11,6 @@
 #include "hw/qdev-properties.h"
 #include "cpu.h"
 #include "qemu/timer.h"
-#include "system/cpu-timers.h"
 
 #include "hw/arm/pmb887x/pll.h"
 #include "hw/arm/pmb887x/gen/cpu_regs.h"
@@ -38,8 +37,6 @@ struct pmb887x_pll_t {
 	
 	pmb887x_src_reg_t src;
 	qemu_irq irq;
-	
-	int64_t ns_per_tick;
 	
 	uint32_t xtal;
 	uint32_t hw_ns_div;
@@ -167,11 +164,8 @@ static void pll_update_state(struct pmb887x_pll_t *p) {
 		new_fsys != p->fsys ||
 		new_fstm != p->fstm ||
 		new_fcpu != p->fcpu ||
-		new_fahb != p->fahb ||
-		!p->ns_per_tick
+		new_fahb != p->fahb
 	);
-	
-	bool recalc_clock = new_fcpu != p->fcpu;
 	
 	if (is_changed) {
 		p->fsys = new_fsys;
@@ -179,16 +173,7 @@ static void pll_update_state(struct pmb887x_pll_t *p) {
 		p->fcpu = new_fcpu;
 		p->fahb = new_fahb;
 		
-		if (recalc_clock) {
-			p->ns_per_tick = 1000000000 / p->fcpu;
-			
-			if (icount2_enabled()) {
-				icount2_set_ns_per_tick(p->ns_per_tick);
-				//icount2_set_ns_per_tick(1000000000 / 208000000);
-			}
-		}
-		
-		DPRINTF("fCPU: %d Hz, fAHB: %d Hz, fSYS: %d Hz, fSTM: %d Hz, ns_per_tick=%d\n", p->fcpu, p->fahb, p->fsys, p->fstm, (uint32_t) p->ns_per_tick);
+		DPRINTF("fCPU: %d Hz, fAHB: %d Hz, fSYS: %d Hz, fSTM: %d Hz\n", p->fcpu, p->fahb, p->fsys, p->fstm);
 		
 		for (int i = 0; i < p->callbacks_count; ++i)
 			p->callbacks[i].callback(p->callbacks[i].opaque);
@@ -342,7 +327,6 @@ static void pll_reset(DeviceState *dev) {
 	pmb887x_src_reset(&p->src);
 	pmb887x_src_set(&p->src, MOD_SRC_SRE);
 
-	p->ns_per_tick = 0;
 	p->frtc = 32768;
 	p->fgptu = 1000000000;
 	p->fsys = p->xtal;
@@ -363,8 +347,6 @@ static void pll_realize(DeviceState *dev, Error **errp) {
 	
 	pmb887x_src_init(&p->src, p->irq);
 	pmb887x_src_set(&p->src, MOD_SRC_SRE);
-	
-	p->ns_per_tick = 0;
 	
 	p->frtc = 32768;
 	p->fgptu = 1000000000;

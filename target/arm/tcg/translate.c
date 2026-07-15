@@ -5337,6 +5337,9 @@ static bool trans_B_cond_thumb(DisasContext *s, arg_ci *a)
         return true;
     }
     arm_skip_unless(s, a->cond);
+    if (icount2_enabled()) {
+        gen_helper_cycle_counter(tcg_env, tcg_constant_i32(2));
+    }
     gen_jmp(s, jmp_diff(s, a->imm));
     return true;
 }
@@ -6057,13 +6060,163 @@ static bool trans_CSEL(DisasContext *s, arg_CSEL *a)
  * Legacy decoder.
  */
 
+static void gen_icount2_cycles(uint32_t cycles)
+{
+    if (icount2_enabled()) {
+        gen_helper_cycle_counter(tcg_env, tcg_constant_i32(cycles));
+    }
+}
+
+static uint32_t arm9e_a32_instruction_cycles(uint32_t insn)
+{
+    uint32_t opcode;
+    uint32_t cycles;
+    uint32_t registers;
+
+    /* B, BL and BLX immediate refill the pipeline. */
+    if ((insn & 0x0e000000) == 0x0a000000) {
+        return 3;
+    }
+
+    /* BX, BXJ and BLX register refill the pipeline. */
+    if ((insn & 0x0ffffff0) == 0x012fff10 ||
+        (insn & 0x0ffffff0) == 0x012fff20 ||
+        (insn & 0x0ffffff0) == 0x012fff30) {
+        return 3;
+    }
+
+    /* Software interrupt and undefined instruction exception entry. */
+    if ((insn & 0x0f000000) == 0x0f000000) {
+        return 3;
+    }
+
+    /* Load/store multiple occupies one cycle per transfer. */
+    if ((insn & 0x0e000000) == 0x08000000) {
+        registers = ctpop16(insn & 0xffff);
+        if ((insn & (1 << 20)) && (insn & (1 << 15))) {
+            return registers + 4;
+        }
+        return MAX(registers, 2);
+    }
+
+    /* Long multiply and multiply-accumulate. */
+    if ((insn & 0x0f8000f0) == 0x00800090) {
+        return (insn & (1 << 20)) ? 5 : 3;
+    }
+
+    /* Multiply and multiply-accumulate. */
+    if ((insn & 0x0fc000f0) == 0x00000090) {
+        return (insn & (1 << 20)) ? 4 : 2;
+    }
+
+    /* Swap performs a read followed by a write. */
+    if ((insn & 0x0fb00ff0) == 0x01000090) {
+        return 2;
+    }
+
+    /* MRS. */
+    if ((insn & 0x0fbf0fff) == 0x010f0000) {
+        return 2;
+    }
+
+    /* MSR takes three cycles when it updates control fields. */
+    if ((insn & 0x0fb0fff0) == 0x0120f000 ||
+        (insn & 0x0fb0f000) == 0x0320f000) {
+        return (extract32(insn, 16, 4) & 0x7) ? 3 : 1;
+    }
+
+    /* LDRD and STRD. */
+    if ((insn & 0x0e1000d0) == 0x000000d0 ||
+        (insn & 0x0e1000f0) == 0x000000f0) {
+        return 2;
+    }
+
+    /* Halfword and signed transfers share this space with multiplies. */
+    if ((insn & 0x0e000090) == 0x00000090) {
+        if ((insn & (1 << 20)) && extract32(insn, 12, 4) == 15) {
+            return 5;
+        }
+        return 1;
+    }
+
+    /* Single data transfer, including the scaled-register offset penalty. */
+    if ((insn & 0x0c000000) == 0x04000000) {
+        cycles = ((insn & (1 << 25)) && extract32(insn, 5, 7)) ? 2 : 1;
+        if ((insn & (1 << 20)) && extract32(insn, 12, 4) == 15) {
+            cycles += 4;
+        }
+        return cycles;
+    }
+
+    /* Data processing with a register-controlled shift takes one extra cycle. */
+    if ((insn & 0x0c000000) == 0) {
+        opcode = extract32(insn, 21, 4);
+        cycles = (!(opcode >= 8 && opcode <= 11) && extract32(insn, 12, 4) == 15) ? 3 : 1;
+        if (!(insn & (1 << 25)) && (insn & (1 << 4)) && !(insn & (1 << 7))) {
+            cycles++;
+        }
+        return cycles;
+    }
+
+    return 1;
+}
+
+static uint32_t arm9e_thumb_instruction_cycles(uint32_t insn)
+{
+    uint32_t registers;
+
+    if (insn > 0xffff) {
+        /* QEMU combines the two halves of Thumb-1 BL/BLX into one instruction. */
+        if ((insn & 0xf800e800) == 0xf000e800) {
+            return 4;
+        }
+        return 1;
+    }
+
+    /* Conditional branches are charged on the taken path in the decoder. */
+    if ((insn & 0xf000) == 0xd000 && (insn & 0x0f00) < 0x0e00) {
+        return 1;
+    }
+
+    if ((insn & 0xf800) == 0xe000 || (insn & 0xff87) == 0x4700 ||
+        (insn & 0xff87) == 0x4780 || (insn & 0xff00) == 0xde00 ||
+        (insn & 0xff00) == 0xdf00) {
+        return 3;
+    }
+
+    /* Thumb MULS always updates the flags. */
+    if ((insn & 0xffc0) == 0x4340) {
+        return 4;
+    }
+
+    if ((insn & 0xf000) == 0xc000) {
+        registers = ctpop8(insn & 0xff);
+        return MAX(registers, 2);
+    }
+
+    if ((insn & 0xfe00) == 0xb400 || (insn & 0xfe00) == 0xbc00) {
+        registers = ctpop8(insn & 0xff) + extract32(insn, 8, 1);
+        if ((insn & 0xfe00) == 0xbc00 && (insn & (1 << 8))) {
+            return registers + 4;
+        }
+        return MAX(registers, 2);
+    }
+
+    return 1;
+}
+
+static void gen_icount2_extra_cycles(uint32_t cycles)
+{
+    if (cycles > 1) {
+        gen_icount2_cycles(cycles - 1);
+    }
+}
+
 static void disas_arm_insn(DisasContext *s, unsigned int insn)
 {
     unsigned int cond = insn >> 28;
 
-	if (icount2_enabled()) {
-		gen_helper_instructions_counter(tcg_env);
-	}
+    gen_icount2_cycles(1);
 
     /* M variants do not implement ARM mode; this must raise the INVSTATE
      * UsageFault exception.
@@ -6092,6 +6245,8 @@ static void disas_arm_insn(DisasContext *s, unsigned int insn)
             return;
         }
 
+        gen_icount2_extra_cycles(arm9e_a32_instruction_cycles(insn));
+
         /* Unconditional instructions.  */
         /* TODO: Perhaps merge these into one decodetree output file.  */
         if (disas_a32_uncond(s, insn) ||
@@ -6108,6 +6263,8 @@ static void disas_arm_insn(DisasContext *s, unsigned int insn)
            next instruction */
         arm_skip_unless(s, cond);
     }
+
+    gen_icount2_extra_cycles(arm9e_a32_instruction_cycles(insn));
 
     /* TODO: Perhaps merge these into one decodetree output file.  */
     if (disas_a32(s, insn) ||
@@ -6162,10 +6319,6 @@ static bool thumb_insn_is_16bit(DisasContext *s, uint32_t pc, uint32_t insn)
 /* Translate a 32-bit thumb instruction. */
 static void disas_thumb2_insn(DisasContext *s, uint32_t insn)
 {
-	if (icount2_enabled()) {
-		gen_helper_instructions_counter(tcg_env);
-	}
-
     /*
      * ARMv6-M supports a limited subset of Thumb2 instructions.
      * Other Thumb1 architectures allow only 32-bit
@@ -6263,10 +6416,6 @@ illegal_op:
 
 static void disas_thumb_insn(DisasContext *s, uint32_t insn)
 {
-	if (icount2_enabled()) {
-		gen_helper_instructions_counter(tcg_env);
-	}
-
     if (!disas_t16(s, insn)) {
         unallocated_encoding(s);
     }
@@ -6628,6 +6777,8 @@ static void thumb_tr_translate_insn(DisasContextBase *dcbase, CPUState *cpu)
     dc->base.pc_next = pc;
     dc->insn = insn;
 
+    gen_icount2_cycles(1);
+
     if (dc->pstate_il) {
         /*
          * Illegal execution state. This has priority over BTI
@@ -6683,6 +6834,8 @@ static void thumb_tr_translate_insn(DisasContextBase *dcbase, CPUState *cpu)
             arm_skip_unless(dc, cond);
         }
     }
+
+    gen_icount2_extra_cycles(arm9e_thumb_instruction_cycles(insn));
 
     if (is_16bit) {
         disas_thumb_insn(dc, insn);

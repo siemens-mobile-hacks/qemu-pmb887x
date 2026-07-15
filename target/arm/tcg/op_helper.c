@@ -371,7 +371,6 @@ static inline int check_wfx_trap(CPUARMState *env, bool is_wfe, uint32_t *excp)
 
 void HELPER(wfi)(CPUARMState *env, uint32_t insn_len)
 {
-    return;
 #ifdef CONFIG_USER_ONLY
     /*
      * WFI in the user-mode emulator is technically permitted but not
@@ -510,10 +509,10 @@ void HELPER(exception_internal)(CPUARMState *env, uint32_t excp)
     cpu_loop_exit(cs);
 }
 
-/* Instruction counter */
-void HELPER(instructions_counter)(CPUARMState *env)
+/* ARM core cycle counter */
+void HELPER(cycle_counter)(CPUARMState *env, uint32_t cycles)
 {
-    icount2_on_tick();
+    icount2_advance(cycles);
 }
 
 /* Raise an exception with the specified syndrome register value */

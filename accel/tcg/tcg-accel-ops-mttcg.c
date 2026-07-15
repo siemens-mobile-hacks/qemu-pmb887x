@@ -86,16 +86,20 @@ static void *mttcg_cpu_thread_fn(void *arg)
     qemu_guest_random_seed_thread_part2(cpu->random_seed);
 
     do {
-        bool can_run = cpu_can_run(cpu);
+        bool idle = icount2_enabled() && cpu_thread_is_idle(cpu) && !cpu_is_stopped(cpu);
 
-        if (icount2_enabled() && can_run) {
+        if (idle) {
             icount2_enter_sleep();
         }
 
         qemu_process_cpu_events(cpu);
 
-        if (icount2_enabled() && can_run) {
+        if (idle) {
             icount2_exit_sleep();
+        }
+
+        if (icount2_enabled()) {
+            icount2_sync();
         }
 
         if (cpu_can_run(cpu)) {

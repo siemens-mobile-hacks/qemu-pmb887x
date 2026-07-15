@@ -55,11 +55,11 @@ extern bool use_icount2;
 #endif
 
 void icount2_configure(QemuOpts *opts, Error **errp);
-void icount2_on_tick(void);
+void icount2_advance(uint32_t cycles);
 void icount2_sync(void);
 int64_t icount2_get(void);
 void icount2_enter_sleep(void);
 void icount2_exit_sleep(void);
-void icount2_set_ns_per_tick(int64_t ns_per_tick);
+void icount2_wakeup(int cpu_index, bool halted, int mask, int interrupt_request);
 
 #endif /* SYSTEM_CPU_TIMERS_H */

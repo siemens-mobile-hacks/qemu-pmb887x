@@ -1020,6 +1020,10 @@ static void gptu_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned s
 			pmb887x_clc_set(&p->clc, value);
 			gptu_sync_timer(p);
 			gptu_update_freq(p);
+			if (!p->enabled) {
+				for (int i = 0; i < 8; i++)
+					pmb887x_src_update(&p->src[i], 0, MOD_SRC_CLRR);
+			}
 			gptu_rebuild_timers(p);
 			gptu_t2_sync_timer(p);
 			gptu_t2_update_state(p);

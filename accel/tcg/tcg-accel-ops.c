@@ -96,6 +96,11 @@ static void tcg_cpu_reset_hold(CPUState *cpu)
 /* mask must never be zero, except for A20 change call */
 void tcg_handle_interrupt(CPUState *cpu, int mask)
 {
+    if (icount2_enabled()) {
+        icount2_wakeup(cpu->cpu_index, cpu->halted, mask,
+                       cpu->interrupt_request);
+    }
+
     cpu_set_interrupt(cpu, mask);
 
     /*
