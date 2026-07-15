@@ -246,9 +246,9 @@
 #define PMB8876_SSC_RX_IRQ			13
 #define PMB8876_SSC_ERR_IRQ			14
 #define PMB8876_SSC_TMO_IRQ			15
-#define PMB8876_SIM_UNK0_IRQ		22
-#define PMB8876_SIM_UNK1_IRQ		23
-#define PMB8876_SIM_UNK2_IRQ		24
+#define PMB8876_SIM_ERR_IRQ			22
+#define PMB8876_SIM_IN_IRQ			23
+#define PMB8876_SIM_OK_IRQ			24
 #define PMB8876_USB_IRQ				25
 #define PMB8876_USART1_TX_IRQ		26
 #define PMB8876_USART1_TBUF_IRQ		27
@@ -533,9 +533,9 @@
 #define PMB8875_DIF_RX_IRQ			19
 #define PMB8875_DIF_ERR_IRQ			20
 #define PMB8875_DIF_TMO_IRQ			21
-#define PMB8875_SIM_UNK0_IRQ		22
-#define PMB8875_SIM_UNK1_IRQ		23
-#define PMB8875_SIM_UNK2_IRQ		24
+#define PMB8875_SIM_ERR_IRQ			22
+#define PMB8875_SIM_IN_IRQ			23
+#define PMB8875_SIM_OK_IRQ			24
 #define PMB8875_USB_IRQ				25
 #define PMB8875_USART1_TX_IRQ		26
 #define PMB8875_USART1_TBUF_IRQ		27
@@ -2261,10 +2261,34 @@
 
 #define DIFv1_UNK2						0x60
 
+/* Unknown LCD Register (0x64) */
+#define DIFv1_LCD_UNK64					0x64
+#define DIFv1_LCD_UNK64_VALUE0			(0x1F << 0)
+#define DIFv1_LCD_UNK64_VALUE0_SHIFT	0
+#define DIFv1_LCD_UNK64_VALUE1			(0x1F << 8)
+#define DIFv1_LCD_UNK64_VALUE1_SHIFT	8
+#define DIFv1_LCD_UNK64_VALUE2			(0x1F << 16)
+#define DIFv1_LCD_UNK64_VALUE2_SHIFT	16
+
+/* Unknown LCD Register (0x68) */
+#define DIFv1_LCD_UNK68					0x68
+#define DIFv1_LCD_UNK68_VALUE0			(0x1F << 0)
+#define DIFv1_LCD_UNK68_VALUE0_SHIFT	0
+#define DIFv1_LCD_UNK68_VALUE1			(0x1F << 8)
+#define DIFv1_LCD_UNK68_VALUE1_SHIFT	8
+#define DIFv1_LCD_UNK68_VALUE2			(0x1F << 16)
+#define DIFv1_LCD_UNK68_VALUE2_SHIFT	16
+#define DIFv1_LCD_UNK68_VALUE3			(0x1F << 24)
+#define DIFv1_LCD_UNK68_VALUE3_SHIFT	24
+
 /* Pixel-Bit Conversion Register */
 #define DIFv1_PBCCON					0x70
 #define DIFv1_PBCCON_PBBCONV_MODE		(1 << 0)
 #define DIFv1_PBCCON_PBBCONV_MODE_SHIFT	0
+#define DIFv1_PBCCON_UNK8				(1 << 8)		 // Enabled by firmware when UNK9 contains a mode from 0 to 3
+#define DIFv1_PBCCON_UNK8_SHIFT			8
+#define DIFv1_PBCCON_UNK9				(0x3 << 9)		 // Firmware mode field; mode 4 is represented by clearing UNK8 and UNK9
+#define DIFv1_PBCCON_UNK9_SHIFT			9
 
 /* Bit Multiplex Configuration Register 0 */
 #define DIFv1_BMREG0					0x74
@@ -2352,68 +2376,68 @@
 #define DIFv1_BCREG						0x8C
 #define DIFv1_BCREG_B0					(1 << 0)
 #define DIFv1_BCREG_B0_SHIFT			0
-#define DIFv1_BCREG_B16					(1 << 0)
-#define DIFv1_BCREG_B16_SHIFT			0
-#define DIFv1_BCREG_B1					(1 << 2)
-#define DIFv1_BCREG_B1_SHIFT			2
-#define DIFv1_BCREG_B17					(1 << 2)
-#define DIFv1_BCREG_B17_SHIFT			2
-#define DIFv1_BCREG_B18					(1 << 4)
-#define DIFv1_BCREG_B18_SHIFT			4
-#define DIFv1_BCREG_B2					(1 << 4)
-#define DIFv1_BCREG_B2_SHIFT			4
-#define DIFv1_BCREG_B19					(1 << 6)
-#define DIFv1_BCREG_B19_SHIFT			6
-#define DIFv1_BCREG_B3					(1 << 6)
-#define DIFv1_BCREG_B3_SHIFT			6
-#define DIFv1_BCREG_B20					(1 << 8)
-#define DIFv1_BCREG_B20_SHIFT			8
-#define DIFv1_BCREG_B4					(1 << 8)
-#define DIFv1_BCREG_B4_SHIFT			8
-#define DIFv1_BCREG_B21					(1 << 10)
-#define DIFv1_BCREG_B21_SHIFT			10
-#define DIFv1_BCREG_B5					(1 << 10)
-#define DIFv1_BCREG_B5_SHIFT			10
-#define DIFv1_BCREG_B22					(1 << 12)
-#define DIFv1_BCREG_B22_SHIFT			12
-#define DIFv1_BCREG_B6					(1 << 12)
-#define DIFv1_BCREG_B6_SHIFT			12
-#define DIFv1_BCREG_B23					(1 << 14)
-#define DIFv1_BCREG_B23_SHIFT			14
-#define DIFv1_BCREG_B7					(1 << 14)
-#define DIFv1_BCREG_B7_SHIFT			14
-#define DIFv1_BCREG_B24					(1 << 16)
-#define DIFv1_BCREG_B24_SHIFT			16
-#define DIFv1_BCREG_B8					(1 << 16)
-#define DIFv1_BCREG_B8_SHIFT			16
-#define DIFv1_BCREG_B25					(1 << 18)
-#define DIFv1_BCREG_B25_SHIFT			18
-#define DIFv1_BCREG_B9					(1 << 18)
-#define DIFv1_BCREG_B9_SHIFT			18
-#define DIFv1_BCREG_B10					(1 << 20)
-#define DIFv1_BCREG_B10_SHIFT			20
-#define DIFv1_BCREG_B26					(1 << 20)
-#define DIFv1_BCREG_B26_SHIFT			20
-#define DIFv1_BCREG_B11					(1 << 22)
-#define DIFv1_BCREG_B11_SHIFT			22
-#define DIFv1_BCREG_B27					(1 << 22)
-#define DIFv1_BCREG_B27_SHIFT			22
-#define DIFv1_BCREG_B12					(1 << 24)
-#define DIFv1_BCREG_B12_SHIFT			24
-#define DIFv1_BCREG_B28					(1 << 24)
-#define DIFv1_BCREG_B28_SHIFT			24
-#define DIFv1_BCREG_B13					(1 << 26)
-#define DIFv1_BCREG_B13_SHIFT			26
-#define DIFv1_BCREG_B29					(1 << 26)
-#define DIFv1_BCREG_B29_SHIFT			26
-#define DIFv1_BCREG_B14					(1 << 28)
-#define DIFv1_BCREG_B14_SHIFT			28
-#define DIFv1_BCREG_B30					(1 << 28)
-#define DIFv1_BCREG_B30_SHIFT			28
-#define DIFv1_BCREG_B15					(1 << 30)
-#define DIFv1_BCREG_B15_SHIFT			30
-#define DIFv1_BCREG_B31					(1 << 30)
-#define DIFv1_BCREG_B31_SHIFT			30
+#define DIFv1_BCREG_B1					(1 << 1)
+#define DIFv1_BCREG_B1_SHIFT			1
+#define DIFv1_BCREG_B2					(1 << 2)
+#define DIFv1_BCREG_B2_SHIFT			2
+#define DIFv1_BCREG_B3					(1 << 3)
+#define DIFv1_BCREG_B3_SHIFT			3
+#define DIFv1_BCREG_B4					(1 << 4)
+#define DIFv1_BCREG_B4_SHIFT			4
+#define DIFv1_BCREG_B5					(1 << 5)
+#define DIFv1_BCREG_B5_SHIFT			5
+#define DIFv1_BCREG_B6					(1 << 6)
+#define DIFv1_BCREG_B6_SHIFT			6
+#define DIFv1_BCREG_B7					(1 << 7)
+#define DIFv1_BCREG_B7_SHIFT			7
+#define DIFv1_BCREG_B8					(1 << 8)
+#define DIFv1_BCREG_B8_SHIFT			8
+#define DIFv1_BCREG_B9					(1 << 9)
+#define DIFv1_BCREG_B9_SHIFT			9
+#define DIFv1_BCREG_B10					(1 << 10)
+#define DIFv1_BCREG_B10_SHIFT			10
+#define DIFv1_BCREG_B11					(1 << 11)
+#define DIFv1_BCREG_B11_SHIFT			11
+#define DIFv1_BCREG_B12					(1 << 12)
+#define DIFv1_BCREG_B12_SHIFT			12
+#define DIFv1_BCREG_B13					(1 << 13)
+#define DIFv1_BCREG_B13_SHIFT			13
+#define DIFv1_BCREG_B14					(1 << 14)
+#define DIFv1_BCREG_B14_SHIFT			14
+#define DIFv1_BCREG_B15					(1 << 15)
+#define DIFv1_BCREG_B15_SHIFT			15
+#define DIFv1_BCREG_B16					(1 << 16)
+#define DIFv1_BCREG_B16_SHIFT			16
+#define DIFv1_BCREG_B17					(1 << 17)
+#define DIFv1_BCREG_B17_SHIFT			17
+#define DIFv1_BCREG_B18					(1 << 18)
+#define DIFv1_BCREG_B18_SHIFT			18
+#define DIFv1_BCREG_B19					(1 << 19)
+#define DIFv1_BCREG_B19_SHIFT			19
+#define DIFv1_BCREG_B20					(1 << 20)
+#define DIFv1_BCREG_B20_SHIFT			20
+#define DIFv1_BCREG_B21					(1 << 21)
+#define DIFv1_BCREG_B21_SHIFT			21
+#define DIFv1_BCREG_B22					(1 << 22)
+#define DIFv1_BCREG_B22_SHIFT			22
+#define DIFv1_BCREG_B23					(1 << 23)
+#define DIFv1_BCREG_B23_SHIFT			23
+#define DIFv1_BCREG_B24					(1 << 24)
+#define DIFv1_BCREG_B24_SHIFT			24
+#define DIFv1_BCREG_B25					(1 << 25)
+#define DIFv1_BCREG_B25_SHIFT			25
+#define DIFv1_BCREG_B26					(1 << 26)
+#define DIFv1_BCREG_B26_SHIFT			26
+#define DIFv1_BCREG_B27					(1 << 27)
+#define DIFv1_BCREG_B27_SHIFT			27
+#define DIFv1_BCREG_B28					(1 << 28)
+#define DIFv1_BCREG_B28_SHIFT			28
+#define DIFv1_BCREG_B29					(1 << 29)
+#define DIFv1_BCREG_B29_SHIFT			29
+#define DIFv1_BCREG_B30					(1 << 30)
+#define DIFv1_BCREG_B30_SHIFT			30
+#define DIFv1_BCREG_B31					(1 << 31)
+#define DIFv1_BCREG_B31_SHIFT			31
 
 /* Bit Control Register 0 */
 #define DIFv1_BCSEL0					0x90
@@ -2485,9 +2509,40 @@
 #define DIFv1_BCSEL1_B31				(0x3 << 30)
 #define DIFv1_BCSEL1_B31_SHIFT			30
 
-#define DIFv1_UNK3						0x98
+/* Transfer Synchronization Configuration Register */
+#define DIFv1_SYNC_CONFIG				0x98
+#define DIFv1_SYNC_CONFIG_SYNCEN		(1 << 0)
+#define DIFv1_SYNC_CONFIG_SYNCEN_SHIFT	0
+#define DIFv1_SYNC_CONFIG_HDPOL			(1 << 1)
+#define DIFv1_SYNC_CONFIG_HDPOL_SHIFT	1
+#define DIFv1_SYNC_CONFIG_VDPOL			(1 << 2)
+#define DIFv1_SYNC_CONFIG_VDPOL_SHIFT	2
+#define DIFv1_SYNC_CONFIG_SYNCCD		(1 << 3)
+#define DIFv1_SYNC_CONFIG_SYNCCD_SHIFT	3
+#define DIFv1_SYNC_CONFIG_SYNCCS1		(1 << 4)
+#define DIFv1_SYNC_CONFIG_SYNCCS1_SHIFT	4
+#define DIFv1_SYNC_CONFIG_SYNCCS2		(1 << 5)
+#define DIFv1_SYNC_CONFIG_SYNCCS2_SHIFT	5
+#define DIFv1_SYNC_CONFIG_SYNCCS3		(1 << 6)
+#define DIFv1_SYNC_CONFIG_SYNCCS3_SHIFT	6
 
-#define DIFv1_UNK4						0x9C
+/* Unknown LCD Control Register (0x9C) */
+#define DIFv1_LCD_UNK9C					0x9C
+#define DIFv1_LCD_UNK9C_BIT0			(1 << 0)
+#define DIFv1_LCD_UNK9C_BIT0_SHIFT		0
+#define DIFv1_LCD_UNK9C_BIT1			(1 << 1)
+#define DIFv1_LCD_UNK9C_BIT1_SHIFT		1
+#define DIFv1_LCD_UNK9C_BIT2			(1 << 2)
+#define DIFv1_LCD_UNK9C_BIT2_SHIFT		2
+
+/* Transfer Synchronization Count Register */
+#define DIFv1_SYNC_COUNT				0xA0
+#define DIFv1_SYNC_COUNT_HDSTART		(0x3FF << 0)
+#define DIFv1_SYNC_COUNT_HDSTART_SHIFT	0
+#define DIFv1_SYNC_COUNT_NUMBYTES		(0xFFF << 10)
+#define DIFv1_SYNC_COUNT_NUMBYTES_SHIFT	10
+#define DIFv1_SYNC_COUNT_NUMROWS		(0x3FF << 22)
+#define DIFv1_SYNC_COUNT_NUMROWS_SHIFT	22
 
 
 // DIFv2 [MOD_NUM=F043, MOD_REV=12, MOD_32BIT=C0]
@@ -6626,12 +6681,200 @@
 
 // SIM [MOD_NUM=F000, MOD_REV=32, MOD_32BIT=C0]
 // SIM Card Interface
-#define SIM_IO_SIZE	0x00000200
+#define SIM_IO_SIZE					0x00000200
 /* Clock Control Register */
-#define SIM_CLC		0x00
+#define SIM_CLC						0x00
 
 /* Module Identifier Register */
-#define SIM_ID		0x08
+#define SIM_ID						0x08
+
+/* SIM Control Register */
+#define SIM_CON						0x20
+#define SIM_CON_INCON				(1 << 0)		 // Character convention (0: direct; 1: inverse)
+#define SIM_CON_INCON_SHIFT			0
+#define SIM_CON_SIMT0				(1 << 1)		 // Protocol mode (0: character; 1: hardware T=0)
+#define SIM_CON_SIMT0_SHIFT			1
+#define SIM_CON_SIMIOL				(1 << 2)		 // SIM I/O line enable
+#define SIM_CON_SIMIOL_SHIFT		2
+#define SIM_CON_SIMEN				(1 << 3)		 // SIM interface enable
+#define SIM_CON_SIMEN_SHIFT			3
+#define SIM_CON_SIMVCC				(1 << 4)		 // SIM supply voltage enable
+#define SIM_CON_SIMVCC_SHIFT		4
+#define SIM_CON_SIMRST				(1 << 5)		 // SIM reset output level
+#define SIM_CON_SIMRST_SHIFT		5
+#define SIM_CON_ERROFF				(1 << 6)		 // Disable error signalling
+#define SIM_CON_ERROFF_SHIFT		6
+#define SIM_CON_RPTOFF				(1 << 7)		 // Disable character retransmission
+#define SIM_CON_RPTOFF_SHIFT		7
+#define SIM_CON_APDWN				(1 << 8)		 // Automatic power-down enable
+#define SIM_CON_APDWN_SHIFT			8
+#define SIM_CON_SIMPDWN				(1 << 9)		 // Force automatic power-down
+#define SIM_CON_SIMPDWN_SHIFT		9
+#define SIM_CON_SIMON				(1 << 10)		 // SIM clock enable
+#define SIM_CON_SIMON_SHIFT			10
+#define SIM_CON_CLKSEL				(1 << 11)		 // SIM clock selection
+#define SIM_CON_CLKSEL_SHIFT		11
+#define SIM_CON_CLKHIGH				(1 << 12)		 // Clock-stop level selection
+#define SIM_CON_CLKHIGH_SHIFT		12
+#define SIM_CON_UARTON				(1 << 13)		 // UART and protocol clock enable
+#define SIM_CON_UARTON_SHIFT		13
+#define SIM_CON_SMCSWACT			(1 << 14)		 // Smart-card interface data switch
+#define SIM_CON_SMCSWACT_SHIFT		14
+#define SIM_CON_SIMT1				(1 << 15)		 // Hardware T=1 / DMA transfer mode enable
+#define SIM_CON_SIMT1_SHIFT			15
+
+/* SIM Baud Rate Factor Register */
+#define SIM_BRF						0x24
+#define SIM_BRF_BRF					(0x7F << 0)		 // Baud-rate factor F / (4D)
+#define SIM_BRF_BRF_SHIFT			0
+
+/* Status Register */
+#define SIM_STAT					0x28
+#define SIM_STAT_UARTOK				(1 << 0)		 // A byte was received or transmitted successfully
+#define SIM_STAT_UARTOK_SHIFT		0
+#define SIM_STAT_PARINT				(1 << 1)		 // Parity error
+#define SIM_STAT_PARINT_SHIFT		1
+#define SIM_STAT_OVRRUN				(1 << 2)		 // Transmit or receive overrun
+#define SIM_STAT_OVRRUN_SHIFT		2
+#define SIM_STAT_T0END				(1 << 3)		 // Hardware T=0 instruction completed
+#define SIM_STAT_T0END_SHIFT		3
+#define SIM_STAT_SIMDET				(1 << 4)		 // SIM presence input state
+#define SIM_STAT_SIMDET_SHIFT		4
+#define SIM_STAT_CHTIMEOUT			(1 << 5)		 // Character timer expired
+#define SIM_STAT_CHTIMEOUT_SHIFT	5
+#define SIM_STAT_UNK6				(1 << 6)
+#define SIM_STAT_UNK6_SHIFT			6
+#define SIM_STAT_UNK7				(1 << 7)
+#define SIM_STAT_UNK7_SHIFT			7
+#define SIM_STAT_UNK8				(1 << 8)
+#define SIM_STAT_UNK8_SHIFT			8
+
+/* SIM Event Enable Register */
+#define SIM_IRQEN					0x2C
+#define SIM_IRQEN_ENOKINT			(1 << 0)		 // UARTOK event enable
+#define SIM_IRQEN_ENOKINT_SHIFT		0
+#define SIM_IRQEN_ENPAR				(1 << 1)		 // PARINT event enable
+#define SIM_IRQEN_ENPAR_SHIFT		1
+#define SIM_IRQEN_ENOVR				(1 << 2)		 // OVRRUN event enable
+#define SIM_IRQEN_ENOVR_SHIFT		2
+#define SIM_IRQEN_ENT0END			(1 << 3)		 // T0END event enable
+#define SIM_IRQEN_ENT0END_SHIFT		3
+#define SIM_IRQEN_ENCHTIMER			(1 << 4)		 // Character timer event enable
+#define SIM_IRQEN_ENCHTIMER_SHIFT	4
+#define SIM_IRQEN_ENBWTTIMER		(1 << 5)		 // Block waiting timer event enable
+#define SIM_IRQEN_ENBWTTIMER_SHIFT	5
+#define SIM_IRQEN_UNK6				(1 << 6)
+#define SIM_IRQEN_UNK6_SHIFT		6
+
+/* Receive Spacing Register */
+#define SIM_RXSPC					0x30
+#define SIM_RXSPC_RXSPC				(0xFF << 0)		 // RX-to-TX spacing in 1/16 ETU
+#define SIM_RXSPC_RXSPC_SHIFT		0
+
+/* Transmit Spacing Register */
+#define SIM_TXSPC					0x34
+#define SIM_TXSPC_TXSPC				(0xFF << 0)		 // Extra TX-to-TX spacing in ETU
+#define SIM_TXSPC_TXSPC_SHIFT		0
+
+/* Character Timer Register */
+#define SIM_CHTIMER					0x38
+#define SIM_CHTIMER_CHTIMER			(0xFFFFFF << 0)	 // Character wait timeout in ETU
+#define SIM_CHTIMER_CHTIMER_SHIFT	0
+
+#define SIM_UNK3C					0x3C
+#define SIM_UNK3C_VALUE				(0x1F << 0)
+#define SIM_UNK3C_VALUE_SHIFT		0
+
+#define SIM_UNK40					0x40
+#define SIM_UNK40_VALUE				(0x7FF << 0)
+#define SIM_UNK40_VALUE_SHIFT		0
+
+/* Block Waiting Timer Register */
+#define SIM_BWT						0x44
+#define SIM_BWT_BWT					(0xFFFFFF << 0)	 // Block wait timeout in ETU
+#define SIM_BWT_BWT_SHIFT			0
+
+/* Transmit Buffer Register */
+#define SIM_TXB						0x50
+#define SIM_TXB_VALUE				(0xFF << 0)
+#define SIM_TXB_VALUE_SHIFT			0
+
+/* Receive Buffer Register */
+#define SIM_RXB						0x54
+#define SIM_RXB_VALUE				(0xFF << 0)
+#define SIM_RXB_VALUE_SHIFT			0
+
+/* T=0 Instruction Class Register */
+#define SIM_INS						0x58
+#define SIM_INS_INS					(0xFF << 0)		 // Instruction byte
+#define SIM_INS_INS_SHIFT			0
+#define SIM_INS_INSDIR				(1 << 8)		 // Instruction direction (0: transmit; 1: receive)
+#define SIM_INS_INSDIR_SHIFT		8
+
+/* T=0 Parameter 3 Register */
+#define SIM_P3						0x5C
+#define SIM_P3_P3					(0xFF << 0)		 // Number of bytes to transmit or receive
+#define SIM_P3_P3_SHIFT				0
+
+/* T=0 Status Word 1 Register */
+#define SIM_SW1						0x60
+#define SIM_SW1_SW1					(0xFF << 0)
+#define SIM_SW1_SW1_SHIFT			0
+
+/* T=0 Status Word 2 Register */
+#define SIM_SW2						0x64
+#define SIM_SW2_SW2					(0xFF << 0)
+#define SIM_SW2_SW2_SHIFT			0
+
+/* Interrupt Mask Control Register */
+#define SIM_IMSC					0x70
+#define SIM_IMSC_ERR				(1 << 0)		 // Status/error interrupt
+#define SIM_IMSC_ERR_SHIFT			0
+#define SIM_IMSC_IN					(1 << 1)		 // SIM presence interrupt
+#define SIM_IMSC_IN_SHIFT			1
+#define SIM_IMSC_OK					(1 << 2)		 // Successful character interrupt
+#define SIM_IMSC_OK_SHIFT			2
+
+/* Raw Interrupt Status Register */
+#define SIM_RIS						0x74
+#define SIM_RIS_ERR					(1 << 0)		 // Status/error interrupt
+#define SIM_RIS_ERR_SHIFT			0
+#define SIM_RIS_IN					(1 << 1)		 // SIM presence interrupt
+#define SIM_RIS_IN_SHIFT			1
+#define SIM_RIS_OK					(1 << 2)		 // Successful character interrupt
+#define SIM_RIS_OK_SHIFT			2
+
+/* Masked Interrupt Status Register */
+#define SIM_MIS						0x78
+#define SIM_MIS_ERR					(1 << 0)		 // Status/error interrupt
+#define SIM_MIS_ERR_SHIFT			0
+#define SIM_MIS_IN					(1 << 1)		 // SIM presence interrupt
+#define SIM_MIS_IN_SHIFT			1
+#define SIM_MIS_OK					(1 << 2)		 // Successful character interrupt
+#define SIM_MIS_OK_SHIFT			2
+
+/* Interrupt Clear Register */
+#define SIM_ICR						0x7C
+#define SIM_ICR_ERR					(1 << 0)		 // Status/error interrupt
+#define SIM_ICR_ERR_SHIFT			0
+#define SIM_ICR_IN					(1 << 1)		 // SIM presence interrupt
+#define SIM_ICR_IN_SHIFT			1
+#define SIM_ICR_OK					(1 << 2)		 // Successful character interrupt
+#define SIM_ICR_OK_SHIFT			2
+
+/* Interrupt Set Register */
+#define SIM_ISR						0x80
+#define SIM_ISR_ERR					(1 << 0)		 // Status/error interrupt
+#define SIM_ISR_ERR_SHIFT			0
+#define SIM_ISR_IN					(1 << 1)		 // SIM presence interrupt
+#define SIM_ISR_IN_SHIFT			1
+#define SIM_ISR_OK					(1 << 2)		 // Successful character interrupt
+#define SIM_ISR_OK_SHIFT			2
+
+/* DMA Enable Register */
+#define SIM_DMAE					0x84
+#define SIM_DMAE_OK					(1 << 0)		 // Successful-character DMA request enable
+#define SIM_DMAE_OK_SHIFT			0
 
 
 // SSC [MOD_NUM=0045, MOD_REV=25, MOD_32BIT=00]

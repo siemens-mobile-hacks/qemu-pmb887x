@@ -51,13 +51,18 @@ struct pmb887x_dif_t {
 	uint32_t con;
 	uint32_t status;
 	uint32_t bmreg[6];
-	uint32_t unk[5];
+	uint32_t unk[3];
+	uint32_t lcd_unk64;
+	uint32_t lcd_unk68;
 	uint16_t tb;
 	uint32_t rxfcon;
 	uint32_t txfcon;
 	uint32_t pbccon;
 	uint32_t bcreg;
 	uint32_t bcsel[2];
+	uint32_t sync_config;
+	uint32_t lcd_unk9c;
+	uint32_t sync_count;
 
 	pmb887x_fifo16_t tx_fifo_buffered;
 	pmb887x_fifo16_t rx_fifo_buffered;
@@ -311,6 +316,9 @@ static uint16_t dif_read_fifo(pmb887x_dif_t *p) {
 }
 
 static void dif_write_fifo(pmb887x_dif_t *p, uint16_t value) {
+	if ((p->sync_config & DIFv1_SYNC_CONFIG_SYNCEN) != 0)
+		return;
+
 	if (pmb887x_fifo_is_full(p->tx_fifo)) {
 		if ((p->con & DIFv1_CON_TEN)) {
 			DPRINTF("TX FIFO underflow\n");
@@ -337,8 +345,6 @@ static int dif_get_unk_index_from_reg(uint32_t reg) {
 		case DIFv1_UNK0:		return 0;
 		case DIFv1_UNK1:		return 1;
 		case DIFv1_UNK2:		return 2;
-		case DIFv1_UNK3:		return 3;
-		case DIFv1_UNK4:		return 4;
 		default:				abort();
 	};
 }
@@ -456,9 +462,15 @@ static uint64_t dif_io_read(void *opaque, hwaddr haddr, unsigned size) {
 		case DIFv1_UNK0:
 		case DIFv1_UNK1:
 		case DIFv1_UNK2:
-		case DIFv1_UNK3:
-		case DIFv1_UNK4:
 			value = p->unk[dif_get_unk_index_from_reg(haddr)];
+			break;
+
+		case DIFv1_LCD_UNK64:
+			value = p->lcd_unk64;
+			break;
+
+		case DIFv1_LCD_UNK68:
+			value = p->lcd_unk68;
 			break;
 
 		case DIFv1_PBCCON:
@@ -481,6 +493,18 @@ static uint64_t dif_io_read(void *opaque, hwaddr haddr, unsigned size) {
 
 		case DIFv1_BCREG:
 			value = p->bcreg;
+			break;
+
+		case DIFv1_SYNC_CONFIG:
+			value = p->sync_config;
+			break;
+
+		case DIFv1_LCD_UNK9C:
+			value = p->lcd_unk9c;
+			break;
+
+		case DIFv1_SYNC_COUNT:
+			value = p->sync_count;
 			break;
 
 		default:
@@ -572,9 +596,15 @@ static void dif_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned si
 		case DIFv1_UNK0:
 		case DIFv1_UNK1:
 		case DIFv1_UNK2:
-		case DIFv1_UNK3:
-		case DIFv1_UNK4:
 			p->unk[dif_get_unk_index_from_reg(haddr)] = value;
+			break;
+
+		case DIFv1_LCD_UNK64:
+			p->lcd_unk64 = value;
+			break;
+
+		case DIFv1_LCD_UNK68:
+			p->lcd_unk68 = value;
 			break;
 
 		case DIFv1_PBCCON:
@@ -602,6 +632,20 @@ static void dif_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned si
 		case DIFv1_BCREG:
 			p->bcreg = value;
 			dif_dump_bit_mux(p);
+			break;
+
+		case DIFv1_SYNC_CONFIG:
+			p->sync_config = value;
+			if ((p->sync_config & DIFv1_SYNC_CONFIG_SYNCEN) != 0)
+				pmb887x_srb_set_icr(&p->srb, (DIFv1_ICR_TX | DIFv1_ICR_RX));
+			break;
+
+		case DIFv1_LCD_UNK9C:
+			p->lcd_unk9c = value;
+			break;
+
+		case DIFv1_SYNC_COUNT:
+			p->sync_count = value;
 			break;
 
 		default:
@@ -699,12 +743,17 @@ static void dif_reset(DeviceState *dev) {
 	p->status = 0;
 	dif_reset_bit_mapping(p);
 	memset(p->unk, 0, sizeof(p->unk));
+	p->lcd_unk64 = 0;
+	p->lcd_unk68 = 0;
 	p->tb = 0;
 	p->rxfcon = 1 << DIFv1_RXFCON_RXFITL_SHIFT;
 	p->txfcon = 1 << DIFv1_TXFCON_TXFITL_SHIFT;
 	p->pbccon = 0;
 	p->bcreg = 0;
 	memset(p->bcsel, 0, sizeof(p->bcsel));
+	p->sync_config = 0;
+	p->lcd_unk9c = 0;
+	p->sync_count = 0;
 	p->mask = 0;
 	p->bits = 0;
 	p->tx_data = 0;
