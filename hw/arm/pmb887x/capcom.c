@@ -28,6 +28,7 @@ typedef enum pmb887x_capcom_cc_mode_t pmb887x_capcom_cc_mode_t;
 struct pmb887x_capcom_t {
 	SysBusDevice parent_obj;
 	MemoryRegion mmio;
+	uint32_t revision;
 	
 	qemu_irq t_irq[2];
 	qemu_irq cc_irq[8];
@@ -123,7 +124,7 @@ static uint64_t capcom_io_read(void *opaque, hwaddr haddr, unsigned size) {
 			break;
 		
 		case CAPCOM_ID:
-			value = 0x00005011;
+			value = 0x00005000 | p->revision;
 			break;
 		
 		case CAPCOM_PISEL:
@@ -463,8 +464,13 @@ static void capcom_realize(DeviceState *dev, Error **errp) {
 	capcom_update_state(p);
 }
 
+static const Property capcom_properties[] = {
+	DEFINE_PROP_UINT32("revision", pmb887x_capcom_t, revision, 0),
+};
+
 static void capcom_class_init(ObjectClass *klass, const void *data) {
 	DeviceClass *dc = DEVICE_CLASS(klass);
+	device_class_set_props(dc, capcom_properties);
 	device_class_set_legacy_reset(dc, capcom_reset);
 	dc->realize = capcom_realize;
 }

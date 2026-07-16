@@ -26,7 +26,6 @@
 #define DMAC_FIFO			16
 
 static const uint32_t PCELL_ID = 0xB105F00D;
-static const uint32_t PERIPH_ID = 0x0A141080;
 
 typedef struct pmb887x_dmac_ch_t pmb887x_dmac_ch_t;
 typedef struct pmb887x_dmac_request_t pmb887x_dmac_request_t;
@@ -50,6 +49,8 @@ struct pmb887x_dmac_ch_t {
 struct pmb887x_dmac_t {
 	SysBusDevice parent_obj;
 	MemoryRegion mmio;
+	uint32_t revision;
+	uint32_t peripheral_id;
 	
 	QEMUTimer *timer;
 	MemoryRegion *downstream;
@@ -560,7 +561,7 @@ static uint64_t dmac_io_read(void *opaque, hwaddr haddr, unsigned size) {
 		case DMAC_PERIPH_ID1:
 		case DMAC_PERIPH_ID2:
 		case DMAC_PERIPH_ID3:
-			value = (PERIPH_ID >> ((haddr - DMAC_PERIPH_ID0) * 2)) & 0xFF;
+			value = (p->peripheral_id >> ((haddr - DMAC_PERIPH_ID0) * 2)) & 0xFF;
 			break;
 
 		case DMAC_CH_SRC_ADDR0:
@@ -925,6 +926,8 @@ static void dmac_reset(DeviceState *dev) {
 }
 
 static const Property dmac_properties[] = {
+	DEFINE_PROP_UINT32("revision", pmb887x_dmac_t, revision, 0),
+	DEFINE_PROP_UINT32("peripheral-id", pmb887x_dmac_t, peripheral_id, 0),
 	DEFINE_PROP_LINK("downstream", pmb887x_dmac_t, downstream, TYPE_MEMORY_REGION, MemoryRegion *),
 };
 

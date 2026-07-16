@@ -42,6 +42,7 @@ struct pmb887x_vic_frame_t {
 struct pmb887x_vic_t {
 	SysBusDevice parent_obj;
 	MemoryRegion mmio;
+	uint32_t revision;
 	
 	pmb887x_vic_irq_t irq_state[IRQS_COUNT];
 	
@@ -190,7 +191,7 @@ static uint64_t vic_io_read(void *opaque, hwaddr haddr, unsigned size) {
 	
 	switch (haddr) {
 		case VIC_ID:
-			value = 0x0031C011;
+			value = 0x0031C000 | p->revision;
 			break;
 		
 		case VIC_FIQ_CON:
@@ -349,8 +350,13 @@ static void vic_realize(DeviceState *dev, Error **errp) {
 	vic_update_state(p);
 }
 
+static const Property vic_properties[] = {
+	DEFINE_PROP_UINT32("revision", pmb887x_vic_t, revision, 0),
+};
+
 static void vic_class_init(ObjectClass *klass, const void *data) {
 	DeviceClass *dc = DEVICE_CLASS(klass);
+	device_class_set_props(dc, vic_properties);
 	device_class_set_legacy_reset(dc, vic_reset);
 	dc->realize = vic_realize;
 }

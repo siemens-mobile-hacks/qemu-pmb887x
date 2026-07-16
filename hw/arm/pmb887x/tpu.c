@@ -30,6 +30,7 @@ typedef struct pmb887x_tpu_t pmb887x_tpu_t;
 struct pmb887x_tpu_t {
 	SysBusDevice parent_obj;
 	MemoryRegion mmio;
+	uint32_t revision;
 	
 	// regs
 	pmb887x_clc_reg_t clc;
@@ -245,7 +246,7 @@ static uint64_t tpu_io_read(void *opaque, hwaddr haddr, unsigned size) {
 			break;
 		
 		case TPU_ID:
-			value = 0xF021C012;
+			value = 0xF021C000 | p->revision;
 			break;
 
 		case TPU_RFCON1:
@@ -581,6 +582,7 @@ static void tpu_reset(DeviceState *dev) {
 }
 
 static const Property tpu_properties[] = {
+	DEFINE_PROP_UINT32("revision", pmb887x_tpu_t, revision, 0),
 	DEFINE_PROP_LINK("pll", struct pmb887x_tpu_t, pll, "pmb887x-pll", struct pmb887x_pll_t *),
 };
 

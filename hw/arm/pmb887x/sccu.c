@@ -33,6 +33,7 @@ typedef struct pmb887x_sccu_t pmb887x_sccu_t;
 struct pmb887x_sccu_t {
 	SysBusDevice parent_obj;
 	MemoryRegion mmio;
+	uint32_t revision;
 
 	qemu_irq irq[2];
 
@@ -410,6 +411,7 @@ static void sccu_reset(DeviceState *dev) {
 }
 
 static const Property sccu_properties[] = {
+	DEFINE_PROP_UINT32("revision", pmb887x_sccu_t, revision, 0),
 	DEFINE_PROP_LINK("pll", struct pmb887x_sccu_t, pll, "pmb887x-pll", struct pmb887x_pll_t *),
 };
 

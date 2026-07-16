@@ -27,6 +27,7 @@ typedef struct pmb887x_gpio_t pmb887x_gpio_t;
 struct pmb887x_gpio_t {
 	SysBusDevice parent_obj;
 	MemoryRegion mmio;
+	uint32_t revision;
 	
 	pmb887x_clc_reg_t clc;
 	uint32_t pins[GPIOS_COUNT];
@@ -92,7 +93,7 @@ static uint64_t gpio_io_read(void *opaque, hwaddr haddr, unsigned size) {
 			break;
 		
 		case GPIO_ID:
-			value = 0xF023C032;
+			value = 0xF023C000 | p->revision;
 			break;
 		
 		case GPIO_PIN0 ... GPIO_PIN113: {
@@ -279,8 +280,13 @@ static void gpio_realize(DeviceState *dev, Error **errp) {
 	gpio_update_state(p);
 }
 
+static const Property gpio_properties[] = {
+	DEFINE_PROP_UINT32("revision", pmb887x_gpio_t, revision, 0),
+};
+
 static void gpio_class_init(ObjectClass *klass, const void *data) {
 	DeviceClass *dc = DEVICE_CLASS(klass);
+	device_class_set_props(dc, gpio_properties);
 	device_class_set_legacy_reset(dc, gpio_reset);
 	dc->realize = gpio_realize;
 }

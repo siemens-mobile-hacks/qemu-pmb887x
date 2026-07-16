@@ -85,6 +85,7 @@ struct pmb887x_gptu_timer_t2_t {
 struct pmb887x_gptu_t {
 	SysBusDevice parent_obj;
 	MemoryRegion mmio;
+	uint32_t revision;
 
 	qemu_irq irq[8];
 	QEMUTimer *timer;
@@ -882,7 +883,7 @@ static uint64_t gptu_io_read(void *opaque, hwaddr haddr, unsigned size) {
 			break;
 
 		case GPTU_ID:
-			value = 0x0001C011;
+			value = 0x0001C000 | p->revision;
 			break;
 
 		case GPTU_T01IRS:
@@ -1276,6 +1277,7 @@ static void gptu_reset(DeviceState *dev) {
 }
 
 static const Property gptu_properties[] = {
+	DEFINE_PROP_UINT32("revision", pmb887x_gptu_t, revision, 0),
 	DEFINE_PROP_LINK("pll", pmb887x_gptu_t, pll, "pmb887x-pll", struct pmb887x_pll_t *),
 };
 

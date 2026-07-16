@@ -46,6 +46,7 @@ typedef struct pmb887x_usart_t pmb887x_usart_t;
 struct pmb887x_usart_t {
 	SysBusDevice parent_obj;
 	MemoryRegion mmio;
+	uint32_t revision;
 	
 	pmb887x_clc_reg_t clc;
 	pmb887x_srb_reg_t srb;
@@ -527,7 +528,7 @@ static uint64_t usart_io_read(void *opaque, hwaddr haddr, unsigned size) {
 			break;
 
 		case USART_ID:
-			value = 0x000044F1;
+			value = 0x00004400 | p->revision;
 			break;
 
 		case USART_CON:
@@ -681,7 +682,6 @@ static void usart_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned 
 			break;
 
 		case USART_ID:
-			value = 0x000044F1;
 			break;
 
 		case USART_CON: {
@@ -909,6 +909,7 @@ static void usart_reset(DeviceState *dev) {
 }
 
 static const Property usart_properties[] = {
+	DEFINE_PROP_UINT32("revision", pmb887x_usart_t, revision, 0),
 	DEFINE_PROP_LINK("pll", pmb887x_usart_t, pll, "pmb887x-pll", pmb887x_pll_t *),
     DEFINE_PROP_CHR("chardev", struct pmb887x_usart_t, chr),
 };

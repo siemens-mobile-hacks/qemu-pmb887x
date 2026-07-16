@@ -26,6 +26,7 @@ typedef struct pmb887x_mmci_t pmb887x_mmci_t;
 struct pmb887x_mmci_t {
 	SysBusDevice parent_obj;
 	MemoryRegion mmio;
+	uint32_t revision;
 	pmb887x_clc_reg_t clc;
 	qemu_irq gpio_dat0;
 	qemu_irq gpio_dat1;
@@ -44,7 +45,7 @@ static uint64_t mmci_io_read(void *opaque, hwaddr haddr, unsigned size) {
 			break;
 		
 		case MMCI_ID:
-			value = 0xF041C022;
+			value = 0xF041C000 | p->revision;
 			break;
 		
 		default:
@@ -113,8 +114,13 @@ static void mmci_realize(DeviceState *dev, Error **errp) {
 	pmb887x_clc_init(&p->clc);
 }
 
+static const Property mmci_properties[] = {
+	DEFINE_PROP_UINT32("revision", pmb887x_mmci_t, revision, 0),
+};
+
 static void mmci_class_init(ObjectClass *klass, const void *data) {
 	DeviceClass *dc = DEVICE_CLASS(klass);
+	device_class_set_props(dc, mmci_properties);
 	device_class_set_legacy_reset(dc, mmci_reset);
 	dc->realize = mmci_realize;
 }

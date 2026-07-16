@@ -67,6 +67,7 @@ struct pmb887x_adc_ch_cfg_t {
 struct pmb887x_adc_t {
 	SysBusDevice parent_obj;
 	MemoryRegion mmio;
+	uint32_t revision;
 	
 	int measure_mode;
 	
@@ -232,7 +233,7 @@ static uint64_t adc_io_read(void *opaque, hwaddr haddr, unsigned size) {
 			break;
 
 		case ADC_ID:
-			value = 0xF024C011;
+			value = 0xF024C000 | p->revision;
 			break;
 
 		case ADC_STAT:
@@ -371,6 +372,7 @@ static void adc_realize(DeviceState *dev, Error **errp) {
 }
 
 static const Property adc_properties[] = {
+	DEFINE_PROP_UINT32("revision", pmb887x_adc_t, revision, 0),
 	DEFINE_PROP_LINK("pll", pmb887x_adc_t, pll, "pmb887x-pll", struct pmb887x_pll_t *),
 };
 

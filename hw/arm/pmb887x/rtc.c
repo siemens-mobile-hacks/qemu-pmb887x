@@ -31,6 +31,7 @@ typedef struct pmb887x_rtc_t pmb887x_rtc_t;
 struct pmb887x_rtc_t {
 	SysBusDevice parent_obj;
 	MemoryRegion mmio;
+	uint32_t revision;
 	
 	pmb887x_clc_reg_t clc;
 	pmb887x_src_reg_t src;
@@ -174,7 +175,7 @@ static uint64_t rtc_io_read(void *opaque, hwaddr haddr, unsigned size) {
 			break;
 		
 		case RTC_ID:
-			value = 0xF049C011;
+			value = 0xF049C000 | p->revision;
 			break;
 		
 		case RTC_CTRL:
@@ -342,6 +343,7 @@ static void rtc_realize(DeviceState *dev, Error **errp) {
 }
 
 static const Property rtc_properties[] = {
+	DEFINE_PROP_UINT32("revision", pmb887x_rtc_t, revision, 0),
 	DEFINE_PROP_LINK("pll", pmb887x_rtc_t, pll, "pmb887x-pll", pmb887x_pll_t *),
 };
 

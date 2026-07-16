@@ -64,6 +64,7 @@ enum sim_t0_state_t {
 struct pmb887x_sim_t {
 	SysBusDevice parent_obj;
 	MemoryRegion mmio;
+	uint32_t revision;
 	qemu_irq irq[SIM_IRQ_COUNT];
 
 	pmb887x_clc_reg_t clc;
@@ -386,7 +387,7 @@ static uint64_t sim_io_read(void *opaque, hwaddr haddr, unsigned size) {
 			value = pmb887x_clc_get(&p->clc);
 			break;
 		case SIM_ID:
-			value = PMB887X_SIM_MODULE_ID;
+			value = 0xF000C000 | p->revision;
 			break;
 		case SIM_CON:
 			value = p->con;
@@ -699,6 +700,7 @@ static void sim_finalize(Object *obj) {
 }
 
 static const Property sim_properties[] = {
+	DEFINE_PROP_UINT32("revision", pmb887x_sim_t, revision, 0),
 	DEFINE_PROP_CHR("chardev", pmb887x_sim_t, chr),
 };
 

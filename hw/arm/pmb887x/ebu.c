@@ -38,6 +38,7 @@ struct pmb887x_ebu_user_data_t {
 struct pmb887x_ebu_t {
 	SysBusDevice parent_obj;
 	MemoryRegion mmio;
+	uint32_t revision;
 	MemoryRegion *cs[8];
 	MemoryRegion regions[8];
 	pmb887x_ebu_user_data_t user_data[8];
@@ -108,7 +109,7 @@ static uint64_t ebu_io_read(void *opaque, hwaddr haddr, unsigned size) {
 			break;
 
 		case EBU_ID:
-			value = 0x0014C004;
+			value = 0x0014C000 | p->revision;
 			break;
 
 		case EBU_CON:
@@ -384,6 +385,7 @@ static void ebu_realize(DeviceState *dev, Error **errp) {
 }
 
 static const Property ebu_properties[] = {
+	DEFINE_PROP_UINT32("revision", pmb887x_ebu_t, revision, 0),
 	DEFINE_PROP_LINK("cs0", pmb887x_ebu_t, cs[0], TYPE_MEMORY_REGION, MemoryRegion *),
 	DEFINE_PROP_LINK("cs1", pmb887x_ebu_t, cs[1], TYPE_MEMORY_REGION, MemoryRegion *),
 	DEFINE_PROP_LINK("cs2", pmb887x_ebu_t, cs[2], TYPE_MEMORY_REGION, MemoryRegion *),

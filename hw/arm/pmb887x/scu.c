@@ -30,6 +30,7 @@ typedef struct pmb887x_scu_t pmb887x_scu_t;
 struct pmb887x_scu_t {
 	SysBusDevice parent_obj;
 	MemoryRegion mmio;
+	uint32_t revision;
 	
 	pmb887x_src_reg_t dsp_src[5];
 	pmb887x_src_reg_t unk_src[3];
@@ -247,7 +248,7 @@ static uint64_t scu_io_read(void *opaque, hwaddr haddr, unsigned size) {
 			break;
 		
 		case SCU_ID:
-			value = 0xF040C012;
+			value = 0xF040C000 | p->revision;
 			break;
 		
 		case SCU_MANID:
@@ -649,6 +650,7 @@ static void scu_realize(DeviceState *dev, Error **errp) {
 }
 
 static const Property scu_properties[] = {
+	DEFINE_PROP_UINT32("revision", pmb887x_scu_t, revision, 0),
 	DEFINE_PROP_UINT32("cpu_type", pmb887x_scu_t, cpu_type, 0),
 	DEFINE_PROP_UINT32("cpu_rev", pmb887x_scu_t, cpu_rev, 0),
 	DEFINE_PROP_UINT32("cpu_uid0", pmb887x_scu_t, cpu_uid[0], 0),

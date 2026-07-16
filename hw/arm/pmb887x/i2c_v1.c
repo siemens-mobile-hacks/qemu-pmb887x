@@ -45,6 +45,7 @@ enum {
 struct pmb887x_i2c_t {
 	SysBusDevice parent_obj;
 	MemoryRegion mmio;
+	uint32_t revision;
 
 	I2CBus *bus;
 	QEMUTimer *timer;
@@ -320,7 +321,7 @@ static uint64_t i2c_io_read(void *opaque, hwaddr haddr, unsigned size) {
 			break;
 
 		case I2Cv2_ID:
-			value = 0x00004604;
+			value = 0x00004600 | p->revision;
 			break;
 
 		case I2Cv1_PISEL:
@@ -562,6 +563,7 @@ static void i2c_reset(DeviceState *dev) {
 }
 
 static const Property i2c_properties[] = {
+	DEFINE_PROP_UINT32("revision", pmb887x_i2c_t, revision, 0),
 	DEFINE_PROP_LINK("bus", pmb887x_i2c_t, bus, TYPE_I2C_BUS, I2CBus *)
 };
 

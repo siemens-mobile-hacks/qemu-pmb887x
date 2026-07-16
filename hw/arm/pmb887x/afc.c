@@ -23,7 +23,7 @@ struct pmb887x_afc_t {
 	SysBusDevice parent_obj;
 	MemoryRegion mmio;
 	pmb887x_clc_reg_t clc;
-	uint32_t module_id;
+	uint32_t revision;
 	uint32_t afcval;
 };
 
@@ -37,7 +37,7 @@ static uint64_t afc_io_read(void *opaque, hwaddr haddr, unsigned size) {
 			break;
 
 		case AFC_ID:
-			value = p->module_id;
+			value = 0xF004C000 | p->revision;
 			break;
 
 		case AFC_AFCVAL:
@@ -98,7 +98,7 @@ static void afc_reset(DeviceState *dev) {
 }
 
 static const Property afc_properties[] = {
-	DEFINE_PROP_UINT32("module-id", pmb887x_afc_t, module_id, 0xF004C000),
+	DEFINE_PROP_UINT32("revision", pmb887x_afc_t, revision, 0),
 };
 
 static void afc_class_init(ObjectClass *klass, const void *data) {

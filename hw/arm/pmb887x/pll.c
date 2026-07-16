@@ -31,6 +31,7 @@ struct pmb887x_pll_callback_t {
 struct pmb887x_pll_t {
 	SysBusDevice parent_obj;
 	MemoryRegion mmio;
+	uint32_t revision;
 	
 	pmb887x_pll_callback_t *callbacks;
 	int callbacks_count;
@@ -366,6 +367,7 @@ static void pll_realize(DeviceState *dev, Error **errp) {
 }
 
 static const Property pll_properties[] = {
+	DEFINE_PROP_UINT32("revision", pmb887x_pll_t, revision, 0),
 	DEFINE_PROP_UINT32("xtal", struct pmb887x_pll_t, xtal, 26000000),
 	DEFINE_PROP_UINT32("hw-ns-throttle", struct pmb887x_pll_t, hw_ns_div, 1),
 };

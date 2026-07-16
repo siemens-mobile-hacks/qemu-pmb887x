@@ -40,6 +40,7 @@ enum SSCFifoType {
 struct pmb887x_ssc_t {
 	SysBusDevice parent_obj;
 	MemoryRegion mmio;
+	uint32_t revision;
 
 	qemu_irq irq[4];
 
@@ -282,7 +283,7 @@ static uint64_t ssc_io_read(void *opaque, hwaddr haddr, unsigned size) {
 			break;
 
 		case SSC_ID:
-			value = 0x00004525;
+			value = 0x00004500 | p->revision;
 			break;
 
 		case SSC_CON:
@@ -541,6 +542,7 @@ static void ssc_reset(DeviceState *dev) {
 }
 
 static const Property ssc_properties[] = {
+	DEFINE_PROP_UINT32("revision", pmb887x_ssc_t, revision, 0),
 	DEFINE_PROP_LINK("bus", pmb887x_ssc_t, bus, "SSI", SSIBus *),
 };
 

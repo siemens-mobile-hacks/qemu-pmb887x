@@ -3,6 +3,7 @@
 #include "hw/arm/pmb887x/board/board.h"
 #include "hw/arm/pmb887x/board/gpio.h"
 #include "hw/arm/pmb887x/gen/cpu_modules.h"
+#include "hw/arm/pmb887x/gen/cpu_regs.h"
 
 #include "hw/arm/pmb887x/utils/strings.h"
 #include "hw/core/hw-error.h"
@@ -29,8 +30,9 @@ DeviceState *pmb887x_new_cpu_module(const char *name) {
 
 	DeviceState *dev = qdev_new(mod->dev);
 	dev->id = g_strdup(name);
-	if (object_property_find(OBJECT(dev), "module-id"))
-		qdev_prop_set_uint32(dev, "module-id", mod->id);
+	qdev_prop_set_uint32(dev, "revision", mod->id & MOD_ID_REV);
+	if (object_property_find(OBJECT(dev), "peripheral-id"))
+		qdev_prop_set_uint32(dev, "peripheral-id", mod->id);
 
 	sysbus_mmio_map(SYS_BUS_DEVICE(dev), 0, mod->base);
 

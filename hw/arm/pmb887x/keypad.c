@@ -35,6 +35,7 @@ typedef struct pmb887x_keypad_t pmb887x_keypad_t;
 struct pmb887x_keypad_t {
 	SysBusDevice parent_obj;
 	MemoryRegion mmio;
+	uint32_t revision;
 	
 	qemu_irq irq[4];
 	pmb887x_src_reg_t src[4];
@@ -101,7 +102,7 @@ static uint64_t keypad_io_read(void *opaque, hwaddr haddr, unsigned size) {
 	
 	switch (haddr) {
 		case KEYPAD_ID:
-			value = 0xF046C021;
+			value = 0xF046C000 | p->revision;
 			break;
 		
 		case KEYPAD_CON:
@@ -236,6 +237,7 @@ static void keypad_reset(DeviceState *dev) {
 }
 
 static const Property keypad_properties[] = {
+	DEFINE_PROP_UINT32("revision", pmb887x_keypad_t, revision, 0),
 	DEFINE_PROP_ARRAY("map", pmb887x_keypad_t, map_size, map, qdev_prop_uint32, uint32_t),
 };
 

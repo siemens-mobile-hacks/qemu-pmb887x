@@ -59,6 +59,7 @@ enum DIFWorkState {
 struct pmb887x_dif_t {
 	SysBusDevice parent_obj;
 	MemoryRegion mmio;
+	uint32_t revision;
 	SSIBus *bus;
 
 	qemu_irq irq[4];
@@ -747,7 +748,7 @@ static uint64_t dif_io_read(void *opaque, hwaddr haddr, unsigned size) {
 			break;
 
 		case DIFv2_ID:
-			value = 0xF043C012;
+			value = 0xF043C000 | p->revision;
 			break;
 
 		case DIFv2_RUNCTRL:
@@ -1291,6 +1292,7 @@ static void dif_reset(DeviceState *dev) {
 }
 
 static const Property dif_properties[] = {
+	DEFINE_PROP_UINT32("revision", pmb887x_dif_t, revision, 0),
 	DEFINE_PROP_LINK("bus", pmb887x_dif_t, bus, "SSI", SSIBus *),
 };
 

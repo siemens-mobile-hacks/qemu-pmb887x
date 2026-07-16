@@ -26,6 +26,7 @@ typedef struct pmb887x_dsp_t pmb887x_dsp_t;
 struct pmb887x_dsp_t {
 	SysBusDevice parent_obj;
 	MemoryRegion mmio;
+	uint32_t revision;
 	
 	uint32_t com_status;
 	uint8_t ram[DSP_RAM_SIZE];
@@ -84,7 +85,7 @@ static uint64_t dsp_io_read(void *opaque, hwaddr haddr, unsigned size) {
 			break;
 
 		case DSP_ID:
-			value = 0xF022C031;
+			value = 0xF022C000 | p->revision;
 			break;
 
 		case DSP_COM_STATUS:
@@ -165,6 +166,7 @@ static void dsp_reset(DeviceState *dev) {
 }
 
 static const Property dsp_properties[] = {
+	DEFINE_PROP_UINT32("revision", pmb887x_dsp_t, revision, 0),
 	DEFINE_PROP_UINT32("ram0_value", pmb887x_dsp_t, ram0_value, 0x0801),
 };
 
