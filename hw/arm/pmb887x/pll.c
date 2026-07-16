@@ -20,6 +20,7 @@
 
 #define TYPE_PMB887X_PLL	"pmb887x-pll"
 #define PMB887X_PLL(obj)	OBJECT_CHECK(pmb887x_pll_t, (obj), TYPE_PMB887X_PLL)
+#define PLL_LOCK_DELAY_NS	(10 * SCALE_US)
 
 typedef struct pmb887x_pll_callback_t pmb887x_pll_callback_t;
 
@@ -38,6 +39,8 @@ struct pmb887x_pll_t {
 	
 	pmb887x_src_reg_t src;
 	qemu_irq irq;
+	QEMUTimer *lock_timer;
+	bool locked;
 	
 	uint32_t xtal;
 	uint32_t hw_ns_div;
@@ -57,6 +60,16 @@ struct pmb887x_pll_t {
 
 	qemu_irq gpio_clk32;
 };
+
+static void pll_lock_timer_expired(void *opaque) {
+	pmb887x_pll_t *p = opaque;
+
+	if (!(p->osc & PLL_OSC_PLL_POWER_UP))
+		return;
+
+	p->locked = true;
+	pmb887x_src_update(&p->src, 0, MOD_SRC_SETR);
+}
 
 // Apply dividers for AHB freq
 static uint32_t pll_ahb_div(uint32_t freq, uint32_t k1, uint32_t k2) {
@@ -212,7 +225,7 @@ static uint64_t pll_io_read(void *opaque, hwaddr haddr, unsigned size) {
 			break;
 		
 		case PLL_STAT:
-			value = PLL_STAT_LOCK;
+			value = p->locked ? PLL_STAT_LOCK : 0;
 			break;
 		
 		case PLL_CON3:
@@ -240,9 +253,19 @@ static void pll_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned si
 	IO_DUMP(haddr + p->mmio.addr, size, value, true);
 	
 	switch (haddr) {
-		case PLL_OSC:
+		case PLL_OSC: {
+			uint32_t old_osc = p->osc;
 			p->osc = value;
+			bool pll_changed = ((old_osc ^ p->osc) & (PLL_OSC_PLL_POWER_UP | PLL_OSC_NDIV | PLL_OSC_MDIV)) != 0;
+			if (!(p->osc & PLL_OSC_PLL_POWER_UP)) {
+				timer_del(p->lock_timer);
+				p->locked = false;
+			} else if (pll_changed) {
+				p->locked = false;
+				timer_mod(p->lock_timer, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + PLL_LOCK_DELAY_NS);
+			}
 			break;
+		}
 		
 		case PLL_CON0:
 			p->con0 = value;
@@ -328,13 +351,14 @@ static void pll_init(Object *obj) {
 	sysbus_init_mmio(SYS_BUS_DEVICE(obj), &p->mmio);
 	sysbus_init_irq(SYS_BUS_DEVICE(obj), &p->irq);
 	qdev_init_gpio_out_named(dev, &p->gpio_clk32, "CLK32_OUT", 1);
+	p->lock_timer = timer_new_ns(QEMU_CLOCK_VIRTUAL, pll_lock_timer_expired, p);
 }
 
 static void pll_reset(DeviceState *dev) {
 	pmb887x_pll_t *p = PMB887X_PLL(dev);
 
+	timer_del(p->lock_timer);
 	pmb887x_src_reset(&p->src);
-	pmb887x_src_set(&p->src, MOD_SRC_SRE);
 
 	p->frtc = 32768;
 	p->fgptu = 1000000000;
@@ -344,6 +368,7 @@ static void pll_reset(DeviceState *dev) {
 	p->con1 = 0;
 	p->con2 = 0;
 	p->con3 = 0;
+	p->locked = true;
 
 	pll_update_state(p);
 }
@@ -355,7 +380,6 @@ static void pll_realize(DeviceState *dev, Error **errp) {
 		hw_error("pmb887x-pll: irq not set");
 	
 	pmb887x_src_init(&p->src, p->irq);
-	pmb887x_src_set(&p->src, MOD_SRC_SRE);
 	
 	p->frtc = 32768;
 	p->fgptu = 1000000000;
@@ -370,6 +394,7 @@ static void pll_realize(DeviceState *dev, Error **errp) {
 	p->con1	= 0x00000000;
 	p->con2	= 0x00000000;
 	p->con3	= 0x00000000;
+	p->locked = true;
 	
 	pll_update_state(p);
 }

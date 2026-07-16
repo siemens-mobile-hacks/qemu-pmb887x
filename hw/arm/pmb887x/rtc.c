@@ -144,7 +144,7 @@ static void rtc_sync(pmb887x_rtc_t *p) {
 		return;
 	}
 
-	int64_t now = qemu_clock_get_ns(QEMU_CLOCK_REALTIME);
+	int64_t now = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
 	if (!p->start)
 		p->start = now;
 
@@ -333,7 +333,7 @@ static void rtc_realize(DeviceState *dev, Error **errp) {
 	
 	pmb887x_clc_init(&p->clc);
 	pmb887x_src_init(&p->src, p->irq);
-	p->timer = timer_new_ns(QEMU_CLOCK_REALTIME, rtc_ptimer_reset, p);
+	p->timer = timer_new_ns(QEMU_CLOCK_VIRTUAL, rtc_ptimer_reset, p);
 	p->con = RTC_CON_RUN | RTC_CON_PRE;
 	uint32_t t14_start = (UINT16_MAX + 1) - rtc_get_freq(p);
 	p->t14 = ((t14_start << RTC_T14_CNT_SHIFT) | (t14_start << RTC_T14_REL_SHIFT));
