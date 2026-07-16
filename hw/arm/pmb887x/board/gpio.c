@@ -28,6 +28,33 @@ bool pmb887x_qdev_is_gpio_out_exists(DeviceState *dev, const char *name, int n) 
 	return object_property_find(OBJECT(dev), prop_name) != NULL;
 }
 
+typedef struct pmb887x_qdev_search_result_t pmb887x_qdev_search_result_t;
+
+struct pmb887x_qdev_search_result_t {
+	const char *id;
+	DeviceState *device;
+};
+
+static int find_qdev_by_id(Object *object, void *opaque) {
+	pmb887x_qdev_search_result_t *result = opaque;
+	DeviceState *device = (DeviceState *) object_dynamic_cast(object, TYPE_DEVICE);
+	if (device && g_strcmp0(device->id, result->id) == 0) {
+		result->device = device;
+		return 1;
+	}
+	return 0;
+}
+
+static DeviceState *find_qdev(const char *id) {
+	DeviceState *device = qdev_find_recursive(sysbus_get_default(), id);
+	if (device)
+		return device;
+
+	pmb887x_qdev_search_result_t result = { .id = id };
+	object_child_foreach_recursive(object_get_root(), find_qdev_by_id, &result);
+	return result.device;
+}
+
 static char *find_internal_gpio(bool is_out, const char *name, DeviceState **dev, int *id) {
 	char **parts = g_strsplit(name, ":", 2);
 	const char *dev_name = "GPIO";
@@ -38,7 +65,7 @@ static char *find_internal_gpio(bool is_out, const char *name, DeviceState **dev
 		pin_name = parts[1];
 	}
 
-	*dev = qdev_find_recursive(sysbus_get_default(), dev_name);
+	*dev = find_qdev(dev_name);
 	if (!*dev)
 		hw_error("Device not found: %s", dev_name);
 

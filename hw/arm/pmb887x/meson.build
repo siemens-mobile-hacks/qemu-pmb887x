@@ -12,6 +12,7 @@ arm_common_ss.add(when: 'CONFIG_PMB887X', if_true: files(
 	'sccu.c',
 	'gpio.c',
 	'usart.c',
+	'sim.c',
 	'mmci.c',
 	'gptu.c',
 	'vic.c',
@@ -66,4 +67,12 @@ arm_common_ss.add(when: 'CONFIG_PMB887X', if_true: files(
 	'i2c/d1094xx.c',
 	'i2c/pmb6812.c',
 	'i2c/tea5761uk.c',
+	'sim/apdu.c',
+	'sim/gsm_sim.c',
+	'sim/sim_fs.c',
+	'sim/sim_card.c',
 ))
+
+if cacard.found()
+	arm_common_ss.add(when: 'CONFIG_PMB887X', if_true: [cacard, files('sim/cacard_apdu.c')])
+endif

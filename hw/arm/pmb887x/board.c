@@ -191,6 +191,10 @@ static void pmb887x_init(MachineState *machine) {
 		sysbus_realize_and_unref(SYS_BUS_DEVICE(mmci), &error_fatal);
 	}
 
+	// SIM card interface
+	DeviceState *sim = pmb887x_new_cpu_module("SIM");
+	sysbus_realize_and_unref(SYS_BUS_DEVICE(sim), &error_fatal);
+
 	// USART0
 	DeviceState *usart0 = pmb887x_new_cpu_module("USART0");
 	object_property_set_link(OBJECT(usart0), "pll", OBJECT(pll), &error_fatal);

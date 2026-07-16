@@ -4,6 +4,8 @@
 #include "hw/arm/pmb887x/board/board.h"
 #include "hw/arm/pmb887x/board/gpio.h"
 #include "hw/arm/pmb887x/board/memory.h"
+#include "hw/arm/pmb887x/sim.h"
+#include "hw/arm/pmb887x/sim/sim_card.h"
 #include "hw/arm/pmb887x/utils/regexp.h"
 #include "hw/arm/pmb887x/utils/toml.h"
 
@@ -25,6 +27,7 @@ enum pmb887x_dev_bus_type_t {
 	DEV_BUS_NONE,
 	DEV_BUS_I2C,
 	DEV_BUS_SSI,
+	DEV_BUS_SIM,
 	DEV_BUS_EBU,
 };
 
@@ -139,6 +142,10 @@ static pmb887x_dev_t devices_meta[] = {
 		.name = "pmb6812",
 		.props = {},
 	},
+	{
+		.name = "sim-card",
+		.props = {},
+	},
 
 	// FM Radio
 	{
@@ -208,6 +215,8 @@ static pmb887x_dev_bus_type_t bus_get_type(Object *dev) {
 		return DEV_BUS_I2C;
 	if (strcmp(typename, "SSI") == 0)
 		return DEV_BUS_SSI;
+	if (strcmp(typename, TYPE_PMB887X_SIM) == 0)
+		return DEV_BUS_SIM;
 	if (strcmp(typename, "pmb887x-ebu") == 0)
 		return DEV_BUS_EBU;
 	hw_error("Unknown bus type: %s", typename);
@@ -268,9 +277,42 @@ static void device_init_gpios_from_config(DeviceState *dev, toml_datum_t table) 
 	}
 }
 
+static void sim_card_apply_runtime_options(DeviceState *dev) {
+	const char *source = getenv("PMB887X_SIM");
+	if (!source)
+		return;
+
+	if (strcmp(source, "virtual") == 0) {
+		const char *imsi = getenv("PMB887X_SIM_IMSI");
+		const char *operator_code = getenv("PMB887X_SIM_OPERATOR");
+		if (imsi)
+			qdev_prop_set_string(dev, "imsi", imsi);
+		if (operator_code)
+			qdev_prop_set_string(dev, "operator_code", operator_code);
+	} else if (strcmp(source, "reader") == 0) {
+		qdev_prop_set_string(dev, "apdu_backend", "cacard");
+		const char *reader_name = getenv("PMB887X_SIM_READER_NAME");
+		if (reader_name && reader_name[0] != '\0')
+			qdev_prop_set_string(dev, "reader", reader_name);
+	} else {
+		hw_error("Unknown SIM source: %s", source);
+	}
+}
+
+static void sim_card_realize_and_attach(DeviceState *card, pmb887x_sim_t *sim) {
+	if (!object_dynamic_cast(OBJECT(card), TYPE_PMB887X_SIM_CARD))
+		hw_error("Device '%s' is not a SIM card", object_get_typename(OBJECT(card)));
+	object_property_add_child(OBJECT(sim), card->id, OBJECT(card));
+	qdev_realize(card, NULL, &error_fatal);
+	pmb887x_sim_set_chardev(sim, pmb887x_sim_card_get_chardev(PMB887X_SIM_CARD(card)), &error_fatal);
+}
+
 static DeviceState *device_create_from_config(DeviceState *ebuc, const char *id, toml_datum_t table) {
 	pmb887x_board_t *board = pmb887x_board();
 	const char *type = toml_table_get_string(table, "type", NULL, true);
+	const char *sim_source = getenv("PMB887X_SIM");
+	if (strcmp(type, TYPE_PMB887X_SIM_CARD) == 0 && sim_source && strcmp(sim_source, "none") == 0)
+		return NULL;
 	const char *bus_id = toml_table_get_string(table, "bus", NULL, true);
 	const pmb887x_dev_t *meta = dev_get_metadata(type);
 
@@ -295,6 +337,16 @@ static DeviceState *device_create_from_config(DeviceState *ebuc, const char *id,
 			device_init_props_from_config(dev, meta, table);
 			qdev_realize_and_unref(dev, BUS(bus), &error_fatal);
 			device_init_gpios_from_config(dev, table);
+			break;
+		}
+		case DEV_BUS_SIM: {
+			dev = qdev_new(type);
+			dev->id = g_strdup(id);
+			device_init_props_from_config(dev, meta, table);
+			sim_card_apply_runtime_options(dev);
+			sim_card_realize_and_attach(dev, PMB887X_SIM(bus));
+			device_init_gpios_from_config(dev, table);
+			object_unref(OBJECT(dev));
 			break;
 		}
 		case DEV_BUS_EBU: {
