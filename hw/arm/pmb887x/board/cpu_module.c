@@ -29,6 +29,8 @@ DeviceState *pmb887x_new_cpu_module(const char *name) {
 
 	DeviceState *dev = qdev_new(mod->dev);
 	dev->id = g_strdup(name);
+	if (object_property_find(OBJECT(dev), "module-id"))
+		qdev_prop_set_uint32(dev, "module-id", mod->id);
 
 	sysbus_mmio_map(SYS_BUS_DEVICE(dev), 0, mod->base);
 

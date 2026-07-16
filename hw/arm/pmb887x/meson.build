@@ -3,6 +3,7 @@ arm_common_ss.add(when: 'CONFIG_PMB887X', if_true: files(
 	'fifo.c',
 	'flash.c',
 	'flash-blk.c',
+	'afc.c',
 	'adc.c',
 	'ebu.c',
 	'dmac.c',

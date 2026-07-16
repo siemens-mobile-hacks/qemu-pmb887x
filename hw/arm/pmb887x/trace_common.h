@@ -29,6 +29,7 @@ enum pmb887x_modules_t {
 	PMB887X_TRACE_SSC		= 1ULL << 20,
 	PMB887X_TRACE_TCM		= 1ULL << 21,
 	PMB887X_TRACE_SIM		= 1ULL << 22,
+	PMB887X_TRACE_AFC		= 1ULL << 23,
 
 	// External
 	PMB887X_TRACE_SIM_CARD	= 1ULL << 56,

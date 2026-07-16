@@ -309,6 +309,7 @@ static const pmb887x_cpu_module_t pmb8876_modules[] = {
 	{"ADC",		0xF024C021,	PMB8876_ADC_BASE,		"pmb887x-adc",		pmb8876_adc_irqs,		ARRAY_SIZE(pmb8876_adc_irqs),		NULL,					0,									NULL,				0},
 	{"KEYPAD",	0xF046C021,	PMB8876_KEYPAD_BASE,	"pmb887x-keypad",	pmb8876_keypad_irqs,	ARRAY_SIZE(pmb8876_keypad_irqs),	pmb8876_keypad_gpios,	ARRAY_SIZE(pmb8876_keypad_gpios),	NULL,				0},
 	{"DSP",		0xF022C031,	PMB8876_DSP_BASE,		"pmb887x-dsp",		NULL,					0,									NULL,					0,									NULL,				0},
+	{"AFC",		0xF004C011,	PMB8876_AFC_BASE,		"pmb887x-afc",		NULL,					0,									NULL,					0,									NULL,				0},
 	{"TPU",		0xF021C012,	PMB8876_TPU_BASE,		"pmb887x-tpu",		pmb8876_tpu_irqs,		ARRAY_SIZE(pmb8876_tpu_irqs),		NULL,					0,									NULL,				0},
 	{"DIF",		0xF043C012,	PMB8876_DIF_BASE,		"pmb887x-dif-v2",	pmb8876_dif_irqs,		ARRAY_SIZE(pmb8876_dif_irqs),		pmb8876_dif_gpios,		ARRAY_SIZE(pmb8876_dif_gpios),		pmb8876_dif_dma,	ARRAY_SIZE(pmb8876_dif_dma)},
 	{"MMCI",	0xF041C022,	PMB8876_MMCI_BASE,		"pmb887x-mmci",		NULL,					0,									pmb8876_mmci_gpios,		ARRAY_SIZE(pmb8876_mmci_gpios),		NULL,				0},
@@ -594,6 +595,7 @@ static const pmb887x_cpu_module_t pmb8875_modules[] = {
 	{"ADC",		0xF024C010,	PMB8875_ADC_BASE,		"pmb887x-adc",		pmb8875_adc_irqs,		ARRAY_SIZE(pmb8875_adc_irqs),		NULL,					0,									NULL,				0},
 	{"KEYPAD",	0xF046C000,	PMB8875_KEYPAD_BASE,	"pmb887x-keypad",	pmb8875_keypad_irqs,	ARRAY_SIZE(pmb8875_keypad_irqs),	pmb8875_keypad_gpios,	ARRAY_SIZE(pmb8875_keypad_gpios),	NULL,				0},
 	{"DSP",		0xF022C010,	PMB8875_DSP_BASE,		"pmb887x-dsp",		NULL,					0,									NULL,					0,									NULL,				0},
+	{"AFC",		0xF004C000,	PMB8875_AFC_BASE,		"pmb887x-afc",		NULL,					0,									NULL,					0,									NULL,				0},
 	{"TPU",		0xF021C000,	PMB8875_TPU_BASE,		"pmb887x-tpu",		pmb8875_tpu_irqs,		ARRAY_SIZE(pmb8875_tpu_irqs),		NULL,					0,									NULL,				0},
 };
 

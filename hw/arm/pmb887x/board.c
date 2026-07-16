@@ -185,6 +185,10 @@ static void pmb887x_init(MachineState *machine) {
 	pmb887x_board_init_dsp(dsp);
 	sysbus_realize_and_unref(SYS_BUS_DEVICE(dsp), &error_fatal);
 
+	// Automatic Frequency Correction
+	DeviceState *afc = pmb887x_new_cpu_module("AFC");
+	sysbus_realize_and_unref(SYS_BUS_DEVICE(afc), &error_fatal);
+
 	if (pmb887x_board()->cpu == CPU_PMB8876) {
 		// MMCI
 		DeviceState *mmci = pmb887x_new_cpu_module("MMCI");
