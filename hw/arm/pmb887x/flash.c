@@ -29,6 +29,7 @@
 #define FLASH_STATUS_BLOCK_ERASE_ERROR	BIT(5)
 #define FLASH_STATUS_READY				BIT(7)
 #define FLASH_STATUS_ERRORS				(BIT(1) | BIT(3) | BIT(4) | BIT(5) | BIT(8) | BIT(9))
+#define FLASH_STATUS_SEQUENCE_ERROR		(FLASH_STATUS_PROGRAM_ERROR | FLASH_STATUS_BLOCK_ERASE_ERROR)
 
 #define FLASH_LOCK_STATUS_LOCKED		BIT(0)
 #define FLASH_LOCK_STATUS_LOCKED_DOWN	BIT(1)
@@ -119,11 +120,15 @@ static void flash_error_part(pmb887x_flash_part_t *p, const char *format, ...) G
 static void flash_load_file(pmb887x_flash_t *flash, const char *path, void *data, size_t size, const char *region);
 static void flash_save_file(pmb887x_flash_t *flash, const char *path, const void *data, size_t size, const char *region);
 
-static void flash_reset(pmb887x_flash_part_t *p) {
-	flash_trace_part(p, "back to read array mode");
+static void flash_buffer_clear(pmb887x_flash_part_t *p) {
 	g_clear_pointer(&p->buffer, g_free);
 	p->buffer_size = 0;
 	p->buffer_index = 0;
+}
+
+static void flash_reset(pmb887x_flash_part_t *p) {
+	flash_trace_part(p, "back to read array mode");
+	flash_buffer_clear(p);
 	p->cmd = 0;
 	p->wcycle = 0;
 	memory_region_rom_device_set_romd(&p->mem, true);
@@ -481,15 +486,33 @@ static void flash_word_program(pmb887x_flash_part_t *p, uint32_t offset, uint64_
 	}
 }
 
+static bool flash_buffer_address_in_block(pmb887x_flash_part_t *p, uint32_t offset, uint32_t size) {
+	pmb887x_flash_block_t *command_block = flash_part_find_block(p, p->cmd_addr);
+	uint32_t block_start = p->offset + command_block->offset;
+	uint32_t block_end = block_start + command_block->size;
+
+	return offset >= block_start && offset < block_end && size <= block_end - offset;
+}
+
+static void flash_buffer_abort(pmb887x_flash_part_t *p, uint32_t offset) {
+	flash_trace_part(p, "abort buffered program at %08X (setup at %08X)", p->flash->offset + offset,
+		p->flash->offset + p->cmd_addr);
+	flash_buffer_clear(p);
+	p->cmd = 0x70;
+	p->wcycle = 0;
+	p->status |= FLASH_STATUS_READY | FLASH_STATUS_SEQUENCE_ERROR;
+	memory_region_rom_device_set_romd(&p->mem, false);
+}
+
 static void flash_buffer_add(pmb887x_flash_part_t *p, uint32_t offset, uint64_t value, uint32_t size) {
-	uint32_t sector_size = flash_find_sector_size(p, offset);
-	uint32_t mask = ~(sector_size - 1);
 	flash_trace_part(p, "program word [%d]: %08"PRIX64" to %08X", size, value, p->flash->offset + offset);
-	if ((offset & mask) != (p->cmd_addr & mask))
-		flash_error_part(p, "program sector mismatch: %08X != %08X", offset, p->cmd_addr);
 	if (size != 2 && size != 4) {
-		flash_error_part(p, "invalid write size: %d", size);
-		exit(1);
+		flash_buffer_abort(p, offset);
+		return;
+	}
+	if (!flash_buffer_address_in_block(p, offset, size)) {
+		flash_buffer_abort(p, offset);
+		return;
 	}
 
 	for (uint32_t i = 0; i < size; i += 2) {
@@ -527,9 +550,7 @@ static void flash_buffer_commit(pmb887x_flash_part_t *p) {
 			flash_data_write(p, p->buffer[i].offset, p->buffer[i].value, p->buffer[i].size);
 	}
 
-	g_clear_pointer(&p->buffer, g_free);
-	p->buffer_size = 0;
-	p->buffer_index = 0;
+	flash_buffer_clear(p);
 	flash_trace_part(p, "confirm buffered program");
 	p->wcycle = 0;
 	p->status |= FLASH_STATUS_READY;
@@ -753,13 +774,15 @@ static void flash_io_write(void *opaque, hwaddr part_offset, uint64_t value, uin
 			case 0xE9:	// buffered program
 			case 0xE8:	// buffered program
 				valid_command = true;
-				p->buffer_size = (value & 0xFFFF) + 1;
-				p->buffer_index = 0;
-				p->buffer = g_new0(pmb887x_flash_buffer_t, p->buffer_size);
-				
-				flash_trace_part(p, "buffered program %d words", p->buffer_size);
-				
-				p->wcycle++;
+				if (!flash_buffer_address_in_block(p, offset, size)) {
+					flash_buffer_abort(p, offset);
+				} else {
+					p->buffer_size = (value & 0xFFFF) + 1;
+					p->buffer_index = 0;
+					p->buffer = g_new0(pmb887x_flash_buffer_t, p->buffer_size);
+					flash_trace_part(p, "buffered program %d words", p->buffer_size);
+					p->wcycle++;
+				}
 				break;
 			
 			case 0x10:	// program word
@@ -797,9 +820,11 @@ static void flash_io_write(void *opaque, hwaddr part_offset, uint64_t value, uin
 		switch (p->cmd) {
 			case 0xE9:	// buffered program
 			case 0xE8:	// buffered program
-				if (value == 0xD0) {
+				valid_command = true;
+				if (value != 0xD0 || !flash_buffer_address_in_block(p, offset, size)) {
+					flash_buffer_abort(p, offset);
+				} else {
 					flash_buffer_commit(p);
-					valid_command = true;
 				}
 				break;
 		}
