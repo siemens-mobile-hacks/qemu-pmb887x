@@ -21,6 +21,7 @@ static struct {
 	{ "SOFT_RIGHT", Q_KEY_CODE_F2 },
 	{ "SEND", Q_KEY_CODE_F3 },
 	{ "END_CALL", Q_KEY_CODE_F4 },
+	{ "CLEAR", Q_KEY_CODE_BACKSPACE },
 
 	{ "MUSIC", Q_KEY_CODE_F5 },
 	{ "PLAY_PAUSE", Q_KEY_CODE_F6 },
