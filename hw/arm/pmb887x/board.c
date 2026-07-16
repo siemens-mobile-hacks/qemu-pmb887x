@@ -61,7 +61,6 @@ static void memory_dump_at_exit(void) {
 	if (!cpu)
 		return;
 
-//	pmb887x_io_dump_finish();
 	fprintf(stderr, "sorry died at %08X LR %08X\n", ARM_CPU(cpu)->env.regs[15], ARM_CPU(cpu)->env.regs[14]);
 
 
