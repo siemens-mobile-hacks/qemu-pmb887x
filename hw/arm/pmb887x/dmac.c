@@ -43,7 +43,6 @@ struct pmb887x_dmac_ch_t {
 	uint32_t control;
 	uint32_t config;
 	bool is_source_complete;
-	bool is_active;
 };
 
 struct pmb887x_dmac_t {
@@ -207,7 +206,6 @@ static void dmac_transfer_finish(pmb887x_dmac_t *p, pmb887x_dmac_ch_t *ch) {
 		DPRINTF("CH%d: transfer done\n", ch->id);
 		dmac_update_final_addresses(ch);
 		ch->config &= ~DMAC_CH_CONFIG_ENABLE;
-		ch->is_active = false;
 		pmb887x_srb_set_isr(&p->srb_tc, (1 << ch->id));
 	}
 
@@ -258,7 +256,6 @@ static void dmac_transfer_memory(pmb887x_dmac_t *p, pmb887x_dmac_ch_t *ch, uint3
 	ch->dst_addr &= ~(dst_width - 1);
 
 	DPRINTF("CH%d: %08X [%dx%d] -> %08X [%dx%d] [%d]\n", ch->id, ch->src_addr, src_width, burst_size, ch->dst_addr, dst_width, burst_size, tx_size);
-	ch->is_active = burst_size > 0;
 
 	if (is_simple_memcpy) {
 		address_space_read(&p->downstream_as, ch->src_addr, MEMTXATTRS_UNSPECIFIED, buffer, src_width * burst_size);
@@ -356,7 +353,7 @@ static bool dmac_service_request(pmb887x_dmac_t *p, pmb887x_dmac_ch_t *ch, pmb88
 static void dmac_channel_run(pmb887x_dmac_t *p, pmb887x_dmac_ch_t *ch) {
 	if (!(ch->config & DMAC_CH_CONFIG_ENABLE) || !(p->config & DMAC_CONFIG_ENABLE))
 		return;
-	if ((ch->config & DMAC_CH_CONFIG_HALT) && !ch->is_active)
+	if ((ch->config & DMAC_CH_CONFIG_HALT))
 		return;
 
 	uint32_t src_burst_size = dmac_get_burst_size((ch->control & DMAC_CH_CONTROL_SB_SIZE) >> DMAC_CH_CONTROL_SB_SIZE_SHIFT);
@@ -595,7 +592,8 @@ static uint64_t dmac_io_read(void *opaque, hwaddr haddr, unsigned size) {
 		case DMAC_CH_CONFIG6:
 		case DMAC_CH_CONFIG7: {
 			pmb887x_dmac_ch_t *ch = &p->ch[(haddr - DMAC_CH_CONFIG0) / 0x20];
-			value = ch->config | (ch->is_active ? DMAC_CH_CONFIG_ACTIVE : 0);
+			/* The channel FIFO is not modeled, so ACTIVE is always clear. */
+			value = ch->config;
 			break;
 		}
 
@@ -706,8 +704,6 @@ static void dmac_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned s
 			if (!(ch->config & DMAC_CH_CONFIG_ENABLE) && (value & DMAC_CH_CONFIG_ENABLE))
 				ch->is_source_complete = false;
 			ch->config = value & ~DMAC_CH_CONFIG_ACTIVE;
-			if (!(ch->config & DMAC_CH_CONFIG_ENABLE))
-				ch->is_active = false;
 			break;
 		}
 		
