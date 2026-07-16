@@ -55,7 +55,7 @@ static uint32_t rtc_get_freq(pmb887x_rtc_t *p) {
 }
 
 static int64_t rtc_ticks_to_ns(pmb887x_rtc_t *p, uint64_t ticks) {
-	return muldiv64(ticks, NANOSECONDS_PER_SECOND, rtc_get_freq(p));
+	return muldiv64_round_up(ticks, NANOSECONDS_PER_SECOND, rtc_get_freq(p));
 }
 
 static uint32_t rtc_get_enabled_requests(pmb887x_rtc_t *p) {
@@ -319,6 +319,7 @@ static void rtc_reset(DeviceState *dev) {
 	p->rel = 0;
 	p->isnc = 0;
 	p->alarm = 0xFFFFFFFF;
+	p->start = 0;
 
 	rtc_sync(p);
 }
