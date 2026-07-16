@@ -10,6 +10,7 @@
 #include "system/memory.h"
 #include "cpu.h"
 #include "qapi/error.h"
+#include "qemu/bitops.h"
 #include "qemu/timer.h"
 #include "qemu/main-loop.h"
 #include "hw/core/irq.h"
@@ -23,7 +24,31 @@
 
 #define TYPE_PMB887X_TPU	"pmb887x-tpu"
 #define PMB887X_TPU(obj)	OBJECT_CHECK(pmb887x_tpu_t, (obj), TYPE_PMB887X_TPU)
-#define	TPU_RAM_SIZE		0x2000
+#define TPU_RAM_WORDS 1024
+#define TPU_RF_RAM_WORDS 512
+#define TPU_TIMER_RAM_WORDS (TPU_RAM_WORDS - TPU_RF_RAM_WORDS)
+#define TPU_TIMER_RAM_BASE TPU_RF_RAM_WORDS
+#define TPU_RAM_WORD_STRIDE 4
+#define TPU_RAM_SIZE (TPU_RAM_WORDS * TPU_RAM_WORD_STRIDE)
+#define TPU_RF_RAM_WORD_MASK 0x07FF
+
+#define TPU_EVENT_WORDS 3
+#define TPU_EVENT_TIMER_BITS_HIGH_MASK 0x00FF
+#define TPU_EVENT_GROUP_MASK 0x3E00
+#define TPU_EVENT_GROUP_SHIFT 9
+#define TPU_EVENT_TYPE_MASK 0xC000
+#define TPU_EVENT_TYPE_REPLACE 0x0000
+#define TPU_EVENT_TYPE_SET 0x4000
+#define TPU_EVENT_TYPE_CLEAR 0x8000
+#define TPU_EVENT_TYPE_ADVANCE 0xC000
+#define TPU_EVENT_TRIGGER_MASK 0x00FFFFFF
+#define TPU_EVENT_TRIGGER_LOW_MASK 0x00000FFF
+#define TPU_EVENT_TRIGGER_HIGH_MASK 0x00FFF000
+#define TPU_EVENT_DECODER_SHIFT 6
+#define TPU_EVENT_DECODER_MASK 0x1F
+#define TPU_EVENT_GP_FIRST 10
+#define TPU_EVENT_GP_LAST 14
+#define TPU_GP_COUNT (TPU_EVENT_GP_LAST - TPU_EVENT_GP_FIRST + 1)
 
 #define TPU_OVERFLOW_RESET 0x270F
 #define TPU_FADE_RESET 0x0700
@@ -48,11 +73,11 @@ struct pmb887x_tpu_t {
 	uint32_t intr[2];
 	
 	pmb887x_src_reg_t src[2];
-	pmb887x_src_reg_t gp_src[5];
+	pmb887x_src_reg_t gp_src[TPU_GP_COUNT];
 	pmb887x_src_reg_t rfssc_src;
 	
 	qemu_irq irq[2];
-	qemu_irq gp_irq[6];
+	qemu_irq gp_irq[TPU_GP_COUNT];
 	qemu_irq rfssc_irq;
 	
 	uint32_t gsmclk1;
@@ -79,6 +104,9 @@ struct pmb887x_tpu_t {
 	uint32_t next_frame_ticks;
 	bool skip_extended;
 	bool offset_pending;
+	bool events_finished;
+	int32_t timing_advance;
+	uint32_t triggers;
 	
 	uint32_t L;
 	uint32_t K;
@@ -118,6 +146,98 @@ static int64_t tpu_run_irq(pmb887x_tpu_t *p, int64_t counter, uint64_t now, int6
 	return next;
 }
 
+static uint16_t tpu_ram_word_read(pmb887x_tpu_t *p, uint32_t index) {
+	uint32_t offset = index * TPU_RAM_WORD_STRIDE;
+
+	return p->ram[offset] | p->ram[offset + 1] << 8;
+}
+
+static void tpu_begin_event_frame(pmb887x_tpu_t *p) {
+	p->ceap = p->eapb;
+	p->events_finished = false;
+}
+
+static void tpu_execute_event(pmb887x_tpu_t *p, uint16_t control, uint16_t timer_bits_low) {
+	uint32_t timer_bits = ((control & TPU_EVENT_TIMER_BITS_HIGH_MASK) << 16) | timer_bits_low;
+	uint32_t high_triggers;
+	uint32_t decoder;
+
+	switch (control & TPU_EVENT_TYPE_MASK) {
+		case TPU_EVENT_TYPE_REPLACE:
+			p->triggers = timer_bits;
+			break;
+
+		case TPU_EVENT_TYPE_SET:
+			high_triggers = (p->triggers | timer_bits) & TPU_EVENT_TRIGGER_HIGH_MASK;
+			p->triggers = (timer_bits & TPU_EVENT_TRIGGER_LOW_MASK) | high_triggers;
+			break;
+
+		case TPU_EVENT_TYPE_CLEAR:
+			high_triggers = p->triggers & ~timer_bits & TPU_EVENT_TRIGGER_HIGH_MASK;
+			p->triggers = (timer_bits & TPU_EVENT_TRIGGER_LOW_MASK) | high_triggers;
+			break;
+
+		default:
+			abort();
+	}
+
+	p->triggers &= TPU_EVENT_TRIGGER_MASK;
+	decoder = p->triggers >> TPU_EVENT_DECODER_SHIFT & TPU_EVENT_DECODER_MASK;
+	if (decoder >= TPU_EVENT_GP_FIRST && decoder <= TPU_EVENT_GP_LAST)
+		pmb887x_src_update(&p->gp_src[decoder - TPU_EVENT_GP_FIRST], 0, MOD_SRC_SETR);
+}
+
+static int64_t tpu_run_events(pmb887x_tpu_t *p, uint32_t counter, int64_t now, int64_t next) {
+	while (!p->events_finished && p->ceap < p->eapt) {
+		if (p->ceap > TPU_TIMER_RAM_WORDS - TPU_EVENT_WORDS) {
+			p->events_finished = true;
+			break;
+		}
+
+		uint32_t word = TPU_TIMER_RAM_BASE + p->ceap;
+		uint16_t control = tpu_ram_word_read(p, word);
+		uint16_t value = tpu_ram_word_read(p, word + 1);
+		uint16_t timer_bits_low = tpu_ram_word_read(p, word + 2);
+		uint32_t group = (control & TPU_EVENT_GROUP_MASK) >> TPU_EVENT_GROUP_SHIFT;
+
+		if (!(p->tger & (1U << group))) {
+			p->ceap += TPU_EVENT_WORDS;
+			continue;
+		}
+
+		if ((control & TPU_EVENT_TYPE_MASK) == TPU_EVENT_TYPE_ADVANCE) {
+			p->timing_advance = sextract32(value, 0, 15);
+			p->ceap += TPU_EVENT_WORDS;
+			continue;
+		}
+
+		uint32_t compare = (value + p->timing_advance) & TPU_COUNTER_VALUE;
+		if (compare == 0)
+			compare = 1;
+		if (counter < compare) {
+			next = MIN(next, now + tpu_ticks_to_ns(p, compare - counter));
+			break;
+		}
+
+		tpu_execute_event(p, control, timer_bits_low);
+		p->ceap += TPU_EVENT_WORDS;
+	}
+
+	if (!p->events_finished && p->ceap >= p->eapt) {
+		p->ceap = p->eapb;
+		p->events_finished = true;
+
+		if (p->ceap + TPU_EVENT_WORDS < p->eapt) {
+			uint32_t word = TPU_TIMER_RAM_BASE + p->ceap;
+			uint16_t compare = tpu_ram_word_read(p, word + 1);
+			if (((compare + p->timing_advance) & TPU_COUNTER_VALUE) < counter)
+				p->ceap += TPU_EVENT_WORDS;
+		}
+	}
+
+	return next;
+}
+
 static uint32_t tpu_regular_frame_ticks(pmb887x_tpu_t *p) {
 	return p->overflow + 1;
 }
@@ -135,6 +255,7 @@ static void tpu_finish_frame(pmb887x_tpu_t *p) {
 	p->irq_fired = 0;
 	p->frame_ticks = p->next_frame_ticks ? p->next_frame_ticks : regular_frame_ticks;
 	p->next_frame_ticks = 0;
+	tpu_begin_event_frame(p);
 
 	if (p->skip_extended) {
 		p->skip &= ~TPU_SKIP_SKIPC;
@@ -162,6 +283,7 @@ static void tpu_update_timer(pmb887x_tpu_t *p) {
 
 	p->next = p->start + tpu_ticks_to_ns(p, p->frame_ticks - p->counter);
 	p->next = tpu_run_irq(p, p->counter, p->start, p->next);
+	p->next = tpu_run_events(p, p->counter, p->start, p->next);
 	timer_mod(p->timer, p->next);
 }
 
@@ -217,6 +339,9 @@ static void tpu_update_state(pmb887x_tpu_t *p) {
 		p->frame_ticks = tpu_regular_frame_ticks(p);
 		p->next_frame_ticks = 0;
 		p->skip_extended = false;
+		tpu_begin_event_frame(p);
+		p->timing_advance = 0;
+		p->triggers = 0;
 	}
 	
 	bool enabled = pmb887x_clc_is_enabled(&p->clc) && new_freq > 0 && (p->param & TPU_PARAM_TINI) != 0 && p->overflow >= 2;
@@ -232,6 +357,9 @@ static void tpu_update_state(pmb887x_tpu_t *p) {
 		p->frame_ticks = tpu_regular_frame_ticks(p);
 		p->next_frame_ticks = 0;
 		p->skip_extended = false;
+		tpu_begin_event_frame(p);
+		p->timing_advance = 0;
+		p->triggers = 0;
 		p->start = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
 		if (p->offset_pending)
 			tpu_apply_offset(p);
@@ -250,8 +378,9 @@ static void tpu_update_state_callback(void *opaque) {
 	}
 }
 
-static uint32_t tpu_ram_read(pmb887x_tpu_t *p, uint32_t offset, unsigned size) {
+static uint32_t tpu_ram_read(pmb887x_tpu_t *p, uint32_t offset, size_t size) {
 	uint8_t *data = p->ram;
+	offset -= TPU_RAM0;
 	switch (size) {
 		case 1:		return data[offset];
 		case 2:		return data[offset] | (data[offset + 1] << 8);
@@ -260,8 +389,9 @@ static uint32_t tpu_ram_read(pmb887x_tpu_t *p, uint32_t offset, unsigned size) {
 	}
 }
 
-static void tpu_ram_write(pmb887x_tpu_t *p, uint32_t offset, uint32_t value, unsigned size) {
+static void tpu_ram_write(pmb887x_tpu_t *p, uint32_t offset, uint32_t value, size_t size) {
 	uint8_t *data = p->ram;
+	offset -= TPU_RAM0;
 	switch (size) {
 		case 1:
 			data[offset] = value & 0xFF;
@@ -282,6 +412,14 @@ static void tpu_ram_write(pmb887x_tpu_t *p, uint32_t offset, uint32_t value, uns
 		default:
 			abort();
 	}
+
+	uint32_t word_offset = offset / TPU_RAM_WORD_STRIDE * TPU_RAM_WORD_STRIDE;
+	uint16_t word_mask = word_offset / TPU_RAM_WORD_STRIDE < TPU_RF_RAM_WORDS ? TPU_RF_RAM_WORD_MASK : UINT16_MAX;
+	uint16_t word = (data[word_offset] | data[word_offset + 1] << 8) & word_mask;
+	data[word_offset] = word;
+	data[word_offset + 1] = word >> 8;
+	data[word_offset + 2] = 0;
+	data[word_offset + 3] = 0;
 }
 
 static uint64_t tpu_io_read(void *opaque, hwaddr haddr, unsigned size) {
@@ -386,7 +524,7 @@ static uint64_t tpu_io_read(void *opaque, hwaddr haddr, unsigned size) {
 			value = p->unk;
 			break;
 
-		case TPU_RAM0 ... (TPU_RAM0 + TPU_RAM_SIZE):
+		case TPU_RAM0 ... (TPU_RAM0 + TPU_RAM_SIZE - 1):
 			value = tpu_ram_read(p, haddr, size);
 			break;
 
@@ -510,15 +648,15 @@ static void tpu_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned si
 			break;
 
 		case TPU_CEAP:
-			p->ceap = value;
+			p->ceap = value & TPU_CEAP_VALUE;
 			break;
 
 		case TPU_EAPT:
-			p->eapt = value;
+			p->eapt = value & TPU_EAPT_VALUE;
 			break;
 
 		case TPU_EAPB:
-			p->eapb = value;
+			p->eapb = value & TPU_EAPB_VALUE;
 			break;
 
 		case TPU_TGER:
@@ -529,7 +667,7 @@ static void tpu_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned si
 			p->unk = value;
 			break;
 
-		case TPU_RAM0 ... (TPU_RAM0 + TPU_RAM_SIZE):
+		case TPU_RAM0 ... (TPU_RAM0 + TPU_RAM_SIZE - 1):
 			tpu_ram_write(p, haddr, value, size);
 			break;
 
@@ -569,14 +707,10 @@ static void tpu_init(Object *obj) {
 	sysbus_init_mmio(SYS_BUS_DEVICE(obj), &p->mmio);
 	
 	sysbus_init_irq(SYS_BUS_DEVICE(obj), &p->rfssc_irq);
-	sysbus_init_irq(SYS_BUS_DEVICE(obj), &p->gp_irq[0]);
-	sysbus_init_irq(SYS_BUS_DEVICE(obj), &p->gp_irq[1]);
-	sysbus_init_irq(SYS_BUS_DEVICE(obj), &p->gp_irq[2]);
-	sysbus_init_irq(SYS_BUS_DEVICE(obj), &p->gp_irq[3]);
-	sysbus_init_irq(SYS_BUS_DEVICE(obj), &p->gp_irq[4]);
-
-	sysbus_init_irq(SYS_BUS_DEVICE(obj), &p->irq[0]);
-	sysbus_init_irq(SYS_BUS_DEVICE(obj), &p->irq[1]);
+	for (size_t i = 0; i < ARRAY_SIZE(p->gp_irq); i++)
+		sysbus_init_irq(SYS_BUS_DEVICE(obj), &p->gp_irq[i]);
+	for (size_t i = 0; i < ARRAY_SIZE(p->irq); i++)
+		sysbus_init_irq(SYS_BUS_DEVICE(obj), &p->irq[i]);
 }
 
 static void tpu_realize(DeviceState *dev, Error **errp) {
@@ -647,6 +781,9 @@ static void tpu_reset(DeviceState *dev) {
 	p->next_frame_ticks = 0;
 	p->skip_extended = false;
 	p->offset_pending = false;
+	p->events_finished = false;
+	p->timing_advance = 0;
+	p->triggers = 0;
 	p->L = 2;
 	p->K = 1;
 	p->last_fsys = 0;
