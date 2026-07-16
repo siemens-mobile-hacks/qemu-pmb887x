@@ -25,6 +25,11 @@
 #define PMB887X_TPU(obj)	OBJECT_CHECK(pmb887x_tpu_t, (obj), TYPE_PMB887X_TPU)
 #define	TPU_RAM_SIZE		0x2000
 
+#define TPU_OVERFLOW_RESET 0x270F
+#define TPU_FADE_RESET 0x0700
+#define TPU_GSMCLK1_RESET (1U << TPU_GSMCLK1_K_SHIFT)
+#define TPU_GSMCLK2_RESET (2U << TPU_GSMCLK2_L_SHIFT)
+
 typedef struct pmb887x_tpu_t pmb887x_tpu_t;
 
 struct pmb887x_tpu_t {
@@ -70,6 +75,10 @@ struct pmb887x_tpu_t {
 	uint32_t counter;
 	int64_t start;
 	int64_t next;
+	uint32_t frame_ticks;
+	uint32_t next_frame_ticks;
+	bool skip_extended;
+	bool offset_pending;
 	
 	uint32_t L;
 	uint32_t K;
@@ -80,20 +89,19 @@ struct pmb887x_tpu_t {
 	pmb887x_pll_t *pll;
 };
 
-static int64_t tpu_get_time(pmb887x_tpu_t *p, bool real) {
-	int64_t next = p->counter;
-	int64_t overflow = p->overflow + 1;
-	
+static uint64_t tpu_get_counter(pmb887x_tpu_t *p) {
+	uint64_t counter = p->counter;
+
 	if (p->enabled) {
 		int64_t delta_ns = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) - p->start;
-		next += (int64_t) muldiv64(delta_ns, p->freq, NANOSECONDS_PER_SECOND);
+		counter += muldiv64(delta_ns, p->freq, NANOSECONDS_PER_SECOND);
 	}
-	
-	return real ? next : (next % overflow);
+
+	return counter;
 }
 
-static int64_t tpu_ticks_to_ns(pmb887x_tpu_t *p, int64_t ticks) {
-    return (int64_t) muldiv64(ticks, NANOSECONDS_PER_SECOND, p->freq);
+static int64_t tpu_ticks_to_ns(pmb887x_tpu_t *p, uint64_t ticks) {
+	return (int64_t) muldiv64_round_up(ticks, NANOSECONDS_PER_SECOND, p->freq);
 }
 
 static int64_t tpu_run_irq(pmb887x_tpu_t *p, int64_t counter, uint64_t now, int64_t next) {
@@ -110,48 +118,74 @@ static int64_t tpu_run_irq(pmb887x_tpu_t *p, int64_t counter, uint64_t now, int6
 	return next;
 }
 
-static void tpu_ptimer_reset(void *opaque) {
-	pmb887x_tpu_t *p = opaque;
-	
-	if (!p->enabled)
+static uint32_t tpu_regular_frame_ticks(pmb887x_tpu_t *p) {
+	return p->overflow + 1;
+}
+
+static void tpu_finish_frame(pmb887x_tpu_t *p) {
+	uint32_t regular_frame_ticks = tpu_regular_frame_ticks(p);
+
+	if ((p->skip & TPU_SKIP_SKIPC) && !p->skip_extended) {
+		p->frame_ticks += regular_frame_ticks;
+		p->skip_extended = true;
 		return;
-	
-	int64_t now = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
-	int64_t overflow = p->overflow + 1;
-	
-	if (!p->start) {
-		p->start = now;
-		p->next = 0;
 	}
-	
-	int64_t counter = tpu_get_time(p, true);
-	if (counter >= overflow) {
-		p->start = now;
-		p->counter = p->counter % overflow;
-		p->irq_fired = 0;
-		
-		counter = p->counter;
+
+	p->counter -= p->frame_ticks;
+	p->irq_fired = 0;
+	p->frame_ticks = p->next_frame_ticks ? p->next_frame_ticks : regular_frame_ticks;
+	p->next_frame_ticks = 0;
+
+	if (p->skip_extended) {
+		p->skip &= ~TPU_SKIP_SKIPC;
+		p->skip_extended = false;
 	}
-	
-	p->next = now + tpu_ticks_to_ns(p, overflow - counter);
-	p->next = tpu_run_irq(p, counter, now, p->next);
-	
+	if (p->skip & TPU_SKIP_SKIPN) {
+		p->skip &= ~TPU_SKIP_SKIPN;
+		p->skip |= TPU_SKIP_SKIPC;
+	}
+}
+
+static void tpu_update_timer(pmb887x_tpu_t *p) {
+	if (!p->enabled) {
+		timer_del(p->timer);
+		return;
+	}
+
+	uint64_t counter = tpu_get_counter(p);
+	uint64_t elapsed_ticks = counter - p->counter;
+	p->counter = (uint32_t) counter;
+	p->start += tpu_ticks_to_ns(p, elapsed_ticks);
+
+	while (p->counter >= p->frame_ticks)
+		tpu_finish_frame(p);
+
+	p->next = p->start + tpu_ticks_to_ns(p, p->frame_ticks - p->counter);
+	p->next = tpu_run_irq(p, p->counter, p->start, p->next);
 	timer_mod(p->timer, p->next);
 }
 
-static void tpu_ptimer_reset2(void *opaque) {
-	pmb887x_tpu_t *p = opaque;
-	
-	uint64_t now = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
-	if (p->next && (now - p->next) / 1000000) {
-		EPRINTF("delta=%"PRId64" ms / %"PRId64" us\n", (now - p->next) / 1000000, (now - p->next) / 1000);
-		// abort();
+static void tpu_timer_callback(void *opaque) {
+	tpu_update_timer(opaque);
+}
+
+static void tpu_apply_offset(pmb887x_tpu_t *p) {
+	uint32_t offset = p->offset & TPU_OFFSET_VALUE;
+
+	if (offset == 0)
+		return;
+	if (p->offset & TPU_OFFSET_CTRL) {
+		p->frame_ticks += offset + 1;
+	} else {
+		p->frame_ticks = offset + 1;
 	}
-	
-	tpu_ptimer_reset(p);
 }
 
 static void tpu_update_state(pmb887x_tpu_t *p) {
+	bool was_enabled = p->enabled;
+	if (was_enabled)
+		tpu_update_timer(p);
+
 	uint32_t div = pmb887x_clc_get_rmc(&p->clc);
 	
 	// Input freq for module
@@ -180,6 +214,9 @@ static void tpu_update_state(pmb887x_tpu_t *p) {
 		p->counter = 0;
 		p->irq_fired = 0;
 		p->next = 0;
+		p->frame_ticks = tpu_regular_frame_ticks(p);
+		p->next_frame_ticks = 0;
+		p->skip_extended = false;
 	}
 	
 	bool enabled = pmb887x_clc_is_enabled(&p->clc) && new_freq > 0 && (p->param & TPU_PARAM_TINI) != 0 && p->overflow >= 2;
@@ -188,8 +225,20 @@ static void tpu_update_state(pmb887x_tpu_t *p) {
 		p->enabled = enabled;
 		DPRINTF("fsys=%d, ftpu=%d, fcounter=%d [%s]\n", pmb887x_pll_get_fsys(p->pll), ftpu, p->freq, p->enabled ? "ON" : "OFF");
 	}
-	
-	tpu_ptimer_reset(p);
+
+	if (p->enabled && !was_enabled) {
+		p->counter = 0;
+		p->irq_fired = 0;
+		p->frame_ticks = tpu_regular_frame_ticks(p);
+		p->next_frame_ticks = 0;
+		p->skip_extended = false;
+		p->start = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
+		if (p->offset_pending)
+			tpu_apply_offset(p);
+		p->offset_pending = false;
+	}
+
+	tpu_update_timer(p);
 }
 
 static void tpu_update_state_callback(void *opaque) {
@@ -314,7 +363,7 @@ static uint64_t tpu_io_read(void *opaque, hwaddr haddr, unsigned size) {
 			break;
 		
 		case TPU_COUNTER:
-			value = tpu_get_time(p, false);
+			value = tpu_get_counter(p);
 			break;
 
 		case TPU_CEAP:
@@ -389,11 +438,23 @@ static void tpu_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned si
 			break;
 
 		case TPU_CORRECTION:
+			tpu_update_timer(p);
 			p->correction = value;
+			if (p->enabled) {
+				uint32_t correction_ticks = (p->correction & TPU_CORRECTION_VALUE) + 1;
+				if (p->correction & TPU_CORRECTION_CTRL) {
+					p->next_frame_ticks = correction_ticks;
+				} else {
+					p->frame_ticks = correction_ticks;
+				}
+			}
 			break;
 		
 		case TPU_OVERFLOW:
-			p->overflow = value;
+			tpu_update_timer(p);
+			p->overflow = value & TPU_OVERFLOW_VALUE;
+			p->frame_ticks = tpu_regular_frame_ticks(p);
+			p->next_frame_ticks = 0;
 			break;
 		
 		case TPU_INT0:
@@ -413,11 +474,19 @@ static void tpu_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned si
 			break;
 		
 		case TPU_OFFSET:
+			tpu_update_timer(p);
 			p->offset = value;
+			if (p->enabled) {
+				tpu_apply_offset(p);
+			} else {
+				p->offset_pending = true;
+			}
 			break;
 		
 		case TPU_SKIP:
-			p->skip = value;
+			tpu_update_timer(p);
+			p->skip = value & (TPU_SKIP_SKIPN | TPU_SKIP_SKIPC);
+			p->skip_extended = false;
 			break;
 		
 		case TPU_PARAM:
@@ -513,7 +582,7 @@ static void tpu_init(Object *obj) {
 static void tpu_realize(DeviceState *dev, Error **errp) {
 	pmb887x_tpu_t *p = PMB887X_TPU(dev);
 	
-	pmb887x_clc_init(&p->clc);
+	pmb887x_clc_set(&p->clc, MOD_CLC_DISR);
 	pmb887x_src_init(&p->rfssc_src, p->rfssc_irq);
 
 	for (int i = 0; i < ARRAY_SIZE(p->src); i++) {
@@ -528,7 +597,7 @@ static void tpu_realize(DeviceState *dev, Error **errp) {
 		pmb887x_src_init(&p->gp_src[i], p->gp_irq[i]);
 	}
 	
-    p->timer = timer_new_ns(QEMU_CLOCK_VIRTUAL, tpu_ptimer_reset2, p);
+	p->timer = timer_new_ns(QEMU_CLOCK_VIRTUAL, tpu_timer_callback, p);
 	p->enabled = false;
 	
 	tpu_update_state(p);
@@ -540,7 +609,7 @@ static void tpu_reset(DeviceState *dev) {
 
 	timer_del(p->timer);
 
-	pmb887x_clc_init(&p->clc);
+	pmb887x_clc_set(&p->clc, MOD_CLC_DISR);
 
 	pmb887x_src_reset(&p->rfssc_src);
 	for (size_t i = 0; i < ARRAY_SIZE(p->src); i++)
@@ -550,14 +619,15 @@ static void tpu_reset(DeviceState *dev) {
 
 	memset(p->ram, 0, sizeof(p->ram));
 	p->correction = 0;
-	p->overflow = 0;
+	p->overflow = TPU_OVERFLOW_RESET;
 	p->offset = 0;
 	p->param = 0;
 	p->skip = 0;
-	memset(p->intr, 0, sizeof(p->intr));
+	for (size_t i = 0; i < ARRAY_SIZE(p->intr); i++)
+		p->intr[i] = TPU_INT_VALUE;
 
-	p->gsmclk1 = 0;
-	p->gsmclk2 = 0;
+	p->gsmclk1 = TPU_GSMCLK1_RESET;
+	p->gsmclk2 = TPU_GSMCLK2_RESET;
 	p->gsmclk3 = 0;
 	p->ceap = 0;
 	p->eapt = 0;
@@ -565,7 +635,7 @@ static void tpu_reset(DeviceState *dev) {
 	p->tger = 0;
 	p->rfcon1 = 0;
 	p->rfcon2 = 0;
-	p->fade = 0;
+	p->fade = TPU_FADE_RESET;
 	p->irq_fired = 0;
 
 	p->enabled = false;
@@ -573,8 +643,12 @@ static void tpu_reset(DeviceState *dev) {
 	p->counter = 0;
 	p->start = 0;
 	p->next = 0;
-	p->L = 0;
-	p->K = 0;
+	p->frame_ticks = tpu_regular_frame_ticks(p);
+	p->next_frame_ticks = 0;
+	p->skip_extended = false;
+	p->offset_pending = false;
+	p->L = 2;
+	p->K = 1;
 	p->last_fsys = 0;
 	p->unk = 0;
 
