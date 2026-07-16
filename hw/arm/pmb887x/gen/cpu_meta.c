@@ -5283,19 +5283,33 @@ static const pmb887x_module_reg_t mmcif_regs[] = {
 };
 
 static const pmb887x_module_field_t pll_osc_fields[] = {
-	{"LOCK",	PLL_OSC_LOCK,	PLL_OSC_LOCK_SHIFT,	NULL,	0},
-	{"NDIV",	PLL_OSC_NDIV,	PLL_OSC_NDIV_SHIFT,	NULL,	0},
+	{"PLL_POWER_UP",	PLL_OSC_PLL_POWER_UP,		PLL_OSC_PLL_POWER_UP_SHIFT,		NULL,	0},
+	{"PHASE0_POWER_UP",	PLL_OSC_PHASE0_POWER_UP,	PLL_OSC_PHASE0_POWER_UP_SHIFT,	NULL,	0},
+	{"PHASE1_POWER_UP",	PLL_OSC_PHASE1_POWER_UP,	PLL_OSC_PHASE1_POWER_UP_SHIFT,	NULL,	0},
+	{"PHASE2_POWER_UP",	PLL_OSC_PHASE2_POWER_UP,	PLL_OSC_PHASE2_POWER_UP_SHIFT,	NULL,	0},
+	{"PHASE3_POWER_UP",	PLL_OSC_PHASE3_POWER_UP,	PLL_OSC_PHASE3_POWER_UP_SHIFT,	NULL,	0},
+	{"PLL_BYPASS_N",	PLL_OSC_PLL_BYPASS_N,		PLL_OSC_PLL_BYPASS_N_SHIFT,		NULL,	0},
+	{"PHASE0_BYPASS_N",	PLL_OSC_PHASE0_BYPASS_N,	PLL_OSC_PHASE0_BYPASS_N_SHIFT,	NULL,	0},
+	{"PHASE1_BYPASS_N",	PLL_OSC_PHASE1_BYPASS_N,	PLL_OSC_PHASE1_BYPASS_N_SHIFT,	NULL,	0},
+	{"PHASE2_BYPASS_N",	PLL_OSC_PHASE2_BYPASS_N,	PLL_OSC_PHASE2_BYPASS_N_SHIFT,	NULL,	0},
+	{"PHASE3_BYPASS_N",	PLL_OSC_PHASE3_BYPASS_N,	PLL_OSC_PHASE3_BYPASS_N_SHIFT,	NULL,	0},
+	{"NDIV",			PLL_OSC_NDIV,				PLL_OSC_NDIV_SHIFT,				NULL,	0},
+	{"MDIV",			PLL_OSC_MDIV,				PLL_OSC_MDIV_SHIFT,				NULL,	0},
 };
 
 static const pmb887x_module_field_t pll_con0_fields[] = {
-	{"PLL1_K2",	PLL_CON0_PLL1_K2,	PLL_CON0_PLL1_K2_SHIFT,	NULL,	0},
-	{"PLL1_K1",	PLL_CON0_PLL1_K1,	PLL_CON0_PLL1_K1_SHIFT,	NULL,	0},
-	{"PLL2_K2",	PLL_CON0_PLL2_K2,	PLL_CON0_PLL2_K2_SHIFT,	NULL,	0},
-	{"PLL2_K1",	PLL_CON0_PLL2_K1,	PLL_CON0_PLL2_K1_SHIFT,	NULL,	0},
-	{"PLL3_K2",	PLL_CON0_PLL3_K2,	PLL_CON0_PLL3_K2_SHIFT,	NULL,	0},
-	{"PLL3_K1",	PLL_CON0_PLL3_K1,	PLL_CON0_PLL3_K1_SHIFT,	NULL,	0},
-	{"PLL4_K2",	PLL_CON0_PLL4_K2,	PLL_CON0_PLL4_K2_SHIFT,	NULL,	0},
-	{"PLL4_K1",	PLL_CON0_PLL4_K1,	PLL_CON0_PLL4_K1_SHIFT,	NULL,	0},
+	{"PHASE0_CONFIG",	PLL_CON0_PHASE0_CONFIG,	PLL_CON0_PHASE0_CONFIG_SHIFT,	NULL,	0},
+	{"PLL1_K2",			PLL_CON0_PLL1_K2,		PLL_CON0_PLL1_K2_SHIFT,			NULL,	0},
+	{"PLL1_K1",			PLL_CON0_PLL1_K1,		PLL_CON0_PLL1_K1_SHIFT,			NULL,	0},
+	{"PHASE1_CONFIG",	PLL_CON0_PHASE1_CONFIG,	PLL_CON0_PHASE1_CONFIG_SHIFT,	NULL,	0},
+	{"PLL2_K2",			PLL_CON0_PLL2_K2,		PLL_CON0_PLL2_K2_SHIFT,			NULL,	0},
+	{"PLL2_K1",			PLL_CON0_PLL2_K1,		PLL_CON0_PLL2_K1_SHIFT,			NULL,	0},
+	{"PHASE2_CONFIG",	PLL_CON0_PHASE2_CONFIG,	PLL_CON0_PHASE2_CONFIG_SHIFT,	NULL,	0},
+	{"PLL3_K2",			PLL_CON0_PLL3_K2,		PLL_CON0_PLL3_K2_SHIFT,			NULL,	0},
+	{"PLL3_K1",			PLL_CON0_PLL3_K1,		PLL_CON0_PLL3_K1_SHIFT,			NULL,	0},
+	{"PHASE3_CONFIG",	PLL_CON0_PHASE3_CONFIG,	PLL_CON0_PHASE3_CONFIG_SHIFT,	NULL,	0},
+	{"PLL4_K2",			PLL_CON0_PLL4_K2,		PLL_CON0_PLL4_K2_SHIFT,			NULL,	0},
+	{"PLL4_K1",			PLL_CON0_PLL4_K1,		PLL_CON0_PLL4_K1_SHIFT,			NULL,	0},
 };
 
 static const pmb887x_module_value_t pll_pll_con1_fsys_clksel_values[] = {
@@ -5314,27 +5328,39 @@ static const pmb887x_module_value_t pll_pll_con1_ahb_clksel_values[] = {
 };
 
 static const pmb887x_module_value_t pll_pll_con1_fstm_div_values[] = {
-	{"1",	PLL_CON1_FSTM_DIV_1},
-	{"2",	PLL_CON1_FSTM_DIV_2},
 	{"4",	PLL_CON1_FSTM_DIV_4},
 	{"8",	PLL_CON1_FSTM_DIV_8},
+	{"16",	PLL_CON1_FSTM_DIV_16},
+	{"32",	PLL_CON1_FSTM_DIV_32},
 };
 
 static const pmb887x_module_field_t pll_con1_fields[] = {
-	{"FSYS_CLKSEL",	PLL_CON1_FSYS_CLKSEL,	PLL_CON1_FSYS_CLKSEL_SHIFT,	pll_pll_con1_fsys_clksel_values,	ARRAY_SIZE(pll_pll_con1_fsys_clksel_values)},
-	{"AHB_CLKSEL",	PLL_CON1_AHB_CLKSEL,	PLL_CON1_AHB_CLKSEL_SHIFT,	pll_pll_con1_ahb_clksel_values,		ARRAY_SIZE(pll_pll_con1_ahb_clksel_values)},
-	{"FSTM_DIV_EN",	PLL_CON1_FSTM_DIV_EN,	PLL_CON1_FSTM_DIV_EN_SHIFT,	NULL,								0},
-	{"FSTM_DIV",	PLL_CON1_FSTM_DIV,		PLL_CON1_FSTM_DIV_SHIFT,	pll_pll_con1_fstm_div_values,		ARRAY_SIZE(pll_pll_con1_fstm_div_values)},
+	{"FSYS_PLL_ENABLE",	PLL_CON1_FSYS_PLL_ENABLE,	PLL_CON1_FSYS_PLL_ENABLE_SHIFT,	NULL,								0},
+	{"FSYS_CLKSEL",		PLL_CON1_FSYS_CLKSEL,		PLL_CON1_FSYS_CLKSEL_SHIFT,		pll_pll_con1_fsys_clksel_values,	ARRAY_SIZE(pll_pll_con1_fsys_clksel_values)},
+	{"AHB_CLKSEL",		PLL_CON1_AHB_CLKSEL,		PLL_CON1_AHB_CLKSEL_SHIFT,		pll_pll_con1_ahb_clksel_values,		ARRAY_SIZE(pll_pll_con1_ahb_clksel_values)},
+	{"FSTM_DIV_EN",		PLL_CON1_FSTM_DIV_EN,		PLL_CON1_FSTM_DIV_EN_SHIFT,		NULL,								0},
+	{"FSTM_DIV",		PLL_CON1_FSTM_DIV,			PLL_CON1_FSTM_DIV_SHIFT,		pll_pll_con1_fstm_div_values,		ARRAY_SIZE(pll_pll_con1_fstm_div_values)},
+};
+
+static const pmb887x_module_value_t pll_pll_con2_usb_clksel_values[] = {
+	{"OSC",		PLL_CON2_USB_CLKSEL_OSC},
+	{"PHASE3",	PLL_CON2_USB_CLKSEL_PHASE3},
+	{"DISABLE",	PLL_CON2_USB_CLKSEL_DISABLE},
 };
 
 static const pmb887x_module_field_t pll_con2_fields[] = {
-	{"CPU_DIV",		PLL_CON2_CPU_DIV,		PLL_CON2_CPU_DIV_SHIFT,		NULL,	0},
-	{"CPU_DIV_EN",	PLL_CON2_CPU_DIV_EN,	PLL_CON2_CPU_DIV_EN_SHIFT,	NULL,	0},
-	{"CLK32_EN",	PLL_CON2_CLK32_EN,		PLL_CON2_CLK32_EN_SHIFT,	NULL,	0},
+	{"CPU_DIV",		PLL_CON2_CPU_DIV,		PLL_CON2_CPU_DIV_SHIFT,		NULL,							0},
+	{"CPU_DIV_EN",	PLL_CON2_CPU_DIV_EN,	PLL_CON2_CPU_DIV_EN_SHIFT,	NULL,							0},
+	{"USB_CLKSEL",	PLL_CON2_USB_CLKSEL,	PLL_CON2_USB_CLKSEL_SHIFT,	pll_pll_con2_usb_clksel_values,	ARRAY_SIZE(pll_pll_con2_usb_clksel_values)},
+	{"CLK32_EN",	PLL_CON2_CLK32_EN,		PLL_CON2_CLK32_EN_SHIFT,	NULL,							0},
 };
 
 static const pmb887x_module_field_t pll_stat_fields[] = {
 	{"LOCK",	PLL_STAT_LOCK,	PLL_STAT_LOCK_SHIFT,	NULL,	0},
+};
+
+static const pmb887x_module_field_t pll_con3_fields[] = {
+	{"USB_CLKDIV",	PLL_CON3_USB_CLKDIV,	PLL_CON3_USB_CLKDIV_SHIFT,	NULL,	0},
 };
 
 static const pmb887x_module_field_t pll_src_fields[] = {
@@ -5352,7 +5378,7 @@ static const pmb887x_module_reg_t pll_regs[] = {
 	{"CON1",	PLL_CON1,	pll_con1_fields,	ARRAY_SIZE(pll_con1_fields),	0},
 	{"CON2",	PLL_CON2,	pll_con2_fields,	ARRAY_SIZE(pll_con2_fields),	0},
 	{"STAT",	PLL_STAT,	pll_stat_fields,	ARRAY_SIZE(pll_stat_fields),	0},
-	{"CON3",	PLL_CON3,	NULL,				0,								0},
+	{"CON3",	PLL_CON3,	pll_con3_fields,	ARRAY_SIZE(pll_con3_fields),	0},
 	{"SRC",		PLL_SRC,	pll_src_fields,		ARRAY_SIZE(pll_src_fields),		0},
 };
 
@@ -5969,6 +5995,14 @@ static const pmb887x_module_field_t scu_exti7_src_fields[] = {
 	{"SETR",	MOD_SRC_SETR,	MOD_SRC_SETR_SHIFT,	NULL,	0},
 };
 
+static const pmb887x_module_value_t scu_scu_emu_id_value_values[] = {
+	{"QEMU",	SCU_EMU_ID_VALUE_QEMU},
+};
+
+static const pmb887x_module_field_t scu_emu_id_fields[] = {
+	{"VALUE",	SCU_EMU_ID_VALUE,	SCU_EMU_ID_VALUE_SHIFT,	scu_scu_emu_id_value_values,	ARRAY_SIZE(scu_scu_emu_id_value_values)},
+};
+
 static const pmb887x_module_reg_t scu_regs[] = {
 	{"CLC",			SCU_CLC,		scu_clc_fields,			ARRAY_SIZE(scu_clc_fields),			0},
 	{"ID",			SCU_ID,			scu_id_fields,			ARRAY_SIZE(scu_id_fields),			0},
@@ -6011,6 +6045,7 @@ static const pmb887x_module_reg_t scu_regs[] = {
 	{"EXTI5_SRC",	SCU_EXTI5_SRC,	scu_exti5_src_fields,	ARRAY_SIZE(scu_exti5_src_fields),	0},
 	{"EXTI6_SRC",	SCU_EXTI6_SRC,	scu_exti6_src_fields,	ARRAY_SIZE(scu_exti6_src_fields),	0},
 	{"EXTI7_SRC",	SCU_EXTI7_SRC,	scu_exti7_src_fields,	ARRAY_SIZE(scu_exti7_src_fields),	0},
+	{"EMU_ID",		SCU_EMU_ID,		scu_emu_id_fields,		ARRAY_SIZE(scu_emu_id_fields),		0},
 };
 
 static const pmb887x_module_field_t sim_clc_fields[] = {
@@ -7851,6 +7886,70 @@ static const pmb887x_module_field_t usb_setup_packet_fields[] = {
 	{"DATA",	USB_SETUP_PACKET_DATA,	USB_SETUP_PACKET_DATA_SHIFT,	NULL,	0},
 };
 
+static const pmb887x_module_field_t usb_global_int_status_fields[] = {
+	{"SOURCES",	USB_GLOBAL_INT_STATUS_SOURCES,	USB_GLOBAL_INT_STATUS_SOURCES_SHIFT,	NULL,	0},
+};
+
+static const pmb887x_module_field_t usb_global_int_enable_fields[] = {
+	{"SOURCES",	USB_GLOBAL_INT_ENABLE_SOURCES,	USB_GLOBAL_INT_ENABLE_SOURCES_SHIFT,	NULL,	0},
+};
+
+static const pmb887x_module_field_t usb_dma0_int_status_fields[] = {
+	{"SOURCES",	USB_DMA0_INT_STATUS_SOURCES,	USB_DMA0_INT_STATUS_SOURCES_SHIFT,	NULL,	0},
+};
+
+static const pmb887x_module_field_t usb_dma0_int_enable_fields[] = {
+	{"SOURCES",	USB_DMA0_INT_ENABLE_SOURCES,	USB_DMA0_INT_ENABLE_SOURCES_SHIFT,	NULL,	0},
+};
+
+static const pmb887x_module_field_t usb_dma1_int_status_fields[] = {
+	{"SOURCES",	USB_DMA1_INT_STATUS_SOURCES,	USB_DMA1_INT_STATUS_SOURCES_SHIFT,	NULL,	0},
+};
+
+static const pmb887x_module_field_t usb_dma1_int_enable_fields[] = {
+	{"SOURCES",	USB_DMA1_INT_ENABLE_SOURCES,	USB_DMA1_INT_ENABLE_SOURCES_SHIFT,	NULL,	0},
+};
+
+static const pmb887x_module_field_t usb_event_int_status_fields[] = {
+	{"EVENTS",	USB_EVENT_INT_STATUS_EVENTS,	USB_EVENT_INT_STATUS_EVENTS_SHIFT,	NULL,	0},
+};
+
+static const pmb887x_module_field_t usb_event_int_enable_fields[] = {
+	{"EVENTS",	USB_EVENT_INT_ENABLE_EVENTS,	USB_EVENT_INT_ENABLE_EVENTS_SHIFT,	NULL,	0},
+};
+
+static const pmb887x_module_field_t usb_ep_a_int_status_low_fields[] = {
+	{"ENDPOINTS",	USB_EP_A_INT_STATUS_LOW_ENDPOINTS,	USB_EP_A_INT_STATUS_LOW_ENDPOINTS_SHIFT,	NULL,	0},
+};
+
+static const pmb887x_module_field_t usb_ep_a_int_enable_low_fields[] = {
+	{"ENDPOINTS",	USB_EP_A_INT_ENABLE_LOW_ENDPOINTS,	USB_EP_A_INT_ENABLE_LOW_ENDPOINTS_SHIFT,	NULL,	0},
+};
+
+static const pmb887x_module_field_t usb_ep_a_int_status_high_fields[] = {
+	{"ENDPOINTS",	USB_EP_A_INT_STATUS_HIGH_ENDPOINTS,	USB_EP_A_INT_STATUS_HIGH_ENDPOINTS_SHIFT,	NULL,	0},
+};
+
+static const pmb887x_module_field_t usb_ep_a_int_enable_high_fields[] = {
+	{"ENDPOINTS",	USB_EP_A_INT_ENABLE_HIGH_ENDPOINTS,	USB_EP_A_INT_ENABLE_HIGH_ENDPOINTS_SHIFT,	NULL,	0},
+};
+
+static const pmb887x_module_field_t usb_ep_b_int_status_low_fields[] = {
+	{"ENDPOINTS",	USB_EP_B_INT_STATUS_LOW_ENDPOINTS,	USB_EP_B_INT_STATUS_LOW_ENDPOINTS_SHIFT,	NULL,	0},
+};
+
+static const pmb887x_module_field_t usb_ep_b_int_enable_low_fields[] = {
+	{"ENDPOINTS",	USB_EP_B_INT_ENABLE_LOW_ENDPOINTS,	USB_EP_B_INT_ENABLE_LOW_ENDPOINTS_SHIFT,	NULL,	0},
+};
+
+static const pmb887x_module_field_t usb_ep_b_int_status_high_fields[] = {
+	{"ENDPOINTS",	USB_EP_B_INT_STATUS_HIGH_ENDPOINTS,	USB_EP_B_INT_STATUS_HIGH_ENDPOINTS_SHIFT,	NULL,	0},
+};
+
+static const pmb887x_module_field_t usb_ep_b_int_enable_high_fields[] = {
+	{"ENDPOINTS",	USB_EP_B_INT_ENABLE_HIGH_ENDPOINTS,	USB_EP_B_INT_ENABLE_HIGH_ENDPOINTS_SHIFT,	NULL,	0},
+};
+
 static const pmb887x_module_field_t usb_ep_count_low_fields[] = {
 	{"VALUE",	USB_EP_COUNT_LOW_VALUE,	USB_EP_COUNT_LOW_VALUE_SHIFT,	NULL,	0},
 };
@@ -7876,96 +7975,96 @@ static const pmb887x_module_field_t usb_id_fields[] = {
 };
 
 static const pmb887x_module_reg_t usb_regs[] = {
-	{"EP_ENABLE_LOW",			USB_EP_ENABLE_LOW,			usb_ep_enable_low_fields,		ARRAY_SIZE(usb_ep_enable_low_fields),		0},
-	{"EP_ENABLE_HIGH",			USB_EP_ENABLE_HIGH,			usb_ep_enable_high_fields,		ARRAY_SIZE(usb_ep_enable_high_fields),		0},
-	{"DEVICE_ADDRESS",			USB_DEVICE_ADDRESS,			usb_device_address_fields,		ARRAY_SIZE(usb_device_address_fields),		0},
-	{"FRAME_NUMBER_LOW",		USB_FRAME_NUMBER_LOW,		usb_frame_number_low_fields,	ARRAY_SIZE(usb_frame_number_low_fields),	0},
-	{"FRAME_NUMBER_HIGH",		USB_FRAME_NUMBER_HIGH,		usb_frame_number_high_fields,	ARRAY_SIZE(usb_frame_number_high_fields),	0},
-	{"CONTROL",					USB_CONTROL,				usb_control_fields,				ARRAY_SIZE(usb_control_fields),				0},
-	{"SETUP_PACKET0",			USB_SETUP_PACKET0,			usb_setup_packet_fields,		ARRAY_SIZE(usb_setup_packet_fields),		0},
-	{"SETUP_PACKET1",			USB_SETUP_PACKET1,			usb_setup_packet_fields,		ARRAY_SIZE(usb_setup_packet_fields),		0},
-	{"SETUP_PACKET2",			USB_SETUP_PACKET2,			usb_setup_packet_fields,		ARRAY_SIZE(usb_setup_packet_fields),		0},
-	{"SETUP_PACKET3",			USB_SETUP_PACKET3,			usb_setup_packet_fields,		ARRAY_SIZE(usb_setup_packet_fields),		0},
-	{"SETUP_PACKET4",			USB_SETUP_PACKET4,			usb_setup_packet_fields,		ARRAY_SIZE(usb_setup_packet_fields),		0},
-	{"SETUP_PACKET5",			USB_SETUP_PACKET5,			usb_setup_packet_fields,		ARRAY_SIZE(usb_setup_packet_fields),		0},
-	{"SETUP_PACKET6",			USB_SETUP_PACKET6,			usb_setup_packet_fields,		ARRAY_SIZE(usb_setup_packet_fields),		0},
-	{"SETUP_PACKET7",			USB_SETUP_PACKET7,			usb_setup_packet_fields,		ARRAY_SIZE(usb_setup_packet_fields),		0},
-	{"EP0_STATUS",				USB_EP0_STATUS,				NULL,							0,											0},
-	{"EP_CONFIG0",				USB_EP_CONFIG0,				NULL,							0,											0},
-	{"EP_CONFIG1",				USB_EP_CONFIG1,				NULL,							0,											0},
-	{"EP_CONFIG2",				USB_EP_CONFIG2,				NULL,							0,											0},
-	{"EP_CONFIG3",				USB_EP_CONFIG3,				NULL,							0,											0},
-	{"EP_CONFIG4",				USB_EP_CONFIG4,				NULL,							0,											0},
-	{"EP_CONFIG5",				USB_EP_CONFIG5,				NULL,							0,											0},
-	{"EP_CONFIG6",				USB_EP_CONFIG6,				NULL,							0,											0},
-	{"EP_CONFIG7",				USB_EP_CONFIG7,				NULL,							0,											0},
-	{"EP_CONFIG8",				USB_EP_CONFIG8,				NULL,							0,											0},
-	{"EP_CONFIG9",				USB_EP_CONFIG9,				NULL,							0,											0},
-	{"EP_CONFIG10",				USB_EP_CONFIG10,			NULL,							0,											0},
-	{"GLOBAL_INT_STATUS",		USB_GLOBAL_INT_STATUS,		NULL,							0,											0},
-	{"GLOBAL_INT_ENABLE",		USB_GLOBAL_INT_ENABLE,		NULL,							0,											0},
-	{"DMA0_INT_STATUS",			USB_DMA0_INT_STATUS,		NULL,							0,											0},
-	{"DMA0_INT_ENABLE",			USB_DMA0_INT_ENABLE,		NULL,							0,											0},
-	{"DMA1_INT_STATUS",			USB_DMA1_INT_STATUS,		NULL,							0,											0},
-	{"DMA1_INT_ENABLE",			USB_DMA1_INT_ENABLE,		NULL,							0,											0},
-	{"EVENT_INT_STATUS",		USB_EVENT_INT_STATUS,		NULL,							0,											0},
-	{"EVENT_INT_ENABLE",		USB_EVENT_INT_ENABLE,		NULL,							0,											0},
-	{"EP_A_INT_STATUS_LOW",		USB_EP_A_INT_STATUS_LOW,	NULL,							0,											0},
-	{"EP_A_INT_ENABLE_LOW",		USB_EP_A_INT_ENABLE_LOW,	NULL,							0,											0},
-	{"EP_A_INT_STATUS_HIGH",	USB_EP_A_INT_STATUS_HIGH,	NULL,							0,											0},
-	{"EP_A_INT_ENABLE_HIGH",	USB_EP_A_INT_ENABLE_HIGH,	NULL,							0,											0},
-	{"EP_B_INT_STATUS_LOW",		USB_EP_B_INT_STATUS_LOW,	NULL,							0,											0},
-	{"EP_B_INT_ENABLE_LOW",		USB_EP_B_INT_ENABLE_LOW,	NULL,							0,											0},
-	{"EP_B_INT_STATUS_HIGH",	USB_EP_B_INT_STATUS_HIGH,	NULL,							0,											0},
-	{"EP_B_INT_ENABLE_HIGH",	USB_EP_B_INT_ENABLE_HIGH,	NULL,							0,											0},
-	{"EP_DATA0",				USB_EP_DATA0,				NULL,							0,											0},
-	{"EP_DATA1",				USB_EP_DATA1,				NULL,							0,											0},
-	{"EP_DATA2",				USB_EP_DATA2,				NULL,							0,											0},
-	{"EP_DATA3",				USB_EP_DATA3,				NULL,							0,											0},
-	{"EP_DATA4",				USB_EP_DATA4,				NULL,							0,											0},
-	{"EP_DATA5",				USB_EP_DATA5,				NULL,							0,											0},
-	{"EP_DATA6",				USB_EP_DATA6,				NULL,							0,											0},
-	{"EP_DATA7",				USB_EP_DATA7,				NULL,							0,											0},
-	{"EP_DATA8",				USB_EP_DATA8,				NULL,							0,											0},
-	{"EP_DATA9",				USB_EP_DATA9,				NULL,							0,											0},
-	{"EP_DATA10",				USB_EP_DATA10,				NULL,							0,											0},
-	{"EP_CONTROL0",				USB_EP_CONTROL0,			NULL,							0,											0},
-	{"EP_CONTROL1",				USB_EP_CONTROL1,			NULL,							0,											0},
-	{"EP_CONTROL2",				USB_EP_CONTROL2,			NULL,							0,											0},
-	{"EP_CONTROL3",				USB_EP_CONTROL3,			NULL,							0,											0},
-	{"EP_CONTROL4",				USB_EP_CONTROL4,			NULL,							0,											0},
-	{"EP_CONTROL5",				USB_EP_CONTROL5,			NULL,							0,											0},
-	{"EP_CONTROL6",				USB_EP_CONTROL6,			NULL,							0,											0},
-	{"EP_CONTROL7",				USB_EP_CONTROL7,			NULL,							0,											0},
-	{"EP_CONTROL8",				USB_EP_CONTROL8,			NULL,							0,											0},
-	{"EP_CONTROL9",				USB_EP_CONTROL9,			NULL,							0,											0},
-	{"EP_CONTROL10",			USB_EP_CONTROL10,			NULL,							0,											0},
-	{"EP_COUNT_LOW0",			USB_EP_COUNT_LOW0,			usb_ep_count_low_fields,		ARRAY_SIZE(usb_ep_count_low_fields),		0},
-	{"EP_COUNT_LOW1",			USB_EP_COUNT_LOW1,			usb_ep_count_low_fields,		ARRAY_SIZE(usb_ep_count_low_fields),		0},
-	{"EP_COUNT_LOW2",			USB_EP_COUNT_LOW2,			usb_ep_count_low_fields,		ARRAY_SIZE(usb_ep_count_low_fields),		0},
-	{"EP_COUNT_LOW3",			USB_EP_COUNT_LOW3,			usb_ep_count_low_fields,		ARRAY_SIZE(usb_ep_count_low_fields),		0},
-	{"EP_COUNT_LOW4",			USB_EP_COUNT_LOW4,			usb_ep_count_low_fields,		ARRAY_SIZE(usb_ep_count_low_fields),		0},
-	{"EP_COUNT_LOW5",			USB_EP_COUNT_LOW5,			usb_ep_count_low_fields,		ARRAY_SIZE(usb_ep_count_low_fields),		0},
-	{"EP_COUNT_LOW6",			USB_EP_COUNT_LOW6,			usb_ep_count_low_fields,		ARRAY_SIZE(usb_ep_count_low_fields),		0},
-	{"EP_COUNT_LOW7",			USB_EP_COUNT_LOW7,			usb_ep_count_low_fields,		ARRAY_SIZE(usb_ep_count_low_fields),		0},
-	{"EP_COUNT_LOW8",			USB_EP_COUNT_LOW8,			usb_ep_count_low_fields,		ARRAY_SIZE(usb_ep_count_low_fields),		0},
-	{"EP_COUNT_LOW9",			USB_EP_COUNT_LOW9,			usb_ep_count_low_fields,		ARRAY_SIZE(usb_ep_count_low_fields),		0},
-	{"EP_COUNT_LOW10",			USB_EP_COUNT_LOW10,			usb_ep_count_low_fields,		ARRAY_SIZE(usb_ep_count_low_fields),		0},
-	{"EP_COUNT_HIGH0",			USB_EP_COUNT_HIGH0,			usb_ep_count_high_fields,		ARRAY_SIZE(usb_ep_count_high_fields),		0},
-	{"EP_COUNT_HIGH1",			USB_EP_COUNT_HIGH1,			usb_ep_count_high_fields,		ARRAY_SIZE(usb_ep_count_high_fields),		0},
-	{"EP_COUNT_HIGH2",			USB_EP_COUNT_HIGH2,			usb_ep_count_high_fields,		ARRAY_SIZE(usb_ep_count_high_fields),		0},
-	{"EP_COUNT_HIGH3",			USB_EP_COUNT_HIGH3,			usb_ep_count_high_fields,		ARRAY_SIZE(usb_ep_count_high_fields),		0},
-	{"EP_COUNT_HIGH4",			USB_EP_COUNT_HIGH4,			usb_ep_count_high_fields,		ARRAY_SIZE(usb_ep_count_high_fields),		0},
-	{"EP_COUNT_HIGH5",			USB_EP_COUNT_HIGH5,			usb_ep_count_high_fields,		ARRAY_SIZE(usb_ep_count_high_fields),		0},
-	{"EP_COUNT_HIGH6",			USB_EP_COUNT_HIGH6,			usb_ep_count_high_fields,		ARRAY_SIZE(usb_ep_count_high_fields),		0},
-	{"EP_COUNT_HIGH7",			USB_EP_COUNT_HIGH7,			usb_ep_count_high_fields,		ARRAY_SIZE(usb_ep_count_high_fields),		0},
-	{"EP_COUNT_HIGH8",			USB_EP_COUNT_HIGH8,			usb_ep_count_high_fields,		ARRAY_SIZE(usb_ep_count_high_fields),		0},
-	{"EP_COUNT_HIGH9",			USB_EP_COUNT_HIGH9,			usb_ep_count_high_fields,		ARRAY_SIZE(usb_ep_count_high_fields),		0},
-	{"EP_COUNT_HIGH10",			USB_EP_COUNT_HIGH10,		usb_ep_count_high_fields,		ARRAY_SIZE(usb_ep_count_high_fields),		0},
-	{"PHY_CONTROL",				USB_PHY_CONTROL,			NULL,							0,											0},
-	{"CLC",						USB_CLC,					usb_clc_fields,					ARRAY_SIZE(usb_clc_fields),					0},
-	{"CFG",						USB_CFG,					NULL,							0,											0},
-	{"ID",						USB_ID,						usb_id_fields,					ARRAY_SIZE(usb_id_fields),					0},
+	{"EP_ENABLE_LOW",			USB_EP_ENABLE_LOW,			usb_ep_enable_low_fields,			ARRAY_SIZE(usb_ep_enable_low_fields),			0},
+	{"EP_ENABLE_HIGH",			USB_EP_ENABLE_HIGH,			usb_ep_enable_high_fields,			ARRAY_SIZE(usb_ep_enable_high_fields),			0},
+	{"DEVICE_ADDRESS",			USB_DEVICE_ADDRESS,			usb_device_address_fields,			ARRAY_SIZE(usb_device_address_fields),			0},
+	{"FRAME_NUMBER_LOW",		USB_FRAME_NUMBER_LOW,		usb_frame_number_low_fields,		ARRAY_SIZE(usb_frame_number_low_fields),		0},
+	{"FRAME_NUMBER_HIGH",		USB_FRAME_NUMBER_HIGH,		usb_frame_number_high_fields,		ARRAY_SIZE(usb_frame_number_high_fields),		0},
+	{"CONTROL",					USB_CONTROL,				usb_control_fields,					ARRAY_SIZE(usb_control_fields),					0},
+	{"SETUP_PACKET0",			USB_SETUP_PACKET0,			usb_setup_packet_fields,			ARRAY_SIZE(usb_setup_packet_fields),			0},
+	{"SETUP_PACKET1",			USB_SETUP_PACKET1,			usb_setup_packet_fields,			ARRAY_SIZE(usb_setup_packet_fields),			0},
+	{"SETUP_PACKET2",			USB_SETUP_PACKET2,			usb_setup_packet_fields,			ARRAY_SIZE(usb_setup_packet_fields),			0},
+	{"SETUP_PACKET3",			USB_SETUP_PACKET3,			usb_setup_packet_fields,			ARRAY_SIZE(usb_setup_packet_fields),			0},
+	{"SETUP_PACKET4",			USB_SETUP_PACKET4,			usb_setup_packet_fields,			ARRAY_SIZE(usb_setup_packet_fields),			0},
+	{"SETUP_PACKET5",			USB_SETUP_PACKET5,			usb_setup_packet_fields,			ARRAY_SIZE(usb_setup_packet_fields),			0},
+	{"SETUP_PACKET6",			USB_SETUP_PACKET6,			usb_setup_packet_fields,			ARRAY_SIZE(usb_setup_packet_fields),			0},
+	{"SETUP_PACKET7",			USB_SETUP_PACKET7,			usb_setup_packet_fields,			ARRAY_SIZE(usb_setup_packet_fields),			0},
+	{"EP0_STATUS",				USB_EP0_STATUS,				NULL,								0,												0},
+	{"EP_CONFIG0",				USB_EP_CONFIG0,				NULL,								0,												0},
+	{"EP_CONFIG1",				USB_EP_CONFIG1,				NULL,								0,												0},
+	{"EP_CONFIG2",				USB_EP_CONFIG2,				NULL,								0,												0},
+	{"EP_CONFIG3",				USB_EP_CONFIG3,				NULL,								0,												0},
+	{"EP_CONFIG4",				USB_EP_CONFIG4,				NULL,								0,												0},
+	{"EP_CONFIG5",				USB_EP_CONFIG5,				NULL,								0,												0},
+	{"EP_CONFIG6",				USB_EP_CONFIG6,				NULL,								0,												0},
+	{"EP_CONFIG7",				USB_EP_CONFIG7,				NULL,								0,												0},
+	{"EP_CONFIG8",				USB_EP_CONFIG8,				NULL,								0,												0},
+	{"EP_CONFIG9",				USB_EP_CONFIG9,				NULL,								0,												0},
+	{"EP_CONFIG10",				USB_EP_CONFIG10,			NULL,								0,												0},
+	{"GLOBAL_INT_STATUS",		USB_GLOBAL_INT_STATUS,		usb_global_int_status_fields,		ARRAY_SIZE(usb_global_int_status_fields),		0},
+	{"GLOBAL_INT_ENABLE",		USB_GLOBAL_INT_ENABLE,		usb_global_int_enable_fields,		ARRAY_SIZE(usb_global_int_enable_fields),		0},
+	{"DMA0_INT_STATUS",			USB_DMA0_INT_STATUS,		usb_dma0_int_status_fields,			ARRAY_SIZE(usb_dma0_int_status_fields),			0},
+	{"DMA0_INT_ENABLE",			USB_DMA0_INT_ENABLE,		usb_dma0_int_enable_fields,			ARRAY_SIZE(usb_dma0_int_enable_fields),			0},
+	{"DMA1_INT_STATUS",			USB_DMA1_INT_STATUS,		usb_dma1_int_status_fields,			ARRAY_SIZE(usb_dma1_int_status_fields),			0},
+	{"DMA1_INT_ENABLE",			USB_DMA1_INT_ENABLE,		usb_dma1_int_enable_fields,			ARRAY_SIZE(usb_dma1_int_enable_fields),			0},
+	{"EVENT_INT_STATUS",		USB_EVENT_INT_STATUS,		usb_event_int_status_fields,		ARRAY_SIZE(usb_event_int_status_fields),		0},
+	{"EVENT_INT_ENABLE",		USB_EVENT_INT_ENABLE,		usb_event_int_enable_fields,		ARRAY_SIZE(usb_event_int_enable_fields),		0},
+	{"EP_A_INT_STATUS_LOW",		USB_EP_A_INT_STATUS_LOW,	usb_ep_a_int_status_low_fields,		ARRAY_SIZE(usb_ep_a_int_status_low_fields),		0},
+	{"EP_A_INT_ENABLE_LOW",		USB_EP_A_INT_ENABLE_LOW,	usb_ep_a_int_enable_low_fields,		ARRAY_SIZE(usb_ep_a_int_enable_low_fields),		0},
+	{"EP_A_INT_STATUS_HIGH",	USB_EP_A_INT_STATUS_HIGH,	usb_ep_a_int_status_high_fields,	ARRAY_SIZE(usb_ep_a_int_status_high_fields),	0},
+	{"EP_A_INT_ENABLE_HIGH",	USB_EP_A_INT_ENABLE_HIGH,	usb_ep_a_int_enable_high_fields,	ARRAY_SIZE(usb_ep_a_int_enable_high_fields),	0},
+	{"EP_B_INT_STATUS_LOW",		USB_EP_B_INT_STATUS_LOW,	usb_ep_b_int_status_low_fields,		ARRAY_SIZE(usb_ep_b_int_status_low_fields),		0},
+	{"EP_B_INT_ENABLE_LOW",		USB_EP_B_INT_ENABLE_LOW,	usb_ep_b_int_enable_low_fields,		ARRAY_SIZE(usb_ep_b_int_enable_low_fields),		0},
+	{"EP_B_INT_STATUS_HIGH",	USB_EP_B_INT_STATUS_HIGH,	usb_ep_b_int_status_high_fields,	ARRAY_SIZE(usb_ep_b_int_status_high_fields),	0},
+	{"EP_B_INT_ENABLE_HIGH",	USB_EP_B_INT_ENABLE_HIGH,	usb_ep_b_int_enable_high_fields,	ARRAY_SIZE(usb_ep_b_int_enable_high_fields),	0},
+	{"EP_DATA0",				USB_EP_DATA0,				NULL,								0,												0},
+	{"EP_DATA1",				USB_EP_DATA1,				NULL,								0,												0},
+	{"EP_DATA2",				USB_EP_DATA2,				NULL,								0,												0},
+	{"EP_DATA3",				USB_EP_DATA3,				NULL,								0,												0},
+	{"EP_DATA4",				USB_EP_DATA4,				NULL,								0,												0},
+	{"EP_DATA5",				USB_EP_DATA5,				NULL,								0,												0},
+	{"EP_DATA6",				USB_EP_DATA6,				NULL,								0,												0},
+	{"EP_DATA7",				USB_EP_DATA7,				NULL,								0,												0},
+	{"EP_DATA8",				USB_EP_DATA8,				NULL,								0,												0},
+	{"EP_DATA9",				USB_EP_DATA9,				NULL,								0,												0},
+	{"EP_DATA10",				USB_EP_DATA10,				NULL,								0,												0},
+	{"EP_CONTROL0",				USB_EP_CONTROL0,			NULL,								0,												0},
+	{"EP_CONTROL1",				USB_EP_CONTROL1,			NULL,								0,												0},
+	{"EP_CONTROL2",				USB_EP_CONTROL2,			NULL,								0,												0},
+	{"EP_CONTROL3",				USB_EP_CONTROL3,			NULL,								0,												0},
+	{"EP_CONTROL4",				USB_EP_CONTROL4,			NULL,								0,												0},
+	{"EP_CONTROL5",				USB_EP_CONTROL5,			NULL,								0,												0},
+	{"EP_CONTROL6",				USB_EP_CONTROL6,			NULL,								0,												0},
+	{"EP_CONTROL7",				USB_EP_CONTROL7,			NULL,								0,												0},
+	{"EP_CONTROL8",				USB_EP_CONTROL8,			NULL,								0,												0},
+	{"EP_CONTROL9",				USB_EP_CONTROL9,			NULL,								0,												0},
+	{"EP_CONTROL10",			USB_EP_CONTROL10,			NULL,								0,												0},
+	{"EP_COUNT_LOW0",			USB_EP_COUNT_LOW0,			usb_ep_count_low_fields,			ARRAY_SIZE(usb_ep_count_low_fields),			0},
+	{"EP_COUNT_LOW1",			USB_EP_COUNT_LOW1,			usb_ep_count_low_fields,			ARRAY_SIZE(usb_ep_count_low_fields),			0},
+	{"EP_COUNT_LOW2",			USB_EP_COUNT_LOW2,			usb_ep_count_low_fields,			ARRAY_SIZE(usb_ep_count_low_fields),			0},
+	{"EP_COUNT_LOW3",			USB_EP_COUNT_LOW3,			usb_ep_count_low_fields,			ARRAY_SIZE(usb_ep_count_low_fields),			0},
+	{"EP_COUNT_LOW4",			USB_EP_COUNT_LOW4,			usb_ep_count_low_fields,			ARRAY_SIZE(usb_ep_count_low_fields),			0},
+	{"EP_COUNT_LOW5",			USB_EP_COUNT_LOW5,			usb_ep_count_low_fields,			ARRAY_SIZE(usb_ep_count_low_fields),			0},
+	{"EP_COUNT_LOW6",			USB_EP_COUNT_LOW6,			usb_ep_count_low_fields,			ARRAY_SIZE(usb_ep_count_low_fields),			0},
+	{"EP_COUNT_LOW7",			USB_EP_COUNT_LOW7,			usb_ep_count_low_fields,			ARRAY_SIZE(usb_ep_count_low_fields),			0},
+	{"EP_COUNT_LOW8",			USB_EP_COUNT_LOW8,			usb_ep_count_low_fields,			ARRAY_SIZE(usb_ep_count_low_fields),			0},
+	{"EP_COUNT_LOW9",			USB_EP_COUNT_LOW9,			usb_ep_count_low_fields,			ARRAY_SIZE(usb_ep_count_low_fields),			0},
+	{"EP_COUNT_LOW10",			USB_EP_COUNT_LOW10,			usb_ep_count_low_fields,			ARRAY_SIZE(usb_ep_count_low_fields),			0},
+	{"EP_COUNT_HIGH0",			USB_EP_COUNT_HIGH0,			usb_ep_count_high_fields,			ARRAY_SIZE(usb_ep_count_high_fields),			0},
+	{"EP_COUNT_HIGH1",			USB_EP_COUNT_HIGH1,			usb_ep_count_high_fields,			ARRAY_SIZE(usb_ep_count_high_fields),			0},
+	{"EP_COUNT_HIGH2",			USB_EP_COUNT_HIGH2,			usb_ep_count_high_fields,			ARRAY_SIZE(usb_ep_count_high_fields),			0},
+	{"EP_COUNT_HIGH3",			USB_EP_COUNT_HIGH3,			usb_ep_count_high_fields,			ARRAY_SIZE(usb_ep_count_high_fields),			0},
+	{"EP_COUNT_HIGH4",			USB_EP_COUNT_HIGH4,			usb_ep_count_high_fields,			ARRAY_SIZE(usb_ep_count_high_fields),			0},
+	{"EP_COUNT_HIGH5",			USB_EP_COUNT_HIGH5,			usb_ep_count_high_fields,			ARRAY_SIZE(usb_ep_count_high_fields),			0},
+	{"EP_COUNT_HIGH6",			USB_EP_COUNT_HIGH6,			usb_ep_count_high_fields,			ARRAY_SIZE(usb_ep_count_high_fields),			0},
+	{"EP_COUNT_HIGH7",			USB_EP_COUNT_HIGH7,			usb_ep_count_high_fields,			ARRAY_SIZE(usb_ep_count_high_fields),			0},
+	{"EP_COUNT_HIGH8",			USB_EP_COUNT_HIGH8,			usb_ep_count_high_fields,			ARRAY_SIZE(usb_ep_count_high_fields),			0},
+	{"EP_COUNT_HIGH9",			USB_EP_COUNT_HIGH9,			usb_ep_count_high_fields,			ARRAY_SIZE(usb_ep_count_high_fields),			0},
+	{"EP_COUNT_HIGH10",			USB_EP_COUNT_HIGH10,		usb_ep_count_high_fields,			ARRAY_SIZE(usb_ep_count_high_fields),			0},
+	{"PHY_CONTROL",				USB_PHY_CONTROL,			NULL,								0,												0},
+	{"CLC",						USB_CLC,					usb_clc_fields,						ARRAY_SIZE(usb_clc_fields),						0},
+	{"CFG",						USB_CFG,					NULL,								0,												0},
+	{"ID",						USB_ID,						usb_id_fields,						ARRAY_SIZE(usb_id_fields),						0},
 };
 
 static const pmb887x_module_field_t vic_id_fields[] = {

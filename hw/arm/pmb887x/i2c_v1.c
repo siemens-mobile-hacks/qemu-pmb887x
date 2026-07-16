@@ -508,6 +508,13 @@ static void i2c_handle_gpio_input(void *opaque, int id, int level) {
 	// nothing
 }
 
+static void i2c_reset(DeviceState *dev);
+
+static void i2c_handle_reset(void *opaque, int id, int level) {
+	if (level)
+		i2c_reset(DEVICE(opaque));
+}
+
 static void i2c_init(Object *obj) {
 	DeviceState *dev = DEVICE(obj);
 	pmb887x_i2c_t *p = PMB887X_I2C(obj);
@@ -523,6 +530,7 @@ static void i2c_init(Object *obj) {
 	qdev_init_gpio_out_named(dev, &p->gpio_scl, "SCL_OUT", 1);
 	qdev_init_gpio_in_named(dev, i2c_handle_gpio_input, "SDA_IN", 1);
 	qdev_init_gpio_out_named(dev, &p->gpio_sda, "SDA_OUT", 1);
+	qdev_init_gpio_in_named(dev, i2c_handle_reset, "RESET_IN", 1);
 }
 
 static void i2c_realize(DeviceState *dev, Error **errp) {
@@ -544,7 +552,7 @@ static void i2c_reset(DeviceState *dev) {
 	if (p->state != I2C_STATE_NONE)
 		i2c_end_transfer(p->bus);
 
-	pmb887x_clc_init(&p->clc);
+	pmb887x_clc_set(&p->clc, MOD_CLC_DISR);
 
 	pmb887x_src_reset(&p->data_src);
 	pmb887x_src_reset(&p->proto_src);

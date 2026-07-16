@@ -64,14 +64,15 @@ static uint32_t pll_ahb_div(uint32_t freq, uint32_t k1, uint32_t k2) {
 		return 0;
 	if (k1 == 0)
 		return freq / 8;
-	return (freq * 12) / ((k1 * 6) + (k2 >= 1 ? k2 - 1 : 0));
+	return muldiv64(freq, 12, k1 * 6 + k2);
 }
 
 // Freq after PLL
 static uint32_t pll_freq(pmb887x_pll_t *p) {
-	// fPLL = fOSC * (NDIV + 1)
+	// fPLL = fOSC * (NDIV + 1) / (MDIV + 1)
 	uint32_t ndiv = (p->osc & PLL_OSC_NDIV) >> PLL_OSC_NDIV_SHIFT;
-	return p->xtal * (ndiv + 1);
+	uint32_t mdiv = (p->osc & PLL_OSC_MDIV) >> PLL_OSC_MDIV_SHIFT;
+	return muldiv64(p->xtal, ndiv + 1, mdiv + 1);
 }
 
 // Get AHB bus freq
@@ -83,33 +84,33 @@ static uint32_t pll_get_ahb_freq(pmb887x_pll_t *p) {
 			return p->xtal;
 		
 		case PLL_CON1_AHB_CLKSEL_PLL0:
-			// fAHB = fOSC * (NDIV + 1)
+			// fAHB = fPLL
 			return pll_freq(p);
 		
 		case PLL_CON1_AHB_CLKSEL_PLL1:
-			// PLL1_K1 > 0:		fAHB = (fOSC * (NDIV + 1) * 12) / (PLL1_K1 * 6 + (PLL1_K2 - 1))
-			// PLL1_K1 = 0:		fAHB = (fOSC * (NDIV + 1) * 12) / 16
+			// PLL1_K1 > 0:		fAHB = (fPLL * 12) / (PLL1_K1 * 6 + PLL1_K2)
+			// PLL1_K1 = 0:		fAHB = fPLL / 8
 			k1 = (p->con0 & PLL_CON0_PLL1_K1) >> PLL_CON0_PLL1_K1_SHIFT;
 			k2 = (p->con0 & PLL_CON0_PLL1_K2) >> PLL_CON0_PLL1_K2_SHIFT;
 			return pll_ahb_div(pll_freq(p), k1, k2);
 		
 		case PLL_CON1_AHB_CLKSEL_PLL2:
-			// PLL2_K1 > 0:		fAHB = (fOSC * (NDIV + 1) * 12) / (PLL1_K2 * 6 + (PLL2_K2 - 1))
-			// PLL2_K1 = 0:		fAHB = (fOSC * (NDIV + 1) * 12) / 16
+			// PLL2_K1 > 0:		fAHB = (fPLL * 12) / (PLL2_K1 * 6 + PLL2_K2)
+			// PLL2_K1 = 0:		fAHB = fPLL / 8
 			k1 = (p->con0 & PLL_CON0_PLL2_K1) >> PLL_CON0_PLL2_K1_SHIFT;
 			k2 = (p->con0 & PLL_CON0_PLL2_K2) >> PLL_CON0_PLL2_K2_SHIFT;
 			return pll_ahb_div(pll_freq(p), k1, k2);
 		
 		case PLL_CON1_AHB_CLKSEL_PLL3:
-			// PLL3_K1 > 0:		fAHB = (fOSC * (NDIV + 1) * 12) / (PLL1_K3 * 6 + (PLL3_K2 - 1))
-			// PLL3_K1 = 0:		fAHB = (fOSC * (NDIV + 1) * 12) / 16
+			// PLL3_K1 > 0:		fAHB = (fPLL * 12) / (PLL3_K1 * 6 + PLL3_K2)
+			// PLL3_K1 = 0:		fAHB = fPLL / 8
 			k1 = (p->con0 & PLL_CON0_PLL3_K1) >> PLL_CON0_PLL3_K1_SHIFT;
 			k2 = (p->con0 & PLL_CON0_PLL3_K2) >> PLL_CON0_PLL3_K2_SHIFT;
 			return pll_ahb_div(pll_freq(p), k1, k2);
 		
 		case PLL_CON1_AHB_CLKSEL_PLL4:
-			// PLL4_K1 > 0:		fAHB = (fOSC * (NDIV + 1) * 12) / (PLL4_K1 * 6 + (PLL4_K2 - 1))
-			// PLL4_K1 = 0:		fAHB = (fOSC * (NDIV + 1) * 12) / 16
+			// PLL4_K1 > 0:		fAHB = (fPLL * 12) / (PLL4_K1 * 6 + PLL4_K2)
+			// PLL4_K1 = 0:		fAHB = fPLL / 8
 			k1 = (p->con0 & PLL_CON0_PLL4_K1) >> PLL_CON0_PLL4_K1_SHIFT;
 			k2 = (p->con0 & PLL_CON0_PLL4_K2) >> PLL_CON0_PLL4_K2_SHIFT;
 			return pll_ahb_div(pll_freq(p), k1, k2);
@@ -138,7 +139,7 @@ static uint32_t pll_get_stm_freq(pmb887x_pll_t *p) {
 	uint32_t freq = p->xtal;
 	if ((p->con1 & PLL_CON1_FSTM_DIV_EN)) {
 		uint32_t div = (p->con1 & PLL_CON1_FSTM_DIV) >> PLL_CON1_FSTM_DIV_SHIFT;
-		return div ? freq / div : freq;
+		return freq / (4U << div);
 	}
 	return freq;
 }
@@ -169,12 +170,19 @@ static void pll_update_state(struct pmb887x_pll_t *p) {
 	);
 	
 	if (is_changed) {
+		if (new_fcpu != p->fcpu)
+			DPRINTF("fCPU: %u -> %u Hz\n", p->fcpu, new_fcpu);
+		if (new_fahb != p->fahb)
+			DPRINTF("fAHB: %u -> %u Hz\n", p->fahb, new_fahb);
+		if (new_fsys != p->fsys)
+			DPRINTF("fSYS: %u -> %u Hz\n", p->fsys, new_fsys);
+		if (new_fstm != p->fstm)
+			DPRINTF("fSTM: %u -> %u Hz\n", p->fstm, new_fstm);
+
 		p->fsys = new_fsys;
 		p->fstm = new_fstm;
 		p->fcpu = new_fcpu;
 		p->fahb = new_fahb;
-		
-		DPRINTF("fCPU: %d Hz, fAHB: %d Hz, fSYS: %d Hz, fSTM: %d Hz\n", p->fcpu, p->fahb, p->fsys, p->fstm);
 		
 		for (int i = 0; i < p->callbacks_count; ++i)
 			p->callbacks[i].callback(p->callbacks[i].opaque);

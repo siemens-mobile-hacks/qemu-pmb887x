@@ -182,7 +182,7 @@ static uint64_t ebu_io_read(void *opaque, hwaddr haddr, unsigned size) {
 
 		case EBU_SDRSTAT0:
 		case EBU_SDRSTAT1:
-			value = 0; // no errors
+			value = EBU_SDRSTAT_UNK8;
 			break;
 
 		case EBU_SDRMOD0:
@@ -348,7 +348,7 @@ static void ebu_init(Object *obj) {
 static void ebu_reset(DeviceState *dev) {
 	pmb887x_ebu_t *p = PMB887X_EBU(dev);
 
-	pmb887x_clc_init(&p->clc);
+	pmb887x_clc_set(&p->clc, 0);
 
 	p->con = 0;
 	p->bfcon = 0;

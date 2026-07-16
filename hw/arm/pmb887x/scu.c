@@ -41,6 +41,8 @@ struct pmb887x_scu_t {
 	qemu_irq dsp_irq[5];
 	qemu_irq unk_irq[3];
 	qemu_irq dsp_reset;
+	qemu_irq dmac_reset;
+	qemu_irq i2c_reset;
 	qemu_irq dsp_request[PMB887X_DSP_INT_COUNT];
 	
 	uint32_t cpu_type;
@@ -313,6 +315,10 @@ static uint64_t scu_io_read(void *opaque, hwaddr haddr, unsigned size) {
 		case SCU_BOOT_FLAG:
 			value = p->boot_flag;
 			break;
+
+		case SCU_RTID:
+			value = 0;
+			break;
 		
 		case SCU_DMARS:
 			value = pmb887x_dmac_get_sel(p->dmac);
@@ -363,6 +369,10 @@ static uint64_t scu_io_read(void *opaque, hwaddr haddr, unsigned size) {
 			value = p->sleep_req;
 			break;
 
+		case SCU_EMU_ID:
+			value = SCU_EMU_ID_VALUE_QEMU;
+			break;
+
 		default:
 			IO_DUMP(haddr + p->mmio.addr, size, 0xFFFFFFFF, false);
 			EPRINTF("unknown reg access: %02"PRIX64"\n", haddr);
@@ -399,7 +409,9 @@ static void scu_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned si
 		case SCU_RST_REQ:
 			p->rst_req = value;
 			qemu_set_irq(p->dsp_reset, value & SCU_RST_REQ_DSP);
-		break;
+			qemu_set_irq(p->dmac_reset, value & SCU_RST_REQ_DMAC);
+			qemu_set_irq(p->i2c_reset, value & SCU_RST_REQ_I2C);
+			break;
 		
 		case SCU_WDTCON0:
 			scu_wdt_write_con0(p, value);
@@ -590,6 +602,8 @@ static void scu_init(Object *obj) {
 	qdev_init_gpio_in_named(dev, scu_input_exti6_handler, "EXTI6_IN", 1);
 	qdev_init_gpio_in_named(dev, scu_input_exti7_handler, "EXTI7_IN", 1);
 	qdev_init_gpio_out_named(dev, &p->dsp_reset, "DSP_RESET_OUT", 1);
+	qdev_init_gpio_out_named(dev, &p->dmac_reset, "DMAC_RESET_OUT", 1);
+	qdev_init_gpio_out_named(dev, &p->i2c_reset, "I2C_RESET_OUT", 1);
 	qdev_init_gpio_out_named(dev, p->dsp_request, "DSP_INT_OUT", ARRAY_SIZE(p->dsp_request));
 }
 
@@ -623,6 +637,8 @@ static void scu_reset(DeviceState *dev) {
 	);
 	p->rst_req = 0;
 	qemu_set_irq(p->dsp_reset, 0);
+	qemu_set_irq(p->dmac_reset, 0);
+	qemu_set_irq(p->i2c_reset, 0);
 	p->rst_con = 0;
 
 	p->ebuclc = 0;

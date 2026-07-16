@@ -835,6 +835,13 @@ static const MemoryRegionOps io_ops = {
 	}
 };
 
+static void dmac_reset(DeviceState *dev);
+
+static void dmac_handle_reset(void *opaque, int id, int level) {
+	if (level)
+		dmac_reset(DEVICE(opaque));
+}
+
 static void dmac_init(Object *obj) {
 	DeviceState *dev = DEVICE(obj);
 	pmb887x_dmac_t *p = PMB887X_DMAC(obj);
@@ -861,6 +868,7 @@ static void dmac_init(Object *obj) {
 	qdev_init_gpio_in_named(dev, dmac_handle_signal_sel1_breq, "SEL1_BREQ", DMAC_REQUESTS);
 	qdev_init_gpio_in_named(dev, dmac_handle_signal_sel1_lsreq, "SEL1_LSREQ", DMAC_REQUESTS);
 	qdev_init_gpio_in_named(dev, dmac_handle_signal_sel1_lbreq, "SEL1_LBREQ", DMAC_REQUESTS);
+	qdev_init_gpio_in_named(dev, dmac_handle_reset, "RESET_IN", 1);
 }
 
 static int dmac_tc_irq_router(void *opaque, int event_id) {

@@ -54,11 +54,9 @@ static void stm_update_state(pmb887x_stm_t *p) {
 	bool new_enabled = new_freq > 0 && pmb887x_clc_is_enabled(&p->clc);
 	
 	if (new_enabled != p->enabled || new_freq != p->freq) {
+		p->counter = stm_get_time(p);
 		p->freq = new_freq;
 		p->enabled = new_enabled;
-		
-		if (p->start)
-			p->counter = stm_get_time(p);
 		
 		if (p->enabled) {
 			p->start = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);

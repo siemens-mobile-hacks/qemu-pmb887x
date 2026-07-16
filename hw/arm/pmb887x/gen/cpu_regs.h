@@ -3346,17 +3346,17 @@
 /* Module Identifier Register */
 #define DSP_ID						0x08
 
-/* Communication Flag Set Register */
+/* Communication Flag Set Register (write one to set, reads as zero) */
 #define DSP_COM_SET					0x1C
 #define DSP_COM_SET_FLAGS			(0xFFFF << 0)	 // Communication flags to set
 #define DSP_COM_SET_FLAGS_SHIFT		0
 
-/* Communication Flag Clear Register */
+/* Communication Flag Clear Register (write one to clear, reads as zero) */
 #define DSP_COM_CLEAR				0x20
 #define DSP_COM_CLEAR_FLAGS			(0xFFFF << 0)	 // Communication flags to clear
 #define DSP_COM_CLEAR_FLAGS_SHIFT	0
 
-/* Communication Flag Status Register */
+/* Communication Flag Status Register (read-only) */
 #define DSP_COM_STATUS				0x24
 #define DSP_COM_STATUS_FLAGS		(0xFFFF << 0)	 // Communication flag status
 #define DSP_COM_STATUS_FLAGS_SHIFT	0
@@ -6285,36 +6285,66 @@
 // Clock Control Unit
 #define PLL_IO_SIZE						0x00000200
 #define PLL_OSC							0xA0
-#define PLL_OSC_LOCK					(1 << 0)
-#define PLL_OSC_LOCK_SHIFT				0
-#define PLL_OSC_NDIV					(0x7 << 16)	 // Feedback divider (multiply by N+1)
+#define PLL_OSC_PLL_POWER_UP			(1 << 0)		 // Power up PLL
+#define PLL_OSC_PLL_POWER_UP_SHIFT		0
+#define PLL_OSC_PHASE0_POWER_UP			(1 << 1)		 // Power up phase-shifter output 0
+#define PLL_OSC_PHASE0_POWER_UP_SHIFT	1
+#define PLL_OSC_PHASE1_POWER_UP			(1 << 2)		 // Power up phase-shifter output 1
+#define PLL_OSC_PHASE1_POWER_UP_SHIFT	2
+#define PLL_OSC_PHASE2_POWER_UP			(1 << 3)		 // Power up phase-shifter output 2
+#define PLL_OSC_PHASE2_POWER_UP_SHIFT	3
+#define PLL_OSC_PHASE3_POWER_UP			(1 << 4)		 // Power up phase-shifter output 3
+#define PLL_OSC_PHASE3_POWER_UP_SHIFT	4
+#define PLL_OSC_PLL_BYPASS_N			(1 << 8)		 // Disable PLL bypass
+#define PLL_OSC_PLL_BYPASS_N_SHIFT		8
+#define PLL_OSC_PHASE0_BYPASS_N			(1 << 9)		 // Disable bypass for phase-shifter output 0
+#define PLL_OSC_PHASE0_BYPASS_N_SHIFT	9
+#define PLL_OSC_PHASE1_BYPASS_N			(1 << 10)		 // Disable bypass for phase-shifter output 1
+#define PLL_OSC_PHASE1_BYPASS_N_SHIFT	10
+#define PLL_OSC_PHASE2_BYPASS_N			(1 << 11)		 // Disable bypass for phase-shifter output 2
+#define PLL_OSC_PHASE2_BYPASS_N_SHIFT	11
+#define PLL_OSC_PHASE3_BYPASS_N			(1 << 12)		 // Disable bypass for phase-shifter output 3
+#define PLL_OSC_PHASE3_BYPASS_N_SHIFT	12
+#define PLL_OSC_NDIV					(0x3F << 16)	 // PLL feedback divider (multiply by N+1)
 #define PLL_OSC_NDIV_SHIFT				16
+#define PLL_OSC_MDIV					(0xF << 24)		 // PLL input divider (divide by M+1)
+#define PLL_OSC_MDIV_SHIFT				24
 
 #define PLL_CON0						0xA4
-#define PLL_CON0_PLL1_K2				(0x7 << 0)	 // div by (K1 * 6 + (K2 - 1))
+#define PLL_CON0_PHASE0_CONFIG			(0xFF << 0)		 // Complete K1/K2 configuration byte for phase-shifter output 0
+#define PLL_CON0_PHASE0_CONFIG_SHIFT	0
+#define PLL_CON0_PLL1_K2				(0x7 << 0)		 // Phase 0 divider denominator term, valid values 0..5
 #define PLL_CON0_PLL1_K2_SHIFT			0
-#define PLL_CON0_PLL1_K1				(0xF << 3)
+#define PLL_CON0_PLL1_K1				(0xF << 3)		 // Phase 0 divider: fPLL * 12 / (K1 * 6 + K2)
 #define PLL_CON0_PLL1_K1_SHIFT			3
-#define PLL_CON0_PLL2_K2				(0x7 << 8)	 // div by (K1 * 6 + (K2 - 1))
+#define PLL_CON0_PHASE1_CONFIG			(0xFF << 8)		 // Complete K1/K2 configuration byte for phase-shifter output 1
+#define PLL_CON0_PHASE1_CONFIG_SHIFT	8
+#define PLL_CON0_PLL2_K2				(0x7 << 8)		 // Phase 1 divider denominator term, valid values 0..5
 #define PLL_CON0_PLL2_K2_SHIFT			8
-#define PLL_CON0_PLL2_K1				(0xF << 11)
+#define PLL_CON0_PLL2_K1				(0xF << 11)		 // Phase 1 divider: fPLL * 12 / (K1 * 6 + K2)
 #define PLL_CON0_PLL2_K1_SHIFT			11
-#define PLL_CON0_PLL3_K2				(0x7 << 16)	 // div by (K1 * 6 + (K2 - 1))
+#define PLL_CON0_PHASE2_CONFIG			(0xFF << 16)	 // Complete K1/K2 configuration byte for phase-shifter output 2
+#define PLL_CON0_PHASE2_CONFIG_SHIFT	16
+#define PLL_CON0_PLL3_K2				(0x7 << 16)		 // Phase 2 divider denominator term, valid values 0..5
 #define PLL_CON0_PLL3_K2_SHIFT			16
-#define PLL_CON0_PLL3_K1				(0xF << 19)
+#define PLL_CON0_PLL3_K1				(0xF << 19)		 // Phase 2 divider: fPLL * 12 / (K1 * 6 + K2)
 #define PLL_CON0_PLL3_K1_SHIFT			19
-#define PLL_CON0_PLL4_K2				(0x7 << 24)	 // div by (K1 * 6 + (K2 - 1))
+#define PLL_CON0_PHASE3_CONFIG			(0xFF << 24)	 // Complete K1/K2 configuration byte for phase-shifter output 3
+#define PLL_CON0_PHASE3_CONFIG_SHIFT	24
+#define PLL_CON0_PLL4_K2				(0x7 << 24)		 // Phase 3 divider denominator term, valid values 0..5
 #define PLL_CON0_PLL4_K2_SHIFT			24
-#define PLL_CON0_PLL4_K1				(0xF << 27)
+#define PLL_CON0_PLL4_K1				(0xF << 27)		 // Phase 3 divider: fPLL * 12 / (K1 * 6 + K2)
 #define PLL_CON0_PLL4_K1_SHIFT			27
 
 #define PLL_CON1						0xA8
-#define PLL_CON1_FSYS_CLKSEL			(0x3 << 16)	 // Source clock for fSYS (BYPASS: fSYS=fOSC, PLL: fSYS=fPLL / 2)
+#define PLL_CON1_FSYS_PLL_ENABLE		(1 << 1)		 // Enable the PLL source for fSYS
+#define PLL_CON1_FSYS_PLL_ENABLE_SHIFT	1
+#define PLL_CON1_FSYS_CLKSEL			(0x3 << 16)		 // Source clock for fSYS (BYPASS: fSYS=fOSC, PLL: fSYS=fPLL / 2)
 #define PLL_CON1_FSYS_CLKSEL_SHIFT		16
 #define PLL_CON1_FSYS_CLKSEL_BYPASS		0x0
 #define PLL_CON1_FSYS_CLKSEL_PLL		0x20000
 #define PLL_CON1_FSYS_CLKSEL_DISABLE	0x30000
-#define PLL_CON1_AHB_CLKSEL				(0x7 << 20)	 // Source clock for fPLL
+#define PLL_CON1_AHB_CLKSEL				(0x7 << 20)		 // Source clock for fAHB
 #define PLL_CON1_AHB_CLKSEL_SHIFT		20
 #define PLL_CON1_AHB_CLKSEL_BYPASS		0x0
 #define PLL_CON1_AHB_CLKSEL_PLL0		0x200000
@@ -6322,20 +6352,25 @@
 #define PLL_CON1_AHB_CLKSEL_PLL2		0x400000
 #define PLL_CON1_AHB_CLKSEL_PLL3		0x500000
 #define PLL_CON1_AHB_CLKSEL_PLL4		0x600000
-#define PLL_CON1_FSTM_DIV_EN			(1 << 25)	 // Enable fSTM divider
+#define PLL_CON1_FSTM_DIV_EN			(1 << 25)		 // Enable fSTM divider
 #define PLL_CON1_FSTM_DIV_EN_SHIFT		25
-#define PLL_CON1_FSTM_DIV				(0x3 << 28)	 // fSTM divider value (n^2)
+#define PLL_CON1_FSTM_DIV				(0x3 << 28)		 // fSTM divider: divide fOSC by 4 * 2^n
 #define PLL_CON1_FSTM_DIV_SHIFT			28
-#define PLL_CON1_FSTM_DIV_1				0x0
-#define PLL_CON1_FSTM_DIV_2				0x10000000
-#define PLL_CON1_FSTM_DIV_4				0x20000000
-#define PLL_CON1_FSTM_DIV_8				0x30000000
+#define PLL_CON1_FSTM_DIV_4				0x0
+#define PLL_CON1_FSTM_DIV_8				0x10000000
+#define PLL_CON1_FSTM_DIV_16			0x20000000
+#define PLL_CON1_FSTM_DIV_32			0x30000000
 
 #define PLL_CON2						0xAC
 #define PLL_CON2_CPU_DIV				(0x3 << 8)
 #define PLL_CON2_CPU_DIV_SHIFT			8
 #define PLL_CON2_CPU_DIV_EN				(1 << 12)
 #define PLL_CON2_CPU_DIV_EN_SHIFT		12
+#define PLL_CON2_USB_CLKSEL				(0x3 << 14)		 // Source clock for USB
+#define PLL_CON2_USB_CLKSEL_SHIFT		14
+#define PLL_CON2_USB_CLKSEL_OSC			0x0
+#define PLL_CON2_USB_CLKSEL_PHASE3		0x8000
+#define PLL_CON2_USB_CLKSEL_DISABLE		0xC000
 #define PLL_CON2_CLK32_EN				(1 << 24)
 #define PLL_CON2_CLK32_EN_SHIFT			24
 
@@ -6344,6 +6379,8 @@
 #define PLL_STAT_LOCK_SHIFT				13
 
 #define PLL_CON3						0xB4
+#define PLL_CON3_USB_CLKDIV				(0x3 << 24)		 // USB clock divider (divide by 2^n)
+#define PLL_CON3_USB_CLKDIV_SHIFT		24
 
 /* Service Routing Control Register */
 #define PLL_SRC							0xCC
@@ -6581,93 +6618,93 @@
 
 /* Reset Status Register */
 #define SCU_RST_SR						0x10
-#define SCU_RST_SR_RSSTM				(1 << 0)		 // System Timer Reset Status
+#define SCU_RST_SR_RSSTM				(1 << 0)			 // System Timer Reset Status
 #define SCU_RST_SR_RSSTM_SHIFT			0
-#define SCU_RST_SR_RSEXT				(1 << 1)		 // HDRST Line State during Last Reset
+#define SCU_RST_SR_RSEXT				(1 << 1)			 // HDRST Line State during Last Reset
 #define SCU_RST_SR_RSEXT_SHIFT			1
-#define SCU_RST_SR_HWCFG				(0x7 << 16)		 // Boot Configuration Selection Status
+#define SCU_RST_SR_HWCFG				(0x7 << 16)			 // Boot Configuration Selection Status
 #define SCU_RST_SR_HWCFG_SHIFT			16
-#define SCU_RST_SR_HWBRKIN				(1 << 21)		 // Latched State of BRKIN Input
+#define SCU_RST_SR_HWBRKIN				(1 << 21)			 // Latched State of BRKIN Input
 #define SCU_RST_SR_HWBRKIN_SHIFT		21
-#define SCU_RST_SR_TMPLS				(1 << 22)		 // Latched State of TESTMODE Input
+#define SCU_RST_SR_TMPLS				(1 << 22)			 // Latched State of TESTMODE Input
 #define SCU_RST_SR_TMPLS_SHIFT			22
-#define SCU_RST_SR_PWORST				(1 << 27)		 // The last reset was a power-on reset
+#define SCU_RST_SR_PWORST				(1 << 27)			 // The last reset was a power-on reset
 #define SCU_RST_SR_PWORST_SHIFT			27
-#define SCU_RST_SR_HDRST				(1 << 28)		 // The last reset was a hardware reset.
+#define SCU_RST_SR_HDRST				(1 << 28)			 // The last reset was a hardware reset.
 #define SCU_RST_SR_HDRST_SHIFT			28
-#define SCU_RST_SR_SFTRST				(1 << 29)		 // The last reset was a software reset.
+#define SCU_RST_SR_SFTRST				(1 << 29)			 // The last reset was a software reset.
 #define SCU_RST_SR_SFTRST_SHIFT			29
-#define SCU_RST_SR_WDTRST				(1 << 30)		 // The last reset was a watchdog reset.
+#define SCU_RST_SR_WDTRST				(1 << 30)			 // The last reset was a watchdog reset.
 #define SCU_RST_SR_WDTRST_SHIFT			30
-#define SCU_RST_SR_PWDRST				(1 << 31)		 // The last reset was a wake-up from power-down
+#define SCU_RST_SR_PWDRST				(1 << 31)			 // The last reset was a wake-up from power-down
 #define SCU_RST_SR_PWDRST_SHIFT			31
 
 /* Reset Control Register */
 #define SCU_RST_CON						0x14
-#define SCU_RST_CON_SWCFG				(0x7 << 16)		 // Software Boot Configuration
+#define SCU_RST_CON_SWCFG				(0x7 << 16)			 // Software Boot Configuration
 #define SCU_RST_CON_SWCFG_SHIFT			16
-#define SCU_RST_CON_SWBRKIN				(1 << 21)		 // Software Break Signal Boot Value
+#define SCU_RST_CON_SWBRKIN				(1 << 21)			 // Software Break Signal Boot Value
 #define SCU_RST_CON_SWBRKIN_SHIFT		21
-#define SCU_RST_CON_SWBOOT				(1 << 24)		 // Software Boot Configuration Selection
+#define SCU_RST_CON_SWBOOT				(1 << 24)			 // Software Boot Configuration Selection
 #define SCU_RST_CON_SWBOOT_SHIFT		24
 
 /* Peripheral Reset Request Register */
 #define SCU_RST_REQ						0x18
-#define SCU_RST_REQ_DSP					(1 << 0)		 // DSP software reset request
+#define SCU_RST_REQ_DSP					(1 << 0)			 // DSP software reset request
 #define SCU_RST_REQ_DSP_SHIFT			0
-#define SCU_RST_REQ_RTC					(1 << 1)		 // RTC software reset request
+#define SCU_RST_REQ_RTC					(1 << 1)			 // RTC software reset request
 #define SCU_RST_REQ_RTC_SHIFT			1
-#define SCU_RST_REQ_USB					(1 << 9)		 // USB software reset request
+#define SCU_RST_REQ_USB					(1 << 9)			 // USB software reset request
 #define SCU_RST_REQ_USB_SHIFT			9
-#define SCU_RST_REQ_DMAC				(1 << 11)		 // DMAC software reset request
+#define SCU_RST_REQ_DMAC				(1 << 11)			 // DMAC software reset request
 #define SCU_RST_REQ_DMAC_SHIFT			11
-#define SCU_RST_REQ_I2C					(1 << 15)		 // I2C software reset request
+#define SCU_RST_REQ_I2C					(1 << 15)			 // I2C software reset request
 #define SCU_RST_REQ_I2C_SHIFT			15
 
 /* Sleep Request Register */
 #define SCU_SLEEP_REQ					0x20
-#define SCU_SLEEP_REQ_REQ				(1 << 0)		 // Sleep request asserted before WFI
+#define SCU_SLEEP_REQ_REQ				(1 << 0)			 // Sleep request asserted before WFI
 #define SCU_SLEEP_REQ_REQ_SHIFT			0
 
 #define SCU_WDTCON0						0x24
-#define SCU_WDTCON0_ENDINIT				(1 << 0)		 // End-of-Initialization Control Bit.
+#define SCU_WDTCON0_ENDINIT				(1 << 0)			 // End-of-Initialization Control Bit.
 #define SCU_WDTCON0_ENDINIT_SHIFT		0
-#define SCU_WDTCON0_WDTLCK				(1 << 1)		 // Lock bit to Control Access to WDT_CON0.
+#define SCU_WDTCON0_WDTLCK				(1 << 1)			 // Lock bit to Control Access to WDT_CON0.
 #define SCU_WDTCON0_WDTLCK_SHIFT		1
-#define SCU_WDTCON0_WDTHPW0				(0x3 << 2)		 // Hardware Password 0.
+#define SCU_WDTCON0_WDTHPW0				(0x3 << 2)			 // Hardware Password 0.
 #define SCU_WDTCON0_WDTHPW0_SHIFT		2
-#define SCU_WDTCON0_WDTHPW1				(0xF << 4)		 // Hardware Password 1.
+#define SCU_WDTCON0_WDTHPW1				(0xF << 4)			 // Hardware Password 1.
 #define SCU_WDTCON0_WDTHPW1_SHIFT		4
-#define SCU_WDTCON0_WDTPW				(0xFF << 8)		 // User-Definable Password Field for Access to WDT_CON0.
+#define SCU_WDTCON0_WDTPW				(0xFF << 8)			 // User-Definable Password Field for Access to WDT_CON0.
 #define SCU_WDTCON0_WDTPW_SHIFT			8
-#define SCU_WDTCON0_WDTREL				(0xFFFF << 16)	 // Reload Value for the Watchdog Timer.
+#define SCU_WDTCON0_WDTREL				(0xFFFF << 16)		 // Reload Value for the Watchdog Timer.
 #define SCU_WDTCON0_WDTREL_SHIFT		16
 
 #define SCU_WDTCON1						0x28
-#define SCU_WDTCON1_WDTIR				(1 << 2)		 // Watchdog Timer Input Frequency Request Control Bit.
+#define SCU_WDTCON1_WDTIR				(1 << 2)			 // Watchdog Timer Input Frequency Request Control Bit.
 #define SCU_WDTCON1_WDTIR_SHIFT			2
-#define SCU_WDTCON1_WDTDR				(1 << 3)		 // Watchdog Timer Disable Request Control Bit.
+#define SCU_WDTCON1_WDTDR				(1 << 3)			 // Watchdog Timer Disable Request Control Bit.
 #define SCU_WDTCON1_WDTDR_SHIFT			3
 
 #define SCU_WDT_SR						0x2C
-#define SCU_WDT_SR_WDTAE				(1 << 0)		 // Watchdog Access Error Status Flag
+#define SCU_WDT_SR_WDTAE				(1 << 0)			 // Watchdog Access Error Status Flag
 #define SCU_WDT_SR_WDTAE_SHIFT			0
-#define SCU_WDT_SR_WDTOE				(1 << 1)		 // Watchdog Overflow Error Status Flag
+#define SCU_WDT_SR_WDTOE				(1 << 1)			 // Watchdog Overflow Error Status Flag
 #define SCU_WDT_SR_WDTOE_SHIFT			1
-#define SCU_WDT_SR_WDTIS				(1 << 2)		 // Watchdog Input Clock Status Flag
+#define SCU_WDT_SR_WDTIS				(1 << 2)			 // Watchdog Input Clock Status Flag
 #define SCU_WDT_SR_WDTIS_SHIFT			2
-#define SCU_WDT_SR_WDTDS				(1 << 3)		 // Watchdog Enable/Disable Status Flag
+#define SCU_WDT_SR_WDTDS				(1 << 3)			 // Watchdog Enable/Disable Status Flag
 #define SCU_WDT_SR_WDTDS_SHIFT			3
-#define SCU_WDT_SR_WDTTO				(1 << 4)		 // Watchdog Time-out Mode Flag
+#define SCU_WDT_SR_WDTTO				(1 << 4)			 // Watchdog Time-out Mode Flag
 #define SCU_WDT_SR_WDTTO_SHIFT			4
-#define SCU_WDT_SR_WDTPR				(1 << 5)		 // Watchdog Prewarning Mode Flag
+#define SCU_WDT_SR_WDTPR				(1 << 5)			 // Watchdog Prewarning Mode Flag
 #define SCU_WDT_SR_WDTPR_SHIFT			5
-#define SCU_WDT_SR_WDTTIM				(0xFFFF << 16)	 // Watchdog Timer Value
+#define SCU_WDT_SR_WDTTIM				(0xFFFF << 16)		 // Watchdog Timer Value
 #define SCU_WDT_SR_WDTTIM_SHIFT			16
 
 /* DSP Interrupt Request Register */
 #define SCU_DSP_INT						0x30
-#define SCU_DSP_INT_REQ					(0x7 << 0)		 // DSP interrupt request lines
+#define SCU_DSP_INT_REQ					(0x7 << 0)			 // DSP interrupt request lines
 #define SCU_DSP_INT_REQ_SHIFT			0
 
 /* Interrupt Filter Select Register */
@@ -6816,13 +6853,13 @@
 
 /* Real Time Clock Interface Enable Register */
 #define SCU_RTCIF						0x64
-#define SCU_RTCIF_RTCIFEN				(0xFF << 0)		 // RTC interface enable field; 0xAA enables access
+#define SCU_RTCIF_RTCIFEN				(0xFF << 0)			 // RTC interface enable field; 0xAA enables access
 #define SCU_RTCIF_RTCIFEN_SHIFT			0
 
 #define SCU_UID0						0x6C
 
 #define SCU_UID1						0x70
-#define SCU_UID1_SECBOOT				(1 << 24)		 // Secure boot
+#define SCU_UID1_SECBOOT				(1 << 24)			 // Secure boot
 #define SCU_UID1_SECBOOT_SHIFT			24
 #define SCU_UID1_PLATFORM				(0x3 << 25)
 #define SCU_UID1_PLATFORM_SHIFT			25
@@ -6832,11 +6869,11 @@
 #define SCU_UID1_PLATFORM_803			0x6000000
 
 #define SCU_UID2						0x74
-#define SCU_UID2_BOOT_USART1			(1 << 28)		 // Allow boot from USART1
+#define SCU_UID2_BOOT_USART1			(1 << 28)			 // Allow boot from USART1
 #define SCU_UID2_BOOT_USART1_SHIFT		28
-#define SCU_UID2_BOOT_BSL				(1 << 29)		 // Force boot from BSL, bypass firmware
+#define SCU_UID2_BOOT_BSL				(1 << 29)			 // Force boot from BSL, bypass firmware
 #define SCU_UID2_BOOT_BSL_SHIFT			29
-#define SCU_UID2_BOOT_USB				(1 << 30)		 // Allow boot from USB
+#define SCU_UID2_BOOT_USB				(1 << 30)			 // Allow boot from USB
 #define SCU_UID2_BOOT_USB_SHIFT			30
 
 #define SCU_BOOT_FLAG					0x78
@@ -6849,7 +6886,7 @@
 
 /* Redesign Tracing Identification Register */
 #define SCU_RTID						0x80
-#define SCU_RTID_RT						(0xFFFF << 0)	 // Redesign tracing value
+#define SCU_RTID_RT						(0xFFFF << 0)		 // Redesign tracing value
 #define SCU_RTID_RT_SHIFT				0
 
 /* DMA Request Select */
@@ -6926,6 +6963,12 @@
 
 /* Service Routing Control Register */
 #define SCU_EXTI7_SRC					0xFC
+
+/* Emulator identification register */
+#define SCU_EMU_ID						0x1FC
+#define SCU_EMU_ID_VALUE				(0xFFFFFFFF << 0)
+#define SCU_EMU_ID_VALUE_SHIFT			0
+#define SCU_EMU_ID_VALUE_QEMU			0x51454D55
 
 
 // SIM [MOD_NUM=F000, MOD_REV=32, MOD_32BIT=C0]
@@ -8794,182 +8837,214 @@
 // USB [MOD_NUM=F047, MOD_REV=00, MOD_32BIT=C0]
 // USB [MOD_NUM=F047, MOD_REV=12, MOD_32BIT=C0]
 // sci-worx USB device controller
-#define USB_IO_SIZE							0x00000900
+#define USB_IO_SIZE									0x00000900
 /* Endpoint Enable Register, endpoints 0-7 */
-#define USB_EP_ENABLE_LOW					0x00
-#define USB_EP_ENABLE_LOW_ENDPOINTS			(0xFF << 0)
-#define USB_EP_ENABLE_LOW_ENDPOINTS_SHIFT	0
+#define USB_EP_ENABLE_LOW							0x00
+#define USB_EP_ENABLE_LOW_ENDPOINTS					(0xFF << 0)
+#define USB_EP_ENABLE_LOW_ENDPOINTS_SHIFT			0
 
 /* Endpoint Enable Register, endpoints 8-10 */
-#define USB_EP_ENABLE_HIGH					0x04
-#define USB_EP_ENABLE_HIGH_ENDPOINTS		(0x7 << 0)
-#define USB_EP_ENABLE_HIGH_ENDPOINTS_SHIFT	0
+#define USB_EP_ENABLE_HIGH							0x04
+#define USB_EP_ENABLE_HIGH_ENDPOINTS				(0x7 << 0)
+#define USB_EP_ENABLE_HIGH_ENDPOINTS_SHIFT			0
 
 /* USB Device Address Register */
-#define USB_DEVICE_ADDRESS					0x08
-#define USB_DEVICE_ADDRESS_ADDRESS			(0x7F << 0)
-#define USB_DEVICE_ADDRESS_ADDRESS_SHIFT	0
-#define USB_DEVICE_ADDRESS_ENABLE			(1 << 7)	 // Device address is active
-#define USB_DEVICE_ADDRESS_ENABLE_SHIFT		7
+#define USB_DEVICE_ADDRESS							0x08
+#define USB_DEVICE_ADDRESS_ADDRESS					(0x7F << 0)
+#define USB_DEVICE_ADDRESS_ADDRESS_SHIFT			0
+#define USB_DEVICE_ADDRESS_ENABLE					(1 << 7)	 // Device address is active
+#define USB_DEVICE_ADDRESS_ENABLE_SHIFT				7
 
 /* USB Frame Number Low Register */
-#define USB_FRAME_NUMBER_LOW				0x0C
-#define USB_FRAME_NUMBER_LOW_VALUE			(0xFF << 0)
-#define USB_FRAME_NUMBER_LOW_VALUE_SHIFT	0
+#define USB_FRAME_NUMBER_LOW						0x0C
+#define USB_FRAME_NUMBER_LOW_VALUE					(0xFF << 0)
+#define USB_FRAME_NUMBER_LOW_VALUE_SHIFT			0
 
 /* USB Frame Number High Register */
-#define USB_FRAME_NUMBER_HIGH				0x10
-#define USB_FRAME_NUMBER_HIGH_VALUE			(0x7 << 0)
-#define USB_FRAME_NUMBER_HIGH_VALUE_SHIFT	0
+#define USB_FRAME_NUMBER_HIGH						0x10
+#define USB_FRAME_NUMBER_HIGH_VALUE					(0x7 << 0)
+#define USB_FRAME_NUMBER_HIGH_VALUE_SHIFT			0
 
 /* USB Core Control Register */
-#define USB_CONTROL							0x18
-#define USB_CONTROL_ENABLE					(1 << 0)	 // Enable USB core
-#define USB_CONTROL_ENABLE_SHIFT			0
+#define USB_CONTROL									0x18
+#define USB_CONTROL_ENABLE							(1 << 0)	 // Enable USB core
+#define USB_CONTROL_ENABLE_SHIFT					0
 
 /* Setup Packet Byte Register */
-#define USB_SETUP_PACKET0					0x1C
-#define USB_SETUP_PACKET1					0x20
-#define USB_SETUP_PACKET2					0x24
-#define USB_SETUP_PACKET3					0x28
-#define USB_SETUP_PACKET4					0x2C
-#define USB_SETUP_PACKET5					0x30
-#define USB_SETUP_PACKET6					0x34
-#define USB_SETUP_PACKET7					0x38
-#define USB_SETUP_PACKET_DATA				(0xFF << 0)
-#define USB_SETUP_PACKET_DATA_SHIFT			0
+#define USB_SETUP_PACKET0							0x1C
+#define USB_SETUP_PACKET1							0x20
+#define USB_SETUP_PACKET2							0x24
+#define USB_SETUP_PACKET3							0x28
+#define USB_SETUP_PACKET4							0x2C
+#define USB_SETUP_PACKET5							0x30
+#define USB_SETUP_PACKET6							0x34
+#define USB_SETUP_PACKET7							0x38
+#define USB_SETUP_PACKET_DATA						(0xFF << 0)
+#define USB_SETUP_PACKET_DATA_SHIFT					0
 
 /* Endpoint 0 Status Register */
-#define USB_EP0_STATUS						0x3C
+#define USB_EP0_STATUS								0x3C
 
 /* Endpoint Configuration Register */
-#define USB_EP_CONFIG0						0x40
-#define USB_EP_CONFIG1						0x44
-#define USB_EP_CONFIG2						0x48
-#define USB_EP_CONFIG3						0x4C
-#define USB_EP_CONFIG4						0x50
-#define USB_EP_CONFIG5						0x54
-#define USB_EP_CONFIG6						0x58
-#define USB_EP_CONFIG7						0x5C
-#define USB_EP_CONFIG8						0x60
-#define USB_EP_CONFIG9						0x64
-#define USB_EP_CONFIG10						0x68
+#define USB_EP_CONFIG0								0x40
+#define USB_EP_CONFIG1								0x44
+#define USB_EP_CONFIG2								0x48
+#define USB_EP_CONFIG3								0x4C
+#define USB_EP_CONFIG4								0x50
+#define USB_EP_CONFIG5								0x54
+#define USB_EP_CONFIG6								0x58
+#define USB_EP_CONFIG7								0x5C
+#define USB_EP_CONFIG8								0x60
+#define USB_EP_CONFIG9								0x64
+#define USB_EP_CONFIG10								0x68
 
-/* Global Interrupt Status Register */
-#define USB_GLOBAL_INT_STATUS				0x180
+/* Global Interrupt Status Register (write one to clear) */
+#define USB_GLOBAL_INT_STATUS						0x180
+#define USB_GLOBAL_INT_STATUS_SOURCES				(0xFF << 0)
+#define USB_GLOBAL_INT_STATUS_SOURCES_SHIFT			0
 
 /* Global Interrupt Enable Register */
-#define USB_GLOBAL_INT_ENABLE				0x184
+#define USB_GLOBAL_INT_ENABLE						0x184
+#define USB_GLOBAL_INT_ENABLE_SOURCES				(0xFF << 0)
+#define USB_GLOBAL_INT_ENABLE_SOURCES_SHIFT			0
 
-/* DMA Channel Group 0 Interrupt Status Register */
-#define USB_DMA0_INT_STATUS					0x188
+/* DMA Channel Group 0 Interrupt Status Register (write one to clear) */
+#define USB_DMA0_INT_STATUS							0x188
+#define USB_DMA0_INT_STATUS_SOURCES					(0xFF << 0)
+#define USB_DMA0_INT_STATUS_SOURCES_SHIFT			0
 
 /* DMA Channel Group 0 Interrupt Enable Register */
-#define USB_DMA0_INT_ENABLE					0x18C
+#define USB_DMA0_INT_ENABLE							0x18C
+#define USB_DMA0_INT_ENABLE_SOURCES					(0xFF << 0)
+#define USB_DMA0_INT_ENABLE_SOURCES_SHIFT			0
 
-/* DMA Channel Group 1 Interrupt Status Register */
-#define USB_DMA1_INT_STATUS					0x190
+/* DMA Channel Group 1 Interrupt Status Register (write one to clear) */
+#define USB_DMA1_INT_STATUS							0x190
+#define USB_DMA1_INT_STATUS_SOURCES					(0x3 << 0)
+#define USB_DMA1_INT_STATUS_SOURCES_SHIFT			0
 
 /* DMA Channel Group 1 Interrupt Enable Register */
-#define USB_DMA1_INT_ENABLE					0x194
+#define USB_DMA1_INT_ENABLE							0x194
+#define USB_DMA1_INT_ENABLE_SOURCES					(0x3 << 0)
+#define USB_DMA1_INT_ENABLE_SOURCES_SHIFT			0
 
-/* USB Event Interrupt Status Register */
-#define USB_EVENT_INT_STATUS				0x198
+/* USB Event Interrupt Status Register (write one to clear) */
+#define USB_EVENT_INT_STATUS						0x198
+#define USB_EVENT_INT_STATUS_EVENTS					(0xFF << 0)
+#define USB_EVENT_INT_STATUS_EVENTS_SHIFT			0
 
 /* USB Event Interrupt Enable Register */
-#define USB_EVENT_INT_ENABLE				0x19C
+#define USB_EVENT_INT_ENABLE						0x19C
+#define USB_EVENT_INT_ENABLE_EVENTS					(0xFF << 0)
+#define USB_EVENT_INT_ENABLE_EVENTS_SHIFT			0
 
-/* Endpoint Interrupt Group A Status Register, endpoints 0-7 */
-#define USB_EP_A_INT_STATUS_LOW				0x1A0
+/* Endpoint Interrupt Group A Status Register, endpoints 0-7 (write one to clear) */
+#define USB_EP_A_INT_STATUS_LOW						0x1A0
+#define USB_EP_A_INT_STATUS_LOW_ENDPOINTS			(0xFF << 0)
+#define USB_EP_A_INT_STATUS_LOW_ENDPOINTS_SHIFT		0
 
 /* Endpoint Interrupt Group A Enable Register, endpoints 0-7 */
-#define USB_EP_A_INT_ENABLE_LOW				0x1A4
+#define USB_EP_A_INT_ENABLE_LOW						0x1A4
+#define USB_EP_A_INT_ENABLE_LOW_ENDPOINTS			(0xFF << 0)
+#define USB_EP_A_INT_ENABLE_LOW_ENDPOINTS_SHIFT		0
 
-/* Endpoint Interrupt Group A Status Register, endpoints 8-10 */
-#define USB_EP_A_INT_STATUS_HIGH			0x1A8
+/* Endpoint Interrupt Group A Status Register, endpoints 8-10 (write one to clear) */
+#define USB_EP_A_INT_STATUS_HIGH					0x1A8
+#define USB_EP_A_INT_STATUS_HIGH_ENDPOINTS			(0x7 << 0)
+#define USB_EP_A_INT_STATUS_HIGH_ENDPOINTS_SHIFT	0
 
 /* Endpoint Interrupt Group A Enable Register, endpoints 8-10 */
-#define USB_EP_A_INT_ENABLE_HIGH			0x1AC
+#define USB_EP_A_INT_ENABLE_HIGH					0x1AC
+#define USB_EP_A_INT_ENABLE_HIGH_ENDPOINTS			(0x7 << 0)
+#define USB_EP_A_INT_ENABLE_HIGH_ENDPOINTS_SHIFT	0
 
-/* Endpoint Interrupt Group B Status Register, endpoints 0-7 */
-#define USB_EP_B_INT_STATUS_LOW				0x1B0
+/* Endpoint Interrupt Group B Status Register, endpoints 0-7 (write one to clear) */
+#define USB_EP_B_INT_STATUS_LOW						0x1B0
+#define USB_EP_B_INT_STATUS_LOW_ENDPOINTS			(0xFF << 0)
+#define USB_EP_B_INT_STATUS_LOW_ENDPOINTS_SHIFT		0
 
 /* Endpoint Interrupt Group B Enable Register, endpoints 0-7 */
-#define USB_EP_B_INT_ENABLE_LOW				0x1B4
+#define USB_EP_B_INT_ENABLE_LOW						0x1B4
+#define USB_EP_B_INT_ENABLE_LOW_ENDPOINTS			(0xFF << 0)
+#define USB_EP_B_INT_ENABLE_LOW_ENDPOINTS_SHIFT		0
 
-/* Endpoint Interrupt Group B Status Register, endpoints 8-10 */
-#define USB_EP_B_INT_STATUS_HIGH			0x1B8
+/* Endpoint Interrupt Group B Status Register, endpoints 8-10 (write one to clear) */
+#define USB_EP_B_INT_STATUS_HIGH					0x1B8
+#define USB_EP_B_INT_STATUS_HIGH_ENDPOINTS			(0x7 << 0)
+#define USB_EP_B_INT_STATUS_HIGH_ENDPOINTS_SHIFT	0
 
 /* Endpoint Interrupt Group B Enable Register, endpoints 8-10 */
-#define USB_EP_B_INT_ENABLE_HIGH			0x1BC
+#define USB_EP_B_INT_ENABLE_HIGH					0x1BC
+#define USB_EP_B_INT_ENABLE_HIGH_ENDPOINTS			(0x7 << 0)
+#define USB_EP_B_INT_ENABLE_HIGH_ENDPOINTS_SHIFT	0
 
 /* Endpoint FIFO Data Register */
-#define USB_EP_DATA0						0x1C0
-#define USB_EP_DATA1						0x1D0
-#define USB_EP_DATA2						0x1E0
-#define USB_EP_DATA3						0x1F0
-#define USB_EP_DATA4						0x200
-#define USB_EP_DATA5						0x210
-#define USB_EP_DATA6						0x220
-#define USB_EP_DATA7						0x230
-#define USB_EP_DATA8						0x240
-#define USB_EP_DATA9						0x250
-#define USB_EP_DATA10						0x260
+#define USB_EP_DATA0								0x1C0
+#define USB_EP_DATA1								0x1D0
+#define USB_EP_DATA2								0x1E0
+#define USB_EP_DATA3								0x1F0
+#define USB_EP_DATA4								0x200
+#define USB_EP_DATA5								0x210
+#define USB_EP_DATA6								0x220
+#define USB_EP_DATA7								0x230
+#define USB_EP_DATA8								0x240
+#define USB_EP_DATA9								0x250
+#define USB_EP_DATA10								0x260
 
 /* Endpoint FIFO Control Register */
-#define USB_EP_CONTROL0						0x1C4
-#define USB_EP_CONTROL1						0x1D4
-#define USB_EP_CONTROL2						0x1E4
-#define USB_EP_CONTROL3						0x1F4
-#define USB_EP_CONTROL4						0x204
-#define USB_EP_CONTROL5						0x214
-#define USB_EP_CONTROL6						0x224
-#define USB_EP_CONTROL7						0x234
-#define USB_EP_CONTROL8						0x244
-#define USB_EP_CONTROL9						0x254
-#define USB_EP_CONTROL10					0x264
+#define USB_EP_CONTROL0								0x1C4
+#define USB_EP_CONTROL1								0x1D4
+#define USB_EP_CONTROL2								0x1E4
+#define USB_EP_CONTROL3								0x1F4
+#define USB_EP_CONTROL4								0x204
+#define USB_EP_CONTROL5								0x214
+#define USB_EP_CONTROL6								0x224
+#define USB_EP_CONTROL7								0x234
+#define USB_EP_CONTROL8								0x244
+#define USB_EP_CONTROL9								0x254
+#define USB_EP_CONTROL10							0x264
 
 /* Endpoint FIFO Byte Count Low Register */
-#define USB_EP_COUNT_LOW0					0x1C8
-#define USB_EP_COUNT_LOW1					0x1D8
-#define USB_EP_COUNT_LOW2					0x1E8
-#define USB_EP_COUNT_LOW3					0x1F8
-#define USB_EP_COUNT_LOW4					0x208
-#define USB_EP_COUNT_LOW5					0x218
-#define USB_EP_COUNT_LOW6					0x228
-#define USB_EP_COUNT_LOW7					0x238
-#define USB_EP_COUNT_LOW8					0x248
-#define USB_EP_COUNT_LOW9					0x258
-#define USB_EP_COUNT_LOW10					0x268
-#define USB_EP_COUNT_LOW_VALUE				(0xFF << 0)
-#define USB_EP_COUNT_LOW_VALUE_SHIFT		0
+#define USB_EP_COUNT_LOW0							0x1C8
+#define USB_EP_COUNT_LOW1							0x1D8
+#define USB_EP_COUNT_LOW2							0x1E8
+#define USB_EP_COUNT_LOW3							0x1F8
+#define USB_EP_COUNT_LOW4							0x208
+#define USB_EP_COUNT_LOW5							0x218
+#define USB_EP_COUNT_LOW6							0x228
+#define USB_EP_COUNT_LOW7							0x238
+#define USB_EP_COUNT_LOW8							0x248
+#define USB_EP_COUNT_LOW9							0x258
+#define USB_EP_COUNT_LOW10							0x268
+#define USB_EP_COUNT_LOW_VALUE						(0xFF << 0)
+#define USB_EP_COUNT_LOW_VALUE_SHIFT				0
 
 /* Endpoint FIFO Byte Count High Register */
-#define USB_EP_COUNT_HIGH0					0x1CC
-#define USB_EP_COUNT_HIGH1					0x1DC
-#define USB_EP_COUNT_HIGH2					0x1EC
-#define USB_EP_COUNT_HIGH3					0x1FC
-#define USB_EP_COUNT_HIGH4					0x20C
-#define USB_EP_COUNT_HIGH5					0x21C
-#define USB_EP_COUNT_HIGH6					0x22C
-#define USB_EP_COUNT_HIGH7					0x23C
-#define USB_EP_COUNT_HIGH8					0x24C
-#define USB_EP_COUNT_HIGH9					0x25C
-#define USB_EP_COUNT_HIGH10					0x26C
-#define USB_EP_COUNT_HIGH_VALUE				(0x7 << 0)
-#define USB_EP_COUNT_HIGH_VALUE_SHIFT		0
+#define USB_EP_COUNT_HIGH0							0x1CC
+#define USB_EP_COUNT_HIGH1							0x1DC
+#define USB_EP_COUNT_HIGH2							0x1EC
+#define USB_EP_COUNT_HIGH3							0x1FC
+#define USB_EP_COUNT_HIGH4							0x20C
+#define USB_EP_COUNT_HIGH5							0x21C
+#define USB_EP_COUNT_HIGH6							0x22C
+#define USB_EP_COUNT_HIGH7							0x23C
+#define USB_EP_COUNT_HIGH8							0x24C
+#define USB_EP_COUNT_HIGH9							0x25C
+#define USB_EP_COUNT_HIGH10							0x26C
+#define USB_EP_COUNT_HIGH_VALUE						(0x7 << 0)
+#define USB_EP_COUNT_HIGH_VALUE_SHIFT				0
 
 /* USB PHY Control and Status Register */
-#define USB_PHY_CONTROL						0x2FC
+#define USB_PHY_CONTROL								0x2FC
 
 /* Clock Control Register */
-#define USB_CLC								0x800
+#define USB_CLC										0x800
 
 /* Wrapper Configuration Register */
-#define USB_CFG								0x804
+#define USB_CFG										0x804
 
 /* Module Identifier Register */
-#define USB_ID								0x808
+#define USB_ID										0x808
 
 
 // VIC [MOD_NUM=0031, MOD_REV=01, MOD_32BIT=C0]
