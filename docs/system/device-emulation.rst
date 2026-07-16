@@ -88,12 +88,14 @@ Emulated Devices
    devices/canokey.rst
    devices/ccid.rst
    devices/cxl.rst
+   devices/emmc.rst
    devices/igb.rst
    devices/ivshmem-flat.rst
    devices/ivshmem.rst
    devices/keyboard.rst
    devices/net.rst
    devices/nvme.rst
+   devices/scsi/index.rst
    devices/usb-u2f.rst
    devices/usb.rst
    devices/vfio-user.rst

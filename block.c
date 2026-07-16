@@ -606,12 +606,13 @@ create_file_fallback_zero_first_sector(BlockBackend *blk,
                                        int64_t current_size,
                                        Error **errp)
 {
+    uint32_t alignment = blk_get_pwrite_zeroes_alignment(blk);
     int64_t bytes_to_clear;
     int ret;
 
     GLOBAL_STATE_CODE();
 
-    bytes_to_clear = MIN(current_size, BDRV_SECTOR_SIZE);
+    bytes_to_clear = MIN(current_size, MAX(BDRV_SECTOR_SIZE, alignment));
     if (bytes_to_clear) {
         ret = blk_co_pwrite_zeroes(blk, 0, bytes_to_clear, BDRV_REQ_MAY_UNMAP);
         if (ret < 0) {
@@ -693,7 +694,7 @@ out:
 }
 
 int coroutine_fn bdrv_co_create_file(const char *filename, QemuOpts *opts,
-                                     Error **errp)
+                                     bool allow_protocol_prefix, Error **errp)
 {
     QemuOpts *protocol_opts;
     BlockDriver *drv;
@@ -702,7 +703,7 @@ int coroutine_fn bdrv_co_create_file(const char *filename, QemuOpts *opts,
 
     GLOBAL_STATE_CODE();
 
-    drv = bdrv_find_protocol(filename, true, errp);
+    drv = bdrv_find_protocol(filename, allow_protocol_prefix, errp);
     if (drv == NULL) {
         return -ENOENT;
     }
@@ -5398,17 +5399,13 @@ bdrv_replace_node_noperm(BlockDriverState *from,
  *
  * With auto_skip=false the error is returned if from has a parent which should
  * not be updated.
- *
- * With @detach_subchain=true @to must be in a backing chain of @from. In this
- * case backing link of the cow-parent of @to is removed.
  */
 static int GRAPH_WRLOCK
 bdrv_replace_node_common(BlockDriverState *from, BlockDriverState *to,
-                         bool auto_skip, bool detach_subchain, Error **errp)
+                         bool auto_skip, Error **errp)
 {
     Transaction *tran = tran_new();
     g_autoptr(GSList) refresh_list = NULL;
-    BlockDriverState *to_cow_parent = NULL;
     int ret;
 
     GLOBAL_STATE_CODE();
@@ -5416,17 +5413,6 @@ bdrv_replace_node_common(BlockDriverState *from, BlockDriverState *to,
     assert(from->quiesce_counter);
     assert(to->quiesce_counter);
     assert(bdrv_get_aio_context(from) == bdrv_get_aio_context(to));
-
-    if (detach_subchain) {
-        assert(bdrv_chain_contains(from, to));
-        assert(from != to);
-        for (to_cow_parent = from;
-             bdrv_filter_or_cow_bs(to_cow_parent) != to;
-             to_cow_parent = bdrv_filter_or_cow_bs(to_cow_parent))
-        {
-            ;
-        }
-    }
 
     /*
      * Do the replacement without permission update.
@@ -5437,11 +5423,6 @@ bdrv_replace_node_common(BlockDriverState *from, BlockDriverState *to,
     ret = bdrv_replace_node_noperm(from, to, auto_skip, tran, errp);
     if (ret < 0) {
         goto out;
-    }
-
-    if (detach_subchain) {
-        /* to_cow_parent is already drained because from is drained */
-        bdrv_remove_child(bdrv_filter_or_cow_child(to_cow_parent), tran);
     }
 
     refresh_list = g_slist_prepend(refresh_list, to);
@@ -5462,7 +5443,7 @@ out:
 int bdrv_replace_node(BlockDriverState *from, BlockDriverState *to,
                       Error **errp)
 {
-    return bdrv_replace_node_common(from, to, true, false, errp);
+    return bdrv_replace_node_common(from, to, true, errp);
 }
 
 int bdrv_drop_filter(BlockDriverState *bs, Error **errp)
@@ -5478,7 +5459,7 @@ int bdrv_drop_filter(BlockDriverState *bs, Error **errp)
 
     bdrv_drained_begin(child_bs);
     bdrv_graph_wrlock();
-    ret = bdrv_replace_node_common(bs, child_bs, true, true, errp);
+    ret = bdrv_replace_node_common(bs, child_bs, true, errp);
     bdrv_graph_wrunlock();
     bdrv_drained_end(child_bs);
 
@@ -5929,17 +5910,7 @@ int bdrv_drop_intermediate(BlockDriverState *top, BlockDriverState *base,
         updated_children = g_slist_prepend(updated_children, c);
     }
 
-    /*
-     * It seems correct to pass detach_subchain=true here, but it triggers
-     * one more yet not fixed bug, when due to nested aio_poll loop we switch to
-     * another drained section, which modify the graph (for example, removing
-     * the child, which we keep in updated_children list). So, it's a TODO.
-     *
-     * Note, bug triggered if pass detach_subchain=true here and run
-     * test-bdrv-drain. test_drop_intermediate_poll() test-case will crash.
-     * That's a FIXME.
-     */
-    bdrv_replace_node_common(top, base, false, false, &local_err);
+    bdrv_replace_node_common(top, base, false, &local_err);
     bdrv_graph_wrunlock();
 
     if (local_err) {
@@ -8506,7 +8477,7 @@ static bool bdrv_bsc_range_overlaps_locked(BlockDriverState *bs,
 }
 
 /**
- * See block_int.h for this function's documentation.
+ * See block_int-io.h for this function's documentation.
  */
 bool bdrv_bsc_is_data(BlockDriverState *bs, int64_t offset, int64_t *pnum)
 {
@@ -8516,7 +8487,7 @@ bool bdrv_bsc_is_data(BlockDriverState *bs, int64_t offset, int64_t *pnum)
 }
 
 /**
- * See block_int.h for this function's documentation.
+ * See block_int-io.h for this function's documentation.
  */
 void bdrv_bsc_invalidate_range(BlockDriverState *bs,
                                int64_t offset, int64_t bytes)
@@ -8530,7 +8501,7 @@ void bdrv_bsc_invalidate_range(BlockDriverState *bs,
 }
 
 /**
- * See block_int.h for this function's documentation.
+ * See block_int-io.h for this function's documentation.
  */
 void bdrv_bsc_fill(BlockDriverState *bs, int64_t offset, int64_t bytes)
 {

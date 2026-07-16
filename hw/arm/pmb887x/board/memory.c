@@ -1,8 +1,8 @@
 #include "hw/arm/pmb887x/board/memory.h"
 
-#include "hw/sysbus.h"
-#include "hw/qdev-core.h"
-#include "hw/qdev-properties.h"
+#include "hw/core/sysbus.h"
+#include "hw/core/qdev.h"
+#include "hw/core/qdev-properties.h"
 #include "qapi/error.h"
 
 void pmb887x_board_ebu_connect(DeviceState *ebuc, int cs, MemoryRegion *region) {

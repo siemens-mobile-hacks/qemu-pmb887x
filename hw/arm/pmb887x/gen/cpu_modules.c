@@ -3,7 +3,7 @@
 #include "hw/arm/pmb887x/gen/cpu_meta.h"
 #include "hw/arm/pmb887x/gen/cpu_regs.h"
 
-#include "hw/hw.h"
+#include "hw/core/hw-error.h"
 
 static const int pmb8876_usart0_irqs[] = {
 	PMB8876_USART0_TX_IRQ,

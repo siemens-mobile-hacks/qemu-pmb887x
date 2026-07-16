@@ -1,6 +1,6 @@
 #include "qemu/osdep.h"
 #include "qemu/module.h"
-#include "hw/qdev-properties.h"
+#include "hw/core/qdev-properties.h"
 #include "qapi/error.h"
 
 #include "hw/arm/pmb887x/sim/apdu.h"

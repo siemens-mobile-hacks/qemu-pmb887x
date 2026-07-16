@@ -133,7 +133,7 @@
 #define FTYPE_FILE   0
 #define FTYPE_CD     1
 
-#define MAX_BLOCKSIZE	4096
+#define MAX_BLOCKSIZE 4096
 
 /* Posix file locking bytes. Libvirt takes byte 0, we start from higher bytes,
  * leaving a few more bytes for its future use. */
@@ -755,14 +755,23 @@ static int raw_open_common(BlockDriverState *bs, QDict *options,
     }
 #endif /* !defined(CONFIG_LINUX_AIO) */
 
-#ifndef CONFIG_LINUX_IO_URING
     if (s->use_linux_io_uring) {
+#ifdef CONFIG_LINUX_IO_URING
+        if (!aio_has_io_uring()) {
+            error_setg(errp, "aio=io_uring was specified, but is not "
+                             "available (disabled via io_uring_disabled "
+                             "sysctl or blocked by container runtime "
+                             "seccomp policy?)");
+            ret = -EINVAL;
+            goto fail;
+        }
+#else
         error_setg(errp, "aio=io_uring was specified, but is not supported "
-                         "in this build.");
+                         "in this build");
         ret = -EINVAL;
         goto fail;
-    }
 #endif /* !defined(CONFIG_LINUX_IO_URING) */
+    }
 
     s->has_discard = true;
     s->has_write_zeroes = true;
@@ -1047,21 +1056,6 @@ static int raw_handle_perm_lock(BlockDriverState *bs,
     return ret;
 }
 
-/* Sets a specific flag */
-static int fcntl_setfl(int fd, int flag)
-{
-    int flags;
-
-    flags = fcntl(fd, F_GETFL);
-    if (flags == -1) {
-        return -errno;
-    }
-    if (fcntl(fd, F_SETFL, flags | flag) == -1) {
-        return -errno;
-    }
-    return 0;
-}
-
 static int raw_reconfigure_getfd(BlockDriverState *bs, int flags,
                                  int *open_flags, uint64_t perm, Error **errp)
 {
@@ -1100,7 +1094,7 @@ static int raw_reconfigure_getfd(BlockDriverState *bs, int flags,
         /* dup the original fd */
         fd = qemu_dup(s->fd);
         if (fd >= 0) {
-            ret = fcntl_setfl(fd, *open_flags);
+            ret = qemu_fcntl_addfl(fd, *open_flags);
             if (ret) {
                 qemu_close(fd);
                 fd = -1;
@@ -1602,6 +1596,22 @@ static void raw_refresh_limits(BlockDriverState *bs, Error **errp)
 
             bs->bl.pdiscard_alignment = dalign;
         }
+
+#ifdef __linux__
+        /*
+         * Linux requires logical block size alignment for write zeroes even
+         * when normal reads/writes do not require alignment.
+         */
+        if (!s->needs_alignment) {
+            ret = probe_logical_blocksize(s->fd,
+                                          &bs->bl.pwrite_zeroes_alignment);
+            if (ret < 0) {
+                error_setg_errno(errp, -ret,
+                                 "Failed to probe logical block size");
+                return;
+            }
+        }
+#endif /* __linux__ */
     }
 
     raw_refresh_zoned_limits(bs, &st, errp);
@@ -2522,27 +2532,6 @@ static bool bdrv_qiov_is_aligned(BlockDriverState *bs, QEMUIOVector *qiov)
     return true;
 }
 
-#ifdef CONFIG_LINUX_IO_URING
-static inline bool raw_check_linux_io_uring(BDRVRawState *s)
-{
-    Error *local_err = NULL;
-    AioContext *ctx;
-
-    if (!s->use_linux_io_uring) {
-        return false;
-    }
-
-    ctx = qemu_get_current_aio_context();
-    if (unlikely(!aio_setup_linux_io_uring(ctx, &local_err))) {
-        error_reportf_err(local_err, "Unable to use linux io_uring, "
-                                     "falling back to thread pool: ");
-        s->use_linux_io_uring = false;
-        return false;
-    }
-    return true;
-}
-#endif
-
 #ifdef CONFIG_LINUX_AIO
 static inline bool raw_check_linux_aio(BDRVRawState *s)
 {
@@ -2595,7 +2584,7 @@ raw_co_prw(BlockDriverState *bs, int64_t *offset_ptr, uint64_t bytes,
     if (s->needs_alignment && !bdrv_qiov_is_aligned(bs, qiov)) {
         type |= QEMU_AIO_MISALIGNED;
 #ifdef CONFIG_LINUX_IO_URING
-    } else if (raw_check_linux_io_uring(s)) {
+    } else if (s->use_linux_io_uring) {
         assert(qiov->size == bytes);
         ret = luring_co_submit(bs, s->fd, offset, qiov, type, flags);
         goto out;
@@ -2692,7 +2681,7 @@ static int coroutine_fn raw_co_flush_to_disk(BlockDriverState *bs)
     };
 
 #ifdef CONFIG_LINUX_IO_URING
-    if (raw_check_linux_io_uring(s)) {
+    if (s->use_linux_io_uring) {
         return luring_co_submit(bs, s->fd, 0, NULL, QEMU_AIO_FLUSH, 0);
     }
 #endif
@@ -4284,25 +4273,8 @@ hdev_open_Mac_error:
 static bool coroutine_fn sgio_path_error(int ret, sg_io_hdr_t *io_hdr)
 {
     if (ret < 0) {
-        switch (ret) {
-        case -ENODEV:
-            return true;
-        case -EAGAIN:
-            /*
-             * The device is probably suspended. This happens while the dm table
-             * is reloaded, e.g. because a path is added or removed. This is an
-             * operation that should complete within 1ms, so just wait a bit and
-             * retry.
-             *
-             * If the device was suspended for another reason, we'll wait and
-             * retry SG_IO_MAX_RETRIES times. This is a tolerable delay before
-             * we return an error and potentially stop the VM.
-             */
-            qemu_co_sleep_ns(QEMU_CLOCK_REALTIME, 1000000);
-            return true;
-        default:
-            return false;
-        }
+        /* Path errors sometimes result in -ENODEV */
+        return ret == -ENODEV;
     }
 
     if (io_hdr->host_status != SCSI_HOST_OK) {
@@ -4371,6 +4343,7 @@ hdev_co_ioctl(BlockDriverState *bs, unsigned long int req, void *buf)
 {
     BDRVRawState *s = bs->opaque;
     RawPosixAIOData acb;
+    uint64_t eagain_sleep_ns = 1 * SCALE_MS;
     int retries = SG_IO_MAX_RETRIES;
     int ret;
 
@@ -4399,9 +4372,37 @@ hdev_co_ioctl(BlockDriverState *bs, unsigned long int req, void *buf)
         },
     };
 
-    do {
-        ret = raw_thread_pool_submit(handle_aiocb_ioctl, &acb);
-    } while (req == SG_IO && retries-- && hdev_co_ioctl_sgio_retry(&acb, ret));
+retry:
+    ret = raw_thread_pool_submit(handle_aiocb_ioctl, &acb);
+    if (req == SG_IO && s->use_mpath) {
+        if (ret == -EAGAIN && eagain_sleep_ns < NANOSECONDS_PER_SECOND) {
+            /*
+             * If this is a multipath device, it is probably suspended.
+             *
+             * This can happen while the dm table is reloaded, e.g. because a
+             * path is added or removed. This is an operation that should
+             * complete within 1ms, so just wait a bit and retry.
+             *
+             * There are also some cases in which libmpathpersist must recover
+             * from path failure during its operation, which can leave the
+             * device suspended for a bit longer while the library brings back
+             * reservations into the expected state.
+             *
+             * Use increasing delays to cover both cases without waiting
+             * excessively, and stop after a bit more than a second (1023 ms).
+             * This is a tolerable delay before we return an error and
+             * potentially stop the VM.
+             */
+            qemu_co_sleep_ns(QEMU_CLOCK_REALTIME, eagain_sleep_ns);
+            eagain_sleep_ns *= 2;
+            goto retry;
+        }
+
+        /* Even for ret == 0, the SG_IO header can contain an error */
+        if (retries-- && hdev_co_ioctl_sgio_retry(&acb, ret)) {
+            goto retry;
+        }
+    }
 
     return ret;
 }
@@ -4574,20 +4575,20 @@ static void coroutine_fn cdrom_co_lock_medium(BlockDriverState *bs, bool locked)
 }
 
 static BlockDriver bdrv_host_cdrom = {
-    .format_name        = "host_cdrom",
-    .protocol_name      = "host_cdrom",
-    .instance_size      = sizeof(BDRVRawState),
-    .bdrv_needs_filename = true,
-    .bdrv_probe_device	= cdrom_probe_device,
-    .bdrv_parse_filename = cdrom_parse_filename,
-    .bdrv_open          = cdrom_open,
-    .bdrv_close         = raw_close,
-    .bdrv_reopen_prepare = raw_reopen_prepare,
-    .bdrv_reopen_commit  = raw_reopen_commit,
-    .bdrv_reopen_abort   = raw_reopen_abort,
-    .bdrv_co_create_opts = bdrv_co_create_opts_simple,
-    .create_opts         = &bdrv_create_opts_simple,
-    .mutable_opts        = mutable_opts,
+    .format_name            = "host_cdrom",
+    .protocol_name          = "host_cdrom",
+    .instance_size          = sizeof(BDRVRawState),
+    .bdrv_needs_filename    = true,
+    .bdrv_probe_device      = cdrom_probe_device,
+    .bdrv_parse_filename    = cdrom_parse_filename,
+    .bdrv_open              = cdrom_open,
+    .bdrv_close             = raw_close,
+    .bdrv_reopen_prepare    = raw_reopen_prepare,
+    .bdrv_reopen_commit     = raw_reopen_commit,
+    .bdrv_reopen_abort      = raw_reopen_abort,
+    .bdrv_co_create_opts    = bdrv_co_create_opts_simple,
+    .create_opts            = &bdrv_create_opts_simple,
+    .mutable_opts           = mutable_opts,
     .bdrv_co_invalidate_cache = raw_co_invalidate_cache,
 
     .bdrv_co_preadv         = raw_co_preadv,
@@ -4700,20 +4701,20 @@ static void coroutine_fn cdrom_co_lock_medium(BlockDriverState *bs, bool locked)
 }
 
 static BlockDriver bdrv_host_cdrom = {
-    .format_name        = "host_cdrom",
-    .protocol_name      = "host_cdrom",
-    .instance_size      = sizeof(BDRVRawState),
-    .bdrv_needs_filename = true,
-    .bdrv_probe_device	= cdrom_probe_device,
-    .bdrv_parse_filename = cdrom_parse_filename,
-    .bdrv_open          = cdrom_open,
-    .bdrv_close         = raw_close,
-    .bdrv_reopen_prepare = raw_reopen_prepare,
-    .bdrv_reopen_commit  = raw_reopen_commit,
-    .bdrv_reopen_abort   = raw_reopen_abort,
-    .bdrv_co_create_opts = bdrv_co_create_opts_simple,
-    .create_opts         = &bdrv_create_opts_simple,
-    .mutable_opts       = mutable_opts,
+    .format_name            = "host_cdrom",
+    .protocol_name          = "host_cdrom",
+    .instance_size          = sizeof(BDRVRawState),
+    .bdrv_needs_filename    = true,
+    .bdrv_probe_device      = cdrom_probe_device,
+    .bdrv_parse_filename    = cdrom_parse_filename,
+    .bdrv_open              = cdrom_open,
+    .bdrv_close             = raw_close,
+    .bdrv_reopen_prepare    = raw_reopen_prepare,
+    .bdrv_reopen_commit     = raw_reopen_commit,
+    .bdrv_reopen_abort      = raw_reopen_abort,
+    .bdrv_co_create_opts    = bdrv_co_create_opts_simple,
+    .create_opts            = &bdrv_create_opts_simple,
+    .mutable_opts           = mutable_opts,
 
     .bdrv_co_preadv         = raw_co_preadv,
     .bdrv_co_pwritev        = raw_co_pwritev,

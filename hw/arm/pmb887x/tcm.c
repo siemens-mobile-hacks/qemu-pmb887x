@@ -5,12 +5,12 @@
 #define PMB887X_TRACE_PREFIX	"pmb887x-tcm"
 
 #include "qemu/osdep.h"
-#include "hw/sysbus.h"
+#include "hw/core/sysbus.h"
 #include "system/memory.h"
 #include "cpu.h"
 #include "cpregs.h"
 #include "exec/cputlb.h"
-#include "hw/qdev-properties.h"
+#include "hw/core/qdev-properties.h"
 
 #include "hw/arm/pmb887x/trace.h"
 

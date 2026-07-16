@@ -19,8 +19,8 @@
 #include "system/ioport.h"
 #include "system/memory.h"
 #include "exec/tswap.h"
-#include "hw/qdev-core.h"
-#include "hw/irq.h"
+#include "hw/core/qdev.h"
+#include "hw/core/irq.h"
 #include "hw/core/cpu.h"
 #include "qemu/accel.h"
 #include "system/cpu-timers.h"
@@ -68,6 +68,10 @@ static void *qtest_server_send_opaque;
  * Line based protocol, request/response based.  Server can send async messages
  * so clients should always handle many async messages before the response
  * comes in.
+ *
+ * Extra ASCII space characters in command inputs are permitted and ignored.
+ * Lines containing only spaces are permitted and ignored.
+ * Lines that start with a '#' character (comments) are permitted and ignored.
  *
  * Valid requests
  * ^^^^^^^^^^^^^^
@@ -367,7 +371,11 @@ static void qtest_process_command(CharFrontend *chr, gchar **words)
         fprintf(qtest_log_fp, "\n");
     }
 
-    g_assert(command);
+    if (!command || command[0] == '#') {
+        /* Input line was blank or a comment: ignore it */
+        return;
+    }
+
     if (strcmp(words[0], "irq_intercept_out") == 0
         || strcmp(words[0], "irq_intercept_in") == 0) {
         DeviceState *dev;
@@ -808,6 +816,10 @@ static void qtest_event(void *opaque, QEMUChrEvent event)
         }
         break;
     case CHR_EVENT_CLOSED:
+        if (!qtest_opened) {
+            /* Ignore CLOSED events if we have already closed the log */
+            break;
+        }
         qtest_opened = false;
         if (qtest_log_fp) {
             fprintf(qtest_log_fp, "[I +" FMT_timeval "] CLOSED\n", g_timer_elapsed(timer, NULL));

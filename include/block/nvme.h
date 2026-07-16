@@ -1,7 +1,7 @@
 #ifndef BLOCK_NVME_H
 #define BLOCK_NVME_H
 
-#include "hw/registerfields.h"
+#include "hw/core/registerfields.h"
 
 typedef struct QEMU_PACKED NvmeBar {
     uint64_t    cap;
@@ -1589,7 +1589,7 @@ enum NvmeIdNsMc {
 
 enum NvmeIdNsNsfeat {
     NVME_ID_NS_NSFEAT_THINP         = 1 << 0,
-    NVME_ID_NS_NSFEAT_NSABPNS       = 1 << 1,
+    NVME_ID_NS_NSFEAT_NSABP         = 1 << 1,
     NVME_ID_NS_NSFEAT_DAE           = 1 << 2,
     NVME_ID_NS_NSFEAT_UIDREUSE      = 1 << 3,
     NVME_ID_NS_NSFEAT_OPTPERF_ALL   = 3 << 4,

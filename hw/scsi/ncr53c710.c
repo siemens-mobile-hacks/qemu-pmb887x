@@ -28,8 +28,8 @@
 #include "qemu/osdep.h"
 #include "qapi/error.h"
 #include "qemu/timer.h"
-#include "hw/irq.h"
-#include "hw/sysbus.h"
+#include "hw/core/irq.h"
+#include "hw/core/sysbus.h"
 #include "hw/scsi/scsi.h"
 #include "hw/scsi/ncr53c710.h"
 #include "migration/vmstate.h"
@@ -550,7 +550,7 @@ static inline uint8_t ncr710_scsi_fifo_dequeue(NCR710_SCSI_FIFO *fifo,
 static inline uint32_t ncr710_read_dword(NCR710State *s, uint32_t addr)
 {
     uint32_t buf;
-    address_space_read(&address_space_memory, addr, MEMTXATTRS_UNSPECIFIED,
+    address_space_read(s->as, addr, MEMTXATTRS_UNSPECIFIED,
                        (uint8_t *)&buf, 4);
     /*
      * The NCR710 datasheet saying "operates internally in LE mode"
@@ -565,7 +565,7 @@ static inline uint32_t ncr710_read_dword(NCR710State *s, uint32_t addr)
 static inline void ncr710_dma_read(NCR710State *s, uint32_t addr,
                                    void *buf, uint32_t len)
 {
-    address_space_read(&address_space_memory, addr, MEMTXATTRS_UNSPECIFIED,
+    address_space_read(s->as, addr, MEMTXATTRS_UNSPECIFIED,
                        buf, len);
     NCR710_DPRINTF("Read %d bytes from %08x: ", len, addr);
     for (int i = 0; i < len && i < 16; i++) {
@@ -577,7 +577,7 @@ static inline void ncr710_dma_read(NCR710State *s, uint32_t addr,
 static inline void ncr710_dma_write(NCR710State *s, uint32_t addr,
                                     const void *buf, uint32_t len)
 {
-    address_space_write(&address_space_memory, addr, MEMTXATTRS_UNSPECIFIED,
+    address_space_write(s->as, addr, MEMTXATTRS_UNSPECIFIED,
                         buf, len);
     NCR710_DPRINTF("Wrote %d bytes to %08x\n", len, addr);
 }
@@ -593,7 +593,7 @@ static void ncr710_update_irq(NCR710State *s)
 {
     int level = 0;
 
-    if (s->dstat) {
+    if (s->dstat & ~NCR710_DSTAT_DFE) {
         if (s->dstat & s->dien) {
             level = 1;
         }
@@ -718,7 +718,9 @@ static void ncr710_do_dma(NCR710State *s, int out)
     if (s->current->dma_len == 0) {
         s->current->dma_buf = NULL;
         s->current->pending = 0;
+        s->waiting = NCR710_WAIT_DMA;
         scsi_req_continue(s->current->req);
+        return;
     } else {
         s->current->dma_buf += count;
         s->waiting = NCR710_WAIT_NONE;
@@ -737,6 +739,12 @@ static void ncr710_add_msg_byte(NCR710State *s, uint8_t data)
 
 static void ncr710_request_free(NCR710State *s, NCR710Request *p)
 {
+    if (!p) {
+        return;
+    }
+    if (p->req && p->req->hba_private == p) {
+        p->req->hba_private = NULL;
+    }
     if (p == s->current) {
         s->current = NULL;
     }
@@ -747,8 +755,11 @@ void ncr710_request_cancelled(SCSIRequest *req)
 {
     NCR710State *s = ncr710_from_scsi_bus(req->bus);
     NCR710Request *p = (NCR710Request *)req->hba_private;
-    req->hba_private = NULL;
-    ncr710_request_free(s, p);
+    if (p) {
+        req->hba_private = NULL;
+        p->req = NULL;
+        ncr710_request_free(s, p);
+    }
     scsi_req_unref(req);
 }
 
@@ -789,7 +800,13 @@ void ncr710_command_complete(SCSIRequest *req, size_t resid)
 
     ncr710_set_phase(s, PHASE_ST);
 
-    if (req->hba_private == s->current) {
+    if (p) {
+        req->hba_private = NULL;
+        if (p == s->current) {
+            p->req = NULL;
+        } else {
+            ncr710_request_free(s, p);
+        }
         scsi_req_unref(req);
     }
 
@@ -832,12 +849,11 @@ void ncr710_transfer_data(SCSIRequest *req, uint32_t len)
     }
 
     /* Host adapter (re)connected */
-    s->current->dma_len = len;
     s->command_complete = NCR710_CMD_DATA_READY;
-
     if (!s->current) {
         return;
     }
+    s->current->dma_len = len;
 
     if (s->waiting) {
         s->scntl1 |= NCR710_SCNTL1_CON;
@@ -981,6 +997,7 @@ static void ncr710_do_status(NCR710State *s)
     ncr710_set_phase(s, PHASE_MI);
     s->msg_action = NCR710_MSG_ACTION_DISCONNECT;
     ncr710_add_msg_byte(s, 0); /* COMMAND COMPLETE */
+    s->command_complete = NCR710_CMD_COMPLETE;
 }
 
 static void ncr710_do_msgin(NCR710State *s)
@@ -1025,7 +1042,7 @@ static void ncr710_do_msgin(NCR710State *s)
         ncr710_set_phase(s, PHASE_CO);
         break;
     case NCR710_MSG_ACTION_DISCONNECT:
-        ncr710_disconnect(s);
+        s->sstat2 &= ~PHASE_MASK;
         break;
     case NCR710_MSG_ACTION_DATA_OUT:
         ncr710_set_phase(s, PHASE_DO);
@@ -1339,8 +1356,8 @@ again:
             offset = sextract32(addr, 0, 24);
             ncr710_dma_read(s, s->dsa + offset, buf, 8);
             /* byte count is stored in bits 0:23 only */
-            s->dbc = cpu_to_le32(buf[0]) & 0xffffff;
-            addr = cpu_to_le32(buf[1]);
+            s->dbc = be32_to_cpu(buf[0]) & 0xffffff;
+            addr = be32_to_cpu(buf[1]);
         }
         /* Check phase match for block move instructions */
         if ((s->sstat2 & PHASE_MASK) != ((insn >> 24) & 7)) {
@@ -1362,11 +1379,6 @@ again:
         case PHASE_DI:
             s->waiting = NCR710_WAIT_DMA;
             ncr710_do_dma(s, 0);
-            if (s->waiting != NCR710_WAIT_NONE) {
-                /* Async - stop and wait */
-                break;
-            }
-            /* Sync - continue execution */
             break;
         case PHASE_CO:
             ncr710_do_command(s);
@@ -1410,8 +1422,30 @@ again:
                         s->dsp = s->dnad;
                         break;
                     }
-                } else if (!scsi_device_find(&s->bus, 0, idbitstonum(id), 0)) {
+                }
+                bool device_exists = false;
+                if (insn & (1 << 24)) {
+                    /* ATN set - scan all LUNs for this target */
+                    for (int lun = 0; lun < 8; lun++) {
+                        SCSIDevice *dev = scsi_device_find(&s->bus, 0,
+                                                           idbitstonum(id),
+                                                           lun);
+                        if (dev) {
+                            device_exists = true;
+                            break;
+                        }
+                    }
+                } else {
+                    /* No ATN - check only LUN 0 */
+                    SCSIDevice *dev = scsi_device_find(&s->bus, 0,
+                                                       idbitstonum(id), 0);
+                    device_exists = dev != NULL;
+                }
+                if (!device_exists) {
                     ncr710_bad_selection(s, id);
+                    if (!(insn & (1 << 24)) && addr != 0) {
+                        s->dsp = addr;
+                    }
                     break;
                 } else {
                     /*
@@ -1435,9 +1469,7 @@ again:
                 if (s->command_complete != NCR710_CMD_PENDING) {
                     s->scntl1 &= ~NCR710_SCNTL1_CON;
                     s->istat &= ~NCR710_ISTAT_CON;
-                    if (s->waiting == NCR710_WAIT_RESELECT) {
-                        s->waiting = NCR710_WAIT_NONE;
-                    }
+                    s->waiting = NCR710_WAIT_NONE;
                 } else {
                     if (s->current) {
                         s->current->resume_offset = s->dsp;
@@ -1776,7 +1808,6 @@ static uint8_t ncr710_reg_readb(NCR710State *s, int offset)
         }
         s->dstat = 0;  /* Clear all DMA interrupt status bits */
         s->dstat |= NCR710_DSTAT_DFE;
-        s->istat &= ~NCR710_ISTAT_DIP;
         ncr710_update_irq(s);
 
         if (s->waiting == NCR710_WAIT_RESELECT && s->current &&
@@ -1802,7 +1833,7 @@ static uint8_t ncr710_reg_readb(NCR710State *s, int offset)
         return ret;
     case NCR710_SSTAT0_REG: /* SSTAT0 */
         ret = s->sstat0;
-        if (s->sstat0 != 0 && !(s->sstat0 & NCR710_SSTAT0_STO)) {
+        if (s->sstat0 != 0) {
             s->sstat0 = 0;
             s->istat &= ~NCR710_ISTAT_SIP;
             ncr710_update_irq(s);
@@ -1815,14 +1846,7 @@ static uint8_t ncr710_reg_readb(NCR710State *s, int offset)
         ret = s->sstat0;
         break;
     case NCR710_SSTAT2_REG: /* SSTAT2 */
-        ret = s->dstat;
-
-        if (s->dstat & NCR710_DSTAT_SIR) {
-            /* SIR bit processing */
-        }
-        s->dstat = 0;
-        s->istat &= ~NCR710_ISTAT_DIP;
-        ncr710_update_irq(s);
+        ret = s->sstat2;
         break;
         CASE_GET_REG32(dsa, NCR710_DSA_REG)
         break;
@@ -1893,7 +1917,6 @@ static uint8_t ncr710_reg_readb(NCR710State *s, int offset)
         if (s->dsps == GOOD_STATUS_AFTER_STATUS &&
             (s->dstat & NCR710_DSTAT_SIR)) {
             s->dstat &= ~NCR710_DSTAT_SIR;
-            s->istat &= ~NCR710_ISTAT_DIP;
             ncr710_update_irq(s);
         }
         break;
@@ -2055,7 +2078,21 @@ static void ncr710_reg_writeb(NCR710State *s, int offset, uint8_t val)
         /* Linux writes to these readonly registers on startup */
         return;
 
-    CASE_SET_REG32(dsa, NCR710_DSA_REG)
+    case NCR710_DSA_REG:
+        s->dsa &= 0xffffff00;
+        s->dsa |= val;
+        break;
+    case NCR710_DSA_REG + 1:
+        s->dsa &= 0xffff00ff;
+        s->dsa |= val << 8;
+        break;
+    case NCR710_DSA_REG + 2:
+        s->dsa &= 0xff00ffff;
+        s->dsa |= val << 16;
+        break;
+    case NCR710_DSA_REG + 3:
+        s->dsa &= 0x00ffffff;
+        s->dsa |= val << 24;
         break;
 
     case NCR710_CTEST0_REG: /* CTEST0 */
@@ -2124,7 +2161,11 @@ static void ncr710_reg_writeb(NCR710State *s, int offset, uint8_t val)
         if (val & 0x04) {
             ncr710_scsi_fifo_init(&s->scsi_fifo);
             s->dstat |= NCR710_DSTAT_DFE;
+            s->ctest1 = 0xFF;
+        } else if (s->ctest8 & 0x04) {
+            s->ctest1 = 0x00;
         }
+        s->ctest8 = val;
         break;
     case NCR710_LCRC_REG: /* LCRC */
         s->lcrc = val;
@@ -2256,7 +2297,7 @@ static const VMStateDescription vmstate_ncr710_scsi_fifo = {
     }
 };
 
-static const VMStateDescription vmstate_ncr710 = {
+const VMStateDescription vmstate_ncr710 = {
     .name = "ncr710",
     .version_id = 1,
     .minimum_version_id = 1,

@@ -202,7 +202,7 @@ struct VirtIONet {
         uint8_t uni_overflow;
         uint8_t *macs;
     } mac_table;
-    uint32_t vlans[MAX_VLAN];
+    uint32_t *vlans;
     virtio_net_conf net_conf;
     NICConf nic_conf;
     DeviceState *qdev;
@@ -218,7 +218,6 @@ struct VirtIONet {
     uint64_t saved_guest_offloads;
     AnnounceTimer announce_timer;
     bool needs_vnet_hdr_swap;
-    bool mtu_bypass_backend;
     /* primary failover device is hidden*/
     bool failover_primary_hidden;
     bool failover;

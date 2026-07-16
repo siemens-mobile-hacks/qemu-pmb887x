@@ -5,7 +5,7 @@
 #define PMB887X_TRACE_PREFIX	"l2f50250"
 
 #include "qemu/osdep.h"
-#include "hw/qdev-properties.h"
+#include "hw/core/qdev-properties.h"
 #include "qapi/error.h"
 #include "qemu/error-report.h"
 #include "hw/arm/pmb887x/trace.h"

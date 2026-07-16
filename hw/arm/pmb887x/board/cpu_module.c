@@ -5,11 +5,11 @@
 #include "hw/arm/pmb887x/gen/cpu_modules.h"
 
 #include "hw/arm/pmb887x/utils/strings.h"
-#include "hw/hw.h"
-#include "hw/irq.h"
-#include "hw/sysbus.h"
-#include "hw/qdev-core.h"
-#include "hw/qdev-properties.h"
+#include "hw/core/hw-error.h"
+#include "hw/core/irq.h"
+#include "hw/core/sysbus.h"
+#include "hw/core/qdev.h"
+#include "hw/core/qdev-properties.h"
 #include "qom/object.h"
 
 static const struct pmb887x_cpu_module_t *get_cpu_module_definition(const char *name) {

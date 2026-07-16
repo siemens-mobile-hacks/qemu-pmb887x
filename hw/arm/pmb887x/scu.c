@@ -5,7 +5,7 @@
 #define PMB887X_TRACE_PREFIX	"pmb887x-scu"
 
 #include "qemu/osdep.h"
-#include "hw/sysbus.h"
+#include "hw/core/sysbus.h"
 #include "hw/arm/pmb887x/gen/cpu_regs.h"
 #include "hw/arm/pmb887x/io_bridge.h"
 #include "system/memory.h"
@@ -13,7 +13,7 @@
 #include "qapi/error.h"
 #include "qemu/timer.h"
 #include "system/runstate.h"
-#include "hw/qdev-properties.h"
+#include "hw/core/qdev-properties.h"
 
 #include "hw/arm/pmb887x/regs_dump.h"
 #include "hw/arm/pmb887x/mod.h"

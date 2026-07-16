@@ -5,14 +5,14 @@
 #define PMB887X_TRACE_PREFIX	"pmb887x-i2c"
 
 #include "qemu/osdep.h"
-#include "hw/sysbus.h"
-#include "hw/hw.h"
+#include "hw/core/sysbus.h"
+#include "hw/core/hw-error.h"
 #include "system/memory.h"
 #include "cpu.h"
 #include "qemu/error-report.h"
 #include "qemu/timer.h"
 #include "qemu/main-loop.h"
-#include "hw/qdev-properties.h"
+#include "hw/core/qdev-properties.h"
 #include "hw/i2c/i2c.h"
 
 #include "hw/arm/pmb887x/gen/cpu_regs.h"

@@ -9,8 +9,8 @@
 #include "qemu/module.h"
 #include "qemu/timer.h"
 #include "chardev/char.h"
-#include "hw/irq.h"
-#include "hw/qdev-properties.h"
+#include "hw/core/irq.h"
+#include "hw/core/qdev-properties.h"
 #include "qapi/error.h"
 
 #include "hw/arm/pmb887x/sim/apdu.h"

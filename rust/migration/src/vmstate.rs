@@ -101,6 +101,7 @@ pub unsafe trait VMState {
     /// type for the length (i.e. if it is not `u8`, `u16`, `u32`), using it
     /// in a call to [`vmstate_of!`](crate::vmstate_of) will cause a
     /// compile-time error.
+    #[doc(hidden)] // https://github.com/rust-lang/rust/issues/149635
     const VARRAY_FLAG: VMStateFlags = {
         panic!("invalid type for variable-sized array");
     };
@@ -141,100 +142,27 @@ pub const fn vmstate_varray_flag<T: VMState>(_: PhantomData<T>) -> VMStateFlags 
 /// [`Owned`]: ../../qom/qom/struct.Owned.html
 #[macro_export]
 macro_rules! vmstate_of {
-    ($struct_name:ty, $field_name:ident $([0 .. $num:ident $(* $factor:expr)?])? $(, $test_fn:expr)? $(,)?) => {
+    ($struct_name:ty, $($field_name:ident).+ $([0 .. $($num:ident).+ $(* $factor:expr)?])? $(, $test_fn:expr)? $(,)?) => {
         $crate::bindings::VMStateField {
-            name: ::core::concat!(::core::stringify!($field_name), "\0")
+            name: ::core::concat!(::core::stringify!($($field_name).+), "\0")
                 .as_bytes()
                 .as_ptr().cast::<::std::os::raw::c_char>(),
-            offset: ::std::mem::offset_of!($struct_name, $field_name),
-            $(num_offset: ::std::mem::offset_of!($struct_name, $num),)?
+            offset: ::std::mem::offset_of!($struct_name, $($field_name).+),
+            $(num_offset: ::std::mem::offset_of!($struct_name, $($num).+),)?
             $(field_exists: $crate::vmstate_exist_fn!($struct_name, $test_fn),)?
             // The calls to `call_func_with_field!` are the magic that
             // computes most of the VMStateField from the type of the field.
             ..$crate::call_func_with_field!(
                 $crate::vmstate::vmstate_base,
                 $struct_name,
-                $field_name
+                $($field_name).+
             )$(.with_varray_flag($crate::call_func_with_field!(
                     $crate::vmstate::vmstate_varray_flag,
                     $struct_name,
-                    $num))
+                    $($num).+))
                $(.with_varray_multiply($factor))?)?
         }
     };
-}
-
-pub trait VMStateFlagsExt {
-    const VMS_VARRAY_FLAGS: VMStateFlags;
-}
-
-impl VMStateFlagsExt for VMStateFlags {
-    const VMS_VARRAY_FLAGS: VMStateFlags = VMStateFlags(
-        VMStateFlags::VMS_VARRAY_INT32.0
-            | VMStateFlags::VMS_VARRAY_UINT8.0
-            | VMStateFlags::VMS_VARRAY_UINT16.0
-            | VMStateFlags::VMS_VARRAY_UINT32.0,
-    );
-}
-
-// Add a couple builder-style methods to VMStateField, allowing
-// easy derivation of VMStateField constants from other types.
-impl VMStateField {
-    #[must_use]
-    pub const fn with_version_id(mut self, version_id: i32) -> Self {
-        assert!(version_id >= 0);
-        self.version_id = version_id;
-        self
-    }
-
-    #[must_use]
-    pub const fn with_array_flag(mut self, num: usize) -> Self {
-        assert!(num <= 0x7FFF_FFFFusize);
-        assert!((self.flags.0 & VMStateFlags::VMS_ARRAY.0) == 0);
-        assert!((self.flags.0 & VMStateFlags::VMS_VARRAY_FLAGS.0) == 0);
-        if (self.flags.0 & VMStateFlags::VMS_POINTER.0) != 0 {
-            self.flags = VMStateFlags(self.flags.0 & !VMStateFlags::VMS_POINTER.0);
-            self.flags = VMStateFlags(self.flags.0 | VMStateFlags::VMS_ARRAY_OF_POINTER.0);
-            // VMS_ARRAY_OF_POINTER flag stores the size of pointer.
-            // FIXME: *const, *mut, NonNull and Box<> have the same size as usize.
-            //        Resize if more smart pointers are supported.
-            self.size = std::mem::size_of::<usize>();
-        }
-        self.flags = VMStateFlags(self.flags.0 & !VMStateFlags::VMS_SINGLE.0);
-        self.flags = VMStateFlags(self.flags.0 | VMStateFlags::VMS_ARRAY.0);
-        self.num = num as i32;
-        self
-    }
-
-    #[must_use]
-    pub const fn with_pointer_flag(mut self) -> Self {
-        assert!((self.flags.0 & VMStateFlags::VMS_POINTER.0) == 0);
-        self.flags = VMStateFlags(self.flags.0 | VMStateFlags::VMS_POINTER.0);
-        self
-    }
-
-    #[must_use]
-    pub const fn with_varray_flag_unchecked(mut self, flag: VMStateFlags) -> Self {
-        self.flags = VMStateFlags(self.flags.0 & !VMStateFlags::VMS_ARRAY.0);
-        self.flags = VMStateFlags(self.flags.0 | flag.0);
-        self.num = 0; // varray uses num_offset instead of num.
-        self
-    }
-
-    #[must_use]
-    #[allow(unused_mut)]
-    pub const fn with_varray_flag(mut self, flag: VMStateFlags) -> Self {
-        assert!((self.flags.0 & VMStateFlags::VMS_ARRAY.0) != 0);
-        self.with_varray_flag_unchecked(flag)
-    }
-
-    #[must_use]
-    pub const fn with_varray_multiply(mut self, num: u32) -> Self {
-        assert!(num <= 0x7FFF_FFFFu32);
-        self.flags = VMStateFlags(self.flags.0 | VMStateFlags::VMS_MULTIPLY_ELEMENTS.0);
-        self.num = num as i32;
-        self
-    }
 }
 
 /// This macro can be used (by just passing it a type) to forward the `VMState`
@@ -530,7 +458,11 @@ pub struct VMStateDescription<T>(bindings::VMStateDescription, PhantomData<fn(&T
 unsafe impl<T: Sync> Sync for VMStateDescription<T> {}
 
 #[derive(Clone)]
-pub struct VMStateDescriptionBuilder<T>(bindings::VMStateDescription, PhantomData<fn(&T)>);
+pub struct VMStateDescriptionBuilder<T>(
+    bindings::VMStateDescription,
+    Option<*const std::os::raw::c_char>, // the name of VMStateDescription
+    PhantomData<fn(&T)>,
+);
 
 #[derive(Debug)]
 pub struct InvalidError;
@@ -591,7 +523,7 @@ unsafe extern "C" fn vmstate_dev_unplug_pending_cb<T, F: for<'a> FnCall<(&'a T,)
 impl<T> VMStateDescriptionBuilder<T> {
     #[must_use]
     pub const fn name(mut self, name_str: &CStr) -> Self {
-        self.0.name = ::std::ffi::CStr::as_ptr(name_str);
+        self.1 = Some(::std::ffi::CStr::as_ptr(name_str));
         self
     }
 
@@ -717,13 +649,16 @@ impl<T> VMStateDescriptionBuilder<T> {
     }
 
     #[must_use]
-    pub const fn build(self) -> VMStateDescription<T> {
+    pub const fn build(mut self) -> VMStateDescription<T> {
+        // FIXME: is_null()/as_ref() become const since v1.84.
+        assert!(self.1.is_some(), "VMStateDescription requires name field!");
+        self.0.name = self.1.unwrap();
         VMStateDescription::<T>(self.0, PhantomData)
     }
 
     #[must_use]
     pub const fn new() -> Self {
-        Self(bindings::VMStateDescription::ZERO, PhantomData)
+        Self(bindings::VMStateDescription::ZERO, None, PhantomData)
     }
 }
 

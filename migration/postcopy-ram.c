@@ -30,7 +30,7 @@
 #include "system/system.h"
 #include "qemu/error-report.h"
 #include "trace.h"
-#include "hw/boards.h"
+#include "hw/core/boards.h"
 #include "system/ramblock.h"
 #include "socket.h"
 #include "yank_functions.h"
@@ -582,7 +582,7 @@ bool postcopy_ram_supported_by_host(MigrationIncomingState *mis, Error **errp)
 
     ufd = uffd_open(O_CLOEXEC);
     if (ufd == -1) {
-        error_setg(errp, "Userfaultfd not available: %s", strerror(errno));
+        error_setg_errno(errp, errno, "Userfaultfd not available");
         goto out;
     }
 
@@ -620,7 +620,7 @@ bool postcopy_ram_supported_by_host(MigrationIncomingState *mis, Error **errp)
      * it was enabled.
      */
     if (munlockall()) {
-        error_setg(errp, "munlockall() failed: %s", strerror(errno));
+        error_setg_errno(errp, errno, "munlockall() failed");
         goto out;
     }
 
@@ -632,7 +632,7 @@ bool postcopy_ram_supported_by_host(MigrationIncomingState *mis, Error **errp)
     testarea = mmap(NULL, pagesize, PROT_READ | PROT_WRITE, MAP_PRIVATE |
                                     MAP_ANONYMOUS, -1, 0);
     if (testarea == MAP_FAILED) {
-        error_setg(errp, "Failed to map test area: %s", strerror(errno));
+        error_setg_errno(errp, errno, "Failed to map test area");
         goto out;
     }
     g_assert(QEMU_PTR_IS_ALIGNED(testarea, pagesize));
@@ -642,14 +642,14 @@ bool postcopy_ram_supported_by_host(MigrationIncomingState *mis, Error **errp)
     reg_struct.mode = UFFDIO_REGISTER_MODE_MISSING;
 
     if (ioctl(ufd, UFFDIO_REGISTER, &reg_struct)) {
-        error_setg(errp, "UFFDIO_REGISTER failed: %s", strerror(errno));
+        error_setg_errno(errp, errno, "UFFDIO_REGISTER failed");
         goto out;
     }
 
     range_struct.start = (uintptr_t)testarea;
     range_struct.len = pagesize;
     if (ioctl(ufd, UFFDIO_UNREGISTER, &range_struct)) {
-        error_setg(errp, "UFFDIO_UNREGISTER failed: %s", strerror(errno));
+        error_setg_errno(errp, errno, "UFFDIO_UNREGISTER failed");
         goto out;
     }
 
@@ -1467,7 +1467,8 @@ retry:
 static int postcopy_temp_pages_setup(MigrationIncomingState *mis)
 {
     PostcopyTmpPage *tmp_page;
-    int err, i, channels;
+    int err;
+    unsigned i, channels;
     void *temp_page;
 
     if (migrate_postcopy_preempt()) {
@@ -1479,7 +1480,7 @@ static int postcopy_temp_pages_setup(MigrationIncomingState *mis)
     }
 
     channels = mis->postcopy_channels;
-    mis->postcopy_tmp_pages = g_malloc0_n(sizeof(PostcopyTmpPage), channels);
+    mis->postcopy_tmp_pages = g_new0(PostcopyTmpPage, channels);
 
     for (i = 0; i < channels; i++) {
         tmp_page = &mis->postcopy_tmp_pages[i];
@@ -1927,8 +1928,7 @@ postcopy_preempt_send_channel_done(MigrationState *s,
                                    QIOChannel *ioc, Error *local_err)
 {
     if (local_err) {
-        migrate_set_error(s, local_err);
-        error_free(local_err);
+        migrate_error_propagate(s, local_err);
     } else {
         migration_ioc_register_yank(ioc);
         s->postcopy_qemufile_src = qemu_file_new_output(ioc);
@@ -1966,7 +1966,7 @@ postcopy_preempt_send_channel_new(QIOTask *task, gpointer opaque)
     }
 
     if (migrate_channel_requires_tls_upgrade(ioc)) {
-        tioc = migration_tls_client_create(ioc, s->hostname, &local_err);
+        tioc = migration_tls_client_create(ioc, &local_err);
         if (!tioc) {
             goto out;
         }
@@ -2076,4 +2076,164 @@ bool postcopy_is_paused(MigrationStatus status)
 {
     return status == MIGRATION_STATUS_POSTCOPY_PAUSED ||
         status == MIGRATION_STATUS_POSTCOPY_RECOVER_SETUP;
+}
+
+static void postcopy_listen_thread_bh(void *opaque)
+{
+    MigrationState *s = migrate_get_current();
+    MigrationIncomingState *mis = migration_incoming_get_current();
+
+    migration_incoming_state_destroy();
+
+    if (mis->state == MIGRATION_STATUS_FAILED && mis->exit_on_error) {
+        WITH_QEMU_LOCK_GUARD(&s->error_mutex) {
+            error_report_err(s->error);
+            s->error = NULL;
+        }
+        /*
+         * If something went wrong then we have a bad state so exit;
+         * we only could have gotten here if something failed before
+         * POSTCOPY_INCOMING_RUNNING (for example device load), otherwise
+         * postcopy migration would pause inside qemu_loadvm_state_main().
+         * Failing dirty-bitmaps won't fail the whole migration.
+         */
+        exit(1);
+    }
+}
+
+/*
+ * Triggered by a postcopy_listen command; this thread takes over reading
+ * the input stream, leaving the main thread free to carry on loading the rest
+ * of the device state (from RAM).
+ */
+static void *postcopy_listen_thread(void *opaque)
+{
+    MigrationIncomingState *mis = migration_incoming_get_current();
+    QEMUFile *f = mis->from_src_file;
+    int load_res;
+    MigrationState *migr = migrate_get_current();
+    Error *local_err = NULL;
+
+    object_ref(OBJECT(migr));
+
+    migrate_set_state(&mis->state, MIGRATION_STATUS_ACTIVE,
+                      mis->to_src_file ? MIGRATION_STATUS_POSTCOPY_DEVICE :
+                                         MIGRATION_STATUS_POSTCOPY_ACTIVE);
+    qemu_event_set(&mis->thread_sync_event);
+    trace_postcopy_ram_listen_thread_start();
+
+    rcu_register_thread();
+    /*
+     * Because we're a thread and not a coroutine we can't yield
+     * in qemu_file, and thus we must be blocking now.
+     */
+    qemu_file_set_blocking(f, true, &error_fatal);
+
+    /* TODO: sanity check that only postcopiable data will be loaded here */
+    load_res = qemu_loadvm_state_main(f, mis, &local_err);
+
+    /*
+     * This is tricky, but, mis->from_src_file can change after it
+     * returns, when postcopy recovery happened. In the future, we may
+     * want a wrapper for the QEMUFile handle.
+     */
+    f = mis->from_src_file;
+
+    /* And non-blocking again so we don't block in any cleanup */
+    qemu_file_set_blocking(f, false, &error_fatal);
+
+    trace_postcopy_ram_listen_thread_exit();
+    if (load_res < 0) {
+        qemu_file_set_error(f, load_res);
+        dirty_bitmap_mig_cancel_incoming();
+        error_prepend(&local_err,
+                      "loadvm failed during postcopy: %d: ", load_res);
+        if (postcopy_state_get() == POSTCOPY_INCOMING_RUNNING &&
+            !migrate_postcopy_ram() && migrate_dirty_bitmaps())
+        {
+            error_append_hint(&local_err,
+                              "All state is migrated except dirty bitmaps."
+                              " Some dirty bitmaps may be lost, but any"
+                              " migrated dirty bitmaps are valid.");
+            error_report_err(local_err);
+        } else {
+            /*
+             * Something went fatally wrong and we have a bad state, QEMU will
+             * exit depending on if postcopy-exit-on-error is true, but the
+             * migration cannot be recovered.
+             */
+            migrate_error_propagate(migr, error_copy(local_err));
+            error_report_err(local_err);
+            migrate_set_state(&mis->state, mis->state, MIGRATION_STATUS_FAILED);
+            goto out;
+        }
+    }
+    /*
+     * This looks good, but it's possible that the device loading in the
+     * main thread hasn't finished yet, and so we might not be in 'RUN'
+     * state yet; wait for the end of the main thread.
+     */
+    qemu_event_wait(&mis->main_thread_load_event);
+
+    /*
+     * Device load in the main thread has finished, we should be in
+     * POSTCOPY_ACTIVE now.
+     */
+    migrate_set_state(&mis->state, MIGRATION_STATUS_POSTCOPY_ACTIVE,
+                                   MIGRATION_STATUS_COMPLETED);
+
+out:
+    rcu_unregister_thread();
+    postcopy_state_set(POSTCOPY_INCOMING_END);
+
+    migration_bh_schedule(postcopy_listen_thread_bh, NULL);
+
+    object_unref(OBJECT(migr));
+
+    return NULL;
+}
+
+int postcopy_incoming_setup(MigrationIncomingState *mis, Error **errp)
+{
+    /*
+     * Sensitise RAM - can now generate requests for blocks that don't exist
+     * However, at this point the CPU shouldn't be running, and the IO
+     * shouldn't be doing anything yet so don't actually expect requests
+     */
+    if (migrate_postcopy_ram()) {
+        if (postcopy_ram_incoming_setup(mis)) {
+            postcopy_ram_incoming_cleanup(mis);
+            error_setg(errp, "Failed to setup incoming postcopy RAM blocks");
+            return -1;
+        }
+    }
+
+    trace_loadvm_postcopy_handle_listen("after uffd");
+
+    if (postcopy_notify(POSTCOPY_NOTIFY_INBOUND_LISTEN, errp)) {
+        return -1;
+    }
+
+    mis->have_listen_thread = true;
+    postcopy_thread_create(mis, &mis->listen_thread,
+                           MIGRATION_THREAD_DST_LISTEN,
+                           postcopy_listen_thread, QEMU_THREAD_JOINABLE);
+
+    return 0;
+}
+
+int postcopy_incoming_cleanup(MigrationIncomingState *mis)
+{
+    int rc = 0;
+
+    if (mis->have_listen_thread) {
+        qemu_thread_join(&mis->listen_thread);
+        mis->have_listen_thread = false;
+    }
+
+    if (migrate_postcopy_ram()) {
+        rc = postcopy_ram_incoming_cleanup(mis);
+    }
+
+    return rc;
 }

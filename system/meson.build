@@ -1,17 +1,11 @@
-specific_ss.add(when: 'CONFIG_SYSTEM_ONLY', if_true: [files(
-  'arch_init.c',
-  'globals-target.c',
-)])
-
-specific_ss.add(when: ['CONFIG_SYSTEM_ONLY', 'CONFIG_TCG'], if_true: [files(
-  'icount2.c',
-)])
+system_ss.add(when: 'CONFIG_TCG', if_true: files('icount2.c'))
 
 system_ss.add(files(
   'vl.c',
 ), sdl, libpmem, libdaxctl)
 
 system_ss.add(files(
+  'arch_init.c',
   'balloon.c',
   'bootdevice.c',
   'cpus.c',

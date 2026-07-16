@@ -23,7 +23,7 @@
 
 #include "qom/object.h"
 #include "qemu/coroutine-core.h"
-#include "block/aio.h"
+#include "qemu/aio.h"
 
 #define TYPE_QIO_CHANNEL "qio-channel"
 OBJECT_DECLARE_TYPE(QIOChannel, QIOChannelClass,
@@ -870,6 +870,21 @@ void qio_channel_wake_read(QIOChannel *ioc);
  */
 void qio_channel_wait(QIOChannel *ioc,
                       GIOCondition condition);
+
+/**
+ * qio_channel_wait_cond:
+ * @ioc: the channel object
+ * @condition: the I/O condition to wait for
+ *
+ * Block execution from the current thread until
+ * the condition indicated by @condition becomes
+ * available.
+ *
+ * This will work with/without a coroutine context, by automatically select
+ * the proper API to wait.
+ */
+void qio_channel_wait_cond(QIOChannel *ioc,
+                           GIOCondition condition);
 
 /**
  * qio_channel_set_aio_fd_handler:

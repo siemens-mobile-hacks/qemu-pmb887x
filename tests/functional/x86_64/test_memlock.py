@@ -14,12 +14,13 @@ import re
 from typing import Dict
 
 from qemu_test import QemuSystemTest
-from qemu_test import skipLockedMemoryTest
+from qemu_test import skipLockedMemoryTest, skipUnlessOperatingSystem
 
 
 STATUS_VALUE_PATTERN = re.compile(r'^(\w+):\s+(\d+) kB', re.MULTILINE)
 
 
+@skipUnlessOperatingSystem('Linux')
 @skipLockedMemoryTest(2_097_152)  # 2GB
 class MemlockTest(QemuSystemTest):
     """
@@ -69,11 +70,13 @@ class MemlockTest(QemuSystemTest):
         return result
 
     def _get_raw_process_status(self, pid: int) -> str:
+        status = None
         try:
-            with open(f'/proc/{pid}/status', 'r') as f:
-                return f.read()
+            with open(f'/proc/{pid}/status', 'r', encoding="ascii") as f:
+                status = f.read()
         except FileNotFoundError:
             self.skipTest("Can't open status file of the process")
+        return status
 
 
 if __name__ == '__main__':

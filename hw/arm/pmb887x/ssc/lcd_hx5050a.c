@@ -5,8 +5,8 @@
 #define PMB887X_TRACE_PREFIX	"pmb887x-lcd-hx5050a"
 
 #include "qemu/osdep.h"
-#include "hw/hw.h"
-#include "hw/qdev-properties.h"
+#include "hw/core/hw-error.h"
+#include "hw/core/qdev-properties.h"
 #include "qapi/error.h"
 #include "qemu/error-report.h"
 #include "hw/arm/pmb887x/trace.h"

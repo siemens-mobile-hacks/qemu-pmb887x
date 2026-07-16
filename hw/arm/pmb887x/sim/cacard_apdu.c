@@ -1,7 +1,7 @@
 #include "qemu/osdep.h"
 #include "qemu/module.h"
 #include "qemu/thread.h"
-#include "hw/qdev-properties.h"
+#include "hw/core/qdev-properties.h"
 #include "qapi/error.h"
 
 #include <libcacard.h>

@@ -33,7 +33,7 @@
 #include "exec/cpu-common.h"
 #include "exec/cpu-defs.h"
 #include "exec/cpu-interrupt.h"
-#include "hw/clock.h"
+#include "hw/core/clock.h"
 #include "xtensa-isa.h"
 
 enum {
@@ -642,6 +642,10 @@ static inline void xtensa_select_static_vectors(CPUXtensaState *env,
     env->static_vectors = n;
 }
 void xtensa_runstall(CPUXtensaState *env, bool runstall);
+
+uint32_t cpu_get_fsr(CPUXtensaState *env);
+void cpu_set_fcr(CPUXtensaState *env, uint32_t v);
+void cpu_set_fsr(CPUXtensaState *env, uint32_t v);
 
 #define XTENSA_OPTION_BIT(opt) (((uint64_t)1) << (opt))
 #define XTENSA_OPTION_ALL (~(uint64_t)0)

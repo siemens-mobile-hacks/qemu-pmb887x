@@ -1,6 +1,6 @@
 #pragma once
 #include "qemu/osdep.h"
-#include "hw/irq.h"
+#include "hw/core/irq.h"
 
 typedef struct pmb887x_clc_reg_t pmb887x_clc_reg_t;
 typedef struct pmb887x_src_reg_t pmb887x_src_reg_t;

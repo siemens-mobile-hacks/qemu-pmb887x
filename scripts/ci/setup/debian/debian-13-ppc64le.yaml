@@ -14,6 +14,7 @@ packages:
   - ca-certificates
   - ccache
   - clang
+  - coreutils
   - dbus
   - debianutils
   - diffutils
@@ -100,7 +101,6 @@ packages:
   - make
   - mtools
   - multipath-tools
-  - ncat
   - nettle-dev
   - ninja-build
   - openssh-client

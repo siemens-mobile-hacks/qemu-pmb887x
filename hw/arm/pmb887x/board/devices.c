@@ -10,11 +10,11 @@
 #include "hw/arm/pmb887x/utils/toml.h"
 
 #include "hw/arm/pmb887x/utils/tomlc17.h"
-#include "hw/hw.h"
-#include "hw/sysbus.h"
-#include "hw/qdev-core.h"
+#include "hw/core/hw-error.h"
+#include "hw/core/sysbus.h"
+#include "hw/core/qdev.h"
 #include "qom/object.h"
-#include "hw/qdev-properties.h"
+#include "hw/core/qdev-properties.h"
 #include "hw/i2c/i2c.h"
 #include "qapi/error.h"
 

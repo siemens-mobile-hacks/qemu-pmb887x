@@ -9,7 +9,7 @@
 #include "system/memory.h"
 #endif
 #include "fpu/softfloat-types.h"
-#include "hw/clock.h"
+#include "hw/core/clock.h"
 #include "mips-defs.h"
 
 typedef struct CPUMIPSTLBContext CPUMIPSTLBContext;
@@ -1365,6 +1365,9 @@ void cpu_mips_clock_init(MIPSCPU *cpu);
 
 /* helper.c */
 target_ulong exception_resume_pc(CPUMIPSState *env);
+
+/* fpu.c */
+void cpu_mips_restore_fp_status(CPUMIPSState *env);
 
 /**
  * mips_cpu_create_with_clock:

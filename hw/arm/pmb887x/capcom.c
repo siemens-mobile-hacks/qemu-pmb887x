@@ -5,13 +5,13 @@
 #define PMB887X_TRACE_PREFIX	"pmb887x-capcom"
 
 #include "qemu/osdep.h"
-#include "hw/sysbus.h"
-#include "hw/hw.h"
+#include "hw/core/sysbus.h"
+#include "hw/core/hw-error.h"
 #include "system/memory.h"
 #include "cpu.h"
 #include "qapi/error.h"
 #include "qemu/main-loop.h"
-#include "hw/qdev-properties.h"
+#include "hw/core/qdev-properties.h"
 
 #include "hw/arm/pmb887x/gen/cpu_regs.h"
 #include "hw/arm/pmb887x/regs_dump.h"

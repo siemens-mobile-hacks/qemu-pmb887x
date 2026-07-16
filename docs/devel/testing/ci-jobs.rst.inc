@@ -91,12 +91,6 @@ Maintainer controlled job variables
 The following variables may be set when defining a job in the
 CI configuration file.
 
-QEMU_JOB_CIRRUS
-~~~~~~~~~~~~~~~
-
-The job makes use of Cirrus CI infrastructure, requiring the
-configuration setup for cirrus-run to be present in the repository
-
 QEMU_JOB_OPTIONAL
 ~~~~~~~~~~~~~~~~~
 
@@ -173,6 +167,12 @@ S390X_RUNNER_AVAILABLE
 If you've got access to an IBM Z host that can be used as a gitlab-CI
 runner, you can set this variable to enable the tests that require this
 kind of host. The runner should be tagged with "s390x".
+
+PPC64LE_RUNNER_AVAILABLE
+~~~~~~~~~~~~~~~~~~~~~~~~
+If you've got access to an PPC64LE host that can be used as a gitlab-CI
+runner, you can set this variable to enable the tests that require this
+kind of host. The runner should be tagged with "ppc64le".
 
 CCACHE_DISABLE
 ~~~~~~~~~~~~~~

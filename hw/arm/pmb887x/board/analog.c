@@ -1,7 +1,7 @@
 #include "hw/arm/pmb887x/board/analog.h"
 
-#include "hw/hw.h"
-#include "hw/sysbus.h"
+#include "hw/core/hw-error.h"
+#include "hw/core/sysbus.h"
 
 #include "hw/arm/pmb887x/adc.h"
 #include "hw/arm/pmb887x/board/board.h"

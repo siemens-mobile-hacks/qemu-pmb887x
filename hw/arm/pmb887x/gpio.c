@@ -5,9 +5,9 @@
 #define PMB887X_TRACE_PREFIX	"pmb887x-gpio"
 
 #include "qemu/osdep.h"
-#include "hw/sysbus.h"
+#include "hw/core/sysbus.h"
 #include "system/memory.h"
-#include "hw/qdev-properties.h"
+#include "hw/core/qdev-properties.h"
 #include "qapi/error.h"
 #include "cpu.h"
 

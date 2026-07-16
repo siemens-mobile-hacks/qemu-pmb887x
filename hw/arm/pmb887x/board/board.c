@@ -5,7 +5,7 @@
 #include "hw/arm/pmb887x/gen/cpu_regs.h"
 #include "hw/arm/pmb887x/utils/toml.h"
 #include "hw/arm/pmb887x/utils/tomlc17.h"
-#include "hw/hw.h"
+#include "hw/core/hw-error.h"
 #include "qemu/error-report.h"
 
 static pmb887x_board_t *board = NULL;

@@ -15,13 +15,12 @@
 #ifndef HW_NCR53C710_H
 #define HW_NCR53C710_H
 
-#include "qemu/osdep.h"
-#include "hw/sysbus.h"
+#include "hw/core/sysbus.h"
 #include "hw/scsi/scsi.h"
 #include "qemu/fifo8.h"
 #include "qom/object.h"
 #include "system/memory.h"
-#include "hw/irq.h"
+#include "hw/core/irq.h"
 #include "qemu/timer.h"
 
 #define TYPE_NCR710_SCSI "ncr710-scsi"
@@ -242,5 +241,6 @@ void ncr710_transfer_data(SCSIRequest *req, uint32_t len);
 void ncr710_execute_script(NCR710State *s);
 void ncr710_set_phase(NCR710State *s, int phase);
 void ncr710_reselection_retry_callback(void *opaque);
+extern const VMStateDescription vmstate_ncr710;
 
 #endif /* HW_NCR53C710_H */

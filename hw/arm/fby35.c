@@ -10,8 +10,8 @@
 #include "qapi/error.h"
 #include "system/system.h"
 #include "system/block-backend.h"
-#include "hw/boards.h"
-#include "hw/qdev-clock.h"
+#include "hw/core/boards.h"
+#include "hw/core/qdev-clock.h"
 #include "hw/arm/aspeed_soc.h"
 #include "hw/arm/boot.h"
 #include "hw/arm/machines-qom.h"
@@ -175,6 +175,7 @@ static void fby35_class_init(ObjectClass *oc, const void *data)
     MachineClass *mc = MACHINE_CLASS(oc);
 
     mc->desc = "Meta Platforms fby35";
+    mc->deprecation_reason = "For a multi-soc machine, use 'ast2700fc' instead";
     mc->init = fby35_init;
     mc->no_floppy = 1;
     mc->no_cdrom = 1;

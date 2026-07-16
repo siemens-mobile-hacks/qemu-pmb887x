@@ -6,7 +6,7 @@
 
 #include "hw/arm/pmb887x/mod.h"
 #include "hw/arm/pmb887x/gen/cpu_regs.h"
-#include "hw/hw.h"
+#include "hw/core/hw-error.h"
 #include "hw/arm/pmb887x/trace.h"
 
 void pmb887x_clc_init(pmb887x_clc_reg_t *reg) {

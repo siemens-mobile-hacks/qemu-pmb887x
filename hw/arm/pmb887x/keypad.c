@@ -5,9 +5,9 @@
 #define PMB887X_TRACE_PREFIX	"pmb887x-keypad"
 
 #include "qemu/osdep.h"
-#include "hw/sysbus.h"
-#include "hw/hw.h"
-#include "hw/qdev-properties.h"
+#include "hw/core/sysbus.h"
+#include "hw/core/hw-error.h"
+#include "hw/core/qdev-properties.h"
 #include "qapi/error.h"
 #include "ui/input.h"
 

@@ -9,29 +9,25 @@
 #
 # SPDX-License-Identifier: GPL-2.0-or-later
 
-from qemu.machine.machine import VMLaunchFailure
+from re import search
+from subprocess import check_output, CalledProcessError
 
-from qemu_test import Asset
+from qemu_test import Asset, skipIfMissingCommands
 from qemu_test import exec_command_and_wait_for_pattern as ec_and_wait
-from qemu_test import skipIfMissingCommands
 
 from qemu_test.linuxkernel import LinuxKernelTest
 
-from re import search
-from subprocess import check_output, CalledProcessError
+from qemu.machine.machine import VMLaunchFailure
+
 
 class Aarch64VirtGPUMachine(LinuxKernelTest):
 
     ASSET_VIRT_GPU_KERNEL = Asset(
-        'https://fileserver.linaro.org/s/ce5jXBFinPxtEdx/'
-        'download?path=%2F&files='
-        'Image.6.12.16.aarch64',
+        'https://share.linaro.org/downloadFile?id=lL8wgnMmSXZo7Co',
         '7888c51c55d37e86bbbdeb5acea9f08c34e6b0f03c1f5b2463285f6a6f6eec8b')
 
     ASSET_VIRT_GPU_ROOTFS = Asset(
-        'https://fileserver.linaro.org/s/ce5jXBFinPxtEdx/'
-        'download?path=%2F&files='
-        'rootfs.aarch64.ext2.zstd',
+        'https://share.linaro.org/downloadFile?id=qOn1wbfKmS6KVHZ',
         'd45118c899420b7e673f1539a37a35480134b3e36e3a59e2cb69b1781cbb14ef')
 
     def _launch_virt_gpu(self, gpu_device):
@@ -85,16 +81,16 @@ class Aarch64VirtGPUMachine(LinuxKernelTest):
         self.wait_for_console_pattern('buildroot login:')
         ec_and_wait(self, 'root', '#')
 
-    def _run_virt_weston_test(self, cmd, fail = None):
+    def _run_virt_weston_test(self, cmd, fail=None):
 
         # make it easier to detect successful return to shell
-        PS1 = 'RES=[$?] # '
-        OK_CMD = 'RES=[0] # '
+        ps1 = 'RES=[$?] # '
+        ok_cmd = 'RES=[0] # '
 
         ec_and_wait(self, 'export XDG_RUNTIME_DIR=/tmp', '#')
-        ec_and_wait(self, f"export PS1='{PS1}'", OK_CMD)
+        ec_and_wait(self, f"export PS1='{ps1}'", ok_cmd)
         full_cmd = f"weston -B headless --renderer gl --shell kiosk -- {cmd}"
-        ec_and_wait(self, full_cmd, OK_CMD, fail)
+        ec_and_wait(self, full_cmd, ok_cmd, fail)
 
     @skipIfMissingCommands('zstd')
     def test_aarch64_virt_with_virgl_gpu(self):

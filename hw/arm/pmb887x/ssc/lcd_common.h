@@ -1,6 +1,6 @@
 #pragma once
 
-#include "hw/qdev-core.h"
+#include "hw/core/qdev.h"
 #include "qapi-builtin-types.h"
 #include "qom/object.h"
 #include "hw/ssi/ssi.h"

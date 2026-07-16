@@ -33,8 +33,8 @@ static bool icount2_debug;
 static void icount2_idle_timer(void *opaque) {
 	if (timers_state.icount2_idle_deadline > 0) {
 		seqlock_write_lock(&timers_state.vm_clock_seqlock, &timers_state.vm_clock_lock);
-		int64_t bias = qatomic_read_i64(&timers_state.icount2_bias);
-		qatomic_set_i64(&timers_state.icount2_bias, bias + timers_state.icount2_idle_deadline);
+		int64_t bias = qatomic_read(&timers_state.icount2_bias);
+		qatomic_set(&timers_state.icount2_bias, bias + timers_state.icount2_idle_deadline);
 		seqlock_write_unlock(&timers_state.vm_clock_seqlock, &timers_state.vm_clock_lock);
 
 		timers_state.icount2_idle_deadline = 0;
@@ -62,7 +62,7 @@ void icount2_sync(void) {
 	
 	int64_t deadline = qemu_clock_deadline_ns_all(QEMU_CLOCK_VIRTUAL, QEMU_TIMER_ATTR_ALL);
 	if (deadline < 0) {
-		qatomic_set_i64(&timers_state.icount2_deadline, 0);
+		qatomic_set(&timers_state.icount2_deadline, 0);
 		return;
 	}
 	
@@ -73,22 +73,22 @@ void icount2_sync(void) {
 	}
 	
 	if (deadline < 0) {
-		qatomic_set_i64(&timers_state.icount2_deadline, 0);
+		qatomic_set(&timers_state.icount2_deadline, 0);
 		return;
 	}
 	
-	int64_t ticks = qatomic_read_i64(&timers_state.icount2_ticks);
+	int64_t ticks = qatomic_read(&timers_state.icount2_ticks);
 	uint32_t frequency = qatomic_read(&timers_state.icount2_frequency);
 	uint64_t instructions = muldiv64_round_up(deadline, frequency, NANOSECONDS_PER_SECOND);
-	qatomic_set_i64(&timers_state.icount2_deadline, ticks + instructions);
+	qatomic_set(&timers_state.icount2_deadline, ticks + instructions);
 }
 
 void icount2_advance(uint32_t cycles) {
-	int64_t ticks = qatomic_read_i64(&timers_state.icount2_ticks);
+	int64_t ticks = qatomic_read(&timers_state.icount2_ticks);
 	int64_t new_ticks = ticks + cycles;
-	qatomic_set_i64(&timers_state.icount2_ticks, new_ticks);
+	qatomic_set(&timers_state.icount2_ticks, new_ticks);
 	
-	int64_t deadline = qatomic_read_i64(&timers_state.icount2_deadline);
+	int64_t deadline = qatomic_read(&timers_state.icount2_deadline);
 	if (deadline > 0 && new_ticks >= deadline) {
 		bql_lock();
 		icount2_sync();
@@ -97,10 +97,10 @@ void icount2_advance(uint32_t cycles) {
 }
 
 static int64_t icount2_get_locked(void) {
-	int64_t ticks = qatomic_read_i64(&timers_state.icount2_ticks);
-	int64_t offset = qatomic_read_i64(&timers_state.icount2_offset);
+	int64_t ticks = qatomic_read(&timers_state.icount2_ticks);
+	int64_t offset = qatomic_read(&timers_state.icount2_offset);
 	uint32_t frequency = qatomic_read(&timers_state.icount2_frequency);
-	int64_t bias = qatomic_read_i64(&timers_state.icount2_bias);
+	int64_t bias = qatomic_read(&timers_state.icount2_bias);
 	return bias + muldiv64(ticks - offset, NANOSECONDS_PER_SECOND, frequency);
 }
 
@@ -115,13 +115,13 @@ int64_t icount2_get(void) {
 }
 
 static void icount2_set_frequency_locked(uint32_t frequency) {
-	int64_t ticks = qatomic_read_i64(&timers_state.icount2_ticks);
+	int64_t ticks = qatomic_read(&timers_state.icount2_ticks);
 	int64_t time = icount2_get_locked();
 
-	qatomic_set_i64(&timers_state.icount2_bias, time);
-	qatomic_set_i64(&timers_state.icount2_offset, ticks);
+	qatomic_set(&timers_state.icount2_bias, time);
+	qatomic_set(&timers_state.icount2_offset, ticks);
 	qatomic_set(&timers_state.icount2_frequency, frequency);
-	qatomic_set_i64(&timers_state.icount2_deadline, ticks);
+	qatomic_set(&timers_state.icount2_deadline, ticks);
 }
 
 static void icount2_adjust(void) {
@@ -138,7 +138,7 @@ static void icount2_adjust(void) {
 	}
 
 	realtime = cpu_get_clock_locked();
-	ticks = qatomic_read_i64(&timers_state.icount2_ticks);
+	ticks = qatomic_read(&timers_state.icount2_ticks);
 
 	if (!timers_state.icount2_adjust_initialized) {
 		timers_state.icount2_adjust_realtime = realtime;

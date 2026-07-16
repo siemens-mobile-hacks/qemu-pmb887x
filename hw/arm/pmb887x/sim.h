@@ -1,7 +1,7 @@
 #pragma once
 
 #include "chardev/char.h"
-#include "hw/sysbus.h"
+#include "hw/core/sysbus.h"
 
 #define TYPE_PMB887X_SIM "pmb887x-sim"
 OBJECT_DECLARE_SIMPLE_TYPE(pmb887x_sim_t, PMB887X_SIM)

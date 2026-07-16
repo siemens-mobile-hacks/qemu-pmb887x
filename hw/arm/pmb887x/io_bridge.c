@@ -11,8 +11,8 @@
 #include <stdlib.h>
 #include <stdint.h>
 
-#include "hw/qdev-core.h"
-#include "hw/irq.h"
+#include "hw/core/qdev.h"
+#include "hw/core/irq.h"
 #include "qemu/thread.h"
 #include "qemu/main-loop.h"
 #include "cpu.h"

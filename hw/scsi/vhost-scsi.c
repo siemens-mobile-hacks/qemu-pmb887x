@@ -26,8 +26,8 @@
 #include "hw/virtio/vhost.h"
 #include "hw/virtio/virtio-scsi.h"
 #include "hw/virtio/virtio-bus.h"
-#include "hw/fw-path-provider.h"
-#include "hw/qdev-properties.h"
+#include "hw/core/fw-path-provider.h"
+#include "hw/core/qdev-properties.h"
 #include "qemu/cutils.h"
 #include "system/system.h"
 
@@ -245,8 +245,7 @@ static void vhost_scsi_realize(DeviceState *dev, Error **errp)
     } else {
         vhostfd = open("/dev/vhost-scsi", O_RDWR);
         if (vhostfd < 0) {
-            error_setg(errp, "vhost-scsi: open vhost char device failed: %s",
-                       strerror(errno));
+            error_setg_file_open(errp, errno, "/dev/vhost-scsi");
             return;
         }
     }

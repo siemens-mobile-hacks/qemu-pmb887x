@@ -5,13 +5,13 @@
 #define PMB887X_TRACE_PREFIX	"pmb887x-usart"
 
 #include "qemu/osdep.h"
-#include "hw/sysbus.h"
-#include "hw/hw.h"
+#include "hw/core/sysbus.h"
+#include "hw/core/hw-error.h"
 #include "system/memory.h"
 #include "cpu.h"
 #include "qemu/main-loop.h"
-#include "hw/qdev-properties.h"
-#include "hw/qdev-properties-system.h"
+#include "hw/core/qdev-properties.h"
+#include "hw/core/qdev-properties-system.h"
 #include "chardev/char-fe.h"
 #include "chardev/char-serial.h"
 

@@ -5,13 +5,13 @@
 #define PMB887X_TRACE_PREFIX	"s1d13732"
 
 #include "qemu/osdep.h"
-#include "hw/qdev-properties.h"
+#include "hw/core/qdev-properties.h"
 #include "hw/ssi/ssi.h"
 #include "qemu/module.h"
 #include "ui/console.h"
 #include "qom/object.h"
-#include "hw/irq.h"
-#include "hw/hw.h"
+#include "hw/core/irq.h"
+#include "hw/core/hw-error.h"
 #include "hw/arm/pmb887x/trace.h"
 
 typedef struct pmb887x_gimmick_t pmb887x_gimmick_t;

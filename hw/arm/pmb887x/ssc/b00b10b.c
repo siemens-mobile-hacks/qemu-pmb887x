@@ -5,10 +5,10 @@
 #define PMB887X_TRACE_PREFIX	"b00b10b"
 
 #include "qemu/osdep.h"
-#include "hw/qdev-properties.h"
-#include "hw/hw.h"
+#include "hw/core/qdev-properties.h"
+#include "hw/core/hw-error.h"
 #include "hw/ssi/ssi.h"
-#include "hw/irq.h"
+#include "hw/core/irq.h"
 #include "qemu/module.h"
 #include "ui/console.h"
 #include "qom/object.h"

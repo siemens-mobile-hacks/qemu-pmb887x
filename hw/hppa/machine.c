@@ -9,7 +9,7 @@
 #include "qemu/datadir.h"
 #include "cpu.h"
 #include "elf.h"
-#include "hw/loader.h"
+#include "hw/core/loader.h"
 #include "qemu/error-report.h"
 #include "exec/target_page.h"
 #include "system/reset.h"
@@ -23,8 +23,8 @@
 #include "hw/intc/i8259.h"
 #include "hw/input/lasips2.h"
 #include "hw/net/lasi_82596.h"
-#include "hw/nmi.h"
-#include "hw/usb.h"
+#include "hw/core/nmi.h"
+#include "hw/usb/usb.h"
 #include "hw/pci/pci.h"
 #include "hw/pci/pci_device.h"
 #include "hw/pci-host/astro.h"
@@ -43,14 +43,14 @@ OBJECT_DECLARE_SIMPLE_TYPE(HppaMachineState, HPPA_COMMON_MACHINE)
 
 struct HppaMachineState {
     MachineState parent_obj;
+
+    uint64_t memsplit_addr;
 };
 
-#define MIN_SEABIOS_HPPA_VERSION 19 /* require at least this fw version */
+#define MIN_SEABIOS_HPPA_VERSION 22 /* require at least this fw version */
 
 #define HPA_POWER_BUTTON        (FIRMWARE_END - 0x10)
 static hwaddr soft_power_reg;
-
-#define enable_lasi_lan()       0
 
 static DeviceState *lasi_dev;
 
@@ -181,18 +181,20 @@ static uint64_t linux_kernel_virt_to_phys(void *opaque, uint64_t addr)
     return addr;
 }
 
+static HPPACPU *cpu[HPPA_MAX_CPUS];
+static uint64_t firmware_entry;
+
 static uint64_t translate_pa10(void *dummy, uint64_t addr)
 {
-    return (uint32_t)addr;
+    const uint8_t pa_bits = hppa_phys_addr_bits(&cpu[0]->env);
+    return hppa_abs_to_phys_pa1x(pa_bits, addr);
 }
 
 static uint64_t translate_pa20(void *dummy, uint64_t addr)
 {
-    return hppa_abs_to_phys_pa2_w0(addr);
+    const uint8_t pa_bits = hppa_phys_addr_bits(&cpu[0]->env);
+    return hppa_abs_to_phys_pa2_w0(pa_bits, addr);
 }
-
-static HPPACPU *cpu[HPPA_MAX_CPUS];
-static uint64_t firmware_entry;
 
 static void fw_cfg_boot_set(void *opaque, const char *boot_device,
                             Error **errp)
@@ -208,9 +210,10 @@ static FWCfgState *create_fw_cfg(MachineState *ms, PCIBus *pci_bus,
     const char qemu_version[] = QEMU_VERSION;
     MachineClass *mc = MACHINE_GET_CLASS(ms);
     int btlb_entries = HPPA_BTLB_ENTRIES(&cpu[0]->env);
+    struct HppaMachineState *hpm = HPPA_COMMON_MACHINE(ms);
     int len;
 
-    fw_cfg = fw_cfg_init_mem(addr, addr + 4);
+    fw_cfg = fw_cfg_init_mem_nodma(addr, addr + 4, 1);
     fw_cfg_add_i16(fw_cfg, FW_CFG_NB_CPUS, ms->smp.cpus);
     fw_cfg_add_i16(fw_cfg, FW_CFG_MAX_CPUS, HPPA_MAX_CPUS);
     fw_cfg_add_i64(fw_cfg, FW_CFG_RAM_SIZE, ms->ram_size);
@@ -230,6 +233,10 @@ static FWCfgState *create_fw_cfg(MachineState *ms, PCIBus *pci_bus,
     len = strlen(mc->name) + 1;
     fw_cfg_add_file(fw_cfg, "/etc/hppa/machine",
                     g_memdup2(mc->name, len), len);
+
+    val = cpu_to_le64(hpm->memsplit_addr);
+    fw_cfg_add_file(fw_cfg, "/etc/hppa/memsplit-addr",
+                    g_memdup2(&val, sizeof(val)), sizeof(val));
 
     val = cpu_to_le64(soft_power_reg);
     fw_cfg_add_file(fw_cfg, "/etc/hppa/power-button-addr",
@@ -287,6 +294,8 @@ static TranslateFn *machine_HP_common_init_cpus(MachineState *machine)
     TranslateFn *translate;
     MemoryRegion *cpu_region;
     uint64_t ram_max;
+    struct HppaMachineState *hpm;
+    hwaddr splitaddr;
 
     /* Create CPUs.  */
     for (unsigned int i = 0; i < smp_cpus; i++) {
@@ -306,6 +315,8 @@ static TranslateFn *machine_HP_common_init_cpus(MachineState *machine)
 
     for (unsigned int i = 0; i < smp_cpus; i++) {
         g_autofree char *name = g_strdup_printf("cpu%u-io-eir", i);
+        g_autofree char *cflush_name = NULL;
+        MemoryRegion *cflush;
 
         cpu_region = g_new(MemoryRegion, 1);
         memory_region_init_io(cpu_region, OBJECT(cpu[i]), &hppa_io_eir_ops,
@@ -313,6 +324,24 @@ static TranslateFn *machine_HP_common_init_cpus(MachineState *machine)
         memory_region_add_subregion(addr_space,
                                     translate(NULL, CPU_HPA + i * 0x1000),
                                     cpu_region);
+
+        if (!hppa_is_pa20(&cpu[0]->env)) {
+            continue;
+        }
+
+        /*
+         * HP-UX 11 64-bit reads a word from address CPU_HPA + 0x500
+         * while flushing the cache of a T600, which was the first
+         * server with a 64-bit PA-RISC 2.0 CPU.
+         * We return 0, since the value isn't used anyway.
+         */
+        cflush_name = g_strdup_printf("cpu%u-T600-cacheflush", i);
+        cflush = g_new(MemoryRegion, 1);
+        memory_region_init_io(cflush, NULL, &hppa_pci_ignore_ops,
+                              NULL, cflush_name, 4);
+        memory_region_add_subregion(addr_space,
+                              translate(NULL, CPU_HPA + i * 0x1000 + 0x500),
+                              cflush);
     }
 
     /* RTC and DebugOutputPort on CPU #0 */
@@ -327,21 +356,36 @@ static TranslateFn *machine_HP_common_init_cpus(MachineState *machine)
         info_report("Max RAM size limited to %" PRIu64 " MB", ram_max / MiB);
         machine->ram_size = ram_max;
     }
-    if (machine->ram_size <= FIRMWARE_START) {
-        /* contiguous memory up to 3.75 GB RAM */
-        memory_region_add_subregion_overlap(addr_space, 0, machine->ram, -1);
-    } else {
+
+    hpm = HPPA_COMMON_MACHINE(machine);
+    if (!hpm->memsplit_addr) {
         /* non-contiguous: Memory above 3.75 GB is mapped at RAM_MAP_HIGH */
-        MemoryRegion *mem_region;
-        mem_region = g_new(MemoryRegion, 2);
-        memory_region_init_alias(&mem_region[0], &addr_space->parent_obj,
-                              "LowMem", machine->ram, 0, FIRMWARE_START);
-        memory_region_init_alias(&mem_region[1], &addr_space->parent_obj,
-                              "HighMem", machine->ram, FIRMWARE_START,
-                              machine->ram_size - FIRMWARE_START);
-        memory_region_add_subregion_overlap(addr_space, 0, &mem_region[0], -1);
-        memory_region_add_subregion_overlap(addr_space, RAM_MAP_HIGH,
-                                            &mem_region[1], -1);
+        hpm->memsplit_addr = FIRMWARE_START;
+    }
+    splitaddr = hpm->memsplit_addr;
+
+    MemoryRegion *mem_region;
+    mem_region = g_new(MemoryRegion, 1);
+    memory_region_init_alias(&mem_region[0], &addr_space->parent_obj,
+                          "memory0", machine->ram, 0, splitaddr);
+    memory_region_add_subregion_overlap(addr_space, 0, &mem_region[0], -1);
+    if (hppa_is_pa20(&cpu[0]->env)) {
+        if (machine->ram_size > 4 * GiB) {
+            mem_region = g_new(MemoryRegion, 1);
+            memory_region_init_alias(&mem_region[0], &addr_space->parent_obj,
+                          "memory1", machine->ram, 4 * GiB,
+                          machine->ram_size - 4 * GiB);
+            memory_region_add_subregion_overlap(addr_space, RAM_MAP_HIGH1,
+                                        &mem_region[0], -1);
+        }
+        if (machine->ram_size > splitaddr) {
+            mem_region = g_new(MemoryRegion, 1);
+            memory_region_init_alias(&mem_region[0], &addr_space->parent_obj,
+                          "memory2", machine->ram, splitaddr,
+                          4 * GiB - splitaddr);
+            memory_region_add_subregion_overlap(addr_space, RAM_MAP_HIGH2,
+                                        &mem_region[0], -1);
+        }
     }
 
     return translate;
@@ -364,7 +408,8 @@ static void machine_HP_common_init_tail(MachineState *machine, PCIBus *pci_bus,
     SysBusDevice *s;
 
     /* Graphics setup. */
-    if (machine->enable_graphics && vga_interface_type != VGA_NONE) {
+    if (lasi_dev && machine->enable_graphics &&
+        vga_interface_type != VGA_NONE) {
         dev = qdev_new("artist");
         s = SYS_BUS_DEVICE(dev);
         bool disabled = object_property_get_bool(OBJECT(dev), "disable", NULL);
@@ -376,29 +421,21 @@ static void machine_HP_common_init_tail(MachineState *machine, PCIBus *pci_bus,
         }
     }
 
-    /* Network setup. */
-    if (lasi_dev) {
-        lasi_82596_init(addr_space, translate(NULL, LASI_LAN_HPA),
-                        qdev_get_gpio_in(lasi_dev, LASI_IRQ_LAN_HPA),
-                        enable_lasi_lan());
-    }
-
     if (pci_bus) {
         pci_init_nic_devices(pci_bus, mc->default_nic);
+    }
 
+    if (pci_bus && hppa_is_pa20(&cpu[0]->env)) {
         /* BMC board: HP Diva GSP PCI card */
-        dev = qdev_new("diva-gsp");
-        if (dev && !object_property_get_bool(OBJECT(dev), "disable", NULL)) {
-            pci_dev = pci_new_multifunction(PCI_DEVFN(2, 0), "diva-gsp");
-            if (!lasi_dev) {
-                /* bind default keyboard/serial to Diva card */
-                qdev_prop_set_chr(DEVICE(pci_dev), "chardev1", serial_hd(0));
-                qdev_prop_set_chr(DEVICE(pci_dev), "chardev2", serial_hd(1));
-                qdev_prop_set_chr(DEVICE(pci_dev), "chardev3", serial_hd(2));
-                qdev_prop_set_chr(DEVICE(pci_dev), "chardev4", serial_hd(3));
-            }
-            pci_realize_and_unref(pci_dev, pci_bus, &error_fatal);
+        pci_dev = pci_new_multifunction(PCI_DEVFN(2, 0), "diva-gsp");
+        if (!lasi_dev) {
+            /* bind default keyboard/serial to Diva card */
+            qdev_prop_set_chr(DEVICE(pci_dev), "chardev1", serial_hd(0));
+            qdev_prop_set_chr(DEVICE(pci_dev), "chardev2", serial_hd(1));
+            qdev_prop_set_chr(DEVICE(pci_dev), "chardev3", serial_hd(2));
+            qdev_prop_set_chr(DEVICE(pci_dev), "chardev4", serial_hd(3));
         }
+        pci_realize_and_unref(pci_dev, pci_bus, &error_fatal);
     }
 
     /* create USB OHCI controller for USB keyboard & mouse on Astro machines */
@@ -515,7 +552,7 @@ static void machine_HP_common_init_tail(MachineState *machine, PCIBus *pci_bus,
             }
 
             load_image_targphys(initrd_filename, initrd_base, initrd_size,
-                                NULL);
+                                &error_fatal);
             cpu[0]->env.initrd_base = initrd_base;
             cpu[0]->env.initrd_end  = initrd_base + initrd_size;
         }
@@ -595,6 +632,17 @@ static void machine_HP_715_init(MachineState *machine)
         lasi_ncr710_handle_legacy_cmdline(dev);
     }
 
+    /* LASI i82596 network */
+    dev = qemu_create_nic_device(TYPE_LASI_82596, true, "lasi");
+    if (dev) {
+        sysbus_realize_and_unref(SYS_BUS_DEVICE(dev), &error_fatal);
+        sysbus_connect_irq(SYS_BUS_DEVICE(dev), 0,
+                           qdev_get_gpio_in(lasi_dev, LASI_IRQ_LAN_HPA));
+        memory_region_add_subregion(addr_space,
+                                    translate(NULL, LASI_HPA_715 + LASI_LAN),
+                                    sysbus_mmio_get_region(SYS_BUS_DEVICE(dev), 0));
+    }
+
     /* Add NICs, graphics & load firmware */
     machine_HP_common_init_tail(machine, NULL, translate);
 }
@@ -638,7 +686,7 @@ static void machine_HP_B160L_init(MachineState *machine)
     assert(isa_bus);
 
     /* Serial ports: Lasi and Dino use a 7.272727 MHz clock. */
-    serial_mm_init(addr_space, translate(NULL, LASI_UART_HPA + 0x800), 0,
+    serial_mm_init(addr_space, translate(NULL, LASI_HPA + LASI_UART + 0x800), 0,
         qdev_get_gpio_in(lasi_dev, LASI_IRQ_UART_HPA), 7272727 / 16,
         serial_hd(0), DEVICE_BIG_ENDIAN);
 
@@ -647,7 +695,8 @@ static void machine_HP_B160L_init(MachineState *machine)
         serial_hd(1), DEVICE_BIG_ENDIAN);
 
     /* Parallel port */
-    parallel_mm_init(addr_space, translate(NULL, LASI_LPT_HPA + 0x800), 0,
+    parallel_mm_init(addr_space,
+                     translate(NULL, LASI_HPA + LASI_LPT + 0x800), 0,
                      qdev_get_gpio_in(lasi_dev, LASI_IRQ_LPT_HPA),
                      parallel_hds[0]);
 
@@ -657,11 +706,11 @@ static void machine_HP_B160L_init(MachineState *machine)
     sysbus_connect_irq(SYS_BUS_DEVICE(dev), 0,
                        qdev_get_gpio_in(lasi_dev, LASI_IRQ_PS2KBD_HPA));
     memory_region_add_subregion(addr_space,
-                                translate(NULL, LASI_PS2KBD_HPA),
+                                translate(NULL, LASI_HPA + LASI_PS2),
                                 sysbus_mmio_get_region(SYS_BUS_DEVICE(dev),
                                                        0));
     memory_region_add_subregion(addr_space,
-                                translate(NULL, LASI_PS2KBD_HPA + 0x100),
+                                translate(NULL, LASI_HPA + LASI_PS2 + 0x100),
                                 sysbus_mmio_get_region(SYS_BUS_DEVICE(dev),
                                                        1));
 
@@ -680,6 +729,9 @@ static AstroState *astro_init(void)
     DeviceState *dev;
 
     dev = qdev_new(TYPE_ASTRO_CHIP);
+    object_property_set_int(OBJECT(dev), "phys-addr-bits",
+                            hppa_phys_addr_bits(&cpu[0]->env),
+                            &error_abort);
     sysbus_realize_and_unref(SYS_BUS_DEVICE(dev), &error_fatal);
 
     return ASTRO_CHIP(dev);
@@ -722,6 +774,18 @@ static void machine_HP_C3700_init(MachineState *machine)
 
     /* Add NICs, graphics & load firmware */
     machine_HP_common_init_tail(machine, pci_bus, translate);
+}
+
+/*
+ * Create HP A400 server
+ */
+static void machine_HP_A400_init(MachineState *machine)
+{
+    struct HppaMachineState *hpm;
+
+    hpm = HPPA_COMMON_MACHINE(machine);
+    hpm->memsplit_addr = 1 * GiB;
+    machine_HP_C3700_init(machine);
 }
 
 static void hppa_machine_reset(MachineState *ms, ResetType type)
@@ -779,7 +843,7 @@ static void hppa_machine_common_class_init(ObjectClass *oc, const void *data)
     mc->default_cpus = 1;
     mc->max_cpus = HPPA_MAX_CPUS;
     mc->default_boot_order = "cd";
-    mc->default_ram_id = "ram";
+    mc->default_ram_id = "hppa.ram";
     mc->default_nic = "tulip";
 
     nc->nmi_monitor_handler = hppa_nmi;
@@ -788,13 +852,13 @@ static void hppa_machine_common_class_init(ObjectClass *oc, const void *data)
 static void HP_B160L_machine_init_class_init(ObjectClass *oc, const void *data)
 {
     static const char * const valid_cpu_types[] = {
-        TYPE_HPPA_CPU,
+        TYPE_HPPA_CPU_PA_7300LC,
         NULL
     };
     MachineClass *mc = MACHINE_CLASS(oc);
 
     mc->desc = "HP B160L workstation";
-    mc->default_cpu_type = TYPE_HPPA_CPU;
+    mc->default_cpu_type = TYPE_HPPA_CPU_PA_7300LC;
     mc->valid_cpu_types = valid_cpu_types;
     mc->init = machine_HP_B160L_init;
     mc->is_default = true;
@@ -804,15 +868,31 @@ static void HP_B160L_machine_init_class_init(ObjectClass *oc, const void *data)
 static void HP_C3700_machine_init_class_init(ObjectClass *oc, const void *data)
 {
     static const char * const valid_cpu_types[] = {
-        TYPE_HPPA64_CPU,
+        TYPE_HPPA_CPU_PA_8700,
         NULL
     };
     MachineClass *mc = MACHINE_CLASS(oc);
 
     mc->desc = "HP C3700 workstation";
-    mc->default_cpu_type = TYPE_HPPA64_CPU;
+    mc->default_cpu_type = TYPE_HPPA_CPU_PA_8700;
     mc->valid_cpu_types = valid_cpu_types;
     mc->init = machine_HP_C3700_init;
+    mc->max_cpus = HPPA_MAX_CPUS;
+    mc->default_ram_size = 1024 * MiB;
+}
+
+static void HP_A400_machine_init_class_init(ObjectClass *oc, const void *data)
+{
+    static const char * const valid_cpu_types[] = {
+        TYPE_HPPA_CPU_PA_8500,
+        NULL
+    };
+    MachineClass *mc = MACHINE_CLASS(oc);
+
+    mc->desc = "HP A400-44 server";
+    mc->default_cpu_type = TYPE_HPPA_CPU_PA_8500;
+    mc->valid_cpu_types = valid_cpu_types;
+    mc->init = machine_HP_A400_init;
     mc->max_cpus = HPPA_MAX_CPUS;
     mc->default_ram_size = 1024 * MiB;
 }
@@ -820,19 +900,24 @@ static void HP_C3700_machine_init_class_init(ObjectClass *oc, const void *data)
 static void HP_715_machine_init_class_init(ObjectClass *oc, const void *data)
 {
     static const char * const valid_cpu_types[] = {
-        TYPE_HPPA_CPU,
+        TYPE_HPPA_CPU_PA_7300LC,
         NULL
     };
     MachineClass *mc = MACHINE_CLASS(oc);
 
     mc->desc = "HP 715/64 workstation";
-    mc->default_cpu_type = TYPE_HPPA_CPU;
+    /*
+     * Although the 715 workstation should use a 7100LC, it can be safely
+     * modeled as a 7300LC as the difference is a moving of the L1 data cache
+     * to on-chip.
+     */
+    mc->default_cpu_type = TYPE_HPPA_CPU_PA_7300LC;
     mc->valid_cpu_types = valid_cpu_types;
     mc->init = machine_HP_715_init;
     /* can only support up to max. 8 CPUs due inventory major numbers */
     mc->max_cpus = MIN_CONST(HPPA_MAX_CPUS, 8);
     mc->default_ram_size = 256 * MiB;
-    mc->default_nic = NULL;
+    mc->default_nic = TYPE_LASI_82596;
 }
 
 
@@ -855,6 +940,10 @@ static const TypeInfo hppa_machine_types[] = {
         .name = MACHINE_TYPE_NAME("C3700"),
         .parent = TYPE_HPPA_COMMON_MACHINE,
         .class_init = HP_C3700_machine_init_class_init,
+    }, {
+        .name = MACHINE_TYPE_NAME("A400"),
+        .parent = TYPE_HPPA_COMMON_MACHINE,
+        .class_init = HP_A400_machine_init_class_init,
     }, {
         .name = MACHINE_TYPE_NAME("715"),
         .parent = TYPE_HPPA_COMMON_MACHINE,

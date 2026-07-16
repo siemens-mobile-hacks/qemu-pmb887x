@@ -5,10 +5,10 @@
 
 #include "hw/arm/pmb887x/utils/toml.h"
 #include "hw/arm/pmb887x/utils/tomlc17.h"
-#include "hw/hw.h"
-#include "hw/irq.h"
+#include "hw/core/hw-error.h"
+#include "hw/core/irq.h"
 #include "hw/ssi/ssi.h"
-#include "hw/qdev-core.h"
+#include "hw/core/qdev.h"
 #include "qemu/error-report.h"
 
 bool pmb887x_qdev_is_gpio_in_exists(DeviceState *dev, const char *name, int n) {

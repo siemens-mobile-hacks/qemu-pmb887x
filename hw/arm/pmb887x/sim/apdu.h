@@ -1,6 +1,6 @@
 #pragma once
 
-#include "hw/qdev-core.h"
+#include "hw/core/qdev.h"
 #include "qom/object.h"
 
 #define TYPE_PMB887X_APDU_BACKEND "pmb887x-apdu-backend"

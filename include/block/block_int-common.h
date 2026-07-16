@@ -24,13 +24,12 @@
 #ifndef BLOCK_INT_COMMON_H
 #define BLOCK_INT_COMMON_H
 
-#include "block/aio.h"
 #include "block/block-common.h"
 #include "block/block-global-state.h"
 #include "block/snapshot.h"
+#include "qemu/aiocb.h"
 #include "qemu/iov.h"
 #include "qemu/rcu.h"
-#include "qemu/stats64.h"
 
 #define BLOCK_FLAG_LAZY_REFCOUNTS   8
 
@@ -57,6 +56,7 @@
 #define BLOCK_OPT_DATA_FILE_RAW     "data_file_raw"
 #define BLOCK_OPT_COMPRESSION_TYPE  "compression_type"
 #define BLOCK_OPT_EXTL2             "extended_l2"
+#define BLOCK_OPT_KEEP_DATA_FILE    "keep_data_file"
 
 #define BLOCK_PROBE_BUF_SIZE        512
 
@@ -508,7 +508,12 @@ struct BlockDriver {
         BlockDriverState *bs, BlockdevAmendOptions *opts, bool force,
         Error **errp);
 
-    /* aio */
+    /*
+     * AIO
+     * The given completion callback will be run in the same AioContext as the
+     * one in which the AIO function was called.
+     */
+
     BlockAIOCB * GRAPH_RDLOCK_PTR (*bdrv_aio_preadv)(BlockDriverState *bs,
         int64_t offset, int64_t bytes, QEMUIOVector *qiov,
         BdrvRequestFlags flags, BlockCompletionFunc *cb, void *opaque);
@@ -1241,7 +1246,7 @@ struct BlockDriverState {
     QLIST_HEAD(, BdrvDirtyBitmap) dirty_bitmaps;
 
     /* Offset after the highest byte written to */
-    Stat64 wr_highest_offset;
+    uint64_t wr_highest_offset;
 
     /*
      * If true, copy read backing sectors into image.  Can be >1 if more

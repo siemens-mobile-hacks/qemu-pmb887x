@@ -14,8 +14,7 @@
 #ifndef HW_LASI_NCR710_H
 #define HW_LASI_NCR710_H
 
-#include "hw/sysbus.h"
-#include "qemu/osdep.h"
+#include "hw/core/sysbus.h"
 #include "exec/memattrs.h"
 #include "hw/scsi/scsi.h"
 #include "hw/scsi/ncr53c710.h"
@@ -46,7 +45,6 @@ typedef struct LasiNCR710State {
     uint32_t hw_type;        /* Hardware type (HPHW_*) */
     uint32_t sversion;       /* Software version */
     uint32_t hversion;       /* Hardware version */
-    SCSIBus bus;
     NCR710State ncr710;
 } LasiNCR710State;
 

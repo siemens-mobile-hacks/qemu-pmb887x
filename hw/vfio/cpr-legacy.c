@@ -4,9 +4,9 @@
  * SPDX-License-Identifier: GPL-2.0-or-later
  */
 
+#include "qemu/osdep.h"
 #include <sys/ioctl.h>
 #include <linux/vfio.h>
-#include "qemu/osdep.h"
 #include "hw/vfio/vfio-container-legacy.h"
 #include "hw/vfio/vfio-device.h"
 #include "hw/vfio/vfio-listener.h"
@@ -137,7 +137,7 @@ static int vfio_cpr_fail_notifier(NotifierWithReturn *notifier,
         container_of(notifier, VFIOLegacyContainer, cpr.transfer_notifier);
     VFIOContainer *bcontainer = VFIO_IOMMU(container);
 
-    if (e->type != MIG_EVENT_PRECOPY_FAILED) {
+    if (e->type != MIG_EVENT_FAILED) {
         return 0;
     }
 
@@ -176,9 +176,9 @@ bool vfio_legacy_cpr_register_container(VFIOLegacyContainer *container,
                                 MIG_MODE_CPR_REBOOT);
 
     if (!vfio_cpr_supported(container, cpr_blocker)) {
-        return migrate_add_blocker_modes(cpr_blocker, errp,
-                                         MIG_MODE_CPR_TRANSFER,
-                                         MIG_MODE_CPR_EXEC, -1) == 0;
+        return migrate_add_blocker_modes(cpr_blocker,
+                        BIT(MIG_MODE_CPR_TRANSFER) | BIT(MIG_MODE_CPR_EXEC),
+                        errp) == 0;
     }
 
     vfio_cpr_add_kvm_notifier();
@@ -187,7 +187,7 @@ bool vfio_legacy_cpr_register_container(VFIOLegacyContainer *container,
 
     migration_add_notifier_modes(&container->cpr.transfer_notifier,
                                  vfio_cpr_fail_notifier,
-                                 MIG_MODE_CPR_TRANSFER, MIG_MODE_CPR_EXEC, -1);
+                                 BIT(MIG_MODE_CPR_TRANSFER) | BIT(MIG_MODE_CPR_EXEC));
     return true;
 }
 

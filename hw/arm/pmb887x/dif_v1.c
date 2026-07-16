@@ -7,11 +7,11 @@
 #define PMB887X_DIF_DUMP_BIT_MUX	0 // print bit mux config
 
 #include "qemu/osdep.h"
-#include "hw/irq.h"
-#include "hw/hw.h"
+#include "hw/core/irq.h"
+#include "hw/core/hw-error.h"
 #include "hw/ssi/ssi.h"
-#include "hw/sysbus.h"
-#include "hw/qdev-properties.h"
+#include "hw/core/sysbus.h"
+#include "hw/core/qdev-properties.h"
 #include "qemu/module.h"
 #include "qemu/timer.h"
 #include "qom/object.h"
