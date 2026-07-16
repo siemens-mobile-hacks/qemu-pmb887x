@@ -17,6 +17,7 @@
 
 #include "hw/arm/pmb887x/regs_dump.h"
 #include "hw/arm/pmb887x/mod.h"
+#include "hw/arm/pmb887x/dsp.h"
 #include "hw/arm/pmb887x/dmac.h"
 #include "hw/arm/pmb887x/pll.h"
 #include "hw/arm/pmb887x/sccu.h"
@@ -39,6 +40,8 @@ struct pmb887x_scu_t {
 	qemu_irq exti_irq[8];
 	qemu_irq dsp_irq[5];
 	qemu_irq unk_irq[3];
+	qemu_irq dsp_reset;
+	qemu_irq dsp_request[PMB887X_DSP_INT_COUNT];
 	
 	uint32_t cpu_type;
 	uint32_t cpu_uid[3];
@@ -395,6 +398,7 @@ static void scu_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned si
 		
 		case SCU_RST_REQ:
 			p->rst_req = value;
+			qemu_set_irq(p->dsp_reset, value & SCU_RST_REQ_DSP);
 		break;
 		
 		case SCU_WDTCON0:
@@ -466,6 +470,8 @@ static void scu_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned si
 		
 		case SCU_DSP_INT:
 			p->dsp_int = value & SCU_DSP_INT_REQ;
+			for (int i = 0; i < ARRAY_SIZE(p->dsp_request); i++)
+				qemu_set_irq(p->dsp_request[i], p->dsp_int & BIT(i));
 		break;
 		
 		case SCU_EXTI0_SRC:
@@ -583,6 +589,8 @@ static void scu_init(Object *obj) {
 	qdev_init_gpio_in_named(dev, scu_input_exti5_handler, "EXTI5_IN", 1);
 	qdev_init_gpio_in_named(dev, scu_input_exti6_handler, "EXTI6_IN", 1);
 	qdev_init_gpio_in_named(dev, scu_input_exti7_handler, "EXTI7_IN", 1);
+	qdev_init_gpio_out_named(dev, &p->dsp_reset, "DSP_RESET_OUT", 1);
+	qdev_init_gpio_out_named(dev, p->dsp_request, "DSP_INT_OUT", ARRAY_SIZE(p->dsp_request));
 }
 
 static void scu_reset(DeviceState *dev) {
@@ -614,6 +622,7 @@ static void scu_reset(DeviceState *dev) {
 		reset_cause
 	);
 	p->rst_req = 0;
+	qemu_set_irq(p->dsp_reset, 0);
 	p->rst_con = 0;
 
 	p->ebuclc = 0;
@@ -624,6 +633,8 @@ static void scu_reset(DeviceState *dev) {
 	p->dmars = 0;
 	p->boot_cfg = 0;
 	p->dsp_int = 0;
+	for (int i = 0; i < ARRAY_SIZE(p->dsp_request); i++)
+		qemu_set_irq(p->dsp_request[i], 0);
 	p->sleep_req = 0;
 	p->pending_reset_cause = 0;
 

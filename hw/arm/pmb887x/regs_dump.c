@@ -40,11 +40,15 @@ static const pmb887x_module_t *regs_dump_find_cpu_module(uint32_t addr) {
 	return NULL;
 }
 
-static const pmb887x_module_reg_t *regs_dump_find_cpu_module_reg(const pmb887x_module_t *module, uint32_t addr) {
+static const pmb887x_module_reg_t *regs_dump_find_cpu_module_reg(const pmb887x_module_t *module, uint32_t addr,
+	uint32_t *reg_offset) {
 	for (int i = 0; i < module->regs_count; i++) {
 		const pmb887x_module_reg_t *reg = &module->regs[i];
-		if (addr == (module->base + reg->addr))
+		uint32_t reg_addr = module->base + reg->addr;
+		if (addr >= reg_addr && addr < reg_addr + sizeof(uint32_t)) {
+			*reg_offset = addr - reg_addr;
 			return reg;
+		}
 	}
 	return NULL;
 }
@@ -193,9 +197,12 @@ void pmb887x_print_dump_io(uint32_t addr, uint32_t size, uint32_t value, bool is
 	}
 	
 	if (module) {
-		const pmb887x_module_reg_t *reg = regs_dump_find_cpu_module_reg(module, addr);
+		uint32_t reg_offset;
+		const pmb887x_module_reg_t *reg = regs_dump_find_cpu_module_reg(module, addr, &reg_offset);
 		if (reg) {
-			if (reg->special == PMB887X_REG_IS_GPIO_PIN) {
+			if (reg_offset) {
+				g_string_append_printf(s, " (%s_%s+0x%X)", module->name, reg->name, reg_offset);
+			} else if (reg->special == PMB887X_REG_IS_GPIO_PIN) {
 				uint32_t gpio_id = (addr - (gpio_base + GPIO_PIN0)) / 4;
 				g_string_append_printf(s, " (%s)", board->gpios[gpio_id].full_name);
 			} else if (reg->special == PMB887X_REG_IS_IRQ_CON) {
@@ -209,14 +216,14 @@ void pmb887x_print_dump_io(uint32_t addr, uint32_t size, uint32_t value, bool is
 				g_string_append_printf(s, " (%s_%s)", module->name, reg->name);
 			}
 			
-			if (reg->special == PMB887X_REG_IS_IRQ_NUM) {
+			if (!reg_offset && reg->special == PMB887X_REG_IS_IRQ_NUM) {
 				const char *irq_name = regs_dump_find_cpu_irq_num_name(cpu_info, value);
 				if (irq_name) {
 					g_string_append_printf(s, ": NUM(0x%02X)=%s", value, irq_name);
 				} else {
 					g_string_append_printf(s, ": NUM(0x%02X)", value);
 				}
-			} else if (reg->fields_count) {
+			} else if (!reg_offset && reg->fields_count) {
 				bool first = true;
 				uint32_t known_bits = 0;
 				for (int i = 0; i < reg->fields_count; i++) {

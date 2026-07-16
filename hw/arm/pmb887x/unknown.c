@@ -1,5 +1,5 @@
 /*
- * RTC
+ * Unknown memory
  * */
 #define PMB887X_TRACE_ID		UNKNOWN
 #define PMB887X_TRACE_PREFIX	"pmb887x-unknown"
@@ -7,9 +7,6 @@
 #include "qemu/osdep.h"
 #include "hw/core/sysbus.h"
 #include "system/memory.h"
-#include "cpu.h"
-#include "qemu/main-loop.h"
-#include "hw/core/qdev-properties.h"
 
 #include "hw/arm/pmb887x/io_bridge.h"
 #include "hw/arm/pmb887x/regs_dump.h"
@@ -23,7 +20,6 @@ typedef struct pmb887x_unknown_t pmb887x_unknown_t;
 struct pmb887x_unknown_t {
 	SysBusDevice parent_obj;
 	MemoryRegion mmio;
-	uint32_t unk_reg_F4600040;
 };
 
 static uint64_t unknown_io_read(void *opaque, hwaddr haddr, unsigned size) {
@@ -43,12 +39,6 @@ static uint64_t unknown_io_read(void *opaque, hwaddr haddr, unsigned size) {
 	if (haddr == 0xF4C00000)
 		value = 0xFFFFFFFF;
 
-	if (haddr == 0xF4600024)
-		value = 0x800000 | 0x11;
-
-	if (haddr == 0xF4600040)
-		value = p->unk_reg_F4600040;
-
 	IO_DUMP(haddr + p->mmio.addr, size, value, false);
 
 	return value;
@@ -65,21 +55,6 @@ static void unknown_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigne
 
 	IO_DUMP(haddr + p->mmio.addr, size, value, true);
 
-	if (haddr == 0xf460001c) {
-		if (value == 0x8) {
-			p->unk_reg_F4600040 = 2;
-		} else {
-			p->unk_reg_F4600040 = 1;
-		}
-	}
-
-	if (haddr == 0xF460002C) {
-		if (value == 2) {
-			p->unk_reg_F4600040 = 1;
-		} else {
-			p->unk_reg_F4600040 = 0;
-		}
-	}
 }
 
 static const MemoryRegionOps io_ops = {
@@ -98,27 +73,11 @@ static void unknown_init(Object *obj) {
 	sysbus_init_mmio(SYS_BUS_DEVICE(obj), &p->mmio);
 }
 
-static void unknown_realize(DeviceState *dev, Error **errp) {
-	// Nothing
-}
-
-static void unknown_reset(DeviceState *dev) {
-	pmb887x_unknown_t *p = PMB887X_UNKNOWN(dev);
-	p->unk_reg_F4600040 = 0;
-}
-
-static void unknown_class_init(ObjectClass *klass, const void *data) {
-	DeviceClass *dc = DEVICE_CLASS(klass);
-	device_class_set_legacy_reset(dc, unknown_reset);
-	dc->realize = unknown_realize;
-}
-
 static const TypeInfo unknown_info = {
 	.name          	= TYPE_PMB887X_UNKNOWN,
 	.parent        	= TYPE_SYS_BUS_DEVICE,
 	.instance_size 	= sizeof(struct pmb887x_unknown_t),
 	.instance_init 	= unknown_init,
-	.class_init    	= unknown_class_init,
 };
 
 static void unknown_register_types(void) {
