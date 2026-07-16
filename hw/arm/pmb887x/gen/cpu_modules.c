@@ -74,6 +74,10 @@ static const pmb887x_cpu_module_dma_t pmb8876_usart1_dma[] = {
 	{"RX",	PMB887X_DMAC_BUS_AHB1,	7,	0},
 };
 
+static const int pmb8876_usb_irqs[] = {
+	PMB8876_USB_IRQ
+};
+
 static const int pmb8876_dmac_irqs[] = {
 	PMB8876_DMAC_ERR_IRQ,
 	PMB8876_DMAC_CH0_IRQ,
@@ -299,6 +303,7 @@ static const pmb887x_cpu_module_t pmb8876_modules[] = {
 	{"SSC",		0x00004531,	PMB8876_SSC_BASE,		"pmb887x-ssc",		pmb8876_ssc_irqs,		ARRAY_SIZE(pmb8876_ssc_irqs),		NULL,					0,									pmb8876_ssc_dma,	ARRAY_SIZE(pmb8876_ssc_dma)},
 	{"SIM",		0xF000C032,	PMB8876_SIM_BASE,		"pmb887x-sim",		pmb8876_sim_irqs,		ARRAY_SIZE(pmb8876_sim_irqs),		NULL,					0,									pmb8876_sim_dma,	ARRAY_SIZE(pmb8876_sim_dma)},
 	{"USART1",	0x000044F1,	PMB8876_USART1_BASE,	"pmb887x-usart",	pmb8876_usart1_irqs,	ARRAY_SIZE(pmb8876_usart1_irqs),	pmb8876_usart1_gpios,	ARRAY_SIZE(pmb8876_usart1_gpios),	pmb8876_usart1_dma,	ARRAY_SIZE(pmb8876_usart1_dma)},
+	{"USB",		0xF047C012,	PMB8876_USB_BASE,		"pmb887x-usb",		pmb8876_usb_irqs,		ARRAY_SIZE(pmb8876_usb_irqs),		NULL,					0,									NULL,				0},
 	{"VIC",		0x0031C011,	PMB8876_VIC_BASE,		"pmb887x-vic",		NULL,					0,									NULL,					0,									NULL,				0},
 	{"DMAC",	0x0A141080,	PMB8876_DMAC_BASE,		"pmb887x-dmac",		pmb8876_dmac_irqs,		ARRAY_SIZE(pmb8876_dmac_irqs),		NULL,					0,									NULL,				0},
 	{"CAPCOM0",	0x00005011,	PMB8876_CAPCOM0_BASE,	"pmb887x-capcom",	pmb8876_capcom0_irqs,	ARRAY_SIZE(pmb8876_capcom0_irqs),	NULL,					0,									NULL,				0},
@@ -406,6 +411,10 @@ static const pmb887x_cpu_module_gpio_t pmb8875_dif_gpios[] = {
 static const pmb887x_cpu_module_dma_t pmb8875_dif_dma[] = {
 	{"TX",	PMB887X_DMAC_BUS_AHB1,	4,	0},
 	{"RX",	PMB887X_DMAC_BUS_AHB1,	5,	0},
+};
+
+static const int pmb8875_usb_irqs[] = {
+	PMB8875_USB_IRQ
 };
 
 static const int pmb8875_dmac_irqs[] = {
@@ -590,6 +599,7 @@ static const pmb887x_cpu_module_t pmb8875_modules[] = {
 	{"SIM",		0xF000C032,	PMB8875_SIM_BASE,		"pmb887x-sim",		pmb8875_sim_irqs,		ARRAY_SIZE(pmb8875_sim_irqs),		NULL,					0,									NULL,				0},
 	{"USART1",	0x000044E2,	PMB8875_USART1_BASE,	"pmb887x-usart",	pmb8875_usart1_irqs,	ARRAY_SIZE(pmb8875_usart1_irqs),	pmb8875_usart1_gpios,	ARRAY_SIZE(pmb8875_usart1_gpios),	pmb8875_usart1_dma,	ARRAY_SIZE(pmb8875_usart1_dma)},
 	{"DIF",		0xF043C000,	PMB8875_DIF_BASE,		"pmb887x-dif-v1",	pmb8875_dif_irqs,		ARRAY_SIZE(pmb8875_dif_irqs),		pmb8875_dif_gpios,		ARRAY_SIZE(pmb8875_dif_gpios),		pmb8875_dif_dma,	ARRAY_SIZE(pmb8875_dif_dma)},
+	{"USB",		0xF047C000,	PMB8875_USB_BASE,		"pmb887x-usb",		pmb8875_usb_irqs,		ARRAY_SIZE(pmb8875_usb_irqs),		NULL,					0,									NULL,				0},
 	{"VIC",		0x0031C001,	PMB8875_VIC_BASE,		"pmb887x-vic",		NULL,					0,									NULL,					0,									NULL,				0},
 	{"DMAC",	0x02041080,	PMB8875_DMAC_BASE,		"pmb887x-dmac",		pmb8875_dmac_irqs,		ARRAY_SIZE(pmb8875_dmac_irqs),		NULL,					0,									NULL,				0},
 	{"CAPCOM0",	0x00005003,	PMB8875_CAPCOM0_BASE,	"pmb887x-capcom",	pmb8875_capcom0_irqs,	ARRAY_SIZE(pmb8875_capcom0_irqs),	pmb8875_capcom0_gpios,	ARRAY_SIZE(pmb8875_capcom0_gpios),	NULL,				0},

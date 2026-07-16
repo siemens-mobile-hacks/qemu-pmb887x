@@ -41,6 +41,7 @@ struct pmb887x_scu_t {
 	qemu_irq dsp_irq[5];
 	qemu_irq unk_irq[3];
 	qemu_irq dsp_reset;
+	qemu_irq usb_reset;
 	qemu_irq dmac_reset;
 	qemu_irq i2c_reset;
 	qemu_irq dsp_request[PMB887X_DSP_INT_COUNT];
@@ -409,6 +410,7 @@ static void scu_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned si
 		case SCU_RST_REQ:
 			p->rst_req = value;
 			qemu_set_irq(p->dsp_reset, value & SCU_RST_REQ_DSP);
+			qemu_set_irq(p->usb_reset, value & SCU_RST_REQ_USB);
 			qemu_set_irq(p->dmac_reset, value & SCU_RST_REQ_DMAC);
 			qemu_set_irq(p->i2c_reset, value & SCU_RST_REQ_I2C);
 			break;
@@ -602,6 +604,7 @@ static void scu_init(Object *obj) {
 	qdev_init_gpio_in_named(dev, scu_input_exti6_handler, "EXTI6_IN", 1);
 	qdev_init_gpio_in_named(dev, scu_input_exti7_handler, "EXTI7_IN", 1);
 	qdev_init_gpio_out_named(dev, &p->dsp_reset, "DSP_RESET_OUT", 1);
+	qdev_init_gpio_out_named(dev, &p->usb_reset, "USB_RESET_OUT", 1);
 	qdev_init_gpio_out_named(dev, &p->dmac_reset, "DMAC_RESET_OUT", 1);
 	qdev_init_gpio_out_named(dev, &p->i2c_reset, "I2C_RESET_OUT", 1);
 	qdev_init_gpio_out_named(dev, p->dsp_request, "DSP_INT_OUT", ARRAY_SIZE(p->dsp_request));
@@ -637,6 +640,7 @@ static void scu_reset(DeviceState *dev) {
 	);
 	p->rst_req = 0;
 	qemu_set_irq(p->dsp_reset, 0);
+	qemu_set_irq(p->usb_reset, 0);
 	qemu_set_irq(p->dmac_reset, 0);
 	qemu_set_irq(p->i2c_reset, 0);
 	p->rst_con = 0;

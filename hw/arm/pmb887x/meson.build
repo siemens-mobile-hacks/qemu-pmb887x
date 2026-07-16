@@ -13,6 +13,7 @@ arm_common_ss.add(when: 'CONFIG_PMB887X', if_true: files(
 	'sccu.c',
 	'gpio.c',
 	'usart.c',
+	'usb.c',
 	'sim.c',
 	'mmci.c',
 	'gptu.c',

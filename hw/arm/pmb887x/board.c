@@ -181,6 +181,10 @@ static void pmb887x_init(MachineState *machine) {
 	object_property_set_link(OBJECT(dmac), "downstream", OBJECT(sysmem), &error_fatal);
 	sysbus_realize_and_unref(SYS_BUS_DEVICE(dmac), &error_fatal);
 
+	// USB Device Controller
+	DeviceState *usb = pmb887x_new_cpu_module("USB");
+	sysbus_realize_and_unref(SYS_BUS_DEVICE(usb), &error_fatal);
+
 	// DSP
 	DeviceState *dsp = pmb887x_new_cpu_module("DSP");
 	pmb887x_board_init_dsp(dsp);
@@ -250,6 +254,7 @@ static void pmb887x_init(MachineState *machine) {
 	object_property_set_uint(OBJECT(scu), "cpu_uid1", pmb887x_board()->cpu_uid[1], &error_fatal);
 	object_property_set_uint(OBJECT(scu), "cpu_uid2", pmb887x_board()->cpu_uid[2], &error_fatal);
 	qdev_connect_gpio_out_named(scu, "DSP_RESET_OUT", 0, qdev_get_gpio_in_named(dsp, "RESET_IN", 0));
+	qdev_connect_gpio_out_named(scu, "USB_RESET_OUT", 0, qdev_get_gpio_in_named(usb, "RESET_IN", 0));
 	qdev_connect_gpio_out_named(scu, "DMAC_RESET_OUT", 0, qdev_get_gpio_in_named(dmac, "RESET_IN", 0));
 	qdev_connect_gpio_out_named(scu, "I2C_RESET_OUT", 0, qdev_get_gpio_in_named(i2c, "RESET_IN", 0));
 	for (int i = 0; i < PMB887X_DSP_INT_COUNT; i++)
