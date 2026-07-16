@@ -127,7 +127,7 @@ struct pmb887x_gptu_t {
 
 static void gptu_sync_timer(pmb887x_gptu_t *p);
 static void gptu_t2_sync_timer(pmb887x_gptu_t *p);
-static void gptu_t2_external_trigger(pmb887x_gptu_t *p, int trigger_id, uint64_t count);
+static void gptu_t2_internal_trigger(pmb887x_gptu_t *p, int trigger_id, uint64_t count);
 static void gptu_t01_external_count(pmb887x_gptu_t *p, int cnt_id, uint64_t count);
 
 /*
@@ -518,7 +518,7 @@ static void gptu_t2_set_counter(pmb887x_gptu_t *p, uint32_t value) {
 	gptu_t2_sync_timer(p);
 }
 
-static bool gptu_t2_input_matches_trigger(pmb887x_gptu_t *p, int timer_id, int is_shift, int edge_shift, int trigger_id) {
+static bool gptu_t2_internal_input_matches_trigger(pmb887x_gptu_t *p, int timer_id, int is_shift, int edge_shift, int trigger_id) {
 	bool split = gptu_t2_split(p);
 	uint32_t is = (!split || timer_id == 0) ? p->t2ais : p->t2bis;
 	uint32_t es_shift = edge_shift + ((split && timer_id == 1) ? 16 : 0);
@@ -544,12 +544,13 @@ static void gptu_t2_handle_rc_event(pmb887x_gptu_t *p, int timer_id, int rc_id) 
 		gptu_t2_set_counter_value(p, timer_id, 0);
 }
 
-static void gptu_t2_external_trigger(pmb887x_gptu_t *p, int trigger_id, uint64_t count) {
+static void gptu_t2_internal_trigger(pmb887x_gptu_t *p, int trigger_id, uint64_t count) {
 	if (count == 0)
 		return;
 
 	gptu_t2_sync_timer(p);
 
+	/* T0/T1 trigger signals are available only to count and reload/capture inputs. */
 	for (int i = 0; i < 2; i++) {
 		if (!gptu_t2_split(p) && i == 0)
 			continue;
@@ -557,52 +558,19 @@ static void gptu_t2_external_trigger(pmb887x_gptu_t *p, int trigger_id, uint64_t
 		pmb887x_gptu_timer_t2_t *timer = &p->timers_t2[i];
 		int logical_id = gptu_t2_logical_id(p, i);
 
-		if (gptu_t2_input_matches_trigger(p, i, GPTU_T2AIS_T2AISTR_SHIFT, GPTU_T2ES_T2AESTR_SHIFT, trigger_id)) {
-			if (logical_id) {
-				p->t012run |= GPTU_T012RUN_T2BRUN;
-			} else {
-				p->t012run |= GPTU_T012RUN_T2ARUN;
-			}
-			timer->enabled = true;
-			timer->stopped = false;
-			timer->start = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
-			gptu_trigger_ev_irq(p, logical_id ? EV_START_B : EV_START_A);
-		}
-
-		if (gptu_t2_input_matches_trigger(p, i, GPTU_T2AIS_T2AISTP_SHIFT, GPTU_T2ES_T2AESTP_SHIFT, trigger_id)) {
-			if (logical_id) {
-				p->t012run &= ~GPTU_T012RUN_T2BRUN;
-			} else {
-				p->t012run &= ~GPTU_T012RUN_T2ARUN;
-			}
-			timer->enabled = false;
-			timer->stopped = false;
-			gptu_trigger_ev_irq(p, logical_id ? EV_STOP_B : EV_STOP_A);
-		}
-
-		if (gptu_t2_input_matches_trigger(p, i, GPTU_T2AIS_T2AIUD_SHIFT, GPTU_T2ES_T2AEUD_SHIFT, trigger_id)) {
-			gptu_trigger_ev_irq(p, EV_UPDOWN_A);
-		}
-
-		if (gptu_t2_input_matches_trigger(p, i, GPTU_T2AIS_T2AICLR_SHIFT, GPTU_T2ES_T2AECLR_SHIFT, trigger_id)) {
-			if (gptu_t2_cclr(p, i) == 0)
-				gptu_t2_set_counter_value(p, i, 0);
-			gptu_trigger_ev_irq(p, EV_CLEAR_A);
-		}
-
-		if (gptu_t2_input_matches_trigger(p, i, GPTU_T2AIS_T2AIRC0_SHIFT, GPTU_T2ES_T2AERC0_SHIFT, trigger_id)) {
+		if (gptu_t2_internal_input_matches_trigger(p, i, GPTU_T2AIS_T2AIRC0_SHIFT, GPTU_T2ES_T2AERC0_SHIFT, trigger_id)) {
 			gptu_t2_handle_rc_event(p, i, 0);
 			gptu_trigger_ev_irq(p, logical_id ? EV_RLCP0_B : EV_RLCP0_A);
 		}
 
-		if (gptu_t2_input_matches_trigger(p, i, GPTU_T2AIS_T2AIRC1_SHIFT, GPTU_T2ES_T2AERC1_SHIFT, trigger_id)) {
+		if (gptu_t2_internal_input_matches_trigger(p, i, GPTU_T2AIS_T2AIRC1_SHIFT, GPTU_T2ES_T2AERC1_SHIFT, trigger_id)) {
 			gptu_t2_handle_rc_event(p, i, 1);
 			gptu_trigger_ev_irq(p, logical_id ? EV_RLCP1_B : EV_RLCP1_A);
 		}
 
 		if (timer->enabled && !timer->stopped &&
 			gptu_t2_csrc(p, i) != 0 &&
-			gptu_t2_input_matches_trigger(p, i, GPTU_T2AIS_T2AICNT_SHIFT, GPTU_T2ES_T2AECNT_SHIFT, trigger_id)) {
+			gptu_t2_internal_input_matches_trigger(p, i, GPTU_T2AIS_T2AICNT_SHIFT, GPTU_T2ES_T2AECNT_SHIFT, trigger_id)) {
 			gptu_t2_advance_ticks(p, i, count);
 		}
 	}
@@ -669,18 +637,18 @@ static void gptu_t01_fire_outputs(pmb887x_gptu_t *p, int timer_id, uint64_t coun
 		if (((p->t01ots & GPTU_T01OTS_SOUT01) >> GPTU_T01OTS_SOUT01_SHIFT) == part)
 			gptu_toggle_output_source(p, 1, count);
 		if (((p->t01ots & GPTU_T01OTS_STRG00) >> GPTU_T01OTS_STRG00_SHIFT) == part)
-			gptu_t2_external_trigger(p, 0, count);
+			gptu_t2_internal_trigger(p, 0, count);
 		if (((p->t01ots & GPTU_T01OTS_STRG01) >> GPTU_T01OTS_STRG01_SHIFT) == part)
-			gptu_t2_external_trigger(p, 1, count);
+			gptu_t2_internal_trigger(p, 1, count);
 	} else {
 		if (((p->t01ots & GPTU_T01OTS_SOUT10) >> GPTU_T01OTS_SOUT10_SHIFT) == part)
 			gptu_toggle_output_source(p, 2, count);
 		if (((p->t01ots & GPTU_T01OTS_SOUT11) >> GPTU_T01OTS_SOUT11_SHIFT) == part)
 			gptu_toggle_output_source(p, 3, count);
 		if (((p->t01ots & GPTU_T01OTS_STRG10) >> GPTU_T01OTS_STRG10_SHIFT) == part)
-			gptu_t2_external_trigger(p, 2, count);
+			gptu_t2_internal_trigger(p, 2, count);
 		if (((p->t01ots & GPTU_T01OTS_STRG11) >> GPTU_T01OTS_STRG11_SHIFT) == part)
-			gptu_t2_external_trigger(p, 3, count);
+			gptu_t2_internal_trigger(p, 3, count);
 	}
 }
 
