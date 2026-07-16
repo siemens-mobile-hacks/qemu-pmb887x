@@ -4,6 +4,7 @@
 #include "qemu/osdep.h"
 #include "qapi/error.h"
 #include "qemu/error-report.h"
+#include "block/block_int-common.h"
 #include "hw/core/sysbus.h"
 #include "system/block-backend.h"
 #include "hw/core/qdev-properties.h"
@@ -34,6 +35,11 @@ bool pmb887x_flash_blk_is_rw(pmb887x_flash_blk_t *flash) {
 
 int64_t pmb887x_flash_blk_size(pmb887x_flash_blk_t *flash) {
 	return blk_co_getlength(flash->blk);
+}
+
+const char *pmb887x_flash_blk_filename(pmb887x_flash_blk_t *flash) {
+	BlockDriverState *bs = blk_bs(flash->blk);
+	return bs->exact_filename[0] ? bs->exact_filename : bs->filename;
 }
 
 pmb887x_flash_blk_t *pmb887x_flash_blk_self(DeviceState *dev) {

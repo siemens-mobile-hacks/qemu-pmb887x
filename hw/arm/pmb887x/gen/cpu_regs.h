@@ -6839,6 +6839,12 @@
 #define SCU_EBUCLC_VCOBYP				(1 << 8)
 #define SCU_EBUCLC_VCOBYP_SHIFT			8
 
+/* Emulator identification register */
+#define SCU_EMU_ID						0x4C
+#define SCU_EMU_ID_VALUE				(0xFFFFFFFF << 0)
+#define SCU_EMU_ID_VALUE_SHIFT			0
+#define SCU_EMU_ID_VALUE_QEMU			0x51454D55
+
 #define SCU_MANID						0x5C
 #define SCU_MANID_DEPT					(0xF << 0)
 #define SCU_MANID_DEPT_SHIFT			0
@@ -6963,12 +6969,6 @@
 
 /* Service Routing Control Register */
 #define SCU_EXTI7_SRC					0xFC
-
-/* Emulator identification register */
-#define SCU_EMU_ID						0x1FC
-#define SCU_EMU_ID_VALUE				(0xFFFFFFFF << 0)
-#define SCU_EMU_ID_VALUE_SHIFT			0
-#define SCU_EMU_ID_VALUE_QEMU			0x51454D55
 
 
 // SIM [MOD_NUM=F000, MOD_REV=32, MOD_32BIT=C0]

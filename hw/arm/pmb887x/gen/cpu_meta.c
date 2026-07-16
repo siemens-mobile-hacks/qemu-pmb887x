@@ -5824,6 +5824,14 @@ static const pmb887x_module_field_t scu_ebuclc_fields[] = {
 	{"VCOBYP",	SCU_EBUCLC_VCOBYP,	SCU_EBUCLC_VCOBYP_SHIFT,	NULL,	0},
 };
 
+static const pmb887x_module_value_t scu_scu_emu_id_value_values[] = {
+	{"QEMU",	SCU_EMU_ID_VALUE_QEMU},
+};
+
+static const pmb887x_module_field_t scu_emu_id_fields[] = {
+	{"VALUE",	SCU_EMU_ID_VALUE,	SCU_EMU_ID_VALUE_SHIFT,	scu_scu_emu_id_value_values,	ARRAY_SIZE(scu_scu_emu_id_value_values)},
+};
+
 static const pmb887x_module_field_t scu_manid_fields[] = {
 	{"DEPT",	SCU_MANID_DEPT,		SCU_MANID_DEPT_SHIFT,	NULL,	0},
 	{"MANUF",	SCU_MANID_MANUF,	SCU_MANID_MANUF_SHIFT,	NULL,	0},
@@ -5995,14 +6003,6 @@ static const pmb887x_module_field_t scu_exti7_src_fields[] = {
 	{"SETR",	MOD_SRC_SETR,	MOD_SRC_SETR_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_module_value_t scu_scu_emu_id_value_values[] = {
-	{"QEMU",	SCU_EMU_ID_VALUE_QEMU},
-};
-
-static const pmb887x_module_field_t scu_emu_id_fields[] = {
-	{"VALUE",	SCU_EMU_ID_VALUE,	SCU_EMU_ID_VALUE_SHIFT,	scu_scu_emu_id_value_values,	ARRAY_SIZE(scu_scu_emu_id_value_values)},
-};
-
 static const pmb887x_module_reg_t scu_regs[] = {
 	{"CLC",			SCU_CLC,		scu_clc_fields,			ARRAY_SIZE(scu_clc_fields),			0},
 	{"ID",			SCU_ID,			scu_id_fields,			ARRAY_SIZE(scu_id_fields),			0},
@@ -6019,6 +6019,7 @@ static const pmb887x_module_reg_t scu_regs[] = {
 	{"EBUCLC1",		SCU_EBUCLC1,	scu_ebuclc1_fields,		ARRAY_SIZE(scu_ebuclc1_fields),		0},
 	{"EBUCLC2",		SCU_EBUCLC2,	scu_ebuclc2_fields,		ARRAY_SIZE(scu_ebuclc2_fields),		0},
 	{"EBUCLC",		SCU_EBUCLC,		scu_ebuclc_fields,		ARRAY_SIZE(scu_ebuclc_fields),		0},
+	{"EMU_ID",		SCU_EMU_ID,		scu_emu_id_fields,		ARRAY_SIZE(scu_emu_id_fields),		0},
 	{"MANID",		SCU_MANID,		scu_manid_fields,		ARRAY_SIZE(scu_manid_fields),		0},
 	{"CHIPID",		SCU_CHIPID,		scu_chipid_fields,		ARRAY_SIZE(scu_chipid_fields),		0},
 	{"RTCIF",		SCU_RTCIF,		scu_rtcif_fields,		ARRAY_SIZE(scu_rtcif_fields),		0},
@@ -6045,7 +6046,6 @@ static const pmb887x_module_reg_t scu_regs[] = {
 	{"EXTI5_SRC",	SCU_EXTI5_SRC,	scu_exti5_src_fields,	ARRAY_SIZE(scu_exti5_src_fields),	0},
 	{"EXTI6_SRC",	SCU_EXTI6_SRC,	scu_exti6_src_fields,	ARRAY_SIZE(scu_exti6_src_fields),	0},
 	{"EXTI7_SRC",	SCU_EXTI7_SRC,	scu_exti7_src_fields,	ARRAY_SIZE(scu_exti7_src_fields),	0},
-	{"EMU_ID",		SCU_EMU_ID,		scu_emu_id_fields,		ARRAY_SIZE(scu_emu_id_fields),		0},
 };
 
 static const pmb887x_module_field_t sim_clc_fields[] = {

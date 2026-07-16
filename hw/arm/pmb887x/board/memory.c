@@ -27,19 +27,19 @@ MemoryRegion *pmb887x_board_create_nor_flash(const char *id, uint32_t vid, uint3
 	DeviceState *flash_blk = qdev_find_recursive(sysbus_get_default(), "FULLFLASH");
 	g_assert(flash_blk != NULL);
 
-	char flash_otp0_env[32];
-	char flash_otp1_env[32];
-	sprintf(flash_otp0_env, "PMB887X_%s_OTP0", id);
-	sprintf(flash_otp1_env, "PMB887X_%s_OTP1", id);
-
-	const char *bank_otp0 = getenv(flash_otp0_env) ?: getenv("PMB887X_FLASH_OTP0");
-	const char *bank_otp1 = getenv(flash_otp1_env) ?: getenv("PMB887X_FLASH_OTP1");
-
+	g_autofree char *otp0_env = g_strdup_printf("PMB887X_%s_OTP0", id);
+	g_autofree char *otp1_env = g_strdup_printf("PMB887X_%s_OTP1", id);
+	g_autofree char *otp0_file_env = g_strdup_printf("PMB887X_%s_OTP0_FILE", id);
+	g_autofree char *otp1_file_env = g_strdup_printf("PMB887X_%s_OTP1_FILE", id);
+	g_autofree char *efa_file_env = g_strdup_printf("PMB887X_%s_EFA_FILE", id);
 	DeviceState *flash = qdev_new("pmb887x-flash");
 	flash->id = g_strdup(id);
 	qdev_prop_set_string(flash, "name", id);
-	qdev_prop_set_string(flash, "otp0-data", bank_otp0 ?: ""); // ESN
-	qdev_prop_set_string(flash, "otp1-data", bank_otp1 ?: ""); // IMEI
+	qdev_prop_set_string(flash, "otp0-data", g_getenv(otp0_env) ?: ""); // ESN
+	qdev_prop_set_string(flash, "otp1-data", g_getenv(otp1_env) ?: ""); // IMEI
+	qdev_prop_set_string(flash, "otp0-file", g_getenv(otp0_file_env) ?: "");
+	qdev_prop_set_string(flash, "otp1-file", g_getenv(otp1_file_env) ?: "");
+	qdev_prop_set_string(flash, "efa-file", g_getenv(efa_file_env) ?: "");
 	qdev_prop_set_uint16(flash, "vid", vid);
 	qdev_prop_set_uint16(flash, "pid", pid);
 	qdev_prop_set_uint32(flash, "offset", offset);

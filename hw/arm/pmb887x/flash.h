@@ -22,7 +22,6 @@ struct pmb887x_flash_cfg_part_t {
 struct pmb887x_flash_cfg_t {
 	uint16_t vid;
 	uint16_t pid;
-	uint16_t lock;
 	uint16_t cr;
 	uint16_t ehcr;
 	uint32_t size;
@@ -32,10 +31,13 @@ struct pmb887x_flash_cfg_t {
 	uint32_t pri_size;
 	const pmb887x_flash_cfg_part_t *parts;
 	uint32_t parts_count;
+	const pmb887x_flash_erase_region_t *efa_erase_regions;
+	uint32_t efa_erase_regions_count;
 	uint16_t pri_addr;
 	
 	uint16_t otp0_addr;
 	uint16_t otp0_size;
+	uint16_t otp0_factory_size;
 	uint16_t otp1_addr;
 	uint16_t otp1_size;
 };

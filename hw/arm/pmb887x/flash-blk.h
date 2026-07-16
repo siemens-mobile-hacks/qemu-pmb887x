@@ -9,4 +9,5 @@ int pmb887x_flash_blk_pread(pmb887x_flash_blk_t *flash, int64_t offset, int64_t 
 int pmb887x_flash_blk_pwrite(pmb887x_flash_blk_t *flash, int64_t offset, int64_t size, void *value);
 bool pmb887x_flash_blk_is_rw(pmb887x_flash_blk_t *flash);
 int64_t pmb887x_flash_blk_size(pmb887x_flash_blk_t *flash);
+const char *pmb887x_flash_blk_filename(pmb887x_flash_blk_t *flash);
 pmb887x_flash_blk_t *pmb887x_flash_blk_self(DeviceState *dev);
