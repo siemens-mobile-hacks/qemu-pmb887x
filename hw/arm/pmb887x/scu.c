@@ -43,7 +43,8 @@ struct pmb887x_scu_t {
 	uint32_t cpu_uid[3];
 	uint32_t cpu_rev;
 	
-	uint32_t exti;
+	uint32_t int_edge;
+	uint32_t int_filter;
 	uint32_t wdtcon0;
 	uint32_t wdtcon1;
 	uint32_t wdt_status;
@@ -63,10 +64,8 @@ struct pmb887x_scu_t {
 	uint32_t rst_con;
 	uint32_t rst_req;
 	uint32_t boot_cfg;
-	uint32_t dsp_unk0;
-
-	uint32_t unk0;
-	uint32_t scu_exti_unk;
+	uint32_t dsp_int;
+	uint32_t sleep_req;
 
 	pmb887x_dmac_t *dmac;
 	pmb887x_pll_t *pll;
@@ -319,16 +318,16 @@ static uint64_t scu_io_read(void *opaque, hwaddr haddr, unsigned size) {
 			value = p->cpu_uid[(haddr - SCU_UID0) / 4];
 			break;
 
-		case SCU_EXTI_UNK:
-			value = p->scu_exti_unk;
+		case SCU_INT_FILTER:
+			value = p->int_filter;
 			break;
 
-		case SCU_EXTI:
-			value = p->exti;
+		case SCU_INT_EDGE:
+			value = p->int_edge;
 			break;
 		
-		case SCU_DSP_UNK0:
-			value = p->dsp_unk0;
+		case SCU_DSP_INT:
+			value = p->dsp_int;
 			break;
 
 		case SCU_EXTI0_SRC:
@@ -356,8 +355,8 @@ static uint64_t scu_io_read(void *opaque, hwaddr haddr, unsigned size) {
 			value = pmb887x_src_get(&p->unk_src[get_src_index_by_addr(haddr)]);
 			break;
 
-		case SCU_UNK0:
-			value = p->unk0;
+		case SCU_SLEEP_REQ:
+			value = p->sleep_req;
 			break;
 
 		default:
@@ -434,16 +433,24 @@ static void scu_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned si
 			pmb887x_dmac_set_sel(p->dmac, value);
 		break;
 
-		case SCU_EXTI_UNK:
-			p->scu_exti_unk = value;
+		case SCU_INT_FILTER:
+			p->int_filter = value & (
+				SCU_INT_FILTER_EXT0 | SCU_INT_FILTER_EXT1 | SCU_INT_FILTER_EXT2 |
+				SCU_INT_FILTER_EXT3 | SCU_INT_FILTER_EXT4 | SCU_INT_FILTER_EXT5 |
+				SCU_INT_FILTER_EXT6 | SCU_INT_FILTER_EXT7 | SCU_INT_FILTER_DSP0
+			);
 			break;
 
-		case SCU_EXTI: {
-			p->exti = value;
-			DPRINTF("EXTI=%08"PRIX64"\n", value);
+		case SCU_INT_EDGE: {
+			p->int_edge = value & (
+				SCU_INT_EDGE_EXT0 | SCU_INT_EDGE_EXT1 | SCU_INT_EDGE_EXT2 |
+				SCU_INT_EDGE_EXT3 | SCU_INT_EDGE_EXT4 | SCU_INT_EDGE_EXT5 |
+				SCU_INT_EDGE_EXT6 | SCU_INT_EDGE_EXT7 | SCU_INT_EDGE_DSP0
+			);
+			DPRINTF("INT_EDGE=%08X\n", p->int_edge);
 			for (uint32_t i = 0; i < ARRAY_SIZE(p->exti_irq); i++) {
-				uint32_t falling = p->exti & (1 << (i * 2)) ? 1 : 0;
-				uint32_t rising = p->exti & (1 << (i * 2 + 1)) ? 1 : 0;
+				uint32_t rising = p->int_edge & (1 << (i * 2)) ? 1 : 0;
+				uint32_t falling = p->int_edge & (1 << (i * 2 + 1)) ? 1 : 0;
 
 				if (falling && rising) {
 					DPRINTF("EXTI_%d: FALLING | RISING\n", i);
@@ -456,8 +463,8 @@ static void scu_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned si
 			break;
 		}
 		
-		case SCU_DSP_UNK0:
-			p->dsp_unk0 = value;
+		case SCU_DSP_INT:
+			p->dsp_int = value & SCU_DSP_INT_REQ;
 		break;
 		
 		case SCU_EXTI0_SRC:
@@ -485,8 +492,8 @@ static void scu_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned si
 			pmb887x_src_set(&p->unk_src[get_src_index_by_addr(haddr)], value);
 		break;
 
-		case SCU_UNK0:
-			p->unk0 = value;
+		case SCU_SLEEP_REQ:
+			p->sleep_req = value & SCU_SLEEP_REQ_REQ;
 			break;
 		default:
 			EPRINTF("unknown reg access: %02"PRIX64"\n", haddr);
@@ -553,6 +560,9 @@ static void scu_init(Object *obj) {
 	sysbus_init_irq(SYS_BUS_DEVICE(obj), &p->exti_irq[2]);
 	sysbus_init_irq(SYS_BUS_DEVICE(obj), &p->exti_irq[3]);
 	sysbus_init_irq(SYS_BUS_DEVICE(obj), &p->exti_irq[4]);
+	sysbus_init_irq(SYS_BUS_DEVICE(obj), &p->exti_irq[5]);
+	sysbus_init_irq(SYS_BUS_DEVICE(obj), &p->exti_irq[6]);
+	sysbus_init_irq(SYS_BUS_DEVICE(obj), &p->exti_irq[7]);
 
 	sysbus_init_irq(SYS_BUS_DEVICE(obj), &p->dsp_irq[0]);
 	sysbus_init_irq(SYS_BUS_DEVICE(obj), &p->dsp_irq[1]);
@@ -563,10 +573,6 @@ static void scu_init(Object *obj) {
 	sysbus_init_irq(SYS_BUS_DEVICE(obj), &p->unk_irq[0]);
 	sysbus_init_irq(SYS_BUS_DEVICE(obj), &p->unk_irq[1]);
 	sysbus_init_irq(SYS_BUS_DEVICE(obj), &p->unk_irq[2]);
-
-	sysbus_init_irq(SYS_BUS_DEVICE(obj), &p->exti_irq[5]);
-	sysbus_init_irq(SYS_BUS_DEVICE(obj), &p->exti_irq[6]);
-	sysbus_init_irq(SYS_BUS_DEVICE(obj), &p->exti_irq[7]);
 
 	qdev_init_gpio_in_named(dev, scu_input_exti0_handler, "EXTI0_IN", 1);
 	qdev_init_gpio_in_named(dev, scu_input_exti1_handler, "EXTI1_IN", 1);
@@ -591,7 +597,8 @@ static void scu_reset(DeviceState *dev) {
 	for (size_t i = 0; i < ARRAY_SIZE(p->unk_src); i++)
 		pmb887x_src_reset(&p->unk_src[i]);
 
-	p->exti = 0;
+	p->int_edge = 0;
+	p->int_filter = 0;
 
 	p->wdtcon0 = SCU_WDTCON0_WDTLCK | (0xFFFC << SCU_WDTCON0_WDTREL_SHIFT);
 	p->wdtcon1 = 0;
@@ -615,9 +622,8 @@ static void scu_reset(DeviceState *dev) {
 	p->boot_flag = 0;
 	p->dmars = 0;
 	p->boot_cfg = 0;
-	p->dsp_unk0 = 0;
-	p->unk0 = 0;
-	p->scu_exti_unk = 0;
+	p->dsp_int = 0;
+	p->sleep_req = 0;
 	p->pending_reset_cause = 0;
 
 	DPRINTF("watchdog disabled (reset)\n");

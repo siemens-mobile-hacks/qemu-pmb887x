@@ -24,10 +24,10 @@
 #define KEYPAD_MAX_OUT	(4 * KEYPAD_PORTS)
 
 enum {
-	IRQ_KEY_PRESS,
-	IRQ_KEY_UNK0,
-	IRQ_KEY_UNK1,
-	IRQ_KEY_RELEASE,
+	IRQ_KEY_INT0,
+	IRQ_KEY_INT1,
+	IRQ_KEY_INT2,
+	IRQ_KEY_INT3,
 };
 
 typedef struct pmb887x_keypad_t pmb887x_keypad_t;
@@ -75,10 +75,10 @@ static void keypad_handle_event(DeviceState *dev, QemuConsole *src, InputEvent *
 			
 			if (pressed) {
 				p->state[i][j]++;
-				pmb887x_src_update(&p->src[IRQ_KEY_PRESS], 0, MOD_SRC_SETR);
+				pmb887x_src_update(&p->src[IRQ_KEY_INT0], 0, MOD_SRC_SETR);
 			} else {
 				p->state[i][j]--;
-				pmb887x_src_update(&p->src[IRQ_KEY_RELEASE], 0, MOD_SRC_SETR);
+				pmb887x_src_update(&p->src[IRQ_KEY_INT3], 0, MOD_SRC_SETR);
 			}
 			
 			uint8_t port = i / 4;
@@ -107,6 +107,10 @@ static uint64_t keypad_io_read(void *opaque, hwaddr haddr, unsigned size) {
 		case KEYPAD_CON:
 			value = p->con;
 			break;
+
+		case KEYPAD_ISR:
+			value = 0;
+			break;
 		
 		case KEYPAD_PORT0:
 		case KEYPAD_PORT1:
@@ -114,11 +118,11 @@ static uint64_t keypad_io_read(void *opaque, hwaddr haddr, unsigned size) {
 			value = p->port[(haddr - KEYPAD_PORT0) / 4];
 			break;
 		
-		case KEYPAD_PRESS_SRC:
-		case KEYPAD_UNK0_SRC:
-		case KEYPAD_UNK1_SRC:
-		case KEYPAD_RELEASE_SRC:
-			value = pmb887x_src_get(&p->src[(haddr - KEYPAD_PRESS_SRC) / 4]);
+		case KEYPAD_INT0_SRC:
+		case KEYPAD_INT1_SRC:
+		case KEYPAD_INT2_SRC:
+		case KEYPAD_INT3_SRC:
+			value = pmb887x_src_get(&p->src[(haddr - KEYPAD_INT0_SRC) / 4]);
 			break;
 		
 		default:
@@ -139,14 +143,14 @@ static void keypad_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned
 	
 	switch (haddr) {
 		case KEYPAD_CON:
-			p->con = value;
+			p->con = value & (KEYPAD_CON_NEXT_REPEAT_DELAY | KEYPAD_CON_FIRST_REPEAT_DELAY);
 			break;
 		
-		case KEYPAD_PRESS_SRC:
-		case KEYPAD_UNK0_SRC:
-		case KEYPAD_UNK1_SRC:
-		case KEYPAD_RELEASE_SRC:
-			pmb887x_src_set(&p->src[(haddr - KEYPAD_PRESS_SRC) / 4], value);
+		case KEYPAD_INT0_SRC:
+		case KEYPAD_INT1_SRC:
+		case KEYPAD_INT2_SRC:
+		case KEYPAD_INT3_SRC:
+			pmb887x_src_set(&p->src[(haddr - KEYPAD_INT0_SRC) / 4], value);
 			break;
 		
 		default:

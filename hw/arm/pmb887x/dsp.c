@@ -27,7 +27,7 @@ struct pmb887x_dsp_t {
 	SysBusDevice parent_obj;
 	MemoryRegion mmio;
 	
-	uint32_t unk[2];
+	uint32_t com_status;
 	uint8_t ram[DSP_RAM_SIZE];
 	uint32_t ram0_value;
 	
@@ -87,12 +87,8 @@ static uint64_t dsp_io_read(void *opaque, hwaddr haddr, unsigned size) {
 			value = 0xF022C031;
 			break;
 
-		case DSP_UNK0:
-			value = p->unk[0];
-			break;
-
-		case DSP_UNK1:
-			value = p->unk[1];
+		case DSP_COM_STATUS:
+			value = p->com_status;
 			break;
 
 		case DSP_RAM0 ... (DSP_RAM0 + DSP_RAM_SIZE):
@@ -120,12 +116,12 @@ static void dsp_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned si
 			pmb887x_clc_set(&p->clc, value);
 			break;
 
-		case DSP_UNK0:
-			p->unk[0] = value;
+		case DSP_COM_SET:
+			p->com_status |= value & DSP_COM_SET_FLAGS;
 			break;
 
-		case DSP_UNK1:
-			p->unk[1] = value;
+		case DSP_COM_CLEAR:
+			p->com_status &= ~(value & DSP_COM_CLEAR_FLAGS);
 			break;
 
 		case DSP_RAM0 ... (DSP_RAM0 + DSP_RAM_SIZE):
@@ -161,8 +157,7 @@ static void dsp_reset(DeviceState *dev) {
 
 	pmb887x_clc_init(&p->clc);
 
-	p->unk[0] = 0x01;
-	p->unk[1] = 0x00;
+	p->com_status = 0;
 	memset(p->ram, 0, sizeof(p->ram));
 	dsp_ram_write(p, 0, p->ram0_value, 2);
 
@@ -178,8 +173,7 @@ static void dsp_realize(DeviceState *dev, Error **errp) {
 	
 	pmb887x_clc_init(&p->clc);
 	
-	p->unk[0] = 0x01;
-	p->unk[1] = 0x00;
+	p->com_status = 0;
 
 	dsp_ram_write(p, 0, p->ram0_value, 2);
 	dsp_update_state(p);
