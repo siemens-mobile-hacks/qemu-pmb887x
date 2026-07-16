@@ -38,6 +38,7 @@ static const pmb887x_debug_channel_t debug_channels[] = {
 	{ "tcm",		PMB887X_TRACE_TCM },
 	{ "sim",		PMB887X_TRACE_SIM },
 	{ "afc",		PMB887X_TRACE_AFC },
+	{ "gprscu",	PMB887X_TRACE_GPRSCU },
 
 	// peripherals
 	{ "sim-card",	PMB887X_TRACE_SIM_CARD },

@@ -186,6 +186,10 @@ static void pmb887x_init(MachineState *machine) {
 	pmb887x_board_init_dsp(dsp);
 	sysbus_realize_and_unref(SYS_BUS_DEVICE(dsp), &error_fatal);
 
+	// GPRS Ciphering Unit
+	DeviceState *gprscu = pmb887x_new_cpu_module("GPRSCU");
+	sysbus_realize_and_unref(SYS_BUS_DEVICE(gprscu), &error_fatal);
+
 	// Automatic Frequency Correction
 	DeviceState *afc = pmb887x_new_cpu_module("AFC");
 	sysbus_realize_and_unref(SYS_BUS_DEVICE(afc), &error_fatal);

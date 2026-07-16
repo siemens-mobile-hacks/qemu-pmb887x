@@ -23,6 +23,7 @@ arm_common_ss.add(when: 'CONFIG_PMB887X', if_true: files(
 	'i2c_v2.c',
 	'capcom.c',
 	'dsp.c',
+	'gprscu.c',
 	'ssc.c',
 	'dif_v1.c',
 	'dif_v2.c',
