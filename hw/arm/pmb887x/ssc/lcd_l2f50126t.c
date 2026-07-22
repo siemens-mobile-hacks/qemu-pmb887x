@@ -40,17 +40,17 @@ static void lcd_update_state(pmb887x_lcd_t *lcd) {
 
 	uint8_t colmod = (priv->regs[0x3A][0] & 7);
 
-	enum pmb887x_lcd_pixel_mode_t new_mode;
+	enum pmb887x_lcd_pixel_format_t pixel_format;
 	switch (colmod) {
 		case 0x05:
-			new_mode = bgr ? LCD_MODE_BGR565 : LCD_MODE_RGB565;
+			pixel_format = LCD_PIXEL_FORMAT_RGB565;
 			break;
 		case 0x06:
-			new_mode = bgr ? LCD_MODE_BGR666 : LCD_MODE_RGB666;
+			pixel_format = LCD_PIXEL_FORMAT_RGB666_6_6_6;
 			break;
 		default:
 			EPRINTF("Invalid color mode: 0x%02X, fallback to 565", colmod);
-			new_mode = bgr ? LCD_MODE_BGR565 : LCD_MODE_RGB565;
+			pixel_format = LCD_PIXEL_FORMAT_RGB565;
 			break;
 	}
 
@@ -62,7 +62,9 @@ static void lcd_update_state(pmb887x_lcd_t *lcd) {
 	);
 
 	DPRINTF("mv=%d, mx=%d, my=%d, invert_xy=%d, bgr=%d\n", mv, mx, my, invert_xy, bgr);
-	pmb887x_lcd_set_mode(lcd, new_mode, invert_xy, invert_xy);
+	pmb887x_lcd_set_pixel_format(lcd, pixel_format);
+	pmb887x_lcd_set_output_bgr(lcd, bgr);
+	pmb887x_lcd_set_transform(lcd, invert_xy, invert_xy);
 }
 
 static int lcd_on_cmd(pmb887x_lcd_t *lcd, uint32_t cmd) {

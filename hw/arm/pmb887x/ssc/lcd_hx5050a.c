@@ -45,8 +45,9 @@ static void lcd_update_state(pmb887x_lcd_t *lcd) {
 		(id1 ? LCD_AC_INC : LCD_AC_DEC)
 	);
 	
-	enum pmb887x_lcd_pixel_mode_t new_mode = bgr ? LCD_MODE_BGR565 : LCD_MODE_RGB565;
-	pmb887x_lcd_set_mode(lcd, new_mode);
+	pmb887x_lcd_set_pixel_format(lcd, LCD_PIXEL_FORMAT_RGB565);
+	pmb887x_lcd_set_output_bgr(lcd, bgr);
+	pmb887x_lcd_set_transform(lcd, false, false);
 }
 
 static uint32_t lcd_on_cmd(pmb887x_lcd_t *lcd, uint32_t cmd) {

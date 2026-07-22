@@ -37,7 +37,9 @@ static void lcd_update_state(pmb887x_lcd_t *lcd) {
 		LCD_AC_INC,
 		LCD_AC_INC
 	);
-	pmb887x_lcd_set_mode(lcd, LCD_MODE_RGB565, false, false);
+	pmb887x_lcd_set_pixel_format(lcd, LCD_PIXEL_FORMAT_RGB565);
+	pmb887x_lcd_set_output_bgr(lcd, false);
+	pmb887x_lcd_set_transform(lcd, false, false);
 }
 
 static int lcd_on_cmd(pmb887x_lcd_t *lcd, uint32_t cmd) {
