@@ -15,6 +15,10 @@
 #error "PMB887X_TRACE_PREFIX not defined!"
 #endif
 
+#ifndef PMB887X_TRACE_IO
+#define PMB887X_TRACE_IO PMB887X_TRACE_IO_CPU
+#endif
+
 #define PMB887X_MOD_CONST_NAME_(a, b) a ## b
 #define PMB887X_MOD_CONST_NAME(b) PMB887X_MOD_CONST_NAME_(PMB887X_TRACE_, b)
 
@@ -34,12 +38,12 @@
 
 #define IO_DUMP_READ(...) do { \
 		if (pmb887x_trace_io_enabled(PMB887X_MOD_CONST_NAME(PMB887X_TRACE_ID))) { \
-			pmb887x_dump_io_read(__VA_ARGS__); \
+			pmb887x_dump_io_read(PMB887X_TRACE_IO, __VA_ARGS__); \
 		} \
 	} while (0)
 
 #define IO_DUMP_WRITE(...) do { \
 		if (pmb887x_trace_io_enabled(PMB887X_MOD_CONST_NAME(PMB887X_TRACE_ID))) { \
-			pmb887x_dump_io_write(__VA_ARGS__); \
+			pmb887x_dump_io_write(PMB887X_TRACE_IO, __VA_ARGS__); \
 		} \
 	} while (0)

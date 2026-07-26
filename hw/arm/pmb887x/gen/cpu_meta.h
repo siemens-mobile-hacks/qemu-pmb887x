@@ -10,37 +10,45 @@
 typedef struct pmb887x_cpu_meta_gpio_t pmb887x_cpu_meta_gpio_t;
 typedef struct pmb887x_cpu_meta_irq_t pmb887x_cpu_meta_irq_t;
 typedef struct pmb887x_cpu_meta_t pmb887x_cpu_meta_t;
-typedef struct pmb887x_module_t pmb887x_module_t;
-typedef struct pmb887x_module_reg_t pmb887x_module_reg_t;
-typedef struct pmb887x_module_field_t pmb887x_module_field_t;
-typedef struct pmb887x_module_value_t pmb887x_module_value_t;
+typedef struct pmb887x_cpu_io_t pmb887x_cpu_io_t;
+typedef struct pmb887x_io_meta_t pmb887x_io_meta_t;
+typedef struct pmb887x_io_reg_t pmb887x_io_reg_t;
+typedef struct pmb887x_io_field_t pmb887x_io_field_t;
+typedef struct pmb887x_io_value_t pmb887x_io_value_t;
 
-struct pmb887x_module_value_t {
+typedef enum pmb887x_trace_io_t {
+	PMB887X_TRACE_IO_CPU,
+	PMB887X_TRACE_IO_D1094EC,
+	PMB887X_TRACE_IO_D1601XX,
+	PMB887X_TRACE_IO_COUNT,
+} pmb887x_trace_io_t;
+
+struct pmb887x_io_value_t {
 	const char *name;
 	uint32_t value;
 };
 
-struct pmb887x_module_field_t {
+struct pmb887x_io_field_t {
 	const char *name;
 	uint32_t mask;
 	uint32_t shift;
-	const pmb887x_module_value_t *values;
+	const pmb887x_io_value_t *values;
 	int values_count;
 };
 
-struct pmb887x_module_reg_t {
+struct pmb887x_io_reg_t {
 	const char *name;
 	uint32_t addr;
-	const pmb887x_module_field_t *fields;
+	const pmb887x_io_field_t *fields;
 	int fields_count;
 	int special;
 };
 
-struct pmb887x_module_t {
+struct pmb887x_cpu_io_t {
 	const char *name;
 	uint32_t base;
 	uint32_t size;
-	const pmb887x_module_reg_t *regs;
+	const pmb887x_io_reg_t *regs;
 	int regs_count;
 };
 
@@ -66,8 +74,15 @@ struct pmb887x_cpu_meta_t {
 	const pmb887x_cpu_meta_gpio_t *gpios;
 	int gpios_count;
 
-	const pmb887x_module_t *modules;
+	const pmb887x_cpu_io_t *modules;
 	int modules_count;
 };
 
+struct pmb887x_io_meta_t {
+	const char *name;
+	const pmb887x_io_reg_t *regs;
+	int regs_count;
+};
+
 const pmb887x_cpu_meta_t *pmb887x_get_cpu_meta(int cpu);
+const pmb887x_io_meta_t *pmb887x_get_io_meta(pmb887x_trace_io_t id);
