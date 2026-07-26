@@ -96,14 +96,14 @@ static uint64_t usb_io_read(void *opaque, hwaddr haddr, unsigned int size) {
 			break;
 	}
 
-	IO_DUMP(haddr + p->mmio.addr, size, value, false);
+	IO_DUMP_READ(haddr + p->mmio.addr, size, value);
 	return value;
 }
 
 static void usb_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned int size) {
 	pmb887x_usb_t *p = opaque;
 
-	IO_DUMP(haddr + p->mmio.addr, size, value, true);
+	IO_DUMP_WRITE(haddr + p->mmio.addr, size, value);
 	if (haddr == USB_CLC) {
 		pmb887x_clc_set(&p->clc, value);
 		return;

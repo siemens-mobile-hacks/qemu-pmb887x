@@ -29,7 +29,7 @@ static uint64_t unknown_io_read(void *opaque, hwaddr haddr, unsigned size) {
 
 	#if PMB887X_IO_BRIDGE
 	value = pmb8876_io_bridge_read(haddr, size);
-	IO_DUMP(haddr + p->mmio.addr, size, value, false);
+	IO_DUMP_READ(haddr + p->mmio.addr, size, value);
 	return value;
 	#endif
 
@@ -39,7 +39,7 @@ static uint64_t unknown_io_read(void *opaque, hwaddr haddr, unsigned size) {
 	if (haddr == 0xF4C00000)
 		value = 0xFFFFFFFF;
 
-	IO_DUMP(haddr + p->mmio.addr, size, value, false);
+	IO_DUMP_READ(haddr + p->mmio.addr, size, value);
 
 	return value;
 }
@@ -48,12 +48,12 @@ static void unknown_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigne
 	pmb887x_unknown_t *p = opaque;
 
 #if PMB887X_IO_BRIDGE
-	IO_DUMP(haddr + p->mmio.addr, size, value, true);
+	IO_DUMP_WRITE(haddr + p->mmio.addr, size, value);
 	pmb8876_io_bridge_write(haddr, size, value);
 	return;
 #endif
 
-	IO_DUMP(haddr + p->mmio.addr, size, value, true);
+	IO_DUMP_WRITE(haddr + p->mmio.addr, size, value);
 
 }
 

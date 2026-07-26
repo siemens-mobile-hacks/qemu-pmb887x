@@ -204,7 +204,7 @@ void pmb887x_io_dump_init(void) {
 	assert(gpio_base != 0);
 }
 
-void pmb887x_dump_io(uint32_t addr, uint32_t size, uint32_t value, bool is_write) {
+static void regs_dump_io(uint32_t addr, uint32_t size, uint32_t value, bool is_write) {
 	if (!io_dump_cpu)
 		io_dump_cpu = ARM_CPU(qemu_get_cpu(0));
 
@@ -243,6 +243,14 @@ void pmb887x_dump_io(uint32_t addr, uint32_t size, uint32_t value, bool is_write
 	if (io_dump_queue_count <= 2)
 		qemu_cond_signal(&io_dump_ready);
 	qemu_mutex_unlock(&io_dump_lock);
+}
+
+void pmb887x_dump_io_read(uint32_t addr, uint32_t size, uint32_t value) {
+	regs_dump_io(addr, size, value, false);
+}
+
+void pmb887x_dump_io_write(uint32_t addr, uint32_t size, uint32_t value) {
+	regs_dump_io(addr, size, value, true);
 }
 
 static void regs_dump_print_io(FILE *log_file, uint32_t addr, uint32_t size, uint32_t value, bool is_write, uint32_t pc, uint32_t lr, uint64_t count) {

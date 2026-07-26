@@ -215,12 +215,12 @@ static uint64_t rtc_io_read(void *opaque, hwaddr haddr, unsigned size) {
 			break;
 		
 		default:
-			IO_DUMP(haddr + p->mmio.addr, size, 0xFFFFFFFF, false);
+			IO_DUMP_READ(haddr + p->mmio.addr, size, 0xFFFFFFFF);
 			EPRINTF("unknown reg access: %02"PRIX64"\n", haddr);
 			exit(1);
 	}
 	
-	IO_DUMP(haddr + p->mmio.addr, size, value, false);
+	IO_DUMP_READ(haddr + p->mmio.addr, size, value);
 	
 	return value;
 }
@@ -229,7 +229,7 @@ static void rtc_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned si
 	pmb887x_rtc_t *p = opaque;
 	rtc_sync(p);
 	
-	IO_DUMP(haddr + p->mmio.addr, size, value, true);
+	IO_DUMP_WRITE(haddr + p->mmio.addr, size, value);
 	
 	switch (haddr) {
 		case RTC_CLC:

@@ -53,7 +53,7 @@ static uint64_t mmci_io_read(void *opaque, hwaddr haddr, unsigned size) {
 			exit(1);
 	}
 	
-	IO_DUMP(haddr + p->mmio.addr, size, value, false);
+	IO_DUMP_READ(haddr + p->mmio.addr, size, value);
 	
 	return value;
 }
@@ -61,7 +61,7 @@ static uint64_t mmci_io_read(void *opaque, hwaddr haddr, unsigned size) {
 static void mmci_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned size) {
 	pmb887x_mmci_t *p = opaque;
 	
-	IO_DUMP(haddr + p->mmio.addr, size, value, true);
+	IO_DUMP_WRITE(haddr + p->mmio.addr, size, value);
 	
 	switch (haddr) {
 		case GPIO_CLC:

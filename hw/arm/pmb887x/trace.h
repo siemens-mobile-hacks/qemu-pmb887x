@@ -32,8 +32,14 @@
 		warn_report("[" PMB887X_TRACE_PREFIX "]: " fmt , ## __VA_ARGS__); \
 	} while (0)
 
-#define IO_DUMP(...) do { \
+#define IO_DUMP_READ(...) do { \
 		if (pmb887x_trace_io_enabled(PMB887X_MOD_CONST_NAME(PMB887X_TRACE_ID))) { \
-			pmb887x_dump_io(__VA_ARGS__); \
+			pmb887x_dump_io_read(__VA_ARGS__); \
+		} \
+	} while (0)
+
+#define IO_DUMP_WRITE(...) do { \
+		if (pmb887x_trace_io_enabled(PMB887X_MOD_CONST_NAME(PMB887X_TRACE_ID))) { \
+			pmb887x_dump_io_write(__VA_ARGS__); \
 		} \
 	} while (0)

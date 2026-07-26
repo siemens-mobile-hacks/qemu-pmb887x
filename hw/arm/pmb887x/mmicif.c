@@ -194,14 +194,14 @@ static uint64_t mmicif_io_read(void *opaque, hwaddr haddr, unsigned size) {
             break;
     }
 
-    IO_DUMP(haddr + p->mmio.addr, size, value, false);
+    IO_DUMP_READ(haddr + p->mmio.addr, size, value);
     return value;
 }
 
 static void mmicif_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned size) {
     pmb887x_mmicif_t *p = opaque;
 
-    IO_DUMP(haddr + p->mmio.addr, size, value, true);
+    IO_DUMP_WRITE(haddr + p->mmio.addr, size, value);
 
     switch (haddr) {
         case MMICIF_CLC:
@@ -304,7 +304,7 @@ static uint64_t mmicif_mmap_read(void *opaque, hwaddr haddr, unsigned size) {
             p->host_address += sizeof(uint32_t);
     }
 
-    IO_DUMP(haddr + p->mmap.addr, size, value, false);
+    IO_DUMP_READ(haddr + p->mmap.addr, size, value);
     return value;
 }
 
@@ -312,7 +312,7 @@ static void mmicif_mmap_write(void *opaque, hwaddr haddr, uint64_t value, unsign
     pmb887x_mmicif_t *p = opaque;
     uint32_t mode = p->transfer_config & MMICIF_TRANSFER_CONFIG_MODE;
 
-    IO_DUMP(haddr + p->mmap.addr, size, value, true);
+    IO_DUMP_WRITE(haddr + p->mmap.addr, size, value);
 
     if (haddr == MMICIF_HOST_STATUS_OFFSET) {
         p->host_status = value & ~MMICIF_HOST_STATUS_READ_READY;

@@ -88,12 +88,12 @@ static uint64_t dsp_io_read(void *opaque, hwaddr haddr, unsigned size) {
 			break;
 
 		default:
-			IO_DUMP(haddr + p->mmio.addr, size, 0xFFFFFFFF, false);
+			IO_DUMP_READ(haddr + p->mmio.addr, size, 0xFFFFFFFF);
 			EPRINTF("unknown reg access: %02"PRIX64"\n", haddr);
 			break;
 	}
 
-	IO_DUMP(haddr + p->mmio.addr, size, value, false);
+	IO_DUMP_READ(haddr + p->mmio.addr, size, value);
 	
 	return value;
 }
@@ -101,7 +101,7 @@ static uint64_t dsp_io_read(void *opaque, hwaddr haddr, unsigned size) {
 static void dsp_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned size) {
 	pmb887x_dsp_t *p = opaque;
 	
-	IO_DUMP(haddr + p->mmio.addr, size, value, true);
+	IO_DUMP_WRITE(haddr + p->mmio.addr, size, value);
 
 	switch (haddr) {
 		case DSP_CLC:
@@ -141,14 +141,14 @@ static uint64_t dsp_ram_read(void *opaque, hwaddr haddr, unsigned size) {
 	for (unsigned i = 0; i < size; i++)
 		value |= (uint64_t) p->ram_data[haddr + i] << (i * 8);
 
-	IO_DUMP(haddr + p->mmio.addr + DSP_RAM0, size, value, false);
+	IO_DUMP_READ(haddr + p->mmio.addr + DSP_RAM0, size, value);
 	return value;
 }
 
 static void dsp_ram_write(void *opaque, hwaddr haddr, uint64_t value, unsigned size) {
 	pmb887x_dsp_t *p = opaque;
 
-	IO_DUMP(haddr + p->mmio.addr + DSP_RAM0, size, value, true);
+	IO_DUMP_WRITE(haddr + p->mmio.addr + DSP_RAM0, size, value);
 	for (unsigned i = 0; i < size; i++)
 		p->ram_data[haddr + i] = value >> (i * 8);
 }

@@ -296,13 +296,13 @@ static uint64_t tpu_io_read(void *opaque, hwaddr haddr, unsigned size) {
 		break;
 
 		default:
-			IO_DUMP(haddr + p->mmio.addr, size, 0xFFFFFFFF, false);
+			IO_DUMP_READ(haddr + p->mmio.addr, size, 0xFFFFFFFF);
 			EPRINTF("unknown reg access: %02"PRIX64"\n", haddr);
 			exit(1);
 		break;
 	}
 
-	IO_DUMP(haddr + p->mmio.addr, size, value, false);
+	IO_DUMP_READ(haddr + p->mmio.addr, size, value);
 
 	return value;
 }
@@ -310,7 +310,7 @@ static uint64_t tpu_io_read(void *opaque, hwaddr haddr, unsigned size) {
 static void tpu_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned size) {
 	struct pmb887x_tpu_t *p = (struct pmb887x_tpu_t *) opaque;
 
-	IO_DUMP(haddr + p->mmio.addr, size, value, true);
+	IO_DUMP_WRITE(haddr + p->mmio.addr, size, value);
 
 	switch (haddr) {
 		case TPU_CLC:
