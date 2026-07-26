@@ -2,6 +2,7 @@
 /build/
 /.cache/
 /.vscode/
+/AGENTS.md
 *.pyc
 .sdk
 .stgit-*
