@@ -4,6 +4,7 @@
 #include "hw/arm/pmb887x/board/board.h"
 #include "hw/arm/pmb887x/board/gpio.h"
 #include "hw/arm/pmb887x/board/memory.h"
+#include "hw/arm/pmb887x/mmicif.h"
 #include "hw/arm/pmb887x/sim.h"
 #include "hw/arm/pmb887x/sim/sim_card.h"
 #include "hw/arm/pmb887x/utils/regexp.h"
@@ -29,6 +30,7 @@ enum pmb887x_dev_bus_type_t {
 	DEV_BUS_SSI,
 	DEV_BUS_SIM,
 	DEV_BUS_EBU,
+	DEV_BUS_MMICIF,
 };
 
 enum pmb887x_dev_prop_type_t {
@@ -230,6 +232,8 @@ static pmb887x_dev_bus_type_t bus_get_type(Object *dev) {
 		return DEV_BUS_SIM;
 	if (strcmp(typename, "pmb887x-ebu") == 0)
 		return DEV_BUS_EBU;
+	if (strcmp(typename, TYPE_PMB887X_MMICIF_BUS) == 0)
+		return DEV_BUS_MMICIF;
 	hw_error("Unknown bus type: %s", typename);
 	return DEV_BUS_NONE;
 }
@@ -378,6 +382,15 @@ static DeviceState *device_create_from_config(DeviceState *ebuc, const char *id,
 			}
 			break;
 		}
+
+		case DEV_BUS_MMICIF:
+			dev = qdev_new(type);
+			dev->id = g_strdup(id);
+			device_init_props_from_config(dev, meta, table);
+			qdev_realize_and_unref(dev, BUS(bus), &error_fatal);
+			device_init_gpios_from_config(dev, table);
+			break;
+
 		default:
 			error_report("Unknown bus type: %s", bus_id);
 			exit(EXIT_FAILURE);

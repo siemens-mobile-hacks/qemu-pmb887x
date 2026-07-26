@@ -201,6 +201,11 @@ static void pmb887x_init(MachineState *machine) {
 		// MMCI
 		DeviceState *mmci = pmb887x_new_cpu_module("MMCI");
 		sysbus_realize_and_unref(SYS_BUS_DEVICE(mmci), &error_fatal);
+
+		// Multi Media Controller Interface
+		DeviceState *mmicif = pmb887x_new_cpu_module("MMICIF");
+		sysbus_mmio_map(SYS_BUS_DEVICE(mmicif), 1, PMB8876_MMICIF_BASE + MMICIF_MMAP_BASE);
+		sysbus_realize_and_unref(SYS_BUS_DEVICE(mmicif), &error_fatal);
 	}
 
 	// SIM card interface

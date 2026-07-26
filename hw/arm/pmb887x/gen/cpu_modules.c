@@ -338,6 +338,7 @@ static const pmb887x_cpu_module_t pmb8876_modules[] = {
 	{"DIF",		0xF043C012,	PMB8876_DIF_BASE,		"pmb887x-dif-v2",	pmb8876_dif_irqs,		ARRAY_SIZE(pmb8876_dif_irqs),		pmb8876_dif_gpios,		ARRAY_SIZE(pmb8876_dif_gpios),		pmb8876_dif_dma,	ARRAY_SIZE(pmb8876_dif_dma)},
 	{"MMCI",	0xF041C022,	PMB8876_MMCI_BASE,		"pmb887x-mmci",		NULL,					0,									pmb8876_mmci_gpios,		ARRAY_SIZE(pmb8876_mmci_gpios),		NULL,				0},
 	{"I2C",		0xF057C012,	PMB8876_I2C_BASE,		"pmb887x-i2c-v2",	pmb8876_i2c_irqs,		ARRAY_SIZE(pmb8876_i2c_irqs),		pmb8876_i2c_gpios,		ARRAY_SIZE(pmb8876_i2c_gpios),		pmb8876_i2c_dma,	ARRAY_SIZE(pmb8876_i2c_dma)},
+	{"MMICIF",	0xF053C012,	PMB8876_MMICIF_BASE,	"pmb887x-mmicif",	NULL,					0,									NULL,					0,									NULL,				0},
 };
 
 static const int pmb8875_usart0_irqs[] = {
