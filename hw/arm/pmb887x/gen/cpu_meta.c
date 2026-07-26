@@ -6468,6 +6468,1191 @@ static const pmb887x_io_reg_t d1601xx_regs[] = {
 	{ "RG_REG",			0x58,	d1601xx_rg_reg_fields,			ARRAY_SIZE(d1601xx_rg_reg_fields),			0 },
 };
 
+static const pmb887x_io_field_t jbt6k71_oscillation_fields[] = {
+	{ "OSC",	0x00000001,	0,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t jbt6k71_driver_output_control_fields[] = {
+	{ "NL",	0x0000003F,	0,	NULL,	0 },
+	{ "SS",	0x00000100,	8,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t jbt6k71_lcd_driving_signal_fields[] = {
+	{ "B_C",	0x00000200,	9,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t jbt6k71_entry_mode_fields[] = {
+	{ "AM",		0x00000008,	3,	NULL,	0 },
+	{ "ID",		0x00000030,	4,	NULL,	0 },
+	{ "HWM",	0x00000100,	8,	NULL,	0 },
+	{ "IF18",	0x00000800,	11,	NULL,	0 },
+	{ "BGR",	0x00001000,	12,	NULL,	0 },
+	{ "DFM",	0x00006000,	13,	NULL,	0 },
+	{ "TRI",	0x00008000,	15,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t jbt6k71_horizontal_valid_width_fields[] = {
+	{ "HBP",	0x0000001F,	0,	NULL,	0 },
+	{ "HWS",	0x0000FF00,	8,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t jbt6k71_display_mode_1_fields[] = {
+	{ "REV",	0x00000004,	2,	NULL,	0 },
+	{ "NBW",	0x00000010,	4,	NULL,	0 },
+	{ "PT",		0x000000C0,	6,	NULL,	0 },
+	{ "SPT",	0x00000100,	8,	NULL,	0 },
+	{ "VLE",	0x00000600,	9,	NULL,	0 },
+	{ "COL",	0x0000C000,	14,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t jbt6k71_display_mode_2_fields[] = {
+	{ "BP",	0x0000000F,	0,	NULL,	0 },
+	{ "FP",	0x0000FF00,	8,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t jbt6k71_display_mode_3_fields[] = {
+	{ "RSH",	0x0000000F,	0,	NULL,	0 },
+	{ "RSB",	0x00000030,	4,	NULL,	0 },
+	{ "RSE",	0x00000080,	7,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t jbt6k71_display_mode_4_fields[] = {
+	{ "SIP",	0x00000001,	0,	NULL,	0 },
+	{ "Y2",		0x00000020,	5,	NULL,	0 },
+	{ "X2",		0x00000040,	6,	NULL,	0 },
+	{ "XYON",	0x00000080,	7,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t jbt6k71_external_display_1_fields[] = {
+	{ "RIM",	0x00000003,	0,	NULL,	0 },
+	{ "DM",		0x00000030,	4,	NULL,	0 },
+	{ "RM",		0x00000100,	8,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t jbt6k71_fr_frequency_adjustment_fields[] = {
+	{ "RTNI",	0x0000001F,	0,	NULL,	0 },
+	{ "DIVI",	0x00000300,	8,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t jbt6k71_external_display_2_fields[] = {
+	{ "RTNE",	0x000000FF,	0,	NULL,	0 },
+	{ "DIVE",	0x00000300,	8,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t jbt6k71_external_display_3_fields[] = {
+	{ "DPL",	0x00000001,	0,	NULL,	0 },
+	{ "EPL",	0x00000002,	1,	NULL,	0 },
+	{ "VPL",	0x00000004,	2,	NULL,	0 },
+	{ "HSPL",	0x00000008,	3,	NULL,	0 },
+	{ "VSPL",	0x00000010,	4,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t jbt6k71_ltps_control_1_fields[] = {
+	{ "CLTI",	0x00000003,	0,	NULL,	0 },
+	{ "CLWI",	0x00000F00,	8,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t jbt6k71_ltps_control_2_fields[] = {
+	{ "OEVFI",	0x00000003,	0,	NULL,	0 },
+	{ "OEVBI",	0x00000300,	8,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t jbt6k71_ltps_control_3_fields[] = {
+	{ "SHI",	0x00000003,	0,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t jbt6k71_ltps_control_4_fields[] = {
+	{ "CKFI",	0x00000300,	8,	NULL,	0 },
+	{ "CKBI",	0x00003000,	12,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t jbt6k71_ltps_control_5_fields[] = {
+	{ "CLTE",	0x0000000F,	0,	NULL,	0 },
+	{ "CLWE",	0x00003F00,	8,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t jbt6k71_ltps_control_6_fields[] = {
+	{ "OEVFE",	0x0000000F,	0,	NULL,	0 },
+	{ "OEVBE",	0x00000F00,	8,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t jbt6k71_ltps_control_7_fields[] = {
+	{ "SHE",	0x0000000F,	0,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t jbt6k71_ltps_control_8_fields[] = {
+	{ "CKFE",	0x00000F00,	8,	NULL,	0 },
+	{ "CKBE",	0x0000F000,	12,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t jbt6k71_amplifier_capability_fields[] = {
+	{ "ABSW",	0x00000003,	0,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t jbt6k71_mode_fields[] = {
+	{ "STB",	0x00000001,	0,	NULL,	0 },
+	{ "DSTB",	0x00000004,	2,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t jbt6k71_power_off_line_count_fields[] = {
+	{ "POFH",	0x0000000F,	0,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t jbt6k71_display_control_fields[] = {
+	{ "DCG",	0x00000001,	0,	NULL,	0 },
+	{ "VGAM",	0x00000002,	1,	NULL,	0 },
+	{ "FDON",	0x00000004,	2,	NULL,	0 },
+	{ "FR",		0x00000008,	3,	NULL,	0 },
+	{ "D",		0x00000030,	4,	NULL,	0 },
+	{ "ASW",	0x000000C0,	6,	NULL,	0 },
+	{ "VCS",	0x00000100,	8,	NULL,	0 },
+	{ "OEV",	0x00000200,	9,	NULL,	0 },
+	{ "CON",	0x00000400,	10,	NULL,	0 },
+	{ "UD",		0x00000800,	11,	NULL,	0 },
+	{ "DCEV",	0x00001000,	12,	NULL,	0 },
+	{ "PEV",	0x00002000,	13,	NULL,	0 },
+	{ "CONT",	0x00004000,	14,	NULL,	0 },
+	{ "PO",		0x00008000,	15,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t jbt6k71_auto_management_control_fields[] = {
+	{ "AUTO",	0x00000001,	0,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t jbt6k71_power_supply_control_1_fields[] = {
+	{ "VGM",	0x0000000F,	0,	NULL,	0 },
+	{ "VCS",	0x000000F0,	4,	NULL,	0 },
+	{ "VCD",	0x00000F00,	8,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t jbt6k71_power_supply_control_2_fields[] = {
+	{ "XVD",	0x00000007,	0,	NULL,	0 },
+	{ "WSEL1",	0x00001000,	12,	NULL,	0 },
+	{ "WSEL2",	0x00002000,	13,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t jbt6k71_power_supply_control_3_fields[] = {
+	{ "BAV",	0x00000001,	0,	NULL,	0 },
+	{ "BXV",	0x00000002,	1,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t jbt6k71_power_supply_control_4_fields[] = {
+	{ "CK1",	0x00000003,	0,	NULL,	0 },
+	{ "CK2",	0x0000000C,	2,	NULL,	0 },
+	{ "CK3",	0x00000030,	4,	NULL,	0 },
+	{ "DCW",	0x00000300,	8,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t jbt6k71_external_polarity_fields[] = {
+	{ "EXTC1",	0x00000001,	0,	NULL,	0 },
+	{ "EXTC2",	0x00000002,	1,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t jbt6k71_ram_address_low_fields[] = {
+	{ "AD_07_00",	0x000000FF,	0,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t jbt6k71_ram_address_high_fields[] = {
+	{ "AD_16_08",	0x000001FF,	0,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t jbt6k71_gram_data_fields[] = {
+	{ "DATA",	0x0003FFFF,	0,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t jbt6k71_graphic_operation_1_fields[] = {
+	{ "WM_05_00",	0x0000003F,	0,	NULL,	0 },
+	{ "WM_11_06",	0x00003F00,	8,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t jbt6k71_graphic_operation_2_fields[] = {
+	{ "WM_17_12",	0x0000003F,	0,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t jbt6k71_gray_scale_1_fields[] = {
+	{ "PK0",	0x00000007,	0,	NULL,	0 },
+	{ "PK1",	0x00000700,	8,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t jbt6k71_gray_scale_2_fields[] = {
+	{ "PK2",	0x00000007,	0,	NULL,	0 },
+	{ "PK3",	0x00000700,	8,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t jbt6k71_gray_scale_3_fields[] = {
+	{ "PK4",	0x00000007,	0,	NULL,	0 },
+	{ "PK5",	0x00000700,	8,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t jbt6k71_gray_scale_4_fields[] = {
+	{ "PR0",	0x00000007,	0,	NULL,	0 },
+	{ "PR1",	0x00000700,	8,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t jbt6k71_gray_scale_5_fields[] = {
+	{ "VR0",	0x00000007,	0,	NULL,	0 },
+	{ "VR1",	0x00000700,	8,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t jbt6k71_blue_offset_fields[] = {
+	{ "BOFS",	0x00000007,	0,	NULL,	0 },
+	{ "BUP",	0x00000070,	4,	NULL,	0 },
+	{ "BLON",	0x00000100,	8,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t jbt6k71_vertical_scroll_1_fields[] = {
+	{ "VL1",	0x000001FF,	0,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t jbt6k71_vertical_scroll_2_fields[] = {
+	{ "VL2",	0x000001FF,	0,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t jbt6k71_screen1_drive_start_fields[] = {
+	{ "SS1",	0x000001FF,	0,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t jbt6k71_screen1_drive_end_fields[] = {
+	{ "SE1",	0x000001FF,	0,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t jbt6k71_screen2_drive_start_fields[] = {
+	{ "SS2",	0x000001FF,	0,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t jbt6k71_screen2_drive_end_fields[] = {
+	{ "SE2",	0x000001FF,	0,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t jbt6k71_horizontal_ram_start_fields[] = {
+	{ "HSA",	0x000000FF,	0,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t jbt6k71_horizontal_ram_end_fields[] = {
+	{ "HEA",	0x000000FF,	0,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t jbt6k71_vertical_ram_start_fields[] = {
+	{ "VSA",	0x000001FF,	0,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t jbt6k71_vertical_ram_end_fields[] = {
+	{ "VEA",	0x000001FF,	0,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t jbt6k71_osd_control_fields[] = {
+	{ "OSDON",	0x00000001,	0,	NULL,	0 },
+	{ "OSDW",	0x00000100,	8,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t jbt6k71_osd_screen1_start_fields[] = {
+	{ "ST1",	0x000001FF,	0,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t jbt6k71_osd_screen2_start_fields[] = {
+	{ "ST2",	0x000001FF,	0,	NULL,	0 },
+};
+
+static const pmb887x_io_reg_t jbt6k71_regs[] = {
+	{ "OSCILLATION",				0x0,	jbt6k71_oscillation_fields,				ARRAY_SIZE(jbt6k71_oscillation_fields),				0 },
+	{ "DRIVER_OUTPUT_CONTROL",		0x1,	jbt6k71_driver_output_control_fields,	ARRAY_SIZE(jbt6k71_driver_output_control_fields),	0 },
+	{ "LCD_DRIVING_SIGNAL",			0x2,	jbt6k71_lcd_driving_signal_fields,		ARRAY_SIZE(jbt6k71_lcd_driving_signal_fields),		0 },
+	{ "ENTRY_MODE",					0x3,	jbt6k71_entry_mode_fields,				ARRAY_SIZE(jbt6k71_entry_mode_fields),				0 },
+	{ "HORIZONTAL_VALID_WIDTH",		0x6,	jbt6k71_horizontal_valid_width_fields,	ARRAY_SIZE(jbt6k71_horizontal_valid_width_fields),	0 },
+	{ "DISPLAY_MODE_1",				0x7,	jbt6k71_display_mode_1_fields,			ARRAY_SIZE(jbt6k71_display_mode_1_fields),			0 },
+	{ "DISPLAY_MODE_2",				0x8,	jbt6k71_display_mode_2_fields,			ARRAY_SIZE(jbt6k71_display_mode_2_fields),			0 },
+	{ "DISPLAY_MODE_3",				0x9,	jbt6k71_display_mode_3_fields,			ARRAY_SIZE(jbt6k71_display_mode_3_fields),			0 },
+	{ "DISPLAY_MODE_4",				0xB,	jbt6k71_display_mode_4_fields,			ARRAY_SIZE(jbt6k71_display_mode_4_fields),			0 },
+	{ "EXTERNAL_DISPLAY_1",			0xC,	jbt6k71_external_display_1_fields,		ARRAY_SIZE(jbt6k71_external_display_1_fields),		0 },
+	{ "FR_FREQUENCY_ADJUSTMENT",	0xD,	jbt6k71_fr_frequency_adjustment_fields,	ARRAY_SIZE(jbt6k71_fr_frequency_adjustment_fields),	0 },
+	{ "EXTERNAL_DISPLAY_2",			0xE,	jbt6k71_external_display_2_fields,		ARRAY_SIZE(jbt6k71_external_display_2_fields),		0 },
+	{ "EXTERNAL_DISPLAY_3",			0xF,	jbt6k71_external_display_3_fields,		ARRAY_SIZE(jbt6k71_external_display_3_fields),		0 },
+	{ "LTPS_CONTROL_1",				0x12,	jbt6k71_ltps_control_1_fields,			ARRAY_SIZE(jbt6k71_ltps_control_1_fields),			0 },
+	{ "LTPS_CONTROL_2",				0x13,	jbt6k71_ltps_control_2_fields,			ARRAY_SIZE(jbt6k71_ltps_control_2_fields),			0 },
+	{ "LTPS_CONTROL_3",				0x14,	jbt6k71_ltps_control_3_fields,			ARRAY_SIZE(jbt6k71_ltps_control_3_fields),			0 },
+	{ "LTPS_CONTROL_4",				0x15,	jbt6k71_ltps_control_4_fields,			ARRAY_SIZE(jbt6k71_ltps_control_4_fields),			0 },
+	{ "LTPS_CONTROL_5",				0x18,	jbt6k71_ltps_control_5_fields,			ARRAY_SIZE(jbt6k71_ltps_control_5_fields),			0 },
+	{ "LTPS_CONTROL_6",				0x19,	jbt6k71_ltps_control_6_fields,			ARRAY_SIZE(jbt6k71_ltps_control_6_fields),			0 },
+	{ "LTPS_CONTROL_7",				0x1A,	jbt6k71_ltps_control_7_fields,			ARRAY_SIZE(jbt6k71_ltps_control_7_fields),			0 },
+	{ "LTPS_CONTROL_8",				0x1B,	jbt6k71_ltps_control_8_fields,			ARRAY_SIZE(jbt6k71_ltps_control_8_fields),			0 },
+	{ "AMPLIFIER_CAPABILITY",		0x1C,	jbt6k71_amplifier_capability_fields,	ARRAY_SIZE(jbt6k71_amplifier_capability_fields),	0 },
+	{ "MODE",						0x1D,	jbt6k71_mode_fields,					ARRAY_SIZE(jbt6k71_mode_fields),					0 },
+	{ "POWER_OFF_LINE_COUNT",		0x1E,	jbt6k71_power_off_line_count_fields,	ARRAY_SIZE(jbt6k71_power_off_line_count_fields),	0 },
+	{ "DISPLAY_CONTROL",			0x100,	jbt6k71_display_control_fields,			ARRAY_SIZE(jbt6k71_display_control_fields),			0 },
+	{ "AUTO_MANAGEMENT_CONTROL",	0x101,	jbt6k71_auto_management_control_fields,	ARRAY_SIZE(jbt6k71_auto_management_control_fields),	0 },
+	{ "POWER_SUPPLY_CONTROL_1",		0x102,	jbt6k71_power_supply_control_1_fields,	ARRAY_SIZE(jbt6k71_power_supply_control_1_fields),	0 },
+	{ "POWER_SUPPLY_CONTROL_2",		0x103,	jbt6k71_power_supply_control_2_fields,	ARRAY_SIZE(jbt6k71_power_supply_control_2_fields),	0 },
+	{ "POWER_SUPPLY_CONTROL_3",		0x104,	jbt6k71_power_supply_control_3_fields,	ARRAY_SIZE(jbt6k71_power_supply_control_3_fields),	0 },
+	{ "POWER_SUPPLY_CONTROL_4",		0x105,	jbt6k71_power_supply_control_4_fields,	ARRAY_SIZE(jbt6k71_power_supply_control_4_fields),	0 },
+	{ "EXTERNAL_POLARITY",			0x108,	jbt6k71_external_polarity_fields,		ARRAY_SIZE(jbt6k71_external_polarity_fields),		0 },
+	{ "RAM_ADDRESS_LOW",			0x200,	jbt6k71_ram_address_low_fields,			ARRAY_SIZE(jbt6k71_ram_address_low_fields),			0 },
+	{ "RAM_ADDRESS_HIGH",			0x201,	jbt6k71_ram_address_high_fields,		ARRAY_SIZE(jbt6k71_ram_address_high_fields),		0 },
+	{ "GRAM_DATA",					0x202,	jbt6k71_gram_data_fields,				ARRAY_SIZE(jbt6k71_gram_data_fields),				0 },
+	{ "GRAPHIC_OPERATION_1",		0x203,	jbt6k71_graphic_operation_1_fields,		ARRAY_SIZE(jbt6k71_graphic_operation_1_fields),		0 },
+	{ "GRAPHIC_OPERATION_2",		0x204,	jbt6k71_graphic_operation_2_fields,		ARRAY_SIZE(jbt6k71_graphic_operation_2_fields),		0 },
+	{ "GRAY_SCALE_1",				0x300,	jbt6k71_gray_scale_1_fields,			ARRAY_SIZE(jbt6k71_gray_scale_1_fields),			0 },
+	{ "GRAY_SCALE_2",				0x301,	jbt6k71_gray_scale_2_fields,			ARRAY_SIZE(jbt6k71_gray_scale_2_fields),			0 },
+	{ "GRAY_SCALE_3",				0x302,	jbt6k71_gray_scale_3_fields,			ARRAY_SIZE(jbt6k71_gray_scale_3_fields),			0 },
+	{ "GRAY_SCALE_4",				0x303,	jbt6k71_gray_scale_4_fields,			ARRAY_SIZE(jbt6k71_gray_scale_4_fields),			0 },
+	{ "GRAY_SCALE_5",				0x304,	jbt6k71_gray_scale_5_fields,			ARRAY_SIZE(jbt6k71_gray_scale_5_fields),			0 },
+	{ "BLUE_OFFSET",				0x305,	jbt6k71_blue_offset_fields,				ARRAY_SIZE(jbt6k71_blue_offset_fields),				0 },
+	{ "VERTICAL_SCROLL_1",			0x400,	jbt6k71_vertical_scroll_1_fields,		ARRAY_SIZE(jbt6k71_vertical_scroll_1_fields),		0 },
+	{ "VERTICAL_SCROLL_2",			0x401,	jbt6k71_vertical_scroll_2_fields,		ARRAY_SIZE(jbt6k71_vertical_scroll_2_fields),		0 },
+	{ "SCREEN1_DRIVE_START",		0x402,	jbt6k71_screen1_drive_start_fields,		ARRAY_SIZE(jbt6k71_screen1_drive_start_fields),		0 },
+	{ "SCREEN1_DRIVE_END",			0x403,	jbt6k71_screen1_drive_end_fields,		ARRAY_SIZE(jbt6k71_screen1_drive_end_fields),		0 },
+	{ "SCREEN2_DRIVE_START",		0x404,	jbt6k71_screen2_drive_start_fields,		ARRAY_SIZE(jbt6k71_screen2_drive_start_fields),		0 },
+	{ "SCREEN2_DRIVE_END",			0x405,	jbt6k71_screen2_drive_end_fields,		ARRAY_SIZE(jbt6k71_screen2_drive_end_fields),		0 },
+	{ "HORIZONTAL_RAM_START",		0x406,	jbt6k71_horizontal_ram_start_fields,	ARRAY_SIZE(jbt6k71_horizontal_ram_start_fields),	0 },
+	{ "HORIZONTAL_RAM_END",			0x407,	jbt6k71_horizontal_ram_end_fields,		ARRAY_SIZE(jbt6k71_horizontal_ram_end_fields),		0 },
+	{ "VERTICAL_RAM_START",			0x408,	jbt6k71_vertical_ram_start_fields,		ARRAY_SIZE(jbt6k71_vertical_ram_start_fields),		0 },
+	{ "VERTICAL_RAM_END",			0x409,	jbt6k71_vertical_ram_end_fields,		ARRAY_SIZE(jbt6k71_vertical_ram_end_fields),		0 },
+	{ "OSD_CONTROL",				0x500,	jbt6k71_osd_control_fields,				ARRAY_SIZE(jbt6k71_osd_control_fields),				0 },
+	{ "OSD_SCREEN1_START",			0x504,	jbt6k71_osd_screen1_start_fields,		ARRAY_SIZE(jbt6k71_osd_screen1_start_fields),		0 },
+	{ "OSD_SCREEN2_START",			0x505,	jbt6k71_osd_screen2_start_fields,		ARRAY_SIZE(jbt6k71_osd_screen2_start_fields),		0 },
+};
+
+static const pmb887x_io_field_t ssd1286_oscillation_fields[] = {
+	{ "OSCEN",	0x00000001,	0,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t ssd1286_driver_output_control_fields[] = {
+	{ "MUX",	0x000000FF,	0,	NULL,	0 },
+	{ "RL",		0x00000100,	8,	NULL,	0 },
+	{ "TB",		0x00000200,	9,	NULL,	0 },
+	{ "SM",		0x00000400,	10,	NULL,	0 },
+	{ "BGR",	0x00000800,	11,	NULL,	0 },
+	{ "CAD",	0x00001000,	12,	NULL,	0 },
+	{ "REV",	0x00002000,	13,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t ssd1286_lcd_drive_ac_control_fields[] = {
+	{ "NW",		0x0000007F,	0,	NULL,	0 },
+	{ "WSMD",	0x00000080,	7,	NULL,	0 },
+	{ "EOR",	0x00000100,	8,	NULL,	0 },
+	{ "B_C",	0x00000200,	9,	NULL,	0 },
+	{ "ENWS",	0x00000400,	10,	NULL,	0 },
+	{ "FLD",	0x00000800,	11,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t ssd1286_entry_mode_fields[] = {
+	{ "LG",		0x00000007,	0,	NULL,	0 },
+	{ "AM",		0x00000008,	3,	NULL,	0 },
+	{ "ID",		0x00000030,	4,	NULL,	0 },
+	{ "TY",		0x000000C0,	6,	NULL,	0 },
+	{ "DMODE",	0x00000300,	8,	NULL,	0 },
+	{ "WMODE",	0x00000400,	10,	NULL,	0 },
+	{ "OEDEF",	0x00000800,	11,	NULL,	0 },
+	{ "TRANS",	0x00001000,	12,	NULL,	0 },
+	{ "DFM",	0x00006000,	13,	NULL,	0 },
+	{ "VSMODE",	0x00008000,	15,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t ssd1286_compare_1_fields[] = {
+	{ "CPG",	0x000000FC,	2,	NULL,	0 },
+	{ "CPR",	0x0000FC00,	10,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t ssd1286_compare_2_fields[] = {
+	{ "CPB",	0x000000FC,	2,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t ssd1286_display_control_fields[] = {
+	{ "D",		0x00000003,	0,	NULL,	0 },
+	{ "CM",		0x00000008,	3,	NULL,	0 },
+	{ "DTE",	0x00000010,	4,	NULL,	0 },
+	{ "GON",	0x00000020,	5,	NULL,	0 },
+	{ "SPT",	0x00000100,	8,	NULL,	0 },
+	{ "VLE",	0x00000600,	9,	NULL,	0 },
+	{ "PT",		0x00001800,	11,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t ssd1286_frame_cycle_control_fields[] = {
+	{ "RTN",	0x0000000F,	0,	NULL,	0 },
+	{ "SRTN",	0x00000010,	4,	NULL,	0 },
+	{ "SDIV",	0x00000020,	5,	NULL,	0 },
+	{ "DIV",	0x00000300,	8,	NULL,	0 },
+	{ "EQ",		0x00000C00,	10,	NULL,	0 },
+	{ "SDT",	0x00003000,	12,	NULL,	0 },
+	{ "NO",		0x0000C000,	14,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t ssd1286_power_control_1_fields[] = {
+	{ "SLP",	0x00000001,	0,	NULL,	0 },
+	{ "AP",		0x0000000E,	1,	NULL,	0 },
+	{ "DC",		0x00000030,	4,	NULL,	0 },
+	{ "BTL",	0x000001C0,	6,	NULL,	0 },
+	{ "BTH",	0x00000E00,	9,	NULL,	0 },
+	{ "DCY",	0x00007000,	12,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t ssd1286_power_control_2_fields[] = {
+	{ "VRC",	0x00000007,	0,	NULL,	0 },
+	{ "PU",		0x00000018,	3,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t ssd1286_power_control_3_fields[] = {
+	{ "VRH",	0x0000000F,	0,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t ssd1286_power_control_4_fields[] = {
+	{ "VDV",	0x00001F00,	8,	NULL,	0 },
+	{ "VCOMG",	0x00002000,	13,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t ssd1286_horizontal_porch_fields[] = {
+	{ "HBP",	0x0000003F,	0,	NULL,	0 },
+	{ "XL",		0x0000FF00,	8,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t ssd1286_vertical_porch_fields[] = {
+	{ "VBP",	0x0000007F,	0,	NULL,	0 },
+	{ "VFP",	0x00007F00,	8,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t ssd1286_power_control_5_fields[] = {
+	{ "VCM",	0x0000003F,	0,	NULL,	0 },
+	{ "NOTP",	0x00000080,	7,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t ssd1286_ram_address_fields[] = {
+	{ "AD",	0x0000FFFF,	0,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t ssd1286_gram_data_fields[] = {
+	{ "DATA",	0x0003FFFF,	0,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t ssd1286_ram_write_mask_1_fields[] = {
+	{ "WMG",	0x000000FC,	2,	NULL,	0 },
+	{ "WMR",	0x0000FC00,	10,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t ssd1286_ram_write_mask_2_fields[] = {
+	{ "WMB",	0x000000FC,	2,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t ssd1286_vcom_otp_1_fields[] = {
+	{ "VALUE",	0x0000FFFF,	0,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t ssd1286_vcom_otp_2_fields[] = {
+	{ "VALUE",	0x0000FFFF,	0,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t ssd1286_gamma_1_fields[] = {
+	{ "PKP0",	0x00000007,	0,	NULL,	0 },
+	{ "PKP1",	0x00000700,	8,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t ssd1286_gamma_2_fields[] = {
+	{ "PKP2",	0x00000007,	0,	NULL,	0 },
+	{ "PKP3",	0x00000700,	8,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t ssd1286_gamma_3_fields[] = {
+	{ "PKP4",	0x00000007,	0,	NULL,	0 },
+	{ "PKP5",	0x00000700,	8,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t ssd1286_gamma_4_fields[] = {
+	{ "PRP0",	0x00000007,	0,	NULL,	0 },
+	{ "PRP1",	0x00000700,	8,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t ssd1286_gamma_5_fields[] = {
+	{ "PKN0",	0x00000007,	0,	NULL,	0 },
+	{ "PKN1",	0x00000700,	8,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t ssd1286_gamma_6_fields[] = {
+	{ "PKN2",	0x00000007,	0,	NULL,	0 },
+	{ "PKN3",	0x00000700,	8,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t ssd1286_gamma_7_fields[] = {
+	{ "PKN4",	0x00000007,	0,	NULL,	0 },
+	{ "PKN5",	0x00000700,	8,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t ssd1286_gamma_8_fields[] = {
+	{ "PRN0",	0x00000007,	0,	NULL,	0 },
+	{ "PRN1",	0x00000700,	8,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t ssd1286_gamma_9_fields[] = {
+	{ "VRP_03_00",	0x0000000F,	0,	NULL,	0 },
+	{ "VRP_14_10",	0x00001F00,	8,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t ssd1286_gamma_10_fields[] = {
+	{ "VRN_03_00",	0x0000000F,	0,	NULL,	0 },
+	{ "VRN_14_10",	0x00001F00,	8,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t ssd1286_gate_scan_start_fields[] = {
+	{ "SCN",	0x000000FF,	0,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t ssd1286_vertical_scroll_fields[] = {
+	{ "VL1",	0x000000FF,	0,	NULL,	0 },
+	{ "VL2",	0x0000FF00,	8,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t ssd1286_first_display_drive_fields[] = {
+	{ "SS1",	0x000000FF,	0,	NULL,	0 },
+	{ "SE1",	0x0000FF00,	8,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t ssd1286_second_display_drive_fields[] = {
+	{ "SS2",	0x000000FF,	0,	NULL,	0 },
+	{ "SE2",	0x0000FF00,	8,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t ssd1286_horizontal_ram_address_fields[] = {
+	{ "HSA",	0x000000FF,	0,	NULL,	0 },
+	{ "HEA",	0x0000FF00,	8,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t ssd1286_vertical_ram_address_fields[] = {
+	{ "VSA",	0x000000FF,	0,	NULL,	0 },
+	{ "VEA",	0x0000FF00,	8,	NULL,	0 },
+};
+
+static const pmb887x_io_reg_t ssd1286_regs[] = {
+	{ "OSCILLATION",			0x0,	ssd1286_oscillation_fields,				ARRAY_SIZE(ssd1286_oscillation_fields),				0 },
+	{ "DRIVER_OUTPUT_CONTROL",	0x1,	ssd1286_driver_output_control_fields,	ARRAY_SIZE(ssd1286_driver_output_control_fields),	0 },
+	{ "LCD_DRIVE_AC_CONTROL",	0x2,	ssd1286_lcd_drive_ac_control_fields,	ARRAY_SIZE(ssd1286_lcd_drive_ac_control_fields),	0 },
+	{ "ENTRY_MODE",				0x3,	ssd1286_entry_mode_fields,				ARRAY_SIZE(ssd1286_entry_mode_fields),				0 },
+	{ "COMPARE_1",				0x4,	ssd1286_compare_1_fields,				ARRAY_SIZE(ssd1286_compare_1_fields),				0 },
+	{ "COMPARE_2",				0x5,	ssd1286_compare_2_fields,				ARRAY_SIZE(ssd1286_compare_2_fields),				0 },
+	{ "DISPLAY_CONTROL",		0x7,	ssd1286_display_control_fields,			ARRAY_SIZE(ssd1286_display_control_fields),			0 },
+	{ "FRAME_CYCLE_CONTROL",	0xB,	ssd1286_frame_cycle_control_fields,		ARRAY_SIZE(ssd1286_frame_cycle_control_fields),		0 },
+	{ "POWER_CONTROL_1",		0x10,	ssd1286_power_control_1_fields,			ARRAY_SIZE(ssd1286_power_control_1_fields),			0 },
+	{ "POWER_CONTROL_2",		0x11,	ssd1286_power_control_2_fields,			ARRAY_SIZE(ssd1286_power_control_2_fields),			0 },
+	{ "POWER_CONTROL_3",		0x12,	ssd1286_power_control_3_fields,			ARRAY_SIZE(ssd1286_power_control_3_fields),			0 },
+	{ "POWER_CONTROL_4",		0x13,	ssd1286_power_control_4_fields,			ARRAY_SIZE(ssd1286_power_control_4_fields),			0 },
+	{ "HORIZONTAL_PORCH",		0x16,	ssd1286_horizontal_porch_fields,		ARRAY_SIZE(ssd1286_horizontal_porch_fields),		0 },
+	{ "VERTICAL_PORCH",			0x17,	ssd1286_vertical_porch_fields,			ARRAY_SIZE(ssd1286_vertical_porch_fields),			0 },
+	{ "POWER_CONTROL_5",		0x1E,	ssd1286_power_control_5_fields,			ARRAY_SIZE(ssd1286_power_control_5_fields),			0 },
+	{ "RAM_ADDRESS",			0x21,	ssd1286_ram_address_fields,				ARRAY_SIZE(ssd1286_ram_address_fields),				0 },
+	{ "GRAM_DATA",				0x22,	ssd1286_gram_data_fields,				ARRAY_SIZE(ssd1286_gram_data_fields),				0 },
+	{ "RAM_WRITE_MASK_1",		0x23,	ssd1286_ram_write_mask_1_fields,		ARRAY_SIZE(ssd1286_ram_write_mask_1_fields),		0 },
+	{ "RAM_WRITE_MASK_2",		0x24,	ssd1286_ram_write_mask_2_fields,		ARRAY_SIZE(ssd1286_ram_write_mask_2_fields),		0 },
+	{ "VCOM_OTP_1",				0x28,	ssd1286_vcom_otp_1_fields,				ARRAY_SIZE(ssd1286_vcom_otp_1_fields),				0 },
+	{ "VCOM_OTP_2",				0x29,	ssd1286_vcom_otp_2_fields,				ARRAY_SIZE(ssd1286_vcom_otp_2_fields),				0 },
+	{ "GAMMA_1",				0x30,	ssd1286_gamma_1_fields,					ARRAY_SIZE(ssd1286_gamma_1_fields),					0 },
+	{ "GAMMA_2",				0x31,	ssd1286_gamma_2_fields,					ARRAY_SIZE(ssd1286_gamma_2_fields),					0 },
+	{ "GAMMA_3",				0x32,	ssd1286_gamma_3_fields,					ARRAY_SIZE(ssd1286_gamma_3_fields),					0 },
+	{ "GAMMA_4",				0x33,	ssd1286_gamma_4_fields,					ARRAY_SIZE(ssd1286_gamma_4_fields),					0 },
+	{ "GAMMA_5",				0x34,	ssd1286_gamma_5_fields,					ARRAY_SIZE(ssd1286_gamma_5_fields),					0 },
+	{ "GAMMA_6",				0x35,	ssd1286_gamma_6_fields,					ARRAY_SIZE(ssd1286_gamma_6_fields),					0 },
+	{ "GAMMA_7",				0x36,	ssd1286_gamma_7_fields,					ARRAY_SIZE(ssd1286_gamma_7_fields),					0 },
+	{ "GAMMA_8",				0x37,	ssd1286_gamma_8_fields,					ARRAY_SIZE(ssd1286_gamma_8_fields),					0 },
+	{ "GAMMA_9",				0x3A,	ssd1286_gamma_9_fields,					ARRAY_SIZE(ssd1286_gamma_9_fields),					0 },
+	{ "GAMMA_10",				0x3B,	ssd1286_gamma_10_fields,				ARRAY_SIZE(ssd1286_gamma_10_fields),				0 },
+	{ "GATE_SCAN_START",		0x40,	ssd1286_gate_scan_start_fields,			ARRAY_SIZE(ssd1286_gate_scan_start_fields),			0 },
+	{ "VERTICAL_SCROLL",		0x41,	ssd1286_vertical_scroll_fields,			ARRAY_SIZE(ssd1286_vertical_scroll_fields),			0 },
+	{ "FIRST_DISPLAY_DRIVE",	0x42,	ssd1286_first_display_drive_fields,		ARRAY_SIZE(ssd1286_first_display_drive_fields),		0 },
+	{ "SECOND_DISPLAY_DRIVE",	0x43,	ssd1286_second_display_drive_fields,	ARRAY_SIZE(ssd1286_second_display_drive_fields),	0 },
+	{ "HORIZONTAL_RAM_ADDRESS",	0x44,	ssd1286_horizontal_ram_address_fields,	ARRAY_SIZE(ssd1286_horizontal_ram_address_fields),	0 },
+	{ "VERTICAL_RAM_ADDRESS",	0x45,	ssd1286_vertical_ram_address_fields,	ARRAY_SIZE(ssd1286_vertical_ram_address_fields),	0 },
+};
+
+static const pmb887x_io_value_t tea5760uk_intreg_status_fields_blflag_values[] = {
+	{ "BAND_LIMIT_NOT_REACHED",			0x00000000 },
+	{ "BAND_LIMIT_REACHED_OR_TIMEOUT",	0x00000001 },
+};
+
+static const pmb887x_io_value_t tea5760uk_intreg_status_fields_frrflag_values[] = {
+	{ "TUNER_NOT_READY",	0x00000000 },
+	{ "TUNER_READY",		0x00000002 },
+};
+
+static const pmb887x_io_value_t tea5760uk_intreg_status_fields_levflag_values[] = {
+	{ "LEVEL_ABOVE_THRESHOLD",	0x00000000 },
+	{ "LEVEL_BELOW_THRESHOLD",	0x00000008 },
+};
+
+static const pmb887x_io_value_t tea5760uk_intreg_status_fields_ifflag_values[] = {
+	{ "IF_COUNT_CORRECT",	0x00000000 },
+	{ "IF_COUNT_INCORRECT",	0x00000010 },
+};
+
+static const pmb887x_io_field_t tea5760uk_intreg_status_fields[] = {
+	{ "BLFLAG",		0x00000001,	0,	tea5760uk_intreg_status_fields_blflag_values,	ARRAY_SIZE(tea5760uk_intreg_status_fields_blflag_values) },
+	{ "FRRFLAG",	0x00000002,	1,	tea5760uk_intreg_status_fields_frrflag_values,	ARRAY_SIZE(tea5760uk_intreg_status_fields_frrflag_values) },
+	{ "LEVFLAG",	0x00000008,	3,	tea5760uk_intreg_status_fields_levflag_values,	ARRAY_SIZE(tea5760uk_intreg_status_fields_levflag_values) },
+	{ "IFFLAG",		0x00000010,	4,	tea5760uk_intreg_status_fields_ifflag_values,	ARRAY_SIZE(tea5760uk_intreg_status_fields_ifflag_values) },
+};
+
+static const pmb887x_io_value_t tea5760uk_intreg_mask_fields_blmsk_values[] = {
+	{ "DISABLED",	0x00000000 },
+	{ "ENABLED",	0x00000001 },
+};
+
+static const pmb887x_io_value_t tea5760uk_intreg_mask_fields_frrmsk_values[] = {
+	{ "DISABLED",	0x00000000 },
+	{ "ENABLED",	0x00000002 },
+};
+
+static const pmb887x_io_value_t tea5760uk_intreg_mask_fields_levmsk_values[] = {
+	{ "DISABLED",	0x00000000 },
+	{ "ENABLED",	0x00000008 },
+};
+
+static const pmb887x_io_value_t tea5760uk_intreg_mask_fields_ifmsk_values[] = {
+	{ "DISABLED",	0x00000000 },
+	{ "ENABLED",	0x00000010 },
+};
+
+static const pmb887x_io_field_t tea5760uk_intreg_mask_fields[] = {
+	{ "BLMSK",			0x00000001,	0,	tea5760uk_intreg_mask_fields_blmsk_values,	ARRAY_SIZE(tea5760uk_intreg_mask_fields_blmsk_values) },
+	{ "FRRMSK",			0x00000002,	1,	tea5760uk_intreg_mask_fields_frrmsk_values,	ARRAY_SIZE(tea5760uk_intreg_mask_fields_frrmsk_values) },
+	{ "RDS_RESTRICTED",	0x00000004,	2,	NULL,										0 },
+	{ "LEVMSK",			0x00000008,	3,	tea5760uk_intreg_mask_fields_levmsk_values,	ARRAY_SIZE(tea5760uk_intreg_mask_fields_levmsk_values) },
+	{ "IFMSK",			0x00000010,	4,	tea5760uk_intreg_mask_fields_ifmsk_values,	ARRAY_SIZE(tea5760uk_intreg_mask_fields_ifmsk_values) },
+};
+
+static const pmb887x_io_value_t tea5760uk_frqset_high_fields_sm_values[] = {
+	{ "PRESET",	0x00000000 },
+	{ "SEARCH",	0x00000040 },
+};
+
+static const pmb887x_io_value_t tea5760uk_frqset_high_fields_sud_values[] = {
+	{ "SEARCH_DOWN",	0x00000000 },
+	{ "SEARCH_UP",		0x00000080 },
+};
+
+static const pmb887x_io_field_t tea5760uk_frqset_high_fields[] = {
+	{ "FR_13_08",	0x0000003F,	0,	NULL,										0 },
+	{ "SM",			0x00000040,	6,	tea5760uk_frqset_high_fields_sm_values,		ARRAY_SIZE(tea5760uk_frqset_high_fields_sm_values) },
+	{ "SUD",		0x00000080,	7,	tea5760uk_frqset_high_fields_sud_values,	ARRAY_SIZE(tea5760uk_frqset_high_fields_sud_values) },
+};
+
+static const pmb887x_io_field_t tea5760uk_frqset_low_fields[] = {
+	{ "FR_07_00",	0x000000FF,	0,	NULL,	0 },
+};
+
+static const pmb887x_io_value_t tea5760uk_tnctrl_control_fields_snc_values[] = {
+	{ "OFF",	0x00000000 },
+	{ "ON",		0x00000001 },
+};
+
+static const pmb887x_io_value_t tea5760uk_tnctrl_control_fields_smute_values[] = {
+	{ "OFF",	0x00000000 },
+	{ "ON",		0x00000002 },
+};
+
+static const pmb887x_io_value_t tea5760uk_tnctrl_control_fields_afm_values[] = {
+	{ "AUDIO_ACTIVE",	0x00000000 },
+	{ "AUDIO_MUTED",	0x00000004 },
+};
+
+static const pmb887x_io_value_t tea5760uk_tnctrl_control_fields_ifctc_values[] = {
+	{ "COUNT_1_953_MS",		0x00000000 },
+	{ "COUNT_15_625_MS",	0x00000008 },
+};
+
+static const pmb887x_io_value_t tea5760uk_tnctrl_control_fields_swpm_values[] = {
+	{ "SWP_OUTPUT",		0x00000000 },
+	{ "FRRFLAG_OUTPUT",	0x00000010 },
+};
+
+static const pmb887x_io_value_t tea5760uk_tnctrl_control_fields_blim_values[] = {
+	{ "US_EUROPE",	0x00000000 },
+	{ "JAPAN",		0x00000020 },
+};
+
+static const pmb887x_io_value_t tea5760uk_tnctrl_control_fields_pupd_values[] = {
+	{ "FM_OFF",	0x00000000 },
+	{ "FM_ON",	0x00000040 },
+};
+
+static const pmb887x_io_field_t tea5760uk_tnctrl_control_fields[] = {
+	{ "SNC",	0x00000001,	0,	tea5760uk_tnctrl_control_fields_snc_values,		ARRAY_SIZE(tea5760uk_tnctrl_control_fields_snc_values) },
+	{ "SMUTE",	0x00000002,	1,	tea5760uk_tnctrl_control_fields_smute_values,	ARRAY_SIZE(tea5760uk_tnctrl_control_fields_smute_values) },
+	{ "AFM",	0x00000004,	2,	tea5760uk_tnctrl_control_fields_afm_values,		ARRAY_SIZE(tea5760uk_tnctrl_control_fields_afm_values) },
+	{ "IFCTC",	0x00000008,	3,	tea5760uk_tnctrl_control_fields_ifctc_values,	ARRAY_SIZE(tea5760uk_tnctrl_control_fields_ifctc_values) },
+	{ "SWPM",	0x00000010,	4,	tea5760uk_tnctrl_control_fields_swpm_values,	ARRAY_SIZE(tea5760uk_tnctrl_control_fields_swpm_values) },
+	{ "BLIM",	0x00000020,	5,	tea5760uk_tnctrl_control_fields_blim_values,	ARRAY_SIZE(tea5760uk_tnctrl_control_fields_blim_values) },
+	{ "PUPD",	0x00000040,	6,	tea5760uk_tnctrl_control_fields_pupd_values,	ARRAY_SIZE(tea5760uk_tnctrl_control_fields_pupd_values) },
+};
+
+static const pmb887x_io_value_t tea5760uk_tnctrl_audio_fields_ahlsi_values[] = {
+	{ "CONTINUOUS_SEARCH",			0x00000000 },
+	{ "STOP_ON_FAILED_IF_COUNT",	0x00000001 },
+};
+
+static const pmb887x_io_value_t tea5760uk_tnctrl_audio_fields_dtc_values[] = {
+	{ "DEEMPHASIS_75_US",	0x00000000 },
+	{ "DEEMPHASIS_50_US",	0x00000002 },
+};
+
+static const pmb887x_io_value_t tea5760uk_tnctrl_audio_fields_swp_values[] = {
+	{ "LOW",	0x00000000 },
+	{ "HIGH",	0x00000004 },
+};
+
+static const pmb887x_io_value_t tea5760uk_tnctrl_audio_fields_mst_values[] = {
+	{ "STEREO",			0x00000000 },
+	{ "FORCED_MONO",	0x00000008 },
+};
+
+static const pmb887x_io_value_t tea5760uk_tnctrl_audio_fields_hlsi_values[] = {
+	{ "LOW_SIDE",	0x00000000 },
+	{ "HIGH_SIDE",	0x00000010 },
+};
+
+static const pmb887x_io_value_t tea5760uk_tnctrl_audio_fields_ssl_values[] = {
+	{ "ADC3",	0x00000000 },
+	{ "ADC5",	0x00000020 },
+	{ "ADC7",	0x00000040 },
+	{ "ADC10",	0x00000060 },
+};
+
+static const pmb887x_io_value_t tea5760uk_tnctrl_audio_fields_mu_values[] = {
+	{ "NOT_MUTED",	0x00000000 },
+	{ "HARD_MUTED",	0x00000080 },
+};
+
+static const pmb887x_io_field_t tea5760uk_tnctrl_audio_fields[] = {
+	{ "AHLSI",	0x00000001,	0,	tea5760uk_tnctrl_audio_fields_ahlsi_values,	ARRAY_SIZE(tea5760uk_tnctrl_audio_fields_ahlsi_values) },
+	{ "DTC",	0x00000002,	1,	tea5760uk_tnctrl_audio_fields_dtc_values,	ARRAY_SIZE(tea5760uk_tnctrl_audio_fields_dtc_values) },
+	{ "SWP",	0x00000004,	2,	tea5760uk_tnctrl_audio_fields_swp_values,	ARRAY_SIZE(tea5760uk_tnctrl_audio_fields_swp_values) },
+	{ "MST",	0x00000008,	3,	tea5760uk_tnctrl_audio_fields_mst_values,	ARRAY_SIZE(tea5760uk_tnctrl_audio_fields_mst_values) },
+	{ "HLSI",	0x00000010,	4,	tea5760uk_tnctrl_audio_fields_hlsi_values,	ARRAY_SIZE(tea5760uk_tnctrl_audio_fields_hlsi_values) },
+	{ "SSL",	0x00000060,	5,	tea5760uk_tnctrl_audio_fields_ssl_values,	ARRAY_SIZE(tea5760uk_tnctrl_audio_fields_ssl_values) },
+	{ "MU",		0x00000080,	7,	tea5760uk_tnctrl_audio_fields_mu_values,	ARRAY_SIZE(tea5760uk_tnctrl_audio_fields_mu_values) },
+};
+
+static const pmb887x_io_field_t tea5760uk_frqchk_high_fields[] = {
+	{ "PLL_13_08",	0x0000003F,	0,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t tea5760uk_frqchk_low_fields[] = {
+	{ "PLL_07_00",	0x000000FF,	0,	NULL,	0 },
+};
+
+static const pmb887x_io_value_t tea5760uk_tunchk_if_fields_tunto_values[] = {
+	{ "PLL_SETTLED",	0x00000000 },
+	{ "TUNING_TIMEOUT",	0x00000001 },
+};
+
+static const pmb887x_io_field_t tea5760uk_tunchk_if_fields[] = {
+	{ "TUNTO",	0x00000001,	0,	tea5760uk_tunchk_if_fields_tunto_values,	ARRAY_SIZE(tea5760uk_tunchk_if_fields_tunto_values) },
+	{ "IF_6_0",	0x000000FE,	1,	NULL,										0 },
+};
+
+static const pmb887x_io_value_t tea5760uk_tunchk_status_fields_stereo_values[] = {
+	{ "MONO",	0x00000000 },
+	{ "STEREO",	0x00000004 },
+};
+
+static const pmb887x_io_value_t tea5760uk_tunchk_status_fields_ld_values[] = {
+	{ "PLL_NOT_LOCKED",	0x00000000 },
+	{ "PLL_LOCKED",		0x00000008 },
+};
+
+static const pmb887x_io_field_t tea5760uk_tunchk_status_fields[] = {
+	{ "STEREO",		0x00000004,	2,	tea5760uk_tunchk_status_fields_stereo_values,	ARRAY_SIZE(tea5760uk_tunchk_status_fields_stereo_values) },
+	{ "LD",			0x00000008,	3,	tea5760uk_tunchk_status_fields_ld_values,		ARRAY_SIZE(tea5760uk_tunchk_status_fields_ld_values) },
+	{ "LEV_3_0",	0x000000F0,	4,	NULL,											0 },
+};
+
+static const pmb887x_io_value_t tea5760uk_testreg_control_fields_intctrl_values[] = {
+	{ "NO_INTERRUPT",		0x00000000 },
+	{ "GENERATE_INTERRUPT",	0x00000001 },
+};
+
+static const pmb887x_io_value_t tea5760uk_testreg_control_fields_rfagc_values[] = {
+	{ "ON",		0x00000000 },
+	{ "OFF",	0x00000002 },
+};
+
+static const pmb887x_io_value_t tea5760uk_testreg_control_fields_tun_values[] = {
+	{ "NO_PROGRAMMING_ERROR",	0x00000000 },
+	{ "PROGRAMMING_ERROR",		0x00000004 },
+};
+
+static const pmb887x_io_value_t tea5760uk_testreg_control_fields_rhm_values[] = {
+	{ "NOT_MUTED",	0x00000000 },
+	{ "HARD_MUTED",	0x00000040 },
+};
+
+static const pmb887x_io_value_t tea5760uk_testreg_control_fields_lhm_values[] = {
+	{ "NOT_MUTED",	0x00000000 },
+	{ "HARD_MUTED",	0x00000080 },
+};
+
+static const pmb887x_io_field_t tea5760uk_testreg_control_fields[] = {
+	{ "INTCTRL",	0x00000001,	0,	tea5760uk_testreg_control_fields_intctrl_values,	ARRAY_SIZE(tea5760uk_testreg_control_fields_intctrl_values) },
+	{ "RFAGC",		0x00000002,	1,	tea5760uk_testreg_control_fields_rfagc_values,		ARRAY_SIZE(tea5760uk_testreg_control_fields_rfagc_values) },
+	{ "TUN",		0x00000004,	2,	tea5760uk_testreg_control_fields_tun_values,		ARRAY_SIZE(tea5760uk_testreg_control_fields_tun_values) },
+	{ "RHM",		0x00000040,	6,	tea5760uk_testreg_control_fields_rhm_values,		ARRAY_SIZE(tea5760uk_testreg_control_fields_rhm_values) },
+	{ "LHM",		0x00000080,	7,	tea5760uk_testreg_control_fields_lhm_values,		ARRAY_SIZE(tea5760uk_testreg_control_fields_lhm_values) },
+};
+
+static const pmb887x_io_value_t tea5760uk_testreg_config_fields_tm_values[] = {
+	{ "NORMAL",		0x00000000 },
+	{ "TEST_MODE",	0x00000010 },
+};
+
+static const pmb887x_io_value_t tea5760uk_testreg_config_fields_snclev_values[] = {
+	{ "LEVEL_30_UV",	0x00000000 },
+	{ "LEVEL_15_UV",	0x00000020 },
+};
+
+static const pmb887x_io_field_t tea5760uk_testreg_config_fields[] = {
+	{ "TB_3_0",	0x0000000F,	0,	NULL,											0 },
+	{ "TM",		0x00000010,	4,	tea5760uk_testreg_config_fields_tm_values,		ARRAY_SIZE(tea5760uk_testreg_config_fields_tm_values) },
+	{ "SNCLEV",	0x00000020,	5,	tea5760uk_testreg_config_fields_snclev_values,	ARRAY_SIZE(tea5760uk_testreg_config_fields_snclev_values) },
+};
+
+static const pmb887x_io_field_t tea5760uk_manid_high_fields[] = {
+	{ "MAN_ID_10_07",	0x0000000F,	0,	NULL,	0 },
+	{ "VERSION",		0x000000F0,	4,	NULL,	0 },
+};
+
+static const pmb887x_io_value_t tea5760uk_manid_low_fields_idav_values[] = {
+	{ "NOT_AVAILABLE",	0x00000000 },
+	{ "AVAILABLE",		0x00000001 },
+};
+
+static const pmb887x_io_field_t tea5760uk_manid_low_fields[] = {
+	{ "IDAV",			0x00000001,	0,	tea5760uk_manid_low_fields_idav_values,	ARRAY_SIZE(tea5760uk_manid_low_fields_idav_values) },
+	{ "MAN_ID_06_00",	0x000000FE,	1,	NULL,									0 },
+};
+
+static const pmb887x_io_field_t tea5760uk_chipid_high_fields[] = {
+	{ "CHIP_ID_15_08",	0x000000FF,	0,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t tea5760uk_chipid_low_fields[] = {
+	{ "CHIP_ID_07_00",	0x000000FF,	0,	NULL,	0 },
+};
+
+static const pmb887x_io_reg_t tea5760uk_regs[] = {
+	{ "INTREG_STATUS",		0x0,	tea5760uk_intreg_status_fields,		ARRAY_SIZE(tea5760uk_intreg_status_fields),		0 },
+	{ "INTREG_MASK",		0x1,	tea5760uk_intreg_mask_fields,		ARRAY_SIZE(tea5760uk_intreg_mask_fields),		0 },
+	{ "FRQSET_HIGH",		0x2,	tea5760uk_frqset_high_fields,		ARRAY_SIZE(tea5760uk_frqset_high_fields),		0 },
+	{ "FRQSET_LOW",			0x3,	tea5760uk_frqset_low_fields,		ARRAY_SIZE(tea5760uk_frqset_low_fields),		0 },
+	{ "TNCTRL_CONTROL",		0x4,	tea5760uk_tnctrl_control_fields,	ARRAY_SIZE(tea5760uk_tnctrl_control_fields),	0 },
+	{ "TNCTRL_AUDIO",		0x5,	tea5760uk_tnctrl_audio_fields,		ARRAY_SIZE(tea5760uk_tnctrl_audio_fields),		0 },
+	{ "FRQCHK_HIGH",		0x6,	tea5760uk_frqchk_high_fields,		ARRAY_SIZE(tea5760uk_frqchk_high_fields),		0 },
+	{ "FRQCHK_LOW",			0x7,	tea5760uk_frqchk_low_fields,		ARRAY_SIZE(tea5760uk_frqchk_low_fields),		0 },
+	{ "TUNCHK_IF",			0x8,	tea5760uk_tunchk_if_fields,			ARRAY_SIZE(tea5760uk_tunchk_if_fields),			0 },
+	{ "TUNCHK_STATUS",		0x9,	tea5760uk_tunchk_status_fields,		ARRAY_SIZE(tea5760uk_tunchk_status_fields),		0 },
+	{ "TESTREG_CONTROL",	0xA,	tea5760uk_testreg_control_fields,	ARRAY_SIZE(tea5760uk_testreg_control_fields),	0 },
+	{ "TESTREG_CONFIG",		0xB,	tea5760uk_testreg_config_fields,	ARRAY_SIZE(tea5760uk_testreg_config_fields),	0 },
+	{ "MANID_HIGH",			0xC,	tea5760uk_manid_high_fields,		ARRAY_SIZE(tea5760uk_manid_high_fields),		0 },
+	{ "MANID_LOW",			0xD,	tea5760uk_manid_low_fields,			ARRAY_SIZE(tea5760uk_manid_low_fields),			0 },
+	{ "CHIPID_HIGH",		0xE,	tea5760uk_chipid_high_fields,		ARRAY_SIZE(tea5760uk_chipid_high_fields),		0 },
+	{ "CHIPID_LOW",			0xF,	tea5760uk_chipid_low_fields,		ARRAY_SIZE(tea5760uk_chipid_low_fields),		0 },
+};
+
+static const pmb887x_io_value_t tea5761uk_intreg_status_fields_blflag_values[] = {
+	{ "BAND_LIMIT_NOT_REACHED",			0x00000000 },
+	{ "BAND_LIMIT_REACHED_OR_TIMEOUT",	0x00000001 },
+};
+
+static const pmb887x_io_value_t tea5761uk_intreg_status_fields_frrflag_values[] = {
+	{ "TUNER_NOT_READY",	0x00000000 },
+	{ "TUNER_READY",		0x00000002 },
+};
+
+static const pmb887x_io_value_t tea5761uk_intreg_status_fields_levflag_values[] = {
+	{ "LEVEL_ABOVE_THRESHOLD",	0x00000000 },
+	{ "LEVEL_BELOW_THRESHOLD",	0x00000008 },
+};
+
+static const pmb887x_io_value_t tea5761uk_intreg_status_fields_ifflag_values[] = {
+	{ "IF_COUNT_CORRECT",	0x00000000 },
+	{ "IF_COUNT_INCORRECT",	0x00000010 },
+};
+
+static const pmb887x_io_field_t tea5761uk_intreg_status_fields[] = {
+	{ "BLFLAG",		0x00000001,	0,	tea5761uk_intreg_status_fields_blflag_values,	ARRAY_SIZE(tea5761uk_intreg_status_fields_blflag_values) },
+	{ "FRRFLAG",	0x00000002,	1,	tea5761uk_intreg_status_fields_frrflag_values,	ARRAY_SIZE(tea5761uk_intreg_status_fields_frrflag_values) },
+	{ "LEVFLAG",	0x00000008,	3,	tea5761uk_intreg_status_fields_levflag_values,	ARRAY_SIZE(tea5761uk_intreg_status_fields_levflag_values) },
+	{ "IFFLAG",		0x00000010,	4,	tea5761uk_intreg_status_fields_ifflag_values,	ARRAY_SIZE(tea5761uk_intreg_status_fields_ifflag_values) },
+};
+
+static const pmb887x_io_value_t tea5761uk_intreg_mask_fields_blmsk_values[] = {
+	{ "DISABLED",	0x00000000 },
+	{ "ENABLED",	0x00000001 },
+};
+
+static const pmb887x_io_value_t tea5761uk_intreg_mask_fields_frrmsk_values[] = {
+	{ "DISABLED",	0x00000000 },
+	{ "ENABLED",	0x00000002 },
+};
+
+static const pmb887x_io_value_t tea5761uk_intreg_mask_fields_levmsk_values[] = {
+	{ "DISABLED",	0x00000000 },
+	{ "ENABLED",	0x00000008 },
+};
+
+static const pmb887x_io_value_t tea5761uk_intreg_mask_fields_ifmsk_values[] = {
+	{ "DISABLED",	0x00000000 },
+	{ "ENABLED",	0x00000010 },
+};
+
+static const pmb887x_io_field_t tea5761uk_intreg_mask_fields[] = {
+	{ "BLMSK",	0x00000001,	0,	tea5761uk_intreg_mask_fields_blmsk_values,	ARRAY_SIZE(tea5761uk_intreg_mask_fields_blmsk_values) },
+	{ "FRRMSK",	0x00000002,	1,	tea5761uk_intreg_mask_fields_frrmsk_values,	ARRAY_SIZE(tea5761uk_intreg_mask_fields_frrmsk_values) },
+	{ "LEVMSK",	0x00000008,	3,	tea5761uk_intreg_mask_fields_levmsk_values,	ARRAY_SIZE(tea5761uk_intreg_mask_fields_levmsk_values) },
+	{ "IFMSK",	0x00000010,	4,	tea5761uk_intreg_mask_fields_ifmsk_values,	ARRAY_SIZE(tea5761uk_intreg_mask_fields_ifmsk_values) },
+};
+
+static const pmb887x_io_value_t tea5761uk_frqset_high_fields_sm_values[] = {
+	{ "PRESET",	0x00000000 },
+	{ "SEARCH",	0x00000040 },
+};
+
+static const pmb887x_io_value_t tea5761uk_frqset_high_fields_sud_values[] = {
+	{ "SEARCH_DOWN",	0x00000000 },
+	{ "SEARCH_UP",		0x00000080 },
+};
+
+static const pmb887x_io_field_t tea5761uk_frqset_high_fields[] = {
+	{ "FR_13_08",	0x0000003F,	0,	NULL,										0 },
+	{ "SM",			0x00000040,	6,	tea5761uk_frqset_high_fields_sm_values,		ARRAY_SIZE(tea5761uk_frqset_high_fields_sm_values) },
+	{ "SUD",		0x00000080,	7,	tea5761uk_frqset_high_fields_sud_values,	ARRAY_SIZE(tea5761uk_frqset_high_fields_sud_values) },
+};
+
+static const pmb887x_io_field_t tea5761uk_frqset_low_fields[] = {
+	{ "FR_07_00",	0x000000FF,	0,	NULL,	0 },
+};
+
+static const pmb887x_io_value_t tea5761uk_tnctrl_control_fields_snc_values[] = {
+	{ "OFF",	0x00000000 },
+	{ "ON",		0x00000001 },
+};
+
+static const pmb887x_io_value_t tea5761uk_tnctrl_control_fields_smute_values[] = {
+	{ "OFF",	0x00000000 },
+	{ "ON",		0x00000002 },
+};
+
+static const pmb887x_io_value_t tea5761uk_tnctrl_control_fields_afm_values[] = {
+	{ "AUDIO_ACTIVE",	0x00000000 },
+	{ "AUDIO_MUTED",	0x00000004 },
+};
+
+static const pmb887x_io_value_t tea5761uk_tnctrl_control_fields_ifctc_values[] = {
+	{ "COUNT_1_953_MS",		0x00000000 },
+	{ "COUNT_15_625_MS",	0x00000008 },
+};
+
+static const pmb887x_io_value_t tea5761uk_tnctrl_control_fields_swpm_values[] = {
+	{ "SWP_OUTPUT",		0x00000000 },
+	{ "FRRFLAG_OUTPUT",	0x00000010 },
+};
+
+static const pmb887x_io_value_t tea5761uk_tnctrl_control_fields_blim_values[] = {
+	{ "US_EUROPE",	0x00000000 },
+	{ "JAPAN",		0x00000020 },
+};
+
+static const pmb887x_io_value_t tea5761uk_tnctrl_control_fields_pupd_values[] = {
+	{ "FM_OFF",	0x00000000 },
+	{ "FM_ON",	0x00000040 },
+};
+
+static const pmb887x_io_field_t tea5761uk_tnctrl_control_fields[] = {
+	{ "SNC",	0x00000001,	0,	tea5761uk_tnctrl_control_fields_snc_values,		ARRAY_SIZE(tea5761uk_tnctrl_control_fields_snc_values) },
+	{ "SMUTE",	0x00000002,	1,	tea5761uk_tnctrl_control_fields_smute_values,	ARRAY_SIZE(tea5761uk_tnctrl_control_fields_smute_values) },
+	{ "AFM",	0x00000004,	2,	tea5761uk_tnctrl_control_fields_afm_values,		ARRAY_SIZE(tea5761uk_tnctrl_control_fields_afm_values) },
+	{ "IFCTC",	0x00000008,	3,	tea5761uk_tnctrl_control_fields_ifctc_values,	ARRAY_SIZE(tea5761uk_tnctrl_control_fields_ifctc_values) },
+	{ "SWPM",	0x00000010,	4,	tea5761uk_tnctrl_control_fields_swpm_values,	ARRAY_SIZE(tea5761uk_tnctrl_control_fields_swpm_values) },
+	{ "BLIM",	0x00000020,	5,	tea5761uk_tnctrl_control_fields_blim_values,	ARRAY_SIZE(tea5761uk_tnctrl_control_fields_blim_values) },
+	{ "PUPD",	0x00000040,	6,	tea5761uk_tnctrl_control_fields_pupd_values,	ARRAY_SIZE(tea5761uk_tnctrl_control_fields_pupd_values) },
+};
+
+static const pmb887x_io_value_t tea5761uk_tnctrl_audio_fields_ahlsi_values[] = {
+	{ "CONTINUOUS_SEARCH",			0x00000000 },
+	{ "STOP_ON_FAILED_IF_COUNT",	0x00000001 },
+};
+
+static const pmb887x_io_value_t tea5761uk_tnctrl_audio_fields_dtc_values[] = {
+	{ "DEEMPHASIS_75_US",	0x00000000 },
+	{ "DEEMPHASIS_50_US",	0x00000002 },
+};
+
+static const pmb887x_io_value_t tea5761uk_tnctrl_audio_fields_swp_values[] = {
+	{ "LOW",	0x00000000 },
+	{ "HIGH",	0x00000004 },
+};
+
+static const pmb887x_io_value_t tea5761uk_tnctrl_audio_fields_mst_values[] = {
+	{ "STEREO",			0x00000000 },
+	{ "FORCED_MONO",	0x00000008 },
+};
+
+static const pmb887x_io_value_t tea5761uk_tnctrl_audio_fields_hlsi_values[] = {
+	{ "LOW_SIDE",	0x00000000 },
+	{ "HIGH_SIDE",	0x00000010 },
+};
+
+static const pmb887x_io_value_t tea5761uk_tnctrl_audio_fields_ssl_values[] = {
+	{ "ADC3",	0x00000000 },
+	{ "ADC5",	0x00000020 },
+	{ "ADC7",	0x00000040 },
+	{ "ADC10",	0x00000060 },
+};
+
+static const pmb887x_io_value_t tea5761uk_tnctrl_audio_fields_mu_values[] = {
+	{ "NOT_MUTED",	0x00000000 },
+	{ "HARD_MUTED",	0x00000080 },
+};
+
+static const pmb887x_io_field_t tea5761uk_tnctrl_audio_fields[] = {
+	{ "AHLSI",	0x00000001,	0,	tea5761uk_tnctrl_audio_fields_ahlsi_values,	ARRAY_SIZE(tea5761uk_tnctrl_audio_fields_ahlsi_values) },
+	{ "DTC",	0x00000002,	1,	tea5761uk_tnctrl_audio_fields_dtc_values,	ARRAY_SIZE(tea5761uk_tnctrl_audio_fields_dtc_values) },
+	{ "SWP",	0x00000004,	2,	tea5761uk_tnctrl_audio_fields_swp_values,	ARRAY_SIZE(tea5761uk_tnctrl_audio_fields_swp_values) },
+	{ "MST",	0x00000008,	3,	tea5761uk_tnctrl_audio_fields_mst_values,	ARRAY_SIZE(tea5761uk_tnctrl_audio_fields_mst_values) },
+	{ "HLSI",	0x00000010,	4,	tea5761uk_tnctrl_audio_fields_hlsi_values,	ARRAY_SIZE(tea5761uk_tnctrl_audio_fields_hlsi_values) },
+	{ "SSL",	0x00000060,	5,	tea5761uk_tnctrl_audio_fields_ssl_values,	ARRAY_SIZE(tea5761uk_tnctrl_audio_fields_ssl_values) },
+	{ "MU",		0x00000080,	7,	tea5761uk_tnctrl_audio_fields_mu_values,	ARRAY_SIZE(tea5761uk_tnctrl_audio_fields_mu_values) },
+};
+
+static const pmb887x_io_field_t tea5761uk_frqchk_high_fields[] = {
+	{ "PLL_13_08",	0x0000003F,	0,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t tea5761uk_frqchk_low_fields[] = {
+	{ "PLL_07_00",	0x000000FF,	0,	NULL,	0 },
+};
+
+static const pmb887x_io_value_t tea5761uk_tunchk_if_fields_tunto_values[] = {
+	{ "PLL_SETTLED",	0x00000000 },
+	{ "TUNING_TIMEOUT",	0x00000001 },
+};
+
+static const pmb887x_io_field_t tea5761uk_tunchk_if_fields[] = {
+	{ "TUNTO",	0x00000001,	0,	tea5761uk_tunchk_if_fields_tunto_values,	ARRAY_SIZE(tea5761uk_tunchk_if_fields_tunto_values) },
+	{ "IF_6_0",	0x000000FE,	1,	NULL,										0 },
+};
+
+static const pmb887x_io_value_t tea5761uk_tunchk_status_fields_stereo_values[] = {
+	{ "NO_PILOT",		0x00000000 },
+	{ "PILOT_DETECTED",	0x00000004 },
+};
+
+static const pmb887x_io_value_t tea5761uk_tunchk_status_fields_ld_values[] = {
+	{ "PLL_NOT_LOCKED",	0x00000000 },
+	{ "PLL_LOCKED",		0x00000008 },
+};
+
+static const pmb887x_io_field_t tea5761uk_tunchk_status_fields[] = {
+	{ "STEREO",		0x00000004,	2,	tea5761uk_tunchk_status_fields_stereo_values,	ARRAY_SIZE(tea5761uk_tunchk_status_fields_stereo_values) },
+	{ "LD",			0x00000008,	3,	tea5761uk_tunchk_status_fields_ld_values,		ARRAY_SIZE(tea5761uk_tunchk_status_fields_ld_values) },
+	{ "LEV_3_0",	0x000000F0,	4,	NULL,											0 },
+};
+
+static const pmb887x_io_value_t tea5761uk_testreg_control_fields_intctrl_values[] = {
+	{ "DISABLED",	0x00000000 },
+	{ "ENABLED",	0x00000001 },
+};
+
+static const pmb887x_io_value_t tea5761uk_testreg_control_fields_rfagc_values[] = {
+	{ "ON",		0x00000000 },
+	{ "OFF",	0x00000002 },
+};
+
+static const pmb887x_io_value_t tea5761uk_testreg_control_fields_ldx_values[] = {
+	{ "NORMAL_GAIN",		0x00000000 },
+	{ "REDUCED_GAIN_6_DB",	0x00000004 },
+};
+
+static const pmb887x_io_value_t tea5761uk_testreg_control_fields_trigfr_values[] = {
+	{ "XTAL",	0x00000000 },
+	{ "FREQIN",	0x00000008 },
+};
+
+static const pmb887x_io_value_t tea5761uk_testreg_control_fields_lhsw_values[] = {
+	{ "SMALL",	0x00000000 },
+	{ "LARGE",	0x00000010 },
+};
+
+static const pmb887x_io_value_t tea5761uk_testreg_control_fields_rhm_values[] = {
+	{ "NOT_MUTED",	0x00000000 },
+	{ "HARD_MUTED",	0x00000040 },
+};
+
+static const pmb887x_io_value_t tea5761uk_testreg_control_fields_lhm_values[] = {
+	{ "NOT_MUTED",	0x00000000 },
+	{ "HARD_MUTED",	0x00000080 },
+};
+
+static const pmb887x_io_field_t tea5761uk_testreg_control_fields[] = {
+	{ "INTCTRL",	0x00000001,	0,	tea5761uk_testreg_control_fields_intctrl_values,	ARRAY_SIZE(tea5761uk_testreg_control_fields_intctrl_values) },
+	{ "RFAGC",		0x00000002,	1,	tea5761uk_testreg_control_fields_rfagc_values,		ARRAY_SIZE(tea5761uk_testreg_control_fields_rfagc_values) },
+	{ "LDX",		0x00000004,	2,	tea5761uk_testreg_control_fields_ldx_values,		ARRAY_SIZE(tea5761uk_testreg_control_fields_ldx_values) },
+	{ "TRIGFR",		0x00000008,	3,	tea5761uk_testreg_control_fields_trigfr_values,		ARRAY_SIZE(tea5761uk_testreg_control_fields_trigfr_values) },
+	{ "LHSW",		0x00000010,	4,	tea5761uk_testreg_control_fields_lhsw_values,		ARRAY_SIZE(tea5761uk_testreg_control_fields_lhsw_values) },
+	{ "RHM",		0x00000040,	6,	tea5761uk_testreg_control_fields_rhm_values,		ARRAY_SIZE(tea5761uk_testreg_control_fields_rhm_values) },
+	{ "LHM",		0x00000080,	7,	tea5761uk_testreg_control_fields_lhm_values,		ARRAY_SIZE(tea5761uk_testreg_control_fields_lhm_values) },
+};
+
+static const pmb887x_io_value_t tea5761uk_testreg_config_fields_tm_values[] = {
+	{ "NORMAL",		0x00000000 },
+	{ "TEST_MODE",	0x00000010 },
+};
+
+static const pmb887x_io_value_t tea5761uk_testreg_config_fields_dett_values[] = {
+	{ "SLOW_8_MS",	0x00000000 },
+	{ "FAST_4_MS",	0x00000080 },
+};
+
+static const pmb887x_io_field_t tea5761uk_testreg_config_fields[] = {
+	{ "TB_3_0",	0x0000000F,	0,	NULL,											0 },
+	{ "TM",		0x00000010,	4,	tea5761uk_testreg_config_fields_tm_values,		ARRAY_SIZE(tea5761uk_testreg_config_fields_tm_values) },
+	{ "DETT",	0x00000080,	7,	tea5761uk_testreg_config_fields_dett_values,	ARRAY_SIZE(tea5761uk_testreg_config_fields_dett_values) },
+};
+
+static const pmb887x_io_field_t tea5761uk_manid_high_fields[] = {
+	{ "MAN_ID_10_07",	0x0000000F,	0,	NULL,	0 },
+	{ "VERSION",		0x000000F0,	4,	NULL,	0 },
+};
+
+static const pmb887x_io_value_t tea5761uk_manid_low_fields_idav_values[] = {
+	{ "NOT_AVAILABLE",	0x00000000 },
+	{ "AVAILABLE",		0x00000001 },
+};
+
+static const pmb887x_io_field_t tea5761uk_manid_low_fields[] = {
+	{ "IDAV",			0x00000001,	0,	tea5761uk_manid_low_fields_idav_values,	ARRAY_SIZE(tea5761uk_manid_low_fields_idav_values) },
+	{ "MAN_ID_06_00",	0x000000FE,	1,	NULL,									0 },
+};
+
+static const pmb887x_io_field_t tea5761uk_chipid_high_fields[] = {
+	{ "CHIP_ID_15_08",	0x000000FF,	0,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t tea5761uk_chipid_low_fields[] = {
+	{ "CHIP_ID_07_00",	0x000000FF,	0,	NULL,	0 },
+};
+
+static const pmb887x_io_reg_t tea5761uk_regs[] = {
+	{ "INTREG_STATUS",		0x0,	tea5761uk_intreg_status_fields,		ARRAY_SIZE(tea5761uk_intreg_status_fields),		0 },
+	{ "INTREG_MASK",		0x1,	tea5761uk_intreg_mask_fields,		ARRAY_SIZE(tea5761uk_intreg_mask_fields),		0 },
+	{ "FRQSET_HIGH",		0x2,	tea5761uk_frqset_high_fields,		ARRAY_SIZE(tea5761uk_frqset_high_fields),		0 },
+	{ "FRQSET_LOW",			0x3,	tea5761uk_frqset_low_fields,		ARRAY_SIZE(tea5761uk_frqset_low_fields),		0 },
+	{ "TNCTRL_CONTROL",		0x4,	tea5761uk_tnctrl_control_fields,	ARRAY_SIZE(tea5761uk_tnctrl_control_fields),	0 },
+	{ "TNCTRL_AUDIO",		0x5,	tea5761uk_tnctrl_audio_fields,		ARRAY_SIZE(tea5761uk_tnctrl_audio_fields),		0 },
+	{ "FRQCHK_HIGH",		0x6,	tea5761uk_frqchk_high_fields,		ARRAY_SIZE(tea5761uk_frqchk_high_fields),		0 },
+	{ "FRQCHK_LOW",			0x7,	tea5761uk_frqchk_low_fields,		ARRAY_SIZE(tea5761uk_frqchk_low_fields),		0 },
+	{ "TUNCHK_IF",			0x8,	tea5761uk_tunchk_if_fields,			ARRAY_SIZE(tea5761uk_tunchk_if_fields),			0 },
+	{ "TUNCHK_STATUS",		0x9,	tea5761uk_tunchk_status_fields,		ARRAY_SIZE(tea5761uk_tunchk_status_fields),		0 },
+	{ "TESTREG_CONTROL",	0xA,	tea5761uk_testreg_control_fields,	ARRAY_SIZE(tea5761uk_testreg_control_fields),	0 },
+	{ "TESTREG_CONFIG",		0xB,	tea5761uk_testreg_config_fields,	ARRAY_SIZE(tea5761uk_testreg_config_fields),	0 },
+	{ "MANID_HIGH",			0xC,	tea5761uk_manid_high_fields,		ARRAY_SIZE(tea5761uk_manid_high_fields),		0 },
+	{ "MANID_LOW",			0xD,	tea5761uk_manid_low_fields,			ARRAY_SIZE(tea5761uk_manid_low_fields),			0 },
+	{ "CHIPID_HIGH",		0xE,	tea5761uk_chipid_high_fields,		ARRAY_SIZE(tea5761uk_chipid_high_fields),		0 },
+	{ "CHIPID_LOW",			0xF,	tea5761uk_chipid_low_fields,		ARRAY_SIZE(tea5761uk_chipid_low_fields),		0 },
+};
+
 static const pmb887x_cpu_meta_irq_t pmb8876_irqs[] = {
 	{"USART0_TX",		PMB8876_USART0_TX_IRQ,		VIC_CON4},
 	{"USART0_TBUF",		PMB8876_USART0_TBUF_IRQ,	VIC_CON5},
@@ -6589,120 +7774,120 @@ static const pmb887x_cpu_meta_irq_t pmb8876_irqs[] = {
 };
 
 static const pmb887x_cpu_meta_gpio_t pmb8876_gpios[] = {
-	{"PIN0",	"KP_IN0",		"GPIO_PIN0_KP_IN0",			PMB8876_GPIO_KP_IN0},
-	{"PIN1",	"KP_IN1",		"GPIO_PIN1_KP_IN1",			PMB8876_GPIO_KP_IN1},
-	{"PIN2",	"KP_IN2",		"GPIO_PIN2_KP_IN2",			PMB8876_GPIO_KP_IN2},
-	{"PIN3",	"KP_IN3",		"GPIO_PIN3_KP_IN3",			PMB8876_GPIO_KP_IN3},
-	{"PIN4",	"KP_IN4",		"GPIO_PIN4_KP_IN4",			PMB8876_GPIO_KP_IN4},
-	{"PIN5",	"KP_IN5",		"GPIO_PIN5_KP_IN5",			PMB8876_GPIO_KP_IN5},
-	{"PIN6",	"KP_IN6",		"GPIO_PIN6_KP_IN6",			PMB8876_GPIO_KP_IN6},
-	{"PIN7",	"KP_OUT0",		"GPIO_PIN7_KP_OUT0",		PMB8876_GPIO_KP_OUT0},
-	{"PIN8",	"KP_OUT1",		"GPIO_PIN8_KP_OUT1",		PMB8876_GPIO_KP_OUT1},
-	{"PIN9",	"KP_OUT2",		"GPIO_PIN9_KP_OUT2",		PMB8876_GPIO_KP_OUT2},
-	{"PIN10",	"KP_OUT3",		"GPIO_PIN10_KP_OUT3",		PMB8876_GPIO_KP_OUT3},
-	{"PIN11",	"USART0_RXD",	"GPIO_PIN11_USART0_RXD",	PMB8876_GPIO_USART0_RXD},
-	{"PIN12",	"USART0_TXD",	"GPIO_PIN12_USART0_TXD",	PMB8876_GPIO_USART0_TXD},
-	{"PIN13",	"USART0_RTS",	"GPIO_PIN13_USART0_RTS",	PMB8876_GPIO_USART0_RTS},
-	{"PIN14",	"USART0_CTS",	"GPIO_PIN14_USART0_CTS",	PMB8876_GPIO_USART0_CTS},
-	{"PIN15",	"DSPOUT0",		"GPIO_PIN15_DSPOUT0",		PMB8876_GPIO_DSPOUT0},
-	{"PIN16",	"USART1_RXD",	"GPIO_PIN16_USART1_RXD",	PMB8876_GPIO_USART1_RXD},
-	{"PIN17",	"USART1_TXD",	"GPIO_PIN17_USART1_TXD",	PMB8876_GPIO_USART1_TXD},
-	{"PIN18",	"USART1_RTS",	"GPIO_PIN18_USART1_RTS",	PMB8876_GPIO_USART1_RTS},
-	{"PIN19",	"USART1_CTS",	"GPIO_PIN19_USART1_CTS",	PMB8876_GPIO_USART1_CTS},
-	{"PIN20",	"USB_DPLUS",	"GPIO_PIN20_USB_DPLUS",		PMB8876_GPIO_USB_DPLUS},
-	{"PIN21",	"USB_DMINUS",	"GPIO_PIN21_USB_DMINUS",	PMB8876_GPIO_USB_DMINUS},
-	{"PIN22",	"PIN22",		"GPIO_PIN22",				PMB8876_GPIO_PIN22},
-	{"PIN23",	"DIF_D2",		"GPIO_PIN23_DIF_D2",		PMB8876_GPIO_DIF_D2},
-	{"PIN24",	"DIF_D0",		"GPIO_PIN24_DIF_D0",		PMB8876_GPIO_DIF_D0},
-	{"PIN25",	"DIF_CD",		"GPIO_PIN25_DIF_CD",		PMB8876_GPIO_DIF_CD},
-	{"PIN26",	"DIF_CS1",		"GPIO_PIN26_DIF_CS1",		PMB8876_GPIO_DIF_CS1},
-	{"PIN27",	"DIF_RESET1",	"GPIO_PIN27_DIF_RESET1",	PMB8876_GPIO_DIF_RESET1},
-	{"PIN28",	"I2C_SCL",		"GPIO_PIN28_I2C_SCL",		PMB8876_GPIO_I2C_SCL},
-	{"PIN29",	"I2C_SDA",		"GPIO_PIN29_I2C_SDA",		PMB8876_GPIO_I2C_SDA},
-	{"PIN30",	"DIF_D1",		"GPIO_PIN30_DIF_D1",		PMB8876_GPIO_DIF_D1},
-	{"PIN31",	"PIN31",		"GPIO_PIN31",				PMB8876_GPIO_PIN31},
-	{"PIN32",	"PIN32",		"GPIO_PIN32",				PMB8876_GPIO_PIN32},
-	{"PIN33",	"PIN33",		"GPIO_PIN33",				PMB8876_GPIO_PIN33},
-	{"PIN34",	"PIN34",		"GPIO_PIN34",				PMB8876_GPIO_PIN34},
-	{"PIN35",	"PIN35",		"GPIO_PIN35",				PMB8876_GPIO_PIN35},
-	{"PIN36",	"PIN36",		"GPIO_PIN36",				PMB8876_GPIO_PIN36},
-	{"PIN37",	"PIN37",		"GPIO_PIN37",				PMB8876_GPIO_PIN37},
-	{"PIN38",	"PIN38",		"GPIO_PIN38",				PMB8876_GPIO_PIN38},
-	{"PIN39",	"DIF_HD",		"GPIO_PIN39_DIF_HD",		PMB8876_GPIO_DIF_HD},
-	{"PIN40",	"PIN40",		"GPIO_PIN40",				PMB8876_GPIO_PIN40},
-	{"PIN41",	"PIN41",		"GPIO_PIN41",				PMB8876_GPIO_PIN41},
-	{"PIN42",	"PIN42",		"GPIO_PIN42",				PMB8876_GPIO_PIN42},
-	{"PIN43",	"T_OUT0",		"GPIO_PIN43_T_OUT0",		PMB8876_GPIO_T_OUT0},
-	{"PIN44",	"T_OUT1",		"GPIO_PIN44_T_OUT1",		PMB8876_GPIO_T_OUT1},
-	{"PIN45",	"T_OUT2",		"GPIO_PIN45_T_OUT2",		PMB8876_GPIO_T_OUT2},
-	{"PIN46",	"T_OUT3",		"GPIO_PIN46_T_OUT3",		PMB8876_GPIO_T_OUT3},
-	{"PIN47",	"T_OUT4",		"GPIO_PIN47_T_OUT4",		PMB8876_GPIO_T_OUT4},
-	{"PIN48",	"T_OUT5",		"GPIO_PIN48_T_OUT5",		PMB8876_GPIO_T_OUT5},
-	{"PIN49",	"T_OUT6",		"GPIO_PIN49_T_OUT6",		PMB8876_GPIO_T_OUT6},
-	{"PIN50",	"T_OUT7",		"GPIO_PIN50_T_OUT7",		PMB8876_GPIO_T_OUT7},
-	{"PIN51",	"T_OUT8",		"GPIO_PIN51_T_OUT8",		PMB8876_GPIO_T_OUT8},
-	{"PIN52",	"T_OUT9",		"GPIO_PIN52_T_OUT9",		PMB8876_GPIO_T_OUT9},
-	{"PIN53",	"T_OUT10",		"GPIO_PIN53_T_OUT10",		PMB8876_GPIO_T_OUT10},
-	{"PIN54",	"T_OUT11",		"GPIO_PIN54_T_OUT11",		PMB8876_GPIO_T_OUT11},
-	{"PIN55",	"T_OUT12",		"GPIO_PIN55_T_OUT12",		PMB8876_GPIO_T_OUT12},
-	{"PIN56",	"RF_STR0",		"GPIO_PIN56_RF_STR0",		PMB8876_GPIO_RF_STR0},
-	{"PIN57",	"RF_STR1",		"GPIO_PIN57_RF_STR1",		PMB8876_GPIO_RF_STR1},
-	{"PIN58",	"CLKOUT0",		"GPIO_PIN58_CLKOUT0",		PMB8876_GPIO_CLKOUT0},
-	{"PIN59",	"RF_CLK",		"GPIO_PIN59_RF_CLK",		PMB8876_GPIO_RF_CLK},
-	{"PIN60",	"PIN60",		"GPIO_PIN60",				PMB8876_GPIO_PIN60},
-	{"PIN61",	"DSPIN0",		"GPIO_PIN61_DSPIN0",		PMB8876_GPIO_DSPIN0},
-	{"PIN62",	"DSPOUT1",		"GPIO_PIN62_DSPOUT1",		PMB8876_GPIO_DSPOUT1},
-	{"PIN63",	"DSPIN1",		"GPIO_PIN63_DSPIN1",		PMB8876_GPIO_DSPIN1},
-	{"PIN64",	"PIN64",		"GPIO_PIN64",				PMB8876_GPIO_PIN64},
-	{"PIN65",	"PIN65",		"GPIO_PIN65",				PMB8876_GPIO_PIN65},
-	{"PIN66",	"PIPESTAT2",	"GPIO_PIN66_PIPESTAT2",		PMB8876_GPIO_PIPESTAT2},
-	{"PIN67",	"PIPESTAT1",	"GPIO_PIN67_PIPESTAT1",		PMB8876_GPIO_PIPESTAT1},
-	{"PIN68",	"PIPESTAT0",	"GPIO_PIN68_PIPESTAT0",		PMB8876_GPIO_PIPESTAT0},
-	{"PIN69",	"TRACEPKT0",	"GPIO_PIN69_TRACEPKT0",		PMB8876_GPIO_TRACEPKT0},
-	{"PIN70",	"TRACEPKT1",	"GPIO_PIN70_TRACEPKT1",		PMB8876_GPIO_TRACEPKT1},
-	{"PIN71",	"TRACEPKT2",	"GPIO_PIN71_TRACEPKT2",		PMB8876_GPIO_TRACEPKT2},
-	{"PIN72",	"TRACEPKT3",	"GPIO_PIN72_TRACEPKT3",		PMB8876_GPIO_TRACEPKT3},
-	{"PIN73",	"TRACEPKT4",	"GPIO_PIN73_TRACEPKT4",		PMB8876_GPIO_TRACEPKT4},
-	{"PIN74",	"PIN74",		"GPIO_PIN74",				PMB8876_GPIO_PIN74},
-	{"PIN75",	"PIN75",		"GPIO_PIN75",				PMB8876_GPIO_PIN75},
-	{"PIN76",	"PIN76",		"GPIO_PIN76",				PMB8876_GPIO_PIN76},
-	{"PIN77",	"FCDP_RB",		"GPIO_PIN77_FCDP_RB",		PMB8876_GPIO_FCDP_RB},
-	{"PIN78",	"CIF_D0",		"GPIO_PIN78_CIF_D0",		PMB8876_GPIO_CIF_D0},
-	{"PIN79",	"CIF_D1",		"GPIO_PIN79_CIF_D1",		PMB8876_GPIO_CIF_D1},
-	{"PIN80",	"CIF_D2",		"GPIO_PIN80_CIF_D2",		PMB8876_GPIO_CIF_D2},
-	{"PIN81",	"CIF_D3",		"GPIO_PIN81_CIF_D3",		PMB8876_GPIO_CIF_D3},
-	{"PIN82",	"CIF_D4",		"GPIO_PIN82_CIF_D4",		PMB8876_GPIO_CIF_D4},
-	{"PIN83",	"CIF_D5",		"GPIO_PIN83_CIF_D5",		PMB8876_GPIO_CIF_D5},
-	{"PIN84",	"CIF_D6",		"GPIO_PIN84_CIF_D6",		PMB8876_GPIO_CIF_D6},
-	{"PIN85",	"CIF_D7",		"GPIO_PIN85_CIF_D7",		PMB8876_GPIO_CIF_D7},
-	{"PIN86",	"CIF_PCLK",		"GPIO_PIN86_CIF_PCLK",		PMB8876_GPIO_CIF_PCLK},
-	{"PIN87",	"CIF_HSYNC",	"GPIO_PIN87_CIF_HSYNC",		PMB8876_GPIO_CIF_HSYNC},
-	{"PIN88",	"CIF_VSYNC",	"GPIO_PIN88_CIF_VSYNC",		PMB8876_GPIO_CIF_VSYNC},
-	{"PIN89",	"CLKOUT2",		"GPIO_PIN89_CLKOUT2",		PMB8876_GPIO_CLKOUT2},
-	{"PIN90",	"CIF_RESET",	"GPIO_PIN90_CIF_RESET",		PMB8876_GPIO_CIF_RESET},
-	{"PIN91",	"DIF_D3",		"GPIO_PIN91_DIF_D3",		PMB8876_GPIO_DIF_D3},
-	{"PIN92",	"DIF_D4",		"GPIO_PIN92_DIF_D4",		PMB8876_GPIO_DIF_D4},
-	{"PIN93",	"DIF_D5",		"GPIO_PIN93_DIF_D5",		PMB8876_GPIO_DIF_D5},
-	{"PIN94",	"DIF_D6",		"GPIO_PIN94_DIF_D6",		PMB8876_GPIO_DIF_D6},
-	{"PIN95",	"DIF_D7",		"GPIO_PIN95_DIF_D7",		PMB8876_GPIO_DIF_D7},
-	{"PIN96",	"DIF_CS2",		"GPIO_PIN96_DIF_CS2",		PMB8876_GPIO_DIF_CS2},
-	{"PIN97",	"DIF_WR",		"GPIO_PIN97_DIF_WR",		PMB8876_GPIO_DIF_WR},
-	{"PIN98",	"DIF_RD",		"GPIO_PIN98_DIF_RD",		PMB8876_GPIO_DIF_RD},
-	{"PIN99",	"MMCI_DAT1",	"GPIO_PIN99_MMCI_DAT1",		PMB8876_GPIO_MMCI_DAT1},
-	{"PIN100",	"DIF_VD",		"GPIO_PIN100_DIF_VD",		PMB8876_GPIO_DIF_VD},
-	{"PIN101",	"PIN101",		"GPIO_PIN101",				PMB8876_GPIO_PIN101},
-	{"PIN102",	"PIN102",		"GPIO_PIN102",				PMB8876_GPIO_PIN102},
-	{"PIN103",	"PIN103",		"GPIO_PIN103",				PMB8876_GPIO_PIN103},
-	{"PIN104",	"MMCI_CMD",		"GPIO_PIN104_MMCI_CMD",		PMB8876_GPIO_MMCI_CMD},
-	{"PIN105",	"MMCI_DAT0",	"GPIO_PIN105_MMCI_DAT0",	PMB8876_GPIO_MMCI_DAT0},
-	{"PIN106",	"MMCI_CLK",		"GPIO_PIN106_MMCI_CLK",		PMB8876_GPIO_MMCI_CLK},
-	{"PIN107",	"PIN107",		"GPIO_PIN107",				PMB8876_GPIO_PIN107},
-	{"PIN108",	"PIN108",		"GPIO_PIN108",				PMB8876_GPIO_PIN108},
-	{"PIN109",	"PIN109",		"GPIO_PIN109",				PMB8876_GPIO_PIN109},
-	{"PIN110",	"PIN110",		"GPIO_PIN110",				PMB8876_GPIO_PIN110},
-	{"PIN111",	"PIN111",		"GPIO_PIN111",				PMB8876_GPIO_PIN111},
-	{"PIN112",	"I2S1_CLK1",	"GPIO_PIN112_I2S1_CLK1",	PMB8876_GPIO_I2S1_CLK1},
-	{"PIN113",	"CIF_PD",		"GPIO_PIN113_CIF_PD",		PMB8876_GPIO_CIF_PD},
+	{"PIN0",	"KP_IN0",			"GPIO_PIN0_KP_IN0",				PMB8876_GPIO_KP_IN0},
+	{"PIN1",	"KP_IN1",			"GPIO_PIN1_KP_IN1",				PMB8876_GPIO_KP_IN1},
+	{"PIN2",	"KP_IN2",			"GPIO_PIN2_KP_IN2",				PMB8876_GPIO_KP_IN2},
+	{"PIN3",	"KP_IN3",			"GPIO_PIN3_KP_IN3",				PMB8876_GPIO_KP_IN3},
+	{"PIN4",	"KP_IN4",			"GPIO_PIN4_KP_IN4",				PMB8876_GPIO_KP_IN4},
+	{"PIN5",	"KP_IN5",			"GPIO_PIN5_KP_IN5",				PMB8876_GPIO_KP_IN5},
+	{"PIN6",	"KP_IN6",			"GPIO_PIN6_KP_IN6",				PMB8876_GPIO_KP_IN6},
+	{"PIN7",	"KP_OUT0",			"GPIO_PIN7_KP_OUT0",			PMB8876_GPIO_KP_OUT0},
+	{"PIN8",	"KP_OUT1",			"GPIO_PIN8_KP_OUT1",			PMB8876_GPIO_KP_OUT1},
+	{"PIN9",	"KP_OUT2",			"GPIO_PIN9_KP_OUT2",			PMB8876_GPIO_KP_OUT2},
+	{"PIN10",	"KP_OUT3",			"GPIO_PIN10_KP_OUT3",			PMB8876_GPIO_KP_OUT3},
+	{"PIN11",	"USART0_RXD",		"GPIO_PIN11_USART0_RXD",		PMB8876_GPIO_USART0_RXD},
+	{"PIN12",	"USART0_TXD",		"GPIO_PIN12_USART0_TXD",		PMB8876_GPIO_USART0_TXD},
+	{"PIN13",	"USART0_RTS",		"GPIO_PIN13_USART0_RTS",		PMB8876_GPIO_USART0_RTS},
+	{"PIN14",	"USART0_CTS",		"GPIO_PIN14_USART0_CTS",		PMB8876_GPIO_USART0_CTS},
+	{"PIN15",	"DSPOUT0",			"GPIO_PIN15_DSPOUT0",			PMB8876_GPIO_DSPOUT0},
+	{"PIN16",	"USART1_RXD",		"GPIO_PIN16_USART1_RXD",		PMB8876_GPIO_USART1_RXD},
+	{"PIN17",	"USART1_TXD",		"GPIO_PIN17_USART1_TXD",		PMB8876_GPIO_USART1_TXD},
+	{"PIN18",	"USART1_RTS",		"GPIO_PIN18_USART1_RTS",		PMB8876_GPIO_USART1_RTS},
+	{"PIN19",	"USART1_CTS",		"GPIO_PIN19_USART1_CTS",		PMB8876_GPIO_USART1_CTS},
+	{"PIN20",	"USB_DPLUS",		"GPIO_PIN20_USB_DPLUS",			PMB8876_GPIO_USB_DPLUS},
+	{"PIN21",	"USB_DMINUS",		"GPIO_PIN21_USB_DMINUS",		PMB8876_GPIO_USB_DMINUS},
+	{"PIN22",	"PIN22",			"GPIO_PIN22",					PMB8876_GPIO_PIN22},
+	{"PIN23",	"DIF_D2",			"GPIO_PIN23_DIF_D2",			PMB8876_GPIO_DIF_D2},
+	{"PIN24",	"DIF_D0",			"GPIO_PIN24_DIF_D0",			PMB8876_GPIO_DIF_D0},
+	{"PIN25",	"DIF_CD",			"GPIO_PIN25_DIF_CD",			PMB8876_GPIO_DIF_CD},
+	{"PIN26",	"DIF_CS1",			"GPIO_PIN26_DIF_CS1",			PMB8876_GPIO_DIF_CS1},
+	{"PIN27",	"DIF_RESET1",		"GPIO_PIN27_DIF_RESET1",		PMB8876_GPIO_DIF_RESET1},
+	{"PIN28",	"I2C_SCL",			"GPIO_PIN28_I2C_SCL",			PMB8876_GPIO_I2C_SCL},
+	{"PIN29",	"I2C_SDA",			"GPIO_PIN29_I2C_SDA",			PMB8876_GPIO_I2C_SDA},
+	{"PIN30",	"DIF_D1",			"GPIO_PIN30_DIF_D1",			PMB8876_GPIO_DIF_D1},
+	{"PIN31",	"PIN31",			"GPIO_PIN31",					PMB8876_GPIO_PIN31},
+	{"PIN32",	"PIN32",			"GPIO_PIN32",					PMB8876_GPIO_PIN32},
+	{"PIN33",	"PIN33",			"GPIO_PIN33",					PMB8876_GPIO_PIN33},
+	{"PIN34",	"PIN34",			"GPIO_PIN34",					PMB8876_GPIO_PIN34},
+	{"PIN35",	"PIN35",			"GPIO_PIN35",					PMB8876_GPIO_PIN35},
+	{"PIN36",	"PIN36",			"GPIO_PIN36",					PMB8876_GPIO_PIN36},
+	{"PIN37",	"PIN37",			"GPIO_PIN37",					PMB8876_GPIO_PIN37},
+	{"PIN38",	"PIN38",			"GPIO_PIN38",					PMB8876_GPIO_PIN38},
+	{"PIN39",	"DIF_HD",			"GPIO_PIN39_DIF_HD",			PMB8876_GPIO_DIF_HD},
+	{"PIN40",	"PIN40",			"GPIO_PIN40",					PMB8876_GPIO_PIN40},
+	{"PIN41",	"PIN41",			"GPIO_PIN41",					PMB8876_GPIO_PIN41},
+	{"PIN42",	"PIN42",			"GPIO_PIN42",					PMB8876_GPIO_PIN42},
+	{"PIN43",	"T_OUT0",			"GPIO_PIN43_T_OUT0",			PMB8876_GPIO_T_OUT0},
+	{"PIN44",	"T_OUT1",			"GPIO_PIN44_T_OUT1",			PMB8876_GPIO_T_OUT1},
+	{"PIN45",	"T_OUT2",			"GPIO_PIN45_T_OUT2",			PMB8876_GPIO_T_OUT2},
+	{"PIN46",	"T_OUT3",			"GPIO_PIN46_T_OUT3",			PMB8876_GPIO_T_OUT3},
+	{"PIN47",	"T_OUT4",			"GPIO_PIN47_T_OUT4",			PMB8876_GPIO_T_OUT4},
+	{"PIN48",	"T_OUT5",			"GPIO_PIN48_T_OUT5",			PMB8876_GPIO_T_OUT5},
+	{"PIN49",	"T_OUT6",			"GPIO_PIN49_T_OUT6",			PMB8876_GPIO_T_OUT6},
+	{"PIN50",	"T_OUT7",			"GPIO_PIN50_T_OUT7",			PMB8876_GPIO_T_OUT7},
+	{"PIN51",	"T_OUT8",			"GPIO_PIN51_T_OUT8",			PMB8876_GPIO_T_OUT8},
+	{"PIN52",	"T_OUT9",			"GPIO_PIN52_T_OUT9",			PMB8876_GPIO_T_OUT9},
+	{"PIN53",	"T_OUT10",			"GPIO_PIN53_T_OUT10",			PMB8876_GPIO_T_OUT10},
+	{"PIN54",	"T_OUT11",			"GPIO_PIN54_T_OUT11",			PMB8876_GPIO_T_OUT11},
+	{"PIN55",	"T_OUT12",			"GPIO_PIN55_T_OUT12",			PMB8876_GPIO_T_OUT12},
+	{"PIN56",	"RF_STR0",			"GPIO_PIN56_RF_STR0",			PMB8876_GPIO_RF_STR0},
+	{"PIN57",	"RF_STR1",			"GPIO_PIN57_RF_STR1",			PMB8876_GPIO_RF_STR1},
+	{"PIN58",	"CLKOUT0",			"GPIO_PIN58_CLKOUT0",			PMB8876_GPIO_CLKOUT0},
+	{"PIN59",	"RF_CLK",			"GPIO_PIN59_RF_CLK",			PMB8876_GPIO_RF_CLK},
+	{"PIN60",	"PIN60",			"GPIO_PIN60",					PMB8876_GPIO_PIN60},
+	{"PIN61",	"DSPIN0",			"GPIO_PIN61_DSPIN0",			PMB8876_GPIO_DSPIN0},
+	{"PIN62",	"DSPOUT1",			"GPIO_PIN62_DSPOUT1",			PMB8876_GPIO_DSPOUT1},
+	{"PIN63",	"DSPIN1",			"GPIO_PIN63_DSPIN1",			PMB8876_GPIO_DSPIN1},
+	{"PIN64",	"PIN64",			"GPIO_PIN64",					PMB8876_GPIO_PIN64},
+	{"PIN65",	"PIN65",			"GPIO_PIN65",					PMB8876_GPIO_PIN65},
+	{"PIN66",	"PIPESTAT2",		"GPIO_PIN66_PIPESTAT2",			PMB8876_GPIO_PIPESTAT2},
+	{"PIN67",	"PIPESTAT1",		"GPIO_PIN67_PIPESTAT1",			PMB8876_GPIO_PIPESTAT1},
+	{"PIN68",	"PIPESTAT0",		"GPIO_PIN68_PIPESTAT0",			PMB8876_GPIO_PIPESTAT0},
+	{"PIN69",	"TRACEPKT0",		"GPIO_PIN69_TRACEPKT0",			PMB8876_GPIO_TRACEPKT0},
+	{"PIN70",	"TRACEPKT1",		"GPIO_PIN70_TRACEPKT1",			PMB8876_GPIO_TRACEPKT1},
+	{"PIN71",	"TRACEPKT2",		"GPIO_PIN71_TRACEPKT2",			PMB8876_GPIO_TRACEPKT2},
+	{"PIN72",	"TRACEPKT3",		"GPIO_PIN72_TRACEPKT3",			PMB8876_GPIO_TRACEPKT3},
+	{"PIN73",	"TRACEPKT4",		"GPIO_PIN73_TRACEPKT4",			PMB8876_GPIO_TRACEPKT4},
+	{"PIN74",	"PIN74",			"GPIO_PIN74",					PMB8876_GPIO_PIN74},
+	{"PIN75",	"PIN75",			"GPIO_PIN75",					PMB8876_GPIO_PIN75},
+	{"PIN76",	"PIN76",			"GPIO_PIN76",					PMB8876_GPIO_PIN76},
+	{"PIN77",	"FCDP_RB",			"GPIO_PIN77_FCDP_RB",			PMB8876_GPIO_FCDP_RB},
+	{"PIN78",	"CIF_D0",			"GPIO_PIN78_CIF_D0",			PMB8876_GPIO_CIF_D0},
+	{"PIN79",	"CIF_D1",			"GPIO_PIN79_CIF_D1",			PMB8876_GPIO_CIF_D1},
+	{"PIN80",	"CIF_D2",			"GPIO_PIN80_CIF_D2",			PMB8876_GPIO_CIF_D2},
+	{"PIN81",	"CIF_D3",			"GPIO_PIN81_CIF_D3",			PMB8876_GPIO_CIF_D3},
+	{"PIN82",	"CIF_D4",			"GPIO_PIN82_CIF_D4",			PMB8876_GPIO_CIF_D4},
+	{"PIN83",	"CIF_D5",			"GPIO_PIN83_CIF_D5",			PMB8876_GPIO_CIF_D5},
+	{"PIN84",	"CIF_D6",			"GPIO_PIN84_CIF_D6",			PMB8876_GPIO_CIF_D6},
+	{"PIN85",	"CIF_D7",			"GPIO_PIN85_CIF_D7",			PMB8876_GPIO_CIF_D7},
+	{"PIN86",	"CIF_PCLK",			"GPIO_PIN86_CIF_PCLK",			PMB8876_GPIO_CIF_PCLK},
+	{"PIN87",	"CIF_HSYNC",		"GPIO_PIN87_CIF_HSYNC",			PMB8876_GPIO_CIF_HSYNC},
+	{"PIN88",	"CIF_VSYNC",		"GPIO_PIN88_CIF_VSYNC",			PMB8876_GPIO_CIF_VSYNC},
+	{"PIN89",	"CLKOUT2",			"GPIO_PIN89_CLKOUT2",			PMB8876_GPIO_CLKOUT2},
+	{"PIN90",	"CIF_RESET",		"GPIO_PIN90_CIF_RESET",			PMB8876_GPIO_CIF_RESET},
+	{"PIN91",	"DIF_D3",			"GPIO_PIN91_DIF_D3",			PMB8876_GPIO_DIF_D3},
+	{"PIN92",	"DIF_D4",			"GPIO_PIN92_DIF_D4",			PMB8876_GPIO_DIF_D4},
+	{"PIN93",	"DIF_D5",			"GPIO_PIN93_DIF_D5",			PMB8876_GPIO_DIF_D5},
+	{"PIN94",	"DIF_D6",			"GPIO_PIN94_DIF_D6",			PMB8876_GPIO_DIF_D6},
+	{"PIN95",	"DIF_D7",			"GPIO_PIN95_DIF_D7",			PMB8876_GPIO_DIF_D7},
+	{"PIN96",	"DIF_CS2",			"GPIO_PIN96_DIF_CS2",			PMB8876_GPIO_DIF_CS2},
+	{"PIN97",	"DIF_WR",			"GPIO_PIN97_DIF_WR",			PMB8876_GPIO_DIF_WR},
+	{"PIN98",	"DIF_RD",			"GPIO_PIN98_DIF_RD",			PMB8876_GPIO_DIF_RD},
+	{"PIN99",	"MMCI_DAT1",		"GPIO_PIN99_MMCI_DAT1",			PMB8876_GPIO_MMCI_DAT1},
+	{"PIN100",	"DIF_VD",			"GPIO_PIN100_DIF_VD",			PMB8876_GPIO_DIF_VD},
+	{"PIN101",	"PIN101",			"GPIO_PIN101",					PMB8876_GPIO_PIN101},
+	{"PIN102",	"PIN102",			"GPIO_PIN102",					PMB8876_GPIO_PIN102},
+	{"PIN103",	"PIN103",			"GPIO_PIN103",					PMB8876_GPIO_PIN103},
+	{"PIN104",	"MMCI_CMD",			"GPIO_PIN104_MMCI_CMD",			PMB8876_GPIO_MMCI_CMD},
+	{"PIN105",	"MMCI_DAT0",		"GPIO_PIN105_MMCI_DAT0",		PMB8876_GPIO_MMCI_DAT0},
+	{"PIN106",	"MMCI_CLK",			"GPIO_PIN106_MMCI_CLK",			PMB8876_GPIO_MMCI_CLK},
+	{"PIN107",	"USIF_TXD_MTSR",	"GPIO_PIN107_USIF_TXD_MTSR",	PMB8876_GPIO_USIF_TXD_MTSR},
+	{"PIN108",	"PIN108",			"GPIO_PIN108",					PMB8876_GPIO_PIN108},
+	{"PIN109",	"PIN109",			"GPIO_PIN109",					PMB8876_GPIO_PIN109},
+	{"PIN110",	"PIN110",			"GPIO_PIN110",					PMB8876_GPIO_PIN110},
+	{"PIN111",	"PIN111",			"GPIO_PIN111",					PMB8876_GPIO_PIN111},
+	{"PIN112",	"I2S1_CLK1",		"GPIO_PIN112_I2S1_CLK1",		PMB8876_GPIO_I2S1_CLK1},
+	{"PIN113",	"CIF_PD",			"GPIO_PIN113_CIF_PD",			PMB8876_GPIO_CIF_PD},
 };
 
 static const pmb887x_cpu_io_t pmb8876_modules[] = {
@@ -6988,8 +8173,12 @@ static const pmb887x_cpu_meta_t cpus_metadata[] = {
 };
 
 static const pmb887x_io_meta_t io_metadata[PMB887X_TRACE_IO_COUNT] = {
-	[PMB887X_TRACE_IO_D1094EC] = { "d1094ec",	d1094ec_regs,	ARRAY_SIZE(d1094ec_regs) },
-	[PMB887X_TRACE_IO_D1601XX] = { "d1601xx",	d1601xx_regs,	ARRAY_SIZE(d1601xx_regs) },
+	[PMB887X_TRACE_IO_D1094EC] = { "d1094ec",		d1094ec_regs,	ARRAY_SIZE(d1094ec_regs) },
+	[PMB887X_TRACE_IO_D1601XX] = { "d1601xx",		d1601xx_regs,	ARRAY_SIZE(d1601xx_regs) },
+	[PMB887X_TRACE_IO_JBT6K71] = { "jbt6k71",		jbt6k71_regs,	ARRAY_SIZE(jbt6k71_regs) },
+	[PMB887X_TRACE_IO_SSD1286] = { "ssd1286",		ssd1286_regs,	ARRAY_SIZE(ssd1286_regs) },
+	[PMB887X_TRACE_IO_TEA5760UK] = { "tea5760uk",	tea5760uk_regs,	ARRAY_SIZE(tea5760uk_regs) },
+	[PMB887X_TRACE_IO_TEA5761UK] = { "tea5761uk",	tea5761uk_regs,	ARRAY_SIZE(tea5761uk_regs) },
 };
 
 const pmb887x_cpu_meta_t *pmb887x_get_cpu_meta(int cpu) {
