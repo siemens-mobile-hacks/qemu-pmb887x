@@ -7,9 +7,30 @@
 #include "hw/arm/pmb887x/utils/tomlc17.h"
 #include "hw/core/hw-error.h"
 #include "hw/core/irq.h"
+#include "hw/core/split-irq.h"
 #include "hw/ssi/ssi.h"
 #include "hw/core/qdev.h"
+#include "hw/core/qdev-properties.h"
+#include "qapi/error.h"
 #include "qemu/error-report.h"
+
+typedef struct pmb887x_gpio_output_t pmb887x_gpio_output_t;
+
+struct pmb887x_gpio_output_t {
+	DeviceState *dev;
+	char *name;
+	int n;
+	GPtrArray *inputs;
+};
+
+static GPtrArray *gpio_outputs;
+
+static void pmb887x_gpio_output_free(gpointer data) {
+	pmb887x_gpio_output_t *output = data;
+	g_free(output->name);
+	g_ptr_array_free(output->inputs, true);
+	g_free(output);
+}
 
 bool pmb887x_qdev_is_gpio_in_exists(DeviceState *dev, const char *name, int n) {
 	if (n < 0)
@@ -130,12 +151,61 @@ int pmb887x_get_gpio_id_by_name(const char *name) {
 	return -1;
 }
 
+void pmb887x_qdev_connect_gpio_out(DeviceState *dev, const char *name, int n, qemu_irq gpio_in) {
+	if (!gpio_outputs)
+		gpio_outputs = g_ptr_array_new_with_free_func(pmb887x_gpio_output_free);
+
+	for (size_t i = 0; i < gpio_outputs->len; i++) {
+		pmb887x_gpio_output_t *output = g_ptr_array_index(gpio_outputs, i);
+
+		if (output->dev == dev && output->n == n && g_strcmp0(output->name, name) == 0) {
+			g_ptr_array_add(output->inputs, gpio_in);
+			return;
+		}
+	}
+
+	pmb887x_gpio_output_t *output = g_new0(pmb887x_gpio_output_t, 1);
+	output->dev = dev;
+	output->name = g_strdup(name);
+	output->n = n;
+	output->inputs = g_ptr_array_new();
+	g_ptr_array_add(output->inputs, gpio_in);
+	g_ptr_array_add(gpio_outputs, output);
+}
+
+void pmb887x_qdev_connect_gpio_outputs(void) {
+	if (!gpio_outputs)
+		return;
+
+	for (size_t i = 0; i < gpio_outputs->len; i++) {
+		pmb887x_gpio_output_t *output = g_ptr_array_index(gpio_outputs, i);
+
+		if (qdev_get_gpio_out_connector(output->dev, output->name, output->n))
+			hw_error("GPIO_OUT '%s:%s[%d]' is already connected!", output->dev->id, output->name, output->n);
+
+		if (output->inputs->len == 1) {
+			qdev_connect_gpio_out_named(output->dev, output->name, output->n, g_ptr_array_index(output->inputs, 0));
+			continue;
+		}
+
+		DeviceState *splitter = qdev_new(TYPE_SPLIT_IRQ);
+		qdev_prop_set_uint16(splitter, "num-lines", output->inputs->len);
+		qdev_realize_and_unref(splitter, NULL, &error_abort);
+		for (size_t j = 0; j < output->inputs->len; j++)
+			qdev_connect_gpio_out(splitter, j, g_ptr_array_index(output->inputs, j));
+		qdev_connect_gpio_out_named(output->dev, output->name, output->n, qdev_get_gpio_in(splitter, 0));
+	}
+
+	g_ptr_array_free(gpio_outputs, true);
+	gpio_outputs = NULL;
+}
+
 void pmb887x_gpio_connect(const char *gpio_out_name, const char *gpio_in_name) {
 	int gpio_out_id;
 	DeviceState *dev;
 	qemu_irq gpio_in = pmb887x_gpio_get_input(gpio_in_name);
 	char *gpio_out_internal_name = find_internal_gpio(true, gpio_out_name, &dev, &gpio_out_id);
-	qdev_connect_gpio_out_named(dev, gpio_out_internal_name, gpio_out_id, gpio_in);
+	pmb887x_qdev_connect_gpio_out(dev, gpio_out_internal_name, gpio_out_id, gpio_in);
 	g_free(gpio_out_internal_name);
 }
 

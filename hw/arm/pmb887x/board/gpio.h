@@ -6,6 +6,8 @@ void pmb887x_board_gpio_init_fixed_inputs(void);
 void pmb887x_board_gpio_init_fixed_connections(void);
 
 void pmb887x_gpio_connect(const char *gpio_out_name, const char *gpio_in_name);
+void pmb887x_qdev_connect_gpio_out(DeviceState *dev, const char *name, int n, qemu_irq gpio_in);
+void pmb887x_qdev_connect_gpio_outputs(void);
 qemu_irq pmb887x_gpio_get_input(const char *name);
 int pmb887x_get_gpio_id_by_name(const char *name);
 

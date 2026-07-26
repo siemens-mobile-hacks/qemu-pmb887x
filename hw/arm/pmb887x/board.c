@@ -313,6 +313,7 @@ static void pmb887x_init(MachineState *machine) {
 	pmb887x_board_gpio_init_fixed_inputs();
 	pmb887x_board_gpio_init_fixed_connections();
 	pmb887x_board_init_devices(ebuc);
+	pmb887x_qdev_connect_gpio_outputs();
 
 #if PMB887X_IO_BRIDGE
 	pmb8876_io_bridge_set_vic(vic);

@@ -70,9 +70,7 @@ static void pmb887x_cpu_module_post_init(DeviceState *dev, const pmb887x_cpu_mod
 				qemu_irq gpio_in = qdev_get_gpio_in_named(gpio, gpio_in_name, gpio_link->pin);
 				if (!object_get_canonical_path(OBJECT(gpio_in)))
 					hw_error("GPIO_IN '%s[%d]' is not attached to dev!", gpio_in_name, gpio_link->pin);
-				if (qdev_get_gpio_out_connector(dev, gpio_link->name, 0) != NULL)
-					hw_error("GPIO_OUT '%s:%s[0]' is already connected!", dev->id, gpio_link->name);
-				qdev_connect_gpio_out_named(dev, gpio_link->name, 0, gpio_in);
+				pmb887x_qdev_connect_gpio_out(dev, gpio_link->name, 0, gpio_in);
 			}
 
 			// GPIO_IN -> PERIPHERAL
@@ -89,9 +87,7 @@ static void pmb887x_cpu_module_post_init(DeviceState *dev, const pmb887x_cpu_mod
 				qemu_irq gpio_in = qdev_get_gpio_in_named(dev, gpio_link->name, 0);
 				if (!object_get_canonical_path(OBJECT(gpio_in)))
 					hw_error("GPIO_IN '%s:%s[0]' is not attached to dev!", dev->id, gpio_link->name);
-				if (qdev_get_gpio_out_connector(dev, gpio_out_name, gpio_link->pin) != NULL)
-					hw_error("GPIO_OUT '%s[%d]' is already connected!", gpio_out_name, gpio_link->pin);
-				qdev_connect_gpio_out_named(gpio, gpio_out_name, gpio_link->pin, gpio_in);
+				pmb887x_qdev_connect_gpio_out(gpio, gpio_out_name, gpio_link->pin, gpio_in);
 			}
 		}
 	}
