@@ -58,8 +58,8 @@ static uint8_t gpio_get_mux_os(pmb887x_gpio_t *p, int pin) {
 
 static void gpio_sync_pin_state(pmb887x_gpio_t *p, int id) {
 	if ((p->pins[id] & GPIO_PS) == GPIO_PS_MANUAL) {
-		if ((p->pins[id] & GPIO_DIR) == GPIO_DIR_OUT)
-			qemu_set_irq(p->pins_out[0][id], (p->pins[id] & GPIO_DATA) == GPIO_DATA_HIGH);
+		bool level = (p->pins[id] & GPIO_DIR) == GPIO_DIR_OUT ? (p->pins[id] & GPIO_DATA) == GPIO_DATA_HIGH : p->input_state[0][id];
+		qemu_set_irq(p->pins_out[0][id], level);
 	} else {
 		int pin_mux_is = gpio_get_mux_is(p, id);
 		int pin_mux_os = gpio_get_mux_os(p, id);
@@ -173,7 +173,9 @@ static void gpio_update_pin_state(pmb887x_gpio_t *p, int mux, int id) {
 	int pin_mux_is = gpio_get_mux_is(p, id);
 	int pin_mux_os = gpio_get_mux_os(p, id);
 	if (mux == 0) {
-		if (pin_mux_is != 0) {
+		if ((p->pins[id] & GPIO_PS) == GPIO_PS_MANUAL && (p->pins[id] & GPIO_DIR) == GPIO_DIR_IN) {
+			qemu_set_irq(p->pins_out[0][id], p->input_state[0][id]);
+		} else if (pin_mux_is != 0) {
 			// proxy GPIO_IN -> PERIPHERAL
 			qemu_set_irq(p->pins_out[pin_mux_is][id], p->input_state[0][id]);
 		}
