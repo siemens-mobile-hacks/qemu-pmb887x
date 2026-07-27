@@ -7987,6 +7987,7 @@ static const pmb887x_io_value_t pcf8882_colmod_fields_p_values[] = {
 	{ "PIXEL_8_BIT",	0x00000002 },
 	{ "PIXEL_12_BIT",	0x00000003 },
 	{ "PIXEL_16_BIT",	0x00000005 },
+	{ "PIXEL_18_BIT",	0x00000007 },
 };
 
 static const pmb887x_io_field_t pcf8882_colmod_fields[] = {

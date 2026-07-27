@@ -3,11 +3,13 @@
  * */
 #define PMB887X_TRACE_ID		LCD
 #define PMB887X_TRACE_PREFIX	"jbt6k71"
+#define PMB887X_TRACE_IO		PMB887X_TRACE_IO_JBT6K71
 
 #include "qemu/osdep.h"
 #include "hw/core/qdev-properties.h"
 #include "qapi/error.h"
 #include "qemu/error-report.h"
+#include "hw/arm/pmb887x/gen/peripheral/JBT6K71.h"
 #include "hw/arm/pmb887x/trace.h"
 #include "hw/arm/pmb887x/ssc/lcd_common.h"
 
@@ -28,9 +30,9 @@ static const enum pmb887x_lcd_pixel_format_t JBT6K71_PIXEL_FORMATS[2][2][2] = {
 };
 
 static const uint16_t DEFAULT_REGS[] = {
-	[0x001]	= 0x27, /* Driver output control setting */
-	[0x003]	= 0x30, /* Entry mode  */
-	[0x100] = 0x800, /* Display control */
+	[JBT6K71_DRIVER_OUTPUT_CONTROL] = 0x27,
+	[JBT6K71_ENTRY_MODE] = 0x30,
+	[JBT6K71_DISPLAY_CONTROL] = 0x800,
 };
 
 typedef struct pmb887x_lcd_panel_t pmb887x_lcd_panel_t;
@@ -42,16 +44,18 @@ struct pmb887x_lcd_panel_t {
 
 static void lcd_update_state(pmb887x_lcd_t *lcd) {
 	pmb887x_lcd_panel_t *priv = PMB887X_LCD_PANEL(lcd);
-	
-	bool ss = (priv->regs[0x001] & (1 << 8)) != 0; /* SS */
-	bool am = (priv->regs[0x003] & (1 << 3)) != 0; /* AM */
-	bool id0 = (priv->regs[0x003] & (1 << 4)) != 0; /* ID0 */
-	bool id1 = (priv->regs[0x003] & (1 << 5)) != 0; /* ID1 */
-	bool bgr = (priv->regs[0x003] & (1 << 12)) != 0; /* BGR */
-	bool dfm0 = (priv->regs[0x003] & (1 << 13)) != 0; /* DFM0 */
-	bool dfm1 = (priv->regs[0x003] & (1 << 14)) != 0; /* DFM1 */
-	bool tri = (priv->regs[0x003] & (1 << 15)) != 0; /* TRI */
-	bool ud = (priv->regs[0x100] & (1 << 11)) != 0; /* UD */
+	uint16_t entry_mode = priv->regs[JBT6K71_ENTRY_MODE];
+	uint32_t id = (entry_mode & JBT6K71_ENTRY_MODE_ID) >> JBT6K71_ENTRY_MODE_ID_SHIFT;
+	uint32_t dfm = (entry_mode & JBT6K71_ENTRY_MODE_DFM) >> JBT6K71_ENTRY_MODE_DFM_SHIFT;
+	bool ss = (priv->regs[JBT6K71_DRIVER_OUTPUT_CONTROL] & JBT6K71_DRIVER_OUTPUT_CONTROL_SS) != 0;
+	bool am = (entry_mode & JBT6K71_ENTRY_MODE_AM) != 0;
+	bool id0 = (id & BIT(0)) != 0;
+	bool id1 = (id & BIT(1)) != 0;
+	bool bgr = (entry_mode & JBT6K71_ENTRY_MODE_BGR) != 0;
+	bool dfm0 = (dfm & BIT(0)) != 0;
+	bool dfm1 = (dfm & BIT(1)) != 0;
+	bool tri = (entry_mode & JBT6K71_ENTRY_MODE_TRI) != 0;
+	bool ud = (priv->regs[JBT6K71_DISPLAY_CONTROL] & JBT6K71_DISPLAY_CONTROL_UD) != 0;
 	
 	DPRINTF("am=%d, id1=%d, id0=%d, ss=%d, ud=%d\n", am, id1, id0, ss, ud);
 	
@@ -74,7 +78,7 @@ static void lcd_update_state(pmb887x_lcd_t *lcd) {
 }
 
 static int lcd_on_cmd(pmb887x_lcd_t *lcd, uint32_t cmd) {
-	if (cmd == 0x202) {
+	if (cmd == JBT6K71_GRAM_DATA) {
 		pmb887x_lcd_set_ram_mode(lcd, true);
 		return 0;
 	}
@@ -86,39 +90,38 @@ static void lcd_on_cmd_with_params(pmb887x_lcd_t *lcd, uint32_t cmd, const uint3
 	
 	g_assert(params_n == 1);
 	g_assert(cmd < JBT6K71_MAX_REGS);
-	
+
+	IO_DUMP_WRITE(cmd, 2, params[0]);
 	priv->regs[cmd] = params[0];
 	
-	DPRINTF("write reg 0x%04X -> 0x%04X\n", cmd, params[0]);
-	
 	switch (cmd) {
-		case 0x001:
-		case 0x003:
-		case 0x100:
+		case JBT6K71_DRIVER_OUTPUT_CONTROL:
+		case JBT6K71_ENTRY_MODE:
+		case JBT6K71_DISPLAY_CONTROL:
 			lcd_update_state(lcd);
 			break;
 		
-		case 0x200:
+		case JBT6K71_RAM_ADDRESS_LOW:
 			pmb887x_lcd_set_x(lcd, params[0]);
 			break;
 		
-		case 0x201:
+		case JBT6K71_RAM_ADDRESS_HIGH:
 			pmb887x_lcd_set_y(lcd, params[0]);
 			break;
 		
-		case 0x406:
+		case JBT6K71_HORIZONTAL_RAM_START:
 			pmb887x_lcd_set_window_x1(lcd, params[0]);
 			break;
 		
-		case 0x407:
+		case JBT6K71_HORIZONTAL_RAM_END:
 			pmb887x_lcd_set_window_x2(lcd, params[0]);
 			break;
 		
-		case 0x408:
+		case JBT6K71_VERTICAL_RAM_START:
 			pmb887x_lcd_set_window_y1(lcd, params[0]);
 			break;
 		
-		case 0x409:
+		case JBT6K71_VERTICAL_RAM_END:
 			pmb887x_lcd_set_window_y2(lcd, params[0]);
 			break;
 
@@ -131,12 +134,15 @@ static void lcd_on_cmd_with_params(pmb887x_lcd_t *lcd, uint32_t cmd, const uint3
 static uint32_t lcd_on_read(pmb887x_lcd_t *lcd, uint32_t index) {
 	pmb887x_lcd_panel_t *priv = PMB887X_LCD_PANEL(lcd);
 	uint16_t value = 0;
-	if (lcd->current_cmd == 0) {
+	uint32_t shift = (1 - index % JBT6K71_BUS_WIDTH) * 8;
+
+	if (lcd->current_cmd == JBT6K71_OSCILLATION) {
 		value = JBT6K71_DEVICE_CODE;
 	} else if (lcd->current_cmd < JBT6K71_MAX_REGS) {
 		value = priv->regs[lcd->current_cmd];
 	}
-	uint32_t shift = (1 - index % JBT6K71_BUS_WIDTH) * 8;
+	if (index % JBT6K71_BUS_WIDTH == 0)
+		IO_DUMP_READ(lcd->current_cmd, 2, value);
 	return (value >> shift) & 0xFF;
 }
 
@@ -144,16 +150,16 @@ static void lcd_reset(pmb887x_lcd_t *lcd) {
 	pmb887x_lcd_panel_t *priv = PMB887X_LCD_PANEL(lcd);
 	memset(priv->regs, 0, sizeof(priv->regs));
 	memcpy(priv->regs, DEFAULT_REGS, sizeof(DEFAULT_REGS));
-	priv->regs[0x407] = lcd->width - 1;
-	priv->regs[0x409] = lcd->height - 1;
+	priv->regs[JBT6K71_HORIZONTAL_RAM_END] = lcd->width - 1;
+	priv->regs[JBT6K71_VERTICAL_RAM_END] = lcd->height - 1;
 
 	lcd_update_state(lcd);
-	pmb887x_lcd_set_x(lcd, priv->regs[0x200]);
-	pmb887x_lcd_set_y(lcd, priv->regs[0x201]);
-	pmb887x_lcd_set_window_x1(lcd, priv->regs[0x406]);
-	pmb887x_lcd_set_window_x2(lcd, priv->regs[0x407]);
-	pmb887x_lcd_set_window_y1(lcd, priv->regs[0x408]);
-	pmb887x_lcd_set_window_y2(lcd, priv->regs[0x409]);
+	pmb887x_lcd_set_x(lcd, priv->regs[JBT6K71_RAM_ADDRESS_LOW]);
+	pmb887x_lcd_set_y(lcd, priv->regs[JBT6K71_RAM_ADDRESS_HIGH]);
+	pmb887x_lcd_set_window_x1(lcd, priv->regs[JBT6K71_HORIZONTAL_RAM_START]);
+	pmb887x_lcd_set_window_x2(lcd, priv->regs[JBT6K71_HORIZONTAL_RAM_END]);
+	pmb887x_lcd_set_window_y1(lcd, priv->regs[JBT6K71_VERTICAL_RAM_START]);
+	pmb887x_lcd_set_window_y2(lcd, priv->regs[JBT6K71_VERTICAL_RAM_END]);
 }
 
 static void lcd_realize(pmb887x_lcd_t *lcd, Error **errp) {

@@ -3,11 +3,13 @@
  * */
 #define PMB887X_TRACE_ID		LCD
 #define PMB887X_TRACE_PREFIX	"ssd1286"
+#define PMB887X_TRACE_IO		PMB887X_TRACE_IO_SSD1286
 
 #include "qemu/osdep.h"
 #include "hw/core/qdev-properties.h"
 #include "qapi/error.h"
 #include "qemu/error-report.h"
+#include "hw/arm/pmb887x/gen/peripheral/SSD1286.h"
 #include "hw/arm/pmb887x/trace.h"
 #include "hw/arm/pmb887x/ssc/lcd_common.h"
 
@@ -18,8 +20,8 @@
 #define SSD1286_MAX_REGS	0x100
 
 static const uint16_t DEFAULT_REGS[] = {
-	[0x001] = 0x0001,
-	[0x003] = 0x6830,
+	[SSD1286_DRIVER_OUTPUT_CONTROL] = 0x0001,
+	[SSD1286_ENTRY_MODE] = 0x6830,
 };
 
 typedef struct pmb887x_lcd_panel_t pmb887x_lcd_panel_t;
@@ -31,17 +33,18 @@ struct pmb887x_lcd_panel_t {
 
 static void lcd_update_state(pmb887x_lcd_t *lcd) {
 	pmb887x_lcd_panel_t *priv = PMB887X_LCD_PANEL(lcd);
-	
-	bool ss = (priv->regs[0x001] & (1 << 8)) != 0; /* SS */
-	bool sm = (priv->regs[0x001] & (1 << 10)) != 0; /* SM */
-	
-	bool am = (priv->regs[0x003] & (1 << 3)) != 0; /* AM */
-	bool id0 = (priv->regs[0x003] & (1 << 4)) != 0; /* ID0 */
-	bool id1 = (priv->regs[0x003] & (1 << 5)) != 0; /* ID1 */
-	bool bgr = (priv->regs[0x001] & (1 << 11)) != 0; /* BGR */
-
-	bool dfm0 = (priv->regs[0x003] & (1 << 13)) != 0; /* DFM0 */
-	bool dfm1 = (priv->regs[0x003] & (1 << 14)) != 0; /* DFM1 */
+	uint16_t driver_output_control = priv->regs[SSD1286_DRIVER_OUTPUT_CONTROL];
+	uint16_t entry_mode = priv->regs[SSD1286_ENTRY_MODE];
+	uint32_t id = (entry_mode & SSD1286_ENTRY_MODE_ID) >> SSD1286_ENTRY_MODE_ID_SHIFT;
+	uint32_t dfm = (entry_mode & SSD1286_ENTRY_MODE_DFM) >> SSD1286_ENTRY_MODE_DFM_SHIFT;
+	bool ss = (driver_output_control & SSD1286_DRIVER_OUTPUT_CONTROL_RL) != 0;
+	bool sm = (driver_output_control & SSD1286_DRIVER_OUTPUT_CONTROL_SM) != 0;
+	bool am = (entry_mode & SSD1286_ENTRY_MODE_AM) != 0;
+	bool id0 = (id & BIT(0)) != 0;
+	bool id1 = (id & BIT(1)) != 0;
+	bool bgr = (driver_output_control & SSD1286_DRIVER_OUTPUT_CONTROL_BGR) != 0;
+	bool dfm0 = (dfm & BIT(0)) != 0;
+	bool dfm1 = (dfm & BIT(1)) != 0;
 	
 	DPRINTF("am=%d, id1=%d, id0=%d, ss=%d, sm=%d, dfm0=%d, dfm1=%d, bgr=%d\n", am, id1, id0, ss, sm, dfm0, dfm1, bgr);
 	
@@ -60,7 +63,7 @@ static void lcd_update_state(pmb887x_lcd_t *lcd) {
 }
 
 static int lcd_on_cmd(pmb887x_lcd_t *lcd, uint32_t cmd) {
-	if (cmd == 0x22) {
+	if (cmd == SSD1286_GRAM_DATA) {
 		pmb887x_lcd_set_ram_mode(lcd, true);
 		return 0;
 	}
@@ -72,30 +75,33 @@ static void lcd_on_cmd_with_params(pmb887x_lcd_t *lcd, uint32_t cmd, const uint3
 	
 	g_assert(params_n == 1);
 	g_assert(cmd < SSD1286_MAX_REGS);
-	
+
+	IO_DUMP_WRITE(cmd, 2, params[0]);
 	priv->regs[cmd] = params[0];
 	
-	DPRINTF("write reg 0x%04X -> 0x%04X\n", cmd, params[0]);
-	
 	switch (cmd) {
-		case 0x01:
-		case 0x03:
+		case SSD1286_DRIVER_OUTPUT_CONTROL:
+		case SSD1286_ENTRY_MODE:
 			lcd_update_state(lcd);
 			break;
 		
-		case 0x21:
+		case SSD1286_RAM_ADDRESS:
 			pmb887x_lcd_set_x(lcd, params[0] & 0xFF);
 			pmb887x_lcd_set_y(lcd, params[0] >> 8);
 			break;
 		
-		case 0x44:
-			pmb887x_lcd_set_window_x1(lcd, params[0] & 0xFF);
-			pmb887x_lcd_set_window_x2(lcd, params[0] >> 8);
+		case SSD1286_HORIZONTAL_RAM_ADDRESS:
+			pmb887x_lcd_set_window_x1(lcd, (params[0] & SSD1286_HORIZONTAL_RAM_ADDRESS_HSA) >>
+				SSD1286_HORIZONTAL_RAM_ADDRESS_HSA_SHIFT);
+			pmb887x_lcd_set_window_x2(lcd, (params[0] & SSD1286_HORIZONTAL_RAM_ADDRESS_HEA) >>
+				SSD1286_HORIZONTAL_RAM_ADDRESS_HEA_SHIFT);
 			break;
 		
-		case 0x45:
-			pmb887x_lcd_set_window_y1(lcd, params[0] & 0xFF);
-			pmb887x_lcd_set_window_y2(lcd, params[0] >> 8);
+		case SSD1286_VERTICAL_RAM_ADDRESS:
+			pmb887x_lcd_set_window_y1(lcd, (params[0] & SSD1286_VERTICAL_RAM_ADDRESS_VSA) >>
+				SSD1286_VERTICAL_RAM_ADDRESS_VSA_SHIFT);
+			pmb887x_lcd_set_window_y2(lcd, (params[0] & SSD1286_VERTICAL_RAM_ADDRESS_VEA) >>
+				SSD1286_VERTICAL_RAM_ADDRESS_VEA_SHIFT);
 			break;
 
 		default:

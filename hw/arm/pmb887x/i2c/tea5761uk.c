@@ -89,7 +89,7 @@ static uint8_t tea5761uk_recv(I2CSlave *s) {
 	uint8_t index = p->read_index;
 	uint8_t data = index < ARRAY_SIZE(p->regs) ? p->regs[index] : 0;
 
-	IO_DUMP_READ(index, sizeof(data), data);
+	IO_DUMP_READ(index, 1, data);
 	p->read_index++;
 	if (index == 0) {
 		p->regs[0] = 0;
@@ -105,7 +105,7 @@ static int tea5761uk_send(I2CSlave *s, uint8_t data) {
 	uint8_t index = p->write_index;
 
 	if (index < ARRAY_SIZE(write_registers)) {
-		IO_DUMP_WRITE(write_registers[index], sizeof(data), data);
+		IO_DUMP_WRITE(write_registers[index], 1, data);
 		p->regs[write_registers[index]] = data;
 	}
 	p->write_index++;

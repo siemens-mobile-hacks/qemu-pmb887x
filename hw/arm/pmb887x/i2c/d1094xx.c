@@ -150,7 +150,7 @@ static int pmic_event(I2CSlave *s, enum i2c_event event) {
 static uint8_t pmic_recv(I2CSlave *s) {
 	pmb887x_pmic_t *p = PMB887X_PMIC(s);
 	uint8_t data = p->regs[p->reg_id];
-	IO_DUMP_READ(p->reg_id, sizeof(data), data);
+	IO_DUMP_READ(p->reg_id, 1, data);
 	p->reg_id = (p->reg_id + 1) % ARRAY_SIZE(p->regs);
 	return data;
 }
@@ -160,7 +160,7 @@ static int pmic_send(I2CSlave *s, uint8_t data) {
 	if (p->wcycle == 0) {
 		p->reg_id = data % ARRAY_SIZE(p->regs);
 	} else {
-		IO_DUMP_WRITE(p->reg_id, sizeof(data), data);
+		IO_DUMP_WRITE(p->reg_id, 1, data);
 		p->regs[p->reg_id] = data;
 		p->reg_id = (p->reg_id + 1) % ARRAY_SIZE(p->regs);
 	}
