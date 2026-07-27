@@ -1,8 +1,9 @@
 /*
- * Infineon pmb6812
- * */
+ * Infineon PMB6812
+ */
 #define PMB887X_TRACE_ID		PMIC
 #define PMB887X_TRACE_PREFIX	"pmb6812"
+#define PMB887X_TRACE_IO		PMB887X_TRACE_IO_PMB6812
 
 #include "qemu/osdep.h"
 #include "hw/core/sysbus.h"
@@ -47,7 +48,7 @@ static const uint8_t regs_PMB6812[256] = {
 static int pmic_event(I2CSlave *s, enum i2c_event event) {
 	pmb887x_pmic_t *p = PMB887X_PMIC(s);
 
-    switch (event) {
+	switch (event) {
 		case I2C_START_SEND:
 			p->wcycle = 0;
 			break;
@@ -64,34 +65,32 @@ static int pmic_event(I2CSlave *s, enum i2c_event event) {
 			p->wcycle = 0;
 			break;
 	}
-    
-    return 0;
+
+	return 0;
 }
 
 static uint8_t pmic_recv(I2CSlave *s) {
 	pmb887x_pmic_t *p = PMB887X_PMIC(s);
-	
 	uint8_t data = p->regs[p->reg_id];
-	DPRINTF("read reg %02X: %02X\n", p->reg_id, data);
+	IO_DUMP_READ(p->reg_id, 1, data);
 	p->reg_id = (p->reg_id + 1) % ARRAY_SIZE(p->regs);
-	
+
 	return data;
 }
 
 static int pmic_send(I2CSlave *s, uint8_t data) {
 	pmb887x_pmic_t *p = PMB887X_PMIC(s);
-	
 	if (p->wcycle == 0) {
 		p->reg_id = data % ARRAY_SIZE(p->regs);
 	} else {
-		DPRINTF("write reg %02X: %02X\n", p->reg_id, data);
+		IO_DUMP_WRITE(p->reg_id, 1, data);
 		p->regs[p->reg_id] = data;
 		p->reg_id = (p->reg_id + 1) % ARRAY_SIZE(p->regs);
 	}
-	
+
 	p->wcycle++;
-	
-    return 0;
+
+	return 0;
 }
 
 static void pmic_realize(DeviceState *dev, Error **errp) {
@@ -101,19 +100,18 @@ static void pmic_realize(DeviceState *dev, Error **errp) {
 
 static void pmic_class_init(ObjectClass *klass, const void *data) {
 	DeviceClass *dc = DEVICE_CLASS(klass);
+	I2CSlaveClass *k = I2C_SLAVE_CLASS(klass);
 	dc->realize = pmic_realize;
-	
-    I2CSlaveClass *k = I2C_SLAVE_CLASS(klass);
-    k->event = &pmic_event;
-    k->recv = &pmic_recv;
-    k->send = &pmic_send;
+	k->event = &pmic_event;
+	k->recv = &pmic_recv;
+	k->send = &pmic_send;
 }
 
 static const TypeInfo pmic_info = {
-    .name          	= TYPE_PMB887X_PMIC,
-    .parent        	= TYPE_I2C_SLAVE,
-    .instance_size 	= sizeof(pmb887x_pmic_t),
-    .class_init    	= pmic_class_init,
+	.name = TYPE_PMB887X_PMIC,
+	.parent = TYPE_I2C_SLAVE,
+	.instance_size = sizeof(pmb887x_pmic_t),
+	.class_init = pmic_class_init,
 };
 
 static void pmic_register_types(void) {

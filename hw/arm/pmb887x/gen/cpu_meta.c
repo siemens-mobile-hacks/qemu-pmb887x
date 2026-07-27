@@ -8040,6 +8040,341 @@ static const pmb887x_io_reg_t pcf8882_regs[] = {
 	{ "RDID3",		0xDC,	pcf8882_rdid3_fields,	ARRAY_SIZE(pcf8882_rdid3_fields),	0 },
 };
 
+static const pmb887x_io_field_t pmb6812_resctrl_fields[] = {
+	{ "RES",	0x00000001,	0,	NULL,	0 },
+	{ "ALLOFF",	0x00000040,	6,	NULL,	0 },
+	{ "RESDN",	0x00000080,	7,	NULL,	0 },
+};
+
+static const pmb887x_io_value_t pmb6812_pwctrl1_fields_lbbmd_values[] = {
+	{ "OFF",				0x00000000 },
+	{ "LBB1_VCXO_LBB2_ON",	0x00000002 },
+	{ "LBB1_OFF_LBB2_ON",	0x00000004 },
+	{ "ON",					0x00000006 },
+};
+
+static const pmb887x_io_value_t pmb6812_pwctrl1_fields_lbbv_values[] = {
+	{ "1V5",	0x00000000 },
+	{ "1V65",	0x00000008 },
+};
+
+static const pmb887x_io_value_t pmb6812_pwctrl1_fields_lintmd_values[] = {
+	{ "STANDBY",	0x00000000 },
+	{ "ON",			0x00000010 },
+};
+
+static const pmb887x_io_field_t pmb6812_pwctrl1_fields[] = {
+	{ "LANAMD",	0x00000001,	0,	NULL,									0 },
+	{ "LBBMD",	0x00000006,	1,	pmb6812_pwctrl1_fields_lbbmd_values,	ARRAY_SIZE(pmb6812_pwctrl1_fields_lbbmd_values) },
+	{ "LBBV",	0x00000008,	3,	pmb6812_pwctrl1_fields_lbbv_values,		ARRAY_SIZE(pmb6812_pwctrl1_fields_lbbv_values) },
+	{ "LINTMD",	0x00000010,	4,	pmb6812_pwctrl1_fields_lintmd_values,	ARRAY_SIZE(pmb6812_pwctrl1_fields_lintmd_values) },
+};
+
+static const pmb887x_io_value_t pmb6812_pwctrl2_fields_vsel_values[] = {
+	{ "1V5",	0x00000000 },
+	{ "1V8",	0x00000001 },
+	{ "TEST",	0x00000002 },
+	{ "1V92",	0x00000003 },
+};
+
+static const pmb887x_io_value_t pmb6812_pwctrl2_fields_sdbbmd_values[] = {
+	{ "FORCED_PWM",	0x00000000 },
+	{ "AUTO_PFM",	0x00000040 },
+	{ "TEST",		0x00000080 },
+	{ "FORCED_PFM",	0x000000C0 },
+};
+
+static const pmb887x_io_field_t pmb6812_pwctrl2_fields[] = {
+	{ "VSEL",	0x00000003,	0,	pmb6812_pwctrl2_fields_vsel_values,		ARRAY_SIZE(pmb6812_pwctrl2_fields_vsel_values) },
+	{ "LPEN",	0x00000010,	4,	NULL,									0 },
+	{ "ASPWM",	0x00000020,	5,	NULL,									0 },
+	{ "SDBBMD",	0x000000C0,	6,	pmb6812_pwctrl2_fields_sdbbmd_values,	ARRAY_SIZE(pmb6812_pwctrl2_fields_sdbbmd_values) },
+};
+
+static const pmb887x_io_value_t pmb6812_chctrl1_fields_pl_values[] = {
+	{ "2MS",	0x00000000 },
+	{ "4MS",	0x00000001 },
+	{ "8MS",	0x00000002 },
+	{ "16MS",	0x00000003 },
+	{ "33MS",	0x00000004 },
+	{ "66MS",	0x00000005 },
+	{ "131MS",	0x00000006 },
+	{ "262MS",	0x00000007 },
+};
+
+static const pmb887x_io_value_t pmb6812_chctrl1_fields_vl_values[] = {
+	{ "SHUTDOWN",		0x00000000 },
+	{ "VOLTAGE_LIMIT",	0x00000008 },
+};
+
+static const pmb887x_io_value_t pmb6812_chctrl1_fields_vmax_values[] = {
+	{ "VCHMAX1",	0x00000000 },
+	{ "VCHMAX2",	0x00000010 },
+	{ "RESERVED",	0x00000020 },
+	{ "VCHMAX3",	0x00000030 },
+};
+
+static const pmb887x_io_value_t pmb6812_chctrl1_fields_pch_values[] = {
+	{ "CONTINUOUS",	0x00000000 },
+	{ "PULSE",		0x00000040 },
+};
+
+static const pmb887x_io_field_t pmb6812_chctrl1_fields[] = {
+	{ "PL",		0x00000007,	0,	pmb6812_chctrl1_fields_pl_values,	ARRAY_SIZE(pmb6812_chctrl1_fields_pl_values) },
+	{ "VL",		0x00000008,	3,	pmb6812_chctrl1_fields_vl_values,	ARRAY_SIZE(pmb6812_chctrl1_fields_vl_values) },
+	{ "VMAX",	0x00000030,	4,	pmb6812_chctrl1_fields_vmax_values,	ARRAY_SIZE(pmb6812_chctrl1_fields_vmax_values) },
+	{ "PCH",	0x00000040,	6,	pmb6812_chctrl1_fields_pch_values,	ARRAY_SIZE(pmb6812_chctrl1_fields_pch_values) },
+	{ "ON",		0x00000080,	7,	NULL,								0 },
+};
+
+static const pmb887x_io_value_t pmb6812_intctrl1_fields_intmd_values[] = {
+	{ "FALLING",	0x00000000 },
+	{ "RISING",		0x00000001 },
+};
+
+static const pmb887x_io_field_t pmb6812_intctrl1_fields[] = {
+	{ "INTMD",		0x00000001,	0,	pmb6812_intctrl1_fields_intmd_values,	ARRAY_SIZE(pmb6812_intctrl1_fields_intmd_values) },
+	{ "EIORLSIM",	0x00000002,	1,	NULL,									0 },
+	{ "EIORLMMC",	0x00000004,	2,	NULL,									0 },
+	{ "EISPWM",		0x00000008,	3,	NULL,									0 },
+	{ "EICHCAL",	0x00000020,	5,	NULL,									0 },
+	{ "EICHMD",		0x00000040,	6,	NULL,									0 },
+	{ "EICHV",		0x00000080,	7,	NULL,									0 },
+};
+
+static const pmb887x_io_value_t pmb6812_intctrl2_fields_debug_values[] = {
+	{ "CURRENT",	0x00000000 },
+	{ "LATCHED",	0x00000001 },
+};
+
+static const pmb887x_io_field_t pmb6812_intctrl2_fields[] = {
+	{ "DEBUG",	0x00000001,	0,	pmb6812_intctrl2_fields_debug_values,	ARRAY_SIZE(pmb6812_intctrl2_fields_debug_values) },
+	{ "EION",	0x00000002,	1,	NULL,									0 },
+	{ "OTSEN",	0x00000010,	4,	NULL,									0 },
+	{ "RAGOTW",	0x00000040,	6,	NULL,									0 },
+	{ "EIOTW",	0x00000080,	7,	NULL,									0 },
+};
+
+static const pmb887x_io_value_t pmb6812_pwctrl3_fields_lrf2md_values[] = {
+	{ "OFF",		0x00000000 },
+	{ "VCXO",		0x00000001 },
+	{ "FORCED_OFF",	0x00000002 },
+	{ "ON",			0x00000003 },
+};
+
+static const pmb887x_io_value_t pmb6812_pwctrl3_fields_lrf2v_values[] = {
+	{ "2V7",	0x00000000 },
+	{ "2V5",	0x00000004 },
+};
+
+static const pmb887x_io_field_t pmb6812_pwctrl3_fields[] = {
+	{ "LRF2MD",	0x00000003,	0,	pmb6812_pwctrl3_fields_lrf2md_values,	ARRAY_SIZE(pmb6812_pwctrl3_fields_lrf2md_values) },
+	{ "LRF2V",	0x00000004,	2,	pmb6812_pwctrl3_fields_lrf2v_values,	ARRAY_SIZE(pmb6812_pwctrl3_fields_lrf2v_values) },
+};
+
+static const pmb887x_io_value_t pmb6812_chctrl2_fields_chclim_values[] = {
+	{ "400MA",	0x00000000 },
+	{ "500MA",	0x00000001 },
+	{ "600MA",	0x00000002 },
+	{ "700MA",	0x00000003 },
+	{ "800MA",	0x00000004 },
+	{ "900MA",	0x00000005 },
+	{ "1000MA",	0x00000006 },
+	{ "1100MA",	0x00000007 },
+};
+
+static const pmb887x_io_value_t pmb6812_chctrl2_fields_rvm_values[] = {
+	{ "0MA",	0x00000000 },
+	{ "100MA",	0x00000020 },
+	{ "200MA",	0x00000040 },
+	{ "300MA",	0x00000060 },
+	{ "400MA",	0x00000080 },
+	{ "500MA",	0x000000A0 },
+	{ "600MA",	0x000000C0 },
+	{ "700MA",	0x000000E0 },
+};
+
+static const pmb887x_io_field_t pmb6812_chctrl2_fields[] = {
+	{ "CHCLIM",	0x00000007,	0,	pmb6812_chctrl2_fields_chclim_values,	ARRAY_SIZE(pmb6812_chctrl2_fields_chclim_values) },
+	{ "PREOFF",	0x00000010,	4,	NULL,									0 },
+	{ "RVM",	0x000000E0,	5,	pmb6812_chctrl2_fields_rvm_values,		ARRAY_SIZE(pmb6812_chctrl2_fields_rvm_values) },
+};
+
+static const pmb887x_io_field_t pmb6812_ledctrl1_fields[] = {
+	{ "LEDON",	0x00000001,	0,	NULL,	0 },
+	{ "LEDPWM",	0x0000007E,	1,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t pmb6812_drvctrl_fields[] = {
+	{ "VVIB",	0x0000000F,	0,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t pmb6812_usbctrl_fields[] = {
+	{ "VALUE",	0x000000FF,	0,	NULL,	0 },
+};
+
+static const pmb887x_io_value_t pmb6812_audctrl_fields_audgain_values[] = {
+	{ "MINUS_6DB",		0x00000000 },
+	{ "MINUS_1_2DB",	0x00000004 },
+	{ "PLUS_2_7DB",		0x00000008 },
+	{ "PLUS_7_6DB",		0x0000000C },
+};
+
+static const pmb887x_io_field_t pmb6812_audctrl_fields[] = {
+	{ "AUDON",		0x00000001,	0,	NULL,									0 },
+	{ "MUTE",		0x00000002,	1,	NULL,									0 },
+	{ "AUDGAIN",	0x0000000C,	2,	pmb6812_audctrl_fields_audgain_values,	ARRAY_SIZE(pmb6812_audctrl_fields_audgain_values) },
+	{ "TRISTATE",	0x00000010,	4,	NULL,									0 },
+};
+
+static const pmb887x_io_value_t pmb6812_pwctrl4_fields_lrf1md_values[] = {
+	{ "OFF",		0x00000000 },
+	{ "VCXO",		0x00000004 },
+	{ "FORCED_OFF",	0x00000008 },
+	{ "ON",			0x0000000C },
+};
+
+static const pmb887x_io_value_t pmb6812_pwctrl4_fields_lrfcmd_values[] = {
+	{ "OFF",		0x00000000 },
+	{ "VCXO",		0x00000040 },
+	{ "FORCED_OFF",	0x00000080 },
+	{ "ON",			0x000000C0 },
+};
+
+static const pmb887x_io_field_t pmb6812_pwctrl4_fields[] = {
+	{ "LRF1MD",	0x0000000C,	2,	pmb6812_pwctrl4_fields_lrf1md_values,	ARRAY_SIZE(pmb6812_pwctrl4_fields_lrf1md_values) },
+	{ "LRFCMD",	0x000000C0,	6,	pmb6812_pwctrl4_fields_lrfcmd_values,	ARRAY_SIZE(pmb6812_pwctrl4_fields_lrfcmd_values) },
+};
+
+static const pmb887x_io_value_t pmb6812_pwctrl5_fields_lsimmd_values[] = {
+	{ "OFF",			0x00000000 },
+	{ "VCXO_STANDBY",	0x00000001 },
+	{ "STANDBY",		0x00000002 },
+	{ "ON",				0x00000003 },
+};
+
+static const pmb887x_io_value_t pmb6812_pwctrl5_fields_lsimv_values[] = {
+	{ "2V85",	0x00000000 },
+	{ "1V8",	0x00000004 },
+};
+
+static const pmb887x_io_value_t pmb6812_pwctrl5_fields_lsim2md_values[] = {
+	{ "OFF",				0x00000000 },
+	{ "VCXO_STANDBY",		0x00000008 },
+	{ "ON",					0x00000010 },
+	{ "VCXO_STANDBY_ALT",	0x00000018 },
+	{ "STANDBY",			0x00000020 },
+	{ "ON_ALT1",			0x00000028 },
+	{ "OFF_ALT",			0x00000030 },
+	{ "ON_ALT2",			0x00000038 },
+};
+
+static const pmb887x_io_value_t pmb6812_pwctrl5_fields_lsim2v_values[] = {
+	{ "2V85",	0x00000000 },
+	{ "1V8",	0x00000040 },
+};
+
+static const pmb887x_io_field_t pmb6812_pwctrl5_fields[] = {
+	{ "LSIMMD",		0x00000003,	0,	pmb6812_pwctrl5_fields_lsimmd_values,	ARRAY_SIZE(pmb6812_pwctrl5_fields_lsimmd_values) },
+	{ "LSIMV",		0x00000004,	2,	pmb6812_pwctrl5_fields_lsimv_values,	ARRAY_SIZE(pmb6812_pwctrl5_fields_lsimv_values) },
+	{ "LSIM2MD",	0x00000038,	3,	pmb6812_pwctrl5_fields_lsim2md_values,	ARRAY_SIZE(pmb6812_pwctrl5_fields_lsim2md_values) },
+	{ "LSIM2V",		0x00000040,	6,	pmb6812_pwctrl5_fields_lsim2v_values,	ARRAY_SIZE(pmb6812_pwctrl5_fields_lsim2v_values) },
+};
+
+static const pmb887x_io_value_t pmb6812_pwctrl6_fields_lmmcmd_values[] = {
+	{ "OFF",			0x00000000 },
+	{ "VCXO_STANDBY",	0x00000001 },
+	{ "STANDBY",		0x00000002 },
+	{ "ON",				0x00000003 },
+};
+
+static const pmb887x_io_value_t pmb6812_pwctrl6_fields_lmmcv_values[] = {
+	{ "1V8",	0x00000000 },
+	{ "2V85",	0x00000004 },
+};
+
+static const pmb887x_io_field_t pmb6812_pwctrl6_fields[] = {
+	{ "LMMCMD",	0x00000003,	0,	pmb6812_pwctrl6_fields_lmmcmd_values,	ARRAY_SIZE(pmb6812_pwctrl6_fields_lmmcmd_values) },
+	{ "LMMCV",	0x00000004,	2,	pmb6812_pwctrl6_fields_lmmcv_values,	ARRAY_SIZE(pmb6812_pwctrl6_fields_lmmcv_values) },
+};
+
+static const pmb887x_io_value_t pmb6812_ledctrl2_fields_ledcur_values[] = {
+	{ "POWER_DOWN",	0x00000000 },
+	{ "20MA",		0x00000008 },
+	{ "40MA",		0x00000010 },
+	{ "60MA",		0x00000018 },
+	{ "80MA",		0x00000020 },
+	{ "100MA",		0x00000028 },
+	{ "120MA",		0x00000030 },
+	{ "140MA",		0x00000038 },
+};
+
+static const pmb887x_io_field_t pmb6812_ledctrl2_fields[] = {
+	{ "LEDCUR",		0x00000038,	3,	pmb6812_ledctrl2_fields_ledcur_values,	ARRAY_SIZE(pmb6812_ledctrl2_fields_ledcur_values) },
+	{ "SLED1ON",	0x00000040,	6,	NULL,									0 },
+	{ "SLED2ON",	0x00000080,	7,	NULL,									0 },
+};
+
+static const pmb887x_io_field_t pmb6812_gef1_fields[] = {
+	{ "LINT",	0x00000001,	0,	NULL,	0 },
+	{ "LANA",	0x00000002,	1,	NULL,	0 },
+	{ "LRF2",	0x00000004,	2,	NULL,	0 },
+	{ "LRF1",	0x00000008,	3,	NULL,	0 },
+	{ "LRFC",	0x00000010,	4,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t pmb6812_isf_fields[] = {
+	{ "LON",	0x00000001,	0,	NULL,	0 },
+	{ "OTS",	0x00000002,	1,	NULL,	0 },
+	{ "SPWM",	0x00000004,	2,	NULL,	0 },
+	{ "LSIM",	0x00000008,	3,	NULL,	0 },
+	{ "LMMC",	0x00000010,	4,	NULL,	0 },
+	{ "OTW",	0x00000080,	7,	NULL,	0 },
+};
+
+static const pmb887x_io_value_t pmb6812_chst_fields_pmuid_values[] = {
+	{ "SM_POWER",		0x00000000 },
+	{ "E_POWERLITE",	0x00000001 },
+};
+
+static const pmb887x_io_field_t pmb6812_chst_fields[] = {
+	{ "PMUID",	0x00000001,	0,	pmb6812_chst_fields_pmuid_values,	ARRAY_SIZE(pmb6812_chst_fields_pmuid_values) },
+	{ "CCAL",	0x00000020,	5,	NULL,								0 },
+	{ "CHMD",	0x00000040,	6,	NULL,								0 },
+	{ "CHV",	0x00000080,	7,	NULL,								0 },
+};
+
+static const pmb887x_io_field_t pmb6812_gef2_fields[] = {
+	{ "SDBB",	0x00000001,	0,	NULL,	0 },
+	{ "LBB1",	0x00000002,	1,	NULL,	0 },
+	{ "LBB2",	0x00000004,	2,	NULL,	0 },
+	{ "LSIM2",	0x00000008,	3,	NULL,	0 },
+	{ "OTWD",	0x00000080,	7,	NULL,	0 },
+};
+
+static const pmb887x_io_reg_t pmb6812_regs[] = {
+	{ "RESCTRL",	0x1,	pmb6812_resctrl_fields,		ARRAY_SIZE(pmb6812_resctrl_fields),		0 },
+	{ "PWCTRL1",	0x2,	pmb6812_pwctrl1_fields,		ARRAY_SIZE(pmb6812_pwctrl1_fields),		0 },
+	{ "PWCTRL2",	0x3,	pmb6812_pwctrl2_fields,		ARRAY_SIZE(pmb6812_pwctrl2_fields),		0 },
+	{ "CHCTRL1",	0x4,	pmb6812_chctrl1_fields,		ARRAY_SIZE(pmb6812_chctrl1_fields),		0 },
+	{ "INTCTRL1",	0x5,	pmb6812_intctrl1_fields,	ARRAY_SIZE(pmb6812_intctrl1_fields),	0 },
+	{ "INTCTRL2",	0x6,	pmb6812_intctrl2_fields,	ARRAY_SIZE(pmb6812_intctrl2_fields),	0 },
+	{ "PWCTRL3",	0x7,	pmb6812_pwctrl3_fields,		ARRAY_SIZE(pmb6812_pwctrl3_fields),		0 },
+	{ "CHCTRL2",	0x8,	pmb6812_chctrl2_fields,		ARRAY_SIZE(pmb6812_chctrl2_fields),		0 },
+	{ "LEDCTRL1",	0xA,	pmb6812_ledctrl1_fields,	ARRAY_SIZE(pmb6812_ledctrl1_fields),	0 },
+	{ "DRVCTRL",	0xB,	pmb6812_drvctrl_fields,		ARRAY_SIZE(pmb6812_drvctrl_fields),		0 },
+	{ "USBCTRL",	0xC,	pmb6812_usbctrl_fields,		ARRAY_SIZE(pmb6812_usbctrl_fields),		0 },
+	{ "AUDCTRL",	0xD,	pmb6812_audctrl_fields,		ARRAY_SIZE(pmb6812_audctrl_fields),		0 },
+	{ "PWCTRL4",	0xE,	pmb6812_pwctrl4_fields,		ARRAY_SIZE(pmb6812_pwctrl4_fields),		0 },
+	{ "PWCTRL5",	0x11,	pmb6812_pwctrl5_fields,		ARRAY_SIZE(pmb6812_pwctrl5_fields),		0 },
+	{ "PWCTRL6",	0x12,	pmb6812_pwctrl6_fields,		ARRAY_SIZE(pmb6812_pwctrl6_fields),		0 },
+	{ "LEDCTRL2",	0x13,	pmb6812_ledctrl2_fields,	ARRAY_SIZE(pmb6812_ledctrl2_fields),	0 },
+	{ "GEF1",		0x80,	pmb6812_gef1_fields,		ARRAY_SIZE(pmb6812_gef1_fields),		0 },
+	{ "ISF",		0x81,	pmb6812_isf_fields,			ARRAY_SIZE(pmb6812_isf_fields),			0 },
+	{ "CHST",		0x82,	pmb6812_chst_fields,		ARRAY_SIZE(pmb6812_chst_fields),		0 },
+	{ "GEF2",		0x83,	pmb6812_gef2_fields,		ARRAY_SIZE(pmb6812_gef2_fields),		0 },
+};
+
 static const pmb887x_io_field_t ssd1286_oscillation_fields[] = {
 	{ "OSCEN",	0x00000001,	0,	NULL,	0 },
 };
@@ -9408,6 +9743,7 @@ static const pmb887x_io_meta_t io_metadata[PMB887X_TRACE_IO_COUNT] = {
 	[PMB887X_TRACE_IO_PASIC] = { "pasic",			pasic_regs,		ARRAY_SIZE(pasic_regs) },
 	[PMB887X_TRACE_IO_PCF8833] = { "pcf8833",		pcf8833_regs,	ARRAY_SIZE(pcf8833_regs) },
 	[PMB887X_TRACE_IO_PCF8882] = { "pcf8882",		pcf8882_regs,	ARRAY_SIZE(pcf8882_regs) },
+	[PMB887X_TRACE_IO_PMB6812] = { "pmb6812",		pmb6812_regs,	ARRAY_SIZE(pmb6812_regs) },
 	[PMB887X_TRACE_IO_SSD1286] = { "ssd1286",		ssd1286_regs,	ARRAY_SIZE(ssd1286_regs) },
 	[PMB887X_TRACE_IO_TEA5760UK] = { "tea5760uk",	tea5760uk_regs,	ARRAY_SIZE(tea5760uk_regs) },
 	[PMB887X_TRACE_IO_TEA5761UK] = { "tea5761uk",	tea5761uk_regs,	ARRAY_SIZE(tea5761uk_regs) },
