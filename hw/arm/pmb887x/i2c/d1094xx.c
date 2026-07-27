@@ -2,7 +2,7 @@
  * Dialog d1094xx / d1601xx
  * */
 #define PMB887X_TRACE_ID		PMIC
-#define PMB887X_TRACE_PREFIX	"d1094xx"
+#define PMB887X_TRACE_PREFIX	"pasic"
 #define PMB887X_TRACE_IO		p->trace_io
 
 #include "qemu/osdep.h"
@@ -172,10 +172,9 @@ static int pmic_send(I2CSlave *s, uint8_t data) {
 
 static void pmic_realize(DeviceState *dev, Error **errp) {
 	pmb887x_pmic_t *p = PMB887X_PMIC(dev);
-	p->trace_io = PMB887X_TRACE_IO_D1601XX;
+	p->trace_io = PMB887X_TRACE_IO_PASIC;
 	DPRINTF("PMIC revision: %02X\n", p->revision);
 	if (p->revision == 0xEC) {
-		p->trace_io = PMB887X_TRACE_IO_D1094EC;
 		memcpy(p->regs, regs_D1094EC, sizeof(regs_D1094EC));
 	} else if (p->revision == 0xED) {
 		memcpy(p->regs, regs_D1094ED, sizeof(regs_D1094ED));

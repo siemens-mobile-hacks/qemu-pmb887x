@@ -6265,131 +6265,378 @@ static const pmb887x_io_reg_t vic_regs[] = {
 	{"CON169",		VIC_CON169,			vic_con_fields,			ARRAY_SIZE(vic_con_fields),			PMB887X_REG_IS_IRQ_CON},
 };
 
-static const pmb887x_io_field_t d1094ec_identification_status_fields[] = {
-	{ "MODEL_LOW",			0x00000007,	0,	NULL,	0 },
-	{ "STATUS_REVISION",	0x00000078,	3,	NULL,	0 },
-	{ "MODEL_HIGH",			0x00000080,	7,	NULL,	0 },
+static const pmb887x_io_value_t d1094xx_identification_fields_vendor_values[] = {
+	{ "ST",		0x00000000 },
+	{ "DIALOG",	0x00000080 },
 };
 
-static const pmb887x_io_field_t d1094ec_fault_fields[] = {
-	{ "THERMAL_SHUTDOWN",			0x00000008,	3,	NULL,	0 },
-	{ "UNDERVOLTAGE_AUDIO_REGA",	0x00000020,	5,	NULL,	0 },
+static const pmb887x_io_field_t d1094xx_identification_fields[] = {
+	{ "MODEL",		0x00000007,	0,	NULL,											0 },
+	{ "REVISION",	0x00000078,	3,	NULL,											0 },
+	{ "VENDOR",		0x00000080,	7,	d1094xx_identification_fields_vendor_values,	ARRAY_SIZE(d1094xx_identification_fields_vendor_values) },
 };
 
-static const pmb887x_io_value_t d1094ec_turnoff_reason_fields_value_values[] = {
+static const pmb887x_io_field_t d1094xx_irq_status_1_fields[] = {
+	{ "OVER_TEMP",		0x00000004,	2,	NULL,	0 },
+	{ "CHARGER_EVENT",	0x00000008,	3,	NULL,	0 },
+	{ "UV_AUDIO_REGA",	0x00000020,	5,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t d1094xx_irq_status_2_fields[] = {
+	{ "UV_SIM_REGA",	0x00000001,	0,	NULL,	0 },
+	{ "SUPPLY_SHORT",	0x00000002,	1,	NULL,	0 },
+	{ "UNEXP_CHARGE",	0x00000004,	2,	NULL,	0 },
+	{ "VBATT_OV",		0x00000020,	5,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t d1094xx_irq_mask_1_fields[] = {
+	{ "VALUE",	0x000000FF,	0,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t d1094xx_irq_mask_2_fields[] = {
+	{ "VALUE",	0x000000FF,	0,	NULL,	0 },
+};
+
+static const pmb887x_io_value_t d1094xx_turnoff_reason_fields_value_values[] = {
 	{ "UNDEFINED",				0x00000000 },
 	{ "NO_REASON_STORED",		0x00000001 },
 	{ "UNDERVOLTAGE_VBATT",		0x00000002 },
-	{ "UNDERVOLTAGE_REG_3",		0x00000003 },
-	{ "UNDERVOLTAGE_REG_2A",	0x00000004 },
-	{ "UNDERVOLTAGE_REG_1",		0x00000005 },
+	{ "UNDERVOLTAGE_REG3",		0x00000003 },
+	{ "UNDERVOLTAGE_REG2A",		0x00000004 },
+	{ "UNDERVOLTAGE_REG1",		0x00000005 },
 	{ "SHUTDOWN_BY_REGISTER",	0x00000006 },
 	{ "WATCHDOG_MIN_TIME",		0x00000007 },
 	{ "WATCHDOG_MAX_TIME",		0x00000008 },
 	{ "OVERVOLTAGE_VBATT",		0x00000009 },
 };
 
-static const pmb887x_io_field_t d1094ec_turnoff_reason_fields[] = {
-	{ "VALUE",	0x000000FF,	0,	d1094ec_turnoff_reason_fields_value_values,	ARRAY_SIZE(d1094ec_turnoff_reason_fields_value_values) },
+static const pmb887x_io_field_t d1094xx_turnoff_reason_fields[] = {
+	{ "VALUE",	0x000000FF,	0,	d1094xx_turnoff_reason_fields_value_values,	ARRAY_SIZE(d1094xx_turnoff_reason_fields_value_values) },
 };
 
-static const pmb887x_io_field_t d1094ec_supply_enable_1_fields[] = {
-	{ "VALUE",	0x000000FF,	0,	NULL,	0 },
+static const pmb887x_io_field_t d1094xx_supply_enable_1_fields[] = {
+	{ "VREG1_EN",		0x00000001,	0,	NULL,	0 },
+	{ "VREG2B_EN",		0x00000002,	1,	NULL,	0 },
+	{ "VSIMREGA_EN",	0x00000004,	2,	NULL,	0 },
+	{ "VSIMREGB_EN",	0x00000008,	3,	NULL,	0 },
+	{ "VAUDREGA_EN",	0x00000010,	4,	NULL,	0 },
+	{ "VAUDREGB_EN",	0x00000020,	5,	NULL,	0 },
+	{ "VREGMEM1_EN",	0x00000040,	6,	NULL,	0 },
+	{ "VREGMEM2_EN",	0x00000080,	7,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t d1094ec_supply_enable_2_fields[] = {
+static const pmb887x_io_field_t d1094xx_supply_enable_2_fields[] = {
+	{ "VIBRA_EN",	0x00000001,	0,	NULL,	0 },
+	{ "VREGUSB_EN",	0x00000002,	1,	NULL,	0 },
 	{ "VBOOST_EN",	0x00000004,	2,	NULL,	0 },
+	{ "VLPREG_EN",	0x00000010,	4,	NULL,	0 },
 };
 
-static const pmb887x_io_value_t d1094ec_power_fields_wdt_time_values[] = {
+static const pmb887x_io_field_t d1094xx_rf_enable_fields[] = {
+	{ "VRF1_EN",	0x00000001,	0,	NULL,	0 },
+	{ "VRF2_EN",	0x00000002,	1,	NULL,	0 },
+	{ "VRF3_EN",	0x00000004,	2,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t d1094xx_supply_control_1_fields[] = {
+	{ "VREG1_MODE",		0x00000001,	0,	NULL,	0 },
+	{ "VREG2_LEVEL",	0x0000000E,	1,	NULL,	0 },
+	{ "VREG3_LEVEL",	0x00000070,	4,	NULL,	0 },
+	{ "STEPDOWN_MODE",	0x00000080,	7,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t d1094xx_supply_mode_fields[] = {
+	{ "VSIMREGA_MODE",	0x00000001,	0,	NULL,	0 },
+	{ "VAUDREGA_MODE",	0x00000002,	1,	NULL,	0 },
+	{ "VAUDREGB_MODE",	0x00000004,	2,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t d1094xx_rf_voltage_fields[] = {
+	{ "VRF1_LEVEL",	0x00000003,	0,	NULL,	0 },
+	{ "VRF2_LEVEL",	0x0000000C,	2,	NULL,	0 },
+	{ "VRF3_LEVEL",	0x00000030,	4,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t d1094xx_light_enable_fields[] = {
+	{ "LED1_EN",	0x00000001,	0,	NULL,	0 },
+	{ "LED2_EN",	0x00000002,	1,	NULL,	0 },
+	{ "LED3_EN",	0x00000004,	2,	NULL,	0 },
+};
+
+static const pmb887x_io_value_t d1094xx_power_fields_wdt_time_values[] = {
 	{ "3S",		0x00000000 },
 	{ "6S",		0x00000001 },
 	{ "12S",	0x00000002 },
 	{ "24S",	0x00000003 },
 };
 
-static const pmb887x_io_field_t d1094ec_power_fields[] = {
-	{ "WDT_TIME",	0x00000003,	0,	d1094ec_power_fields_wdt_time_values,	ARRAY_SIZE(d1094ec_power_fields_wdt_time_values) },
+static const pmb887x_io_field_t d1094xx_power_fields[] = {
+	{ "WDT_TIME",	0x00000003,	0,	d1094xx_power_fields_wdt_time_values,	ARRAY_SIZE(d1094xx_power_fields_wdt_time_values) },
 	{ "POWEROFF",	0x00000004,	2,	NULL,									0 },
 };
 
-static const pmb887x_io_field_t d1094ec_dcdc_stepup_control_fields[] = {
+static const pmb887x_io_value_t d1094xx_charge_control_fields_current_values[] = {
+	{ "75MA",	0x00000000 },
+	{ "150MA",	0x00000001 },
+	{ "300MA",	0x00000002 },
+	{ "400MA",	0x00000003 },
+};
+
+static const pmb887x_io_field_t d1094xx_charge_control_fields[] = {
+	{ "CURRENT",	0x00000003,	0,	d1094xx_charge_control_fields_current_values,	ARRAY_SIZE(d1094xx_charge_control_fields_current_values) },
+	{ "CHARGE_EN",	0x00000008,	3,	NULL,											0 },
+	{ "CURRENT_EN",	0x00000080,	7,	NULL,											0 },
+};
+
+static const pmb887x_io_field_t d1094xx_charge_status_fields[] = {
+	{ "CURRENT",	0x000000FF,	0,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t d1094xx_light_pwm1_fields[] = {
+	{ "LEVEL",	0x0000007F,	0,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t d1094xx_light_pwm2_fields[] = {
+	{ "LEVEL",	0x0000007F,	0,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t d1094xx_light_control_fields[] = {
+	{ "LED1_EN",	0x00000002,	1,	NULL,	0 },
+	{ "LED2_EN",	0x00000004,	2,	NULL,	0 },
+	{ "PWM1_EN",	0x00000008,	3,	NULL,	0 },
+	{ "PWM2_EN",	0x00000010,	4,	NULL,	0 },
+	{ "MASTER_EN",	0x00000020,	5,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t d1094xx_ddps_control_fields[] = {
 	{ "VALUE",	0x000000FF,	0,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t d1094ec_led1_pwm_fields[] = {
+static const pmb887x_io_field_t d1094xx_amplifier_gain_0_fields[] = {
+	{ "LEVEL",	0x000000FF,	0,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t d1094xx_amplifier_gain_1_fields[] = {
+	{ "LEVEL",	0x000000FF,	0,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t d1094xx_mono_control_fields[] = {
+	{ "KEY_CLICK_EN",	0x00000008,	3,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t d1094xx_stereo_control_fields[] = {
 	{ "VALUE",	0x000000FF,	0,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t d1094ec_led2_pwm_fields[] = {
+static const pmb887x_io_field_t d1094xx_amplifier_gain_2_fields[] = {
+	{ "GAIN",		0x0000003F,	0,	NULL,	0 },
+	{ "TONE_LEVEL",	0x000000C0,	6,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t d1094xx_amplifier_gain_3_fields[] = {
+	{ "LEVEL",	0x000000FF,	0,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t d1094xx_tone_control_fields[] = {
+	{ "DURATION",	0x0000001F,	0,	NULL,	0 },
+	{ "MODULATION",	0x00000060,	5,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t d1094xx_vibra_fields[] = {
+	{ "LEVEL",	0x000000FF,	0,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t d1094xx_pp_amplifier_1_fields[] = {
+	{ "PATH_1_SOURCE",	0x00000007,	0,	NULL,	0 },
+	{ "PATH_1_EN",		0x00000008,	3,	NULL,	0 },
+	{ "PATH_2_SOURCE",	0x00000070,	4,	NULL,	0 },
+	{ "PATH_2_EN",		0x00000080,	7,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t d1094xx_switch_mux_1_fields[] = {
 	{ "VALUE",	0x000000FF,	0,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t d1094ec_light_control_fields[] = {
-	{ "LED2_OUTPUT_EN",	0x00000002,	1,	NULL,	0 },
-	{ "LED1_OUTPUT_EN",	0x00000004,	2,	NULL,	0 },
-	{ "LED1_PWM_EN",	0x00000008,	3,	NULL,	0 },
-	{ "LED2_PWM_EN",	0x00000010,	4,	NULL,	0 },
-	{ "LED_MASTER_EN",	0x00000020,	5,	NULL,	0 },
+static const pmb887x_io_field_t d1094xx_pp_route_1_fields[] = {
+	{ "VALUE",	0x0000000F,	0,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t d1094ec_tone_ctrl_fields[] = {
-	{ "PLAY",	0x00000010,	4,	NULL,	0 },
+static const pmb887x_io_field_t d1094xx_adc_control_fields[] = {
+	{ "VALUE",	0x000000FF,	0,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t d1094ec_tone_volume_fields[] = {
+static const pmb887x_io_field_t d1094xx_pp_amplifier_2_fields[] = {
+	{ "PATH_1_SOURCE",	0x00000007,	0,	NULL,	0 },
+	{ "PATH_1_EN",		0x00000008,	3,	NULL,	0 },
+	{ "PATH_2_SOURCE",	0x00000070,	4,	NULL,	0 },
+	{ "PATH_2_EN",		0x00000080,	7,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t d1094xx_switch_mux_2_fields[] = {
+	{ "VALUE",		0x0000003F,	0,	NULL,	0 },
+	{ "VLPREG_EN",	0x00000040,	6,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t d1094xx_pp_route_2_fields[] = {
+	{ "VALUE",	0x0000000F,	0,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t d1094xx_switch_mux_4_fields[] = {
+	{ "VALUE",	0x000000FF,	0,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t d1094xx_amplifier_gain_4_5_fields[] = {
+	{ "GAIN",			0x0000007F,	0,	NULL,	0 },
+	{ "PATH_4_SELECT",	0x00000080,	7,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t d1094xx_amplifier_gain_6_fields[] = {
 	{ "LEVEL",	0x000000FF,	0,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t d1094ec_tone_freq_fields[] = {
-	{ "LEVEL",	0x000000FF,	0,	NULL,	0 },
+static const pmb887x_io_field_t d1094xx_dac_control_fields[] = {
+	{ "VALUE",	0x000000FF,	0,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t d1094ec_vibra_fields[] = {
-	{ "LEVEL",	0x000000FF,	0,	NULL,	0 },
+static const pmb887x_io_field_t d1094xx_amplifier_gain_7_8_fields[] = {
+	{ "GAIN",			0x0000007F,	0,	NULL,	0 },
+	{ "PATH_7_SELECT",	0x00000080,	7,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t d1094ec_audio_volume_fields[] = {
-	{ "LEVEL",	0x000000FF,	0,	NULL,	0 },
+static const pmb887x_io_field_t d1094xx_amplifier_gain_9_fields[] = {
+	{ "GAIN",	0x0000007F,	0,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t d1094ec_rf_reg_fields[] = {
-	{ "EN_VRF1",	0x00000001,	0,	NULL,	0 },
-	{ "EN_VRF2",	0x00000002,	1,	NULL,	0 },
-	{ "EN_VRF3",	0x00000004,	2,	NULL,	0 },
+static const pmb887x_io_field_t d1094xx_switch_mux_5_fields[] = {
+	{ "VALUE",	0x000000FF,	0,	NULL,	0 },
 };
 
-static const pmb887x_io_reg_t d1094ec_regs[] = {
-	{ "IDENTIFICATION_STATUS",	0x0,	d1094ec_identification_status_fields,	ARRAY_SIZE(d1094ec_identification_status_fields),	0 },
-	{ "FAULT",					0x1,	d1094ec_fault_fields,					ARRAY_SIZE(d1094ec_fault_fields),					0 },
-	{ "TURNOFF_REASON",			0x5,	d1094ec_turnoff_reason_fields,			ARRAY_SIZE(d1094ec_turnoff_reason_fields),			0 },
-	{ "SUPPLY_ENABLE_1",		0x6,	d1094ec_supply_enable_1_fields,			ARRAY_SIZE(d1094ec_supply_enable_1_fields),			0 },
-	{ "SUPPLY_ENABLE_2",		0x7,	d1094ec_supply_enable_2_fields,			ARRAY_SIZE(d1094ec_supply_enable_2_fields),			0 },
-	{ "POWER",					0xE,	d1094ec_power_fields,					ARRAY_SIZE(d1094ec_power_fields),					0 },
-	{ "DCDC_STEPUP_CONTROL",	0x10,	d1094ec_dcdc_stepup_control_fields,		ARRAY_SIZE(d1094ec_dcdc_stepup_control_fields),		0 },
-	{ "LED1_PWM",				0x12,	d1094ec_led1_pwm_fields,				ARRAY_SIZE(d1094ec_led1_pwm_fields),				0 },
-	{ "LED2_PWM",				0x13,	d1094ec_led2_pwm_fields,				ARRAY_SIZE(d1094ec_led2_pwm_fields),				0 },
-	{ "LIGHT_CONTROL",			0x14,	d1094ec_light_control_fields,			ARRAY_SIZE(d1094ec_light_control_fields),			0 },
-	{ "TONE_CTRL",				0x42,	d1094ec_tone_ctrl_fields,				ARRAY_SIZE(d1094ec_tone_ctrl_fields),				0 },
-	{ "TONE_VOLUME",			0x44,	d1094ec_tone_volume_fields,				ARRAY_SIZE(d1094ec_tone_volume_fields),				0 },
-	{ "TONE_FREQ",				0x46,	d1094ec_tone_freq_fields,				ARRAY_SIZE(d1094ec_tone_freq_fields),				0 },
-	{ "VIBRA",					0x47,	d1094ec_vibra_fields,					ARRAY_SIZE(d1094ec_vibra_fields),					0 },
-	{ "AUDIO_VOLUME",			0x50,	d1094ec_audio_volume_fields,			ARRAY_SIZE(d1094ec_audio_volume_fields),			0 },
-	{ "RF_REG",					0x58,	d1094ec_rf_reg_fields,					ARRAY_SIZE(d1094ec_rf_reg_fields),					0 },
+static const pmb887x_io_field_t d1094xx_mux_input_fields[] = {
+	{ "VALUE",	0x000000FF,	0,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t d1601xx_fault_fields[] = {
-	{ "THERMAL_SHUTDOWN",			0x00000008,	3,	NULL,	0 },
-	{ "UNDERVOLTAGE_AUDIO_REGA",	0x00000020,	5,	NULL,	0 },
+static const pmb887x_io_field_t d1094xx_switch_mux_3_fields[] = {
+	{ "VALUE",	0x000000FF,	0,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t d1094xx_outport_control_fields[] = {
+	{ "MODE",	0x00000003,	0,	NULL,	0 },
+	{ "LEVEL",	0x00000004,	2,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t d1094xx_sample_rate_fields[] = {
+	{ "ADC",	0x0000000F,	0,	NULL,	0 },
+	{ "DAC",	0x000000F0,	4,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t d1094xx_stereo_mode_fields[] = {
+	{ "VALUE",	0x000000FF,	0,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t d1094xx_i2s_rx_control_fields[] = {
+	{ "VALUE",	0x000000FF,	0,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t d1094xx_i2s_tx_control_fields[] = {
+	{ "VALUE",	0x000000FF,	0,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t d1094xx_audio_control_2_fields[] = {
+	{ "VALUE",	0x000000FF,	0,	NULL,	0 },
+};
+
+static const pmb887x_io_reg_t d1094xx_regs[] = {
+	{ "IDENTIFICATION",		0x0,	d1094xx_identification_fields,		ARRAY_SIZE(d1094xx_identification_fields),		0 },
+	{ "IRQ_STATUS_1",		0x1,	d1094xx_irq_status_1_fields,		ARRAY_SIZE(d1094xx_irq_status_1_fields),		0 },
+	{ "IRQ_STATUS_2",		0x2,	d1094xx_irq_status_2_fields,		ARRAY_SIZE(d1094xx_irq_status_2_fields),		0 },
+	{ "IRQ_MASK_1",			0x3,	d1094xx_irq_mask_1_fields,			ARRAY_SIZE(d1094xx_irq_mask_1_fields),			0 },
+	{ "IRQ_MASK_2",			0x4,	d1094xx_irq_mask_2_fields,			ARRAY_SIZE(d1094xx_irq_mask_2_fields),			0 },
+	{ "TURNOFF_REASON",		0x5,	d1094xx_turnoff_reason_fields,		ARRAY_SIZE(d1094xx_turnoff_reason_fields),		0 },
+	{ "SUPPLY_ENABLE_1",	0x6,	d1094xx_supply_enable_1_fields,		ARRAY_SIZE(d1094xx_supply_enable_1_fields),		0 },
+	{ "SUPPLY_ENABLE_2",	0x7,	d1094xx_supply_enable_2_fields,		ARRAY_SIZE(d1094xx_supply_enable_2_fields),		0 },
+	{ "RF_ENABLE",			0x8,	d1094xx_rf_enable_fields,			ARRAY_SIZE(d1094xx_rf_enable_fields),			0 },
+	{ "SUPPLY_CONTROL_1",	0x9,	d1094xx_supply_control_1_fields,	ARRAY_SIZE(d1094xx_supply_control_1_fields),	0 },
+	{ "SUPPLY_MODE",		0xA,	d1094xx_supply_mode_fields,			ARRAY_SIZE(d1094xx_supply_mode_fields),			0 },
+	{ "RF_VOLTAGE",			0xB,	d1094xx_rf_voltage_fields,			ARRAY_SIZE(d1094xx_rf_voltage_fields),			0 },
+	{ "LIGHT_ENABLE",		0xC,	d1094xx_light_enable_fields,		ARRAY_SIZE(d1094xx_light_enable_fields),		0 },
+	{ "POWER",				0xE,	d1094xx_power_fields,				ARRAY_SIZE(d1094xx_power_fields),				0 },
+	{ "CHARGE_CONTROL",		0x10,	d1094xx_charge_control_fields,		ARRAY_SIZE(d1094xx_charge_control_fields),		0 },
+	{ "CHARGE_STATUS",		0x11,	d1094xx_charge_status_fields,		ARRAY_SIZE(d1094xx_charge_status_fields),		0 },
+	{ "LIGHT_PWM1",			0x12,	d1094xx_light_pwm1_fields,			ARRAY_SIZE(d1094xx_light_pwm1_fields),			0 },
+	{ "LIGHT_PWM2",			0x13,	d1094xx_light_pwm2_fields,			ARRAY_SIZE(d1094xx_light_pwm2_fields),			0 },
+	{ "LIGHT_CONTROL",		0x14,	d1094xx_light_control_fields,		ARRAY_SIZE(d1094xx_light_control_fields),		0 },
+	{ "DDPS_CONTROL",		0x20,	d1094xx_ddps_control_fields,		ARRAY_SIZE(d1094xx_ddps_control_fields),		0 },
+	{ "AMPLIFIER_GAIN_0",	0x40,	d1094xx_amplifier_gain_0_fields,	ARRAY_SIZE(d1094xx_amplifier_gain_0_fields),	0 },
+	{ "AMPLIFIER_GAIN_1",	0x41,	d1094xx_amplifier_gain_1_fields,	ARRAY_SIZE(d1094xx_amplifier_gain_1_fields),	0 },
+	{ "MONO_CONTROL",		0x42,	d1094xx_mono_control_fields,		ARRAY_SIZE(d1094xx_mono_control_fields),		0 },
+	{ "STEREO_CONTROL",		0x43,	d1094xx_stereo_control_fields,		ARRAY_SIZE(d1094xx_stereo_control_fields),		0 },
+	{ "AMPLIFIER_GAIN_2",	0x44,	d1094xx_amplifier_gain_2_fields,	ARRAY_SIZE(d1094xx_amplifier_gain_2_fields),	0 },
+	{ "AMPLIFIER_GAIN_3",	0x45,	d1094xx_amplifier_gain_3_fields,	ARRAY_SIZE(d1094xx_amplifier_gain_3_fields),	0 },
+	{ "TONE_CONTROL",		0x46,	d1094xx_tone_control_fields,		ARRAY_SIZE(d1094xx_tone_control_fields),		0 },
+	{ "VIBRA",				0x47,	d1094xx_vibra_fields,				ARRAY_SIZE(d1094xx_vibra_fields),				0 },
+	{ "PP_AMPLIFIER_1",		0x48,	d1094xx_pp_amplifier_1_fields,		ARRAY_SIZE(d1094xx_pp_amplifier_1_fields),		0 },
+	{ "SWITCH_MUX_1",		0x49,	d1094xx_switch_mux_1_fields,		ARRAY_SIZE(d1094xx_switch_mux_1_fields),		0 },
+	{ "PP_ROUTE_1",			0x4A,	d1094xx_pp_route_1_fields,			ARRAY_SIZE(d1094xx_pp_route_1_fields),			0 },
+	{ "ADC_CONTROL",		0x4B,	d1094xx_adc_control_fields,			ARRAY_SIZE(d1094xx_adc_control_fields),			0 },
+	{ "PP_AMPLIFIER_2",		0x4C,	d1094xx_pp_amplifier_2_fields,		ARRAY_SIZE(d1094xx_pp_amplifier_2_fields),		0 },
+	{ "SWITCH_MUX_2",		0x4D,	d1094xx_switch_mux_2_fields,		ARRAY_SIZE(d1094xx_switch_mux_2_fields),		0 },
+	{ "PP_ROUTE_2",			0x4E,	d1094xx_pp_route_2_fields,			ARRAY_SIZE(d1094xx_pp_route_2_fields),			0 },
+	{ "SWITCH_MUX_4",		0x4F,	d1094xx_switch_mux_4_fields,		ARRAY_SIZE(d1094xx_switch_mux_4_fields),		0 },
+	{ "AMPLIFIER_GAIN_4_5",	0x50,	d1094xx_amplifier_gain_4_5_fields,	ARRAY_SIZE(d1094xx_amplifier_gain_4_5_fields),	0 },
+	{ "AMPLIFIER_GAIN_6",	0x51,	d1094xx_amplifier_gain_6_fields,	ARRAY_SIZE(d1094xx_amplifier_gain_6_fields),	0 },
+	{ "DAC_CONTROL",		0x52,	d1094xx_dac_control_fields,			ARRAY_SIZE(d1094xx_dac_control_fields),			0 },
+	{ "AMPLIFIER_GAIN_7_8",	0x53,	d1094xx_amplifier_gain_7_8_fields,	ARRAY_SIZE(d1094xx_amplifier_gain_7_8_fields),	0 },
+	{ "AMPLIFIER_GAIN_9",	0x54,	d1094xx_amplifier_gain_9_fields,	ARRAY_SIZE(d1094xx_amplifier_gain_9_fields),	0 },
+	{ "SWITCH_MUX_5",		0x55,	d1094xx_switch_mux_5_fields,		ARRAY_SIZE(d1094xx_switch_mux_5_fields),		0 },
+	{ "MUX_INPUT",			0x56,	d1094xx_mux_input_fields,			ARRAY_SIZE(d1094xx_mux_input_fields),			0 },
+	{ "SWITCH_MUX_3",		0x57,	d1094xx_switch_mux_3_fields,		ARRAY_SIZE(d1094xx_switch_mux_3_fields),		0 },
+	{ "OUTPORT_CONTROL",	0x58,	d1094xx_outport_control_fields,		ARRAY_SIZE(d1094xx_outport_control_fields),		0 },
+	{ "SAMPLE_RATE",		0x59,	d1094xx_sample_rate_fields,			ARRAY_SIZE(d1094xx_sample_rate_fields),			0 },
+	{ "STEREO_MODE",		0x5A,	d1094xx_stereo_mode_fields,			ARRAY_SIZE(d1094xx_stereo_mode_fields),			0 },
+	{ "I2S_RX_CONTROL",		0x5B,	d1094xx_i2s_rx_control_fields,		ARRAY_SIZE(d1094xx_i2s_rx_control_fields),		0 },
+	{ "I2S_TX_CONTROL",		0x5C,	d1094xx_i2s_tx_control_fields,		ARRAY_SIZE(d1094xx_i2s_tx_control_fields),		0 },
+	{ "AUDIO_CONTROL_2",	0x5D,	d1094xx_audio_control_2_fields,		ARRAY_SIZE(d1094xx_audio_control_2_fields),		0 },
+};
+
+static const pmb887x_io_value_t d1601xx_identification_fields_vendor_values[] = {
+	{ "ST",		0x00000000 },
+	{ "DIALOG",	0x00000080 },
+};
+
+static const pmb887x_io_field_t d1601xx_identification_fields[] = {
+	{ "MODEL",		0x00000007,	0,	NULL,											0 },
+	{ "REVISION",	0x00000078,	3,	NULL,											0 },
+	{ "VENDOR",		0x00000080,	7,	d1601xx_identification_fields_vendor_values,	ARRAY_SIZE(d1601xx_identification_fields_vendor_values) },
+};
+
+static const pmb887x_io_field_t d1601xx_irq_status_1_fields[] = {
+	{ "OVER_TEMP",		0x00000004,	2,	NULL,	0 },
+	{ "CHARGER_EVENT",	0x00000008,	3,	NULL,	0 },
+	{ "UV_AUDIO_REGA",	0x00000020,	5,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t d1601xx_irq_status_2_fields[] = {
+	{ "UV_SIM_REGA",	0x00000001,	0,	NULL,	0 },
+	{ "SUPPLY_SHORT",	0x00000002,	1,	NULL,	0 },
+	{ "UNEXP_CHARGE",	0x00000004,	2,	NULL,	0 },
+	{ "VBATT_OV",		0x00000020,	5,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t d1601xx_irq_mask_1_fields[] = {
+	{ "VALUE",	0x000000FF,	0,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t d1601xx_irq_mask_2_fields[] = {
+	{ "VALUE",	0x000000FF,	0,	NULL,	0 },
 };
 
 static const pmb887x_io_value_t d1601xx_turnoff_reason_fields_value_values[] = {
 	{ "UNDEFINED",				0x00000000 },
 	{ "NO_REASON_STORED",		0x00000001 },
 	{ "UNDERVOLTAGE_VBATT",		0x00000002 },
-	{ "UNDERVOLTAGE_REG_3",		0x00000003 },
-	{ "UNDERVOLTAGE_REG_2A",	0x00000004 },
-	{ "UNDERVOLTAGE_REG_1",		0x00000005 },
+	{ "UNDERVOLTAGE_REG3",		0x00000003 },
+	{ "UNDERVOLTAGE_REG2A",		0x00000004 },
+	{ "UNDERVOLTAGE_REG1",		0x00000005 },
 	{ "SHUTDOWN_BY_REGISTER",	0x00000006 },
 	{ "WATCHDOG_MIN_TIME",		0x00000007 },
 	{ "WATCHDOG_MAX_TIME",		0x00000008 },
@@ -6398,6 +6645,54 @@ static const pmb887x_io_value_t d1601xx_turnoff_reason_fields_value_values[] = {
 
 static const pmb887x_io_field_t d1601xx_turnoff_reason_fields[] = {
 	{ "VALUE",	0x000000FF,	0,	d1601xx_turnoff_reason_fields_value_values,	ARRAY_SIZE(d1601xx_turnoff_reason_fields_value_values) },
+};
+
+static const pmb887x_io_field_t d1601xx_supply_enable_1_fields[] = {
+	{ "VREG1_EN",		0x00000001,	0,	NULL,	0 },
+	{ "VREG2B_EN",		0x00000002,	1,	NULL,	0 },
+	{ "VSIMREGA_EN",	0x00000004,	2,	NULL,	0 },
+	{ "VSIMREGB_EN",	0x00000008,	3,	NULL,	0 },
+	{ "VAUDREGA_EN",	0x00000010,	4,	NULL,	0 },
+	{ "VAUDREGB_EN",	0x00000020,	5,	NULL,	0 },
+	{ "VREGMEM1_EN",	0x00000040,	6,	NULL,	0 },
+	{ "VREGMEM2_EN",	0x00000080,	7,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t d1601xx_supply_enable_2_fields[] = {
+	{ "VIBRA_EN",	0x00000001,	0,	NULL,	0 },
+	{ "VREGUSB_EN",	0x00000002,	1,	NULL,	0 },
+	{ "VBOOST_EN",	0x00000004,	2,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t d1601xx_rf_enable_fields[] = {
+	{ "VRF1_EN",	0x00000001,	0,	NULL,	0 },
+	{ "VRF2_EN",	0x00000002,	1,	NULL,	0 },
+	{ "VRF3_EN",	0x00000004,	2,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t d1601xx_supply_control_1_fields[] = {
+	{ "VREG1_MODE",		0x00000001,	0,	NULL,	0 },
+	{ "VREG2_LEVEL",	0x0000000E,	1,	NULL,	0 },
+	{ "VREG3_LEVEL",	0x00000070,	4,	NULL,	0 },
+	{ "STEPDOWN_MODE",	0x00000080,	7,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t d1601xx_supply_mode_fields[] = {
+	{ "VSIMREGA_MODE",	0x00000001,	0,	NULL,	0 },
+	{ "VAUDREGA_MODE",	0x00000002,	1,	NULL,	0 },
+	{ "VAUDREGB_MODE",	0x00000004,	2,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t d1601xx_rf_voltage_fields[] = {
+	{ "VRF1_LEVEL",	0x00000003,	0,	NULL,	0 },
+	{ "VRF2_LEVEL",	0x0000000C,	2,	NULL,	0 },
+	{ "VRF3_LEVEL",	0x00000030,	4,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t d1601xx_light_enable_fields[] = {
+	{ "LED1_EN",	0x00000001,	0,	NULL,	0 },
+	{ "LED2_EN",	0x00000002,	1,	NULL,	0 },
+	{ "LED3_EN",	0x00000004,	2,	NULL,	0 },
 };
 
 static const pmb887x_io_value_t d1601xx_power_fields_wdt_time_values[] = {
@@ -6412,60 +6707,252 @@ static const pmb887x_io_field_t d1601xx_power_fields[] = {
 	{ "POWEROFF",	0x00000004,	2,	NULL,									0 },
 };
 
-static const pmb887x_io_field_t d1601xx_led_light_pwm1_fields[] = {
-	{ "LEVEL",	0x000000FF,	0,	NULL,	0 },
+static const pmb887x_io_value_t d1601xx_charge_control_fields_current_values[] = {
+	{ "75MA",	0x00000000 },
+	{ "150MA",	0x00000001 },
+	{ "300MA",	0x00000002 },
+	{ "400MA",	0x00000003 },
 };
 
-static const pmb887x_io_field_t d1601xx_led_light_pwm2_fields[] = {
-	{ "LEVEL",	0x000000FF,	0,	NULL,	0 },
+static const pmb887x_io_field_t d1601xx_charge_control_fields[] = {
+	{ "CURRENT",	0x00000003,	0,	d1601xx_charge_control_fields_current_values,	ARRAY_SIZE(d1601xx_charge_control_fields_current_values) },
+	{ "CHARGE_EN",	0x00000008,	3,	NULL,											0 },
+	{ "CURRENT_EN",	0x00000080,	7,	NULL,											0 },
 };
 
-static const pmb887x_io_field_t d1601xx_led_control_fields[] = {
+static const pmb887x_io_field_t d1601xx_charge_status_fields[] = {
+	{ "CURRENT",	0x000000FF,	0,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t d1601xx_light_pwm1_fields[] = {
+	{ "LEVEL",	0x0000007F,	0,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t d1601xx_light_pwm2_fields[] = {
+	{ "LEVEL",	0x0000007F,	0,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t d1601xx_light_control_fields[] = {
 	{ "LED1_EN",	0x00000002,	1,	NULL,	0 },
 	{ "LED2_EN",	0x00000004,	2,	NULL,	0 },
-	{ "LIGHT_PWM1",	0x00000008,	3,	NULL,	0 },
-	{ "LIGHT_PWM2",	0x00000010,	4,	NULL,	0 },
+	{ "PWM1_EN",	0x00000008,	3,	NULL,	0 },
+	{ "PWM2_EN",	0x00000010,	4,	NULL,	0 },
+	{ "MASTER_EN",	0x00000020,	5,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t d1601xx_tone_ctrl_fields[] = {
-	{ "PLAY",	0x00000010,	4,	NULL,	0 },
+static const pmb887x_io_field_t d1601xx_led_pattern_1_fields[] = {
+	{ "VALUE",	0x000000FF,	0,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t d1601xx_tone_volume_fields[] = {
+static const pmb887x_io_field_t d1601xx_led_pattern_2_fields[] = {
+	{ "VALUE",	0x000000FF,	0,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t d1601xx_led_pattern_3_fields[] = {
+	{ "VALUE",	0x000000FF,	0,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t d1601xx_led_pattern_4_fields[] = {
+	{ "VALUE",	0x000000FF,	0,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t d1601xx_led_pattern_5_fields[] = {
+	{ "VALUE",	0x000000FF,	0,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t d1601xx_ddps_control_fields[] = {
+	{ "VALUE",	0x000000FF,	0,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t d1601xx_amplifier_gain_0_fields[] = {
 	{ "LEVEL",	0x000000FF,	0,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t d1601xx_tone_freq_fields[] = {
+static const pmb887x_io_field_t d1601xx_amplifier_gain_1_fields[] = {
 	{ "LEVEL",	0x000000FF,	0,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t d1601xx_mono_control_fields[] = {
+	{ "KEY_CLICK_EN",	0x00000008,	3,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t d1601xx_stereo_control_fields[] = {
+	{ "VALUE",	0x000000FF,	0,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t d1601xx_amplifier_gain_2_fields[] = {
+	{ "GAIN",		0x0000003F,	0,	NULL,	0 },
+	{ "TONE_LEVEL",	0x000000C0,	6,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t d1601xx_amplifier_gain_3_fields[] = {
+	{ "LEVEL",	0x000000FF,	0,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t d1601xx_tone_control_fields[] = {
+	{ "DURATION",	0x0000001F,	0,	NULL,	0 },
+	{ "MODULATION",	0x00000060,	5,	NULL,	0 },
 };
 
 static const pmb887x_io_field_t d1601xx_vibra_fields[] = {
 	{ "LEVEL",	0x000000FF,	0,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t d1601xx_audio_volume_fields[] = {
+static const pmb887x_io_field_t d1601xx_pp_amplifier_1_fields[] = {
+	{ "PATH_1_SOURCE",	0x00000007,	0,	NULL,	0 },
+	{ "PATH_1_EN",		0x00000008,	3,	NULL,	0 },
+	{ "PATH_2_SOURCE",	0x00000070,	4,	NULL,	0 },
+	{ "PATH_2_EN",		0x00000080,	7,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t d1601xx_switch_mux_1_fields[] = {
+	{ "VALUE",	0x000000FF,	0,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t d1601xx_pp_route_1_fields[] = {
+	{ "VALUE",	0x0000000F,	0,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t d1601xx_adc_control_fields[] = {
+	{ "VALUE",	0x000000FF,	0,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t d1601xx_pp_amplifier_2_fields[] = {
+	{ "PATH_1_SOURCE",	0x00000007,	0,	NULL,	0 },
+	{ "PATH_1_EN",		0x00000008,	3,	NULL,	0 },
+	{ "PATH_2_SOURCE",	0x00000070,	4,	NULL,	0 },
+	{ "PATH_2_EN",		0x00000080,	7,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t d1601xx_switch_mux_2_fields[] = {
+	{ "VALUE",		0x0000003F,	0,	NULL,	0 },
+	{ "VLPREG_EN",	0x00000040,	6,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t d1601xx_pp_route_2_fields[] = {
+	{ "VALUE",	0x0000000F,	0,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t d1601xx_switch_mux_4_fields[] = {
+	{ "VALUE",	0x000000FF,	0,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t d1601xx_amplifier_gain_4_5_fields[] = {
+	{ "GAIN",			0x0000007F,	0,	NULL,	0 },
+	{ "PATH_4_SELECT",	0x00000080,	7,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t d1601xx_amplifier_gain_6_fields[] = {
 	{ "LEVEL",	0x000000FF,	0,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t d1601xx_rg_reg_fields[] = {
-	{ "EN_VRF1",	0x00000001,	0,	NULL,	0 },
-	{ "EN_VRF2",	0x00000002,	1,	NULL,	0 },
-	{ "EN_VRF3",	0x00000004,	2,	NULL,	0 },
+static const pmb887x_io_field_t d1601xx_dac_control_fields[] = {
+	{ "VALUE",	0x000000FF,	0,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t d1601xx_amplifier_gain_7_8_fields[] = {
+	{ "GAIN",			0x0000007F,	0,	NULL,	0 },
+	{ "PATH_7_SELECT",	0x00000080,	7,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t d1601xx_amplifier_gain_9_fields[] = {
+	{ "GAIN",	0x0000007F,	0,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t d1601xx_switch_mux_5_fields[] = {
+	{ "VALUE",	0x000000FF,	0,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t d1601xx_mux_input_fields[] = {
+	{ "VALUE",	0x000000FF,	0,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t d1601xx_switch_mux_3_fields[] = {
+	{ "VALUE",	0x000000FF,	0,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t d1601xx_outport_control_fields[] = {
+	{ "MODE",	0x00000003,	0,	NULL,	0 },
+	{ "LEVEL",	0x00000004,	2,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t d1601xx_sample_rate_fields[] = {
+	{ "ADC",	0x0000000F,	0,	NULL,	0 },
+	{ "DAC",	0x000000F0,	4,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t d1601xx_stereo_mode_fields[] = {
+	{ "VALUE",	0x000000FF,	0,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t d1601xx_i2s_rx_control_fields[] = {
+	{ "VALUE",	0x000000FF,	0,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t d1601xx_i2s_tx_control_fields[] = {
+	{ "VALUE",	0x000000FF,	0,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t d1601xx_audio_control_2_fields[] = {
+	{ "VALUE",	0x000000FF,	0,	NULL,	0 },
 };
 
 static const pmb887x_io_reg_t d1601xx_regs[] = {
-	{ "FAULT",			0x1,	d1601xx_fault_fields,			ARRAY_SIZE(d1601xx_fault_fields),			0 },
-	{ "TURNOFF_REASON",	0x5,	d1601xx_turnoff_reason_fields,	ARRAY_SIZE(d1601xx_turnoff_reason_fields),	0 },
-	{ "POWER",			0xE,	d1601xx_power_fields,			ARRAY_SIZE(d1601xx_power_fields),			0 },
-	{ "LED_LIGHT_PWM1",	0x12,	d1601xx_led_light_pwm1_fields,	ARRAY_SIZE(d1601xx_led_light_pwm1_fields),	0 },
-	{ "LED_LIGHT_PWM2",	0x13,	d1601xx_led_light_pwm2_fields,	ARRAY_SIZE(d1601xx_led_light_pwm2_fields),	0 },
-	{ "LED_CONTROL",	0x14,	d1601xx_led_control_fields,		ARRAY_SIZE(d1601xx_led_control_fields),		0 },
-	{ "TONE_CTRL",		0x42,	d1601xx_tone_ctrl_fields,		ARRAY_SIZE(d1601xx_tone_ctrl_fields),		0 },
-	{ "TONE_VOLUME",	0x44,	d1601xx_tone_volume_fields,		ARRAY_SIZE(d1601xx_tone_volume_fields),		0 },
-	{ "TONE_FREQ",		0x46,	d1601xx_tone_freq_fields,		ARRAY_SIZE(d1601xx_tone_freq_fields),		0 },
-	{ "VIBRA",			0x47,	d1601xx_vibra_fields,			ARRAY_SIZE(d1601xx_vibra_fields),			0 },
-	{ "AUDIO_VOLUME",	0x50,	d1601xx_audio_volume_fields,	ARRAY_SIZE(d1601xx_audio_volume_fields),	0 },
-	{ "RG_REG",			0x58,	d1601xx_rg_reg_fields,			ARRAY_SIZE(d1601xx_rg_reg_fields),			0 },
+	{ "IDENTIFICATION",		0x0,	d1601xx_identification_fields,		ARRAY_SIZE(d1601xx_identification_fields),		0 },
+	{ "IRQ_STATUS_1",		0x1,	d1601xx_irq_status_1_fields,		ARRAY_SIZE(d1601xx_irq_status_1_fields),		0 },
+	{ "IRQ_STATUS_2",		0x2,	d1601xx_irq_status_2_fields,		ARRAY_SIZE(d1601xx_irq_status_2_fields),		0 },
+	{ "IRQ_MASK_1",			0x3,	d1601xx_irq_mask_1_fields,			ARRAY_SIZE(d1601xx_irq_mask_1_fields),			0 },
+	{ "IRQ_MASK_2",			0x4,	d1601xx_irq_mask_2_fields,			ARRAY_SIZE(d1601xx_irq_mask_2_fields),			0 },
+	{ "TURNOFF_REASON",		0x5,	d1601xx_turnoff_reason_fields,		ARRAY_SIZE(d1601xx_turnoff_reason_fields),		0 },
+	{ "SUPPLY_ENABLE_1",	0x6,	d1601xx_supply_enable_1_fields,		ARRAY_SIZE(d1601xx_supply_enable_1_fields),		0 },
+	{ "SUPPLY_ENABLE_2",	0x7,	d1601xx_supply_enable_2_fields,		ARRAY_SIZE(d1601xx_supply_enable_2_fields),		0 },
+	{ "RF_ENABLE",			0x8,	d1601xx_rf_enable_fields,			ARRAY_SIZE(d1601xx_rf_enable_fields),			0 },
+	{ "SUPPLY_CONTROL_1",	0x9,	d1601xx_supply_control_1_fields,	ARRAY_SIZE(d1601xx_supply_control_1_fields),	0 },
+	{ "SUPPLY_MODE",		0xA,	d1601xx_supply_mode_fields,			ARRAY_SIZE(d1601xx_supply_mode_fields),			0 },
+	{ "RF_VOLTAGE",			0xB,	d1601xx_rf_voltage_fields,			ARRAY_SIZE(d1601xx_rf_voltage_fields),			0 },
+	{ "LIGHT_ENABLE",		0xC,	d1601xx_light_enable_fields,		ARRAY_SIZE(d1601xx_light_enable_fields),		0 },
+	{ "POWER",				0xE,	d1601xx_power_fields,				ARRAY_SIZE(d1601xx_power_fields),				0 },
+	{ "CHARGE_CONTROL",		0x10,	d1601xx_charge_control_fields,		ARRAY_SIZE(d1601xx_charge_control_fields),		0 },
+	{ "CHARGE_STATUS",		0x11,	d1601xx_charge_status_fields,		ARRAY_SIZE(d1601xx_charge_status_fields),		0 },
+	{ "LIGHT_PWM1",			0x12,	d1601xx_light_pwm1_fields,			ARRAY_SIZE(d1601xx_light_pwm1_fields),			0 },
+	{ "LIGHT_PWM2",			0x13,	d1601xx_light_pwm2_fields,			ARRAY_SIZE(d1601xx_light_pwm2_fields),			0 },
+	{ "LIGHT_CONTROL",		0x14,	d1601xx_light_control_fields,		ARRAY_SIZE(d1601xx_light_control_fields),		0 },
+	{ "LED_PATTERN_1",		0x15,	d1601xx_led_pattern_1_fields,		ARRAY_SIZE(d1601xx_led_pattern_1_fields),		0 },
+	{ "LED_PATTERN_2",		0x16,	d1601xx_led_pattern_2_fields,		ARRAY_SIZE(d1601xx_led_pattern_2_fields),		0 },
+	{ "LED_PATTERN_3",		0x17,	d1601xx_led_pattern_3_fields,		ARRAY_SIZE(d1601xx_led_pattern_3_fields),		0 },
+	{ "LED_PATTERN_4",		0x18,	d1601xx_led_pattern_4_fields,		ARRAY_SIZE(d1601xx_led_pattern_4_fields),		0 },
+	{ "LED_PATTERN_5",		0x19,	d1601xx_led_pattern_5_fields,		ARRAY_SIZE(d1601xx_led_pattern_5_fields),		0 },
+	{ "DDPS_CONTROL",		0x20,	d1601xx_ddps_control_fields,		ARRAY_SIZE(d1601xx_ddps_control_fields),		0 },
+	{ "AMPLIFIER_GAIN_0",	0x40,	d1601xx_amplifier_gain_0_fields,	ARRAY_SIZE(d1601xx_amplifier_gain_0_fields),	0 },
+	{ "AMPLIFIER_GAIN_1",	0x41,	d1601xx_amplifier_gain_1_fields,	ARRAY_SIZE(d1601xx_amplifier_gain_1_fields),	0 },
+	{ "MONO_CONTROL",		0x42,	d1601xx_mono_control_fields,		ARRAY_SIZE(d1601xx_mono_control_fields),		0 },
+	{ "STEREO_CONTROL",		0x43,	d1601xx_stereo_control_fields,		ARRAY_SIZE(d1601xx_stereo_control_fields),		0 },
+	{ "AMPLIFIER_GAIN_2",	0x44,	d1601xx_amplifier_gain_2_fields,	ARRAY_SIZE(d1601xx_amplifier_gain_2_fields),	0 },
+	{ "AMPLIFIER_GAIN_3",	0x45,	d1601xx_amplifier_gain_3_fields,	ARRAY_SIZE(d1601xx_amplifier_gain_3_fields),	0 },
+	{ "TONE_CONTROL",		0x46,	d1601xx_tone_control_fields,		ARRAY_SIZE(d1601xx_tone_control_fields),		0 },
+	{ "VIBRA",				0x47,	d1601xx_vibra_fields,				ARRAY_SIZE(d1601xx_vibra_fields),				0 },
+	{ "PP_AMPLIFIER_1",		0x48,	d1601xx_pp_amplifier_1_fields,		ARRAY_SIZE(d1601xx_pp_amplifier_1_fields),		0 },
+	{ "SWITCH_MUX_1",		0x49,	d1601xx_switch_mux_1_fields,		ARRAY_SIZE(d1601xx_switch_mux_1_fields),		0 },
+	{ "PP_ROUTE_1",			0x4A,	d1601xx_pp_route_1_fields,			ARRAY_SIZE(d1601xx_pp_route_1_fields),			0 },
+	{ "ADC_CONTROL",		0x4B,	d1601xx_adc_control_fields,			ARRAY_SIZE(d1601xx_adc_control_fields),			0 },
+	{ "PP_AMPLIFIER_2",		0x4C,	d1601xx_pp_amplifier_2_fields,		ARRAY_SIZE(d1601xx_pp_amplifier_2_fields),		0 },
+	{ "SWITCH_MUX_2",		0x4D,	d1601xx_switch_mux_2_fields,		ARRAY_SIZE(d1601xx_switch_mux_2_fields),		0 },
+	{ "PP_ROUTE_2",			0x4E,	d1601xx_pp_route_2_fields,			ARRAY_SIZE(d1601xx_pp_route_2_fields),			0 },
+	{ "SWITCH_MUX_4",		0x4F,	d1601xx_switch_mux_4_fields,		ARRAY_SIZE(d1601xx_switch_mux_4_fields),		0 },
+	{ "AMPLIFIER_GAIN_4_5",	0x50,	d1601xx_amplifier_gain_4_5_fields,	ARRAY_SIZE(d1601xx_amplifier_gain_4_5_fields),	0 },
+	{ "AMPLIFIER_GAIN_6",	0x51,	d1601xx_amplifier_gain_6_fields,	ARRAY_SIZE(d1601xx_amplifier_gain_6_fields),	0 },
+	{ "DAC_CONTROL",		0x52,	d1601xx_dac_control_fields,			ARRAY_SIZE(d1601xx_dac_control_fields),			0 },
+	{ "AMPLIFIER_GAIN_7_8",	0x53,	d1601xx_amplifier_gain_7_8_fields,	ARRAY_SIZE(d1601xx_amplifier_gain_7_8_fields),	0 },
+	{ "AMPLIFIER_GAIN_9",	0x54,	d1601xx_amplifier_gain_9_fields,	ARRAY_SIZE(d1601xx_amplifier_gain_9_fields),	0 },
+	{ "SWITCH_MUX_5",		0x55,	d1601xx_switch_mux_5_fields,		ARRAY_SIZE(d1601xx_switch_mux_5_fields),		0 },
+	{ "MUX_INPUT",			0x56,	d1601xx_mux_input_fields,			ARRAY_SIZE(d1601xx_mux_input_fields),			0 },
+	{ "SWITCH_MUX_3",		0x57,	d1601xx_switch_mux_3_fields,		ARRAY_SIZE(d1601xx_switch_mux_3_fields),		0 },
+	{ "OUTPORT_CONTROL",	0x58,	d1601xx_outport_control_fields,		ARRAY_SIZE(d1601xx_outport_control_fields),		0 },
+	{ "SAMPLE_RATE",		0x59,	d1601xx_sample_rate_fields,			ARRAY_SIZE(d1601xx_sample_rate_fields),			0 },
+	{ "STEREO_MODE",		0x5A,	d1601xx_stereo_mode_fields,			ARRAY_SIZE(d1601xx_stereo_mode_fields),			0 },
+	{ "I2S_RX_CONTROL",		0x5B,	d1601xx_i2s_rx_control_fields,		ARRAY_SIZE(d1601xx_i2s_rx_control_fields),		0 },
+	{ "I2S_TX_CONTROL",		0x5C,	d1601xx_i2s_tx_control_fields,		ARRAY_SIZE(d1601xx_i2s_tx_control_fields),		0 },
+	{ "AUDIO_CONTROL_2",	0x5D,	d1601xx_audio_control_2_fields,		ARRAY_SIZE(d1601xx_audio_control_2_fields),		0 },
 };
 
 static const pmb887x_io_field_t jbt6k71_oscillation_fields[] = {
@@ -6809,6 +7296,747 @@ static const pmb887x_io_reg_t jbt6k71_regs[] = {
 	{ "OSD_CONTROL",				0x500,	jbt6k71_osd_control_fields,				ARRAY_SIZE(jbt6k71_osd_control_fields),				0 },
 	{ "OSD_SCREEN1_START",			0x504,	jbt6k71_osd_screen1_start_fields,		ARRAY_SIZE(jbt6k71_osd_screen1_start_fields),		0 },
 	{ "OSD_SCREEN2_START",			0x505,	jbt6k71_osd_screen2_start_fields,		ARRAY_SIZE(jbt6k71_osd_screen2_start_fields),		0 },
+};
+
+static const pmb887x_io_value_t pasic_identification_fields_vendor_values[] = {
+	{ "ST",		0x00000000 },
+	{ "DIALOG",	0x00000080 },
+};
+
+static const pmb887x_io_field_t pasic_identification_fields[] = {
+	{ "MODEL",		0x00000007,	0,	NULL,										0 },
+	{ "REVISION",	0x00000078,	3,	NULL,										0 },
+	{ "VENDOR",		0x00000080,	7,	pasic_identification_fields_vendor_values,	ARRAY_SIZE(pasic_identification_fields_vendor_values) },
+};
+
+static const pmb887x_io_field_t pasic_irq_status_1_fields[] = {
+	{ "OVER_TEMP",		0x00000004,	2,	NULL,	0 },
+	{ "CHARGER_EVENT",	0x00000008,	3,	NULL,	0 },
+	{ "UV_AUDIO_REGA",	0x00000020,	5,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t pasic_irq_status_2_fields[] = {
+	{ "UV_SIM_REGA",	0x00000001,	0,	NULL,	0 },
+	{ "SUPPLY_SHORT",	0x00000002,	1,	NULL,	0 },
+	{ "UNEXP_CHARGE",	0x00000004,	2,	NULL,	0 },
+	{ "VBATT_OV",		0x00000020,	5,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t pasic_irq_mask_1_fields[] = {
+	{ "VALUE",	0x000000FF,	0,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t pasic_irq_mask_2_fields[] = {
+	{ "VALUE",	0x000000FF,	0,	NULL,	0 },
+};
+
+static const pmb887x_io_value_t pasic_turnoff_reason_fields_value_values[] = {
+	{ "UNDEFINED",				0x00000000 },
+	{ "NO_REASON_STORED",		0x00000001 },
+	{ "UNDERVOLTAGE_VBATT",		0x00000002 },
+	{ "UNDERVOLTAGE_REG3",		0x00000003 },
+	{ "UNDERVOLTAGE_REG2A",		0x00000004 },
+	{ "UNDERVOLTAGE_REG1",		0x00000005 },
+	{ "SHUTDOWN_BY_REGISTER",	0x00000006 },
+	{ "WATCHDOG_MIN_TIME",		0x00000007 },
+	{ "WATCHDOG_MAX_TIME",		0x00000008 },
+	{ "OVERVOLTAGE_VBATT",		0x00000009 },
+};
+
+static const pmb887x_io_field_t pasic_turnoff_reason_fields[] = {
+	{ "VALUE",	0x000000FF,	0,	pasic_turnoff_reason_fields_value_values,	ARRAY_SIZE(pasic_turnoff_reason_fields_value_values) },
+};
+
+static const pmb887x_io_field_t pasic_supply_enable_1_fields[] = {
+	{ "VREG1_EN",		0x00000001,	0,	NULL,	0 },
+	{ "VREG2B_EN",		0x00000002,	1,	NULL,	0 },
+	{ "VSIMREGA_EN",	0x00000004,	2,	NULL,	0 },
+	{ "VSIMREGB_EN",	0x00000008,	3,	NULL,	0 },
+	{ "VAUDREGA_EN",	0x00000010,	4,	NULL,	0 },
+	{ "VAUDREGB_EN",	0x00000020,	5,	NULL,	0 },
+	{ "VREGMEM1_EN",	0x00000040,	6,	NULL,	0 },
+	{ "VREGMEM2_EN",	0x00000080,	7,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t pasic_supply_enable_2_fields[] = {
+	{ "VIBRA_EN",	0x00000001,	0,	NULL,	0 },
+	{ "VREGUSB_EN",	0x00000002,	1,	NULL,	0 },
+	{ "VBOOST_EN",	0x00000004,	2,	NULL,	0 },
+	{ "VLPREG_EN",	0x00000010,	4,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t pasic_rf_enable_fields[] = {
+	{ "VRF1_EN",	0x00000001,	0,	NULL,	0 },
+	{ "VRF2_EN",	0x00000002,	1,	NULL,	0 },
+	{ "VRF3_EN",	0x00000004,	2,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t pasic_supply_control_1_fields[] = {
+	{ "VREG1_MODE",		0x00000001,	0,	NULL,	0 },
+	{ "VREG2_LEVEL",	0x0000000E,	1,	NULL,	0 },
+	{ "VREG3_LEVEL",	0x00000070,	4,	NULL,	0 },
+	{ "STEPDOWN_MODE",	0x00000080,	7,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t pasic_supply_mode_fields[] = {
+	{ "VSIMREGA_MODE",	0x00000001,	0,	NULL,	0 },
+	{ "VAUDREGA_MODE",	0x00000002,	1,	NULL,	0 },
+	{ "VAUDREGB_MODE",	0x00000004,	2,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t pasic_rf_voltage_fields[] = {
+	{ "VRF1_LEVEL",	0x00000003,	0,	NULL,	0 },
+	{ "VRF2_LEVEL",	0x0000000C,	2,	NULL,	0 },
+	{ "VRF3_LEVEL",	0x00000030,	4,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t pasic_light_enable_fields[] = {
+	{ "LED1_EN",	0x00000001,	0,	NULL,	0 },
+	{ "LED2_EN",	0x00000002,	1,	NULL,	0 },
+	{ "LED3_EN",	0x00000004,	2,	NULL,	0 },
+};
+
+static const pmb887x_io_value_t pasic_power_fields_wdt_time_values[] = {
+	{ "3S",		0x00000000 },
+	{ "6S",		0x00000001 },
+	{ "12S",	0x00000002 },
+	{ "24S",	0x00000003 },
+};
+
+static const pmb887x_io_field_t pasic_power_fields[] = {
+	{ "WDT_TIME",	0x00000003,	0,	pasic_power_fields_wdt_time_values,	ARRAY_SIZE(pasic_power_fields_wdt_time_values) },
+	{ "POWEROFF",	0x00000004,	2,	NULL,								0 },
+};
+
+static const pmb887x_io_value_t pasic_charge_control_fields_current_values[] = {
+	{ "75MA",	0x00000000 },
+	{ "150MA",	0x00000001 },
+	{ "300MA",	0x00000002 },
+	{ "400MA",	0x00000003 },
+};
+
+static const pmb887x_io_field_t pasic_charge_control_fields[] = {
+	{ "CURRENT",	0x00000003,	0,	pasic_charge_control_fields_current_values,	ARRAY_SIZE(pasic_charge_control_fields_current_values) },
+	{ "CHARGE_EN",	0x00000008,	3,	NULL,										0 },
+	{ "CURRENT_EN",	0x00000080,	7,	NULL,										0 },
+};
+
+static const pmb887x_io_field_t pasic_charge_status_fields[] = {
+	{ "CURRENT",	0x000000FF,	0,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t pasic_light_pwm1_fields[] = {
+	{ "LEVEL",	0x0000007F,	0,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t pasic_light_pwm2_fields[] = {
+	{ "LEVEL",	0x0000007F,	0,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t pasic_light_control_fields[] = {
+	{ "LED1_EN",	0x00000002,	1,	NULL,	0 },
+	{ "LED2_EN",	0x00000004,	2,	NULL,	0 },
+	{ "PWM1_EN",	0x00000008,	3,	NULL,	0 },
+	{ "PWM2_EN",	0x00000010,	4,	NULL,	0 },
+	{ "MASTER_EN",	0x00000020,	5,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t pasic_led_pattern_1_fields[] = {
+	{ "VALUE",	0x000000FF,	0,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t pasic_led_pattern_2_fields[] = {
+	{ "VALUE",	0x000000FF,	0,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t pasic_led_pattern_3_fields[] = {
+	{ "VALUE",	0x000000FF,	0,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t pasic_led_pattern_4_fields[] = {
+	{ "VALUE",	0x000000FF,	0,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t pasic_led_pattern_5_fields[] = {
+	{ "VALUE",	0x000000FF,	0,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t pasic_ddps_control_fields[] = {
+	{ "VALUE",	0x000000FF,	0,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t pasic_amplifier_gain_0_fields[] = {
+	{ "LEVEL",	0x000000FF,	0,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t pasic_amplifier_gain_1_fields[] = {
+	{ "LEVEL",	0x000000FF,	0,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t pasic_mono_control_fields[] = {
+	{ "KEY_CLICK_EN",	0x00000008,	3,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t pasic_stereo_control_fields[] = {
+	{ "VALUE",	0x000000FF,	0,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t pasic_amplifier_gain_2_fields[] = {
+	{ "GAIN",		0x0000003F,	0,	NULL,	0 },
+	{ "TONE_LEVEL",	0x000000C0,	6,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t pasic_amplifier_gain_3_fields[] = {
+	{ "LEVEL",	0x000000FF,	0,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t pasic_tone_control_fields[] = {
+	{ "DURATION",	0x0000001F,	0,	NULL,	0 },
+	{ "MODULATION",	0x00000060,	5,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t pasic_vibra_fields[] = {
+	{ "LEVEL",	0x000000FF,	0,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t pasic_pp_amplifier_1_fields[] = {
+	{ "PATH_1_SOURCE",	0x00000007,	0,	NULL,	0 },
+	{ "PATH_1_EN",		0x00000008,	3,	NULL,	0 },
+	{ "PATH_2_SOURCE",	0x00000070,	4,	NULL,	0 },
+	{ "PATH_2_EN",		0x00000080,	7,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t pasic_switch_mux_1_fields[] = {
+	{ "VALUE",	0x000000FF,	0,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t pasic_pp_route_1_fields[] = {
+	{ "VALUE",	0x0000000F,	0,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t pasic_adc_control_fields[] = {
+	{ "VALUE",	0x000000FF,	0,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t pasic_pp_amplifier_2_fields[] = {
+	{ "PATH_1_SOURCE",	0x00000007,	0,	NULL,	0 },
+	{ "PATH_1_EN",		0x00000008,	3,	NULL,	0 },
+	{ "PATH_2_SOURCE",	0x00000070,	4,	NULL,	0 },
+	{ "PATH_2_EN",		0x00000080,	7,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t pasic_switch_mux_2_fields[] = {
+	{ "VALUE",		0x0000003F,	0,	NULL,	0 },
+	{ "VLPREG_EN",	0x00000040,	6,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t pasic_pp_route_2_fields[] = {
+	{ "VALUE",	0x0000000F,	0,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t pasic_switch_mux_4_fields[] = {
+	{ "VALUE",	0x000000FF,	0,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t pasic_amplifier_gain_4_5_fields[] = {
+	{ "GAIN",			0x0000007F,	0,	NULL,	0 },
+	{ "PATH_4_SELECT",	0x00000080,	7,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t pasic_amplifier_gain_6_fields[] = {
+	{ "LEVEL",	0x000000FF,	0,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t pasic_dac_control_fields[] = {
+	{ "VALUE",	0x000000FF,	0,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t pasic_amplifier_gain_7_8_fields[] = {
+	{ "GAIN",			0x0000007F,	0,	NULL,	0 },
+	{ "PATH_7_SELECT",	0x00000080,	7,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t pasic_amplifier_gain_9_fields[] = {
+	{ "GAIN",	0x0000007F,	0,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t pasic_switch_mux_5_fields[] = {
+	{ "VALUE",	0x000000FF,	0,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t pasic_mux_input_fields[] = {
+	{ "VALUE",	0x000000FF,	0,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t pasic_switch_mux_3_fields[] = {
+	{ "VALUE",	0x000000FF,	0,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t pasic_outport_control_fields[] = {
+	{ "MODE",	0x00000003,	0,	NULL,	0 },
+	{ "LEVEL",	0x00000004,	2,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t pasic_sample_rate_fields[] = {
+	{ "ADC",	0x0000000F,	0,	NULL,	0 },
+	{ "DAC",	0x000000F0,	4,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t pasic_stereo_mode_fields[] = {
+	{ "VALUE",	0x000000FF,	0,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t pasic_i2s_rx_control_fields[] = {
+	{ "VALUE",	0x000000FF,	0,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t pasic_i2s_tx_control_fields[] = {
+	{ "VALUE",	0x000000FF,	0,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t pasic_audio_control_2_fields[] = {
+	{ "VALUE",	0x000000FF,	0,	NULL,	0 },
+};
+
+static const pmb887x_io_reg_t pasic_regs[] = {
+	{ "IDENTIFICATION",		0x0,	pasic_identification_fields,		ARRAY_SIZE(pasic_identification_fields),		0 },
+	{ "IRQ_STATUS_1",		0x1,	pasic_irq_status_1_fields,			ARRAY_SIZE(pasic_irq_status_1_fields),			0 },
+	{ "IRQ_STATUS_2",		0x2,	pasic_irq_status_2_fields,			ARRAY_SIZE(pasic_irq_status_2_fields),			0 },
+	{ "IRQ_MASK_1",			0x3,	pasic_irq_mask_1_fields,			ARRAY_SIZE(pasic_irq_mask_1_fields),			0 },
+	{ "IRQ_MASK_2",			0x4,	pasic_irq_mask_2_fields,			ARRAY_SIZE(pasic_irq_mask_2_fields),			0 },
+	{ "TURNOFF_REASON",		0x5,	pasic_turnoff_reason_fields,		ARRAY_SIZE(pasic_turnoff_reason_fields),		0 },
+	{ "SUPPLY_ENABLE_1",	0x6,	pasic_supply_enable_1_fields,		ARRAY_SIZE(pasic_supply_enable_1_fields),		0 },
+	{ "SUPPLY_ENABLE_2",	0x7,	pasic_supply_enable_2_fields,		ARRAY_SIZE(pasic_supply_enable_2_fields),		0 },
+	{ "RF_ENABLE",			0x8,	pasic_rf_enable_fields,				ARRAY_SIZE(pasic_rf_enable_fields),				0 },
+	{ "SUPPLY_CONTROL_1",	0x9,	pasic_supply_control_1_fields,		ARRAY_SIZE(pasic_supply_control_1_fields),		0 },
+	{ "SUPPLY_MODE",		0xA,	pasic_supply_mode_fields,			ARRAY_SIZE(pasic_supply_mode_fields),			0 },
+	{ "RF_VOLTAGE",			0xB,	pasic_rf_voltage_fields,			ARRAY_SIZE(pasic_rf_voltage_fields),			0 },
+	{ "LIGHT_ENABLE",		0xC,	pasic_light_enable_fields,			ARRAY_SIZE(pasic_light_enable_fields),			0 },
+	{ "POWER",				0xE,	pasic_power_fields,					ARRAY_SIZE(pasic_power_fields),					0 },
+	{ "CHARGE_CONTROL",		0x10,	pasic_charge_control_fields,		ARRAY_SIZE(pasic_charge_control_fields),		0 },
+	{ "CHARGE_STATUS",		0x11,	pasic_charge_status_fields,			ARRAY_SIZE(pasic_charge_status_fields),			0 },
+	{ "LIGHT_PWM1",			0x12,	pasic_light_pwm1_fields,			ARRAY_SIZE(pasic_light_pwm1_fields),			0 },
+	{ "LIGHT_PWM2",			0x13,	pasic_light_pwm2_fields,			ARRAY_SIZE(pasic_light_pwm2_fields),			0 },
+	{ "LIGHT_CONTROL",		0x14,	pasic_light_control_fields,			ARRAY_SIZE(pasic_light_control_fields),			0 },
+	{ "LED_PATTERN_1",		0x15,	pasic_led_pattern_1_fields,			ARRAY_SIZE(pasic_led_pattern_1_fields),			0 },
+	{ "LED_PATTERN_2",		0x16,	pasic_led_pattern_2_fields,			ARRAY_SIZE(pasic_led_pattern_2_fields),			0 },
+	{ "LED_PATTERN_3",		0x17,	pasic_led_pattern_3_fields,			ARRAY_SIZE(pasic_led_pattern_3_fields),			0 },
+	{ "LED_PATTERN_4",		0x18,	pasic_led_pattern_4_fields,			ARRAY_SIZE(pasic_led_pattern_4_fields),			0 },
+	{ "LED_PATTERN_5",		0x19,	pasic_led_pattern_5_fields,			ARRAY_SIZE(pasic_led_pattern_5_fields),			0 },
+	{ "DDPS_CONTROL",		0x20,	pasic_ddps_control_fields,			ARRAY_SIZE(pasic_ddps_control_fields),			0 },
+	{ "AMPLIFIER_GAIN_0",	0x40,	pasic_amplifier_gain_0_fields,		ARRAY_SIZE(pasic_amplifier_gain_0_fields),		0 },
+	{ "AMPLIFIER_GAIN_1",	0x41,	pasic_amplifier_gain_1_fields,		ARRAY_SIZE(pasic_amplifier_gain_1_fields),		0 },
+	{ "MONO_CONTROL",		0x42,	pasic_mono_control_fields,			ARRAY_SIZE(pasic_mono_control_fields),			0 },
+	{ "STEREO_CONTROL",		0x43,	pasic_stereo_control_fields,		ARRAY_SIZE(pasic_stereo_control_fields),		0 },
+	{ "AMPLIFIER_GAIN_2",	0x44,	pasic_amplifier_gain_2_fields,		ARRAY_SIZE(pasic_amplifier_gain_2_fields),		0 },
+	{ "AMPLIFIER_GAIN_3",	0x45,	pasic_amplifier_gain_3_fields,		ARRAY_SIZE(pasic_amplifier_gain_3_fields),		0 },
+	{ "TONE_CONTROL",		0x46,	pasic_tone_control_fields,			ARRAY_SIZE(pasic_tone_control_fields),			0 },
+	{ "VIBRA",				0x47,	pasic_vibra_fields,					ARRAY_SIZE(pasic_vibra_fields),					0 },
+	{ "PP_AMPLIFIER_1",		0x48,	pasic_pp_amplifier_1_fields,		ARRAY_SIZE(pasic_pp_amplifier_1_fields),		0 },
+	{ "SWITCH_MUX_1",		0x49,	pasic_switch_mux_1_fields,			ARRAY_SIZE(pasic_switch_mux_1_fields),			0 },
+	{ "PP_ROUTE_1",			0x4A,	pasic_pp_route_1_fields,			ARRAY_SIZE(pasic_pp_route_1_fields),			0 },
+	{ "ADC_CONTROL",		0x4B,	pasic_adc_control_fields,			ARRAY_SIZE(pasic_adc_control_fields),			0 },
+	{ "PP_AMPLIFIER_2",		0x4C,	pasic_pp_amplifier_2_fields,		ARRAY_SIZE(pasic_pp_amplifier_2_fields),		0 },
+	{ "SWITCH_MUX_2",		0x4D,	pasic_switch_mux_2_fields,			ARRAY_SIZE(pasic_switch_mux_2_fields),			0 },
+	{ "PP_ROUTE_2",			0x4E,	pasic_pp_route_2_fields,			ARRAY_SIZE(pasic_pp_route_2_fields),			0 },
+	{ "SWITCH_MUX_4",		0x4F,	pasic_switch_mux_4_fields,			ARRAY_SIZE(pasic_switch_mux_4_fields),			0 },
+	{ "AMPLIFIER_GAIN_4_5",	0x50,	pasic_amplifier_gain_4_5_fields,	ARRAY_SIZE(pasic_amplifier_gain_4_5_fields),	0 },
+	{ "AMPLIFIER_GAIN_6",	0x51,	pasic_amplifier_gain_6_fields,		ARRAY_SIZE(pasic_amplifier_gain_6_fields),		0 },
+	{ "DAC_CONTROL",		0x52,	pasic_dac_control_fields,			ARRAY_SIZE(pasic_dac_control_fields),			0 },
+	{ "AMPLIFIER_GAIN_7_8",	0x53,	pasic_amplifier_gain_7_8_fields,	ARRAY_SIZE(pasic_amplifier_gain_7_8_fields),	0 },
+	{ "AMPLIFIER_GAIN_9",	0x54,	pasic_amplifier_gain_9_fields,		ARRAY_SIZE(pasic_amplifier_gain_9_fields),		0 },
+	{ "SWITCH_MUX_5",		0x55,	pasic_switch_mux_5_fields,			ARRAY_SIZE(pasic_switch_mux_5_fields),			0 },
+	{ "MUX_INPUT",			0x56,	pasic_mux_input_fields,				ARRAY_SIZE(pasic_mux_input_fields),				0 },
+	{ "SWITCH_MUX_3",		0x57,	pasic_switch_mux_3_fields,			ARRAY_SIZE(pasic_switch_mux_3_fields),			0 },
+	{ "OUTPORT_CONTROL",	0x58,	pasic_outport_control_fields,		ARRAY_SIZE(pasic_outport_control_fields),		0 },
+	{ "SAMPLE_RATE",		0x59,	pasic_sample_rate_fields,			ARRAY_SIZE(pasic_sample_rate_fields),			0 },
+	{ "STEREO_MODE",		0x5A,	pasic_stereo_mode_fields,			ARRAY_SIZE(pasic_stereo_mode_fields),			0 },
+	{ "I2S_RX_CONTROL",		0x5B,	pasic_i2s_rx_control_fields,		ARRAY_SIZE(pasic_i2s_rx_control_fields),		0 },
+	{ "I2S_TX_CONTROL",		0x5C,	pasic_i2s_tx_control_fields,		ARRAY_SIZE(pasic_i2s_tx_control_fields),		0 },
+	{ "AUDIO_CONTROL_2",	0x5D,	pasic_audio_control_2_fields,		ARRAY_SIZE(pasic_audio_control_2_fields),		0 },
+};
+
+static const pmb887x_io_value_t pcf8833_rddidif_fields_module_type_values[] = {
+	{ "MONOCHROME",	0x00000000 },
+	{ "COLOR",		0x00008000 },
+};
+
+static const pmb887x_io_field_t pcf8833_rddidif_fields[] = {
+	{ "MODULE_CODE",	0x000000FF,	0,	NULL,										0 },
+	{ "VERSION",		0x00007F00,	8,	NULL,										0 },
+	{ "MODULE_TYPE",	0x00008000,	15,	pcf8833_rddidif_fields_module_type_values,	ARRAY_SIZE(pcf8833_rddidif_fields_module_type_values) },
+	{ "MANID",			0x00FF0000,	16,	NULL,										0 },
+};
+
+static const pmb887x_io_field_t pcf8833_rddst_fields[] = {
+	{ "TEARING",		0x00000200,	9,	NULL,	0 },
+	{ "DISPLAY_ON",		0x00000400,	10,	NULL,	0 },
+	{ "ALL_OFF",		0x00000800,	11,	NULL,	0 },
+	{ "ALL_ON",			0x00001000,	12,	NULL,	0 },
+	{ "INVERSION",		0x00002000,	13,	NULL,	0 },
+	{ "SCROLL",			0x00008000,	15,	NULL,	0 },
+	{ "NORMAL_DISPLAY",	0x00010000,	16,	NULL,	0 },
+	{ "SLEEP_OUT",		0x00020000,	17,	NULL,	0 },
+	{ "PARTIAL",		0x00040000,	18,	NULL,	0 },
+	{ "IDLE",			0x00080000,	19,	NULL,	0 },
+	{ "PIXEL_FORMAT",	0x00700000,	20,	NULL,	0 },
+	{ "RGB",			0x04000000,	26,	NULL,	0 },
+	{ "LAO",			0x08000000,	27,	NULL,	0 },
+	{ "V",				0x10000000,	28,	NULL,	0 },
+	{ "MX",				0x20000000,	29,	NULL,	0 },
+	{ "MY",				0x40000000,	30,	NULL,	0 },
+	{ "BOOSTER_READY",	0x80000000,	31,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t pcf8833_setcon_fields[] = {
+	{ "VCON",	0x0000007F,	0,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t pcf8833_caset_fields[] = {
+	{ "XE",	0x000000FF,	0,	NULL,	0 },
+	{ "XS",	0x0000FF00,	8,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t pcf8833_paset_fields[] = {
+	{ "YE",	0x000000FF,	0,	NULL,	0 },
+	{ "YS",	0x0000FF00,	8,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t pcf8833_ptlar_fields[] = {
+	{ "AREA_END",	0x000000FF,	0,	NULL,	0 },
+	{ "AREA_START",	0x0000FF00,	8,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t pcf8833_vscrdef_fields[] = {
+	{ "BOTTOM_FIXED",	0x000000FF,	0,	NULL,	0 },
+	{ "SCROLL_AREA",	0x0000FF00,	8,	NULL,	0 },
+	{ "TOP_FIXED",		0x00FF0000,	16,	NULL,	0 },
+};
+
+static const pmb887x_io_value_t pcf8833_madctl_fields_rgb_values[] = {
+	{ "RGB_ORDER",	0x00000000 },
+	{ "BGR_ORDER",	0x00000008 },
+};
+
+static const pmb887x_io_value_t pcf8833_madctl_fields_lao_values[] = {
+	{ "TOP_TO_BOTTOM",	0x00000000 },
+	{ "BOTTOM_TO_TOP",	0x00000010 },
+};
+
+static const pmb887x_io_value_t pcf8833_madctl_fields_v_values[] = {
+	{ "WRITE_X",	0x00000000 },
+	{ "WRITE_Y",	0x00000020 },
+};
+
+static const pmb887x_io_value_t pcf8833_madctl_fields_mx_values[] = {
+	{ "NORMAL",		0x00000000 },
+	{ "MIRRORED",	0x00000040 },
+};
+
+static const pmb887x_io_value_t pcf8833_madctl_fields_my_values[] = {
+	{ "NORMAL",		0x00000000 },
+	{ "MIRRORED",	0x00000080 },
+};
+
+static const pmb887x_io_field_t pcf8833_madctl_fields[] = {
+	{ "RGB",	0x00000008,	3,	pcf8833_madctl_fields_rgb_values,	ARRAY_SIZE(pcf8833_madctl_fields_rgb_values) },
+	{ "LAO",	0x00000010,	4,	pcf8833_madctl_fields_lao_values,	ARRAY_SIZE(pcf8833_madctl_fields_lao_values) },
+	{ "V",		0x00000020,	5,	pcf8833_madctl_fields_v_values,		ARRAY_SIZE(pcf8833_madctl_fields_v_values) },
+	{ "MX",		0x00000040,	6,	pcf8833_madctl_fields_mx_values,	ARRAY_SIZE(pcf8833_madctl_fields_mx_values) },
+	{ "MY",		0x00000080,	7,	pcf8833_madctl_fields_my_values,	ARRAY_SIZE(pcf8833_madctl_fields_my_values) },
+};
+
+static const pmb887x_io_field_t pcf8833_sep_fields[] = {
+	{ "VALUE",	0x000000FF,	0,	NULL,	0 },
+};
+
+static const pmb887x_io_value_t pcf8833_colmod_fields_p_values[] = {
+	{ "PIXEL_8_BIT",	0x00000002 },
+	{ "PIXEL_12_BIT",	0x00000003 },
+	{ "PIXEL_16_BIT",	0x00000005 },
+};
+
+static const pmb887x_io_field_t pcf8833_colmod_fields[] = {
+	{ "P",	0x00000007,	0,	pcf8833_colmod_fields_p_values,	ARRAY_SIZE(pcf8833_colmod_fields_p_values) },
+};
+
+static const pmb887x_io_field_t pcf8833_setvop_fields[] = {
+	{ "VPR_04_00",	0x0000001F,	0,	NULL,	0 },
+	{ "VPR_08_05",	0x00000F00,	8,	NULL,	0 },
+};
+
+static const pmb887x_io_value_t pcf8833_setmul_fields_s_values[] = {
+	{ "FACTOR_2",	0x00000000 },
+	{ "FACTOR_3",	0x00000001 },
+	{ "FACTOR_4",	0x00000002 },
+	{ "FACTOR_5",	0x00000003 },
+};
+
+static const pmb887x_io_field_t pcf8833_setmul_fields[] = {
+	{ "S",	0x00000003,	0,	pcf8833_setmul_fields_s_values,	ARRAY_SIZE(pcf8833_setmul_fields_s_values) },
+};
+
+static const pmb887x_io_field_t pcf8833_tcvopab_fields[] = {
+	{ "SLA",	0x00000007,	0,	NULL,	0 },
+	{ "SLB",	0x00000070,	4,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t pcf8833_tcvopcd_fields[] = {
+	{ "SLC",	0x00000007,	0,	NULL,	0 },
+	{ "SLD",	0x00000070,	4,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t pcf8833_tcdf_fields[] = {
+	{ "DFD",	0x0000007F,	0,	NULL,	0 },
+	{ "DFC",	0x00007F00,	8,	NULL,	0 },
+	{ "DFB",	0x007F0000,	16,	NULL,	0 },
+	{ "DFA",	0x7F000000,	24,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t pcf8833_df8color_fields[] = {
+	{ "DF8",	0x0000007F,	0,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t pcf8833_setbs_fields[] = {
+	{ "VB",	0x0000000F,	0,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t pcf8833_rdtemp_fields[] = {
+	{ "TD",	0x000000FF,	0,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t pcf8833_nli_fields[] = {
+	{ "NLI",	0x000000FF,	0,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t pcf8833_rdid1_fields[] = {
+	{ "MANID",	0x000000FF,	0,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t pcf8833_rdid2_fields[] = {
+	{ "VERSION",	0x000000FF,	0,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t pcf8833_rdid3_fields[] = {
+	{ "MODULE_ID",	0x000000FF,	0,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t pcf8833_calmode_fields[] = {
+	{ "CALMM",	0x00000001,	0,	NULL,	0 },
+	{ "OPE",	0x00000002,	1,	NULL,	0 },
+	{ "ORA",	0x00000038,	3,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t pcf8833_otpshtin_fields[] = {
+	{ "DATA",	0x000000FF,	0,	NULL,	0 },
+};
+
+static const pmb887x_io_reg_t pcf8833_regs[] = {
+	{ "NOP",			0x0,	NULL,						0,										0 },
+	{ "SWRESET",		0x1,	NULL,						0,										0 },
+	{ "BSTROFF",		0x2,	NULL,						0,										0 },
+	{ "BSTRON",			0x3,	NULL,						0,										0 },
+	{ "RDDIDIF",		0x4,	pcf8833_rddidif_fields,		ARRAY_SIZE(pcf8833_rddidif_fields),		0 },
+	{ "RDDST",			0x9,	pcf8833_rddst_fields,		ARRAY_SIZE(pcf8833_rddst_fields),		0 },
+	{ "SLPIN",			0x10,	NULL,						0,										0 },
+	{ "SLPOUT",			0x11,	NULL,						0,										0 },
+	{ "PTLON",			0x12,	NULL,						0,										0 },
+	{ "NORON",			0x13,	NULL,						0,										0 },
+	{ "INVOFF",			0x20,	NULL,						0,										0 },
+	{ "INVON",			0x21,	NULL,						0,										0 },
+	{ "DALO",			0x22,	NULL,						0,										0 },
+	{ "DAL",			0x23,	NULL,						0,										0 },
+	{ "SETCON",			0x25,	pcf8833_setcon_fields,		ARRAY_SIZE(pcf8833_setcon_fields),		0 },
+	{ "DISPOFF",		0x28,	NULL,						0,										0 },
+	{ "DISPON",			0x29,	NULL,						0,										0 },
+	{ "CASET",			0x2A,	pcf8833_caset_fields,		ARRAY_SIZE(pcf8833_caset_fields),		0 },
+	{ "PASET",			0x2B,	pcf8833_paset_fields,		ARRAY_SIZE(pcf8833_paset_fields),		0 },
+	{ "RAMWR",			0x2C,	NULL,						0,										0 },
+	{ "RGBSET",			0x2D,	NULL,						0,										0 },
+	{ "PTLAR",			0x30,	pcf8833_ptlar_fields,		ARRAY_SIZE(pcf8833_ptlar_fields),		0 },
+	{ "VSCRDEF",		0x33,	pcf8833_vscrdef_fields,		ARRAY_SIZE(pcf8833_vscrdef_fields),		0 },
+	{ "TEOFF",			0x34,	NULL,						0,										0 },
+	{ "TEON",			0x35,	NULL,						0,										0 },
+	{ "MADCTL",			0x36,	pcf8833_madctl_fields,		ARRAY_SIZE(pcf8833_madctl_fields),		0 },
+	{ "SEP",			0x37,	pcf8833_sep_fields,			ARRAY_SIZE(pcf8833_sep_fields),			0 },
+	{ "IDMOFF",			0x38,	NULL,						0,										0 },
+	{ "IDMON",			0x39,	NULL,						0,										0 },
+	{ "COLMOD",			0x3A,	pcf8833_colmod_fields,		ARRAY_SIZE(pcf8833_colmod_fields),		0 },
+	{ "SETVOP",			0xB0,	pcf8833_setvop_fields,		ARRAY_SIZE(pcf8833_setvop_fields),		0 },
+	{ "BRS_NORMAL",		0xB4,	NULL,						0,										0 },
+	{ "BRS_MIRRORED",	0xB5,	NULL,						0,										0 },
+	{ "TRS_NORMAL",		0xB6,	NULL,						0,										0 },
+	{ "TRS_MIRRORED",	0xB7,	NULL,						0,										0 },
+	{ "FINV_OFF",		0xB8,	NULL,						0,										0 },
+	{ "FINV_ON",		0xB9,	NULL,						0,										0 },
+	{ "DOR_NORMAL",		0xBA,	NULL,						0,										0 },
+	{ "DOR_SWAPPED",	0xBB,	NULL,						0,										0 },
+	{ "TCDFE_OFF",		0xBC,	NULL,						0,										0 },
+	{ "TCDFE_ON",		0xBD,	NULL,						0,										0 },
+	{ "TCVOPE_OFF",		0xBE,	NULL,						0,										0 },
+	{ "TCVOPE_ON",		0xBF,	NULL,						0,										0 },
+	{ "EC_INTERNAL",	0xC0,	NULL,						0,										0 },
+	{ "EC_EXTERNAL",	0xC1,	NULL,						0,										0 },
+	{ "SETMUL",			0xC2,	pcf8833_setmul_fields,		ARRAY_SIZE(pcf8833_setmul_fields),		0 },
+	{ "TCVOPAB",		0xC3,	pcf8833_tcvopab_fields,		ARRAY_SIZE(pcf8833_tcvopab_fields),		0 },
+	{ "TCVOPCD",		0xC4,	pcf8833_tcvopcd_fields,		ARRAY_SIZE(pcf8833_tcvopcd_fields),		0 },
+	{ "TCDF",			0xC5,	pcf8833_tcdf_fields,		ARRAY_SIZE(pcf8833_tcdf_fields),		0 },
+	{ "DF8COLOR",		0xC6,	pcf8833_df8color_fields,	ARRAY_SIZE(pcf8833_df8color_fields),	0 },
+	{ "SETBS",			0xC7,	pcf8833_setbs_fields,		ARRAY_SIZE(pcf8833_setbs_fields),		0 },
+	{ "RDTEMP",			0xC8,	pcf8833_rdtemp_fields,		ARRAY_SIZE(pcf8833_rdtemp_fields),		0 },
+	{ "NLI",			0xC9,	pcf8833_nli_fields,			ARRAY_SIZE(pcf8833_nli_fields),			0 },
+	{ "RDID1",			0xDA,	pcf8833_rdid1_fields,		ARRAY_SIZE(pcf8833_rdid1_fields),		0 },
+	{ "RDID2",			0xDB,	pcf8833_rdid2_fields,		ARRAY_SIZE(pcf8833_rdid2_fields),		0 },
+	{ "RDID3",			0xDC,	pcf8833_rdid3_fields,		ARRAY_SIZE(pcf8833_rdid3_fields),		0 },
+	{ "SFD_INTERFACE",	0xEE,	NULL,						0,										0 },
+	{ "SFD_OTP",		0xEF,	NULL,						0,										0 },
+	{ "CALMODE",		0xF0,	pcf8833_calmode_fields,		ARRAY_SIZE(pcf8833_calmode_fields),		0 },
+	{ "OTPSHTIN",		0xF1,	pcf8833_otpshtin_fields,	ARRAY_SIZE(pcf8833_otpshtin_fields),	0 },
+};
+
+static const pmb887x_io_value_t pcf8882_rddidif_fields_module_type_values[] = {
+	{ "MONOCHROME",	0x00000000 },
+	{ "COLOR",		0x00008000 },
+};
+
+static const pmb887x_io_field_t pcf8882_rddidif_fields[] = {
+	{ "MODULE_CODE",	0x000000FF,	0,	NULL,										0 },
+	{ "VERSION",		0x00007F00,	8,	NULL,										0 },
+	{ "MODULE_TYPE",	0x00008000,	15,	pcf8882_rddidif_fields_module_type_values,	ARRAY_SIZE(pcf8882_rddidif_fields_module_type_values) },
+	{ "MANID",			0x00FF0000,	16,	NULL,										0 },
+};
+
+static const pmb887x_io_field_t pcf8882_rddst_fields[] = {
+	{ "TEARING",		0x00000200,	9,	NULL,	0 },
+	{ "DISPLAY_ON",		0x00000400,	10,	NULL,	0 },
+	{ "ALL_OFF",		0x00000800,	11,	NULL,	0 },
+	{ "ALL_ON",			0x00001000,	12,	NULL,	0 },
+	{ "INVERSION",		0x00002000,	13,	NULL,	0 },
+	{ "SCROLL",			0x00008000,	15,	NULL,	0 },
+	{ "NORMAL_DISPLAY",	0x00010000,	16,	NULL,	0 },
+	{ "SLEEP_OUT",		0x00020000,	17,	NULL,	0 },
+	{ "PARTIAL",		0x00040000,	18,	NULL,	0 },
+	{ "IDLE",			0x00080000,	19,	NULL,	0 },
+	{ "PIXEL_FORMAT",	0x00700000,	20,	NULL,	0 },
+	{ "RGB",			0x04000000,	26,	NULL,	0 },
+	{ "LAO",			0x08000000,	27,	NULL,	0 },
+	{ "V",				0x10000000,	28,	NULL,	0 },
+	{ "MX",				0x20000000,	29,	NULL,	0 },
+	{ "MY",				0x40000000,	30,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t pcf8882_caset_fields[] = {
+	{ "XE",	0x000000FF,	0,	NULL,	0 },
+	{ "XS",	0x0000FF00,	8,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t pcf8882_paset_fields[] = {
+	{ "YE",	0x000000FF,	0,	NULL,	0 },
+	{ "YS",	0x0000FF00,	8,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t pcf8882_ptlar_fields[] = {
+	{ "AREA_END",	0x000000FF,	0,	NULL,	0 },
+	{ "AREA_START",	0x0000FF00,	8,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t pcf8882_vscrdef_fields[] = {
+	{ "BOTTOM_FIXED",	0x000000FF,	0,	NULL,	0 },
+	{ "SCROLL_AREA",	0x0000FF00,	8,	NULL,	0 },
+	{ "TOP_FIXED",		0x00FF0000,	16,	NULL,	0 },
+};
+
+static const pmb887x_io_value_t pcf8882_madctl_fields_rgb_values[] = {
+	{ "RGB_ORDER",	0x00000000 },
+	{ "BGR_ORDER",	0x00000008 },
+};
+
+static const pmb887x_io_value_t pcf8882_madctl_fields_lao_values[] = {
+	{ "TOP_TO_BOTTOM",	0x00000000 },
+	{ "BOTTOM_TO_TOP",	0x00000010 },
+};
+
+static const pmb887x_io_value_t pcf8882_madctl_fields_v_values[] = {
+	{ "WRITE_X",	0x00000000 },
+	{ "WRITE_Y",	0x00000020 },
+};
+
+static const pmb887x_io_value_t pcf8882_madctl_fields_mx_values[] = {
+	{ "NORMAL",		0x00000000 },
+	{ "MIRRORED",	0x00000040 },
+};
+
+static const pmb887x_io_value_t pcf8882_madctl_fields_my_values[] = {
+	{ "NORMAL",		0x00000000 },
+	{ "MIRRORED",	0x00000080 },
+};
+
+static const pmb887x_io_field_t pcf8882_madctl_fields[] = {
+	{ "RGB",	0x00000008,	3,	pcf8882_madctl_fields_rgb_values,	ARRAY_SIZE(pcf8882_madctl_fields_rgb_values) },
+	{ "LAO",	0x00000010,	4,	pcf8882_madctl_fields_lao_values,	ARRAY_SIZE(pcf8882_madctl_fields_lao_values) },
+	{ "V",		0x00000020,	5,	pcf8882_madctl_fields_v_values,		ARRAY_SIZE(pcf8882_madctl_fields_v_values) },
+	{ "MX",		0x00000040,	6,	pcf8882_madctl_fields_mx_values,	ARRAY_SIZE(pcf8882_madctl_fields_mx_values) },
+	{ "MY",		0x00000080,	7,	pcf8882_madctl_fields_my_values,	ARRAY_SIZE(pcf8882_madctl_fields_my_values) },
+};
+
+static const pmb887x_io_field_t pcf8882_sep_fields[] = {
+	{ "VALUE",	0x000000FF,	0,	NULL,	0 },
+};
+
+static const pmb887x_io_value_t pcf8882_colmod_fields_p_values[] = {
+	{ "PIXEL_8_BIT",	0x00000002 },
+	{ "PIXEL_12_BIT",	0x00000003 },
+	{ "PIXEL_16_BIT",	0x00000005 },
+};
+
+static const pmb887x_io_field_t pcf8882_colmod_fields[] = {
+	{ "P",	0x00000007,	0,	pcf8882_colmod_fields_p_values,	ARRAY_SIZE(pcf8882_colmod_fields_p_values) },
+};
+
+static const pmb887x_io_field_t pcf8882_rdid1_fields[] = {
+	{ "MANID",	0x000000FF,	0,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t pcf8882_rdid2_fields[] = {
+	{ "VERSION",	0x000000FF,	0,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t pcf8882_rdid3_fields[] = {
+	{ "MODULE_ID",	0x000000FF,	0,	NULL,	0 },
+};
+
+static const pmb887x_io_reg_t pcf8882_regs[] = {
+	{ "NOP",		0x0,	NULL,					0,									0 },
+	{ "SWRESET",	0x1,	NULL,					0,									0 },
+	{ "RDDIDIF",	0x4,	pcf8882_rddidif_fields,	ARRAY_SIZE(pcf8882_rddidif_fields),	0 },
+	{ "RDDST",		0x9,	pcf8882_rddst_fields,	ARRAY_SIZE(pcf8882_rddst_fields),	0 },
+	{ "SLPIN",		0x10,	NULL,					0,									0 },
+	{ "SLPOUT",		0x11,	NULL,					0,									0 },
+	{ "PTLON",		0x12,	NULL,					0,									0 },
+	{ "NORON",		0x13,	NULL,					0,									0 },
+	{ "INVOFF",		0x20,	NULL,					0,									0 },
+	{ "INVON",		0x21,	NULL,					0,									0 },
+	{ "DALO",		0x22,	NULL,					0,									0 },
+	{ "DAL",		0x23,	NULL,					0,									0 },
+	{ "GAMSET",		0x26,	NULL,					0,									0 },
+	{ "DISPOFF",	0x28,	NULL,					0,									0 },
+	{ "DISPON",		0x29,	NULL,					0,									0 },
+	{ "CASET",		0x2A,	pcf8882_caset_fields,	ARRAY_SIZE(pcf8882_caset_fields),	0 },
+	{ "PASET",		0x2B,	pcf8882_paset_fields,	ARRAY_SIZE(pcf8882_paset_fields),	0 },
+	{ "RAMWR",		0x2C,	NULL,					0,									0 },
+	{ "RGBSET",		0x2D,	NULL,					0,									0 },
+	{ "PTLAR",		0x30,	pcf8882_ptlar_fields,	ARRAY_SIZE(pcf8882_ptlar_fields),	0 },
+	{ "VSCRDEF",	0x33,	pcf8882_vscrdef_fields,	ARRAY_SIZE(pcf8882_vscrdef_fields),	0 },
+	{ "TEOFF",		0x34,	NULL,					0,									0 },
+	{ "TEON",		0x35,	NULL,					0,									0 },
+	{ "MADCTL",		0x36,	pcf8882_madctl_fields,	ARRAY_SIZE(pcf8882_madctl_fields),	0 },
+	{ "SEP",		0x37,	pcf8882_sep_fields,		ARRAY_SIZE(pcf8882_sep_fields),		0 },
+	{ "IDMOFF",		0x38,	NULL,					0,									0 },
+	{ "IDMON",		0x39,	NULL,					0,									0 },
+	{ "COLMOD",		0x3A,	pcf8882_colmod_fields,	ARRAY_SIZE(pcf8882_colmod_fields),	0 },
+	{ "RDID1",		0xDA,	pcf8882_rdid1_fields,	ARRAY_SIZE(pcf8882_rdid1_fields),	0 },
+	{ "RDID2",		0xDB,	pcf8882_rdid2_fields,	ARRAY_SIZE(pcf8882_rdid2_fields),	0 },
+	{ "RDID3",		0xDC,	pcf8882_rdid3_fields,	ARRAY_SIZE(pcf8882_rdid3_fields),	0 },
 };
 
 static const pmb887x_io_field_t ssd1286_oscillation_fields[] = {
@@ -8173,9 +9401,12 @@ static const pmb887x_cpu_meta_t cpus_metadata[] = {
 };
 
 static const pmb887x_io_meta_t io_metadata[PMB887X_TRACE_IO_COUNT] = {
-	[PMB887X_TRACE_IO_D1094EC] = { "d1094ec",		d1094ec_regs,	ARRAY_SIZE(d1094ec_regs) },
+	[PMB887X_TRACE_IO_D1094XX] = { "d1094xx",		d1094xx_regs,	ARRAY_SIZE(d1094xx_regs) },
 	[PMB887X_TRACE_IO_D1601XX] = { "d1601xx",		d1601xx_regs,	ARRAY_SIZE(d1601xx_regs) },
 	[PMB887X_TRACE_IO_JBT6K71] = { "jbt6k71",		jbt6k71_regs,	ARRAY_SIZE(jbt6k71_regs) },
+	[PMB887X_TRACE_IO_PASIC] = { "pasic",			pasic_regs,		ARRAY_SIZE(pasic_regs) },
+	[PMB887X_TRACE_IO_PCF8833] = { "pcf8833",		pcf8833_regs,	ARRAY_SIZE(pcf8833_regs) },
+	[PMB887X_TRACE_IO_PCF8882] = { "pcf8882",		pcf8882_regs,	ARRAY_SIZE(pcf8882_regs) },
 	[PMB887X_TRACE_IO_SSD1286] = { "ssd1286",		ssd1286_regs,	ARRAY_SIZE(ssd1286_regs) },
 	[PMB887X_TRACE_IO_TEA5760UK] = { "tea5760uk",	tea5760uk_regs,	ARRAY_SIZE(tea5760uk_regs) },
 	[PMB887X_TRACE_IO_TEA5761UK] = { "tea5761uk",	tea5761uk_regs,	ARRAY_SIZE(tea5761uk_regs) },
