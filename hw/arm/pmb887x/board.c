@@ -21,7 +21,9 @@
 #include "hw/arm/pmb887x/board/board.h"
 #include "hw/arm/pmb887x/board/analog.h"
 #include "hw/arm/pmb887x/board/gpio.h"
+#include "hw/arm/pmb887x/board/keyboard.h"
 #include "hw/arm/pmb887x/board/cpu_module.h"
+#include "hw/arm/pmb887x/board/startup.h"
 
 #include "hw/arm/pmb887x/gen/brom.h"
 #include "hw/arm/pmb887x/gen/cpu_regs.h"
@@ -318,7 +320,9 @@ static void pmb887x_init(MachineState *machine) {
 	pmb887x_board_gpio_init_fixed_inputs();
 	pmb887x_board_gpio_init_fixed_connections();
 	pmb887x_board_init_devices(ebuc);
+	pmb887x_board_keyboard_connect_gpios(keypad);
 	pmb887x_qdev_connect_gpio_outputs();
+	pmb887x_board_startup_init(keypad);
 
 #if PMB887X_IO_BRIDGE
 	pmb8876_io_bridge_set_vic(vic);

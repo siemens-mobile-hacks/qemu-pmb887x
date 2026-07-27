@@ -49,9 +49,20 @@ struct pmb887x_keypad_t {
 	bool *pressed;
 	uint32_t *map;
 	uint32_t map_size;
+	qemu_irq *key_out;
 
 	qemu_irq gpio_out[4];
+	qemu_irq ready_out;
+	bool ready;
 };
+
+static void keypad_signal_ready(pmb887x_keypad_t *p) {
+	if (p->ready)
+		return;
+
+	p->ready = true;
+	qemu_irq_pulse(p->ready_out);
+}
 
 static void keypad_handle_event(DeviceState *dev, QemuConsole *src, InputEvent *evt) {
 	pmb887x_keypad_t *p = PMB887X_KEYPAD(dev);
@@ -65,6 +76,7 @@ static void keypad_handle_event(DeviceState *dev, QemuConsole *src, InputEvent *
 	if (p->pressed[keycode] == pressed)
 		return;
 	p->pressed[keycode] = pressed;
+	qemu_set_irq(p->key_out[keycode], pressed);
 	
 	for (int i = 0; i < KEYPAD_MAX_OUT; i++) {
 		if (!(p->map[keycode] & (1 << (8 + i))))
@@ -116,6 +128,7 @@ static uint64_t keypad_io_read(void *opaque, hwaddr haddr, unsigned size) {
 		case KEYPAD_PORT0:
 		case KEYPAD_PORT1:
 		case KEYPAD_PORT2:
+			keypad_signal_ready(p);
 			value = p->port[(haddr - KEYPAD_PORT0) / 4];
 			break;
 		
@@ -152,6 +165,8 @@ static void keypad_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned
 		case KEYPAD_INT2_SRC:
 		case KEYPAD_INT3_SRC:
 			pmb887x_src_set(&p->src[(haddr - KEYPAD_INT0_SRC) / 4], value);
+			if ((value & MOD_SRC_SRE) != 0)
+				keypad_signal_ready(p);
 			break;
 		
 		default:
@@ -165,7 +180,7 @@ static const MemoryRegionOps io_ops = {
 	.write			= keypad_io_write,
 	.endianness		= DEVICE_NATIVE_ENDIAN,
 	.valid			= {
-		.min_access_size	= 1,
+		.min_access_size	= 4,
 		.max_access_size	= 4
 	}
 };
@@ -201,6 +216,7 @@ static void keypad_init(Object *obj) {
 	qdev_init_gpio_out_named(dev, &p->gpio_out[1], "OUT1_OUT", 1);
 	qdev_init_gpio_out_named(dev, &p->gpio_out[2], "OUT2_OUT", 1);
 	qdev_init_gpio_out_named(dev, &p->gpio_out[3], "OUT3_OUT", 1);
+	qdev_init_gpio_out_named(dev, &p->ready_out, "KEYPAD_READY_OUT", 1);
 }
 
 static void keypad_realize(DeviceState *dev, Error **errp) {
@@ -209,6 +225,8 @@ static void keypad_realize(DeviceState *dev, Error **errp) {
 	p->con = 0;
 	p->extension = 0;
 	p->pressed = g_new0(bool, p->map_size);
+	p->key_out = g_new0(qemu_irq, p->map_size);
+	qdev_init_gpio_out_named(dev, p->key_out, "KEY_OUT", p->map_size);
 	
 	for (int i = 0; i < KEYPAD_MAX_OUT; i++) {
 		for (int j = 0; j < KEYPAD_MAX_IN; j++)

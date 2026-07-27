@@ -12,6 +12,7 @@
 #include "qemu/main-loop.h"
 #include "hw/core/qdev-properties.h"
 #include "hw/i2c/i2c.h"
+#include "hw/arm/pmb887x/gen/peripheral/PMB6812.h"
 #include "hw/arm/pmb887x/trace.h"
 
 #define TYPE_PMB887X_PMIC	"pmb6812"
@@ -24,6 +25,8 @@ struct pmb887x_pmic_t {
 	uint32_t reg_id;
 	uint8_t wcycle;
 	uint8_t regs[256];
+	bool on_level;
+	bool lon_frozen;
 };
 
 static const uint8_t regs_PMB6812[256] = {
@@ -44,6 +47,28 @@ static const uint8_t regs_PMB6812[256] = {
 	0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
 	0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
 };
+
+static void pmic_update_on_level(pmb887x_pmic_t *p) {
+	if (p->on_level) {
+		p->regs[PMB6812_ISF] |= PMB6812_ISF_LON;
+	} else {
+		p->regs[PMB6812_ISF] &= ~PMB6812_ISF_LON;
+	}
+}
+
+static void pmic_handle_on_input(void *opaque, int line, int level) {
+	pmb887x_pmic_t *p = opaque;
+	bool on_level = level != 0;
+
+	if (p->on_level == on_level)
+		return;
+
+	p->on_level = on_level;
+	if (!p->lon_frozen)
+		pmic_update_on_level(p);
+	if ((p->regs[PMB6812_INTCTRL2] & PMB6812_INTCTRL2_EION) != 0)
+		p->lon_frozen = true;
+}
 
 static int pmic_event(I2CSlave *s, enum i2c_event event) {
 	pmb887x_pmic_t *p = PMB887X_PMIC(s);
@@ -72,7 +97,12 @@ static int pmic_event(I2CSlave *s, enum i2c_event event) {
 static uint8_t pmic_recv(I2CSlave *s) {
 	pmb887x_pmic_t *p = PMB887X_PMIC(s);
 	uint8_t data = p->regs[p->reg_id];
+
 	IO_DUMP_READ(p->reg_id, 1, data);
+	if (p->reg_id == PMB6812_ISF) {
+		p->lon_frozen = false;
+		pmic_update_on_level(p);
+	}
 	p->reg_id = (p->reg_id + 1) % ARRAY_SIZE(p->regs);
 
 	return data;
@@ -80,11 +110,18 @@ static uint8_t pmic_recv(I2CSlave *s) {
 
 static int pmic_send(I2CSlave *s, uint8_t data) {
 	pmb887x_pmic_t *p = PMB887X_PMIC(s);
+
 	if (p->wcycle == 0) {
 		p->reg_id = data % ARRAY_SIZE(p->regs);
 	} else {
 		IO_DUMP_WRITE(p->reg_id, 1, data);
 		p->regs[p->reg_id] = data;
+		if (p->reg_id == PMB6812_INTCTRL2) {
+			if ((data & PMB6812_INTCTRL2_EION) == 0)
+				p->lon_frozen = false;
+			if (!p->lon_frozen)
+				pmic_update_on_level(p);
+		}
 		p->reg_id = (p->reg_id + 1) % ARRAY_SIZE(p->regs);
 	}
 
@@ -93,14 +130,27 @@ static int pmic_send(I2CSlave *s, uint8_t data) {
 	return 0;
 }
 
-static void pmic_realize(DeviceState *dev, Error **errp) {
+static void pmic_reset(DeviceState *dev) {
 	pmb887x_pmic_t *p = PMB887X_PMIC(dev);
+	p->reg_id = 0;
+	p->wcycle = 0;
+	p->lon_frozen = false;
 	memcpy(p->regs, regs_PMB6812, sizeof(regs_PMB6812));
+	pmic_update_on_level(p);
+}
+
+static void pmic_realize(DeviceState *dev, Error **errp) {
+	pmic_reset(dev);
+}
+
+static void pmic_init(Object *obj) {
+	qdev_init_gpio_in_named(DEVICE(obj), pmic_handle_on_input, "ON_IN", 1);
 }
 
 static void pmic_class_init(ObjectClass *klass, const void *data) {
 	DeviceClass *dc = DEVICE_CLASS(klass);
 	I2CSlaveClass *k = I2C_SLAVE_CLASS(klass);
+	device_class_set_legacy_reset(dc, pmic_reset);
 	dc->realize = pmic_realize;
 	k->event = &pmic_event;
 	k->recv = &pmic_recv;
@@ -111,6 +161,7 @@ static const TypeInfo pmic_info = {
 	.name = TYPE_PMB887X_PMIC,
 	.parent = TYPE_I2C_SLAVE,
 	.instance_size = sizeof(pmb887x_pmic_t),
+	.instance_init = pmic_init,
 	.class_init = pmic_class_init,
 };
 

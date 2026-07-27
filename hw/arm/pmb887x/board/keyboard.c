@@ -1,14 +1,16 @@
 #include "hw/arm/pmb887x/board/keyboard.h"
 #include "hw/arm/pmb887x/board/board.h"
+#include "hw/arm/pmb887x/board/gpio.h"
 
 #include "hw/arm/pmb887x/utils/toml.h"
 #include "hw/arm/pmb887x/utils/tomlc17.h"
+#include "hw/core/irq.h"
 #include "qapi/qapi-types-ui.h"
 #include "qemu/error-report.h"
 
-static struct {
-	char name[64];
-	uint32_t id;
+static const struct {
+	const char *name;
+	QKeyCode qcode;
 } keyboard_map[] = {
 	{ "NAV_UP", Q_KEY_CODE_UP },
 	{ "NAV_RIGHT", Q_KEY_CODE_RIGHT },
@@ -59,6 +61,48 @@ static struct {
 	{ "HASH", Q_KEY_CODE_KP_DIVIDE },
 };
 
+bool pmb887x_board_find_keycode(const char *name, QKeyCode *qcode) {
+	pmb887x_board_t *board = pmb887x_board();
+
+	for (size_t i = 0; i < ARRAY_SIZE(keyboard_map); i++) {
+		if (strcmp(name, keyboard_map[i].name) == 0 && board->keymap[keyboard_map[i].qcode]) {
+			*qcode = keyboard_map[i].qcode;
+			return true;
+		}
+	}
+
+	return false;
+}
+
+void pmb887x_board_keyboard_connect_gpios(DeviceState *keypad) {
+	pmb887x_board_t *board = pmb887x_board();
+	toml_datum_t table = toml_table_get(board->config, TOML_TABLE, "keyboard.gpio", false);
+
+	if (table.type == TOML_UNKNOWN)
+		return;
+
+	for (int i = 0; i < table.u.tab.size; i++) {
+		const char *key_name = table.u.tab.key[i];
+		toml_datum_t connections = toml_table_get(table, TOML_ARRAY, key_name, true);
+		QKeyCode qcode;
+
+		if (!pmb887x_board_find_keycode(key_name, &qcode)) {
+			error_report("Unknown key '%s' in keyboard GPIO config", key_name);
+			exit(EXIT_FAILURE);
+		}
+
+		for (int j = 0; j < connections.u.arr.size; j++) {
+			toml_datum_t config = toml_array_get(connections, TOML_TABLE, j, true);
+			const char *target = toml_table_get_string(config, "target", NULL, true);
+			qemu_irq input = pmb887x_gpio_get_input(target);
+
+			if (toml_table_get_bool(config, "inverted", false, false))
+				input = qemu_irq_invert(input);
+			pmb887x_qdev_connect_gpio_out(keypad, "KEY_OUT", qcode, input);
+		}
+	}
+}
+
 void pmb887x_board_keymap_init(void) {
 	pmb887x_board_t *board = pmb887x_board();
 
@@ -67,6 +111,9 @@ void pmb887x_board_keymap_init(void) {
 		return;
 	for (int i = 0; i < table.u.tab.size; i++) {
 		const char *key_name = table.u.tab.key[i];
+		if (strcmp(key_name, "gpio") == 0)
+			continue;
+
 		uint32_t keycode = 0;
 		toml_datum_t arr = toml_table_get(table, TOML_ARRAY, key_name, true);
 		if (arr.u.arr.size < 2) {
@@ -85,7 +132,7 @@ void pmb887x_board_keymap_init(void) {
 		bool found = false;
 		for (size_t j = 0; j < ARRAY_SIZE(keyboard_map); j++) {
 			if (strcmp(key_name, keyboard_map[j].name) == 0) {
-				board->keymap[keyboard_map[j].id] = keycode;
+				board->keymap[keyboard_map[j].qcode] = keycode;
 				found = true;
 			}
 		}
