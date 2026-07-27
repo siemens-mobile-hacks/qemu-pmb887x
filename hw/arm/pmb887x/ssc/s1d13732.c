@@ -302,6 +302,20 @@ static uint32_t gimmick_transfer(SSIPeripheral *dev, uint32_t in) {
 	return out;
 }
 
+static uint32_t gimmick_transfer_raw(SSIPeripheral *dev, uint32_t in) {
+	pmb887x_gimmick_t *p = PMB887X_GIMMICK(dev);
+	bool selected = !dev->cs;
+	if (!selected && !p->lcd_data_bypass)
+		return 0;
+
+	return gimmick_transfer(dev, in);
+}
+
+static void gimmick_handle_cs(void *opaque, int n, int level) {
+	SSIPeripheral *dev = SSI_PERIPHERAL(opaque);
+	dev->cs = level != 0;
+}
+
 static void gimmick_handle_sa0(void *opaque, int n, int level) {
 	pmb887x_gimmick_t *p = PMB887X_GIMMICK(opaque);
 	bool new_is_command = level == 0;
@@ -343,6 +357,7 @@ static void gimmick_realize(SSIPeripheral *d, Error **errp) {
 		"FPDAT4_OUT", "FPDAT5_OUT", "FPDAT6_OUT", "FPDAT7_OUT",
 	};
 	p->bus = ssi_create_bus(DEVICE(d), TYPE_PMB887X_GIMMICK);
+	qdev_init_gpio_in_named(DEVICE(d), gimmick_handle_cs, SSI_GPIO_CS, 1);
 	qdev_init_gpio_in_named(DEVICE(d), gimmick_handle_sa0, "SA0_IN", 1);
 	qdev_init_gpio_in_named(DEVICE(d), gimmick_handle_reset, "RESET_IN", 1);
 	qdev_init_gpio_out_named(DEVICE(d), &p->fpline, "FPLINE_OUT", 1);
@@ -362,6 +377,7 @@ static void gimmick_class_init(ObjectClass *klass, const void *data) {
 	device_class_set_legacy_reset(dc, gimmick_reset);
 	k->realize = gimmick_realize;
 	k->transfer = gimmick_transfer;
+	k->transfer_raw = gimmick_transfer_raw;
 	k->cs_polarity = SSI_CS_LOW;
 }
 
