@@ -280,11 +280,11 @@
 #define PMB8876_SCU_EXTI5_IRQ		53
 #define PMB8876_SCU_EXTI6_IRQ		54
 #define PMB8876_SCU_EXTI7_IRQ		55
-#define PMB8876_SCU_DSP0_IRQ		56
-#define PMB8876_SCU_DSP1_IRQ		57
-#define PMB8876_SCU_DSP2_IRQ		58
-#define PMB8876_SCU_DSP3_IRQ		59
-#define PMB8876_SCU_DSP4_IRQ		60
+#define PMB8876_SCU_PM_INT_IRQ		56
+#define PMB8876_SCU_DSP0_IRQ		57
+#define PMB8876_SCU_DSP1_IRQ		58
+#define PMB8876_SCU_DSP2_IRQ		59
+#define PMB8876_SCU_DSP3_IRQ		60
 #define PMB8876_SCU_UNK0_IRQ		61
 #define PMB8876_SCU_UNK1_IRQ		62
 #define PMB8876_SCCU_UNK_IRQ		63
@@ -568,11 +568,11 @@
 #define PMB8875_SCU_EXTI5_IRQ		53
 #define PMB8875_SCU_EXTI6_IRQ		54
 #define PMB8875_SCU_EXTI7_IRQ		55
-#define PMB8875_SCU_DSP0_IRQ		56
-#define PMB8875_SCU_DSP1_IRQ		57
-#define PMB8875_SCU_DSP2_IRQ		58
-#define PMB8875_SCU_DSP3_IRQ		59
-#define PMB8875_SCU_DSP4_IRQ		60
+#define PMB8875_SCU_PM_INT_IRQ		56
+#define PMB8875_SCU_DSP0_IRQ		57
+#define PMB8875_SCU_DSP1_IRQ		58
+#define PMB8875_SCU_DSP2_IRQ		59
+#define PMB8875_SCU_DSP3_IRQ		60
 #define PMB8875_SCU_UNK0_IRQ		61
 #define PMB8875_SCU_UNK1_IRQ		62
 #define PMB8875_SCCU_UNK_IRQ		63
@@ -3355,19 +3355,19 @@
 /* Module Identifier Register */
 #define DSP_ID						0x08
 
-/* Communication Flag Set Register (write one to set, reads as zero) */
+/* MCU Communication Flag Set Register (write one to set, reads as zero) */
 #define DSP_COM_SET					0x1C
-#define DSP_COM_SET_FLAGS			(0xFFFF << 0)					 // Communication flags to set
+#define DSP_COM_SET_FLAGS			(0xFFFF << 0)					 // Communication flags to set; flag 0 handshakes boot commands on DSP interrupt 0
 #define DSP_COM_SET_FLAGS_SHIFT		0
 
-/* Communication Flag Clear Register (write one to clear, reads as zero) */
+/* MCU Communication Flag Reset Register (write one to clear, reads as zero) */
 #define DSP_COM_CLEAR				0x20
-#define DSP_COM_CLEAR_FLAGS			(0xFFFF << 0)					 // Communication flags to clear
+#define DSP_COM_CLEAR_FLAGS			(0xFFFF << 0)					 // Communication flags to reset; DSP clears flag 0 after accepting a boot command
 #define DSP_COM_CLEAR_FLAGS_SHIFT	0
 
-/* Communication Flag Status Register (read-only) */
+/* MCU Communication Flag Status Register (read-only) */
 #define DSP_COM_STATUS				0x24
-#define DSP_COM_STATUS_FLAGS		(0xFFFF << 0)					 // Communication flag status
+#define DSP_COM_STATUS_FLAGS		(0xFFFF << 0)					 // Shared MCU/DSP communication flag status
 #define DSP_COM_STATUS_FLAGS_SHIFT	0
 
 
@@ -5727,124 +5727,124 @@
 #define SCU_WDT_SR_WDTTIM				(0xFFFF << 16)		 // Watchdog Timer Value
 #define SCU_WDT_SR_WDTTIM_SHIFT			16
 
-/* DSP Interrupt Request Register */
+/* MCU-to-DSP Interrupt Request Register */
 #define SCU_DSP_INT						0x30
-#define SCU_DSP_INT_REQ					(0x7 << 0)			 // DSP interrupt request lines
+#define SCU_DSP_INT_REQ					(0x7 << 0)			 // MCU interrupt request lines to the DSP
 #define SCU_DSP_INT_REQ_SHIFT			0
 
-/* Interrupt Filter Select Register */
-#define SCU_INT_FILTER					0x38
-#define SCU_INT_FILTER_EXT0				(0x3 << 0)
-#define SCU_INT_FILTER_EXT0_SHIFT		0
-#define SCU_INT_FILTER_EXT0_OFF			0x0
-#define SCU_INT_FILTER_EXT0_CLOCK_1		0x1
-#define SCU_INT_FILTER_EXT0_CLOCK_2		0x2
-#define SCU_INT_FILTER_EXT0_CLOCK_3		0x3
-#define SCU_INT_FILTER_EXT1				(0x3 << 2)
-#define SCU_INT_FILTER_EXT1_SHIFT		2
-#define SCU_INT_FILTER_EXT1_OFF			0x0
-#define SCU_INT_FILTER_EXT1_CLOCK_1		0x4
-#define SCU_INT_FILTER_EXT1_CLOCK_2		0x8
-#define SCU_INT_FILTER_EXT1_CLOCK_3		0xC
-#define SCU_INT_FILTER_EXT2				(0x3 << 4)
-#define SCU_INT_FILTER_EXT2_SHIFT		4
-#define SCU_INT_FILTER_EXT2_OFF			0x0
-#define SCU_INT_FILTER_EXT2_CLOCK_1		0x10
-#define SCU_INT_FILTER_EXT2_CLOCK_2		0x20
-#define SCU_INT_FILTER_EXT2_CLOCK_3		0x30
-#define SCU_INT_FILTER_EXT3				(0x3 << 6)
-#define SCU_INT_FILTER_EXT3_SHIFT		6
-#define SCU_INT_FILTER_EXT3_OFF			0x0
-#define SCU_INT_FILTER_EXT3_CLOCK_1		0x40
-#define SCU_INT_FILTER_EXT3_CLOCK_2		0x80
-#define SCU_INT_FILTER_EXT3_CLOCK_3		0xC0
-#define SCU_INT_FILTER_EXT4				(0x3 << 8)
-#define SCU_INT_FILTER_EXT4_SHIFT		8
-#define SCU_INT_FILTER_EXT4_OFF			0x0
-#define SCU_INT_FILTER_EXT4_CLOCK_1		0x100
-#define SCU_INT_FILTER_EXT4_CLOCK_2		0x200
-#define SCU_INT_FILTER_EXT4_CLOCK_3		0x300
-#define SCU_INT_FILTER_EXT5				(0x3 << 10)
-#define SCU_INT_FILTER_EXT5_SHIFT		10
-#define SCU_INT_FILTER_EXT5_OFF			0x0
-#define SCU_INT_FILTER_EXT5_CLOCK_1		0x400
-#define SCU_INT_FILTER_EXT5_CLOCK_2		0x800
-#define SCU_INT_FILTER_EXT5_CLOCK_3		0xC00
-#define SCU_INT_FILTER_EXT6				(0x3 << 12)
-#define SCU_INT_FILTER_EXT6_SHIFT		12
-#define SCU_INT_FILTER_EXT6_OFF			0x0
-#define SCU_INT_FILTER_EXT6_CLOCK_1		0x1000
-#define SCU_INT_FILTER_EXT6_CLOCK_2		0x2000
-#define SCU_INT_FILTER_EXT6_CLOCK_3		0x3000
-#define SCU_INT_FILTER_EXT7				(0x3 << 14)
-#define SCU_INT_FILTER_EXT7_SHIFT		14
-#define SCU_INT_FILTER_EXT7_OFF			0x0
-#define SCU_INT_FILTER_EXT7_CLOCK_1		0x4000
-#define SCU_INT_FILTER_EXT7_CLOCK_2		0x8000
-#define SCU_INT_FILTER_EXT7_CLOCK_3		0xC000
-#define SCU_INT_FILTER_DSP0				(0x3 << 16)
-#define SCU_INT_FILTER_DSP0_SHIFT		16
-#define SCU_INT_FILTER_DSP0_OFF			0x0
-#define SCU_INT_FILTER_DSP0_CLOCK_1		0x10000
-#define SCU_INT_FILTER_DSP0_CLOCK_2		0x20000
-#define SCU_INT_FILTER_DSP0_CLOCK_3		0x30000
+/* External Interrupt Filter Select Register */
+#define SCU_EXTI_FILTER					0x38
+#define SCU_EXTI_FILTER_EXT0			(0x3 << 0)
+#define SCU_EXTI_FILTER_EXT0_SHIFT		0
+#define SCU_EXTI_FILTER_EXT0_OFF		0x0
+#define SCU_EXTI_FILTER_EXT0_CLOCK_1	0x1
+#define SCU_EXTI_FILTER_EXT0_CLOCK_2	0x2
+#define SCU_EXTI_FILTER_EXT0_CLOCK_3	0x3
+#define SCU_EXTI_FILTER_EXT1			(0x3 << 2)
+#define SCU_EXTI_FILTER_EXT1_SHIFT		2
+#define SCU_EXTI_FILTER_EXT1_OFF		0x0
+#define SCU_EXTI_FILTER_EXT1_CLOCK_1	0x4
+#define SCU_EXTI_FILTER_EXT1_CLOCK_2	0x8
+#define SCU_EXTI_FILTER_EXT1_CLOCK_3	0xC
+#define SCU_EXTI_FILTER_EXT2			(0x3 << 4)
+#define SCU_EXTI_FILTER_EXT2_SHIFT		4
+#define SCU_EXTI_FILTER_EXT2_OFF		0x0
+#define SCU_EXTI_FILTER_EXT2_CLOCK_1	0x10
+#define SCU_EXTI_FILTER_EXT2_CLOCK_2	0x20
+#define SCU_EXTI_FILTER_EXT2_CLOCK_3	0x30
+#define SCU_EXTI_FILTER_EXT3			(0x3 << 6)
+#define SCU_EXTI_FILTER_EXT3_SHIFT		6
+#define SCU_EXTI_FILTER_EXT3_OFF		0x0
+#define SCU_EXTI_FILTER_EXT3_CLOCK_1	0x40
+#define SCU_EXTI_FILTER_EXT3_CLOCK_2	0x80
+#define SCU_EXTI_FILTER_EXT3_CLOCK_3	0xC0
+#define SCU_EXTI_FILTER_EXT4			(0x3 << 8)
+#define SCU_EXTI_FILTER_EXT4_SHIFT		8
+#define SCU_EXTI_FILTER_EXT4_OFF		0x0
+#define SCU_EXTI_FILTER_EXT4_CLOCK_1	0x100
+#define SCU_EXTI_FILTER_EXT4_CLOCK_2	0x200
+#define SCU_EXTI_FILTER_EXT4_CLOCK_3	0x300
+#define SCU_EXTI_FILTER_EXT5			(0x3 << 10)
+#define SCU_EXTI_FILTER_EXT5_SHIFT		10
+#define SCU_EXTI_FILTER_EXT5_OFF		0x0
+#define SCU_EXTI_FILTER_EXT5_CLOCK_1	0x400
+#define SCU_EXTI_FILTER_EXT5_CLOCK_2	0x800
+#define SCU_EXTI_FILTER_EXT5_CLOCK_3	0xC00
+#define SCU_EXTI_FILTER_EXT6			(0x3 << 12)
+#define SCU_EXTI_FILTER_EXT6_SHIFT		12
+#define SCU_EXTI_FILTER_EXT6_OFF		0x0
+#define SCU_EXTI_FILTER_EXT6_CLOCK_1	0x1000
+#define SCU_EXTI_FILTER_EXT6_CLOCK_2	0x2000
+#define SCU_EXTI_FILTER_EXT6_CLOCK_3	0x3000
+#define SCU_EXTI_FILTER_EXT7			(0x3 << 14)
+#define SCU_EXTI_FILTER_EXT7_SHIFT		14
+#define SCU_EXTI_FILTER_EXT7_OFF		0x0
+#define SCU_EXTI_FILTER_EXT7_CLOCK_1	0x4000
+#define SCU_EXTI_FILTER_EXT7_CLOCK_2	0x8000
+#define SCU_EXTI_FILTER_EXT7_CLOCK_3	0xC000
+#define SCU_EXTI_FILTER_PM_INT			(0x3 << 16)
+#define SCU_EXTI_FILTER_PM_INT_SHIFT	16
+#define SCU_EXTI_FILTER_PM_INT_OFF		0x0
+#define SCU_EXTI_FILTER_PM_INT_CLOCK_1	0x10000
+#define SCU_EXTI_FILTER_PM_INT_CLOCK_2	0x20000
+#define SCU_EXTI_FILTER_PM_INT_CLOCK_3	0x30000
 
-/* Interrupt Edge Select Register */
-#define SCU_INT_EDGE					0x3C
-#define SCU_INT_EDGE_EXT0				(0x3 << 0)
-#define SCU_INT_EDGE_EXT0_SHIFT			0
-#define SCU_INT_EDGE_EXT0_OFF			0x0
-#define SCU_INT_EDGE_EXT0_RISING		0x1
-#define SCU_INT_EDGE_EXT0_FALLING		0x2
-#define SCU_INT_EDGE_EXT0_ANY			0x3
-#define SCU_INT_EDGE_EXT1				(0x3 << 2)
-#define SCU_INT_EDGE_EXT1_SHIFT			2
-#define SCU_INT_EDGE_EXT1_OFF			0x0
-#define SCU_INT_EDGE_EXT1_RISING		0x4
-#define SCU_INT_EDGE_EXT1_FALLING		0x8
-#define SCU_INT_EDGE_EXT1_ANY			0xC
-#define SCU_INT_EDGE_EXT2				(0x3 << 4)
-#define SCU_INT_EDGE_EXT2_SHIFT			4
-#define SCU_INT_EDGE_EXT2_OFF			0x0
-#define SCU_INT_EDGE_EXT2_RISING		0x10
-#define SCU_INT_EDGE_EXT2_FALLING		0x20
-#define SCU_INT_EDGE_EXT2_ANY			0x30
-#define SCU_INT_EDGE_EXT3				(0x3 << 6)
-#define SCU_INT_EDGE_EXT3_SHIFT			6
-#define SCU_INT_EDGE_EXT3_OFF			0x0
-#define SCU_INT_EDGE_EXT3_RISING		0x40
-#define SCU_INT_EDGE_EXT3_FALLING		0x80
-#define SCU_INT_EDGE_EXT3_ANY			0xC0
-#define SCU_INT_EDGE_EXT4				(0x3 << 8)
-#define SCU_INT_EDGE_EXT4_SHIFT			8
-#define SCU_INT_EDGE_EXT4_OFF			0x0
-#define SCU_INT_EDGE_EXT4_RISING		0x100
-#define SCU_INT_EDGE_EXT4_FALLING		0x200
-#define SCU_INT_EDGE_EXT4_ANY			0x300
-#define SCU_INT_EDGE_EXT5				(0x3 << 10)
-#define SCU_INT_EDGE_EXT5_SHIFT			10
-#define SCU_INT_EDGE_EXT5_OFF			0x0
-#define SCU_INT_EDGE_EXT5_RISING		0x400
-#define SCU_INT_EDGE_EXT5_FALLING		0x800
-#define SCU_INT_EDGE_EXT5_ANY			0xC00
-#define SCU_INT_EDGE_EXT6				(0x3 << 12)
-#define SCU_INT_EDGE_EXT6_SHIFT			12
-#define SCU_INT_EDGE_EXT6_OFF			0x0
-#define SCU_INT_EDGE_EXT6_RISING		0x1000
-#define SCU_INT_EDGE_EXT6_FALLING		0x2000
-#define SCU_INT_EDGE_EXT6_ANY			0x3000
-#define SCU_INT_EDGE_EXT7				(0x3 << 14)
-#define SCU_INT_EDGE_EXT7_SHIFT			14
-#define SCU_INT_EDGE_EXT7_OFF			0x0
-#define SCU_INT_EDGE_EXT7_RISING		0x4000
-#define SCU_INT_EDGE_EXT7_FALLING		0x8000
-#define SCU_INT_EDGE_EXT7_ANY			0xC000
-#define SCU_INT_EDGE_DSP0				(0x3 << 16)
-#define SCU_INT_EDGE_DSP0_SHIFT			16
-#define SCU_INT_EDGE_DSP0_OFF			0x0
-#define SCU_INT_EDGE_DSP0_RISING		0x10000
-#define SCU_INT_EDGE_DSP0_FALLING		0x20000
-#define SCU_INT_EDGE_DSP0_ANY			0x30000
+/* External Interrupt Edge Select Register */
+#define SCU_EXTI_EDGE					0x3C
+#define SCU_EXTI_EDGE_EXT0				(0x3 << 0)
+#define SCU_EXTI_EDGE_EXT0_SHIFT		0
+#define SCU_EXTI_EDGE_EXT0_OFF			0x0
+#define SCU_EXTI_EDGE_EXT0_RISING		0x1
+#define SCU_EXTI_EDGE_EXT0_FALLING		0x2
+#define SCU_EXTI_EDGE_EXT0_ANY			0x3
+#define SCU_EXTI_EDGE_EXT1				(0x3 << 2)
+#define SCU_EXTI_EDGE_EXT1_SHIFT		2
+#define SCU_EXTI_EDGE_EXT1_OFF			0x0
+#define SCU_EXTI_EDGE_EXT1_RISING		0x4
+#define SCU_EXTI_EDGE_EXT1_FALLING		0x8
+#define SCU_EXTI_EDGE_EXT1_ANY			0xC
+#define SCU_EXTI_EDGE_EXT2				(0x3 << 4)
+#define SCU_EXTI_EDGE_EXT2_SHIFT		4
+#define SCU_EXTI_EDGE_EXT2_OFF			0x0
+#define SCU_EXTI_EDGE_EXT2_RISING		0x10
+#define SCU_EXTI_EDGE_EXT2_FALLING		0x20
+#define SCU_EXTI_EDGE_EXT2_ANY			0x30
+#define SCU_EXTI_EDGE_EXT3				(0x3 << 6)
+#define SCU_EXTI_EDGE_EXT3_SHIFT		6
+#define SCU_EXTI_EDGE_EXT3_OFF			0x0
+#define SCU_EXTI_EDGE_EXT3_RISING		0x40
+#define SCU_EXTI_EDGE_EXT3_FALLING		0x80
+#define SCU_EXTI_EDGE_EXT3_ANY			0xC0
+#define SCU_EXTI_EDGE_EXT4				(0x3 << 8)
+#define SCU_EXTI_EDGE_EXT4_SHIFT		8
+#define SCU_EXTI_EDGE_EXT4_OFF			0x0
+#define SCU_EXTI_EDGE_EXT4_RISING		0x100
+#define SCU_EXTI_EDGE_EXT4_FALLING		0x200
+#define SCU_EXTI_EDGE_EXT4_ANY			0x300
+#define SCU_EXTI_EDGE_EXT5				(0x3 << 10)
+#define SCU_EXTI_EDGE_EXT5_SHIFT		10
+#define SCU_EXTI_EDGE_EXT5_OFF			0x0
+#define SCU_EXTI_EDGE_EXT5_RISING		0x400
+#define SCU_EXTI_EDGE_EXT5_FALLING		0x800
+#define SCU_EXTI_EDGE_EXT5_ANY			0xC00
+#define SCU_EXTI_EDGE_EXT6				(0x3 << 12)
+#define SCU_EXTI_EDGE_EXT6_SHIFT		12
+#define SCU_EXTI_EDGE_EXT6_OFF			0x0
+#define SCU_EXTI_EDGE_EXT6_RISING		0x1000
+#define SCU_EXTI_EDGE_EXT6_FALLING		0x2000
+#define SCU_EXTI_EDGE_EXT6_ANY			0x3000
+#define SCU_EXTI_EDGE_EXT7				(0x3 << 14)
+#define SCU_EXTI_EDGE_EXT7_SHIFT		14
+#define SCU_EXTI_EDGE_EXT7_OFF			0x0
+#define SCU_EXTI_EDGE_EXT7_RISING		0x4000
+#define SCU_EXTI_EDGE_EXT7_FALLING		0x8000
+#define SCU_EXTI_EDGE_EXT7_ANY			0xC000
+#define SCU_EXTI_EDGE_PM_INT			(0x3 << 16)
+#define SCU_EXTI_EDGE_PM_INT_SHIFT		16
+#define SCU_EXTI_EDGE_PM_INT_OFF		0x0
+#define SCU_EXTI_EDGE_PM_INT_RISING		0x10000
+#define SCU_EXTI_EDGE_PM_INT_FALLING	0x20000
+#define SCU_EXTI_EDGE_PM_INT_ANY		0x30000
 
 #define SCU_EBUCLC1						0x40
 #define SCU_EBUCLC1_FLAG1				(0xF << 0)
@@ -5970,12 +5970,14 @@
 /* Service Routing Control Register */
 #define SCU_EXTI4_SRC					0xC8
 
-/* Service Routing Control Register */
-#define SCU_DSP_SRC0					0xCC
-#define SCU_DSP_SRC1					0xD0
-#define SCU_DSP_SRC2					0xD4
-#define SCU_DSP_SRC3					0xD8
-#define SCU_DSP_SRC4					0xDC
+/* Power ASIC/PMIC Interrupt Service Request Register */
+#define SCU_PM_INT_SRC					0xCC
+
+/* DSP-to-MCU Interrupt Service Request Registers; D:DE10 bits 0..3 */
+#define SCU_DSP_SRC0					0xD0
+#define SCU_DSP_SRC1					0xD4
+#define SCU_DSP_SRC2					0xD8
+#define SCU_DSP_SRC3					0xDC
 
 /* Service Routing Control Register */
 #define SCU_UNK0_SRC					0xE8

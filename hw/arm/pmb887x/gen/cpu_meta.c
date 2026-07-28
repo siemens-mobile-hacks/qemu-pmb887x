@@ -4671,154 +4671,154 @@ static const pmb887x_io_field_t scu_dsp_int_fields[] = {
 	{"REQ",	SCU_DSP_INT_REQ,	SCU_DSP_INT_REQ_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_value_t scu_scu_int_filter_ext0_values[] = {
-	{"OFF",		SCU_INT_FILTER_EXT0_OFF},
-	{"CLOCK_1",	SCU_INT_FILTER_EXT0_CLOCK_1},
-	{"CLOCK_2",	SCU_INT_FILTER_EXT0_CLOCK_2},
-	{"CLOCK_3",	SCU_INT_FILTER_EXT0_CLOCK_3},
+static const pmb887x_io_value_t scu_scu_exti_filter_ext0_values[] = {
+	{"OFF",		SCU_EXTI_FILTER_EXT0_OFF},
+	{"CLOCK_1",	SCU_EXTI_FILTER_EXT0_CLOCK_1},
+	{"CLOCK_2",	SCU_EXTI_FILTER_EXT0_CLOCK_2},
+	{"CLOCK_3",	SCU_EXTI_FILTER_EXT0_CLOCK_3},
 };
 
-static const pmb887x_io_value_t scu_scu_int_filter_ext1_values[] = {
-	{"OFF",		SCU_INT_FILTER_EXT1_OFF},
-	{"CLOCK_1",	SCU_INT_FILTER_EXT1_CLOCK_1},
-	{"CLOCK_2",	SCU_INT_FILTER_EXT1_CLOCK_2},
-	{"CLOCK_3",	SCU_INT_FILTER_EXT1_CLOCK_3},
+static const pmb887x_io_value_t scu_scu_exti_filter_ext1_values[] = {
+	{"OFF",		SCU_EXTI_FILTER_EXT1_OFF},
+	{"CLOCK_1",	SCU_EXTI_FILTER_EXT1_CLOCK_1},
+	{"CLOCK_2",	SCU_EXTI_FILTER_EXT1_CLOCK_2},
+	{"CLOCK_3",	SCU_EXTI_FILTER_EXT1_CLOCK_3},
 };
 
-static const pmb887x_io_value_t scu_scu_int_filter_ext2_values[] = {
-	{"OFF",		SCU_INT_FILTER_EXT2_OFF},
-	{"CLOCK_1",	SCU_INT_FILTER_EXT2_CLOCK_1},
-	{"CLOCK_2",	SCU_INT_FILTER_EXT2_CLOCK_2},
-	{"CLOCK_3",	SCU_INT_FILTER_EXT2_CLOCK_3},
+static const pmb887x_io_value_t scu_scu_exti_filter_ext2_values[] = {
+	{"OFF",		SCU_EXTI_FILTER_EXT2_OFF},
+	{"CLOCK_1",	SCU_EXTI_FILTER_EXT2_CLOCK_1},
+	{"CLOCK_2",	SCU_EXTI_FILTER_EXT2_CLOCK_2},
+	{"CLOCK_3",	SCU_EXTI_FILTER_EXT2_CLOCK_3},
 };
 
-static const pmb887x_io_value_t scu_scu_int_filter_ext3_values[] = {
-	{"OFF",		SCU_INT_FILTER_EXT3_OFF},
-	{"CLOCK_1",	SCU_INT_FILTER_EXT3_CLOCK_1},
-	{"CLOCK_2",	SCU_INT_FILTER_EXT3_CLOCK_2},
-	{"CLOCK_3",	SCU_INT_FILTER_EXT3_CLOCK_3},
+static const pmb887x_io_value_t scu_scu_exti_filter_ext3_values[] = {
+	{"OFF",		SCU_EXTI_FILTER_EXT3_OFF},
+	{"CLOCK_1",	SCU_EXTI_FILTER_EXT3_CLOCK_1},
+	{"CLOCK_2",	SCU_EXTI_FILTER_EXT3_CLOCK_2},
+	{"CLOCK_3",	SCU_EXTI_FILTER_EXT3_CLOCK_3},
 };
 
-static const pmb887x_io_value_t scu_scu_int_filter_ext4_values[] = {
-	{"OFF",		SCU_INT_FILTER_EXT4_OFF},
-	{"CLOCK_1",	SCU_INT_FILTER_EXT4_CLOCK_1},
-	{"CLOCK_2",	SCU_INT_FILTER_EXT4_CLOCK_2},
-	{"CLOCK_3",	SCU_INT_FILTER_EXT4_CLOCK_3},
+static const pmb887x_io_value_t scu_scu_exti_filter_ext4_values[] = {
+	{"OFF",		SCU_EXTI_FILTER_EXT4_OFF},
+	{"CLOCK_1",	SCU_EXTI_FILTER_EXT4_CLOCK_1},
+	{"CLOCK_2",	SCU_EXTI_FILTER_EXT4_CLOCK_2},
+	{"CLOCK_3",	SCU_EXTI_FILTER_EXT4_CLOCK_3},
 };
 
-static const pmb887x_io_value_t scu_scu_int_filter_ext5_values[] = {
-	{"OFF",		SCU_INT_FILTER_EXT5_OFF},
-	{"CLOCK_1",	SCU_INT_FILTER_EXT5_CLOCK_1},
-	{"CLOCK_2",	SCU_INT_FILTER_EXT5_CLOCK_2},
-	{"CLOCK_3",	SCU_INT_FILTER_EXT5_CLOCK_3},
+static const pmb887x_io_value_t scu_scu_exti_filter_ext5_values[] = {
+	{"OFF",		SCU_EXTI_FILTER_EXT5_OFF},
+	{"CLOCK_1",	SCU_EXTI_FILTER_EXT5_CLOCK_1},
+	{"CLOCK_2",	SCU_EXTI_FILTER_EXT5_CLOCK_2},
+	{"CLOCK_3",	SCU_EXTI_FILTER_EXT5_CLOCK_3},
 };
 
-static const pmb887x_io_value_t scu_scu_int_filter_ext6_values[] = {
-	{"OFF",		SCU_INT_FILTER_EXT6_OFF},
-	{"CLOCK_1",	SCU_INT_FILTER_EXT6_CLOCK_1},
-	{"CLOCK_2",	SCU_INT_FILTER_EXT6_CLOCK_2},
-	{"CLOCK_3",	SCU_INT_FILTER_EXT6_CLOCK_3},
+static const pmb887x_io_value_t scu_scu_exti_filter_ext6_values[] = {
+	{"OFF",		SCU_EXTI_FILTER_EXT6_OFF},
+	{"CLOCK_1",	SCU_EXTI_FILTER_EXT6_CLOCK_1},
+	{"CLOCK_2",	SCU_EXTI_FILTER_EXT6_CLOCK_2},
+	{"CLOCK_3",	SCU_EXTI_FILTER_EXT6_CLOCK_3},
 };
 
-static const pmb887x_io_value_t scu_scu_int_filter_ext7_values[] = {
-	{"OFF",		SCU_INT_FILTER_EXT7_OFF},
-	{"CLOCK_1",	SCU_INT_FILTER_EXT7_CLOCK_1},
-	{"CLOCK_2",	SCU_INT_FILTER_EXT7_CLOCK_2},
-	{"CLOCK_3",	SCU_INT_FILTER_EXT7_CLOCK_3},
+static const pmb887x_io_value_t scu_scu_exti_filter_ext7_values[] = {
+	{"OFF",		SCU_EXTI_FILTER_EXT7_OFF},
+	{"CLOCK_1",	SCU_EXTI_FILTER_EXT7_CLOCK_1},
+	{"CLOCK_2",	SCU_EXTI_FILTER_EXT7_CLOCK_2},
+	{"CLOCK_3",	SCU_EXTI_FILTER_EXT7_CLOCK_3},
 };
 
-static const pmb887x_io_value_t scu_scu_int_filter_dsp0_values[] = {
-	{"OFF",		SCU_INT_FILTER_DSP0_OFF},
-	{"CLOCK_1",	SCU_INT_FILTER_DSP0_CLOCK_1},
-	{"CLOCK_2",	SCU_INT_FILTER_DSP0_CLOCK_2},
-	{"CLOCK_3",	SCU_INT_FILTER_DSP0_CLOCK_3},
+static const pmb887x_io_value_t scu_scu_exti_filter_pm_int_values[] = {
+	{"OFF",		SCU_EXTI_FILTER_PM_INT_OFF},
+	{"CLOCK_1",	SCU_EXTI_FILTER_PM_INT_CLOCK_1},
+	{"CLOCK_2",	SCU_EXTI_FILTER_PM_INT_CLOCK_2},
+	{"CLOCK_3",	SCU_EXTI_FILTER_PM_INT_CLOCK_3},
 };
 
-static const pmb887x_io_field_t scu_int_filter_fields[] = {
-	{"EXT0",	SCU_INT_FILTER_EXT0,	SCU_INT_FILTER_EXT0_SHIFT,	scu_scu_int_filter_ext0_values,	ARRAY_SIZE(scu_scu_int_filter_ext0_values)},
-	{"EXT1",	SCU_INT_FILTER_EXT1,	SCU_INT_FILTER_EXT1_SHIFT,	scu_scu_int_filter_ext1_values,	ARRAY_SIZE(scu_scu_int_filter_ext1_values)},
-	{"EXT2",	SCU_INT_FILTER_EXT2,	SCU_INT_FILTER_EXT2_SHIFT,	scu_scu_int_filter_ext2_values,	ARRAY_SIZE(scu_scu_int_filter_ext2_values)},
-	{"EXT3",	SCU_INT_FILTER_EXT3,	SCU_INT_FILTER_EXT3_SHIFT,	scu_scu_int_filter_ext3_values,	ARRAY_SIZE(scu_scu_int_filter_ext3_values)},
-	{"EXT4",	SCU_INT_FILTER_EXT4,	SCU_INT_FILTER_EXT4_SHIFT,	scu_scu_int_filter_ext4_values,	ARRAY_SIZE(scu_scu_int_filter_ext4_values)},
-	{"EXT5",	SCU_INT_FILTER_EXT5,	SCU_INT_FILTER_EXT5_SHIFT,	scu_scu_int_filter_ext5_values,	ARRAY_SIZE(scu_scu_int_filter_ext5_values)},
-	{"EXT6",	SCU_INT_FILTER_EXT6,	SCU_INT_FILTER_EXT6_SHIFT,	scu_scu_int_filter_ext6_values,	ARRAY_SIZE(scu_scu_int_filter_ext6_values)},
-	{"EXT7",	SCU_INT_FILTER_EXT7,	SCU_INT_FILTER_EXT7_SHIFT,	scu_scu_int_filter_ext7_values,	ARRAY_SIZE(scu_scu_int_filter_ext7_values)},
-	{"DSP0",	SCU_INT_FILTER_DSP0,	SCU_INT_FILTER_DSP0_SHIFT,	scu_scu_int_filter_dsp0_values,	ARRAY_SIZE(scu_scu_int_filter_dsp0_values)},
+static const pmb887x_io_field_t scu_exti_filter_fields[] = {
+	{"EXT0",	SCU_EXTI_FILTER_EXT0,	SCU_EXTI_FILTER_EXT0_SHIFT,		scu_scu_exti_filter_ext0_values,	ARRAY_SIZE(scu_scu_exti_filter_ext0_values)},
+	{"EXT1",	SCU_EXTI_FILTER_EXT1,	SCU_EXTI_FILTER_EXT1_SHIFT,		scu_scu_exti_filter_ext1_values,	ARRAY_SIZE(scu_scu_exti_filter_ext1_values)},
+	{"EXT2",	SCU_EXTI_FILTER_EXT2,	SCU_EXTI_FILTER_EXT2_SHIFT,		scu_scu_exti_filter_ext2_values,	ARRAY_SIZE(scu_scu_exti_filter_ext2_values)},
+	{"EXT3",	SCU_EXTI_FILTER_EXT3,	SCU_EXTI_FILTER_EXT3_SHIFT,		scu_scu_exti_filter_ext3_values,	ARRAY_SIZE(scu_scu_exti_filter_ext3_values)},
+	{"EXT4",	SCU_EXTI_FILTER_EXT4,	SCU_EXTI_FILTER_EXT4_SHIFT,		scu_scu_exti_filter_ext4_values,	ARRAY_SIZE(scu_scu_exti_filter_ext4_values)},
+	{"EXT5",	SCU_EXTI_FILTER_EXT5,	SCU_EXTI_FILTER_EXT5_SHIFT,		scu_scu_exti_filter_ext5_values,	ARRAY_SIZE(scu_scu_exti_filter_ext5_values)},
+	{"EXT6",	SCU_EXTI_FILTER_EXT6,	SCU_EXTI_FILTER_EXT6_SHIFT,		scu_scu_exti_filter_ext6_values,	ARRAY_SIZE(scu_scu_exti_filter_ext6_values)},
+	{"EXT7",	SCU_EXTI_FILTER_EXT7,	SCU_EXTI_FILTER_EXT7_SHIFT,		scu_scu_exti_filter_ext7_values,	ARRAY_SIZE(scu_scu_exti_filter_ext7_values)},
+	{"PM_INT",	SCU_EXTI_FILTER_PM_INT,	SCU_EXTI_FILTER_PM_INT_SHIFT,	scu_scu_exti_filter_pm_int_values,	ARRAY_SIZE(scu_scu_exti_filter_pm_int_values)},
 };
 
-static const pmb887x_io_value_t scu_scu_int_edge_ext0_values[] = {
-	{"OFF",		SCU_INT_EDGE_EXT0_OFF},
-	{"RISING",	SCU_INT_EDGE_EXT0_RISING},
-	{"FALLING",	SCU_INT_EDGE_EXT0_FALLING},
-	{"ANY",		SCU_INT_EDGE_EXT0_ANY},
+static const pmb887x_io_value_t scu_scu_exti_edge_ext0_values[] = {
+	{"OFF",		SCU_EXTI_EDGE_EXT0_OFF},
+	{"RISING",	SCU_EXTI_EDGE_EXT0_RISING},
+	{"FALLING",	SCU_EXTI_EDGE_EXT0_FALLING},
+	{"ANY",		SCU_EXTI_EDGE_EXT0_ANY},
 };
 
-static const pmb887x_io_value_t scu_scu_int_edge_ext1_values[] = {
-	{"OFF",		SCU_INT_EDGE_EXT1_OFF},
-	{"RISING",	SCU_INT_EDGE_EXT1_RISING},
-	{"FALLING",	SCU_INT_EDGE_EXT1_FALLING},
-	{"ANY",		SCU_INT_EDGE_EXT1_ANY},
+static const pmb887x_io_value_t scu_scu_exti_edge_ext1_values[] = {
+	{"OFF",		SCU_EXTI_EDGE_EXT1_OFF},
+	{"RISING",	SCU_EXTI_EDGE_EXT1_RISING},
+	{"FALLING",	SCU_EXTI_EDGE_EXT1_FALLING},
+	{"ANY",		SCU_EXTI_EDGE_EXT1_ANY},
 };
 
-static const pmb887x_io_value_t scu_scu_int_edge_ext2_values[] = {
-	{"OFF",		SCU_INT_EDGE_EXT2_OFF},
-	{"RISING",	SCU_INT_EDGE_EXT2_RISING},
-	{"FALLING",	SCU_INT_EDGE_EXT2_FALLING},
-	{"ANY",		SCU_INT_EDGE_EXT2_ANY},
+static const pmb887x_io_value_t scu_scu_exti_edge_ext2_values[] = {
+	{"OFF",		SCU_EXTI_EDGE_EXT2_OFF},
+	{"RISING",	SCU_EXTI_EDGE_EXT2_RISING},
+	{"FALLING",	SCU_EXTI_EDGE_EXT2_FALLING},
+	{"ANY",		SCU_EXTI_EDGE_EXT2_ANY},
 };
 
-static const pmb887x_io_value_t scu_scu_int_edge_ext3_values[] = {
-	{"OFF",		SCU_INT_EDGE_EXT3_OFF},
-	{"RISING",	SCU_INT_EDGE_EXT3_RISING},
-	{"FALLING",	SCU_INT_EDGE_EXT3_FALLING},
-	{"ANY",		SCU_INT_EDGE_EXT3_ANY},
+static const pmb887x_io_value_t scu_scu_exti_edge_ext3_values[] = {
+	{"OFF",		SCU_EXTI_EDGE_EXT3_OFF},
+	{"RISING",	SCU_EXTI_EDGE_EXT3_RISING},
+	{"FALLING",	SCU_EXTI_EDGE_EXT3_FALLING},
+	{"ANY",		SCU_EXTI_EDGE_EXT3_ANY},
 };
 
-static const pmb887x_io_value_t scu_scu_int_edge_ext4_values[] = {
-	{"OFF",		SCU_INT_EDGE_EXT4_OFF},
-	{"RISING",	SCU_INT_EDGE_EXT4_RISING},
-	{"FALLING",	SCU_INT_EDGE_EXT4_FALLING},
-	{"ANY",		SCU_INT_EDGE_EXT4_ANY},
+static const pmb887x_io_value_t scu_scu_exti_edge_ext4_values[] = {
+	{"OFF",		SCU_EXTI_EDGE_EXT4_OFF},
+	{"RISING",	SCU_EXTI_EDGE_EXT4_RISING},
+	{"FALLING",	SCU_EXTI_EDGE_EXT4_FALLING},
+	{"ANY",		SCU_EXTI_EDGE_EXT4_ANY},
 };
 
-static const pmb887x_io_value_t scu_scu_int_edge_ext5_values[] = {
-	{"OFF",		SCU_INT_EDGE_EXT5_OFF},
-	{"RISING",	SCU_INT_EDGE_EXT5_RISING},
-	{"FALLING",	SCU_INT_EDGE_EXT5_FALLING},
-	{"ANY",		SCU_INT_EDGE_EXT5_ANY},
+static const pmb887x_io_value_t scu_scu_exti_edge_ext5_values[] = {
+	{"OFF",		SCU_EXTI_EDGE_EXT5_OFF},
+	{"RISING",	SCU_EXTI_EDGE_EXT5_RISING},
+	{"FALLING",	SCU_EXTI_EDGE_EXT5_FALLING},
+	{"ANY",		SCU_EXTI_EDGE_EXT5_ANY},
 };
 
-static const pmb887x_io_value_t scu_scu_int_edge_ext6_values[] = {
-	{"OFF",		SCU_INT_EDGE_EXT6_OFF},
-	{"RISING",	SCU_INT_EDGE_EXT6_RISING},
-	{"FALLING",	SCU_INT_EDGE_EXT6_FALLING},
-	{"ANY",		SCU_INT_EDGE_EXT6_ANY},
+static const pmb887x_io_value_t scu_scu_exti_edge_ext6_values[] = {
+	{"OFF",		SCU_EXTI_EDGE_EXT6_OFF},
+	{"RISING",	SCU_EXTI_EDGE_EXT6_RISING},
+	{"FALLING",	SCU_EXTI_EDGE_EXT6_FALLING},
+	{"ANY",		SCU_EXTI_EDGE_EXT6_ANY},
 };
 
-static const pmb887x_io_value_t scu_scu_int_edge_ext7_values[] = {
-	{"OFF",		SCU_INT_EDGE_EXT7_OFF},
-	{"RISING",	SCU_INT_EDGE_EXT7_RISING},
-	{"FALLING",	SCU_INT_EDGE_EXT7_FALLING},
-	{"ANY",		SCU_INT_EDGE_EXT7_ANY},
+static const pmb887x_io_value_t scu_scu_exti_edge_ext7_values[] = {
+	{"OFF",		SCU_EXTI_EDGE_EXT7_OFF},
+	{"RISING",	SCU_EXTI_EDGE_EXT7_RISING},
+	{"FALLING",	SCU_EXTI_EDGE_EXT7_FALLING},
+	{"ANY",		SCU_EXTI_EDGE_EXT7_ANY},
 };
 
-static const pmb887x_io_value_t scu_scu_int_edge_dsp0_values[] = {
-	{"OFF",		SCU_INT_EDGE_DSP0_OFF},
-	{"RISING",	SCU_INT_EDGE_DSP0_RISING},
-	{"FALLING",	SCU_INT_EDGE_DSP0_FALLING},
-	{"ANY",		SCU_INT_EDGE_DSP0_ANY},
+static const pmb887x_io_value_t scu_scu_exti_edge_pm_int_values[] = {
+	{"OFF",		SCU_EXTI_EDGE_PM_INT_OFF},
+	{"RISING",	SCU_EXTI_EDGE_PM_INT_RISING},
+	{"FALLING",	SCU_EXTI_EDGE_PM_INT_FALLING},
+	{"ANY",		SCU_EXTI_EDGE_PM_INT_ANY},
 };
 
-static const pmb887x_io_field_t scu_int_edge_fields[] = {
-	{"EXT0",	SCU_INT_EDGE_EXT0,	SCU_INT_EDGE_EXT0_SHIFT,	scu_scu_int_edge_ext0_values,	ARRAY_SIZE(scu_scu_int_edge_ext0_values)},
-	{"EXT1",	SCU_INT_EDGE_EXT1,	SCU_INT_EDGE_EXT1_SHIFT,	scu_scu_int_edge_ext1_values,	ARRAY_SIZE(scu_scu_int_edge_ext1_values)},
-	{"EXT2",	SCU_INT_EDGE_EXT2,	SCU_INT_EDGE_EXT2_SHIFT,	scu_scu_int_edge_ext2_values,	ARRAY_SIZE(scu_scu_int_edge_ext2_values)},
-	{"EXT3",	SCU_INT_EDGE_EXT3,	SCU_INT_EDGE_EXT3_SHIFT,	scu_scu_int_edge_ext3_values,	ARRAY_SIZE(scu_scu_int_edge_ext3_values)},
-	{"EXT4",	SCU_INT_EDGE_EXT4,	SCU_INT_EDGE_EXT4_SHIFT,	scu_scu_int_edge_ext4_values,	ARRAY_SIZE(scu_scu_int_edge_ext4_values)},
-	{"EXT5",	SCU_INT_EDGE_EXT5,	SCU_INT_EDGE_EXT5_SHIFT,	scu_scu_int_edge_ext5_values,	ARRAY_SIZE(scu_scu_int_edge_ext5_values)},
-	{"EXT6",	SCU_INT_EDGE_EXT6,	SCU_INT_EDGE_EXT6_SHIFT,	scu_scu_int_edge_ext6_values,	ARRAY_SIZE(scu_scu_int_edge_ext6_values)},
-	{"EXT7",	SCU_INT_EDGE_EXT7,	SCU_INT_EDGE_EXT7_SHIFT,	scu_scu_int_edge_ext7_values,	ARRAY_SIZE(scu_scu_int_edge_ext7_values)},
-	{"DSP0",	SCU_INT_EDGE_DSP0,	SCU_INT_EDGE_DSP0_SHIFT,	scu_scu_int_edge_dsp0_values,	ARRAY_SIZE(scu_scu_int_edge_dsp0_values)},
+static const pmb887x_io_field_t scu_exti_edge_fields[] = {
+	{"EXT0",	SCU_EXTI_EDGE_EXT0,		SCU_EXTI_EDGE_EXT0_SHIFT,	scu_scu_exti_edge_ext0_values,		ARRAY_SIZE(scu_scu_exti_edge_ext0_values)},
+	{"EXT1",	SCU_EXTI_EDGE_EXT1,		SCU_EXTI_EDGE_EXT1_SHIFT,	scu_scu_exti_edge_ext1_values,		ARRAY_SIZE(scu_scu_exti_edge_ext1_values)},
+	{"EXT2",	SCU_EXTI_EDGE_EXT2,		SCU_EXTI_EDGE_EXT2_SHIFT,	scu_scu_exti_edge_ext2_values,		ARRAY_SIZE(scu_scu_exti_edge_ext2_values)},
+	{"EXT3",	SCU_EXTI_EDGE_EXT3,		SCU_EXTI_EDGE_EXT3_SHIFT,	scu_scu_exti_edge_ext3_values,		ARRAY_SIZE(scu_scu_exti_edge_ext3_values)},
+	{"EXT4",	SCU_EXTI_EDGE_EXT4,		SCU_EXTI_EDGE_EXT4_SHIFT,	scu_scu_exti_edge_ext4_values,		ARRAY_SIZE(scu_scu_exti_edge_ext4_values)},
+	{"EXT5",	SCU_EXTI_EDGE_EXT5,		SCU_EXTI_EDGE_EXT5_SHIFT,	scu_scu_exti_edge_ext5_values,		ARRAY_SIZE(scu_scu_exti_edge_ext5_values)},
+	{"EXT6",	SCU_EXTI_EDGE_EXT6,		SCU_EXTI_EDGE_EXT6_SHIFT,	scu_scu_exti_edge_ext6_values,		ARRAY_SIZE(scu_scu_exti_edge_ext6_values)},
+	{"EXT7",	SCU_EXTI_EDGE_EXT7,		SCU_EXTI_EDGE_EXT7_SHIFT,	scu_scu_exti_edge_ext7_values,		ARRAY_SIZE(scu_scu_exti_edge_ext7_values)},
+	{"PM_INT",	SCU_EXTI_EDGE_PM_INT,	SCU_EXTI_EDGE_PM_INT_SHIFT,	scu_scu_exti_edge_pm_int_values,	ARRAY_SIZE(scu_scu_exti_edge_pm_int_values)},
 };
 
 static const pmb887x_io_field_t scu_ebuclc1_fields[] = {
@@ -4952,6 +4952,15 @@ static const pmb887x_io_field_t scu_exti4_src_fields[] = {
 	{"SETR",	MOD_SRC_SETR,	MOD_SRC_SETR_SHIFT,	NULL,	0},
 };
 
+static const pmb887x_io_field_t scu_pm_int_src_fields[] = {
+	{"SRPN",	MOD_SRC_SRPN,	MOD_SRC_SRPN_SHIFT,	NULL,	0},
+	{"TOS",		MOD_SRC_TOS,	MOD_SRC_TOS_SHIFT,	NULL,	0},
+	{"SRE",		MOD_SRC_SRE,	MOD_SRC_SRE_SHIFT,	NULL,	0},
+	{"SRR",		MOD_SRC_SRR,	MOD_SRC_SRR_SHIFT,	NULL,	0},
+	{"CLRR",	MOD_SRC_CLRR,	MOD_SRC_CLRR_SHIFT,	NULL,	0},
+	{"SETR",	MOD_SRC_SETR,	MOD_SRC_SETR_SHIFT,	NULL,	0},
+};
+
 static const pmb887x_io_field_t scu_dsp_src_fields[] = {
 	{"SRPN",	MOD_SRC_SRPN,	MOD_SRC_SRPN_SHIFT,	NULL,	0},
 	{"TOS",		MOD_SRC_TOS,	MOD_SRC_TOS_SHIFT,	NULL,	0},
@@ -5016,48 +5025,48 @@ static const pmb887x_io_field_t scu_exti7_src_fields[] = {
 };
 
 static const pmb887x_io_reg_t scu_regs[] = {
-	{"CLC",			SCU_CLC,		scu_clc_fields,			ARRAY_SIZE(scu_clc_fields),			0},
-	{"ID",			SCU_ID,			scu_id_fields,			ARRAY_SIZE(scu_id_fields),			0},
-	{"RST_SR",		SCU_RST_SR,		scu_rst_sr_fields,		ARRAY_SIZE(scu_rst_sr_fields),		0},
-	{"RST_CON",		SCU_RST_CON,	scu_rst_con_fields,		ARRAY_SIZE(scu_rst_con_fields),		0},
-	{"RST_REQ",		SCU_RST_REQ,	scu_rst_req_fields,		ARRAY_SIZE(scu_rst_req_fields),		0},
-	{"SLEEP_REQ",	SCU_SLEEP_REQ,	scu_sleep_req_fields,	ARRAY_SIZE(scu_sleep_req_fields),	0},
-	{"WDTCON0",		SCU_WDTCON0,	scu_wdtcon0_fields,		ARRAY_SIZE(scu_wdtcon0_fields),		0},
-	{"WDTCON1",		SCU_WDTCON1,	scu_wdtcon1_fields,		ARRAY_SIZE(scu_wdtcon1_fields),		0},
-	{"WDT_SR",		SCU_WDT_SR,		scu_wdt_sr_fields,		ARRAY_SIZE(scu_wdt_sr_fields),		0},
-	{"DSP_INT",		SCU_DSP_INT,	scu_dsp_int_fields,		ARRAY_SIZE(scu_dsp_int_fields),		0},
-	{"INT_FILTER",	SCU_INT_FILTER,	scu_int_filter_fields,	ARRAY_SIZE(scu_int_filter_fields),	0},
-	{"INT_EDGE",	SCU_INT_EDGE,	scu_int_edge_fields,	ARRAY_SIZE(scu_int_edge_fields),	0},
-	{"EBUCLC1",		SCU_EBUCLC1,	scu_ebuclc1_fields,		ARRAY_SIZE(scu_ebuclc1_fields),		0},
-	{"EBUCLC2",		SCU_EBUCLC2,	scu_ebuclc2_fields,		ARRAY_SIZE(scu_ebuclc2_fields),		0},
-	{"EBUCLC",		SCU_EBUCLC,		scu_ebuclc_fields,		ARRAY_SIZE(scu_ebuclc_fields),		0},
-	{"EMU_ID",		SCU_EMU_ID,		scu_emu_id_fields,		ARRAY_SIZE(scu_emu_id_fields),		0},
-	{"MANID",		SCU_MANID,		scu_manid_fields,		ARRAY_SIZE(scu_manid_fields),		0},
-	{"CHIPID",		SCU_CHIPID,		scu_chipid_fields,		ARRAY_SIZE(scu_chipid_fields),		0},
-	{"RTCIF",		SCU_RTCIF,		scu_rtcif_fields,		ARRAY_SIZE(scu_rtcif_fields),		0},
-	{"UID0",		SCU_UID0,		NULL,					0,									0},
-	{"UID1",		SCU_UID1,		scu_uid1_fields,		ARRAY_SIZE(scu_uid1_fields),		0},
-	{"UID2",		SCU_UID2,		scu_uid2_fields,		ARRAY_SIZE(scu_uid2_fields),		0},
-	{"BOOT_FLAG",	SCU_BOOT_FLAG,	scu_boot_flag_fields,	ARRAY_SIZE(scu_boot_flag_fields),	0},
-	{"ROMAMCR",		SCU_ROMAMCR,	scu_romamcr_fields,		ARRAY_SIZE(scu_romamcr_fields),		0},
-	{"RTID",		SCU_RTID,		scu_rtid_fields,		ARRAY_SIZE(scu_rtid_fields),		0},
-	{"DMARS",		SCU_DMARS,		scu_dmars_fields,		ARRAY_SIZE(scu_dmars_fields),		0},
-	{"EXTI0_SRC",	SCU_EXTI0_SRC,	scu_exti0_src_fields,	ARRAY_SIZE(scu_exti0_src_fields),	0},
-	{"EXTI1_SRC",	SCU_EXTI1_SRC,	scu_exti1_src_fields,	ARRAY_SIZE(scu_exti1_src_fields),	0},
-	{"EXTI2_SRC",	SCU_EXTI2_SRC,	scu_exti2_src_fields,	ARRAY_SIZE(scu_exti2_src_fields),	0},
-	{"EXTI3_SRC",	SCU_EXTI3_SRC,	scu_exti3_src_fields,	ARRAY_SIZE(scu_exti3_src_fields),	0},
-	{"EXTI4_SRC",	SCU_EXTI4_SRC,	scu_exti4_src_fields,	ARRAY_SIZE(scu_exti4_src_fields),	0},
-	{"DSP_SRC0",	SCU_DSP_SRC0,	scu_dsp_src_fields,		ARRAY_SIZE(scu_dsp_src_fields),		0},
-	{"DSP_SRC1",	SCU_DSP_SRC1,	scu_dsp_src_fields,		ARRAY_SIZE(scu_dsp_src_fields),		0},
-	{"DSP_SRC2",	SCU_DSP_SRC2,	scu_dsp_src_fields,		ARRAY_SIZE(scu_dsp_src_fields),		0},
-	{"DSP_SRC3",	SCU_DSP_SRC3,	scu_dsp_src_fields,		ARRAY_SIZE(scu_dsp_src_fields),		0},
-	{"DSP_SRC4",	SCU_DSP_SRC4,	scu_dsp_src_fields,		ARRAY_SIZE(scu_dsp_src_fields),		0},
-	{"UNK0_SRC",	SCU_UNK0_SRC,	scu_unk0_src_fields,	ARRAY_SIZE(scu_unk0_src_fields),	0},
-	{"UNK1_SRC",	SCU_UNK1_SRC,	scu_unk1_src_fields,	ARRAY_SIZE(scu_unk1_src_fields),	0},
-	{"UNK2_SRC",	SCU_UNK2_SRC,	scu_unk2_src_fields,	ARRAY_SIZE(scu_unk2_src_fields),	0},
-	{"EXTI5_SRC",	SCU_EXTI5_SRC,	scu_exti5_src_fields,	ARRAY_SIZE(scu_exti5_src_fields),	0},
-	{"EXTI6_SRC",	SCU_EXTI6_SRC,	scu_exti6_src_fields,	ARRAY_SIZE(scu_exti6_src_fields),	0},
-	{"EXTI7_SRC",	SCU_EXTI7_SRC,	scu_exti7_src_fields,	ARRAY_SIZE(scu_exti7_src_fields),	0},
+	{"CLC",			SCU_CLC,			scu_clc_fields,			ARRAY_SIZE(scu_clc_fields),			0},
+	{"ID",			SCU_ID,				scu_id_fields,			ARRAY_SIZE(scu_id_fields),			0},
+	{"RST_SR",		SCU_RST_SR,			scu_rst_sr_fields,		ARRAY_SIZE(scu_rst_sr_fields),		0},
+	{"RST_CON",		SCU_RST_CON,		scu_rst_con_fields,		ARRAY_SIZE(scu_rst_con_fields),		0},
+	{"RST_REQ",		SCU_RST_REQ,		scu_rst_req_fields,		ARRAY_SIZE(scu_rst_req_fields),		0},
+	{"SLEEP_REQ",	SCU_SLEEP_REQ,		scu_sleep_req_fields,	ARRAY_SIZE(scu_sleep_req_fields),	0},
+	{"WDTCON0",		SCU_WDTCON0,		scu_wdtcon0_fields,		ARRAY_SIZE(scu_wdtcon0_fields),		0},
+	{"WDTCON1",		SCU_WDTCON1,		scu_wdtcon1_fields,		ARRAY_SIZE(scu_wdtcon1_fields),		0},
+	{"WDT_SR",		SCU_WDT_SR,			scu_wdt_sr_fields,		ARRAY_SIZE(scu_wdt_sr_fields),		0},
+	{"DSP_INT",		SCU_DSP_INT,		scu_dsp_int_fields,		ARRAY_SIZE(scu_dsp_int_fields),		0},
+	{"EXTI_FILTER",	SCU_EXTI_FILTER,	scu_exti_filter_fields,	ARRAY_SIZE(scu_exti_filter_fields),	0},
+	{"EXTI_EDGE",	SCU_EXTI_EDGE,		scu_exti_edge_fields,	ARRAY_SIZE(scu_exti_edge_fields),	0},
+	{"EBUCLC1",		SCU_EBUCLC1,		scu_ebuclc1_fields,		ARRAY_SIZE(scu_ebuclc1_fields),		0},
+	{"EBUCLC2",		SCU_EBUCLC2,		scu_ebuclc2_fields,		ARRAY_SIZE(scu_ebuclc2_fields),		0},
+	{"EBUCLC",		SCU_EBUCLC,			scu_ebuclc_fields,		ARRAY_SIZE(scu_ebuclc_fields),		0},
+	{"EMU_ID",		SCU_EMU_ID,			scu_emu_id_fields,		ARRAY_SIZE(scu_emu_id_fields),		0},
+	{"MANID",		SCU_MANID,			scu_manid_fields,		ARRAY_SIZE(scu_manid_fields),		0},
+	{"CHIPID",		SCU_CHIPID,			scu_chipid_fields,		ARRAY_SIZE(scu_chipid_fields),		0},
+	{"RTCIF",		SCU_RTCIF,			scu_rtcif_fields,		ARRAY_SIZE(scu_rtcif_fields),		0},
+	{"UID0",		SCU_UID0,			NULL,					0,									0},
+	{"UID1",		SCU_UID1,			scu_uid1_fields,		ARRAY_SIZE(scu_uid1_fields),		0},
+	{"UID2",		SCU_UID2,			scu_uid2_fields,		ARRAY_SIZE(scu_uid2_fields),		0},
+	{"BOOT_FLAG",	SCU_BOOT_FLAG,		scu_boot_flag_fields,	ARRAY_SIZE(scu_boot_flag_fields),	0},
+	{"ROMAMCR",		SCU_ROMAMCR,		scu_romamcr_fields,		ARRAY_SIZE(scu_romamcr_fields),		0},
+	{"RTID",		SCU_RTID,			scu_rtid_fields,		ARRAY_SIZE(scu_rtid_fields),		0},
+	{"DMARS",		SCU_DMARS,			scu_dmars_fields,		ARRAY_SIZE(scu_dmars_fields),		0},
+	{"EXTI0_SRC",	SCU_EXTI0_SRC,		scu_exti0_src_fields,	ARRAY_SIZE(scu_exti0_src_fields),	0},
+	{"EXTI1_SRC",	SCU_EXTI1_SRC,		scu_exti1_src_fields,	ARRAY_SIZE(scu_exti1_src_fields),	0},
+	{"EXTI2_SRC",	SCU_EXTI2_SRC,		scu_exti2_src_fields,	ARRAY_SIZE(scu_exti2_src_fields),	0},
+	{"EXTI3_SRC",	SCU_EXTI3_SRC,		scu_exti3_src_fields,	ARRAY_SIZE(scu_exti3_src_fields),	0},
+	{"EXTI4_SRC",	SCU_EXTI4_SRC,		scu_exti4_src_fields,	ARRAY_SIZE(scu_exti4_src_fields),	0},
+	{"PM_INT_SRC",	SCU_PM_INT_SRC,		scu_pm_int_src_fields,	ARRAY_SIZE(scu_pm_int_src_fields),	0},
+	{"DSP_SRC0",	SCU_DSP_SRC0,		scu_dsp_src_fields,		ARRAY_SIZE(scu_dsp_src_fields),		0},
+	{"DSP_SRC1",	SCU_DSP_SRC1,		scu_dsp_src_fields,		ARRAY_SIZE(scu_dsp_src_fields),		0},
+	{"DSP_SRC2",	SCU_DSP_SRC2,		scu_dsp_src_fields,		ARRAY_SIZE(scu_dsp_src_fields),		0},
+	{"DSP_SRC3",	SCU_DSP_SRC3,		scu_dsp_src_fields,		ARRAY_SIZE(scu_dsp_src_fields),		0},
+	{"UNK0_SRC",	SCU_UNK0_SRC,		scu_unk0_src_fields,	ARRAY_SIZE(scu_unk0_src_fields),	0},
+	{"UNK1_SRC",	SCU_UNK1_SRC,		scu_unk1_src_fields,	ARRAY_SIZE(scu_unk1_src_fields),	0},
+	{"UNK2_SRC",	SCU_UNK2_SRC,		scu_unk2_src_fields,	ARRAY_SIZE(scu_unk2_src_fields),	0},
+	{"EXTI5_SRC",	SCU_EXTI5_SRC,		scu_exti5_src_fields,	ARRAY_SIZE(scu_exti5_src_fields),	0},
+	{"EXTI6_SRC",	SCU_EXTI6_SRC,		scu_exti6_src_fields,	ARRAY_SIZE(scu_exti6_src_fields),	0},
+	{"EXTI7_SRC",	SCU_EXTI7_SRC,		scu_exti7_src_fields,	ARRAY_SIZE(scu_exti7_src_fields),	0},
 };
 
 static const pmb887x_io_field_t sim_clc_fields[] = {
@@ -9260,11 +9269,11 @@ static const pmb887x_cpu_meta_irq_t pmb8876_irqs[] = {
 	{"SCU_EXTI5",		PMB8876_SCU_EXTI5_IRQ,		VIC_CON53},
 	{"SCU_EXTI6",		PMB8876_SCU_EXTI6_IRQ,		VIC_CON54},
 	{"SCU_EXTI7",		PMB8876_SCU_EXTI7_IRQ,		VIC_CON55},
-	{"SCU_DSP0",		PMB8876_SCU_DSP0_IRQ,		VIC_CON56},
-	{"SCU_DSP1",		PMB8876_SCU_DSP1_IRQ,		VIC_CON57},
-	{"SCU_DSP2",		PMB8876_SCU_DSP2_IRQ,		VIC_CON58},
-	{"SCU_DSP3",		PMB8876_SCU_DSP3_IRQ,		VIC_CON59},
-	{"SCU_DSP4",		PMB8876_SCU_DSP4_IRQ,		VIC_CON60},
+	{"SCU_PM_INT",		PMB8876_SCU_PM_INT_IRQ,		VIC_CON56},
+	{"SCU_DSP0",		PMB8876_SCU_DSP0_IRQ,		VIC_CON57},
+	{"SCU_DSP1",		PMB8876_SCU_DSP1_IRQ,		VIC_CON58},
+	{"SCU_DSP2",		PMB8876_SCU_DSP2_IRQ,		VIC_CON59},
+	{"SCU_DSP3",		PMB8876_SCU_DSP3_IRQ,		VIC_CON60},
 	{"SCU_UNK0",		PMB8876_SCU_UNK0_IRQ,		VIC_CON61},
 	{"SCU_UNK1",		PMB8876_SCU_UNK1_IRQ,		VIC_CON62},
 	{"SCCU_UNK",		PMB8876_SCCU_UNK_IRQ,		VIC_CON63},
@@ -9552,11 +9561,11 @@ static const pmb887x_cpu_meta_irq_t pmb8875_irqs[] = {
 	{"SCU_EXTI5",		PMB8875_SCU_EXTI5_IRQ,		VIC_CON53},
 	{"SCU_EXTI6",		PMB8875_SCU_EXTI6_IRQ,		VIC_CON54},
 	{"SCU_EXTI7",		PMB8875_SCU_EXTI7_IRQ,		VIC_CON55},
-	{"SCU_DSP0",		PMB8875_SCU_DSP0_IRQ,		VIC_CON56},
-	{"SCU_DSP1",		PMB8875_SCU_DSP1_IRQ,		VIC_CON57},
-	{"SCU_DSP2",		PMB8875_SCU_DSP2_IRQ,		VIC_CON58},
-	{"SCU_DSP3",		PMB8875_SCU_DSP3_IRQ,		VIC_CON59},
-	{"SCU_DSP4",		PMB8875_SCU_DSP4_IRQ,		VIC_CON60},
+	{"SCU_PM_INT",		PMB8875_SCU_PM_INT_IRQ,		VIC_CON56},
+	{"SCU_DSP0",		PMB8875_SCU_DSP0_IRQ,		VIC_CON57},
+	{"SCU_DSP1",		PMB8875_SCU_DSP1_IRQ,		VIC_CON58},
+	{"SCU_DSP2",		PMB8875_SCU_DSP2_IRQ,		VIC_CON59},
+	{"SCU_DSP3",		PMB8875_SCU_DSP3_IRQ,		VIC_CON60},
 	{"SCU_UNK0",		PMB8875_SCU_UNK0_IRQ,		VIC_CON61},
 	{"SCU_UNK1",		PMB8875_SCU_UNK1_IRQ,		VIC_CON62},
 	{"SCCU_UNK",		PMB8875_SCCU_UNK_IRQ,		VIC_CON63},

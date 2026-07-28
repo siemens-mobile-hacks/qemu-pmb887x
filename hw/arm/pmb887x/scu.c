@@ -33,12 +33,12 @@ struct pmb887x_scu_t {
 	MemoryRegion mmio;
 	uint32_t revision;
 	
-	pmb887x_src_reg_t dsp_src[5];
+	pmb887x_src_reg_t service_src[5];
 	pmb887x_src_reg_t unk_src[3];
 	pmb887x_src_reg_t exti_src[8];
 	
 	qemu_irq exti_irq[8];
-	qemu_irq dsp_irq[5];
+	qemu_irq service_irq[5];
 	qemu_irq unk_irq[3];
 	qemu_irq dsp_reset;
 	qemu_irq usb_reset;
@@ -50,8 +50,8 @@ struct pmb887x_scu_t {
 	uint32_t cpu_uid[3];
 	uint32_t cpu_rev;
 	
-	uint32_t int_edge;
-	uint32_t int_filter;
+	uint32_t exti_edge;
+	uint32_t exti_filter;
 	uint32_t wdtcon0;
 	uint32_t wdtcon1;
 	uint32_t wdt_status;
@@ -229,11 +229,11 @@ static int get_src_index_by_addr(hwaddr haddr) {
 		case SCU_EXTI6_SRC:		return 6;
 		case SCU_EXTI7_SRC:		return 7;
 		
-		case SCU_DSP_SRC0:		return 0;
-		case SCU_DSP_SRC1:		return 1;
-		case SCU_DSP_SRC2:		return 2;
-		case SCU_DSP_SRC3:		return 3;
-		case SCU_DSP_SRC4:		return 4;
+		case SCU_PM_INT_SRC:		return 0;
+		case SCU_DSP_SRC0:		return 1;
+		case SCU_DSP_SRC1:		return 2;
+		case SCU_DSP_SRC2:		return 3;
+		case SCU_DSP_SRC3:		return 4;
 		
 		case SCU_UNK0_SRC:		return 0;
 		case SCU_UNK1_SRC:		return 1;
@@ -329,12 +329,12 @@ static uint64_t scu_io_read(void *opaque, hwaddr haddr, unsigned size) {
 			value = p->cpu_uid[(haddr - SCU_UID0) / 4];
 			break;
 
-		case SCU_INT_FILTER:
-			value = p->int_filter;
+		case SCU_EXTI_FILTER:
+			value = p->exti_filter;
 			break;
 
-		case SCU_INT_EDGE:
-			value = p->int_edge;
+		case SCU_EXTI_EDGE:
+			value = p->exti_edge;
 			break;
 		
 		case SCU_DSP_INT:
@@ -352,12 +352,12 @@ static uint64_t scu_io_read(void *opaque, hwaddr haddr, unsigned size) {
 			value = pmb887x_src_get(&p->exti_src[get_src_index_by_addr(haddr)]);
 			break;
 		
+		case SCU_PM_INT_SRC:
 		case SCU_DSP_SRC0:
 		case SCU_DSP_SRC1:
 		case SCU_DSP_SRC2:
 		case SCU_DSP_SRC3:
-		case SCU_DSP_SRC4:
-			value = pmb887x_src_get(&p->dsp_src[get_src_index_by_addr(haddr)]);
+			value = pmb887x_src_get(&p->service_src[get_src_index_by_addr(haddr)]);
 			break;
 		
 		case SCU_UNK0_SRC:
@@ -452,24 +452,24 @@ static void scu_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned si
 			pmb887x_dmac_set_sel(p->dmac, value);
 		break;
 
-		case SCU_INT_FILTER:
-			p->int_filter = value & (
-				SCU_INT_FILTER_EXT0 | SCU_INT_FILTER_EXT1 | SCU_INT_FILTER_EXT2 |
-				SCU_INT_FILTER_EXT3 | SCU_INT_FILTER_EXT4 | SCU_INT_FILTER_EXT5 |
-				SCU_INT_FILTER_EXT6 | SCU_INT_FILTER_EXT7 | SCU_INT_FILTER_DSP0
+		case SCU_EXTI_FILTER:
+			p->exti_filter = value & (
+				SCU_EXTI_FILTER_EXT0 | SCU_EXTI_FILTER_EXT1 | SCU_EXTI_FILTER_EXT2 |
+				SCU_EXTI_FILTER_EXT3 | SCU_EXTI_FILTER_EXT4 | SCU_EXTI_FILTER_EXT5 |
+				SCU_EXTI_FILTER_EXT6 | SCU_EXTI_FILTER_EXT7 | SCU_EXTI_FILTER_PM_INT
 			);
 			break;
 
-		case SCU_INT_EDGE: {
-			p->int_edge = value & (
-				SCU_INT_EDGE_EXT0 | SCU_INT_EDGE_EXT1 | SCU_INT_EDGE_EXT2 |
-				SCU_INT_EDGE_EXT3 | SCU_INT_EDGE_EXT4 | SCU_INT_EDGE_EXT5 |
-				SCU_INT_EDGE_EXT6 | SCU_INT_EDGE_EXT7 | SCU_INT_EDGE_DSP0
+		case SCU_EXTI_EDGE: {
+			p->exti_edge = value & (
+				SCU_EXTI_EDGE_EXT0 | SCU_EXTI_EDGE_EXT1 | SCU_EXTI_EDGE_EXT2 |
+				SCU_EXTI_EDGE_EXT3 | SCU_EXTI_EDGE_EXT4 | SCU_EXTI_EDGE_EXT5 |
+				SCU_EXTI_EDGE_EXT6 | SCU_EXTI_EDGE_EXT7 | SCU_EXTI_EDGE_PM_INT
 			);
-			DPRINTF("INT_EDGE=%08X\n", p->int_edge);
+			DPRINTF("EXTI_EDGE=%08X\n", p->exti_edge);
 			for (uint32_t i = 0; i < ARRAY_SIZE(p->exti_irq); i++) {
-				uint32_t rising = p->int_edge & (1 << (i * 2)) ? 1 : 0;
-				uint32_t falling = p->int_edge & (1 << (i * 2 + 1)) ? 1 : 0;
+				uint32_t rising = p->exti_edge & (1 << (i * 2)) ? 1 : 0;
+				uint32_t falling = p->exti_edge & (1 << (i * 2 + 1)) ? 1 : 0;
 
 				if (falling && rising) {
 					DPRINTF("EXTI_%d: FALLING | RISING\n", i);
@@ -499,12 +499,12 @@ static void scu_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned si
 			pmb887x_src_set(&p->exti_src[get_src_index_by_addr(haddr)], value);
 		break;
 		
+		case SCU_PM_INT_SRC:
 		case SCU_DSP_SRC0:
 		case SCU_DSP_SRC1:
 		case SCU_DSP_SRC2:
 		case SCU_DSP_SRC3:
-		case SCU_DSP_SRC4:
-			pmb887x_src_set(&p->dsp_src[get_src_index_by_addr(haddr)], value);
+			pmb887x_src_set(&p->service_src[get_src_index_by_addr(haddr)], value);
 		break;
 		
 		case SCU_UNK0_SRC:
@@ -585,11 +585,11 @@ static void scu_init(Object *obj) {
 	sysbus_init_irq(SYS_BUS_DEVICE(obj), &p->exti_irq[6]);
 	sysbus_init_irq(SYS_BUS_DEVICE(obj), &p->exti_irq[7]);
 
-	sysbus_init_irq(SYS_BUS_DEVICE(obj), &p->dsp_irq[0]);
-	sysbus_init_irq(SYS_BUS_DEVICE(obj), &p->dsp_irq[1]);
-	sysbus_init_irq(SYS_BUS_DEVICE(obj), &p->dsp_irq[2]);
-	sysbus_init_irq(SYS_BUS_DEVICE(obj), &p->dsp_irq[3]);
-	sysbus_init_irq(SYS_BUS_DEVICE(obj), &p->dsp_irq[4]);
+	sysbus_init_irq(SYS_BUS_DEVICE(obj), &p->service_irq[0]);
+	sysbus_init_irq(SYS_BUS_DEVICE(obj), &p->service_irq[1]);
+	sysbus_init_irq(SYS_BUS_DEVICE(obj), &p->service_irq[2]);
+	sysbus_init_irq(SYS_BUS_DEVICE(obj), &p->service_irq[3]);
+	sysbus_init_irq(SYS_BUS_DEVICE(obj), &p->service_irq[4]);
 
 	sysbus_init_irq(SYS_BUS_DEVICE(obj), &p->unk_irq[0]);
 	sysbus_init_irq(SYS_BUS_DEVICE(obj), &p->unk_irq[1]);
@@ -618,13 +618,13 @@ static void scu_reset(DeviceState *dev) {
 
 	for (size_t i = 0; i < ARRAY_SIZE(p->exti_src); i++)
 		pmb887x_src_reset(&p->exti_src[i]);
-	for (size_t i = 0; i < ARRAY_SIZE(p->dsp_src); i++)
-		pmb887x_src_reset(&p->dsp_src[i]);
+	for (size_t i = 0; i < ARRAY_SIZE(p->service_src); i++)
+		pmb887x_src_reset(&p->service_src[i]);
 	for (size_t i = 0; i < ARRAY_SIZE(p->unk_src); i++)
 		pmb887x_src_reset(&p->unk_src[i]);
 
-	p->int_edge = 0;
-	p->int_filter = 0;
+	p->exti_edge = 0;
+	p->exti_filter = 0;
 
 	p->wdtcon0 = SCU_WDTCON0_WDTLCK | (0xFFFC << SCU_WDTCON0_WDTREL_SHIFT);
 	p->wdtcon1 = 0;
@@ -670,8 +670,8 @@ static void scu_realize(DeviceState *dev, Error **errp) {
 	for (size_t i = 0; i < ARRAY_SIZE(p->exti_src); i++)
 		pmb887x_src_init(&p->exti_src[i], p->exti_irq[i]);
 
-	for (size_t i = 0; i < ARRAY_SIZE(p->dsp_src); i++)
-		pmb887x_src_init(&p->dsp_src[i], p->dsp_irq[i]);
+	for (size_t i = 0; i < ARRAY_SIZE(p->service_src); i++)
+		pmb887x_src_init(&p->service_src[i], p->service_irq[i]);
 	
 	for (size_t i = 0; i < ARRAY_SIZE(p->unk_src); i++)
 		pmb887x_src_init(&p->unk_src[i], p->unk_irq[i]);
