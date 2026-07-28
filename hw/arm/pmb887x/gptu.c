@@ -322,17 +322,45 @@ static void gptu_t2_set_counter_value(pmb887x_gptu_t *p, int timer_id, uint32_t 
 	timer->start = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
 }
 
-static void gptu_t2_apply_ouv(pmb887x_gptu_t *p, int timer_id, bool overflow, uint64_t count) {
-	pmb887x_gptu_timer_t2_t *timer = &p->timers_t2[timer_id];
-	int logical_id = gptu_t2_logical_id(p, timer_id);
-	int event_id = gptu_t2_split(p) ? timer_id : 1;
+static void gptu_t2_fire_ouv(pmb887x_gptu_t *p, int event_id, uint64_t count) {
 	int ev_id = event_id ? EV_OUV_T2B : EV_OUV_T2A;
 	int out_source = event_id ? 5 : 4;
-	uint32_t reload = 0;
 
 	gptu_trigger_ev_irq(p, ev_id);
 	gptu_toggle_output_source(p, out_source, count);
 	gptu_t01_external_count(p, event_id, count);
+}
+
+static uint64_t gptu_t2_low_word_ouv_count(int64_t counter, bool down, uint64_t ticks) {
+	uint64_t low = counter & 0xFFFF;
+	uint64_t count = ticks / 0x10000;
+	uint64_t remainder = ticks % 0x10000;
+
+	if (down)
+		return count + (remainder > low);
+	return count + (remainder + low >= 0x10000);
+}
+
+static void gptu_t2_add_ticks(pmb887x_gptu_t *p, int timer_id, bool down, uint64_t ticks) {
+	pmb887x_gptu_timer_t2_t *timer = &p->timers_t2[timer_id];
+
+	if (!gptu_t2_split(p)) {
+		uint64_t count = gptu_t2_low_word_ouv_count(timer->counter, down, ticks);
+
+		if (count)
+			gptu_t2_fire_ouv(p, 0, count);
+	}
+
+	timer->counter += down ? -(int64_t) ticks : (int64_t) ticks;
+}
+
+static void gptu_t2_apply_ouv(pmb887x_gptu_t *p, int timer_id, bool overflow, uint64_t count) {
+	pmb887x_gptu_timer_t2_t *timer = &p->timers_t2[timer_id];
+	int logical_id = gptu_t2_logical_id(p, timer_id);
+	int event_id = gptu_t2_split(p) ? timer_id : 1;
+	uint32_t reload = 0;
+
+	gptu_t2_fire_ouv(p, event_id, count);
 
 	if (gptu_t2_reload_for_ouv(p, timer_id, overflow, &reload)) {
 		gptu_t2_set_counter_value(p, timer_id, reload);
@@ -386,11 +414,11 @@ static void gptu_t2_advance_ticks(pmb887x_gptu_t *p, int timer_id, uint64_t tick
 		bool down = gptu_t2_count_down(p, timer_id);
 
 		if (ticks < distance) {
-			timer->counter += down ? -(int64_t) ticks : (int64_t) ticks;
+			gptu_t2_add_ticks(p, timer_id, down, ticks);
 			break;
 		}
 
-		timer->counter += down ? -(int64_t) distance : (int64_t) distance;
+		gptu_t2_add_ticks(p, timer_id, down, distance);
 		ticks -= distance;
 		gptu_t2_apply_ouv(p, timer_id, !down, 1);
 
@@ -401,8 +429,7 @@ static void gptu_t2_advance_ticks(pmb887x_gptu_t *p, int timer_id, uint64_t tick
 		if (distance > 0 && ticks >= distance) {
 			uint64_t repeats = ticks / distance;
 			ticks %= distance;
-			timer->counter += down ? -(int64_t) (distance * repeats) :
-				(int64_t) (distance * repeats);
+			gptu_t2_add_ticks(p, timer_id, down, distance * repeats);
 			gptu_t2_apply_ouv(p, timer_id, !down, repeats);
 		}
 	}
