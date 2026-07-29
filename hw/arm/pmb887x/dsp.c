@@ -10,7 +10,7 @@
 #include "cpu.h"
 #include "qapi/error.h"
 #include "qemu/main-loop.h"
-#include "qemu/timer.h"
+#include "qemu/thread.h"
 #include "hw/core/qdev-properties.h"
 
 #include "hw/arm/pmb887x/gen/cpu_regs.h"
@@ -22,13 +22,22 @@
 #include "hw/arm/pmb887x/trace.h"
 
 #define DSP_RAM_SIZE		(DSP_IO_SIZE - DSP_RAM0)
-#define DSP_SLICE_CYCLES	256
-#define DSP_SLICE_NS		10000
+#define DSP_BACKGROUND_SLICE_CYCLES	256
+#define DSP_COMMAND_CHUNK_CYCLES	4096
+#define DSP_BACKGROUND_WAIT_MS	1
 #define DSP_BOOT_DATA_OFFSET	2
 #define DSP_RUNTIME_PIPE_OFFSET	5
 #define DSP_RUNTIME_PIPE_STRIDE	0x1C
 #define TYPE_PMB887X_DSP	"pmb887x-dsp"
 #define PMB887X_DSP(obj)	OBJECT_CHECK(pmb887x_dsp_t, (obj), TYPE_PMB887X_DSP)
+
+enum {
+	DSP_BOOT_PLOAD,
+	DSP_BOOT_DLOAD,
+	DSP_BOOT_BRANCH,
+	DSP_BOOT_PREAD,
+	DSP_BOOT_DREAD,
+};
 
 typedef struct pmb887x_dsp_t pmb887x_dsp_t;
 
@@ -39,23 +48,28 @@ struct pmb887x_dsp_t {
 	MemoryRegion ram;
 	uint32_t revision;
 	uint32_t rom_version;
-	uint32_t com_status;
 	uint16_t dsp_interrupts;
-	bool boot_mode;
+	bool trace_boot_mode;
 	pmb887x_clc_reg_t clc;
 	pmb887x_dsp_core_t *core;
-	QEMUTimer *timer;
+	QEMUBH *worker_bh;
+	QemuThread worker_thread;
+	QemuMutex worker_mutex;
+	QemuCond worker_cond;
+	QemuCond reset_cond;
+	uint16_t worker_active_flags;
+	uint16_t worker_interrupts;
+	uint32_t worker_generation;
+	bool worker_enabled;
+	bool worker_reset;
+	bool worker_starting;
+	bool worker_stop;
+	bool worker_created;
 	qemu_irq mcu_interrupts[PMB887X_DSP_MCU_INT_COUNT];
 };
 
-static void dsp_schedule(pmb887x_dsp_t *p) {
-	timer_del(p->timer);
-	if (pmb887x_clc_is_enabled(&p->clc))
-		timer_mod_ns(p->timer, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + DSP_SLICE_NS);
-}
-
-static void dsp_update_interrupts(pmb887x_dsp_t *p) {
-	uint16_t interrupts = pmb887x_dsp_core_get_mcu_interrupts(p->core) & MAKE_64BIT_MASK(0, PMB887X_DSP_MCU_INT_COUNT);
+static void dsp_update_interrupts(pmb887x_dsp_t *p, uint16_t interrupts) {
+	interrupts &= MAKE_64BIT_MASK(0, PMB887X_DSP_MCU_INT_COUNT);
 	if (interrupts == p->dsp_interrupts)
 		return;
 	for (size_t i = 0; i < ARRAY_SIZE(p->mcu_interrupts); i++)
@@ -63,28 +77,122 @@ static void dsp_update_interrupts(pmb887x_dsp_t *p) {
 	p->dsp_interrupts = interrupts;
 }
 
-static void dsp_timer_callback(void *opaque) {
+static void dsp_worker_bh(void *opaque) {
+	pmb887x_dsp_t *p = opaque;
+	uint16_t interrupts = qatomic_read(&p->worker_interrupts);
+
+	dsp_update_interrupts(p, interrupts);
+}
+
+static bool dsp_worker_publish_result(pmb887x_dsp_t *p, uint32_t generation, uint16_t communication_clear,
+	uint16_t interrupts)
+{
+	if (generation != p->worker_generation)
+		return false;
+
+	bool notify_interrupts = interrupts != qatomic_read(&p->worker_interrupts);
+	qatomic_and(&p->worker_active_flags, (uint16_t) ~communication_clear);
+	qatomic_set(&p->worker_interrupts, interrupts);
+	if (notify_interrupts)
+		qemu_bh_schedule(p->worker_bh);
+	return true;
+}
+
+static void *dsp_worker(void *opaque) {
 	pmb887x_dsp_t *p = opaque;
 
-	pmb887x_dsp_core_run(p->core, DSP_SLICE_CYCLES);
-	uint16_t clear = pmb887x_dsp_core_take_com_clear(p->core) & p->com_status;
-	if (clear) {
-		p->com_status &= ~clear;
-		DPRINTF("command acknowledged: mask=%04X status=%04X pc=%05X\n", clear, p->com_status,
-			pmb887x_dsp_core_get_pc(p->core));
+	qemu_mutex_lock(&p->worker_mutex);
+	while (!p->worker_stop) {
+		while (!p->worker_enabled && !p->worker_reset && !p->worker_stop)
+			qemu_cond_wait(&p->worker_cond, &p->worker_mutex);
+		if (p->worker_stop)
+			break;
+		if (p->worker_reset) {
+			uint32_t generation = p->worker_generation;
+			bool run_startup = p->worker_enabled;
+			uint16_t communication_clear = 0;
+			uint16_t interrupts = 0;
+
+			qemu_mutex_unlock(&p->worker_mutex);
+			pmb887x_dsp_core_reset(p->core);
+			if (run_startup)
+				pmb887x_dsp_core_run(p->core, DSP_COMMAND_CHUNK_CYCLES, &communication_clear, &interrupts);
+			qemu_mutex_lock(&p->worker_mutex);
+			if (!dsp_worker_publish_result(p, generation, communication_clear, interrupts))
+				continue;
+			p->worker_reset = false;
+			p->worker_starting = !run_startup || communication_clear == 0;
+			if (!p->worker_enabled || !p->worker_starting)
+				qemu_cond_broadcast(&p->reset_cond);
+			continue;
+		}
+
+		bool run_active = p->worker_starting || qatomic_read(&p->worker_active_flags) != 0;
+		if (!run_active) {
+			qemu_cond_timedwait(&p->worker_cond, &p->worker_mutex, DSP_BACKGROUND_WAIT_MS);
+			if (p->worker_stop || p->worker_reset || !p->worker_enabled)
+				continue;
+			run_active = p->worker_starting || qatomic_read(&p->worker_active_flags) != 0;
+		}
+		uint32_t generation = p->worker_generation;
+		bool startup_active = p->worker_starting;
+		qemu_mutex_unlock(&p->worker_mutex);
+
+		size_t cycles = run_active ? DSP_COMMAND_CHUNK_CYCLES : DSP_BACKGROUND_SLICE_CYCLES;
+		uint16_t communication_clear;
+		uint16_t interrupts;
+		pmb887x_dsp_core_run(p->core, cycles, &communication_clear, &interrupts);
+
+		qemu_mutex_lock(&p->worker_mutex);
+		if (!dsp_worker_publish_result(p, generation, communication_clear, interrupts))
+			continue;
+		if (startup_active && communication_clear != 0) {
+			p->worker_starting = false;
+			qemu_cond_broadcast(&p->reset_cond);
+		}
 	}
-	dsp_update_interrupts(p);
-	dsp_schedule(p);
+	qemu_mutex_unlock(&p->worker_mutex);
+	return NULL;
+}
+
+static void dsp_worker_set_enabled(pmb887x_dsp_t *p, bool enabled) {
+	qemu_mutex_lock(&p->worker_mutex);
+	p->worker_enabled = enabled;
+	if (enabled)
+		qemu_cond_signal(&p->worker_cond);
+	qemu_mutex_unlock(&p->worker_mutex);
+}
+
+static void dsp_worker_kick(pmb887x_dsp_t *p) {
+	qemu_mutex_lock(&p->worker_mutex);
+	qemu_cond_signal(&p->worker_cond);
+	qemu_mutex_unlock(&p->worker_mutex);
+}
+
+static void dsp_wait_for_startup(pmb887x_dsp_t *p) {
+	qemu_mutex_lock(&p->worker_mutex);
+	while ((p->worker_reset || (p->worker_enabled && p->worker_starting)) && !p->worker_stop)
+		qemu_cond_wait(&p->reset_cond, &p->worker_mutex);
+	qemu_mutex_unlock(&p->worker_mutex);
 }
 
 static void dsp_reset_internal_state(pmb887x_dsp_t *p) {
-	p->com_status = 0;
+	pmb887x_dsp_core_request_reset(p->core);
+	qemu_bh_cancel(p->worker_bh);
+
+	qemu_mutex_lock(&p->worker_mutex);
+	p->worker_generation++;
+	p->worker_reset = true;
+	p->worker_starting = true;
+	p->worker_enabled = pmb887x_clc_is_enabled(&p->clc);
+	qatomic_set(&p->worker_active_flags, 0);
+	qatomic_set(&p->worker_interrupts, 0);
 	p->dsp_interrupts = 0;
-	p->boot_mode = true;
+	p->trace_boot_mode = true;
 	for (size_t i = 0; i < ARRAY_SIZE(p->mcu_interrupts); i++)
 		qemu_set_irq(p->mcu_interrupts[i], 0);
-	pmb887x_dsp_core_reset(p->core);
-	dsp_schedule(p);
+	qemu_cond_signal(&p->worker_cond);
+	qemu_mutex_unlock(&p->worker_mutex);
 }
 
 static void dsp_reset_input(void *opaque, int id, int level) {
@@ -94,15 +202,15 @@ static void dsp_reset_input(void *opaque, int id, int level) {
 
 static const char *dsp_boot_command_name(uint16_t command) {
 	switch (command) {
-		case 0:
+		case DSP_BOOT_PLOAD:
 			return "PLOAD";
-		case 1:
+		case DSP_BOOT_DLOAD:
 			return "DLOAD";
-		case 2:
+		case DSP_BOOT_BRANCH:
 			return "BRANCH";
-		case 3:
+		case DSP_BOOT_PREAD:
 			return "PREAD";
-		case 4:
+		case DSP_BOOT_DREAD:
 			return "DREAD";
 		default:
 			return "UNKNOWN";
@@ -110,29 +218,35 @@ static const char *dsp_boot_command_name(uint16_t command) {
 }
 
 static void dsp_trace_command(pmb887x_dsp_t *p, size_t pipe) {
-	if (p->boot_mode) {
+	if (p->trace_boot_mode) {
 		uint16_t command = pmb887x_dsp_core_shared_read(p->core, DSP_BOOT_DATA_OFFSET);
 		uint16_t address = pmb887x_dsp_core_shared_read(p->core, DSP_BOOT_DATA_OFFSET + 1);
-		uint16_t words = command == 2 ? 0 : pmb887x_dsp_core_shared_read(p->core, DSP_BOOT_DATA_OFFSET + 2);
+		uint16_t words = 0;
+		if (command != DSP_BOOT_BRANCH)
+			words = pmb887x_dsp_core_shared_read(p->core, DSP_BOOT_DATA_OFFSET + 2);
+
 		DPRINTF("boot command: %s(%u) address=%04X words=%u\n", dsp_boot_command_name(command), command, address, words);
+		if (command == DSP_BOOT_BRANCH)
+			p->trace_boot_mode = false;
 		return;
 	}
 
 	uint16_t offset = DSP_RUNTIME_PIPE_OFFSET + pipe * DSP_RUNTIME_PIPE_STRIDE;
 	uint16_t command = pmb887x_dsp_core_shared_read(p->core, offset);
+
 	DPRINTF("runtime command: pipe=%zu command=%u (0x%04X)\n", pipe, command, command);
 }
 
 static void dsp_interrupt_input(void *opaque, int id, int level) {
 	pmb887x_dsp_t *p = opaque;
 
+	dsp_wait_for_startup(p);
 	if (level)
 		dsp_trace_command(p, id);
 	pmb887x_dsp_core_set_request(p->core, id, level);
-	if (level && p->boot_mode && pmb887x_dsp_core_shared_read(p->core, DSP_BOOT_DATA_OFFSET) == 2) {
-		p->boot_mode = false;
-		pmb887x_dsp_core_set_boot_mode(p->core, false);
-	}
+	if (level)
+		qatomic_or(&p->worker_active_flags, (uint16_t) (1U << id));
+	dsp_worker_kick(p);
 }
 
 static uint64_t dsp_io_read(void *opaque, hwaddr haddr, unsigned size) {
@@ -149,7 +263,12 @@ static uint64_t dsp_io_read(void *opaque, hwaddr haddr, unsigned size) {
 			break;
 
 		case DSP_COM_STATUS:
-			value = p->com_status;
+			dsp_wait_for_startup(p);
+			value = pmb887x_dsp_core_get_communication_flags(p->core);
+			if (value) {
+				g_thread_yield();
+				value = pmb887x_dsp_core_get_communication_flags(p->core);
+			}
 			break;
 
 		case DSP_COM_SET:
@@ -173,15 +292,17 @@ static void dsp_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned si
 	switch (haddr) {
 		case DSP_CLC:
 			pmb887x_clc_set(&p->clc, value);
-			dsp_schedule(p);
+			dsp_worker_set_enabled(p, pmb887x_clc_is_enabled(&p->clc));
 			break;
 
 		case DSP_COM_SET:
-			p->com_status |= value & DSP_COM_SET_FLAGS;
+			dsp_wait_for_startup(p);
+			pmb887x_dsp_core_set_communication_flags(p->core, value & DSP_COM_SET_FLAGS);
 			break;
 
 		case DSP_COM_CLEAR:
-			p->com_status &= ~(value & DSP_COM_CLEAR_FLAGS);
+			dsp_wait_for_startup(p);
+			pmb887x_dsp_core_clear_communication_flags(p->core, value & DSP_COM_CLEAR_FLAGS);
 			break;
 
 		default:
@@ -202,12 +323,10 @@ static const MemoryRegionOps io_ops = {
 
 static uint64_t dsp_ram_read(void *opaque, hwaddr haddr, unsigned size) {
 	pmb887x_dsp_t *p = opaque;
-	uint64_t value = 0;
+	uint64_t value;
 
-	for (size_t i = 0; i < size; i++) {
-		uint16_t word = pmb887x_dsp_core_shared_read(p->core, (haddr + i) / 2);
-		value |= (uint64_t) ((word >> (((haddr + i) & 1) * 8)) & 0xFF) << (i * 8);
-	}
+	dsp_wait_for_startup(p);
+	value = pmb887x_dsp_core_shared_read_bytes(p->core, haddr, size);
 	IO_DUMP_READ(haddr + p->mmio.addr + DSP_RAM0, size, value);
 	return value;
 }
@@ -215,14 +334,9 @@ static uint64_t dsp_ram_read(void *opaque, hwaddr haddr, unsigned size) {
 static void dsp_ram_write(void *opaque, hwaddr haddr, uint64_t value, unsigned size) {
 	pmb887x_dsp_t *p = opaque;
 
+	dsp_wait_for_startup(p);
 	IO_DUMP_WRITE(haddr + p->mmio.addr + DSP_RAM0, size, value);
-	for (size_t i = 0; i < size; i++) {
-		uint16_t offset = (haddr + i) / 2;
-		uint16_t shift = ((haddr + i) & 1) * 8;
-		uint16_t word = pmb887x_dsp_core_shared_read(p->core, offset);
-		word = (word & ~(0xFF << shift)) | ((value >> (i * 8) & 0xFF) << shift);
-		pmb887x_dsp_core_shared_write(p->core, offset, word);
-	}
+	pmb887x_dsp_core_shared_write_bytes(p->core, haddr, value, size);
 }
 
 static const MemoryRegionOps ram_io_ops = {
@@ -281,12 +395,21 @@ static void dsp_realize(DeviceState *dev, Error **errp) {
 		error_setg(errp, "DSP MASK ROM version %04X is not embedded", p->rom_version);
 		return;
 	}
-	p->core = pmb887x_dsp_core_create(p->revision, p->rom_version, rom->data, rom->size);
+	p->core = pmb887x_dsp_core_create(p->revision, p->rom_version, rom->program_rom, rom->data_rom);
 	if (p->core == NULL) {
-		error_setg(errp, "DSP MASK ROM version %04X has an invalid DSP1 image", p->rom_version);
+		error_setg(errp, "DSP MASK ROM version %04X is incompatible with DSP revision %02X", p->rom_version,
+			p->revision);
 		return;
 	}
-	p->timer = timer_new_ns(QEMU_CLOCK_VIRTUAL, dsp_timer_callback, p);
+
+	p->worker_stop = false;
+	p->worker_enabled = false;
+	qemu_mutex_init(&p->worker_mutex);
+	qemu_cond_init(&p->worker_cond);
+	qemu_cond_init(&p->reset_cond);
+	p->worker_bh = qemu_bh_new(dsp_worker_bh, p);
+	qemu_thread_create(&p->worker_thread, "pmb887x-dsp", dsp_worker, p, QEMU_THREAD_JOINABLE);
+	p->worker_created = true;
 	pmb887x_clc_set(&p->clc, MOD_CLC_DISR);
 	dsp_reset_internal_state(p);
 	DPRINTF("core initialized: revision=%02X family=r%02X rom_version=%04X\n",
@@ -296,10 +419,25 @@ static void dsp_realize(DeviceState *dev, Error **errp) {
 static void dsp_unrealize(DeviceState *dev) {
 	pmb887x_dsp_t *p = PMB887X_DSP(dev);
 
-	if (p->timer)
-		timer_free(p->timer);
-	if (p->core)
+	if (p->worker_created) {
+		qemu_mutex_lock(&p->worker_mutex);
+		p->worker_stop = true;
+		qemu_cond_signal(&p->worker_cond);
+		qemu_cond_broadcast(&p->reset_cond);
+		qemu_mutex_unlock(&p->worker_mutex);
+		qemu_thread_join(&p->worker_thread);
+		qemu_bh_delete(p->worker_bh);
+		p->worker_bh = NULL;
+		p->worker_created = false;
+		qemu_cond_destroy(&p->reset_cond);
+		qemu_cond_destroy(&p->worker_cond);
+		qemu_mutex_destroy(&p->worker_mutex);
+	}
+
+	if (p->core) {
 		pmb887x_dsp_core_destroy(p->core);
+		p->core = NULL;
+	}
 }
 
 static void dsp_class_init(ObjectClass *klass, const void *data) {
