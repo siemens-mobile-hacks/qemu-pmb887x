@@ -23,7 +23,7 @@
 
 #define DSP_RAM_SIZE		(DSP_IO_SIZE - DSP_RAM0)
 #define DSP_BACKGROUND_SLICE_CYCLES	256
-#define DSP_COMMAND_CHUNK_CYCLES	4096
+#define DSP_COMMAND_CHUNK_CYCLES	16384
 #define DSP_BACKGROUND_WAIT_MS	1
 #define DSP_BOOT_DATA_OFFSET	2
 #define DSP_RUNTIME_PIPE_OFFSET	5
@@ -48,7 +48,6 @@ struct pmb887x_dsp_t {
 	MemoryRegion ram;
 	uint32_t revision;
 	uint32_t rom_version;
-	uint16_t dsp_interrupts;
 	bool trace_boot_mode;
 	pmb887x_clc_reg_t clc;
 	pmb887x_dsp_core_t *core;
@@ -57,9 +56,9 @@ struct pmb887x_dsp_t {
 	QemuMutex worker_mutex;
 	QemuCond worker_cond;
 	QemuCond reset_cond;
+	uint16_t worker_wake_flags;
 	uint16_t worker_active_flags;
-	uint16_t worker_interrupts;
-	uint32_t worker_generation;
+	uint16_t worker_interrupt_events;
 	bool worker_enabled;
 	bool worker_reset;
 	bool worker_starting;
@@ -68,34 +67,22 @@ struct pmb887x_dsp_t {
 	qemu_irq mcu_interrupts[PMB887X_DSP_MCU_INT_COUNT];
 };
 
-static void dsp_update_interrupts(pmb887x_dsp_t *p, uint16_t interrupts) {
-	interrupts &= MAKE_64BIT_MASK(0, PMB887X_DSP_MCU_INT_COUNT);
-	if (interrupts == p->dsp_interrupts)
-		return;
-	for (size_t i = 0; i < ARRAY_SIZE(p->mcu_interrupts); i++)
-		qemu_set_irq(p->mcu_interrupts[i], interrupts & BIT(i));
-	p->dsp_interrupts = interrupts;
-}
-
 static void dsp_worker_bh(void *opaque) {
 	pmb887x_dsp_t *p = opaque;
-	uint16_t interrupts = qatomic_read(&p->worker_interrupts);
+	uint16_t events = qatomic_xchg(&p->worker_interrupt_events, 0);
 
-	dsp_update_interrupts(p, interrupts);
+	events &= MAKE_64BIT_MASK(0, PMB887X_DSP_MCU_INT_COUNT);
+	for (size_t i = 0; i < ARRAY_SIZE(p->mcu_interrupts); i++)
+		if ((events & BIT(i)))
+			qemu_irq_raise(p->mcu_interrupts[i]);
 }
 
-static bool dsp_worker_publish_result(pmb887x_dsp_t *p, uint32_t generation, uint16_t communication_clear,
-	uint16_t interrupts)
-{
-	if (generation != p->worker_generation)
-		return false;
+static void dsp_worker_publish_interrupts(pmb887x_dsp_t *p, uint16_t events) {
+	if (events == 0)
+		return;
 
-	bool notify_interrupts = interrupts != qatomic_read(&p->worker_interrupts);
-	qatomic_and(&p->worker_active_flags, (uint16_t) ~communication_clear);
-	qatomic_set(&p->worker_interrupts, interrupts);
-	if (notify_interrupts)
-		qemu_bh_schedule(p->worker_bh);
-	return true;
+	qatomic_or(&p->worker_interrupt_events, events);
+	qemu_bh_schedule(p->worker_bh);
 }
 
 static void *dsp_worker(void *opaque) {
@@ -108,18 +95,16 @@ static void *dsp_worker(void *opaque) {
 		if (p->worker_stop)
 			break;
 		if (p->worker_reset) {
-			uint32_t generation = p->worker_generation;
 			bool run_startup = p->worker_enabled;
 			uint16_t communication_clear = 0;
-			uint16_t interrupts = 0;
+			uint16_t interrupt_events = 0;
 
 			qemu_mutex_unlock(&p->worker_mutex);
 			pmb887x_dsp_core_reset(p->core);
 			if (run_startup)
-				pmb887x_dsp_core_run(p->core, DSP_COMMAND_CHUNK_CYCLES, &communication_clear, &interrupts);
+				pmb887x_dsp_core_run(p->core, DSP_COMMAND_CHUNK_CYCLES, &communication_clear, &interrupt_events);
 			qemu_mutex_lock(&p->worker_mutex);
-			if (!dsp_worker_publish_result(p, generation, communication_clear, interrupts))
-				continue;
+			dsp_worker_publish_interrupts(p, interrupt_events);
 			p->worker_reset = false;
 			p->worker_starting = !run_startup || communication_clear == 0;
 			if (!p->worker_enabled || !p->worker_starting)
@@ -127,25 +112,30 @@ static void *dsp_worker(void *opaque) {
 			continue;
 		}
 
+		uint16_t wake_flags = qatomic_xchg(&p->worker_wake_flags, 0);
+		qatomic_or(&p->worker_active_flags, wake_flags);
 		bool run_active = p->worker_starting || qatomic_read(&p->worker_active_flags) != 0;
 		if (!run_active) {
 			qemu_cond_timedwait(&p->worker_cond, &p->worker_mutex, DSP_BACKGROUND_WAIT_MS);
 			if (p->worker_stop || p->worker_reset || !p->worker_enabled)
 				continue;
+			wake_flags = qatomic_xchg(&p->worker_wake_flags, 0);
+			qatomic_or(&p->worker_active_flags, wake_flags);
 			run_active = p->worker_starting || qatomic_read(&p->worker_active_flags) != 0;
 		}
-		uint32_t generation = p->worker_generation;
 		bool startup_active = p->worker_starting;
 		qemu_mutex_unlock(&p->worker_mutex);
 
 		size_t cycles = run_active ? DSP_COMMAND_CHUNK_CYCLES : DSP_BACKGROUND_SLICE_CYCLES;
 		uint16_t communication_clear;
-		uint16_t interrupts;
-		pmb887x_dsp_core_run(p->core, cycles, &communication_clear, &interrupts);
+		uint16_t interrupt_events;
+		pmb887x_dsp_core_run(p->core, cycles, &communication_clear, &interrupt_events);
 
 		qemu_mutex_lock(&p->worker_mutex);
-		if (!dsp_worker_publish_result(p, generation, communication_clear, interrupts))
+		if (p->worker_reset)
 			continue;
+		dsp_worker_publish_interrupts(p, interrupt_events);
+		qatomic_and(&p->worker_active_flags, (uint16_t) ~communication_clear);
 		if (startup_active && communication_clear != 0) {
 			p->worker_starting = false;
 			qemu_cond_broadcast(&p->reset_cond);
@@ -181,16 +171,13 @@ static void dsp_reset_internal_state(pmb887x_dsp_t *p) {
 	qemu_bh_cancel(p->worker_bh);
 
 	qemu_mutex_lock(&p->worker_mutex);
-	p->worker_generation++;
 	p->worker_reset = true;
 	p->worker_starting = true;
 	p->worker_enabled = pmb887x_clc_is_enabled(&p->clc);
+	qatomic_set(&p->worker_wake_flags, 0);
 	qatomic_set(&p->worker_active_flags, 0);
-	qatomic_set(&p->worker_interrupts, 0);
-	p->dsp_interrupts = 0;
+	qatomic_set(&p->worker_interrupt_events, 0);
 	p->trace_boot_mode = true;
-	for (size_t i = 0; i < ARRAY_SIZE(p->mcu_interrupts); i++)
-		qemu_set_irq(p->mcu_interrupts[i], 0);
 	qemu_cond_signal(&p->worker_cond);
 	qemu_mutex_unlock(&p->worker_mutex);
 }
@@ -244,9 +231,10 @@ static void dsp_interrupt_input(void *opaque, int id, int level) {
 	if (level)
 		dsp_trace_command(p, id);
 	pmb887x_dsp_core_set_request(p->core, id, level);
-	if (level)
-		qatomic_or(&p->worker_active_flags, (uint16_t) (1U << id));
-	dsp_worker_kick(p);
+	if (level) {
+		qatomic_or(&p->worker_wake_flags, (uint16_t) (1U << id));
+		dsp_worker_kick(p);
+	}
 }
 
 static uint64_t dsp_io_read(void *opaque, hwaddr haddr, unsigned size) {

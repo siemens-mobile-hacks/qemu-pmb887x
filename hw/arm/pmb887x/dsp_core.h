@@ -18,7 +18,7 @@ void pmb887x_dsp_core_destroy(pmb887x_dsp_core_t *core);
 void pmb887x_dsp_core_request_reset(pmb887x_dsp_core_t *core);
 void pmb887x_dsp_core_reset(pmb887x_dsp_core_t *core);
 void pmb887x_dsp_core_run(pmb887x_dsp_core_t *core, size_t cycles, uint16_t *communication_clear,
-	uint16_t *mcu_interrupts);
+	uint16_t *mcu_interrupt_events);
 uint16_t pmb887x_dsp_core_get_communication_flags(pmb887x_dsp_core_t *core);
 uint16_t pmb887x_dsp_core_shared_read(pmb887x_dsp_core_t *core, uint16_t offset);
 void pmb887x_dsp_core_shared_write(pmb887x_dsp_core_t *core, uint16_t offset, uint16_t value);

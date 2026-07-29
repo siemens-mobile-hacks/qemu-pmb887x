@@ -107,10 +107,20 @@ public:
 	{
 		teakra_config.teaklite = true;
 		teakra = std::make_unique<Teakra::Teakra>(teakra_config);
-		teakra->SetMMIOReadHandler(EXTERNAL_INTERRUPT_STATUS_MMIO, [this]() { return external_interrupt_status; });
-		teakra->SetMMIOWriteHandler(EXTERNAL_INTERRUPT_CLEAR_MMIO, [this](uint16_t value) { external_interrupt_status &= ~value; });
+		teakra->SetMMIOReadHandler(EXTERNAL_INTERRUPT_STATUS_MMIO,
+			[this]() { return external_interrupt_status.load(std::memory_order_acquire); });
+		teakra->SetMMIOWriteHandler(EXTERNAL_INTERRUPT_CLEAR_MMIO,
+			[this](uint16_t value) { external_interrupt_status.fetch_and((uint16_t) ~value, std::memory_order_release); });
 		teakra->SetMMIOWriteHandler(COMMUNICATION_FLAG_SET_MMIO, [this](uint16_t value) { SetCommunicationFlags(value); });
-		teakra->SetMMIOWriteHandler(COMMUNICATION_FLAG_CLEAR_MMIO, [this](uint16_t value) { ClearCommunicationFlagsFromDsp(value); });
+		teakra->SetMMIOWriteHandler(COMMUNICATION_FLAG_CLEAR_MMIO,
+			[this](uint16_t value) { ClearCommunicationFlagsFromDsp(value); });
+		teakra->SetMMIOWriteHandler(INTERRUPT_TO_MCU_MMIO, [this](uint16_t value) {
+			mcu_interrupt_events.fetch_or(value, std::memory_order_release);
+			if (value)
+				teakra->RequestStop();
+		});
+		teakra->SetMMIOReadHandler(DSP_PAGE_MMIO, [this]() { return page_register; });
+		teakra->SetMMIOWriteHandler(DSP_PAGE_MMIO, [this](uint16_t value) { SetPage(value); });
 	}
 
 	void Reset() {
@@ -130,9 +140,8 @@ public:
 		LoadDataRom(data_rom, revision_config->data_rom_address, data_fixed_words);
 		active_program_bank = SIZE_MAX;
 		active_data_bank = SIZE_MAX;
-		active_page = SIZE_MAX;
-		MapProgramBank(0);
-		MapDataBank(0);
+		page_register = 0;
+		SetPage(page_register);
 
 		for (size_t address = 0; address < program_ram.size(); address++)
 			teakra->ProgramWrite(address, program_ram[address]);
@@ -147,11 +156,11 @@ public:
 		registers.prpage = 0;
 		teakra->DataWrite(revision_config->shared_base, rom_version, true);
 
-		input_requests = 0;
-		external_interrupt_status = 0;
+		pending_requests.store(0, std::memory_order_relaxed);
+		external_interrupt_status.store(0, std::memory_order_relaxed);
 		communication_status.store(0, std::memory_order_relaxed);
 		communication_cleared.store(0, std::memory_order_relaxed);
-		last_unknown_mcu_interrupts = 0;
+		mcu_interrupt_events.store(0, std::memory_order_relaxed);
 		halted = false;
 		initialized = true;
 	}
@@ -162,30 +171,23 @@ public:
 			return;
 		}
 
-		for (size_t i = 0; i < cycles; i++) {
-			UpdateBanks();
+		ApplyRequests();
+		try {
+			teakra->Run(cycles);
+		} catch (const Teakra::UndefinedInstructionException &error) {
+			DPRINTF("undefined instruction: revision=r%02X pc=%05X opcode=%04X\n", revision_config->family,
+				CurrentPC(), error.opcode);
+			halted = true;
+		} catch (const Teakra::UnimplementedException &error) {
 			uint32_t pc = CurrentPC();
-			uint16_t opcode = teakra->ProgramRead(pc);
-			try {
-				teakra->Run(1);
-			} catch (const Teakra::UndefinedInstructionException &error) {
-				DPRINTF("undefined instruction: revision=r%02X pc=%05X opcode=%04X\n",
-					revision_config->family, pc, error.opcode);
-				halted = true;
-				break;
-			} catch (const Teakra::UnimplementedException &error) {
-				DPRINTF("unimplemented instruction: revision=r%02X pc=%05X opcode=%04X error=%s\n",
-					revision_config->family, pc, opcode, error.what());
-				halted = true;
-				break;
-			} catch (const std::exception &error) {
-				DPRINTF("DSP core exception: revision=r%02X pc=%05X opcode=%04X error=%s\n",
-					revision_config->family, pc, opcode, error.what());
-				halted = true;
-				break;
-			}
-			if (communication_cleared.load(std::memory_order_relaxed) != 0)
-				break;
+			DPRINTF("unimplemented instruction: revision=r%02X pc=%05X opcode=%04X error=%s\n",
+				revision_config->family, pc, teakra->ProgramRead(pc), error.what());
+			halted = true;
+		} catch (const std::exception &error) {
+			uint32_t pc = CurrentPC();
+			DPRINTF("DSP core exception: revision=r%02X pc=%05X opcode=%04X error=%s\n", revision_config->family,
+				pc, teakra->ProgramRead(pc), error.what());
+			halted = true;
 		}
 
 		*communication_clear_result = communication_cleared.exchange(0, std::memory_order_acquire);
@@ -207,16 +209,18 @@ public:
 		}
 
 		uint16_t mask = (uint16_t) (1U << index);
-		if (!level) {
-			input_requests &= ~mask;
-			return;
-		}
-		if ((input_requests & mask))
+		if (!level)
 			return;
 
-		input_requests |= mask;
-		external_interrupt_status |= mask;
-		teakra->SignalInterrupt(REQUEST_INTERRUPTS[index]);
+		uint16_t previous = external_interrupt_status.fetch_or(mask, std::memory_order_release);
+		if (!(previous & mask))
+			pending_requests.fetch_or(mask, std::memory_order_release);
+	}
+
+	void RequestReset() {
+		pending_requests.store(0, std::memory_order_relaxed);
+		external_interrupt_status.store(0, std::memory_order_relaxed);
+		ClearCommunicationFlags(UINT16_MAX);
 	}
 
 	void SetCommunicationFlags(uint16_t value) {
@@ -231,23 +235,29 @@ public:
 		return communication_status.load(std::memory_order_acquire);
 	}
 
-	uint16_t GetMcuInterrupts() {
-		uint16_t value = teakra->MMIOPeek(INTERRUPT_TO_MCU_MMIO);
+	uint16_t GetMcuInterruptEvents() {
+		uint16_t value = mcu_interrupt_events.exchange(0, std::memory_order_acquire);
 		uint16_t unknown = value & ~MCU_INTERRUPT_MASK;
-		if (unknown != last_unknown_mcu_interrupts) {
-			DPRINTF("unknown DSP output interrupts: revision=r%02X value=%04X unknown=%04X\n",
+		if (unknown)
+			DPRINTF("unknown DSP output interrupt events: revision=r%02X value=%04X unknown=%04X\n",
 				revision_config->family, value, unknown);
-			last_unknown_mcu_interrupts = unknown;
-		}
 		return value;
 	}
 
 private:
+	void ApplyRequests() {
+		uint16_t pending = pending_requests.exchange(0, std::memory_order_acquire);
+		for (size_t i = 0; i < REQUEST_INTERRUPTS.size(); i++)
+			if ((pending & (1U << i)))
+				teakra->SignalInterrupt(REQUEST_INTERRUPTS[i]);
+	}
+
 	void ClearCommunicationFlagsFromDsp(uint16_t value) {
 		uint16_t previous = communication_status.fetch_and((uint16_t) ~value, std::memory_order_acq_rel);
 		uint16_t cleared = previous & value;
 		if (cleared) {
 			communication_cleared.fetch_or(cleared, std::memory_order_release);
+			teakra->RequestStop();
 			DPRINTF("DSP_CFR: value=%04X cleared=%04X pc=%05X\n", value, cleared, CurrentPC());
 		}
 	}
@@ -299,11 +309,7 @@ private:
 		active_data_bank = bank;
 	}
 
-	void UpdateBanks() {
-		uint16_t page = teakra->MMIOPeek(DSP_PAGE_MMIO);
-		if (page == active_page)
-			return;
-
+	void SetPage(uint16_t page) {
 		uint16_t program_page_mask = revision_config->page_field_mask << revision_config->program_page_shift;
 		uint16_t page_mask = program_page_mask | revision_config->page_field_mask;
 		if ((page & ~page_mask))
@@ -311,7 +317,7 @@ private:
 				revision_config->family, page, page & ~page_mask);
 		MapProgramBank(page >> revision_config->program_page_shift & revision_config->page_field_mask);
 		MapDataBank(page & revision_config->page_field_mask);
-		active_page = page;
+		page_register = page;
 	}
 
 	const DspRevisionConfig *revision_config;
@@ -322,12 +328,12 @@ private:
 	std::unique_ptr<Teakra::Teakra> teakra;
 	size_t active_program_bank = SIZE_MAX;
 	size_t active_data_bank = SIZE_MAX;
-	size_t active_page = SIZE_MAX;
-	uint16_t input_requests = 0;
-	uint16_t external_interrupt_status = 0;
-	uint16_t last_unknown_mcu_interrupts = 0;
+	uint16_t page_register = 0;
+	std::atomic<uint16_t> pending_requests{ 0 };
+	std::atomic<uint16_t> external_interrupt_status{ 0 };
 	std::atomic<uint16_t> communication_status{ 0 };
 	std::atomic<uint16_t> communication_cleared{ 0 };
+	std::atomic<uint16_t> mcu_interrupt_events{ 0 };
 	bool halted = false;
 	bool initialized = false;
 };
@@ -336,9 +342,6 @@ private:
 
 struct pmb887x_dsp_core_t {
 	std::unique_ptr<DspCore> core;
-	std::atomic<uint16_t> input_requests{ 0 };
-	std::atomic<uint16_t> pending_requests{ 0 };
-	uint16_t applied_requests = 0;
 };
 
 extern "C" {
@@ -378,40 +381,18 @@ void pmb887x_dsp_core_destroy(pmb887x_dsp_core_t *core) {
 }
 
 void pmb887x_dsp_core_request_reset(pmb887x_dsp_core_t *core) {
-	core->input_requests.store(0, std::memory_order_relaxed);
-	core->pending_requests.store(0, std::memory_order_relaxed);
-	core->core->ClearCommunicationFlags(UINT16_MAX);
+	core->core->RequestReset();
 }
 
 void pmb887x_dsp_core_reset(pmb887x_dsp_core_t *core) {
 	core->core->Reset();
-	core->applied_requests = 0;
 }
 
 void pmb887x_dsp_core_run(pmb887x_dsp_core_t *core, size_t cycles, uint16_t *communication_clear,
-	uint16_t *mcu_interrupts)
+	uint16_t *mcu_interrupt_events)
 {
-	uint16_t pending = core->pending_requests.exchange(0, std::memory_order_acquire);
-	uint16_t requests = core->input_requests.load(std::memory_order_relaxed);
-	uint16_t changed_requests = requests ^ core->applied_requests;
-	for (size_t i = 0; i < REQUEST_INTERRUPTS.size(); i++) {
-		uint16_t mask = (uint16_t) (1U << i);
-		bool request_pending = pending & mask;
-		bool request_applied = core->applied_requests & mask;
-		bool request_changed = changed_requests & mask;
-		if (request_pending) {
-			if (request_applied)
-				core->core->SetRequest(i, false);
-			core->core->SetRequest(i, true);
-			core->applied_requests |= mask;
-		} else if (request_changed) {
-			core->core->SetRequest(i, requests & mask);
-			core->applied_requests ^= mask;
-		}
-	}
-
 	core->core->Run(cycles, communication_clear);
-	*mcu_interrupts = core->core->GetMcuInterrupts();
+	*mcu_interrupt_events = core->core->GetMcuInterruptEvents();
 }
 
 uint16_t pmb887x_dsp_core_get_communication_flags(pmb887x_dsp_core_t *core) {
@@ -467,18 +448,7 @@ void pmb887x_dsp_core_shared_write_bytes(pmb887x_dsp_core_t *core, size_t offset
 }
 
 void pmb887x_dsp_core_set_request(pmb887x_dsp_core_t *core, size_t index, bool level) {
-	if (index >= REQUEST_INTERRUPTS.size()) {
-		DPRINTF("unknown DSP input interrupt: index=%zu level=%u\n", index, level);
-		return;
-	}
-
-	uint16_t mask = (uint16_t) (1U << index);
-	if (level) {
-		core->input_requests.fetch_or(mask, std::memory_order_relaxed);
-		core->pending_requests.fetch_or(mask, std::memory_order_release);
-	} else {
-		core->input_requests.fetch_and((uint16_t) ~mask, std::memory_order_relaxed);
-	}
+	core->core->SetRequest(index, level);
 }
 
 void pmb887x_dsp_core_set_communication_flags(pmb887x_dsp_core_t *core, uint16_t value) {
