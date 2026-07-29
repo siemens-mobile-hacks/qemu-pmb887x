@@ -1,3 +1,11 @@
+teakra_subproject = subproject('teakra')
+teakra_dependency = teakra_subproject.get_variable('teakra_dep')
+dsp_core_library = static_library('pmb887x-dsp-core', files('dsp_core.cpp'),
+	dependencies: teakra_dependency,
+	cpp_args: ['-std=gnu++17'],
+)
+dsp_core_dependency = declare_dependency(link_whole: dsp_core_library, dependencies: teakra_dependency)
+
 arm_common_ss.add(when: 'CONFIG_PMB887X', if_true: files(
 	'board.c',
 	'fifo.c',
@@ -40,6 +48,7 @@ arm_common_ss.add(when: 'CONFIG_PMB887X', if_true: files(
 	'gen/brom.c',
 	'gen/cpu_meta.c',
 	'gen/cpu_modules.c',
+	'gen/dsp_rom.c',
 	'gen/flash-info.c',
 
 	'board/dsp.c',
@@ -79,6 +88,7 @@ arm_common_ss.add(when: 'CONFIG_PMB887X', if_true: files(
 	'sim/sim_fs.c',
 	'sim/sim_card.c',
 ))
+arm_common_ss.add(when: 'CONFIG_PMB887X', if_true: dsp_core_dependency)
 
 if cacard.found()
 	arm_common_ss.add(when: 'CONFIG_PMB887X', if_true: [cacard, files('sim/cacard_apdu.c')])

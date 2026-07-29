@@ -560,6 +560,13 @@ static void scu_input_exti7_handler(void *opaque, int id, int level) {
 	scu_handle_exti_change(opaque, 7, level);
 }
 
+static void scu_input_dsp_handler(void *opaque, int id, int level) {
+	pmb887x_scu_t *p = opaque;
+
+	if (level)
+		pmb887x_src_update(&p->service_src[id + 1], 0, MOD_SRC_SETR);
+}
+
 static const MemoryRegionOps io_ops = {
 	.read			= scu_io_read,
 	.write			= scu_io_write,
@@ -603,6 +610,7 @@ static void scu_init(Object *obj) {
 	qdev_init_gpio_in_named(dev, scu_input_exti5_handler, "EXTI5_IN", 1);
 	qdev_init_gpio_in_named(dev, scu_input_exti6_handler, "EXTI6_IN", 1);
 	qdev_init_gpio_in_named(dev, scu_input_exti7_handler, "EXTI7_IN", 1);
+	qdev_init_gpio_in_named(dev, scu_input_dsp_handler, "DSP_INT_IN", PMB887X_DSP_MCU_INT_COUNT);
 	qdev_init_gpio_out_named(dev, &p->dsp_reset, "DSP_RESET_OUT", 1);
 	qdev_init_gpio_out_named(dev, &p->usb_reset, "USB_RESET_OUT", 1);
 	qdev_init_gpio_out_named(dev, &p->dmac_reset, "DMAC_RESET_OUT", 1);

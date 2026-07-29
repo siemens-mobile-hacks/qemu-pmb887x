@@ -81,7 +81,7 @@ python = import('python').find_installation()
 
 cc = meson.get_compiler('c')
 all_languages = ['c']
-enable_cpp = host_os == 'windows' or get_option('plugins')
+enable_cpp = host_os == 'windows' or get_option('plugins') or target_dirs.contains('arm-softmmu')
 if enable_cpp and add_languages('cpp', required: false, native: false)
   all_languages += ['cpp']
   cxx = meson.get_compiler('cpp')

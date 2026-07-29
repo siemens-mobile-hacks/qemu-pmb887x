@@ -265,6 +265,8 @@ static void pmb887x_init(MachineState *machine) {
 	qdev_connect_gpio_out_named(scu, "I2C_RESET_OUT", 0, qdev_get_gpio_in_named(i2c, "RESET_IN", 0));
 	for (int i = 0; i < PMB887X_DSP_INT_COUNT; i++)
 		qdev_connect_gpio_out_named(scu, "DSP_INT_OUT", i, qdev_get_gpio_in_named(dsp, "INT_IN", i));
+	for (int i = 0; i < PMB887X_DSP_MCU_INT_COUNT; i++)
+		qdev_connect_gpio_out_named(dsp, "INT_OUT", i, qdev_get_gpio_in_named(scu, "DSP_INT_IN", i));
 	sysbus_realize_and_unref(SYS_BUS_DEVICE(scu), &error_fatal);
 
 	// CAPCOM0

@@ -45,3 +45,6 @@
 [submodule "tests/lcitool/libvirt-ci"]
 	path = tests/lcitool/libvirt-ci
 	url = https://gitlab.com/libvirt/libvirt-ci.git
+[submodule "subprojects/teakra"]
+	path = subprojects/teakra
+	url = git@github.com:siemens-mobile-hacks/teakra.git
