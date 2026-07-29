@@ -114,7 +114,10 @@ public:
 		teakra->SetMMIOWriteHandler(COMMUNICATION_FLAG_SET_MMIO, [this](uint16_t value) { SetCommunicationFlags(value); });
 		teakra->SetMMIOWriteHandler(COMMUNICATION_FLAG_CLEAR_MMIO,
 			[this](uint16_t value) { ClearCommunicationFlagsFromDsp(value); });
+		teakra->SetMMIOReadHandler(INTERRUPT_TO_MCU_MMIO,
+			[this]() { return mcu_interrupt_status.load(std::memory_order_acquire); });
 		teakra->SetMMIOWriteHandler(INTERRUPT_TO_MCU_MMIO, [this](uint16_t value) {
+			mcu_interrupt_status.fetch_or(value & MCU_INTERRUPT_MASK, std::memory_order_release);
 			mcu_interrupt_events.fetch_or(value, std::memory_order_release);
 			if (value)
 				teakra->RequestStop();
@@ -160,6 +163,7 @@ public:
 		external_interrupt_status.store(0, std::memory_order_relaxed);
 		communication_status.store(0, std::memory_order_relaxed);
 		communication_cleared.store(0, std::memory_order_relaxed);
+		mcu_interrupt_status.store(0, std::memory_order_relaxed);
 		mcu_interrupt_events.store(0, std::memory_order_relaxed);
 		halted = false;
 		initialized = true;
@@ -333,6 +337,7 @@ private:
 	std::atomic<uint16_t> external_interrupt_status{ 0 };
 	std::atomic<uint16_t> communication_status{ 0 };
 	std::atomic<uint16_t> communication_cleared{ 0 };
+	std::atomic<uint16_t> mcu_interrupt_status{ 0 };
 	std::atomic<uint16_t> mcu_interrupt_events{ 0 };
 	bool halted = false;
 	bool initialized = false;
