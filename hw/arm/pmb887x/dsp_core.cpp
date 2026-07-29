@@ -22,9 +22,6 @@ namespace {
 constexpr uint32_t DSP_ADDRESS_SPACE_WORDS = 0x10000;
 constexpr uint32_t DSP_REVISION_FAMILY_MASK = 0xF0;
 constexpr uint16_t DSP_PAGE_MMIO = 0x00A3;
-constexpr uint16_t DSP_ROM_PAGE_MASK = 0x0003;
-constexpr uint32_t DSP_PROGRAM_PAGE_SHIFT = 2;
-constexpr uint16_t DSP_PAGE_MASK = DSP_ROM_PAGE_MASK << DSP_PROGRAM_PAGE_SHIFT | DSP_ROM_PAGE_MASK;
 constexpr uint16_t EXTERNAL_INTERRUPT_STATUS_MMIO = 0x0000;
 constexpr uint16_t EXTERNAL_INTERRUPT_CLEAR_MMIO = 0x0002;
 constexpr uint16_t COMMUNICATION_FLAG_SET_MMIO = 0x0091;
@@ -37,6 +34,8 @@ constexpr std::array<uint8_t, 3> REQUEST_INTERRUPTS = { 0, 1, 0 };
 struct DspRevisionConfig {
 	uint32_t family;
 	uint16_t default_rom_version;
+	uint16_t page_field_mask;
+	uint32_t program_page_shift;
 	uint16_t program_rom_address;
 	uint16_t program_bank_address;
 	size_t program_bank_count;
@@ -54,6 +53,8 @@ constexpr std::array<DspRevisionConfig, 2> DSP_REVISION_CONFIGS = {{
 		DspRevisionConfig config{};
 		config.family = 0x10;
 		config.default_rom_version = 0x0602;
+		config.page_field_mask = 0x0001;
+		config.program_page_shift = 1;
 		config.program_rom_address = 0x1000;
 		config.program_bank_address = 0xB000;
 		config.program_bank_count = 2;
@@ -70,6 +71,8 @@ constexpr std::array<DspRevisionConfig, 2> DSP_REVISION_CONFIGS = {{
 		DspRevisionConfig config{};
 		config.family = 0x30;
 		config.default_rom_version = 0x0801;
+		config.page_field_mask = 0x0003;
+		config.program_page_shift = 2;
 		config.program_rom_address = 0x2000;
 		config.program_bank_address = 0xA000;
 		config.program_bank_count = 3;
@@ -301,11 +304,13 @@ private:
 		if (page == active_page)
 			return;
 
-		if ((page & ~DSP_PAGE_MASK))
+		uint16_t program_page_mask = revision_config->page_field_mask << revision_config->program_page_shift;
+		uint16_t page_mask = program_page_mask | revision_config->page_field_mask;
+		if ((page & ~page_mask))
 			DPRINTF("unknown DSP page bits: revision=r%02X value=%04X unknown=%04X\n",
-				revision_config->family, page, page & ~DSP_PAGE_MASK);
-		MapProgramBank(page >> DSP_PROGRAM_PAGE_SHIFT & DSP_ROM_PAGE_MASK);
-		MapDataBank(page & DSP_ROM_PAGE_MASK);
+				revision_config->family, page, page & ~page_mask);
+		MapProgramBank(page >> revision_config->program_page_shift & revision_config->page_field_mask);
+		MapDataBank(page & revision_config->page_field_mask);
 		active_page = page;
 	}
 
