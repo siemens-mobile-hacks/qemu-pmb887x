@@ -157,7 +157,7 @@ void pmb887x_lcd_set_transform(pmb887x_lcd_t *lcd, bool flip_h_pins, bool flip_v
 		lcd->shadow_buffer = g_new0(uint8_t, output_width * output_height * 4);
 		lcd->shadow_surface = qemu_create_displaysurface_from(output_width, output_height, PIXMAN_x8r8g8b8,
 			output_width * 4, lcd->shadow_buffer);
-		dpy_gfx_replace_surface(lcd->console, lcd->shadow_surface);
+		qemu_console_set_surface(lcd->console, lcd->shadow_surface);
 		g_free(old_shadow_buffer);
 	}
 
@@ -372,15 +372,15 @@ static inline pmb887x_lcd_rect_t lcd_get_dirty_region(pmb887x_lcd_t *lcd) {
 	return dirty;
 }
 
-static void lcd_update_display(void *opaque) {
+static bool lcd_update_display(void *opaque) {
 	pmb887x_lcd_t *lcd = opaque;
 	
 	if (!lcd->surface)
-		return;
+		return true;
 	
 	pmb887x_lcd_rect_t dirty = lcd_get_dirty_region(lcd);
 	if (dirty.x1 > dirty.x2 || dirty.y1 > dirty.y2)
-		return;
+		return true;
 
 	if (lcd->shadow_surface) {
 		lcd_transform_rect(lcd, &dirty);
@@ -397,7 +397,8 @@ static void lcd_update_display(void *opaque) {
 		);
 	}
 
-	dpy_gfx_update(lcd->console, dirty.x1, dirty.y1, dirty.x2 - dirty.x1 + 1, dirty.y2 - dirty.y1 + 1);
+	qemu_console_update(lcd->console, dirty.x1, dirty.y1, dirty.x2 - dirty.x1 + 1, dirty.y2 - dirty.y1 + 1);
+	return true;
 }
 
 static void lcd_invalidate_display(void *opaque) {
@@ -551,7 +552,7 @@ static void lcd_realize(SSIPeripheral *d, Error **errp) {
 
 	pmb887x_fifo8_init(&lcd->fifo, LCD_CMD_MAX_PARAMS);
 
-	lcd->console = graphic_console_init(DEVICE(d), 0, &pmb887x_lcd_gfx_ops, lcd);
+	lcd->console = qemu_graphic_console_create(DEVICE(d), 0, &pmb887x_lcd_gfx_ops, lcd);
 
 	lcd->rotation = lcd->default_rotation;
 	lcd->flip_horizontal = lcd->default_flip_horizontal;

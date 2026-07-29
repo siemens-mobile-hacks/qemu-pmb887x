@@ -50,6 +50,7 @@ struct pmb887x_keypad_t {
 	uint32_t *map;
 	uint32_t map_size;
 	qemu_irq *key_out;
+	QemuInputHandlerState *input_handler;
 
 	qemu_irq gpio_out[4];
 	qemu_irq ready_out;
@@ -64,11 +65,11 @@ static void keypad_signal_ready(pmb887x_keypad_t *p) {
 	qemu_irq_pulse(p->ready_out);
 }
 
-static void keypad_handle_event(DeviceState *dev, QemuConsole *src, InputEvent *evt) {
+static void keypad_handle_event(DeviceState *dev, QemuConsole *src, QemuInputEvent *evt) {
 	pmb887x_keypad_t *p = PMB887X_KEYPAD(dev);
 	
-	bool pressed = evt->u.key.data->down;
-	int keycode = qemu_input_key_value_to_qcode(evt->u.key.data->key);
+	bool pressed = evt->key.down;
+	int keycode = qemu_input_linux_to_qcode(evt->key.key);
 	
 	if (keycode >= p->map_size || !p->map)
 		return;
@@ -185,7 +186,7 @@ static const MemoryRegionOps io_ops = {
 	}
 };
 
-static QemuInputHandler keypad_input_handler = {
+static const QemuInputHandler keypad_input_handler = {
     .name  = "QEMU PMB887X Keypad",
     .mask  = INPUT_EVENT_MASK_KEY,
     .event = keypad_handle_event,
@@ -242,7 +243,13 @@ static void keypad_realize(DeviceState *dev, Error **errp) {
 		pmb887x_src_init(&p->src[i], p->irq[i]);
 	}
 	
-    qemu_input_handler_register(dev, &keypad_input_handler);
+	p->input_handler = qemu_input_handler_register(dev, &keypad_input_handler);
+}
+
+static void keypad_unrealize(DeviceState *dev) {
+	pmb887x_keypad_t *p = PMB887X_KEYPAD(dev);
+
+	g_clear_pointer(&p->input_handler, qemu_input_handler_unregister);
 }
 
 static void keypad_reset(DeviceState *dev) {
@@ -264,6 +271,7 @@ static void keypad_class_init(ObjectClass *klass, const void *data) {
 	device_class_set_props(dc, keypad_properties);
 	device_class_set_legacy_reset(dc, keypad_reset);
 	dc->realize = keypad_realize;
+	dc->unrealize = keypad_unrealize;
 }
 
 static const TypeInfo keypad_info = {

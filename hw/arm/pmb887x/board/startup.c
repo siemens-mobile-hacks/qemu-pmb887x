@@ -29,7 +29,7 @@ static void pmb887x_board_startup_release(void *opaque) {
 	pmb887x_startup_sequence_t *sequence = opaque;
 
 	for (size_t i = 0; i < sequence->keys_count; i++)
-		qemu_input_event_send_key_qcode(NULL, sequence->keys[i], false);
+		qemu_input_event_send_key_linux(NULL, qemu_input_map_qcode_to_linux[sequence->keys[i]], false);
 	qemu_log("Startup: %s deactivated\n", sequence->name);
 }
 
@@ -37,7 +37,7 @@ static void pmb887x_board_startup_activate(void *opaque) {
 	pmb887x_startup_sequence_t *sequence = opaque;
 
 	for (size_t i = 0; i < sequence->keys_count; i++)
-		qemu_input_event_send_key_qcode(NULL, sequence->keys[i], true);
+		qemu_input_event_send_key_linux(NULL, qemu_input_map_qcode_to_linux[sequence->keys[i]], true);
 	qemu_log("Startup: %s activated\n", sequence->name);
 }
 
