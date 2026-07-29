@@ -320,14 +320,14 @@ static void macfb_draw_graphic(MacfbState *s)
             }
         } else {
             if (ymin >= 0) {
-                dpy_gfx_update(s->con, 0, ymin, s->width, y - ymin);
+                qemu_console_update(s->con, 0, ymin, s->width, y - ymin);
                 ymin = -1;
             }
         }
     }
 
     if (ymin >= 0) {
-        dpy_gfx_update(s->con, 0, ymin, s->width, y - ymin);
+        qemu_console_update(s->con, 0, ymin, s->width, y - ymin);
     }
 
     g_free(snap);
@@ -454,7 +454,7 @@ static gchar *macfb_mode_list(void)
 }
 
 
-static void macfb_update_display(void *opaque)
+static bool macfb_update_display(void *opaque)
 {
     MacfbState *s = opaque;
     DisplaySurface *surface = qemu_console_surface(s->con);
@@ -462,7 +462,7 @@ static void macfb_update_display(void *opaque)
     qemu_flush_coalesced_mmio_buffer();
 
     if (s->width == 0 || s->height == 0) {
-        return;
+        return true;
     }
 
     if (s->width != surface_width(surface) ||
@@ -471,6 +471,8 @@ static void macfb_update_display(void *opaque)
     }
 
     macfb_draw_graphic(s);
+
+    return true;
 }
 
 static void macfb_update_irq(MacfbState *s)
@@ -669,7 +671,7 @@ static bool macfb_common_realize(DeviceState *dev, MacfbState *s, Error **errp)
     s->regs[DAFB_MODE_CTRL1 >> 2] = s->mode->mode_ctrl1;
     s->regs[DAFB_MODE_CTRL2 >> 2] = s->mode->mode_ctrl2;
 
-    s->con = graphic_console_init(dev, 0, &macfb_ops, s);
+    s->con = qemu_graphic_console_create(dev, 0, &macfb_ops, s);
     surface = qemu_console_surface(s->con);
 
     if (surface_bits_per_pixel(surface) != 32) {

@@ -598,7 +598,7 @@ static int coroutine_fn rule_check(BlockDriverState *bs, uint64_t offset,
                                    uint64_t bytes, BlkdebugIOType iotype)
 {
     BDRVBlkdebugState *s = bs->opaque;
-    BlkdebugRule *rule = NULL;
+    BlkdebugRule *rule;
     int error;
     bool immediately;
     int64_t delay_ns;

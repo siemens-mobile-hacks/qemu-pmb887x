@@ -32,6 +32,7 @@
 #include "system/device_tree.h"
 #include "system/cpus.h"
 #include "system/hw_accel.h"
+#include "system/physmem.h"
 #include "system/runstate.h"
 #include "system/qtest.h"
 #include "kvm_ppc.h"
@@ -51,6 +52,21 @@
 #include "target/ppc/mmu-book3s-v3.h"
 #include "migration/blocker.h"
 #include "helper_regs.h"
+
+uint32_t rtas_ld(target_ulong phys, int n)
+{
+    return ldl_be_phys(&address_space_memory, ppc64_phys_to_real(phys + 4 * n));
+}
+
+uint64_t rtas_ldq(target_ulong phys, int n)
+{
+    return (uint64_t)rtas_ld(phys, n) << 32 | rtas_ld(phys, n + 1);
+}
+
+void rtas_st(target_ulong phys, int n, uint32_t val)
+{
+    stl_be_phys(&address_space_memory, ppc64_phys_to_real(phys + 4 * n), val);
+}
 
 static void rtas_display_character(PowerPCCPU *cpu, SpaprMachineState *spapr,
                                    uint32_t token, uint32_t nargs,
@@ -264,7 +280,7 @@ static inline int sysparm_st(target_ulong addr, target_ulong len,
         return RTAS_OUT_SYSPARM_PARAM_ERROR;
     }
     stw_be_phys(&address_space_memory, phys, vallen);
-    cpu_physical_memory_write(phys + 2, val, MIN(len - 2, vallen));
+    physical_memory_write(phys + 2, val, MIN(len - 2, vallen));
     return RTAS_OUT_SUCCESS;
 }
 
@@ -426,7 +442,7 @@ static void rtas_ibm_os_term(PowerPCCPU *cpu,
         return trigger_fadump_boot(spapr, rets);
     }
 
-    cpu_physical_memory_read(msgaddr, msg, sizeof(msg) - 1);
+    physical_memory_read(msgaddr, msg, sizeof(msg) - 1);
     msg[sizeof(msg) - 1] = 0;
 
     error_report("OS terminated: %s", msg);

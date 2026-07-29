@@ -124,7 +124,7 @@ blkio_do_alloc_bounce_buffer(BDRVBlkioState *s, BlkioBounceBuf *bounce,
                              int64_t bytes)
 {
     void *addr = s->bounce_pool.addr;
-    BlkioBounceBuf *cur = NULL;
+    BlkioBounceBuf *cur;
     BlkioBounceBuf *prev = NULL;
     ptrdiff_t space;
 
@@ -937,9 +937,8 @@ static int64_t coroutine_fn blkio_co_getlength(BlockDriverState *bs)
     uint64_t capacity;
     int ret;
 
-    WITH_QEMU_LOCK_GUARD(&s->blkio_lock) {
-        ret = blkio_get_uint64(s->blkio, "capacity", &capacity);
-    }
+    QEMU_LOCK_GUARD(&s->blkio_lock);
+    ret = blkio_get_uint64(s->blkio, "capacity", &capacity);
     if (ret < 0) {
         return -ret;
     }

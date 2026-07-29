@@ -293,6 +293,11 @@ static bool vfio_region_create_dma_buf(VFIORegion *region, Error **errp)
     size_t total_size;
     int i, ret;
 
+    /* Check if backend supports DMA-BUF creation */
+    if (!(vbasedev->io_ops->capabilities & VFIO_IO_CAP_DMA_BUF)) {
+        return true;
+    }
+
     total_size = sizeof(*feature) + sizeof(*dma_buf) +
                  sizeof(struct vfio_region_dma_range) * region->nr_mmaps;
     feature = g_malloc0(total_size);
@@ -316,13 +321,12 @@ static bool vfio_region_create_dma_buf(VFIORegion *region, Error **errp)
     ret = vfio_device_get_feature(vbasedev, feature);
     if (ret < 0) {
         if (ret == -ENOTTY) {
-            warn_report_once("VFIO dma-buf not supported in kernel: "
-                             "PCI BAR IOMMU mappings may fail");
+            warn_report_once("VFIO dma-buf not supported in kernel, "
+                             "using mmap fallback, P2P DMA will not work");
             return true;
         }
-        /* P2P DMA or exposing device memory use cases are not supported. */
-        error_setg_errno(errp, -ret, "%s: failed to create dma-buf: "
-                         "PCI BAR IOMMU mappings may fail",
+        error_setg_errno(errp, -ret, "%s: dma-buf unavailable, "
+                         "using mmap fallback, P2P DMA will not work",
                          memory_region_name(region->mem));
         return false;
     }
@@ -443,7 +447,7 @@ int vfio_region_mmap(VFIORegion *region)
     }
 
     if (!vfio_region_create_dma_buf(region, &local_err)) {
-        error_report_err(local_err);
+        warn_report_err_once(local_err);
     }
 
     return 0;
@@ -461,21 +465,6 @@ no_mmap:
     }
 
     return ret;
-}
-
-void vfio_region_unmap(VFIORegion *region)
-{
-    int i;
-
-    if (!region->mem) {
-        return;
-    }
-
-    for (i = 0; i < region->nr_mmaps; i++) {
-        if (region->mmaps[i].mmap) {
-            vfio_subregion_unmap(region, i);
-        }
-    }
 }
 
 void vfio_region_exit(VFIORegion *region)

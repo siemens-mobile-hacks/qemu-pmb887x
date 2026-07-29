@@ -23,7 +23,8 @@
  */
 
 #include "qemu/osdep.h"
-#include "cpu.h"
+#include "target/ppc/cpu.h"
+#include "exec/page-protection.h"
 #include "exec/target_page.h"
 #include "hw/ppc/ppc.h"
 #include "qemu/timer.h"

@@ -114,7 +114,6 @@ QEMU_EXTERN_C int daemon(int, int);
 #include <stdio.h>
 
 #include <string.h>
-#include <strings.h>
 #include <inttypes.h>
 #include <limits.h>
 /* Put unistd.h before time.h as that triggers localtime_r/gmtime_r
@@ -383,6 +382,17 @@ void QEMU_ERROR("code path is reachable")
 
 #ifndef TIME_MAX
 #define TIME_MAX TYPE_MAXIMUM(time_t)
+#endif
+
+#ifndef PATH_MAX
+#define PATH_MAX 1024
+#endif
+
+/*
+ * Use the same value as Linux for now.
+ */
+#ifndef IOV_MAX
+#define IOV_MAX 1024
 #endif
 
 /* Mac OSX has a <stdint.h> bug that incorrectly defines SIZE_MAX with
@@ -662,10 +672,6 @@ struct iovec {
     void *iov_base;
     size_t iov_len;
 };
-/*
- * Use the same value as Linux for now.
- */
-#define IOV_MAX 1024
 
 ssize_t readv(int fd, const struct iovec *iov, int iov_cnt);
 ssize_t writev(int fd, const struct iovec *iov, int iov_cnt);

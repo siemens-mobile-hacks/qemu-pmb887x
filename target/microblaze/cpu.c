@@ -27,7 +27,7 @@
 #include "cpu.h"
 #include "qemu/module.h"
 #include "hw/core/qdev-properties.h"
-#include "accel/tcg/cpu-ldst.h"
+#include "accel/tcg/cpu-ldst-common.h"
 #include "exec/gdbstub.h"
 #include "exec/translation-block.h"
 #include "fpu/softfloat-helpers.h"
@@ -428,7 +428,7 @@ static ObjectClass *mb_cpu_class_by_name(const char *cpu_model)
 
 static const struct SysemuCPUOps mb_sysemu_ops = {
     .has_work = mb_cpu_has_work,
-    .get_phys_page_attrs_debug = mb_cpu_get_phys_page_attrs_debug,
+    .translate_for_debug = mb_cpu_translate_for_debug,
 };
 #endif
 

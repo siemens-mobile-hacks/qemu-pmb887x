@@ -31,8 +31,10 @@
 #include "qemu/osdep.h"
 #include "cpu.h"
 #include "s390x-internal.h"
-#include "tcg/tcg-op.h"
-#include "tcg/tcg-op-gvec.h"
+#define TCG_ADDRESS_BITS 64
+#include "tcg/tcg-op-common.h"
+#include "tcg/tcg-op-mem.h"
+#include "tcg/tcg-op-gvec-common.h"
 #include "qemu/log.h"
 #include "qemu/host-utils.h"
 #include "exec/helper-proto.h"
@@ -6509,7 +6511,8 @@ void s390x_translate_code(CPUState *cs, TranslationBlock *tb,
 {
     DisasContext dc;
 
-    translator_loop(cs, tb, max_insns, pc, host_pc, &s390x_tr_ops, &dc.base);
+    translator_loop(cs, tb, max_insns, pc, host_pc, &s390x_tr_ops, &dc.base,
+                    TCG_TYPE_VA);
 }
 
 void s390x_restore_state_to_opc(CPUState *cs,

@@ -45,6 +45,7 @@ typedef struct PCMachineState {
     const char *south_bridge;
 
     bool acpi_build_enabled;
+    bool wdat_enabled;
     bool smbus_enabled;
     bool sata_enabled;
     bool hpet_enabled;
@@ -207,6 +208,9 @@ void pc_system_parse_ovmf_flash(uint8_t *flash_ptr, size_t flash_size);
 
 /* sgx.c */
 void pc_machine_init_sgx_epc(PCMachineState *pcms);
+
+extern GlobalProperty pc_compat_11_0[];
+extern const size_t pc_compat_11_0_len;
 
 extern GlobalProperty pc_compat_10_2[];
 extern const size_t pc_compat_10_2_len;

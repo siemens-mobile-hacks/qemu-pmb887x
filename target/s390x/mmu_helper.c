@@ -24,6 +24,9 @@
 #include "system/kvm.h"
 #include "system/tcg.h"
 #include "system/memory.h"
+#ifdef CONFIG_TCG
+#include "accel/tcg/cpu-loop.h"
+#endif
 #include "exec/page-protection.h"
 #include "exec/target_page.h"
 #include "hw/core/hw-error.h"
@@ -44,8 +47,9 @@ static void trigger_access_exception(CPUS390XState *env, uint32_t type,
     } else {
         CPUState *cs = env_cpu(env);
         if (type != PGM_ADDRESSING) {
-            stq_be_phys(cs->as, env->psa + offsetof(LowCore, trans_exc_code),
-                        tec);
+            address_space_stq_be(cs->as,
+                                 env->psa + offsetof(LowCore, trans_exc_code),
+                                 tec, MEMTXATTRS_UNSPECIFIED, NULL);
         }
         trigger_pgm_exception(env, type);
     }

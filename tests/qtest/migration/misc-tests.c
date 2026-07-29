@@ -28,9 +28,11 @@ static void test_baddest(char *name, MigrateCommon *args)
 
     args->start.hide_stderr = true;
 
-    if (migrate_start(&from, &to, "tcp:127.0.0.1:0", &args->start)) {
+    if (migrate_start(&from, &to, &args->start)) {
         return;
     }
+
+    migrate_incoming_qmp(to, "tcp:127.0.0.1:0", NULL, "{}");
     migrate_qmp(from, to, "tcp:127.0.0.1:0", NULL, "{}");
     wait_for_migration_fail(from, false);
     migrate_end(from, to, false);
@@ -52,8 +54,7 @@ static void test_analyze_script(char *name, MigrateCommon *args)
         return;
     }
 
-    /* dummy url */
-    if (migrate_start(&from, &to, "tcp:127.0.0.1:0", &args->start)) {
+    if (migrate_start(&from, &to, &args->start)) {
         return;
     }
 
@@ -69,6 +70,7 @@ static void test_analyze_script(char *name, MigrateCommon *args)
     uri = g_strdup_printf("exec:cat > %s", file);
 
     migrate_ensure_converge(from);
+    migrate_incoming_qmp(to, "tcp:127.0.0.1:0", NULL, "{}");
     migrate_qmp(from, to, uri, NULL, "{}");
     wait_for_migration_complete(from);
 
@@ -90,40 +92,22 @@ static void test_analyze_script(char *name, MigrateCommon *args)
 }
 #endif
 
-static void test_ignore_shared(char *name, MigrateCommon *args)
+static void ignore_shared_assert_skipped(QTestState *from, QTestState *to,
+                                         void *data)
 {
-    g_autofree char *uri = g_strdup_printf("unix:%s/migsocket", tmpfs);
-    QTestState *from, *to;
-
-    args->start.mem_type = MEM_TYPE_SHMEM;
-    args->start.caps[MIGRATION_CAPABILITY_X_IGNORE_SHARED] = true;
-
-    if (migrate_start(&from, &to, uri, &args->start)) {
-        return;
-    }
-
-    migrate_ensure_non_converge(from);
-    migrate_prepare_for_dirty_mem(from);
-
-    /* Wait for the first serial output from the source */
-    wait_for_serial("src_serial");
-
-    migrate_qmp(from, to, uri, NULL, "{}");
-
-    migrate_wait_for_dirty_mem(from, to);
-
-    wait_for_stop(from, get_src());
-
-    qtest_qmp_eventwait(to, "RESUME");
-
-    wait_for_serial("dest_serial");
-    wait_for_migration_complete(from);
-
     /* Check whether shared RAM has been really skipped */
     g_assert_cmpint(
         read_ram_property_int(from, "transferred"), <, 4 * 1024 * 1024);
+}
 
-    migrate_end(from, to, true);
+static void test_ignore_shared(char *name, MigrateCommon *args)
+{
+    args->live = true;
+    args->start.mem_type = MEM_TYPE_SHMEM;
+    args->start.caps[MIGRATION_CAPABILITY_X_IGNORE_SHARED] = true;
+    args->end_hook = ignore_shared_assert_skipped;
+
+    test_precopy_unix_common(args);
 }
 
 static void do_test_validate_uuid(MigrateStart *args, bool should_fail)
@@ -131,7 +115,7 @@ static void do_test_validate_uuid(MigrateStart *args, bool should_fail)
     g_autofree char *uri = g_strdup_printf("unix:%s/migsocket", tmpfs);
     QTestState *from, *to;
 
-    if (migrate_start(&from, &to, "defer", args)) {
+    if (migrate_start(&from, &to, args)) {
         return;
     }
 
@@ -196,12 +180,14 @@ static void do_test_validate_uri_channel(MigrateCommon *args)
     QTestState *from, *to;
     QObject *channels;
 
-    if (migrate_start(&from, &to, args->listen_uri, &args->start)) {
+    if (migrate_start(&from, &to, &args->start)) {
         return;
     }
 
     /* Wait for the first serial output from the source */
     wait_for_serial("src_serial");
+
+    migrate_incoming_qmp(to, "tcp:127.0.0.1:0", NULL, "{}");
 
     /*
      * 'uri' and 'channels' validation is checked even before the migration
@@ -210,15 +196,63 @@ static void do_test_validate_uri_channel(MigrateCommon *args)
     channels = args->connect_channels ?
                qobject_from_json(args->connect_channels, &error_abort) :
                NULL;
-    migrate_qmp_fail(from, args->connect_uri, channels, "{}");
+    migrate_qmp_fail(from, args->uri, channels, "{}");
 
     migrate_end(from, to, false);
 }
 
+static void validate_caps_pair(QTestState *from,
+                               const char *first_capability,
+                               const char *second_capability,
+                               const char *expected_error)
+{
+    QDict *rsp;
+    const char *error_desc;
+
+    migrate_set_capability(from, first_capability, true);
+
+    rsp = qtest_qmp_assert_failure_ref(
+        from,
+        "{ 'execute': 'migrate-set-capabilities',"
+        "  'arguments': { 'capabilities': [ { "
+        "      'capability': %s, 'state': true } ] } }",
+        second_capability);
+
+    error_desc = qdict_get_str(rsp, "desc");
+    g_assert_cmpstr(error_desc, ==, expected_error);
+    qobject_unref(rsp);
+
+    migrate_set_capability(from, first_capability, false);
+}
+
+static void test_validate_caps_pair(char *test_path, MigrateCommon *args)
+{
+    g_autofree char *serial_path = g_strconcat(tmpfs, "/src_serial", NULL);
+    g_autofree char *cap_pair = g_path_get_basename(test_path);
+    QTestState *from, *to;
+
+    args->start.hide_stderr = true;
+    args->start.only_source = true;
+
+    if (migrate_start(&from, &to, &args->start)) {
+        return;
+    }
+
+    if (g_str_equal(cap_pair, "mapped_ram_postcopy")) {
+        const char *error =
+            "Mapped-ram migration is incompatible with postcopy";
+
+        validate_caps_pair(from, "mapped-ram", "postcopy-ram", error);
+        validate_caps_pair(from, "postcopy-ram", "mapped-ram", error);
+    }
+
+    qtest_quit(from);
+    unlink(serial_path);
+}
+
 static void test_validate_uri_channels_both_set(char *name, MigrateCommon *args)
 {
-    args->listen_uri = "defer",
-    args->connect_uri = "tcp:127.0.0.1:0",
+    args->uri = "tcp:127.0.0.1:0",
     args->connect_channels = ("[ { ""'channel-type': 'main',"
                               "    'addr': { 'transport': 'socket',"
                               "              'type': 'inet',"
@@ -232,7 +266,6 @@ static void test_validate_uri_channels_both_set(char *name, MigrateCommon *args)
 
 static void test_validate_uri_channels_none_set(char *name, MigrateCommon *args)
 {
-    args->listen_uri = "defer";
     args->start.hide_stderr = true;
 
     do_test_validate_uri_channel(args);
@@ -276,4 +309,7 @@ void migration_test_add_misc(MigrationTestEnv *env)
                        test_validate_uri_channels_both_set);
     migration_test_add("/migration/validate_uri/channels/none_set",
                        test_validate_uri_channels_none_set);
+    migration_test_add_suffix("/migration/validate_caps/",
+                              "mapped_ram_postcopy",
+                              test_validate_caps_pair);
 }

@@ -58,7 +58,7 @@
 # @value: the value of the property.  Absent when the property cannot
 #     be read.
 #
-# Since 10.1
+# Since: 10.1
 ##
 { 'struct': 'ObjectPropertyValue',
   'data': { 'name': 'str',
@@ -70,7 +70,7 @@
 #
 # @properties: a list of properties.
 #
-# Since 10.1
+# Since: 10.1
 ##
 { 'struct': 'ObjectPropertiesValues',
   'data': { 'properties': [ 'ObjectPropertyValue' ] }}
@@ -167,7 +167,7 @@
 # Returns: A list where each element is the result for the
 #     corresponding element of @paths.
 #
-# Since 10.1
+# Since: 10.1
 ##
 { 'command': 'qom-list-get',
   'data': { 'paths': [ 'str' ] },
@@ -606,6 +606,13 @@
 #     algorithm detects it is spending too long polling without
 #     encountering events.  0 selects a default behaviour (default: 0)
 #
+# @poll-weight: the weight factor for adaptive polling.  Determines
+#     how much the most recent event interval affects the next
+#     polling duration calculation.  If set to 0, the system default
+#     value of 3 is used.  Typical values: 1 (high weight on recent
+#     interval), 2-4 (moderate weight on recent interval).
+#     (default: 0) (since 11.1)
+#
 # The @aio-max-batch option is available since 6.1.
 #
 # Since: 2.0
@@ -614,7 +621,8 @@
   'base': 'EventLoopBaseProperties',
   'data': { '*poll-max-ns': 'int',
             '*poll-grow': 'int',
-            '*poll-shrink': 'int' } }
+            '*poll-shrink': 'int',
+            '*poll-weight': 'int' } }
 
 ##
 # @MainLoopProperties:
@@ -1180,6 +1188,65 @@
             '*node-affinity': ['uint16'] } }
 
 ##
+# @MonitorProperties:
+#
+# Properties for all monitors
+#
+# @chardev: ID of the character device providing the monitor transport
+#
+# Since: 11.1
+##
+{ 'struct': 'MonitorProperties',
+  'data': { 'chardev': 'str' }}
+
+##
+# @MonitorHMPProperties:
+#
+# Properties for the HMP monitor
+#
+# @readline: whether to enable readline for line editing
+#      (default: true)
+#
+# Since: 11.1
+##
+{ 'struct': 'MonitorHMPProperties',
+  'base': 'MonitorProperties',
+  'data': { '*readline': 'bool' } }
+
+
+##
+# @MonitorQMPCloseAction:
+#
+# Action to take when the character device backend is closed.
+#
+# @none: take no action
+#
+# @delete: delete both the 'monitor-qmp' object and its associated
+#     character device backend object
+#
+# Since: 11.1
+##
+{ 'enum': 'MonitorQMPCloseAction',
+  'data': ['none', 'delete'] }
+
+##
+# @MonitorQMPProperties:
+#
+# Properties for the QMP monitor
+#
+# @pretty: whether to pretty print JSON responses (default: false)
+#
+# @close-action: action to take when the character device backend is
+#     closed (default: none)
+#
+# Since: 11.1
+##
+{ 'struct': 'MonitorQMPProperties',
+  'base': 'MonitorProperties',
+  'data': { '*pretty': 'bool',
+            '*close-action': 'MonitorQMPCloseAction' } }
+
+##
 # @ObjectType:
 #
 # Features:
@@ -1229,6 +1296,8 @@
     'memory-backend-ram',
     { 'name': 'memory-backend-shm',
       'if': 'CONFIG_POSIX' },
+    'monitor-hmp',
+    'monitor-qmp',
     'pef-guest',
     { 'name': 'pr-manager-helper',
       'if': 'CONFIG_LINUX' },
@@ -1307,6 +1376,8 @@
       'memory-backend-ram':         'MemoryBackendProperties',
       'memory-backend-shm':         { 'type': 'MemoryBackendShmProperties',
                                       'if': 'CONFIG_POSIX' },
+      'monitor-hmp':                'MonitorHMPProperties',
+      'monitor-qmp':                'MonitorQMPProperties',
       'pr-manager-helper':          { 'type': 'PrManagerHelperProperties',
                                       'if': 'CONFIG_LINUX' },
       'qtest':                      'QtestProperties',

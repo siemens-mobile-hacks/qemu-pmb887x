@@ -30,7 +30,7 @@
 
 #include "qemu/osdep.h"
 #include "qemu/log.h"
-#include "cpu.h"
+#include "target/i386/cpu.h"
 #include "qapi/error.h"
 #include "qapi/visitor.h"
 #include "qemu/range.h"
@@ -701,6 +701,7 @@ static void ich9_lpc_initfn(Object *obj)
                                    &lpc->smi_negotiated_features,
                                    OBJ_PROP_FLAG_READ);
 
+    ich9_pm_reset_properties(&lpc->pm);
     ich9_pm_add_properties(obj, &lpc->pm);
 }
 

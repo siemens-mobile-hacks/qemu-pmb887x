@@ -28,6 +28,7 @@
 #include "qemu/host-utils.h"
 #include "system/kvm.h"
 #include "system/mshv.h"
+#include "system/physmem.h"
 #include "trace.h"
 #include "hw/i386/apic-msidef.h"
 #include "exec/cpu-common.h"
@@ -107,7 +108,7 @@ static void apic_sync_vapic(APICCommonState *s, int sync_type)
         return;
     }
     if (sync_type & SYNC_FROM_VAPIC) {
-        cpu_physical_memory_read(s->vapic_paddr, &vapic_state,
+        physical_memory_read(s->vapic_paddr, &vapic_state,
                                  sizeof(vapic_state));
         s->tpr = vapic_state.tpr;
     }
@@ -872,6 +873,15 @@ static uint64_t apic_mem_read(void *opaque, hwaddr addr, unsigned size)
 
     if (!s) {
         return -1;
+    }
+
+    /* if the xAPIC is disabled, return early. */
+    if (!(s->apicbase & MSR_IA32_APICBASE_ENABLE)) {
+        return 0xffffffff;
+    }
+
+    if (is_x2apic_mode(s)) {
+        return 0xffffffff;
     }
 
     index = (addr >> 4) & 0xff;

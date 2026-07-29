@@ -3,7 +3,7 @@
 #include "cpregs.h"
 #include "trace.h"
 #include "qemu/error-report.h"
-#include "system/kvm.h"
+#include "system/hvf.h"
 #include "system/tcg.h"
 #include "kvm_arm.h"
 #include "internals.h"
@@ -916,7 +916,7 @@ static int get_power(QEMUFile *f, void *opaque, size_t size,
 {
     ARMCPU *cpu = opaque;
     bool powered_off = qemu_get_byte(f);
-    cpu->power_state = powered_off ? PSCI_OFF : PSCI_ON;
+    arm_set_cpu_power_state(cpu, powered_off ? PSCI_OFF : PSCI_ON);
     return 0;
 }
 
@@ -960,11 +960,30 @@ static const VMStateDescription vmstate_syndrome64 = {
     },
 };
 
+static bool fpmr_needed(void *opaque)
+{
+    ARMCPU *cpu = opaque;
+
+    return arm_feature(&cpu->env, ARM_FEATURE_AARCH64)
+           && cpu_isar_feature(aa64_fpmr, cpu);
+}
+
+static const VMStateDescription vmstate_fpmr = {
+    .name = "cpu/fpmr",
+    .version_id = 1,
+    .minimum_version_id = 1,
+    .needed = fpmr_needed,
+    .fields = (const VMStateField[]) {
+        VMSTATE_UINT64(env.vfp.fpmr, ARMCPU),
+        VMSTATE_END_OF_LIST()
+    },
+};
+
 static int cpu_pre_save(void *opaque)
 {
     ARMCPU *cpu = opaque;
 
-    if (!kvm_enabled()) {
+    if (tcg_enabled() || hvf_enabled()) {
         pmu_op_start(&cpu->env);
     }
 
@@ -998,18 +1017,16 @@ static int cpu_pre_save(void *opaque)
     return 0;
 }
 
-static int cpu_post_save(void *opaque)
+static void cpu_post_save(void *opaque)
 {
     ARMCPU *cpu = opaque;
 
-    if (!kvm_enabled()) {
+    if (tcg_enabled() || hvf_enabled()) {
         pmu_op_finish(&cpu->env);
     }
 
     cpu->cpreg_vmstate_indexes = NULL;
     cpu->cpreg_vmstate_values = NULL;
-
-    return 0;
 }
 
 static int cpu_pre_load(void *opaque)
@@ -1038,7 +1055,7 @@ static int cpu_pre_load(void *opaque)
      */
     env->irq_line_state = UINT32_MAX;
 
-    if (!kvm_enabled()) {
+    if (tcg_enabled() || hvf_enabled()) {
         pmu_op_start(env);
     }
 
@@ -1065,25 +1082,37 @@ static void handle_cpreg_missing_in_incoming_stream(ARMCPU *cpu, uint64_t kvmidx
 {
     g_autofree gchar *name = print_register_name(kvmidx);
 
+    if (arm_cpu_match_cpreg_mig_tolerance(cpu, kvmidx,
+                                          0, 0, ToleranceNotOnBothEnds)) {
+        trace_tolerate_cpreg_missing_in_incoming_stream(name);
+        return;
+    }
     warn_report("%s: %s "
                 "expected by the destination but not in the incoming stream: "
                  "skip it", __func__, name);
 }
 
 /*
- * Handle the situation where @kvmidx is in the incoming stream
- * but not on destination. This currently fails the migration but
- * we plan to accomodate some exceptions, hence the boolean returned value.
+ * Handle the situation where @kvmidx is in the incoming
+ * stream but not on destination. This fails the migration if
+ * no cpreg mig tolerance is matched for this @kvmidx
+ * Return true if the migration should eventually fail
  */
-static bool handle_cpreg_only_in_incoming_stream(ARMCPU *cpu, uint64_t kvmidx)
+static bool
+handle_cpreg_only_in_incoming_stream(ARMCPU *cpu, uint64_t kvmidx, uint64_t value)
 {
     g_autofree gchar *name = print_register_name(kvmidx);
-    bool fail = true;
 
+    if (arm_cpu_match_cpreg_mig_tolerance(cpu, kvmidx,
+                                          0, 0, ToleranceNotOnBothEnds) ||
+        arm_cpu_match_cpreg_mig_tolerance(cpu, kvmidx,
+                                          value, 0, ToleranceOnlySrcTestValue)) {
+        trace_tolerate_cpreg_only_in_incoming_stream(name);
+        return false;
+    }
     error_report("%s: %s in the incoming stream but unknown on the "
                  "destination: fail migration", __func__, name);
-
-    return fail;
+    return true;
 }
 
 static int cpu_post_load(void *opaque, int version_id)
@@ -1130,7 +1159,9 @@ static int cpu_post_load(void *opaque, int version_id)
         }
         if (cpu->cpreg_vmstate_indexes[v] < cpu->cpreg_indexes[i]) {
             fail = handle_cpreg_only_in_incoming_stream(cpu,
-                                                        cpu->cpreg_vmstate_indexes[v++]);
+                                                        cpu->cpreg_vmstate_indexes[v],
+                                                        cpu->cpreg_vmstate_values[v]);
+            v++;
             continue;
         }
         /* matching register, copy the value over */
@@ -1153,7 +1184,8 @@ static int cpu_post_load(void *opaque, int version_id)
      */
     for ( ; v < cpu->cpreg_vmstate_array_len; v++) {
         fail = handle_cpreg_only_in_incoming_stream(cpu,
-                                                    cpu->cpreg_vmstate_indexes[v]);
+                                                    cpu->cpreg_vmstate_indexes[v],
+                                                    cpu->cpreg_vmstate_values[v]);
     }
     if (fail) {
         return -1;
@@ -1202,7 +1234,7 @@ static int cpu_post_load(void *opaque, int version_id)
         }
     }
 
-    if (!kvm_enabled()) {
+    if (tcg_enabled() || hvf_enabled()) {
         pmu_op_finish(env);
     }
 
@@ -1310,6 +1342,7 @@ const VMStateDescription vmstate_arm_cpu = {
         &vmstate_syndrome64,
         &vmstate_pstate64,
         &vmstate_event,
+        &vmstate_fpmr,
         NULL
     }
 };

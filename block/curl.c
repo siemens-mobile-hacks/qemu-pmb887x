@@ -482,6 +482,8 @@ static int curl_init_state(BDRVCURLState *s, CURLState *state)
             }
         }
         if (curl_easy_setopt(state->curl, CURLOPT_TIMEOUT, (long)s->timeout) ||
+            curl_easy_setopt(state->curl, CURLOPT_USERAGENT,
+                             "QEMU/" QEMU_VERSION) ||
             curl_easy_setopt(state->curl, CURLOPT_WRITEFUNCTION,
                              (void *)curl_read_cb) ||
             curl_easy_setopt(state->curl, CURLOPT_WRITEDATA, (void *)state) ||
@@ -871,8 +873,8 @@ static int curl_open(BlockDriverState *bs, QDict *options, int flags,
         goto out;
     }
 
-    if ((!strncasecmp(s->url, "http://", strlen("http://"))
-        || !strncasecmp(s->url, "https://", strlen("https://")))
+    if ((!g_ascii_strncasecmp(s->url, "http://", strlen("http://"))
+        || !g_ascii_strncasecmp(s->url, "https://", strlen("https://")))
         && !s->accept_range) {
         pstrcpy(state->errmsg, CURL_ERROR_SIZE,
                 "Server does not support 'range' (byte ranges).");

@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: GPL-2.0-or-later */
 
 #include "qemu/osdep.h"
+#include "exec/page-protection.h"
 #include "qemu.h"
 #include "loader.h"
 #include "target_elf.h"
@@ -16,13 +17,26 @@ const char *get_elf_platform(CPUState *cs)
     return "PARISC";
 }
 
+void elf_core_copy_regs(target_elf_gregset_t *r, const CPUArchState *env)
+{
+    int i;
+
+    memset(r, 0, sizeof(*r));
+    for (i = 0; i < 32; i++) {
+        r->gr[i] = tswapal(env->gr[i]);
+    }
+    r->iaoq[0] = tswapal(env->iaoq_f);
+    r->iaoq[1] = tswapal(env->iaoq_b);
+    r->sar     = tswapal(env->cr[CR_SAR]);
+}
+
 bool init_guest_commpage(void)
 {
     /* If reserved_va, then we have already mapped 0 page on the host. */
     if (!reserved_va) {
         void *want, *addr;
 
-        want = g2h_untagged(LO_COMMPAGE);
+        want = g2h_untagged(COMMPAGE);
         addr = mmap(want, TARGET_PAGE_SIZE, PROT_NONE,
                     MAP_ANONYMOUS | MAP_PRIVATE | MAP_FIXED_NOREPLACE, -1, 0);
         if (addr == MAP_FAILED) {
@@ -41,7 +55,7 @@ bool init_guest_commpage(void)
      * and implement syscalls.  Here, simply mark the page executable.
      * Special case the entry points during translation (see do_page_zero).
      */
-    page_set_flags(LO_COMMPAGE, LO_COMMPAGE | ~TARGET_PAGE_MASK,
+    page_set_flags(COMMPAGE, COMMPAGE | ~TARGET_PAGE_MASK,
                    PAGE_EXEC | PAGE_VALID, PAGE_VALID);
     return true;
 }

@@ -20,8 +20,6 @@ void whpx_translate_cpu_breakpoints(
     CPUState *cpu,
     int cpu_breakpoint_count);
 void whpx_arch_destroy_vcpu(CPUState *cpu);
-
-/* called by whpx-accel-ops */
-bool whpx_arch_supports_guest_debug(void);
+void whpx_arch_accel_class_init(ObjectClass *oc);
 
 #endif

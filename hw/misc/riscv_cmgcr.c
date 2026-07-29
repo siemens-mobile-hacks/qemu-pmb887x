@@ -19,8 +19,9 @@
 #include "migration/vmstate.h"
 #include "hw/misc/riscv_cmgcr.h"
 #include "hw/core/qdev-properties.h"
+#include "exec/target_page.h"
 
-#include "cpu.h"
+#include "target/riscv/cpu.h"
 
 #define CM_RESET_VEC 0x1FC00000
 #define GCR_ADDRSPACE_SZ        0x8000

@@ -178,17 +178,24 @@ out:
     return ret;
 }
 
+void kbd_layout_free(kbd_layout_t *k)
+{
+    if (!k) {
+        return;
+    }
+    g_hash_table_unref(k->hash);
+    g_free(k);
+}
 
-kbd_layout_t *init_keyboard_layout(const name2keysym_t *table,
-                                   const char *language, Error **errp)
+kbd_layout_t *kbd_layout_new(const name2keysym_t *table,
+                             const char *language, Error **errp)
 {
     kbd_layout_t *k;
 
     k = g_new0(kbd_layout_t, 1);
-    k->hash = g_hash_table_new(NULL, NULL);
+    k->hash = g_hash_table_new_full(NULL, NULL, NULL, g_free);
     if (parse_keyboard_layout(k, table, language, errp) < 0) {
-        g_hash_table_unref(k->hash);
-        g_free(k);
+        kbd_layout_free(k);
         return NULL;
     }
     return k;
@@ -248,9 +255,9 @@ int keysym2scancode(kbd_layout_t *k, int keysym,
          * On keyup: Try find a key which is actually down.
          */
         for (i = 0; i < keysym2code->count; i++) {
-            QKeyCode qcode = qemu_input_key_number_to_qcode
+            unsigned int lnx = qemu_input_key_number_to_linux
                 (keysym2code->keycodes[i]);
-            if (kbd && qkbd_state_key_get(kbd, qcode)) {
+            if (kbd && qkbd_state_key_get(kbd, lnx)) {
                 return keysym2code->keycodes[i];
             }
         }

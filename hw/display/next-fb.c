@@ -67,7 +67,7 @@ static void nextfb_draw_line(void *opaque, uint8_t *d, const uint8_t *s,
     }
 }
 
-static void nextfb_update(void *opaque)
+static bool nextfb_update(void *opaque)
 {
     NeXTFbState *s = NEXTFB(opaque);
     int dest_width = 4;
@@ -89,7 +89,9 @@ static void nextfb_update(void *opaque)
                                src_width, dest_width, 0, 1, nextfb_draw_line,
                                s, &first, &last);
 
-    dpy_gfx_update(s->con, 0, 0, s->cols, s->rows);
+    qemu_console_update(s->con, 0, 0, s->cols, s->rows);
+
+    return true;
 }
 
 static void nextfb_invalidate(void *opaque)
@@ -115,7 +117,7 @@ static void nextfb_realize(DeviceState *dev, Error **errp)
     s->cols = 1120;
     s->rows = 832;
 
-    s->con = graphic_console_init(dev, 0, &nextfb_ops, s);
+    s->con = qemu_graphic_console_create(dev, 0, &nextfb_ops, s);
     qemu_console_resize(s->con, s->cols, s->rows);
 }
 
