@@ -4084,8 +4084,8 @@ bool get_phys_addr(CPUARMState *env, vaddr address,
         .in_prot_check = 1 << access_type,
     };
 
-    if (get_phys_addr_gpc(env, &ptw, address, access_type, memop, result, fi)) {
-        return true;
+    if (!get_phys_addr_gpc(env, &ptw, address, access_type, memop, result, fi)) {
+        return false;
     }
 
     /* DTCM intercepts data accesses, while instruction fetches use system memory. */
@@ -4096,7 +4096,7 @@ bool get_phys_addr(CPUARMState *env, vaddr address,
         result->f.phys_addr = cpu->dtcm_phys_base + (result->f.phys_addr - cpu->dtcm_base);
     }
 
-    return false;
+    return true;
 }
 
 static bool arm_cpu_get_phys_addr(CPUARMState *env, vaddr addr,
