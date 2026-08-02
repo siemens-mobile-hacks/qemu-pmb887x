@@ -10,7 +10,7 @@
 typedef struct pmb887x_io_operation_t pmb887x_io_operation_t;
 typedef struct pmb887x_io_dump_buffer_t pmb887x_io_dump_buffer_t;
 
-#define IO_DUMP_QUEUE_CAPACITY 65536
+#define IO_DUMP_QUEUE_CAPACITY 0x100000
 #define IO_DUMP_BATCH_SIZE 256
 #define IO_DUMP_DEDUPLICATION_INTERVAL_MS 100
 #define IO_DUMP_BUFFER_SIZE 4096
@@ -67,6 +67,16 @@ static void regs_dump_buffer_append(pmb887x_io_dump_buffer_t *buffer, const char
 	buffer->length += MIN((size_t) length, available - 1);
 }
 
+static const pmb887x_cpu_io_t *regs_dump_find_module(const pmb887x_cpu_io_t *modules, int modules_count, uint32_t addr) {
+	for (int i = 0; i < modules_count; i++) {
+		const pmb887x_cpu_io_t *module = &modules[i];
+
+		if (addr >= module->base && addr - module->base < module->size)
+			return module;
+	}
+	return NULL;
+}
+
 static const pmb887x_cpu_io_t *regs_dump_find_cpu_module(uint32_t addr) {
 	uint32_t prefix = (addr & 0xFFF00000) >> 20;
 	for (int i = 0; i < addr2modules[prefix].count; i++) {
@@ -77,12 +87,13 @@ static const pmb887x_cpu_io_t *regs_dump_find_cpu_module(uint32_t addr) {
 	return NULL;
 }
 
-static const pmb887x_io_reg_t *regs_dump_find_cpu_module_reg(const pmb887x_cpu_io_t *module, uint32_t addr,
-	uint32_t *reg_offset) {
+static const pmb887x_io_reg_t *regs_dump_find_module_reg(const pmb887x_cpu_io_t *module, uint32_t addr,
+	uint32_t register_size, uint32_t *reg_offset
+) {
 	for (int i = 0; i < module->regs_count; i++) {
 		const pmb887x_io_reg_t *reg = &module->regs[i];
 		uint32_t reg_addr = module->base + reg->addr;
-		if (addr >= reg_addr && addr < reg_addr + sizeof(uint32_t)) {
+		if (addr >= reg_addr && addr < reg_addr + register_size) {
 			*reg_offset = addr - reg_addr;
 			return reg;
 		}
@@ -199,7 +210,7 @@ void pmb887x_io_dump_init(void) {
 	qemu_add_exit_notifier(&io_dump_exit_notifier);
 
 	qemu_thread_create(&io_dump_thread_id, "io_dump", regs_dump_dump_io_thread, NULL, QEMU_THREAD_JOINABLE);
-	
+
 	// Module search index
 	for (int i = 0; i < cpu_info->modules_count; i++) {
 		const pmb887x_cpu_io_t *module = &cpu_info->modules[i];
@@ -208,21 +219,17 @@ void pmb887x_io_dump_init(void) {
 		addr2modules[prefix].modules = g_realloc(addr2modules[prefix].modules,
 			sizeof(pmb887x_cpu_io_t *) * addr2modules[prefix].count);
 		addr2modules[prefix].modules[addr2modules[prefix].count - 1] = module;
-		
+
 		if (strcmp(module->name, "GPIO") == 0)
 			gpio_base = module->base;
 	}
-	
+
 	assert(gpio_base != 0);
 }
 
-static void regs_dump_io(pmb887x_trace_io_t trace_io, uint32_t addr, uint32_t size, uint32_t value, bool is_write) {
-	if (!io_dump_cpu)
-		io_dump_cpu = ARM_CPU(qemu_get_cpu(0));
-
-	uint32_t pc = io_dump_cpu->env.regs[15];
-	uint32_t lr = io_dump_cpu->env.regs[14];
-
+static void regs_dump_io(pmb887x_trace_io_t trace_io, uint32_t addr, uint32_t size, uint32_t value, bool is_write,
+	uint32_t pc, uint32_t lr
+) {
 	qemu_mutex_lock(&io_dump_lock);
 	if (io_dump_queue_count > 0) {
 		size_t last_index = (io_dump_queue_head + io_dump_queue_count - 1) % IO_DUMP_QUEUE_CAPACITY;
@@ -260,11 +267,23 @@ static void regs_dump_io(pmb887x_trace_io_t trace_io, uint32_t addr, uint32_t si
 }
 
 void pmb887x_dump_io_read(pmb887x_trace_io_t trace_io, uint32_t addr, uint32_t size, uint32_t value) {
-	regs_dump_io(trace_io, addr, size, value, false);
+	if (!io_dump_cpu)
+		io_dump_cpu = ARM_CPU(qemu_get_cpu(0));
+	regs_dump_io(trace_io, addr, size, value, false, io_dump_cpu->env.regs[15], io_dump_cpu->env.regs[14]);
 }
 
 void pmb887x_dump_io_write(pmb887x_trace_io_t trace_io, uint32_t addr, uint32_t size, uint32_t value) {
-	regs_dump_io(trace_io, addr, size, value, true);
+	if (!io_dump_cpu)
+		io_dump_cpu = ARM_CPU(qemu_get_cpu(0));
+	regs_dump_io(trace_io, addr, size, value, true, io_dump_cpu->env.regs[15], io_dump_cpu->env.regs[14]);
+}
+
+void pmb887x_dump_io_read_ex(pmb887x_trace_io_t trace_io, uint32_t addr, uint32_t size, uint32_t value, uint32_t pc, uint32_t lr) {
+	regs_dump_io(trace_io, addr, size, value, false, pc, lr);
+}
+
+void pmb887x_dump_io_write_ex(pmb887x_trace_io_t trace_io, uint32_t addr, uint32_t size, uint32_t value, uint32_t pc, uint32_t lr) {
+	regs_dump_io(trace_io, addr, size, value, true, pc, lr);
 }
 
 static void regs_dump_print_fields(pmb887x_io_dump_buffer_t *buffer, const pmb887x_io_reg_t *reg, uint32_t value) {
@@ -321,7 +340,7 @@ static void regs_dump_print_cpu_io(pmb887x_io_dump_buffer_t *buffer, uint32_t ad
 		return;
 
 	uint32_t reg_offset;
-	const pmb887x_io_reg_t *reg = regs_dump_find_cpu_module_reg(module, addr, &reg_offset);
+	const pmb887x_io_reg_t *reg = regs_dump_find_module_reg(module, addr, sizeof(uint32_t), &reg_offset);
 	if (!reg) {
 		regs_dump_buffer_append(buffer, " (%s_*)", module->name);
 		return;
@@ -355,8 +374,28 @@ static void regs_dump_print_cpu_io(pmb887x_io_dump_buffer_t *buffer, uint32_t ad
 	}
 }
 
+static void regs_dump_print_dsp_io(pmb887x_io_dump_buffer_t *buffer, uint32_t addr, uint32_t value) {
+	const pmb887x_cpu_meta_t *cpu = pmb887x_get_cpu_meta(pmb887x_board()->cpu);
+	const pmb887x_cpu_io_t *module = regs_dump_find_module(cpu->dsp_modules, cpu->dsp_modules_count, addr);
+	const pmb887x_io_reg_t *reg;
+	uint32_t reg_offset;
+
+	if (module == NULL)
+		return;
+	reg = regs_dump_find_module_reg(module, addr, 1, &reg_offset);
+	if (reg == NULL) {
+		regs_dump_buffer_append(buffer, " (%s_*)", module->name);
+		return;
+	}
+
+	regs_dump_buffer_append(buffer, " (%s_%s)", module->name, reg->name);
+	if (reg->fields_count)
+		regs_dump_print_fields(buffer, reg, value);
+}
+
 static void regs_dump_print_peripheral_io(pmb887x_io_dump_buffer_t *buffer, const pmb887x_io_meta_t *meta,
-	uint32_t addr, uint32_t value) {
+	uint32_t addr, uint32_t value
+) {
 	if (!meta)
 		return;
 
@@ -370,7 +409,8 @@ static void regs_dump_print_peripheral_io(pmb887x_io_dump_buffer_t *buffer, cons
 }
 
 static void regs_dump_print_io(FILE *log_file, pmb887x_trace_io_t trace_io, uint32_t addr, uint32_t size,
-	uint32_t value, bool is_write, uint32_t pc, uint32_t lr, uint64_t count) {
+	uint32_t value, bool is_write, uint32_t pc, uint32_t lr, uint64_t count
+) {
 	pmb887x_io_dump_buffer_t buffer;
 	buffer.length = 0;
 	buffer.data[0] = '\0';
@@ -384,6 +424,13 @@ static void regs_dump_print_io(FILE *log_file, pmb887x_trace_io_t trace_io, uint
 
 		regs_dump_print_cpu_io(&buffer, addr, value);
 		regs_dump_buffer_append(&buffer, " (PC: %08X, LR: %08X)", pc, lr);
+	} else if (trace_io == PMB887X_TRACE_IO_DSP) {
+		int width = (int) size * 2;
+
+		regs_dump_buffer_append(&buffer, "[DSP] %s[%u] %0*X: %0*X", is_write ? "WRITE" : " READ", size,
+			width, addr, width, value);
+		regs_dump_print_dsp_io(&buffer, addr, value);
+		regs_dump_buffer_append(&buffer, " (PC: %05X)", pc);
 	} else {
 		const pmb887x_io_meta_t *meta = pmb887x_get_io_meta(trace_io);
 		int width = (int) size * 2;

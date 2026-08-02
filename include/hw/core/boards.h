@@ -189,6 +189,8 @@ typedef struct {
  * @max_cpus: maximum number of CPUs supported. Default: 1
  * @min_cpus: minimum number of CPUs supported. Default: 1
  * @default_cpus: number of CPUs instantiated if none are specified. Default: 1
+ * @tcg_auxiliary_threads: number of non-vCPU threads that generate and execute
+ *    TCG code. Default: 0
  * @is_default:
  *    If true QEMU will use this machine by default if no '-M' option is given.
  * @get_hotplug_handler: this function is called during bus-less
@@ -287,6 +289,7 @@ struct MachineClass {
     int max_cpus;
     int min_cpus;
     int default_cpus;
+    uint32_t tcg_auxiliary_threads;
     unsigned int no_serial:1,
         no_parallel:1,
         no_floppy:1,

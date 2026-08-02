@@ -145,6 +145,7 @@ static int tcg_init_machine(AccelState *as, MachineState *ms)
     }
 
     qemu_add_vm_change_state_handler(tcg_vm_change_state, NULL);
+    max_threads += MACHINE_GET_CLASS(ms)->tcg_auxiliary_threads;
 #endif
 
     tcg_allowed = true;

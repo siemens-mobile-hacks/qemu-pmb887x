@@ -18,6 +18,7 @@ typedef struct pmb887x_io_value_t pmb887x_io_value_t;
 
 typedef enum pmb887x_trace_io_t {
 	PMB887X_TRACE_IO_CPU,
+	PMB887X_TRACE_IO_DSP,
 	PMB887X_TRACE_IO_D1094XX,
 	PMB887X_TRACE_IO_D1601XX,
 	PMB887X_TRACE_IO_JBT6K71,
@@ -84,6 +85,9 @@ struct pmb887x_cpu_meta_t {
 
 	const pmb887x_cpu_io_t *modules;
 	int modules_count;
+
+	const pmb887x_cpu_io_t *dsp_modules;
+	int dsp_modules_count;
 };
 
 struct pmb887x_io_meta_t {

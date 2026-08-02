@@ -14,13 +14,12 @@
 #include "qom/object.h"
 
 static const struct pmb887x_cpu_module_t *get_cpu_module_definition(const char *name) {
-	int i = 0;
-	const pmb887x_cpu_module_t *modules = pmb887x_cpu_get_modules_list(pmb887x_board()->cpu);
-	while (modules[i].name[0]) {
-		const pmb887x_cpu_module_t *mod = &modules[i];
+	const pmb887x_cpu_t *cpu = pmb887x_cpu_get(pmb887x_board()->cpu);
+
+	for (size_t i = 0; i < cpu->modules_count; i++) {
+		const pmb887x_cpu_module_t *mod = &cpu->modules[i];
 		if (strcmp(name, mod->name) == 0)
 			return mod;
-		i++;
 	}
 	hw_error("Can't find CPU module: %s\n", name);
 }
@@ -135,13 +134,12 @@ static void pmb887x_cpu_module_post_init(DeviceState *dev, const pmb887x_cpu_mod
 }
 
 void pmb887x_cpu_modules_post_init(void) {
-	int i = 0;
-	const pmb887x_cpu_module_t *modules = pmb887x_cpu_get_modules_list(pmb887x_board()->cpu);
-	while (modules[i].name[0]) {
-		const pmb887x_cpu_module_t *mod = &modules[i];
+	const pmb887x_cpu_t *cpu = pmb887x_cpu_get(pmb887x_board()->cpu);
+
+	for (size_t i = 0; i < cpu->modules_count; i++) {
+		const pmb887x_cpu_module_t *mod = &cpu->modules[i];
 		DeviceState *dev = qdev_find_recursive(sysbus_get_default(), mod->name);
 		if (dev)
 			pmb887x_cpu_module_post_init(dev, mod);
-		i++;
 	}
 }

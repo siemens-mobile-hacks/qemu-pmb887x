@@ -1,10 +1,23 @@
-teakra_subproject = subproject('teakra')
-teakra_dependency = teakra_subproject.get_variable('teakra_dep')
-dsp_core_library = static_library('pmb887x-dsp-core', files('dsp_core.cpp'),
-	dependencies: teakra_dependency,
-	cpp_args: ['-std=gnu++17'],
+dsp_core_sources = files('dsp/core.c')
+dsp_peripheral_sources = files(
+	'dsp/peripheral.c',
+	'dsp/peripheral/afe.c',
+	'dsp/peripheral/baseband.c',
+	'dsp/peripheral/channel-decoder.c',
+	'dsp/peripheral/cipher.c',
+	'dsp/peripheral/cipher-kasumi.c',
+	'dsp/peripheral/dsp.c',
+	'dsp/peripheral/equalizer.c',
+	'dsp/peripheral/i2s.c',
+	'dsp/peripheral/i2s-tx.c',
+	'dsp/peripheral/interrupt.c',
+	'dsp/peripheral/mcs.c',
+	'dsp/peripheral/modulator.c',
+	'dsp/peripheral/ssc.c',
+	'dsp/peripheral/timer1.c',
+	'dsp/peripheral/timer2.c',
+	'dsp/peripheral/unknown.c',
 )
-dsp_core_dependency = declare_dependency(link_whole: dsp_core_library, dependencies: teakra_dependency)
 
 arm_common_ss.add(when: 'CONFIG_PMB887X', if_true: files(
 	'board.c',
@@ -88,7 +101,32 @@ arm_common_ss.add(when: 'CONFIG_PMB887X', if_true: files(
 	'sim/sim_fs.c',
 	'sim/sim_card.c',
 ))
-arm_common_ss.add(when: 'CONFIG_PMB887X', if_true: dsp_core_dependency)
+arm_common_ss.add(when: 'CONFIG_PMB887X', if_true: dsp_core_sources + dsp_peripheral_sources +
+	files('dsp/tcg.c', 'dsp/runtime.c'))
+
+dsp_test_c_args = ['-include', meson.current_source_dir() / 'dsp/tests/compat.h']
+host_unit_tests += {
+	'pmb887x-dsp-core': {
+		'sources': files('dsp/tests/core.c') + dsp_core_sources,
+		'c_args': dsp_test_c_args,
+		'dependencies': [glib],
+	},
+	'pmb887x-dsp-peripheral': {
+		'sources': files('dsp/tests/peripheral.c') + dsp_peripheral_sources,
+		'c_args': dsp_test_c_args,
+		'dependencies': [glib],
+	},
+}
+
+target_unit_tests += {
+	'arm-softmmu': {
+		'pmb887x-dsp-tcg': {
+			'sources': files('dsp/tests/tcg.c'),
+			'c_args': dsp_test_c_args,
+			'config': 'CONFIG_PMB887X',
+		},
+	},
+}
 
 if cacard.found()
 	arm_common_ss.add(when: 'CONFIG_PMB887X', if_true: [cacard, files('sim/cacard_apdu.c')])

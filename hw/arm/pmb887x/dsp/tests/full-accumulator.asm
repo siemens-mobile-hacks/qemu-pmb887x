@@ -1,0 +1,13 @@
+segment p 0000
+mov a0 a1
+mov a0 b0
+mov a0 b1
+mov a1 a0
+mov a1 b0
+mov a1 b1
+mov b0 a0
+mov b0 a1
+mov b0 b1
+mov b1 a0
+mov b1 a1
+mov b1 b0

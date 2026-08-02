@@ -2,8 +2,152 @@
 
 #include "hw/arm/pmb887x/gen/cpu_meta.h"
 #include "hw/arm/pmb887x/gen/cpu_regs.h"
+#include "hw/arm/pmb887x/gen/dsp.h"
 
 #include "hw/core/hw-error.h"
+
+static const pmb887x_dsp_peripheral_config_t pmb8876_dsp_peripherals[] = {
+	{
+		.name = "INT",
+		.type = PMB887X_DSP_PERIPHERAL_INTERRUPT,
+		.base = 0xDE00,
+		.size = 0x0016,
+		.ram_base = 0,
+		.ram_size = 0,
+	},
+	{
+		.name = "CIPH",
+		.type = PMB887X_DSP_PERIPHERAL_CIPHER,
+		.base = 0xDE20,
+		.size = 0x0010,
+		.ram_base = PMB8876_TEAK_CIPHER_RAM_BASE,
+		.ram_size = PMB8876_TEAK_CIPHER_RAM_SIZE,
+	},
+	{
+		.name = "TMR1",
+		.type = PMB887X_DSP_PERIPHERAL_TIMER1,
+		.base = 0xDE30,
+		.size = 0x0004,
+		.ram_base = 0,
+		.ram_size = 0,
+	},
+	{
+		.name = "TMR2",
+		.type = PMB887X_DSP_PERIPHERAL_TIMER2,
+		.base = 0xDE34,
+		.size = 0x0003,
+		.ram_base = 0,
+		.ram_size = 0,
+	},
+	{
+		.name = "EQ",
+		.type = PMB887X_DSP_PERIPHERAL_EQUALIZER,
+		.base = 0xDE40,
+		.size = 0x0007,
+		.ram_base = 0,
+		.ram_size = 0,
+	},
+	{
+		.name = "CHDEC",
+		.type = PMB887X_DSP_PERIPHERAL_CHANNEL_DECODER,
+		.base = 0xDE50,
+		.size = 0x0010,
+		.ram_base = 0,
+		.ram_size = 0,
+	},
+	{
+		.name = "AFE",
+		.type = PMB887X_DSP_PERIPHERAL_AFE,
+		.base = 0xDE70,
+		.size = 0x0007,
+		.ram_base = PMB8876_TEAK_AFE_RAM_BASE,
+		.ram_size = PMB8876_TEAK_AFE_RAM_SIZE,
+	},
+	{
+		.name = "BB",
+		.type = PMB887X_DSP_PERIPHERAL_BASEBAND,
+		.base = 0xDE80,
+		.size = 0x000D,
+		.ram_base = PMB8876_TEAK_DEMODULATOR_RAM_BASE,
+		.ram_size = PMB8876_TEAK_DEMODULATOR_RAM_SIZE,
+	},
+	{
+		.name = "MCS",
+		.type = PMB887X_DSP_PERIPHERAL_MCS,
+		.base = 0xDE90,
+		.size = 0x0006,
+		.ram_base = 0,
+		.ram_size = 0,
+	},
+	{
+		.name = "DSP",
+		.type = PMB887X_DSP_PERIPHERAL_DSP,
+		.base = 0xDEA0,
+		.size = 0x0009,
+		.ram_base = 0,
+		.ram_size = 0,
+	},
+	{
+		.name = "MOD",
+		.type = PMB887X_DSP_PERIPHERAL_MODULATOR,
+		.base = 0xDEB0,
+		.size = 0x000B,
+		.ram_base = PMB8876_TEAK_MODULATOR_RAM_BASE,
+		.ram_size = PMB8876_TEAK_MODULATOR_RAM_SIZE,
+	},
+	{
+		.name = "SSC",
+		.type = PMB887X_DSP_PERIPHERAL_SSC,
+		.base = 0xDEC0,
+		.size = 0x0009,
+		.ram_base = 0,
+		.ram_size = 0,
+	},
+	{
+		.name = "I2S1",
+		.type = PMB887X_DSP_PERIPHERAL_I2S,
+		.base = 0xDED0,
+		.size = 0x000B,
+		.ram_base = PMB8876_TEAK_I2S1_RAM_BASE,
+		.ram_size = PMB8876_TEAK_I2S1_RAM_SIZE,
+	},
+	{
+		.name = "I2S2",
+		.type = PMB887X_DSP_PERIPHERAL_I2S,
+		.base = 0xDEE0,
+		.size = 0x000B,
+		.ram_base = PMB8876_TEAK_I2S2_RAM_BASE,
+		.ram_size = PMB8876_TEAK_I2S2_RAM_SIZE,
+	},
+	{
+		.name = "I2S3",
+		.type = PMB887X_DSP_PERIPHERAL_I2S_TX,
+		.base = 0xDEF0,
+		.size = 0x000B,
+		.ram_base = PMB8876_TEAK_I2S3_RAM_BASE,
+		.ram_size = PMB8876_TEAK_I2S3_RAM_SIZE,
+	},
+};
+
+static const pmb887x_dsp_config_t pmb8876_dsp_config = {
+	.name = "pmb8876",
+	.default_rom_version = 0x0801,
+	.page_field_mask = 0x0003,
+	.program_page_shift = 2,
+	.program_rom_base = PMB8876_TEAK_PROM_FIXED_BASE,
+	.program_bank_base = PMB8876_TEAK_PROM_PAGE0_BASE,
+	.program_bank_count = 3,
+	.data_rom_base = PMB8876_TEAK_DROM_FIXED_BASE,
+	.data_bank_base = PMB8876_TEAK_DROM_PAGE0_BASE,
+	.data_bank_count = 4,
+	.shared_base = PMB8876_TEAK_SHARED_RAM_BASE,
+	.shared_size = PMB8876_TEAK_SHARED_RAM_SIZE,
+	.y_space_base = PMB8876_TEAK_YRAM_BASE,
+	.mmio_base = PMB8876_TEAK_INT_BASE,
+	.mmio_size = 0x0100,
+	.peripherals = pmb8876_dsp_peripherals,
+	.peripheral_count = ARRAY_SIZE(pmb8876_dsp_peripherals),
+};
 
 static const int pmb8876_usart0_irqs[] = {
 	PMB8876_USART0_TX_IRQ,
@@ -228,6 +372,13 @@ static const pmb887x_cpu_module_gpio_t pmb8876_keypad_gpios[] = {
 	{"OUT3_OUT",	PMB8876_GPIO_KP_OUT3,	0},
 };
 
+static const pmb887x_cpu_module_gpio_t pmb8876_dsp_gpios[] = {
+	{"DSPOUT0_OUT",	PMB8876_GPIO_DSPOUT0,	0},
+	{"DSPIN0_IN",	PMB8876_GPIO_DSPIN0,	0},
+	{"DSPOUT1_OUT",	PMB8876_GPIO_DSPOUT1,	0},
+	{"DSPIN1_IN",	PMB8876_GPIO_DSPIN1,	0},
+};
+
 static const int pmb8876_gprscu_irqs[] = {
 	PMB8876_GPRSCU_INT0_IRQ,
 	PMB8876_GPRSCU_INT1_IRQ
@@ -331,7 +482,7 @@ static const pmb887x_cpu_module_t pmb8876_modules[] = {
 	{"STM",		0x0000C011,	PMB8876_STM_BASE,		"pmb887x-stm",		NULL,					0,									NULL,					0,									NULL,				0},
 	{"ADC",		0xF024C021,	PMB8876_ADC_BASE,		"pmb887x-adc",		pmb8876_adc_irqs,		ARRAY_SIZE(pmb8876_adc_irqs),		NULL,					0,									NULL,				0},
 	{"KEYPAD",	0xF046C021,	PMB8876_KEYPAD_BASE,	"pmb887x-keypad",	pmb8876_keypad_irqs,	ARRAY_SIZE(pmb8876_keypad_irqs),	pmb8876_keypad_gpios,	ARRAY_SIZE(pmb8876_keypad_gpios),	NULL,				0},
-	{"DSP",		0xF022C031,	PMB8876_DSP_BASE,		"pmb887x-dsp",		NULL,					0,									NULL,					0,									NULL,				0},
+	{"DSP",		0xF022C031,	PMB8876_DSP_BASE,		"pmb887x-dsp",		NULL,					0,									pmb8876_dsp_gpios,		ARRAY_SIZE(pmb8876_dsp_gpios),		NULL,				0},
 	{"GPRSCU",	0xF003C022,	PMB8876_GPRSCU_BASE,	"pmb887x-gprscu",	pmb8876_gprscu_irqs,	ARRAY_SIZE(pmb8876_gprscu_irqs),	NULL,					0,									NULL,				0},
 	{"AFC",		0xF004C011,	PMB8876_AFC_BASE,		"pmb887x-afc",		NULL,					0,									NULL,					0,									NULL,				0},
 	{"TPU",		0xF021C012,	PMB8876_TPU_BASE,		"pmb887x-tpu",		pmb8876_tpu_irqs,		ARRAY_SIZE(pmb8876_tpu_irqs),		NULL,					0,									NULL,				0},
@@ -339,6 +490,155 @@ static const pmb887x_cpu_module_t pmb8876_modules[] = {
 	{"MMCI",	0xF041C022,	PMB8876_MMCI_BASE,		"pmb887x-mmci",		NULL,					0,									pmb8876_mmci_gpios,		ARRAY_SIZE(pmb8876_mmci_gpios),		NULL,				0},
 	{"I2C",		0xF057C012,	PMB8876_I2C_BASE,		"pmb887x-i2c-v2",	pmb8876_i2c_irqs,		ARRAY_SIZE(pmb8876_i2c_irqs),		pmb8876_i2c_gpios,		ARRAY_SIZE(pmb8876_i2c_gpios),		pmb8876_i2c_dma,	ARRAY_SIZE(pmb8876_i2c_dma)},
 	{"MMICIF",	0xF053C012,	PMB8876_MMICIF_BASE,	"pmb887x-mmicif",	NULL,					0,									NULL,					0,									NULL,				0},
+};
+
+static const pmb887x_cpu_t pmb8876_cpu = {
+	.modules = pmb8876_modules,
+	.modules_count = ARRAY_SIZE(pmb8876_modules),
+	.dsp_config = &pmb8876_dsp_config,
+};
+
+static const pmb887x_dsp_peripheral_config_t pmb8875_dsp_peripherals[] = {
+	{
+		.name = "INT",
+		.type = PMB887X_DSP_PERIPHERAL_INTERRUPT,
+		.base = 0xE600,
+		.size = 0x0016,
+		.ram_base = 0,
+		.ram_size = 0,
+	},
+	{
+		.name = "CIPH",
+		.type = PMB887X_DSP_PERIPHERAL_CIPHER,
+		.base = 0xE620,
+		.size = 0x0010,
+		.ram_base = PMB8875_TEAK_CIPHER_RAM_BASE,
+		.ram_size = PMB8875_TEAK_CIPHER_RAM_SIZE,
+	},
+	{
+		.name = "TMR1",
+		.type = PMB887X_DSP_PERIPHERAL_TIMER1,
+		.base = 0xE630,
+		.size = 0x0004,
+		.ram_base = 0,
+		.ram_size = 0,
+	},
+	{
+		.name = "TMR2",
+		.type = PMB887X_DSP_PERIPHERAL_TIMER2,
+		.base = 0xE634,
+		.size = 0x0003,
+		.ram_base = 0,
+		.ram_size = 0,
+	},
+	{
+		.name = "EQ",
+		.type = PMB887X_DSP_PERIPHERAL_EQUALIZER,
+		.base = 0xE640,
+		.size = 0x0007,
+		.ram_base = 0,
+		.ram_size = 0,
+	},
+	{
+		.name = "CHDEC",
+		.type = PMB887X_DSP_PERIPHERAL_CHANNEL_DECODER,
+		.base = 0xE650,
+		.size = 0x0010,
+		.ram_base = 0,
+		.ram_size = 0,
+	},
+	{
+		.name = "AFE",
+		.type = PMB887X_DSP_PERIPHERAL_AFE,
+		.base = 0xE670,
+		.size = 0x0007,
+		.ram_base = PMB8875_TEAK_AFE_RAM_BASE,
+		.ram_size = PMB8875_TEAK_AFE_RAM_SIZE,
+	},
+	{
+		.name = "BB",
+		.type = PMB887X_DSP_PERIPHERAL_BASEBAND,
+		.base = 0xE680,
+		.size = 0x000D,
+		.ram_base = PMB8875_TEAK_DEMODULATOR_RAM_BASE,
+		.ram_size = PMB8875_TEAK_DEMODULATOR_RAM_SIZE,
+	},
+	{
+		.name = "MCS",
+		.type = PMB887X_DSP_PERIPHERAL_MCS,
+		.base = 0xE690,
+		.size = 0x0006,
+		.ram_base = 0,
+		.ram_size = 0,
+	},
+	{
+		.name = "DSP",
+		.type = PMB887X_DSP_PERIPHERAL_DSP,
+		.base = 0xE6A0,
+		.size = 0x0009,
+		.ram_base = 0,
+		.ram_size = 0,
+	},
+	{
+		.name = "MOD",
+		.type = PMB887X_DSP_PERIPHERAL_MODULATOR,
+		.base = 0xE6B0,
+		.size = 0x000B,
+		.ram_base = PMB8875_TEAK_MODULATOR_RAM_BASE,
+		.ram_size = PMB8875_TEAK_MODULATOR_RAM_SIZE,
+	},
+	{
+		.name = "SSC",
+		.type = PMB887X_DSP_PERIPHERAL_SSC,
+		.base = 0xE6C0,
+		.size = 0x0009,
+		.ram_base = 0,
+		.ram_size = 0,
+	},
+	{
+		.name = "I2S1",
+		.type = PMB887X_DSP_PERIPHERAL_I2S,
+		.base = 0xE6D0,
+		.size = 0x000B,
+		.ram_base = PMB8875_TEAK_I2S1_RAM_BASE,
+		.ram_size = PMB8875_TEAK_I2S1_RAM_SIZE,
+	},
+	{
+		.name = "I2S2",
+		.type = PMB887X_DSP_PERIPHERAL_I2S,
+		.base = 0xE6E0,
+		.size = 0x000B,
+		.ram_base = PMB8875_TEAK_I2S2_RAM_BASE,
+		.ram_size = PMB8875_TEAK_I2S2_RAM_SIZE,
+	},
+	{
+		.name = "I2S3",
+		.type = PMB887X_DSP_PERIPHERAL_I2S_TX,
+		.base = 0xE6F0,
+		.size = 0x000B,
+		.ram_base = PMB8875_TEAK_I2S3_RAM_BASE,
+		.ram_size = PMB8875_TEAK_I2S3_RAM_SIZE,
+	},
+};
+
+static const pmb887x_dsp_config_t pmb8875_dsp_config = {
+	.name = "pmb8875",
+	.default_rom_version = 0x0602,
+	.page_field_mask = 0x0001,
+	.program_page_shift = 1,
+	.program_rom_base = PMB8875_TEAK_PROM_FIXED_BASE,
+	.program_bank_base = PMB8875_TEAK_PROM_PAGE0_BASE,
+	.program_bank_count = 2,
+	.data_rom_base = PMB8875_TEAK_DROM_FIXED_BASE,
+	.data_bank_base = PMB8875_TEAK_DROM_PAGE0_BASE,
+	.data_bank_count = 2,
+	.shared_base = PMB8875_TEAK_SHARED_RAM_BASE,
+	.shared_size = PMB8875_TEAK_SHARED_RAM_SIZE,
+	.y_space_base = PMB8875_TEAK_YRAM_BASE,
+	.mmio_base = PMB8875_TEAK_INT_BASE,
+	.mmio_size = 0x0100,
+	.peripherals = pmb8875_dsp_peripherals,
+	.peripheral_count = ARRAY_SIZE(pmb8875_dsp_peripherals),
 };
 
 static const int pmb8875_usart0_irqs[] = {
@@ -596,6 +896,13 @@ static const pmb887x_cpu_module_gpio_t pmb8875_keypad_gpios[] = {
 	{"OUT3_OUT",	PMB8875_GPIO_KP_OUT3,	0},
 };
 
+static const pmb887x_cpu_module_gpio_t pmb8875_dsp_gpios[] = {
+	{"DSPOUT0_OUT",	PMB8875_GPIO_DSPOUT0,	0},
+	{"DSPIN0_IN",	PMB8875_GPIO_DSPIN0,	0},
+	{"DSPOUT1_OUT",	PMB8875_GPIO_DSPOUT1,	0},
+	{"DSPIN1_IN",	PMB8875_GPIO_DSPIN1,	0},
+};
+
 static const int pmb8875_gprscu_irqs[] = {
 	PMB8875_GPRSCU_INT0_IRQ,
 	PMB8875_GPRSCU_INT1_IRQ
@@ -635,19 +942,25 @@ static const pmb887x_cpu_module_t pmb8875_modules[] = {
 	{"STM",		0x0000C002,	PMB8875_STM_BASE,		"pmb887x-stm",		NULL,					0,									NULL,					0,									NULL,				0},
 	{"ADC",		0xF024C010,	PMB8875_ADC_BASE,		"pmb887x-adc",		pmb8875_adc_irqs,		ARRAY_SIZE(pmb8875_adc_irqs),		NULL,					0,									NULL,				0},
 	{"KEYPAD",	0xF046C000,	PMB8875_KEYPAD_BASE,	"pmb887x-keypad",	pmb8875_keypad_irqs,	ARRAY_SIZE(pmb8875_keypad_irqs),	pmb8875_keypad_gpios,	ARRAY_SIZE(pmb8875_keypad_gpios),	NULL,				0},
-	{"DSP",		0xF022C010,	PMB8875_DSP_BASE,		"pmb887x-dsp",		NULL,					0,									NULL,					0,									NULL,				0},
+	{"DSP",		0xF022C010,	PMB8875_DSP_BASE,		"pmb887x-dsp",		NULL,					0,									pmb8875_dsp_gpios,		ARRAY_SIZE(pmb8875_dsp_gpios),		NULL,				0},
 	{"GPRSCU",	0xF003C010,	PMB8875_GPRSCU_BASE,	"pmb887x-gprscu",	pmb8875_gprscu_irqs,	ARRAY_SIZE(pmb8875_gprscu_irqs),	NULL,					0,									NULL,				0},
 	{"AFC",		0xF004C000,	PMB8875_AFC_BASE,		"pmb887x-afc",		NULL,					0,									NULL,					0,									NULL,				0},
 	{"TPU",		0xF021C000,	PMB8875_TPU_BASE,		"pmb887x-tpu",		pmb8875_tpu_irqs,		ARRAY_SIZE(pmb8875_tpu_irqs),		NULL,					0,									NULL,				0},
 };
 
-const pmb887x_cpu_module_t *pmb887x_cpu_get_modules_list(int cpu_id) {
+static const pmb887x_cpu_t pmb8875_cpu = {
+	.modules = pmb8875_modules,
+	.modules_count = ARRAY_SIZE(pmb8875_modules),
+	.dsp_config = &pmb8875_dsp_config,
+};
+
+const pmb887x_cpu_t *pmb887x_cpu_get(int cpu_id) {
 	switch (cpu_id) {
 		case CPU_PMB8875:
-			return pmb8875_modules;
+			return &pmb8875_cpu;
 
 		case CPU_PMB8876:
-			return pmb8876_modules;
+			return &pmb8876_cpu;
 
 		default:
 			hw_error("Invalid CPU type: %d", cpu_id);

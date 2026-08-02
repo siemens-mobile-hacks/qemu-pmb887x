@@ -3355,6 +3355,21 @@
 /* Module Identifier Register */
 #define DSP_ID						0x08
 
+/* MCU Semaphore Set Register (write one to request, reads as zero) */
+#define DSP_SEM_SET					0x10
+#define DSP_SEM_SET_FLAGS			(0xFFFF << 0)					 // Semaphores requested by the MCU
+#define DSP_SEM_SET_FLAGS_SHIFT		0
+
+/* MCU Semaphore Reset Register (write one to release, reads as zero) */
+#define DSP_SEM_CLEAR				0x14
+#define DSP_SEM_CLEAR_FLAGS			(0xFFFF << 0)					 // Semaphores released by the MCU
+#define DSP_SEM_CLEAR_FLAGS_SHIFT	0
+
+/* MCU Semaphore Status Register (read-only) */
+#define DSP_SEM_STATUS				0x18
+#define DSP_SEM_STATUS_FLAGS		(0xFFFF << 0)					 // Zero for semaphores owned by the MCU, one for semaphores owned by the DSP or free
+#define DSP_SEM_STATUS_FLAGS_SHIFT	0
+
 /* MCU Communication Flag Set Register (write one to set, reads as zero) */
 #define DSP_COM_SET					0x1C
 #define DSP_COM_SET_FLAGS			(0xFFFF << 0)					 // Communication flags to set; flag 0 handshakes boot commands on DSP interrupt 0

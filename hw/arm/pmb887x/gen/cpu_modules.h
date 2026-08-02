@@ -2,14 +2,23 @@
 
 #include "qemu/osdep.h"
 
+#include "hw/arm/pmb887x/dsp/config.h"
+
 enum {
 	PMB887X_DMAC_BUS_AHB1 = 0,
 	PMB887X_DMAC_BUS_AHB2,
 };
 
+typedef struct pmb887x_cpu_t pmb887x_cpu_t;
 typedef struct pmb887x_cpu_module_t pmb887x_cpu_module_t;
 typedef struct pmb887x_cpu_module_gpio_t pmb887x_cpu_module_gpio_t;
 typedef struct pmb887x_cpu_module_dma_t pmb887x_cpu_module_dma_t;
+
+struct pmb887x_cpu_t {
+	const pmb887x_cpu_module_t *modules;
+	size_t modules_count;
+	const pmb887x_dsp_config_t *dsp_config;
+};
 
 struct pmb887x_cpu_module_t {
 	const char name[64];
@@ -40,4 +49,4 @@ struct pmb887x_cpu_module_dma_t {
 	int sel;
 };
 
-const pmb887x_cpu_module_t *pmb887x_cpu_get_modules_list(int cpu_id);
+const pmb887x_cpu_t *pmb887x_cpu_get(int cpu_id);

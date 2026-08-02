@@ -209,9 +209,26 @@ static const pmb887x_dev_t *dev_get_metadata(const char *name) {
 }
 
 static Object *bus_find_by_id(const char *name) {
-	DeviceState *dev = qdev_find_recursive(sysbus_get_default(), name);
+	g_autofree char *device_name = g_strdup(name);
+	g_autofree char *normalized_bus_name = NULL;
+	g_autofree char *bus_property_name = NULL;
+	char *bus_name = strchr(device_name, ':');
+	DeviceState *dev;
+
+	if (bus_name != NULL) {
+		*bus_name = '\0';
+		bus_name++;
+	}
+	dev = qdev_find_recursive(sysbus_get_default(), device_name);
 	if (!dev)
-		hw_error("Bus not found: %s", name);
+		hw_error("Bus device not found: %s", device_name);
+	if (bus_name != NULL) {
+		normalized_bus_name = g_ascii_strdown(bus_name, -1);
+		bus_property_name = g_strdup_printf("bus_%s", normalized_bus_name);
+		if (!object_property_find(OBJECT(dev), bus_property_name))
+			hw_error("Bus not found: %s", name);
+		return object_property_get_link(OBJECT(dev), bus_property_name, &error_fatal);
+	}
 
 	if (object_property_find(OBJECT(dev), "bus")) {
 		Object *bus_obj = object_property_get_link(OBJECT(dev), "bus", &error_fatal);

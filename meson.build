@@ -3757,6 +3757,9 @@ subdir('fpu')
 subdir('plugins')
 subdir('ebpf')
 
+host_unit_tests = {}
+target_unit_tests = {}
+
 if have_system
   subdir('hw')
 else
@@ -3793,6 +3796,18 @@ libqemuutil = static_library('qemuutil',
 qemuutil = declare_dependency(link_with: libqemuutil,
                               sources: genh + version_res,
                               dependencies: [event_loop_base])
+
+foreach test_name, test_config : host_unit_tests
+  test_exe = executable(
+    'test-' + test_name,
+    test_config['sources'],
+    genh,
+    c_args: test_config.get('c_args', []),
+    dependencies: [qemuutil] + test_config.get('dependencies', []),
+    build_by_default: false,
+  )
+  test(test_name, test_exe, suite: ['unit'])
+endforeach
 
 if have_system or have_user
   decodetree = generator(find_program('scripts/decodetree.py'),
@@ -4403,6 +4418,23 @@ foreach target : target_dirs
                  include_directories: target_inc,
                  c_args: c_args,
                  build_by_default: false)
+
+  foreach test_name, test_config : target_unit_tests.get(target, {})
+    required_config = test_config.get('config', '')
+    if required_config != '' and required_config not in config_target
+      continue
+    endif
+
+    test_exe = executable(
+      'test-' + test_name,
+      test_config['sources'],
+      c_args: c_args + test_config.get('c_args', []),
+      dependencies: arch_deps + [glib, target_stubs] + test_config.get('dependencies', []),
+      objects: lib.extract_all_objects(recursive: true),
+      build_by_default: false,
+    )
+    test(test_name, test_exe, suite: ['unit'])
+  endforeach
 
   if target.endswith('-softmmu')
     execs = [{

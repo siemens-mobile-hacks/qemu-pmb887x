@@ -1,5 +1,7 @@
 #include "hw/arm/pmb887x/trace_common.h"
+#include "qapi/error.h"
 #include "qemu/error-report.h"
+#include "qemu/log.h"
 
 typedef struct pmb887x_debug_channel_t pmb887x_debug_channel_t;
 
@@ -23,6 +25,24 @@ static const pmb887x_debug_channel_t debug_channels[] = {
 	{ "capcom",		PMB887X_TRACE_CAPCOM },
 	{ "dif",		PMB887X_TRACE_DIF },
 	{ "dsp",		PMB887X_TRACE_DSP },
+	{ "dsp_tcg",			PMB887X_TRACE_DSP_TCG },
+	{ "dsp_interrupt",		PMB887X_TRACE_DSP_INTERRUPT },
+	{ "dsp_cipher",			PMB887X_TRACE_DSP_CIPHER },
+	{ "dsp_timer1",			PMB887X_TRACE_DSP_TIMER1 },
+	{ "dsp_timer2",			PMB887X_TRACE_DSP_TIMER2 },
+	{ "dsp_equalizer",		PMB887X_TRACE_DSP_EQUALIZER },
+	{ "dsp_channel_decoder",	PMB887X_TRACE_DSP_CHANNEL_DECODER },
+	{ "dsp_afe",			PMB887X_TRACE_DSP_AFE },
+	{ "dsp_baseband",		PMB887X_TRACE_DSP_BASEBAND },
+	{ "dsp_mcs",			PMB887X_TRACE_DSP_MCS },
+	{ "dsp_xbiu",			PMB887X_TRACE_DSP_XBIU },
+	{ "dsp_control",		PMB887X_TRACE_DSP_CONTROL },
+	{ "dsp_modulator",		PMB887X_TRACE_DSP_MODULATOR },
+	{ "dsp_ssc",			PMB887X_TRACE_DSP_SSC },
+	{ "dsp_i2s",			PMB887X_TRACE_DSP_I2S },
+	{ "dsp_i2s_tx",			PMB887X_TRACE_DSP_I2S_TX },
+	{ "dsp_unknown",		PMB887X_TRACE_DSP_UNKNOWN },
+	{ "dsp_all",			PMB887X_TRACE_DSP_ALL },
 	{ "mod",		PMB887X_TRACE_MOD },
 	{ "vic",		PMB887X_TRACE_VIC },
 	{ "gpio",		PMB887X_TRACE_GPIO },
@@ -67,6 +87,8 @@ void pmb887x_trace_init(void) {
 	pmb887x_trace_log_mask = parse_trace_spec(getenv("PMB887X_TRACE_LOG"), 0);
 	pmb887x_trace_io_mask = parse_trace_spec(getenv("PMB887X_TRACE_ALL"), pmb887x_trace_io_mask);
 	pmb887x_trace_log_mask = parse_trace_spec(getenv("PMB887X_TRACE_ALL"), pmb887x_trace_log_mask);
+	if (pmb887x_trace_io_mask || pmb887x_trace_log_mask)
+		qemu_set_log(qemu_loglevel | LOG_TRACE, &error_fatal);
 }
 
 static uint64_t parse_trace_spec(const char *spec, uint64_t mask) {

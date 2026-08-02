@@ -37,13 +37,21 @@
 	} while (0)
 
 #define IO_DUMP_READ(...) do { \
-		if (pmb887x_trace_io_enabled(PMB887X_MOD_CONST_NAME(PMB887X_TRACE_ID))) { \
+		if (pmb887x_trace_io_enabled(PMB887X_MOD_CONST_NAME(PMB887X_TRACE_ID))) \
 			pmb887x_dump_io_read(PMB887X_TRACE_IO, __VA_ARGS__); \
-		} \
 	} while (0)
 
 #define IO_DUMP_WRITE(...) do { \
-		if (pmb887x_trace_io_enabled(PMB887X_MOD_CONST_NAME(PMB887X_TRACE_ID))) { \
+		if (pmb887x_trace_io_enabled(PMB887X_MOD_CONST_NAME(PMB887X_TRACE_ID))) \
 			pmb887x_dump_io_write(PMB887X_TRACE_IO, __VA_ARGS__); \
-		} \
+	} while (0)
+
+#define IO_DUMP_READ_EX(...) do { \
+		if (pmb887x_trace_io_enabled(PMB887X_MOD_CONST_NAME(PMB887X_TRACE_ID))) \
+			pmb887x_dump_io_read_ex(PMB887X_TRACE_IO, __VA_ARGS__); \
+	} while (0)
+
+#define IO_DUMP_WRITE_EX(...) do { \
+		if (pmb887x_trace_io_enabled(PMB887X_MOD_CONST_NAME(PMB887X_TRACE_ID))) \
+			pmb887x_dump_io_write_ex(PMB887X_TRACE_IO, __VA_ARGS__); \
 	} while (0)

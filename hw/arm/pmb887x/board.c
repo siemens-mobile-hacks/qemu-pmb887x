@@ -26,6 +26,7 @@
 #include "hw/arm/pmb887x/board/startup.h"
 
 #include "hw/arm/pmb887x/gen/brom.h"
+#include "hw/arm/pmb887x/gen/cpu_modules.h"
 #include "hw/arm/pmb887x/gen/cpu_regs.h"
 
 #include "hw/arm/pmb887x/io_bridge.h"
@@ -188,8 +189,11 @@ static void pmb887x_init(MachineState *machine) {
 
 	// DSP
 	DeviceState *dsp = pmb887x_new_cpu_module("DSP");
+	pmb887x_dsp_set_config(dsp, pmb887x_cpu_get(pmb887x_board()->cpu)->dsp_config);
 	pmb887x_board_init_dsp(dsp);
 	sysbus_realize_and_unref(SYS_BUS_DEVICE(dsp), &error_fatal);
+	for (size_t i = 0; i < PMB887X_DSP_GSM_SIGNAL_COUNT; i++)
+		qdev_connect_gpio_out_named(tpu, "GSM_OUT", i, qdev_get_gpio_in_named(dsp, "GSM_IN", i));
 
 	// GPRS Ciphering Unit
 	DeviceState *gprscu = pmb887x_new_cpu_module("GPRSCU");
@@ -357,6 +361,7 @@ static void pmb887x_class_init(ObjectClass *oc, const void *data) {
 	mc->ignore_memory_transaction_failures = true;
 	mc->default_cpu_type = ARM_CPU_TYPE_NAME("arm926");
 	mc->default_ram_size = 16 * 1024 * 1024;
+	mc->tcg_auxiliary_threads = 1;
 }
 
 static const TypeInfo pmb887x_type = {

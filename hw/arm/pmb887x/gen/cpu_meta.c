@@ -2360,6 +2360,18 @@ static const pmb887x_io_field_t dsp_id_fields[] = {
 	{"NUMBER",	MOD_ID_NUMBER,	MOD_ID_NUMBER_SHIFT,	NULL,	0},
 };
 
+static const pmb887x_io_field_t dsp_sem_set_fields[] = {
+	{"FLAGS",	DSP_SEM_SET_FLAGS,	DSP_SEM_SET_FLAGS_SHIFT,	NULL,	0},
+};
+
+static const pmb887x_io_field_t dsp_sem_clear_fields[] = {
+	{"FLAGS",	DSP_SEM_CLEAR_FLAGS,	DSP_SEM_CLEAR_FLAGS_SHIFT,	NULL,	0},
+};
+
+static const pmb887x_io_field_t dsp_sem_status_fields[] = {
+	{"FLAGS",	DSP_SEM_STATUS_FLAGS,	DSP_SEM_STATUS_FLAGS_SHIFT,	NULL,	0},
+};
+
 static const pmb887x_io_field_t dsp_com_set_fields[] = {
 	{"FLAGS",	DSP_COM_SET_FLAGS,	DSP_COM_SET_FLAGS_SHIFT,	NULL,	0},
 };
@@ -2375,6 +2387,9 @@ static const pmb887x_io_field_t dsp_com_status_fields[] = {
 static const pmb887x_io_reg_t dsp_regs[] = {
 	{"CLC",			DSP_CLC,		dsp_clc_fields,			ARRAY_SIZE(dsp_clc_fields),			0},
 	{"ID",			DSP_ID,			dsp_id_fields,			ARRAY_SIZE(dsp_id_fields),			0},
+	{"SEM_SET",		DSP_SEM_SET,	dsp_sem_set_fields,		ARRAY_SIZE(dsp_sem_set_fields),		0},
+	{"SEM_CLEAR",	DSP_SEM_CLEAR,	dsp_sem_clear_fields,	ARRAY_SIZE(dsp_sem_clear_fields),	0},
+	{"SEM_STATUS",	DSP_SEM_STATUS,	dsp_sem_status_fields,	ARRAY_SIZE(dsp_sem_status_fields),	0},
 	{"COM_SET",		DSP_COM_SET,	dsp_com_set_fields,		ARRAY_SIZE(dsp_com_set_fields),		0},
 	{"COM_CLEAR",	DSP_COM_CLEAR,	dsp_com_clear_fields,	ARRAY_SIZE(dsp_com_clear_fields),	0},
 	{"COM_STATUS",	DSP_COM_STATUS,	dsp_com_status_fields,	ARRAY_SIZE(dsp_com_status_fields),	0},
@@ -9226,6 +9241,1318 @@ static const pmb887x_io_reg_t tea5761uk_regs[] = {
 	{ "CHIPID_LOW",			0xF,	tea5761uk_chipid_low_fields,		ARRAY_SIZE(tea5761uk_chipid_low_fields),		0 },
 };
 
+static const pmb887x_io_field_t dsp_afe_intptr_fields[] = {
+	{ "RXINTPTR",	0x0000003F,	0,	NULL,	0 },
+	{ "TXINTPTR",	0x00003F00,	8,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t dsp_afe_rwaddr_fields[] = {
+	{ "RDADDR",	0x0000003F,	0,	NULL,	0 },
+	{ "WRADDR",	0x00003F00,	8,	NULL,	0 },
+};
+
+static const pmb887x_io_value_t dsp_afe_bcon_fields_rxrate_values[] = {
+	{ "KHZ_8",		0x00000000 },
+	{ "KHZ_16",		0x00000004 },
+	{ "KHZ_31_746",	0x00000008 },
+	{ "KHZ_44_444",	0x0000000C },
+	{ "KHZ_47_619",	0x00000010 },
+};
+
+static const pmb887x_io_value_t dsp_afe_bcon_fields_txrate_values[] = {
+	{ "KHZ_8",	0x00000000 },
+	{ "KHZ_16",	0x00000040 },
+};
+
+static const pmb887x_io_field_t dsp_afe_bcon_fields[] = {
+	{ "MODE",		0x00000001,	0,	NULL,								0 },
+	{ "RXSTART",	0x00000002,	1,	NULL,								0 },
+	{ "RXRATE",		0x0000001C,	2,	dsp_afe_bcon_fields_rxrate_values,	ARRAY_SIZE(dsp_afe_bcon_fields_rxrate_values) },
+	{ "TXSTART",	0x00000020,	5,	NULL,								0 },
+	{ "TXRATE",		0x00000040,	6,	dsp_afe_bcon_fields_txrate_values,	ARRAY_SIZE(dsp_afe_bcon_fields_txrate_values) },
+};
+
+static const pmb887x_io_field_t dsp_afe_vrxctrl1_fields[] = {
+	{ "EPSAV",		0x00000004,	2,	NULL,	0 },
+	{ "VCMEPB",		0x00000070,	4,	NULL,	0 },
+	{ "RXGAINSP",	0x00000380,	7,	NULL,	0 },
+	{ "RXGAINPA",	0x00001C00,	10,	NULL,	0 },
+	{ "RXDITH",		0x0000C000,	14,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t dsp_afe_vrxctrl2_fields[] = {
+	{ "RXDAC",		0x00000001,	0,	NULL,	0 },
+	{ "RINGSELSP",	0x00000004,	2,	NULL,	0 },
+	{ "RINGSELPA",	0x00000008,	3,	NULL,	0 },
+	{ "VEPPA",		0x00000010,	4,	NULL,	0 },
+	{ "VEPSP",		0x00000040,	6,	NULL,	0 },
+	{ "ZERODETECT",	0x00000080,	7,	NULL,	0 },
+	{ "MODE",		0x00004000,	14,	NULL,	0 },
+};
+
+static const pmb887x_io_value_t dsp_afe_vtxctrl_fields_txmode_values[] = {
+	{ "POWER_DOWN",	0x00000000 },
+	{ "TALK",		0x00000020 },
+};
+
+static const pmb887x_io_value_t dsp_afe_vtxctrl_fields_txinsel_values[] = {
+	{ "MIC2",	0x00000200 },
+	{ "MIC1",	0x00000400 },
+};
+
+static const pmb887x_io_value_t dsp_afe_vtxctrl_fields_vmic_values[] = {
+	{ "POWER_DOWN",	0x00000000 },
+	{ "VOLT_1_8",	0x00000800 },
+	{ "VOLT_2_0",	0x00001000 },
+	{ "VOLT_2_2",	0x00001800 },
+};
+
+static const pmb887x_io_field_t dsp_afe_vtxctrl_fields[] = {
+	{ "TXDITH",		0x00000001,	0,	NULL,									0 },
+	{ "TXGAIN0",	0x00000002,	1,	NULL,									0 },
+	{ "TXGAIN1",	0x00000004,	2,	NULL,									0 },
+	{ "TXGAIN2",	0x00000008,	3,	NULL,									0 },
+	{ "TXGAIN3",	0x00000010,	4,	NULL,									0 },
+	{ "TXMODE",		0x00000060,	5,	dsp_afe_vtxctrl_fields_txmode_values,	ARRAY_SIZE(dsp_afe_vtxctrl_fields_txmode_values) },
+	{ "TXINSEL",	0x00000700,	8,	dsp_afe_vtxctrl_fields_txinsel_values,	ARRAY_SIZE(dsp_afe_vtxctrl_fields_txinsel_values) },
+	{ "VMIC",		0x00001800,	11,	dsp_afe_vtxctrl_fields_vmic_values,		ARRAY_SIZE(dsp_afe_vtxctrl_fields_vmic_values) },
+};
+
+static const pmb887x_io_value_t dsp_afe_ringctrl_fields_rins_values[] = {
+	{ "CAPCOM0",		0x00000000 },
+	{ "CAPCOM1",		0x00000002 },
+	{ "ALTERNATIVE",	0x00000004 },
+};
+
+static const pmb887x_io_field_t dsp_afe_ringctrl_fields[] = {
+	{ "ALTRIN",	0x00000001,	0,	NULL,									0 },
+	{ "RINS",	0x00000006,	1,	dsp_afe_ringctrl_fields_rins_values,	ARRAY_SIZE(dsp_afe_ringctrl_fields_rins_values) },
+};
+
+static const pmb887x_io_reg_t dsp_afe_regs[] = {
+	{ "INTPTR",		0x0,	dsp_afe_intptr_fields,		ARRAY_SIZE(dsp_afe_intptr_fields),		0 },
+	{ "RWADDR",		0x1,	dsp_afe_rwaddr_fields,		ARRAY_SIZE(dsp_afe_rwaddr_fields),		0 },
+	{ "BCON",		0x2,	dsp_afe_bcon_fields,		ARRAY_SIZE(dsp_afe_bcon_fields),		0 },
+	{ "VRXCTRL1",	0x3,	dsp_afe_vrxctrl1_fields,	ARRAY_SIZE(dsp_afe_vrxctrl1_fields),	0 },
+	{ "VRXCTRL2",	0x4,	dsp_afe_vrxctrl2_fields,	ARRAY_SIZE(dsp_afe_vrxctrl2_fields),	0 },
+	{ "VTXCTRL",	0x5,	dsp_afe_vtxctrl_fields,		ARRAY_SIZE(dsp_afe_vtxctrl_fields),		0 },
+	{ "RINGCTRL",	0x6,	dsp_afe_ringctrl_fields,	ARRAY_SIZE(dsp_afe_ringctrl_fields),	0 },
+};
+
+static const pmb887x_io_field_t dsp_baseband_ctrl_fields[] = {
+	{ "BB_STOP",	0x00000001,	0,	NULL,	0 },
+	{ "CORDICON",	0x00000002,	1,	NULL,	0 },
+	{ "BB_ON",		0x00000004,	2,	NULL,	0 },
+	{ "BB_ADCMODE",	0x00000008,	3,	NULL,	0 },
+	{ "BBADAP_EN",	0x00000010,	4,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t dsp_baseband_int_pointer_fields[] = {
+	{ "VALUE",	0x000003FF,	0,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t dsp_baseband_wr_pointer_fields[] = {
+	{ "VALUE",	0x000003FF,	0,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t dsp_baseband_status_fields[] = {
+	{ "EQON",	0x00000001,	0,	NULL,	0 },
+	{ "FCON",	0x00000002,	1,	NULL,	0 },
+	{ "MONON",	0x00000004,	2,	NULL,	0 },
+	{ "SCON",	0x00000008,	3,	NULL,	0 },
+	{ "RXON",	0x00000010,	4,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t dsp_baseband_dcoffset_i_fields[] = {
+	{ "VALUE",	0x0000FFFF,	0,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t dsp_baseband_dcoffset_q_fields[] = {
+	{ "VALUE",	0x0000FFFF,	0,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t dsp_baseband_fshift_fields[] = {
+	{ "VALUE",	0x0000FFFF,	0,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t dsp_baseband_brfilter_ctrl_fields[] = {
+	{ "LENGTH",		0x000000FF,	0,	NULL,	0 },
+	{ "SCALING",	0x00000F00,	8,	NULL,	0 },
+	{ "DECIMATION",	0x00001000,	12,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t dsp_baseband_pbase_msb_fields[] = {
+	{ "VALUE",	0x000000FF,	0,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t dsp_baseband_pbase_lsb_fields[] = {
+	{ "VALUE",	0x0000FFFF,	0,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t dsp_baseband_padj_msb_fields[] = {
+	{ "VALUE",	0x000000FF,	0,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t dsp_baseband_padj_lsb_fields[] = {
+	{ "VALUE",	0x0000FFFF,	0,	NULL,	0 },
+};
+
+static const pmb887x_io_reg_t dsp_baseband_regs[] = {
+	{ "CTRL",			0x0,	dsp_baseband_ctrl_fields,			ARRAY_SIZE(dsp_baseband_ctrl_fields),			0 },
+	{ "INT_POINTER",	0x1,	dsp_baseband_int_pointer_fields,	ARRAY_SIZE(dsp_baseband_int_pointer_fields),	0 },
+	{ "WR_POINTER",		0x2,	dsp_baseband_wr_pointer_fields,		ARRAY_SIZE(dsp_baseband_wr_pointer_fields),		0 },
+	{ "STATUS",			0x3,	dsp_baseband_status_fields,			ARRAY_SIZE(dsp_baseband_status_fields),			0 },
+	{ "DCOFFSET_I",		0x4,	dsp_baseband_dcoffset_i_fields,		ARRAY_SIZE(dsp_baseband_dcoffset_i_fields),		0 },
+	{ "DCOFFSET_Q",		0x5,	dsp_baseband_dcoffset_q_fields,		ARRAY_SIZE(dsp_baseband_dcoffset_q_fields),		0 },
+	{ "FSHIFT",			0x6,	dsp_baseband_fshift_fields,			ARRAY_SIZE(dsp_baseband_fshift_fields),			0 },
+	{ "BRFILTER_CTRL",	0x7,	dsp_baseband_brfilter_ctrl_fields,	ARRAY_SIZE(dsp_baseband_brfilter_ctrl_fields),	0 },
+	{ "PBASE_MSB",		0x8,	dsp_baseband_pbase_msb_fields,		ARRAY_SIZE(dsp_baseband_pbase_msb_fields),		0 },
+	{ "PBASE_LSB",		0x9,	dsp_baseband_pbase_lsb_fields,		ARRAY_SIZE(dsp_baseband_pbase_lsb_fields),		0 },
+	{ "PADJ_MSB",		0xA,	dsp_baseband_padj_msb_fields,		ARRAY_SIZE(dsp_baseband_padj_msb_fields),		0 },
+	{ "PADJ_LSB",		0xB,	dsp_baseband_padj_lsb_fields,		ARRAY_SIZE(dsp_baseband_padj_lsb_fields),		0 },
+	{ "IQ_IMBALANCE",	0xC,	NULL,								0,												0 },
+};
+
+static const pmb887x_io_field_t dsp_channel_decoder_conf1_fields[] = {
+	{ "RES_RW1_RW2",	0x00000001,	0,	NULL,	0 },
+	{ "RES_SIN01_BASE",	0x00000002,	1,	NULL,	0 },
+	{ "RES_SIN2_BASE",	0x00000004,	2,	NULL,	0 },
+	{ "RES_TR_BASE",	0x00000008,	3,	NULL,	0 },
+	{ "RES_DM_BASE",	0x00000080,	7,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t dsp_channel_decoder_conf2_fields[] = {
+	{ "HW_ENA_DEC",		0x00000001,	0,	NULL,	0 },
+	{ "RES_DEC",		0x00000002,	1,	NULL,	0 },
+	{ "DEC_ON",			0x00000004,	2,	NULL,	0 },
+	{ "RES_ALL",		0x00000100,	8,	NULL,	0 },
+	{ "DEC_FLAG_RD",	0x00000800,	11,	NULL,	0 },
+	{ "PC_DEC_0",		0x00001000,	12,	NULL,	0 },
+	{ "PC_DEC_1",		0x00002000,	13,	NULL,	0 },
+	{ "OFLOW_PROT",		0x00004000,	14,	NULL,	0 },
+	{ "DEC_64",			0x00008000,	15,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t dsp_channel_decoder_status_fields[] = {
+	{ "DEC_BUSY",	0x00004000,	14,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t dsp_channel_decoder_conf_cnt_fields[] = {
+	{ "C_DEC",	0x000000FF,	0,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t dsp_channel_decoder_stat_cnt_fields[] = {
+	{ "S_DEC",	0x000000FF,	0,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t dsp_channel_decoder_ref_br_bfly0_fields[] = {
+	{ "REF1",	0x0000000F,	0,	NULL,	0 },
+	{ "REF2",	0x000000F0,	4,	NULL,	0 },
+	{ "REF3",	0x00000F00,	8,	NULL,	0 },
+	{ "REF4",	0x0000F000,	12,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t dsp_channel_decoder_ref_br_bfly1_fields[] = {
+	{ "REF1",	0x0000000F,	0,	NULL,	0 },
+	{ "REF2",	0x000000F0,	4,	NULL,	0 },
+	{ "REF3",	0x00000F00,	8,	NULL,	0 },
+	{ "REF4",	0x0000F000,	12,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t dsp_channel_decoder_ref_br_bfly2_fields[] = {
+	{ "REF1",	0x0000000F,	0,	NULL,	0 },
+	{ "REF2",	0x000000F0,	4,	NULL,	0 },
+	{ "REF3",	0x00000F00,	8,	NULL,	0 },
+	{ "REF4",	0x0000F000,	12,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t dsp_channel_decoder_ref_br_bfly3_fields[] = {
+	{ "REF1",	0x0000000F,	0,	NULL,	0 },
+	{ "REF2",	0x000000F0,	4,	NULL,	0 },
+	{ "REF3",	0x00000F00,	8,	NULL,	0 },
+	{ "REF4",	0x0000F000,	12,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t dsp_channel_decoder_ref_br_bfly4_fields[] = {
+	{ "REF1",	0x0000000F,	0,	NULL,	0 },
+	{ "REF2",	0x000000F0,	4,	NULL,	0 },
+	{ "REF3",	0x00000F00,	8,	NULL,	0 },
+	{ "REF4",	0x0000F000,	12,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t dsp_channel_decoder_ref_br_bfly5_fields[] = {
+	{ "REF1",	0x0000000F,	0,	NULL,	0 },
+	{ "REF2",	0x000000F0,	4,	NULL,	0 },
+	{ "REF3",	0x00000F00,	8,	NULL,	0 },
+	{ "REF4",	0x0000F000,	12,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t dsp_channel_decoder_ref_br_bfly6_fields[] = {
+	{ "REF1",	0x0000000F,	0,	NULL,	0 },
+	{ "REF2",	0x000000F0,	4,	NULL,	0 },
+	{ "REF3",	0x00000F00,	8,	NULL,	0 },
+	{ "REF4",	0x0000F000,	12,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t dsp_channel_decoder_ref_br_bfly7_fields[] = {
+	{ "REF1",	0x0000000F,	0,	NULL,	0 },
+	{ "REF2",	0x000000F0,	4,	NULL,	0 },
+	{ "REF3",	0x00000F00,	8,	NULL,	0 },
+	{ "REF4",	0x0000F000,	12,	NULL,	0 },
+};
+
+static const pmb887x_io_reg_t dsp_channel_decoder_regs[] = {
+	{ "CONF1",			0x0,	dsp_channel_decoder_conf1_fields,			ARRAY_SIZE(dsp_channel_decoder_conf1_fields),			0 },
+	{ "CONF2",			0x1,	dsp_channel_decoder_conf2_fields,			ARRAY_SIZE(dsp_channel_decoder_conf2_fields),			0 },
+	{ "STATUS",			0x2,	dsp_channel_decoder_status_fields,			ARRAY_SIZE(dsp_channel_decoder_status_fields),			0 },
+	{ "CONF_CNT",		0x3,	dsp_channel_decoder_conf_cnt_fields,		ARRAY_SIZE(dsp_channel_decoder_conf_cnt_fields),		0 },
+	{ "STAT_CNT",		0x4,	dsp_channel_decoder_stat_cnt_fields,		ARRAY_SIZE(dsp_channel_decoder_stat_cnt_fields),		0 },
+	{ "REF_BR_BFLY0",	0x5,	dsp_channel_decoder_ref_br_bfly0_fields,	ARRAY_SIZE(dsp_channel_decoder_ref_br_bfly0_fields),	0 },
+	{ "REF_BR_BFLY1",	0x6,	dsp_channel_decoder_ref_br_bfly1_fields,	ARRAY_SIZE(dsp_channel_decoder_ref_br_bfly1_fields),	0 },
+	{ "REF_BR_BFLY2",	0x7,	dsp_channel_decoder_ref_br_bfly2_fields,	ARRAY_SIZE(dsp_channel_decoder_ref_br_bfly2_fields),	0 },
+	{ "REF_BR_BFLY3",	0x8,	dsp_channel_decoder_ref_br_bfly3_fields,	ARRAY_SIZE(dsp_channel_decoder_ref_br_bfly3_fields),	0 },
+	{ "REF_BR_BFLY4",	0x9,	dsp_channel_decoder_ref_br_bfly4_fields,	ARRAY_SIZE(dsp_channel_decoder_ref_br_bfly4_fields),	0 },
+	{ "REF_BR_BFLY5",	0xA,	dsp_channel_decoder_ref_br_bfly5_fields,	ARRAY_SIZE(dsp_channel_decoder_ref_br_bfly5_fields),	0 },
+	{ "REF_BR_BFLY6",	0xB,	dsp_channel_decoder_ref_br_bfly6_fields,	ARRAY_SIZE(dsp_channel_decoder_ref_br_bfly6_fields),	0 },
+	{ "REF_BR_BFLY7",	0xC,	dsp_channel_decoder_ref_br_bfly7_fields,	ARRAY_SIZE(dsp_channel_decoder_ref_br_bfly7_fields),	0 },
+};
+
+static const pmb887x_io_field_t dsp_cipher_cstat_fields[] = {
+	{ "CACT",	0x00000001,	0,	NULL,	0 },
+	{ "A52",	0x00000002,	1,	NULL,	0 },
+	{ "EDGE",	0x00000004,	2,	NULL,	0 },
+	{ "INIT",	0x00000008,	3,	NULL,	0 },
+	{ "A53",	0x00000010,	4,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t dsp_cipher_key0_fields[] = {
+	{ "VALUE",	0x0000FFFF,	0,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t dsp_cipher_key1_fields[] = {
+	{ "VALUE",	0x0000FFFF,	0,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t dsp_cipher_key2_fields[] = {
+	{ "VALUE",	0x0000FFFF,	0,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t dsp_cipher_key3_fields[] = {
+	{ "VALUE",	0x0000FFFF,	0,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t dsp_cipher_tmod26_fields[] = {
+	{ "T26N",	0x0000001F,	0,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t dsp_cipher_tmod51_fields[] = {
+	{ "T51N",	0x0000003F,	0,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t dsp_cipher_sfnum_fields[] = {
+	{ "SFN",	0x000007FF,	0,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t dsp_cipher_key4_fields[] = {
+	{ "VALUE",	0x0000FFFF,	0,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t dsp_cipher_key5_fields[] = {
+	{ "VALUE",	0x0000FFFF,	0,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t dsp_cipher_key6_fields[] = {
+	{ "VALUE",	0x0000FFFF,	0,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t dsp_cipher_key7_fields[] = {
+	{ "VALUE",	0x0000FFFF,	0,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t dsp_cipher_kdata1_fields[] = {
+	{ "CE",	0x0000FFFF,	0,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t dsp_cipher_kdata2_fields[] = {
+	{ "CA",	0x000000FF,	0,	NULL,	0 },
+	{ "CD",	0x00000400,	10,	NULL,	0 },
+	{ "CB",	0x0000F800,	11,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t dsp_cipher_kdata3_fields[] = {
+	{ "T26N",	0x0000001F,	0,	NULL,	0 },
+	{ "T51N",	0x000007E0,	5,	NULL,	0 },
+	{ "SFN",	0x0000F800,	11,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t dsp_cipher_kdata4_fields[] = {
+	{ "SFN",	0x0000003F,	0,	NULL,	0 },
+};
+
+static const pmb887x_io_reg_t dsp_cipher_regs[] = {
+	{ "CSTAT",	0x0,	dsp_cipher_cstat_fields,	ARRAY_SIZE(dsp_cipher_cstat_fields),	0 },
+	{ "KEY0",	0x1,	dsp_cipher_key0_fields,		ARRAY_SIZE(dsp_cipher_key0_fields),		0 },
+	{ "KEY1",	0x2,	dsp_cipher_key1_fields,		ARRAY_SIZE(dsp_cipher_key1_fields),		0 },
+	{ "KEY2",	0x3,	dsp_cipher_key2_fields,		ARRAY_SIZE(dsp_cipher_key2_fields),		0 },
+	{ "KEY3",	0x4,	dsp_cipher_key3_fields,		ARRAY_SIZE(dsp_cipher_key3_fields),		0 },
+	{ "TMOD26",	0x5,	dsp_cipher_tmod26_fields,	ARRAY_SIZE(dsp_cipher_tmod26_fields),	0 },
+	{ "TMOD51",	0x6,	dsp_cipher_tmod51_fields,	ARRAY_SIZE(dsp_cipher_tmod51_fields),	0 },
+	{ "SFNUM",	0x7,	dsp_cipher_sfnum_fields,	ARRAY_SIZE(dsp_cipher_sfnum_fields),	0 },
+	{ "KEY4",	0x8,	dsp_cipher_key4_fields,		ARRAY_SIZE(dsp_cipher_key4_fields),		0 },
+	{ "KEY5",	0x9,	dsp_cipher_key5_fields,		ARRAY_SIZE(dsp_cipher_key5_fields),		0 },
+	{ "KEY6",	0xA,	dsp_cipher_key6_fields,		ARRAY_SIZE(dsp_cipher_key6_fields),		0 },
+	{ "KEY7",	0xB,	dsp_cipher_key7_fields,		ARRAY_SIZE(dsp_cipher_key7_fields),		0 },
+	{ "KDATA1",	0xC,	dsp_cipher_kdata1_fields,	ARRAY_SIZE(dsp_cipher_kdata1_fields),	0 },
+	{ "KDATA2",	0xD,	dsp_cipher_kdata2_fields,	ARRAY_SIZE(dsp_cipher_kdata2_fields),	0 },
+	{ "KDATA3",	0xE,	dsp_cipher_kdata3_fields,	ARRAY_SIZE(dsp_cipher_kdata3_fields),	0 },
+	{ "KDATA4",	0xF,	dsp_cipher_kdata4_fields,	ARRAY_SIZE(dsp_cipher_kdata4_fields),	0 },
+};
+
+static const pmb887x_io_field_t dsp_dsp_id_fields[] = {
+	{ "DSPID",	0x0000FFFF,	0,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t dsp_dsp_ctrl_fields[] = {
+	{ "DSPDIS",	0x00000001,	0,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t dsp_dsp_debug_fields[] = {
+	{ "OCEM",	0x00000002,	1,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t dsp_dsp_page_fields[] = {
+	{ "DATA_PAGE",	0x00000001,	0,	NULL,	0 },
+	{ "PROG_PAGE",	0x00000002,	1,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t dsp_dsp_dspout_fields[] = {
+	{ "DSPOUT0",	0x00000001,	0,	NULL,	0 },
+	{ "DSPOUT1",	0x00000002,	1,	NULL,	0 },
+	{ "DSPOUT2",	0x00000004,	2,	NULL,	0 },
+	{ "DSPIN0",		0x00000008,	3,	NULL,	0 },
+	{ "DSPIN1",		0x00000010,	4,	NULL,	0 },
+	{ "MONIN1",		0x00000020,	5,	NULL,	0 },
+	{ "MONIN2",		0x00000040,	6,	NULL,	0 },
+	{ "MONIN3",		0x00000080,	7,	NULL,	0 },
+	{ "MONIN4",		0x00000100,	8,	NULL,	0 },
+};
+
+static const pmb887x_io_reg_t dsp_dsp_regs[] = {
+	{ "ID",		0x0,	dsp_dsp_id_fields,		ARRAY_SIZE(dsp_dsp_id_fields),		0 },
+	{ "CTRL",	0x1,	dsp_dsp_ctrl_fields,	ARRAY_SIZE(dsp_dsp_ctrl_fields),	0 },
+	{ "DEBUG",	0x2,	dsp_dsp_debug_fields,	ARRAY_SIZE(dsp_dsp_debug_fields),	0 },
+	{ "PAGE",	0x3,	dsp_dsp_page_fields,	ARRAY_SIZE(dsp_dsp_page_fields),	0 },
+	{ "UNK6",	0x6,	NULL,					0,									0 },
+	{ "DSPOUT",	0x8,	dsp_dsp_dspout_fields,	ARRAY_SIZE(dsp_dsp_dspout_fields),	0 },
+};
+
+static const pmb887x_io_field_t dsp_dsp_8876_id_fields[] = {
+	{ "DSPID",	0x0000FFFF,	0,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t dsp_dsp_8876_ctrl_fields[] = {
+	{ "DSPDIS",	0x00000001,	0,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t dsp_dsp_8876_debug_fields[] = {
+	{ "OCEM",	0x00000002,	1,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t dsp_dsp_8876_page_fields[] = {
+	{ "DATA_PAGE",	0x00000003,	0,	NULL,	0 },
+	{ "PROG_PAGE",	0x0000000C,	2,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t dsp_dsp_8876_dspout_fields[] = {
+	{ "DSPOUT0",	0x00000001,	0,	NULL,	0 },
+	{ "DSPOUT1",	0x00000002,	1,	NULL,	0 },
+	{ "DSPOUT2",	0x00000004,	2,	NULL,	0 },
+	{ "DSPIN0",		0x00000008,	3,	NULL,	0 },
+	{ "DSPIN1",		0x00000010,	4,	NULL,	0 },
+	{ "MONIN1",		0x00000020,	5,	NULL,	0 },
+	{ "MONIN2",		0x00000040,	6,	NULL,	0 },
+	{ "MONIN3",		0x00000080,	7,	NULL,	0 },
+	{ "MONIN4",		0x00000100,	8,	NULL,	0 },
+};
+
+static const pmb887x_io_reg_t dsp_dsp_8876_regs[] = {
+	{ "ID",		0x0,	dsp_dsp_8876_id_fields,		ARRAY_SIZE(dsp_dsp_8876_id_fields),		0 },
+	{ "CTRL",	0x1,	dsp_dsp_8876_ctrl_fields,	ARRAY_SIZE(dsp_dsp_8876_ctrl_fields),	0 },
+	{ "DEBUG",	0x2,	dsp_dsp_8876_debug_fields,	ARRAY_SIZE(dsp_dsp_8876_debug_fields),	0 },
+	{ "PAGE",	0x3,	dsp_dsp_8876_page_fields,	ARRAY_SIZE(dsp_dsp_8876_page_fields),	0 },
+	{ "UNK6",	0x6,	NULL,						0,										0 },
+	{ "DSPOUT",	0x8,	dsp_dsp_8876_dspout_fields,	ARRAY_SIZE(dsp_dsp_8876_dspout_fields),	0 },
+};
+
+static const pmb887x_io_field_t dsp_equalizer_conf1_fields[] = {
+	{ "RES_RW1_RW2",	0x00000001,	0,	NULL,	0 },
+	{ "RES_RX_BASE",	0x00000004,	2,	NULL,	0 },
+	{ "RES_BPAR_BASE",	0x00000008,	3,	NULL,	0 },
+	{ "RES_SOUT_BASE",	0x00000010,	4,	NULL,	0 },
+	{ "RES_HOUT_BASE",	0x00000020,	5,	NULL,	0 },
+	{ "RES_ELAT_BASE",	0x00000080,	7,	NULL,	0 },
+	{ "RES_EMR_BASE",	0x00000800,	11,	NULL,	0 },
+	{ "RES_EML_BASE",	0x00001000,	12,	NULL,	0 },
+	{ "RES_EPR_BASE",	0x00002000,	13,	NULL,	0 },
+	{ "RES_EPL_BASE",	0x00004000,	14,	NULL,	0 },
+	{ "RES_EB_BASE",	0x00008000,	15,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t dsp_equalizer_conf2_fields[] = {
+	{ "HW_ENA_EQ",	0x00000001,	0,	NULL,	0 },
+	{ "RES_EQ",		0x00000002,	1,	NULL,	0 },
+	{ "EQ_ON",		0x00000004,	2,	NULL,	0 },
+	{ "RES_ALL",	0x00000100,	8,	NULL,	0 },
+	{ "S_SEG",		0x00000200,	9,	NULL,	0 },
+	{ "S_COMB",		0x00000400,	10,	NULL,	0 },
+	{ "EQ_FLAG_RD",	0x00000800,	11,	NULL,	0 },
+	{ "PC_EQ_0",	0x00001000,	12,	NULL,	0 },
+	{ "PC_EQ_1",	0x00002000,	13,	NULL,	0 },
+	{ "EQ_RIGHT",	0x00004000,	14,	NULL,	0 },
+	{ "EQ_EDGE",	0x00008000,	15,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t dsp_equalizer_status_fields[] = {
+	{ "EQ_BUSY",	0x00008000,	15,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t dsp_equalizer_conf_cnt_fields[] = {
+	{ "C_EQ",	0x0000003F,	0,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t dsp_equalizer_stat_cnt_fields[] = {
+	{ "S_EQ",	0x0000003F,	0,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t dsp_equalizer_sc_sout_fields[] = {
+	{ "SC7_0",	0x000000FF,	0,	NULL,	0 },
+	{ "SC8",	0x00000100,	8,	NULL,	0 },
+	{ "SC12_9",	0x00001E00,	9,	NULL,	0 },
+	{ "SC13",	0x00002000,	13,	NULL,	0 },
+	{ "SC14",	0x00004000,	14,	NULL,	0 },
+	{ "SC15",	0x00008000,	15,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t dsp_equalizer_squal_fields[] = {
+	{ "SQ",	0x0000FFFF,	0,	NULL,	0 },
+};
+
+static const pmb887x_io_reg_t dsp_equalizer_regs[] = {
+	{ "CONF1",		0x0,	dsp_equalizer_conf1_fields,		ARRAY_SIZE(dsp_equalizer_conf1_fields),		0 },
+	{ "CONF2",		0x1,	dsp_equalizer_conf2_fields,		ARRAY_SIZE(dsp_equalizer_conf2_fields),		0 },
+	{ "STATUS",		0x2,	dsp_equalizer_status_fields,	ARRAY_SIZE(dsp_equalizer_status_fields),	0 },
+	{ "CONF_CNT",	0x3,	dsp_equalizer_conf_cnt_fields,	ARRAY_SIZE(dsp_equalizer_conf_cnt_fields),	0 },
+	{ "STAT_CNT",	0x4,	dsp_equalizer_stat_cnt_fields,	ARRAY_SIZE(dsp_equalizer_stat_cnt_fields),	0 },
+	{ "SC_SOUT",	0x5,	dsp_equalizer_sc_sout_fields,	ARRAY_SIZE(dsp_equalizer_sc_sout_fields),	0 },
+	{ "SQUAL",		0x6,	dsp_equalizer_squal_fields,		ARRAY_SIZE(dsp_equalizer_squal_fields),		0 },
+};
+
+static const pmb887x_io_field_t dsp_i2s_ctrl_fields[] = {
+	{ "I2SON",		0x00000001,	0,	NULL,	0 },
+	{ "I2STXSTART",	0x00000002,	1,	NULL,	0 },
+	{ "I2SRXSTART",	0x00000004,	2,	NULL,	0 },
+	{ "TXPCM",		0x00000020,	5,	NULL,	0 },
+	{ "RXPCM",		0x00000040,	6,	NULL,	0 },
+	{ "DAI_EN",		0x00000080,	7,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t dsp_i2s_csel_fields[] = {
+	{ "TXCLKSEL",	0x00000003,	0,	NULL,	0 },
+	{ "CLK0SEL",	0x0000000C,	2,	NULL,	0 },
+	{ "RXCLKSEL",	0x00000030,	4,	NULL,	0 },
+	{ "CLK1SEL",	0x000000C0,	6,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t dsp_i2s_rwaddr_fields[] = {
+	{ "RDADDR",	0x0000003F,	0,	NULL,	0 },
+	{ "WRADDR",	0x00003F00,	8,	NULL,	0 },
+};
+
+static const pmb887x_io_value_t dsp_i2s_num0_fields_fref_values[] = {
+	{ "MODULE_CLOCK",	0x00000000 },
+	{ "CLOCK_104MHZ",	0x00001000 },
+};
+
+static const pmb887x_io_field_t dsp_i2s_num0_fields[] = {
+	{ "NUMERATOR",	0x000007FF,	0,	NULL,								0 },
+	{ "FREF",		0x00003000,	12,	dsp_i2s_num0_fields_fref_values,	ARRAY_SIZE(dsp_i2s_num0_fields_fref_values) },
+};
+
+static const pmb887x_io_field_t dsp_i2s_den0_fields[] = {
+	{ "DENOMINATOR",	0x0000FFFF,	0,	NULL,	0 },
+};
+
+static const pmb887x_io_value_t dsp_i2s_num1_fields_fref_values[] = {
+	{ "MODULE_CLOCK",	0x00000000 },
+	{ "CLOCK_104MHZ",	0x00001000 },
+};
+
+static const pmb887x_io_field_t dsp_i2s_num1_fields[] = {
+	{ "NUMERATOR",	0x000007FF,	0,	NULL,								0 },
+	{ "FREF",		0x00003000,	12,	dsp_i2s_num1_fields_fref_values,	ARRAY_SIZE(dsp_i2s_num1_fields_fref_values) },
+};
+
+static const pmb887x_io_field_t dsp_i2s_den1_fields[] = {
+	{ "DENOMINATOR",	0x0000FFFF,	0,	NULL,	0 },
+};
+
+static const pmb887x_io_value_t dsp_i2s_rxconf_fields_period_values[] = {
+	{ "CLOCKS_64",	0x00000000 },
+	{ "CLOCKS_48",	0x00000008 },
+	{ "CLOCKS_32",	0x00000010 },
+};
+
+static const pmb887x_io_value_t dsp_i2s_rxconf_fields_width_values[] = {
+	{ "BITS_16",	0x00000000 },
+	{ "BITS_18",	0x00000080 },
+	{ "BITS_20",	0x000000A0 },
+	{ "BITS_24",	0x000000C0 },
+	{ "BITS_32",	0x000000E0 },
+};
+
+static const pmb887x_io_field_t dsp_i2s_rxconf_fields[] = {
+	{ "EDGE",		0x00000001,	0,	NULL,									0 },
+	{ "DEL",		0x00000002,	1,	NULL,									0 },
+	{ "POL",		0x00000004,	2,	NULL,									0 },
+	{ "PERIOD",		0x00000018,	3,	dsp_i2s_rxconf_fields_period_values,	ARRAY_SIZE(dsp_i2s_rxconf_fields_period_values) },
+	{ "WIDTH",		0x000000E0,	5,	dsp_i2s_rxconf_fields_width_values,		ARRAY_SIZE(dsp_i2s_rxconf_fields_width_values) },
+	{ "ALIGN",		0x00000100,	8,	NULL,									0 },
+	{ "CLK1_OUT",	0x00002000,	13,	NULL,									0 },
+	{ "CLK1_CONT",	0x00004000,	14,	NULL,									0 },
+	{ "WA1_LEN",	0x00008000,	15,	NULL,									0 },
+};
+
+static const pmb887x_io_field_t dsp_i2s_rxintaddr_fields[] = {
+	{ "RXINTPTR",	0x0000003F,	0,	NULL,	0 },
+};
+
+static const pmb887x_io_value_t dsp_i2s_txconf_fields_period_values[] = {
+	{ "CLOCKS_64",	0x00000000 },
+	{ "CLOCKS_48",	0x00000008 },
+	{ "CLOCKS_32",	0x00000010 },
+};
+
+static const pmb887x_io_value_t dsp_i2s_txconf_fields_width_values[] = {
+	{ "BITS_16",	0x00000000 },
+	{ "BITS_18",	0x00000080 },
+	{ "BITS_20",	0x000000A0 },
+	{ "BITS_24",	0x000000C0 },
+	{ "BITS_32",	0x000000E0 },
+};
+
+static const pmb887x_io_value_t dsp_i2s_txconf_fields_mono_values[] = {
+	{ "STEREO",	0x00000000 },
+	{ "RIGHT",	0x00000400 },
+	{ "LEFT",	0x00000600 },
+};
+
+static const pmb887x_io_field_t dsp_i2s_txconf_fields[] = {
+	{ "EDGE",		0x00000001,	0,	NULL,									0 },
+	{ "DEL",		0x00000002,	1,	NULL,									0 },
+	{ "POL",		0x00000004,	2,	NULL,									0 },
+	{ "PERIOD",		0x00000018,	3,	dsp_i2s_txconf_fields_period_values,	ARRAY_SIZE(dsp_i2s_txconf_fields_period_values) },
+	{ "WIDTH",		0x000000E0,	5,	dsp_i2s_txconf_fields_width_values,		ARRAY_SIZE(dsp_i2s_txconf_fields_width_values) },
+	{ "ALIGN",		0x00000100,	8,	NULL,									0 },
+	{ "MONO",		0x00000600,	9,	dsp_i2s_txconf_fields_mono_values,		ARRAY_SIZE(dsp_i2s_txconf_fields_mono_values) },
+	{ "MUTE_L",		0x00000800,	11,	NULL,									0 },
+	{ "MUTE_R",		0x00001000,	12,	NULL,									0 },
+	{ "CLK0_OUT",	0x00002000,	13,	NULL,									0 },
+	{ "CLK0_CONT",	0x00004000,	14,	NULL,									0 },
+	{ "WA0_LEN",	0x00008000,	15,	NULL,									0 },
+};
+
+static const pmb887x_io_field_t dsp_i2s_txintaddr_fields[] = {
+	{ "TXINTPTR",	0x0000003F,	0,	NULL,	0 },
+};
+
+static const pmb887x_io_reg_t dsp_i2s_regs[] = {
+	{ "CTRL",		0x0,	dsp_i2s_ctrl_fields,		ARRAY_SIZE(dsp_i2s_ctrl_fields),		0 },
+	{ "CSEL",		0x1,	dsp_i2s_csel_fields,		ARRAY_SIZE(dsp_i2s_csel_fields),		0 },
+	{ "RWADDR",		0x2,	dsp_i2s_rwaddr_fields,		ARRAY_SIZE(dsp_i2s_rwaddr_fields),		0 },
+	{ "NUM0",		0x3,	dsp_i2s_num0_fields,		ARRAY_SIZE(dsp_i2s_num0_fields),		0 },
+	{ "DEN0",		0x4,	dsp_i2s_den0_fields,		ARRAY_SIZE(dsp_i2s_den0_fields),		0 },
+	{ "NUM1",		0x5,	dsp_i2s_num1_fields,		ARRAY_SIZE(dsp_i2s_num1_fields),		0 },
+	{ "DEN1",		0x6,	dsp_i2s_den1_fields,		ARRAY_SIZE(dsp_i2s_den1_fields),		0 },
+	{ "RXCONF",		0x7,	dsp_i2s_rxconf_fields,		ARRAY_SIZE(dsp_i2s_rxconf_fields),		0 },
+	{ "RXINTADDR",	0x8,	dsp_i2s_rxintaddr_fields,	ARRAY_SIZE(dsp_i2s_rxintaddr_fields),	0 },
+	{ "TXCONF",		0x9,	dsp_i2s_txconf_fields,		ARRAY_SIZE(dsp_i2s_txconf_fields),		0 },
+	{ "TXINTADDR",	0xA,	dsp_i2s_txintaddr_fields,	ARRAY_SIZE(dsp_i2s_txintaddr_fields),	0 },
+};
+
+static const pmb887x_io_field_t dsp_i2s_tx_ctrl_fields[] = {
+	{ "I2SON",		0x00000001,	0,	NULL,	0 },
+	{ "I2STXSTART",	0x00000002,	1,	NULL,	0 },
+	{ "TXPCM",		0x00000020,	5,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t dsp_i2s_tx_csel_fields[] = {
+	{ "TXCLKSEL",	0x00000002,	1,	NULL,	0 },
+	{ "CLKSEL",		0x00000008,	3,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t dsp_i2s_tx_raddr_fields[] = {
+	{ "RDADDR",	0x0000003F,	0,	NULL,	0 },
+};
+
+static const pmb887x_io_value_t dsp_i2s_tx_num_fields_fref_values[] = {
+	{ "MODULE_CLOCK",	0x00000000 },
+	{ "CLOCK_104MHZ",	0x00001000 },
+};
+
+static const pmb887x_io_field_t dsp_i2s_tx_num_fields[] = {
+	{ "NUMERATOR",	0x000007FF,	0,	NULL,								0 },
+	{ "FREF",		0x00003000,	12,	dsp_i2s_tx_num_fields_fref_values,	ARRAY_SIZE(dsp_i2s_tx_num_fields_fref_values) },
+};
+
+static const pmb887x_io_field_t dsp_i2s_tx_den_fields[] = {
+	{ "DENOMINATOR",	0x0000FFFF,	0,	NULL,	0 },
+};
+
+static const pmb887x_io_value_t dsp_i2s_tx_txconf_fields_period_values[] = {
+	{ "CLOCKS_64",	0x00000000 },
+	{ "CLOCKS_48",	0x00000008 },
+	{ "CLOCKS_32",	0x00000010 },
+};
+
+static const pmb887x_io_value_t dsp_i2s_tx_txconf_fields_width_values[] = {
+	{ "BITS_16",	0x00000000 },
+	{ "BITS_18",	0x00000080 },
+	{ "BITS_20",	0x000000A0 },
+	{ "BITS_24",	0x000000C0 },
+	{ "BITS_32",	0x000000E0 },
+};
+
+static const pmb887x_io_value_t dsp_i2s_tx_txconf_fields_mono_values[] = {
+	{ "STEREO",	0x00000000 },
+	{ "RIGHT",	0x00000400 },
+	{ "LEFT",	0x00000600 },
+};
+
+static const pmb887x_io_field_t dsp_i2s_tx_txconf_fields[] = {
+	{ "EDGE",		0x00000001,	0,	NULL,									0 },
+	{ "DEL",		0x00000002,	1,	NULL,									0 },
+	{ "POL",		0x00000004,	2,	NULL,									0 },
+	{ "PERIOD",		0x00000018,	3,	dsp_i2s_tx_txconf_fields_period_values,	ARRAY_SIZE(dsp_i2s_tx_txconf_fields_period_values) },
+	{ "WIDTH",		0x000000E0,	5,	dsp_i2s_tx_txconf_fields_width_values,	ARRAY_SIZE(dsp_i2s_tx_txconf_fields_width_values) },
+	{ "ALIGN",		0x00000100,	8,	NULL,									0 },
+	{ "MONO",		0x00000600,	9,	dsp_i2s_tx_txconf_fields_mono_values,	ARRAY_SIZE(dsp_i2s_tx_txconf_fields_mono_values) },
+	{ "MUTE_L",		0x00000800,	11,	NULL,									0 },
+	{ "MUTE_R",		0x00001000,	12,	NULL,									0 },
+	{ "CLK_OUT",	0x00002000,	13,	NULL,									0 },
+	{ "CLK_CONT",	0x00004000,	14,	NULL,									0 },
+	{ "WA_LEN",		0x00008000,	15,	NULL,									0 },
+};
+
+static const pmb887x_io_field_t dsp_i2s_tx_txintaddr_fields[] = {
+	{ "TXINTPTR",	0x0000003F,	0,	NULL,	0 },
+};
+
+static const pmb887x_io_reg_t dsp_i2s_tx_regs[] = {
+	{ "CTRL",		0x0,	dsp_i2s_tx_ctrl_fields,			ARRAY_SIZE(dsp_i2s_tx_ctrl_fields),			0 },
+	{ "CSEL",		0x1,	dsp_i2s_tx_csel_fields,			ARRAY_SIZE(dsp_i2s_tx_csel_fields),			0 },
+	{ "RADDR",		0x2,	dsp_i2s_tx_raddr_fields,		ARRAY_SIZE(dsp_i2s_tx_raddr_fields),		0 },
+	{ "NUM",		0x3,	dsp_i2s_tx_num_fields,			ARRAY_SIZE(dsp_i2s_tx_num_fields),			0 },
+	{ "DEN",		0x4,	dsp_i2s_tx_den_fields,			ARRAY_SIZE(dsp_i2s_tx_den_fields),			0 },
+	{ "TXCONF",		0x9,	dsp_i2s_tx_txconf_fields,		ARRAY_SIZE(dsp_i2s_tx_txconf_fields),		0 },
+	{ "TXINTADDR",	0xA,	dsp_i2s_tx_txintaddr_fields,	ARRAY_SIZE(dsp_i2s_tx_txintaddr_fields),	0 },
+};
+
+static const pmb887x_io_field_t dsp_interrupt_finta0_fields[] = {
+	{ "MCU0",		0x00000001,	0,	NULL,	0 },
+	{ "MCU1",		0x00000002,	1,	NULL,	0 },
+	{ "MCU2",		0x00000004,	2,	NULL,	0 },
+	{ "MCU3",		0x00000008,	3,	NULL,	0 },
+	{ "FRAME",		0x00000010,	4,	NULL,	0 },
+	{ "CODONHI",	0x00000020,	5,	NULL,	0 },
+	{ "CODONLO",	0x00000040,	6,	NULL,	0 },
+	{ "MODU",		0x00000080,	7,	NULL,	0 },
+	{ "CHADEC",		0x00000100,	8,	NULL,	0 },
+	{ "EQ",			0x00000200,	9,	NULL,	0 },
+	{ "BBHI",		0x00000400,	10,	NULL,	0 },
+	{ "BBLO",		0x00000800,	11,	NULL,	0 },
+	{ "BB_FULL",	0x00001000,	12,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t dsp_interrupt_einta0_fields[] = {
+	{ "MCU0",		0x00000001,	0,	NULL,	0 },
+	{ "MCU1",		0x00000002,	1,	NULL,	0 },
+	{ "MCU2",		0x00000004,	2,	NULL,	0 },
+	{ "MCU3",		0x00000008,	3,	NULL,	0 },
+	{ "FRAME",		0x00000010,	4,	NULL,	0 },
+	{ "CODONHI",	0x00000020,	5,	NULL,	0 },
+	{ "CODONLO",	0x00000040,	6,	NULL,	0 },
+	{ "MODU",		0x00000080,	7,	NULL,	0 },
+	{ "CHADEC",		0x00000100,	8,	NULL,	0 },
+	{ "EQ",			0x00000200,	9,	NULL,	0 },
+	{ "BBHI",		0x00000400,	10,	NULL,	0 },
+	{ "BBLO",		0x00000800,	11,	NULL,	0 },
+	{ "BB_FULL",	0x00001000,	12,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t dsp_interrupt_rinta0_fields[] = {
+	{ "MCU0",		0x00000001,	0,	NULL,	0 },
+	{ "MCU1",		0x00000002,	1,	NULL,	0 },
+	{ "MCU2",		0x00000004,	2,	NULL,	0 },
+	{ "MCU3",		0x00000008,	3,	NULL,	0 },
+	{ "FRAME",		0x00000010,	4,	NULL,	0 },
+	{ "CODONHI",	0x00000020,	5,	NULL,	0 },
+	{ "CODONLO",	0x00000040,	6,	NULL,	0 },
+	{ "MODU",		0x00000080,	7,	NULL,	0 },
+	{ "CHADEC",		0x00000100,	8,	NULL,	0 },
+	{ "EQ",			0x00000200,	9,	NULL,	0 },
+	{ "BBHI",		0x00000400,	10,	NULL,	0 },
+	{ "BBLO",		0x00000800,	11,	NULL,	0 },
+	{ "BB_FULL",	0x00001000,	12,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t dsp_interrupt_sinta0_fields[] = {
+	{ "MCU0",		0x00000001,	0,	NULL,	0 },
+	{ "MCU1",		0x00000002,	1,	NULL,	0 },
+	{ "MCU2",		0x00000004,	2,	NULL,	0 },
+	{ "MCU3",		0x00000008,	3,	NULL,	0 },
+	{ "FRAME",		0x00000010,	4,	NULL,	0 },
+	{ "CODONHI",	0x00000020,	5,	NULL,	0 },
+	{ "CODONLO",	0x00000040,	6,	NULL,	0 },
+	{ "MODU",		0x00000080,	7,	NULL,	0 },
+	{ "CHADEC",		0x00000100,	8,	NULL,	0 },
+	{ "EQ",			0x00000200,	9,	NULL,	0 },
+	{ "BBHI",		0x00000400,	10,	NULL,	0 },
+	{ "BBLO",		0x00000800,	11,	NULL,	0 },
+	{ "BB_FULL",	0x00001000,	12,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t dsp_interrupt_fintb0_fields[] = {
+	{ "I2S1TX",		0x00000001,	0,	NULL,	0 },
+	{ "I2S1RX",		0x00000002,	1,	NULL,	0 },
+	{ "I2S2TX",		0x00000004,	2,	NULL,	0 },
+	{ "I2S2RX",		0x00000008,	3,	NULL,	0 },
+	{ "VBRX",		0x00000020,	5,	NULL,	0 },
+	{ "VBTX",		0x00000040,	6,	NULL,	0 },
+	{ "SSC1RX",		0x00000080,	7,	NULL,	0 },
+	{ "SSC1TX",		0x00000100,	8,	NULL,	0 },
+	{ "SSC1ERR",	0x00000200,	9,	NULL,	0 },
+	{ "SYSMCU",		0x00000400,	10,	NULL,	0 },
+	{ "I2S3TX",		0x00000800,	11,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t dsp_interrupt_eintb0_fields[] = {
+	{ "I2S1TX",		0x00000001,	0,	NULL,	0 },
+	{ "I2S1RX",		0x00000002,	1,	NULL,	0 },
+	{ "I2S2TX",		0x00000004,	2,	NULL,	0 },
+	{ "I2S2RX",		0x00000008,	3,	NULL,	0 },
+	{ "VBRX",		0x00000020,	5,	NULL,	0 },
+	{ "VBTX",		0x00000040,	6,	NULL,	0 },
+	{ "SSC1RX",		0x00000080,	7,	NULL,	0 },
+	{ "SSC1TX",		0x00000100,	8,	NULL,	0 },
+	{ "SSC1ERR",	0x00000200,	9,	NULL,	0 },
+	{ "SYSMCU",		0x00000400,	10,	NULL,	0 },
+	{ "I2S3TX",		0x00000800,	11,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t dsp_interrupt_rintb0_fields[] = {
+	{ "I2S1TX",		0x00000001,	0,	NULL,	0 },
+	{ "I2S1RX",		0x00000002,	1,	NULL,	0 },
+	{ "I2S2TX",		0x00000004,	2,	NULL,	0 },
+	{ "I2S2RX",		0x00000008,	3,	NULL,	0 },
+	{ "VBRX",		0x00000020,	5,	NULL,	0 },
+	{ "VBTX",		0x00000040,	6,	NULL,	0 },
+	{ "SSC1RX",		0x00000080,	7,	NULL,	0 },
+	{ "SSC1TX",		0x00000100,	8,	NULL,	0 },
+	{ "SSC1ERR",	0x00000200,	9,	NULL,	0 },
+	{ "SYSMCU",		0x00000400,	10,	NULL,	0 },
+	{ "I2S3TX",		0x00000800,	11,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t dsp_interrupt_sintb0_fields[] = {
+	{ "I2S1TX",		0x00000001,	0,	NULL,	0 },
+	{ "I2S1RX",		0x00000002,	1,	NULL,	0 },
+	{ "I2S2TX",		0x00000004,	2,	NULL,	0 },
+	{ "I2S2RX",		0x00000008,	3,	NULL,	0 },
+	{ "VBRX",		0x00000020,	5,	NULL,	0 },
+	{ "VBTX",		0x00000040,	6,	NULL,	0 },
+	{ "SSC1RX",		0x00000080,	7,	NULL,	0 },
+	{ "SSC1TX",		0x00000100,	8,	NULL,	0 },
+	{ "SSC1ERR",	0x00000200,	9,	NULL,	0 },
+	{ "SYSMCU",		0x00000400,	10,	NULL,	0 },
+	{ "I2S3TX",		0x00000800,	11,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t dsp_interrupt_fint1_fields[] = {
+	{ "CIPH",		0x00000001,	0,	NULL,	0 },
+	{ "TMR10",		0x00000002,	1,	NULL,	0 },
+	{ "TMR11",		0x00000004,	2,	NULL,	0 },
+	{ "TMR2",		0x00000008,	3,	NULL,	0 },
+	{ "DSPIN0HI",	0x00000010,	4,	NULL,	0 },
+	{ "DSPIN0LO",	0x00000020,	5,	NULL,	0 },
+	{ "DSPIN1HI",	0x00000040,	6,	NULL,	0 },
+	{ "DSPIN1LO",	0x00000080,	7,	NULL,	0 },
+	{ "MONIN1HI",	0x00000100,	8,	NULL,	0 },
+	{ "MONIN1LO",	0x00000200,	9,	NULL,	0 },
+	{ "MONIN2HI",	0x00000400,	10,	NULL,	0 },
+	{ "MONIN2LO",	0x00000800,	11,	NULL,	0 },
+	{ "MONIN3HI",	0x00001000,	12,	NULL,	0 },
+	{ "MONIN3LO",	0x00002000,	13,	NULL,	0 },
+	{ "MONIN4HI",	0x00004000,	14,	NULL,	0 },
+	{ "MONIN4LO",	0x00008000,	15,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t dsp_interrupt_eint1_fields[] = {
+	{ "CIPH",		0x00000001,	0,	NULL,	0 },
+	{ "TMR10",		0x00000002,	1,	NULL,	0 },
+	{ "TMR11",		0x00000004,	2,	NULL,	0 },
+	{ "TMR2",		0x00000008,	3,	NULL,	0 },
+	{ "DSPIN0HI",	0x00000010,	4,	NULL,	0 },
+	{ "DSPIN0LO",	0x00000020,	5,	NULL,	0 },
+	{ "DSPIN1HI",	0x00000040,	6,	NULL,	0 },
+	{ "DSPIN1LO",	0x00000080,	7,	NULL,	0 },
+	{ "MONIN1HI",	0x00000100,	8,	NULL,	0 },
+	{ "MONIN1LO",	0x00000200,	9,	NULL,	0 },
+	{ "MONIN2HI",	0x00000400,	10,	NULL,	0 },
+	{ "MONIN2LO",	0x00000800,	11,	NULL,	0 },
+	{ "MONIN3HI",	0x00001000,	12,	NULL,	0 },
+	{ "MONIN3LO",	0x00002000,	13,	NULL,	0 },
+	{ "MONIN4HI",	0x00004000,	14,	NULL,	0 },
+	{ "MONIN4LO",	0x00008000,	15,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t dsp_interrupt_rint1_fields[] = {
+	{ "CIPH",		0x00000001,	0,	NULL,	0 },
+	{ "TMR10",		0x00000002,	1,	NULL,	0 },
+	{ "TMR11",		0x00000004,	2,	NULL,	0 },
+	{ "TMR2",		0x00000008,	3,	NULL,	0 },
+	{ "DSPIN0HI",	0x00000010,	4,	NULL,	0 },
+	{ "DSPIN0LO",	0x00000020,	5,	NULL,	0 },
+	{ "DSPIN1HI",	0x00000040,	6,	NULL,	0 },
+	{ "DSPIN1LO",	0x00000080,	7,	NULL,	0 },
+	{ "MONIN1HI",	0x00000100,	8,	NULL,	0 },
+	{ "MONIN1LO",	0x00000200,	9,	NULL,	0 },
+	{ "MONIN2HI",	0x00000400,	10,	NULL,	0 },
+	{ "MONIN2LO",	0x00000800,	11,	NULL,	0 },
+	{ "MONIN3HI",	0x00001000,	12,	NULL,	0 },
+	{ "MONIN3LO",	0x00002000,	13,	NULL,	0 },
+	{ "MONIN4HI",	0x00004000,	14,	NULL,	0 },
+	{ "MONIN4LO",	0x00008000,	15,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t dsp_interrupt_sint1_fields[] = {
+	{ "CIPH",		0x00000001,	0,	NULL,	0 },
+	{ "TMR10",		0x00000002,	1,	NULL,	0 },
+	{ "TMR11",		0x00000004,	2,	NULL,	0 },
+	{ "TMR2",		0x00000008,	3,	NULL,	0 },
+	{ "DSPIN0HI",	0x00000010,	4,	NULL,	0 },
+	{ "DSPIN0LO",	0x00000020,	5,	NULL,	0 },
+	{ "DSPIN1HI",	0x00000040,	6,	NULL,	0 },
+	{ "DSPIN1LO",	0x00000080,	7,	NULL,	0 },
+	{ "MONIN1HI",	0x00000100,	8,	NULL,	0 },
+	{ "MONIN1LO",	0x00000200,	9,	NULL,	0 },
+	{ "MONIN2HI",	0x00000400,	10,	NULL,	0 },
+	{ "MONIN2LO",	0x00000800,	11,	NULL,	0 },
+	{ "MONIN3HI",	0x00001000,	12,	NULL,	0 },
+	{ "MONIN3LO",	0x00002000,	13,	NULL,	0 },
+	{ "MONIN4HI",	0x00004000,	14,	NULL,	0 },
+	{ "MONIN4LO",	0x00008000,	15,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t dsp_interrupt_fint2_fields[] = {
+	{ "FW0",	0x00000001,	0,	NULL,	0 },
+	{ "FW1",	0x00000002,	1,	NULL,	0 },
+	{ "FW2",	0x00000004,	2,	NULL,	0 },
+	{ "FW3",	0x00000008,	3,	NULL,	0 },
+	{ "FW4",	0x00000010,	4,	NULL,	0 },
+	{ "FW5",	0x00000020,	5,	NULL,	0 },
+	{ "FW6",	0x00000040,	6,	NULL,	0 },
+	{ "FW7",	0x00000080,	7,	NULL,	0 },
+	{ "FW8",	0x00000100,	8,	NULL,	0 },
+	{ "FW9",	0x00000200,	9,	NULL,	0 },
+	{ "FW10",	0x00000400,	10,	NULL,	0 },
+	{ "FW11",	0x00000800,	11,	NULL,	0 },
+	{ "FW12",	0x00001000,	12,	NULL,	0 },
+	{ "FW13",	0x00002000,	13,	NULL,	0 },
+	{ "FW14",	0x00004000,	14,	NULL,	0 },
+	{ "FW15",	0x00008000,	15,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t dsp_interrupt_eint2_fields[] = {
+	{ "EFW0",	0x00000001,	0,	NULL,	0 },
+	{ "EFW1",	0x00000002,	1,	NULL,	0 },
+	{ "EFW2",	0x00000004,	2,	NULL,	0 },
+	{ "EFW3",	0x00000008,	3,	NULL,	0 },
+	{ "EFW4",	0x00000010,	4,	NULL,	0 },
+	{ "EFW5",	0x00000020,	5,	NULL,	0 },
+	{ "EFW6",	0x00000040,	6,	NULL,	0 },
+	{ "EFW7",	0x00000080,	7,	NULL,	0 },
+	{ "EFW8",	0x00000100,	8,	NULL,	0 },
+	{ "EFW9",	0x00000200,	9,	NULL,	0 },
+	{ "EFW10",	0x00000400,	10,	NULL,	0 },
+	{ "EFW11",	0x00000800,	11,	NULL,	0 },
+	{ "EFW12",	0x00001000,	12,	NULL,	0 },
+	{ "EFW13",	0x00002000,	13,	NULL,	0 },
+	{ "EFW14",	0x00004000,	14,	NULL,	0 },
+	{ "EFW15",	0x00008000,	15,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t dsp_interrupt_rint2_fields[] = {
+	{ "RFW0",	0x00000001,	0,	NULL,	0 },
+	{ "RFW1",	0x00000002,	1,	NULL,	0 },
+	{ "RFW2",	0x00000004,	2,	NULL,	0 },
+	{ "RFW3",	0x00000008,	3,	NULL,	0 },
+	{ "RFW4",	0x00000010,	4,	NULL,	0 },
+	{ "RFW5",	0x00000020,	5,	NULL,	0 },
+	{ "RFW6",	0x00000040,	6,	NULL,	0 },
+	{ "RFW7",	0x00000080,	7,	NULL,	0 },
+	{ "RFW8",	0x00000100,	8,	NULL,	0 },
+	{ "RFW9",	0x00000200,	9,	NULL,	0 },
+	{ "RFW10",	0x00000400,	10,	NULL,	0 },
+	{ "RFW11",	0x00000800,	11,	NULL,	0 },
+	{ "RFW12",	0x00001000,	12,	NULL,	0 },
+	{ "RFW13",	0x00002000,	13,	NULL,	0 },
+	{ "RFW14",	0x00004000,	14,	NULL,	0 },
+	{ "RFW15",	0x00008000,	15,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t dsp_interrupt_sint2_fields[] = {
+	{ "SFW0",	0x00000001,	0,	NULL,	0 },
+	{ "SFW1",	0x00000002,	1,	NULL,	0 },
+	{ "SFW2",	0x00000004,	2,	NULL,	0 },
+	{ "SFW3",	0x00000008,	3,	NULL,	0 },
+	{ "SFW4",	0x00000010,	4,	NULL,	0 },
+	{ "SFW5",	0x00000020,	5,	NULL,	0 },
+	{ "SFW6",	0x00000040,	6,	NULL,	0 },
+	{ "SFW7",	0x00000080,	7,	NULL,	0 },
+	{ "SFW8",	0x00000100,	8,	NULL,	0 },
+	{ "SFW9",	0x00000200,	9,	NULL,	0 },
+	{ "SFW10",	0x00000400,	10,	NULL,	0 },
+	{ "SFW11",	0x00000800,	11,	NULL,	0 },
+	{ "SFW12",	0x00001000,	12,	NULL,	0 },
+	{ "SFW13",	0x00002000,	13,	NULL,	0 },
+	{ "SFW14",	0x00004000,	14,	NULL,	0 },
+	{ "SFW15",	0x00008000,	15,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t dsp_interrupt_tomcu_fields[] = {
+	{ "TOMCU0",	0x00000001,	0,	NULL,	0 },
+	{ "TOMCU1",	0x00000002,	1,	NULL,	0 },
+	{ "TOMCU2",	0x00000004,	2,	NULL,	0 },
+	{ "TOMCU3",	0x00000008,	3,	NULL,	0 },
+};
+
+static const pmb887x_io_reg_t dsp_interrupt_regs[] = {
+	{ "FINTA0",	0x0,	dsp_interrupt_finta0_fields,	ARRAY_SIZE(dsp_interrupt_finta0_fields),	0 },
+	{ "EINTA0",	0x1,	dsp_interrupt_einta0_fields,	ARRAY_SIZE(dsp_interrupt_einta0_fields),	0 },
+	{ "RINTA0",	0x2,	dsp_interrupt_rinta0_fields,	ARRAY_SIZE(dsp_interrupt_rinta0_fields),	0 },
+	{ "SINTA0",	0x3,	dsp_interrupt_sinta0_fields,	ARRAY_SIZE(dsp_interrupt_sinta0_fields),	0 },
+	{ "FINTB0",	0x4,	dsp_interrupt_fintb0_fields,	ARRAY_SIZE(dsp_interrupt_fintb0_fields),	0 },
+	{ "EINTB0",	0x5,	dsp_interrupt_eintb0_fields,	ARRAY_SIZE(dsp_interrupt_eintb0_fields),	0 },
+	{ "RINTB0",	0x6,	dsp_interrupt_rintb0_fields,	ARRAY_SIZE(dsp_interrupt_rintb0_fields),	0 },
+	{ "SINTB0",	0x7,	dsp_interrupt_sintb0_fields,	ARRAY_SIZE(dsp_interrupt_sintb0_fields),	0 },
+	{ "FINT1",	0x8,	dsp_interrupt_fint1_fields,		ARRAY_SIZE(dsp_interrupt_fint1_fields),		0 },
+	{ "EINT1",	0x9,	dsp_interrupt_eint1_fields,		ARRAY_SIZE(dsp_interrupt_eint1_fields),		0 },
+	{ "RINT1",	0xA,	dsp_interrupt_rint1_fields,		ARRAY_SIZE(dsp_interrupt_rint1_fields),		0 },
+	{ "SINT1",	0xB,	dsp_interrupt_sint1_fields,		ARRAY_SIZE(dsp_interrupt_sint1_fields),		0 },
+	{ "FINT2",	0xC,	dsp_interrupt_fint2_fields,		ARRAY_SIZE(dsp_interrupt_fint2_fields),		0 },
+	{ "EINT2",	0xD,	dsp_interrupt_eint2_fields,		ARRAY_SIZE(dsp_interrupt_eint2_fields),		0 },
+	{ "RINT2",	0xE,	dsp_interrupt_rint2_fields,		ARRAY_SIZE(dsp_interrupt_rint2_fields),		0 },
+	{ "SINT2",	0xF,	dsp_interrupt_sint2_fields,		ARRAY_SIZE(dsp_interrupt_sint2_fields),		0 },
+	{ "TOMCU",	0x10,	dsp_interrupt_tomcu_fields,		ARRAY_SIZE(dsp_interrupt_tomcu_fields),		0 },
+	{ "UNK11",	0x11,	NULL,							0,											0 },
+	{ "UNK12",	0x12,	NULL,							0,											0 },
+	{ "UNK13",	0x13,	NULL,							0,											0 },
+	{ "UNK14",	0x14,	NULL,							0,											0 },
+	{ "UNK15",	0x15,	NULL,							0,											0 },
+};
+
+static const pmb887x_io_field_t dsp_mcs_cfsta_fields[] = {
+	{ "CF0",	0x00000001,	0,	NULL,	0 },
+	{ "CF1",	0x00000002,	1,	NULL,	0 },
+	{ "CF2",	0x00000004,	2,	NULL,	0 },
+	{ "CF3",	0x00000008,	3,	NULL,	0 },
+	{ "CF4",	0x00000010,	4,	NULL,	0 },
+	{ "CF5",	0x00000020,	5,	NULL,	0 },
+	{ "CF6",	0x00000040,	6,	NULL,	0 },
+	{ "CF7",	0x00000080,	7,	NULL,	0 },
+	{ "CF8",	0x00000100,	8,	NULL,	0 },
+	{ "CF9",	0x00000200,	9,	NULL,	0 },
+	{ "CF10",	0x00000400,	10,	NULL,	0 },
+	{ "CF11",	0x00000800,	11,	NULL,	0 },
+	{ "CF12",	0x00001000,	12,	NULL,	0 },
+	{ "CF13",	0x00002000,	13,	NULL,	0 },
+	{ "CF14",	0x00004000,	14,	NULL,	0 },
+	{ "CF15",	0x00008000,	15,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t dsp_mcs_cfset_fields[] = {
+	{ "CF0",	0x00000001,	0,	NULL,	0 },
+	{ "CF1",	0x00000002,	1,	NULL,	0 },
+	{ "CF2",	0x00000004,	2,	NULL,	0 },
+	{ "CF3",	0x00000008,	3,	NULL,	0 },
+	{ "CF4",	0x00000010,	4,	NULL,	0 },
+	{ "CF5",	0x00000020,	5,	NULL,	0 },
+	{ "CF6",	0x00000040,	6,	NULL,	0 },
+	{ "CF7",	0x00000080,	7,	NULL,	0 },
+	{ "CF8",	0x00000100,	8,	NULL,	0 },
+	{ "CF9",	0x00000200,	9,	NULL,	0 },
+	{ "CF10",	0x00000400,	10,	NULL,	0 },
+	{ "CF11",	0x00000800,	11,	NULL,	0 },
+	{ "CF12",	0x00001000,	12,	NULL,	0 },
+	{ "CF13",	0x00002000,	13,	NULL,	0 },
+	{ "CF14",	0x00004000,	14,	NULL,	0 },
+	{ "CF15",	0x00008000,	15,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t dsp_mcs_cfr_fields[] = {
+	{ "CF0",	0x00000001,	0,	NULL,	0 },
+	{ "CF1",	0x00000002,	1,	NULL,	0 },
+	{ "CF2",	0x00000004,	2,	NULL,	0 },
+	{ "CF3",	0x00000008,	3,	NULL,	0 },
+	{ "CF4",	0x00000010,	4,	NULL,	0 },
+	{ "CF5",	0x00000020,	5,	NULL,	0 },
+	{ "CF6",	0x00000040,	6,	NULL,	0 },
+	{ "CF7",	0x00000080,	7,	NULL,	0 },
+	{ "CF8",	0x00000100,	8,	NULL,	0 },
+	{ "CF9",	0x00000200,	9,	NULL,	0 },
+	{ "CF10",	0x00000400,	10,	NULL,	0 },
+	{ "CF11",	0x00000800,	11,	NULL,	0 },
+	{ "CF12",	0x00001000,	12,	NULL,	0 },
+	{ "CF13",	0x00002000,	13,	NULL,	0 },
+	{ "CF14",	0x00004000,	14,	NULL,	0 },
+	{ "CF15",	0x00008000,	15,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t dsp_mcs_mcu_sem_fields[] = {
+	{ "SEM0",	0x00000001,	0,	NULL,	0 },
+	{ "SEM1",	0x00000002,	1,	NULL,	0 },
+	{ "SEM2",	0x00000004,	2,	NULL,	0 },
+	{ "SEM3",	0x00000008,	3,	NULL,	0 },
+	{ "SEM4",	0x00000010,	4,	NULL,	0 },
+	{ "SEM5",	0x00000020,	5,	NULL,	0 },
+	{ "SEM6",	0x00000040,	6,	NULL,	0 },
+	{ "SEM7",	0x00000080,	7,	NULL,	0 },
+	{ "SEM8",	0x00000100,	8,	NULL,	0 },
+	{ "SEM9",	0x00000200,	9,	NULL,	0 },
+	{ "SEM10",	0x00000400,	10,	NULL,	0 },
+	{ "SEM11",	0x00000800,	11,	NULL,	0 },
+	{ "SEM12",	0x00001000,	12,	NULL,	0 },
+	{ "SEM13",	0x00002000,	13,	NULL,	0 },
+	{ "SEM14",	0x00004000,	14,	NULL,	0 },
+	{ "SEM15",	0x00008000,	15,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t dsp_mcs_mcu_sems_fields[] = {
+	{ "SEM0",	0x00000001,	0,	NULL,	0 },
+	{ "SEM1",	0x00000002,	1,	NULL,	0 },
+	{ "SEM2",	0x00000004,	2,	NULL,	0 },
+	{ "SEM3",	0x00000008,	3,	NULL,	0 },
+	{ "SEM4",	0x00000010,	4,	NULL,	0 },
+	{ "SEM5",	0x00000020,	5,	NULL,	0 },
+	{ "SEM6",	0x00000040,	6,	NULL,	0 },
+	{ "SEM7",	0x00000080,	7,	NULL,	0 },
+	{ "SEM8",	0x00000100,	8,	NULL,	0 },
+	{ "SEM9",	0x00000200,	9,	NULL,	0 },
+	{ "SEM10",	0x00000400,	10,	NULL,	0 },
+	{ "SEM11",	0x00000800,	11,	NULL,	0 },
+	{ "SEM12",	0x00001000,	12,	NULL,	0 },
+	{ "SEM13",	0x00002000,	13,	NULL,	0 },
+	{ "SEM14",	0x00004000,	14,	NULL,	0 },
+	{ "SEM15",	0x00008000,	15,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t dsp_mcs_mcu_semr_fields[] = {
+	{ "SEM0",	0x00000001,	0,	NULL,	0 },
+	{ "SEM1",	0x00000002,	1,	NULL,	0 },
+	{ "SEM2",	0x00000004,	2,	NULL,	0 },
+	{ "SEM3",	0x00000008,	3,	NULL,	0 },
+	{ "SEM4",	0x00000010,	4,	NULL,	0 },
+	{ "SEM5",	0x00000020,	5,	NULL,	0 },
+	{ "SEM6",	0x00000040,	6,	NULL,	0 },
+	{ "SEM7",	0x00000080,	7,	NULL,	0 },
+	{ "SEM8",	0x00000100,	8,	NULL,	0 },
+	{ "SEM9",	0x00000200,	9,	NULL,	0 },
+	{ "SEM10",	0x00000400,	10,	NULL,	0 },
+	{ "SEM11",	0x00000800,	11,	NULL,	0 },
+	{ "SEM12",	0x00001000,	12,	NULL,	0 },
+	{ "SEM13",	0x00002000,	13,	NULL,	0 },
+	{ "SEM14",	0x00004000,	14,	NULL,	0 },
+	{ "SEM15",	0x00008000,	15,	NULL,	0 },
+};
+
+static const pmb887x_io_reg_t dsp_mcs_regs[] = {
+	{ "CFSTA",		0x0,	dsp_mcs_cfsta_fields,		ARRAY_SIZE(dsp_mcs_cfsta_fields),		0 },
+	{ "CFSET",		0x1,	dsp_mcs_cfset_fields,		ARRAY_SIZE(dsp_mcs_cfset_fields),		0 },
+	{ "CFR",		0x2,	dsp_mcs_cfr_fields,			ARRAY_SIZE(dsp_mcs_cfr_fields),			0 },
+	{ "MCU_SEM",	0x3,	dsp_mcs_mcu_sem_fields,		ARRAY_SIZE(dsp_mcs_mcu_sem_fields),		0 },
+	{ "MCU_SEMS",	0x4,	dsp_mcs_mcu_sems_fields,	ARRAY_SIZE(dsp_mcs_mcu_sems_fields),	0 },
+	{ "MCU_SEMR",	0x5,	dsp_mcs_mcu_semr_fields,	ARRAY_SIZE(dsp_mcs_mcu_semr_fields),	0 },
+};
+
+static const pmb887x_io_field_t dsp_modulator_ctrl_fields[] = {
+	{ "IQSWAP",	0x00000001,	0,	NULL,	0 },
+	{ "MSWACT",	0x00000100,	8,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t dsp_modulator_stat_fields[] = {
+	{ "MSTAT",	0x00000001,	0,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t dsp_modulator_int_addr_fields[] = {
+	{ "MINT_ADDR",	0x000001FF,	0,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t dsp_modulator_oci_fields[] = {
+	{ "VALUE",	0x00000FFF,	0,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t dsp_modulator_ocq_fields[] = {
+	{ "VALUE",	0x00000FFF,	0,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t dsp_modulator_aci_fields[] = {
+	{ "VALUE",	0x000000FF,	0,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t dsp_modulator_acq_fields[] = {
+	{ "VALUE",	0x000000FF,	0,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t dsp_modulator_fc_fields[] = {
+	{ "VALUE",	0x00000FFF,	0,	NULL,	0 },
+};
+
+static const pmb887x_io_reg_t dsp_modulator_regs[] = {
+	{ "CTRL",		0x0,	dsp_modulator_ctrl_fields,		ARRAY_SIZE(dsp_modulator_ctrl_fields),		0 },
+	{ "STAT",		0x1,	dsp_modulator_stat_fields,		ARRAY_SIZE(dsp_modulator_stat_fields),		0 },
+	{ "INT_ADDR",	0x3,	dsp_modulator_int_addr_fields,	ARRAY_SIZE(dsp_modulator_int_addr_fields),	0 },
+	{ "OCI",		0x4,	dsp_modulator_oci_fields,		ARRAY_SIZE(dsp_modulator_oci_fields),		0 },
+	{ "OCQ",		0x5,	dsp_modulator_ocq_fields,		ARRAY_SIZE(dsp_modulator_ocq_fields),		0 },
+	{ "ACI",		0x6,	dsp_modulator_aci_fields,		ARRAY_SIZE(dsp_modulator_aci_fields),		0 },
+	{ "ACQ",		0x7,	dsp_modulator_acq_fields,		ARRAY_SIZE(dsp_modulator_acq_fields),		0 },
+	{ "FC",			0x8,	dsp_modulator_fc_fields,		ARRAY_SIZE(dsp_modulator_fc_fields),		0 },
+	{ "UNK9",		0x9,	NULL,							0,											0 },
+	{ "UNKA",		0xA,	NULL,							0,											0 },
+};
+
+static const pmb887x_io_field_t dsp_ssc_con_fields[] = {
+	{ "BC",		0x0000000F,	0,	NULL,	0 },
+	{ "BM",		0x0000000F,	0,	NULL,	0 },
+	{ "HB",		0x00000010,	4,	NULL,	0 },
+	{ "PH",		0x00000020,	5,	NULL,	0 },
+	{ "PO",		0x00000040,	6,	NULL,	0 },
+	{ "LB",		0x00000080,	7,	NULL,	0 },
+	{ "TE",		0x00000100,	8,	NULL,	0 },
+	{ "TEN",	0x00000100,	8,	NULL,	0 },
+	{ "RE",		0x00000200,	9,	NULL,	0 },
+	{ "REN",	0x00000200,	9,	NULL,	0 },
+	{ "PE",		0x00000400,	10,	NULL,	0 },
+	{ "PEN",	0x00000400,	10,	NULL,	0 },
+	{ "BE",		0x00000800,	11,	NULL,	0 },
+	{ "BEN",	0x00000800,	11,	NULL,	0 },
+	{ "AREN",	0x00001000,	12,	NULL,	0 },
+	{ "BSY",	0x00001000,	12,	NULL,	0 },
+	{ "CLKON",	0x00002000,	13,	NULL,	0 },
+	{ "MS",		0x00004000,	14,	NULL,	0 },
+	{ "EN",		0x00008000,	15,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t dsp_ssc_whbcon_fields[] = {
+	{ "CLRTE",	0x00000100,	8,	NULL,	0 },
+	{ "CLRRE",	0x00000200,	9,	NULL,	0 },
+	{ "CLRPE",	0x00000400,	10,	NULL,	0 },
+	{ "CLRBE",	0x00000800,	11,	NULL,	0 },
+	{ "SETTE",	0x00001000,	12,	NULL,	0 },
+	{ "SETRE",	0x00002000,	13,	NULL,	0 },
+	{ "SETPE",	0x00004000,	14,	NULL,	0 },
+	{ "SETBE",	0x00008000,	15,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t dsp_ssc_txb_fields[] = {
+	{ "VALUE",	0x0000FFFF,	0,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t dsp_ssc_rxb_fields[] = {
+	{ "VALUE",	0x0000FFFF,	0,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t dsp_ssc_rxfcon_fields[] = {
+	{ "EN",		0x00000001,	0,	NULL,	0 },
+	{ "FLU",	0x00000002,	1,	NULL,	0 },
+	{ "TMEN",	0x00000004,	2,	NULL,	0 },
+	{ "ITL",	0x00003F00,	8,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t dsp_ssc_txfcon_fields[] = {
+	{ "EN",		0x00000001,	0,	NULL,	0 },
+	{ "FLU",	0x00000002,	1,	NULL,	0 },
+	{ "TMEN",	0x00000004,	2,	NULL,	0 },
+	{ "ITL",	0x00003F00,	8,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t dsp_ssc_fstat_fields[] = {
+	{ "RXFFL",	0x0000003F,	0,	NULL,	0 },
+	{ "TXFFL",	0x00003F00,	8,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t dsp_ssc_br_fields[] = {
+	{ "VALUE",	0x0000FFFF,	0,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t dsp_ssc_fdv_fields[] = {
+	{ "VALUE",	0x000001FF,	0,	NULL,	0 },
+};
+
+static const pmb887x_io_reg_t dsp_ssc_regs[] = {
+	{ "CON",	0x0,	dsp_ssc_con_fields,		ARRAY_SIZE(dsp_ssc_con_fields),		0 },
+	{ "WHBCON",	0x1,	dsp_ssc_whbcon_fields,	ARRAY_SIZE(dsp_ssc_whbcon_fields),	0 },
+	{ "TXB",	0x2,	dsp_ssc_txb_fields,		ARRAY_SIZE(dsp_ssc_txb_fields),		0 },
+	{ "RXB",	0x3,	dsp_ssc_rxb_fields,		ARRAY_SIZE(dsp_ssc_rxb_fields),		0 },
+	{ "RXFCON",	0x4,	dsp_ssc_rxfcon_fields,	ARRAY_SIZE(dsp_ssc_rxfcon_fields),	0 },
+	{ "TXFCON",	0x5,	dsp_ssc_txfcon_fields,	ARRAY_SIZE(dsp_ssc_txfcon_fields),	0 },
+	{ "FSTAT",	0x6,	dsp_ssc_fstat_fields,	ARRAY_SIZE(dsp_ssc_fstat_fields),	0 },
+	{ "BR",		0x7,	dsp_ssc_br_fields,		ARRAY_SIZE(dsp_ssc_br_fields),		0 },
+	{ "FDV",	0x8,	dsp_ssc_fdv_fields,		ARRAY_SIZE(dsp_ssc_fdv_fields),		0 },
+};
+
+static const pmb887x_io_field_t dsp_timer1_ctrl_fields[] = {
+	{ "DT1ENA",		0x00000001,	0,	NULL,	0 },
+	{ "RESTART",	0x00000002,	1,	NULL,	0 },
+	{ "DT1ACT",		0x00000004,	2,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t dsp_timer1_cnt_fields[] = {
+	{ "T1CNT",	0x00000FFF,	0,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t dsp_timer1_int0_fields[] = {
+	{ "T1INT0",	0x00000FFF,	0,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t dsp_timer1_int1_fields[] = {
+	{ "T1INT1",	0x00000FFF,	0,	NULL,	0 },
+};
+
+static const pmb887x_io_reg_t dsp_timer1_regs[] = {
+	{ "CTRL",	0x0,	dsp_timer1_ctrl_fields,	ARRAY_SIZE(dsp_timer1_ctrl_fields),	0 },
+	{ "CNT",	0x1,	dsp_timer1_cnt_fields,	ARRAY_SIZE(dsp_timer1_cnt_fields),	0 },
+	{ "INT0",	0x2,	dsp_timer1_int0_fields,	ARRAY_SIZE(dsp_timer1_int0_fields),	0 },
+	{ "INT1",	0x3,	dsp_timer1_int1_fields,	ARRAY_SIZE(dsp_timer1_int1_fields),	0 },
+};
+
+static const pmb887x_io_field_t dsp_timer2_ctrl_fields[] = {
+	{ "DT2ACT",	0x00000001,	0,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t dsp_timer2_cnt_fields[] = {
+	{ "T2CNT",	0x0000FFFF,	0,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t dsp_timer2_max_fields[] = {
+	{ "T2MAX",	0x0000FFFF,	0,	NULL,	0 },
+};
+
+static const pmb887x_io_reg_t dsp_timer2_regs[] = {
+	{ "CTRL",	0x0,	dsp_timer2_ctrl_fields,	ARRAY_SIZE(dsp_timer2_ctrl_fields),	0 },
+	{ "CNT",	0x1,	dsp_timer2_cnt_fields,	ARRAY_SIZE(dsp_timer2_cnt_fields),	0 },
+	{ "MAX",	0x2,	dsp_timer2_max_fields,	ARRAY_SIZE(dsp_timer2_max_fields),	0 },
+};
+
 static const pmb887x_cpu_meta_irq_t pmb8876_irqs[] = {
 	{"USART0_TX",		PMB8876_USART0_TX_IRQ,		VIC_CON4},
 	{"USART0_TBUF",		PMB8876_USART0_TBUF_IRQ,	VIC_CON5},
@@ -9514,6 +10841,24 @@ static const pmb887x_cpu_io_t pmb8876_modules[] = {
 	{"MMICIF",		PMB8876_MMICIF_BASE,	MMICIF_IO_SIZE,	mmicif_regs,	ARRAY_SIZE(mmicif_regs)},
 };
 
+static const pmb887x_cpu_io_t pmb8876_dsp_modules[] = {
+	{"INT",		0xDE00,	0x16,	dsp_interrupt_regs,			ARRAY_SIZE(dsp_interrupt_regs)},
+	{"CIPH",	0xDE20,	0x10,	dsp_cipher_regs,			ARRAY_SIZE(dsp_cipher_regs)},
+	{"TMR1",	0xDE30,	0x4,	dsp_timer1_regs,			ARRAY_SIZE(dsp_timer1_regs)},
+	{"TMR2",	0xDE34,	0x3,	dsp_timer2_regs,			ARRAY_SIZE(dsp_timer2_regs)},
+	{"EQ",		0xDE40,	0x7,	dsp_equalizer_regs,			ARRAY_SIZE(dsp_equalizer_regs)},
+	{"CHDEC",	0xDE50,	0x10,	dsp_channel_decoder_regs,	ARRAY_SIZE(dsp_channel_decoder_regs)},
+	{"AFE",		0xDE70,	0x7,	dsp_afe_regs,				ARRAY_SIZE(dsp_afe_regs)},
+	{"BB",		0xDE80,	0xD,	dsp_baseband_regs,			ARRAY_SIZE(dsp_baseband_regs)},
+	{"MCS",		0xDE90,	0x6,	dsp_mcs_regs,				ARRAY_SIZE(dsp_mcs_regs)},
+	{"DSP",		0xDEA0,	0x9,	dsp_dsp_8876_regs,			ARRAY_SIZE(dsp_dsp_8876_regs)},
+	{"MOD",		0xDEB0,	0xB,	dsp_modulator_regs,			ARRAY_SIZE(dsp_modulator_regs)},
+	{"SSC",		0xDEC0,	0x9,	dsp_ssc_regs,				ARRAY_SIZE(dsp_ssc_regs)},
+	{"I2S1",	0xDED0,	0xB,	dsp_i2s_regs,				ARRAY_SIZE(dsp_i2s_regs)},
+	{"I2S2",	0xDEE0,	0xB,	dsp_i2s_regs,				ARRAY_SIZE(dsp_i2s_regs)},
+	{"I2S3",	0xDEF0,	0xB,	dsp_i2s_tx_regs,			ARRAY_SIZE(dsp_i2s_tx_regs)},
+};
+
 static const pmb887x_cpu_meta_irq_t pmb8875_irqs[] = {
 	{"USART0_TX",		PMB8875_USART0_TX_IRQ,		VIC_CON4},
 	{"USART0_TBUF",		PMB8875_USART0_TBUF_IRQ,	VIC_CON5},
@@ -9740,9 +11085,27 @@ static const pmb887x_cpu_io_t pmb8875_modules[] = {
 	{"TPU",		PMB8875_TPU_BASE,		TPU_IO_SIZE,	tpu_regs,		ARRAY_SIZE(tpu_regs)},
 };
 
+static const pmb887x_cpu_io_t pmb8875_dsp_modules[] = {
+	{"INT",		0xE600,	0x16,	dsp_interrupt_regs,			ARRAY_SIZE(dsp_interrupt_regs)},
+	{"CIPH",	0xE620,	0x10,	dsp_cipher_regs,			ARRAY_SIZE(dsp_cipher_regs)},
+	{"TMR1",	0xE630,	0x4,	dsp_timer1_regs,			ARRAY_SIZE(dsp_timer1_regs)},
+	{"TMR2",	0xE634,	0x3,	dsp_timer2_regs,			ARRAY_SIZE(dsp_timer2_regs)},
+	{"EQ",		0xE640,	0x7,	dsp_equalizer_regs,			ARRAY_SIZE(dsp_equalizer_regs)},
+	{"CHDEC",	0xE650,	0x10,	dsp_channel_decoder_regs,	ARRAY_SIZE(dsp_channel_decoder_regs)},
+	{"AFE",		0xE670,	0x7,	dsp_afe_regs,				ARRAY_SIZE(dsp_afe_regs)},
+	{"BB",		0xE680,	0xD,	dsp_baseband_regs,			ARRAY_SIZE(dsp_baseband_regs)},
+	{"MCS",		0xE690,	0x6,	dsp_mcs_regs,				ARRAY_SIZE(dsp_mcs_regs)},
+	{"DSP",		0xE6A0,	0x9,	dsp_dsp_regs,				ARRAY_SIZE(dsp_dsp_regs)},
+	{"MOD",		0xE6B0,	0xB,	dsp_modulator_regs,			ARRAY_SIZE(dsp_modulator_regs)},
+	{"SSC",		0xE6C0,	0x9,	dsp_ssc_regs,				ARRAY_SIZE(dsp_ssc_regs)},
+	{"I2S1",	0xE6D0,	0xB,	dsp_i2s_regs,				ARRAY_SIZE(dsp_i2s_regs)},
+	{"I2S2",	0xE6E0,	0xB,	dsp_i2s_regs,				ARRAY_SIZE(dsp_i2s_regs)},
+	{"I2S3",	0xE6F0,	0xB,	dsp_i2s_tx_regs,			ARRAY_SIZE(dsp_i2s_tx_regs)},
+};
+
 static const pmb887x_cpu_meta_t cpus_metadata[] = {
-	{"pmb8876",	pmb8876_irqs,	ARRAY_SIZE(pmb8876_irqs),	pmb8876_gpios,	ARRAY_SIZE(pmb8876_gpios),	pmb8876_modules,	ARRAY_SIZE(pmb8876_modules)},
-	{"pmb8875",	pmb8875_irqs,	ARRAY_SIZE(pmb8875_irqs),	pmb8875_gpios,	ARRAY_SIZE(pmb8875_gpios),	pmb8875_modules,	ARRAY_SIZE(pmb8875_modules)},
+	{"pmb8876",	pmb8876_irqs,	ARRAY_SIZE(pmb8876_irqs),	pmb8876_gpios,	ARRAY_SIZE(pmb8876_gpios),	pmb8876_modules,	ARRAY_SIZE(pmb8876_modules),	pmb8876_dsp_modules,	ARRAY_SIZE(pmb8876_dsp_modules)},
+	{"pmb8875",	pmb8875_irqs,	ARRAY_SIZE(pmb8875_irqs),	pmb8875_gpios,	ARRAY_SIZE(pmb8875_gpios),	pmb8875_modules,	ARRAY_SIZE(pmb8875_modules),	pmb8875_dsp_modules,	ARRAY_SIZE(pmb8875_dsp_modules)},
 };
 
 static const pmb887x_io_meta_t io_metadata[PMB887X_TRACE_IO_COUNT] = {
@@ -9763,7 +11126,7 @@ const pmb887x_cpu_meta_t *pmb887x_get_cpu_meta(int cpu) {
 }
 
 const pmb887x_io_meta_t *pmb887x_get_io_meta(pmb887x_trace_io_t id) {
-	if (id <= PMB887X_TRACE_IO_CPU || id >= PMB887X_TRACE_IO_COUNT)
+	if (id <= PMB887X_TRACE_IO_DSP || id >= PMB887X_TRACE_IO_COUNT)
 		return NULL;
 	return &io_metadata[id];
 }
