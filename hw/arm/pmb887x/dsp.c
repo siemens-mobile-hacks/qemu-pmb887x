@@ -306,6 +306,8 @@ static void dsp_worker_notify_comm(void *opaque, uint16_t flags) {
 	int64_t host_delay;
 	int64_t virtual_delay;
 
+	qatomic_and(&p->comm_status, (uint16_t) ~flags);
+
 	if (sequence == 0)
 		return;
 
