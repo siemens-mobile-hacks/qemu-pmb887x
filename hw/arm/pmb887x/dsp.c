@@ -63,8 +63,10 @@ struct dsp_worker_t {
 	uint16_t interrupt_events;
 	uint16_t output_events;
 	uint16_t outputs;
+	uint64_t command_sequence;
 	bool enabled;
 	bool busy;
+	bool sync_requested;
 	bool reset;
 	bool stop;
 	bool created;
@@ -84,8 +86,14 @@ struct dsp_state_t {
 	dsp_worker_t worker;
 	bool runtime_running;
 	VMChangeStateEntry *vmstate;
+	uint16_t comm_status;
 	uint16_t reset_comm_flags;
 	uint16_t reset_requests;
+	uint64_t command_sequence;
+	int64_t command_host_time;
+	int64_t command_virtual_time;
+	uint32_t command_status_reads;
+	uint16_t command_flags;
 	bool reset_pending;
 	bool vm_running;
 	qemu_irq mcu_interrupts[PMB887X_DSP_MCU_INT_COUNT];
@@ -154,6 +162,7 @@ static void *dsp_worker(void *opaque) {
 	qemu_mutex_lock(&p->worker.mutex);
 	while (!p->worker.stop) {
 		dsp_events_t events = {};
+		uint64_t command_sequence;
 		bool runnable;
 
 		while (!p->worker.enabled && !p->worker.reset && !p->worker.stop)
@@ -179,6 +188,7 @@ static void *dsp_worker(void *opaque) {
 
 			qemu_mutex_lock(&p->worker.mutex);
 			p->worker.busy = false;
+			p->worker.sync_requested = false;
 			qemu_cond_broadcast(&p->worker.idle_cond);
 			if (p->worker.reset)
 				continue;
@@ -186,6 +196,7 @@ static void *dsp_worker(void *opaque) {
 			comm_flags = qatomic_read(&p->reset_comm_flags);
 			requests = qatomic_read(&p->reset_requests);
 			dsp_runtime_set_comm(p->runtime, comm_flags);
+			qatomic_set(&p->comm_status, comm_flags);
 			for (size_t i = 0; i < PMB887X_DSP_INT_COUNT; i++)
 				if ((requests & BIT(i)) != 0)
 					dsp_runtime_set_request(p->runtime, i, true);
@@ -213,10 +224,24 @@ static void *dsp_worker(void *opaque) {
 		p->worker.busy = true;
 		qemu_mutex_unlock(&p->worker.mutex);
 
+		command_sequence = qatomic_read(&p->command_sequence);
+		if (command_sequence != p->worker.command_sequence) {
+			int64_t host_delay = qemu_clock_get_ns(QEMU_CLOCK_HOST) - qatomic_read(&p->command_host_time);
+			int64_t virtual_delay = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) -
+				qatomic_read(&p->command_virtual_time);
+
+			p->worker.command_sequence = command_sequence;
+			DPRINTF("command start: sequence=%" PRIu64 " flags=%04X host_delay=%" PRId64
+				" ns virtual_delay=%" PRId64 " ns\n",
+				command_sequence, qatomic_read(&p->command_flags), host_delay, virtual_delay);
+		}
+
 		dsp_run(p, &events);
 
 		qemu_mutex_lock(&p->worker.mutex);
+		qatomic_set(&p->comm_status, dsp_runtime_get_comm(p->runtime));
 		p->worker.busy = false;
+		p->worker.sync_requested = false;
 		qemu_cond_broadcast(&p->worker.idle_cond);
 
 		if (p->worker.reset)
@@ -259,35 +284,62 @@ static void dsp_vm_state_change(void *opaque, bool running, RunState state) {
 
 static void dsp_worker_kick(void *opaque) {
 	dsp_state_t *p = opaque;
+
+	if (qemu_thread_is_self(&p->worker.thread)) {
+		qemu_event_set(&p->worker.event);
+		return;
+	}
+
+	qemu_mutex_lock(&p->worker.mutex);
+	if (p->worker.busy) {
+		dsp_runtime_kick(p->runtime);
+	} else {
+		dsp_runtime_wake(p->runtime);
+	}
 	qemu_event_set(&p->worker.event);
+	qemu_mutex_unlock(&p->worker.mutex);
 }
 
 static void dsp_worker_notify_comm(void *opaque, uint16_t flags) {
 	dsp_state_t *p = opaque;
-	(void) flags;
+	uint64_t sequence = qatomic_read(&p->command_sequence);
+	int64_t host_delay;
+	int64_t virtual_delay;
 
-	qemu_mutex_lock(&p->worker.mutex);
-	qemu_cond_broadcast(&p->worker.idle_cond);
-	qemu_mutex_unlock(&p->worker.mutex);
+	if (sequence == 0)
+		return;
+
+	host_delay = qemu_clock_get_ns(QEMU_CLOCK_HOST) - qatomic_read(&p->command_host_time);
+	virtual_delay = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) - qatomic_read(&p->command_virtual_time);
+
+	DPRINTF("command clear: sequence=%" PRIu64 " flags=%04X host_delay=%" PRId64
+		" ns virtual_delay=%" PRId64 " ns status_reads=%u\n",
+		sequence, flags, host_delay, virtual_delay, qatomic_read(&p->command_status_reads));
 }
 
-static void dsp_worker_synchronize_reset(dsp_state_t *p) {
-	qemu_mutex_lock(&p->worker.mutex);
-	while (qatomic_read(&p->reset_pending) && p->worker.enabled && !p->worker.stop)
-		qemu_cond_wait(&p->worker.idle_cond, &p->worker.mutex);
-	qemu_mutex_unlock(&p->worker.mutex);
-}
-
-static void dsp_worker_handoff(dsp_state_t *p) {
-	bool runnable;
+static void dsp_worker_synchronize_cold_program(dsp_state_t *p) {
+	int64_t start = qemu_clock_get_ns(QEMU_CLOCK_HOST);
+	uint64_t cache_compiles = dsp_runtime_get_cache_compiles(p->runtime);
+	bool waited = false;
 
 	qemu_mutex_lock(&p->worker.mutex);
-	runnable = p->worker.enabled && p->runtime_running && !dsp_runtime_is_idle(p->runtime);
-	if (runnable) {
+	if (p->worker.enabled && !p->worker.stop && dsp_runnable(p)) {
+		p->worker.sync_requested = true;
 		qemu_event_set(&p->worker.event);
+	}
+	while (p->worker.sync_requested && p->worker.enabled && !p->worker.stop) {
+		waited = true;
 		qemu_cond_wait(&p->worker.idle_cond, &p->worker.mutex);
 	}
 	qemu_mutex_unlock(&p->worker.mutex);
+
+	cache_compiles = dsp_runtime_get_cache_compiles(p->runtime) - cache_compiles;
+	if (cache_compiles == 0 && dsp_runtime_get_comm(p->runtime) == 0)
+		dsp_runtime_finish_program_warmup(p->runtime);
+
+	DPRINTF("cold program sync: waited=%u host_delay=%" PRId64 " ns compile=%" PRIu64 " warming=%u\n",
+		waited, qemu_clock_get_ns(QEMU_CLOCK_HOST) - start, cache_compiles,
+		dsp_runtime_is_program_warming(p->runtime));
 }
 
 static void dsp_reset_internal_state(dsp_state_t *p) {
@@ -300,6 +352,7 @@ static void dsp_reset_internal_state(dsp_state_t *p) {
 	qatomic_set(&p->worker.interrupt_events, 0);
 	qatomic_set(&p->worker.output_events, 0);
 	qatomic_set(&p->worker.outputs, 0);
+	qatomic_set(&p->comm_status, 0);
 	qatomic_set(&p->reset_comm_flags, 0);
 	qatomic_set(&p->reset_requests, 0);
 	for (size_t i = 0; i < ARRAY_SIZE(p->outputs); i++)
@@ -415,26 +468,31 @@ static uint64_t dsp_io_read(void *opaque, hwaddr haddr, unsigned size) {
 			if (reset_pending) {
 				value = qatomic_read(&p->reset_comm_flags);
 			} else {
-				value = dsp_runtime_get_comm(p->runtime);
+				value = qatomic_read(&p->comm_status);
 			}
 
-			if (reset_pending && value != 0) {
-				dsp_worker_synchronize_reset(p);
-				reset_pending = qatomic_read(&p->reset_pending);
-				if (reset_pending) {
-					value = qatomic_read(&p->reset_comm_flags);
-				} else {
-					value = dsp_runtime_get_comm(p->runtime);
+			if (value != 0) {
+				uint32_t reads = qatomic_fetch_inc(&p->command_status_reads) + 1;
+
+				if (reads == 1 || reads % 100 == 0) {
+					int64_t host_delay = qemu_clock_get_ns(QEMU_CLOCK_HOST) -
+						qatomic_read(&p->command_host_time);
+					int64_t virtual_delay = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) -
+						qatomic_read(&p->command_virtual_time);
+
+					DPRINTF("command pending: sequence=%" PRIu64 " flags=%04" PRIX64
+						" reads=%u host_delay=%" PRId64 " ns virtual_delay=%" PRId64 " ns\n",
+						qatomic_read(&p->command_sequence), value, reads, host_delay, virtual_delay);
 				}
 			}
 
-			if (!reset_pending && value != 0) {
-				dsp_worker_handoff(p);
-				value = dsp_runtime_get_comm(p->runtime);
-			}
-
 			if (!reset_pending && dsp_runtime_take_program_start(p->runtime, &program_start_pc))
-				DPRINTF("cold program start: pc=%05X flags=%04"PRIX64"\n", program_start_pc, value);
+				DPRINTF("cold program start: pc=%05X flags=%04" PRIX64 "\n", program_start_pc, value);
+
+			if (!reset_pending && dsp_runtime_is_program_warming(p->runtime)) {
+				dsp_worker_synchronize_cold_program(p);
+				value = qatomic_read(&p->comm_status);
+			}
 			break;
 		}
 
@@ -471,11 +529,20 @@ static void dsp_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned si
 			break;
 
 		case DSP_COM_SET:
+			qatomic_set(&p->command_host_time, qemu_clock_get_ns(QEMU_CLOCK_HOST));
+			qatomic_set(&p->command_virtual_time, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL));
+			qatomic_set(&p->command_status_reads, 0);
+			qatomic_set(&p->command_flags, value & DSP_COM_SET_FLAGS);
+			qatomic_inc(&p->command_sequence);
+			DPRINTF("command set: sequence=%" PRIu64 " flags=%04" PRIX64 "\n",
+				qatomic_read(&p->command_sequence), value & DSP_COM_SET_FLAGS);
+
 			qemu_mutex_lock(&p->worker.mutex);
 			if (qatomic_read(&p->reset_pending)) {
 				qatomic_or(&p->reset_comm_flags, value & DSP_COM_SET_FLAGS);
 			} else {
 				dsp_runtime_set_comm(p->runtime, value & DSP_COM_SET_FLAGS);
+				qatomic_or(&p->comm_status, value & DSP_COM_SET_FLAGS);
 			}
 			qemu_mutex_unlock(&p->worker.mutex);
 			dsp_worker_kick(p);
@@ -487,6 +554,7 @@ static void dsp_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned si
 				qatomic_and(&p->reset_comm_flags, (uint16_t) ~(value & DSP_COM_CLEAR_FLAGS));
 			} else {
 				dsp_runtime_clear_comm(p->runtime, value & DSP_COM_CLEAR_FLAGS);
+				qatomic_and(&p->comm_status, (uint16_t) ~(value & DSP_COM_CLEAR_FLAGS));
 			}
 			qemu_mutex_unlock(&p->worker.mutex);
 			dsp_worker_kick(p);
@@ -523,8 +591,6 @@ static uint64_t dsp_ram_read(void *opaque, hwaddr haddr, unsigned size) {
 	uint64_t value;
 
 	if (pmb887x_clc_is_enabled(&p->clc)) {
-		if (!dsp_runtime_is_idle(p->runtime))
-			g_thread_yield();
 		value = dsp_runtime_shared_read_bytes(p->runtime, haddr, size);
 	} else {
 		value = 0;

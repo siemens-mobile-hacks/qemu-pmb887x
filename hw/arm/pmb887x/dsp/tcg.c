@@ -1015,6 +1015,33 @@ void teak_tcg_invalidate_program(teak_tcg_core_t *core, uint32_t address) {
 	}
 }
 
+void teak_tcg_invalidate_program_range(teak_tcg_core_t *core, uint32_t address, size_t words) {
+	uint16_t start = (uint16_t) address;
+
+	tcg_check_block_cache();
+	for (size_t i = 0; i < ARRAY_SIZE(tcg_block_cache); i++) {
+		teak_tcg_block_cache_entry_t **link = &tcg_block_cache[i];
+		while (*link != NULL) {
+			teak_tcg_block_cache_entry_t *entry = *link;
+			bool intersects = false;
+			for (size_t j = 0; j < entry->block.instruction_count; j++) {
+				const teak_insn_t *instruction = &entry->block.instructions[j];
+				uint16_t offset = (uint16_t) instruction->address - start;
+				intersects = offset < words || (instruction->words == 2 && (uint16_t) (offset + 1) < words);
+				if (intersects)
+					break;
+			}
+
+			if (entry->cache_id == core->cache_id && intersects) {
+				*link = entry->next;
+				g_free(entry);
+			} else {
+				link = &entry->next;
+			}
+		}
+	}
+}
+
 void teak_tcg_invalidate_all(teak_tcg_core_t *core) {
 	tcg_check_block_cache();
 	for (size_t i = 0; i < ARRAY_SIZE(tcg_block_cache); i++) {

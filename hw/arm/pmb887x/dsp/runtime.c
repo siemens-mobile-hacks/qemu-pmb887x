@@ -34,7 +34,11 @@ struct dsp_runtime_t {
 	bool halted;
 	bool core_disabled;
 	bool pram_cache_active;
+	bool program_dirty;
+	bool program_warming;
+	bool mutable_program_started;
 	bool program_start;
+	bool reschedule;
 	uint32_t program_start_pc;
 };
 
@@ -47,8 +51,14 @@ static void dsp_runtime_load_words(uint16_t *destination, const uint8_t *source,
 		qatomic_set(&destination[i], dsp_runtime_read_u16(source + i * sizeof(uint16_t)));
 }
 
-static void dsp_runtime_wake(dsp_runtime_t *runtime) {
+void dsp_runtime_wake(dsp_runtime_t *runtime) {
 	qatomic_set(&runtime->idle, false);
+}
+
+void dsp_runtime_kick(dsp_runtime_t *runtime) {
+	dsp_runtime_wake(runtime);
+	qatomic_set(&runtime->reschedule, true);
+	teak_tcg_request_exit(&runtime->core);
 }
 
 static void dsp_runtime_map_program_bank(dsp_runtime_t *runtime, size_t bank) {
@@ -68,7 +78,7 @@ static void dsp_runtime_map_program_bank(dsp_runtime_t *runtime, size_t bank) {
 	bank_data = runtime->program_rom + (fixed_words + bank * bank_words) * sizeof(uint16_t);
 	dsp_runtime_load_words(runtime->program + config->program_bank_base, bank_data, bank_words);
 	teak_tcg_request_exit(&runtime->core);
-	teak_tcg_invalidate_all(&runtime->core);
+	teak_tcg_invalidate_program_range(&runtime->core, config->program_bank_base, bank_words);
 	runtime->active_program_bank = bank;
 }
 
@@ -146,8 +156,12 @@ static void dsp_runtime_program_write(void *opaque, uint32_t address, uint16_t v
 			address, value, runtime->core.state.pc);
 		return;
 	}
-	if (address < runtime->config->program_rom_base && qatomic_read(&runtime->program[address]) != value)
-		qatomic_set(&runtime->program[address], value);
+	if (address >= runtime->config->program_rom_base || qatomic_read(&runtime->program[address]) == value)
+		return;
+
+	if (!qatomic_read(&runtime->program_warming))
+		qatomic_set(&runtime->program_dirty, true);
+	qatomic_set(&runtime->program[address], value);
 }
 
 static bool dsp_runtime_program_should_invalidate(void *opaque, uint32_t address) {
@@ -239,6 +253,8 @@ dsp_runtime_t *dsp_runtime_create(
 	runtime->notify_comm = notify_comm;
 	runtime->program = g_new0(uint16_t, PMB887X_DSP_ADDRESS_SPACE_WORDS);
 	runtime->data = g_new0(uint16_t, PMB887X_DSP_ADDRESS_SPACE_WORDS);
+	runtime->active_program_bank = SIZE_MAX;
+	runtime->active_data_bank = SIZE_MAX;
 
 	host = (dsp_host_t) {
 		.opaque = runtime,
@@ -301,19 +317,19 @@ void dsp_runtime_reset(dsp_runtime_t *runtime) {
 	size_t program_fixed_words = config->program_bank_base - config->program_rom_base;
 	size_t data_fixed_words = config->data_bank_base - config->data_rom_base;
 
-	teak_tcg_invalidate_all(&runtime->core);
 	dsp_runtime_load_words(runtime->program + config->program_rom_base, runtime->program_rom, program_fixed_words);
 	dsp_runtime_load_words(runtime->data + config->data_rom_base, runtime->data_rom, data_fixed_words);
-	runtime->active_program_bank = SIZE_MAX;
-	runtime->active_data_bank = SIZE_MAX;
 
 	dsp_bus_reset(runtime->bus);
 	dsp_bus_set_core_idle(runtime->bus, false);
 	teak_tcg_reset(&runtime->core, config->program_rom_base + 2);
 
 	runtime->data[config->shared_base] = runtime->rom_version;
-	qatomic_set(&runtime->pram_cache_active, false);
+	if (qatomic_xchg(&runtime->program_warming, false))
+		qatomic_set(&runtime->program_dirty, true);
+	qatomic_set(&runtime->mutable_program_started, false);
 	qatomic_set(&runtime->program_start, false);
+	qatomic_set(&runtime->reschedule, false);
 	qatomic_set(&runtime->idle, false);
 	qatomic_set(&runtime->core_disabled, false);
 	runtime->halted = false;
@@ -339,21 +355,29 @@ bool dsp_runtime_run(dsp_runtime_t *runtime) {
 	dsp_bus_set_core_idle(runtime->bus, false);
 
 	while (cycles < DSP_ACTIVE_SLICE_CYCLES && !runtime->halted) {
-		uint8_t active_lines = dsp_bus_get_irq_lines(runtime->bus);
 		uint8_t block_repeat_level;
 		uint32_t block_pc;
 		size_t remaining_cycles = DSP_ACTIVE_SLICE_CYCLES - cycles;
 		size_t slice_cycles = MIN(remaining_cycles, (size_t) DSP_STABLE_BLOCK_CYCLES);
 		bool mutable_program = runtime->core.state.pc < runtime->config->program_rom_base;
-		bool first_mutable_execution = !qatomic_read(&runtime->pram_cache_active) && mutable_program;
+		bool new_program_lifecycle = !qatomic_read(&runtime->mutable_program_started);
+		bool program_changed = qatomic_read(&runtime->program_dirty);
+		bool first_mutable_execution = mutable_program && (new_program_lifecycle || program_changed);
 
 		if (first_mutable_execution) {
 			qatomic_set(&runtime->program_start_pc, runtime->core.state.pc);
 			qatomic_set(&runtime->program_start, true);
+			qatomic_set(&runtime->program_dirty, false);
+			qatomic_set(&runtime->program_warming, true);
+			qatomic_set(&runtime->mutable_program_started, true);
 			qatomic_set(&runtime->pram_cache_active, true);
 		}
 
 		if (qatomic_read(&runtime->core_disabled)) {
+			uint8_t active_lines;
+
+			dsp_bus_advance(runtime->bus, 0);
+			active_lines = dsp_bus_get_irq_lines(runtime->bus);
 			if (active_lines == 0) {
 				qatomic_set(&runtime->idle, true);
 				dsp_bus_set_core_idle(runtime->bus, true);
@@ -384,6 +408,9 @@ bool dsp_runtime_run(dsp_runtime_t *runtime) {
 			runtime->halted = true;
 			break;
 		}
+
+		if (qatomic_xchg(&runtime->reschedule, false))
+			break;
 
 		cycles += runtime->core.last_block_cycles;
 		blocks += runtime->core.last_block_count;
@@ -420,6 +447,15 @@ bool dsp_runtime_take_program_start(dsp_runtime_t *runtime, uint32_t *pc) {
 		return false;
 	*pc = qatomic_read(&runtime->program_start_pc);
 	return true;
+}
+
+bool dsp_runtime_is_program_warming(const dsp_runtime_t *runtime) {
+	return qatomic_read(&runtime->program_warming);
+}
+
+void dsp_runtime_finish_program_warmup(dsp_runtime_t *runtime) {
+	qatomic_set(&runtime->program_warming, false);
+	qatomic_set(&runtime->program_start, false);
 }
 
 void dsp_runtime_thread_enter(void) {
@@ -507,10 +543,17 @@ void dsp_runtime_set_input(dsp_runtime_t *runtime, size_t index, bool level) {
 
 void dsp_runtime_set_gsm_signal(dsp_runtime_t *runtime, pmb887x_dsp_gsm_signal_t signal, bool level) {
 	dsp_bus_set_gsm_signal(runtime->bus, signal, level);
+
+	dsp_runtime_wake(runtime);
+	runtime->notify_activity(runtime->device_opaque);
 }
 
 uint16_t dsp_runtime_get_outputs(dsp_runtime_t *runtime) {
 	return dsp_bus_get_outputs(runtime->bus);
+}
+
+uint64_t dsp_runtime_get_cache_compiles(const dsp_runtime_t *runtime) {
+	return qatomic_read(&runtime->core.cache_compiles);
 }
 
 uint16_t dsp_runtime_take_output_events(dsp_runtime_t *runtime) {
