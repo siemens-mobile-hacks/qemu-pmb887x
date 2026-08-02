@@ -31,6 +31,9 @@ static bool icount2_debug;
 #define ICOUNT2_ADJUST_SCALE 1000000
 
 static void icount2_idle_timer(void *opaque) {
+	int64_t virtual_ahead;
+	int64_t deadline;
+
 	if (timers_state.icount2_idle_deadline > 0) {
 		seqlock_write_lock(&timers_state.vm_clock_seqlock, &timers_state.vm_clock_lock);
 		int64_t bias = qatomic_read(&timers_state.icount2_bias);
@@ -40,7 +43,7 @@ static void icount2_idle_timer(void *opaque) {
 		timers_state.icount2_idle_deadline = 0;
 	}
 
-	int64_t deadline = qemu_clock_deadline_ns_all(QEMU_CLOCK_VIRTUAL, QEMU_TIMER_ATTR_ALL);
+	deadline = qemu_clock_deadline_ns_all(QEMU_CLOCK_VIRTUAL, QEMU_TIMER_ATTR_ALL);
 	if (deadline == 0) {
 		qemu_clock_run_timers(QEMU_CLOCK_VIRTUAL);
 		qemu_clock_notify(QEMU_CLOCK_VIRTUAL);
@@ -52,8 +55,9 @@ static void icount2_idle_timer(void *opaque) {
 	if (deadline < 0)
 		return;
 
+	virtual_ahead = MAX(icount2_get() - cpu_get_clock(), 0);
 	timers_state.icount2_idle_deadline = deadline;
-	timer_mod(timers_state.icount2_idle_timer, qemu_clock_get_ns(QEMU_CLOCK_REALTIME) + deadline);
+	timer_mod(timers_state.icount2_idle_timer, qemu_clock_get_ns(QEMU_CLOCK_REALTIME) + deadline + virtual_ahead);
 }
 
 void icount2_sync(void) {
@@ -127,6 +131,8 @@ static void icount2_set_frequency_locked(uint32_t frequency) {
 static void icount2_adjust(void) {
 	int64_t realtime;
 	int64_t ticks;
+	int64_t elapsed;
+	int64_t executed;
 
 	if (!runstate_is_running() || timers_state.icount2_idle)
 		return;
@@ -148,15 +154,26 @@ static void icount2_adjust(void) {
 		return;
 	}
 
-	int64_t elapsed = realtime - timers_state.icount2_adjust_realtime;
-	int64_t executed = ticks - timers_state.icount2_adjust_ticks;
-	timers_state.icount2_adjust_realtime = realtime;
-	timers_state.icount2_adjust_ticks = ticks;
+	elapsed = realtime - timers_state.icount2_adjust_realtime;
+	executed = ticks - timers_state.icount2_adjust_ticks;
 
-	if (elapsed <= 0 || elapsed > UINT32_MAX || executed <= 0) {
+	if (elapsed <= 0) {
 		seqlock_write_unlock(&timers_state.vm_clock_seqlock, &timers_state.vm_clock_lock);
 		return;
 	}
+	if (elapsed > UINT32_MAX) {
+		timers_state.icount2_adjust_realtime = realtime;
+		timers_state.icount2_adjust_ticks = ticks;
+		seqlock_write_unlock(&timers_state.vm_clock_seqlock, &timers_state.vm_clock_lock);
+		return;
+	}
+	if (executed <= 0 || elapsed < ICOUNT2_ADJUST_INTERVAL) {
+		seqlock_write_unlock(&timers_state.vm_clock_seqlock, &timers_state.vm_clock_lock);
+		return;
+	}
+
+	timers_state.icount2_adjust_realtime = realtime;
+	timers_state.icount2_adjust_ticks = ticks;
 
 	uint32_t target_frequency = CLAMP(
 		muldiv64(executed, NANOSECONDS_PER_SECOND, elapsed),
