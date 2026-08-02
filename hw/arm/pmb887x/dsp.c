@@ -172,6 +172,7 @@ static void *dsp_worker(void *opaque) {
 			qemu_mutex_unlock(&p->worker.mutex);
 			dsp_runtime_reset(p->runtime);
 			p->runtime_running = true;
+			DPRINTF("core reset: startup=%d\n", run_startup);
 
 			if (run_startup)
 				dsp_run(p, &events);
@@ -433,7 +434,7 @@ static uint64_t dsp_io_read(void *opaque, hwaddr haddr, unsigned size) {
 			}
 
 			if (!reset_pending && dsp_runtime_take_program_start(p->runtime, &program_start_pc))
-				EPRINTF("cold program start: pc=%05X flags=%04"PRIX64"\n", program_start_pc, value);
+				DPRINTF("cold program start: pc=%05X flags=%04"PRIX64"\n", program_start_pc, value);
 			break;
 		}
 

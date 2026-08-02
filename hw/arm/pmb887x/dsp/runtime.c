@@ -320,9 +320,20 @@ void dsp_runtime_reset(dsp_runtime_t *runtime) {
 }
 
 bool dsp_runtime_run(dsp_runtime_t *runtime) {
+	uint64_t cache_compiles = runtime->core.cache_compiles;
+	uint64_t cache_decoded_hits = runtime->core.cache_decoded_hits;
+	uint64_t cache_fast_hits = runtime->core.cache_fast_hits;
+	uint64_t jit_entries = runtime->core.jit_entries;
+	uint64_t chain_links = runtime->core.chain_links;
+	uint64_t chain_interrupts = runtime->core.chain_interrupts;
+	uint64_t chain_exit_stops = runtime->core.chain_exit_stops;
+	uint64_t chain_budget_stops = runtime->core.chain_budget_stops;
+	uint64_t chain_cache_stops = runtime->core.chain_cache_stops;
 	size_t slices = 0;
 	size_t blocks = 0;
 	size_t cycles = 0;
+
+	runtime->core.chain_exit_pc = 0;
 
 	qatomic_set(&runtime->idle, false);
 	dsp_bus_set_core_idle(runtime->bus, false);
@@ -383,9 +394,20 @@ bool dsp_runtime_run(dsp_runtime_t *runtime) {
 				runtime->core.state.pc, block_repeat_level, runtime->core.state.bcn, runtime->core.state.lp);
 	}
 
-	if (blocks != 0)
-		DPRINTF("slices=%zu blocks=%zu cycles=%zu run=%u idle=%u pc=%04X\n", slices, blocks, cycles,
-			!runtime->halted, qatomic_read(&runtime->idle), runtime->core.state.pc);
+	if (blocks != 0) {
+		DPRINTF("slices=%zu blocks=%zu jit=%"PRIu64" cycles=%zu run=%u idle=%u pc=%04X\n", slices, blocks,
+			runtime->core.jit_entries - jit_entries, cycles, !runtime->halted, qatomic_read(&runtime->idle),
+			runtime->core.state.pc);
+		DPRINTF("cache=%"PRIu64"/%"PRIu64" compile=%"PRIu64" chain=%"PRIu64" irq=%"PRIu64
+			" stop=%"PRIu64"/%"PRIu64"/%"PRIu64" exit_pc=%04X\n",
+			runtime->core.cache_fast_hits - cache_fast_hits,
+			runtime->core.cache_decoded_hits - cache_decoded_hits,
+			runtime->core.cache_compiles - cache_compiles, runtime->core.chain_links - chain_links,
+			runtime->core.chain_interrupts - chain_interrupts,
+			runtime->core.chain_exit_stops - chain_exit_stops,
+			runtime->core.chain_budget_stops - chain_budget_stops,
+			runtime->core.chain_cache_stops - chain_cache_stops, runtime->core.chain_exit_pc);
+	}
 	return !runtime->halted;
 }
 

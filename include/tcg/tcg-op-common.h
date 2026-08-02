@@ -75,6 +75,15 @@ void tcg_gen_exit_tb(const TranslationBlock *tb, unsigned idx);
 void tcg_gen_goto_tb(unsigned idx);
 
 /**
+ * tcg_gen_goto_ptr() - jump to a translated code pointer
+ * @ptr: translated code pointer
+ *
+ * This operation is optional. If the TCG backend does not implement goto_ptr,
+ * it is equivalent to calling tcg_gen_exit_tb() with 0 as the argument.
+ */
+void tcg_gen_goto_ptr(TCGv_ptr ptr);
+
+/**
  * tcg_gen_lookup_and_goto_ptr() - look up the current TB, jump to it if valid
  * @addr: Guest address of the target TB
  *

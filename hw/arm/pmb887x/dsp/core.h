@@ -432,6 +432,20 @@ struct teak_tcg_core_t {
 	uint32_t synchronization_offset;
 	uint32_t synchronization_access;
 	uint32_t pending_cycles;
+	uint32_t batch_iterations;
+	uint32_t batch_block_cycles;
+	uint32_t batch_cycles_remaining;
+	uint32_t chain_cycle_limit;
+	uint32_t chain_exit_pc;
+	uint64_t cache_fast_hits;
+	uint64_t cache_decoded_hits;
+	uint64_t cache_compiles;
+	uint64_t jit_entries;
+	uint64_t chain_links;
+	uint64_t chain_interrupts;
+	uint64_t chain_exit_stops;
+	uint64_t chain_budget_stops;
+	uint64_t chain_cache_stops;
 	bool synchronization_valid;
 };
 
