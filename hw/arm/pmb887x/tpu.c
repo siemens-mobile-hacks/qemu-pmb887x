@@ -103,6 +103,7 @@ struct pmb887x_tpu_t {
 	uint32_t eapt;
 	uint32_t eapb;
 	uint32_t tger;
+	uint32_t next_tger;
 	uint32_t rfcon1;
 	uint32_t rfcon2;
 	uint32_t fade;
@@ -153,6 +154,8 @@ static int64_t tpu_run_irq(pmb887x_tpu_t *p, int64_t counter, uint64_t now, int6
 			if (counter >= p->intr[i]) {
 				pmb887x_src_update(&p->src[i], 0, MOD_SRC_SETR);
 				p->irq_fired |= (1 << i);
+				DPRINTF("IRQ%d: counter=%" PRId64 " virtual=%" PRId64 " ns host=%" PRId64 " ns\n",
+					i, counter, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL), qemu_clock_get_ns(QEMU_CLOCK_HOST));
 			} else {
 				next = MIN(next, now + tpu_ticks_to_ns(p, p->intr[i] - counter));
 			}
@@ -177,12 +180,14 @@ static void tpu_set_gsm_signal(pmb887x_tpu_t *p, pmb887x_dsp_gsm_signal_t signal
 
 	if (((p->gsm_signals & mask) != 0) == level)
 		return;
-	if (level)
+	if (level) {
 		p->gsm_signals |= mask;
-	else
+	} else {
 		p->gsm_signals &= (uint16_t) ~mask;
+	}
 	qemu_set_irq(p->gsm_outputs[signal], level);
-	DPRINTF("GSM signal=%u level=%u counter=%u\n", signal, level, p->counter);
+	DPRINTF("GSM signal=%u level=%u counter=%u virtual=%" PRId64 " ns host=%" PRId64 " ns\n",
+		signal, level, p->counter, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL), qemu_clock_get_ns(QEMU_CLOCK_HOST));
 }
 
 static void tpu_decode_gsm_signal(pmb887x_tpu_t *p, uint32_t decoder) {
@@ -339,6 +344,7 @@ static void tpu_finish_frame(pmb887x_tpu_t *p) {
 	p->irq_fired = 0;
 	p->frame_ticks = p->next_frame_ticks ? p->next_frame_ticks : regular_frame_ticks;
 	p->next_frame_ticks = 0;
+	p->tger = p->next_tger;
 	tpu_begin_event_frame(p);
 
 	if (p->skip_extended) {
@@ -441,6 +447,7 @@ static void tpu_update_state(pmb887x_tpu_t *p) {
 		p->frame_ticks = tpu_regular_frame_ticks(p);
 		p->next_frame_ticks = 0;
 		p->skip_extended = false;
+		p->tger = p->next_tger;
 		tpu_begin_event_frame(p);
 		p->timing_advance = 0;
 		p->triggers = 0;
@@ -744,7 +751,7 @@ static void tpu_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned si
 			break;
 
 		case TPU_TGER:
-			p->tger = value;
+			p->next_tger = value;
 			break;
 
 		case TPU_UNK:
@@ -852,6 +859,7 @@ static void tpu_reset(DeviceState *dev) {
 	p->eapt = 0;
 	p->eapb = 0;
 	p->tger = 0;
+	p->next_tger = 0;
 	p->rfcon1 = 0;
 	p->rfcon2 = 0;
 	p->fade = TPU_FADE_RESET;
