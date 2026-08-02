@@ -178,32 +178,35 @@ void dsp_bus_set_clock(dsp_bus_t *bus, bool enabled) {
 }
 
 void dsp_bus_set_core_idle(dsp_bus_t *bus, bool idle) {
+	if (bus->baseband != NULL)
+		baseband_set_core_idle(bus->baseband, idle);
 	if (bus->timer2 != NULL)
 		timer2_set_core_idle(bus->timer2, idle);
 }
 
 void dsp_bus_advance(dsp_bus_t *bus, size_t cycles) {
-	if (bus->afe != NULL)
+	if (bus->afe != NULL && afe_is_active(bus->afe))
 		afe_advance(bus->afe, cycles);
-	if (bus->baseband != NULL)
+	if (bus->baseband != NULL && baseband_is_active(bus->baseband))
 		baseband_advance(bus->baseband, cycles);
-	if (bus->channel_decoder != NULL)
+	if (bus->channel_decoder != NULL && chdec_is_active(bus->channel_decoder))
 		chdec_advance(bus->channel_decoder, cycles);
-	if (bus->cipher != NULL)
+	if (bus->cipher != NULL && cipher_is_active(bus->cipher))
 		cipher_advance(bus->cipher, cycles);
-	if (bus->equalizer != NULL)
+	if (bus->equalizer != NULL && equalizer_is_active(bus->equalizer))
 		equalizer_advance(bus->equalizer, cycles);
 	for (size_t i = 0; i < bus->i2s_count; i++)
-		i2s_advance(bus->i2s[i], cycles);
-	if (bus->i2s_tx != NULL)
+		if (i2s_is_active(bus->i2s[i]))
+			i2s_advance(bus->i2s[i], cycles);
+	if (bus->i2s_tx != NULL && i2s_tx_is_active(bus->i2s_tx))
 		i2s_tx_advance(bus->i2s_tx, cycles);
-	if (bus->modulator != NULL)
+	if (bus->modulator != NULL && modulator_is_active(bus->modulator))
 		modulator_advance(bus->modulator, cycles);
-	if (bus->ssc != NULL)
+	if (bus->ssc != NULL && ssc_is_active(bus->ssc))
 		ssc_advance(bus->ssc, cycles);
-	if (bus->timer1 != NULL)
+	if (bus->timer1 != NULL && timer1_is_active(bus->timer1))
 		timer1_advance(bus->timer1, cycles);
-	if (bus->timer2 != NULL)
+	if (bus->timer2 != NULL && timer2_is_active(bus->timer2))
 		timer2_advance(bus->timer2, cycles);
 }
 
