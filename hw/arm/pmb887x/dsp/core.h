@@ -407,6 +407,7 @@ struct teak_state_t {
 	uint8_t product_extension[2];
 	uint8_t interrupt_mask;
 	uint8_t interrupt_context;
+	uint8_t maskable_interrupt_active;
 	uint8_t nonmaskable_context;
 	uint8_t stepi;
 	uint8_t stepj;

@@ -357,12 +357,34 @@ static void test_delayed_interrupt_return(void) {
 	pmb887x_dsp_tcg_core_t core = test_core_create(&program, &data);
 
 	core.state.sp = 5;
+	core.state.maskable_interrupt_active = 1;
 	g_assert_true(pmb887x_dsp_tcg_execute_block(&core));
 	g_assert_cmphex(core.state.pc, ==, 11);
 	g_assert_cmphex(core.state.a[0], ==, 2);
 	g_assert_cmphex(core.state.sp, ==, 6);
 	g_assert_cmphex(core.state.ie, ==, 1);
+	g_assert_cmphex(core.state.maskable_interrupt_active, ==, 0);
 	g_assert_cmphex(data.words[0x10], ==, 0xA55A);
+}
+
+static void test_nested_nmi_interrupt_return(void) {
+	test_memory_t program = {
+		.words = { 0xD7C0, 0x2102, 0xD4BC, 0x0010 },
+	};
+	test_memory_t data = {
+		.words = { [5] = 10, [0x10] = 0xA55A },
+	};
+	pmb887x_dsp_tcg_core_t core = test_core_create(&program, &data);
+
+	core.state.sp = 5;
+	core.state.nmi_active = 1;
+	core.state.maskable_interrupt_active = 1;
+	g_assert_true(pmb887x_dsp_tcg_execute_block(&core));
+	g_assert_cmphex(core.state.pc, ==, 11);
+	g_assert_cmphex(core.state.sp, ==, 6);
+	g_assert_cmphex(core.state.ie, ==, 1);
+	g_assert_cmphex(core.state.nmi_active, ==, 0);
+	g_assert_cmphex(core.state.maskable_interrupt_active, ==, 1);
 }
 
 int main(int argc, char **argv) {
@@ -388,5 +410,6 @@ int main(int argc, char **argv) {
 	g_test_add_func("/pmb887x/dsp/tcg/external-registers-disconnected", test_external_registers_disconnected);
 	g_test_add_func("/pmb887x/dsp/tcg/movr-b-destination", test_movr_b_destination);
 	g_test_add_func("/pmb887x/dsp/tcg/delayed-interrupt-return", test_delayed_interrupt_return);
+	g_test_add_func("/pmb887x/dsp/tcg/nested-nmi-interrupt-return", test_nested_nmi_interrupt_return);
 	return g_test_run();
 }

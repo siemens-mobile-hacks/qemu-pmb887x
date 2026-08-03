@@ -12,13 +12,16 @@
 #include "qemu/atomic.h"
 #include "qemu/main-loop.h"
 #include "qemu/thread.h"
+#include "qemu/timer.h"
 #include "hw/core/qdev-properties.h"
+#include "hw/core/qdev-clock.h"
 #include "hw/ssi/ssi.h"
 #include "system/runstate.h"
 
 #include "hw/arm/pmb887x/dsp/runtime.h"
 
 #include "hw/arm/pmb887x/gen/cpu_regs.h"
+#include "hw/arm/pmb887x/gen/dsp.h"
 #include "hw/arm/pmb887x/gen/dsp_rom.h"
 #include "hw/arm/pmb887x/dsp.h"
 #include "hw/arm/pmb887x/dsp/config.h"
@@ -31,6 +34,8 @@
 #define DSP_RUNTIME_PIPE_OFFSET	5
 #define DSP_RUNTIME_PIPE_STRIDE	0x1C
 #define DSP_OUTPUT_COUNT	3
+#define DSP_BASEBAND_SYNC_TIMEOUT_MS	50
+#define DSP_BASEBAND_IRQ_MASK	(TEAK_INT_FINTA0_BBHI | TEAK_INT_FINTA0_BBLO | TEAK_INT_FINTA0_BB_FULL)
 #define DSP_SSC_BUS_NAME	"pmb887x-dsp-ssc"
 #define TYPE_PMB887X_DSP	"pmb887x-dsp"
 #define PMB887X_DSP(obj)	OBJECT_CHECK(dsp_state_t, (obj), TYPE_PMB887X_DSP)
@@ -94,6 +99,7 @@ struct dsp_state_t {
 	int64_t command_virtual_time;
 	uint32_t command_status_reads;
 	uint16_t command_flags;
+	Clock *gsm_clock;
 	bool reset_pending;
 	bool vm_running;
 	qemu_irq mcu_interrupts[PMB887X_DSP_MCU_INT_COUNT];
@@ -132,9 +138,12 @@ static void dsp_worker_bh(void *opaque) {
 	uint16_t events = qatomic_xchg(&p->worker.interrupt_events, 0);
 	uint16_t output_events = qatomic_xchg(&p->worker.output_events, 0);
 	uint16_t outputs = qatomic_read(&p->worker.outputs);
+	bool locked = bql_locked();
 
 	events &= MAKE_64BIT_MASK(0, PMB887X_DSP_MCU_INT_COUNT);
 
+	if (!locked)
+		bql_lock();
 	for (size_t i = 0; i < ARRAY_SIZE(p->mcu_interrupts); i++)
 		if ((events & BIT(i)) != 0)
 			qemu_irq_raise(p->mcu_interrupts[i]);
@@ -142,6 +151,8 @@ static void dsp_worker_bh(void *opaque) {
 	for (size_t i = 0; i < ARRAY_SIZE(p->outputs); i++)
 		if ((output_events & BIT(i)) != 0)
 			qemu_set_irq(p->outputs[i], (outputs & BIT(i)) != 0);
+	if (!locked)
+		bql_unlock();
 }
 
 static void dsp_worker_publish_events(dsp_state_t *p, const dsp_events_t *events) {
@@ -462,8 +473,57 @@ static void dsp_input1(void *opaque, int id, int level) {
 	dsp_set_input(opaque, 1, level);
 }
 
+static bool dsp_baseband_event_blocked(dsp_state_t *p) {
+	uint16_t flags = dsp_runtime_get_irq_flags(p->runtime, 0);
+
+	return dsp_runtime_is_maskable_interrupt_active(p->runtime) || (flags & DSP_BASEBAND_IRQ_MASK) != 0;
+}
+
+static void dsp_wait_baseband_irq(dsp_state_t *p, int signal, int level) {
+	if (!dsp_baseband_event_blocked(p))
+		return;
+
+	int64_t start = qemu_clock_get_ns(QEMU_CLOCK_HOST);
+	int64_t deadline = start + DSP_BASEBAND_SYNC_TIMEOUT_MS * SCALE_MS;
+	bool timed_out = false;
+
+	dsp_worker_kick(p);
+	qemu_mutex_lock(&p->worker.mutex);
+	while (dsp_baseband_event_blocked(p)) {
+		bool worker_stopped = !p->worker.enabled || !p->runtime_running || p->worker.stop;
+
+		if (worker_stopped)
+			break;
+
+		int64_t remaining = deadline - qemu_clock_get_ns(QEMU_CLOCK_HOST);
+
+		if (remaining <= 0) {
+			timed_out = true;
+			break;
+		}
+		qemu_cond_timedwait(&p->worker.idle_cond, &p->worker.mutex, DIV_ROUND_UP(remaining, SCALE_MS));
+	}
+	bool ready = !dsp_baseband_event_blocked(p);
+	qemu_mutex_unlock(&p->worker.mutex);
+
+	int64_t host_wait = qemu_clock_get_ns(QEMU_CLOCK_HOST) - start;
+	uint16_t flags = dsp_runtime_get_irq_flags(p->runtime, 0) & DSP_BASEBAND_IRQ_MASK;
+	uint32_t pc = dsp_runtime_get_pc(p->runtime);
+
+	DPRINTF("ARM waited for DSP Baseband ISR: signal=%d level=%d flags=%04X active=%u pc=%05X host_wait=%" PRId64
+		" ns ready=%u timeout=%u\n", signal, level, flags, dsp_runtime_is_maskable_interrupt_active(p->runtime), pc,
+		host_wait, ready, timed_out);
+}
+
 static void dsp_gsm_input(void *opaque, int signal, int level) {
 	dsp_state_t *p = opaque;
+	uint32_t gsm_frequency = clock_get_hz(p->gsm_clock);
+	bool baseband_irq = signal < PMB887X_DSP_GSM_SIGNAL_RXON;
+
+	dsp_runtime_set_gsm_clock(p->runtime, gsm_frequency);
+	if (baseband_irq)
+		dsp_wait_baseband_irq(p, signal, level);
+
 	dsp_runtime_set_gsm_signal(p->runtime, signal, level != 0);
 }
 
@@ -617,13 +677,7 @@ static const MemoryRegionOps io_ops = {
 
 static uint64_t dsp_ram_read(void *opaque, hwaddr haddr, unsigned size) {
 	dsp_state_t *p = opaque;
-	uint64_t value;
-
-	if (pmb887x_clc_is_enabled(&p->clc)) {
-		value = dsp_runtime_shared_read_bytes(p->runtime, haddr, size);
-	} else {
-		value = 0;
-	}
+	uint64_t value = pmb887x_clc_is_enabled(&p->clc) ? dsp_runtime_shared_read_bytes(p->runtime, haddr, size) : 0;
 
 	IO_DUMP_READ(haddr + p->mmio.addr + DSP_RAM0, size, value);
 	return value;
@@ -672,6 +726,7 @@ static void dsp_init(Object *obj) {
 	qdev_init_gpio_in_named(DEVICE(obj), dsp_input0, "DSPIN0_IN", 1);
 	qdev_init_gpio_in_named(DEVICE(obj), dsp_input1, "DSPIN1_IN", 1);
 	qdev_init_gpio_in_named(DEVICE(obj), dsp_gsm_input, "GSM_IN", PMB887X_DSP_GSM_SIGNAL_COUNT);
+	p->gsm_clock = qdev_init_clock_in(DEVICE(obj), "GSM_CLOCK", NULL, p, 0);
 	qdev_init_gpio_out_named(DEVICE(obj), &p->outputs[0], "DSPOUT0_OUT", 1);
 	qdev_init_gpio_out_named(DEVICE(obj), &p->outputs[1], "DSPOUT1_OUT", 1);
 	qdev_init_gpio_out_named(DEVICE(obj), &p->outputs[2], "DSPOUT2_OUT", 1);

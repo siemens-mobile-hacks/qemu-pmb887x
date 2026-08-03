@@ -446,6 +446,14 @@ bool dsp_runtime_is_idle(const dsp_runtime_t *runtime) {
 	return qatomic_read(&runtime->idle);
 }
 
+bool dsp_runtime_is_maskable_interrupt_active(const dsp_runtime_t *runtime) {
+	return qatomic_read(&runtime->core.state.maskable_interrupt_active);
+}
+
+uint16_t dsp_runtime_get_irq_flags(dsp_runtime_t *runtime, size_t group) {
+	return dsp_bus_get_irq_flags(runtime->bus, group);
+}
+
 bool dsp_runtime_take_program_start(dsp_runtime_t *runtime, uint32_t *pc) {
 	if (!qatomic_xchg(&runtime->program_start, false))
 		return false;
@@ -545,12 +553,23 @@ void dsp_runtime_set_input(dsp_runtime_t *runtime, size_t index, bool level) {
 	dsp_bus_set_input(runtime->bus, index, level);
 }
 
+void dsp_runtime_set_gsm_clock(dsp_runtime_t *runtime, uint32_t frequency) {
+	dsp_bus_set_gsm_clock(runtime->bus, frequency);
+}
+
 void dsp_runtime_set_gsm_signal(dsp_runtime_t *runtime, pmb887x_dsp_gsm_signal_t signal, bool level) {
 	dsp_bus_set_gsm_signal(runtime->bus, signal, level);
+
+	dsp_runtime_wake(runtime);
+	runtime->notify_activity(runtime->device_opaque);
 }
 
 uint16_t dsp_runtime_get_outputs(dsp_runtime_t *runtime) {
 	return dsp_bus_get_outputs(runtime->bus);
+}
+
+uint32_t dsp_runtime_get_pc(const dsp_runtime_t *runtime) {
+	return qatomic_read(&runtime->core.state.pc);
 }
 
 uint64_t dsp_runtime_get_cache_compiles(const dsp_runtime_t *runtime) {

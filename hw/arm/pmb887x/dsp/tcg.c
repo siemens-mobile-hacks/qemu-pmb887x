@@ -436,6 +436,7 @@ bool teak_tcg_service_interrupt(teak_tcg_core_t *core) {
 		interrupt = (uint8_t) ctz32(pending);
 		context_switch = (state->interrupt_context & BIT(interrupt)) != 0;
 		state->ie = 0;
+		qatomic_set(&state->maskable_interrupt_active, 1);
 	}
 
 	qatomic_and(&state->pending_interrupts, (uint8_t) ~BIT(interrupt));
@@ -1948,13 +1949,17 @@ static void tcg_emit_call_accumulator(const teak_insn_t *instruction) {
 
 static void tcg_emit_interrupt_return_state(void) {
 	TCGv_i32 trap_active = tcg_temp_new_i32();
+	TCGv_i32 nmi_active = tcg_temp_new_i32();
 	TCGLabel *done = gen_new_label();
 
 	tcg_gen_ld8u_i32(trap_active, tcg_env, offsetof(teak_state_t, trap_active));
+	tcg_gen_ld8u_i32(nmi_active, tcg_env, offsetof(teak_state_t, nmi_active));
 	tcg_gen_st8_i32(tcg_constant_i32(0), tcg_env, offsetof(teak_state_t, trap_active));
 	tcg_gen_st8_i32(tcg_constant_i32(0), tcg_env, offsetof(teak_state_t, nmi_active));
 	tcg_gen_brcondi_i32(TCG_COND_NE, trap_active, 0, done);
 	tcg_gen_st8_i32(tcg_constant_i32(1), tcg_env, offsetof(teak_state_t, ie));
+	tcg_gen_brcondi_i32(TCG_COND_NE, nmi_active, 0, done);
+	tcg_gen_st8_i32(tcg_constant_i32(0), tcg_env, offsetof(teak_state_t, maskable_interrupt_active));
 	gen_set_label(done);
 }
 
@@ -4813,7 +4818,8 @@ static bool tcg_execute_slice_block(teak_tcg_core_t *core, const teak_tcg_block_
 			break;
 
 		bool interrupt_requested = qatomic_xchg(&core->state.interrupt_request, 0) != 0;
-		if (interrupt_requested && teak_tcg_service_interrupt(core))
+		bool interrupt_pending = interrupt_requested || tcg_pending_interrupts(&core->state) != 0;
+		if (interrupt_pending && teak_tcg_service_interrupt(core))
 			core->chain_interrupts++;
 
 		if (core->state.pc != block->pc)
@@ -4843,7 +4849,8 @@ static bool tcg_execute_cached_slice(teak_tcg_core_t *core, teak_tcg_block_cache
 			break;
 
 		bool interrupt_requested = qatomic_xchg(&core->state.interrupt_request, 0) != 0;
-		if (interrupt_requested && teak_tcg_service_interrupt(core))
+		bool interrupt_pending = interrupt_requested || tcg_pending_interrupts(&core->state) != 0;
+		if (interrupt_pending && teak_tcg_service_interrupt(core))
 			core->chain_interrupts++;
 
 		if (core->last_block_cycles >= max_cycles)

@@ -77,6 +77,7 @@ void afe_advance(dsp_device_t *device, size_t cycles);
 bool afe_is_active(const dsp_device_t *device);
 
 dsp_device_t *baseband_create(const pmb887x_dsp_peripheral_config_t *config, dsp_device_t *interrupt, const dsp_host_t *host);
+void baseband_set_clock(dsp_device_t *device, uint32_t frequency);
 void baseband_set_signal(dsp_device_t *device, pmb887x_dsp_gsm_signal_t signal, bool level);
 
 dsp_device_t *chdec_create(const pmb887x_dsp_peripheral_config_t *config, dsp_device_t *interrupt);

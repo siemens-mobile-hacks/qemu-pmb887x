@@ -15,6 +15,7 @@
 #include "qemu/main-loop.h"
 #include "hw/core/irq.h"
 #include "hw/core/qdev-properties.h"
+#include "hw/core/qdev-clock.h"
 
 #include "hw/arm/pmb887x/pll.h"
 #include "hw/arm/pmb887x/dsp/signals.h"
@@ -94,6 +95,7 @@ struct pmb887x_tpu_t {
 	qemu_irq gp_irq[TPU_GP_COUNT];
 	qemu_irq rfssc_irq;
 	qemu_irq gsm_outputs[PMB887X_DSP_GSM_SIGNAL_COUNT];
+	Clock *gsm_clock;
 	uint16_t gsm_signals;
 	
 	uint32_t gsmclk1;
@@ -443,6 +445,7 @@ static void tpu_update_state(pmb887x_tpu_t *p) {
 	if (p->freq != new_freq || p->enabled != enabled) {
 		p->freq = new_freq;
 		p->enabled = enabled;
+		clock_update_hz(p->gsm_clock, p->freq);
 		DPRINTF("fsys=%d, ftpu=%d, fcounter=%d [%s]\n", pmb887x_pll_get_fsys(p->pll), ftpu, p->freq, p->enabled ? "ON" : "OFF");
 	}
 
@@ -808,6 +811,7 @@ static void tpu_init(Object *obj) {
 	for (size_t i = 0; i < ARRAY_SIZE(p->irq); i++)
 		sysbus_init_irq(SYS_BUS_DEVICE(obj), &p->irq[i]);
 	qdev_init_gpio_out_named(DEVICE(obj), p->gsm_outputs, "GSM_OUT", PMB887X_DSP_GSM_SIGNAL_COUNT);
+	p->gsm_clock = qdev_init_clock_out(DEVICE(obj), "GSM_CLOCK");
 }
 
 static void tpu_realize(DeviceState *dev, Error **errp) {
@@ -875,6 +879,7 @@ static void tpu_reset(DeviceState *dev) {
 
 	p->enabled = false;
 	p->freq = 0;
+	clock_update_hz(p->gsm_clock, 0);
 	p->counter = 0;
 	p->start = 0;
 	p->next = 0;

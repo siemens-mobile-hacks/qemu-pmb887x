@@ -11,13 +11,13 @@
 #include "hw/arm/pmb887x/gen/dsp.h"
 #include "hw/arm/pmb887x/trace.h"
 
+#define BASEBAND_CTRL_UNDOCUMENTED	0x0100U
 #define BASEBAND_CTRL_MASK		(TEAK_BB_CTRL_BB_STOP | TEAK_BB_CTRL_CORDICON | TEAK_BB_CTRL_BB_ON | \
-	TEAK_BB_CTRL_BB_ADCMODE | TEAK_BB_CTRL_BBADAP_EN)
+	TEAK_BB_CTRL_BB_ADCMODE | TEAK_BB_CTRL_BBADAP_EN | BASEBAND_CTRL_UNDOCUMENTED)
 #define BASEBAND_FILTER_CTRL_MASK	(TEAK_BB_BRFILTER_CTRL_LENGTH | TEAK_BB_BRFILTER_CTRL_SCALING | \
 	TEAK_BB_BRFILTER_CTRL_DECIMATION)
 #define BASEBAND_RING_WORDS		0x03C0U
-#define BASEBAND_WORD_RATE_NUMERATOR	13U
-#define BASEBAND_WORD_RATE_DENOMINATOR_NS	12000U
+#define BASEBAND_WORDS_PER_TPU_TICK	2U
 #define BASEBAND_DECIMATION_DIVISOR	2U
 #define BASEBAND_INTERRUPT_GROUP	0U
 #define BASEBAND_CTRL_RESET		0x0110U
@@ -45,7 +45,9 @@ struct baseband_state_t {
 	int64_t full_time;
 	uint64_t produced_words;
 	uint16_t rate_divisor;
+	uint32_t gsm_frequency;
 	bool job_active;
+	uint8_t startup_pointer_reads;
 };
 
 static void baseband_destroy(dsp_device_t *device) {
@@ -79,15 +81,18 @@ static void baseband_reset(dsp_device_t *device) {
 
 static uint64_t baseband_words_at(const baseband_state_t *state, int64_t now) {
 	int64_t elapsed = MAX(now - qatomic_read(&state->job_start_time), 0);
-	uint32_t denominator = BASEBAND_WORD_RATE_DENOMINATOR_NS * qatomic_read(&state->rate_divisor);
-	uint64_t periods = (uint64_t) elapsed / denominator;
-	uint64_t remainder = (uint64_t) elapsed % denominator;
-	return periods * BASEBAND_WORD_RATE_NUMERATOR +
-		(remainder * BASEBAND_WORD_RATE_NUMERATOR + denominator / 2) / denominator;
+	uint32_t frequency = qatomic_read(&state->gsm_frequency);
+	uint16_t rate_divisor = qatomic_read(&state->rate_divisor);
+
+	if (frequency == 0)
+		return 0;
+
+	uint64_t half_ticks = muldiv64((uint64_t) elapsed, frequency * 2U, NANOSECONDS_PER_SECOND);
+	uint64_t ticks = (half_ticks + 1) / 2;
+	return MAX(ticks, 1) * BASEBAND_WORDS_PER_TPU_TICK / rate_divisor;
 }
 
-static uint16_t baseband_update_pointer(baseband_state_t *state, int64_t now) {
-	uint64_t words = baseband_words_at(state, now);
+static uint16_t baseband_publish_words(baseband_state_t *state, uint64_t words) {
 	uint64_t produced = qatomic_read(&state->produced_words);
 
 	while (words > produced) {
@@ -105,6 +110,10 @@ static uint16_t baseband_update_pointer(baseband_state_t *state, int64_t now) {
 	return pointer;
 }
 
+static uint16_t baseband_update_pointer(baseband_state_t *state, int64_t now) {
+	return baseband_publish_words(state, baseband_words_at(state, now));
+}
+
 static void baseband_schedule_interrupt(baseband_state_t *state, int64_t now) {
 	if (!qatomic_read(&state->job_active)) {
 		qatomic_set(&state->full_time, INT64_MAX);
@@ -118,14 +127,23 @@ static void baseband_schedule_interrupt(baseband_state_t *state, int64_t now) {
 		return;
 	}
 
+	if (qatomic_read(&state->gsm_frequency) == 0) {
+		qatomic_set(&state->full_time, INT64_MAX);
+		timer_del(state->full_timer);
+		return;
+	}
+
 	uint64_t words = baseband_words_at(state, now);
 	uint16_t pointer = words % BASEBAND_RING_WORDS;
 	uint16_t target = qatomic_read(&state->interrupt_pointer);
 	uint16_t distance = target > pointer ? target - pointer : BASEBAND_RING_WORDS - pointer + target;
+	uint16_t batch_words = BASEBAND_WORDS_PER_TPU_TICK / qatomic_read(&state->rate_divisor);
+	distance = ROUND_UP(distance, batch_words);
 	uint64_t target_words = words + distance;
-	uint64_t numerator = target_words * BASEBAND_WORD_RATE_DENOMINATOR_NS * qatomic_read(&state->rate_divisor);
-	int64_t deadline = qatomic_read(&state->job_start_time) + (numerator + BASEBAND_WORD_RATE_NUMERATOR - 1) /
-		BASEBAND_WORD_RATE_NUMERATOR;
+	uint64_t target_ticks = target_words / batch_words;
+	uint32_t frequency = qatomic_read(&state->gsm_frequency);
+	int64_t deadline = qatomic_read(&state->job_start_time) + muldiv64_round_up(target_ticks,
+		NANOSECONDS_PER_SECOND, frequency);
 
 	qatomic_set(&state->full_time, deadline);
 	timer_mod(state->full_timer, deadline);
@@ -146,7 +164,13 @@ static bool baseband_read(dsp_device_t *device, uint16_t offset, uint32_t pc, ui
 		case TEAK_BB_WR_POINTER: {
 			int64_t now = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
 
-			if (qatomic_read(&state->job_active)) {
+			if (qatomic_read(&state->job_active) && qatomic_read(&state->startup_pointer_reads) < 2) {
+				uint8_t reads = qatomic_read(&state->startup_pointer_reads) + 1;
+				uint16_t batch_words = BASEBAND_WORDS_PER_TPU_TICK / qatomic_read(&state->rate_divisor);
+
+				qatomic_set(&state->startup_pointer_reads, reads);
+				*value = baseband_publish_words(state, reads * batch_words);
+			} else if (qatomic_read(&state->job_active)) {
 				*value = baseband_update_pointer(state, now);
 			} else {
 				*value = qatomic_read(&state->write_pointer);
@@ -270,6 +294,7 @@ static void baseband_full_timer(void *opaque) {
 	if (!qatomic_read(&state->job_active))
 		return;
 
+	qatomic_set(&state->startup_pointer_reads, 2);
 	baseband_update_pointer(state, deadline);
 	dsp_int_set_flags(state->interrupt, BASEBAND_INTERRUPT_GROUP, TEAK_INT_FINTA0_BB_FULL);
 }
@@ -314,6 +339,7 @@ static void baseband_apply_signal(baseband_state_t *state, pmb887x_dsp_gsm_signa
 
 	uint16_t old_status = qatomic_read(&state->status);
 	bool interrupt_signal = signal != PMB887X_DSP_GSM_SIGNAL_RXON;
+
 	DPRINTF("signal: time=%" PRId64 " ns signal=%u level=%u status=%04X pointer=%u interrupt_pointer=%u\n",
 		now, signal, level, old_status,
 		qatomic_read(&state->write_pointer), qatomic_read(&state->interrupt_pointer));
@@ -330,6 +356,8 @@ static void baseband_apply_signal(baseband_state_t *state, pmb887x_dsp_gsm_signa
 				qatomic_set(&state->rate_divisor, rate_divisor);
 				qatomic_set(&state->job_start_time, now);
 				qatomic_set(&state->job_active, true);
+				qatomic_set(&state->startup_pointer_reads, 0);
+				baseband_update_pointer(state, now);
 				baseband_schedule_interrupt(state, now);
 			}
 		}
@@ -340,6 +368,7 @@ static void baseband_apply_signal(baseband_state_t *state, pmb887x_dsp_gsm_signa
 			dsp_int_set_flags(state->interrupt, BASEBAND_INTERRUPT_GROUP, TEAK_INT_FINTA0_BBHI);
 	} else {
 		if (interrupt_signal && qatomic_read(&state->job_active)) {
+			qatomic_set(&state->startup_pointer_reads, 2);
 			baseband_update_pointer(state, now);
 			qatomic_set(&state->job_active, false);
 			qatomic_set(&state->full_time, INT64_MAX);
@@ -361,4 +390,10 @@ void baseband_set_signal(dsp_device_t *device, pmb887x_dsp_gsm_signal_t signal, 
 	int64_t now = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
 
 	baseband_apply_signal(state, signal, level, now);
+}
+
+void baseband_set_clock(dsp_device_t *device, uint32_t frequency) {
+	baseband_state_t *state = device->state;
+
+	qatomic_set(&state->gsm_frequency, frequency);
 }

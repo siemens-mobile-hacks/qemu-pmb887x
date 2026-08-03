@@ -11,6 +11,7 @@
 #include "system/address-spaces.h"
 #include "system/reset.h"
 #include "hw/core/loader.h"
+#include "hw/core/qdev-clock.h"
 #include "hw/arm/machines-qom.h"
 #include "system/system.h"
 #include "target/arm/cpregs.h"
@@ -191,6 +192,7 @@ static void pmb887x_init(MachineState *machine) {
 	DeviceState *dsp = pmb887x_new_cpu_module("DSP");
 	pmb887x_dsp_set_config(dsp, pmb887x_cpu_get(pmb887x_board()->cpu)->dsp_config);
 	pmb887x_board_init_dsp(dsp);
+	qdev_connect_clock_in(dsp, "GSM_CLOCK", qdev_get_clock_out(tpu, "GSM_CLOCK"));
 	sysbus_realize_and_unref(SYS_BUS_DEVICE(dsp), &error_fatal);
 	for (size_t i = 0; i < PMB887X_DSP_GSM_SIGNAL_COUNT; i++)
 		qdev_connect_gpio_out_named(tpu, "GSM_OUT", i, qdev_get_gpio_in_named(dsp, "GSM_IN", i));

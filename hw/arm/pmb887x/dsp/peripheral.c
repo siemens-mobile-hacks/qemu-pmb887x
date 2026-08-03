@@ -273,6 +273,10 @@ uint8_t dsp_bus_get_irq_lines(dsp_bus_t *bus) {
 	return dsp_int_get_lines(bus->interrupt);
 }
 
+uint16_t dsp_bus_get_irq_flags(dsp_bus_t *bus, size_t group) {
+	return dsp_int_get_flags(bus->interrupt, group);
+}
+
 void dsp_bus_set_request(dsp_bus_t *bus, size_t index, bool level) {
 	dsp_int_set_request(bus->interrupt, index, level);
 }
@@ -285,6 +289,11 @@ void dsp_bus_set_input(dsp_bus_t *bus, size_t index, bool level) {
 		return;
 	flag = (uint16_t) BIT(4 + index * 2 + (edge < 0));
 	dsp_int_set_flags(bus->interrupt, 2, flag);
+}
+
+void dsp_bus_set_gsm_clock(dsp_bus_t *bus, uint32_t frequency) {
+	if (bus->baseband != NULL)
+		baseband_set_clock(bus->baseband, frequency);
 }
 
 void dsp_bus_set_gsm_signal(dsp_bus_t *bus, pmb887x_dsp_gsm_signal_t signal, bool level) {
