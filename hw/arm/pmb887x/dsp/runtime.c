@@ -14,7 +14,7 @@
 #include "hw/arm/pmb887x/trace.h"
 
 #define DSP_ACTIVE_SLICE_CYCLES	32768
-#define DSP_STABLE_BLOCK_CYCLES	256
+#define DSP_STABLE_BLOCK_CYCLES	512
 
 struct dsp_runtime_t {
 	const pmb887x_dsp_config_t *config;
@@ -283,6 +283,9 @@ dsp_runtime_t *dsp_runtime_create(
 			.read = dsp_runtime_external_read,
 			.write = dsp_runtime_external_write,
 		},
+		.direct_data = runtime->data,
+		.direct_data_read_size = config->shared_base,
+		.direct_data_write_size = config->data_rom_base,
 		.cycle_opaque = runtime,
 		.advance_cycles = dsp_runtime_advance_cycles,
 		.cycle_sensitive_base = config->mmio_base,
@@ -386,6 +389,7 @@ bool dsp_runtime_run(dsp_runtime_t *runtime) {
 			qatomic_set(&runtime->core_disabled, false);
 		}
 
+		qatomic_xchg(&runtime->core.state.interrupt_request, 0);
 		teak_tcg_service_interrupt(&runtime->core);
 		block_pc = runtime->core.state.pc;
 		block_repeat_level = runtime->core.state.bcn;
@@ -543,9 +547,6 @@ void dsp_runtime_set_input(dsp_runtime_t *runtime, size_t index, bool level) {
 
 void dsp_runtime_set_gsm_signal(dsp_runtime_t *runtime, pmb887x_dsp_gsm_signal_t signal, bool level) {
 	dsp_bus_set_gsm_signal(runtime->bus, signal, level);
-
-	dsp_runtime_wake(runtime);
-	runtime->notify_activity(runtime->device_opaque);
 }
 
 uint16_t dsp_runtime_get_outputs(dsp_runtime_t *runtime) {

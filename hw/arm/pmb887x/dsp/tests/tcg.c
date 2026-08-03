@@ -53,6 +53,12 @@ static pmb887x_dsp_tcg_core_t test_core_create(test_memory_t *program, test_memo
 	return core;
 }
 
+static void test_core_set_direct_data(pmb887x_dsp_tcg_core_t *core, test_memory_t *data) {
+	core->memory.direct_data = data->words;
+	core->memory.direct_data_read_size = ARRAY_SIZE(data->words);
+	core->memory.direct_data_write_size = ARRAY_SIZE(data->words);
+}
+
 static void test_execute_until(pmb887x_dsp_tcg_core_t *core, uint16_t pc, size_t max_blocks) {
 	for (size_t i = 0; i < max_blocks && core->state.pc != pc; i++)
 		g_assert_true(pmb887x_dsp_tcg_execute_block(core));
@@ -183,6 +189,7 @@ static void test_dual_memory_spaces(void) {
 	};
 	pmb887x_dsp_tcg_core_t core = test_core_create(&program, &data);
 
+	test_core_set_direct_data(&core, &data);
 	core.state.r[0] = 0x10;
 	core.state.r[4] = 0x18;
 	g_assert_true(pmb887x_dsp_tcg_execute_block(&core));
@@ -191,12 +198,31 @@ static void test_dual_memory_spaces(void) {
 	g_assert_cmphex(core.state.p[0], ==, 0);
 
 	core = test_core_create(&program, &data);
+	test_core_set_direct_data(&core, &data);
 	core.state.r[0] = 0x10;
 	core.state.r[4] = 0x20;
 	g_assert_true(pmb887x_dsp_tcg_execute_block(&core));
 	g_assert_cmphex(core.state.x[0], ==, 0xFFFF);
 	g_assert_cmphex(core.state.y[0], ==, 0x8001);
 	g_assert_cmphex(core.state.p[0], ==, 0x7FFF);
+}
+
+static void test_direct_data_read_write(void) {
+	test_memory_t program = {
+		.words = { 0x1B40, 0x1F41, 0x4180, 0x0004 },
+	};
+	test_memory_t data = {
+		.words = { [0x10] = 0x8001 },
+	};
+	pmb887x_dsp_tcg_core_t core = test_core_create(&program, &data);
+
+	test_core_set_direct_data(&core, &data);
+	core.state.a[0] = 0xA55A;
+	core.state.r[0] = 0x11;
+	core.state.r[1] = 0x10;
+	g_assert_true(pmb887x_dsp_tcg_execute_block(&core));
+	g_assert_cmphex(data.words[0x11], ==, 0xA55A);
+	g_assert_cmphex(core.state.a[0], ==, 0x8001);
 }
 
 static void test_mov_accumulator_high_extension_unaffected(void) {
@@ -353,6 +379,7 @@ int main(int argc, char **argv) {
 	g_test_add_func("/pmb887x/dsp/tcg/multiply-status-register", test_multiply_status_register);
 	g_test_add_func("/pmb887x/dsp/tcg/alu-status-register", test_alu_status_register);
 	g_test_add_func("/pmb887x/dsp/tcg/dual-memory-spaces", test_dual_memory_spaces);
+	g_test_add_func("/pmb887x/dsp/tcg/direct-data-read-write", test_direct_data_read_write);
 	g_test_add_func("/pmb887x/dsp/tcg/mov-accumulator-high-extension-unaffected", test_mov_accumulator_high_extension_unaffected);
 	g_test_add_func("/pmb887x/dsp/tcg/alu-accumulator-masks", test_alu_accumulator_masks);
 	g_test_add_func("/pmb887x/dsp/tcg/multiply-subtract-status-register", test_multiply_subtract_status_register);

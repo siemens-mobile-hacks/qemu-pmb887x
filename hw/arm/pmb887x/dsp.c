@@ -300,6 +300,20 @@ static void dsp_worker_kick(void *opaque) {
 	qemu_mutex_unlock(&p->worker.mutex);
 }
 
+static void dsp_worker_notify_activity(void *opaque) {
+	dsp_state_t *p = opaque;
+
+	if (qemu_thread_is_self(&p->worker.thread)) {
+		qemu_event_set(&p->worker.event);
+		return;
+	}
+
+	qemu_mutex_lock(&p->worker.mutex);
+	dsp_runtime_wake(p->runtime);
+	qemu_event_set(&p->worker.event);
+	qemu_mutex_unlock(&p->worker.mutex);
+}
+
 static void dsp_worker_notify_comm(void *opaque, uint16_t flags, bool set) {
 	dsp_state_t *p = opaque;
 
@@ -707,7 +721,7 @@ static void dsp_realize(DeviceState *dev, Error **errp) {
 	}
 
 	p->runtime = dsp_runtime_create(config, p->rom_version, rom->program_rom, rom->data_rom,
-		p, dsp_worker_kick, dsp_worker_notify_comm, dsp_ssc_transfer);
+		p, dsp_worker_notify_activity, dsp_worker_notify_comm, dsp_ssc_transfer);
 
 	p->worker.stop = false;
 	p->worker.enabled = false;

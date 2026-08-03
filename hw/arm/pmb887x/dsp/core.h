@@ -306,6 +306,9 @@ struct teak_memory_t {
 	teak_memory_space_t program;
 	teak_memory_space_t data;
 	teak_memory_space_t external;
+	uint16_t *direct_data;
+	uint32_t direct_data_read_size;
+	uint32_t direct_data_write_size;
 	void *cycle_opaque;
 	teak_advance_cycles_fn *advance_cycles;
 	uint32_t cycle_sensitive_base;
@@ -360,6 +363,7 @@ struct teak_state_t {
 	uint32_t trace_pc;
 	uint32_t pending_interrupts;
 	uint32_t interrupt_lines;
+	uint32_t interrupt_request;
 	uint32_t exit_request;
 	uint32_t block_repeat_start[TEAK_BLOCK_REPEAT_LEVELS];
 	uint32_t block_repeat_end[TEAK_BLOCK_REPEAT_LEVELS];

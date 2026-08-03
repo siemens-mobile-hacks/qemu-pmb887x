@@ -80,18 +80,94 @@ static uint32_t tcg_memory_access;
 
 static const uint16_t teak_interrupt_vectors[] = { 0x0006, 0x000E, 0x0016, 0x0004 };
 
+typedef enum teak_tcg_data_space_t {
+	TEAK_TCG_DATA_SPACE_ALL,
+	TEAK_TCG_DATA_SPACE_XZ,
+	TEAK_TCG_DATA_SPACE_Y,
+} teak_tcg_data_space_t;
+
+static TCGv_ptr tcg_emit_direct_data_pointer(TCGv_i32 address) {
+	TCGv_i32 offset = tcg_temp_new_i32();
+	TCGv_ptr base = tcg_temp_new_ptr();
+	TCGv_ptr pointer = tcg_temp_new_ptr();
+
+	tcg_gen_shli_i32(offset, address, 1);
+	tcg_gen_ext_i32_ptr(pointer, offset);
+	tcg_gen_ld_ptr(base, tcg_env, offsetof(teak_tcg_core_t, memory.direct_data));
+	tcg_gen_add_ptr(pointer, pointer, base);
+	return pointer;
+}
+
+static void tcg_emit_data_read(TCGv_i32 result, TCGv_i32 address, teak_tcg_data_space_t space) {
+	TCGLabel *slow = gen_new_label();
+	TCGLabel *done = gen_new_label();
+	TCGLabel *zero = space == TEAK_TCG_DATA_SPACE_ALL ? NULL : gen_new_label();
+	TCGv_i32 limit = tcg_temp_new_i32();
+	uint32_t access = tcg_memory_access++;
+
+	if (space != TEAK_TCG_DATA_SPACE_ALL) {
+		TCGv_i32 y_space_base = tcg_temp_new_i32();
+		TCGCond condition = space == TEAK_TCG_DATA_SPACE_XZ ? TCG_COND_GEU : TCG_COND_LTU;
+
+		tcg_gen_ld16u_i32(y_space_base, tcg_env, offsetof(teak_tcg_core_t, memory.y_space_base));
+		tcg_gen_brcond_i32(condition, address, y_space_base, zero);
+	}
+
+	tcg_gen_ld_i32(limit, tcg_env, offsetof(teak_tcg_core_t, memory.direct_data_read_size));
+	tcg_gen_brcond_i32(TCG_COND_GEU, address, limit, slow);
+	tcg_gen_ld16u_i32(result, tcg_emit_direct_data_pointer(address), 0);
+	tcg_gen_br(done);
+
+	gen_set_label(slow);
+	switch (space) {
+		case TEAK_TCG_DATA_SPACE_ALL:
+			gen_helper_teak_tcg_data_read_at(result, tcg_env, address, tcg_memory_pc, tcg_memory_cycle,
+				tcg_constant_i32(access));
+			break;
+
+		case TEAK_TCG_DATA_SPACE_XZ:
+			gen_helper_teak_tcg_data_read_xz_at(result, tcg_env, address, tcg_memory_pc, tcg_memory_cycle,
+				tcg_constant_i32(access));
+			break;
+
+		case TEAK_TCG_DATA_SPACE_Y:
+			gen_helper_teak_tcg_data_read_y_at(result, tcg_env, address, tcg_memory_pc, tcg_memory_cycle,
+				tcg_constant_i32(access));
+			break;
+	}
+	tcg_gen_br(done);
+
+	if (zero != NULL) {
+		gen_set_label(zero);
+		tcg_gen_movi_i32(result, 0);
+	}
+	gen_set_label(done);
+}
+
+static void tcg_emit_data_write(TCGv_i32 address, TCGv_i32 value) {
+	TCGLabel *slow = gen_new_label();
+	TCGLabel *done = gen_new_label();
+	TCGv_i32 limit = tcg_temp_new_i32();
+	uint32_t access = tcg_memory_access++;
+
+	tcg_gen_ld_i32(limit, tcg_env, offsetof(teak_tcg_core_t, memory.direct_data_write_size));
+	tcg_gen_brcond_i32(TCG_COND_GEU, address, limit, slow);
+	tcg_gen_st16_i32(value, tcg_emit_direct_data_pointer(address), 0);
+	tcg_gen_br(done);
+
+	gen_set_label(slow);
+	gen_helper_teak_tcg_data_write_at(tcg_env, address, value, tcg_memory_pc, tcg_memory_cycle,
+		tcg_constant_i32(access));
+	gen_set_label(done);
+}
+
 #define gen_helper_teak_tcg_data_read(result, env, address) \
-	gen_helper_teak_tcg_data_read_at(result, env, address, tcg_memory_pc, tcg_memory_cycle, \
-		tcg_constant_i32(tcg_memory_access++))
+	tcg_emit_data_read(result, address, TEAK_TCG_DATA_SPACE_ALL)
 #define gen_helper_teak_tcg_data_read_xz(result, env, address) \
-	gen_helper_teak_tcg_data_read_xz_at(result, env, address, tcg_memory_pc, tcg_memory_cycle, \
-		tcg_constant_i32(tcg_memory_access++))
+	tcg_emit_data_read(result, address, TEAK_TCG_DATA_SPACE_XZ)
 #define gen_helper_teak_tcg_data_read_y(result, env, address) \
-	gen_helper_teak_tcg_data_read_y_at(result, env, address, tcg_memory_pc, tcg_memory_cycle, \
-		tcg_constant_i32(tcg_memory_access++))
-#define gen_helper_teak_tcg_data_write(env, address, value) \
-	gen_helper_teak_tcg_data_write_at(env, address, value, tcg_memory_pc, tcg_memory_cycle, \
-		tcg_constant_i32(tcg_memory_access++))
+	tcg_emit_data_read(result, address, TEAK_TCG_DATA_SPACE_Y)
+#define gen_helper_teak_tcg_data_write(env, address, value) tcg_emit_data_write(address, value)
 
 static uint16_t tcg_pack_shadow_st0(const teak_state_t *state) {
 	uint16_t limit = state->flm | state->fvl;
@@ -314,7 +390,7 @@ void teak_tcg_request_interrupt(teak_tcg_core_t *core, uint8_t interrupt) {
 	g_assert(interrupt <= TEAK_INTERRUPT_NMI);
 
 	qatomic_or(&core->state.pending_interrupts, BIT(interrupt));
-	teak_tcg_request_exit(core);
+	qatomic_set(&core->state.interrupt_request, 1);
 }
 
 void teak_tcg_set_interrupt(teak_tcg_core_t *core, uint8_t interrupt, bool level) {
@@ -322,18 +398,17 @@ void teak_tcg_set_interrupt(teak_tcg_core_t *core, uint8_t interrupt, bool level
 
 	if (level) {
 		qatomic_or(&core->state.pending_interrupts, BIT(interrupt));
-		teak_tcg_request_exit(core);
+		qatomic_set(&core->state.interrupt_request, 1);
 	} else {
 		qatomic_and(&core->state.pending_interrupts, (uint8_t) ~BIT(interrupt));
 	}
 }
 
 void teak_tcg_update_irq_lines(teak_tcg_core_t *core, uint8_t lines) {
-	uint32_t previous;
 	lines &= 7U;
-	previous = qatomic_xchg(&core->state.interrupt_lines, lines);
-	if ((lines & ~previous) != 0)
-		teak_tcg_request_exit(core);
+	qatomic_set(&core->state.interrupt_lines, lines);
+	if (lines != 0)
+		qatomic_set(&core->state.interrupt_request, 1);
 }
 
 void teak_tcg_request_exit(teak_tcg_core_t *core) {
@@ -364,7 +439,6 @@ bool teak_tcg_service_interrupt(teak_tcg_core_t *core) {
 	}
 
 	qatomic_and(&state->pending_interrupts, (uint8_t) ~BIT(interrupt));
-	qatomic_set(&state->exit_request, 0);
 	state->sp--;
 	teak_data_write(core, state->sp, (uint16_t) state->pc);
 	if (context_switch)
@@ -629,9 +703,29 @@ static void tcg_synchronize_data_access(teak_tcg_core_t *core, uint32_t address,
 	}
 }
 
+static bool tcg_direct_data_read(teak_tcg_core_t *core, uint32_t address, uint16_t *value) {
+	if (core->memory.direct_data == NULL || address >= core->memory.direct_data_read_size)
+		return false;
+
+	*value = qatomic_read(&core->memory.direct_data[address]);
+	return true;
+}
+
+static bool tcg_direct_data_write(teak_tcg_core_t *core, uint32_t address, uint16_t value) {
+	if (core->memory.direct_data == NULL || address >= core->memory.direct_data_write_size)
+		return false;
+
+	qatomic_set(&core->memory.direct_data[address], value);
+	return true;
+}
+
 uint32_t HELPER(teak_tcg_data_read_at)(void *opaque, uint32_t address, uint32_t pc, uint32_t cycle_offset, uint32_t access) {
 	teak_state_t *state = opaque;
 	teak_tcg_core_t *core = container_of(state, teak_tcg_core_t, state);
+	uint16_t value;
+
+	if (tcg_direct_data_read(core, address, &value))
+		return value;
 
 	state->trace_pc = pc;
 	tcg_synchronize_data_access(core, address, cycle_offset, access);
@@ -641,10 +735,13 @@ uint32_t HELPER(teak_tcg_data_read_at)(void *opaque, uint32_t address, uint32_t 
 uint32_t HELPER(teak_tcg_data_read_xz_at)(void *opaque, uint32_t address, uint32_t pc, uint32_t cycle_offset, uint32_t access) {
 	teak_state_t *state = opaque;
 	teak_tcg_core_t *core = container_of(state, teak_tcg_core_t, state);
+	uint16_t value;
 
 	state->trace_pc = pc;
 	if (address >= core->memory.y_space_base)
 		return 0;
+	if (tcg_direct_data_read(core, address, &value))
+		return value;
 	tcg_synchronize_data_access(core, address, cycle_offset, access);
 	return teak_data_read(core, address);
 }
@@ -652,10 +749,13 @@ uint32_t HELPER(teak_tcg_data_read_xz_at)(void *opaque, uint32_t address, uint32
 uint32_t HELPER(teak_tcg_data_read_y_at)(void *opaque, uint32_t address, uint32_t pc, uint32_t cycle_offset, uint32_t access) {
 	teak_state_t *state = opaque;
 	teak_tcg_core_t *core = container_of(state, teak_tcg_core_t, state);
+	uint16_t value;
 
 	state->trace_pc = pc;
 	if (address < core->memory.y_space_base)
 		return 0;
+	if (tcg_direct_data_read(core, address, &value))
+		return value;
 	tcg_synchronize_data_access(core, address, cycle_offset, access);
 	return teak_data_read(core, address);
 }
@@ -665,6 +765,9 @@ void HELPER(teak_tcg_data_write_at)(void *opaque, uint32_t address, uint32_t val
 ) {
 	teak_state_t *state = opaque;
 	teak_tcg_core_t *core = container_of(state, teak_tcg_core_t, state);
+
+	if (tcg_direct_data_write(core, address, (uint16_t) value))
+		return;
 
 	state->trace_pc = pc;
 	tcg_synchronize_data_access(core, address, cycle_offset, access);
@@ -800,11 +903,13 @@ void HELPER(teak_tcg_alb_memory)(void *opaque, uint32_t address, uint32_t mask, 
 	uint16_t value;
 	uint16_t result;
 
-	state->trace_pc = pc;
-	tcg_synchronize_data_access(core, address, cycle_offset, access);
-	value = teak_data_read(core, address);
+	if (!tcg_direct_data_read(core, address, &value)) {
+		state->trace_pc = pc;
+		tcg_synchronize_data_access(core, address, cycle_offset, access);
+		value = teak_data_read(core, address);
+	}
 	result = tcg_alb_result(state, alb_operation, value, mask);
-	if (tcg_alb_modifies_operand(alb_operation))
+	if (tcg_alb_modifies_operand(alb_operation) && !tcg_direct_data_write(core, address, result))
 		teak_data_write(core, address, result);
 }
 
@@ -4298,6 +4403,7 @@ static void tcg_emit_block_batch(const teak_tcg_block_t *block, TCGLabel *loop, 
 	TCGv_i32 cycles_remaining = tcg_temp_new_i32();
 	TCGv_i32 exit_reason = tcg_temp_new_i32();
 	TCGv_i32 exit_request = tcg_temp_new_i32();
+	TCGv_i32 interrupt_request = tcg_temp_new_i32();
 	TCGv_i32 iterations = tcg_temp_new_i32();
 	TCGv_i32 interrupt_lines = tcg_temp_new_i32();
 	TCGv_i32 pending_interrupts = tcg_temp_new_i32();
@@ -4309,6 +4415,8 @@ static void tcg_emit_block_batch(const teak_tcg_block_t *block, TCGLabel *loop, 
 
 	tcg_gen_ld_i32(exit_request, tcg_env, offsetof(teak_state_t, exit_request));
 	tcg_gen_brcondi_i32(TCG_COND_NE, exit_request, 0, exit);
+	tcg_gen_ld_i32(interrupt_request, tcg_env, offsetof(teak_state_t, interrupt_request));
+	tcg_gen_brcondi_i32(TCG_COND_NE, interrupt_request, 0, exit);
 	tcg_gen_ld_i32(pending_interrupts, tcg_env, offsetof(teak_state_t, pending_interrupts));
 	tcg_gen_ld_i32(interrupt_lines, tcg_env, offsetof(teak_state_t, interrupt_lines));
 	tcg_gen_or_i32(pending_interrupts, pending_interrupts, interrupt_lines);
@@ -4400,9 +4508,12 @@ static void tcg_emit_block(void *opaque) {
 		}
 		if (tcg_may_write_data(instruction)) {
 			TCGv_i32 exit_request = tcg_temp_new_i32();
+			TCGv_i32 interrupt_request = tcg_temp_new_i32();
 
 			tcg_gen_ld_i32(exit_request, tcg_env, offsetof(teak_state_t, exit_request));
 			tcg_gen_brcondi_i32(TCG_COND_NE, exit_request, 0, exit);
+			tcg_gen_ld_i32(interrupt_request, tcg_env, offsetof(teak_state_t, interrupt_request));
+			tcg_gen_brcondi_i32(TCG_COND_NE, interrupt_request, 0, exit);
 		}
 	}
 	if (can_batch)
@@ -4607,6 +4718,8 @@ void *HELPER(teak_tcg_chain)(void *opaque, uint32_t block_cycles, uint32_t block
 		core->chain_exit_stops++;
 		return NULL;
 	}
+	if (qatomic_read(&state->interrupt_request) != 0)
+		return NULL;
 	if (tcg_pending_interrupts(state) != 0 && teak_tcg_service_interrupt(core))
 		core->chain_interrupts++;
 	if (core->last_block_cycles >= core->chain_cycle_limit) {
@@ -4688,7 +4801,6 @@ bool teak_tcg_execute_block(teak_tcg_core_t *core) {
 
 static bool tcg_execute_slice_block(teak_tcg_core_t *core, const teak_tcg_block_t *block, TranslationBlock *tb, size_t max_cycles) {
 	bool stable_block = core->state.bcn == 0;
-	bool poll_interrupts = tcg_pending_interrupts(&core->state) != 0;
 
 	do {
 		bool continue_block = stable_block;
@@ -4699,8 +4811,11 @@ static bool tcg_execute_slice_block(teak_tcg_core_t *core, const teak_tcg_block_
 
 		if (qatomic_xchg(&core->state.exit_request, 0) != 0)
 			break;
-		if (poll_interrupts && teak_tcg_service_interrupt(core))
-			break;
+
+		bool interrupt_requested = qatomic_xchg(&core->state.interrupt_request, 0) != 0;
+		if (interrupt_requested && teak_tcg_service_interrupt(core))
+			core->chain_interrupts++;
+
 		if (core->state.pc != block->pc)
 			continue_block = false;
 		if (core->state.bcn != 0)
@@ -4717,8 +4832,6 @@ static bool tcg_execute_slice_block(teak_tcg_core_t *core, const teak_tcg_block_
 }
 
 static bool tcg_execute_cached_slice(teak_tcg_core_t *core, teak_tcg_block_cache_entry_t *entry, size_t max_cycles) {
-	bool poll_interrupts = tcg_pending_interrupts(&core->state) != 0;
-
 	while (true) {
 		teak_tcg_block_cache_entry_t *next;
 		size_t remaining_cycles = max_cycles - core->last_block_cycles;
@@ -4728,8 +4841,11 @@ static bool tcg_execute_cached_slice(teak_tcg_core_t *core, teak_tcg_block_cache
 
 		if (qatomic_xchg(&core->state.exit_request, 0) != 0)
 			break;
-		if (poll_interrupts && teak_tcg_service_interrupt(core))
-			break;
+
+		bool interrupt_requested = qatomic_xchg(&core->state.interrupt_request, 0) != 0;
+		if (interrupt_requested && teak_tcg_service_interrupt(core))
+			core->chain_interrupts++;
+
 		if (core->last_block_cycles >= max_cycles)
 			break;
 
