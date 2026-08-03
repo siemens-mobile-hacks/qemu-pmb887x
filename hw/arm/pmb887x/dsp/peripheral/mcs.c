@@ -141,9 +141,14 @@ static bool mcs_write(dsp_device_t *device, uint16_t offset, uint32_t pc, uint16
 	mcs_state_t *state = device->state;
 
 	switch (offset) {
-		case TEAK_MCS_CFSET:
-			qatomic_or(&state->comm_status, value);
+		case TEAK_MCS_CFSET: {
+			uint16_t previous = qatomic_fetch_or(&state->comm_status, value);
+			uint16_t set = value & ~previous;
+
+			if (set != 0 && state->host.comm_changed != NULL)
+				state->host.comm_changed(state->host.opaque, set, true);
 			break;
+		}
 
 		case TEAK_MCS_CFR: {
 			uint16_t cleared = qatomic_read(&state->comm_status) & value;
@@ -151,8 +156,8 @@ static bool mcs_write(dsp_device_t *device, uint16_t offset, uint32_t pc, uint16
 			qatomic_and(&state->comm_status, (uint16_t) ~value);
 			qatomic_or(&state->comm_cleared, cleared);
 
-			if (cleared != 0 && state->host.comm_cleared != NULL)
-				state->host.comm_cleared(state->host.opaque, cleared);
+			if (cleared != 0 && state->host.comm_changed != NULL)
+				state->host.comm_changed(state->host.opaque, cleared, false);
 			break;
 		}
 

@@ -22,7 +22,7 @@ struct dsp_runtime_t {
 	const uint8_t *data_rom;
 	void *device_opaque;
 	void (*notify_activity)(void *opaque);
-	void (*notify_comm)(void *opaque, uint16_t flags);
+	void (*notify_comm)(void *opaque, uint16_t flags, bool set);
 	teak_tcg_core_t core;
 	dsp_bus_t *bus;
 	uint16_t *program;
@@ -132,10 +132,12 @@ static void dsp_runtime_set_interrupt_lines(void *opaque, uint8_t lines) {
 	}
 }
 
-static void dsp_runtime_comm_cleared(void *opaque, uint16_t flags) {
+static void dsp_runtime_comm_changed(void *opaque, uint16_t flags, bool set) {
 	dsp_runtime_t *runtime = opaque;
 
-	runtime->notify_comm(runtime->device_opaque, flags);
+	runtime->notify_comm(runtime->device_opaque, flags, set);
+	if (set)
+		dsp_runtime_kick(runtime);
 }
 
 static uint16_t dsp_runtime_program_read(void *opaque, uint32_t address) {
@@ -230,13 +232,8 @@ static void dsp_runtime_external_write(void *opaque, uint32_t index, uint16_t va
 }
 
 dsp_runtime_t *dsp_runtime_create(
-	const pmb887x_dsp_config_t *config,
-	uint16_t rom_version,
-	const uint8_t *program_rom,
-	const uint8_t *data_rom,
-	void *device_opaque,
-	void (*notify_activity)(void *opaque),
-	void (*notify_comm)(void *opaque, uint16_t flags),
+	const pmb887x_dsp_config_t *config, uint16_t rom_version, const uint8_t *program_rom, const uint8_t *data_rom,
+	void *device_opaque, void (*notify_activity)(void *opaque), void (*notify_comm)(void *opaque, uint16_t flags, bool set),
 	uint32_t (*ssc_transfer)(void *opaque, uint32_t value)
 ) {
 	dsp_runtime_t *runtime;
@@ -262,7 +259,7 @@ dsp_runtime_t *dsp_runtime_create(
 		.set_page = dsp_runtime_set_page,
 		.set_core_disabled = dsp_runtime_set_core_disabled,
 		.set_interrupt_lines = dsp_runtime_set_interrupt_lines,
-		.comm_cleared = dsp_runtime_comm_cleared,
+		.comm_changed = dsp_runtime_comm_changed,
 		.data_read = dsp_runtime_bus_data_read,
 		.data_write = dsp_runtime_bus_data_write,
 		.ssc_transfer = ssc_transfer,
@@ -371,6 +368,9 @@ bool dsp_runtime_run(dsp_runtime_t *runtime) {
 			qatomic_set(&runtime->program_warming, true);
 			qatomic_set(&runtime->mutable_program_started, true);
 			qatomic_set(&runtime->pram_cache_active, true);
+
+			size_t precompiled = teak_tcg_precompile_entry(&runtime->core, runtime->core.state.pc);
+			DPRINTF("cold program precompile: pc=%05X blocks=%zu\n", runtime->core.state.pc, precompiled);
 		}
 
 		if (qatomic_read(&runtime->core_disabled)) {

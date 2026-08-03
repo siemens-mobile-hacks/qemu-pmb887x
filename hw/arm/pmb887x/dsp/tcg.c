@@ -78,6 +78,8 @@ static TCGv_i32 tcg_memory_pc;
 static TCGv_i32 tcg_memory_cycle;
 static uint32_t tcg_memory_access;
 
+static const uint16_t teak_interrupt_vectors[] = { 0x0006, 0x000E, 0x0016, 0x0004 };
+
 #define gen_helper_teak_tcg_data_read(result, env, address) \
 	gen_helper_teak_tcg_data_read_at(result, env, address, tcg_memory_pc, tcg_memory_cycle, \
 		tcg_constant_i32(tcg_memory_access++))
@@ -339,7 +341,6 @@ void teak_tcg_request_exit(teak_tcg_core_t *core) {
 }
 
 bool teak_tcg_service_interrupt(teak_tcg_core_t *core) {
-	static const uint32_t vectors[] = { 0x0006, 0x000E, 0x0016, 0x0004 };
 	teak_state_t *state = &core->state;
 	uint32_t pending;
 	uint8_t interrupt;
@@ -368,7 +369,7 @@ bool teak_tcg_service_interrupt(teak_tcg_core_t *core) {
 	teak_data_write(core, state->sp, (uint16_t) state->pc);
 	if (context_switch)
 		tcg_context_store(state);
-	state->pc = vectors[interrupt];
+	state->pc = teak_interrupt_vectors[interrupt];
 	state->exit_reason = TEAK_EXIT_INTERRUPT;
 	return true;
 }
@@ -4478,6 +4479,97 @@ static TranslationBlock *tcg_prepare_block(teak_tcg_core_t *core, teak_tcg_block
 		max_instructions = MAX((size_t) 1, block->instruction_count / 2);
 	}
 	return tb;
+}
+
+static void tcg_precompile_enqueue(uint16_t *queue, bool *queued, size_t *tail, uint32_t address) {
+	uint16_t pc = (uint16_t) address;
+
+	if (queued[pc])
+		return;
+	queued[pc] = true;
+	queue[(*tail)++] = pc;
+}
+
+size_t teak_tcg_precompile_entry(teak_tcg_core_t *core, uint32_t entry) {
+	uint16_t *queue = g_new(uint16_t, (size_t) TEAK_PROGRAM_ADDRESS_MASK + 1);
+	bool *queued = g_new0(bool, (size_t) TEAK_PROGRAM_ADDRESS_MASK + 1);
+	size_t head = 0;
+	size_t tail = 0;
+	size_t blocks = 0;
+
+	uint32_t saved_pc = core->state.pc;
+	uint32_t saved_error_address = core->translation_error_address;
+	teak_translation_error_t saved_error = core->translation_error;
+	uint8_t saved_bcn = core->state.bcn;
+	uint8_t saved_lp = core->state.lp;
+
+	tcg_precompile_enqueue(queue, queued, &tail, entry);
+	for (size_t i = 0; i < ARRAY_SIZE(teak_interrupt_vectors); i++)
+		tcg_precompile_enqueue(queue, queued, &tail, teak_interrupt_vectors[i]);
+
+	while (head < tail) {
+		teak_tcg_block_t block;
+
+		core->state.pc = queue[head++];
+		core->state.bcn = 0;
+		core->state.lp = 0;
+		TranslationBlock *tb = tcg_prepare_block(core, &block);
+		if (tb == NULL)
+			continue;
+
+		blocks++;
+		const teak_insn_t *last = &block.instructions[block.instruction_count - 1];
+		uint16_t fallthrough = (uint16_t) (last->address + last->words);
+
+		switch (last->opcode) {
+			case TEAK_OP_BRANCH_ABSOLUTE:
+			case TEAK_OP_BRANCH_RELATIVE:
+				tcg_precompile_enqueue(queue, queued, &tail, last->branch_target);
+				if (last->condition != TEAK_COND_TRUE)
+					tcg_precompile_enqueue(queue, queued, &tail, fallthrough);
+				break;
+
+			case TEAK_OP_CALL_ABSOLUTE:
+			case TEAK_OP_CALL_RELATIVE:
+				tcg_precompile_enqueue(queue, queued, &tail, last->branch_target);
+				tcg_precompile_enqueue(queue, queued, &tail, fallthrough);
+				break;
+
+			case TEAK_OP_CALL_ACCUMULATOR:
+				tcg_precompile_enqueue(queue, queued, &tail, fallthrough);
+				break;
+
+			case TEAK_OP_RETURN:
+			case TEAK_OP_RETURN_INTERRUPT:
+				if (last->condition != TEAK_COND_TRUE)
+					tcg_precompile_enqueue(queue, queued, &tail, fallthrough);
+				break;
+
+			case TEAK_OP_RETURN_STACK:
+			case TEAK_OP_DELAYED_RETURN:
+			case TEAK_OP_DELAYED_RETURN_INTERRUPT:
+				break;
+
+			case TEAK_OP_TRAP:
+				tcg_precompile_enqueue(queue, queued, &tail, 2);
+				tcg_precompile_enqueue(queue, queued, &tail, fallthrough);
+				break;
+
+			default:
+				tcg_precompile_enqueue(queue, queued, &tail, fallthrough);
+				break;
+		}
+	}
+
+	core->state.pc = saved_pc;
+	core->state.bcn = saved_bcn;
+	core->state.lp = saved_lp;
+	core->translation_error_address = saved_error_address;
+	core->translation_error = saved_error;
+
+	g_free(queued);
+	g_free(queue);
+	return blocks;
 }
 
 static void tcg_complete_block_cycles(teak_tcg_core_t *core, uint32_t block_cycles) {

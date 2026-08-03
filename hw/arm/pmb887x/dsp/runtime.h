@@ -8,10 +8,11 @@
 
 typedef struct dsp_runtime_t dsp_runtime_t;
 
-dsp_runtime_t *dsp_runtime_create(const pmb887x_dsp_config_t *config,
-	uint16_t rom_version, const uint8_t *program_rom, const uint8_t *data_rom, void *device_opaque,
-	void (*notify_activity)(void *opaque), void (*notify_comm)(void *opaque, uint16_t flags),
-	uint32_t (*ssc_transfer)(void *opaque, uint32_t value));
+dsp_runtime_t *dsp_runtime_create(
+	const pmb887x_dsp_config_t *config, uint16_t rom_version, const uint8_t *program_rom, const uint8_t *data_rom,
+	void *device_opaque, void (*notify_activity)(void *opaque), void (*notify_comm)(void *opaque, uint16_t flags, bool set),
+	uint32_t (*ssc_transfer)(void *opaque, uint32_t value)
+);
 void dsp_runtime_destroy(dsp_runtime_t *runtime);
 void dsp_runtime_reset(dsp_runtime_t *runtime);
 void dsp_runtime_set_clock(dsp_runtime_t *runtime, bool enabled);

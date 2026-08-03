@@ -15,7 +15,7 @@ struct dsp_host_t {
 	void (*set_page)(void *opaque, uint16_t value);
 	void (*set_core_disabled)(void *opaque, bool disabled);
 	void (*set_interrupt_lines)(void *opaque, uint8_t lines);
-	void (*comm_cleared)(void *opaque, uint16_t flags);
+	void (*comm_changed)(void *opaque, uint16_t flags, bool set);
 	uint32_t (*get_pc)(void *opaque);
 	uint16_t (*data_read)(void *opaque, uint16_t address);
 	void (*data_write)(void *opaque, uint16_t address, uint16_t value);

@@ -196,7 +196,7 @@ static void *dsp_worker(void *opaque) {
 			comm_flags = qatomic_read(&p->reset_comm_flags);
 			requests = qatomic_read(&p->reset_requests);
 			dsp_runtime_set_comm(p->runtime, comm_flags);
-			qatomic_set(&p->comm_status, comm_flags);
+			qatomic_set(&p->comm_status, dsp_runtime_get_comm(p->runtime));
 			for (size_t i = 0; i < PMB887X_DSP_INT_COUNT; i++)
 				if ((requests & BIT(i)) != 0)
 					dsp_runtime_set_request(p->runtime, i, true);
@@ -300,19 +300,22 @@ static void dsp_worker_kick(void *opaque) {
 	qemu_mutex_unlock(&p->worker.mutex);
 }
 
-static void dsp_worker_notify_comm(void *opaque, uint16_t flags) {
+static void dsp_worker_notify_comm(void *opaque, uint16_t flags, bool set) {
 	dsp_state_t *p = opaque;
-	uint64_t sequence = qatomic_read(&p->command_sequence);
-	int64_t host_delay;
-	int64_t virtual_delay;
+
+	if (set) {
+		qatomic_or(&p->comm_status, flags);
+		return;
+	}
 
 	qatomic_and(&p->comm_status, (uint16_t) ~flags);
 
+	uint64_t sequence = qatomic_read(&p->command_sequence);
 	if (sequence == 0)
 		return;
 
-	host_delay = qemu_clock_get_ns(QEMU_CLOCK_HOST) - qatomic_read(&p->command_host_time);
-	virtual_delay = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) - qatomic_read(&p->command_virtual_time);
+	int64_t host_delay = qemu_clock_get_ns(QEMU_CLOCK_HOST) - qatomic_read(&p->command_host_time);
+	int64_t virtual_delay = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) - qatomic_read(&p->command_virtual_time);
 
 	DPRINTF("command clear: sequence=%" PRIu64 " flags=%04X host_delay=%" PRId64
 		" ns virtual_delay=%" PRId64 " ns status_reads=%u\n",
@@ -468,7 +471,7 @@ static uint64_t dsp_io_read(void *opaque, hwaddr haddr, unsigned size) {
 			bool reset_pending = qatomic_read(&p->reset_pending);
 
 			if (reset_pending) {
-				value = qatomic_read(&p->reset_comm_flags);
+				value = qatomic_read(&p->reset_comm_flags) | qatomic_read(&p->comm_status);
 			} else {
 				value = qatomic_read(&p->comm_status);
 			}
@@ -485,6 +488,16 @@ static uint64_t dsp_io_read(void *opaque, hwaddr haddr, unsigned size) {
 					DPRINTF("command pending: sequence=%" PRIu64 " flags=%04" PRIX64
 						" reads=%u host_delay=%" PRId64 " ns virtual_delay=%" PRId64 " ns\n",
 						qatomic_read(&p->command_sequence), value, reads, host_delay, virtual_delay);
+				}
+			}
+
+			if (reset_pending || value != 0) {
+				g_thread_yield();
+				reset_pending = qatomic_read(&p->reset_pending);
+				if (reset_pending) {
+					value = qatomic_read(&p->reset_comm_flags) | qatomic_read(&p->comm_status);
+				} else {
+					value = qatomic_read(&p->comm_status);
 				}
 			}
 

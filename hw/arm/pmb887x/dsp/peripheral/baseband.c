@@ -5,7 +5,6 @@
 #include "qemu/osdep.h"
 #include "qemu/atomic.h"
 #include "qemu/bitops.h"
-#include "qemu/thread.h"
 #include "qemu/timer.h"
 
 #include "hw/arm/pmb887x/dsp/peripheral/internal.h"
@@ -19,28 +18,16 @@
 #define BASEBAND_RING_WORDS		0x03C0U
 #define BASEBAND_WORD_RATE_NUMERATOR	13U
 #define BASEBAND_WORD_RATE_DENOMINATOR_NS	12000U
-#define BASEBAND_DSP_CLOCK_FREQUENCY	104000000U
 #define BASEBAND_DECIMATION_DIVISOR	2U
 #define BASEBAND_INTERRUPT_GROUP	0U
 #define BASEBAND_CTRL_RESET		0x0110U
 
 typedef struct baseband_state_t baseband_state_t;
-typedef struct baseband_event_t baseband_event_t;
-typedef QTAILQ_HEAD(baseband_event_queue_t, baseband_event_t) baseband_event_queue_t;
-
-struct baseband_event_t {
-	pmb887x_dsp_gsm_signal_t signal;
-	int64_t time;
-	int64_t host_time;
-	bool level;
-	QTAILQ_ENTRY(baseband_event_t) entry;
-};
 
 struct baseband_state_t {
 	dsp_device_t *interrupt;
 	dsp_host_t host;
-	QemuMutex *event_mutex;
-	baseband_event_queue_t events;
+	QEMUTimer *full_timer;
 	uint16_t ram_base;
 	uint16_t ram_size;
 	uint16_t control;
@@ -55,36 +42,16 @@ struct baseband_state_t {
 	uint32_t adjacent_power;
 	uint16_t iq_imbalance;
 	int64_t job_start_time;
-	int64_t current_time;
-	int64_t dsp_time;
 	int64_t full_time;
 	uint64_t produced_words;
-	uint32_t queued_events;
-	uint32_t dsp_time_remainder;
 	uint16_t rate_divisor;
-	bool full_scheduled;
 	bool job_active;
-	bool core_idle;
 };
-
-static void baseband_clear_events(baseband_state_t *state) {
-	baseband_event_t *event;
-
-	while ((event = QTAILQ_FIRST(&state->events)) != NULL) {
-		QTAILQ_REMOVE(&state->events, event, entry);
-		g_free(event);
-	}
-	qatomic_set(&state->queued_events, 0);
-}
 
 static void baseband_destroy(dsp_device_t *device) {
 	baseband_state_t *state = device->state;
 
-	qemu_mutex_lock(state->event_mutex);
-	baseband_clear_events(state);
-	qemu_mutex_unlock(state->event_mutex);
-	qemu_mutex_destroy(state->event_mutex);
-	g_free(state->event_mutex);
+	timer_free(state->full_timer);
 	g_free(device->state);
 }
 
@@ -92,22 +59,19 @@ static void baseband_reset(dsp_device_t *device) {
 	baseband_state_t *state = device->state;
 	dsp_device_t *interrupt = state->interrupt;
 	dsp_host_t host = state->host;
-	QemuMutex *event_mutex = state->event_mutex;
+	QEMUTimer *full_timer = state->full_timer;
 	uint16_t ram_base = state->ram_base;
 	uint16_t ram_size = state->ram_size;
 
-	qemu_mutex_lock(event_mutex);
-	baseband_clear_events(state);
+	timer_del(full_timer);
 	memset(state, 0, sizeof(*state));
 	state->interrupt = interrupt;
 	state->host = host;
-	state->event_mutex = event_mutex;
-	QTAILQ_INIT(&state->events);
+	state->full_timer = full_timer;
 	state->ram_base = ram_base;
 	state->ram_size = ram_size;
 	state->control = BASEBAND_CTRL_RESET;
-	state->dsp_time = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
-	qemu_mutex_unlock(event_mutex);
+	state->full_time = INT64_MAX;
 
 	for (size_t i = 0; i < MIN((size_t) ram_size, (size_t) BASEBAND_RING_WORDS); i++)
 		state->host.data_write(state->host.opaque, ram_base + i, 0);
@@ -142,21 +106,29 @@ static uint16_t baseband_update_pointer(baseband_state_t *state, int64_t now) {
 }
 
 static void baseband_schedule_interrupt(baseband_state_t *state, int64_t now) {
-	if (!state->job_active || state->interrupt_pointer >= BASEBAND_RING_WORDS) {
-		state->full_scheduled = false;
+	if (!qatomic_read(&state->job_active)) {
+		qatomic_set(&state->full_time, INT64_MAX);
+		timer_del(state->full_timer);
+		return;
+	}
+
+	if (qatomic_read(&state->interrupt_pointer) >= BASEBAND_RING_WORDS) {
+		qatomic_set(&state->full_time, INT64_MAX);
+		timer_del(state->full_timer);
 		return;
 	}
 
 	uint64_t words = baseband_words_at(state, now);
 	uint16_t pointer = words % BASEBAND_RING_WORDS;
-	uint16_t target = state->interrupt_pointer;
+	uint16_t target = qatomic_read(&state->interrupt_pointer);
 	uint16_t distance = target > pointer ? target - pointer : BASEBAND_RING_WORDS - pointer + target;
 	uint64_t target_words = words + distance;
-	uint64_t numerator = target_words * BASEBAND_WORD_RATE_DENOMINATOR_NS * state->rate_divisor;
-
-	state->full_time = state->job_start_time + (numerator + BASEBAND_WORD_RATE_NUMERATOR - 1) /
+	uint64_t numerator = target_words * BASEBAND_WORD_RATE_DENOMINATOR_NS * qatomic_read(&state->rate_divisor);
+	int64_t deadline = qatomic_read(&state->job_start_time) + (numerator + BASEBAND_WORD_RATE_NUMERATOR - 1) /
 		BASEBAND_WORD_RATE_NUMERATOR;
-	state->full_scheduled = true;
+
+	qatomic_set(&state->full_time, deadline);
+	timer_mod(state->full_timer, deadline);
 }
 
 static bool baseband_read(dsp_device_t *device, uint16_t offset, uint32_t pc, uint16_t *value) {
@@ -171,13 +143,16 @@ static bool baseband_read(dsp_device_t *device, uint16_t offset, uint32_t pc, ui
 			*value = qatomic_read(&state->interrupt_pointer);
 			break;
 
-		case TEAK_BB_WR_POINTER:
+		case TEAK_BB_WR_POINTER: {
+			int64_t now = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
+
 			if (qatomic_read(&state->job_active)) {
-				*value = baseband_update_pointer(state, state->current_time);
+				*value = baseband_update_pointer(state, now);
 			} else {
 				*value = qatomic_read(&state->write_pointer);
 			}
 			break;
+		}
 
 		case TEAK_BB_STATUS:
 			*value = qatomic_read(&state->status);
@@ -236,10 +211,13 @@ static bool baseband_write(dsp_device_t *device, uint16_t offset, uint32_t pc, u
 			qatomic_set(&state->control, value & BASEBAND_CTRL_MASK);
 			break;
 
-		case TEAK_BB_INT_POINTER:
+		case TEAK_BB_INT_POINTER: {
+			int64_t now = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
+
 			qatomic_set(&state->interrupt_pointer, value & TEAK_BB_INT_POINTER_VALUE);
-			baseband_schedule_interrupt(state, state->current_time);
+			baseband_schedule_interrupt(state, now);
 			break;
+		}
 
 		case TEAK_BB_DCOFFSET_I:
 			qatomic_set(&state->dc_offset_i, value);
@@ -273,15 +251,37 @@ static const dsp_device_ops_t baseband_ops = {
 	.write = baseband_write,
 };
 
+static void baseband_full_timer(void *opaque) {
+	baseband_state_t *state = opaque;
+	int64_t now = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
+	int64_t deadline = qatomic_read(&state->full_time);
+
+	if (deadline == INT64_MAX)
+		return;
+
+	if (deadline > now) {
+		timer_mod(state->full_timer, deadline);
+		return;
+	}
+
+	if (qatomic_cmpxchg(&state->full_time, deadline, INT64_MAX) != deadline)
+		return;
+
+	if (!qatomic_read(&state->job_active))
+		return;
+
+	baseband_update_pointer(state, deadline);
+	dsp_int_set_flags(state->interrupt, BASEBAND_INTERRUPT_GROUP, TEAK_INT_FINTA0_BB_FULL);
+}
+
 dsp_device_t *baseband_create(const pmb887x_dsp_peripheral_config_t *config, dsp_device_t *interrupt, const dsp_host_t *host) {
 	baseband_state_t *state = g_new0(baseband_state_t, 1);
 	state->interrupt = interrupt;
 	state->host = *host;
 	state->ram_base = config->ram_base;
 	state->ram_size = config->ram_size;
-	state->event_mutex = g_new(QemuMutex, 1);
-	qemu_mutex_init(state->event_mutex);
-	QTAILQ_INIT(&state->events);
+	state->full_time = INT64_MAX;
+	state->full_timer = timer_new_ns(QEMU_CLOCK_VIRTUAL, baseband_full_timer, state);
 	return dsp_device_create(config, &baseband_ops, state);
 }
 
@@ -307,25 +307,15 @@ static uint16_t baseband_status_mask(pmb887x_dsp_gsm_signal_t signal) {
 	}
 }
 
-static void baseband_apply_signal(baseband_state_t *state, const baseband_event_t *event) {
-	pmb887x_dsp_gsm_signal_t signal = event->signal;
-	bool level = event->level;
+static void baseband_apply_signal(baseband_state_t *state, pmb887x_dsp_gsm_signal_t signal, bool level, int64_t now) {
 	uint16_t mask = baseband_status_mask(signal);
-	uint16_t old_status = qatomic_read(&state->status);
-	bool interrupt_signal = signal != PMB887X_DSP_GSM_SIGNAL_RXON;
-	int64_t now = event->time;
-	int64_t virtual_delay = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) - event->time;
-	int64_t host_delay = qemu_clock_get_ns(QEMU_CLOCK_HOST) - event->host_time;
-	int64_t dsp_lateness = MAX(state->dsp_time - event->time, 0);
-
 	if (mask == 0)
 		return;
 
-	state->current_time = now;
-	DPRINTF("signal: time=%" PRId64 " ns signal=%u level=%u virtual_delay=%" PRId64
-		" ns host_delay=%" PRId64 " ns dsp_lateness=%" PRId64
-		" ns status=%04X pointer=%u interrupt_pointer=%u\n",
-		now, signal, level, virtual_delay, host_delay, dsp_lateness, old_status,
+	uint16_t old_status = qatomic_read(&state->status);
+	bool interrupt_signal = signal != PMB887X_DSP_GSM_SIGNAL_RXON;
+	DPRINTF("signal: time=%" PRId64 " ns signal=%u level=%u status=%04X pointer=%u interrupt_pointer=%u\n",
+		now, signal, level, old_status,
 		qatomic_read(&state->write_pointer), qatomic_read(&state->interrupt_pointer));
 
 	if (level) {
@@ -352,7 +342,8 @@ static void baseband_apply_signal(baseband_state_t *state, const baseband_event_
 		if (interrupt_signal && qatomic_read(&state->job_active)) {
 			baseband_update_pointer(state, now);
 			qatomic_set(&state->job_active, false);
-			state->full_scheduled = false;
+			qatomic_set(&state->full_time, INT64_MAX);
+			timer_del(state->full_timer);
 		}
 
 		qatomic_and(&state->status, (uint16_t) ~mask);
@@ -367,97 +358,7 @@ static void baseband_apply_signal(baseband_state_t *state, const baseband_event_
 
 void baseband_set_signal(dsp_device_t *device, pmb887x_dsp_gsm_signal_t signal, bool level) {
 	baseband_state_t *state = device->state;
-	baseband_event_t *event = g_new(baseband_event_t, 1);
-	event->signal = signal;
-	event->level = level;
-	event->time = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
-	event->host_time = qemu_clock_get_ns(QEMU_CLOCK_HOST);
+	int64_t now = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
 
-	qemu_mutex_lock(state->event_mutex);
-	QTAILQ_INSERT_TAIL(&state->events, event, entry);
-	qatomic_inc(&state->queued_events);
-	qemu_mutex_unlock(state->event_mutex);
-}
-
-void baseband_set_core_idle(dsp_device_t *device, bool idle) {
-	baseband_state_t *state = device->state;
-	baseband_event_t *event;
-	int64_t next_time;
-
-	if (!state->core_idle || idle) {
-		state->core_idle = idle;
-		return;
-	}
-
-	next_time = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
-	qemu_mutex_lock(state->event_mutex);
-	event = QTAILQ_FIRST(&state->events);
-	if (event != NULL)
-		next_time = MIN(next_time, event->time);
-	qemu_mutex_unlock(state->event_mutex);
-
-	if (state->full_scheduled)
-		next_time = MIN(next_time, state->full_time);
-
-	if (next_time > state->dsp_time) {
-		state->dsp_time = next_time;
-		state->dsp_time_remainder = 0;
-	}
-	state->core_idle = false;
-}
-
-void baseband_advance(dsp_device_t *device, size_t cycles) {
-	baseband_state_t *state = device->state;
-	uint64_t elapsed = (uint64_t) cycles * NANOSECONDS_PER_SECOND + state->dsp_time_remainder;
-
-	state->dsp_time += elapsed / BASEBAND_DSP_CLOCK_FREQUENCY;
-	state->dsp_time_remainder = elapsed % BASEBAND_DSP_CLOCK_FREQUENCY;
-
-	while (true) {
-		baseband_event_t *event;
-		uint16_t flags;
-		int64_t now;
-		bool deliver_full;
-		bool deliver_queued;
-
-		if (qatomic_read(&state->queued_events) == 0 && !state->full_scheduled)
-			return;
-
-		flags = dsp_int_get_flags(state->interrupt, BASEBAND_INTERRUPT_GROUP);
-		if ((flags & (TEAK_INT_FINTA0_BBHI | TEAK_INT_FINTA0_BBLO | TEAK_INT_FINTA0_BB_FULL)) != 0)
-			return;
-
-		now = state->dsp_time;
-
-		qemu_mutex_lock(state->event_mutex);
-		event = QTAILQ_FIRST(&state->events);
-
-		deliver_full = state->full_scheduled && state->full_time <= now &&
-			(event == NULL || state->full_time <= event->time);
-		deliver_queued = !deliver_full && event != NULL && event->time <= now;
-		if (deliver_queued) {
-			QTAILQ_REMOVE(&state->events, event, entry);
-			qatomic_dec(&state->queued_events);
-		} else {
-			event = NULL;
-		}
-		qemu_mutex_unlock(state->event_mutex);
-
-		if (deliver_full) {
-			state->current_time = state->full_time;
-			baseband_update_pointer(state, state->current_time);
-			state->full_scheduled = false;
-			dsp_int_set_flags(state->interrupt, BASEBAND_INTERRUPT_GROUP, TEAK_INT_FINTA0_BB_FULL);
-		} else if (event != NULL) {
-			baseband_apply_signal(state, event);
-			g_free(event);
-		} else {
-			return;
-		}
-	}
-}
-
-bool baseband_is_active(const dsp_device_t *device) {
-	const baseband_state_t *state = device->state;
-	return qatomic_read(&state->queued_events) != 0 || state->full_scheduled;
+	baseband_apply_signal(state, signal, level, now);
 }

@@ -178,8 +178,6 @@ void dsp_bus_set_clock(dsp_bus_t *bus, bool enabled) {
 }
 
 void dsp_bus_set_core_idle(dsp_bus_t *bus, bool idle) {
-	if (bus->baseband != NULL)
-		baseband_set_core_idle(bus->baseband, idle);
 	if (bus->timer2 != NULL)
 		timer2_set_core_idle(bus->timer2, idle);
 }
@@ -187,8 +185,6 @@ void dsp_bus_set_core_idle(dsp_bus_t *bus, bool idle) {
 void dsp_bus_advance(dsp_bus_t *bus, size_t cycles) {
 	if (bus->afe != NULL && afe_is_active(bus->afe))
 		afe_advance(bus->afe, cycles);
-	if (bus->baseband != NULL && baseband_is_active(bus->baseband))
-		baseband_advance(bus->baseband, cycles);
 	if (bus->channel_decoder != NULL && chdec_is_active(bus->channel_decoder))
 		chdec_advance(bus->channel_decoder, cycles);
 	if (bus->cipher != NULL && cipher_is_active(bus->cipher))
@@ -212,8 +208,6 @@ void dsp_bus_advance(dsp_bus_t *bus, size_t cycles) {
 
 bool dsp_bus_is_active(const dsp_bus_t *bus) {
 	if (bus->afe != NULL && afe_is_active(bus->afe))
-		return true;
-	if (bus->baseband != NULL && baseband_is_active(bus->baseband))
 		return true;
 	if (bus->channel_decoder != NULL && chdec_is_active(bus->channel_decoder))
 		return true;
