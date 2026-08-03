@@ -57,6 +57,7 @@
 #define TPU_EVENT_DECODER_TXON_SET 8
 #define TPU_EVENT_DECODER_TXON_CLEAR 9
 #define TPU_EVENT_DECODER_FRAME 15
+#define TPU_EVENT_DECODER_SYSMCU 16
 #define TPU_EVENT_DECODER_CODON_SET 17
 #define TPU_EVENT_DECODER_CODON_CLEAR 18
 #define TPU_EVENT_GP_FIRST 10
@@ -233,6 +234,10 @@ static void tpu_decode_gsm_signal(pmb887x_tpu_t *p, uint32_t decoder) {
 
 		case TPU_EVENT_DECODER_FRAME:
 			qemu_irq_pulse(p->gsm_outputs[PMB887X_DSP_GSM_SIGNAL_FRAME]);
+			break;
+
+		case TPU_EVENT_DECODER_SYSMCU:
+			qemu_irq_pulse(p->gsm_outputs[PMB887X_DSP_GSM_SIGNAL_SYSMCU]);
 			break;
 
 		case TPU_EVENT_DECODER_CODON_SET:

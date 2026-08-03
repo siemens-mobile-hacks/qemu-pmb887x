@@ -3,6 +3,7 @@
 #define PMB887X_TRACE_IO		PMB887X_TRACE_IO_DSP
 
 #include "qemu/osdep.h"
+#include "qemu/atomic.h"
 #include "qemu/bitops.h"
 
 #include "hw/arm/pmb887x/dsp/peripheral/internal.h"
@@ -21,8 +22,13 @@ struct modulator_state_t {
 	dsp_device_t *interrupt;
 	uint16_t position;
 	size_t sample_cycles;
-	bool active;
+	bool codon;
 };
+
+static bool modulator_active(const modulator_state_t *state) {
+	bool software_active = qatomic_read(&state->registers[TEAK_MOD_CTRL]) & TEAK_MOD_CTRL_MSWACT;
+	return qatomic_read(&state->codon) || software_active;
+}
 
 static void modulator_destroy(dsp_device_t *device) {
 	g_free(device->state);
@@ -44,7 +50,7 @@ static bool modulator_read(dsp_device_t *device, uint16_t offset, uint32_t pc, u
 
 	switch (offset) {
 		case TEAK_MOD_STAT:
-			*value = state->active * TEAK_MOD_STAT_MSTAT;
+			*value = modulator_active(state) * TEAK_MOD_STAT_MSTAT;
 			break;
 
 		case MODULATOR_RESERVED:
@@ -69,9 +75,8 @@ static bool modulator_write(dsp_device_t *device, uint16_t offset, uint32_t pc, 
 			break;
 
 		case TEAK_MOD_CTRL:
-			state->registers[offset] = value & (TEAK_MOD_CTRL_IQSWAP | TEAK_MOD_CTRL_MSWACT);
-			state->active = (value & TEAK_MOD_CTRL_MSWACT) != 0;
-			if (!state->active)
+			qatomic_set(&state->registers[offset], value & (TEAK_MOD_CTRL_IQSWAP | TEAK_MOD_CTRL_MSWACT));
+			if (!modulator_active(state))
 				state->sample_cycles = 0;
 			break;
 
@@ -113,15 +118,23 @@ dsp_device_t *modulator_create(const pmb887x_dsp_peripheral_config_t *config, ds
 	return dsp_device_create(config, &modulator_ops, state);
 }
 
+void modulator_set_codon(dsp_device_t *device, bool level) {
+	modulator_state_t *state = device->state;
+
+	qatomic_set(&state->codon, level);
+}
+
 void modulator_advance(dsp_device_t *device, size_t cycles) {
 	modulator_state_t *state = device->state;
 
-	if (!state->active)
+	if (!modulator_active(state)) {
+		state->sample_cycles = 0;
 		return;
+	}
 
 	state->sample_cycles += cycles;
 
-	while (state->active && state->sample_cycles >= MODULATOR_SAMPLE_CYCLES) {
+	while (modulator_active(state) && state->sample_cycles >= MODULATOR_SAMPLE_CYCLES) {
 		state->sample_cycles -= MODULATOR_SAMPLE_CYCLES;
 		state->position++;
 		state->position &= TEAK_MOD_INT_ADDR_MINT_ADDR;
@@ -133,5 +146,5 @@ void modulator_advance(dsp_device_t *device, size_t cycles) {
 
 bool modulator_is_active(const dsp_device_t *device) {
 	const modulator_state_t *state = device->state;
-	return state->active;
+	return modulator_active(state);
 }

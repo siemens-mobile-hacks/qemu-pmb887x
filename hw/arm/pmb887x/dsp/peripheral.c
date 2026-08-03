@@ -2,6 +2,7 @@
 #include "qemu/bitops.h"
 
 #include "hw/arm/pmb887x/dsp/peripheral/internal.h"
+#include "hw/arm/pmb887x/gen/dsp.h"
 
 dsp_device_t *dsp_device_create(const pmb887x_dsp_peripheral_config_t *config, const dsp_device_ops_t *ops, void *state) {
 	dsp_device_t *device = g_new0(dsp_device_t, 1);
@@ -309,13 +310,19 @@ void dsp_bus_set_gsm_signal(dsp_bus_t *bus, pmb887x_dsp_gsm_signal_t signal, boo
 	}
 
 	if (signal == PMB887X_DSP_GSM_SIGNAL_CODON) {
-		uint16_t flag = level ? BIT(5) : BIT(6);
+		if (bus->modulator != NULL)
+			modulator_set_codon(bus->modulator, level);
+
+		uint16_t flag = level ? TEAK_INT_FINTA0_CODONHI : TEAK_INT_FINTA0_CODONLO;
 		dsp_int_set_flags(bus->interrupt, 0, flag);
 		return;
 	}
 
 	if (signal == PMB887X_DSP_GSM_SIGNAL_FRAME && level)
-		dsp_int_set_flags(bus->interrupt, 0, BIT(4));
+		dsp_int_set_flags(bus->interrupt, 0, TEAK_INT_FINTA0_FRAME);
+
+	if (signal == PMB887X_DSP_GSM_SIGNAL_SYSMCU && level)
+		dsp_int_set_flags(bus->interrupt, 1, TEAK_INT_FINTB0_SYSMCU);
 }
 
 uint16_t dsp_bus_get_outputs(dsp_bus_t *bus) {
