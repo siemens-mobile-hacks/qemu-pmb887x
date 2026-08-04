@@ -26,6 +26,7 @@ OBJECT_DECLARE_SIMPLE_TYPE(pmb887x_i2c_t, PMB887X_I2C);
 
 #define FIFO_IO_SIZE		0x3FFF
 #define FIFO_SIZE			8
+#define I2C_IO_SIZE			(I2Cv2_RXD + FIFO_IO_SIZE + 1)
 
 #define FIFO_ICR_MASK		(I2Cv2_ICR_BREQ_INT | I2Cv2_ICR_LBREQ_INT | I2Cv2_ICR_SREQ_INT | I2Cv2_ICR_LSREQ_INT)
 
@@ -47,22 +48,22 @@ struct pmb887x_i2c_t {
 	SysBusDevice parent_obj;
 	MemoryRegion mmio;
 	uint32_t revision;
-	
-    I2CBus *bus;
+
+	I2CBus *bus;
 	QEMUTimer *timer;
 	bool transfer_pending;
-    
+
 	pmb887x_clc_reg_t clc;
 	pmb887x_srb_reg_t srb;
 	pmb887x_srb_ext_reg_t srb_proto;
 	pmb887x_srb_ext_reg_t srb_err;
-	
+
 	int state;
 	pmb887x_fifo32_t fifo;
-	
+
 	bool is_read;
 	uint8_t addr;
-	
+
 	qemu_irq irq[4];
 	bool busy;
 	bool addr_is_sent;
@@ -70,7 +71,7 @@ struct pmb887x_i2c_t {
 	bool enddctrl_restart;
 	uint32_t rx_total_bytes;
 	uint32_t rx_bytes_in_fifo;
-	
+
 	bool fifo_req;
 	uint32_t tx_remaining;
 	uint32_t rx_remaining;
@@ -85,6 +86,12 @@ struct pmb887x_i2c_t {
 	uint32_t timcfg;
 	uint32_t dma_control;
 	uint32_t rpsstat;
+	int dmac_clr;
+
+	qemu_irq dmac_sreq;
+	qemu_irq dmac_breq;
+	qemu_irq dmac_lsreq;
+	qemu_irq dmac_lbreq;
 
 	qemu_irq gpio_scl;
 	qemu_irq gpio_sda;
@@ -99,7 +106,7 @@ static inline bool i2c_is_running(pmb887x_i2c_t *p) {
 }
 
 static int i2c_irq_router(void *opaque, int event_id) {
-	switch ((1 << event_id)) {
+	switch (1 << event_id) {
 		case I2Cv2_ISR_LSREQ_INT:
 		case I2Cv2_ISR_SREQ_INT:
 		case I2Cv2_ISR_LBREQ_INT:
@@ -133,13 +140,22 @@ static uint32_t i2c_get_tx_burst_size(pmb887x_i2c_t *p) {
 	return bs * (4 / i2c_get_tx_align(p));
 }
 
+static void i2c_trigger_dma(pmb887x_i2c_t *p) {
+	uint32_t requests = p->dmac_clr ? 0 : pmb887x_srb_get_ris_dma(&p->srb) & FIFO_ICR_MASK;
+
+	qemu_set_irq(p->dmac_sreq, (requests & I2Cv2_ISR_SREQ_INT) != 0);
+	qemu_set_irq(p->dmac_breq, (requests & I2Cv2_ISR_BREQ_INT) != 0);
+	qemu_set_irq(p->dmac_lsreq, (requests & I2Cv2_ISR_LSREQ_INT) != 0);
+	qemu_set_irq(p->dmac_lbreq, (requests & I2Cv2_ISR_LBREQ_INT) != 0);
+}
+
 static void i2c_fifo_req(pmb887x_i2c_t *p) {
 	if (p->fifo_req)
 		return;
 
 	if (p->state == I2C_STATE_MASTER_TX) {
 		uint32_t burst_req_size = i2c_get_tx_burst_size(p);
-		uint32_t single_req_size = (4 / i2c_get_tx_align(p));
+		uint32_t single_req_size = 4 / i2c_get_tx_align(p);
 		uint32_t burst_req_count = burst_req_size / single_req_size;
 
 		uint32_t tx_remaining = p->tx_remaining - MIN(p->tx_remaining, pmb887x_fifo_count(&p->fifo) * single_req_size);
@@ -171,7 +187,7 @@ static void i2c_fifo_req(pmb887x_i2c_t *p) {
 
 	} else if (p->state == I2C_STATE_MASTER_RX) {
 		uint32_t burst_req_size = i2c_get_rx_burst_size(p);
-		uint32_t single_req_size = (4 / i2c_get_rx_align(p));
+		uint32_t single_req_size = 4 / i2c_get_rx_align(p);
 		uint32_t rx_pending = p->rx_remaining + p->rx_bytes_in_fifo;
 		uint32_t pending_req_count = DIV_ROUND_UP(rx_pending, single_req_size);
 		uint32_t burst_req_count = burst_req_size / single_req_size;
@@ -238,7 +254,7 @@ static void i2c_fifo_write(pmb887x_i2c_t *p, uint64_t value) {
 		i2c_transfer_error(p);
 		return;
 	}
-	
+
 	pmb887x_fifo32_push(&p->fifo, value);
 	i2c_timer_schedule(p);
 }
@@ -265,7 +281,7 @@ static bool i2c_tx_from_fifo(pmb887x_i2c_t *p) {
 
 		uint32_t bytes_in_fifo_reg = MIN(4, p->tx_remaining);
 		if (bytes_in_fifo_reg == 0)
-			bytes_in_fifo_reg = 4; // shit from real HW
+			bytes_in_fifo_reg = 4; /* Real hardware consumes a full FIFO word. */
 
 		for (uint32_t i = 0; i < bytes_in_fifo_reg; i += align) {
 			uint8_t byte = (value >> (8 * i)) & 0xFF;
@@ -322,7 +338,7 @@ static void i2c_rx_to_fifo(pmb887x_i2c_t *p) {
 		for (uint32_t i = 0; i < bytes_in_fifo_reg; i += align) {
 			uint8_t byte = i2c_recv(p->bus);
 			DPRINTF("RX: %02X\n", byte);
-			value |= (byte << (8 * i));
+			value |= byte << (8 * i);
 			bytes_read++;
 
 			if (p->enddctrl_end)
@@ -701,6 +717,8 @@ static void i2c_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned si
 
 		case I2Cv2_DMAE:
 			p->dma_control = value;
+			pmb887x_srb_set_dmae(&p->srb, value);
+			i2c_trigger_dma(p);
 			break;
 
 		default:
@@ -730,13 +748,27 @@ static void i2c_handle_reset(void *opaque, int id, int level) {
 		i2c_reset(DEVICE(opaque));
 }
 
+static void i2c_handle_dmac_clr(void *opaque, int id, int level) {
+	pmb887x_i2c_t *p = opaque;
+
+	p->dmac_clr = level;
+	if (level) {
+		uint32_t request = pmb887x_srb_get_ris(&p->srb) & FIFO_ICR_MASK;
+
+		pmb887x_srb_set_icr(&p->srb, request);
+	}
+	i2c_trigger_dma(p);
+}
+
 static void i2c_event_handler(void *opaque, int event_id, int level) {
 	pmb887x_i2c_t *p = opaque;
 	uint32_t mask = 1 << event_id;
+
+	i2c_trigger_dma(p);
 	if (level == 0 && (mask & FIFO_ICR_MASK) != 0) {
 		if (p->state == I2C_STATE_MASTER_RX || p->state == I2C_STATE_MASTER_TX) {
 			i2c_fifo_clr_req(p);
-			i2c_fifo_req(p);
+			i2c_timer_schedule(p);
 		}
 	}
 }
@@ -744,11 +776,18 @@ static void i2c_event_handler(void *opaque, int event_id, int level) {
 static void i2c_init(Object *obj) {
 	DeviceState *dev = DEVICE(obj);
 	pmb887x_i2c_t *p = PMB887X_I2C(obj);
-	memory_region_init_io(&p->mmio, obj, &io_ops, p, TYPE_PMB887X_I2C, I2Cv2_IO_SIZE);
+	memory_region_init_io(&p->mmio, obj, &io_ops, p, TYPE_PMB887X_I2C, I2C_IO_SIZE);
 	sysbus_init_mmio(SYS_BUS_DEVICE(obj), &p->mmio);
 
 	for (int i = 0; i < ARRAY_SIZE(p->irq); i++)
 		sysbus_init_irq(SYS_BUS_DEVICE(obj), &p->irq[i]);
+
+	/* I2C TX and RX share one DMA request on PMB8876. */
+	qdev_init_gpio_in_named(dev, i2c_handle_dmac_clr, "DMAC_TX_CLR", 1);
+	qdev_init_gpio_out_named(dev, &p->dmac_sreq, "DMAC_TX_SREQ", 1);
+	qdev_init_gpio_out_named(dev, &p->dmac_breq, "DMAC_TX_BREQ", 1);
+	qdev_init_gpio_out_named(dev, &p->dmac_lsreq, "DMAC_TX_LSREQ", 1);
+	qdev_init_gpio_out_named(dev, &p->dmac_lbreq, "DMAC_TX_LBREQ", 1);
 
 	qdev_init_gpio_in_named(dev, i2c_handle_gpio_input, "SCL_IN", 1);
 	qdev_init_gpio_out_named(dev, &p->gpio_scl, "SCL_OUT", 1);
@@ -763,16 +802,16 @@ static void i2c_realize(DeviceState *dev, Error **errp) {
 	p->bus = i2c_init_bus(dev, TYPE_PMB887X_I2C);
 
 	pmb887x_clc_init(&p->clc);
-	
+
 	pmb887x_srb_init(&p->srb, p->irq, ARRAY_SIZE(p->irq));
 	pmb887x_srb_set_irq_router(&p->srb, p, i2c_irq_router);
 	pmb887x_srb_set_event_handler(&p->srb, p, i2c_event_handler);
-	
+
 	pmb887x_srb_ext_init(&p->srb_err, &p->srb, I2Cv2_ISR_I2C_ERR_INT);
 	pmb887x_srb_ext_init(&p->srb_proto, &p->srb, I2Cv2_ISR_I2C_P_INT);
-	
+
 	pmb887x_fifo32_init(&p->fifo, FIFO_SIZE);
-	
+
 	p->timer = timer_new_ns(QEMU_CLOCK_VIRTUAL, i2c_timer_reset, p);
 }
 
@@ -804,13 +843,15 @@ static void i2c_reset(DeviceState *dev) {
 	p->timcfg = 0;
 	p->dma_control = 0;
 	p->rpsstat = 0;
+	p->dmac_clr = 0;
 
 	i2c_kernel_reset(p, I2C_STATE_NONE);
+	i2c_trigger_dma(p);
 }
 
 static const Property i2c_properties[] = {
 	DEFINE_PROP_UINT32("revision", pmb887x_i2c_t, revision, 0),
-	DEFINE_PROP_LINK("bus", pmb887x_i2c_t, bus, TYPE_I2C_BUS, I2CBus *)
+	DEFINE_PROP_LINK("bus", pmb887x_i2c_t, bus, TYPE_I2C_BUS, I2CBus *),
 };
 
 static void i2c_class_init(ObjectClass *klass, const void *data) {
@@ -821,11 +862,11 @@ static void i2c_class_init(ObjectClass *klass, const void *data) {
 }
 
 static const TypeInfo i2c_info = {
-    .name          	= TYPE_PMB887X_I2C,
-    .parent        	= TYPE_SYS_BUS_DEVICE,
-    .instance_size 	= sizeof(pmb887x_i2c_t),
-    .instance_init 	= i2c_init,
-    .class_init    	= i2c_class_init,
+	.name          	= TYPE_PMB887X_I2C,
+	.parent        	= TYPE_SYS_BUS_DEVICE,
+	.instance_size 	= sizeof(pmb887x_i2c_t),
+	.instance_init 	= i2c_init,
+	.class_init    	= i2c_class_init,
 };
 
 static void i2c_register_types(void) {
