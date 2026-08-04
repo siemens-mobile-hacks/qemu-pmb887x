@@ -35,6 +35,7 @@ uint16_t dsp_bus_external_read(dsp_bus_t *bus, size_t index);
 void dsp_bus_external_write(dsp_bus_t *bus, size_t index, uint16_t value);
 uint8_t dsp_bus_get_irq_lines(dsp_bus_t *bus);
 uint16_t dsp_bus_get_irq_flags(dsp_bus_t *bus, size_t group);
+uint16_t dsp_bus_get_irq_pending_flags(dsp_bus_t *bus, size_t group);
 void dsp_bus_set_request(dsp_bus_t *bus, size_t index, bool level);
 void dsp_bus_set_input(dsp_bus_t *bus, size_t index, bool level);
 void dsp_bus_set_gsm_clock(dsp_bus_t *bus, uint32_t frequency);

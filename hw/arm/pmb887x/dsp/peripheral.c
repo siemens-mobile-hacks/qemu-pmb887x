@@ -277,6 +277,10 @@ uint16_t dsp_bus_get_irq_flags(dsp_bus_t *bus, size_t group) {
 	return dsp_int_get_flags(bus->interrupt, group);
 }
 
+uint16_t dsp_bus_get_irq_pending_flags(dsp_bus_t *bus, size_t group) {
+	return dsp_int_get_pending_flags(bus->interrupt, group);
+}
+
 void dsp_bus_set_request(dsp_bus_t *bus, size_t index, bool level) {
 	dsp_int_set_request(bus->interrupt, index, level);
 }

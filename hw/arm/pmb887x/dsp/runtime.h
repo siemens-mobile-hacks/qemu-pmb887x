@@ -20,6 +20,7 @@ bool dsp_runtime_run(dsp_runtime_t *runtime);
 bool dsp_runtime_is_idle(const dsp_runtime_t *runtime);
 bool dsp_runtime_is_maskable_interrupt_active(const dsp_runtime_t *runtime);
 uint16_t dsp_runtime_get_irq_flags(dsp_runtime_t *runtime, size_t group);
+uint16_t dsp_runtime_get_irq_pending_flags(dsp_runtime_t *runtime, size_t group);
 void dsp_runtime_wake(dsp_runtime_t *runtime);
 void dsp_runtime_kick(dsp_runtime_t *runtime);
 bool dsp_runtime_take_program_start(dsp_runtime_t *runtime, uint32_t *pc);

@@ -454,6 +454,10 @@ uint16_t dsp_runtime_get_irq_flags(dsp_runtime_t *runtime, size_t group) {
 	return dsp_bus_get_irq_flags(runtime->bus, group);
 }
 
+uint16_t dsp_runtime_get_irq_pending_flags(dsp_runtime_t *runtime, size_t group) {
+	return dsp_bus_get_irq_pending_flags(runtime->bus, group);
+}
+
 bool dsp_runtime_take_program_start(dsp_runtime_t *runtime, uint32_t *pc) {
 	if (!qatomic_xchg(&runtime->program_start, false))
 		return false;

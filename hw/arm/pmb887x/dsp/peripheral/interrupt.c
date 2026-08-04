@@ -151,6 +151,13 @@ uint16_t dsp_int_get_flags(dsp_device_t *device, size_t group) {
 	return qatomic_read(&state->flags[group]);
 }
 
+uint16_t dsp_int_get_pending_flags(dsp_device_t *device, size_t group) {
+	dsp_int_state_t *state = device->state;
+
+	g_assert(group < INTERRUPT_GROUP_COUNT);
+	return qatomic_read(&state->flags[group]) & qatomic_read(&state->enable[group]);
+}
+
 void dsp_int_set_request(dsp_device_t *device, size_t index, bool level) {
 	dsp_int_state_t *state = device->state;
 	uint16_t mask;

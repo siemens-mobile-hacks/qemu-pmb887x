@@ -435,8 +435,8 @@ bool teak_tcg_service_interrupt(teak_tcg_core_t *core) {
 			return false;
 		interrupt = (uint8_t) ctz32(pending);
 		context_switch = (state->interrupt_context & BIT(interrupt)) != 0;
-		state->ie = 0;
 		qatomic_set(&state->maskable_interrupt_active, 1);
+		state->ie = 0;
 	}
 
 	qatomic_and(&state->pending_interrupts, (uint8_t) ~BIT(interrupt));

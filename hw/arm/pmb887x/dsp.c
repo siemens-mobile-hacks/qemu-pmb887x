@@ -35,6 +35,7 @@
 #define DSP_RUNTIME_PIPE_STRIDE	0x1C
 #define DSP_OUTPUT_COUNT	3
 #define DSP_BASEBAND_SYNC_TIMEOUT_MS	50
+#define DSP_BASEBAND_SPIN_NS	(100 * SCALE_US)
 #define DSP_BASEBAND_IRQ_MASK	(TEAK_INT_FINTA0_BBHI | TEAK_INT_FINTA0_BBLO | TEAK_INT_FINTA0_BB_FULL)
 #define DSP_SSC_BUS_NAME	"pmb887x-dsp-ssc"
 #define TYPE_PMB887X_DSP	"pmb887x-dsp"
@@ -68,7 +69,6 @@ struct dsp_worker_t {
 	uint16_t interrupt_events;
 	uint16_t output_events;
 	uint16_t outputs;
-	uint64_t command_sequence;
 	bool enabled;
 	bool busy;
 	bool sync_requested;
@@ -94,11 +94,7 @@ struct dsp_state_t {
 	uint16_t comm_status;
 	uint16_t reset_comm_flags;
 	uint16_t reset_requests;
-	uint64_t command_sequence;
-	int64_t command_host_time;
-	int64_t command_virtual_time;
-	uint32_t command_status_reads;
-	uint16_t command_flags;
+	uint16_t baseband_timeout_flags;
 	Clock *gsm_clock;
 	bool reset_pending;
 	bool vm_running;
@@ -173,7 +169,6 @@ static void *dsp_worker(void *opaque) {
 	qemu_mutex_lock(&p->worker.mutex);
 	while (!p->worker.stop) {
 		dsp_events_t events = {};
-		uint64_t command_sequence;
 		bool runnable;
 
 		while (!p->worker.enabled && !p->worker.reset && !p->worker.stop)
@@ -234,18 +229,6 @@ static void *dsp_worker(void *opaque) {
 
 		p->worker.busy = true;
 		qemu_mutex_unlock(&p->worker.mutex);
-
-		command_sequence = qatomic_read(&p->command_sequence);
-		if (command_sequence != p->worker.command_sequence) {
-			int64_t host_delay = qemu_clock_get_ns(QEMU_CLOCK_HOST) - qatomic_read(&p->command_host_time);
-			int64_t virtual_delay = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) -
-				qatomic_read(&p->command_virtual_time);
-
-			p->worker.command_sequence = command_sequence;
-			DPRINTF("command start: sequence=%" PRIu64 " flags=%04X host_delay=%" PRId64
-				" ns virtual_delay=%" PRId64 " ns\n",
-				command_sequence, qatomic_read(&p->command_flags), host_delay, virtual_delay);
-		}
 
 		dsp_run(p, &events);
 
@@ -334,17 +317,6 @@ static void dsp_worker_notify_comm(void *opaque, uint16_t flags, bool set) {
 	}
 
 	qatomic_and(&p->comm_status, (uint16_t) ~flags);
-
-	uint64_t sequence = qatomic_read(&p->command_sequence);
-	if (sequence == 0)
-		return;
-
-	int64_t host_delay = qemu_clock_get_ns(QEMU_CLOCK_HOST) - qatomic_read(&p->command_host_time);
-	int64_t virtual_delay = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) - qatomic_read(&p->command_virtual_time);
-
-	DPRINTF("command clear: sequence=%" PRIu64 " flags=%04X host_delay=%" PRId64
-		" ns virtual_delay=%" PRId64 " ns status_reads=%u\n",
-		sequence, flags, host_delay, virtual_delay, qatomic_read(&p->command_status_reads));
 }
 
 static void dsp_worker_synchronize_cold_program(dsp_state_t *p) {
@@ -385,6 +357,7 @@ static void dsp_reset_internal_state(dsp_state_t *p) {
 	qatomic_set(&p->comm_status, 0);
 	qatomic_set(&p->reset_comm_flags, 0);
 	qatomic_set(&p->reset_requests, 0);
+	p->baseband_timeout_flags = 0;
 	for (size_t i = 0; i < ARRAY_SIZE(p->outputs); i++)
 		qemu_irq_lower(p->outputs[i]);
 	p->trace_boot_mode = true;
@@ -474,9 +447,18 @@ static void dsp_input1(void *opaque, int id, int level) {
 }
 
 static bool dsp_baseband_event_blocked(dsp_state_t *p) {
-	uint16_t flags = dsp_runtime_get_irq_flags(p->runtime, 0);
+	uint16_t pending = dsp_runtime_get_irq_pending_flags(p->runtime, 0);
+	uint16_t pending_baseband = pending & DSP_BASEBAND_IRQ_MASK;
 
-	return dsp_runtime_is_maskable_interrupt_active(p->runtime) || (flags & DSP_BASEBAND_IRQ_MASK) != 0;
+	if (dsp_runtime_is_maskable_interrupt_active(p->runtime))
+		return true;
+
+	if (pending_baseband == 0) {
+		p->baseband_timeout_flags = 0;
+		return false;
+	}
+
+	return pending_baseband != p->baseband_timeout_flags;
 }
 
 static void dsp_wait_baseband_irq(dsp_state_t *p, int signal, int level) {
@@ -485,9 +467,14 @@ static void dsp_wait_baseband_irq(dsp_state_t *p, int signal, int level) {
 
 	int64_t start = qemu_clock_get_ns(QEMU_CLOCK_HOST);
 	int64_t deadline = start + DSP_BASEBAND_SYNC_TIMEOUT_MS * SCALE_MS;
+	int64_t spin_deadline = start + DSP_BASEBAND_SPIN_NS;
+	uint32_t sleeps = 0;
 	bool timed_out = false;
 
 	dsp_worker_kick(p);
+	while (dsp_baseband_event_blocked(p) && qemu_clock_get_ns(QEMU_CLOCK_HOST) < spin_deadline)
+		cpu_relax();
+
 	qemu_mutex_lock(&p->worker.mutex);
 	while (dsp_baseband_event_blocked(p)) {
 		bool worker_stopped = !p->worker.enabled || !p->runtime_running || p->worker.stop;
@@ -501,18 +488,23 @@ static void dsp_wait_baseband_irq(dsp_state_t *p, int signal, int level) {
 			timed_out = true;
 			break;
 		}
+		sleeps++;
 		qemu_cond_timedwait(&p->worker.idle_cond, &p->worker.mutex, DIV_ROUND_UP(remaining, SCALE_MS));
 	}
-	bool ready = !dsp_baseband_event_blocked(p);
 	qemu_mutex_unlock(&p->worker.mutex);
 
-	int64_t host_wait = qemu_clock_get_ns(QEMU_CLOCK_HOST) - start;
+	if (timed_out)
+		p->baseband_timeout_flags = dsp_runtime_get_irq_pending_flags(p->runtime, 0) & DSP_BASEBAND_IRQ_MASK;
+
+	if (sleeps == 0)
+		return;
+
+	int64_t host_wait_us = (qemu_clock_get_ns(QEMU_CLOCK_HOST) - start) / SCALE_US;
 	uint16_t flags = dsp_runtime_get_irq_flags(p->runtime, 0) & DSP_BASEBAND_IRQ_MASK;
 	uint32_t pc = dsp_runtime_get_pc(p->runtime);
 
-	DPRINTF("ARM waited for DSP Baseband ISR: signal=%d level=%d flags=%04X active=%u pc=%05X host_wait=%" PRId64
-		" ns ready=%u timeout=%u\n", signal, level, flags, dsp_runtime_is_maskable_interrupt_active(p->runtime), pc,
-		host_wait, ready, timed_out);
+	DPRINTF("ARM wait: sig=%d/%d irq=%04X active=%u pc=%05X wait=%" PRId64 " us sleeps=%u timeout=%u\n",
+		signal, level, flags, dsp_runtime_is_maskable_interrupt_active(p->runtime), pc, host_wait_us, sleeps, timed_out);
 }
 
 static void dsp_gsm_input(void *opaque, int signal, int level) {
@@ -548,31 +540,6 @@ static uint64_t dsp_io_read(void *opaque, hwaddr haddr, unsigned size) {
 				value = qatomic_read(&p->reset_comm_flags) | qatomic_read(&p->comm_status);
 			} else {
 				value = qatomic_read(&p->comm_status);
-			}
-
-			if (value != 0) {
-				uint32_t reads = qatomic_fetch_inc(&p->command_status_reads) + 1;
-
-				if (reads == 1 || reads % 100 == 0) {
-					int64_t host_delay = qemu_clock_get_ns(QEMU_CLOCK_HOST) -
-						qatomic_read(&p->command_host_time);
-					int64_t virtual_delay = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) -
-						qatomic_read(&p->command_virtual_time);
-
-					DPRINTF("command pending: sequence=%" PRIu64 " flags=%04" PRIX64
-						" reads=%u host_delay=%" PRId64 " ns virtual_delay=%" PRId64 " ns\n",
-						qatomic_read(&p->command_sequence), value, reads, host_delay, virtual_delay);
-				}
-			}
-
-			if (reset_pending || value != 0) {
-				g_thread_yield();
-				reset_pending = qatomic_read(&p->reset_pending);
-				if (reset_pending) {
-					value = qatomic_read(&p->reset_comm_flags) | qatomic_read(&p->comm_status);
-				} else {
-					value = qatomic_read(&p->comm_status);
-				}
 			}
 
 			if (!reset_pending && dsp_runtime_take_program_start(p->runtime, &program_start_pc))
@@ -618,14 +585,6 @@ static void dsp_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned si
 			break;
 
 		case DSP_COM_SET:
-			qatomic_set(&p->command_host_time, qemu_clock_get_ns(QEMU_CLOCK_HOST));
-			qatomic_set(&p->command_virtual_time, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL));
-			qatomic_set(&p->command_status_reads, 0);
-			qatomic_set(&p->command_flags, value & DSP_COM_SET_FLAGS);
-			qatomic_inc(&p->command_sequence);
-			DPRINTF("command set: sequence=%" PRIu64 " flags=%04" PRIX64 "\n",
-				qatomic_read(&p->command_sequence), value & DSP_COM_SET_FLAGS);
-
 			qemu_mutex_lock(&p->worker.mutex);
 			if (qatomic_read(&p->reset_pending)) {
 				qatomic_or(&p->reset_comm_flags, value & DSP_COM_SET_FLAGS);
