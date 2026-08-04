@@ -23,12 +23,12 @@
 #define DMAC_MULTIPLEXOR	2
 #define DMAC_CHANNELS		8
 #define DMAC_REQUESTS		16
-#define DMAC_FIFO			16
 
 static const uint32_t PCELL_ID = 0xB105F00D;
 
 typedef struct pmb887x_dmac_ch_t pmb887x_dmac_ch_t;
 typedef struct pmb887x_dmac_request_t pmb887x_dmac_request_t;
+typedef struct pmb887x_dmac_pending_request_t pmb887x_dmac_pending_request_t;
 
 struct pmb887x_dmac_request_t {
 	int level[DMAC_MULTIPLEXOR][DMAC_REQUESTS];
@@ -42,7 +42,13 @@ struct pmb887x_dmac_ch_t {
 	uint32_t lli;
 	uint32_t control;
 	uint32_t config;
-	bool is_source_complete;
+	uint32_t last_source_count;
+};
+
+struct pmb887x_dmac_pending_request_t {
+	pmb887x_dmac_request_t *request;
+	uint32_t count;
+	bool last;
 };
 
 struct pmb887x_dmac_t {
@@ -50,24 +56,24 @@ struct pmb887x_dmac_t {
 	MemoryRegion mmio;
 	uint32_t revision;
 	uint32_t peripheral_id;
-	
+
 	QEMUTimer *timer;
 	MemoryRegion *downstream;
 	AddressSpace downstream_as;
-	
+
 	qemu_irq irq_err;
 	qemu_irq irq_tc[DMAC_CHANNELS];
-	
+
 	pmb887x_srb_reg_t srb_tc;
 	pmb887x_srb_reg_t srb_err;
-	
+
 	pmb887x_dmac_ch_t ch[DMAC_CHANNELS];
 
 	bool dmac_pending;
 	bool is_busy;
 	uint32_t config;
 	uint32_t sync;
-	
+
 	int sel[DMAC_REQUESTS];
 
 	qemu_irq CLR[DMAC_MULTIPLEXOR][DMAC_REQUESTS];
@@ -159,13 +165,16 @@ static void dmac_write_software_request(pmb887x_dmac_t *p, pmb887x_dmac_request_
 		request->soft |= value;
 }
 
-static bool dmac_is_flow_controller(uint32_t flow_ctrl) {
-	return (
-		flow_ctrl == DMAC_CH_CONFIG_FLOW_CTRL_MEM2MEM ||
-		flow_ctrl == DMAC_CH_CONFIG_FLOW_CTRL_MEM2PER ||
-		flow_ctrl == DMAC_CH_CONFIG_FLOW_CTRL_PER2MEM ||
-		flow_ctrl == DMAC_CH_CONFIG_FLOW_CTRL_PER2PER
-	);
+static bool dmac_is_dmac_flow_controller(uint32_t flow_ctrl) {
+	switch (flow_ctrl) {
+		case DMAC_CH_CONFIG_FLOW_CTRL_MEM2MEM:
+		case DMAC_CH_CONFIG_FLOW_CTRL_MEM2PER:
+		case DMAC_CH_CONFIG_FLOW_CTRL_PER2MEM:
+		case DMAC_CH_CONFIG_FLOW_CTRL_PER2PER:
+			return true;
+		default:
+			return false;
+	}
 }
 
 static void dmac_update_final_addresses(pmb887x_dmac_ch_t *ch) {
@@ -255,7 +264,8 @@ static void dmac_transfer_memory(pmb887x_dmac_t *p, pmb887x_dmac_ch_t *ch, uint3
 	ch->src_addr &= ~(src_width - 1);
 	ch->dst_addr &= ~(dst_width - 1);
 
-	DPRINTF("CH%d: %08X [%dx%d] -> %08X [%dx%d] [%d]\n", ch->id, ch->src_addr, src_width, burst_size, ch->dst_addr, dst_width, burst_size, tx_size);
+	DPRINTF("CH%d: %08X [%dx%d] -> %08X [%dx%d] [%d]\n",
+		ch->id, ch->src_addr, src_width, burst_size, ch->dst_addr, dst_width, burst_size, tx_size);
 
 	if (is_simple_memcpy) {
 		address_space_read(&p->downstream_as, ch->src_addr, MEMTXATTRS_UNSPECIFIED, buffer, src_width * burst_size);
@@ -325,20 +335,19 @@ static void dmac_transfer_memory(pmb887x_dmac_t *p, pmb887x_dmac_ch_t *ch, uint3
 		}
 	}
 
-	if (tx_size > 0) {
-		if (!dmac_is_flow_controller(flow_ctrl))
-			hw_error("TransferSize must be zero when peripheral is flow controller!");
+	uint32_t tx_size_mask = DMAC_CH_CONTROL_TRANSFER_SIZE >> DMAC_CH_CONTROL_TRANSFER_SIZE_SHIFT;
+	tx_size = (tx_size - burst_size) & tx_size_mask;
+	ch->control &= ~DMAC_CH_CONTROL_TRANSFER_SIZE;
+	ch->control |= tx_size << DMAC_CH_CONTROL_TRANSFER_SIZE_SHIFT;
 
-		tx_size -= burst_size;
-		ch->control &= ~DMAC_CH_CONTROL_TRANSFER_SIZE;
-		ch->control |= tx_size << DMAC_CH_CONTROL_TRANSFER_SIZE_SHIFT;
-
-		if (tx_size == 0)
-			dmac_transfer_finish(p, ch);
-	}
+	if (tx_size == 0 && dmac_is_dmac_flow_controller(flow_ctrl))
+		dmac_transfer_finish(p, ch);
 }
 
-static bool dmac_service_request(pmb887x_dmac_t *p, pmb887x_dmac_ch_t *ch, pmb887x_dmac_request_t *request, pmb887x_dmac_request_t *last_request, uint8_t sel, uint8_t id, uint32_t count) {
+static bool dmac_service_request(
+	pmb887x_dmac_t *p, pmb887x_dmac_ch_t *ch, pmb887x_dmac_request_t *request,
+	pmb887x_dmac_request_t *last_request, uint8_t sel, uint8_t id, uint32_t count
+) {
 	bool is_last = dmac_is_request_pending(last_request, sel, id);
 	if (!is_last && !dmac_is_request_pending(request, sel, id))
 		return false;
@@ -348,6 +357,92 @@ static bool dmac_service_request(pmb887x_dmac_t *p, pmb887x_dmac_ch_t *ch, pmb88
 		dmac_transfer_finish(p, ch);
 	dmac_ack_request(p, is_last ? last_request : request, sel, id);
 	return true;
+}
+
+static bool dmac_get_pending_request(
+	pmb887x_dmac_t *p, uint8_t sel, uint8_t id, uint32_t burst_size, pmb887x_dmac_pending_request_t *pending
+) {
+	if (dmac_is_request_pending(&p->lsreq, sel, id)) {
+		*pending = (pmb887x_dmac_pending_request_t) { &p->lsreq, 1, true };
+		return true;
+	}
+
+	if (dmac_is_request_pending(&p->lbreq, sel, id)) {
+		*pending = (pmb887x_dmac_pending_request_t) { &p->lbreq, burst_size, true };
+		return true;
+	}
+
+	if (dmac_is_request_pending(&p->sreq, sel, id)) {
+		*pending = (pmb887x_dmac_pending_request_t) { &p->sreq, 1, false };
+		return true;
+	}
+
+	if (dmac_is_request_pending(&p->breq, sel, id)) {
+		*pending = (pmb887x_dmac_pending_request_t) { &p->breq, burst_size, false };
+		return true;
+	}
+
+	return false;
+}
+
+static void dmac_run_per2per_destination(
+	pmb887x_dmac_t *p, pmb887x_dmac_ch_t *ch, uint8_t src_sel, uint8_t src_periph, uint32_t src_burst_size,
+	uint8_t dst_sel, uint8_t dst_periph, uint32_t dst_burst_size
+) {
+	pmb887x_dmac_pending_request_t source;
+	pmb887x_dmac_pending_request_t destination;
+
+	if (!dmac_get_pending_request(p, dst_sel, dst_periph, dst_burst_size, &destination))
+		return;
+
+	if (!dmac_get_pending_request(p, src_sel, src_periph, src_burst_size, &source))
+		return;
+
+	if (source.count < destination.count)
+		return;
+
+	dmac_transfer_memory(p, ch, destination.count);
+	dmac_ack_request(p, source.request, src_sel, src_periph);
+	dmac_ack_request(p, destination.request, dst_sel, dst_periph);
+	if (destination.last)
+		dmac_transfer_finish(p, ch);
+}
+
+static void dmac_run_per2per_source(
+	pmb887x_dmac_t *p, pmb887x_dmac_ch_t *ch, uint8_t src_sel, uint8_t src_periph, uint32_t src_burst_size,
+	uint8_t dst_sel, uint8_t dst_periph, uint32_t dst_burst_size
+) {
+	pmb887x_dmac_pending_request_t source;
+	bool destination_pending = dmac_is_request_pending(&p->breq, dst_sel, dst_periph);
+
+	if (ch->last_source_count == 0) {
+		if (!dmac_get_pending_request(p, src_sel, src_periph, src_burst_size, &source))
+			return;
+
+		if (source.last) {
+			ch->last_source_count = source.count;
+			dmac_ack_request(p, source.request, src_sel, src_periph);
+		} else {
+			if (!destination_pending)
+				return;
+
+			uint32_t count = MIN(source.count, dst_burst_size);
+			dmac_transfer_memory(p, ch, count);
+			dmac_ack_request(p, source.request, src_sel, src_periph);
+			dmac_ack_request(p, &p->breq, dst_sel, dst_periph);
+			return;
+		}
+	}
+
+	if (!destination_pending)
+		return;
+
+	uint32_t count = MIN(ch->last_source_count, dst_burst_size);
+	dmac_transfer_memory(p, ch, count);
+	ch->last_source_count -= count;
+	dmac_ack_request(p, &p->breq, dst_sel, dst_periph);
+	if (ch->last_source_count == 0)
+		dmac_transfer_finish(p, ch);
 }
 
 static void dmac_channel_run(pmb887x_dmac_t *p, pmb887x_dmac_ch_t *ch) {
@@ -364,7 +459,7 @@ static void dmac_channel_run(pmb887x_dmac_t *p, pmb887x_dmac_ch_t *ch) {
 	uint8_t dst_sel = p->sel[dst_periph];
 	uint32_t flow_ctrl = (ch->config & DMAC_CH_CONFIG_FLOW_CTRL);
 	uint32_t tx_size = (ch->control & DMAC_CH_CONTROL_TRANSFER_SIZE) >> DMAC_CH_CONTROL_TRANSFER_SIZE_SHIFT;
-	if (dmac_is_flow_controller(flow_ctrl) && !tx_size)
+	if (dmac_is_dmac_flow_controller(flow_ctrl) && !tx_size)
 		return;
 
 	switch (flow_ctrl) {
@@ -412,29 +507,13 @@ static void dmac_channel_run(pmb887x_dmac_t *p, pmb887x_dmac_ch_t *ch) {
 			break;
 
 		case DMAC_CH_CONFIG_FLOW_CTRL_PER2PER_DST:
-			if (dmac_is_request_pending(&p->breq, src_sel, src_periph) &&
-				(dmac_is_request_pending(&p->breq, dst_sel, dst_periph) ||
-				 dmac_is_request_pending(&p->lbreq, dst_sel, dst_periph))) {
-				bool is_last = dmac_is_request_pending(&p->lbreq, dst_sel, dst_periph);
-				dmac_transfer_memory(p, ch, MIN(src_burst_size, dst_burst_size));
-				dmac_ack_request(p, &p->breq, src_sel, src_periph);
-				dmac_ack_request(p, is_last ? &p->lbreq : &p->breq, dst_sel, dst_periph);
-				if (is_last)
-					dmac_transfer_finish(p, ch);
-			}
+			dmac_run_per2per_destination(p, ch, src_sel, src_periph, src_burst_size,
+				dst_sel, dst_periph, dst_burst_size);
 			break;
 
 		case DMAC_CH_CONFIG_FLOW_CTRL_PER2PER_SRC:
-			if (dmac_is_request_pending(&p->lbreq, src_sel, src_periph)) {
-				ch->is_source_complete = true;
-				dmac_ack_request(p, &p->lbreq, src_sel, src_periph);
-			}
-			if (ch->is_source_complete && dmac_is_request_pending(&p->breq, dst_sel, dst_periph)) {
-				dmac_transfer_memory(p, ch, MIN(src_burst_size, dst_burst_size));
-				dmac_ack_request(p, &p->breq, dst_sel, dst_periph);
-				dmac_transfer_finish(p, ch);
-				ch->is_source_complete = false;
-			}
+			dmac_run_per2per_source(p, ch, src_sel, src_periph, src_burst_size,
+				dst_sel, dst_periph, dst_burst_size);
 			break;
 
 		case DMAC_CH_CONFIG_FLOW_CTRL_PER2MEM_PER:
@@ -450,18 +529,18 @@ static void dmac_channel_run(pmb887x_dmac_t *p, pmb887x_dmac_ch_t *ch) {
 static void dmac_update(pmb887x_dmac_t *p) {
 	uint32_t err_mask = 0;
 	uint32_t tc_mask = 0;
-	
+
 	for (int i = 0; i < DMAC_CHANNELS; i++) {
 		pmb887x_dmac_ch_t *ch = &p->ch[i];
 		uint8_t mask = 1 << i;
-		
+
 		if ((ch->config & DMAC_CH_CONFIG_INT_MASK_ERR))
 			err_mask |= mask;
-		
+
 		if ((ch->config & DMAC_CH_CONFIG_INT_MASK_TC))
 			tc_mask |= mask;
 	}
-	
+
 	pmb887x_srb_set_imsc(&p->srb_tc, tc_mask);
 	pmb887x_srb_set_imsc(&p->srb_err, err_mask);
 
@@ -505,7 +584,7 @@ static void dmac_handle_signal(pmb887x_dmac_t *p, pmb887x_dmac_request_t *reques
 
 static uint64_t dmac_io_read(void *opaque, hwaddr haddr, unsigned size) {
 	pmb887x_dmac_t *p = opaque;
-	
+
 	uint64_t value = 0;
 
 	switch (haddr) {
@@ -646,30 +725,30 @@ static uint64_t dmac_io_read(void *opaque, hwaddr haddr, unsigned size) {
 	}
 
 	IO_DUMP_READ(haddr + p->mmio.addr, size, value);
-	
+
 	return value;
 }
 
 static void dmac_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned size) {
 	pmb887x_dmac_t *p = opaque;
-	
+
 	IO_DUMP_WRITE(haddr + p->mmio.addr, size, value);
-	
+
 	switch (haddr) {
 		case DMAC_CONFIG:
 			p->config = value & (DMAC_CONFIG_ENABLE | DMAC_CONFIG_M1 | DMAC_CONFIG_M2);
 			if (!(p->config & DMAC_CONFIG_ENABLE))
 				dmac_clear_software_requests(p);
 			break;
-		
+
 		case DMAC_TC_CLEAR:
 			pmb887x_srb_set_icr(&p->srb_tc, value);
 			break;
-		
+
 		case DMAC_ERR_CLEAR:
 			pmb887x_srb_set_icr(&p->srb_err, value);
 			break;
-		
+
 		case DMAC_CH_SRC_ADDR0:
 		case DMAC_CH_SRC_ADDR1:
 		case DMAC_CH_SRC_ADDR2:
@@ -680,7 +759,7 @@ static void dmac_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned s
 		case DMAC_CH_SRC_ADDR7:
 			p->ch[(haddr - DMAC_CH_SRC_ADDR0) / 0x20].src_addr = value;
 			break;
-		
+
 		case DMAC_CH_DST_ADDR0:
 		case DMAC_CH_DST_ADDR1:
 		case DMAC_CH_DST_ADDR2:
@@ -691,7 +770,7 @@ static void dmac_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned s
 		case DMAC_CH_DST_ADDR7:
 			p->ch[(haddr - DMAC_CH_DST_ADDR0) / 0x20].dst_addr = value;
 			break;
-		
+
 		case DMAC_CH_CONFIG0:
 		case DMAC_CH_CONFIG1:
 		case DMAC_CH_CONFIG2:
@@ -702,11 +781,11 @@ static void dmac_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned s
 		case DMAC_CH_CONFIG7: {
 			pmb887x_dmac_ch_t *ch = &p->ch[(haddr - DMAC_CH_CONFIG0) / 0x20];
 			if (!(ch->config & DMAC_CH_CONFIG_ENABLE) && (value & DMAC_CH_CONFIG_ENABLE))
-				ch->is_source_complete = false;
+				ch->last_source_count = 0;
 			ch->config = value & ~DMAC_CH_CONFIG_ACTIVE;
 			break;
 		}
-		
+
 		case DMAC_CH_CONTROL0:
 		case DMAC_CH_CONTROL1:
 		case DMAC_CH_CONTROL2:
@@ -717,7 +796,7 @@ static void dmac_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned s
 		case DMAC_CH_CONTROL7:
 			p->ch[(haddr - DMAC_CH_CONTROL0) / 0x20].control = value;
 			break;
-		
+
 		case DMAC_CH_LLI0:
 		case DMAC_CH_LLI1:
 		case DMAC_CH_LLI2:
@@ -753,7 +832,7 @@ static void dmac_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned s
 			EPRINTF("unknown reg access: %02"PRIX64"\n", haddr);
 			exit(1);
 	}
-	
+
 	dmac_update(p);
 }
 
@@ -843,9 +922,9 @@ static void dmac_init(Object *obj) {
 	pmb887x_dmac_t *p = PMB887X_DMAC(obj);
 	memory_region_init_io(&p->mmio, obj, &io_ops, p, "pmb887x-dmac", DMAC_IO_SIZE);
 	sysbus_init_mmio(SYS_BUS_DEVICE(obj), &p->mmio);
-	
+
 	sysbus_init_irq(SYS_BUS_DEVICE(obj), &p->irq_err);
-	
+
 	for (int i = 0; i < DMAC_CHANNELS; i++)
 		sysbus_init_irq(SYS_BUS_DEVICE(obj), &p->irq_tc[i]);
 
@@ -870,7 +949,7 @@ static void dmac_init(Object *obj) {
 static int dmac_tc_irq_router(void *opaque, int event_id) {
 	if (event_id < DMAC_CHANNELS)
 		return event_id;
-	
+
 	hw_error("Unknown event id: %d\n", event_id);
 }
 
@@ -880,20 +959,20 @@ static int dmac_err_irq_router(void *opaque, int event_id) {
 
 static void dmac_realize(DeviceState *dev, Error **errp) {
 	pmb887x_dmac_t *p = PMB887X_DMAC(dev);
-	
+
 	if (!p->downstream) {
 		error_setg(errp, "DMAC 'downstream' link not set");
 		return;
 	}
-	
+
 	address_space_init(&p->downstream_as, p->downstream, "pl080-downstream");
-	
+
 	for (int i = 0; i < DMAC_CHANNELS; i++)
 		p->ch[i].id = i;
-	
+
 	pmb887x_srb_init(&p->srb_err, &p->irq_err, 1);
 	pmb887x_srb_set_irq_router(&p->srb_err, p, dmac_err_irq_router);
-	
+
 	pmb887x_srb_init(&p->srb_tc, p->irq_tc, ARRAY_SIZE(p->irq_tc));
 	pmb887x_srb_set_irq_router(&p->srb_tc, p, dmac_tc_irq_router);
 
@@ -943,11 +1022,11 @@ static void dmac_class_init(ObjectClass *klass, const void *data) {
 }
 
 static const TypeInfo dmac_info = {
-    .name          	= TYPE_PMB887X_DMAC,
-    .parent        	= TYPE_SYS_BUS_DEVICE,
-    .instance_size 	= sizeof(pmb887x_dmac_t),
-    .instance_init 	= dmac_init,
-    .class_init    	= dmac_class_init,
+	.name          	= TYPE_PMB887X_DMAC,
+	.parent        	= TYPE_SYS_BUS_DEVICE,
+	.instance_size 	= sizeof(pmb887x_dmac_t),
+	.instance_init 	= dmac_init,
+	.class_init    	= dmac_class_init,
 };
 
 static void dmac_register_types(void) {
