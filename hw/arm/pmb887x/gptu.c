@@ -148,6 +148,12 @@ static int64_t gptu_ticks_to_ns(pmb887x_gptu_t *p, uint64_t ticks) {
 	return (int64_t) muldiv64(ticks, NANOSECONDS_PER_SECOND, p->freq);
 }
 
+static int64_t gptu_ticks_to_deadline_ns(pmb887x_gptu_t *p, uint64_t ticks) {
+	if (p->freq == 0)
+		return INT64_MAX;
+	return (int64_t) muldiv64_round_up(ticks, NANOSECONDS_PER_SECOND, p->freq);
+}
+
 static void gptu_trigger_ev_irq(pmb887x_gptu_t *p, int ev_id) {
 	pmb887x_gptu_ev_t *ev = &p->events[ev_id];
 	for (int i = 0; i < 8; i++) {
@@ -476,7 +482,7 @@ static void gptu_t2_sync_timer(pmb887x_gptu_t *p) {
 
 			if (!timer->stopped) {
 				uint64_t ticks = gptu_t2_ticks_to_ouv(p, i);
-				p->next_t2 = MIN(p->next_t2, timer->start + gptu_ticks_to_ns(p, ticks));
+				p->next_t2 = MIN(p->next_t2, timer->start + gptu_ticks_to_deadline_ns(p, ticks));
 				has_enabled = true;
 			}
 		}
@@ -801,7 +807,7 @@ static void gptu_sync_timer(pmb887x_gptu_t *p) {
 		}
 
 		uint64_t ticks = gptu_t01_ticks_to_overflow(p, i);
-		p->next = MIN(p->next, timer->start + gptu_ticks_to_ns(p, ticks));
+		p->next = MIN(p->next, timer->start + gptu_ticks_to_deadline_ns(p, ticks));
 		has_enabled = true;
 	}
 
