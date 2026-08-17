@@ -97,17 +97,22 @@ struct pmb887x_sim_t {
 	bool dmac_tx_clr;
 	bool dmac_rx_clr;
 	bool dma_event_pending;
+	bool t0_tx_slot;
 	enum sim_t0_state_t t0_state;
 	uint16_t t0_header_size;
 	uint16_t t0_data_size;
 	uint16_t t0_data_transferred;
 	uint16_t t0_chunk_remaining;
 
+	bool rx_last;
+
 	qemu_irq cc_rst;
 	qemu_irq cc_io;
 	qemu_irq cc_clk;
 	qemu_irq dmac_tx_breq;
 	qemu_irq dmac_rx_breq;
+	qemu_irq dmac_tx_lbreq;
+	qemu_irq dmac_rx_lbreq;
 };
 
 static bool sim_is_uart_running(pmb887x_sim_t *p) {
@@ -119,25 +124,33 @@ static bool sim_is_t0_running(pmb887x_sim_t *p) {
 	return sim_is_uart_running(p) && (p->con & (SIM_CON_SIMT0 | SIM_CON_SIMRST)) == (SIM_CON_SIMT0 | SIM_CON_SIMRST);
 }
 
-static void sim_set_dma_request(pmb887x_sim_t *p, bool level) {
-	qemu_set_irq(p->dmac_tx_breq, level);
-	qemu_set_irq(p->dmac_rx_breq, level);
+static void sim_set_dma_request(pmb887x_sim_t *p, bool request, bool last) {
+	qemu_set_irq(p->dmac_tx_breq, request && !last);
+	qemu_set_irq(p->dmac_rx_breq, request && !last);
+	qemu_set_irq(p->dmac_tx_lbreq, request && last);
+	qemu_set_irq(p->dmac_rx_lbreq, request && last);
 }
 
 static void sim_update_dma_request(pmb887x_sim_t *p) {
 	bool request;
+	bool last = false;
 	if (sim_is_t0_running(p)) {
 		bool tx_ready = (
 			(p->t0_state == SIM_T0_STATE_HEADER || p->t0_state == SIM_T0_STATE_TX_DATA) &&
-			!p->tx_pending && fifo8_is_empty(&p->t0_tx_fifo)
+			!p->tx_pending && fifo8_is_empty(&p->t0_tx_fifo) && p->t0_tx_slot
 		);
 		request = !p->dmac_tx_clr && !p->dmac_rx_clr &&
 			(pmb887x_srb_get_dmae(&p->srb) & SIM_DMAE_OK) != 0 && (tx_ready || p->rx_pending);
+
+		if (p->rx_pending)
+			last = p->rx_last;
+		else if (tx_ready && p->t0_state == SIM_T0_STATE_TX_DATA)
+			last = (uint16_t)(p->t0_data_size - p->t0_data_transferred) == 1;
 	} else {
 		request = !p->dmac_tx_clr && !p->dmac_rx_clr &&
 			p->dma_event_pending && (pmb887x_srb_get_dmae(&p->srb) & SIM_DMAE_OK) != 0;
 	}
-	sim_set_dma_request(p, request);
+	sim_set_dma_request(p, request, last);
 }
 
 static void sim_update_outputs(pmb887x_sim_t *p) {
@@ -199,6 +212,7 @@ static void sim_t0_reset(pmb887x_sim_t *p, bool start) {
 	p->t0_data_size = 0;
 	p->t0_data_transferred = 0;
 	p->t0_chunk_remaining = 0;
+	p->t0_tx_slot = start;
 	sim_update_dma_request(p);
 }
 
@@ -230,6 +244,8 @@ static void sim_t0_receive(pmb887x_sim_t *p, uint8_t value) {
 				p->t0_state = (p->ins & SIM_INS_INSDIR) ? SIM_T0_STATE_RX_DATA : SIM_T0_STATE_TX_DATA;
 				DPRINTF("T=0 procedure: %02X, %s %u byte(s)\n", value,
 					(p->ins & SIM_INS_INSDIR) ? "receive" : "transmit", p->t0_chunk_remaining);
+				if (p->t0_state == SIM_T0_STATE_TX_DATA)
+					p->t0_tx_slot = true;
 				sim_update_dma_request(p);
 				sim_update_character_timer(p);
 				return;
@@ -243,10 +259,12 @@ static void sim_t0_receive(pmb887x_sim_t *p, uint8_t value) {
 			p->rx_pending = true;
 			p->t0_data_transferred++;
 			p->t0_chunk_remaining--;
-			if (p->t0_data_transferred == p->t0_data_size)
+			if (p->t0_data_transferred == p->t0_data_size) {
 				p->t0_state = SIM_T0_STATE_SW1;
-			else if (p->t0_chunk_remaining == 0)
+				p->rx_last = true;
+			} else if (p->t0_chunk_remaining == 0) {
 				p->t0_state = SIM_T0_STATE_PROCEDURE;
+			}
 			sim_update_dma_request(p);
 			sim_update_character_timer(p);
 			return;
@@ -304,16 +322,36 @@ void pmb887x_sim_set_chardev(pmb887x_sim_t *p, Chardev *chardev, Error **errp) {
 	qemu_chr_fe_set_handlers(&p->chr, sim_can_receive, sim_receive, NULL, NULL, p, NULL, true);
 }
 
+static void sim_t0_tx_advance(pmb887x_sim_t *p) {
+	if (p->t0_state == SIM_T0_STATE_HEADER) {
+		p->t0_header_size++;
+		if (p->t0_header_size == PMB887X_APDU_HEADER_SIZE) {
+			p->t0_state = SIM_T0_STATE_PROCEDURE;
+			p->t0_data_size = p->p3 ? p->p3 : PMB887X_APDU_MAX_DATA_SIZE;
+			DPRINTF("T=0 header sent: INS=%02X, P3=%u\n", p->ins & SIM_INS_INS, p->t0_data_size);
+		}
+	} else if (p->t0_state == SIM_T0_STATE_TX_DATA) {
+		p->t0_data_transferred++;
+		p->t0_chunk_remaining--;
+		if (p->t0_data_transferred == p->t0_data_size)
+			p->t0_state = SIM_T0_STATE_SW1;
+		else if (p->t0_chunk_remaining == 0)
+			p->t0_state = SIM_T0_STATE_PROCEDURE;
+	}
+}
+
 static void sim_tx_complete(void *opaque) {
 	pmb887x_sim_t *p = opaque;
 
 	if (!fifo8_is_empty(&p->t0_tx_fifo)) {
 		uint8_t value = fifo8_pop(&p->t0_tx_fifo);
 		qemu_chr_fe_write_all(&p->chr, &value, 1);
+		sim_t0_tx_advance(p);
 		if (!fifo8_is_empty(&p->t0_tx_fifo)) {
 			timer_mod(p->tx_timer, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + SIM_BYTE_TIME_NS);
 		} else {
 			p->tx_pending = false;
+			p->t0_tx_slot = true;
 			sim_update_dma_request(p);
 			sim_update_character_timer(p);
 		}
@@ -338,21 +376,6 @@ static void sim_t0_write_txb(pmb887x_sim_t *p, uint8_t value) {
 
 	p->txb = value;
 	fifo8_push(&p->t0_tx_fifo, value);
-	if (p->t0_state == SIM_T0_STATE_HEADER) {
-		p->t0_header_size++;
-		if (p->t0_header_size == PMB887X_APDU_HEADER_SIZE) {
-			p->t0_state = SIM_T0_STATE_PROCEDURE;
-			p->t0_data_size = p->p3 ? p->p3 : PMB887X_APDU_MAX_DATA_SIZE;
-			DPRINTF("T=0 header queued: INS=%02X, P3=%u\n", p->ins & SIM_INS_INS, p->t0_data_size);
-		}
-	} else {
-		p->t0_data_transferred++;
-		p->t0_chunk_remaining--;
-		if (p->t0_data_transferred == p->t0_data_size)
-			p->t0_state = SIM_T0_STATE_SW1;
-		else if (p->t0_chunk_remaining == 0)
-			p->t0_state = SIM_T0_STATE_PROCEDURE;
-	}
 
 	if (!p->tx_pending) {
 		p->tx_pending = true;
@@ -425,6 +448,7 @@ static uint64_t sim_io_read(void *opaque, hwaddr haddr, unsigned size) {
 		case SIM_RXB:
 			value = p->rxb;
 			p->rx_pending = false;
+			p->rx_last = false;
 			qemu_chr_fe_accept_input(&p->chr);
 			sim_update_dma_request(p);
 			break;
@@ -524,6 +548,8 @@ static void sim_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned si
 			break;
 		case SIM_INS:
 			p->ins = value & (SIM_INS_INS | SIM_INS_INSDIR);
+			p->t0_tx_slot = true;
+			sim_update_dma_request(p);
 			break;
 		case SIM_P3:
 			p->p3 = value & SIM_P3_P3;
@@ -584,16 +610,20 @@ static void sim_handle_cc_io(void *opaque, int id, int level) {
 static void sim_handle_dmac_tx_clr(void *opaque, int id, int level) {
 	pmb887x_sim_t *p = opaque;
 	p->dmac_tx_clr = level != 0;
-	if (level)
+	if (level) {
+		p->t0_tx_slot = false;
 		pmb887x_srb_set_icr(&p->srb, SIM_ICR_OK);
+	}
 	sim_update_dma_request(p);
 }
 
 static void sim_handle_dmac_rx_clr(void *opaque, int id, int level) {
 	pmb887x_sim_t *p = opaque;
 	p->dmac_rx_clr = level != 0;
-	if (level)
+	if (level) {
+		p->t0_tx_slot = false;
 		pmb887x_srb_set_icr(&p->srb, SIM_ICR_OK);
+	}
 	sim_update_dma_request(p);
 }
 
@@ -626,8 +656,10 @@ static void sim_init(Object *obj) {
 
 	qdev_init_gpio_in_named(dev, sim_handle_dmac_tx_clr, "DMAC_TX_CLR", 1);
 	qdev_init_gpio_out_named(dev, &p->dmac_tx_breq, "DMAC_TX_BREQ", 1);
+	qdev_init_gpio_out_named(dev, &p->dmac_tx_lbreq, "DMAC_TX_LBREQ", 1);
 	qdev_init_gpio_in_named(dev, sim_handle_dmac_rx_clr, "DMAC_RX_CLR", 1);
 	qdev_init_gpio_out_named(dev, &p->dmac_rx_breq, "DMAC_RX_BREQ", 1);
+	qdev_init_gpio_out_named(dev, &p->dmac_rx_lbreq, "DMAC_RX_LBREQ", 1);
 }
 
 static void sim_realize(DeviceState *dev, Error **errp) {
@@ -672,6 +704,8 @@ static void sim_reset(DeviceState *dev) {
 	p->dmac_tx_clr = false;
 	p->dmac_rx_clr = false;
 	p->dma_event_pending = false;
+	p->t0_tx_slot = false;
+	p->rx_last = false;
 	p->t0_state = SIM_T0_STATE_IDLE;
 	p->t0_header_size = 0;
 	p->t0_data_size = 0;
@@ -679,7 +713,7 @@ static void sim_reset(DeviceState *dev) {
 	p->t0_chunk_remaining = 0;
 	fifo8_reset(&p->t0_tx_fifo);
 
-	sim_set_dma_request(p, false);
+	sim_set_dma_request(p, false, false);
 	sim_update_outputs(p);
 }
 

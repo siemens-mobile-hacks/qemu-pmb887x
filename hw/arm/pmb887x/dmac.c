@@ -24,6 +24,10 @@
 #define DMAC_CHANNELS		8
 #define DMAC_REQUESTS		16
 
+/* Max bursts serviced per timer callback before yielding the BQL back to the
+ * main loop / vCPU. Bounds how long a single pass can hold the lock. */
+#define DMAC_MAX_BURSTS_PER_PASS	10240
+
 static const uint32_t PCELL_ID = 0xB105F00D;
 
 typedef struct pmb887x_dmac_ch_t pmb887x_dmac_ch_t;
@@ -153,6 +157,22 @@ static void dmac_ack_request(pmb887x_dmac_t *p, pmb887x_dmac_request_t *request,
 		qemu_set_irq(p->CLR[sel][id], 1);
 }
 
+static pmb887x_dmac_request_t *dmac_pending_burst(pmb887x_dmac_t *p, uint8_t sel, uint8_t id) {
+	if (dmac_is_request_pending(&p->breq, sel, id))
+		return &p->breq;
+	if (dmac_is_request_pending(&p->lbreq, sel, id))
+		return &p->lbreq;
+	return NULL;
+}
+
+static pmb887x_dmac_request_t *dmac_pending_single(pmb887x_dmac_t *p, uint8_t sel, uint8_t id) {
+	if (dmac_is_request_pending(&p->sreq, sel, id))
+		return &p->sreq;
+	if (dmac_is_request_pending(&p->lsreq, sel, id))
+		return &p->lsreq;
+	return NULL;
+}
+
 static void dmac_clear_software_requests(pmb887x_dmac_t *p) {
 	p->sreq.soft = 0;
 	p->breq.soft = 0;
@@ -215,7 +235,8 @@ static void dmac_transfer_finish(pmb887x_dmac_t *p, pmb887x_dmac_ch_t *ch) {
 		DPRINTF("CH%d: transfer done\n", ch->id);
 		dmac_update_final_addresses(ch);
 		ch->config &= ~DMAC_CH_CONFIG_ENABLE;
-		pmb887x_srb_set_isr(&p->srb_tc, (1 << ch->id));
+		if ((ch->control & DMAC_CH_CONTROL_I))
+			pmb887x_srb_set_isr(&p->srb_tc, (1 << ch->id));
 	}
 
 	bool is_dst_tc = (
@@ -474,9 +495,10 @@ static void dmac_channel_run(pmb887x_dmac_t *p, pmb887x_dmac_ch_t *ch) {
 		}
 
 		case DMAC_CH_CONFIG_FLOW_CTRL_MEM2PER: {
-			if (dmac_is_request_pending(&p->breq, dst_sel, dst_periph)) {
+			pmb887x_dmac_request_t *req = dmac_pending_burst(p, dst_sel, dst_periph);
+			if (req) {
 				dmac_transfer_memory(p, ch, MIN(tx_size, src_burst_size));
-				dmac_ack_request(p, &p->breq, dst_sel, dst_periph);
+				dmac_ack_request(p, req, dst_sel, dst_periph);
 			}
 			break;
 		}
@@ -487,15 +509,19 @@ static void dmac_channel_run(pmb887x_dmac_t *p, pmb887x_dmac_ch_t *ch) {
 			break;
 		}
 
-		case DMAC_CH_CONFIG_FLOW_CTRL_PER2MEM:
-			if (dmac_is_request_pending(&p->breq, src_sel, src_periph)) {
-				dmac_transfer_memory(p, ch, MIN(tx_size, src_burst_size));
-				dmac_ack_request(p, &p->breq, src_sel, src_periph);
-			} else if (dmac_is_request_pending(&p->sreq, src_sel, src_periph)) {
-				dmac_transfer_memory(p, ch, MIN(tx_size, 1));
-				dmac_ack_request(p, &p->sreq, src_sel, src_periph);
+		case DMAC_CH_CONFIG_FLOW_CTRL_PER2MEM: {
+			pmb887x_dmac_request_t *req = dmac_pending_burst(p, src_sel, src_periph);
+			uint32_t count = src_burst_size;
+			if (!req) {
+				req = dmac_pending_single(p, src_sel, src_periph);
+				count = 1;
+			}
+			if (req) {
+				dmac_transfer_memory(p, ch, MIN(tx_size, count));
+				dmac_ack_request(p, req, src_sel, src_periph);
 			}
 			break;
+		}
 
 		case DMAC_CH_CONFIG_FLOW_CTRL_PER2PER:
 			if (dmac_is_request_pending(&p->breq, src_sel, src_periph) &&
@@ -851,13 +877,16 @@ uint32_t pmb887x_dmac_get_sel(pmb887x_dmac_t *p) {
 
 static void dmac_timer_reset(void *opaque) {
 	pmb887x_dmac_t *p = opaque;
-	while (p->dmac_pending) {
+	int budget = DMAC_MAX_BURSTS_PER_PASS;
+	while (p->dmac_pending && budget-- > 0) {
 		p->dmac_pending = false;
 		for (int i = 0; i < DMAC_CHANNELS; i++)
 			dmac_channel_run(p, &p->ch[i]);
 		if (pmb887x_srb_get_ris(&p->srb_tc) || pmb887x_srb_get_ris(&p->srb_err))
 			break;
 	}
+	if (p->dmac_pending)
+		timer_mod(p->timer, qemu_clock_get_ns(QEMU_CLOCK_REALTIME) + 1);
 }
 
 static void dmac_handle_signal_sel0_sreq(void *opaque, int request, int level) {
