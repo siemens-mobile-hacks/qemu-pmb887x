@@ -58,19 +58,15 @@ static void lcd_update_state(pmb887x_lcd_t *lcd) {
 	pmb887x_lcd_set_addr_mode(
 		lcd,
 		(am ? LCD_AM_VERTICAL : LCD_AM_HORIZONTAL),
-		(id0 ? LCD_AC_DEC : LCD_AC_INC),
+		(id0 ? LCD_AC_INC : LCD_AC_DEC),
 		(id1 ? LCD_AC_INC : LCD_AC_DEC)
 	);
 
-	// TRI=1 + DFM=1: 18-bit pixel transferred in 3 cycles; otherwise 16-bit.
-	enum pmb887x_lcd_pixel_mode_t new_mode;
-	if (tri && dfm) {
-		new_mode = bgr ? LCD_MODE_BGR666 : LCD_MODE_RGB666;
-	} else {
-		new_mode = bgr ? LCD_MODE_BGR565 : LCD_MODE_RGB565;
-	}
-
-	pmb887x_lcd_set_mode(lcd, new_mode, ss, gs);
+	enum pmb887x_lcd_pixel_format_t pixel_format = tri && dfm ?
+		LCD_PIXEL_FORMAT_RGB666_6_6_6 : LCD_PIXEL_FORMAT_RGB565;
+	pmb887x_lcd_set_pixel_format(lcd, pixel_format);
+	pmb887x_lcd_set_output_bgr(lcd, bgr);
+	pmb887x_lcd_set_transform(lcd, false, false);
 }
 
 static int lcd_on_cmd(pmb887x_lcd_t *lcd, uint32_t cmd) {
@@ -134,6 +130,22 @@ static void lcd_on_cmd_with_params(pmb887x_lcd_t *lcd, uint32_t cmd, const uint3
 	}
 }
 
+static void lcd_reset(pmb887x_lcd_t *lcd) {
+	pmb887x_lcd_panel_t *priv = PMB887X_LCD_PANEL(lcd);
+	memset(priv->regs, 0, sizeof(priv->regs));
+	memcpy(priv->regs, DEFAULT_REGS, sizeof(DEFAULT_REGS));
+	priv->regs[R63400_R_WINDOW_HEND] = lcd->width - 1;
+	priv->regs[R63400_R_WINDOW_VEND] = lcd->height - 1;
+
+	lcd_update_state(lcd);
+	pmb887x_lcd_set_x(lcd, priv->regs[R63400_R_GRAM_X]);
+	pmb887x_lcd_set_y(lcd, priv->regs[R63400_R_GRAM_Y]);
+	pmb887x_lcd_set_window_x1(lcd, priv->regs[R63400_R_WINDOW_HSTART]);
+	pmb887x_lcd_set_window_x2(lcd, priv->regs[R63400_R_WINDOW_HEND]);
+	pmb887x_lcd_set_window_y1(lcd, priv->regs[R63400_R_WINDOW_VSTART]);
+	pmb887x_lcd_set_window_y2(lcd, priv->regs[R63400_R_WINDOW_VEND]);
+}
+
 static void lcd_realize(pmb887x_lcd_t *lcd, Error **errp) {
 	pmb887x_lcd_panel_t *priv = PMB887X_LCD_PANEL(lcd);
 	memset(priv->regs, 0, sizeof(priv->regs));
@@ -147,6 +159,7 @@ static void lcd_class_init(ObjectClass *oc, const void *data) {
 	k->param_width = 2;
 	k->on_cmd = lcd_on_cmd;
 	k->on_cmd_with_params = lcd_on_cmd_with_params;
+	k->reset = lcd_reset;
 	k->realize = lcd_realize;
 }
 

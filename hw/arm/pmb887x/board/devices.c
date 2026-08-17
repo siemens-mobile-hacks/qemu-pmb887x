@@ -144,7 +144,7 @@ static pmb887x_dev_t devices_meta[] = {
 		},
 	},
 	{
-		.name = "ili9320",
+		.name = "r61505",
 		.props = {
 			{ "width", DEV_PROP_UINT, true },
 			{ "height", DEV_PROP_UINT, true },

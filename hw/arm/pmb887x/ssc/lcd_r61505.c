@@ -1,8 +1,8 @@
 /*
- * Ilitek ILI9320 (LGIT IL220DBN1A panel on the LG KE970)
+ * R61505/ILI9320-compatible panels
  * */
 #define PMB887X_TRACE_ID		LCD
-#define PMB887X_TRACE_PREFIX	"ili9320"
+#define PMB887X_TRACE_PREFIX	"r61505"
 
 #include "qemu/osdep.h"
 #include "hw/core/qdev-properties.h"
@@ -11,7 +11,7 @@
 #include "hw/arm/pmb887x/trace.h"
 #include "hw/arm/pmb887x/ssc/lcd_common.h"
 
-#define TYPE_PMB887X_LCD_PANEL	"ili9320"
+#define TYPE_PMB887X_LCD_PANEL	"r61505"
 #define PMB887X_LCD_PANEL(obj)	OBJECT_CHECK(pmb887x_lcd_panel_t, (obj), TYPE_PMB887X_LCD_PANEL)
 
 #define ILI9320_MAX_REGS	0x100
@@ -62,18 +62,16 @@ static void lcd_update_state(pmb887x_lcd_t *lcd) {
 		(id1 ? LCD_AC_INC : LCD_AC_DEC)
 	);
 
-	// TRI=1 + DFM=1: 18-bit pixel transferred in 3 cycles; otherwise 16-bit.
-	enum pmb887x_lcd_pixel_mode_t new_mode;
-	if (tri && dfm) {
-		new_mode = bgr ? LCD_MODE_BGR666 : LCD_MODE_RGB666;
-	} else {
-		new_mode = bgr ? LCD_MODE_BGR565 : LCD_MODE_RGB565;
-	}
-
-	pmb887x_lcd_set_mode(lcd, new_mode, ss, gs);
+	enum pmb887x_lcd_pixel_format_t pixel_format = tri && dfm ?
+		LCD_PIXEL_FORMAT_RGB666_6_6_6 : LCD_PIXEL_FORMAT_RGB565;
+	pmb887x_lcd_set_pixel_format(lcd, pixel_format);
+	pmb887x_lcd_set_output_bgr(lcd, bgr);
+	pmb887x_lcd_set_transform(lcd, false, false);
 }
 
 static int lcd_on_cmd(pmb887x_lcd_t *lcd, uint32_t cmd) {
+	DPRINTF("write R%02X\n", cmd);
+
 	if (cmd == ILI9320_R_GRAM_WRITE) {
 		pmb887x_lcd_set_ram_mode(lcd, true);
 		return 0;
@@ -134,6 +132,22 @@ static void lcd_on_cmd_with_params(pmb887x_lcd_t *lcd, uint32_t cmd, const uint3
 	}
 }
 
+static void lcd_reset(pmb887x_lcd_t *lcd) {
+	pmb887x_lcd_panel_t *priv = PMB887X_LCD_PANEL(lcd);
+	memset(priv->regs, 0, sizeof(priv->regs));
+	memcpy(priv->regs, DEFAULT_REGS, sizeof(DEFAULT_REGS));
+	priv->regs[ILI9320_R_WINDOW_HEND] = lcd->width - 1;
+	priv->regs[ILI9320_R_WINDOW_VEND] = lcd->height - 1;
+
+	lcd_update_state(lcd);
+	pmb887x_lcd_set_x(lcd, priv->regs[ILI9320_R_GRAM_X]);
+	pmb887x_lcd_set_y(lcd, priv->regs[ILI9320_R_GRAM_Y]);
+	pmb887x_lcd_set_window_x1(lcd, priv->regs[ILI9320_R_WINDOW_HSTART]);
+	pmb887x_lcd_set_window_x2(lcd, priv->regs[ILI9320_R_WINDOW_HEND]);
+	pmb887x_lcd_set_window_y1(lcd, priv->regs[ILI9320_R_WINDOW_VSTART]);
+	pmb887x_lcd_set_window_y2(lcd, priv->regs[ILI9320_R_WINDOW_VEND]);
+}
+
 static void lcd_realize(pmb887x_lcd_t *lcd, Error **errp) {
 	pmb887x_lcd_panel_t *priv = PMB887X_LCD_PANEL(lcd);
 	memset(priv->regs, 0, sizeof(priv->regs));
@@ -147,6 +161,7 @@ static void lcd_class_init(ObjectClass *oc, const void *data) {
 	k->param_width = 2;
 	k->on_cmd = lcd_on_cmd;
 	k->on_cmd_with_params = lcd_on_cmd_with_params;
+	k->reset = lcd_reset;
 	k->realize = lcd_realize;
 }
 
