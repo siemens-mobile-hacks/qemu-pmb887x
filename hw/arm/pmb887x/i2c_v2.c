@@ -245,8 +245,8 @@ static void i2c_timer_schedule(pmb887x_i2c_t *p) {
 }
 
 static void i2c_fifo_write(pmb887x_i2c_t *p, uint64_t value) {
-	if (p->state == I2C_STATE_MASTER_RX)
-		hw_error("Wriring to FIFO in MASTER_RX is not allowed!");
+	// if (p->state == I2C_STATE_MASTER_RX)
+	// 	hw_error("Wriring to FIFO in MASTER_RX is not allowed!");
 
 	if (!pmb887x_fifo_free_count(&p->fifo)) {
 		DPRINTF("TX FIFO overflow!\n");
@@ -362,6 +362,9 @@ static void i2c_start_tx(pmb887x_i2c_t *p) {
 	if (!i2c_is_running(p))
 		return;
 
+	if (p->state == I2C_STATE_MASTER_RX && p->rx_remaining == 0 && pmb887x_fifo_is_empty(&p->fifo))
+		i2c_transfer_done(p);
+
 	if (p->state != I2C_STATE_MASTER_RESTART && p->state != I2C_STATE_NONE)
 		return;
 
@@ -395,6 +398,7 @@ static void i2c_transfer_error(pmb887x_i2c_t *p) {
 	pmb887x_srb_ext_set_icr(&p->srb_proto, I2Cv2_PIRQSS_RX);
 	DPRINTF("------ STOP ------\n");
 	i2c_end_transfer(p->bus);
+	pmb887x_fifo_reset(&p->fifo);
 	i2c_kernel_reset(p, I2C_STATE_NONE);
 	i2c_timer_schedule(p);
 }
@@ -480,8 +484,13 @@ static void i2c_work(pmb887x_i2c_t *p) {
 
 		i2c_fifo_req(p);
 
-		if (p->rx_remaining == 0 && pmb887x_fifo_is_empty(&p->fifo))
-			i2c_transfer_done(p);
+		if (p->rx_remaining == 0) {
+			if (pmb887x_fifo_is_empty(&p->fifo)) {
+				i2c_transfer_done(p);
+			} else {
+				pmb887x_srb_ext_set_isr(&p->srb_proto, I2Cv2_PIRQSS_TX_END);
+			}
+		}
 	} else if (p->state == I2C_STATE_MASTER_RESTART) {
 		if (p->enddctrl_end) {
 			i2c_transfer_done(p);
