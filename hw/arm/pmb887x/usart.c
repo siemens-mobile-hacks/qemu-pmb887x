@@ -51,7 +51,7 @@ struct pmb887x_usart_t {
 	pmb887x_clc_reg_t clc;
 	pmb887x_srb_reg_t srb;
 	qemu_irq irq[USART_IRQ_NR];
-	pmb887x_pll_t *pll;
+	pmb887x_cgu_t *cgu;
 
 	QEMUTimer *timer;
 	QEMUTimer *tmo_timer;
@@ -113,7 +113,7 @@ static void usart_transmit_fifo(pmb887x_usart_t *p);
 
 static uint32_t usart_get_baud_rate(pmb887x_usart_t *p) {
 	uint32_t rmc = pmb887x_clc_get_rmc(&p->clc);
-	uint64_t frequency = rmc > 0 ? pmb887x_pll_get_fsys(p->pll) / rmc : 0;
+	uint64_t frequency = rmc > 0 ? pmb887x_pll_get_fsys(p->cgu) / rmc : 0;
 	uint64_t reload = (p->bg & 0x1FFF) + 1;
 	uint64_t numerator;
 	uint64_t denominator;
@@ -910,7 +910,7 @@ static void usart_reset(DeviceState *dev) {
 
 static const Property usart_properties[] = {
 	DEFINE_PROP_UINT32("revision", pmb887x_usart_t, revision, 0),
-	DEFINE_PROP_LINK("pll", pmb887x_usart_t, pll, "pmb887x-pll", pmb887x_pll_t *),
+	DEFINE_PROP_LINK("cgu", pmb887x_usart_t, cgu, "pmb887x-cgu", pmb887x_cgu_t *),
     DEFINE_PROP_CHR("chardev", struct pmb887x_usart_t, chr),
 };
 

@@ -133,7 +133,7 @@ struct pmb887x_tpu_t {
 	uint32_t last_fsys;
 	uint32_t unk;
 	
-	pmb887x_pll_t *pll;
+	pmb887x_cgu_t *cgu;
 };
 
 static uint64_t tpu_get_counter(pmb887x_tpu_t *p) {
@@ -408,7 +408,7 @@ static void tpu_update_state(pmb887x_tpu_t *p) {
 	uint32_t div = pmb887x_clc_get_rmc(&p->clc);
 	
 	// Input freq for module
-	uint32_t ftpu = div > 0 ? pmb887x_pll_get_fsys(p->pll) / div : 0;
+	uint32_t ftpu = div > 0 ? pmb887x_pll_get_fsys(p->cgu) / div : 0;
 	
 	// Update clock
 	if ((p->gsmclk3 & TPU_GSMCLK3_INIT) || (p->gsmclk3 & TPU_GSMCLK3_LOAD)) {
@@ -446,7 +446,7 @@ static void tpu_update_state(pmb887x_tpu_t *p) {
 		p->freq = new_freq;
 		p->enabled = enabled;
 		clock_update_hz(p->gsm_clock, p->freq);
-		DPRINTF("fsys=%d, ftpu=%d, fcounter=%d [%s]\n", pmb887x_pll_get_fsys(p->pll), ftpu, p->freq, p->enabled ? "ON" : "OFF");
+		DPRINTF("fsys=%d, ftpu=%d, fcounter=%d [%s]\n", pmb887x_pll_get_fsys(p->cgu), ftpu, p->freq, p->enabled ? "ON" : "OFF");
 	}
 
 	if (p->enabled && !was_enabled) {
@@ -470,7 +470,7 @@ static void tpu_update_state(pmb887x_tpu_t *p) {
 
 static void tpu_update_state_callback(void *opaque) {
 	pmb887x_tpu_t *p = opaque;
-	uint32_t fsys = pmb887x_pll_get_fsys(p->pll);
+	uint32_t fsys = pmb887x_pll_get_fsys(p->cgu);
 	if (p->last_fsys != fsys) {
 		tpu_update_state(p);
 		p->last_fsys = fsys;
@@ -836,7 +836,7 @@ static void tpu_realize(DeviceState *dev, Error **errp) {
 	p->enabled = false;
 	
 	tpu_update_state(p);
-	pmb887x_pll_add_freq_update_callback(p->pll, tpu_update_state_callback, p);
+	pmb887x_pll_add_freq_update_callback(p->cgu, tpu_update_state_callback, p);
 }
 
 static void tpu_reset(DeviceState *dev) {
@@ -900,7 +900,7 @@ static void tpu_reset(DeviceState *dev) {
 
 static const Property tpu_properties[] = {
 	DEFINE_PROP_UINT32("revision", pmb887x_tpu_t, revision, 0),
-	DEFINE_PROP_LINK("pll", struct pmb887x_tpu_t, pll, "pmb887x-pll", struct pmb887x_pll_t *),
+	DEFINE_PROP_LINK("cgu", struct pmb887x_tpu_t, cgu, "pmb887x-cgu", struct pmb887x_cgu_t *),
 };
 
 static void tpu_class_init(ObjectClass *klass, const void *data) {

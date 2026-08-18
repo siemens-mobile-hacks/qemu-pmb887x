@@ -83,7 +83,7 @@ struct pmb887x_adc_t {
 	uint16_t data[8];
 	
 	pmb887x_adc_input_t inputs[PMB887X_ADC_MAX_INPUTS];
-	pmb887x_pll_t *pll;
+	pmb887x_cgu_t *cgu;
 };
 
 // Known channels with known parameters
@@ -207,7 +207,7 @@ static void adc_start_conversion(pmb887x_adc_t *p) {
 
 static void adc_update_state(pmb887x_adc_t *p) {
 	uint32_t div = pmb887x_clc_get_rmc(&p->clc);
-	uint32_t fadc = div > 0 ? pmb887x_pll_get_fsys(p->pll) / div : 0;
+	uint32_t fadc = div > 0 ? pmb887x_pll_get_fsys(p->cgu) / div : 0;
 	bool is_enabled = fadc > 0 && pmb887x_clc_is_enabled(&p->clc);
 	
 	if ((p->con1 & ADC_CTRL_ENTRIG)) {
@@ -373,7 +373,7 @@ static void adc_realize(DeviceState *dev, Error **errp) {
 
 static const Property adc_properties[] = {
 	DEFINE_PROP_UINT32("revision", pmb887x_adc_t, revision, 0),
-	DEFINE_PROP_LINK("pll", pmb887x_adc_t, pll, "pmb887x-pll", struct pmb887x_pll_t *),
+	DEFINE_PROP_LINK("cgu", pmb887x_adc_t, cgu, "pmb887x-cgu", struct pmb887x_cgu_t *),
 };
 
 static void adc_class_init(ObjectClass *klass, const void *data) {

@@ -36,6 +36,9 @@ struct pmb887x_gpio_t {
 	bool input_state[8][GPIOS_COUNT];
 	qemu_irq pins_out[8][GPIOS_COUNT];
 
+	qemu_irq mon3_out;
+	qemu_irq mon4_out;
+
 	const char **names;
 	uint32_t names_count;
 };
@@ -254,6 +257,9 @@ static void gpio_init(Object *obj) {
 
 	qdev_init_gpio_in_named(dev, gpio_input_alt6_handler, "pin_alt6_in", GPIOS_COUNT);
 	qdev_init_gpio_out_named(dev, p->pins_out[7], "pin_alt6_out", GPIOS_COUNT);
+
+	qdev_init_gpio_out_named(dev, &p->mon3_out, "MON3_OUT", 1);
+	qdev_init_gpio_out_named(dev, &p->mon4_out, "MON4_OUT", 1);
 }
 
 static void gpio_reset(DeviceState *dev) {

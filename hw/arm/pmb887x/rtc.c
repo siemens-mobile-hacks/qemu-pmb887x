@@ -35,7 +35,7 @@ struct pmb887x_rtc_t {
 	
 	pmb887x_clc_reg_t clc;
 	pmb887x_src_reg_t src;
-	pmb887x_pll_t *pll;
+	pmb887x_cgu_t *cgu;
 	qemu_irq irq;
 	QEMUTimer *timer;
 	
@@ -50,7 +50,7 @@ struct pmb887x_rtc_t {
 };
 
 static uint32_t rtc_get_freq(pmb887x_rtc_t *p) {
-	uint32_t frtc = pmb887x_pll_get_frtc(p->pll);
+	uint32_t frtc = pmb887x_pll_get_frtc(p->cgu);
 	return (p->con & RTC_CON_PRE) ? frtc / 8 : frtc;
 }
 
@@ -327,8 +327,8 @@ static void rtc_reset(DeviceState *dev) {
 static void rtc_realize(DeviceState *dev, Error **errp) {
 	pmb887x_rtc_t *p = PMB887X_RTC(dev);
 	
-	if (!p->pll)
-		hw_error("PLL not found...");
+	if (!p->cgu)
+		hw_error("CGU not found...");
 	if (!p->irq)
 		hw_error("pmb887x-rtc: irq not set");
 	
@@ -345,7 +345,7 @@ static void rtc_realize(DeviceState *dev, Error **errp) {
 
 static const Property rtc_properties[] = {
 	DEFINE_PROP_UINT32("revision", pmb887x_rtc_t, revision, 0),
-	DEFINE_PROP_LINK("pll", pmb887x_rtc_t, pll, "pmb887x-pll", pmb887x_pll_t *),
+	DEFINE_PROP_LINK("cgu", pmb887x_rtc_t, cgu, "pmb887x-cgu", pmb887x_cgu_t *),
 };
 
 static void rtc_class_init(ObjectClass *klass, const void *data) {
