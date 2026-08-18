@@ -24,6 +24,7 @@ struct pmb887x_pmic_t {
 	I2CSlave parent_obj;
 	uint32_t reg_id;
 	uint8_t wcycle;
+	uint8_t rcycle;
 	uint8_t regs[256];
 	bool on_level;
 	bool lon_frozen;
@@ -82,6 +83,7 @@ static int pmic_event(I2CSlave *s, enum i2c_event event) {
 			break;
 		case I2C_START_RECV:
 			p->wcycle = 0;
+			p->rcycle = 0;
 			break;
 		case I2C_NACK:
 			p->wcycle = 0;
@@ -96,14 +98,16 @@ static int pmic_event(I2CSlave *s, enum i2c_event event) {
 
 static uint8_t pmic_recv(I2CSlave *s) {
 	pmb887x_pmic_t *p = PMB887X_PMIC(s);
-	uint8_t data = p->regs[p->reg_id];
+
+	bool readable = p->rcycle == 0 && p->reg_id >= PMB6812_GEF1 && p->reg_id <= PMB6812_GEF2;
+	uint8_t data = readable ? p->regs[p->reg_id] : 0xFF;
 
 	IO_DUMP_READ(p->reg_id, 1, data);
-	if (p->reg_id == PMB6812_ISF) {
+	if (readable && p->reg_id == PMB6812_ISF) {
 		p->lon_frozen = false;
 		pmic_update_on_level(p);
 	}
-	p->reg_id = (p->reg_id + 1) % ARRAY_SIZE(p->regs);
+	p->rcycle++;
 
 	return data;
 }
@@ -134,6 +138,7 @@ static void pmic_reset(DeviceState *dev) {
 	pmb887x_pmic_t *p = PMB887X_PMIC(dev);
 	p->reg_id = 0;
 	p->wcycle = 0;
+	p->rcycle = 0;
 	p->lon_frozen = false;
 	memcpy(p->regs, regs_PMB6812, sizeof(regs_PMB6812));
 	pmic_update_on_level(p);
