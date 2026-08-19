@@ -85,7 +85,7 @@ arm_common_ss.add(when: 'CONFIG_PMB887X', if_true: files(
 	'ssc/b00b10b.c',
 	'ssc/lcd_common.c',
 	'ssc/lcd_common_format.c',
-	'ssc/lcd_ili9320.c',
+	'ssc/lcd_r61505.c',
 	'ssc/lcd_jbt6k71.c',
 	'ssc/lcd_ssd1286.c',
 	'ssc/lcd_pcf8882.c',
