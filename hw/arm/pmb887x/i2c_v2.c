@@ -18,6 +18,7 @@
 #include "hw/arm/pmb887x/gen/cpu_regs.h"
 #include "hw/arm/pmb887x/regs_dump.h"
 #include "hw/arm/pmb887x/mod.h"
+#include "hw/arm/pmb887x/pll.h"
 #include "hw/arm/pmb887x/trace.h"
 #include "hw/arm/pmb887x/fifo.h"
 
@@ -27,6 +28,7 @@ OBJECT_DECLARE_SIMPLE_TYPE(pmb887x_i2c_t, PMB887X_I2C);
 #define FIFO_IO_SIZE		0x3FFF
 #define FIFO_SIZE			8
 #define I2C_IO_SIZE			(I2Cv2_RXD + FIFO_IO_SIZE + 1)
+#define I2C_BYTE_SCL_PERIODS	9 /* Eight data bits and ACK. */
 
 #define FIFO_ICR_MASK		(I2Cv2_ICR_BREQ_INT | I2Cv2_ICR_LBREQ_INT | I2Cv2_ICR_SREQ_INT | I2Cv2_ICR_LSREQ_INT)
 
@@ -54,6 +56,7 @@ struct pmb887x_i2c_t {
 	bool transfer_pending;
 
 	pmb887x_clc_reg_t clc;
+	pmb887x_pll_t *pll;
 	pmb887x_srb_reg_t srb;
 	pmb887x_srb_ext_reg_t srb_proto;
 	pmb887x_srb_ext_reg_t srb_err;
@@ -240,8 +243,43 @@ static void i2c_timer_reset(void *opaque) {
 	i2c_work(p);
 }
 
+static uint32_t i2c_get_baud_rate_hz(pmb887x_i2c_t *p) {
+	uint32_t rmc = pmb887x_clc_get_rmc(&p->clc);
+	uint64_t kernel_clock_hz = rmc > 0 ? pmb887x_pll_get_fsys(p->pll) / rmc : 0;
+	uint64_t dec = (p->fdivcfg & I2Cv2_FDIVCFG_DEC) >> I2Cv2_FDIVCFG_DEC_SHIFT;
+	uint64_t inc = (p->fdivcfg & I2Cv2_FDIVCFG_INC) >> I2Cv2_FDIVCFG_INC_SHIFT;
+
+	if (!pmb887x_clc_is_enabled(&p->clc))
+		return 0;
+	if (kernel_clock_hz == 0)
+		return 0;
+	if (inc == 0)
+		return 0;
+
+	/* Normal/fast SCL period is (2 * DEC + 3 * INC) / INC kernel clock cycles. */
+	uint64_t scl_period_cycles_x_inc = (2 * dec) + (3 * inc);
+	return (kernel_clock_hz * inc) / scl_period_cycles_x_inc;
+}
+
+static int64_t i2c_get_work_delay_ns(pmb887x_i2c_t *p) {
+	uint32_t baud_rate_hz = i2c_get_baud_rate_hz(p);
+
+	if (baud_rate_hz == 0)
+		return 0;
+
+	return MAX(1, (int64_t) muldiv64_round_up(I2C_BYTE_SCL_PERIODS, NANOSECONDS_PER_SECOND, baud_rate_hz));
+}
+
 static void i2c_timer_schedule(pmb887x_i2c_t *p) {
-	timer_mod(p->timer, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + 300);
+	int64_t work_delay_ns = i2c_get_work_delay_ns(p);
+	p->transfer_pending = true;
+
+	if (work_delay_ns == 0) {
+		timer_del(p->timer);
+		return;
+	}
+
+	timer_mod(p->timer, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + work_delay_ns);
 }
 
 static void i2c_fifo_write(pmb887x_i2c_t *p, uint64_t value) {
@@ -485,6 +523,8 @@ static void i2c_work(pmb887x_i2c_t *p) {
 		i2c_fifo_req(p);
 
 		if (p->rx_remaining == 0) {
+			p->rpsstat = p->rx_total_bytes;
+			p->mrpsctrl = 0;
 			if (pmb887x_fifo_is_empty(&p->fifo)) {
 				i2c_transfer_done(p);
 			} else {
@@ -643,6 +683,8 @@ static void i2c_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned si
 	switch (haddr) {
 		case I2Cv2_CLC:
 			pmb887x_clc_set(&p->clc, value);
+			if (p->transfer_pending)
+				i2c_timer_schedule(p);
 			break;
 
 		case I2Cv2_RUNCTRL:
@@ -835,6 +877,10 @@ static void i2c_reset(DeviceState *dev) {
 	pmb887x_srb_reset(&p->srb);
 	pmb887x_srb_ext_reset(&p->srb_proto);
 	pmb887x_srb_ext_reset(&p->srb_err);
+	pmb887x_srb_ext_set_imsc(&p->srb_proto, I2Cv2_PIRQSM_AM | I2Cv2_PIRQSM_GC | I2Cv2_PIRQSM_MC |
+		I2Cv2_PIRQSM_AL | I2Cv2_PIRQSM_NACK | I2Cv2_PIRQSM_TX_END | I2Cv2_PIRQSM_RX);
+	pmb887x_srb_ext_set_imsc(&p->srb_err,
+		I2Cv2_ERRIRQSM_RXF_UFL | I2Cv2_ERRIRQSM_RXF_OFL | I2Cv2_ERRIRQSM_TXF_UFL | I2Cv2_ERRIRQSM_TXF_OFL);
 	pmb887x_fifo_reset(&p->fifo);
 
 	p->transfer_pending = false;
@@ -847,7 +893,7 @@ static void i2c_reset(DeviceState *dev) {
 	p->fdivhighcfg = 0;
 	p->addrcfg = 0;
 	p->mrpsctrl = 0;
-	p->fifocfg = 0;
+	p->fifocfg = I2Cv2_FIFOCFG_RXBS_4_WORD | I2Cv2_FIFOCFG_TXBS_4_WORD;
 	p->tpsctrl = 0;
 	p->timcfg = 0;
 	p->dma_control = 0;
@@ -860,6 +906,7 @@ static void i2c_reset(DeviceState *dev) {
 
 static const Property i2c_properties[] = {
 	DEFINE_PROP_UINT32("revision", pmb887x_i2c_t, revision, 0),
+	DEFINE_PROP_LINK("pll", pmb887x_i2c_t, pll, "pmb887x-pll", pmb887x_pll_t *),
 	DEFINE_PROP_LINK("bus", pmb887x_i2c_t, bus, TYPE_I2C_BUS, I2CBus *),
 };
 

@@ -238,9 +238,11 @@ static void pmb887x_init(MachineState *machine) {
 		object_property_set_link(OBJECT(dif), "dmac", OBJECT(dmac), &error_fatal);
 	sysbus_realize_and_unref(SYS_BUS_DEVICE(dif), &error_fatal);
 
-    // I2C
-    DeviceState *i2c = pmb887x_new_cpu_module("I2C");
-    sysbus_realize_and_unref(SYS_BUS_DEVICE(i2c), &error_fatal);
+	// I2C
+	DeviceState *i2c = pmb887x_new_cpu_module("I2C");
+	if (object_property_find(OBJECT(i2c), "pll"))
+		object_property_set_link(OBJECT(i2c), "pll", OBJECT(pll), &error_fatal);
+	sysbus_realize_and_unref(SYS_BUS_DEVICE(i2c), &error_fatal);
 
 	// Synchronous Serial Controller
 	DeviceState *ssc = pmb887x_new_cpu_module("SSC");
