@@ -63,6 +63,7 @@ struct pmb887x_flash_part_t {
 	uint8_t cmd;
 	uint32_t cmd_addr;
 	uint16_t status;
+	bool io_mode;
 	
 	uint8_t *storage;
 	
@@ -131,7 +132,8 @@ static void flash_reset(pmb887x_flash_part_t *p) {
 	flash_buffer_clear(p);
 	p->cmd = 0;
 	p->wcycle = 0;
-	memory_region_rom_device_set_romd(&p->mem, true);
+	if (!p->io_mode)
+		memory_region_rom_device_set_romd(&p->mem, true);
 }
 
 static pmb887x_flash_block_t *flash_part_find_block(pmb887x_flash_part_t *p, uint32_t offset) {
@@ -217,6 +219,14 @@ static uint32_t flash_efa_read(pmb887x_flash_part_t *p, uint32_t offset, uint32_
 		exit(1);
 	}
 	return lduw_le_p(p->flash->efa_storage + efa_offset);
+}
+
+static uint32_t flash_array_read(pmb887x_flash_part_t *p, uint32_t offset, uint32_t size) {
+	uint32_t value = 0;
+	offset -= p->offset;
+	for (uint32_t i = 0; i < size; i++)
+		value |= (uint32_t) p->storage[offset + i] << (i * 8);
+	return value;
 }
 
 static uint32_t flash_query_read(pmb887x_flash_part_t *p, uint32_t offset) {
@@ -564,6 +574,10 @@ static uint64_t flash_io_read(void *opaque, hwaddr part_offset, uint32_t size) {
 	uint32_t value = 0;
 	
 	switch (p->cmd) {
+		case 0x00:
+			value = flash_array_read(p, offset, size);
+			break;
+
 		case 0x94:
 			value = flash_efa_read(p, offset, size);
 			break;
@@ -605,7 +619,8 @@ static void flash_io_write(void *opaque, hwaddr part_offset, uint64_t value, uin
 	bool valid_command = false;
 	
 	if (p->wcycle == 0) {
-		memory_region_rom_device_set_romd(&p->mem, false);
+		if (!p->io_mode)
+			memory_region_rom_device_set_romd(&p->mem, false);
 		
 		valid_command = true;
 		p->cmd_addr = offset;
@@ -636,6 +651,8 @@ static void flash_io_write(void *opaque, hwaddr part_offset, uint64_t value, uin
 			case 0x94:
 				flash_trace_part(p, "cmd read EFA (%02"PRIX64")", value);
 				p->cmd = value;
+				// EFA is scanned byte-by-byte; keep this partition in I/O mode to avoid remapping it per byte.
+				p->io_mode = true;
 				break;
 
 			case 0x98:
@@ -1057,7 +1074,25 @@ static void flash_realize(DeviceState *dev, Error **errp) {
 	}
 	
 	flash->cfg = cfg;
-	flash->size = cfg->size;
+	if (!flash->size)
+		flash->size = cfg->size;
+	if (flash->size > cfg->size) {
+		flash_error(flash, "invalid size 0x%08X, maximum is 0x%08X", flash->size, cfg->size);
+		exit(1);
+	}
+
+	bool complete_partition = false;
+	for (size_t i = 0; i < cfg->parts_count; i++) {
+		const pmb887x_flash_cfg_part_t *part = &cfg->parts[i];
+		if (part->offset + part->size == flash->size) {
+			complete_partition = true;
+			break;
+		}
+	}
+	if (!complete_partition) {
+		flash_error(flash, "size 0x%08X does not end on a hardware partition boundary", flash->size);
+		exit(1);
+	}
 	flash_init_file_paths(flash);
 	
 	flash_trace(flash, "FLASH %04X:%04X, 0x%08X ... 0x%08X", flash->vid, flash->pid, flash->offset, flash->offset + flash->size - 1);
@@ -1098,7 +1133,7 @@ static void flash_realize(DeviceState *dev, Error **errp) {
 	flash_init_efa(flash);
 	if (flash->efa_size)
 		flash_load_file(flash, flash->efa_file, flash->efa_storage, flash->efa_size, "EFA");
-	for (size_t i = 0; i < cfg->parts_count; i++)
+	for (size_t i = 0; i < cfg->parts_count && cfg->parts[i].offset < flash->size; i++)
 		flash_init_part(flash, &cfg->parts[i]);
 	
 	sysbus_init_mmio(SYS_BUS_DEVICE(flash->dev), &flash->mmio);

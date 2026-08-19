@@ -50,6 +50,7 @@ struct pmb887x_gsm_sim_t {
 
 enum gsm_sim_file_id_t {
 	GSM_SIM_FILE_MF = PMB887X_SIM_FS_MF_ID,
+	GSM_SIM_FILE_EF_ELP = 0x2F05,
 	GSM_SIM_FILE_EF_ICCID = 0x2FE2,
 	GSM_SIM_FILE_DF_TELECOM = 0x7F10,
 	GSM_SIM_FILE_DF_GSM = 0x7F20,
@@ -72,6 +73,7 @@ enum gsm_sim_file_id_t {
 };
 
 static const uint8_t GSM_SIM_ATR[] = { 0x3B, 0x00 };
+static const uint8_t GSM_SIM_ELP[] = { 'e', 'n' };
 static const uint8_t GSM_SIM_ICCID[] = { 0x98, 0x88, 0x12, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x20 };
 static const uint8_t GSM_SIM_LP[] = { 0xFF };
 static const uint8_t GSM_SIM_KC[] = { 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0x07 };
@@ -96,6 +98,7 @@ static const uint8_t GSM_SIM_MSISDN[GSM_SIM_MSISDN_RECORD_SIZE] = {
 
 static const pmb887x_sim_fs_file_definition_t GSM_SIM_FILES[] = {
 	{ GSM_SIM_FILE_MF, 0, PMB887X_SIM_FS_MF, NULL, 0, 0x00, 0 },
+	{ GSM_SIM_FILE_EF_ELP, GSM_SIM_FILE_MF, PMB887X_SIM_FS_EF_TRANSPARENT, GSM_SIM_ELP, sizeof(GSM_SIM_ELP), 0xFF, 0 },
 	{ GSM_SIM_FILE_EF_ICCID, GSM_SIM_FILE_MF, PMB887X_SIM_FS_EF_TRANSPARENT, GSM_SIM_ICCID, sizeof(GSM_SIM_ICCID), 0xFF, 0 },
 	{ GSM_SIM_FILE_DF_GSM, GSM_SIM_FILE_MF, PMB887X_SIM_FS_DF, NULL, 0, 0x00, 0 },
 	{ GSM_SIM_FILE_DF_TELECOM, GSM_SIM_FILE_MF, PMB887X_SIM_FS_DF, NULL, 0, 0x00, 0 },

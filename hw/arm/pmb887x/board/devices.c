@@ -143,6 +143,28 @@ static pmb887x_dev_t devices_meta[] = {
 			{ "bgr_filter", DEV_PROP_BOOL, false },
 		},
 	},
+	{
+		.name = "r61505",
+		.props = {
+			{ "width", DEV_PROP_UINT, true },
+			{ "height", DEV_PROP_UINT, true },
+			{ "rotation", DEV_PROP_UINT, false },
+			{ "flip_horizontal", DEV_PROP_BOOL, false },
+			{ "flip_vertical", DEV_PROP_BOOL, false },
+			{ "bgr_filter", DEV_PROP_BOOL, false },
+		},
+	},
+	{
+		.name = "r63400",
+		.props = {
+			{ "width", DEV_PROP_UINT, true },
+			{ "height", DEV_PROP_UINT, true },
+			{ "rotation", DEV_PROP_UINT, false },
+			{ "flip_horizontal", DEV_PROP_BOOL, false },
+			{ "flip_vertical", DEV_PROP_BOOL, false },
+			{ "bgr_filter", DEV_PROP_BOOL, false },
+		},
+	},
 
 	// PMIC
 	{
@@ -183,6 +205,11 @@ static pmb887x_dev_t devices_meta[] = {
 	// Audio Codec
 	{
 		.name = "b00b10b",
+		.props = {},
+	},
+	// Audio amplifier (LM4845/LM4946)
+	{
+		.name = "lm4946",
 		.props = {},
 	},
 
@@ -390,7 +417,7 @@ static DeviceState *device_create_from_config(DeviceState *ebuc, const char *id,
 				uint32_t cs = toml_table_get_uint32(table, "ebu.cs", 0, true);
 				uint32_t vid = toml_table_get_uint32(table, "flash.vid", 0, true);
 				uint32_t pid = toml_table_get_uint32(table, "flash.pid", 0, true);
-				uint32_t bank_size;
+				uint32_t bank_size = toml_table_get_uint32(table, "flash.size", 0, false);
 				pmb887x_board_ebu_connect(DEVICE(bus), cs, pmb887x_board_create_nor_flash(id, vid, pid, board->flash_offset, &bank_size));
 				board->flash_offset += bank_size;
 			} else {
