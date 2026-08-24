@@ -1524,8 +1524,26 @@ static uint8_t tcg_delay_slot_cycles(const teak_insn_t *instruction) {
 		case TEAK_OP_MOV_DATA_IMM8_ACCUMULATOR:
 		case TEAK_OP_MOV_DATA_IMM8_ACCUMULATOR_HIGH_EU:
 		case TEAK_OP_MOV_REGISTER_DATA_IMM8:
+		case TEAK_OP_MOV_DATA_RN_STEP_REGISTER:
+		case TEAK_OP_MOV_REGISTER_DATA_RN_STEP:
+		case TEAK_OP_MOV_DATA_RN_STEP_B_ACCUMULATOR:
+		case TEAK_OP_MOV_REGISTER_REGISTER:
+		case TEAK_OP_MOV_STACK_REGISTER:
 		case TEAK_OP_MOV_DATA_R7_OFFSET7_ACCUMULATOR:
 		case TEAK_OP_MOV_ACCUMULATOR_LOW_DATA_R7_OFFSET7:
+		case TEAK_OP_ALU_REGISTER_ACCUMULATOR:
+		case TEAK_OP_ALU_RN_STEP_ACCUMULATOR:
+		case TEAK_OP_ALU_R7_OFFSET7_ACCUMULATOR:
+		case TEAK_OP_ALU_DATA_IMM8_ACCUMULATOR:
+		case TEAK_OP_TEST_ACCUMULATOR_DATA_IMM8:
+		case TEAK_OP_TSTB_IMM8:
+		case TEAK_OP_TSTB_REGISTER:
+		case TEAK_OP_TSTB_RN_STEP:
+		case TEAK_OP_MODIFY_RN:
+		case TEAK_OP_LOAD_MODI:
+		case TEAK_OP_LOAD_MODJ:
+		case TEAK_OP_LOAD_STEPI:
+		case TEAK_OP_LOAD_STEPJ:
 			return 1;
 
 		case TEAK_OP_NORMALIZE:
@@ -4172,8 +4190,13 @@ static bool tcg_block_repeat_setup_valid(const teak_tcg_core_t *core, const teak
 }
 
 static bool tcg_active_block_repeat_instruction_valid(const teak_tcg_core_t *core, const teak_insn_t *instruction) {
+	uint32_t active_start = core->state.block_repeat_start[core->state.bcn - 1];
 	uint32_t active_end = core->state.block_repeat_end[core->state.bcn - 1];
 	uint32_t instruction_end = instruction->address + instruction->words - 1;
+
+	if (instruction->address < active_start || instruction->address > active_end)
+		return true;
+
 	if (instruction_end > active_end)
 		return false;
 	if (instruction->opcode == TEAK_OP_BREAK && instruction_end == active_end)
