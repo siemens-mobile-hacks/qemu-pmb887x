@@ -19,7 +19,7 @@ static const pmb887x_debug_channel_t debug_channels[] = {
 	{ "dmac",		PMB887X_TRACE_DMAC },
 	{ "ebu",		PMB887X_TRACE_EBU },
 	{ "stm",		PMB887X_TRACE_STM },
-	{ "pll",		PMB887X_TRACE_PLL },
+	{ "cgu",		PMB887X_TRACE_CGU },
 	{ "adc",		PMB887X_TRACE_ADC },
 	{ "meas",		PMB887X_TRACE_ADC },
 	{ "capcom",		PMB887X_TRACE_CAPCOM },
@@ -61,6 +61,7 @@ static const pmb887x_debug_channel_t debug_channels[] = {
 	{ "gprscu",	PMB887X_TRACE_GPRSCU },
 	{ "usb",		PMB887X_TRACE_USB },
 	{ "mmicif",	PMB887X_TRACE_MMICIF },
+	{ "usif",		PMB887X_TRACE_USIF },
 
 	// peripherals
 	{ "sim-card",	PMB887X_TRACE_SIM_CARD },

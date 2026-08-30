@@ -284,7 +284,7 @@ static uint32_t flash_query_read(pmb887x_flash_part_t *p, uint32_t offset) {
 
 			default:
 				value = 0xFFFF;
-				flash_error_part(p, "%08X: read unknown cfi index 0x%02X", offset, index);
+				flash_trace_part(p, "%08X: read unknown cfi index 0x%02X", offset, index);
 				break;
 		}
 	}

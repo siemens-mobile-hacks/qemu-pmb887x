@@ -102,7 +102,7 @@ struct pmb887x_gptu_t {
 	pmb887x_gptu_ev_t events[16];
 	uint32_t events_ssr[2][2];
 
-	struct pmb887x_pll_t *pll;
+	struct pmb887x_cgu_t *cgu;
 
 	int64_t next;
 	int64_t next_t2;
@@ -136,7 +136,7 @@ static void gptu_t01_external_count(pmb887x_gptu_t *p, int cnt_id, uint64_t coun
 static void gptu_update_freq(pmb887x_gptu_t *p) {
 	uint8_t rmc = pmb887x_clc_get_rmc(&p->clc);
 
-	p->freq = rmc > 0 ? pmb887x_pll_get_fsys(p->pll) / rmc : 0;
+	p->freq = rmc > 0 ? pmb887x_pll_get_fsys(p->cgu) / rmc : 0;
 	p->enabled = pmb887x_clc_is_enabled(&p->clc) && p->freq > 0;
 
 	DPRINTF("fgptu=%d %s\n", p->freq, p->enabled ? "[ON]" : "[OFF]");
@@ -1208,7 +1208,7 @@ static void gptu_init(Object *obj) {
 static void gptu_realize(DeviceState *dev, Error **errp) {
 	pmb887x_gptu_t *p = PMB887X_GPTU(dev);
 
-	if (!p->pll)
+	if (!p->cgu)
 		hw_error("PLL not found...");
 
 	pmb887x_clc_set(&p->clc, MOD_CLC_DISR);
@@ -1275,7 +1275,7 @@ static void gptu_reset(DeviceState *dev) {
 
 static const Property gptu_properties[] = {
 	DEFINE_PROP_UINT32("revision", pmb887x_gptu_t, revision, 0),
-	DEFINE_PROP_LINK("pll", pmb887x_gptu_t, pll, "pmb887x-pll", struct pmb887x_pll_t *),
+	DEFINE_PROP_LINK("cgu", pmb887x_gptu_t, cgu, "pmb887x-cgu", struct pmb887x_cgu_t *),
 };
 
 static void gptu_class_init(ObjectClass *klass, const void *data) {

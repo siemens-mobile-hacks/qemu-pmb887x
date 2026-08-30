@@ -6,6 +6,7 @@
 #define PMB887X_TRACE_IO		PMB887X_TRACE_IO_PMB6812
 
 #include "qemu/osdep.h"
+#include "qemu/log.h"
 #include "hw/core/sysbus.h"
 #include "system/memory.h"
 #include "qapi/error.h"
@@ -24,6 +25,8 @@ struct pmb887x_pmic_t {
 	I2CSlave parent_obj;
 	uint32_t reg_id;
 	uint8_t wcycle;
+	uint8_t rcycle;
+	uint8_t wr_val;
 	uint8_t regs[256];
 	bool on_level;
 	bool lon_frozen;
@@ -82,6 +85,7 @@ static int pmic_event(I2CSlave *s, enum i2c_event event) {
 			break;
 		case I2C_START_RECV:
 			p->wcycle = 0;
+			p->rcycle = 0;
 			break;
 		case I2C_NACK:
 			p->wcycle = 0;
@@ -96,33 +100,67 @@ static int pmic_event(I2CSlave *s, enum i2c_event event) {
 
 static uint8_t pmic_recv(I2CSlave *s) {
 	pmb887x_pmic_t *p = PMB887X_PMIC(s);
-	uint8_t data = p->regs[p->reg_id];
+
+	bool readable = p->rcycle == 0 && p->reg_id >= PMB6812_GEF1 && p->reg_id <= PMB6812_GEF2;
+	uint8_t data = readable ? p->regs[p->reg_id] : 0xFF;
 
 	IO_DUMP_READ(p->reg_id, 1, data);
-	if (p->reg_id == PMB6812_ISF) {
+	if (readable && p->reg_id == PMB6812_ISF) {
 		p->lon_frozen = false;
 		pmic_update_on_level(p);
 	}
-	p->reg_id = (p->reg_id + 1) % ARRAY_SIZE(p->regs);
+	p->rcycle++;
 
 	return data;
+}
+
+static uint8_t pmic_pec(uint8_t addr_w, uint8_t reg, uint8_t val) {
+	const uint8_t bytes[3] = { addr_w, reg, val };
+	uint8_t crc = 0;
+
+	for (int i = 0; i < 3; i++) {
+		crc ^= bytes[i];
+		for (int j = 0; j < 8; j++)
+			crc = (crc & 0x80) ? (crc << 1) ^ 0x07 : (crc << 1);
+	}
+
+	return crc;
 }
 
 static int pmic_send(I2CSlave *s, uint8_t data) {
 	pmb887x_pmic_t *p = PMB887X_PMIC(s);
 
-	if (p->wcycle == 0) {
-		p->reg_id = data % ARRAY_SIZE(p->regs);
-	} else {
-		IO_DUMP_WRITE(p->reg_id, 1, data);
-		p->regs[p->reg_id] = data;
-		if (p->reg_id == PMB6812_INTCTRL2) {
-			if ((data & PMB6812_INTCTRL2_EION) == 0)
-				p->lon_frozen = false;
-			if (!p->lon_frozen)
-				pmic_update_on_level(p);
+	switch (p->wcycle) {
+		case 0:
+			p->reg_id = data % ARRAY_SIZE(p->regs);
+			break;
+		case 1:
+			p->wr_val = data;
+			break;
+		case 2: {
+			uint8_t expect = pmic_pec((s->address << 1), p->reg_id, p->wr_val);
+			if (data != expect) {
+				qemu_log_mask(LOG_GUEST_ERROR, "pmb6812: bad CRC on write reg=0x%02X val=0x%02X: "
+					"got 0x%02X expected 0x%02X\n",
+					p->reg_id, p->wr_val, data, expect);
+				p->wcycle++;
+				return 1;
+			}
+
+			IO_DUMP_WRITE(p->reg_id, 1, p->wr_val);
+			p->regs[p->reg_id] = p->wr_val;
+			if (p->reg_id == PMB6812_INTCTRL2) {
+				if ((p->wr_val & PMB6812_INTCTRL2_EION) == 0)
+					p->lon_frozen = false;
+				if (!p->lon_frozen)
+					pmic_update_on_level(p);
+			}
+			break;
 		}
-		p->reg_id = (p->reg_id + 1) % ARRAY_SIZE(p->regs);
+		default:
+			/* the device does not support continued writes */
+			p->wcycle++;
+			return 1;
 	}
 
 	p->wcycle++;
@@ -134,6 +172,7 @@ static void pmic_reset(DeviceState *dev) {
 	pmb887x_pmic_t *p = PMB887X_PMIC(dev);
 	p->reg_id = 0;
 	p->wcycle = 0;
+	p->rcycle = 0;
 	p->lon_frozen = false;
 	memcpy(p->regs, regs_PMB6812, sizeof(regs_PMB6812));
 	pmic_update_on_level(p);

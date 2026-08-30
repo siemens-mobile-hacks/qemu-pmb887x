@@ -37,7 +37,7 @@ struct pmb887x_stm_t {
 	int64_t capture;
 	int64_t counter;
 
-	pmb887x_pll_t *pll;
+	pmb887x_cgu_t *cgu;
 };
 
 static int64_t stm_get_time(pmb887x_stm_t *p) {
@@ -50,7 +50,7 @@ static int64_t stm_get_time(pmb887x_stm_t *p) {
 
 static void stm_update_state(pmb887x_stm_t *p) {
 	uint32_t div = pmb887x_clc_get_rmc(&p->clc);
-	uint32_t new_freq = div > 0 ? pmb887x_pll_get_fstm(p->pll) / div : 0;
+	uint32_t new_freq = div > 0 ? pmb887x_pll_get_fstm(p->cgu) / div : 0;
 	bool new_enabled = new_freq > 0 && pmb887x_clc_is_enabled(&p->clc);
 	
 	if (new_enabled != p->enabled || new_freq != p->freq) {
@@ -64,7 +64,7 @@ static void stm_update_state(pmb887x_stm_t *p) {
 			p->start = 0;
 		}
 		
-		DPRINTF("fstm=%d, fstm / RMC=%d [%s]\n", pmb887x_pll_get_fstm(p->pll), p->freq, p->enabled ? "ON" : "OFF");
+		DPRINTF("fstm=%d, fstm / RMC=%d [%s]\n", pmb887x_pll_get_fstm(p->cgu), p->freq, p->enabled ? "ON" : "OFF");
 	}
 }
 
@@ -186,12 +186,12 @@ static void stm_realize(DeviceState *dev, Error **errp) {
 	pmb887x_clc_init(&p->clc);
 	
 	stm_update_state(p);
-	pmb887x_pll_add_freq_update_callback(p->pll, stm_update_state_callback, p);
+	pmb887x_pll_add_freq_update_callback(p->cgu, stm_update_state_callback, p);
 }
 
 static const Property stm_properties[] = {
 	DEFINE_PROP_UINT32("revision", pmb887x_stm_t, revision, 0),
-	DEFINE_PROP_LINK("pll", struct pmb887x_stm_t, pll, "pmb887x-pll", struct pmb887x_pll_t *),
+	DEFINE_PROP_LINK("cgu", struct pmb887x_stm_t, cgu, "pmb887x-cgu", struct pmb887x_cgu_t *),
 };
 
 static void stm_class_init(ObjectClass *klass, const void *data) {

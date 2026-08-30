@@ -111,6 +111,11 @@ static void pmb887x_init(MachineState *machine) {
 
 	if (object_property_find(cpuobj, "has_el3"))
 		object_property_set_bool(cpuobj, "has_el3", false, &error_fatal);
+
+	// PMB887X has no VFP coprocessor
+	if (object_property_find(cpuobj, "vfp"))
+		object_property_set_bool(cpuobj, "vfp", false, &error_fatal);
+
 	object_property_set_bool(cpuobj, "realized", false, &error_fatal);
 
 	qdev_realize(DEVICE(cpuobj), NULL, &error_fatal);
@@ -165,18 +170,18 @@ static void pmb887x_init(MachineState *machine) {
 	sysbus_connect_irq(SYS_BUS_DEVICE(vic), 1, qdev_get_gpio_in(DEVICE(cpu), ARM_CPU_FIQ));
 	sysbus_realize_and_unref(SYS_BUS_DEVICE(vic), &error_fatal);
 
-	// PLL
-	DeviceState *pll = pmb887x_new_cpu_module("PLL");
-	sysbus_realize_and_unref(SYS_BUS_DEVICE(pll), &error_fatal);
+	// CGU
+	DeviceState *cgu = pmb887x_new_cpu_module("CGU");
+	sysbus_realize_and_unref(SYS_BUS_DEVICE(cgu), &error_fatal);
 
 	// System Timer
 	DeviceState *stm = pmb887x_new_cpu_module("STM");
-	object_property_set_link(OBJECT(stm), "pll", OBJECT(pll), &error_fatal);
+	object_property_set_link(OBJECT(stm), "cgu", OBJECT(cgu), &error_fatal);
 	sysbus_realize_and_unref(SYS_BUS_DEVICE(stm), &error_fatal);
 
 	// Time Processing Unit
 	DeviceState *tpu = pmb887x_new_cpu_module("TPU");
-	object_property_set_link(OBJECT(tpu), "pll", OBJECT(pll), &error_fatal);
+	object_property_set_link(OBJECT(tpu), "cgu", OBJECT(cgu), &error_fatal);
 	sysbus_realize_and_unref(SYS_BUS_DEVICE(tpu), &error_fatal);
 
 	// DMA Controller
@@ -222,15 +227,22 @@ static void pmb887x_init(MachineState *machine) {
 
 	// USART0
 	DeviceState *usart0 = pmb887x_new_cpu_module("USART0");
-	object_property_set_link(OBJECT(usart0), "pll", OBJECT(pll), &error_fatal);
+	object_property_set_link(OBJECT(usart0), "cgu", OBJECT(cgu), &error_fatal);
 	qdev_prop_set_chr(DEVICE(usart0), "chardev", serial_hd(0));
 	sysbus_realize_and_unref(SYS_BUS_DEVICE(usart0), &error_fatal);
 
 	// USART1
 	DeviceState *usart1 = pmb887x_new_cpu_module("USART1");
-	object_property_set_link(OBJECT(usart1), "pll", OBJECT(pll), &error_fatal);
+	object_property_set_link(OBJECT(usart1), "cgu", OBJECT(cgu), &error_fatal);
 	qdev_prop_set_chr(DEVICE(usart1), "chardev", serial_hd(1));
 	sysbus_realize_and_unref(SYS_BUS_DEVICE(usart1), &error_fatal);
+
+	// USIF (Bluetooth HCI transport, PMB8876 only)
+	if (pmb887x_board()->cpu == CPU_PMB8876) {
+		DeviceState *usif = pmb887x_new_cpu_module("USIF");
+		qdev_prop_set_chr(DEVICE(usif), "chardev", serial_hd(2));
+		sysbus_realize_and_unref(SYS_BUS_DEVICE(usif), &error_fatal);
+	}
 
 	// DIF
 	DeviceState *dif = pmb887x_new_cpu_module("DIF");
@@ -250,7 +262,7 @@ static void pmb887x_init(MachineState *machine) {
 
 	// Standby Clock Control Unit
 	DeviceState *sccu = pmb887x_new_cpu_module("SCCU");
-	object_property_set_link(OBJECT(sccu), "pll", OBJECT(pll), &error_fatal);
+	object_property_set_link(OBJECT(sccu), "cgu", OBJECT(cgu), &error_fatal);
 	sysbus_realize_and_unref(SYS_BUS_DEVICE(sccu), &error_fatal);
 
 	// System Control Unit
@@ -258,7 +270,7 @@ static void pmb887x_init(MachineState *machine) {
 	const char *stop_on_excp = getenv("QEMU_ARM_STOP_ON_EXCP");
 	if (stop_on_excp && strcmp(stop_on_excp, "1") == 0)
 		object_property_set_bool(OBJECT(scu), "stop_on_watchdog", true, &error_fatal);
-	object_property_set_link(OBJECT(scu), "pll", OBJECT(pll), &error_fatal);
+	object_property_set_link(OBJECT(scu), "cgu", OBJECT(cgu), &error_fatal);
 	object_property_set_link(OBJECT(scu), "brom_mirror", OBJECT(brom_mirror), &error_fatal);
 	object_property_set_link(OBJECT(scu), "sccu", OBJECT(sccu), &error_fatal);
 	object_property_set_link(OBJECT(scu), "dmac", OBJECT(dmac), &error_fatal);
@@ -287,22 +299,22 @@ static void pmb887x_init(MachineState *machine) {
 
 	// RTC
 	DeviceState *rtc = pmb887x_new_cpu_module("RTC");
-	object_property_set_link(OBJECT(rtc), "pll", OBJECT(pll), &error_fatal);
+	object_property_set_link(OBJECT(rtc), "cgu", OBJECT(cgu), &error_fatal);
 	sysbus_realize_and_unref(SYS_BUS_DEVICE(rtc), &error_fatal);
 
 	// GPTU0
 	DeviceState *gptu0 = pmb887x_new_cpu_module("GPTU0");
-	object_property_set_link(OBJECT(gptu0), "pll", OBJECT(pll), &error_fatal);
+	object_property_set_link(OBJECT(gptu0), "cgu", OBJECT(cgu), &error_fatal);
 	sysbus_realize_and_unref(SYS_BUS_DEVICE(gptu0), &error_fatal);
 	
 	// GPTU1
 	DeviceState *gptu1 = pmb887x_new_cpu_module("GPTU1");
-	object_property_set_link(OBJECT(gptu1), "pll", OBJECT(pll), &error_fatal);
+	object_property_set_link(OBJECT(gptu1), "cgu", OBJECT(cgu), &error_fatal);
 	sysbus_realize_and_unref(SYS_BUS_DEVICE(gptu1), &error_fatal);
 
 	// ADC
 	DeviceState *adc = pmb887x_new_cpu_module("ADC");
-	object_property_set_link(OBJECT(adc), "pll", OBJECT(pll), &error_fatal);
+	object_property_set_link(OBJECT(adc), "cgu", OBJECT(cgu), &error_fatal);
 	sysbus_realize_and_unref(SYS_BUS_DEVICE(adc), &error_fatal);
 
 	// KEYPAD

@@ -75,7 +75,7 @@ struct pmb887x_scu_t {
 	uint32_t sleep_req;
 
 	pmb887x_dmac_t *dmac;
-	pmb887x_pll_t *pll;
+	pmb887x_cgu_t *cgu;
 	struct pmb887x_sccu_t *sccu;
 	MemoryRegion *brom_mirror;
 	QEMUTimer *wdt_timer;
@@ -83,7 +83,7 @@ struct pmb887x_scu_t {
 
 static uint32_t scu_wdt_get_frequency(pmb887x_scu_t *p) {
 	uint32_t divider = (p->wdt_status & SCU_WDT_SR_WDTIS) ? 256 : 16384;
-	return pmb887x_pll_get_fsys(p->pll) / divider;
+	return pmb887x_pll_get_fsys(p->cgu) / divider;
 }
 
 static uint16_t scu_wdt_get_counter(pmb887x_scu_t *p) {
@@ -411,7 +411,7 @@ static void scu_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned si
 			p->rst_req = value;
 			qemu_set_irq(p->dsp_reset, value & SCU_RST_REQ_DSP);
 			qemu_set_irq(p->usb_reset, value & SCU_RST_REQ_USB);
-			qemu_set_irq(p->dmac_reset, value & SCU_RST_REQ_DMAC);
+			qemu_set_irq(p->dmac_reset, value & (SCU_RST_REQ_DMA1 | SCU_RST_REQ_DMA2 | SCU_RST_REQ_DMA3));
 			qemu_set_irq(p->i2c_reset, value & SCU_RST_REQ_I2C);
 			break;
 		
@@ -685,7 +685,7 @@ static void scu_realize(DeviceState *dev, Error **errp) {
 		pmb887x_src_init(&p->unk_src[i], p->unk_irq[i]);
 	
 	p->wdt_timer = timer_new_ns(QEMU_CLOCK_VIRTUAL, scu_wdt_timer_reset, p);
-	pmb887x_pll_add_freq_update_callback(p->pll, scu_wdt_update_frequency, p);
+	pmb887x_pll_add_freq_update_callback(p->cgu, scu_wdt_update_frequency, p);
 }
 
 static const Property scu_properties[] = {
@@ -696,7 +696,7 @@ static const Property scu_properties[] = {
 	DEFINE_PROP_UINT32("cpu_uid1", pmb887x_scu_t, cpu_uid[1], 0),
 	DEFINE_PROP_UINT32("cpu_uid2", pmb887x_scu_t, cpu_uid[2], 0),
 	DEFINE_PROP_BOOL("stop_on_watchdog", pmb887x_scu_t, stop_on_watchdog, false),
-	DEFINE_PROP_LINK("pll", pmb887x_scu_t, pll, "pmb887x-pll", pmb887x_pll_t *),
+	DEFINE_PROP_LINK("cgu", pmb887x_scu_t, cgu, "pmb887x-cgu", pmb887x_cgu_t *),
 	DEFINE_PROP_LINK("sccu", pmb887x_scu_t, sccu, "pmb887x-sccu", struct pmb887x_sccu_t *),
 	DEFINE_PROP_LINK("dmac", pmb887x_scu_t, dmac, "pmb887x-dmac", pmb887x_dmac_t *),
 	DEFINE_PROP_LINK("brom_mirror", pmb887x_scu_t, brom_mirror, TYPE_MEMORY_REGION, MemoryRegion *),

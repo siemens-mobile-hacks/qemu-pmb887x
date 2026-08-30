@@ -1,8 +1,8 @@
 /*
- * PLL
+ * CGU
  * */
-#define PMB887X_TRACE_ID		PLL
-#define PMB887X_TRACE_PREFIX	"pmb887x-pll"
+#define PMB887X_TRACE_ID		CGU
+#define PMB887X_TRACE_PREFIX	"pmb887x-cgu"
 
 #include "qemu/osdep.h"
 #include "hw/core/sysbus.h"
@@ -18,8 +18,8 @@
 #include "hw/arm/pmb887x/mod.h"
 #include "hw/arm/pmb887x/trace.h"
 
-#define TYPE_PMB887X_PLL	"pmb887x-pll"
-#define PMB887X_PLL(obj)	OBJECT_CHECK(pmb887x_pll_t, (obj), TYPE_PMB887X_PLL)
+#define TYPE_PMB887X_CGU	"pmb887x-cgu"
+#define PMB887X_CGU(obj)	OBJECT_CHECK(pmb887x_cgu_t, (obj), TYPE_PMB887X_CGU)
 #define PLL_LOCK_DELAY_NS	(10 * SCALE_US)
 
 typedef struct pmb887x_pll_callback_t pmb887x_pll_callback_t;
@@ -29,7 +29,7 @@ struct pmb887x_pll_callback_t {
 	void (*callback)(void *);
 };
 
-struct pmb887x_pll_t {
+struct pmb887x_cgu_t {
 	SysBusDevice parent_obj;
 	MemoryRegion mmio;
 	uint32_t revision;
@@ -62,9 +62,9 @@ struct pmb887x_pll_t {
 };
 
 static void pll_lock_timer_expired(void *opaque) {
-	pmb887x_pll_t *p = opaque;
+	pmb887x_cgu_t *p = opaque;
 
-	if (!(p->osc & PLL_OSC_PLL_POWER_UP))
+	if (!(p->osc & CGU_OSC_PLL_POWER_UP))
 		return;
 
 	p->locked = true;
@@ -81,65 +81,65 @@ static uint32_t pll_ahb_div(uint32_t freq, uint32_t k1, uint32_t k2) {
 }
 
 // Freq after PLL
-static uint32_t pll_freq(pmb887x_pll_t *p) {
+static uint32_t pll_freq(pmb887x_cgu_t *p) {
 	// fPLL = fOSC * (NDIV + 1) / (MDIV + 1)
-	uint32_t ndiv = (p->osc & PLL_OSC_NDIV) >> PLL_OSC_NDIV_SHIFT;
-	uint32_t mdiv = (p->osc & PLL_OSC_MDIV) >> PLL_OSC_MDIV_SHIFT;
+	uint32_t ndiv = (p->osc & CGU_OSC_NDIV) >> CGU_OSC_NDIV_SHIFT;
+	uint32_t mdiv = (p->osc & CGU_OSC_MDIV) >> CGU_OSC_MDIV_SHIFT;
 	return muldiv64(p->xtal, ndiv + 1, mdiv + 1);
 }
 
 // Get AHB bus freq
-static uint32_t pll_get_ahb_freq(pmb887x_pll_t *p) {
+static uint32_t pll_get_ahb_freq(pmb887x_cgu_t *p) {
 	uint32_t k1, k2;
-	switch ((p->con1 & PLL_CON1_AHB_CLKSEL)) {
-		case PLL_CON1_AHB_CLKSEL_BYPASS:
+	switch ((p->con1 & CGU_CON1_AHB_CLKSEL)) {
+		case CGU_CON1_AHB_CLKSEL_BYPASS:
 			// fAHB = fOSC
 			return p->xtal;
 		
-		case PLL_CON1_AHB_CLKSEL_PLL0:
+		case CGU_CON1_AHB_CLKSEL_PLL:
 			// fAHB = fPLL
 			return pll_freq(p);
 		
-		case PLL_CON1_AHB_CLKSEL_PLL1:
+		case CGU_CON1_AHB_CLKSEL_PHASE1:
 			// PLL1_K1 > 0:		fAHB = (fPLL * 12) / (PLL1_K1 * 6 + PLL1_K2)
 			// PLL1_K1 = 0:		fAHB = fPLL / 8
-			k1 = (p->con0 & PLL_CON0_PLL1_K1) >> PLL_CON0_PLL1_K1_SHIFT;
-			k2 = (p->con0 & PLL_CON0_PLL1_K2) >> PLL_CON0_PLL1_K2_SHIFT;
+			k1 = (p->con0 & CGU_CON0_PHASE1_K1) >> CGU_CON0_PHASE1_K1_SHIFT;
+			k2 = (p->con0 & CGU_CON0_PHASE1_K2) >> CGU_CON0_PHASE1_K2_SHIFT;
 			return pll_ahb_div(pll_freq(p), k1, k2);
 		
-		case PLL_CON1_AHB_CLKSEL_PLL2:
+		case CGU_CON1_AHB_CLKSEL_PHASE2:
 			// PLL2_K1 > 0:		fAHB = (fPLL * 12) / (PLL2_K1 * 6 + PLL2_K2)
 			// PLL2_K1 = 0:		fAHB = fPLL / 8
-			k1 = (p->con0 & PLL_CON0_PLL2_K1) >> PLL_CON0_PLL2_K1_SHIFT;
-			k2 = (p->con0 & PLL_CON0_PLL2_K2) >> PLL_CON0_PLL2_K2_SHIFT;
+			k1 = (p->con0 & CGU_CON0_PHASE2_K1) >> CGU_CON0_PHASE2_K1_SHIFT;
+			k2 = (p->con0 & CGU_CON0_PHASE2_K2) >> CGU_CON0_PHASE2_K2_SHIFT;
 			return pll_ahb_div(pll_freq(p), k1, k2);
 		
-		case PLL_CON1_AHB_CLKSEL_PLL3:
+		case CGU_CON1_AHB_CLKSEL_PHASE3:
 			// PLL3_K1 > 0:		fAHB = (fPLL * 12) / (PLL3_K1 * 6 + PLL3_K2)
 			// PLL3_K1 = 0:		fAHB = fPLL / 8
-			k1 = (p->con0 & PLL_CON0_PLL3_K1) >> PLL_CON0_PLL3_K1_SHIFT;
-			k2 = (p->con0 & PLL_CON0_PLL3_K2) >> PLL_CON0_PLL3_K2_SHIFT;
+			k1 = (p->con0 & CGU_CON0_PHASE3_K1) >> CGU_CON0_PHASE3_K1_SHIFT;
+			k2 = (p->con0 & CGU_CON0_PHASE3_K2) >> CGU_CON0_PHASE3_K2_SHIFT;
 			return pll_ahb_div(pll_freq(p), k1, k2);
 		
-		case PLL_CON1_AHB_CLKSEL_PLL4:
+		case CGU_CON1_AHB_CLKSEL_PHASE4:
 			// PLL4_K1 > 0:		fAHB = (fPLL * 12) / (PLL4_K1 * 6 + PLL4_K2)
 			// PLL4_K1 = 0:		fAHB = fPLL / 8
-			k1 = (p->con0 & PLL_CON0_PLL4_K1) >> PLL_CON0_PLL4_K1_SHIFT;
-			k2 = (p->con0 & PLL_CON0_PLL4_K2) >> PLL_CON0_PLL4_K2_SHIFT;
+			k1 = (p->con0 & CGU_CON0_PHASE4_K1) >> CGU_CON0_PHASE4_K1_SHIFT;
+			k2 = (p->con0 & CGU_CON0_PHASE4_K2) >> CGU_CON0_PHASE4_K2_SHIFT;
 			return pll_ahb_div(pll_freq(p), k1, k2);
 	}
 	return 0;
 }
 
-static uint32_t pll_get_sys_freq(pmb887x_pll_t *p) {
+static uint32_t pll_get_sys_freq(pmb887x_cgu_t *p) {
 	uint32_t freq = pll_freq(p);
-	uint32_t clksel = p->con1 & PLL_CON1_FSYS_CLKSEL;
+	uint32_t clksel = p->con1 & CGU_CON1_FSYS_CLKSEL;
 	
 	// fSYS=0
-	if (clksel == PLL_CON1_FSYS_CLKSEL_DISABLE)
+	if (clksel == CGU_CON1_FSYS_CLKSEL_DISABLE)
 		return 0;
 	
-	if (clksel == PLL_CON1_FSYS_CLKSEL_PLL) {
+	if (clksel == CGU_CON1_FSYS_CLKSEL_PLL) {
 		// fSYS = fPLL / 2
 		return freq / 2;
 	}
@@ -148,28 +148,28 @@ static uint32_t pll_get_sys_freq(pmb887x_pll_t *p) {
 	return p->xtal;
 }
 
-static uint32_t pll_get_stm_freq(pmb887x_pll_t *p) {
+static uint32_t pll_get_stm_freq(pmb887x_cgu_t *p) {
 	uint32_t freq = p->xtal;
-	if ((p->con1 & PLL_CON1_FSTM_DIV_EN)) {
-		uint32_t div = (p->con1 & PLL_CON1_FSTM_DIV) >> PLL_CON1_FSTM_DIV_SHIFT;
+	if ((p->con1 & CGU_CON1_FSTM_DIV_EN)) {
+		uint32_t div = (p->con1 & CGU_CON1_FSTM_DIV) >> CGU_CON1_FSTM_DIV_SHIFT;
 		return freq / (4U << div);
 	}
 	return freq;
 }
 
 // CPU freq from AHB
-static uint32_t pll_get_cpu_freq(pmb887x_pll_t *p) {
+static uint32_t pll_get_cpu_freq(pmb887x_cgu_t *p) {
 	uint32_t ahb_freq = pll_get_ahb_freq(p);
-	if ((p->con2 & PLL_CON2_CPU_DIV_EN)) {
+	if ((p->con2 & CGU_CON2_CPU_DIV_EN)) {
 		// fCPU = fAHB / (CPU_DIV + 1)
-		uint32_t div = ((p->con2 & PLL_CON2_CPU_DIV) >> PLL_CON2_CPU_DIV_SHIFT) + 1;
+		uint32_t div = ((p->con2 & CGU_CON2_CPU_DIV) >> CGU_CON2_CPU_DIV_SHIFT) + 1;
 		return ahb_freq / div;
 	}
 	// fCPU = fAHB
 	return ahb_freq;
 }
 
-static void pll_update_state(struct pmb887x_pll_t *p) {
+static void pll_update_state(struct pmb887x_cgu_t *p) {
 	uint32_t new_fsys = pll_get_sys_freq(p);
 	uint32_t new_fstm = pll_get_stm_freq(p);
 	uint32_t new_fcpu = pll_get_cpu_freq(p);
@@ -203,36 +203,36 @@ static void pll_update_state(struct pmb887x_pll_t *p) {
 }
 
 static uint64_t pll_io_read(void *opaque, hwaddr haddr, unsigned size) {
-	pmb887x_pll_t *p = opaque;
+	pmb887x_cgu_t *p = opaque;
 	
 	uint64_t value = 0;
 	
 	switch (haddr) {
-		case PLL_OSC:
+		case CGU_OSC:
 			value = p->osc;
 			break;
 		
-		case PLL_CON0:
+		case CGU_CON0:
 			value = p->con0;
 			break;
 		
-		case PLL_CON1:
+		case CGU_CON1:
 			value = p->con1;
 			break;
 		
-		case PLL_CON2:
+		case CGU_CON2:
 			value = p->con2;
 			break;
 		
-		case PLL_STAT:
-			value = p->locked ? PLL_STAT_LOCK : 0;
+		case CGU_STAT:
+			value = p->locked ? CGU_STAT_LOCK : 0;
 			break;
 		
-		case PLL_CON3:
+		case CGU_CON3:
 			value = p->con3;
 			break;
 		
-		case PLL_SRC:
+		case CGU_SRC:
 			value = pmb887x_src_get(&p->src);
 			break;
 		
@@ -248,16 +248,16 @@ static uint64_t pll_io_read(void *opaque, hwaddr haddr, unsigned size) {
 }
 
 static void pll_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned size) {
-	pmb887x_pll_t *p = opaque;
+	pmb887x_cgu_t *p = opaque;
 	
 	IO_DUMP_WRITE(haddr + p->mmio.addr, size, value);
 	
 	switch (haddr) {
-		case PLL_OSC: {
+		case CGU_OSC: {
 			uint32_t old_osc = p->osc;
 			p->osc = value;
-			bool pll_changed = ((old_osc ^ p->osc) & (PLL_OSC_PLL_POWER_UP | PLL_OSC_NDIV | PLL_OSC_MDIV)) != 0;
-			if (!(p->osc & PLL_OSC_PLL_POWER_UP)) {
+			bool pll_changed = ((old_osc ^ p->osc) & (CGU_OSC_PLL_POWER_UP | CGU_OSC_NDIV | CGU_OSC_MDIV)) != 0;
+			if (!(p->osc & CGU_OSC_PLL_POWER_UP)) {
 				timer_del(p->lock_timer);
 				p->locked = false;
 			} else if (pll_changed) {
@@ -267,23 +267,23 @@ static void pll_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned si
 			break;
 		}
 		
-		case PLL_CON0:
+		case CGU_CON0:
 			p->con0 = value;
 			break;
 		
-		case PLL_CON1:
+		case CGU_CON1:
 			p->con1 = value;
 			break;
 		
-		case PLL_CON2:
+		case CGU_CON2:
 			p->con2 = value;
 			break;
 		
-		case PLL_CON3:
+		case CGU_CON3:
 			p->con3 = value;
 			break;
 		
-		case PLL_SRC:
+		case CGU_SRC:
 			pmb887x_src_set(&p->src, value);
 			break;
 		
@@ -305,39 +305,39 @@ static const MemoryRegionOps io_ops = {
 	}
 };
 
-pmb887x_pll_t *pmb887x_pll_get_self(DeviceState *dev) {
-	return PMB887X_PLL(dev);
+pmb887x_cgu_t *pmb887x_pll_get_self(DeviceState *dev) {
+	return PMB887X_CGU(dev);
 }
 
-uint32_t pmb887x_pll_get_fosc(pmb887x_pll_t *p) {
+uint32_t pmb887x_pll_get_fosc(pmb887x_cgu_t *p) {
 	return p->xtal;
 }
 
-uint32_t pmb887x_pll_get_frtc(pmb887x_pll_t *p) {
+uint32_t pmb887x_pll_get_frtc(pmb887x_cgu_t *p) {
 	return p->frtc;
 }
 
-uint32_t pmb887x_pll_get_fsys(pmb887x_pll_t *p) {
+uint32_t pmb887x_pll_get_fsys(pmb887x_cgu_t *p) {
 	return p->fsys;
 }
 
-uint32_t pmb887x_pll_get_fstm(pmb887x_pll_t *p) {
+uint32_t pmb887x_pll_get_fstm(pmb887x_cgu_t *p) {
 	return p->fstm;
 }
 
-uint32_t pmb887x_pll_get_fcpu(pmb887x_pll_t *p) {
+uint32_t pmb887x_pll_get_fcpu(pmb887x_cgu_t *p) {
 	return p->fcpu;
 }
 
-uint32_t pmb887x_pll_get_fahb(pmb887x_pll_t *p) {
+uint32_t pmb887x_pll_get_fahb(pmb887x_cgu_t *p) {
 	return p->fahb;
 }
 
-uint32_t pmb887x_pll_get_fgptu(pmb887x_pll_t *p) {
+uint32_t pmb887x_pll_get_fgptu(pmb887x_cgu_t *p) {
 	return p->fgptu;
 }
 
-void pmb887x_pll_add_freq_update_callback(pmb887x_pll_t *p, void (*callback)(void *), void *opaque) {
+void pmb887x_pll_add_freq_update_callback(pmb887x_cgu_t *p, void (*callback)(void *), void *opaque) {
 	p->callbacks = g_realloc(p->callbacks, (p->callbacks_count + 1) * sizeof(struct pmb887x_pll_callback_t));
 	p->callbacks[p->callbacks_count].opaque = opaque;
 	p->callbacks[p->callbacks_count].callback = callback;
@@ -346,8 +346,8 @@ void pmb887x_pll_add_freq_update_callback(pmb887x_pll_t *p, void (*callback)(voi
 
 static void pll_init(Object *obj) {
 	DeviceState *dev = DEVICE(obj);
-	pmb887x_pll_t *p = PMB887X_PLL(obj);
-	memory_region_init_io(&p->mmio, obj, &io_ops, p, "pmb887x-pll", PLL_IO_SIZE);
+	pmb887x_cgu_t *p = PMB887X_CGU(obj);
+	memory_region_init_io(&p->mmio, obj, &io_ops, p, "pmb887x-cgu", CGU_IO_SIZE);
 	sysbus_init_mmio(SYS_BUS_DEVICE(obj), &p->mmio);
 	sysbus_init_irq(SYS_BUS_DEVICE(obj), &p->irq);
 	qdev_init_gpio_out_named(dev, &p->gpio_clk32, "CLK32_OUT", 1);
@@ -355,7 +355,7 @@ static void pll_init(Object *obj) {
 }
 
 static void pll_reset(DeviceState *dev) {
-	pmb887x_pll_t *p = PMB887X_PLL(dev);
+	pmb887x_cgu_t *p = PMB887X_CGU(dev);
 
 	timer_del(p->lock_timer);
 	pmb887x_src_reset(&p->src);
@@ -374,10 +374,10 @@ static void pll_reset(DeviceState *dev) {
 }
 
 static void pll_realize(DeviceState *dev, Error **errp) {
-	pmb887x_pll_t *p = PMB887X_PLL(dev);
+	pmb887x_cgu_t *p = PMB887X_CGU(dev);
 	
 	if (!p->irq)
-		hw_error("pmb887x-pll: irq not set");
+		hw_error("pmb887x-cgu: irq not set");
 	
 	pmb887x_src_init(&p->src, p->irq);
 	
@@ -400,9 +400,9 @@ static void pll_realize(DeviceState *dev, Error **errp) {
 }
 
 static const Property pll_properties[] = {
-	DEFINE_PROP_UINT32("revision", pmb887x_pll_t, revision, 0),
-	DEFINE_PROP_UINT32("xtal", struct pmb887x_pll_t, xtal, 26000000),
-	DEFINE_PROP_UINT32("hw-ns-throttle", struct pmb887x_pll_t, hw_ns_div, 1),
+	DEFINE_PROP_UINT32("revision", pmb887x_cgu_t, revision, 0),
+	DEFINE_PROP_UINT32("xtal", struct pmb887x_cgu_t, xtal, 26000000),
+	DEFINE_PROP_UINT32("hw-ns-throttle", struct pmb887x_cgu_t, hw_ns_div, 1),
 };
 
 static void pll_class_init(ObjectClass *klass, const void *data) {
@@ -413,9 +413,9 @@ static void pll_class_init(ObjectClass *klass, const void *data) {
 }
 
 static const TypeInfo pll_info = {
-    .name          	= TYPE_PMB887X_PLL,
+    .name          	= TYPE_PMB887X_CGU,
     .parent        	= TYPE_SYS_BUS_DEVICE,
-    .instance_size 	= sizeof(struct pmb887x_pll_t),
+    .instance_size 	= sizeof(struct pmb887x_cgu_t),
     .instance_init 	= pll_init,
     .class_init    	= pll_class_init,
 };

@@ -34,6 +34,7 @@ arm_common_ss.add(when: 'CONFIG_PMB887X', if_true: files(
 	'sccu.c',
 	'gpio.c',
 	'usart.c',
+	'usif.c',
 	'usb.c',
 	'sim.c',
 	'mmci.c',
@@ -85,7 +86,6 @@ arm_common_ss.add(when: 'CONFIG_PMB887X', if_true: files(
 	'ssc/b00b10b.c',
 	'ssc/lcd_common.c',
 	'ssc/lcd_common_format.c',
-	'ssc/lcd_r61505.c',
 	'ssc/lcd_jbt6k71.c',
 	'ssc/lcd_ssd1286.c',
 	'ssc/lcd_pcf8882.c',
@@ -93,6 +93,7 @@ arm_common_ss.add(when: 'CONFIG_PMB887X', if_true: files(
 	'ssc/lcd_l2f50126t.c',
 	'ssc/lcd_l2f50250.c',
 	'ssc/lcd_lr38826.c',
+	'ssc/lcd_r61505.c',
 	'ssc/lcd_r63400.c',
 
 	'i2c/d1094xx.c',
