@@ -237,6 +237,13 @@ static void pmb887x_init(MachineState *machine) {
 	qdev_prop_set_chr(DEVICE(usart1), "chardev", serial_hd(1));
 	sysbus_realize_and_unref(SYS_BUS_DEVICE(usart1), &error_fatal);
 
+	// USIF (Bluetooth HCI transport, PMB8876 only)
+	if (pmb887x_board()->cpu == CPU_PMB8876) {
+		DeviceState *usif = pmb887x_new_cpu_module("USIF");
+		qdev_prop_set_chr(DEVICE(usif), "chardev", serial_hd(2));
+		sysbus_realize_and_unref(SYS_BUS_DEVICE(usif), &error_fatal);
+	}
+
 	// DIF
 	DeviceState *dif = pmb887x_new_cpu_module("DIF");
 	if (object_property_find(OBJECT(dif), "dmac"))

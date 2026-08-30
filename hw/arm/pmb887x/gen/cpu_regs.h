@@ -30,6 +30,7 @@
 #define PMB8876_DIF_BASE			0xF7100000
 #define PMB8876_MMCI_BASE			0xF7300000
 #define PMB8876_MCI_BASE			0xF7301000
+#define PMB8876_USIF_BASE			0xF7500000
 #define PMB8876_I2C_BASE			0xF7600000
 #define PMB8876_MMICIF_BASE			0xF8000000
 
@@ -7282,6 +7283,71 @@
 
 /* Module Identifier Register */
 #define USB_ID										0x808
+
+
+// USIF [MOD_NUM=F051, MOD_REV=12, MOD_32BIT=C0]
+// Universal Serial Interface (Infineon USIF, used for the Bluetooth HCI transport)
+#define USIF_IO_SIZE				0x00010000
+/* Clock Control Register */
+#define USIF_CLC					0x00
+
+/* Run Control Register */
+#define USIF_RUN					0x10
+#define USIF_RUN_RUN				(1 << 0)	 // Enable USIF
+#define USIF_RUN_RUN_SHIFT			0
+#define USIF_RUN_BUSY				(1 << 17)	 // Module Busy
+#define USIF_RUN_BUSY_SHIFT			17
+
+/* Modem Control Register (DTR/RTS) */
+#define USIF_MODEM_CTRL				0x14
+#define USIF_MODEM_CTRL_DTR			(1 << 3)
+#define USIF_MODEM_CTRL_DTR_SHIFT	3
+#define USIF_MODEM_CTRL_RTS			(1 << 4)
+#define USIF_MODEM_CTRL_RTS_SHIFT	4
+
+/* Protocol / Framing Register */
+#define USIF_PROTO					0x1C
+
+/* Mode / Oversampling Register */
+#define USIF_MODE					0x20
+
+/* Baudrate Reload Register */
+#define USIF_BAUD					0x28
+
+/* Fractional Baudrate Register */
+#define USIF_FBAUD					0x2C
+
+/* RX Sampling Point Register */
+#define USIF_RXSMP					0x30
+
+/* Modem Status Register (CTS/DSR) [read-only] */
+#define USIF_MODEM_STAT				0x34
+#define USIF_MODEM_STAT_CTS			(1 << 0)
+#define USIF_MODEM_STAT_CTS_SHIFT	0
+#define USIF_MODEM_STAT_DSR			(1 << 1)
+#define USIF_MODEM_STAT_DSR_SHIFT	1
+
+/* TX Transfer Count / Pending Size [read-only] */
+#define USIF_TPS					0x3C
+
+/* TX FIFO Status Register [read-only] */
+#define USIF_FIFO_STAT				0x40
+#define USIF_FIFO_STAT_FILL			(0x1F << 0)	 // TX FIFO fill level
+#define USIF_FIFO_STAT_FILL_SHIFT	0
+#define USIF_FIFO_STAT_BUSY			(1 << 8)	 // TX in progress
+#define USIF_FIFO_STAT_BUSY_SHIFT	8
+
+/* TX Interrupt Mask Register */
+#define USIF_TX_IMSC				0x84
+
+/* RX Interrupt Mask Register */
+#define USIF_RX_IMSC				0x94
+
+/* TX FIFO Data Window (also DMA TX endpoint) [write-only] */
+#define USIF_TXD					0x4000
+
+/* RX FIFO Data Window (also DMA RX endpoint) [read-only] */
+#define USIF_RXD					0x8000
 
 
 // VIC [MOD_NUM=0031, MOD_REV=01, MOD_32BIT=C0]

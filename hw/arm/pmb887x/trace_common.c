@@ -61,6 +61,7 @@ static const pmb887x_debug_channel_t debug_channels[] = {
 	{ "gprscu",	PMB887X_TRACE_GPRSCU },
 	{ "usb",		PMB887X_TRACE_USB },
 	{ "mmicif",	PMB887X_TRACE_MMICIF },
+	{ "usif",		PMB887X_TRACE_USIF },
 
 	// peripherals
 	{ "sim-card",	PMB887X_TRACE_SIM_CARD },

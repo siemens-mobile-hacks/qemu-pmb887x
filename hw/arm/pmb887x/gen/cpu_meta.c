@@ -6263,6 +6263,54 @@ static const pmb887x_io_reg_t usb_regs[] = {
 	{"ID",						USB_ID,						usb_id_fields,						ARRAY_SIZE(usb_id_fields),						0},
 };
 
+static const pmb887x_io_field_t usif_clc_fields[] = {
+	{"DISR",	MOD_CLC_DISR,	MOD_CLC_DISR_SHIFT,	NULL,	0},
+	{"DISS",	MOD_CLC_DISS,	MOD_CLC_DISS_SHIFT,	NULL,	0},
+	{"SPEN",	MOD_CLC_SPEN,	MOD_CLC_SPEN_SHIFT,	NULL,	0},
+	{"EDIS",	MOD_CLC_EDIS,	MOD_CLC_EDIS_SHIFT,	NULL,	0},
+	{"SBWE",	MOD_CLC_SBWE,	MOD_CLC_SBWE_SHIFT,	NULL,	0},
+	{"FSOE",	MOD_CLC_FSOE,	MOD_CLC_FSOE_SHIFT,	NULL,	0},
+	{"RMC",		MOD_CLC_RMC,	MOD_CLC_RMC_SHIFT,	NULL,	0},
+};
+
+static const pmb887x_io_field_t usif_run_fields[] = {
+	{"RUN",		USIF_RUN_RUN,	USIF_RUN_RUN_SHIFT,		NULL,	0},
+	{"BUSY",	USIF_RUN_BUSY,	USIF_RUN_BUSY_SHIFT,	NULL,	0},
+};
+
+static const pmb887x_io_field_t usif_modem_ctrl_fields[] = {
+	{"DTR",	USIF_MODEM_CTRL_DTR,	USIF_MODEM_CTRL_DTR_SHIFT,	NULL,	0},
+	{"RTS",	USIF_MODEM_CTRL_RTS,	USIF_MODEM_CTRL_RTS_SHIFT,	NULL,	0},
+};
+
+static const pmb887x_io_field_t usif_modem_stat_fields[] = {
+	{"CTS",	USIF_MODEM_STAT_CTS,	USIF_MODEM_STAT_CTS_SHIFT,	NULL,	0},
+	{"DSR",	USIF_MODEM_STAT_DSR,	USIF_MODEM_STAT_DSR_SHIFT,	NULL,	0},
+};
+
+static const pmb887x_io_field_t usif_fifo_stat_fields[] = {
+	{"FILL",	USIF_FIFO_STAT_FILL,	USIF_FIFO_STAT_FILL_SHIFT,	NULL,	0},
+	{"BUSY",	USIF_FIFO_STAT_BUSY,	USIF_FIFO_STAT_BUSY_SHIFT,	NULL,	0},
+};
+
+static const pmb887x_io_reg_t usif_regs[] = {
+	{"CLC",			USIF_CLC,			usif_clc_fields,		ARRAY_SIZE(usif_clc_fields),		0},
+	{"RUN",			USIF_RUN,			usif_run_fields,		ARRAY_SIZE(usif_run_fields),		0},
+	{"MODEM_CTRL",	USIF_MODEM_CTRL,	usif_modem_ctrl_fields,	ARRAY_SIZE(usif_modem_ctrl_fields),	0},
+	{"PROTO",		USIF_PROTO,			NULL,					0,									0},
+	{"MODE",		USIF_MODE,			NULL,					0,									0},
+	{"BAUD",		USIF_BAUD,			NULL,					0,									0},
+	{"FBAUD",		USIF_FBAUD,			NULL,					0,									0},
+	{"RXSMP",		USIF_RXSMP,			NULL,					0,									0},
+	{"MODEM_STAT",	USIF_MODEM_STAT,	usif_modem_stat_fields,	ARRAY_SIZE(usif_modem_stat_fields),	0},
+	{"TPS",			USIF_TPS,			NULL,					0,									0},
+	{"FIFO_STAT",	USIF_FIFO_STAT,		usif_fifo_stat_fields,	ARRAY_SIZE(usif_fifo_stat_fields),	0},
+	{"TX_IMSC",		USIF_TX_IMSC,		NULL,					0,									0},
+	{"RX_IMSC",		USIF_RX_IMSC,		NULL,					0,									0},
+	{"TXD",			USIF_TXD,			NULL,					0,									0},
+	{"RXD",			USIF_RXD,			NULL,					0,									0},
+};
+
 static const pmb887x_io_field_t vic_id_fields[] = {
 	{"REV",		MOD_ID_REV,		MOD_ID_REV_SHIFT,		NULL,	0},
 	{"32B",		MOD_ID_32B,		MOD_ID_32B_SHIFT,		NULL,	0},
@@ -11639,6 +11687,7 @@ static const pmb887x_cpu_io_t pmb8876_modules[] = {
 	{"DIF",			PMB8876_DIF_BASE,		DIFv2_IO_SIZE,	difv2_regs,		ARRAY_SIZE(difv2_regs)},
 	{"MMCI",		PMB8876_MMCI_BASE,		MMCI_IO_SIZE,	mmci_regs,		ARRAY_SIZE(mmci_regs)},
 	{"MCI",			PMB8876_MCI_BASE,		MCI_IO_SIZE,	mci_regs,		ARRAY_SIZE(mci_regs)},
+	{"USIF",		PMB8876_USIF_BASE,		USIF_IO_SIZE,	usif_regs,		ARRAY_SIZE(usif_regs)},
 	{"I2C",			PMB8876_I2C_BASE,		I2Cv2_IO_SIZE,	i2cv2_regs,		ARRAY_SIZE(i2cv2_regs)},
 	{"MMICIF_MMAP",	0xFA000000,				0x100000,		NULL,			0},
 	{"MMICIF_MMAP",	0xFA100000,				0x100000,		NULL,			0},
