@@ -111,6 +111,11 @@ static void pmb887x_init(MachineState *machine) {
 
 	if (object_property_find(cpuobj, "has_el3"))
 		object_property_set_bool(cpuobj, "has_el3", false, &error_fatal);
+
+	// PMB887X has no VFP coprocessor
+	if (object_property_find(cpuobj, "vfp"))
+		object_property_set_bool(cpuobj, "vfp", false, &error_fatal);
+
 	object_property_set_bool(cpuobj, "realized", false, &error_fatal);
 
 	qdev_realize(DEVICE(cpuobj), NULL, &error_fatal);
