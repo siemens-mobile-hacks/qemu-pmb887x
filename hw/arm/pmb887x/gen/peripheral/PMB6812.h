@@ -9,7 +9,7 @@
 /* Reset and shutdown control */
 #define	PMB6812_RESCTRL								0x01
 #define	PMB6812_RESCTRL_RES							BIT(0)					 // Trigger internal and external reset
-#define	PMB6812_RESCTRL_UNLOCK						BIT(1)
+#define	PMB6812_RESCTRL_UNLOCK						BIT(1)					 // Undocumented
 #define	PMB6812_RESCTRL_ALLOFF						BIT(6)					 // Shut down all regulators except LRTC
 #define	PMB6812_RESCTRL_RESDN						BIT(7)					 // Generate external reset during power-down
 
