@@ -56,7 +56,7 @@ struct pmb887x_i2c_t {
 	bool transfer_pending;
 
 	pmb887x_clc_reg_t clc;
-	pmb887x_pll_t *pll;
+	pmb887x_cgu_t *cgu;
 	pmb887x_srb_reg_t srb;
 	pmb887x_srb_ext_reg_t srb_proto;
 	pmb887x_srb_ext_reg_t srb_err;
@@ -245,7 +245,7 @@ static void i2c_timer_reset(void *opaque) {
 
 static uint32_t i2c_get_baud_rate_hz(pmb887x_i2c_t *p) {
 	uint32_t rmc = pmb887x_clc_get_rmc(&p->clc);
-	uint64_t kernel_clock_hz = rmc > 0 ? pmb887x_pll_get_fsys(p->pll) / rmc : 0;
+	uint64_t kernel_clock_hz = rmc > 0 ? pmb887x_pll_get_fsys(p->cgu) / rmc : 0;
 	uint64_t dec = (p->fdivcfg & I2Cv2_FDIVCFG_DEC) >> I2Cv2_FDIVCFG_DEC_SHIFT;
 	uint64_t inc = (p->fdivcfg & I2Cv2_FDIVCFG_INC) >> I2Cv2_FDIVCFG_INC_SHIFT;
 
@@ -906,7 +906,7 @@ static void i2c_reset(DeviceState *dev) {
 
 static const Property i2c_properties[] = {
 	DEFINE_PROP_UINT32("revision", pmb887x_i2c_t, revision, 0),
-	DEFINE_PROP_LINK("pll", pmb887x_i2c_t, pll, "pmb887x-pll", pmb887x_pll_t *),
+	DEFINE_PROP_LINK("cgu", pmb887x_i2c_t, cgu, "pmb887x-cgu", pmb887x_cgu_t *),
 	DEFINE_PROP_LINK("bus", pmb887x_i2c_t, bus, TYPE_I2C_BUS, I2CBus *),
 };
 

@@ -252,8 +252,8 @@ static void pmb887x_init(MachineState *machine) {
 
 	// I2C
 	DeviceState *i2c = pmb887x_new_cpu_module("I2C");
-	if (object_property_find(OBJECT(i2c), "pll"))
-		object_property_set_link(OBJECT(i2c), "pll", OBJECT(pll), &error_fatal);
+	if (object_property_find(OBJECT(i2c), "cgu"))
+		object_property_set_link(OBJECT(i2c), "cgu", OBJECT(cgu), &error_fatal);
 	sysbus_realize_and_unref(SYS_BUS_DEVICE(i2c), &error_fatal);
 
 	// Synchronous Serial Controller
