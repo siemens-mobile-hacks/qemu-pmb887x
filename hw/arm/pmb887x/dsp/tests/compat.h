@@ -1,6 +1,12 @@
 #ifndef HW_ARM_PMB887X_DSP_TESTS_COMPAT_H
 #define HW_ARM_PMB887X_DSP_TESTS_COMPAT_H
 
+/*
+ * The host unit-test build links only glib, not the QEMU audio subsystem, so
+ * peripheral sources must compile out any audio-backend usage when built here.
+ */
+#define PMB887X_DSP_TESTS
+
 #include "hw/arm/pmb887x/dsp/core.h"
 #include "hw/arm/pmb887x/dsp/tcg.h"
 #include "hw/arm/pmb887x/dsp/peripheral.h"
