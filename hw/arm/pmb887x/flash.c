@@ -91,6 +91,9 @@ struct pmb887x_flash_t {
 	char *otp0_file;
 	char *otp1_file;
 	char *efa_file;
+	int otp0_fd;
+	int otp1_fd;
+	int efa_fd;
 	
 	uint16_t vid;
 	uint16_t pid;
@@ -119,7 +122,8 @@ static void flash_trace_part(pmb887x_flash_part_t *p, const char *format, ...) G
 static void flash_error_part(pmb887x_flash_part_t *p, const char *format, ...) G_GNUC_PRINTF(2, 3);
 
 static void flash_load_file(pmb887x_flash_t *flash, const char *path, void *data, size_t size, const char *region);
-static void flash_save_file(pmb887x_flash_t *flash, const char *path, const void *data, size_t size, const char *region);
+static void flash_save_file(pmb887x_flash_t *flash, int *fd, const char *path, const void *data, size_t total_size,
+	size_t offset, size_t size, const char *region);
 
 static void flash_buffer_clear(pmb887x_flash_part_t *p) {
 	g_clear_pointer(&p->buffer, g_free);
@@ -330,8 +334,10 @@ static void flash_efa_erase(pmb887x_flash_part_t *p, uint32_t offset) {
 		}
 	}
 	memset(p->flash->efa_storage + blk->offset, 0xFF, blk->size);
-	if (changed)
-		flash_save_file(p->flash, p->flash->efa_file, p->flash->efa_storage, p->flash->efa_size, "EFA");
+	if (changed) {
+		flash_save_file(p->flash, &p->flash->efa_fd, p->flash->efa_file, p->flash->efa_storage,
+			p->flash->efa_size, blk->offset, blk->size, "EFA");
+	}
 }
 
 static void flash_efa_program(pmb887x_flash_part_t *p, uint32_t offset, uint64_t value, uint32_t size) {
@@ -356,8 +362,10 @@ static void flash_efa_program(pmb887x_flash_part_t *p, uint32_t offset, uint64_t
 		if (old_value != new_value)
 			changed = true;
 	}
-	if (changed)
-		flash_save_file(p->flash, p->flash->efa_file, p->flash->efa_storage, p->flash->efa_size, "EFA");
+	if (changed) {
+		flash_save_file(p->flash, &p->flash->efa_fd, p->flash->efa_file, p->flash->efa_storage,
+			p->flash->efa_size, efa_offset, size, "EFA");
+	}
 }
 
 static void flash_otp_program(pmb887x_flash_part_t *p, uint32_t offset, uint64_t value, uint32_t size) {
@@ -395,10 +403,13 @@ static void flash_otp_program(pmb887x_flash_part_t *p, uint32_t offset, uint64_t
 	otp_data[data_index] &= (uint16_t) value;
 	if (otp_data[data_index] == old_value)
 		return;
+	uint32_t data_offset = data_index * sizeof(otp_data[0]);
 	if (otp_data == p->flash->otp0_data) {
-		flash_save_file(p->flash, p->flash->otp0_file, p->flash->otp0_data, cfg->otp0_size, "OTP0");
+		flash_save_file(p->flash, &p->flash->otp0_fd, p->flash->otp0_file, p->flash->otp0_data,
+			cfg->otp0_size, data_offset, sizeof(otp_data[0]), "OTP0");
 	} else {
-		flash_save_file(p->flash, p->flash->otp1_file, p->flash->otp1_data, cfg->otp1_size, "OTP1");
+		flash_save_file(p->flash, &p->flash->otp1_fd, p->flash->otp1_file, p->flash->otp1_data,
+			cfg->otp1_size, data_offset, sizeof(otp_data[0]), "OTP1");
 	}
 }
 
@@ -941,16 +952,32 @@ static void flash_load_file(pmb887x_flash_t *flash, const char *path, void *data
 	flash_trace(flash, "loaded %s from %s", region, path);
 }
 
-static void flash_save_file(pmb887x_flash_t *flash, const char *path, const void *data, size_t size, const char *region) {
+static void flash_save_file(pmb887x_flash_t *flash, int *fd, const char *path, const void *data, size_t total_size,
+	size_t offset, size_t size, const char *region)
+{
 	if (!path || !path[0] || !pmb887x_flash_blk_is_rw(flash->blk))
 		return;
 
-	g_autoptr(GError) error = NULL;
-	if (!g_file_set_contents(path, data, size, &error)) {
-		flash_error(flash, "Can't write %s file %s: %s", region, path, error->message);
+	if (*fd < 0) {
+		Error *error = NULL;
+		*fd = qemu_create(path, O_WRONLY, 0644, &error);
+		if (*fd < 0) {
+			flash_error(flash, "Can't open %s file %s: %s", region, path, error_get_pretty(error));
+			error_free(error);
+			exit(1);
+		}
+		// The file may not exist yet, so materialize the whole region once.
+		offset = 0;
+		size = total_size;
+	}
+
+	if (lseek(*fd, offset, SEEK_SET) == (off_t) -1 ||
+		qemu_write_full(*fd, (const uint8_t *) data + offset, size) != (ssize_t) size)
+	{
+		flash_error(flash, "Can't write %s file %s: %s", region, path, strerror(errno));
 		exit(1);
 	}
-	flash_trace(flash, "saved %s to %s", region, path);
+	flash_trace(flash, "saved %s to %s [%08zX...%08zX]", region, path, offset, offset + size - 1);
 }
 
 static void flash_init_file_paths(pmb887x_flash_t *flash) {
@@ -1066,7 +1093,10 @@ static void flash_init_part(pmb887x_flash_t *flash, const pmb887x_flash_cfg_part
 static void flash_realize(DeviceState *dev, Error **errp) {
 	pmb887x_flash_t *flash = PMB887X_FLASH(dev);
 	flash->dev = dev;
-	
+	flash->otp0_fd = -1;
+	flash->otp1_fd = -1;
+	flash->efa_fd = -1;
+
 	const pmb887x_flash_cfg_t *cfg = pmb887x_flash_find(flash->vid, flash->pid);
 	if (!cfg) {
 		flash_error(flash, "unimplemented %04X:%04X", flash->vid, flash->pid);
