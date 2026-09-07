@@ -8,6 +8,7 @@
 #include "hw/core/sysbus.h"
 #include "hw/core/hw-error.h"
 #include "system/memory.h"
+#include "system/rtc.h"
 #include "cpu.h"
 #include "qapi/error.h"
 #include "qemu/timer.h"
@@ -25,6 +26,10 @@
 #define RTC_ISNC_ENABLES	(RTC_ISNC_T14IE | RTC_ISNC_RTC0IE | RTC_ISNC_RTC1IE | RTC_ISNC_RTC2IE | RTC_ISNC_RTC3IE | RTC_ISNC_ALARMIE)
 #define RTC_ISNC_REQUESTS	(RTC_ISNC_T14IR | RTC_ISNC_RTC0IR | RTC_ISNC_RTC1IR | RTC_ISNC_RTC2IR | RTC_ISNC_RTC3IR | RTC_ISNC_ALARMIR)
 #define RTC_ISNRC_REQUESTS	(RTC_ISNRC_T14 | RTC_ISNRC_RTC0 | RTC_ISNRC_RTC1 | RTC_ISNRC_RTC2 | RTC_ISNRC_RTC3 | RTC_ISNRC_ALARM)
+
+#define RTC_CNT_SEC_REL		964
+#define RTC_CNT_MIN_REL		4
+#define RTC_CNT_HOUR_REL	40
 
 typedef struct pmb887x_rtc_t pmb887x_rtc_t;
 
@@ -302,6 +307,25 @@ static void rtc_init(Object *obj) {
 	sysbus_init_irq(SYS_BUS_DEVICE(obj), &p->irq);
 }
 
+static uint32_t rtc_pack_cnt(uint32_t day_rel, uint32_t yday, uint32_t hour, uint32_t min, uint32_t sec) {
+	return ((RTC_CNT_SEC_REL + sec) & 0x3FF) |
+		(((RTC_CNT_MIN_REL + min) & 0x3F) << 10) |
+		(((RTC_CNT_HOUR_REL + hour) & 0x3F) << 16) |
+		(((day_rel + yday) & 0x3FF) << 22);
+}
+
+static void rtc_init_datetime(pmb887x_rtc_t *p) {
+	struct tm tm;
+	qemu_get_timedate(&tm, 0);
+
+	uint32_t year = 1900 + tm.tm_year;
+	bool leap = !(year % 4) && ((year % 100) || !(year % 400));
+	uint32_t day_rel = 0x400 - (leap ? 366 : 365);
+
+	p->rel = rtc_pack_cnt(day_rel, 0, 0, 0, 0);
+	p->cnt = rtc_pack_cnt(day_rel, tm.tm_yday, tm.tm_hour, tm.tm_min, tm.tm_sec);
+}
+
 static void rtc_reset(DeviceState *dev) {
 	pmb887x_rtc_t *p = PMB887X_RTC(dev);
 
@@ -315,8 +339,7 @@ static void rtc_reset(DeviceState *dev) {
 
 	uint32_t t14_start = (UINT16_MAX + 1) - rtc_get_freq(p);
 	p->t14 = ((t14_start << RTC_T14_CNT_SHIFT) | (t14_start << RTC_T14_REL_SHIFT));
-	p->cnt = qemu_clock_get_ns(QEMU_CLOCK_HOST) / NANOSECONDS_PER_SECOND;
-	p->rel = 0;
+	rtc_init_datetime(p);
 	p->isnc = 0;
 	p->alarm = 0xFFFFFFFF;
 	p->start = 0;
@@ -338,7 +361,7 @@ static void rtc_realize(DeviceState *dev, Error **errp) {
 	p->con = RTC_CON_RUN | RTC_CON_PRE;
 	uint32_t t14_start = (UINT16_MAX + 1) - rtc_get_freq(p);
 	p->t14 = ((t14_start << RTC_T14_CNT_SHIFT) | (t14_start << RTC_T14_REL_SHIFT));
-	p->cnt = qemu_clock_get_ns(QEMU_CLOCK_HOST) / NANOSECONDS_PER_SECOND;
+	rtc_init_datetime(p);
 	p->alarm = 0xFFFFFFFF;
 	rtc_sync(p);
 }
