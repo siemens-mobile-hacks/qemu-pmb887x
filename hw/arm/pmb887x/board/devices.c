@@ -188,6 +188,12 @@ static pmb887x_dev_t devices_meta[] = {
 		.props = {},
 	},
 
+	// RF transceiver
+	{
+		.name = "pmb6272",
+		.props = {},
+	},
+
 	// Gimmick
 	{
 		.name = "s1d13732",

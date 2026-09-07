@@ -64,6 +64,7 @@ static const pmb887x_debug_channel_t debug_channels[] = {
 	{ "usif",		PMB887X_TRACE_USIF },
 
 	// peripherals
+	{ "rf",			PMB887X_TRACE_RF },
 	{ "sim-card",	PMB887X_TRACE_SIM_CARD },
 	{ "acodec",		PMB887X_TRACE_ACODEC },
 	{ "gimmick",	PMB887X_TRACE_GIMMICK },

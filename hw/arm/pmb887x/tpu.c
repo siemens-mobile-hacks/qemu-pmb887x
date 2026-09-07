@@ -16,6 +16,7 @@
 #include "hw/core/irq.h"
 #include "hw/core/qdev-properties.h"
 #include "hw/core/qdev-clock.h"
+#include "hw/ssi/ssi.h"
 
 #include "hw/arm/pmb887x/pll.h"
 #include "hw/arm/pmb887x/dsp/signals.h"
@@ -26,6 +27,7 @@
 
 #define TYPE_PMB887X_TPU	"pmb887x-tpu"
 #define PMB887X_TPU(obj)	OBJECT_CHECK(pmb887x_tpu_t, (obj), TYPE_PMB887X_TPU)
+#define TPU_RFSSC_BUS_NAME	"pmb887x-tpu-rfssc"
 #define TPU_RAM_WORDS 1024
 #define TPU_RF_RAM_WORDS 512
 #define TPU_TIMER_RAM_WORDS (TPU_RAM_WORDS - TPU_RF_RAM_WORDS)
@@ -94,6 +96,7 @@ struct pmb887x_tpu_t {
 	qemu_irq irq[2];
 	qemu_irq gp_irq[TPU_GP_COUNT];
 	qemu_irq rfssc_irq;
+	SSIBus *rfssc_bus;
 	qemu_irq gsm_outputs[PMB887X_DSP_GSM_SIGNAL_COUNT];
 	Clock *gsm_clock;
 	uint16_t gsm_signals;
@@ -670,6 +673,7 @@ static void tpu_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned si
 
 		case TPU_RFSSCTB:
 			DPRINTF("RF control: %04X\n", (uint16_t) value);
+			ssi_transfer(p->rfssc_bus, value & TPU_RFSSCTB_VALUE);
 			pmb887x_src_set(&p->rfssc_src, MOD_SRC_SETR);
 			p->rfcon2 &= ~TPU_RFCON2_SSCEN;
 			break;
@@ -802,6 +806,7 @@ static const MemoryRegionOps io_ops = {
 
 static void tpu_init(Object *obj) {
 	pmb887x_tpu_t *p = PMB887X_TPU(obj);
+	p->rfssc_bus = ssi_create_bus(DEVICE(obj), TPU_RFSSC_BUS_NAME);
 	memory_region_init_io(&p->mmio, obj, &io_ops, p, "pmb887x-tpu", TPU_RAM0 + TPU_RAM_SIZE);
 	sysbus_init_mmio(SYS_BUS_DEVICE(obj), &p->mmio);
 	
@@ -901,6 +906,7 @@ static void tpu_reset(DeviceState *dev) {
 static const Property tpu_properties[] = {
 	DEFINE_PROP_UINT32("revision", pmb887x_tpu_t, revision, 0),
 	DEFINE_PROP_LINK("cgu", struct pmb887x_tpu_t, cgu, "pmb887x-cgu", struct pmb887x_cgu_t *),
+	DEFINE_PROP_LINK("bus_rfssc", struct pmb887x_tpu_t, rfssc_bus, "SSI", SSIBus *),
 };
 
 static void tpu_class_init(ObjectClass *klass, const void *data) {

@@ -95,6 +95,7 @@ arm_common_ss.add(when: 'CONFIG_PMB887X', if_true: files(
 	'ssc/lcd_lr38826.c',
 	'ssc/lcd_r61505.c',
 	'ssc/lcd_r63400.c',
+	'ssc/pmb6272.c',
 
 	'i2c/d1094xx.c',
 	'i2c/lm4946.c',
