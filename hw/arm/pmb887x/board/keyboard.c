@@ -75,6 +75,19 @@ bool pmb887x_board_find_keycode(const char *name, QKeyCode *qcode) {
 	return false;
 }
 
+bool pmb887x_board_connect_key_to_gpio(DeviceState *keypad, const char *name, qemu_irq input) {
+	bool found = false;
+
+	for (size_t i = 0; i < ARRAY_SIZE(keyboard_map); i++) {
+		if (strcmp(name, keyboard_map[i].name) != 0)
+			continue;
+		pmb887x_qdev_connect_gpio_out(keypad, "KEY_OUT", keyboard_map[i].qcode, input);
+		found = true;
+	}
+
+	return found;
+}
+
 void pmb887x_board_keyboard_connect_gpios(DeviceState *keypad) {
 	pmb887x_board_t *board = pmb887x_board();
 	toml_datum_t table = toml_table_get(board->config, TOML_TABLE, "keyboard.gpio", false);
