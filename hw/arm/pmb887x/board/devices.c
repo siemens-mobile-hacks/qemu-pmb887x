@@ -3,6 +3,7 @@
 #include "hw/arm/pmb887x/flash-blk.h"
 #include "hw/arm/pmb887x/board/board.h"
 #include "hw/arm/pmb887x/board/gpio.h"
+#include "hw/arm/pmb887x/board/keyboard.h"
 #include "hw/arm/pmb887x/board/memory.h"
 #include "hw/arm/pmb887x/mmicif.h"
 #include "hw/arm/pmb887x/sim.h"
@@ -188,6 +189,17 @@ static pmb887x_dev_t devices_meta[] = {
 		.props = {},
 	},
 
+	// Input
+	{
+		.name = "ke970-scroll",
+		.props = {
+			{ "steps", DEV_PROP_UINT, false },
+			{ "edge_us", DEV_PROP_UINT, false },
+			{ "repeat_delay_us", DEV_PROP_UINT, false },
+			{ "detent_us", DEV_PROP_UINT, false },
+		},
+	},
+
 	// RF transceiver
 	{
 		.name = "pmb6272",
@@ -319,6 +331,31 @@ static void device_init_props_from_config(DeviceState *dev, const pmb887x_dev_t 
 	}
 }
 
+static void device_init_keys_from_config(DeviceState *dev, toml_datum_t table) {
+	toml_datum_t keys_tab = toml_table_get(table, TOML_TABLE, "key", false);
+	if (keys_tab.type == TOML_UNKNOWN)
+		return;
+
+	DeviceState *keypad = qdev_find_recursive(sysbus_get_default(), "KEYPAD");
+	if (!keypad)
+		hw_error("KEYPAD not found, required by '%s' key bindings", dev->id);
+
+	for (size_t i = 0; i < keys_tab.u.tab.size; i++) {
+		const char *pin_name = keys_tab.u.tab.key[i];
+		const char *key_name = toml_table_get_string(keys_tab, pin_name, NULL, true);
+
+		char gpio_in_name[64];
+		snprintf(gpio_in_name, sizeof(gpio_in_name), "%s_IN", pin_name);
+
+		if (!pmb887x_qdev_is_gpio_in_exists(dev, gpio_in_name, 0))
+			hw_error("GPIO_IN '%s' not found in '%s'", gpio_in_name, dev->id);
+
+		qemu_irq input = qdev_get_gpio_in_named(dev, gpio_in_name, 0);
+		if (!pmb887x_board_connect_key_to_gpio(keypad, key_name, input))
+			hw_error("Unknown key '%s' in '%s' key bindings", key_name, dev->id);
+	}
+}
+
 static void device_init_gpios_from_config(DeviceState *dev, toml_datum_t table) {
 	toml_datum_t gpio_in_tab = toml_table_get(table, TOML_TABLE, "in", false);
 	toml_datum_t gpio_out_tab = toml_table_get(table, TOML_TABLE, "out", false);
@@ -378,10 +415,22 @@ static DeviceState *device_create_from_config(DeviceState *ebuc, const char *id,
 	const char *sim_source = getenv("PMB887X_SIM");
 	if (strcmp(type, TYPE_PMB887X_SIM_CARD) == 0 && sim_source && strcmp(sim_source, "none") == 0)
 		return NULL;
-	const char *bus_id = toml_table_get_string(table, "bus", NULL, true);
+	const char *bus_id = toml_table_get_string(table, "bus", NULL, false);
 	const pmb887x_dev_t *meta = dev_get_metadata(type);
 
 	DeviceState *dev = NULL;
+
+	/* Board-level device that hangs off no bus at all (e.g. the KE970 jog dial). */
+	if (!bus_id) {
+		dev = qdev_new(type);
+		dev->id = g_strdup(id);
+		device_init_props_from_config(dev, meta, table);
+		sysbus_realize_and_unref(SYS_BUS_DEVICE(dev), &error_fatal);
+		device_init_gpios_from_config(dev, table);
+		device_init_keys_from_config(dev, table);
+		return dev;
+	}
+
 	Object *bus = strcmp(bus_id, "EBU") == 0 ? OBJECT(ebuc) : bus_find_by_id(bus_id);
 	pmb887x_dev_bus_type_t bus_type = bus_get_type(bus);
 
@@ -393,6 +442,7 @@ static DeviceState *device_create_from_config(DeviceState *ebuc, const char *id,
 			device_init_props_from_config(dev, meta, table);
 			i2c_slave_realize_and_unref(I2C_SLAVE(dev), I2C_BUS(bus), &error_fatal);
 			device_init_gpios_from_config(dev, table);
+			device_init_keys_from_config(dev, table);
 			break;
 		}
 		case DEV_BUS_SSI: {
@@ -402,6 +452,7 @@ static DeviceState *device_create_from_config(DeviceState *ebuc, const char *id,
 			device_init_props_from_config(dev, meta, table);
 			qdev_realize_and_unref(dev, BUS(bus), &error_fatal);
 			device_init_gpios_from_config(dev, table);
+			device_init_keys_from_config(dev, table);
 			break;
 		}
 		case DEV_BUS_SIM: {
@@ -411,6 +462,7 @@ static DeviceState *device_create_from_config(DeviceState *ebuc, const char *id,
 			sim_card_apply_runtime_options(dev);
 			sim_card_realize_and_attach(dev, PMB887X_SIM(bus));
 			device_init_gpios_from_config(dev, table);
+			device_init_keys_from_config(dev, table);
 			object_unref(OBJECT(dev));
 			break;
 		}
@@ -439,6 +491,7 @@ static DeviceState *device_create_from_config(DeviceState *ebuc, const char *id,
 			device_init_props_from_config(dev, meta, table);
 			qdev_realize_and_unref(dev, BUS(bus), &error_fatal);
 			device_init_gpios_from_config(dev, table);
+			device_init_keys_from_config(dev, table);
 			break;
 
 		default:

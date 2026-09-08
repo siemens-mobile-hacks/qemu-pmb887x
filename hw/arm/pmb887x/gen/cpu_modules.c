@@ -248,6 +248,7 @@ static const int pmb8876_capcom0_irqs[] = {
 };
 
 static const pmb887x_cpu_module_gpio_t pmb8876_capcom0_gpios[] = {
+	{"CC5_IN",	PMB8876_GPIO_CLKOUT0,	2},
 	{"CC4_IN",	PMB8876_GPIO_DSPIN1,	2},
 };
 
@@ -265,6 +266,7 @@ static const int pmb8876_capcom1_irqs[] = {
 };
 
 static const pmb887x_cpu_module_gpio_t pmb8876_capcom1_gpios[] = {
+	{"CC6_IN",	PMB8876_GPIO_DSPOUT0,	2},
 	{"CC3_IN",	PMB8876_GPIO_CIF_RESET,	1},
 };
 
