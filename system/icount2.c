@@ -21,7 +21,32 @@ bool use_icount2 = false;
 static bool icount2_debug;
 
 #define ICOUNT2_INITIAL_FREQUENCY 314000000
+#ifdef __EMSCRIPTEN__
+/*
+ * Slow-host guard (phones): let the controller converge to the actually
+ * measured execution rate instead of the stock 1 MHz floor.
+ *
+ * On a fast host this never binds (controller converges to 3-17 MHz,
+ * measured).  On a host where the TCI interpreter sustains less than
+ * 1 MHz, the stock floor makes virtual time run ahead of executed
+ * instructions - guest deadlines arrive with a fraction of the
+ * expected instruction budget and the boot dies.  Measured under 16x
+ * CPU starvation (sustained ~2.5 kHz, 2026-09-09):
+ *   floor 1 kHz: virtual clock tracks reality, v=377 after 420 s
+ *                (idle-bias deadline jumps included), boots in slow
+ *                motion, no crash;
+ *   floor 1 MHz: frequency pins at 1.000 MHz, virtual time frozen at
+ *                v=0.88 after 420 s (advances insns/1e6 ~= 2 ms/s) -
+ *                the guest never sees its timers.
+ *
+ * The default timing model (stock -icount shift=3,sleep=off) has no
+ * frequency controller at all; this only guards the opt-in
+ * precise-clocks (icount2) mode on slow hosts.
+ */
+#define ICOUNT2_MIN_FREQUENCY 1000
+#else
 #define ICOUNT2_MIN_FREQUENCY 1000000
+#endif
 #define ICOUNT2_MAX_FREQUENCY 500000000
 #define ICOUNT2_ADJUST_INTERVAL NANOSECONDS_PER_SECOND
 #define ICOUNT2_ADJUST_P_GAIN 200000

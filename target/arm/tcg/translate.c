@@ -5362,9 +5362,11 @@ static bool trans_B_cond_thumb(DisasContext *s, arg_ci *a)
         return true;
     }
     arm_skip_unless(s, a->cond);
+#if !defined(__EMSCRIPTEN__)
     if (icount2_enabled()) {
         gen_helper_cycle_counter(tcg_env, tcg_constant_i32(2));
     }
+#endif
     gen_jmp(s, jmp_diff(s, a->imm));
     return true;
 }
@@ -6087,6 +6089,15 @@ static bool trans_CSEL(DisasContext *s, arg_CSEL *a)
 
 static void gen_icount2_cycles(uint32_t cycles)
 {
+#ifdef __EMSCRIPTEN__
+    /*
+     * TCI helper calls route through libffi, which on wasm is a JS
+     * roundtrip (~µs each); a helper per guest instruction limits the
+     * interpreter to <1M insns/s.  On emscripten the accounting is done
+     * once per executed TB in cpu_tb_exec() instead.
+     */
+    return;
+#endif
     if (icount2_enabled()) {
         gen_helper_cycle_counter(tcg_env, tcg_constant_i32(cycles));
     }
