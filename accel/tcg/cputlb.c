@@ -29,6 +29,7 @@
 #include "system/physmem.h"
 #include "accel/tcg/cpu-ldst-common.h"
 #include "system/cpu-timers.h"
+#include "exec/icount.h"
 #include "accel/tcg/cpu-mmu-index.h"
 #include "exec/cputlb.h"
 #include "exec/tb-flush.h"
@@ -1315,8 +1316,9 @@ io_prepare(hwaddr *out_offset, CPUState *cpu, CPUTLBEntryFull *full,
          * costs nothing.  QEMU_IO_REWIND=1 forces the stock rewind
          * everywhere (A/B testing / fallback).
          */
-        if (icount2_enabled() && !rewind_mode &&
-            !section->mr->rom_device) {
+        if (rewind_mode || section->mr->rom_device) {
+            cpu_io_recompile(cpu, retaddr);
+        } else if (icount2_enabled()) {
             /*
              * The chained-TB clock is already at/after this access
              * (tci_tbhdr credited the whole TB at its start); just run
@@ -1325,7 +1327,27 @@ io_prepare(hwaddr *out_offset, CPUState *cpu, CPUTLBEntryFull *full,
              */
             extern void wasm_io_advance(unsigned cycles);
             wasm_io_advance(0);
+        } else if (icount_enabled()) {
+            /*
+             * Stock icount: gen_tb_start() has already subtracted the
+             * whole TB's insn count from icount_decr.u16.low and stored
+             * it back, so committing it now (icount_update) makes the
+             * callback see a clock that includes this TB - at most one
+             * TB (~5 guest insns on this firmware) ahead of the access,
+             * the same deviation the chained icount2 accounting above
+             * accepts, and in the safe direction (elapsed, never
+             * frozen - the GPTU SRC7 poll failure mode).  can_do_io
+             * re-opens the clock-read window (icount_get_raw_locked
+             * would otherwise "Bad icount read" abort); the next TB
+             * entry clears it again (the translator sets it false
+             * before the first insn of every multi-insn TB).  Mid-TB
+             * accesses after the first in the same TB see the same
+             * clock: their commits are idempotent.
+             */
+            cpu->neg.can_do_io = true;
+            icount_update(cpu);
         } else {
+            /* !can_do_io without any icount mode: not expected. */
             cpu_io_recompile(cpu, retaddr);
         }
 #else
