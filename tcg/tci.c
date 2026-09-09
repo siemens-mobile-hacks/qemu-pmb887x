@@ -126,6 +126,22 @@ static void tci_args_rrs(uint32_t insn, TCGReg *r0, TCGReg *r1, int32_t *i2)
     *i2 = sextract32(insn, 16, 16);
 }
 
+static void tci_args_rri(uint32_t insn, TCGReg *r0, TCGReg *r1, int32_t *i2)
+{
+    *r0 = extract32(insn, 8, 4);
+    *r1 = extract32(insn, 12, 4);
+    *i2 = sextract32(insn, 16, 16);
+}
+
+static void tci_args_rrci(uint32_t insn, TCGReg *r0, TCGReg *r1,
+                          TCGCond *c2, int32_t *i3)
+{
+    *r0 = extract32(insn, 8, 4);
+    *r1 = extract32(insn, 12, 4);
+    *c2 = extract32(insn, 16, 4);
+    *i3 = sextract32(insn, 20, 12);
+}
+
 static void tci_args_rrbb(uint32_t insn, TCGReg *r0, TCGReg *r1,
                           uint8_t *i2, uint8_t *i3)
 {
@@ -1203,6 +1219,49 @@ uintptr_t QEMU_DISABLE_CFI tcg_qemu_tb_exec(CPUArchState *env,
             break;
 #endif
 
+        case INDEX_op_tci_add_ri:
+        {
+            int32_t imm;
+            tci_args_rri(insn, &r0, &r1, &imm);
+            regs[r0] = regs[r1] + imm;
+            break;
+        }
+        case INDEX_op_tci_and_ri:
+        {
+            int32_t imm;
+            tci_args_rri(insn, &r0, &r1, &imm);
+            regs[r0] = regs[r1] & imm;
+            break;
+        }
+        case INDEX_op_tci_or_ri:
+        {
+            int32_t imm;
+            tci_args_rri(insn, &r0, &r1, &imm);
+            regs[r0] = regs[r1] | imm;
+            break;
+        }
+        case INDEX_op_tci_xor_ri:
+        {
+            int32_t imm;
+            tci_args_rri(insn, &r0, &r1, &imm);
+            regs[r0] = regs[r1] ^ imm;
+            break;
+        }
+        case INDEX_op_tci_andc_ri:
+        {
+            int32_t imm;
+            tci_args_rri(insn, &r0, &r1, &imm);
+            regs[r0] = regs[r1] & ~imm;
+            break;
+        }
+        case INDEX_op_tci_setcond32_ri:
+        {
+            int32_t imm;
+            tci_args_rrci(insn, &r0, &r1, &condition, &imm);
+            regs[r0] = tci_compare32(regs[r1], imm, condition);
+            break;
+        }
+
         case INDEX_op_br:
             tci_args_l(insn, tb_ptr, &ptr);
             tb_ptr = ptr;
@@ -1767,6 +1826,28 @@ int print_insn_tci(bfd_vma addr, disassemble_info *info)
         info->fprintf_func(info->stream, "%-12s  %s, %s, %s",
                            op_name, str_r(r0), str_r(r1), str_r(r2));
         break;
+
+    case INDEX_op_tci_add_ri:
+    case INDEX_op_tci_and_ri:
+    case INDEX_op_tci_or_ri:
+    case INDEX_op_tci_xor_ri:
+    case INDEX_op_tci_andc_ri:
+    {
+        int32_t imm;
+        tci_args_rri(insn, &r0, &r1, &imm);
+        info->fprintf_func(info->stream, "%-12s  %s, %s, %d",
+                           op_name, str_r(r0), str_r(r1), (int)imm);
+        break;
+    }
+
+    case INDEX_op_tci_setcond32_ri:
+    {
+        int32_t imm;
+        tci_args_rrci(insn, &r0, &r1, &c, &imm);
+        info->fprintf_func(info->stream, "%-12s  %s, %s, %s, %d",
+                           op_name, str_r(r0), str_r(r1), str_c(c), (int)imm);
+        break;
+    }
 
     case INDEX_op_tci_ctz32:
     case INDEX_op_tci_clz32:
