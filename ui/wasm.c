@@ -140,6 +140,35 @@ uint64_t wasm_fb_updates(void)
     return wasm_fb.updates;
 }
 
+/*
+ * Per-TB execution statistics (diagnostics): fed once per executed TB
+ * from the TCI interpreter's TB header op (see the wasm-tci-tb-chaining
+ * patch); wasm_tbs()/wasm_insns() are what the page and the benchmark
+ * tooling read as the guest-throughput metric.
+ */
+static struct {
+    uint64_t tbs;
+    uint64_t insns;
+} wasm_tb_stats;
+
+void wasm_tb_account(unsigned insns)
+{
+    wasm_tb_stats.tbs++;
+    wasm_tb_stats.insns += insns;
+}
+
+EMSCRIPTEN_KEEPALIVE
+uint64_t wasm_tbs(void)
+{
+    return wasm_tb_stats.tbs;
+}
+
+EMSCRIPTEN_KEEPALIVE
+uint64_t wasm_insns(void)
+{
+    return wasm_tb_stats.insns;
+}
+
 /* Guest virtual clock in ns (diagnostics: boot progress). */
 EMSCRIPTEN_KEEPALIVE
 int64_t wasm_vclock(void)
