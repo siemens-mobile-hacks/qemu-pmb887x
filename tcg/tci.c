@@ -1183,6 +1183,26 @@ uintptr_t QEMU_DISABLE_CFI tcg_qemu_tb_exec(CPUArchState *env,
             }
             break;
 
+#ifdef __EMSCRIPTEN__
+        case INDEX_op_tci_tbhdr:
+            /*
+             * TB header (emitted by tcg_out_tb_start): advance the
+             * icount2 clock by this TB's guest-insn count.  Executed at
+             * every TB entry, including goto_tb/goto_ptr chain targets,
+             * so TB chaining (see tcg_out_goto_tb) keeps the clock
+             * instruction-proportional.  cpu_tb_exec() no longer
+             * accounts executed TBs.
+             */
+            tci_args_ri(insn, &r0, &t1);
+            {
+                extern void wasm_tb_account(unsigned insns);
+                extern void icount2_advance(uint32_t cycles);
+                wasm_tb_account((unsigned)t1);
+                icount2_advance((uint32_t)t1);
+            }
+            break;
+#endif
+
         case INDEX_op_br:
             tci_args_l(insn, tb_ptr, &ptr);
             tb_ptr = ptr;

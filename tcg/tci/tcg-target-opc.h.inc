@@ -15,3 +15,9 @@ DEF(tci_setcond32, 1, 2, 1, TCG_OPF_NOT_PRESENT)
 DEF(tci_movcond32, 1, 2, 1, TCG_OPF_NOT_PRESENT)
 DEF(tci_qemu_ld_rrr, 1, 2, 0, TCG_OPF_NOT_PRESENT)
 DEF(tci_qemu_st_rrr, 0, 3, 0, TCG_OPF_NOT_PRESENT)
+#ifdef __EMSCRIPTEN__
+/* wasm only: TB header carrying the guest-insn count, executed at every
+ * TB entry (cpu_tb_exec call, goto_tb chain jump, goto_ptr target) so the
+ * icount2 clock advances per executed TB even while TBs are chained. */
+DEF(tci_tbhdr, 0, 0, 1, TCG_OPF_NOT_PRESENT)
+#endif
