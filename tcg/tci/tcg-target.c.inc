@@ -1231,14 +1231,69 @@ static const TCGOutOpStore outop_st = {
     .out_r = tcg_out_st,
 };
 
+/*
+ * Does this mop reduce tci_tlb_probe() to the specialized compare
+ * (addr + size-1) & TARGET_PAGE_MASK == tlb_addr (see tci_probe_1)?
+ * Requires: no bswap, a_mask == 0 (no MO_ALIGN bits, MO_ALIGN_TLB_ONLY ok),
+ * and atomicity that never forces the helper path for a probe hit
+ * (IFALIGN - the default - and NONE; a plain aligned load/store satisfies
+ * IFALIGN, and misaligned accesses the specialized compare still admits
+ * have no atomicity requirement).
+ */
+static bool tci_mop_specializes(MemOp mop)
+{
+    if ((mop & ~(MO_SIZE | MO_SIGN)) != (MO_ALIGN | MO_ATOM_NONE)) {
+        return false;
+    }
+    if ((mop & MO_SIZE) > MO_32) {
+        return false;
+    }
+    return true;
+}
+
 static void tgen_qemu_ld(TCGContext *s, TCGType type, TCGReg data,
                          TCGReg addr, MemOpIdx oi)
 {
-    if (oi & ~0xffff) {
+    if (oi & ~0xffff && !tci_mop_specializes(get_memop(oi))) {
         tcg_out_movi(s, TCG_TYPE_I32, TCG_REG_TMP, oi);
         tcg_out_op_rrr(s, INDEX_op_tci_qemu_ld_rrr, data, addr, TCG_REG_TMP);
-    } else {
-        tcg_out_op_rrm(s, INDEX_op_qemu_ld, data, addr, oi);
+        return;
+    }
+    {
+        MemOp mop = get_memop(oi);
+        TCGOpcode op = INDEX_op_qemu_ld;
+
+        if (tci_mop_specializes(mop)) {
+            switch (mop & (MO_SIZE | MO_SIGN)) {
+            case MO_UB:
+                op = INDEX_op_tci_qemu_ld8;
+                break;
+            case MO_SB:
+                op = INDEX_op_tci_qemu_ld8s;
+                break;
+            case MO_UW:
+                op = INDEX_op_tci_qemu_ld16;
+                break;
+            case MO_SW:
+                op = INDEX_op_tci_qemu_ld16s;
+                break;
+            case MO_UL:
+                op = INDEX_op_tci_qemu_ld32;
+                break;
+            case MO_SL:
+                /* i64 + MO_SL sign-extends to 64 bits; i32 does not care. */
+                op = type == TCG_TYPE_I32
+                    ? INDEX_op_tci_qemu_ld32 : INDEX_op_qemu_ld;
+                break;
+            default:
+                g_assert_not_reached();
+            }
+            if (op != INDEX_op_qemu_ld) {
+                    /* the case reconstructs the mop; the stream carries the idx */
+                oi = get_mmuidx(oi);
+            }
+        }
+        tcg_out_op_rrm(s, op, data, addr, oi);
     }
 }
 
@@ -1254,11 +1309,32 @@ static const TCGOutOpQemuLdSt2 outop_qemu_ld2 = {
 static void tgen_qemu_st(TCGContext *s, TCGType type, TCGReg data,
                          TCGReg addr, MemOpIdx oi)
 {
-    if (oi & ~0xffff) {
+    if (oi & ~0xffff && !tci_mop_specializes(get_memop(oi))) {
         tcg_out_movi(s, TCG_TYPE_I32, TCG_REG_TMP, oi);
         tcg_out_op_rrr(s, INDEX_op_tci_qemu_st_rrr, data, addr, TCG_REG_TMP);
-    } else {
-        tcg_out_op_rrm(s, INDEX_op_qemu_st, data, addr, oi);
+        return;
+    }
+    {
+        MemOp mop = get_memop(oi);
+        TCGOpcode op = INDEX_op_qemu_st;
+
+        if (tci_mop_specializes(mop)) {
+            switch (mop & MO_SIZE) {
+            case MO_8:
+                op = INDEX_op_tci_qemu_st8;
+                break;
+            case MO_16:
+                op = INDEX_op_tci_qemu_st16;
+                break;
+            case MO_32:
+                op = INDEX_op_tci_qemu_st32;
+                break;
+            default:
+                g_assert_not_reached();
+            }
+            oi = get_mmuidx(oi);
+        }
+        tcg_out_op_rrm(s, op, data, addr, oi);
     }
 }
 

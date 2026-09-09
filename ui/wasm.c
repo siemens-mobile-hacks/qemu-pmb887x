@@ -169,6 +169,14 @@ uint64_t wasm_insns(void)
     return wasm_tb_stats.insns;
 }
 
+/* Diagnostics: memory-subsystem counters (see include/qemu/wasm-diag.h). */
+#include "qemu/wasm-diag.h"
+EMSCRIPTEN_KEEPALIVE
+uint64_t wasm_memstat(int32_t idx)
+{
+    return idx >= 0 && idx < WASM_DIAG_N ? wasm_diag_stat[idx] : 0;
+}
+
 /* Guest virtual clock in ns (diagnostics: boot progress). */
 EMSCRIPTEN_KEEPALIVE
 int64_t wasm_vclock(void)
