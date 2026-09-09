@@ -28,6 +28,7 @@
 #include "system/memory.h"
 #include "system/physmem.h"
 #include "accel/tcg/cpu-ldst-common.h"
+#include "system/cpu-timers.h"
 #include "accel/tcg/cpu-mmu-index.h"
 #include "exec/cputlb.h"
 #include "exec/tb-flush.h"
@@ -1281,7 +1282,55 @@ io_prepare(hwaddr *out_offset, CPUState *cpu, CPUTLBEntryFull *full,
     mr_offset = full->xlat_offset + addr;
     cpu->mem_io_pc = retaddr;
     if (!cpu->neg.can_do_io) {
+#ifdef __EMSCRIPTEN__
+        /*
+         * wasm: do not rewind the TB.  The rewind (cpu_io_recompile)
+         * exists so icount-mode device callbacks see the clock of the
+         * io insn, not of the TB boundary; but its cpu_loop_exit()
+         * longjmp costs ~150us under emscripten (JS-exception based)
+         * and an MMIO polling loop re-pays it on every iteration
+         * forever (the unsplit TB stays cached).
+         *
+         * With TB chaining the clock is advanced per TB by the
+         * tci_tbhdr header op (tcg/tci.c), so the callback already
+         * sees a clock that includes this TB - skipping the rewind
+         * changes nothing about clock visibility.  The earlier
+         * batched-after-TB accounting (patches 0002/0004 era) needed
+         * the boundary move here; a dropped patch that skipped it
+         * entirely left the GPTU SRC7 poll at 0x400118c reading a
+         * timer armed earlier in the same TB as never elapsed and
+         * aborted the boot (FILE: flash 0x0552,
+         * doc/early-crash-postmortem.md).
+         */
+        static bool rewind_mode, rewind_mode_init;
+        if (unlikely(!rewind_mode_init)) {
+            rewind_mode = getenv("QEMU_IO_REWIND") != NULL;
+            rewind_mode_init = true;
+        }
+        /*
+         * ROM devices (the flash command interface): keep the stock
+         * rewind.  The boot ROM's program/verify handshake over the
+         * flash command registers aborts without it (FILE: flash
+         * 0x0552); those accesses are rare, so the ~150us longjmp
+         * costs nothing.  QEMU_IO_REWIND=1 forces the stock rewind
+         * everywhere (A/B testing / fallback).
+         */
+        if (icount2_enabled() && !rewind_mode &&
+            !section->mr->rom_device) {
+            /*
+             * The chained-TB clock is already at/after this access
+             * (tci_tbhdr credited the whole TB at its start); just run
+             * any virtual timers whose deadline it crossed so the
+             * callback sees their effects (system/icount2.c).
+             */
+            extern void wasm_io_advance(unsigned cycles);
+            wasm_io_advance(0);
+        } else {
+            cpu_io_recompile(cpu, retaddr);
+        }
+#else
         cpu_io_recompile(cpu, retaddr);
+#endif
     }
 
     *out_offset = mr_offset;
