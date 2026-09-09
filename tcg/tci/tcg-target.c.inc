@@ -1238,7 +1238,15 @@ static inline void tcg_target_qemu_prologue(TCGContext *s)
 
 static void tcg_out_tb_start(TCGContext *s)
 {
-    /* nothing to do */
+#ifdef __EMSCRIPTEN__
+    /*
+     * Emit the TB header (see INDEX_op_tci_tbhdr): the interpreter
+     * executes it at every TB entry and advances the icount2 clock by
+     * the TB's guest-insn count there.  This keeps the clock strictly
+     * instruction-proportional even when TBs are chained via goto_tb.
+     */
+    tcg_out_op_ri(s, INDEX_op_tci_tbhdr, 0, s->gen_tb->icount);
+#endif
 }
 
 bool tcg_target_has_memory_bswap(MemOp memop)
