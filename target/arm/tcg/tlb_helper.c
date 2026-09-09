@@ -6,6 +6,7 @@
  * SPDX-License-Identifier: GPL-2.0-or-later
  */
 #include "qemu/osdep.h"
+#include "qemu/wasm-diag.h"
 #include "cpu.h"
 #include "helper.h"
 #include "accel/tcg/cpu-loop.h"
@@ -322,6 +323,12 @@ void arm_cpu_do_transaction_failed(CPUState *cs, hwaddr physaddr,
     ARMCPU *cpu = ARM_CPU(cs);
     CPUARMState *env = &cpu->env;
     ARMMMUFaultInfo fi = {};
+
+#ifdef __EMSCRIPTEN__
+    {
+        wasm_diag_stat[WASM_DIAG_TXN_FAILED]++;
+    }
+#endif
 
     /*
      * For M-profile, CCR.BFHFNMIGN lets software executing at a negative

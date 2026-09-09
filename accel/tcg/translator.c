@@ -169,6 +169,19 @@ void translator_loop(CPUState *cpu, TranslationBlock *tb, int *max_insns,
             plugin_gen_insn_start(cpu, db);
         }
 
+#ifdef __EMSCRIPTEN__
+        bool io_barrier = wasm_is_io_barrier(db->pc_next);
+        if (unlikely(io_barrier) && db->num_insns > 1) {
+            /*
+             * Keep a barrier insn out of the middle of a TB: stop here so
+             * it starts a single-insn TB of its own (can_do_io is true
+             * there; see cpu_io_recompile in translate-all.c).
+             */
+            db->is_jmp = DISAS_TOO_MANY;
+            break;
+        }
+#endif
+
         /*
          * Disassemble one instruction.  The translate_insn hook should
          * update db->pc_next and db->is_jmp to indicate what should be
@@ -176,6 +189,13 @@ void translator_loop(CPUState *cpu, TranslationBlock *tb, int *max_insns,
          * the next instruction.
          */
         ops->translate_insn(db, cpu);
+
+#ifdef __EMSCRIPTEN__
+        if (unlikely(io_barrier) && db->is_jmp == DISAS_NEXT) {
+            /* Barrier is the first insn of this TB: make it single-insn. */
+            db->is_jmp = DISAS_TOO_MANY;
+        }
+#endif
 
         /*
          * We can't instrument after instructions that change control

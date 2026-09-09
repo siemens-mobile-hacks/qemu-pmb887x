@@ -15,6 +15,11 @@ enum {
     WASM_DIAG_IO_LD,         /* cputlb MMIO load dispatches */
     WASM_DIAG_IO_ST,         /* cputlb MMIO store dispatches */
     WASM_DIAG_TLB_FILL,      /* tlb_fill_align calls */
+    WASM_DIAG_TXN_FAILED,    /* arm_cpu_do_transaction_failed raises */
+    WASM_DIAG_TXN_NOEXIT,    /* ...converted to no-unwind exits */
+    WASM_DIAG_TB_GEN,        /* tb_gen_code calls (translation) */
+    WASM_DIAG_TB_FLUSH,      /* tb_flush calls (code buffer full) */
+    WASM_DIAG_IO_REWIND,     /* ROM-device io_prepare rewinds (longjmp) */
     WASM_DIAG_N
 };
 
