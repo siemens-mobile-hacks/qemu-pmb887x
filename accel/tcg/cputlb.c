@@ -19,7 +19,7 @@
 
 #include "qemu/osdep.h"
 
-#include "qemu/wasm-diag.h"
+
 #include "qemu/main-loop.h"
 #include "qemu/target-info.h"
 #include "accel/tcg/cpu-loop.h"
@@ -28,6 +28,7 @@
 #include "accel/tcg/probe.h"
 #include "exec/page-protection.h"
 #include "system/memory.h"
+#include "qemu/wasm-diag.h"
 #include "system/physmem.h"
 #include "accel/tcg/cpu-ldst-common.h"
 #include "system/cpu-timers.h"
@@ -1330,6 +1331,7 @@ io_prepare(hwaddr *out_offset, CPUState *cpu, CPUTLBEntryFull *full,
          * everywhere (A/B testing / fallback).
          */
         if (rewind_mode || section->mr->rom_device) {
+            wasm_diag_stat[WASM_DIAG_IO_REWIND]++;
             cpu_io_recompile(cpu, retaddr);
         } else if (icount2_enabled()) {
             /*

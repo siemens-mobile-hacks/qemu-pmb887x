@@ -18,6 +18,9 @@
  */
 
 #include "qemu/osdep.h"
+#ifdef __EMSCRIPTEN__
+#include "qemu/wasm-diag.h"
+#endif
 #include "qemu/interval-tree.h"
 #include "qemu/qtree.h"
 #include "exec/cputlb.h"
@@ -772,6 +775,9 @@ void tb_flush__exclusive_or_serial(void)
 {
     CPUState *cpu;
 
+#ifdef __EMSCRIPTEN__
+    wasm_diag_stat[WASM_DIAG_TB_FLUSH]++;
+#endif
     trace_tb_flush();
     assert(tcg_enabled());
     /* Note that cpu_in_serial_context checks cpu_in_exclusive_context. */
