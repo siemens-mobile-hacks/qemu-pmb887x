@@ -125,6 +125,32 @@ void icount2_advance(uint32_t cycles) {
 	}
 }
 
+int64_t icount2_ticks_now(void) {
+	return qatomic_read(&timers_state.icount2_ticks);
+}
+
+#ifdef __EMSCRIPTEN__
+/*
+ * wasm: mid-TB MMIO accounting (see io_prepare(), cputlb.c).  Called
+ * from a load/store helper: if a virtual-timer deadline is crossed the
+ * timers are synced here so the upcoming device callback sees their
+ * effects, but never when the BQL is already held by this thread (a
+ * nested dispatch); the next per-TB icount2_advance() syncs instead.
+ */
+void wasm_io_advance(unsigned cycles) {
+	int64_t ticks = qatomic_read(&timers_state.icount2_ticks);
+	int64_t new_ticks = ticks + cycles;
+	qatomic_set(&timers_state.icount2_ticks, new_ticks);
+
+	int64_t deadline = qatomic_read(&timers_state.icount2_deadline);
+	if (deadline > 0 && new_ticks >= deadline && !bql_locked()) {
+		bql_lock();
+		icount2_sync();
+		bql_unlock();
+	}
+}
+#endif
+
 static int64_t icount2_get_locked(void) {
 	int64_t ticks = qatomic_read(&timers_state.icount2_ticks);
 	int64_t offset = qatomic_read(&timers_state.icount2_offset);
