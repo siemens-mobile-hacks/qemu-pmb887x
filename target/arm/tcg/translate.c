@@ -1050,6 +1050,42 @@ static void gen_exception_el_v(int excp, uint32_t syndrome, TCGv_i32 tcg_el)
                                           tcg_constant_i32(syndrome), tcg_el);
 }
 
+#ifdef __EMSCRIPTEN__
+/*
+ * On emscripten, cpu_loop_exit() unwinds out of the TB via a JS
+ * exception (~15 µs each; this guest takes ~9k SWIs per second while
+ * booting, which used to cost ~15 % of the vCPU worker).  For an
+ * exception whose full state is known at translate time on cores
+ * without EL2/EL3 — no HCR.TGE redirect, target_el always 1 — we can
+ * instead store the exception state and end the TB with a plain
+ * exit_tb: cpu_handle_interrupt() sees the pending exception_index
+ * first and delivers it before running any other TB, exactly like the
+ * longjmp would have.  PC/condexec sync is the caller's job, same as
+ * with the helper form.
+ */
+static bool arm_excp_exit_ok(DisasContext *s)
+{
+    return !s->aarch64
+        && !arm_dc_feature(s, ARM_FEATURE_EL2)
+        && !arm_dc_feature(s, ARM_FEATURE_EL3)
+        && !arm_dc_feature(s, ARM_FEATURE_M);
+}
+
+static void gen_exception_exit(int excp, uint32_t syndrome)
+{
+    /* cs->exception_index = excp */
+    tcg_gen_st_i32(tcg_constant_i32(excp), tcg_env,
+                   offsetof(CPUState, exception_index) - sizeof(CPUState));
+    /* env->exception.syndrome (32-bit form; high half never used on A32) */
+    tcg_gen_st_i32(tcg_constant_i32(syndrome), tcg_env,
+                   offsetof(CPUARMState, exception.syndrome));
+    /* env->exception.target_el = 1 (fixed without EL2/EL3) */
+    tcg_gen_st_i32(tcg_constant_i32(1), tcg_env,
+                   offsetof(CPUARMState, exception.target_el));
+    tcg_gen_exit_tb(NULL, 0);
+}
+#endif /* __EMSCRIPTEN__ */
+
 static void gen_exception_el(int excp, uint32_t syndrome, uint32_t target_el)
 {
     gen_exception_el_v(excp, syndrome, tcg_constant_i32(target_el));
@@ -7035,6 +7071,12 @@ static void arm_tr_tb_stop(DisasContextBase *dcbase, CPUState *cpu)
             gen_helper_yield(tcg_env);
             break;
         case DISAS_SWI:
+#ifdef __EMSCRIPTEN__
+            if (arm_excp_exit_ok(dc)) {
+                gen_exception_exit(EXCP_SWI, syn_aa32_svc(dc->svc_imm, dc->thumb));
+                break;
+            }
+#endif
             gen_exception(EXCP_SWI, syn_aa32_svc(dc->svc_imm, dc->thumb));
             break;
         case DISAS_HVC:

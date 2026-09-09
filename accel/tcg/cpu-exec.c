@@ -781,6 +781,19 @@ static inline bool cpu_handle_interrupt(CPUState *cpu,
                                         TranslationBlock **last_tb)
 {
     /*
+     * A guest exception left pending by generated code that ended its
+     * TB with a plain exit instead of a cpu_loop_exit() unwind (see
+     * gen_exception_exit in the target frontends): deliver it before
+     * anything else, exactly like the longjmp would have.  Clear the
+     * exit-kick flag the same way the normal path below does so a kick
+     * that raced with the TB cannot force one-exit-per-TB spinning.
+     */
+    if (unlikely(cpu->exception_index >= 0)) {
+        qatomic_set_mb(&cpu->neg.icount_decr.u16.high, 0);
+        return true;
+    }
+
+    /*
      * If we have requested custom cflags with CF_NOIRQ we should
      * skip checking here. Any pending interrupts will get picked up
      * by the next TB we execute under normal cflags.
