@@ -18,6 +18,8 @@
  */
 
 #include "qemu/osdep.h"
+
+#include "qemu/wasm-diag.h"
 #include "qemu/main-loop.h"
 #include "qemu/target-info.h"
 #include "accel/tcg/cpu-loop.h"
@@ -55,6 +57,16 @@
 #endif
 #include "tcg/tcg-ldst.h"
 #include "backend-ldst.h"
+
+/*
+ * wasm diagnostics counters (see include/qemu/wasm-diag.h).  Defined
+ * here - not in tcg/tci.c, the other writer - because this file is
+ * compiled into every softmmu build, while tci.c only exists under
+ * --enable-tcg-interpreter; the counters are cold-path, so they are
+ * harmless even in builds with no reader (the wasm_memstat export is
+ * emscripten-only).
+ */
+uint64_t wasm_diag_stat[WASM_DIAG_N];
 
 
 /* DEBUG defines, enable DEBUG_TLB_LOG to log to the CPU_LOG_MMU target */
@@ -1245,6 +1257,7 @@ static bool tlb_fill_align(CPUState *cpu, vaddr addr, MMUAccessType type,
     const TCGCPUOps *ops = cpu->cc->tcg_ops;
     CPUTLBEntryFull full;
 
+    wasm_diag_stat[WASM_DIAG_TLB_FILL]++;
     if (ops->tlb_fill_align) {
         if (ops->tlb_fill_align(cpu, &full, addr, type, mmu_idx,
                                 memop, size, probe, ra)) {
@@ -2051,6 +2064,7 @@ static uint64_t do_ld_mmio_beN(CPUState *cpu, CPUTLBEntryFull *full,
 
     tcg_debug_assert(size > 0 && size <= 8);
 
+    wasm_diag_stat[WASM_DIAG_IO_LD]++;
     section = io_prepare(&mr_offset, cpu, full, addr, ra);
     mr = section->mr;
 
@@ -2565,6 +2579,7 @@ static uint64_t do_st_mmio_leN(CPUState *cpu, CPUTLBEntryFull *full,
 
     tcg_debug_assert(size > 0 && size <= 8);
 
+    wasm_diag_stat[WASM_DIAG_IO_ST]++;
     section = io_prepare(&mr_offset, cpu, full, addr, ra);
     mr = section->mr;
 

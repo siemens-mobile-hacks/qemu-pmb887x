@@ -37,6 +37,7 @@
 #include "exec/cpu-common.h"
 #include "exec/tlb-flags.h"
 #include "exec/target_page.h"
+#include "qemu/wasm-diag.h"
 
 
 /*
@@ -50,6 +51,7 @@
 #endif
 
 __thread uintptr_t tci_tb_ptr;
+
 
 /*
  * Load sets of arguments all at once.  The naming convention is:
@@ -328,44 +330,46 @@ static void *tci_tlb_probe(CPUArchState *env, uint64_t addr,
     return NULL;
 }
 
+/*
+ * Specialized probe for tci_qemu_ld8..st32: the emitters pick these ops only
+ * for mops of the exact family MO_ALIGN|MO_ATOM_NONE|size(|sign) (see
+ * tci_mop_specializes in tcg-target.c.inc).  For those, a_mask == s_mask, so
+ * the generic tci_tlb_probe() compare reduces to
+ *     (addr & (TARGET_PAGE_MASK | s_mask)) == tlb_addr
+ * - no mask math, no atom branch, no size switch; s_mask is a compile-time
+ * constant at each call site.  Misaligned addresses fail the compare (the
+ * low bits hit tlb_addr's flag bits) and take the generic slow path, exactly
+ * like the full probe.
+ */
+static void *QEMU_ALWAYS_INLINE tci_probe_a(CPUArchState *env, uint64_t addr,
+                                            unsigned s_mask, bool is_load,
+                                            unsigned mmu_idx)
+{
+    CPUTLBDescFast *fast = cpu_tlb_fast(env_cpu(env), mmu_idx);
+    CPUTLBEntry *entry = &fast->table[(addr >> TARGET_PAGE_BITS) &
+                           (fast->mask >> CPU_TLB_ENTRY_BITS)];
+    uint64_t tlb_addr = is_load ? entry->addr_read : entry->addr_write;
+
+    if (likely((addr & ((uint64_t)(int64_t)TARGET_PAGE_MASK | s_mask))
+               == tlb_addr)) {
+        return (void *)(uintptr_t)(addr + entry->addend);
+    }
+    return NULL;
+}
+
 static uint64_t tci_qemu_ld(CPUArchState *env, uint64_t taddr,
                             MemOpIdx oi, const void *tb_ptr)
 {
     MemOp mop = get_memop(oi);
     uintptr_t ra = (uintptr_t)tb_ptr;
 
-    {
-        void *haddr = tci_tlb_probe(env, taddr, oi, true);
-        if (likely(haddr != NULL)) {
-            uint64_t v;
-            switch (mop & MO_SSIZE) {
-            case MO_UB:
-                return *(uint8_t *)haddr;
-            case MO_SB:
-                return (int8_t)*(uint8_t *)haddr;
-            case MO_UW:
-                v = *(uint16_t *)haddr;
-                return (mop & MO_BSWAP) ? bswap16(v) : v;
-            case MO_SW:
-                v = *(uint16_t *)haddr;
-                v = (mop & MO_BSWAP) ? bswap16(v) : v;
-                return (int16_t)v;
-            case MO_UL:
-                v = *(uint32_t *)haddr;
-                return (mop & MO_BSWAP) ? bswap32(v) : v;
-            case MO_SL:
-                v = *(uint32_t *)haddr;
-                v = (mop & MO_BSWAP) ? bswap32(v) : v;
-                return (int32_t)v;
-            case MO_UQ:
-                v = *(uint64_t *)haddr;
-                return (mop & MO_BSWAP) ? bswap64(v) : v;
-            default:
-                g_assert_not_reached();
-            }
-        }
-    }
-
+    /*
+     * No TLB probe here: every caller (tci_ld_fast and the size-specialized
+     * cases below) has just probed with the same inputs - nothing can change
+     * the TLB in between, so a re-probe can never hit (measured: 0 hits in
+     * 1.1M+ calls).  Straight to the full slow path.
+     */
+    wasm_diag_stat[WASM_DIAG_LD_HELPER]++;
     switch (mop & MO_SSIZE) {
     case MO_UB:
         return helper_ldub_mmu(env, taddr, oi, ra);
@@ -482,31 +486,8 @@ static void tci_qemu_st(CPUArchState *env, uint64_t taddr, uint64_t val,
     MemOp mop = get_memop(oi);
     uintptr_t ra = (uintptr_t)tb_ptr;
 
-    {
-        void *haddr = tci_tlb_probe(env, taddr, oi, false);
-        if (likely(haddr != NULL)) {
-            switch (mop & MO_SIZE) {
-            case MO_UB:
-                *(uint8_t *)haddr = (uint8_t)val;
-                return;
-            case MO_UW:
-                *(uint16_t *)haddr =
-                    (mop & MO_BSWAP) ? bswap16(val) : (uint16_t)val;
-                return;
-            case MO_UL:
-                *(uint32_t *)haddr =
-                    (mop & MO_BSWAP) ? bswap32(val) : (uint32_t)val;
-                return;
-            case MO_UQ:
-                *(uint64_t *)haddr =
-                    (mop & MO_BSWAP) ? bswap64(val) : val;
-                return;
-            default:
-                g_assert_not_reached();
-            }
-        }
-    }
-
+    /* no re-probe here either - see tci_qemu_ld */
+    wasm_diag_stat[WASM_DIAG_ST_HELPER]++;
     switch (mop & MO_SIZE) {
     case MO_UB:
         helper_stb_mmu(env, taddr, val, oi, ra);
@@ -1739,6 +1720,62 @@ uintptr_t QEMU_DISABLE_CFI tcg_qemu_tb_exec(CPUArchState *env,
             }
             break;
 
+        /*
+         * Size-specialized guest memory ops (see tcg-target-opc.h.inc):
+         * probe with the size mask baked in, then the access itself; fall
+         * back to the generic path on a miss.  These are the interpreter's
+         * hottest cases, so they stay branch-minimal.  The rrm immediate
+         * field carries only the mmu_idx; the mop is fully reconstructed
+         * from the opcode (exact family, tci_mop_specializes()).
+         */
+#define TCI_SPEC_LD(op, s_mask, mop_const, expr)                        \
+        case op:                                                         \
+            tci_args_rrm(insn, &r0, &r1, &oi);                           \
+            taddr = regs[r1];                                            \
+            ptr = tci_probe_a(env, taddr, s_mask, true, oi & 31);        \
+            if (likely(ptr != NULL)) {                                   \
+                regs[r0] = (expr);                                       \
+            } else {                                                     \
+                regs[r0] = tci_qemu_ld(env, taddr,                       \
+                    make_memop_idx(mop_const, oi & 31), tb_ptr);         \
+            }                                                            \
+            break;
+
+#define TCI_SPEC_ST(op, s_mask, mop_const, expr)                         \
+        case op:                                                         \
+            tci_args_rrm(insn, &r0, &r1, &oi);                           \
+            taddr = regs[r1];                                            \
+            ptr = tci_probe_a(env, taddr, s_mask, false, oi & 31);       \
+            if (likely(ptr != NULL)) {                                   \
+                expr;                                                    \
+            } else {                                                     \
+                tci_qemu_st(env, taddr, regs[r0],                        \
+                    make_memop_idx(mop_const, oi & 31), tb_ptr);         \
+            }                                                            \
+            break;
+
+        TCI_SPEC_LD(INDEX_op_tci_qemu_ld8, 0,
+                    MO_ALIGN | MO_ATOM_NONE | MO_UB, *(uint8_t *)ptr)
+        TCI_SPEC_LD(INDEX_op_tci_qemu_ld8s, 0,
+                    MO_ALIGN | MO_ATOM_NONE | MO_SB, (int8_t)*(uint8_t *)ptr)
+        TCI_SPEC_LD(INDEX_op_tci_qemu_ld16, 1,
+                    MO_ALIGN | MO_ATOM_NONE | MO_UW, *(uint16_t *)ptr)
+        TCI_SPEC_LD(INDEX_op_tci_qemu_ld16s, 1,
+                    MO_ALIGN | MO_ATOM_NONE | MO_SW, (int16_t)*(uint16_t *)ptr)
+        TCI_SPEC_LD(INDEX_op_tci_qemu_ld32, 3,
+                    MO_ALIGN | MO_ATOM_NONE | MO_UL, *(uint32_t *)ptr)
+        TCI_SPEC_ST(INDEX_op_tci_qemu_st8, 0,
+                    MO_ALIGN | MO_ATOM_NONE | MO_UB,
+                    *(uint8_t *)ptr = (uint8_t)regs[r0])
+        TCI_SPEC_ST(INDEX_op_tci_qemu_st16, 1,
+                    MO_ALIGN | MO_ATOM_NONE | MO_UW,
+                    *(uint16_t *)ptr = (uint16_t)regs[r0])
+        TCI_SPEC_ST(INDEX_op_tci_qemu_st32, 3,
+                    MO_ALIGN | MO_ATOM_NONE | MO_UL,
+                    *(uint32_t *)ptr = (uint32_t)regs[r0])
+#undef TCI_SPEC_LD
+#undef TCI_SPEC_ST
+
         case INDEX_op_mb:
             /* Ensure ordering for all kinds */
             smp_mb();
@@ -1991,6 +2028,14 @@ int print_insn_tci(bfd_vma addr, disassemble_info *info)
 
     case INDEX_op_qemu_ld:
     case INDEX_op_qemu_st:
+    case INDEX_op_tci_qemu_ld8:
+    case INDEX_op_tci_qemu_ld8s:
+    case INDEX_op_tci_qemu_ld16:
+    case INDEX_op_tci_qemu_ld16s:
+    case INDEX_op_tci_qemu_ld32:
+    case INDEX_op_tci_qemu_st8:
+    case INDEX_op_tci_qemu_st16:
+    case INDEX_op_tci_qemu_st32:
         tci_args_rrm(insn, &r0, &r1, &oi);
         info->fprintf_func(info->stream, "%-12s  %s, %s, %x",
                            op_name, str_r(r0), str_r(r1), oi);

@@ -33,3 +33,25 @@ DEF(tci_setcond32_ri, 1, 2, 1, TCG_OPF_NOT_PRESENT)
  * icount2 clock advances per executed TB even while TBs are chained. */
 DEF(tci_tbhdr, 0, 0, 1, TCG_OPF_NOT_PRESENT)
 #endif
+/*
+ * Size-specialized guest memory ops: the generic qemu_ld/st interpreter
+ * cases recompute the TLB compare masks (s_mask/a_mask/atom) and dispatch
+ * on the size for every access.  For mops of the exact family
+ * MO_ALIGN|MO_ATOM_NONE|size(|sign) - which on pmb887x/ARMv5 is every
+ * plain guest data access - the generic probe tci_tlb_probe() reduces to
+ *     (addr & (TARGET_PAGE_MASK | size-1)) == tlb_addr
+ * (a_mask == s_mask, atom bits = NONE, LE host) so these variants bake that
+ * in: no mask math, no atom branch, no size switch, straight to the access
+ * on a hit.  The rrm immediate field carries only the mmu_idx; the case
+ * reconstructs the full MemOp (see TCI_SPEC_LD/ST in tcg/tci.c).
+ * The emitters (tgen_qemu_ld/st) pick them only on the exact family match;
+ * everything else keeps the generic path.
+ */
+DEF(tci_qemu_ld8, 1, 2, 0, TCG_OPF_NOT_PRESENT)
+DEF(tci_qemu_ld8s, 1, 2, 0, TCG_OPF_NOT_PRESENT)
+DEF(tci_qemu_ld16, 1, 2, 0, TCG_OPF_NOT_PRESENT)
+DEF(tci_qemu_ld16s, 1, 2, 0, TCG_OPF_NOT_PRESENT)
+DEF(tci_qemu_ld32, 1, 2, 0, TCG_OPF_NOT_PRESENT)
+DEF(tci_qemu_st8, 0, 3, 0, TCG_OPF_NOT_PRESENT)
+DEF(tci_qemu_st16, 0, 3, 0, TCG_OPF_NOT_PRESENT)
+DEF(tci_qemu_st32, 0, 3, 0, TCG_OPF_NOT_PRESENT)
