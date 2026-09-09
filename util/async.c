@@ -464,6 +464,14 @@ LinuxAioState *aio_get_linux_aio(AioContext *ctx)
 
 void aio_notify(AioContext *ctx)
 {
+#ifdef __EMSCRIPTEN__
+    /* wake the condvar-based main-loop wait (util/main-loop.c); the
+     * event_notifier pipe wake does not work on wasm */
+    {
+        extern void qemu_main_loop_wake(void);
+        qemu_main_loop_wake();
+    }
+#endif
     /*
      * Write e.g. ctx->bh_list before writing ctx->notified.  Pairs with
      * smp_mb() in aio_notify_accept().
