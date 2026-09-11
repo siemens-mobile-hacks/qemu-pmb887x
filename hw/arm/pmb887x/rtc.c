@@ -13,6 +13,7 @@
 #include "qapi/error.h"
 #include "qemu/timer.h"
 #include "qemu/main-loop.h"
+#include "qemu/cutils.h"
 #include "hw/core/qdev-properties.h"
 
 #include "hw/arm/pmb887x/gen/cpu_regs.h"
@@ -37,7 +38,8 @@ struct pmb887x_rtc_t {
 	SysBusDevice parent_obj;
 	MemoryRegion mmio;
 	uint32_t revision;
-	
+	char *cnt_format;
+
 	pmb887x_clc_reg_t clc;
 	pmb887x_src_reg_t src;
 	pmb887x_cgu_t *cgu;
@@ -314,16 +316,36 @@ static uint32_t rtc_pack_cnt(uint32_t day_rel, uint32_t yday, uint32_t hour, uin
 		(((day_rel + yday) & 0x3FF) << 22);
 }
 
+/*
+ * Power-on seed of CNT/REL, in the layout the firmware expects (the
+ * "cnt-format" property, chosen per board):
+ *
+ *   calendar  sec/min/hour/yday packed into the 10/6/6/10-bit fields with
+ *             REL set so each field wraps like a 60/60/24/365 calendar
+ *             (LG firmware reads the fields directly);
+ *   unix      one linear 32-bit seconds counter since the Unix epoch with
+ *             REL = 0 so the fields carry into each other (Siemens firmware
+ *             adds its own time-zone setting on top).  A calendar seed
+ *             here decodes to the year 2091 and jumps +16 min at every
+ *             minute wrap (0x3FF -> 0x7C4 is +965).
+ *
+ * Both honour -rtc base=/clock= through qemu_get_timedate().
+ */
 static void rtc_init_datetime(pmb887x_rtc_t *p) {
 	struct tm tm;
 	qemu_get_timedate(&tm, 0);
 
-	uint32_t year = 1900 + tm.tm_year;
-	bool leap = !(year % 4) && ((year % 100) || !(year % 400));
-	uint32_t day_rel = 0x400 - (leap ? 366 : 365);
+	if (p->cnt_format && !strcmp(p->cnt_format, "calendar")) {
+		uint32_t year = 1900 + tm.tm_year;
+		bool leap = !(year % 4) && ((year % 100) || !(year % 400));
+		uint32_t day_rel = 0x400 - (leap ? 366 : 365);
 
-	p->rel = rtc_pack_cnt(day_rel, 0, 0, 0, 0);
-	p->cnt = rtc_pack_cnt(day_rel, tm.tm_yday, tm.tm_hour, tm.tm_min, tm.tm_sec);
+		p->rel = rtc_pack_cnt(day_rel, 0, 0, 0, 0);
+		p->cnt = rtc_pack_cnt(day_rel, tm.tm_yday, tm.tm_hour, tm.tm_min, tm.tm_sec);
+	} else {
+		p->rel = 0;
+		p->cnt = mktimegm(&tm);
+	}
 }
 
 static void rtc_reset(DeviceState *dev) {
@@ -354,7 +376,11 @@ static void rtc_realize(DeviceState *dev, Error **errp) {
 		hw_error("CGU not found...");
 	if (!p->irq)
 		hw_error("pmb887x-rtc: irq not set");
-	
+	if (p->cnt_format && strcmp(p->cnt_format, "unix") && strcmp(p->cnt_format, "calendar")) {
+		error_setg(errp, "pmb887x-rtc: unknown cnt-format '%s' (unix|calendar)", p->cnt_format);
+		return;
+	}
+
 	pmb887x_clc_init(&p->clc);
 	pmb887x_src_init(&p->src, p->irq);
 	p->timer = timer_new_ns(QEMU_CLOCK_VIRTUAL, rtc_ptimer_reset, p);
@@ -368,6 +394,7 @@ static void rtc_realize(DeviceState *dev, Error **errp) {
 
 static const Property rtc_properties[] = {
 	DEFINE_PROP_UINT32("revision", pmb887x_rtc_t, revision, 0),
+	DEFINE_PROP_STRING("cnt-format", pmb887x_rtc_t, cnt_format),
 	DEFINE_PROP_LINK("cgu", pmb887x_rtc_t, cgu, "pmb887x-cgu", pmb887x_cgu_t *),
 };
 
