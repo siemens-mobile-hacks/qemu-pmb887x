@@ -886,7 +886,7 @@ static void dmac_timer_reset(void *opaque) {
 			break;
 	}
 	if (p->dmac_pending)
-		timer_mod(p->timer, qemu_clock_get_ns(QEMU_CLOCK_REALTIME) + 1);
+		timer_mod(p->timer, qemu_clock_get_ns(pmb887x_completion_clock()) + 1);
 }
 
 static void dmac_handle_signal_sel0_sreq(void *opaque, int request, int level) {
@@ -1005,7 +1005,9 @@ static void dmac_realize(DeviceState *dev, Error **errp) {
 	pmb887x_srb_init(&p->srb_tc, p->irq_tc, ARRAY_SIZE(p->irq_tc));
 	pmb887x_srb_set_irq_router(&p->srb_tc, p, dmac_tc_irq_router);
 
-	p->timer = timer_new_ns(QEMU_CLOCK_REALTIME, dmac_timer_reset, p);
+	/* see pmb887x_completion_clock(): the display DMA stretch is one
+	 * IRQ + halt per word, each completion used to be a main-loop trip */
+	p->timer = timer_new_ns(pmb887x_completion_clock(), dmac_timer_reset, p);
 }
 
 static void dmac_reset(DeviceState *dev) {

@@ -498,7 +498,7 @@ static void ssc_realize(DeviceState *dev, Error **errp) {
 
 	pmb887x_fifo16_init(&p->tx_fifo_single, 1);
 	pmb887x_fifo16_init(&p->rx_fifo_single, 1);
-	p->transfer_timer = timer_new_ns(QEMU_CLOCK_REALTIME, ssc_transfer_complete, p);
+	p->transfer_timer = timer_new_ns(pmb887x_completion_clock(), ssc_transfer_complete, p);
 
 	ssc_set_fifo(p, SSC_FIFO_RX, false);
 	ssc_set_fifo(p, SSC_FIFO_TX, false);
