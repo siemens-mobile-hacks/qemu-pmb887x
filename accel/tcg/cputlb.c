@@ -295,6 +295,7 @@ static void tlb_mmu_resize_locked(CPUTLBDesc *desc, CPUTLBDescFast *fast,
 static void tlb_mmu_flush_locked(CPUTLBDesc *desc, CPUTLBDescFast *fast)
 {
     desc->n_used_entries = 0;
+    desc->n_fills = 0;
     desc->large_page_addr = -1;
     desc->large_page_mask = -1;
     desc->vindex = 0;
@@ -1289,6 +1290,31 @@ void tlb_set_page_full(CPUState *cpu, int mmu_idx,
      * is unlikely to be contended.
      */
     qemu_spin_lock(&tlb->c.lock);
+
+    /*
+     * Grow the TLB from the fill path.  The resize policy in
+     * tlb_mmu_resize_locked only runs at flush time, so a guest that
+     * never flushes its TLB (or a phase that runs long between flushes)
+     * is stuck with the current size however hard it misses: a J2ME app
+     * on an ARMv5 board with 1 KB pages refilled a 256-entry table 83k
+     * times per second, no flush in sight.  Once the fills since the
+     * last flush/resize exceed twice the table, double it (the resize
+     * flushes this mmu_idx, so the refill is paid once per doubling);
+     * capped well below CPU_TLB_DYN_MAX_BITS so a streaming working set
+     * cannot grow the table without bound.
+     */
+    desc->n_fills++;
+    {
+        size_t n = tlb_n_entries(cpu_tlb_fast(cpu, mmu_idx));
+
+        if (unlikely(desc->n_fills > 2 * n) &&
+            n < ((size_t)1 << TLB_FILL_GROW_MAX_BITS)) {
+            desc->window_max_entries = n;    /* rate 100 %: doubles */
+            tlb_flush_one_mmuidx_locked(cpu, mmu_idx, get_clock_realtime());
+            index = tlb_index(cpu, mmu_idx, addr_page);
+            te = tlb_entry(cpu, mmu_idx, addr_page);
+        }
+    }
 
     /* Note that the tlb is no longer clean.  */
     tlb->c.dirty |= 1 << mmu_idx;
