@@ -165,6 +165,48 @@ static void rr_idle_advance(void)
     }
 }
 
+#ifdef __EMSCRIPTEN__
+/*
+ * The same handoff removal for a guest running *without* icount (the LG
+ * boards: site/app.js boots them on the plain realtime clock).  There
+ * QEMU_CLOCK_VIRTUAL advances with host time and the main loop owns its
+ * timers, so a halted guest waiting for a device completion needed a
+ * main-loop wake plus a vCPU kick — two futex/BQL handoffs — for every
+ * interrupt.  KE800's GSM L1 loop takes thousands per second and crawled
+ * at ~0.8 MIPS (native: 150).
+ *
+ * Sleep here until the next virtual deadline instead and run the due
+ * timers on this thread, under the BQL we already hold.  The wait is
+ * kick-interruptible (an interrupt makes the guest non-idle and we leave
+ * without running anything) and bounded, so a host-clock event is never
+ * starved: the main loop takes the BQL between iterations.  Nothing here
+ * touches virtual *time* — only which thread runs the callbacks.
+ */
+static void rr_idle_advance_realtime(void)
+{
+    int i;
+
+    for (i = 0; i < 64 && all_cpu_threads_idle(); i++) {
+        int64_t deadline = qemu_clock_deadline_ns_all(QEMU_CLOCK_VIRTUAL,
+                                                      ~QEMU_TIMER_ATTR_EXTERNAL);
+        if (deadline < 0) {
+            return;             /* nothing due: the plain halt wait below */
+        }
+        if (deadline > 0) {
+            qemu_cond_timedwait_bql_ns(first_cpu->halt_cond,
+                                       MIN(deadline, 20 * SCALE_MS));
+            if (qemu_clock_deadline_ns_all(QEMU_CLOCK_VIRTUAL,
+                                           ~QEMU_TIMER_ATTR_EXTERNAL) > 0) {
+                return;         /* woken early (kick) or bound hit */
+            }
+        }
+        qemu_clock_run_timers(QEMU_CLOCK_VIRTUAL);
+        bql_unlock();
+        bql_lock();
+    }
+}
+#endif
+
 /*
  * Real-time cap while the guest runs: after a budget round, sleep if the
  * virtual clock got ahead of wall time.  The host-clock read is a JS
@@ -321,6 +363,15 @@ static void *rr_cpu_thread_fn(void *arg)
                 qemu_notify_event();
             }
         }
+#ifdef __EMSCRIPTEN__
+        else if (all_cpu_threads_idle()) {
+            /* no icount: run the virtual-clock timers here too */
+            rr_idle_advance_realtime();
+            if (all_cpu_threads_idle()) {
+                qemu_notify_event();
+            }
+        }
+#endif
 
         rr_wait_io_event();
         rr_deal_with_unplugged_cpus();
