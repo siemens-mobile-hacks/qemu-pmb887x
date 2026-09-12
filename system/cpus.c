@@ -597,6 +597,11 @@ void qemu_cond_timedwait_bql(QemuCond *cond, int ms)
     qemu_cond_timedwait(cond, &bql, ms);
 }
 
+bool qemu_cond_timedwait_bql_ns(QemuCond *cond, int64_t ns)
+{
+    return qemu_cond_timedwait_ns(cond, &bql, ns);
+}
+
 /* signal CPU creation */
 void cpu_thread_signal_created(CPUState *cpu)
 {

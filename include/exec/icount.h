@@ -73,4 +73,15 @@ void icount_start_warp_timer(void);
 void icount_account_warp_timer(void);
 void icount_notify_exit(void);
 
+/*
+ * Real-time cap for sleep=off icount (QEMU_ICOUNT_RTCAP=off|banked|strict;
+ * wasm defaults to banked, other hosts to off): QEMU_CLOCK_VIRTUAL is not
+ * allowed to run ahead of wall time.  The vCPU thread asks how many host
+ * ns must pass before virtual time may reach @vtarget and sleeps for them
+ * (rr_idle_advance before a warp, the rr loop after a budget round).
+ */
+extern bool icount_rtcap;
+int64_t icount_rtcap_excess_ns(int64_t vtarget);
+void icount_rtcap_set_waiting(bool waiting);
+
 #endif /* EXEC_ICOUNT_H */

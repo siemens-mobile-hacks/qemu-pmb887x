@@ -133,6 +133,23 @@ static void rr_idle_advance(void)
             return;
         }
         if (deadline > 0) {
+            if (icount_rtcap) {
+                /*
+                 * Real-time cap: the warp would put the virtual clock
+                 * ahead of wall time — sleep the difference first (a kick
+                 * ends the wait early; an interrupt then makes the guest
+                 * non-idle and we leave without warping).
+                 */
+                int64_t excess = icount_rtcap_excess_ns(
+                    qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + deadline);
+
+                if (excess > 0) {
+                    icount_rtcap_set_waiting(true);
+                    qemu_cond_timedwait_bql_ns(first_cpu->halt_cond, excess);
+                    icount_rtcap_set_waiting(false);
+                    continue;
+                }
+            }
             icount_start_warp_timer();
             if (qemu_clock_deadline_ns_all(QEMU_CLOCK_VIRTUAL,
                                            ~QEMU_TIMER_ATTR_EXTERNAL) > 0) {
@@ -145,6 +162,32 @@ static void rr_idle_advance(void)
             bql_unlock();
             bql_lock();
         }
+    }
+}
+
+/*
+ * Real-time cap while the guest runs: after a budget round, sleep if the
+ * virtual clock got ahead of wall time.  The host-clock read is a JS
+ * import on wasm, so it is taken at most once per ms of virtual time.
+ * Called without the BQL; the wait is kick-interruptible and bounded so
+ * an interrupt is never delayed by more than a few ms.
+ */
+static void rr_rtcap_throttle(void)
+{
+    static int64_t last_v;
+    int64_t v = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
+    int64_t excess;
+
+    if (v - last_v < SCALE_MS) {
+        return;
+    }
+    last_v = v;
+    excess = icount_rtcap_excess_ns(v);
+    if (excess > 0) {
+        bql_lock();
+        qemu_cond_timedwait_bql_ns(first_cpu->halt_cond,
+                                   MIN(excess, 20 * SCALE_MS));
+        bql_unlock();
     }
 }
 
@@ -332,6 +375,9 @@ static void *rr_cpu_thread_fn(void *arg)
                 r = tcg_cpu_exec(cpu);
                 if (icount_enabled()) {
                     icount_process_data(cpu);
+                    if (icount_rtcap) {
+                        rr_rtcap_throttle();
+                    }
                 }
                 bql_lock();
 
