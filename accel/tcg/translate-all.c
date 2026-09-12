@@ -266,6 +266,9 @@ TranslationBlock *tb_gen_code(CPUState *cpu, TCGTBCPUState s)
     CPUArchState *env = cpu_env(cpu);
 #ifdef __EMSCRIPTEN__
     wasm_diag_stat[WASM_DIAG_TB_GEN]++;
+    if (s.cflags & CF_COUNT_MASK) {
+        wasm_diag_stat[WASM_DIAG_TB_GEN_COUNTED]++;
+    }
 #endif
     TranslationBlock *tb, *existing_tb;
     tb_page_addr_t phys_pc, phys_p2;
@@ -693,6 +696,9 @@ void tcg_flush_jmp_cache(CPUState *cpu)
     if (unlikely(jc == NULL)) {
         return;
     }
+#ifdef __EMSCRIPTEN__
+    wasm_diag_stat[WASM_DIAG_JC_FLUSH]++;
+#endif
 
     for (int i = 0; i < TB_JMP_CACHE_SIZE; i++) {
         qatomic_set(&jc->array[i].tb, NULL);

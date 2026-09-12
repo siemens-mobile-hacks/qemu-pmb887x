@@ -294,6 +294,9 @@ static void tlb_mmu_resize_locked(CPUTLBDesc *desc, CPUTLBDescFast *fast,
 
 static void tlb_mmu_flush_locked(CPUTLBDesc *desc, CPUTLBDescFast *fast)
 {
+#ifdef __EMSCRIPTEN__
+    wasm_diag_stat[WASM_DIAG_TLB_FLUSH]++;     /* every table clear */
+#endif
     desc->n_used_entries = 0;
     desc->n_fills = 0;
     desc->large_page_addr = -1;
@@ -600,6 +603,9 @@ static void tlb_flush_page_locked(CPUState *cpu, int midx, vaddr page)
         tlb_debug("forcing full flush midx %d (%016"
                   VADDR_PRIx "/%016" VADDR_PRIx ")\n",
                   midx, lp_addr, lp_mask);
+#ifdef __EMSCRIPTEN__
+        wasm_diag_stat[WASM_DIAG_TLB_FLUSH_RANGE]++;   /* page-in-large-page */
+#endif
         tlb_flush_one_mmuidx_locked(cpu, midx, get_clock_realtime());
     } else {
         if (tlb_flush_entry_locked(tlb_entry(cpu, midx, page), page)) {
@@ -693,6 +699,9 @@ void tlb_flush_page_by_mmuidx(CPUState *cpu, vaddr addr, MMUIdxMap idxmap)
     tlb_debug("addr: %016" VADDR_PRIx " mmu_idx:%" PRIx16 "\n", addr, idxmap);
 
     assert_cpu_is_self(cpu);
+#ifdef __EMSCRIPTEN__
+    wasm_diag_stat[WASM_DIAG_TLB_FLUSH_RANGE]++;
+#endif
 
     /* This should already be page aligned */
     addr &= TARGET_PAGE_MASK;
@@ -786,6 +795,9 @@ static void tlb_flush_range_locked(CPUState *cpu, int midx,
         tlb_debug("forcing full flush midx %d ("
                   "%016" VADDR_PRIx "/%016" VADDR_PRIx ")\n",
                   midx, d->large_page_addr, d->large_page_mask);
+#ifdef __EMSCRIPTEN__
+        wasm_diag_stat[WASM_DIAG_TLB_FLUSH_RANGE]++;   /* range-in-large-page */
+#endif
         tlb_flush_one_mmuidx_locked(cpu, midx, get_clock_realtime());
         return;
     }
@@ -861,6 +873,9 @@ void tlb_flush_range_by_mmuidx(CPUState *cpu, vaddr addr,
     TLBFlushRangeData d;
 
     assert_cpu_is_self(cpu);
+#ifdef __EMSCRIPTEN__
+    wasm_diag_stat[WASM_DIAG_TLB_FLUSH_RANGE]++;
+#endif
 
     /* If no page bits are significant, this devolves to tlb_flush. */
     if (bits < TARGET_PAGE_BITS) {
@@ -1322,6 +1337,16 @@ void tlb_set_page_full(CPUState *cpu, int mmu_idx,
     /* Make sure there's no cached translation for the new page.  */
     tlb_flush_vtlb_page_locked(cpu, mmu_idx, addr_page);
 
+#ifdef __EMSCRIPTEN__
+    wasm_diag_stat[WASM_DIAG_FILL_SAMEPAGE] += tlb_hit_page_anyprot(te, addr_page);
+    wasm_diag_stat[WASM_DIAG_FILL_INVALID] += (read_flags & TLB_INVALID_MASK) != 0;
+    wasm_diag_stat[WASM_DIAG_FILL_LARGE] += full->lg_page_size > TARGET_PAGE_BITS;
+    wasm_diag_stat[WASM_DIAG_FILL_IDX] += mmu_idx;
+    wasm_diag_stat[WASM_DIAG_FILL_EVICT] +=
+        !tlb_hit_page_anyprot(te, addr_page) && !tlb_entry_is_empty(te);
+    wasm_diag_stat[WASM_DIAG_TLB_SIZE0] = tlb_n_entries(cpu_tlb_fast(cpu, 0));
+    wasm_diag_stat[WASM_DIAG_TLB_USED0] = tlb->d[0].n_used_entries;
+#endif
     /*
      * Only evict the old entry to the victim tlb if it's for a
      * different page; otherwise just overwrite the stale data.
@@ -1443,6 +1468,10 @@ static bool tlb_fill_align(CPUState *cpu, vaddr addr, MMUAccessType type,
     CPUTLBEntryFull full;
 
     wasm_diag_stat[WASM_DIAG_TLB_FILL]++;
+#ifdef __EMSCRIPTEN__
+    wasm_diag_stat[WASM_DIAG_FILL_FETCH] += type == MMU_INST_FETCH;
+    wasm_diag_stat[WASM_DIAG_FILL_PROBE] += probe;
+#endif
     if (ops->tlb_fill_align) {
         if (ops->tlb_fill_align(cpu, &full, addr, type, mmu_idx,
                                 memop, size, probe, ra)) {

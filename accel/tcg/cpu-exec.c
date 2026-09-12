@@ -19,6 +19,7 @@
 
 #include "qemu/osdep.h"
 #include "qemu/qemu-print.h"
+#include "qemu/wasm-diag.h"
 #include "qapi/error.h"
 #include "qapi/type-helpers.h"
 #include "hw/core/cpu.h"
@@ -244,12 +245,18 @@ static inline TranslationBlock *tb_lookup(CPUState *cpu, TCGTBCPUState s)
     hash = tb_jmp_cache_hash_func(s.pc);
     jc = cpu->tb_jmp_cache;
 
+#ifdef __EMSCRIPTEN__
+    wasm_diag_stat[WASM_DIAG_LOOKUP]++;
+#endif
     tb = qatomic_read(&jc->array[hash].tb);
     if (likely(tb &&
                jc->array[hash].pc == s.pc &&
                tb->cs_base == s.cs_base &&
                tb->flags == s.flags &&
                tb_cflags(tb) == s.cflags)) {
+#ifdef __EMSCRIPTEN__
+        wasm_diag_stat[WASM_DIAG_LOOKUP_JC]++;
+#endif
         goto hit;
     }
 
@@ -257,6 +264,9 @@ static inline TranslationBlock *tb_lookup(CPUState *cpu, TCGTBCPUState s)
     if (tb == NULL) {
         return NULL;
     }
+#ifdef __EMSCRIPTEN__
+    wasm_diag_stat[WASM_DIAG_LOOKUP_QHT]++;
+#endif
 
     jc->array[hash].pc = s.pc;
     qatomic_set(&jc->array[hash].tb, tb);
