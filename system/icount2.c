@@ -129,6 +129,15 @@ int64_t icount2_ticks_now(void) {
 	return qatomic_read(&timers_state.icount2_ticks);
 }
 
+/* wasm64 TCG backend: addresses of the icount2 state that emitted TB
+ * prologues advance inline (w64_acct_addr, tcg/wasm64/wasm64.c).  The
+ * emitter needs the addresses as plain integers at translation time
+ * and cannot include cpu-timers-internal.h for the struct. */
+void icount2_w64_acct_addrs(uintptr_t *ticks, uintptr_t *deadline) {
+	*ticks = (uintptr_t)&timers_state.icount2_ticks;
+	*deadline = (uintptr_t)&timers_state.icount2_deadline;
+}
+
 #ifdef __EMSCRIPTEN__
 /*
  * wasm: mid-TB MMIO accounting (see io_prepare(), cputlb.c).  Called

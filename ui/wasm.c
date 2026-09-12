@@ -144,29 +144,28 @@ uint64_t wasm_fb_updates(void)
  * Per-TB execution statistics (diagnostics): fed once per executed TB
  * from the TCI interpreter's TB header op (see the wasm-tci-tb-chaining
  * patch); wasm_tbs()/wasm_insns() are what the page and the benchmark
- * tooling read as the guest-throughput metric.
+ * tooling read as the guest-throughput metric.  Non-static array
+ * [tbs, insns]: the wasm64 TCG backend inlines these increments into
+ * TB prologues (w64_acct_addr, tcg/wasm64/).
  */
-static struct {
-    uint64_t tbs;
-    uint64_t insns;
-} wasm_tb_stats;
+uint64_t wasm_tb_stats[2];
 
 void wasm_tb_account(unsigned insns)
 {
-    wasm_tb_stats.tbs++;
-    wasm_tb_stats.insns += insns;
+    wasm_tb_stats[0]++;
+    wasm_tb_stats[1] += insns;
 }
 
 EMSCRIPTEN_KEEPALIVE
 uint64_t wasm_tbs(void)
 {
-    return wasm_tb_stats.tbs;
+    return wasm_tb_stats[0];
 }
 
 EMSCRIPTEN_KEEPALIVE
 uint64_t wasm_insns(void)
 {
-    return wasm_tb_stats.insns;
+    return wasm_tb_stats[1];
 }
 
 /* Diagnostics: memory-subsystem counters (see include/qemu/wasm-diag.h). */

@@ -118,6 +118,10 @@ static void tcg_register_jit_int(const void *buf, size_t size,
 static void tcg_out_tb_start(TCGContext *s);
 static void tcg_out_ld(TCGContext *s, TCGType type, TCGReg ret, TCGReg arg1,
                        intptr_t arg2);
+#ifdef CONFIG_TCG_WASM64
+static void tcg_out_set_label(TCGContext *s, TCGLabel *l);
+static void tcg_out_tb_finalize(TCGContext *s);
+#endif
 static bool tcg_out_mov(TCGContext *s, TCGType type, TCGReg ret, TCGReg arg);
 static void tcg_out_movi(TCGContext *s, TCGType type,
                          TCGReg ret, tcg_target_long arg);
@@ -246,7 +250,7 @@ TCGv_env tcg_env;
 const void *tcg_code_gen_epilogue;
 ptrdiff_t tcg_splitwx_diff;
 
-#ifndef CONFIG_TCG_INTERPRETER
+#if !defined(CONFIG_TCG_INTERPRETER) && !defined(CONFIG_TCG_WASM64)
 tcg_prologue_fn *tcg_qemu_tb_exec;
 #endif
 
@@ -353,6 +357,10 @@ static void tcg_out_label(TCGContext *s, TCGLabel *l)
     tcg_debug_assert(!l->has_value);
     l->has_value = 1;
     l->u.value_ptr = tcg_splitwx_to_rx(s->code_ptr);
+#ifdef CONFIG_TCG_WASM64
+    /* the wasm64 backend needs to emit its label-region guard here */
+    tcg_out_set_label(s, l);
+#endif
 }
 
 TCGLabel *gen_new_label(void)
@@ -1853,7 +1861,7 @@ void tcg_prologue_init(void)
     s->code_buf = s->code_gen_ptr;
     s->data_gen_ptr = NULL;
 
-#ifndef CONFIG_TCG_INTERPRETER
+#if !defined(CONFIG_TCG_INTERPRETER) && !defined(CONFIG_TCG_WASM64)
     tcg_qemu_tb_exec = (tcg_prologue_fn *)tcg_splitwx_to_rx(s->code_ptr);
 #endif
 
@@ -6752,6 +6760,10 @@ int tcg_gen_code(TCGContext *s, TranslationBlock *tb, uint64_t pc_start)
     if (i < 0) {
         return i;
     }
+#ifdef CONFIG_TCG_WASM64
+    /* the wasm64 backend assembles the module around the body */
+    tcg_out_tb_finalize(s);
+#endif
     if (!tcg_resolve_relocs(s)) {
         return -2;
     }
