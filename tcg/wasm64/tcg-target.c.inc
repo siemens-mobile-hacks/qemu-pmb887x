@@ -16,6 +16,7 @@
  */
 
 #include "wasm64.h"
+#include "system/cpu-timers.h"      /* icount2_enabled() */
 
 /* ------------------------------------------------------------------ */
 /* per-TB assembly state                                              */
@@ -2286,12 +2287,15 @@ static void tcg_out_tb_start(TCGContext *s)
      * Registered first so their indices are deterministic (the
      * prologue's calls are the body's first instructions). */
     if (w64_acct_inline()) {
-        sync_type = w64_add_type(0, NULL, 0xff);          /* () -> () */
-        sync_uimp = w64_union_type(0, NULL, 0xff);
-        sync_imp = w64_import_idx((uint32_t)(uintptr_t)w64_icount2_sync_now,
-                                  sync_type);
-        sync_uimp = w64_union_import(
-            (uint32_t)(uintptr_t)w64_icount2_sync_now, sync_uimp);
+        sync_type = sync_imp = sync_uimp = 0;
+        if (icount2_enabled()) {
+            sync_type = w64_add_type(0, NULL, 0xff);      /* () -> () */
+            sync_uimp = w64_union_type(0, NULL, 0xff);
+            sync_imp = w64_import_idx(
+                (uint32_t)(uintptr_t)w64_icount2_sync_now, sync_type);
+            sync_uimp = w64_union_import(
+                (uint32_t)(uintptr_t)w64_icount2_sync_now, sync_uimp);
+        }
 
         ls_type = w64_add_type(1, p1, 0xff);            /* (i32) -> () */
         ls_uimp = w64_union_type(1, p1, 0xff);
@@ -2345,7 +2349,15 @@ static void tcg_out_tb_start(TCGContext *s)
 
         /* icount2_advance fast path: ticks += icount — atomic accesses,
          * mirroring the qatomic_read/qatomic_set the C function emits
-         * (timers_state is read/written cross-thread) */
+         * (timers_state is read/written cross-thread).  Only for the
+         * opt-in icount2 (?icount=precise-clocks) timing model: the
+         * default stock-icount boot never sets icount2_deadline, so an
+         * atomic RMW + a deadline compare per TB entry (~5M/s) would be
+         * pure overhead there.  icount2 is fixed at command-line parse
+         * time, before the first translation. */
+        if (!icount2_enabled()) {
+            goto no_icount2;
+        }
         w64_const_i64(s, (int64_t)w64_acct_addr[2]);
         w64_u8(s, 0xfe); w64_u8(s, 0x11);
         w64_memarg(s, 3, 0);                          /* i64.atomic.load */
@@ -2374,6 +2386,7 @@ static void tcg_out_tb_start(TCGContext *s)
         w64_u8(s, 0x10);                              /* call */
         w64_callidx(s, sync_imp, sync_uimp);
         w64_blk_pop(s);
+    no_icount2:
 
         /* if (w64_ls_on) w64_lockstep_account(icount) — the lockstep
          * fold import, only when armed (normal boots: one i32.load) */
