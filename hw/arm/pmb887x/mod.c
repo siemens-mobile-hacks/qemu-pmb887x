@@ -5,6 +5,7 @@
 #define PMB887X_TRACE_PREFIX	"pmb887x-mod"
 
 #include "hw/arm/pmb887x/mod.h"
+#include "qemu/host-utils.h"
 #include "hw/arm/pmb887x/gen/cpu_regs.h"
 #include "hw/core/hw-error.h"
 #include "hw/arm/pmb887x/trace.h"
@@ -224,10 +225,10 @@ void pmb887x_srb_set_icr(pmb887x_srb_reg_t *reg, uint32_t value) {
 }
 
 void pmb887x_srb_set_isr(pmb887x_srb_reg_t *reg, uint32_t value) {
-	for (int i = 0; i < 32; i++) {
-		uint32_t mask = 1U << i;
-		if ((value & mask))
-			pmb887x_srb_set_event(reg, i, 1);
+	while (value) {
+		int i = ctz32(value);
+		value &= value - 1;
+		pmb887x_srb_set_event(reg, i, 1);
 	}
 }
 

@@ -68,6 +68,13 @@ struct pmb887x_dif_t {
 	qemu_irq gpio_data[8];
 	qemu_irq gpio_cs[3];
 	qemu_irq gpio_cd;
+	/* last level driven on CS1..3/CD/RD/WR (-1 = never): the pins are
+	 * re-driven on every FIFO word and every consumer (GPIO proxy, LCD
+	 * CD/RD, SSI CS) is level-idempotent, so an unchanged level is skipped */
+	int8_t gpio_pin_level[6];
+	/* same for the eight DMAC request lines (dmac_handle_signal ignores an
+	 * unchanged level anyway) */
+	int8_t dmac_req_level[8];
 	qemu_irq gpio_wr;
 	qemu_irq gpio_rd;
 
@@ -91,6 +98,12 @@ struct pmb887x_dif_t {
 	uint8_t bit_invert[32];
 	uint8_t bit_bcreg[32];
 	uint8_t bit_bcsel[32];
+	/* dif_mux() as four byte-lane lookups: mux_tab[cd][lane][byte] ORed
+	 * together, plus the constant bits (bcsel == 1) and the invert mask —
+	 * rebuilt by dif_update_mux, exactly the bit-per-bit result */
+	uint32_t mux_tab[2][4][256];
+	uint32_t mux_const[2];
+	uint32_t mux_invert;
 
 	uint32_t con;
 	uint32_t perreg;
@@ -230,14 +243,20 @@ static void dif_update_gpio_state(pmb887x_dif_t *p) {
 	for (int i = 0; i < ARRAY_SIZE(cs_pins); i++) {
 		bool polarity = (p->perreg & cs_pins[i].perreg) != 0;
 		bool value = cs_pins[i].value;
-		if (polarity) {
-			// DPRINTF("%s=%d set %s\n", cs_pins[i].name, value, value ? "HIGH" : "LOW");
-			qemu_set_irq(cs_pins[i].pin, value ? 1 : 0);
-		} else {
-			// DPRINTF("%s=%d set %s\n", cs_pins[i].name, value, value ? "LOW" : "HIGH");
-			qemu_set_irq(cs_pins[i].pin, value ? 0 : 1);
-		}
+		int level = polarity ? (value ? 1 : 0) : (value ? 0 : 1);
+		if (p->gpio_pin_level[i] == level)
+			continue;
+		p->gpio_pin_level[i] = level;
+		// DPRINTF("%s=%d set %s\n", cs_pins[i].name, value, level ? "HIGH" : "LOW");
+		qemu_set_irq(cs_pins[i].pin, level);
 	}
+}
+
+static inline void dif_set_dmac_req(pmb887x_dif_t *p, int i, qemu_irq req, int level) {
+	if (p->dmac_req_level[i] == level)
+		return;
+	p->dmac_req_level[i] = level;
+	qemu_set_irq(req, level);
 }
 
 static void dif_schedule(pmb887x_dif_t *p) {
@@ -258,27 +277,27 @@ static void dif_schedule(pmb887x_dif_t *p) {
 static void dif_trigger_dma(pmb887x_dif_t *p) {
 	uint32_t ris = pmb887x_srb_get_ris_dma(&p->srb);
 	if (p->dmac_tx_clr) {
-		qemu_set_irq(p->dmac_tx_sreq, 0);
-		qemu_set_irq(p->dmac_tx_breq, 0);
-		qemu_set_irq(p->dmac_tx_lsreq, 0);
-		qemu_set_irq(p->dmac_tx_lbreq, 0);
+		dif_set_dmac_req(p, 0, p->dmac_tx_sreq, 0);
+		dif_set_dmac_req(p, 1, p->dmac_tx_breq, 0);
+		dif_set_dmac_req(p, 2, p->dmac_tx_lsreq, 0);
+		dif_set_dmac_req(p, 3, p->dmac_tx_lbreq, 0);
 	} else {
-		qemu_set_irq(p->dmac_tx_sreq, (ris & DIFv2_RIS_TXSREQ) != 0);
-		qemu_set_irq(p->dmac_tx_breq, (ris & DIFv2_RIS_TXBREQ) != 0);
-		qemu_set_irq(p->dmac_tx_lsreq, (ris & DIFv2_RIS_TXLSREQ) != 0);
-		qemu_set_irq(p->dmac_tx_lbreq, (ris & DIFv2_RIS_TXLBREQ) != 0);
+		dif_set_dmac_req(p, 0, p->dmac_tx_sreq, (ris & DIFv2_RIS_TXSREQ) != 0);
+		dif_set_dmac_req(p, 1, p->dmac_tx_breq, (ris & DIFv2_RIS_TXBREQ) != 0);
+		dif_set_dmac_req(p, 2, p->dmac_tx_lsreq, (ris & DIFv2_RIS_TXLSREQ) != 0);
+		dif_set_dmac_req(p, 3, p->dmac_tx_lbreq, (ris & DIFv2_RIS_TXLBREQ) != 0);
 	}
 
 	if (p->dmac_rx_clr) {
-		qemu_set_irq(p->dmac_rx_sreq, 0);
-		qemu_set_irq(p->dmac_rx_breq, 0);
-		qemu_set_irq(p->dmac_rx_lsreq, 0);
-		qemu_set_irq(p->dmac_rx_lbreq, 0);
+		dif_set_dmac_req(p, 4, p->dmac_rx_sreq, 0);
+		dif_set_dmac_req(p, 5, p->dmac_rx_breq, 0);
+		dif_set_dmac_req(p, 6, p->dmac_rx_lsreq, 0);
+		dif_set_dmac_req(p, 7, p->dmac_rx_lbreq, 0);
 	} else {
-		qemu_set_irq(p->dmac_rx_sreq, (ris & DIFv2_RIS_RXSREQ) != 0);
-		qemu_set_irq(p->dmac_rx_breq, (ris & DIFv2_RIS_RXBREQ) != 0);
-		qemu_set_irq(p->dmac_rx_lsreq, (ris & DIFv2_RIS_RXLSREQ) != 0);
-		qemu_set_irq(p->dmac_rx_lbreq, (ris & DIFv2_RIS_RXLBREQ) != 0);
+		dif_set_dmac_req(p, 4, p->dmac_rx_sreq, (ris & DIFv2_RIS_RXSREQ) != 0);
+		dif_set_dmac_req(p, 5, p->dmac_rx_breq, (ris & DIFv2_RIS_RXBREQ) != 0);
+		dif_set_dmac_req(p, 6, p->dmac_rx_lsreq, (ris & DIFv2_RIS_RXLSREQ) != 0);
+		dif_set_dmac_req(p, 7, p->dmac_rx_lbreq, (ris & DIFv2_RIS_RXLBREQ) != 0);
 	}
 }
 
@@ -405,13 +424,21 @@ static void dif_reset_rx_fifo(pmb887x_dif_t *p) {
 }
 
 static inline uint32_t dif_mux(pmb887x_dif_t *p, uint32_t value) {
-	uint32_t csreg = dif_get_transfer_csreg(p);
+	int cd = (dif_get_transfer_csreg(p) & DIFv2_CSREG_CD) != 0;
+	const uint32_t (*t)[256] = p->mux_tab[cd];
+	return (t[0][value & 0xFF] | t[1][(value >> 8) & 0xFF] |
+	        t[2][(value >> 16) & 0xFF] | t[3][value >> 24] |
+	        p->mux_const[cd]) ^ p->mux_invert;
+}
+
+/* the bit-per-bit definition dif_mux() used to evaluate per word */
+static uint32_t dif_mux_slow(pmb887x_dif_t *p, bool cd, uint32_t value) {
 	uint32_t new_value = 0;
 	for (uint32_t output_bit = 0; output_bit < 32; output_bit++) {
 		uint32_t bit = 0;
 
 		if (p->bit_bcsel[output_bit] == 0) {
-			uint32_t input_bit = (csreg & DIFv2_CSREG_CD) ? output_bit : p->bit_mux[output_bit];
+			uint32_t input_bit = cd ? output_bit : p->bit_mux[output_bit];
 			bit = (value >> input_bit) & 1;
 		} else if (p->bit_bcsel[output_bit] == 1) {
 			bit = p->bit_bcreg[output_bit];
@@ -421,6 +448,24 @@ static inline uint32_t dif_mux(pmb887x_dif_t *p, uint32_t value) {
 		new_value |= (bit << output_bit);
 	}
 	return new_value;
+}
+
+static void dif_build_mux_tables(pmb887x_dif_t *p) {
+	p->mux_invert = 0;
+	for (uint32_t o = 0; o < 32; o++) {
+		if (p->bit_invert[o])
+			p->mux_invert |= 1U << o;
+	}
+	for (int cd = 0; cd < 2; cd++) {
+		/* constant / invert part = the mux of zero, before inversion */
+		p->mux_const[cd] = dif_mux_slow(p, cd, 0) ^ p->mux_invert;
+		for (uint32_t lane = 0; lane < 4; lane++) {
+			for (uint32_t b = 0; b < 256; b++) {
+				uint32_t v = dif_mux_slow(p, cd, b << (8 * lane)) ^ p->mux_invert;
+				p->mux_tab[cd][lane][b] = v & ~p->mux_const[cd];
+			}
+		}
+	}
 }
 
 static uint32_t dif_convert_color(pmb887x_dif_t *p, uint32_t value) {
@@ -816,6 +861,7 @@ static void dif_update_mux(pmb887x_dif_t *p) {
 		// DIF_INVERT_BIT
 		p->bit_invert[i] = p->invert_bit & (1 << i) ? 1 : 0;
 	}
+	dif_build_mux_tables(p);
 
 #if PMB887X_DIF_DUMP_BIT_MUX
 	g_autoptr(GString) mux_str = g_string_new("");
@@ -1338,6 +1384,8 @@ static void dif_reset(DeviceState *dev) {
 	pmb887x_dif_t *p = PMB887X_DIF(dev);
 
 	timer_del(p->timer);
+	memset(p->gpio_pin_level, -1, sizeof(p->gpio_pin_level));
+	memset(p->dmac_req_level, -1, sizeof(p->dmac_req_level));
 
 	pmb887x_clc_init(&p->clc);
 	pmb887x_clc_set(&p->clc, MOD_CLC_DISR);
