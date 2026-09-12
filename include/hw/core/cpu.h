@@ -207,6 +207,16 @@ typedef uint32_t MMUIdxMap;
 #define CPU_VTLB_SIZE 8
 
 /*
+ * Granularity of the per-TLB physical-address summary (see phys_group in
+ * CPUTLBDesc): one 64-bit mask per group of 64 table entries, one bit per
+ * 64 MB of physical address space.  Tables larger than
+ * TLB_PHYS_GROUPS << TLB_PHYS_GROUP_BITS entries fall back to a full walk.
+ */
+#define TLB_PHYS_GROUP_BITS 6
+#define TLB_PHYS_GROUPS 256
+#define TLB_PHYS_BUCKET_BITS 25
+
+/*
  * The full TLB entry, which is not accessed by generated TCG code,
  * so the layout is not as critical as that of CPUTLBEntry. This is
  * also why we don't want to combine the two structs.
@@ -317,6 +327,17 @@ typedef struct CPUTLBDesc {
     size_t n_fills;
     /* The next index to use in the tlb victim table.  */
     size_t vindex;
+    /*
+     * Physical-address summary, so a memory-topology commit does not have
+     * to walk every entry (tlb_flush_phys_ranges).  phys_group[g] is a
+     * bitmap of the 64 MB physical buckets the entries of the 64-entry
+     * group g translate into; phys_any is the OR over the groups and the
+     * victim table.  Both are conservative - bits are added on fill and
+     * never removed on eviction - and a commit that walks a group rewrites
+     * that group's mask exactly, so staleness cannot accumulate.
+     */
+    uint64_t phys_any;
+    uint64_t phys_group[TLB_PHYS_GROUPS];
     /* The tlb victim table, in two parts.  */
     CPUTLBEntry vtable[CPU_VTLB_SIZE];
     CPUTLBEntryFull vfulltlb[CPU_VTLB_SIZE];
