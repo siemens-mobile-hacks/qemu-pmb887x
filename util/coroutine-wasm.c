@@ -24,6 +24,35 @@
 #include "qemu/coroutine-tls.h"
 
 #include <emscripten/fiber.h>
+#include <emscripten/em_js.h>
+
+static __thread bool co_forbidden_thread;
+
+void qemu_coroutine_forbid_current_thread(void)
+{
+    co_forbidden_thread = true;
+}
+
+/*
+ * QEMU_COSTACK=1: log every distinct JS/wasm call stack at a coroutine
+ * switch (Asyncify must instrument exactly these frames; the set feeds
+ * -sASYNCIFY_ONLY).  Frames print as wasm-function[N], resolved with the
+ * .symbols sidecar.
+ */
+EM_JS(void, wasm_costack_trace, (void), {
+    var lim = Error.stackTraceLimit;
+    Error.stackTraceLimit = 400;
+    var s = new Error().stack;
+    Error.stackTraceLimit = lim;
+    var key = s.replace(/:0x[0-9a-f]+[\x29]?/g, "").replace(/https?:[\x2f][\x2f][^ \x29]*[\x2f]/g, "");
+    if (!globalThis.__costacks) globalThis.__costacks = new Set();
+    if (!globalThis.__costacks.has(key)) {
+        globalThis.__costacks.add(key);
+        console.log("[qemu] COSTACK " + key.split("\n").slice(1).map(function (l) {
+            return l.trim().replace(/^at /, "");
+        }).join(" | "));
+    }
+});
 
 typedef struct {
     Coroutine base;
@@ -88,8 +117,21 @@ CoroutineAction qemu_coroutine_switch(Coroutine *from_, Coroutine *to_,
     CoroutineEmscripten *from = DO_UPCAST(CoroutineEmscripten, base, from_);
     CoroutineEmscripten *to = DO_UPCAST(CoroutineEmscripten, base, to_);
 
+    if (co_forbidden_thread) {
+        /*
+         * Only the frames in configs/meson/asyncify-only.txt can be
+         * unwound; a vCPU thread stack (JIT'd TB frames, invoke_*
+         * wrappers) never can, so fail loudly instead of derailing.
+         */
+        fprintf(stderr, "qemu: coroutine switch on the vCPU thread "
+                "(not Asyncify-instrumented) — aborting\n");
+        abort();
+    }
     set_current(to_);
     to->action = action;
+    if (getenv("QEMU_COSTACK")) {
+        wasm_costack_trace();
+    }
     emscripten_fiber_swap(&from->fiber, &to->fiber);
     return from->action;
 }
