@@ -381,6 +381,40 @@ static inline bool check_for_breakpoints(CPUState *cpu, vaddr pc,
         check_for_breakpoints_slow(cpu, pc, cflags);
 }
 
+/*
+ * helper_lookup_tb_ptr runs once per indirect jump - 2.9M/s on this
+ * firmware, 78M per boot - and two of its calls are pure dispatch on a
+ * build with exactly one target and one accelerator:
+ *
+ *  - get_tb_cpu_state is reached through cpu->cc->tcg_ops, i.e. a wasm
+ *    call_indirect (table bounds + signature check) around a function
+ *    the linker could have called directly;
+ *  - curr_cflags() lives in another translation unit, so the four
+ *    debug-only conditions it tests (none of which can be true in a
+ *    browser build: no gdbstub single-step, no -one-insn-per-tb, no
+ *    -d nochain) cost a call instead of folding away.
+ *
+ * Both are wasm-only shortcuts: the generic paths stay for every other
+ * build.
+ */
+#ifdef __EMSCRIPTEN__
+TCGTBCPUState arm_get_tb_cpu_state(CPUState *cs);
+#define W64_GET_TB_CPU_STATE(cpu)  arm_get_tb_cpu_state(cpu)
+
+static inline uint32_t curr_cflags_fast(CPUState *cpu)
+{
+    if (likely(!cpu_single_stepping(cpu) &&
+               !qatomic_read(&one_insn_per_tb) &&
+               !qemu_loglevel_mask(CPU_LOG_TB_NOCHAIN))) {
+        return cpu->tcg_cflags;
+    }
+    return curr_cflags(cpu);
+}
+#else
+#define W64_GET_TB_CPU_STATE(cpu)  ((cpu)->cc->tcg_ops->get_tb_cpu_state(cpu))
+#define curr_cflags_fast(cpu)      curr_cflags(cpu)
+#endif
+
 /**
  * helper_lookup_tb_ptr: quick check for next tb
  * @env: current cpu state
@@ -403,8 +437,8 @@ const void *HELPER(lookup_tb_ptr)(CPUArchState *env)
      */
     cpu->neg.can_do_io = true;
 
-    TCGTBCPUState s = cpu->cc->tcg_ops->get_tb_cpu_state(cpu);
-    s.cflags = curr_cflags(cpu);
+    TCGTBCPUState s = W64_GET_TB_CPU_STATE(cpu);
+    s.cflags = curr_cflags_fast(cpu);
 
     if (check_for_breakpoints(cpu, s.pc, &s.cflags)) {
         cpu_loop_exit(cpu);
