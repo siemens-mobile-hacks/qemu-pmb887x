@@ -133,7 +133,7 @@ struct TranslationBlock {
      * of execution so the browser compiles TBs in batches
      * (accel/tcg/cpu-exec.c w64_speculate).  A hint only.
      */
-    vaddr w64_succ[2];
+    vaddr w64_succ[3];
     uint8_t w64_nsucc;
 #endif
 

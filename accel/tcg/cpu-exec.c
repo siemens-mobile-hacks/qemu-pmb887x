@@ -632,12 +632,18 @@ void cpu_exec_step_atomic(CPUState *cpu)
 #define W64_SPEC_MAX 64
 int w64_spec_active;
 
+static bool w64_spec_code_host(CPUArchState *env, vaddr pc, int mmu_idx,
+                               void **host)
+{
+    int flags = probe_access_full_mmu(env, pc, 0, MMU_INST_FETCH, mmu_idx,
+                                      host, NULL);
+    return *host != NULL && !(flags & (TLB_INVALID_MASK | TLB_MMIO));
+}
+
 static bool w64_spec_code_ram(CPUArchState *env, vaddr pc, int mmu_idx)
 {
     void *host;
-    int flags = probe_access_full_mmu(env, pc, 0, MMU_INST_FETCH, mmu_idx,
-                                      &host, NULL);
-    return host != NULL && !(flags & (TLB_INVALID_MASK | TLB_MMIO));
+    return w64_spec_code_host(env, pc, mmu_idx, &host);
 }
 
 static bool w64_speculate(CPUState *cpu, TranslationBlock *root,
@@ -653,7 +659,7 @@ static bool w64_speculate(CPUState *cpu, TranslationBlock *root,
 
     if (budget < 0) {
         const char *e = getenv("W64_SPEC_N");
-        budget = e ? atoi(e) : 16;
+        budget = e ? atoi(e) : 32;
         budget = MIN(MAX(budget, 0), W64_SPEC_MAX);
     }
     static unsigned st[6];   /* misses, nosucc, exists, notram, made, oneshot */
@@ -679,16 +685,37 @@ static bool w64_speculate(CPUState *cpu, TranslationBlock *root,
     queue[qt++] = root;
     while (qh < qt && made < (unsigned)budget) {
         TranslationBlock *tb = queue[qh++];
+        vaddr succ[ARRAY_SIZE(tb->w64_succ) + 1];
+        unsigned nsucc = tb->w64_nsucc;
         unsigned i;
 
-        for (i = 0; i < tb->w64_nsucc && made < (unsigned)budget &&
-             qt < qmax; i++) {
+        memcpy(succ, tb->w64_succ, nsucc * sizeof(succ[0]));
+        /*
+         * ARM `ldr pc, [pc, #-4]` trampolines (the firmware's call
+         * thunks): the target is the literal right after the insn.
+         * Read through the non-faulting probe's host pointer; a wrong
+         * guess is just a probe-validated, never-executed TB.
+         */
+        if (!(tb->cflags & CF_PCREL) && tb->size >= 4) {
+            vaddr last = tb->pc + tb->size - 4;
+            void *h1, *h2;
+            if (w64_spec_code_host(env, last, mmu_idx, &h1) &&
+                ldl_le_p(h1) == 0xe51ff004 &&
+                w64_spec_code_host(env, last + 4, mmu_idx, &h2)) {
+                vaddr target = ldl_le_p(h2);
+                if (!(target & 3)) {
+                    succ[nsucc++] = target;
+                }
+            }
+        }
+
+        for (i = 0; i < nsucc && made < (unsigned)budget && qt < qmax; i++) {
             TCGTBCPUState t = s;
             TranslationBlock *ex;
             vaddr next_page;
             unsigned k;
 
-            t.pc = tb->w64_succ[i];
+            t.pc = succ[i];
             /*
              * Non-faulting probes first — before tb_htable_lookup, whose
              * get_page_addr_code() would deliver a prefetch abort to the
