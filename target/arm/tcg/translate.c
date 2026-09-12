@@ -1490,7 +1490,16 @@ static int gen_set_psr(DisasContext *s, uint32_t mask, int spsr, TCGv_i32 t0)
     } else {
         gen_set_cpsr(t0, mask);
     }
-    gen_lookup_tb(s);
+    /*
+     * Continue through goto_ptr (next-TB lookup with the rebuilt hflags)
+     * instead of a plain exit to cpu_exec_loop: the only thing the loop
+     * round added was cpu_handle_interrupt, and helper_cpsr_write requests
+     * exactly that (an exit at the next TB start) whenever an interrupt is
+     * pending — this write may just have unmasked it.  The firmware's
+     * critical sections make this the most frequent TB exit of the boot.
+     */
+    gen_pc_plus_diff(s, cpu_R[15], curr_insn_len(s));
+    s->base.is_jmp = DISAS_JUMP;
     return 0;
 }
 
@@ -1729,8 +1738,9 @@ static void gen_rfe(DisasContext *s, TCGv_i32 pc, TCGv_i32 cpsr)
      */
     translator_io_start(&s->base);
     gen_helper_cpsr_write_eret(tcg_env, cpsr);
-    /* Must exit loop to check un-masked IRQs */
-    s->base.is_jmp = DISAS_EXIT;
+    /* Un-masked IRQs: the helper requests the next-TB-start exit (see
+     * gen_set_psr); pc is already stored, so look up and go. */
+    s->base.is_jmp = DISAS_JUMP;
 }
 
 /* Generate an old-style exception return. Marks pc as dead. */
@@ -5301,8 +5311,8 @@ static bool do_ldm(DisasContext *s, arg_ldst_block *a)
         tmp = load_cpu_field(spsr);
         translator_io_start(&s->base);
         gen_helper_cpsr_write_eret(tcg_env, tmp);
-        /* Must exit loop to check un-masked IRQs */
-        s->base.is_jmp = DISAS_EXIT;
+        /* Un-masked IRQs: see gen_rfe */
+        s->base.is_jmp = DISAS_JUMP;
     }
     clear_eci_state(s);
     return true;

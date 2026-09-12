@@ -802,11 +802,27 @@ uint32_t HELPER(cpsr_read)(CPUARMState *env)
     return cpsr_read(env) & ~CPSR_EXEC;
 }
 
+/*
+ * The TB that wrote CPSR continues through goto_ptr rather than a plain
+ * exit (gen_set_psr / gen_rfe): if any interrupt is pending — including
+ * one that was masked until this write — make the next TB start unwind
+ * to cpu_handle_interrupt, exactly where the plain exit would have gone.
+ */
+static void cpsr_write_check_irq(CPUARMState *env)
+{
+    CPUState *cs = env_cpu(env);
+
+    if (qatomic_read(&cs->interrupt_request)) {
+        qatomic_set(&cs->neg.icount_decr.u16.high, -1);
+    }
+}
+
 void HELPER(cpsr_write)(CPUARMState *env, uint32_t val, uint32_t mask)
 {
     cpsr_write(env, val, mask, CPSRWriteByInstr);
     /* TODO: Not all cpsr bits are relevant to hflags.  */
     arm_rebuild_hflags(env);
+    cpsr_write_check_irq(env);
 }
 
 /* Write the CPSR for a 32-bit exception return */
@@ -832,6 +848,7 @@ void HELPER(cpsr_write_eret)(CPUARMState *env, uint32_t val)
     bql_lock();
     arm_call_el_change_hook(env_archcpu(env));
     bql_unlock();
+    cpsr_write_check_irq(env);
 }
 
 /* Access to user mode registers from privileged modes.  */
