@@ -48,6 +48,11 @@
 #include "internal-common.h"
 #if !defined(CONFIG_USER_ONLY)
 #include "accel/tcg/iommu.h"
+#ifdef CONFIG_TCG_WASM64
+#include "accel/tcg/probe.h"
+#include "accel/tcg/cpu-mmu-index.h"
+#include "exec/tlb-flags.h"
+#endif
 #endif
 
 /* -icount align implementation. */
@@ -600,6 +605,142 @@ void cpu_exec_step_atomic(CPUState *cpu)
     end_exclusive();
 }
 
+#ifdef CONFIG_TCG_WASM64
+/*
+ * Speculative successor translation for the wasm64 backend.
+ *
+ * Every translated TB has to be compiled by the browser
+ * (WebAssembly.Module) before it can run, and each compile carries a
+ * large fixed cost — plus, in Firefox, a page-granular slice of a
+ * process-wide executable-memory budget that is only reclaimed by GC.
+ * Compiling one module per TB at first execution paid that cost ~1k
+ * times per second in the early boot.  Instead, when a TB is
+ * translated on a lookup miss, its goto_tb destinations (and theirs,
+ * breadth-first, up to W64_SPEC_N TBs) are translated right away;
+ * they all join the backend's open batch, which is assembled into ONE
+ * module when the first of them executes (tcg_qemu_tb_exec).
+ *
+ * Translation here must be side-effect free for the guest: only
+ * targets whose page AND the following page (a TB may cross into it)
+ * are executable RAM are translated, so the translator never takes a
+ * faulting code-fetch path; the cflags must be the plain ones (no
+ * one-shot CF_COUNT/CF_LAST_IO request pending); and nothing is done
+ * when the code buffer is nearly full, so a tb_flush cannot be
+ * triggered from here (a flush would free @root under the caller).
+ * Returns true if a flush happened anyway (caller re-looks-up).
+ */
+#define W64_SPEC_MAX 64
+int w64_spec_active;
+
+static bool w64_spec_code_ram(CPUArchState *env, vaddr pc, int mmu_idx)
+{
+    void *host;
+    int flags = probe_access_full_mmu(env, pc, 0, MMU_INST_FETCH, mmu_idx,
+                                      &host, NULL);
+    return host != NULL && !(flags & (TLB_INVALID_MASK | TLB_MMIO));
+}
+
+static bool w64_speculate(CPUState *cpu, TranslationBlock *root,
+                          TCGTBCPUState s)
+{
+    static int budget = -1;
+    CPUArchState *env = cpu_env(cpu);
+    TranslationBlock *queue[4 * W64_SPEC_MAX + 1];
+    unsigned qh = 0, qt = 0, made = 0;
+    const unsigned qmax = ARRAY_SIZE(queue);
+    unsigned flush_count = tb_ctx.tb_flush_count;
+    int mmu_idx = cpu_mmu_index(cpu, true);
+
+    if (budget < 0) {
+        const char *e = getenv("W64_SPEC_N");
+        budget = e ? atoi(e) : 16;
+        budget = MIN(MAX(budget, 0), W64_SPEC_MAX);
+    }
+    static unsigned st[6];   /* misses, nosucc, exists, notram, made, oneshot */
+    static int dbg = -1;
+    if (dbg < 0) {
+        dbg = getenv("W64_DEBUG") != NULL;
+    }
+    st[0]++;
+    if (s.cflags != curr_cflags(cpu)) {
+        st[5]++;
+    } else if (root->w64_nsucc == 0) {
+        st[1]++;
+    }
+    if (dbg && (st[0] & 4095) == 0) {
+        fprintf(stderr, "W64SPEC misses=%u nosucc=%u oneshot=%u exists=%u "
+                "notram=%u made=%u\n", st[0], st[1], st[5], st[2], st[3], st[4]);
+    }
+    if (budget == 0 || root->w64_nsucc == 0 ||
+        s.cflags != curr_cflags(cpu)) {
+        return false;
+    }
+
+    queue[qt++] = root;
+    while (qh < qt && made < (unsigned)budget) {
+        TranslationBlock *tb = queue[qh++];
+        unsigned i;
+
+        for (i = 0; i < tb->w64_nsucc && made < (unsigned)budget &&
+             qt < qmax; i++) {
+            TCGTBCPUState t = s;
+            TranslationBlock *ex;
+            vaddr next_page;
+            unsigned k;
+
+            t.pc = tb->w64_succ[i];
+            /*
+             * Non-faulting probes first — before tb_htable_lookup, whose
+             * get_page_addr_code() would deliver a prefetch abort to the
+             * guest for a target it does not map, or (blx: a Thumb
+             * target recorded while in ARM mode) an alignment fault.  A
+             * successful probe fills the TLB, so the faulting lookups in
+             * tb_htable_lookup, tb_gen_code and translator_ld then hit.
+             */
+            if (!w64_spec_code_ram(env, t.pc, mmu_idx)) {
+                st[3]++;
+                continue;
+            }
+            next_page = (t.pc & TARGET_PAGE_MASK) + TARGET_PAGE_SIZE;
+            if (next_page > t.pc && !w64_spec_code_ram(env, next_page, mmu_idx)) {
+                st[3]++;
+                continue;
+            }
+            ex = tb_htable_lookup(cpu, t);
+            if (ex) {
+                /* already translated: walk through it, its successors
+                 * may still be missing (once per node) */
+                st[2]++;
+                for (k = 0; k < qt && queue[k] != ex; k++) {
+                    continue;
+                }
+                if (k == qt) {
+                    queue[qt++] = ex;
+                }
+                continue;
+            }
+            st[4]++;
+            /* leave headroom: never provoke a flush from here */
+            if ((char *)tcg_ctx->code_gen_highwater -
+                (char *)tcg_ctx->code_gen_ptr < (1 << 20)) {
+                return false;
+            }
+            mmap_lock();
+            w64_spec_active = 1;
+            queue[qt] = tb_gen_code(cpu, t);
+            w64_spec_active = 0;
+            mmap_unlock();
+            made++;
+            if (tb_ctx.tb_flush_count != flush_count) {
+                return true;
+            }
+            qt++;
+        }
+    }
+    return false;
+}
+#endif
+
 void tb_set_jmp_target(TranslationBlock *tb, int n, uintptr_t addr)
 {
     /*
@@ -985,6 +1126,14 @@ cpu_exec_loop(CPUState *cpu, SyncClocks *sc)
                 mmap_lock();
                 tb = tb_gen_code(cpu, s);
                 mmap_unlock();
+
+#ifdef CONFIG_TCG_WASM64
+                if (w64_speculate(cpu, tb, s)) {
+                    /* a tb_flush freed @tb: start the lookup over */
+                    last_tb = NULL;
+                    continue;
+                }
+#endif
 
                 /*
                  * We add the TB in the virtual pc hash table

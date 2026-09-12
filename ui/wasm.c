@@ -170,10 +170,54 @@ uint64_t wasm_insns(void)
 
 /* Diagnostics: memory-subsystem counters (see include/qemu/wasm-diag.h). */
 #include "qemu/wasm-diag.h"
+#include "hw/core/cpu.h"
 EMSCRIPTEN_KEEPALIVE
 uint64_t wasm_memstat(int32_t idx)
 {
     return idx >= 0 && idx < WASM_DIAG_N ? wasm_diag_stat[idx] : 0;
+}
+
+/* Current guest pc of the first vCPU (diagnostics: where is it spinning). */
+EMSCRIPTEN_KEEPALIVE
+uint64_t wasm_pc(void)
+{
+    CPUState *cs = first_cpu;
+    return cs ? cs->cc->get_pc(cs) : 0;
+}
+
+/* Diagnostics: a gdb-numbered register (ARM: 25 = CPSR), the pending
+ * interrupt_request mask, and a 32-bit guest memory word. */
+#include "exec/gdbstub.h"
+#include "exec/cpu-common.h"
+EMSCRIPTEN_KEEPALIVE
+uint64_t wasm_reg(int32_t idx)
+{
+    CPUState *cs = first_cpu;
+    GByteArray *buf = g_byte_array_sized_new(8);
+    uint64_t v = 0;
+    if (cs && gdb_read_register(cs, buf, idx)) {
+        memcpy(&v, buf->data, buf->len < 8 ? buf->len : 8);
+    }
+    g_byte_array_free(buf, TRUE);
+    return v;
+}
+
+EMSCRIPTEN_KEEPALIVE
+uint32_t wasm_irq_pending(void)
+{
+    CPUState *cs = first_cpu;
+    return cs ? (uint32_t)cs->interrupt_request : 0;
+}
+
+EMSCRIPTEN_KEEPALIVE
+uint32_t wasm_peek(uint32_t addr)
+{
+    CPUState *cs = first_cpu;
+    uint32_t v = 0;
+    if (cs) {
+        cpu_memory_rw_debug(cs, addr, &v, 4, 0);
+    }
+    return v;
 }
 
 /* Guest virtual clock in ns (diagnostics: boot progress). */
