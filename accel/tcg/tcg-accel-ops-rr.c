@@ -25,6 +25,7 @@
 
 #include "qemu/osdep.h"
 #include "qemu/lockable.h"
+#include "qemu/wasm-diag.h"
 #include "system/tcg.h"
 #include "system/replay.h"
 #include "exec/icount.h"
@@ -126,6 +127,9 @@ static void rr_idle_advance(void)
 {
     int i;
 
+#ifdef __EMSCRIPTEN__
+    wasm_diag_stat[WASM_DIAG_HALT]++;
+#endif
     for (i = 0; i < 64 && all_cpu_threads_idle(); i++) {
         int64_t deadline = qemu_clock_deadline_ns_all(QEMU_CLOCK_VIRTUAL,
                                                       ~QEMU_TIMER_ATTR_EXTERNAL);
