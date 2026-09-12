@@ -311,6 +311,10 @@ typedef struct CPUTLBDesc {
     /* maximum number of entries observed in the window */
     size_t window_max_entries;
     size_t n_used_entries;
+    /* fills since the last flush/resize (tlb_set_page_full grows the
+     * table when this exceeds twice its size — a guest that never flushes
+     * its TLB never reached the flush-time resize policy) */
+    size_t n_fills;
     /* The next index to use in the tlb victim table.  */
     size_t vindex;
     /* The tlb victim table, in two parts.  */
