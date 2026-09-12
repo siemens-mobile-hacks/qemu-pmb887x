@@ -333,7 +333,6 @@ void icount_start_warp_timer(void)
     }
 
     /* We want to use the earliest deadline from ALL vm_clocks */
-    clock = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL_RT);
     deadline = qemu_clock_deadline_ns_all(QEMU_CLOCK_VIRTUAL,
                                           ~QEMU_TIMER_ATTR_EXTERNAL);
     if (deadline < 0) {
@@ -375,6 +374,7 @@ void icount_start_warp_timer(void)
              * you will not be sending network packets continuously instead of
              * every 100ms.
              */
+            clock = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL_RT);
             seqlock_write_lock(&timers_state.vm_clock_seqlock,
                                &timers_state.vm_clock_lock);
             if (timers_state.vm_clock_warp_start == -1
