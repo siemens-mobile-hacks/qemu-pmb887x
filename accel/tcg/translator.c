@@ -114,6 +114,23 @@ void translator_note_succ(DisasContextBase *db, vaddr dest)
     TranslationBlock *tb = db->tb;
     unsigned i;
 
+    /*
+     * Narrow to the guest's address width.  The frontends compute a
+     * branch target as a 64-bit `pc + diff` (gen_goto_tb) and hand it
+     * over unnarrowed: on a 32-bit guest a target that wraps around zero
+     * arrives sign-extended.  Upstream only same-page-tests the value, so
+     * a wrong high half merely disables goto_tb, but w64_speculate feeds
+     * it to tb_gen_code as a real address — and translator_ld then aborts
+     * on "(base ^ pc) & TARGET_PAGE_MASK", comparing a sign-extended
+     * db->pc_first against a pc the frontend zero-extended.  KE800 died
+     * there ~90 s in: a TB at guest 0x0 branches back by -0xebb0 into the
+     * 0xffff0000 high vectors, which is where its GSM L1 interrupt path
+     * lives.
+     */
+    if (tcg_ctx->addr_type == TCG_TYPE_I32) {
+        dest = (uint32_t)dest;
+    }
+
     for (i = 0; i < tb->w64_nsucc; i++) {
         if (tb->w64_succ[i] == dest) {
             return;
