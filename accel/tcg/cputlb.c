@@ -493,6 +493,80 @@ static inline bool tlb_flush_entry_locked(CPUTLBEntry *tlb_entry, vaddr page)
     return tlb_flush_entry_mask_locked(tlb_entry, page, -1);
 }
 
+/*
+ * Selective variant of tlb_flush() for memory topology commits
+ * (tcg_commit): drop only the entries that translate into one of the
+ * changed physical ranges [lo[i], hi[i]) reported by the commit's
+ * region_add/region_del listener callbacks.
+ *
+ * A full tlb_flush() per commit would also throw away every unrelated
+ * code/data translation and pay a page-table walk per page to get them
+ * back; ROM devices flip their romd mode per flash command, which
+ * re-flushed the whole TLB tens of thousands of times per boot (each
+ * flip followed by a ~33-entry refill storm of the running code).
+ *
+ * Entries outside the changed ranges translate to the same section
+ * content as before, so they stay valid - including entries installed
+ * against a previous FlatView variant that a romd commit recycled
+ * (system/memory.c keeps the variants alive; their dispatches and
+ * sections are only freed after tlb_flush() semantics would have
+ * dropped them, see tcg_commit's full-flush fallback).
+ */
+void tlb_flush_phys_ranges(CPUState *cpu,
+                           const hwaddr *lo, const hwaddr *hi,
+                           unsigned n)
+{
+    int mmu_idx;
+
+    assert_cpu_is_self(cpu);
+
+    qemu_spin_lock(&cpu->neg.tlb.c.lock);
+
+    for (mmu_idx = 0; mmu_idx < NB_MMU_MODES; mmu_idx++) {
+        CPUTLBDesc *desc = &cpu->neg.tlb.d[mmu_idx];
+        CPUTLBDescFast *fast = cpu_tlb_fast(cpu, mmu_idx);
+        size_t nr = (fast->mask >> CPU_TLB_ENTRY_BITS) + 1;
+        size_t i;
+        unsigned r;
+
+        for (i = 0; i < nr; i++) {
+            CPUTLBEntry *te = &fast->table[i];
+            hwaddr pa;
+
+            if (tlb_entry_is_empty(te)) {
+                continue;
+            }
+            pa = desc->fulltlb[i].phys_addr;
+            for (r = 0; r < n; r++) {
+                if (pa >= lo[r] && pa < hi[r]) {
+                    memset(te, -1, sizeof(*te));
+                    tlb_n_used_entries_dec(cpu, mmu_idx);
+                    break;
+                }
+            }
+        }
+        for (i = 0; i < CPU_VTLB_SIZE; i++) {
+            CPUTLBEntry *te = &desc->vtable[i];
+            hwaddr pa;
+
+            if (tlb_entry_is_empty(te)) {
+                continue;
+            }
+            pa = desc->vfulltlb[i].phys_addr;
+            for (r = 0; r < n; r++) {
+                if (pa >= lo[r] && pa < hi[r]) {
+                    memset(te, -1, sizeof(*te));
+                    tlb_n_used_entries_dec(cpu, mmu_idx);
+                    break;
+                }
+            }
+        }
+    }
+
+    qemu_spin_unlock(&cpu->neg.tlb.c.lock);
+}
+
+
 /* Called with tlb_c.lock held */
 static void tlb_flush_vtlb_page_mask_locked(CPUState *cpu, int mmu_idx,
                                             vaddr page,

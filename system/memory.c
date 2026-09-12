@@ -35,6 +35,7 @@
 #include "hw/core/boards.h"
 #include "migration/vmstate.h"
 #include "system/address-spaces.h"
+#include "qemu/wasm-diag.h"
 
 #include "memory-internal.h"
 
@@ -52,6 +53,133 @@ static QTAILQ_HEAD(, AddressSpace) address_spaces
     = QTAILQ_HEAD_INITIALIZER(address_spaces);
 
 static GHashTable *flat_views;
+
+static bool flatview_ref(FlatView *view);
+
+/*
+ * Romd-mode FlatView variants.
+ *
+ * A ROM device (pmb887x NOR flash, pflash) toggles romd_mode on every
+ * command: array->command on the first command write, command->array on
+ * READ_ARRAY.  Each toggle is a memory topology change, so the default
+ * commit path throws away *every* FlatView and re-renders all of them -
+ * dominated by the phys-page radix refill of the dispatch tree over the
+ * full flash (a 64 MB flash at 4k granularity = 16k page inserts, ~0.1 ms
+ * per flip on the wasm build, and the firmware flips up to a few hundred
+ * times per second while boot polling flash status).
+ *
+ * But the render is a pure function of the MR-tree state, and romd_mode
+ * is the *only* MR field that these commits change.  So a FlatView can be
+ * tagged with the tree state it was rendered from - (topo_gen, romd_sig):
+ *   topo_gen  - generation of every non-romd topology change (bumped in
+ *               the default flatviews_reset() path and in finalize),
+ *   romd_sig  - identity of the set of ROM-device MRs currently in
+ *               command (non-romd) mode - every other ROM device is in
+ *               array mode, the init default,
+ * and a commit whose only change is romd_mode can reuse a previously
+ * rendered variant of the same (root, tag) instead of re-rendering it.
+ * Correctness of a reuse therefore needs exactly the two tags to match:
+ * any other mutation (subregion add/del, resize, enable, readonly,
+ * alias, finalize, ...) bumps topo_gen, and any other romd combination
+ * gives a different romd_sig.
+ */
+static uint64_t topo_gen = 1;
+static bool romd_update_pending;
+static GPtrArray *romd_off_mrs; /* ROM-device MRs in command mode (owned ptrs, no refs) */
+
+#define ROMD_STASH_SLOTS 16
+typedef struct RomdStashSlot {
+    MemoryRegion *root;
+    uint64_t gen;
+    uint64_t sig;
+    FlatView *view; /* stashed ref */
+} RomdStashSlot;
+static RomdStashSlot romd_stash[ROMD_STASH_SLOTS];
+static unsigned romd_stash_next;
+/* Set when a stashed variant was dropped from the ring; the reader
+ * (the tcg listener's commit, tcg_commit) reacts with a full TLB flush,
+ * since TLB entries may still reference sections of the evicted view and
+ * nothing else guarantees those entries are dropped before the view is
+ * reclaimed by RCU. */
+static bool romd_stash_evicted;
+
+static int romd_ptr_cmp(const void *a, const void *b)
+{
+    uintptr_t x = *(const uintptr_t *)a, y = *(const uintptr_t *)b;
+
+    return x < y ? -1 : x > y;
+}
+
+static uint64_t romd_signature(void)
+{
+    uintptr_t ptrs[16];
+    uint64_t sig = 0x9e3779b97f4a7c15ULL;
+    unsigned n = 0, i;
+
+    if (romd_off_mrs) {
+        n = MIN(romd_off_mrs->len, ARRAY_SIZE(ptrs));
+        for (i = 0; i < n; i++) {
+            ptrs[i] = (uintptr_t)g_ptr_array_index(romd_off_mrs, i);
+        }
+        /* order-insensitive: sort so the same set always hashes equal */
+        qsort(ptrs, n, sizeof(ptrs[0]), romd_ptr_cmp);
+    }
+    for (i = 0; i < n; i++) {
+        sig ^= (uint64_t)ptrs[i];
+        sig *= 0xff51afd7ed558ccdULL;
+        sig ^= sig >> 29;
+    }
+    sig ^= (uint64_t)n << 32;
+    return sig;
+}
+
+static FlatView *romd_stash_lookup(MemoryRegion *root, uint64_t gen,
+                                   uint64_t sig)
+{
+    for (unsigned i = 0; i < ROMD_STASH_SLOTS; i++) {
+        RomdStashSlot *s = &romd_stash[i];
+
+        if (s->view && s->root == root && s->gen == gen && s->sig == sig) {
+            return s->view;
+        }
+    }
+    return NULL;
+}
+
+static void romd_stash_record(MemoryRegion *root, uint64_t gen, uint64_t sig,
+                              FlatView *view)
+{
+    RomdStashSlot *s = &romd_stash[romd_stash_next];
+
+    if (s->view) {
+        romd_stash_evicted = true;
+        flatview_unref(s->view);
+    }
+    s->root = root;
+    s->gen = gen;
+    s->sig = sig;
+    s->view = view;
+    flatview_ref(view);
+    romd_stash_next = (romd_stash_next + 1) % ROMD_STASH_SLOTS;
+}
+
+bool memory_topology_views_recycled(void)
+{
+    return romd_stash_evicted;
+}
+
+static void romd_stash_evicted_reset(void)
+{
+    romd_stash_evicted = false;
+}
+
+static void romd_off_mrs_remove(MemoryRegion *mr)
+{
+    if (romd_off_mrs) {
+        g_ptr_array_remove(romd_off_mrs, mr);
+    }
+}
+
 
 typedef struct AddrRange AddrRange;
 
@@ -751,6 +879,8 @@ static FlatView *generate_memory_topology(MemoryRegion *mr)
     FlatView *view;
 
     view = flatview_new(mr);
+    view->topo_gen = topo_gen;
+    view->romd_sig = romd_signature();
 
     if (mr) {
         render_memory_region(view, mr, int128_zero(),
@@ -766,6 +896,19 @@ static FlatView *generate_memory_topology(MemoryRegion *mr)
         flatview_add_to_dispatch(view, &mrs);
     }
     address_space_dispatch_compact(view->dispatch);
+
+    /*
+     * Keep the rendered variant around for romd-only commits: the next
+     * time the MR tree returns to exactly this (topo_gen, romd_sig) state,
+     * flatviews_update_romd() can adopt it without re-rendering.  Views
+     * hold refs on the MRs they reference, so a stashed view delays the
+     * destruction of its regions until ring eviction - fine for the boot
+     * workload this serves (no hot-unplug of flash devices at runtime).
+     */
+    if (mr) {
+        romd_stash_record(mr, view->topo_gen, view->romd_sig, view);
+    }
+
     g_hash_table_replace(flat_views, mr, view);
 
     return view;
@@ -1137,6 +1280,44 @@ static void address_space_update_topology(AddressSpace *as)
     address_space_set_flatview(as);
 }
 
+/*
+ * Romd-only commit: no FlatView needs re-rendering from scratch.  For
+ * every address-space root, the view rendered from the *current*
+ * (topo_gen, romd_sig) state is, if present in flat_views, still valid
+ * (render is a pure function of the tagged tree state); otherwise a
+ * previously rendered variant comes from the stash, and only a genuine
+ * first sighting renders - and itself becomes stashable.
+ */
+static void flatviews_update_romd(void)
+{
+    AddressSpace *as;
+    uint64_t sig = romd_signature();
+
+    flatviews_init();
+    QTAILQ_FOREACH(as, &address_spaces, address_spaces_link) {
+        MemoryRegion *physmr = memory_region_get_flatview_root(as->root);
+        FlatView *view;
+
+        if (!physmr) {
+            /* the NULL root renders the (constant) empty view */
+            continue;
+        }
+        view = g_hash_table_lookup(flat_views, physmr);
+        if (view && view->topo_gen == topo_gen && view->romd_sig == sig) {
+            /* rendered from exactly this tree state - still current */
+            continue;
+        }
+        view = romd_stash_lookup(physmr, topo_gen, sig);
+        if (view) {
+            wasm_diag_stat[WASM_DIAG_TOPO_REUSED]++;
+            flatview_ref(view);
+            g_hash_table_replace(flat_views, physmr, view);
+        } else {
+            generate_memory_topology(physmr);
+        }
+    }
+}
+
 void memory_region_transaction_begin(void)
 {
     qemu_flush_coalesced_mmio_buffer();
@@ -1153,6 +1334,8 @@ void memory_region_transaction_commit(void)
     --memory_region_transaction_depth;
     if (!memory_region_transaction_depth) {
         if (memory_region_update_pending) {
+            wasm_diag_stat[WASM_DIAG_TOPO_COMMIT]++;
+            topo_gen++;
             flatviews_reset();
 
             MEMORY_LISTENER_CALL_GLOBAL(begin, Forward);
@@ -1164,12 +1347,33 @@ void memory_region_transaction_commit(void)
             memory_region_update_pending = false;
             ioeventfd_update_pending = false;
             MEMORY_LISTENER_CALL_GLOBAL(commit, Forward);
+            romd_stash_evicted_reset();
+        } else if (romd_update_pending) {
+            /*
+             * The only change in this transaction is romd_mode toggles:
+             * same listener sequence as above, but the views are adopted
+             * from the tags/stash instead of re-rendered
+             * (flatviews_update_romd).
+             */
+            wasm_diag_stat[WASM_DIAG_TOPO_COMMIT]++;
+            flatviews_update_romd();
+
+            MEMORY_LISTENER_CALL_GLOBAL(begin, Forward);
+
+            QTAILQ_FOREACH(as, &address_spaces, address_spaces_link) {
+                address_space_set_flatview(as);
+                address_space_update_ioeventfds(as);
+            }
+            ioeventfd_update_pending = false;
+            MEMORY_LISTENER_CALL_GLOBAL(commit, Forward);
+            romd_stash_evicted_reset();
         } else if (ioeventfd_update_pending) {
             QTAILQ_FOREACH(as, &address_spaces, address_spaces_link) {
                 address_space_update_ioeventfds(as);
             }
             ioeventfd_update_pending = false;
         }
+        romd_update_pending = false;
    }
 }
 
@@ -1769,6 +1973,13 @@ static void memory_region_finalize(Object *obj)
 
     mr->destructor(mr);
     memory_region_clear_coalescing(mr);
+    /*
+     * The MR may currently be in the romd off-list; drop it so the
+     * signature never dereferences-or-compares a dangling pointer (its
+     * removal changes the sig, which forces a re-render at the next
+     * romd-only commit even if nothing else did).
+     */
+    romd_off_mrs_remove(mr);
     g_free((char *)mr->name);
     g_free(mr->ioeventfds);
     object_unref(mr->rdm);
@@ -2314,9 +2525,26 @@ void memory_region_set_nonvolatile(MemoryRegion *mr, bool nonvolatile)
 void memory_region_rom_device_set_romd(MemoryRegion *mr, bool romd_mode)
 {
     if (mr->romd_mode != romd_mode) {
+        wasm_diag_stat[WASM_DIAG_ROMD_FLIP]++;
+        if (!romd_off_mrs) {
+            romd_off_mrs = g_ptr_array_new();
+        }
+        /*
+         * The off-list is the complete romd signature input: track the
+         * mode even for disabled MRs (their state is part of the tag
+         * identity; a later enable goes through the full commit path,
+         * which bumps topo_gen and re-renders).
+         */
+        if (romd_mode) {
+            g_ptr_array_remove(romd_off_mrs, mr);
+        } else {
+            g_ptr_array_add(romd_off_mrs, mr);
+        }
         memory_region_transaction_begin();
         mr->romd_mode = romd_mode;
-        memory_region_update_pending |= mr->enabled;
+        if (mr->enabled) {
+            romd_update_pending = true;
+        }
         memory_region_transaction_commit();
     }
 }
