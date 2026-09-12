@@ -894,6 +894,61 @@ static void tcg_out_goto_tb(TCGContext *s, int which)
 
 static void tcg_out_goto_ptr(TCGContext *s, TCGReg a0)
 {
+    /* helper_lookup_tb_ptr returned the next TB's descriptor (or
+     * tcg_code_gen_epilogue on a miss).  Tail-call it through the shared
+     * chain table when it is instantiated, exactly like a linked goto_tb
+     * (same fidx / w64_chain_stop guards): every bx lr / pop {pc} /
+     * ldr pc used to unwind to the C dispatcher and re-enter through the
+     * batch run thunk (0.5-1.7M exits/s early in the boot).
+     *
+     *   block
+     *     $scr0 = a0
+     *     br_if 0 ($scr0 == epilogue || w64_chain_stop != 0
+     *              || i32.load [fidx @ $scr0] == 0)
+     *     $scr32 = i32.load [tidx @ $scr0]
+     *     return_call_indirect $tbsig, table 0 ($env, $sp, $tp, $scr32)
+     *   end
+     *   ... the handoff-slot fallback below (uninstantiated target:
+     *   the dispatcher compiles it; miss: cpu_exec_loop looks it up) */
+    tcg_debug_assert(W.n_blk < W64_MAX_BLK);
+    w64_u8(s, 0x02);                        /* block void */
+    w64_u8(s, 0x40);
+    W.blk[W.n_blk].kind = W64_BLK_IF;
+    W.blk[W.n_blk].label = -1;
+    W.n_blk++;
+
+    w64_get_i64(s, a0);
+    w64_local_set(s, W64_L_SCR0);
+    w64_local_get(s, W64_L_SCR0);
+    w64_const_i64(s, (int64_t)(uintptr_t)tcg_code_gen_epilogue);
+    w64_u8(s, 0x51);                        /* i64.eq */
+    w64_const_i64(s, (int64_t)(uintptr_t)&w64_chain_stop);
+    w64_u8(s, 0x28);                        /* i32.load (i64 addr) */
+    w64_memarg(s, 2, 0);
+    w64_u8(s, 0x72);                        /* i32.or */
+    w64_local_get(s, W64_L_SCR0);
+    w64_u8(s, 0x28);                        /* i32.load target fidx */
+    w64_memarg(s, 2, W64_DESC_FIDX);
+    w64_u8(s, 0x45);                        /* i32.eqz: not instantiated */
+    w64_u8(s, 0x72);                        /* i32.or */
+    w64_u8(s, 0x0d);                        /* br_if */
+    w64_uleb(s, 0);
+
+    w64_local_get(s, W64_L_SCR0);
+    w64_u8(s, 0x28);                        /* i32.load tidx (i64 addr) */
+    w64_memarg(s, 2, W64_DESC_TIDX);
+    w64_local_set(s, W64_L_SCR32);
+
+    w64_local_get(s, W64_P_ENV);
+    w64_local_get(s, W64_P_SP);
+    w64_local_get(s, W64_P_TP);
+    w64_local_get(s, W64_L_SCR32);
+    w64_u8(s, 0x13);                        /* return_call_indirect */
+    w64_uleb(s, 0);                         /* type 0: the TB signature */
+    w64_uleb(s, 0);                         /* table 0: the shared table */
+
+    w64_blk_pop(s);                         /* end */
+
     /* store the next TB's code pointer at [sp-8] and return the
      * handoff code; the C dispatcher continues the chain. */
     w64_local_get(s, W64_P_SP);
