@@ -317,6 +317,7 @@ TranslationBlock *tb_gen_code(CPUState *cpu, TCGTBCPUState s)
     tb->cflags = s.cflags;
 #ifdef CONFIG_TCG_WASM64
     tb->w64_nsucc = 0;
+    tb->w64_explored = 0;
 #endif
     tb_set_page_addr0(tb, phys_pc);
     tb_set_page_addr1(tb, -1);

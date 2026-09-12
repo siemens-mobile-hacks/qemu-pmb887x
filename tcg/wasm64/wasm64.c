@@ -820,13 +820,18 @@ EM_JS(int, w64_batch_instantiate,
     }
     const imports = { e: { m: wasmMemory, t: TAB } };
     const ip = Number(ipp);
+    let __t0 = performance.now();
     for (let i = 0; i < nimp; i++) {
         /* memory64: the emscripten table is i64-indexed */
         imports.e['f' + i] = wasmTable.get(BigInt(dv.getUint32(ip + i * 4, true)));
     }
+    let __t1 = performance.now(); globalThis.__w64tR = (globalThis.__w64tR || 0) + (__t1 - __t0);
     let inst;
     try {
-        inst = new WebAssembly.Instance(new WebAssembly.Module(mod_bytes), imports);
+        const __m = new WebAssembly.Module(mod_bytes);
+        let __t2 = performance.now(); globalThis.__w64tM = (globalThis.__w64tM || 0) + (__t2 - __t1);
+        inst = new WebAssembly.Instance(__m, imports);
+        let __t3 = performance.now(); globalThis.__w64tI = (globalThis.__w64tI || 0) + (__t3 - __t2);
     } catch (e) {
         console.log('W64BATCHFAIL nimp=' + nimp + ' len=' + modlen + ': ' + e);
         /* stash the failing module for post-mortem: the page FS survives
@@ -851,7 +856,10 @@ EM_JS(int, w64_batch_instantiate,
         const junk = new ArrayBuffer(32 << 20);
         new Uint8Array(junk)[0] = 1;
     }
-    return addFunction(inst.exports.run, 'jjjii');
+    let __t4 = performance.now();
+    const __r = addFunction(inst.exports.run, 'jjjii');
+    globalThis.__w64tA = (globalThis.__w64tA || 0) + (performance.now() - __t4);
+    return __r;
 });
 
 /* flaky-batch-corruption forensics: stage-time vs close-time source

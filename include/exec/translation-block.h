@@ -135,6 +135,7 @@ struct TranslationBlock {
      */
     vaddr w64_succ[3];
     uint8_t w64_nsucc;
+    uint8_t w64_explored;   /* speculation: every successor already exists */
 #endif
 
     /*
