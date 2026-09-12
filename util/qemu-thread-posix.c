@@ -250,7 +250,10 @@ static bool qemu_cond_wait_common(QemuCond *cond, QemuMutex *mutex,
 void qemu_cond_wait_impl(QemuCond *cond, QemuMutex *mutex,
                          const char *file, const int line)
 {
-    qemu_cond_wait_common(cond, mutex, 0, file, line);
+    /* INFINITY: emscripten_futex_wait treats 0 ms as "return at once"
+     * (a timed-out wait), which turned every untimed cond wait — the
+     * vCPU's halt wait included — into a lock/unlock spin. */
+    qemu_cond_wait_common(cond, mutex, INFINITY, file, line);
 }
 
 bool qemu_cond_timedwait_impl(QemuCond *cond, QemuMutex *mutex, int ms,
