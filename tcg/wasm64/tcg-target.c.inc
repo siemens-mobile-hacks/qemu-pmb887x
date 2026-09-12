@@ -15,6 +15,7 @@
  * SPDX-License-Identifier: MIT
  */
 
+#include "qemu/wasm-diag.h"
 #include "wasm64.h"
 #include "system/cpu-timers.h"      /* icount2_enabled() */
 
@@ -2472,6 +2473,7 @@ static void tcg_out_tb_finalize(TCGContext *s)
 
     body_total = s->code_ptr - (s->code_buf + W64_BODY_OFF);
     body_size = body_total - 5;
+    wasm_diag_stat[WASM_DIAG_TB_BYTES] += body_size;
 
     /* every forward branch must have been resolved by now */
     tcg_debug_assert(W.n_fixup == 0);

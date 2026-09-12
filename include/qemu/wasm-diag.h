@@ -40,6 +40,27 @@ enum {
     WASM_DIAG_TLB_SIZE0,     /* current entries of the mmu_idx 0 table (gauge) */
     WASM_DIAG_TLB_USED0,     /* used entries of the mmu_idx 0 table (gauge) */
     WASM_DIAG_HALT,          /* vCPU idle entries (rr_idle_advance: all halted) */
+    WASM_DIAG_PHYS_CALL,     /* tlb_flush_phys_ranges calls (topology commits) */
+    WASM_DIAG_PHYS_SCAN,     /* ...entries walked by those calls */
+    WASM_DIAG_PHYS_DROP,     /* ...entries actually invalidated */
+    WASM_DIAG_MOD_BYTES,     /* wasm bytes handed to WebAssembly.Module */
+    WASM_DIAG_MOD_COUNT,     /* modules created */
+    WASM_DIAG_TB_BYTES,      /* sum of emitted TB body sizes */
+    WASM_DIAG_WARP_NS,       /* total ns the idle warp jumped */
+    WASM_DIAG_WARP_B0,       /* warp size buckets: <1us,<10us,<100us, */
+    WASM_DIAG_WARP_B1,       /*  <1ms,<10ms,<100ms,>=100ms */
+    WASM_DIAG_WARP_B2,
+    WASM_DIAG_WARP_B3,
+    WASM_DIAG_WARP_B4,
+    WASM_DIAG_WARP_B5,
+    WASM_DIAG_WARP_B6,
+    WASM_DIAG_MOD_SRC,       /* assemble source: 1=close 2=compact 3=ensure */
+    WASM_DIAG_CLOSE_BYTES,   /* bytes from first batch close */
+    WASM_DIAG_COMPACT_BYTES, /* bytes from compaction */
+    WASM_DIAG_ENSURE_BYTES,  /* bytes from re-ensure after eviction */
+    WASM_DIAG_CLOSE_N,
+    WASM_DIAG_COMPACT_N,
+    WASM_DIAG_ENSURE_N,
     WASM_DIAG_N
 };
 
