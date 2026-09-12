@@ -154,6 +154,16 @@ static void rr_idle_advance(void)
                     continue;
                 }
             }
+#ifdef __EMSCRIPTEN__
+            {
+                int b = deadline < 1000 ? 0 : deadline < 10000 ? 1
+                      : deadline < 100000 ? 2 : deadline < 1000000 ? 3
+                      : deadline < 10000000 ? 4
+                      : deadline < 100000000 ? 5 : 6;
+                wasm_diag_stat[WASM_DIAG_WARP_NS] += deadline;
+                wasm_diag_stat[WASM_DIAG_WARP_B0 + b]++;
+            }
+#endif
             icount_start_warp_timer();
             if (qemu_clock_deadline_ns_all(QEMU_CLOCK_VIRTUAL,
                                            ~QEMU_TIMER_ATTR_EXTERNAL) > 0) {

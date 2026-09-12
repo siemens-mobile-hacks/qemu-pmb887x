@@ -25,6 +25,7 @@
 #include "exec/gdbstub.h"
 #include "hw/core/cpu.h"
 #include <emscripten.h>
+#include "qemu/wasm-diag.h"
 #include "wasm64.h"
 
 /* icount2.c: addresses of the fields emitted TB prologues touch
@@ -608,6 +609,30 @@ static uint32_t w64_next_batch_id;
  * once this many of them / members have accumulated */
 #define W64_COMPACT_BATCHES 256
 #define W64_COMPACT_MEMBERS 1024
+
+/* Compaction thresholds, env-tunable so a benchmark can A/B them
+ * (W64_COMPACT_BATCHES / W64_COMPACT_MEMBERS; a huge value = off). */
+static unsigned w64_compact_batches(void)
+{
+    static int v = -1;
+    if (v < 0) {
+        const char *e = getenv("W64_COMPACT_BATCHES");
+        v = e ? atoi(e) : W64_COMPACT_BATCHES;
+        v = MAX(v, 2);
+    }
+    return v;
+}
+
+static unsigned w64_compact_members(void)
+{
+    static int v = -1;
+    if (v < 0) {
+        const char *e = getenv("W64_COMPACT_MEMBERS");
+        v = e ? atoi(e) : W64_COMPACT_MEMBERS;
+        v = MAX(v, 2);
+    }
+    return v;
+}
 
 static unsigned w64_live_max(void)
 {
@@ -1257,6 +1282,13 @@ static uint32_t w64_assemble_instantiate(const struct w64_bsrc *src,
         ip[i] = src->uimp[i].fptr;
     }
 
+    wasm_diag_stat[WASM_DIAG_MOD_BYTES] += mod.n;
+    wasm_diag_stat[WASM_DIAG_MOD_COUNT]++;
+    {
+        int k = wasm_diag_stat[WASM_DIAG_MOD_SRC];
+        wasm_diag_stat[WASM_DIAG_CLOSE_BYTES + (k ? k - 1 : 0)] += mod.n;
+        wasm_diag_stat[WASM_DIAG_CLOSE_N + (k ? k - 1 : 0)]++;
+    }
     thunk = w64_batch_instantiate((uintptr_t)mod.b, mod.n, (uintptr_t)ip,
                                   src->n_uimp, maxtidx);
     tcg_debug_assert(thunk != 0);
@@ -1352,8 +1384,8 @@ static void w64_live_push(struct w64_landed *l)
     if (l->small) {
         w64_small_n++;
         w64_small_members += l->src.n_member;
-        if (w64_small_n >= W64_COMPACT_BATCHES ||
-            w64_small_members >= W64_COMPACT_MEMBERS) {
+        if (w64_small_n >= w64_compact_batches() ||
+            w64_small_members >= w64_compact_members()) {
             w64_compact();
         }
     }
@@ -1385,7 +1417,9 @@ static bool w64_batch_ensure(uint32_t id)
     if (l->thunk) {
         return true;
     }
+    wasm_diag_stat[WASM_DIAG_MOD_SRC] = 3;
     l->thunk = w64_assemble_instantiate(&l->src, &l->maxtidx);
+    wasm_diag_stat[WASM_DIAG_MOD_SRC] = 0;
     if (!l->thunk) {
         return false;
     }
@@ -1561,7 +1595,9 @@ static void w64_compact(void)
     merged->tidx = tidx;
     merged->small = false;
 
+    wasm_diag_stat[WASM_DIAG_MOD_SRC] = 2;
     thunk = w64_assemble_instantiate(&merged->src, &merged->maxtidx);
+    wasm_diag_stat[WASM_DIAG_MOD_SRC] = 0;
     if (!thunk) {
         fprintf(stderr, "W64COMPACT id=%u FAILED (%u batches, %u members)\n",
                 merged->src.id, n_smalls, n_member);
@@ -1661,7 +1697,9 @@ static void w64_batch_close(void)
     }
 
     w64_bsrc_of_open();
+    wasm_diag_stat[WASM_DIAG_MOD_SRC] = 1;
     thunk = w64_assemble_instantiate(&B_src, &maxtidx);
+    wasm_diag_stat[WASM_DIAG_MOD_SRC] = 0;
     if (!thunk) {
         fprintf(stderr, "W64BATCHSKIP id=%u members=%u "
                 "(members stay on temp modules)\n", B.id, B.n_member);
@@ -1881,6 +1919,9 @@ uintptr_t QEMU_DISABLE_CFI tcg_qemu_tb_exec(CPUArchState *env,
             } else if (w64_batch_close_pending(tb)) {
                 fidx = desc[W64_DESC_FIDX / 4];
             } else {
+                wasm_diag_stat[WASM_DIAG_MOD_BYTES] +=
+                    desc[W64_DESC_MODLEN / 4];
+                wasm_diag_stat[WASM_DIAG_MOD_COUNT]++;
                 fidx = w64_instantiate(tb);
                 tcg_debug_assert(fidx != 0);
                 desc[W64_DESC_FIDX / 4] = fidx;
