@@ -688,6 +688,18 @@ static bool w64_speculate(CPUState *cpu, TranslationBlock *root,
         vaddr succ[ARRAY_SIZE(tb->w64_succ) + 1];
         unsigned nsucc = tb->w64_nsucc;
         unsigned i;
+        bool complete = true;
+
+        /*
+         * A node whose successors were all found translated by an
+         * earlier walk has nothing to offer: the walk through already-
+         * translated TBs re-probed and re-looked-up the same edges on
+         * every miss in the neighbourhood (~2 % of the boot's vCPU time
+         * in probes + qht lookups for nothing).
+         */
+        if (tb->w64_explored) {
+            continue;
+        }
 
         memcpy(succ, tb->w64_succ, nsucc * sizeof(succ[0]));
         /*
@@ -709,8 +721,13 @@ static bool w64_speculate(CPUState *cpu, TranslationBlock *root,
             }
         }
 
-        for (i = 0; i < nsucc && made < (unsigned)budget && qt < qmax; i++) {
+        for (i = 0; i < nsucc; i++) {
             TCGTBCPUState t = s;
+
+            if (made >= (unsigned)budget || qt >= qmax) {
+                complete = false;
+                break;
+            }
             TranslationBlock *ex;
             vaddr next_page;
             unsigned k;
@@ -762,6 +779,9 @@ static bool w64_speculate(CPUState *cpu, TranslationBlock *root,
                 return true;
             }
             qt++;
+        }
+        if (complete) {
+            tb->w64_explored = 1;
         }
     }
     return false;
