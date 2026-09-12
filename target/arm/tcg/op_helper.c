@@ -819,9 +819,23 @@ static void cpsr_write_check_irq(CPUARMState *env)
 
 void HELPER(cpsr_write)(CPUARMState *env, uint32_t val, uint32_t mask)
 {
+    uint32_t before = env->uncached_cpsr;
+
     cpsr_write(env, val, mask, CPSRWriteByInstr);
-    /* TODO: Not all cpsr bits are relevant to hflags.  */
-    arm_rebuild_hflags(env);
+    /*
+     * Upstream rebuilds hflags unconditionally here, with a TODO saying
+     * not all cpsr bits are relevant.  They are not: every field hflags
+     * reads out of the CPSR (mode -> EL/mmu_idx/sctlr, E, IL, PAN) lives
+     * in uncached_cpsr, while the bits this firmware writes hundreds of
+     * thousands of times a second - the I/F interrupt masks of its
+     * critical sections, and the condition flags - are held in the
+     * dedicated env fields listed by CACHED_CPSR_BITS and are not hflags
+     * inputs.  So an unchanged uncached_cpsr means unchanged hflags, and
+     * the ~76 ns full rebuild can be skipped.
+     */
+    if (unlikely(before != env->uncached_cpsr)) {
+        arm_rebuild_hflags(env);
+    }
     cpsr_write_check_irq(env);
 }
 
