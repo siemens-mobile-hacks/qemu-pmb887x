@@ -1111,6 +1111,89 @@ static inline void tlb_set_compare(CPUTLBEntryFull *full, CPUTLBEntry *ent,
  * Called from TCG-generated code, which is under an RCU read-side
  * critical section.
  */
+/*
+ * Fill-time MMIO dispatch resolution (device-path slice 1,
+ * doc/performance-handoff.md): mirror what
+ * memory_region_dispatch_{read,write} would resolve per access for
+ * this section's leaf MemoryRegion, so the access path is one mask
+ * test + one indirect call.  Bits that cannot be resolved statically
+ * (accepts callbacks, ioeventf d writes, with-attrs ops, sizes outside
+ * the impl range) keep the mask empty and take the stock path.
+ */
+static void tlb_resolve_io_dispatch(CPUTLBEntryFull *full, MemoryRegion *mr)
+{
+    const MemoryRegionOps *ops;
+    unsigned min, max, s;
+    bool dev_be;
+
+    full->io_opaque = NULL;
+    full->io_read_fn = NULL;
+    full->io_write_fn = NULL;
+    full->io_rmask = 0;
+    full->io_wmask = 0;
+    full->io_swap = 0;
+    full->io_check_align = 0;
+    full->io_guard = NULL;
+
+    if (mr->alias) {
+        return;
+    }
+    ops = mr->ops;
+    if (!ops || ops->valid.accepts) {
+        return;
+    }
+
+    min = ops->impl.min_access_size;
+    if (!min) {
+        min = 1;
+    }
+    max = ops->impl.max_access_size;
+    if (!max) {
+        max = 4;
+    }
+
+    for (s = 1; s <= 8; s <<= 1) {
+        if (s < min || s > max) {
+            continue;
+        }
+        if (ops->valid.max_access_size &&
+            (s > ops->valid.max_access_size ||
+             s < ops->valid.min_access_size)) {
+            continue;
+        }
+        if (ops->read) {
+            full->io_rmask |= 1u << s;
+        }
+        if (ops->write && !mr->ioeventfd_nb) {
+            full->io_wmask |= 1u << s;
+        }
+    }
+    if (!full->io_rmask && !full->io_wmask) {
+        return;
+    }
+
+    /*
+     * Endianness: adjust_endianness() swaps iff the access op's bswap
+     * bit differs from the device's.  The access sites always build
+     * MO_BE (read) / MO_LE (write) pieces, both host-relative constants.
+     */
+    dev_be = ops->endianness == DEVICE_BIG_ENDIAN ||
+             (ops->endianness == DEVICE_NATIVE_ENDIAN && target_big_endian());
+    full->io_swap = (((MO_BE & MO_BSWAP) != 0) != dev_be) |
+                    ((((MO_LE & MO_BSWAP) != 0) != dev_be) << 1);
+
+    full->io_opaque = mr->opaque;
+    full->io_read_fn = ops->read;
+    full->io_write_fn = ops->write;
+    full->io_check_align = !ops->valid.unaligned;
+
+    /* Same re-entrancy guard condition as access_with_adjusted_size(). */
+    if (mr->dev && !mr->disable_reentrancy_guard && !mr->ram_device &&
+        !mr->ram && !mr->rom_device && !mr->readonly) {
+        full->io_guard = &mr->dev->mem_reentrancy_guard.engaged_in_io;
+    }
+}
+
 void tlb_set_page_full(CPUState *cpu, int mmu_idx,
                        vaddr addr, CPUTLBEntryFull *full)
 {
@@ -1245,6 +1328,7 @@ void tlb_set_page_full(CPUState *cpu, int mmu_idx,
     full = &desc->fulltlb[index];
     full->xlat_offset = iotlb - addr_page;
     full->section = section;
+    tlb_resolve_io_dispatch(full, section->mr);
     full->phys_addr = paddr_page;
 
     /* Now calculate the new entry */
@@ -1474,7 +1558,16 @@ static bool victim_tlb_hit(CPUState *cpu, size_t mmu_idx, size_t index,
         CPUTLBEntry *vtlb = &cpu->neg.tlb.d[mmu_idx].vtable[vidx];
         uint64_t cmp = tlb_read_idx(vtlb, access_type);
 
-        if (cmp == page) {
+        /*
+         * Compare with the same masking as tlb_hit_page(): addr_idx
+         * carries TLB_FORCE_SLOW (every MMIO entry) and possibly
+         * TLB_NOTDIRTY above the page bits, and the unmasked compare
+         * used to reject those entries outright - the victim tlb never
+         * hit for MMIO, so two MMIO pages aliasing on one tlb index
+         * (easy with ARMv5 1K pages) re-walked the guest page tables
+         * on every single access.
+         */
+        if (tlb_hit_page(cmp, page)) {
             /* Found entry in victim tlb, swap tlb and iotlb.  */
             CPUTLBEntry tmptlb, *tlb = &cpu_tlb_fast(cpu, mmu_idx)->table[index];
 
@@ -2096,6 +2189,16 @@ static void *atomic_mmu_lookup(CPUState *cpu, vaddr addr, MemOpIdx oi,
  * Load @size bytes from @addr, which is memory-mapped i/o.
  * The bytes are concatenated in big-endian order with @ret_be.
  */
+static inline uint64_t io_fast_bswap(uint64_t val, unsigned size)
+{
+    switch (size) {
+    case 2: return bswap16(val);
+    case 4: return bswap32(val);
+    case 8: return bswap64(val);
+    default: return val;
+    }
+}
+
 static uint64_t int_ld_mmio_beN(CPUState *cpu, CPUTLBEntryFull *full,
                                 uint64_t ret_be, vaddr addr, int size,
                                 int mmu_idx, MMUAccessType type, uintptr_t ra,
@@ -2112,8 +2215,35 @@ static uint64_t int_ld_mmio_beN(CPUState *cpu, CPUTLBEntryFull *full,
         this_size = 1 << this_mop;
         this_mop |= MO_BE;
 
-        r = memory_region_dispatch_read(mr, mr_offset, &val,
-                                        this_mop, full->attrs);
+        /* Fill-time resolved dispatch: one mask test + indirect call. */
+        if (likely((full->io_rmask & (1u << this_size)) &&
+                   (!full->io_check_align ||
+                    !(mr_offset & (this_size - 1))))) {
+            bool *guard = full->io_guard;
+
+            if (unlikely(guard && *guard)) {
+                /* Re-entrant access: take the stock path for its
+                 * warn_report_once + MEMTX_ACCESS_ERROR semantics. */
+                r = memory_region_dispatch_read(mr, mr_offset, &val,
+                                                this_mop, full->attrs);
+            } else {
+                if (guard) {
+                    *guard = true;
+                }
+                val = full->io_read_fn(full->io_opaque, mr_offset,
+                                       this_size);
+                if (guard) {
+                    *guard = false;
+                }
+                if (full->io_swap & 1) {
+                    val = io_fast_bswap(val, this_size);
+                }
+                r = MEMTX_OK;
+            }
+        } else {
+            r = memory_region_dispatch_read(mr, mr_offset, &val,
+                                            this_mop, full->attrs);
+        }
         if (unlikely(r != MEMTX_OK)) {
             io_failed(cpu, full, addr, this_size, type, mmu_idx, r, ra);
         }
@@ -2626,8 +2756,35 @@ static uint64_t int_st_mmio_leN(CPUState *cpu, CPUTLBEntryFull *full,
         this_size = 1 << this_mop;
         this_mop |= MO_LE;
 
-        r = memory_region_dispatch_write(mr, mr_offset, val_le,
-                                         this_mop, full->attrs);
+        /* Fill-time resolved dispatch: one mask test + indirect call. */
+        if (likely((full->io_wmask & (1u << this_size)) &&
+                   (!full->io_check_align ||
+                    !(mr_offset & (this_size - 1))))) {
+            bool *guard = full->io_guard;
+
+            if (unlikely(guard && *guard)) {
+                r = memory_region_dispatch_write(mr, mr_offset, val_le,
+                                                 this_mop, full->attrs);
+            } else {
+                uint64_t tmp = val_le;
+
+                if (guard) {
+                    *guard = true;
+                }
+                if (full->io_swap & 2) {
+                    tmp = io_fast_bswap(tmp, this_size);
+                }
+                full->io_write_fn(full->io_opaque, mr_offset, tmp,
+                                  this_size);
+                if (guard) {
+                    *guard = false;
+                }
+                r = MEMTX_OK;
+            }
+        } else {
+            r = memory_region_dispatch_write(mr, mr_offset, val_le,
+                                             this_mop, full->attrs);
+        }
         if (unlikely(r != MEMTX_OK)) {
             io_failed(cpu, full, addr, this_size, MMU_DATA_STORE,
                       mmu_idx, r, ra);
