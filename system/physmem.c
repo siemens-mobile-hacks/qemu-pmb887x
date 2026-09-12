@@ -160,6 +160,8 @@ static void io_mem_init(void);
 static void memory_map_init(void);
 static void tcg_log_global_after_sync(MemoryListener *listener);
 static void tcg_commit(MemoryListener *listener);
+static void tcg_region_changed(MemoryListener *listener,
+                               MemoryRegionSection *section);
 static bool ram_is_cpr_compatible(RAMBlock *rb);
 
 /**
@@ -172,6 +174,18 @@ typedef struct CPUAddressSpace {
     CPUState *cpu;
     AddressSpace *as;
     MemoryListener tcg_as_listener;
+    /*
+     * Physical ranges changed by the topology commit(s) since the last
+     * executed TLB flush, accumulated by the tcg listener's
+     * region_add/region_del callbacks so tcg_commit can flush only the
+     * affected entries instead of the whole TLB (see tlb_flush_phys_ranges).
+     * pend_all collapses to "flush everything" (range overflow, or a
+     * FlatView variant was recycled and entries may point into it).
+     */
+    hwaddr pend_lo[32];
+    hwaddr pend_hi[32];
+    unsigned pend_n;
+    bool pend_all;
 } CPUAddressSpace;
 
 struct DirtyBitmapSnapshot {
@@ -780,6 +794,8 @@ void cpu_address_space_init(CPUState *cpu, int asidx,
     newas->as = as;
     if (tcg_enabled()) {
         newas->tcg_as_listener.log_global_after_sync = tcg_log_global_after_sync;
+        newas->tcg_as_listener.region_add = tcg_region_changed;
+        newas->tcg_as_listener.region_del = tcg_region_changed;
         newas->tcg_as_listener.commit = tcg_commit;
         newas->tcg_as_listener.name = "tcg";
         memory_listener_register(&newas->tcg_as_listener, as);
@@ -3065,9 +3081,49 @@ static void tcg_log_global_after_sync(MemoryListener *listener)
     }
 }
 
+/*
+ * Record a physical range whose mapping changed, for the selective
+ * flush at commit (both region_add and region_del count: an entry for
+ * either the old or the new mapping must go).
+ */
+static void tcg_region_changed(MemoryListener *listener,
+                                MemoryRegionSection *section)
+{
+    CPUAddressSpace *cpuas =
+        container_of(listener, CPUAddressSpace, tcg_as_listener);
+    Int128 sz = section->size;
+    hwaddr lo = section->offset_within_address_space;
+
+    if (cpuas->pend_all || int128_gethi(sz) || cpuas->pend_n == 32) {
+        cpuas->pend_all = true;
+        return;
+    }
+    cpuas->pend_lo[cpuas->pend_n] = lo;
+    cpuas->pend_hi[cpuas->pend_n] = lo + int128_getlo(sz);
+    cpuas->pend_n++;
+}
+
 static void tcg_commit_cpu(CPUState *cpu, run_on_cpu_data data)
 {
-    tlb_flush(cpu);
+    CPUAddressSpace *cpuas = data.host_ptr;
+
+    /*
+     * The topology of this AS changed.  Drop only the entries that
+     * translate into one of the changed ranges - a full tlb_flush()
+     * per commit would also discard every unrelated code/data
+     * translation and pay a page-table walk per page to get it back
+     * (ROM devices flip romd per flash command: tens of thousands of
+     * full TLB flushes per boot, each with a refill storm for the
+     * running code).
+     */
+    if (cpuas->pend_all) {
+        tlb_flush(cpu);
+    } else if (cpuas->pend_n) {
+        tlb_flush_phys_ranges(cpu, cpuas->pend_lo, cpuas->pend_hi,
+                              cpuas->pend_n);
+    }
+    cpuas->pend_n = 0;
+    cpuas->pend_all = false;
 }
 
 static void tcg_commit(MemoryListener *listener)
@@ -3080,6 +3136,18 @@ static void tcg_commit(MemoryListener *listener)
        reset the modified entries */
     cpuas = container_of(listener, CPUAddressSpace, tcg_as_listener);
     cpu = cpuas->cpu;
+
+    /*
+     * If a FlatView variant was recycled since the last flush, entries
+     * may point into its dispatch: those we cannot identify by range,
+     * so fall back to the full flush.  (Steady-state romd ping-pong
+     * never evicts from the variant stash - this triggers during the
+     * render-heavy boot phases only, where a full flush is what stock
+     * does anyway.)
+     */
+    if (memory_topology_views_recycled()) {
+        cpuas->pend_all = true;
+    }
 
     /*
      * Queueing the work function will kick the cpu back to

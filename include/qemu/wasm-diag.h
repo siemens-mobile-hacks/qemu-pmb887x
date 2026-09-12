@@ -20,6 +20,9 @@ enum {
     WASM_DIAG_TB_GEN,        /* tb_gen_code calls (translation) */
     WASM_DIAG_TB_FLUSH,      /* tb_flush calls (code buffer full) */
     WASM_DIAG_IO_REWIND,     /* ROM-device io_prepare rewinds (longjmp) */
+    WASM_DIAG_ROMD_FLIP,     /* memory_region_rom_device_set_romd transitions */
+    WASM_DIAG_TOPO_COMMIT,   /* commits with memory_region_update_pending */
+    WASM_DIAG_TOPO_REUSED,   /* stashed-view reuses (saves render+dispatch) */
     WASM_DIAG_N
 };
 
