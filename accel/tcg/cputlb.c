@@ -292,11 +292,63 @@ static void tlb_mmu_resize_locked(CPUTLBDesc *desc, CPUTLBDescFast *fast,
     }
 }
 
+/*
+ * One bit per 32 MB block of physical address space, folded into 64 bits
+ * (see CPUTLBDesc::phys_group).  The block size has to divide the ranges a
+ * topology commit reports - the flash banks here are 32 MB - or a commit
+ * against one bank would also match every entry of its neighbour.
+ */
+static inline uint64_t tlb_phys_blk_bit(uint64_t blk)
+{
+    return 1ULL << ((blk ^ (blk >> 6)) & 63);
+}
+
+static inline uint64_t tlb_phys_bit(hwaddr pa)
+{
+    return tlb_phys_blk_bit(pa >> TLB_PHYS_BUCKET_BITS);
+}
+
+/* Record that entry @index of @desc now translates to @pa. */
+static inline void tlb_phys_note(CPUTLBDesc *desc, uintptr_t index, hwaddr pa)
+{
+    uint64_t bit = tlb_phys_bit(pa);
+
+    desc->phys_group[(index >> TLB_PHYS_GROUP_BITS) & (TLB_PHYS_GROUPS - 1)]
+        |= bit;
+    desc->phys_any |= bit;
+}
+
+static uint64_t tlb_phys_ranges_mask(const hwaddr *lo, const hwaddr *hi,
+                                     unsigned n)
+{
+    uint64_t mask = 0;
+    unsigned r;
+
+    for (r = 0; r < n; r++) {
+        hwaddr b, last;
+
+        if (hi[r] <= lo[r]) {
+            continue;
+        }
+        b = lo[r] >> TLB_PHYS_BUCKET_BITS;
+        last = (hi[r] - 1) >> TLB_PHYS_BUCKET_BITS;
+        if (last - b >= 63) {
+            return ~0ULL;
+        }
+        for (; b <= last; b++) {
+            mask |= tlb_phys_blk_bit(b);
+        }
+    }
+    return mask;
+}
+
 static void tlb_mmu_flush_locked(CPUTLBDesc *desc, CPUTLBDescFast *fast)
 {
 #ifdef __EMSCRIPTEN__
     wasm_diag_stat[WASM_DIAG_TLB_FLUSH]++;     /* every table clear */
 #endif
+    desc->phys_any = 0;
+    memset(desc->phys_group, 0, sizeof(desc->phys_group));
     desc->n_used_entries = 0;
     desc->n_fills = 0;
     desc->large_page_addr = -1;
@@ -520,33 +572,80 @@ void tlb_flush_phys_ranges(CPUState *cpu,
                            const hwaddr *lo, const hwaddr *hi,
                            unsigned n)
 {
+    uint64_t req = tlb_phys_ranges_mask(lo, hi, n);
     int mmu_idx;
 
     assert_cpu_is_self(cpu);
 
+    if (!req) {
+        return;
+    }
+
     qemu_spin_lock(&cpu->neg.tlb.c.lock);
 
+#ifdef __EMSCRIPTEN__
+    wasm_diag_stat[WASM_DIAG_PHYS_CALL]++;
+#endif
     for (mmu_idx = 0; mmu_idx < NB_MMU_MODES; mmu_idx++) {
         CPUTLBDesc *desc = &cpu->neg.tlb.d[mmu_idx];
         CPUTLBDescFast *fast = cpu_tlb_fast(cpu, mmu_idx);
         size_t nr = (fast->mask >> CPU_TLB_ENTRY_BITS) + 1;
-        size_t i;
+        size_t ngroup = nr >> TLB_PHYS_GROUP_BITS;
+        bool summarised = ngroup <= TLB_PHYS_GROUPS;
+        uint64_t any = 0;
+        size_t g, i;
         unsigned r;
 
-        for (i = 0; i < nr; i++) {
-            CPUTLBEntry *te = &fast->table[i];
-            hwaddr pa;
+        /*
+         * Nothing in this table translates into any of the changed
+         * buckets: one load decides it.  The summary is exact for every
+         * group a previous commit walked, so this is the common case
+         * once a romd flip has already dropped the flash entries.
+         */
+        if (summarised && !(desc->phys_any & req)) {
+            continue;
+        }
 
-            if (tlb_entry_is_empty(te)) {
-                continue;
-            }
-            pa = desc->fulltlb[i].phys_addr;
-            for (r = 0; r < n; r++) {
-                if (pa >= lo[r] && pa < hi[r]) {
-                    memset(te, -1, sizeof(*te));
-                    tlb_n_used_entries_dec(cpu, mmu_idx);
-                    break;
+        for (g = 0; g < MAX(ngroup, 1); g++) {
+            size_t base = g << TLB_PHYS_GROUP_BITS;
+            size_t end = MIN(base + (1 << TLB_PHYS_GROUP_BITS), nr);
+            uint64_t fresh = 0;
+
+            if (summarised) {
+                uint64_t gm = desc->phys_group[g];
+
+                if (!(gm & req)) {
+                    any |= gm;
+                    continue;
                 }
+            }
+#ifdef __EMSCRIPTEN__
+            wasm_diag_stat[WASM_DIAG_PHYS_SCAN] += end - base;
+#endif
+            for (i = base; i < end; i++) {
+                CPUTLBEntry *te = &fast->table[i];
+                hwaddr pa;
+
+                if (tlb_entry_is_empty(te)) {
+                    continue;
+                }
+                pa = desc->fulltlb[i].phys_addr;
+                for (r = 0; r < n; r++) {
+                    if (pa >= lo[r] && pa < hi[r]) {
+                        memset(te, -1, sizeof(*te));
+                        tlb_n_used_entries_dec(cpu, mmu_idx);
+#ifdef __EMSCRIPTEN__
+                        wasm_diag_stat[WASM_DIAG_PHYS_DROP]++;
+#endif
+                        goto dropped;
+                    }
+                }
+                fresh |= tlb_phys_bit(pa);
+            dropped:;
+            }
+            if (summarised) {
+                desc->phys_group[g] = fresh;
+                any |= fresh;
             }
         }
         for (i = 0; i < CPU_VTLB_SIZE; i++) {
@@ -561,9 +660,14 @@ void tlb_flush_phys_ranges(CPUState *cpu,
                 if (pa >= lo[r] && pa < hi[r]) {
                     memset(te, -1, sizeof(*te));
                     tlb_n_used_entries_dec(cpu, mmu_idx);
-                    break;
+                    goto vdropped;
                 }
             }
+            any |= tlb_phys_bit(pa);
+        vdropped:;
+        }
+        if (summarised) {
+            desc->phys_any = any;
         }
     }
 
@@ -1381,6 +1485,7 @@ void tlb_set_page_full(CPUState *cpu, int mmu_idx,
     full->section = section;
     tlb_resolve_io_dispatch(full, section->mr);
     full->phys_addr = paddr_page;
+    tlb_phys_note(desc, index, paddr_page);
 
     /* Now calculate the new entry */
     tn.addend = addend - addr_page;
@@ -1636,6 +1741,8 @@ static bool victim_tlb_hit(CPUState *cpu, size_t mmu_idx, size_t index,
             CPUTLBEntryFull *f2 = &cpu->neg.tlb.d[mmu_idx].vfulltlb[vidx];
             CPUTLBEntryFull tmpf;
             tmpf = *f1; *f1 = *f2; *f2 = tmpf;
+            /* the promoted entry now sits at @index: summarise it there */
+            tlb_phys_note(&cpu->neg.tlb.d[mmu_idx], index, f1->phys_addr);
             return true;
         }
     }
