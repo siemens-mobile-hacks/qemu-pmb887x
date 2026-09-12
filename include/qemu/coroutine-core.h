@@ -110,6 +110,17 @@ AioContext *qemu_coroutine_get_aio_context(Coroutine *co);
  */
 Coroutine *qemu_coroutine_self(void);
 
+/*
+ * wasm: mark the calling thread as one whose stack can never be unwound
+ * by a coroutine switch (Asyncify allowlist, see util/coroutine-wasm.c);
+ * a switch there aborts instead of derailing.  No-op elsewhere.
+ */
+#ifdef __EMSCRIPTEN__
+void qemu_coroutine_forbid_current_thread(void);
+#else
+static inline void qemu_coroutine_forbid_current_thread(void) {}
+#endif
+
 /**
  * Return whether or not currently inside a coroutine
  *
