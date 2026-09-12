@@ -714,7 +714,20 @@ static bool w64_speculate(CPUState *cpu, TranslationBlock *root,
             if (w64_spec_code_host(env, last, mmu_idx, &h1) &&
                 ldl_le_p(h1) == 0xe51ff004 &&
                 w64_spec_code_host(env, last + 4, mmu_idx, &h2)) {
-                vaddr target = ldl_le_p(h2);
+                /*
+                 * ldl_le_p() returns a *signed* int: a literal with bit
+                 * 31 set (0xa0000000 flash/RAM, and the 0xffff0000 high
+                 * vectors the pmb887x bootrom lives in) sign-extends into
+                 * the 64-bit vaddr.  A sign-extended address that still
+                 * passes the probe reaches tb_gen_code, and translator_ld
+                 * then compares db->pc_first (sign-extended) against a pc
+                 * the ARM frontend zero-extended: neither page test
+                 * matches and it aborts on
+                 * "(base ^ pc) & TARGET_PAGE_MASK".  KE800 died there
+                 * ~90 s into the boot (its firmware runs the GSM L1
+                 * interrupt path through the 0xffff0000 trampolines).
+                 */
+                vaddr target = (uint32_t)ldl_le_p(h2);
                 if (!(target & 3)) {
                     succ[nsucc++] = target;
                 }
