@@ -980,10 +980,32 @@ void tb_target_set_jmp_target(const TranslationBlock *tb, int n,
 /* calls                                                               */
 /* ------------------------------------------------------------------ */
 
-/* current code offset, for retaddr values */
+/*
+ * Retaddr marker for GETPC()-using helpers.
+ *
+ * cpu_unwind_data_from_tb() resolves a retaddr by walking the per-insn
+ * end offsets for the first one *strictly greater* than
+ * (retaddr - GETPC_ADJ): a real backend's GETPC() is a return address,
+ * which always sits after the call, i.e. strictly inside the faulting
+ * insn's code range.  Here the marker is emitted before the call
+ * sequence, and for a guest insn whose code starts with that call (any
+ * plain load/store: the address is already in a register) the raw
+ * offset equals the insn's start = the previous insn's end, so the
+ * unwind resolved one guest insn too early.  cpu_io_recompile() then
+ * rewound to the previous insn and re-executed it — an EL71 boot
+ * re-ran an `ldm r0!` twice before a buffered flash program and wrote
+ * the erased pattern, aborting with ">>EXIT<< FILE: flash" (0x0506).
+ *
+ * Bias by GETPC_ADJ so the subtraction lands exactly on the insn start,
+ * which the strict comparison attributes to this insn.  The call
+ * sequence that follows is always longer than the bias, so the marker
+ * still refers to this insn and never to the next one.
+ */
+#define W64_GETPC_ADJ 2         /* GETPC_ADJ, accel/tcg/tb-internal.h */
 static inline uintptr_t w64_pc(TCGContext *s)
 {
-    return (uintptr_t)s->code_buf + (s->code_ptr - s->code_buf);
+    return (uintptr_t)s->code_buf + (s->code_ptr - s->code_buf)
+           + W64_GETPC_ADJ;
 }
 
 /* typemask typecode -> wasm type (0 = i32, 1 = i64); 0xff invalid */
