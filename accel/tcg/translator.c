@@ -176,6 +176,24 @@ void translator_loop(CPUState *cpu, TranslationBlock *tb, int *max_insns,
     db->plugin_enabled = plugin_enabled;
 
     while (true) {
+#ifdef __EMSCRIPTEN__
+        /*
+         * Keep an io-barrier insn out of the middle of a TB: stop before
+         * it so it starts a single-insn TB of its own (can_do_io is true
+         * there; see cpu_io_recompile in translate-all.c).  This has to
+         * happen before num_insns is bumped and insn_start emitted, or
+         * the TB carries a phantom instruction it never translates:
+         * tb->icount one too high (an extra insn charged to the icount
+         * budget per split TB) and a duplicate entry in the unwind
+         * search data.
+         */
+        bool io_barrier = wasm_is_io_barrier(db->pc_next);
+        if (unlikely(io_barrier) && db->num_insns > 0) {
+            db->is_jmp = DISAS_TOO_MANY;
+            break;
+        }
+#endif
+
         *max_insns = ++db->num_insns;
         ops->insn_start(db, cpu);
         db->insn_start = tcg_last_op();
@@ -187,19 +205,6 @@ void translator_loop(CPUState *cpu, TranslationBlock *tb, int *max_insns,
         if (plugin_enabled) {
             plugin_gen_insn_start(cpu, db);
         }
-
-#ifdef __EMSCRIPTEN__
-        bool io_barrier = wasm_is_io_barrier(db->pc_next);
-        if (unlikely(io_barrier) && db->num_insns > 1) {
-            /*
-             * Keep a barrier insn out of the middle of a TB: stop here so
-             * it starts a single-insn TB of its own (can_do_io is true
-             * there; see cpu_io_recompile in translate-all.c).
-             */
-            db->is_jmp = DISAS_TOO_MANY;
-            break;
-        }
-#endif
 
         /*
          * Disassemble one instruction.  The translate_insn hook should
