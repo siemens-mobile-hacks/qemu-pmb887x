@@ -1331,7 +1331,7 @@ static void dif_realize(DeviceState *dev, Error **errp) {
 	}
 	dif_update_mux(p);
 
-	p->timer = timer_new_ns(QEMU_CLOCK_REALTIME, dif_timer_reset, p);
+	p->timer = timer_new_ns(pmb887x_completion_clock(), dif_timer_reset, p);
 }
 
 static void dif_reset(DeviceState *dev) {
