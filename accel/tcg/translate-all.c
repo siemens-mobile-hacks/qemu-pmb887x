@@ -315,6 +315,9 @@ TranslationBlock *tb_gen_code(CPUState *cpu, TCGTBCPUState s)
     tb->cs_base = s.cs_base;
     tb->flags = s.flags;
     tb->cflags = s.cflags;
+#ifdef CONFIG_TCG_WASM64
+    tb->w64_nsucc = 0;
+#endif
     tb_set_page_addr0(tb, phys_pc);
     tb_set_page_addr1(tb, -1);
     if (phys_pc != -1) {
@@ -393,6 +396,21 @@ TranslationBlock *tb_gen_code(CPUState *cpu, TCGTBCPUState s)
         }
     }
     tcg_ctx->gen_tb = NULL;
+
+#ifdef CONFIG_TCG_WASM64
+    {
+        extern int w64_spec_active;
+        static int tblog = -1;
+        if (tblog < 0) {
+            tblog = getenv("W64_TBLOG") != NULL;
+        }
+        if (tblog) {
+            fprintf(stderr, "TBGEN %08llx %u %u %x %c\n",
+                    (unsigned long long)s.pc, tb->size, tb->icount,
+                    tb->cflags, w64_spec_active ? 'S' : '-');
+        }
+    }
+#endif
 
     search_size = encode_search(tb, (void *)gen_code_buf + gen_code_size);
     if (unlikely(search_size < 0)) {

@@ -126,6 +126,16 @@ struct TranslationBlock {
     uint16_t jmp_reset_offset[2]; /* offset of original jump target */
     uint16_t jmp_insn_offset[2];  /* offset of direct jump insn */
     uintptr_t jmp_target_addr[2]; /* target address */
+#ifdef CONFIG_TCG_WASM64
+    /*
+     * Guest addresses of this TB's goto_tb destinations, recorded by
+     * translator_use_goto_tb: the wasm64 backend translates them ahead
+     * of execution so the browser compiles TBs in batches
+     * (accel/tcg/cpu-exec.c w64_speculate).  A hint only.
+     */
+    vaddr w64_succ[2];
+    uint8_t w64_nsucc;
+#endif
 
     /*
      * Each TB has a NULL-terminated list (jmp_list_head) of incoming jumps.

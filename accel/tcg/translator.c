@@ -115,6 +115,16 @@ bool translator_use_goto_tb(DisasContextBase *db, vaddr dest)
         return false;
     }
 
+#ifdef CONFIG_TCG_WASM64
+    {
+        TranslationBlock *tb = db->tb;
+        if (tb->w64_nsucc < 2 &&
+            !(tb->w64_nsucc == 1 && tb->w64_succ[0] == dest)) {
+            tb->w64_succ[tb->w64_nsucc++] = dest;
+        }
+    }
+#endif
+
     /* Check for the dest on the same page as the start of the TB.  */
     return translator_is_same_page(db, dest);
 }
