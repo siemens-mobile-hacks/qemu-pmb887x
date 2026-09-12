@@ -1906,8 +1906,11 @@ uintptr_t QEMU_DISABLE_CFI tcg_qemu_tb_exec(CPUArchState *env,
         }
 
         if (res & W64_EXIT_GOTOPTR) {
-            uintptr_t next = *(uintptr_t *)w64_frame;
-            if (next == 0) {
+            /* the handoff slot is [sp-8] = frame+8 (sp = frame+16); the
+             * dispatcher read frame+0 — always 0 — so every goto_ptr
+             * unwound to cpu_exec_loop (14.9M of 16.8M exits per boot) */
+            uintptr_t next = *(uintptr_t *)(w64_frame + 8);
+            if (next == 0 || next == (uintptr_t)tcg_code_gen_epilogue) {
                 return 0;
             }
             tb = next;
