@@ -162,6 +162,17 @@ void translator_loop(CPUState *cpu, TranslationBlock *tb, int *max_insns,
 bool translator_use_goto_tb(DisasContextBase *db, vaddr dest);
 
 /**
+ * translator_note_succ
+ * @db: disassembly context
+ * @dest: a guest address control flow is likely to reach after this TB
+ *
+ * Speculation hint only (wasm64 backend: ahead-of-execution translation
+ * of successors); a no-op elsewhere.  Call sites: the return address of
+ * a direct call.
+ */
+void translator_note_succ(DisasContextBase *db, vaddr dest);
+
+/**
  * translator_io_start
  * @db: Disassembly context
  *

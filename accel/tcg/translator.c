@@ -108,6 +108,23 @@ bool translator_is_same_page(const DisasContextBase *db, vaddr addr)
     return ((addr ^ db->pc_first) & TARGET_PAGE_MASK) == 0;
 }
 
+void translator_note_succ(DisasContextBase *db, vaddr dest)
+{
+#ifdef CONFIG_TCG_WASM64
+    TranslationBlock *tb = db->tb;
+    unsigned i;
+
+    for (i = 0; i < tb->w64_nsucc; i++) {
+        if (tb->w64_succ[i] == dest) {
+            return;
+        }
+    }
+    if (tb->w64_nsucc < ARRAY_SIZE(tb->w64_succ)) {
+        tb->w64_succ[tb->w64_nsucc++] = dest;
+    }
+#endif
+}
+
 bool translator_use_goto_tb(DisasContextBase *db, vaddr dest)
 {
     /* Suppress goto_tb if requested. */
@@ -115,15 +132,7 @@ bool translator_use_goto_tb(DisasContextBase *db, vaddr dest)
         return false;
     }
 
-#ifdef CONFIG_TCG_WASM64
-    {
-        TranslationBlock *tb = db->tb;
-        if (tb->w64_nsucc < 2 &&
-            !(tb->w64_nsucc == 1 && tb->w64_succ[0] == dest)) {
-            tb->w64_succ[tb->w64_nsucc++] = dest;
-        }
-    }
-#endif
+    translator_note_succ(db, dest);
 
     /* Check for the dest on the same page as the start of the TB.  */
     return translator_is_same_page(db, dest);
