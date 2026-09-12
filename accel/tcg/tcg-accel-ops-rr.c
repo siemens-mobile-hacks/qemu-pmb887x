@@ -106,6 +106,48 @@ static void rr_stop_kick_timer(void)
     }
 }
 
+/*
+ * All vCPUs are halted under icount.  Stock qemu hands the virtual-clock
+ * warp to the main loop (icount_start_warp_timer: with sleep=off the
+ * bias jumps to the next deadline) which then kicks the vCPU back through
+ * async_run_on_cpu so that icount_handle_deadline can run the expired
+ * QEMU_CLOCK_VIRTUAL timers here — two cross-thread hops (futex wake +
+ * BQL handoff each) per deadline, and a halted guest spends most of its
+ * wall time in them (wasm: ~30 % of the early boot in the halt wait).
+ * Do the warp and the timer run on this thread, under the BQL we hold:
+ * the same clock steps in the same order, without the handoffs.  Only
+ * QEMU_CLOCK_VIRTUAL is touched (it is this thread's clock under icount
+ * anyway); host-clock timers stay with the main loop, which gets the BQL
+ * between iterations so a due host-clock event (DMA completion, DSP,
+ * input) is not starved.  Bounded so a self-rearming zero-deadline timer
+ * cannot keep the cond wait below from ever being reached.
+ */
+static void rr_idle_advance(void)
+{
+    int i;
+
+    for (i = 0; i < 64 && all_cpu_threads_idle(); i++) {
+        int64_t deadline = qemu_clock_deadline_ns_all(QEMU_CLOCK_VIRTUAL,
+                                                      ~QEMU_TIMER_ATTR_EXTERNAL);
+        if (deadline < 0) {
+            return;
+        }
+        if (deadline > 0) {
+            icount_start_warp_timer();
+            if (qemu_clock_deadline_ns_all(QEMU_CLOCK_VIRTUAL,
+                                           ~QEMU_TIMER_ATTR_EXTERNAL) > 0) {
+                /* icount sleep=on: the warp timer paces the clock */
+                return;
+            }
+        }
+        icount_handle_deadline();
+        if (i > 0) {
+            bql_unlock();
+            bql_lock();
+        }
+    }
+}
+
 static void rr_wait_io_event(void)
 {
     CPUState *cpu;
@@ -226,11 +268,14 @@ static void *rr_cpu_thread_fn(void *arg)
         }
 
         if (icount_enabled() && all_cpu_threads_idle()) {
+            rr_idle_advance();
             /*
              * When all cpus are sleeping (e.g in WFI), to avoid a deadlock
              * in the main_loop, wake it up in order to start the warp timer.
              */
-            qemu_notify_event();
+            if (all_cpu_threads_idle()) {
+                qemu_notify_event();
+            }
         }
 
         rr_wait_io_event();
