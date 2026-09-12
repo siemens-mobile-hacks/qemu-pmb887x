@@ -108,12 +108,48 @@ bool translator_is_same_page(const DisasContextBase *db, vaddr addr)
     return ((addr ^ db->pc_first) & TARGET_PAGE_MASK) == 0;
 }
 
+void translator_note_succ(DisasContextBase *db, vaddr dest)
+{
+#ifdef CONFIG_TCG_WASM64
+    TranslationBlock *tb = db->tb;
+    unsigned i;
+
+    /*
+     * Narrow to the guest's address width.  The frontends compute a
+     * branch target as a 64-bit `pc + diff` (gen_goto_tb) and hand it
+     * over unnarrowed: on a 32-bit guest a target that wraps around zero
+     * arrives sign-extended.  Upstream only same-page-tests the value, so
+     * a wrong high half merely disables goto_tb, but w64_speculate feeds
+     * it to tb_gen_code as a real address — and translator_ld then aborts
+     * on "(base ^ pc) & TARGET_PAGE_MASK", comparing a sign-extended
+     * db->pc_first against a pc the frontend zero-extended.  KE800 died
+     * there ~90 s in: a TB at guest 0x0 branches back by -0xebb0 into the
+     * 0xffff0000 high vectors, which is where its GSM L1 interrupt path
+     * lives.
+     */
+    if (tcg_ctx->addr_type == TCG_TYPE_I32) {
+        dest = (uint32_t)dest;
+    }
+
+    for (i = 0; i < tb->w64_nsucc; i++) {
+        if (tb->w64_succ[i] == dest) {
+            return;
+        }
+    }
+    if (tb->w64_nsucc < ARRAY_SIZE(tb->w64_succ)) {
+        tb->w64_succ[tb->w64_nsucc++] = dest;
+    }
+#endif
+}
+
 bool translator_use_goto_tb(DisasContextBase *db, vaddr dest)
 {
     /* Suppress goto_tb if requested. */
     if (tb_cflags(db->tb) & CF_NO_GOTO_TB) {
         return false;
     }
+
+    translator_note_succ(db, dest);
 
     /* Check for the dest on the same page as the start of the TB.  */
     return translator_is_same_page(db, dest);
@@ -157,6 +193,24 @@ void translator_loop(CPUState *cpu, TranslationBlock *tb, int *max_insns,
     db->plugin_enabled = plugin_enabled;
 
     while (true) {
+#ifdef __EMSCRIPTEN__
+        /*
+         * Keep an io-barrier insn out of the middle of a TB: stop before
+         * it so it starts a single-insn TB of its own (can_do_io is true
+         * there; see cpu_io_recompile in translate-all.c).  This has to
+         * happen before num_insns is bumped and insn_start emitted, or
+         * the TB carries a phantom instruction it never translates:
+         * tb->icount one too high (an extra insn charged to the icount
+         * budget per split TB) and a duplicate entry in the unwind
+         * search data.
+         */
+        bool io_barrier = wasm_is_io_barrier(db->pc_next);
+        if (unlikely(io_barrier) && db->num_insns > 0) {
+            db->is_jmp = DISAS_TOO_MANY;
+            break;
+        }
+#endif
+
         *max_insns = ++db->num_insns;
         ops->insn_start(db, cpu);
         db->insn_start = tcg_last_op();
@@ -176,6 +230,13 @@ void translator_loop(CPUState *cpu, TranslationBlock *tb, int *max_insns,
          * the next instruction.
          */
         ops->translate_insn(db, cpu);
+
+#ifdef __EMSCRIPTEN__
+        if (unlikely(io_barrier) && db->is_jmp == DISAS_NEXT) {
+            /* Barrier is the first insn of this TB: make it single-insn. */
+            db->is_jmp = DISAS_TOO_MANY;
+        }
+#endif
 
         /*
          * We can't instrument after instructions that change control

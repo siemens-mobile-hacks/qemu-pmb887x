@@ -300,6 +300,10 @@ static void pmb887x_init(MachineState *machine) {
 	// RTC
 	DeviceState *rtc = pmb887x_new_cpu_module("RTC");
 	object_property_set_link(OBJECT(rtc), "cgu", OBJECT(cgu), &error_fatal);
+	// [rtc] format = "unix" | "calendar": how the firmware reads CNT at
+	// power-on (see rtc.c); LG boards set calendar in their config.
+	qdev_prop_set_string(rtc, "cnt-format",
+		toml_table_get_string(pmb887x_board()->config, "rtc.format", "unix", false));
 	sysbus_realize_and_unref(SYS_BUS_DEVICE(rtc), &error_fatal);
 
 	// GPTU0

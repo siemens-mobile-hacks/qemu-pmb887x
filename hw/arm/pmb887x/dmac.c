@@ -293,6 +293,21 @@ static void dmac_transfer_memory(pmb887x_dmac_t *p, pmb887x_dmac_ch_t *ch, uint3
 		address_space_write(&p->downstream_as, ch->dst_addr, MEMTXATTRS_UNSPECIFIED, buffer, dst_width * burst_size);
 		ch->src_addr += src_width * burst_size;
 		ch->dst_addr += dst_width * burst_size;
+	} else if (dst_width == src_width && is_src_memory && (ch->control & DMAC_CH_CONTROL_SI)) {
+		/* memory source with an incrementing address (the display path:
+		 * RAM -> DIF FIFO): one address_space_read for the whole burst
+		 * instead of one dispatch per word; the destination is written
+		 * per word as before (a FIFO register sees each word) */
+		dmac_read(p, ch->src_addr, buffer, src_width, burst_size, src_endian);
+		ch->src_addr += src_width * burst_size;
+		for (uint32_t i = 0; i < burst_size; i++) {
+			uint8_t *w = buffer + i * src_width;
+			if (src_endian != dst_endian && src_width > 1)
+				dmac_swap_byte_order(w, dst_width, 1);
+			dmac_write(p, ch->dst_addr, w, dst_width);
+			if ((ch->control & DMAC_CH_CONTROL_DI))
+				ch->dst_addr += dst_width;
+		}
 	} else if (dst_width == src_width) {
 		uint32_t transferred = 0;
 		while (transferred < burst_size) {
@@ -886,7 +901,7 @@ static void dmac_timer_reset(void *opaque) {
 			break;
 	}
 	if (p->dmac_pending)
-		timer_mod(p->timer, qemu_clock_get_ns(QEMU_CLOCK_REALTIME) + 1);
+		timer_mod(p->timer, qemu_clock_get_ns(pmb887x_completion_clock()) + 1);
 }
 
 static void dmac_handle_signal_sel0_sreq(void *opaque, int request, int level) {
@@ -1005,7 +1020,9 @@ static void dmac_realize(DeviceState *dev, Error **errp) {
 	pmb887x_srb_init(&p->srb_tc, p->irq_tc, ARRAY_SIZE(p->irq_tc));
 	pmb887x_srb_set_irq_router(&p->srb_tc, p, dmac_tc_irq_router);
 
-	p->timer = timer_new_ns(QEMU_CLOCK_REALTIME, dmac_timer_reset, p);
+	/* see pmb887x_completion_clock(): the display DMA stretch is one
+	 * IRQ + halt per word, each completion used to be a main-loop trip */
+	p->timer = timer_new_ns(pmb887x_completion_clock(), dmac_timer_reset, p);
 }
 
 static void dmac_reset(DeviceState *dev) {

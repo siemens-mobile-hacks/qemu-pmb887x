@@ -21,7 +21,32 @@ bool use_icount2 = false;
 static bool icount2_debug;
 
 #define ICOUNT2_INITIAL_FREQUENCY 314000000
+#ifdef __EMSCRIPTEN__
+/*
+ * Slow-host guard (phones): let the controller converge to the actually
+ * measured execution rate instead of the stock 1 MHz floor.
+ *
+ * On a fast host this never binds (controller converges to 3-17 MHz,
+ * measured).  On a host where the TCI interpreter sustains less than
+ * 1 MHz, the stock floor makes virtual time run ahead of executed
+ * instructions - guest deadlines arrive with a fraction of the
+ * expected instruction budget and the boot dies.  Measured under 16x
+ * CPU starvation (sustained ~2.5 kHz, 2026-09-09):
+ *   floor 1 kHz: virtual clock tracks reality, v=377 after 420 s
+ *                (idle-bias deadline jumps included), boots in slow
+ *                motion, no crash;
+ *   floor 1 MHz: frequency pins at 1.000 MHz, virtual time frozen at
+ *                v=0.88 after 420 s (advances insns/1e6 ~= 2 ms/s) -
+ *                the guest never sees its timers.
+ *
+ * The default timing model (stock -icount shift=3,sleep=off) has no
+ * frequency controller at all; this only guards the opt-in
+ * precise-clocks (icount2) mode on slow hosts.
+ */
+#define ICOUNT2_MIN_FREQUENCY 1000
+#else
 #define ICOUNT2_MIN_FREQUENCY 1000000
+#endif
 #define ICOUNT2_MAX_FREQUENCY 500000000
 #define ICOUNT2_ADJUST_INTERVAL NANOSECONDS_PER_SECOND
 #define ICOUNT2_ADJUST_P_GAIN 200000
@@ -99,6 +124,41 @@ void icount2_advance(uint32_t cycles) {
 		bql_unlock();
 	}
 }
+
+int64_t icount2_ticks_now(void) {
+	return qatomic_read(&timers_state.icount2_ticks);
+}
+
+/* wasm64 TCG backend: addresses of the icount2 state that emitted TB
+ * prologues advance inline (w64_acct_addr, tcg/wasm64/wasm64.c).  The
+ * emitter needs the addresses as plain integers at translation time
+ * and cannot include cpu-timers-internal.h for the struct. */
+void icount2_w64_acct_addrs(uintptr_t *ticks, uintptr_t *deadline) {
+	*ticks = (uintptr_t)&timers_state.icount2_ticks;
+	*deadline = (uintptr_t)&timers_state.icount2_deadline;
+}
+
+#ifdef __EMSCRIPTEN__
+/*
+ * wasm: mid-TB MMIO accounting (see io_prepare(), cputlb.c).  Called
+ * from a load/store helper: if a virtual-timer deadline is crossed the
+ * timers are synced here so the upcoming device callback sees their
+ * effects, but never when the BQL is already held by this thread (a
+ * nested dispatch); the next per-TB icount2_advance() syncs instead.
+ */
+void wasm_io_advance(unsigned cycles) {
+	int64_t ticks = qatomic_read(&timers_state.icount2_ticks);
+	int64_t new_ticks = ticks + cycles;
+	qatomic_set(&timers_state.icount2_ticks, new_ticks);
+
+	int64_t deadline = qatomic_read(&timers_state.icount2_deadline);
+	if (deadline > 0 && new_ticks >= deadline && !bql_locked()) {
+		bql_lock();
+		icount2_sync();
+		bql_unlock();
+	}
+}
+#endif
 
 static int64_t icount2_get_locked(void) {
 	int64_t ticks = qatomic_read(&timers_state.icount2_ticks);

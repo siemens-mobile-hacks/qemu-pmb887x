@@ -407,7 +407,18 @@ void HELPER(wfi)(CPUARMState *env, uint32_t insn_len)
     env->halt_reason = HALT_WFI;
     cs->exception_index = EXCP_HLT;
     cs->halted = 1;
+#ifdef __EMSCRIPTEN__
+    /*
+     * No unwind: WFI always ends its TB, whose exit_tb(0) follows this
+     * call, and cpu_handle_interrupt delivers a pending exception_index
+     * before running anything else (the gen_exception_exit path) — the
+     * same outcome as the longjmp, minus the ~15 us JS-exception unwind
+     * per halt (one per display-DMA word).
+     */
+    cs->neg.can_do_io = true;
+#else
     cpu_loop_exit(cs);
+#endif
 #endif
 }
 
@@ -791,11 +802,41 @@ uint32_t HELPER(cpsr_read)(CPUARMState *env)
     return cpsr_read(env) & ~CPSR_EXEC;
 }
 
+/*
+ * The TB that wrote CPSR continues through goto_ptr rather than a plain
+ * exit (gen_set_psr / gen_rfe): if any interrupt is pending — including
+ * one that was masked until this write — make the next TB start unwind
+ * to cpu_handle_interrupt, exactly where the plain exit would have gone.
+ */
+static void cpsr_write_check_irq(CPUARMState *env)
+{
+    CPUState *cs = env_cpu(env);
+
+    if (qatomic_read(&cs->interrupt_request)) {
+        qatomic_set(&cs->neg.icount_decr.u16.high, -1);
+    }
+}
+
 void HELPER(cpsr_write)(CPUARMState *env, uint32_t val, uint32_t mask)
 {
+    uint32_t before = env->uncached_cpsr;
+
     cpsr_write(env, val, mask, CPSRWriteByInstr);
-    /* TODO: Not all cpsr bits are relevant to hflags.  */
-    arm_rebuild_hflags(env);
+    /*
+     * Upstream rebuilds hflags unconditionally here, with a TODO saying
+     * not all cpsr bits are relevant.  They are not: every field hflags
+     * reads out of the CPSR (mode -> EL/mmu_idx/sctlr, E, IL, PAN) lives
+     * in uncached_cpsr, while the bits this firmware writes hundreds of
+     * thousands of times a second - the I/F interrupt masks of its
+     * critical sections, and the condition flags - are held in the
+     * dedicated env fields listed by CACHED_CPSR_BITS and are not hflags
+     * inputs.  So an unchanged uncached_cpsr means unchanged hflags, and
+     * the ~76 ns full rebuild can be skipped.
+     */
+    if (unlikely(before != env->uncached_cpsr)) {
+        arm_rebuild_hflags(env);
+    }
+    cpsr_write_check_irq(env);
 }
 
 /* Write the CPSR for a 32-bit exception return */
@@ -821,6 +862,7 @@ void HELPER(cpsr_write_eret)(CPUARMState *env, uint32_t val)
     bql_lock();
     arm_call_el_change_hook(env_archcpu(env));
     bql_unlock();
+    cpsr_write_check_irq(env);
 }
 
 /* Access to user mode registers from privileged modes.  */

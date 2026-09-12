@@ -19,6 +19,7 @@
 
 #include "qemu/osdep.h"
 #include "qemu/qemu-print.h"
+#include "qemu/wasm-diag.h"
 #include "qapi/error.h"
 #include "qapi/type-helpers.h"
 #include "hw/core/cpu.h"
@@ -48,6 +49,11 @@
 #include "internal-common.h"
 #if !defined(CONFIG_USER_ONLY)
 #include "accel/tcg/iommu.h"
+#ifdef CONFIG_TCG_WASM64
+#include "accel/tcg/probe.h"
+#include "accel/tcg/cpu-mmu-index.h"
+#include "exec/tlb-flags.h"
+#endif
 #endif
 
 /* -icount align implementation. */
@@ -239,12 +245,18 @@ static inline TranslationBlock *tb_lookup(CPUState *cpu, TCGTBCPUState s)
     hash = tb_jmp_cache_hash_func(s.pc);
     jc = cpu->tb_jmp_cache;
 
+#ifdef __EMSCRIPTEN__
+    wasm_diag_stat[WASM_DIAG_LOOKUP]++;
+#endif
     tb = qatomic_read(&jc->array[hash].tb);
     if (likely(tb &&
                jc->array[hash].pc == s.pc &&
                tb->cs_base == s.cs_base &&
                tb->flags == s.flags &&
                tb_cflags(tb) == s.cflags)) {
+#ifdef __EMSCRIPTEN__
+        wasm_diag_stat[WASM_DIAG_LOOKUP_JC]++;
+#endif
         goto hit;
     }
 
@@ -252,6 +264,9 @@ static inline TranslationBlock *tb_lookup(CPUState *cpu, TCGTBCPUState s)
     if (tb == NULL) {
         return NULL;
     }
+#ifdef __EMSCRIPTEN__
+    wasm_diag_stat[WASM_DIAG_LOOKUP_QHT]++;
+#endif
 
     jc->array[hash].pc = s.pc;
     qatomic_set(&jc->array[hash].tb, tb);
@@ -366,6 +381,40 @@ static inline bool check_for_breakpoints(CPUState *cpu, vaddr pc,
         check_for_breakpoints_slow(cpu, pc, cflags);
 }
 
+/*
+ * helper_lookup_tb_ptr runs once per indirect jump - 2.9M/s on this
+ * firmware, 78M per boot - and two of its calls are pure dispatch on a
+ * build with exactly one target and one accelerator:
+ *
+ *  - get_tb_cpu_state is reached through cpu->cc->tcg_ops, i.e. a wasm
+ *    call_indirect (table bounds + signature check) around a function
+ *    the linker could have called directly;
+ *  - curr_cflags() lives in another translation unit, so the four
+ *    debug-only conditions it tests (none of which can be true in a
+ *    browser build: no gdbstub single-step, no -one-insn-per-tb, no
+ *    -d nochain) cost a call instead of folding away.
+ *
+ * Both are wasm-only shortcuts: the generic paths stay for every other
+ * build.
+ */
+#ifdef __EMSCRIPTEN__
+TCGTBCPUState arm_get_tb_cpu_state(CPUState *cs);
+#define W64_GET_TB_CPU_STATE(cpu)  arm_get_tb_cpu_state(cpu)
+
+static inline uint32_t curr_cflags_fast(CPUState *cpu)
+{
+    if (likely(!cpu_single_stepping(cpu) &&
+               !qatomic_read(&one_insn_per_tb) &&
+               !qemu_loglevel_mask(CPU_LOG_TB_NOCHAIN))) {
+        return cpu->tcg_cflags;
+    }
+    return curr_cflags(cpu);
+}
+#else
+#define W64_GET_TB_CPU_STATE(cpu)  ((cpu)->cc->tcg_ops->get_tb_cpu_state(cpu))
+#define curr_cflags_fast(cpu)      curr_cflags(cpu)
+#endif
+
 /**
  * helper_lookup_tb_ptr: quick check for next tb
  * @env: current cpu state
@@ -388,8 +437,8 @@ const void *HELPER(lookup_tb_ptr)(CPUArchState *env)
      */
     cpu->neg.can_do_io = true;
 
-    TCGTBCPUState s = cpu->cc->tcg_ops->get_tb_cpu_state(cpu);
-    s.cflags = curr_cflags(cpu);
+    TCGTBCPUState s = W64_GET_TB_CPU_STATE(cpu);
+    s.cflags = curr_cflags_fast(cpu);
 
     if (check_for_breakpoints(cpu, s.pc, &s.cflags)) {
         cpu_loop_exit(cpu);
@@ -600,6 +649,202 @@ void cpu_exec_step_atomic(CPUState *cpu)
     end_exclusive();
 }
 
+#ifdef CONFIG_TCG_WASM64
+/*
+ * Speculative successor translation for the wasm64 backend.
+ *
+ * Every translated TB has to be compiled by the browser
+ * (WebAssembly.Module) before it can run, and each compile carries a
+ * large fixed cost — plus, in Firefox, a page-granular slice of a
+ * process-wide executable-memory budget that is only reclaimed by GC.
+ * Compiling one module per TB at first execution paid that cost ~1k
+ * times per second in the early boot.  Instead, when a TB is
+ * translated on a lookup miss, its goto_tb destinations (and theirs,
+ * breadth-first, up to W64_SPEC_N TBs) are translated right away;
+ * they all join the backend's open batch, which is assembled into ONE
+ * module when the first of them executes (tcg_qemu_tb_exec).
+ *
+ * Translation here must be side-effect free for the guest: only
+ * targets whose page AND the following page (a TB may cross into it)
+ * are executable RAM are translated, so the translator never takes a
+ * faulting code-fetch path; the cflags must be the plain ones (no
+ * one-shot CF_COUNT/CF_LAST_IO request pending); and nothing is done
+ * when the code buffer is nearly full, so a tb_flush cannot be
+ * triggered from here (a flush would free @root under the caller).
+ * Returns true if a flush happened anyway (caller re-looks-up).
+ */
+#define W64_SPEC_MAX 64
+int w64_spec_active;
+
+static bool w64_spec_code_host(CPUArchState *env, vaddr pc, int mmu_idx,
+                               void **host)
+{
+    int flags = probe_access_full_mmu(env, pc, 0, MMU_INST_FETCH, mmu_idx,
+                                      host, NULL);
+    return *host != NULL && !(flags & (TLB_INVALID_MASK | TLB_MMIO));
+}
+
+static bool w64_spec_code_ram(CPUArchState *env, vaddr pc, int mmu_idx)
+{
+    void *host;
+    return w64_spec_code_host(env, pc, mmu_idx, &host);
+}
+
+static bool w64_speculate(CPUState *cpu, TranslationBlock *root,
+                          TCGTBCPUState s)
+{
+    static int budget = -1;
+    CPUArchState *env = cpu_env(cpu);
+    TranslationBlock *queue[4 * W64_SPEC_MAX + 1];
+    unsigned qh = 0, qt = 0, made = 0;
+    const unsigned qmax = ARRAY_SIZE(queue);
+    unsigned flush_count = tb_ctx.tb_flush_count;
+    int mmu_idx = cpu_mmu_index(cpu, true);
+
+    if (budget < 0) {
+        const char *e = getenv("W64_SPEC_N");
+        budget = e ? atoi(e) : 32;
+        budget = MIN(MAX(budget, 0), W64_SPEC_MAX);
+    }
+    static unsigned st[6];   /* misses, nosucc, exists, notram, made, oneshot */
+    static int dbg = -1;
+    if (dbg < 0) {
+        dbg = getenv("W64_DEBUG") != NULL;
+    }
+    st[0]++;
+    if (s.cflags != curr_cflags(cpu)) {
+        st[5]++;
+    } else if (root->w64_nsucc == 0) {
+        st[1]++;
+    }
+    if (dbg && (st[0] & 4095) == 0) {
+        fprintf(stderr, "W64SPEC misses=%u nosucc=%u oneshot=%u exists=%u "
+                "notram=%u made=%u\n", st[0], st[1], st[5], st[2], st[3], st[4]);
+    }
+    if (budget == 0 || root->w64_nsucc == 0 ||
+        s.cflags != curr_cflags(cpu)) {
+        return false;
+    }
+
+    queue[qt++] = root;
+    while (qh < qt && made < (unsigned)budget) {
+        TranslationBlock *tb = queue[qh++];
+        vaddr succ[ARRAY_SIZE(tb->w64_succ) + 1];
+        unsigned nsucc = tb->w64_nsucc;
+        unsigned i;
+        bool complete = true;
+
+        /*
+         * A node whose successors were all found translated by an
+         * earlier walk has nothing to offer: the walk through already-
+         * translated TBs re-probed and re-looked-up the same edges on
+         * every miss in the neighbourhood (~2 % of the boot's vCPU time
+         * in probes + qht lookups for nothing).
+         */
+        if (tb->w64_explored) {
+            continue;
+        }
+
+        memcpy(succ, tb->w64_succ, nsucc * sizeof(succ[0]));
+        /*
+         * ARM `ldr pc, [pc, #-4]` trampolines (the firmware's call
+         * thunks): the target is the literal right after the insn.
+         * Read through the non-faulting probe's host pointer; a wrong
+         * guess is just a probe-validated, never-executed TB.
+         */
+        if (!(tb->cflags & CF_PCREL) && tb->size >= 4) {
+            vaddr last = tb->pc + tb->size - 4;
+            void *h1, *h2;
+            if (w64_spec_code_host(env, last, mmu_idx, &h1) &&
+                ldl_le_p(h1) == 0xe51ff004 &&
+                w64_spec_code_host(env, last + 4, mmu_idx, &h2)) {
+                /*
+                 * ldl_le_p() returns a *signed* int: a literal with bit
+                 * 31 set (0xa0000000 flash/RAM, and the 0xffff0000 high
+                 * vectors the pmb887x bootrom lives in) sign-extends into
+                 * the 64-bit vaddr.  A sign-extended address that still
+                 * passes the probe reaches tb_gen_code, and translator_ld
+                 * then compares db->pc_first (sign-extended) against a pc
+                 * the ARM frontend zero-extended: neither page test
+                 * matches and it aborts on
+                 * "(base ^ pc) & TARGET_PAGE_MASK".  KE800 died there
+                 * ~90 s into the boot (its firmware runs the GSM L1
+                 * interrupt path through the 0xffff0000 trampolines).
+                 */
+                vaddr target = (uint32_t)ldl_le_p(h2);
+                if (!(target & 3)) {
+                    succ[nsucc++] = target;
+                }
+            }
+        }
+
+        for (i = 0; i < nsucc; i++) {
+            TCGTBCPUState t = s;
+
+            if (made >= (unsigned)budget || qt >= qmax) {
+                complete = false;
+                break;
+            }
+            TranslationBlock *ex;
+            vaddr next_page;
+            unsigned k;
+
+            t.pc = succ[i];
+            /*
+             * Non-faulting probes first — before tb_htable_lookup, whose
+             * get_page_addr_code() would deliver a prefetch abort to the
+             * guest for a target it does not map, or (blx: a Thumb
+             * target recorded while in ARM mode) an alignment fault.  A
+             * successful probe fills the TLB, so the faulting lookups in
+             * tb_htable_lookup, tb_gen_code and translator_ld then hit.
+             */
+            if (!w64_spec_code_ram(env, t.pc, mmu_idx)) {
+                st[3]++;
+                continue;
+            }
+            next_page = (t.pc & TARGET_PAGE_MASK) + TARGET_PAGE_SIZE;
+            if (next_page > t.pc && !w64_spec_code_ram(env, next_page, mmu_idx)) {
+                st[3]++;
+                continue;
+            }
+            ex = tb_htable_lookup(cpu, t);
+            if (ex) {
+                /* already translated: walk through it, its successors
+                 * may still be missing (once per node) */
+                st[2]++;
+                for (k = 0; k < qt && queue[k] != ex; k++) {
+                    continue;
+                }
+                if (k == qt) {
+                    queue[qt++] = ex;
+                }
+                continue;
+            }
+            st[4]++;
+            /* leave headroom: never provoke a flush from here */
+            if ((char *)tcg_ctx->code_gen_highwater -
+                (char *)tcg_ctx->code_gen_ptr < (1 << 20)) {
+                return false;
+            }
+            mmap_lock();
+            w64_spec_active = 1;
+            queue[qt] = tb_gen_code(cpu, t);
+            w64_spec_active = 0;
+            mmap_unlock();
+            made++;
+            if (tb_ctx.tb_flush_count != flush_count) {
+                return true;
+            }
+            qt++;
+        }
+        if (complete) {
+            tb->w64_explored = 1;
+        }
+    }
+    return false;
+}
+#endif
+
 void tb_set_jmp_target(TranslationBlock *tb, int n, uintptr_t addr)
 {
     /*
@@ -780,6 +1025,19 @@ static inline bool icount_exit_request(CPUState *cpu)
 static inline bool cpu_handle_interrupt(CPUState *cpu,
                                         TranslationBlock **last_tb)
 {
+    /*
+     * A guest exception left pending by generated code that ended its
+     * TB with a plain exit instead of a cpu_loop_exit() unwind (see
+     * gen_exception_exit in the target frontends): deliver it before
+     * anything else, exactly like the longjmp would have.  Clear the
+     * exit-kick flag the same way the normal path below does so a kick
+     * that raced with the TB cannot force one-exit-per-TB spinning.
+     */
+    if (unlikely(cpu->exception_index >= 0)) {
+        qatomic_set_mb(&cpu->neg.icount_decr.u16.high, 0);
+        return true;
+    }
+
     /*
      * If we have requested custom cflags with CF_NOIRQ we should
      * skip checking here. Any pending interrupts will get picked up
@@ -972,6 +1230,14 @@ cpu_exec_loop(CPUState *cpu, SyncClocks *sc)
                 mmap_lock();
                 tb = tb_gen_code(cpu, s);
                 mmap_unlock();
+
+#ifdef CONFIG_TCG_WASM64
+                if (w64_speculate(cpu, tb, s)) {
+                    /* a tb_flush freed @tb: start the lookup over */
+                    last_tb = NULL;
+                    continue;
+                }
+#endif
 
                 /*
                  * We add the TB in the virtual pc hash table

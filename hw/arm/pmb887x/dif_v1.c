@@ -723,7 +723,7 @@ static void dif_realize(DeviceState *dev, Error **errp) {
 
 	pmb887x_fifo16_init(&p->tx_fifo_single, 1);
 	pmb887x_fifo16_init(&p->rx_fifo_single, 1);
-	p->transfer_timer = timer_new_ns(QEMU_CLOCK_REALTIME, dif_transfer_complete, p);
+	p->transfer_timer = timer_new_ns(pmb887x_completion_clock(), dif_transfer_complete, p);
 
 	dif_set_fifo(p, DIF_FIFO_RX, false);
 	dif_set_fifo(p, DIF_FIFO_TX, false);

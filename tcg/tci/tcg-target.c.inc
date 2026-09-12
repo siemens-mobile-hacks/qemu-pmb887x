@@ -28,6 +28,10 @@
 #define TCG_TARGET_CALL_ARG_I32         TCG_CALL_ARG_NORMAL
 #define TCG_TARGET_CALL_ARG_I64         TCG_CALL_ARG_NORMAL
 #define TCG_TARGET_CALL_ARG_I128        TCG_CALL_ARG_NORMAL
+
+/* Constants we accept as inline immediates (see tcg-target-con-str.h).  */
+#define TCG_CT_CONST_S16 0x100
+#define TCG_CT_CONST_S12 0x200
 #define TCG_TARGET_CALL_RET_I128        TCG_CALL_RET_NORMAL
 
 static TCGConstraintSetIndex
@@ -207,6 +211,33 @@ static void tcg_out_op_rrr(TCGContext *s, TCGOpcode op,
     insn = deposit32(insn, 8, 4, r0);
     insn = deposit32(insn, 12, 4, r1);
     insn = deposit32(insn, 16, 4, r2);
+    tcg_out32(s, insn);
+}
+
+static void tcg_out_op_rri(TCGContext *s, TCGOpcode op,
+                           TCGReg r0, TCGReg r1, int32_t i2)
+{
+    tcg_insn_unit insn = 0;
+
+    tcg_debug_assert(i2 == sextract32(i2, 0, 16));
+    insn = deposit32(insn, 0, 8, op);
+    insn = deposit32(insn, 8, 4, r0);
+    insn = deposit32(insn, 12, 4, r1);
+    insn = deposit32(insn, 16, 16, i2);
+    tcg_out32(s, insn);
+}
+
+static void tcg_out_op_rrci(TCGContext *s, TCGOpcode op, TCGReg r0,
+                            TCGReg r1, TCGCond c2, int32_t i3)
+{
+    tcg_insn_unit insn = 0;
+
+    tcg_debug_assert(i3 == sextract32(i3, 0, 12));
+    insn = deposit32(insn, 0, 8, op);
+    insn = deposit32(insn, 8, 4, r0);
+    insn = deposit32(insn, 12, 4, r1);
+    insn = deposit32(insn, 16, 4, c2);
+    insn = deposit32(insn, 20, 12, i3);
     tcg_out32(s, insn);
 }
 
@@ -484,9 +515,16 @@ static void tgen_add(TCGContext *s, TCGType type,
     tcg_out_op_rrr(s, INDEX_op_add, a0, a1, a2);
 }
 
+static void tgen_addi(TCGContext *s, TCGType type,
+                       TCGReg a0, TCGReg a1, tcg_target_long a2)
+{
+    tcg_out_op_rri(s, INDEX_op_tci_add_ri, a0, a1, a2);
+}
+
 static const TCGOutOpBinary outop_add = {
-    .base.static_constraint = C_O1_I2(r, r, r),
+    .base.static_constraint = C_O1_I2(r, r, rS),
     .out_rrr = tgen_add,
+    .out_rri = tgen_addi,
 };
 
 static TCGConstraintSetIndex cset_addsubcarry(TCGType type, unsigned flags)
@@ -541,9 +579,16 @@ static void tgen_and(TCGContext *s, TCGType type,
     tcg_out_op_rrr(s, INDEX_op_and, a0, a1, a2);
 }
 
+static void tgen_andi(TCGContext *s, TCGType type,
+                        TCGReg a0, TCGReg a1, tcg_target_long a2)
+{
+    tcg_out_op_rri(s, INDEX_op_tci_and_ri, a0, a1, a2);
+}
+
 static const TCGOutOpBinary outop_and = {
-    .base.static_constraint = C_O1_I2(r, r, r),
+    .base.static_constraint = C_O1_I2(r, r, rS),
     .out_rrr = tgen_and,
+    .out_rri = tgen_andi,
 };
 
 static void tgen_andc(TCGContext *s, TCGType type,
@@ -552,9 +597,16 @@ static void tgen_andc(TCGContext *s, TCGType type,
     tcg_out_op_rrr(s, INDEX_op_andc, a0, a1, a2);
 }
 
+static void tgen_andci(TCGContext *s, TCGType type,
+                         TCGReg a0, TCGReg a1, tcg_target_long a2)
+{
+    tcg_out_op_rri(s, INDEX_op_tci_andc_ri, a0, a1, a2);
+}
+
 static const TCGOutOpBinary outop_andc = {
-    .base.static_constraint = C_O1_I2(r, r, r),
+    .base.static_constraint = C_O1_I2(r, r, rS),
     .out_rrr = tgen_andc,
+    .out_rri = tgen_andci,
 };
 
 static void tgen_clz(TCGContext *s, TCGType type,
@@ -729,9 +781,16 @@ static void tgen_or(TCGContext *s, TCGType type,
     tcg_out_op_rrr(s, INDEX_op_or, a0, a1, a2);
 }
 
+static void tgen_ori(TCGContext *s, TCGType type,
+                       TCGReg a0, TCGReg a1, tcg_target_long a2)
+{
+    tcg_out_op_rri(s, INDEX_op_tci_or_ri, a0, a1, a2);
+}
+
 static const TCGOutOpBinary outop_or = {
-    .base.static_constraint = C_O1_I2(r, r, r),
+    .base.static_constraint = C_O1_I2(r, r, rS),
     .out_rrr = tgen_or,
+    .out_rri = tgen_ori,
 };
 
 static void tgen_orc(TCGContext *s, TCGType type,
@@ -900,9 +959,16 @@ static void tgen_xor(TCGContext *s, TCGType type,
     tcg_out_op_rrr(s, INDEX_op_xor, a0, a1, a2);
 }
 
+static void tgen_xori(TCGContext *s, TCGType type,
+                        TCGReg a0, TCGReg a1, tcg_target_long a2)
+{
+    tcg_out_op_rri(s, INDEX_op_tci_xor_ri, a0, a1, a2);
+}
+
 static const TCGOutOpBinary outop_xor = {
-    .base.static_constraint = C_O1_I2(r, r, r),
+    .base.static_constraint = C_O1_I2(r, r, rS),
     .out_rrr = tgen_xor,
+    .out_rri = tgen_xori,
 };
 
 static void tgen_ctpop(TCGContext *s, TCGType type, TCGReg a0, TCGReg a1)
@@ -988,9 +1054,23 @@ static void tgen_setcond(TCGContext *s, TCGType type, TCGCond cond,
     tcg_out_op_rrrc(s, opc, dest, arg1, arg2, cond);
 }
 
+static void tgen_setcondi(TCGContext *s, TCGType type, TCGCond cond,
+                            TCGReg dest, TCGReg arg1, tcg_target_long arg2)
+{
+    tcg_out_op_rrci(s, INDEX_op_tci_setcond32_ri, dest, arg1, cond, arg2);
+}
+
+static TCGConstraintSetIndex cset_setcond(TCGType type, unsigned flags)
+{
+    /* the _ri form decodes a 12-bit immediate; i64 keeps registers only */
+    return type == TCG_TYPE_I32 ? C_O1_I2(r, r, rB) : C_O1_I2(r, r, r);
+}
+
 static const TCGOutOpSetcond outop_setcond = {
-    .base.static_constraint = C_O1_I2(r, r, r),
+    .base.static_constraint = C_Dynamic,
+    .base.dynamic_constraint = cset_setcond,
     .out_rrr = tgen_setcond,
+    .out_rri = tgen_setcondi,
 };
 
 static void tgen_negsetcond(TCGContext *s, TCGType type, TCGCond cond,
@@ -1012,9 +1092,25 @@ static void tgen_brcond(TCGContext *s, TCGType type, TCGCond cond,
     tcg_out_op_rl(s, INDEX_op_brcond, TCG_REG_TMP, l);
 }
 
+static void tgen_brcondi(TCGContext *s, TCGType type, TCGCond cond,
+                         TCGReg arg0, tcg_target_long arg1, TCGLabel *l)
+{
+    tcg_out_op_rrci(s, INDEX_op_tci_setcond32_ri,
+                    TCG_REG_TMP, arg0, cond, arg1);
+    tcg_out_op_rl(s, INDEX_op_brcond, TCG_REG_TMP, l);
+}
+
+static TCGConstraintSetIndex cset_brcond(TCGType type, unsigned flags)
+{
+    /* the _ri form decodes a 12-bit immediate; i64 keeps registers only */
+    return type == TCG_TYPE_I32 ? C_O0_I2(r, rB) : C_O0_I2(r, r);
+}
+
 static const TCGOutOpBrcond outop_brcond = {
-    .base.static_constraint = C_O0_I2(r, r),
+    .base.static_constraint = C_Dynamic,
+    .base.dynamic_constraint = cset_brcond,
     .out_rr = tgen_brcond,
+    .out_ri = tgen_brcondi,
 };
 
 static void tgen_movcond(TCGContext *s, TCGType type, TCGCond cond,
@@ -1135,14 +1231,69 @@ static const TCGOutOpStore outop_st = {
     .out_r = tcg_out_st,
 };
 
+/*
+ * Does this mop reduce tci_tlb_probe() to the specialized compare
+ * (addr + size-1) & TARGET_PAGE_MASK == tlb_addr (see tci_probe_1)?
+ * Requires: no bswap, a_mask == 0 (no MO_ALIGN bits, MO_ALIGN_TLB_ONLY ok),
+ * and atomicity that never forces the helper path for a probe hit
+ * (IFALIGN - the default - and NONE; a plain aligned load/store satisfies
+ * IFALIGN, and misaligned accesses the specialized compare still admits
+ * have no atomicity requirement).
+ */
+static bool tci_mop_specializes(MemOp mop)
+{
+    if ((mop & ~(MO_SIZE | MO_SIGN)) != (MO_ALIGN | MO_ATOM_NONE)) {
+        return false;
+    }
+    if ((mop & MO_SIZE) > MO_32) {
+        return false;
+    }
+    return true;
+}
+
 static void tgen_qemu_ld(TCGContext *s, TCGType type, TCGReg data,
                          TCGReg addr, MemOpIdx oi)
 {
-    if (oi & ~0xffff) {
+    if (oi & ~0xffff && !tci_mop_specializes(get_memop(oi))) {
         tcg_out_movi(s, TCG_TYPE_I32, TCG_REG_TMP, oi);
         tcg_out_op_rrr(s, INDEX_op_tci_qemu_ld_rrr, data, addr, TCG_REG_TMP);
-    } else {
-        tcg_out_op_rrm(s, INDEX_op_qemu_ld, data, addr, oi);
+        return;
+    }
+    {
+        MemOp mop = get_memop(oi);
+        TCGOpcode op = INDEX_op_qemu_ld;
+
+        if (tci_mop_specializes(mop)) {
+            switch (mop & (MO_SIZE | MO_SIGN)) {
+            case MO_UB:
+                op = INDEX_op_tci_qemu_ld8;
+                break;
+            case MO_SB:
+                op = INDEX_op_tci_qemu_ld8s;
+                break;
+            case MO_UW:
+                op = INDEX_op_tci_qemu_ld16;
+                break;
+            case MO_SW:
+                op = INDEX_op_tci_qemu_ld16s;
+                break;
+            case MO_UL:
+                op = INDEX_op_tci_qemu_ld32;
+                break;
+            case MO_SL:
+                /* i64 + MO_SL sign-extends to 64 bits; i32 does not care. */
+                op = type == TCG_TYPE_I32
+                    ? INDEX_op_tci_qemu_ld32 : INDEX_op_qemu_ld;
+                break;
+            default:
+                g_assert_not_reached();
+            }
+            if (op != INDEX_op_qemu_ld) {
+                    /* the case reconstructs the mop; the stream carries the idx */
+                oi = get_mmuidx(oi);
+            }
+        }
+        tcg_out_op_rrm(s, op, data, addr, oi);
     }
 }
 
@@ -1158,11 +1309,32 @@ static const TCGOutOpQemuLdSt2 outop_qemu_ld2 = {
 static void tgen_qemu_st(TCGContext *s, TCGType type, TCGReg data,
                          TCGReg addr, MemOpIdx oi)
 {
-    if (oi & ~0xffff) {
+    if (oi & ~0xffff && !tci_mop_specializes(get_memop(oi))) {
         tcg_out_movi(s, TCG_TYPE_I32, TCG_REG_TMP, oi);
         tcg_out_op_rrr(s, INDEX_op_tci_qemu_st_rrr, data, addr, TCG_REG_TMP);
-    } else {
-        tcg_out_op_rrm(s, INDEX_op_qemu_st, data, addr, oi);
+        return;
+    }
+    {
+        MemOp mop = get_memop(oi);
+        TCGOpcode op = INDEX_op_qemu_st;
+
+        if (tci_mop_specializes(mop)) {
+            switch (mop & MO_SIZE) {
+            case MO_8:
+                op = INDEX_op_tci_qemu_st8;
+                break;
+            case MO_16:
+                op = INDEX_op_tci_qemu_st16;
+                break;
+            case MO_32:
+                op = INDEX_op_tci_qemu_st32;
+                break;
+            default:
+                g_assert_not_reached();
+            }
+            oi = get_mmuidx(oi);
+        }
+        tcg_out_op_rrm(s, op, data, addr, oi);
     }
 }
 
@@ -1196,6 +1368,23 @@ static inline bool tcg_out_sti(TCGContext *s, TCGType type, TCGArg val,
 static bool tcg_target_const_match(int64_t val, int ct,
                                    TCGType type, TCGCond cond, int vece)
 {
+    if (ct & TCG_CT_CONST_S16) {
+        /*
+         * For i32 the upper bits of a register are undefined in TCI
+         * (consumers truncate), so only the low 16 bits must match;
+         * the interpreter applies the sign-extended immediate.
+         */
+        if (type == TCG_TYPE_I32) {
+            return (uint32_t)val == (uint32_t)(int16_t)val;
+        }
+        return val == (int64_t)(int16_t)val;
+    }
+    if (ct & TCG_CT_CONST_S12) {
+        if (type == TCG_TYPE_I32) {
+            return (uint32_t)val == (uint32_t)sextract64(val, 0, 12);
+        }
+        return val == sextract64(val, 0, 12);
+    }
     return ct & TCG_CT_CONST;
 }
 
@@ -1238,7 +1427,15 @@ static inline void tcg_target_qemu_prologue(TCGContext *s)
 
 static void tcg_out_tb_start(TCGContext *s)
 {
-    /* nothing to do */
+#ifdef __EMSCRIPTEN__
+    /*
+     * Emit the TB header (see INDEX_op_tci_tbhdr): the interpreter
+     * executes it at every TB entry and advances the icount2 clock by
+     * the TB's guest-insn count there.  This keeps the clock strictly
+     * instruction-proportional even when TBs are chained via goto_tb.
+     */
+    tcg_out_op_ri(s, INDEX_op_tci_tbhdr, 0, s->gen_tb->icount);
+#endif
 }
 
 bool tcg_target_has_memory_bswap(MemOp memop)

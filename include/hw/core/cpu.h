@@ -207,6 +207,16 @@ typedef uint32_t MMUIdxMap;
 #define CPU_VTLB_SIZE 8
 
 /*
+ * Granularity of the per-TLB physical-address summary (see phys_group in
+ * CPUTLBDesc): one 64-bit mask per group of 64 table entries, one bit per
+ * 64 MB of physical address space.  Tables larger than
+ * TLB_PHYS_GROUPS << TLB_PHYS_GROUP_BITS entries fall back to a full walk.
+ */
+#define TLB_PHYS_GROUP_BITS 6
+#define TLB_PHYS_GROUPS 256
+#define TLB_PHYS_BUCKET_BITS 25
+
+/*
  * The full TLB entry, which is not accessed by generated TCG code,
  * so the layout is not as critical as that of CPUTLBEntry. This is
  * also why we don't want to combine the two structs.
@@ -249,7 +259,30 @@ struct CPUTLBEntryFull {
     uint8_t slow_flags[MMU_ACCESS_COUNT];
 
     /*
+     * Fill-time resolved MMIO dispatch (doc/performance-handoff.md,
+     * device-path slice 1): when the entry's section is a leaf I/O
+     * region whose ops allow a direct call for a given exact size,
+     * tlb_set_page_full resolves the callback + opaque + allowed-size
+     * mask + endianness swap here, so the access path is one mask
+     * test + one indirect call instead of the generic
+     * memory_region_dispatch_{read,write} resolution.  io_size_mask == 0
+     * disables the fast path (RAM, aliases, accept callbacks,
+     * ioeventf d writes, with-attrs ops, out-of-range sizes all fall
+     * back to the stock path with no added per-access conditions).
+     */
+    void *io_opaque;
+    uint64_t (*io_read_fn)(void *opaque, hwaddr addr, unsigned size);
+    void (*io_write_fn)(void *opaque, hwaddr addr, uint64_t val,
+                        unsigned size);
+    uint16_t io_rmask;         /* exact sizes dispatchable directly */
+    uint16_t io_wmask;
+    uint8_t io_swap;           /* bit0: swap reads, bit1: swap writes */
+    uint8_t io_check_align;    /* honor ops->valid.unaligned == false */
+    bool *io_guard;            /* re-entrancy guard flag, or NULL */
+
+    /*
      * Allow target-specific additions to this structure.
+
      * This may be used to cache items from the guest cpu
      * page tables for later use by the implementation.
      */
@@ -288,8 +321,23 @@ typedef struct CPUTLBDesc {
     /* maximum number of entries observed in the window */
     size_t window_max_entries;
     size_t n_used_entries;
+    /* fills since the last flush/resize (tlb_set_page_full grows the
+     * table when this exceeds twice its size — a guest that never flushes
+     * its TLB never reached the flush-time resize policy) */
+    size_t n_fills;
     /* The next index to use in the tlb victim table.  */
     size_t vindex;
+    /*
+     * Physical-address summary, so a memory-topology commit does not have
+     * to walk every entry (tlb_flush_phys_ranges).  phys_group[g] is a
+     * bitmap of the 64 MB physical buckets the entries of the 64-entry
+     * group g translate into; phys_any is the OR over the groups and the
+     * victim table.  Both are conservative - bits are added on fill and
+     * never removed on eviction - and a commit that walks a group rewrites
+     * that group's mask exactly, so staleness cannot accumulate.
+     */
+    uint64_t phys_any;
+    uint64_t phys_group[TLB_PHYS_GROUPS];
     /* The tlb victim table, in two parts.  */
     CPUTLBEntry vtable[CPU_VTLB_SIZE];
     CPUTLBEntryFull vfulltlb[CPU_VTLB_SIZE];

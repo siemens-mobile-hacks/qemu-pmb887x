@@ -51,6 +51,50 @@ static bool icount_sleep = true;
 
 bool icount_align_option;
 
+/*
+ * Real-time cap (see exec/icount.h).  With sleep=off the virtual clock is
+ * instruction-proportional and never waits for the host: a halted guest
+ * warps to its next timer at once and a guest running faster than one insn
+ * per 2^shift ns runs its clocks ahead of wall time (idle-screen
+ * countdowns, animations).  The cap keeps QEMU_CLOCK_VIRTUAL within
+ * RTCAP_SLACK of "allowed" virtual time: the vCPU thread sleeps
+ * (kick-interruptible) before a warp or after a budget round that would
+ * overrun.  Virtual time itself stays deterministic, only wall pacing
+ * changes.  "banked": allowed = wall time since the VM started, so a guest
+ * that fell behind (a slow boot) may catch up as fast as it can and the
+ * boot is never slowed; "strict": the anchor is re-set whenever virtual
+ * time lags, so nothing is banked and the guest is always paced.
+ */
+bool icount_rtcap;
+static bool icount_rtcap_strict;
+static int64_t rtcap_v0, rtcap_r0;
+static bool rtcap_vcpu_waiting;
+#define RTCAP_SLACK_NS (2 * SCALE_MS)
+
+int64_t icount_rtcap_excess_ns(int64_t vtarget)
+{
+    int64_t r = qemu_clock_get_ns(QEMU_CLOCK_REALTIME);
+    int64_t allowed = rtcap_v0 + (r - rtcap_r0);
+
+    /*
+     * strict: lag is forgiven, not banked.  Test the target, not the
+     * current virtual time: while the vCPU sleeps for wall time to reach
+     * a warp target, the current time falls "behind" by design, and
+     * re-anchoring on it would restart the wait forever.
+     */
+    if (icount_rtcap_strict && vtarget < allowed - RTCAP_SLACK_NS) {
+        rtcap_v0 = vtarget;
+        rtcap_r0 = r;
+        allowed = vtarget;
+    }
+    return vtarget - (allowed + RTCAP_SLACK_NS);
+}
+
+void icount_rtcap_set_waiting(bool waiting)
+{
+    qatomic_set(&rtcap_vcpu_waiting, waiting);
+}
+
 /* Do not count executed instructions */
 ICountMode use_icount = ICOUNT_DISABLED;
 
@@ -333,7 +377,6 @@ void icount_start_warp_timer(void)
     }
 
     /* We want to use the earliest deadline from ALL vm_clocks */
-    clock = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL_RT);
     deadline = qemu_clock_deadline_ns_all(QEMU_CLOCK_VIRTUAL,
                                           ~QEMU_TIMER_ATTR_EXTERNAL);
     if (deadline < 0) {
@@ -359,6 +402,18 @@ void icount_start_warp_timer(void)
              * It is useful when we want a deterministic execution time,
              * isolated from host latencies.
              */
+            if (icount_rtcap && !qemu_in_vcpu_thread()) {
+                /*
+                 * Under the real-time cap the vCPU thread paces its own
+                 * warps (rr_idle_advance).  It handles this deadline when
+                 * its timed wait ends; if it is parked in the untimed halt
+                 * wait instead, hand the deadline back to it.
+                 */
+                if (!qatomic_read(&rtcap_vcpu_waiting)) {
+                    qemu_cpu_kick(first_cpu);
+                }
+                return;
+            }
             seqlock_write_lock(&timers_state.vm_clock_seqlock,
                                &timers_state.vm_clock_lock);
             qatomic_set(&timers_state.qemu_icount_bias,
@@ -375,6 +430,7 @@ void icount_start_warp_timer(void)
              * you will not be sending network packets continuously instead of
              * every 100ms.
              */
+            clock = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL_RT);
             seqlock_write_lock(&timers_state.vm_clock_seqlock,
                                &timers_state.vm_clock_lock);
             if (timers_state.vm_clock_warp_start == -1
@@ -463,6 +519,18 @@ bool icount_configure(QemuOpts *opts, Error **errp)
     if (icount_sleep) {
         timers_state.icount_warp_timer = timer_new_ns(QEMU_CLOCK_VIRTUAL_RT,
                                          icount_timer_cb, NULL);
+    } else {
+        const char *e = getenv("QEMU_ICOUNT_RTCAP");
+#ifdef __EMSCRIPTEN__
+        const char *mode = e ? e : "banked";
+#else
+        const char *mode = e ? e : "off";
+#endif
+        icount_rtcap_strict = !strcmp(mode, "strict");
+        icount_rtcap = icount_rtcap_strict || !strcmp(mode, "banked")
+                       || !strcmp(mode, "1") || !strcmp(mode, "on");
+        rtcap_v0 = 0;
+        rtcap_r0 = qemu_clock_get_ns(QEMU_CLOCK_REALTIME);
     }
 
     icount_align_option = align;

@@ -192,6 +192,9 @@ static inline bool (qemu_cond_timedwait)(QemuCond *cond, QemuMutex *mutex,
     return qemu_cond_timedwait(cond, mutex, ms);
 }
 
+/* Sub-millisecond timed wait (host ns); same return as qemu_cond_timedwait */
+bool qemu_cond_timedwait_ns(QemuCond *cond, QemuMutex *mutex, int64_t ns);
+
 void qemu_sem_init(QemuSemaphore *sem, int init);
 void qemu_sem_post(QemuSemaphore *sem);
 void qemu_sem_wait(QemuSemaphore *sem);

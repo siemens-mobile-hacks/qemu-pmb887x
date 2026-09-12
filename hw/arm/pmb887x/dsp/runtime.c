@@ -5,6 +5,7 @@
 #include "qemu/atomic.h"
 #include "qemu/bitops.h"
 #include "qemu/rcu.h"
+#include "qemu/timer.h"
 
 #include "tcg/startup.h"
 
@@ -15,6 +16,12 @@
 
 #define DSP_ACTIVE_SLICE_CYCLES	32768
 #define DSP_STABLE_BLOCK_CYCLES	512
+/* Cycles to advance a real-time peripheral per step while the core waits idle. */
+#define DSP_IDLE_ADVANCE_CYCLES	16
+/* Wall-clock period of one AFE sample (8 kHz voiceband). */
+#define AFE_SAMPLE_PERIOD_NS	(NANOSECONDS_PER_SECOND / 8000)
+/* Cap how far the paced AFE can catch up in one go (e.g. after a stall). */
+#define AFE_MAX_CATCHUP_SAMPLES	64
 
 struct dsp_runtime_t {
 	const pmb887x_dsp_config_t *config;
@@ -40,6 +47,7 @@ struct dsp_runtime_t {
 	bool program_start;
 	bool reschedule;
 	uint32_t program_start_pc;
+	int64_t afe_next_sample_ns;
 };
 
 static uint16_t dsp_runtime_read_u16(const uint8_t *data) {
@@ -173,6 +181,57 @@ static bool dsp_runtime_program_should_invalidate(void *opaque, uint32_t address
 
 static bool dsp_runtime_is_mmio(const dsp_runtime_t *runtime, uint16_t address) {
 	return address >= runtime->config->mmio_base && address - runtime->config->mmio_base < runtime->config->mmio_size;
+}
+
+/*
+ * Advance the AFE sample clock by however many 8 kHz samples are due in
+ * wall-clock time since the last call, capped so a long stall can't spiral.
+ * Decoupling the AFE from DSP cycles keeps it at real 8 kHz no matter how fast
+ * the core spins, so its audio interrupts don't monopolise the core and starve
+ * the MCU command handshake. Runs on the worker thread (owns the AFE + IRQ
+ * state), so no locking is needed; the dsp.c AFE timer just wakes this worker.
+ */
+static void dsp_runtime_pace_afe(dsp_runtime_t *runtime) {
+	int64_t now, next;
+	size_t samples = 0;
+
+	if (!dsp_bus_is_active(runtime->bus))
+		return;
+
+	/* Wall-clock (matches DSP_AFE_CLOCK in dsp.c) so the sample clock keeps
+	 * advancing even while the vCPU is parked in a handshake wait under -icount. */
+	now = qemu_clock_get_ns(QEMU_CLOCK_HOST);
+	next = runtime->afe_next_sample_ns;
+	if (next == 0 || next > now + AFE_SAMPLE_PERIOD_NS)
+		next = now;	/* first sample or clock skew: (re)sync */
+
+	while (next <= now && samples < AFE_MAX_CATCHUP_SAMPLES) {
+		samples++;
+		next += AFE_SAMPLE_PERIOD_NS;
+	}
+	runtime->afe_next_sample_ns = next;
+
+	if (samples != 0) {
+		size_t cycles = samples * DSP_IDLE_ADVANCE_CYCLES;
+
+		dsp_bus_advance_afe(runtime->bus, cycles);
+		/*
+		 * Also clock the free-running DSP timers on wall-clock time. They are
+		 * otherwise only advanced by executed DSP cycles, so while the core sits
+		 * idle in a WFI-style wait they freeze -- and a timer the firmware left
+		 * enabled to periodically wake the core (to poll the MCU command mailbox)
+		 * never fires, deadlocking the ARM<->DSP handshake. Timers only, so we do
+		 * not perturb cycle-sensitive GSM baseband peripheral timing.
+		 */
+		dsp_bus_advance_timers(runtime->bus, cycles);
+#if 0	/* AFE pacing debug */
+		static uint32_t pn;
+		if ((pn++ & 0x1FF) == 0)
+			fprintf(stderr, "[afe-pace] n=%u samples=%zu irq=%02X pc=%05X idle=%d\n",
+				pn, samples, dsp_bus_get_irq_lines(runtime->bus),
+				runtime->core.state.pc, qatomic_read(&runtime->idle));
+#endif
+	}
 }
 
 static void dsp_runtime_advance_cycles(void *opaque, size_t cycles) {
@@ -364,6 +423,8 @@ bool dsp_runtime_run(dsp_runtime_t *runtime) {
 		bool program_changed = qatomic_read(&runtime->program_dirty);
 		bool first_mutable_execution = mutable_program && (new_program_lifecycle || program_changed);
 
+		dsp_runtime_pace_afe(runtime);
+
 		if (first_mutable_execution) {
 			qatomic_set(&runtime->program_start_pc, runtime->core.state.pc);
 			qatomic_set(&runtime->program_start, true);
@@ -400,8 +461,8 @@ bool dsp_runtime_run(dsp_runtime_t *runtime) {
 			uint16_t word = teak_program_read(&runtime->core, pc);
 			bool decoded = teak_decode(&runtime->core, pc, &instruction);
 
-			DPRINTF("native execution stopped: cpu=%s pc=%05X opcode=%04X decoded=%u error=%u lp=%u bcn=%u\n",
-				runtime->config->name, pc, word, decoded, runtime->core.translation_error,
+			DPRINTF("native execution stopped: cpu=%s pc=%05X opcode=%04X op=%u decoded=%u error=%u lp=%u bcn=%u\n",
+				runtime->config->name, pc, word, instruction.opcode, decoded, runtime->core.translation_error,
 				runtime->core.state.lp, runtime->core.state.bcn);
 			if (runtime->core.state.bcn != 0) {
 				size_t level = runtime->core.state.bcn - 1;
@@ -446,6 +507,10 @@ bool dsp_runtime_is_idle(const dsp_runtime_t *runtime) {
 	return qatomic_read(&runtime->idle);
 }
 
+bool dsp_runtime_realtime_active(const dsp_runtime_t *runtime) {
+	return dsp_bus_is_active(runtime->bus);
+}
+
 bool dsp_runtime_is_maskable_interrupt_active(const dsp_runtime_t *runtime) {
 	return qatomic_read(&runtime->core.state.maskable_interrupt_active);
 }
@@ -456,6 +521,16 @@ uint16_t dsp_runtime_get_irq_flags(dsp_runtime_t *runtime, size_t group) {
 
 uint16_t dsp_runtime_get_irq_pending_flags(dsp_runtime_t *runtime, size_t group) {
 	return dsp_bus_get_irq_pending_flags(runtime->bus, group);
+}
+
+void dsp_runtime_get_irq_debug(dsp_runtime_t *runtime, uint8_t *ie, uint8_t *interrupt_mask, uint8_t *lines) {
+	*ie = qatomic_read(&runtime->core.state.ie);
+	*interrupt_mask = qatomic_read(&runtime->core.state.interrupt_mask);
+	*lines = dsp_bus_get_irq_lines(runtime->bus);
+}
+
+uint16_t dsp_runtime_peek(dsp_runtime_t *runtime, uint16_t address) {
+	return qatomic_read(&runtime->data[address]);
 }
 
 bool dsp_runtime_take_program_start(dsp_runtime_t *runtime, uint32_t *pc) {

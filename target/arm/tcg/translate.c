@@ -1050,6 +1050,42 @@ static void gen_exception_el_v(int excp, uint32_t syndrome, TCGv_i32 tcg_el)
                                           tcg_constant_i32(syndrome), tcg_el);
 }
 
+#ifdef __EMSCRIPTEN__
+/*
+ * On emscripten, cpu_loop_exit() unwinds out of the TB via a JS
+ * exception (~15 µs each; this guest takes ~9k SWIs per second while
+ * booting, which used to cost ~15 % of the vCPU worker).  For an
+ * exception whose full state is known at translate time on cores
+ * without EL2/EL3 — no HCR.TGE redirect, target_el always 1 — we can
+ * instead store the exception state and end the TB with a plain
+ * exit_tb: cpu_handle_interrupt() sees the pending exception_index
+ * first and delivers it before running any other TB, exactly like the
+ * longjmp would have.  PC/condexec sync is the caller's job, same as
+ * with the helper form.
+ */
+static bool arm_excp_exit_ok(DisasContext *s)
+{
+    return !s->aarch64
+        && !arm_dc_feature(s, ARM_FEATURE_EL2)
+        && !arm_dc_feature(s, ARM_FEATURE_EL3)
+        && !arm_dc_feature(s, ARM_FEATURE_M);
+}
+
+static void gen_exception_exit(int excp, uint32_t syndrome)
+{
+    /* cs->exception_index = excp */
+    tcg_gen_st_i32(tcg_constant_i32(excp), tcg_env,
+                   offsetof(CPUState, exception_index) - sizeof(CPUState));
+    /* env->exception.syndrome (32-bit form; high half never used on A32) */
+    tcg_gen_st_i32(tcg_constant_i32(syndrome), tcg_env,
+                   offsetof(CPUARMState, exception.syndrome));
+    /* env->exception.target_el = 1 (fixed without EL2/EL3) */
+    tcg_gen_st_i32(tcg_constant_i32(1), tcg_env,
+                   offsetof(CPUARMState, exception.target_el));
+    tcg_gen_exit_tb(NULL, 0);
+}
+#endif /* __EMSCRIPTEN__ */
+
 static void gen_exception_el(int excp, uint32_t syndrome, uint32_t target_el)
 {
     gen_exception_el_v(excp, syndrome, tcg_constant_i32(target_el));
@@ -1454,7 +1490,16 @@ static int gen_set_psr(DisasContext *s, uint32_t mask, int spsr, TCGv_i32 t0)
     } else {
         gen_set_cpsr(t0, mask);
     }
-    gen_lookup_tb(s);
+    /*
+     * Continue through goto_ptr (next-TB lookup with the rebuilt hflags)
+     * instead of a plain exit to cpu_exec_loop: the only thing the loop
+     * round added was cpu_handle_interrupt, and helper_cpsr_write requests
+     * exactly that (an exit at the next TB start) whenever an interrupt is
+     * pending — this write may just have unmasked it.  The firmware's
+     * critical sections make this the most frequent TB exit of the boot.
+     */
+    gen_pc_plus_diff(s, cpu_R[15], curr_insn_len(s));
+    s->base.is_jmp = DISAS_JUMP;
     return 0;
 }
 
@@ -1693,8 +1738,9 @@ static void gen_rfe(DisasContext *s, TCGv_i32 pc, TCGv_i32 cpsr)
      */
     translator_io_start(&s->base);
     gen_helper_cpsr_write_eret(tcg_env, cpsr);
-    /* Must exit loop to check un-masked IRQs */
-    s->base.is_jmp = DISAS_EXIT;
+    /* Un-masked IRQs: the helper requests the next-TB-start exit (see
+     * gen_set_psr); pc is already stored, so look up and go. */
+    s->base.is_jmp = DISAS_JUMP;
 }
 
 /* Generate an old-style exception return. Marks pc as dead. */
@@ -5265,8 +5311,8 @@ static bool do_ldm(DisasContext *s, arg_ldst_block *a)
         tmp = load_cpu_field(spsr);
         translator_io_start(&s->base);
         gen_helper_cpsr_write_eret(tcg_env, tmp);
-        /* Must exit loop to check un-masked IRQs */
-        s->base.is_jmp = DISAS_EXIT;
+        /* Un-masked IRQs: see gen_rfe */
+        s->base.is_jmp = DISAS_JUMP;
     }
     clear_eci_state(s);
     return true;
@@ -5362,15 +5408,18 @@ static bool trans_B_cond_thumb(DisasContext *s, arg_ci *a)
         return true;
     }
     arm_skip_unless(s, a->cond);
+#if !defined(__EMSCRIPTEN__)
     if (icount2_enabled()) {
         gen_helper_cycle_counter(tcg_env, tcg_constant_i32(2));
     }
+#endif
     gen_jmp(s, jmp_diff(s, a->imm));
     return true;
 }
 
 static bool trans_BL(DisasContext *s, arg_i *a)
 {
+    translator_note_succ(&s->base, s->base.pc_next);
     gen_pc_plus_diff(s, cpu_R[14], curr_insn_len(s) | s->thumb);
     gen_jmp(s, jmp_diff(s, a->imm));
     return true;
@@ -5378,6 +5427,7 @@ static bool trans_BL(DisasContext *s, arg_i *a)
 
 static bool trans_BLX_i(DisasContext *s, arg_BLX_i *a)
 {
+    translator_note_succ(&s->base, s->base.pc_next);
     /*
      * BLX <imm> would be useless on M-profile; the encoding space
      * is used for other insns from v8.1M onward, and UNDEFs before that.
@@ -6087,6 +6137,15 @@ static bool trans_CSEL(DisasContext *s, arg_CSEL *a)
 
 static void gen_icount2_cycles(uint32_t cycles)
 {
+#ifdef __EMSCRIPTEN__
+    /*
+     * TCI helper calls route through libffi, which on wasm is a JS
+     * roundtrip (~µs each); a helper per guest instruction limits the
+     * interpreter to <1M insns/s.  On emscripten the accounting is done
+     * once per executed TB in cpu_tb_exec() instead.
+     */
+    return;
+#endif
     if (icount2_enabled()) {
         gen_helper_cycle_counter(tcg_env, tcg_constant_i32(cycles));
     }
@@ -7024,6 +7083,12 @@ static void arm_tr_tb_stop(DisasContextBase *dcbase, CPUState *cpu)
             gen_helper_yield(tcg_env);
             break;
         case DISAS_SWI:
+#ifdef __EMSCRIPTEN__
+            if (arm_excp_exit_ok(dc)) {
+                gen_exception_exit(EXCP_SWI, syn_aa32_svc(dc->svc_imm, dc->thumb));
+                break;
+            }
+#endif
             gen_exception(EXCP_SWI, syn_aa32_svc(dc->svc_imm, dc->thumb));
             break;
         case DISAS_HVC:

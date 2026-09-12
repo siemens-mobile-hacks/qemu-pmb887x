@@ -18,6 +18,9 @@
  */
 
 #include "qemu/osdep.h"
+#ifdef __EMSCRIPTEN__
+#include "qemu/wasm-diag.h"
+#endif
 
 #include "trace.h"
 #include "disas/disas.h"
@@ -261,6 +264,12 @@ static int setjmp_gen_code(CPUArchState *env, TranslationBlock *tb,
 TranslationBlock *tb_gen_code(CPUState *cpu, TCGTBCPUState s)
 {
     CPUArchState *env = cpu_env(cpu);
+#ifdef __EMSCRIPTEN__
+    wasm_diag_stat[WASM_DIAG_TB_GEN]++;
+    if (s.cflags & CF_COUNT_MASK) {
+        wasm_diag_stat[WASM_DIAG_TB_GEN_COUNTED]++;
+    }
+#endif
     TranslationBlock *tb, *existing_tb;
     tb_page_addr_t phys_pc, phys_p2;
     tcg_insn_unit *gen_code_buf;
@@ -309,6 +318,10 @@ TranslationBlock *tb_gen_code(CPUState *cpu, TCGTBCPUState s)
     tb->cs_base = s.cs_base;
     tb->flags = s.flags;
     tb->cflags = s.cflags;
+#ifdef CONFIG_TCG_WASM64
+    tb->w64_nsucc = 0;
+    tb->w64_explored = 0;
+#endif
     tb_set_page_addr0(tb, phys_pc);
     tb_set_page_addr1(tb, -1);
     if (phys_pc != -1) {
@@ -387,6 +400,21 @@ TranslationBlock *tb_gen_code(CPUState *cpu, TCGTBCPUState s)
         }
     }
     tcg_ctx->gen_tb = NULL;
+
+#ifdef CONFIG_TCG_WASM64
+    {
+        extern int w64_spec_active;
+        static int tblog = -1;
+        if (tblog < 0) {
+            tblog = getenv("W64_TBLOG") != NULL;
+        }
+        if (tblog) {
+            fprintf(stderr, "TBGEN %08llx %u %u %x %c\n",
+                    (unsigned long long)s.pc, tb->size, tb->icount,
+                    tb->cflags, w64_spec_active ? 'S' : '-');
+        }
+    }
+#endif
 
     search_size = encode_search(tb, (void *)gen_code_buf + gen_code_size);
     if (unlikely(search_size < 0)) {
@@ -572,6 +600,27 @@ void tb_check_watchpoint(CPUState *cpu, uintptr_t retaddr)
  *
  * Called by softmmu_template.h, with iothread mutex not held.
  */
+/*
+ * wasm io barriers (see cpu_io_recompile): a small direct-mapped set of
+ * guest insns whose first memory access in a multi-insn TB turned out to
+ * be MMIO.  The translator keeps those insns in single-insn TBs so their
+ * device callbacks run with can_do_io set (stock rewound-and-resplit
+ * semantics) without the recurring cpu_loop_exit() unwind.
+ */
+static vaddr wasm_io_barriers[64];
+
+void wasm_add_io_barrier(vaddr pc)
+{
+    uint32_t h = (pc >> 2) & (ARRAY_SIZE(wasm_io_barriers) - 1);
+    wasm_io_barriers[h] = pc;
+}
+
+bool wasm_is_io_barrier(vaddr pc)
+{
+    uint32_t h = (pc >> 2) & (ARRAY_SIZE(wasm_io_barriers) - 1);
+    return wasm_io_barriers[h] == pc;
+}
+
 void cpu_io_recompile(CPUState *cpu, uintptr_t retaddr)
 {
     TranslationBlock *tb;
@@ -585,11 +634,27 @@ void cpu_io_recompile(CPUState *cpu, uintptr_t retaddr)
     }
     cpu_restore_state_from_tb(cpu, tb, retaddr);
 
+#ifdef __EMSCRIPTEN__
     /*
-     * Some guests must re-execute the branch when re-executing a delay
-     * slot instruction.  When this is the case, adjust icount and N
-     * to account for the re-execution of the branch.
+     * wasm: the JS-exception unwind in cpu_loop_exit_noexc costs ~15 us,
+     * and this TB stays cached with the MMIO in its middle - a polling
+     * loop re-pays the rewind on every iteration forever.  Remember the
+     * faulting insn as an io barrier and drop the TB: the next translation
+     * of this code splits the TB around the barrier (see translator.c),
+     * the MMIO insn executes as a single-insn TB with can_do_io set, and
+     * the rewind (and its clock semantics: the callback sees the clock
+     * of exactly that insn) is reproduced without any further unwinding.
      */
+    wasm_add_io_barrier(cpu->cc->get_pc(cpu));
+    tb_phys_invalidate(tb, -1);
+#endif
+
+
+/*
+ * Some guests must re-execute the branch when re-executing a delay
+ * slot instruction.  When this is the case, adjust icount and N
+ * to account for the re-execution of the branch.
+ */
     n = 1;
     if (cc->tcg_ops->io_recompile_replay_branch &&
         cc->tcg_ops->io_recompile_replay_branch(cpu, tb)) {
@@ -631,6 +696,9 @@ void tcg_flush_jmp_cache(CPUState *cpu)
     if (unlikely(jc == NULL)) {
         return;
     }
+#ifdef __EMSCRIPTEN__
+    wasm_diag_stat[WASM_DIAG_JC_FLUSH]++;
+#endif
 
     for (int i = 0; i < TB_JMP_CACHE_SIZE; i++) {
         qatomic_set(&jc->array[i].tb, NULL);

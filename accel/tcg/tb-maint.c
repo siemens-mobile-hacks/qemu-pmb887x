@@ -18,6 +18,9 @@
  */
 
 #include "qemu/osdep.h"
+#ifdef __EMSCRIPTEN__
+#include "qemu/wasm-diag.h"
+#endif
 #include "qemu/interval-tree.h"
 #include "qemu/qtree.h"
 #include "exec/cputlb.h"
@@ -31,6 +34,9 @@
 #include "tb-internal.h"
 #include "system/tcg.h"
 #include "tcg/tcg.h"
+#ifdef CONFIG_TCG_WASM64
+#include "tcg/wasm64/wasm64.h"
+#endif
 #include "tb-hash.h"
 #include "tb-context.h"
 #include "internal-common.h"
@@ -772,6 +778,9 @@ void tb_flush__exclusive_or_serial(void)
 {
     CPUState *cpu;
 
+#ifdef __EMSCRIPTEN__
+    wasm_diag_stat[WASM_DIAG_TB_FLUSH]++;
+#endif
     trace_tb_flush();
     assert(tcg_enabled());
     /* Note that cpu_in_serial_context checks cpu_in_exclusive_context. */
@@ -784,6 +793,12 @@ void tb_flush__exclusive_or_serial(void)
 
     qht_reset_size(&tb_ctx.htable, CODE_GEN_HTABLE_SIZE);
     tb_remove_all();
+
+#ifdef CONFIG_TCG_WASM64
+    /* drop the batch modules/thunks and temp modules before the code
+     * buffer (which holds their staged bytes and descriptors) resets */
+    w64_batch_flush();
+#endif
 
     tcg_region_reset_all();
     /* XXX: flush processor icache at this point if cache flush is expensive */

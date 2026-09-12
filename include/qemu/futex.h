@@ -55,6 +55,31 @@ static inline void qemu_futex_wait(void *f, unsigned val)
         }
     }
 }
+#elif defined(__EMSCRIPTEN__)
+/*
+ * Emscripten: pthread_cond signal/broadcast between web workers is not
+ * delivered while the waiter runs under Asyncify (wakes only happen when
+ * the wait times out).  The engine-level futex (Atomics.wait/notify) is
+ * Asyncify-safe, so implement the futex wrappers on top of it.  This also
+ * defines HAVE_FUTEX below, switching QemuEvent to its futex fast path.
+ */
+#include <emscripten/threading.h>
+
+static inline void qemu_futex_wake_all(void *f)
+{
+    emscripten_futex_wake(f, INT_MAX);
+}
+
+static inline void qemu_futex_wake_single(void *f)
+{
+    emscripten_futex_wake(f, 1);
+}
+
+static inline void qemu_futex_wait(void *f, unsigned val)
+{
+    /* 0 timeout = wait indefinitely; spurious wakes are allowed by design */
+    emscripten_futex_wait(f, val, 0);
+}
 #elif defined(CONFIG_WIN32)
 #include <synchapi.h>
 
