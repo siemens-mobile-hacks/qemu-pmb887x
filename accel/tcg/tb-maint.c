@@ -34,6 +34,9 @@
 #include "tb-internal.h"
 #include "system/tcg.h"
 #include "tcg/tcg.h"
+#ifdef CONFIG_TCG_WASM64
+#include "tcg/wasm64/wasm64.h"
+#endif
 #include "tb-hash.h"
 #include "tb-context.h"
 #include "internal-common.h"
@@ -790,6 +793,12 @@ void tb_flush__exclusive_or_serial(void)
 
     qht_reset_size(&tb_ctx.htable, CODE_GEN_HTABLE_SIZE);
     tb_remove_all();
+
+#ifdef CONFIG_TCG_WASM64
+    /* drop the batch modules/thunks and temp modules before the code
+     * buffer (which holds their staged bytes and descriptors) resets */
+    w64_batch_flush();
+#endif
 
     tcg_region_reset_all();
     /* XXX: flush processor icache at this point if cache flush is expensive */
