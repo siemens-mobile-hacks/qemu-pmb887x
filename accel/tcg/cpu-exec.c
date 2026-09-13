@@ -1041,24 +1041,17 @@ static inline bool cpu_handle_interrupt(CPUState *cpu,
      * wasm-only: it exists for the Asyncify unwind, and costs every
      * build a branch per loop iteration. */
 #ifdef __EMSCRIPTEN__
-    if (unlikely(cpu->exception_index >= 0)) {
-        /*
-         * Replay delivers interrupts ahead of pending exceptions via
-         * the cpu_handle_exception() fall-through below; bouncing back
-         * here first would livelock it, so take the stock path there.
-         */
-#ifndef CONFIG_USER_ONLY
-        if (replay_mode != REPLAY_MODE_NONE) {
-            goto stock_path;
-        }
-#endif
+    /*
+     * Not under record/replay: replay delivers interrupts ahead of
+     * pending exceptions via the cpu_handle_exception() fall-through
+     * below, and bouncing back here first would livelock it.
+     */
+    if (unlikely(cpu->exception_index >= 0) &&
+        replay_mode == REPLAY_MODE_NONE) {
         qatomic_set_mb(&cpu->neg.icount_decr.u16.high, 0);
         return true;
     }
 #endif /* __EMSCRIPTEN__ */
-#ifdef __EMSCRIPTEN__
-stock_path:
-#endif
     /*
      * If we have requested custom cflags with CF_NOIRQ we should
      * skip checking here. Any pending interrupts will get picked up

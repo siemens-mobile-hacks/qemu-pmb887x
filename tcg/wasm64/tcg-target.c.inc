@@ -1900,7 +1900,7 @@ static void tgen_deposit(TCGContext *s, TCGType t, TCGReg a0, TCGReg a1,
     w64_get(s, a1, t);
     w64_const(s, t, ~(tcg_target_long)mask);
     w64_u8(s, t == TCG_TYPE_I32 ? 0x71 : 0x83);           /* and */
-    w64_local_get(s, W64_L_SCR0);
+    w64_local_get(s, w64_scr(t));       /* the typed scratch set above */
     w64_u8(s, t == TCG_TYPE_I32 ? 0x72 : 0x84);           /* or */
     if (t == TCG_TYPE_I32) {
         w64_set_i32(s, a0);
@@ -1911,45 +1911,6 @@ static void tgen_deposit(TCGContext *s, TCGType t, TCGReg a0, TCGReg a1,
 static const TCGOutOpDeposit outop_deposit = {
     .base.static_constraint = C_O1_I2(r, r, r),
     .out_rrr = tgen_deposit,
-};
-
-static void tgen_depositi(TCGContext *s, TCGType t, TCGReg a0, TCGReg a1,
-                          tcg_target_long a2, unsigned ofs, unsigned len)
-{
-    uint64_t mask = (len >= 64 ? ~(uint64_t)0 : (UINT64_C(1) << len) - 1)
-                   << ofs;
-
-    w64_deposit_field(s, t, 0, a2, true, ofs, len);
-    w64_local_set(s, w64_scr(t));
-    w64_get(s, a1, t);
-    w64_const(s, t, ~(tcg_target_long)mask);
-    w64_u8(s, t == TCG_TYPE_I32 ? 0x71 : 0x83);           /* and */
-    w64_local_get(s, W64_L_SCR0);
-    w64_u8(s, t == TCG_TYPE_I32 ? 0x72 : 0x84);           /* or */
-    if (t == TCG_TYPE_I32) {
-        w64_set_i32(s, a0);
-    } else {
-        w64_set_i64(s, a0);
-    }
-}
-static const TCGOutOpDeposit outop_depositi = {
-    .base.static_constraint = C_O1_I2(r, r, rC),
-    .out_rri = tgen_depositi,
-};
-
-static void tgen_deposit_zr(TCGContext *s, TCGType t, TCGReg a0,
-                            TCGReg a2, unsigned ofs, unsigned len)
-{
-    w64_deposit_field(s, t, a2, 0, false, ofs, len);
-    if (t == TCG_TYPE_I32) {
-        w64_set_i32(s, a0);
-    } else {
-        w64_set_i64(s, a0);
-    }
-}
-static const TCGOutOpDeposit outop_deposit_zr = {
-    .base.static_constraint = C_O1_I1(r, r),
-    .out_rzr = tgen_deposit_zr,
 };
 
 static void tgen_extract(TCGContext *s, TCGType t, TCGReg a0, TCGReg a1,
@@ -1987,17 +1948,14 @@ static void tgen_sextract(TCGContext *s, TCGType t, TCGReg a0, TCGReg a1,
 {
     unsigned width = t == TCG_TYPE_I32 ? 32 : 64;
 
+    w64_get(s, a1, t);
     if (ofs + len == width) {
         /* arithmetic shift alone sign-extends the field */
-        w64_get(s, a1, t);
         w64_const(s, t, ofs);
         w64_u8(s, t == TCG_TYPE_I32 ? 0x75 : 0x87);       /* shr_s */
     } else {
-        int scr_ = w64_scr(t);
-        tgen_extract(s, t, a0, a1, ofs, len);
-        w64_local_set(s, scr_);
-        w64_local_get(s, scr_);
-        w64_const(s, t, width - len);
+        /* shift the field to the top, then arithmetic shift down */
+        w64_const(s, t, width - ofs - len);
         w64_u8(s, t == TCG_TYPE_I32 ? 0x74 : 0x86);       /* shl */
         w64_const(s, t, width - len);
         w64_u8(s, t == TCG_TYPE_I32 ? 0x75 : 0x87);       /* shr_s */
