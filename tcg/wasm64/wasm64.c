@@ -924,6 +924,26 @@ static uint32_t w64_read_leb5(const uint8_t *p, uint32_t *nbytes)
     return v;
 }
 
+/* Re-read a staged member's source and compare it against the record
+ * taken when it was added.  Returns NULL when it still matches, else a
+ * one-line reason.  Used at batch close and again at re-ensure, where
+ * assembling from overwritten bytes would produce wrong code silently
+ * rather than a detectable failure. */
+static const char *w64_member_src_bad(const struct w64_member *mb)
+{
+    const uint8_t *src = (const uint8_t *)(uintptr_t)mb->tcptr;
+    uint32_t nbytes, leb;
+
+    leb = w64_read_leb5(src + W64_BODY_OFF, &nbytes);
+    if (nbytes != 5 || leb != mb->body_len - 5) {
+        return "size LEB changed since staging";
+    }
+    if (w64_sum(src + W64_BODY_OFF, mb->body_len) != mb->sum) {
+        return "body bytes changed since staging";
+    }
+    return NULL;
+}
+
 /* append a forensic record to the open /w64bad file, if any */
 static FILE *w64_badf;
 static unsigned w64_badn;
@@ -1414,6 +1434,18 @@ static bool w64_batch_ensure(uint32_t id)
     if (l->thunk) {
         return true;
     }
+    /* The staged bodies must still be what this batch was assembled
+     * from; re-assembling from overwritten bytes would be wrong code,
+     * not a detectable failure.  The caller reports and aborts. */
+    for (unsigned m = 0; m < l->src.n_member; m++) {
+        const char *why = w64_member_src_bad(&l->src.member[m]);
+        if (why) {
+            fprintf(stderr, "W64BATCHENSURE id=%u member %u tcptr=%#x "
+                    "SOURCE-CORRUPT: %s\n",
+                    id, m, l->src.member[m].tcptr, why);
+            return false;
+        }
+    }
     wasm_diag_stat[WASM_DIAG_MOD_SRC] = 3;
     l->thunk = w64_assemble_instantiate(&l->src, &l->maxtidx);
     wasm_diag_stat[WASM_DIAG_MOD_SRC] = 0;
@@ -1662,20 +1694,10 @@ static void w64_batch_close(void)
     {
         bool badsrc = false;
         for (m = 0; m < B.n_member; m++) {
-            const uint8_t *src =
-                (const uint8_t *)(uintptr_t)B.member[m].tcptr;
-            uint32_t nbytes, leb;
-            leb = w64_read_leb5(src + W64_BODY_OFF, &nbytes);
-            if (nbytes != 5 || leb != B.member[m].body_len - 5) {
+            const char *why = w64_member_src_bad(&B.member[m]);
+            if (why) {
                 w64_bad_open();
-                w64_bad_member(m, "size LEB changed since staging");
-                badsrc = true;
-                break;
-            }
-            if (w64_sum(src + W64_BODY_OFF, B.member[m].body_len)
-                != B.member[m].sum) {
-                w64_bad_open();
-                w64_bad_member(m, "body bytes changed since staging");
+                w64_bad_member(m, why);
                 badsrc = true;
                 break;
             }
@@ -1796,6 +1818,36 @@ void w64_batch_member(uintptr_t tcptr, uint32_t body_len,
         B.n_utypes > W64_UMAX_TYPES - W64_MAX_TYPES - 1) {
         w64_batch_close();
     }
+}
+
+/*
+ * Withdraw the member staged for @tcptr: tb_gen_code() generated the TB
+ * (so tcg_out_tb_finalize already staged it) and then abandoned it
+ * WITHOUT advancing code_gen_ptr — encode_search() running past the
+ * region's highwater does exactly that, and jumps back to
+ * `buffer_overflow`.  The next tcg_tb_alloc() then carves a
+ * TranslationBlock out of the very bytes this member points at, and the
+ * batch that still holds it assembles from a body that has been
+ * overwritten.  That is the SOURCE-CORRUPT the close-time detector
+ * reports: a forensic dump taken on 2026-09-13 showed seven TB structs
+ * written over one staged member at sizeof(TranslationBlock) stride
+ * (the 0xffff jmp_reset_offset/jmp_insn_offset pairs, 192 bytes apart).
+ *
+ * Staging is synchronous, so the abandoned TB is always the last member
+ * — the same reasoning the retry de-duplication above relies on.  If
+ * staging already closed the batch the bytes were still intact when the
+ * module was assembled, so the landed module is correct; only its
+ * re-assembly records go stale, which costs a re-ensure after an
+ * eviction (w64_live_max) and cannot affect a batch that stays live.
+ */
+void w64_batch_unstage(uintptr_t tcptr)
+{
+    if (B.id == 0 || B.n_member == 0 ||
+        B.member[B.n_member - 1].tcptr != (uint32_t)tcptr) {
+        return;
+    }
+    B.n_fix = B.n_member > 1 ? B.member[B.n_member - 2].fix_end : 0;
+    B.n_member--;
 }
 
 /* First execution of a TB that is still staged in the open batch:

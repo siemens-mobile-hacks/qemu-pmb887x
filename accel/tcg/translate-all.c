@@ -420,6 +420,21 @@ TranslationBlock *tb_gen_code(CPUState *cpu, TCGTBCPUState s)
     if (unlikely(search_size < 0)) {
         trace_tb_gen_code_buffer_overflow("encode_search");
         tb_unlock_pages(tb);
+#ifdef CONFIG_TCG_WASM64
+        /*
+         * This TB is abandoned with code_gen_ptr still pointing at its
+         * bytes, so the tcg_tb_alloc() below will carve a
+         * TranslationBlock out of them.  The wasm64 backend already
+         * staged the module body in the open batch during
+         * tcg_gen_code(); withdraw it, or the batch assembles from
+         * overwritten memory (SOURCE-CORRUPT).
+         */
+        {
+            /* tcg/wasm64/wasm64.h is not on this file's include path */
+            extern void w64_batch_unstage(uintptr_t tcptr);
+            w64_batch_unstage((uintptr_t)gen_code_buf);
+        }
+#endif
         goto buffer_overflow;
     }
     tb->tc.size = gen_code_size;

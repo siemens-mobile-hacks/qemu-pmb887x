@@ -166,6 +166,9 @@ uint8_t w64_union_type(unsigned np, const uint8_t *p, uint8_t ret);
 uint8_t w64_union_import(uint32_t fptr, uint8_t utype);
 void w64_batch_member(uintptr_t tcptr, uint32_t body_len,
                       const struct w64_cfix *cf, uint32_t ncf);
+/* drop the member staged for @tcptr: its TB was generated and abandoned
+ * without committing the code buffer (accel/tcg/translate-all.c) */
+void w64_batch_unstage(uintptr_t tcptr);
 void w64_batch_flush(void);     /* tb_flush teardown */
 
 #endif /* TCG_WASM64_H */
