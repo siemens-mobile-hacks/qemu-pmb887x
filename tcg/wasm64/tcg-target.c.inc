@@ -2374,6 +2374,7 @@ static void tcg_out_tb_start(TCGContext *s)
     memset(&W, 0, sizeof(W));
     n_cf = 0;
     w64_scan_labels(s);
+    w64_batch_begin_tb();
 
     /* lazy one-time init of the inline-accounting address table
      * (translation of the first TB precedes w64_init/first exec) */

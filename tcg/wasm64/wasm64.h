@@ -162,6 +162,7 @@ extern uint32_t w64_ls_on;
 extern uint64_t wasm_tb_stats[2];
 
 /* batching API (wasm64.c) — called from tcg-target.c.inc */
+void w64_batch_begin_tb(void);
 uint8_t w64_union_type(unsigned np, const uint8_t *p, uint8_t ret);
 uint8_t w64_union_import(uint32_t fptr, uint8_t utype);
 void w64_batch_member(uintptr_t tcptr, uint32_t body_len,

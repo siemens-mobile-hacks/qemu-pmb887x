@@ -680,6 +680,19 @@ static void w64_batch_open(void)
     B.n_utypes = 1;
 }
 
+/* Called at the start of every translation.  A TB translated while no
+ * batch is open (the previous one just closed) is never staged and
+ * runs from a throwaway per-TB module, which Firefox's module budget
+ * cannot absorb; until the prologue cleanup (58bb274261) the lockstep
+ * import registered by every prologue opened the batch as a side
+ * effect. */
+void w64_batch_begin_tb(void)
+{
+    if (w64_batch_mode() && B.id == 0) {
+        w64_batch_open();
+    }
+}
+
 uint8_t w64_union_type(unsigned np, const uint8_t *p, uint8_t ret)
 {
     int i, j;
