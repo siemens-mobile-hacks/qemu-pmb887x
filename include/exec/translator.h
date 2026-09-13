@@ -179,6 +179,26 @@ static inline void translator_note_succ(DisasContextBase *db, vaddr dest)
 #endif
 
 /**
+ * translator_unnote_succ
+ * @db: Disassembly context
+ * @dest: an address recorded by translator_note_succ / translator_use_goto_tb
+ *
+ * Withdraw a speculation hint.  A frontend must call this for a direct
+ * jump that switches instruction set (ARM BLX <imm>): the successor was
+ * recorded with this TB's flags, and translating a Thumb entry as ARM
+ * (or vice versa) produces a TB that raises a PC-alignment abort - which
+ * the guest then receives as a spurious prefetch abort.  Inline no-op
+ * elsewhere.
+ */
+#ifdef CONFIG_TCG_WASM64
+void translator_unnote_succ(DisasContextBase *db, vaddr dest);
+#else
+static inline void translator_unnote_succ(DisasContextBase *db, vaddr dest)
+{
+}
+#endif
+
+/**
  * translator_io_start
  * @db: Disassembly context
  *

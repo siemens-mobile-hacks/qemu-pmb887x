@@ -5444,6 +5444,12 @@ static bool trans_BLX_i(DisasContext *s, arg_BLX_i *a)
     store_cpu_field_constant(!s->thumb, thumb);
     /* This jump is computed from an aligned PC: subtract off the low bits. */
     gen_jmp(s, jmp_diff(s, a->imm - (s->pc_curr & 3)));
+    /*
+     * The target runs in the other instruction set: it must not be
+     * speculatively translated with this TB's flags (wasm64 backend).
+     */
+    translator_unnote_succ(&s->base,
+                           s->pc_curr + jmp_diff(s, a->imm - (s->pc_curr & 3)));
     return true;
 }
 

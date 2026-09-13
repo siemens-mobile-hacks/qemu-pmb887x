@@ -142,6 +142,21 @@ void translator_note_succ(DisasContextBase *db, vaddr dest)
 }
 #endif
 
+#ifdef CONFIG_TCG_WASM64
+void translator_unnote_succ(DisasContextBase *db, vaddr dest)
+{
+    TranslationBlock *tb = db->tb;
+    unsigned i;
+
+    for (i = 0; i < tb->w64_nsucc; i++) {
+        if (tb->w64_succ[i] == dest) {
+            tb->w64_succ[i] = tb->w64_succ[--tb->w64_nsucc];
+            return;
+        }
+    }
+}
+#endif
+
 bool translator_use_goto_tb(DisasContextBase *db, vaddr dest)
 {
     /* Suppress goto_tb if requested. */
