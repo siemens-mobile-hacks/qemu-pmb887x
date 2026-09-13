@@ -77,6 +77,12 @@ struct pmb887x_dif_t {
 	/* same for the eight DMAC request lines (dmac_handle_signal ignores an
 	 * unchanged level anyway) */
 	int8_t dmac_req_level[8];
+	/* inputs of the last dif_update_gpio_state pass: it runs twice per
+	 * FIFO word, usually with nothing changed (no such cache for
+	 * dif_trigger_dma - its inputs differ on every call of a word's
+	 * request / acknowledge sequence) */
+	uint64_t gpio_state_key;
+	bool gpio_state_rx;
 	qemu_irq gpio_wr;
 	qemu_irq gpio_rd;
 
@@ -233,6 +239,12 @@ static inline bool dif_is_pbc_enabled(pmb887x_dif_t *p) {
 
 static void dif_update_gpio_state(pmb887x_dif_t *p) {
 	uint32_t csreg = dif_get_transfer_csreg(p);
+	bool rx = p->state == DIF_STATE_RX;
+	uint64_t key = ((uint64_t)csreg << 32) | p->perreg;
+	if (p->gpio_state_key == key && p->gpio_state_rx == rx)
+		return;
+	p->gpio_state_key = key;
+	p->gpio_state_rx = rx;
 	/* CS1, CS2, CS3, CD, RD, WR - built twice per FIFO word, keep it small */
 	const struct {
 		bool value;
@@ -1410,6 +1422,7 @@ static void dif_reset(DeviceState *dev) {
 	timer_del(p->timer);
 	memset(p->gpio_pin_level, -1, sizeof(p->gpio_pin_level));
 	memset(p->dmac_req_level, -1, sizeof(p->dmac_req_level));
+	p->gpio_state_key = ~0ULL;
 
 	pmb887x_clc_init(&p->clc);
 	pmb887x_clc_set(&p->clc, MOD_CLC_DISR);
