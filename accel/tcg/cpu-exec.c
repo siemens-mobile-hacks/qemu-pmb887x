@@ -398,12 +398,19 @@ static inline bool check_for_breakpoints(CPUState *cpu, vaddr pc,
  * build.
  */
 #ifdef __EMSCRIPTEN__
-#if defined(CONFIG_TARGET_ARM)
+#if defined(CONFIG_TCG_WASM64)
+/*
+ * This file is target-independent (TARGET_* are poisoned here), so the
+ * direct call is keyed on the backend: the wasm64 backend is only ever
+ * linked with the ARM target in this tree, and any other target would
+ * fail to link on this symbol rather than silently fall back.  (The
+ * original guard, CONFIG_TARGET_ARM, is a macro no build defines — the
+ * devirtualisation was inactive from 0044 until 2026-09-13.)
+ */
 TCGTBCPUState arm_get_tb_cpu_state(CPUState *cs);
 #define W64_GET_TB_CPU_STATE(cpu)  arm_get_tb_cpu_state(cpu)
 #else
-/* Target-neutral fallback: the devirtualisation win is ARM-measured
- * (-2..-4 % on the milestones); other targets keep the ops call. */
+/* The TCI dist keeps the ops call. */
 #define W64_GET_TB_CPU_STATE(cpu)  ((cpu)->cc->tcg_ops->get_tb_cpu_state(cpu))
 #endif
 
@@ -461,6 +468,132 @@ const void *HELPER(lookup_tb_ptr)(CPUArchState *env)
 
     return tb->tc.ptr;
 }
+
+#ifdef CONFIG_TCG_WASM64
+/*
+ * helper_lookup_tb_ptr_lc: helper_lookup_tb_ptr for a TB whose goto_ptr
+ * carries an inline next-TB cache (@slot = &tb->w64_lc of the calling
+ * TB, see target/arm gen_goto_ptr).  The emitted code takes the cached
+ * target when (pc, cpu->neg.tb_key_gen, dyn) all match and calls here
+ * otherwise; on a hit that the target declares cacheable the slot is
+ * refilled.
+ *
+ * Soundness: a slot stamped with generation G is valid for as long as
+ * the jump-cache entry it was filled from would be — every event that
+ * drops a jump-cache entry (tb_phys_invalidate, tcg_flush_jmp_cache,
+ * tb_jmp_cache_clear_page) bumps the generation, and so does every
+ * change of a target key input that neither the inline test nor the
+ * static stamp covers (ARM: hflags.flags2, FPSCR.Len/Stride, FPEXC.EN).
+ * The words the translator stamped statically are checked here at fill
+ * time instead (w64_lc_static_match).  The generation is read BEFORE
+ * the lookup so that an invalidation racing with the fill leaves a
+ * stale stamp, never a stale target.
+ *
+ * W64_LC_VERIFY=1 makes the translator route every goto_ptr through
+ * this helper and checks, per call, that a slot the inline test would
+ * have accepted names the TB the real lookup returns (LC_VHIT/LC_VBAD).
+ */
+/* ARM-only, like W64_GET_TB_CPU_STATE above (same linking argument). */
+bool arm_w64_lc_key(CPUState *cs, uint32_t key32[3]);
+#define W64_LC_KEY(cpu, k32)  arm_w64_lc_key(cpu, k32)
+
+/*
+ * Would the inline test at this slot accept the CPU's current key
+ * (@cur)?  Static words are the translator's and are not compared by
+ * the emitted code, so they do not count here either — verify mode
+ * relies on that to test the static-key invariant itself.
+ */
+static bool w64_lc_dyn_match(const struct W64LookupCache *lc,
+                             const uint32_t cur[3])
+{
+    for (int i = 0; i < 3; i++) {
+        if ((lc->dynmask & (1 << i)) && lc->key32[i] != cur[i]) {
+            return false;
+        }
+    }
+    return true;
+}
+
+/* Can the slot be filled for @cur: every static word must match. */
+static bool w64_lc_static_match(const struct W64LookupCache *lc,
+                                const uint32_t cur[3])
+{
+    for (int i = 0; i < 3; i++) {
+        if (!(lc->dynmask & (1 << i)) && lc->key32[i] != cur[i]) {
+            return false;
+        }
+    }
+    return true;
+}
+
+static bool w64_lc_verify(void)
+{
+    static int mode = -1;
+    if (mode < 0) {
+        mode = getenv("W64_LC_VERIFY") != NULL;
+    }
+    return mode != 0;
+}
+
+const void *HELPER(lookup_tb_ptr_lc)(CPUArchState *env, void *slot)
+{
+    CPUState *cpu = env_cpu(env);
+    struct W64LookupCache *lc = slot;
+    TranslationBlock *tb;
+    uint32_t gen = qatomic_read(&cpu->neg.tb_key_gen);
+    uint32_t cur[3];
+
+    cpu->neg.can_do_io = true;
+    wasm_diag_stat[WASM_DIAG_LC_CALL]++;
+
+    TCGTBCPUState s = W64_GET_TB_CPU_STATE(cpu);
+    s.cflags = curr_cflags_fast(cpu);
+
+    if (check_for_breakpoints(cpu, s.pc, &s.cflags)) {
+        cpu_loop_exit(cpu);
+    }
+
+    tb = tb_lookup(cpu, s);
+
+    if (unlikely(w64_lc_verify())) {
+        if (lc->gen == gen && lc->pc == s.pc &&
+            W64_LC_KEY(cpu, cur) && w64_lc_dyn_match(lc, cur)) {
+            wasm_diag_stat[WASM_DIAG_LC_VHIT]++;
+            if (tb == NULL || lc->tc != tb->tc.ptr) {
+                wasm_diag_stat[WASM_DIAG_LC_VBAD]++;
+            }
+        }
+    }
+
+    if (tb == NULL) {
+        return tcg_code_gen_epilogue;
+    }
+
+    if (qemu_loglevel_mask(CPU_LOG_TB_CPU | CPU_LOG_EXEC)) {
+        log_cpu_exec(s.pc, cpu, tb);
+        return tb->tc.ptr;         /* keep every lookup visible in the log */
+    }
+
+    if (likely(s.cflags == cpu->tcg_cflags) && W64_LC_KEY(cpu, cur) &&
+        w64_lc_static_match(lc, cur)) {
+        lc->pc = s.pc;
+        for (int i = 0; i < 3; i++) {
+            if (lc->dynmask & (1 << i)) {
+                lc->key32[i] = cur[i];
+            }
+        }
+        lc->tc = tb->tc.ptr;
+        lc->gen = gen;
+        wasm_diag_stat[WASM_DIAG_LC_FILL]++;
+    }
+    return tb->tc.ptr;
+}
+
+void HELPER(tb_key_gen_bump)(CPUArchState *env)
+{
+    cpu_tb_key_gen_bump(env_cpu(env));
+}
+#endif /* CONFIG_TCG_WASM64 */
 
 /* Return the current PC from CPU, which may be cached in TB. */
 static vaddr log_pc(CPUState *cpu, const TranslationBlock *tb)

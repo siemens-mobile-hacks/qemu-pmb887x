@@ -62,6 +62,14 @@ enum {
     WASM_DIAG_CLOSE_N,
     WASM_DIAG_COMPACT_N,
     WASM_DIAG_ENSURE_N,
+    WASM_DIAG_LC_FILL,       /* helper_lookup_tb_ptr_lc filled a TB's inline cache */
+    WASM_DIAG_LC_VHIT,       /* W64_LC_VERIFY: slots the inline test would have taken */
+    WASM_DIAG_LC_VBAD,       /* W64_LC_VERIFY: ...that disagreed with the real lookup */
+    WASM_DIAG_KEY_GEN,       /* cpu_tb_key_gen_bump calls (every slot retired) */
+    WASM_DIAG_LC_CALL,       /* helper_lookup_tb_ptr_lc calls (inline-cache misses) */
+    WASM_DIAG_KEY_GEN_FLUSH, /* ...bumps from tcg_flush_jmp_cache */
+    WASM_DIAG_KEY_GEN_INVAL, /* ...from tb_phys_invalidate */
+    WASM_DIAG_KEY_GEN_PAGE,  /* ...from tb_jmp_cache_clear_page */
     WASM_DIAG_N
 };
 

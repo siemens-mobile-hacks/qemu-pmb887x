@@ -166,6 +166,10 @@ static void tb_jmp_cache_clear_page(CPUState *cpu, vaddr page_addr)
     CPUJumpCache *jc = cpu->tb_jmp_cache;
     int i, i0;
 
+    cpu_tb_key_gen_bump(cpu);
+#ifdef __EMSCRIPTEN__
+    wasm_diag_stat[WASM_DIAG_KEY_GEN_PAGE]++;
+#endif
     if (unlikely(!jc)) {
         return;
     }

@@ -422,6 +422,19 @@ typedef struct CPUNegativeOffsetState {
 #endif
     IcountDecr icount_decr;
     bool can_do_io;
+#ifdef CONFIG_TCG_WASM64
+    /*
+     * Generation of the per-TB inline lookup caches (TranslationBlock
+     * w64_lc): every event that invalidates a jump-cache entry (a TB
+     * invalidation, a jump-cache flush or page clear) and every change
+     * of a target TB-key input the slots neither stamp nor compare (ARM:
+     * hflags.flags2, FPSCR.Len/Stride, FPEXC.EN) bumps it, so a slot
+     * stamped with the current generation is exactly as valid as a
+     * jump-cache hit would be.  Never 0 (a fresh TB's slot holds 0 and
+     * must never match).
+     */
+    uint32_t tb_key_gen;
+#endif
 } CPUNegativeOffsetState;
 
 struct KVMState;
@@ -642,6 +655,12 @@ struct CPUState {
 /* Validate placement of CPUNegativeOffsetState. */
 QEMU_BUILD_BUG_ON(offsetof(CPUState, neg) !=
                   sizeof(CPUState) - sizeof(CPUNegativeOffsetState));
+
+#ifdef CONFIG_TCG_WASM64
+void cpu_tb_key_gen_bump(CPUState *cpu);
+#else
+static inline void cpu_tb_key_gen_bump(CPUState *cpu) { }
+#endif
 
 static inline CPUArchState *cpu_env(CPUState *cpu)
 {

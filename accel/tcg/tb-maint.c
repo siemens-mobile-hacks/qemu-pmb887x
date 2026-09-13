@@ -925,6 +925,11 @@ static void tb_jmp_cache_inval_tb(TranslationBlock *tb)
             if (qatomic_read(&jc->array[h].tb) == tb) {
                 qatomic_set(&jc->array[h].tb, NULL);
             }
+            /* the inline caches hold no back-reference: retire them all */
+            cpu_tb_key_gen_bump(cpu);
+#ifdef __EMSCRIPTEN__
+            wasm_diag_stat[WASM_DIAG_KEY_GEN_INVAL]++;
+#endif
         }
     }
 }

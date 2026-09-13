@@ -321,6 +321,7 @@ TranslationBlock *tb_gen_code(CPUState *cpu, TCGTBCPUState s)
 #ifdef CONFIG_TCG_WASM64
     tb->w64_nsucc = 0;
     tb->w64_explored = 0;
+    tb->w64_lc.gen = 0;
 #endif
     tb_set_page_addr0(tb, phys_pc);
     tb_set_page_addr1(tb, -1);
@@ -701,6 +702,22 @@ void cpu_io_recompile(CPUState *cpu, uintptr_t retaddr)
 
 #endif /* CONFIG_USER_ONLY */
 
+#ifdef CONFIG_TCG_WASM64
+/*
+ * Retire every per-TB inline lookup cache (TranslationBlock w64_lc) by
+ * moving the generation they are stamped with.  Called wherever a jump
+ * cache entry is dropped and wherever the target's TB key changes for a
+ * reason other than the PC; cold, so it counts itself.
+ */
+void cpu_tb_key_gen_bump(CPUState *cpu)
+{
+    uint32_t g = qatomic_read(&cpu->neg.tb_key_gen) + 1;
+
+    qatomic_set(&cpu->neg.tb_key_gen, g ? g : 1);
+    wasm_diag_stat[WASM_DIAG_KEY_GEN]++;
+}
+#endif
+
 /*
  * Called by generic code at e.g. cpu reset after cpu creation,
  * therefore we must be prepared to allocate the jump cache.
@@ -708,6 +725,11 @@ void cpu_io_recompile(CPUState *cpu, uintptr_t retaddr)
 void tcg_flush_jmp_cache(CPUState *cpu)
 {
     CPUJumpCache *jc = cpu->tb_jmp_cache;
+
+    cpu_tb_key_gen_bump(cpu);
+#ifdef __EMSCRIPTEN__
+    wasm_diag_stat[WASM_DIAG_KEY_GEN_FLUSH]++;
+#endif
 
     /* During early initialization, the cache may not yet be allocated. */
     if (unlikely(jc == NULL)) {

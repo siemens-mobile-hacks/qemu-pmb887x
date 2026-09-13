@@ -755,6 +755,9 @@ static inline void gen_bx(DisasContext *s, TCGv_i32 var)
     tcg_gen_andi_i32(var, var, 1);
     store_cpu_field(var, thumb);
     s->pc_save = -1;
+#ifdef CONFIG_TCG_WASM64
+    s->w64_thumb = -1;
+#endif
 }
 
 /*
@@ -1343,8 +1346,125 @@ void write_neon_element64(TCGv_i64 src, int reg, int ele, MemOp memop)
     }
 }
 
-static void gen_goto_ptr(void)
+#ifdef CONFIG_TCG_WASM64
+/*
+ * Inline next-TB cache mode for goto_ptr exits (fixed per process):
+ *   1  emit the inline test + helper_lookup_tb_ptr_lc slow path (default)
+ *   0  W64_NOLC=1: plain helper_lookup_tb_ptr (knob A/B, same wasm)
+ *   2  W64_LC_VERIFY=1: helper_lookup_tb_ptr_lc only — it cross-checks
+ *      every slot the inline test would have accepted against the real
+ *      lookup (WASM_DIAG_LC_VHIT / LC_VBAD)
+ */
+static int w64_lc_mode(void)
 {
+    static int mode = -1;
+    if (mode < 0) {
+        mode = getenv("W64_NOLC") ? 0 : getenv("W64_LC_VERIFY") ? 2 : 1;
+    }
+    return mode;
+}
+#endif
+
+/*
+ * @condexec: the condexec_bits value in memory at this exit (what
+ * gen_set_condexec last stored, or 0 mid-TB — see arm_tr_init_disas_context).
+ */
+static void gen_goto_ptr(DisasContext *s, uint32_t condexec)
+{
+#ifdef CONFIG_TCG_WASM64
+    /*
+     * Every bx lr / pop {pc} / ldr pc and (0027) every msr CPSR_* ends
+     * here — one lookup per ~12 guest insns, 153 M per boot, ~12 % of
+     * the vCPU in helper_lookup_tb_ptr + jump cache + the ARM key.
+     * The 2026-09-11 inline cache recomputed that key in wasm and was
+     * flat, and a first cut of this one that compared every key word
+     * (pc, gen, hflags, thumb, condexec) at an 84 % hit rate measured
+     * +2..+4 % SLOWER: Liftoff code for a dozen loads and six branches
+     * costs more than the TurboFan-compiled helper's jump-cache hit.
+     *
+     * So the emitted test compares only what can differ at this exit
+     * from what the translator knows.  hflags cannot: any insn that
+     * changes them ends the TB (the TB's own flags are the proof), so a
+     * plain branch exit stamps tb->flags into the slot statically and
+     * the fill-time helper only ever fills a slot whose static words
+     * match the CPU.  Likewise thumb (static unless gen_bx wrote it) and
+     * condexec (always static: memory holds @condexec here).  Only an
+     * exit after a CPSR write (w64_dynkey) has all three dynamic.  The
+     * generation compare stands in for jump-cache validity and for the
+     * rare VFP key inputs (helper_lookup_tb_ptr_lc).  M-profile keys on
+     * more state than this covers: helper only.
+     */
+    int mode = w64_lc_mode();
+
+    if (mode != 0 && !(tb_cflags(s->base.tb) & CF_NO_GOTO_PTR) &&
+        !arm_dc_feature(s, ARM_FEATURE_M)) {
+        struct W64LookupCache *lc =
+            (struct W64LookupCache *)&s->base.tb->w64_lc;
+        uint32_t key[3] = { s->base.tb->flags, s->w64_thumb, condexec };
+        uint8_t mask = 0;
+
+        if (s->w64_dynkey) {
+            mask = W64_LC_DYN_FLAGS | W64_LC_DYN_THUMB | W64_LC_DYN_CONDEXEC;
+        } else if (s->w64_thumb < 0) {
+            mask = W64_LC_DYN_THUMB;
+        }
+        if (s->w64_lc_sites == 0) {
+            s->w64_lc_sites = 1;
+            memcpy(s->w64_lc_key, key, sizeof(key));
+            s->w64_lc_mask = mask;
+            memcpy(lc->key32, key, sizeof(key));
+            lc->dynmask = mask;
+        } else if (mask != s->w64_lc_mask ||
+                   memcmp(s->w64_lc_key, key, sizeof(key)) != 0) {
+            /* a second exit keyed differently: it stays off the slot */
+            tcg_gen_lookup_and_goto_ptr();
+            return;
+        }
+
+        TCGv_ptr lcp = tcg_constant_ptr(lc);
+        TCGv_ptr tc = tcg_temp_new_ptr();
+
+        if (mode == 1) {
+            TCGLabel *slow = gen_new_label();
+            TCGv_i32 a32 = tcg_temp_new_i32();
+            TCGv_i32 b32 = tcg_temp_new_i32();
+
+            tcg_gen_ld_i32(a32, lcp, offsetof(struct W64LookupCache, pc));
+            tcg_gen_brcond_i32(TCG_COND_NE, a32, cpu_R[15], slow);
+            tcg_gen_ld_i32(a32, lcp, offsetof(struct W64LookupCache, gen));
+            tcg_gen_ld_i32(b32, tcg_env,
+                           offsetof(ARMCPU, parent_obj.neg.tb_key_gen) -
+                           offsetof(ARMCPU, env));
+            tcg_gen_brcond_i32(TCG_COND_NE, a32, b32, slow);
+            if (mask & W64_LC_DYN_FLAGS) {
+                tcg_gen_ld_i32(a32, lcp,
+                               offsetof(struct W64LookupCache, key32[0]));
+                tcg_gen_ld_i32(b32, tcg_env,
+                               offsetof(CPUARMState, hflags.flags));
+                tcg_gen_brcond_i32(TCG_COND_NE, a32, b32, slow);
+            }
+            if (mask & W64_LC_DYN_THUMB) {
+                tcg_gen_ld_i32(a32, lcp,
+                               offsetof(struct W64LookupCache, key32[1]));
+                tcg_gen_ld8u_i32(b32, tcg_env, offsetof(CPUARMState, thumb));
+                tcg_gen_brcond_i32(TCG_COND_NE, a32, b32, slow);
+            }
+            if (mask & W64_LC_DYN_CONDEXEC) {
+                tcg_gen_ld_i32(a32, lcp,
+                               offsetof(struct W64LookupCache, key32[2]));
+                tcg_gen_ld_i32(b32, tcg_env,
+                               offsetof(CPUARMState, condexec_bits));
+                tcg_gen_brcond_i32(TCG_COND_NE, a32, b32, slow);
+            }
+            tcg_gen_ld_ptr(tc, lcp, offsetof(struct W64LookupCache, tc));
+            tcg_gen_goto_ptr(tc);
+            gen_set_label(slow);
+        }
+        gen_helper_lookup_tb_ptr_lc(tc, tcg_env, lcp);
+        tcg_gen_goto_ptr(tc);
+        return;
+    }
+#endif
     tcg_gen_lookup_and_goto_ptr();
 }
 
@@ -1373,7 +1493,7 @@ static void gen_goto_tb(DisasContext *s, unsigned tb_slot_idx, int64_t diff)
         tcg_gen_exit_tb(s->base.tb, tb_slot_idx);
     } else {
         gen_update_pc(s, diff);
-        gen_goto_ptr();
+        gen_goto_ptr(s, 0);
     }
     s->base.is_jmp = DISAS_NORETURN;
 }
@@ -1410,7 +1530,7 @@ static void gen_jmp_tb(DisasContext *s, int64_t diff, int tbno)
          * and don't chain to another TB.
          */
         gen_update_pc(s, diff);
-        gen_goto_ptr();
+        gen_goto_ptr(s, 0);
         s->base.is_jmp = DISAS_NORETURN;
         break;
     default:
@@ -1500,6 +1620,9 @@ static int gen_set_psr(DisasContext *s, uint32_t mask, int spsr, TCGv_i32 t0)
      */
     gen_pc_plus_diff(s, cpu_R[15], curr_insn_len(s));
     s->base.is_jmp = DISAS_JUMP;
+#ifdef CONFIG_TCG_WASM64
+    s->w64_dynkey = true;
+#endif
     return 0;
 }
 
@@ -1741,6 +1864,9 @@ static void gen_rfe(DisasContext *s, TCGv_i32 pc, TCGv_i32 cpsr)
     /* Un-masked IRQs: the helper requests the next-TB-start exit (see
      * gen_set_psr); pc is already stored, so look up and go. */
     s->base.is_jmp = DISAS_JUMP;
+#ifdef CONFIG_TCG_WASM64
+    s->w64_dynkey = true;
+#endif
 }
 
 /* Generate an old-style exception return. Marks pc as dead. */
@@ -5313,6 +5439,9 @@ static bool do_ldm(DisasContext *s, arg_ldst_block *a)
         gen_helper_cpsr_write_eret(tcg_env, tmp);
         /* Un-masked IRQs: see gen_rfe */
         s->base.is_jmp = DISAS_JUMP;
+#ifdef CONFIG_TCG_WASM64
+        s->w64_dynkey = true;
+#endif
     }
     clear_eci_state(s);
     return true;
@@ -5442,6 +5571,9 @@ static bool trans_BLX_i(DisasContext *s, arg_BLX_i *a)
     }
     gen_pc_plus_diff(s, cpu_R[14], curr_insn_len(s) | s->thumb);
     store_cpu_field_constant(!s->thumb, thumb);
+#ifdef CONFIG_TCG_WASM64
+    s->w64_thumb = !s->thumb;
+#endif
     /* This jump is computed from an aligned PC: subtract off the low bits. */
     gen_jmp(s, jmp_diff(s, a->imm - (s->pc_curr & 3)));
     /*
@@ -6551,6 +6683,11 @@ static void arm_tr_init_disas_context(DisasContextBase *dcbase, CPUState *cs)
     dc->pc_save = dc->base.pc_first;
     dc->aarch64 = false;
     dc->thumb = EX_TBFLAG_AM32(tb_flags, THUMB);
+#ifdef CONFIG_TCG_WASM64
+    dc->w64_thumb = dc->thumb;
+    dc->w64_dynkey = false;
+    dc->w64_lc_sites = 0;
+#endif
     dc->be_data = EX_TBFLAG_ANY(tb_flags, BE_DATA) ? MO_BE : MO_LE;
     condexec = EX_TBFLAG_AM32(tb_flags, CONDEXEC);
     /*
@@ -7057,7 +7194,10 @@ static void arm_tr_tb_stop(DisasContextBase *dcbase, CPUState *cpu)
             gen_update_pc(dc, curr_insn_len(dc));
             /* fall through */
         case DISAS_JUMP:
-            gen_goto_ptr();
+            /* memory holds what gen_set_condexec stored above, else 0 */
+            gen_goto_ptr(dc, dc->condexec_mask ?
+                         (dc->condexec_cond << 4) | (dc->condexec_mask >> 1)
+                         : 0);
             break;
         case DISAS_UPDATE_EXIT:
             gen_update_pc(dc, curr_insn_len(dc));

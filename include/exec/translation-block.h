@@ -136,6 +136,26 @@ struct TranslationBlock {
     vaddr w64_succ[3];
     uint8_t w64_nsucc;
     uint8_t w64_explored;   /* speculation: every successor already exists */
+    /*
+     * Inline next-TB cache for this TB's goto_ptr exit (target/arm
+     * gen_goto_ptr): the emitted code compares pc, tb_key_gen and the
+     * key words flagged dynamic in @dynmask against the CPU and
+     * tail-calls @tc on a match instead of calling helper_lookup_tb_ptr.
+     * The other key words were stamped by the translator (the exit's
+     * static key) and helper_lookup_tb_ptr_lc fills the slot only when
+     * they match the CPU; a bump of cpu->neg.tb_key_gen retires every
+     * slot at once.  @gen 0 = empty.
+     */
+    struct W64LookupCache {
+        uint32_t pc;
+        uint32_t gen;
+        uint32_t key32[3];  /* ARM: hflags.flags, thumb, condexec_bits */
+        uint8_t dynmask;    /* W64_LC_DYN_* bits: key32[i] is dynamic */
+        const void *tc;
+    } w64_lc;
+#define W64_LC_DYN_FLAGS     1
+#define W64_LC_DYN_THUMB     2
+#define W64_LC_DYN_CONDEXEC  4
 #endif
 
     /*

@@ -577,9 +577,49 @@ static CPUARMTBFlags rebuild_hflags_internal(CPUARMState *env)
     }
 }
 
+/*
+ * Every hflags assignment goes through here.  On the wasm64 backend the
+ * inline TB-lookup cache (gen_goto_ptr) covers hflags.flags per exit
+ * (statically or by comparing it) but not flags2, which is expected to
+ * stay put across a boot: a change of flags2 retires every slot.
+ */
+static void arm_set_hflags(CPUARMState *env, CPUARMTBFlags f)
+{
+#ifdef CONFIG_TCG_WASM64
+    if (f.flags2 != env->hflags.flags2) {
+        cpu_tb_key_gen_bump(env_cpu(env));
+    }
+#endif
+    env->hflags = f;
+}
+
+#ifdef CONFIG_TCG_WASM64
+/*
+ * The words of the wasm64 inline TB-lookup cache key (gen_goto_ptr
+ * stamps or compares them without recomputing the TB flags):
+ * hflags.flags, thumb and condexec_bits.  What is left of
+ * arm_get_tb_cpu_state's key is either covered by the cache generation
+ * (hflags.flags2, FPSCR.Len/Stride, FPEXC.EN — see cpu_tb_key_gen_bump)
+ * or excluded here (A64, M-profile, single-step: never cached).
+ */
+bool arm_w64_lc_key(CPUState *cs, uint32_t key32[3])
+{
+    CPUARMState *env = cpu_env(cs);
+
+    if (is_a64(env) || arm_feature(env, ARM_FEATURE_M) ||
+        EX_TBFLAG_ANY(env->hflags, SS_ACTIVE)) {
+        return false;
+    }
+    key32[0] = env->hflags.flags;
+    key32[1] = env->thumb;
+    key32[2] = env->condexec_bits;
+    return true;
+}
+#endif
+
 void arm_rebuild_hflags(CPUARMState *env)
 {
-    env->hflags = rebuild_hflags_internal(env);
+    arm_set_hflags(env, rebuild_hflags_internal(env));
 }
 
 /*
@@ -592,7 +632,7 @@ void HELPER(rebuild_hflags_m32_newel)(CPUARMState *env)
     int fp_el = fp_exception_el(env, el);
     ARMMMUIdx mmu_idx = arm_mmu_idx_el(env, el);
 
-    env->hflags = rebuild_hflags_m32(env, fp_el, mmu_idx);
+    arm_set_hflags(env, rebuild_hflags_m32(env, fp_el, mmu_idx));
 }
 
 void HELPER(rebuild_hflags_m32)(CPUARMState *env, int el)
@@ -600,7 +640,7 @@ void HELPER(rebuild_hflags_m32)(CPUARMState *env, int el)
     int fp_el = fp_exception_el(env, el);
     ARMMMUIdx mmu_idx = arm_mmu_idx_el(env, el);
 
-    env->hflags = rebuild_hflags_m32(env, fp_el, mmu_idx);
+    arm_set_hflags(env, rebuild_hflags_m32(env, fp_el, mmu_idx));
 }
 
 /*
@@ -612,7 +652,7 @@ void HELPER(rebuild_hflags_a32_newel)(CPUARMState *env)
     int el = arm_current_el(env);
     int fp_el = fp_exception_el(env, el);
     ARMMMUIdx mmu_idx = arm_mmu_idx_el(env, el);
-    env->hflags = rebuild_hflags_a32(env, fp_el, mmu_idx);
+    arm_set_hflags(env, rebuild_hflags_a32(env, fp_el, mmu_idx));
 }
 
 void HELPER(rebuild_hflags_a32)(CPUARMState *env, int el)
@@ -620,7 +660,7 @@ void HELPER(rebuild_hflags_a32)(CPUARMState *env, int el)
     int fp_el = fp_exception_el(env, el);
     ARMMMUIdx mmu_idx = arm_mmu_idx_el(env, el);
 
-    env->hflags = rebuild_hflags_a32(env, fp_el, mmu_idx);
+    arm_set_hflags(env, rebuild_hflags_a32(env, fp_el, mmu_idx));
 }
 
 void HELPER(rebuild_hflags_a64)(CPUARMState *env, int el)
@@ -628,7 +668,7 @@ void HELPER(rebuild_hflags_a64)(CPUARMState *env, int el)
     int fp_el = fp_exception_el(env, el);
     ARMMMUIdx mmu_idx = arm_mmu_idx_el(env, el);
 
-    env->hflags = rebuild_hflags_a64(env, el, fp_el, mmu_idx);
+    arm_set_hflags(env, rebuild_hflags_a64(env, el, fp_el, mmu_idx));
 }
 
 static void assert_hflags_rebuild_correctly(CPUARMState *env)
