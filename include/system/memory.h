@@ -1979,6 +1979,15 @@ void memory_region_rom_device_set_romd(MemoryRegion *mr, bool romd_mode);
 bool memory_topology_views_recycled(void);
 
 /**
+ * memory_topology_commit_full: whether the transaction commit that is
+ * currently being dispatched (or just finished) changed real memory
+ * topology, as opposed to only romd mode or ioeventfds.  Such commits
+ * can put different code behind the same guest physical address, so
+ * the TCG jump cache must be cleared in addition to the TLB ranges.
+ */
+bool memory_topology_commit_full(void);
+
+/**
  * memory_region_set_coalescing: Enable memory coalescing for the region.
  *
  * Enabled writes to a region to be queued for later processing. MMIO ->write

@@ -34,6 +34,7 @@
 
 #include "exec/cputlb.h"
 #include "exec/page-protection.h"
+#include "exec/tb-flush.h"
 #include "exec/target_page.h"
 #include "exec/translation-block.h"
 #include "hw/core/qdev.h"
@@ -186,6 +187,11 @@ typedef struct CPUAddressSpace {
     hwaddr pend_hi[32];
     unsigned pend_n;
     bool pend_all;
+    /* the last commit changed real topology (not just romd mode):
+     * the jump cache must be cleared too - it is virtual-pc-indexed
+     * and tlb_flush_phys_ranges never touches it, so a remap could
+     * otherwise execute a TB translated from the old mapping */
+    bool jmp_flush;
 } CPUAddressSpace;
 
 struct DirtyBitmapSnapshot {
@@ -3122,6 +3128,10 @@ static void tcg_commit_cpu(CPUState *cpu, run_on_cpu_data data)
         tlb_flush_phys_ranges(cpu, cpuas->pend_lo, cpuas->pend_hi,
                               cpuas->pend_n);
     }
+    if (cpuas->jmp_flush) {
+        tcg_flush_jmp_cache(cpu);
+        cpuas->jmp_flush = false;
+    }
     cpuas->pend_n = 0;
     cpuas->pend_all = false;
 }
@@ -3147,6 +3157,9 @@ static void tcg_commit(MemoryListener *listener)
      */
     if (memory_topology_views_recycled()) {
         cpuas->pend_all = true;
+    }
+    if (memory_topology_commit_full()) {
+        cpuas->jmp_flush = true;
     }
 
     /*

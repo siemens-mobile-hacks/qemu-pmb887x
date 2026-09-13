@@ -19,7 +19,6 @@
 
 #include "qemu/osdep.h"
 
-
 #include "qemu/main-loop.h"
 #include "qemu/target-info.h"
 #include "accel/tcg/cpu-loop.h"
@@ -1255,7 +1254,7 @@ static void tlb_resolve_io_dispatch(CPUTLBEntryFull *full, MemoryRegion *mr)
     full->io_check_align = 0;
     full->io_guard = NULL;
 
-    if (mr->alias) {
+    if (mr->alias || mr->ram) {
         return;
     }
     ops = mr->ops;
@@ -1299,8 +1298,13 @@ static void tlb_resolve_io_dispatch(CPUTLBEntryFull *full, MemoryRegion *mr)
      */
     dev_be = ops->endianness == DEVICE_BIG_ENDIAN ||
              (ops->endianness == DEVICE_NATIVE_ENDIAN && target_big_endian());
-    full->io_swap = (((MO_BE & MO_BSWAP) != 0) != dev_be) |
-                    ((((MO_LE & MO_BSWAP) != 0) != dev_be) << 1);
+    /* The read pieces are assembled big-endian and the write pieces
+     * little-endian, so the host-independent form of "swap iff the op's
+     * bswap bit differs from the device's" is: bit 0 (reads) swaps on a
+     * little-endian device, bit 1 (writes) on a big-endian one.  (On a
+     * big-endian host MO_BE == 0, so deriving this from the MO_*
+     * constants would invert both bits there.) */
+    full->io_swap = (unsigned)!dev_be | ((unsigned)dev_be << 1);
 
     full->io_opaque = mr->opaque;
     full->io_read_fn = ops->read;
@@ -1572,8 +1576,8 @@ static bool tlb_fill_align(CPUState *cpu, vaddr addr, MMUAccessType type,
     const TCGCPUOps *ops = cpu->cc->tcg_ops;
     CPUTLBEntryFull full;
 
-    wasm_diag_stat[WASM_DIAG_TLB_FILL]++;
 #ifdef __EMSCRIPTEN__
+    wasm_diag_stat[WASM_DIAG_TLB_FILL]++;
     wasm_diag_stat[WASM_DIAG_FILL_FETCH] += type == MMU_INST_FETCH;
     wasm_diag_stat[WASM_DIAG_FILL_PROBE] += probe;
 #endif
@@ -1658,7 +1662,6 @@ io_prepare(hwaddr *out_offset, CPUState *cpu, CPUTLBEntryFull *full,
              * any virtual timers whose deadline it crossed so the
              * callback sees their effects (system/icount2.c).
              */
-            extern void wasm_io_advance(unsigned cycles);
             wasm_io_advance(0);
         } else if (icount_enabled()) {
             /*
@@ -1680,7 +1683,13 @@ io_prepare(hwaddr *out_offset, CPUState *cpu, CPUTLBEntryFull *full,
             cpu->neg.can_do_io = true;
             icount_update(cpu);
         } else {
-            /* !can_do_io without any icount mode: not expected. */
+            /*
+             * !can_do_io without any icount mode: this is the normal
+             * path for the LG boards - stock QEMU 11 manages can_do_io
+             * for every TB and recompiles any mid-TB MMIO regardless of
+             * icount; the io-barrier mechanism makes the recompile a
+             * one-time cost per faulting insn.
+             */
             cpu_io_recompile(cpu, retaddr);
         }
 #else
@@ -2397,6 +2406,10 @@ static uint64_t int_ld_mmio_beN(CPUState *cpu, CPUTLBEntryFull *full,
                 if (guard) {
                     *guard = false;
                 }
+                /* stock's accessor masks the piece to its access size;
+                 * a device returning 0xffffffff for a 2-byte read must
+                 * not corrupt the preceding piece of a split load */
+                val &= MAKE_64BIT_MASK(0, this_size * 8);
                 if (full->io_swap & 1) {
                     val = io_fast_bswap(val, this_size);
                 }
@@ -2432,7 +2445,9 @@ static uint64_t do_ld_mmio_beN(CPUState *cpu, CPUTLBEntryFull *full,
 
     tcg_debug_assert(size > 0 && size <= 8);
 
+#ifdef __EMSCRIPTEN__
     wasm_diag_stat[WASM_DIAG_IO_LD]++;
+#endif
     section = io_prepare(&mr_offset, cpu, full, addr, ra);
     mr = section->mr;
 
@@ -2933,6 +2948,9 @@ static uint64_t int_st_mmio_leN(CPUState *cpu, CPUTLBEntryFull *full,
                 if (guard) {
                     *guard = true;
                 }
+                /* stock's accessor masks the piece to its access size
+                 * before the device sees it */
+                tmp &= MAKE_64BIT_MASK(0, this_size * 8);
                 if (full->io_swap & 2) {
                     tmp = io_fast_bswap(tmp, this_size);
                 }
@@ -2974,7 +2992,9 @@ static uint64_t do_st_mmio_leN(CPUState *cpu, CPUTLBEntryFull *full,
 
     tcg_debug_assert(size > 0 && size <= 8);
 
+#ifdef __EMSCRIPTEN__
     wasm_diag_stat[WASM_DIAG_IO_ST]++;
+#endif
     section = io_prepare(&mr_offset, cpu, full, addr, ra);
     mr = section->mr;
 

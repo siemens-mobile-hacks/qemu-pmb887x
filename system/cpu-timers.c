@@ -261,9 +261,19 @@ void qemu_timer_notify_cb(void *opaque, QEMUClockType type)
          */
         if (icount_enabled()) {
             CPUState *cpu = current_cpu;
-            int64_t deadline = qemu_clock_deadline_ns_all(QEMU_CLOCK_VIRTUAL,
-                                                          QEMU_TIMER_ATTR_ALL);
-            int64_t left = cpu->neg.icount_decr.u16.low + cpu->icount_extra;
+            int64_t deadline, left;
+
+            if (!cpu->neg.can_do_io) {
+                /* Reading the virtual clock here would hit
+                 * icount_get_raw_locked()'s "Bad icount read" exit when
+                 * the caller cannot do io - keep the stock unconditional
+                 * cpu_exit instead. */
+                cpu_exit(current_cpu);
+                return;
+            }
+            deadline = qemu_clock_deadline_ns_all(QEMU_CLOCK_VIRTUAL,
+                                                  QEMU_TIMER_ATTR_ALL);
+            left = cpu->neg.icount_decr.u16.low + cpu->icount_extra;
 
             if (deadline >= 0 && icount_round(deadline) >= left) {
                 return;

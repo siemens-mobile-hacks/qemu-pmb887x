@@ -209,7 +209,8 @@ typedef uint32_t MMUIdxMap;
 /*
  * Granularity of the per-TLB physical-address summary (see phys_group in
  * CPUTLBDesc): one 64-bit mask per group of 64 table entries, one bit per
- * 64 MB of physical address space.  Tables larger than
+ * 32 MB (1 << TLB_PHYS_BUCKET_BITS) of physical address space.  Tables
+ * larger than
  * TLB_PHYS_GROUPS << TLB_PHYS_GROUP_BITS entries fall back to a full walk.
  */
 #define TLB_PHYS_GROUP_BITS 6
@@ -265,9 +266,9 @@ struct CPUTLBEntryFull {
      * tlb_set_page_full resolves the callback + opaque + allowed-size
      * mask + endianness swap here, so the access path is one mask
      * test + one indirect call instead of the generic
-     * memory_region_dispatch_{read,write} resolution.  io_size_mask == 0
+     * memory_region_dispatch_{read,write} resolution.  An empty mask
      * disables the fast path (RAM, aliases, accept callbacks,
-     * ioeventf d writes, with-attrs ops, out-of-range sizes all fall
+     * ioeventfd writes, with-attrs ops, out-of-range sizes all fall
      * back to the stock path with no added per-access conditions).
      */
     void *io_opaque;
@@ -330,7 +331,7 @@ typedef struct CPUTLBDesc {
     /*
      * Physical-address summary, so a memory-topology commit does not have
      * to walk every entry (tlb_flush_phys_ranges).  phys_group[g] is a
-     * bitmap of the 64 MB physical buckets the entries of the 64-entry
+     * bitmap of the 32 MB physical buckets the entries of the 64-entry
      * group g translate into; phys_any is the OR over the groups and the
      * victim table.  Both are conservative - bits are added on fill and
      * never removed on eviction - and a commit that walks a group rewrites
