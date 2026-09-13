@@ -25,7 +25,7 @@
 /* ------------------------------------------------------------------ */
 
 #define W64_MAX_FIXUPS  1024
-#define W64_MAX_BLK     32
+#define W64_MAX_BLK     128     /* nested mode: one block per label */
 #define W64_MAX_LABELS  1024
 
 /* w64_type / w64_import / table caps come from wasm64.h (the batch
@@ -54,6 +54,13 @@ static __thread struct {
     struct { uint8_t kind; int label; } blk[W64_MAX_BLK];
     int n_blk;
     int loop_idx;           /* blk[] index of the top-level label loop */
+    /* nested mode: every TCG branch in this TB is forward (the ARM
+     * frontend never emits a backward one), so the labels become nested
+     * blocks opened at TB start in set order (last label outermost) and
+     * a branch is a plain br / br_if — no dispatch loop, no $bp, no
+     * per-label compare, no loop phis for V8's register allocator.  A
+     * backward branch falls back to the loop + sibling-if scheme. */
+    bool nested;
 
     /* register representation: bit r set = value in the i64 local */
     uint32_t rep;
@@ -63,6 +70,7 @@ enum {
     W64_BLK_REGION,         /* if (bp <= k) label region            */
     W64_BLK_IF,             /* transient emitter if                 */
     W64_BLK_LOOP,           /* the top-level label dispatch loop    */
+    W64_BLK_LABEL,          /* nested mode: block closed at its label */
 };
 
 /* ------------------------------------------------------------------ */
@@ -328,7 +336,8 @@ static void w64_blk_push(TCGContext *s, uint8_t kind, int label)
         W.overflow = true;
         return;
     }
-    w64_u8(s, kind == W64_BLK_LOOP ? 0x03 : 0x04);
+    w64_u8(s, kind == W64_BLK_LOOP ? 0x03 :
+              kind == W64_BLK_LABEL ? 0x02 : 0x04);
     w64_u8(s, 0x40);                        /* void */
     W.blk[W.n_blk].kind = kind;
     W.blk[W.n_blk].label = label;
@@ -403,8 +412,59 @@ static uint8_t w64_import_idx(uint32_t fptr, uint8_t type)
 /* ------------------------------------------------------------------ */
 
 
+/* number the labels in set order and decide the branch scheme */
+static void w64_scan_labels(TCGContext *s)
+{
+    TCGOp *op;
+
+    W.nested = true;
+    QTAILQ_FOREACH(op, &s->ops, link) {
+        TCGLabel *l;
+
+        switch (op->opc) {
+        case INDEX_op_set_label:
+            l = arg_label(op->args[0]);
+            if (l->id >= W64_MAX_LABELS || W.n_labels == 0xffff) {
+                W.overflow = true;
+                return;
+            }
+            W.label_idx[l->id] = ++W.n_labels;
+            break;
+        case INDEX_op_br:
+            l = arg_label(op->args[0]);
+            goto check;
+        case INDEX_op_brcond:
+            l = arg_label(op->args[3]);
+        check:
+            if (l->id < W64_MAX_LABELS && W.label_idx[l->id] != 0) {
+                W.nested = false;           /* backward branch */
+            }
+            break;
+        default:
+            break;
+        }
+    }
+    if (W.nested && W.n_labels + 8 > W64_MAX_BLK) {
+        W.overflow = true;                  /* retry with fewer insns */
+    }
+    if (!W.nested) {
+        /* the loop scheme numbers labels as they are placed */
+        memset(W.label_idx, 0, sizeof(W.label_idx));
+        W.n_labels = 0;
+    }
+}
+
 static void w64_emit_loop_head(TCGContext *s)
 {
+    int k;
+
+    if (W.nested) {
+        for (k = W.n_labels; k >= 1; k--) {
+            w64_blk_push(s, W64_BLK_LABEL, k);
+        }
+        return;
+    }
+
     /* loop { if (u32.le_u (local.get $bp) (i32.const 0)) { <region 0> */
     w64_u8(s, 0x03);                        /* loop void */
     w64_u8(s, 0x40);
@@ -423,6 +483,18 @@ static void w64_emit_loop_head(TCGContext *s)
 static void tcg_out_set_label(TCGContext *s, TCGLabel *l)
 {
     int i;
+
+    if (W.nested) {
+        /* the innermost open block is this label's */
+        if (W.n_blk == 0 || W.blk[W.n_blk - 1].kind != W64_BLK_LABEL ||
+            l->id >= W64_MAX_LABELS ||
+            W.blk[W.n_blk - 1].label != W.label_idx[l->id]) {
+            W.overflow = true;
+            return;
+        }
+        w64_blk_pop(s);
+        return;
+    }
 
     if (l->id >= W64_MAX_LABELS || W.n_labels == 0xffff) {
         W.overflow = true;
@@ -823,6 +895,23 @@ static bool tcg_out_xchg(TCGContext *s, TCGType t, TCGReg r1, TCGReg r2)
 static void w64_br_to_label(TCGContext *s, TCGLabel *l, bool cond)
 {
     uint16_t idx = W.label_idx[l->id];
+
+    if (W.nested) {
+        int i;
+
+        for (i = W.n_blk - 1; i >= 0; i--) {
+            if (W.blk[i].kind == W64_BLK_LABEL && W.blk[i].label == idx) {
+                break;
+            }
+        }
+        if (idx == 0 || i < 0) {
+            W.overflow = true;
+            return;
+        }
+        w64_u8(s, cond ? 0x0d : 0x0c);      /* br_if / br */
+        w64_uleb(s, W.n_blk - 1 - i);
+        return;
+    }
 
     if (cond) {
         w64_blk_push(s, W64_BLK_IF, -1);
@@ -2284,6 +2373,7 @@ static void tcg_out_tb_start(TCGContext *s)
 
     memset(&W, 0, sizeof(W));
     n_cf = 0;
+    w64_scan_labels(s);
 
     /* lazy one-time init of the inline-accounting address table
      * (translation of the first TB precedes w64_init/first exec) */
@@ -2472,11 +2562,17 @@ static int tcg_out_tb_finalize(TCGContext *s)
      * the loop is void — falling off its end never happens (every region
      * ends in a branch or return), but the validator wants the function's
      * i32 result on the stack after it. */
-    if (W.n_blk != 2) {
-        return -2;
+    if (W.nested) {
+        if (W.n_blk != 0) {
+            return -2;
+        }
+    } else {
+        if (W.n_blk != 2) {
+            return -2;
+        }
+        w64_blk_pop(s);                    /* end: last region's if */
+        w64_blk_pop(s);                    /* end: the loop */
     }
-    w64_blk_pop(s);                        /* end: last region's if */
-    w64_blk_pop(s);                        /* end: the loop */
     w64_const_i32(s, 0);
     w64_u8(s, 0x0b);                       /* end: function expr */
 
