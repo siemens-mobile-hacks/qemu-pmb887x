@@ -2357,6 +2357,17 @@ void memory_region_transaction_begin(void);
 void memory_region_transaction_commit(void);
 
 /**
+ * memory_region_topology_gen: generation of the installed flatviews.
+ *
+ * Changes on every committed transaction that installed new views (romd
+ * toggles included).  A translation obtained under one value stays
+ * valid while the value is unchanged, so a device that dispatches many
+ * accesses to one address may cache the (MemoryRegion, offset) pair
+ * keyed on it instead of walking the flatview per access.
+ */
+uint64_t memory_region_topology_gen(void);
+
+/**
  * memory_listener_register: register callbacks to be called when memory
  *                           sections are mapped or unmapped into an address
  *                           space

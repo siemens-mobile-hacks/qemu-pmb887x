@@ -74,6 +74,7 @@ enum {
     WASM_DIAG_DIF_TX_WORD,   /* pmb887x DIF v2 words popped from the TX FIFO */
     WASM_DIAG_DMAC_BURST,    /* pmb887x DMAC dmac_transfer_memory calls */
     WASM_DIAG_DMAC_SCHED_TIMER, /* pmb887x DMAC timer_mod from dmac_schedule */
+    WASM_DIAG_DMAC_XLAT_FILL, /* pmb887x DMAC translation-window fills (misses) */
     WASM_DIAG_N
 };
 

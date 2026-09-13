@@ -55,7 +55,13 @@ struct pmb887x_vic_t {
 
 	qemu_irq parent_irq;
 	qemu_irq parent_fiq;
-	
+	/* last level driven on the CPU lines (-1 = never): the CPU's handler
+	 * is not free when the level is unchanged - a repeated "asserted" is
+	 * a cpu_interrupt() that forces the TB loop out - and a masked DMA
+	 * request line toggles through here twice per display word */
+	int8_t parent_irq_level;
+	int8_t parent_fiq_level;
+
 	int pending_irq;
 	int pending_fiq;
 
@@ -129,8 +135,16 @@ static int vic_pending_fiq(pmb887x_vic_t *p) {
 static void vic_update_state(pmb887x_vic_t *p) {
 	p->pending_irq = vic_pending_irq(p);
 	p->pending_fiq = vic_pending_fiq(p);
-	qemu_set_irq(p->parent_irq, p->pending_irq >= 0);
-	qemu_set_irq(p->parent_fiq, p->pending_fiq >= 0);
+	int8_t irq = p->pending_irq >= 0;
+	int8_t fiq = p->pending_fiq >= 0;
+	if (p->parent_irq_level != irq) {
+		p->parent_irq_level = irq;
+		qemu_set_irq(p->parent_irq, irq);
+	}
+	if (p->parent_fiq_level != fiq) {
+		p->parent_fiq_level = fiq;
+		qemu_set_irq(p->parent_fiq, fiq);
+	}
 }
 
 static void vic_irq_handler(void *opaque, int irq, int level) {
@@ -345,6 +359,8 @@ static void vic_reset(DeviceState *dev) {
 
 	p->pending_irq = -1;
 	p->pending_fiq = -1;
+	p->parent_irq_level = -1;
+	p->parent_fiq_level = -1;
 	p->irq_depth = 0;
 	p->fiq_depth = 0;
 	memset(p->irq_frames, 0, sizeof(p->irq_frames));

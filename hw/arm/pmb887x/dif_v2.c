@@ -233,18 +233,18 @@ static inline bool dif_is_pbc_enabled(pmb887x_dif_t *p) {
 
 static void dif_update_gpio_state(pmb887x_dif_t *p) {
 	uint32_t csreg = dif_get_transfer_csreg(p);
-	struct {
+	/* CS1, CS2, CS3, CD, RD, WR - built twice per FIFO word, keep it small */
+	const struct {
 		bool value;
 		uint32_t perreg;
 		qemu_irq pin;
-		char name[32];
 	} cs_pins[] = {
-		{ (csreg & DIFv2_CSREG_CS1) != 0, DIFv2_PERREG_CS1POL, p->gpio_cs[0], "CS1" },
-		{ (csreg & DIFv2_CSREG_CS2) != 0, DIFv2_PERREG_CS2POL, p->gpio_cs[1], "CS2" },
-		{ (csreg & DIFv2_CSREG_CS3) != 0, DIFv2_PERREG_CS3POL, p->gpio_cs[2], "CS3" },
-		{ (csreg & DIFv2_CSREG_CD) != 0, DIFv2_PERREG_CDPOL, p->gpio_cd, "CD" },
-		{ p->state == DIF_STATE_RX, DIFv2_PERREG_RDPOL, p->gpio_rd, "RD" },
-		{ p->state != DIF_STATE_RX, DIFv2_PERREG_WRPOL, p->gpio_wr, "WR" },
+		{ (csreg & DIFv2_CSREG_CS1) != 0, DIFv2_PERREG_CS1POL, p->gpio_cs[0] },
+		{ (csreg & DIFv2_CSREG_CS2) != 0, DIFv2_PERREG_CS2POL, p->gpio_cs[1] },
+		{ (csreg & DIFv2_CSREG_CS3) != 0, DIFv2_PERREG_CS3POL, p->gpio_cs[2] },
+		{ (csreg & DIFv2_CSREG_CD) != 0, DIFv2_PERREG_CDPOL, p->gpio_cd },
+		{ p->state == DIF_STATE_RX, DIFv2_PERREG_RDPOL, p->gpio_rd },
+		{ p->state != DIF_STATE_RX, DIFv2_PERREG_WRPOL, p->gpio_wr },
 	};
 	for (int i = 0; i < ARRAY_SIZE(cs_pins); i++) {
 		bool polarity = (p->perreg & cs_pins[i].perreg) != 0;
@@ -253,7 +253,6 @@ static void dif_update_gpio_state(pmb887x_dif_t *p) {
 		if (p->gpio_pin_level[i] == level)
 			continue;
 		p->gpio_pin_level[i] = level;
-		// DPRINTF("%s=%d set %s\n", cs_pins[i].name, value, level ? "HIGH" : "LOW");
 		qemu_set_irq(cs_pins[i].pin, level);
 	}
 }
