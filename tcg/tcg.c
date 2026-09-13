@@ -120,7 +120,7 @@ static void tcg_out_ld(TCGContext *s, TCGType type, TCGReg ret, TCGReg arg1,
                        intptr_t arg2);
 #ifdef CONFIG_TCG_WASM64
 static void tcg_out_set_label(TCGContext *s, TCGLabel *l);
-static void tcg_out_tb_finalize(TCGContext *s);
+static int tcg_out_tb_finalize(TCGContext *s);
 #endif
 static bool tcg_out_mov(TCGContext *s, TCGType type, TCGReg ret, TCGReg arg);
 static void tcg_out_movi(TCGContext *s, TCGType type,
@@ -250,7 +250,7 @@ TCGv_env tcg_env;
 const void *tcg_code_gen_epilogue;
 ptrdiff_t tcg_splitwx_diff;
 
-#if !defined(CONFIG_TCG_INTERPRETER) && !defined(CONFIG_TCG_WASM64)
+#if !defined(HAVE_TCG_QEMU_TB_EXEC)
 tcg_prologue_fn *tcg_qemu_tb_exec;
 #endif
 
@@ -1861,7 +1861,7 @@ void tcg_prologue_init(void)
     s->code_buf = s->code_gen_ptr;
     s->data_gen_ptr = NULL;
 
-#if !defined(CONFIG_TCG_INTERPRETER) && !defined(CONFIG_TCG_WASM64)
+#if !defined(HAVE_TCG_QEMU_TB_EXEC)
     tcg_qemu_tb_exec = (tcg_prologue_fn *)tcg_splitwx_to_rx(s->code_ptr);
 #endif
 
@@ -1917,11 +1917,11 @@ void tcg_prologue_init(void)
         }
     }
 
-#ifndef CONFIG_TCG_INTERPRETER
+#ifndef HAVE_TCG_QEMU_TB_EXEC
     /*
      * Assert that goto_ptr is implemented completely, setting an epilogue.
-     * For tci, we use NULL as the signal to return from the interpreter,
-     * so skip this check.
+     * For tci and wasm64, we use NULL as the signal to return from the
+     * interpreter / dispatcher, so skip this check.
      */
     tcg_debug_assert(tcg_code_gen_epilogue != NULL);
 #endif
@@ -6762,7 +6762,9 @@ int tcg_gen_code(TCGContext *s, TranslationBlock *tb, uint64_t pc_start)
     }
 #ifdef CONFIG_TCG_WASM64
     /* the wasm64 backend assembles the module around the body */
-    tcg_out_tb_finalize(s);
+    if (tcg_out_tb_finalize(s) < 0) {
+        return -2;
+    }
 #endif
     if (!tcg_resolve_relocs(s)) {
         return -2;

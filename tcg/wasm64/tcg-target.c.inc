@@ -37,7 +37,10 @@ struct w64_fixup {          /* forward branch to an unplaced label */
 
 static __thread struct {
     uint16_t label_idx[W64_MAX_LABELS];  /* 0 = unplaced, else 1..n */
-    uint8_t n_labels;
+    uint16_t n_labels;
+    bool overflow;          /* a fixed-size emitter table filled up: fail
+                             * the translation (tcg_out_tb_finalize -> -2,
+                             * tb_gen_code retries with half the insns) */
     struct w64_fixup fixup[W64_MAX_FIXUPS];
     int n_fixup;
 
@@ -288,7 +291,10 @@ static void w64_const(TCGContext *s, TCGType t, tcg_target_long v)
 
 static void w64_blk_push(TCGContext *s, uint8_t kind, int label)
 {
-    tcg_debug_assert(W.n_blk < W64_MAX_BLK);
+    if (W.n_blk >= W64_MAX_BLK) {
+        W.overflow = true;
+        return;
+    }
     w64_u8(s, kind == W64_BLK_LOOP ? 0x03 : 0x04);
     w64_u8(s, 0x40);                        /* void */
     W.blk[W.n_blk].kind = kind;
@@ -331,6 +337,10 @@ static uint8_t w64_add_type(unsigned np, const uint8_t *p, uint8_t ret)
         }
     }
     tcg_debug_assert(W.n_types < W64_MAX_TYPES);
+    if (W.n_types >= W64_MAX_TYPES) {
+        W.overflow = true;
+        return 0;
+    }
     W.type[W.n_types].np = np;
     memcpy(W.type[W.n_types].p, p, np);
     W.type[W.n_types].ret = ret;
@@ -346,6 +356,10 @@ static uint8_t w64_import_idx(uint32_t fptr, uint8_t type)
         }
     }
     tcg_debug_assert(W.n_imp < W64_MAX_IMPORTS);
+    if (W.n_imp >= W64_MAX_IMPORTS) {
+        W.overflow = true;
+        return 0;
+    }
     W.imp[W.n_imp].fptr = fptr;
     W.imp[W.n_imp].type = type;
     return W.n_imp++;
@@ -355,11 +369,6 @@ static uint8_t w64_import_idx(uint32_t fptr, uint8_t type)
 /* module frame (emitted around the body at fixed offsets)             */
 /* ------------------------------------------------------------------ */
 
-static void w64_out_desc_u32(TCGContext *s, unsigned off, uint32_t v)
-{
-    tcg_insn_unit *p = s->code_buf + off;
-    stl_p(p, v);
-}
 
 static void w64_emit_loop_head(TCGContext *s)
 {
@@ -382,8 +391,10 @@ static void tcg_out_set_label(TCGContext *s, TCGLabel *l)
 {
     int i;
 
-    tcg_debug_assert(l->id < W64_MAX_LABELS);
-    tcg_debug_assert(W.n_labels < 0xffff);
+    if (l->id >= W64_MAX_LABELS || W.n_labels == 0xffff) {
+        W.overflow = true;
+        return;
+    }
     W.label_idx[l->id] = ++W.n_labels;
 
     /* patch forward branches to this label */
@@ -791,10 +802,13 @@ static void w64_br_to_label(TCGContext *s, TCGLabel *l, bool cond)
     if (idx == 0) {
         /* forward branch: patch later */
         w64_u8(s, 0x41);                    /* i32.const */
-        tcg_debug_assert(W.n_fixup < W64_MAX_FIXUPS);
-        W.fixup[W.n_fixup].pos = s->code_ptr - s->code_buf;
-        W.fixup[W.n_fixup].label = l->id;
-        W.n_fixup++;
+        if (W.n_fixup >= W64_MAX_FIXUPS) {
+            W.overflow = true;
+        } else {
+            W.fixup[W.n_fixup].pos = s->code_ptr - s->code_buf;
+            W.fixup[W.n_fixup].label = l->id;
+            W.n_fixup++;
+        }
         w64_uleb32_p5(s, 0);
     } else {
         w64_const_i32(s, idx);
@@ -922,8 +936,8 @@ static void tcg_out_goto_ptr(TCGContext *s, TCGReg a0)
     w64_get_i64(s, a0);
     w64_local_set(s, W64_L_SCR0);
     w64_local_get(s, W64_L_SCR0);
-    w64_const_i64(s, (int64_t)(uintptr_t)tcg_code_gen_epilogue);
-    w64_u8(s, 0x51);                        /* i64.eq */
+    w64_u8(s, 0x50);                        /* i64.eqz: a miss returns
+                                             * tcg_code_gen_epilogue == NULL */
     w64_const_i64(s, (int64_t)(uintptr_t)&w64_chain_stop);
     w64_u8(s, 0x28);                        /* i32.load (i64 addr) */
     w64_memarg(s, 2, 0);
@@ -965,7 +979,18 @@ static void tcg_out_goto_ptr(TCGContext *s, TCGReg a0)
 
 static void tcg_out_mb(TCGContext *s, unsigned a0)
 {
-    /* single-threaded guest, single linear memory: nothing to do */
+    /*
+     * The guest is single-vCPU, but the linear memory is shared with
+     * other pthreads (main-loop timers, the DSP worker); wasm plain
+     * loads/stores carry no cross-thread ordering, so honour the
+     * barrier (atomic.fence, 0xfe 0x03 0x00).  ARMv5 firmware issues
+     * essentially no barriers, so the cost is nil.
+     */
+    if (a0 != 0) {
+        w64_u8(s, 0xfe);
+        w64_u8(s, 0x03);
+        w64_u8(s, 0x00);
+    }
 }
 
 void tb_target_set_jmp_target(const TranslationBlock *tb, int n,
@@ -1838,10 +1863,6 @@ static const TCGOutOpBinary outop_mulsh = {
     .out_rrr = tgen_mulsh,
 };
 
-static const TCGOutOpBinary outop_muluh_i64 = {
-    .base.static_constraint = C_NotImplemented,
-};
-
 /* ------------------------------------------------------------------ */
 /* deposit / extract                                                   */
 /* ------------------------------------------------------------------ */
@@ -2077,20 +2098,26 @@ static void tgen_bswap32(TCGContext *s, TCGType t, TCGReg r0, TCGReg r1,
         return;
     }
 
-    /* i64: swap low 32 bits, upper 32 governed by flags */
+    /* i64: swap the low 32 bits, upper 32 governed by flags.
+     * bswap32(x) = adjacent-byte swap of the 16-bit-half swap, all in
+     * the low 32 bits (kept as i64 ops; every intermediate stays
+     * masked to 32 bits). */
     w64_get_i64(s, r1);
-    w64_const_i64(s, 32);
-    w64_u8(s, 0x78);                        /* i64.rotr */
-    w64_local_set(s, W64_L_SCR0);
-    w64_local_get(s, W64_L_SCR0);
     w64_const_i64(s, 0x00000000ffffffffull);
     w64_u8(s, 0x83);                        /* and */
     w64_local_set(s, W64_L_SCR0);
-    /* re-swap the low 32 (rotr moved the halves) */
+    /* 16-bit half swap */
     w64_local_get(s, W64_L_SCR0);
     w64_const_i64(s, 16);
-    w64_u8(s, 0x78);                        /* i64.rotr */
+    w64_u8(s, 0x86);                        /* shl */
+    w64_local_get(s, W64_L_SCR0);
+    w64_const_i64(s, 16);
+    w64_u8(s, 0x88);                        /* shr_u */
+    w64_u8(s, 0x84);                        /* or */
+    w64_const_i64(s, 0x00000000ffffffffull);
+    w64_u8(s, 0x83);                        /* and */
     w64_local_set(s, W64_L_SCR0);
+    /* two-mask adjacent-byte swap */
     w64_local_get(s, W64_L_SCR0);
     w64_const_i64(s, (int64_t)0xff00ff00u);
     w64_u8(s, 0x83);                        /* and */
@@ -2312,7 +2339,7 @@ static void tcg_out_tb_start(TCGContext *s)
     if (w64_acct_inline()) {
         sync_type = sync_imp = sync_uimp = 0;
         if (icount2_enabled()) {
-            sync_type = w64_add_type(0, NULL, 0xff);      /* () -> () */
+            sync_type = w64_add_type(0, (const uint8_t *)"", 0xff);  /* () -> () */
             sync_uimp = w64_union_type(0, NULL, 0xff);
             sync_imp = w64_import_idx(
                 (uint32_t)(uintptr_t)w64_icount2_sync_now, sync_type);
@@ -2433,15 +2460,24 @@ static void tcg_out_tb_start(TCGContext *s)
 struct w64_buf {
     uint8_t b[W64_PRELUDE + 16];
     unsigned n;
+    bool overflow;
 };
 
 static void wb_u8(struct w64_buf *w, uint8_t v)
 {
+    if (w->n >= sizeof(w->b)) {
+        w->overflow = true;
+        return;
+    }
     w->b[w->n++] = v;
 }
 
 static void wb_bytes(struct w64_buf *w, const void *p, unsigned n)
 {
+    if (w->n + n > sizeof(w->b)) {
+        w->overflow = true;
+        return;
+    }
     memcpy(w->b + w->n, p, n);
     w->n += n;
 }
@@ -2455,17 +2491,26 @@ static void wb_uleb(struct w64_buf *w, uint64_t v)
     } while (v);
 }
 
-static void tcg_out_tb_finalize(TCGContext *s)
+static int tcg_out_tb_finalize(TCGContext *s)
 {
     struct w64_buf w;
     size_t body_total, body_size;
     unsigned i;
 
+    if (W.overflow) {
+        /* an emitter table filled up mid-translation: report "TB too
+         * large" so tb_gen_code retries with half the insns instead of
+         * emitting a corrupt module */
+        return -2;
+    }
+
     /* close the open label region, the dispatch loop, and the function:
      * the loop is void — falling off its end never happens (every region
      * ends in a branch or return), but the validator wants the function's
      * i32 result on the stack after it. */
-    tcg_debug_assert(W.n_blk == 2);
+    if (W.n_blk != 2) {
+        return -2;
+    }
     w64_blk_pop(s);                        /* end: last region's if */
     w64_blk_pop(s);                        /* end: the loop */
     w64_const_i32(s, 0);
@@ -2476,7 +2521,9 @@ static void tcg_out_tb_finalize(TCGContext *s)
     wasm_diag_stat[WASM_DIAG_TB_BYTES] += body_size;
 
     /* every forward branch must have been resolved by now */
-    tcg_debug_assert(W.n_fixup == 0);
+    if (W.n_fixup != 0) {
+        return -2;
+    }
 
     /* patch the body-size LEB */
     {
@@ -2492,6 +2539,7 @@ static void tcg_out_tb_finalize(TCGContext *s)
 
     /* sections */
     w.n = 0;
+    w.overflow = false;
     wb_bytes(&w, s->code_buf + W64_MOD_OFF, 8);         /* magic */
 
     /* type section */
@@ -2515,7 +2563,9 @@ static void tcg_out_tb_finalize(TCGContext *s)
             }
         }
         w.b[start - 1] = w.n - start;
-        tcg_debug_assert(w.n - start < 128);
+        if (w.n - start >= 128) {
+            return -2;                  /* 1-byte section size overflow */
+        }
     }
 
     /* import section: memory + shared chain table + helpers */
@@ -2548,7 +2598,9 @@ static void tcg_out_tb_finalize(TCGContext *s)
             wb_uleb(&w, W.imp[i].type);
         }
         w.b[start - 1] = w.n - start;
-        tcg_debug_assert(w.n - start < 128);
+        if (w.n - start >= 128) {
+            return -2;                  /* 1-byte section size overflow */
+        }
     }
 
     /* function section: one defined function, type 0 */
@@ -2564,7 +2616,9 @@ static void tcg_out_tb_finalize(TCGContext *s)
         wb_u8(&w, 0x00);
         wb_uleb(&w, W.n_imp);
         w.b[start - 1] = w.n - start;
-        tcg_debug_assert(w.n - start < 128);
+        if (w.n - start >= 128) {
+            return -2;                  /* 1-byte section size overflow */
+        }
     }
 
     /* custom-section filler + code section header, ending at BODY_OFF */
@@ -2572,9 +2626,14 @@ static void tcg_out_tb_finalize(TCGContext *s)
         unsigned payload = 1 + body_total;  /* count + body */
         unsigned trailer = 1 + 5 + 1;       /* id + size LEB + count */
         unsigned target = W64_PRELUDE - trailer;
-        unsigned room = target - w.n;
+        unsigned room;
 
-        tcg_debug_assert(w.n <= target);
+        if (w.n > target || target - w.n == 1 || target - w.n == 2) {
+            /* cannot fill the gap with a well-formed custom section */
+            return -2;
+        }
+        room = target - w.n;
+
         if (room > 0) {
             /* one custom section: id 0, size LEB, content = name + payload.
              * The size counts the content only (name length + payload).
@@ -2591,7 +2650,9 @@ static void tcg_out_tb_finalize(TCGContext *s)
                 nleb = 1;
             } else {
                 content = room - 3;
-                tcg_debug_assert(content >= 127 && content < 16384);
+                if (content < 127 || content >= 16384) {
+                    return -2;
+                }
                 b0 = (uint8_t)((content & 0x7f) | 0x80);
                 b1 = (uint8_t)(content >> 7);
                 nleb = 2;
@@ -2607,12 +2668,17 @@ static void tcg_out_tb_finalize(TCGContext *s)
                 wb_u8(&w, 0);
             }
         }
-        tcg_debug_assert(w.n == target);
+        if (w.n != target) {
+            return -2;
+        }
 
         wb_u8(&w, 0x0a);                    /* code section */
         w.n += 5;                           /* patched below */
         wb_u8(&w, 0x01);                    /* one body */
 
+        if (w.overflow) {
+            return -2;
+        }
         memcpy(s->code_buf + W64_MOD_OFF, w.b, W64_PRELUDE);
 
         /* code section size (5-byte padded LEB) */
@@ -2643,6 +2709,7 @@ static void tcg_out_tb_finalize(TCGContext *s)
      * descriptor to the batch thunk (desc+4 = batch id, so the
      * dispatcher calls run(env, sp, tp, tidx) instead of the entry) */
     w64_batch_member((uintptr_t)s->code_buf, body_total, CF, n_cf);
+    return 0;
 }
 
 /* ------------------------------------------------------------------ */
@@ -2656,7 +2723,7 @@ static const int tcg_target_reg_alloc_order[TCG_TARGET_NB_REGS] = {
     TCG_REG_R14, TCG_REG_R15, TCG_REG_R16, TCG_REG_R17,
     TCG_REG_R18, TCG_REG_R19, TCG_REG_R20, TCG_REG_R21,
     TCG_REG_R22, TCG_REG_R23, TCG_REG_R24, TCG_REG_R25,
-    TCG_REG_R26, TCG_REG_R27, TCG_REG_R30,
+    TCG_REG_R26, TCG_REG_R27,
     /* call-clobbered (helper results land here) — use last */
     TCG_REG_R0, TCG_REG_R1,
 };

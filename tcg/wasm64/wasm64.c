@@ -30,7 +30,6 @@
 
 /* icount2.c: addresses of the fields emitted TB prologues touch
  * (cpu-timers-internal.h needs too many prerequisites to include here) */
-void icount2_w64_acct_addrs(uintptr_t *ticks, uintptr_t *deadline);
 
 __thread uintptr_t w64_tb_ptr;
 
