@@ -18,6 +18,7 @@
 #include "hw/arm/pmb887x/regs_dump.h"
 #include "hw/arm/pmb887x/mod.h"
 #include "hw/arm/pmb887x/trace.h"
+#include "qemu/wasm-diag.h"
 
 #define TYPE_PMB887X_GPTU	"pmb887x-gptu"
 #define PMB887X_GPTU(obj)	OBJECT_CHECK(pmb887x_gptu_t, (obj), TYPE_PMB887X_GPTU)
@@ -613,6 +614,7 @@ static void gptu_t2_internal_trigger(pmb887x_gptu_t *p, int trigger_id, uint64_t
 
 static void gptu_t2_ptimer_reset(void *opaque) {
 	pmb887x_gptu_t *p = opaque;
+	wasm_diag_stat[WASM_DIAG_GPTU_TIMER]++;
 	gptu_t2_sync_timer(p);
 }
 
@@ -650,11 +652,6 @@ static int gptu_t01_carry_source(pmb887x_gptu_t *p, int timer_id) {
 	if (timer_id == 0)
 		return (p->t01irs & GPTU_T01IRS_T0INC) ? 7 : 3;
 	return (p->t01irs & GPTU_T01IRS_T1INC) ? 3 : 7;
-}
-
-static uint64_t gptu_t01_ticks_to_overflow(pmb887x_gptu_t *p, int timer_id) {
-	pmb887x_gptu_timer_t *timer = &p->timers[timer_id];
-	return GPTU_OVERFLOW - (timer->counter & 0xFF);
 }
 
 static void gptu_t01_reload_event(pmb887x_gptu_t *p, int source_id, int depth);
@@ -772,6 +769,139 @@ static void gptu_t01_external_count(pmb887x_gptu_t *p, int cnt_id, uint64_t coun
 	}
 }
 
+static bool gptu_t01_free_running(pmb887x_gptu_t *p, int timer_id) {
+	return p->timers[timer_id].enabled && gptu_t01_input(p, timer_id) == INPUT_BYPASS;
+}
+
+static bool gptu_t01_reloads_others(pmb887x_gptu_t *p, int timer_id) {
+	if (!gptu_t01_reload_own(p, timer_id))
+		return false;
+	for (int i = 0; i < 8; i++) {
+		if (!gptu_t01_reload_own(p, i) && gptu_t01_reload_source(p, i) == timer_id)
+			return true;
+	}
+	return false;
+}
+
+static bool gptu_t2_trigger_used(pmb887x_gptu_t *p, int trigger_id) {
+	for (int i = 0; i < 2; i++) {
+		if (!gptu_t2_split(p) && i == 0)
+			continue;
+
+		pmb887x_gptu_timer_t2_t *timer = &p->timers_t2[i];
+		int logical_id = gptu_t2_logical_id(p, i);
+		bool down = gptu_t2_count_down(p, i);
+
+		for (int rc_id = 0; rc_id < 2; rc_id++) {
+			if (!gptu_t2_internal_input_matches_trigger(p, i,
+					rc_id ? GPTU_T2AIS_T2AIRC1_SHIFT : GPTU_T2AIS_T2AIRC0_SHIFT,
+					rc_id ? GPTU_T2ES_T2AERC1_SHIFT : GPTU_T2ES_T2AERC0_SHIFT, trigger_id))
+				continue;
+			uint32_t mode = gptu_t2_mrc(p, i, rc_id);
+			int ev = rc_id ? (logical_id ? EV_RLCP1_B : EV_RLCP1_A) : (logical_id ? EV_RLCP0_B : EV_RLCP0_A);
+			if (mode == 3 || mode == 5 || (mode == 7 && (rc_id ? down : !down)) || p->events[ev].mask)
+				return true;
+		}
+
+		if (timer->enabled && !timer->stopped && gptu_t2_csrc(p, i) != 0 &&
+			gptu_t2_internal_input_matches_trigger(p, i, GPTU_T2AIS_T2AICNT_SHIFT, GPTU_T2ES_T2AECNT_SHIFT, trigger_id))
+			return true;
+	}
+	return false;
+}
+
+/*
+ * An overflow of this timer that somebody can see at the instant it happens:
+ * a service request, or a trigger T2 is listening to.  Output toggles only
+ * change the OUT register by the parity of the overflow count, so they are
+ * exact however late they are applied.
+ */
+static bool gptu_t01_observable(pmb887x_gptu_t *p, int timer_id) {
+	pmb887x_gptu_timer_t *timer = &p->timers[timer_id];
+	int group = timer_id / 4;
+	int part = timer_id % 4;
+
+	if (!timer->enabled)
+		return false;
+
+	for (int j = 0; j < 2; j++) {
+		if (timer->ev_ssr[j] && p->events_ssr[group][j] == timer_id)
+			return true;
+	}
+
+	if (group == 0) {
+		return (((p->t01ots & GPTU_T01OTS_STRG00) >> GPTU_T01OTS_STRG00_SHIFT) == part && gptu_t2_trigger_used(p, 0)) ||
+			(((p->t01ots & GPTU_T01OTS_STRG01) >> GPTU_T01OTS_STRG01_SHIFT) == part && gptu_t2_trigger_used(p, 1));
+	}
+	return (((p->t01ots & GPTU_T01OTS_STRG10) >> GPTU_T01OTS_STRG10_SHIFT) == part && gptu_t2_trigger_used(p, 2)) ||
+		(((p->t01ots & GPTU_T01OTS_STRG11) >> GPTU_T01OTS_STRG11_SHIFT) == part && gptu_t2_trigger_used(p, 3));
+}
+
+static uint64_t gptu_t01_period(pmb887x_gptu_t *p, int timer_id) {
+	if (gptu_t01_reload_own(p, timer_id))
+		return GPTU_OVERFLOW - (p->timers[timer_id].reload & 0xFF);
+	return GPTU_OVERFLOW;
+}
+
+#define GPTU_TICKS_HORIZON	(1ULL << 40)
+
+/*
+ * Ticks of the free-running timer `root` until the first overflow, anywhere
+ * in the carry tree it feeds, that matters at that instant: one that reloads
+ * other timers (the rest of the interval counts from the reloaded values),
+ * or, with observable_only, one that raises a request or triggers T2.  Every
+ * other overflow is reproduced exactly by gptu_t01_add_ticks carrying a
+ * count, so the sync can step over any number of them at once.
+ */
+static uint64_t gptu_t01_ticks_to_boundary(pmb887x_gptu_t *p, int root, bool observable_only) {
+	struct { int id; uint64_t ticks, period; } stack[8];
+	uint64_t best = GPTU_TICKS_HORIZON;
+	uint32_t seen = 0;
+	int sp = 0;
+
+	stack[sp].id = root;
+	stack[sp].ticks = GPTU_OVERFLOW - (p->timers[root].counter & 0xFF);
+	stack[sp].period = gptu_t01_period(p, root);
+	sp++;
+
+	while (sp > 0) {
+		sp--;
+		int id = stack[sp].id;
+		uint64_t ticks = stack[sp].ticks;
+		uint64_t period = stack[sp].period;
+
+		if (seen & (1U << id))
+			continue;
+		seen |= 1U << id;
+
+		if (ticks >= best)
+			continue;
+		if (gptu_t01_observable(p, id) || (!observable_only && gptu_t01_reloads_others(p, id)))
+			best = ticks;
+		if (period >= GPTU_TICKS_HORIZON)
+			continue;
+
+		for (int k = 0; k < 8 && sp < ARRAY_SIZE(stack); k++) {
+			if ((seen & (1U << k)) || !p->timers[k].enabled ||
+				gptu_t01_input(p, k) != INPUT_CONCAT || gptu_t01_carry_source(p, k) != id)
+				continue;
+			stack[sp].id = k;
+			stack[sp].ticks = MIN(ticks + (GPTU_OVERFLOW - 1 - (p->timers[k].counter & 0xFF)) * period, GPTU_TICKS_HORIZON);
+			stack[sp].period = MIN(period * gptu_t01_period(p, k), GPTU_TICKS_HORIZON);
+			sp++;
+		}
+	}
+
+	return best;
+}
+
+static void gptu_t01_advance(pmb887x_gptu_t *p, int timer_id, uint64_t ticks) {
+	if (ticks == 0)
+		return;
+	gptu_t01_add_ticks(p, timer_id, ticks, 0);
+	p->timers[timer_id].start += gptu_ticks_to_ns(p, ticks);
+}
+
 static void gptu_sync_timer(pmb887x_gptu_t *p) {
 	if (p->syncing_t01)
 		return;
@@ -785,33 +915,54 @@ static void gptu_sync_timer(pmb887x_gptu_t *p) {
 	}
 
 	int64_t now = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
-	p->next = INT64_MAX;
-	bool has_enabled = false;
 
 	for (int i = 0; i < 8; i++) {
 		pmb887x_gptu_timer_t *timer = &p->timers[i];
-		uint32_t input = gptu_t01_input(p, i);
-
-		if (!timer->enabled || input != INPUT_BYPASS) {
+		if (!gptu_t01_free_running(p, i))
 			timer->start = 0;
-			continue;
-		}
-
-		if (!timer->start)
+		else if (!timer->start)
 			timer->start = now;
-
-		uint64_t elapsed = muldiv64(now - timer->start, p->freq, NANOSECONDS_PER_SECOND);
-		if (elapsed > 0) {
-			gptu_t01_add_ticks(p, i, elapsed, 0);
-			timer->start += gptu_ticks_to_ns(p, elapsed);
-		}
-
-		uint64_t ticks = gptu_t01_ticks_to_overflow(p, i);
-		p->next = MIN(p->next, timer->start + gptu_ticks_to_deadline_ns(p, ticks));
-		has_enabled = true;
 	}
 
-	if (has_enabled) {
+	for (int guard = 0; guard < 65536; guard++) {
+		uint64_t boundary[8];
+		int64_t t_next = INT64_MAX;
+
+		for (int i = 0; i < 8; i++) {
+			if (!gptu_t01_free_running(p, i))
+				continue;
+			boundary[i] = gptu_t01_ticks_to_boundary(p, i, false);
+			if (boundary[i] < GPTU_TICKS_HORIZON)
+				t_next = MIN(t_next, (int64_t) p->timers[i].start + gptu_ticks_to_deadline_ns(p, boundary[i]));
+		}
+		if (t_next > now)
+			break;
+
+		for (int i = 0; i < 8; i++) {
+			pmb887x_gptu_timer_t *timer = &p->timers[i];
+			if (!gptu_t01_free_running(p, i) || t_next <= (int64_t) timer->start)
+				continue;
+			uint64_t elapsed = muldiv64(t_next - timer->start, p->freq, NANOSECONDS_PER_SECOND);
+			gptu_t01_advance(p, i, MIN(elapsed, boundary[i]));
+		}
+	}
+
+	for (int i = 0; i < 8; i++) {
+		pmb887x_gptu_timer_t *timer = &p->timers[i];
+		if (gptu_t01_free_running(p, i) && now > (int64_t) timer->start)
+			gptu_t01_advance(p, i, muldiv64(now - timer->start, p->freq, NANOSECONDS_PER_SECOND));
+	}
+
+	p->next = INT64_MAX;
+	for (int i = 0; i < 8; i++) {
+		if (!gptu_t01_free_running(p, i))
+			continue;
+		uint64_t ticks = gptu_t01_ticks_to_boundary(p, i, true);
+		if (ticks < GPTU_TICKS_HORIZON)
+			p->next = MIN(p->next, (int64_t) p->timers[i].start + gptu_ticks_to_deadline_ns(p, ticks));
+	}
+
+	if (p->next != INT64_MAX) {
 		timer_mod(p->timer, p->next);
 	} else {
 		timer_del(p->timer);
@@ -870,6 +1021,7 @@ static void gptu_rebuild_timers(pmb887x_gptu_t *p) {
 
 static void gptu_ptimer_reset(void *opaque) {
 	pmb887x_gptu_t *p = opaque;
+	wasm_diag_stat[WASM_DIAG_GPTU_TIMER]++;
 	gptu_sync_timer(p);
 }
 
