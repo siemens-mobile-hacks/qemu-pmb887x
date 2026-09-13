@@ -331,7 +331,9 @@ static void dmac_transfer_finish(pmb887x_dmac_t *p, pmb887x_dmac_ch_t *ch) {
 }
 
 static void dmac_transfer_memory(pmb887x_dmac_t *p, pmb887x_dmac_ch_t *ch, uint32_t burst_size) {
-	uint8_t buffer[16 * 1024] QEMU_ALIGNED(4); // 12bit TransferSize x DWORD
+	/* QEMU_UNINITIALIZED: -ftrivial-auto-var-init=zero would clear all 16 KB
+	 * on every call, and the display path calls this once per 4-byte word */
+	uint8_t buffer[16 * 1024] QEMU_ALIGNED(4) QEMU_UNINITIALIZED; // 12bit TransferSize x DWORD
 	uint32_t src_width = dmac_get_width((ch->control & DMAC_CH_CONTROL_S_WIDTH) >> DMAC_CH_CONTROL_S_WIDTH_SHIFT);
 	uint32_t dst_width = dmac_get_width((ch->control & DMAC_CH_CONTROL_D_WIDTH) >> DMAC_CH_CONTROL_D_WIDTH_SHIFT);
 	uint32_t flow_ctrl = (ch->config & DMAC_CH_CONFIG_FLOW_CTRL);
