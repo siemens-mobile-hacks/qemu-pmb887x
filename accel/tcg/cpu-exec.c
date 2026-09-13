@@ -398,8 +398,14 @@ static inline bool check_for_breakpoints(CPUState *cpu, vaddr pc,
  * build.
  */
 #ifdef __EMSCRIPTEN__
+#if defined(CONFIG_TARGET_ARM)
 TCGTBCPUState arm_get_tb_cpu_state(CPUState *cs);
 #define W64_GET_TB_CPU_STATE(cpu)  arm_get_tb_cpu_state(cpu)
+#else
+/* Target-neutral fallback: the devirtualisation win is ARM-measured
+ * (-2..-4 % on the milestones); other targets keep the ops call. */
+#define W64_GET_TB_CPU_STATE(cpu)  ((cpu)->cc->tcg_ops->get_tb_cpu_state(cpu))
+#endif
 
 static inline uint32_t curr_cflags_fast(CPUState *cpu)
 {
@@ -1032,12 +1038,27 @@ static inline bool cpu_handle_interrupt(CPUState *cpu,
      * anything else, exactly like the longjmp would have.  Clear the
      * exit-kick flag the same way the normal path below does so a kick
      * that raced with the TB cannot force one-exit-per-TB spinning.
-     */
+     * wasm-only: it exists for the Asyncify unwind, and costs every
+     * build a branch per loop iteration. */
+#ifdef __EMSCRIPTEN__
     if (unlikely(cpu->exception_index >= 0)) {
+        /*
+         * Replay delivers interrupts ahead of pending exceptions via
+         * the cpu_handle_exception() fall-through below; bouncing back
+         * here first would livelock it, so take the stock path there.
+         */
+#ifndef CONFIG_USER_ONLY
+        if (replay_mode != REPLAY_MODE_NONE) {
+            goto stock_path;
+        }
+#endif
         qatomic_set_mb(&cpu->neg.icount_decr.u16.high, 0);
         return true;
     }
-
+#endif /* __EMSCRIPTEN__ */
+#ifdef __EMSCRIPTEN__
+stock_path:
+#endif
     /*
      * If we have requested custom cflags with CF_NOIRQ we should
      * skip checking here. Any pending interrupts will get picked up

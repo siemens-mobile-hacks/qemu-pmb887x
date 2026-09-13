@@ -607,6 +607,7 @@ void tb_check_watchpoint(CPUState *cpu, uintptr_t retaddr)
  * device callbacks run with can_do_io set (stock rewound-and-resplit
  * semantics) without the recurring cpu_loop_exit() unwind.
  */
+#ifdef __EMSCRIPTEN__
 static vaddr wasm_io_barriers[64];
 
 void wasm_add_io_barrier(vaddr pc)
@@ -620,6 +621,7 @@ bool wasm_is_io_barrier(vaddr pc)
     uint32_t h = (pc >> 2) & (ARRAY_SIZE(wasm_io_barriers) - 1);
     return wasm_io_barriers[h] == pc;
 }
+#endif /* __EMSCRIPTEN__ */
 
 void cpu_io_recompile(CPUState *cpu, uintptr_t retaddr)
 {
@@ -650,11 +652,11 @@ void cpu_io_recompile(CPUState *cpu, uintptr_t retaddr)
 #endif
 
 
-/*
- * Some guests must re-execute the branch when re-executing a delay
- * slot instruction.  When this is the case, adjust icount and N
- * to account for the re-execution of the branch.
- */
+    /*
+     * Some guests must re-execute the branch when re-executing a delay
+     * slot instruction.  When this is the case, adjust icount and N
+     * to account for the re-execution of the branch.
+     */
     n = 1;
     if (cc->tcg_ops->io_recompile_replay_branch &&
         cc->tcg_ops->io_recompile_replay_branch(cpu, tb)) {

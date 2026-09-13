@@ -173,17 +173,17 @@ static void dsp_hexdump(const char *prefix, void *buf, size_t size)
 	for (b = 0; b < size; b += len) {
 		len = MIN(16, size - b);
 		g_string_truncate(str, 0);
-		const uint16_t *line = (uint16_t*)buf + b;
+		const uint16_t *line = (const uint16_t *)((uint8_t *)buf + b);
 
-		for (size_t i = 0; i < len; i++) {
-			uint16_t c = line[i];
+		for (size_t i = 0; i < len; i += 2) {
+			uint16_t c = line[i / 2];
 
 			g_string_append_c(str, hexdump_nibble((c >> 12) & 0xf));
 			g_string_append_c(str, hexdump_nibble((c >> 8) & 0xf));
 			g_string_append_c(str, hexdump_nibble((c >> 4) & 0xf));
 			g_string_append_c(str, hexdump_nibble(c & 0xf));
 
-			if (i < len) {
+			if (i + 2 < len) {
 				g_string_append_c(str, ' ');
 			}
 		}
@@ -894,11 +894,6 @@ static void dsp_afe_timer_cb(void *opaque) {
 	dsp_state_t *p = opaque;
 	bool active = dsp_runtime_realtime_active(p->runtime);
 
-#if 0	/* AFE timer debug */
-	static uint32_t tn;
-	if ((tn++ & 0x3FF) == 0)
-		fprintf(stderr, "[afe-timer] n=%u active=%d\n", tn, active);
-#endif
 
 	if (active)
 		dsp_worker_kick(p);

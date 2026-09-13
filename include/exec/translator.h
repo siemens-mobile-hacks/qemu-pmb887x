@@ -167,10 +167,16 @@ bool translator_use_goto_tb(DisasContextBase *db, vaddr dest);
  * @dest: a guest address control flow is likely to reach after this TB
  *
  * Speculation hint only (wasm64 backend: ahead-of-execution translation
- * of successors); a no-op elsewhere.  Call sites: the return address of
- * a direct call.
+ * of successors); an inline no-op elsewhere.  Call sites: the return
+ * address of a direct call.
  */
+#ifdef CONFIG_TCG_WASM64
 void translator_note_succ(DisasContextBase *db, vaddr dest);
+#else
+static inline void translator_note_succ(DisasContextBase *db, vaddr dest)
+{
+}
+#endif
 
 /**
  * translator_io_start

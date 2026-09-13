@@ -108,9 +108,9 @@ bool translator_is_same_page(const DisasContextBase *db, vaddr addr)
     return ((addr ^ db->pc_first) & TARGET_PAGE_MASK) == 0;
 }
 
+#ifdef CONFIG_TCG_WASM64
 void translator_note_succ(DisasContextBase *db, vaddr dest)
 {
-#ifdef CONFIG_TCG_WASM64
     TranslationBlock *tb = db->tb;
     unsigned i;
 
@@ -139,8 +139,8 @@ void translator_note_succ(DisasContextBase *db, vaddr dest)
     if (tb->w64_nsucc < ARRAY_SIZE(tb->w64_succ)) {
         tb->w64_succ[tb->w64_nsucc++] = dest;
     }
-#endif
 }
+#endif
 
 bool translator_use_goto_tb(DisasContextBase *db, vaddr dest)
 {

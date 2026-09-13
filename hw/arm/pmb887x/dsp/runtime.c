@@ -224,13 +224,7 @@ static void dsp_runtime_pace_afe(dsp_runtime_t *runtime) {
 		 * not perturb cycle-sensitive GSM baseband peripheral timing.
 		 */
 		dsp_bus_advance_timers(runtime->bus, cycles);
-#if 0	/* AFE pacing debug */
-		static uint32_t pn;
-		if ((pn++ & 0x1FF) == 0)
-			fprintf(stderr, "[afe-pace] n=%u samples=%zu irq=%02X pc=%05X idle=%d\n",
-				pn, samples, dsp_bus_get_irq_lines(runtime->bus),
-				runtime->core.state.pc, qatomic_read(&runtime->idle));
-#endif
+
 	}
 }
 
