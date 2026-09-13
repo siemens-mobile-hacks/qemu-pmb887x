@@ -39,6 +39,10 @@ void qemu_coroutine_forbid_current_thread(void)
  * -sASYNCIFY_ONLY).  Frames print as wasm-function[N], resolved with the
  * .symbols sidecar.
  */
+/* -1 = not yet probed, 0 = off, 1 = on (cached: this runs on every
+ * coroutine switch) */
+static int8_t costack_debug = -1;
+
 EM_JS(void, wasm_costack_trace, (void), {
     var lim = Error.stackTraceLimit;
     Error.stackTraceLimit = 400;
@@ -129,7 +133,10 @@ CoroutineAction qemu_coroutine_switch(Coroutine *from_, Coroutine *to_,
     }
     set_current(to_);
     to->action = action;
-    if (getenv("QEMU_COSTACK")) {
+    if (unlikely(costack_debug) && costack_debug < 0) {
+        costack_debug = getenv("QEMU_COSTACK") != NULL;
+    }
+    if (unlikely(costack_debug > 0)) {
         wasm_costack_trace();
     }
     emscripten_fiber_swap(&from->fiber, &to->fiber);

@@ -252,7 +252,7 @@ static QEMUBH *key_bh;
 
 static void wasm_key_bh(void *opaque)
 {
-    while (qatomic_read(&key_ring_tail) != key_ring_head) {
+    while (qatomic_load_acquire(&key_ring_tail) != key_ring_head) {
         unsigned int i = key_ring_head & (KEY_RING_SIZE - 1);
         qemu_input_event_send_key_linux(NULL, key_ring[i].lnx,
                                         key_ring[i].down);
@@ -272,7 +272,9 @@ void wasm_send_key(uint32_t lnx, int32_t down)
     }
     key_ring[tail & (KEY_RING_SIZE - 1)].lnx = lnx;
     key_ring[tail & (KEY_RING_SIZE - 1)].down = !!down;
-    qatomic_set(&key_ring_tail, tail + 1);
+    /* release: publish the slot stores before the tail, so the consumer
+     * can never observe the new tail with stale slot contents */
+    qatomic_store_release(&key_ring_tail, tail + 1);
 
     qemu_bh_schedule(key_bh);
 }

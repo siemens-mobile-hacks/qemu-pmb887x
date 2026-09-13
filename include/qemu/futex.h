@@ -77,8 +77,10 @@ static inline void qemu_futex_wake_single(void *f)
 
 static inline void qemu_futex_wait(void *f, unsigned val)
 {
-    /* 0 timeout = wait indefinitely; spurious wakes are allowed by design */
-    emscripten_futex_wait(f, val, 0);
+    /* INFINITY: emscripten_futex_wait treats a 0 ms timeout as "return
+     * at once" (-ETIMEDOUT), not as "wait indefinitely".  Spurious
+     * wakes are allowed by design. */
+    emscripten_futex_wait(f, val, INFINITY);
 }
 #elif defined(CONFIG_WIN32)
 #include <synchapi.h>

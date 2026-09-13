@@ -194,13 +194,14 @@ void qemu_notify_event(void)
  * firmware's WFI windows are as short as ~100 us and are served by
  * this wait - a 1 ms floor measurably slows the whole boot.
  */
-static int32_t ml_futex_wake;   /* 0 = sleeping, 1 = wake requested */
+static uint32_t ml_futex_seq;   /* sequence counter: wake = seq++ */
+static uint32_t ml_wait_seq;    /* snapshot taken before the timeout
+                                 * is computed (see main_loop_wait) */
 
 void qemu_main_loop_wake(void)
 {
-    if (qatomic_xchg(&ml_futex_wake, 1) == 0) {
-        emscripten_futex_wake(&ml_futex_wake, INT_MAX);
-    }
+    qatomic_set(&ml_futex_seq, qatomic_read(&ml_futex_seq) + 1);
+    emscripten_futex_wake(&ml_futex_seq, INT_MAX);
 }
 #endif
 
@@ -357,12 +358,15 @@ static int os_host_main_loop_wait(int64_t timeout)
     replay_mutex_unlock();
 
 #ifdef __EMSCRIPTEN__
-    /* see qemu_main_loop_wake() above: poll() cannot sleep on wasm */
-    qatomic_set(&ml_futex_wake, 0);
+    /* see qemu_main_loop_wake() above: poll() cannot sleep on wasm.
+     * The sequence-counter protocol (snapshot in main_loop_wait before
+     * the timeout is computed, wait for any change here) cannot lose a
+     * wake that lands between the timeout computation and the sleep,
+     * which the old reset-then-wait flag could. */
     if (timeout < 0) {
-        emscripten_futex_wait(&ml_futex_wake, 0, INFINITY);
+        emscripten_futex_wait(&ml_futex_seq, ml_wait_seq, INFINITY);
     } else if (timeout > 0) {
-        emscripten_futex_wait(&ml_futex_wake, 0,
+        emscripten_futex_wait(&ml_futex_seq, ml_wait_seq,
                               (double)timeout / 1000000.0);
     }
     ret = 0;
@@ -639,6 +643,13 @@ void main_loop_wait(int nonblocking)
 
     /* poll any events */
     g_array_set_size(gpollfds, 0); /* reset for new iteration */
+#ifdef __EMSCRIPTEN__
+    /* Snapshot the wake sequence before anything below computes the
+     * poll timeout: a wake racing with the timeout computation then
+     * shows up as a value change in os_host_main_loop_wait's futex
+     * wait (immediate -EWOULDBLOCK) instead of being erased. */
+    ml_wait_seq = qatomic_read(&ml_futex_seq);
+#endif
     /* XXX: separate device handlers from system ones */
     notifier_list_notify(&main_loop_poll_notifiers, &mlpoll);
 

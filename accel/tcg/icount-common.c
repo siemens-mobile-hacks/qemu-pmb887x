@@ -39,6 +39,10 @@
 #include "exec/icount.h"
 #include "system/cpu-timers-internal.h"
 
+static void rtcap_do_nothing(CPUState *cpu, run_on_cpu_data unused)
+{
+}
+
 /*
  * ICOUNT: Instruction Counter
  *
@@ -410,7 +414,15 @@ void icount_start_warp_timer(void)
                  * wait instead, hand the deadline back to it.
                  */
                 if (!qatomic_read(&rtcap_vcpu_waiting)) {
-                    qemu_cpu_kick(first_cpu);
+                    /*
+                     * qemu_cpu_kick cannot wake a halted rr thread out
+                     * of its untimed halt-cond wait (the kick only sets
+                     * exit_request, which cpu_thread_is_idle ignores).
+                     * Mirror qemu_timer_notify_cb() and use
+                     * async_run_on_cpu(), which does.
+                     */
+                    async_run_on_cpu(first_cpu, rtcap_do_nothing,
+                                     RUN_ON_CPU_NULL);
                 }
                 return;
             }
