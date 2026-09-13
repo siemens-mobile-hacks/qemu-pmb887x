@@ -1234,7 +1234,9 @@ static const TCGOutOpStore outop_st = {
 /*
  * Does this mop reduce tci_tlb_probe() to the specialized compare
  * (addr + size-1) & TARGET_PAGE_MASK == tlb_addr (see tci_probe_1)?
- * Requires: no bswap, a_mask == 0 (no MO_ALIGN bits, MO_ALIGN_TLB_ONLY ok),
+ * Requires: no bswap, a_mask == s_mask (MO_ALIGN set - alignment is
+ * required, so a misaligned access must take the slow path - and
+ * MO_ALIGN_TLB_ONLY alone does not qualify),
  * and atomicity that never forces the helper path for a probe hit
  * (IFALIGN - the default - and NONE; a plain aligned load/store satisfies
  * IFALIGN, and misaligned accesses the specialized compare still admits
