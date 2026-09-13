@@ -46,11 +46,11 @@
  * it at runtime and tail-calls the target through the shared funcref
  * table ("e"/"t") when linked, else falls through to the exit_tb that
  * follows.  TBs entered via a chain still run their prologue's TB
- * accounting (inline by default, phase 3: wasm_tb_stats + the icount2
- * fast path emitted directly, imports only for the deadline-crossed
- * sync and the lockstep fold; W64_NOACCTINLINE=1 reverts to the
- * imported w64_tb_account(icount)), so accounting and the lockstep
- * fold stay per-TB-entry exact.  The chain also refuses targets whose descriptor
+ * accounting (inline, phase 3: the wasm_tb_stats counters on non-icount
+ * boards / W64_TBSTATS=1, the icount2 fast path under
+ * ?icount=precise-clocks, imports only for the deadline-crossed sync
+ * and the lockstep fold when W64_LOCKSTEP is armed), so accounting and
+ * the lockstep fold stay per-TB-entry exact.  The chain also refuses targets whose descriptor
  * fidx is 0 (evicted batch member — v1 only happens across tb_flush,
  * the check keeps a future LRU cap sound).
  *
@@ -133,8 +133,6 @@ struct w64_cfix {
 
 /* runtime (wasm64.c), used by the emitters */
 uint32_t w64_alloc_tidx(void);   /* next shared-chain-table index (>=1) */
-void w64_tb_account(unsigned insns); /* per-TB-entry accounting import
-                                       * (W64_NOACCTINLINE=1 fallback) */
 extern uint32_t w64_chain_stop;  /* lockstep budget reached: stop chaining */
 
 /* Inline TB-prologue accounting (phase 3): addresses of the state the

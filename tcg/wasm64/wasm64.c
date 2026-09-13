@@ -220,11 +220,9 @@ static void w64_init(void)
         size_t sz = 16 + TCG_STATIC_CALL_ARGS_SIZE + TCG_STATIC_FRAME_SIZE;
         w64_frame = g_malloc0(sz);
         w64_inited = true;
-        /* Eager lockstep init: the inline TB accounting (below) tests
-         * w64_ls_on before any import call, so the fold must be armed
-         * before the first executed TB's prologue runs — this is the
-         * same point where the old lazy init (first w64_tb_account)
-         * fired, one TB earlier than execution. */
+        /* Eager lockstep init: an armed prologue tests w64_ls_on before
+         * its import call, so the fold must be armed before the first
+         * executed TB's prologue runs. */
         w64_ls_init();
     }
 }
@@ -497,8 +495,8 @@ static void w64_ls_init(void)
     fflush(LS.f);
 }
 
-/* called from the emitted TB prologue (import, only when w64_ls_on) —
- * and from w64_tb_account (the W64_NOACCTINLINE fallback) */
+/* called from the emitted TB prologue (import; emitted only in a process
+ * armed with W64_LOCKSTEP, and then only when w64_ls_on) */
 void w64_lockstep_account(unsigned insns)
 {
     if (!LS.inited) {
@@ -1868,20 +1866,6 @@ void w64_batch_flush(void)
     B.n_fix = 0;
 }
 
-/* TB-prologue accounting import (see tcg_out_tb_start): runs at EVERY
- * TB entry — dispatcher call or goto_tb chain target — mirroring TCI's
- * INDEX_op_tci_tbhdr so icount2, the diagnostics clock and the lockstep
- * fold stay per-TB-entry exact while TBs are chained. */
-void w64_tb_account(unsigned insns)
-{
-    extern void wasm_tb_account(unsigned insns);
-    extern void icount2_advance(uint32_t cycles);
-
-    wasm_tb_account(insns);
-    icount2_advance(insns);
-    w64_lockstep_account(insns);
-}
-
 /* Set when the lockstep budget is crossed: emitted goto_tb code re-reads
  * this at runtime and refuses to chain, unwinding to the dispatcher. */
 uint32_t w64_chain_stop;
@@ -1897,9 +1881,9 @@ uintptr_t QEMU_DISABLE_CFI tcg_qemu_tb_exec(CPUArchState *env,
         uint32_t *desc = (uint32_t *)tb;
         uint32_t fidx, res;
 
-        /* per-TB accounting (wasm_tb_account / icount2_advance /
-         * lockstep fold) now runs in the TB prologue (imported
-         * w64_tb_account) so chained entries are counted identically */
+        /* per-TB accounting (wasm_tb_stats / icount2_advance / lockstep
+         * fold) runs inline in the TB prologue (tcg_out_tb_start) so
+         * chained entries are counted identically */
 
         fidx = desc[W64_DESC_FIDX / 4];
         if (fidx == 0) {

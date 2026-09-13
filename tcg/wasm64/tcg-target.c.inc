@@ -18,6 +18,7 @@
 #include "qemu/wasm-diag.h"
 #include "wasm64.h"
 #include "system/cpu-timers.h"      /* icount2_enabled() */
+#include "exec/icount.h"            /* icount_enabled() */
 
 /* ------------------------------------------------------------------ */
 /* per-TB assembly state                                              */
@@ -181,6 +182,38 @@ static void w64_callidx(TCGContext *s, uint8_t imp, uint8_t uimp)
 static int w64_scr(TCGType t)
 {
     return t == TCG_TYPE_I32 ? W64_L_SCR32 : W64_L_SCR0;
+}
+
+/* Translation-time knobs, fixed for the life of the process.
+ *
+ * The per-TB-entry statistics (wasm_tb_stats: TB entries and guest
+ * insns, read by the page and the benchmark tooling through
+ * wasm_tbs/wasm_insns) cost two read-modify-writes at every TB entry
+ * (~5 M/s, ~50 of the ~560 bytes of an average TB module).  Under
+ * icount the guest instruction count is already exact in the icount
+ * state and wasm_insns() derives it there, so the prologue maintains
+ * the counters only on non-icount boards (the LG ones) or when
+ * W64_TBSTATS=1 asks for the TB-entry count too. */
+static bool w64_tbstats_inline(void)
+{
+    static int mode = -1;
+    if (mode < 0) {
+        mode = !icount_enabled() || getenv("W64_TBSTATS") != NULL;
+    }
+    return mode != 0;
+}
+
+/* The lockstep fold is armed per process (W64_LOCKSTEP, set by the page
+ * before qemu starts).  An unarmed process omits the w64_ls_on test and
+ * import from every prologue and the w64_chain_stop term from every
+ * goto_tb/goto_ptr; nothing else ever sets w64_chain_stop. */
+static bool w64_ls_armed(void)
+{
+    static int mode = -1;
+    if (mode < 0) {
+        mode = getenv("W64_LOCKSTEP") != NULL;
+    }
+    return mode != 0;
 }
 
 static int w64_local32(TCGReg r)
@@ -613,11 +646,6 @@ static void tcg_out_st16(TCGContext *s, TCGType t, TCGReg v, TCGReg b, intptr_t 
     w64_store(s, t == TCG_TYPE_I32 ? 0x3b : 0x3d, t, v, b, o, 1);
 }
 
-static void tcg_out_st32(TCGContext *s, TCGType t, TCGReg v, TCGReg b, intptr_t o)
-{
-    w64_store(s, t == TCG_TYPE_I32 ? 0x36 : 0x3e, t, v, b, o, 2);
-}
-
 static bool tcg_out_sti(TCGContext *s, TCGType t, TCGArg v, TCGReg b, intptr_t o)
 {
     uint8_t opc = t == TCG_TYPE_I32 ? 0x36 : 0x37;
@@ -852,7 +880,8 @@ static void tcg_out_goto_tb(TCGContext *s, int which)
      * the very tb_add_jump that links the pair.  w64_chain_stop is the
      * lockstep-budget brake (see wasm64.c): it forces the chain to
      * unwind to the dispatcher at the next goto_tb so the leg stops at
-     * the exact insn budget.  A chain target has always been
+     * the exact insn budget (the term is only emitted in a process armed
+     * with W64_LOCKSTEP).  A chain target has always been
      * instantiated (it executed at least once via the dispatcher), so
      * its table entry is live and its descriptor fidx non-zero; the
      * fidx term keeps a future batch-eviction (LRU cap) sound — an
@@ -880,10 +909,12 @@ static void tcg_out_goto_tb(TCGContext *s, int which)
     w64_local_get(s, W64_L_SCR0);
     w64_const_i64(s, (int64_t)reset_addr);
     w64_u8(s, 0x51);                        /* i64.eq */
-    w64_const_i64(s, (int64_t)(uintptr_t)&w64_chain_stop);
-    w64_u8(s, 0x28);                        /* i32.load (i64 addr: memory64) */
-    w64_memarg(s, 2, 0);
-    w64_u8(s, 0x72);                        /* i32.or */
+    if (w64_ls_armed()) {
+        w64_const_i64(s, (int64_t)(uintptr_t)&w64_chain_stop);
+        w64_u8(s, 0x28);                    /* i32.load (i64 addr: memory64) */
+        w64_memarg(s, 2, 0);
+        w64_u8(s, 0x72);                    /* i32.or */
+    }
     w64_local_get(s, W64_L_SCR0);
     w64_u8(s, 0x28);                        /* i32.load target fidx */
     w64_memarg(s, 2, W64_DESC_FIDX);
@@ -938,10 +969,12 @@ static void tcg_out_goto_ptr(TCGContext *s, TCGReg a0)
     w64_local_get(s, W64_L_SCR0);
     w64_u8(s, 0x50);                        /* i64.eqz: a miss returns
                                              * tcg_code_gen_epilogue == NULL */
-    w64_const_i64(s, (int64_t)(uintptr_t)&w64_chain_stop);
-    w64_u8(s, 0x28);                        /* i32.load (i64 addr) */
-    w64_memarg(s, 2, 0);
-    w64_u8(s, 0x72);                        /* i32.or */
+    if (w64_ls_armed()) {
+        w64_const_i64(s, (int64_t)(uintptr_t)&w64_chain_stop);
+        w64_u8(s, 0x28);                    /* i32.load (i64 addr) */
+        w64_memarg(s, 2, 0);
+        w64_u8(s, 0x72);                    /* i32.or */
+    }
     w64_local_get(s, W64_L_SCR0);
     w64_u8(s, 0x28);                        /* i32.load target fidx */
     w64_memarg(s, 2, W64_DESC_FIDX);
@@ -2242,31 +2275,19 @@ static const TCGOutOpDivRem outop_divu2 = {
 /* module assembly                                                     */
 /* ------------------------------------------------------------------ */
 
-/* W64_NOACCTINLINE=1 disables the inline TB accounting (A/B measurement,
- * debugging) — the prologue then calls the imported w64_tb_account */
-static bool w64_acct_inline(void)
-{
-    static int mode = -1;
-    if (mode < 0) {
-        mode = getenv("W64_NOACCTINLINE") == NULL;
-    }
-    return mode != 0;
-}
-
 static void tcg_out_tb_start(TCGContext *s)
 {
     static const uint8_t magic[8] = { 0, 'a', 's', 'm', 1, 0, 0, 0 };
     static const uint8_t p1[1] = { 0 };    /* (i32) */
-    uint8_t acc_type = 0, acc_imp = 0, acc_uimp = 0;
-    uint8_t sync_type, sync_imp, sync_uimp;
-    uint8_t ls_type, ls_imp, ls_uimp;
+    uint8_t sync_type = 0, sync_imp = 0, sync_uimp = 0;
+    uint8_t ls_type = 0, ls_imp = 0, ls_uimp = 0;
 
     memset(&W, 0, sizeof(W));
     n_cf = 0;
 
     /* lazy one-time init of the inline-accounting address table
      * (translation of the first TB precedes w64_init/first exec) */
-    if (w64_acct_inline() && w64_acct_addr[0] == 0) {
+    if (w64_acct_addr[0] == 0) {
         w64_acct_init();
     }
 
@@ -2287,37 +2308,27 @@ static void tcg_out_tb_start(TCGContext *s)
         w64_add_type(3, p, 0);
     }
 
-    /* TB accounting (phase 3): by default the prologue performs
-     * wasm_tb_account + icount2_advance's fast path INLINE (see
-     * w64_acct_inline below) and imports only the rare/conditional
-     * tails; W64_NOACCTINLINE=1 falls back to the single imported
-     * w64_tb_account(icount) call (A/B measurement, debugging).
-     * Registered first so their indices are deterministic (the
-     * prologue's calls are the body's first instructions). */
-    if (w64_acct_inline()) {
-        sync_type = sync_imp = sync_uimp = 0;
-        if (icount2_enabled()) {
-            sync_type = w64_add_type(0, (const uint8_t *)"", 0xff);  /* () -> () */
-            sync_uimp = w64_union_type(0, NULL, 0xff);
-            sync_imp = w64_import_idx(
-                (uint32_t)(uintptr_t)w64_icount2_sync_now, sync_type);
-            sync_uimp = w64_union_import(
-                (uint32_t)(uintptr_t)w64_icount2_sync_now, sync_uimp);
-        }
-
+    /* TB accounting (phase 3): the prologue performs the per-TB-entry
+     * accounting INLINE and imports only the rare/conditional tails -
+     * the icount2 deadline sync (opt-in ?icount=precise-clocks) and the
+     * lockstep fold (W64_LOCKSTEP).  Registered first so their indices
+     * are deterministic (the prologue's calls are the body's first
+     * instructions). */
+    if (icount2_enabled()) {
+        sync_type = w64_add_type(0, (const uint8_t *)"", 0xff);  /* () -> () */
+        sync_uimp = w64_union_type(0, NULL, 0xff);
+        sync_imp = w64_import_idx(
+            (uint32_t)(uintptr_t)w64_icount2_sync_now, sync_type);
+        sync_uimp = w64_union_import(
+            (uint32_t)(uintptr_t)w64_icount2_sync_now, sync_uimp);
+    }
+    if (w64_ls_armed()) {
         ls_type = w64_add_type(1, p1, 0xff);            /* (i32) -> () */
         ls_uimp = w64_union_type(1, p1, 0xff);
         ls_imp = w64_import_idx((uint32_t)(uintptr_t)w64_lockstep_account,
                                 ls_type);
         ls_uimp = w64_union_import(
             (uint32_t)(uintptr_t)w64_lockstep_account, ls_uimp);
-    } else {
-        acc_type = w64_add_type(1, p1, 0xff);            /* (i32) -> () */
-        acc_uimp = w64_union_type(1, p1, 0xff);
-        acc_imp = w64_import_idx((uint32_t)(uintptr_t)w64_tb_account,
-                                 acc_type);
-        acc_uimp = w64_union_import((uint32_t)(uintptr_t)w64_tb_account,
-                                    acc_uimp);
     }
 
     /* body: [body-size LEB (patched)] [locals] [expr...] */
@@ -2331,12 +2342,10 @@ static void tcg_out_tb_start(TCGContext *s)
     w64_u8(s, 0x01); w64_u8(s, 0x7f);       /* i32: $scr32 */
     w64_u8(s, 0x03); w64_u8(s, 0x7e);       /* i64: $scr0..$scr2 */
 
-    /* prologue: TB accounting — inline fast path (default) or the
-     * imported w64_tb_account(icount) */
-    if (w64_acct_inline()) {
-        /* wasm_tb_stats[0]++ and [1] += icount (plain RMWs — exactly
-         * what wasm_tb_account compiles to; the fields are only ever
-         * written by this vCPU thread) */
+    /* prologue: per-TB-entry accounting, inline */
+    if (w64_tbstats_inline()) {
+        /* wasm_tb_stats[0]++ and [1] += icount (plain RMWs — the fields
+         * are only ever written by this vCPU thread) */
         w64_const_i64(s, (int64_t)w64_acct_addr[0]);
         w64_u8(s, 0x29);  w64_memarg(s, 3, 0);        /* i64.load */
         w64_const_i64(s, 1);
@@ -2354,7 +2363,9 @@ static void tcg_out_tb_start(TCGContext *s)
         w64_const_i64(s, (int64_t)w64_acct_addr[1]);
         w64_local_get(s, W64_L_SCR0);
         w64_u8(s, 0x37);  w64_memarg(s, 3, 0);
+    }
 
+    if (icount2_enabled()) {
         /* icount2_advance fast path: ticks += icount — atomic accesses,
          * mirroring the qatomic_read/qatomic_set the C function emits
          * (timers_state is read/written cross-thread).  Only for the
@@ -2363,9 +2374,6 @@ static void tcg_out_tb_start(TCGContext *s)
          * atomic RMW + a deadline compare per TB entry (~5M/s) would be
          * pure overhead there.  icount2 is fixed at command-line parse
          * time, before the first translation. */
-        if (!icount2_enabled()) {
-            goto no_icount2;
-        }
         w64_const_i64(s, (int64_t)w64_acct_addr[2]);
         w64_u8(s, 0xfe); w64_u8(s, 0x11);
         w64_memarg(s, 3, 0);                          /* i64.atomic.load */
@@ -2394,10 +2402,12 @@ static void tcg_out_tb_start(TCGContext *s)
         w64_u8(s, 0x10);                              /* call */
         w64_callidx(s, sync_imp, sync_uimp);
         w64_blk_pop(s);
-    no_icount2:
+    }
 
+    if (w64_ls_armed()) {
         /* if (w64_ls_on) w64_lockstep_account(icount) — the lockstep
-         * fold import, only when armed (normal boots: one i32.load) */
+         * fold import (w64_ls_on stays 0 when the log could not be
+         * opened) */
         w64_const_i64(s, (int64_t)w64_acct_addr[4]);
         w64_u8(s, 0x28);  w64_memarg(s, 2, 0);        /* i32.load */
         w64_blk_push(s, W64_BLK_IF, -1);
@@ -2405,10 +2415,6 @@ static void tcg_out_tb_start(TCGContext *s)
         w64_u8(s, 0x10);                              /* call */
         w64_callidx(s, ls_imp, ls_uimp);
         w64_blk_pop(s);
-    } else {
-        w64_const_i32(s, s->gen_tb->icount);
-        w64_u8(s, 0x10);                              /* call */
-        w64_callidx(s, acc_imp, acc_uimp);
     }
 
     w64_emit_loop_head(s);

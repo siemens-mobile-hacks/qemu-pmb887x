@@ -28,6 +28,10 @@
 #include "qemu/error-report.h"
 #include "qemu/main-loop.h"
 #include "qemu/timer.h"
+#include "exec/icount.h"
+#include "hw/core/cpu.h"
+#include "qemu/seqlock.h"
+#include "system/cpu-timers-internal.h"
 #include "system/runstate.h"
 #include "ui/console.h"
 #include "ui/input.h"
@@ -146,7 +150,10 @@ uint64_t wasm_fb_updates(void)
  * patch); wasm_tbs()/wasm_insns() are what the page and the benchmark
  * tooling read as the guest-throughput metric.  Non-static array
  * [tbs, insns]: the wasm64 TCG backend inlines these increments into
- * TB prologues (w64_acct_addr, tcg/wasm64/).
+ * TB prologues (w64_acct_addr, tcg/wasm64/) - but only on non-icount
+ * boards or with W64_TBSTATS=1: under icount the instruction count is
+ * already exact in the icount state and wasm_insns() reads it there,
+ * so the shipped prologue carries no counter at all.
  */
 uint64_t wasm_tb_stats[2];
 
@@ -156,15 +163,34 @@ void wasm_tb_account(unsigned insns)
     wasm_tb_stats[1] += insns;
 }
 
+/* TB entries; 0 on the wasm64 backend under icount unless W64_TBSTATS=1 */
 EMSCRIPTEN_KEEPALIVE
 uint64_t wasm_tbs(void)
 {
     return wasm_tb_stats[0];
 }
 
+/*
+ * Guest instructions executed so far.  Under icount: the finished
+ * slices in timers_state.qemu_icount plus what the running slice has
+ * consumed of its budget (the same arithmetic as icount_get_executed).
+ * This is read from the JS main thread while the vCPU runs, so it is a
+ * racy snapshot that can be off by up to one slice at a slice boundary
+ * - adequate for the 0.5-1 s progress meters that use it.
+ */
 EMSCRIPTEN_KEEPALIVE
 uint64_t wasm_insns(void)
 {
+    if (icount_enabled()) {
+        CPUState *cpu = first_cpu;
+        int64_t slice = 0;
+
+        if (cpu) {
+            slice = cpu->icount_budget -
+                    (cpu->neg.icount_decr.u16.low + cpu->icount_extra);
+        }
+        return qatomic_read(&timers_state.qemu_icount) + slice;
+    }
     return wasm_tb_stats[1];
 }
 
