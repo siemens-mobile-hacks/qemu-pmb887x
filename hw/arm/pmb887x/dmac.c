@@ -13,6 +13,7 @@
 #include "qemu/bswap.h"
 #include "qemu/main-loop.h"
 #include "hw/core/qdev-properties.h"
+#include "qemu/wasm-diag.h"
 
 #include "hw/arm/pmb887x/gen/cpu_regs.h"
 #include "hw/arm/pmb887x/regs_dump.h"
@@ -74,6 +75,7 @@ struct pmb887x_dmac_t {
 	pmb887x_dmac_ch_t ch[DMAC_CHANNELS];
 
 	bool dmac_pending;
+	bool in_run;
 	bool is_busy;
 	uint32_t config;
 	uint32_t sync;
@@ -141,8 +143,15 @@ static void dmac_write(pmb887x_dmac_t *p, hwaddr addr, const uint8_t *buffer, ui
 }
 
 static void dmac_schedule(pmb887x_dmac_t *p) {
-	if (!p->dmac_pending) {
-		p->dmac_pending = true;
+	if (p->dmac_pending)
+		return;
+	p->dmac_pending = true;
+	/* a request raised from inside dmac_timer_reset (the peripheral
+	 * re-requesting as its burst is acknowledged) is picked up by that
+	 * loop's next pass; arming the timer would only recompute the clock
+	 * deadline per burst */
+	if (!p->in_run) {
+		wasm_diag_stat[WASM_DIAG_DMAC_SCHED_TIMER]++;
 		timer_mod(p->timer, 0);
 	}
 }
@@ -266,6 +275,8 @@ static void dmac_transfer_memory(pmb887x_dmac_t *p, pmb887x_dmac_ch_t *ch, uint3
 	uint32_t tx_size = (ch->control & DMAC_CH_CONTROL_TRANSFER_SIZE) >> DMAC_CH_CONTROL_TRANSFER_SIZE_SHIFT;
 	enum device_endian src_endian = dmac_master_endian(p, (ch->control & DMAC_CH_CONTROL_S_AHB2) != 0);
 	enum device_endian dst_endian = dmac_master_endian(p, (ch->control & DMAC_CH_CONTROL_D_AHB2) != 0);
+
+	wasm_diag_stat[WASM_DIAG_DMAC_BURST]++;
 
 	bool is_simple_memcpy = (
 		flow_ctrl == DMAC_CH_CONFIG_FLOW_CTRL_MEM2MEM &&
@@ -893,6 +904,7 @@ uint32_t pmb887x_dmac_get_sel(pmb887x_dmac_t *p) {
 static void dmac_timer_reset(void *opaque) {
 	pmb887x_dmac_t *p = opaque;
 	int budget = DMAC_MAX_BURSTS_PER_PASS;
+	p->in_run = true;
 	while (p->dmac_pending && budget-- > 0) {
 		p->dmac_pending = false;
 		for (int i = 0; i < DMAC_CHANNELS; i++)
@@ -900,6 +912,7 @@ static void dmac_timer_reset(void *opaque) {
 		if (pmb887x_srb_get_ris(&p->srb_tc) || pmb887x_srb_get_ris(&p->srb_err))
 			break;
 	}
+	p->in_run = false;
 	if (p->dmac_pending)
 		timer_mod(p->timer, qemu_clock_get_ns(pmb887x_completion_clock()) + 1);
 }

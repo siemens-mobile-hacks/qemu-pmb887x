@@ -217,10 +217,10 @@ void pmb887x_srb_set_imsc(pmb887x_srb_reg_t *reg, uint32_t value) {
 }
 
 void pmb887x_srb_set_icr(pmb887x_srb_reg_t *reg, uint32_t value) {
-	for (int i = 0; i < 32; i++) {
-		uint32_t mask = 1U << i;
-		if ((value & mask))
-			pmb887x_srb_set_event(reg, i, 0);
+	while (value) {
+		int i = ctz32(value);
+		value &= value - 1;
+		pmb887x_srb_set_event(reg, i, 0);
 	}
 }
 

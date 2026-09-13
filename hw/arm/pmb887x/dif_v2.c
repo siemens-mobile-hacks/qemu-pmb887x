@@ -16,6 +16,7 @@
 #include "qom/object.h"
 #include "hw/core/qdev-properties.h"
 #include "qemu/timer.h"
+#include "qemu/wasm-diag.h"
 
 #include "hw/arm/pmb887x/gen/cpu_regs.h"
 #include "hw/arm/pmb887x/regs_dump.h"
@@ -43,6 +44,7 @@ static bool dif_is_running(pmb887x_dif_t *p);
 static void dif_tx_from_fifo(pmb887x_dif_t *p);
 static void dif_work(pmb887x_dif_t *p);
 static uint16_t dif_bus_transfer(pmb887x_dif_t *p, uint16_t value);
+static void dif_update_mux(pmb887x_dif_t *p);
 
 enum DIFIrqType {
 	DIF_RX_SINGLE_IRQ = 0,
@@ -104,6 +106,10 @@ struct pmb887x_dif_t {
 	uint32_t mux_tab[2][4][256];
 	uint32_t mux_const[2];
 	uint32_t mux_invert;
+	/* a BMREG/BCSEL/BCREG/INVERT_BIT write changed the mux registers; the
+	 * tables are rebuilt on the next word (the firmware rewrites them far
+	 * more often than it transfers) */
+	bool mux_dirty;
 
 	uint32_t con;
 	uint32_t perreg;
@@ -424,6 +430,8 @@ static void dif_reset_rx_fifo(pmb887x_dif_t *p) {
 }
 
 static inline uint32_t dif_mux(pmb887x_dif_t *p, uint32_t value) {
+	if (unlikely(p->mux_dirty))
+		dif_update_mux(p);
 	int cd = (dif_get_transfer_csreg(p) & DIFv2_CSREG_CD) != 0;
 	const uint32_t (*t)[256] = p->mux_tab[cd];
 	return (t[0][value & 0xFF] | t[1][(value >> 8) & 0xFF] |
@@ -431,41 +439,35 @@ static inline uint32_t dif_mux(pmb887x_dif_t *p, uint32_t value) {
 	        p->mux_const[cd]) ^ p->mux_invert;
 }
 
-/* the bit-per-bit definition dif_mux() used to evaluate per word */
-static uint32_t dif_mux_slow(pmb887x_dif_t *p, bool cd, uint32_t value) {
-	uint32_t new_value = 0;
-	for (uint32_t output_bit = 0; output_bit < 32; output_bit++) {
-		uint32_t bit = 0;
-
-		if (p->bit_bcsel[output_bit] == 0) {
-			uint32_t input_bit = cd ? output_bit : p->bit_mux[output_bit];
-			bit = (value >> input_bit) & 1;
-		} else if (p->bit_bcsel[output_bit] == 1) {
-			bit = p->bit_bcreg[output_bit];
-		}
-		if (p->bit_invert[output_bit])
-			bit = bit ? 0 : 1;
-		new_value |= (bit << output_bit);
-	}
-	return new_value;
-}
-
+/* The bit-per-bit definition: output bit o is input bit (cd ? o :
+ * bit_mux[o]) when bcsel[o] == 0, the constant bcreg[o] when bcsel[o] == 1,
+ * else 0, then XOR invert[o].  A bcsel == 0 bit is therefore set in the
+ * entries of its input's byte lane whose index has that bit. */
 static void dif_build_mux_tables(pmb887x_dif_t *p) {
-	p->mux_invert = 0;
+	uint32_t invert = 0, cst = 0;
+	memset(p->mux_tab, 0, sizeof(p->mux_tab));
 	for (uint32_t o = 0; o < 32; o++) {
+		uint32_t obit = 1U << o;
 		if (p->bit_invert[o])
-			p->mux_invert |= 1U << o;
-	}
-	for (int cd = 0; cd < 2; cd++) {
-		/* constant / invert part = the mux of zero, before inversion */
-		p->mux_const[cd] = dif_mux_slow(p, cd, 0) ^ p->mux_invert;
-		for (uint32_t lane = 0; lane < 4; lane++) {
-			for (uint32_t b = 0; b < 256; b++) {
-				uint32_t v = dif_mux_slow(p, cd, b << (8 * lane)) ^ p->mux_invert;
-				p->mux_tab[cd][lane][b] = v & ~p->mux_const[cd];
-			}
+			invert |= obit;
+		if (p->bit_bcsel[o] == 1) {
+			if (p->bit_bcreg[o])
+				cst |= obit;
+			continue;
+		}
+		if (p->bit_bcsel[o] != 0)
+			continue;
+		for (int cd = 0; cd < 2; cd++) {
+			uint32_t in = cd ? o : p->bit_mux[o];
+			uint32_t *t = p->mux_tab[cd][in >> 3];
+			uint32_t ibit = 1U << (in & 7);
+			for (uint32_t b = ibit; b < 256; b = (b + 1) | ibit)
+				t[b] |= obit;
 		}
 	}
+	p->mux_invert = invert;
+	p->mux_const[0] = cst;
+	p->mux_const[1] = cst;
 }
 
 static uint32_t dif_convert_color(pmb887x_dif_t *p, uint32_t value) {
@@ -704,6 +706,9 @@ static bool dif_convert_word(pmb887x_dif_t *p, uint16_t value, uint32_t *output)
 static bool dif_is_pbc_selection_valid(pmb887x_dif_t *p) {
 	uint32_t word_bits = dif_get_tx_word_bits(p);
 
+	if (unlikely(p->mux_dirty))
+		dif_update_mux(p);
+
 	for (uint32_t output_bit = 0; output_bit < word_bits; output_bit++) {
 		if (p->bit_bcsel[output_bit] > 1)
 			return false;
@@ -722,6 +727,7 @@ static void dif_tx_from_fifo(pmb887x_dif_t *p) {
 	while (pmb887x_fifo_count(&p->tx_fifo) > 0) {
 		uint32_t value = pmb887x_fifo32_pop(&p->tx_fifo);
 		p->tx_csreg = pmb887x_fifo32_pop(&p->tx_csreg_fifo);
+		wasm_diag_stat[WASM_DIAG_DIF_TX_WORD]++;
 		p->is_tx_csreg_active = true;
 		dif_update_gpio_state(p);
 		uint32_t bsconf_word_count = dif_get_bsconf_word_count(p);
@@ -862,6 +868,8 @@ static void dif_update_mux(pmb887x_dif_t *p) {
 		p->bit_invert[i] = p->invert_bit & (1 << i) ? 1 : 0;
 	}
 	dif_build_mux_tables(p);
+	p->mux_dirty = false;
+	wasm_diag_stat[WASM_DIAG_DIF_MUX_REBUILD]++;
 
 #if PMB887X_DIF_DUMP_BIT_MUX
 	g_autoptr(GString) mux_str = g_string_new("");
@@ -1145,29 +1153,41 @@ static void dif_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned si
 		case DIFv2_BMREG2:
 		case DIFv2_BMREG3:
 		case DIFv2_BMREG4:
-		case DIFv2_BMREG5:
-			p->bmreg[(haddr - DIFv2_BMREG0) / 4] = value;
-			dif_update_mux(p);
+		case DIFv2_BMREG5: {
+			uint32_t *reg = &p->bmreg[(haddr - DIFv2_BMREG0) / 4];
+			if (*reg != (uint32_t) value) {
+				*reg = value;
+				p->mux_dirty = true;
+			}
 			break;
+		}
 
 		case DIFv2_PBCCON:
 			p->pbccon = value;
 			break;
 
 		case DIFv2_BCSEL0:
-		case DIFv2_BCSEL1:
-			p->bcsel[(haddr - DIFv2_BCSEL0) / 4] = value;
-			dif_update_mux(p);
+		case DIFv2_BCSEL1: {
+			uint32_t *reg = &p->bcsel[(haddr - DIFv2_BCSEL0) / 4];
+			if (*reg != (uint32_t) value) {
+				*reg = value;
+				p->mux_dirty = true;
+			}
 			break;
+		}
 
 		case DIFv2_BCREG:
-			p->bcreg = value;
-			dif_update_mux(p);
+			if (p->bcreg != (uint32_t) value) {
+				p->bcreg = value;
+				p->mux_dirty = true;
+			}
 			break;
 
 		case DIFv2_INVERT_BIT:
-			p->invert_bit = value;
-			dif_update_mux(p);
+			if (p->invert_bit != (uint32_t) value) {
+				p->invert_bit = value;
+				p->mux_dirty = true;
+			}
 			break;
 
 		case DIFv2_SYNC_CONFIG:
@@ -1260,8 +1280,12 @@ static void dif_handle_gpio_data_input(void *opaque, int id, int level) {
 static void dif_handle_dmac_tx_clr(void *opaque, int id, int level) {
 	pmb887x_dif_t *p = opaque;
 	p->dmac_tx_clr = level;
+	/* only the raised request(s): clearing an already-clear one is a
+	 * no-op for the register but re-runs the event handler (dif_schedule,
+	 * dif_trigger_dma) once per bit, on every DMA burst acknowledgement */
 	if (level == 1)
-		pmb887x_srb_set_icr(&p->srb, DIFv2_ICR_TXSREQ | DIFv2_ICR_TXBREQ | DIFv2_ICR_TXLSREQ | DIFv2_ICR_TXLBREQ);
+		pmb887x_srb_set_icr(&p->srb, pmb887x_srb_get_ris(&p->srb) &
+			(DIFv2_ICR_TXSREQ | DIFv2_ICR_TXBREQ | DIFv2_ICR_TXLSREQ | DIFv2_ICR_TXLBREQ));
 	dif_trigger_dma(p);
 }
 
@@ -1269,7 +1293,8 @@ static void dif_handle_dmac_rx_clr(void *opaque, int id, int level) {
 	pmb887x_dif_t *p = opaque;
 	p->dmac_rx_clr = level;
 	if (level == 1)
-		pmb887x_srb_set_icr(&p->srb, DIFv2_ICR_RXSREQ | DIFv2_ICR_RXBREQ | DIFv2_ICR_RXLSREQ | DIFv2_ICR_RXLBREQ);
+		pmb887x_srb_set_icr(&p->srb, pmb887x_srb_get_ris(&p->srb) &
+			(DIFv2_ICR_RXSREQ | DIFv2_ICR_RXBREQ | DIFv2_ICR_RXLSREQ | DIFv2_ICR_RXLBREQ));
 	dif_trigger_dma(p);
 }
 
