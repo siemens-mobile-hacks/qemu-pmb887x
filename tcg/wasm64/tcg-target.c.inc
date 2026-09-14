@@ -261,6 +261,13 @@ static void w64_local_set(TCGContext *s, int l)
     w64_uleb(s, l);
 }
 
+/* local.set + local.get in one op: the value stays on the value stack. */
+static void w64_local_tee(TCGContext *s, int l)
+{
+    w64_u8(s, 0x22);
+    w64_uleb(s, l);
+}
+
 /* Push TCG reg r as an i32 value (wrapping if held in the i64 local). */
 static void w64_get_i32(TCGContext *s, TCGReg r)
 {
@@ -994,8 +1001,7 @@ static void tcg_out_goto_tb(TCGContext *s, int which)
     w64_const_i64(s, (int64_t)slot);
     w64_u8(s, 0x29);                        /* i64.load */
     w64_memarg(s, 3, 0);
-    w64_local_set(s, W64_L_SCR0);
-    w64_local_get(s, W64_L_SCR0);
+    w64_local_tee(s, W64_L_SCR0);
     w64_const_i64(s, (int64_t)reset_addr);
     w64_u8(s, 0x51);                        /* i64.eq */
     if (w64_ls_armed()) {
@@ -1054,8 +1060,7 @@ static void tcg_out_goto_ptr(TCGContext *s, TCGReg a0)
     W.n_blk++;
 
     w64_get_i64(s, a0);
-    w64_local_set(s, W64_L_SCR0);
-    w64_local_get(s, W64_L_SCR0);
+    w64_local_tee(s, W64_L_SCR0);
     w64_u8(s, 0x50);                        /* i64.eqz: a miss returns
                                              * tcg_code_gen_epilogue == NULL */
     if (w64_ls_armed()) {
@@ -1339,10 +1344,9 @@ static void w64_tlb_probe(TCGContext *s, int al, const struct w64_tlb_ctx *tc)
     w64_local_get(s, W64_P_ENV);
     w64_const_i64(s, tc->fast_ofs);
     w64_u8(s, 0x7c);                        /* i64.add */
-    w64_local_set(s, W64_L_SCR0);
+    w64_local_tee(s, W64_L_SCR0);
 
     /* $scr0 = table[(addr >> page_bits) & (mask >> entry_bits)] */
-    w64_local_get(s, W64_L_SCR0);
     w64_u8(s, 0x29);                        /* i64.load */
     w64_memarg(s, 3, 0);                    /* mask */
     w64_local_get(s, al);
@@ -1353,16 +1357,13 @@ static void w64_tlb_probe(TCGContext *s, int al, const struct w64_tlb_ctx *tc)
     w64_u8(s, 0x29);                        /* i64.load */
     w64_memarg(s, 3, 8);                    /* table */
     w64_u8(s, 0x7c);                        /* i64.add */
-    w64_local_set(s, W64_L_SCR0);
+    w64_local_tee(s, W64_L_SCR0);
 
-    /* $scr1 = tlb_addr */
-    w64_local_get(s, W64_L_SCR0);
+    /* hit = (tlb_addr == ((addr + adj) & tlb_mask)); tlb_addr has no
+     * other reader, so it stays on the value stack */
     w64_u8(s, 0x29);                        /* i64.load */
     w64_memarg(s, 3, tc->cmp_ofs);
-    w64_local_set(s, W64_L_SCR1);
 
-    /* hit = ($scr1 == ((addr + adj) & tlb_mask)) */
-    w64_local_get(s, W64_L_SCR1);
     w64_local_get(s, al);
     if (tc->adj) {
         w64_const_i64(s, tc->adj);
@@ -1912,8 +1913,7 @@ static void tgen_mulu2(TCGContext *s, TCGType t, TCGReg a0, TCGReg a1,
     w64_get_i64(s, a2);
     w64_get_i64(s, a3);
     w64_u8(s, 0x7e);                        /* i64.mul */
-    w64_local_set(s, W64_L_SCR0);
-    w64_local_get(s, W64_L_SCR0);
+    w64_local_tee(s, W64_L_SCR0);
     w64_u8(s, 0xa7);                        /* i32.wrap_i64 */
     w64_set_i32(s, a0);
     w64_local_get(s, W64_L_SCR0);
@@ -1936,8 +1936,7 @@ static void tgen_muls2(TCGContext *s, TCGType t, TCGReg a0, TCGReg a1,
     w64_get_i32(s, a3);
     w64_u8(s, 0xac);                        /* i64.extend_i32_s */
     w64_u8(s, 0x7e);                        /* i64.mul */
-    w64_local_set(s, W64_L_SCR0);
-    w64_local_get(s, W64_L_SCR0);
+    w64_local_tee(s, W64_L_SCR0);
     w64_u8(s, 0xa7);                        /* i32.wrap_i64 */
     w64_set_i32(s, a0);
     w64_local_get(s, W64_L_SCR0);
@@ -2162,8 +2161,7 @@ static void tgen_bswap32(TCGContext *s, TCGType t, TCGReg r0, TCGReg r1,
         w64_get_i32(s, r1);
         w64_const_i32(s, 16);
         w64_u8(s, 0x78);                    /* i32.rotr */
-        w64_local_set(s, W64_L_SCR32);
-        w64_local_get(s, W64_L_SCR32);
+        w64_local_tee(s, W64_L_SCR32);
         w64_const_i32(s, (int32_t)0xff00ff00u);
         w64_u8(s, 0x71);                    /* and */
         w64_const_i32(s, 8);
@@ -2481,8 +2479,7 @@ static void tcg_out_tb_start(TCGContext *s)
         w64_const_i64(s, (int64_t)w64_acct_addr[3]);
         w64_u8(s, 0xfe); w64_u8(s, 0x11);
         w64_memarg(s, 3, 0);
-        w64_local_set(s, W64_L_SCR1);                /* deadline */
-        w64_local_get(s, W64_L_SCR1);
+        w64_local_tee(s, W64_L_SCR1);                /* deadline */
         w64_const_i64(s, 0);
         w64_u8(s, 0x55);                              /* i64.gt_s */
         w64_local_get(s, W64_L_SCR0);
