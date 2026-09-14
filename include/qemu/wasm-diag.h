@@ -76,6 +76,9 @@ enum {
     WASM_DIAG_DMAC_SCHED_TIMER, /* pmb887x DMAC timer_mod from dmac_schedule */
     WASM_DIAG_DMAC_XLAT_FILL, /* pmb887x DMAC translation-window fills (misses) */
     WASM_DIAG_GPTU_TIMER,    /* pmb887x GPTU QEMU-timer callbacks (T01 + T2) */
+    WASM_DIAG_IO_RECOMP,     /* cpu_io_recompile calls (mid-TB MMIO unwinds) */
+    WASM_DIAG_IO_BARRIER_EVICT, /* ...that evicted a different barrier PC */
+    WASM_DIAG_IO_BARRIER_SPLIT, /* translator TB splits on an io barrier */
     WASM_DIAG_N
 };
 

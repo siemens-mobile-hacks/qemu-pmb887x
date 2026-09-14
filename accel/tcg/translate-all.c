@@ -624,18 +624,67 @@ void tb_check_watchpoint(CPUState *cpu, uintptr_t retaddr)
  * semantics) without the recurring cpu_loop_exit() unwind.
  */
 #ifdef __EMSCRIPTEN__
-static vaddr wasm_io_barriers[64];
+/*
+ * The set is direct-mapped, so two hot MMIO insns that land in one slot
+ * evict each other on every pass and neither is ever kept out of the
+ * middle of a TB: the recompile (unwind + invalidate + retranslate +
+ * a wasm Module per pass) then repeats forever instead of once.  That
+ * is what the 64-slot, (pc >> 2)-indexed original did on the LG boards,
+ * which take this path for every mid-TB MMIO (io_prepare in cputlb.c):
+ * ~790 recompiles/s at a standing idle screen.  Two changes:
+ *   - index by (pc >> 1): Thumb insns are 2 bytes apart, and >> 2 mapped
+ *     every adjacent Thumb pair onto one slot;
+ *   - 4096 slots, two ways each, so a collision costs a second lookup
+ *     rather than a permanent ping-pong.
+ * W64_IO_BARRIERS=<n> caps the usable slots (a power of two, 1..4096) —
+ * the same-wasm A/B knob that sized this.
+ */
+#define WASM_IO_BARRIER_SLOTS 4096
+#define WASM_IO_BARRIER_WAYS  2
+static vaddr wasm_io_barriers[WASM_IO_BARRIER_SLOTS][WASM_IO_BARRIER_WAYS];
+static uint32_t wasm_io_barrier_mask;
+
+static uint32_t wasm_io_barrier_slot(vaddr pc)
+{
+    if (unlikely(!wasm_io_barrier_mask)) {
+        const char *e = getenv("W64_IO_BARRIERS");
+        unsigned long n = e ? strtoul(e, NULL, 0) : WASM_IO_BARRIER_SLOTS;
+        if (n < 1 || n > WASM_IO_BARRIER_SLOTS || (n & (n - 1))) {
+            n = WASM_IO_BARRIER_SLOTS;
+        }
+        wasm_io_barrier_mask = n - 1;
+    }
+    return (uint32_t)(pc >> 1) & wasm_io_barrier_mask;
+}
 
 void wasm_add_io_barrier(vaddr pc)
 {
-    uint32_t h = (pc >> 2) & (ARRAY_SIZE(wasm_io_barriers) - 1);
-    wasm_io_barriers[h] = pc;
+    vaddr *ways = wasm_io_barriers[wasm_io_barrier_slot(pc)];
+
+    for (int i = 0; i < WASM_IO_BARRIER_WAYS; i++) {
+        if (ways[i] == pc) {
+            return;
+        }
+    }
+    if (ways[WASM_IO_BARRIER_WAYS - 1]) {
+        wasm_diag_stat[WASM_DIAG_IO_BARRIER_EVICT]++;
+    }
+    for (int i = WASM_IO_BARRIER_WAYS - 1; i > 0; i--) {
+        ways[i] = ways[i - 1];
+    }
+    ways[0] = pc;
 }
 
 bool wasm_is_io_barrier(vaddr pc)
 {
-    uint32_t h = (pc >> 2) & (ARRAY_SIZE(wasm_io_barriers) - 1);
-    return wasm_io_barriers[h] == pc;
+    const vaddr *ways = wasm_io_barriers[wasm_io_barrier_slot(pc)];
+
+    for (int i = 0; i < WASM_IO_BARRIER_WAYS; i++) {
+        if (ways[i] == pc) {
+            return pc != 0;   /* an empty way is 0, not a barrier at 0 */
+        }
+    }
+    return false;
 }
 #endif /* __EMSCRIPTEN__ */
 
@@ -663,6 +712,7 @@ void cpu_io_recompile(CPUState *cpu, uintptr_t retaddr)
      * the rewind (and its clock semantics: the callback sees the clock
      * of exactly that insn) is reproduced without any further unwinding.
      */
+    wasm_diag_stat[WASM_DIAG_IO_RECOMP]++;
     wasm_add_io_barrier(cpu->cc->get_pc(cpu));
     tb_phys_invalidate(tb, -1);
 #endif

@@ -10,6 +10,7 @@
 #include "qemu/osdep.h"
 #include "qemu/bswap.h"
 #include "qemu/log.h"
+#include "qemu/wasm-diag.h"
 #include "qemu/error-report.h"
 #include "accel/tcg/cpu-ldst-common.h"
 #include "accel/tcg/cpu-mmu-index.h"
@@ -221,6 +222,7 @@ void translator_loop(CPUState *cpu, TranslationBlock *tb, int *max_insns,
          */
         bool io_barrier = wasm_is_io_barrier(db->pc_next);
         if (unlikely(io_barrier) && db->num_insns > 0) {
+            wasm_diag_stat[WASM_DIAG_IO_BARRIER_SPLIT]++;
             db->is_jmp = DISAS_TOO_MANY;
             break;
         }
