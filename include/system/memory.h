@@ -2462,6 +2462,27 @@ MemTxResult memory_region_dispatch_write_direct(MemoryRegion *mr, hwaddr addr,
                                                 uint64_t data, unsigned size);
 
 /**
+ * memory_region_subpage_leaf: resolve one level of a subpage container.
+ *
+ * A target page shared by several regions is represented by a subpage
+ * container whose ops re-enter the flatview on every access, so a caller
+ * holding only the container (the TCG TLB does: its fill translates with
+ * resolve_subpage = false) pays a full translate + dispatch per access.
+ * This resolves the leaf that backs one offset, and reports the run of
+ * offsets that resolve to the same leaf, so the caller can cache the
+ * resolution and range-check instead of re-walking.
+ *
+ * Valid only while memory_region_topology_gen() is unchanged.
+ *
+ * @mr: the container; NULL is returned unless it is a subpage
+ * @offset: offset within @mr (i.e. within one target page)
+ * @lo: filled with the first offset of the run
+ * @len: filled with the length of the run
+ */
+MemoryRegionSection *memory_region_subpage_leaf(MemoryRegion *mr, hwaddr offset,
+                                                unsigned *lo, unsigned *len);
+
+/**
  * address_space_init: initializes an address space
  *
  * @as: an uninitialized #AddressSpace

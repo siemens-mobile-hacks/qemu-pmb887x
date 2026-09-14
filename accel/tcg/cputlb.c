@@ -1257,6 +1257,9 @@ static void tlb_resolve_io_dispatch(CPUTLBEntryFull *full, MemoryRegion *mr)
     full->io_swap = 0;
     full->io_check_align = 0;
     full->io_guard = NULL;
+    full->io_lo = 0;
+    full->io_len = UINT32_MAX;
+    full->io_off_delta = 0;
 
     if (mr->alias || mr->ram) {
         return;
@@ -1320,6 +1323,50 @@ static void tlb_resolve_io_dispatch(CPUTLBEntryFull *full, MemoryRegion *mr)
         !mr->ram && !mr->rom_device && !mr->readonly) {
         full->io_guard = &mr->dev->mem_reentrancy_guard.engaged_in_io;
     }
+}
+
+/*
+ * A target page shared by several regions is filled with the *subpage
+ * container*: its ops re-enter the flatview on every access
+ * (subpage_read/_write -> address_space_read -> translate + dispatch),
+ * and its valid.accepts callback stops tlb_resolve_io_dispatch() from
+ * installing any direct call, so a device register smaller than a page
+ * paid two translations and two dispatches per access.  Every pmb887x
+ * device under 1 KB is such a region (STM is 0x30 bytes), and a firmware
+ * that polls one - the EL71 polls the STM - spent ~20 % of the vCPU
+ * there.
+ *
+ * Resolve the leaf that backs the faulting offset once, at fill time,
+ * and record the run of offsets it covers.  The access path adds
+ * io_off_delta to reach the leaf's own offset and range-checks against
+ * the run, so an access to a different region in the same page simply
+ * keeps the container's stock path.  Valid only while the topology is
+ * unchanged, which is exactly the lifetime of a TLB entry (a commit
+ * flushes the affected pages, see tlb_flush_phys_ranges()).
+ */
+static void tlb_resolve_io_subpage(CPUTLBEntryFull *full,
+                                   MemoryRegionSection *section,
+                                   hwaddr mr_offset)
+{
+    MemoryRegionSection *leaf;
+    hwaddr container_base;
+    unsigned lo, len;
+
+    leaf = memory_region_subpage_leaf(section->mr, mr_offset, &lo, &len);
+    if (!leaf) {
+        return;
+    }
+    tlb_resolve_io_dispatch(full, leaf->mr);
+    if (!full->io_rmask && !full->io_wmask) {
+        return;   /* no fast path installed: the masks keep it unused */
+    }
+    container_base = section->offset_within_address_space
+                     - section->offset_within_region;
+    full->io_lo = lo;
+    full->io_len = len;
+    full->io_off_delta = (int64_t)leaf->offset_within_region
+                         + (int64_t)container_base
+                         - (int64_t)leaf->offset_within_address_space;
 }
 
 void tlb_set_page_full(CPUState *cpu, int mmu_idx,
@@ -1492,6 +1539,9 @@ void tlb_set_page_full(CPUState *cpu, int mmu_idx,
     full->xlat_offset = iotlb - addr_page;
     full->section = section;
     tlb_resolve_io_dispatch(full, section->mr);
+    if (unlikely(section->mr->subpage)) {
+        tlb_resolve_io_subpage(full, section, xlat + (addr - addr_page));
+    }
     full->phys_addr = paddr_page;
     tlb_phys_note(desc, index, paddr_page);
 
@@ -2374,6 +2424,22 @@ static inline uint64_t io_fast_bswap(uint64_t val, unsigned size)
     }
 }
 
+/*
+ * Is the fill-time resolved dispatch equivalent for this piece?  It is
+ * unless the entry resolved *through* a subpage container, in which case
+ * only the run of offsets backed by the resolved leaf may use it (see
+ * tlb_resolve_io_subpage()).  A leaf entry has io_lo = 0 and
+ * io_len = UINT32_MAX, so this is a subtract and two compares that
+ * always pass.
+ */
+static inline bool tlb_io_in_range(const CPUTLBEntryFull *full,
+                                   hwaddr mr_offset, unsigned size)
+{
+    uint64_t off = mr_offset - full->io_lo;
+
+    return off < full->io_len && size <= full->io_len - off;
+}
+
 static uint64_t int_ld_mmio_beN(CPUState *cpu, CPUTLBEntryFull *full,
                                 uint64_t ret_be, vaddr addr, int size,
                                 int mmu_idx, MMUAccessType type, uintptr_t ra,
@@ -2391,9 +2457,12 @@ static uint64_t int_ld_mmio_beN(CPUState *cpu, CPUTLBEntryFull *full,
         this_mop |= MO_BE;
 
         /* Fill-time resolved dispatch: one mask test + indirect call. */
+        hwaddr io_offset = mr_offset + full->io_off_delta;
+
         if (likely((full->io_rmask & (1u << this_size)) &&
+                   tlb_io_in_range(full, mr_offset, this_size) &&
                    (!full->io_check_align ||
-                    !(mr_offset & (this_size - 1))))) {
+                    !(io_offset & (this_size - 1))))) {
             bool *guard = full->io_guard;
 
             if (unlikely(guard && *guard)) {
@@ -2405,7 +2474,7 @@ static uint64_t int_ld_mmio_beN(CPUState *cpu, CPUTLBEntryFull *full,
                 if (guard) {
                     *guard = true;
                 }
-                val = full->io_read_fn(full->io_opaque, mr_offset,
+                val = full->io_read_fn(full->io_opaque, io_offset,
                                        this_size);
                 if (guard) {
                     *guard = false;
@@ -2938,9 +3007,12 @@ static uint64_t int_st_mmio_leN(CPUState *cpu, CPUTLBEntryFull *full,
         this_mop |= MO_LE;
 
         /* Fill-time resolved dispatch: one mask test + indirect call. */
+        hwaddr io_offset = mr_offset + full->io_off_delta;
+
         if (likely((full->io_wmask & (1u << this_size)) &&
+                   tlb_io_in_range(full, mr_offset, this_size) &&
                    (!full->io_check_align ||
-                    !(mr_offset & (this_size - 1))))) {
+                    !(io_offset & (this_size - 1))))) {
             bool *guard = full->io_guard;
 
             if (unlikely(guard && *guard)) {
@@ -2958,7 +3030,7 @@ static uint64_t int_st_mmio_leN(CPUState *cpu, CPUTLBEntryFull *full,
                 if (full->io_swap & 2) {
                     tmp = io_fast_bswap(tmp, this_size);
                 }
-                full->io_write_fn(full->io_opaque, mr_offset, tmp,
+                full->io_write_fn(full->io_opaque, io_offset, tmp,
                                   this_size);
                 if (guard) {
                     *guard = false;

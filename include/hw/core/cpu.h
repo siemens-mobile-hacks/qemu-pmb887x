@@ -280,6 +280,19 @@ struct CPUTLBEntryFull {
     uint8_t io_swap;           /* bit0: swap reads, bit1: swap writes */
     uint8_t io_check_align;    /* honor ops->valid.unaligned == false */
     bool *io_guard;            /* re-entrancy guard flag, or NULL */
+    /*
+     * When @section is a subpage container (a target page shared by
+     * several regions), the three fields above describe its *leaf*, and
+     * the fast path is only equivalent for the part of the page that
+     * leaf backs: offsets in [io_lo, io_lo + io_len) are dispatched with
+     * io_off_delta added, anything else falls back to the container's
+     * own ops.  A leaf section (the common case) sets io_lo = 0,
+     * io_len = UINT32_MAX and io_off_delta = 0, so the range test is a
+     * subtract and a compare that always passes.
+     */
+    uint32_t io_lo;
+    uint32_t io_len;
+    int64_t io_off_delta;
 
     /*
      * Allow target-specific additions to this structure.

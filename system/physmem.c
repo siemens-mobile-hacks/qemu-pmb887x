@@ -2963,6 +2963,34 @@ static bool subpage_accepts(void *opaque, hwaddr addr,
                                  len, is_write, attrs);
 }
 
+MemoryRegionSection *memory_region_subpage_leaf(MemoryRegion *mr, hwaddr offset,
+                                                unsigned *lo, unsigned *len)
+{
+    AddressSpaceDispatch *d;
+    subpage_t *subpage;
+    unsigned idx, a, b;
+    uint16_t sec;
+
+    if (!mr->subpage || offset >= TARGET_PAGE_SIZE) {
+        return NULL;
+    }
+    subpage = container_of(mr, subpage_t, iomem);
+    d = flatview_to_dispatch(subpage->fv);
+    idx = SUBPAGE_IDX(offset);
+    sec = subpage->sub_section[idx];
+
+    for (a = idx; a > 0 && subpage->sub_section[a - 1] == sec; a--) {
+        continue;
+    }
+    for (b = idx; b + 1 < TARGET_PAGE_SIZE && subpage->sub_section[b + 1] == sec;
+         b++) {
+        continue;
+    }
+    *lo = a;
+    *len = b - a + 1;
+    return &d->map.sections[sec];
+}
+
 static const MemoryRegionOps subpage_ops = {
     .read_with_attrs = subpage_read,
     .write_with_attrs = subpage_write,
