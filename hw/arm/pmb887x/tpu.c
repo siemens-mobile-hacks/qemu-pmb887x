@@ -12,6 +12,7 @@
 #include "qapi/error.h"
 #include "qemu/bitops.h"
 #include "qemu/timer.h"
+#include "qemu/wasm-diag.h"
 #include "qemu/main-loop.h"
 #include "hw/core/irq.h"
 #include "hw/core/qdev-properties.h"
@@ -122,6 +123,8 @@ struct pmb887x_tpu_t {
 	uint32_t counter;
 	int64_t start;
 	int64_t next;
+	int64_t armed;
+	bool armed_valid;
 	uint32_t frame_ticks;
 	uint32_t next_frame_ticks;
 	bool skip_extended;
@@ -367,12 +370,12 @@ static void tpu_finish_frame(pmb887x_tpu_t *p) {
 	}
 }
 
-static void tpu_update_timer(pmb887x_tpu_t *p) {
-	if (!p->enabled) {
-		timer_del(p->timer);
-		return;
-	}
-
+/*
+ * Bring the counter, the frame, the interrupts and the event list up to
+ * the current virtual time and recompute p->next.  Everything
+ * tpu_update_timer() does except arming the QEMU timer.
+ */
+static void tpu_advance(pmb887x_tpu_t *p) {
 	uint64_t counter = tpu_get_counter(p);
 	uint64_t elapsed_ticks = counter - p->counter;
 	p->counter = (uint32_t) counter;
@@ -384,11 +387,38 @@ static void tpu_update_timer(pmb887x_tpu_t *p) {
 	p->next = p->start + tpu_ticks_to_ns(p, p->frame_ticks - p->counter);
 	p->next = tpu_run_irq(p, p->counter, p->start, p->next);
 	p->next = tpu_run_events(p, p->counter, p->start, p->next);
-	timer_mod(p->timer, p->next);
+}
+
+static void tpu_update_timer(pmb887x_tpu_t *p) {
+	if (!p->enabled) {
+		p->armed_valid = false;
+		timer_del(p->timer);
+		return;
+	}
+
+	tpu_advance(p);
+
+	/*
+	 * tpu_io_write() ends in tpu_update_state() for *every* register,
+	 * including the event RAM, so a guest that keeps the TPU busy
+	 * reaches here ~1.5M times a second (the S75 at idle).  timer_mod()
+	 * is not free at that rate - it takes the timer list's lock, walks
+	 * it and may notify the main loop - so only re-arm when the
+	 * deadline actually moved.
+	 */
+	if (!p->armed_valid || p->armed != p->next || !timer_pending(p->timer)) {
+		p->armed = p->next;
+		p->armed_valid = true;
+		wasm_diag_stat[WASM_DIAG_TPU_REARM]++;
+		timer_mod(p->timer, p->next);
+	}
 }
 
 static void tpu_timer_callback(void *opaque) {
-	tpu_update_timer(opaque);
+	pmb887x_tpu_t *p = opaque;
+	wasm_diag_stat[WASM_DIAG_TPU_TIMER]++;
+	p->armed_valid = false;   /* the timer has fired; it is not armed */
+	tpu_update_timer(p);
 }
 
 static void tpu_apply_offset(pmb887x_tpu_t *p) {
@@ -405,8 +435,14 @@ static void tpu_apply_offset(pmb887x_tpu_t *p) {
 
 static void tpu_update_state(pmb887x_tpu_t *p) {
 	bool was_enabled = p->enabled;
+	/*
+	 * Advance, but do not arm: tpu_update_state() ends in
+	 * tpu_update_timer(), so an arm here is overwritten before the
+	 * guest can observe it - it was simply the second half of every
+	 * TPU register write's cost.
+	 */
 	if (was_enabled)
-		tpu_update_timer(p);
+		tpu_advance(p);
 
 	uint32_t div = pmb887x_clc_get_rmc(&p->clc);
 	
@@ -847,6 +883,7 @@ static void tpu_realize(DeviceState *dev, Error **errp) {
 static void tpu_reset(DeviceState *dev) {
 	pmb887x_tpu_t *p = PMB887X_TPU(dev);
 
+	p->armed_valid = false;
 	timer_del(p->timer);
 
 	pmb887x_clc_set(&p->clc, MOD_CLC_DISR);

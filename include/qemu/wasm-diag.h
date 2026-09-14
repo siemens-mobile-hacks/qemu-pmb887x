@@ -82,6 +82,8 @@ enum {
     WASM_DIAG_IO_LD_FAST,    /* MMIO loads taken by the fused single-piece path */
     WASM_DIAG_VCLOCK_READ,   /* QEMU_CLOCK_VIRTUAL reads (icount_get) */
     WASM_DIAG_IO_ST_FAST,    /* MMIO stores taken by the fused single-piece path */
+    WASM_DIAG_TPU_TIMER,     /* pmb887x TPU QEMU-timer callbacks */
+    WASM_DIAG_TPU_REARM,     /* pmb887x TPU timer_mod calls (any caller) */
     WASM_DIAG_N
 };
 
