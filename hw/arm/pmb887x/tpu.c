@@ -435,14 +435,6 @@ static void tpu_apply_offset(pmb887x_tpu_t *p) {
 
 static void tpu_update_state(pmb887x_tpu_t *p) {
 	bool was_enabled = p->enabled;
-	/*
-	 * Advance, but do not arm: tpu_update_state() ends in
-	 * tpu_update_timer(), so an arm here is overwritten before the
-	 * guest can observe it - it was simply the second half of every
-	 * TPU register write's cost.
-	 */
-	if (was_enabled)
-		tpu_advance(p);
 
 	uint32_t div = pmb887x_clc_get_rmc(&p->clc);
 	
@@ -467,6 +459,26 @@ static void tpu_update_state(pmb887x_tpu_t *p) {
 	
 	// new_freq = new_freq / 6;
 	
+	bool new_enabled = pmb887x_clc_is_enabled(&p->clc) && new_freq > 0 &&
+		(p->param & TPU_PARAM_TINI) != 0 && p->overflow >= 2;
+
+	/*
+	 * Bring the counter up to date *at the old rate* - but only when
+	 * something below actually consumes that: a rate or enable change,
+	 * or the TINI reset that wipes the counter.  Otherwise this is a
+	 * second tpu_advance() on top of the one tpu_update_timer() does at
+	 * the end of this function, at the same virtual instant and the
+	 * same frequency, and tpu_io_write() reaches here for *every* TPU
+	 * register - ~815k times a second on the S75's idle screen, where
+	 * tpu_advance was 5.8 % of the vCPU.  Nothing between here and
+	 * there reads the counter, and the values it computes above are
+	 * pure functions of the registers.
+	 */
+	if (was_enabled && (p->freq != new_freq || p->enabled != new_enabled ||
+			    !(p->param & TPU_PARAM_TINI))) {
+		tpu_advance(p);
+	}
+
 	// Reset counter when TPU_PARAM_TINI=0
 	if (!(p->param & TPU_PARAM_TINI)) {
 		p->counter = 0;
@@ -480,10 +492,9 @@ static void tpu_update_state(pmb887x_tpu_t *p) {
 		p->triggers = 0;
 	}
 	
-	bool enabled = pmb887x_clc_is_enabled(&p->clc) && new_freq > 0 && (p->param & TPU_PARAM_TINI) != 0 && p->overflow >= 2;
-	if (p->freq != new_freq || p->enabled != enabled) {
+	if (p->freq != new_freq || p->enabled != new_enabled) {
 		p->freq = new_freq;
-		p->enabled = enabled;
+		p->enabled = new_enabled;
 		clock_update_hz(p->gsm_clock, p->freq);
 		DPRINTF("fsys=%d, ftpu=%d, fcounter=%d [%s]\n", pmb887x_pll_get_fsys(p->cgu), ftpu, p->freq, p->enabled ? "ON" : "OFF");
 	}
