@@ -1363,6 +1363,18 @@ cpu_exec_loop(CPUState *cpu, SyncClocks *sc)
         while (!cpu_handle_interrupt(cpu, &last_tb)) {
             TranslationBlock *tb;
 
+#ifndef CONFIG_USER_ONLY
+            /*
+             * A BQL this thread is holding only because bql_unlock_mmio()
+             * deferred the release (system/cpus.c) is given back here as
+             * soon as another thread asks for it.  One atomic load, which
+             * on x86 is a plain one; the release itself is rare.
+             */
+            if (unlikely(bql_wanted_by_other())) {
+                bql_release_lazy();
+            }
+#endif
+
             TCGTBCPUState s = W64_GET_TB_CPU_STATE(cpu);
             s.cflags = cpu->cflags_next_tb;
 

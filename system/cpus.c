@@ -598,10 +598,47 @@ bool bql_locked(void)
  * in which case the caller must not (an outer holder may have called
  * bql_block_unlock(), and it owns the unlock either way).
  */
+/*
+ * Deferred release (see bql_release_lazy in main-loop.h).  @bql_mmio_lazy
+ * says "this thread holds the BQL and the only reason is that
+ * bql_unlock_mmio() did not give it back"; @bql_wanted counts the threads
+ * blocked, or about to block, in bql_lock_impl().
+ *
+ * Plain __thread rather than the coroutine-safe TLS the bql_locked flag
+ * uses: the flag is read and written only by the thread that owns the
+ * lock, on the vCPU's device-access path, which is not coroutine code.
+ */
+static __thread bool bql_mmio_lazy;
+static int bql_wanted;
+
+bool bql_wanted_by_other(void)
+{
+    return qatomic_read(&bql_wanted) != 0;
+}
+
+void bql_release_lazy(void)
+{
+    if (unlikely(bql_mmio_lazy)) {
+        bql_mmio_lazy = false;
+        set_bql_locked(false);
+        pthread_mutex_unlock(&bql.lock);
+    }
+}
+
 bool bql_lock_mmio(void)
 {
     if (get_bql_locked()) {
-        return false;
+        /*
+         * Already held - either by an outer holder, or by this thread's
+         * own deferred unlock.  In the second case hand it over if
+         * somebody is waiting: bql_unlock_mmio() below then really
+         * unlocks, because bql_wanted is still set.
+         */
+        if (unlikely(bql_mmio_lazy && bql_wanted_by_other())) {
+            bql_release_lazy();
+        } else {
+            return false;
+        }
     }
     pthread_mutex_lock(&bql.lock);
     set_bql_locked(true);
@@ -610,6 +647,15 @@ bool bql_lock_mmio(void)
 
 void bql_unlock_mmio(void)
 {
+    /*
+     * Keep it, unless somebody wants it, or this is not a vCPU thread -
+     * only a vCPU reliably comes back through cpu_exec_loop(), which is
+     * what bounds the deferral.
+     */
+    if (likely(current_cpu && !bql_wanted_by_other())) {
+        bql_mmio_lazy = true;
+        return;
+    }
     set_bql_locked(false);
     pthread_mutex_unlock(&bql.lock);
 }
@@ -631,16 +677,30 @@ void rust_bql_mock_lock(void)
  */
 void bql_lock_impl(const char *file, int line)
 {
-    QemuMutexLockFunc bql_lock_fn = qatomic_read(&bql_mutex_lock_func);
+    QemuMutexLockFunc bql_lock_fn;
 
+    if (unlikely(bql_mmio_lazy)) {
+        /* We are holding it already: adopt the deferred hold as this one. */
+        bql_mmio_lazy = false;
+        return;
+    }
+
+    bql_lock_fn = qatomic_read(&bql_mutex_lock_func);
     g_assert(!bql_locked());
+    /*
+     * Tell a vCPU that is sitting on a deferred bql_unlock_mmio() to let
+     * go.  Counted, not a flag: two waiters must not cancel each other.
+     */
+    qatomic_inc(&bql_wanted);
     bql_lock_fn(&bql, file, line);
+    qatomic_dec(&bql_wanted);
 }
 
 void bql_unlock(void)
 {
     g_assert(bql_locked());
     g_assert(!bql_unlock_blocked);
+    bql_mmio_lazy = false;
     qemu_mutex_unlock(&bql);
 }
 

@@ -305,6 +305,25 @@ bool bql_lock_mmio(void);
 void bql_unlock_mmio(void);
 
 /**
+ * bql_wanted_by_other: is a thread blocked (or about to block) on the BQL?
+ * bql_release_lazy: give up a BQL held only by a deferred bql_unlock_mmio().
+ *
+ * bql_unlock_mmio() on a vCPU thread does not really unlock: an idle S75
+ * takes and drops the BQL three million times a second for device
+ * accesses that nobody is contending, and the atomic pair alone is ~3.5 %
+ * of the vCPU.  It keeps the lock instead, and the next bql_lock_mmio()
+ * sees the thread-local flag already set and does nothing at all.
+ *
+ * What ends the deferral: an explicit bql_lock() on this thread adopts it
+ * (the rr loop's own bql_lock() after tcg_cpu_exec()), an explicit
+ * bql_unlock() drops it, and cpu_exec_loop() calls bql_release_lazy()
+ * whenever bql_wanted_by_other() says somebody is waiting - which bounds
+ * how long another thread can be kept out to one pass of that loop.
+ */
+bool bql_wanted_by_other(void);
+void bql_release_lazy(void);
+
+/**
  * bql_block: Allow/deny releasing the BQL
  *
  * The Big QEMU Lock (BQL) is used to provide interior mutability to
