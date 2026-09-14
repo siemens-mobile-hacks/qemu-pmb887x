@@ -88,6 +88,9 @@ enum {
     WASM_DIAG_ML_WAKE_DUP,   /* qemu_notify_event's own wake after aio_notify */
     WASM_DIAG_TPU_RAM_W,     /* pmb887x TPU RAM writes */
     WASM_DIAG_TPU_RAM_SKIP,  /* ...that skipped the advance (no deadline effect) */
+    WASM_DIAG_HFLAGS,        /* AArch32 hflags rebuilds */
+    WASM_DIAG_HFLAGS_FAST,   /* ...taken by the pre-v6 short path */
+    WASM_DIAG_HFLAGS_BAD,    /* ...where it disagreed with the generic one */
     WASM_DIAG_N
 };
 
