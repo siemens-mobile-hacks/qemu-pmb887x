@@ -134,10 +134,41 @@ static int64_t icount_get_executed(CPUState *cpu)
 static void icount_update_locked(CPUState *cpu)
 {
     int64_t executed = icount_get_executed(cpu);
+
+    /*
+     * Nothing has run since the last commit: the two stores below would
+     * both write back what is already there, and the qemu_icount one is a
+     * seq_cst i64.atomic.store on wasm, to a line the main loop reads.
+     * A virtual-clock read that follows another one inside the same TB
+     * lands here - and on a guest that touches two device registers in one
+     * TB that is every second read.
+     */
+    if (!executed) {
+        return;
+    }
+
     cpu->icount_budget -= executed;
 
+#ifdef __EMSCRIPTEN__
+    /*
+     * A plain store, deliberately.
+     *
+     * qatomic_set() is __ATOMIC_RELAXED, but wasm has no relaxed atomics:
+     * LLVM lowers it to i64.atomic.store, which the wasm spec defines as
+     * sequentially consistent, so an engine emits a locked exchange for it.
+     * This is the only write to timers_state.qemu_icount in the program and
+     * it comes from the vCPU thread; the field is QEMU_ALIGNED(64), so the
+     * plain store is a single naturally-aligned i64.store that no reader can
+     * see torn.  What a reader can see is a *stale* value - but it could
+     * already: this writer does not hold the seqlock's write lock (stock
+     * QEMU commits the running slice from inside a read section), so the
+     * only guarantee readers ever had is "some value this thread published".
+     */
+    timers_state.qemu_icount += executed;
+#else
     qatomic_set(&timers_state.qemu_icount,
                 timers_state.qemu_icount + executed);
+#endif
 }
 
 /*
@@ -152,6 +183,53 @@ void icount_update(CPUState *cpu)
     icount_update_locked(cpu);
     seqlock_write_unlock(&timers_state.vm_clock_seqlock,
                          &timers_state.vm_clock_lock);
+}
+
+/*
+ * The vm_clock seqlock read section, for this file's readers only.
+ *
+ * seqlock_read_begin()/retry() bracket the section with smp_rmb(), i.e.
+ * __atomic_thread_fence(ACQUIRE).  LLVM lowers that to wasm's atomic.fence,
+ * which the wasm spec defines as sequentially consistent, so an engine
+ * emits a real locked operation for it - twice per icount_get(), and an
+ * idle S75 reads the virtual clock about 1.2M times a second.
+ *
+ * Every *shared* location these sections touch is reached through
+ * qatomic_read()/qatomic_set() (qemu_icount, qemu_icount_bias,
+ * icount_time_shift, the sequence itself), and on wasm a relaxed qatomic_*
+ * on shared memory lowers to iN.atomic.load/store - which wasm also defines
+ * as sequentially consistent.  The engine therefore already orders them
+ * against the writer's stores, and the fence adds nothing.  The rest of the
+ * section is the calling thread's own CPUState.
+ *
+ * What is still needed is to stop the *compiler* moving those accesses
+ * across the sequence reads: LLVM sees __ATOMIC_RELAXED and may reorder
+ * them, whatever the backend later emits.  barrier() does that for free.
+ *
+ * This argument does not generalise: a seqlock whose payload is plain
+ * (non-qatomic) loads still needs the real smp_rmb(), because nothing then
+ * orders those loads at all.  Hence a local pair rather than a change to
+ * seqlock.h.
+ */
+#ifdef __EMSCRIPTEN__
+#define ICOUNT_SEQ_RMB() barrier()
+#else
+#define ICOUNT_SEQ_RMB() smp_rmb()
+#endif
+
+static inline unsigned icount_seq_read_begin(void)
+{
+    unsigned ret = qatomic_read(&timers_state.vm_clock_seqlock.sequence);
+
+    ICOUNT_SEQ_RMB();
+    return ret & ~1;
+}
+
+static inline int icount_seq_read_retry(unsigned start)
+{
+    ICOUNT_SEQ_RMB();
+    return unlikely(qatomic_read(&timers_state.vm_clock_seqlock.sequence)
+                    != start);
 }
 
 static int64_t icount_get_raw_locked(void)
@@ -193,9 +271,9 @@ int64_t icount_get_raw(void)
     unsigned start;
 
     do {
-        start = seqlock_read_begin(&timers_state.vm_clock_seqlock);
+        start = icount_seq_read_begin();
         icount = icount_get_raw_locked();
-    } while (seqlock_read_retry(&timers_state.vm_clock_seqlock, start));
+    } while (icount_seq_read_retry(start));
 
     return icount;
 }
@@ -210,9 +288,9 @@ int64_t icount_get(void)
     wasm_diag_stat[WASM_DIAG_VCLOCK_READ]++;
 #endif
     do {
-        start = seqlock_read_begin(&timers_state.vm_clock_seqlock);
+        start = icount_seq_read_begin();
         icount = icount_get_locked();
-    } while (seqlock_read_retry(&timers_state.vm_clock_seqlock, start));
+    } while (icount_seq_read_retry(start));
 
     return icount;
 }
