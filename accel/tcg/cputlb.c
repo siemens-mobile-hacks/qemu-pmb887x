@@ -1538,6 +1538,7 @@ void tlb_set_page_full(CPUState *cpu, int mmu_idx,
     full = &desc->fulltlb[index];
     full->xlat_offset = iotlb - addr_page;
     full->section = section;
+    full->io_rom_device = section->mr->rom_device;
     tlb_resolve_io_dispatch(full, section->mr);
     if (unlikely(section->mr->subpage)) {
         tlb_resolve_io_subpage(full, section, xlat + (addr - addr_page));
@@ -1760,6 +1761,35 @@ io_open_clock_window(CPUState *cpu,
 #endif
 }
 
+/*
+ * The whole of io_open_clock_window() under stock icount, once the two
+ * out-of-line cases are excluded, is "set can_do_io".  It is reached on
+ * every mid-TB device access - 3M times a second on an idle S75, which
+ * made a noinline call that stores one byte 0.9 % of the vCPU thread.
+ *
+ * Decide the two exclusions once: whether QEMU_IO_REWIND forces the
+ * stock rewind (a getenv), and which icount mode is running (fixed for
+ * the machine's life).  The per-access remainder is this flag and the
+ * region's precomputed rom_device bit.
+ */
+static int io_cw_store_only = -1;
+
+static inline __attribute__((always_inline)) void
+io_clock_window(CPUState *cpu, CPUTLBEntryFull *full, uintptr_t retaddr)
+{
+#ifdef __EMSCRIPTEN__
+    if (unlikely(io_cw_store_only < 0)) {
+        io_cw_store_only = !getenv("QEMU_IO_REWIND") &&
+            !icount2_enabled() && icount_enabled();
+    }
+    if (likely(io_cw_store_only && !full->io_rom_device)) {
+        cpu->neg.can_do_io = true;
+        return;
+    }
+#endif
+    io_open_clock_window(cpu, full->section, retaddr);
+}
+
 static MemoryRegionSection *
 io_prepare(hwaddr *out_offset, CPUState *cpu, CPUTLBEntryFull *full,
            vaddr addr, uintptr_t retaddr)
@@ -1768,7 +1798,7 @@ io_prepare(hwaddr *out_offset, CPUState *cpu, CPUTLBEntryFull *full,
 
     cpu->mem_io_pc = retaddr;
     if (unlikely(!cpu->neg.can_do_io)) {
-        io_open_clock_window(cpu, section, retaddr);
+        io_clock_window(cpu, full, retaddr);
     }
 
     *out_offset = full->xlat_offset + addr;
@@ -2629,7 +2659,7 @@ static bool do_ld_mmio_1p(CPUState *cpu, vaddr addr, MemOpIdx oi,
 
     cpu->mem_io_pc = ra;
     if (unlikely(!cpu->neg.can_do_io)) {
-        io_open_clock_window(cpu, full->section, ra);
+        io_clock_window(cpu, full, ra);
     }
 
     took_bql = bql_lock_mmio();
@@ -3277,7 +3307,7 @@ static bool do_st_mmio_1p(CPUState *cpu, vaddr addr, uint64_t val_le,
 
     cpu->mem_io_pc = ra;
     if (unlikely(!cpu->neg.can_do_io)) {
-        io_open_clock_window(cpu, full->section, ra);
+        io_clock_window(cpu, full, ra);
     }
 
     took_bql = bql_lock_mmio();

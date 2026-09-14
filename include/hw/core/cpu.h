@@ -279,6 +279,8 @@ struct CPUTLBEntryFull {
     uint16_t io_wmask;
     uint8_t io_swap;           /* bit0: swap reads, bit1: swap writes */
     uint8_t io_check_align;    /* honor ops->valid.unaligned == false */
+    uint8_t io_rom_device;     /* section->mr->rom_device, for the
+                                  clock-window test on the access path */
     bool *io_guard;            /* re-entrancy guard flag, or NULL */
     /*
      * When @section is a subpage container (a target page shared by

@@ -541,6 +541,31 @@ static uint32_t tpu_ram_read(pmb887x_tpu_t *p, uint32_t offset, size_t size) {
 static void tpu_ram_write(pmb887x_tpu_t *p, uint32_t offset, uint32_t value, size_t size) {
 	uint8_t *data = p->ram;
 	offset -= TPU_RAM0;
+
+	/*
+	 * The word-aligned 2/4-byte write, which is every write the S75's
+	 * idle screen makes (1.5M a second), reduced to what the general
+	 * code below leaves behind: the low half masked, the high half
+	 * zeroed.  The byte stores there write the word twice and read it
+	 * back in between - fourteen byte accesses for one 32-bit store.
+	 *
+	 * Only for an aligned word: a 2-byte write to the *upper* half is
+	 * not a store at all in this model (the tail re-masks the low half
+	 * and zeroes the high one, discarding what was just written), and
+	 * a byte write keeps whichever neighbour byte was there.
+	 */
+	if (likely((size == 4 || size == 2) && (offset & (TPU_RAM_WORD_STRIDE - 1)) == 0)) {
+		uint16_t mask = offset / TPU_RAM_WORD_STRIDE < TPU_RF_RAM_WORDS ?
+			TPU_RF_RAM_WORD_MASK : UINT16_MAX;
+		uint16_t word = (uint16_t) value & mask;
+
+		data[offset] = (uint8_t) word;
+		data[offset + 1] = (uint8_t) (word >> 8);
+		data[offset + 2] = 0;
+		data[offset + 3] = 0;
+		return;
+	}
+
 	switch (size) {
 		case 1:
 			data[offset] = value & 0xFF;

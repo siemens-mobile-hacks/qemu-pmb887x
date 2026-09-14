@@ -1199,8 +1199,21 @@ static inline bool cpu_handle_interrupt(CPUState *cpu,
      * Ensure zeroing happens before reading cpu->exit_request or
      * cpu->interrupt_request (see also store-release in
      * tcg_kick_vcpu_thread())
+     *
+     * Only when there is something to clear.  The barrier is what this
+     * costs - it stops the interrupt_request load below being hoisted
+     * above the store, which would let a kick that landed in between be
+     * cleared without being acted on - and if the flag already reads 0
+     * there is no store for the load to be hoisted above: a kicker sets
+     * interrupt_request and *then* the flag, so a flag of 0 means any
+     * kick is still to come, and the iteration that sees the flag set
+     * will take the full path.  On wasm the skipped pair is a seq_cst
+     * i32.atomic.store plus an atomic.fence, on a loop that runs about
+     * 1.6M times a second on an idle S75.
      */
-    qatomic_set_mb(&cpu->neg.icount_decr.u16.high, 0);
+    if (unlikely(qatomic_read(&cpu->neg.icount_decr.u16.high))) {
+        qatomic_set_mb(&cpu->neg.icount_decr.u16.high, 0);
+    }
 
 #ifdef CONFIG_USER_ONLY
     assert(!cpu_test_interrupt(cpu, ~0));
@@ -1349,7 +1362,8 @@ cpu_exec_loop(CPUState *cpu, SyncClocks *sc)
 
         while (!cpu_handle_interrupt(cpu, &last_tb)) {
             TranslationBlock *tb;
-            TCGTBCPUState s = cpu->cc->tcg_ops->get_tb_cpu_state(cpu);
+
+            TCGTBCPUState s = W64_GET_TB_CPU_STATE(cpu);
             s.cflags = cpu->cflags_next_tb;
 
             /*
