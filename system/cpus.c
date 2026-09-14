@@ -45,6 +45,7 @@
 #include "system/runstate.h"
 #include "migration/misc.h"
 #include "system/cpu-timers.h"
+#include "exec/icount.h"
 #include "system/whpx.h"
 #include "hw/core/boards.h"
 #include "hw/core/hw-error.h"
@@ -226,6 +227,22 @@ int64_t cpus_get_virtual_clock(void)
      *
      * XXX
      */
+#ifdef CONFIG_TCG
+    /*
+     * The hot caller is a device model polled by the guest (the EL71
+     * reads the STM ~1.1M times a second), and every one of those
+     * reaches the same two hooks tcg_accel_ops_init() installs.  Call
+     * them directly: a wasm call_indirect costs a table bounds check
+     * and a signature check on top of the call.  Kept in the same
+     * order tcg_accel_ops_init() assigns them, so icount2 still wins.
+     */
+    if (icount2_enabled()) {
+        return icount2_get();
+    }
+    if (icount_enabled()) {
+        return icount_get();
+    }
+#endif
     if (cpus_accel && cpus_accel->get_virtual_clock) {
         return cpus_accel->get_virtual_clock();
     }

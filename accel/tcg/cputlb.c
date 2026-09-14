@@ -1721,21 +1721,29 @@ io_prepare(hwaddr *out_offset, CPUState *cpu, CPUTLBEntryFull *full,
             /*
              * Stock icount: gen_tb_start() has already subtracted the
              * whole TB's insn count from icount_decr.u16.low and stored
-             * it back, so committing it now (icount_update) makes the
-             * callback see a clock that includes this TB - at most one
-             * TB (~5 guest insns on this firmware) ahead of the access,
-             * the same deviation the chained icount2 accounting above
-             * accepts, and in the safe direction (elapsed, never
-             * frozen - the GPTU SRC7 poll failure mode).  can_do_io
-             * re-opens the clock-read window (icount_get_raw_locked
-             * would otherwise "Bad icount read" abort); the next TB
-             * entry clears it again (the translator sets it false
-             * before the first insn of every multi-insn TB).  Mid-TB
-             * accesses after the first in the same TB see the same
-             * clock: their commits are idempotent.
+             * it back, so the callback must see a clock that includes
+             * this TB - at most one TB (~5 guest insns on this
+             * firmware) ahead of the access, the same deviation the
+             * chained icount2 accounting above accepts, and in the safe
+             * direction (elapsed, never frozen - the GPTU SRC7 poll
+             * failure mode).  can_do_io alone is what that needs:
+             * icount_get_raw_locked() commits the running slice itself
+             * (icount_update_locked) on every virtual-clock read, so
+             * any callback that reads the clock gets the identical
+             * value whether or not we commit first - and without it
+             * would "Bad icount read" abort.  The next TB entry clears
+             * can_do_io again (the translator sets it false before the
+             * first insn of every multi-insn TB).
+             *
+             * An icount_update() here would be a *second* commit of the
+             * same slice, and a far more expensive one: it publishes
+             * under the vm_clock seqlock write lock, so a polling guest
+             * pays a spinlock acquire and four barriers per MMIO
+             * access.  Devices that do not read the clock simply
+             * publish at the TB boundary instead, which is where stock
+             * QEMU publishes anyway.
              */
             cpu->neg.can_do_io = true;
-            icount_update(cpu);
         } else {
             /*
              * !can_do_io without any icount mode: this is the normal
