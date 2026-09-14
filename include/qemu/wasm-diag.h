@@ -81,6 +81,7 @@ enum {
     WASM_DIAG_IO_BARRIER_SPLIT, /* translator TB splits on an io barrier */
     WASM_DIAG_IO_LD_FAST,    /* MMIO loads taken by the fused single-piece path */
     WASM_DIAG_VCLOCK_READ,   /* QEMU_CLOCK_VIRTUAL reads (icount_get) */
+    WASM_DIAG_IO_ST_FAST,    /* MMIO stores taken by the fused single-piece path */
     WASM_DIAG_N
 };
 
