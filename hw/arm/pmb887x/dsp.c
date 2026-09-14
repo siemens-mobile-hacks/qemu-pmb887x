@@ -224,7 +224,12 @@ static void dsp_realize(DeviceState *dev, Error **errp) {
 	p->unk[0] = 0x01;
 	p->unk[1] = 0x00;
 
-	dsp_ram_write(p, 0, p->ram0_value, 2);
+	/* The ARM reads the mask ROM version from shared RAM word 0 and refuses to
+	 * boot (ddsphw fatal exit) when it does not match the SoC it expects. */                                                                                                
+	if (p->rom_version == 0 && p->config != NULL)                                                                                                                                                                                                    
+			p->rom_version = p->config->default_rom_version;
+	dsp_ram_write(p, 0, p->rom_version, 2);
+
 	dsp_update_state(p);
 }
 
