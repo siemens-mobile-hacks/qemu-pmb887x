@@ -70,6 +70,14 @@ int64_t icount_round(int64_t count);
 
 /* if the CPUs are idle, start accounting real time to virtual clock. */
 void icount_start_warp_timer(void);
+/*
+ * As icount_start_warp_timer(), but @notify false suppresses the
+ * qemu_clock_notify(QEMU_CLOCK_VIRTUAL) that tells other threads the
+ * clock jumped.  Only for a caller that notifies itself immediately
+ * afterwards on the same thread - each notify is a cross-thread wake,
+ * and the idle path takes this thousands of times a second.
+ */
+void icount_start_warp_timer_full(bool notify);
 void icount_account_warp_timer(void);
 void icount_notify_exit(void);
 

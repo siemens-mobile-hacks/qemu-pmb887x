@@ -353,7 +353,7 @@ static void icount_timer_cb(void *opaque)
     icount_warp_rt();
 }
 
-void icount_start_warp_timer(void)
+void icount_start_warp_timer_full(bool notify)
 {
     int64_t clock;
     int64_t deadline;
@@ -447,7 +447,14 @@ void icount_start_warp_timer(void)
                         timers_state.qemu_icount_bias + deadline);
             seqlock_write_unlock(&timers_state.vm_clock_seqlock,
                                  &timers_state.vm_clock_lock);
-            qemu_clock_notify(QEMU_CLOCK_VIRTUAL);
+            /*
+             * @notify false: the caller runs the deadline itself on this
+             * thread straight after, and that notifies.  See
+             * rr_idle_advance().
+             */
+            if (notify) {
+                qemu_clock_notify(QEMU_CLOCK_VIRTUAL);
+            }
         } else {
             /*
              * We do stop VCPUs and only advance QEMU_CLOCK_VIRTUAL after some
@@ -470,8 +477,15 @@ void icount_start_warp_timer(void)
                                  clock + deadline);
         }
     } else if (deadline == 0) {
-        qemu_clock_notify(QEMU_CLOCK_VIRTUAL);
+        if (notify) {
+            qemu_clock_notify(QEMU_CLOCK_VIRTUAL);
+        }
     }
+}
+
+void icount_start_warp_timer(void)
+{
+    icount_start_warp_timer_full(true);
 }
 
 void icount_account_warp_timer(void)

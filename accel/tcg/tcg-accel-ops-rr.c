@@ -164,9 +164,25 @@ static void rr_idle_advance(void)
                 wasm_diag_stat[WASM_DIAG_WARP_B0 + b]++;
             }
 #endif
-            icount_start_warp_timer();
+            /*
+             * Do not let the warp notify: with sleep=off it moves the
+             * bias by exactly @deadline, so the ~EXTERNAL deadline is 0
+             * afterwards and the ATTR_ALL deadline icount_handle_deadline()
+             * tests - a superset, so never larger - is 0 too.  It always
+             * notifies, on this thread, a few instructions later.  The
+             * suppressed one was a second cross-thread wake per idle
+             * round, and this loop runs thousands of times a second (the
+             * S75 idle screen: PROF_FN=emscripten_futex_wake put it at
+             * ~4.7 % of the vCPU).
+             */
+            icount_start_warp_timer_full(false);
             if (qemu_clock_deadline_ns_all(QEMU_CLOCK_VIRTUAL,
                                            ~QEMU_TIMER_ATTR_EXTERNAL) > 0) {
+                /*
+                 * sleep=on paces via the warp timer and we return
+                 * without running the deadline - so nobody notified.
+                 */
+                qemu_clock_notify(QEMU_CLOCK_VIRTUAL);
                 /* icount sleep=on: the warp timer paces the clock */
                 return;
             }
