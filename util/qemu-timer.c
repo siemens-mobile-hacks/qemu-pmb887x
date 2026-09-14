@@ -145,6 +145,37 @@ void qemu_clock_notify(QEMUClockType type)
     QEMUTimerList *timer_list;
     QEMUClock *clock = qemu_clock_ptr(type);
     QLIST_FOREACH(timer_list, &clock->timerlists, list) {
+        /*
+         * A notify says "the clock moved, recompute your deadline".  A
+         * list with no armed timer has no deadline to recompute and
+         * nothing to run, so the wake is pure cost - and on wasm an
+         * expensive one: qemu_aio_context's QEMU_CLOCK_VIRTUAL list is
+         * empty for this machine's whole life (devices arm their timers
+         * on main_loop_tlg), yet aio_timerlist_notify() woke the parked
+         * main-loop thread through a futex for every virtual-clock
+         * notify - 38k times a second on an idle S75.
+         *
+         * A timer armed concurrently cannot be missed: the thread that
+         * arms it calls timerlist_rearm() -> timerlist_notify() itself,
+         * after the insert.  The other caller of timerlist_notify() is
+         * that rearm, where the list is non-empty by construction.
+         *
+         * Only under icount, though.  Without it the *main loop* is what
+         * runs QEMU_CLOCK_VIRTUAL timers, so there the notify is not
+         * spare capacity - it is the kick that keeps the loop iterating.
+         * Skipping it unconditionally measured 11-14 % slower on the
+         * KE800 boot (icount=none, site/app.js; four runs a side) and
+         * produced a run that never reached idle.  That meter drifted
+         * 45 % between same-binary runs the same afternoon, so treat the
+         * magnitude as unproven - but the mechanism is real, and gating
+         * on icount gives up none of the win: the boards that pay the
+         * 38k wakes/s are exactly the ones that run icount.
+         */
+        if (type == QEMU_CLOCK_VIRTUAL &&
+            (icount_enabled() || icount2_enabled()) &&
+            !qatomic_read(&timer_list->active_timers)) {
+            continue;
+        }
         timerlist_notify(timer_list);
     }
 }

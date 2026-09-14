@@ -37,6 +37,7 @@
 #include "block/thread-pool.h"
 #include "qemu/error-report.h"
 #include "qemu/queue.h"
+#include "qemu/wasm-diag.h"
 #include "qom/object.h"
 
 #ifndef _WIN32
@@ -167,6 +168,7 @@ void qemu_notify_event(void)
      * its pipe/eventfd poll masks never report readiness, so the BH
      * kick must also wake the waiter directly.
      */
+    wasm_diag_stat[WASM_DIAG_ML_WAKE_DUP]++;
     qemu_main_loop_wake();
 #endif
 }
@@ -200,6 +202,7 @@ static uint32_t ml_wait_seq;    /* snapshot taken before the timeout
 
 void qemu_main_loop_wake(void)
 {
+    wasm_diag_stat[WASM_DIAG_ML_WAKE]++;
     qatomic_set(&ml_futex_seq, qatomic_read(&ml_futex_seq) + 1);
     emscripten_futex_wake(&ml_futex_seq, INT_MAX);
 }
