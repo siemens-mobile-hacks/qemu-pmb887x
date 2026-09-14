@@ -808,6 +808,13 @@ uint32_t HELPER(cpsr_read)(CPUARMState *env)
  * one that was masked until this write — make the next TB start unwind
  * to cpu_handle_interrupt, exactly where the plain exit would have gone.
  */
+/*
+ * The CPSR bits cpsr_write() itself treats as hflags inputs: when the
+ * write mask covers any of them (and the write is not Raw) it rebuilds
+ * hflags at its tail.  Keep this in step with `rebuild_hflags` there.
+ */
+#define CPSR_HFLAGS_INPUTS (CPSR_M | CPSR_E | CPSR_IL)
+
 static void cpsr_write_check_irq(CPUARMState *env)
 {
     CPUState *cs = env_cpu(env);
@@ -832,8 +839,16 @@ void HELPER(cpsr_write)(CPUARMState *env, uint32_t val, uint32_t mask)
      * dedicated env fields listed by CACHED_CPSR_BITS and are not hflags
      * inputs.  So an unchanged uncached_cpsr means unchanged hflags, and
      * the ~76 ns full rebuild can be skipped.
+     *
+     * And when the mask does touch M/E/IL, cpsr_write() has already
+     * rebuilt them at its own tail, after writing every bit of
+     * uncached_cpsr - so a rebuild here would be a second full pass over
+     * identical state.  PAN is why the test is the mask and not just
+     * "did anything change": a write that moves PAN alone leaves
+     * cpsr_write()'s own condition false and still needs this one.
      */
-    if (unlikely(before != env->uncached_cpsr)) {
+    if (unlikely(before != env->uncached_cpsr) &&
+        !(mask & CPSR_HFLAGS_INPUTS)) {
         arm_rebuild_hflags(env);
     }
     cpsr_write_check_irq(env);
@@ -857,7 +872,12 @@ void HELPER(cpsr_write_eret)(CPUARMState *env, uint32_t val)
      * state. Do the masking now.
      */
     env->regs[15] &= (env->thumb ? ~1 : ~3);
-    arm_rebuild_hflags(env);
+    /* as in HELPER(cpsr_write): cpsr_write() has already rebuilt them
+     * when the mask covered M/E/IL, and the PC masking just above is not
+     * an hflags input. */
+    if (!(mask & CPSR_HFLAGS_INPUTS)) {
+        arm_rebuild_hflags(env);
+    }
 
     bql_lock();
     arm_call_el_change_hook(env_archcpu(env));
