@@ -700,11 +700,38 @@ static uint64_t tpu_io_read(void *opaque, hwaddr haddr, unsigned size) {
 	return value;
 }
 
+/*
+ * Can a write to this RAM word change p->next?
+ *
+ * The event RAM is plain memory: tpu_run_events() re-reads it on every
+ * scan and caches nothing, so a word only matters while it is inside
+ * the part of the current frame's list that is still to be scanned.
+ * Everything else - the RF half of the RAM, entries this frame has
+ * already consumed, entries past p->eapt, and any word at all once the
+ * frame's list has finished - is read no earlier than the next frame,
+ * and tpu_advance() runs there anyway (the QEMU timer is armed for it).
+ *
+ * This is worth a test: the S75's idle screen writes the event RAM
+ * 1.27M times a second - 96 % of its TPU writes and 84 % of every MMIO
+ * store it makes - and each one used to run tpu_update_state() ->
+ * tpu_update_timer() -> tpu_advance(), whose virtual-clock read alone
+ * was 76 % of icount_get(), the vCPU's top symbol at 7.7 %.
+ */
+static bool tpu_ram_write_moves_deadline(pmb887x_tpu_t *p, uint32_t offset) {
+	uint32_t word = (offset - TPU_RAM0) / TPU_RAM_WORD_STRIDE;
+
+	if (word < TPU_TIMER_RAM_BASE || p->events_finished)
+		return false;
+
+	word -= TPU_TIMER_RAM_BASE;
+	return word >= p->ceap && word < p->eapt;
+}
+
 static void tpu_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned size) {
 	pmb887x_tpu_t *p = (struct pmb887x_tpu_t *) opaque;
 	
 	IO_DUMP_WRITE(haddr + p->mmio.addr, size, value);
-	
+
 	switch (haddr) {
 		case TPU_CLC:
 			pmb887x_clc_set(&p->clc, value);
@@ -819,6 +846,11 @@ static void tpu_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned si
 
 		case TPU_RAM0 ... (TPU_RAM0 + TPU_RAM_SIZE - 1):
 			tpu_ram_write(p, haddr, value, size);
+			wasm_diag_stat[WASM_DIAG_TPU_RAM_W]++;
+			if (!tpu_ram_write_moves_deadline(p, haddr)) {
+				wasm_diag_stat[WASM_DIAG_TPU_RAM_SKIP]++;
+				return;
+			}
 			break;
 
 		case TPU_RFSSC_SRC:

@@ -86,6 +86,8 @@ enum {
     WASM_DIAG_TPU_REARM,     /* pmb887x TPU timer_mod calls (any caller) */
     WASM_DIAG_ML_WAKE,       /* qemu_main_loop_wake calls (futex wakes issued) */
     WASM_DIAG_ML_WAKE_DUP,   /* qemu_notify_event's own wake after aio_notify */
+    WASM_DIAG_TPU_RAM_W,     /* pmb887x TPU RAM writes */
+    WASM_DIAG_TPU_RAM_SKIP,  /* ...that skipped the advance (no deadline effect) */
     WASM_DIAG_N
 };
 
