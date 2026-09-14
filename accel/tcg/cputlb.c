@@ -1662,104 +1662,116 @@ static inline void cpu_unaligned_access(CPUState *cpu, vaddr addr,
                                           mmu_idx, retaddr);
 }
 
+/*
+ * The rare half of io_prepare(), kept out of line so that both it and
+ * the fused single-piece path below are a load, a test and a
+ * not-taken branch in the common case.
+ */
+static void __attribute__((noinline))
+io_open_clock_window(CPUState *cpu,
+                                                 MemoryRegionSection *section,
+                                                 uintptr_t retaddr)
+{
+#ifdef __EMSCRIPTEN__
+    /*
+     * wasm: do not rewind the TB.  The rewind (cpu_io_recompile)
+     * exists so icount-mode device callbacks see the clock of the
+     * io insn, not of the TB boundary; but its cpu_loop_exit()
+     * longjmp costs ~150us under emscripten (JS-exception based)
+     * and an MMIO polling loop re-pays it on every iteration
+     * forever (the unsplit TB stays cached).
+     *
+     * With TB chaining the clock is advanced per TB by the
+     * tci_tbhdr header op (tcg/tci.c), so the callback already
+     * sees a clock that includes this TB - skipping the rewind
+     * changes nothing about clock visibility.  The earlier
+     * batched-after-TB accounting (patches 0002/0004 era) needed
+     * the boundary move here; a dropped patch that skipped it
+     * entirely left the GPTU SRC7 poll at 0x400118c reading a
+     * timer armed earlier in the same TB as never elapsed and
+     * aborted the boot (FILE: flash 0x0552,
+     * doc/early-crash-postmortem.md).
+     */
+    static bool rewind_mode, rewind_mode_init;
+    if (unlikely(!rewind_mode_init)) {
+        rewind_mode = getenv("QEMU_IO_REWIND") != NULL;
+        rewind_mode_init = true;
+    }
+    /*
+     * ROM devices (the flash command interface): keep the stock
+     * rewind.  The boot ROM's program/verify handshake over the
+     * flash command registers aborts without it (FILE: flash
+     * 0x0552); those accesses are rare, so the ~150us longjmp
+     * costs nothing.  QEMU_IO_REWIND=1 forces the stock rewind
+     * everywhere (A/B testing / fallback).
+     */
+    if (rewind_mode || section->mr->rom_device) {
+        wasm_diag_stat[WASM_DIAG_IO_REWIND]++;
+        cpu_io_recompile(cpu, retaddr);
+    } else if (icount2_enabled()) {
+        /*
+         * The chained-TB clock is already at/after this access
+         * (tci_tbhdr credited the whole TB at its start); just run
+         * any virtual timers whose deadline it crossed so the
+         * callback sees their effects (system/icount2.c).
+         */
+        wasm_io_advance(0);
+    } else if (icount_enabled()) {
+        /*
+         * Stock icount: gen_tb_start() has already subtracted the
+         * whole TB's insn count from icount_decr.u16.low and stored
+         * it back, so the callback must see a clock that includes
+         * this TB - at most one TB (~5 guest insns on this
+         * firmware) ahead of the access, the same deviation the
+         * chained icount2 accounting above accepts, and in the safe
+         * direction (elapsed, never frozen - the GPTU SRC7 poll
+         * failure mode).  can_do_io alone is what that needs:
+         * icount_get_raw_locked() commits the running slice itself
+         * (icount_update_locked) on every virtual-clock read, so
+         * any callback that reads the clock gets the identical
+         * value whether or not we commit first - and without it
+         * would "Bad icount read" abort.  The next TB entry clears
+         * can_do_io again (the translator sets it false before the
+         * first insn of every multi-insn TB).
+         *
+         * An icount_update() here would be a *second* commit of the
+         * same slice, and a far more expensive one: it publishes
+         * under the vm_clock seqlock write lock, so a polling guest
+         * pays a spinlock acquire and four seq_cst barriers per
+         * MMIO access (wasm has no relaxed atomics - every
+         * qatomic_set on shared memory is an i64.atomic.store, and
+         * smp_rmb/smp_wmb are full atomic.fence).  Devices that do
+         * not read the clock simply publish at the TB boundary
+         * instead, which is where stock QEMU publishes anyway.
+         */
+        cpu->neg.can_do_io = true;
+    } else {
+        /*
+         * !can_do_io without any icount mode: this is the normal
+         * path for the LG boards - stock QEMU 11 manages can_do_io
+         * for every TB and recompiles any mid-TB MMIO regardless of
+         * icount; the io-barrier mechanism makes the recompile a
+         * one-time cost per faulting insn.
+         */
+        cpu_io_recompile(cpu, retaddr);
+    }
+#else
+    cpu_io_recompile(cpu, retaddr);
+#endif
+}
+
 static MemoryRegionSection *
 io_prepare(hwaddr *out_offset, CPUState *cpu, CPUTLBEntryFull *full,
            vaddr addr, uintptr_t retaddr)
 {
-    MemoryRegionSection *section;
-    hwaddr mr_offset;
+    MemoryRegionSection *section = full->section;
 
-    section = full->section;
-    mr_offset = full->xlat_offset + addr;
     cpu->mem_io_pc = retaddr;
-    if (!cpu->neg.can_do_io) {
-#ifdef __EMSCRIPTEN__
-        /*
-         * wasm: do not rewind the TB.  The rewind (cpu_io_recompile)
-         * exists so icount-mode device callbacks see the clock of the
-         * io insn, not of the TB boundary; but its cpu_loop_exit()
-         * longjmp costs ~150us under emscripten (JS-exception based)
-         * and an MMIO polling loop re-pays it on every iteration
-         * forever (the unsplit TB stays cached).
-         *
-         * With TB chaining the clock is advanced per TB by the
-         * tci_tbhdr header op (tcg/tci.c), so the callback already
-         * sees a clock that includes this TB - skipping the rewind
-         * changes nothing about clock visibility.  The earlier
-         * batched-after-TB accounting (patches 0002/0004 era) needed
-         * the boundary move here; a dropped patch that skipped it
-         * entirely left the GPTU SRC7 poll at 0x400118c reading a
-         * timer armed earlier in the same TB as never elapsed and
-         * aborted the boot (FILE: flash 0x0552,
-         * doc/early-crash-postmortem.md).
-         */
-        static bool rewind_mode, rewind_mode_init;
-        if (unlikely(!rewind_mode_init)) {
-            rewind_mode = getenv("QEMU_IO_REWIND") != NULL;
-            rewind_mode_init = true;
-        }
-        /*
-         * ROM devices (the flash command interface): keep the stock
-         * rewind.  The boot ROM's program/verify handshake over the
-         * flash command registers aborts without it (FILE: flash
-         * 0x0552); those accesses are rare, so the ~150us longjmp
-         * costs nothing.  QEMU_IO_REWIND=1 forces the stock rewind
-         * everywhere (A/B testing / fallback).
-         */
-        if (rewind_mode || section->mr->rom_device) {
-            wasm_diag_stat[WASM_DIAG_IO_REWIND]++;
-            cpu_io_recompile(cpu, retaddr);
-        } else if (icount2_enabled()) {
-            /*
-             * The chained-TB clock is already at/after this access
-             * (tci_tbhdr credited the whole TB at its start); just run
-             * any virtual timers whose deadline it crossed so the
-             * callback sees their effects (system/icount2.c).
-             */
-            wasm_io_advance(0);
-        } else if (icount_enabled()) {
-            /*
-             * Stock icount: gen_tb_start() has already subtracted the
-             * whole TB's insn count from icount_decr.u16.low and stored
-             * it back, so the callback must see a clock that includes
-             * this TB - at most one TB (~5 guest insns on this
-             * firmware) ahead of the access, the same deviation the
-             * chained icount2 accounting above accepts, and in the safe
-             * direction (elapsed, never frozen - the GPTU SRC7 poll
-             * failure mode).  can_do_io alone is what that needs:
-             * icount_get_raw_locked() commits the running slice itself
-             * (icount_update_locked) on every virtual-clock read, so
-             * any callback that reads the clock gets the identical
-             * value whether or not we commit first - and without it
-             * would "Bad icount read" abort.  The next TB entry clears
-             * can_do_io again (the translator sets it false before the
-             * first insn of every multi-insn TB).
-             *
-             * An icount_update() here would be a *second* commit of the
-             * same slice, and a far more expensive one: it publishes
-             * under the vm_clock seqlock write lock, so a polling guest
-             * pays a spinlock acquire and four barriers per MMIO
-             * access.  Devices that do not read the clock simply
-             * publish at the TB boundary instead, which is where stock
-             * QEMU publishes anyway.
-             */
-            cpu->neg.can_do_io = true;
-        } else {
-            /*
-             * !can_do_io without any icount mode: this is the normal
-             * path for the LG boards - stock QEMU 11 manages can_do_io
-             * for every TB and recompiles any mid-TB MMIO regardless of
-             * icount; the io-barrier mechanism makes the recompile a
-             * one-time cost per faulting insn.
-             */
-            cpu_io_recompile(cpu, retaddr);
-        }
-#else
-        cpu_io_recompile(cpu, retaddr);
-#endif
+    if (unlikely(!cpu->neg.can_do_io)) {
+        io_open_clock_window(cpu, section, retaddr);
     }
 
-    *out_offset = mr_offset;
+    *out_offset = full->xlat_offset + addr;
     return section;
 }
 
@@ -2537,6 +2549,107 @@ static uint64_t do_ld_mmio_beN(CPUState *cpu, CPUTLBEntryFull *full,
                            type, ra, mr, mr_offset);
 }
 
+/*
+ * Fused single-piece MMIO load.
+ *
+ * The generic route from a guest load to a device callback is six
+ * frames that re-derive from each other - do_ldN_mmu fills an
+ * MMULookupLocals via mmu_lookup/mmu_lookup1, do_ld_N tests its flags,
+ * do_ld_mmio_beN turns the entry back into a MemoryRegionSection, and
+ * int_ld_mmio_beN splits the access into aligned pieces.  A firmware
+ * that polls device registers takes that route ~1M times a second (the
+ * EL71's STM poll; see doc/performance-handoff.md), and on wasm the
+ * frames themselves are a measurable share of the vCPU.
+ *
+ * Every one of those accesses is the same shape: a TLB hit on an I/O
+ * entry whose dispatch tlb_set_page_full() already resolved, naturally
+ * aligned, whole access inside one page, no other slow-path flag.  Do
+ * that shape here in one frame.  Anything else - a miss, a watchpoint,
+ * an unresolved or subpage-narrowed region, a split access - returns
+ * false and takes the generic path unchanged, so this adds conditions
+ * only to accesses it also completes.
+ *
+ * Returns the value the way do_ld_mmio_beN() would: assembled
+ * big-endian, device swap applied, caller-visible bswap not.
+ */
+static bool do_ld_mmio_1p(CPUState *cpu, vaddr addr, MemOpIdx oi,
+                          uintptr_t ra, MMUAccessType type, uint64_t *out)
+{
+    MemOp memop = get_memop(oi);
+    int mmu_idx = get_mmuidx(oi);
+    unsigned size = memop_size(memop);
+    uintptr_t index = tlb_index(cpu, mmu_idx, addr);
+    CPUTLBEntry *entry = tlb_entry(cpu, mmu_idx, addr);
+    uint64_t tlb_addr = tlb_read_idx(entry, type);
+    CPUTLBEntryFull *full;
+    hwaddr mr_offset, io_offset;
+    unsigned a_bits;
+    uint64_t val;
+    bool *guard;
+
+    /*
+     * The shape mmu_lookup()/do_ld_N() would take to do_ld_mmio_beN():
+     * a valid entry (tlb_hit rejects TLB_INVALID_MASK), no TLB_NOTDIRTY,
+     * and TLB_MMIO as the *only* slow flag - so no watchpoint, no
+     * TLB_BSWAP, no TLB_CHECK_ALIGNED, no TLB_DISCARD_WRITE.
+     */
+    if (!tlb_hit(tlb_addr, addr) ||
+        (tlb_addr & (TLB_FLAGS_MASK & ~TLB_FORCE_SLOW))) {
+        return false;
+    }
+    full = &cpu->neg.tlb.d[mmu_idx].fulltlb[index];
+    if (full->slow_flags[type] != TLB_MMIO) {
+        return false;
+    }
+    /* One piece: what int_ld_mmio_beN's loop would do in a single turn. */
+    if (!(full->io_rmask & (1u << size)) || (addr & (size - 1))) {
+        return false;
+    }
+    /* mmu_lookup1() logs a guest error for these; let it. */
+    a_bits = memop_tlb_alignment_bits(memop, false);
+    if (addr & ((1 << a_bits) - 1)) {
+        return false;
+    }
+    mr_offset = full->xlat_offset + addr;
+    if (!tlb_io_in_range(full, mr_offset, size)) {
+        return false;
+    }
+    io_offset = mr_offset + full->io_off_delta;
+    if (full->io_check_align && (io_offset & (size - 1))) {
+        return false;
+    }
+
+    cpu->mem_io_pc = ra;
+    if (unlikely(!cpu->neg.can_do_io)) {
+        io_open_clock_window(cpu, full->section, ra);
+    }
+
+    BQL_LOCK_GUARD();
+
+    guard = full->io_guard;
+    if (unlikely(guard && *guard)) {
+        /* Re-entrant: the stock path has the warn_report_once for it. */
+        return false;
+    }
+#ifdef __EMSCRIPTEN__
+    wasm_diag_stat[WASM_DIAG_IO_LD]++;
+    wasm_diag_stat[WASM_DIAG_IO_LD_FAST]++;
+#endif
+    if (guard) {
+        *guard = true;
+    }
+    val = full->io_read_fn(full->io_opaque, io_offset, size);
+    if (guard) {
+        *guard = false;
+    }
+    val &= MAKE_64BIT_MASK(0, size * 8);
+    if (full->io_swap & 1) {
+        val = io_fast_bswap(val, size);
+    }
+    *out = val;
+    return true;
+}
+
 static Int128 do_ld16_mmio_beN(CPUState *cpu, CPUTLBEntryFull *full,
                                uint64_t ret_be, vaddr addr, int size,
                                int mmu_idx, uintptr_t ra)
@@ -2844,8 +2957,12 @@ static uint8_t do_ld1_mmu(CPUState *cpu, vaddr addr, MemOpIdx oi,
 {
     MMULookupLocals l;
     bool crosspage;
+    uint64_t io;
 
     cpu_req_mo(cpu, TCG_MO_LD_LD | TCG_MO_ST_LD);
+    if (do_ld_mmio_1p(cpu, addr, oi, ra, access_type, &io)) {
+        return io;
+    }
     crosspage = mmu_lookup(cpu, addr, oi, ra, access_type, &l);
     tcg_debug_assert(!crosspage);
 
@@ -2859,8 +2976,12 @@ static uint16_t do_ld2_mmu(CPUState *cpu, vaddr addr, MemOpIdx oi,
     bool crosspage;
     uint16_t ret;
     uint8_t a, b;
+    uint64_t io;
 
     cpu_req_mo(cpu, TCG_MO_LD_LD | TCG_MO_ST_LD);
+    if (do_ld_mmio_1p(cpu, addr, oi, ra, access_type, &io)) {
+        return (get_memop(oi) & MO_BSWAP) == MO_LE ? bswap16(io) : io;
+    }
     crosspage = mmu_lookup(cpu, addr, oi, ra, access_type, &l);
     if (likely(!crosspage)) {
         return do_ld_2(cpu, &l.page[0], l.mmu_idx, access_type, l.memop, ra);
@@ -2883,8 +3004,12 @@ static uint32_t do_ld4_mmu(CPUState *cpu, vaddr addr, MemOpIdx oi,
     MMULookupLocals l;
     bool crosspage;
     uint32_t ret;
+    uint64_t io;
 
     cpu_req_mo(cpu, TCG_MO_LD_LD | TCG_MO_ST_LD);
+    if (do_ld_mmio_1p(cpu, addr, oi, ra, access_type, &io)) {
+        return (get_memop(oi) & MO_BSWAP) == MO_LE ? bswap32(io) : io;
+    }
     crosspage = mmu_lookup(cpu, addr, oi, ra, access_type, &l);
     if (likely(!crosspage)) {
         return do_ld_4(cpu, &l.page[0], l.mmu_idx, access_type, l.memop, ra);
@@ -2904,8 +3029,12 @@ static uint64_t do_ld8_mmu(CPUState *cpu, vaddr addr, MemOpIdx oi,
     MMULookupLocals l;
     bool crosspage;
     uint64_t ret;
+    uint64_t io;
 
     cpu_req_mo(cpu, TCG_MO_LD_LD | TCG_MO_ST_LD);
+    if (do_ld_mmio_1p(cpu, addr, oi, ra, access_type, &io)) {
+        return (get_memop(oi) & MO_BSWAP) == MO_LE ? bswap64(io) : io;
+    }
     crosspage = mmu_lookup(cpu, addr, oi, ra, access_type, &l);
     if (likely(!crosspage)) {
         return do_ld_8(cpu, &l.page[0], l.mmu_idx, access_type, l.memop, ra);

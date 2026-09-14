@@ -38,6 +38,7 @@
 #include "hw/core/cpu.h"
 #include "exec/icount.h"
 #include "system/cpu-timers-internal.h"
+#include "qemu/wasm-diag.h"
 
 static void rtcap_do_nothing(CPUState *cpu, run_on_cpu_data unused)
 {
@@ -162,7 +163,18 @@ static int64_t icount_get_raw_locked(void)
             error_report("Bad icount read");
             exit(1);
         }
-        /* Take into account what has run */
+        /*
+         * Take into account what has run.
+         *
+         * Publishing here is not needed for the value this returns -
+         * qemu_icount + icount_get_executed(cpu) is the same number -
+         * and the store is not free: it is ~1.5M writes a second on a
+         * polling guest, to a line other threads read.  Not publishing
+         * was measured on the EL71 busy state (2026-09-14) and is a
+         * 7.8 % MIPS *regression*, twice: a global icount that only
+         * moves at slice boundaries changes how the main loop paces
+         * itself, and that costs more than the store.  Leave it.
+         */
         icount_update_locked(cpu);
     }
     /* The read is protected by the seqlock, but needs atomic to avoid UB */
@@ -194,6 +206,9 @@ int64_t icount_get(void)
     int64_t icount;
     unsigned start;
 
+#ifdef __EMSCRIPTEN__
+    wasm_diag_stat[WASM_DIAG_VCLOCK_READ]++;
+#endif
     do {
         start = seqlock_read_begin(&timers_state.vm_clock_seqlock);
         icount = icount_get_locked();
