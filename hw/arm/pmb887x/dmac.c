@@ -52,6 +52,8 @@ typedef struct {
 	hwaddr xlat;       /* addr's offset within mr */
 	MemoryRegion *mr;
 	uint8_t *host;     /* direct RAM pointer for addr; NULL for MMIO */
+	uint32_t direct_width;  /* width memory_region_write_direct_ok() was asked about */
+	bool direct_ok;
 } pmb887x_dmac_xlat_t;
 
 struct pmb887x_dmac_ch_t {
@@ -168,6 +170,7 @@ static bool dmac_xlat(pmb887x_dmac_t *p, pmb887x_dmac_xlat_t *x, hwaddr addr, ui
 	x->len = size;
 	x->xlat = sec.offset_within_region;
 	x->mr = sec.mr;
+	x->direct_width = 0;
 	x->host = memory_access_is_direct(sec.mr, is_write, MEMTXATTRS_UNSPECIFIED) ?
 		(uint8_t *) memory_region_get_ram_ptr(sec.mr) + sec.offset_within_region : NULL;
 	return true;
@@ -192,7 +195,22 @@ static void dmac_write(pmb887x_dmac_t *p, pmb887x_dmac_xlat_t *x, hwaddr addr, c
 		hwaddr off = x->xlat + (addr - x->addr);
 		/* the one step address_space_write takes for an aligned
 		 * width-sized store to an MMIO region; RAM keeps the API for
-		 * its dirty tracking */
+		 * its dirty tracking.  Whether the dispatch's own per-access
+		 * work (validity, endianness, ioeventfds, access splitting)
+		 * can be skipped depends only on the region and the width, so
+		 * it is decided once per window rather than per word. */
+		if (x->direct_width != width) {
+			x->direct_width = width;
+			x->direct_ok = memory_region_write_direct_ok(mr, width);
+		}
+		if (x->direct_ok && !(off & (width - 1))) {
+			RCU_READ_LOCK_GUARD();
+			bool release_lock = prepare_mmio_access(mr);
+			memory_region_dispatch_write_direct(mr, off, ldn_he_p(buffer, width), width);
+			if (release_lock)
+				bql_unlock();
+			return;
+		}
 		if (memory_access_size(mr, width, off) == width) {
 			RCU_READ_LOCK_GUARD();
 			bool release_lock = prepare_mmio_access(mr);
