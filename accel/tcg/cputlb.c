@@ -2434,7 +2434,14 @@ static void *atomic_mmu_lookup(CPUState *cpu, vaddr addr, MemOpIdx oi,
  * Load @size bytes from @addr, which is memory-mapped i/o.
  * The bytes are concatenated in big-endian order with @ret_be.
  */
-static inline uint64_t io_fast_bswap(uint64_t val, unsigned size)
+/*
+ * always_inline: a plain "static inline" of this was left out of line by
+ * the size heuristic and showed up as its own 0.5 % symbol in the S75
+ * profile - a call and a return to swap four bytes, on a path taken
+ * ~4M times a second.
+ */
+static inline __attribute__((always_inline))
+uint64_t io_fast_bswap(uint64_t val, unsigned size)
 {
     switch (size) {
     case 2: return bswap16(val);
@@ -2586,6 +2593,7 @@ static bool do_ld_mmio_1p(CPUState *cpu, vaddr addr, MemOpIdx oi,
     unsigned a_bits;
     uint64_t val;
     bool *guard;
+    bool took_bql;
 
     /*
      * The shape mmu_lookup()/do_ld_N() would take to do_ld_mmio_beN():
@@ -2624,11 +2632,14 @@ static bool do_ld_mmio_1p(CPUState *cpu, vaddr addr, MemOpIdx oi,
         io_open_clock_window(cpu, full->section, ra);
     }
 
-    BQL_LOCK_GUARD();
+    took_bql = bql_lock_mmio();
 
     guard = full->io_guard;
     if (unlikely(guard && *guard)) {
         /* Re-entrant: the stock path has the warn_report_once for it. */
+        if (took_bql) {
+            bql_unlock_mmio();
+        }
         return false;
     }
 #ifdef __EMSCRIPTEN__
@@ -2641,6 +2652,9 @@ static bool do_ld_mmio_1p(CPUState *cpu, vaddr addr, MemOpIdx oi,
     val = full->io_read_fn(full->io_opaque, io_offset, size);
     if (guard) {
         *guard = false;
+    }
+    if (took_bql) {
+        bql_unlock_mmio();
     }
     val &= MAKE_64BIT_MASK(0, size * 8);
     if (full->io_swap & 1) {
@@ -3235,6 +3249,7 @@ static bool do_st_mmio_1p(CPUState *cpu, vaddr addr, uint64_t val_le,
     hwaddr mr_offset, io_offset;
     unsigned a_bits;
     bool *guard;
+    bool took_bql;
 
     if (!tlb_hit(tlb_addr, addr) ||
         (tlb_addr & (TLB_FLAGS_MASK & ~TLB_FORCE_SLOW))) {
@@ -3265,10 +3280,13 @@ static bool do_st_mmio_1p(CPUState *cpu, vaddr addr, uint64_t val_le,
         io_open_clock_window(cpu, full->section, ra);
     }
 
-    BQL_LOCK_GUARD();
+    took_bql = bql_lock_mmio();
 
     guard = full->io_guard;
     if (unlikely(guard && *guard)) {
+        if (took_bql) {
+            bql_unlock_mmio();
+        }
         return false;
     }
 #ifdef __EMSCRIPTEN__
@@ -3285,6 +3303,9 @@ static bool do_st_mmio_1p(CPUState *cpu, vaddr addr, uint64_t val_le,
     full->io_write_fn(full->io_opaque, io_offset, val_le, size);
     if (guard) {
         *guard = false;
+    }
+    if (took_bql) {
+        bql_unlock_mmio();
     }
     return true;
 }

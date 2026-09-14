@@ -574,6 +574,46 @@ bool bql_locked(void)
     return get_bql_locked();
 }
 
+/*
+ * BQL for the MMIO dispatch path (accel/tcg/cputlb.c).
+ *
+ * A guest that polls a device register takes and drops the BQL about
+ * four million times a second (the S75's driven menu), and the generic
+ * BQL_LOCK_GUARD() pair is ~22 calls that no compiler may inline:
+ * bql_locked() and its coroutine-TLS accessor are deliberately
+ * noinline, three g_asserts call them again, bql_lock_impl() reaches
+ * pthread_mutex through the lock-profiling function pointer, and
+ * qemu_mutex_post_lock()/pre_unlock() call mutex_is_bql() and
+ * bql_update_status() - which calls the accessor twice more.  On wasm
+ * that measures ~41 ns per pair, a quarter of what a device register
+ * read costs in total.
+ *
+ * This pair reads the thread-local flag once, takes the mutex, and
+ * writes the flag once.  What it gives up on this one path: the
+ * qemu_mutex_lock/locked/unlock trace points, the -enable-sync-profile
+ * lock-profiling hook, and CONFIG_DEBUG_MUTEX's file/line bookkeeping.
+ *
+ * Returns true if this call took the lock, in which case the caller
+ * must call bql_unlock_mmio(); false if this thread already held it,
+ * in which case the caller must not (an outer holder may have called
+ * bql_block_unlock(), and it owns the unlock either way).
+ */
+bool bql_lock_mmio(void)
+{
+    if (get_bql_locked()) {
+        return false;
+    }
+    pthread_mutex_lock(&bql.lock);
+    set_bql_locked(true);
+    return true;
+}
+
+void bql_unlock_mmio(void)
+{
+    set_bql_locked(false);
+    pthread_mutex_unlock(&bql.lock);
+}
+
 bool qemu_in_main_thread(void)
 {
     return bql_locked();

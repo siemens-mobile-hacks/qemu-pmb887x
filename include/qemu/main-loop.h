@@ -289,6 +289,22 @@ bool mutex_is_bql(QemuMutex *mutex);
 void bql_update_status(bool locked);
 
 /**
+ * bql_lock_mmio: take the BQL for one device access, leanly.
+ * bql_unlock_mmio: drop it again.
+ *
+ * The BQL_LOCK_GUARD() pair costs ~22 non-inlinable calls, which a
+ * device-polling guest pays millions of times a second.  This pair does
+ * the same job with the thread-local flag read once and written once,
+ * giving up the mutex trace points and the lock-profiling hook.  Use it
+ * only on a path that is hot enough to care - see system/cpus.c.
+ *
+ * bql_lock_mmio() returns true if it took the lock; only then may
+ * bql_unlock_mmio() be called.
+ */
+bool bql_lock_mmio(void);
+void bql_unlock_mmio(void);
+
+/**
  * bql_block: Allow/deny releasing the BQL
  *
  * The Big QEMU Lock (BQL) is used to provide interior mutability to
