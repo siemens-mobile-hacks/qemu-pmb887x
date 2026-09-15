@@ -749,6 +749,16 @@ bool arm_w64_lc_key(CPUState *cs, uint32_t key32[3])
 
 void arm_rebuild_hflags(CPUARMState *env)
 {
+#ifdef CONFIG_TCG_WASM64
+    /*
+     * Unconditional, and worth its one increment: this is the counter
+     * that prices the function.  A wasm profile credited it with 11 % of
+     * the vCPU on an idle CX70 while it was in fact called 11.6 k times a
+     * second, which at any believable cost per call is under 0.3 %.  See
+     * doc/lessons.md -- profile self-time here names the wrong function.
+     */
+    wasm_diag_stat[WASM_DIAG_HFLAGS_CALLS]++;
+#endif
     arm_set_hflags(env, rebuild_hflags_internal(env));
 }
 

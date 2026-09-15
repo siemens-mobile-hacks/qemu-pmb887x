@@ -266,6 +266,9 @@ static inline TranslationBlock *tb_lookup(CPUState *cpu, TCGTBCPUState s)
     }
 #ifdef __EMSCRIPTEN__
     wasm_diag_stat[WASM_DIAG_LOOKUP_QHT]++;
+    if (qatomic_read(&jc->array[hash].tb) != NULL) {
+        wasm_diag_stat[WASM_DIAG_LOOKUP_CONFL]++;
+    }
 #endif
 
     jc->array[hash].pc = s.pc;
@@ -851,10 +854,12 @@ static bool w64_speculate(CPUState *cpu, TranslationBlock *root,
         dbg = getenv("W64_DEBUG") != NULL;
     }
     st[0]++;
+    wasm_diag_stat[WASM_DIAG_SPEC_MISS]++;
     if (s.cflags != curr_cflags(cpu)) {
         st[5]++;
     } else if (root->w64_nsucc == 0) {
         st[1]++;
+        wasm_diag_stat[WASM_DIAG_SPEC_NOSUCC]++;
     }
     if (dbg && (st[0] & 4095) == 0) {
         fprintf(stderr, "W64SPEC misses=%u nosucc=%u oneshot=%u exists=%u "
@@ -892,6 +897,14 @@ static bool w64_speculate(CPUState *cpu, TranslationBlock *root,
          * guess is just a probe-validated, never-executed TB.
          */
         if (!(tb->cflags & CF_PCREL) && tb->size >= 4) {
+            /*
+             * NOTE: inert as written.  arm_cpu_realizefn sets CF_PCREL on
+             * every system-mode TB, so this branch has never been taken on
+             * any board here -- and under CF_PCREL tb_gen_code leaves
+             * @tb->pc unwritten, so the pc it wants has to be carried
+             * alongside the walk rather than read back.  Enabling it is a
+             * behaviour change and wants its own measurement.
+             */
             vaddr last = tb->pc + tb->size - 4;
             void *h1, *h2;
             if (w64_spec_code_host(env, last, mmu_idx, &h1) &&
@@ -939,11 +952,13 @@ static bool w64_speculate(CPUState *cpu, TranslationBlock *root,
              */
             if (!w64_spec_code_ram(env, t.pc, mmu_idx)) {
                 st[3]++;
+                wasm_diag_stat[WASM_DIAG_SPEC_NOTRAM]++;
                 continue;
             }
             next_page = (t.pc & TARGET_PAGE_MASK) + TARGET_PAGE_SIZE;
             if (next_page > t.pc && !w64_spec_code_ram(env, next_page, mmu_idx)) {
                 st[3]++;
+                wasm_diag_stat[WASM_DIAG_SPEC_NOTRAM]++;
                 continue;
             }
             ex = tb_htable_lookup(cpu, t);
@@ -951,6 +966,7 @@ static bool w64_speculate(CPUState *cpu, TranslationBlock *root,
                 /* already translated: walk through it, its successors
                  * may still be missing (once per node) */
                 st[2]++;
+                wasm_diag_stat[WASM_DIAG_SPEC_EXISTS]++;
                 for (k = 0; k < qt && queue[k] != ex; k++) {
                     continue;
                 }
@@ -960,6 +976,7 @@ static bool w64_speculate(CPUState *cpu, TranslationBlock *root,
                 continue;
             }
             st[4]++;
+            wasm_diag_stat[WASM_DIAG_SPEC_MADE]++;
             /* leave headroom: never provoke a flush from here */
             if ((char *)tcg_ctx->code_gen_highwater -
                 (char *)tcg_ctx->code_gen_ptr < (1 << 20)) {

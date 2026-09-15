@@ -93,6 +93,17 @@ enum {
     WASM_DIAG_HFLAGS,        /* AArch32 hflags rebuilds */
     WASM_DIAG_HFLAGS_FAST,   /* ...taken by the pre-v6 short path */
     WASM_DIAG_HFLAGS_BAD,    /* ...where it disagreed with the generic one */
+    WASM_DIAG_SPEC_MISS,     /* w64_speculate calls (one per lookup miss) */
+    WASM_DIAG_SPEC_NOSUCC,   /* ...where the miss TB recorded no goto_tb successor */
+    WASM_DIAG_SPEC_EXISTS,   /* speculation edges whose target was already translated */
+    WASM_DIAG_SPEC_NOTRAM,   /* ...rejected by the non-faulting executable-RAM probe */
+    WASM_DIAG_SPEC_MADE,     /* ...translated into the open batch */
+    WASM_DIAG_HFLAGS_CALLS,  /* arm_rebuild_hflags() entries (unconditional:
+                              * the gated WASM_DIAG_HFLAGS counts a different
+                              * site, and the question here is the call rate) */
+    WASM_DIAG_LOOKUP_CONFL,  /* ...qht lookups whose jump-cache slot held another
+                              * TB: a capacity/conflict miss.  qht minus this is
+                              * what the flushes and cold pcs cost. */
     WASM_DIAG_N
 };
 
