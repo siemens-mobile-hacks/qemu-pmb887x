@@ -316,13 +316,9 @@ CPUARMTBFlags rebuild_hflags_a32_el(CPUARMState *env, int el)
 {
     CPUARMTBFlags fast;
 
-#ifdef __EMSCRIPTEN__
-    wasm_diag_stat[WASM_DIAG_HFLAGS]++;
-#endif
+    WASM_DIAG_HOT(WASM_DIAG_HFLAGS);
     if (rebuild_hflags_a32_fast(env, el, &fast)) {
-#ifdef __EMSCRIPTEN__
-        wasm_diag_stat[WASM_DIAG_HFLAGS_FAST]++;
-#endif
+        WASM_DIAG_HOT(WASM_DIAG_HFLAGS_FAST);
 #ifndef HFLAGS_FAST_VERIFY
         return fast;
 #else

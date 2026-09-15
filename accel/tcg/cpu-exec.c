@@ -544,7 +544,7 @@ const void *HELPER(lookup_tb_ptr_lc)(CPUArchState *env, void *slot)
     uint32_t cur[3];
 
     cpu->neg.can_do_io = true;
-    wasm_diag_stat[WASM_DIAG_LC_CALL]++;
+    WASM_DIAG_HOT(WASM_DIAG_LC_CALL);
 
     TCGTBCPUState s = W64_GET_TB_CPU_STATE(cpu);
     s.cflags = curr_cflags_fast(cpu);
@@ -584,7 +584,7 @@ const void *HELPER(lookup_tb_ptr_lc)(CPUArchState *env, void *slot)
         }
         lc->tc = tb->tc.ptr;
         lc->gen = gen;
-        wasm_diag_stat[WASM_DIAG_LC_FILL]++;
+        WASM_DIAG_HOT(WASM_DIAG_LC_FILL);
     }
     return tb->tc.ptr;
 }

@@ -1,10 +1,12 @@
 /*
- * wasm diagnostics counters: cold-path memory-subsystem counters filled
- * by tcg/tci.c + accel/tcg/cputlb.c (interpreter slow-path entries, MMIO
- * dispatches, TLB fills - ~40k increments/s on a booting pmb887x, cost is
- * noise) and read from JS via the wasm_memstat() export in ui/wasm.c.
- * See tools/memstat.mjs.  Hot paths (the inline fast paths) deliberately
- * carry no counters.
+ * wasm diagnostics counters, filled by tcg/tci.c + accel/tcg/cputlb.c +
+ * the pmb887x devices and read from JS via the wasm_memstat() export in
+ * ui/wasm.c.  See tools/memstat.mjs, tools/diagall.mjs.
+ *
+ * Most are cold-path (interpreter slow-path entries, TLB fills, TB
+ * generation, topology commits) and cost nothing.  The ones that are not
+ * are marked with WASM_DIAG_HOT() at their increment sites and compiled
+ * out by default - see the block below the enum.
  */
 #ifndef QEMU_WASM_DIAG_H
 #define QEMU_WASM_DIAG_H
@@ -95,5 +97,29 @@ enum {
 };
 
 extern uint64_t wasm_diag_stat[WASM_DIAG_N];
+
+/*
+ * The counters above started out on cold paths, where the cost is noise.
+ * Several now sit on the hottest paths there are - every MMIO dispatch,
+ * every virtual-clock read, every hflags rebuild - which on an idle S75
+ * is ~14M read-modify-writes a second across four cache lines.
+ *
+ * WASM_DIAG_HOT() marks those.  To get them back - which is what you
+ * want whenever a rate, not a wall-clock number, is the thing in
+ * question - add
+ *
+ *     #define WASM_DIAG_HOT_COUNTERS 1
+ *
+ * above this block and rebuild; uibench and diagall then report real
+ * rates for ioLd, ioSt, vclock, hflags and tpuRamW instead of zero.
+ * Never measure wall-clock A/B against such a build.  Cold counters are
+ * unconditional, so the tb/flush/fill/warp diagnostics keep working in
+ * the shipping build.
+ */
+#ifdef WASM_DIAG_HOT_COUNTERS
+#define WASM_DIAG_HOT(idx) (wasm_diag_stat[idx]++)
+#else
+#define WASM_DIAG_HOT(idx) ((void) 0)
+#endif
 
 #endif

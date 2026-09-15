@@ -2575,9 +2575,7 @@ static uint64_t do_ld_mmio_beN(CPUState *cpu, CPUTLBEntryFull *full,
 
     tcg_debug_assert(size > 0 && size <= 8);
 
-#ifdef __EMSCRIPTEN__
-    wasm_diag_stat[WASM_DIAG_IO_LD]++;
-#endif
+    WASM_DIAG_HOT(WASM_DIAG_IO_LD);
     section = io_prepare(&mr_offset, cpu, full, addr, ra);
     mr = section->mr;
 
@@ -2700,10 +2698,8 @@ bool do_ld_mmio_1p(CPUState *cpu, vaddr addr, MemOpIdx oi,
         }
         return false;
     }
-#ifdef __EMSCRIPTEN__
-    wasm_diag_stat[WASM_DIAG_IO_LD]++;
-    wasm_diag_stat[WASM_DIAG_IO_LD_FAST]++;
-#endif
+    WASM_DIAG_HOT(WASM_DIAG_IO_LD);
+    WASM_DIAG_HOT(WASM_DIAG_IO_LD_FAST);
     if (guard) {
         *guard = true;
     }
@@ -3280,9 +3276,7 @@ static uint64_t do_st_mmio_leN(CPUState *cpu, CPUTLBEntryFull *full,
 
     tcg_debug_assert(size > 0 && size <= 8);
 
-#ifdef __EMSCRIPTEN__
-    wasm_diag_stat[WASM_DIAG_IO_ST]++;
-#endif
+    WASM_DIAG_HOT(WASM_DIAG_IO_ST);
     section = io_prepare(&mr_offset, cpu, full, addr, ra);
     mr = section->mr;
 
@@ -3353,10 +3347,8 @@ bool do_st_mmio_1p(CPUState *cpu, vaddr addr, uint64_t val,
         }
         return false;
     }
-#ifdef __EMSCRIPTEN__
-    wasm_diag_stat[WASM_DIAG_IO_ST]++;
-    wasm_diag_stat[WASM_DIAG_IO_ST_FAST]++;
-#endif
+    WASM_DIAG_HOT(WASM_DIAG_IO_ST);
+    WASM_DIAG_HOT(WASM_DIAG_IO_ST_FAST);
     if (guard) {
         *guard = true;
     }

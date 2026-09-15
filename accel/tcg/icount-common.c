@@ -284,9 +284,7 @@ int64_t icount_get(void)
     int64_t icount;
     unsigned start;
 
-#ifdef __EMSCRIPTEN__
-    wasm_diag_stat[WASM_DIAG_VCLOCK_READ]++;
-#endif
+    WASM_DIAG_HOT(WASM_DIAG_VCLOCK_READ);
     do {
         start = icount_seq_read_begin();
         icount = icount_get_locked();
