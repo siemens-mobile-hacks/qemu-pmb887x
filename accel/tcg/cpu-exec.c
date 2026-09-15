@@ -873,7 +873,7 @@ static bool w64_speculate(CPUState *cpu, TranslationBlock *root,
     queue[qt++] = root;
     while (qh < qt && made < (unsigned)budget) {
         TranslationBlock *tb = queue[qh++];
-        vaddr succ[ARRAY_SIZE(tb->w64_succ) + 1];
+        vaddr succ[ARRAY_SIZE(tb->w64_succ)];
         unsigned nsucc = tb->w64_nsucc;
         unsigned i;
         bool complete = true;
@@ -891,44 +891,18 @@ static bool w64_speculate(CPUState *cpu, TranslationBlock *root,
 
         memcpy(succ, tb->w64_succ, nsucc * sizeof(succ[0]));
         /*
-         * ARM `ldr pc, [pc, #-4]` trampolines (the firmware's call
-         * thunks): the target is the literal right after the insn.
-         * Read through the non-faulting probe's host pointer; a wrong
-         * guess is just a probe-validated, never-executed TB.
+         * There was an `ldr pc, [pc, #-4]` trampoline heuristic here: read
+         * the literal after a TB ending in that insn and queue it as an
+         * extra successor, recovering an edge goto_tb cannot record.  It
+         * was guarded on !CF_PCREL, which ARM sets on every system-mode TB,
+         * so it had never once run.  Measured with the guard lifted and the
+         * guest pc carried alongside the walk (tb->pc is unwritten under
+         * CF_PCREL): the tail probe succeeds on ~141 nodes per Mi, and of
+         * those the pattern matches 0.004 -- about one node in 35k, against
+         * 6.5-17.6 lookup misses per Mi.  Four boards, same answer.  These
+         * firmwares do not end blocks that way; deleted rather than shipped
+         * behind a knob.  See doc/optimization-playbook.md.
          */
-        if (!(tb->cflags & CF_PCREL) && tb->size >= 4) {
-            /*
-             * NOTE: inert as written.  arm_cpu_realizefn sets CF_PCREL on
-             * every system-mode TB, so this branch has never been taken on
-             * any board here -- and under CF_PCREL tb_gen_code leaves
-             * @tb->pc unwritten, so the pc it wants has to be carried
-             * alongside the walk rather than read back.  Enabling it is a
-             * behaviour change and wants its own measurement.
-             */
-            vaddr last = tb->pc + tb->size - 4;
-            void *h1, *h2;
-            if (w64_spec_code_host(env, last, mmu_idx, &h1) &&
-                ldl_le_p(h1) == 0xe51ff004 &&
-                w64_spec_code_host(env, last + 4, mmu_idx, &h2)) {
-                /*
-                 * ldl_le_p() returns a *signed* int: a literal with bit
-                 * 31 set (0xa0000000 flash/RAM, and the 0xffff0000 high
-                 * vectors the pmb887x bootrom lives in) sign-extends into
-                 * the 64-bit vaddr.  A sign-extended address that still
-                 * passes the probe reaches tb_gen_code, and translator_ld
-                 * then compares db->pc_first (sign-extended) against a pc
-                 * the ARM frontend zero-extended: neither page test
-                 * matches and it aborts on
-                 * "(base ^ pc) & TARGET_PAGE_MASK".  KE800 died there
-                 * ~90 s into the boot (its firmware runs the GSM L1
-                 * interrupt path through the 0xffff0000 trampolines).
-                 */
-                vaddr target = (uint32_t)ldl_le_p(h2);
-                if (!(target & 3)) {
-                    succ[nsucc++] = target;
-                }
-            }
-        }
 
         for (i = 0; i < nsucc; i++) {
             TCGTBCPUState t = s;

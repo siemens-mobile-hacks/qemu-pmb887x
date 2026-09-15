@@ -104,6 +104,18 @@ enum {
     WASM_DIAG_LOOKUP_CONFL,  /* ...qht lookups whose jump-cache slot held another
                               * TB: a capacity/conflict miss.  qht minus this is
                               * what the flushes and cold pcs cost. */
+    WASM_DIAG_MOD_NS,        /* wall ns in w64_batch_instantiate: the
+                              * browser's WebAssembly.Module + Instance for
+                              * one batch, charged to the vCPU thread that
+                              * waits for it.  Always on (~1k/s at boot) */
+    WASM_DIAG_FILL_NS,       /* wall ns inside tlb_fill_align (phase build) */
+    WASM_DIAG_TB_ICOUNT,     /* sum of tb->icount over translated TBs:
+                              * /tbGen is the mean guest insns per TB */
+    WASM_DIAG_TB_GEN_NS,     /* wall ns inside tb_gen_code, and only in a
+                              * WASM_DIAG_TIME_PHASES build (see
+                              * accel/tcg/translate-all.c); the module
+                              * compile is the browser's own time, which
+                              * tools/modcost.mjs reads from the worker */
     WASM_DIAG_N
 };
 
@@ -126,6 +138,21 @@ extern uint64_t wasm_diag_stat[WASM_DIAG_N];
  * Never measure wall-clock A/B against such a build.  Cold counters are
  * unconditional, so the tb/flush/fill/warp diagnostics keep working in
  * the shipping build.
+ */
+/*
+ * WASM_DIAG_TIME_PHASES: wall-clock timers around whole phases, read as
+ * a share of wall time by tools/modcost.mjs.  Separate from the hot
+ * counters because the cost is different in kind: emscripten's
+ * gettimeofday is a call out to JS, so a timer is only affordable on a
+ * phase entered a few thousand times a second, and the sites it guards
+ * (tb_gen_code ~4k/s, tlb_fill_align ~54k/s) are above that.  Like the
+ * hot counters: define it here, rebuild, measure -- and never A/B wall
+ * clock against such a build.
+ *
+ *     #define WASM_DIAG_TIME_PHASES 1
+ *
+ * WASM_DIAG_MOD_NS is NOT behind this: module compiles are ~1k/s, so
+ * that one is affordable always and ships on.
  */
 #ifdef WASM_DIAG_HOT_COUNTERS
 #define WASM_DIAG_HOT(idx) (wasm_diag_stat[idx]++)

@@ -20,6 +20,7 @@
 #include "qemu/osdep.h"
 #ifdef __EMSCRIPTEN__
 #include "qemu/wasm-diag.h"
+#include "qemu/timer.h"
 #endif
 
 #include "trace.h"
@@ -260,8 +261,32 @@ static int setjmp_gen_code(CPUArchState *env, TranslationBlock *tb,
     return tcg_gen_code(tcg_ctx, tb, pc);
 }
 
-/* Called with mmap_lock held for user mode emulation.  */
+static TranslationBlock *tb_gen_code_inner(CPUState *cpu, TCGTBCPUState s);
+
+/*
+ * Prices translation against module compilation (tools/modcost.mjs reads
+ * the browser's half).  OFF by default and never shipped on: emscripten's
+ * gettimeofday is a call out to JS, and at the ~4k translations a second
+ * an early boot does, two of them per call are not free -- which is the
+ * same reason the hot counters are off.  Enable it with
+ * WASM_DIAG_TIME_PHASES in qemu/include/qemu/wasm-diag.h and read it
+ * with tools/modcost.mjs.
+ */
 TranslationBlock *tb_gen_code(CPUState *cpu, TCGTBCPUState s)
+{
+#if defined(CONFIG_TCG_WASM64) && defined(WASM_DIAG_TIME_PHASES)
+    int64_t t0 = get_clock_realtime();
+    TranslationBlock *tb = tb_gen_code_inner(cpu, s);
+
+    wasm_diag_stat[WASM_DIAG_TB_GEN_NS] += get_clock_realtime() - t0;
+    return tb;
+#else
+    return tb_gen_code_inner(cpu, s);
+#endif
+}
+
+/* Called with mmap_lock held for user mode emulation.  */
+static TranslationBlock *tb_gen_code_inner(CPUState *cpu, TCGTBCPUState s)
 {
     CPUArchState *env = cpu_env(cpu);
 #ifdef __EMSCRIPTEN__
@@ -403,6 +428,8 @@ TranslationBlock *tb_gen_code(CPUState *cpu, TCGTBCPUState s)
     tcg_ctx->gen_tb = NULL;
 
 #ifdef CONFIG_TCG_WASM64
+    /* tbIcount/tbGen = mean guest instructions per translated TB */
+    wasm_diag_stat[WASM_DIAG_TB_ICOUNT] += tb->icount;
     {
         extern int w64_spec_active;
         static int tblog = -1;
@@ -762,6 +789,22 @@ void cpu_io_recompile(CPUState *cpu, uintptr_t retaddr)
 void cpu_tb_key_gen_bump(CPUState *cpu)
 {
     uint32_t g = qatomic_read(&cpu->neg.tb_key_gen) + 1;
+
+    /*
+     * CEILING PROBE, UNSOUND: W64_NOGENBUMP=1 stops retiring inline-cache
+     * slots, so stale targets survive every jump-cache flush.  The guest
+     * will eventually run the wrong TB.  It exists only to answer "what
+     * would a perfect inline cache be worth" before anyone engineers a
+     * sound generation scheme -- read MIPS and lcCall, never trust the
+     * boot past the window you measured.
+     */
+    static int nobump = -1;
+    if (nobump < 0) {
+        nobump = getenv("W64_NOGENBUMP") != NULL;
+    }
+    if (nobump) {
+        return;
+    }
 
     qatomic_set(&cpu->neg.tb_key_gen, g ? g : 1);
     wasm_diag_stat[WASM_DIAG_KEY_GEN]++;

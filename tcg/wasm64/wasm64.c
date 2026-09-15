@@ -26,6 +26,7 @@
 #include "hw/core/cpu.h"
 #include <emscripten.h>
 #include "qemu/wasm-diag.h"
+#include "qemu/timer.h"
 #include "wasm64.h"
 
 /* icount2.c: addresses of the fields emitted TB prologues touch
@@ -1319,8 +1320,22 @@ static uint32_t w64_assemble_instantiate(const struct w64_bsrc *src,
         wasm_diag_stat[WASM_DIAG_CLOSE_BYTES + (k ? k - 1 : 0)] += mod.n;
         wasm_diag_stat[WASM_DIAG_CLOSE_N + (k ? k - 1 : 0)]++;
     }
-    thunk = w64_batch_instantiate((uintptr_t)mod.b, mod.n, (uintptr_t)ip,
-                                  src->n_uimp, maxtidx);
+    {
+        /*
+         * Timed on this side rather than in the EM_JS body: those
+         * __w64t* globals live in the vCPU worker, and the worker runs
+         * the guest without yielding, so a page-side evaluate() to read
+         * them never gets scheduled.  In wasm_diag_stat it reaches
+         * _wasm_memstat like every other counter.  ~1k modules/s at boot,
+         * so the two clock reads are noise -- but see WASM_DIAG_TIME_PHASES
+         * for the one that is not.
+         */
+        int64_t t0 = get_clock_realtime();
+
+        thunk = w64_batch_instantiate((uintptr_t)mod.b, mod.n, (uintptr_t)ip,
+                                      src->n_uimp, maxtidx);
+        wasm_diag_stat[WASM_DIAG_MOD_NS] += get_clock_realtime() - t0;
+    }
     tcg_debug_assert(thunk != 0);
     g_free(mod.b);
     g_free(sec.b);

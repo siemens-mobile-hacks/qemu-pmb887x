@@ -28,6 +28,7 @@
 #include "exec/page-protection.h"
 #include "system/memory.h"
 #include "qemu/wasm-diag.h"
+#include "qemu/timer.h"
 #include "system/physmem.h"
 #include "accel/tcg/cpu-ldst-common.h"
 #include "system/cpu-timers.h"
@@ -1624,9 +1625,28 @@ static inline bool tlb_hit(uint64_t tlb_addr, vaddr addr)
  * (e.g. CPUTLBEntry pointers) must be discarded and looked up again
  * (e.g. via tlb_entry()).
  */
+static bool tlb_fill_align_1(CPUState *cpu, vaddr addr, MMUAccessType type,
+                             int mmu_idx, MemOp memop, int size,
+                             bool probe, uintptr_t ra);
+
 static bool tlb_fill_align(CPUState *cpu, vaddr addr, MMUAccessType type,
                            int mmu_idx, MemOp memop, int size,
                            bool probe, uintptr_t ra)
+{
+#if defined(CONFIG_TCG_WASM64) && defined(WASM_DIAG_TIME_PHASES)
+    int64_t t0 = get_clock_realtime();
+    bool r = tlb_fill_align_1(cpu, addr, type, mmu_idx, memop, size, probe, ra);
+
+    wasm_diag_stat[WASM_DIAG_FILL_NS] += get_clock_realtime() - t0;
+    return r;
+#else
+    return tlb_fill_align_1(cpu, addr, type, mmu_idx, memop, size, probe, ra);
+#endif
+}
+
+static bool tlb_fill_align_1(CPUState *cpu, vaddr addr, MMUAccessType type,
+                             int mmu_idx, MemOp memop, int size,
+                             bool probe, uintptr_t ra)
 {
     const TCGCPUOps *ops = cpu->cc->tcg_ops;
     CPUTLBEntryFull full;
