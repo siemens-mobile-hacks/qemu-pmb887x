@@ -82,6 +82,11 @@ struct pmb887x_dif_t {
 	uint16_t pbc_word;
 	bool is_pbc_word_valid;
 
+	/* dif_mux() as a byte-lane lookup; see dif_build_mux_table() */
+	uint32_t mux_tab[4][256];
+	uint32_t mux_const;
+	bool mux_dirty;
+
 	pmb887x_clc_reg_t clc;
 	pmb887x_srb_reg_t srb;
     SSIBus *bus;
@@ -97,6 +102,8 @@ struct pmb887x_dif_t {
 
 	qemu_irq dmac_tx_breq;
 	qemu_irq dmac_rx_breq;
+	int dmac_tx_breq_level;   /* last level driven; -1 = never */
+	int dmac_rx_breq_level;
 };
 
 static void dif_reset_fifo(pmb887x_dif_t *p, enum DIFFifoType fifo) {
@@ -117,6 +124,7 @@ static void dif_set_fifo(pmb887x_dif_t *p, enum DIFFifoType fifo, bool buffered)
 }
 
 static void dif_reset_bit_mapping(pmb887x_dif_t *p) {
+	p->mux_dirty = true;
 	memset(p->bmreg, 0, sizeof(p->bmreg));
 	for (uint32_t bit = 0; bit < 32; bit++) {
 		uint32_t reg_index = bit / 6;
@@ -128,19 +136,29 @@ static void dif_reset_bit_mapping(pmb887x_dif_t *p) {
 	}
 }
 
+/*
+ * Every srb_set_isr/icr on the transfer path ends here through the event
+ * handler, so this runs ~4x per transferred word - and the level almost
+ * never changes.  The DMAC end already drops a repeat (dmac_handle_signal
+ * returns when request->level is unchanged), but only after an indirect
+ * call and two wrappers; these two lines are the DIF's own outputs and
+ * nothing else drives them, so dropping it here is the same decision taken
+ * one level earlier.
+ */
+static void dif_set_breq(qemu_irq line, int *last, int level) {
+	if (*last == level)
+		return;
+	*last = level;
+	qemu_set_irq(line, level);
+}
+
 static void dif_trigger_dma(pmb887x_dif_t *p) {
 	uint32_t ris = pmb887x_srb_get_ris_dma(&p->srb);
-	if (p->dmac_tx_clr) {
-		qemu_set_irq(p->dmac_tx_breq, 0);
-	} else {
-		qemu_set_irq(p->dmac_tx_breq, (ris & DIFv1_RIS_TX) != 0);
-	}
 
-	if (p->dmac_rx_clr) {
-		qemu_set_irq(p->dmac_rx_breq, 0);
-	} else {
-		qemu_set_irq(p->dmac_rx_breq, (ris & DIFv1_RIS_RX) != 0);
-	}
+	dif_set_breq(p->dmac_tx_breq, &p->dmac_tx_breq_level,
+		     p->dmac_tx_clr ? 0 : (ris & DIFv1_RIS_TX) != 0);
+	dif_set_breq(p->dmac_rx_breq, &p->dmac_rx_breq_level,
+		     p->dmac_rx_clr ? 0 : (ris & DIFv1_RIS_RX) != 0);
 }
 
 static bool dif_is_running(pmb887x_dif_t *p) {
@@ -181,30 +199,59 @@ static void dif_update_rx_request(pmb887x_dif_t *p) {
 	}
 }
 
-static uint16_t dif_mux(pmb887x_dif_t *p, uint32_t value) {
-	uint16_t output = 0;
+/*
+ * The bit-per-bit definition: output bit o (o < bits) is input bit bmreg[o]
+ * when bcsel[o] == 0, the constant bcreg[o] when bcsel[o] == 1, else 0.  A
+ * bcsel == 0 bit is therefore set in exactly those entries of its input's
+ * byte lane whose index has that input bit, which is what the inner loop
+ * enumerates.  Same shape as DIF v2's dif_build_mux_tables(), minus the
+ * command/data dimension and the inverter, which v1 does not have.
+ */
+static void dif_build_mux_table(pmb887x_dif_t *p) {
+	uint32_t cst = 0;
 
+	memset(p->mux_tab, 0, sizeof(p->mux_tab));
 	for (uint32_t output_bit = 0; output_bit < p->bits; output_bit++) {
-		uint32_t bmreg_index = output_bit / 6;
+		uint32_t obit = 1U << output_bit;
 		uint32_t bmreg_shift = (output_bit % 6) * 5;
-		uint32_t bcsel_index = output_bit / 16;
-		uint32_t bcsel_shift = (output_bit % 16) * 2;
-		uint32_t bit = 0;
 
 		if (bmreg_shift >= 15)
 			bmreg_shift++;
 
-		uint32_t mux = ((p->bmreg[bmreg_index] >> bmreg_shift) & 0x1F);
-		uint32_t bcsel = ((p->bcsel[bcsel_index] >> bcsel_shift) & 3);
-		if (bcsel == 0) {
-			bit = ((value >> mux) & 1);
-		} else if (bcsel == 1) {
-			bit = ((p->bcreg >> output_bit) & 1);
-		}
-		output |= (bit << output_bit);
-	}
+		uint32_t mux = ((p->bmreg[output_bit / 6] >> bmreg_shift) & 0x1F);
+		uint32_t bcsel = ((p->bcsel[output_bit / 16] >>
+				   ((output_bit % 16) * 2)) & 3);
 
-	return output;
+		if (bcsel == 1) {
+			if ((p->bcreg >> output_bit) & 1)
+				cst |= obit;
+			continue;
+		}
+		if (bcsel != 0)
+			continue;
+
+		uint32_t *t = p->mux_tab[mux >> 3];
+		uint32_t ibit = 1U << (mux & 7);
+		for (uint32_t b = ibit; b < 256; b = (b + 1) | ibit)
+			t[b] |= obit;
+	}
+	p->mux_const = cst;
+	p->mux_dirty = false;
+}
+
+/*
+ * Once per transferred word, and the per-bit form above was ~16 iterations
+ * of two divisions and two modulos each - 3.4 % of the vCPU on a CX70.
+ */
+static inline uint16_t dif_mux(pmb887x_dif_t *p, uint32_t value) {
+	if (unlikely(p->mux_dirty))
+		dif_build_mux_table(p);
+
+	return p->mux_tab[0][value & 0xFF] |
+	       p->mux_tab[1][(value >> 8) & 0xFF] |
+	       p->mux_tab[2][(value >> 16) & 0xFF] |
+	       p->mux_tab[3][value >> 24] |
+	       p->mux_const;
 }
 
 static bool dif_convert_word(pmb887x_dif_t *p, uint16_t value, uint16_t *output) {
@@ -335,6 +382,8 @@ static void dif_write_fifo(pmb887x_dif_t *p, uint16_t value) {
 
 static void dif_update_state(pmb887x_dif_t *p) {
 	uint32_t bits = ((p->con & DIFv1_CON_BM) >> DIFv1_CON_BM_SHIFT) + 1;
+	if (bits != p->bits)
+		p->mux_dirty = true;
 	p->bits = bits;
 	p->mask = (1 << bits) - 1;
 
@@ -617,6 +666,7 @@ static void dif_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned si
 		case DIFv1_BCSEL0:
 		case DIFv1_BCSEL1:
 			p->bcsel[(haddr - DIFv1_BCSEL0) / 4] = value;
+			p->mux_dirty = true;
 			dif_dump_bit_mux(p);
 			break;
 
@@ -627,11 +677,13 @@ static void dif_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned si
 		case DIFv1_BMREG4:
 		case DIFv1_BMREG5:
 			p->bmreg[(haddr - DIFv1_BMREG0) / 4] = value;
+			p->mux_dirty = true;
 			dif_dump_bit_mux(p);
 			break;
 
 		case DIFv1_BCREG:
 			p->bcreg = value;
+			p->mux_dirty = true;
 			dif_dump_bit_mux(p);
 			break;
 
@@ -752,6 +804,7 @@ static void dif_reset(DeviceState *dev) {
 	p->pbccon = 0;
 	p->bcreg = 0;
 	memset(p->bcsel, 0, sizeof(p->bcsel));
+	p->mux_dirty = true;
 	p->sync_config = 0;
 	p->lcd_unk9c = 0;
 	p->sync_count = 0;
@@ -759,13 +812,16 @@ static void dif_reset(DeviceState *dev) {
 	p->bits = 0;
 	p->tx_data = 0;
 	p->transfer_pending = false;
+	/* the DMAC's own recorded level resets with it: re-drive both lines */
+	p->dmac_tx_breq_level = -1;
+	p->dmac_rx_breq_level = -1;
 	p->pbc_word = 0;
 	p->is_pbc_word_valid = false;
 	p->dmac_tx_clr = 0;
 	p->dmac_rx_clr = 0;
 
-	qemu_set_irq(p->dmac_tx_breq, 0);
-	qemu_set_irq(p->dmac_rx_breq, 0);
+	dif_set_breq(p->dmac_tx_breq, &p->dmac_tx_breq_level, 0);
+	dif_set_breq(p->dmac_rx_breq, &p->dmac_rx_breq_level, 0);
 
 	dif_set_fifo(p, DIF_FIFO_RX, false);
 	dif_set_fifo(p, DIF_FIFO_TX, false);
