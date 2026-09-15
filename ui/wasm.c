@@ -278,6 +278,12 @@ static unsigned int key_ring_head;   /* consumer (main loop) */
 static unsigned int key_ring_tail;   /* producer (JS thread) */
 
 static QEMUBH *key_bh;
+/*
+ * Release-published once @key_bh exists.  A separate flag rather than an
+ * atomic read of @key_bh itself: QEMUBH is opaque here, and qatomic's
+ * typeof_strip_qual() needs a complete type to form (expr)+0.
+ */
+static int key_bh_ready;
 
 /*
  * Why the ring + bottom half: wasm_send_key() runs on the browser main
@@ -301,8 +307,27 @@ static void wasm_key_bh(void *opaque)
 EMSCRIPTEN_KEEPALIVE
 void wasm_send_key(uint32_t lnx, int32_t down)
 {
-    unsigned int tail = qatomic_read(&key_ring_tail);
-    unsigned int head = qatomic_read(&key_ring_head);
+    unsigned int tail, head;
+    /*
+     * The export is callable from JS the moment the module instantiates,
+     * which is long before wasm_display_init() creates the bottom half --
+     * and the page's keypad is live from its first render, so a pointer
+     * resting where a key lands (or a touch during the boot) delivers a
+     * key event to a machine that does not exist yet.
+     *
+     * That used to take the whole module down.  With a NULL @bh,
+     * qemu_bh_schedule()'s atomic on bh->flags succeeds -- offset 40 is a
+     * perfectly valid wasm address -- so nothing catches it there; bh->ctx
+     * then reads address 0 and the list insert at ctx+184 traps with
+     * "memory access out of bounds".  A guest key press cannot be
+     * delivered before there is a guest, so drop it.
+     */
+    if (!qatomic_load_acquire(&key_bh_ready)) {
+        return;
+    }
+
+    tail = qatomic_read(&key_ring_tail);
+    head = qatomic_read(&key_ring_head);
 
     if (tail - head >= KEY_RING_SIZE) {
         return; /* full: drop */
@@ -398,6 +423,8 @@ static void wasm_display_init(DisplayState *ds, DisplayOptions *opts)
     QemuConsole *con;
 
     key_bh = qemu_bh_new(wasm_key_bh, NULL);
+    /* release: pairs with the acquire in wasm_send_key() */
+    qatomic_store_release(&key_bh_ready, 1);
 
     /* listen on the first (graphic) console: the phone LCD */
     con = qemu_console_lookup_by_index(0);
