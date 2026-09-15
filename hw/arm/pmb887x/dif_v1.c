@@ -76,6 +76,7 @@ struct pmb887x_dif_t {
 	QEMUTimer *transfer_timer;
 	uint16_t tx_data;
 	bool transfer_pending;
+	bool in_transfer;         /* dif_run_transfers() re-entrancy guard */
 
 	uint32_t mask;
 	uint32_t bits;
@@ -306,8 +307,29 @@ static void dif_transfer_word(pmb887x_dif_t *p) {
 	}
 }
 
-static void dif_transfer_complete(void *opaque) {
-	pmb887x_dif_t *p = opaque;
+/*
+ * Run the queued words here rather than from a timer.  v1 used to hand
+ * every single word to timer_mod(transfer_timer, 0) and pick it up from
+ * the callback, which on a CX70 is ~84k timer arm/fire pairs a second -
+ * and because the DMAC's breq then arrives from outside its own run loop,
+ * the DMAC arms its timer per burst too (dmacSchedTimer 10.87M against
+ * 10.86M bursts).  DIF v2 has never armed its timer at all: the guard
+ * below is its dif_schedule(), and on an S75 the same display work costs
+ * 99 DMAC timer arms a second instead of 72k.
+ *
+ * The loop still stops as soon as an interrupt is raised - the RX FIFO is
+ * four words deep and would overflow if a whole TX FIFO were drained
+ * without anyone reading it - so the transfer has to be resumable.  Every
+ * point that can drop the raised request calls back in: the DMAC or CPU
+ * pushing the next word, reading the RX FIFO, and the event handler when
+ * a request is cleared (dif_event_handler, which is what v2 resumes on).
+ */
+static void dif_run_transfers(pmb887x_dif_t *p) {
+	if (p->in_transfer)
+		return;   /* an outer call is looping; it will take the work */
+
+	p->in_transfer = true;
+	dif_schedule_transfer(p);
 	while (p->transfer_pending) {
 		p->transfer_pending = false;
 		if (!dif_is_running(p))
@@ -318,10 +340,38 @@ static void dif_transfer_complete(void *opaque) {
 		if (pmb887x_srb_get_ris(&p->srb) != 0)
 			break;
 	}
-	if (!p->transfer_pending)
+	if (p->transfer_pending) {
+		/*
+		 * The loop stopped on a raised request with a word already
+		 * popped into tx_data, and only an external call can carry it
+		 * forward - so guarantee one.  This is NOT the per-word arm
+		 * the old code did: a word is only held when the TX FIFO had
+		 * another one ready, and the DMAC feeds it a word at a time,
+		 * so on the display path the FIFO is empty here and the timer
+		 * is never armed.  Without it a CPU-driven burst that fills
+		 * the FIFO and then waits on something other than the CON read
+		 * below stalls outright - which is what the rt=banked boot
+		 * gate caught, at 140M instructions.
+		 */
+		timer_mod(p->transfer_timer, 0);
+	} else {
 		p->status &= ~DIFv1_CON_BSY;
+	}
+	p->in_transfer = false;
 }
 
+/*
+ * Nothing arms transfer_timer any more, exactly as in v2 - the resume
+ * points above are what carry a held word forward.  The timer and this
+ * callback stay because dif_stop_transfer() still cancels it and because
+ * re-arming it is the one-line fix if a firmware is ever found that
+ * stalls: the CON read is the catch-all today.
+ */
+static void dif_transfer_complete(void *opaque) {
+	dif_run_transfers(opaque);
+}
+
+/* Pop the next word into tx_data; the caller runs it. */
 static void dif_schedule_transfer(pmb887x_dif_t *p) {
 	if (p->transfer_pending || !dif_is_running(p) || pmb887x_fifo_is_empty(p->tx_fifo))
 		return;
@@ -330,7 +380,6 @@ static void dif_schedule_transfer(pmb887x_dif_t *p) {
 	p->transfer_pending = true;
 	p->status |= DIFv1_CON_BSY;
 	dif_update_tx_request(p);
-	timer_mod(p->transfer_timer, 0);
 }
 
 static void dif_stop_transfer(pmb887x_dif_t *p) {
@@ -343,7 +392,7 @@ static void dif_stop_transfer(pmb887x_dif_t *p) {
 
 static void dif_update_transfer(pmb887x_dif_t *p) {
 	if (dif_is_running(p)) {
-		dif_schedule_transfer(p);
+		dif_run_transfers(p);
 	} else {
 		dif_stop_transfer(p);
 	}
@@ -360,6 +409,8 @@ static uint16_t dif_read_fifo(pmb887x_dif_t *p) {
 	}
 	uint16_t value = pmb887x_fifo16_pop(p->rx_fifo);
 	dif_update_rx_request(p);
+	/* draining RX may have dropped the request the loop stopped on */
+	dif_run_transfers(p);
 	return value;
 }
 
@@ -377,7 +428,7 @@ static void dif_write_fifo(pmb887x_dif_t *p, uint16_t value) {
 	}
 	pmb887x_fifo16_push(p->tx_fifo, p->tb & p->mask);
 	dif_update_tx_request(p);
-	dif_schedule_transfer(p);
+	dif_run_transfers(p);
 }
 
 static void dif_update_state(pmb887x_dif_t *p) {
@@ -458,6 +509,10 @@ static uint64_t dif_io_read(void *opaque, hwaddr haddr, unsigned size) {
 			break;
 
 		case DIFv1_CON:
+			/* this is where BSY is read, so it is where a CPU that
+			 * spins on it without touching anything else would
+			 * otherwise wait for a word the loop is still holding */
+			dif_run_transfers(p);
 			value = (p->con & DIFv1_CON_EN) ? p->status | (p->con & DIF_CON_STATUS) : p->con;
 			break;
 
@@ -710,6 +765,10 @@ static void dif_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned si
 static void dif_event_handler(void *opaque, int event_id, int level) {
 	pmb887x_dif_t *p = opaque;
 	dif_trigger_dma(p);
+	/* a cleared request is what dif_run_transfers() stopped on; v2's
+	 * dif_event_handler resumes on exactly this */
+	if (level == 0)
+		dif_run_transfers(p);
 }
 
 static const MemoryRegionOps io_ops = {
@@ -812,6 +871,7 @@ static void dif_reset(DeviceState *dev) {
 	p->bits = 0;
 	p->tx_data = 0;
 	p->transfer_pending = false;
+	p->in_transfer = false;
 	/* the DMAC's own recorded level resets with it: re-drive both lines */
 	p->dmac_tx_breq_level = -1;
 	p->dmac_rx_breq_level = -1;
