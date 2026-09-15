@@ -14,6 +14,7 @@
 #include "accel/tcg/cpu-ops.h"
 #include "cpregs.h"
 #include "qemu/wasm-diag.h"
+#include "qemu/timer.h"
 
 static inline bool fgt_svc(CPUARMState *env, int el)
 {
@@ -758,6 +759,20 @@ void arm_rebuild_hflags(CPUARMState *env)
      * doc/lessons.md -- profile self-time here names the wrong function.
      */
     wasm_diag_stat[WASM_DIAG_HFLAGS_CALLS]++;
+#endif
+#if defined(CONFIG_TCG_WASM64) && defined(WASM_DIAG_TIME_PHASES)
+    {
+        static uint32_t tick;
+
+        if (unlikely((++tick & 7) == 0)) {
+            int64_t t0 = get_clock_realtime();
+
+            arm_set_hflags(env, rebuild_hflags_internal(env));
+            wasm_diag_stat[WASM_DIAG_HFLAGS_NS] += get_clock_realtime() - t0;
+            wasm_diag_stat[WASM_DIAG_HFLAGS_NS_N]++;
+            return;
+        }
+    }
 #endif
     arm_set_hflags(env, rebuild_hflags_internal(env));
 }

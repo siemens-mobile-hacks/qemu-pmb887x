@@ -182,6 +182,12 @@ enum {
     WASM_DIAG_SLOWW_BD,
     WASM_DIAG_SLOWW_BE,
     WASM_DIAG_SLOWW_BF,
+    WASM_DIAG_LC2_HIT,       /* W64_LC2 ceiling probe: misses a second cache
+                              * way would have caught */
+    WASM_DIAG_HFLAGS_NS,     /* sampled time in arm_rebuild_hflags */
+    WASM_DIAG_HFLAGS_NS_N,
+    WASM_DIAG_LC_NS,         /* sampled time in helper_lookup_tb_ptr_lc */
+    WASM_DIAG_LC_NS_N,
     WASM_DIAG_RO_FLIP,       /* memory_region_set_readonly transitions */
     WASM_DIAG_EBU_W,         /* pmb887x EBU register writes */
     WASM_DIAG_EBU_CHANGE,    /* ...chip-selects the sweep actually remapped */

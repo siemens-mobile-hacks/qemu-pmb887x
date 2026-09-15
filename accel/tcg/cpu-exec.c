@@ -20,6 +20,7 @@
 #include "qemu/osdep.h"
 #include "qemu/qemu-print.h"
 #include "qemu/wasm-diag.h"
+#include "qemu/timer.h"
 #include "qapi/error.h"
 #include "qapi/type-helpers.h"
 #include "hw/core/cpu.h"
@@ -529,6 +530,38 @@ static bool w64_lc_static_match(const struct W64LookupCache *lc,
     return true;
 }
 
+/*
+ * Ceiling probe for a second cache way, W64_LC2=1.  The emitted code is
+ * untouched, so the helper still sees only real misses of the one-entry
+ * slot; a direct-mapped shadow table hashed on the slot address stands in
+ * for way 1, filled with whatever way 0 is about to evict (LRU-of-2).
+ * LC2_HIT / LC_CALL is then the fraction of today's misses a two-way
+ * cache would catch - measured before building one.
+ */
+#define W64_LC2_SLOTS 16384
+static struct {
+    const void *slot;
+    uint32_t pc, gen, key32[3];
+    uint8_t dynmask;
+} w64_lc2[W64_LC2_SLOTS];
+
+static bool w64_lc2_enabled(void)
+{
+    static int mode = -1;
+    if (mode < 0) {
+        mode = getenv("W64_LC2") != NULL;
+    }
+    return mode != 0;
+}
+
+static unsigned w64_lc2_idx(const void *slot)
+{
+    uintptr_t x = (uintptr_t)slot >> 5;
+
+    x *= 0x9e3779b97f4a7c15ULL;
+    return (x >> 33) & (W64_LC2_SLOTS - 1);
+}
+
 static bool w64_lc_verify(void)
 {
     static int mode = -1;
@@ -538,9 +571,33 @@ static bool w64_lc_verify(void)
     return mode != 0;
 }
 
+#if defined(CONFIG_TCG_WASM64) && defined(WASM_DIAG_TIME_PHASES)
+static const void *lookup_tb_ptr_lc_1(CPUArchState *env, void *slot);
+
+const void *HELPER(lookup_tb_ptr_lc)(CPUArchState *env, void *slot)
+{
+    static uint32_t tick;
+    const void *r;
+    int64_t t0;
+
+    if (likely((++tick & 7) != 0)) {
+        return lookup_tb_ptr_lc_1(env, slot);
+    }
+    t0 = get_clock_realtime();
+    r = lookup_tb_ptr_lc_1(env, slot);
+    wasm_diag_stat[WASM_DIAG_LC_NS] += get_clock_realtime() - t0;
+    wasm_diag_stat[WASM_DIAG_LC_NS_N]++;
+    return r;
+}
+
+static const void *lookup_tb_ptr_lc_1(CPUArchState *env, void *slot)
+{
+    CPUState *cpu = env_cpu(env);
+#else
 const void *HELPER(lookup_tb_ptr_lc)(CPUArchState *env, void *slot)
 {
     CPUState *cpu = env_cpu(env);
+#endif
     struct W64LookupCache *lc = slot;
     TranslationBlock *tb;
     uint32_t gen = qatomic_read(&cpu->neg.tb_key_gen);
@@ -557,6 +614,33 @@ const void *HELPER(lookup_tb_ptr_lc)(CPUArchState *env, void *slot)
     }
 
     tb = tb_lookup(cpu, s);
+
+    if (unlikely(w64_lc2_enabled()) && W64_LC_KEY(cpu, cur)) {
+        unsigned i = w64_lc2_idx(slot);
+
+        if (w64_lc2[i].slot == slot && w64_lc2[i].gen == gen &&
+            w64_lc2[i].pc == s.pc) {
+            bool ok = true;
+
+            for (int k = 0; k < 3; k++) {
+                if ((w64_lc2[i].dynmask & (1 << k)) &&
+                    w64_lc2[i].key32[k] != cur[k]) {
+                    ok = false;
+                }
+            }
+            if (ok) {
+                wasm_diag_stat[WASM_DIAG_LC2_HIT]++;
+            }
+        }
+        /* way 0 is about to be overwritten: it becomes way 1 */
+        w64_lc2[i].slot = slot;
+        w64_lc2[i].pc = lc->pc;
+        w64_lc2[i].gen = lc->gen;
+        w64_lc2[i].dynmask = lc->dynmask;
+        for (int k = 0; k < 3; k++) {
+            w64_lc2[i].key32[k] = lc->key32[k];
+        }
+    }
 
     if (unlikely(w64_lc_verify())) {
         if (lc->gen == gen && lc->pc == s.pc &&
