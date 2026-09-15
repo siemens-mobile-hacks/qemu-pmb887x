@@ -116,6 +116,86 @@ enum {
                               * accel/tcg/translate-all.c); the module
                               * compile is the browser's own time, which
                               * tools/modcost.mjs reads from the worker */
+    WASM_DIAG_LDST_GEN,      /* guest memory ops emitted (translation) */
+    WASM_DIAG_LDST_GEN_NOPROBE, /* ...with no inline TLB probe: bswap, or an
+                              * atomicity class the backend will not inline
+                              * (MO_ATOM_IFALIGN_PAIR is ldrd/strd).  These
+                              * call the *_mmu helper on EVERY execution. */
+    WASM_DIAG_LDST_NOPROBE,  /* executions of those, counted in the generated
+                              * code itself -- W64_LDSTCOUNT=1 only */
+    WASM_DIAG_LDST_MISS,     /* executions where a probe was emitted and
+                              * missed (TLB miss or MMIO) -- same knob */
+    WASM_DIAG_LDST_EXEC,     /* executions of any guest memory op, the
+                              * per-instruction denominator -- W64_LDSTCOUNT=2,
+                              * which is a bump on the hottest path there is */
+    WASM_DIAG_SLOW_MISS,     /* mmu_lookup1: the entry was for another page */
+    WASM_DIAG_SLOW_MMIO,     /* ...entry matched, TLB_MMIO */
+    WASM_DIAG_SLOW_NOTDIRTY, /* ...entry matched, TLB_NOTDIRTY (clean page) */
+    WASM_DIAG_SLOW_OTHER,    /* ...entry matched, some other flag */
+    WASM_DIAG_SLOW_CLEAN,    /* ...entry matched with NO flag set: the inline
+                              * probe rejected an access it could have served,
+                              * and the helper round trip bought nothing */
+    WASM_DIAG_IO_NS,         /* summed wall ns over SAMPLED fused MMIO
+                              * LOAD dispatches -- ioNs/ioNsN is ns each.
+                              * The browser's clock is quantized to 1 ms, so
+                              * a sample is 0 or 1 ms and the mean is a
+                              * straddle-probability estimate: unbiased, but
+                              * its error is 1/sqrt(nonzero samples). */
+    WASM_DIAG_IO_NS_N,       /* ...how many were sampled (1 in W64_IO_SAMPLE) */
+    WASM_DIAG_IO_ST_NS,      /* same for fused MMIO STORE dispatches */
+    WASM_DIAG_IO_ST_NS_N,
+    WASM_DIAG_BQL_NS,        /* ...of which, bql_lock_mmio() alone */
+    WASM_DIAG_BQL_NS_N,
+    WASM_DIAG_CAL_NS,        /* straddle floor: an EMPTY timed interval,
+                              * sampled like the others.  calNs/calNsN is
+                              * what two clock reads cost by themselves, and
+                              * must be subtracted from ioNs, ioStNs and
+                              * bqlNs before any of them is believed. */
+    WASM_DIAG_CAL_NS_N,
+    WASM_DIAG_DEV_R_NS,      /* the device read callback alone */
+    WASM_DIAG_DEV_R_NS_N,
+    WASM_DIAG_DEV_W_NS,      /* the device write callback alone: no BQL, no
+                              * dispatch, just full->io_write_fn() */
+    WASM_DIAG_DEV_W_NS_N,
+    WASM_DIAG_TPU_W_NS,      /* the pmb887x TPU write handler alone */
+    WASM_DIAG_TPU_W_NS_N,
+    WASM_DIAG_SLOWW_ADDR,    /* sum of guest addresses of duration-weighted
+                              * MMIO store samples: /slowwN names the device */
+    WASM_DIAG_SLOWW_N,
+    WASM_DIAG_SLOWW_MIN,     /* ...and the range they span (gauges) */
+    WASM_DIAG_SLOWW_MAX,
+    WASM_DIAG_SLOWW_B0,      /* duration-weighted MMIO-store samples bucketed
+                              * by phys_addr >> 28: B0 = RAM/BROM, BA = the
+                              * NOR flash window, BF = the module MMIO block */
+    WASM_DIAG_SLOWW_B1,
+    WASM_DIAG_SLOWW_B2,
+    WASM_DIAG_SLOWW_B3,
+    WASM_DIAG_SLOWW_B4,
+    WASM_DIAG_SLOWW_B5,
+    WASM_DIAG_SLOWW_B6,
+    WASM_DIAG_SLOWW_B7,
+    WASM_DIAG_SLOWW_B8,
+    WASM_DIAG_SLOWW_B9,
+    WASM_DIAG_SLOWW_BA,
+    WASM_DIAG_SLOWW_BB,
+    WASM_DIAG_SLOWW_BC,
+    WASM_DIAG_SLOWW_BD,
+    WASM_DIAG_SLOWW_BE,
+    WASM_DIAG_SLOWW_BF,
+    WASM_DIAG_RO_FLIP,       /* memory_region_set_readonly transitions */
+    WASM_DIAG_EBU_W,         /* pmb887x EBU register writes */
+    WASM_DIAG_EBU_CHANGE,    /* ...chip-selects the sweep actually remapped */
+    WASM_DIAG_EBU_CH_SIZE,   /* ...of which by size, base, enable, readonly */
+    WASM_DIAG_EBU_CH_ADDR,
+    WASM_DIAG_EBU_CH_EN,
+    WASM_DIAG_EBU_CH_RO,
+    WASM_DIAG_EBU_W_NS,      /* ...and the sampled time in the handler */
+    WASM_DIAG_EBU_W_NS_N,
+    WASM_DIAG_BQL_CALL,      /* bql_lock_mmio() calls */
+    WASM_DIAG_BQL_TOOK,      /* ...that reached the real pthread_mutex_lock:
+                              * the rest were served by the deferred hold */
+    WASM_DIAG_BQL_REAL_UNLOCK, /* bql_unlock_mmio() calls that really released
+                              * (somebody was waiting), ending a deferral */
     WASM_DIAG_N
 };
 

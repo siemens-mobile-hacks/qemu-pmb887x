@@ -752,7 +752,26 @@ static bool tpu_ram_write_moves_deadline(pmb887x_tpu_t *p, uint32_t offset) {
 	return word >= p->ceap && word < p->eapt;
 }
 
+#if defined(CONFIG_TCG_WASM64) && defined(WASM_DIAG_TIME_PHASES)
+/* Sampled like cputlb's: subtract calNs (the empty-interval floor). */
+static uint32_t tpu_w_tick;
+static void tpu_io_write_1(void *opaque, hwaddr haddr, uint64_t value, unsigned size);
+
 static void tpu_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned size) {
+	if (likely((++tpu_w_tick & 7) != 0)) {
+		tpu_io_write_1(opaque, haddr, value, size);
+		return;
+	}
+	int64_t t0 = get_clock_realtime();
+	tpu_io_write_1(opaque, haddr, value, size);
+	wasm_diag_stat[WASM_DIAG_TPU_W_NS] += get_clock_realtime() - t0;
+	wasm_diag_stat[WASM_DIAG_TPU_W_NS_N]++;
+}
+
+static void tpu_io_write_1(void *opaque, hwaddr haddr, uint64_t value, unsigned size) {
+#else
+static void tpu_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned size) {
+#endif
 	pmb887x_tpu_t *p = (struct pmb887x_tpu_t *) opaque;
 	
 	IO_DUMP_WRITE(haddr + p->mmio.addr, size, value);

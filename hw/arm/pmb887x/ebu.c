@@ -5,6 +5,8 @@
 #define PMB887X_TRACE_PREFIX	"pmb887x-ebu"
 
 #include "qemu/osdep.h"
+#include "qemu/timer.h"
+#include "qemu/wasm-diag.h"
 #include "hw/core/sysbus.h"
 #include "hw/core/hw-error.h"
 #include "system/address-spaces.h"
@@ -58,7 +60,8 @@ struct pmb887x_ebu_t {
 
 static void ebu_update_state(pmb887x_ebu_t *p) {
 	bool is_ebu_enabled = pmb887x_clc_is_enabled(&p->clc);
-	
+
+
 	for (int i = 0; i < 8; ++i) {
 		MemoryRegion *region = &p->regions[i];
 		
@@ -74,6 +77,19 @@ static void ebu_update_state(pmb887x_ebu_t *p) {
 			region->enabled != is_enabled || region->readonly != is_ro;
 		
 		if (state_changed) {
+			wasm_diag_stat[WASM_DIAG_EBU_CHANGE]++;
+			if (memory_region_size(region) != size) {
+				wasm_diag_stat[WASM_DIAG_EBU_CH_SIZE]++;
+			}
+			if (region->addr != addr) {
+				wasm_diag_stat[WASM_DIAG_EBU_CH_ADDR]++;
+			}
+			if (region->enabled != is_enabled) {
+				wasm_diag_stat[WASM_DIAG_EBU_CH_EN]++;
+			}
+			if (region->readonly != is_ro) {
+				wasm_diag_stat[WASM_DIAG_EBU_CH_RO]++;
+			}
 			if (is_enabled && !region->enabled) {
 				DPRINTF("CS%d enable region %08X-%08X%s [%dM]\n", i, addr, addr + size - 1, is_ro ? " [RO]" : " [RW]", size / 1024 / 1024);
 			} else if (!is_enabled && region->enabled) {
@@ -97,6 +113,7 @@ static void ebu_update_state(pmb887x_ebu_t *p) {
 			}
 		}
 	}
+
 }
 
 static uint64_t ebu_io_read(void *opaque, hwaddr haddr, unsigned size) {
@@ -205,7 +222,26 @@ static uint64_t ebu_io_read(void *opaque, hwaddr haddr, unsigned size) {
 	return value;
 }
 
+#if defined(CONFIG_TCG_WASM64) && defined(WASM_DIAG_TIME_PHASES)
+static uint32_t ebu_w_tick;
+static void ebu_io_write_1(void *opaque, hwaddr haddr, uint64_t value, unsigned size);
+
 static void ebu_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned size) {
+	wasm_diag_stat[WASM_DIAG_EBU_W]++;
+	if (likely((++ebu_w_tick & 7) != 0)) {
+		ebu_io_write_1(opaque, haddr, value, size);
+		return;
+	}
+	int64_t t0 = get_clock_realtime();
+	ebu_io_write_1(opaque, haddr, value, size);
+	wasm_diag_stat[WASM_DIAG_EBU_W_NS] += get_clock_realtime() - t0;
+	wasm_diag_stat[WASM_DIAG_EBU_W_NS_N]++;
+}
+
+static void ebu_io_write_1(void *opaque, hwaddr haddr, uint64_t value, unsigned size) {
+#else
+static void ebu_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned size) {
+#endif
 	pmb887x_ebu_t *p = opaque;
 	
 	IO_DUMP_WRITE(haddr + p->mmio.addr, size, value);

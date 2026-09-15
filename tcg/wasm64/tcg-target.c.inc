@@ -1311,6 +1311,47 @@ static bool w64_tlb_inline(void)
     return mode != 0;
 }
 
+/* W64_LDSTCOUNT emits counter bumps into the generated code, which is how
+ * the *dynamic* cost of a memop becomes visible at all: the static
+ * WASM_DIAG_LDST_GEN* counters count translations, and a memop translated
+ * once can run a billion times.
+ *
+ *   1  miss arms only -- the bump sits next to an indirect helper call
+ *      that dwarfs it, so this one is nearly free
+ *   2  ...and every execution (WASM_DIAG_LDST_EXEC), which is the memops
+ *      -per-guest-instruction denominator.  On the hot path by
+ *      construction: expect it to cost.
+ *
+ * Either way the generated code changes -- a measurement knob, never an
+ * A/B.  Per-Mi rates stay exact under it (icount determinism); wall-clock
+ * numbers do not. */
+static int w64_ldst_count(void)
+{
+    static int mode = -1;
+    if (mode < 0) {
+        const char *e = getenv("W64_LDSTCOUNT");
+        mode = e ? atoi(e) : 0;
+    }
+    return mode;
+}
+
+/* ++*(uint64_t *)&wasm_diag_stat[idx], at the link-time constant address:
+ * the generated modules import the main module's linear memory, so the
+ * counter the tools read through _wasm_memstat is directly addressable. */
+static void w64_diag_bump(TCGContext *s, int idx)
+{
+    int64_t a = (int64_t)(uintptr_t)&wasm_diag_stat[idx];
+
+    w64_const_i64(s, a);
+    w64_const_i64(s, a);
+    w64_u8(s, 0x29);                        /* i64.load */
+    w64_memarg(s, 3, 0);
+    w64_const_i64(s, 1);
+    w64_u8(s, 0x7c);                        /* i64.add */
+    w64_u8(s, 0x37);                        /* i64.store */
+    w64_memarg(s, 3, 0);
+}
+
 static bool w64_tlb_setup(struct w64_tlb_ctx *tc, TCGContext *s,
                           MemOpIdx oi, bool is_ld)
 {
@@ -1427,6 +1468,13 @@ static void tgen_qemu_ld(TCGContext *s, TCGType type, TCGReg data,
         (uint32_t)(uintptr_t)qemu_ld_helpers[mop & MO_SSIZE], ut);
 
     fast = w64_tlb_setup(&tc, s, oi, true);
+    wasm_diag_stat[WASM_DIAG_LDST_GEN]++;
+    if (!fast) {
+        wasm_diag_stat[WASM_DIAG_LDST_GEN_NOPROBE]++;
+    }
+    if (w64_ldst_count() >= 2) {
+        w64_diag_bump(s, WASM_DIAG_LDST_EXEC);
+    }
     if (fast) {
         /* Snapshot the zero-extended address before the arms: with
          * data == addr (legal — e.g. ldrd's 64-bit load into the
@@ -1450,6 +1498,9 @@ static void tgen_qemu_ld(TCGContext *s, TCGType type, TCGReg data,
     }
 
     /* miss (or probe disabled): the *_mmu helper (phase-1 path) */
+    if (w64_ldst_count()) {
+        w64_diag_bump(s, fast ? WASM_DIAG_LDST_MISS : WASM_DIAG_LDST_NOPROBE);
+    }
     w64_local_get(s, W64_P_ENV);
     if (fast) {
         w64_local_get(s, W64_L_SCR2);       /* addr snapshot */
@@ -1499,6 +1550,13 @@ static void tgen_qemu_st(TCGContext *s, TCGType type, TCGReg data,
         (uint32_t)(uintptr_t)qemu_st_helpers[s_bits], ut);
 
     fast = w64_tlb_setup(&tc, s, oi, false);
+    wasm_diag_stat[WASM_DIAG_LDST_GEN]++;
+    if (!fast) {
+        wasm_diag_stat[WASM_DIAG_LDST_GEN_NOPROBE]++;
+    }
+    if (w64_ldst_count() >= 2) {
+        w64_diag_bump(s, WASM_DIAG_LDST_EXEC);
+    }
     if (fast) {
         w64_get_i64(s, addr);               /* snapshot (see ld above) */
         w64_local_set(s, W64_L_SCR2);
@@ -1517,6 +1575,9 @@ static void tgen_qemu_st(TCGContext *s, TCGType type, TCGReg data,
     }
 
     /* miss (or probe disabled): the *_mmu helper (phase-1 path) */
+    if (w64_ldst_count()) {
+        w64_diag_bump(s, fast ? WASM_DIAG_LDST_MISS : WASM_DIAG_LDST_NOPROBE);
+    }
     w64_local_get(s, W64_P_ENV);
     if (fast) {
         w64_local_get(s, W64_L_SCR2);       /* addr snapshot */

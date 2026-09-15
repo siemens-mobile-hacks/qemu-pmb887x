@@ -2198,6 +2198,9 @@ static bool mmu_lookup1(CPUState *cpu, MMULookupPageData *data, MemOp memop,
     int flags;
 
     /* If the TLB entry is for a different page, reload and try again.  */
+#ifdef CONFIG_TCG_WASM64
+    bool w64_missed = !tlb_hit(tlb_addr, addr);
+#endif
     if (!tlb_hit(tlb_addr, addr)) {
         if (!victim_tlb_hit(cpu, mmu_idx, index, access_type,
                             addr & TARGET_PAGE_MASK)) {
@@ -2213,6 +2216,27 @@ static bool mmu_lookup1(CPUState *cpu, MMULookupPageData *data, MemOp memop,
     full = &cpu->neg.tlb.d[mmu_idx].fulltlb[index];
     flags = tlb_addr & (TLB_FLAGS_MASK & ~TLB_FORCE_SLOW);
     flags |= full->slow_flags[access_type];
+
+#ifdef CONFIG_TCG_WASM64
+    /*
+     * Why the wasm64 backend's inline TLB probe sent this access to the
+     * helper.  The probe fails on any flag bit, so "clean" below means the
+     * probe and this lookup disagree -- the access was resolvable inline
+     * and the round trip bought nothing.  ~745k/s on both EL71 and CX70,
+     * the same order as the unconditional WASM_DIAG_LOOKUP.
+     */
+    if (w64_missed) {
+        wasm_diag_stat[WASM_DIAG_SLOW_MISS]++;
+    } else if (flags & TLB_MMIO) {
+        wasm_diag_stat[WASM_DIAG_SLOW_MMIO]++;
+    } else if (flags & TLB_NOTDIRTY) {
+        wasm_diag_stat[WASM_DIAG_SLOW_NOTDIRTY]++;
+    } else if (flags) {
+        wasm_diag_stat[WASM_DIAG_SLOW_OTHER]++;
+    } else {
+        wasm_diag_stat[WASM_DIAG_SLOW_CLEAN]++;
+    }
+#endif
 
     if (likely(!maybe_resized)) {
         /* Alignment has not been checked by tlb_fill_align. */
@@ -2645,6 +2669,39 @@ uint64_t io_bswap_const(uint64_t val, unsigned size)
     }
 }
 
+#if defined(CONFIG_TCG_WASM64) && defined(WASM_DIAG_TIME_PHASES)
+/*
+ * Sampled timer for the fused MMIO dispatch, load and store both.  Two
+ * get_clock_realtime() calls on a path taken ~680k times a second would
+ * cost more than they measure (emscripten's gettimeofday is a call out to
+ * JS), so time one dispatch in W64_IO_SAMPLE and report the mean: ioNs /
+ * ioNsN is the ns per dispatch, and that times (ioLd + ioSt) is the share
+ * of wall the devices take.
+ */
+#define W64_IO_SAMPLE 8
+static uint32_t w64_io_tick;
+
+static inline bool w64_io_time_p(void)
+{
+    return (++w64_io_tick & (W64_IO_SAMPLE - 1)) == 0;
+}
+
+/*
+ * Calibration: every timed interval is bounded by two get_clock_realtime()
+ * calls, and their own latency sits inside the window, so a zero-length
+ * phase still measures nonzero.  This times an EMPTY interval the same
+ * sampled way; calNs/calNsN is that floor, to be subtracted from every
+ * other ns-per-call figure taken with this instrument.
+ */
+static inline void w64_cal_tick(void)
+{
+    int64_t a = get_clock_realtime();
+
+    wasm_diag_stat[WASM_DIAG_CAL_NS] += get_clock_realtime() - a;
+    wasm_diag_stat[WASM_DIAG_CAL_NS_N]++;
+}
+#endif
+
 /*
  * @size is a literal at every call site (helper_ld*_mmu already assert
  * it), so the mask tests, the alignment tests, the value mask and the
@@ -2708,7 +2765,20 @@ bool do_ld_mmio_1p(CPUState *cpu, vaddr addr, MemOpIdx oi,
         io_clock_window(cpu, full, ra);
     }
 
+#if defined(CONFIG_TCG_WASM64) && defined(WASM_DIAG_TIME_PHASES)
+    bool w64_timed = w64_io_time_p();
+    if (w64_timed) {
+        w64_cal_tick();
+    }
+    int64_t w64_t0 = w64_timed ? get_clock_realtime() : 0;
+#endif
     took_bql = bql_lock_mmio();
+#if defined(CONFIG_TCG_WASM64) && defined(WASM_DIAG_TIME_PHASES)
+    if (w64_timed) {
+        wasm_diag_stat[WASM_DIAG_BQL_NS] += get_clock_realtime() - w64_t0;
+        wasm_diag_stat[WASM_DIAG_BQL_NS_N]++;
+    }
+#endif
 
     guard = full->io_guard;
     if (unlikely(guard && *guard)) {
@@ -2723,13 +2793,28 @@ bool do_ld_mmio_1p(CPUState *cpu, vaddr addr, MemOpIdx oi,
     if (guard) {
         *guard = true;
     }
+#if defined(CONFIG_TCG_WASM64) && defined(WASM_DIAG_TIME_PHASES)
+    int64_t w64_d0 = w64_timed ? get_clock_realtime() : 0;
+#endif
     val = full->io_read_fn(full->io_opaque, io_offset, size);
+#if defined(CONFIG_TCG_WASM64) && defined(WASM_DIAG_TIME_PHASES)
+    if (w64_timed) {
+        wasm_diag_stat[WASM_DIAG_DEV_R_NS] += get_clock_realtime() - w64_d0;
+        wasm_diag_stat[WASM_DIAG_DEV_R_NS_N]++;
+    }
+#endif
     if (guard) {
         *guard = false;
     }
     if (took_bql) {
         bql_unlock_mmio();
     }
+#if defined(CONFIG_TCG_WASM64) && defined(WASM_DIAG_TIME_PHASES)
+    if (w64_timed) {
+        wasm_diag_stat[WASM_DIAG_IO_NS] += get_clock_realtime() - w64_t0;
+        wasm_diag_stat[WASM_DIAG_IO_NS_N]++;
+    }
+#endif
     val &= MAKE_64BIT_MASK(0, size * 8);
     if (((full->io_swap & 1) != 0) ^ caller_le) {
         val = io_bswap_const(val, size);
@@ -3358,7 +3443,20 @@ bool do_st_mmio_1p(CPUState *cpu, vaddr addr, uint64_t val,
         io_clock_window(cpu, full, ra);
     }
 
+#if defined(CONFIG_TCG_WASM64) && defined(WASM_DIAG_TIME_PHASES)
+    bool w64_timed = w64_io_time_p();
+    if (w64_timed) {
+        w64_cal_tick();
+    }
+    int64_t w64_t0 = w64_timed ? get_clock_realtime() : 0;
+#endif
     took_bql = bql_lock_mmio();
+#if defined(CONFIG_TCG_WASM64) && defined(WASM_DIAG_TIME_PHASES)
+    if (w64_timed) {
+        wasm_diag_stat[WASM_DIAG_BQL_NS] += get_clock_realtime() - w64_t0;
+        wasm_diag_stat[WASM_DIAG_BQL_NS_N]++;
+    }
+#endif
 
     guard = full->io_guard;
     if (unlikely(guard && *guard)) {
@@ -3376,13 +3474,50 @@ bool do_st_mmio_1p(CPUState *cpu, vaddr addr, uint64_t val,
     if (((full->io_swap & 2) != 0) ^ !caller_le) {
         val = io_bswap_const(val, size);
     }
+#if defined(CONFIG_TCG_WASM64) && defined(WASM_DIAG_TIME_PHASES)
+    int64_t w64_d0 = w64_timed ? get_clock_realtime() : 0;
+#endif
     full->io_write_fn(full->io_opaque, io_offset, val, size);
+#if defined(CONFIG_TCG_WASM64) && defined(WASM_DIAG_TIME_PHASES)
+    if (w64_timed) {
+        int64_t dt = get_clock_realtime() - w64_d0;
+
+        wasm_diag_stat[WASM_DIAG_DEV_W_NS] += dt;
+        wasm_diag_stat[WASM_DIAG_DEV_W_NS_N]++;
+        /*
+         * Which device is slow.  The clock is 1 ms-quantized, so dt is 0 or
+         * 1 ms and a nonzero sample is one drawn in proportion to the call's
+         * duration: the phys_addr distribution of those samples is the
+         * duration-weighted one, and on pmb887x the page identifies the
+         * module.  Sum/min/max bracket it; min == max means one culprit.
+         */
+        if (dt) {
+            uint64_t a = (uint64_t)full->phys_addr;
+            wasm_diag_stat[WASM_DIAG_SLOWW_ADDR] += a;
+            wasm_diag_stat[WASM_DIAG_SLOWW_N]++;
+            if (!wasm_diag_stat[WASM_DIAG_SLOWW_MIN] ||
+                a < wasm_diag_stat[WASM_DIAG_SLOWW_MIN]) {
+                wasm_diag_stat[WASM_DIAG_SLOWW_MIN] = a;
+            }
+            if (a > wasm_diag_stat[WASM_DIAG_SLOWW_MAX]) {
+                wasm_diag_stat[WASM_DIAG_SLOWW_MAX] = a;
+            }
+            wasm_diag_stat[WASM_DIAG_SLOWW_B0 + ((a >> 24) & 15)]++;
+        }
+    }
+#endif
     if (guard) {
         *guard = false;
     }
     if (took_bql) {
         bql_unlock_mmio();
     }
+#if defined(CONFIG_TCG_WASM64) && defined(WASM_DIAG_TIME_PHASES)
+    if (w64_timed) {
+        wasm_diag_stat[WASM_DIAG_IO_ST_NS] += get_clock_realtime() - w64_t0;
+        wasm_diag_stat[WASM_DIAG_IO_ST_NS_N]++;
+    }
+#endif
     return true;
 }
 

@@ -97,8 +97,21 @@ uint64_t memory_region_topology_gen(void)
  * full topology path - i.e. real topology changed, not only romd mode or
  * ioeventfds.  Such commits must also clear the TCG jump cache. */
 static bool topo_commit_full;
+/* "a view variant changed, the region tree did not" - romd mode or, since
+ * the ro_on_mrs note below, a readonly flip */
 static bool romd_update_pending;
 static GPtrArray *romd_off_mrs; /* ROM-device MRs in command mode (owned ptrs, no refs) */
+/*
+ * MRs currently marked read-only, tracked for exactly the same reason as
+ * romd_off_mrs and folded into the same signature.  The pmb887x EBU flips
+ * a chip-select's readonly bit to open the NOR flash for a CFI command and
+ * closes it again straight after - 599 times a second on an EL71 boot, and
+ * before this each flip bumped topo_gen, re-rendered every flat view and
+ * dropped the whole romd stash with it.  readonly changes the rendered
+ * FlatRange but not the region tree, so it is a view *variant* in the same
+ * sense romd mode is, and the A-B-A toggle hits the stash.
+ */
+static GPtrArray *ro_on_mrs;
 
 #define ROMD_STASH_SLOTS 16
 typedef struct RomdStashSlot {
@@ -149,6 +162,26 @@ static uint64_t romd_signature(void)
         sig ^= sig >> 29;
     }
     sig ^= (uint64_t)n << 32;
+
+    /* ...and the read-only set, separated so the two cannot alias */
+    sig ^= 0xd6e8feb86659fd93ULL;
+    n = 0;
+    if (ro_on_mrs) {
+        if (ro_on_mrs->len > ARRAY_SIZE(ptrs)) {
+            return 0;
+        }
+        n = ro_on_mrs->len;
+        for (i = 0; i < n; i++) {
+            ptrs[i] = (uintptr_t)g_ptr_array_index(ro_on_mrs, i);
+        }
+        qsort(ptrs, n, sizeof(ptrs[0]), romd_ptr_cmp);
+    }
+    for (i = 0; i < n; i++) {
+        sig ^= (uint64_t)ptrs[i];
+        sig *= 0xff51afd7ed558ccdULL;
+        sig ^= sig >> 29;
+    }
+    sig ^= (uint64_t)n << 48;
     return sig;
 }
 
@@ -2627,9 +2660,24 @@ bool memory_region_snapshot_get_dirty(MemoryRegion *mr, DirtyBitmapSnapshot *sna
 void memory_region_set_readonly(MemoryRegion *mr, bool readonly)
 {
     if (mr->readonly != readonly) {
+#ifdef __EMSCRIPTEN__
+        wasm_diag_stat[WASM_DIAG_RO_FLIP]++;
+#endif
+        if (!ro_on_mrs) {
+            ro_on_mrs = g_ptr_array_new();
+        }
+        /* The on-list is the whole readonly signature input; track it even
+         * for disabled MRs, as the romd off-list does. */
+        if (readonly) {
+            g_ptr_array_add(ro_on_mrs, mr);
+        } else {
+            g_ptr_array_remove(ro_on_mrs, mr);
+        }
         memory_region_transaction_begin();
         mr->readonly = readonly;
-        memory_region_update_pending |= mr->enabled;
+        if (mr->enabled) {
+            romd_update_pending = true;
+        }
         memory_region_transaction_commit();
     }
 }
