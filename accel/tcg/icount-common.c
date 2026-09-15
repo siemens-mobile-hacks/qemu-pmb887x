@@ -69,12 +69,38 @@ bool icount_align_option;
  * that fell behind (a slow boot) may catch up as fast as it can and the
  * boot is never slowed; "strict": the anchor is re-set whenever virtual
  * time lags, so nothing is banked and the guest is always paced.
+ *
+ * "banked:<n>" is the shipping wasm mode: banked for the guest's first <n>
+ * seconds of its own clock - the boot, which must not be slowed further -
+ * then strict for the rest of the run, so a later stall is not repaid by
+ * sprinting the phone's clock through the time it banked.  The window is
+ * guest time because the boot costs the same virtual time on every host
+ * while its wall time ranges from seconds to minutes; it also needs no
+ * anchor of its own and is not consumed by a pause.
+ *
+ * The switch needs no re-anchor.  strict's branch below only fires when
+ * vtarget < allowed - SLACK and then sets allowed = vtarget, so strict's
+ * allowed is never greater than banked's and excess_strict <= excess_banked
+ * in every state: flipping can only shorten a sleep, never lengthen one and
+ * never turn "no sleep" into a sleep.  Either the guest is lagging, and the
+ * branch fires on this same call and discards the bank in one step, or it
+ * is inside the slack band and the flip is a no-op.  (An explicit re-anchor
+ * would hand the guest its up-to-slack lead for good.)
  */
 bool icount_rtcap;
 static bool icount_rtcap_strict;
 static int64_t rtcap_v0, rtcap_r0;
+static int64_t rtcap_strict_at;   /* virtual ns; 0 = pinned, never switches */
 static bool rtcap_vcpu_waiting;
 #define RTCAP_SLACK_NS (2 * SCALE_MS)
+
+#ifdef __EMSCRIPTEN__
+#define RTCAP_DEFAULT      "banked"
+#define RTCAP_DEFAULT_WIN  30       /* guest seconds; roughly the boot */
+#else
+#define RTCAP_DEFAULT      "off"
+#define RTCAP_DEFAULT_WIN  0
+#endif
 
 int64_t icount_rtcap_excess_ns(int64_t vtarget)
 {
@@ -82,10 +108,28 @@ int64_t icount_rtcap_excess_ns(int64_t vtarget)
     int64_t allowed = rtcap_v0 + (r - rtcap_r0);
 
     /*
+     * End of the banked window.  vtarget is a virtual-time value at both
+     * call sites, so this costs one predictable-false compare and no clock
+     * read; on the idle path it is the warp target rather than the current
+     * time, so the switch can land one deadline early - immaterial against
+     * a window of tens of seconds, and it is one-way, so the two call sites
+     * disagreeing for an instant is harmless.
+     */
+    if (rtcap_strict_at && vtarget >= rtcap_strict_at) {
+        qatomic_set(&icount_rtcap_strict, true);
+        rtcap_strict_at = 0;
+    }
+
+    /*
      * strict: lag is forgiven, not banked.  Test the target, not the
      * current virtual time: while the vCPU sleeps for wall time to reach
      * a warp target, the current time falls "behind" by design, and
      * re-anchoring on it would restart the wait forever.
+     *
+     * Read plainly, not with qatomic_read: this thread is the only writer,
+     * and wasm has no relaxed atomic load - it would emit a seq_cst
+     * i32.atomic.load on a path taken thousands of times a second.  The
+     * store above is atomic for the browser thread's sake (icount_rtcap_mode).
      */
     if (icount_rtcap_strict && vtarget < allowed - RTCAP_SLACK_NS) {
         rtcap_v0 = vtarget;
@@ -98,6 +142,15 @@ int64_t icount_rtcap_excess_ns(int64_t vtarget)
 void icount_rtcap_set_waiting(bool waiting)
 {
     qatomic_set(&rtcap_vcpu_waiting, waiting);
+}
+
+/*
+ * The browser main thread polls this while the vCPU thread writes the flag,
+ * hence the atomic; relaxed is enough, nothing is published through it.
+ */
+int icount_rtcap_mode(void)
+{
+    return !icount_rtcap ? 0 : qatomic_read(&icount_rtcap_strict) ? 2 : 1;
 }
 
 /* Do not count executed instructions */
@@ -638,14 +691,30 @@ bool icount_configure(QemuOpts *opts, Error **errp)
                                          icount_timer_cb, NULL);
     } else {
         const char *e = getenv("QEMU_ICOUNT_RTCAP");
-#ifdef __EMSCRIPTEN__
-        const char *mode = e ? e : "banked";
-#else
-        const char *mode = e ? e : "off";
-#endif
+        const char *mode = e ? e : RTCAP_DEFAULT;
+        int64_t win_s = e ? 0 : RTCAP_DEFAULT_WIN;
+
+        /*
+         * The value reaches us from a page query parameter (?rt=), so a typo
+         * warns and falls back to the default rather than failing the boot
+         * into a dead page.
+         */
+        if (!strncmp(mode, "banked:", 7)) {
+            if (qemu_strtoi64(mode + 7, NULL, 10, &win_s) || win_s < 0
+                || win_s > INT64_MAX / NANOSECONDS_PER_SECOND) {
+                warn_report("ignoring malformed QEMU_ICOUNT_RTCAP '%s'", mode);
+                mode = RTCAP_DEFAULT;
+                win_s = RTCAP_DEFAULT_WIN;
+            } else {
+                mode = win_s ? "banked" : "strict";
+            }
+        }
+
         icount_rtcap_strict = !strcmp(mode, "strict");
         icount_rtcap = icount_rtcap_strict || !strcmp(mode, "banked")
                        || !strcmp(mode, "1") || !strcmp(mode, "on");
+        rtcap_strict_at = icount_rtcap && !icount_rtcap_strict
+                          ? win_s * NANOSECONDS_PER_SECOND : 0;
         rtcap_v0 = 0;
         rtcap_r0 = qemu_clock_get_ns(QEMU_CLOCK_REALTIME);
     }

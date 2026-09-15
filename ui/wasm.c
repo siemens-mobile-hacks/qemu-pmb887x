@@ -253,6 +253,17 @@ int64_t wasm_vclock(void)
     return qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
 }
 
+/*
+ * Real-time cap phase: 0 off, 1 banked (still banking), 2 strict.  The page
+ * hides its "slow" warning while banked - v/wall is below 1 by construction
+ * there, because the guest is behind and allowed to catch up.
+ */
+EMSCRIPTEN_KEEPALIVE
+int32_t wasm_rtcap(void)
+{
+    return icount_rtcap_mode();
+}
+
 /* ------------------------------------------------------------------ */
 /* Key input: SPSC ring filled from the JS main thread, drained by BH  */
 /* ------------------------------------------------------------------ */
