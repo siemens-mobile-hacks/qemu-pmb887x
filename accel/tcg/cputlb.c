@@ -2606,15 +2606,43 @@ static uint64_t do_ld_mmio_beN(CPUState *cpu, CPUTLBEntryFull *full,
  * false and takes the generic path unchanged, so this adds conditions
  * only to accesses it also completes.
  *
- * Returns the value the way do_ld_mmio_beN() would: assembled
- * big-endian, device swap applied, caller-visible bswap not.
+ * Returns the value ready for the caller to hand back: the device swap
+ * and the caller's own bswap are combined into the one that is left
+ * over, so unlike do_ld_mmio_beN() this does not stop at the
+ * big-endian-assembled form.
  */
-static bool do_ld_mmio_1p(CPUState *cpu, vaddr addr, MemOpIdx oi,
-                          uintptr_t ra, MMUAccessType type, uint64_t *out)
+/*
+ * Byte swap for a size the caller knows at compile time; folds to a
+ * single instruction, where io_fast_bswap() is an out-of-line call and
+ * a br_table.
+ */
+static inline __attribute__((always_inline))
+uint64_t io_bswap_const(uint64_t val, unsigned size)
+{
+    switch (size) {
+    case 2: return bswap16(val);
+    case 4: return bswap32(val);
+    case 8: return bswap64(val);
+    default: return val;
+    }
+}
+
+/*
+ * @size is a literal at every call site (helper_ld*_mmu already assert
+ * it), so the mask tests, the alignment tests, the value mask and the
+ * swap all fold.  @caller_le is (memop & MO_BSWAP) == MO_LE, the swap
+ * the caller used to apply to the big-endian-assembled result: combining
+ * it with the device's own swap here removes a double swap that, for a
+ * little-endian device read by a little-endian guest - every hot MMIO
+ * register on these boards - cancelled out into two real bswaps.
+ */
+static inline __attribute__((always_inline))
+bool do_ld_mmio_1p(CPUState *cpu, vaddr addr, MemOpIdx oi,
+                   uintptr_t ra, MMUAccessType type, uint64_t *out,
+                   unsigned size, bool caller_le)
 {
     MemOp memop = get_memop(oi);
     int mmu_idx = get_mmuidx(oi);
-    unsigned size = memop_size(memop);
     uintptr_t index = tlb_index(cpu, mmu_idx, addr);
     CPUTLBEntry *entry = tlb_entry(cpu, mmu_idx, addr);
     uint64_t tlb_addr = tlb_read_idx(entry, type);
@@ -2687,8 +2715,8 @@ static bool do_ld_mmio_1p(CPUState *cpu, vaddr addr, MemOpIdx oi,
         bql_unlock_mmio();
     }
     val &= MAKE_64BIT_MASK(0, size * 8);
-    if (full->io_swap & 1) {
-        val = io_fast_bswap(val, size);
+    if (((full->io_swap & 1) != 0) ^ caller_le) {
+        val = io_bswap_const(val, size);
     }
     *out = val;
     return true;
@@ -3004,7 +3032,7 @@ static uint8_t do_ld1_mmu(CPUState *cpu, vaddr addr, MemOpIdx oi,
     uint64_t io;
 
     cpu_req_mo(cpu, TCG_MO_LD_LD | TCG_MO_ST_LD);
-    if (do_ld_mmio_1p(cpu, addr, oi, ra, access_type, &io)) {
+    if (do_ld_mmio_1p(cpu, addr, oi, ra, access_type, &io, 1, false)) {
         return io;
     }
     crosspage = mmu_lookup(cpu, addr, oi, ra, access_type, &l);
@@ -3023,8 +3051,9 @@ static uint16_t do_ld2_mmu(CPUState *cpu, vaddr addr, MemOpIdx oi,
     uint64_t io;
 
     cpu_req_mo(cpu, TCG_MO_LD_LD | TCG_MO_ST_LD);
-    if (do_ld_mmio_1p(cpu, addr, oi, ra, access_type, &io)) {
-        return (get_memop(oi) & MO_BSWAP) == MO_LE ? bswap16(io) : io;
+    if (do_ld_mmio_1p(cpu, addr, oi, ra, access_type, &io, 2,
+                      (get_memop(oi) & MO_BSWAP) == MO_LE)) {
+        return io;
     }
     crosspage = mmu_lookup(cpu, addr, oi, ra, access_type, &l);
     if (likely(!crosspage)) {
@@ -3051,8 +3080,9 @@ static uint32_t do_ld4_mmu(CPUState *cpu, vaddr addr, MemOpIdx oi,
     uint64_t io;
 
     cpu_req_mo(cpu, TCG_MO_LD_LD | TCG_MO_ST_LD);
-    if (do_ld_mmio_1p(cpu, addr, oi, ra, access_type, &io)) {
-        return (get_memop(oi) & MO_BSWAP) == MO_LE ? bswap32(io) : io;
+    if (do_ld_mmio_1p(cpu, addr, oi, ra, access_type, &io, 4,
+                      (get_memop(oi) & MO_BSWAP) == MO_LE)) {
+        return io;
     }
     crosspage = mmu_lookup(cpu, addr, oi, ra, access_type, &l);
     if (likely(!crosspage)) {
@@ -3076,8 +3106,9 @@ static uint64_t do_ld8_mmu(CPUState *cpu, vaddr addr, MemOpIdx oi,
     uint64_t io;
 
     cpu_req_mo(cpu, TCG_MO_LD_LD | TCG_MO_ST_LD);
-    if (do_ld_mmio_1p(cpu, addr, oi, ra, access_type, &io)) {
-        return (get_memop(oi) & MO_BSWAP) == MO_LE ? bswap64(io) : io;
+    if (do_ld_mmio_1p(cpu, addr, oi, ra, access_type, &io, 8,
+                      (get_memop(oi) & MO_BSWAP) == MO_LE)) {
+        return io;
     }
     crosspage = mmu_lookup(cpu, addr, oi, ra, access_type, &l);
     if (likely(!crosspage)) {
@@ -3262,16 +3293,19 @@ static uint64_t do_st_mmio_leN(CPUState *cpu, CPUTLBEntryFull *full,
 
 /*
  * Fused single-piece MMIO store, the mirror of do_ld_mmio_1p().  The
- * S75 leans on this side hardest: at idle it is ~850k MMIO stores a
- * second against ~520k loads.  @val_le is little-endian assembled, the
- * way do_st_N() hands it to do_st_mmio_leN().
+ * S75 leans on this side hardest: at idle it is ~2.0M MMIO stores a
+ * second against ~1.2M loads.  @val is the guest's value as the helper
+ * received it, not the little-endian assembly do_st_mmio_leN() takes:
+ * @caller_le says which way the op wanted it, and that is combined with
+ * the device's own swap into the single swap that remains.
  */
-static bool do_st_mmio_1p(CPUState *cpu, vaddr addr, uint64_t val_le,
-                          MemOpIdx oi, uintptr_t ra)
+static inline __attribute__((always_inline))
+bool do_st_mmio_1p(CPUState *cpu, vaddr addr, uint64_t val,
+                   MemOpIdx oi, uintptr_t ra,
+                   unsigned size, bool caller_le)
 {
     MemOp memop = get_memop(oi);
     int mmu_idx = get_mmuidx(oi);
-    unsigned size = memop_size(memop);
     uintptr_t index = tlb_index(cpu, mmu_idx, addr);
     CPUTLBEntry *entry = tlb_entry(cpu, mmu_idx, addr);
     uint64_t tlb_addr = tlb_read_idx(entry, MMU_DATA_STORE);
@@ -3326,11 +3360,11 @@ static bool do_st_mmio_1p(CPUState *cpu, vaddr addr, uint64_t val_le,
     if (guard) {
         *guard = true;
     }
-    val_le &= MAKE_64BIT_MASK(0, size * 8);
-    if (full->io_swap & 2) {
-        val_le = io_fast_bswap(val_le, size);
+    val &= MAKE_64BIT_MASK(0, size * 8);
+    if (((full->io_swap & 2) != 0) ^ !caller_le) {
+        val = io_bswap_const(val, size);
     }
-    full->io_write_fn(full->io_opaque, io_offset, val_le, size);
+    full->io_write_fn(full->io_opaque, io_offset, val, size);
     if (guard) {
         *guard = false;
     }
@@ -3536,7 +3570,7 @@ static void do_st1_mmu(CPUState *cpu, vaddr addr, uint8_t val,
     bool crosspage;
 
     cpu_req_mo(cpu, TCG_MO_LD_ST | TCG_MO_ST_ST);
-    if (do_st_mmio_1p(cpu, addr, val, oi, ra)) {
+    if (do_st_mmio_1p(cpu, addr, val, oi, ra, 1, true)) {
         return;
     }
     crosspage = mmu_lookup(cpu, addr, oi, ra, MMU_DATA_STORE, &l);
@@ -3553,9 +3587,8 @@ static void do_st2_mmu(CPUState *cpu, vaddr addr, uint16_t val,
     uint8_t a, b;
 
     cpu_req_mo(cpu, TCG_MO_LD_ST | TCG_MO_ST_ST);
-    if (do_st_mmio_1p(cpu, addr,
-                      (get_memop(oi) & MO_BSWAP) != MO_LE ? bswap16(val) : val,
-                      oi, ra)) {
+    if (do_st_mmio_1p(cpu, addr, val, oi, ra, 2,
+                      (get_memop(oi) & MO_BSWAP) == MO_LE)) {
         return;
     }
     crosspage = mmu_lookup(cpu, addr, oi, ra, MMU_DATA_STORE, &l);
@@ -3580,9 +3613,8 @@ static void do_st4_mmu(CPUState *cpu, vaddr addr, uint32_t val,
     bool crosspage;
 
     cpu_req_mo(cpu, TCG_MO_LD_ST | TCG_MO_ST_ST);
-    if (do_st_mmio_1p(cpu, addr,
-                      (get_memop(oi) & MO_BSWAP) != MO_LE ? bswap32(val) : val,
-                      oi, ra)) {
+    if (do_st_mmio_1p(cpu, addr, val, oi, ra, 4,
+                      (get_memop(oi) & MO_BSWAP) == MO_LE)) {
         return;
     }
     crosspage = mmu_lookup(cpu, addr, oi, ra, MMU_DATA_STORE, &l);
@@ -3606,9 +3638,8 @@ static void do_st8_mmu(CPUState *cpu, vaddr addr, uint64_t val,
     bool crosspage;
 
     cpu_req_mo(cpu, TCG_MO_LD_ST | TCG_MO_ST_ST);
-    if (do_st_mmio_1p(cpu, addr,
-                      (get_memop(oi) & MO_BSWAP) != MO_LE ? bswap64(val) : val,
-                      oi, ra)) {
+    if (do_st_mmio_1p(cpu, addr, val, oi, ra, 8,
+                      (get_memop(oi) & MO_BSWAP) == MO_LE)) {
         return;
     }
     crosspage = mmu_lookup(cpu, addr, oi, ra, MMU_DATA_STORE, &l);
