@@ -506,7 +506,9 @@ static void w64_scan_labels(TCGContext *s)
     }
     if (!W.nested) {
         /* the loop scheme numbers labels as they are placed */
-        memset(W.label_idx, 0, sizeof(W.label_idx));
+        memset(W.label_idx, 0,
+               MIN((unsigned)s->nb_labels, W64_MAX_LABELS) *
+               sizeof(W.label_idx[0]));
         W.n_labels = 0;
     }
 }
@@ -568,14 +570,16 @@ static void w64_ir_bad(void)
     IR.bad = true;
 }
 
-static void w64_ir_reset(void)
+static void w64_ir_reset(unsigned nlabels)
 {
     IR.n = 0;
     IR.n_fix = 0;
     IR.bad = false;
     IR.on = w64_interp_on();
     if (IR.on) {
-        memset(IR.lbl, 0xff, sizeof(IR.lbl));
+        /* only ids below nb_labels are ever set or resolved */
+        memset(IR.lbl, 0xff,
+               MIN(nlabels, W64_IREC_LBL) * sizeof(IR.lbl[0]));
     }
 }
 
@@ -3184,10 +3188,27 @@ static void tcg_out_tb_start(TCGContext *s)
     uint8_t ls_type = 0, ls_imp = 0, ls_uimp = 0;
     uint8_t pad_type = 0, pad_imp = 0, pad_uimp = 0;
     uint32_t tidx;
+    unsigned nlabels = MIN((unsigned)s->nb_labels, W64_MAX_LABELS);
 
-    memset(&W, 0, sizeof(W));
+    /*
+     * Only the counters and the live prefix of label_idx carry state
+     * from the previous TB: fixup[], type[], imp[] and blk[] are all
+     * bounded by their own counters and are written before they are
+     * read.  Zeroing the whole struct was 11.6 KB of memset per
+     * translation, against the ~10 label slots a TB actually uses.
+     */
+    memset(W.label_idx, 0, nlabels * sizeof(W.label_idx[0]));
+    W.n_labels = 0;
+    W.overflow = false;
+    W.n_fixup = 0;
+    W.n_types = 0;
+    W.n_imp = 0;
+    W.n_blk = 0;
+    W.loop_idx = 0;
+    W.nested = false;
+    W.rep = 0;
     n_cf = 0;
-    w64_ir_reset();
+    w64_ir_reset(nlabels);
     w64_scan_labels(s);
     w64_batch_begin_tb();
 
