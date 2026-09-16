@@ -314,6 +314,9 @@ enum {
     WASM_DIAG_IREC_N,        /* TBs the interpreter tier recorded */
     WASM_DIAG_IREC_BYTES,    /* bytes those records hold (live) */
     WASM_DIAG_INTERP_ENT,    /* TB entries served by the interpreter */
+    WASM_DIAG_TB_ABSORB,     /* unconditional direct branches whose target the
+                              * TB swallowed by translating on from there,
+                              * costing no exit at all */
     WASM_DIAG_N
 };
 

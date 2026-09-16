@@ -30,6 +30,7 @@
 #include "system/cpu-timers.h"
 #include "exec/target_page.h"
 #include "exec/translator.h"
+#include "qemu/wasm-diag.h"
 #include "helper.h"
 #include "helper-mve.h"
 
@@ -1772,6 +1773,63 @@ static void w64_refund(DisasContext *dc, int skipped)
     tcg_gen_st16_i32(c, tcg_env, off);
 }
 
+/*
+ * An unconditional direct branch ends the TB, and the exit costs a tail
+ * call through a table of thousands of TB functions.  When the target is
+ * a little way *forward* on the same page, translate on from there
+ * instead: nothing is emitted for the branch at all.
+ *
+ * The bytes jumped over join the TB's guest range, so a write to them
+ * invalidates it -- conservative, and the reason for a distance bound.
+ * ARM bounds a TB to the instructions left on its page (the count *is*
+ * the byte offset there, arm_tr_init_disas_context), so a skip has to
+ * spend that budget too; Thumb re-checks the page after every
+ * instruction and needs nothing.
+ */
+static unsigned w64_absorb_max(void)
+{
+    static int n = -1;
+
+    if (n < 0) {
+        const char *e = getenv("W64_ABSORB");
+
+        n = e ? atoi(e) : 256;
+    }
+    return n;
+}
+
+static bool w64_absorb(DisasContext *s, int64_t diff)
+{
+    vaddr dest = s->pc_curr + diff;
+    vaddr skip;
+
+    if (s->base.is_jmp != DISAS_NEXT || s->condjmp || s->condexec_mask ||
+        s->eci || unlikely(s->ss_active) ||
+        (tb_cflags(s->base.tb) & CF_SINGLE_STEP)) {
+        return false;
+    }
+    /*
+     * trans_BLX_i's target runs in the *other* instruction set -- it says so
+     * by flipping w64_thumb -- and translating on would decode it with this
+     * TB's flags.  M-profile's MVE loop instructions (trans_WLS, trans_LE)
+     * emit their own control flow around gen_jmp and need it to end the TB.
+     */
+    if (s->w64_thumb != s->thumb || arm_dc_feature(s, ARM_FEATURE_M)) {
+        return false;
+    }
+    if (dest <= s->base.pc_next || dest - s->base.pc_next > w64_absorb_max() ||
+        !translator_is_same_page(&s->base, dest)) {
+        return false;
+    }
+    skip = dest - s->base.pc_next;
+    s->base.pc_next = dest;
+    if (!s->thumb) {
+        s->base.max_insns -= skip / 4;
+    }
+    wasm_diag_stat[WASM_DIAG_TB_ABSORB]++;
+    return true;
+}
+
 /* the deferred taken paths and the loop's interrupt exit, from tb_stop */
 static void w64_emit_deferred_taken(DisasContext *dc)
 {
@@ -1821,6 +1879,9 @@ static void gen_jmp_tb(DisasContext *s, int64_t diff, int tbno)
          */
 #ifdef CONFIG_TCG_WASM64
         if (w64_back_edge(s, diff)) {
+            return;
+        }
+        if (w64_absorb(s, diff)) {
             return;
         }
         if (tbno == 0 && w64_defer_taken(s, diff)) {
