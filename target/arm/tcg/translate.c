@@ -1629,6 +1629,92 @@ static bool w64_merge_on(void)
     return on;
 }
 
+/*
+ * A goto_tb back to this TB's own first instruction is a guest loop whose
+ * body is one TB: one exit in five is that, and an exit costs a
+ * return_call_indirect through a table of thousands of TB functions.
+ * Branch to the label arm_tr_tb_start left at the top instead.
+ *
+ * The loop must still be interruptible and must still spend its icount
+ * budget, so the back-edge repeats gen_tb_start's check: another
+ * num_insns off icount_decr, and out through exitreq_label when that goes
+ * negative.  TB_EXIT_REQUESTED re-enters this TB from the top, which is
+ * where the guest PC now is -- so the PC update has to happen before the
+ * check, not on the way out.
+ *
+ * That leaves the prologue prepaying the whole TB while a pass through the
+ * loop runs only its head, which is the same invariant a TB entry sets up
+ * and so is what cpu_restore_state_from_tb already assumes -- except on the
+ * back-edge's own interrupt exit, which leaves with the tail prepaid and
+ * unrun.  w64_emit_deferred_taken refunds it there.
+ */
+static bool w64_loop_on(void)
+{
+    static int on = -1;
+
+    if (on < 0) {
+        const char *e = getenv("W64_LOOP");
+
+        on = e ? atoi(e) : 1;
+    }
+    return on;
+}
+
+static bool w64_back_edge(DisasContext *s, int64_t diff)
+{
+    int off32 = offsetof(CPUState, neg.icount_decr.u32) - sizeof(CPUState);
+    int off16 = offsetof(CPUState, neg.icount_decr.u16.low) - sizeof(CPUState);
+    bool icount = tb_cflags(s->base.tb) & CF_USE_ICOUNT;
+    vaddr pc_save = s->pc_save;
+    bool conditional;
+    TCGv_i32 count;
+    TCGLabel *exit;
+
+    if (!w64_loop_on() || s->pc_curr + diff != s->base.pc_first ||
+        tcg_ctx->exitreq_label == NULL || s->condexec_mask || s->eci ||
+        unlikely(s->ss_active) ||
+        (tb_cflags(s->base.tb) & CF_SINGLE_STEP) || w64_tb_icount_exact()) {
+        return false;
+    }
+    /*
+     * A conditional back-edge is the taken arm of a brcond, so the TB can
+     * carry on into the fall-through exactly as it does for a deferred
+     * taken path -- the loop body is then num_insns *here*, which is what
+     * the back-edge has to charge for the next pass.
+     */
+    conditional = s->condjmp && (s->base.is_jmp == DISAS_NEXT ||
+                                 s->base.is_jmp == DISAS_TOO_MANY);
+    if (conditional) {
+        if (s->w64_loop_insns) {
+            return false;       /* one such exit per TB */
+        }
+        s->w64_loop_exit = gen_disas_label(s);
+        s->w64_loop_insns = s->base.num_insns;
+        exit = s->w64_loop_exit.label;
+    } else {
+        exit = tcg_ctx->exitreq_label;
+    }
+
+    gen_update_pc(s, diff);
+    count = tcg_temp_new_i32();
+    tcg_gen_ld_i32(count, tcg_env, off32);
+    if (icount) {
+        tcg_gen_subi_i32(count, count, s->base.num_insns);
+    }
+    tcg_gen_brcondi_i32(TCG_COND_LT, count, 0, exit);
+    if (icount) {
+        tcg_gen_st16_i32(count, tcg_env, off16);
+    }
+    tcg_gen_br(s->w64_loop.label);
+
+    if (conditional) {
+        s->pc_save = pc_save;   /* the fall-through never ran that store */
+    } else {
+        s->base.is_jmp = DISAS_NORETURN;
+    }
+    return true;
+}
+
 static unsigned w64_ft_max(void)
 {
     static int n = -1;
@@ -1670,23 +1756,36 @@ static bool w64_defer_taken(DisasContext *s, int64_t diff)
     return true;
 }
 
-/* the deferred taken paths, emitted from arm_tr_tb_stop */
+/* hand back the icount the prologue prepaid for instructions not run */
+static void w64_refund(DisasContext *dc, int skipped)
+{
+    TCGv_i32 c;
+    int off;
+
+    if (skipped <= 0 || !(tb_cflags(dc->base.tb) & CF_USE_ICOUNT)) {
+        return;
+    }
+    off = offsetof(CPUState, neg.icount_decr.u16.low) - sizeof(CPUState);
+    c = tcg_temp_new_i32();
+    tcg_gen_ld16u_i32(c, tcg_env, off);
+    tcg_gen_addi_i32(c, c, skipped);
+    tcg_gen_st16_i32(c, tcg_env, off);
+}
+
+/* the deferred taken paths and the loop's interrupt exit, from tb_stop */
 static void w64_emit_deferred_taken(DisasContext *dc)
 {
+    if (dc->w64_loop_insns) {
+        set_disas_label(dc, dc->w64_loop_exit);
+        w64_refund(dc, dc->base.num_insns - dc->w64_loop_insns);
+        tcg_gen_br(tcg_ctx->exitreq_label);
+    }
     for (unsigned i = 0; i < dc->w64_ft_n; i++) {
         int skipped = dc->base.num_insns - dc->w64_ft[i].insns;
         int64_t diff;
 
         set_disas_label(dc, dc->w64_ft[i].label);
-        if (skipped > 0 && (tb_cflags(dc->base.tb) & CF_USE_ICOUNT)) {
-            TCGv_i32 c = tcg_temp_new_i32();
-            int off = offsetof(CPUState, neg.icount_decr.u16.low) -
-                      sizeof(CPUState);
-
-            tcg_gen_ld16u_i32(c, tcg_env, off);
-            tcg_gen_addi_i32(c, c, skipped);
-            tcg_gen_st16_i32(c, tcg_env, off);
-        }
+        w64_refund(dc, skipped);
         diff = dc->w64_ft[i].dest - dc->pc_curr;
         if (~dc->w64_slots & 3) {
             gen_goto_tb(dc, ctz32(~dc->w64_slots), diff);
@@ -1721,6 +1820,9 @@ static void gen_jmp_tb(DisasContext *s, int64_t diff, int tbno)
          * on the second call to gen_jmp().
          */
 #ifdef CONFIG_TCG_WASM64
+        if (w64_back_edge(s, diff)) {
+            return;
+        }
         if (tbno == 0 && w64_defer_taken(s, diff)) {
             return;
         }
@@ -6897,6 +6999,7 @@ static void arm_tr_init_disas_context(DisasContextBase *dcbase, CPUState *cs)
     dc->w64_lc_sites = 0;
     dc->w64_ft_n = 0;
     dc->w64_slots = 0;
+    dc->w64_loop_insns = 0;
 #endif
     dc->be_data = EX_TBFLAG_ANY(tb_flags, BE_DATA) ? MO_BE : MO_LE;
     condexec = EX_TBFLAG_AM32(tb_flags, CONDEXEC);
@@ -7031,6 +7134,16 @@ static void arm_tr_tb_start(DisasContextBase *dcbase, CPUState *cpu)
     if (dc->condexec_mask || dc->condexec_cond) {
         store_cpu_field_constant(0, condexec_bits);
     }
+
+#ifdef CONFIG_TCG_WASM64
+    /*
+     * A guest loop whose body is one TB leaves that TB by tail-calling
+     * itself.  Name the top so a back-edge can branch here instead; TCG
+     * drops the label again if nothing does (reachable_code_pass).
+     */
+    dc->w64_loop = gen_disas_label(dc);
+    set_disas_label(dc, dc->w64_loop);
+#endif
 }
 
 static void arm_tr_insn_start(DisasContextBase *dcbase, CPUState *cpu)

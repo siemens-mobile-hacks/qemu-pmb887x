@@ -148,6 +148,16 @@ typedef struct DisasContext {
     } w64_ft[W64_FT_MAX];
     uint8_t w64_ft_n;
     uint8_t w64_slots;
+    /* the TB's own first instruction, as a branch target (arm_tr_tb_start) */
+    DisasLabel w64_loop;
+    /*
+     * A back-edge that is a brcond's taken arm leaves the rest of the TB
+     * after the loop, so its interrupt exit has to hand back the icount
+     * the TB prologue prepaid for that tail.  @w64_loop_insns is the loop
+     * body's length, 0 when no such exit was emitted.
+     */
+    DisasLabel w64_loop_exit;
+    int w64_loop_insns;
 #endif
     bool lse2;
     /*

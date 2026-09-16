@@ -60,8 +60,16 @@ static __thread struct {
      * blocks opened at TB start in set order (last label outermost) and
      * a branch is a plain br / br_if — no dispatch loop, no $bp, no
      * per-label compare, no loop phis for V8's register allocator.  A
-     * backward branch falls back to the loop + sibling-if scheme. */
+     * backward branch falls back to the loop + sibling-if scheme --
+     * unless it is the one target/arm does emit, a guest loop's
+     * back-edge to the TB's own first instruction.  That target is
+     * always the first label placed, so nested mode keeps its blocks:
+     * a wasm loop opens where label 1 sits -- past gen_tb_start's
+     * icount check, which the back-edge must not re-run -- and the
+     * labels after it nest inside.  Only the last label, the one the
+     * check itself branches to, stays outside. */
     bool nested;
+    bool selfloop;
 
     /* register representation: bit r set = value in the i64 local */
     uint32_t rep;
@@ -473,8 +481,10 @@ static uint8_t w64_import_idx(uint32_t fptr, uint8_t type)
 static void w64_scan_labels(TCGContext *s)
 {
     TCGOp *op;
+    int prologue_target = -1;   /* label branched to before any is placed */
 
     W.nested = true;
+    W.selfloop = false;
     QTAILQ_FOREACH(op, &s->ops, link) {
         TCGLabel *l;
 
@@ -493,18 +503,41 @@ static void w64_scan_labels(TCGContext *s)
         case INDEX_op_brcond:
             l = arg_label(op->args[3]);
         check:
+            if (W.n_labels == 0) {
+                if (prologue_target >= 0 && prologue_target != l->id) {
+                    prologue_target = W64_MAX_LABELS;
+                } else {
+                    prologue_target = l->id;
+                }
+            }
             if (l->id < W64_MAX_LABELS && W.label_idx[l->id] != 0) {
-                W.nested = false;           /* backward branch */
+                if (W.label_idx[l->id] == 1) {
+                    W.selfloop = true;      /* back-edge to the TB's top */
+                } else {
+                    W.nested = false;       /* any other backward branch */
+                }
             }
             break;
         default:
             break;
         }
     }
-    if (W.nested && W.n_labels + 8 > W64_MAX_BLK) {
+    /*
+     * The guest loop starts where label 1 is placed, so everything before
+     * it -- gen_tb_start's icount check -- stays outside, and the only
+     * label whose block can still wrap it is the one placed last.
+     */
+    if (W.selfloop &&
+        (W.n_labels < 2 || (prologue_target >= 0 &&
+                            (prologue_target >= W64_MAX_LABELS ||
+                             W.label_idx[prologue_target] != W.n_labels)))) {
+        W.nested = false;
+    }
+    if (W.nested && W.n_labels + 9 > W64_MAX_BLK) {
         W.overflow = true;                  /* retry with fewer insns */
     }
     if (!W.nested) {
+        W.selfloop = false;
         /* the loop scheme numbers labels as they are placed */
         memset(W.label_idx, 0,
                MIN((unsigned)s->nb_labels, W64_MAX_LABELS) *
@@ -518,6 +551,12 @@ static void w64_emit_loop_head(TCGContext *s)
     int k;
 
     if (W.nested) {
+        if (W.selfloop) {
+            /* only the last label wraps the prologue; the rest open
+             * inside the guest loop, at label 1 (tcg_out_set_label) */
+            w64_blk_push(s, W64_BLK_LABEL, W.n_labels);
+            return;
+        }
         for (k = W.n_labels; k >= 1; k--) {
             w64_blk_push(s, W64_BLK_LABEL, k);
         }
@@ -844,10 +883,35 @@ static void tcg_out_set_label(TCGContext *s, TCGLabel *l)
     w64_ir_set_label(l);
 
     if (W.nested) {
+        uint16_t idx = l->id < W64_MAX_LABELS ? W.label_idx[l->id] : 0;
+
+        if (W.selfloop && idx == 1) {
+            /*
+             * The guest loop starts here, just past the prologue; label 1
+             * gets no block of its own -- a back-edge branches to the loop
+             * -- and every other label nests inside it.
+             */
+            if (W.n_blk != 1) {
+                W.overflow = true;
+                return;
+            }
+            w64_blk_push(s, W64_BLK_LOOP, -1);
+            W.loop_idx = W.n_blk - 1;
+            for (i = W.n_labels - 1; i >= 2; i--) {
+                w64_blk_push(s, W64_BLK_LABEL, i);
+            }
+            return;
+        }
+        if (W.selfloop && idx == W.n_labels) {
+            if (W.n_blk != 2 || W.blk[1].kind != W64_BLK_LOOP) {
+                W.overflow = true;
+                return;
+            }
+            w64_blk_pop(s);                 /* end: the guest loop */
+        }
         /* the innermost open block is this label's */
         if (W.n_blk == 0 || W.blk[W.n_blk - 1].kind != W64_BLK_LABEL ||
-            l->id >= W64_MAX_LABELS ||
-            W.blk[W.n_blk - 1].label != W.label_idx[l->id]) {
+            idx == 0 || W.blk[W.n_blk - 1].label != idx) {
             W.overflow = true;
             return;
         }
@@ -1286,6 +1350,12 @@ static void w64_br_to_label(TCGContext *s, TCGLabel *l, bool cond)
             if (W.blk[i].kind == W64_BLK_LABEL && W.blk[i].label == idx) {
                 break;
             }
+        }
+        if (i < 0 && W.selfloop && idx == 1) {
+            /* the back-edge: label 1 is the guest loop, not a block */
+            w64_u8(s, cond ? 0x0d : 0x0c);  /* br_if / br */
+            w64_uleb(s, W.n_blk - 1 - W.loop_idx);
+            return;
         }
         if (idx == 0 || i < 0) {
             W.overflow = true;
@@ -3222,6 +3292,7 @@ static void tcg_out_tb_start(TCGContext *s)
     W.n_blk = 0;
     W.loop_idx = 0;
     W.nested = false;
+    W.selfloop = false;
     W.rep = 0;
     n_cf = 0;
     w64_ir_reset(nlabels);
