@@ -215,6 +215,23 @@ static bool w64_tbstats_inline(void)
  * before qemu starts).  An unarmed process omits the w64_ls_on test and
  * import from every prologue and the w64_chain_stop term from every
  * goto_tb/goto_ptr; nothing else ever sets w64_chain_stop. */
+/* W64_LOCALPAD=N declares N extra, never-referenced i64 locals in every
+ * TB function.  Measurement knob only: wasm requires locals to be zero at
+ * entry and the baseline tier has no liveness analysis, so it zeroes every
+ * declared local on every call — tools/locals-probe.mjs prices the
+ * backend's own ~70 at +38.9 ns on a 49.9 ns baseline call, and this
+ * reads the same slope in the guest, where only some fraction of the
+ * dispatches are still running baseline code. */
+static unsigned w64_locals_pad(void)
+{
+    static int n = -1;
+    if (n < 0) {
+        const char *e = getenv("W64_LOCALPAD");
+        n = e ? atoi(e) : 0;
+    }
+    return n;
+}
+
 static bool w64_ls_armed(void)
 {
     static int mode = -1;
@@ -2536,13 +2553,17 @@ static void tcg_out_tb_start(TCGContext *s)
     /* body: [body-size LEB (patched)] [locals] [expr...] */
     s->code_ptr = s->code_buf + W64_BODY_OFF;
     w64_uleb32_p5(s, 0);
-    w64_u8(s, 0x04);                        /* 4 local runs */
+    w64_u8(s, w64_locals_pad() ? 0x05 : 0x04);   /* local runs */
     w64_uleb(s, TCG_TARGET_NB_REGS + 1);    /* i32: regs + $bp */
     w64_u8(s, 0x7f);
     w64_uleb(s, TCG_TARGET_NB_REGS);        /* i64: regs */
     w64_u8(s, 0x7e);
     w64_u8(s, 0x01); w64_u8(s, 0x7f);       /* i32: $scr32 */
     w64_u8(s, 0x03); w64_u8(s, 0x7e);       /* i64: $scr0..$scr2 */
+    if (w64_locals_pad()) {
+        w64_uleb(s, w64_locals_pad());
+        w64_u8(s, 0x7e);
+    }
 
     /* prologue: per-TB-entry accounting, inline */
     if (w64_tbstats_inline()) {
