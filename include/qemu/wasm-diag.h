@@ -260,6 +260,40 @@ enum {
      * wasted translations per miss it removes.
      */
     WASM_DIAG_MISS_NEWPAGE,  /* ...the first miss ever in its guest page */
+    /*
+     * The C dispatcher (tcg/wasm64/wasm64.c tcg_qemu_tb_exec).  After
+     * 0091 a chained TB never comes back here -- goto_tb and goto_ptr
+     * both tail-call through the shared table -- so DISP_ITER minus
+     * DISP_CALL is how often a chain really did unwind, and DISP_CALL
+     * is how often cpu_exec_loop re-entered.  Both are needed to turn a
+     * profile share for this function into ns per call.
+     */
+    WASM_DIAG_DISP_CALL,     /* tcg_qemu_tb_exec entries */
+    WASM_DIAG_DISP_ITER,     /* ...its loop iterations */
+    /*
+     * Exit mix, counted in the generated code itself (W64_XCOUNT=1, a
+     * measurement build like W64_LDSTCOUNT).  A TB entry costs a
+     * return_call_indirect through the shared table whatever ends it,
+     * and the only lever on that cost is executing fewer of them, so
+     * the question is which exits could ever be merged away: X_GOTOTB
+     * is a direct branch the translator already resolved, X_SELF the
+     * subset that chains back to the same TB (a guest loop), X_GOTOPTR
+     * an indirect one taken through the inline cache.
+     */
+    WASM_DIAG_X_GOTOTB,      /* which = 0: the branch the frontend took */
+    WASM_DIAG_X_GOTOTB1,     /* which = 1: the fall-through */
+    WASM_DIAG_X_SELF,
+    WASM_DIAG_X_GOTOPTR,
+    /*
+     * Per-memop-site one-entry page cache, counted in the generated code
+     * (W64_TLBHIT=1).  The inline TLB probe costs 5.1 % of EL71 wall
+     * (W64_TLBDUP), and a check that reaches the addend in two loads
+     * instead of four costs 2.3 % (W64_TLBCHEAP) -- but only if a site
+     * keeps hitting the same guest page.  This is that hit rate, and
+     * nothing else decides whether the cheaper check is worth building.
+     */
+    WASM_DIAG_TLBC_HIT,
+    WASM_DIAG_TLBC_MISS,
     WASM_DIAG_N
 };
 

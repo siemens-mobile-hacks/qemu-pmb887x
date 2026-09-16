@@ -2097,10 +2097,13 @@ uintptr_t QEMU_DISABLE_CFI tcg_qemu_tb_exec(CPUArchState *env,
     uintptr_t tb = (uintptr_t)v_tb_ptr;
 
     w64_init();
+    WASM_DIAG_HOT(WASM_DIAG_DISP_CALL);
 
     for (;;) {
         uint32_t *desc = (uint32_t *)tb;
         uint32_t fidx, res;
+
+        WASM_DIAG_HOT(WASM_DIAG_DISP_ITER);
 
         /* per-TB accounting (wasm_tb_stats / icount2_advance / lockstep
          * fold) runs inline in the TB prologue (tcg_out_tb_start) so

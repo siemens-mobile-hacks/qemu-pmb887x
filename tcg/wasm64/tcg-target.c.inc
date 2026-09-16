@@ -989,6 +989,9 @@ static void tcg_out_exit_tb(TCGContext *s, uintptr_t arg)
     w64_u8(s, 0x0f);                        /* return */
 }
 
+static bool w64_xcount(void);
+static void w64_diag_bump(TCGContext *s, int idx);
+
 static void tcg_out_goto_tb(TCGContext *s, int which)
 {
     /* Chaining through the shared funcref table (phase 2).  The chain
@@ -1056,6 +1059,17 @@ static void tcg_out_goto_tb(TCGContext *s, int which)
     w64_u8(s, 0x0d);                        /* br_if */
     w64_uleb(s, 0);
 
+    if (w64_xcount()) {
+        w64_diag_bump(s, which ? WASM_DIAG_X_GOTOTB1 : WASM_DIAG_X_GOTOTB);
+        w64_local_get(s, W64_L_SCR0);
+        w64_u8(s, 0xa7);                    /* i32.wrap_i64 */
+        w64_const_i32(s, (int32_t)ldl_p(s->code_buf + W64_DESC_TIDX));
+        w64_u8(s, 0x46);                    /* i32.eq */
+        w64_blk_push(s, W64_BLK_IF, -1);
+        w64_diag_bump(s, WASM_DIAG_X_SELF);
+        w64_blk_pop(s);
+    }
+
     w64_local_get(s, W64_P_ENV);
     w64_local_get(s, W64_P_SP);
     w64_local_get(s, W64_P_TP);
@@ -1110,6 +1124,10 @@ static void tcg_out_goto_ptr(TCGContext *s, TCGReg a0)
     }
     w64_u8(s, 0x0d);                        /* br_if */
     w64_uleb(s, 0);
+
+    if (w64_xcount()) {
+        w64_diag_bump(s, WASM_DIAG_X_GOTOPTR);
+    }
 
     w64_local_get(s, W64_P_ENV);
     w64_local_get(s, W64_P_SP);
@@ -1382,6 +1400,19 @@ static void w64_diag_bump(TCGContext *s, int idx)
     w64_memarg(s, 3, 0);
 }
 
+/* W64_XCOUNT=1 counts TB exits in the generated code: which chain a TB
+ * entry actually left by, and whether a goto_tb went back to its own TB.
+ * Same class as W64_LDSTCOUNT -- the generated code changes, so per-Mi
+ * rates stay exact and wall-clock numbers do not. */
+static bool w64_xcount(void)
+{
+    static int on = -1;
+    if (on < 0) {
+        on = getenv("W64_XCOUNT") != NULL;
+    }
+    return on;
+}
+
 /* W64_LDSTPAD=N emits N filler ALU ops on every memop, executed or not.
  *
  * This is the calibration instrument the phase timers are not: a timed
@@ -1432,6 +1463,26 @@ static void w64_emit_pad(TCGContext *s, int units)
     w64_memarg(s, 3, 0);
 }
 
+/* W64_TLBDUP=N emits N extra inline TLB probes on every memop, each
+ * against a different mmu index so the mask/table loads cannot be
+ * common-subexpressed away, their results or'd together and folded into
+ * the pad sink so nothing is dead.  The N=1 -> N=2 slope is one whole
+ * probe plus one i32.or, which is what the probe costs: the standing
+ * "~5 % of wall" is `W64_LDSTPAD`'s ns-per-instruction extrapolated over
+ * an instruction count, and that calibration measured a *dependent ALU
+ * chain*, which a probe (two loads deep, several independent operands)
+ * is not.  Measurement build, like W64_LDSTCOUNT: per-Mi rates stay
+ * exact under it, wall-clock numbers do not. */
+static int w64_tlb_dup(void)
+{
+    static int n = -1;
+    if (n < 0) {
+        const char *e = getenv("W64_TLBDUP");
+        n = e ? atoi(e) : 0;
+    }
+    return n;
+}
+
 static bool w64_tlb_setup(struct w64_tlb_ctx *tc, TCGContext *s,
                           MemOpIdx oi, bool is_ld)
 {
@@ -1452,6 +1503,18 @@ static bool w64_tlb_setup(struct w64_tlb_ctx *tc, TCGContext *s,
     tc->cmp_ofs = is_ld ? offsetof(CPUTLBEntry, addr_read)
                         : offsetof(CPUTLBEntry, addr_write);
     return true;
+}
+
+/* push the address tag an entry's addr_read/addr_write must equal */
+static void w64_tlb_key(TCGContext *s, int al, const struct w64_tlb_ctx *tc)
+{
+    w64_local_get(s, al);
+    if (tc->adj) {
+        w64_const_i64(s, tc->adj);
+        w64_u8(s, 0x7c);                    /* i64.add */
+    }
+    w64_const_i64(s, (int64_t)tc->tlb_mask);
+    w64_u8(s, 0x83);                        /* i64.and */
 }
 
 /* Emit the probe: $scr0 = entry, $scr1 = tlb_addr, then the hit
@@ -1485,14 +1548,189 @@ static void w64_tlb_probe(TCGContext *s, int al, const struct w64_tlb_ctx *tc)
     w64_u8(s, 0x29);                        /* i64.load */
     w64_memarg(s, 3, tc->cmp_ofs);
 
-    w64_local_get(s, al);
-    if (tc->adj) {
-        w64_const_i64(s, tc->adj);
-        w64_u8(s, 0x7c);                    /* i64.add */
-    }
-    w64_const_i64(s, (int64_t)tc->tlb_mask);
-    w64_u8(s, 0x83);                        /* i64.and */
+    w64_tlb_key(s, al, tc);
     w64_u8(s, 0x51);                        /* i64.eq */
+}
+
+/* W64_TLBCHEAP=N prices the *replacement* for the inline probe before it
+ * is built, in exactly the units W64_TLBDUP prices the current one: a
+ * per-memop-site one-entry cache of (page -> host addend), tagged with a
+ * global generation so a TLB flush invalidates every site at once.
+ *
+ *   hit = load(slot) == ((addr & (PAGE_MASK|a_mask)) ^ gen)
+ *   haddr = addr + load(slot + 8)
+ *
+ * against the current probe's two loads to reach the fast table, an index
+ * computation and a third load to reach the entry.  The slot pool here is
+ * 1 MB and indexed by a translation-time counter, so the duplicate pays a
+ * realistically scattered access the way a real pool would and does not
+ * flatter itself with one always-hot cache line.  The generation load
+ * reads a real always-hot global.  Measurement only: the result is folded
+ * into the pad sink and nothing acts on it. */
+/* Backing store for the measurement knobs' per-site slots: 8 MB, and
+ * allocated only when one of them is on, so an ordinary build reserves
+ * nothing for it. */
+static uint64_t *w64_fakeslot;
+static unsigned w64_fakeslot_n;
+
+static uint64_t *w64_fakeslot_next(void)
+{
+    if (!w64_fakeslot) {
+        w64_fakeslot = g_malloc0((size_t)(1 << 20) * sizeof(uint64_t));
+    }
+    return &w64_fakeslot[(w64_fakeslot_n++ & 0x7ffff) * 2];
+}
+
+static int w64_tlb_cheap(void)
+{
+    static int n = -1;
+    if (n < 0) {
+        const char *e = getenv("W64_TLBCHEAP");
+        n = e ? atoi(e) : 0;
+    }
+    return n;
+}
+
+static void w64_tlb_cheap_probe(TCGContext *s, int al,
+                                const struct w64_tlb_ctx *tc)
+{
+    uint64_t *slot = w64_fakeslot_next();
+
+    w64_local_get(s, al);
+    w64_const_i64(s, (int64_t)tc->tlb_mask);
+    w64_u8(s, 0x83);                            /* i64.and */
+    w64_const_i64(s, (int64_t)w64_acct_addr[2]);
+    w64_u8(s, 0x29);                            /* i64.load (generation) */
+    w64_memarg(s, 3, 0);
+    w64_u8(s, 0x85);                            /* i64.xor */
+    w64_const_i64(s, (int64_t)(uintptr_t)slot);
+    w64_u8(s, 0x29);                            /* i64.load (tag) */
+    w64_memarg(s, 3, 0);
+    w64_u8(s, 0x51);                            /* i64.eq */
+}
+
+/* W64_TLBHIT=1 runs the per-site cache for real -- check, then fill the
+ * slot when it misses -- and counts hits and misses.  The slot holds only
+ * the page key, so this is the page-stability hit rate a real design would
+ * see between TLB flushes; the flush term is separately computable from
+ * tlbFlush + tlbFlushRange and the number of live sites. */
+static bool w64_tlb_hit(void)
+{
+    static int on = -1;
+    if (on < 0) {
+        on = getenv("W64_TLBHIT") != NULL;
+    }
+    return on;
+}
+
+static void w64_tlb_hit_emit(TCGContext *s, int al, MemOpIdx oi, bool is_ld)
+{
+    struct w64_tlb_ctx tc;
+    uint64_t *slot;
+
+    if (!w64_tlb_hit() || !w64_tlb_setup(&tc, s, oi, is_ld)) {
+        return;
+    }
+    slot = w64_fakeslot_next();
+
+    w64_local_get(s, al);
+    w64_const_i64(s, (int64_t)tc.tlb_mask);
+    w64_u8(s, 0x83);                            /* i64.and */
+    w64_local_tee(s, W64_L_SCR1);
+    w64_const_i64(s, (int64_t)(uintptr_t)slot);
+    w64_u8(s, 0x29);                            /* i64.load */
+    w64_memarg(s, 3, 0);
+    w64_u8(s, 0x51);                            /* i64.eq */
+    w64_blk_push(s, W64_BLK_IF, -1);
+    w64_diag_bump(s, WASM_DIAG_TLBC_HIT);
+    w64_u8(s, 0x05);                            /* else */
+    w64_diag_bump(s, WASM_DIAG_TLBC_MISS);
+    w64_const_i64(s, (int64_t)(uintptr_t)slot);
+    w64_local_get(s, W64_L_SCR1);
+    w64_u8(s, 0x37);                            /* i64.store */
+    w64_memarg(s, 3, 0);
+    w64_blk_pop(s);
+}
+
+/* W64_TLBSIMD=N is the same cache with the two words read as one
+ * `v128.load`, and the generation kept in a local instead of memory -- so
+ * the whole check costs exactly one load, against the current probe's
+ * three, and lane 1 carries the addend the current `haddr` needs a fourth
+ * load for.  If the probe's cost really is its load count, this is the
+ * floor of the redesign. */
+static int w64_tlb_simd(void)
+{
+    static int n = -1;
+    if (n < 0) {
+        const char *e = getenv("W64_TLBSIMD");
+        n = e ? atoi(e) : 0;
+    }
+    return n;
+}
+
+static void w64_tlb_simd_probe(TCGContext *s, int al,
+                               const struct w64_tlb_ctx *tc)
+{
+    uint64_t *slot = w64_fakeslot_next();
+
+    w64_local_get(s, al);
+    w64_const_i64(s, (int64_t)tc->tlb_mask);
+    w64_u8(s, 0x83);                            /* i64.and */
+    w64_local_get(s, W64_L_SCR1);               /* stands in for $gen */
+    w64_u8(s, 0x85);                            /* i64.xor */
+    w64_const_i64(s, (int64_t)(uintptr_t)slot);
+    w64_u8(s, 0xfd); w64_uleb(s, 0x00);         /* v128.load */
+    w64_memarg(s, 4, 0);
+    w64_u8(s, 0xfd); w64_uleb(s, 0x1d); w64_u8(s, 0);  /* i64x2.extract_lane 0 */
+    w64_u8(s, 0x51);                            /* i64.eq */
+}
+
+/* N-1 extra probes against mmu index ^ 1 (a different mask/table pair, so
+ * no load is common-subexpressed with the real probe), each result stored
+ * to its own slot.  At N=1 the store is of a constant, so the N=1 -> N=2
+ * wall slope is one probe and nothing else.
+ *
+ * The sink must be a plain store to a *per-site* address, never a
+ * read-modify-write of one global: an RMW makes every memop in the program
+ * wait on the previous one's store-to-load forward, which puts the
+ * duplicate's whole dependency chain on a serialized critical path and
+ * prices its latency instead of its cost.  Measured both ways, that
+ * inflated the probe by ~2x and made a one-load check look as expensive as
+ * a three-load one. */
+static void w64_tlb_dup_emit(TCGContext *s, int al, MemOpIdx oi, bool is_ld)
+{
+    bool simd = w64_tlb_simd() > 0;
+    bool cheap = !simd && w64_tlb_cheap() > 0;
+    int n = simd ? w64_tlb_simd() : cheap ? w64_tlb_cheap() : w64_tlb_dup();
+    struct w64_tlb_ctx tc;
+    uint64_t *sink;
+    int i;
+
+    if (n < 1 || !w64_tlb_setup(&tc, s, oi, is_ld)) {
+        return;
+    }
+    tc.fast_ofs = tlb_mask_table_ofs(s, get_mmuidx(oi) ^ 1);
+    sink = w64_fakeslot_next();
+
+    w64_const_i64(s, (int64_t)(uintptr_t)sink);
+    if (n == 1) {
+        w64_const_i32(s, 0);
+    } else {
+        for (i = 1; i < n; i++) {
+            if (simd) {
+                w64_tlb_simd_probe(s, al, &tc);
+            } else if (cheap) {
+                w64_tlb_cheap_probe(s, al, &tc);
+            } else {
+                w64_tlb_probe(s, al, &tc);
+            }
+            if (i > 1) {
+                w64_u8(s, 0x72);                /* i32.or */
+            }
+        }
+    }
+    w64_u8(s, 0x36);                            /* i32.store */
+    w64_memarg(s, 2, 0);
 }
 
 /* push [addr + entry->addend] (i64) for the fast access; @al as above */
@@ -1520,6 +1758,33 @@ static const uint8_t w64_fast_st[2][16] = {
     [0][MO_UB] = 0x3a, [0][MO_UW] = 0x3b, [0][MO_UL] = 0x36,
     [1][MO_UQ] = 0x37,
 };
+
+/* the fast arm of a guest load/store, factored out so a second check in
+ * front of the inline probe can emit it too */
+static void w64_ld_fast(TCGContext *s, TCGType type, TCGReg data,
+                        MemOp mop, unsigned s_bits)
+{
+    w64_tlb_haddr(s, W64_L_SCR2);
+    w64_u8(s, w64_fast_ld[type == TCG_TYPE_I64][mop & MO_SSIZE]);
+    w64_memarg(s, s_bits, 0);
+    if (type == TCG_TYPE_I32) {
+        w64_set_i32(s, data);
+    } else {
+        w64_set_i64(s, data);
+    }
+}
+
+static void w64_st_fast(TCGContext *s, TCGReg data, bool q, unsigned s_bits)
+{
+    w64_tlb_haddr(s, W64_L_SCR2);
+    if (q) {
+        w64_get_i64(s, data);
+    } else {
+        w64_get_i32(s, data);
+    }
+    w64_u8(s, w64_fast_st[q][s_bits]);
+    w64_memarg(s, s_bits, 0);
+}
 
 static void tgen_qemu_ld(TCGContext *s, TCGType type, TCGReg data,
                          TCGReg addr, MemOpIdx oi)
@@ -1566,17 +1831,11 @@ static void tgen_qemu_ld(TCGContext *s, TCGType type, TCGReg data,
          * make the arm emitted second read a stale local. */
         w64_get_i64(s, addr);
         w64_local_set(s, W64_L_SCR2);
+        w64_tlb_dup_emit(s, W64_L_SCR2, oi, true);
+        w64_tlb_hit_emit(s, W64_L_SCR2, oi, true);
         w64_tlb_probe(s, W64_L_SCR2, &tc);
         w64_blk_push(s, W64_BLK_IF, -1);
-        /* hit: size-specialized load at addr + addend */
-        w64_tlb_haddr(s, W64_L_SCR2);
-        w64_u8(s, w64_fast_ld[type == TCG_TYPE_I64][mop & MO_SSIZE]);
-        w64_memarg(s, s_bits, 0);
-        if (type == TCG_TYPE_I32) {
-            w64_set_i32(s, data);
-        } else {
-            w64_set_i64(s, data);
-        }
+        w64_ld_fast(s, type, data, mop, s_bits);
         w64_u8(s, 0x05);                    /* else */
     }
 
@@ -1646,17 +1905,11 @@ static void tgen_qemu_st(TCGContext *s, TCGType type, TCGReg data,
     if (fast) {
         w64_get_i64(s, addr);               /* snapshot (see ld above) */
         w64_local_set(s, W64_L_SCR2);
+        w64_tlb_dup_emit(s, W64_L_SCR2, oi, false);
+        w64_tlb_hit_emit(s, W64_L_SCR2, oi, false);
         w64_tlb_probe(s, W64_L_SCR2, &tc);
         w64_blk_push(s, W64_BLK_IF, -1);
-        /* hit: size-specialized store at addr + addend */
-        w64_tlb_haddr(s, W64_L_SCR2);
-        if (q) {
-            w64_get_i64(s, data);
-        } else {
-            w64_get_i32(s, data);
-        }
-        w64_u8(s, w64_fast_st[q][s_bits]);
-        w64_memarg(s, s_bits, 0);
+        w64_st_fast(s, data, q, s_bits);
         w64_u8(s, 0x05);                    /* else */
     }
 
