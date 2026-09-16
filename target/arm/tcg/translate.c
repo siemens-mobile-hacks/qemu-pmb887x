@@ -1723,7 +1723,7 @@ static unsigned w64_ft_max(void)
     if (n < 0) {
         const char *e = getenv("W64_FTMAX");
 
-        n = e ? MIN(atoi(e), W64_FT_MAX) : 1;
+        n = e ? MIN(atoi(e), W64_FT_MAX) : 2;
     }
     return n;
 }
