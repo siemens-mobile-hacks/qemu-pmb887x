@@ -23,7 +23,18 @@ bool dsp_runtime_is_maskable_interrupt_active(const dsp_runtime_t *runtime);
 uint16_t dsp_runtime_get_irq_flags(dsp_runtime_t *runtime, size_t group);
 uint16_t dsp_runtime_get_irq_pending_flags(dsp_runtime_t *runtime, size_t group);
 void dsp_runtime_get_irq_debug(dsp_runtime_t *runtime, uint8_t *ie, uint8_t *interrupt_mask, uint8_t *lines);
+void dsp_runtime_poke(dsp_runtime_t *runtime, uint16_t address, uint16_t value);
+void dsp_runtime_set_ie(dsp_runtime_t *runtime, uint8_t value);
+void dsp_runtime_set_int_mask(dsp_runtime_t *runtime, uint16_t value);
 uint16_t dsp_runtime_peek(dsp_runtime_t *runtime, uint16_t address);
+uint8_t dsp_runtime_get_page(const dsp_runtime_t *runtime);
+uint16_t dsp_runtime_peek_sp(const dsp_runtime_t *runtime);
+uint16_t dsp_runtime_peek_reg(const dsp_runtime_t *runtime, unsigned reg);
+void dsp_runtime_force_afe_start(dsp_runtime_t *runtime);
+void dsp_runtime_peek_modulo(const dsp_runtime_t *runtime, uint8_t *enable, uint16_t *modi, uint16_t *modj,
+	uint8_t *stepi, uint8_t *stepj);
+uint16_t dsp_runtime_peek_pc(const dsp_runtime_t *runtime);
+uint16_t dsp_runtime_peek_program(dsp_runtime_t *runtime, uint16_t address);
 void dsp_runtime_wake(dsp_runtime_t *runtime);
 void dsp_runtime_kick(dsp_runtime_t *runtime);
 bool dsp_runtime_take_program_start(dsp_runtime_t *runtime, uint32_t *pc);

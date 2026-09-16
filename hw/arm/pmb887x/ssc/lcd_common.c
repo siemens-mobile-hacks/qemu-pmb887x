@@ -14,10 +14,90 @@
 #include "hw/ssi/ssi.h"
 #include "hw/arm/pmb887x/trace.h"
 #include "hw/arm/pmb887x/ssc/lcd_common.h"
+#include "hw/arm/pmb887x/board/startup.h"
 
 #define LCD_CMD_MAX_PARAMS 256
 
 static void lcd_incr_px(pmb887x_lcd_t *lcd);
+
+/*
+ * Screen capture for automation: when PMB887X_SCREEN_DIR is set, dump a PPM of
+ * the GRAM whenever the content has been stable for 150 ms (at most once per
+ * 500 ms). Files are named with the virtual time in ms and the content hash,
+ * which gives a ground-truth timeline of the screens the guest displays.
+ */
+#define SCREEN_DUMP_STABLE_NS   (150 * SCALE_MS)
+#define SCREEN_DUMP_PERIOD_NS   (500 * SCALE_MS)
+#define SCREEN_DUMP_TICK_NS     (100 * SCALE_MS)
+
+/* Rows of the "Network search" text on the 132x176 IDLE screen (clock-free). */
+#define SCREEN_IDLE_TEXT_R0     44
+#define SCREEN_IDLE_TEXT_R1     59
+
+static void screen_dump_frame(pmb887x_lcd_t *lcd, int64_t virt_ms, uint64_t hash) {
+    char path[1024];
+    snprintf(path, sizeof(path), "%s/%012" PRId64 "_%016" PRIx64 ".ppm",
+        lcd->screen_dir, virt_ms, hash);
+    FILE *f = fopen(path, "wb");
+    if (!f)
+        return;
+    fprintf(f, "P6\n%u %u\n255\n", lcd->width, lcd->height);
+    for (uint32_t y = 0; y < lcd->height; y++) {
+        for (uint32_t x = 0; x < lcd->width; x++) {
+            uint32_t px = lcd->gram[y * lcd->width + x];
+            uint8_t r = (px >> 16) & 0xFF, g = (px >> 8) & 0xFF, b = px & 0xFF;
+            fputc(r, f);
+            fputc(g, f);
+            fputc(b, f);
+        }
+    }
+    fclose(f);
+    fprintf(stderr, "[screen] virt=%" PRId64 "ms hash=%016" PRIx64 " %s\n", virt_ms, hash, path);
+}
+
+static void screen_dump_tick(void *opaque) {
+    pmb887x_lcd_t *lcd = opaque;
+    int64_t now = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
+    static int64_t last_heartbeat = 0;
+    if (now - last_heartbeat >= 5 * 1000 * SCALE_MS) {
+        last_heartbeat = now;
+        fprintf(stderr, "[virt] %" PRId64 " ms\n", now / SCALE_MS);
+    }
+    if (!lcd->gram) {
+        timer_mod(lcd->screen_timer, now + SCREEN_DUMP_TICK_NS);
+        return;
+    }
+    uint64_t hash = 1469598103934665603ULL; /* FNV-1a */
+    for (uint32_t i = 0; i < lcd->width * lcd->height; i++) {
+        hash ^= (uint64_t) lcd->gram[i];
+        hash *= 1099511628211ULL;
+    }
+
+    /* Clock-independent "Network search" text-region hash: identifies the
+     * IDLE screen for the key-sequence injector. The text rows are static
+     * (the blinking signal/battery icons live in the status bar above). */
+    if (lcd->height > SCREEN_IDLE_TEXT_R1) {
+        uint64_t region_hash = 1469598103934665603ULL;
+        for (uint32_t y = SCREEN_IDLE_TEXT_R0; y < SCREEN_IDLE_TEXT_R1; y++)
+            for (uint32_t x = 0; x < lcd->width; x++) {
+                region_hash ^= (uint64_t) lcd->gram[y * lcd->width + x];
+                region_hash *= 1099511628211ULL;
+            }
+        pmb887x_keyseq_screen_idle(region_hash);
+    }
+    if (hash != lcd->screen_hash) {
+        lcd->screen_hash = hash;
+        lcd->screen_last_change_ns = now;
+    }
+    if (now - lcd->screen_last_change_ns >= SCREEN_DUMP_STABLE_NS &&
+        hash != lcd->screen_last_dump_hash &&
+        now - lcd->screen_last_dump_ns >= SCREEN_DUMP_PERIOD_NS) {
+        lcd->screen_last_dump_ns = now;
+        lcd->screen_last_dump_hash = hash;
+        screen_dump_frame(lcd, now / SCALE_MS, hash);
+    }
+    timer_mod(lcd->screen_timer, now + SCREEN_DUMP_TICK_NS);
+}
 
 static void lcd_write_control_byte(pmb887x_lcd_t *lcd, uint8_t value);
 
@@ -549,6 +629,13 @@ static void lcd_realize(SSIPeripheral *d, Error **errp) {
 	lcd->k = PMB887X_LCD_GET_CLASS(d);
 	lcd->read_active = false;
 	lcd->reset_active = false;
+
+	const char *screen_dir = getenv("PMB887X_SCREEN_DIR");
+	if (screen_dir) {
+		lcd->screen_dir = g_strdup(screen_dir);
+		lcd->screen_timer = timer_new_ns(QEMU_CLOCK_VIRTUAL, screen_dump_tick, lcd);
+		timer_mod(lcd->screen_timer, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + SCREEN_DUMP_TICK_NS);
+	}
 
 	pmb887x_fifo8_init(&lcd->fifo, LCD_CMD_MAX_PARAMS);
 

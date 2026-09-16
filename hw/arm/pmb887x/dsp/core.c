@@ -129,7 +129,82 @@ static const teak_step_t DSP_MINMAX_ALIAS_STEPS[] = {
 
 static uint64_t teak_next_cache_id;
 
+extern uint16_t teak_watch_lo, teak_watch_hi;
+
 void teak_tcg_init(teak_tcg_core_t *core, const teak_memory_t *memory) {
+	const char *btrace = getenv("PMB887X_DSP_BTRACE");
+	if (btrace) {
+		extern FILE *teak_btrace_file;
+		extern uint64_t teak_btrace_budget;
+		char path[512];
+		unsigned long long budget = 400000;
+		const char *comma = strchr(btrace, ',');
+
+		if (comma) {
+			size_t len = MIN((size_t) (comma - btrace), sizeof(path) - 1);
+			memcpy(path, btrace, len);
+			path[len] = '\0';
+			budget = strtoull(comma + 1, NULL, 0);
+		} else {
+			snprintf(path, sizeof(path), "%s", btrace);
+		}
+		if (teak_btrace_file == NULL) {
+			teak_btrace_file = fopen(path, "w");
+			teak_btrace_budget = budget;
+			fprintf(stderr, "[DSP-BTRACE] %s budget=%llu file=%p\n", path, budget, teak_btrace_file);
+		}
+	}
+
+	/* PMB887X_DSP_PCWATCH=<hex>,<hex>,... counts executions of those DSP PCs. */
+	const char *pcwatch = getenv("PMB887X_DSP_PCWATCH");
+	if (pcwatch) {
+		extern uint32_t teak_pcwatch_addr[TEAK_PCWATCH_MAX];
+		extern size_t teak_pcwatch_count;
+
+		if (teak_pcwatch_count == 0) {
+			const char *cursor = pcwatch;
+
+			while (*cursor != '\0' && teak_pcwatch_count < TEAK_PCWATCH_MAX) {
+				teak_pcwatch_addr[teak_pcwatch_count++] = (uint32_t) strtoul(cursor, NULL, 16);
+				cursor = strchr(cursor, ',');
+				if (cursor == NULL)
+					break;
+				cursor++;
+			}
+			fprintf(stderr, "[DSP-PCWATCH] watching %zu address(es)\n", teak_pcwatch_count);
+		}
+	}
+
+	const char *ring = getenv("PMB887X_DSP_RING");
+	if (ring) {
+		extern uint32_t *teak_btrace_ring;
+		extern size_t teak_btrace_ring_size;
+
+		if (teak_btrace_ring == NULL) {
+			size_t entries = strtoul(ring, NULL, 0);
+
+			if (entries == 0)
+				entries = 200000;
+			teak_btrace_ring = g_new0(uint32_t, entries);
+			teak_btrace_ring_size = entries;
+			fprintf(stderr, "[DSP-BTRACE] ring enabled (%zu entries)\n", entries);
+		}
+	}
+
+	const char *watch = getenv("PMB887X_DSP_WATCH");
+	if (watch) {
+		unsigned lo = 0, hi = 0;
+		if (watch[0] == 'z') {
+			extern uint8_t teak_watch_zero_only;
+			teak_watch_zero_only = 1;
+			watch++;
+		}
+		if (sscanf(watch, "%x:%x", &lo, &hi) == 2) {
+			teak_watch_lo = (uint16_t) lo;
+			teak_watch_hi = (uint16_t) hi;
+			fprintf(stderr, "[DSP-WATCH] enabled d:%04X-%04X\n", teak_watch_lo, teak_watch_hi);
+		}
+	}
 	g_assert(memory->program.read != NULL);
 	g_assert(memory->program.write != NULL);
 	g_assert(memory->data.read != NULL);

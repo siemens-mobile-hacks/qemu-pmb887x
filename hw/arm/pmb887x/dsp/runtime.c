@@ -529,8 +529,40 @@ void dsp_runtime_get_irq_debug(dsp_runtime_t *runtime, uint8_t *ie, uint8_t *int
 	*lines = dsp_bus_get_irq_lines(runtime->bus);
 }
 
+void dsp_runtime_poke(dsp_runtime_t *runtime, uint16_t address, uint16_t value) {
+	qatomic_set(&runtime->data[address], value);
+}
+
+void dsp_runtime_set_ie(dsp_runtime_t *runtime, uint8_t value) {
+	qatomic_set(&runtime->core.state.ie, value);
+}
+
+void dsp_runtime_set_int_mask(dsp_runtime_t *runtime, uint16_t value) {
+	qatomic_set(&runtime->core.state.interrupt_mask, value);
+}
+
 uint16_t dsp_runtime_peek(dsp_runtime_t *runtime, uint16_t address) {
 	return qatomic_read(&runtime->data[address]);
+}
+
+uint8_t dsp_runtime_get_page(const dsp_runtime_t *runtime) {
+	return qatomic_read(&runtime->core.state.page);
+}
+
+uint16_t dsp_runtime_peek_sp(const dsp_runtime_t *runtime) {
+	return qatomic_read(&runtime->core.state.sp);
+}
+
+uint16_t dsp_runtime_peek_reg(const dsp_runtime_t *runtime, unsigned reg) {
+	return qatomic_read(&runtime->core.state.r[reg & 7]);
+}
+
+uint16_t dsp_runtime_peek_pc(const dsp_runtime_t *runtime) {
+	return qatomic_read(&runtime->core.state.pc);
+}
+
+uint16_t dsp_runtime_peek_program(dsp_runtime_t *runtime, uint16_t address) {
+	return qatomic_read(&runtime->program[address]);
 }
 
 bool dsp_runtime_take_program_start(dsp_runtime_t *runtime, uint32_t *pc) {
@@ -621,11 +653,9 @@ void dsp_runtime_shared_write_bytes(dsp_runtime_t *runtime, size_t offset, uint6
 }
 
 void dsp_runtime_set_request(dsp_runtime_t *runtime, size_t index, bool level) {
-	if (!level)
-		return;
-
 	dsp_bus_set_request(runtime->bus, index, level);
-	dsp_runtime_wake(runtime);
+	if (level)
+		dsp_runtime_wake(runtime);
 }
 
 void dsp_runtime_set_input(dsp_runtime_t *runtime, size_t index, bool level) {
@@ -697,4 +727,17 @@ void dsp_runtime_release_mcu_semaphores(dsp_runtime_t *runtime, uint16_t value) 
 	dsp_bus_release_mcu_semaphores(runtime->bus, value);
 
 	dsp_runtime_wake(runtime);
+}
+
+void dsp_runtime_peek_modulo(const dsp_runtime_t *runtime, uint8_t *enable, uint16_t *modi, uint16_t *modj,
+	uint8_t *stepi, uint8_t *stepj) {
+	*enable = qatomic_read(&runtime->core.state.modulo_enable);
+	*modi = qatomic_read(&runtime->core.state.modi);
+	*modj = qatomic_read(&runtime->core.state.modj);
+	*stepi = qatomic_read(&runtime->core.state.stepi);
+	*stepj = qatomic_read(&runtime->core.state.stepj);
+}
+
+void dsp_runtime_force_afe_start(dsp_runtime_t *runtime) {
+	dsp_bus_force_afe_start(runtime->bus);
 }

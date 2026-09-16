@@ -17,6 +17,7 @@
 #include "hw/arm/pmb887x/regs_dump.h"
 #include "hw/arm/pmb887x/mod.h"
 #include "hw/arm/pmb887x/trace.h"
+#include "hw/arm/pmb887x/board/startup.h"
 
 #define TYPE_PMB887X_CAPCOM	"pmb887x-capcom"
 #define PMB887X_CAPCOM(obj)	OBJECT_CHECK(pmb887x_capcom_t, (obj), TYPE_PMB887X_CAPCOM)
@@ -217,6 +218,8 @@ static uint64_t capcom_io_read(void *opaque, hwaddr haddr, unsigned size) {
 		
 		default:
 			IO_DUMP_READ(haddr + p->mmio.addr, size, 0xFFFFFFFF);
+			if (haddr == 0x5C) /* IDLE-screen poll; react to it */
+				pmb887x_keyseq_idle_poll();
 			EPRINTF("unknown reg access: %02"PRIX64"\n", haddr);
 			break;
 	}
@@ -325,6 +328,8 @@ static void capcom_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned
 			break;
 		
 		default:
+			if (haddr == 0x5C) /* IDLE-screen poll; react to it */
+				pmb887x_keyseq_idle_poll();
 			EPRINTF("unknown reg access: %02"PRIX64"\n", haddr);
 			break;
 	}

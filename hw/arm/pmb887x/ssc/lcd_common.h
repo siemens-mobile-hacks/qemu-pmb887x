@@ -7,6 +7,7 @@
 #include "ui/console.h"
 #include "hw/arm/pmb887x/fifo.h"
 #include "hw/arm/pmb887x/ssc/lcd_common_format.h"
+#include "qemu/timer.h"
 
 #define TYPE_PMB887X_LCD	"pmb887x-lcd"
 OBJECT_DECLARE_TYPE(pmb887x_lcd_t, pmb887x_lcd_class_t, PMB887X_LCD);
@@ -97,6 +98,14 @@ struct pmb887x_lcd_t {
 	QemuConsole *console;
 
 	bool invalidate;
+
+	/* Screen capture (PMB887X_SCREEN_DIR): dumps settled GRAM frames as PPM */
+	char *screen_dir;
+	QEMUTimer *screen_timer;
+	uint64_t screen_hash;
+	int64_t screen_last_change_ns;
+	int64_t screen_last_dump_ns;
+	uint64_t screen_last_dump_hash;
 };
 
 struct pmb887x_lcd_class_t {

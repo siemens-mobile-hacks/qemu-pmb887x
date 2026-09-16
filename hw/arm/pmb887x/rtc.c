@@ -316,7 +316,17 @@ static uint32_t rtc_pack_cnt(uint32_t day_rel, uint32_t yday, uint32_t hour, uin
 
 static void rtc_init_datetime(pmb887x_rtc_t *p) {
 	struct tm tm;
-	qemu_get_timedate(&tm, 0);
+
+	/* Deterministic: fixed date/time instead of the host clock, so the guest
+	 * RTC (and any boot logic keyed off it) is reproducible run-to-run. */
+	memset(&tm, 0, sizeof(tm));
+	tm.tm_year = 2024 - 1900; /* 2024 */
+	tm.tm_mon  = 0;           /* Jan */
+	tm.tm_mday = 1;
+	tm.tm_hour = 12;
+	tm.tm_min  = 0;
+	tm.tm_sec  = 0;
+	tm.tm_yday = 0;
 
 	uint32_t year = 1900 + tm.tm_year;
 	bool leap = !(year % 4) && ((year % 100) || !(year % 400));

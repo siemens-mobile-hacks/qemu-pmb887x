@@ -193,35 +193,53 @@ static void afe_audio_produce(afe_state_t *state, uint16_t sample_word) {
 	qemu_mutex_unlock(&audio->lock);
 }
 
-static void afe_audio_init(afe_state_t *state) {
+/*
+ * Resolve the audio backend and open the out voice if not already done.
+ * A named -audiodev is only registered after machine init, so this is first
+ * attempted at device init (best effort) and retried from
+ * afe_audio_set_format() once playback starts. Degrades to silence when no
+ * backend is available.
+ */
+static void afe_audio_bind(afe_state_t *state) {
 	afe_audio_t *audio = &state->audio;
+
+	if (audio->voice != NULL)
+		return;
+
+	if (audio->backend == NULL) {
+		const char *audiodev_id = getenv("PMB887X_AUDIODEV_ID");
+		if (audiodev_id != NULL && audiodev_id[0] != '\0')
+			/* Resolve the -audiodev object created at machine init. */
+			audio->backend = audio_be_by_name(audiodev_id, NULL);
+		else
+			audio->backend = audio_get_default_audio_be(NULL);
+	}
+	if (audio->backend == NULL)
+		return;
+
 	struct audsettings as = {
-		.freq = AFE_OUT_FREQ,
-		.nchannels = AFE_OUT_CHANNELS,
+		.freq = audio->out_freq,
+		.nchannels = audio->out_channels,
 		.fmt = AUDIO_FORMAT_S16,
 		.big_endian = false,
 	};
+	audio->voice = audio_be_open_out(audio->backend, NULL, "pmb887x-afe",
+		state, afe_audio_out_callback, &as);
+	if (audio->voice)
+		/* Keep the voice active; the callback fills silence when idle. */
+		audio_be_set_active_out(audio->backend, audio->voice, true);
+}
+
+static void afe_audio_init(afe_state_t *state) {
+	afe_audio_t *audio = &state->audio;
+
 	audio->out_freq = AFE_OUT_FREQ;
 	audio->out_channels = AFE_OUT_CHANNELS;
 	qemu_mutex_init(&audio->lock);
-
-	/* Lazily bind the default -audiodev; degrade to silence if none. */
-	if (!audio_be_check(&audio->backend, NULL)) {
-		DPRINTF("no audio backend configured; RX output disabled\n");
-		return;
-	}
-
-	audio->voice = audio_be_open_out(audio->backend, NULL, "pmb887x-afe",
-		state, afe_audio_out_callback, &as);
-	if (!audio->voice) {
-		EPRINTF("could not open audio out voice\n");
-		return;
-	}
-
 	fifo8_create(&audio->fifo, AFE_OUT_FIFO_BYTES);
 	audio->fifo_ready = true;
-	/* Keep the voice active; the callback fills silence when idle. */
-	audio_be_set_active_out(audio->backend, audio->voice, true);
+
+	afe_audio_bind(state);
 }
 
 static void afe_audio_reset(afe_state_t *state) {
@@ -302,12 +320,17 @@ static bool afe_read(dsp_device_t *device, uint16_t offset, uint32_t pc, uint16_
 static bool afe_write(dsp_device_t *device, uint16_t offset, uint32_t pc, uint16_t value) {
 	afe_state_t *state = device->state;
 
+	DPRINTF("afe write[%02X] = %04X (pc=%05X)\n", offset, value, pc);
+
 	switch (offset) {
 		case TEAK_AFE_INTPTR:
 			state->registers[offset] = value & (TEAK_AFE_INTPTR_RXINTPTR | TEAK_AFE_INTPTR_TXINTPTR);
 			break;
 
 		case TEAK_AFE_BCON:
+			if ((value & (TEAK_AFE_BCON_MODE | TEAK_AFE_BCON_TXSTART)) !=
+				(state->registers[offset] & (TEAK_AFE_BCON_MODE | TEAK_AFE_BCON_TXSTART)))
+				DPRINTF("afe BCON write: %04X (pc=%05X)\n", value, pc);
 			state->registers[offset] = value & AFE_CONTROL_MASK;
 			if (!afe_receive_active(state)) {
 				state->receive_position = 0;
@@ -382,8 +405,29 @@ void afe_advance(dsp_device_t *device, size_t cycles) {
 
 #ifndef PMB887X_DSP_TESTS
 			/* Play out the DSP's decoded sample sitting at the DAC read pointer. */
-			afe_audio_produce(state, state->host.data_read(state->host.opaque,
-				state->ram_base + AFE_DAC_RING_OFFSET + state->transmit_position));
+			{
+				uint16_t dac = state->host.data_read(state->host.opaque,
+					state->ram_base + AFE_DAC_RING_OFFSET + state->transmit_position);
+			afe_audio_produce(state, dac);
+			/*
+			 * Diagnostic: confirm whether the real firmware drives the DAC ring
+			 * while the AFE transmit is running.  Rate-limited to ~once/s.
+			 */
+			static int64_t diag_deadline;
+			static int diag_nz;
+			static int64_t diag_total;
+			int64_t now = qemu_clock_get_ns(QEMU_CLOCK_REALTIME);
+			if (diag_total < 4096) diag_total++;
+			if (dac != 0) diag_nz++;
+			if (now >= diag_deadline && diag_total >= 4096) {
+				DPRINTF("afe diag: tx active bcon=0x%04x pos=%u samples=%ld nz=%d ram_base=%p\n",
+					state->registers[TEAK_AFE_BCON], state->transmit_position,
+					(long) diag_total, diag_nz, (void *) state->ram_base);
+				diag_deadline = now + NANOSECONDS_PER_SECOND;
+				diag_total = 0;
+				diag_nz = 0;
+			}
+		}
 #endif
 
 			if (power_down) {
@@ -411,6 +455,14 @@ bool afe_is_active(const dsp_device_t *device) {
 }
 
 #ifndef PMB887X_DSP_TESTS
+void afe_force_start(dsp_device_t *device) {
+	afe_state_t *state = device->state;
+	state->registers[TEAK_AFE_INTPTR] = 0x2020;
+	state->registers[TEAK_AFE_VTXCTRL] = 0;
+	state->registers[TEAK_AFE_BCON] = TEAK_AFE_BCON_MODE | TEAK_AFE_BCON_TXSTART;
+	DPRINTF("AFE force-start applied\n");
+}
+
 size_t afe_audio_push_samples(dsp_device_t *device, const uint16_t *samples, size_t count) {
 	afe_state_t *state = device->state;
 
@@ -422,10 +474,6 @@ size_t afe_audio_push_samples(dsp_device_t *device, const uint16_t *samples, siz
 void afe_audio_set_format(dsp_device_t *device, unsigned freq, unsigned channels) {
 	afe_state_t *state = device->state;
 	afe_audio_t *audio = &state->audio;
-	struct audsettings as = {
-		.fmt = AUDIO_FORMAT_S16,
-		.big_endian = false,
-	};
 
 	if (freq == 0)
 		freq = audio->out_freq;
@@ -433,26 +481,28 @@ void afe_audio_set_format(dsp_device_t *device, unsigned freq, unsigned channels
 		channels = audio->out_channels;
 	if (channels > AFE_OUT_MAX_CHANNELS)
 		channels = AFE_OUT_MAX_CHANNELS;
-	if ((int) freq == audio->out_freq && (int) channels == audio->out_channels)
+
+	bool changed = freq != audio->out_freq || channels != audio->out_channels;
+	if (!changed && audio->voice != NULL)
 		return;
 
 	DPRINTF("audio out format %d Hz/%dch -> %u Hz/%uch\n",
 		audio->out_freq, audio->out_channels, freq, channels);
 	audio->out_freq = freq;
 	audio->out_channels = channels;
-	as.freq = freq;
-	as.nchannels = channels;
 
-	/* Reopen the live voice with the new format. Runs under the BQL alongside
-	 * the drain callback, so there is no concurrent access to the voice. */
-	if (audio->voice) {
+	/*
+	 * Reopen the live voice with the current format. This also resolves the
+	 * backend on first playback, now that the -audiodev is registered. Runs
+	 * under the BQL alongside the drain callback, so there is no concurrent
+	 * access to the voice.
+	 */
+	if (audio->voice != NULL) {
 		audio_be_set_active_out(audio->backend, audio->voice, false);
 		audio_be_close_out(audio->backend, audio->voice);
-		audio->voice = audio_be_open_out(audio->backend, NULL, "pmb887x-afe",
-			state, afe_audio_out_callback, &as);
-		if (audio->voice)
-			audio_be_set_active_out(audio->backend, audio->voice, true);
+		audio->voice = NULL;
 	}
+	afe_audio_bind(state);
 }
 
 bool afe_audio_has_room(dsp_device_t *device, size_t count) {

@@ -78,6 +78,8 @@ static TCGv_i32 tcg_memory_pc;
 static TCGv_i32 tcg_memory_cycle;
 static uint32_t tcg_memory_access;
 
+extern uint16_t teak_watch_lo, teak_watch_hi;
+
 static const uint16_t teak_interrupt_vectors[] = { 0x0006, 0x000E, 0x0016, 0x0004 };
 
 typedef enum teak_tcg_data_space_t {
@@ -153,6 +155,13 @@ static void tcg_emit_data_write(TCGv_i32 address, TCGv_i32 value) {
 	tcg_gen_ld_i32(limit, tcg_env, offsetof(teak_tcg_core_t, memory.direct_data_write_size));
 	tcg_gen_brcond_i32(TCG_COND_GEU, address, limit, slow);
 	tcg_gen_st16_i32(value, tcg_emit_direct_data_pointer(address), 0);
+	if (teak_watch_hi != 0) {
+		TCGLabel *skip = gen_new_label();
+		tcg_gen_brcond_i32(TCG_COND_LTU, address, tcg_constant_i32(teak_watch_lo), skip);
+		tcg_gen_brcond_i32(TCG_COND_GTU, address, tcg_constant_i32(teak_watch_hi), skip);
+		gen_helper_teak_tcg_watch_write(tcg_env, address, value, tcg_memory_pc);
+		gen_set_label(skip);
+	}
 	tcg_gen_br(done);
 
 	gen_set_label(slow);
@@ -773,6 +782,79 @@ void HELPER(teak_tcg_data_write_at)(void *opaque, uint32_t address, uint32_t val
 	state->trace_pc = pc;
 	tcg_synchronize_data_access(core, address, cycle_offset, access);
 	teak_data_write(core, address, (uint16_t) value);
+}
+
+uint16_t teak_watch_lo = 0, teak_watch_hi = 0;
+
+uint8_t teak_watch_zero_only = 0;
+
+FILE *teak_btrace_file = NULL;
+uint64_t teak_btrace_budget = 0;
+
+/* Ring buffer of recently executed DSP PCs, dumped on demand (e.g. at a comm
+ * stall) so the instructions leading into a hang can be inspected. */
+uint32_t *teak_btrace_ring = NULL;
+size_t teak_btrace_ring_size = 0;
+size_t teak_btrace_ring_pos = 0;
+bool teak_btrace_ring_wrapped = false;
+
+void teak_tcg_dump_trace_ring(const char *path) {
+	FILE *f;
+	size_t count, start, i;
+
+	if (teak_btrace_ring == NULL)
+		return;
+
+	f = fopen(path, "w");
+	if (f == NULL)
+		return;
+
+	count = teak_btrace_ring_wrapped ? teak_btrace_ring_size : teak_btrace_ring_pos;
+	start = teak_btrace_ring_wrapped ? teak_btrace_ring_pos : 0;
+	for (i = 0; i < count; i++)
+		fprintf(f, "%08X\n", teak_btrace_ring[(start + i) % teak_btrace_ring_size]);
+	fclose(f);
+	fprintf(stderr, "[DSP-BTRACE] ring dumped to %s (%zu entries)\n", path, count);
+}
+
+uint32_t teak_pcwatch_addr[TEAK_PCWATCH_MAX];
+uint64_t teak_pcwatch_hits[TEAK_PCWATCH_MAX];
+size_t teak_pcwatch_count;
+
+void teak_tcg_report_pcwatch(void) {
+	for (size_t i = 0; i < teak_pcwatch_count; i++)
+		fprintf(stderr, "[DSP-PCWATCH] P:%05X hits=%" PRIu64 "\n",
+			teak_pcwatch_addr[i], teak_pcwatch_hits[i]);
+}
+
+void HELPER(teak_tcg_trace_pc)(void *opaque, uint32_t pc) {
+	for (size_t i = 0; i < teak_pcwatch_count; i++) {
+		if (teak_pcwatch_addr[i] == pc)
+			teak_pcwatch_hits[i]++;
+	}
+	if (teak_btrace_ring != NULL) {
+		teak_btrace_ring[teak_btrace_ring_pos] = pc;
+		if (++teak_btrace_ring_pos == teak_btrace_ring_size) {
+			teak_btrace_ring_pos = 0;
+			teak_btrace_ring_wrapped = true;
+		}
+		return;
+	}
+	if (teak_btrace_budget == 0)
+		return;
+	fprintf(teak_btrace_file, "%08X\n", pc);
+	if (--teak_btrace_budget == 0) {
+		fflush(teak_btrace_file);
+		fprintf(stderr, "[DSP-BTRACE] budget exhausted\n");
+	}
+}
+
+void HELPER(teak_tcg_watch_write)(void *opaque, uint32_t address, uint32_t value, uint32_t pc) {
+	if (address >= teak_watch_lo && address <= teak_watch_hi) {
+		if (teak_watch_zero_only && (value & 0xFFFF) != 0)
+			return;
+		fprintf(stderr, "[DSP-WATCH] pc=%05X d:%04X=%04X\n", pc, address, (uint16_t) value);
+	}
 }
 
 uint32_t HELPER(teak_tcg_program_read)(void *opaque, uint32_t address) {
@@ -4513,6 +4595,8 @@ static void tcg_emit_block(void *opaque) {
 		if (repeat_pending)
 			gen_set_label(repeat);
 		tcg_gen_insn_start(instruction->address, 0, 0);
+		if (teak_btrace_file != NULL || teak_btrace_ring != NULL || teak_pcwatch_count != 0)
+			gen_helper_teak_tcg_trace_pc(tcg_env, tcg_constant_i32(instruction->address));
 		if (tcg_delayed_transfer_cycles(instruction) != 0) {
 			delayed_transfer_target = tcg_emit_delayed_transfer_target(instruction);
 			delayed_transfer_interrupt = instruction->opcode == TEAK_OP_DELAYED_RETURN_INTERRUPT;

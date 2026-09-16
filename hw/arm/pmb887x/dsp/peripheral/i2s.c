@@ -76,14 +76,22 @@ static bool i2s_write(dsp_device_t *device, uint16_t offset, uint32_t pc, uint16
 	i2s_state_t *state = device->state;
 
 	switch (offset) {
-		case TEAK_I2S_CTRL:
+		case TEAK_I2S_CTRL: {
+			bool was_tx = i2s_transmit_active(state);
+
 			state->registers[offset] = value & I2S_CONTROL_MASK;
+			if (i2s_transmit_active(state) != was_tx)
+				DPRINTF("i2s%u TX %s: ctrl=%04X txint=%04X (pc=%05X)\n",
+					state->transmit_interrupt_flag == 1 ? 1 : 2,
+					was_tx ? "stop" : "START", value,
+					state->registers[TEAK_I2S_TXINTADDR], pc);
 			if ((value & TEAK_I2S_CTRL_I2SON) == 0) {
 				state->transmit_position = 0;
 				state->receive_position = 0;
 				state->sample_cycles = 0;
 			}
 			break;
+		}
 
 		case TEAK_I2S_RXINTADDR:
 		case TEAK_I2S_TXINTADDR:

@@ -345,6 +345,7 @@ static void pmb887x_init(MachineState *machine) {
 	pmb887x_board_keyboard_connect_gpios(keypad);
 	pmb887x_qdev_connect_gpio_outputs();
 	pmb887x_board_startup_init(keypad);
+	pmb887x_board_keyseq_init();
 
 #if PMB887X_IO_BRIDGE
 	pmb8876_io_bridge_set_vic(vic);

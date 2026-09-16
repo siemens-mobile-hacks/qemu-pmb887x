@@ -461,6 +461,9 @@ void teak_program_write(teak_tcg_core_t *core, uint32_t address, uint16_t value)
 uint16_t teak_data_read(teak_tcg_core_t *core, uint32_t address);
 void teak_data_write(teak_tcg_core_t *core, uint32_t address, uint16_t value);
 uint16_t teak_modulo_address(const teak_state_t *state, uint8_t register_index, uint16_t address, int16_t step);
+
+#define TEAK_PCWATCH_MAX	16
+void teak_tcg_report_pcwatch(void);
 bool teak_decode(teak_tcg_core_t *core, uint32_t address, teak_insn_t *instruction);
 
 #endif

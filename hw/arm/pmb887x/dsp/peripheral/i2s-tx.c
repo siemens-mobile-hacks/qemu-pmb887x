@@ -62,13 +62,20 @@ static bool i2s_tx_write(dsp_device_t *device, uint16_t offset, uint32_t pc, uin
 	i2s_tx_state_t *state = device->state;
 
 	switch (offset) {
-		case TEAK_I2S3_CTRL:
+		case TEAK_I2S3_CTRL: {
+			bool was_tx = i2s_tx_active(state);
+
 			state->registers[offset] = value & 0x0023U;
+			if (i2s_tx_active(state) != was_tx)
+				DPRINTF("i2s3 TX %s: ctrl=%04X txint=%04X (pc=%05X)\n",
+					was_tx ? "stop" : "START", value,
+					state->registers[TEAK_I2S3_TXINTADDR], pc);
 			if ((value & TEAK_I2S3_CTRL_I2SON) == 0) {
 				state->position = 0;
 				state->sample_cycles = 0;
 			}
 			break;
+		}
 
 		case TEAK_I2S3_TXINTADDR:
 			state->registers[offset] = value & TEAK_I2S3_RADDR_RDADDR;

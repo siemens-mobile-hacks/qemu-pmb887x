@@ -404,3 +404,8 @@ void dsp_bus_request_mcu_semaphores(dsp_bus_t *bus, uint16_t value) {
 void dsp_bus_release_mcu_semaphores(dsp_bus_t *bus, uint16_t value) {
 	mcs_release_mcu_semaphores(bus->mcs, value);
 }
+
+void dsp_bus_force_afe_start(dsp_bus_t *bus) {
+	if (bus->afe != NULL)
+		afe_force_start(bus->afe);
+}
