@@ -241,6 +241,10 @@ enum {
     WASM_DIAG_MODBENCH_NS,   /* W64_MODBENCH: back-to-back compiles of one
                               * real module, in the vCPU worker's isolate */
     WASM_DIAG_MODBENCH_N,
+    WASM_DIAG_MOD_PRE_NS,    /* entry -> import loop: DataView, the byte copy,
+                              * the table check.  modNs minus the four phases
+                              * left ~14.5 us per module unaccounted */
+    WASM_DIAG_MOD_POST_NS,   /* Instance -> addFunction: the GC nudge */
     WASM_DIAG_N
 };
 

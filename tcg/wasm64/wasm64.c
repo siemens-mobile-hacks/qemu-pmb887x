@@ -876,9 +876,22 @@ static int w64_gc_nudge(void)
 EM_JS(int, w64_batch_instantiate,
       (uintptr_t modp, uint32_t modlen, uintptr_t ipp, uint32_t nimp,
        uint32_t maxtidx, uintptr_t nsp, int nudge, int bench), {
-    const dv = new DataView(HEAPU8.buffer);
-    const mod_bytes =
-        new Uint8Array(HEAPU8.slice(Number(modp), Number(modp) + Number(modlen)));
+    const __tp = performance.now();
+    /*
+     * Views over HEAPU8.buffer, cached until the buffer identity changes
+     * (emscripten replaces HEAPU8 on a memory growth, so that is the only
+     * event that can invalidate them).  Built fresh per call this cost
+     * ~9.8 us a module, 1.4 % of an EL71 boot, for a DataView and a
+     * Float64Array over a 2 GB shared buffer plus a doubled copy of the
+     * module bytes -- HEAPU8.slice() already returns a Uint8Array, and
+     * wrapping it in new Uint8Array() copied it a second time.
+     */
+    let __v = globalThis.__w64v;
+    if (__v === undefined || __v.b !== HEAPU8.buffer) {
+        __v = globalThis.__w64v = { b: HEAPU8.buffer, dv: new DataView(HEAPU8.buffer), ns: {} };
+    }
+    const dv = __v.dv;
+    const mod_bytes = HEAPU8.slice(Number(modp), Number(modp) + Number(modlen));
     if (!globalThis.__w64tab) {
         globalThis.__w64tab = new WebAssembly.Table({ element: 'anyfunc', initial: 1 << 14 });
     }
@@ -887,8 +900,13 @@ EM_JS(int, w64_batch_instantiate,
         TAB.grow(Math.max(4096, maxtidx + 1 - TAB.length));
     }
     const ip = Number(ipp);
-    const __ns = new Float64Array(HEAPU8.buffer, Number(nsp), 6);
+    const __nk = Number(nsp);
+    let __ns = __v.ns[__nk];
+    if (__ns === undefined) {
+        __ns = __v.ns[__nk] = new Float64Array(HEAPU8.buffer, __nk, 8);
+    }
     let __t0 = performance.now();
+    __ns[6] += (__t0 - __tp) * 1e6;
     /* 2.1 imports per module, and building this object is 0.7 % of the
      * time this function costs: a cached namespace was built and measured
      * against it, see the playbook's REJECTED table */
@@ -904,6 +922,7 @@ EM_JS(int, w64_batch_instantiate,
         let __t2 = performance.now(); __ns[1] += (__t2 - __t1) * 1e6;
         inst = new WebAssembly.Instance(__m, imports);
         let __t3 = performance.now(); __ns[2] += (__t3 - __t2) * 1e6;
+        globalThis.__w64t3 = __t3;
     } catch (e) {
         console.log('W64BATCHFAIL nimp=' + nimp + ' len=' + modlen + ': ' + e);
         /* stash the failing module for post-mortem: the page FS survives
@@ -934,9 +953,10 @@ EM_JS(int, w64_batch_instantiate,
         const junk = new ArrayBuffer(32 << 20);
         new Uint8Array(junk)[0] = 1;
     }
-    let __t4 = performance.now();
+    let __t3b = globalThis.__w64t3, __t4 = performance.now();
     const __r = addFunction(inst.exports.run, 'jjjii');
     __ns[3] += (performance.now() - __t4) * 1e6;
+    __ns[7] += (__t4 - __t3b) * 1e6;
     if (bench && !globalThis.__w64bd) {
         /*
          * The same bytes, in this isolate, back to back.  A close module
@@ -1396,7 +1416,7 @@ static uint32_t w64_assemble_instantiate(const struct w64_bsrc *src,
         /* per assemble source, so that the fixed per-module cost and the
          * per-byte cost can be separated: the two sources differ by 170x
          * in bytes per module and 177x in count */
-        static double phase_ns[3][6];
+        static double phase_ns[3][8];
         static unsigned closes;
         int k = wasm_diag_stat[WASM_DIAG_MOD_SRC];
 
@@ -1422,6 +1442,10 @@ static uint32_t w64_assemble_instantiate(const struct w64_bsrc *src,
         wasm_diag_stat[WASM_DIAG_MOD_UIMP] += src->n_uimp;
         wasm_diag_stat[WASM_DIAG_MODBENCH_NS] = (uint64_t)phase_ns[0][4];
         wasm_diag_stat[WASM_DIAG_MODBENCH_N] = (uint64_t)phase_ns[0][5];
+        wasm_diag_stat[WASM_DIAG_MOD_PRE_NS] =
+            (uint64_t)(phase_ns[0][6] + phase_ns[1][6] + phase_ns[2][6]);
+        wasm_diag_stat[WASM_DIAG_MOD_POST_NS] =
+            (uint64_t)(phase_ns[0][7] + phase_ns[1][7] + phase_ns[2][7]);
     }
     tcg_debug_assert(thunk != 0);
     g_free(mod.b);
