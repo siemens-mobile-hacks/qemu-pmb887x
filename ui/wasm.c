@@ -254,9 +254,11 @@ int64_t wasm_vclock(void)
 }
 
 /*
- * Real-time cap phase: 0 off, 1 banked (still banking), 2 strict.  The page
- * hides its "slow" warning while banked - v/wall is below 1 by construction
- * there, because the guest is behind and allowed to catch up.
+ * Real-time cap phase: 0 off, 1 banked (still banking), 2 strict, 3 budget
+ * (banked for the boot window, then the repayable bank is capped at the
+ * configured ms).  The page hides its "slow" warning while banked - v/wall
+ * is below 1 by construction there, because the guest is behind and
+ * allowed to catch up.
  */
 EMSCRIPTEN_KEEPALIVE
 int32_t wasm_rtcap(void)
