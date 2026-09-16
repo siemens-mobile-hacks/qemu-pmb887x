@@ -108,11 +108,18 @@
 #define W64_UMAX_TYPES   64
 #define W64_UMAX_IMPORTS 192
 
-/* default members per batch module; W64_BATCH_N env overrides
+/* Default members per batch module; W64_BATCH_N env overrides
  * (clamped to 1..W64_BATCH_N_MAX; setting it to 1 exercises the whole
  * batch path with minimal batching), W64_NOBATCH=1 disables batching
- * entirely (pure per-TB temp modules). */
-#define W64_BATCH_N_DEF 256
+ * entirely (pure per-TB temp modules).
+ *
+ * The default is the maximum on purpose: with the interpreter tier a
+ * batch is closed by a member reaching its promotion threshold long
+ * before it fills, so the cap only ever cuts a batch short.  At 1024 it
+ * stops binding -- batches average 284 members and every close is a
+ * promotion -- and the union tables never come close either (7 imports
+ * per module against a 167 threshold). */
+#define W64_BATCH_N_DEF 1024
 #define W64_BATCH_N_MAX 1024
 
 struct w64_type {
