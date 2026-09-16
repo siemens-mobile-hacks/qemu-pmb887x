@@ -1436,7 +1436,13 @@ void memory_region_transaction_commit(void)
 #ifdef __EMSCRIPTEN__
             wasm_diag_stat[WASM_DIAG_TOPO_COMMIT]++;
             wasm_diag_stat[WASM_DIAG_TOPO_FULL]++;
-            for (int r = 0; r < WASM_DIAG_N - WASM_DIAG_TOPO_R_LOG; r++) {
+            /* the reason bits, not every counter that follows them:
+             * once the enum grew past TOPO_R_LOG + 32 this shifted by
+             * 1u << 32 (UB, wraps mod 32 on wasm) and bumped whatever
+             * sat at TOPO_R_LOG + 32 + bit -- a silent write into the
+             * newest counters, which read as small plausible numbers */
+            for (int r = 0;
+                 r <= WASM_DIAG_TOPO_R_DIRTY - WASM_DIAG_TOPO_R_LOG; r++) {
                 if (memory_region_update_reasons & (1u << r)) {
                     wasm_diag_stat[WASM_DIAG_TOPO_R_LOG + r]++;
                 }
