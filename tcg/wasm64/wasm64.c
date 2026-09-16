@@ -503,6 +503,19 @@ static void w64_ls_init(void)
     fflush(LS.f);
 }
 
+/*
+ * W64_CALLPAD=N: N unconditional calls to this per TB entry, from the
+ * emitted prologue.  Every helper a TB calls is in the main module while
+ * the TB is in its own, so the call is a cross-module import call -- and
+ * that boundary, not the helper body, is what the goto_ptr lookup helper
+ * turned out to be paying (playbook § 0g).  padSink counts the calls
+ * exactly, so an A/B against N=0 prices the boundary in ns.
+ */
+void w64_callpad_sink(void)
+{
+    wasm_diag_stat[WASM_DIAG_PAD_SINK]++;
+}
+
 /* called from the emitted TB prologue (import; emitted only in a process
  * armed with W64_LOCKSTEP, and then only when w64_ls_on) */
 void w64_lockstep_account(unsigned insns)

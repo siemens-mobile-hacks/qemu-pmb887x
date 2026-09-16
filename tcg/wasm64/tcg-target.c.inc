@@ -250,6 +250,21 @@ static unsigned w64_byte_pad(void)
     return n;
 }
 
+/* W64_CALLPAD=N adds N calls to w64_callpad_sink() per TB entry.  Its
+ * companion knobs price bytes (W64_BYTEPAD) and locals (W64_LOCALPAD);
+ * this one prices the wasm->wasm import call itself, which is what a
+ * helper costs a TB before the helper does anything.  padSink is the
+ * exact call count, so the A/B divides straight into ns per call. */
+static unsigned w64_call_pad(void)
+{
+    static int n = -1;
+    if (n < 0) {
+        const char *e = getenv("W64_CALLPAD");
+        n = e ? atoi(e) : 0;
+    }
+    return n;
+}
+
 static bool w64_ls_armed(void)
 {
     static int mode = -1;
@@ -3167,6 +3182,7 @@ static void tcg_out_tb_start(TCGContext *s)
     static const uint8_t p1[1] = { 0 };    /* (i32) */
     uint8_t sync_type = 0, sync_imp = 0, sync_uimp = 0;
     uint8_t ls_type = 0, ls_imp = 0, ls_uimp = 0;
+    uint8_t pad_type = 0, pad_imp = 0, pad_uimp = 0;
     uint32_t tidx;
 
     memset(&W, 0, sizeof(W));
@@ -3224,6 +3240,14 @@ static void tcg_out_tb_start(TCGContext *s)
                                 ls_type);
         ls_uimp = w64_union_import(
             (uint32_t)(uintptr_t)w64_lockstep_account, ls_uimp);
+    }
+    if (w64_call_pad()) {
+        pad_type = w64_add_type(0, (const uint8_t *)"", 0xff);   /* () -> () */
+        pad_uimp = w64_union_type(0, NULL, 0xff);
+        pad_imp = w64_import_idx((uint32_t)(uintptr_t)w64_callpad_sink,
+                                 pad_type);
+        pad_uimp = w64_union_import(
+            (uint32_t)(uintptr_t)w64_callpad_sink, pad_uimp);
     }
 
     /* body: [body-size LEB (patched)] [locals] [expr...] */
@@ -3317,6 +3341,15 @@ static void tcg_out_tb_start(TCGContext *s)
         w64_u8(s, 0x10);                              /* call */
         w64_callidx(s, ls_imp, ls_uimp);
         w64_blk_pop(s);
+    }
+
+    if (w64_call_pad()) {
+        unsigned i;
+
+        for (i = 0; i < w64_call_pad(); i++) {
+            w64_u8(s, 0x10);                          /* call */
+            w64_callidx(s, pad_imp, pad_uimp);
+        }
     }
 
     if (w64_byte_pad()) {
@@ -3594,6 +3627,30 @@ static int tcg_out_tb_finalize(TCGContext *s)
      * right here (fill or union-table pressure) and flip this TB's
      * descriptor to the batch thunk (desc+4 = batch id, so the
      * dispatcher calls run(env, sp, tp, tidx) instead of the entry) */
+    {
+        /* W64_DUMPTB=N: hex of the Nth TB's complete temp module, so the
+         * emitted bytes can be disassembled (wasm-dis) and counted. */
+        static int dump = -2;
+        if (dump == -2) {
+            const char *e = getenv("W64_DUMPTB");
+            dump = e ? atoi(e) : -1;
+        }
+        if (dump >= 0 &&
+            wasm_diag_stat[WASM_DIAG_TB_GEN] == (uint64_t)dump) {
+            uint32_t n = W64_PRELUDE + body_total;
+            const uint8_t *b = s->code_buf + W64_MOD_OFF;
+            char *h = g_malloc(2 * (size_t)n + 1);
+            uint32_t i;
+
+            for (i = 0; i < n; i++) {
+                snprintf(h + 2 * i, 3, "%02x", b[i]);
+            }
+            fprintf(stderr, "W64TBDUMP icount=%u n=%u %s\n",
+                    s->gen_tb->icount, n, h);
+            g_free(h);
+        }
+    }
+
     w64_ir_finish(ldl_p(s->code_buf + W64_DESC_TIDX));
     w64_batch_member((uintptr_t)s->code_buf, body_total, CF, n_cf);
     return 0;
