@@ -1394,6 +1394,70 @@ static void note_call_return(DisasContext *s) { }
 #endif
 
 /*
+ * REJECTED EXPERIMENT, kept as its reproducer.  Off unless W64_LINSPEC is
+ * set: 1 = note the address after an unconditional transfer (`b`), 2 =
+ * after an indirect one (`bx lr`, `pop {pc}`), 3 = both.
+ *
+ * The idea: that address is a basic block the guest very often runs
+ * later, and nothing records it -- goto_tb notes only the branch target
+ * and an indirect exit notes nothing.  The economics look inviting,
+ * because the two costs are nowhere near each other.  A speculative
+ * translation is ~12 us and a lookup miss is a wasm module at ~96 us, so
+ * an extra edge pays at a **12.5 %** hit rate, and the edges the walk
+ * already has convert at 66 % (W64_SPEC_N 0 vs 32 on a fixed-work el71
+ * window: 127k extra translations remove 84k misses, 117881 -> 33621).
+ *
+ * It does not work, twice over.
+ *
+ * Performance: it makes **89 % more speculative translations** (specMade
+ * 143k -> 271k) and does **not** reduce the miss count.  The guesses are
+ * wrong often enough to be pure cost.
+ *
+ * Soundness, which is the part worth keeping: W64_LINSPEC=2 panics the
+ * EL71 firmware in ~4.5 s, deterministically, always at the same guest pc
+ * ("sorry died at A04D103C").  W64_LINSPEC=1 does not, and s75 and cx70
+ * survive =2 -- EL71 is the board that programs its flash file system
+ * while booting.  So an address handed to w64_speculate can change guest
+ * behaviour, which contradicts the "hint only" the speculation path is
+ * documented with, and three plausible causes have been ruled out:
+ *
+ *   - tb_flush.  It does happen under =3 (the code buffer fills), but the
+ *     shipping build survives 11 and 38 flushes forced with
+ *     `?qargs=-accel tcg,tb-size=24` / `=8` with no panic -- which also
+ *     confirms 0091's tidx recycling across a flush, never exercised
+ *     before.
+ *   - ISA alignment (translating a 2-aligned address with ARM flags,
+ *     the fault trans_BLX_i un-notes its target to avoid): filtering the
+ *     guess on `s->thumb` alignment changes nothing.
+ *   - a stale TB over reprogrammed flash.  hw/arm/pmb887x/flash.c and
+ *     hw/block/pflash_cfi01.c both write their rom device's backing RAM
+ *     directly and neither invalidates TBs for the range -- a real gap,
+ *     and hw/nvram/nrf51_nvm.c shows the intended call -- but adding
+ *     tb_invalidate_phys_range there does not stop the panic either.
+ *     (memory_region_flush_rom_device cannot be used as-is: it asserts
+ *     the region is in romd mode, which a CFI part never is while being
+ *     programmed.)
+ *
+ * Anyone extending speculation must explain this first.
+ */
+#ifdef CONFIG_TCG_WASM64
+static void note_linear_succ(DisasContext *s, unsigned bit)
+{
+    static int mask = -1;
+
+    if (mask < 0) {
+        const char *e = getenv("W64_LINSPEC");
+        mask = e ? atoi(e) : 0;
+    }
+    if (mask & bit) {
+        translator_note_succ(&s->base, s->base.pc_next);
+    }
+}
+#else
+static void note_linear_succ(DisasContext *s, unsigned bit) { }
+#endif
+
+/*
  * @condexec: the condexec_bits value in memory at this exit (what
  * gen_set_condexec last stored, or 0 mid-TB — see arm_tr_init_disas_context).
  */
@@ -7225,6 +7289,7 @@ static void arm_tr_tb_stop(DisasContextBase *dcbase, CPUState *cpu)
             gen_update_pc(dc, curr_insn_len(dc));
             /* fall through */
         case DISAS_JUMP:
+            note_linear_succ(dc, 2);
             /* memory holds what gen_set_condexec stored above, else 0 */
             gen_goto_ptr(dc, dc->condexec_mask ?
                          (dc->condexec_cond << 4) | (dc->condexec_mask >> 1)
@@ -7238,7 +7303,7 @@ static void arm_tr_tb_stop(DisasContextBase *dcbase, CPUState *cpu)
             tcg_gen_exit_tb(NULL, 0);
             break;
         case DISAS_NORETURN:
-            /* nothing more to generate */
+            note_linear_succ(dc, 1);
             break;
         case DISAS_WFI:
             gen_helper_wfi(tcg_env, tcg_constant_i32(curr_insn_len(dc)));
