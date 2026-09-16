@@ -294,6 +294,22 @@ enum {
      */
     WASM_DIAG_TLBC_HIT,
     WASM_DIAG_TLBC_MISS,
+    /*
+     * What an interpreter tier would have to interpret (W64_TBHIST=1,
+     * and only meaningful with W64_NOCLOSEEXEC=1).
+     *
+     * The tier's saving is easy to price -- fewer batch closes at ~86 us
+     * each -- but its cost is not: a TB stays interpreted from its
+     * translation until its batch closes, and how many times it runs in
+     * that window depends on an interleaving of translation and
+     * execution order that only the real thing produces.  W64_NOCLOSEEXEC
+     * *is* that real thing with the close deferred: batches then fill to
+     * W64_BATCH_N.  So at close time, sum what the members have already
+     * executed (w64_tbhist, exact per TB) and the interpreted-entry
+     * count is measured rather than assumed.
+     */
+    WASM_DIAG_CLOSE_PRE_ENT, /* member entries already run at batch close */
+    WASM_DIAG_CLOSE_PRE_TB,  /* ...members that had run at least once */
     WASM_DIAG_N
 };
 

@@ -550,6 +550,11 @@ uint32_t *w64_tbhist_slot(uint32_t tidx)
     return &w64_tbhist[tidx & (W64_TBHIST_N - 1)];
 }
 
+static uint32_t w64_tbhist_count(uint32_t tidx)
+{
+    return w64_tbhist ? w64_tbhist[tidx & (W64_TBHIST_N - 1)] : 0;
+}
+
 uint64_t w64_tbhist_bucket(int b)
 {
     uint64_t acc = 0;
@@ -1967,6 +1972,11 @@ static void w64_batch_close(void)
         desc[W64_DESC_FIDX / 4] = thunk;
         desc[W64_DESC_BATCH / 4] = W64_BATCH_TAG | B.id;
         l->tidx[m] = desc[W64_DESC_TIDX / 4];
+        if (w64_tbhist) {
+            uint32_t c = w64_tbhist_count(l->tidx[m]);
+            wasm_diag_stat[WASM_DIAG_CLOSE_PRE_ENT] += c;
+            wasm_diag_stat[WASM_DIAG_CLOSE_PRE_TB] += (c != 0);
+        }
     }
 
     w64_landed_register(l);
