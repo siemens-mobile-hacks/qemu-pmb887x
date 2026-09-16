@@ -950,6 +950,45 @@ static bool w64_spec_code_ram(CPUArchState *env, vaddr pc, int mmu_idx)
     return w64_spec_code_host(env, pc, mmu_idx, &host);
 }
 
+/*
+ * Has any miss landed in this guest page before?  Module count is miss
+ * count, and two static edge classes have now failed to predict misses
+ * (0092 call returns: -2.6 %; 0095 the address after an unconditional
+ * transfer: 0 %), so the question worth asking is coarser: are the
+ * misses spread over many pages, or do they cluster into a few pages the
+ * guest keeps re-entering at new offsets?
+ *
+ * misses / new-page-misses is the misses-per-touched-page ratio, and it
+ * is what decides whether translating a whole page on first entry could
+ * pay: a translation is ~12 us against ~96 us for the module a miss
+ * forces, so a page may cost up to ~8 wasted translations per miss it
+ * removes.
+ *
+ * Open-addressed, never cleared, saturating: a full bucket counts as
+ * seen, which biases the ratio *down* and so cannot manufacture a
+ * prize.
+ */
+#define W64_MISSPAGE_BITS 15
+static uint32_t w64_misspage[1u << W64_MISSPAGE_BITS];
+
+static bool w64_misspage_seen(vaddr pc)
+{
+    uint32_t key = (uint32_t)(pc >> TARGET_PAGE_BITS) | 0x80000000u;
+    unsigned i = (key * 2654435761u) >> (32 - W64_MISSPAGE_BITS);
+    unsigned n;
+
+    for (n = 0; n < 8; n++, i = (i + 1) & ((1u << W64_MISSPAGE_BITS) - 1)) {
+        if (w64_misspage[i] == key) {
+            return true;
+        }
+        if (w64_misspage[i] == 0) {
+            w64_misspage[i] = key;
+            return false;
+        }
+    }
+    return true;
+}
+
 static bool w64_speculate(CPUState *cpu, TranslationBlock *root,
                           TCGTBCPUState s)
 {
@@ -973,6 +1012,27 @@ static bool w64_speculate(CPUState *cpu, TranslationBlock *root,
     }
     st[0]++;
     wasm_diag_stat[WASM_DIAG_SPEC_MISS]++;
+    if (!w64_misspage_seen(s.pc)) {
+        wasm_diag_stat[WASM_DIAG_MISS_NEWPAGE]++;
+    }
+    /*
+     * W64_MISSDUMP=1: print every missed guest pc to the console, so the
+     * miss stream can be intersected offline with the flash image (are
+     * these addresses stored anywhere as pointers, i.e. could a literal
+     * scan have predicted them?).  Measurement only -- the printf makes
+     * the run much slower, and the counters stay valid because they count
+     * guest events.  tools/abortlog.mjs captures it.
+     */
+    {
+        static int dump = -1;
+
+        if (dump < 0) {
+            dump = getenv("W64_MISSDUMP") != NULL;
+        }
+        if (dump) {
+            fprintf(stderr, "W64MISS %08x\n", (uint32_t)s.pc);
+        }
+    }
     if (s.cflags != curr_cflags(cpu)) {
         st[5]++;
     } else if (root->w64_nsucc == 0) {

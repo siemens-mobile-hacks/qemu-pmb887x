@@ -245,6 +245,21 @@ enum {
                               * the table check.  modNs minus the four phases
                               * left ~14.5 us per module unaccounted */
     WASM_DIAG_MOD_POST_NS,   /* Instance -> addFunction: the GC nudge */
+    /*
+     * Miss classification (accel/tcg/cpu-exec.c w64_speculate).  Module
+     * count is miss count, so the only question that matters about a miss
+     * is whether anything could have predicted it.  Two static edge
+     * classes have been tried and failed (call returns: -2.6 %; the
+     * address after an unconditional transfer: 0 %), so the next question
+     * is coarser: is the missed pc in a guest page that has been
+     * translated from before, or a page nothing has ever run in?
+     *
+     * misses-per-touched-page is what decides whether translating a whole
+     * page on first entry is worth building: at ~12 us a translation
+     * against ~96 us a module, it pays if a page costs fewer than ~8
+     * wasted translations per miss it removes.
+     */
+    WASM_DIAG_MISS_NEWPAGE,  /* ...the first miss ever in its guest page */
     WASM_DIAG_N
 };
 
