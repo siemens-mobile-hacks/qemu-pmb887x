@@ -112,8 +112,8 @@
  * (clamped to 1..W64_BATCH_N_MAX; setting it to 1 exercises the whole
  * batch path with minimal batching), W64_NOBATCH=1 disables batching
  * entirely (pure per-TB temp modules). */
-#define W64_BATCH_N_DEF 128
-#define W64_BATCH_N_MAX 256
+#define W64_BATCH_N_DEF 256
+#define W64_BATCH_N_MAX 1024
 
 struct w64_type {
     uint8_t np;             /* number of params */
