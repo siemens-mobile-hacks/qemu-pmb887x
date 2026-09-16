@@ -27,7 +27,11 @@
 #include <emscripten.h>
 #include "qemu/wasm-diag.h"
 #include "qemu/timer.h"
+#include "exec/translation-block.h"
 #include "wasm64.h"
+
+QEMU_BUILD_BUG_ON(W64_TCP_FIDX != W64_DESC_FIDX);
+QEMU_BUILD_BUG_ON(W64_TCP_TIDX != W64_DESC_TIDX);
 
 /* icount2.c: addresses of the fields emitted TB prologues touch
  * (cpu-timers-internal.h needs too many prerequisites to include here) */
@@ -1475,6 +1479,7 @@ static uint32_t w64_assemble_instantiate(const struct w64_bsrc *src,
 static void w64_batch_evict_oldest(void)
 {
     struct w64_landed *l = w64_live_head;
+    CPUState *cpu;
     unsigned m;
 
     if (!l) {
@@ -1493,15 +1498,40 @@ static void w64_batch_evict_oldest(void)
 
     for (m = 0; m < l->src.n_member; m++) {
         uint32_t *desc = (uint32_t *)(uintptr_t)l->src.member[m].tcptr;
+        TranslationBlock *tb;
+
         /* a descriptor re-used by a later translation carries another
          * batch id (or a mod_len) by now: leave it alone */
-        if (desc[W64_DESC_BATCH / 4] == (W64_BATCH_TAG | l->src.id)) {
-            desc[W64_DESC_FIDX / 4] = 0;
+        if (desc[W64_DESC_BATCH / 4] != (W64_BATCH_TAG | l->src.id)) {
+            continue;
+        }
+        desc[W64_DESC_FIDX / 4] = 0;
+        /*
+         * A linked goto_tb slot holds this member's chain-table index and
+         * nothing else (exec/translation-block.h), so clearing fidx no
+         * longer stops the chain: drop the incoming jumps instead.  They
+         * are re-linked the next time each source runs.
+         */
+        tb = tcg_tb_lookup(l->src.member[m].tcptr);
+        if (tb) {
+            tb_w64_unlink_incoming(tb);
         }
     }
     w64_tab_unset((uintptr_t)l->tidx, l->src.n_member);
     w64_remove((int)l->thunk);
     l->thunk = 0;
+
+    /*
+     * A goto_ptr inline-cache slot holds a table index too, and has no
+     * back-reference at all, so retire every slot at once — that is what
+     * the generation is for.  Eviction happens only above W64_LIVE_MAX
+     * live modules, which compaction keeps a boot two orders of magnitude
+     * below (~450 against 6144), so neither this nor the unlink above has
+     * been observed to run.
+     */
+    CPU_FOREACH(cpu) {
+        cpu_tb_key_gen_bump(cpu);
+    }
 }
 
 static void w64_live_unlink(struct w64_landed *l)

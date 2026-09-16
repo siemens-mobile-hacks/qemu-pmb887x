@@ -958,18 +958,27 @@ static void tcg_out_exit_tb(TCGContext *s, uintptr_t arg)
 static void tcg_out_goto_tb(TCGContext *s, int which)
 {
     /* Chaining through the shared funcref table (phase 2).  The chain
-     * slot is tb->jmp_target_addr[which] — qemu core links it to the
-     * target TB's tc.ptr (tb_add_jump) and resets it to this TB's own
-     * reset address (tb_reset_jump), exactly as with TCI's indirect
-     * jumps; we read the slot at runtime:
+     * slot is tb->jmp_target_addr[which] — qemu core links it
+     * (tb_add_jump) and resets it to this TB's own reset address
+     * (tb_reset_jump), exactly as with TCI's indirect jumps; we read the
+     * slot at runtime.  tb_set_jmp_target stores the *table index* of the
+     * target there, tagged in the high half (exec/translation-block.h),
+     * and a reset address is a wasm64 heap pointer below 2 GB, so one
+     * test separates the two:
      *
      *   block
      *     $scr0 = i64.load &tb->jmp_target_addr[which]
-     *     br_if 0 ($scr0 == reset_addr || w64_chain_stop != 0
-     *               || i32.load [fidx @ $scr0] == 0)
-     *     $scr32 = i32.load [tidx @ $scr0]   // target's shared-table index
-     *     return_call_indirect $tbsig, table 0 ($env, $sp, $tp, $scr32)
+     *     br_if 0 (($scr0 >> 32) == 0 || w64_chain_stop != 0)
+     *     return_call_indirect $tbsig, table 0
+     *                          ($env, $sp, $tp, i32.wrap $scr0)
      *   end
+     *
+     * The chain then reads one word — this TB's own slot — where it used
+     * to follow that word into the target's descriptor for fidx and tidx:
+     * a cache line per TB, in a ~20 MB region nothing else in the
+     * execution path touches.  tools/dispatch-probe.mjs prices that
+     * dependent load at +2 ns over a 256-TB working set and +8..9 ns over
+     * 1024-4096 of them.
      *
      * The fall-through runs the exit_tb the frontend emits right after
      * goto_tb, returning (tb|which) to cpu_exec — which then performs
@@ -977,17 +986,16 @@ static void tcg_out_goto_tb(TCGContext *s, int which)
      * lockstep-budget brake (see wasm64.c): it forces the chain to
      * unwind to the dispatcher at the next goto_tb so the leg stops at
      * the exact insn budget (the term is only emitted in a process armed
-     * with W64_LOCKSTEP).  A chain target has always been
-     * instantiated (it executed at least once via the dispatcher), so
-     * its table entry is live and its descriptor fidx non-zero; the
-     * fidx term keeps a future batch-eviction (LRU cap) sound — an
-     * evicted member falls through to exit_tb and re-enters through
-     * the dispatcher.  Invalidation unlinks sources via
-     * tb_jmp_unlink before the TB may be freed, and the wasm loads of
-     * the still-live slot keep native-TCG unlink memory-ordering
+     * with W64_LOCKSTEP).  A chain target has always been instantiated by
+     * the time the chain can be taken — tb_add_jump is immediately
+     * followed by executing the target — so its table entry is live; the
+     * one thing that can unregister it afterwards is batch eviction,
+     * which unlinks the incoming jumps of every member it drops
+     * (tcg/wasm64/wasm64.c).  Invalidation unlinks sources via
+     * tb_jmp_unlink before the TB may be freed, and the wasm load of the
+     * still-live slot keeps native-TCG unlink memory-ordering
      * semantics. */
     uintptr_t slot = get_jmp_target_addr(s, which);
-    uintptr_t reset_addr = (uintptr_t)s->code_buf + tcg_current_code_size(s);
 
     set_jmp_reset_offset(s, which);
 
@@ -1002,31 +1010,23 @@ static void tcg_out_goto_tb(TCGContext *s, int which)
     w64_u8(s, 0x29);                        /* i64.load */
     w64_memarg(s, 3, 0);
     w64_local_tee(s, W64_L_SCR0);
-    w64_const_i64(s, (int64_t)reset_addr);
-    w64_u8(s, 0x51);                        /* i64.eq */
+    w64_const_i64(s, 32);
+    w64_u8(s, 0x88);                        /* i64.shr_u */
+    w64_u8(s, 0x50);                        /* i64.eqz: not linked */
     if (w64_ls_armed()) {
         w64_const_i64(s, (int64_t)(uintptr_t)&w64_chain_stop);
         w64_u8(s, 0x28);                    /* i32.load (i64 addr: memory64) */
         w64_memarg(s, 2, 0);
         w64_u8(s, 0x72);                    /* i32.or */
     }
-    w64_local_get(s, W64_L_SCR0);
-    w64_u8(s, 0x28);                        /* i32.load target fidx */
-    w64_memarg(s, 2, W64_DESC_FIDX);
-    w64_u8(s, 0x45);                        /* i32.eqz: evicted / uncompiled */
-    w64_u8(s, 0x72);                        /* i32.or */
     w64_u8(s, 0x0d);                        /* br_if */
     w64_uleb(s, 0);
-
-    w64_local_get(s, W64_L_SCR0);
-    w64_u8(s, 0x28);                        /* i32.load tidx (i64 addr) */
-    w64_memarg(s, 2, W64_DESC_TIDX);
-    w64_local_set(s, W64_L_SCR32);
 
     w64_local_get(s, W64_P_ENV);
     w64_local_get(s, W64_P_SP);
     w64_local_get(s, W64_P_TP);
-    w64_local_get(s, W64_L_SCR32);
+    w64_local_get(s, W64_L_SCR0);
+    w64_u8(s, 0xa7);                        /* i32.wrap_i64: the tidx */
     w64_u8(s, 0x13);                        /* return_call_indirect */
     w64_uleb(s, 0);                         /* type 0: the TB signature */
     w64_uleb(s, 0);                         /* table 0: the shared table */
@@ -1036,22 +1036,26 @@ static void tcg_out_goto_tb(TCGContext *s, int which)
 
 static void tcg_out_goto_ptr(TCGContext *s, TCGReg a0)
 {
-    /* helper_lookup_tb_ptr returned the next TB's descriptor (or
-     * tcg_code_gen_epilogue on a miss).  Tail-call it through the shared
-     * chain table when it is instantiated, exactly like a linked goto_tb
-     * (same fidx / w64_chain_stop guards): every bx lr / pop {pc} /
+    /* The lookup helpers hand over the target's shared-table index with
+     * W64_TIDX_TAG in the high half (exec/translation-block.h), so this
+     * tail-call reads nothing of the target: every bx lr / pop {pc} /
      * ldr pc used to unwind to the C dispatcher and re-enter through the
-     * batch run thunk (0.5-1.7M exits/s early in the boot).
+     * batch run thunk (0.5-1.7M exits/s early in the boot), then paid two
+     * loads from the target's descriptor to get here.
      *
      *   block
      *     $scr0 = a0
-     *     br_if 0 ($scr0 == epilogue || w64_chain_stop != 0
-     *              || i32.load [fidx @ $scr0] == 0)
-     *     $scr32 = i32.load [tidx @ $scr0]
-     *     return_call_indirect $tbsig, table 0 ($env, $sp, $tp, $scr32)
+     *     br_if 0 (($scr0 >> 32) == 0 || w64_chain_stop != 0)
+     *     return_call_indirect $tbsig, table 0
+     *                          ($env, $sp, $tp, i32.wrap $scr0)
      *   end
-     *   ... the handoff-slot fallback below (uninstantiated target:
-     *   the dispatcher compiles it; miss: cpu_exec_loop looks it up) */
+     *   ... the handoff-slot fallback below: $scr0 is then NULL (lookup
+     *   miss) or a descriptor pointer whose fidx is 0 (target not
+     *   compiled yet, or its batch was evicted), and the C dispatcher
+     *   compiles / re-ensures it exactly as before.
+     *
+     * A wasm64 heap pointer is below 2 GB, so the high half separates the
+     * two cases without a tag test of its own. */
     tcg_debug_assert(W.n_blk < W64_MAX_BLK);
     w64_u8(s, 0x02);                        /* block void */
     w64_u8(s, 0x40);
@@ -1061,31 +1065,23 @@ static void tcg_out_goto_ptr(TCGContext *s, TCGReg a0)
 
     w64_get_i64(s, a0);
     w64_local_tee(s, W64_L_SCR0);
-    w64_u8(s, 0x50);                        /* i64.eqz: a miss returns
-                                             * tcg_code_gen_epilogue == NULL */
+    w64_const_i64(s, 32);
+    w64_u8(s, 0x88);                        /* i64.shr_u */
+    w64_u8(s, 0x50);                        /* i64.eqz: not a table index */
     if (w64_ls_armed()) {
         w64_const_i64(s, (int64_t)(uintptr_t)&w64_chain_stop);
         w64_u8(s, 0x28);                    /* i32.load (i64 addr) */
         w64_memarg(s, 2, 0);
         w64_u8(s, 0x72);                    /* i32.or */
     }
-    w64_local_get(s, W64_L_SCR0);
-    w64_u8(s, 0x28);                        /* i32.load target fidx */
-    w64_memarg(s, 2, W64_DESC_FIDX);
-    w64_u8(s, 0x45);                        /* i32.eqz: not instantiated */
-    w64_u8(s, 0x72);                        /* i32.or */
     w64_u8(s, 0x0d);                        /* br_if */
     w64_uleb(s, 0);
-
-    w64_local_get(s, W64_L_SCR0);
-    w64_u8(s, 0x28);                        /* i32.load tidx (i64 addr) */
-    w64_memarg(s, 2, W64_DESC_TIDX);
-    w64_local_set(s, W64_L_SCR32);
 
     w64_local_get(s, W64_P_ENV);
     w64_local_get(s, W64_P_SP);
     w64_local_get(s, W64_P_TP);
-    w64_local_get(s, W64_L_SCR32);
+    w64_local_get(s, W64_L_SCR0);
+    w64_u8(s, 0xa7);                        /* i32.wrap_i64: the tidx */
     w64_u8(s, 0x13);                        /* return_call_indirect */
     w64_uleb(s, 0);                         /* type 0: the TB signature */
     w64_uleb(s, 0);                         /* table 0: the shared table */
@@ -1097,7 +1093,7 @@ static void tcg_out_goto_ptr(TCGContext *s, TCGReg a0)
     w64_local_get(s, W64_P_SP);
     w64_const_i64(s, -8);
     w64_u8(s, 0x7c);                        /* i64.add */
-    w64_get_i64(s, a0);
+    w64_local_get(s, W64_L_SCR0);
     w64_u8(s, 0x37);                        /* i64.store */
     w64_memarg(s, 3, 0);
     w64_const_i32(s, (int32_t)W64_EXIT_GOTOPTR);

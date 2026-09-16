@@ -418,6 +418,26 @@ TCGTBCPUState arm_get_tb_cpu_state(CPUState *cs);
 #define W64_GET_TB_CPU_STATE(cpu)  ((cpu)->cc->tcg_ops->get_tb_cpu_state(cpu))
 #endif
 
+#if defined(CONFIG_TCG_WASM64)
+/*
+ * What a goto_ptr exit is handed (exec/translation-block.h): the target's
+ * shared-table index, tagged, so the emitted dispatch tail-calls it without
+ * reading the target TB's descriptor — a cache line per TB in a region the
+ * execution path otherwise never touches.  An uncompiled or evicted target
+ * (fidx == 0) still goes to the C dispatcher, as the emitted fidx test used
+ * to arrange; the pointer is what the dispatcher's handoff slot wants.
+ */
+static inline const void *w64_dispatch_target(const TranslationBlock *tb)
+{
+    const uint32_t *desc = tb->tc.ptr;
+
+    if (unlikely(desc[W64_TCP_FIDX / 4] == 0)) {
+        return tb->tc.ptr;
+    }
+    return (const void *)(uintptr_t)(W64_TIDX_TAG | desc[W64_TCP_TIDX / 4]);
+}
+#endif
+
 static inline uint32_t curr_cflags_fast(CPUState *cpu)
 {
     if (likely(!cpu_single_stepping(cpu) &&
@@ -470,7 +490,11 @@ const void *HELPER(lookup_tb_ptr)(CPUArchState *env)
         log_cpu_exec(s.pc, cpu, tb);
     }
 
+#ifdef CONFIG_TCG_WASM64
+    return w64_dispatch_target(tb);
+#else
     return tb->tc.ptr;
+#endif
 }
 
 #ifdef CONFIG_TCG_WASM64
@@ -600,6 +624,7 @@ const void *HELPER(lookup_tb_ptr_lc)(CPUArchState *env, void *slot)
 #endif
     struct W64LookupCache *lc = slot;
     TranslationBlock *tb;
+    const void *target;
     uint32_t gen = qatomic_read(&cpu->neg.tb_key_gen);
     uint32_t cur[3];
 
@@ -646,7 +671,7 @@ const void *HELPER(lookup_tb_ptr_lc)(CPUArchState *env, void *slot)
         if (lc->gen == gen && lc->pc == s.pc &&
             W64_LC_KEY(cpu, cur) && w64_lc_dyn_match(lc, cur)) {
             wasm_diag_stat[WASM_DIAG_LC_VHIT]++;
-            if (tb == NULL || lc->tc != tb->tc.ptr) {
+            if (tb == NULL || lc->tc != w64_dispatch_target(tb)) {
                 wasm_diag_stat[WASM_DIAG_LC_VBAD]++;
             }
         }
@@ -661,19 +686,28 @@ const void *HELPER(lookup_tb_ptr_lc)(CPUArchState *env, void *slot)
         return tb->tc.ptr;         /* keep every lookup visible in the log */
     }
 
-    if (likely(s.cflags == cpu->tcg_cflags) && W64_LC_KEY(cpu, cur) &&
-        w64_lc_static_match(lc, cur)) {
+    target = w64_dispatch_target(tb);
+
+    /*
+     * Only a compiled target may be cached: an untagged one (fidx == 0)
+     * would pin this slot to the dispatcher handoff for good, because a
+     * hit never calls back here to refill it.  The TB is about to be
+     * compiled by this very execution, so the next miss fills the slot.
+     */
+    if (likely(s.cflags == cpu->tcg_cflags) &&
+        ((uintptr_t)target & W64_TIDX_TAG) &&
+        W64_LC_KEY(cpu, cur) && w64_lc_static_match(lc, cur)) {
         lc->pc = s.pc;
         for (int i = 0; i < 3; i++) {
             if (lc->dynmask & (1 << i)) {
                 lc->key32[i] = cur[i];
             }
         }
-        lc->tc = tb->tc.ptr;
+        lc->tc = target;
         lc->gen = gen;
         WASM_DIAG_HOT(WASM_DIAG_LC_FILL);
     }
-    return tb->tc.ptr;
+    return target;
 }
 
 void HELPER(tb_key_gen_bump)(CPUArchState *env)
@@ -1071,6 +1105,27 @@ void tb_set_jmp_target(TranslationBlock *tb, int n, uintptr_t addr)
     uintptr_t jmp_rx = (uintptr_t)tb->tc.ptr + offset;
     uintptr_t jmp_rw = jmp_rx - tcg_splitwx_diff;
 
+#ifdef CONFIG_TCG_WASM64
+    /*
+     * The wasm64 chain reads this slot and tail-calls the shared table, so
+     * hold the target's table index here (tagged, exec/translation-block.h)
+     * instead of its descriptor address: the chain then touches nothing of
+     * the target, where it used to load fidx and tidx out of a cache line
+     * that only the dispatch ever reads.  tb_reset_jump's own address is a
+     * wasm64 heap pointer, below 2 GB, so a reset slot reads as "not
+     * linked" with no second test.
+     *
+     * A chain is only ever *taken* after the target has run once through
+     * the dispatcher (tb_add_jump is immediately followed by executing the
+     * target), so its table entry is live by then.  The one thing that can
+     * unregister it afterwards is batch eviction, which unlinks the
+     * incoming jumps itself (tcg/wasm64/wasm64.c).
+     */
+    if (addr != (uintptr_t)tb->tc.ptr + tb->jmp_reset_offset[n]) {
+        addr = (uintptr_t)(W64_TIDX_TAG |
+                           ((const uint32_t *)addr)[W64_TCP_TIDX / 4]);
+    }
+#endif
     tb->jmp_target_addr[n] = addr;
     tb_target_set_jmp_target(c_tb, n, jmp_rx, jmp_rw);
 }

@@ -78,6 +78,9 @@
 #define W64_DESC_ICOUNT   8
 #define W64_DESC_NIMP    12
 #define W64_DESC_TIDX    16
+/* accel/tcg builds a goto_ptr dispatch target out of these two, through
+ * W64_TCP_FIDX / W64_TCP_TIDX in exec/translation-block.h (where the
+ * encoding is documented); wasm64.c asserts the pairs agree. */
 
 #define W64_MOD_OFF      20
 #define W64_PRELUDE     256

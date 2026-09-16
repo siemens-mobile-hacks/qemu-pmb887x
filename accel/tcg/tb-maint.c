@@ -907,6 +907,20 @@ static inline void tb_jmp_unlink(TranslationBlock *dest)
     qemu_spin_unlock(&dest->jmp_lock);
 }
 
+#ifdef CONFIG_TCG_WASM64
+/*
+ * Batch eviction (tcg/wasm64/wasm64.c) unregisters @dest's entry in the
+ * shared chain table, and a linked goto_tb slot names that entry with no
+ * back-reference of its own — so drop the incoming chains.  The TB itself
+ * stays valid: the sources fall back to exit_tb, the dispatcher
+ * re-instantiates the batch, and tb_add_jump links them again.
+ */
+void tb_w64_unlink_incoming(TranslationBlock *dest)
+{
+    tb_jmp_unlink(dest);
+}
+#endif
+
 static void tb_jmp_cache_inval_tb(TranslationBlock *tb)
 {
     CPUState *cpu;

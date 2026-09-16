@@ -156,6 +156,33 @@ struct TranslationBlock {
 #define W64_LC_DYN_FLAGS     1
 #define W64_LC_DYN_THUMB     2
 #define W64_LC_DYN_CONDEXEC  4
+
+/*
+ * What a goto_ptr operand means to the wasm64 backend.
+ *
+ * The emitted dispatch is a return_call_indirect through the shared chain
+ * table, so all it needs is the target's table index.  That index used to
+ * be read out of the descriptor at tb->tc.ptr — one u32 per ~576-byte
+ * module staging area, i.e. one cache line per TB in a ~20 MB region that
+ * nothing else in the execution path touches.  A synthetic dispatch chain
+ * (tools/dispatch-probe.mjs) prices that dependent load at +2 ns over a
+ * 256-TB working set and +8..9 ns over 1024-4096 TBs, on a dispatch that
+ * runs ~11 M times a second.
+ *
+ * So the lookup helpers hand the index over directly, tagged in the high
+ * half (a wasm64 heap pointer is < 2 GB, so a real pointer never has one):
+ *
+ *   hi != 0   W64_TIDX_TAG | tidx — tail-call table[tidx]
+ *   hi == 0   a descriptor pointer (target not compiled yet, or its batch
+ *             was evicted) or NULL (lookup miss): hand off to the C
+ *             dispatcher, which is what used to happen when fidx was 0.
+ *
+ * The offsets mirror W64_DESC_FIDX / W64_DESC_TIDX in tcg/wasm64/wasm64.h,
+ * which asserts they agree.
+ */
+#define W64_TCP_FIDX     0
+#define W64_TCP_TIDX    16
+#define W64_TIDX_TAG    (1ULL << 32)
 #endif
 
     /*
@@ -182,6 +209,11 @@ struct TranslationBlock {
 
 /* The alignment given to TranslationBlock during allocation. */
 #define CODE_GEN_ALIGN  16
+
+#ifdef CONFIG_TCG_WASM64
+/* accel/tcg/tb-maint.c, for tcg/wasm64/wasm64.c's batch eviction. */
+void tb_w64_unlink_incoming(TranslationBlock *dest);
+#endif
 
 /* Hide the qatomic_read to make code a little easier on the eyes */
 static inline uint32_t tb_cflags(const TranslationBlock *tb)
