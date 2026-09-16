@@ -841,6 +841,16 @@ EM_JS(void, w64_tab_clear, (void), {
  * union import table (u32 C function pointers).  The instance's
  * active element segments register every member into TAB at its tidx
  * (replacing the temp-module entries) before addFunction returns. */
+/*
+ * The Firefox module-GC pressure in the EM_JS body: 32 MB of garbage every
+ * 256 instantiations, which at the EL71 boot's ~1360 modules/s is
+ * ~170 MB/s manufactured on purpose.  Firefox needs it - module code is
+ * not GC pressure there and the worker never yields, so dropped modules
+ * pile up against the ~16k executable-memory budget (0019, 0053).
+ * Chromium does not, and pays 0.16 s per 25 s of EL71 boot for it, so the
+ * default (-1) is to decide in JS from the user agent.  W64_GCNUDGE=0/1
+ * forces it, which is how the two legs of the A/B run in one binary.
+ */
 /* W64_MODBENCH=<n>: on the nth module close, time 200 back-to-back
  * compiles of that module's own bytes (see the EM_JS body). */
 static int w64_modbench(void)
@@ -853,10 +863,19 @@ static int w64_modbench(void)
     return v;
 }
 
+static int w64_gc_nudge(void)
+{
+    static int v = -2;
+    if (v == -2) {
+        const char *e = getenv("W64_GCNUDGE");
+        v = e ? atoi(e) : -1;
+    }
+    return v;
+}
 
 EM_JS(int, w64_batch_instantiate,
       (uintptr_t modp, uint32_t modlen, uintptr_t ipp, uint32_t nimp,
-       uint32_t maxtidx, uintptr_t nsp, int bench), {
+       uint32_t maxtidx, uintptr_t nsp, int nudge, int bench), {
     const dv = new DataView(HEAPU8.buffer);
     const mod_bytes =
         new Uint8Array(HEAPU8.slice(Number(modp), Number(modp) + Number(modlen)));
@@ -905,7 +924,13 @@ EM_JS(int, w64_batch_instantiate,
      * collected).  A throwaway 32 MB buffer every 256 instantiations
      * is that pressure; V8 is indifferent to it. */
     globalThis.__w64ninst = (globalThis.__w64ninst || 0) + 1;
-    if ((globalThis.__w64ninst & 255) === 0) {
+    if (globalThis.__w64gc === undefined) {
+        /* nudge < 0 is "decide here": the pressure is only needed where
+         * module code is not GC pressure, which is SpiderMonkey. */
+        globalThis.__w64gc = nudge < 0
+            ? navigator.userAgent.indexOf('Firefox') >= 0 : nudge > 0;
+    }
+    if (globalThis.__w64gc && (globalThis.__w64ninst & 255) === 0) {
         const junk = new ArrayBuffer(32 << 20);
         new Uint8Array(junk)[0] = 1;
     }
@@ -1381,6 +1406,7 @@ static uint32_t w64_assemble_instantiate(const struct w64_bsrc *src,
         thunk = w64_batch_instantiate((uintptr_t)mod.b, mod.n, (uintptr_t)ip,
                                       src->n_uimp, maxtidx,
                                       (uintptr_t)phase_ns[k],
+                                      w64_gc_nudge(),
                                       w64_modbench() && closes == w64_modbench());
         wasm_diag_stat[WASM_DIAG_MOD_NS] += get_clock_realtime() - t0;
         wasm_diag_stat[WASM_DIAG_MOD_RESOLVE_NS] =
