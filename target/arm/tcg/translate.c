@@ -1566,6 +1566,9 @@ static void gen_goto_ptr(DisasContext *s, uint32_t condexec)
  */
 static void gen_goto_tb(DisasContext *s, unsigned tb_slot_idx, int64_t diff)
 {
+#ifdef CONFIG_TCG_WASM64
+    s->w64_slots |= 1 << tb_slot_idx;
+#endif
     if (translator_use_goto_tb(&s->base, s->pc_curr + diff)) {
         /*
          * For pcrel, the pc must always be up-to-date on entry to
@@ -1590,6 +1593,111 @@ static void gen_goto_tb(DisasContext *s, unsigned tb_slot_idx, int64_t diff)
     s->base.is_jmp = DISAS_NORETURN;
 }
 
+#ifdef CONFIG_TCG_WASM64
+/*
+ * Conditional-branch fall-through merge (hand-off item 1b).
+ *
+ * A conditional branch ends the TB today: arm_skip_unless emits the
+ * brcond, the taken path is emitted inline, and arm_tr_tb_stop's
+ * `if (dc->condjmp)` tail emits the fall-through as goto_tb 1.  The
+ * firmware's TBs are then ~4 instructions, and every one of those
+ * boundaries costs a tail call, an icount prologue and a full sync of
+ * the register globals to env.
+ *
+ * Merging inverts it: the taken path becomes a forward branch to a
+ * label emitted at the end of the TB, and translation continues
+ * straight into the fall-through, so the two blocks share one TB.
+ * Up to W64_FT_MAX of them accumulate; the first two collect the TB's
+ * goto_tb slots if the TB's own end has not spent them, the rest leave
+ * through goto_ptr and its inline cache.
+ *
+ * What the inversion costs is an icount correction.  gen_tb_start
+ * subtracts the whole of db->num_insns from icount_decr when the TB is
+ * entered, so a taken exit -- which skips the fall-through -- has to
+ * hand those instructions back, or the guest is charged for
+ * instructions it never ran and the lockstep gate diverges.
+ */
+static bool w64_merge_on(void)
+{
+    static int on = -1;
+
+    if (on < 0) {
+        const char *e = getenv("W64_MERGE");
+
+        on = e ? atoi(e) : 1;
+    }
+    return on;
+}
+
+static unsigned w64_ft_max(void)
+{
+    static int n = -1;
+
+    if (n < 0) {
+        const char *e = getenv("W64_FTMAX");
+
+        n = e ? MIN(atoi(e), W64_FT_MAX) : 1;
+    }
+    return n;
+}
+
+static bool w64_defer_taken(DisasContext *s, int64_t diff)
+{
+    /*
+     * NORETURN here is the "gen_brcondi(l); gen_jmp(); gen_set_label(l);
+     * gen_jmp()" idiom: arm_post_translate_insn would not place
+     * condlabel, so the fall-through would be unreachable and the label
+     * never set.
+     */
+    if (s->base.is_jmp != DISAS_NEXT && s->base.is_jmp != DISAS_TOO_MANY) {
+        return false;
+    }
+    if (!w64_merge_on() || !s->condjmp || s->w64_ft_n >= w64_ft_max() ||
+        s->condexec_mask || s->eci || unlikely(s->ss_active) ||
+        (tb_cflags(s->base.tb) & CF_SINGLE_STEP) || w64_tb_icount_exact()) {
+        return false;
+    }
+    s->w64_ft[s->w64_ft_n].label = gen_disas_label(s);
+    s->w64_ft[s->w64_ft_n].dest = s->pc_curr + diff;
+    s->w64_ft[s->w64_ft_n].insns = s->base.num_insns;
+    tcg_gen_br(s->w64_ft[s->w64_ft_n].label.label);
+    s->w64_ft_n++;
+    /*
+     * Leave is_jmp alone: arm_post_translate_insn places condlabel for
+     * DISAS_NEXT/DISAS_TOO_MANY and the loop carries on into the
+     * fall-through.
+     */
+    return true;
+}
+
+/* the deferred taken paths, emitted from arm_tr_tb_stop */
+static void w64_emit_deferred_taken(DisasContext *dc)
+{
+    for (unsigned i = 0; i < dc->w64_ft_n; i++) {
+        int skipped = dc->base.num_insns - dc->w64_ft[i].insns;
+        int64_t diff;
+
+        set_disas_label(dc, dc->w64_ft[i].label);
+        if (skipped > 0 && (tb_cflags(dc->base.tb) & CF_USE_ICOUNT)) {
+            TCGv_i32 c = tcg_temp_new_i32();
+            int off = offsetof(CPUState, neg.icount_decr.u16.low) -
+                      sizeof(CPUState);
+
+            tcg_gen_ld16u_i32(c, tcg_env, off);
+            tcg_gen_addi_i32(c, c, skipped);
+            tcg_gen_st16_i32(c, tcg_env, off);
+        }
+        diff = dc->w64_ft[i].dest - dc->pc_curr;
+        if (~dc->w64_slots & 3) {
+            gen_goto_tb(dc, ctz32(~dc->w64_slots), diff);
+        } else {
+            gen_update_pc(dc, diff);
+            gen_goto_ptr(dc, 0);
+        }
+    }
+}
+#endif
+
 /* Jump, specifying which TB number to use if we gen_goto_tb() */
 static void gen_jmp_tb(DisasContext *s, int64_t diff, int tbno)
 {
@@ -1612,6 +1720,11 @@ static void gen_jmp_tb(DisasContext *s, int64_t diff, int tbno)
          *    gen_jmp();
          * on the second call to gen_jmp().
          */
+#ifdef CONFIG_TCG_WASM64
+        if (tbno == 0 && w64_defer_taken(s, diff)) {
+            return;
+        }
+#endif
         gen_goto_tb(s, tbno, diff);
         break;
     case DISAS_UPDATE_NOCHAIN:
@@ -6782,6 +6895,8 @@ static void arm_tr_init_disas_context(DisasContextBase *dcbase, CPUState *cs)
     dc->w64_thumb = dc->thumb;
     dc->w64_dynkey = false;
     dc->w64_lc_sites = 0;
+    dc->w64_ft_n = 0;
+    dc->w64_slots = 0;
 #endif
     dc->be_data = EX_TBFLAG_ANY(tb_flags, BE_DATA) ? MO_BE : MO_LE;
     condexec = EX_TBFLAG_AM32(tb_flags, CONDEXEC);
@@ -7353,6 +7468,10 @@ static void arm_tr_tb_stop(DisasContextBase *dcbase, CPUState *cpu)
             gen_goto_tb(dc, 1, curr_insn_len(dc));
         }
     }
+
+#ifdef CONFIG_TCG_WASM64
+    w64_emit_deferred_taken(dc);
+#endif
 
     emit_delayed_exceptions(dc);
 }

@@ -223,6 +223,14 @@ extern uint32_t w64_interp_gate;
 #ifdef CONFIG_TCG_WASM64
 /* accel/tcg/tb-maint.c, for tcg/wasm64/wasm64.c's batch eviction. */
 void tb_w64_unlink_incoming(TranslationBlock *dest);
+
+/*
+ * True while something charges tb->icount once per TB entry from the
+ * emitted prologue (tcg/wasm64/tcg-target.c.inc).  A TB that can leave
+ * before its last instruction over-charges those, so a frontend must
+ * not merge a conditional branch's fall-through while any is armed.
+ */
+bool w64_tb_icount_exact(void);
 #endif
 
 /* Hide the qatomic_read to make code a little easier on the eyes */

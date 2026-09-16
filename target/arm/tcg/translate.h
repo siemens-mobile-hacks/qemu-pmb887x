@@ -36,6 +36,11 @@ typedef struct DisasDelayException {
     uint32_t target_el;
 } DisasDelayException;
 
+#ifdef CONFIG_TCG_WASM64
+/* conditional branches whose taken path one TB may defer to its end */
+#define W64_FT_MAX 8
+#endif
+
 typedef struct DisasContext {
     DisasContextBase base;
     const ARMISARegisters *isar;
@@ -125,6 +130,24 @@ typedef struct DisasContext {
     uint8_t w64_lc_sites;
     uint32_t w64_lc_key[3];
     uint8_t w64_lc_mask;
+    /*
+     * Deferred taken paths of conditional branches (gen_jmp_tb): instead
+     * of ending the TB there, the branch jumps to @label and translation
+     * continues into the fall-through, so both basic blocks share one TB.
+     * @dest is the branch target, @insns the instruction count at the
+     * branch -- the difference from the final count is what the taken
+     * path has to hand back to icount_decr, because the TB charges for
+     * every instruction it contains the moment it is entered.
+     * @w64_slots is the set of goto_tb slots already spent by this TB;
+     * each deferred path takes one that is left, or goto_ptr if none is.
+     */
+    struct {
+        DisasLabel label;
+        vaddr dest;
+        int insns;
+    } w64_ft[W64_FT_MAX];
+    uint8_t w64_ft_n;
+    uint8_t w64_slots;
 #endif
     bool lse2;
     /*

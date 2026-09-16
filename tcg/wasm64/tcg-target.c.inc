@@ -3180,6 +3180,22 @@ static const TCGOutOpDivRem outop_divu2 = {
 /* module assembly                                                     */
 /* ------------------------------------------------------------------ */
 
+/*
+ * True while something reads tb->icount as a statistic, charged once per
+ * TB entry from the emitted prologue below.  A TB that can leave before
+ * its last instruction over-charges those, so target/arm does not merge
+ * a conditional branch's fall-through while any of them is armed.
+ *
+ * The lockstep fold is deliberately not in this set: it is a gate, and
+ * excluding it would mean the gate never ran the shipping control flow.
+ * Merged and unmerged 250 Mi lockstep runs return the same verdict, to
+ * the digest -- the grid is TB-entry-keyed on both sides.
+ */
+bool w64_tb_icount_exact(void)
+{
+    return w64_tbhist_on() || w64_tbstats_inline() || icount2_enabled();
+}
+
 static void tcg_out_tb_start(TCGContext *s)
 {
     static const uint8_t magic[8] = { 0, 'a', 's', 'm', 1, 0, 0, 0 };
