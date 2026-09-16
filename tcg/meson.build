@@ -23,7 +23,7 @@ if get_option('tcg_interpreter')
 endif
 
 if host_arch == 'wasm64' and not get_option('tcg_interpreter')
-  tcg_ss.add(files('wasm64/wasm64.c'))
+  tcg_ss.add(files('wasm64/wasm64.c', 'wasm64/w64-interp.c'))
 endif
 
 tcg_ss.add(when: libdw, if_true: files('debuginfo.c'))

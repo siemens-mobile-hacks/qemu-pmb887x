@@ -176,6 +176,14 @@ void w64_lockstep_account(unsigned insns);
  * tests it via w64_acct_addr[4] to skip the import entirely when off. */
 extern uint32_t w64_ls_on;
 
+/* What the emitted TB prologue accounts for, published once by the
+ * emitter so the interpreter tier can do the same work (w64-interp.c). */
+#define W64_ACCT_TBHIST   1
+#define W64_ACCT_TBSTATS  2
+#define W64_ACCT_ICOUNT2  4
+#define W64_ACCT_LS       8
+extern uint32_t w64_acct_flags;
+
 /* wasm_tb_stats as [tbs, insns] (ui/wasm.c); see w64_acct_addr above. */
 extern uint64_t wasm_tb_stats[2];
 

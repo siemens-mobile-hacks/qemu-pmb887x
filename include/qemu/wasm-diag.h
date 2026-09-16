@@ -310,6 +310,10 @@ enum {
      */
     WASM_DIAG_CLOSE_PRE_ENT, /* member entries already run at batch close */
     WASM_DIAG_CLOSE_PRE_TB,  /* ...members that had run at least once */
+
+    WASM_DIAG_IREC_N,        /* TBs the interpreter tier recorded */
+    WASM_DIAG_IREC_BYTES,    /* bytes those records hold (live) */
+    WASM_DIAG_INTERP_ENT,    /* TB entries served by the interpreter */
     WASM_DIAG_N
 };
 

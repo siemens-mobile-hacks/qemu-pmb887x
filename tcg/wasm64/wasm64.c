@@ -29,6 +29,7 @@
 #include "qemu/timer.h"
 #include "exec/translation-block.h"
 #include "wasm64.h"
+#include "w64-interp.h"
 
 QEMU_BUILD_BUG_ON(W64_TCP_FIDX != W64_DESC_FIDX);
 QEMU_BUILD_BUG_ON(W64_TCP_TIDX != W64_DESC_TIDX);
@@ -229,6 +230,7 @@ static void w64_init(void)
          * its import call, so the fold must be armed before the first
          * executed TB's prologue runs. */
         w64_ls_init();
+        w64_interp_init();
     }
 }
 
@@ -238,6 +240,7 @@ static void w64_init(void)
  * of addresses into static initializers, and translation of the first
  * TB happens before w64_init()/first exec. */
 uint64_t w64_acct_addr[5];
+uint32_t w64_acct_flags;
 
 void w64_acct_init(void)
 {
@@ -1972,6 +1975,7 @@ static void w64_batch_close(void)
         desc[W64_DESC_FIDX / 4] = thunk;
         desc[W64_DESC_BATCH / 4] = W64_BATCH_TAG | B.id;
         l->tidx[m] = desc[W64_DESC_TIDX / 4];
+        w64_irec_drop(l->tidx[m]);
         if (w64_tbhist) {
             uint32_t c = w64_tbhist_count(l->tidx[m]);
             wasm_diag_stat[WASM_DIAG_CLOSE_PRE_ENT] += c;
@@ -2108,6 +2112,8 @@ void w64_batch_flush(void)
     unsigned landed;
     unsigned m;
 
+    w64_irec_flush();
+
     if (debug < 0) {
         debug = getenv("W64_DEBUG") != NULL;
     }
@@ -2158,6 +2164,15 @@ uintptr_t QEMU_DISABLE_CFI tcg_qemu_tb_exec(CPUArchState *env,
 
         WASM_DIAG_HOT(WASM_DIAG_DISP_ITER);
 
+        if (w64_interp_gate &&
+            (w64_interp_gate == 2 || desc[W64_DESC_FIDX / 4] == 0) &&
+            w64_interp_try(desc[W64_DESC_TIDX / 4],
+                           desc[W64_DESC_ICOUNT / 4], (uintptr_t)env,
+                           (uintptr_t)(w64_frame + 16),
+                           (uintptr_t)&w64_tb_ptr, &res)) {
+            goto exited;
+        }
+
         /* per-TB accounting (wasm_tb_stats / icount2_advance / lockstep
          * fold) runs inline in the TB prologue (tcg_out_tb_start) so
          * chained entries are counted identically */
@@ -2204,6 +2219,7 @@ uintptr_t QEMU_DISABLE_CFI tcg_qemu_tb_exec(CPUArchState *env,
                 (uintptr_t)&w64_tb_ptr);
         }
 
+    exited:
         if (LS.stop) {
             /* budget crossed: this insn ran; halt before the next TB.
              * qemu_system_shutdown_request trips an uninitialized

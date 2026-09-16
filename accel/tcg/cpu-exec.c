@@ -1203,6 +1203,19 @@ static inline void tb_add_jump(TranslationBlock *tb, int n,
     if (tb_next->cflags & CF_INVALID) {
         goto out_unlock_next;
     }
+#ifdef CONFIG_TCG_WASM64
+    /*
+     * The wasm64 chain tail-calls the target's shared-table entry, which
+     * exists only once the target has a module.  Until the interpreter
+     * tier there was no way for a target to run without one, so linking
+     * here was always safe; now it is not.  Leave the pair unlinked --
+     * jmp_dest stays NULL, so the next exit through this edge links it
+     * once the target has been compiled.
+     */
+    if (((const uint32_t *)tb_next->tc.ptr)[W64_TCP_FIDX / 4] == 0) {
+        goto out_unlock_next;
+    }
+#endif
     /* Atomically claim the jump destination slot only if it was NULL */
     old = qatomic_cmpxchg(&tb->jmp_dest[n], (uintptr_t)NULL,
                           (uintptr_t)tb_next);

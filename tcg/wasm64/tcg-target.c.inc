@@ -17,6 +17,7 @@
 
 #include "qemu/wasm-diag.h"
 #include "wasm64.h"
+#include "w64-interp.h"
 #include "system/cpu-timers.h"      /* icount2_enabled() */
 #include "exec/icount.h"            /* icount_enabled() */
 
@@ -521,9 +522,307 @@ static void w64_emit_loop_head(TCGContext *s)
     w64_blk_push(s, W64_BLK_REGION, 0);
 }
 
+/* ------------------------------------------------------------------ */
+/* interpreter-tier recorder (w64-interp.h)                            */
+/*                                                                     */
+/* Every emitter below also appends to a per-TB op stream, from the    */
+/* same already-register-allocated operands, so the recorded program   */
+/* and the emitted wasm are the same program by construction.  An      */
+/* emitter that cannot be encoded calls w64_ir_bad(): that TB is then  */
+/* never interpreted and takes today's path, so correctness never      */
+/* depends on this being complete.                                     */
+/* ------------------------------------------------------------------ */
+
+#define W64_IREC_MAX   (1 << 14)        /* words; a TB overflowing is bad */
+#define W64_IREC_LBL   512
+#define W64_IREC_FIX   1024
+
+static struct {
+    uint32_t code[W64_IREC_MAX];
+    uint32_t n;
+    bool bad;
+    bool on;
+    uint32_t lbl[W64_IREC_LBL];         /* label id -> word index */
+    uint32_t fix_at[W64_IREC_FIX];      /* word holding a target to patch */
+    uint16_t fix_lbl[W64_IREC_FIX];
+    uint32_t n_fix;
+} IR;
+
+static void w64_ir_bad(void)
+{
+    IR.bad = true;
+}
+
+static void w64_ir_reset(void)
+{
+    IR.n = 0;
+    IR.n_fix = 0;
+    IR.bad = false;
+    IR.on = w64_interp_on();
+    if (IR.on) {
+        memset(IR.lbl, 0xff, sizeof(IR.lbl));
+    }
+}
+
+static void w64_ir_w(uint32_t w)
+{
+    if (IR.n >= W64_IREC_MAX) {
+        IR.bad = true;
+        return;
+    }
+    IR.code[IR.n++] = w;
+}
+
+static void w64_ir_w64(uint64_t v)
+{
+    w64_ir_w((uint32_t)v);
+    w64_ir_w((uint32_t)(v >> 32));
+}
+
+static void w64_ir_op(unsigned op, unsigned a0, unsigned a1, unsigned a2)
+{
+    if (!IR.on) {
+        return;
+    }
+    w64_ir_w(WI_W0(op, a0, a1, a2));
+}
+
+/* record the word index this label resolves to */
+static void w64_ir_set_label(const TCGLabel *l)
+{
+    if (!IR.on) {
+        return;
+    }
+    if (l->id >= W64_IREC_LBL) {
+        IR.bad = true;
+        return;
+    }
+    IR.lbl[l->id] = IR.n;
+}
+
+/* emit a placeholder target word and note it for w64_ir_finish */
+static void w64_ir_target(const TCGLabel *l)
+{
+    if (!IR.on) {
+        return;
+    }
+    if (l->id >= W64_IREC_LBL || IR.n_fix >= W64_IREC_FIX) {
+        IR.bad = true;
+        w64_ir_w(0);
+        return;
+    }
+    IR.fix_at[IR.n_fix] = IR.n;
+    IR.fix_lbl[IR.n_fix] = l->id;
+    IR.n_fix++;
+    w64_ir_w(0);
+}
+
+static void w64_ir_imm32(uint32_t v)
+{
+    if (IR.on) {
+        w64_ir_w(v);
+    }
+}
+
+static void w64_ir_imm64(uint64_t v)
+{
+    if (IR.on) {
+        w64_ir_w64(v);
+    }
+}
+
+static void w64_ir_ldst(unsigned op, TCGReg v, TCGReg b, intptr_t o)
+{
+    if (!IR.on) {
+        return;
+    }
+    if (o != (intptr_t)(int32_t)o) {
+        IR.bad = true;
+        return;
+    }
+    w64_ir_w(WI_W0(op, v, b, 0));
+    w64_ir_w((uint32_t)(int32_t)o);
+}
+
+static void w64_ir_sti(TCGType t, tcg_target_long v, TCGReg b, intptr_t o)
+{
+    if (!IR.on) {
+        return;
+    }
+    if (o != (intptr_t)(int32_t)o) {
+        IR.bad = true;
+        return;
+    }
+    w64_ir_w(WI_W0(t == TCG_TYPE_I32 ? WI_STI32 : WI_STI64, 0, b, 0));
+    w64_ir_w((uint32_t)(int32_t)o);
+    w64_ir_w64((uint64_t)(int64_t)v);
+}
+
+static void w64_ir_movi(TCGType t, TCGReg r0, tcg_target_long v)
+{
+    if (!IR.on) {
+        return;
+    }
+    if (t == TCG_TYPE_I32) {
+        w64_ir_w(WI_W0(WI_MOVI32, r0, 0, 0));
+        w64_ir_w((uint32_t)v);
+    } else {
+        w64_ir_w(WI_W0(WI_MOVI64, r0, 0, 0));
+        w64_ir_w64((uint64_t)(int64_t)v);
+    }
+}
+
+static void w64_ir_un(TCGType t, unsigned un, TCGReg r0, TCGReg r1)
+{
+    w64_ir_op((t == TCG_TYPE_I32 ? WI_UN32 : WI_UN64) + un, r0, r1, 0);
+}
+
+static void w64_ir_alu(TCGType t, unsigned alu, TCGReg r0, TCGReg r1,
+                       TCGReg r2)
+{
+    w64_ir_op((t == TCG_TYPE_I32 ? WI_ALU32_RRR : WI_ALU64_RRR) + alu,
+              r0, r1, r2);
+}
+
+static void w64_ir_alui(TCGType t, unsigned alu, TCGReg r0, TCGReg r1,
+                        tcg_target_long i2)
+{
+    w64_ir_op((t == TCG_TYPE_I32 ? WI_ALU32_RRI : WI_ALU64_RRI) + alu,
+              r0, r1, 0);
+    w64_ir_imm64((uint64_t)(int64_t)i2);
+}
+
+static void w64_ir_subir(TCGType t, TCGReg r0, tcg_target_long i1, TCGReg r2)
+{
+    w64_ir_op(t == TCG_TYPE_I32 ? WI_SUBIR32 : WI_SUBIR64, r0, 0, r2);
+    w64_ir_imm64((uint64_t)(int64_t)i1);
+}
+
+static void w64_ir_setcond(TCGType t, TCGCond c, TCGReg r0, TCGReg r1,
+                           TCGReg r2)
+{
+    w64_ir_op(t == TCG_TYPE_I32 ? WI_SETCOND32 : WI_SETCOND64, r0, r1, r2);
+    w64_ir_imm32(c);
+}
+
+static void w64_ir_setcondi(TCGType t, TCGCond c, TCGReg r0, TCGReg r1,
+                            tcg_target_long i2)
+{
+    w64_ir_op(t == TCG_TYPE_I32 ? WI_SETCONDI32 : WI_SETCONDI64, r0, r1, 0);
+    w64_ir_imm32(c);
+    w64_ir_imm64((uint64_t)(int64_t)i2);
+}
+
+static void w64_ir_brcond(TCGType t, TCGCond c, TCGReg r1, TCGReg r2,
+                          const TCGLabel *l)
+{
+    w64_ir_op(t == TCG_TYPE_I32 ? WI_BRCOND32 : WI_BRCOND64, 0, r1, r2);
+    w64_ir_imm32(c);
+    w64_ir_target(l);
+}
+
+static void w64_ir_brcondi(TCGType t, TCGCond c, TCGReg r1,
+                           tcg_target_long i2, const TCGLabel *l)
+{
+    w64_ir_op(t == TCG_TYPE_I32 ? WI_BRCONDI32 : WI_BRCONDI64, 0, r1, 0);
+    w64_ir_imm32(c);
+    w64_ir_imm64((uint64_t)(int64_t)i2);
+    w64_ir_target(l);
+}
+
+static void w64_ir_movcond(TCGType t, TCGCond c, TCGReg ret, TCGReg c1,
+                           TCGArg c2, bool const_c2, TCGArg vt, bool const_vt,
+                           TCGArg vf, bool const_vf)
+{
+    unsigned flags = (const_c2 ? 1 : 0) | (const_vt ? 2 : 0) |
+                     (const_vf ? 4 : 0);
+
+    w64_ir_op(t == TCG_TYPE_I32 ? WI_MOVCOND32 : WI_MOVCOND64,
+              ret, c1, const_c2 ? 0 : (unsigned)c2);
+    w64_ir_imm32(c);
+    w64_ir_imm32(flags | ((const_vt ? 0u : (unsigned)vt) << 8) |
+                 ((const_vf ? 0u : (unsigned)vf) << 16));
+    if (const_c2) {
+        w64_ir_imm64((uint64_t)(int64_t)c2);
+    }
+    if (const_vt) {
+        w64_ir_imm64((uint64_t)(int64_t)vt);
+    }
+    if (const_vf) {
+        w64_ir_imm64((uint64_t)(int64_t)vf);
+    }
+}
+
+static void w64_ir_mul2(unsigned op, TCGReg a0, TCGReg a1, TCGReg a2,
+                        TCGReg a3)
+{
+    w64_ir_op(op, a0, a1, a2);
+    w64_ir_imm32(a3);
+}
+
+static void w64_ir_field(unsigned op, TCGReg a0, TCGReg a1, TCGReg a2,
+                         unsigned ofs, unsigned len)
+{
+    w64_ir_op(op, a0, a1, a2);
+    w64_ir_imm32(ofs | (len << 8));
+}
+
+static void w64_ir_memop(unsigned op, TCGReg data, TCGReg addr, MemOpIdx oi,
+                         uintptr_t ra)
+{
+    w64_ir_op(op, data, addr, 0);
+    w64_ir_imm32(oi);
+    w64_ir_imm64(ra);
+}
+
+static void w64_ir_call(const void *target, const TCGHelperInfo *info,
+                        uintptr_t ra)
+{
+    if (!IR.on) {
+        return;
+    }
+    if (info->out_kind != TCG_CALL_RET_NORMAL) {
+        IR.bad = true;
+        return;
+    }
+    {
+        uint32_t tag = w64_call_tag(info->typemask, info->nr_in);
+        if (tag == UINT32_MAX) {
+            w64_ir_bad();
+            return;
+        }
+        w64_ir_w(WI_W0(WI_CALL, 0, 0, 0));
+        w64_ir_w(tag);
+    }
+    w64_ir_w64((uint64_t)(uintptr_t)target);
+    w64_ir_w64(ra);
+}
+
+static void w64_ir_finish(uint32_t tidx)
+{
+    uint32_t *code;
+    uint32_t i;
+
+    if (!IR.on || IR.bad || IR.n == 0) {
+        return;
+    }
+    for (i = 0; i < IR.n_fix; i++) {
+        uint32_t t = IR.lbl[IR.fix_lbl[i]];
+        if (t == 0xffffffffu) {
+            return;                     /* label never placed: not ours */
+        }
+        IR.code[IR.fix_at[i]] = t;
+    }
+    code = g_malloc((size_t)IR.n * sizeof(uint32_t));
+    memcpy(code, IR.code, (size_t)IR.n * sizeof(uint32_t));
+    w64_irec_put(tidx, code, IR.n);
+}
+
 static void tcg_out_set_label(TCGContext *s, TCGLabel *l)
 {
     int i;
+
+    w64_ir_set_label(l);
 
     if (W.nested) {
         /* the innermost open block is this label's */
@@ -690,6 +989,7 @@ static void w64_frame_check(TCGReg base, intptr_t ofs)
 static void tcg_out_ld(TCGContext *s, TCGType type, TCGReg val, TCGReg base,
                        intptr_t ofs)
 {
+    w64_ir_ldst(type == TCG_TYPE_I32 ? WI_LD32 : WI_LD64, val, base, ofs);
     w64_frame_check(base, ofs);
     switch (type) {
     case TCG_TYPE_I32:
@@ -706,6 +1006,7 @@ static void tcg_out_ld(TCGContext *s, TCGType type, TCGReg val, TCGReg base,
 static void tcg_out_st(TCGContext *s, TCGType type, TCGReg val, TCGReg base,
                        intptr_t ofs)
 {
+    w64_ir_ldst(type == TCG_TYPE_I32 ? WI_ST32 : WI_ST64, val, base, ofs);
     w64_frame_check(base, ofs);
     switch (type) {
     case TCG_TYPE_I32:
@@ -721,46 +1022,55 @@ static void tcg_out_st(TCGContext *s, TCGType type, TCGReg val, TCGReg base,
 
 static void tcg_out_ld8u(TCGContext *s, TCGType t, TCGReg v, TCGReg b, intptr_t o)
 {
+    w64_ir_ldst(t == TCG_TYPE_I32 ? WI_LD8U : WI_LD8U, v, b, o);
     w64_load(s, t == TCG_TYPE_I32 ? 0x2d : 0x31, t, v, b, o, 0);
 }
 
 static void tcg_out_ld8s(TCGContext *s, TCGType t, TCGReg v, TCGReg b, intptr_t o)
 {
+    w64_ir_ldst(t == TCG_TYPE_I32 ? WI_LD8S32 : WI_LD8S64, v, b, o);
     w64_load(s, t == TCG_TYPE_I32 ? 0x2c : 0x30, t, v, b, o, 0);
 }
 
 static void tcg_out_ld16u(TCGContext *s, TCGType t, TCGReg v, TCGReg b, intptr_t o)
 {
+    w64_ir_ldst(t == TCG_TYPE_I32 ? WI_LD16U : WI_LD16U, v, b, o);
     w64_load(s, t == TCG_TYPE_I32 ? 0x2f : 0x33, t, v, b, o, 1);
 }
 
 static void tcg_out_ld16s(TCGContext *s, TCGType t, TCGReg v, TCGReg b, intptr_t o)
 {
+    w64_ir_ldst(t == TCG_TYPE_I32 ? WI_LD16S32 : WI_LD16S64, v, b, o);
     w64_load(s, t == TCG_TYPE_I32 ? 0x2e : 0x32, t, v, b, o, 1);
 }
 
 static void tcg_out_ld32u(TCGContext *s, TCGType t, TCGReg v, TCGReg b, intptr_t o)
 {
+    w64_ir_ldst(t == TCG_TYPE_I32 ? WI_LD32U : WI_LD32U, v, b, o);
     w64_load(s, t == TCG_TYPE_I32 ? 0x28 : 0x35, t, v, b, o, 2);
 }
 
 static void tcg_out_ld32s(TCGContext *s, TCGType t, TCGReg v, TCGReg b, intptr_t o)
 {
+    w64_ir_ldst(t == TCG_TYPE_I32 ? WI_LD32S64 : WI_LD32S64, v, b, o);
     w64_load(s, 0x34, TCG_TYPE_I64, v, b, o, 2);
 }
 
 static void tcg_out_st8(TCGContext *s, TCGType t, TCGReg v, TCGReg b, intptr_t o)
 {
+    w64_ir_ldst(WI_ST8, v, b, o);
     w64_store(s, t == TCG_TYPE_I32 ? 0x3a : 0x3c, t, v, b, o, 0);
 }
 
 static void tcg_out_st16(TCGContext *s, TCGType t, TCGReg v, TCGReg b, intptr_t o)
 {
+    w64_ir_ldst(WI_ST16, v, b, o);
     w64_store(s, t == TCG_TYPE_I32 ? 0x3b : 0x3d, t, v, b, o, 1);
 }
 
 static bool tcg_out_sti(TCGContext *s, TCGType t, TCGArg v, TCGReg b, intptr_t o)
 {
+    w64_ir_sti(t, v, b, o);
     uint8_t opc = t == TCG_TYPE_I32 ? 0x36 : 0x37;
     unsigned align = t == TCG_TYPE_I32 ? 2 : 3;
 
@@ -785,6 +1095,7 @@ static bool tcg_out_sti(TCGContext *s, TCGType t, TCGArg v, TCGReg b, intptr_t o
 
 static bool tcg_out_mov(TCGContext *s, TCGType type, TCGReg ret, TCGReg arg)
 {
+    w64_ir_op(type == TCG_TYPE_I32 ? WI_MOV32 : WI_MOV64, ret, arg, 0);
     tcg_debug_assert(ret != arg);
     if (type == TCG_TYPE_I32) {
         if (w64_rep_is64(arg)) {
@@ -809,6 +1120,7 @@ static bool tcg_out_mov(TCGContext *s, TCGType type, TCGReg ret, TCGReg arg)
 static void tcg_out_movi(TCGContext *s, TCGType type,
                          TCGReg ret, tcg_target_long arg)
 {
+    w64_ir_movi(type, ret, arg);
     switch (type) {
     case TCG_TYPE_I32:
         w64_const_i32(s, (int32_t)arg);
@@ -825,6 +1137,7 @@ static void tcg_out_movi(TCGContext *s, TCGType type,
 
 static void tcg_out_ext8s(TCGContext *s, TCGType t, TCGReg r0, TCGReg r1)
 {
+    w64_ir_un(t, WI_UN_EXT8S, r0, r1);
     if (t == TCG_TYPE_I32) {
         w64_get_i32(s, r1);
         w64_u8(s, 0xc0);                    /* i32.extend8_s */
@@ -838,6 +1151,7 @@ static void tcg_out_ext8s(TCGContext *s, TCGType t, TCGReg r0, TCGReg r1)
 
 static void tcg_out_ext16s(TCGContext *s, TCGType t, TCGReg r0, TCGReg r1)
 {
+    w64_ir_un(t, WI_UN_EXT16S, r0, r1);
     if (t == TCG_TYPE_I32) {
         w64_get_i32(s, r1);
         w64_u8(s, 0xc1);                    /* i32.extend16_s */
@@ -851,6 +1165,7 @@ static void tcg_out_ext16s(TCGContext *s, TCGType t, TCGReg r0, TCGReg r1)
 
 static void tcg_out_ext8u(TCGContext *s, TCGReg r0, TCGReg r1)
 {
+    w64_ir_un(TCG_TYPE_I64, WI_UN_EXT8U, r0, r1);
     w64_get_i32(s, r1);
     w64_const_i32(s, 0xff);
     w64_u8(s, 0x71);                        /* i32.and */
@@ -859,6 +1174,7 @@ static void tcg_out_ext8u(TCGContext *s, TCGReg r0, TCGReg r1)
 
 static void tcg_out_ext16u(TCGContext *s, TCGReg r0, TCGReg r1)
 {
+    w64_ir_un(TCG_TYPE_I64, WI_UN_EXT16U, r0, r1);
     w64_get_i32(s, r1);
     w64_const_i32(s, 0xffff);
     w64_u8(s, 0x71);                        /* i32.and */
@@ -867,6 +1183,7 @@ static void tcg_out_ext16u(TCGContext *s, TCGReg r0, TCGReg r1)
 
 static void tcg_out_ext32s(TCGContext *s, TCGReg r0, TCGReg r1)
 {
+    w64_ir_un(TCG_TYPE_I64, WI_UN_EXT32S, r0, r1);
     w64_get_i64(s, r1);
     w64_u8(s, 0xc4);                        /* i64.extend32_s */
     w64_set_i64(s, r0);
@@ -874,6 +1191,7 @@ static void tcg_out_ext32s(TCGContext *s, TCGReg r0, TCGReg r1)
 
 static void tcg_out_ext32u(TCGContext *s, TCGReg r0, TCGReg r1)
 {
+    w64_ir_un(TCG_TYPE_I64, WI_UN_EXT32U, r0, r1);
     w64_get_i32(s, r1);
     w64_u8(s, 0xad);                        /* i64.extend_i32_u */
     w64_set_i64(s, r0);
@@ -881,6 +1199,7 @@ static void tcg_out_ext32u(TCGContext *s, TCGReg r0, TCGReg r1)
 
 static void tcg_out_exts_i32_i64(TCGContext *s, TCGReg r0, TCGReg r1)
 {
+    w64_ir_un(TCG_TYPE_I64, WI_UN_EXT32S, r0, r1);
     w64_get_i32(s, r1);
     w64_u8(s, 0xac);                        /* i64.extend_i32_s */
     w64_set_i64(s, r0);
@@ -888,6 +1207,7 @@ static void tcg_out_exts_i32_i64(TCGContext *s, TCGReg r0, TCGReg r1)
 
 static void tcg_out_extu_i32_i64(TCGContext *s, TCGReg r0, TCGReg r1)
 {
+    w64_ir_un(TCG_TYPE_I64, WI_UN_EXT32U, r0, r1);
     w64_get_i32(s, r1);
     w64_u8(s, 0xad);                        /* i64.extend_i32_u */
     w64_set_i64(s, r0);
@@ -895,12 +1215,14 @@ static void tcg_out_extu_i32_i64(TCGContext *s, TCGReg r0, TCGReg r1)
 
 static void tcg_out_extrl_i64_i32(TCGContext *s, TCGReg r0, TCGReg r1)
 {
+    w64_ir_un(TCG_TYPE_I64, WI_UN_EXTRL, r0, r1);
     w64_get_i32(s, r1);                     /* includes the wrap */
     w64_set_i32(s, r0);
 }
 
 static void tcg_out_extrh_i64_i32(TCGContext *s, TCGReg r0, TCGReg r1)
 {
+    w64_ir_un(TCG_TYPE_I64, WI_UN_EXTRH, r0, r1);
     w64_get_i64(s, r1);
     w64_const_i64(s, 32);
     w64_u8(s, 0x88);                        /* i64.shr_u */
@@ -914,6 +1236,7 @@ static void tcg_out_addi_ptr(TCGContext *s, TCGReg r0, TCGReg r1,
     if (v == 0) {
         tcg_out_mov(s, TCG_TYPE_PTR, r0, r1);
     } else {
+        w64_ir_alui(TCG_TYPE_I64, WI_ALU_ADD, r0, r1, v);
         w64_get_i64(s, r1);
         w64_const_i64(s, v);
         w64_u8(s, 0x7c);                    /* i64.add */
@@ -980,11 +1303,15 @@ static void w64_br_to_label(TCGContext *s, TCGLabel *l, bool cond)
 
 static void tcg_out_br(TCGContext *s, TCGLabel *l)
 {
+    w64_ir_op(WI_BR, 0, 0, 0);
+    w64_ir_target(l);
     w64_br_to_label(s, l, false);
 }
 
 static void tcg_out_exit_tb(TCGContext *s, uintptr_t arg)
 {
+    w64_ir_op(WI_EXIT_TB, 0, 0, 0);
+    w64_ir_imm32((uint32_t)arg);
     w64_const_i32(s, (int32_t)arg);
     w64_u8(s, 0x0f);                        /* return */
 }
@@ -994,6 +1321,7 @@ static void w64_diag_bump(TCGContext *s, int idx);
 
 static void tcg_out_goto_tb(TCGContext *s, int which)
 {
+    w64_ir_op(WI_GOTO_TB, which, 0, 0);
     /* Chaining through the shared funcref table (phase 2).  The chain
      * slot is tb->jmp_target_addr[which] — qemu core links it
      * (tb_add_jump) and resets it to this TB's own reset address
@@ -1084,6 +1412,7 @@ static void tcg_out_goto_tb(TCGContext *s, int which)
 
 static void tcg_out_goto_ptr(TCGContext *s, TCGReg a0)
 {
+    w64_ir_op(WI_GOTO_PTR, a0, 0, 0);
     /* The lookup helpers hand over the target's shared-table index with
      * W64_TIDX_TAG in the high half (exec/translation-block.h), so this
      * tail-call reads nothing of the target: every bx lr / pop {pc} /
@@ -1154,6 +1483,9 @@ static void tcg_out_goto_ptr(TCGContext *s, TCGReg a0)
 
 static void tcg_out_mb(TCGContext *s, unsigned a0)
 {
+    if (a0 != 0) {
+        w64_ir_op(WI_MB, 0, 0, 0);
+    }
     /*
      * The guest is single-vCPU, but the linear memory is shared with
      * other pthreads (main-loop timers, the DSP worker); wasm plain
@@ -1236,6 +1568,7 @@ static void tcg_out_call(TCGContext *s, const tcg_insn_unit *target,
 
     tcg_debug_assert(info->out_kind == TCG_CALL_RET_NORMAL);
     tcg_debug_assert(np <= ARRAY_SIZE(p));
+    w64_ir_call(target, info, ra);
 
     /* retaddr for GETPC()-using helpers */
     w64_local_get(s, W64_P_TP);
@@ -1829,6 +2162,8 @@ static void tgen_qemu_ld(TCGContext *s, TCGType type, TCGReg data,
     if (type == TCG_TYPE_I32) {
         tcg_debug_assert(s_bits <= MO_32);
     }
+    w64_ir_memop(type == TCG_TYPE_I32 ? WI_QEMU_LD32 : WI_QEMU_LD64,
+                 data, addr, oi, ra);
 
     /* helper signature: (env*, uint64_t addr, uint32_t oi, uintptr_t ra)
      * -> tcg_target_ulong (i64) */
@@ -1911,6 +2246,8 @@ static void tgen_qemu_st(TCGContext *s, TCGType type, TCGReg data,
 
     /* helper signature: (env*, uint64_t addr, val, uint32_t oi,
      * uintptr_t ra) -> void; val: i32 for b/w/l, i64 for q */
+    w64_ir_memop(type == TCG_TYPE_I32 ? WI_QEMU_ST32 : WI_QEMU_ST64,
+                 data, addr, oi, ra);
     lt = w64_add_type(5, p, 0xff);
     ut = w64_union_type(5, p, 0xff);
     imp = w64_import_idx(
@@ -1982,14 +2319,16 @@ static const TCGOutOpQemuLdSt2 outop_qemu_st2 = {
 /* arithmetic / logic outops                                           */
 /* ------------------------------------------------------------------ */
 
-#define W64_BINOP(NM, OP32, OP64)                                         \
+#define W64_BINOP(NM, UP, OP32, OP64)                                         \
 static void tgen_##NM(TCGContext *s, TCGType t, TCGReg r0, TCGReg r1, TCGReg r2) \
 {                                                                          \
+    w64_ir_alu(t, WI_ALU_##UP, r0, r1, r2);                                \
     w64_binop_rrr(s, t, OP32, OP64, r0, r1, r2);                           \
 }                                                                          \
 static void tgen_##NM##i(TCGContext *s, TCGType t, TCGReg r0, TCGReg r1,  \
                          tcg_target_long i2)                              \
 {                                                                          \
+    w64_ir_alui(t, WI_ALU_##UP, r0, r1, i2);                               \
     w64_binop_rri(s, t, OP32, OP64, r0, r1, i2);                           \
 }                                                                          \
 static const TCGOutOpBinary outop_##NM = {                                 \
@@ -1998,29 +2337,31 @@ static const TCGOutOpBinary outop_##NM = {                                 \
     .out_rri = tgen_##NM##i,                                               \
 };
 
-W64_BINOP(add, 0x6a, 0x7c)
-W64_BINOP(mul, 0x6c, 0x7e)
-W64_BINOP(and, 0x71, 0x83)
-W64_BINOP(or,  0x72, 0x84)
-W64_BINOP(xor, 0x73, 0x85)
-W64_BINOP(shl, 0x74, 0x86)
-W64_BINOP(shr, 0x76, 0x88)
-W64_BINOP(sar, 0x75, 0x87)
-W64_BINOP(rotl, 0x77, 0x89)
-W64_BINOP(rotr, 0x78, 0x8a)
-W64_BINOP(divs, 0x6d, 0x7f)
-W64_BINOP(divu, 0x6e, 0x80)
-W64_BINOP(rems, 0x6f, 0x81)
-W64_BINOP(remu, 0x70, 0x82)
+W64_BINOP(add, ADD, 0x6a, 0x7c)
+W64_BINOP(mul, MUL, 0x6c, 0x7e)
+W64_BINOP(and, AND, 0x71, 0x83)
+W64_BINOP(or, OR,  0x72, 0x84)
+W64_BINOP(xor, XOR, 0x73, 0x85)
+W64_BINOP(shl, SHL, 0x74, 0x86)
+W64_BINOP(shr, SHR, 0x76, 0x88)
+W64_BINOP(sar, SAR, 0x75, 0x87)
+W64_BINOP(rotl, ROTL, 0x77, 0x89)
+W64_BINOP(rotr, ROTR, 0x78, 0x8a)
+W64_BINOP(divs, DIVS, 0x6d, 0x7f)
+W64_BINOP(divu, DIVU, 0x6e, 0x80)
+W64_BINOP(rems, REMS, 0x6f, 0x81)
+W64_BINOP(remu, REMU, 0x70, 0x82)
 
 static void tgen_sub(TCGContext *s, TCGType t, TCGReg r0, TCGReg r1, TCGReg r2)
 {
+    w64_ir_alu(t, WI_ALU_SUB, r0, r1, r2);
     w64_binop_rrr(s, t, 0x6b, 0x7d, r0, r1, r2);
 }
 static void tgen_subi(TCGContext *s, TCGType t, TCGReg r0, tcg_target_long i1,
                       TCGReg r2)
 {
     /* constant first operand */
+    w64_ir_subir(t, r0, i1, r2);
     w64_const(s, t, i1);
     w64_get(s, r2, t);
     w64_u8(s, t == TCG_TYPE_I32 ? 0x6b : 0x7d);   /* sub */
@@ -2039,6 +2380,7 @@ static const TCGOutOpSubtract outop_sub = {
 /* a & ~b, a | ~b, ~(a^b), ~(a&b), ~(a|b) */
 static void tgen_andc(TCGContext *s, TCGType t, TCGReg r0, TCGReg r1, TCGReg r2)
 {
+    w64_ir_alu(t, WI_ALU_ANDC, r0, r1, r2);
     w64_get(s, r1, t);
     w64_get(s, r2, t);
     w64_const(s, t, -1);
@@ -2053,6 +2395,7 @@ static void tgen_andc(TCGContext *s, TCGType t, TCGReg r0, TCGReg r1, TCGReg r2)
 static void tgen_andci(TCGContext *s, TCGType t, TCGReg r0, TCGReg r1,
                        tcg_target_long i2)
 {
+    w64_ir_alui(t, WI_ALU_ANDC, r0, r1, i2);
     w64_get(s, r1, t);
     w64_const(s, t, ~i2);
     w64_u8(s, t == TCG_TYPE_I32 ? 0x71 : 0x83);   /* and */
@@ -2070,6 +2413,7 @@ static const TCGOutOpBinary outop_andc = {
 
 static void tgen_orc(TCGContext *s, TCGType t, TCGReg r0, TCGReg r1, TCGReg r2)
 {
+    w64_ir_alu(t, WI_ALU_ORC, r0, r1, r2);
     w64_get(s, r1, t);
     w64_get(s, r2, t);
     w64_const(s, t, -1);
@@ -2084,6 +2428,7 @@ static void tgen_orc(TCGContext *s, TCGType t, TCGReg r0, TCGReg r1, TCGReg r2)
 static void tgen_orci(TCGContext *s, TCGType t, TCGReg r0, TCGReg r1,
                       tcg_target_long i2)
 {
+    w64_ir_alui(t, WI_ALU_ORC, r0, r1, i2);
     w64_get(s, r1, t);
     w64_const(s, t, ~i2);
     w64_u8(s, t == TCG_TYPE_I32 ? 0x72 : 0x84);   /* or */
@@ -2099,9 +2444,10 @@ static const TCGOutOpBinary outop_orc = {
     .out_rri = tgen_orci,
 };
 
-#define W64_NOTOP(NM, OP32, OP64, INV32, INV64)                            \
+#define W64_NOTOP(NM, UP, OP32, OP64, INV32, INV64)                            \
 static void tgen_##NM(TCGContext *s, TCGType t, TCGReg r0, TCGReg r1, TCGReg r2) \
 {                                                                          \
+    w64_ir_alu(t, WI_ALU_##UP, r0, r1, r2);                                \
     w64_get(s, r1, t);                                                     \
     w64_get(s, r2, t);                                                     \
     w64_u8(s, t == TCG_TYPE_I32 ? OP32 : OP64);                            \
@@ -2116,6 +2462,7 @@ static void tgen_##NM(TCGContext *s, TCGType t, TCGReg r0, TCGReg r1, TCGReg r2)
 static void tgen_##NM##i(TCGContext *s, TCGType t, TCGReg r0, TCGReg r1,  \
                          tcg_target_long i2)                              \
 {                                                                          \
+    w64_ir_alui(t, WI_ALU_##UP, r0, r1, i2);                               \
     w64_get(s, r1, t);                                                     \
     w64_const(s, t, i2);                                                   \
     w64_u8(s, t == TCG_TYPE_I32 ? OP32 : OP64);                            \
@@ -2133,12 +2480,13 @@ static const TCGOutOpBinary outop_##NM = {                                 \
     .out_rri = tgen_##NM##i,                                               \
 };
 
-W64_NOTOP(eqv,  0x73, 0x85, 0x73, 0x85)   /* ~(a^b)  */
-W64_NOTOP(nand, 0x71, 0x83, 0x73, 0x85)   /* ~(a&b)  */
-W64_NOTOP(nor,  0x72, 0x84, 0x73, 0x85)   /* ~(a|b)  */
+W64_NOTOP(eqv, EQV,  0x73, 0x85, 0x73, 0x85)   /* ~(a^b)  */
+W64_NOTOP(nand, NAND, 0x71, 0x83, 0x73, 0x85)   /* ~(a&b)  */
+W64_NOTOP(nor, NOR,  0x72, 0x84, 0x73, 0x85)   /* ~(a|b)  */
 
 static void tgen_neg(TCGContext *s, TCGType t, TCGReg r0, TCGReg r1)
 {
+    w64_ir_un(t, WI_UN_NEG, r0, r1);
     w64_const(s, t, 0);
     w64_get(s, r1, t);
     w64_u8(s, t == TCG_TYPE_I32 ? 0x6b : 0x7d);   /* sub */
@@ -2155,6 +2503,7 @@ static const TCGOutOpUnary outop_neg = {
 
 static void tgen_not(TCGContext *s, TCGType t, TCGReg r0, TCGReg r1)
 {
+    w64_ir_un(t, WI_UN_NOT, r0, r1);
     w64_get(s, r1, t);
     w64_const(s, t, -1);
     w64_u8(s, t == TCG_TYPE_I32 ? 0x73 : 0x85);   /* xor */
@@ -2171,6 +2520,7 @@ static const TCGOutOpUnary outop_not = {
 
 static void tgen_ctpop(TCGContext *s, TCGType t, TCGReg r0, TCGReg r1)
 {
+    w64_ir_un(t, WI_UN_CTPOP, r0, r1);
     w64_get(s, r1, t);
     w64_u8(s, t == TCG_TYPE_I32 ? 0x69 : 0x7b);   /* popcnt */
     if (t == TCG_TYPE_I32) {
@@ -2185,9 +2535,10 @@ static const TCGOutOpUnary outop_ctpop = {
 };
 
 /* clz/ctz: wasm returns width for zero; TCG wants arg2 in that case */
-#define W64_CNTOP(NM, OP32, OP64)                                          \
+#define W64_CNTOP(NM, UP, OP32, OP64)                                          \
 static void tgen_##NM(TCGContext *s, TCGType t, TCGReg r0, TCGReg r1, TCGReg r2) \
 {                                                                          \
+    w64_ir_alu(t, WI_ALU_##UP, r0, r1, r2);                                \
     int scr_ = w64_scr(t);                                                \
     w64_get(s, r1, t);                                                     \
     w64_u8(s, t == TCG_TYPE_I32 ? OP32 : OP64);                            \
@@ -2209,6 +2560,7 @@ static void tgen_##NM(TCGContext *s, TCGType t, TCGReg r0, TCGReg r1, TCGReg r2)
 static void tgen_##NM##i(TCGContext *s, TCGType t, TCGReg r0, TCGReg r1,  \
                          tcg_target_long i2)                              \
 {                                                                          \
+    w64_ir_alui(t, WI_ALU_##UP, r0, r1, i2);                               \
     int scr_ = w64_scr(t);                                                \
     w64_get(s, r1, t);                                                     \
     w64_u8(s, t == TCG_TYPE_I32 ? OP32 : OP64);                            \
@@ -2233,8 +2585,8 @@ static const TCGOutOpBinary outop_##NM = {                                 \
     .out_rri = tgen_##NM##i,                                               \
 };
 
-W64_CNTOP(clz, 0x67, 0x79)
-W64_CNTOP(ctz, 0x68, 0x7a)
+W64_CNTOP(clz, CLZ, 0x67, 0x79)
+W64_CNTOP(ctz, CTZ, 0x68, 0x7a)
 
 /* ------------------------------------------------------------------ */
 /* setcond / movcond / brcond                                          */
@@ -2243,6 +2595,7 @@ W64_CNTOP(ctz, 0x68, 0x7a)
 static void tgen_setcond(TCGContext *s, TCGType t, TCGCond c,
                          TCGReg r0, TCGReg r1, TCGReg r2)
 {
+    w64_ir_setcond(t, c, r0, r1, r2);
     w64_get(s, r1, t);
     w64_get(s, r2, t);
     w64_cmp_op(s, t, c);
@@ -2252,6 +2605,7 @@ static void tgen_setcond(TCGContext *s, TCGType t, TCGCond c,
 static void tgen_setcondi(TCGContext *s, TCGType t, TCGCond c,
                           TCGReg r0, TCGReg r1, tcg_target_long i2)
 {
+    w64_ir_setcondi(t, c, r0, r1, i2);
     w64_get(s, r1, t);
     w64_const(s, t, i2);
     w64_cmp_op(s, t, c);
@@ -2272,6 +2626,7 @@ static void tgen_movcond(TCGContext *s, TCGType t, TCGCond c, TCGReg ret,
                          TCGReg c1, TCGArg c2, bool const_c2,
                          TCGArg vt, bool const_vt, TCGArg vf, bool const_vf)
 {
+    w64_ir_movcond(t, c, ret, c1, c2, const_c2, vt, const_vt, vf, const_vf);
     w64_get(s, c1, t);
     if (const_c2) {
         w64_const(s, t, c2);
@@ -2308,6 +2663,7 @@ static const TCGOutOpMovcond outop_movcond = {
 static void tgen_brcond(TCGContext *s, TCGType t, TCGCond c,
                         TCGReg r1, TCGReg r2, TCGLabel *l)
 {
+    w64_ir_brcond(t, c, r1, r2, l);
     w64_get(s, r1, t);
     w64_get(s, r2, t);
     w64_cmp_op(s, t, c);
@@ -2317,6 +2673,7 @@ static void tgen_brcond(TCGContext *s, TCGType t, TCGCond c,
 static void tgen_brcondi(TCGContext *s, TCGType t, TCGCond c,
                          TCGReg r1, tcg_target_long i2, TCGLabel *l)
 {
+    w64_ir_brcondi(t, c, r1, i2, l);
     w64_get(s, r1, t);
     w64_const(s, t, i2);
     w64_cmp_op(s, t, c);
@@ -2336,6 +2693,7 @@ static const TCGOutOpBrcond outop_brcond = {
 static void tgen_mulu2(TCGContext *s, TCGType t, TCGReg a0, TCGReg a1,
                        TCGReg a2, TCGReg a3)
 {
+    w64_ir_mul2(WI_MULU2_32, a0, a1, a2, a3);
     tcg_debug_assert(t == TCG_TYPE_I32);
     w64_get_i64(s, a2);
     w64_get_i64(s, a3);
@@ -2357,6 +2715,7 @@ static const TCGOutOpMul2 outop_mulu2 = {
 static void tgen_muls2(TCGContext *s, TCGType t, TCGReg a0, TCGReg a1,
                        TCGReg a2, TCGReg a3)
 {
+    w64_ir_mul2(WI_MULS2_32, a0, a1, a2, a3);
     tcg_debug_assert(t == TCG_TYPE_I32);
     w64_get_i32(s, a2);
     w64_u8(s, 0xac);                        /* i64.extend_i32_s */
@@ -2379,6 +2738,7 @@ static const TCGOutOpMul2 outop_muls2 = {
 
 static void tgen_muluh(TCGContext *s, TCGType t, TCGReg a0, TCGReg a1, TCGReg a2)
 {
+    w64_ir_alu(t, WI_ALU_MULUH, a0, a1, a2);
     tcg_debug_assert(t == TCG_TYPE_I32);
     w64_get_i64(s, a1);
     w64_get_i64(s, a2);
@@ -2395,6 +2755,7 @@ static const TCGOutOpBinary outop_muluh = {
 
 static void tgen_mulsh(TCGContext *s, TCGType t, TCGReg a0, TCGReg a1, TCGReg a2)
 {
+    w64_ir_alu(t, WI_ALU_MULSH, a0, a1, a2);
     tcg_debug_assert(t == TCG_TYPE_I32);
     w64_get_i32(s, a1);
     w64_u8(s, 0xac);                        /* i64.extend_i32_s */
@@ -2440,6 +2801,8 @@ static void w64_deposit_field(TCGContext *s, TCGType t,
 static void tgen_deposit(TCGContext *s, TCGType t, TCGReg a0, TCGReg a1,
                          TCGReg a2, unsigned ofs, unsigned len)
 {
+    w64_ir_field(t == TCG_TYPE_I32 ? WI_DEPOSIT32 : WI_DEPOSIT64,
+                 a0, a1, a2, ofs, len);
     uint64_t mask = (len >= 64 ? ~(uint64_t)0 : (UINT64_C(1) << len) - 1)
                    << ofs;
 
@@ -2464,6 +2827,8 @@ static const TCGOutOpDeposit outop_deposit = {
 static void tgen_extract(TCGContext *s, TCGType t, TCGReg a0, TCGReg a1,
                          unsigned ofs, unsigned len)
 {
+    w64_ir_field(t == TCG_TYPE_I32 ? WI_EXTRACT32 : WI_EXTRACT64,
+                 a0, a1, 0, ofs, len);
     unsigned width = t == TCG_TYPE_I32 ? 32 : 64;
 
     if (ofs == 0 && len == width) {
@@ -2494,6 +2859,8 @@ static const TCGOutOpExtract outop_extract = {
 static void tgen_sextract(TCGContext *s, TCGType t, TCGReg a0, TCGReg a1,
                           unsigned ofs, unsigned len)
 {
+    w64_ir_field(t == TCG_TYPE_I32 ? WI_SEXTRACT32 : WI_SEXTRACT64,
+                 a0, a1, 0, ofs, len);
     unsigned width = t == TCG_TYPE_I32 ? 32 : 64;
 
     w64_get(s, a1, t);
@@ -2532,6 +2899,8 @@ static const TCGOutOpExtract2 outop_extract2 = {
 static void tgen_bswap16(TCGContext *s, TCGType t, TCGReg r0, TCGReg r1,
                          unsigned flags)
 {
+    w64_ir_op(WI_BSWAP16, r0, r1, t != TCG_TYPE_I32);
+    w64_ir_imm32(flags);
     unsigned top = t == TCG_TYPE_I32 ? 32 : 64;
     uint64_t lowmask = t == TCG_TYPE_I32 ? 0xffff : 0xffff;
 
@@ -2581,6 +2950,8 @@ static const TCGOutOpBswap outop_bswap16 = {
 static void tgen_bswap32(TCGContext *s, TCGType t, TCGReg r0, TCGReg r1,
                          unsigned flags)
 {
+    w64_ir_op(WI_BSWAP32, r0, r1, t != TCG_TYPE_I32);
+    w64_ir_imm32(flags);
     unsigned top = t == TCG_TYPE_I32 ? 32 : 64;
 
     if (t == TCG_TYPE_I32) {
@@ -2660,6 +3031,7 @@ static const TCGOutOpBswap outop_bswap32 = {
 
 static void tgen_bswap64(TCGContext *s, TCGType t, TCGReg r0, TCGReg r1)
 {
+    w64_ir_op(WI_BSWAP64, r0, r1, 0);
     /* stage 1: bytes */
     w64_get_i64(s, r1);
     w64_const_i64(s, 0x00ff00ff00ff00ffull);
@@ -2799,6 +3171,7 @@ static void tcg_out_tb_start(TCGContext *s)
 
     memset(&W, 0, sizeof(W));
     n_cf = 0;
+    w64_ir_reset();
     w64_scan_labels(s);
     w64_batch_begin_tb();
 
@@ -2807,6 +3180,10 @@ static void tcg_out_tb_start(TCGContext *s)
     if (w64_acct_addr[0] == 0) {
         w64_acct_init();
     }
+    w64_acct_flags = (w64_tbhist_on() ? W64_ACCT_TBHIST : 0) |
+                     (w64_tbstats_inline() ? W64_ACCT_TBSTATS : 0) |
+                     (icount2_enabled() ? W64_ACCT_ICOUNT2 : 0) |
+                     (w64_ls_armed() ? W64_ACCT_LS : 0);
 
     /* descriptor */
     stl_p(s->code_buf + W64_DESC_FIDX, 0);
@@ -3217,6 +3594,7 @@ static int tcg_out_tb_finalize(TCGContext *s)
      * right here (fill or union-table pressure) and flip this TB's
      * descriptor to the batch thunk (desc+4 = batch id, so the
      * dispatcher calls run(env, sp, tp, tidx) instead of the entry) */
+    w64_ir_finish(ldl_p(s->code_buf + W64_DESC_TIDX));
     w64_batch_member((uintptr_t)s->code_buf, body_total, CF, n_cf);
     return 0;
 }
