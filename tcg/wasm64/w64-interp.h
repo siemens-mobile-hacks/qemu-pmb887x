@@ -155,7 +155,6 @@ bool w64_interp_on(void);
  * (W64_INTERP_ALL=1 -- full coverage for the correctness gate, and the
  * way the tier's own speed is priced).
  */
-extern uint32_t w64_interp_gate;
 void w64_interp_init(void);
 uint32_t w64_call_tag(uint32_t typemask, unsigned nargs);
 

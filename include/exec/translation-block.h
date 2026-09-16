@@ -207,6 +207,16 @@ struct TranslationBlock {
     uintptr_t jmp_dest[2];
 };
 
+#ifdef CONFIG_TCG_WASM64
+/*
+ * Interpreter-tier gate (tcg/wasm64/w64-interp.c): 0 off, 1 interpret a
+ * TB until it earns a module, 2 interpret always.  accel/tcg reads it to
+ * decide whether speculative successor translation is worth anything --
+ * see w64_speculate().
+ */
+extern uint32_t w64_interp_gate;
+#endif
+
 /* The alignment given to TranslationBlock during allocation. */
 #define CODE_GEN_ALIGN  16
 

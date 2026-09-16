@@ -1002,7 +1002,15 @@ static bool w64_speculate(CPUState *cpu, TranslationBlock *root,
 
     if (budget < 0) {
         const char *e = getenv("W64_SPEC_N");
-        budget = e ? atoi(e) : 32;
+        /*
+         * Speculation exists to fill the open batch, and the interpreter
+         * tier fills it far better: with the tier on, every speculated TB
+         * is translation the batch would have got anyway, and 27 % of
+         * them are never entered at all.  Measured monotone -- 593/571/
+         * 540/514 Mi for a budget of 0/2/8/32 -- so the tier's default is
+         * none.
+         */
+        budget = e ? atoi(e) : (w64_interp_gate ? 0 : 32);
         budget = MIN(MAX(budget, 0), W64_SPEC_MAX);
     }
     static unsigned st[6];   /* misses, nosucc, exists, notram, made, oneshot */

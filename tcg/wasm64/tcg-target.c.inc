@@ -3684,6 +3684,7 @@ static void tcg_out_set_borrow(TCGContext *s)
 
 static void tcg_target_init(TCGContext *s)
 {
+    w64_interp_init();
     tcg_target_available_regs[TCG_TYPE_I32] = MAKE_64BIT_MASK(0, 28);
     tcg_target_available_regs[TCG_TYPE_I64] = MAKE_64BIT_MASK(0, 28);
 

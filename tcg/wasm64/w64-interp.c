@@ -70,9 +70,20 @@ uint32_t w64_interp_gate;
  * how a divergence is bisected down to the single TB that causes it. */
 static uint32_t w64_interp_lo, w64_interp_hi = UINT32_MAX;
 
+/*
+ * Called from tcg_target_init, not from the first TB execution: accel/tcg
+ * latches its speculation budget on the first lookup miss, which is
+ * earlier than that, and reads w64_interp_gate to do it.
+ */
 void w64_interp_init(void)
 {
     const char *r = getenv("W64_INTERP_RANGE");
+    static bool done;
+
+    if (done) {
+        return;
+    }
+    done = true;
 
     if (r) {
         w64_interp_lo = strtoul(r, NULL, 0);
