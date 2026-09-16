@@ -1400,6 +1400,33 @@ static void w64_diag_bump(TCGContext *s, int idx)
     w64_memarg(s, 3, 0);
 }
 
+/* W64_TBHIST=1: ++w64_tbhist[tidx] in the prologue.  The slot address is
+ * known at translation time, so this is one load and one store at a
+ * constant address -- the cheapest per-TB-entry counter the backend can
+ * emit, and still a measurement build like W64_LDSTCOUNT. */
+static bool w64_tbhist_on(void)
+{
+    static int on = -1;
+    if (on < 0) {
+        on = getenv("W64_TBHIST") != NULL;
+    }
+    return on;
+}
+
+static void w64_tbhist_emit(TCGContext *s, uint32_t tidx)
+{
+    int64_t a = (int64_t)(uintptr_t)w64_tbhist_slot(tidx);
+
+    w64_const_i64(s, a);
+    w64_const_i64(s, a);
+    w64_u8(s, 0x28);                        /* i32.load */
+    w64_memarg(s, 2, 0);
+    w64_const_i32(s, 1);
+    w64_u8(s, 0x6a);                        /* i32.add */
+    w64_u8(s, 0x36);                        /* i32.store */
+    w64_memarg(s, 2, 0);
+}
+
 /* W64_XCOUNT=1 counts TB exits in the generated code: which chain a TB
  * entry actually left by, and whether a goto_tb went back to its own TB.
  * Same class as W64_LDSTCOUNT -- the generated code changes, so per-Mi
@@ -2768,6 +2795,7 @@ static void tcg_out_tb_start(TCGContext *s)
     static const uint8_t p1[1] = { 0 };    /* (i32) */
     uint8_t sync_type = 0, sync_imp = 0, sync_uimp = 0;
     uint8_t ls_type = 0, ls_imp = 0, ls_uimp = 0;
+    uint32_t tidx;
 
     memset(&W, 0, sizeof(W));
     n_cf = 0;
@@ -2785,7 +2813,8 @@ static void tcg_out_tb_start(TCGContext *s)
     stl_p(s->code_buf + W64_DESC_MODLEN, 0);
     stl_p(s->code_buf + W64_DESC_ICOUNT, s->gen_tb->icount);
     stl_p(s->code_buf + W64_DESC_NIMP, 0);
-    stl_p(s->code_buf + W64_DESC_TIDX, w64_alloc_tidx());
+    tidx = w64_alloc_tidx();
+    stl_p(s->code_buf + W64_DESC_TIDX, tidx);
 
     /* module prelude reservation */
     memcpy(s->code_buf + W64_MOD_OFF, magic, sizeof(magic));
@@ -2836,6 +2865,10 @@ static void tcg_out_tb_start(TCGContext *s)
     }
 
     /* prologue: per-TB-entry accounting, inline */
+    if (w64_tbhist_on()) {
+        w64_tbhist_emit(s, tidx);
+    }
+
     if (w64_tbstats_inline()) {
         /* wasm_tb_stats[0]++ and [1] += icount (plain RMWs — the fields
          * are only ever written by this vCPU thread) */

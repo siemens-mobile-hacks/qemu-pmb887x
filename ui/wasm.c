@@ -203,6 +203,17 @@ uint64_t wasm_memstat(int32_t idx)
     return idx >= 0 && idx < WASM_DIAG_N ? wasm_diag_stat[idx] : 0;
 }
 
+/* Diagnostics: the per-TB entry-count histogram (W64_TBHIST=1; see
+ * tcg/wasm64/wasm64.h).  Zero in an ordinary build. */
+#ifdef CONFIG_TCG_WASM64
+#include "tcg/wasm64/wasm64.h"
+EMSCRIPTEN_KEEPALIVE
+uint64_t wasm_tbhist(int32_t b)
+{
+    return w64_tbhist_bucket(b);
+}
+#endif
+
 /* Current guest pc of the first vCPU (diagnostics: where is it spinning). */
 EMSCRIPTEN_KEEPALIVE
 uint64_t wasm_pc(void)

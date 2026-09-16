@@ -538,6 +538,49 @@ uint32_t w64_alloc_tidx(void)
     return w64_next_tidx++;
 }
 
+/* Per-TB entry counts (W64_TBHIST=1); 8 MB, allocated only when the
+ * emitter asks for the first slot. */
+static uint32_t *w64_tbhist;
+
+uint32_t *w64_tbhist_slot(uint32_t tidx)
+{
+    if (!w64_tbhist) {
+        w64_tbhist = g_malloc0((size_t)W64_TBHIST_N * sizeof(uint32_t));
+    }
+    return &w64_tbhist[tidx & (W64_TBHIST_N - 1)];
+}
+
+uint64_t w64_tbhist_bucket(int b)
+{
+    uint64_t acc = 0;
+    uint32_t i, n = w64_next_tidx;
+
+    if (!w64_tbhist || b < 0 || b > 2 * W64_TBHIST_BUCKETS) {
+        return 0;
+    }
+    if (n > W64_TBHIST_N) {
+        n = W64_TBHIST_N;
+    }
+    for (i = 1; i < n; i++) {
+        uint32_t c = w64_tbhist[i];
+        int lg = 0;
+
+        if (!c) {
+            acc += (b == 2 * W64_TBHIST_BUCKETS);
+            continue;
+        }
+        while ((c >> lg) > 1 && lg < W64_TBHIST_BUCKETS - 1) {
+            lg++;
+        }
+        if (b == lg) {
+            acc++;
+        } else if (b == W64_TBHIST_BUCKETS + lg) {
+            acc += c;
+        }
+    }
+    return acc;
+}
+
 /* ------------------------------------------------------------------ */
 /* batching (phase 2, doc/wasm-tcg-backend-plan.md §4.1)              */
 /*                                                                    */

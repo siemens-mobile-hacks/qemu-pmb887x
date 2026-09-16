@@ -134,6 +134,21 @@ struct w64_cfix {
     uint16_t uimp;
 };
 
+/* W64_TBHIST=1 (measurement build): the TB prologue bumps a per-TB
+ * entry counter at a translation-time-constant address, so the lifetime
+ * entry count of every TB is available at the end of a run.  It answers
+ * the one question the interpreter tier is gated on — what fraction of
+ * translated TBs never run often enough to be worth a wasm module.
+ * Counts are per tidx and tidx is recycled at tb_flush, so a run with
+ * tbFlush > 0 merges the counts of unrelated TBs; check it. */
+#define W64_TBHIST_N   (1u << 21)
+#define W64_TBHIST_BUCKETS 24
+uint32_t *w64_tbhist_slot(uint32_t tidx);
+/* [0, BUCKETS)        TBs whose lifetime entry count is in [2^b, 2^(b+1))
+ * [BUCKETS, 2*BUCKETS) entries contributed by those TBs
+ * 2*BUCKETS           TBs translated but never entered */
+uint64_t w64_tbhist_bucket(int b);
+
 /* runtime (wasm64.c), used by the emitters */
 uint32_t w64_alloc_tidx(void);   /* next shared-chain-table index (>=1) */
 extern uint32_t w64_chain_stop;  /* lockstep budget reached: stop chaining */
