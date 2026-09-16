@@ -232,6 +232,23 @@ static unsigned w64_locals_pad(void)
     return n;
 }
 
+/* W64_BYTEPAD=N adds N never-executed i64 add/store pairs (~7 bytes each)
+ * to every TB body, behind a test of $scr32 which is still 0 here.  The
+ * companion knob to W64_LOCALPAD: it prices *emitted bytes* against
+ * module compile time (modNs), which is what decides whether shrinking
+ * the inline TLB probe -- 37 % of emitted bytes -- is worth building.
+ * The execution cost it adds is one load and one not-taken branch per TB
+ * entry, the same at every N, so modNs is the response variable. */
+static unsigned w64_byte_pad(void)
+{
+    static int n = -1;
+    if (n < 0) {
+        const char *e = getenv("W64_BYTEPAD");
+        n = e ? atoi(e) : 0;
+    }
+    return n;
+}
+
 static bool w64_ls_armed(void)
 {
     static int mode = -1;
@@ -2636,6 +2653,20 @@ static void tcg_out_tb_start(TCGContext *s)
         w64_const_i32(s, s->gen_tb->icount);
         w64_u8(s, 0x10);                              /* call */
         w64_callidx(s, ls_imp, ls_uimp);
+        w64_blk_pop(s);
+    }
+
+    if (w64_byte_pad()) {
+        unsigned i;
+
+        w64_local_get(s, W64_L_SCR32);
+        w64_blk_push(s, W64_BLK_IF, -1);
+        for (i = 0; i < w64_byte_pad(); i++) {
+            w64_local_get(s, W64_L_SCR0);
+            w64_const_i64(s, (int64_t)i);
+            w64_u8(s, 0x7c);                          /* i64.add */
+            w64_local_set(s, W64_L_SCR0);
+        }
         w64_blk_pop(s);
     }
 
