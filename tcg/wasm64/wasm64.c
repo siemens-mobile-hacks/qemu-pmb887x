@@ -687,6 +687,19 @@ static unsigned w64_compact_members(void)
     return v;
 }
 
+/*
+ * Compaction is worth its re-compile only when live module slots are
+ * actually scarce.  Before the interpreter tier a batch held 4.85
+ * members, so the 1024-member bound merged ~256 of them and freed ~255
+ * slots for ~530 KB; now a batch holds ~150, so the same bound merges 7
+ * and frees 6 -- and a full boot plateaus at ~760 live against a cap of
+ * 6144, so those 6 slots are worth nothing.  Measured on EL71 12 s
+ * windows: compacting anyway costs 56 MB of re-compiled module bytes
+ * per window and 14.8 % of throughput (3/3).  W64_COMPACT_LIVE=0
+ * restores the unconditional behaviour.
+ */
+static unsigned w64_compact_live(void);
+
 static unsigned w64_live_max(void)
 {
     static int v = -1;
@@ -1606,7 +1619,18 @@ static void w64_live_unlink(struct w64_landed *l)
     l->next = NULL;
 }
 
-static void w64_compact(void);
+static unsigned w64_compact_live(void)
+{
+    static int v = -1;
+    if (v < 0) {
+        const char *e = getenv("W64_COMPACT_LIVE");
+        v = e ? atoi(e) : (int)(w64_live_max() * 3 / 4);
+        v = MAX(v, 0);
+    }
+    return v;
+}
+
+static void w64_compact(unsigned max_members);
 
 static void w64_live_push(struct w64_landed *l)
 {
@@ -1621,9 +1645,10 @@ static void w64_live_push(struct w64_landed *l)
     if (l->small) {
         w64_small_n++;
         w64_small_members += l->src.n_member;
-        if (w64_small_n >= w64_compact_batches() ||
-            w64_small_members >= w64_compact_members()) {
-            w64_compact();
+        if (w64_live_n >= w64_compact_live() &&
+            (w64_small_n >= w64_compact_batches() ||
+             w64_small_members >= w64_compact_members())) {
+            w64_compact(w64_compact_members());
         }
     }
     while (w64_live_n > w64_live_max()) {
@@ -1741,7 +1766,7 @@ static void w64_landed_free(struct w64_landed *l)
  * module per miss: Firefox's executable-memory budget, and no
  * eviction churn of hot code.
  */
-static void w64_compact(void)
+static void w64_compact(unsigned max_members)
 {
     struct w64_landed *l, *merged;
     struct w64_landed **smalls;
@@ -1766,6 +1791,10 @@ static void w64_compact(void)
     smalls = g_new(struct w64_landed *, cap_smalls);
     for (l = w64_live_head; l && n_smalls < cap_smalls; l = l->next) {
         if (l->small && l->thunk) {
+            if (n_smalls >= 2 &&
+                cap_member + l->src.n_member > max_members) {
+                break;
+            }
             smalls[n_smalls++] = l;
             cap_utypes += l->src.n_utypes;
             cap_uimp += l->src.n_uimp;
