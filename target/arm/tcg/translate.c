@@ -1830,6 +1830,66 @@ static bool w64_absorb(DisasContext *s, int64_t diff)
     return true;
 }
 
+static bool w64_join_on(void)
+{
+    static int on = -1;
+
+    if (on < 0) {
+        const char *e = getenv("W64_JOIN");
+
+        on = e ? atoi(e) : 1;
+    }
+    return on;
+}
+
+/*
+ * A deferred taken path (w64_defer_taken) exits to its target at the end of
+ * the TB -- but the fall-through it let the TB carry on into often arrives
+ * at that very address a few instructions later, which is what an
+ * `if (cond) { ... }` is.  Place the label there instead and the branch
+ * costs no exit at all.
+ *
+ * The taken path skipped the instructions between, and gen_tb_start prepaid
+ * for them, so it refunds them on its way in; the fall-through branches
+ * over that refund.  Freeing the slot also lets the next conditional branch
+ * be deferred, so a run of them folds into one TB.
+ *
+ * Called from insn_start, before tcg_gen_insn_start, so the refund belongs
+ * to the instruction before and everything after the join unwinds as @pc.
+ */
+static void w64_try_join(DisasContext *s, vaddr pc)
+{
+    unsigned i = 0;
+
+    if (!w64_join_on() || s->condexec_mask || s->eci) {
+        return;
+    }
+    while (i < s->w64_ft_n) {
+        int skipped = s->base.num_insns - 1 - s->w64_ft[i].insns;
+        DisasLabel l = s->w64_ft[i].label;
+
+        if (s->w64_ft[i].dest != pc) {
+            i++;
+            continue;
+        }
+        if (s->pc_save != l.pc_save) {
+            gen_update_pc(s, l.pc_save - s->pc_curr);
+        }
+        if (skipped > 0) {
+            TCGLabel *cont = gen_new_label();
+
+            tcg_gen_br(cont);
+            set_disas_label(s, l);
+            w64_refund(s, skipped);
+            gen_set_label(cont);
+        } else {
+            set_disas_label(s, l);
+        }
+        s->w64_ft[i] = s->w64_ft[--s->w64_ft_n];
+        wasm_diag_stat[WASM_DIAG_TB_JOIN]++;
+    }
+}
+
 /* the deferred taken paths and the loop's interrupt exit, from tb_stop */
 static void w64_emit_deferred_taken(DisasContext *dc)
 {
@@ -7218,6 +7278,11 @@ static void arm_tr_insn_start(DisasContextBase *dcbase, CPUState *cpu)
     uint32_t condexec_bits;
     uint32_t pc_arg = dc->base.pc_next;
 
+#ifdef CONFIG_TCG_WASM64
+    if (dc->w64_ft_n) {
+        w64_try_join(dc, dc->base.pc_next);
+    }
+#endif
     if (tb_cflags(dcbase->tb) & CF_PCREL) {
         pc_arg &= ~TARGET_PAGE_MASK;
     }
