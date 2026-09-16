@@ -1366,6 +1366,34 @@ static int w64_lc_mode(void)
 #endif
 
 /*
+ * The address a call returns to is a TB the guest is certain to run and
+ * that nothing records: the callee comes back through `bx lr`, an
+ * indirect exit, and w64_speculate only walks goto_tb destinations.  So
+ * every call site is a guaranteed future lookup miss, and on this backend
+ * a miss costs a wasm module (~103 us, 12.5 % of the boot).
+ *
+ * trans_BL and trans_BLX_i already note it.  These are the three paths
+ * that did not: calls through a register, and Thumb-1's split BL/BLX —
+ * which is how an ARMv5 core makes every Thumb call, and this firmware is
+ * mostly Thumb.  W64_NORETSPEC=1 takes it back off for an A/B.
+ */
+#ifdef CONFIG_TCG_WASM64
+static void note_call_return(DisasContext *s)
+{
+    static int on = -1;
+
+    if (on < 0) {
+        on = getenv("W64_NORETSPEC") == NULL;
+    }
+    if (on) {
+        translator_note_succ(&s->base, s->base.pc_next);
+    }
+}
+#else
+static void note_call_return(DisasContext *s) { }
+#endif
+
+/*
  * @condexec: the condexec_bits value in memory at this exit (what
  * gen_set_condexec last stored, or 0 mid-TB — see arm_tr_init_disas_context).
  */
@@ -3673,6 +3701,7 @@ static bool trans_BLX_r(DisasContext *s, arg_BLX_r *a)
     if (!ENABLE_ARCH_5) {
         return false;
     }
+    note_call_return(s);
     tmp = load_reg(s, a->rm);
     gen_pc_plus_diff(s, cpu_R[14], curr_insn_len(s) | s->thumb);
     gen_bx(s, tmp);
@@ -5597,6 +5626,7 @@ static bool trans_BL_suffix(DisasContext *s, arg_BL_suffix *a)
     TCGv_i32 tmp = tcg_temp_new_i32();
 
     assert(!arm_dc_feature(s, ARM_FEATURE_THUMB2));
+    note_call_return(s);
     tcg_gen_addi_i32(tmp, cpu_R[14], (a->imm << 1) | 1);
     gen_pc_plus_diff(s, cpu_R[14], curr_insn_len(s) | 1);
     gen_bx(s, tmp);
@@ -5611,6 +5641,7 @@ static bool trans_BLX_suffix(DisasContext *s, arg_BLX_suffix *a)
     if (!ENABLE_ARCH_5) {
         return false;
     }
+    note_call_return(s);
     tmp = tcg_temp_new_i32();
     tcg_gen_addi_i32(tmp, cpu_R[14], a->imm << 1);
     tcg_gen_andi_i32(tmp, tmp, 0xfffffffc);
