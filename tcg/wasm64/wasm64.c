@@ -841,9 +841,22 @@ EM_JS(void, w64_tab_clear, (void), {
  * union import table (u32 C function pointers).  The instance's
  * active element segments register every member into TAB at its tidx
  * (replacing the temp-module entries) before addFunction returns. */
+/* W64_MODBENCH=<n>: on the nth module close, time 200 back-to-back
+ * compiles of that module's own bytes (see the EM_JS body). */
+static int w64_modbench(void)
+{
+    static int v = -1;
+    if (v < 0) {
+        const char *e = getenv("W64_MODBENCH");
+        v = e ? atoi(e) : 0;
+    }
+    return v;
+}
+
+
 EM_JS(int, w64_batch_instantiate,
       (uintptr_t modp, uint32_t modlen, uintptr_t ipp, uint32_t nimp,
-       uint32_t maxtidx), {
+       uint32_t maxtidx, uintptr_t nsp, int bench), {
     const dv = new DataView(HEAPU8.buffer);
     const mod_bytes =
         new Uint8Array(HEAPU8.slice(Number(modp), Number(modp) + Number(modlen)));
@@ -854,20 +867,24 @@ EM_JS(int, w64_batch_instantiate,
     if (maxtidx >= TAB.length) {
         TAB.grow(Math.max(4096, maxtidx + 1 - TAB.length));
     }
-    const imports = { e: { m: wasmMemory, t: TAB } };
     const ip = Number(ipp);
+    const __ns = new Float64Array(HEAPU8.buffer, Number(nsp), 6);
     let __t0 = performance.now();
+    /* 2.1 imports per module, and building this object is 0.7 % of the
+     * time this function costs: a cached namespace was built and measured
+     * against it, see the playbook's REJECTED table */
+    const imports = { e: { m: wasmMemory, t: TAB } };
     for (let i = 0; i < nimp; i++) {
         /* memory64: the emscripten table is i64-indexed */
         imports.e['f' + i] = wasmTable.get(BigInt(dv.getUint32(ip + i * 4, true)));
     }
-    let __t1 = performance.now(); globalThis.__w64tR = (globalThis.__w64tR || 0) + (__t1 - __t0);
+    let __t1 = performance.now(); __ns[0] += (__t1 - __t0) * 1e6;
     let inst;
     try {
         const __m = new WebAssembly.Module(mod_bytes);
-        let __t2 = performance.now(); globalThis.__w64tM = (globalThis.__w64tM || 0) + (__t2 - __t1);
+        let __t2 = performance.now(); __ns[1] += (__t2 - __t1) * 1e6;
         inst = new WebAssembly.Instance(__m, imports);
-        let __t3 = performance.now(); globalThis.__w64tI = (globalThis.__w64tI || 0) + (__t3 - __t2);
+        let __t3 = performance.now(); __ns[2] += (__t3 - __t2) * 1e6;
     } catch (e) {
         console.log('W64BATCHFAIL nimp=' + nimp + ' len=' + modlen + ': ' + e);
         /* stash the failing module for post-mortem: the page FS survives
@@ -894,7 +911,26 @@ EM_JS(int, w64_batch_instantiate,
     }
     let __t4 = performance.now();
     const __r = addFunction(inst.exports.run, 'jjjii');
-    globalThis.__w64tA = (globalThis.__w64tA || 0) + (performance.now() - __t4);
+    __ns[3] += (performance.now() - __t4) * 1e6;
+    if (bench && !globalThis.__w64bd) {
+        /*
+         * The same bytes, in this isolate, back to back.  A close module
+         * costs 83 us here and ~21 us for the same shape in the page, and
+         * nothing about the module explained the gap; this asks whether
+         * the gap is the isolate or the fact that a real compile runs once
+         * every ~700 us with the caches full of guest code.  The same
+         * bytes every time is fine: V8 has no content cache for a
+         * synchronous WebAssembly.Module, only for streaming compiles.
+         */
+        globalThis.__w64bd = 1;
+        const c = mod_bytes.slice();
+        let t = performance.now(), n = 0;
+        try {
+            for (; n < 200; n++) { new WebAssembly.Module(c); }
+        } catch (e) { console.log('W64MODBENCH-THROW ' + n + ' ' + e); }
+        __ns[4] += (performance.now() - t) * 1e6;
+        __ns[5] += n;
+    }
     return __r;
 });
 
@@ -1332,9 +1368,34 @@ static uint32_t w64_assemble_instantiate(const struct w64_bsrc *src,
          */
         int64_t t0 = get_clock_realtime();
 
+        /* per assemble source, so that the fixed per-module cost and the
+         * per-byte cost can be separated: the two sources differ by 170x
+         * in bytes per module and 177x in count */
+        static double phase_ns[3][6];
+        static unsigned closes;
+        int k = wasm_diag_stat[WASM_DIAG_MOD_SRC];
+
+        closes++;
+
+        k = k ? k - 1 : 0;
         thunk = w64_batch_instantiate((uintptr_t)mod.b, mod.n, (uintptr_t)ip,
-                                      src->n_uimp, maxtidx);
+                                      src->n_uimp, maxtidx,
+                                      (uintptr_t)phase_ns[k],
+                                      w64_modbench() && closes == w64_modbench());
         wasm_diag_stat[WASM_DIAG_MOD_NS] += get_clock_realtime() - t0;
+        wasm_diag_stat[WASM_DIAG_MOD_RESOLVE_NS] =
+            (uint64_t)(phase_ns[0][0] + phase_ns[1][0] + phase_ns[2][0]);
+        wasm_diag_stat[WASM_DIAG_MOD_COMPILE_NS] =
+            (uint64_t)(phase_ns[0][1] + phase_ns[1][1] + phase_ns[2][1]);
+        wasm_diag_stat[WASM_DIAG_MOD_INST_NS] =
+            (uint64_t)(phase_ns[0][2] + phase_ns[1][2] + phase_ns[2][2]);
+        wasm_diag_stat[WASM_DIAG_MOD_ADDFN_NS] =
+            (uint64_t)(phase_ns[0][3] + phase_ns[1][3] + phase_ns[2][3]);
+        wasm_diag_stat[WASM_DIAG_MOD_CLOSE_CNS] = (uint64_t)phase_ns[0][1];
+        wasm_diag_stat[WASM_DIAG_MOD_COMPACT_CNS] = (uint64_t)phase_ns[1][1];
+        wasm_diag_stat[WASM_DIAG_MOD_UIMP] += src->n_uimp;
+        wasm_diag_stat[WASM_DIAG_MODBENCH_NS] = (uint64_t)phase_ns[0][4];
+        wasm_diag_stat[WASM_DIAG_MODBENCH_N] = (uint64_t)phase_ns[0][5];
     }
     tcg_debug_assert(thunk != 0);
     g_free(mod.b);

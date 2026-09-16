@@ -202,6 +202,45 @@ enum {
                               * the rest were served by the deferred hold */
     WASM_DIAG_BQL_REAL_UNLOCK, /* bql_unlock_mmio() calls that really released
                               * (somebody was waiting), ending a deferral */
+    /*
+     * TOPO_COMMIT counts both commit paths together, which stopped being
+     * useful once 0083 gave the cheap one real traffic.  These split it,
+     * and TOPO_R* attributes the expensive one: every setter that raises
+     * memory_region_update_pending ORs its reason bit into a mask, and a
+     * full commit bumps one counter per bit.  A transaction that batches
+     * several setters bumps several - the sum over R* is >= TOPO_FULL by
+     * design, because the question is "who is in here", not "who won".
+     */
+    WASM_DIAG_TOPO_FULL,     /* commits that re-rendered every flat view */
+    WASM_DIAG_TOPO_VAR,      /* ...that adopted a variant instead (0083) */
+    WASM_DIAG_TOPO_R_LOG,    /* memory_region_set_log */
+    WASM_DIAG_TOPO_R_NONVOL, /* memory_region_set_nonvolatile */
+    WASM_DIAG_TOPO_R_EVFD,   /* memory_region_{add,del}_eventfd */
+    WASM_DIAG_TOPO_R_ADDSUB, /* memory_region_add_subregion* */
+    WASM_DIAG_TOPO_R_DELSUB, /* memory_region_del_subregion */
+    WASM_DIAG_TOPO_R_ENABLE, /* memory_region_set_enabled */
+    WASM_DIAG_TOPO_R_SIZE,   /* memory_region_set_size */
+    WASM_DIAG_TOPO_R_ALIAS,  /* memory_region_set_alias_offset */
+    WASM_DIAG_TOPO_R_UNMERG, /* memory_region_set_unmergeable */
+    WASM_DIAG_TOPO_R_DIRTY,  /* global dirty-log start/stop */
+    WASM_DIAG_PAD_SINK,      /* W64_LDSTPAD's live-out (never read as a count) */
+    /*
+     * MOD_NS split four ways.  The JS side has timed these all along into
+     * __w64tR/M/I/A, but those globals live in the vCPU worker and the
+     * worker runs the guest without yielding, so no evaluate() ever got to
+     * read them.  Charged into wasm_diag_stat instead, they reach
+     * _wasm_memstat like everything else.  ns, summed.
+     */
+    WASM_DIAG_MOD_RESOLVE_NS, /* building the import object */
+    WASM_DIAG_MOD_COMPILE_NS, /* new WebAssembly.Module */
+    WASM_DIAG_MOD_INST_NS,    /* new WebAssembly.Instance */
+    WASM_DIAG_MOD_ADDFN_NS,   /* addFunction on the export */
+    WASM_DIAG_MOD_UIMP,       /* imports resolved, summed over modules */
+    WASM_DIAG_MOD_CLOSE_CNS,  /* ...compile ns, first-close modules only */
+    WASM_DIAG_MOD_COMPACT_CNS,/* ...compile ns, compaction modules only */
+    WASM_DIAG_MODBENCH_NS,   /* W64_MODBENCH: back-to-back compiles of one
+                              * real module, in the vCPU worker's isolate */
+    WASM_DIAG_MODBENCH_N,
     WASM_DIAG_N
 };
 

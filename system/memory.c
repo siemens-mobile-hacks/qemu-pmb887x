@@ -44,6 +44,22 @@
 static unsigned memory_region_transaction_depth;
 static bool memory_region_update_pending;
 static bool ioeventfd_update_pending;
+
+#ifdef __EMSCRIPTEN__
+/* see WASM_DIAG_TOPO_R_* - which setters are in the pending transaction */
+static uint32_t memory_region_update_reasons;
+#define MR_UPDATE_PENDING(cond, reason)                                 \
+    do {                                                                \
+        bool cond_ = (cond);                                            \
+        memory_region_update_pending |= cond_;                          \
+        if (cond_) {                                                    \
+            memory_region_update_reasons |= 1u << ((reason) - WASM_DIAG_TOPO_R_LOG); \
+        }                                                               \
+    } while (0)
+#else
+#define MR_UPDATE_PENDING(cond, reason)         \
+    (memory_region_update_pending |= (cond))
+#endif
 unsigned int global_dirty_tracking;
 
 static QTAILQ_HEAD(, MemoryListener) memory_listeners
@@ -1419,6 +1435,13 @@ void memory_region_transaction_commit(void)
         if (memory_region_update_pending) {
 #ifdef __EMSCRIPTEN__
             wasm_diag_stat[WASM_DIAG_TOPO_COMMIT]++;
+            wasm_diag_stat[WASM_DIAG_TOPO_FULL]++;
+            for (int r = 0; r < WASM_DIAG_N - WASM_DIAG_TOPO_R_LOG; r++) {
+                if (memory_region_update_reasons & (1u << r)) {
+                    wasm_diag_stat[WASM_DIAG_TOPO_R_LOG + r]++;
+                }
+            }
+            memory_region_update_reasons = 0;
 #endif
             topo_commit_gen++;
             topo_gen++;
@@ -1445,6 +1468,7 @@ void memory_region_transaction_commit(void)
              */
 #ifdef __EMSCRIPTEN__
             wasm_diag_stat[WASM_DIAG_TOPO_COMMIT]++;
+            wasm_diag_stat[WASM_DIAG_TOPO_VAR]++;
 #endif
             topo_commit_gen++;
             flatviews_update_romd();
@@ -2532,7 +2556,7 @@ void memory_region_set_log(MemoryRegion *mr, bool log, unsigned client)
 
     memory_region_transaction_begin();
     mr->dirty_log_mask = (mr->dirty_log_mask & ~mask) | (log * mask);
-    memory_region_update_pending |= mr->enabled;
+    MR_UPDATE_PENDING(mr->enabled, WASM_DIAG_TOPO_R_LOG);
     memory_region_transaction_commit();
 }
 
@@ -2687,7 +2711,7 @@ void memory_region_set_nonvolatile(MemoryRegion *mr, bool nonvolatile)
     if (mr->nonvolatile != nonvolatile) {
         memory_region_transaction_begin();
         mr->nonvolatile = nonvolatile;
-        memory_region_update_pending |= mr->enabled;
+        MR_UPDATE_PENDING(mr->enabled, WASM_DIAG_TOPO_R_NONVOL);
         memory_region_transaction_commit();
     }
 }
@@ -2921,7 +2945,7 @@ void memory_region_add_eventfd(MemoryRegion *mr,
      * writes to ops->write and bypasses the eventfd (R-06).  Take the
      * full path so the entries are re-filled.
      */
-    memory_region_update_pending |= mr->enabled;
+    MR_UPDATE_PENDING(mr->enabled, WASM_DIAG_TOPO_R_EVFD);
     memory_region_transaction_commit();
 }
 
@@ -2959,7 +2983,7 @@ void memory_region_del_eventfd(MemoryRegion *mr,
                                   sizeof(*mr->ioeventfds)*mr->ioeventfd_nb + 1);
     /* see memory_region_add_eventfd: the full commit re-fills TLB
      * entries that cached the ioeventfd-free fast path */
-    memory_region_update_pending |= mr->enabled;
+    MR_UPDATE_PENDING(mr->enabled, WASM_DIAG_TOPO_R_EVFD);
     memory_region_transaction_commit();
 }
 
@@ -2982,7 +3006,7 @@ static void memory_region_update_container_subregions(MemoryRegion *subregion)
     }
     QTAILQ_INSERT_TAIL(&mr->subregions, subregion, subregions_link);
 done:
-    memory_region_update_pending |= mr->enabled && subregion->enabled;
+    MR_UPDATE_PENDING(mr->enabled && subregion->enabled, WASM_DIAG_TOPO_R_ADDSUB);
     memory_region_transaction_commit();
 }
 
@@ -3036,7 +3060,7 @@ void memory_region_del_subregion(MemoryRegion *mr,
         memory_region_unref(subregion);
     }
 
-    memory_region_update_pending |= mr->enabled && subregion->enabled;
+    MR_UPDATE_PENDING(mr->enabled && subregion->enabled, WASM_DIAG_TOPO_R_DELSUB);
     memory_region_transaction_commit();
 }
 
@@ -3047,7 +3071,7 @@ void memory_region_set_enabled(MemoryRegion *mr, bool enabled)
     }
     memory_region_transaction_begin();
     mr->enabled = enabled;
-    memory_region_update_pending = true;
+    MR_UPDATE_PENDING(true, WASM_DIAG_TOPO_R_ENABLE);
     memory_region_transaction_commit();
 }
 
@@ -3063,7 +3087,7 @@ void memory_region_set_size(MemoryRegion *mr, uint64_t size)
     }
     memory_region_transaction_begin();
     mr->size = s;
-    memory_region_update_pending = true;
+    MR_UPDATE_PENDING(true, WASM_DIAG_TOPO_R_SIZE);
     memory_region_transaction_commit();
 }
 
@@ -3099,7 +3123,7 @@ void memory_region_set_alias_offset(MemoryRegion *mr, hwaddr offset)
 
     memory_region_transaction_begin();
     mr->alias_offset = offset;
-    memory_region_update_pending |= mr->enabled;
+    MR_UPDATE_PENDING(mr->enabled, WASM_DIAG_TOPO_R_ALIAS);
     memory_region_transaction_commit();
 }
 
@@ -3111,7 +3135,7 @@ void memory_region_set_unmergeable(MemoryRegion *mr, bool unmergeable)
 
     memory_region_transaction_begin();
     mr->unmergeable = unmergeable;
-    memory_region_update_pending |= mr->enabled;
+    MR_UPDATE_PENDING(mr->enabled, WASM_DIAG_TOPO_R_UNMERG);
     memory_region_transaction_commit();
 }
 
@@ -3310,7 +3334,7 @@ bool memory_global_dirty_log_start(unsigned int flags, Error **errp)
         }
 
         memory_region_transaction_begin();
-        memory_region_update_pending = true;
+        MR_UPDATE_PENDING(true, WASM_DIAG_TOPO_R_DIRTY);
         memory_region_transaction_commit();
     }
     return true;
@@ -3326,7 +3350,7 @@ static void memory_global_dirty_log_do_stop(unsigned int flags)
 
     if (!global_dirty_tracking) {
         memory_region_transaction_begin();
-        memory_region_update_pending = true;
+        MR_UPDATE_PENDING(true, WASM_DIAG_TOPO_R_DIRTY);
         memory_region_transaction_commit();
         MEMORY_LISTENER_CALL_GLOBAL(log_global_stop, Reverse);
     }

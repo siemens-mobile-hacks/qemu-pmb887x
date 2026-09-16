@@ -1352,6 +1352,56 @@ static void w64_diag_bump(TCGContext *s, int idx)
     w64_memarg(s, 3, 0);
 }
 
+/* W64_LDSTPAD=N emits N filler ALU ops on every memop, executed or not.
+ *
+ * This is the calibration instrument the phase timers are not: a timed
+ * interval prices a phase against an empty interval and so inherits the
+ * clock's floor, which is how round eighteen briefly "found" a 94 ns BQL
+ * acquire.  A pad prices wasm instructions against *each other* - run the
+ * same fixed guest work at N = 0, 8, 16 and the slope of wall against N is
+ * ns per wasm instruction on the memop path, with the load and the store
+ * that make the chain live cancelling out of the slope.
+ *
+ * The unit must survive the optimising tier, and the first two candidates
+ * did not.  A dropped pure result folds to nothing at all; an `i64.add`
+ * chain folds to x+(sum of constants); and xor-then-rotate, which looks
+ * like a mixing step, folds just as completely, because xor distributes
+ * over rotate - rotl(x^a, k) is rotl(x,k) ^ rotl(a,k), so N units collapse
+ * to one rotate and one xor.  That one was measured before it was caught:
+ * 8 units read 1.64 ns per memop, ~6x too cheap for 32 ALU ops.
+ *
+ * add and xor do not distribute over each other in either direction, so
+ * alternating them has no algebraic collapse, and the chain ends in a
+ * store the engine cannot prove dead. */
+static int w64_ldst_pad(void)
+{
+    static int n = -1;
+    if (n < 0) {
+        const char *e = getenv("W64_LDSTPAD");
+        n = e ? atoi(e) : 0;
+    }
+    return n;
+}
+
+static void w64_emit_pad(TCGContext *s, int units)
+{
+    int64_t a = (int64_t)(uintptr_t)&wasm_diag_stat[WASM_DIAG_PAD_SINK];
+    int i;
+
+    w64_const_i64(s, a);
+    w64_const_i64(s, a);
+    w64_u8(s, 0x29);                        /* i64.load */
+    w64_memarg(s, 3, 0);
+    for (i = 0; i < units; i++) {
+        w64_const_i64(s, 0x9e3779b97f4a7c15ULL + i);
+        w64_u8(s, 0x7c);                    /* i64.add */
+        w64_const_i64(s, 0xc2b2ae3d27d4eb4fULL - i);
+        w64_u8(s, 0x85);                    /* i64.xor */
+    }
+    w64_u8(s, 0x37);                        /* i64.store */
+    w64_memarg(s, 3, 0);
+}
+
 static bool w64_tlb_setup(struct w64_tlb_ctx *tc, TCGContext *s,
                           MemOpIdx oi, bool is_ld)
 {
@@ -1475,6 +1525,9 @@ static void tgen_qemu_ld(TCGContext *s, TCGType type, TCGReg data,
     if (w64_ldst_count() >= 2) {
         w64_diag_bump(s, WASM_DIAG_LDST_EXEC);
     }
+    if (w64_ldst_pad()) {
+        w64_emit_pad(s, w64_ldst_pad());
+    }
     if (fast) {
         /* Snapshot the zero-extended address before the arms: with
          * data == addr (legal — e.g. ldrd's 64-bit load into the
@@ -1556,6 +1609,9 @@ static void tgen_qemu_st(TCGContext *s, TCGType type, TCGReg data,
     }
     if (w64_ldst_count() >= 2) {
         w64_diag_bump(s, WASM_DIAG_LDST_EXEC);
+    }
+    if (w64_ldst_pad()) {
+        w64_emit_pad(s, w64_ldst_pad());
     }
     if (fast) {
         w64_get_i64(s, addr);               /* snapshot (see ld above) */
