@@ -1820,8 +1820,32 @@ static void arm_cpu_realizefn(DeviceState *dev, Error **errp)
     Error *local_err = NULL;
 
 #if defined(CONFIG_TCG) && !defined(CONFIG_USER_ONLY)
-    /* Use pc-relative instructions in system-mode */
-    tcg_cflags_set(cs, CF_PCREL);
+    /*
+     * Use pc-relative instructions in system-mode.
+     *
+     * CF_PCREL earns its keep when the same physical code runs at many
+     * virtual addresses -- it lets one TB serve all of them.  A phone
+     * firmware maps its flash once, and pays for the generality at every
+     * PC materialisation: gen_pc_plus_diff becomes a read of cpu_R[15]
+     * plus an add instead of a constant, and on an ARMv5 core every
+     * 32-bit literal is an `ldr rX, [pc, #imm]`.
+     *
+     * Measured and closed (2026-09-16): turning it off is **-0.7 %, 2/3
+     * pairwise -- inside noise -- and costs +2 % lookup misses**, because
+     * TBs then key on the virtual pc too and stop being shared.  The
+     * saving is not there because cpu_R[15] is a TCG global, which the
+     * wasm64 backend keeps in a wasm local for the life of the TB: the
+     * "read" is a local.get, not a memory load, so the add costs about
+     * what the constant would.  tbGen does not move either, so this
+     * firmware really does map its code once -- CF_PCREL's generality is
+     * unused here and still not worth removing.
+     */
+#ifdef CONFIG_TCG_WASM64
+    if (!getenv("W64_NOPCREL"))
+#endif
+    {
+        tcg_cflags_set(cs, CF_PCREL);
+    }
 #endif
 
     /* If we needed to query the host kernel for the CPU features
