@@ -421,6 +421,15 @@ enum {
      */
     WASM_DIAG_DMAC_RUN,
     WASM_DIAG_DIF_RUN,
+    /*
+     * One step lower: the bytes of a burst handed to the SSI bus in one
+     * call instead of one at a time.  ssiRun/difRun says the byte run is
+     * taken on every burst the DIF runs, and ssiByte/difTxWord is bytes
+     * per word -- 2 for a 16-bit panel.
+     */
+    WASM_DIAG_SSI_RUN,
+    WASM_DIAG_SSI_BYTE,
+
     WASM_DIAG_N
 };
 

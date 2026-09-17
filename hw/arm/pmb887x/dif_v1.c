@@ -822,6 +822,80 @@ static void dif_run_word(pmb887x_dif_t *p, uint16_t value) {
 	pmb887x_fifo16_push(p->rx_fifo, received & p->mask);
 }
 
+/*
+ * The same burst again, one step lower: the bytes of every word at once,
+ * so the bus below is walked once instead of once per byte.  What the SSI
+ * side gives back is the same sequence of received bytes either way, so
+ * the RX FIFO is filled from it afterwards exactly as dif_run_word() would
+ * have - only the transfers themselves move.  Returns false, having
+ * transferred nothing, when the bus has no run path.
+ */
+#define DIF_RUN_CHUNK 128
+
+/* W64_NOSSIRUN=1 falls back to one ssi_transfer per word inside the
+ * burst, so the byte run is A/B'able without a second binary. */
+static bool dif_ssi_run_enabled(void) {
+	static int on = -1;
+	if (on < 0)
+		on = getenv("W64_NOSSIRUN") == NULL;
+	return on != 0;
+}
+
+static bool dif_run_ssi_burst(pmb887x_dif_t *p, const uint8_t *buf, unsigned size, unsigned count) {
+	uint16_t words[DIF_RUN_CHUNK];
+	uint8_t tx[DIF_RUN_CHUNK * 2], rx[DIF_RUN_CHUNK * 2];
+	unsigned word_bytes = p->bits / 8;
+	bool msb_first = (p->con & DIFv1_CON_HB_MSB) != 0;
+
+	for (unsigned done = 0; done < count; done += DIF_RUN_CHUNK) {
+		unsigned chunk = MIN(count - done, DIF_RUN_CHUNK);
+
+		for (unsigned i = 0; i < chunk; i++) {
+			uint16_t value = ldn_he_p(buf + (done + i) * size, size) & p->mask;
+			uint16_t transmitted = dif_mux(p, value) & p->mask;
+			words[i] = value;
+			for (unsigned k = 0; k < word_bytes; k++) {
+				unsigned shift = (msb_first ? word_bytes - 1 - k : k) * 8;
+				tx[i * word_bytes + k] = (transmitted >> shift) & 0xFF;
+			}
+		}
+
+		if (!ssi_transfer_run(p->bus, tx, rx, chunk * word_bytes)) {
+			/* nothing transferred yet only while this is the first
+			 * chunk; later ones cannot fail, since a data run
+			 * changes nothing the bus tested for the first */
+			if (done > 0) {
+				hw_error("pmb887x-dif: SSI run vanished mid-burst");
+			}
+			return false;
+		}
+
+		wasm_diag_stat[WASM_DIAG_SSI_RUN]++;
+		wasm_diag_stat[WASM_DIAG_SSI_BYTE] += chunk * word_bytes;
+
+		for (unsigned i = 0; i < chunk; i++) {
+			uint16_t received = 0;
+			for (unsigned k = 0; k < word_bytes; k++) {
+				unsigned shift = (msb_first ? word_bytes - 1 - k : k) * 8;
+				received |= (uint16_t)rx[i * word_bytes + k] << shift;
+			}
+
+			p->status &= ~(DIFv1_CON_TE | DIFv1_CON_RE);
+			if (pmb887x_fifo_is_full(p->rx_fifo)) {
+				if ((p->con & DIFv1_CON_REN)) {
+					p->status |= DIFv1_CON_RE;
+					pmb887x_srb_set_isr(&p->srb, DIFv1_ISR_ERR);
+				}
+				pmb887x_fifo16_pop(p->rx_fifo); // overwrite last fifo stage
+			}
+			pmb887x_fifo16_push(p->rx_fifo, received & p->mask);
+		}
+
+		p->tb = words[chunk - 1];
+	}
+	return true;
+}
+
 static void dif_io_write_run(void *opaque, hwaddr haddr, const uint8_t *buf, unsigned size, unsigned count) {
 	pmb887x_dif_t *p = opaque;
 
@@ -837,9 +911,11 @@ static void dif_io_write_run(void *opaque, hwaddr haddr, const uint8_t *buf, uns
 	/* the srb event handler re-enters dif_run_transfers(); the burst is
 	 * the transfer, so hold it off exactly as the per-word loop does */
 	p->in_transfer = true;
-	for (unsigned i = 0; i < count; i++) {
-		p->tb = ldn_he_p(buf + i * size, size) & p->mask;
-		dif_run_word(p, p->tb);
+	if (!dif_ssi_run_enabled() || !dif_run_ssi_burst(p, buf, size, count)) {
+		for (unsigned i = 0; i < count; i++) {
+			p->tb = ldn_he_p(buf + i * size, size) & p->mask;
+			dif_run_word(p, p->tb);
+		}
 	}
 	p->in_transfer = false;
 

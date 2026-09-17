@@ -170,6 +170,36 @@ uint32_t ssi_transfer(SSIBus *bus, uint32_t val)
     return r;
 }
 
+unsigned ssi_transfer_run(SSIBus *bus, const uint8_t *tx, uint8_t *rx,
+                          unsigned n)
+{
+    BusState *b = &bus->parent_obj;
+    BusChild *kid = QTAILQ_FIRST(&b->children);
+    SSIPeripheral *p;
+
+    /*
+     * ssi_transfer() ORs every child's answer together.  One child is the
+     * only shape a run can reproduce without a separate rx buffer per
+     * child, and it is the shape of every bus on a display path.
+     */
+    if (!kid || QTAILQ_NEXT(kid, sibling)) {
+        return 0;
+    }
+
+    p = (SSIPeripheral *)kid->child;
+    if (!p->spc->transfer_run ||
+        p->spc->transfer_raw != ssi_transfer_raw_default) {
+        return 0;
+    }
+    if (!((p->cs && p->spc->cs_polarity == SSI_CS_HIGH) ||
+          (!p->cs && p->spc->cs_polarity == SSI_CS_LOW) ||
+          p->spc->cs_polarity == SSI_CS_NONE)) {
+        return 0;
+    }
+
+    return p->spc->transfer_run(p, tx, rx, n);
+}
+
 const VMStateDescription vmstate_ssi_peripheral = {
     .name = "SSISlave",
     .version_id = 1,

@@ -482,6 +482,42 @@ static uint32_t lcd_transfer(SSIPeripheral *dev, uint32_t data) {
 	return 0;
 }
 
+/*
+ * A whole DMA burst of pixel data in one loop.  Everything lcd_transfer()
+ * re-tests per byte is invariant over a run of GRAM writes - the device is
+ * not in reset, not being read, not in a command phase - so it is tested
+ * once here and what is left is the pixel itself.  Any other state falls
+ * back to the per-byte path, which is also where a read has to go: the
+ * caller's rx buffer is the SSI return, and only GRAM writes return zero.
+ */
+static unsigned lcd_transfer_run(SSIPeripheral *dev, const uint8_t *tx, uint8_t *rx, unsigned n) {
+	pmb887x_lcd_t *lcd = (pmb887x_lcd_t *)dev;
+
+	if (lcd->reset_active || lcd->read_active || lcd->cd || lcd->wr_state != LCD_WR_STATE_RAM)
+		return 0;
+
+	uint32_t (*decode_pixel)(uint32_t) = lcd->decode_pixel;
+	uint32_t byte_pp = lcd->byte_pp;
+	uint32_t tmp_pixel = lcd->tmp_pixel;
+	uint32_t tmp_index = lcd->tmp_index;
+
+	for (unsigned i = 0; i < n; i++) {
+		tmp_pixel = tmp_pixel << 8 | tx[i];
+		if (++tmp_index == byte_pp) {
+			lcd->gram[lcd->buffer_y * lcd->width + lcd->buffer_x] = decode_pixel(tmp_pixel);
+			lcd_mark_dirty(lcd, lcd->buffer_x, lcd->buffer_y);
+			tmp_pixel = 0;
+			tmp_index = 0;
+			lcd_incr_px(lcd);
+		}
+	}
+
+	lcd->tmp_pixel = tmp_pixel;
+	lcd->tmp_index = tmp_index;
+	memset(rx, 0, n);
+	return n;
+}
+
 static const GraphicHwOps pmb887x_lcd_gfx_ops = {
 	.invalidate = lcd_invalidate_display,
 	.gfx_update = lcd_update_display
@@ -588,6 +624,7 @@ static void lcd_class_init(ObjectClass *klass, const void *data) {
 	device_class_set_legacy_reset(dc, lcd_reset);
 	k->realize = lcd_realize;
 	k->transfer = lcd_transfer;
+	k->transfer_run = lcd_transfer_run;
 	k->cs_polarity = SSI_CS_LOW;
 }
 
