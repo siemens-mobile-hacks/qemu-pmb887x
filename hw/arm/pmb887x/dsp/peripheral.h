@@ -28,6 +28,8 @@ void dsp_bus_reset(dsp_bus_t *bus);
 void dsp_bus_set_clock(dsp_bus_t *bus, bool enabled);
 void dsp_bus_set_core_idle(dsp_bus_t *bus, bool idle);
 void dsp_bus_advance(dsp_bus_t *bus, size_t cycles);
+void dsp_bus_advance_afe(dsp_bus_t *bus, size_t cycles);
+void dsp_bus_advance_timers(dsp_bus_t *bus, size_t cycles);
 bool dsp_bus_is_active(const dsp_bus_t *bus);
 uint16_t dsp_bus_read(dsp_bus_t *bus, uint16_t address);
 void dsp_bus_write(dsp_bus_t *bus, uint16_t address, uint16_t value);
