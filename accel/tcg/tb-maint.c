@@ -1236,6 +1236,64 @@ void tb_invalidate_phys_range(CPUState *cpu, tb_page_addr_t start,
     page_collection_unlock(pages);
 }
 
+#ifdef CONFIG_TCG_WASM64
+/* W64_NOSMCSCAN=1 restores the unconditional page collection. */
+static bool tb_smc_scan_enabled(void)
+{
+    static int on = -1;
+    if (on < 0) {
+        on = getenv("W64_NOSMCSCAN") == NULL;
+    }
+    return on != 0;
+}
+
+/*
+ * Is there anything for the invalidation below to do to [start, last]?
+ *
+ * A page keeps its slow-write protection for as long as it holds any TB,
+ * so a guest that puts writable data on a page it also executes from pays
+ * the invalidation path on every store - a J2ME game does ~31k of them a
+ * second, and none of them hits a TB.  The collection is only needed to
+ * invalidate: building it (two allocations, a tree created, filled and
+ * destroyed) and the tcg_tb_lookup that precedes the walk are wasted
+ * whenever no TB covers the write, and the walk that establishes that
+ * costs nothing beyond the one page_collection_lock would do anyway.
+ *
+ * An empty page still goes the long way: that is where the protection is
+ * lifted, and it happens once.
+ *
+ * Holding one page's lock is order-safe by construction: it is the lock
+ * page_collection_lock would take first, and nothing is locked yet.
+ */
+static bool tb_page_covers(PageDesc *p, tb_page_addr_t start,
+                           tb_page_addr_t last)
+{
+    TranslationBlock *tb;
+    PageForEachNext n;
+    bool covers;
+
+    page_lock(p);
+    covers = p->first_tb == 0;
+    PAGE_FOR_EACH_TB(start, last, p, tb, n) {
+        tb_page_addr_t tb_start = tb_page_addr0(tb);
+        tb_page_addr_t tb_last = tb_start + tb->size - 1;
+
+        if (n == 0) {
+            tb_last = MIN(tb_last, tb_start | ~TARGET_PAGE_MASK);
+        } else {
+            tb_start = tb_page_addr1(tb);
+            tb_last = tb_start + (tb_last & ~TARGET_PAGE_MASK);
+        }
+        if (!(tb_last < start || tb_start > last)) {
+            covers = true;
+            break;
+        }
+    }
+    page_unlock(p);
+    return covers;
+}
+#endif /* CONFIG_TCG_WASM64 */
+
 /*
  * len must be <= 8 and start must be a multiple of len.
  * Called via softmmu_template.h when code areas are written to with
@@ -1248,8 +1306,25 @@ void tb_invalidate_phys_range_fast(CPUState *cpu, ram_addr_t start,
 
     if (p) {
         ram_addr_t last = start + len - 1;
-        struct page_collection *pages = page_collection_lock(start, last);
+        struct page_collection *pages;
 
+#ifdef CONFIG_TCG_WASM64
+        /*
+         * wasm64 only: the skip is sound because a wasm board always runs
+         * with icount, so mttcg never auto-enables (tcg-all.c) and no
+         * other thread can link a TB into this page between the scan's
+         * page_unlock and the return.  A native mttcg guest has no such
+         * guarantee, and keeping the mechanism off there also makes the
+         * lockstep oracle an independent check of it rather than a
+         * mirror.
+         */
+        if (tb_smc_scan_enabled() && !tb_page_covers(p, start, last)) {
+            wasm_diag_stat[WASM_DIAG_SMC_MISS]++;
+            return;
+        }
+#endif
+
+        pages = page_collection_lock(start, last);
         tb_invalidate_phys_page_range__locked(cpu, pages, p,
                                               start, last, ra);
         page_collection_unlock(pages);
