@@ -44,8 +44,13 @@
 #define MAX_CODE_GEN_BUFFER_SIZE  ((size_t)-1)
 #define MIN_TLB_MASK_TABLE_OFS    INT_MIN
 
-/* Number of abstract registers (= wasm locals). */
-#define TCG_TARGET_NB_REGS 32
+/* Number of abstract registers (= wasm locals).  Every register costs two
+ * declared locals in every TB function (an i32 and an i64 one), and a
+ * declared local is not free: the baseline tier zeroes all of them at
+ * entry.  W64_LOCALPAD prices one at 8.09 us/Mi, so the 32-register file
+ * was ~5.6 % of wall for registers TCG never allocated — tcgSpill reads 0
+ * with 13 allocatable and 29 over 64 631 TBs with 10. */
+#define TCG_TARGET_NB_REGS 16
 
 typedef enum {
     TCG_REG_R0 = 0,
@@ -64,27 +69,11 @@ typedef enum {
     TCG_REG_R13,
     TCG_REG_R14,
     TCG_REG_R15,
-    TCG_REG_R16,
-    TCG_REG_R17,
-    TCG_REG_R18,
-    TCG_REG_R19,
-    TCG_REG_R20,
-    TCG_REG_R21,
-    TCG_REG_R22,
-    TCG_REG_R23,
-    TCG_REG_R24,
-    TCG_REG_R25,
-    TCG_REG_R26,
-    TCG_REG_R27,
-    TCG_REG_R28,
-    TCG_REG_R29,
-    TCG_REG_R30,
-    TCG_REG_R31,
 } TCGReg;
 
-#define TCG_REG_TMP        TCG_REG_R28   /* generic scratch (reserved) */
-#define TCG_AREG0          TCG_REG_R29   /* env — wasm local $env       */
-#define TCG_REG_CALL_STACK TCG_REG_R31   /* frame — wasm local $sp      */
+#define TCG_REG_TMP        TCG_REG_R13   /* generic scratch (reserved) */
+#define TCG_AREG0          TCG_REG_R14   /* env — wasm local $env       */
+#define TCG_REG_CALL_STACK TCG_REG_R15   /* frame — wasm local $sp      */
 
 /* Function call generation: no argument registers; all arguments are
  * stored into the call frame at $sp (TCG_STATIC_CALL_ARGS_SIZE layout),

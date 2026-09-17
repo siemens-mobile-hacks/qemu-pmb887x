@@ -3768,14 +3768,10 @@ static int tcg_out_tb_finalize(TCGContext *s)
 /* target boilerplate                                                  */
 /* ------------------------------------------------------------------ */
 
-static const int tcg_target_reg_alloc_order[TCG_TARGET_NB_REGS] = {
+static const int tcg_target_reg_alloc_order[] = {
     TCG_REG_R2, TCG_REG_R3, TCG_REG_R4, TCG_REG_R5,
     TCG_REG_R6, TCG_REG_R7, TCG_REG_R8, TCG_REG_R9,
-    TCG_REG_R10, TCG_REG_R11, TCG_REG_R12, TCG_REG_R13,
-    TCG_REG_R14, TCG_REG_R15, TCG_REG_R16, TCG_REG_R17,
-    TCG_REG_R18, TCG_REG_R19, TCG_REG_R20, TCG_REG_R21,
-    TCG_REG_R22, TCG_REG_R23, TCG_REG_R24, TCG_REG_R25,
-    TCG_REG_R26, TCG_REG_R27,
+    TCG_REG_R10, TCG_REG_R11, TCG_REG_R12,
     /* call-clobbered (helper results land here) — use last */
     TCG_REG_R0, TCG_REG_R1,
 };
@@ -3792,9 +3788,7 @@ static TCGReg tcg_target_call_oarg_reg(TCGCallReturnKind kind, int slot)
 #ifdef CONFIG_DEBUG_TCG
 static const char *const tcg_target_reg_names[TCG_TARGET_NB_REGS] = {
     "r00", "r01", "r02", "r03", "r04", "r05", "r06", "r07",
-    "r08", "r09", "r10", "r11", "r12", "r13", "r14", "r15",
-    "r16", "r17", "r18", "r19", "r20", "r21", "r22", "r23",
-    "r24", "r25", "r26", "r27", "tmp", "env", "r30", "sp",
+    "r08", "r09", "r10", "r11", "r12", "tmp", "env", "sp",
 };
 #endif
 
@@ -3850,8 +3844,8 @@ static void tcg_out_set_borrow(TCGContext *s)
 static void tcg_target_init(TCGContext *s)
 {
     w64_interp_init();
-    tcg_target_available_regs[TCG_TYPE_I32] = MAKE_64BIT_MASK(0, 28);
-    tcg_target_available_regs[TCG_TYPE_I64] = MAKE_64BIT_MASK(0, 28);
+    tcg_target_available_regs[TCG_TYPE_I32] = MAKE_64BIT_MASK(0, 13);
+    tcg_target_available_regs[TCG_TYPE_I64] = MAKE_64BIT_MASK(0, 13);
 
     /* wasm calls preserve locals; only the result registers change */
     tcg_target_call_clobber_regs = MAKE_64BIT_MASK(TCG_REG_R0, 2);
