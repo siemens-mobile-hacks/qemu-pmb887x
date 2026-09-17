@@ -498,20 +498,43 @@ bool arm_w64_lc_key_pc(CPUState *cs, uint32_t key32[3], uint32_t *pc);
  * W64_NOPCC=1 turns it off for an A/B inside one binary.
  */
 #define W64_PCC_SLOTS TB_JMP_CACHE_SIZE
-static struct W64PccEnt {
-    uint32_t pc;
-    uint32_t gen;
-    uint32_t key32[3];
-    /*
-     * The table is global where the jump cache is per-CPU, and the
-     * generation is per-CPU too, so an entry has to name its owner.
-     * Every board here is uniprocessor, so this compare never fails —
-     * it is what makes that a fact rather than an assumption.  It also
-     * pads the entry to 32 bytes: two per cache line, never straddling.
-     */
-    uint32_t cpu_index;
-    const void *tc;
-} w64_pcc[W64_PCC_SLOTS];
+/*
+ * The entry is declared in exec/translation-block.h because the generated
+ * code reads it too (mechanism K).  @cpu_index is there because the table
+ * is global where the jump cache is per-CPU, and the generation is
+ * per-CPU too, so an entry has to name its owner.  Every board here is
+ * uniprocessor, so that compare never fails — it is what makes that a
+ * fact rather than an assumption.  It also pads the entry to 32 bytes:
+ * two per cache line, never straddling.
+ */
+static struct W64PccEnt w64_pcc[W64_PCC_SLOTS];
+QEMU_BUILD_BUG_ON(sizeof(struct W64PccEnt) != 32);
+
+/*
+ * W64_NOPCCIN=1 keeps every per-TB-slot miss going to the helper, so the
+ * emitted second way is A/B'able inside one binary.
+ */
+bool w64_pcc_inline(void)
+{
+    static int on = -1;
+    if (on < 0) {
+        on = getenv("W64_NOPCCIN") == NULL;
+    }
+    return on != 0;
+}
+
+const struct W64PccShape *w64_pcc_shape(void)
+{
+    static struct W64PccShape shape;
+
+    if (!shape.tab) {
+        shape.shift = TARGET_PAGE_BITS - TB_JMP_PAGE_BITS;
+        shape.page_mask = TB_JMP_PAGE_MASK;
+        shape.addr_mask = TB_JMP_ADDR_MASK;
+        shape.tab = w64_pcc;
+    }
+    return &shape;
+}
 
 static bool w64_lc_verify(void);
 static bool w64_lc2_enabled(void);
@@ -826,6 +849,8 @@ const void *HELPER(lookup_tb_ptr_lc)(CPUArchState *env, void *slot)
     r = lookup_tb_ptr_lc_1(env, slot);
     wasm_diag_stat[WASM_DIAG_LC_NS] += get_clock_realtime() - t0;
     wasm_diag_stat[WASM_DIAG_LC_NS_N]++;
+    t0 = get_clock_realtime();
+    wasm_diag_stat[WASM_DIAG_LC_CAL] += get_clock_realtime() - t0;
     return r;
 }
 
@@ -844,7 +869,13 @@ const void *HELPER(lookup_tb_ptr_lc)(CPUArchState *env, void *slot)
     uint32_t cur[3];
 
     cpu->neg.can_do_io = true;
-    WASM_DIAG_HOT(WASM_DIAG_LC_CALL);
+    /*
+     * Unconditional: lookup - lcCall is how many goto_ptr exits reached a
+     * helper from a site that carries no inline cache at all (a TB's second
+     * differently-keyed exit), which is a different repair from a site whose
+     * single slot keeps missing.  One increment on a ~28 ns path.
+     */
+    wasm_diag_stat[WASM_DIAG_LC_CALL]++;
 
     const void *pcc_hit = NULL;
 
@@ -867,7 +898,7 @@ const void *HELPER(lookup_tb_ptr_lc)(CPUArchState *env, void *slot)
                 }
                 lc->tc = pcc_hit;
                 lc->gen = gen;
-                WASM_DIAG_HOT(WASM_DIAG_LC_FILL);
+                wasm_diag_stat[WASM_DIAG_LC_FILL]++;
             }
             return pcc_hit;
         }
@@ -960,7 +991,7 @@ const void *HELPER(lookup_tb_ptr_lc)(CPUArchState *env, void *slot)
         }
         lc->tc = target;
         lc->gen = gen;
-        WASM_DIAG_HOT(WASM_DIAG_LC_FILL);
+        wasm_diag_stat[WASM_DIAG_LC_FILL]++;
     }
     return target;
 }
@@ -1581,9 +1612,32 @@ static inline bool cpu_handle_exception(CPUState *cpu, int *ret)
     if (replay_exception()) {
         const TCGCPUOps *tcg_ops = cpu->cc->tcg_ops;
 
+#ifdef CONFIG_TCG_WASM64
+        if (w64_exc_ns()) {
+            int64_t c0 = get_clock_realtime();
+            int64_t c1 = get_clock_realtime();
+            int64_t c2, c3, c4;
+
+            bql_lock();
+            c2 = get_clock_realtime();
+            tcg_ops->do_interrupt(cpu);
+            c3 = get_clock_realtime();
+            bql_unlock();
+            c4 = get_clock_realtime();
+            wasm_diag_stat[WASM_DIAG_EXC_CAL] += c1 - c0;
+            wasm_diag_stat[WASM_DIAG_EXC_BQL_NS] += (c2 - c1) + (c4 - c3);
+            wasm_diag_stat[WASM_DIAG_EXC_DO_NS] += c3 - c2;
+            wasm_diag_stat[WASM_DIAG_EXC_N]++;
+        } else {
+            bql_lock();
+            tcg_ops->do_interrupt(cpu);
+            bql_unlock();
+        }
+#else
         bql_lock();
         tcg_ops->do_interrupt(cpu);
         bql_unlock();
+#endif
         cpu->exception_index = -1;
 
         if (unlikely(cpu_single_stepping(cpu))) {
@@ -1929,6 +1983,14 @@ static int cpu_exec_setjmp(CPUState *cpu, SyncClocks *sc)
 #endif
     /* Prepare setjmp context for exception handling. */
     if (unlikely(sigsetjmp(cpu->jmp_env, 0) != 0)) {
+#ifdef CONFIG_TCG_WASM64
+        if (w64_exc_ns() && w64_exc_lj_t0) {
+            wasm_diag_stat[WASM_DIAG_EXC_LJ_NS] +=
+                get_clock_realtime() - w64_exc_lj_t0;
+            wasm_diag_stat[WASM_DIAG_EXC_LJ_N]++;
+            w64_exc_lj_t0 = 0;
+        }
+#endif
         cpu_exec_longjmp_cleanup(cpu);
     }
 

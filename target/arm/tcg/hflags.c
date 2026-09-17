@@ -786,6 +786,8 @@ void arm_rebuild_hflags(CPUARMState *env)
             arm_set_hflags(env, rebuild_hflags_internal(env));
             wasm_diag_stat[WASM_DIAG_HFLAGS_NS] += get_clock_realtime() - t0;
             wasm_diag_stat[WASM_DIAG_HFLAGS_NS_N]++;
+            t0 = get_clock_realtime();
+            wasm_diag_stat[WASM_DIAG_HFLAGS_CAL] += get_clock_realtime() - t0;
             return;
         }
     }

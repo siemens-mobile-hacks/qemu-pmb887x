@@ -212,6 +212,31 @@ struct TranslationBlock {
 
 #ifdef CONFIG_TCG_WASM64
 /*
+ * The global pc-keyed next-TB cache (accel/tcg/cpu-exec.c) as the
+ * generated code sees it.  A goto_ptr whose per-TB slot misses used to
+ * call the helper for this table's six-word compare; the translator emits
+ * that compare instead, so the entry layout and the hash's own constants
+ * have to leave cpu-exec.c.
+ */
+struct W64PccEnt {
+    uint32_t pc;
+    uint32_t gen;
+    uint32_t key32[3];
+    uint32_t cpu_index;
+    const void *tc;
+};
+
+struct W64PccShape {
+    struct W64PccEnt *tab;
+    unsigned shift;         /* TARGET_PAGE_BITS - TB_JMP_PAGE_BITS */
+    uint32_t page_mask;     /* TB_JMP_PAGE_MASK */
+    uint32_t addr_mask;     /* TB_JMP_ADDR_MASK */
+};
+
+const struct W64PccShape *w64_pcc_shape(void);
+bool w64_pcc_inline(void);
+
+/*
  * Interpreter-tier gate (tcg/wasm64/w64-interp.c): 0 off, 1 interpret a
  * TB until it earns a module, 2 interpret always.  accel/tcg reads it to
  * decide whether speculative successor translation is worth anything --

@@ -4607,6 +4607,9 @@ static void temp_sync(TCGContext *s, TCGTemp *ts, TCGRegSet allocated_regs,
             if (free_or_dead
                 && tcg_out_sti(s, ts->type, ts->val,
                                ts->mem_base->reg, ts->mem_offset)) {
+                if (ts->kind == TEMP_GLOBAL) {
+                    wasm_diag_stat[WASM_DIAG_TCG_GST]++;
+                }
                 break;
             }
             temp_load(s, ts, tcg_target_available_regs[ts->type],
@@ -4614,6 +4617,9 @@ static void temp_sync(TCGContext *s, TCGTemp *ts, TCGRegSet allocated_regs,
             /* fallthrough */
 
         case TEMP_VAL_REG:
+            if (ts->kind == TEMP_GLOBAL) {
+                wasm_diag_stat[WASM_DIAG_TCG_GST]++;
+            }
             tcg_out_st(s, ts->type, ts->reg,
                        ts->mem_base->reg, ts->mem_offset);
             break;
@@ -4804,6 +4810,9 @@ static void temp_load(TCGContext *s, TCGTemp *ts, TCGRegSet desired_regs,
         }
         reg = tcg_reg_alloc(s, desired_regs, allocated_regs,
                             preferred_regs, ts->indirect_base);
+        if (ts->kind == TEMP_GLOBAL) {
+            wasm_diag_stat[WASM_DIAG_TCG_GLD]++;
+        }
         tcg_out_ld(s, ts->type, reg, ts->mem_base->reg, ts->mem_offset);
         ts->mem_coherent = 1;
         break;

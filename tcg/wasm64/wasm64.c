@@ -897,6 +897,118 @@ static void mb_sec(struct w64_mb *mod, uint8_t id, struct w64_mb *sec)
     mb_put(mod, sec->b, sec->n);
 }
 
+EM_JS(int, w64_driver_make, (uintptr_t p, uint32_t len), {
+    if (!globalThis.__w64tab) {
+        globalThis.__w64tab =
+            new WebAssembly.Table({ element: 'anyfunc', initial: 1 << 14 });
+    }
+    const bytes = HEAPU8.slice(Number(p), Number(p) + Number(len));
+    const inst = new WebAssembly.Instance(new WebAssembly.Module(bytes),
+                                          { e: { t: globalThis.__w64tab } });
+    return addFunction(inst.exports.d, 'jjjii');
+});
+
+/*
+ * W64_CHAINLOOP: the chain driver.
+ *
+ * A TB that ends its chain by returning W64_EXIT_CHAIN | tidx hands the
+ * successor's index to this one-function module, which calls it, and its
+ * successor, and so on, from a loop:
+ *
+ *   d(env, sp, tp, tidx):
+ *     loop
+ *       res = TAB[tidx](env, sp, tp)
+ *       if (res >= 0xC0000000) { tidx = res & 0x3fffffff; continue }
+ *     end
+ *     return res
+ *
+ * It cannot be written in C: a tidx indexes the shared chain table, not
+ * emscripten's indirect function table, so the call has to be a wasm
+ * call_indirect against the table the TB modules import.  That is the
+ * whole mechanism -- the same transition the tail call made, reached
+ * from a loop V8 compiles far better (W64_EXIT_CHAIN in wasm64.h).
+ */
+static uint32_t w64_driver(void)
+{
+    static uint32_t fidx;
+    struct w64_mb mod = { 0 }, sec = { 0 };
+    static const uint8_t magic[8] = { 0, 'a', 's', 'm', 1, 0, 0, 0 };
+
+    if (fidx) {
+        return fidx;
+    }
+    mb_put(&mod, magic, sizeof(magic));
+
+    /* type 0: the TB signature; type 1: the driver's own */
+    mb_uleb(&sec, 2);
+    mb_u8(&sec, 0x60);
+    mb_uleb(&sec, 3);
+    mb_u8(&sec, 0x7e); mb_u8(&sec, 0x7e); mb_u8(&sec, 0x7e);
+    mb_uleb(&sec, 1); mb_u8(&sec, 0x7f);
+    mb_u8(&sec, 0x60);
+    mb_uleb(&sec, 4);
+    mb_u8(&sec, 0x7e); mb_u8(&sec, 0x7e); mb_u8(&sec, 0x7e); mb_u8(&sec, 0x7f);
+    mb_uleb(&sec, 1); mb_u8(&sec, 0x7f);
+    mb_sec(&mod, 1, &sec);
+
+    sec.n = 0;                                  /* import: the chain table */
+    mb_uleb(&sec, 1);
+    mb_u8(&sec, 1); mb_u8(&sec, 'e');
+    mb_u8(&sec, 1); mb_u8(&sec, 't');
+    mb_u8(&sec, 0x01);
+    mb_u8(&sec, 0x70);
+    mb_u8(&sec, 0x00);
+    mb_uleb(&sec, 1);
+    mb_sec(&mod, 2, &sec);
+
+    sec.n = 0;
+    mb_uleb(&sec, 1); mb_uleb(&sec, 1);         /* one function, type 1 */
+    mb_sec(&mod, 3, &sec);
+
+    sec.n = 0;
+    mb_uleb(&sec, 1);
+    mb_u8(&sec, 1); mb_u8(&sec, 'd');
+    mb_u8(&sec, 0x00); mb_uleb(&sec, 0);
+    mb_sec(&mod, 7, &sec);
+
+    {
+        struct w64_mb body = { 0 };
+
+        mb_uleb(&body, 1); mb_uleb(&body, 1); mb_u8(&body, 0x7f); /* $res */
+        mb_u8(&body, 0x03); mb_u8(&body, 0x40);           /* loop void */
+        mb_u8(&body, 0x20); mb_uleb(&body, 0);
+        mb_u8(&body, 0x20); mb_uleb(&body, 1);
+        mb_u8(&body, 0x20); mb_uleb(&body, 2);
+        mb_u8(&body, 0x20); mb_uleb(&body, 3);
+        mb_u8(&body, 0x11); mb_uleb(&body, 0); mb_uleb(&body, 0);
+        mb_u8(&body, 0x22); mb_uleb(&body, 4);            /* local.tee $res */
+        mb_u8(&body, 0x41); mb_sleb32(&body, (int32_t)W64_EXIT_CHAIN);
+        mb_u8(&body, 0x4f);                               /* i32.ge_u */
+        mb_u8(&body, 0x04); mb_u8(&body, 0x40);           /* if void */
+        mb_u8(&body, 0x20); mb_uleb(&body, 4);
+        mb_u8(&body, 0x41); mb_sleb32(&body, (int32_t)~W64_EXIT_CHAIN);
+        mb_u8(&body, 0x71);                               /* i32.and */
+        mb_u8(&body, 0x21); mb_uleb(&body, 3);            /* local.set $tidx */
+        mb_u8(&body, 0x0c); mb_uleb(&body, 1);            /* br -> loop */
+        mb_u8(&body, 0x0b);                               /* end if */
+        mb_u8(&body, 0x0b);                               /* end loop */
+        mb_u8(&body, 0x20); mb_uleb(&body, 4);
+        mb_u8(&body, 0x0b);                               /* end function */
+
+        sec.n = 0;
+        mb_uleb(&sec, 1);
+        mb_uleb(&sec, body.n);
+        mb_put(&sec, body.b, body.n);
+        mb_sec(&mod, 10, &sec);
+        g_free(body.b);
+    }
+
+    fidx = w64_driver_make((uintptr_t)mod.b, mod.n);
+    g_free(mod.b);
+    g_free(sec.b);
+    return fidx;
+}
+
 EM_JS(void, w64_remove, (int fidx), {
     removeFunction(fidx);
 });
@@ -1195,6 +1307,67 @@ static void w64_bsrc_of_open(void)
     B_src.id = B.id;
 }
 
+/*
+ * W64_MERGE=1: assemble a batch's member bodies into ONE wasm function —
+ * a br_table cascade over a module-local selector global — with a small
+ * entry stub per member registered in the chain table in its place.
+ *
+ * V8 charges its tier-up budget per *function* and drains it per *call*
+ * (~1–2.4e4 calls, independent of size), so a module's ~277 one-TB
+ * functions each need their own 1e4 calls while one merged function
+ * needs 1e4 in total: it reaches the optimizing tier ~277x sooner in
+ * TB-entry terms.  The baseline tier is worth 3–6 % on a running game
+ * (--no-liftoff, round thirty-one), and a browser flag is not a shipping
+ * lever.  See performance-handoff.md, "The module-local dispatch loop".
+ *
+ * The merged function keeps type 0, the TB signature, rather than taking
+ * the selector as a fourth parameter: locals are indexed after
+ * parameters, so a fourth parameter would shift every local index in
+ * every body and the bodies could no longer be copied verbatim.
+ *
+ * W64_MERGE=2 is the control: it adds the entry stub to every member
+ * WITHOUT merging anything, so the table still reaches a per-TB function
+ * by way of one extra tail call.  Merging buys tier-up amortisation and
+ * pays for a hop; measured alone, W64_MERGE=1 reports only their sum.
+ * Mode 2 prices the hop in the real system, and the difference is the
+ * tier-up half — the number the --no-liftoff ceiling cannot give.
+ */
+static int w64_merge_mode(void)
+{
+    static int on = -1;
+    if (on < 0) {
+        const char *e = getenv("W64_MERGE");
+        on = e ? atoi(e) : 0;
+    }
+    return on;
+}
+
+/* Byte length of a staged body's locals declaration, which follows the
+ * five-byte padded size LEB.  The emitter writes four runs in nine fixed
+ * bytes today, but W64_LOCALPAD appends a fifth, so this is parsed. */
+static uint32_t w64_locals_len(const uint8_t *body)
+{
+    const uint8_t *p = body + 5;
+    uint64_t runs = 0;
+    unsigned shift = 0;
+
+    for (;;) {
+        uint8_t b = *p++;
+        runs |= (uint64_t)(b & 0x7f) << shift;
+        if (!(b & 0x80)) {
+            break;
+        }
+        shift += 7;
+    }
+    while (runs--) {
+        while (*p++ & 0x80) {
+            continue;                   /* count LEB */
+        }
+        p++;                            /* value type */
+    }
+    return (uint32_t)(p - (body + 5));
+}
+
 /* Assemble the batch module from @src (staged bodies re-read from the
  * code buffer) and instantiate it; returns the run-thunk fidx, 0 when
  * the assembled module failed validation (the members then stay on
@@ -1210,7 +1383,7 @@ static uint32_t w64_assemble_instantiate(const struct w64_bsrc *src,
         0x13, 0, 0,            /* return_call_indirect type 0, table 0 */
         0x0b,                                     /* end */
     };
-    struct w64_mb mod = { 0 }, sec = { 0 };
+    struct w64_mb mod = { 0 }, sec = { 0 }, mg = { 0 };
     uint8_t name[8];
     uint32_t maxtidx = 0;
     uint32_t *ip;
@@ -1218,8 +1391,97 @@ static uint32_t w64_assemble_instantiate(const struct w64_bsrc *src,
     unsigned m, i;
     size_t code_sec = 0;
     uint64_t code_total = 0;
+    /*
+     * Defined-function layout.  Plain: members, then the thunk.  Merged
+     * (mode 1): the merged body, then one entry stub per member, then
+     * the thunk.  Stub-only (mode 2): the members unchanged, then the
+     * stubs, then the thunk — same extra hop, nothing merged, which is
+     * what separates the hop's cost from merging's gain.
+     */
+    int mmode = 0;
+    bool merge = false;                 /* mmode != 0 and preconditions met */
+    unsigned nfn, stub_base, stub_dst0;
+    uint32_t loc_len = 0;
+    uint32_t stub_len = 0;
 
     mb_put(&mod, magic, sizeof(magic));
+
+    /*
+     * Merging needs every member to declare the same locals, because the
+     * merged function declares them once and a member whose declaration
+     * differed would resolve its local indices to the wrong slots.  With
+     * W64_LOCALPAD off they are byte-identical by construction; when one
+     * differs the batch is assembled unmerged rather than wrongly.
+     */
+    mmode = w64_merge_mode();
+    if (mmode && src->n_member >= 2) {
+        const uint8_t *b0 =
+            (const uint8_t *)(uintptr_t)src->member[0].tcptr + W64_BODY_OFF;
+
+        loc_len = w64_locals_len(b0);
+        merge = true;
+        for (m = 1; m < src->n_member; m++) {
+            const uint8_t *bm =
+                (const uint8_t *)(uintptr_t)src->member[m].tcptr + W64_BODY_OFF;
+            if (w64_locals_len(bm) != loc_len ||
+                memcmp(bm + 5, b0 + 5, loc_len) != 0) {
+                merge = false;
+                break;
+            }
+        }
+        /*
+         * Two more invariants the merge rests on, checked here so the
+         * build loop cannot half-write a wrong module: every body ends
+         * in the function `end` that becomes a `return`, and every call
+         * fixup lands inside the expr that gets copied.  Both hold by
+         * construction today; a batch that breaks one is assembled
+         * unmerged instead of silently mis-linked.
+         */
+        for (m = 0; m < src->n_member && merge; m++) {
+            const uint8_t *bm =
+                (const uint8_t *)(uintptr_t)src->member[m].tcptr + W64_BODY_OFF;
+            uint32_t bl = src->member[m].body_len;
+            uint32_t fs = m ? src->member[m - 1].fix_end : 0;
+            uint32_t skip = 5 + loc_len;
+
+            if (bl < skip + 2 || bm[bl - 1] != 0x0b) {
+                merge = false;
+                break;
+            }
+            for (i = fs; i < src->member[m].fix_end; i++) {
+                if (src->fix[i].pos < W64_BODY_OFF + skip ||
+                    src->fix[i].pos + 2 > W64_BODY_OFF + bl - 1) {
+                    merge = false;
+                    break;
+                }
+            }
+        }
+        if (!merge) {
+            wasm_diag_stat[WASM_DIAG_MERGE_SKIP]++;
+        }
+    }
+
+    /*
+     * Mode 2 needs none of those preconditions -- it merges nothing --
+     * but it is applied the same gate on purpose: the two modes must
+     * take the alternate path on exactly the same batches, or their
+     * difference is a difference in which batches were affected rather
+     * than in the mechanism.
+     */
+    if (!merge) {
+        mmode = 0;
+        nfn = src->n_member + 1;
+        stub_base = src->n_uimp;        /* no stubs: the table reaches member m */
+        stub_dst0 = 0;
+    } else if (mmode == 1) {
+        nfn = src->n_member + 2;
+        stub_base = src->n_uimp + 1;
+        stub_dst0 = src->n_uimp;        /* every stub targets the merged body */
+    } else {
+        nfn = 2 * src->n_member + 1;
+        stub_base = src->n_uimp + src->n_member;
+        stub_dst0 = src->n_uimp;        /* stub m targets member m */
+    }
 
     /* type section: union types + the thunk signature */
     mb_uleb(&sec, src->n_utypes + 1);
@@ -1273,26 +1535,43 @@ static uint32_t w64_assemble_instantiate(const struct w64_bsrc *src,
     }
     mb_sec(&mod, 2, &sec);
 
-    /* function section: members (type 0) + thunk */
+    /* function section: every defined function but the thunk has type 0 —
+     * member bodies, the merged body and the entry stubs all wear the TB
+     * signature, which is what lets a stub tail-call any of them */
     sec.n = 0;
-    mb_uleb(&sec, src->n_member + 1);
-    for (m = 0; m < src->n_member; m++) {
+    mb_uleb(&sec, nfn);
+    for (i = 0; i + 1 < nfn; i++) {
         mb_uleb(&sec, 0);
     }
     mb_uleb(&sec, src->n_utypes);            /* the thunk's type index */
     mb_sec(&mod, 3, &sec);
 
-    /* export section: "run" -> the thunk (funcidx n_uimp + n_member;
-     * function indices count only the helper imports) */
+    /* global section: the merged cascade's selector.  Nothing else in a
+     * batch module has ever declared a global, so this is index 0 and no
+     * emitted body's indices move.  Mode 2 emits it too and its stubs
+     * still write it, so the hop it prices is the same hop. */
+    if (merge) {
+        sec.n = 0;
+        mb_uleb(&sec, 1);
+        mb_u8(&sec, 0x7f);                   /* i32 */
+        mb_u8(&sec, 0x01);                   /* mutable */
+        mb_u8(&sec, 0x41); mb_sleb32(&sec, 0);
+        mb_u8(&sec, 0x0b);
+        mb_sec(&mod, 6, &sec);
+    }
+
+    /* export section: "run" -> the thunk, which is always the last
+     * defined function (indices count only the helper imports) */
     sec.n = 0;
     mb_uleb(&sec, 1);
     mb_u8(&sec, 3); mb_u8(&sec, 'r'); mb_u8(&sec, 'u'); mb_u8(&sec, 'n');
     mb_u8(&sec, 0x00);
-    mb_uleb(&sec, src->n_uimp + src->n_member);
+    mb_uleb(&sec, src->n_uimp + nfn - 1);
     mb_sec(&mod, 7, &sec);
 
     /* element section: one active segment per member —
-     * TAB[tidx] = member function n_uimp + m */
+     * TAB[tidx] = the function that answers for member m, which is the
+     * member itself when nothing is merged and its entry stub otherwise */
     sec.n = 0;
     mb_uleb(&sec, src->n_member);
     for (m = 0; m < src->n_member; m++) {
@@ -1304,38 +1583,139 @@ static uint32_t w64_assemble_instantiate(const struct w64_bsrc *src,
         mb_sleb32(&sec, (int32_t)tidx);
         mb_u8(&sec, 0x0b);                /* end */
         mb_uleb(&sec, 1);
-        mb_uleb(&sec, src->n_uimp + m);
+        mb_uleb(&sec, stub_base + m);
     }
     mb_sec(&mod, 9, &sec);
 
     /* code section: staged bodies (rewritten to union import indices)
      * + the thunk; the total size is a padded 5-byte LEB so it never
      * shifts when the body sum crosses a LEB width boundary */
-    code_sec = mod.n;
-    {
-        uint64_t total = (src->n_member + 1) < 128 ? 1 : 2;
-        total += sizeof(thunk_body);
+    if (mmode == 1) {
+        /*
+         * One function holding every member's expr, selected by a
+         * br_table over the selector global:
+         *
+         *     block ... block          (n_member of them)
+         *       global.get $sel
+         *       br_table 0 1 .. n-1, default
+         *     end   <- innermost; br 0 lands here
+         *     <member 0 expr> return
+         *     end
+         *     <member 1 expr> return
+         *     ...
+         *
+         * A body's own branches all target blocks inside itself
+         * (w64_br_to_label computes depth as n_blk-1-i, i >= 0, so none
+         * can reach function level), which is what makes the enclosing
+         * blocks safe to add and the bytes safe to copy verbatim.  Only
+         * the trailing `end` is rewritten, to `return`, so control
+         * cannot fall out of one arm into the next.
+         */
+        struct w64_mb mc = { 0 };
+        const uint8_t *b0 =
+            (const uint8_t *)(uintptr_t)src->member[0].tcptr + W64_BODY_OFF;
+        uint32_t skip = 5 + loc_len;
+
+        mb_put(&mc, b0 + 5, loc_len);
         for (m = 0; m < src->n_member; m++) {
-            total += src->member[m].body_len;
+            mb_u8(&mc, 0x02); mb_u8(&mc, 0x40);
+        }
+        mb_u8(&mc, 0x23); mb_uleb(&mc, 0);
+        mb_u8(&mc, 0x0e); mb_uleb(&mc, src->n_member);
+        for (m = 0; m < src->n_member; m++) {
+            mb_uleb(&mc, m);
+        }
+        mb_uleb(&mc, src->n_member - 1);     /* default: our stubs are in range */
+
+        for (m = 0; m < src->n_member; m++) {
+            const uint8_t *body =
+                (const uint8_t *)(uintptr_t)src->member[m].tcptr;
+            uint32_t fs = m ? src->member[m - 1].fix_end : 0;
+            size_t off;
+
+            mb_u8(&mc, 0x0b);
+            off = mc.n;
+            mb_put(&mc, body + W64_BODY_OFF + skip,
+                   src->member[m].body_len - skip - 1);
+            mb_u8(&mc, 0x0f);
+            for (i = fs; i < src->member[m].fix_end; i++) {
+                uint8_t *p = mc.b + off +
+                             (src->fix[i].pos - W64_BODY_OFF - skip);
+                p[0] = (uint8_t)((src->fix[i].uimp & 0x7f) | 0x80);
+                p[1] = (uint8_t)(src->fix[i].uimp >> 7);
+            }
+        }
+        mb_u8(&mc, 0x41); mb_sleb32(&mc, 0);
+        mb_u8(&mc, 0x0b);
+
+        mb_uleb(&mg, mc.n);
+        mb_put(&mg, mc.b, mc.n);
+        g_free(mc.b);
+    }
+
+    /* entry stubs: the chain table still holds one funcref per TB, so a
+     * caller that knows only a tidx keeps working.  The stub is what
+     * turns that tidx back into a cascade index -- and in mode 2, where
+     * there is no cascade, it does the same work and lands on the member
+     * itself, so what mode 2 measures is the stub and nothing else. */
+    if (mmode) {
+        struct w64_mb st = { 0 };
+
+        for (m = 0; m < src->n_member; m++) {
+            st.n = 0;
+            mb_u8(&st, 0x00);                        /* no locals */
+            mb_u8(&st, 0x41); mb_sleb32(&st, (int32_t)m);
+            mb_u8(&st, 0x24); mb_uleb(&st, 0);       /* global.set $sel */
+            mb_u8(&st, 0x20); mb_uleb(&st, 0);
+            mb_u8(&st, 0x20); mb_uleb(&st, 1);
+            mb_u8(&st, 0x20); mb_uleb(&st, 2);
+            mb_u8(&st, 0x12);                        /* return_call */
+            mb_uleb(&st, stub_dst0 + (mmode == 1 ? 0 : m));
+            mb_u8(&st, 0x0b);
+            mb_uleb(&mg, st.n);
+            mb_put(&mg, st.b, st.n);
+        }
+        stub_len = st.n;
+        g_free(st.b);
+
+        wasm_diag_stat[WASM_DIAG_MERGE_MOD]++;
+        wasm_diag_stat[WASM_DIAG_MERGE_MEMB] += src->n_member;
+    }
+
+    {
+        uint64_t total = (nfn < 128 ? 1 : 2) + sizeof(thunk_body) + mg.n;
+
+        if (mmode != 1) {
+            for (m = 0; m < src->n_member; m++) {
+                total += src->member[m].body_len;
+            }
         }
         code_total = total;
+        code_sec = mod.n;
         mb_u8(&mod, 10);
         mb_uleb_p5(&mod, (uint32_t)total);
-        mb_uleb(&mod, src->n_member + 1);
-    }
-    for (m = 0; m < src->n_member; m++) {
-        const uint8_t *body = (const uint8_t *)(uintptr_t)src->member[m].tcptr;
-        uint32_t fs = m ? src->member[m - 1].fix_end : 0;
-        size_t off = mod.n;
+        mb_uleb(&mod, nfn);
 
-        mb_put(&mod, body + W64_BODY_OFF, src->member[m].body_len);
-        for (i = fs; i < src->member[m].fix_end; i++) {
-            uint8_t *p = mod.b + off + (src->fix[i].pos - W64_BODY_OFF);
-            p[0] = (uint8_t)((src->fix[i].uimp & 0x7f) | 0x80);
-            p[1] = (uint8_t)(src->fix[i].uimp >> 7);
+        if (mmode != 1) {
+            for (m = 0; m < src->n_member; m++) {
+                const uint8_t *body =
+                    (const uint8_t *)(uintptr_t)src->member[m].tcptr;
+                uint32_t fs = m ? src->member[m - 1].fix_end : 0;
+                size_t off = mod.n;
+
+                mb_put(&mod, body + W64_BODY_OFF, src->member[m].body_len);
+                for (i = fs; i < src->member[m].fix_end; i++) {
+                    uint8_t *p = mod.b + off + (src->fix[i].pos - W64_BODY_OFF);
+                    p[0] = (uint8_t)((src->fix[i].uimp & 0x7f) | 0x80);
+                    p[1] = (uint8_t)(src->fix[i].uimp >> 7);
+                }
+            }
         }
+        if (mg.n) {
+            mb_put(&mod, mg.b, mg.n);
+        }
+        mb_put(&mod, thunk_body, sizeof(thunk_body));
     }
-    mb_put(&mod, thunk_body, sizeof(thunk_body));
 
     /* Validate the assembled code section exactly the way the wasm
      * decoder will walk it (body-size LEBs, section total) plus the
@@ -1356,12 +1736,12 @@ static uint32_t w64_assemble_instantiate(const struct w64_bsrc *src,
             shift += 7;
         }
         count = (unsigned)v;
-        if (count != src->n_member + 1) {
-            fprintf(stderr, "W64BATCHBAD count LEB=%u members+1=%u\n",
-                    count, src->n_member + 1);
+        if (count != nfn) {
+            fprintf(stderr, "W64BATCHBAD count LEB=%u functions=%u\n",
+                    count, nfn);
             bad = true;
         }
-        for (m = 0; m < src->n_member && !bad; m++) {
+        for (m = 0; mmode != 1 && m < src->n_member && !bad; m++) {
             uint32_t fs = m ? src->member[m - 1].fix_end : 0;
             const uint8_t *srcp =
                 (const uint8_t *)(uintptr_t)src->member[m].tcptr;
@@ -1417,6 +1797,27 @@ static uint32_t w64_assemble_instantiate(const struct w64_bsrc *src,
             }
             k += v;
         }
+        /*
+         * The merged body and the entry stubs have no staged body_len to
+         * compare against, so walk their size LEBs the decoder's way and
+         * let the section-total check below be what catches a desync.
+         */
+        for (m = (mmode != 1) ? src->n_member : 0; m + 1 < nfn && !bad; m++) {
+            v = 0; shift = 0;
+            for (;;) {
+                uint8_t b = mod.b[k++];
+                v |= (uint64_t)(b & 0x7f) << shift;
+                if (!(b & 0x80)) {
+                    break;
+                }
+                shift += 7;
+                if (shift > 35) {
+                    bad = true;
+                    break;
+                }
+            }
+            k += v;
+        }
         if (!bad) {
             /* thunk body: size LEB 13 */
             if (mod.b[k] != 13) {
@@ -1467,6 +1868,7 @@ static uint32_t w64_assemble_instantiate(const struct w64_bsrc *src,
             }
             g_free(mod.b);
             g_free(sec.b);
+            g_free(mg.b);
             return 0;
         }
     }
@@ -1533,6 +1935,7 @@ static uint32_t w64_assemble_instantiate(const struct w64_bsrc *src,
     tcg_debug_assert(thunk != 0);
     g_free(mod.b);
     g_free(sec.b);
+    g_free(mg.b);
     g_free(ip);
     *pmaxtidx = maxtidx;
 
@@ -1544,9 +1947,11 @@ static uint32_t w64_assemble_instantiate(const struct w64_bsrc *src,
         if (debug) {
             static uint32_t n_closed;
             fprintf(stderr, "W64BATCH close#%u id=%u members=%u utypes=%u "
-                    "uimps=%u bytes=%zu fixes=%u maxtidx=%u live=%u\n",
+                    "uimps=%u bytes=%zu fixes=%u maxtidx=%u live=%u "
+                    "merged=%d fns=%u locals=%u stub=%u\n",
                     ++n_closed, src->id, src->n_member, src->n_utypes,
-                    src->n_uimp, mod.n, src->n_fix, maxtidx, w64_live_n);
+                    src->n_uimp, mod.n, src->n_fix, maxtidx, w64_live_n,
+                    mmode, nfn, loc_len, stub_len);
         }
     }
 
@@ -2261,6 +2666,20 @@ uintptr_t QEMU_DISABLE_CFI tcg_qemu_tb_exec(CPUArchState *env,
             res = ((w64_tb_fn *)(uintptr_t)fidx)(
                 (uintptr_t)env, (uintptr_t)(w64_frame + 16),
                 (uintptr_t)&w64_tb_ptr);
+        }
+
+        /*
+         * W64_CHAINLOOP: the TB handed its successor's chain-table index
+         * back instead of tail-calling it.  The driver runs the rest of
+         * the chain from a loop and returns only a real exit code, so the
+         * whole run costs one extra C call per dispatcher iteration (745
+         * per Mi) and nothing per TB.
+         */
+        if (res >= W64_EXIT_CHAIN) {
+            wasm_diag_stat[WASM_DIAG_CHAIN_DRV]++;
+            res = ((w64_run_fn *)(uintptr_t)w64_driver())(
+                (uintptr_t)env, (uintptr_t)(w64_frame + 16),
+                (uintptr_t)&w64_tb_ptr, res & ~W64_EXIT_CHAIN);
         }
 
     exited:

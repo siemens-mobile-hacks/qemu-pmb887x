@@ -37,8 +37,15 @@ typedef struct DisasDelayException {
 } DisasDelayException;
 
 #ifdef CONFIG_TCG_WASM64
-/* conditional branches whose taken path one TB may defer to its end */
-#define W64_FT_MAX 8
+/*
+ * Conditional branches whose taken path one TB may defer to its end.  This
+ * is only the ceiling the array can hold; w64_ft_max() picks the extent
+ * actually used.  A four-point sweep on a J2ME game fits
+ * ns/insn = 9.83 + 27.87 * exits/insn to within 1.2 %, so the extent buys
+ * time strictly by removing boundaries and the ceiling only has to be high
+ * enough to find where that stops paying.
+ */
+#define W64_FT_MAX 32
 
 /* W64_XWHY reasons, in the order of the WASM_DIAG_XW_* counters */
 enum {

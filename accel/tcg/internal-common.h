@@ -146,6 +146,13 @@ bool wasm_is_io_barrier(vaddr pc);
 void tb_phys_invalidate(TranslationBlock *tb, tb_page_addr_t page_addr);
 void tb_set_jmp_target(TranslationBlock *tb, int n, uintptr_t addr);
 
+#ifdef CONFIG_TCG_WASM64
+/* W64_EXCNS: the unwind span starts in cpu_loop_exit and ends where the
+ * sigsetjmp returns, which is a different translation unit. */
+extern int64_t w64_exc_lj_t0;
+bool w64_exc_ns(void);
+#endif
+
 void tcg_get_stats(AccelState *accel, GString *buf);
 
 #endif

@@ -241,6 +241,19 @@ static unsigned w64_locals_pad(void)
     return n;
 }
 
+/* W64_CHAINLOOP=1: end a TB by returning the successor's table index for
+ * tcg_qemu_tb_exec's chain loop to call, rather than tail-calling it here.
+ * See W64_EXIT_CHAIN in wasm64.h for what that is worth and why. */
+static bool w64_chainloop(void)
+{
+    static int on = -1;
+    if (on < 0) {
+        const char *e = getenv("W64_CHAINLOOP");
+        on = e ? atoi(e) : 0;
+    }
+    return on != 0;
+}
+
 /* W64_BYTEPAD=N adds N never-executed i64 add/store pairs (~7 bytes each)
  * to every TB body, behind a test of $scr32 which is still 0 here.  The
  * companion knob to W64_LOCALPAD: it prices *emitted bytes* against
@@ -477,13 +490,28 @@ static uint8_t w64_import_idx(uint32_t fptr, uint8_t type)
 /* ------------------------------------------------------------------ */
 
 
+/*
+ * CEILING PROBE: W64_NONESTED=1 emits every TB with the $bp dispatch loop,
+ * so the A/B prices the region walk against 100 % of TBs.  Sound either
+ * way -- the loop scheme is the general one.
+ */
+static bool w64_nested_enabled(void)
+{
+    static int on = -1;
+
+    if (on < 0) {
+        on = getenv("W64_NONESTED") == NULL;
+    }
+    return on != 0;
+}
+
 /* number the labels in set order and decide the branch scheme */
 static void w64_scan_labels(TCGContext *s)
 {
     TCGOp *op;
     int prologue_target = -1;   /* label branched to before any is placed */
 
-    W.nested = true;
+    W.nested = w64_nested_enabled();
     W.selfloop = false;
     QTAILQ_FOREACH(op, &s->ops, link) {
         TCGLabel *l;
@@ -544,6 +572,7 @@ static void w64_scan_labels(TCGContext *s)
                sizeof(W.label_idx[0]));
         W.n_labels = 0;
     }
+    wasm_diag_stat[W.nested ? WASM_DIAG_TB_NESTED : WASM_DIAG_TB_LOOPMODE]++;
 }
 
 static void w64_emit_loop_head(TCGContext *s)
@@ -1408,6 +1437,27 @@ static void tcg_out_exit_tb(TCGContext *s, uintptr_t arg)
 static bool w64_xcount(void);
 static void w64_diag_bump(TCGContext *s, int idx);
 
+/* the chain transition itself: $scr0 holds the successor's table index */
+static void w64_chain_go(TCGContext *s)
+{
+    if (w64_chainloop()) {
+        w64_local_get(s, W64_L_SCR0);
+        w64_u8(s, 0xa7);                    /* i32.wrap_i64: the tidx */
+        w64_const_i32(s, (int32_t)W64_EXIT_CHAIN);
+        w64_u8(s, 0x72);                    /* i32.or */
+        w64_u8(s, 0x0f);                    /* return */
+        return;
+    }
+    w64_local_get(s, W64_P_ENV);
+    w64_local_get(s, W64_P_SP);
+    w64_local_get(s, W64_P_TP);
+    w64_local_get(s, W64_L_SCR0);
+    w64_u8(s, 0xa7);                        /* i32.wrap_i64: the tidx */
+    w64_u8(s, 0x13);                        /* return_call_indirect */
+    w64_uleb(s, 0);                         /* type 0: the TB signature */
+    w64_uleb(s, 0);                         /* table 0: the shared table */
+}
+
 static void tcg_out_goto_tb(TCGContext *s, int which)
 {
     w64_ir_op(WI_GOTO_TB, which, 0, 0);
@@ -1487,14 +1537,7 @@ static void tcg_out_goto_tb(TCGContext *s, int which)
         w64_blk_pop(s);
     }
 
-    w64_local_get(s, W64_P_ENV);
-    w64_local_get(s, W64_P_SP);
-    w64_local_get(s, W64_P_TP);
-    w64_local_get(s, W64_L_SCR0);
-    w64_u8(s, 0xa7);                        /* i32.wrap_i64: the tidx */
-    w64_u8(s, 0x13);                        /* return_call_indirect */
-    w64_uleb(s, 0);                         /* type 0: the TB signature */
-    w64_uleb(s, 0);                         /* table 0: the shared table */
+    w64_chain_go(s);
 
     w64_blk_pop(s);                         /* end */
 }
@@ -1547,14 +1590,7 @@ static void tcg_out_goto_ptr(TCGContext *s, TCGReg a0)
         w64_diag_bump(s, WASM_DIAG_X_GOTOPTR);
     }
 
-    w64_local_get(s, W64_P_ENV);
-    w64_local_get(s, W64_P_SP);
-    w64_local_get(s, W64_P_TP);
-    w64_local_get(s, W64_L_SCR0);
-    w64_u8(s, 0xa7);                        /* i32.wrap_i64: the tidx */
-    w64_u8(s, 0x13);                        /* return_call_indirect */
-    w64_uleb(s, 0);                         /* type 0: the TB signature */
-    w64_uleb(s, 0);                         /* table 0: the shared table */
+    w64_chain_go(s);
 
     w64_blk_pop(s);                         /* end */
 

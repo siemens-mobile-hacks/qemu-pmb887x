@@ -91,6 +91,23 @@
  * wasm64 heap is 2GB. */
 #define W64_EXIT_GOTOPTR 0x80000000u
 
+/*
+ * Exit-code flag: continue the chain at table index (res & ~W64_EXIT_CHAIN).
+ *
+ * W64_CHAINLOOP=1 ends a TB by returning its successor's table index instead
+ * of tail-calling it.  V8 compiles an unpredictable return_call_indirect far
+ * worse than the same indirect call made from a loop: ~27 ns against ~12.7 ns
+ * per transition in tests/wasm/dispatchbench.mjs, best-of-11 and interleaved,
+ * with the gap vanishing entirely once the target is predictable.  The
+ * emulator's own four-point W64_FTMAX regression prices a TB boundary at
+ * 27.9 ns, which is the tail-call figure, so the loop form is worth ~15 ns on
+ * each of the ~108k boundaries per Mi.
+ *
+ * Both bits 31 and 30 are set: the wasm64 heap is 2GB, so no exit_tb value
+ * (tb | which) reaches 0xC0000000, and W64_EXIT_GOTOPTR stays distinct.
+ */
+#define W64_EXIT_CHAIN   0xC0000000u
+
 /* desc+4 bit 31 once a batch landed: distinguishes the batch id from
  * the mod_len a not-yet-compiled temp module still carries there. */
 #define W64_BATCH_TAG    0x80000000u

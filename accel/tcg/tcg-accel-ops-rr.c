@@ -148,6 +148,13 @@ static void rr_idle_advance(void)
                     qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + deadline);
 
                 if (excess > 0) {
+#ifdef __EMSCRIPTEN__
+                    wasm_diag_stat[WASM_DIAG_RTCAP_WAIT]++;
+                    wasm_diag_stat[WASM_DIAG_RTCAP_WAIT_NS] += excess;
+                    if (excess > wasm_diag_stat[WASM_DIAG_RTCAP_WAIT_MAX]) {
+                        wasm_diag_stat[WASM_DIAG_RTCAP_WAIT_MAX] = excess;
+                    }
+#endif
                     icount_rtcap_set_waiting(true);
                     qemu_cond_timedwait_bql_ns(first_cpu->halt_cond, excess);
                     icount_rtcap_set_waiting(false);
@@ -256,9 +263,13 @@ static void rr_rtcap_throttle(void)
     last_v = v;
     excess = icount_rtcap_excess_ns(v);
     if (excess > 0) {
+        int64_t wait = MIN(excess, 20 * SCALE_MS);
+#ifdef __EMSCRIPTEN__
+        wasm_diag_stat[WASM_DIAG_RTCAP_THROT]++;
+        wasm_diag_stat[WASM_DIAG_RTCAP_THROT_NS] += wait;
+#endif
         bql_lock();
-        qemu_cond_timedwait_bql_ns(first_cpu->halt_cond,
-                                   MIN(excess, 20 * SCALE_MS));
+        qemu_cond_timedwait_bql_ns(first_cpu->halt_cond, wait);
         bql_unlock();
     }
 }

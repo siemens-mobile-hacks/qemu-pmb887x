@@ -1493,6 +1493,119 @@ static void w64_xwhy_count(DisasContext *s)
     tcg_gen_st_i64(v, p, 0);
     s->w64_why = 0;
 }
+
+static void gen_pcc_key_cmp(TCGv_ptr ep, TCGv_i32 a32, TCGv_i32 t32,
+                            const uint32_t key[3], uint8_t mask,
+                            TCGLabel *miss)
+{
+    tcg_gen_ld_i32(a32, ep, offsetof(struct W64PccEnt, key32[0]));
+    if (mask & W64_LC_DYN_FLAGS) {
+        tcg_gen_ld_i32(t32, tcg_env, offsetof(CPUARMState, hflags.flags));
+        tcg_gen_brcond_i32(TCG_COND_NE, a32, t32, miss);
+    } else {
+        tcg_gen_brcondi_i32(TCG_COND_NE, a32, key[0], miss);
+    }
+
+    tcg_gen_ld_i32(a32, ep, offsetof(struct W64PccEnt, key32[1]));
+    if (mask & W64_LC_DYN_THUMB) {
+        tcg_gen_ld8u_i32(t32, tcg_env, offsetof(CPUARMState, thumb));
+        tcg_gen_brcond_i32(TCG_COND_NE, a32, t32, miss);
+    } else {
+        tcg_gen_brcondi_i32(TCG_COND_NE, a32, key[1], miss);
+    }
+
+    tcg_gen_ld_i32(a32, ep, offsetof(struct W64PccEnt, key32[2]));
+    if (mask & W64_LC_DYN_CONDEXEC) {
+        tcg_gen_ld_i32(t32, tcg_env, offsetof(CPUARMState, condexec_bits));
+        tcg_gen_brcond_i32(TCG_COND_NE, a32, t32, miss);
+    } else {
+        tcg_gen_brcondi_i32(TCG_COND_NE, a32, key[2], miss);
+    }
+}
+
+/*
+ * The global pc-keyed cache (accel/tcg/cpu-exec.c w64_pcc), compared in
+ * emitted code instead of behind a helper call.
+ *
+ * The per-TB slot in gen_goto_ptr below holds one target, which is right
+ * for a `bx lr` that keeps returning to the same caller and wrong for a
+ * bytecode interpreter's `ldr pc, [table, op, lsl #2]`: on a J2ME game
+ * 19.6 % of goto_ptr exits miss it, and **92 % of those** are then
+ * answered by w64_pcc — the same six-word compare, reached by a 28.5 ns
+ * call.  Emitting it leaves the call for the 8 % that really need a
+ * lookup.
+ *
+ * On a hit it refills the per-TB slot exactly as the helper would.
+ * Without that, way one stops being refilled and its 80 % falls through
+ * to this way, which is five times longer — the mechanism would pay for
+ * itself and then lose.
+ *
+ * Soundness is the helper's, word for word: an entry names its owning
+ * CPU (the generation is per-CPU) and carries the generation that
+ * retires it, and the three key words are compared against the same CPU
+ * state the helper reads — as constants wherever this exit's key is
+ * static, which is the argument gen_goto_ptr makes for way one.
+ * arm_w64_lc_key refuses A64, M-profile and single-step; the first two
+ * never reach here and SS_ACTIVE is a bit of hflags.flags, so a
+ * single-stepping CPU cannot match an entry filled by a normal one.
+ */
+static void gen_goto_ptr_pcc(TCGv_ptr tc, struct W64LookupCache *lc,
+                             const uint32_t key[3], uint8_t mask)
+{
+    const struct W64PccShape *sh = w64_pcc_shape();
+    TCGLabel *miss = gen_new_label();
+    TCGv_i32 h = tcg_temp_new_i32();
+    TCGv_i32 a32 = tcg_temp_new_i32();
+    TCGv_i32 t32 = tcg_temp_new_i32();
+    TCGv_i32 gen32 = tcg_temp_new_i32();
+    TCGv_ptr ep = tcg_temp_new_ptr();
+
+    /* tb_jmp_cache_hash_func(r15), then the entry's address */
+    tcg_gen_shri_i32(h, cpu_R[15], sh->shift);
+    tcg_gen_xor_i32(h, h, cpu_R[15]);
+    tcg_gen_shri_i32(t32, h, sh->shift);
+    tcg_gen_andi_i32(t32, t32, sh->page_mask);
+    tcg_gen_andi_i32(h, h, sh->addr_mask);
+    tcg_gen_or_i32(h, h, t32);
+    tcg_gen_shli_i32(h, h, 5);
+    tcg_gen_ext_i32_ptr(ep, h);
+    tcg_gen_addi_ptr(ep, ep, (intptr_t)(uintptr_t)sh->tab);
+
+    tcg_gen_ld_i32(a32, ep, offsetof(struct W64PccEnt, pc));
+    tcg_gen_brcond_i32(TCG_COND_NE, a32, cpu_R[15], miss);
+
+    tcg_gen_ld_i32(gen32, tcg_env,
+                   offsetof(ARMCPU, parent_obj.neg.tb_key_gen) -
+                   offsetof(ARMCPU, env));
+    tcg_gen_ld_i32(a32, ep, offsetof(struct W64PccEnt, gen));
+    tcg_gen_brcond_i32(TCG_COND_NE, a32, gen32, miss);
+
+    tcg_gen_ld_i32(a32, ep, offsetof(struct W64PccEnt, cpu_index));
+    tcg_gen_ld_i32(t32, tcg_env,
+                   offsetof(ARMCPU, parent_obj.cpu_index) -
+                   offsetof(ARMCPU, env));
+    tcg_gen_brcond_i32(TCG_COND_NE, a32, t32, miss);
+
+    gen_pcc_key_cmp(ep, a32, t32, key, mask, miss);
+
+    tcg_gen_ld_ptr(tc, ep, offsetof(struct W64PccEnt, tc));
+    if (lc) {
+        TCGv_ptr lcp = tcg_constant_ptr(lc);
+
+        for (int i = 0; i < 3; i++) {
+            if (mask & (1 << i)) {
+                tcg_gen_ld_i32(a32, ep, offsetof(struct W64PccEnt, key32[i]));
+                tcg_gen_st_i32(a32, lcp,
+                               offsetof(struct W64LookupCache, key32[i]));
+            }
+        }
+        tcg_gen_st_i32(cpu_R[15], lcp, offsetof(struct W64LookupCache, pc));
+        tcg_gen_st_ptr(tc, lcp, offsetof(struct W64LookupCache, tc));
+        tcg_gen_st_i32(gen32, lcp, offsetof(struct W64LookupCache, gen));
+    }
+    tcg_gen_goto_ptr(tc);
+    gen_set_label(miss);
+}
 #endif
 
 /*
@@ -1547,7 +1660,11 @@ static void gen_goto_ptr(DisasContext *s, uint32_t condexec)
             lc->dynmask = mask;
         } else if (mask != s->w64_lc_mask ||
                    memcmp(s->w64_lc_key, key, sizeof(key)) != 0) {
-            /* a second exit keyed differently: it stays off the slot */
+            /* a second exit keyed differently: it stays off the slot, but
+             * the global cache is not the slot's and still covers it */
+            if (w64_pcc_inline()) {
+                gen_goto_ptr_pcc(tcg_temp_new_ptr(), NULL, key, mask);
+            }
             tcg_gen_lookup_and_goto_ptr();
             return;
         }
@@ -1590,6 +1707,9 @@ static void gen_goto_ptr(DisasContext *s, uint32_t condexec)
             tcg_gen_ld_ptr(tc, lcp, offsetof(struct W64LookupCache, tc));
             tcg_gen_goto_ptr(tc);
             gen_set_label(slow);
+        }
+        if (w64_pcc_inline()) {
+            gen_goto_ptr_pcc(tc, lc, key, mask);
         }
         gen_helper_lookup_tb_ptr_lc(tc, tcg_env, lcp);
         tcg_gen_goto_ptr(tc);

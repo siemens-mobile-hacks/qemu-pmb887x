@@ -23,6 +23,22 @@
 #include "qemu/plugin.h"
 #include "accel/tcg/cpu-loop.h"
 #include "internal-common.h"
+#ifdef CONFIG_TCG_WASM64
+#include "qemu/wasm-diag.h"
+#include "qemu/timer.h"
+
+/* start of the unwind span closed in cpu_exec_setjmp (W64_EXCNS=1) */
+int64_t w64_exc_lj_t0;
+
+bool w64_exc_ns(void)
+{
+    static int on = -1;
+    if (on < 0) {
+        on = getenv("W64_EXCNS") != NULL;
+    }
+    return on;
+}
+#endif
 
 bool tcg_allowed;
 
@@ -71,6 +87,11 @@ void cpu_loop_exit(CPUState *cpu)
     cpu->neg.can_do_io = true;
     /* Undo any setting in generated code.  */
     qemu_plugin_disable_mem_helpers(cpu);
+#ifdef CONFIG_TCG_WASM64
+    if (w64_exc_ns()) {
+        w64_exc_lj_t0 = get_clock_realtime();
+    }
+#endif
     siglongjmp(cpu->jmp_env, 1);
 }
 
