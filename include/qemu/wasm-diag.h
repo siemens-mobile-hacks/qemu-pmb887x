@@ -375,6 +375,42 @@ enum {
     WASM_DIAG_XW_NOCHAIN,    /* DISAS_UPDATE_NOCHAIN */
     WASM_DIAG_RAM_1P,        /* accesses do_ram_1p served inline -- what
                               * SLOW_CLEAN counted before it existed */
+    /*
+     * The rates the dispatcher's profile share cannot be turned into ns
+     * without: how often cpu_exec_loop goes round (a chain unwind --
+     * since 0091 a chained TB never comes back), how often cpu_exec is
+     * entered at all, and how often the CPU takes an ARM exception.
+     * The first two together say what fraction of unwinds the exception
+     * accounts for: 77 %, on an S75 boot.
+     */
+    WASM_DIAG_EXEC_ITER,     /* cpu_exec_loop inner-loop iterations */
+    WASM_DIAG_EXEC_SJMP,     /* cpu_exec_setjmp calls (not longjmps) */
+    /*
+     * cpu_loop_exit longjmps actually taken.  A longjmp here is the
+     * emscripten JS-exception unwind (the artifact carries setThrew and
+     * _emscripten_throw_longjmp), priced at ~15 us by the HELPER(wfi)
+     * comment that removed the last hot one -- so this reading near
+     * zero is what makes the exception path affordable, and a build
+     * that puts one back on a hot path will say so here.
+     */
+    WASM_DIAG_EXEC_LJMP,
+    WASM_DIAG_ARM_IRQ,       /* arm_cpu_do_interrupt calls */
+    /*
+     * ARM_IRQ by kind.  93k exceptions a second on an S75 boot is two
+     * orders above any device's natural rate, so which kind it is
+     * decides whether a device model is firing too often or the guest
+     * is making that many syscalls.  It is the latter: 90 % are SWI.
+     * Slot = exception_index for
+     * EXCP_UDEF..EXCP_FIQ (1..6), 0 for anything else, so these must
+     * stay in the ARM constants' order and contiguous.
+     */
+    WASM_DIAG_EXC_OTHER,
+    WASM_DIAG_EXC_UDEF,
+    WASM_DIAG_EXC_SWI,
+    WASM_DIAG_EXC_PABT,
+    WASM_DIAG_EXC_DABT,
+    WASM_DIAG_EXC_IRQ,
+    WASM_DIAG_EXC_FIQ,
     WASM_DIAG_N
 };
 

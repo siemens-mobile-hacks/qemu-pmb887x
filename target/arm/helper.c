@@ -18,6 +18,7 @@
 #include "qemu/timer.h"
 #include "qemu/bitops.h"
 #include "qemu/qemu-print.h"
+#include "qemu/wasm-diag.h"
 #include "exec/cputlb.h"
 #include "exec/translation-block.h"
 #include "hw/core/irq.h"
@@ -9702,6 +9703,15 @@ void arm_cpu_do_interrupt(CPUState *cs)
     uint64_t last_pc = cs->cc->get_pc(cs);
 
     assert(!arm_feature(env, ARM_FEATURE_M));
+
+#ifdef CONFIG_TCG_WASM64
+    {
+        unsigned e = cs->exception_index;
+
+        wasm_diag_stat[WASM_DIAG_ARM_IRQ]++;
+        wasm_diag_stat[WASM_DIAG_EXC_OTHER + (e <= EXCP_FIQ ? e : 0)]++;
+    }
+#endif
 
     arm_log_exception(cs);
     qemu_log_mask(CPU_LOG_INT, "...from EL%d to EL%d\n", arm_current_el(env),

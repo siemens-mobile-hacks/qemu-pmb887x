@@ -866,6 +866,10 @@ static void cpu_exec_longjmp_cleanup(CPUState *cpu)
     /* Non-buggy compilers preserve this; assert the correct value. */
     g_assert(cpu == current_cpu);
 
+#ifdef CONFIG_TCG_WASM64
+    wasm_diag_stat[WASM_DIAG_EXEC_LJMP]++;
+#endif
+
 #ifdef CONFIG_USER_ONLY
     clear_helper_retaddr();
     if (have_mmap_lock()) {
@@ -1614,6 +1618,10 @@ cpu_exec_loop(CPUState *cpu, SyncClocks *sc)
         while (!cpu_handle_interrupt(cpu, &last_tb)) {
             TranslationBlock *tb;
 
+#ifdef CONFIG_TCG_WASM64
+            wasm_diag_stat[WASM_DIAG_EXEC_ITER]++;
+#endif
+
 #ifndef CONFIG_USER_ONLY
             /*
              * A BQL this thread is holding only because bql_unlock_mmio()
@@ -1701,6 +1709,9 @@ cpu_exec_loop(CPUState *cpu, SyncClocks *sc)
 
 static int cpu_exec_setjmp(CPUState *cpu, SyncClocks *sc)
 {
+#ifdef CONFIG_TCG_WASM64
+    wasm_diag_stat[WASM_DIAG_EXEC_SJMP]++;
+#endif
     /* Prepare setjmp context for exception handling. */
     if (unlikely(sigsetjmp(cpu->jmp_env, 0) != 0)) {
         cpu_exec_longjmp_cleanup(cpu);
