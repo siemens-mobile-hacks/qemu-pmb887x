@@ -181,8 +181,11 @@ struct TranslationBlock {
  * which asserts they agree.
  */
 #define W64_TCP_FIDX     0
+#define W64_TCP_BATCH    4
 #define W64_TCP_TIDX    16
 #define W64_TIDX_TAG    (1ULL << 32)
+/* set in the W64_TCP_BATCH word once the TB's batch module landed */
+#define W64_TCP_BATCH_TAG  0x80000000u
 #endif
 
     /*

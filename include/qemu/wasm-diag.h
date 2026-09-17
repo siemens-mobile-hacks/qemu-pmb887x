@@ -320,6 +320,45 @@ enum {
     WASM_DIAG_TB_ABSORB,     /* unconditional direct branches whose target the
                               * TB swallowed by translating on from there,
                               * costing no exit at all */
+    WASM_DIAG_X_SAMEMOD,     /* goto_ptr exits whose target TB lives in the
+                              * same batch module as the TB exiting (W64_COLOC
+                              * with W64_LC_VERIFY: the share of indirect exits
+                              * an intra-module branch could ever replace) */
+    WASM_DIAG_X_DIFFMOD,     /* ...a different one */
+    WASM_DIAG_X_NOMOD,       /* ...either side not yet landed in a batch */
+    /*
+     * Why a direct branch still ends its TB, i.e. what an absorb rule that
+     * was not the one in w64_absorb would be worth.  Counted where the
+     * absorb is refused, so the five are disjoint and sum with TB_ABSORB
+     * to every direct branch the backend sees.
+     */
+    WASM_DIAG_AB_BACKIN,     /* backward, into this TB's own range: a loop
+                              * whose head is not the TB's first insn */
+    WASM_DIAG_AB_BACKOUT,    /* backward, before this TB */
+    WASM_DIAG_AB_FAR,        /* forward, past W64_ABSORB bytes */
+    WASM_DIAG_AB_PAGE,       /* forward and near, but on the next page */
+    WASM_DIAG_AB_STATE,      /* refused by the IT-block / single-step guards */
+    WASM_DIAG_AB_COND,       /* ...of which: a conditional branch's taken path,
+                              * which w64_defer_taken handles instead */
+    WASM_DIAG_AB_JMP,        /* ...the TB was already ending for another reason */
+    WASM_DIAG_AB_IT,         /* ...inside an IT block or an ECI resume */
+    WASM_DIAG_AB_ISET,       /* ...the target runs in the other instruction set */
+    /*
+     * ldm/stm move n registers as n separate guest memory ops, each with its
+     * own inline TLB probe and address add.  W64_LSMCOUNT=1 counts the
+     * executed ones against WASM_DIAG_LDST_EXEC (W64_LDSTCOUNT=2), which is
+     * the share one address translation per instruction could serve.
+     */
+    WASM_DIAG_LSM_N,         /* ldm/stm instructions executed */
+    WASM_DIAG_LSM_EXEC,      /* registers they moved */
+    /*
+     * Register-allocator spills, counted at translation time: the backend
+     * has 28 allocatable registers against target/arm's 22 globals, and a
+     * spill is a store to env memory the optimizing tier cannot remove.
+     * Read per tbGen; raising TCG_TARGET_NB_REGS only helps if this is
+     * more than a fraction of one per TB.
+     */
+    WASM_DIAG_TCG_SPILL,
     WASM_DIAG_N
 };
 

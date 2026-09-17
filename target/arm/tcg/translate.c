@@ -1798,6 +1798,42 @@ static unsigned w64_absorb_max(void)
     return n;
 }
 
+static void w64_lsm_count(int n)
+{
+    static int on = -1;
+    TCGv_ptr p;
+    TCGv_i64 v;
+
+    if (on < 0) {
+        const char *e = getenv("W64_LSMCOUNT");
+
+        on = e ? atoi(e) : 0;
+    }
+    if (!on) {
+        return;
+    }
+    p = tcg_constant_ptr(&wasm_diag_stat[WASM_DIAG_LSM_N]);
+    v = tcg_temp_new_i64();
+    tcg_gen_ld_i64(v, p, 0);
+    tcg_gen_addi_i64(v, v, 1);
+    tcg_gen_st_i64(v, p, 0);
+    tcg_gen_ld_i64(v, p, sizeof(wasm_diag_stat[0]));
+    tcg_gen_addi_i64(v, v, n);
+    tcg_gen_st_i64(v, p, sizeof(wasm_diag_stat[0]));
+}
+
+static bool w64_absorb_charge(void)
+{
+    static int on = -1;
+
+    if (on < 0) {
+        const char *e = getenv("W64_ABSCHG");
+
+        on = e ? atoi(e) : 1;
+    }
+    return on;
+}
+
 static bool w64_absorb(DisasContext *s, int64_t diff)
 {
     vaddr dest = s->pc_curr + diff;
@@ -1806,6 +1842,10 @@ static bool w64_absorb(DisasContext *s, int64_t diff)
     if (s->base.is_jmp != DISAS_NEXT || s->condjmp || s->condexec_mask ||
         s->eci || unlikely(s->ss_active) ||
         (tb_cflags(s->base.tb) & CF_SINGLE_STEP)) {
+        wasm_diag_stat[s->condjmp ? WASM_DIAG_AB_COND :
+                       s->base.is_jmp != DISAS_NEXT ? WASM_DIAG_AB_JMP :
+                       (s->condexec_mask || s->eci) ? WASM_DIAG_AB_IT :
+                       WASM_DIAG_AB_STATE]++;
         return false;
     }
     /*
@@ -1815,15 +1855,32 @@ static bool w64_absorb(DisasContext *s, int64_t diff)
      * emit their own control flow around gen_jmp and need it to end the TB.
      */
     if (s->w64_thumb != s->thumb || arm_dc_feature(s, ARM_FEATURE_M)) {
+        wasm_diag_stat[WASM_DIAG_AB_ISET]++;
         return false;
     }
-    if (dest <= s->base.pc_next || dest - s->base.pc_next > w64_absorb_max() ||
-        !translator_is_same_page(&s->base, dest)) {
+    if (dest <= s->base.pc_next) {
+        wasm_diag_stat[dest >= s->base.pc_first ? WASM_DIAG_AB_BACKIN
+                                                : WASM_DIAG_AB_BACKOUT]++;
+        return false;
+    }
+    if (dest - s->base.pc_next > w64_absorb_max()) {
+        wasm_diag_stat[WASM_DIAG_AB_FAR]++;
+        return false;
+    }
+    if (!translator_is_same_page(&s->base, dest)) {
+        wasm_diag_stat[WASM_DIAG_AB_PAGE]++;
         return false;
     }
     skip = dest - s->base.pc_next;
     s->base.pc_next = dest;
-    if (!s->thumb) {
+    /*
+     * W64_ABSCHG=0 drops the charge, on the theory that it truncates the TB
+     * for instructions never translated.  Measured: with the distance also
+     * raised to 1024 it lifts absorbs 8 632 -> 9 464 and tbIcount by 0.3 %,
+     * because translator_is_same_page binds first.  Kept as a knob, not a
+     * default.
+     */
+    if (!s->thumb && w64_absorb_charge()) {
         s->base.max_insns -= skip / 4;
     }
     wasm_diag_stat[WASM_DIAG_TB_ABSORB]++;
@@ -5742,6 +5799,9 @@ static bool op_stm(DisasContext *s, arg_ldst_block *a)
 
     addr = op_addr_block_pre(s, a, n);
     mem_idx = get_mem_index(s);
+#ifdef CONFIG_TCG_WASM64
+    w64_lsm_count(n);
+#endif
 
     for (i = j = 0; i < 16; i++) {
         if (!(list & (1 << i))) {
@@ -5829,6 +5889,9 @@ static bool do_ldm(DisasContext *s, arg_ldst_block *a)
     mem_idx = get_mem_index(s);
     loaded_base = false;
     loaded_var = NULL;
+#ifdef CONFIG_TCG_WASM64
+    w64_lsm_count(n);
+#endif
 
     for (i = j = 0; i < 16; i++) {
         if (!(list & (1 << i))) {

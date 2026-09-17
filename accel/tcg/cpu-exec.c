@@ -595,6 +595,42 @@ static bool w64_lc_verify(void)
     return mode != 0;
 }
 
+/*
+ * W64_COLOC=1, with W64_LC_VERIFY=1 so that every goto_ptr arrives here:
+ * how often does an indirect exit land in the batch module it is leaving?
+ * That is the ceiling on replacing the tail call with a branch inside one
+ * wasm function, and it is worth knowing before building one.
+ */
+static bool w64_coloc(void)
+{
+    static int mode = -1;
+    if (mode < 0) {
+        mode = getenv("W64_COLOC") != NULL;
+    }
+    return mode != 0;
+}
+
+static void w64_count_coloc(const struct W64LookupCache *lc,
+                            const TranslationBlock *dest)
+{
+    const TranslationBlock *src = container_of(lc, TranslationBlock, w64_lc);
+    uint32_t a, b;
+
+    if (src->tc.ptr == NULL || dest->tc.ptr == NULL) {
+        wasm_diag_stat[WASM_DIAG_X_NOMOD]++;
+        return;
+    }
+    a = ldl_p((const uint8_t *)src->tc.ptr + W64_TCP_BATCH);
+    b = ldl_p((const uint8_t *)dest->tc.ptr + W64_TCP_BATCH);
+    if (!(a & W64_TCP_BATCH_TAG) || !(b & W64_TCP_BATCH_TAG)) {
+        wasm_diag_stat[WASM_DIAG_X_NOMOD]++;
+    } else if (a == b) {
+        wasm_diag_stat[WASM_DIAG_X_SAMEMOD]++;
+    } else {
+        wasm_diag_stat[WASM_DIAG_X_DIFFMOD]++;
+    }
+}
+
 #if defined(CONFIG_TCG_WASM64) && defined(WASM_DIAG_TIME_PHASES)
 static const void *lookup_tb_ptr_lc_1(CPUArchState *env, void *slot);
 
@@ -679,6 +715,10 @@ const void *HELPER(lookup_tb_ptr_lc)(CPUArchState *env, void *slot)
 
     if (tb == NULL) {
         return tcg_code_gen_epilogue;
+    }
+
+    if (unlikely(w64_coloc())) {
+        w64_count_coloc(lc, tb);
     }
 
     if (qemu_loglevel_mask(CPU_LOG_TB_CPU | CPU_LOG_EXEC)) {

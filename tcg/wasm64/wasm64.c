@@ -33,6 +33,8 @@
 
 QEMU_BUILD_BUG_ON(W64_TCP_FIDX != W64_DESC_FIDX);
 QEMU_BUILD_BUG_ON(W64_TCP_TIDX != W64_DESC_TIDX);
+QEMU_BUILD_BUG_ON(W64_TCP_BATCH != W64_DESC_BATCH);
+QEMU_BUILD_BUG_ON(W64_TCP_BATCH_TAG != W64_BATCH_TAG);
 
 /* icount2.c: addresses of the fields emitted TB prologues touch
  * (cpu-timers-internal.h needs too many prerequisites to include here) */

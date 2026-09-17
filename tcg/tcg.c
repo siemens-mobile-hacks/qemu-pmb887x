@@ -34,6 +34,7 @@
 #include "qemu/cacheflush.h"
 #include "qemu/cacheinfo.h"
 #include "qemu/timer.h"
+#include "qemu/wasm-diag.h"
 #include "exec/target_page.h"
 #include "exec/translation-block.h"
 #include "exec/tlb-common.h"
@@ -4690,6 +4691,9 @@ static TCGReg tcg_reg_alloc(TCGContext *s, TCGRegSet required_regs,
     }
 
     /* We must spill something.  */
+#ifdef CONFIG_TCG_WASM64
+    wasm_diag_stat[WASM_DIAG_TCG_SPILL]++;
+#endif
     for (j = f; j < 2; j++) {
         TCGRegSet set = reg_ct[j];
 
