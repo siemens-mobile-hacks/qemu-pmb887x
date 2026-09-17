@@ -203,7 +203,21 @@ static uint32_t ml_wait_seq;    /* snapshot taken before the timeout
 void qemu_main_loop_wake(void)
 {
     wasm_diag_stat[WASM_DIAG_ML_WAKE]++;
-    qatomic_set(&ml_futex_seq, qatomic_read(&ml_futex_seq) + 1);
+    /*
+     * Atomic because two threads wake concurrently as a matter of course
+     * (qemu_notify_event issues one itself and a second through
+     * aio_notify, and the vCPU thread notifies on every timer_mod), and
+     * the increment is what the sleeping main loop's futex compares
+     * against: read-modify-write in the open lets a waker that is
+     * preempted between the read and the write store back a value the
+     * waiter has already snapshotted, erasing its own wake.  The loop
+     * then sleeps out its timeout -- INFINITY when no timer is armed --
+     * and with icount off nothing else runs QEMU_CLOCK_VIRTUAL deadlines
+     * (see main_loop_wait), so the guest stops dead.  Needs the losing
+     * waker to be descheduled across a whole main-loop iteration, which
+     * is why only a loaded or slow host ever sees it.
+     */
+    qatomic_fetch_inc(&ml_futex_seq);
     emscripten_futex_wake(&ml_futex_seq, INT_MAX);
 }
 #endif
