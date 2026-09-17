@@ -445,6 +445,161 @@ enum {
     WASM_DIAG_PCC_BAD,       /* W64_PCC_VERIFY: hits the full lookup
                               * disagreed with.  Must be 0. */
 
+    /*
+     * The real-time cap's idle wait: the vCPU sitting still on purpose,
+     * because warping would put the virtual clock ahead of wall time.
+     * It is the one way the vCPU can be quiet for seconds while nothing
+     * is wrong, and the halt counter cannot see it -- the halt is
+     * counted on entry to the idle advance, and the wait happens inside
+     * it -- so a long one is indistinguishable from a dead guest unless
+     * it is counted here.  rtcapWaitMax is the longest single wait.
+     */
+    WASM_DIAG_RTCAP_WAIT,
+    WASM_DIAG_RTCAP_WAIT_NS,
+    WASM_DIAG_RTCAP_WAIT_MAX,
+    /* the running guest's own cap, capped at 20 ms a time but able to
+     * stack: many in a row is a crawl, not a freeze, and tells them apart */
+    WASM_DIAG_RTCAP_THROT,
+    WASM_DIAG_RTCAP_THROT_NS,
+
+    /*
+     * Display writes that took the row run rather than the per-pixel
+     * loop.  lcdPx over lcdRow is the run length: a blit that arrives as
+     * long runs is being decoded a row at a time, and a ratio near 1
+     * means the fast path is being entered for nothing.
+     */
+    WASM_DIAG_LCD_ROW,
+    WASM_DIAG_LCD_PX,
+
+    /* stores into a protected page that no TB covered, so the page
+     * collection was never built.  Against slowNotdirty this says how
+     * much of the guest's writing to its own code pages is real SMC. */
+    WASM_DIAG_SMC_MISS,
+
+    /*
+     * Wall ns inside the DMA display stream -- the whole DMA -> DIF -> SSI
+     * -> LCD chain for one burst, which is the only place those 1608
+     * bursts per Mi are paid for.  DISP_CAL is an empty interval taken the
+     * same number of times right beside it: two clock reads back to back
+     * measure nothing, so subtracting it removes the instrument's own
+     * floor instead of leaving it inside the answer.
+     */
+    WASM_DIAG_DISP_NS,
+    WASM_DIAG_DISP_CAL,
+    WASM_DIAG_DISP_BURST,
+
+    /*
+     * W64_EXCNS=1: what a guest exception costs outside the guest's own
+     * instructions.  A J2ME game takes ~700 of them per Mi -- 98 % SWI --
+     * against 756 dispatcher iterations, so on this workload the exception
+     * path *is* the C dispatcher, and every one of them crosses the
+     * setjmp/longjmp that the boot and idle benchmarks almost never take.
+     *
+     * Three spans, because they are three different things to fix: the
+     * unwind (EXC_LJ_NS, cpu_loop_exit's siglongjmp to the sigsetjmp's
+     * return), the BQL round trip around do_interrupt (EXC_BQL_NS), and
+     * arm_cpu_do_interrupt itself (EXC_DO_NS).  EXC_CAL is an empty
+     * interval taken once per exception: each measured span carries one
+     * clock read's own floor, so the floor has to be measured beside them
+     * rather than assumed.
+     */
+    WASM_DIAG_EXC_LJ_NS,
+    WASM_DIAG_EXC_LJ_N,
+    WASM_DIAG_EXC_BQL_NS,
+    WASM_DIAG_EXC_DO_NS,
+    WASM_DIAG_EXC_CAL,
+    WASM_DIAG_EXC_N,
+
+    /*
+     * DMAC_COAL counts the transfers that carried more than one burst
+     * because the destination had taken the previous burst through its
+     * run-write path.  DMAC_BURST / DMAC_COAL is how many bursts a
+     * coalesced transfer averaged; with the display stream it should
+     * approach the W64_DMACOAL cap divided by the channel's burst size.
+     */
+    WASM_DIAG_DMAC_COAL,
+
+    /*
+     * DIF_RXSKIP counts the words of a DIF burst whose received value the
+     * RX FIFO could not still be holding when the burst ends, so the
+     * reassembly and the push were skipped.  DIF_RXSKIP / DIF_TX_WORD is
+     * the share of the burst's RX bookkeeping that was unobservable.
+     */
+    WASM_DIAG_DIF_RXSKIP,
+
+    /*
+     * DIF_TXFAST counts the words a burst packed with the byte-swap path
+     * instead of the generic mux-and-shift loop.  DIF_TXFAST / DIF_TX_WORD
+     * is the share of transmitted words that took it; on the display
+     * stream it should be ~1.
+     */
+    WASM_DIAG_DIF_TXFAST,
+
+    /*
+     * CHAIN_DRV counts entries into the W64_CHAINLOOP chain driver, i.e.
+     * dispatcher iterations whose first TB ended by handing its successor
+     * back instead of tail-calling it.  With the knob on it should track
+     * execIter; with it off it is zero, which is what says the mechanism
+     * is engaged before any clock is read.
+     */
+    WASM_DIAG_CHAIN_DRV,
+
+    /*
+     * Which branch scheme a TB was emitted with: TB_NESTED is one wasm
+     * block per label and a plain br, TB_LOOPMODE is the $bp dispatch
+     * loop whose taken branches walk a chain of `if (bp <= k)`.  Both are
+     * translation-time, so they count TBs and not executions -- the cost
+     * of the scheme itself is what W64_NONESTED prices.
+     */
+    WASM_DIAG_TB_NESTED,
+    WASM_DIAG_TB_LOOPMODE,
+
+    /*
+     * W64_MERGE: MERGE_MOD counts batches assembled as one merged
+     * function and MERGE_MEMB the member bodies folded into them, so
+     * MERGE_MEMB / MERGE_MOD is the fan-in that tier-up amortises over
+     * -- the whole point of the mechanism, and the number to check
+     * before reading any clock.  MERGE_SKIP counts batches that asked
+     * to merge and could not because their members' locals declarations
+     * disagreed; it should be 0 with W64_LOCALPAD off, and a nonzero
+     * value silently halves the fan-in, so it is a counter and not an
+     * assertion.  All three are per module (~1k/s), hence uncounted by
+     * WASM_DIAG_HOT.
+     */
+    WASM_DIAG_MERGE_MOD,
+    WASM_DIAG_MERGE_MEMB,
+    WASM_DIAG_MERGE_SKIP,
+
+    /*
+     * Straddle floors for the two WASM_DIAG_TIME_PHASES samplers that
+     * never had one.  ioNs has had calNs beside it since it was built,
+     * and for the same reason: the browser's clock is quantized, so a
+     * sample of a 50 ns span is 0 or one whole tick and the mean is a
+     * straddle probability, not a duration.  That estimate is unbiased
+     * for span-plus-two-clock-reads, so the two reads have to be
+     * measured beside it rather than assumed small -- at these spans
+     * they are most of it.  Sampled 1-in-8 with their partners, so the
+     * denominator is the existing LC_NS_N / HFLAGS_NS_N.
+     */
+    WASM_DIAG_LC_CAL,
+    WASM_DIAG_HFLAGS_CAL,
+
+    /*
+     * Guest-register traffic across a TB boundary, counted at translation
+     * time.  TCG_SPILL is ~0 on this backend (2 in 3920 Mi) because the 16
+     * TCG registers are wasm locals and locals are unlimited, so there is
+     * no allocator pressure -- but that is not the same as no traffic.
+     * TCG's globals live in env memory, and liveness writes every dirty one
+     * back at the end of the basic block and loads it again in the next TB.
+     * That round trip is amortised over 8.4 guest instructions and is the
+     * one component of the 27.9 ns boundary no mechanism A/B could move:
+     * neither dispatchbench nor the CHAINLOOP driver has guest state.
+     *
+     * GLD/GST are per generated TB, so divide by TB_GEN, not by tbIcount.
+     */
+    WASM_DIAG_TCG_GLD,       /* a global loaded from env (temp_load) */
+    WASM_DIAG_TCG_GST,       /* a global written back to env (temp_sync) */
+
     WASM_DIAG_N
 };
 
@@ -483,6 +638,7 @@ extern uint64_t wasm_diag_stat[WASM_DIAG_N];
  * WASM_DIAG_MOD_NS is NOT behind this: module compiles are ~1k/s, so
  * that one is affordable always and ships on.
  */
+
 #ifdef WASM_DIAG_HOT_COUNTERS
 #define WASM_DIAG_HOT(idx) (wasm_diag_stat[idx]++)
 #else
