@@ -14,6 +14,7 @@
 #include "hw/ssi/ssi.h"
 #include "hw/arm/pmb887x/trace.h"
 #include "hw/arm/pmb887x/ssc/lcd_common.h"
+#include "qemu/wasm-diag.h"
 
 #define LCD_CMD_MAX_PARAMS 256
 
@@ -482,6 +483,88 @@ static uint32_t lcd_transfer(SSIPeripheral *dev, uint32_t data) {
 	return 0;
 }
 
+/* W64_NOLCDROW=1 falls back to the per-pixel loop, so the row run is
+ * A/B'able without a second binary. */
+static bool lcd_run_rows_enabled(void) {
+	static int on = -1;
+	if (on < 0)
+		on = getenv("W64_NOLCDROW") == NULL;
+	return on != 0;
+}
+
+/*
+ * A blit is not a sequence of unrelated pixels, it is rows.  The per-pixel
+ * loop re-derives that structure every time: a gram index from a multiply,
+ * four MIN/MAX to grow the dirty rectangle, the window-wrap branches and an
+ * indirect call through decode_pixel - per pixel, ~12.8k times per Mi on a
+ * J2ME game.  All of that except the decode is invariant within a row, so
+ * walk rows, and mark the bounding box once at the end.
+ *
+ * Only the shape a framebuffer blit actually uses is taken: 16-bit pixels
+ * landing on a pixel boundary, horizontal address mode, both counters
+ * ascending, and a window inside the panel with the cursor in it.  Anything
+ * else - vertical mode, a descending counter, a partial pixel carried in
+ * from the previous burst, a window the panel could not hold - returns
+ * false having touched nothing, and the caller runs the per-pixel loop that
+ * was always there.
+ */
+static bool lcd_run_rows(pmb887x_lcd_t *lcd, const uint8_t *tx, unsigned n) {
+	if (lcd->byte_pp != 2 || lcd->tmp_index != 0 || (n & 1) || !lcd->gram ||
+			lcd->am == LCD_AM_VERTICAL ||
+			lcd->ac_x != LCD_AC_INC || lcd->ac_y != LCD_AC_INC ||
+			lcd->window.x1 < 0 || lcd->window.y1 < 0 ||
+			lcd->window.x2 >= (int)lcd->width ||
+			lcd->window.y2 >= (int)lcd->height ||
+			lcd->buffer_x < lcd->window.x1 || lcd->buffer_x > lcd->window.x2 ||
+			lcd->buffer_y < lcd->window.y1 || lcd->buffer_y > lcd->window.y2)
+		return false;
+
+	uint32_t (*decode_pixel)(uint32_t) = lcd->decode_pixel;
+	bool rgb565 = lcd->pixel_format == LCD_PIXEL_FORMAT_RGB565;
+	unsigned left = n / 2;
+	int x1 = lcd->window.x1, x2 = lcd->window.x2;
+	int y2 = lcd->window.y2;
+	int dx1 = lcd->buffer_x, dx2 = lcd->buffer_x;
+	int dy1 = lcd->buffer_y, dy2 = lcd->buffer_y;
+
+	while (left) {
+		unsigned run = MIN(left, (unsigned)(x2 - lcd->buffer_x + 1));
+		uint32_t *dst = &lcd->gram[(size_t)lcd->buffer_y * lcd->width + lcd->buffer_x];
+
+		if (rgb565) {
+			for (unsigned i = 0; i < run; i++)
+				dst[i] = pmb887x_lcd_rgb565_decode((uint32_t)tx[2 * i] << 8 | tx[2 * i + 1]);
+		} else {
+			for (unsigned i = 0; i < run; i++)
+				dst[i] = decode_pixel((uint32_t)tx[2 * i] << 8 | tx[2 * i + 1]);
+		}
+
+		if (lcd->buffer_x < dx1)
+			dx1 = lcd->buffer_x;
+		if (lcd->buffer_x + (int)run - 1 > dx2)
+			dx2 = lcd->buffer_x + (int)run - 1;
+
+		tx += 2 * run;
+		left -= run;
+		lcd->buffer_x += run;
+		if (lcd->buffer_x > x2) {
+			lcd->buffer_x = x1;
+			lcd->buffer_y = lcd->buffer_y < y2 ? lcd->buffer_y + 1 : lcd->window.y1;
+			if (lcd->buffer_y < dy1)
+				dy1 = lcd->buffer_y;
+			if (lcd->buffer_y > dy2)
+				dy2 = lcd->buffer_y;
+		}
+	}
+
+	lcd_mark_dirty(lcd, dx1, dy1);
+	lcd_mark_dirty(lcd, dx2, dy2);
+	lcd->tmp_pixel = 0;
+	wasm_diag_stat[WASM_DIAG_LCD_ROW]++;
+	wasm_diag_stat[WASM_DIAG_LCD_PX] += n / 2;
+	return true;
+}
+
 /*
  * A whole DMA burst of pixel data in one loop.  Everything lcd_transfer()
  * re-tests per byte is invariant over a run of GRAM writes - the device is
@@ -495,6 +578,11 @@ static unsigned lcd_transfer_run(SSIPeripheral *dev, const uint8_t *tx, uint8_t 
 
 	if (lcd->reset_active || lcd->read_active || lcd->cd || lcd->wr_state != LCD_WR_STATE_RAM)
 		return 0;
+
+	if (lcd_run_rows_enabled() && lcd_run_rows(lcd, tx, n)) {
+		memset(rx, 0, n);
+		return n;
+	}
 
 	uint32_t (*decode_pixel)(uint32_t) = lcd->decode_pixel;
 	uint32_t byte_pp = lcd->byte_pp;

@@ -12,6 +12,7 @@ typedef struct {
 #define pmb887x_fifo_is_full(_fifo)		pmb887x_fifo_base_is_full(&(_fifo)->base)
 #define pmb887x_fifo_is_empty(_fifo)	pmb887x_fifo_base_is_empty(&(_fifo)->base)
 #define pmb887x_fifo_count(_fifo)		pmb887x_fifo_base_count(&(_fifo)->base)
+#define pmb887x_fifo_total(_fifo)		((_fifo)->base.total)
 #define pmb887x_fifo_free_count(_fifo)	pmb887x_fifo_base_free_count(&(_fifo)->base)
 #define pmb887x_fifo_reset(_fifo)		pmb887x_fifo_base_reset(&(_fifo)->base)
 
