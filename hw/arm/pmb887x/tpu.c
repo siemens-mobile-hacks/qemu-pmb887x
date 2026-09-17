@@ -741,7 +741,28 @@ static uint64_t tpu_io_read(void *opaque, hwaddr haddr, unsigned size) {
  * store it makes - and each one used to run tpu_update_state() ->
  * tpu_update_timer() -> tpu_advance(), whose virtual-clock read alone
  * was 76 % of icount_get(), the vCPU's top symbol at 7.7 %.
+ *
+ * "Still to be scanned" is one event, not the rest of the list.
+ * tpu_run_events() breaks at the first event the counter has not
+ * reached, leaving p->ceap on it, and p->next is that event's time; it
+ * read words ceap..ceap+2 and nothing beyond.  A later event cannot
+ * move the deadline, because the list is executed in order and nothing
+ * reaches it before p->next anyway - at which point the timer fires and
+ * the list is rescanned from RAM.  Measured: of 8.7M event-RAM writes
+ * in 25 s, 1.97M passed the old [ceap, eapt) test and *every one* of
+ * them landed past ceap+TPU_EVENT_WORDS.  W64_TPUSCAN=0 restores the
+ * wide window so the two legs of an A/B live in one binary.
  */
+static uint32_t tpu_scan_hi(pmb887x_tpu_t *p) {
+	static int wide = -1;
+
+	if (wide < 0) {
+		const char *e = getenv("W64_TPUSCAN");
+		wide = e && atoi(e) == 0;
+	}
+	return wide ? p->eapt : p->ceap + TPU_EVENT_WORDS;
+}
+
 static bool tpu_ram_write_moves_deadline(pmb887x_tpu_t *p, uint32_t offset) {
 	uint32_t word = (offset - TPU_RAM0) / TPU_RAM_WORD_STRIDE;
 
@@ -749,7 +770,7 @@ static bool tpu_ram_write_moves_deadline(pmb887x_tpu_t *p, uint32_t offset) {
 		return false;
 
 	word -= TPU_TIMER_RAM_BASE;
-	return word >= p->ceap && word < p->eapt;
+	return word >= p->ceap && word < tpu_scan_hi(p);
 }
 
 #if defined(CONFIG_TCG_WASM64) && defined(WASM_DIAG_TIME_PHASES)
