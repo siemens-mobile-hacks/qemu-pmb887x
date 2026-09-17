@@ -373,6 +373,8 @@ enum {
     WASM_DIAG_XW_RFE,        /* rfe, and ldm with an SPSR restore */
     WASM_DIAG_XW_DEFER,      /* a deferred taken path with no slot left */
     WASM_DIAG_XW_NOCHAIN,    /* DISAS_UPDATE_NOCHAIN */
+    WASM_DIAG_RAM_1P,        /* accesses do_ram_1p served inline -- what
+                              * SLOW_CLEAN counted before it existed */
     WASM_DIAG_N
 };
 

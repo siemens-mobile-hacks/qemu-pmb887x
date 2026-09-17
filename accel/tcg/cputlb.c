@@ -2702,6 +2702,62 @@ static inline void w64_cal_tick(void)
 }
 #endif
 
+#ifdef CONFIG_TCG_WASM64
+/*
+ * The RAM twin of do_ld_mmio_1p, and the generated code's inline TLB probe
+ * written once in C for the callers that have none.  The wasm64 interpreter
+ * tier reaches the guest only through helper_*_mmu (tcg/wasm64/w64-interp.c),
+ * and slowClean says 76 % of the lookups those do find a matching entry with
+ * no flag set at all -- a round trip through mmu_lookup that bought nothing.
+ *
+ * The test is w64_tlb_setup/w64_tlb_probe's, exactly: comparator equal to
+ * (addr + adj) & (TARGET_PAGE_MASK | a_mask), which in one compare says the
+ * page is present, carries no flag bit (so no MMIO, no watchpoint, no
+ * notdirty, no discard), satisfies the alignment the memop asked for, and
+ * does not cross into the next page.  MO_BSWAP and the atomicity classes the
+ * backend refuses are refused here too, so a fast-path access is exactly the
+ * one the JIT would have done inline.
+ *
+ * W64_RAM1P=0 turns it off, so the two legs of an A/B live in one binary.
+ */
+static bool do_ram_1p_on(void)
+{
+    static int mode = -1;
+
+    if (unlikely(mode < 0)) {
+        const char *e = getenv("W64_RAM1P");
+
+        mode = e == NULL || strtol(e, NULL, 0) != 0;
+    }
+    return mode != 0;
+}
+
+static inline __attribute__((always_inline))
+void *do_ram_1p(CPUState *cpu, vaddr addr, MemOpIdx oi, MMUAccessType type,
+                unsigned size)
+{
+    MemOp memop = get_memop(oi);
+    unsigned atom = memop & MO_ATOM_MASK;
+    unsigned a_mask = (1u << memop_alignment_bits(memop)) - 1;
+    unsigned s_mask = size - 1;
+    vaddr adj = a_mask >= s_mask ? 0 : s_mask - a_mask;
+    vaddr tlb_mask = (uint64_t)(int64_t)(int)TARGET_PAGE_MASK | a_mask;
+    CPUTLBEntry *entry;
+
+    if (unlikely((memop & MO_BSWAP) ||
+                 (atom != MO_ATOM_NONE && atom != MO_ATOM_IFALIGN) ||
+                 !do_ram_1p_on())) {
+        return NULL;
+    }
+    entry = tlb_entry(cpu, get_mmuidx(oi), addr);
+    if (likely(tlb_read_idx(entry, type) == ((addr + adj) & tlb_mask))) {
+        wasm_diag_stat[WASM_DIAG_RAM_1P]++;
+        return (void *)((uintptr_t)addr + entry->addend);
+    }
+    return NULL;
+}
+#endif
+
 /*
  * @size is a literal at every call site (helper_ld*_mmu already assert
  * it), so the mask tests, the alignment tests, the value mask and the
@@ -3133,6 +3189,15 @@ static uint8_t do_ld1_mmu(CPUState *cpu, vaddr addr, MemOpIdx oi,
     uint64_t io;
 
     cpu_req_mo(cpu, TCG_MO_LD_LD | TCG_MO_ST_LD);
+#ifdef CONFIG_TCG_WASM64
+    {
+        void *h = do_ram_1p(cpu, addr, oi, access_type, 1);
+
+        if (likely(h != NULL)) {
+            return ldub_p(h);
+        }
+    }
+#endif
     if (do_ld_mmio_1p(cpu, addr, oi, ra, access_type, &io, 1, false)) {
         return io;
     }
@@ -3152,6 +3217,15 @@ static uint16_t do_ld2_mmu(CPUState *cpu, vaddr addr, MemOpIdx oi,
     uint64_t io;
 
     cpu_req_mo(cpu, TCG_MO_LD_LD | TCG_MO_ST_LD);
+#ifdef CONFIG_TCG_WASM64
+    {
+        void *h = do_ram_1p(cpu, addr, oi, access_type, 2);
+
+        if (likely(h != NULL)) {
+            return lduw_he_p(h);
+        }
+    }
+#endif
     if (do_ld_mmio_1p(cpu, addr, oi, ra, access_type, &io, 2,
                       (get_memop(oi) & MO_BSWAP) == MO_LE)) {
         return io;
@@ -3181,6 +3255,15 @@ static uint32_t do_ld4_mmu(CPUState *cpu, vaddr addr, MemOpIdx oi,
     uint64_t io;
 
     cpu_req_mo(cpu, TCG_MO_LD_LD | TCG_MO_ST_LD);
+#ifdef CONFIG_TCG_WASM64
+    {
+        void *h = do_ram_1p(cpu, addr, oi, access_type, 4);
+
+        if (likely(h != NULL)) {
+            return ldl_he_p(h);
+        }
+    }
+#endif
     if (do_ld_mmio_1p(cpu, addr, oi, ra, access_type, &io, 4,
                       (get_memop(oi) & MO_BSWAP) == MO_LE)) {
         return io;
@@ -3207,6 +3290,15 @@ static uint64_t do_ld8_mmu(CPUState *cpu, vaddr addr, MemOpIdx oi,
     uint64_t io;
 
     cpu_req_mo(cpu, TCG_MO_LD_LD | TCG_MO_ST_LD);
+#ifdef CONFIG_TCG_WASM64
+    {
+        void *h = do_ram_1p(cpu, addr, oi, access_type, 8);
+
+        if (likely(h != NULL)) {
+            return ldq_he_p(h);
+        }
+    }
+#endif
     if (do_ld_mmio_1p(cpu, addr, oi, ra, access_type, &io, 8,
                       (get_memop(oi) & MO_BSWAP) == MO_LE)) {
         return io;
@@ -3717,6 +3809,16 @@ static void do_st1_mmu(CPUState *cpu, vaddr addr, uint8_t val,
     bool crosspage;
 
     cpu_req_mo(cpu, TCG_MO_LD_ST | TCG_MO_ST_ST);
+#ifdef CONFIG_TCG_WASM64
+    {
+        void *h = do_ram_1p(cpu, addr, oi, MMU_DATA_STORE, 1);
+
+        if (likely(h != NULL)) {
+            stb_p(h, val);
+            return;
+        }
+    }
+#endif
     if (do_st_mmio_1p(cpu, addr, val, oi, ra, 1, true)) {
         return;
     }
@@ -3734,6 +3836,16 @@ static void do_st2_mmu(CPUState *cpu, vaddr addr, uint16_t val,
     uint8_t a, b;
 
     cpu_req_mo(cpu, TCG_MO_LD_ST | TCG_MO_ST_ST);
+#ifdef CONFIG_TCG_WASM64
+    {
+        void *h = do_ram_1p(cpu, addr, oi, MMU_DATA_STORE, 2);
+
+        if (likely(h != NULL)) {
+            stw_he_p(h, val);
+            return;
+        }
+    }
+#endif
     if (do_st_mmio_1p(cpu, addr, val, oi, ra, 2,
                       (get_memop(oi) & MO_BSWAP) == MO_LE)) {
         return;
@@ -3760,6 +3872,16 @@ static void do_st4_mmu(CPUState *cpu, vaddr addr, uint32_t val,
     bool crosspage;
 
     cpu_req_mo(cpu, TCG_MO_LD_ST | TCG_MO_ST_ST);
+#ifdef CONFIG_TCG_WASM64
+    {
+        void *h = do_ram_1p(cpu, addr, oi, MMU_DATA_STORE, 4);
+
+        if (likely(h != NULL)) {
+            stl_he_p(h, val);
+            return;
+        }
+    }
+#endif
     if (do_st_mmio_1p(cpu, addr, val, oi, ra, 4,
                       (get_memop(oi) & MO_BSWAP) == MO_LE)) {
         return;
@@ -3785,6 +3907,16 @@ static void do_st8_mmu(CPUState *cpu, vaddr addr, uint64_t val,
     bool crosspage;
 
     cpu_req_mo(cpu, TCG_MO_LD_ST | TCG_MO_ST_ST);
+#ifdef CONFIG_TCG_WASM64
+    {
+        void *h = do_ram_1p(cpu, addr, oi, MMU_DATA_STORE, 8);
+
+        if (likely(h != NULL)) {
+            stq_he_p(h, val);
+            return;
+        }
+    }
+#endif
     if (do_st_mmio_1p(cpu, addr, val, oi, ra, 8,
                       (get_memop(oi) & MO_BSWAP) == MO_LE)) {
         return;
