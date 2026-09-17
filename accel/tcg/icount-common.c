@@ -752,14 +752,15 @@ bool icount_configure(QemuOpts *opts, Error **errp)
              * clock.  Both fields default (30 s / 500 ms); <win> of 0 is
              * capped from the first instruction.
              */
-            const char *p;
-            bool bad;
+            const char *p = mode + 6;   /* "budget", then "" or ":..." */
+            bool bad = false;
 
             win_s = RTCAP_DEFAULT_WIN;
-            p = mode + 7;      /* past "budget:"; bare "budget" keeps both */
-            bad = mode[6] == '\0' || qemu_strtoi64(p, &p, 10, &win_s) != 0;
-            if (!bad && *p == ':') {
-                bad = qemu_strtoi64(p + 1, &p, 10, &budget_ms) != 0;
+            if (*p == ':') {
+                bad = qemu_strtoi64(p + 1, &p, 10, &win_s) != 0;
+                if (!bad && *p == ':') {
+                    bad = qemu_strtoi64(p + 1, &p, 10, &budget_ms) != 0;
+                }
             }
             if (bad || *p || win_s < 0
                 || win_s > INT64_MAX / NANOSECONDS_PER_SECOND
