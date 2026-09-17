@@ -156,6 +156,26 @@ void icount_rtcap_set_waiting(bool waiting)
 }
 
 /*
+ * Measurement hook, called from the browser main thread (wasm_rtcap_set).
+ * A meter that has to *navigate* a firmware menu needs the guest's clock
+ * paced against wall time - uncapped, an idle guest warps hours per wall
+ * minute and the phone's screensaver re-arms between key presses - and
+ * then needs the cap gone to read engine throughput.  Re-anchor the bank
+ * on the way back in: the guest has been sprinting while the cap was off,
+ * and a stale anchor would sleep the vCPU for as long as that lead.
+ * Racy against the vCPU's own writes of the anchor by construction; it is
+ * a test hook, and the only cost of losing the race is one mispaced sleep.
+ */
+void icount_rtcap_set_enabled(bool on)
+{
+    if (on) {
+        rtcap_v0 = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
+        rtcap_r0 = qemu_clock_get_ns(QEMU_CLOCK_REALTIME);
+    }
+    qatomic_set(&icount_rtcap, on);
+}
+
+/*
  * The browser main thread polls this while the vCPU thread writes the flag,
  * hence the atomic; relaxed is enough, nothing is published through it.
  * rtcap_budget_ns is written once at configure, before either thread runs,

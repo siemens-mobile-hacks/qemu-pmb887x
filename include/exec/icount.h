@@ -101,6 +101,7 @@ void icount_notify_exit(void);
 extern bool icount_rtcap;
 int64_t icount_rtcap_excess_ns(int64_t vtarget);
 void icount_rtcap_set_waiting(bool waiting);
+void icount_rtcap_set_enabled(bool on);
 /* 0 = off, 1 = banked (still banking), 2 = strict, 3 = budget.  Safe from
  * any thread. */
 int icount_rtcap_mode(void);

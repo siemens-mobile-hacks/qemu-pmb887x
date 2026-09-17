@@ -277,6 +277,18 @@ int32_t wasm_rtcap(void)
     return icount_rtcap_mode();
 }
 
+/*
+ * Drop or restore the cap mid-run.  Measurement only (tools/j2mebench.mjs):
+ * navigating a firmware menu needs the guest paced against wall time, and
+ * reading engine throughput needs it uncapped, and the two cannot both be
+ * settled by a command line written before the guest boots.
+ */
+EMSCRIPTEN_KEEPALIVE
+void wasm_rtcap_set(int32_t on)
+{
+    icount_rtcap_set_enabled(!!on);
+}
+
 /* ------------------------------------------------------------------ */
 /* Key input: SPSC ring filled from the JS main thread, drained by BH  */
 /* ------------------------------------------------------------------ */
