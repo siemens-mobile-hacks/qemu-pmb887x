@@ -452,6 +452,160 @@ static inline uint32_t curr_cflags_fast(CPUState *cpu)
 #define curr_cflags_fast(cpu)      curr_cflags(cpu)
 #endif
 
+#ifdef CONFIG_TCG_WASM64
+/* ARM-only, like W64_GET_TB_CPU_STATE above (same linking argument). */
+bool arm_w64_lc_key(CPUState *cs, uint32_t key32[3]);
+bool arm_w64_lc_key_pc(CPUState *cs, uint32_t key32[3], uint32_t *pc);
+#define W64_LC_KEY(cpu, k32)  arm_w64_lc_key(cpu, k32)
+#define W64_LC_KEY_PC(cpu, k32, pcp)  arm_w64_lc_key_pc(cpu, k32, pcp)
+
+/*
+ * The global next-TB cache, keyed on the target PC.
+ *
+ * The per-TB slot above is monomorphic — one target per exit site — and
+ * a J2ME interpreter's dispatch is the case it cannot serve: one
+ * `ldr pc, [table, bytecode, lsl #2]` reached once per Java bytecode,
+ * going somewhere different almost every time.  Atomic Skater calls the
+ * helper 15.3k times per Mi of guest work, one per ~65 guest
+ * instructions, and 96.5 % of those calls then *hit the jump cache* —
+ * the answer was one PC-hashed load away and the call paid for
+ * arm_get_tb_cpu_state, curr_cflags, the breakpoint test, three loads
+ * out of the TB descriptor and the dispatch-target decode to find it.
+ *
+ * So the fast path here is the jump cache's own question asked in the
+ * cheap place: hash the PC, compare the key the per-TB slot already
+ * proved sufficient (pc, hflags.flags, thumb, condexec_bits, plus the
+ * generation for everything else — see gen_goto_ptr), and return the
+ * dispatch target the last lookup computed.  A hit touches one 32-byte
+ * line and four env words, all of them hot.
+ *
+ * This is not the rejected second way (playbook § REJECTED, 2026-09-15).
+ * That one added a compare chain to *emitted* code on the path that
+ * still missed, and emitted code grew 20.6 %.  Nothing is emitted here:
+ * the cache lives entirely in the helper, which lands in the main qemu
+ * module where V8 optimizes it — the lesson from round 21's tier-up
+ * probe, applied.
+ *
+ * Soundness is the per-TB slot's, unchanged: the key is the same three
+ * words, the generation retires the whole table at once and is bumped
+ * wherever a jump-cache entry is dropped, wherever a key input the test
+ * does not cover moves (hflags.flags2, FPSCR.Len/Stride, FPEXC.EN,
+ * cflags) and wherever a module is evicted; A64, M-profile and
+ * single-step never fill (arm_w64_lc_key).  Only a tagged — i.e.
+ * compiled — target is cached, for the same reason as the slot: a hit
+ * never comes back here to refill.
+ *
+ * W64_NOPCC=1 turns it off for an A/B inside one binary.
+ */
+#define W64_PCC_SLOTS TB_JMP_CACHE_SIZE
+static struct W64PccEnt {
+    uint32_t pc;
+    uint32_t gen;
+    uint32_t key32[3];
+    /*
+     * The table is global where the jump cache is per-CPU, and the
+     * generation is per-CPU too, so an entry has to name its owner.
+     * Every board here is uniprocessor, so this compare never fails —
+     * it is what makes that a fact rather than an assumption.  It also
+     * pads the entry to 32 bytes: two per cache line, never straddling.
+     */
+    uint32_t cpu_index;
+    const void *tc;
+} w64_pcc[W64_PCC_SLOTS];
+
+static bool w64_lc_verify(void);
+static bool w64_lc2_enabled(void);
+static bool w64_coloc(void);
+
+static bool w64_pcc_on(void)
+{
+    static int mode = -1;
+    if (mode < 0) {
+        /* every diagnostic mode wants the full lookup to run */
+        mode = getenv("W64_NOPCC") == NULL &&
+            !w64_lc_verify() && !w64_lc2_enabled() && !w64_coloc();
+    }
+    return mode != 0;
+}
+
+/*
+ * W64_PCC_VERIFY=1: take the hit, then do the full lookup anyway and
+ * check that they name the same target.  pccBad must be 0 — it is the
+ * only evidence that the key and the generation cover everything
+ * arm_get_tb_cpu_state does.
+ */
+static bool w64_pcc_verify(void)
+{
+    static int mode = -1;
+    if (mode < 0) {
+        mode = getenv("W64_PCC_VERIFY") != NULL;
+    }
+    return mode != 0;
+}
+
+/*
+ * The jump cache's own hash and size, so a pccHit is exactly a lookupJc
+ * that never had to be reached: the ceiling this is built against is
+ * lookupJc/lookup = 96.5 %, and a different hash would only move the
+ * conflicts around.
+ */
+static inline unsigned w64_pcc_idx(uint32_t pc)
+{
+    return tb_jmp_cache_hash_func(pc);
+}
+
+static inline const void *w64_pcc_get(CPUState *cpu, uint32_t gen,
+                                      uint32_t key[3], uint32_t *pc_out)
+{
+    uint32_t pc;
+    const struct W64PccEnt *e;
+
+    if (!W64_LC_KEY_PC(cpu, key, &pc)) {
+        return NULL;
+    }
+    e = &w64_pcc[w64_pcc_idx(pc)];
+    if (likely(e->pc == pc && e->gen == gen &&
+               e->cpu_index == (uint32_t)cpu->cpu_index &&
+               e->key32[0] == key[0] &&
+               e->key32[1] == key[1] &&
+               e->key32[2] == key[2])) {
+        wasm_diag_stat[WASM_DIAG_PCC_HIT]++;
+        *pc_out = pc;
+        return e->tc;
+    }
+    return NULL;
+}
+
+/*
+ * @gen is read before the lookup that produced @target, so an
+ * invalidation racing with this fill leaves a stale stamp and the entry
+ * is simply missed — never a stale target under a current stamp.  Same
+ * ordering rule as the per-TB slot.
+ */
+static inline void w64_pcc_put(CPUState *cpu, TCGTBCPUState s, uint32_t gen,
+                               const void *target)
+{
+    uint32_t key[3];
+    struct W64PccEnt *e;
+
+    if (!((uintptr_t)target & W64_TIDX_TAG) ||
+        s.cflags != cpu->tcg_cflags ||
+        !W64_LC_KEY(cpu, key)) {
+        return;
+    }
+    e = &w64_pcc[w64_pcc_idx((uint32_t)s.pc)];
+    e->pc = (uint32_t)s.pc;
+    e->key32[0] = key[0];
+    e->key32[1] = key[1];
+    e->key32[2] = key[2];
+    e->cpu_index = (uint32_t)cpu->cpu_index;
+    e->tc = target;
+    e->gen = gen;
+    wasm_diag_stat[WASM_DIAG_PCC_FILL]++;
+}
+
+#endif /* CONFIG_TCG_WASM64 */
+
 /**
  * helper_lookup_tb_ptr: quick check for next tb
  * @env: current cpu state
@@ -474,6 +628,20 @@ const void *HELPER(lookup_tb_ptr)(CPUArchState *env)
      */
     cpu->neg.can_do_io = true;
 
+#ifdef CONFIG_TCG_WASM64
+    uint32_t pcc_gen = qatomic_read(&cpu->neg.tb_key_gen);
+    const void *pcc_hit = NULL;
+
+    if (likely(w64_pcc_on())) {
+        uint32_t key[3], pc;
+
+        pcc_hit = w64_pcc_get(cpu, pcc_gen, key, &pc);
+        if (likely(pcc_hit != NULL) && likely(!w64_pcc_verify())) {
+            return pcc_hit;
+        }
+    }
+#endif
+
     TCGTBCPUState s = W64_GET_TB_CPU_STATE(cpu);
     s.cflags = curr_cflags_fast(cpu);
 
@@ -488,10 +656,24 @@ const void *HELPER(lookup_tb_ptr)(CPUArchState *env)
 
     if (qemu_loglevel_mask(CPU_LOG_TB_CPU | CPU_LOG_EXEC)) {
         log_cpu_exec(s.pc, cpu, tb);
+        return tb->tc.ptr;
     }
 
 #ifdef CONFIG_TCG_WASM64
-    return w64_dispatch_target(tb);
+    {
+        const void *target = w64_dispatch_target(tb);
+
+        if (unlikely(pcc_hit != NULL)) {
+            if (pcc_hit != target) {
+                wasm_diag_stat[WASM_DIAG_PCC_BAD]++;
+            }
+            return pcc_hit;
+        }
+        if (likely(w64_pcc_on())) {
+            w64_pcc_put(cpu, s, pcc_gen, target);
+        }
+        return target;
+    }
 #else
     return tb->tc.ptr;
 #endif
@@ -521,9 +703,6 @@ const void *HELPER(lookup_tb_ptr)(CPUArchState *env)
  * this helper and checks, per call, that a slot the inline test would
  * have accepted names the TB the real lookup returns (LC_VHIT/LC_VBAD).
  */
-/* ARM-only, like W64_GET_TB_CPU_STATE above (same linking argument). */
-bool arm_w64_lc_key(CPUState *cs, uint32_t key32[3]);
-#define W64_LC_KEY(cpu, k32)  arm_w64_lc_key(cpu, k32)
 
 /*
  * Would the inline test at this slot accept the CPU's current key
@@ -667,6 +846,33 @@ const void *HELPER(lookup_tb_ptr_lc)(CPUArchState *env, void *slot)
     cpu->neg.can_do_io = true;
     WASM_DIAG_HOT(WASM_DIAG_LC_CALL);
 
+    const void *pcc_hit = NULL;
+
+    if (likely(w64_pcc_on())) {
+        uint32_t pc;
+
+        pcc_hit = w64_pcc_get(cpu, gen, cur, &pc);
+        if (likely(pcc_hit != NULL) && likely(!w64_pcc_verify())) {
+            /*
+             * Refill the per-TB slot exactly as the slow path would
+             * have: a hit here means the emitted inline test missed,
+             * and without this it would go on missing for good.
+             */
+            if (w64_lc_static_match(lc, cur)) {
+                lc->pc = pc;
+                for (int i = 0; i < 3; i++) {
+                    if (lc->dynmask & (1 << i)) {
+                        lc->key32[i] = cur[i];
+                    }
+                }
+                lc->tc = pcc_hit;
+                lc->gen = gen;
+                WASM_DIAG_HOT(WASM_DIAG_LC_FILL);
+            }
+            return pcc_hit;
+        }
+    }
+
     TCGTBCPUState s = W64_GET_TB_CPU_STATE(cpu);
     s.cflags = curr_cflags_fast(cpu);
 
@@ -727,6 +933,15 @@ const void *HELPER(lookup_tb_ptr_lc)(CPUArchState *env, void *slot)
     }
 
     target = w64_dispatch_target(tb);
+    if (unlikely(pcc_hit != NULL)) {
+        if (pcc_hit != target) {
+            wasm_diag_stat[WASM_DIAG_PCC_BAD]++;
+        }
+        return pcc_hit;
+    }
+    if (likely(w64_pcc_on())) {
+        w64_pcc_put(cpu, s, gen, target);
+    }
 
     /*
      * Only a compiled target may be cached: an untagged one (fidx == 0)

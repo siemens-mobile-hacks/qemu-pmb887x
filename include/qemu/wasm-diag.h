@@ -430,6 +430,21 @@ enum {
     WASM_DIAG_SSI_RUN,
     WASM_DIAG_SSI_BYTE,
 
+    /*
+     * The global next-TB cache in helper_lookup_tb_ptr{,_lc}.  pccHit is
+     * the share of lookup helper calls answered without
+     * arm_get_tb_cpu_state or a jump-cache probe: pccHit/(pccHit +
+     * lookup) is the hit rate, and it should track lookupJc/lookup,
+     * because it is the same question asked one call earlier.  pccFill
+     * counts the misses that could be cached at all -- a fill is refused
+     * for an uncompiled target, a non-standard cflags or an A64 /
+     * M-profile / single-stepping CPU.
+     */
+    WASM_DIAG_PCC_HIT,
+    WASM_DIAG_PCC_FILL,
+    WASM_DIAG_PCC_BAD,       /* W64_PCC_VERIFY: hits the full lookup
+                              * disagreed with.  Must be 0. */
+
     WASM_DIAG_N
 };
 

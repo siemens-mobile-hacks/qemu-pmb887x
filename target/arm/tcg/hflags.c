@@ -746,6 +746,22 @@ bool arm_w64_lc_key(CPUState *cs, uint32_t key32[3])
     key32[2] = env->condexec_bits;
     return true;
 }
+
+/*
+ * The same key with the PC, for the global next-TB cache: it is keyed on
+ * the *target* PC, so it has to read the PC without arm_get_tb_cpu_state
+ * — which is the call it exists to avoid.
+ */
+bool arm_w64_lc_key_pc(CPUState *cs, uint32_t key32[3], uint32_t *pc)
+{
+    CPUARMState *env = cpu_env(cs);
+
+    if (!arm_w64_lc_key(cs, key32)) {
+        return false;
+    }
+    *pc = env->regs[15];
+    return true;
+}
 #endif
 
 void arm_rebuild_hflags(CPUARMState *env)
