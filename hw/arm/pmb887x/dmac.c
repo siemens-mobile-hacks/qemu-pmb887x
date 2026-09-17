@@ -223,6 +223,47 @@ static void dmac_write(pmb887x_dmac_t *p, pmb887x_dmac_xlat_t *x, hwaddr addr, c
 	address_space_write(&p->downstream_as, addr, MEMTXATTRS_UNSPECIFIED, buffer, width);
 }
 
+/*
+ * The whole burst into one non-incrementing register, in one call.  The
+ * display stream is RAM -> the DIF's TB, and above the device's own
+ * handler every word costs an RCU section, a BQL check, the dispatch and
+ * the register switch - ~14 % of a CX70's vCPU while a J2ME game is
+ * drawing.  A device that cannot take a run says so by not having the
+ * op, and the caller falls back to the per-word loop.
+ */
+/* W64_NODMARUN=1 sends every burst back through the per-word path, so
+ * the burst write can be A/B'd inside one binary. */
+static bool dmac_run_enabled(void) {
+	static int on = -1;
+	if (on < 0)
+		on = getenv("W64_NODMARUN") == NULL;
+	return on != 0;
+}
+
+static bool dmac_write_run(pmb887x_dmac_t *p, pmb887x_dmac_xlat_t *x, hwaddr addr, const uint8_t *buffer, uint32_t width, uint32_t count) {
+	if (!dmac_run_enabled())
+		return false;
+	if (!x || !dmac_xlat(p, x, addr, width, true) || x->host)
+		return false;
+
+	MemoryRegion *mr = x->mr;
+	hwaddr off = x->xlat + (addr - x->addr);
+
+	if (x->direct_width != width) {
+		x->direct_width = width;
+		x->direct_ok = memory_region_write_direct_ok(mr, width);
+	}
+	if (!x->direct_ok || (off & (width - 1)))
+		return false;
+
+	RCU_READ_LOCK_GUARD();
+	bool release_lock = prepare_mmio_access(mr);
+	bool done = memory_region_dispatch_write_run(mr, off, buffer, width, count);
+	if (release_lock)
+		bql_unlock();
+	return done;
+}
+
 static void dmac_schedule(pmb887x_dmac_t *p) {
 	if (p->dmac_pending)
 		return;
@@ -394,7 +435,11 @@ static void dmac_transfer_memory(pmb887x_dmac_t *p, pmb887x_dmac_ch_t *ch, uint3
 		 * per word as before (a FIFO register sees each word) */
 		dmac_read(p, &ch->src_xlat, ch->src_addr, buffer, src_width, burst_size, src_endian);
 		ch->src_addr += src_width * burst_size;
-		for (uint32_t i = 0; i < burst_size; i++) {
+		bool run = src_endian == dst_endian && !(ch->control & DMAC_CH_CONTROL_DI) &&
+			dmac_write_run(p, &ch->dst_xlat, ch->dst_addr, buffer, dst_width, burst_size);
+		if (run)
+			wasm_diag_stat[WASM_DIAG_DMAC_RUN]++;
+		for (uint32_t i = 0; !run && i < burst_size; i++) {
 			uint8_t *w = buffer + i * src_width;
 			if (src_endian != dst_endian && src_width > 1)
 				dmac_swap_byte_order(w, dst_width, 1);
@@ -445,6 +490,10 @@ static void dmac_transfer_memory(pmb887x_dmac_t *p, pmb887x_dmac_ch_t *ch, uint3
 		uint32_t transferred = 0;
 		uint32_t src_burst_size = is_src_memory && (ch->control & DMAC_CH_CONTROL_SI) ? burst_size : 1;
 		uint32_t src_burst_size_bytes = src_burst_size * src_width;
+		/* This is the CX70's display stream: 32-bit reads from RAM split
+		 * into 16-bit writes to the DIF's TB, destination fixed. */
+		bool try_run = !(ch->control & DMAC_CH_CONTROL_DI) &&
+			(dst_endian != DEVICE_BIG_ENDIAN || dst_width == 1);
 		while (transferred < burst_size) {
 			dmac_read(p, &ch->src_xlat, ch->src_addr, buffer, src_width, src_burst_size, src_endian);
 			if (src_endian == DEVICE_BIG_ENDIAN)
@@ -453,7 +502,11 @@ static void dmac_transfer_memory(pmb887x_dmac_t *p, pmb887x_dmac_ch_t *ch, uint3
 			if ((ch->control & DMAC_CH_CONTROL_SI))
 				ch->src_addr += src_burst_size_bytes;
 
-			for (uint32_t j = 0; j < src_burst_size_bytes; j += dst_width) {
+			bool run = try_run && dmac_write_run(p, &ch->dst_xlat, ch->dst_addr, buffer, dst_width,
+				src_burst_size_bytes / dst_width);
+			if (run)
+				wasm_diag_stat[WASM_DIAG_DMAC_RUN]++;
+			for (uint32_t j = 0; !run && j < src_burst_size_bytes; j += dst_width) {
 				if (dst_endian == DEVICE_BIG_ENDIAN && dst_width > 1)
 					dmac_swap_byte_order(buffer + j, dst_width, 1);
 				dmac_write(p, &ch->dst_xlat, ch->dst_addr, buffer + j, dst_width);

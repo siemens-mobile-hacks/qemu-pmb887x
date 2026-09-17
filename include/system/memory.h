@@ -313,6 +313,22 @@ struct MemoryRegionOps {
                                     unsigned size,
                                     MemTxAttrs attrs);
 
+    /*
+     * Optional: @count writes of @size bytes each, all to @addr, taken
+     * in one call.  A DMA burst into a FIFO register is the whole
+     * display path on a phone - a framebuffer arrives one pixel per
+     * dispatch - and the per-access work above the device is then most
+     * of the cost.  A device that sets this must leave exactly the
+     * state @write would leave after the same @count writes; it is
+     * reached only through memory_region_dispatch_write_run(), so a
+     * caller that does not know about it is unaffected.
+     */
+    void (*write_run)(void *opaque,
+                      hwaddr addr,
+                      const uint8_t *buf,
+                      unsigned size,
+                      unsigned count);
+
     enum device_endian endianness;
     /* Guest-visible constraints: */
     struct {
@@ -2460,6 +2476,22 @@ bool memory_region_write_direct_ok(MemoryRegion *mr, unsigned size);
  */
 MemTxResult memory_region_dispatch_write_direct(MemoryRegion *mr, hwaddr addr,
                                                 uint64_t data, unsigned size);
+
+/**
+ * memory_region_dispatch_write_run: hand @count @size-byte writes of @buf,
+ * all to @addr, to the device in one call.  Same preconditions as
+ * memory_region_dispatch_write_direct().  Returns false - having written
+ * nothing - when @mr has no such path, so the caller writes word by word.
+ *
+ * @mr: #MemoryRegion to access
+ * @addr: address within that region
+ * @buf: @count * @size bytes, each word in the device's own byte order
+ * @size: access size in bytes
+ * @count: number of writes
+ */
+bool memory_region_dispatch_write_run(MemoryRegion *mr, hwaddr addr,
+                                      const uint8_t *buf, unsigned size,
+                                      unsigned count);
 
 /**
  * memory_region_subpage_leaf: resolve one level of a subpage container.
