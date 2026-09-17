@@ -318,6 +318,9 @@ void store_reg(DisasContext *s, int reg, TCGv_i32 var)
          */
         mask = s->thumb ? 1 : 3;
         s->base.is_jmp = DISAS_JUMP;
+#ifdef CONFIG_TCG_WASM64
+        s->w64_why = W64_WHY_PCST;
+#endif
         s->pc_save = -1;
     } else if (reg == 13 && arm_dc_feature(s, ARM_FEATURE_M)) {
         /* For M-profile SP bits [1:0] are always zero */
@@ -752,6 +755,9 @@ void gen_update_pc(DisasContext *s, int64_t diff)
 static inline void gen_bx(DisasContext *s, TCGv_i32 var)
 {
     s->base.is_jmp = DISAS_JUMP;
+#ifdef CONFIG_TCG_WASM64
+    s->w64_why = W64_WHY_BX;
+#endif
     tcg_gen_andi_i32(cpu_R[15], var, ~1);
     tcg_gen_andi_i32(var, var, 1);
     store_cpu_field(var, thumb);
@@ -1458,6 +1464,37 @@ static void note_linear_succ(DisasContext *s, unsigned bit)
 static void note_linear_succ(DisasContext *s, unsigned bit) { }
 #endif
 
+#ifdef CONFIG_TCG_WASM64
+/*
+ * W64_XWHY=1: attribute this goto_ptr to the guest instruction that asked
+ * for it.  Indirect exits are two thirds of all TB boundaries, so the split
+ * is what decides which one is worth a mechanism.  @s->w64_why is set
+ * wherever DISAS_JUMP is, and cleared here so a later exit in the same TB
+ * cannot inherit it.
+ */
+static void w64_xwhy_count(DisasContext *s)
+{
+    static int on = -1;
+    TCGv_ptr p;
+    TCGv_i64 v;
+
+    if (on < 0) {
+        const char *e = getenv("W64_XWHY");
+
+        on = e ? atoi(e) : 0;
+    }
+    if (!on) {
+        return;
+    }
+    p = tcg_constant_ptr(&wasm_diag_stat[WASM_DIAG_XW_OTHER + s->w64_why]);
+    v = tcg_temp_new_i64();
+    tcg_gen_ld_i64(v, p, 0);
+    tcg_gen_addi_i64(v, v, 1);
+    tcg_gen_st_i64(v, p, 0);
+    s->w64_why = 0;
+}
+#endif
+
 /*
  * @condexec: the condexec_bits value in memory at this exit (what
  * gen_set_condexec last stored, or 0 mid-TB — see arm_tr_init_disas_context).
@@ -1465,6 +1502,7 @@ static void note_linear_succ(DisasContext *s, unsigned bit) { }
 static void gen_goto_ptr(DisasContext *s, uint32_t condexec)
 {
 #ifdef CONFIG_TCG_WASM64
+    w64_xwhy_count(s);
     /*
      * Every bx lr / pop {pc} / ldr pc and (0027) every msr CPSR_* ends
      * here — one lookup per ~12 guest insns, 153 M per boot, ~12 % of
@@ -1966,6 +2004,7 @@ static void w64_emit_deferred_taken(DisasContext *dc)
             gen_goto_tb(dc, ctz32(~dc->w64_slots), diff);
         } else {
             gen_update_pc(dc, diff);
+            dc->w64_why = W64_WHY_DEFER;
             gen_goto_ptr(dc, 0);
         }
     }
@@ -2015,6 +2054,9 @@ static void gen_jmp_tb(DisasContext *s, int64_t diff, int tbno)
          * and don't chain to another TB.
          */
         gen_update_pc(s, diff);
+#ifdef CONFIG_TCG_WASM64
+        s->w64_why = W64_WHY_NOCHAIN;
+#endif
         gen_goto_ptr(s, 0);
         s->base.is_jmp = DISAS_NORETURN;
         break;
@@ -2106,6 +2148,7 @@ static int gen_set_psr(DisasContext *s, uint32_t mask, int spsr, TCGv_i32 t0)
     gen_pc_plus_diff(s, cpu_R[15], curr_insn_len(s));
     s->base.is_jmp = DISAS_JUMP;
 #ifdef CONFIG_TCG_WASM64
+    s->w64_why = W64_WHY_PSR;
     s->w64_dynkey = true;
 #endif
     return 0;
@@ -2350,6 +2393,7 @@ static void gen_rfe(DisasContext *s, TCGv_i32 pc, TCGv_i32 cpsr)
      * gen_set_psr); pc is already stored, so look up and go. */
     s->base.is_jmp = DISAS_JUMP;
 #ifdef CONFIG_TCG_WASM64
+    s->w64_why = W64_WHY_RFE;
     s->w64_dynkey = true;
 #endif
 }
@@ -5932,6 +5976,7 @@ static bool do_ldm(DisasContext *s, arg_ldst_block *a)
         /* Un-masked IRQs: see gen_rfe */
         s->base.is_jmp = DISAS_JUMP;
 #ifdef CONFIG_TCG_WASM64
+        s->w64_why = W64_WHY_RFE;
         s->w64_dynkey = true;
 #endif
     }
@@ -7704,6 +7749,9 @@ static void arm_tr_tb_stop(DisasContextBase *dcbase, CPUState *cpu)
             break;
         case DISAS_UPDATE_NOCHAIN:
             gen_update_pc(dc, curr_insn_len(dc));
+#ifdef CONFIG_TCG_WASM64
+            dc->w64_why = W64_WHY_NOCHAIN;
+#endif
             /* fall through */
         case DISAS_JUMP:
             note_linear_succ(dc, 2);

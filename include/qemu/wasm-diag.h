@@ -359,6 +359,20 @@ enum {
      * more than a fraction of one per TB.
      */
     WASM_DIAG_TCG_SPILL,
+    /*
+     * W64_XWHY=1: which guest instruction asked for a goto_ptr exit.
+     * Indirect exits are two thirds of all TB boundaries and a boundary
+     * is ~34 ns, so the split decides which one is worth a mechanism.
+     * Emitted into the generated code, so this is a measurement build
+     * like W64_XCOUNT -- per-Mi rates exact, wall not comparable.
+     */
+    WASM_DIAG_XW_OTHER,
+    WASM_DIAG_XW_PCST,       /* a store to r15: pop {pc}, ldr pc, mov pc */
+    WASM_DIAG_XW_BX,         /* bx / blx register, i.e. most returns */
+    WASM_DIAG_XW_PSR,        /* msr cpsr -- gen_set_psr */
+    WASM_DIAG_XW_RFE,        /* rfe, and ldm with an SPSR restore */
+    WASM_DIAG_XW_DEFER,      /* a deferred taken path with no slot left */
+    WASM_DIAG_XW_NOCHAIN,    /* DISAS_UPDATE_NOCHAIN */
     WASM_DIAG_N
 };
 

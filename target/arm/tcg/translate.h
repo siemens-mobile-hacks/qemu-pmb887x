@@ -39,6 +39,12 @@ typedef struct DisasDelayException {
 #ifdef CONFIG_TCG_WASM64
 /* conditional branches whose taken path one TB may defer to its end */
 #define W64_FT_MAX 8
+
+/* W64_XWHY reasons, in the order of the WASM_DIAG_XW_* counters */
+enum {
+    W64_WHY_OTHER, W64_WHY_PCST, W64_WHY_BX, W64_WHY_PSR,
+    W64_WHY_RFE, W64_WHY_DEFER, W64_WHY_NOCHAIN,
+};
 #endif
 
 typedef struct DisasContext {
@@ -158,6 +164,8 @@ typedef struct DisasContext {
      */
     DisasLabel w64_loop_exit;
     int w64_loop_insns;
+    /* which instruction asked for the next goto_ptr, for W64_XWHY */
+    uint8_t w64_why;
 #endif
     bool lse2;
     /*
