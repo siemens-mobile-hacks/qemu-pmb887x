@@ -6954,8 +6954,32 @@
 #define USART_WHBCON_SETOE_SHIFT			13
 
 #define USART_WHBABCON						0x54
+#define USART_WHBABCON_CLRABEN				(1 << 0)	 // Clear autobaud detection enable
+#define USART_WHBABCON_CLRABEN_SHIFT		0
+#define USART_WHBABCON_SETABEN				(1 << 1)	 // Set autobaud detection enable
+#define USART_WHBABCON_SETABEN_SHIFT		1
 
 #define USART_WHBABSTAT						0x58
+#define USART_WHBABSTAT_CLRFCSDET			(1 << 0)	 // Clear first small character detected flag
+#define USART_WHBABSTAT_CLRFCSDET_SHIFT		0
+#define USART_WHBABSTAT_CLRFCCDET			(1 << 1)	 // Clear first capital character detected flag
+#define USART_WHBABSTAT_CLRFCCDET_SHIFT		1
+#define USART_WHBABSTAT_CLRSCSDET			(1 << 2)	 // Clear second small character detected flag
+#define USART_WHBABSTAT_CLRSCSDET_SHIFT		2
+#define USART_WHBABSTAT_CLRSCCDET			(1 << 3)	 // Clear second capital character detected flag
+#define USART_WHBABSTAT_CLRSCCDET_SHIFT		3
+#define USART_WHBABSTAT_CLRDETWAIT			(1 << 4)	 // Clear autobaud detection waiting flag
+#define USART_WHBABSTAT_CLRDETWAIT_SHIFT	4
+#define USART_WHBABSTAT_SETFCSDET			(1 << 5)	 // Set first small character detected flag
+#define USART_WHBABSTAT_SETFCSDET_SHIFT		5
+#define USART_WHBABSTAT_SETFCCDET			(1 << 6)	 // Set first capital character detected flag
+#define USART_WHBABSTAT_SETFCCDET_SHIFT		6
+#define USART_WHBABSTAT_SETSCSDET			(1 << 7)	 // Set second small character detected flag
+#define USART_WHBABSTAT_SETSCSDET_SHIFT		7
+#define USART_WHBABSTAT_SETSCCDET			(1 << 8)	 // Set second capital character detected flag
+#define USART_WHBABSTAT_SETSCCDET_SHIFT		8
+#define USART_WHBABSTAT_SETDETWAIT			(1 << 9)	 // Set autobaud detection waiting flag
+#define USART_WHBABSTAT_SETDETWAIT_SHIFT	9
 
 #define USART_FCCON							0x5C
 #define USART_FCCON_CTSEN					(1 << 0)	 // RTS enbled (0: disable; 1: enable)
