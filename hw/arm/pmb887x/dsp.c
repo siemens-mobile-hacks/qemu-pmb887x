@@ -173,17 +173,17 @@ static void dsp_hexdump(const char *prefix, void *buf, size_t size)
 	for (b = 0; b < size; b += len) {
 		len = MIN(16, size - b);
 		g_string_truncate(str, 0);
-		const uint16_t *line = (uint16_t*)buf + b;
+		const uint16_t *line = (const uint16_t *)((uint8_t *)buf + b);
 
-		for (size_t i = 0; i < len; i++) {
-			uint16_t c = line[i];
+		for (size_t i = 0; i < len; i += 2) {
+			uint16_t c = line[i / 2];
 
 			g_string_append_c(str, hexdump_nibble((c >> 12) & 0xf));
 			g_string_append_c(str, hexdump_nibble((c >> 8) & 0xf));
 			g_string_append_c(str, hexdump_nibble((c >> 4) & 0xf));
 			g_string_append_c(str, hexdump_nibble(c & 0xf));
 
-			if (i < len) {
+			if (i + 2 < len) {
 				g_string_append_c(str, ' ');
 			}
 		}
@@ -589,9 +589,9 @@ static void dsp_realize(DeviceState *dev, Error **errp) {
 	p->refill_timer = timer_new_ns(DSP_PCM_REFILL_CLOCK, dsp_pcm_refill_tick, p);
 
 	/* The ARM reads the mask ROM version from shared RAM word 0 and refuses to
-	 * boot (ddsphw fatal exit) when it does not match the SoC it expects. */                                                                                                
-	if (p->rom_version == 0 && p->config != NULL)                                                                                                                                                                                                    
-			p->rom_version = p->config->default_rom_version;
+	 * boot (ddsphw fatal exit) when it does not match the SoC it expects. */
+	if (p->rom_version == 0 && p->config != NULL)
+		p->rom_version = p->config->default_rom_version;
 	dsp_ram_write(p, 0, p->rom_version, 2);
 
 	dsp_update_state(p);
