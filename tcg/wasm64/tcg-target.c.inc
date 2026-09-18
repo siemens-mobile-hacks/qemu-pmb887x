@@ -210,12 +210,21 @@ static int w64_scr(TCGType t)
  * icount the guest instruction count is already exact in the icount
  * state and wasm_insns() derives it there, so the prologue maintains
  * the counters only on non-icount boards (the LG ones) or when
- * W64_TBSTATS=1 asks for the TB-entry count too. */
+ * W64_TBSTATS=1 asks for the TB-entry count too.
+ *
+ * The knob reads its value rather than its presence, so W64_TBSTATS=0
+ * turns the accounting off where it is otherwise forced on.  That is the
+ * only way to price it: on an LG board it is what the MIPS readout is
+ * made of, so deleting it is a ceiling probe and not a configuration --
+ * MIPS reads 0 with it off, and only the wall-clock rates (fps) mean
+ * anything in that leg. */
 static bool w64_tbstats_inline(void)
 {
     static int mode = -1;
     if (mode < 0) {
-        mode = !icount_enabled() || getenv("W64_TBSTATS") != NULL;
+        const char *e = getenv("W64_TBSTATS");
+
+        mode = e ? atoi(e) != 0 : !icount_enabled();
     }
     return mode != 0;
 }
@@ -3342,10 +3351,32 @@ static const TCGOutOpDivRem outop_divu2 = {
  * excluding it would mean the gate never ran the shipping control flow.
  * Merged and unmerged 250 Mi lockstep runs return the same verdict, to
  * the digest -- the grid is TB-entry-keyed on both sides.
+ *
+ * wasm_tb_stats is not in the set either, and that one matters in
+ * production: it is armed on exactly the boards icount is *off* for (see
+ * w64_tbstats_inline), so leaving it in switched off TB lengthening --
+ * the fold target and the conditional loop back-edge merge both -- for
+ * the whole LG family, to protect a MIPS readout.  It is refundable
+ * instead, through w64_tb_acct_insns below.
+ *
+ * w64_tbhist_on stays because it is a measurement build and costs
+ * nothing shipped; icount2 stays because its counter drives virtual
+ * time rather than a display.
  */
 bool w64_tb_icount_exact(void)
 {
-    return w64_tbhist_on() || w64_tbstats_inline() || icount2_enabled();
+    return w64_tbhist_on() || icount2_enabled();
+}
+
+/*
+ * The guest-instruction half of wasm_tb_stats, for a frontend that emits
+ * an early TB exit: the prologue prepays tb->icount at entry, so an exit
+ * that skips instructions hands them back here the same way it hands
+ * back icount_decr.  NULL while nothing charges the counter per entry.
+ */
+uint64_t *w64_tb_acct_insns(void)
+{
+    return w64_tbstats_inline() ? &wasm_tb_stats[1] : NULL;
 }
 
 static void tcg_out_tb_start(TCGContext *s)

@@ -259,6 +259,14 @@ void tb_w64_unlink_incoming(TranslationBlock *dest);
  * not merge a conditional branch's fall-through while any is armed.
  */
 bool w64_tb_icount_exact(void);
+
+/*
+ * The per-TB-entry guest-instruction counter, when one is charged from
+ * the prologue, else NULL.  A frontend that exits a TB early subtracts
+ * what it skipped, which is what keeps that counter out of
+ * w64_tb_icount_exact.
+ */
+uint64_t *w64_tb_acct_insns(void);
 #endif
 
 /* Hide the qatomic_read to make code a little easier on the eyes */

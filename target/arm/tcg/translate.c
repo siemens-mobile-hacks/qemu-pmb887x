@@ -1819,6 +1819,29 @@ static bool w64_loop_on(void)
     return on;
 }
 
+/*
+ * Move the per-TB-entry instruction counter, for the paths that make one
+ * entry stop meaning "tb->icount instructions ran": negative where an
+ * early exit skipped some, positive where a loop pass re-ran the body
+ * without coming back through the prologue.  Nothing to do unless that
+ * counter is being charged inline.
+ */
+static void w64_acct_charge(int insns)
+{
+    uint64_t *acct = w64_tb_acct_insns();
+    TCGv_ptr p;
+    TCGv_i64 v;
+
+    if (!acct || !insns) {
+        return;
+    }
+    p = tcg_constant_ptr(acct);
+    v = tcg_temp_new_i64();
+    tcg_gen_ld_i64(v, p, 0);
+    tcg_gen_addi_i64(v, v, insns);
+    tcg_gen_st_i64(v, p, 0);
+}
+
 static bool w64_back_edge(DisasContext *s, int64_t diff)
 {
     int off32 = offsetof(CPUState, neg.icount_decr.u32) - sizeof(CPUState);
@@ -1864,6 +1887,7 @@ static bool w64_back_edge(DisasContext *s, int64_t diff)
     if (icount) {
         tcg_gen_st16_i32(count, tcg_env, off16);
     }
+    w64_acct_charge(s->base.num_insns);
     tcg_gen_br(s->w64_loop.label);
 
     if (conditional) {
@@ -1915,20 +1939,21 @@ static bool w64_defer_taken(DisasContext *s, int64_t diff)
     return true;
 }
 
-/* hand back the icount the prologue prepaid for instructions not run */
+/* hand back what the prologue prepaid for instructions not run */
 static void w64_refund(DisasContext *dc, int skipped)
 {
-    TCGv_i32 c;
-    int off;
-
-    if (skipped <= 0 || !(tb_cflags(dc->base.tb) & CF_USE_ICOUNT)) {
+    if (skipped <= 0) {
         return;
     }
-    off = offsetof(CPUState, neg.icount_decr.u16.low) - sizeof(CPUState);
-    c = tcg_temp_new_i32();
-    tcg_gen_ld16u_i32(c, tcg_env, off);
-    tcg_gen_addi_i32(c, c, skipped);
-    tcg_gen_st16_i32(c, tcg_env, off);
+    if (tb_cflags(dc->base.tb) & CF_USE_ICOUNT) {
+        int off = offsetof(CPUState, neg.icount_decr.u16.low) - sizeof(CPUState);
+        TCGv_i32 c = tcg_temp_new_i32();
+
+        tcg_gen_ld16u_i32(c, tcg_env, off);
+        tcg_gen_addi_i32(c, c, skipped);
+        tcg_gen_st16_i32(c, tcg_env, off);
+    }
+    w64_acct_charge(-skipped);
 }
 
 /*

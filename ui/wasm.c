@@ -171,6 +171,20 @@ uint64_t wasm_tbs(void)
 }
 
 /*
+ * The inline counter itself, which wasm_insns() below hides whenever
+ * icount can answer better.  That is what makes it a self-check: run an
+ * icount board with W64_TBSTATS=1 and the two must agree, which is the
+ * only way to prove the charges and refunds around early TB exits and
+ * loop back-edges (w64_acct_charge, target/arm/tcg/translate.c) keep
+ * this exact on the boards that have nothing else to compare against.
+ */
+EMSCRIPTEN_KEEPALIVE
+uint64_t wasm_tb_insns(void)
+{
+    return wasm_tb_stats[1];
+}
+
+/*
  * Guest instructions executed so far.  Under icount: the finished
  * slices in timers_state.qemu_icount plus what the running slice has
  * consumed of its budget (the same arithmetic as icount_get_executed).
