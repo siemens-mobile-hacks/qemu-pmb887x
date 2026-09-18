@@ -19,6 +19,8 @@
 
 #include "qemu/osdep.h"
 #include "qemu/qemu-print.h"
+#include "qemu/wasm-diag.h"
+#include "qemu/timer.h"
 #include "qapi/error.h"
 #include "qapi/type-helpers.h"
 #include "hw/core/cpu.h"
@@ -48,6 +50,11 @@
 #include "internal-common.h"
 #if !defined(CONFIG_USER_ONLY)
 #include "accel/tcg/iommu.h"
+#ifdef CONFIG_TCG_WASM64
+#include "accel/tcg/probe.h"
+#include "accel/tcg/cpu-mmu-index.h"
+#include "exec/tlb-flags.h"
+#endif
 #endif
 
 /* -icount align implementation. */
@@ -239,12 +246,18 @@ static inline TranslationBlock *tb_lookup(CPUState *cpu, TCGTBCPUState s)
     hash = tb_jmp_cache_hash_func(s.pc);
     jc = cpu->tb_jmp_cache;
 
+#ifdef __EMSCRIPTEN__
+    wasm_diag_stat[WASM_DIAG_LOOKUP]++;
+#endif
     tb = qatomic_read(&jc->array[hash].tb);
     if (likely(tb &&
                jc->array[hash].pc == s.pc &&
                tb->cs_base == s.cs_base &&
                tb->flags == s.flags &&
                tb_cflags(tb) == s.cflags)) {
+#ifdef __EMSCRIPTEN__
+        wasm_diag_stat[WASM_DIAG_LOOKUP_JC]++;
+#endif
         goto hit;
     }
 
@@ -252,6 +265,12 @@ static inline TranslationBlock *tb_lookup(CPUState *cpu, TCGTBCPUState s)
     if (tb == NULL) {
         return NULL;
     }
+#ifdef __EMSCRIPTEN__
+    wasm_diag_stat[WASM_DIAG_LOOKUP_QHT]++;
+    if (qatomic_read(&jc->array[hash].tb) != NULL) {
+        wasm_diag_stat[WASM_DIAG_LOOKUP_CONFL]++;
+    }
+#endif
 
     jc->array[hash].pc = s.pc;
     qatomic_set(&jc->array[hash].tb, tb);
@@ -366,6 +385,250 @@ static inline bool check_for_breakpoints(CPUState *cpu, vaddr pc,
         check_for_breakpoints_slow(cpu, pc, cflags);
 }
 
+/*
+ * helper_lookup_tb_ptr runs once per indirect jump - 2.9M/s on this
+ * firmware, 78M per boot - and two of its calls are pure dispatch on a
+ * build with exactly one target and one accelerator:
+ *
+ *  - get_tb_cpu_state is reached through cpu->cc->tcg_ops, i.e. a wasm
+ *    call_indirect (table bounds + signature check) around a function
+ *    the linker could have called directly;
+ *  - curr_cflags() lives in another translation unit, so the four
+ *    debug-only conditions it tests (none of which can be true in a
+ *    browser build: no gdbstub single-step, no -one-insn-per-tb, no
+ *    -d nochain) cost a call instead of folding away.
+ *
+ * Both are wasm-only shortcuts: the generic paths stay for every other
+ * build.
+ */
+#ifdef __EMSCRIPTEN__
+#if defined(CONFIG_TCG_WASM64)
+/*
+ * This file is target-independent (TARGET_* are poisoned here), so the
+ * direct call is keyed on the backend: the wasm64 backend is only ever
+ * linked with the ARM target in this tree, and any other target would
+ * fail to link on this symbol rather than silently fall back.  (The
+ * original guard, CONFIG_TARGET_ARM, is a macro no build defines — the
+ * devirtualisation was inactive from 0044 until 2026-09-13.)
+ */
+TCGTBCPUState arm_get_tb_cpu_state(CPUState *cs);
+#define W64_GET_TB_CPU_STATE(cpu)  arm_get_tb_cpu_state(cpu)
+#else
+/* The TCI dist keeps the ops call. */
+#define W64_GET_TB_CPU_STATE(cpu)  ((cpu)->cc->tcg_ops->get_tb_cpu_state(cpu))
+#endif
+
+#if defined(CONFIG_TCG_WASM64)
+/*
+ * What a goto_ptr exit is handed (exec/translation-block.h): the target's
+ * shared-table index, tagged, so the emitted dispatch tail-calls it without
+ * reading the target TB's descriptor — a cache line per TB in a region the
+ * execution path otherwise never touches.  An uncompiled or evicted target
+ * (fidx == 0) still goes to the C dispatcher, as the emitted fidx test used
+ * to arrange; the pointer is what the dispatcher's handoff slot wants.
+ */
+static inline const void *w64_dispatch_target(const TranslationBlock *tb)
+{
+    const uint32_t *desc = tb->tc.ptr;
+
+    if (unlikely(desc[W64_TCP_FIDX / 4] == 0)) {
+        return tb->tc.ptr;
+    }
+    return (const void *)(uintptr_t)(W64_TIDX_TAG | desc[W64_TCP_TIDX / 4]);
+}
+#endif
+
+static inline uint32_t curr_cflags_fast(CPUState *cpu)
+{
+    if (likely(!cpu_single_stepping(cpu) &&
+               !qatomic_read(&one_insn_per_tb) &&
+               !qemu_loglevel_mask(CPU_LOG_TB_NOCHAIN))) {
+        return cpu->tcg_cflags;
+    }
+    return curr_cflags(cpu);
+}
+#else
+#define W64_GET_TB_CPU_STATE(cpu)  ((cpu)->cc->tcg_ops->get_tb_cpu_state(cpu))
+#define curr_cflags_fast(cpu)      curr_cflags(cpu)
+#endif
+
+#ifdef CONFIG_TCG_WASM64
+/* ARM-only, like W64_GET_TB_CPU_STATE above (same linking argument). */
+bool arm_w64_lc_key(CPUState *cs, uint32_t key32[3]);
+bool arm_w64_lc_key_pc(CPUState *cs, uint32_t key32[3], uint32_t *pc);
+#define W64_LC_KEY(cpu, k32)  arm_w64_lc_key(cpu, k32)
+#define W64_LC_KEY_PC(cpu, k32, pcp)  arm_w64_lc_key_pc(cpu, k32, pcp)
+
+/*
+ * The global next-TB cache, keyed on the target PC.
+ *
+ * The per-TB slot above is monomorphic — one target per exit site — and
+ * a J2ME interpreter's dispatch is the case it cannot serve: one
+ * `ldr pc, [table, bytecode, lsl #2]` reached once per Java bytecode,
+ * going somewhere different almost every time.  Atomic Skater calls the
+ * helper 15.3k times per Mi of guest work, one per ~65 guest
+ * instructions, and 96.5 % of those calls then *hit the jump cache* —
+ * the answer was one PC-hashed load away and the call paid for
+ * arm_get_tb_cpu_state, curr_cflags, the breakpoint test, three loads
+ * out of the TB descriptor and the dispatch-target decode to find it.
+ *
+ * So the fast path here is the jump cache's own question asked in the
+ * cheap place: hash the PC, compare the key the per-TB slot already
+ * proved sufficient (pc, hflags.flags, thumb, condexec_bits, plus the
+ * generation for everything else — see gen_goto_ptr), and return the
+ * dispatch target the last lookup computed.  A hit touches one 32-byte
+ * line and four env words, all of them hot.
+ *
+ * This is not the rejected second way (playbook § REJECTED, 2026-09-15).
+ * That one added a compare chain to *emitted* code on the path that
+ * still missed, and emitted code grew 20.6 %.  Nothing is emitted here:
+ * the cache lives entirely in the helper, which lands in the main qemu
+ * module where V8 optimizes it — the lesson from round 21's tier-up
+ * probe, applied.
+ *
+ * Soundness is the per-TB slot's, unchanged: the key is the same three
+ * words, the generation retires the whole table at once and is bumped
+ * wherever a jump-cache entry is dropped, wherever a key input the test
+ * does not cover moves (hflags.flags2, FPSCR.Len/Stride, FPEXC.EN,
+ * cflags) and wherever a module is evicted; A64, M-profile and
+ * single-step never fill (arm_w64_lc_key).  Only a tagged — i.e.
+ * compiled — target is cached, for the same reason as the slot: a hit
+ * never comes back here to refill.
+ *
+ * W64_NOPCC=1 turns it off for an A/B inside one binary.
+ */
+#define W64_PCC_SLOTS TB_JMP_CACHE_SIZE
+/*
+ * The entry is declared in exec/translation-block.h because the generated
+ * code reads it too (mechanism K).  @cpu_index is there because the table
+ * is global where the jump cache is per-CPU, and the generation is
+ * per-CPU too, so an entry has to name its owner.  Every board here is
+ * uniprocessor, so that compare never fails — it is what makes that a
+ * fact rather than an assumption.  It also pads the entry to 32 bytes:
+ * two per cache line, never straddling.
+ */
+static struct W64PccEnt w64_pcc[W64_PCC_SLOTS];
+QEMU_BUILD_BUG_ON(sizeof(struct W64PccEnt) != 32);
+
+/*
+ * W64_NOPCCIN=1 keeps every per-TB-slot miss going to the helper, so the
+ * emitted second way is A/B'able inside one binary.
+ */
+bool w64_pcc_inline(void)
+{
+    static int on = -1;
+    if (on < 0) {
+        on = getenv("W64_NOPCCIN") == NULL;
+    }
+    return on != 0;
+}
+
+const struct W64PccShape *w64_pcc_shape(void)
+{
+    static struct W64PccShape shape;
+
+    if (!shape.tab) {
+        shape.shift = TARGET_PAGE_BITS - TB_JMP_PAGE_BITS;
+        shape.page_mask = TB_JMP_PAGE_MASK;
+        shape.addr_mask = TB_JMP_ADDR_MASK;
+        shape.tab = w64_pcc;
+    }
+    return &shape;
+}
+
+static bool w64_lc_verify(void);
+static bool w64_lc2_enabled(void);
+static bool w64_coloc(void);
+
+static bool w64_pcc_on(void)
+{
+    static int mode = -1;
+    if (mode < 0) {
+        /* every diagnostic mode wants the full lookup to run */
+        mode = getenv("W64_NOPCC") == NULL &&
+            !w64_lc_verify() && !w64_lc2_enabled() && !w64_coloc();
+    }
+    return mode != 0;
+}
+
+/*
+ * W64_PCC_VERIFY=1: take the hit, then do the full lookup anyway and
+ * check that they name the same target.  pccBad must be 0 — it is the
+ * only evidence that the key and the generation cover everything
+ * arm_get_tb_cpu_state does.
+ */
+static bool w64_pcc_verify(void)
+{
+    static int mode = -1;
+    if (mode < 0) {
+        mode = getenv("W64_PCC_VERIFY") != NULL;
+    }
+    return mode != 0;
+}
+
+/*
+ * The jump cache's own hash and size, so a pccHit is exactly a lookupJc
+ * that never had to be reached: the ceiling this is built against is
+ * lookupJc/lookup = 96.5 %, and a different hash would only move the
+ * conflicts around.
+ */
+static inline unsigned w64_pcc_idx(uint32_t pc)
+{
+    return tb_jmp_cache_hash_func(pc);
+}
+
+static inline const void *w64_pcc_get(CPUState *cpu, uint32_t gen,
+                                      uint32_t key[3], uint32_t *pc_out)
+{
+    uint32_t pc;
+    const struct W64PccEnt *e;
+
+    if (!W64_LC_KEY_PC(cpu, key, &pc)) {
+        return NULL;
+    }
+    e = &w64_pcc[w64_pcc_idx(pc)];
+    if (likely(e->pc == pc && e->gen == gen &&
+               e->cpu_index == (uint32_t)cpu->cpu_index &&
+               e->key32[0] == key[0] &&
+               e->key32[1] == key[1] &&
+               e->key32[2] == key[2])) {
+        wasm_diag_stat[WASM_DIAG_PCC_HIT]++;
+        *pc_out = pc;
+        return e->tc;
+    }
+    return NULL;
+}
+
+/*
+ * @gen is read before the lookup that produced @target, so an
+ * invalidation racing with this fill leaves a stale stamp and the entry
+ * is simply missed — never a stale target under a current stamp.  Same
+ * ordering rule as the per-TB slot.
+ */
+static inline void w64_pcc_put(CPUState *cpu, TCGTBCPUState s, uint32_t gen,
+                               const void *target)
+{
+    uint32_t key[3];
+    struct W64PccEnt *e;
+
+    if (!((uintptr_t)target & W64_TIDX_TAG) ||
+        s.cflags != cpu->tcg_cflags ||
+        !W64_LC_KEY(cpu, key)) {
+        return;
+    }
+    e = &w64_pcc[w64_pcc_idx((uint32_t)s.pc)];
+    e->pc = (uint32_t)s.pc;
+    e->key32[0] = key[0];
+    e->key32[1] = key[1];
+    e->key32[2] = key[2];
+    e->cpu_index = (uint32_t)cpu->cpu_index;
+    e->tc = target;
+    e->gen = gen;
+    wasm_diag_stat[WASM_DIAG_PCC_FILL]++;
+}
+
+#endif /* CONFIG_TCG_WASM64 */
+
 /**
  * helper_lookup_tb_ptr: quick check for next tb
  * @env: current cpu state
@@ -388,8 +651,22 @@ const void *HELPER(lookup_tb_ptr)(CPUArchState *env)
      */
     cpu->neg.can_do_io = true;
 
-    TCGTBCPUState s = cpu->cc->tcg_ops->get_tb_cpu_state(cpu);
-    s.cflags = curr_cflags(cpu);
+#ifdef CONFIG_TCG_WASM64
+    uint32_t pcc_gen = qatomic_read(&cpu->neg.tb_key_gen);
+    const void *pcc_hit = NULL;
+
+    if (likely(w64_pcc_on())) {
+        uint32_t key[3], pc;
+
+        pcc_hit = w64_pcc_get(cpu, pcc_gen, key, &pc);
+        if (likely(pcc_hit != NULL) && likely(!w64_pcc_verify())) {
+            return pcc_hit;
+        }
+    }
+#endif
+
+    TCGTBCPUState s = W64_GET_TB_CPU_STATE(cpu);
+    s.cflags = curr_cflags_fast(cpu);
 
     if (check_for_breakpoints(cpu, s.pc, &s.cflags)) {
         cpu_loop_exit(cpu);
@@ -402,10 +679,328 @@ const void *HELPER(lookup_tb_ptr)(CPUArchState *env)
 
     if (qemu_loglevel_mask(CPU_LOG_TB_CPU | CPU_LOG_EXEC)) {
         log_cpu_exec(s.pc, cpu, tb);
+        return tb->tc.ptr;
     }
 
+#ifdef CONFIG_TCG_WASM64
+    {
+        const void *target = w64_dispatch_target(tb);
+
+        if (unlikely(pcc_hit != NULL)) {
+            if (pcc_hit != target) {
+                wasm_diag_stat[WASM_DIAG_PCC_BAD]++;
+            }
+            return pcc_hit;
+        }
+        if (likely(w64_pcc_on())) {
+            w64_pcc_put(cpu, s, pcc_gen, target);
+        }
+        return target;
+    }
+#else
     return tb->tc.ptr;
+#endif
 }
+
+#ifdef CONFIG_TCG_WASM64
+/*
+ * helper_lookup_tb_ptr_lc: helper_lookup_tb_ptr for a TB whose goto_ptr
+ * carries an inline next-TB cache (@slot = &tb->w64_lc of the calling
+ * TB, see target/arm gen_goto_ptr).  The emitted code takes the cached
+ * target when (pc, cpu->neg.tb_key_gen, dyn) all match and calls here
+ * otherwise; on a hit that the target declares cacheable the slot is
+ * refilled.
+ *
+ * Soundness: a slot stamped with generation G is valid for as long as
+ * the jump-cache entry it was filled from would be — every event that
+ * drops a jump-cache entry (tb_phys_invalidate, tcg_flush_jmp_cache,
+ * tb_jmp_cache_clear_page) bumps the generation, and so does every
+ * change of a target key input that neither the inline test nor the
+ * static stamp covers (ARM: hflags.flags2, FPSCR.Len/Stride, FPEXC.EN).
+ * The words the translator stamped statically are checked here at fill
+ * time instead (w64_lc_static_match).  The generation is read BEFORE
+ * the lookup so that an invalidation racing with the fill leaves a
+ * stale stamp, never a stale target.
+ *
+ * W64_LC_VERIFY=1 makes the translator route every goto_ptr through
+ * this helper and checks, per call, that a slot the inline test would
+ * have accepted names the TB the real lookup returns (LC_VHIT/LC_VBAD).
+ */
+
+/*
+ * Would the inline test at this slot accept the CPU's current key
+ * (@cur)?  Static words are the translator's and are not compared by
+ * the emitted code, so they do not count here either — verify mode
+ * relies on that to test the static-key invariant itself.
+ */
+static bool w64_lc_dyn_match(const struct W64LookupCache *lc,
+                             const uint32_t cur[3])
+{
+    for (int i = 0; i < 3; i++) {
+        if ((lc->dynmask & (1 << i)) && lc->key32[i] != cur[i]) {
+            return false;
+        }
+    }
+    return true;
+}
+
+/* Can the slot be filled for @cur: every static word must match. */
+static bool w64_lc_static_match(const struct W64LookupCache *lc,
+                                const uint32_t cur[3])
+{
+    for (int i = 0; i < 3; i++) {
+        if (!(lc->dynmask & (1 << i)) && lc->key32[i] != cur[i]) {
+            return false;
+        }
+    }
+    return true;
+}
+
+/*
+ * Ceiling probe for a second cache way, W64_LC2=1.  The emitted code is
+ * untouched, so the helper still sees only real misses of the one-entry
+ * slot; a direct-mapped shadow table hashed on the slot address stands in
+ * for way 1, filled with whatever way 0 is about to evict (LRU-of-2).
+ * LC2_HIT / LC_CALL is then the fraction of today's misses a two-way
+ * cache would catch - measured before building one.
+ */
+#define W64_LC2_SLOTS 16384
+static struct {
+    const void *slot;
+    uint32_t pc, gen, key32[3];
+    uint8_t dynmask;
+} w64_lc2[W64_LC2_SLOTS];
+
+static bool w64_lc2_enabled(void)
+{
+    static int mode = -1;
+    if (mode < 0) {
+        mode = getenv("W64_LC2") != NULL;
+    }
+    return mode != 0;
+}
+
+static unsigned w64_lc2_idx(const void *slot)
+{
+    uintptr_t x = (uintptr_t)slot >> 5;
+
+    x *= 0x9e3779b97f4a7c15ULL;
+    return (x >> 33) & (W64_LC2_SLOTS - 1);
+}
+
+static bool w64_lc_verify(void)
+{
+    static int mode = -1;
+    if (mode < 0) {
+        mode = getenv("W64_LC_VERIFY") != NULL;
+    }
+    return mode != 0;
+}
+
+/*
+ * W64_COLOC=1, with W64_LC_VERIFY=1 so that every goto_ptr arrives here:
+ * how often does an indirect exit land in the batch module it is leaving?
+ * That is the ceiling on replacing the tail call with a branch inside one
+ * wasm function, and it is worth knowing before building one.
+ */
+static bool w64_coloc(void)
+{
+    static int mode = -1;
+    if (mode < 0) {
+        mode = getenv("W64_COLOC") != NULL;
+    }
+    return mode != 0;
+}
+
+static void w64_count_coloc(const struct W64LookupCache *lc,
+                            const TranslationBlock *dest)
+{
+    const TranslationBlock *src = container_of(lc, TranslationBlock, w64_lc);
+    uint32_t a, b;
+
+    if (src->tc.ptr == NULL || dest->tc.ptr == NULL) {
+        wasm_diag_stat[WASM_DIAG_X_NOMOD]++;
+        return;
+    }
+    a = ldl_p((const uint8_t *)src->tc.ptr + W64_TCP_BATCH);
+    b = ldl_p((const uint8_t *)dest->tc.ptr + W64_TCP_BATCH);
+    if (!(a & W64_TCP_BATCH_TAG) || !(b & W64_TCP_BATCH_TAG)) {
+        wasm_diag_stat[WASM_DIAG_X_NOMOD]++;
+    } else if (a == b) {
+        wasm_diag_stat[WASM_DIAG_X_SAMEMOD]++;
+    } else {
+        wasm_diag_stat[WASM_DIAG_X_DIFFMOD]++;
+    }
+}
+
+#if defined(CONFIG_TCG_WASM64) && defined(WASM_DIAG_TIME_PHASES)
+static const void *lookup_tb_ptr_lc_1(CPUArchState *env, void *slot);
+
+const void *HELPER(lookup_tb_ptr_lc)(CPUArchState *env, void *slot)
+{
+    static uint32_t tick;
+    const void *r;
+    int64_t t0;
+
+    if (likely((++tick & 7) != 0)) {
+        return lookup_tb_ptr_lc_1(env, slot);
+    }
+    t0 = get_clock_realtime();
+    r = lookup_tb_ptr_lc_1(env, slot);
+    wasm_diag_stat[WASM_DIAG_LC_NS] += get_clock_realtime() - t0;
+    wasm_diag_stat[WASM_DIAG_LC_NS_N]++;
+    t0 = get_clock_realtime();
+    wasm_diag_stat[WASM_DIAG_LC_CAL] += get_clock_realtime() - t0;
+    return r;
+}
+
+static const void *lookup_tb_ptr_lc_1(CPUArchState *env, void *slot)
+{
+    CPUState *cpu = env_cpu(env);
+#else
+const void *HELPER(lookup_tb_ptr_lc)(CPUArchState *env, void *slot)
+{
+    CPUState *cpu = env_cpu(env);
+#endif
+    struct W64LookupCache *lc = slot;
+    TranslationBlock *tb;
+    const void *target;
+    uint32_t gen = qatomic_read(&cpu->neg.tb_key_gen);
+    uint32_t cur[3];
+
+    cpu->neg.can_do_io = true;
+    /*
+     * Unconditional: lookup - lcCall is how many goto_ptr exits reached a
+     * helper from a site that carries no inline cache at all (a TB's second
+     * differently-keyed exit), which is a different repair from a site whose
+     * single slot keeps missing.  One increment on a ~28 ns path.
+     */
+    wasm_diag_stat[WASM_DIAG_LC_CALL]++;
+
+    const void *pcc_hit = NULL;
+
+    if (likely(w64_pcc_on())) {
+        uint32_t pc;
+
+        pcc_hit = w64_pcc_get(cpu, gen, cur, &pc);
+        if (likely(pcc_hit != NULL) && likely(!w64_pcc_verify())) {
+            /*
+             * Refill the per-TB slot exactly as the slow path would
+             * have: a hit here means the emitted inline test missed,
+             * and without this it would go on missing for good.
+             */
+            if (w64_lc_static_match(lc, cur)) {
+                lc->pc = pc;
+                for (int i = 0; i < 3; i++) {
+                    if (lc->dynmask & (1 << i)) {
+                        lc->key32[i] = cur[i];
+                    }
+                }
+                lc->tc = pcc_hit;
+                lc->gen = gen;
+                wasm_diag_stat[WASM_DIAG_LC_FILL]++;
+            }
+            return pcc_hit;
+        }
+    }
+
+    TCGTBCPUState s = W64_GET_TB_CPU_STATE(cpu);
+    s.cflags = curr_cflags_fast(cpu);
+
+    if (check_for_breakpoints(cpu, s.pc, &s.cflags)) {
+        cpu_loop_exit(cpu);
+    }
+
+    tb = tb_lookup(cpu, s);
+
+    if (unlikely(w64_lc2_enabled()) && W64_LC_KEY(cpu, cur)) {
+        unsigned i = w64_lc2_idx(slot);
+
+        if (w64_lc2[i].slot == slot && w64_lc2[i].gen == gen &&
+            w64_lc2[i].pc == s.pc) {
+            bool ok = true;
+
+            for (int k = 0; k < 3; k++) {
+                if ((w64_lc2[i].dynmask & (1 << k)) &&
+                    w64_lc2[i].key32[k] != cur[k]) {
+                    ok = false;
+                }
+            }
+            if (ok) {
+                wasm_diag_stat[WASM_DIAG_LC2_HIT]++;
+            }
+        }
+        /* way 0 is about to be overwritten: it becomes way 1 */
+        w64_lc2[i].slot = slot;
+        w64_lc2[i].pc = lc->pc;
+        w64_lc2[i].gen = lc->gen;
+        w64_lc2[i].dynmask = lc->dynmask;
+        for (int k = 0; k < 3; k++) {
+            w64_lc2[i].key32[k] = lc->key32[k];
+        }
+    }
+
+    if (unlikely(w64_lc_verify())) {
+        if (lc->gen == gen && lc->pc == s.pc &&
+            W64_LC_KEY(cpu, cur) && w64_lc_dyn_match(lc, cur)) {
+            wasm_diag_stat[WASM_DIAG_LC_VHIT]++;
+            if (tb == NULL || lc->tc != w64_dispatch_target(tb)) {
+                wasm_diag_stat[WASM_DIAG_LC_VBAD]++;
+            }
+        }
+    }
+
+    if (tb == NULL) {
+        return tcg_code_gen_epilogue;
+    }
+
+    if (unlikely(w64_coloc())) {
+        w64_count_coloc(lc, tb);
+    }
+
+    if (qemu_loglevel_mask(CPU_LOG_TB_CPU | CPU_LOG_EXEC)) {
+        log_cpu_exec(s.pc, cpu, tb);
+        return tb->tc.ptr;         /* keep every lookup visible in the log */
+    }
+
+    target = w64_dispatch_target(tb);
+    if (unlikely(pcc_hit != NULL)) {
+        if (pcc_hit != target) {
+            wasm_diag_stat[WASM_DIAG_PCC_BAD]++;
+        }
+        return pcc_hit;
+    }
+    if (likely(w64_pcc_on())) {
+        w64_pcc_put(cpu, s, gen, target);
+    }
+
+    /*
+     * Only a compiled target may be cached: an untagged one (fidx == 0)
+     * would pin this slot to the dispatcher handoff for good, because a
+     * hit never calls back here to refill it.  The TB is about to be
+     * compiled by this very execution, so the next miss fills the slot.
+     */
+    if (likely(s.cflags == cpu->tcg_cflags) &&
+        ((uintptr_t)target & W64_TIDX_TAG) &&
+        W64_LC_KEY(cpu, cur) && w64_lc_static_match(lc, cur)) {
+        lc->pc = s.pc;
+        for (int i = 0; i < 3; i++) {
+            if (lc->dynmask & (1 << i)) {
+                lc->key32[i] = cur[i];
+            }
+        }
+        lc->tc = target;
+        lc->gen = gen;
+        wasm_diag_stat[WASM_DIAG_LC_FILL]++;
+    }
+    return target;
+}
+
+void HELPER(tb_key_gen_bump)(CPUArchState *env)
+{
+    cpu_tb_key_gen_bump(env_cpu(env));
+}
+#endif /* CONFIG_TCG_WASM64 */
 
 /* Return the current PC from CPU, which may be cached in TB. */
 static vaddr log_pc(CPUState *cpu, const TranslationBlock *tb)
@@ -517,6 +1112,10 @@ static void cpu_exec_longjmp_cleanup(CPUState *cpu)
     /* Non-buggy compilers preserve this; assert the correct value. */
     g_assert(cpu == current_cpu);
 
+#ifdef CONFIG_TCG_WASM64
+    wasm_diag_stat[WASM_DIAG_EXEC_LJMP]++;
+#endif
+
 #ifdef CONFIG_USER_ONLY
     clear_helper_retaddr();
     if (have_mmap_lock()) {
@@ -600,6 +1199,258 @@ void cpu_exec_step_atomic(CPUState *cpu)
     end_exclusive();
 }
 
+#ifdef CONFIG_TCG_WASM64
+/*
+ * Speculative successor translation for the wasm64 backend.
+ *
+ * Every translated TB has to be compiled by the browser
+ * (WebAssembly.Module) before it can run, and each compile carries a
+ * large fixed cost — plus, in Firefox, a page-granular slice of a
+ * process-wide executable-memory budget that is only reclaimed by GC.
+ * Compiling one module per TB at first execution paid that cost ~1k
+ * times per second in the early boot.  Instead, when a TB is
+ * translated on a lookup miss, its goto_tb destinations (and theirs,
+ * breadth-first, up to W64_SPEC_N TBs) are translated right away;
+ * they all join the backend's open batch, which is assembled into ONE
+ * module when the first of them executes (tcg_qemu_tb_exec).
+ *
+ * Translation here must be side-effect free for the guest: only
+ * targets whose page AND the following page (a TB may cross into it)
+ * are executable RAM are translated, so the translator never takes a
+ * faulting code-fetch path; the cflags must be the plain ones (no
+ * one-shot CF_COUNT/CF_LAST_IO request pending); and nothing is done
+ * when the code buffer is nearly full, so a tb_flush cannot be
+ * triggered from here (a flush would free @root under the caller).
+ * Returns true if a flush happened anyway (caller re-looks-up).
+ */
+#define W64_SPEC_MAX 64
+int w64_spec_active;
+
+static bool w64_spec_code_host(CPUArchState *env, vaddr pc, int mmu_idx,
+                               void **host)
+{
+    int flags = probe_access_full_mmu(env, pc, 0, MMU_INST_FETCH, mmu_idx,
+                                      host, NULL);
+    return *host != NULL && !(flags & (TLB_INVALID_MASK | TLB_MMIO));
+}
+
+static bool w64_spec_code_ram(CPUArchState *env, vaddr pc, int mmu_idx)
+{
+    void *host;
+    return w64_spec_code_host(env, pc, mmu_idx, &host);
+}
+
+/*
+ * Has any miss landed in this guest page before?  Module count is miss
+ * count, and two static edge classes have now failed to predict misses
+ * (0092 call returns: -2.6 %; 0095 the address after an unconditional
+ * transfer: 0 %), so the question worth asking is coarser: are the
+ * misses spread over many pages, or do they cluster into a few pages the
+ * guest keeps re-entering at new offsets?
+ *
+ * misses / new-page-misses is the misses-per-touched-page ratio, and it
+ * is what decides whether translating a whole page on first entry could
+ * pay: a translation is ~12 us against ~96 us for the module a miss
+ * forces, so a page may cost up to ~8 wasted translations per miss it
+ * removes.
+ *
+ * Open-addressed, never cleared, saturating: a full bucket counts as
+ * seen, which biases the ratio *down* and so cannot manufacture a
+ * prize.
+ */
+#define W64_MISSPAGE_BITS 15
+static uint32_t w64_misspage[1u << W64_MISSPAGE_BITS];
+
+static bool w64_misspage_seen(vaddr pc)
+{
+    uint32_t key = (uint32_t)(pc >> TARGET_PAGE_BITS) | 0x80000000u;
+    unsigned i = (key * 2654435761u) >> (32 - W64_MISSPAGE_BITS);
+    unsigned n;
+
+    for (n = 0; n < 8; n++, i = (i + 1) & ((1u << W64_MISSPAGE_BITS) - 1)) {
+        if (w64_misspage[i] == key) {
+            return true;
+        }
+        if (w64_misspage[i] == 0) {
+            w64_misspage[i] = key;
+            return false;
+        }
+    }
+    return true;
+}
+
+static bool w64_speculate(CPUState *cpu, TranslationBlock *root,
+                          TCGTBCPUState s)
+{
+    static int budget = -1;
+    CPUArchState *env = cpu_env(cpu);
+    TranslationBlock *queue[4 * W64_SPEC_MAX + 1];
+    unsigned qh = 0, qt = 0, made = 0;
+    const unsigned qmax = ARRAY_SIZE(queue);
+    unsigned flush_count = tb_ctx.tb_flush_count;
+    int mmu_idx = cpu_mmu_index(cpu, true);
+
+    if (budget < 0) {
+        const char *e = getenv("W64_SPEC_N");
+        /*
+         * Speculation exists to fill the open batch, and the interpreter
+         * tier fills it far better: with the tier on, every speculated TB
+         * is translation the batch would have got anyway, and 27 % of
+         * them are never entered at all.  Measured monotone -- 593/571/
+         * 540/514 Mi for a budget of 0/2/8/32 -- so the tier's default is
+         * none.
+         */
+        budget = e ? atoi(e) : (w64_interp_gate ? 0 : 32);
+        budget = MIN(MAX(budget, 0), W64_SPEC_MAX);
+    }
+    static unsigned st[6];   /* misses, nosucc, exists, notram, made, oneshot */
+    static int dbg = -1;
+    if (dbg < 0) {
+        dbg = getenv("W64_DEBUG") != NULL;
+    }
+    st[0]++;
+    wasm_diag_stat[WASM_DIAG_SPEC_MISS]++;
+    if (!w64_misspage_seen(s.pc)) {
+        wasm_diag_stat[WASM_DIAG_MISS_NEWPAGE]++;
+    }
+    /*
+     * W64_MISSDUMP=1: print every missed guest pc to the console, so the
+     * miss stream can be intersected offline with the flash image (are
+     * these addresses stored anywhere as pointers, i.e. could a literal
+     * scan have predicted them?).  Measurement only -- the printf makes
+     * the run much slower, and the counters stay valid because they count
+     * guest events.  tools/abortlog.mjs captures it.
+     */
+    {
+        static int dump = -1;
+
+        if (dump < 0) {
+            dump = getenv("W64_MISSDUMP") != NULL;
+        }
+        if (dump) {
+            fprintf(stderr, "W64MISS %08x\n", (uint32_t)s.pc);
+        }
+    }
+    if (s.cflags != curr_cflags(cpu)) {
+        st[5]++;
+    } else if (root->w64_nsucc == 0) {
+        st[1]++;
+        wasm_diag_stat[WASM_DIAG_SPEC_NOSUCC]++;
+    }
+    if (dbg && (st[0] & 4095) == 0) {
+        fprintf(stderr, "W64SPEC misses=%u nosucc=%u oneshot=%u exists=%u "
+                "notram=%u made=%u\n", st[0], st[1], st[5], st[2], st[3], st[4]);
+    }
+    if (budget == 0 || root->w64_nsucc == 0 ||
+        s.cflags != curr_cflags(cpu)) {
+        return false;
+    }
+
+    queue[qt++] = root;
+    while (qh < qt && made < (unsigned)budget) {
+        TranslationBlock *tb = queue[qh++];
+        vaddr succ[ARRAY_SIZE(tb->w64_succ)];
+        unsigned nsucc = tb->w64_nsucc;
+        unsigned i;
+        bool complete = true;
+
+        /*
+         * A node whose successors were all found translated by an
+         * earlier walk has nothing to offer: the walk through already-
+         * translated TBs re-probed and re-looked-up the same edges on
+         * every miss in the neighbourhood (~2 % of the boot's vCPU time
+         * in probes + qht lookups for nothing).
+         */
+        if (tb->w64_explored) {
+            continue;
+        }
+
+        memcpy(succ, tb->w64_succ, nsucc * sizeof(succ[0]));
+        /*
+         * There was an `ldr pc, [pc, #-4]` trampoline heuristic here: read
+         * the literal after a TB ending in that insn and queue it as an
+         * extra successor, recovering an edge goto_tb cannot record.  It
+         * was guarded on !CF_PCREL, which ARM sets on every system-mode TB,
+         * so it had never once run.  Measured with the guard lifted and the
+         * guest pc carried alongside the walk (tb->pc is unwritten under
+         * CF_PCREL): the tail probe succeeds on ~141 nodes per Mi, and of
+         * those the pattern matches 0.004 -- about one node in 35k, against
+         * 6.5-17.6 lookup misses per Mi.  Four boards, same answer.  These
+         * firmwares do not end blocks that way; deleted rather than shipped
+         * behind a knob.  See doc/optimization-playbook.md.
+         */
+
+        for (i = 0; i < nsucc; i++) {
+            TCGTBCPUState t = s;
+
+            if (made >= (unsigned)budget || qt >= qmax) {
+                complete = false;
+                break;
+            }
+            TranslationBlock *ex;
+            vaddr next_page;
+            unsigned k;
+
+            t.pc = succ[i];
+            /*
+             * Non-faulting probes first — before tb_htable_lookup, whose
+             * get_page_addr_code() would deliver a prefetch abort to the
+             * guest for a target it does not map, or (blx: a Thumb
+             * target recorded while in ARM mode) an alignment fault.  A
+             * successful probe fills the TLB, so the faulting lookups in
+             * tb_htable_lookup, tb_gen_code and translator_ld then hit.
+             */
+            if (!w64_spec_code_ram(env, t.pc, mmu_idx)) {
+                st[3]++;
+                wasm_diag_stat[WASM_DIAG_SPEC_NOTRAM]++;
+                continue;
+            }
+            next_page = (t.pc & TARGET_PAGE_MASK) + TARGET_PAGE_SIZE;
+            if (next_page > t.pc && !w64_spec_code_ram(env, next_page, mmu_idx)) {
+                st[3]++;
+                wasm_diag_stat[WASM_DIAG_SPEC_NOTRAM]++;
+                continue;
+            }
+            ex = tb_htable_lookup(cpu, t);
+            if (ex) {
+                /* already translated: walk through it, its successors
+                 * may still be missing (once per node) */
+                st[2]++;
+                wasm_diag_stat[WASM_DIAG_SPEC_EXISTS]++;
+                for (k = 0; k < qt && queue[k] != ex; k++) {
+                    continue;
+                }
+                if (k == qt) {
+                    queue[qt++] = ex;
+                }
+                continue;
+            }
+            st[4]++;
+            wasm_diag_stat[WASM_DIAG_SPEC_MADE]++;
+            /* leave headroom: never provoke a flush from here */
+            if ((char *)tcg_ctx->code_gen_highwater -
+                (char *)tcg_ctx->code_gen_ptr < (1 << 20)) {
+                return false;
+            }
+            mmap_lock();
+            w64_spec_active = 1;
+            queue[qt] = tb_gen_code(cpu, t);
+            w64_spec_active = 0;
+            mmap_unlock();
+            made++;
+            if (tb_ctx.tb_flush_count != flush_count) {
+                return true;
+            }
+            qt++;
+        }
+        if (complete) {
+            tb->w64_explored = 1;
+        }
+    }
+    return false;
+}
+#endif
+
 void tb_set_jmp_target(TranslationBlock *tb, int n, uintptr_t addr)
 {
     /*
@@ -612,6 +1463,27 @@ void tb_set_jmp_target(TranslationBlock *tb, int n, uintptr_t addr)
     uintptr_t jmp_rx = (uintptr_t)tb->tc.ptr + offset;
     uintptr_t jmp_rw = jmp_rx - tcg_splitwx_diff;
 
+#ifdef CONFIG_TCG_WASM64
+    /*
+     * The wasm64 chain reads this slot and tail-calls the shared table, so
+     * hold the target's table index here (tagged, exec/translation-block.h)
+     * instead of its descriptor address: the chain then touches nothing of
+     * the target, where it used to load fidx and tidx out of a cache line
+     * that only the dispatch ever reads.  tb_reset_jump's own address is a
+     * wasm64 heap pointer, below 2 GB, so a reset slot reads as "not
+     * linked" with no second test.
+     *
+     * A chain is only ever *taken* after the target has run once through
+     * the dispatcher (tb_add_jump is immediately followed by executing the
+     * target), so its table entry is live by then.  The one thing that can
+     * unregister it afterwards is batch eviction, which unlinks the
+     * incoming jumps itself (tcg/wasm64/wasm64.c).
+     */
+    if (addr != (uintptr_t)tb->tc.ptr + tb->jmp_reset_offset[n]) {
+        addr = (uintptr_t)(W64_TIDX_TAG |
+                           ((const uint32_t *)addr)[W64_TCP_TIDX / 4]);
+    }
+#endif
     tb->jmp_target_addr[n] = addr;
     tb_target_set_jmp_target(c_tb, n, jmp_rx, jmp_rw);
 }
@@ -629,6 +1501,19 @@ static inline void tb_add_jump(TranslationBlock *tb, int n,
     if (tb_next->cflags & CF_INVALID) {
         goto out_unlock_next;
     }
+#ifdef CONFIG_TCG_WASM64
+    /*
+     * The wasm64 chain tail-calls the target's shared-table entry, which
+     * exists only once the target has a module.  Until the interpreter
+     * tier there was no way for a target to run without one, so linking
+     * here was always safe; now it is not.  Leave the pair unlinked --
+     * jmp_dest stays NULL, so the next exit through this edge links it
+     * once the target has been compiled.
+     */
+    if (((const uint32_t *)tb_next->tc.ptr)[W64_TCP_FIDX / 4] == 0) {
+        goto out_unlock_next;
+    }
+#endif
     /* Atomically claim the jump destination slot only if it was NULL */
     old = qatomic_cmpxchg(&tb->jmp_dest[n], (uintptr_t)NULL,
                           (uintptr_t)tb_next);
@@ -727,9 +1612,32 @@ static inline bool cpu_handle_exception(CPUState *cpu, int *ret)
     if (replay_exception()) {
         const TCGCPUOps *tcg_ops = cpu->cc->tcg_ops;
 
+#ifdef CONFIG_TCG_WASM64
+        if (w64_exc_ns()) {
+            int64_t c0 = get_clock_realtime();
+            int64_t c1 = get_clock_realtime();
+            int64_t c2, c3, c4;
+
+            bql_lock();
+            c2 = get_clock_realtime();
+            tcg_ops->do_interrupt(cpu);
+            c3 = get_clock_realtime();
+            bql_unlock();
+            c4 = get_clock_realtime();
+            wasm_diag_stat[WASM_DIAG_EXC_CAL] += c1 - c0;
+            wasm_diag_stat[WASM_DIAG_EXC_BQL_NS] += (c2 - c1) + (c4 - c3);
+            wasm_diag_stat[WASM_DIAG_EXC_DO_NS] += c3 - c2;
+            wasm_diag_stat[WASM_DIAG_EXC_N]++;
+        } else {
+            bql_lock();
+            tcg_ops->do_interrupt(cpu);
+            bql_unlock();
+        }
+#else
         bql_lock();
         tcg_ops->do_interrupt(cpu);
         bql_unlock();
+#endif
         cpu->exception_index = -1;
 
         if (unlikely(cpu_single_stepping(cpu))) {
@@ -781,6 +1689,27 @@ static inline bool cpu_handle_interrupt(CPUState *cpu,
                                         TranslationBlock **last_tb)
 {
     /*
+     * A guest exception left pending by generated code that ended its
+     * TB with a plain exit instead of a cpu_loop_exit() unwind (see
+     * gen_exception_exit in the target frontends): deliver it before
+     * anything else, exactly like the longjmp would have.  Clear the
+     * exit-kick flag the same way the normal path below does so a kick
+     * that raced with the TB cannot force one-exit-per-TB spinning.
+     * wasm-only: it exists for the Asyncify unwind, and costs every
+     * build a branch per loop iteration. */
+#ifdef __EMSCRIPTEN__
+    /*
+     * Not under record/replay: replay delivers interrupts ahead of
+     * pending exceptions via the cpu_handle_exception() fall-through
+     * below, and bouncing back here first would livelock it.
+     */
+    if (unlikely(cpu->exception_index >= 0) &&
+        replay_mode == REPLAY_MODE_NONE) {
+        qatomic_set_mb(&cpu->neg.icount_decr.u16.high, 0);
+        return true;
+    }
+#endif /* __EMSCRIPTEN__ */
+    /*
      * If we have requested custom cflags with CF_NOIRQ we should
      * skip checking here. Any pending interrupts will get picked up
      * by the next TB we execute under normal cflags.
@@ -794,8 +1723,21 @@ static inline bool cpu_handle_interrupt(CPUState *cpu,
      * Ensure zeroing happens before reading cpu->exit_request or
      * cpu->interrupt_request (see also store-release in
      * tcg_kick_vcpu_thread())
+     *
+     * Only when there is something to clear.  The barrier is what this
+     * costs - it stops the interrupt_request load below being hoisted
+     * above the store, which would let a kick that landed in between be
+     * cleared without being acted on - and if the flag already reads 0
+     * there is no store for the load to be hoisted above: a kicker sets
+     * interrupt_request and *then* the flag, so a flag of 0 means any
+     * kick is still to come, and the iteration that sees the flag set
+     * will take the full path.  On wasm the skipped pair is a seq_cst
+     * i32.atomic.store plus an atomic.fence, on a loop that runs about
+     * 1.6M times a second on an idle S75.
      */
-    qatomic_set_mb(&cpu->neg.icount_decr.u16.high, 0);
+    if (unlikely(qatomic_read(&cpu->neg.icount_decr.u16.high))) {
+        qatomic_set_mb(&cpu->neg.icount_decr.u16.high, 0);
+    }
 
 #ifdef CONFIG_USER_ONLY
     assert(!cpu_test_interrupt(cpu, ~0));
@@ -944,7 +1886,24 @@ cpu_exec_loop(CPUState *cpu, SyncClocks *sc)
 
         while (!cpu_handle_interrupt(cpu, &last_tb)) {
             TranslationBlock *tb;
-            TCGTBCPUState s = cpu->cc->tcg_ops->get_tb_cpu_state(cpu);
+
+#ifdef CONFIG_TCG_WASM64
+            wasm_diag_stat[WASM_DIAG_EXEC_ITER]++;
+#endif
+
+#ifndef CONFIG_USER_ONLY
+            /*
+             * A BQL this thread is holding only because bql_unlock_mmio()
+             * deferred the release (system/cpus.c) is given back here as
+             * soon as another thread asks for it.  One atomic load, which
+             * on x86 is a plain one; the release itself is rare.
+             */
+            if (unlikely(bql_wanted_by_other())) {
+                bql_release_lazy();
+            }
+#endif
+
+            TCGTBCPUState s = W64_GET_TB_CPU_STATE(cpu);
             s.cflags = cpu->cflags_next_tb;
 
             /*
@@ -972,6 +1931,14 @@ cpu_exec_loop(CPUState *cpu, SyncClocks *sc)
                 mmap_lock();
                 tb = tb_gen_code(cpu, s);
                 mmap_unlock();
+
+#ifdef CONFIG_TCG_WASM64
+                if (w64_speculate(cpu, tb, s)) {
+                    /* a tb_flush freed @tb: start the lookup over */
+                    last_tb = NULL;
+                    continue;
+                }
+#endif
 
                 /*
                  * We add the TB in the virtual pc hash table
@@ -1011,8 +1978,19 @@ cpu_exec_loop(CPUState *cpu, SyncClocks *sc)
 
 static int cpu_exec_setjmp(CPUState *cpu, SyncClocks *sc)
 {
+#ifdef CONFIG_TCG_WASM64
+    wasm_diag_stat[WASM_DIAG_EXEC_SJMP]++;
+#endif
     /* Prepare setjmp context for exception handling. */
     if (unlikely(sigsetjmp(cpu->jmp_env, 0) != 0)) {
+#ifdef CONFIG_TCG_WASM64
+        if (w64_exc_ns() && w64_exc_lj_t0) {
+            wasm_diag_stat[WASM_DIAG_EXC_LJ_NS] +=
+                get_clock_realtime() - w64_exc_lj_t0;
+            wasm_diag_stat[WASM_DIAG_EXC_LJ_N]++;
+            w64_exc_lj_t0 = 0;
+        }
+#endif
         cpu_exec_longjmp_cleanup(cpu);
     }
 

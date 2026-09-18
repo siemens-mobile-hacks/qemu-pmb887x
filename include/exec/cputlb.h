@@ -127,6 +127,19 @@ void tlb_flush_page_all_cpus_synced(CPUState *src, vaddr addr);
 void tlb_flush(CPUState *cpu);
 
 /**
+ * tlb_flush_phys_ranges:
+ * @cpu: CPU whose TLB should be flushed
+ * @lo/@hi/@n: n changed physical ranges [lo[i], hi[i])
+ *
+ * Selective tlb_flush() for memory topology commits: drop only entries
+ * that translate into a changed physical range (see tcg_commit and
+ * system/memory.c's romd-mode FlatView variants).
+ */
+void tlb_flush_phys_ranges(CPUState *cpu,
+                           const hwaddr *lo, const hwaddr *hi,
+                           unsigned n);
+
+/**
  * tlb_flush_all_cpus_synced:
  * @cpu: src CPU of the flush
  *
@@ -234,6 +247,11 @@ static inline void tlb_flush_page_all_cpus_synced(CPUState *src, vaddr addr)
 {
 }
 static inline void tlb_flush(CPUState *cpu)
+{
+}
+static inline void tlb_flush_phys_ranges(CPUState *cpu,
+                                         const hwaddr *lo, const hwaddr *hi,
+                                         unsigned n)
 {
 }
 static inline void tlb_flush_all_cpus_synced(CPUState *src_cpu)

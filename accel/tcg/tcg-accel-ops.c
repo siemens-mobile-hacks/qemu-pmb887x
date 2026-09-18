@@ -69,6 +69,10 @@ void tcg_cpu_init_cflags(CPUState *cpu, bool parallel)
     cflags |= parallel ? CF_PARALLEL : 0;
     cflags |= icount_enabled() ? CF_USE_ICOUNT : 0;
     tcg_cflags_set(cpu, cflags);
+#ifdef CONFIG_TCG_WASM64
+    /* the inline lookup caches start empty (slot gen 0): never be 0 here */
+    cpu_tb_key_gen_bump(cpu);
+#endif
 }
 
 void tcg_cpu_destroy(CPUState *cpu)

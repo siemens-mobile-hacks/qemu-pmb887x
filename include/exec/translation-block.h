@@ -126,6 +126,67 @@ struct TranslationBlock {
     uint16_t jmp_reset_offset[2]; /* offset of original jump target */
     uint16_t jmp_insn_offset[2];  /* offset of direct jump insn */
     uintptr_t jmp_target_addr[2]; /* target address */
+#ifdef CONFIG_TCG_WASM64
+    /*
+     * Guest addresses of this TB's goto_tb destinations, recorded by
+     * translator_use_goto_tb: the wasm64 backend translates them ahead
+     * of execution so the browser compiles TBs in batches
+     * (accel/tcg/cpu-exec.c w64_speculate).  A hint only.
+     */
+    vaddr w64_succ[3];
+    uint8_t w64_nsucc;
+    uint8_t w64_explored;   /* speculation: every successor already exists */
+    /*
+     * Inline next-TB cache for this TB's goto_ptr exit (target/arm
+     * gen_goto_ptr): the emitted code compares pc, tb_key_gen and the
+     * key words flagged dynamic in @dynmask against the CPU and
+     * tail-calls @tc on a match instead of calling helper_lookup_tb_ptr.
+     * The other key words were stamped by the translator (the exit's
+     * static key) and helper_lookup_tb_ptr_lc fills the slot only when
+     * they match the CPU; a bump of cpu->neg.tb_key_gen retires every
+     * slot at once.  @gen 0 = empty.
+     */
+    struct W64LookupCache {
+        uint32_t pc;
+        uint32_t gen;
+        uint32_t key32[3];  /* ARM: hflags.flags, thumb, condexec_bits */
+        uint8_t dynmask;    /* W64_LC_DYN_* bits: key32[i] is dynamic */
+        const void *tc;
+    } w64_lc;
+#define W64_LC_DYN_FLAGS     1
+#define W64_LC_DYN_THUMB     2
+#define W64_LC_DYN_CONDEXEC  4
+
+/*
+ * What a goto_ptr operand means to the wasm64 backend.
+ *
+ * The emitted dispatch is a return_call_indirect through the shared chain
+ * table, so all it needs is the target's table index.  That index used to
+ * be read out of the descriptor at tb->tc.ptr — one u32 per ~576-byte
+ * module staging area, i.e. one cache line per TB in a ~20 MB region that
+ * nothing else in the execution path touches.  A synthetic dispatch chain
+ * (tools/dispatch-probe.mjs) prices that dependent load at +2 ns over a
+ * 256-TB working set and +8..9 ns over 1024-4096 TBs, on a dispatch that
+ * runs ~11 M times a second.
+ *
+ * So the lookup helpers hand the index over directly, tagged in the high
+ * half (a wasm64 heap pointer is < 2 GB, so a real pointer never has one):
+ *
+ *   hi != 0   W64_TIDX_TAG | tidx — tail-call table[tidx]
+ *   hi == 0   a descriptor pointer (target not compiled yet, or its batch
+ *             was evicted) or NULL (lookup miss): hand off to the C
+ *             dispatcher, which is what used to happen when fidx was 0.
+ *
+ * The offsets mirror W64_DESC_FIDX / W64_DESC_TIDX in tcg/wasm64/wasm64.h,
+ * which asserts they agree.
+ */
+#define W64_TCP_FIDX     0
+#define W64_TCP_BATCH    4
+#define W64_TCP_TIDX    16
+#define W64_TIDX_TAG    (1ULL << 32)
+/* set in the W64_TCP_BATCH word once the TB's batch module landed */
+#define W64_TCP_BATCH_TAG  0x80000000u
+#endif
 
     /*
      * Each TB has a NULL-terminated list (jmp_list_head) of incoming jumps.
@@ -149,8 +210,64 @@ struct TranslationBlock {
     uintptr_t jmp_dest[2];
 };
 
+#ifdef CONFIG_TCG_WASM64
+/*
+ * The global pc-keyed next-TB cache (accel/tcg/cpu-exec.c) as the
+ * generated code sees it.  A goto_ptr whose per-TB slot misses used to
+ * call the helper for this table's six-word compare; the translator emits
+ * that compare instead, so the entry layout and the hash's own constants
+ * have to leave cpu-exec.c.
+ */
+struct W64PccEnt {
+    uint32_t pc;
+    uint32_t gen;
+    uint32_t key32[3];
+    uint32_t cpu_index;
+    const void *tc;
+};
+
+struct W64PccShape {
+    struct W64PccEnt *tab;
+    unsigned shift;         /* TARGET_PAGE_BITS - TB_JMP_PAGE_BITS */
+    uint32_t page_mask;     /* TB_JMP_PAGE_MASK */
+    uint32_t addr_mask;     /* TB_JMP_ADDR_MASK */
+};
+
+const struct W64PccShape *w64_pcc_shape(void);
+bool w64_pcc_inline(void);
+
+/*
+ * Interpreter-tier gate (tcg/wasm64/w64-interp.c): 0 off, 1 interpret a
+ * TB until it earns a module, 2 interpret always.  accel/tcg reads it to
+ * decide whether speculative successor translation is worth anything --
+ * see w64_speculate().
+ */
+extern uint32_t w64_interp_gate;
+#endif
+
 /* The alignment given to TranslationBlock during allocation. */
 #define CODE_GEN_ALIGN  16
+
+#ifdef CONFIG_TCG_WASM64
+/* accel/tcg/tb-maint.c, for tcg/wasm64/wasm64.c's batch eviction. */
+void tb_w64_unlink_incoming(TranslationBlock *dest);
+
+/*
+ * True while something charges tb->icount once per TB entry from the
+ * emitted prologue (tcg/wasm64/tcg-target.c.inc).  A TB that can leave
+ * before its last instruction over-charges those, so a frontend must
+ * not merge a conditional branch's fall-through while any is armed.
+ */
+bool w64_tb_icount_exact(void);
+
+/*
+ * The per-TB-entry guest-instruction counter, when one is charged from
+ * the prologue, else NULL.  A frontend that exits a TB early subtracts
+ * what it skipped, which is what keeps that counter out of
+ * w64_tb_icount_exact.
+ */
+uint64_t *w64_tb_acct_insns(void);
+#endif
 
 /* Hide the qatomic_read to make code a little easier on the eyes */
 static inline uint32_t tb_cflags(const TranslationBlock *tb)

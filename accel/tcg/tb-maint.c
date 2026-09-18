@@ -18,6 +18,9 @@
  */
 
 #include "qemu/osdep.h"
+#ifdef __EMSCRIPTEN__
+#include "qemu/wasm-diag.h"
+#endif
 #include "qemu/interval-tree.h"
 #include "qemu/qtree.h"
 #include "exec/cputlb.h"
@@ -31,6 +34,9 @@
 #include "tb-internal.h"
 #include "system/tcg.h"
 #include "tcg/tcg.h"
+#ifdef CONFIG_TCG_WASM64
+#include "tcg/wasm64/wasm64.h"
+#endif
 #include "tb-hash.h"
 #include "tb-context.h"
 #include "internal-common.h"
@@ -187,11 +193,111 @@ static int v_l2_levels;
 
 static void *l1_map[V_L1_MAX_SIZE];
 
+#ifdef CONFIG_TCG_WASM64
+/* one code_mask bit per 1/256th of a page; see the comment below */
+#define TB_GMASK_BITS_LOG 8
+#define TB_GMASK_WORDS    (1 << (TB_GMASK_BITS_LOG - 6))
+#endif
+
 struct PageDesc {
     QemuSpin lock;
     /* list of TBs intersecting this ram page */
     uintptr_t first_tb;
+#ifdef CONFIG_TCG_WASM64
+    uint64_t code_mask[TB_GMASK_WORDS];
+#endif
 };
+
+#ifdef CONFIG_TCG_WASM64
+/*
+ * A page keeps its slow-write protection for as long as it holds any TB, so
+ * a guest that puts writable data on a page it also executes from pays the
+ * invalidation path on every store -- and tb_page_covers() below answers
+ * "does any TB cover this store" by walking the page's whole TB list.  On a
+ * J2ME game that walk was 14.7 % of the vCPU, half of all time spent outside
+ * emitted code, and it answered "no" 485.6 times out of 485.7 -- after 50.9
+ * list steps each, because 60-odd TBs pile up on a single page.
+ *
+ * code_mask caches that answer per page, one bit per 1/256th of a page:
+ * four bytes, one guest instruction, at this board's 1 KB pages.  A 64-bit
+ * version of the same mask rejected only 57 % of the stores -- the rest were
+ * data words close enough to code to share a granule with it.
+ *
+ * Bits are only ever added when a TB is linked, and cleared wholesale when
+ * the page empties, so the mask is a conservative superset: a stale bit
+ * costs a walk, never correctness.  Nothing narrows it when one TB of
+ * several goes away, because on this workload stores outrun TB removals
+ * 5500:1 -- there is nothing to narrow, and the obvious place to do it (the
+ * walk, which visits every TB anyway) is exactly the path being optimised.
+ *
+ * An empty page must still take the long path whatever the mask holds: that
+ * is where the protection is lifted, and it happens once.
+ */
+static inline uint64_t tb_wmask(unsigned a, unsigned b)
+{
+    /* bits a..b of one word, inclusive; 0 <= a <= b <= 63 */
+    return (~(uint64_t)0 >> (63 - b)) & (~(uint64_t)0 << a);
+}
+
+static inline void tb_page_granules(tb_page_addr_t start, tb_page_addr_t last,
+                                    unsigned *lo, unsigned *hi)
+{
+    int gs = TARGET_PAGE_BITS - TB_GMASK_BITS_LOG;
+
+    *lo = (start & ~TARGET_PAGE_MASK) >> gs;
+    *hi = (last & ~TARGET_PAGE_MASK) >> gs;
+}
+
+static inline bool tb_gmask_test(const uint64_t *m, unsigned lo, unsigned hi)
+{
+    unsigned wl = lo >> 6, wh = hi >> 6;
+
+    if (wl == wh) {
+        return (m[wl] & tb_wmask(lo & 63, hi & 63)) != 0;
+    }
+    if (m[wl] & tb_wmask(lo & 63, 63)) {
+        return true;
+    }
+    for (unsigned w = wl + 1; w < wh; w++) {
+        if (m[w]) {
+            return true;
+        }
+    }
+    return (m[wh] & tb_wmask(0, hi & 63)) != 0;
+}
+
+static inline void tb_gmask_set(uint64_t *m, unsigned lo, unsigned hi)
+{
+    unsigned wl = lo >> 6, wh = hi >> 6;
+
+    if (wl == wh) {
+        m[wl] |= tb_wmask(lo & 63, hi & 63);
+        return;
+    }
+    m[wl] |= tb_wmask(lo & 63, 63);
+    for (unsigned w = wl + 1; w < wh; w++) {
+        m[w] = ~(uint64_t)0;
+    }
+    m[wh] |= tb_wmask(0, hi & 63);
+}
+
+/* the page-local byte range TB @tb occupies on its @n'th page */
+static inline void tb_page_span(const TranslationBlock *tb, unsigned n,
+                                tb_page_addr_t *start, tb_page_addr_t *last)
+{
+    tb_page_addr_t s = tb_page_addr0(tb);
+    tb_page_addr_t l = s + tb->size - 1;
+
+    if (n == 0) {
+        l = MIN(l, s | ~TARGET_PAGE_MASK);
+    } else {
+        s = tb_page_addr1(tb);
+        l = s + (l & ~TARGET_PAGE_MASK);
+    }
+    *start = s;
+    *last = l;
+}
+#endif /* CONFIG_TCG_WASM64 */
 
 void page_table_config_init(void)
 {
@@ -672,6 +778,9 @@ static void tb_remove_all_1(int level, void **lp)
         for (i = 0; i < V_L2_SIZE; ++i) {
             page_lock(&pd[i]);
             pd[i].first_tb = (uintptr_t)NULL;
+#ifdef CONFIG_TCG_WASM64
+            memset(pd[i].code_mask, 0, sizeof(pd[i].code_mask));
+#endif
             page_unlock(&pd[i]);
         }
     } else {
@@ -705,6 +814,16 @@ static void tb_page_add(PageDesc *p, TranslationBlock *tb, unsigned int n)
     tb->page_next[n] = p->first_tb;
     page_already_protected = p->first_tb != 0;
     p->first_tb = (uintptr_t)tb | n;
+#ifdef CONFIG_TCG_WASM64
+    {
+        tb_page_addr_t s, l;
+        unsigned lo, hi;
+
+        tb_page_span(tb, n, &s, &l);
+        tb_page_granules(s, l, &lo, &hi);
+        tb_gmask_set(p->code_mask, lo, hi);
+    }
+#endif
 
     /*
      * If some code is already present, then the pages are already
@@ -741,6 +860,11 @@ static void tb_page_remove(PageDesc *pd, TranslationBlock *tb)
     PAGE_FOR_EACH_TB(unused, unused, pd, tb1, n1) {
         if (tb1 == tb) {
             *pprev = tb1->page_next[n1];
+#ifdef CONFIG_TCG_WASM64
+            if (pd->first_tb == 0) {
+                memset(pd->code_mask, 0, sizeof(pd->code_mask));
+            }
+#endif
             return;
         }
         pprev = &tb1->page_next[n1];
@@ -772,6 +896,9 @@ void tb_flush__exclusive_or_serial(void)
 {
     CPUState *cpu;
 
+#ifdef __EMSCRIPTEN__
+    wasm_diag_stat[WASM_DIAG_TB_FLUSH]++;
+#endif
     trace_tb_flush();
     assert(tcg_enabled());
     /* Note that cpu_in_serial_context checks cpu_in_exclusive_context. */
@@ -784,6 +911,12 @@ void tb_flush__exclusive_or_serial(void)
 
     qht_reset_size(&tb_ctx.htable, CODE_GEN_HTABLE_SIZE);
     tb_remove_all();
+
+#ifdef CONFIG_TCG_WASM64
+    /* drop the batch modules/thunks and temp modules before the code
+     * buffer (which holds their staged bytes and descriptors) resets */
+    w64_batch_flush();
+#endif
 
     tcg_region_reset_all();
     /* XXX: flush processor icache at this point if cache flush is expensive */
@@ -892,6 +1025,20 @@ static inline void tb_jmp_unlink(TranslationBlock *dest)
     qemu_spin_unlock(&dest->jmp_lock);
 }
 
+#ifdef CONFIG_TCG_WASM64
+/*
+ * Batch eviction (tcg/wasm64/wasm64.c) unregisters @dest's entry in the
+ * shared chain table, and a linked goto_tb slot names that entry with no
+ * back-reference of its own — so drop the incoming chains.  The TB itself
+ * stays valid: the sources fall back to exit_tb, the dispatcher
+ * re-instantiates the batch, and tb_add_jump links them again.
+ */
+void tb_w64_unlink_incoming(TranslationBlock *dest)
+{
+    tb_jmp_unlink(dest);
+}
+#endif
+
 static void tb_jmp_cache_inval_tb(TranslationBlock *tb)
 {
     CPUState *cpu;
@@ -910,6 +1057,11 @@ static void tb_jmp_cache_inval_tb(TranslationBlock *tb)
             if (qatomic_read(&jc->array[h].tb) == tb) {
                 qatomic_set(&jc->array[h].tb, NULL);
             }
+            /* the inline caches hold no back-reference: retire them all */
+            cpu_tb_key_gen_bump(cpu);
+#ifdef __EMSCRIPTEN__
+            wasm_diag_stat[WASM_DIAG_KEY_GEN_INVAL]++;
+#endif
         }
     }
 }
@@ -1202,24 +1354,131 @@ void tb_invalidate_phys_range(CPUState *cpu, tb_page_addr_t start,
     page_collection_unlock(pages);
 }
 
+#ifdef CONFIG_TCG_WASM64
+/* W64_NOSMCSCAN=1 restores the unconditional page collection. */
+static bool tb_smc_scan_enabled(void)
+{
+    static int on = -1;
+    if (on < 0) {
+        on = getenv("W64_NOSMCSCAN") == NULL;
+    }
+    return on != 0;
+}
+
+/* W64_NOSMCMASK=1 restores the unconditional TB-list walk inside the scan. */
+static bool tb_smc_mask_enabled(void)
+{
+    static int on = -1;
+    if (on < 0) {
+        on = getenv("W64_NOSMCMASK") == NULL;
+    }
+    return on != 0;
+}
+
+/*
+ * Is there anything for the invalidation below to do to [start, last]?
+ *
+ * A page keeps its slow-write protection for as long as it holds any TB,
+ * so a guest that puts writable data on a page it also executes from pays
+ * the invalidation path on every store - a J2ME game does ~31k of them a
+ * second, and none of them hits a TB.  The collection is only needed to
+ * invalidate: building it (two allocations, a tree created, filled and
+ * destroyed) and the tcg_tb_lookup that precedes the walk are wasted
+ * whenever no TB covers the write, and the walk that establishes that
+ * costs nothing beyond the one page_collection_lock would do anyway.
+ *
+ * The walk itself is not cheap, though: it averages 51 TBs, each a
+ * dependent load into a randomly placed TranslationBlock, and regressing
+ * ms/Mi on the step counter prices it at 8-23 ns a step - 5-14 % of all
+ * wall time.  code_mask answers it without touching the list.
+ *
+ * The mask is only ever grown, in tb_page_add, and cleared when the page
+ * empties; it is never narrowed when one TB of several is removed.  That
+ * is deliberate.  A stale set bit only costs a walk that upstream would
+ * have done anyway, and on this workload a store outruns a TB removal
+ * 5500:1, so there is nothing to narrow.  Rebuilding it exactly during the
+ * walk - which an earlier version did, PAGE_FOR_EACH_TB visiting the whole
+ * list regardless - taxes every step of the case the mask exists to avoid.
+ *
+ * An empty page still goes the long way: that is where the protection is
+ * lifted, and it happens once.  Hence the first_tb test in front of the
+ * mask, not a test for the mask being non-zero: an empty page's mask is
+ * zero, and must not short-circuit to "nothing to do".
+ *
+ * Holding one page's lock is order-safe by construction: it is the lock
+ * page_collection_lock would take first, and nothing is locked yet.
+ */
+static bool tb_page_covers(PageDesc *p, tb_page_addr_t start,
+                           tb_page_addr_t last)
+{
+    TranslationBlock *tb;
+    PageForEachNext n;
+    bool covers;
+    unsigned lo, hi, steps = 0;
+
+    if (tb_smc_mask_enabled() && p->first_tb != 0) {
+        tb_page_granules(start, last, &lo, &hi);
+        if (!tb_gmask_test(p->code_mask, lo, hi)) {
+            wasm_diag_stat[WASM_DIAG_SMC_MASK]++;
+            return false;
+        }
+    }
+
+    page_lock(p);
+    covers = p->first_tb == 0;
+    PAGE_FOR_EACH_TB(start, last, p, tb, n) {
+        tb_page_addr_t tb_start, tb_last;
+
+        steps++;
+        tb_page_span(tb, n, &tb_start, &tb_last);
+        if (!(tb_last < start || tb_start > last)) {
+            covers = true;
+            break;
+        }
+    }
+    page_unlock(p);
+    wasm_diag_stat[WASM_DIAG_SMC_WALK] += steps;
+    return covers;
+}
+#endif /* CONFIG_TCG_WASM64 */
+
 /*
  * len must be <= 8 and start must be a multiple of len.
  * Called via softmmu_template.h when code areas are written to with
  * iothread mutex not held.
  */
-void tb_invalidate_phys_range_fast(CPUState *cpu, ram_addr_t start,
+bool tb_invalidate_phys_range_fast(CPUState *cpu, ram_addr_t start,
                                    unsigned len, uintptr_t ra)
 {
     PageDesc *p = page_find(start >> TARGET_PAGE_BITS);
 
     if (p) {
         ram_addr_t last = start + len - 1;
-        struct page_collection *pages = page_collection_lock(start, last);
+        struct page_collection *pages;
 
+#ifdef CONFIG_TCG_WASM64
+        /*
+         * wasm64 only: the skip is sound because a wasm board always runs
+         * with icount, so mttcg never auto-enables (tcg-all.c) and no
+         * other thread can link a TB into this page between the scan's
+         * page_unlock and the return.  A native mttcg guest has no such
+         * guarantee, and keeping the mechanism off there also makes the
+         * lockstep oracle an independent check of it rather than a
+         * mirror.
+         */
+        if (tb_smc_scan_enabled() && !tb_page_covers(p, start, last)) {
+            wasm_diag_stat[WASM_DIAG_SMC_MISS]++;
+            return false;
+        }
+#endif
+
+        pages = page_collection_lock(start, last);
         tb_invalidate_phys_page_range__locked(cpu, pages, p,
                                               start, last, ra);
         page_collection_unlock(pages);
+        return true;
     }
+    return false;
 }
 
 #endif /* CONFIG_USER_ONLY */

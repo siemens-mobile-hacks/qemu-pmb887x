@@ -34,6 +34,7 @@
 #include "qemu/cacheflush.h"
 #include "qemu/cacheinfo.h"
 #include "qemu/timer.h"
+#include "qemu/wasm-diag.h"
 #include "exec/target_page.h"
 #include "exec/translation-block.h"
 #include "exec/tlb-common.h"
@@ -118,6 +119,10 @@ static void tcg_register_jit_int(const void *buf, size_t size,
 static void tcg_out_tb_start(TCGContext *s);
 static void tcg_out_ld(TCGContext *s, TCGType type, TCGReg ret, TCGReg arg1,
                        intptr_t arg2);
+#ifdef CONFIG_TCG_WASM64
+static void tcg_out_set_label(TCGContext *s, TCGLabel *l);
+static int tcg_out_tb_finalize(TCGContext *s);
+#endif
 static bool tcg_out_mov(TCGContext *s, TCGType type, TCGReg ret, TCGReg arg);
 static void tcg_out_movi(TCGContext *s, TCGType type,
                          TCGReg ret, tcg_target_long arg);
@@ -246,7 +251,7 @@ TCGv_env tcg_env;
 const void *tcg_code_gen_epilogue;
 ptrdiff_t tcg_splitwx_diff;
 
-#ifndef CONFIG_TCG_INTERPRETER
+#if !defined(HAVE_TCG_QEMU_TB_EXEC)
 tcg_prologue_fn *tcg_qemu_tb_exec;
 #endif
 
@@ -353,6 +358,10 @@ static void tcg_out_label(TCGContext *s, TCGLabel *l)
     tcg_debug_assert(!l->has_value);
     l->has_value = 1;
     l->u.value_ptr = tcg_splitwx_to_rx(s->code_ptr);
+#ifdef CONFIG_TCG_WASM64
+    /* the wasm64 backend needs to emit its label-region guard here */
+    tcg_out_set_label(s, l);
+#endif
 }
 
 TCGLabel *gen_new_label(void)
@@ -1853,7 +1862,7 @@ void tcg_prologue_init(void)
     s->code_buf = s->code_gen_ptr;
     s->data_gen_ptr = NULL;
 
-#ifndef CONFIG_TCG_INTERPRETER
+#if !defined(HAVE_TCG_QEMU_TB_EXEC)
     tcg_qemu_tb_exec = (tcg_prologue_fn *)tcg_splitwx_to_rx(s->code_ptr);
 #endif
 
@@ -1909,11 +1918,11 @@ void tcg_prologue_init(void)
         }
     }
 
-#ifndef CONFIG_TCG_INTERPRETER
+#ifndef HAVE_TCG_QEMU_TB_EXEC
     /*
      * Assert that goto_ptr is implemented completely, setting an epilogue.
-     * For tci, we use NULL as the signal to return from the interpreter,
-     * so skip this check.
+     * For tci and wasm64, we use NULL as the signal to return from the
+     * interpreter / dispatcher, so skip this check.
      */
     tcg_debug_assert(tcg_code_gen_epilogue != NULL);
 #endif
@@ -3673,6 +3682,60 @@ static inline void la_reset_pref(TCGTemp *ts)
         = (ts->state == TS_DEAD ? 0 : tcg_target_available_regs[ts->type]);
 }
 
+#ifdef CONFIG_TCG_WASM64
+/*
+ * Blame for a global's write-back, recorded where liveness first demands
+ * it and charged where the store is actually decided.  See the GSYNC_*
+ * block in wasm-diag.h for why the attribution lands on the right site.
+ */
+static __thread uint16_t la_why[TCG_MAX_TEMPS];
+
+/*
+ * A site that only adds TS_MEM leaves an existing demand in place, and the
+ * nearest following demand is the one the store answers -- so the first
+ * blame seen going backwards wins.  A site that kills the global ends every
+ * demand after it, including whatever the previous TB left in ts->state at
+ * the top of the pass, so it overwrites.
+ */
+static inline void la_blame(TCGContext *s, int i, int why)
+{
+    if (!(s->temps[i].state & TS_MEM)) {
+        la_why[i] = why;
+    }
+}
+
+static inline void la_blame_kill(TCGContext *s, int i, int why)
+{
+    la_why[i] = why;
+}
+
+static inline void la_charge(TCGContext *s, TCGTemp *ts)
+{
+    if (ts->kind == TEMP_GLOBAL) {
+        wasm_diag_stat[la_why[ts - s->temps]]++;
+    }
+}
+
+/*
+ * BBCOND is the predication share of BBEND, so it has to be a separate
+ * counter rather than a subdivision: both are charged through la_why, and
+ * a global's blame is one value, not a set.
+ */
+static int la_bbend_why(const TCGOp *op)
+{
+    if (op->opc == INDEX_op_set_label &&
+        arg_label(op->args[0])->w64_condskip) {
+        return WASM_DIAG_GSYNC_BBCOND;
+    }
+    return WASM_DIAG_GSYNC_BBEND;
+}
+#else
+#define la_blame(s, i, why)       do { (void)(s); (void)(i); (void)(why); } while (0)
+#define la_blame_kill(s, i, why)  do { (void)(s); (void)(i); (void)(why); } while (0)
+#define la_charge(s, ts)          do { (void)(s); (void)(ts); } while (0)
+#define la_bbend_why(op)          0
+#endif
+
 /* liveness analysis: end of function: all temps are dead, and globals
    should be in memory. */
 static void la_func_end(TCGContext *s, int ng, int nt)
@@ -3680,6 +3743,7 @@ static void la_func_end(TCGContext *s, int ng, int nt)
     int i;
 
     for (i = 0; i < ng; ++i) {
+        la_blame_kill(s, i, WASM_DIAG_GSYNC_EXIT);
         s->temps[i].state = TS_DEAD | TS_MEM;
         la_reset_pref(&s->temps[i]);
     }
@@ -3691,7 +3755,7 @@ static void la_func_end(TCGContext *s, int ng, int nt)
 
 /* liveness analysis: end of basic block: all temps are dead, globals
    and local temps should be in memory. */
-static void la_bb_end(TCGContext *s, int ng, int nt)
+static void la_bb_end(TCGContext *s, int ng, int nt, int why)
 {
     int i;
 
@@ -3703,6 +3767,7 @@ static void la_bb_end(TCGContext *s, int ng, int nt)
         case TEMP_FIXED:
         case TEMP_GLOBAL:
         case TEMP_TB:
+            la_blame_kill(s, i, why);
             state = TS_DEAD | TS_MEM;
             break;
         case TEMP_EBB:
@@ -3718,12 +3783,13 @@ static void la_bb_end(TCGContext *s, int ng, int nt)
 }
 
 /* liveness analysis: sync globals back to memory.  */
-static void la_global_sync(TCGContext *s, int ng)
+static void la_global_sync(TCGContext *s, int ng, int why)
 {
     int i;
 
     for (i = 0; i < ng; ++i) {
         int state = s->temps[i].state;
+        la_blame(s, i, why);
         s->temps[i].state = state | TS_MEM;
         if (state == TS_DEAD) {
             /* If the global was previously dead, reset prefs.  */
@@ -3739,7 +3805,7 @@ static void la_global_sync(TCGContext *s, int ng)
  */
 static void la_bb_sync(TCGContext *s, int ng, int nt)
 {
-    la_global_sync(s, ng);
+    la_global_sync(s, ng, WASM_DIAG_GSYNC_CBR);
 
     for (int i = ng; i < nt; ++i) {
         TCGTemp *ts = &s->temps[i];
@@ -3769,6 +3835,7 @@ static void la_global_kill(TCGContext *s, int ng)
     int i;
 
     for (i = 0; i < ng; i++) {
+        la_blame_kill(s, i, WASM_DIAG_GSYNC_CALL);
         s->temps[i].state = TS_DEAD | TS_MEM;
         la_reset_pref(&s->temps[i]);
     }
@@ -3935,6 +4002,7 @@ liveness_pass_1(TCGContext *s)
                     }
                     if (ts->state & TS_MEM) {
                         arg_life |= SYNC_ARG << i;
+                        la_charge(s, ts);
                     }
                     ts->state = TS_DEAD;
                     la_reset_pref(ts);
@@ -3947,7 +4015,7 @@ liveness_pass_1(TCGContext *s)
                                     TCG_CALL_NO_READ_GLOBALS))) {
                     la_global_kill(s, nb_globals);
                 } else if (!(call_flags & TCG_CALL_NO_READ_GLOBALS)) {
-                    la_global_sync(s, nb_globals);
+                    la_global_sync(s, nb_globals, WASM_DIAG_GSYNC_CALL);
                 }
 
                 /* Record arguments that die in this helper.  */
@@ -4176,6 +4244,7 @@ liveness_pass_1(TCGContext *s)
                 }
                 if (ts->state & TS_MEM) {
                     arg_life |= SYNC_ARG << i;
+                    la_charge(s, ts);
                 }
                 ts->state = TS_DEAD;
                 la_reset_pref(ts);
@@ -4190,10 +4259,10 @@ liveness_pass_1(TCGContext *s)
                 la_bb_sync(s, nb_globals, nb_temps);
             } else if (def->flags & TCG_OPF_BB_END) {
                 assert_carry_dead(s);
-                la_bb_end(s, nb_globals, nb_temps);
+                la_bb_end(s, nb_globals, nb_temps, la_bbend_why(op));
             } else if (def->flags & TCG_OPF_SIDE_EFFECTS) {
                 assert_carry_dead(s);
-                la_global_sync(s, nb_globals);
+                la_global_sync(s, nb_globals, WASM_DIAG_GSYNC_SE);
                 if (def->flags & TCG_OPF_CALL_CLOBBER) {
                     la_cross_call(s, nb_temps);
                 }
@@ -4579,6 +4648,37 @@ static inline void temp_dead(TCGContext *s, TCGTemp *ts)
     temp_free_or_dead(s, ts, 1);
 }
 
+#ifdef CONFIG_TCG_WASM64
+/*
+ * W64_GDUP=N prices the guest-register traffic row -- the one the budget
+ * table has carried as "unpriced, 1.7-2.0 memory ops per guest
+ * instruction" -- by emitting N-1 extra copies of every global load and
+ * every global write-back.  Each copy targets the same address with the
+ * same value, so it is idempotent and the guest cannot tell; there is no
+ * safe scratch offset inside CPUArchState to aim at instead, and aiming at
+ * one would be a wild store the moment the struct layout moved.
+ *
+ * What idempotence costs is a risk of store-to-store and load-to-load
+ * elimination.  The emitted TB modules run in V8's baseline tier -- that
+ * is what the 3-6 % `--no-liftoff` row means -- and that tier does not do
+ * either.  The probe is self-checking regardless: if the copies were
+ * folded away the N=1 -> N=4 wall difference would be zero, and a zero
+ * here reads as "the probe is inert", never as "the traffic is free".
+ *
+ * Measurement build.  Per-Mi counter rates stay exact under it, since it
+ * adds no counted event; wall-clock numbers do not.
+ */
+static int w64_gdup(void)
+{
+    static int n = -1;
+    if (n < 0) {
+        const char *e = getenv("W64_GDUP");
+        n = e ? atoi(e) : 0;
+    }
+    return n;
+}
+#endif
+
 /* Sync a temporary to memory. 'allocated_regs' is used in case a temporary
    registers needs to be allocated to store a constant.  If 'free_or_dead'
    is non-zero, subsequently release the temporary; if it is positive, the
@@ -4598,6 +4698,9 @@ static void temp_sync(TCGContext *s, TCGTemp *ts, TCGRegSet allocated_regs,
             if (free_or_dead
                 && tcg_out_sti(s, ts->type, ts->val,
                                ts->mem_base->reg, ts->mem_offset)) {
+                if (ts->kind == TEMP_GLOBAL) {
+                    wasm_diag_stat[WASM_DIAG_TCG_GST]++;
+                }
                 break;
             }
             temp_load(s, ts, tcg_target_available_regs[ts->type],
@@ -4605,8 +4708,19 @@ static void temp_sync(TCGContext *s, TCGTemp *ts, TCGRegSet allocated_regs,
             /* fallthrough */
 
         case TEMP_VAL_REG:
+            if (ts->kind == TEMP_GLOBAL) {
+                wasm_diag_stat[WASM_DIAG_TCG_GST]++;
+            }
             tcg_out_st(s, ts->type, ts->reg,
                        ts->mem_base->reg, ts->mem_offset);
+#ifdef CONFIG_TCG_WASM64
+            if (ts->kind == TEMP_GLOBAL) {
+                for (int i = 1; i < w64_gdup(); i++) {
+                    tcg_out_st(s, ts->type, ts->reg,
+                               ts->mem_base->reg, ts->mem_offset);
+                }
+            }
+#endif
             break;
 
         case TEMP_VAL_MEM:
@@ -4682,6 +4796,9 @@ static TCGReg tcg_reg_alloc(TCGContext *s, TCGRegSet required_regs,
     }
 
     /* We must spill something.  */
+#ifdef CONFIG_TCG_WASM64
+    wasm_diag_stat[WASM_DIAG_TCG_SPILL]++;
+#endif
     for (j = f; j < 2; j++) {
         TCGRegSet set = reg_ct[j];
 
@@ -4792,7 +4909,17 @@ static void temp_load(TCGContext *s, TCGTemp *ts, TCGRegSet desired_regs,
         }
         reg = tcg_reg_alloc(s, desired_regs, allocated_regs,
                             preferred_regs, ts->indirect_base);
+        if (ts->kind == TEMP_GLOBAL) {
+            wasm_diag_stat[WASM_DIAG_TCG_GLD]++;
+        }
         tcg_out_ld(s, ts->type, reg, ts->mem_base->reg, ts->mem_offset);
+#ifdef CONFIG_TCG_WASM64
+        if (ts->kind == TEMP_GLOBAL) {
+            for (int i = 1; i < w64_gdup(); i++) {
+                tcg_out_ld(s, ts->type, reg, ts->mem_base->reg, ts->mem_offset);
+            }
+        }
+#endif
         ts->mem_coherent = 1;
         break;
     case TEMP_VAL_DEAD:
@@ -6752,6 +6879,12 @@ int tcg_gen_code(TCGContext *s, TranslationBlock *tb, uint64_t pc_start)
     if (i < 0) {
         return i;
     }
+#ifdef CONFIG_TCG_WASM64
+    /* the wasm64 backend assembles the module around the body */
+    if (tcg_out_tb_finalize(s) < 0) {
+        return -2;
+    }
+#endif
     if (!tcg_resolve_relocs(s)) {
         return -2;
     }

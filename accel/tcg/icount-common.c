@@ -38,6 +38,11 @@
 #include "hw/core/cpu.h"
 #include "exec/icount.h"
 #include "system/cpu-timers-internal.h"
+#include "qemu/wasm-diag.h"
+
+static void rtcap_do_nothing(CPUState *cpu, run_on_cpu_data unused)
+{
+}
 
 /*
  * ICOUNT: Instruction Counter
@@ -50,6 +55,137 @@ static bool icount_sleep = true;
 #define MAX_ICOUNT_SHIFT 10
 
 bool icount_align_option;
+
+/*
+ * Real-time cap (see exec/icount.h).  With sleep=off the virtual clock is
+ * instruction-proportional and never waits for the host: a halted guest
+ * warps to its next timer at once and a guest running faster than one insn
+ * per 2^shift ns runs its clocks ahead of wall time (idle-screen
+ * countdowns, animations).  The cap keeps QEMU_CLOCK_VIRTUAL within
+ * RTCAP_SLACK of "allowed" virtual time: the vCPU thread sleeps
+ * (kick-interruptible) before a warp or after a budget round that would
+ * overrun.  Virtual time itself stays deterministic, only wall pacing
+ * changes.  "banked": allowed = wall time since the VM started, so a guest
+ * that fell behind (a slow boot) may catch up as fast as it can and the
+ * boot is never slowed; "strict": the anchor is re-set whenever virtual
+ * time lags, so nothing is banked and the guest is always paced.
+ *
+ * "banked:<n>" and "budget[:<win>[:<ms>]]" window the boot: banked for
+ * the guest's first <win> seconds of its own clock - the boot, which must
+ * not be slowed further - then, for the rest of the run, either strict
+ * ("banked:<n>": a later stall is not repaid at all) or a bank capped at
+ * <ms> ("budget", the shipping wasm mode, default 30 s / 500 ms: a stall
+ * is repaid, but never by more than <ms> of sprinted clock, so the phone
+ * stays close behind wall time instead of freezing its countdowns while
+ * it skips minutes).  The window is guest time because the boot costs the
+ * same virtual time on every host while its wall time ranges from seconds
+ * to minutes; it also needs no anchor of its own and is not consumed by a
+ * pause.
+ *
+ * The switch needs no re-anchor.  The forgive branch below only fires
+ * when vtarget < allowed - SLACK - budget and then sets allowed = vtarget
+ * + budget < allowed, so the post-window allowed is never greater than
+ * banked's and excess can only shrink at the flip: it can shorten a sleep,
+ * never lengthen one and never turn "no sleep" into a sleep.  Either the
+ * guest is lagging by more than the budget, and the branch fires on this
+ * same call and writes the bank down to the budget in one step, or it is
+ * inside the band and the flip is a no-op.  (An explicit re-anchor would
+ * hand the guest its up-to-slack lead for good.)
+ */
+bool icount_rtcap;
+/* the paced phase: lag is forgiven down to rtcap_budget_ns (0 = strict) */
+static bool icount_rtcap_strict;
+static int64_t rtcap_v0, rtcap_r0;
+static int64_t rtcap_switch_at;   /* virtual ns; 0 = pinned, never switches */
+static int64_t rtcap_budget_ns;   /* bank kept when forgiving; 0 = strict */
+static bool rtcap_vcpu_waiting;
+#define RTCAP_SLACK_NS (2 * SCALE_MS)
+/* what the "budget" mode means; only the default mode differs by host */
+#define RTCAP_DEFAULT_WIN     30       /* guest seconds; roughly the boot */
+#define RTCAP_DEFAULT_BUDGET  500      /* ms of repayable stall */
+
+#ifdef __EMSCRIPTEN__
+#define RTCAP_DEFAULT         "budget"
+#else
+#define RTCAP_DEFAULT         "off"
+#endif
+
+int64_t icount_rtcap_excess_ns(int64_t vtarget)
+{
+    int64_t r = qemu_clock_get_ns(QEMU_CLOCK_REALTIME);
+    int64_t allowed = rtcap_v0 + (r - rtcap_r0);
+
+    /*
+     * End of the banked window.  vtarget is a virtual-time value at both
+     * call sites, so this costs one predictable-false compare and no clock
+     * read; on the idle path it is the warp target rather than the current
+     * time, so the switch can land one deadline early - immaterial against
+     * a window of tens of seconds, and it is one-way, so the two call sites
+     * disagreeing for an instant is harmless.
+     */
+    if (rtcap_switch_at && vtarget >= rtcap_switch_at) {
+        qatomic_set(&icount_rtcap_strict, true);
+        rtcap_switch_at = 0;
+    }
+
+    /*
+     * strict/budget: lag is forgiven, not banked - down to rtcap_budget_ns
+     * (0 in strict): a budgeted cap keeps that much bank, so a later stall
+     * is repaid but never by more than budget + slack.  Test the target,
+     * not the current virtual time: while the vCPU sleeps for wall time to
+     * reach a warp target, the current time falls "behind" by design, and
+     * re-anchoring on it would restart the wait forever.
+     *
+     * Read plainly, not with qatomic_read: this thread is the only writer,
+     * and wasm has no relaxed atomic load - it would emit a seq_cst
+     * i32.atomic.load on a path taken thousands of times a second.  The
+     * store above is atomic for the browser thread's sake (icount_rtcap_mode).
+     */
+    if (icount_rtcap_strict && vtarget < allowed - RTCAP_SLACK_NS
+                                              - rtcap_budget_ns) {
+        rtcap_v0 = vtarget + rtcap_budget_ns;
+        rtcap_r0 = r;
+        allowed = vtarget + rtcap_budget_ns;
+    }
+    return vtarget - (allowed + RTCAP_SLACK_NS);
+}
+
+void icount_rtcap_set_waiting(bool waiting)
+{
+    qatomic_set(&rtcap_vcpu_waiting, waiting);
+}
+
+/*
+ * Measurement hook, called from the browser main thread (wasm_rtcap_set).
+ * A meter that has to *navigate* a firmware menu needs the guest's clock
+ * paced against wall time - uncapped, an idle guest warps hours per wall
+ * minute and the phone's screensaver re-arms between key presses - and
+ * then needs the cap gone to read engine throughput.  Re-anchor the bank
+ * on the way back in: the guest has been sprinting while the cap was off,
+ * and a stale anchor would sleep the vCPU for as long as that lead.
+ * Racy against the vCPU's own writes of the anchor by construction; it is
+ * a test hook, and the only cost of losing the race is one mispaced sleep.
+ */
+void icount_rtcap_set_enabled(bool on)
+{
+    if (on) {
+        rtcap_v0 = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
+        rtcap_r0 = qemu_clock_get_ns(QEMU_CLOCK_REALTIME);
+    }
+    qatomic_set(&icount_rtcap, on);
+}
+
+/*
+ * The browser main thread polls this while the vCPU thread writes the flag,
+ * hence the atomic; relaxed is enough, nothing is published through it.
+ * rtcap_budget_ns is written once at configure, before either thread runs,
+ * and only separates 2 from 3 - a plain read cannot tear meaningfully.
+ */
+int icount_rtcap_mode(void)
+{
+    return !icount_rtcap ? 0 : qatomic_read(&icount_rtcap_strict)
+           ? (rtcap_budget_ns ? 3 : 2) : 1;
+}
 
 /* Do not count executed instructions */
 ICountMode use_icount = ICOUNT_DISABLED;
@@ -85,10 +221,41 @@ static int64_t icount_get_executed(CPUState *cpu)
 static void icount_update_locked(CPUState *cpu)
 {
     int64_t executed = icount_get_executed(cpu);
+
+    /*
+     * Nothing has run since the last commit: the two stores below would
+     * both write back what is already there, and the qemu_icount one is a
+     * seq_cst i64.atomic.store on wasm, to a line the main loop reads.
+     * A virtual-clock read that follows another one inside the same TB
+     * lands here - and on a guest that touches two device registers in one
+     * TB that is every second read.
+     */
+    if (!executed) {
+        return;
+    }
+
     cpu->icount_budget -= executed;
 
+#ifdef __EMSCRIPTEN__
+    /*
+     * A plain store, deliberately.
+     *
+     * qatomic_set() is __ATOMIC_RELAXED, but wasm has no relaxed atomics:
+     * LLVM lowers it to i64.atomic.store, which the wasm spec defines as
+     * sequentially consistent, so an engine emits a locked exchange for it.
+     * This is the only write to timers_state.qemu_icount in the program and
+     * it comes from the vCPU thread; the field is QEMU_ALIGNED(64), so the
+     * plain store is a single naturally-aligned i64.store that no reader can
+     * see torn.  What a reader can see is a *stale* value - but it could
+     * already: this writer does not hold the seqlock's write lock (stock
+     * QEMU commits the running slice from inside a read section), so the
+     * only guarantee readers ever had is "some value this thread published".
+     */
+    timers_state.qemu_icount += executed;
+#else
     qatomic_set(&timers_state.qemu_icount,
                 timers_state.qemu_icount + executed);
+#endif
 }
 
 /*
@@ -105,6 +272,53 @@ void icount_update(CPUState *cpu)
                          &timers_state.vm_clock_lock);
 }
 
+/*
+ * The vm_clock seqlock read section, for this file's readers only.
+ *
+ * seqlock_read_begin()/retry() bracket the section with smp_rmb(), i.e.
+ * __atomic_thread_fence(ACQUIRE).  LLVM lowers that to wasm's atomic.fence,
+ * which the wasm spec defines as sequentially consistent, so an engine
+ * emits a real locked operation for it - twice per icount_get(), and an
+ * idle S75 reads the virtual clock about 1.2M times a second.
+ *
+ * Every *shared* location these sections touch is reached through
+ * qatomic_read()/qatomic_set() (qemu_icount, qemu_icount_bias,
+ * icount_time_shift, the sequence itself), and on wasm a relaxed qatomic_*
+ * on shared memory lowers to iN.atomic.load/store - which wasm also defines
+ * as sequentially consistent.  The engine therefore already orders them
+ * against the writer's stores, and the fence adds nothing.  The rest of the
+ * section is the calling thread's own CPUState.
+ *
+ * What is still needed is to stop the *compiler* moving those accesses
+ * across the sequence reads: LLVM sees __ATOMIC_RELAXED and may reorder
+ * them, whatever the backend later emits.  barrier() does that for free.
+ *
+ * This argument does not generalise: a seqlock whose payload is plain
+ * (non-qatomic) loads still needs the real smp_rmb(), because nothing then
+ * orders those loads at all.  Hence a local pair rather than a change to
+ * seqlock.h.
+ */
+#ifdef __EMSCRIPTEN__
+#define ICOUNT_SEQ_RMB() barrier()
+#else
+#define ICOUNT_SEQ_RMB() smp_rmb()
+#endif
+
+static inline unsigned icount_seq_read_begin(void)
+{
+    unsigned ret = qatomic_read(&timers_state.vm_clock_seqlock.sequence);
+
+    ICOUNT_SEQ_RMB();
+    return ret & ~1;
+}
+
+static inline int icount_seq_read_retry(unsigned start)
+{
+    ICOUNT_SEQ_RMB();
+    return unlikely(qatomic_read(&timers_state.vm_clock_seqlock.sequence)
+                    != start);
+}
+
 static int64_t icount_get_raw_locked(void)
 {
     CPUState *cpu = current_cpu;
@@ -114,7 +328,18 @@ static int64_t icount_get_raw_locked(void)
             error_report("Bad icount read");
             exit(1);
         }
-        /* Take into account what has run */
+        /*
+         * Take into account what has run.
+         *
+         * Publishing here is not needed for the value this returns -
+         * qemu_icount + icount_get_executed(cpu) is the same number -
+         * and the store is not free: it is ~1.5M writes a second on a
+         * polling guest, to a line other threads read.  Not publishing
+         * was measured on the EL71 busy state (2026-09-14) and is a
+         * 7.8 % MIPS *regression*, twice: a global icount that only
+         * moves at slice boundaries changes how the main loop paces
+         * itself, and that costs more than the store.  Leave it.
+         */
         icount_update_locked(cpu);
     }
     /* The read is protected by the seqlock, but needs atomic to avoid UB */
@@ -133,9 +358,9 @@ int64_t icount_get_raw(void)
     unsigned start;
 
     do {
-        start = seqlock_read_begin(&timers_state.vm_clock_seqlock);
+        start = icount_seq_read_begin();
         icount = icount_get_raw_locked();
-    } while (seqlock_read_retry(&timers_state.vm_clock_seqlock, start));
+    } while (icount_seq_read_retry(start));
 
     return icount;
 }
@@ -146,10 +371,11 @@ int64_t icount_get(void)
     int64_t icount;
     unsigned start;
 
+    WASM_DIAG_HOT(WASM_DIAG_VCLOCK_READ);
     do {
-        start = seqlock_read_begin(&timers_state.vm_clock_seqlock);
+        start = icount_seq_read_begin();
         icount = icount_get_locked();
-    } while (seqlock_read_retry(&timers_state.vm_clock_seqlock, start));
+    } while (icount_seq_read_retry(start));
 
     return icount;
 }
@@ -290,7 +516,7 @@ static void icount_timer_cb(void *opaque)
     icount_warp_rt();
 }
 
-void icount_start_warp_timer(void)
+void icount_start_warp_timer_full(bool notify)
 {
     int64_t clock;
     int64_t deadline;
@@ -333,7 +559,6 @@ void icount_start_warp_timer(void)
     }
 
     /* We want to use the earliest deadline from ALL vm_clocks */
-    clock = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL_RT);
     deadline = qemu_clock_deadline_ns_all(QEMU_CLOCK_VIRTUAL,
                                           ~QEMU_TIMER_ATTR_EXTERNAL);
     if (deadline < 0) {
@@ -359,13 +584,40 @@ void icount_start_warp_timer(void)
              * It is useful when we want a deterministic execution time,
              * isolated from host latencies.
              */
+            if (icount_rtcap && !qemu_in_vcpu_thread()) {
+                /*
+                 * Under the real-time cap the vCPU thread paces its own
+                 * warps (rr_idle_advance).  It handles this deadline when
+                 * its timed wait ends; if it is parked in the untimed halt
+                 * wait instead, hand the deadline back to it.
+                 */
+                if (!qatomic_read(&rtcap_vcpu_waiting)) {
+                    /*
+                     * qemu_cpu_kick cannot wake a halted rr thread out
+                     * of its untimed halt-cond wait (the kick only sets
+                     * exit_request, which cpu_thread_is_idle ignores).
+                     * Mirror qemu_timer_notify_cb() and use
+                     * async_run_on_cpu(), which does.
+                     */
+                    async_run_on_cpu(first_cpu, rtcap_do_nothing,
+                                     RUN_ON_CPU_NULL);
+                }
+                return;
+            }
             seqlock_write_lock(&timers_state.vm_clock_seqlock,
                                &timers_state.vm_clock_lock);
             qatomic_set(&timers_state.qemu_icount_bias,
                         timers_state.qemu_icount_bias + deadline);
             seqlock_write_unlock(&timers_state.vm_clock_seqlock,
                                  &timers_state.vm_clock_lock);
-            qemu_clock_notify(QEMU_CLOCK_VIRTUAL);
+            /*
+             * @notify false: the caller runs the deadline itself on this
+             * thread straight after, and that notifies.  See
+             * rr_idle_advance().
+             */
+            if (notify) {
+                qemu_clock_notify(QEMU_CLOCK_VIRTUAL);
+            }
         } else {
             /*
              * We do stop VCPUs and only advance QEMU_CLOCK_VIRTUAL after some
@@ -375,6 +627,7 @@ void icount_start_warp_timer(void)
              * you will not be sending network packets continuously instead of
              * every 100ms.
              */
+            clock = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL_RT);
             seqlock_write_lock(&timers_state.vm_clock_seqlock,
                                &timers_state.vm_clock_lock);
             if (timers_state.vm_clock_warp_start == -1
@@ -387,8 +640,15 @@ void icount_start_warp_timer(void)
                                  clock + deadline);
         }
     } else if (deadline == 0) {
-        qemu_clock_notify(QEMU_CLOCK_VIRTUAL);
+        if (notify) {
+            qemu_clock_notify(QEMU_CLOCK_VIRTUAL);
+        }
     }
+}
+
+void icount_start_warp_timer(void)
+{
+    icount_start_warp_timer_full(true);
 }
 
 void icount_account_warp_timer(void)
@@ -463,6 +723,67 @@ bool icount_configure(QemuOpts *opts, Error **errp)
     if (icount_sleep) {
         timers_state.icount_warp_timer = timer_new_ns(QEMU_CLOCK_VIRTUAL_RT,
                                          icount_timer_cb, NULL);
+    } else {
+        const char *e = getenv("QEMU_ICOUNT_RTCAP");
+        const char *mode = e ? e : RTCAP_DEFAULT;
+        int64_t win_s = e ? 0 : RTCAP_DEFAULT_WIN;
+        int64_t budget_ms = RTCAP_DEFAULT_BUDGET;
+
+        /*
+         * The value reaches us from a page query parameter (?rt=), so a typo
+         * warns and falls back to the default rather than failing the boot
+         * into a dead page.
+         */
+        if (!strncmp(mode, "banked:", 7)) {
+            if (qemu_strtoi64(mode + 7, NULL, 10, &win_s) || win_s < 0
+                || win_s > INT64_MAX / NANOSECONDS_PER_SECOND) {
+                warn_report("ignoring malformed QEMU_ICOUNT_RTCAP '%s'", mode);
+                mode = RTCAP_DEFAULT;
+                win_s = RTCAP_DEFAULT_WIN;
+            } else {
+                mode = win_s ? "banked" : "strict";
+            }
+        } else if (!strncmp(mode, "budget", 6)
+                   && (mode[6] == '\0' || mode[6] == ':')) {
+            /*
+             * budget[:<win>[:<ms>]] - banked for the guest's first <win>
+             * seconds of its own clock, then the bank is capped at <ms>: a
+             * stall is repaid, but never by more than <ms> of sprinted
+             * clock.  Both fields default (30 s / 500 ms); <win> of 0 is
+             * capped from the first instruction.
+             */
+            const char *p = mode + 6;   /* "budget", then "" or ":..." */
+            bool bad = false;
+
+            win_s = RTCAP_DEFAULT_WIN;
+            if (*p == ':') {
+                bad = qemu_strtoi64(p + 1, &p, 10, &win_s) != 0;
+                if (!bad && *p == ':') {
+                    bad = qemu_strtoi64(p + 1, &p, 10, &budget_ms) != 0;
+                }
+            }
+            if (bad || *p || win_s < 0
+                || win_s > INT64_MAX / NANOSECONDS_PER_SECOND
+                || budget_ms < 0 || budget_ms > INT64_MAX / SCALE_MS) {
+                warn_report("ignoring malformed QEMU_ICOUNT_RTCAP '%s'", mode);
+                mode = RTCAP_DEFAULT;
+                win_s = RTCAP_DEFAULT_WIN;
+                budget_ms = RTCAP_DEFAULT_BUDGET;
+            } else {
+                mode = "budget";
+            }
+        }
+
+        icount_rtcap_strict = !strcmp(mode, "strict")
+                              || (!strcmp(mode, "budget") && !win_s);
+        icount_rtcap = icount_rtcap_strict || !strcmp(mode, "banked")
+                       || !strcmp(mode, "budget")
+                       || !strcmp(mode, "1") || !strcmp(mode, "on");
+        rtcap_budget_ns = !strcmp(mode, "budget") ? budget_ms * SCALE_MS : 0;
+        rtcap_switch_at = icount_rtcap && !icount_rtcap_strict
+                          ? win_s * NANOSECONDS_PER_SECOND : 0;
+        rtcap_v0 = 0;
+        rtcap_r0 = qemu_clock_get_ns(QEMU_CLOCK_REALTIME);
     }
 
     icount_align_option = align;

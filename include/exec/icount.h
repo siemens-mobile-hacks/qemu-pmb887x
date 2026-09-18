@@ -70,7 +70,40 @@ int64_t icount_round(int64_t count);
 
 /* if the CPUs are idle, start accounting real time to virtual clock. */
 void icount_start_warp_timer(void);
+/*
+ * As icount_start_warp_timer(), but @notify false suppresses the
+ * qemu_clock_notify(QEMU_CLOCK_VIRTUAL) that tells other threads the
+ * clock jumped.  Only for a caller that notifies itself immediately
+ * afterwards on the same thread - each notify is a cross-thread wake,
+ * and the idle path takes this thousands of times a second.
+ */
+void icount_start_warp_timer_full(bool notify);
 void icount_account_warp_timer(void);
 void icount_notify_exit(void);
+
+/*
+ * Real-time cap for sleep=off icount
+ * (QEMU_ICOUNT_RTCAP=off|banked|banked:<n>|strict|budget[:<n>[:<ms>]];
+ * wasm defaults to budget:30:500, other hosts to off): QEMU_CLOCK_VIRTUAL
+ * is not allowed to run ahead of wall time.  The vCPU thread asks how many
+ * host ns must pass before virtual time may reach @vtarget and sleeps for
+ * them (rr_idle_advance before a warp, the rr loop after a budget round).
+ *
+ * banked and strict are pinned for the life of the run; banked:<n> starts
+ * banked and switches to strict once the guest has run <n> seconds of its
+ * own clock; budget[:<n>[:<ms>]] (the wasm default, 30 s / 500 ms) switches
+ * to a bank capped at <ms> instead - a later stall is repaid, but never by
+ * more than <ms> of sprinted clock.  <n> is GUEST seconds, not wall
+ * seconds - the boot costs the same virtual time on every host but wildly
+ * different wall time, so only a guest-time window covers the same guest
+ * interval everywhere.
+ */
+extern bool icount_rtcap;
+int64_t icount_rtcap_excess_ns(int64_t vtarget);
+void icount_rtcap_set_waiting(bool waiting);
+void icount_rtcap_set_enabled(bool on);
+/* 0 = off, 1 = banked (still banking), 2 = strict, 3 = budget.  Safe from
+ * any thread. */
+int icount_rtcap_mode(void);
 
 #endif /* EXEC_ICOUNT_H */

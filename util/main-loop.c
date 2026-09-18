@@ -23,6 +23,9 @@
  */
 
 #include "qemu/osdep.h"
+#ifdef __EMSCRIPTEN__
+#include <emscripten/threading.h>
+#endif
 #include "qapi/error.h"
 #include "qemu/cutils.h"
 #include "qemu/timer.h"
@@ -34,6 +37,7 @@
 #include "block/thread-pool.h"
 #include "qemu/error-report.h"
 #include "qemu/queue.h"
+#include "qemu/wasm-diag.h"
 #include "qom/object.h"
 
 #ifndef _WIN32
@@ -147,13 +151,76 @@ AioContext *qemu_get_aio_context(void)
     return qemu_aio_context;
 }
 
+#ifdef __EMSCRIPTEN__
+void qemu_main_loop_wake(void);
+#endif
+
 void qemu_notify_event(void)
 {
     if (!qemu_aio_context) {
         return;
     }
     qemu_bh_schedule(qemu_notify_bh);
+#ifdef __EMSCRIPTEN__
+    /*
+     * wasm: the main loop waits on ml_wait_cond (see
+     * os_host_main_loop_wait) - emscripten's poll() cannot sleep and
+     * its pipe/eventfd poll masks never report readiness, so the BH
+     * kick must also wake the waiter directly.
+     */
+    wasm_diag_stat[WASM_DIAG_ML_WAKE_DUP]++;
+    qemu_main_loop_wake();
+#endif
 }
+
+#ifdef __EMSCRIPTEN__
+/*
+ * wasm main-loop wait: emscripten's poll() implementation
+ * (__syscall_poll in libsyscall.js) ignores its timeout - it checks
+ * the fds once and returns; the browser main thread must never block.
+ * The stock os_host_main_loop_wait therefore busy-spins through a
+ * synchronously proxied poll() (~23k iterations/s during boot, each
+ * with a proxy round-trip and two BQL handoffs), and the aio eventfd
+ * wake never actually worked (the emscripten pipe poll mask stays 0 -
+ * the spin itself was the only wake mechanism).
+ *
+ * Replace the poll with a worker-local timed wait on a condvar that
+ * qemu_notify_event()/aio_notify() signal.  The fd set is never
+ * watched - measured over 950k polls during boot, no fd ever became
+ * ready (all returns r==0); device input arrives via BHs (wasm.c
+ * input ring) and chardev I/O is proxy-based, not poll-driven.
+ */
+/*
+ * The wait itself is a raw emscripten futex (not QemuCond): the
+ * condvar paths truncate to whole milliseconds on wasm, but the
+ * firmware's WFI windows are as short as ~100 us and are served by
+ * this wait - a 1 ms floor measurably slows the whole boot.
+ */
+static uint32_t ml_futex_seq;   /* sequence counter: wake = seq++ */
+static uint32_t ml_wait_seq;    /* snapshot taken before the timeout
+                                 * is computed (see main_loop_wait) */
+
+void qemu_main_loop_wake(void)
+{
+    wasm_diag_stat[WASM_DIAG_ML_WAKE]++;
+    /*
+     * Atomic because two threads wake concurrently as a matter of course
+     * (qemu_notify_event issues one itself and a second through
+     * aio_notify, and the vCPU thread notifies on every timer_mod), and
+     * the increment is what the sleeping main loop's futex compares
+     * against: read-modify-write in the open lets a waker that is
+     * preempted between the read and the write store back a value the
+     * waiter has already snapshotted, erasing its own wake.  The loop
+     * then sleeps out its timeout -- INFINITY when no timer is armed --
+     * and with icount off nothing else runs QEMU_CLOCK_VIRTUAL deadlines
+     * (see main_loop_wait), so the guest stops dead.  Needs the losing
+     * waker to be descheduled across a whole main-loop iteration, which
+     * is why only a loaded or slow host ever sees it.
+     */
+    qatomic_fetch_inc(&ml_futex_seq);
+    emscripten_futex_wake(&ml_futex_seq, INT_MAX);
+}
+#endif
 
 static GArray *gpollfds;
 
@@ -307,7 +374,22 @@ static int os_host_main_loop_wait(int64_t timeout)
     bql_unlock();
     replay_mutex_unlock();
 
+#ifdef __EMSCRIPTEN__
+    /* see qemu_main_loop_wake() above: poll() cannot sleep on wasm.
+     * The sequence-counter protocol (snapshot in main_loop_wait before
+     * the timeout is computed, wait for any change here) cannot lose a
+     * wake that lands between the timeout computation and the sleep,
+     * which the old reset-then-wait flag could. */
+    if (timeout < 0) {
+        emscripten_futex_wait(&ml_futex_seq, ml_wait_seq, INFINITY);
+    } else if (timeout > 0) {
+        emscripten_futex_wait(&ml_futex_seq, ml_wait_seq,
+                              (double)timeout / 1000000.0);
+    }
+    ret = 0;
+#else
     ret = qemu_poll_ns((GPollFD *)gpollfds->data, gpollfds->len, timeout);
+#endif
 
     replay_mutex_lock();
     bql_lock();
@@ -578,6 +660,13 @@ void main_loop_wait(int nonblocking)
 
     /* poll any events */
     g_array_set_size(gpollfds, 0); /* reset for new iteration */
+#ifdef __EMSCRIPTEN__
+    /* Snapshot the wake sequence before anything below computes the
+     * poll timeout: a wake racing with the timeout computation then
+     * shows up as a value change in os_host_main_loop_wait's futex
+     * wait (immediate -EWOULDBLOCK) instead of being erased. */
+    ml_wait_seq = qatomic_read(&ml_futex_seq);
+#endif
     /* XXX: separate device handlers from system ones */
     notifier_list_notify(&main_loop_poll_notifiers, &mlpoll);
 
@@ -587,9 +676,36 @@ void main_loop_wait(int nonblocking)
         timeout_ns = (uint64_t)mlpoll.timeout * (int64_t)(SCALE_MS);
     }
 
+#ifdef __EMSCRIPTEN__
+    /*
+     * wasm icount: virtual-clock deadlines belong to the vCPU thread
+     * (icount_handle_deadline / icount2_sync / 0023's idle warp) - the
+     * main loop would wake for every one of them (~24k/s during boot)
+     * for nothing.  Time the poll on the remaining clocks only.
+     *
+     * Without icount nobody else runs them: the vCPU never exits for a
+     * virtual deadline, so a device completion timer only fires when
+     * some unrelated event happens to wake the loop.  The LG boards boot
+     * with icount off (site/app.js) and hung there - KE800 polled
+     * I2C_PIRQSS forever for a transfer whose QEMU_CLOCK_VIRTUAL
+     * completion timer (hw/arm/pmb887x/i2c_v2.c) never came due.  Keep
+     * the stock timing for that case.
+     */
+    {
+        int type;
+        for (type = 0; type < QEMU_CLOCK_MAX; type++) {
+            if (type == QEMU_CLOCK_VIRTUAL && icount_enabled()) {
+                continue;
+            }
+            timeout_ns = qemu_soonest_timeout(
+                timeout_ns, timerlist_deadline_ns(main_loop_tlg.tl[type]));
+        }
+    }
+#else
     timeout_ns = qemu_soonest_timeout(timeout_ns,
                                       timerlistgroup_deadline_ns(
                                           &main_loop_tlg));
+#endif
 
     ret = os_host_main_loop_wait(timeout_ns);
     mlpoll.state = ret < 0 ? MAIN_LOOP_POLL_ERR : MAIN_LOOP_POLL_OK;

@@ -36,6 +36,24 @@ typedef struct DisasDelayException {
     uint32_t target_el;
 } DisasDelayException;
 
+#ifdef CONFIG_TCG_WASM64
+/*
+ * Conditional branches whose taken path one TB may defer to its end.  This
+ * is only the ceiling the array can hold; w64_ft_max() picks the extent
+ * actually used.  A four-point sweep on a J2ME game fits
+ * ns/insn = 9.83 + 27.87 * exits/insn to within 1.2 %, so the extent buys
+ * time strictly by removing boundaries and the ceiling only has to be high
+ * enough to find where that stops paying.
+ */
+#define W64_FT_MAX 32
+
+/* W64_XWHY reasons, in the order of the WASM_DIAG_XW_* counters */
+enum {
+    W64_WHY_OTHER, W64_WHY_PCST, W64_WHY_BX, W64_WHY_PSR,
+    W64_WHY_RFE, W64_WHY_DEFER, W64_WHY_NOCHAIN,
+};
+#endif
+
 typedef struct DisasContext {
     DisasContextBase base;
     const ARMISARegisters *isar;
@@ -110,6 +128,52 @@ typedef struct DisasContext {
     uint64_t features; /* CPU features bits */
     bool aarch64;
     bool thumb;
+#ifdef CONFIG_TCG_WASM64
+    /*
+     * Inline TB-lookup cache classification of this TB's goto_ptr exit
+     * (gen_goto_ptr): w64_thumb is the thumb state the exit leaves
+     * behind when the translator knows it (-1 after gen_bx: dynamic);
+     * w64_dynkey marks an exit that follows a CPSR write, after which
+     * hflags/thumb/condexec are all dynamic.  w64_lc_sites counts the
+     * exits that used the TB's slot so a second, differently-keyed
+     * exit can be kept off it.
+     */
+    int8_t w64_thumb;
+    bool w64_dynkey;
+    uint8_t w64_lc_sites;
+    uint32_t w64_lc_key[3];
+    uint8_t w64_lc_mask;
+    /*
+     * Deferred taken paths of conditional branches (gen_jmp_tb): instead
+     * of ending the TB there, the branch jumps to @label and translation
+     * continues into the fall-through, so both basic blocks share one TB.
+     * @dest is the branch target, @insns the instruction count at the
+     * branch -- the difference from the final count is what the taken
+     * path has to hand back to icount_decr, because the TB charges for
+     * every instruction it contains the moment it is entered.
+     * @w64_slots is the set of goto_tb slots already spent by this TB;
+     * each deferred path takes one that is left, or goto_ptr if none is.
+     */
+    struct {
+        DisasLabel label;
+        vaddr dest;
+        int insns;
+    } w64_ft[W64_FT_MAX];
+    uint8_t w64_ft_n;
+    uint8_t w64_slots;
+    /* the TB's own first instruction, as a branch target (arm_tr_tb_start) */
+    DisasLabel w64_loop;
+    /*
+     * A back-edge that is a brcond's taken arm leaves the rest of the TB
+     * after the loop, so its interrupt exit has to hand back the icount
+     * the TB prologue prepaid for that tail.  @w64_loop_insns is the loop
+     * body's length, 0 when no such exit was emitted.
+     */
+    DisasLabel w64_loop_exit;
+    int w64_loop_insns;
+    /* which instruction asked for the next goto_ptr, for W64_XWHY */
+    uint8_t w64_why;
+#endif
     bool lse2;
     /*
      * Because unallocated encodings generate different exception syndrome

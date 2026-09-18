@@ -12,6 +12,7 @@ typedef struct {
 #define pmb887x_fifo_is_full(_fifo)		pmb887x_fifo_base_is_full(&(_fifo)->base)
 #define pmb887x_fifo_is_empty(_fifo)	pmb887x_fifo_base_is_empty(&(_fifo)->base)
 #define pmb887x_fifo_count(_fifo)		pmb887x_fifo_base_count(&(_fifo)->base)
+#define pmb887x_fifo_total(_fifo)		((_fifo)->base.total)
 #define pmb887x_fifo_free_count(_fifo)	pmb887x_fifo_base_free_count(&(_fifo)->base)
 #define pmb887x_fifo_reset(_fifo)		pmb887x_fifo_base_reset(&(_fifo)->base)
 
@@ -40,13 +41,15 @@ static inline uint32_t pmb887x_fifo_base_free_count(pmb887x_fifo_base_t *fifo) {
 
 static inline void pmb887x_fifo_base_push(pmb887x_fifo_base_t *fifo) {
 	g_assert(fifo->count < fifo->total);
-	fifo->write = (fifo->write + 1) % fifo->total;
+	if (++fifo->write == fifo->total)
+		fifo->write = 0;
 	fifo->count++;
 }
 
 static inline void pmb887x_fifo_base_pop(pmb887x_fifo_base_t *fifo) {
 	g_assert(fifo->count > 0);
-	fifo->read = (fifo->read + 1) % fifo->total;
+	if (++fifo->read == fifo->total)
+		fifo->read = 0;
 	fifo->count--;
 }
 

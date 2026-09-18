@@ -479,6 +479,19 @@ void aio_notify(AioContext *ctx)
     if (qatomic_read(&ctx->notify_me)) {
         event_notifier_set(&ctx->notifier);
     }
+#ifdef __EMSCRIPTEN__
+    /*
+     * Wake the futex-based main-loop wait (util/main-loop.c); the
+     * event_notifier pipe wake does not work on wasm.  It goes last, after
+     * ctx->notified is published: woken before the store, the main loop can
+     * look, find nothing to do and sleep again on the same wake, and the
+     * store that follows carries none of its own.
+     */
+    {
+        extern void qemu_main_loop_wake(void);
+        qemu_main_loop_wake();
+    }
+#endif
 }
 
 void aio_notify_accept(AioContext *ctx)

@@ -1820,8 +1820,32 @@ static void arm_cpu_realizefn(DeviceState *dev, Error **errp)
     Error *local_err = NULL;
 
 #if defined(CONFIG_TCG) && !defined(CONFIG_USER_ONLY)
-    /* Use pc-relative instructions in system-mode */
-    tcg_cflags_set(cs, CF_PCREL);
+    /*
+     * Use pc-relative instructions in system-mode.
+     *
+     * CF_PCREL earns its keep when the same physical code runs at many
+     * virtual addresses -- it lets one TB serve all of them.  A phone
+     * firmware maps its flash once, and pays for the generality at every
+     * PC materialisation: gen_pc_plus_diff becomes a read of cpu_R[15]
+     * plus an add instead of a constant, and on an ARMv5 core every
+     * 32-bit literal is an `ldr rX, [pc, #imm]`.
+     *
+     * Measured and closed (2026-09-16): turning it off is **-0.7 %, 2/3
+     * pairwise -- inside noise -- and costs +2 % lookup misses**, because
+     * TBs then key on the virtual pc too and stop being shared.  The
+     * saving is not there because cpu_R[15] is a TCG global, which the
+     * wasm64 backend keeps in a wasm local for the life of the TB: the
+     * "read" is a local.get, not a memory load, so the add costs about
+     * what the constant would.  tbGen does not move either, so this
+     * firmware really does map its code once -- CF_PCREL's generality is
+     * unused here and still not worth removing.
+     */
+#ifdef CONFIG_TCG_WASM64
+    if (!getenv("W64_NOPCREL"))
+#endif
+    {
+        tcg_cflags_set(cs, CF_PCREL);
+    }
 #endif
 
     /* If we needed to query the host kernel for the CPU features
@@ -2137,6 +2161,30 @@ static void arm_cpu_realizefn(DeviceState *dev, Error **errp)
              */
             pagebits = 10;
         }
+#ifdef CONFIG_TCG_WASM64
+        /*
+         * The board half of W64_PAGEBITS raises the page via
+         * minimum_page_bits, which is already committed by the time we get
+         * here; without this, realize would refuse it as "requires a smaller
+         * page size" below.  Raising is sound rather than a gamble:
+         * tlb_set_page_full marks any guest page smaller than TARGET_PAGE
+         * with TLB_INVALID_MASK and repeats the MMU check and fill on every
+         * access (cputlb.c:1409), so a tiny page is still translated exactly,
+         * just slowly.  1K is therefore a *performance* choice for firmwares
+         * that use ARMv5 tiny pages, and Siemens firmware does not use them
+         * -- fillLarge == tlbFill in every window measured.  What a bigger
+         * page buys is TB shape: translator_use_goto_tb and w64_absorb both
+         * refuse across a page, and at 1K they refuse often.
+         */
+        {
+            const char *e = getenv("W64_PAGEBITS");
+            int want = e ? atoi(e) : 0;
+
+            if (want > pagebits && want <= 16) {
+                pagebits = want;
+            }
+        }
+#endif
         if (!set_preferred_target_page_bits(pagebits)) {
             /*
              * This can only ever happen for hotplugging a CPU, or if

@@ -13,6 +13,8 @@
 #include "exec/translation-block.h"
 #include "accel/tcg/cpu-ops.h"
 #include "cpregs.h"
+#include "qemu/wasm-diag.h"
+#include "qemu/timer.h"
 
 static inline bool fgt_svc(CPUARMState *env, int el)
 {
@@ -164,6 +166,97 @@ static bool sme_fa64(CPUARMState *env, int el)
     return true;
 }
 
+/*
+ * The features whose absence makes every question rebuild_hflags_a32()
+ * asks answerable from two words of state.  An ARMv5 A-profile core with
+ * an MMU - the pmb887x's ARM926EJ-S - has none of them.
+ */
+#define HFLAGS_A32_FAST_FEATURES                                        \
+    ((1ULL << ARM_FEATURE_M) | (1ULL << ARM_FEATURE_AARCH64) |          \
+     (1ULL << ARM_FEATURE_EL2) | (1ULL << ARM_FEATURE_EL3) |            \
+     (1ULL << ARM_FEATURE_PMSA) | (1ULL << ARM_FEATURE_V6))
+
+/*
+ * What each absent feature buys, in the order rebuild_hflags_a32() and
+ * its two tails ask:
+ *
+ *   arm_sctlr(env, el)     no EL2/EL3 -> arm_mmu_idx_el(env, 0) is
+ *                          ARMMMUIdx_E10_0, so el 0 and 1 both read
+ *                          sctlr_el[1].  (A call, and for el 0 a nested
+ *                          arm_mmu_idx_el.)
+ *   aprofile_require_alignment  not PMSA, and arm_hcr_el2_eff() is 0
+ *                          without EL2, so it is SCTLR.A || !SCTLR.M.
+ *   VFPEN                  arm_el_is_aa64(env, 1) is false.
+ *   HSTR_ACTIVE            arm_is_el2_enabled() is false.
+ *   FGT_ACTIVE / FGT_SVC   aa64_fgt needs AArch64.
+ *   SME_TRAP_NONSTREAMING  needs SVCR, i.e. AArch64.
+ *   NS                     access_secure_reg() needs EL3, so NS is 1.
+ *   FPEXC_EL               fp_exception_el() returns 0 before v6 (no
+ *                          CPACR/CPTR to trap with).  (A call.)
+ *   SS_ACTIVE              arm_singlestep_active() requires the debug
+ *                          target EL to be AArch64, so it is always
+ *                          false pre-v8 - as its own comment says.
+ *                          (A call.)
+ *   mmu_idx                el 0 -> E10_0; el 1 -> E10_1, or E10_1_PAN
+ *                          if CPSR.PAN somehow got set (checked, not
+ *                          assumed: it is one bit test).  (A call.)
+ *   sctlr_b                !v6 implies !v7, so it is just SCTLR.B.
+ *   BE_DATA                system mode ignores sctlr_b here; CPSR.E.
+ *
+ * Five out-of-line calls and ~20 branches become two loads and a
+ * handful of bit tests.  This is worth it because the rebuild is not
+ * rare: every mode change runs it, and on an idle S75 the hflags
+ * cluster (rebuild_hflags_a32 + arm_rebuild_hflags + arm_mmu_idx_el)
+ * was 3.4 % of the vCPU thread.
+ *
+ * el > 1 cannot happen without EL2/EL3, but arm_current_el() decodes it
+ * from CPSR, so take the generic path rather than trust the guest.
+ */
+static inline __attribute__((always_inline))
+bool rebuild_hflags_a32_fast(CPUARMState *env, int el, CPUARMTBFlags *out)
+{
+    CPUARMTBFlags flags = {};
+    uint64_t sctlr;
+    ARMMMUIdx mmu_idx;
+
+#ifdef CONFIG_USER_ONLY
+    /* Both ALIGN_MEM and BE_DATA are computed differently there. */
+    return false;
+#endif
+
+    if ((env->features & HFLAGS_A32_FAST_FEATURES) || el > 1) {
+        return false;
+    }
+
+    sctlr = env->cp15.sctlr_el[1];
+
+    if (el == 0) {
+        mmu_idx = ARMMMUIdx_E10_0;
+    } else if (env->uncached_cpsr & CPSR_PAN) {
+        mmu_idx = ARMMMUIdx_E10_1_PAN;
+    } else {
+        mmu_idx = ARMMMUIdx_E10_1;
+    }
+
+    if ((sctlr & SCTLR_A) || !(sctlr & SCTLR_M)) {
+        DP_TBFLAG_ANY(flags, ALIGN_MEM, 1);
+    }
+    if (env->uncached_cpsr & CPSR_IL) {
+        DP_TBFLAG_ANY(flags, PSTATE__IL, 1);
+    }
+    if (sctlr & SCTLR_B) {
+        DP_TBFLAG_A32(flags, SCTLR__B, 1);
+    }
+    if (env->uncached_cpsr & CPSR_E) {
+        DP_TBFLAG_ANY(flags, BE_DATA, 1);
+    }
+    DP_TBFLAG_A32(flags, NS, 1);
+    DP_TBFLAG_ANY(flags, MMUIDX, arm_to_core_mmu_idx(mmu_idx));
+
+    *out = flags;
+    return true;
+}
+
 static CPUARMTBFlags rebuild_hflags_a32(CPUARMState *env, int fp_el,
                                         ARMMMUIdx mmu_idx)
 {
@@ -210,6 +303,39 @@ static CPUARMTBFlags rebuild_hflags_a32(CPUARMState *env, int fp_el,
     }
 
     return rebuild_hflags_common_32(env, fp_el, mmu_idx, flags);
+}
+
+/*
+ * The single AArch32 entry point: every caller has @el and nothing else.
+ * Build with -DHFLAGS_FAST_VERIFY to take the short path, compute the
+ * generic answer anyway, count the disagreements (hflagsBad) and return
+ * the generic one - a build that is behaviourally the tip, so the whole
+ * gate ladder can run on it.
+ */
+static inline __attribute__((always_inline))
+CPUARMTBFlags rebuild_hflags_a32_el(CPUARMState *env, int el)
+{
+    CPUARMTBFlags fast;
+
+    WASM_DIAG_HOT(WASM_DIAG_HFLAGS);
+    if (rebuild_hflags_a32_fast(env, el, &fast)) {
+        WASM_DIAG_HOT(WASM_DIAG_HFLAGS_FAST);
+#ifndef HFLAGS_FAST_VERIFY
+        return fast;
+#else
+        {
+            CPUARMTBFlags gen = rebuild_hflags_a32(env,
+                                                   fp_exception_el(env, el),
+                                                   arm_mmu_idx_el(env, el));
+            if (gen.flags != fast.flags || gen.flags2 != fast.flags2) {
+                wasm_diag_stat[WASM_DIAG_HFLAGS_BAD]++;
+            }
+            return gen;
+        }
+#endif
+    }
+    return rebuild_hflags_a32(env, fp_exception_el(env, el),
+                              arm_mmu_idx_el(env, el));
 }
 
 /*
@@ -565,21 +691,123 @@ static CPUARMTBFlags rebuild_hflags_a64(CPUARMState *env, int el, int fp_el,
 static CPUARMTBFlags rebuild_hflags_internal(CPUARMState *env)
 {
     int el = arm_current_el(env);
-    int fp_el = fp_exception_el(env, el);
-    ARMMMUIdx mmu_idx = arm_mmu_idx_el(env, el);
+    int fp_el;
+    ARMMMUIdx mmu_idx;
+
+    if (!is_a64(env) && !arm_feature(env, ARM_FEATURE_M)) {
+        return rebuild_hflags_a32_el(env, el);
+    }
+
+    fp_el = fp_exception_el(env, el);
+    mmu_idx = arm_mmu_idx_el(env, el);
 
     if (is_a64(env)) {
         return rebuild_hflags_a64(env, el, fp_el, mmu_idx);
-    } else if (arm_feature(env, ARM_FEATURE_M)) {
-        return rebuild_hflags_m32(env, fp_el, mmu_idx);
     } else {
-        return rebuild_hflags_a32(env, fp_el, mmu_idx);
+        return rebuild_hflags_m32(env, fp_el, mmu_idx);
     }
 }
 
+/*
+ * Every hflags assignment goes through here.  On the wasm64 backend the
+ * inline TB-lookup cache (gen_goto_ptr) covers hflags.flags per exit
+ * (statically or by comparing it) but not flags2, which is expected to
+ * stay put across a boot: a change of flags2 retires every slot.
+ */
+static void arm_set_hflags(CPUARMState *env, CPUARMTBFlags f)
+{
+#ifdef CONFIG_TCG_WASM64
+    if (f.flags2 != env->hflags.flags2) {
+        cpu_tb_key_gen_bump(env_cpu(env));
+    }
+#endif
+    env->hflags = f;
+}
+
+#ifdef CONFIG_TCG_WASM64
+/*
+ * The words of the wasm64 inline TB-lookup cache key (gen_goto_ptr
+ * stamps or compares them without recomputing the TB flags):
+ * hflags.flags, thumb and condexec_bits.  What is left of
+ * arm_get_tb_cpu_state's key is either covered by the cache generation
+ * (hflags.flags2, FPSCR.Len/Stride, FPEXC.EN — see cpu_tb_key_gen_bump)
+ * or excluded here (A64, M-profile, single-step: never cached).
+ */
+bool arm_w64_lc_key(CPUState *cs, uint32_t key32[3])
+{
+    CPUARMState *env = cpu_env(cs);
+
+    if (is_a64(env) || arm_feature(env, ARM_FEATURE_M) ||
+        EX_TBFLAG_ANY(env->hflags, SS_ACTIVE)) {
+        return false;
+    }
+    key32[0] = env->hflags.flags;
+    key32[1] = env->thumb;
+    key32[2] = env->condexec_bits;
+    return true;
+}
+
+/*
+ * The same key with the PC, for the global next-TB cache: it is keyed on
+ * the *target* PC, so it has to read the PC without arm_get_tb_cpu_state
+ * — which is the call it exists to avoid.
+ */
+bool arm_w64_lc_key_pc(CPUState *cs, uint32_t key32[3], uint32_t *pc)
+{
+    CPUARMState *env = cpu_env(cs);
+
+    if (!arm_w64_lc_key(cs, key32)) {
+        return false;
+    }
+    *pc = env->regs[15];
+    return true;
+}
+#endif
+
 void arm_rebuild_hflags(CPUARMState *env)
 {
-    env->hflags = rebuild_hflags_internal(env);
+#ifdef CONFIG_TCG_WASM64
+    /*
+     * Unconditional, and worth its one increment: this is the counter
+     * that prices the function.  A wasm profile credited it with 11 % of
+     * the vCPU on an idle CX70 while it was in fact called 11.6 k times
+     * a second.  See doc/lessons.md -- profile self-time here names the
+     * wrong function.
+     *
+     * "Under 0.3 %" used to follow, and it was an idle-screen number
+     * that does not transfer.  Timed with WASM_DIAG_TIME_PHASES and the
+     * two clock reads subtracted off with HFLAGS_CAL (at these spans the
+     * reads are most of the raw span: the raw hflagsNs/hflagsNsN of
+     * ~98 ns is about 3x the truth), a call costs **31.6 ns**.
+     *
+     * The rate is not a constant, so neither is the cost.  This counter
+     * tracks excSwi at ~2.7 rebuilds per SWI across every J2ME game
+     * measured, and the SWI rate itself varies 5x between games: 1065
+     * calls/Mi on CX70 game 1, 5155 on the SWI-heavy game 2.  That is
+     * 0.034 to 0.163 ms/Mi, or roughly **0.8 % to 2.3 % of wall**
+     * depending on the game.  Quote the range, not one game's number --
+     * quoting one workload's rate as if general is the error this
+     * comment used to make.
+     */
+    wasm_diag_stat[WASM_DIAG_HFLAGS_CALLS]++;
+#endif
+#if defined(CONFIG_TCG_WASM64) && defined(WASM_DIAG_TIME_PHASES)
+    {
+        static uint32_t tick;
+
+        if (unlikely((++tick & 7) == 0)) {
+            int64_t t0 = get_clock_realtime();
+
+            arm_set_hflags(env, rebuild_hflags_internal(env));
+            wasm_diag_stat[WASM_DIAG_HFLAGS_NS] += get_clock_realtime() - t0;
+            wasm_diag_stat[WASM_DIAG_HFLAGS_NS_N]++;
+            t0 = get_clock_realtime();
+            wasm_diag_stat[WASM_DIAG_HFLAGS_CAL] += get_clock_realtime() - t0;
+            return;
+        }
+    }
+#endif
+    arm_set_hflags(env, rebuild_hflags_internal(env));
 }
 
 /*
@@ -592,7 +820,7 @@ void HELPER(rebuild_hflags_m32_newel)(CPUARMState *env)
     int fp_el = fp_exception_el(env, el);
     ARMMMUIdx mmu_idx = arm_mmu_idx_el(env, el);
 
-    env->hflags = rebuild_hflags_m32(env, fp_el, mmu_idx);
+    arm_set_hflags(env, rebuild_hflags_m32(env, fp_el, mmu_idx));
 }
 
 void HELPER(rebuild_hflags_m32)(CPUARMState *env, int el)
@@ -600,7 +828,7 @@ void HELPER(rebuild_hflags_m32)(CPUARMState *env, int el)
     int fp_el = fp_exception_el(env, el);
     ARMMMUIdx mmu_idx = arm_mmu_idx_el(env, el);
 
-    env->hflags = rebuild_hflags_m32(env, fp_el, mmu_idx);
+    arm_set_hflags(env, rebuild_hflags_m32(env, fp_el, mmu_idx));
 }
 
 /*
@@ -609,18 +837,12 @@ void HELPER(rebuild_hflags_m32)(CPUARMState *env, int el)
  */
 void HELPER(rebuild_hflags_a32_newel)(CPUARMState *env)
 {
-    int el = arm_current_el(env);
-    int fp_el = fp_exception_el(env, el);
-    ARMMMUIdx mmu_idx = arm_mmu_idx_el(env, el);
-    env->hflags = rebuild_hflags_a32(env, fp_el, mmu_idx);
+    arm_set_hflags(env, rebuild_hflags_a32_el(env, arm_current_el(env)));
 }
 
 void HELPER(rebuild_hflags_a32)(CPUARMState *env, int el)
 {
-    int fp_el = fp_exception_el(env, el);
-    ARMMMUIdx mmu_idx = arm_mmu_idx_el(env, el);
-
-    env->hflags = rebuild_hflags_a32(env, fp_el, mmu_idx);
+    arm_set_hflags(env, rebuild_hflags_a32_el(env, el));
 }
 
 void HELPER(rebuild_hflags_a64)(CPUARMState *env, int el)
@@ -628,7 +850,7 @@ void HELPER(rebuild_hflags_a64)(CPUARMState *env, int el)
     int fp_el = fp_exception_el(env, el);
     ARMMMUIdx mmu_idx = arm_mmu_idx_el(env, el);
 
-    env->hflags = rebuild_hflags_a64(env, el, fp_el, mmu_idx);
+    arm_set_hflags(env, rebuild_hflags_a64(env, el, fp_el, mmu_idx));
 }
 
 static void assert_hflags_rebuild_correctly(CPUARMState *env)

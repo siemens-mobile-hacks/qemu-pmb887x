@@ -313,6 +313,29 @@ struct MemoryRegionOps {
                                     unsigned size,
                                     MemTxAttrs attrs);
 
+    /*
+     * Optional: @count writes of @size bytes each, all to @addr, taken
+     * in one call.  A DMA burst into a FIFO register is the whole
+     * display path on a phone - a framebuffer arrives one pixel per
+     * dispatch - and the per-access work above the device is then most
+     * of the cost.  A device that sets this must leave exactly the
+     * state @write would leave after the same @count writes; it is
+     * reached only through memory_region_dispatch_write_run(), so a
+     * caller that does not know about it is unaffected.
+     *
+     * Returns whether the device took the words as one burst.  A device
+     * that cannot must still deliver them exactly as @write would (the
+     * usual fallback is a per-word loop) and return false: the return
+     * value says the caller cannot rely on burst semantics (a device
+     * that just took a run word by word may drop its request between
+     * the words), not that the words went missing.
+     */
+    bool (*write_run)(void *opaque,
+                      hwaddr addr,
+                      const uint8_t *buf,
+                      unsigned size,
+                      unsigned count);
+
     enum device_endian endianness;
     /* Guest-visible constraints: */
     struct {
@@ -941,6 +964,12 @@ struct FlatView {
     unsigned nr_allocated;
     struct AddressSpaceDispatch *dispatch;
     MemoryRegion *root;
+    /* Topology tags (see system/memory.c, generate_memory_topology):
+     * identity of the MR-tree state this view was rendered from, so a
+     * romd-only toggle can reuse a previously rendered variant without
+     * re-rendering.  Zero = untagged/never reuse. */
+    uint64_t topo_gen;
+    uint64_t romd_sig;
 };
 
 static inline FlatView *address_space_to_flatview(const AddressSpace *as)
@@ -1965,6 +1994,23 @@ void memory_region_set_nonvolatile(MemoryRegion *mr, bool nonvolatile);
 void memory_region_rom_device_set_romd(MemoryRegion *mr, bool romd_mode);
 
 /**
+ * memory_topology_views_recycled: report+clear whether a FlatView variant
+ * was recycled (evicted from the romd stash) since the last call.
+ * Readers holding pointers into FlatViews (TLB entries keep their
+ * MemoryRegionSection) must flush them when this returns true.
+ */
+bool memory_topology_views_recycled(void);
+
+/**
+ * memory_topology_commit_full: whether the transaction commit that is
+ * currently being dispatched (or just finished) changed real memory
+ * topology, as opposed to only romd mode or ioeventfds.  Such commits
+ * can put different code behind the same guest physical address, so
+ * the TCG jump cache must be cleared in addition to the TLB ranges.
+ */
+bool memory_topology_commit_full(void);
+
+/**
  * memory_region_set_coalescing: Enable memory coalescing for the region.
  *
  * Enabled writes to a region to be queued for later processing. MMIO ->write
@@ -2334,6 +2380,17 @@ void memory_region_transaction_begin(void);
 void memory_region_transaction_commit(void);
 
 /**
+ * memory_region_topology_gen: generation of the installed flatviews.
+ *
+ * Changes on every committed transaction that installed new views (romd
+ * toggles included).  A translation obtained under one value stays
+ * valid while the value is unchanged, so a device that dispatches many
+ * accesses to one address may cache the (MemoryRegion, offset) pair
+ * keyed on it instead of walking the flatview per access.
+ */
+uint64_t memory_region_topology_gen(void);
+
+/**
  * memory_listener_register: register callbacks to be called when memory
  *                           sections are mapped or unmapped into an address
  *                           space
@@ -2403,6 +2460,69 @@ MemTxResult memory_region_dispatch_write(MemoryRegion *mr,
                                          uint64_t data,
                                          MemOp op,
                                          MemTxAttrs attrs);
+
+/**
+ * memory_region_write_direct_ok: whether aligned @size-byte writes to @mr
+ * may use memory_region_dispatch_write_direct().  Depends only on @mr and
+ * @size, so a caller writing the same region repeatedly can cache it.
+ *
+ * @mr: #MemoryRegion to access
+ * @size: access size in bytes
+ */
+bool memory_region_write_direct_ok(MemoryRegion *mr, unsigned size);
+
+/**
+ * memory_region_dispatch_write_direct: memory_region_dispatch_write for a
+ * caller that has already established memory_region_write_direct_ok() and
+ * an @addr aligned to @size.
+ *
+ * @mr: #MemoryRegion to access
+ * @addr: address within that region
+ * @data: data to write, in the device's own byte order
+ * @size: access size in bytes
+ */
+MemTxResult memory_region_dispatch_write_direct(MemoryRegion *mr, hwaddr addr,
+                                                uint64_t data, unsigned size);
+
+/**
+ * memory_region_dispatch_write_run: hand @count @size-byte writes of @buf,
+ * all to @addr, to the device in one call.  Same preconditions as
+ * memory_region_dispatch_write_direct().  Returns false - having written
+ * nothing - when @mr has no such path, so the caller writes word by word.
+ * When the words were written, @burst (if non-NULL) reports whether the
+ * device consumed them as one burst or handled them word by word - see
+ * MemoryRegionOps::write_run.
+ *
+ * @mr: #MemoryRegion to access
+ * @addr: address within that region
+ * @buf: @count * @size bytes, each word in the device's own byte order
+ * @size: access size in bytes
+ * @count: number of writes
+ */
+bool memory_region_dispatch_write_run(MemoryRegion *mr, hwaddr addr,
+                                      const uint8_t *buf, unsigned size,
+                                      unsigned count, bool *burst);
+
+/**
+ * memory_region_subpage_leaf: resolve one level of a subpage container.
+ *
+ * A target page shared by several regions is represented by a subpage
+ * container whose ops re-enter the flatview on every access, so a caller
+ * holding only the container (the TCG TLB does: its fill translates with
+ * resolve_subpage = false) pays a full translate + dispatch per access.
+ * This resolves the leaf that backs one offset, and reports the run of
+ * offsets that resolve to the same leaf, so the caller can cache the
+ * resolution and range-check instead of re-walking.
+ *
+ * Valid only while memory_region_topology_gen() is unchanged.
+ *
+ * @mr: the container; NULL is returned unless it is a subpage
+ * @offset: offset within @mr (i.e. within one target page)
+ * @lo: filled with the first offset of the run
+ * @len: filled with the length of the run
+ */
+MemoryRegionSection *memory_region_subpage_leaf(MemoryRegion *mr, hwaddr offset,
+                                                unsigned *lo, unsigned *len);
 
 /**
  * address_space_init: initializes an address space

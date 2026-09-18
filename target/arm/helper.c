@@ -18,6 +18,7 @@
 #include "qemu/timer.h"
 #include "qemu/bitops.h"
 #include "qemu/qemu-print.h"
+#include "qemu/wasm-diag.h"
 #include "exec/cputlb.h"
 #include "exec/translation-block.h"
 #include "hw/core/irq.h"
@@ -8270,11 +8271,26 @@ void cpsr_write(CPUARMState *env, uint32_t val, uint32_t mask,
                 CPSRWriteType write_type)
 {
     uint32_t changed_daif;
-    bool rebuild_hflags = (write_type != CPSRWriteRaw) &&
-        (mask & (CPSR_M | CPSR_E | CPSR_IL));
+    bool rebuild_hflags;
 
     // PMB887X: real hardware just ignores M4
     val |= 0x10;
+
+    /*
+     * Only M, E and IL feed hflags (thumb and condexec are read straight
+     * out of env by arm_get_tb_cpu_state, not cached here), and only a
+     * write that actually moves one of them needs the rebuild.  Testing
+     * the mask alone rebuilt on every `msr cpsr_c`, which is how firmware
+     * masks interrupts - so every critical section in the guest, 873k
+     * rebuilds a second on an EL71 boot, one per 67 guest instructions.
+     * Computed after the M4 quirk above, so @val is the value that will
+     * actually land.  Conservative where the mode switch is later refused
+     * (mask loses CPSR_M): that rebuilds once for nothing, and the
+     * bad-mode path that adds CPSR_IL is only reached when the mode bits
+     * differ, which this test has already caught.
+     */
+    rebuild_hflags = (write_type != CPSRWriteRaw) &&
+        ((env->uncached_cpsr ^ val) & mask & (CPSR_M | CPSR_E | CPSR_IL)) != 0;
 
     if (mask & CPSR_NZCV) {
         env->ZF = (~val) & CPSR_Z;
@@ -9146,6 +9162,28 @@ static void arm_cpu_do_interrupt_aarch32(CPUState *cs)
         A32_BANKED_CURRENT_REG_SET(env, ifar, env->exception.vaddress);
         qemu_log_mask(CPU_LOG_INT, "...with IFSR 0x%x IFAR 0x%x\n",
                       env->exception.fsr, (uint32_t)env->exception.vaddress);
+#ifdef __EMSCRIPTEN__
+        /*
+         * QEMU_LOG_PABT=1: one stderr line per prefetch abort / BKPT.  The
+         * browser page cannot afford -d int (every IRQ and SVC crosses into
+         * JS and the timing change hides the race being chased); a boot
+         * takes essentially none of these until the firmware dies.
+         */
+        {
+            static int log_pabt = -1;
+
+            if (log_pabt < 0) {
+                log_pabt = getenv("QEMU_LOG_PABT") != NULL;
+            }
+            if (log_pabt) {
+                fprintf(stderr, "[pabt] excp=%d ifsr=0x%x ifar=0x%08x pc=0x%08x "
+                        "lr=0x%08x sp=0x%08x cpsr=0x%08x thumb=%d\n",
+                        cs->exception_index, env->exception.fsr,
+                        (uint32_t)env->exception.vaddress, env->regs[15],
+                        env->regs[14], env->regs[13], cpsr_read(env), env->thumb);
+            }
+        }
+#endif
         new_mode = ARM_CPU_MODE_ABT;
         addr = 0x0c;
         mask = CPSR_A | CPSR_I;
@@ -9665,6 +9703,15 @@ void arm_cpu_do_interrupt(CPUState *cs)
     uint64_t last_pc = cs->cc->get_pc(cs);
 
     assert(!arm_feature(env, ARM_FEATURE_M));
+
+#ifdef CONFIG_TCG_WASM64
+    {
+        unsigned e = cs->exception_index;
+
+        wasm_diag_stat[WASM_DIAG_ARM_IRQ]++;
+        wasm_diag_stat[WASM_DIAG_EXC_OTHER + (e <= EXCP_FIQ ? e : 0)]++;
+    }
+#endif
 
     arm_log_exception(cs);
     qemu_log_mask(CPU_LOG_INT, "...from EL%d to EL%d\n", arm_current_el(env),
