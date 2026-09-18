@@ -1882,15 +1882,39 @@ static bool victim_tlb_hit(CPUState *cpu, size_t mmu_idx, size_t index,
     return false;
 }
 
+/* W64_NOCLEANREUSE=1 restores the is_clean() call the comment below replaces. */
+static bool notdirty_reuse_code_flag(void)
+{
+    static int on = -1;
+    if (on < 0) {
+        on = getenv("W64_NOCLEANREUSE") == NULL;
+    }
+    return on != 0;
+}
+
 static void notdirty_write(CPUState *cpu, vaddr mem_vaddr, unsigned size,
                            CPUTLBEntryFull *full, uintptr_t retaddr)
 {
     ram_addr_t ram_addr = mem_vaddr + full->xlat_offset;
+    bool reuse = notdirty_reuse_code_flag();
+    bool code_dirty;
 
     trace_memory_notdirty_write_access(mem_vaddr, ram_addr, size);
 
-    if (!physical_memory_get_dirty_flag(ram_addr, DIRTY_MEMORY_CODE)) {
-        tb_invalidate_phys_range_fast(cpu, ram_addr, size, retaddr);
+    code_dirty = physical_memory_get_dirty_flag(ram_addr, DIRTY_MEMORY_CODE);
+    if (!code_dirty) {
+        bool rescanned = tb_invalidate_phys_range_fast(cpu, ram_addr,
+                                                       size, retaddr);
+        /*
+         * Only the long path can have set CODE dirty under us, and only the
+         * reuse arm cares.  Leaving this out of the other arm keeps it doing
+         * exactly upstream's work, so the A/B measures the removal and not a
+         * probe added to the leg it is measured against.
+         */
+        if (reuse && rescanned) {
+            code_dirty = physical_memory_get_dirty_flag(ram_addr,
+                                                        DIRTY_MEMORY_CODE);
+        }
     }
 
     /*
@@ -1899,8 +1923,23 @@ static void notdirty_write(CPUState *cpu, vaddr mem_vaddr, unsigned size,
      */
     physical_memory_set_dirty_range(ram_addr, size, DIRTY_CLIENTS_NOCODE);
 
-    /* We remove the notdirty callback only if the code has been flushed. */
-    if (!physical_memory_is_clean(ram_addr)) {
+    /*
+     * We remove the notdirty callback only if the code has been flushed.
+     *
+     * physical_memory_is_clean() is !(vga && code && migration), and the
+     * line above has just set vga and migration, so its answer is the CODE
+     * bit -- which is already in hand, and which the scan above only
+     * disturbs when it reports that it went the long way.  Calling it here
+     * costs three more out-of-line dirty-bitmap probes, each an RCU guard
+     * and a find_next_bit, to recompute a value we hold; a J2ME game runs
+     * this path ~480 times per Mi.
+     */
+    if (reuse) {
+        if (code_dirty) {
+            trace_memory_notdirty_set_dirty(mem_vaddr);
+            tlb_set_dirty(cpu, mem_vaddr);
+        }
+    } else if (!physical_memory_is_clean(ram_addr)) {
         trace_memory_notdirty_set_dirty(mem_vaddr);
         tlb_set_dirty(cpu, mem_vaddr);
     }
