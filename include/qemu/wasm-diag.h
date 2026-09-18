@@ -477,6 +477,15 @@ enum {
     WASM_DIAG_SMC_MISS,
 
     /*
+     * Of those, the ones the page's code-granule mask rejected without
+     * touching the TB list, and the number of TBs the list walk visited
+     * when the mask did not reject.  smcWalk / (smcMiss - smcMask) is the
+     * chain length a store used to pay unconditionally.
+     */
+    WASM_DIAG_SMC_MASK,
+    WASM_DIAG_SMC_WALK,
+
+    /*
      * Wall ns inside the DMA display stream -- the whole DMA -> DIF -> SSI
      * -> LCD chain for one burst, which is the only place those 1608
      * bursts per Mi are paid for.  DISP_CAL is an empty interval taken the
