@@ -122,6 +122,8 @@ struct pmb887x_tpu_t {
 	uint32_t counter;
 	int64_t start;
 	int64_t next;
+	int64_t armed;
+	bool armed_valid;
 	uint32_t frame_ticks;
 	uint32_t next_frame_ticks;
 	bool skip_extended;
@@ -367,12 +369,12 @@ static void tpu_finish_frame(pmb887x_tpu_t *p) {
 	}
 }
 
-static void tpu_update_timer(pmb887x_tpu_t *p) {
-	if (!p->enabled) {
-		timer_del(p->timer);
-		return;
-	}
-
+/*
+ * Bring the counter, the frame, the interrupts and the event list up to
+ * the current virtual time and recompute p->next.  Everything
+ * tpu_update_timer() does except arming the QEMU timer.
+ */
+static void tpu_advance(pmb887x_tpu_t *p) {
 	uint64_t counter = tpu_get_counter(p);
 	uint64_t elapsed_ticks = counter - p->counter;
 	p->counter = (uint32_t) counter;
@@ -384,11 +386,36 @@ static void tpu_update_timer(pmb887x_tpu_t *p) {
 	p->next = p->start + tpu_ticks_to_ns(p, p->frame_ticks - p->counter);
 	p->next = tpu_run_irq(p, p->counter, p->start, p->next);
 	p->next = tpu_run_events(p, p->counter, p->start, p->next);
-	timer_mod(p->timer, p->next);
+}
+
+static void tpu_update_timer(pmb887x_tpu_t *p) {
+	if (!p->enabled) {
+		p->armed_valid = false;
+		timer_del(p->timer);
+		return;
+	}
+
+	tpu_advance(p);
+
+	/*
+	 * tpu_io_write() ends in tpu_update_state() for *every* register,
+	 * including the event RAM, so a guest that keeps the TPU busy
+	 * reaches here ~1.5M times a second (the S75 at idle).  timer_mod()
+	 * is not free at that rate - it takes the timer list's lock, walks
+	 * it and may notify the main loop - so only re-arm when the
+	 * deadline actually moved.
+	 */
+	if (!p->armed_valid || p->armed != p->next || !timer_pending(p->timer)) {
+		p->armed = p->next;
+		p->armed_valid = true;
+		timer_mod(p->timer, p->next);
+	}
 }
 
 static void tpu_timer_callback(void *opaque) {
-	tpu_update_timer(opaque);
+	pmb887x_tpu_t *p = opaque;
+	p->armed_valid = false;   /* the timer has fired; it is not armed */
+	tpu_update_timer(p);
 }
 
 static void tpu_apply_offset(pmb887x_tpu_t *p) {
@@ -405,8 +432,6 @@ static void tpu_apply_offset(pmb887x_tpu_t *p) {
 
 static void tpu_update_state(pmb887x_tpu_t *p) {
 	bool was_enabled = p->enabled;
-	if (was_enabled)
-		tpu_update_timer(p);
 
 	uint32_t div = pmb887x_clc_get_rmc(&p->clc);
 	
@@ -431,6 +456,26 @@ static void tpu_update_state(pmb887x_tpu_t *p) {
 	
 	// new_freq = new_freq / 6;
 	
+	bool new_enabled = pmb887x_clc_is_enabled(&p->clc) && new_freq > 0 &&
+		(p->param & TPU_PARAM_TINI) != 0 && p->overflow >= 2;
+
+	/*
+	 * Bring the counter up to date *at the old rate* - but only when
+	 * something below actually consumes that: a rate or enable change,
+	 * or the TINI reset that wipes the counter.  Otherwise this is a
+	 * second tpu_advance() on top of the one tpu_update_timer() does at
+	 * the end of this function, at the same virtual instant and the
+	 * same frequency, and tpu_io_write() reaches here for *every* TPU
+	 * register - ~815k times a second on the S75's idle screen, where
+	 * tpu_advance was 5.8 % of the vCPU.  Nothing between here and
+	 * there reads the counter, and the values it computes above are
+	 * pure functions of the registers.
+	 */
+	if (was_enabled && (p->freq != new_freq || p->enabled != new_enabled ||
+			    !(p->param & TPU_PARAM_TINI))) {
+		tpu_advance(p);
+	}
+
 	// Reset counter when TPU_PARAM_TINI=0
 	if (!(p->param & TPU_PARAM_TINI)) {
 		p->counter = 0;
@@ -444,10 +489,9 @@ static void tpu_update_state(pmb887x_tpu_t *p) {
 		p->triggers = 0;
 	}
 	
-	bool enabled = pmb887x_clc_is_enabled(&p->clc) && new_freq > 0 && (p->param & TPU_PARAM_TINI) != 0 && p->overflow >= 2;
-	if (p->freq != new_freq || p->enabled != enabled) {
+	if (p->freq != new_freq || p->enabled != new_enabled) {
 		p->freq = new_freq;
-		p->enabled = enabled;
+		p->enabled = new_enabled;
 		clock_update_hz(p->gsm_clock, p->freq);
 		DPRINTF("fsys=%d, ftpu=%d, fcounter=%d [%s]\n", pmb887x_pll_get_fsys(p->cgu), ftpu, p->freq, p->enabled ? "ON" : "OFF");
 	}
@@ -494,6 +538,31 @@ static uint32_t tpu_ram_read(pmb887x_tpu_t *p, uint32_t offset, size_t size) {
 static void tpu_ram_write(pmb887x_tpu_t *p, uint32_t offset, uint32_t value, size_t size) {
 	uint8_t *data = p->ram;
 	offset -= TPU_RAM0;
+
+	/*
+	 * The word-aligned 2/4-byte write, which is every write the S75's
+	 * idle screen makes (1.5M a second), reduced to what the general
+	 * code below leaves behind: the low half masked, the high half
+	 * zeroed.  The byte stores there write the word twice and read it
+	 * back in between - fourteen byte accesses for one 32-bit store.
+	 *
+	 * Only for an aligned word: a 2-byte write to the *upper* half is
+	 * not a store at all in this model (the tail re-masks the low half
+	 * and zeroes the high one, discarding what was just written), and
+	 * a byte write keeps whichever neighbour byte was there.
+	 */
+	if (likely((size == 4 || size == 2) && (offset & (TPU_RAM_WORD_STRIDE - 1)) == 0)) {
+		uint16_t mask = offset / TPU_RAM_WORD_STRIDE < TPU_RF_RAM_WORDS ?
+			TPU_RF_RAM_WORD_MASK : UINT16_MAX;
+		uint16_t word = (uint16_t) value & mask;
+
+		data[offset] = (uint8_t) word;
+		data[offset + 1] = (uint8_t) (word >> 8);
+		data[offset + 2] = 0;
+		data[offset + 3] = 0;
+		return;
+	}
+
 	switch (size) {
 		case 1:
 			data[offset] = value & 0xFF;
@@ -653,11 +722,40 @@ static uint64_t tpu_io_read(void *opaque, hwaddr haddr, unsigned size) {
 	return value;
 }
 
+/*
+ * Can a write to this RAM word change p->next?
+ *
+ * The event RAM is plain memory: tpu_run_events() re-reads it on every
+ * scan and caches nothing, so a word only matters while it is inside the
+ * part of the current frame's list that is still to be scanned.
+ * Everything else - the RF half of the RAM, entries this frame has
+ * already consumed, entries past p->eapt, and any word at all once the
+ * frame's list has finished - is read no earlier than the next frame,
+ * and tpu_advance() runs there anyway (the QEMU timer is armed for it).
+ *
+ * "Still to be scanned" is one event, not the rest of the list.
+ * tpu_run_events() breaks at the first event the counter has not
+ * reached, leaving p->ceap on it, and p->next is that event's time; it
+ * read words ceap..ceap+2 and nothing beyond.  A later event cannot
+ * move the deadline, because the list is executed in order and nothing
+ * reaches it before p->next anyway - at which point the timer fires and
+ * the list is rescanned from RAM.
+ */
+static bool tpu_ram_write_moves_deadline(pmb887x_tpu_t *p, uint32_t offset) {
+	uint32_t word = (offset - TPU_RAM0) / TPU_RAM_WORD_STRIDE;
+
+	if (word < TPU_TIMER_RAM_BASE || p->events_finished)
+		return false;
+
+	word -= TPU_TIMER_RAM_BASE;
+	return word >= p->ceap && word < p->ceap + TPU_EVENT_WORDS;
+}
+
 static void tpu_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned size) {
 	pmb887x_tpu_t *p = (struct pmb887x_tpu_t *) opaque;
 	
 	IO_DUMP_WRITE(haddr + p->mmio.addr, size, value);
-	
+
 	switch (haddr) {
 		case TPU_CLC:
 			pmb887x_clc_set(&p->clc, value);
@@ -772,6 +870,8 @@ static void tpu_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned si
 
 		case TPU_RAM0 ... (TPU_RAM0 + TPU_RAM_SIZE - 1):
 			tpu_ram_write(p, haddr, value, size);
+			if (!tpu_ram_write_moves_deadline(p, haddr))
+				return;
 			break;
 
 		case TPU_RFSSC_SRC:
@@ -847,6 +947,7 @@ static void tpu_realize(DeviceState *dev, Error **errp) {
 static void tpu_reset(DeviceState *dev) {
 	pmb887x_tpu_t *p = PMB887X_TPU(dev);
 
+	p->armed_valid = false;
 	timer_del(p->timer);
 
 	pmb887x_clc_set(&p->clc, MOD_CLC_DISR);
