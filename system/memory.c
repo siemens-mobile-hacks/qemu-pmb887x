@@ -1143,6 +1143,15 @@ void memory_region_transaction_begin(void)
     ++memory_region_transaction_depth;
 }
 
+/* Every committed transaction that installed a flatview, romd-only ones
+ * included - the key a device may cache a translation under */
+static uint64_t topo_commit_gen = 1;
+
+uint64_t memory_region_topology_gen(void)
+{
+    return topo_commit_gen;
+}
+
 void memory_region_transaction_commit(void)
 {
     AddressSpace *as;
@@ -1153,6 +1162,7 @@ void memory_region_transaction_commit(void)
     --memory_region_transaction_depth;
     if (!memory_region_transaction_depth) {
         if (memory_region_update_pending) {
+            topo_commit_gen++;
             flatviews_reset();
 
             MEMORY_LISTENER_CALL_GLOBAL(begin, Forward);
