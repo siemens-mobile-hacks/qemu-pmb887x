@@ -2277,6 +2277,8 @@ if have_system
     'pipewire': pipewire.found(),
     'sdl': sdl.found(),
     'sndio': sndio.found(),
+    # WebAudio via a ring shared with the page; built in, no dependency
+    'wasm': host_os == 'emscripten',
   }
   foreach k, v: audio_drivers_available
     config_host_data.set('CONFIG_AUDIO_' + k.to_upper(), v)
@@ -2284,7 +2286,7 @@ if have_system
 
   # Default to native drivers first, OSS second, SDL third
   audio_drivers_priority = \
-    [ 'pa', 'coreaudio', 'dsound', 'sndio', 'oss' ] + \
+    [ 'wasm', 'pa', 'coreaudio', 'dsound', 'sndio', 'oss' ] + \
     (host_os == 'linux' ? [] : [ 'sdl' ])
   audio_drivers_default = []
   foreach k: audio_drivers_priority
