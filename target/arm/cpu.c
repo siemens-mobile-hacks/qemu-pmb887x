@@ -2161,6 +2161,30 @@ static void arm_cpu_realizefn(DeviceState *dev, Error **errp)
              */
             pagebits = 10;
         }
+#ifdef CONFIG_TCG_WASM64
+        /*
+         * The board half of W64_PAGEBITS raises the page via
+         * minimum_page_bits, which is already committed by the time we get
+         * here; without this, realize would refuse it as "requires a smaller
+         * page size" below.  Raising is sound rather than a gamble:
+         * tlb_set_page_full marks any guest page smaller than TARGET_PAGE
+         * with TLB_INVALID_MASK and repeats the MMU check and fill on every
+         * access (cputlb.c:1409), so a tiny page is still translated exactly,
+         * just slowly.  1K is therefore a *performance* choice for firmwares
+         * that use ARMv5 tiny pages, and Siemens firmware does not use them
+         * -- fillLarge == tlbFill in every window measured.  What a bigger
+         * page buys is TB shape: translator_use_goto_tb and w64_absorb both
+         * refuse across a page, and at 1K they refuse often.
+         */
+        {
+            const char *e = getenv("W64_PAGEBITS");
+            int want = e ? atoi(e) : 0;
+
+            if (want > pagebits && want <= 16) {
+                pagebits = want;
+            }
+        }
+#endif
         if (!set_preferred_target_page_bits(pagebits)) {
             /*
              * This can only ever happen for hotplugging a CPU, or if

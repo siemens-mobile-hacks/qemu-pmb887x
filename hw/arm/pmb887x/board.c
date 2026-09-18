@@ -382,6 +382,23 @@ static void pmb887x_class_init(ObjectClass *oc, const void *data) {
 	mc->default_cpu_type = ARM_CPU_TYPE_NAME("arm926");
 	mc->default_ram_size = 16 * 1024 * 1024;
 	mc->tcg_auxiliary_threads = 1;
+#ifdef CONFIG_TCG_WASM64
+	/*
+	 * minimum_page_bits is the only page-size lever that runs early enough.
+	 * vl.c reads it at qemu_create_machine time, just before
+	 * machine_memory_init() commits the size; the CPU's own request in
+	 * arm_cpu_realizefn runs after the commit, where set_preferred_target_
+	 * page_bits can only lower a size, never raise one.
+	 */
+	{
+		const char *e = getenv("W64_PAGEBITS");
+		int want = e ? atoi(e) : 0;
+
+		if (want >= 10 && want <= 16) {
+			mc->minimum_page_bits = want;
+		}
+	}
+#endif
 }
 
 static const TypeInfo pmb887x_type = {
