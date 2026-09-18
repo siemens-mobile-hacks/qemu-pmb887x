@@ -100,6 +100,10 @@ typedef struct TCGLabel TCGLabel;
 struct TCGLabel {
     bool present;
     bool has_value;
+#ifdef CONFIG_TCG_WASM64
+    /* set by arm_gen_condlabel, read by liveness to split GSYNC_BBEND */
+    bool w64_condskip;
+#endif
     uint16_t id;
     union {
         uintptr_t value;

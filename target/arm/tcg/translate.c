@@ -158,6 +158,9 @@ void arm_gen_condlabel(DisasContext *s)
     if (!s->condjmp) {
         s->condlabel = gen_disas_label(s);
         s->condjmp = 1;
+#ifdef CONFIG_TCG_WASM64
+        s->condlabel.label->w64_condskip = true;
+#endif
     }
 }
 
@@ -1979,6 +1982,64 @@ static unsigned w64_absorb_max(void)
         n = e ? atoi(e) : 256;
     }
     return n;
+}
+
+/*
+ * Size the branchless-predication lever without building it.  The
+ * selectable shape is data-processing (immediate, or register with an
+ * immediate shift: bit 4 clear keeps multiplies, swaps and the halfword
+ * load/stores out), S clear so no flags have to be selected too, Rd not
+ * PC so it is not control flow, and opcode outside 8..11, which with S
+ * clear is the miscellaneous space (BX, CLZ, MRS/MSR) rather than
+ * arithmetic.  Conservative on purpose: a shape wrongly excluded costs a
+ * ceiling that reads low, one wrongly included costs a wasted build.
+ */
+static void w64_pred_count(uint32_t insn)
+{
+    uint32_t op = (insn >> 21) & 0xf;
+    bool dp = (insn & 0x0e000000) == 0x02000000 ||
+              (insn & 0x0e000010) == 0x00000000;
+
+    wasm_diag_stat[WASM_DIAG_PRED_A32]++;
+    if (dp && !((insn >> 20) & 1) && ((insn >> 12) & 0xf) != 15 &&
+        !(op >= 8 && op <= 11)) {
+        wasm_diag_stat[WASM_DIAG_PRED_SEL]++;
+    }
+
+    /*
+     * PRED_SEL alone says how much the *narrowest* branchless form reaches,
+     * and it reads low by design -- so bucket the rest by encoding class to
+     * say what widening it would have to cover.  Bits 27..25 pick the class;
+     * the DP arm is split by S because selecting the four flag globals as
+     * well is a bigger form, not an impossible one, while a load, a store
+     * and a branch cannot be selected at all.  Buckets are exclusive and
+     * sum to PRED_A32.  OTHER is not a residue of oddities: the dp test
+     * above clears bit 4, so register-shifted data processing, multiplies
+     * and the halfword/doubleword load-stores all land there.
+     */
+    if (dp) {
+        if ((insn >> 20) & 1) {
+            wasm_diag_stat[WASM_DIAG_PRED_DP_S]++;
+        } else {
+            wasm_diag_stat[WASM_DIAG_PRED_DP_NOS]++;
+        }
+    } else {
+        switch ((insn >> 25) & 7) {
+        case 2:
+        case 3:
+            wasm_diag_stat[WASM_DIAG_PRED_LDST]++;
+            break;
+        case 4:
+            wasm_diag_stat[WASM_DIAG_PRED_LSM]++;
+            break;
+        case 5:
+            wasm_diag_stat[WASM_DIAG_PRED_BR]++;
+            break;
+        default:
+            wasm_diag_stat[WASM_DIAG_PRED_OTHER]++;
+            break;
+        }
+    }
 }
 
 static void w64_lsm_count(int n)
@@ -7167,6 +7228,9 @@ static void disas_arm_insn(DisasContext *s, unsigned int insn)
     if (cond != 0xe) {
         /* if not always execute, we generate a conditional jump to
            next instruction */
+#ifdef CONFIG_TCG_WASM64
+        w64_pred_count(insn);
+#endif
         arm_skip_unless(s, cond);
     }
 

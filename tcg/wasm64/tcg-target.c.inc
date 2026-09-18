@@ -514,6 +514,47 @@ static bool w64_nested_enabled(void)
     return on != 0;
 }
 
+/*
+ * How many memops could be served by a TLB mask/table pair cached in TB
+ * locals.  A call can flush the TLB and a label is a join, so either drops
+ * the cache; a memop does not, because the slow path can refresh it on the
+ * way back.  The first memop after a barrier pays the load either way, so
+ * only the ones after it are counted.
+ *
+ * Kept apart from w64_scan_labels, which returns early on label overflow.
+ * It is a second walk of the op list, but it runs once per *translation*
+ * and a J2ME game translates 1.25 TBs per Mi, so at ~40 ops a TB it costs
+ * ~50 pointer steps per million guest instructions against 3.9 ms.
+ */
+static void w64_scan_ldst_runs(TCGContext *s)
+{
+    bool run = false;
+    TCGOp *op;
+
+    QTAILQ_FOREACH(op, &s->ops, link) {
+        switch (op->opc) {
+        case INDEX_op_qemu_ld:
+        case INDEX_op_qemu_st:
+        case INDEX_op_qemu_ld2:
+        case INDEX_op_qemu_st2:
+            if (run) {
+                wasm_diag_stat[WASM_DIAG_LDST_RUN]++;
+            }
+            run = true;
+            break;
+        case INDEX_op_call:
+            run = false;
+            break;
+        default:
+            if (tcg_op_defs[op->opc].flags &
+                (TCG_OPF_BB_END | TCG_OPF_COND_BRANCH)) {
+                run = false;
+            }
+            break;
+        }
+    }
+}
+
 /* number the labels in set order and decide the branch scheme */
 static void w64_scan_labels(TCGContext *s)
 {
@@ -2206,6 +2247,53 @@ static int w64_tlb_simd(void)
     return n;
 }
 
+/* W64_TLBHOIST=N prices the hoist proposal -- caching fast->mask and
+ * fast->table in two TB locals -- by duplicating exactly the part it would
+ * delete, and nothing else: the two i64 loads that reach the fast table,
+ * without the index arithmetic or the entry load that would remain.
+ *
+ * This is the same ceiling-by-duplication trick as W64_TLBDUP, aimed at a
+ * smaller target, and it has to be re-measured rather than scaled from the
+ * older estimate.  That estimate was mostly the *bound checks* on these
+ * two loads; round thirty-six moved the linear memory to wasm32, the
+ * engine's own checks went with it, and what is left is the load traffic
+ * alone.  A projection made before that round cannot be divided down into
+ * one made after it.
+ *
+ * Two loads, one xor, one eqz -- the operands are independent and the
+ * result reaches the sink, so this prices throughput rather than a
+ * dependent chain, which is the distinction W64_LDSTPAD's calibration got
+ * wrong. */
+static int w64_tlb_hoist(void)
+{
+    static int n = -1;
+    if (n < 0) {
+        const char *e = getenv("W64_TLBHOIST");
+        n = e ? atoi(e) : 0;
+    }
+    return n;
+}
+
+static void w64_tlb_hoist_probe(TCGContext *s, int al,
+                                const struct w64_tlb_ctx *tc)
+{
+    (void)al;
+
+    w64_local_get(s, W64_P_ENV);
+    w64_const_i64(s, tc->fast_ofs);
+    w64_u8(s, 0x7c);                            /* i64.add */
+    w64_local_tee(s, W64_L_SCR0);
+    w64_wrap_addr(s);
+    w64_u8(s, 0x29);                            /* i64.load */
+    w64_memarg(s, 3, 0);                        /* mask */
+    w64_local_get(s, W64_L_SCR0);
+    w64_wrap_addr(s);
+    w64_u8(s, 0x29);                            /* i64.load */
+    w64_memarg(s, 3, 8);                        /* table */
+    w64_u8(s, 0x85);                            /* i64.xor */
+    w64_u8(s, 0x50);                            /* i64.eqz -> i32 */
+}
+
 static void w64_tlb_simd_probe(TCGContext *s, int al,
                                const struct w64_tlb_ctx *tc)
 {
@@ -2239,7 +2327,9 @@ static void w64_tlb_dup_emit(TCGContext *s, int al, MemOpIdx oi, bool is_ld)
 {
     bool simd = w64_tlb_simd() > 0;
     bool cheap = !simd && w64_tlb_cheap() > 0;
-    int n = simd ? w64_tlb_simd() : cheap ? w64_tlb_cheap() : w64_tlb_dup();
+    bool hoist = !simd && !cheap && w64_tlb_hoist() > 0;
+    int n = simd ? w64_tlb_simd() : cheap ? w64_tlb_cheap()
+                 : hoist ? w64_tlb_hoist() : w64_tlb_dup();
     struct w64_tlb_ctx tc;
     uint64_t *sink;
     int i;
@@ -2259,6 +2349,8 @@ static void w64_tlb_dup_emit(TCGContext *s, int al, MemOpIdx oi, bool is_ld)
                 w64_tlb_simd_probe(s, al, &tc);
             } else if (cheap) {
                 w64_tlb_cheap_probe(s, al, &tc);
+            } else if (hoist) {
+                w64_tlb_hoist_probe(s, al, &tc);
             } else {
                 w64_tlb_probe(s, al, &tc);
             }
@@ -3410,6 +3502,7 @@ static void tcg_out_tb_start(TCGContext *s)
     n_cf = 0;
     w64_ir_reset(nlabels);
     w64_scan_labels(s);
+    w64_scan_ldst_runs(s);
     w64_batch_begin_tb();
 
     /* lazy one-time init of the inline-accounting address table

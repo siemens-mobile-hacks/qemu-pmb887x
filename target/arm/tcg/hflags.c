@@ -770,9 +770,24 @@ void arm_rebuild_hflags(CPUARMState *env)
     /*
      * Unconditional, and worth its one increment: this is the counter
      * that prices the function.  A wasm profile credited it with 11 % of
-     * the vCPU on an idle CX70 while it was in fact called 11.6 k times a
-     * second, which at any believable cost per call is under 0.3 %.  See
-     * doc/lessons.md -- profile self-time here names the wrong function.
+     * the vCPU on an idle CX70 while it was in fact called 11.6 k times
+     * a second.  See doc/lessons.md -- profile self-time here names the
+     * wrong function.
+     *
+     * "Under 0.3 %" used to follow, and it was an idle-screen number
+     * that does not transfer.  Timed with WASM_DIAG_TIME_PHASES and the
+     * two clock reads subtracted off with HFLAGS_CAL (at these spans the
+     * reads are most of the raw span: the raw hflagsNs/hflagsNsN of
+     * ~98 ns is about 3x the truth), a call costs **31.6 ns**.
+     *
+     * The rate is not a constant, so neither is the cost.  This counter
+     * tracks excSwi at ~2.7 rebuilds per SWI across every J2ME game
+     * measured, and the SWI rate itself varies 5x between games: 1065
+     * calls/Mi on CX70 game 1, 5155 on the SWI-heavy game 2.  That is
+     * 0.034 to 0.163 ms/Mi, or roughly **0.8 % to 2.3 % of wall**
+     * depending on the game.  Quote the range, not one game's number --
+     * quoting one workload's rate as if general is the error this
+     * comment used to make.
      */
     wasm_diag_stat[WASM_DIAG_HFLAGS_CALLS]++;
 #endif

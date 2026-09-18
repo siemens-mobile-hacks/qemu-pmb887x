@@ -312,7 +312,10 @@ enum {
     WASM_DIAG_CLOSE_PRE_TB,  /* ...members that had run at least once */
 
     WASM_DIAG_IREC_N,        /* TBs the interpreter tier recorded */
-    WASM_DIAG_IREC_BYTES,    /* bytes those records hold (live) */
+    WASM_DIAG_IREC_BYTES,    /* bytes recorded, cumulative: the harness
+                                differences samples, so a live gauge here
+                                reads as a negative rate whenever a record
+                                is dropped.  Live = IREC_BYTES - IREC_FREED */
     WASM_DIAG_INTERP_ENT,    /* TB entries served by the interpreter */
     WASM_DIAG_TB_JOIN,       /* deferred taken paths (0108) whose target the
                               * same TB went on to translate, so the branch
@@ -433,12 +436,27 @@ enum {
     /*
      * The global next-TB cache in helper_lookup_tb_ptr{,_lc}.  pccHit is
      * the share of lookup helper calls answered without
-     * arm_get_tb_cpu_state or a jump-cache probe: pccHit/(pccHit +
-     * lookup) is the hit rate, and it should track lookupJc/lookup,
-     * because it is the same question asked one call earlier.  pccFill
-     * counts the misses that could be cached at all -- a fill is refused
-     * for an uncompiled target, a non-standard cflags or an A64 /
-     * M-profile / single-stepping CPU.
+     * arm_get_tb_cpu_state or a jump-cache probe; pccFill counts the
+     * misses that could be cached at all -- a fill is refused for an
+     * uncompiled target, a non-standard cflags or an A64 / M-profile /
+     * single-stepping CPU.
+     *
+     * pccHit is NOT the cache's hit rate, and reading it as one has now
+     * cost two sessions.  The cache is probed twice: once by code the
+     * backend emits inline, and again here in the helper.  Only the
+     * second bumps this counter.  A hit on the emitted probe returns
+     * without ever calling the helper, so it is invisible here -- its
+     * successes are lookup calls that never happen, and absent events
+     * cannot be counted where they would have occurred.  pccHit/(pccHit
+     * + lookup) therefore measures the *leftover* C-side cache on the
+     * misses of the emitted one, and reads like a ~0.5 % failure when
+     * the cache is in fact carrying most of the traffic.
+     *
+     * To size it, A/B it: W64_NOPCC disables both halves and lookup/Mi
+     * rises 8.9x (972.7 -> 8688.4) for +3.9 % wall.  That is the number.
+     * W64_NOPCCIN disables only the emitted half, which is how the two
+     * are told apart.  See "A counter on the slow path is not a hit
+     * rate" in doc/lessons.md.
      */
     WASM_DIAG_PCC_HIT,
     WASM_DIAG_PCC_FILL,
@@ -608,6 +626,93 @@ enum {
      */
     WASM_DIAG_TCG_GLD,       /* a global loaded from env (temp_load) */
     WASM_DIAG_TCG_GST,       /* a global written back to env (temp_sync) */
+
+    /*
+     * Why each of those write-backs exists.  The comment above calls the
+     * round trip a boundary cost, which was measured on a board averaging
+     * 8.4 guest instructions per TB; it is an assumption, not a finding,
+     * and these five counters test it.  Their sum should track TCG_GST:
+     * a residue means stores are being emitted for a reason other than
+     * liveness demanding one (allocator pressure is the candidate), and
+     * that residue is itself worth reading.
+     *
+     * Liveness runs backwards, so the site that first flips a global to
+     * TS_MEM is the nearest *following* one that needs it in memory, and
+     * the store its defining op later emits belongs to that site.  Blaming
+     * per global at the flip and charging where SYNC_ARG is set is
+     * therefore exact, not a share-out.
+     *
+     * The split is the difference between a cost that could be removed and
+     * one that could not.  SE is an op that can fault -- a guest memory
+     * access -- and CALL a helper that reads env: both must leave env
+     * coherent, and no code shape changes that.  CBR (a brcond) and BBEND
+     * (a label or br) are shape: on this guest they are mostly ARM
+     * predication and folded branches, and predication has a branchless
+     * form.
+     *
+     * Do not read "predication" as CBR alone.  A predicated A32 instruction
+     * emits brcond-over-itself *and* a label after itself
+     * (arm_post_translate_insn), and the two charge different halves: the
+     * brcond claims globals dirtied before it (CBR), while the label claims
+     * the instruction's own outputs (BBEND), because temp_sync clears TS_MEM
+     * at every write (tcg.c, "Output args are dead") and so restarts the
+     * blame span.  Sizing the movcond lever off CBR alone therefore counts
+     * only the half that if-conversion does *not* remove.
+     */
+    WASM_DIAG_GSYNC_CBR,     /* a conditional branch (la_bb_sync) */
+    WASM_DIAG_GSYNC_BBEND,   /* a label or br (la_bb_end); goto_tb is BB_EXIT,
+                                checked first, so it charges GSYNC_EXIT */
+    WASM_DIAG_GSYNC_SE,      /* an op that can fault (qemu_ld/st) */
+    WASM_DIAG_GSYNC_CALL,    /* a helper that reads or writes env */
+    WASM_DIAG_GSYNC_EXIT,    /* the end of the TB (la_func_end) */
+
+    /*
+     * A32 predication: every instruction with a condition other than AL
+     * emits a brcond over itself, and TCG treats both that and the label
+     * closing it as basic-block boundaries -- so it charges GSYNC_CBR and
+     * GSYNC_BBEND, per the note above, not GSYNC_CBR alone.
+     *
+     * PRED_SEL is the share of them a movcond could replace instead --
+     * data-processing, immediate or immediate-shifted register, S clear
+     * and Rd not PC, so the value can be computed unconditionally and
+     * selected into the destination with nothing to fault and no flags to
+     * restore.  Everything else (a predicated load, a predicated branch, a
+     * write to PC) has to keep its branch.  PRED_SEL/PRED_A32 is therefore
+     * the ceiling on what a branchless form could remove, and
+     * (GSYNC_CBR + the predication share of GSYNC_BBEND) * that share is
+     * the ceiling in stores.  GSYNC_BBCOND measures that share: it is the
+     * part of GSYNC_BBEND charged at a label arm_gen_condlabel made, so
+     * BBEND - BBCOND is every other label and br.
+     */
+    WASM_DIAG_PRED_A32,      /* an A32 instruction with cond != AL */
+    WASM_DIAG_PRED_SEL,      /* ... of which this many could be a movcond */
+
+    /*
+     * Appended instead of filed with the other GSYNC_* entries because
+     * site/app.js hardcodes WASM_DIAG_HALT's index, and a mid-enum insert
+     * moves every counter after it.
+     */
+    WASM_DIAG_GSYNC_BBCOND,  /* of GSYNC_BBEND: at an A32 predication skip */
+    WASM_DIAG_IREC_FREED,    /* bytes of interpreter records released */
+
+    /* PRED_A32 by encoding class; exclusive, and they sum to PRED_A32 */
+    WASM_DIAG_PRED_DP_NOS,   /* data processing, S clear (PRED_SEL plus the
+                                shapes its narrower filter excludes) */
+    WASM_DIAG_PRED_DP_S,     /* data processing, S set: selectable only if
+                                the four flag globals are selected too */
+    WASM_DIAG_PRED_LDST,     /* single load/store: cannot be selected */
+    WASM_DIAG_PRED_LSM,      /* load/store multiple */
+    WASM_DIAG_PRED_BR,       /* B/BL */
+    WASM_DIAG_PRED_OTHER,    /* reg-shifted DP, multiplies, extra ldst, cp */
+
+    /*
+     * Of LDST_GEN: memops that follow another memop with no call, label or
+     * branch in between.  A TLB mask/table cache held in TB locals has to
+     * be dropped at every one of those, so LDST_RUN/LDST_GEN is the share
+     * of memops such a cache could actually serve -- the multiplier on the
+     * W64_TLBHOIST ceiling, which prices one pair per memop.
+     */
+    WASM_DIAG_LDST_RUN,
 
     WASM_DIAG_N
 };

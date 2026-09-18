@@ -34,7 +34,6 @@
 /* ------------------------------------------------------------------ */
 
 static struct w64_irec *w64_irecs;
-static size_t w64_irec_bytes;
 
 /*
  * W64_INTERP=T: a TB is interpreted for its first T entries and only
@@ -107,13 +106,12 @@ void w64_irec_put(uint32_t tidx, uint32_t *code, uint32_t n)
         w64_irecs = g_malloc0((size_t)W64_TBHIST_N * sizeof(*w64_irecs));
     }
     r = &w64_irecs[tidx];
-    w64_irec_bytes -= (size_t)r->n * sizeof(uint32_t);
+    wasm_diag_stat[WASM_DIAG_IREC_FREED] += (size_t)r->n * sizeof(uint32_t);
     g_free(r->code);
     r->code = code;
     r->n = n;
-    w64_irec_bytes += (size_t)n * sizeof(uint32_t);
     wasm_diag_stat[WASM_DIAG_IREC_N]++;
-    wasm_diag_stat[WASM_DIAG_IREC_BYTES] = w64_irec_bytes;
+    wasm_diag_stat[WASM_DIAG_IREC_BYTES] += (size_t)n * sizeof(uint32_t);
 }
 
 
@@ -131,11 +129,10 @@ void w64_irec_drop(uint32_t tidx)
     }
     r = &w64_irecs[tidx];
     if (r->code) {
-        w64_irec_bytes -= (size_t)r->n * sizeof(uint32_t);
+        wasm_diag_stat[WASM_DIAG_IREC_FREED] += (size_t)r->n * sizeof(uint32_t);
         g_free(r->code);
         r->code = NULL;
         r->n = 0;
-        wasm_diag_stat[WASM_DIAG_IREC_BYTES] = w64_irec_bytes;
     }
 }
 
@@ -147,11 +144,12 @@ void w64_irec_flush(void)
         return;
     }
     for (i = 0; i < W64_TBHIST_N; i++) {
+        wasm_diag_stat[WASM_DIAG_IREC_FREED] +=
+            (size_t)w64_irecs[i].n * sizeof(uint32_t);
         g_free(w64_irecs[i].code);
         w64_irecs[i].code = NULL;
         w64_irecs[i].n = 0;
     }
-    w64_irec_bytes = 0;
 }
 
 static uint32_t w64_interp_run(const struct w64_irec *r, uintptr_t env,
