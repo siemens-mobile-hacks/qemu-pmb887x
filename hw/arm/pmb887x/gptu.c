@@ -18,7 +18,6 @@
 #include "hw/arm/pmb887x/regs_dump.h"
 #include "hw/arm/pmb887x/mod.h"
 #include "hw/arm/pmb887x/trace.h"
-#include "qemu/wasm-diag.h"
 
 #define TYPE_PMB887X_GPTU	"pmb887x-gptu"
 #define PMB887X_GPTU(obj)	OBJECT_CHECK(pmb887x_gptu_t, (obj), TYPE_PMB887X_GPTU)
@@ -614,7 +613,6 @@ static void gptu_t2_internal_trigger(pmb887x_gptu_t *p, int trigger_id, uint64_t
 
 static void gptu_t2_ptimer_reset(void *opaque) {
 	pmb887x_gptu_t *p = opaque;
-	wasm_diag_stat[WASM_DIAG_GPTU_TIMER]++;
 	gptu_t2_sync_timer(p);
 }
 
@@ -847,13 +845,13 @@ static uint64_t gptu_t01_period(pmb887x_gptu_t *p, int timer_id) {
 
 /*
  * Ticks of the free-running timer `root` until the first overflow, anywhere
- * in the carry tree it feeds, that matters at that instant: one that reloads
- * other timers (the rest of the interval counts from the reloaded values),
- * or, with observable_only, one that raises a request or triggers T2.  Every
- * other overflow is reproduced exactly by gptu_t01_add_ticks carrying a
- * count, so the sync can step over any number of them at once.
+ * in the carry tree it feeds, that matters at that instant: one that raises
+ * a request, triggers T2, or reloads other timers (the rest of the interval
+ * counts from the reloaded values).  Every other overflow is reproduced
+ * exactly by gptu_t01_add_ticks carrying a count, so the sync can step over
+ * any number of them at once.
  */
-static uint64_t gptu_t01_ticks_to_boundary(pmb887x_gptu_t *p, int root, bool observable_only) {
+static uint64_t gptu_t01_ticks_to_boundary(pmb887x_gptu_t *p, int root) {
 	struct { int id; uint64_t ticks, period; } stack[8];
 	uint64_t best = GPTU_TICKS_HORIZON;
 	uint32_t seen = 0;
@@ -876,7 +874,7 @@ static uint64_t gptu_t01_ticks_to_boundary(pmb887x_gptu_t *p, int root, bool obs
 
 		if (ticks >= best)
 			continue;
-		if (gptu_t01_observable(p, id) || (!observable_only && gptu_t01_reloads_others(p, id)))
+		if (gptu_t01_observable(p, id) || gptu_t01_reloads_others(p, id))
 			best = ticks;
 		if (period >= GPTU_TICKS_HORIZON)
 			continue;
@@ -931,7 +929,7 @@ static void gptu_sync_timer(pmb887x_gptu_t *p) {
 		for (int i = 0; i < 8; i++) {
 			if (!gptu_t01_free_running(p, i))
 				continue;
-			boundary[i] = gptu_t01_ticks_to_boundary(p, i, false);
+			boundary[i] = gptu_t01_ticks_to_boundary(p, i);
 			if (boundary[i] < GPTU_TICKS_HORIZON)
 				t_next = MIN(t_next, (int64_t) p->timers[i].start + gptu_ticks_to_deadline_ns(p, boundary[i]));
 		}
@@ -957,7 +955,11 @@ static void gptu_sync_timer(pmb887x_gptu_t *p) {
 	for (int i = 0; i < 8; i++) {
 		if (!gptu_t01_free_running(p, i))
 			continue;
-		uint64_t ticks = gptu_t01_ticks_to_boundary(p, i, true);
+		/* reload boundaries too: a reload moves a dependent's overflow,
+		 * which can be observable earlier than any boundary computed from
+		 * the pre-reload values, so the armed deadline must not step over
+		 * the reload instant */
+		uint64_t ticks = gptu_t01_ticks_to_boundary(p, i);
 		if (ticks < GPTU_TICKS_HORIZON)
 			p->next = MIN(p->next, (int64_t) p->timers[i].start + gptu_ticks_to_deadline_ns(p, ticks));
 	}
@@ -1021,7 +1023,6 @@ static void gptu_rebuild_timers(pmb887x_gptu_t *p) {
 
 static void gptu_ptimer_reset(void *opaque) {
 	pmb887x_gptu_t *p = opaque;
-	wasm_diag_stat[WASM_DIAG_GPTU_TIMER]++;
 	gptu_sync_timer(p);
 }
 
@@ -1194,34 +1195,51 @@ static void gptu_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned s
 			gptu_t2_sync_timer(p);
 			p->t2con = value;
 			gptu_t2_update_state(p);
+			/* the count source selects a T0/T1 trigger, which is an input
+			 * to gptu_t01_observable(): T0/T1 may have become observable
+			 * and need their timer back */
+			gptu_sync_timer(p);
 			break;
 
 		case GPTU_T2RCCON:
 			gptu_t2_sync_timer(p);
 			p->t2rccon = value;
 			gptu_t2_update_state(p);
+			gptu_sync_timer(p);
 			break;
 
 		case GPTU_T2AIS:
 			gptu_t2_sync_timer(p);
 			p->t2ais = value;
+			gptu_sync_timer(p);
 			break;
 
 		case GPTU_T2BIS:
 			gptu_t2_sync_timer(p);
 			p->t2bis = value;
+			gptu_sync_timer(p);
 			break;
 
 		case GPTU_T2ES:
 			gptu_t2_sync_timer(p);
 			p->t2es = value;
+			gptu_sync_timer(p);
 			break;
 
 		case GPTU_OSEL:
+			/* a deferred output toggle routes through OSEL: apply the
+			 * pending ones before the new selection takes effect */
+			gptu_sync_timer(p);
+			gptu_t2_sync_timer(p);
 			p->osel = value;
 			break;
 
 		case GPTU_OUT:
+			/* ditto: an overflow before this write toggles bits, a CLRO
+			 * here clears them, and the deferred toggle must not land
+			 * after the clear */
+			gptu_sync_timer(p);
+			gptu_t2_sync_timer(p);
 			for (int i = 0; i < 8; i++) {
 				bool set = (value & (GPTU_OUT_SETO0 << i)) != 0;
 				bool clear = (value & (GPTU_OUT_CLRO0 << i)) != 0;

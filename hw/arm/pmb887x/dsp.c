@@ -894,7 +894,6 @@ static void dsp_afe_timer_cb(void *opaque) {
 	dsp_state_t *p = opaque;
 	bool active = dsp_runtime_realtime_active(p->runtime);
 
-
 	if (active)
 		dsp_worker_kick(p);
 	timer_mod(p->afe_timer, qemu_clock_get_ns(DSP_AFE_CLOCK) + DSP_AFE_TICK_NS);

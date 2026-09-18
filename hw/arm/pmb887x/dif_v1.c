@@ -15,7 +15,6 @@
 #include "qemu/module.h"
 #include "qemu/timer.h"
 #include "qemu/bswap.h"
-#include "qemu/wasm-diag.h"
 #include "qom/object.h"
 
 #include "hw/arm/pmb887x/gen/cpu_regs.h"
@@ -306,6 +305,24 @@ static bool dif_convert_word(pmb887x_dif_t *p, uint16_t value, uint16_t *output)
 
 static void dif_schedule_transfer(pmb887x_dif_t *p);
 
+/* Clear the overrun flags, drop the oldest stage of a full FIFO (the push
+ * below overwrites it; an overrun under REN latches RE and the sticky
+ * ISR_ERR), then push the received word. */
+static void dif_rx_push(pmb887x_dif_t *p, uint16_t received) {
+	p->status &= ~(DIFv1_CON_TE | DIFv1_CON_RE);
+
+	if (pmb887x_fifo_is_full(p->rx_fifo)) {
+		if ((p->con & DIFv1_CON_REN)) {
+			DPRINTF("RX FIFO overflow\n");
+			p->status |= DIFv1_CON_RE;
+			pmb887x_srb_set_isr(&p->srb, DIFv1_ISR_ERR);
+		}
+		pmb887x_fifo16_pop(p->rx_fifo);
+	}
+
+	pmb887x_fifo16_push(p->rx_fifo, received & p->mask);
+}
+
 static void dif_transfer_word(pmb887x_dif_t *p) {
 	p->status &= ~(DIFv1_CON_TE | DIFv1_CON_RE);
 
@@ -324,36 +341,21 @@ static void dif_transfer_word(pmb887x_dif_t *p) {
 			}
 		}
 
-		if (pmb887x_fifo_is_full(p->rx_fifo)) {
-			if ((p->con & DIFv1_CON_REN)) {
-				DPRINTF("RX FIFO overflow\n");
-				p->status |= DIFv1_CON_RE;
-				pmb887x_srb_set_isr(&p->srb, DIFv1_ISR_ERR);
-			}
-			pmb887x_fifo16_pop(p->rx_fifo); // overwrite last fifo stage
-		}
-
-		pmb887x_fifo16_push(p->rx_fifo, received & p->mask);
+		dif_rx_push(p, received);
 		dif_update_rx_request(p);
 	}
 }
 
 /*
- * Run the queued words here rather than from a timer.  v1 used to hand
- * every single word to timer_mod(transfer_timer, 0) and pick it up from
- * the callback, which on a CX70 is ~84k timer arm/fire pairs a second -
- * and because the DMAC's breq then arrives from outside its own run loop,
- * the DMAC arms its timer per burst too (dmacSchedTimer 10.87M against
- * 10.86M bursts).  DIF v2 has never armed its timer at all: the guard
- * below is its dif_schedule(), and on an S75 the same display work costs
- * 99 DMAC timer arms a second instead of 72k.
- *
- * The loop still stops as soon as an interrupt is raised - the RX FIFO is
- * four words deep and would overflow if a whole TX FIFO were drained
- * without anyone reading it - so the transfer has to be resumable.  Every
- * point that can drop the raised request calls back in: the DMAC or CPU
- * pushing the next word, reading the RX FIFO, and the event handler when
- * a request is cleared (dif_event_handler, which is what v2 resumes on).
+ * Run the queued words here rather than from a timer: v1 used to hand
+ * every single word to timer_mod(transfer_timer, 0), and because the DIF's
+ * breq then reached the DMAC from outside its own run loop, the DMAC armed
+ * its timer per burst too.  The loop still stops as soon as an interrupt
+ * is raised - the RX FIFO is four words deep and would overflow if a whole
+ * TX FIFO were drained without anyone reading it - so the transfer has to
+ * be resumable.  Every point that can drop the raised request calls back
+ * in: the DMAC or CPU pushing the next word, reading the RX FIFO, and the
+ * event handler when a request is cleared (which is what v2 resumes on).
  */
 static void dif_run_transfers(pmb887x_dif_t *p) {
 	if (p->in_transfer)
@@ -373,16 +375,14 @@ static void dif_run_transfers(pmb887x_dif_t *p) {
 	}
 	if (p->transfer_pending) {
 		/*
-		 * The loop stopped on a raised request with a word already
-		 * popped into tx_data, and only an external call can carry it
-		 * forward - so guarantee one.  This is NOT the per-word arm
-		 * the old code did: a word is only held when the TX FIFO had
-		 * another one ready, and the DMAC feeds it a word at a time,
-		 * so on the display path the FIFO is empty here and the timer
-		 * is never armed.  Without it a CPU-driven burst that fills
-		 * the FIFO and then waits on something other than the CON read
-		 * below stalls outright - which is what the rt=banked boot
-		 * gate caught, at 140M instructions.
+		 * The loop stopped on a raised request with a word already popped
+		 * into tx_data, and only an external call can carry it forward -
+		 * so guarantee one.  A word is only held when the TX FIFO had
+		 * another one ready, and the DMAC feeds it a word at a time, so on
+		 * the display path the FIFO is empty here and the timer is never
+		 * armed.  Without it a CPU-driven burst that fills the FIFO and
+		 * then waits on something other than the CON read below stalls
+		 * outright.
 		 */
 		timer_mod(p->transfer_timer, 0);
 	} else {
@@ -391,13 +391,9 @@ static void dif_run_transfers(pmb887x_dif_t *p) {
 	p->in_transfer = false;
 }
 
-/*
- * Nothing arms transfer_timer any more, exactly as in v2 - the resume
- * points above are what carry a held word forward.  The timer and this
- * callback stay because dif_stop_transfer() still cancels it and because
- * re-arming it is the one-line fix if a firmware is ever found that
- * stalls: the CON read is the catch-all today.
- */
+/* Runs a held word whose resume never came: dif_run_transfers() arms the
+ * timer only when it stops on a raised request with a word already popped
+ * into tx_data (see there). */
 static void dif_transfer_complete(void *opaque) {
 	dif_run_transfers(opaque);
 }
@@ -408,7 +404,6 @@ static void dif_schedule_transfer(pmb887x_dif_t *p) {
 		return;
 
 	p->tx_data = pmb887x_fifo16_pop(p->tx_fifo);
-	wasm_diag_stat[WASM_DIAG_DIF_TX_WORD]++;
 	p->transfer_pending = true;
 	p->status |= DIFv1_CON_BSY;
 	dif_update_tx_request(p);
@@ -804,16 +799,11 @@ static void dif_event_handler(void *opaque, int event_id, int level) {
 }
 
 /*
- * The state a whole DMA burst can be pushed through in one loop.  A
- * display word is pushed onto an empty TX FIFO and popped straight back
- * out, so everything the per-word path does around dif_transfer_word()
- * lands on the same level on every word: the TX request is raised by the
- * push and again by the pop, the RX request by the receive, and each of
- * those is an srb event, a DMA-request recompute and two qemu_irq calls
- * that the DMAC then drops as unchanged.  Doing them once at the end of
- * the burst leaves the same levels, so the guest cannot tell -- but only
- * if none of the conditions the loop would have to re-test per word can
- * change inside it, which is what this checks.
+ * The state a whole DMA burst can be pushed through in one loop: the
+ * request updates are done once at the end of the burst instead of per
+ * word, which leaves the same levels only if none of the conditions the
+ * per-word path would re-test per word can change inside it - which is
+ * what this checks.
  */
 static bool dif_can_run_burst(pmb887x_dif_t *p) {
 	return dif_is_running(p) &&
@@ -841,65 +831,30 @@ static void dif_run_word(pmb887x_dif_t *p, uint16_t value) {
 			received |= (ssi_transfer(p->bus, (transmitted >> shift) & 0xFF) & 0xFF) << shift;
 	}
 
-	if (pmb887x_fifo_is_full(p->rx_fifo)) {
-		if ((p->con & DIFv1_CON_REN)) {
-			p->status |= DIFv1_CON_RE;
-			pmb887x_srb_set_isr(&p->srb, DIFv1_ISR_ERR);
-		}
-		pmb887x_fifo16_pop(p->rx_fifo); // overwrite last fifo stage
-	}
-	pmb887x_fifo16_push(p->rx_fifo, received & p->mask);
+	dif_rx_push(p, received);
 }
 
 /*
  * The same burst again, one step lower: the bytes of every word at once,
  * so the bus below is walked once instead of once per byte.  What the SSI
  * side gives back is the same sequence of received bytes either way, so
- * the RX FIFO is filled from it afterwards exactly as dif_run_word() would
- * have - only the transfers themselves move.  Returns false, having
+ * the RX FIFO is filled from it afterwards exactly as dif_run_word()
+ * would have - only the transfers themselves move.  Returns false, having
  * transferred nothing, when the bus has no run path.
  */
 #define DIF_RUN_CHUNK 128
 
-/* W64_NOSSIRUN=1 falls back to one ssi_transfer per word inside the
- * burst, so the byte run is A/B'able without a second binary. */
-static bool dif_ssi_run_enabled(void) {
-	static int on = -1;
-	if (on < 0)
-		on = getenv("W64_NOSSIRUN") == NULL;
-	return on != 0;
-}
-
 /*
  * No guest instruction runs inside a burst, so the only received words the
  * guest can ever read back are the last RX_FIFO_SIZE of it: everything
- * earlier is pushed and then popped again by the pushes that follow, all
- * before the burst returns.  For a chunk longer than the FIFO the leading
- * words can therefore skip the reassembly, the full test and the FIFO
- * round trip entirely, as long as what those words *did* leave behind is
- * put back afterwards: the FIFO drained so the tail lands in the same
- * order, and the overrun effects - RE in status, sticky ISR_ERR - applied
- * once at the end, which is where the last word would have left them.
- *
- * W64_NORXTAIL=1 keeps the per-word path, so the two are A/B'able inside
- * one binary.
+ * earlier is pushed and then popped again by the pushes that follow.  For
+ * a chunk longer than the FIFO the leading words can therefore skip the
+ * reassembly and the FIFO round trip entirely, as long as what they would
+ * have left behind is put back afterwards: the FIFO drained so the tail
+ * lands in the same order, and the overrun effects (RE, sticky ISR_ERR)
+ * applied once at the end, which is where the last word would have left
+ * them.
  */
-static bool dif_rx_tail_enabled(void) {
-	static int on = -1;
-	if (on < 0)
-		on = getenv("W64_NORXTAIL") == NULL;
-	return on != 0;
-}
-
-/* W64_NOTXFAST=1 packs every word through dif_mux() and the shift loop,
- * so the byte-swap path is A/B'able inside one binary. */
-static bool dif_tx_fast_enabled(void) {
-	static int on = -1;
-	if (on < 0)
-		on = getenv("W64_NOTXFAST") == NULL;
-	return on != 0;
-}
-
 static bool dif_run_ssi_burst(pmb887x_dif_t *p, const uint8_t *buf, unsigned size, unsigned count) {
 	uint8_t tx[DIF_RUN_CHUNK * 2], rx[DIF_RUN_CHUNK * 2];
 	unsigned word_bytes = p->bits / 8;
@@ -910,7 +865,7 @@ static bool dif_run_ssi_burst(pmb887x_dif_t *p, const uint8_t *buf, unsigned siz
 
 	/* The display's own shape: 16-bit words, MSB first, no mux. Packing
 	 * those is a byte swap, so do that and skip the table entirely. */
-	bool tx_bswap16 = dif_tx_fast_enabled() && size == 2 && word_bytes == 2 &&
+	bool tx_bswap16 = size == 2 && word_bytes == 2 &&
 		msb_first && p->mask == 0xFFFF && p->mux_identity;
 	uint16_t last = 0;
 
@@ -925,7 +880,6 @@ static bool dif_run_ssi_burst(pmb887x_dif_t *p, const uint8_t *buf, unsigned siz
 				tx[i * 2 + 1] = (uint8_t)value;
 			}
 			last = lduw_he_p(src + (chunk - 1) * 2);
-			wasm_diag_stat[WASM_DIAG_DIF_TXFAST] += chunk;
 		} else {
 			for (unsigned i = 0; i < chunk; i++) {
 				uint16_t value = ldn_he_p(buf + (done + i) * size, size) & p->mask;
@@ -939,25 +893,25 @@ static bool dif_run_ssi_burst(pmb887x_dif_t *p, const uint8_t *buf, unsigned siz
 		}
 
 		if (!ssi_transfer_run(p->bus, tx, rx, chunk * word_bytes)) {
-			/* nothing transferred yet only while this is the first
-			 * chunk; later ones cannot fail, since a data run
-			 * changes nothing the bus tested for the first */
-			if (done > 0) {
-				hw_error("pmb887x-dif: SSI run vanished mid-burst");
+			if (done == 0)
+				return false;
+			/* the bus lost its run path after an earlier chunk; the
+			 * remaining words still have to move, so run them one
+			 * word at a time from the source */
+			for (unsigned i = done; i < count; i++) {
+				uint16_t value = ldn_he_p(buf + i * size, size) & p->mask;
+				p->tb = value;
+				dif_run_word(p, value);
 			}
-			return false;
+			return true;
 		}
-
-		wasm_diag_stat[WASM_DIAG_SSI_RUN]++;
-		wasm_diag_stat[WASM_DIAG_SSI_BYTE] += chunk * word_bytes;
 
 		unsigned first = 0;
 		bool overrun = false;
-		if (dif_rx_tail_enabled() && chunk > pmb887x_fifo_total(p->rx_fifo)) {
+		if (chunk > pmb887x_fifo_total(p->rx_fifo)) {
 			first = chunk - pmb887x_fifo_total(p->rx_fifo);
 			pmb887x_fifo_reset(p->rx_fifo);
 			overrun = true;
-			wasm_diag_stat[WASM_DIAG_DIF_RXSKIP] += first;
 		}
 
 		for (unsigned i = first; i < chunk; i++) {
@@ -967,18 +921,12 @@ static bool dif_run_ssi_burst(pmb887x_dif_t *p, const uint8_t *buf, unsigned siz
 				received |= (uint16_t)rx[i * word_bytes + k] << shift;
 			}
 
-			p->status &= ~(DIFv1_CON_TE | DIFv1_CON_RE);
-			if (pmb887x_fifo_is_full(p->rx_fifo)) {
-				if ((p->con & DIFv1_CON_REN)) {
-					p->status |= DIFv1_CON_RE;
-					pmb887x_srb_set_isr(&p->srb, DIFv1_ISR_ERR);
-				}
-				pmb887x_fifo16_pop(p->rx_fifo); // overwrite last fifo stage
-			}
-			pmb887x_fifo16_push(p->rx_fifo, received & p->mask);
+			dif_rx_push(p, received);
 		}
 
 		if (overrun) {
+			/* the skipped words each left RE behind under REN; the
+			 * last of them is where the flags stand now */
 			p->status &= ~(DIFv1_CON_TE | DIFv1_CON_RE);
 			if ((p->con & DIFv1_CON_REN)) {
 				p->status |= DIFv1_CON_RE;
@@ -991,22 +939,31 @@ static bool dif_run_ssi_burst(pmb887x_dif_t *p, const uint8_t *buf, unsigned siz
 	return true;
 }
 
-static void dif_io_write_run(void *opaque, hwaddr haddr, const uint8_t *buf, unsigned size, unsigned count) {
+/* Returns whether the words were consumed as one burst; false means they
+ * were written word by word, exactly as dif_io_write() would. */
+static bool dif_io_write_run(void *opaque, hwaddr haddr, const uint8_t *buf, unsigned size, unsigned count) {
 	pmb887x_dif_t *p = opaque;
 
 	if (haddr != DIFv1_TB || !dif_can_run_burst(p)) {
 		for (unsigned i = 0; i < count; i++)
 			dif_io_write(opaque, haddr, ldn_he_p(buf + i * size, size), size);
-		return;
+		return false;
 	}
 
-	wasm_diag_stat[WASM_DIAG_DIF_RUN]++;
-	wasm_diag_stat[WASM_DIAG_DIF_TX_WORD] += count;
+	/* burst words bypass dif_io_write(), so log them here: the mask
+	 * test is hoisted out of the loop - the per-word form would put a
+	 * global load on every word of the display stream */
+	if (pmb887x_trace_io_enabled(PMB887X_MOD_CONST_NAME(PMB887X_TRACE_ID))) {
+		for (unsigned i = 0; i < count; i++)
+			pmb887x_dump_io_write(PMB887X_TRACE_IO, haddr + p->mmio.addr, size,
+				ldn_he_p(buf + i * size, size));
+	}
 
 	/* the srb event handler re-enters dif_run_transfers(); the burst is
 	 * the transfer, so hold it off exactly as the per-word loop does */
 	p->in_transfer = true;
-	if (!dif_ssi_run_enabled() || !dif_run_ssi_burst(p, buf, size, count)) {
+	bool burst = dif_run_ssi_burst(p, buf, size, count);
+	if (!burst) {
 		for (unsigned i = 0; i < count; i++) {
 			p->tb = ldn_he_p(buf + i * size, size) & p->mask;
 			dif_run_word(p, p->tb);
@@ -1019,6 +976,7 @@ static void dif_io_write_run(void *opaque, hwaddr haddr, const uint8_t *buf, uns
 	/* the per-word path ends inside dif_run_transfers(); a request the
 	 * updates above cleared is resumed from there and nowhere else */
 	dif_run_transfers(p);
+	return burst;
 }
 
 static const MemoryRegionOps io_ops = {

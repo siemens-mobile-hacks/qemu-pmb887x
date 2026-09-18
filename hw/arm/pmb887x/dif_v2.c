@@ -16,7 +16,6 @@
 #include "qom/object.h"
 #include "hw/core/qdev-properties.h"
 #include "qemu/timer.h"
-#include "qemu/wasm-diag.h"
 
 #include "hw/arm/pmb887x/gen/cpu_regs.h"
 #include "hw/arm/pmb887x/regs_dump.h"
@@ -738,7 +737,6 @@ static void dif_tx_from_fifo(pmb887x_dif_t *p) {
 	while (pmb887x_fifo_count(&p->tx_fifo) > 0) {
 		uint32_t value = pmb887x_fifo32_pop(&p->tx_fifo);
 		p->tx_csreg = pmb887x_fifo32_pop(&p->tx_csreg_fifo);
-		wasm_diag_stat[WASM_DIAG_DIF_TX_WORD]++;
 		p->is_tx_csreg_active = true;
 		dif_update_gpio_state(p);
 		uint32_t bsconf_word_count = dif_get_bsconf_word_count(p);
@@ -880,7 +878,6 @@ static void dif_update_mux(pmb887x_dif_t *p) {
 	}
 	dif_build_mux_tables(p);
 	p->mux_dirty = false;
-	wasm_diag_stat[WASM_DIAG_DIF_MUX_REBUILD]++;
 
 #if PMB887X_DIF_DUMP_BIT_MUX
 	g_autoptr(GString) mux_str = g_string_new("");
@@ -1413,7 +1410,10 @@ static void dif_realize(DeviceState *dev, Error **errp) {
 	}
 	dif_update_mux(p);
 
-	p->timer = timer_new_ns(pmb887x_completion_clock(), dif_timer_reset, p);
+	/* Never armed: the only uses are this creation and the timer_del in
+	 * dif_reset(); kept because dif_schedule() is a plain loop and a
+	 * firmware that ever needs a deadline will want it. */
+	p->timer = timer_new_ns(QEMU_CLOCK_REALTIME, dif_timer_reset, p);
 }
 
 static void dif_reset(DeviceState *dev) {

@@ -14,8 +14,6 @@
 #include "qemu/main-loop.h"
 #include "qemu/rcu.h"
 #include "hw/core/qdev-properties.h"
-#include "qemu/wasm-diag.h"
-#include "qemu/timer.h"
 
 #include "hw/arm/pmb887x/gen/cpu_regs.h"
 #include "hw/arm/pmb887x/regs_dump.h"
@@ -166,7 +164,12 @@ static bool dmac_xlat(pmb887x_dmac_t *p, pmb887x_dmac_xlat_t *x, hwaddr addr, ui
 	hwaddr size = int128_get64(sec.size);
 	if (size < len)
 		return false;
-	wasm_diag_stat[WASM_DIAG_DMAC_XLAT_FILL]++;
+	/* memory_region_find() clips to the intersection with the probe: when
+	 * addr itself is unmapped but a mapped region begins later inside the
+	 * window, the section starts past addr and must not be recorded as
+	 * covering it */
+	if (sec.offset_within_address_space != addr)
+		return false;
 	x->gen = gen;
 	x->addr = addr;
 	x->len = size;
@@ -227,25 +230,20 @@ static void dmac_write(pmb887x_dmac_t *p, pmb887x_dmac_xlat_t *x, hwaddr addr, c
 }
 
 /*
- * The whole burst into one non-incrementing register, in one call.  The
- * display stream is RAM -> the DIF's TB, and above the device's own
- * handler every word costs an RCU section, a BQL check, the dispatch and
- * the register switch - ~14 % of a CX70's vCPU while a J2ME game is
- * drawing.  A device that cannot take a run says so by not having the
- * op, and the caller falls back to the per-word loop.
+ * The whole burst into one non-incrementing register, in one call, so the
+ * per-access work above the device (RCU section, BQL check, dispatch,
+ * register switch) is paid once per burst instead of once per word.  A
+ * device that cannot take a run says so by not having the op - or by
+ * reporting that it did not burst - and the caller falls back to the
+ * per-word loop.
+ *
+ * Returns whether the words reached the device; x->run_ok records whether
+ * they went as one burst, which is what allows the next pass to coalesce:
+ * a device that degraded to per-word writes inside the run may have
+ * dropped its request between the words, so the request round trip must
+ * be respected again.
  */
-/* W64_NODMARUN=1 sends every burst back through the per-word path, so
- * the burst write can be A/B'd inside one binary. */
-static bool dmac_run_enabled(void) {
-	static int on = -1;
-	if (on < 0)
-		on = getenv("W64_NODMARUN") == NULL;
-	return on != 0;
-}
-
 static bool dmac_write_run(pmb887x_dmac_t *p, pmb887x_dmac_xlat_t *x, hwaddr addr, const uint8_t *buffer, uint32_t width, uint32_t count) {
-	if (!dmac_run_enabled())
-		return false;
 	if (!x || !dmac_xlat(p, x, addr, width, true) || x->host)
 		return false;
 
@@ -263,39 +261,28 @@ static bool dmac_write_run(pmb887x_dmac_t *p, pmb887x_dmac_xlat_t *x, hwaddr add
 
 	RCU_READ_LOCK_GUARD();
 	bool release_lock = prepare_mmio_access(mr);
-	bool done = memory_region_dispatch_write_run(mr, off, buffer, width, count);
+	bool burst = false;
+	bool done = memory_region_dispatch_write_run(mr, off, buffer, width, count, &burst);
 	if (release_lock)
 		bql_unlock();
-	x->run_ok = done;
+	x->run_ok = done && burst;
 	return done;
 }
 
 /*
  * How many source words one pass of a memory-to-peripheral stream may
- * carry.  A destination that took the previous burst through its
- * run-write path accepts a run of words in one call and cannot back
- * pressure inside one, so the request it raises after each burst is a
- * foregone conclusion: handing it the next burst straight away reaches
- * the state the request-per-burst round trip would have reached, one
- * walk of DMAC -> DIF -> SSI -> LCD later instead of two.  That walk is
- * ~500 ns of fixed cost against ~15 ns of pixel, and the display stream
- * spends it on every 8 pixels.
+ * carry.  A destination that took the previous pass through its run-write
+ * path as one burst cannot back-pressure inside one, so the request it
+ * raises after each burst is a foregone conclusion and the next burst can
+ * be handed over without waiting for it.  run_ok is only set for a genuine
+ * burst, so a destination that degraded to per-word writes stops the
+ * coalescing and its request is re-checked per burst, as the base did.
  *
  * Only the DMAC-as-flow-controller case coalesces: there the transfer
  * size is the DMAC's own and the tail is exact, so the interrupt still
  * lands on the word it always landed on.
- *
- * W64_DMACOAL=<n> caps the words per pass; 1 disables the coalescing.
  */
-static uint32_t dmac_coalesce_words(void) {
-	static int n = -1;
-	if (n < 0) {
-		const char *e = getenv("W64_DMACOAL");
-		n = e ? atoi(e) : 256;
-		n = MAX(MIN(n, 4096), 1);
-	}
-	return n;
-}
+#define DMAC_COALESCE_WORDS	256
 
 static uint32_t dmac_stream_burst(pmb887x_dmac_ch_t *ch, uint32_t burst_size) {
 	if (!ch->dst_xlat.run_ok || burst_size == 0)
@@ -303,10 +290,9 @@ static uint32_t dmac_stream_burst(pmb887x_dmac_ch_t *ch, uint32_t burst_size) {
 	if ((ch->control & DMAC_CH_CONTROL_DI) || !(ch->control & DMAC_CH_CONTROL_SI))
 		return burst_size;
 
-	uint32_t cap = dmac_coalesce_words();
-	if (cap < burst_size)
+	if (DMAC_COALESCE_WORDS < burst_size)
 		return burst_size;
-	return (cap / burst_size) * burst_size;
+	return (DMAC_COALESCE_WORDS / burst_size) * burst_size;
 }
 
 static void dmac_schedule(pmb887x_dmac_t *p) {
@@ -318,7 +304,6 @@ static void dmac_schedule(pmb887x_dmac_t *p) {
 	 * loop's next pass; arming the timer would only recompute the clock
 	 * deadline per burst */
 	if (!p->in_run) {
-		wasm_diag_stat[WASM_DIAG_DMAC_SCHED_TIMER]++;
 		timer_mod(p->timer, 0);
 	}
 }
@@ -434,10 +419,38 @@ static void dmac_transfer_finish(pmb887x_dmac_t *p, pmb887x_dmac_ch_t *ch) {
 		qemu_set_irq(p->TC[src_sel][src_periph], 1);
 }
 
-static bool dmac_disp_ns(void);
 static void dmac_transfer_stream(pmb887x_dmac_t *p, pmb887x_dmac_ch_t *ch,
 	uint32_t burst_size, bool is_src_memory, uint32_t src_width, uint32_t dst_width,
-	enum device_endian src_endian, enum device_endian dst_endian, uint8_t *buffer);
+	enum device_endian src_endian, enum device_endian dst_endian, uint8_t *buffer)
+{
+	uint32_t transferred = 0;
+	uint32_t src_burst_size = is_src_memory && (ch->control & DMAC_CH_CONTROL_SI) ? burst_size : 1;
+	uint32_t src_burst_size_bytes = src_burst_size * src_width;
+	/* A memory source with a narrower fixed destination: one read of the
+	 * source per pass, the destination written per word as before */
+	bool try_run = !(ch->control & DMAC_CH_CONTROL_DI) &&
+		(dst_endian != DEVICE_BIG_ENDIAN || dst_width == 1);
+	while (transferred < burst_size) {
+		dmac_read(p, &ch->src_xlat, ch->src_addr, buffer, src_width, src_burst_size, src_endian);
+		if (src_endian == DEVICE_BIG_ENDIAN)
+			dmac_swap_byte_order(buffer, src_width, src_burst_size);
+
+		if ((ch->control & DMAC_CH_CONTROL_SI))
+			ch->src_addr += src_burst_size_bytes;
+
+		bool run = try_run && dmac_write_run(p, &ch->dst_xlat, ch->dst_addr, buffer, dst_width,
+			src_burst_size_bytes / dst_width);
+		for (uint32_t j = 0; !run && j < src_burst_size_bytes; j += dst_width) {
+			if (dst_endian == DEVICE_BIG_ENDIAN && dst_width > 1)
+				dmac_swap_byte_order(buffer + j, dst_width, 1);
+			dmac_write(p, &ch->dst_xlat, ch->dst_addr, buffer + j, dst_width);
+
+			if ((ch->control & DMAC_CH_CONTROL_DI))
+				ch->dst_addr += dst_width;
+		}
+		transferred += src_burst_size;
+	}
+}
 
 static void dmac_transfer_memory(pmb887x_dmac_t *p, pmb887x_dmac_ch_t *ch, uint32_t burst_size) {
 	/* QEMU_UNINITIALIZED: -ftrivial-auto-var-init=zero would clear all 16 KB
@@ -449,8 +462,6 @@ static void dmac_transfer_memory(pmb887x_dmac_t *p, pmb887x_dmac_ch_t *ch, uint3
 	uint32_t tx_size = (ch->control & DMAC_CH_CONTROL_TRANSFER_SIZE) >> DMAC_CH_CONTROL_TRANSFER_SIZE_SHIFT;
 	enum device_endian src_endian = dmac_master_endian(p, (ch->control & DMAC_CH_CONTROL_S_AHB2) != 0);
 	enum device_endian dst_endian = dmac_master_endian(p, (ch->control & DMAC_CH_CONTROL_D_AHB2) != 0);
-
-	wasm_diag_stat[WASM_DIAG_DMAC_BURST]++;
 
 	bool is_simple_memcpy = (
 		flow_ctrl == DMAC_CH_CONFIG_FLOW_CTRL_MEM2MEM &&
@@ -487,8 +498,6 @@ static void dmac_transfer_memory(pmb887x_dmac_t *p, pmb887x_dmac_ch_t *ch, uint3
 		ch->src_addr += src_width * burst_size;
 		bool run = src_endian == dst_endian && !(ch->control & DMAC_CH_CONTROL_DI) &&
 			dmac_write_run(p, &ch->dst_xlat, ch->dst_addr, buffer, dst_width, burst_size);
-		if (run)
-			wasm_diag_stat[WASM_DIAG_DMAC_RUN]++;
 		for (uint32_t i = 0; !run && i < burst_size; i++) {
 			uint8_t *w = buffer + i * src_width;
 			if (src_endian != dst_endian && src_width > 1)
@@ -536,14 +545,6 @@ static void dmac_transfer_memory(pmb887x_dmac_t *p, pmb887x_dmac_ch_t *ch, uint3
 			}
 			transferred++;
 		}
-	} else if (dmac_disp_ns()) {
-		int64_t c0 = get_clock_realtime();
-		int64_t c1 = get_clock_realtime();
-		dmac_transfer_stream(p, ch, burst_size, is_src_memory, src_width, dst_width,
-			src_endian, dst_endian, buffer);
-		wasm_diag_stat[WASM_DIAG_DISP_NS] += get_clock_realtime() - c1;
-		wasm_diag_stat[WASM_DIAG_DISP_CAL] += c1 - c0;
-		wasm_diag_stat[WASM_DIAG_DISP_BURST]++;
 	} else {
 		dmac_transfer_stream(p, ch, burst_size, is_src_memory, src_width, dst_width,
 			src_endian, dst_endian, buffer);
@@ -556,52 +557,6 @@ static void dmac_transfer_memory(pmb887x_dmac_t *p, pmb887x_dmac_ch_t *ch, uint3
 
 	if (tx_size == 0 && dmac_is_dmac_flow_controller(flow_ctrl))
 		dmac_transfer_finish(p, ch);
-}
-
-/* W64_DISPNS=1: charge the whole DMA -> DIF -> SSI -> LCD chain in C.
- * A phase timer prices a phase against its own clock floor, so the empty
- * interval beside it is part of the instrument, not a spare counter. */
-static bool dmac_disp_ns(void)
-{
-	static int on = -1;
-	if (on < 0)
-		on = getenv("W64_DISPNS") != NULL;
-	return on;
-}
-
-static void dmac_transfer_stream(pmb887x_dmac_t *p, pmb887x_dmac_ch_t *ch,
-	uint32_t burst_size, bool is_src_memory, uint32_t src_width, uint32_t dst_width,
-	enum device_endian src_endian, enum device_endian dst_endian, uint8_t *buffer)
-{
-	uint32_t transferred = 0;
-	uint32_t src_burst_size = is_src_memory && (ch->control & DMAC_CH_CONTROL_SI) ? burst_size : 1;
-	uint32_t src_burst_size_bytes = src_burst_size * src_width;
-	/* This is the CX70's display stream: 32-bit reads from RAM split
-	 * into 16-bit writes to the DIF's TB, destination fixed. */
-	bool try_run = !(ch->control & DMAC_CH_CONTROL_DI) &&
-		(dst_endian != DEVICE_BIG_ENDIAN || dst_width == 1);
-	while (transferred < burst_size) {
-		dmac_read(p, &ch->src_xlat, ch->src_addr, buffer, src_width, src_burst_size, src_endian);
-		if (src_endian == DEVICE_BIG_ENDIAN)
-			dmac_swap_byte_order(buffer, src_width, src_burst_size);
-
-		if ((ch->control & DMAC_CH_CONTROL_SI))
-			ch->src_addr += src_burst_size_bytes;
-
-		bool run = try_run && dmac_write_run(p, &ch->dst_xlat, ch->dst_addr, buffer, dst_width,
-			src_burst_size_bytes / dst_width);
-		if (run)
-			wasm_diag_stat[WASM_DIAG_DMAC_RUN]++;
-		for (uint32_t j = 0; !run && j < src_burst_size_bytes; j += dst_width) {
-			if (dst_endian == DEVICE_BIG_ENDIAN && dst_width > 1)
-				dmac_swap_byte_order(buffer + j, dst_width, 1);
-			dmac_write(p, &ch->dst_xlat, ch->dst_addr, buffer + j, dst_width);
-
-			if ((ch->control & DMAC_CH_CONTROL_DI))
-				ch->dst_addr += dst_width;
-		}
-		transferred += src_burst_size;
-	}
 }
 
 static bool dmac_service_request(
@@ -736,10 +691,7 @@ static void dmac_channel_run(pmb887x_dmac_t *p, pmb887x_dmac_ch_t *ch) {
 		case DMAC_CH_CONFIG_FLOW_CTRL_MEM2PER: {
 			pmb887x_dmac_request_t *req = dmac_pending_burst(p, dst_sel, dst_periph);
 			if (req) {
-				uint32_t words = dmac_stream_burst(ch, src_burst_size);
-				if (words > src_burst_size)
-					wasm_diag_stat[WASM_DIAG_DMAC_COAL]++;
-				dmac_transfer_memory(p, ch, MIN(tx_size, words));
+				dmac_transfer_memory(p, ch, MIN(tx_size, dmac_stream_burst(ch, src_burst_size)));
 				dmac_ack_request(p, req, dst_sel, dst_periph);
 			}
 			break;
@@ -1266,6 +1218,7 @@ static void dmac_reset(DeviceState *dev) {
 		p->ch[i] = (pmb887x_dmac_ch_t) { .id = i };
 
 	p->dmac_pending = false;
+	p->in_run = false;
 	p->is_busy = false;
 	p->config = 0;
 	p->sync = 0;

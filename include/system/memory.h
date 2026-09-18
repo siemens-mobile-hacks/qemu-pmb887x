@@ -322,8 +322,15 @@ struct MemoryRegionOps {
      * state @write would leave after the same @count writes; it is
      * reached only through memory_region_dispatch_write_run(), so a
      * caller that does not know about it is unaffected.
+     *
+     * Returns whether the device took the words as one burst.  A device
+     * that cannot must still deliver them exactly as @write would (the
+     * usual fallback is a per-word loop) and return false: the return
+     * value says the caller cannot rely on burst semantics (a device
+     * that just took a run word by word may drop its request between
+     * the words), not that the words went missing.
      */
-    void (*write_run)(void *opaque,
+    bool (*write_run)(void *opaque,
                       hwaddr addr,
                       const uint8_t *buf,
                       unsigned size,
@@ -2482,6 +2489,9 @@ MemTxResult memory_region_dispatch_write_direct(MemoryRegion *mr, hwaddr addr,
  * all to @addr, to the device in one call.  Same preconditions as
  * memory_region_dispatch_write_direct().  Returns false - having written
  * nothing - when @mr has no such path, so the caller writes word by word.
+ * When the words were written, @burst (if non-NULL) reports whether the
+ * device consumed them as one burst or handled them word by word - see
+ * MemoryRegionOps::write_run.
  *
  * @mr: #MemoryRegion to access
  * @addr: address within that region
@@ -2491,7 +2501,7 @@ MemTxResult memory_region_dispatch_write_direct(MemoryRegion *mr, hwaddr addr,
  */
 bool memory_region_dispatch_write_run(MemoryRegion *mr, hwaddr addr,
                                       const uint8_t *buf, unsigned size,
-                                      unsigned count);
+                                      unsigned count, bool *burst);
 
 /**
  * memory_region_subpage_leaf: resolve one level of a subpage container.

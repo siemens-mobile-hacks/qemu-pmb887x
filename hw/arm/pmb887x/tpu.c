@@ -12,7 +12,6 @@
 #include "qapi/error.h"
 #include "qemu/bitops.h"
 #include "qemu/timer.h"
-#include "qemu/wasm-diag.h"
 #include "qemu/main-loop.h"
 #include "hw/core/irq.h"
 #include "hw/core/qdev-properties.h"
@@ -409,14 +408,12 @@ static void tpu_update_timer(pmb887x_tpu_t *p) {
 	if (!p->armed_valid || p->armed != p->next || !timer_pending(p->timer)) {
 		p->armed = p->next;
 		p->armed_valid = true;
-		wasm_diag_stat[WASM_DIAG_TPU_REARM]++;
 		timer_mod(p->timer, p->next);
 	}
 }
 
 static void tpu_timer_callback(void *opaque) {
 	pmb887x_tpu_t *p = opaque;
-	wasm_diag_stat[WASM_DIAG_TPU_TIMER]++;
 	p->armed_valid = false;   /* the timer has fired; it is not armed */
 	tpu_update_timer(p);
 }
@@ -729,18 +726,12 @@ static uint64_t tpu_io_read(void *opaque, hwaddr haddr, unsigned size) {
  * Can a write to this RAM word change p->next?
  *
  * The event RAM is plain memory: tpu_run_events() re-reads it on every
- * scan and caches nothing, so a word only matters while it is inside
- * the part of the current frame's list that is still to be scanned.
+ * scan and caches nothing, so a word only matters while it is inside the
+ * part of the current frame's list that is still to be scanned.
  * Everything else - the RF half of the RAM, entries this frame has
  * already consumed, entries past p->eapt, and any word at all once the
  * frame's list has finished - is read no earlier than the next frame,
  * and tpu_advance() runs there anyway (the QEMU timer is armed for it).
- *
- * This is worth a test: the S75's idle screen writes the event RAM
- * 1.27M times a second - 96 % of its TPU writes and 84 % of every MMIO
- * store it makes - and each one used to run tpu_update_state() ->
- * tpu_update_timer() -> tpu_advance(), whose virtual-clock read alone
- * was 76 % of icount_get(), the vCPU's top symbol at 7.7 %.
  *
  * "Still to be scanned" is one event, not the rest of the list.
  * tpu_run_events() breaks at the first event the counter has not
@@ -748,21 +739,8 @@ static uint64_t tpu_io_read(void *opaque, hwaddr haddr, unsigned size) {
  * read words ceap..ceap+2 and nothing beyond.  A later event cannot
  * move the deadline, because the list is executed in order and nothing
  * reaches it before p->next anyway - at which point the timer fires and
- * the list is rescanned from RAM.  Measured: of 8.7M event-RAM writes
- * in 25 s, 1.97M passed the old [ceap, eapt) test and *every one* of
- * them landed past ceap+TPU_EVENT_WORDS.  W64_TPUSCAN=0 restores the
- * wide window so the two legs of an A/B live in one binary.
+ * the list is rescanned from RAM.
  */
-static uint32_t tpu_scan_hi(pmb887x_tpu_t *p) {
-	static int wide = -1;
-
-	if (wide < 0) {
-		const char *e = getenv("W64_TPUSCAN");
-		wide = e && atoi(e) == 0;
-	}
-	return wide ? p->eapt : p->ceap + TPU_EVENT_WORDS;
-}
-
 static bool tpu_ram_write_moves_deadline(pmb887x_tpu_t *p, uint32_t offset) {
 	uint32_t word = (offset - TPU_RAM0) / TPU_RAM_WORD_STRIDE;
 
@@ -770,29 +748,10 @@ static bool tpu_ram_write_moves_deadline(pmb887x_tpu_t *p, uint32_t offset) {
 		return false;
 
 	word -= TPU_TIMER_RAM_BASE;
-	return word >= p->ceap && word < tpu_scan_hi(p);
+	return word >= p->ceap && word < p->ceap + TPU_EVENT_WORDS;
 }
 
-#if defined(CONFIG_TCG_WASM64) && defined(WASM_DIAG_TIME_PHASES)
-/* Sampled like cputlb's: subtract calNs (the empty-interval floor). */
-static uint32_t tpu_w_tick;
-static void tpu_io_write_1(void *opaque, hwaddr haddr, uint64_t value, unsigned size);
-
 static void tpu_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned size) {
-	if (likely((++tpu_w_tick & 7) != 0)) {
-		tpu_io_write_1(opaque, haddr, value, size);
-		return;
-	}
-	int64_t t0 = get_clock_realtime();
-	tpu_io_write_1(opaque, haddr, value, size);
-	wasm_diag_stat[WASM_DIAG_TPU_W_NS] += get_clock_realtime() - t0;
-	wasm_diag_stat[WASM_DIAG_TPU_W_NS_N]++;
-}
-
-static void tpu_io_write_1(void *opaque, hwaddr haddr, uint64_t value, unsigned size) {
-#else
-static void tpu_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned size) {
-#endif
 	pmb887x_tpu_t *p = (struct pmb887x_tpu_t *) opaque;
 	
 	IO_DUMP_WRITE(haddr + p->mmio.addr, size, value);
@@ -911,11 +870,8 @@ static void tpu_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned si
 
 		case TPU_RAM0 ... (TPU_RAM0 + TPU_RAM_SIZE - 1):
 			tpu_ram_write(p, haddr, value, size);
-			wasm_diag_stat[WASM_DIAG_TPU_RAM_W]++;
-			if (!tpu_ram_write_moves_deadline(p, haddr)) {
-				wasm_diag_stat[WASM_DIAG_TPU_RAM_SKIP]++;
+			if (!tpu_ram_write_moves_deadline(p, haddr))
 				return;
-			}
 			break;
 
 		case TPU_RFSSC_SRC:

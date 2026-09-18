@@ -1956,7 +1956,7 @@ MemTxResult memory_region_dispatch_write_direct(MemoryRegion *mr, hwaddr addr,
  * memory ops declines the run and gets its per-word records back. */
 bool memory_region_dispatch_write_run(MemoryRegion *mr, hwaddr addr,
                                       const uint8_t *buf, unsigned size,
-                                      unsigned count)
+                                      unsigned count, bool *burst)
 {
     bool guarded;
 
@@ -1972,12 +1972,12 @@ bool memory_region_dispatch_write_run(MemoryRegion *mr, hwaddr addr,
             warn_report_once("Blocked re-entrant IO on MemoryRegion: "
                              "%s at addr: 0x%" HWADDR_PRIX,
                              memory_region_name(mr), addr);
-            return true;
+            return false;
         }
         mr->dev->mem_reentrancy_guard.engaged_in_io = true;
     }
 
-    mr->ops->write_run(mr->opaque, addr, buf, size, count);
+    *burst = mr->ops->write_run(mr->opaque, addr, buf, size, count);
 
     if (guarded) {
         mr->dev->mem_reentrancy_guard.engaged_in_io = false;

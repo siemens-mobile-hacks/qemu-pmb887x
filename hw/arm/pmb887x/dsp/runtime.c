@@ -224,7 +224,6 @@ static void dsp_runtime_pace_afe(dsp_runtime_t *runtime) {
 		 * not perturb cycle-sensitive GSM baseband peripheral timing.
 		 */
 		dsp_bus_advance_timers(runtime->bus, cycles);
-
 	}
 }
 
