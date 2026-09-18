@@ -1572,6 +1572,102 @@ MemTxResult memory_region_dispatch_write(MemoryRegion *mr,
     }
 }
 
+/* Whether an aligned size-byte write to mr can skip everything
+ * memory_region_dispatch_write does around the device's own write
+ * callback — alias resolution, the validity checks, the endianness
+ * swap, the ioeventfd match and the access splitting.  The answer
+ * depends only on mr and size, so a caller that writes the same region
+ * once per transferred word (hw/arm/pmb887x/dmac.c) can decide it once
+ * per translation window instead of per access. */
+bool memory_region_write_direct_ok(MemoryRegion *mr, unsigned size)
+{
+    const MemoryRegionOps *ops = mr->ops;
+    unsigned impl_min, impl_max, valid_max;
+
+    if (mr->alias || !ops->write || mr->ioeventfd_nb || ops->valid.accepts) {
+        return false;
+    }
+    if ((size_memop(size) & MO_BSWAP) != devend_memop(ops->endianness)) {
+        return false;
+    }
+    valid_max = ops->valid.max_access_size;
+    if (valid_max && (size > valid_max || size < ops->valid.min_access_size)) {
+        return false;
+    }
+    impl_min = ops->impl.min_access_size ? ops->impl.min_access_size : 1;
+    impl_max = ops->impl.max_access_size ? ops->impl.max_access_size : 4;
+    return size >= impl_min && size <= impl_max;
+}
+
+/* The tail of memory_region_dispatch_write for a caller that has
+ * already established memory_region_write_direct_ok() and an aligned
+ * address: the reentrancy guard and the trace point are kept, since
+ * both are observable. */
+MemTxResult memory_region_dispatch_write_direct(MemoryRegion *mr, hwaddr addr,
+                                                uint64_t data, unsigned size)
+{
+    bool guarded = mr->dev && !mr->disable_reentrancy_guard &&
+        !mr->ram_device && !mr->ram && !mr->rom_device && !mr->readonly;
+
+    if (guarded) {
+        if (mr->dev->mem_reentrancy_guard.engaged_in_io) {
+            warn_report_once("Blocked re-entrant IO on MemoryRegion: "
+                             "%s at addr: 0x%" HWADDR_PRIX,
+                             memory_region_name(mr), addr);
+            return MEMTX_ACCESS_ERROR;
+        }
+        mr->dev->mem_reentrancy_guard.engaged_in_io = true;
+    }
+
+    if (mr->subpage) {
+        trace_memory_region_subpage_write(get_cpu_index(), mr, addr, data, size);
+    } else if (trace_event_get_state_backends(TRACE_MEMORY_REGION_OPS_WRITE)) {
+        hwaddr abs_addr = memory_region_to_absolute_addr(mr, addr);
+        trace_memory_region_ops_write(get_cpu_index(), mr, abs_addr, data, size,
+                                      memory_region_name(mr));
+    }
+    mr->ops->write(mr->opaque, addr, data, size);
+
+    if (guarded) {
+        mr->dev->mem_reentrancy_guard.engaged_in_io = false;
+    }
+    return MEMTX_OK;
+}
+
+/* The same, for a whole DMA burst into one register.  The trace point is
+ * per access and a run does not have one, so a build that is tracing
+ * memory ops declines the run and gets its per-word records back. */
+bool memory_region_dispatch_write_run(MemoryRegion *mr, hwaddr addr,
+                                      const uint8_t *buf, unsigned size,
+                                      unsigned count, bool *burst)
+{
+    bool guarded;
+
+    if (!mr->ops->write_run || mr->subpage ||
+        trace_event_get_state_backends(TRACE_MEMORY_REGION_OPS_WRITE)) {
+        return false;
+    }
+
+    guarded = mr->dev && !mr->disable_reentrancy_guard &&
+        !mr->ram_device && !mr->ram && !mr->rom_device && !mr->readonly;
+    if (guarded) {
+        if (mr->dev->mem_reentrancy_guard.engaged_in_io) {
+            warn_report_once("Blocked re-entrant IO on MemoryRegion: "
+                             "%s at addr: 0x%" HWADDR_PRIX,
+                             memory_region_name(mr), addr);
+            return false;
+        }
+        mr->dev->mem_reentrancy_guard.engaged_in_io = true;
+    }
+
+    *burst = mr->ops->write_run(mr->opaque, addr, buf, size, count);
+
+    if (guarded) {
+        mr->dev->mem_reentrancy_guard.engaged_in_io = false;
+    }
+    return true;
+}
+
 static void memory_region_set_ops(MemoryRegion *mr,
                                   const MemoryRegionOps *ops,
                                   void *opaque)

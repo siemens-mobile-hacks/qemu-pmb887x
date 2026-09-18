@@ -2416,6 +2416,29 @@ MemTxResult memory_region_dispatch_write(MemoryRegion *mr,
                                          MemTxAttrs attrs);
 
 /**
+ * memory_region_write_direct_ok: whether aligned @size-byte writes to @mr
+ * may use memory_region_dispatch_write_direct().  Depends only on @mr and
+ * @size, so a caller writing the same region repeatedly can cache it.
+ *
+ * @mr: #MemoryRegion to access
+ * @size: access size in bytes
+ */
+bool memory_region_write_direct_ok(MemoryRegion *mr, unsigned size);
+
+/**
+ * memory_region_dispatch_write_direct: memory_region_dispatch_write for a
+ * caller that has already established memory_region_write_direct_ok() and
+ * an @addr aligned to @size.
+ *
+ * @mr: #MemoryRegion to access
+ * @addr: address within that region
+ * @data: data to write, in the device's own byte order
+ * @size: access size in bytes
+ */
+MemTxResult memory_region_dispatch_write_direct(MemoryRegion *mr, hwaddr addr,
+                                                uint64_t data, unsigned size);
+
+/**
  * address_space_init: initializes an address space
  *
  * @as: an uninitialized #AddressSpace
