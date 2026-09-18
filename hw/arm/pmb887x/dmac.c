@@ -12,6 +12,7 @@
 #include "qapi/error.h"
 #include "qemu/bswap.h"
 #include "qemu/main-loop.h"
+#include "qemu/rcu.h"
 #include "hw/core/qdev-properties.h"
 
 #include "hw/arm/pmb887x/gen/cpu_regs.h"
@@ -39,6 +40,21 @@ struct pmb887x_dmac_request_t {
 	uint16_t soft;
 };
 
+/* One translated window of the downstream address space.  The display
+ * DMA is one word per request (~500 k/s at 60 fps) and every word walked
+ * the flatview twice, for its RAM source and its FIFO destination; the
+ * window is valid while memory_region_topology_gen() is unchanged. */
+typedef struct {
+	uint64_t gen;
+	hwaddr addr;       /* first bus address covered */
+	hwaddr len;        /* bytes covered from addr */
+	hwaddr xlat;       /* addr's offset within mr */
+	MemoryRegion *mr;
+	uint8_t *host;     /* direct RAM pointer for addr; NULL for MMIO */
+	uint32_t direct_width;  /* width memory_region_write_direct_ok() was asked about */
+	bool direct_ok;
+} pmb887x_dmac_xlat_t;
+
 struct pmb887x_dmac_ch_t {
 	uint8_t id;
 	uint32_t src_addr;
@@ -47,6 +63,8 @@ struct pmb887x_dmac_ch_t {
 	uint32_t control;
 	uint32_t config;
 	uint32_t last_source_count;
+	pmb887x_dmac_xlat_t src_xlat;
+	pmb887x_dmac_xlat_t dst_xlat;
 };
 
 struct pmb887x_dmac_pending_request_t {
@@ -126,18 +144,86 @@ static void dmac_swap_byte_order(uint8_t *buffer, uint32_t width, uint32_t count
 	}
 }
 
-static void dmac_read(pmb887x_dmac_t *p, hwaddr addr, uint8_t *buffer, uint32_t width, uint32_t count, enum device_endian endian) {
+#define DMAC_XLAT_WINDOW	(64 * 1024)
+
+/* Resolve [addr, addr + len) through the cached window, refilling it from
+ * the flatview when the topology changed or the range moved out.  The
+ * window is the flat range around addr (the firmware walks the DIF's
+ * 16 KB FIFO window with an incrementing destination, so an MMIO window
+ * must cover the range, not one access), clipped to DMAC_XLAT_WINDOW. */
+static bool dmac_xlat(pmb887x_dmac_t *p, pmb887x_dmac_xlat_t *x, hwaddr addr, uint32_t len, bool is_write) {
+	uint64_t gen = memory_region_topology_gen();
+	if (likely(x->gen == gen && addr >= x->addr && addr + len <= x->addr + x->len))
+		return true;
+
+	MemoryRegionSection sec = memory_region_find(p->downstream, addr, DMAC_XLAT_WINDOW);
+	if (!sec.mr)
+		return false;
+	memory_region_unref(sec.mr);
+	hwaddr size = int128_get64(sec.size);
+	if (size < len)
+		return false;
+	/* memory_region_find() clips to the intersection with the probe: when
+	 * addr itself is unmapped but a mapped region begins later inside the
+	 * window, the section starts past addr and must not be recorded as
+	 * covering it */
+	if (sec.offset_within_address_space != addr)
+		return false;
+	x->gen = gen;
+	x->addr = addr;
+	x->len = size;
+	x->xlat = sec.offset_within_region;
+	x->mr = sec.mr;
+	x->direct_width = 0;
+	x->host = memory_access_is_direct(sec.mr, is_write, MEMTXATTRS_UNSPECIFIED) ?
+		(uint8_t *) memory_region_get_ram_ptr(sec.mr) + sec.offset_within_region : NULL;
+	return true;
+}
+
+static void dmac_read(pmb887x_dmac_t *p, pmb887x_dmac_xlat_t *x, hwaddr addr, uint8_t *buffer, uint32_t width, uint32_t count, enum device_endian endian) {
 	if (endian == DEVICE_BIG_ENDIAN && width < sizeof(uint32_t)) {
 		for (uint32_t i = 0; i < count; i++) {
 			hwaddr transfer_addr = (addr + i * width) ^ (sizeof(uint32_t) - width);
 			address_space_read(&p->downstream_as, transfer_addr, MEMTXATTRS_UNSPECIFIED, buffer + i * width, width);
 		}
+	} else if (x && dmac_xlat(p, x, addr, width * count, false) && x->host) {
+		memcpy(buffer, x->host + (addr - x->addr), width * count);
 	} else {
 		address_space_read(&p->downstream_as, addr, MEMTXATTRS_UNSPECIFIED, buffer, width * count);
 	}
 }
 
-static void dmac_write(pmb887x_dmac_t *p, hwaddr addr, const uint8_t *buffer, uint32_t width) {
+static void dmac_write(pmb887x_dmac_t *p, pmb887x_dmac_xlat_t *x, hwaddr addr, const uint8_t *buffer, uint32_t width) {
+	if (x && dmac_xlat(p, x, addr, width, true) && !x->host) {
+		MemoryRegion *mr = x->mr;
+		hwaddr off = x->xlat + (addr - x->addr);
+		/* the one step address_space_write takes for an aligned
+		 * width-sized store to an MMIO region; RAM keeps the API for
+		 * its dirty tracking.  Whether the dispatch's own per-access
+		 * work (validity, endianness, ioeventfds, access splitting)
+		 * can be skipped depends only on the region and the width, so
+		 * it is decided once per window rather than per word. */
+		if (x->direct_width != width) {
+			x->direct_width = width;
+			x->direct_ok = memory_region_write_direct_ok(mr, width);
+		}
+		if (x->direct_ok && !(off & (width - 1))) {
+			RCU_READ_LOCK_GUARD();
+			bool release_lock = prepare_mmio_access(mr);
+			memory_region_dispatch_write_direct(mr, off, ldn_he_p(buffer, width), width);
+			if (release_lock)
+				bql_unlock();
+			return;
+		}
+		if (memory_access_size(mr, width, off) == width) {
+			RCU_READ_LOCK_GUARD();
+			bool release_lock = prepare_mmio_access(mr);
+			memory_region_dispatch_write(mr, off, ldn_he_p(buffer, width), size_memop(width), MEMTXATTRS_UNSPECIFIED);
+			if (release_lock)
+				bql_unlock();
+			return;
+		}
+	}
 	address_space_write(&p->downstream_as, addr, MEMTXATTRS_UNSPECIFIED, buffer, width);
 }
 
@@ -225,7 +311,7 @@ static void dmac_transfer_finish(pmb887x_dmac_t *p, pmb887x_dmac_ch_t *ch) {
 	if (lli_addr) {
 		uint32_t lli[4];
 		enum device_endian lli_endian = dmac_master_endian(p, (ch->lli & DMAC_CH_LLI_LM) != 0);
-		dmac_read(p, lli_addr, (uint8_t *) lli, sizeof(uint32_t), ARRAY_SIZE(lli), lli_endian);
+		dmac_read(p, NULL, lli_addr, (uint8_t *) lli, sizeof(uint32_t), ARRAY_SIZE(lli), lli_endian);
 		if (lli_endian == DEVICE_BIG_ENDIAN)
 			dmac_swap_byte_order((uint8_t *) lli, sizeof(uint32_t), ARRAY_SIZE(lli));
 
@@ -302,13 +388,28 @@ static void dmac_transfer_memory(pmb887x_dmac_t *p, pmb887x_dmac_ch_t *ch, uint3
 		address_space_write(&p->downstream_as, ch->dst_addr, MEMTXATTRS_UNSPECIFIED, buffer, dst_width * burst_size);
 		ch->src_addr += src_width * burst_size;
 		ch->dst_addr += dst_width * burst_size;
+	} else if (dst_width == src_width && is_src_memory && (ch->control & DMAC_CH_CONTROL_SI)) {
+		/* memory source with an incrementing address (the display path:
+		 * RAM -> DIF FIFO): one address_space_read for the whole burst
+		 * instead of one dispatch per word; the destination is written
+		 * per word as before (a FIFO register sees each word) */
+		dmac_read(p, &ch->src_xlat, ch->src_addr, buffer, src_width, burst_size, src_endian);
+		ch->src_addr += src_width * burst_size;
+		for (uint32_t i = 0; i < burst_size; i++) {
+			uint8_t *w = buffer + i * src_width;
+			if (src_endian != dst_endian && src_width > 1)
+				dmac_swap_byte_order(w, dst_width, 1);
+			dmac_write(p, &ch->dst_xlat, ch->dst_addr, w, dst_width);
+			if ((ch->control & DMAC_CH_CONTROL_DI))
+				ch->dst_addr += dst_width;
+		}
 	} else if (dst_width == src_width) {
 		uint32_t transferred = 0;
 		while (transferred < burst_size) {
-			dmac_read(p, ch->src_addr, buffer, src_width, 1, src_endian);
+			dmac_read(p, &ch->src_xlat, ch->src_addr, buffer, src_width, 1, src_endian);
 			if (src_endian != dst_endian && src_width > 1)
 				dmac_swap_byte_order(buffer, dst_width, 1);
-			dmac_write(p, ch->dst_addr, buffer, dst_width);
+			dmac_write(p, &ch->dst_xlat, ch->dst_addr, buffer, dst_width);
 
 			if ((ch->control & DMAC_CH_CONTROL_SI))
 				ch->src_addr += src_width;
@@ -322,7 +423,7 @@ static void dmac_transfer_memory(pmb887x_dmac_t *p, pmb887x_dmac_ch_t *ch, uint3
 		uint32_t transferred = 0;
 		uint32_t buffer_size = 0;
 		while (transferred < burst_size) {
-			dmac_read(p, ch->src_addr, buffer + buffer_size, src_width, 1, src_endian);
+			dmac_read(p, &ch->src_xlat, ch->src_addr, buffer + buffer_size, src_width, 1, src_endian);
 			if (src_endian == DEVICE_BIG_ENDIAN && src_width > 1)
 				dmac_swap_byte_order(buffer + buffer_size, src_width, 1);
 			buffer_size += src_width;
@@ -333,7 +434,7 @@ static void dmac_transfer_memory(pmb887x_dmac_t *p, pmb887x_dmac_ch_t *ch, uint3
 			if (buffer_size == dst_width) {
 				if (dst_endian == DEVICE_BIG_ENDIAN && dst_width > 1)
 					dmac_swap_byte_order(buffer, dst_width, 1);
-				dmac_write(p, ch->dst_addr, buffer, dst_width);
+				dmac_write(p, &ch->dst_xlat, ch->dst_addr, buffer, dst_width);
 				buffer_size = 0;
 
 				if ((ch->control & DMAC_CH_CONTROL_DI))
@@ -346,7 +447,7 @@ static void dmac_transfer_memory(pmb887x_dmac_t *p, pmb887x_dmac_ch_t *ch, uint3
 		uint32_t src_burst_size = is_src_memory && (ch->control & DMAC_CH_CONTROL_SI) ? burst_size : 1;
 		uint32_t src_burst_size_bytes = src_burst_size * src_width;
 		while (transferred < burst_size) {
-			dmac_read(p, ch->src_addr, buffer, src_width, src_burst_size, src_endian);
+			dmac_read(p, &ch->src_xlat, ch->src_addr, buffer, src_width, src_burst_size, src_endian);
 			if (src_endian == DEVICE_BIG_ENDIAN)
 				dmac_swap_byte_order(buffer, src_width, src_burst_size);
 
@@ -356,7 +457,7 @@ static void dmac_transfer_memory(pmb887x_dmac_t *p, pmb887x_dmac_ch_t *ch, uint3
 			for (uint32_t j = 0; j < src_burst_size_bytes; j += dst_width) {
 				if (dst_endian == DEVICE_BIG_ENDIAN && dst_width > 1)
 					dmac_swap_byte_order(buffer + j, dst_width, 1);
-				dmac_write(p, ch->dst_addr, buffer + j, dst_width);
+				dmac_write(p, &ch->dst_xlat, ch->dst_addr, buffer + j, dst_width);
 
 				if ((ch->control & DMAC_CH_CONTROL_DI))
 					ch->dst_addr += dst_width;
