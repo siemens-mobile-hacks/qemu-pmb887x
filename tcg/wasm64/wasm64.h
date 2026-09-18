@@ -112,8 +112,31 @@
  * the mod_len a not-yet-compiled temp module still carries there. */
 #define W64_BATCH_TAG    0x80000000u
 
-/* main linear memory: shared, memory64, 2GB (32768 pages), fixed */
+/* main linear memory: shared, 2GB (32768 pages), fixed */
 #define W64_MEM_PAGES   32768
+
+/*
+ * The memory's index type, which is not ours to choose independently:
+ * the modules this backend emits *import* the main module's memory, so
+ * they can only declare the type emscripten linked it with.  W64_MEM32
+ * is the -sMEMORY64=2 build, where Binaryen lowers that memory to 32-bit
+ * (clang and lld still use 64-bit pointers, so nothing else changes).
+ *
+ * Getting the two out of step fails loudly and immediately -- an import
+ * type mismatch on the first TB instantiated, not silent corruption --
+ * but it fails at the module boundary, which reads like a linker problem
+ * rather than a missing flag.  Both emitters must use this constant:
+ * tcg_out_tb_finalize() for single-TB modules and
+ * w64_assemble_instantiate() for batched ones.
+ *
+ * 32768 pages is 2 GiB, inside wasm32's 65536-page ceiling, so the
+ * memory's size is unaffected either way.
+ */
+#ifdef W64_MEM32
+#define W64_MEM_LIMITS  0x03            /* shared | max */
+#else
+#define W64_MEM_LIMITS  0x07            /* 64-bit | shared | max */
+#endif
 
 /* per-TB (temp module) table capacities */
 #define W64_MAX_TYPES   12

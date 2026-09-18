@@ -488,6 +488,15 @@ case "$cpu" in
     ;;
   wasm64)
     CPU_CFLAGS="-m64 -sMEMORY64=$wasm64_memory64"
+    # meson ignores the cross file's [built-in options] c_args, so nothing
+    # in --extra-cflags ever reaches a compile line; CPU_CFLAGS becomes the
+    # compiler's own argv ([binaries] c) and does.  The modules the JIT
+    # emits import the main module's memory and must declare the type it
+    # was linked with, so this define has to travel with -sMEMORY64=2
+    # rather than beside it: out of step, every TB fails to instantiate.
+    if test "$wasm64_memory64" = 2; then
+      CPU_CFLAGS="$CPU_CFLAGS -DW64_MEM32"
+    fi
     ;;
 esac
 

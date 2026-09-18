@@ -1033,16 +1033,54 @@ static void w64_binop_rri(TCGContext *s, TCGType t, uint8_t op32, uint8_t op64,
 /* loads/stores (TCG-internal, via the wasm linear memory)             */
 /* ------------------------------------------------------------------ */
 
-/* push the effective address of base+ofs as an i64 */
+/*
+ * Address operands.  Everything this backend pushes as an address is a
+ * 64-bit host pointer; under W64_MEM32 the memory indexes in i32, so the
+ * address -- and only the address -- is narrowed at the point of use.
+ * Truncating after the arithmetic is exact: wrap(a + b) == wrap(a) +
+ * wrap(b) mod 2^32, so a fold like base+ofs may still be done in i64.
+ *
+ * Where these go is not where w64_memarg() goes.  A load is
+ * (addr, opc, memarg) and a store is (addr, value, opc, memarg): for a
+ * store the value is pushed in between, so narrowing "just before the
+ * opcode" would narrow the value instead.  Call these at the address
+ * push, which is what every caller below does.
+ */
+static void w64_wrap_addr(TCGContext *s)
+{
+#ifdef W64_MEM32
+    w64_u8(s, 0xa7);                        /* i32.wrap_i64 */
+#endif
+}
+
+/* push a constant address: free under W64_MEM32, it just gets shorter */
+static void w64_const_addr(TCGContext *s, uint64_t v)
+{
+#ifdef W64_MEM32
+    w64_const_i32(s, (int32_t)v);
+#else
+    w64_const_i64(s, (int64_t)v);
+#endif
+}
+
+/* push register base as an address */
+static void w64_get_addr(TCGContext *s, TCGReg base)
+{
+    w64_get_i64(s, base);
+    w64_wrap_addr(s);
+}
+
+/* push the effective address of base+ofs */
 static void w64_addr(TCGContext *s, TCGReg base, intptr_t ofs)
 {
     if (ofs == 0) {
-        w64_get_i64(s, base);
+        w64_get_addr(s, base);
         return;
     }
     w64_get_i64(s, base);
     w64_const_i64(s, ofs);
     w64_u8(s, 0x7c);                        /* i64.add */
+    w64_wrap_addr(s);
 }
 
 /* memarg (align, offset) with offset folded into the memarg when it
@@ -1057,7 +1095,7 @@ static void w64_load(TCGContext *s, uint8_t opc, TCGType t, TCGReg r0,
                      TCGReg base, intptr_t ofs, unsigned align)
 {
     if (ofs >= 0 && ofs <= 0xffffffffu) {
-        w64_get_i64(s, base);
+        w64_get_addr(s, base);
         w64_u8(s, opc);
         w64_memarg(s, align, ofs);
     } else {
@@ -1076,7 +1114,7 @@ static void w64_store(TCGContext *s, uint8_t opc, TCGType t, TCGReg val,
                       TCGReg base, intptr_t ofs, unsigned align)
 {
     if (ofs >= 0 && ofs <= 0xffffffffu) {
-        w64_get_i64(s, base);
+        w64_get_addr(s, base);
         w64_get(s, val, t);
         w64_u8(s, opc);
         w64_memarg(s, align, ofs);
@@ -1188,7 +1226,7 @@ static bool tcg_out_sti(TCGContext *s, TCGType t, TCGArg v, TCGReg b, intptr_t o
 
     w64_frame_check(b, o);
     if (o >= 0 && o <= 0xffffffffu) {
-        w64_get_i64(s, b);
+        w64_get_addr(s, b);
         w64_const(s, t, v);
         w64_u8(s, opc);
         w64_memarg(s, align, o);
@@ -1510,7 +1548,7 @@ static void tcg_out_goto_tb(TCGContext *s, int which)
     W.blk[W.n_blk].label = -1;
     W.n_blk++;
 
-    w64_const_i64(s, (int64_t)slot);
+    w64_const_addr(s, slot);
     w64_u8(s, 0x29);                        /* i64.load */
     w64_memarg(s, 3, 0);
     w64_local_tee(s, W64_L_SCR0);
@@ -1518,8 +1556,8 @@ static void tcg_out_goto_tb(TCGContext *s, int which)
     w64_u8(s, 0x88);                        /* i64.shr_u */
     w64_u8(s, 0x50);                        /* i64.eqz: not linked */
     if (w64_ls_armed()) {
-        w64_const_i64(s, (int64_t)(uintptr_t)&w64_chain_stop);
-        w64_u8(s, 0x28);                    /* i32.load (i64 addr: memory64) */
+        w64_const_addr(s, (uintptr_t)&w64_chain_stop);
+        w64_u8(s, 0x28);                    /* i32.load */
         w64_memarg(s, 2, 0);
         w64_u8(s, 0x72);                    /* i32.or */
     }
@@ -1578,8 +1616,8 @@ static void tcg_out_goto_ptr(TCGContext *s, TCGReg a0)
     w64_u8(s, 0x88);                        /* i64.shr_u */
     w64_u8(s, 0x50);                        /* i64.eqz: not a table index */
     if (w64_ls_armed()) {
-        w64_const_i64(s, (int64_t)(uintptr_t)&w64_chain_stop);
-        w64_u8(s, 0x28);                    /* i32.load (i64 addr) */
+        w64_const_addr(s, (uintptr_t)&w64_chain_stop);
+        w64_u8(s, 0x28);                    /* i32.load */
         w64_memarg(s, 2, 0);
         w64_u8(s, 0x72);                    /* i32.or */
     }
@@ -1599,6 +1637,7 @@ static void tcg_out_goto_ptr(TCGContext *s, TCGReg a0)
     w64_local_get(s, W64_P_SP);
     w64_const_i64(s, -8);
     w64_u8(s, 0x7c);                        /* i64.add */
+    w64_wrap_addr(s);
     w64_local_get(s, W64_L_SCR0);
     w64_u8(s, 0x37);                        /* i64.store */
     w64_memarg(s, 3, 0);
@@ -1697,6 +1736,7 @@ static void tcg_out_call(TCGContext *s, const tcg_insn_unit *target,
 
     /* retaddr for GETPC()-using helpers */
     w64_local_get(s, W64_P_TP);
+    w64_wrap_addr(s);
     w64_const_i64(s, ra);
     w64_u8(s, 0x37);
     w64_memarg(s, 3, 0);
@@ -1707,6 +1747,7 @@ static void tcg_out_call(TCGContext *s, const tcg_insn_unit *target,
         p[i] = w64_typecode_to_wasm(tc);
         tcg_debug_assert(p[i] != 0xff);
         w64_local_get(s, W64_P_SP);
+        w64_wrap_addr(s);
         w64_u8(s, p[i] ? 0x29 /* i64.load */ : 0x28 /* i32.load */);
         w64_memarg(s, p[i] ? 3 : 2, 8 * i);
     }
@@ -1846,10 +1887,10 @@ static int w64_ldst_count(void)
  * counter the tools read through _wasm_memstat is directly addressable. */
 static void w64_diag_bump(TCGContext *s, int idx)
 {
-    int64_t a = (int64_t)(uintptr_t)&wasm_diag_stat[idx];
+    uintptr_t a = (uintptr_t)&wasm_diag_stat[idx];
 
-    w64_const_i64(s, a);
-    w64_const_i64(s, a);
+    w64_const_addr(s, a);
+    w64_const_addr(s, a);
     w64_u8(s, 0x29);                        /* i64.load */
     w64_memarg(s, 3, 0);
     w64_const_i64(s, 1);
@@ -1873,10 +1914,10 @@ static bool w64_tbhist_on(void)
 
 static void w64_tbhist_emit(TCGContext *s, uint32_t tidx)
 {
-    int64_t a = (int64_t)(uintptr_t)w64_tbhist_slot(tidx);
+    uintptr_t a = (uintptr_t)w64_tbhist_slot(tidx);
 
-    w64_const_i64(s, a);
-    w64_const_i64(s, a);
+    w64_const_addr(s, a);
+    w64_const_addr(s, a);
     w64_u8(s, 0x28);                        /* i32.load */
     w64_memarg(s, 2, 0);
     w64_const_i32(s, 1);
@@ -1931,11 +1972,11 @@ static int w64_ldst_pad(void)
 
 static void w64_emit_pad(TCGContext *s, int units)
 {
-    int64_t a = (int64_t)(uintptr_t)&wasm_diag_stat[WASM_DIAG_PAD_SINK];
+    uintptr_t a = (uintptr_t)&wasm_diag_stat[WASM_DIAG_PAD_SINK];
     int i;
 
-    w64_const_i64(s, a);
-    w64_const_i64(s, a);
+    w64_const_addr(s, a);
+    w64_const_addr(s, a);
     w64_u8(s, 0x29);                        /* i64.load */
     w64_memarg(s, 3, 0);
     for (i = 0; i < units; i++) {
@@ -2014,6 +2055,7 @@ static void w64_tlb_probe(TCGContext *s, int al, const struct w64_tlb_ctx *tc)
     w64_const_i64(s, tc->fast_ofs);
     w64_u8(s, 0x7c);                        /* i64.add */
     w64_local_tee(s, W64_L_SCR0);
+    w64_wrap_addr(s);
 
     /* $scr0 = table[(addr >> page_bits) & (mask >> entry_bits)] */
     w64_u8(s, 0x29);                        /* i64.load */
@@ -2023,10 +2065,12 @@ static void w64_tlb_probe(TCGContext *s, int al, const struct w64_tlb_ctx *tc)
     w64_u8(s, 0x88);                        /* i64.shr_u */
     w64_u8(s, 0x83);                        /* i64.and */
     w64_local_get(s, W64_L_SCR0);
+    w64_wrap_addr(s);
     w64_u8(s, 0x29);                        /* i64.load */
     w64_memarg(s, 3, 8);                    /* table */
     w64_u8(s, 0x7c);                        /* i64.add */
     w64_local_tee(s, W64_L_SCR0);
+    w64_wrap_addr(s);
 
     /* hit = (tlb_addr == ((addr + adj) & tlb_mask)); tlb_addr has no
      * other reader, so it stays on the value stack */
@@ -2084,11 +2128,11 @@ static void w64_tlb_cheap_probe(TCGContext *s, int al,
     w64_local_get(s, al);
     w64_const_i64(s, (int64_t)tc->tlb_mask);
     w64_u8(s, 0x83);                            /* i64.and */
-    w64_const_i64(s, (int64_t)w64_acct_addr[2]);
+    w64_const_addr(s, w64_acct_addr[2]);
     w64_u8(s, 0x29);                            /* i64.load (generation) */
     w64_memarg(s, 3, 0);
     w64_u8(s, 0x85);                            /* i64.xor */
-    w64_const_i64(s, (int64_t)(uintptr_t)slot);
+    w64_const_addr(s, (uintptr_t)slot);
     w64_u8(s, 0x29);                            /* i64.load (tag) */
     w64_memarg(s, 3, 0);
     w64_u8(s, 0x51);                            /* i64.eq */
@@ -2122,7 +2166,7 @@ static void w64_tlb_hit_emit(TCGContext *s, int al, MemOpIdx oi, bool is_ld)
     w64_const_i64(s, (int64_t)tc.tlb_mask);
     w64_u8(s, 0x83);                            /* i64.and */
     w64_local_tee(s, W64_L_SCR1);
-    w64_const_i64(s, (int64_t)(uintptr_t)slot);
+    w64_const_addr(s, (uintptr_t)slot);
     w64_u8(s, 0x29);                            /* i64.load */
     w64_memarg(s, 3, 0);
     w64_u8(s, 0x51);                            /* i64.eq */
@@ -2130,7 +2174,7 @@ static void w64_tlb_hit_emit(TCGContext *s, int al, MemOpIdx oi, bool is_ld)
     w64_diag_bump(s, WASM_DIAG_TLBC_HIT);
     w64_u8(s, 0x05);                            /* else */
     w64_diag_bump(s, WASM_DIAG_TLBC_MISS);
-    w64_const_i64(s, (int64_t)(uintptr_t)slot);
+    w64_const_addr(s, (uintptr_t)slot);
     w64_local_get(s, W64_L_SCR1);
     w64_u8(s, 0x37);                            /* i64.store */
     w64_memarg(s, 3, 0);
@@ -2163,7 +2207,7 @@ static void w64_tlb_simd_probe(TCGContext *s, int al,
     w64_u8(s, 0x83);                            /* i64.and */
     w64_local_get(s, W64_L_SCR1);               /* stands in for $gen */
     w64_u8(s, 0x85);                            /* i64.xor */
-    w64_const_i64(s, (int64_t)(uintptr_t)slot);
+    w64_const_addr(s, (uintptr_t)slot);
     w64_u8(s, 0xfd); w64_uleb(s, 0x00);         /* v128.load */
     w64_memarg(s, 4, 0);
     w64_u8(s, 0xfd); w64_uleb(s, 0x1d); w64_u8(s, 0);  /* i64x2.extract_lane 0 */
@@ -2197,7 +2241,7 @@ static void w64_tlb_dup_emit(TCGContext *s, int al, MemOpIdx oi, bool is_ld)
     tc.fast_ofs = tlb_mask_table_ofs(s, get_mmuidx(oi) ^ 1);
     sink = w64_fakeslot_next();
 
-    w64_const_i64(s, (int64_t)(uintptr_t)sink);
+    w64_const_addr(s, (uintptr_t)sink);
     if (n == 1) {
         w64_const_i32(s, 0);
     } else {
@@ -2223,9 +2267,11 @@ static void w64_tlb_haddr(TCGContext *s, int al)
 {
     w64_local_get(s, al);
     w64_local_get(s, W64_L_SCR0);
+    w64_wrap_addr(s);
     w64_u8(s, 0x29);                        /* i64.load */
     w64_memarg(s, 3, 24);                   /* addend */
     w64_u8(s, 0x7c);                        /* i64.add */
+    w64_wrap_addr(s);
 }
 
 /* size/sign-specialized fast access opcodes, indexed [is64][MO_SSIZE]
@@ -3417,21 +3463,21 @@ static void tcg_out_tb_start(TCGContext *s)
     if (w64_tbstats_inline()) {
         /* wasm_tb_stats[0]++ and [1] += icount (plain RMWs — the fields
          * are only ever written by this vCPU thread) */
-        w64_const_i64(s, (int64_t)w64_acct_addr[0]);
+        w64_const_addr(s, w64_acct_addr[0]);
         w64_u8(s, 0x29);  w64_memarg(s, 3, 0);        /* i64.load */
         w64_const_i64(s, 1);
         w64_u8(s, 0x7c);                              /* i64.add */
         w64_local_set(s, W64_L_SCR0);
-        w64_const_i64(s, (int64_t)w64_acct_addr[0]);
+        w64_const_addr(s, w64_acct_addr[0]);
         w64_local_get(s, W64_L_SCR0);
         w64_u8(s, 0x37);  w64_memarg(s, 3, 0);        /* i64.store */
 
-        w64_const_i64(s, (int64_t)w64_acct_addr[1]);
+        w64_const_addr(s, w64_acct_addr[1]);
         w64_u8(s, 0x29);  w64_memarg(s, 3, 0);
         w64_const_i64(s, s->gen_tb->icount);
         w64_u8(s, 0x7c);
         w64_local_set(s, W64_L_SCR0);
-        w64_const_i64(s, (int64_t)w64_acct_addr[1]);
+        w64_const_addr(s, w64_acct_addr[1]);
         w64_local_get(s, W64_L_SCR0);
         w64_u8(s, 0x37);  w64_memarg(s, 3, 0);
     }
@@ -3445,20 +3491,20 @@ static void tcg_out_tb_start(TCGContext *s)
          * atomic RMW + a deadline compare per TB entry (~5M/s) would be
          * pure overhead there.  icount2 is fixed at command-line parse
          * time, before the first translation. */
-        w64_const_i64(s, (int64_t)w64_acct_addr[2]);
+        w64_const_addr(s, w64_acct_addr[2]);
         w64_u8(s, 0xfe); w64_u8(s, 0x11);
         w64_memarg(s, 3, 0);                          /* i64.atomic.load */
         w64_const_i64(s, s->gen_tb->icount);
         w64_u8(s, 0x7c);
         w64_local_set(s, W64_L_SCR0);                /* new ticks */
-        w64_const_i64(s, (int64_t)w64_acct_addr[2]);
+        w64_const_addr(s, w64_acct_addr[2]);
         w64_local_get(s, W64_L_SCR0);
         w64_u8(s, 0xfe); w64_u8(s, 0x18);
         w64_memarg(s, 3, 0);                          /* i64.atomic.store */
 
         /* if (deadline > 0 && new_ticks >= deadline)
          *     w64_icount2_sync_now()   — the rare slow path */
-        w64_const_i64(s, (int64_t)w64_acct_addr[3]);
+        w64_const_addr(s, w64_acct_addr[3]);
         w64_u8(s, 0xfe); w64_u8(s, 0x11);
         w64_memarg(s, 3, 0);
         w64_local_tee(s, W64_L_SCR1);                /* deadline */
@@ -3478,7 +3524,7 @@ static void tcg_out_tb_start(TCGContext *s)
         /* if (w64_ls_on) w64_lockstep_account(icount) — the lockstep
          * fold import (w64_ls_on stays 0 when the log could not be
          * opened) */
-        w64_const_i64(s, (int64_t)w64_acct_addr[4]);
+        w64_const_addr(s, w64_acct_addr[4]);
         w64_u8(s, 0x28);  w64_memarg(s, 2, 0);        /* i32.load */
         w64_blk_push(s, W64_BLK_IF, -1);
         w64_const_i32(s, s->gen_tb->icount);
@@ -3640,7 +3686,7 @@ static int tcg_out_tb_finalize(TCGContext *s)
         wb_u8(&w, 1); wb_u8(&w, 'e');       /* module "e" */
         wb_u8(&w, 1); wb_u8(&w, 'm');       /* field  "m" */
         wb_u8(&w, 0x02);                    /* memory */
-        wb_u8(&w, 0x07);                    /* 64-bit | shared | max */
+        wb_u8(&w, W64_MEM_LIMITS);
         wb_uleb(&w, W64_MEM_PAGES);
         wb_uleb(&w, W64_MEM_PAGES);
         /* the shared chain table (goto_tb targets); min must not exceed

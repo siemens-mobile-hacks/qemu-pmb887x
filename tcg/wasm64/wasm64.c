@@ -74,9 +74,25 @@ EM_JS(int, w64_instantiate, (uintptr_t tb_ptr), {
     }
     const imports = { e: { m: wasmMemory, t: TAB } };
     const tbl = p + 20 + mod_len;
+    /*
+     * -sMEMORY64=1 leaves the emscripten table i64-indexed, so the index
+     * has to be a BigInt; =2 lowers the table to i32 in Binaryen
+     * (--table64-lowering) and then a BigInt index is a TypeError.
+     * Emscripten's own glue switches on exactly this (parseTools
+     * toIndexType returns BigInt(x) only for MEMORY64 == 1); these three
+     * table reads are hand-written, so they have to switch too.  Probed
+     * rather than #ifdef'd because an EM_JS body is stringified -- and
+     * spelled without JS's nullish-assignment operator, whose three
+     * characters are the C trigraph for #.
+     */
+    if (globalThis.__w64t64 === undefined) {
+      try { wasmTable.get(0); globalThis.__w64t64 = false; }
+      catch (e) { globalThis.__w64t64 = e instanceof TypeError; }
+    }
+    const T64 = globalThis.__w64t64;
     for (let i = 0; i < n_imp; i++) {
-      /* memory64: the emscripten table is i64-indexed */
-      imports.e['f' + i] = wasmTable.get(BigInt(dv.getUint32(tbl + i * 4, true)));
+      const fi = dv.getUint32(tbl + i * 4, true);
+      imports.e['f' + i] = wasmTable.get(T64 ? BigInt(fi) : fi);
     }
 
     let mod;
@@ -164,8 +180,13 @@ EM_JS(int, w64_instantiate, (uintptr_t tb_ptr), {
                     .concat([1], leb(type.length), type, impsec);
                 return bytes;
             };
+            if (globalThis.__w64t64 === undefined) {
+                try { wasmTable.get(0); globalThis.__w64t64 = false; }
+                catch (e) { globalThis.__w64t64 = e instanceof TypeError; }
+            }
+            const T64 = globalThis.__w64t64;
             for (let k = 0; k < n_imp; k++) {
-                const fr = wasmTable.get(BigInt(idxs[k]));
+                const fr = wasmTable.get(T64 ? BigInt(idxs[k]) : idxs[k]);
                 const cands = [];
                 const J = 0x7e, I = 0x7f;
                 const F = 0x7d, D = 0x7c;
@@ -1106,9 +1127,15 @@ EM_JS(int, w64_batch_instantiate,
      * time this function costs: a cached namespace was built and measured
      * against it, see the playbook's REJECTED table */
     const imports = { e: { m: wasmMemory, t: TAB } };
+    /* i64- vs i32-indexed table; see w64_instantiate */
+    if (globalThis.__w64t64 === undefined) {
+        try { wasmTable.get(0); globalThis.__w64t64 = false; }
+        catch (e) { globalThis.__w64t64 = e instanceof TypeError; }
+    }
+    const T64 = globalThis.__w64t64;
     for (let i = 0; i < nimp; i++) {
-        /* memory64: the emscripten table is i64-indexed */
-        imports.e['f' + i] = wasmTable.get(BigInt(dv.getUint32(ip + i * 4, true)));
+        const fi = dv.getUint32(ip + i * 4, true);
+        imports.e['f' + i] = wasmTable.get(T64 ? BigInt(fi) : fi);
     }
     let __t1 = performance.now(); __ns[0] += (__t1 - __t0) * 1e6;
     let inst;
@@ -1516,7 +1543,7 @@ static uint32_t w64_assemble_instantiate(const struct w64_bsrc *src,
     mb_u8(&sec, 1); mb_u8(&sec, 'e');
     mb_u8(&sec, 1); mb_u8(&sec, 'm');
     mb_u8(&sec, 0x02);                    /* memory */
-    mb_u8(&sec, 0x07);                    /* 64-bit | shared | max */
+    mb_u8(&sec, W64_MEM_LIMITS);
     mb_uleb(&sec, W64_MEM_PAGES);
     mb_uleb(&sec, W64_MEM_PAGES);
     mb_u8(&sec, 1); mb_u8(&sec, 'e');
