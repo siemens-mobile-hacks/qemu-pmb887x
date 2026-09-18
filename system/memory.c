@@ -1668,6 +1668,40 @@ bool memory_region_dispatch_write_run(MemoryRegion *mr, hwaddr addr,
     return true;
 }
 
+/* The same, for a whole DMA burst into one register.  The trace point is
+ * per access and a run does not have one, so a build that is tracing
+ * memory ops declines the run and gets its per-word records back. */
+bool memory_region_dispatch_write_run(MemoryRegion *mr, hwaddr addr,
+                                      const uint8_t *buf, unsigned size,
+                                      unsigned count, bool *burst)
+{
+    bool guarded;
+
+    if (!mr->ops->write_run || mr->subpage ||
+        trace_event_get_state_backends(TRACE_MEMORY_REGION_OPS_WRITE)) {
+        return false;
+    }
+
+    guarded = mr->dev && !mr->disable_reentrancy_guard &&
+        !mr->ram_device && !mr->ram && !mr->rom_device && !mr->readonly;
+    if (guarded) {
+        if (mr->dev->mem_reentrancy_guard.engaged_in_io) {
+            warn_report_once("Blocked re-entrant IO on MemoryRegion: "
+                             "%s at addr: 0x%" HWADDR_PRIX,
+                             memory_region_name(mr), addr);
+            return false;
+        }
+        mr->dev->mem_reentrancy_guard.engaged_in_io = true;
+    }
+
+    *burst = mr->ops->write_run(mr->opaque, addr, buf, size, count);
+
+    if (guarded) {
+        mr->dev->mem_reentrancy_guard.engaged_in_io = false;
+    }
+    return true;
+}
+
 static void memory_region_set_ops(MemoryRegion *mr,
                                   const MemoryRegionOps *ops,
                                   void *opaque)
