@@ -35,8 +35,8 @@ MemoryRegion *pmb887x_board_create_nor_flash(const char *id, uint32_t vid, uint3
 	DeviceState *flash = qdev_new("pmb887x-flash");
 	flash->id = g_strdup(id);
 	qdev_prop_set_string(flash, "name", id);
-	qdev_prop_set_string(flash, "otp0-data", g_getenv(otp0_env) ?: ""); // ESN
-	qdev_prop_set_string(flash, "otp1-data", g_getenv(otp1_env) ?: ""); // IMEI
+	qdev_prop_set_string(flash, "otp0-data", g_getenv(otp0_env) ?: g_getenv("PMB887X_FLASH_OTP0") ?: ""); // ESN
+	qdev_prop_set_string(flash, "otp1-data", g_getenv(otp1_env) ?: g_getenv("PMB887X_FLASH_OTP1") ?: ""); // IMEI
 	qdev_prop_set_string(flash, "otp0-file", g_getenv(otp0_file_env) ?: "");
 	qdev_prop_set_string(flash, "otp1-file", g_getenv(otp1_file_env) ?: "");
 	qdev_prop_set_string(flash, "efa-file", g_getenv(efa_file_env) ?: "");
