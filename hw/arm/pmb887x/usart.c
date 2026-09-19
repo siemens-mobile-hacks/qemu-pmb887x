@@ -257,11 +257,19 @@ static void usart_accept_input(void *opaque) {
 	qemu_chr_fe_accept_input(&p->chr);
 }
 
-static void usart_schedule_accept_input(pmb887x_usart_t *p) {
-	int64_t delay_ns = usart_baud_ticks_to_ns(p, usart_frame_bits(p));
+static void usart_schedule_accept_input_frames(pmb887x_usart_t *p, uint32_t frames) {
+	int64_t delay_ns = usart_baud_ticks_to_ns(p, (uint64_t) usart_frame_bits(p) * frames);
 	int64_t virtual = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
 	p->ris_read_count = 0;
 	timer_mod_ns(p->rx_timer, virtual + MAX(1, delay_ns));
+}
+
+static void usart_schedule_accept_input(pmb887x_usart_t *p) {
+	// A delivery that is already due must not be pulled forward, or a guest
+	// draining the FIFO would clock the line faster than its baud rate
+	if (timer_pending(p->rx_timer))
+		return;
+	usart_schedule_accept_input_frames(p, 1);
 }
 
 static void usart_immediate_receive(pmb887x_usart_t *p) {
@@ -347,6 +355,9 @@ static int usart_can_receive(void *opaque) {
 		return 0;
 	if (p->autobaud_pending)
 		return 0;
+	// The words taken last time are still shifting in
+	if (timer_pending(p->rx_timer))
+		return 0;
 	if (p->abcon & USART_ABCON_ABEN)
 		return 1;
 	return pmb887x_fifo_free_count(p->rx_fifo);
@@ -416,8 +427,11 @@ static void usart_receive(void *opaque, const uint8_t *buf, int size) {
 			usart_receive_word(p, buf[i]);
 	}
 
-	if (size > 0)
+	if (size > 0) {
 		usart_receive_complete(p);
+		if (!p->autobaud_pending)
+			usart_schedule_accept_input_frames(p, size);
+	}
 }
 
 static void usart_schedule_transmit(pmb887x_usart_t *p) {
@@ -611,7 +625,9 @@ static uint64_t usart_io_read(void *opaque, hwaddr haddr, unsigned size) {
 				value = pmb887x_fifo16_pop(p->rx_fifo);
 				if (is_full)
 					usart_schedule_accept_input(p);
-				if ((p->rxfcon & USART_RXFCON_RXTMEN) && !pmb887x_fifo_is_empty(p->rx_fifo))
+				// The RX interrupt follows the fill level, so it stays asserted
+				// while the FIFO still holds RXFITL words
+				if (usart_rx_irq(p))
 					pmb887x_srb_set_isr(&p->srb, USART_ISR_RX);
 			} else {
 				pmb887x_srb_set_isr(&p->srb, USART_ISR_ERR);
