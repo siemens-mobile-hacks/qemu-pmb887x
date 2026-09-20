@@ -104,6 +104,10 @@ struct pmb887x_flash_t {
 	uint32_t size;
 	uint32_t offset;
 	
+	/* Refuse program/buffer opcodes the part's CFI command set does not
+	 * document (see flash_command_is_documented). Off by default. */
+	bool strict_opcodes;
+	
 	uint16_t *otp0_data;
 	uint16_t *otp1_data;
 	uint8_t *efa_storage;
@@ -630,8 +634,8 @@ static void flash_io_write(void *opaque, hwaddr part_offset, uint64_t value, uin
 	bool valid_command = false;
 	
 	if (p->wcycle == 0) {
-		if (!p->io_mode)
-			memory_region_rom_device_set_romd(&p->mem, false);
+		// A write is a command, and a command leaves read-array mode
+		memory_region_rom_device_set_romd(&p->mem, false);
 		
 		valid_command = true;
 		p->cmd_addr = offset;
@@ -677,9 +681,15 @@ static void flash_io_write(void *opaque, hwaddr part_offset, uint64_t value, uin
 				memory_region_rom_device_set_romd(&p->mem, p->cmd == 0);
 				break;
 
+			case 0x10:
+				if (p->flash->strict_opcodes) {
+					flash_trace_part(p, "cmd program word (%02"PRIX64") is not documented for command set 0200 -> ignored", value);
+					flash_reset(p);
+					break;
+				}
+				QEMU_FALLTHROUGH;
 			case 0x41:
 			case 0x40:
-			case 0x10:
 				flash_trace_part(p, "cmd program word (%02"PRIX64")", value);
 				p->cmd = value;
 				p->wcycle++;
@@ -691,8 +701,14 @@ static void flash_io_write(void *opaque, hwaddr part_offset, uint64_t value, uin
 				p->wcycle++;
 				break;
 
-			case 0xE9:
 			case 0xE8:
+				if (p->flash->strict_opcodes) {
+					flash_trace_part(p, "cmd buffered program (%02"PRIX64") is not documented for command set 0200 -> ignored", value);
+					flash_reset(p);
+					break;
+				}
+				QEMU_FALLTHROUGH;
+			case 0xE9:
 				flash_trace_part(p, "cmd buffered program (%02"PRIX64")", value);
 				p->cmd = value;
 				p->wcycle++;
@@ -1250,6 +1266,9 @@ static const Property flash_properties[] = {
 	DEFINE_PROP_UINT16("pid", pmb887x_flash_t, pid, 0),
 	DEFINE_PROP_UINT32("offset", pmb887x_flash_t, offset, 0),
 	DEFINE_PROP_UINT32("size", pmb887x_flash_t, size, 0),
+	/* Refuse program/buffer opcodes the part's CFI command set does not
+	 * document; see flash_command_is_documented(). */
+	DEFINE_PROP_BOOL("strict-opcodes", pmb887x_flash_t, strict_opcodes, false),
 	DEFINE_PROP_STRING("otp0-file", pmb887x_flash_t, otp0_file),
 	DEFINE_PROP_STRING("otp1-file", pmb887x_flash_t, otp1_file),
 	DEFINE_PROP_STRING("efa-file", pmb887x_flash_t, efa_file),
