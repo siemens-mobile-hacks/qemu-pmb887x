@@ -14,6 +14,7 @@
 #include "hw/core/qdev-properties.h"
 #include "qemu/module.h"
 #include "qemu/timer.h"
+#include "qemu/bswap.h"
 #include "qom/object.h"
 
 #include "hw/arm/pmb887x/gen/cpu_regs.h"
@@ -87,6 +88,7 @@ struct pmb887x_dif_t {
 	uint32_t mux_tab[4][256];
 	uint32_t mux_const;
 	bool mux_dirty;
+	bool mux_identity;        /* dif_mux(v) == (v & mask) */
 
 	pmb887x_clc_reg_t clc;
 	pmb887x_srb_reg_t srb;
@@ -194,6 +196,24 @@ static void dif_update_rx_request(pmb887x_dif_t *p) {
 }
 
 /*
+ * Is dif_mux(v) & mask == v & mask for every 16-bit v?  Burst words are at
+ * most 16 bits (dif_can_run_burst), so lanes 2 and 3 only contribute
+ * their entry 0.  Lets dif_run_ssi_burst() skip the table lookups.
+ */
+static bool dif_mux_is_identity(pmb887x_dif_t *p) {
+	if (((p->mux_tab[2][0] | p->mux_tab[3][0] | p->mux_const) & p->mask))
+		return false;
+
+	for (uint32_t b = 0; b < 256; b++) {
+		if ((p->mux_tab[0][b] & p->mask) != (b & p->mask))
+			return false;
+		if ((p->mux_tab[1][b] & p->mask) != ((b << 8) & p->mask))
+			return false;
+	}
+	return true;
+}
+
+/*
  * Output bit o is input bit bmreg[o] when bcsel[o] == 0, the constant
  * bcreg[o] when bcsel[o] == 1, else 0.  Precomputed as one 256-entry table
  * per input byte lane so dif_mux() is four lookups ORed together.
@@ -228,6 +248,7 @@ static void dif_build_mux_table(pmb887x_dif_t *p) {
 	}
 	p->mux_const = cst;
 	p->mux_dirty = false;
+	p->mux_identity = dif_mux_is_identity(p);
 }
 
 static inline uint16_t dif_mux(pmb887x_dif_t *p, uint32_t value) {
@@ -731,9 +752,159 @@ static void dif_event_handler(void *opaque, int event_id, int level) {
 		dif_run_transfers(p);
 }
 
+/* Can a whole DMA burst be transferred in one loop, with the request
+ * updates done once at the end instead of per word? */
+static bool dif_can_run_burst(pmb887x_dif_t *p) {
+	return dif_is_running(p) &&
+		!p->in_transfer && !p->transfer_pending &&
+		(p->sync_config & DIFv1_SYNC_CONFIG_SYNCEN) == 0 &&
+		(p->pbccon & DIFv1_PBCCON_PBBCONV_MODE) == 0 &&
+		(p->con & DIFv1_CON_LB) == 0 &&
+		p->bits >= 8 && p->bits <= 16 && (p->bits & 7) == 0 &&
+		pmb887x_fifo_is_empty(p->tx_fifo);
+}
+
+/* dif_transfer_word() without the TX FIFO and request updates. */
+static void dif_run_word(pmb887x_dif_t *p, uint16_t value) {
+	p->status &= ~(DIFv1_CON_TE | DIFv1_CON_RE);
+
+	uint16_t transmitted = dif_mux(p, value) & p->mask;
+	uint16_t received = 0;
+	if ((p->con & DIFv1_CON_HB_MSB) != 0) {
+		for (int shift = p->bits - 8; shift >= 0; shift -= 8)
+			received |= (ssi_transfer(p->bus, (transmitted >> shift) & 0xFF) & 0xFF) << shift;
+	} else {
+		for (int shift = 0; shift < p->bits; shift += 8)
+			received |= (ssi_transfer(p->bus, (transmitted >> shift) & 0xFF) & 0xFF) << shift;
+	}
+
+	dif_rx_push(p, received);
+}
+
+#define DIF_RUN_CHUNK 128
+
+/*
+ * Transfer a burst through ssi_transfer_run() in chunks, then fill the RX
+ * FIFO from the received bytes as dif_run_word() would have.  Only the
+ * last RX FIFO's worth of a chunk can survive, so earlier words skip the
+ * FIFO and the overrun flags are applied once at the end.  Returns false,
+ * having transferred nothing, when the bus has no run path.
+ */
+static bool dif_run_ssi_burst(pmb887x_dif_t *p, const uint8_t *buf, unsigned size, unsigned count) {
+	uint8_t tx[DIF_RUN_CHUNK * 2], rx[DIF_RUN_CHUNK * 2];
+	unsigned word_bytes = p->bits / 8;
+	bool msb_first = (p->con & DIFv1_CON_HB_MSB) != 0;
+
+	if (unlikely(p->mux_dirty))
+		dif_build_mux_table(p);
+
+	/* the common display case: packing is just a byte swap */
+	bool tx_bswap16 = size == 2 && word_bytes == 2 &&
+		msb_first && p->mask == 0xFFFF && p->mux_identity;
+	uint16_t last = 0;
+
+	for (unsigned done = 0; done < count; done += DIF_RUN_CHUNK) {
+		unsigned chunk = MIN(count - done, DIF_RUN_CHUNK);
+
+		if (tx_bswap16) {
+			const uint8_t *src = buf + done * 2;
+			for (unsigned i = 0; i < chunk; i++) {
+				uint16_t value = lduw_he_p(src + i * 2);
+				tx[i * 2] = value >> 8;
+				tx[i * 2 + 1] = (uint8_t)value;
+			}
+			last = lduw_he_p(src + (chunk - 1) * 2);
+		} else {
+			for (unsigned i = 0; i < chunk; i++) {
+				uint16_t value = ldn_he_p(buf + (done + i) * size, size) & p->mask;
+				uint16_t transmitted = dif_mux(p, value) & p->mask;
+				last = value;
+				for (unsigned k = 0; k < word_bytes; k++) {
+					unsigned shift = (msb_first ? word_bytes - 1 - k : k) * 8;
+					tx[i * word_bytes + k] = (transmitted >> shift) & 0xFF;
+				}
+			}
+		}
+
+		if (!ssi_transfer_run(p->bus, tx, rx, chunk * word_bytes)) {
+			if (done == 0)
+				return false;
+			/* the bus lost its run path mid-burst: finish word by word */
+			for (unsigned i = done; i < count; i++) {
+				uint16_t value = ldn_he_p(buf + i * size, size) & p->mask;
+				p->tb = value;
+				dif_run_word(p, value);
+			}
+			return true;
+		}
+
+		unsigned first = 0;
+		bool overrun = false;
+		if (chunk > pmb887x_fifo_total(p->rx_fifo)) {
+			first = chunk - pmb887x_fifo_total(p->rx_fifo);
+			pmb887x_fifo_reset(p->rx_fifo);
+			overrun = true;
+		}
+
+		for (unsigned i = first; i < chunk; i++) {
+			uint16_t received = 0;
+			for (unsigned k = 0; k < word_bytes; k++) {
+				unsigned shift = (msb_first ? word_bytes - 1 - k : k) * 8;
+				received |= (uint16_t)rx[i * word_bytes + k] << shift;
+			}
+
+			dif_rx_push(p, received);
+		}
+
+		if (overrun) {
+			/* what the skipped words would have left behind */
+			p->status &= ~(DIFv1_CON_TE | DIFv1_CON_RE);
+			if ((p->con & DIFv1_CON_REN)) {
+				p->status |= DIFv1_CON_RE;
+				pmb887x_srb_set_isr(&p->srb, DIFv1_ISR_ERR);
+			}
+		}
+
+		p->tb = last;
+	}
+	return true;
+}
+
+static void dif_io_write_run(void *opaque, hwaddr haddr, const uint8_t *buf, unsigned size, unsigned count) {
+	pmb887x_dif_t *p = opaque;
+
+	if (haddr != DIFv1_TB || !dif_can_run_burst(p)) {
+		for (unsigned i = 0; i < count; i++)
+			dif_io_write(opaque, haddr, ldn_he_p(buf + i * size, size), size);
+		return;
+	}
+
+	/* burst words bypass dif_io_write(), so trace them here */
+	if (pmb887x_trace_io_enabled(PMB887X_MOD_CONST_NAME(PMB887X_TRACE_ID))) {
+		for (unsigned i = 0; i < count; i++)
+			pmb887x_dump_io_write(PMB887X_TRACE_IO, haddr + p->mmio.addr, size,
+				ldn_he_p(buf + i * size, size));
+	}
+
+	/* keep the srb event handler from re-entering dif_run_transfers() */
+	p->in_transfer = true;
+	if (!dif_run_ssi_burst(p, buf, size, count)) {
+		for (unsigned i = 0; i < count; i++) {
+			p->tb = ldn_he_p(buf + i * size, size) & p->mask;
+			dif_run_word(p, p->tb);
+		}
+	}
+	p->in_transfer = false;
+
+	dif_update_tx_request(p);
+	dif_update_rx_request(p);
+	dif_run_transfers(p);
+}
+
 static const MemoryRegionOps io_ops = {
 	.read			= dif_io_read,
 	.write			= dif_io_write,
+	.write_run		= dif_io_write_run,
 	.endianness		= DEVICE_NATIVE_ENDIAN,
 	.valid			= {
 		.min_access_size	= 1,
