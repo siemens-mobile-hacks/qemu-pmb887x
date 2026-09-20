@@ -2300,6 +2300,15 @@ MemoryRegionSection memory_region_find(MemoryRegion *mr,
                                        hwaddr addr, uint64_t size);
 
 /**
+ * memory_region_topology_gen: generation of the installed flatviews.
+ *
+ * Changes on every committed transaction that installed new views.  A
+ * translation stays valid while the value is unchanged, so a device may
+ * cache one keyed on it instead of walking the flatview per access.
+ */
+uint64_t memory_region_topology_gen(void);
+
+/**
  * memory_global_dirty_log_sync: synchronize the dirty log for all memory
  *
  * Synchronizes the dirty page log for all address spaces.
