@@ -1570,6 +1570,62 @@ MemTxResult memory_region_dispatch_write(MemoryRegion *mr,
     }
 }
 
+/* Whether an aligned size-byte write to mr can skip everything
+ * memory_region_dispatch_write() does around the device's write callback:
+ * alias resolution, validity checks, endianness swap, ioeventfd match and
+ * access splitting. */
+bool memory_region_write_direct_ok(MemoryRegion *mr, unsigned size)
+{
+    const MemoryRegionOps *ops = mr->ops;
+    unsigned impl_min, impl_max, valid_max;
+
+    if (mr->alias || !ops->write || mr->ioeventfd_nb || ops->valid.accepts) {
+        return false;
+    }
+    if ((size_memop(size) & MO_BSWAP) != devend_memop(ops->endianness)) {
+        return false;
+    }
+    valid_max = ops->valid.max_access_size;
+    if (valid_max && (size > valid_max || size < ops->valid.min_access_size)) {
+        return false;
+    }
+    impl_min = ops->impl.min_access_size ? ops->impl.min_access_size : 1;
+    impl_max = ops->impl.max_access_size ? ops->impl.max_access_size : 4;
+    return size >= impl_min && size <= impl_max;
+}
+
+/* The tail of memory_region_dispatch_write() for a caller that has
+ * already established memory_region_write_direct_ok() and an aligned
+ * address.  The reentrancy guard and trace point are kept. */
+MemTxResult memory_region_dispatch_write_direct(MemoryRegion *mr, hwaddr addr,
+                                                uint64_t data, unsigned size)
+{
+    bool guarded = mr->dev && !mr->disable_reentrancy_guard &&
+        !mr->ram_device && !mr->ram && !mr->rom_device && !mr->readonly;
+
+    if (guarded) {
+        if (mr->dev->mem_reentrancy_guard.engaged_in_io) {
+            warn_report_once("Blocked re-entrant IO on MemoryRegion: "
+                             "%s at addr: 0x%" HWADDR_PRIX,
+                             memory_region_name(mr), addr);
+            return MEMTX_ACCESS_ERROR;
+        }
+        mr->dev->mem_reentrancy_guard.engaged_in_io = true;
+    }
+
+    if (trace_event_get_state_backends(TRACE_MEMORY_REGION_OPS_WRITE)) {
+        hwaddr abs_addr = memory_region_to_absolute_addr(mr, addr);
+        trace_memory_region_ops_write(get_cpu_index(), mr, abs_addr, data, size,
+                                      memory_region_name(mr));
+    }
+    mr->ops->write(mr->opaque, addr, data, size);
+
+    if (guarded) {
+        mr->dev->mem_reentrancy_guard.engaged_in_io = false;
+    }
+    return MEMTX_OK;
+}
+
 static void memory_region_set_ops(MemoryRegion *mr,
                                   const MemoryRegionOps *ops,
                                   void *opaque)
