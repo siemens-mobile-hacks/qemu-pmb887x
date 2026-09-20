@@ -3503,13 +3503,31 @@ static bool op_s_rxi_rot(DisasContext *s, arg_s_rri_rot *a,
     static bool trans_##NAME##_rxi(DisasContext *s, arg_s_rri_rot *a)   \
     { StoreRegKind k = (K); return op_s_rxi_rot(s, a, OP, L, k); }
 
+/*
+ * Canonical compare/test encodings have Rd == 0, but classic (pre-V7)
+ * cores only gate the register writeback on the opcode decode: A32
+ * TST/TEQ/CMP/CMN with any Rd 1..14 executes as the flag-only op on
+ * silicon (patched firmwares branch into such literal-pool words).
+ * Keep UNDEF for V7+ (deliberate strictness) and Rd == 15 (SPSR-restore
+ * form).  The trans_CMP/TST functions are shared by the A32/T16/T32
+ * decoders and Thumb delivers live register fields (T16 hi-reg CMP pc,
+ * rN), so only ARM state is tolerant.
+ */
+#define CMP_CHECK_RD(s, a) do {                                         \
+    if (!s->thumb && (a)->rd != 0 &&                                    \
+        ((a)->rd == 15 || arm_dc_feature((s), ARM_FEATURE_V7))) {       \
+        unallocated_encoding(s);                                        \
+        return true;                                                    \
+    }                                                                   \
+} while (0)
+
 #define DO_CMP2(NAME, OP, L)                                            \
     static bool trans_##NAME##_xrri(DisasContext *s, arg_s_rrr_shi *a)  \
-    { return op_s_rrr_shi(s, a, OP, L, STREG_NONE); }                   \
+    { CMP_CHECK_RD(s, a); return op_s_rrr_shi(s, a, OP, L, STREG_NONE); } \
     static bool trans_##NAME##_xrrr(DisasContext *s, arg_s_rrr_shr *a)  \
-    { return op_s_rrr_shr(s, a, OP, L, STREG_NONE); }                   \
+    { CMP_CHECK_RD(s, a); return op_s_rrr_shr(s, a, OP, L, STREG_NONE); } \
     static bool trans_##NAME##_xri(DisasContext *s, arg_s_rri_rot *a)   \
-    { return op_s_rri_rot(s, a, OP, L, STREG_NONE); }
+    { CMP_CHECK_RD(s, a); return op_s_rri_rot(s, a, OP, L, STREG_NONE); }
 
 DO_ANY3(AND, tcg_gen_and_i32, a->s, STREG_NORMAL)
 DO_ANY3(EOR, tcg_gen_xor_i32, a->s, STREG_NORMAL)
