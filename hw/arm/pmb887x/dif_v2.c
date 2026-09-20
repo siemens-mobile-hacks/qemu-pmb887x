@@ -149,11 +149,11 @@ static inline uint32_t dif_get_transfer_csreg(pmb887x_dif_t *p) {
 }
 
 static inline uint32_t dif_get_rx_align(pmb887x_dif_t *p) {
-	return 1 << ((p->rxfifo_cfg & DIFv2_RXFIFO_CFG_RXFA) >> DIFv2_RXFIFO_CFG_RXFA_SHIFT);
+	return MIN(1 << ((p->rxfifo_cfg & DIFv2_RXFIFO_CFG_RXFA) >> DIFv2_RXFIFO_CFG_RXFA_SHIFT), 4);
 }
 
 static inline uint32_t dif_get_tx_align(pmb887x_dif_t *p) {
-	return 1 << ((p->txfifo_cfg & DIFv2_TXFIFO_CFG_TXFA) >> DIFv2_TXFIFO_CFG_TXFA_SHIFT);
+	return MIN(1 << ((p->txfifo_cfg & DIFv2_TXFIFO_CFG_TXFA) >> DIFv2_TXFIFO_CFG_TXFA_SHIFT), 4);
 }
 
 static inline uint32_t dif_get_rx_burst_size(pmb887x_dif_t *p) {
@@ -206,6 +206,11 @@ static inline uint32_t dif_get_tx_word_bits(pmb887x_dif_t *p) {
 		return 8;
 
 	return MIN(dif_get_word_bits(p), dif_get_tx_align(p) * 8);
+}
+
+/* dif_get_word_bits() reaches 32 (CON.BM is 5 bits), where "1 << bits" would be UB. */
+static inline uint32_t dif_get_word_mask(uint32_t word_bits) {
+	return word_bits >= 32 ? 0xFFFFFFFFU : (1U << word_bits) - 1;
 }
 
 static inline bool dif_is_pbc_enabled(pmb887x_dif_t *p) {
@@ -462,6 +467,9 @@ static void dif_fifo_write(pmb887x_dif_t *p, uint32_t value) {
 		return;
 	}
 
+	DPRINTF("TXD %08X csreg=%02X run=%d state=%d fifo=%d\n", value, p->csreg, dif_is_running(p),
+		p->state, pmb887x_fifo_count(&p->tx_fifo));
+
 	pmb887x_fifo32_push(&p->tx_fifo, value);
 	pmb887x_fifo32_push(&p->tx_csreg_fifo, p->csreg);
 	dif_schedule(p);
@@ -625,7 +633,8 @@ static uint16_t dif_bus_transfer(pmb887x_dif_t *p, uint16_t value) {
 }
 
 static bool dif_send_word(pmb887x_dif_t *p, uint16_t value) {
-	DPRINTF("TX: %03X\n", value);
+	DPRINTF("BUS %03X cd=%d\n", value, (dif_get_transfer_csreg(p) & DIFv2_CSREG_CD) != 0);
+
 	uint16_t received = dif_bus_transfer(p, value);
 	if (dif_is_serial(p))
 		return dif_push_rx_word(p, received);
@@ -635,8 +644,7 @@ static bool dif_send_word(pmb887x_dif_t *p, uint16_t value) {
 
 static bool dif_convert_word(pmb887x_dif_t *p, uint16_t value, uint32_t *output) {
 	if (!dif_is_pbc_enabled(p)) {
-		uint32_t word_bits = dif_get_tx_word_bits(p);
-		uint32_t word_mask = (1U << word_bits) - 1;
+		uint32_t word_mask = dif_get_word_mask(dif_get_tx_word_bits(p));
 
 		*output = dif_mux(p, value & word_mask);
 		return true;
@@ -720,7 +728,7 @@ static void dif_tx_from_fifo(pmb887x_dif_t *p) {
 		} else {
 			for (uint32_t i = 0; i < words_in_fifo_reg; i++) {
 				uint32_t converted;
-				uint16_t word = (value >> (8 * i * align)) & ((1 << word_bits) - 1);
+				uint16_t word = (value >> (8 * i * align)) & dif_get_word_mask(word_bits);
 
 				if (dif_convert_word(p, word, &converted) && !dif_send_word(p, converted))
 					goto done;
@@ -1037,6 +1045,10 @@ static void dif_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned si
 	switch (haddr) {
 		case DIFv2_CLC:
 			pmb887x_clc_set(&p->clc, value);
+			/* Enabling the kernel has to drain whatever was written to TXD while it
+			 * was stopped, the same way dif_v1 reschedules from its CLC handler. */
+			if (dif_is_running(p))
+				dif_schedule(p);
 			break;
 
 		case DIFv2_RUNCTRL:
@@ -1051,6 +1063,10 @@ static void dif_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned si
 				pmb887x_fifo_reset(&p->tx_csreg_fifo);
 				dif_reset_rx_fifo(p);
 			}
+			/* Without this a byte queued while stopped stays in the FIFO until the next
+			 * TXD write, and a RUNCTRL=0 during an RX transaction discards it above. */
+			if (dif_is_running(p))
+				dif_schedule(p);
 			break;
 
 		case DIFv2_CON:
@@ -1331,7 +1347,7 @@ static void dif_realize(DeviceState *dev, Error **errp) {
 	}
 	dif_update_mux(p);
 
-	p->timer = timer_new_ns(QEMU_CLOCK_REALTIME, dif_timer_reset, p);
+	p->timer = timer_new_ns(QEMU_CLOCK_VIRTUAL, dif_timer_reset, p);
 }
 
 static void dif_reset(DeviceState *dev) {
@@ -1349,6 +1365,7 @@ static void dif_reset(DeviceState *dev) {
 	pmb887x_fifo_reset(&p->tx_csreg_fifo);
 	pmb887x_fifo_reset(&p->rx_fifo);
 
+	p->in_schedule = false;
 	p->transfer_pending = false;
 	p->tx_words_preloaded = 0;
 	p->tx_csreg = 0;

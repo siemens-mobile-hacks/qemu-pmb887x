@@ -143,7 +143,7 @@ static void dmac_write(pmb887x_dmac_t *p, hwaddr addr, const uint8_t *buffer, ui
 static void dmac_schedule(pmb887x_dmac_t *p) {
 	if (!p->dmac_pending) {
 		p->dmac_pending = true;
-		timer_mod(p->timer, 0);
+		timer_mod(p->timer, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + 1);
 	}
 }
 
@@ -886,7 +886,7 @@ static void dmac_timer_reset(void *opaque) {
 			break;
 	}
 	if (p->dmac_pending)
-		timer_mod(p->timer, qemu_clock_get_ns(QEMU_CLOCK_REALTIME) + 1);
+		timer_mod(p->timer, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + 1);
 }
 
 static void dmac_handle_signal_sel0_sreq(void *opaque, int request, int level) {
@@ -1005,7 +1005,7 @@ static void dmac_realize(DeviceState *dev, Error **errp) {
 	pmb887x_srb_init(&p->srb_tc, p->irq_tc, ARRAY_SIZE(p->irq_tc));
 	pmb887x_srb_set_irq_router(&p->srb_tc, p, dmac_tc_irq_router);
 
-	p->timer = timer_new_ns(QEMU_CLOCK_REALTIME, dmac_timer_reset, p);
+	p->timer = timer_new_ns(QEMU_CLOCK_VIRTUAL, dmac_timer_reset, p);
 }
 
 static void dmac_reset(DeviceState *dev) {
