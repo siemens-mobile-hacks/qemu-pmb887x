@@ -313,6 +313,20 @@ struct MemoryRegionOps {
                                     unsigned size,
                                     MemTxAttrs attrs);
 
+    /*
+     * Optional: @count writes of @size bytes each, all to @addr, in one
+     * call (a DMA burst into a FIFO register).  Must leave exactly the
+     * state @count calls of @write would.  Only reached through
+     * memory_region_dispatch_write_run().  A device that cannot take them
+     * as one burst must still deliver them, usually by calling @write per
+     * word.
+     */
+    void (*write_run)(void *opaque,
+                      hwaddr addr,
+                      const uint8_t *buf,
+                      unsigned size,
+                      unsigned count);
+
     enum device_endian endianness;
     /* Guest-visible constraints: */
     struct {
@@ -2435,6 +2449,22 @@ bool memory_region_write_direct_ok(MemoryRegion *mr, unsigned size);
  */
 MemTxResult memory_region_dispatch_write_direct(MemoryRegion *mr, hwaddr addr,
                                                 uint64_t data, unsigned size);
+
+/**
+ * memory_region_dispatch_write_run: hand @count @size-byte writes of @buf,
+ * all to @addr, to the device in one call.  Same preconditions as
+ * memory_region_dispatch_write_direct().  Returns false, having written
+ * nothing, when @mr has no such path.
+ *
+ * @mr: #MemoryRegion to access
+ * @addr: address within that region
+ * @buf: @count * @size bytes, each word in the device's own byte order
+ * @size: access size in bytes
+ * @count: number of writes
+ */
+bool memory_region_dispatch_write_run(MemoryRegion *mr, hwaddr addr,
+                                      const uint8_t *buf, unsigned size,
+                                      unsigned count);
 
 /**
  * address_space_init: initializes an address space
