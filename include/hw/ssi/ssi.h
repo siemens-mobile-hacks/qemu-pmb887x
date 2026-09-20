@@ -56,6 +56,15 @@ struct SSIPeripheralClass {
      * See ssi_transfer().
      */
     uint32_t (*transfer_raw)(SSIPeripheral *dev, uint32_t val);
+
+    /*
+     * Optional: @n bytes out and @n bytes back in one call, leaving
+     * exactly the state @n calls of @transfer would.  Returns @n, or 0
+     * having transferred nothing, in which case the caller falls back to
+     * @transfer.
+     */
+    unsigned (*transfer_run)(SSIPeripheral *dev, const uint8_t *tx,
+                             uint8_t *rx, unsigned n);
 };
 
 struct SSIPeripheral {
@@ -125,6 +134,20 @@ SSIBus *ssi_create_bus(DeviceState *parent, const char *name);
  * Return: word value received
  */
 uint32_t ssi_transfer(SSIBus *bus, uint32_t val);
+
+/**
+ * ssi_transfer_run: transfer a run of bytes on an SSI bus in one call
+ * @bus: SSI bus
+ * @tx: bytes to transmit, one per transfer
+ * @rx: filled with the byte received against each
+ * @n: how many
+ *
+ * Equivalent to @n ssi_transfer() calls of one byte each.  Returns @n, or
+ * 0 having transferred nothing when the bus or peripheral has no such
+ * path; the caller then falls back to ssi_transfer().
+ */
+unsigned ssi_transfer_run(SSIBus *bus, const uint8_t *tx, uint8_t *rx,
+                          unsigned n);
 
 DeviceState *ssi_get_cs(SSIBus *bus, uint8_t cs_index);
 

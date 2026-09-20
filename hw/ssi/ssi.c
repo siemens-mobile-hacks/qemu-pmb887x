@@ -155,16 +155,45 @@ SSIBus *ssi_create_bus(DeviceState *parent, const char *name)
 
 uint32_t ssi_transfer(SSIBus *bus, uint32_t val)
 {
-    BusState *b = BUS(bus);
+    /* unchecked casts: called per byte, and qdev already checks the bus
+     * type at attach */
+    BusState *b = &bus->parent_obj;
     BusChild *kid;
     uint32_t r = 0;
 
     QTAILQ_FOREACH(kid, &b->children, sibling) {
-        SSIPeripheral *p = SSI_PERIPHERAL(kid->child);
+        SSIPeripheral *p = (SSIPeripheral *)kid->child;
         r |= p->spc->transfer_raw(p, val);
     }
 
     return r;
+}
+
+unsigned ssi_transfer_run(SSIBus *bus, const uint8_t *tx, uint8_t *rx,
+                          unsigned n)
+{
+    BusState *b = &bus->parent_obj;
+    BusChild *kid = QTAILQ_FIRST(&b->children);
+    SSIPeripheral *p;
+
+    /* ssi_transfer() ORs every child's answer together; a run only
+     * supports a single child */
+    if (!kid || QTAILQ_NEXT(kid, sibling)) {
+        return 0;
+    }
+
+    p = (SSIPeripheral *)kid->child;
+    if (!p->spc->transfer_run ||
+        p->spc->transfer_raw != ssi_transfer_raw_default) {
+        return 0;
+    }
+    if (!((p->cs && p->spc->cs_polarity == SSI_CS_HIGH) ||
+          (!p->cs && p->spc->cs_polarity == SSI_CS_LOW) ||
+          p->spc->cs_polarity == SSI_CS_NONE)) {
+        return 0;
+    }
+
+    return p->spc->transfer_run(p, tx, rx, n);
 }
 
 const VMStateDescription vmstate_ssi_peripheral = {
