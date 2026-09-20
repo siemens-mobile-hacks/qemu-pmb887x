@@ -74,6 +74,7 @@ struct pmb887x_dmac_t {
 	pmb887x_dmac_ch_t ch[DMAC_CHANNELS];
 
 	bool dmac_pending;
+	bool in_run;
 	bool is_busy;
 	uint32_t config;
 	uint32_t sync;
@@ -141,8 +142,12 @@ static void dmac_write(pmb887x_dmac_t *p, hwaddr addr, const uint8_t *buffer, ui
 }
 
 static void dmac_schedule(pmb887x_dmac_t *p) {
-	if (!p->dmac_pending) {
-		p->dmac_pending = true;
+	if (p->dmac_pending)
+		return;
+	p->dmac_pending = true;
+	/* a request raised from inside dmac_timer_reset() is picked up by
+	 * its next pass */
+	if (!p->in_run) {
 		timer_mod(p->timer, 0);
 	}
 }
@@ -259,7 +264,9 @@ static void dmac_transfer_finish(pmb887x_dmac_t *p, pmb887x_dmac_ch_t *ch) {
 }
 
 static void dmac_transfer_memory(pmb887x_dmac_t *p, pmb887x_dmac_ch_t *ch, uint32_t burst_size) {
-	uint8_t buffer[16 * 1024] QEMU_ALIGNED(4); // 12bit TransferSize x DWORD
+	/* QEMU_UNINITIALIZED: called once per word on the display path, so the
+	 * compiler must not zero 16 KB on every call */
+	uint8_t buffer[16 * 1024] QEMU_ALIGNED(4) QEMU_UNINITIALIZED; // 12bit TransferSize x DWORD
 	uint32_t src_width = dmac_get_width((ch->control & DMAC_CH_CONTROL_S_WIDTH) >> DMAC_CH_CONTROL_S_WIDTH_SHIFT);
 	uint32_t dst_width = dmac_get_width((ch->control & DMAC_CH_CONTROL_D_WIDTH) >> DMAC_CH_CONTROL_D_WIDTH_SHIFT);
 	uint32_t flow_ctrl = (ch->config & DMAC_CH_CONFIG_FLOW_CTRL);
@@ -878,6 +885,7 @@ uint32_t pmb887x_dmac_get_sel(pmb887x_dmac_t *p) {
 static void dmac_timer_reset(void *opaque) {
 	pmb887x_dmac_t *p = opaque;
 	int budget = DMAC_MAX_BURSTS_PER_PASS;
+	p->in_run = true;
 	while (p->dmac_pending && budget-- > 0) {
 		p->dmac_pending = false;
 		for (int i = 0; i < DMAC_CHANNELS; i++)
@@ -885,8 +893,9 @@ static void dmac_timer_reset(void *opaque) {
 		if (pmb887x_srb_get_ris(&p->srb_tc) || pmb887x_srb_get_ris(&p->srb_err))
 			break;
 	}
+	p->in_run = false;
 	if (p->dmac_pending)
-		timer_mod(p->timer, qemu_clock_get_ns(QEMU_CLOCK_REALTIME) + 1);
+		timer_mod(p->timer, qemu_clock_get_ns(pmb887x_completion_clock()) + 1);
 }
 
 static void dmac_handle_signal_sel0_sreq(void *opaque, int request, int level) {
@@ -1005,7 +1014,7 @@ static void dmac_realize(DeviceState *dev, Error **errp) {
 	pmb887x_srb_init(&p->srb_tc, p->irq_tc, ARRAY_SIZE(p->irq_tc));
 	pmb887x_srb_set_irq_router(&p->srb_tc, p, dmac_tc_irq_router);
 
-	p->timer = timer_new_ns(QEMU_CLOCK_REALTIME, dmac_timer_reset, p);
+	p->timer = timer_new_ns(pmb887x_completion_clock(), dmac_timer_reset, p);
 }
 
 static void dmac_reset(DeviceState *dev) {
@@ -1020,6 +1029,7 @@ static void dmac_reset(DeviceState *dev) {
 		p->ch[i] = (pmb887x_dmac_ch_t) { .id = i };
 
 	p->dmac_pending = false;
+	p->in_run = false;
 	p->is_busy = false;
 	p->config = 0;
 	p->sync = 0;
