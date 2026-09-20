@@ -40,10 +40,9 @@ struct pmb887x_dmac_request_t {
 	uint16_t soft;
 };
 
-/* One translated window of the downstream address space.  The display
- * DMA is one word per request (~500 k/s at 60 fps) and every word walked
- * the flatview twice, for its RAM source and its FIFO destination; the
- * window is valid while memory_region_topology_gen() is unchanged. */
+/* Cached translation of a window of the downstream address space, valid
+ * while memory_region_topology_gen() is unchanged.  Saves a flatview walk
+ * per transferred word. */
 typedef struct {
 	uint64_t gen;
 	hwaddr addr;       /* first bus address covered */
@@ -51,9 +50,9 @@ typedef struct {
 	hwaddr xlat;       /* addr's offset within mr */
 	MemoryRegion *mr;
 	uint8_t *host;     /* direct RAM pointer for addr; NULL for MMIO */
-	uint32_t direct_width;  /* width memory_region_write_direct_ok() was asked about */
-	bool direct_ok;
-	bool run_ok;       /* the last write to this window went as a run */
+	uint32_t direct_width;  /* width direct_ok was computed for */
+	bool direct_ok;    /* memory_region_write_direct_ok() for direct_width */
+	bool run_ok;       /* the last write to this window went as one burst */
 } pmb887x_dmac_xlat_t;
 
 struct pmb887x_dmac_ch_t {
@@ -148,10 +147,7 @@ static void dmac_swap_byte_order(uint8_t *buffer, uint32_t width, uint32_t count
 #define DMAC_XLAT_WINDOW	(64 * 1024)
 
 /* Resolve [addr, addr + len) through the cached window, refilling it from
- * the flatview when the topology changed or the range moved out.  The
- * window is the flat range around addr (the firmware walks the DIF's
- * 16 KB FIFO window with an incrementing destination, so an MMIO window
- * must cover the range, not one access), clipped to DMAC_XLAT_WINDOW. */
+ * the flatview when the topology changed or the range fell outside it. */
 static bool dmac_xlat(pmb887x_dmac_t *p, pmb887x_dmac_xlat_t *x, hwaddr addr, uint32_t len, bool is_write) {
 	uint64_t gen = memory_region_topology_gen();
 	if (likely(x->gen == gen && addr >= x->addr && addr + len <= x->addr + x->len))
@@ -164,10 +160,7 @@ static bool dmac_xlat(pmb887x_dmac_t *p, pmb887x_dmac_xlat_t *x, hwaddr addr, ui
 	hwaddr size = int128_get64(sec.size);
 	if (size < len)
 		return false;
-	/* memory_region_find() clips to the intersection with the probe: when
-	 * addr itself is unmapped but a mapped region begins later inside the
-	 * window, the section starts past addr and must not be recorded as
-	 * covering it */
+	/* addr itself is unmapped; the section starts later in the probe */
 	if (sec.offset_within_address_space != addr)
 		return false;
 	x->gen = gen;
@@ -199,12 +192,8 @@ static void dmac_write(pmb887x_dmac_t *p, pmb887x_dmac_xlat_t *x, hwaddr addr, c
 	if (x && dmac_xlat(p, x, addr, width, true) && !x->host) {
 		MemoryRegion *mr = x->mr;
 		hwaddr off = x->xlat + (addr - x->addr);
-		/* the one step address_space_write takes for an aligned
-		 * width-sized store to an MMIO region; RAM keeps the API for
-		 * its dirty tracking.  Whether the dispatch's own per-access
-		 * work (validity, endianness, ioeventfds, access splitting)
-		 * can be skipped depends only on the region and the width, so
-		 * it is decided once per window rather than per word. */
+		/* MMIO: dispatch to the region directly.  RAM goes through
+		 * address_space_write() for its dirty tracking. */
 		if (x->direct_width != width) {
 			x->direct_width = width;
 			x->direct_ok = memory_region_write_direct_ok(mr, width);
@@ -230,18 +219,10 @@ static void dmac_write(pmb887x_dmac_t *p, pmb887x_dmac_xlat_t *x, hwaddr addr, c
 }
 
 /*
- * The whole burst into one non-incrementing register, in one call, so the
- * per-access work above the device (RCU section, BQL check, dispatch,
- * register switch) is paid once per burst instead of once per word.  A
- * device that cannot take a run says so by not having the op - or by
- * reporting that it did not burst - and the caller falls back to the
- * per-word loop.
- *
- * Returns whether the words reached the device; x->run_ok records whether
- * they went as one burst, which is what allows the next pass to coalesce:
- * a device that degraded to per-word writes inside the run may have
- * dropped its request between the words, so the request round trip must
- * be respected again.
+ * Write a whole burst to one non-incrementing MMIO register in one call.
+ * Returns whether the words reached the device (false: the caller writes
+ * them one by one).  x->run_ok records whether the device took them as one
+ * burst, which dmac_stream_burst() needs.
  */
 static bool dmac_write_run(pmb887x_dmac_t *p, pmb887x_dmac_xlat_t *x, hwaddr addr, const uint8_t *buffer, uint32_t width, uint32_t count) {
 	if (!x || !dmac_xlat(p, x, addr, width, true) || x->host)
@@ -269,21 +250,15 @@ static bool dmac_write_run(pmb887x_dmac_t *p, pmb887x_dmac_xlat_t *x, hwaddr add
 	return done;
 }
 
-/*
- * How many source words one pass of a memory-to-peripheral stream may
- * carry.  A destination that took the previous pass through its run-write
- * path as one burst cannot back-pressure inside one, so the request it
- * raises after each burst is a foregone conclusion and the next burst can
- * be handed over without waiting for it.  run_ok is only set for a genuine
- * burst, so a destination that degraded to per-word writes stops the
- * coalescing and its request is re-checked per burst, as the base did.
- *
- * Only the DMAC-as-flow-controller case coalesces: there the transfer
- * size is the DMAC's own and the tail is exact, so the interrupt still
- * lands on the word it always landed on.
- */
 #define DMAC_COALESCE_WORDS	256
 
+/*
+ * How many words one memory-to-peripheral pass may carry.  A destination
+ * that took the previous burst as one run cannot back-pressure inside a
+ * burst, so several bursts are handed over without waiting for a request
+ * between them.  A destination that degraded to per-word writes may drop
+ * its request mid-burst, so it goes back to one burst per request.
+ */
 static uint32_t dmac_stream_burst(pmb887x_dmac_ch_t *ch, uint32_t burst_size) {
 	if (!ch->dst_xlat.run_ok || burst_size == 0)
 		return burst_size;
@@ -299,10 +274,8 @@ static void dmac_schedule(pmb887x_dmac_t *p) {
 	if (p->dmac_pending)
 		return;
 	p->dmac_pending = true;
-	/* a request raised from inside dmac_timer_reset (the peripheral
-	 * re-requesting as its burst is acknowledged) is picked up by that
-	 * loop's next pass; arming the timer would only recompute the clock
-	 * deadline per burst */
+	/* a request raised from inside dmac_timer_reset() is picked up by
+	 * its next pass */
 	if (!p->in_run) {
 		timer_mod(p->timer, 0);
 	}
@@ -426,8 +399,6 @@ static void dmac_transfer_stream(pmb887x_dmac_t *p, pmb887x_dmac_ch_t *ch,
 	uint32_t transferred = 0;
 	uint32_t src_burst_size = is_src_memory && (ch->control & DMAC_CH_CONTROL_SI) ? burst_size : 1;
 	uint32_t src_burst_size_bytes = src_burst_size * src_width;
-	/* A memory source with a narrower fixed destination: one read of the
-	 * source per pass, the destination written per word as before */
 	bool try_run = !(ch->control & DMAC_CH_CONTROL_DI) &&
 		(dst_endian != DEVICE_BIG_ENDIAN || dst_width == 1);
 	while (transferred < burst_size) {
@@ -453,8 +424,8 @@ static void dmac_transfer_stream(pmb887x_dmac_t *p, pmb887x_dmac_ch_t *ch,
 }
 
 static void dmac_transfer_memory(pmb887x_dmac_t *p, pmb887x_dmac_ch_t *ch, uint32_t burst_size) {
-	/* QEMU_UNINITIALIZED: -ftrivial-auto-var-init=zero would clear all 16 KB
-	 * on every call, and the display path calls this once per 4-byte word */
+	/* QEMU_UNINITIALIZED: called once per word on the display path, so the
+	 * compiler must not zero 16 KB on every call */
 	uint8_t buffer[16 * 1024] QEMU_ALIGNED(4) QEMU_UNINITIALIZED; // 12bit TransferSize x DWORD
 	uint32_t src_width = dmac_get_width((ch->control & DMAC_CH_CONTROL_S_WIDTH) >> DMAC_CH_CONTROL_S_WIDTH_SHIFT);
 	uint32_t dst_width = dmac_get_width((ch->control & DMAC_CH_CONTROL_D_WIDTH) >> DMAC_CH_CONTROL_D_WIDTH_SHIFT);
@@ -490,10 +461,7 @@ static void dmac_transfer_memory(pmb887x_dmac_t *p, pmb887x_dmac_ch_t *ch, uint3
 		ch->src_addr += src_width * burst_size;
 		ch->dst_addr += dst_width * burst_size;
 	} else if (dst_width == src_width && is_src_memory && (ch->control & DMAC_CH_CONTROL_SI)) {
-		/* memory source with an incrementing address (the display path:
-		 * RAM -> DIF FIFO): one address_space_read for the whole burst
-		 * instead of one dispatch per word; the destination is written
-		 * per word as before (a FIFO register sees each word) */
+		/* the display path (RAM -> DIF FIFO): read the whole burst at once */
 		dmac_read(p, &ch->src_xlat, ch->src_addr, buffer, src_width, burst_size, src_endian);
 		ch->src_addr += src_width * burst_size;
 		bool run = src_endian == dst_endian && !(ch->control & DMAC_CH_CONTROL_DI) &&
@@ -1201,8 +1169,6 @@ static void dmac_realize(DeviceState *dev, Error **errp) {
 	pmb887x_srb_init(&p->srb_tc, p->irq_tc, ARRAY_SIZE(p->irq_tc));
 	pmb887x_srb_set_irq_router(&p->srb_tc, p, dmac_tc_irq_router);
 
-	/* see pmb887x_completion_clock(): the display DMA stretch is one
-	 * IRQ + halt per word, each completion used to be a main-loop trip */
 	p->timer = timer_new_ns(pmb887x_completion_clock(), dmac_timer_reset, p);
 }
 

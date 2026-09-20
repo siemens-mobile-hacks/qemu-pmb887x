@@ -809,10 +809,9 @@ static bool gptu_t2_trigger_used(pmb887x_gptu_t *p, int trigger_id) {
 }
 
 /*
- * An overflow of this timer that somebody can see at the instant it happens:
- * a service request, or a trigger T2 is listening to.  Output toggles only
- * change the OUT register by the parity of the overflow count, so they are
- * exact however late they are applied.
+ * Does an overflow of this timer have to be applied at the instant it
+ * happens (a service request, or a trigger T2 listens to)?  Output toggles
+ * do not: they only depend on the parity of the overflow count.
  */
 static bool gptu_t01_observable(pmb887x_gptu_t *p, int timer_id) {
 	pmb887x_gptu_timer_t *timer = &p->timers[timer_id];
@@ -844,12 +843,10 @@ static uint64_t gptu_t01_period(pmb887x_gptu_t *p, int timer_id) {
 #define GPTU_TICKS_HORIZON	(1ULL << 40)
 
 /*
- * Ticks of the free-running timer `root` until the first overflow, anywhere
- * in the carry tree it feeds, that matters at that instant: one that raises
- * a request, triggers T2, or reloads other timers (the rest of the interval
- * counts from the reloaded values).  Every other overflow is reproduced
- * exactly by gptu_t01_add_ticks carrying a count, so the sync can step over
- * any number of them at once.
+ * Ticks of the free-running timer `root` until the first observable
+ * overflow, or reload of other timers, anywhere in the carry chain it
+ * feeds.  Overflows before that can be stepped over in one
+ * gptu_t01_add_ticks() call.
  */
 static uint64_t gptu_t01_ticks_to_boundary(pmb887x_gptu_t *p, int root) {
 	struct { int id; uint64_t ticks, period; } stack[8];
@@ -955,10 +952,6 @@ static void gptu_sync_timer(pmb887x_gptu_t *p) {
 	for (int i = 0; i < 8; i++) {
 		if (!gptu_t01_free_running(p, i))
 			continue;
-		/* reload boundaries too: a reload moves a dependent's overflow,
-		 * which can be observable earlier than any boundary computed from
-		 * the pre-reload values, so the armed deadline must not step over
-		 * the reload instant */
 		uint64_t ticks = gptu_t01_ticks_to_boundary(p, i);
 		if (ticks < GPTU_TICKS_HORIZON)
 			p->next = MIN(p->next, (int64_t) p->timers[i].start + gptu_ticks_to_deadline_ns(p, ticks));
@@ -1195,9 +1188,7 @@ static void gptu_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned s
 			gptu_t2_sync_timer(p);
 			p->t2con = value;
 			gptu_t2_update_state(p);
-			/* the count source selects a T0/T1 trigger, which is an input
-			 * to gptu_t01_observable(): T0/T1 may have become observable
-			 * and need their timer back */
+			/* the T2 inputs affect gptu_t01_observable() */
 			gptu_sync_timer(p);
 			break;
 
@@ -1227,17 +1218,14 @@ static void gptu_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned s
 			break;
 
 		case GPTU_OSEL:
-			/* a deferred output toggle routes through OSEL: apply the
-			 * pending ones before the new selection takes effect */
+			/* apply pending output toggles under the old selection */
 			gptu_sync_timer(p);
 			gptu_t2_sync_timer(p);
 			p->osel = value;
 			break;
 
 		case GPTU_OUT:
-			/* ditto: an overflow before this write toggles bits, a CLRO
-			 * here clears them, and the deferred toggle must not land
-			 * after the clear */
+			/* apply pending output toggles before SETO/CLRO */
 			gptu_sync_timer(p);
 			gptu_t2_sync_timer(p);
 			for (int i = 0; i < 8; i++) {

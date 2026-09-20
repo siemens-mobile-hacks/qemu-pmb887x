@@ -429,8 +429,7 @@ void pmb887x_lcd_set_ram_mode(pmb887x_lcd_t *lcd, bool flag) {
 }
 
 static uint32_t lcd_transfer(SSIPeripheral *dev, uint32_t data) {
-	/* per LCD byte: the class only installs this transfer on pmb887x_lcd_t
-	 * peripherals, so the checked cast (and its trace point) is skipped */
+	/* unchecked cast: called per byte, and only ever on a pmb887x_lcd_t */
 	pmb887x_lcd_t *lcd = (pmb887x_lcd_t *)dev;
 	if (lcd->reset_active)
 		return 0;
@@ -483,20 +482,11 @@ static uint32_t lcd_transfer(SSIPeripheral *dev, uint32_t data) {
 }
 
 /*
- * A blit is not a sequence of unrelated pixels, it is rows.  The per-pixel
- * loop re-derives that structure every time: a gram index from a multiply,
- * four MIN/MAX to grow the dirty rectangle, the window-wrap branches and
- * an indirect call through decode_pixel - per pixel.  All of that except
- * the decode is invariant within a row, so walk rows, and mark the
- * bounding box once at the end.
- *
- * Only the shape a framebuffer blit actually uses is taken: 16-bit pixels
- * landing on a pixel boundary, horizontal address mode, both counters
- * ascending, and a window inside the panel with the cursor in it.  Anything
- * else - vertical mode, a descending counter, a partial pixel carried in
- * from the previous burst, a window the panel could not hold - returns
- * false having touched nothing, and the caller runs the per-pixel loop
- * that was always there.
+ * Write a burst of pixels row by row, marking the dirty bounding box once
+ * at the end.  Handles only the common framebuffer blit: whole 16-bit
+ * pixels, horizontal address mode, both counters ascending, window inside
+ * the panel with the cursor in it.  Returns false, having touched nothing,
+ * for anything else.
  */
 static bool lcd_run_rows(pmb887x_lcd_t *lcd, const uint8_t *tx, unsigned n) {
 	if (lcd->byte_pp != 2 || lcd->tmp_index != 0 || (n & 1) || !lcd->gram ||
@@ -540,9 +530,7 @@ static bool lcd_run_rows(pmb887x_lcd_t *lcd, const uint8_t *tx, unsigned n) {
 		if (lcd->buffer_x > x2) {
 			lcd->buffer_x = x1;
 			lcd->buffer_y = lcd->buffer_y < y2 ? lcd->buffer_y + 1 : lcd->window.y1;
-			/* a run ending at the right edge still wraps the cursor
-			 * (lcd_incr_px() would), but the new row was not written
-			 * to and must not grow the dirty box */
+			/* the new row only dirties if something is written to it */
 			if (left && lcd->buffer_y < dy1)
 				dy1 = lcd->buffer_y;
 			if (left && lcd->buffer_y > dy2)
@@ -556,10 +544,8 @@ static bool lcd_run_rows(pmb887x_lcd_t *lcd, const uint8_t *tx, unsigned n) {
 	return true;
 }
 
-/* A whole DMA burst of pixel data in one loop: everything lcd_transfer()
- * re-tests per byte is invariant over a run of GRAM writes, so it is
- * tested once here.  Any other state falls back to the per-byte path,
- * which is also where a read has to go: only GRAM writes return zero. */
+/* lcd_transfer() for a whole burst of GRAM writes; anything else goes
+ * through the per-byte path */
 static unsigned lcd_transfer_run(SSIPeripheral *dev, const uint8_t *tx, uint8_t *rx, unsigned n) {
 	pmb887x_lcd_t *lcd = (pmb887x_lcd_t *)dev;
 

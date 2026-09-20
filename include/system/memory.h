@@ -314,21 +314,15 @@ struct MemoryRegionOps {
                                     MemTxAttrs attrs);
 
     /*
-     * Optional: @count writes of @size bytes each, all to @addr, taken
-     * in one call.  A DMA burst into a FIFO register is the whole
-     * display path on a phone - a framebuffer arrives one pixel per
-     * dispatch - and the per-access work above the device is then most
-     * of the cost.  A device that sets this must leave exactly the
-     * state @write would leave after the same @count writes; it is
-     * reached only through memory_region_dispatch_write_run(), so a
-     * caller that does not know about it is unaffected.
+     * Optional: @count writes of @size bytes each, all to @addr, in one
+     * call (a DMA burst into a FIFO register).  Must leave exactly the
+     * state @count calls of @write would.  Only reached through
+     * memory_region_dispatch_write_run().
      *
      * Returns whether the device took the words as one burst.  A device
-     * that cannot must still deliver them exactly as @write would (the
-     * usual fallback is a per-word loop) and return false: the return
-     * value says the caller cannot rely on burst semantics (a device
-     * that just took a run word by word may drop its request between
-     * the words), not that the words went missing.
+     * that cannot must still deliver them, usually by calling @write per
+     * word, and return false so the caller knows the device may have
+     * changed state (e.g. dropped a DMA request) between the words.
      */
     bool (*write_run)(void *opaque,
                       hwaddr addr,
@@ -2325,11 +2319,9 @@ MemoryRegionSection memory_region_find(MemoryRegion *mr,
 /**
  * memory_region_topology_gen: generation of the installed flatviews.
  *
- * Changes on every committed transaction that installed new views (romd
- * toggles included).  A translation obtained under one value stays
- * valid while the value is unchanged, so a device that dispatches many
- * accesses to one address may cache the (MemoryRegion, offset) pair
- * keyed on it instead of walking the flatview per access.
+ * Changes on every committed transaction that installed new views.  A
+ * translation stays valid while the value is unchanged, so a device may
+ * cache one keyed on it instead of walking the flatview per access.
  */
 uint64_t memory_region_topology_gen(void);
 
@@ -2464,10 +2456,9 @@ MemTxResult memory_region_dispatch_write_direct(MemoryRegion *mr, hwaddr addr,
 /**
  * memory_region_dispatch_write_run: hand @count @size-byte writes of @buf,
  * all to @addr, to the device in one call.  Same preconditions as
- * memory_region_dispatch_write_direct().  Returns false - having written
- * nothing - when @mr has no such path, so the caller writes word by word.
- * When the words were written, @burst (if non-NULL) reports whether the
- * device consumed them as one burst or handled them word by word - see
+ * memory_region_dispatch_write_direct().  Returns false, having written
+ * nothing, when @mr has no such path.  Otherwise @burst reports whether
+ * the device consumed the words as one burst; see
  * MemoryRegionOps::write_run.
  *
  * @mr: #MemoryRegion to access

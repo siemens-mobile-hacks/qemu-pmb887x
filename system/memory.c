@@ -1143,8 +1143,6 @@ void memory_region_transaction_begin(void)
     ++memory_region_transaction_depth;
 }
 
-/* Every committed transaction that installed a flatview, romd-only ones
- * included - the key a device may cache a translation under */
 static uint64_t topo_commit_gen = 1;
 
 uint64_t memory_region_topology_gen(void)
@@ -1573,12 +1571,9 @@ MemTxResult memory_region_dispatch_write(MemoryRegion *mr,
 }
 
 /* Whether an aligned size-byte write to mr can skip everything
- * memory_region_dispatch_write does around the device's own write
- * callback — alias resolution, the validity checks, the endianness
- * swap, the ioeventfd match and the access splitting.  The answer
- * depends only on mr and size, so a caller that writes the same region
- * once per transferred word (hw/arm/pmb887x/dmac.c) can decide it once
- * per translation window instead of per access. */
+ * memory_region_dispatch_write() does around the device's write callback:
+ * alias resolution, validity checks, endianness swap, ioeventfd match and
+ * access splitting. */
 bool memory_region_write_direct_ok(MemoryRegion *mr, unsigned size)
 {
     const MemoryRegionOps *ops = mr->ops;
@@ -1599,10 +1594,9 @@ bool memory_region_write_direct_ok(MemoryRegion *mr, unsigned size)
     return size >= impl_min && size <= impl_max;
 }
 
-/* The tail of memory_region_dispatch_write for a caller that has
+/* The tail of memory_region_dispatch_write() for a caller that has
  * already established memory_region_write_direct_ok() and an aligned
- * address: the reentrancy guard and the trace point are kept, since
- * both are observable. */
+ * address.  The reentrancy guard and trace point are kept. */
 MemTxResult memory_region_dispatch_write_direct(MemoryRegion *mr, hwaddr addr,
                                                 uint64_t data, unsigned size)
 {
@@ -1634,43 +1628,8 @@ MemTxResult memory_region_dispatch_write_direct(MemoryRegion *mr, hwaddr addr,
     return MEMTX_OK;
 }
 
-/* The same, for a whole DMA burst into one register.  The trace point is
- * per access and a run does not have one, so a build that is tracing
- * memory ops declines the run and gets its per-word records back. */
-bool memory_region_dispatch_write_run(MemoryRegion *mr, hwaddr addr,
-                                      const uint8_t *buf, unsigned size,
-                                      unsigned count, bool *burst)
-{
-    bool guarded;
-
-    if (!mr->ops->write_run || mr->subpage ||
-        trace_event_get_state_backends(TRACE_MEMORY_REGION_OPS_WRITE)) {
-        return false;
-    }
-
-    guarded = mr->dev && !mr->disable_reentrancy_guard &&
-        !mr->ram_device && !mr->ram && !mr->rom_device && !mr->readonly;
-    if (guarded) {
-        if (mr->dev->mem_reentrancy_guard.engaged_in_io) {
-            warn_report_once("Blocked re-entrant IO on MemoryRegion: "
-                             "%s at addr: 0x%" HWADDR_PRIX,
-                             memory_region_name(mr), addr);
-            return false;
-        }
-        mr->dev->mem_reentrancy_guard.engaged_in_io = true;
-    }
-
-    *burst = mr->ops->write_run(mr->opaque, addr, buf, size, count);
-
-    if (guarded) {
-        mr->dev->mem_reentrancy_guard.engaged_in_io = false;
-    }
-    return true;
-}
-
-/* The same, for a whole DMA burst into one register.  The trace point is
- * per access and a run does not have one, so a build that is tracing
- * memory ops declines the run and gets its per-word records back. */
+/* The same for a whole burst into one register.  A run has no per-access
+ * trace point, so it is declined while memory ops are being traced. */
 bool memory_region_dispatch_write_run(MemoryRegion *mr, hwaddr addr,
                                       const uint8_t *buf, unsigned size,
                                       unsigned count, bool *burst)

@@ -45,9 +45,7 @@ struct pmb887x_vic_t {
 	uint32_t revision;
 	
 	pmb887x_vic_irq_t irq_state[IRQS_COUNT];
-	/* bit i set = irq_state[i].level != 0: the pending scan walks only
-	 * these (a handful of the 170 lines are ever asserted; the scan runs
-	 * on every line change — thousands per second on the display path) */
+	/* bit i set = irq_state[i].level != 0; vic_pending() walks only these */
 	uint64_t asserted[(IRQS_COUNT + 63) / 64];
 
 	uint32_t fiq_con;
@@ -55,10 +53,8 @@ struct pmb887x_vic_t {
 
 	qemu_irq parent_irq;
 	qemu_irq parent_fiq;
-	/* last level driven on the CPU lines (-1 = never): the CPU's handler
-	 * is not free when the level is unchanged - a repeated "asserted" is
-	 * a cpu_interrupt() that forces the TB loop out - and a masked DMA
-	 * request line toggles through here twice per display word */
+	/* last level driven on the CPU lines (-1 = never): a repeated assert
+	 * still costs a cpu_interrupt() */
 	int8_t parent_irq_level;
 	int8_t parent_fiq_level;
 
@@ -97,8 +93,7 @@ static void vic_set_level(pmb887x_vic_t *p, int irq, int level) {
 		p->asserted[irq / 64] &= ~(1ULL << (irq % 64));
 }
 
-/* highest-priority asserted line of one class (fiq or irq) above the
- * mask; only the asserted bitmap is walked */
+/* highest-priority asserted line of one class (fiq or irq) above the mask */
 static int vic_pending(pmb887x_vic_t *p, bool fiq, uint32_t mask_priority) {
 	int irq_n = -1;
 	uint32_t max_priority = 0;
@@ -158,7 +153,7 @@ static void vic_irq_handler(void *opaque, int irq, int level) {
 	#endif
 
 	if (p->irq_state[irq].level == level)
-		return;         /* nothing changed: the pending state cannot have */
+		return;
 	vic_set_level(p, irq, level);
 	vic_update_state(p);
 }

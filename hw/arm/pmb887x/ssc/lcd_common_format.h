@@ -21,8 +21,8 @@ struct pmb887x_lcd_format_t {
 	uint32_t (*encode)(uint32_t);
 };
 
-/* Inline so a bulk GRAM write can decode a run without the indirect call
- * through pmb887x_lcd_t::decode_pixel; the table entry below is this. */
+/* inline for lcd_run_rows(), which decodes a burst without the indirect
+ * call through decode_pixel */
 static inline uint32_t pmb887x_lcd_rgb565_decode(uint32_t value) {
 	uint32_t red = (value >> 11) & 0x1F;
 	uint32_t green = (value >> 5) & 0x3F;

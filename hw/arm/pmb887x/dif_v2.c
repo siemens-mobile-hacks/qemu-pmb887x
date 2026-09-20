@@ -69,17 +69,11 @@ struct pmb887x_dif_t {
 	qemu_irq gpio_data[8];
 	qemu_irq gpio_cs[3];
 	qemu_irq gpio_cd;
-	/* last level driven on CS1..3/CD/RD/WR (-1 = never): the pins are
-	 * re-driven on every FIFO word and every consumer (GPIO proxy, LCD
-	 * CD/RD, SSI CS) is level-idempotent, so an unchanged level is skipped */
+	/* last level driven on CS1..3/CD/RD/WR and on the DMAC request lines
+	 * (-1 = never), so an unchanged level is not re-driven per FIFO word */
 	int8_t gpio_pin_level[6];
-	/* same for the eight DMAC request lines (dmac_handle_signal ignores an
-	 * unchanged level anyway) */
 	int8_t dmac_req_level[8];
-	/* inputs of the last dif_update_gpio_state pass: it runs twice per
-	 * FIFO word, usually with nothing changed (no such cache for
-	 * dif_trigger_dma - its inputs differ on every call of a word's
-	 * request / acknowledge sequence) */
+	/* inputs of the last dif_update_gpio_state() pass */
 	uint64_t gpio_state_key;
 	bool gpio_state_rx;
 	qemu_irq gpio_wr;
@@ -105,15 +99,11 @@ struct pmb887x_dif_t {
 	uint8_t bit_invert[32];
 	uint8_t bit_bcreg[32];
 	uint8_t bit_bcsel[32];
-	/* dif_mux() as four byte-lane lookups: mux_tab[cd][lane][byte] ORed
-	 * together, plus the constant bits (bcsel == 1) and the invert mask —
-	 * rebuilt by dif_update_mux, exactly the bit-per-bit result */
+	/* byte-lane lookup tables for dif_mux(), built by dif_build_mux_tables()
+	 * on the next transfer after a mux register write */
 	uint32_t mux_tab[2][4][256];
 	uint32_t mux_const[2];
 	uint32_t mux_invert;
-	/* a BMREG/BCSEL/BCREG/INVERT_BIT write changed the mux registers; the
-	 * tables are rebuilt on the next word (the firmware rewrites them far
-	 * more often than it transfers) */
 	bool mux_dirty;
 
 	uint32_t con;
@@ -244,7 +234,7 @@ static void dif_update_gpio_state(pmb887x_dif_t *p) {
 		return;
 	p->gpio_state_key = key;
 	p->gpio_state_rx = rx;
-	/* CS1, CS2, CS3, CD, RD, WR - built twice per FIFO word, keep it small */
+	/* CS1, CS2, CS3, CD, RD, WR */
 	const struct {
 		bool value;
 		uint32_t perreg;
@@ -449,10 +439,12 @@ static inline uint32_t dif_mux(pmb887x_dif_t *p, uint32_t value) {
 	        p->mux_const[cd]) ^ p->mux_invert;
 }
 
-/* The bit-per-bit definition: output bit o is input bit (cd ? o :
- * bit_mux[o]) when bcsel[o] == 0, the constant bcreg[o] when bcsel[o] == 1,
- * else 0, then XOR invert[o].  A bcsel == 0 bit is therefore set in the
- * entries of its input's byte lane whose index has that bit. */
+/*
+ * Output bit o is input bit (cd ? o : bit_mux[o]) when bcsel[o] == 0, the
+ * constant bcreg[o] when bcsel[o] == 1, else 0, then XOR invert[o].
+ * Precomputed as one 256-entry table per input byte lane so dif_mux() is
+ * four lookups ORed together.
+ */
 static void dif_build_mux_tables(pmb887x_dif_t *p) {
 	uint32_t invert = 0, cst = 0;
 	memset(p->mux_tab, 0, sizeof(p->mux_tab));
@@ -1288,9 +1280,8 @@ static void dif_handle_gpio_data_input(void *opaque, int id, int level) {
 static void dif_handle_dmac_tx_clr(void *opaque, int id, int level) {
 	pmb887x_dif_t *p = opaque;
 	p->dmac_tx_clr = level;
-	/* only the raised request(s): clearing an already-clear one is a
-	 * no-op for the register but re-runs the event handler (dif_schedule,
-	 * dif_trigger_dma) once per bit, on every DMA burst acknowledgement */
+	/* clear only the raised requests: each cleared bit re-runs the event
+	 * handler */
 	if (level == 1)
 		pmb887x_srb_set_icr(&p->srb, pmb887x_srb_get_ris(&p->srb) &
 			(DIFv2_ICR_TXSREQ | DIFv2_ICR_TXBREQ | DIFv2_ICR_TXLSREQ | DIFv2_ICR_TXLBREQ));
@@ -1410,9 +1401,6 @@ static void dif_realize(DeviceState *dev, Error **errp) {
 	}
 	dif_update_mux(p);
 
-	/* Never armed: the only uses are this creation and the timer_del in
-	 * dif_reset(); kept because dif_schedule() is a plain loop and a
-	 * firmware that ever needs a deadline will want it. */
 	p->timer = timer_new_ns(QEMU_CLOCK_REALTIME, dif_timer_reset, p);
 }
 

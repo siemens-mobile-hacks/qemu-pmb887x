@@ -155,9 +155,8 @@ SSIBus *ssi_create_bus(DeviceState *parent, const char *name)
 
 uint32_t ssi_transfer(SSIBus *bus, uint32_t val)
 {
-    /* plain casts: the checked ones' trace point costs a call per
-     * transferred byte on the LCD path; every child of an SSI bus is an
-     * SSIPeripheral (qdev checks the bus type at attach) */
+    /* unchecked casts: called per byte, and qdev already checks the bus
+     * type at attach */
     BusState *b = &bus->parent_obj;
     BusChild *kid;
     uint32_t r = 0;
@@ -177,11 +176,8 @@ unsigned ssi_transfer_run(SSIBus *bus, const uint8_t *tx, uint8_t *rx,
     BusChild *kid = QTAILQ_FIRST(&b->children);
     SSIPeripheral *p;
 
-    /*
-     * ssi_transfer() ORs every child's answer together.  One child is the
-     * only shape a run can reproduce without a separate rx buffer per
-     * child, and it is the shape of every bus on a display path.
-     */
+    /* ssi_transfer() ORs every child's answer together; a run only
+     * supports a single child */
     if (!kid || QTAILQ_NEXT(kid, sibling)) {
         return 0;
     }

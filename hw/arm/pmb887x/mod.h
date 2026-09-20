@@ -5,14 +5,11 @@
 #include "system/cpu-timers.h"
 
 /*
- * Clock for "completes now" device timers (dmac bursts, dif/ssc word
- * transfers).  QEMU_CLOCK_VIRTUAL under stock icount: the vCPU thread runs
- * those timers itself at the next TB boundary or in its idle warp, so a
- * completion never waits for a main-loop round trip and is deterministic.
- * The opt-in icount2 (precise-clocks) model runs a due virtual timer
- * synchronously inside timer_mod (timerlist_rearm -> icount2_sync), i.e.
- * re-entrantly from the device callback that armed it — keep the realtime
- * clock there, as before.
+ * Clock for "completes now" device timers (DMAC bursts, DIF/SSC word
+ * transfers).  QEMU_CLOCK_VIRTUAL runs them on the vCPU thread without a
+ * main-loop round trip.  icount2 runs due virtual timers synchronously
+ * inside timer_mod(), i.e. re-entrantly from the device callback that
+ * armed them, so it keeps the realtime clock.
  */
 static inline QEMUClockType pmb887x_completion_clock(void)
 {

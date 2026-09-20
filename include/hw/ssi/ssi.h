@@ -58,14 +58,10 @@ struct SSIPeripheralClass {
     uint32_t (*transfer_raw)(SSIPeripheral *dev, uint32_t val);
 
     /*
-     * Optional: @n bytes out and @n bytes back in one call.  A phone's
-     * framebuffer reaches its panel through this bus a byte at a time, and
-     * the scaffolding around @transfer - the bus walk, the indirect call,
-     * the CS test - is then most of what a pixel costs.  A peripheral that
-     * implements this must leave exactly the state @transfer would after
-     * the same @n bytes.  All or nothing: it returns @n, or 0 for "not in
-     * a state I can run", which sends the caller back to the per-byte path
-     * with nothing yet transferred.
+     * Optional: @n bytes out and @n bytes back in one call, leaving
+     * exactly the state @n calls of @transfer would.  Returns @n, or 0
+     * having transferred nothing, in which case the caller falls back to
+     * @transfer.
      */
     unsigned (*transfer_run)(SSIPeripheral *dev, const uint8_t *tx,
                              uint8_t *rx, unsigned n);
@@ -147,8 +143,8 @@ uint32_t ssi_transfer(SSIBus *bus, uint32_t val);
  * @n: how many
  *
  * Equivalent to @n ssi_transfer() calls of one byte each.  Returns @n, or
- * 0 when the bus or the peripheral has no such path - and then nothing has
- * been transferred and the caller must do it byte by byte.
+ * 0 having transferred nothing when the bus or peripheral has no such
+ * path; the caller then falls back to ssi_transfer().
  */
 unsigned ssi_transfer_run(SSIBus *bus, const uint8_t *tx, uint8_t *rx,
                           unsigned n);
