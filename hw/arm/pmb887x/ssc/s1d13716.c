@@ -85,6 +85,16 @@ static uint32_t gimmick_transfer(SSIPeripheral *dev, uint32_t in) {
 	return response;
 }
 
+/* only the LCD pass-through can run; the chip's own registers are
+ * handled per byte */
+static unsigned gimmick_transfer_run(SSIPeripheral *dev, const uint8_t *tx, uint8_t *rx, unsigned n) {
+	pmb887x_gimmick_t *p = (pmb887x_gimmick_t *)dev;
+
+	if (p->cs_app || !p->cs_lcd)
+		return 0;
+	return ssi_transfer_run(p->bus, tx, rx, n);
+}
+
 static void gimmick_handle_rs(void *opaque, int n, int level) {
 	pmb887x_gimmick_t *p = PMB887X_GIMMICK(opaque);
 	p->is_command = level == 0;
@@ -133,6 +143,7 @@ static void gimmick_class_init(ObjectClass *klass, const void *data) {
 	device_class_set_props(dc, gimmick_properties);
 	k->realize = gimmick_realize;
 	k->transfer = gimmick_transfer;
+	k->transfer_run = gimmick_transfer_run;
 	k->cs_polarity = SSI_CS_LOW;
 }
 

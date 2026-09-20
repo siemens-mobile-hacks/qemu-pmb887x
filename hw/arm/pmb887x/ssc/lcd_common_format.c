@@ -2,12 +2,7 @@
 #include "hw/arm/pmb887x/ssc/lcd_common_format.h"
 
 static uint32_t lcd_format_rgb565_decode(uint32_t value) {
-	uint32_t red = (value >> 11) & 0x1F;
-	uint32_t green = (value >> 5) & 0x3F;
-	uint32_t blue = value & 0x1F;
-	return ((red << 3) | (red >> 2)) << 16 |
-		((green << 2) | (green >> 4)) << 8 |
-		(blue << 3) | (blue >> 2);
+	return pmb887x_lcd_rgb565_decode(value);
 }
 
 static uint32_t lcd_format_rgb565_encode(uint32_t value) {

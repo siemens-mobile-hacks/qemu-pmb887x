@@ -21,4 +21,15 @@ struct pmb887x_lcd_format_t {
 	uint32_t (*encode)(uint32_t);
 };
 
+/* inline for lcd_run_rows(), which decodes a burst without the indirect
+ * call through decode_pixel */
+static inline uint32_t pmb887x_lcd_rgb565_decode(uint32_t value) {
+	uint32_t red = (value >> 11) & 0x1F;
+	uint32_t green = (value >> 5) & 0x3F;
+	uint32_t blue = value & 0x1F;
+	return ((red << 3) | (red >> 2)) << 16 |
+		((green << 2) | (green >> 4)) << 8 |
+		(blue << 3) | (blue >> 2);
+}
+
 const pmb887x_lcd_format_t *pmb887x_lcd_format_get(enum pmb887x_lcd_pixel_format_t format);
