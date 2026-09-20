@@ -1,6 +1,20 @@
 #pragma once
 #include "qemu/osdep.h"
 #include "hw/core/irq.h"
+#include "qemu/timer.h"
+#include "system/cpu-timers.h"
+
+/*
+ * Clock for "completes now" device timers (DMAC bursts, DIF/SSC word
+ * transfers).  QEMU_CLOCK_VIRTUAL runs them on the vCPU thread without a
+ * main-loop round trip.  icount2 runs due virtual timers synchronously
+ * inside timer_mod(), i.e. re-entrantly from the device callback that
+ * armed them, so it keeps the realtime clock.
+ */
+static inline QEMUClockType pmb887x_completion_clock(void)
+{
+	return icount2_enabled() ? QEMU_CLOCK_REALTIME : QEMU_CLOCK_VIRTUAL;
+}
 
 typedef struct pmb887x_clc_reg_t pmb887x_clc_reg_t;
 typedef struct pmb887x_src_reg_t pmb887x_src_reg_t;
