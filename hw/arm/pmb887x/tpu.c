@@ -122,6 +122,8 @@ struct pmb887x_tpu_t {
 	uint32_t counter;
 	int64_t start;
 	int64_t next;
+	int64_t armed;
+	bool armed_valid;
 	uint32_t frame_ticks;
 	uint32_t next_frame_ticks;
 	bool skip_extended;
@@ -367,12 +369,9 @@ static void tpu_finish_frame(pmb887x_tpu_t *p) {
 	}
 }
 
-static void tpu_update_timer(pmb887x_tpu_t *p) {
-	if (!p->enabled) {
-		timer_del(p->timer);
-		return;
-	}
-
+/* Bring the counter, frame, interrupts and event list up to the current
+ * virtual time and recompute p->next. */
+static void tpu_advance(pmb887x_tpu_t *p) {
 	uint64_t counter = tpu_get_counter(p);
 	uint64_t elapsed_ticks = counter - p->counter;
 	p->counter = (uint32_t) counter;
@@ -384,11 +383,30 @@ static void tpu_update_timer(pmb887x_tpu_t *p) {
 	p->next = p->start + tpu_ticks_to_ns(p, p->frame_ticks - p->counter);
 	p->next = tpu_run_irq(p, p->counter, p->start, p->next);
 	p->next = tpu_run_events(p, p->counter, p->start, p->next);
-	timer_mod(p->timer, p->next);
+}
+
+static void tpu_update_timer(pmb887x_tpu_t *p) {
+	if (!p->enabled) {
+		p->armed_valid = false;
+		timer_del(p->timer);
+		return;
+	}
+
+	tpu_advance(p);
+
+	/* called on every register write; timer_mod() only when the deadline
+	 * moved */
+	if (!p->armed_valid || p->armed != p->next || !timer_pending(p->timer)) {
+		p->armed = p->next;
+		p->armed_valid = true;
+		timer_mod(p->timer, p->next);
+	}
 }
 
 static void tpu_timer_callback(void *opaque) {
-	tpu_update_timer(opaque);
+	pmb887x_tpu_t *p = opaque;
+	p->armed_valid = false;
+	tpu_update_timer(p);
 }
 
 static void tpu_apply_offset(pmb887x_tpu_t *p) {
@@ -405,8 +423,6 @@ static void tpu_apply_offset(pmb887x_tpu_t *p) {
 
 static void tpu_update_state(pmb887x_tpu_t *p) {
 	bool was_enabled = p->enabled;
-	if (was_enabled)
-		tpu_update_timer(p);
 
 	uint32_t div = pmb887x_clc_get_rmc(&p->clc);
 	
@@ -431,6 +447,17 @@ static void tpu_update_state(pmb887x_tpu_t *p) {
 	
 	// new_freq = new_freq / 6;
 	
+	bool new_enabled = pmb887x_clc_is_enabled(&p->clc) && new_freq > 0 &&
+		(p->param & TPU_PARAM_TINI) != 0 && p->overflow >= 2;
+
+	/* Bring the counter up to date at the old rate, but only when the rate
+	 * or enable state changes or TINI resets the counter.  Otherwise the
+	 * tpu_advance() in tpu_update_timer() below does the same work. */
+	if (was_enabled && (p->freq != new_freq || p->enabled != new_enabled ||
+			    !(p->param & TPU_PARAM_TINI))) {
+		tpu_advance(p);
+	}
+
 	// Reset counter when TPU_PARAM_TINI=0
 	if (!(p->param & TPU_PARAM_TINI)) {
 		p->counter = 0;
@@ -444,10 +471,9 @@ static void tpu_update_state(pmb887x_tpu_t *p) {
 		p->triggers = 0;
 	}
 	
-	bool enabled = pmb887x_clc_is_enabled(&p->clc) && new_freq > 0 && (p->param & TPU_PARAM_TINI) != 0 && p->overflow >= 2;
-	if (p->freq != new_freq || p->enabled != enabled) {
+	if (p->freq != new_freq || p->enabled != new_enabled) {
 		p->freq = new_freq;
-		p->enabled = enabled;
+		p->enabled = new_enabled;
 		clock_update_hz(p->gsm_clock, p->freq);
 		DPRINTF("fsys=%d, ftpu=%d, fcounter=%d [%s]\n", pmb887x_pll_get_fsys(p->cgu), ftpu, p->freq, p->enabled ? "ON" : "OFF");
 	}
@@ -494,6 +520,21 @@ static uint32_t tpu_ram_read(pmb887x_tpu_t *p, uint32_t offset, size_t size) {
 static void tpu_ram_write(pmb887x_tpu_t *p, uint32_t offset, uint32_t value, size_t size) {
 	uint8_t *data = p->ram;
 	offset -= TPU_RAM0;
+
+	/* Fast path for the common aligned 2/4-byte write: same result as the
+	 * general code below (low half masked, high half zeroed). */
+	if (likely((size == 4 || size == 2) && (offset & (TPU_RAM_WORD_STRIDE - 1)) == 0)) {
+		uint16_t mask = offset / TPU_RAM_WORD_STRIDE < TPU_RF_RAM_WORDS ?
+			TPU_RF_RAM_WORD_MASK : UINT16_MAX;
+		uint16_t word = (uint16_t) value & mask;
+
+		data[offset] = (uint8_t) word;
+		data[offset + 1] = (uint8_t) (word >> 8);
+		data[offset + 2] = 0;
+		data[offset + 3] = 0;
+		return;
+	}
+
 	switch (size) {
 		case 1:
 			data[offset] = value & 0xFF;
@@ -653,11 +694,27 @@ static uint64_t tpu_io_read(void *opaque, hwaddr haddr, unsigned size) {
 	return value;
 }
 
+/*
+ * Can a write to this RAM word change p->next?  Only a write to the event
+ * tpu_run_events() stopped on (p->ceap) can: earlier events are done,
+ * later ones are re-read from RAM when the timer fires, and the rest of
+ * the RAM is not read before the next frame.
+ */
+static bool tpu_ram_write_moves_deadline(pmb887x_tpu_t *p, uint32_t offset) {
+	uint32_t word = (offset - TPU_RAM0) / TPU_RAM_WORD_STRIDE;
+
+	if (word < TPU_TIMER_RAM_BASE || p->events_finished)
+		return false;
+
+	word -= TPU_TIMER_RAM_BASE;
+	return word >= p->ceap && word < p->ceap + TPU_EVENT_WORDS;
+}
+
 static void tpu_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned size) {
 	pmb887x_tpu_t *p = (struct pmb887x_tpu_t *) opaque;
 	
 	IO_DUMP_WRITE(haddr + p->mmio.addr, size, value);
-	
+
 	switch (haddr) {
 		case TPU_CLC:
 			pmb887x_clc_set(&p->clc, value);
@@ -772,6 +829,8 @@ static void tpu_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned si
 
 		case TPU_RAM0 ... (TPU_RAM0 + TPU_RAM_SIZE - 1):
 			tpu_ram_write(p, haddr, value, size);
+			if (!tpu_ram_write_moves_deadline(p, haddr))
+				return;
 			break;
 
 		case TPU_RFSSC_SRC:
@@ -847,6 +906,7 @@ static void tpu_realize(DeviceState *dev, Error **errp) {
 static void tpu_reset(DeviceState *dev) {
 	pmb887x_tpu_t *p = PMB887X_TPU(dev);
 
+	p->armed_valid = false;
 	timer_del(p->timer);
 
 	pmb887x_clc_set(&p->clc, MOD_CLC_DISR);
