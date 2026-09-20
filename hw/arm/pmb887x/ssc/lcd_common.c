@@ -429,7 +429,8 @@ void pmb887x_lcd_set_ram_mode(pmb887x_lcd_t *lcd, bool flag) {
 }
 
 static uint32_t lcd_transfer(SSIPeripheral *dev, uint32_t data) {
-	pmb887x_lcd_t *lcd = PMB887X_LCD(dev);
+	/* unchecked cast: called per byte, and only ever on a pmb887x_lcd_t */
+	pmb887x_lcd_t *lcd = (pmb887x_lcd_t *)dev;
 	if (lcd->reset_active)
 		return 0;
 

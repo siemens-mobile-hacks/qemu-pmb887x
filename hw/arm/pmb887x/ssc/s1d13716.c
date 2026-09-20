@@ -49,7 +49,8 @@ struct pmb887x_gimmick_t {
 #define PMB887X_GIMMICK(obj)	OBJECT_CHECK(pmb887x_gimmick_t, (obj), TYPE_PMB887X_GIMMICK)
 
 static uint32_t gimmick_transfer(SSIPeripheral *dev, uint32_t in) {
-	pmb887x_gimmick_t *p = PMB887X_GIMMICK(dev);
+	/* unchecked cast: called per byte, and only ever on a pmb887x_gimmick_t */
+	pmb887x_gimmick_t *p = (pmb887x_gimmick_t *)dev;
 
 	if (!p->cs_app && p->cs_lcd)
 		return ssi_transfer(p->bus, in);
