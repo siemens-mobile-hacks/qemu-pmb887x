@@ -11,15 +11,28 @@
 #include "cpu.h"
 #include "qapi/error.h"
 #include "qemu/main-loop.h"
+#include "qemu/audio.h"
 #include "hw/core/qdev-properties.h"
 
 #include "hw/arm/pmb887x/gen/cpu_regs.h"
 #include "hw/arm/pmb887x/regs_dump.h"
 #include "hw/arm/pmb887x/mod.h"
+#include "hw/arm/pmb887x/pll.h"
 #include "hw/arm/pmb887x/trace.h"
 
 #define TYPE_PMB887X_CAPCOM	"pmb887x-capcom"
 #define PMB887X_CAPCOM(obj)	OBJECT_CHECK(pmb887x_capcom_t, (obj), TYPE_PMB887X_CAPCOM)
+
+/*
+ * The firmware plays .srt ringtones as a square wave on a compare output: one
+ * channel in compare mode 3, its timer reloaded to the note period and the
+ * compare register to half of it. Nothing else in the machine carries that
+ * signal, so the unit renders it to the host directly.
+ */
+#define CAPCOM_TONE_RATE	32000
+#define CAPCOM_TONE_LEVEL	6000
+/* Timer input is the module clock through a fixed /16 and then the T0I/T1I stage. */
+#define CAPCOM_TIMER_PRESCALER	16
 
 typedef struct pmb887x_capcom_t pmb887x_capcom_t;
 typedef struct pmb887x_capcom_cc_t pmb887x_capcom_cc_t;
@@ -55,6 +68,15 @@ struct pmb887x_capcom_t {
 	uint32_t t01ocr;
 	uint32_t whbsout;
 	uint32_t whbcout;
+	uint32_t cc[8];
+
+	struct pmb887x_cgu_t *cgu;
+	AudioBackend *audio;
+	SWVoiceOut *tone_voice;
+	uint32_t tone_step;
+	uint32_t tone_high;
+	double tone_phase;
+	bool tone_active;
 };
 
 struct pmb887x_capcom_cc_t {
@@ -93,8 +115,110 @@ static enum pmb887x_capcom_cc_mode_t capcom_get_mode(pmb887x_capcom_t *p, int id
 	return (ccm & cc->mod_mask) >> cc->mod_shift;
 }
 
+/* Ticks per second of a timer, or zero when it is stopped or counting events. */
+static uint32_t capcom_timer_freq(pmb887x_capcom_t *p, bool timer1) {
+	uint32_t input = timer1 ? CAPCOM_T01CON_T1I : CAPCOM_T01CON_T0I;
+	uint32_t shift = timer1 ? CAPCOM_T01CON_T1I_SHIFT : CAPCOM_T01CON_T0I_SHIFT;
+	uint32_t run = timer1 ? CAPCOM_T01CON_T1R : CAPCOM_T01CON_T0R;
+	uint32_t counter = timer1 ? CAPCOM_T01CON_T1M : CAPCOM_T01CON_T0M;
+	uint8_t rmc = pmb887x_clc_get_rmc(&p->clc);
+
+	if (!p->cgu || rmc == 0 || (p->t01con & run) == 0 || (p->t01con & counter) != 0)
+		return 0;
+	return pmb887x_pll_get_fsys(p->cgu) / rmc /
+		(CAPCOM_TIMER_PRESCALER << ((p->t01con & input) >> shift));
+}
+
+/*
+ * The square wave the first compare channel in mode 3 drives on its output:
+ * its timer runs free from the reload value to overflow, the output goes high
+ * on the compare match and low again on the overflow.
+ */
+static bool capcom_compare_output(pmb887x_capcom_t *p, uint32_t *freq, uint32_t *duty) {
+	for (size_t i = 0; i < ARRAY_SIZE(capcom_cc_list); i++) {
+		const pmb887x_capcom_cc_t *cc = &capcom_cc_list[i];
+		uint32_t ccm = p->ccm[cc->ccm_index];
+		bool timer1 = (ccm & cc->acc_mask) != 0;
+		uint32_t reload = timer1 ? p->t1rel : p->t0rel;
+		uint32_t clock = capcom_timer_freq(p, timer1);
+		uint32_t period = 0x10000 - reload;
+
+		if (((ccm & cc->mod_mask) >> cc->mod_shift) != CAPCOM_CC_MODE_3)
+			continue;
+		if (clock == 0 || reload == 0 || p->cc[i] <= reload)
+			continue;
+
+		*freq = clock / period;
+		*duty = (uint32_t) ((uint64_t) (0x10000 - p->cc[i]) * 0x10000 / period);
+		return true;
+	}
+	return false;
+}
+
 static void capcom_update_state(pmb887x_capcom_t *p) {
-	// TODO
+	uint32_t freq = 0, duty = 0;
+	bool active;
+
+	active = capcom_compare_output(p, &freq, &duty) && freq >= 20 && freq * 2 <= CAPCOM_TONE_RATE;
+	if (active) {
+		qatomic_set(&p->tone_step, (uint32_t) ((uint64_t) freq * 0x10000 / CAPCOM_TONE_RATE));
+		qatomic_set(&p->tone_high, duty);
+	}
+	if (p->tone_voice == NULL || active == p->tone_active)
+		return;
+
+	p->tone_active = active;
+	audio_be_set_active_out(p->audio, p->tone_voice, active);
+}
+
+/*
+ * Correction for the one sample an edge falls inside, so the wave is sampled as
+ * a band-limited step rather than a hard one (polyBLEP). Sampling the hard step
+ * folds every harmonic above the Nyquist frequency back into the audible band:
+ * for the 3520 Hz note at the top of a ringtone that lands a 320 Hz buzz and a
+ * 7.3 kHz whistle under the note, loud enough to hear as a wrong pitch.
+ */
+static double capcom_tone_step_residual(double phase, double step) {
+	if (phase < step) {
+		phase /= step;
+		return phase + phase - phase * phase - 1.0;
+	}
+	if (phase > 1.0 - step) {
+		phase = (phase - 1.0) / step;
+		return phase * phase + phase + phase + 1.0;
+	}
+	return 0.0;
+}
+
+static void capcom_tone_callback(void *opaque, int free_bytes) {
+	pmb887x_capcom_t *p = opaque;
+	int16_t chunk[256];
+
+	while (free_bytes >= (int) sizeof(chunk[0])) {
+		size_t count = MIN((size_t) free_bytes / sizeof(chunk[0]), ARRAY_SIZE(chunk));
+		size_t written;
+
+		for (size_t i = 0; i < count; i++) {
+			/* Per sample: a note can change part way through a buffer. */
+			double step = qatomic_read(&p->tone_step) / 65536.0;
+			double duty = qatomic_read(&p->tone_high) / 65536.0;
+			double fall = p->tone_phase - duty;
+			double level = p->tone_phase < duty ? 1.0 : -1.0;
+
+			level += capcom_tone_step_residual(p->tone_phase, step);
+			level -= capcom_tone_step_residual(fall < 0.0 ? fall + 1.0 : fall, step);
+			chunk[i] = (int16_t) (level * CAPCOM_TONE_LEVEL);
+
+			p->tone_phase += step;
+			if (p->tone_phase >= 1.0)
+				p->tone_phase -= 1.0;
+		}
+
+		written = audio_be_write(p->audio, p->tone_voice, chunk, count * sizeof(chunk[0]));
+		if (written == 0)
+			break;
+		free_bytes -= written;
+	}
 }
 
 static int capcom_get_index_from_reg(uint32_t reg) {
@@ -215,6 +339,17 @@ static uint64_t capcom_io_read(void *opaque, hwaddr haddr, unsigned size) {
 			value = pmb887x_src_get(&p->t_src[capcom_get_index_from_reg(haddr)]);
 			break;
 		
+		case CAPCOM_CC0:
+		case CAPCOM_CC1:
+		case CAPCOM_CC2:
+		case CAPCOM_CC3:
+		case CAPCOM_CC4:
+		case CAPCOM_CC5:
+		case CAPCOM_CC6:
+		case CAPCOM_CC7:
+			value = p->cc[(haddr - CAPCOM_CC0) / 4];
+			break;
+
 		default:
 			IO_DUMP_READ(haddr + p->mmio.addr, size, 0xFFFFFFFF);
 			EPRINTF("unknown reg access: %02"PRIX64"\n", haddr);
@@ -322,6 +457,17 @@ static void capcom_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned
 		case CAPCOM_T1_SRC:
 		case CAPCOM_T0_SRC:
 			pmb887x_src_set(&p->t_src[capcom_get_index_from_reg(haddr)], value);
+			break;
+
+		case CAPCOM_CC0:
+		case CAPCOM_CC1:
+		case CAPCOM_CC2:
+		case CAPCOM_CC3:
+		case CAPCOM_CC4:
+		case CAPCOM_CC5:
+		case CAPCOM_CC6:
+		case CAPCOM_CC7:
+			p->cc[(haddr - CAPCOM_CC0) / 4] = value;
 			break;
 		
 		default:
@@ -436,6 +582,8 @@ static void capcom_reset(DeviceState *dev) {
 	p->t01ocr = 0;
 	p->whbsout = 0;
 	p->whbcout = 0;
+	memset(p->cc, 0, sizeof(p->cc));
+	p->tone_phase = 0;
 
 	capcom_update_state(p);
 }
@@ -461,11 +609,23 @@ static void capcom_realize(DeviceState *dev, Error **errp) {
 		irqn++;
 	}
 	
+	if (audio_be_check(&p->audio, NULL)) {
+		struct audsettings as = {
+			.freq = CAPCOM_TONE_RATE,
+			.nchannels = 1,
+			.fmt = AUDIO_FORMAT_S16,
+			.big_endian = false,
+		};
+		p->tone_voice = audio_be_open_out(p->audio, NULL, "pmb887x-capcom-tone",
+			p, capcom_tone_callback, &as);
+	}
+
 	capcom_update_state(p);
 }
 
 static const Property capcom_properties[] = {
 	DEFINE_PROP_UINT32("revision", pmb887x_capcom_t, revision, 0),
+	DEFINE_PROP_LINK("cgu", pmb887x_capcom_t, cgu, "pmb887x-cgu", struct pmb887x_cgu_t *),
 };
 
 static void capcom_class_init(ObjectClass *klass, const void *data) {
