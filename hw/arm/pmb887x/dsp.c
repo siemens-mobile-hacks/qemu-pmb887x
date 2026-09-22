@@ -173,6 +173,8 @@ struct dsp_state_t {
 	uint8_t siemens_index;
 	uint32_t siemens_rate;
 	bool siemens_mp_pending;
+	/* Flag 9 stays up until the acknowledgement, long after the chunk is read. */
+	bool siemens_staged;
 	QEMUTimer *siemens_timer;
 };
 
@@ -491,8 +493,10 @@ static void dsp_siemens_pace(dsp_state_t *p) {
 static void dsp_siemens_service(dsp_state_t *p) {
 	if (!p->siemens_active || (p->com_status & DSP_SIEMENS_FLAGS) == 0)
 		return;
-	if ((p->com_status & DSP_SIEMENS_DATA_FLAG) != 0)
+	if ((p->com_status & DSP_SIEMENS_DATA_FLAG) != 0 && p->siemens_staged) {
+		p->siemens_staged = false;
 		dsp_siemens_consume(p);
+	}
 	dsp_siemens_pace(p);
 }
 
@@ -777,6 +781,8 @@ static void dsp_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned si
 			 * staged chunk has actually been consumed - including the first
 			 * chunk, which SGOLD2 firmware stages before it starts the player. */
 			p->com_status = (p->com_status | value) & DSP_SIEMENS_FLAGS;
+			if ((value & DSP_SIEMENS_DATA_FLAG) != 0)
+				p->siemens_staged = true;
 			// if ((value & 1) != 0) dsp_exec_command_ch0(p); // noisy logs
 			if ((value & 2) != 0) dsp_exec_command_ch1(p);
 			if ((value & 4) != 0) dsp_exec_command_ch2(p);
