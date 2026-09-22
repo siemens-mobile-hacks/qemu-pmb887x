@@ -6,12 +6,16 @@
 #define PMB887X_TRACE_IO		p->trace_io
 
 #include "qemu/osdep.h"
+#include <math.h>
 #include "hw/core/sysbus.h"
 #include "hw/core/hw-error.h"
 #include "system/memory.h"
 #include "qemu/main-loop.h"
+#include "qemu/atomic.h"
 #include "hw/core/qdev-properties.h"
 #include "hw/i2c/i2c.h"
+#include "hw/arm/pmb887x/gen/peripheral/PASIC.h"
+#include "hw/arm/pmb887x/pmic.h"
 #include "hw/arm/pmb887x/trace.h"
 
 #define TYPE_PMB887X_PMIC	"d1094xx"
@@ -26,7 +30,13 @@ struct pmb887x_pmic_t {
 	uint8_t wcycle;
 	uint8_t regs[256];
 	uint32_t revision;
+
+	/* Published to the audio paths; read from the DSP worker thread. */
+	uint32_t path_gain[PMB887X_PMIC_PATH_COUNT];
 };
+
+/* One codec per machine, and every audio path in it has to read the gain. */
+static pmb887x_pmic_t *pmic_device;
 
 static const uint8_t regs_D1094EC[256] = { // Siemens CX75 & M75
 	0x94, 0x00, 0x00, 0x00, 0x00, 0x08, 0x2F, 0x09, 0x00, 0xFF, 0x0E, 0x01, 0x06, 0x00, 0x10, 0x00,
@@ -123,6 +133,41 @@ static const uint8_t regs_D1094BB[256] = { // Siemens CX65/C65 (proto)
 	0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
 };
 
+/*
+ * An amplifier gain code is an attenuation in decibels. The firmware parks a
+ * path it is not driving at 0x39, fades a ringtone in by walking its code down
+ * from there, and steps the media path 0x0C, 0x08, 0x04, 0x01 as the volume
+ * keys are pressed. Each code is measured from the loudest the firmware
+ * programs on that path, so full volume plays at the level the emulator
+ * produced before the codec was modelled and every setting below it is quieter
+ * than that. PATH_4_SELECT shares the path 4 register and is masked off.
+ */
+#define PMIC_TONE_LOUDEST		0x18
+#define PMIC_STREAM_LOUDEST		0x01
+
+static uint32_t pmic_path_scale(const pmb887x_pmic_t *p, uint8_t reg, uint8_t mask, uint8_t loudest) {
+	int attenuation = (p->regs[reg] & mask) - loudest;
+
+	if (attenuation <= 0)
+		return PMB887X_PMIC_GAIN_UNITY;
+	return PMB887X_PMIC_GAIN_UNITY * pow(10.0, -attenuation / 20.0);
+}
+
+static void pmic_update_path_gains(pmb887x_pmic_t *p) {
+	qatomic_set(&p->path_gain[PMB887X_PMIC_PATH_TONE],
+		pmic_path_scale(p, PASIC_AMPLIFIER_GAIN_0,
+			PASIC_AMPLIFIER_GAIN_0_LEVEL, PMIC_TONE_LOUDEST));
+	qatomic_set(&p->path_gain[PMB887X_PMIC_PATH_STREAM],
+		pmic_path_scale(p, PASIC_AMPLIFIER_GAIN_4_5,
+			PASIC_AMPLIFIER_GAIN_4_5_GAIN, PMIC_STREAM_LOUDEST));
+}
+
+uint32_t pmb887x_pmic_output_gain(pmb887x_pmic_path_t path) {
+	if (pmic_device == NULL)
+		return PMB887X_PMIC_GAIN_UNITY;
+	return qatomic_read(&pmic_device->path_gain[path]);
+}
+
 static int pmic_event(I2CSlave *s, enum i2c_event event) {
 	pmb887x_pmic_t *p = PMB887X_PMIC(s);
 
@@ -162,6 +207,12 @@ static int pmic_send(I2CSlave *s, uint8_t data) {
 	} else {
 		IO_DUMP_WRITE(p->reg_id, 1, data);
 		p->regs[p->reg_id] = data;
+		switch (p->reg_id) {
+			case PASIC_AMPLIFIER_GAIN_0:
+			case PASIC_AMPLIFIER_GAIN_4_5:
+				pmic_update_path_gains(p);
+				break;
+		}
 		p->reg_id = (p->reg_id + 1) % ARRAY_SIZE(p->regs);
 	}
 
@@ -187,6 +238,9 @@ static void pmic_realize(DeviceState *dev, Error **errp) {
 	} else {
 		hw_error("pmb887x-pmic: unknown revision %02X", p->revision);
 	}
+
+	pmic_device = p;
+	pmic_update_path_gains(p);
 }
 
 static const Property pmic_properties[] = {

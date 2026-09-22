@@ -12,6 +12,7 @@
 #include "qapi/error.h"
 #include "qemu/main-loop.h"
 #include "qemu/audio.h"
+#include "hw/arm/pmb887x/pmic.h"
 #include "hw/core/qdev-properties.h"
 
 #include "hw/arm/pmb887x/gen/cpu_regs.h"
@@ -207,7 +208,13 @@ static void capcom_tone_callback(void *opaque, int free_bytes) {
 
 			level += capcom_tone_step_residual(p->tone_phase, step);
 			level -= capcom_tone_step_residual(fall < 0.0 ? fall + 1.0 : fall, step);
-			chunk[i] = (int16_t) (level * CAPCOM_TONE_LEVEL);
+			/*
+			 * The compare output drives the codec's amplifier path 0, which
+			 * the firmware walks up from silence to fade a ringtone in.
+			 */
+			chunk[i] = (int16_t) (level * CAPCOM_TONE_LEVEL *
+				pmb887x_pmic_output_gain(PMB887X_PMIC_PATH_TONE) /
+				PMB887X_PMIC_GAIN_UNITY);
 
 			p->tone_phase += step;
 			if (p->tone_phase >= 1.0)
