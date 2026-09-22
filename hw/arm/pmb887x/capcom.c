@@ -32,7 +32,11 @@
  */
 #define CAPCOM_TONE_RATE	32000
 #define CAPCOM_TONE_LEVEL	6000
-/* Timer input is the module clock through a fixed /16 and then the T0I/T1I stage. */
+/*
+ * Timer input ahead of the T0I/T1I stage. The C16x CAPCOM documents a /8
+ * prescaler on its module clock. The S-GOLD module clock is undocumented;
+ * fsys/16 is that /8 from 26 MHz, and puts the .srt notes at their pitch.
+ */
 #define CAPCOM_TIMER_PRESCALER	16
 
 typedef struct pmb887x_capcom_t pmb887x_capcom_t;
@@ -172,25 +176,6 @@ static void capcom_update_state(pmb887x_capcom_t *p) {
 	audio_be_set_active_out(p->audio, p->tone_voice, active);
 }
 
-/*
- * Correction for the one sample an edge falls inside, so the wave is sampled as
- * a band-limited step rather than a hard one (polyBLEP). Sampling the hard step
- * folds every harmonic above the Nyquist frequency back into the audible band:
- * for the 3520 Hz note at the top of a ringtone that lands a 320 Hz buzz and a
- * 7.3 kHz whistle under the note, loud enough to hear as a wrong pitch.
- */
-static double capcom_tone_step_residual(double phase, double step) {
-	if (phase < step) {
-		phase /= step;
-		return phase + phase - phase * phase - 1.0;
-	}
-	if (phase > 1.0 - step) {
-		phase = (phase - 1.0) / step;
-		return phase * phase + phase + phase + 1.0;
-	}
-	return 0.0;
-}
-
 static void capcom_tone_callback(void *opaque, int free_bytes) {
 	pmb887x_capcom_t *p = opaque;
 	int16_t chunk[256];
@@ -203,11 +188,8 @@ static void capcom_tone_callback(void *opaque, int free_bytes) {
 			/* Per sample: a note can change part way through a buffer. */
 			double step = qatomic_read(&p->tone_step) / 65536.0;
 			double duty = qatomic_read(&p->tone_high) / 65536.0;
-			double fall = p->tone_phase - duty;
 			double level = p->tone_phase < duty ? 1.0 : -1.0;
 
-			level += capcom_tone_step_residual(p->tone_phase, step);
-			level -= capcom_tone_step_residual(fall < 0.0 ? fall + 1.0 : fall, step);
 			/*
 			 * The compare output drives the codec's amplifier path 0, which
 			 * the firmware walks up from silence to fade a ringtone in.

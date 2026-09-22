@@ -24,17 +24,21 @@
 #define PMB887X_PMIC(obj)	OBJECT_CHECK(pmb887x_pmic_t, (obj), TYPE_PMB887X_PMIC)
 
 /*
- * Key-click tone generator. Pitch and envelope are taken from a recording of a
- * keypress on the phone: a 2963 Hz square held flat for 3 ms and gone inside 4.
- * DURATION counts half-milliseconds against that recording, which puts the 7 the
+ * Key-click tone generator. Pitch and length are taken from a recording of a
+ * keypress on the phone: a 2963 Hz square burst of about 3.5 ms. DURATION
+ * counts half-milliseconds against that recording, which puts the 7 the
  * firmware writes at the 3.5 ms it shows.
  */
 #define PMIC_CLICK_RATE			32000
 #define PMIC_CLICK_FREQ			2963
 #define PMIC_CLICK_DURATION_US		500
-#define PMIC_CLICK_RELEASE_US		1500
-/* Per-sample ring-down, reaching ~2% of full level across the release. */
-#define PMIC_CLICK_RELEASE_DECAY	0.92
+/*
+ * The generator does not run through the output amplifiers - clicks stay
+ * audible while both of those are parked silent - and every click the firmware
+ * fires programs the same tone level and gain, so this is its level: a click
+ * against music at the ratio the recordings show.
+ */
+#define PMIC_CLICK_PEAK			9772
 /* Leave the voice open well past the burst so the backend drains all of it. */
 #define PMIC_CLICK_LINGER_US		50000
 
@@ -55,14 +59,10 @@ struct pmb887x_pmic_t {
 	SWVoiceOut *click_voice;
 	QEMUTimer *click_timer;
 	bool click_active;
-	/* Published to the audio callback, which owns the envelope below. */
-	uint32_t click_step;
-	uint32_t click_level;
+	/* Published to the audio callback, which owns the burst below. */
 	uint32_t click_pending;
 	uint32_t click_hold;
-	uint32_t click_release;
 	double click_phase;
-	double click_decay;
 };
 
 /* One codec per machine, and every audio path in it has to read the gain. */
@@ -214,33 +214,23 @@ static void pmic_click_callback(void *opaque, int free_bytes) {
 	while (free_bytes >= (int) sizeof(chunk[0])) {
 		size_t count = MIN((size_t) free_bytes / sizeof(chunk[0]), ARRAY_SIZE(chunk));
 		uint32_t hold = qatomic_xchg(&p->click_pending, 0);
-		double step = qatomic_read(&p->click_step) / 65536.0;
-		uint32_t amplitude = qatomic_read(&p->click_level);
 		size_t written;
 
 		if (hold != 0) {
 			p->click_hold = hold;
-			p->click_release = PMIC_CLICK_RELEASE_US * PMIC_CLICK_RATE / 1000000;
 			p->click_phase = 0.0;
-			p->click_decay = 1.0;
 		}
 
 		for (size_t i = 0; i < count; i++) {
-			double level = p->click_phase < 0.5 ? 1.0 : -1.0;
-
-			if (p->click_hold > 0) {
-				p->click_hold--;
-			} else if (p->click_release > 0) {
-				p->click_release--;
-				p->click_decay *= PMIC_CLICK_RELEASE_DECAY;
-			} else {
+			if (p->click_hold == 0) {
 				/* Burst finished; hold the voice silent until it is closed. */
 				chunk[i] = 0;
 				continue;
 			}
+			p->click_hold--;
 
-			chunk[i] = (int16_t) (level * amplitude * p->click_decay);
-			p->click_phase += step;
+			chunk[i] = p->click_phase < 0.5 ? PMIC_CLICK_PEAK : -PMIC_CLICK_PEAK;
+			p->click_phase += (double) PMIC_CLICK_FREQ / PMIC_CLICK_RATE;
 			if (p->click_phase >= 1.0)
 				p->click_phase -= 1.0;
 		}
@@ -250,29 +240,6 @@ static void pmic_click_callback(void *opaque, int free_bytes) {
 			break;
 		free_bytes -= written;
 	}
-}
-
-/*
- * The tone generator has a level field and an amplifier of its own, parked at
- * 0x39 like any other path and opened to 0x22 to fire a click. It does not run
- * through the output amplifiers -- clicks stay audible while both of those are
- * parked silent -- so this is the whole chain. Every click the firmware fires
- * uses the same two codes, so PMIC_CLICK_PEAK is the level they stand for: a
- * click against music at the ratio the recordings show.
- */
-#define PMIC_CLICK_PEAK			9772
-#define PMIC_CLICK_REF_GAIN		0x22
-#define PMIC_CLICK_REF_TONE_LEVEL	1
-
-static uint32_t pmic_tone_level(const pmb887x_pmic_t *p) {
-	uint8_t reg = p->regs[PASIC_AMPLIFIER_GAIN_2];
-	uint32_t tone = (reg & PASIC_AMPLIFIER_GAIN_2_TONE_LEVEL) >>
-		PASIC_AMPLIFIER_GAIN_2_TONE_LEVEL_SHIFT;
-	int attenuation = (reg & PASIC_AMPLIFIER_GAIN_2_GAIN) - PMIC_CLICK_REF_GAIN;
-	double level = PMIC_CLICK_PEAK * (tone + 1.0) / (PMIC_CLICK_REF_TONE_LEVEL + 1.0) *
-		pow(10.0, -attenuation / 20.0);
-
-	return MIN(level, INT16_MAX);
 }
 
 /*
@@ -286,8 +253,6 @@ static void pmic_click_start(pmb887x_pmic_t *p) {
 	if (p->click_voice == NULL)
 		return;
 
-	qatomic_set(&p->click_step, PMIC_CLICK_FREQ * 0x10000u / PMIC_CLICK_RATE);
-	qatomic_set(&p->click_level, pmic_tone_level(p));
 	qatomic_set(&p->click_pending, MAX(hold_us * PMIC_CLICK_RATE / 1000000, 1));
 
 	if (!p->click_active) {
@@ -295,7 +260,7 @@ static void pmic_click_start(pmb887x_pmic_t *p) {
 		audio_be_set_active_out(p->audio, p->click_voice, true);
 	}
 	timer_mod(p->click_timer, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) +
-		(hold_us + PMIC_CLICK_RELEASE_US + PMIC_CLICK_LINGER_US) * SCALE_US);
+		(hold_us + PMIC_CLICK_LINGER_US) * SCALE_US);
 }
 
 static int pmic_event(I2CSlave *s, enum i2c_event event) {
