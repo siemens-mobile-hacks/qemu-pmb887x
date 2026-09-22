@@ -26,7 +26,6 @@ dsp_bus_t *dsp_bus_create(const pmb887x_dsp_config_t *config, const dsp_host_t *
 void dsp_bus_destroy(dsp_bus_t *bus);
 void dsp_bus_reset(dsp_bus_t *bus);
 void dsp_bus_set_clock(dsp_bus_t *bus, bool enabled);
-void dsp_bus_set_core_idle(dsp_bus_t *bus, bool idle);
 void dsp_bus_advance(dsp_bus_t *bus, size_t cycles);
 void dsp_bus_advance_afe(dsp_bus_t *bus, size_t cycles);
 void dsp_bus_pace_i2s(dsp_bus_t *bus, int64_t now, bool core_parked);

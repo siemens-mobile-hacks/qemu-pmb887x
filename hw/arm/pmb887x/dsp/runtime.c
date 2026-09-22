@@ -382,7 +382,6 @@ void dsp_runtime_reset(dsp_runtime_t *runtime) {
 	dsp_runtime_load_words(runtime->data + config->data_rom_base, runtime->data_rom, data_fixed_words);
 
 	dsp_bus_reset(runtime->bus);
-	dsp_bus_set_core_idle(runtime->bus, false);
 	teak_tcg_reset(&runtime->core, config->program_rom_base + 2);
 
 	runtime->data[config->shared_base] = runtime->rom_version;
@@ -413,7 +412,6 @@ bool dsp_runtime_run(dsp_runtime_t *runtime) {
 	runtime->core.chain_exit_pc = 0;
 
 	qatomic_set(&runtime->idle, false);
-	dsp_bus_set_core_idle(runtime->bus, false);
 
 	while (cycles < DSP_ACTIVE_SLICE_CYCLES && !runtime->halted) {
 		uint8_t block_repeat_level;
@@ -446,7 +444,6 @@ bool dsp_runtime_run(dsp_runtime_t *runtime) {
 			active_lines = dsp_bus_get_irq_lines(runtime->bus);
 			if (active_lines == 0) {
 				qatomic_set(&runtime->idle, true);
-				dsp_bus_set_core_idle(runtime->bus, true);
 				break;
 			}
 			qatomic_set(&runtime->core_disabled, false);

@@ -151,8 +151,6 @@ bool timer1_is_active(const dsp_device_t *device);
 
 dsp_device_t *timer2_create(const pmb887x_dsp_peripheral_config_t *config, dsp_device_t *interrupt);
 void timer2_set_clock_enabled(dsp_device_t *device, bool enabled);
-void timer2_set_core_idle(dsp_device_t *device, bool idle);
-void timer2_advance(dsp_device_t *device, size_t cycles);
 bool timer2_is_active(dsp_device_t *device);
 
 dsp_device_t *unknown_create(const pmb887x_dsp_peripheral_config_t *config);

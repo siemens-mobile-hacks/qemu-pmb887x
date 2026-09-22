@@ -178,11 +178,6 @@ void dsp_bus_set_clock(dsp_bus_t *bus, bool enabled) {
 		timer2_set_clock_enabled(bus->timer2, enabled);
 }
 
-void dsp_bus_set_core_idle(dsp_bus_t *bus, bool idle) {
-	if (bus->timer2 != NULL)
-		timer2_set_core_idle(bus->timer2, idle);
-}
-
 void dsp_bus_advance(dsp_bus_t *bus, size_t cycles) {
 	/*
 	 * The AFE is intentionally NOT advanced here. It is a real-time sample
@@ -209,8 +204,6 @@ void dsp_bus_advance(dsp_bus_t *bus, size_t cycles) {
 		ssc_advance(bus->ssc, cycles);
 	if (bus->timer1 != NULL && timer1_is_active(bus->timer1))
 		timer1_advance(bus->timer1, cycles);
-	if (bus->timer2 != NULL && timer2_is_active(bus->timer2))
-		timer2_advance(bus->timer2, cycles);
 }
 
 void dsp_bus_advance_afe(dsp_bus_t *bus, size_t cycles) {
@@ -248,8 +241,6 @@ void dsp_bus_apply_audio_format(dsp_bus_t *bus) {
 void dsp_bus_advance_timers(dsp_bus_t *bus, size_t cycles) {
 	if (bus->timer1 != NULL && timer1_is_active(bus->timer1))
 		timer1_advance(bus->timer1, cycles);
-	if (bus->timer2 != NULL && timer2_is_active(bus->timer2))
-		timer2_advance(bus->timer2, cycles);
 }
 
 bool dsp_bus_is_active(const dsp_bus_t *bus) {
