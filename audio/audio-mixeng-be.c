@@ -30,6 +30,17 @@
 
 #define SW_NAME(sw) (sw)->name ? (sw)->name : "unknown"
 
+/*
+ * A sound card consumes samples on its own crystal, so the mixer that feeds it
+ * has to be driven by host time as well. QEMU_CLOCK_VIRTUAL is not host time
+ * under -icount: it advances with retired instructions, so it stops outright
+ * whenever a device parks the vCPU waiting on something outside it. A sink
+ * paced by that clock stops draining for as long as the vCPU is parked, which
+ * the device upstream sees as its output queue backing up. VIRTUAL_RT is the
+ * same clock when icount is off, and host nanoseconds when it is on.
+ */
+#define AUDIO_CLOCK QEMU_CLOCK_VIRTUAL_RT
+
 #define audio_bug(fmt, ...) error_report("%s: " fmt, __func__, ##__VA_ARGS__)
 
 const struct mixeng_volume nominal_volume = {
@@ -590,10 +601,10 @@ static void audio_reset_timer(AudioMixengBackend *s)
 {
     if (audio_is_timer_needed(s)) {
         timer_mod_anticipate_ns(s->ts,
-            qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + s->period_ticks);
+            qemu_clock_get_ns(AUDIO_CLOCK) + s->period_ticks);
         if (!s->timer_running) {
             s->timer_running = true;
-            s->timer_last = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
+            s->timer_last = qemu_clock_get_ns(AUDIO_CLOCK);
             trace_audio_timer_start(s->period_ticks / SCALE_MS);
         }
     } else {
@@ -610,7 +621,7 @@ static void audio_timer (void *opaque)
     int64_t now, diff;
     AudioMixengBackend *s = opaque;
 
-    now = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
+    now = qemu_clock_get_ns(AUDIO_CLOCK);
     diff = now - s->timer_last;
     if (diff > s->period_ticks * 3 / 2) {
         trace_audio_timer_delayed(diff / SCALE_MS);
@@ -1456,7 +1467,7 @@ static void audio_mixeng_backend_init(Object *obj)
     QLIST_INIT(&s->hw_head_out);
     QLIST_INIT(&s->hw_head_in);
     QLIST_INIT(&s->cap_head);
-    s->ts = timer_new_ns(QEMU_CLOCK_VIRTUAL, audio_timer, s);
+    s->ts = timer_new_ns(AUDIO_CLOCK, audio_timer, s);
     s->run_timer = g_timer_new();
 
     s->vmse = qemu_add_vm_change_state_handler(audio_vm_change_state_handler, s);
@@ -1726,7 +1737,7 @@ int audio_buffer_bytes(AudiodevPerDirectionOptions *pdo,
 void audio_rate_start(RateCtl *rate)
 {
     memset(rate, 0, sizeof(RateCtl));
-    rate->start_ticks = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
+    rate->start_ticks = qemu_clock_get_ns(AUDIO_CLOCK);
 }
 
 size_t audio_rate_peek_bytes(RateCtl *rate, struct audio_pcm_info *info)
@@ -1736,7 +1747,7 @@ size_t audio_rate_peek_bytes(RateCtl *rate, struct audio_pcm_info *info)
     int64_t bytes;
     int64_t frames;
 
-    now = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
+    now = qemu_clock_get_ns(AUDIO_CLOCK);
     ticks = now - rate->start_ticks;
     bytes = muldiv64(ticks, info->bytes_per_second, NANOSECONDS_PER_SECOND);
     frames = (bytes - rate->bytes_sent) / info->bytes_per_frame;
