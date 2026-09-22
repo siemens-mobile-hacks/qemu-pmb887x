@@ -30,6 +30,7 @@ struct pmb887x_flash_blk_t {
 	/* write-behind (wasm): dirty ranges flushed by a main-loop BH */
 	GArray *dirty;
 	QEMUBH *flush_bh;
+	unsigned inflight;
 	VMChangeStateEntry *vmstate;
 };
 
@@ -47,7 +48,7 @@ int pmb887x_flash_blk_pread(pmb887x_flash_blk_t *flash, int64_t offset, int64_t 
  * from a main-loop bottom half (the coroutine-capable thread); the
  * storage array always holds the latest data, so writing later is exact.
  */
-static void flash_blk_flush(pmb887x_flash_blk_t *flash) {
+static void flash_blk_write_sync(pmb887x_flash_blk_t *flash) {
 	GArray *dirty = flash->dirty;
 
 	if (!dirty->len)
@@ -64,21 +65,70 @@ static void flash_blk_flush(pmb887x_flash_blk_t *flash) {
 	g_array_free(dirty, true);
 }
 
+typedef struct {
+	pmb887x_flash_blk_t *flash;
+	QEMUIOVector qiov;
+} flash_blk_req_t;
+
+static void flash_blk_write_done(void *opaque, int ret) {
+	flash_blk_req_t *req = opaque;
+	pmb887x_flash_blk_t *flash = req->flash;
+
+	if (ret < 0) {
+		EPRINTF("Can't write to flash file: %d, %s", ret, strerror(-ret));
+		exit(1);
+	}
+	qemu_iovec_destroy(&req->qiov);
+	g_free(req);
+	if (--flash->inflight == 0 && flash->dirty->len)
+		qemu_bh_schedule(flash->flush_bh);
+}
+
+/*
+ * Asynchronous, one generation in flight.  A synchronous blk_pwrite() here
+ * polls the thread pool with the BQL held, so every flash MMIO the vCPU made
+ * meanwhile waited for the file write: through a KE970 boot the main loop
+ * sat in this BH ~240 ms of every second and the vCPU 230-370 ms in the BQL.
+ * Ranges dirtied while a generation is in flight wait for all of it to
+ * complete (flash_blk_write_done reschedules), so a later write of a range
+ * always lands after an earlier one and the file converges on the storage.
+ */
 static void flash_blk_flush_bh(void *opaque) {
-	flash_blk_flush(opaque);
+	pmb887x_flash_blk_t *flash = opaque;
+	GArray *dirty = flash->dirty;
+
+	if (flash->inflight || !dirty->len)
+		return;
+	flash->dirty = g_array_new(false, false, sizeof(flash_blk_dirty_t));
+	for (guint i = 0; i < dirty->len; i++) {
+		flash_blk_dirty_t *d = &g_array_index(dirty, flash_blk_dirty_t, i);
+		flash_blk_req_t *req = g_new(flash_blk_req_t, 1);
+
+		req->flash = flash;
+		qemu_iovec_init_buf(&req->qiov, (void *) d->src, d->size);
+		flash->inflight++;
+		blk_aio_pwritev(flash->blk, d->offset, &req->qiov, 0, flash_blk_write_done, req);
+	}
+	g_array_free(dirty, true);
 }
 
 static void flash_blk_vm_state(void *opaque, bool running, RunState state) {
-	if (!running)
-		flash_blk_flush(opaque);
+	pmb887x_flash_blk_t *flash = opaque;
+
+	if (!running) {
+		blk_drain(flash->blk);
+		flash_blk_write_sync(flash);
+	}
 }
 
 int pmb887x_flash_blk_pwrite(pmb887x_flash_blk_t *flash, int64_t offset, int64_t size, void *value) {
 	flash_blk_dirty_t *last = flash->dirty->len ?
 		&g_array_index(flash->dirty, flash_blk_dirty_t, flash->dirty->len - 1) : NULL;
 	/*
-	 * A non-empty list always has its flush pending (the BH swaps the list
-	 * out before writing it).  qemu_bh_schedule() on a pending BH is not a
+	 * A non-empty list always has its flush pending: either the BH is
+	 * scheduled, or a generation is in flight and its completion schedules
+	 * it (the BH swaps the list out before writing it, and flash MMIO runs
+	 * under the BQL).  qemu_bh_schedule() on a pending BH is not a
 	 * no-op: aio_bh_enqueue() still aio_notify()s, i.e. a futex wake of
 	 * the main loop per programmed word -- ~130k/s through a KE970 boot.
 	 */
