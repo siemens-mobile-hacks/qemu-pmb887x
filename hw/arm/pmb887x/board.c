@@ -194,8 +194,13 @@ static void pmb887x_init(MachineState *machine) {
 	sysbus_realize_and_unref(SYS_BUS_DEVICE(usb), &error_fatal);
 
 	// DSP
-	DeviceState *dsp = pmb887x_new_cpu_module("DSP");
-	pmb887x_dsp_set_config(dsp, pmb887x_cpu_get(pmb887x_board()->cpu)->dsp_config);
+	/* The Teak core only runs the PMB8875 mask ROM so far; see dsp.c. */
+	bool dsp_stub = pmb887x_board()->cpu != CPU_PMB8875;
+	DeviceState *dsp = pmb887x_new_cpu_module_as("DSP", dsp_stub ? TYPE_PMB887X_DSP_STUB : NULL);
+	if (dsp_stub)
+		pmb887x_dsp_stub_set_config(dsp, pmb887x_cpu_get(pmb887x_board()->cpu)->dsp_config);
+	else
+		pmb887x_dsp_set_config(dsp, pmb887x_cpu_get(pmb887x_board()->cpu)->dsp_config);
 	pmb887x_board_init_dsp(dsp);
 	qdev_connect_clock_in(dsp, "GSM_CLOCK", qdev_get_clock_out(tpu, "GSM_CLOCK"));
 	sysbus_realize_and_unref(SYS_BUS_DEVICE(dsp), &error_fatal);
@@ -291,10 +296,12 @@ static void pmb887x_init(MachineState *machine) {
 
 	// CAPCOM0
 	DeviceState *capcom0 = pmb887x_new_cpu_module("CAPCOM0");
+	object_property_set_link(OBJECT(capcom0), "cgu", OBJECT(cgu), &error_fatal);
 	sysbus_realize_and_unref(SYS_BUS_DEVICE(capcom0), &error_fatal);
-	
+
 	// CAPCOM1
 	DeviceState *capcom1 = pmb887x_new_cpu_module("CAPCOM1");
+	object_property_set_link(OBJECT(capcom1), "cgu", OBJECT(cgu), &error_fatal);
 	sysbus_realize_and_unref(SYS_BUS_DEVICE(capcom1), &error_fatal);
 
 	// RTC

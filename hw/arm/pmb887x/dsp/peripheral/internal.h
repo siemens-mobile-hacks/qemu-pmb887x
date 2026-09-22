@@ -78,6 +78,7 @@ bool afe_is_active(const dsp_device_t *device);
 
 size_t afe_audio_push_samples(dsp_device_t *device, const uint16_t *samples, size_t count);
 bool afe_audio_has_room(dsp_device_t *device, size_t count);
+size_t afe_audio_queued_samples(dsp_device_t *device);
 void afe_audio_set_format(dsp_device_t *device, unsigned freq, unsigned channels);
 
 dsp_device_t *baseband_create(const pmb887x_dsp_peripheral_config_t *config, dsp_device_t *interrupt, const dsp_host_t *host);
@@ -105,9 +106,14 @@ bool equalizer_is_active(const dsp_device_t *device);
 uint16_t equalizer_external_read(dsp_device_t *device);
 void equalizer_external_write(dsp_device_t *device, uint16_t value);
 
-dsp_device_t *i2s_create(const pmb887x_dsp_peripheral_config_t *config, dsp_device_t *interrupt, uint16_t interrupt_flag);
+dsp_device_t *i2s_create(const pmb887x_dsp_peripheral_config_t *config, dsp_device_t *interrupt,
+	uint16_t interrupt_flag, dsp_device_t *audio_sink);
 void i2s_advance(dsp_device_t *device, size_t cycles);
 bool i2s_is_active(const dsp_device_t *device);
+void i2s_pace(dsp_device_t *device, int64_t now, bool core_parked);
+bool i2s_is_paced(const dsp_device_t *device);
+void i2s_apply_audio_format(dsp_device_t *device);
+void i2s_note_ram_write(dsp_device_t *device, uint16_t address, uint16_t value);
 
 dsp_device_t *i2s_tx_create(const pmb887x_dsp_peripheral_config_t *config, dsp_device_t *interrupt);
 void i2s_tx_advance(dsp_device_t *device, size_t cycles);
@@ -145,8 +151,6 @@ bool timer1_is_active(const dsp_device_t *device);
 
 dsp_device_t *timer2_create(const pmb887x_dsp_peripheral_config_t *config, dsp_device_t *interrupt);
 void timer2_set_clock_enabled(dsp_device_t *device, bool enabled);
-void timer2_set_core_idle(dsp_device_t *device, bool idle);
-void timer2_advance(dsp_device_t *device, size_t cycles);
 bool timer2_is_active(dsp_device_t *device);
 
 dsp_device_t *unknown_create(const pmb887x_dsp_peripheral_config_t *config);

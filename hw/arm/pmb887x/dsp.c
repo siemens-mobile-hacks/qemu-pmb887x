@@ -43,11 +43,27 @@
 #define DSP_COMM_SYNC_TIMEOUT_MS	50
 #define DSP_COMM_SPIN_NS	(100 * SCALE_US)
 #define DSP_SSC_BUS_NAME	"pmb887x-dsp-ssc"
+/*
+ * This file is compiled twice: once as itself for the core that executes the
+ * mask ROM, and once from dsp-stub.c with STUB_DSP set, which answers the
+ * firmware's runtime commands from the host instead. Only the PMB8875 ROM
+ * (0x0602) runs on the core so far, so board.c still picks the stub for the
+ * PMB8876. Everything below is static apart from pmb887x_dsp_set_config, and
+ * the two builds share nothing else.
+ */
+#ifndef STUB_DSP
+#define STUB_DSP 0
+#endif
+
+#if STUB_DSP
+#define TYPE_PMB887X_DSP	TYPE_PMB887X_DSP_STUB
+#define pmb887x_dsp_set_config	pmb887x_dsp_stub_set_config
+#else
 #define TYPE_PMB887X_DSP	"pmb887x-dsp"
+#endif
 #define PMB887X_DSP(obj)	OBJECT_CHECK(dsp_state_t, (obj), TYPE_PMB887X_DSP)
 
-#define STUB_DSP 1
-#ifdef STUB_DSP
+#if STUB_DSP
 #include "hw/arm/pmb887x/dsp/hle.h"
 
 #define DSP_CHAN0_CMD_ADDR	0x0005
@@ -66,6 +82,66 @@
 #define DSP_COM_BUSY_BIT	0x8	/* DSP-owned: runtime pipe busy (a command block is still buffered) */
 #define DSP_COM_OVERRUN_BIT	0x10	/* DSP-owned: a runtime command arrived while the pipe was still busy */
 
+/*
+ * The mask ROM's PCMPLAY command has two client styles. One feeds samples
+ * through the INIT/FEED/END sub-commands above (LG firmware does this). The
+ * other (Siemens firmware) stages a chunk of the source stream in shared RAM
+ * and raises communication flag 9; the mask ROM decodes the chunk, clears the
+ * flag and interrupts the MCU to ask for the next one. Both are driver
+ * conventions over the same mask-ROM command.
+ *
+ * A chunk is a fixed run of equally sized sub-blocks, each a two-word header
+ * { type, payload words } followed by its payload. The payloads are the source
+ * stream copied verbatim and contiguously, so for the IMA ADPCM streams the
+ * melodies use, a 4-byte IMA block header turns up inline every 256 bytes:
+ * `type` is the word offset within the payload where one begins, or
+ * DSP_CHUNK_SUB_CONT when this sub-block carries none.
+ */
+#define DSP_COM_CHUNK_STAGED_BIT	0x200	/* communication flag 9: a chunk is staged */
+#define DSP_COM_PLAYER_PARAMS_BIT	0x400	/* communication flag 10: player parameters */
+#define DSP_COM_STREAM_BITS	(DSP_COM_CHUNK_STAGED_BIT | DSP_COM_PLAYER_PARAMS_BIT)
+#define DSP_CHUNK_WORDS	0x60
+#define DSP_CHUNK_SUB_WORDS	24
+#define DSP_CHUNK_SUB_CONT	0xFFFF
+/*
+ * The media player (linear PCM) hands its samples over differently: it stages
+ * a block of 16-bit mono samples in the window right after the chunk buffer,
+ * headed by a word carrying the sample count and a ready bit, and waits for
+ * the ready bit to be taken down again.
+ */
+#define DSP_MP_WORDS	0x100
+#define DSP_MP_READY	0x8000
+#define DSP_MP_COUNT	0x01FF
+/* Worst case is ADPCM: every payload word carries four samples. */
+#define DSP_CHUNK_MAX_SAMPLES	(DSP_CHUNK_WORDS * 4)
+QEMU_BUILD_BUG_ON(DSP_CHUNK_MAX_SAMPLES < DSP_MP_WORDS);
+/* How much audio to keep buffered in the backend ahead of real time. */
+#define DSP_STREAM_BUFFER_NS	(400 * SCALE_MS)
+/*
+ * Never acknowledge from inside the submit path: the firmware has not finished
+ * its bookkeeping yet and would drop the request, stalling the stream. This
+ * also covers the empty chunk the driver stages when it (re)starts a stream.
+ */
+#define DSP_STREAM_MIN_ACK_NS	(5 * SCALE_MS)
+#define DSP_STREAM_DEFAULT_RATE	16000
+/*
+ * For the chunk stream PCMPLAY SWITCH is a bit mask, not the INIT/FEED/END
+ * enum: bit 6 selects the ADPCM player the melodies use (the media player
+ * streams linear PCM instead), and the upper bits name the player. Whether
+ * this is a start or a stop is in the parameters, not the switch - a stop
+ * leaves them all clear.
+ */
+#define DSP_PCMPLAY_SWITCH_PLAYER_MASK	0x03C0
+#define DSP_PCMPLAY_SWITCH_ADPCM	0x0040
+/*
+ * PCMPLAY parameters: nonzero while starting, and the stream rate in Hz. This
+ * is the same parameter block the INIT path reads, whose rate field is word 3.
+ */
+#define DSP_PCMPLAY_PAR_RUN	3
+#define DSP_PCMPLAY_PAR_RATE	8
+/* MCU interrupt the audio task listens on (SCU service request DSP_SRC1). */
+#define DSP_MCU_ACK_IRQ	1
+
 typedef struct dsp_state_t dsp_state_t;
 
 struct dsp_state_t {
@@ -77,7 +153,6 @@ struct dsp_state_t {
 	uint32_t sem_set;
 	uint32_t sem_status;
 	uint8_t ram[DSP_RAM_SIZE];
-	uint32_t ram0_value;
 	uint32_t revision;
 	uint32_t rom_version;
 	Clock *gsm_clock;
@@ -95,6 +170,17 @@ struct dsp_state_t {
 	uint16_t pcm_len;
 	uint16_t pcm_block[DSP_PCM_MAX_WORDS];
 	QEMUTimer *refill_timer;
+
+	/* Shared-RAM chunk stream. */
+	bool stream_active;
+	bool stream_adpcm;
+	int16_t ima_pred;
+	uint8_t ima_index;
+	uint32_t stream_rate;
+	bool mp_pending;
+	/* Flag 9 stays up until the acknowledgement, long after the chunk is read. */
+	bool chunk_staged;
+	QEMUTimer *stream_timer;
 };
 
 static inline uint16_t dsp_read_word(dsp_state_t *p, uint32_t offset) {
@@ -102,11 +188,17 @@ static inline uint16_t dsp_read_word(dsp_state_t *p, uint32_t offset) {
 	return mem[offset];
 }
 
+static inline void dsp_write_word(dsp_state_t *p, uint32_t offset, uint16_t value) {
+	((uint16_t *) &p->ram[0])[offset] = value;
+}
+
 static void dsp_update_state(dsp_state_t *p) {
 	// TODO
 }
 
 static void dsp_pcm_disarm(dsp_state_t *p);
+static uint32_t dsp_comm_chunk_base(const dsp_state_t *p);
+static void dsp_mp_submit(dsp_state_t *p, uint16_t header);
 
 static void dsp_reset_input(void *opaque, int id, int level) {
 	if (level)
@@ -138,6 +230,8 @@ static uint32_t dsp_ram_read(dsp_state_t *p, uint32_t offset, unsigned size) {
 
 static void dsp_ram_write(dsp_state_t *p, uint32_t offset, uint32_t value, unsigned size) {
 	uint8_t *data = p->ram;
+	uint16_t was = size == 2 ? dsp_read_word(p, offset / 2) : 0;
+
 	switch (size) {
 		case 1:
 			data[offset] = value & 0xFF;
@@ -158,6 +252,18 @@ static void dsp_ram_write(dsp_state_t *p, uint32_t offset, uint32_t value, unsig
 		default:
 			abort();
 	}
+
+	/*
+	 * The media player has no communication flag: its block is staged the
+	 * moment the ready bit lands in the window header. The window doubles as
+	 * the synthesiser's voice table, whose words can have bit 15 set too, so
+	 * insist on the writer's count-then-arm sequence.
+	 */
+	if (p->stream_active && !p->stream_adpcm && size == 2 &&
+			offset == (dsp_comm_chunk_base(p) + DSP_CHUNK_WORDS) * 2 &&
+			(value & DSP_MP_READY) != 0 &&
+			was == (value & ~DSP_MP_READY))
+		dsp_mp_submit(p, value);
 }
 
 static inline char hexdump_nibble(unsigned x)
@@ -266,6 +372,180 @@ static void dsp_pcm_disarm(dsp_state_t *p) {
 	p->com_status &= ~(uint32_t) (DSP_COM_REFILL_BIT | DSP_COM_PIPE2_BIT | DSP_COM_BUSY_BIT | DSP_COM_OVERRUN_BIT);
 }
 
+static const int16_t dsp_ima_step_table[89] = {
+	7, 8, 9, 10, 11, 12, 13, 14, 16, 17, 19, 21, 23, 25, 28, 31, 34, 37, 41, 45,
+	50, 55, 60, 66, 73, 80, 88, 97, 107, 118, 130, 143, 157, 173, 190, 209, 230,
+	253, 279, 307, 337, 371, 408, 449, 494, 544, 598, 658, 724, 796, 876, 963,
+	1060, 1166, 1282, 1411, 1552, 1707, 1878, 2066, 2272, 2499, 2749, 3024, 3327,
+	3660, 4026, 4428, 4871, 5358, 5894, 6484, 7132, 7845, 8630, 9493, 10442,
+	11487, 12635, 13899, 15289, 16818, 18500, 20350, 22385, 24623, 27086, 29794,
+	32767,
+};
+
+static const int8_t dsp_ima_index_table[16] = {
+	-1, -1, -1, -1, 2, 4, 6, 8, -1, -1, -1, -1, 2, 4, 6, 8,
+};
+
+static int16_t dsp_ima_decode(dsp_state_t *p, uint8_t nibble) {
+	int step = dsp_ima_step_table[p->ima_index];
+	int diff = ((2 * (nibble & 7) + 1) * step) >> 3;
+	int pred = p->ima_pred + ((nibble & 8) ? -diff : diff);
+	int index = p->ima_index + dsp_ima_index_table[nibble];
+
+	p->ima_pred = MIN(MAX(pred, -32768), 32767);
+	p->ima_index = MIN(MAX(index, 0), 88);
+	return p->ima_pred;
+}
+
+/*
+ * Word address of the chunk buffer, as laid out by each mask ROM. The SGOLD
+ * ROMs (0x0602/0x0604, buffer at 0x022D) run on the core, not this stub.
+ */
+static uint32_t dsp_comm_chunk_base(const dsp_state_t *p) {
+	switch (p->rom_version) {
+		case 0x0801:	return 0x057B;	/* SGOLD2 */
+		default:	return 0;
+	}
+}
+
+/* Decode the staged chunk into the audio backend, returning the sample count. */
+static unsigned dsp_chunk_consume(dsp_state_t *p) {
+	uint32_t base = dsp_comm_chunk_base(p);
+	int16_t samples[DSP_CHUNK_MAX_SAMPLES];
+	unsigned count = 0;
+
+	if (!p->afe || base == 0)
+		return 0;
+
+	for (unsigned sub = 0; sub + DSP_CHUNK_SUB_WORDS <= DSP_CHUNK_WORDS;
+			sub += DSP_CHUNK_SUB_WORDS) {
+		uint16_t type = dsp_read_word(p, base + sub);
+		uint16_t len = dsp_read_word(p, base + sub + 1);
+
+		if (len == 0 || len > DSP_CHUNK_SUB_WORDS - 2)
+			continue;
+		for (unsigned w = 0; w < len; w++) {
+			uint16_t word = dsp_read_word(p, base + sub + 2 + w);
+
+			if (!p->stream_adpcm) {
+				samples[count++] = (int16_t) word;
+				continue;
+			}
+			/*
+			 * An IMA block header (predictor, step index) sits inline at word
+			 * offset `type`; its predictor is also the block's first sample.
+			 */
+			if (w == type && w + 1 < len) {
+				p->ima_pred = (int16_t) word;
+				p->ima_index = MIN(dsp_read_word(p, base + sub + 3 + w) & 0xFF, 88);
+				samples[count++] = p->ima_pred;
+				w++;
+				continue;
+			}
+			for (unsigned byte = 0; byte < 2; byte++) {
+				uint8_t packed = word >> (8 * byte);
+
+				samples[count++] = dsp_ima_decode(p, packed & 0xF);
+				samples[count++] = dsp_ima_decode(p, packed >> 4);
+			}
+		}
+	}
+
+	if (count > 0)
+		afe_audio_push_samples(p->afe, (const uint16_t *) samples, count);
+	return count;
+}
+
+/*
+ * Take down the hand-off the firmware is waiting on and interrupt the MCU,
+ * which makes its audio task stage the next block.
+ */
+static void dsp_stream_ack(void *opaque) {
+	dsp_state_t *p = opaque;
+	uint32_t mp = dsp_comm_chunk_base(p) + DSP_CHUNK_WORDS;
+
+	if (!p->stream_active)
+		return;
+
+	p->com_status &= ~(uint32_t) DSP_COM_STREAM_BITS;
+	if (p->mp_pending) {
+		p->mp_pending = false;
+		dsp_write_word(p, mp, dsp_read_word(p, mp) & ~DSP_MP_READY);
+	}
+	qemu_irq_pulse(p->mcu_interrupts[DSP_MCU_ACK_IRQ]);
+}
+
+/*
+ * Hold the acknowledgement until the backend is running low. The real DSP
+ * takes the block's own playing time to consume it, but the emulated ARM does
+ * not produce blocks at an even rate, so pacing the acknowledgement exactly to
+ * real time leaves it no slack and the backend runs dry mid-melody. Letting
+ * the firmware build up a cushion instead keeps playback gap-free - and it
+ * still must not answer from inside the submit path, where the audio task has
+ * not finished its bookkeeping and would drop the request.
+ */
+static void dsp_stream_pace(dsp_state_t *p) {
+	size_t queued = p->afe ? afe_audio_queued_samples(p->afe) : 0;
+	int64_t ahead = (int64_t) queued * NANOSECONDS_PER_SECOND / p->stream_rate;
+	int64_t wait = MAX(ahead - DSP_STREAM_BUFFER_NS, DSP_STREAM_MIN_ACK_NS);
+
+	timer_mod(p->stream_timer, qemu_clock_get_ns(QEMU_CLOCK_HOST) + wait);
+}
+
+/*
+ * Service whichever hand-off the ARM just raised: flag 9 stages an ADPCM
+ * chunk, flag 10 only updates player parameters and just wants an answer.
+ */
+static void dsp_stream_service(dsp_state_t *p) {
+	if (!p->stream_active || (p->com_status & DSP_COM_STREAM_BITS) == 0)
+		return;
+	if ((p->com_status & DSP_COM_CHUNK_STAGED_BIT) != 0 && p->chunk_staged) {
+		p->chunk_staged = false;
+		dsp_chunk_consume(p);
+	}
+	dsp_stream_pace(p);
+}
+
+/* The ARM staged a media-player block (ready bit in the window header). */
+static void dsp_mp_submit(dsp_state_t *p, uint16_t header) {
+	uint32_t mp = dsp_comm_chunk_base(p) + DSP_CHUNK_WORDS;
+	unsigned count = MIN(header & DSP_MP_COUNT, DSP_MP_WORDS - 1);
+	int16_t samples[DSP_MP_WORDS];
+
+	for (unsigned i = 0; i < count; i++)
+		samples[i] = (int16_t) dsp_read_word(p, mp + 1 + i);
+	p->mp_pending = true;
+	if (p->afe && count > 0)
+		afe_audio_push_samples(p->afe, (const uint16_t *) samples, count);
+	dsp_stream_pace(p);
+}
+
+static void dsp_stream_pcmplay(dsp_state_t *p, uint32_t base, uint16_t sw) {
+	if (dsp_read_word(p, base + DSP_PCMPLAY_PAR_RUN) == 0) {
+		p->stream_active = false;
+		p->com_status &= ~(uint32_t) DSP_COM_CHUNK_STAGED_BIT;
+		timer_del(p->stream_timer);
+		DPRINTF("stream: stop\n");
+		return;
+	}
+
+	uint32_t rate = dsp_read_word(p, base + DSP_PCMPLAY_PAR_RATE);
+
+	if (rate < 4000 || rate > 48000)
+		rate = DSP_STREAM_DEFAULT_RATE;
+	p->stream_active = true;
+	p->stream_adpcm = (sw & DSP_PCMPLAY_SWITCH_ADPCM) != 0;
+	p->ima_pred = 0;
+	p->ima_index = 0;
+	p->stream_rate = rate;
+	p->mp_pending = false;
+	p->afe_started = true;
+	if (p->afe)
+		afe_audio_set_format(p->afe, rate, 1);
+	DPRINTF("stream: start switch=0x%04X %s %u Hz\n", sw,
+		p->stream_adpcm ? "adpcm" : "pcm", rate);
+}
+
 static void dsp_afe_queue_block(dsp_state_t *p, uint16_t len) {
 	uint32_t words;
 
@@ -291,11 +571,21 @@ static void dsp_afe_queue_block(dsp_state_t *p, uint16_t len) {
 	dsp_afe_flush_pending(p);
 }
 
+/*
+ * Acknowledge a runtime command the way the mask ROM does: the dispatcher
+ * replaces the command word with its negation once the command is accepted
+ * (and with zero when it is rejected), and the firmware checks for that.
+ */
+static void dsp_accept_command(dsp_state_t *p, uint32_t base, uint16_t id) {
+	dsp_write_word(p, base, -id);
+}
+
 static void dsp_exec_command_ch0(dsp_state_t *p) {
 	uint16_t id = dsp_read_word(p, DSP_CHAN0_CMD_ADDR);
 	dsp_hexdump("CH0", &p->ram[DSP_CHAN0_CMD_ADDR * 2], 0x1c);
 
 	DPRINTF("CH0 exec command! 0x%x\n", id);
+	dsp_accept_command(p, DSP_CHAN0_CMD_ADDR, id);
 	qemu_irq_pulse(p->mcu_interrupts[0]);
 }
 
@@ -304,6 +594,13 @@ static void dsp_exec_command_ch1(dsp_state_t *p) {
 	dsp_hexdump("CH1", &p->ram[DSP_CHAN1_CMD_ADDR * 2], 0x1c);
 
 	DPRINTF("CH1 exec command! 0x%x\n", id);
+	dsp_accept_command(p, DSP_CHAN1_CMD_ADDR, id);
+	if (id == DSP_CMD_PCMPLAY) {
+		uint16_t sw = dsp_read_word(p, DSP_CHAN1_CMD_ADDR + 1);
+
+		if ((sw & DSP_PCMPLAY_SWITCH_PLAYER_MASK) != 0)
+			dsp_stream_pcmplay(p, DSP_CHAN1_CMD_ADDR, sw);
+	}
 	qemu_irq_pulse(p->mcu_interrupts[1]);
 }
 
@@ -380,6 +677,7 @@ static void dsp_log_command_ch2(dsp_state_t *p, uint16_t id) {
 static void dsp_exec_command_ch2(dsp_state_t *p) {
 	uint16_t id = dsp_read_word(p, DSP_CHAN2_CMD_ADDR);
 
+	dsp_accept_command(p, DSP_CHAN2_CMD_ADDR, id);
 	bool print = true;
 
 	switch (id) {
@@ -390,7 +688,10 @@ static void dsp_exec_command_ch2(dsp_state_t *p) {
 		case DSP_CMD_PCMPLAY: {
 			uint16_t sw = dsp_read_word(p, DSP_CHAN2_CMD_ADDR + 1);
 
-			if (sw == DSP_PCMPLAY_SWITCH_INIT) {
+			if ((sw & DSP_PCMPLAY_SWITCH_PLAYER_MASK) != 0) {
+				dsp_stream_pcmplay(p, DSP_CHAN2_CMD_ADDR, sw);
+				qemu_irq_pulse(p->mcu_interrupts[2]);
+			} else if (sw == DSP_PCMPLAY_SWITCH_INIT) {
 				uint16_t rate_field = dsp_read_word(p, DSP_CHAN2_CMD_ADDR + 3);
 
 				p->afe_started = true;
@@ -482,10 +783,16 @@ static void dsp_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned si
 
 		case DSP_COM_SET:
 			p->com_set = value;
-			p->com_status = 0;
+			/* The stream flags stay raised until the staged chunk has actually
+			 * been consumed - including the first chunk, which SGOLD2 firmware
+			 * stages before it starts the player. */
+			p->com_status = (p->com_status | value) & DSP_COM_STREAM_BITS;
+			if ((value & DSP_COM_CHUNK_STAGED_BIT) != 0)
+				p->chunk_staged = true;
 			// if ((value & 1) != 0) dsp_exec_command_ch0(p); // noisy logs
 			if ((value & 2) != 0) dsp_exec_command_ch1(p);
 			if ((value & 4) != 0) dsp_exec_command_ch2(p);
+			dsp_stream_service(p);
 			break;
 
 		case DSP_COM_STATUS:
@@ -535,7 +842,6 @@ static void dsp_init(Object *obj) {
 }
 
 static const Property dsp_properties[] = {
-	DEFINE_PROP_UINT32("ram0_value", dsp_state_t, ram0_value, 0x0801),
 	DEFINE_PROP_UINT32("revision", dsp_state_t, revision, 0),
 	DEFINE_PROP_UINT32("rom_version", dsp_state_t, rom_version, 0),
 };
@@ -587,11 +893,12 @@ static void dsp_realize(DeviceState *dev, Error **errp) {
 	}
 
 	p->refill_timer = timer_new_ns(DSP_PCM_REFILL_CLOCK, dsp_pcm_refill_tick, p);
+	p->stream_timer = timer_new_ns(QEMU_CLOCK_HOST, dsp_stream_ack, p);
 
 	/* The ARM reads the mask ROM version from shared RAM word 0 and refuses to
-	 * boot (ddsphw fatal exit) when it does not match the SoC it expects. */                                                                                                
-	if (p->rom_version == 0 && p->config != NULL)                                                                                                                                                                                                    
-			p->rom_version = p->config->default_rom_version;
+	 * boot (ddsphw fatal exit) when it does not match the SoC it expects. */
+	if (p->rom_version == 0 && p->config != NULL)
+		p->rom_version = p->config->default_rom_version;
 	dsp_ram_write(p, 0, p->rom_version, 2);
 
 	dsp_update_state(p);
@@ -603,6 +910,10 @@ static void dsp_unrealize(DeviceState *dev) {
 	if (p->refill_timer != NULL) {
 		timer_free(p->refill_timer);
 		p->refill_timer = NULL;
+	}
+	if (p->stream_timer != NULL) {
+		timer_free(p->stream_timer);
+		p->stream_timer = NULL;
 	}
 	if (p->afe != NULL) {
 		p->afe->ops->destroy(p->afe);
@@ -696,6 +1007,8 @@ struct dsp_state_t {
 	uint16_t baseband_timeout_flags;
 	Clock *gsm_clock;
 	bool reset_pending;
+	/* Set by a reset until the core has run: see dsp_wait_boot(). */
+	bool boot_pending;
 	bool vm_running;
 	qemu_irq mcu_interrupts[PMB887X_DSP_MCU_INT_COUNT];
 	qemu_irq outputs[DSP_OUTPUT_COUNT];
@@ -794,6 +1107,8 @@ static void *dsp_worker(void *opaque) {
 			qemu_mutex_lock(&p->worker.mutex);
 			p->worker.busy = false;
 			p->worker.sync_requested = false;
+			if (run_startup && !p->worker.reset)
+				p->boot_pending = false;
 			qemu_cond_broadcast(&p->worker.idle_cond);
 			if (p->worker.reset)
 				continue;
@@ -842,6 +1157,8 @@ static void *dsp_worker(void *opaque) {
 		qatomic_set(&p->comm_status, dsp_runtime_get_comm(p->runtime));
 		p->worker.busy = false;
 		p->worker.sync_requested = false;
+		if (!p->worker.reset)
+			p->boot_pending = false;
 		qemu_cond_broadcast(&p->worker.idle_cond);
 
 		if (p->worker.reset)
@@ -900,8 +1217,11 @@ static void dsp_afe_timer_cb(void *opaque) {
 		fprintf(stderr, "[afe-timer] n=%u active=%d\n", tn, active);
 #endif
 
-	if (active)
+	if (active) {
+		/* Under the BQL here, unlike the worker: safe to reopen the out voice. */
+		dsp_runtime_apply_audio_format(p->runtime);
 		dsp_worker_kick(p);
+	}
 	timer_mod(p->afe_timer, qemu_clock_get_ns(DSP_AFE_CLOCK) + DSP_AFE_TICK_NS);
 }
 
@@ -1013,6 +1333,7 @@ static void dsp_reset_internal_state(dsp_state_t *p) {
 	qemu_mutex_lock(&p->worker.mutex);
 	p->worker.reset = true;
 	qatomic_set(&p->reset_pending, true);
+	p->boot_pending = true;
 	p->worker.enabled = p->vm_running && pmb887x_clc_is_enabled(&p->clc);
 	qatomic_set(&p->worker.interrupt_events, 0);
 	qatomic_set(&p->worker.output_events, 0);
@@ -1201,6 +1522,34 @@ static bool dsp_comm_handshake_pending(dsp_state_t *p) {
 	return (qatomic_read(&p->comm_status) & qatomic_read(&p->comm_pending)) != 0;
 }
 
+/*
+ * After a reset the mask ROM loader raises CF0, discards every pending request
+ * and only then clears CF0 to report that it is ready. Until the core has run
+ * that far a clear COM_STATUS means nothing: a command sent then is acknowledged
+ * unread, and every download after it lands one slot early.
+ */
+static void dsp_wait_boot(dsp_state_t *p) {
+	int64_t deadline = qemu_clock_get_ns(QEMU_CLOCK_HOST) + DSP_COMM_SYNC_TIMEOUT_MS * SCALE_MS;
+	bool bql = bql_locked();
+
+	if (bql)
+		bql_unlock();
+
+	qemu_mutex_lock(&p->worker.mutex);
+	while (p->boot_pending && p->worker.enabled && !p->worker.stop) {
+		int64_t remaining = deadline - qemu_clock_get_ns(QEMU_CLOCK_HOST);
+
+		if (remaining <= 0)
+			break;
+		qemu_event_set(&p->worker.event);
+		qemu_cond_timedwait(&p->worker.idle_cond, &p->worker.mutex, DIV_ROUND_UP(remaining, SCALE_MS));
+	}
+	qemu_mutex_unlock(&p->worker.mutex);
+
+	if (bql)
+		bql_lock();
+}
+
 static void dsp_wait_comm_clear(dsp_state_t *p) {
 	int64_t start;
 	int64_t deadline;
@@ -1295,7 +1644,11 @@ static uint64_t dsp_io_read(void *opaque, hwaddr haddr, unsigned size) {
 
 		case DSP_COM_STATUS: {
 			uint32_t program_start_pc;
-			bool reset_pending = qatomic_read(&p->reset_pending);
+			bool reset_pending;
+
+			if (qatomic_read(&p->boot_pending))
+				dsp_wait_boot(p);
+			reset_pending = qatomic_read(&p->reset_pending);
 
 			if (reset_pending) {
 				value = qatomic_read(&p->reset_comm_flags) | qatomic_read(&p->comm_status);

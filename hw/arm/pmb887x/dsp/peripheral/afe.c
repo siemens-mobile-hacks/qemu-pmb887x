@@ -13,6 +13,7 @@
 #include "qemu/fifo8.h"
 #include "qemu/thread.h"
 #include "qemu/timer.h"
+#include "hw/arm/pmb887x/pmic.h"
 #endif
 
 #define AFE_REGISTER_COUNT	(TEAK_AFE_RINGCTRL + 1)
@@ -40,6 +41,8 @@
  * case so it fits any configured rate/channel count without being resized.
  */
 #define AFE_OUT_FIFO_BYTES	(AFE_OUT_MAX_FREQ * AFE_OUT_MAX_CHANNELS * sizeof(int16_t))
+/* Quiet time after which the DSP counts as no longer streaming to the host. */
+#define AFE_STREAM_IDLE_MS	200
 
 static const uint16_t AFE_POWER_DOWN_SAMPLES[] = {
 	0x85EA, 0x85F3, 0xB12F, 0x8000, 0x9048, 0x8A3B, 0x81C2, 0x8BCF,
@@ -78,6 +81,9 @@ typedef struct afe_audio_t {
 	/* Output channel count (1 mono / 2 interleaved LR); set per stream too. */
 	int out_channels;
 
+	/* When the producer last handed over a sample, in host milliseconds. */
+	uint32_t last_push_ms;
+
 	/* Rate-limited non-zero-sample diagnostics (worker thread only). */
 	int64_t stats_deadline;
 	uint64_t stats_total;
@@ -114,6 +120,11 @@ static bool afe_transmit_active(const afe_state_t *state) {
 }
 
 #ifndef PMB887X_DSP_TESTS
+/* Wrapping 32-bit host milliseconds; only differences are ever compared. */
+static uint32_t afe_audio_host_ms(void) {
+	return (uint32_t) (qemu_clock_get_ns(QEMU_CLOCK_HOST) / SCALE_MS);
+}
+
 static void afe_audio_out_callback(void *opaque, int free_bytes) {
 	afe_state_t *state = opaque;
 	afe_audio_t *audio = &state->audio;
@@ -132,9 +143,17 @@ static void afe_audio_out_callback(void *opaque, int free_bytes) {
 
 		if (got == 0) {
 			/*
-			 * Producer starved: emit silence so the voice keeps running and
-			 * we never have to toggle AUD_set_active_out from the wrong
-			 * thread. Bounded by one chunk per idle callback.
+			 * Mid-stream underrun: write nothing. The DSP emits silence of
+			 * its own between sounds, so a gap here is only the emulated core
+			 * failing to synthesise in real time, and padding it over would
+			 * stretch out the stream that does arrive.
+			 */
+			if (afe_audio_host_ms() - qatomic_read(&audio->last_push_ms) < AFE_STREAM_IDLE_MS)
+				break;
+			/*
+			 * Idle: keep feeding the voice. It shares the host's mixer with
+			 * the other sound sources in the machine, and one that is enabled
+			 * but never writes holds all of them up.
 			 */
 			memset(chunk, 0, want);
 			got = want;
@@ -172,7 +191,17 @@ static void afe_audio_report_stats(afe_audio_t *audio) {
 static void afe_audio_produce(afe_state_t *state, uint16_t sample_word) {
 	afe_audio_t *audio = &state->audio;
 	int16_t sample = (int16_t) sample_word;
-	uint8_t bytes[2] = { (uint8_t) sample_word, (uint8_t) (sample_word >> 8) };
+	uint8_t bytes[2];
+
+	/*
+	 * The DSP reaches the speaker through the codec's amplifier path 4, which is
+	 * where the phone's volume setting lands.
+	 */
+	sample = (int16_t) ((sample * (int64_t) pmb887x_pmic_output_gain(PMB887X_PMIC_PATH_STREAM)) /
+		PMB887X_PMIC_GAIN_UNITY);
+	sample_word = (uint16_t) sample;
+	bytes[0] = (uint8_t) sample_word;
+	bytes[1] = (uint8_t) (sample_word >> 8);
 
 	audio->stats_total++;
 	if (sample != 0) {
@@ -414,6 +443,7 @@ bool afe_is_active(const dsp_device_t *device) {
 size_t afe_audio_push_samples(dsp_device_t *device, const uint16_t *samples, size_t count) {
 	afe_state_t *state = device->state;
 
+	qatomic_set(&state->audio.last_push_ms, afe_audio_host_ms());
 	for (size_t i = 0; i < count; i++)
 		afe_audio_produce(state, samples[i]);
 	return count;
@@ -453,6 +483,21 @@ void afe_audio_set_format(dsp_device_t *device, unsigned freq, unsigned channels
 		if (audio->voice)
 			audio_be_set_active_out(audio->backend, audio->voice, true);
 	}
+}
+
+/* How much audio the backend still has to play out, in samples. */
+size_t afe_audio_queued_samples(dsp_device_t *device) {
+	afe_state_t *state = device->state;
+	afe_audio_t *audio = &state->audio;
+	size_t used;
+
+	if (!audio->fifo_ready)
+		return 0;
+
+	qemu_mutex_lock(&audio->lock);
+	used = fifo8_num_used(&audio->fifo);
+	qemu_mutex_unlock(&audio->lock);
+	return used / (sizeof(int16_t) * audio->out_channels);
 }
 
 bool afe_audio_has_room(dsp_device_t *device, size_t count) {

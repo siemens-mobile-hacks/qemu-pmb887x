@@ -201,6 +201,7 @@ static void dsp_runtime_pace_afe(dsp_runtime_t *runtime) {
 	/* Wall-clock (matches DSP_AFE_CLOCK in dsp.c) so the sample clock keeps
 	 * advancing even while the vCPU is parked in a handshake wait under -icount. */
 	now = qemu_clock_get_ns(QEMU_CLOCK_HOST);
+	dsp_bus_pace_i2s(runtime->bus, now, qatomic_read(&runtime->core_disabled));
 	next = runtime->afe_next_sample_ns;
 	if (next == 0 || next > now + AFE_SAMPLE_PERIOD_NS)
 		next = now;	/* first sample or clock skew: (re)sync */
@@ -261,6 +262,7 @@ static void dsp_runtime_data_write(void *opaque, uint32_t address, uint16_t valu
 	if (data_address >= runtime->config->shared_base) {
 		uint16_t offset = data_address - runtime->config->shared_base;
 		qatomic_set(&runtime->data[data_address], value);
+		dsp_bus_note_ram_write(runtime->bus, data_address, value);
 		DPRINTF("shared write: address=%04X offset=%04X value=%04X pc=%05X\n", data_address,
 			offset, value, runtime->core.state.trace_pc);
 		return;
@@ -380,7 +382,6 @@ void dsp_runtime_reset(dsp_runtime_t *runtime) {
 	dsp_runtime_load_words(runtime->data + config->data_rom_base, runtime->data_rom, data_fixed_words);
 
 	dsp_bus_reset(runtime->bus);
-	dsp_bus_set_core_idle(runtime->bus, false);
 	teak_tcg_reset(&runtime->core, config->program_rom_base + 2);
 
 	runtime->data[config->shared_base] = runtime->rom_version;
@@ -411,7 +412,6 @@ bool dsp_runtime_run(dsp_runtime_t *runtime) {
 	runtime->core.chain_exit_pc = 0;
 
 	qatomic_set(&runtime->idle, false);
-	dsp_bus_set_core_idle(runtime->bus, false);
 
 	while (cycles < DSP_ACTIVE_SLICE_CYCLES && !runtime->halted) {
 		uint8_t block_repeat_level;
@@ -444,7 +444,6 @@ bool dsp_runtime_run(dsp_runtime_t *runtime) {
 			active_lines = dsp_bus_get_irq_lines(runtime->bus);
 			if (active_lines == 0) {
 				qatomic_set(&runtime->idle, true);
-				dsp_bus_set_core_idle(runtime->bus, true);
 				break;
 			}
 			qatomic_set(&runtime->core_disabled, false);
@@ -509,6 +508,10 @@ bool dsp_runtime_is_idle(const dsp_runtime_t *runtime) {
 
 bool dsp_runtime_realtime_active(const dsp_runtime_t *runtime) {
 	return dsp_bus_is_active(runtime->bus);
+}
+
+void dsp_runtime_apply_audio_format(dsp_runtime_t *runtime) {
+	dsp_bus_apply_audio_format(runtime->bus);
 }
 
 bool dsp_runtime_is_maskable_interrupt_active(const dsp_runtime_t *runtime) {

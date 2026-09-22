@@ -24,10 +24,11 @@ static const struct pmb887x_cpu_module_t *get_cpu_module_definition(const char *
 	hw_error("Can't find CPU module: %s\n", name);
 }
 
-DeviceState *pmb887x_new_cpu_module(const char *name) {
+/* `type` overrides the module table for a module with more than one model. */
+DeviceState *pmb887x_new_cpu_module_as(const char *name, const char *type) {
 	const pmb887x_cpu_module_t *mod = get_cpu_module_definition(name);
 
-	DeviceState *dev = qdev_new(mod->dev);
+	DeviceState *dev = qdev_new(type != NULL ? type : mod->dev);
 	dev->id = g_strdup(name);
 	qdev_prop_set_uint32(dev, "revision", mod->id & MOD_ID_REV);
 	if (object_property_find(OBJECT(dev), "peripheral-id"))
@@ -44,6 +45,10 @@ DeviceState *pmb887x_new_cpu_module(const char *name) {
 	}
 
 	return dev;
+}
+
+DeviceState *pmb887x_new_cpu_module(const char *name) {
+	return pmb887x_new_cpu_module_as(name, NULL);
 }
 
 static void pmb887x_cpu_module_post_init(DeviceState *dev, const pmb887x_cpu_module_t *mod) {
