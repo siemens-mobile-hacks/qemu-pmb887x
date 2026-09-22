@@ -775,19 +775,20 @@ void arm_rebuild_hflags(CPUARMState *env)
      * wrong function.
      *
      * "Under 0.3 %" used to follow, and it was an idle-screen number
-     * that does not transfer.  Timed with WASM_DIAG_TIME_PHASES and the
-     * two clock reads subtracted off with HFLAGS_CAL (at these spans the
-     * reads are most of the raw span: the raw hflagsNs/hflagsNsN of
-     * ~98 ns is about 3x the truth), a call costs **31.6 ns**.
+     * that does not transfer.  A call costs **12.3 +- 1.6 ns**: priced
+     * in round 47 by adding n rebuilds to every inline SVC and fitting
+     * the video meter's ms/Mi against the extra calls (n = 0 vs 8, one
+     * binary).  An earlier 31.6 ns came from WASM_DIAG_TIME_PHASES spans
+     * minus their clock floor, a difference of two quantized sums, and
+     * was 2.6x high.
      *
      * The rate is not a constant, so neither is the cost.  This counter
-     * tracks excSwi at ~2.7 rebuilds per SWI across every J2ME game
-     * measured, and the SWI rate itself varies 5x between games: 1065
-     * calls/Mi on CX70 game 1, 5155 on the SWI-heavy game 2.  That is
-     * 0.034 to 0.163 ms/Mi, or roughly **0.8 % to 2.3 % of wall**
-     * depending on the game.  Quote the range, not one game's number --
-     * quoting one workload's rate as if general is the error this
-     * comment used to make.
+     * tracks excSwi at ~2.5 rebuilds per SWI, and the SWI rate varies:
+     * 1065 calls/Mi on CX70 game 1, 5155 on the SWI-heavy game 2, 5937
+     * on SL65 video.  That is roughly **0.3 % to 2.6 % of wall**
+     * depending on the workload.  Quote the range, not one workload's
+     * number -- quoting one workload's rate as if general is the error
+     * this comment used to make.
      */
     wasm_diag_stat[WASM_DIAG_HFLAGS_CALLS]++;
 #endif
