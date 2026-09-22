@@ -98,23 +98,11 @@
  * DSP_CHUNK_SUB_CONT when this sub-block carries none.
  */
 #define DSP_COM_CHUNK_STAGED_BIT	0x200	/* communication flag 9: a chunk is staged */
-#define DSP_COM_PLAYER_PARAMS_BIT	0x400	/* communication flag 10: player parameters */
-#define DSP_COM_STREAM_BITS	(DSP_COM_CHUNK_STAGED_BIT | DSP_COM_PLAYER_PARAMS_BIT)
 #define DSP_CHUNK_WORDS	0x60
 #define DSP_CHUNK_SUB_WORDS	24
 #define DSP_CHUNK_SUB_CONT	0xFFFF
-/*
- * The media player (linear PCM) hands its samples over differently: it stages
- * a block of 16-bit mono samples in the window right after the chunk buffer,
- * headed by a word carrying the sample count and a ready bit, and waits for
- * the ready bit to be taken down again.
- */
-#define DSP_MP_WORDS	0x100
-#define DSP_MP_READY	0x8000
-#define DSP_MP_COUNT	0x01FF
-/* Worst case is ADPCM: every payload word carries four samples. */
+/* Every ADPCM payload word carries four samples. */
 #define DSP_CHUNK_MAX_SAMPLES	(DSP_CHUNK_WORDS * 4)
-QEMU_BUILD_BUG_ON(DSP_CHUNK_MAX_SAMPLES < DSP_MP_WORDS);
 /* How much audio to keep buffered in the backend ahead of real time. */
 #define DSP_STREAM_BUFFER_NS	(400 * SCALE_MS)
 /*
@@ -126,12 +114,10 @@ QEMU_BUILD_BUG_ON(DSP_CHUNK_MAX_SAMPLES < DSP_MP_WORDS);
 #define DSP_STREAM_DEFAULT_RATE	16000
 /*
  * For the chunk stream PCMPLAY SWITCH is a bit mask, not the INIT/FEED/END
- * enum: bit 6 selects the ADPCM player the melodies use (the media player
- * streams linear PCM instead), and the upper bits name the player. Whether
- * this is a start or a stop is in the parameters, not the switch - a stop
- * leaves them all clear.
+ * enum: bit 6 selects the ADPCM player, and the upper bits name the player.
+ * Whether this is a start or a stop is in the parameters, not the switch - a
+ * stop leaves them all clear.
  */
-#define DSP_PCMPLAY_SWITCH_PLAYER_MASK	0x03C0
 #define DSP_PCMPLAY_SWITCH_ADPCM	0x0040
 /*
  * PCMPLAY parameters: nonzero while starting, and the stream rate in Hz. This
@@ -173,11 +159,9 @@ struct dsp_state_t {
 
 	/* Shared-RAM chunk stream. */
 	bool stream_active;
-	bool stream_adpcm;
 	int16_t ima_pred;
 	uint8_t ima_index;
 	uint32_t stream_rate;
-	bool mp_pending;
 	/* Flag 9 stays up until the acknowledgement, long after the chunk is read. */
 	bool chunk_staged;
 	QEMUTimer *stream_timer;
@@ -188,17 +172,11 @@ static inline uint16_t dsp_read_word(dsp_state_t *p, uint32_t offset) {
 	return mem[offset];
 }
 
-static inline void dsp_write_word(dsp_state_t *p, uint32_t offset, uint16_t value) {
-	((uint16_t *) &p->ram[0])[offset] = value;
-}
-
 static void dsp_update_state(dsp_state_t *p) {
 	// TODO
 }
 
 static void dsp_pcm_disarm(dsp_state_t *p);
-static uint32_t dsp_comm_chunk_base(const dsp_state_t *p);
-static void dsp_mp_submit(dsp_state_t *p, uint16_t header);
 
 static void dsp_reset_input(void *opaque, int id, int level) {
 	if (level)
@@ -230,8 +208,6 @@ static uint32_t dsp_ram_read(dsp_state_t *p, uint32_t offset, unsigned size) {
 
 static void dsp_ram_write(dsp_state_t *p, uint32_t offset, uint32_t value, unsigned size) {
 	uint8_t *data = p->ram;
-	uint16_t was = size == 2 ? dsp_read_word(p, offset / 2) : 0;
-
 	switch (size) {
 		case 1:
 			data[offset] = value & 0xFF;
@@ -252,18 +228,6 @@ static void dsp_ram_write(dsp_state_t *p, uint32_t offset, uint32_t value, unsig
 		default:
 			abort();
 	}
-
-	/*
-	 * The media player has no communication flag: its block is staged the
-	 * moment the ready bit lands in the window header. The window doubles as
-	 * the synthesiser's voice table, whose words can have bit 15 set too, so
-	 * insist on the writer's count-then-arm sequence.
-	 */
-	if (p->stream_active && !p->stream_adpcm && size == 2 &&
-			offset == (dsp_comm_chunk_base(p) + DSP_CHUNK_WORDS) * 2 &&
-			(value & DSP_MP_READY) != 0 &&
-			was == (value & ~DSP_MP_READY))
-		dsp_mp_submit(p, value);
 }
 
 static inline char hexdump_nibble(unsigned x)
@@ -427,10 +391,6 @@ static unsigned dsp_chunk_consume(dsp_state_t *p) {
 		for (unsigned w = 0; w < len; w++) {
 			uint16_t word = dsp_read_word(p, base + sub + 2 + w);
 
-			if (!p->stream_adpcm) {
-				samples[count++] = (int16_t) word;
-				continue;
-			}
 			/*
 			 * An IMA block header (predictor, step index) sits inline at word
 			 * offset `type`; its predictor is also the block's first sample.
@@ -462,16 +422,11 @@ static unsigned dsp_chunk_consume(dsp_state_t *p) {
  */
 static void dsp_stream_ack(void *opaque) {
 	dsp_state_t *p = opaque;
-	uint32_t mp = dsp_comm_chunk_base(p) + DSP_CHUNK_WORDS;
 
 	if (!p->stream_active)
 		return;
 
-	p->com_status &= ~(uint32_t) DSP_COM_STREAM_BITS;
-	if (p->mp_pending) {
-		p->mp_pending = false;
-		dsp_write_word(p, mp, dsp_read_word(p, mp) & ~DSP_MP_READY);
-	}
+	p->com_status &= ~(uint32_t) DSP_COM_CHUNK_STAGED_BIT;
 	qemu_irq_pulse(p->mcu_interrupts[DSP_MCU_ACK_IRQ]);
 }
 
@@ -492,31 +447,14 @@ static void dsp_stream_pace(dsp_state_t *p) {
 	timer_mod(p->stream_timer, qemu_clock_get_ns(QEMU_CLOCK_HOST) + wait);
 }
 
-/*
- * Service whichever hand-off the ARM just raised: flag 9 stages an ADPCM
- * chunk, flag 10 only updates player parameters and just wants an answer.
- */
+/* The ARM raised flag 9: decode the chunk it staged and schedule the answer. */
 static void dsp_stream_service(dsp_state_t *p) {
-	if (!p->stream_active || (p->com_status & DSP_COM_STREAM_BITS) == 0)
+	if (!p->stream_active || (p->com_status & DSP_COM_CHUNK_STAGED_BIT) == 0)
 		return;
-	if ((p->com_status & DSP_COM_CHUNK_STAGED_BIT) != 0 && p->chunk_staged) {
+	if (p->chunk_staged) {
 		p->chunk_staged = false;
 		dsp_chunk_consume(p);
 	}
-	dsp_stream_pace(p);
-}
-
-/* The ARM staged a media-player block (ready bit in the window header). */
-static void dsp_mp_submit(dsp_state_t *p, uint16_t header) {
-	uint32_t mp = dsp_comm_chunk_base(p) + DSP_CHUNK_WORDS;
-	unsigned count = MIN(header & DSP_MP_COUNT, DSP_MP_WORDS - 1);
-	int16_t samples[DSP_MP_WORDS];
-
-	for (unsigned i = 0; i < count; i++)
-		samples[i] = (int16_t) dsp_read_word(p, mp + 1 + i);
-	p->mp_pending = true;
-	if (p->afe && count > 0)
-		afe_audio_push_samples(p->afe, (const uint16_t *) samples, count);
 	dsp_stream_pace(p);
 }
 
@@ -534,16 +472,12 @@ static void dsp_stream_pcmplay(dsp_state_t *p, uint32_t base, uint16_t sw) {
 	if (rate < 4000 || rate > 48000)
 		rate = DSP_STREAM_DEFAULT_RATE;
 	p->stream_active = true;
-	p->stream_adpcm = (sw & DSP_PCMPLAY_SWITCH_ADPCM) != 0;
 	p->ima_pred = 0;
 	p->ima_index = 0;
 	p->stream_rate = rate;
-	p->mp_pending = false;
-	p->afe_started = true;
 	if (p->afe)
 		afe_audio_set_format(p->afe, rate, 1);
-	DPRINTF("stream: start switch=0x%04X %s %u Hz\n", sw,
-		p->stream_adpcm ? "adpcm" : "pcm", rate);
+	DPRINTF("stream: start switch=0x%04X %u Hz\n", sw, rate);
 }
 
 static void dsp_afe_queue_block(dsp_state_t *p, uint16_t len) {
@@ -571,21 +505,11 @@ static void dsp_afe_queue_block(dsp_state_t *p, uint16_t len) {
 	dsp_afe_flush_pending(p);
 }
 
-/*
- * Acknowledge a runtime command the way the mask ROM does: the dispatcher
- * replaces the command word with its negation once the command is accepted
- * (and with zero when it is rejected), and the firmware checks for that.
- */
-static void dsp_accept_command(dsp_state_t *p, uint32_t base, uint16_t id) {
-	dsp_write_word(p, base, -id);
-}
-
 static void dsp_exec_command_ch0(dsp_state_t *p) {
 	uint16_t id = dsp_read_word(p, DSP_CHAN0_CMD_ADDR);
 	dsp_hexdump("CH0", &p->ram[DSP_CHAN0_CMD_ADDR * 2], 0x1c);
 
 	DPRINTF("CH0 exec command! 0x%x\n", id);
-	dsp_accept_command(p, DSP_CHAN0_CMD_ADDR, id);
 	qemu_irq_pulse(p->mcu_interrupts[0]);
 }
 
@@ -594,13 +518,6 @@ static void dsp_exec_command_ch1(dsp_state_t *p) {
 	dsp_hexdump("CH1", &p->ram[DSP_CHAN1_CMD_ADDR * 2], 0x1c);
 
 	DPRINTF("CH1 exec command! 0x%x\n", id);
-	dsp_accept_command(p, DSP_CHAN1_CMD_ADDR, id);
-	if (id == DSP_CMD_PCMPLAY) {
-		uint16_t sw = dsp_read_word(p, DSP_CHAN1_CMD_ADDR + 1);
-
-		if ((sw & DSP_PCMPLAY_SWITCH_PLAYER_MASK) != 0)
-			dsp_stream_pcmplay(p, DSP_CHAN1_CMD_ADDR, sw);
-	}
 	qemu_irq_pulse(p->mcu_interrupts[1]);
 }
 
@@ -677,7 +594,6 @@ static void dsp_log_command_ch2(dsp_state_t *p, uint16_t id) {
 static void dsp_exec_command_ch2(dsp_state_t *p) {
 	uint16_t id = dsp_read_word(p, DSP_CHAN2_CMD_ADDR);
 
-	dsp_accept_command(p, DSP_CHAN2_CMD_ADDR, id);
 	bool print = true;
 
 	switch (id) {
@@ -688,7 +604,7 @@ static void dsp_exec_command_ch2(dsp_state_t *p) {
 		case DSP_CMD_PCMPLAY: {
 			uint16_t sw = dsp_read_word(p, DSP_CHAN2_CMD_ADDR + 1);
 
-			if ((sw & DSP_PCMPLAY_SWITCH_PLAYER_MASK) != 0) {
+			if ((sw & DSP_PCMPLAY_SWITCH_ADPCM) != 0) {
 				dsp_stream_pcmplay(p, DSP_CHAN2_CMD_ADDR, sw);
 				qemu_irq_pulse(p->mcu_interrupts[2]);
 			} else if (sw == DSP_PCMPLAY_SWITCH_INIT) {
@@ -783,10 +699,10 @@ static void dsp_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned si
 
 		case DSP_COM_SET:
 			p->com_set = value;
-			/* The stream flags stay raised until the staged chunk has actually
-			 * been consumed - including the first chunk, which SGOLD2 firmware
+			/* Flag 9 stays raised until the staged chunk has actually been
+			 * consumed - including the first chunk, which SGOLD2 firmware
 			 * stages before it starts the player. */
-			p->com_status = (p->com_status | value) & DSP_COM_STREAM_BITS;
+			p->com_status = (p->com_status | value) & DSP_COM_CHUNK_STAGED_BIT;
 			if ((value & DSP_COM_CHUNK_STAGED_BIT) != 0)
 				p->chunk_staged = true;
 			// if ((value & 1) != 0) dsp_exec_command_ch0(p); // noisy logs
