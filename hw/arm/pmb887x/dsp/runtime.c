@@ -201,6 +201,7 @@ static void dsp_runtime_pace_afe(dsp_runtime_t *runtime) {
 	/* Wall-clock (matches DSP_AFE_CLOCK in dsp.c) so the sample clock keeps
 	 * advancing even while the vCPU is parked in a handshake wait under -icount. */
 	now = qemu_clock_get_ns(QEMU_CLOCK_HOST);
+	dsp_bus_pace_i2s(runtime->bus, now);
 	next = runtime->afe_next_sample_ns;
 	if (next == 0 || next > now + AFE_SAMPLE_PERIOD_NS)
 		next = now;	/* first sample or clock skew: (re)sync */
@@ -261,6 +262,7 @@ static void dsp_runtime_data_write(void *opaque, uint32_t address, uint16_t valu
 	if (data_address >= runtime->config->shared_base) {
 		uint16_t offset = data_address - runtime->config->shared_base;
 		qatomic_set(&runtime->data[data_address], value);
+		dsp_bus_note_ram_write(runtime->bus, data_address, value);
 		DPRINTF("shared write: address=%04X offset=%04X value=%04X pc=%05X\n", data_address,
 			offset, value, runtime->core.state.trace_pc);
 		return;
@@ -509,6 +511,10 @@ bool dsp_runtime_is_idle(const dsp_runtime_t *runtime) {
 
 bool dsp_runtime_realtime_active(const dsp_runtime_t *runtime) {
 	return dsp_bus_is_active(runtime->bus);
+}
+
+void dsp_runtime_apply_audio_format(dsp_runtime_t *runtime) {
+	dsp_bus_apply_audio_format(runtime->bus);
 }
 
 bool dsp_runtime_is_maskable_interrupt_active(const dsp_runtime_t *runtime) {

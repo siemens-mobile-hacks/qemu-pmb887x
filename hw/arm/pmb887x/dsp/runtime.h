@@ -19,6 +19,7 @@ void dsp_runtime_set_clock(dsp_runtime_t *runtime, bool enabled);
 bool dsp_runtime_run(dsp_runtime_t *runtime);
 bool dsp_runtime_is_idle(const dsp_runtime_t *runtime);
 bool dsp_runtime_realtime_active(const dsp_runtime_t *runtime);
+void dsp_runtime_apply_audio_format(dsp_runtime_t *runtime);
 bool dsp_runtime_is_maskable_interrupt_active(const dsp_runtime_t *runtime);
 uint16_t dsp_runtime_get_irq_flags(dsp_runtime_t *runtime, size_t group);
 uint16_t dsp_runtime_get_irq_pending_flags(dsp_runtime_t *runtime, size_t group);

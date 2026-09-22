@@ -1170,6 +1170,18 @@ static bool tcg_alu_uses_multiply(teak_alu_operation_t operation) {
 		operation == TEAK_ALU_SQRA;
 }
 
+/*
+ * The codes tcg_mov_write_register/tcg_mov_read_register decode inline; every
+ * other code reaches the register file through the generic helper.
+ */
+static bool tcg_mov_register_is_accumulator_write(uint8_t register_code) {
+	return (register_code >= 16 && register_code <= 19) || (register_code >= 24 && register_code <= 29);
+}
+
+static bool tcg_mov_register_is_accumulator_read(uint8_t register_code) {
+	return (register_code >= 16 && register_code <= 19) || (register_code >= 26 && register_code <= 29);
+}
+
 static bool tcg_can_read_mov_register(uint8_t register_code) {
 	bool common = register_code <= 10;
 	bool status = register_code >= 13 && register_code <= 15;
@@ -1373,21 +1385,13 @@ static bool tcg_can_translate(const teak_insn_t *instruction) {
 					return false;
 			}
 
-		case TEAK_OP_MOV_DATA_RN_STEP_REGISTER: {
-			bool basic_register = instruction->register_code <= 7;
-			bool b_half = instruction->register_code >= 16 && instruction->register_code <= 19;
-			bool external_register = instruction->register_code >= 20 && instruction->register_code <= 23;
-			bool accumulator = instruction->register_code >= 24 && instruction->register_code <= 29;
-			bool program_counter = instruction->register_code == 12;
-			return basic_register || b_half || external_register || accumulator || program_counter;
-		}
+		case TEAK_OP_MOV_DATA_RN_STEP_REGISTER:
+			/* tcg_write_register covers every code; 12 (pc) is discarded. */
+			return true;
 
-		case TEAK_OP_MOV_REGISTER_DATA_RN_STEP: {
-			bool basic_register = instruction->register_code <= 7;
-			bool b_half = instruction->register_code >= 16 && instruction->register_code <= 19;
-			bool accumulator_half = instruction->register_code >= 26 && instruction->register_code <= 29;
-			return basic_register || b_half || accumulator_half;
-		}
+		case TEAK_OP_MOV_REGISTER_DATA_RN_STEP:
+			/* tcg_read_register has no case for 11 (p high). */
+			return instruction->register_code != 11;
 
 		case TEAK_OP_ALU_REGISTER_ACCUMULATOR: {
 			if (tcg_alu_uses_multiply(instruction->alu_operation))
@@ -1544,6 +1548,8 @@ static uint8_t tcg_delay_slot_cycles(const teak_insn_t *instruction) {
 		case TEAK_OP_LOAD_MODJ:
 		case TEAK_OP_LOAD_STEPI:
 		case TEAK_OP_LOAD_STEPJ:
+		/* Leaving a block repeat from a delay slot: `retd; break; ...` is an idiom. */
+		case TEAK_OP_BREAK:
 			return 1;
 
 		case TEAK_OP_NORMALIZE:
@@ -3339,7 +3345,7 @@ static void tcg_emit_mov_data_rn_step_register(const teak_insn_t *instruction) {
 		tcg_gen_st16_i32(value, tcg_env, tcg_rn_old_offset(instruction->register_code));
 		return;
 	}
-	if (instruction->register_code >= 20 && instruction->register_code <= 23) {
+	if (!tcg_mov_register_is_accumulator_write(instruction->register_code)) {
 		gen_helper_teak_tcg_mov_register_write(tcg_env,
 			tcg_constant_i32(instruction->register_code), value);
 		return;
@@ -3368,6 +3374,9 @@ static void tcg_emit_mov_register_data_rn_step(const teak_insn_t *instruction) {
 	if (instruction->register_code <= 7) {
 		value = tcg_temp_new_i32();
 		tcg_gen_ld16u_i32(value, tcg_env, tcg_rn_old_offset(instruction->register_code));
+	} else if (!tcg_mov_register_is_accumulator_read(instruction->register_code)) {
+		value = tcg_temp_new_i32();
+		gen_helper_teak_tcg_mov_register_read(value, tcg_env, tcg_constant_i32(instruction->register_code));
 	} else {
 		size_t accumulator_offset = tcg_accumulator_register_offset(instruction->register_code);
 		TCGv_i64 accumulator = tcg_temp_new_i64();
@@ -4174,7 +4183,15 @@ static bool tcg_block_repeat_setup_valid(const teak_tcg_core_t *core, const teak
 		return false;
 	if (instruction->branch_target < instruction->address + instruction->words)
 		return false;
-	if (level != 0 && instruction->branch_target >= core->state.block_repeat_end[level - 1])
+	/*
+	 * A lexically nested loop has to end inside its enclosing one. A loop set up
+	 * in a subroutine called out of an enclosing body is not nested that way and
+	 * lives anywhere; only the innermost level is ever tested for completion, so
+	 * it still unwinds correctly.
+	 */
+	if (level != 0 && instruction->address >= core->state.block_repeat_start[level - 1] &&
+		instruction->address <= core->state.block_repeat_end[level - 1] &&
+		instruction->branch_target >= core->state.block_repeat_end[level - 1])
 		return false;
 	if (instruction->opcode == TEAK_OP_BLOCK_REPEAT_REGISTER) {
 		bool full_accumulator = instruction->register_code == 24 || instruction->register_code == 25;
@@ -4339,6 +4356,12 @@ static bool tcg_decode_block(teak_tcg_core_t *core, teak_tcg_block_t *block, siz
 			delayed_transfer_cycles -= delay_slot_cycles;
 			if (delayed_transfer_cycles == 0)
 				return true;
+			/*
+			 * Still inside the delay slots. The pending transfer is only emitted
+			 * on the block's last instruction, so the block has to run to the end
+			 * of the window: none of the terminators below may close it early.
+			 */
+			continue;
 		}
 		if (repeat_pending)
 			return true;
@@ -4534,7 +4557,14 @@ static void tcg_emit_block(void *opaque) {
 			tcg_gen_st_i32(tcg_constant_i32(TEAK_EXIT_BRANCH), tcg_env,
 				offsetof(teak_state_t, exit_reason));
 		}
-		if (tcg_may_write_data(instruction)) {
+		/*
+		 * A delayed transfer pops its target at the transfer instruction but only
+		 * commits it to the PC on the block's last instruction, so leaving the
+		 * block from inside the delay slots would drop it. Hardware does not
+		 * interrupt delay slots either.
+		 */
+		bool inside_delay_slots = delayed_transfer_target != NULL && i + 1 != block->instruction_count;
+		if (tcg_may_write_data(instruction) && !inside_delay_slots) {
 			TCGv_i32 exit_request = tcg_temp_new_i32();
 			TCGv_i32 interrupt_request = tcg_temp_new_i32();
 

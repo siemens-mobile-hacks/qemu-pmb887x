@@ -10,4 +10,7 @@ enum {
 	PMB887X_DSP_MCU_INT_COUNT = 4,
 };
 
+#define TYPE_PMB887X_DSP_STUB	"pmb887x-dsp-stub"
+
 void pmb887x_dsp_set_config(DeviceState *dev, const pmb887x_dsp_config_t *config);
+void pmb887x_dsp_stub_set_config(DeviceState *dev, const pmb887x_dsp_config_t *config);
