@@ -10,6 +10,7 @@
 #include "qemu/atomic.h"
 #include "qemu/thread.h"
 #include "exec/cpu-common.h"
+#include "exec/tb-pages.h"
 #include "exec/vaddr.h"
 #ifdef CONFIG_USER_ONLY
 #include "qemu/interval-tree.h"
@@ -108,8 +109,8 @@ struct TranslationBlock {
 #ifdef CONFIG_USER_ONLY
     IntervalTreeNode itree;
 #else
-    uintptr_t page_next[2];
-    tb_page_addr_t page_addr[2];
+    uintptr_t page_next[TB_PAGES];
+    tb_page_addr_t page_addr[TB_PAGES];
 #endif
 
     /* jmp_lock placed here to fill a 4-byte hole. Its documentation is below */
@@ -156,6 +157,38 @@ struct TranslationBlock {
 #define W64_LC_DYN_FLAGS     1
 #define W64_LC_DYN_THUMB     2
 #define W64_LC_DYN_CONDEXEC  4
+    /*
+     * Call inlining (target/arm w64_inline_call): the TB's guest bytes
+     * are then not one linear span.  The linear part stays on the entry
+     * page, [pc, pc + size); the inlined callee's bytes occupy the
+     * page-relative range w64_inl_lo..hi[n] (inclusive) on tracked page
+     * n.  Pages 1..TB_PAGES-1 - which such a TB never uses for a linear
+     * crossing - are the callees' pages when a callee is not on the entry
+     * page: @w64_inl_vpage[n] holds each as an offset from the entry
+     * page, because under CF_PCREL the TB may be entered at any virtual
+     * alias and only the bl displacement is fixed.  W64_INL_PAGE(n) says
+     * which hulls are set, W64_INL_VPAGE(n) that page n is a callee page
+     * (tb_page_span, tb_lookup_cmp).
+     */
+    vaddr w64_inl_vpage[TB_PAGES];
+    uint16_t w64_inl_lo[TB_PAGES];
+    uint16_t w64_inl_hi[TB_PAGES];
+    uint8_t w64_inl;
+/* one W64_INL_PAGE bit per tracked page, then one W64_INL_VPAGE bit each */
+#define W64_INL_PAGE(n)  (1u << (n))
+#define W64_INL_VPAGE(n) (1u << (TB_PAGES + (n)))
+#define W64_INL_PAGE0   W64_INL_PAGE(0)
+#define W64_INL_PAGE1   W64_INL_PAGE(1)
+    /*
+     * One record per inlined callee, in the code buffer after the unwind
+     * data: the callee's instructions are the TB's indices (idx0, idx1]
+     * and its bytes the page-relative hull lo..hi on tracked page @page.
+     * A store from one stream into another's bytes resumes after the
+     * store on fresh code (tb-maint.c), where the stale-to-completion
+     * rule of a non-precise-SMC target would run a callee's old bytes.
+     */
+    const struct W64InlRec *w64_inl_rec;
+    uint8_t w64_inl_nrec;
 
 /*
  * What a goto_ptr operand means to the wasm64 backend.
@@ -245,6 +278,19 @@ bool w64_pcc_inline(void);
 extern uint32_t w64_interp_gate;
 #endif
 
+#ifdef CONFIG_TCG_WASM64
+struct W64InlRec {
+    uint16_t idx0, idx1;
+    uint16_t lo, hi;
+    uint8_t page;
+};
+#define W64_INL_REC 8
+/* the records of the TB being translated (target/arm fills, tb_gen_code
+ * copies) */
+extern __thread struct W64InlRec w64_inl_pending[W64_INL_REC];
+extern __thread unsigned w64_inl_pending_n;
+#endif
+
 /* The alignment given to TranslationBlock during allocation. */
 #define CODE_GEN_ALIGN  16
 
@@ -326,6 +372,25 @@ static inline void tb_set_page_addr1(TranslationBlock *tb,
     tb->page_addr[1] = addr;
 #endif
 }
+
+#ifndef CONFIG_USER_ONLY
+/*
+ * Slots 1..TB_PAGES-1 by index, for the paths that treat the extra pages
+ * uniformly (locking them in order, linking and unlinking the lists).
+ * Slot 0 keeps its own accessor because user-only stores it differently.
+ */
+static inline tb_page_addr_t tb_page_addr_n(const TranslationBlock *tb,
+                                            unsigned n)
+{
+    return tb->page_addr[n];
+}
+
+static inline void tb_set_page_addr_n(TranslationBlock *tb, unsigned n,
+                                      tb_page_addr_t addr)
+{
+    tb->page_addr[n] = addr;
+}
+#endif
 
 /* TranslationBlock invalidate API */
 void tb_invalidate_phys_range(CPUState *cpu, tb_page_addr_t start,

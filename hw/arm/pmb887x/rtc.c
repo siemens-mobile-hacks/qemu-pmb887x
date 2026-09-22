@@ -155,7 +155,15 @@ static void rtc_sync(pmb887x_rtc_t *p) {
 	if (!p->start)
 		p->start = now;
 
-	uint64_t elapsed = muldiv64(now - p->start, rtc_get_freq(p), NANOSECONDS_PER_SECOND);
+	/*
+	 * The virtual clock a device reads mid-TB can run up to one TB ahead
+	 * of the instructions actually executed (accel/tcg/cputlb.c
+	 * io_clock_window); a later exact read may then be earlier than the
+	 * start this sync recorded.  A negative interval here is not elapsed
+	 * time, and unsigned it would be 2^64 ticks to walk through.
+	 */
+	uint64_t elapsed = now > p->start ?
+		muldiv64(now - p->start, rtc_get_freq(p), NANOSECONDS_PER_SECOND) : 0;
 	if (elapsed) {
 		rtc_advance(p, elapsed);
 		p->start += rtc_ticks_to_ns(p, elapsed);

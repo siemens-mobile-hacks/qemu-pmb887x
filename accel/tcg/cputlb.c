@@ -171,6 +171,9 @@ static void tb_jmp_cache_clear_page(CPUState *cpu, vaddr page_addr)
 #ifdef __EMSCRIPTEN__
     wasm_diag_stat[WASM_DIAG_KEY_GEN_PAGE]++;
 #endif
+#ifdef CONFIG_TCG_WASM64
+    tb_unlink_inlined();    /* as in tcg_flush_jmp_cache: a mapping moved */
+#endif
     if (unlikely(!jc)) {
         return;
     }

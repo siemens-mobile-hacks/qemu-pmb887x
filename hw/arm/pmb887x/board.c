@@ -391,8 +391,15 @@ static void pmb887x_class_init(ObjectClass *oc, const void *data) {
 	 * page_bits can only lower a size, never raise one.
 	 */
 	{
+		/*
+		 * 4 KB by default since round 40: the firmware maps only 1 MB
+		 * sections (fillLarge == tlbFill in every window measured), and
+		 * the 1 KB page ARMv5 defaults to is what stopped a translated
+		 * callee running or branching past its page edge.  Sound either
+		 * way - see arm_cpu_realizefn.
+		 */
 		const char *e = getenv("W64_PAGEBITS");
-		int want = e ? atoi(e) : 0;
+		int want = e ? atoi(e) : 12;
 
 		if (want >= 10 && want <= 16) {
 			mc->minimum_page_bits = want;

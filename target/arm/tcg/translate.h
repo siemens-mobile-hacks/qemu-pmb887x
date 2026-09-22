@@ -47,10 +47,24 @@ typedef struct DisasDelayException {
  */
 #define W64_FT_MAX 32
 
-/* W64_XWHY reasons, in the order of the WASM_DIAG_XW_* counters */
+/*
+ * W64_XWHY reasons.  w64_xwhy_count maps these to WASM_DIAG_XW_* slots
+ * through a table, so the four BL reasons can sit at the end of the
+ * counter enum (which is append-only) while reading naturally here.
+ */
 enum {
     W64_WHY_OTHER, W64_WHY_PCST, W64_WHY_BX, W64_WHY_PSR,
-    W64_WHY_RFE, W64_WHY_DEFER, W64_WHY_NOCHAIN,
+    W64_WHY_RFE, W64_WHY_DEFER, W64_WHY_NOCHAIN, W64_WHY_SVC, W64_WHY_BL,
+    /* why w64_inline_call refused this direct call, at runtime weight */
+    W64_WHY_BL_PAGE, W64_WHY_BL_DEPTH, W64_WHY_BL_COND, W64_WHY_BL_RET,
+    /*
+     * Which rule in w64_inl_pick_page refused the stream a page, for a
+     * call and for an absorbed branch alike.  Only W64_WHY_PG_THIRD is
+     * what another tracked page would collect.
+     */
+    W64_WHY_PG_THIRD, W64_WHY_PG_LIN, W64_WHY_PG_PROBE, W64_WHY_PG_RET,
+    W64_WHY_PG_MORE,
+    W64_WHY_N,
 };
 #endif
 
@@ -173,6 +187,68 @@ typedef struct DisasContext {
     int w64_loop_insns;
     /* which instruction asked for the next goto_ptr, for W64_XWHY */
     uint8_t w64_why;
+    /*
+     * Call inlining (w64_inline_call / w64_inline_return): a direct bl's
+     * callee is translated in place and its bx lr becomes a compare of
+     * lr against the return address.  Per nesting level: the return
+     * address as lr holds it (Thumb bit included), the page_start to
+     * restore, and which tracked page the enclosing code is on.
+     * @w64_inl_miss are the deferred exits of a mismatched return,
+     * refunded and emitted at the TB's end like a deferred taken path.
+     * @w64_inl_page is the tracked page (translation-block.h w64_inl)
+     * the current instruction stream is on, @w64_inl_tracked that the
+     * instruction already recorded its bytes (a call or return moves
+     * pc_next away before the generic tracking runs).
+     */
+#define W64_INL_DEPTH 8
+#define W64_INL_MISS  16
+    vaddr w64_inl_ret[W64_INL_DEPTH];
+    vaddr w64_inl_entry[W64_INL_DEPTH];
+    vaddr w64_inl_pstart[W64_INL_DEPTH];
+    uint8_t w64_inl_page_save[W64_INL_DEPTH];
+    uint8_t w64_inl_recidx[W64_INL_DEPTH];  /* w64_inl_pending slot per level */
+    uint8_t w64_inl_depth;
+    uint8_t w64_inl_page;
+    bool w64_inl_tracked;
+    struct {
+        DisasLabel label;
+        int insns;
+    } w64_inl_miss[W64_INL_MISS];
+    uint8_t w64_inl_miss_n;
+    /*
+     * An unconditional direct branch that w64_absorb took to the TB's
+     * *other* tracked page: >= 0 is the w64_inl_pending record of the
+     * stream that follows it, which is what w64_inl_track charges once
+     * the call-inlining depth stack is empty.  One per TB.
+     */
+    int16_t w64_abs_rec;
+    /*
+     * `msr cpsr` continued in place (gen_set_psr): the write cannot touch
+     * T, IT or J (gen_set_psr masks CPSR_EXEC out), so the only key word
+     * it can move is hflags.  When hflags still matches the TB's and no
+     * interrupt is pending, translation carries on; @w64_psr_miss are the
+     * deferred exits for when either test fails, refunded and emitted at
+     * the TB's end like a deferred taken path.
+     */
+#define W64_PSR_MISS 8
+    struct {
+        DisasLabel label;
+        vaddr dest;
+        int insns;
+    } w64_psr_miss[W64_PSR_MISS];
+    uint8_t w64_psr_miss_n;
+    CPUARMState *w64_env;
+    /* max_insns before the A32 page bound: the cap a re-bound may not pass */
+    int w64_max_insns0;
+    /*
+     * The distinct guest pages this TB's streams have asked for, granted or
+     * not, in request order: w64_pgset_slot's index is the tracked-page slot
+     * an N-page TB would have served the request from, which is what prices
+     * each further slot.  Measurement only -- nothing branches on it.
+     */
+#define W64_PGSET 8
+    vaddr w64_pgset[W64_PGSET];
+    uint8_t w64_pgset_n;
 #endif
     bool lse2;
     /*

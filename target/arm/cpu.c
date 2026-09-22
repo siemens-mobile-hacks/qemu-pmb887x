@@ -1838,10 +1838,17 @@ static void arm_cpu_realizefn(DeviceState *dev, Error **errp)
      * "read" is a local.get, not a memory load, so the add costs about
      * what the constant would.  tbGen does not move either, so this
      * firmware really does map its code once -- CF_PCREL's generality is
-     * unused here and still not worth removing.
+     * unused here.
+     *
+     * wasm64 now runs without it (2026-09-21): call inlining
+     * (translate.c w64_inline_call) puts a callee from another page into
+     * the TB, and CF_PCREL's unwind data - a page offset completed from
+     * the page cpu_R[15] holds - cannot name an instruction there.  With
+     * the flag off every unwind word is the full pc.  W64_PCREL=1 turns it
+     * back on, without inlining.
      */
 #ifdef CONFIG_TCG_WASM64
-    if (!getenv("W64_NOPCREL"))
+    if (getenv("W64_PCREL"))
 #endif
     {
         tcg_cflags_set(cs, CF_PCREL);
@@ -2177,8 +2184,9 @@ static void arm_cpu_realizefn(DeviceState *dev, Error **errp)
          * refuse across a page, and at 1K they refuse often.
          */
         {
+            /* the same default as hw/arm/pmb887x/board.c: 4 KB */
             const char *e = getenv("W64_PAGEBITS");
-            int want = e ? atoi(e) : 0;
+            int want = e ? atoi(e) : 12;
 
             if (want > pagebits && want <= 16) {
                 pagebits = want;

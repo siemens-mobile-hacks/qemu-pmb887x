@@ -88,6 +88,14 @@ void tb_check_watchpoint(CPUState *cpu, uintptr_t retaddr);
  *
  * Note: this function can trigger an exception.
  */
+#ifdef CONFIG_TCG_WASM64
+void tb_unlink_inlined(void);
+void w64_inl_list_add(TranslationBlock *tb);
+void w64_inl_list_clear(void);
+/* the index of the guest instruction @host_pc unwinds to, or -1 */
+int w64_tb_insn_index(TranslationBlock *tb, uintptr_t host_pc);
+#endif
+
 tb_page_addr_t get_page_addr_code_hostp(CPUArchState *env, vaddr addr,
                                         void **hostp);
 

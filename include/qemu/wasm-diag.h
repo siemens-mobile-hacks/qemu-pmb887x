@@ -182,8 +182,8 @@ enum {
     WASM_DIAG_SLOWW_BD,
     WASM_DIAG_SLOWW_BE,
     WASM_DIAG_SLOWW_BF,
-    WASM_DIAG_LC2_HIT,       /* W64_LC2 ceiling probe: misses a second cache
-                              * way would have caught */
+    WASM_DIAG_LC2_HIT,       /* retired with the W64_LC2 probe; the slot
+                              * stays because the ABI is positional */
     WASM_DIAG_HFLAGS_NS,     /* sampled time in arm_rebuild_hflags */
     WASM_DIAG_HFLAGS_NS_N,
     WASM_DIAG_LC_NS,         /* sampled time in helper_lookup_tb_ptr_lc */
@@ -223,7 +223,8 @@ enum {
     WASM_DIAG_TOPO_R_ALIAS,  /* memory_region_set_alias_offset */
     WASM_DIAG_TOPO_R_UNMERG, /* memory_region_set_unmergeable */
     WASM_DIAG_TOPO_R_DIRTY,  /* global dirty-log start/stop */
-    WASM_DIAG_PAD_SINK,      /* W64_LDSTPAD's live-out (never read as a count) */
+    WASM_DIAG_PAD_SINK,      /* retired with the calibration pads (see
+                              * LC2_HIT on why the slot stays) */
     /*
      * MOD_NS split four ways.  The JS side has timed these all along into
      * __w64tR/M/I/A, but those globals live in the vCPU worker and the
@@ -285,12 +286,10 @@ enum {
     WASM_DIAG_X_SELF,
     WASM_DIAG_X_GOTOPTR,
     /*
-     * Per-memop-site one-entry page cache, counted in the generated code
-     * (W64_TLBHIT=1).  The inline TLB probe costs 5.1 % of EL71 wall
-     * (W64_TLBDUP), and a check that reaches the addend in two loads
-     * instead of four costs 2.3 % (W64_TLBCHEAP) -- but only if a site
-     * keeps hitting the same guest page.  This is that hit rate, and
-     * nothing else decides whether the cheaper check is worth building.
+     * Retired with the inline-TLB-probe ceiling family, whose findings are
+     * in the playbook (the probe is 5.1 % of EL71 wall; a two-load check
+     * saves 2.3 %; hoisting collects 66 % of that).  The slots stay
+     * because the ABI is positional.
      */
     WASM_DIAG_TLBC_HIT,
     WASM_DIAG_TLBC_MISS,
@@ -376,7 +375,9 @@ enum {
     WASM_DIAG_XW_RFE,        /* rfe, and ldm with an SPSR restore */
     WASM_DIAG_XW_DEFER,      /* a deferred taken path with no slot left */
     WASM_DIAG_XW_NOCHAIN,    /* DISAS_UPDATE_NOCHAIN */
-    WASM_DIAG_RAM_1P,        /* accesses do_ram_1p served inline -- what
+    WASM_DIAG_XW_SVC,        /* svc taken in the TB (arm_take_svc_aarch32) */
+    WASM_DIAG_XW_BL,         /* a direct bl that w64_inline_call refused */
+    WASM_DIAG_RAM_1P,       /* accesses do_ram_1p served inline -- what
                               * SLOW_CLEAN counted before it existed */
     /*
      * The rates the dispatcher's profile share cannot be turned into ns
@@ -588,9 +589,8 @@ enum {
      * -- the whole point of the mechanism, and the number to check
      * before reading any clock.  MERGE_SKIP counts batches that asked
      * to merge and could not because their members' locals declarations
-     * disagreed; it should be 0 with W64_LOCALPAD off, and a nonzero
-     * value silently halves the fan-in, so it is a counter and not an
-     * assertion.  All three are per module (~1k/s), hence uncounted by
+     * disagreed; it should be 0, and a nonzero value silently halves the
+     * fan-in, so it is a counter and not an assertion.  All three are per module (~1k/s), hence uncounted by
      * WASM_DIAG_HOT.
      */
     WASM_DIAG_MERGE_MOD,
@@ -710,9 +710,93 @@ enum {
      * branch in between.  A TLB mask/table cache held in TB locals has to
      * be dropped at every one of those, so LDST_RUN/LDST_GEN is the share
      * of memops such a cache could actually serve -- the multiplier on the
-     * W64_TLBHOIST ceiling, which prices one pair per memop.
+     * +2.6 % hoist ceiling round thirty-eight measured per memop.
      */
     WASM_DIAG_LDST_RUN,
+
+    /*
+     * cpu_handle_interrupt() iterations whose whole pending set was
+     * CPU_INTERRUPT_EXITTB, taken without the BQL.  Every guest exception
+     * leaves one behind (arm_cpu_do_interrupt sets it), so on a workload
+     * that syscalls as hard as the SL65's video player this is the rate
+     * of a BQL round trip the loop used to make for no other reason.
+     */
+    WASM_DIAG_EXITTB_FAST,
+
+    /*
+     * Call inlining (target/arm w64_inline_call): a direct bl whose
+     * callee is translated in place, the bx lr that ends it compared
+     * against the return address.  INL_CALL / INL_RET are translation
+     * counts (calls inlined, return checks emitted); INL_REFUSE counts
+     * calls a page rule turned down; INL_UNLINK the chains into inlined
+     * TBs dropped by a tb_key_gen bump (cpu_tb_key_gen_bump).
+     */
+    WASM_DIAG_INL_CALL,
+    WASM_DIAG_INL_RET,
+    WASM_DIAG_INL_REFUSE,
+    WASM_DIAG_INL_UNLINK,
+    WASM_DIAG_INL_WALK,      /* tb_unlink_inlined walks (one per TLB flush) */
+    /*
+     * Why a TB ended while still inside an inlined callee (translation
+     * counts, arm_tr_tb_stop): the callee raised an svc, left through an
+     * indirect or far branch, ended at a conditional instruction, ran out
+     * of instructions or page, or something else.  And why a direct bl
+     * was not inlined: it was conditional, the depth limit, or a page
+     * refusal (INL_REFUSE above).
+     */
+    WASM_DIAG_INL_END_SVC,
+    WASM_DIAG_INL_END_JUMP,
+    WASM_DIAG_INL_END_COND,
+    WASM_DIAG_INL_END_MANY,
+    WASM_DIAG_INL_END_OTHER,
+    WASM_DIAG_INL_NO_COND,
+    WASM_DIAG_INL_NO_DEPTH,
+    /* w64_absorb refusals while inside an inlined callee, by reason */
+    WASM_DIAG_INL_AB_COND,
+    WASM_DIAG_INL_AB_BACK,
+    WASM_DIAG_INL_AB_FAR,
+    WASM_DIAG_INL_AB_PAGE,
+    WASM_DIAG_INL_AB_OTHER,
+    WASM_DIAG_INL_END_PSR,   /* ...ended at a CPSR write (gen_set_psr) */
+    WASM_DIAG_INL_SMC_RESUME, /* a store patched another stream of its own
+                               * inlined TB: resumed after it on fresh code */
+    /*
+     * gen_set_psr continuing the TB past an `msr cpsr` / `msr spsr`
+     * instead of ending it (target/arm/tcg/translate.c).  PSR_CONT is the
+     * guarded CPSR case, PSR_SPSR the SPSR one, which needs no guard;
+     * PSR_NO_* are the refusals.  Translation-time counts: the runtime
+     * effect is xwPsr under W64_XWHY.
+     */
+    WASM_DIAG_PSR_CONT,
+    WASM_DIAG_PSR_SPSR,
+    WASM_DIAG_PSR_NO_COND,
+    WASM_DIAG_PSR_NO_ROOM,
+    /*
+     * xwBl split by why w64_inline_call refused, counted in the generated
+     * code like the rest of the W64_XWHY family: which refusal is worth a
+     * mechanism depends on its *runtime* weight, and the inl* counters
+     * above are translation-time.
+     */
+    WASM_DIAG_XW_BL_PAGE,    /* callee on a third page, or a return off it */
+    WASM_DIAG_XW_BL_DEPTH,   /* out of nesting levels, misses or records */
+    WASM_DIAG_XW_BL_COND,    /* a conditional call, or one inside an IT */
+    WASM_DIAG_XW_BL_RET,     /* everything else (cflags, eci, M-profile) */
+    WASM_DIAG_AB_CROSS,      /* w64_absorb took a branch to the TB's other
+                              * tracked page instead of ending the TB */
+    /*
+     * xwBlPage, and the page share of xwOther, split by which rule in
+     * w64_inl_pick_page refused the stream its page.  A call and an
+     * absorbed branch share these because they would share the fix.
+     * Only xwPgThird is what a third tracked page collects; the other
+     * three are not more slots away, so this split is what says whether
+     * that mechanism is worth building.
+     */
+    WASM_DIAG_XW_PG_THIRD,   /* page 1 is taken by a different page */
+    WASM_DIAG_XW_PG_LIN,     /* page 1 belongs to a linear crossing */
+    WASM_DIAG_XW_PG_PROBE,   /* the target page is not mapped for fetch */
+    WASM_DIAG_XW_PG_RET,     /* a bl returning off the stream's page */
+    WASM_DIAG_XW_PG_MORE,    /* ...and would still be refused by a third:
+                              * the TB had already asked for four pages */
 
     WASM_DIAG_N
 };

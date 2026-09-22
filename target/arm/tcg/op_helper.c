@@ -859,6 +859,14 @@ void HELPER(cpsr_write_eret)(CPUARMState *env, uint32_t val)
 {
     uint32_t mask;
 
+    /*
+     * The hook lists are empty on a core without a PMU or GICv3 cpuif,
+     * and round 40 tried walking them without the BQL: the lockstep gate
+     * then diverged on the S75 at 246 M instructions.  These two pairs
+     * are where the main loop reliably gets the lock back between
+     * exceptions, so they stay (they were ~2.4 % of the vCPU on the
+     * video workload, measured from the profile).
+     */
     bql_lock();
     arm_call_pre_el_change_hook(env_archcpu(env));
     bql_unlock();
@@ -883,6 +891,15 @@ void HELPER(cpsr_write_eret)(CPUARMState *env, uint32_t val)
     arm_call_el_change_hook(env_archcpu(env));
     bql_unlock();
     cpsr_write_check_irq(env);
+}
+
+void HELPER(svc_inline)(CPUARMState *env, uint32_t syndrome)
+{
+#ifdef CONFIG_USER_ONLY
+    g_assert_not_reached();
+#else
+    arm_take_svc_aarch32(env, syndrome);
+#endif
 }
 
 /* Access to user mode registers from privileged modes.  */

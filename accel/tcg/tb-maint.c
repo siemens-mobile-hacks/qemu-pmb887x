@@ -50,10 +50,13 @@
 #include "trace.h"
 
 /* List iterators for lists of tagged pointers in TranslationBlock. */
-#define TB_FOR_EACH_TAGGED(head, tb, n, field)                          \
-    for (n = (head) & 1, tb = (TranslationBlock *)((head) & ~1);        \
-         tb; tb = (TranslationBlock *)tb->field[n], n = (uintptr_t)tb & 1, \
-             tb = (TranslationBlock *)((uintptr_t)tb & ~1))
+#define TB_FOR_EACH_TAGGED_M(head, tb, n, field, m)                     \
+    for (n = (head) & (m), tb = (TranslationBlock *)((head) & ~(uintptr_t)(m)); \
+         tb; tb = (TranslationBlock *)tb->field[n], n = (uintptr_t)tb & (m), \
+             tb = (TranslationBlock *)((uintptr_t)tb & ~(uintptr_t)(m)))
+
+#define TB_FOR_EACH_TAGGED(head, tb, n, field)          \
+    TB_FOR_EACH_TAGGED_M(head, tb, n, field, 1)
 
 #define TB_FOR_EACH_JMP(head_tb, tb, n)                                 \
     TB_FOR_EACH_TAGGED((head_tb)->jmp_list_head, tb, n, jmp_list_next)
@@ -288,10 +291,35 @@ static inline void tb_page_span(const TranslationBlock *tb, unsigned n,
     tb_page_addr_t s = tb_page_addr0(tb);
     tb_page_addr_t l = s + tb->size - 1;
 
+    if (unlikely(tb->w64_inl)) {
+        /*
+         * An inlined callee (translation-block.h w64_inl): the linear
+         * range never leaves page 0, and each tracked page carries the
+         * hull of the callee bytes translated from it.  Page 0's span is
+         * the hull joined with the linear range - a callee before the
+         * entry point makes the join cover the gap, which only costs a
+         * needless invalidation.
+         */
+        if (n == 0) {
+            if (tb->w64_inl & W64_INL_PAGE0) {
+                tb_page_addr_t pg = s & TARGET_PAGE_MASK;
+
+                s = MIN(s, pg + tb->w64_inl_lo[0]);
+                l = MAX(l, pg + tb->w64_inl_hi[0]);
+            }
+        } else {
+            s = tb_page_addr_n(tb, n);
+            l = s + tb->w64_inl_hi[n];
+            s += tb->w64_inl_lo[n];
+        }
+        *start = s;
+        *last = l;
+        return;
+    }
     if (n == 0) {
         l = MIN(l, s | ~TARGET_PAGE_MASK);
     } else {
-        s = tb_page_addr1(tb);
+        s = tb_page_addr_n(tb, n);
         l = s + (l & ~TARGET_PAGE_MASK);
     }
     *start = s;
@@ -425,7 +453,7 @@ struct page_collection {
 
 typedef int PageForEachNext;
 #define PAGE_FOR_EACH_TB(start, last, pagedesc, tb, n) \
-    TB_FOR_EACH_TAGGED((pagedesc)->first_tb, tb, n, page_next)
+    TB_FOR_EACH_TAGGED_M((pagedesc)->first_tb, tb, n, page_next, TB_PAGE_TAG)
 
 #ifdef CONFIG_DEBUG_TCG
 
@@ -512,6 +540,49 @@ static void page_unlock(PageDesc *pd)
     page_unlock__debug(pd);
 }
 
+/*
+ * Which of this TB's page slots are linked into a PageDesc list, as slot
+ * numbers: a slot holding -1 is unused, and two slots may name the same
+ * page (a callee on the entry page carries its own hull).  A repeat is
+ * dropped, because page_next[] gives each TB one link per PageDesc and
+ * tb_page_remove would unlink only the first of two entries -- and for
+ * the same reason such a page is locked once.  Ascending, slot 0 first.
+ */
+static unsigned tb_page_slots(const TranslationBlock *tb,
+                              unsigned slots[TB_PAGES])
+{
+    unsigned n = 0, i, j;
+
+    for (i = 0; i < TB_PAGES; i++) {
+        tb_page_addr_t paddr = i ? tb_page_addr_n(tb, i) : tb_page_addr0(tb);
+
+        if (paddr == -1) {
+            continue;
+        }
+        for (j = 0; j < n; j++) {
+            unsigned s = slots[j];
+            tb_page_addr_t o = s ? tb_page_addr_n(tb, s) : tb_page_addr0(tb);
+
+            if ((o >> TARGET_PAGE_BITS) == (paddr >> TARGET_PAGE_BITS)) {
+                break;
+            }
+        }
+        if (j == n) {
+            slots[n++] = i;
+        }
+    }
+    return n;
+}
+
+#define TB_PAGE_UNSET_INDEX (((tb_page_addr_t)-1) >> TARGET_PAGE_BITS)
+
+static tb_page_addr_t tb_page_index(const TranslationBlock *tb, unsigned slot)
+{
+    tb_page_addr_t paddr = slot ? tb_page_addr_n(tb, slot) : tb_page_addr0(tb);
+
+    return paddr >> TARGET_PAGE_BITS;
+}
+
 void tb_lock_page0(tb_page_addr_t paddr)
 {
     page_lock(page_find_alloc(paddr >> TARGET_PAGE_BITS, true));
@@ -561,41 +632,127 @@ void tb_unlock_page1(tb_page_addr_t paddr0, tb_page_addr_t paddr1)
     }
 }
 
+/* this TB's distinct page indices, ascending -- the lock order */
+static unsigned tb_page_order(const TranslationBlock *tb,
+                              tb_page_addr_t idx[TB_PAGES])
+{
+    unsigned slots[TB_PAGES];
+    unsigned n = tb_page_slots(tb, slots), i, j;
+
+    for (i = 0; i < n; i++) {
+        tb_page_addr_t v = tb_page_index(tb, slots[i]);
+
+        for (j = i; j > 0 && idx[j - 1] > v; j--) {
+            idx[j] = idx[j - 1];
+        }
+        idx[j] = v;
+    }
+    return n;
+}
+
 static void tb_lock_pages(TranslationBlock *tb)
 {
-    tb_page_addr_t paddr0 = tb_page_addr0(tb);
-    tb_page_addr_t paddr1 = tb_page_addr1(tb);
-    tb_page_addr_t pindex0 = paddr0 >> TARGET_PAGE_BITS;
-    tb_page_addr_t pindex1 = paddr1 >> TARGET_PAGE_BITS;
+    tb_page_addr_t idx[TB_PAGES];
+    unsigned n, i;
 
-    if (unlikely(paddr0 == -1)) {
+    if (unlikely(tb_page_addr0(tb) == -1)) {
         return;
     }
-    if (unlikely(paddr1 != -1) && pindex0 != pindex1) {
-        if (pindex0 < pindex1) {
-            page_lock(page_find_alloc(pindex0, true));
-            page_lock(page_find_alloc(pindex1, true));
-            return;
-        }
-        page_lock(page_find_alloc(pindex1, true));
+    n = tb_page_order(tb, idx);
+    for (i = 0; i < n; i++) {
+        page_lock(page_find_alloc(idx[i], true));
     }
-    page_lock(page_find_alloc(pindex0, true));
 }
 
 void tb_unlock_pages(TranslationBlock *tb)
 {
-    tb_page_addr_t paddr0 = tb_page_addr0(tb);
-    tb_page_addr_t paddr1 = tb_page_addr1(tb);
-    tb_page_addr_t pindex0 = paddr0 >> TARGET_PAGE_BITS;
-    tb_page_addr_t pindex1 = paddr1 >> TARGET_PAGE_BITS;
+    tb_page_addr_t idx[TB_PAGES];
+    unsigned n, i;
 
-    if (unlikely(paddr0 == -1)) {
+    if (unlikely(tb_page_addr0(tb) == -1)) {
         return;
     }
-    if (unlikely(paddr1 != -1) && pindex0 != pindex1) {
-        page_unlock(page_find_alloc(pindex1, false));
+    n = tb_page_order(tb, idx);
+    for (i = 0; i < n; i++) {
+        page_unlock(page_find_alloc(idx[i], false));
     }
-    page_unlock(page_find_alloc(pindex0, false));
+}
+
+/*
+ * These two scan every slot rather than tb_page_slots(): that list keeps
+ * only the lowest slot naming a page, and here the question is whether
+ * *any other* slot names @paddr, which a dropped higher slot would answer.
+ */
+void tb_unlock_page_n(TranslationBlock *tb, unsigned n, tb_page_addr_t paddr)
+{
+    tb_page_addr_t pindex = paddr >> TARGET_PAGE_BITS;
+    unsigned i;
+
+    for (i = 0; i < TB_PAGES; i++) {
+        if (i != n && tb_page_index(tb, i) == pindex) {
+            /* another slot still holds this page, so the lock stays */
+            return;
+        }
+    }
+    page_unlock(page_find_alloc(pindex, false));
+}
+
+void tb_lock_page_n(TranslationBlock *tb, unsigned n, tb_page_addr_t paddr)
+{
+    tb_page_addr_t pindex = paddr >> TARGET_PAGE_BITS;
+    unsigned slots[TB_PAGES];
+    unsigned ns, i;
+    bool ordered = true;
+    PageDesc *pd;
+
+    for (i = 0; i < TB_PAGES; i++) {
+        tb_page_addr_t held;
+
+        if (i == n) {
+            continue;
+        }
+        held = tb_page_index(tb, i);
+        if (held == TB_PAGE_UNSET_INDEX) {
+            continue;   /* an unset slot must not make @pindex look unordered */
+        }
+        if (held == pindex) {
+            /* already locked under another slot */
+            return;
+        }
+        ordered &= held < pindex;
+    }
+    ns = tb_page_slots(tb, slots);
+
+    pd = page_find_alloc(pindex, true);
+    if (ordered) {
+        /* Correct locking order, we may block. */
+        page_lock(pd);
+        return;
+    }
+
+    /* Incorrect locking order, we cannot block lest we deadlock. */
+    if (!page_trylock(pd)) {
+        return;
+    }
+
+    /*
+     * Drop every lock this TB holds and take them all in index order.
+     * Restart translation via longjmp, as tb_lock_page1 does.
+     */
+    for (i = 0; i < ns; i++) {
+        if (slots[i] != n) {
+            page_unlock(page_find_alloc(tb_page_index(tb, slots[i]), false));
+        }
+    }
+    {
+        tb_page_addr_t idx[TB_PAGES];
+        unsigned no = tb_page_order(tb, idx);
+
+        for (i = 0; i < no; i++) {
+            page_lock(page_find_alloc(idx[i], true));
+        }
+    }
+    siglongjmp(tcg_ctx->jmp_trans, -3);
 }
 
 static inline struct page_entry *
@@ -837,16 +994,15 @@ static void tb_page_add(PageDesc *p, TranslationBlock *tb, unsigned int n)
 
 static void tb_record(TranslationBlock *tb)
 {
-    tb_page_addr_t paddr0 = tb_page_addr0(tb);
-    tb_page_addr_t paddr1 = tb_page_addr1(tb);
-    tb_page_addr_t pindex0 = paddr0 >> TARGET_PAGE_BITS;
-    tb_page_addr_t pindex1 = paddr1 >> TARGET_PAGE_BITS;
+    unsigned slots[TB_PAGES];
+    unsigned n = tb_page_slots(tb, slots), i;
 
-    assert(paddr0 != -1);
-    if (unlikely(paddr1 != -1) && pindex0 != pindex1) {
-        tb_page_add(page_find_alloc(pindex1, false), tb, 1);
+    assert(tb_page_addr0(tb) != -1);
+    /* descending, so slot 0 is added last and ends up at the list head */
+    for (i = n; i-- > 0; ) {
+        tb_page_add(page_find_alloc(tb_page_index(tb, slots[i]), false),
+                    tb, slots[i]);
     }
-    tb_page_add(page_find_alloc(pindex0, false), tb, 0);
 }
 
 static void tb_page_remove(PageDesc *pd, TranslationBlock *tb)
@@ -874,16 +1030,13 @@ static void tb_page_remove(PageDesc *pd, TranslationBlock *tb)
 
 static void tb_remove(TranslationBlock *tb)
 {
-    tb_page_addr_t paddr0 = tb_page_addr0(tb);
-    tb_page_addr_t paddr1 = tb_page_addr1(tb);
-    tb_page_addr_t pindex0 = paddr0 >> TARGET_PAGE_BITS;
-    tb_page_addr_t pindex1 = paddr1 >> TARGET_PAGE_BITS;
+    unsigned slots[TB_PAGES];
+    unsigned n = tb_page_slots(tb, slots), i;
 
-    assert(paddr0 != -1);
-    if (unlikely(paddr1 != -1) && pindex0 != pindex1) {
-        tb_page_remove(page_find_alloc(pindex1, false), tb);
+    assert(tb_page_addr0(tb) != -1);
+    for (i = 0; i < n; i++) {
+        tb_page_remove(page_find_alloc(tb_page_index(tb, slots[i]), false), tb);
     }
-    tb_page_remove(page_find_alloc(pindex0, false), tb);
 }
 #endif /* CONFIG_USER_ONLY */
 
@@ -916,6 +1069,7 @@ void tb_flush__exclusive_or_serial(void)
     /* drop the batch modules/thunks and temp modules before the code
      * buffer (which holds their staged bytes and descriptors) resets */
     w64_batch_flush();
+    w64_inl_list_clear();
 #endif
 
     tcg_region_reset_all();
@@ -1024,6 +1178,95 @@ static inline void tb_jmp_unlink(TranslationBlock *dest)
 
     qemu_spin_unlock(&dest->jmp_lock);
 }
+
+#ifdef CONFIG_TCG_WASM64
+/*
+ * A goto_tb chain into a TB with an inlined callee on its second page
+ * (translation-block.h w64_inl) skips the page-1 check tb_lookup_cmp
+ * makes, so the chains are dropped whenever a mapping may have changed
+ * (the TLB-flush sites): the sources fall back to the dispatcher, which
+ * looks the TB up again and re-links them.  The TBs are kept in a list
+ * of their own - a walk of every TB per page flush crawled the lockstep
+ * boot, where one-insn-per-tb makes millions of them and none inlined.
+ * An invalidated TB stays listed until tb_flush; unlinking it again is a
+ * no-op on an empty jump list.
+ */
+static TranslationBlock **w64_inl_tbs;
+static unsigned w64_inl_ntbs, w64_inl_cap;
+
+void w64_inl_list_add(TranslationBlock *tb)
+{
+    if (w64_inl_ntbs == w64_inl_cap) {
+        w64_inl_cap = w64_inl_cap ? w64_inl_cap * 2 : 1024;
+        w64_inl_tbs = g_renew(TranslationBlock *, w64_inl_tbs, w64_inl_cap);
+    }
+    w64_inl_tbs[w64_inl_ntbs++] = tb;
+}
+
+void w64_inl_list_clear(void)
+{
+    w64_inl_ntbs = 0;
+}
+
+void tb_unlink_inlined(void)
+{
+    for (unsigned i = 0; i < w64_inl_ntbs; i++) {
+        tb_jmp_unlink(w64_inl_tbs[i]);
+    }
+    wasm_diag_stat[WASM_DIAG_INL_UNLINK] += w64_inl_ntbs;
+    wasm_diag_stat[WASM_DIAG_INL_WALK]++;
+}
+
+/*
+ * A non-precise-SMC target lets the TB a store just patched run to
+ * completion on its old code (the "same-TB" rule); an inlined TB would
+ * then run a *callee's* old bytes after `str; bl callee`, which used to
+ * be a lookup and is now the same TB.  Resume after the store on fresh
+ * code when the store and the patched bytes belong to different streams
+ * of the TB; a stream patching itself keeps the same-TB rule.
+ */
+static bool w64_inl_cross_stream(TranslationBlock *tb, uintptr_t retaddr,
+                                 tb_page_addr_t start, tb_page_addr_t last)
+{
+    int i = w64_tb_insn_index(tb, retaddr);
+    int src = -1, dst = -1;
+    static int dbg = -1;
+
+    if (dbg < 0) {
+        dbg = getenv("W64_INLLOG") != NULL;
+    }
+    if (dbg) {
+        fprintf(stderr, "INL smc tb=%08" PRIx64 " i=%d nrec=%u write=%08lx..%08lx"
+                " page0=%08lx page1=%08lx\n", (uint64_t)tb->pc, i,
+                tb->w64_inl_nrec, (unsigned long)start, (unsigned long)last,
+                (unsigned long)tb_page_addr0(tb), (unsigned long)tb_page_addr1(tb));
+        for (unsigned r = 0; r < tb->w64_inl_nrec; r++) {
+            const struct W64InlRec *rec = &tb->w64_inl_rec[r];
+            fprintf(stderr, "  rec%u idx %u..%u page%u lo=%x hi=%x\n", r,
+                    rec->idx0, rec->idx1, rec->page, rec->lo, rec->hi);
+        }
+    }
+    if (i < 0) {
+        return false;
+    }
+    for (unsigned r = 0; r < tb->w64_inl_nrec; r++) {
+        const struct W64InlRec *rec = &tb->w64_inl_rec[r];
+        tb_page_addr_t base = rec->page ? tb_page_addr_n(tb, rec->page)
+                              : (tb_page_addr0(tb) & TARGET_PAGE_MASK);
+
+        /* idx0/idx1 are 1-based counts at the bl and at the return; @i is
+         * the 0-based index, so the callee's instructions are [idx0, idx1) */
+        if (rec->idx0 <= i && i < rec->idx1) {
+            src = r;                    /* innermost: the last that matches */
+        }
+        if (rec->lo <= rec->hi &&
+            !(base + rec->hi < start || base + rec->lo > last)) {
+            dst = r;
+        }
+    }
+    return src != dst;
+}
+#endif
 
 #ifdef CONFIG_TCG_WASM64
 /*
@@ -1267,6 +1510,10 @@ tb_invalidate_phys_page_range__locked(CPUState *cpu,
     PageForEachNext n;
     bool current_tb_modified = false;
     TranslationBlock *current_tb = NULL;
+#ifdef CONFIG_TCG_WASM64
+    TranslationBlock *w64_cur = NULL;
+    bool w64_cur_known = false, w64_resume = false;
+#endif
 
     /* Range may not cross a page. */
     tcg_debug_assert(((start ^ last) & TARGET_PAGE_MASK) == 0);
@@ -1283,6 +1530,9 @@ tb_invalidate_phys_page_range__locked(CPUState *cpu,
         tb_page_addr_t tb_start, tb_last;
 
         /* NOTE: this is subtle as a TB may span two physical pages */
+#ifdef CONFIG_TCG_WASM64
+        tb_page_span(tb, n, &tb_start, &tb_last);
+#else
         tb_start = tb_page_addr0(tb);
         tb_last = tb_start + tb->size - 1;
         if (n == 0) {
@@ -1291,6 +1541,7 @@ tb_invalidate_phys_page_range__locked(CPUState *cpu,
             tb_start = tb_page_addr1(tb);
             tb_last = tb_start + (tb_last & ~TARGET_PAGE_MASK);
         }
+#endif
         if (!(tb_last < start || tb_start > last)) {
             if (unlikely(current_tb == tb) &&
                 (tb_cflags(current_tb) & CF_COUNT_MASK) != 1) {
@@ -1304,6 +1555,30 @@ tb_invalidate_phys_page_range__locked(CPUState *cpu,
                 current_tb_modified = true;
                 cpu_restore_state_from_tb(cpu, current_tb, retaddr);
             }
+#ifdef CONFIG_TCG_WASM64
+            if (unlikely(tb->w64_inl) && getenv("W64_INLLOG")) {
+                fprintf(stderr, "INL smc hit tb=%p (pc %08" PRIx64 ") ra=%lx"
+                        " cpu=%d cflags=%x write=%08lx..%08lx\n", tb,
+                        (uint64_t)tb->pc, (unsigned long)retaddr, cpu != NULL,
+                        tb_cflags(tb), (unsigned long)start,
+                        (unsigned long)last);
+            }
+            if (unlikely(tb->w64_inl) && retaddr && cpu &&
+                (tb_cflags(tb) & CF_COUNT_MASK) != 1) {
+                if (!w64_cur_known) {
+                    w64_cur = tcg_tb_lookup(retaddr);
+                    w64_cur_known = true;
+                    if (getenv("W64_INLLOG")) {
+                        fprintf(stderr, "INL smc cur=%p (pc %08" PRIx64 ")\n",
+                                w64_cur, w64_cur ? (uint64_t)w64_cur->pc : 0);
+                    }
+                }
+                if (w64_cur == tb &&
+                    w64_inl_cross_stream(tb, retaddr, start, last)) {
+                    w64_resume = true;
+                }
+            }
+#endif
             do_tb_phys_invalidate(tb, true);
         }
     }
@@ -1312,6 +1587,20 @@ tb_invalidate_phys_page_range__locked(CPUState *cpu,
     if (!p->first_tb) {
         tlb_unprotect_code(start);
     }
+
+#ifdef CONFIG_TCG_WASM64
+    if (unlikely(w64_resume) && !current_tb_modified) {
+        /*
+         * As a precise-SMC target would: back to the store, which
+         * notdirty_write() unwinds before it has landed, and run it alone
+         * in a one-instruction TB so that TB is exempt from this check;
+         * the code after it is then translated from the patched bytes.
+         */
+        wasm_diag_stat[WASM_DIAG_INL_SMC_RESUME]++;
+        cpu_restore_state_from_tb(cpu, w64_cur, retaddr);
+        current_tb_modified = true;
+    }
+#endif
 
     if (unlikely(current_tb_modified)) {
         page_collection_unlock(pages);

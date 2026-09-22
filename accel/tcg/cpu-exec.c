@@ -175,13 +175,17 @@ static bool tb_lookup_cmp(const void *p, const void *d)
         tb->cs_base == desc->s.cs_base &&
         tb->flags == desc->s.flags &&
         tb_cflags(tb) == desc->s.cflags) {
-        /* check next page if needed */
-        tb_page_addr_t tb_phys_page1 = tb_page_addr1(tb);
-        if (tb_phys_page1 == -1) {
-            return true;
-        } else {
+        /* check every further tracked page if needed */
+        unsigned slot;
+
+        for (slot = 1; slot < TB_PAGES; slot++) {
+            tb_page_addr_t tb_phys_page1 = tb_page_addr_n(tb, slot);
             tb_page_addr_t phys_page1;
             vaddr virt_page1;
+
+            if (tb_phys_page1 == -1) {
+                continue;
+            }
 
             /*
              * We know that the first page matched, and an otherwise valid TB
@@ -193,11 +197,39 @@ static bool tb_lookup_cmp(const void *p, const void *d)
              * here by the faulting lookup is not premature.
              */
             virt_page1 = TARGET_PAGE_ALIGN(desc->s.pc);
+#ifdef CONFIG_TCG_WASM64
+            if (unlikely(tb->w64_inl & W64_INL_VPAGE(slot))) {
+                /*
+                 * Page 1 is an inlined callee's page (translation-block.h
+                 * w64_inl), reached only after the instructions before
+                 * the call ran - so a fault here would be premature: a
+                 * page the guest has unmapped just makes this TB not
+                 * match, and the retranslation will not inline from it.
+                 */
+                void *host;
+                int fl;
+
+                /* the callee page, relative to the entry page (CF_PCREL) */
+                virt_page1 = (desc->s.pc & TARGET_PAGE_MASK) +
+                             tb->w64_inl_vpage[slot];
+                if (desc->s.pc <= UINT32_MAX) {
+                    virt_page1 = (uint32_t)virt_page1;
+                }
+                fl = probe_access_flags(desc->env, virt_page1, 0,
+                                        MMU_INST_FETCH,
+                                        cpu_mmu_index(env_cpu(desc->env), true),
+                                        true, &host, 0);
+                if ((fl & (TLB_INVALID_MASK | TLB_MMIO)) || host == NULL) {
+                    return false;
+                }
+            }
+#endif
             phys_page1 = get_page_addr_code(desc->env, virt_page1);
-            if (tb_phys_page1 == phys_page1) {
-                return true;
+            if (tb_phys_page1 != phys_page1) {
+                return false;
             }
         }
+        return true;
     }
     return false;
 }
@@ -537,7 +569,6 @@ const struct W64PccShape *w64_pcc_shape(void)
 }
 
 static bool w64_lc_verify(void);
-static bool w64_lc2_enabled(void);
 static bool w64_coloc(void);
 
 static bool w64_pcc_on(void)
@@ -546,7 +577,7 @@ static bool w64_pcc_on(void)
     if (mode < 0) {
         /* every diagnostic mode wants the full lookup to run */
         mode = getenv("W64_NOPCC") == NULL &&
-            !w64_lc_verify() && !w64_lc2_enabled() && !w64_coloc();
+            !w64_lc_verify() && !w64_coloc();
     }
     return mode != 0;
 }
@@ -756,38 +787,6 @@ static bool w64_lc_static_match(const struct W64LookupCache *lc,
     return true;
 }
 
-/*
- * Ceiling probe for a second cache way, W64_LC2=1.  The emitted code is
- * untouched, so the helper still sees only real misses of the one-entry
- * slot; a direct-mapped shadow table hashed on the slot address stands in
- * for way 1, filled with whatever way 0 is about to evict (LRU-of-2).
- * LC2_HIT / LC_CALL is then the fraction of today's misses a two-way
- * cache would catch - measured before building one.
- */
-#define W64_LC2_SLOTS 16384
-static struct {
-    const void *slot;
-    uint32_t pc, gen, key32[3];
-    uint8_t dynmask;
-} w64_lc2[W64_LC2_SLOTS];
-
-static bool w64_lc2_enabled(void)
-{
-    static int mode = -1;
-    if (mode < 0) {
-        mode = getenv("W64_LC2") != NULL;
-    }
-    return mode != 0;
-}
-
-static unsigned w64_lc2_idx(const void *slot)
-{
-    uintptr_t x = (uintptr_t)slot >> 5;
-
-    x *= 0x9e3779b97f4a7c15ULL;
-    return (x >> 33) & (W64_LC2_SLOTS - 1);
-}
-
 static bool w64_lc_verify(void)
 {
     static int mode = -1;
@@ -912,33 +911,6 @@ const void *HELPER(lookup_tb_ptr_lc)(CPUArchState *env, void *slot)
     }
 
     tb = tb_lookup(cpu, s);
-
-    if (unlikely(w64_lc2_enabled()) && W64_LC_KEY(cpu, cur)) {
-        unsigned i = w64_lc2_idx(slot);
-
-        if (w64_lc2[i].slot == slot && w64_lc2[i].gen == gen &&
-            w64_lc2[i].pc == s.pc) {
-            bool ok = true;
-
-            for (int k = 0; k < 3; k++) {
-                if ((w64_lc2[i].dynmask & (1 << k)) &&
-                    w64_lc2[i].key32[k] != cur[k]) {
-                    ok = false;
-                }
-            }
-            if (ok) {
-                wasm_diag_stat[WASM_DIAG_LC2_HIT]++;
-            }
-        }
-        /* way 0 is about to be overwritten: it becomes way 1 */
-        w64_lc2[i].slot = slot;
-        w64_lc2[i].pc = lc->pc;
-        w64_lc2[i].gen = lc->gen;
-        w64_lc2[i].dynmask = lc->dynmask;
-        for (int k = 0; k < 3; k++) {
-            w64_lc2[i].key32[k] = lc->key32[k];
-        }
-    }
 
     if (unlikely(w64_lc_verify())) {
         if (lc->gen == gen && lc->pc == s.pc &&
@@ -1613,25 +1585,48 @@ static inline bool cpu_handle_exception(CPUState *cpu, int *ret)
         const TCGCPUOps *tcg_ops = cpu->cc->tcg_ops;
 
 #ifdef CONFIG_TCG_WASM64
+        /*
+         * The lean pair, for the same reason cputlb.c uses it on the MMIO
+         * path: this guest takes an exception every few hundred
+         * instructions - 2360 SVCs per Mi while the SL65 decodes a video,
+         * ~540 k a second - and BQL_LOCK_GUARD's ~22 non-inlinable calls
+         * are then a percent of the vCPU on their own.  bql_unlock_mmio()
+         * also defers the release, so a run of exceptions with nobody
+         * contending costs one thread-local read each instead of a
+         * pthread_mutex round trip; cpu_exec_loop() gives the lock back
+         * on its next iteration as soon as another thread asks
+         * (bql_wanted_by_other()), which bounds the hold exactly as it
+         * does for a device access.
+         *
+         * do_interrupt() may itself reach a device (an IRQ acknowledged
+         * through the VIC) and take the BQL again - that nests through
+         * the same thread-local flag and is what took_bql is for.
+         */
+        bool took_bql;
+
         if (w64_exc_ns()) {
             int64_t c0 = get_clock_realtime();
             int64_t c1 = get_clock_realtime();
             int64_t c2, c3, c4;
 
-            bql_lock();
+            took_bql = bql_lock_mmio();
             c2 = get_clock_realtime();
             tcg_ops->do_interrupt(cpu);
             c3 = get_clock_realtime();
-            bql_unlock();
+            if (took_bql) {
+                bql_unlock_mmio();
+            }
             c4 = get_clock_realtime();
             wasm_diag_stat[WASM_DIAG_EXC_CAL] += c1 - c0;
             wasm_diag_stat[WASM_DIAG_EXC_BQL_NS] += (c2 - c1) + (c4 - c3);
             wasm_diag_stat[WASM_DIAG_EXC_DO_NS] += c3 - c2;
             wasm_diag_stat[WASM_DIAG_EXC_N]++;
         } else {
-            bql_lock();
+            took_bql = bql_lock_mmio();
             tcg_ops->do_interrupt(cpu);
-            bql_unlock();
+            if (took_bql) {
+                bql_unlock_mmio();
+            }
         }
 #else
         bql_lock();
@@ -1743,6 +1738,36 @@ static inline bool cpu_handle_interrupt(CPUState *cpu,
     assert(!cpu_test_interrupt(cpu, ~0));
 #else
     if (unlikely(cpu_test_interrupt(cpu, ~0))) {
+#ifdef CONFIG_TCG_WASM64
+        /*
+         * EXITTB on its own, which is what every guest exception leaves
+         * behind: arm_cpu_do_interrupt() sets it, and the very next
+         * iteration of this loop comes here to take it off again.  The
+         * generic path below then spends a BQL round trip and a call to
+         * cpu_exec_interrupt() - which, with no other bit pending, can
+         * only return false - to do what these two lines do.
+         *
+         * Dropping the lock is safe because the only state this touches
+         * is cpu->interrupt_request, and it touches it with the same
+         * atomic-and the locked path uses: a device thread's concurrent
+         * qatomic_or of CPU_INTERRUPT_HARD cannot be lost, and losing the
+         * race the other way (the bit arriving just after the test) is
+         * what the stock path does too - the kick that comes with it ends
+         * the next TB and the following iteration takes the full path.
+         *
+         * The guest's syscall rate is what makes this worth a branch: an
+         * SL65 decoding video takes 2360 exceptions per Mi, so this is
+         * ~500 k BQL round trips a second that buy nothing.
+         */
+        if (likely(qatomic_load_acquire(&cpu->interrupt_request)
+                   == CPU_INTERRUPT_EXITTB)) {
+            cpu_reset_interrupt(cpu, CPU_INTERRUPT_EXITTB);
+            /* as below: the program flow changed, so do not patch a jump */
+            *last_tb = NULL;
+            wasm_diag_stat[WASM_DIAG_EXITTB_FAST]++;
+            goto after_interrupts;
+        }
+#endif
         bql_lock();
         if (cpu_test_interrupt(cpu, CPU_INTERRUPT_DEBUG)) {
             cpu_reset_interrupt(cpu, CPU_INTERRUPT_DEBUG);
@@ -1810,6 +1835,9 @@ static inline bool cpu_handle_interrupt(CPUState *cpu,
         /* If we exit via cpu_loop_exit/longjmp it is reset in cpu_exec */
         bql_unlock();
     }
+#ifdef CONFIG_TCG_WASM64
+after_interrupts:
+#endif
 #endif /* !CONFIG_USER_ONLY */
 
     /*
@@ -1958,6 +1986,16 @@ cpu_exec_loop(CPUState *cpu, SyncClocks *sc)
              * for the second page can change.
              */
             if (tb_page_addr1(tb) != -1) {
+#ifdef CONFIG_TCG_WASM64
+                /*
+                 * Unless the second page is an inlined callee's
+                 * (translation-block.h w64_inl): those chains are dropped
+                 * whenever the mapping may have changed
+                 * (tb_unlink_inlined, from cpu_tb_key_gen_bump), which
+                 * is what makes a direct jump into the TB safe.
+                 */
+                if (!tb->w64_inl)
+#endif
                 last_tb = NULL;
             }
 #endif

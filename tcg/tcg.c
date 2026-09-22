@@ -4648,37 +4648,6 @@ static inline void temp_dead(TCGContext *s, TCGTemp *ts)
     temp_free_or_dead(s, ts, 1);
 }
 
-#ifdef CONFIG_TCG_WASM64
-/*
- * W64_GDUP=N prices the guest-register traffic row -- the one the budget
- * table has carried as "unpriced, 1.7-2.0 memory ops per guest
- * instruction" -- by emitting N-1 extra copies of every global load and
- * every global write-back.  Each copy targets the same address with the
- * same value, so it is idempotent and the guest cannot tell; there is no
- * safe scratch offset inside CPUArchState to aim at instead, and aiming at
- * one would be a wild store the moment the struct layout moved.
- *
- * What idempotence costs is a risk of store-to-store and load-to-load
- * elimination.  The emitted TB modules run in V8's baseline tier -- that
- * is what the 3-6 % `--no-liftoff` row means -- and that tier does not do
- * either.  The probe is self-checking regardless: if the copies were
- * folded away the N=1 -> N=4 wall difference would be zero, and a zero
- * here reads as "the probe is inert", never as "the traffic is free".
- *
- * Measurement build.  Per-Mi counter rates stay exact under it, since it
- * adds no counted event; wall-clock numbers do not.
- */
-static int w64_gdup(void)
-{
-    static int n = -1;
-    if (n < 0) {
-        const char *e = getenv("W64_GDUP");
-        n = e ? atoi(e) : 0;
-    }
-    return n;
-}
-#endif
-
 /* Sync a temporary to memory. 'allocated_regs' is used in case a temporary
    registers needs to be allocated to store a constant.  If 'free_or_dead'
    is non-zero, subsequently release the temporary; if it is positive, the
@@ -4713,14 +4682,6 @@ static void temp_sync(TCGContext *s, TCGTemp *ts, TCGRegSet allocated_regs,
             }
             tcg_out_st(s, ts->type, ts->reg,
                        ts->mem_base->reg, ts->mem_offset);
-#ifdef CONFIG_TCG_WASM64
-            if (ts->kind == TEMP_GLOBAL) {
-                for (int i = 1; i < w64_gdup(); i++) {
-                    tcg_out_st(s, ts->type, ts->reg,
-                               ts->mem_base->reg, ts->mem_offset);
-                }
-            }
-#endif
             break;
 
         case TEMP_VAL_MEM:
@@ -4913,13 +4874,6 @@ static void temp_load(TCGContext *s, TCGTemp *ts, TCGRegSet desired_regs,
             wasm_diag_stat[WASM_DIAG_TCG_GLD]++;
         }
         tcg_out_ld(s, ts->type, reg, ts->mem_base->reg, ts->mem_offset);
-#ifdef CONFIG_TCG_WASM64
-        if (ts->kind == TEMP_GLOBAL) {
-            for (int i = 1; i < w64_gdup(); i++) {
-                tcg_out_ld(s, ts->type, reg, ts->mem_base->reg, ts->mem_offset);
-            }
-        }
-#endif
         ts->mem_coherent = 1;
         break;
     case TEMP_VAL_DEAD:

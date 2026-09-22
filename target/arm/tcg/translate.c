@@ -31,6 +31,10 @@
 #include "exec/target_page.h"
 #include "exec/translator.h"
 #include "qemu/wasm-diag.h"
+#ifdef CONFIG_TCG_WASM64
+#include "accel/tcg/probe.h"
+#include "exec/tlb-flags.h"
+#endif
 #include "helper.h"
 #include "helper-mve.h"
 
@@ -1084,6 +1088,18 @@ static bool arm_excp_exit_ok(DisasContext *s)
         && !arm_dc_feature(s, ARM_FEATURE_M);
 }
 
+#ifdef CONFIG_TCG_WASM64
+static bool w64_svc_dispatch(void)
+{
+    static int on = -1;
+
+    if (on < 0) {
+        on = getenv("W64_NOSVCINL") != NULL;
+    }
+    return on;
+}
+#endif
+
 static void gen_exception_exit(int excp, uint32_t syndrome)
 {
     /* cs->exception_index = excp */
@@ -1475,25 +1491,56 @@ static void note_linear_succ(DisasContext *s, unsigned bit) { }
  * wherever DISAS_JUMP is, and cleared here so a later exit in the same TB
  * cannot inherit it.
  */
-static void w64_xwhy_count(DisasContext *s)
+static bool w64_xwhy_on(void)
 {
     static int on = -1;
-    TCGv_ptr p;
-    TCGv_i64 v;
 
     if (on < 0) {
         const char *e = getenv("W64_XWHY");
 
         on = e ? atoi(e) : 0;
     }
-    if (!on) {
-        return;
-    }
-    p = tcg_constant_ptr(&wasm_diag_stat[WASM_DIAG_XW_OTHER + s->w64_why]);
-    v = tcg_temp_new_i64();
+    return on != 0;
+}
+
+/* one emitted increment of a diagnostics counter (W64_XWHY builds only) */
+static void w64_bump(int idx)
+{
+    TCGv_ptr p = tcg_constant_ptr(&wasm_diag_stat[idx]);
+    TCGv_i64 v = tcg_temp_new_i64();
+
     tcg_gen_ld_i64(v, p, 0);
     tcg_gen_addi_i64(v, v, 1);
     tcg_gen_st_i64(v, p, 0);
+}
+
+static void w64_xwhy_count(DisasContext *s)
+{
+    static const int slot[W64_WHY_N] = {
+        [W64_WHY_OTHER] = WASM_DIAG_XW_OTHER,
+        [W64_WHY_PCST] = WASM_DIAG_XW_PCST,
+        [W64_WHY_BX] = WASM_DIAG_XW_BX,
+        [W64_WHY_PSR] = WASM_DIAG_XW_PSR,
+        [W64_WHY_RFE] = WASM_DIAG_XW_RFE,
+        [W64_WHY_DEFER] = WASM_DIAG_XW_DEFER,
+        [W64_WHY_NOCHAIN] = WASM_DIAG_XW_NOCHAIN,
+        [W64_WHY_SVC] = WASM_DIAG_XW_SVC,
+        [W64_WHY_BL] = WASM_DIAG_XW_BL,
+        [W64_WHY_BL_PAGE] = WASM_DIAG_XW_BL_PAGE,
+        [W64_WHY_BL_DEPTH] = WASM_DIAG_XW_BL_DEPTH,
+        [W64_WHY_BL_COND] = WASM_DIAG_XW_BL_COND,
+        [W64_WHY_BL_RET] = WASM_DIAG_XW_BL_RET,
+        [W64_WHY_PG_THIRD] = WASM_DIAG_XW_PG_THIRD,
+        [W64_WHY_PG_LIN] = WASM_DIAG_XW_PG_LIN,
+        [W64_WHY_PG_PROBE] = WASM_DIAG_XW_PG_PROBE,
+        [W64_WHY_PG_RET] = WASM_DIAG_XW_PG_RET,
+        [W64_WHY_PG_MORE] = WASM_DIAG_XW_PG_MORE,
+    };
+    if (!w64_xwhy_on()) {
+        s->w64_why = 0;
+        return;
+    }
+    w64_bump(slot[s->w64_why]);
     s->w64_why = 0;
 }
 
@@ -1942,7 +1989,20 @@ static bool w64_defer_taken(DisasContext *s, int64_t diff)
     return true;
 }
 
-/* hand back what the prologue prepaid for instructions not run */
+/*
+ * Hand back what the prologue prepaid for instructions not run - unless a
+ * device has already seen the prepaid clock.  A mid-TB MMIO access does
+ * not rewind the TB on wasm (cputlb.c io_clock_window): it sets can_do_io
+ * and lets the device read a clock that counts the whole TB, accepting a
+ * clock up to one TB ahead.  A refund after that would move the clock the
+ * device saw *backwards*, and a device that keeps "now - last" (the RTC
+ * counts ticks from its last sync) then spins on a negative interval.
+ * can_do_io is exactly "the clock was observed in this TB": the translator
+ * clears it before the first instruction and sets it only before the last
+ * one, which no deferred exit is.  When it is set the instructions are
+ * left charged - time runs one TB ahead, the deviation the design already
+ * allows - and the guest instruction count stays exact.
+ */
 static void w64_refund(DisasContext *dc, int skipped)
 {
     if (skipped <= 0) {
@@ -1950,10 +2010,16 @@ static void w64_refund(DisasContext *dc, int skipped)
     }
     if (tb_cflags(dc->base.tb) & CF_USE_ICOUNT) {
         int off = offsetof(CPUState, neg.icount_decr.u16.low) - sizeof(CPUState);
+        int cdi = offsetof(CPUState, neg.can_do_io) - sizeof(CPUState);
         TCGv_i32 c = tcg_temp_new_i32();
+        TCGv_i32 seen = tcg_temp_new_i32();
+        TCGv_i32 r = tcg_temp_new_i32();
 
+        tcg_gen_ld8u_i32(seen, tcg_env, cdi);
+        tcg_gen_movcond_i32(TCG_COND_EQ, r, seen, tcg_constant_i32(0),
+                            tcg_constant_i32(skipped), tcg_constant_i32(0));
         tcg_gen_ld16u_i32(c, tcg_env, off);
-        tcg_gen_addi_i32(c, c, skipped);
+        tcg_gen_add_i32(c, c, r);
         tcg_gen_st16_i32(c, tcg_env, off);
     }
     w64_acct_charge(-skipped);
@@ -2078,6 +2144,10 @@ static bool w64_absorb_charge(void)
     return on;
 }
 
+/* defined below, with the rest of the two-page stream machinery */
+static bool w64_abs_cross_page(DisasContext *s, vaddr dest);
+static inline bool w64_inl_stream(const DisasContext *s);
+
 static bool w64_absorb(DisasContext *s, int64_t diff)
 {
     vaddr dest = s->pc_curr + diff;
@@ -2090,6 +2160,10 @@ static bool w64_absorb(DisasContext *s, int64_t diff)
                        s->base.is_jmp != DISAS_NEXT ? WASM_DIAG_AB_JMP :
                        (s->condexec_mask || s->eci) ? WASM_DIAG_AB_IT :
                        WASM_DIAG_AB_STATE]++;
+        if (s->w64_inl_depth) {
+            wasm_diag_stat[s->condjmp ? WASM_DIAG_INL_AB_COND
+                                      : WASM_DIAG_INL_AB_OTHER]++;
+        }
         return false;
     }
     /*
@@ -2102,6 +2176,53 @@ static bool w64_absorb(DisasContext *s, int64_t diff)
         wasm_diag_stat[WASM_DIAG_AB_ISET]++;
         return false;
     }
+    /* the page the stream is on: an inlined callee's, not the entry page */
+    if (((dest ^ s->page_start) & TARGET_PAGE_MASK) != 0) {
+        if (w64_abs_cross_page(s, dest)) {
+            wasm_diag_stat[WASM_DIAG_AB_CROSS]++;
+            wasm_diag_stat[WASM_DIAG_TB_ABSORB]++;
+            return true;
+        }
+        wasm_diag_stat[WASM_DIAG_AB_PAGE]++;
+        wasm_diag_stat[WASM_DIAG_INL_AB_PAGE] += s->w64_inl_depth != 0;
+        return false;
+    }
+    if (w64_inl_stream(s)) {
+        /*
+         * Inside an inlined callee the bytes jumped over cost nothing: the
+         * invalidation range is the hull of the instructions actually
+         * translated (translation-block.h w64_inl), not a linear span.  So
+         * a forward branch may go anywhere on the callee's page, and a
+         * backward one anywhere *below* everything translated on it - a
+         * shared epilogue placed before the function, say.  Backward into
+         * translated code is a loop, and absorbing it would unroll it.
+         */
+        TranslationBlock *tb = s->base.tb;
+        unsigned n = s->w64_inl_page;
+        vaddr lo = -1;
+
+        if (tb->w64_inl & W64_INL_PAGE(n)) {
+            lo = s->page_start + tb->w64_inl_lo[n];
+        }
+        if (n == 0) {
+            lo = MIN(lo, s->base.pc_first);
+        }
+        if (dest <= s->base.pc_next && dest >= lo) {
+            wasm_diag_stat[WASM_DIAG_INL_AB_BACK]++;
+            return false;
+        }
+        if (dest > s->base.pc_next) {
+            skip = dest - s->base.pc_next;
+        } else {
+            skip = 0;
+        }
+        s->base.pc_next = dest;
+        if (!s->thumb && skip) {
+            s->base.max_insns -= skip / 4;
+        }
+        wasm_diag_stat[WASM_DIAG_TB_ABSORB]++;
+        return true;
+    }
     if (dest <= s->base.pc_next) {
         wasm_diag_stat[dest >= s->base.pc_first ? WASM_DIAG_AB_BACKIN
                                                 : WASM_DIAG_AB_BACKOUT]++;
@@ -2109,10 +2230,6 @@ static bool w64_absorb(DisasContext *s, int64_t diff)
     }
     if (dest - s->base.pc_next > w64_absorb_max()) {
         wasm_diag_stat[WASM_DIAG_AB_FAR]++;
-        return false;
-    }
-    if (!translator_is_same_page(&s->base, dest)) {
-        wasm_diag_stat[WASM_DIAG_AB_PAGE]++;
         return false;
     }
     skip = dest - s->base.pc_next;
@@ -2129,6 +2246,485 @@ static bool w64_absorb(DisasContext *s, int64_t diff)
     }
     wasm_diag_stat[WASM_DIAG_TB_ABSORB]++;
     return true;
+}
+
+/*
+ * Call inlining.  A direct bl and the bx lr that answers it are the two
+ * largest TB-boundary sources of a call-heavy guest (a decoding video
+ * clip: 66 k calls and 61 k returns per Mi against 167 k boundaries), and
+ * absorbing the call (above) cannot reach the return, because it skips
+ * the return address.  So translate the callee in place instead: the bl
+ * sets lr and translation carries on at the callee; its bx lr compares lr
+ * with the return address and, when they agree - which they do unless the
+ * callee rewrote lr - carries on at the instruction after the call.  A
+ * mismatch takes a deferred exit that hands back the icount prepaid for
+ * the instructions it will not run and leaves through the ordinary bx.
+ *
+ * The bytes the callee contributes are on the entry page or on one other
+ * page, which then takes the TB's page_addr[1] slot; tb_page_span keeps
+ * the invalidation ranges honest and tb_lookup_cmp checks that page's
+ * mapping on every hash lookup (translation-block.h w64_inl).  That is
+ * why the TB's own linear range must stay on the entry page: page 1 is
+ * the callee's.  The nonfault probe below is what makes a callee on an
+ * unmapped page a refusal rather than a prefetch abort raised for
+ * instructions that have not run.
+ */
+static unsigned w64_inline_max(void)
+{
+    static int n = -1;
+
+    if (n < 0) {
+        const char *e = getenv("W64_INLINE");
+
+        n = e ? MIN(atoi(e), W64_INL_DEPTH) : 4;
+    }
+    return n;
+}
+
+static bool w64_inline_log(void)
+{
+    static int on = -1;
+
+    if (on < 0) {
+        on = getenv("W64_INLLOG") != NULL;
+    }
+    return on;
+}
+
+/* record the bytes of the instruction at pc_curr on the page it is on */
+static void w64_inl_track(DisasContext *s, vaddr end_incl)
+{
+    TranslationBlock *tb = s->base.tb;
+    unsigned n = s->w64_inl_page;
+    unsigned lo = s->pc_curr & ~TARGET_PAGE_MASK;
+    unsigned hi = end_incl & ~TARGET_PAGE_MASK;
+    unsigned bit = W64_INL_PAGE(n);
+
+    if (!(tb->w64_inl & bit)) {
+        tb->w64_inl_lo[n] = lo;
+        tb->w64_inl_hi[n] = hi;
+        tb->w64_inl |= bit;
+    } else {
+        tb->w64_inl_lo[n] = MIN(tb->w64_inl_lo[n], lo);
+        tb->w64_inl_hi[n] = MAX(tb->w64_inl_hi[n], hi);
+    }
+    int rec = s->w64_inl_depth ? s->w64_inl_recidx[s->w64_inl_depth - 1]
+                               : s->w64_abs_rec;
+
+    if (rec >= 0) {
+        struct W64InlRec *r = &w64_inl_pending[rec];
+
+        r->lo = MIN(r->lo, lo);
+        r->hi = MAX(r->hi, hi);
+    }
+}
+
+/*
+ * Is translation off the TB's own linear stream -- inside an inlined
+ * callee, or past a branch w64_absorb took to the other tracked page?
+ * Both are tracked by the hull of what was translated rather than by a
+ * linear span, so the bytes in between cost nothing.
+ */
+static inline bool w64_inl_stream(const DisasContext *s)
+{
+    return s->w64_inl_depth || s->w64_abs_rec >= 0;
+}
+
+/*
+ * arm_tr_init_disas_context bounds an A32 TB to the instructions left on
+ * its entry page, which is right for a linear stream and wrong the moment
+ * the stream moves: a callee near the end of its own page, or a caller
+ * resumed after one, has its own remainder.  Re-bound from where the
+ * stream now is, never past the cap the TB started with.  (Thumb needs
+ * nothing: it re-checks page_start after every instruction.)
+ */
+static void w64_inl_rebound(DisasContext *s, vaddr pc)
+{
+    if (!s->thumb) {
+        int left = -(pc | TARGET_PAGE_MASK) / 4;
+
+        s->base.max_insns = MIN(s->w64_max_insns0, s->base.num_insns + left);
+    }
+}
+
+/*
+ * How many distinct guest pages this TB's streams have asked for, in the
+ * order they asked.  Anything past index TB_PAGES-1 is a refusal, and the
+ * index says which slot *would* have served it, which is the marginal
+ * value of the next tracked page.  Recorded whether the request was
+ * granted or refused, because the question is what an N-page TB would have
+ * done.
+ *
+ * It prices *one* further slot and no more.  A refused stream ends the TB
+ * there, so the pages it would have gone on to ask for are never counted:
+ * at two tracked pages this said nothing ever wants a fourth, and at
+ * three, 4 740 per Mi do.
+ */
+static uint8_t w64_pgset_slot(DisasContext *s, vaddr page)
+{
+    unsigned i;
+
+    for (i = 0; i < s->w64_pgset_n; i++) {
+        if (s->w64_pgset[i] == page) {
+            return i;
+        }
+    }
+    if (s->w64_pgset_n < W64_PGSET) {
+        s->w64_pgset[s->w64_pgset_n] = page;
+    }
+    return s->w64_pgset_n++;
+}
+
+/*
+ * Which tracked page a stream that moves to @dest may use: page 0 is the
+ * TB's entry page, page 1 the one slot a TB has besides it.  Claiming
+ * page 1 for the first time needs a nonfault probe, so an unmapped page
+ * is a refusal here rather than a prefetch abort raised for instructions
+ * that have not run.
+ */
+static bool w64_inl_pick_page(DisasContext *s, vaddr dest, uint8_t *on_page,
+                              uint8_t *why)
+{
+    DisasContextBase *db = &s->base;
+    TranslationBlock *tb = db->tb;
+    vaddr page = dest & TARGET_PAGE_MASK;
+    vaddr page0 = db->pc_first & TARGET_PAGE_MASK;
+    uint8_t slot;
+
+    if (s->w64_pgset_n == 0) {
+        w64_pgset_slot(s, page0);
+    }
+    slot = w64_pgset_slot(s, page);
+
+    /*
+     * A linear crossing owns page 1 and carries no hull for it, so once any
+     * stream sets w64_inl, tb_page_span would read an unset hull for that
+     * page: refuse the whole TB to another stream, even one that would stay
+     * on page 0.
+     */
+    if (tb_page_addr_n(tb, 1) != -1 && !(tb->w64_inl & W64_INL_VPAGE(1))) {
+        *why = W64_WHY_PG_LIN;
+        return false;
+    }
+    if (page == page0) {
+        *on_page = 0;
+        return true;
+    }
+    /*
+     * A slot already holding this callee page: reuse it.  Its hull and its
+     * QEMU page registration are already there, so nothing is claimed.
+     */
+    for (unsigned n = 1; n < TB_PAGES; n++) {
+        if ((tb->w64_inl & W64_INL_VPAGE(n)) &&
+            tb->w64_inl_vpage[n] == page - page0) {
+            db->w64_page_base[n] = page;
+            *on_page = n;
+            return true;
+        }
+    }
+    /*
+     * A free slot.  Slot n is free when no stream has claimed it and no
+     * linear crossing has fetched through it -- a crossing carries no hull,
+     * so tb_page_span would have nothing to invalidate that page by.
+     */
+    for (unsigned n = 1; n < TB_PAGES; n++) {
+        void *host;
+        int fl;
+
+        if ((tb->w64_inl & W64_INL_VPAGE(n)) || db->host_addr[n] != NULL ||
+            tb_page_addr_n(tb, n) != -1) {
+            continue;
+        }
+        fl = probe_access_flags(s->w64_env, page, 0, MMU_INST_FETCH,
+                                db->code_mmuidx, true, &host, 0);
+        if ((fl & (TLB_INVALID_MASK | TLB_MMIO)) || host == NULL) {
+            *why = W64_WHY_PG_PROBE;
+            return false;
+        }
+        db->w64_page_base[n] = page;
+        /* relative to the entry page: with CF_PCREL the TB may be entered
+         * at another virtual alias, and the bl offset is what is fixed */
+        tb->w64_inl_vpage[n] = page - page0;
+        tb->w64_inl |= W64_INL_VPAGE(n);
+        *on_page = n;
+        return true;
+    }
+    /*
+     * Every slot is spoken for: by other streams' pages, which one more
+     * tracked page would give this one; or by a linear crossing, which it
+     * would not.
+     */
+    if (!(tb->w64_inl & W64_INL_VPAGE(1))) {
+        *why = W64_WHY_PG_LIN;
+        return false;
+    }
+    *why = slot == TB_PAGES ? W64_WHY_PG_THIRD : W64_WHY_PG_MORE;
+    return false;
+}
+
+/*
+ * An unconditional direct branch off the page the stream is on used to end
+ * the TB (`xwOther`, 8 997 /Mi after round forty-one's msr work, 9.7 % of
+ * every boundary left).  A TB tracks two guest pages, and unless an
+ * inlined callee has claimed the second one it is sitting unused: take it,
+ * and translation carries straight on at the target.
+ *
+ * This is the callee-inlining machinery with the call taken out -- the
+ * target is static, so there is no guard, no miss path and no icount
+ * refund; only the bookkeeping that makes a second stream safe.  The
+ * bytes between the branch and its target cost nothing, because from here
+ * the page is invalidated by the hull of what was actually translated on
+ * it (translation-block.h w64_inl) rather than by a linear span.
+ *
+ * One per TB, and not from inside an inlined callee: the depth stack
+ * restores @page_start on return, and moving the stream out from under it
+ * would restore the wrong one.
+ */
+static bool w64_abs_cross_page(DisasContext *s, vaddr dest)
+{
+    DisasContextBase *db = &s->base;
+    uint8_t on_page;
+
+    if (s->w64_inl_depth || s->w64_abs_rec >= 0 ||
+        w64_inl_pending_n >= W64_INL_REC || s->pc_save == -1 ||
+        (tb_cflags(db->tb) & (CF_PCREL | CF_COUNT_MASK)) ||
+        w64_tb_icount_exact()) {
+        return false;
+    }
+    if (!w64_inl_pick_page(s, dest, &on_page, &s->w64_why)) {
+        return false;
+    }
+
+    /* the branch belongs to the stream it ends, so charge it before moving */
+    w64_inl_track(s, s->pc_curr + curr_insn_len(s) - 1);
+    s->w64_inl_tracked = true;
+    db->w64_lin_end = db->pc_next;
+    {
+        struct W64InlRec *rec = &w64_inl_pending[w64_inl_pending_n];
+
+        rec->idx0 = db->num_insns;
+        rec->idx1 = 0xffff;         /* closed by w64_inl_count_end */
+        rec->lo = 0xffff;
+        rec->hi = 0;
+        rec->page = on_page;
+        s->w64_abs_rec = w64_inl_pending_n++;
+    }
+    s->page_start = dest & TARGET_PAGE_MASK;
+    s->w64_inl_page = on_page;
+    db->pc_next = dest;
+    w64_inl_rebound(s, dest);
+    return true;
+}
+
+static bool w64_inline_call(DisasContext *s, int64_t diff)
+{
+    DisasContextBase *db = &s->base;
+    TranslationBlock *tb = db->tb;
+    vaddr dest = s->pc_curr + diff;
+    vaddr ret = db->pc_next;
+    unsigned depth = s->w64_inl_depth;
+    uint8_t on_page;
+
+    if (tcg_ctx->addr_type == TCG_TYPE_I32) {
+        dest = (uint32_t)dest;
+    }
+    s->w64_why = W64_WHY_BL;
+    if (s->condjmp || s->condexec_mask) {
+        wasm_diag_stat[WASM_DIAG_INL_NO_COND]++;
+        s->w64_why = W64_WHY_BL_COND;
+        return false;
+    }
+    if (depth >= w64_inline_max() || s->w64_inl_miss_n >= W64_INL_MISS ||
+        w64_inl_pending_n >= W64_INL_REC) {
+        wasm_diag_stat[WASM_DIAG_INL_NO_DEPTH]++;
+        s->w64_why = W64_WHY_BL_DEPTH;
+        return false;
+    }
+    if (db->is_jmp != DISAS_NEXT ||
+        s->eci || unlikely(s->ss_active) ||
+        (tb_cflags(tb) & (CF_SINGLE_STEP | CF_PCREL | CF_COUNT_MASK)) ||
+        s->pc_save == -1 ||
+        w64_tb_icount_exact() || arm_dc_feature(s, ARM_FEATURE_M) ||
+        s->w64_thumb != s->thumb) {
+        /*
+         * CF_PCREL: the unwind data then holds page offsets that
+         * restore_state_to_opc completes from the page cpu_R[15] holds,
+         * which a callee on another page breaks.  wasm64 runs without it
+         * (target/arm/cpu.c), so this only guards the W64_PCREL=1 case.
+         */
+        s->w64_why = W64_WHY_BL_RET;
+        return false;
+    }
+    /* a bl in the last word of its page returns to a page this TB has no
+     * slot for */
+    if (((ret ^ s->page_start) & TARGET_PAGE_MASK) != 0) {
+        wasm_diag_stat[WASM_DIAG_INL_REFUSE]++;
+        s->w64_why = W64_WHY_PG_RET;
+        return false;
+    }
+    if (!w64_inl_pick_page(s, dest, &on_page, &s->w64_why)) {
+        wasm_diag_stat[WASM_DIAG_INL_REFUSE]++;
+        return false;
+    }
+
+    if (depth) {
+        w64_inl_track(s, s->pc_curr + curr_insn_len(s) - 1);
+    }
+    s->w64_inl_tracked = true;
+    {
+        struct W64InlRec *r = &w64_inl_pending[w64_inl_pending_n];
+
+        r->idx0 = db->num_insns;
+        r->idx1 = 0xffff;
+        r->lo = 0xffff;
+        r->hi = 0;
+        r->page = on_page;
+        s->w64_inl_recidx[depth] = w64_inl_pending_n++;
+    }
+    s->w64_inl_ret[depth] = ret | s->thumb;
+    s->w64_inl_entry[depth] = dest;
+    s->w64_inl_pstart[depth] = s->page_start;
+    s->w64_inl_page_save[depth] = s->w64_inl_page;
+    s->w64_inl_depth = depth + 1;
+    s->page_start = dest & TARGET_PAGE_MASK;
+    s->w64_inl_page = on_page;
+    if (depth == 0) {
+        db->w64_lin_end = ret;
+    }
+    db->pc_next = dest;
+    w64_inl_rebound(s, dest);
+    s->w64_why = 0;
+    wasm_diag_stat[WASM_DIAG_INL_CALL]++;
+    if (unlikely(w64_inline_log())) {
+        fprintf(stderr, "INL call pc=%08" PRIx64 " dest=%08" PRIx64
+                " ret=%08" PRIx64 " depth=%u page=%u n=%d\n",
+                (uint64_t)s->pc_curr, (uint64_t)dest, (uint64_t)ret,
+                depth + 1, on_page, db->num_insns);
+    }
+    return true;
+}
+
+/* bx lr inside an inlined callee: compare, and carry on after the call */
+static bool w64_inline_return(DisasContext *s, int rm)
+{
+    unsigned depth = s->w64_inl_depth;
+    unsigned m = s->w64_inl_miss_n;
+    vaddr ret;
+    TCGv_i32 lr, want;
+
+    if (depth == 0 || rm != 14 || m >= W64_INL_MISS ||
+        s->condexec_mask || s->eci || unlikely(s->ss_active) ||
+        s->base.is_jmp != DISAS_NEXT || s->pc_save == -1) {
+        return false;
+    }
+    if (s->condjmp) {
+        /*
+         * A conditional return (bxeq lr): its taken arm is a return when
+         * lr matches, so it becomes a deferred taken path to the return
+         * address - the join lands when the unconditional return brings
+         * translation there - and the fall-through stays in the callee.
+         */
+        if (!w64_merge_on() || s->w64_ft_n >= w64_ft_max() ||
+            w64_tb_icount_exact()) {
+            return false;
+        }
+    }
+    ret = s->w64_inl_ret[depth - 1];
+    if (!s->condjmp) {
+        depth--;
+        w64_inl_track(s, s->pc_curr + curr_insn_len(s) - 1);
+        s->w64_inl_tracked = true;
+    }
+
+    /* the return address as lr holds it, pc-relative under CF_PCREL */
+    lr = load_reg(s, 14);
+    want = tcg_temp_new_i32();
+    gen_pc_plus_diff(s, want, (int64_t)ret - (int64_t)s->pc_curr);
+    s->w64_inl_miss[m].label = gen_disas_label(s);
+    s->w64_inl_miss[m].insns = s->base.num_insns;
+    tcg_gen_brcond_i32(TCG_COND_NE, lr, want,
+                       s->w64_inl_miss[m].label.label);
+    s->w64_inl_miss_n = m + 1;
+
+    if (s->condjmp) {
+        s->w64_ft[s->w64_ft_n].label = gen_disas_label(s);
+        s->w64_ft[s->w64_ft_n].dest = ret & ~(vaddr)1;
+        s->w64_ft[s->w64_ft_n].insns = s->base.num_insns;
+        tcg_gen_br(s->w64_ft[s->w64_ft_n].label.label);
+        s->w64_ft_n++;
+        wasm_diag_stat[WASM_DIAG_INL_RET]++;
+        return true;
+    }
+
+    s->w64_inl_depth = depth;
+    w64_inl_pending[s->w64_inl_recidx[depth]].idx1 = s->base.num_insns;
+    s->page_start = s->w64_inl_pstart[depth];
+    s->w64_inl_page = s->w64_inl_page_save[depth];
+    if (depth == 0) {
+        s->base.w64_lin_end = 0;
+    }
+    s->base.pc_next = ret & ~(vaddr)1;
+    w64_inl_rebound(s, s->base.pc_next);
+    wasm_diag_stat[WASM_DIAG_INL_RET]++;
+    if (unlikely(w64_inline_log())) {
+        fprintf(stderr, "INL ret  pc=%08" PRIx64 " ret=%08" PRIx64
+                " depth=%u n=%d\n", (uint64_t)s->pc_curr, (uint64_t)ret,
+                depth, s->base.num_insns);
+    }
+    return true;
+}
+
+/* why the TB ends inside a callee: from the top of tb_stop, before the
+ * exit emitters rewrite is_jmp */
+static void w64_inl_count_end(DisasContext *dc)
+{
+    /* callees the TB ended inside: their stream runs to the TB's end */
+    for (unsigned r = 0; r < w64_inl_pending_n; r++) {
+        if (w64_inl_pending[r].idx1 == 0xffff) {
+            w64_inl_pending[r].idx1 = dc->base.num_insns;
+        }
+    }
+    if (dc->w64_inl_depth) {
+        int k;
+
+        switch (dc->base.is_jmp) {
+        case DISAS_SWI:
+            k = WASM_DIAG_INL_END_SVC;
+            break;
+        case DISAS_JUMP:
+            k = WASM_DIAG_INL_END_JUMP;
+            break;
+        case DISAS_TOO_MANY:
+            k = WASM_DIAG_INL_END_MANY;
+            break;
+        default:
+            k = WASM_DIAG_INL_END_OTHER;
+            break;
+        }
+        if (dc->condjmp) {
+            k = WASM_DIAG_INL_END_COND;
+        } else if (dc->w64_why == W64_WHY_PSR) {
+            k = WASM_DIAG_INL_END_PSR;
+        }
+        wasm_diag_stat[k]++;
+        if (unlikely(w64_inline_log())) {
+            fprintf(stderr, "INL end  pc=%08" PRIx64 " depth=%u n=%d jmp=%d"
+                    " cond=%d why=%d\n", (uint64_t)dc->pc_curr,
+                    dc->w64_inl_depth, dc->base.num_insns, dc->base.is_jmp,
+                    dc->condjmp, dc->w64_why);
+        }
+    }
+}
+
+/* the mismatched-return exits, from tb_stop */
+static void w64_emit_inline_misses(DisasContext *dc)
+{
+    for (unsigned i = 0; i < dc->w64_inl_miss_n; i++) {
+        set_disas_label(dc, dc->w64_inl_miss[i].label);
+        w64_refund(dc, dc->base.num_insns - dc->w64_inl_miss[i].insns);
+        gen_bx(dc, load_reg(dc, 14));
+        gen_goto_ptr(dc, 0);
+    }
 }
 
 static bool w64_join_on(void)
@@ -2326,6 +2922,90 @@ static uint32_t msr_mask(DisasContext *s, int flags, int spsr)
     return mask;
 }
 
+#ifdef CONFIG_TCG_WASM64
+/*
+ * A CPSR write ends the TB because it can move the key the next lookup
+ * uses.  It cannot move most of it: gen_msr_mask clears CPSR_EXEC, so T,
+ * IT and J are untouchable, and condexec and thumb therefore cannot
+ * change.  What is left is hflags -- mode, E, IL, PAN -- and the
+ * interrupt this write may just have unmasked.
+ *
+ * So test exactly those two in emitted code and carry on translating when
+ * they hold.  A mode change *within* EL1 (svc -> irq, say) leaves hflags
+ * equal and is still correct to continue through: the banked registers it
+ * swaps are values in env, which the rest of the TB reloads anyway
+ * because helper_cpsr_write clobbers every global.  A write whose mask
+ * reaches no hflags input at all (`msr cpsr_f`, restoring the condition
+ * flags) skips the hflags compare entirely.
+ *
+ * The interrupt test reproduces the old path exactly rather than
+ * approximating it.  helper_cpsr_write has already run
+ * cpsr_write_check_irq, so a pending interrupt has set icount_decr's high
+ * half; taking the miss exit here reaches the same next TB, which stops
+ * at its own prologue just as it did before.  Continuing instead would
+ * push the interrupt to the end of this TB -- architecturally legal and a
+ * lockstep divergence, which is the trap round forty fell into with the
+ * eret BQL pair.
+ */
+static bool w64_psr_continue(DisasContext *s, uint32_t mask)
+{
+    /* what cpsr_write() lets move hflags, plus PAN for good measure */
+    const uint32_t hflags_in = CPSR_M | CPSR_E | CPSR_IL | CPSR_PAN;
+    TranslationBlock *tb = s->base.tb;
+    TCGv_i32 a;
+
+    if (s->base.is_jmp != DISAS_NEXT ||
+        s->eci || unlikely(s->ss_active) || s->pc_save == -1 ||
+        (tb_cflags(tb) & (CF_SINGLE_STEP | CF_PCREL | CF_COUNT_MASK)) ||
+        w64_tb_icount_exact()) {
+        return false;
+    }
+    if (s->condjmp || s->condexec_mask) {
+        wasm_diag_stat[WASM_DIAG_PSR_NO_COND]++;
+        return false;
+    }
+    if (s->w64_psr_miss_n >= W64_PSR_MISS) {
+        wasm_diag_stat[WASM_DIAG_PSR_NO_ROOM]++;
+        return false;
+    }
+
+    a = tcg_temp_new_i32();
+    s->w64_psr_miss[s->w64_psr_miss_n].label = gen_disas_label(s);
+    s->w64_psr_miss[s->w64_psr_miss_n].dest = s->base.pc_next;
+    s->w64_psr_miss[s->w64_psr_miss_n].insns = s->base.num_insns;
+
+    if (mask & hflags_in) {
+        tcg_gen_ld_i32(a, tcg_env, offsetof(CPUARMState, hflags.flags));
+        tcg_gen_brcondi_i32(TCG_COND_NE, a, (uint32_t)tb->flags,
+                            s->w64_psr_miss[s->w64_psr_miss_n].label.label);
+    }
+    tcg_gen_ld_i32(a, tcg_env,
+                   offsetof(ARMCPU, parent_obj.interrupt_request) -
+                   offsetof(ARMCPU, env));
+    tcg_gen_brcondi_i32(TCG_COND_NE, a, 0,
+                        s->w64_psr_miss[s->w64_psr_miss_n].label.label);
+
+    s->w64_psr_miss_n++;
+    wasm_diag_stat[WASM_DIAG_PSR_CONT]++;
+    return true;
+}
+
+/* the guard's failed exits, from tb_stop */
+static void w64_emit_psr_misses(DisasContext *dc)
+{
+    for (unsigned i = 0; i < dc->w64_psr_miss_n; i++) {
+        int64_t diff = dc->w64_psr_miss[i].dest - dc->pc_curr;
+
+        set_disas_label(dc, dc->w64_psr_miss[i].label);
+        w64_refund(dc, dc->base.num_insns - dc->w64_psr_miss[i].insns);
+        gen_update_pc(dc, diff);
+        dc->w64_why = W64_WHY_PSR;
+        dc->w64_dynkey = true;
+        gen_goto_ptr(dc, 0);
+    }
+}
+#endif
+
 /* Returns nonzero if access to the PSR is not permitted. Marks t0 as dead. */
 static int gen_set_psr(DisasContext *s, uint32_t mask, int spsr, TCGv_i32 t0)
 {
@@ -2343,6 +3023,19 @@ static int gen_set_psr(DisasContext *s, uint32_t mask, int spsr, TCGv_i32 t0)
     } else {
         gen_set_cpsr(t0, mask);
     }
+#ifdef CONFIG_TCG_WASM64
+    /*
+     * An SPSR write moves nothing the TB is keyed on, so it never needed
+     * to end one; a CPSR write ends it only when the guard below fails.
+     */
+    if (spsr && s->base.is_jmp == DISAS_NEXT && !s->eci && !s->ss_active) {
+        wasm_diag_stat[WASM_DIAG_PSR_SPSR]++;
+        return 0;
+    }
+    if (!spsr && w64_psr_continue(s, mask)) {
+        return 0;
+    }
+#endif
     /*
      * Continue through goto_ptr (next-TB lookup with the rebuilt hflags)
      * instead of a plain exit to cpu_exec_loop: the only thing the loop
@@ -4393,6 +5086,11 @@ static bool trans_BX(DisasContext *s, arg_BX *a)
     if (!ENABLE_ARCH_4T) {
         return false;
     }
+#ifdef CONFIG_TCG_WASM64
+    if (w64_inline_return(s, a->rm)) {
+        return true;
+    }
+#endif
     gen_bx_excret(s, load_reg(s, a->rm));
     return true;
 }
@@ -6311,6 +7009,11 @@ static bool trans_BL(DisasContext *s, arg_i *a)
 {
     translator_note_succ(&s->base, s->base.pc_next);
     gen_pc_plus_diff(s, cpu_R[14], curr_insn_len(s) | s->thumb);
+#ifdef CONFIG_TCG_WASM64
+    if (w64_inline_call(s, jmp_diff(s, a->imm))) {
+        return true;
+    }
+#endif
     gen_jmp(s, jmp_diff(s, a->imm));
     return true;
 }
@@ -7456,6 +8159,15 @@ static void arm_tr_init_disas_context(DisasContextBase *dcbase, CPUState *cs)
     dc->w64_ft_n = 0;
     dc->w64_slots = 0;
     dc->w64_loop_insns = 0;
+    dc->w64_inl_depth = 0;
+    dc->w64_inl_page = 0;
+    dc->w64_inl_tracked = false;
+    dc->w64_inl_miss_n = 0;
+    dc->w64_abs_rec = -1;
+    dc->w64_psr_miss_n = 0;
+    dc->w64_pgset_n = 0;
+    dc->w64_env = env;
+    w64_inl_pending_n = 0;
 #endif
     dc->be_data = EX_TBFLAG_ANY(tb_flags, BE_DATA) ? MO_BE : MO_LE;
     condexec = EX_TBFLAG_AM32(tb_flags, CONDEXEC);
@@ -7543,6 +8255,9 @@ static void arm_tr_init_disas_context(DisasContextBase *dcbase, CPUState *cs)
         dc->base.max_insns = 1;
     }
 
+#ifdef CONFIG_TCG_WASM64
+    dc->w64_max_insns0 = dc->base.max_insns;
+#endif
     /* ARM is a fixed-length ISA.  Bound the number of insns to execute
        to those left on the page.  */
     if (!dc->thumb) {
@@ -7677,6 +8392,22 @@ static void arm_post_translate_insn(DisasContext *dc)
         gen_set_label(dc->condlabel.label);
         dc->condjmp = 0;
     }
+#ifdef CONFIG_TCG_WASM64
+    if (w64_inl_stream(dc)) {
+        if (!dc->w64_inl_tracked) {
+            w64_inl_track(dc, dc->base.pc_next - 1);
+        }
+        /*
+         * An inlined callee running off its page ends the TB; the Thumb
+         * translator makes the same check itself against page_start.
+         */
+        if (!dc->thumb && dc->base.is_jmp == DISAS_NEXT &&
+            dc->base.pc_next - dc->page_start >= TARGET_PAGE_SIZE) {
+            dc->base.is_jmp = DISAS_TOO_MANY;
+        }
+    }
+    dc->w64_inl_tracked = false;
+#endif
 }
 
 /* Load an instruction and return it in the standard little-endian order */
@@ -7921,6 +8652,9 @@ static void arm_tr_tb_stop(DisasContextBase *dcbase, CPUState *cpu)
 {
     DisasContext *dc = container_of(dcbase, DisasContext, base);
 
+#ifdef CONFIG_TCG_WASM64
+    w64_inl_count_end(dc);
+#endif
     /* At this stage dc->condjmp will only be set when the skipped
        instruction was a conditional branch or trap, and the PC has
        already been written.  */
@@ -8019,6 +8753,24 @@ static void arm_tr_tb_stop(DisasContextBase *dcbase, CPUState *cpu)
         case DISAS_SWI:
 #ifdef __EMSCRIPTEN__
             if (arm_excp_exit_ok(dc)) {
+#ifdef CONFIG_TCG_WASM64
+                /*
+                 * Take the exception here and continue into the vector
+                 * through goto_ptr: no exit to cpu_exec_loop() at all.
+                 * The helper writes mode, hflags, thumb and condexec, so
+                 * the lookup-cache key is fully dynamic, as after rfe.
+                 * W64_NOSVCINL=1 keeps the dispatcher path (A/B, bisect).
+                 */
+                if (!w64_svc_dispatch()) {
+                    gen_helper_svc_inline(
+                        tcg_env,
+                        tcg_constant_i32(syn_aa32_svc(dc->svc_imm, dc->thumb)));
+                    dc->w64_why = W64_WHY_SVC;
+                    dc->w64_dynkey = true;
+                    gen_goto_ptr(dc, 0);
+                    break;
+                }
+#endif
                 gen_exception_exit(EXCP_SWI, syn_aa32_svc(dc->svc_imm, dc->thumb));
                 break;
             }
@@ -8048,6 +8800,8 @@ static void arm_tr_tb_stop(DisasContextBase *dcbase, CPUState *cpu)
 
 #ifdef CONFIG_TCG_WASM64
     w64_emit_deferred_taken(dc);
+    w64_emit_inline_misses(dc);
+    w64_emit_psr_misses(dc);
 #endif
 
     emit_delayed_exceptions(dc);

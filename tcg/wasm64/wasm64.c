@@ -526,19 +526,6 @@ static void w64_ls_init(void)
     fflush(LS.f);
 }
 
-/*
- * W64_CALLPAD=N: N unconditional calls to this per TB entry, from the
- * emitted prologue.  Every helper a TB calls is in the main module while
- * the TB is in its own, so the call is a cross-module import call -- and
- * that boundary, not the helper body, is what the goto_ptr lookup helper
- * turned out to be paying (playbook § 0g).  padSink counts the calls
- * exactly, so an A/B against N=0 prices the boundary in ns.
- */
-void w64_callpad_sink(void)
-{
-    wasm_diag_stat[WASM_DIAG_PAD_SINK]++;
-}
-
 /* called from the emitted TB prologue (import; emitted only in a process
  * armed with W64_LOCKSTEP, and then only when w64_ls_on) */
 void w64_lockstep_account(unsigned insns)
@@ -1371,7 +1358,7 @@ static int w64_merge_mode(void)
 
 /* Byte length of a staged body's locals declaration, which follows the
  * five-byte padded size LEB.  The emitter writes four runs in nine fixed
- * bytes today, but W64_LOCALPAD appends a fifth, so this is parsed. */
+ * bytes, but this parses the declaration rather than assuming it. */
 static uint32_t w64_locals_len(const uint8_t *body)
 {
     const uint8_t *p = body + 5;
@@ -1436,9 +1423,9 @@ static uint32_t w64_assemble_instantiate(const struct w64_bsrc *src,
     /*
      * Merging needs every member to declare the same locals, because the
      * merged function declares them once and a member whose declaration
-     * differed would resolve its local indices to the wrong slots.  With
-     * W64_LOCALPAD off they are byte-identical by construction; when one
-     * differs the batch is assembled unmerged rather than wrongly.
+     * differed would resolve its local indices to the wrong slots.  They
+     * are byte-identical by construction; when one differs the batch is
+     * assembled unmerged rather than wrongly.
      */
     mmode = w64_merge_mode();
     if (mmode && src->n_member >= 2) {

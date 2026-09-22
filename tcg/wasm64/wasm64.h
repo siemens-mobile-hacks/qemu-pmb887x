@@ -218,7 +218,6 @@ void w64_icount2_sync_now(void);
 /* Lockstep fold accounting (emitted prologue calls it only when armed;
  * exported for the emitter's import registration). */
 void w64_lockstep_account(unsigned insns);
-void w64_callpad_sink(void);
 
 /* 1 once w64_ls_init() armed the lockstep fold; the emitted prologue
  * tests it via w64_acct_addr[4] to skip the import entirely when off. */

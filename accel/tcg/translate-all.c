@@ -171,6 +171,19 @@ static int cpu_unwind_data_from_tb(TranslationBlock *tb, uintptr_t host_pc,
     return -1;
 }
 
+#ifdef CONFIG_TCG_WASM64
+__thread struct W64InlRec w64_inl_pending[W64_INL_REC];
+__thread unsigned w64_inl_pending_n;
+
+int w64_tb_insn_index(TranslationBlock *tb, uintptr_t host_pc)
+{
+    uint64_t data[INSN_START_WORDS];
+    int left = cpu_unwind_data_from_tb(tb, host_pc, data);
+
+    return left < 0 ? -1 : tb->icount - left;
+}
+#endif
+
 /*
  * The cpu state corresponding to 'host_pc' is restored in
  * preparation for exiting the TB.
@@ -347,9 +360,13 @@ static TranslationBlock *tb_gen_code_inner(CPUState *cpu, TCGTBCPUState s)
     tb->w64_nsucc = 0;
     tb->w64_explored = 0;
     tb->w64_lc.gen = 0;
+    tb->w64_inl = 0;
+    memset(tb->w64_inl_vpage, 0, sizeof(tb->w64_inl_vpage));
 #endif
     tb_set_page_addr0(tb, phys_pc);
-    tb_set_page_addr1(tb, -1);
+    for (unsigned i = 1; i < TB_PAGES; i++) {
+        tb_set_page_addr_n(tb, i, -1);
+    }
     if (phys_pc != -1) {
         tb_lock_page0(phys_pc);
     }
@@ -359,6 +376,25 @@ static TranslationBlock *tb_gen_code_inner(CPUState *cpu, TCGTBCPUState s)
 
  restart_translate:
     trace_translate_block(tb, s.pc, tb->tc.ptr);
+#ifdef CONFIG_TCG_WASM64
+    /* a retry re-decides every inline; the -2 case dropped page 1 too */
+    tb->w64_inl = 0;
+    memset(tb->w64_inl_vpage, 0, sizeof(tb->w64_inl_vpage));
+    w64_inl_pending_n = 0;
+    {
+        /* W64_OPDUMP=<pc>: the optimised TCG ops of the TBs at that pc */
+        static int64_t dump_pc = -2;
+        if (dump_pc == -2) {
+            const char *e = getenv("W64_OPDUMP");
+            dump_pc = e ? (int64_t)strtoull(e, NULL, 0) : -1;
+        }
+        if (dump_pc >= 0) {
+            qemu_set_log((vaddr)dump_pc == s.pc ?
+                         CPU_LOG_TB_OP | CPU_LOG_TB_OP_OPT | CPU_LOG_TB_IN_ASM
+                         : 0, NULL);
+        }
+    }
+#endif
 
     gen_code_size = setjmp_gen_code(env, tb, s.pc, host_pc, &max_insns, &ti);
     if (unlikely(gen_code_size < 0)) {
@@ -403,10 +439,12 @@ static TranslationBlock *tb_gen_code_inner(CPUState *cpu, TCGTBCPUState s)
              * TODO: Fix all targets that cross pages except with
              * the first insn, at which point this can't be reached.
              */
-            phys_p2 = tb_page_addr1(tb);
-            if (unlikely(phys_p2 != -1)) {
-                tb_unlock_page1(phys_pc, phys_p2);
-                tb_set_page_addr1(tb, -1);
+            for (unsigned i = TB_PAGES; i-- > 1; ) {
+                phys_p2 = tb_page_addr_n(tb, i);
+                if (unlikely(phys_p2 != -1)) {
+                    tb_unlock_page_n(tb, i, phys_p2);
+                    tb_set_page_addr_n(tb, i, -1);
+                }
             }
             goto restart_translate;
 
@@ -546,6 +584,22 @@ static TranslationBlock *tb_gen_code_inner(CPUState *cpu, TCGTBCPUState s)
         }
     }
 
+#ifdef CONFIG_TCG_WASM64
+    /* the inline records ride behind the unwind data; they fit in the
+     * TCG_HIGHWATER slack encode_search has already stayed under */
+    tb->w64_inl_rec = NULL;
+    tb->w64_inl_nrec = 0;
+    if (tb->w64_inl && w64_inl_pending_n) {
+        size_t rec_size = w64_inl_pending_n * sizeof(struct W64InlRec);
+        void *p = (void *)gen_code_buf + gen_code_size + search_size;
+
+        memcpy(p, w64_inl_pending, rec_size);
+        tb->w64_inl_rec = p;
+        tb->w64_inl_nrec = w64_inl_pending_n;
+        search_size += rec_size;
+    }
+#endif
+
     qatomic_set(&tcg_ctx->code_gen_ptr, (void *)
         ROUND_UP((uintptr_t)gen_code_buf + gen_code_size + search_size,
                  CODE_GEN_ALIGN));
@@ -608,6 +662,11 @@ static TranslationBlock *tb_gen_code_inner(CPUState *cpu, TCGTBCPUState s)
         tcg_tb_remove(tb);
         return existing_tb;
     }
+#ifdef CONFIG_TCG_WASM64
+    if (tb->w64_inl && tb_page_addr_n(tb, 1) != -1) {
+        w64_inl_list_add(tb);
+    }
+#endif
     return tb;
 }
 
@@ -790,22 +849,6 @@ void cpu_tb_key_gen_bump(CPUState *cpu)
 {
     uint32_t g = qatomic_read(&cpu->neg.tb_key_gen) + 1;
 
-    /*
-     * CEILING PROBE, UNSOUND: W64_NOGENBUMP=1 stops retiring inline-cache
-     * slots, so stale targets survive every jump-cache flush.  The guest
-     * will eventually run the wrong TB.  It exists only to answer "what
-     * would a perfect inline cache be worth" before anyone engineers a
-     * sound generation scheme -- read MIPS and lcCall, never trust the
-     * boot past the window you measured.
-     */
-    static int nobump = -1;
-    if (nobump < 0) {
-        nobump = getenv("W64_NOGENBUMP") != NULL;
-    }
-    if (nobump) {
-        return;
-    }
-
     qatomic_set(&cpu->neg.tb_key_gen, g ? g : 1);
     wasm_diag_stat[WASM_DIAG_KEY_GEN]++;
 }
@@ -822,6 +865,14 @@ void tcg_flush_jmp_cache(CPUState *cpu)
     cpu_tb_key_gen_bump(cpu);
 #ifdef __EMSCRIPTEN__
     wasm_diag_stat[WASM_DIAG_KEY_GEN_FLUSH]++;
+#endif
+#ifdef CONFIG_TCG_WASM64
+    /*
+     * A mapping may have changed: drop the chains into TBs whose second
+     * page is an inlined callee's (tb-maint.c tb_unlink_inlined).  Not in
+     * cpu_tb_key_gen_bump() itself, which every TB invalidation calls.
+     */
+    tb_unlink_inlined();
 #endif
 
     /* During early initialization, the cache may not yet be allocated. */

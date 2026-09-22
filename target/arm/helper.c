@@ -9767,6 +9767,72 @@ void arm_cpu_do_interrupt(CPUState *cs)
 
     arm_do_plugin_vcpu_discon_cb(cs, last_pc);
 }
+
+#ifdef CONFIG_TCG_WASM64
+/*
+ * The EXCP_SWI case of the function above, for the TB that executed the
+ * svc (translate.c DISAS_SWI) on a core without EL2/EL3: the target is
+ * always EL1, so none of the PSCI, semihosting, hypervisor or monitor
+ * paths can apply and the vector is the plain SVC slot.  The TB continues
+ * into that vector through goto_ptr, which is why nothing here raises
+ * CPU_INTERRUPT_EXITTB - that bit only stops cpu_exec_loop() patching a
+ * jump into the handler, and there is no dispatcher iteration to patch
+ * one.  What that iteration did check before the handler's first insn -
+ * an interrupt left pending, which the entry may have unmasked (FIQ is
+ * not masked by an SVC) - is kept by ending the next TB at its start
+ * whenever anything is pending, exactly the kick cpu_interrupt() gives.
+ *
+ * The change hooks exist only on cores with a PMU or GICv3 cpuif; when a
+ * qualifying core has them they run under the lean BQL pair, as the
+ * exception dispatch in cpu_handle_exception() does.
+ */
+void arm_take_svc_aarch32(CPUARMState *env, uint32_t syndrome)
+{
+    CPUState *cs = env_cpu(env);
+    ARMCPU *cpu = env_archcpu(env);
+    uint64_t last_pc = env->regs[15];
+    uint32_t addr = 0x08;
+    bool hooks = !QLIST_EMPTY(&cpu->pre_el_change_hooks) ||
+                 !QLIST_EMPTY(&cpu->el_change_hooks);
+    bool took_bql = false;
+
+    cs->exception_index = EXCP_SWI;
+    env->exception.syndrome = syndrome;
+    env->exception.target_el = 1;
+    wasm_diag_stat[WASM_DIAG_EXC_SWI]++;
+
+    if (unlikely(qemu_loglevel_mask(CPU_LOG_INT))) {
+        arm_log_exception(cs);
+        qemu_log_mask(CPU_LOG_INT, "...from EL%d to EL1\n",
+                      arm_current_el(env));
+    }
+
+    if (unlikely(hooks)) {
+        took_bql = bql_lock_mmio();
+        arm_call_pre_el_change_hook(cpu);
+    }
+
+    if (A32_BANKED_CURRENT_REG_GET(env, sctlr) & SCTLR_V) {
+        addr += 0xffff0000;
+    } else {
+        addr += A32_BANKED_CURRENT_REG_GET(env, vbar);
+    }
+    take_aarch32_exception(env, ARM_CPU_MODE_SVC, CPSR_I, 0, addr);
+
+    if (unlikely(hooks)) {
+        arm_call_el_change_hook(cpu);
+        if (took_bql) {
+            bql_unlock_mmio();
+        }
+    }
+    cs->exception_index = -1;
+    arm_do_plugin_vcpu_discon_cb(cs, last_pc);
+
+    if (unlikely(qatomic_read(&cs->interrupt_request))) {
+        qatomic_set(&cs->neg.icount_decr.u16.high, -1);
+    }
+}
+#endif /* CONFIG_TCG_WASM64 */
 #endif /* !CONFIG_USER_ONLY */
 
 uint64_t arm_sctlr(CPUARMState *env, int el)
