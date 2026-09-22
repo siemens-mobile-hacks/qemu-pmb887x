@@ -2704,6 +2704,7 @@ uintptr_t QEMU_DISABLE_CFI tcg_qemu_tb_exec(CPUArchState *env,
              * main loop never happens — emscripten exit() from the vCPU
              * is the stop path (flushes stdio, fires onExit). */
             fflush(LS.f);
+            bql_release_lazy();
             exit(0);
         }
 
