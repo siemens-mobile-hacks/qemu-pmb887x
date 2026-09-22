@@ -857,19 +857,35 @@ void HELPER(cpsr_write)(CPUARMState *env, uint32_t val, uint32_t mask)
 /* Write the CPSR for a 32-bit exception return */
 void HELPER(cpsr_write_eret)(CPUARMState *env, uint32_t val)
 {
+    ARMCPU *cpu = env_archcpu(env);
     uint32_t mask;
-
     /*
-     * The hook lists are empty on a core without a PMU or GICv3 cpuif,
-     * and round 40 tried walking them without the BQL: the lockstep gate
-     * then diverged on the S75 at 246 M instructions.  These two pairs
-     * are where the main loop reliably gets the lock back between
-     * exceptions, so they stay (they were ~2.4 % of the vCPU on the
-     * video workload, measured from the profile).
+     * wasm64: the hook lists are empty on a core without a PMU or GICv3
+     * cpuif, and taking the BQL around nothing cost two lock/unlock pairs
+     * per exception return - 1.29 M bql_lock() calls a second while the
+     * SL65 plays a video.
+     *
+     * The pair's real bql_unlock() is load-bearing, though, and is kept
+     * below as bql_release_lazy(): it ends the hold a bql_unlock_mmio()
+     * deferred (system/cpus.c).  An ISR acks its device through MMIO and
+     * returns here into the firmware's idle spin, which on an icount=none
+     * board is one chained loop that never comes back to cpu_exec_loop();
+     * keeping the hold across the return starved the main loop of the BQL,
+     * and so of the timer that ends the spin - KE970 sat at 408 MIPS with
+     * the main loop stopped.
      */
-    bql_lock();
-    arm_call_pre_el_change_hook(env_archcpu(env));
-    bql_unlock();
+#ifdef CONFIG_TCG_WASM64
+    bool hooks = !QLIST_EMPTY(&cpu->pre_el_change_hooks) ||
+                 !QLIST_EMPTY(&cpu->el_change_hooks);
+#else
+    bool hooks = true;
+#endif
+
+    if (hooks) {
+        bql_lock();
+        arm_call_pre_el_change_hook(cpu);
+        bql_unlock();
+    }
 
     mask = aarch32_cpsr_valid_mask(env->features, &env_archcpu(env)->isar);
     cpsr_write(env, val, mask, CPSRWriteExceptionReturn);
@@ -887,9 +903,16 @@ void HELPER(cpsr_write_eret)(CPUARMState *env, uint32_t val)
         arm_rebuild_hflags(env);
     }
 
-    bql_lock();
-    arm_call_el_change_hook(env_archcpu(env));
-    bql_unlock();
+    if (hooks) {
+        bql_lock();
+        arm_call_el_change_hook(cpu);
+        bql_unlock();
+    }
+#ifdef CONFIG_TCG_WASM64
+    else {
+        bql_release_lazy();
+    }
+#endif
     cpsr_write_check_irq(env);
 }
 

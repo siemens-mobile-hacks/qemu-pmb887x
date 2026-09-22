@@ -317,8 +317,12 @@ void bql_unlock_mmio(void);
  * What ends the deferral: an explicit bql_lock() on this thread adopts it
  * (the rr loop's own bql_lock() after tcg_cpu_exec()), an explicit
  * bql_unlock() drops it, and cpu_exec_loop() calls bql_release_lazy()
- * whenever bql_wanted_by_other() says somebody is waiting - which bounds
- * how long another thread can be kept out to one pass of that loop.
+ * whenever bql_wanted_by_other() says somebody is waiting.  One pass of
+ * that loop is not a bound on its own: chained TBs never come back to it,
+ * and without icount no budget ends the chain, so a firmware idle spin
+ * after an MMIO access would keep the lock forever.  An exception return
+ * releases it too (HELPER(cpsr_write_eret)), which is what ends the hold
+ * on the way into such a spin.
  */
 bool bql_wanted_by_other(void);
 void bql_release_lazy(void);
