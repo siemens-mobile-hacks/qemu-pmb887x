@@ -1005,6 +1005,8 @@ struct dsp_state_t {
 	uint16_t reset_comm_flags;
 	uint16_t reset_requests;
 	uint16_t baseband_timeout_flags;
+	/* The core stayed inside one interrupt handler past a whole baseband wait. */
+	bool baseband_isr_timeout;
 	Clock *gsm_clock;
 	bool reset_pending;
 	/* Set by a reset until the core has run: see dsp_wait_boot(). */
@@ -1343,6 +1345,7 @@ static void dsp_reset_internal_state(dsp_state_t *p) {
 	qatomic_set(&p->reset_comm_flags, 0);
 	qatomic_set(&p->reset_requests, 0);
 	p->baseband_timeout_flags = 0;
+	p->baseband_isr_timeout = false;
 	for (size_t i = 0; i < ARRAY_SIZE(p->outputs); i++)
 		qemu_irq_lower(p->outputs[i]);
 	p->trace_boot_mode = true;
@@ -1449,8 +1452,14 @@ static bool dsp_baseband_event_blocked(dsp_state_t *p) {
 	uint16_t pending = dsp_runtime_get_irq_pending_flags(p->runtime, 0);
 	uint16_t pending_baseband = pending & DSP_BASEBAND_IRQ_MASK;
 
+	/*
+	 * Wait out a handler once. One that outlasts a whole wait (the video
+	 * player's does) is not done by the next TPU edge either, and parking the
+	 * vCPU on every edge starves the ARM until L1 misses its TPU deadline.
+	 */
 	if (dsp_runtime_is_maskable_interrupt_active(p->runtime))
-		return true;
+		return !p->baseband_isr_timeout;
+	p->baseband_isr_timeout = false;
 
 	if (pending_baseband == 0) {
 		p->baseband_timeout_flags = 0;
@@ -1492,8 +1501,10 @@ static void dsp_wait_baseband_irq(dsp_state_t *p, int signal, int level) {
 	}
 	qemu_mutex_unlock(&p->worker.mutex);
 
-	if (timed_out)
+	if (timed_out) {
 		p->baseband_timeout_flags = dsp_runtime_get_irq_pending_flags(p->runtime, 0) & DSP_BASEBAND_IRQ_MASK;
+		p->baseband_isr_timeout = dsp_runtime_is_maskable_interrupt_active(p->runtime);
+	}
 
 	if (sleeps == 0)
 		return;
