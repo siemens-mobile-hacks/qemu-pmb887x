@@ -168,25 +168,52 @@ bool translator_use_goto_tb(DisasContextBase *db, vaddr dest)
     translator_note_succ(db, dest);
 
     /*
-     * Check for the dest on the same page as the start of the TB.
+     * Check for the dest on the same page as the start of the TB, or
+     * (wasm64) on any further page the TB has fetched from - the set it
+     * is registered on for invalidation - because a branch inside an
+     * inlined callee or an absorbed stream is on that page and would
+     * otherwise leave as an indirect exit.  Round 42 measured the
+     * widening at +1.34 % pooled / +2.2 % at matched host load on video
+     * (3 695 indirect exits per Mi become chained ones, boundary count
+     * unchanged) and reverted it with the soundness question open; it
+     * is settled now (retaken in round 43 with the same result: a
+     * 16-leg ABBA scored +2.6 % pooled, +2.4 % on the virtual-rate
+     * metric, +2.1 % at matched host load, xwOther 5 376 -> 1 672/Mi
+     * with the converted exits landing in xGototb exactly):
      *
-     * Round 42 tried widening this to any page the TB has fetched from --
-     * the set it is registered on for invalidation -- because a branch
-     * inside an inlined callee is on the callee's page and is refused a
-     * chain it would have had as its own TB.  It converts 3 695 indirect
-     * exits per Mi into chained ones on video (3 207 on J2ME) at an
-     * unchanged boundary count, gates GREEN, and is worth +1.3 % pooled /
-     * +2.2 % at matched host load.  Reverted unmeasured, not disproven:
-     * the host went to load 26 before its stability could be settled, and
-     * the key-el71 gate became flaky on *every* build including this one.
-     *
-     * What has to be answered before trying it again is whether SMC
-     * registration is the right invariant at all.  It covers writes to the
-     * page; a direct chain is patched once and thereafter bypasses
-     * tb_lookup_cmp, including the w64_inl_vpage check that validates a
-     * TB's non-entry pages.  Same-page may be buying something stronger.
+     * A chain's target is guarded where it is patched (cpu-exec.c): a
+     * TB with a second physical page is never chained into, unless its
+     * second page is an inlined callee's - and those chains are dropped
+     * at every TLB-flush site (tb_unlink_inlined), falling back to the
+     * dispatcher, whose tb_lookup_cmp re-validates w64_inl_vpage.  That
+     * guard looks only at the target, so it holds whatever page the
+     * branch comes from.  A write to the target page invalidates the
+     * target and unlinks through its jmp list; a write to the source's
+     * callee page invalidates the source, which is registered there
+     * (tb_page_slots).  What survives is first-page remap staleness,
+     * which system emulation accepts for same-page chains already
+     * ("we don't take care of direct jumps when address mapping
+     * changes"), and CF_PCREL is off on this port, so the target is
+     * keyed by its full virtual pc.
      */
+#ifdef CONFIG_TCG_WASM64
+    if (likely(translator_is_same_page(db, dest))) {
+        return true;
+    }
+    {
+        vaddr page = dest & TARGET_PAGE_MASK;
+        unsigned n;
+
+        for (n = 1; n < TB_PAGES; n++) {
+            if (db->w64_page_base[n] == page && db->host_addr[n] != NULL) {
+                return true;
+            }
+        }
+    }
+    return false;
+#else
     return translator_is_same_page(db, dest);
+#endif
 }
 
 void translator_loop(CPUState *cpu, TranslationBlock *tb, int *max_insns,
