@@ -76,6 +76,13 @@ static void flash_blk_vm_state(void *opaque, bool running, RunState state) {
 int pmb887x_flash_blk_pwrite(pmb887x_flash_blk_t *flash, int64_t offset, int64_t size, void *value) {
 	flash_blk_dirty_t *last = flash->dirty->len ?
 		&g_array_index(flash->dirty, flash_blk_dirty_t, flash->dirty->len - 1) : NULL;
+	/*
+	 * A non-empty list always has its flush pending (the BH swaps the list
+	 * out before writing it).  qemu_bh_schedule() on a pending BH is not a
+	 * no-op: aio_bh_enqueue() still aio_notify()s, i.e. a futex wake of
+	 * the main loop per programmed word -- ~130k/s through a KE970 boot.
+	 */
+	bool schedule = !last;
 
 	if (last && offset == last->offset + last->size && (const uint8_t *) value == last->src + last->size) {
 		last->size += size;
@@ -86,7 +93,8 @@ int pmb887x_flash_blk_pwrite(pmb887x_flash_blk_t *flash, int64_t offset, int64_t
 		flash_blk_dirty_t d = { .offset = offset, .size = size, .src = value };
 		g_array_append_val(flash->dirty, d);
 	}
-	qemu_bh_schedule(flash->flush_bh);
+	if (schedule)
+		qemu_bh_schedule(flash->flush_bh);
 	return 0;
 }
 #else
