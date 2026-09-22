@@ -5016,6 +5016,46 @@ static bool trans_MSR_bank(DisasContext *s, arg_MSR_bank *a)
     return true;
 }
 
+#ifdef CONFIG_TCG_WASM64
+/*
+ * HELPER(cpsr_read) in emitted code: cpsr_read() & ~CPSR_EXEC.  The EXEC
+ * bits (T, IT, J, IL) are dropped, so thumb and condexec_bits are not
+ * read; the flag globals are used where they live instead of being
+ * synced for the helper and reloaded after it.  An import call inside a
+ * TB costs ~14.5 ns in situ and SL65 video runs 7 710 of these per Mi
+ * (critical sections: mrs, orr #0xc0, msr cpsr_c): -2.9 % ms/Mi.
+ */
+static TCGv_i32 w64_gen_cpsr_read(void)
+{
+    TCGv_i32 r = tcg_temp_new_i32();
+    TCGv_i32 t = tcg_temp_new_i32();
+
+    tcg_gen_ld_i32(r, tcg_env, offsetof(CPUARMState, uncached_cpsr));
+    tcg_gen_andi_i32(t, cpu_NF, 0x80000000);
+    tcg_gen_or_i32(r, r, t);
+    tcg_gen_setcondi_i32(TCG_COND_EQ, t, cpu_ZF, 0);
+    tcg_gen_shli_i32(t, t, 30);
+    tcg_gen_or_i32(r, r, t);
+    tcg_gen_shli_i32(t, cpu_CF, 29);
+    tcg_gen_or_i32(r, r, t);
+    tcg_gen_andi_i32(t, cpu_VF, 0x80000000);
+    tcg_gen_shri_i32(t, t, 3);
+    tcg_gen_or_i32(r, r, t);
+    tcg_gen_ld_i32(t, tcg_env, offsetof(CPUARMState, QF));
+    tcg_gen_shli_i32(t, t, 27);
+    tcg_gen_or_i32(r, r, t);
+    tcg_gen_ld_i32(t, tcg_env, offsetof(CPUARMState, GE));
+    tcg_gen_shli_i32(t, t, 16);
+    tcg_gen_or_i32(r, r, t);
+    /* the low word of the u64: little-endian host (wasm) */
+    tcg_gen_ld_i32(t, tcg_env, offsetof(CPUARMState, daif));
+    tcg_gen_andi_i32(t, t, CPSR_AIF);
+    tcg_gen_or_i32(r, r, t);
+    tcg_gen_andi_i32(r, r, ~CPSR_EXEC);
+    return r;
+}
+#endif
+
 static bool trans_MRS_reg(DisasContext *s, arg_MRS_reg *a)
 {
     TCGv_i32 tmp;
@@ -5030,8 +5070,12 @@ static bool trans_MRS_reg(DisasContext *s, arg_MRS_reg *a)
         }
         tmp = load_cpu_field(spsr);
     } else {
+#ifdef CONFIG_TCG_WASM64
+        tmp = w64_gen_cpsr_read();
+#else
         tmp = tcg_temp_new_i32();
         gen_helper_cpsr_read(tmp, tcg_env);
+#endif
     }
     store_reg(s, a->rd, tmp);
     return true;
