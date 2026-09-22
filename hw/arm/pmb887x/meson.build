@@ -101,6 +101,9 @@ arm_common_ss.add(when: 'CONFIG_PMB887X', if_true: files(
 	'i2c/lm4946.c',
 	'i2c/pmb6812.c',
 	'i2c/tea5761uk.c',
+
+	'input/ke970_scroll.c',
+
 	'sim/apdu.c',
 	'sim/gsm_sim.c',
 	'sim/sim_fs.c',
