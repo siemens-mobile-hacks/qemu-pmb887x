@@ -110,7 +110,7 @@ dsp_device_t *i2s_create(const pmb887x_dsp_peripheral_config_t *config, dsp_devi
 	uint16_t interrupt_flag, dsp_device_t *audio_sink);
 void i2s_advance(dsp_device_t *device, size_t cycles);
 bool i2s_is_active(const dsp_device_t *device);
-void i2s_pace(dsp_device_t *device, int64_t now);
+void i2s_pace(dsp_device_t *device, int64_t now, bool core_parked);
 bool i2s_is_paced(const dsp_device_t *device);
 void i2s_apply_audio_format(dsp_device_t *device);
 void i2s_note_ram_write(dsp_device_t *device, uint16_t address, uint16_t value);

@@ -219,10 +219,10 @@ void dsp_bus_advance_afe(dsp_bus_t *bus, size_t cycles) {
 }
 
 /* Real-time audio clocks that run on wall time rather than executed cycles. */
-void dsp_bus_pace_i2s(dsp_bus_t *bus, int64_t now) {
+void dsp_bus_pace_i2s(dsp_bus_t *bus, int64_t now, bool core_parked) {
 	for (size_t i = 0; i < bus->i2s_count; i++)
 		if (i2s_is_active(bus->i2s[i]))
-			i2s_pace(bus->i2s[i], now);
+			i2s_pace(bus->i2s[i], now, core_parked);
 }
 
 /* Offer a DSP write to the serial units, whose audio out follows their ring. */

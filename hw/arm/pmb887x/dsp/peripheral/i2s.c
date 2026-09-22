@@ -53,6 +53,8 @@ struct i2s_state_t {
 	/* Ring slots the core has refilled since they were last shifted out. */
 	uint64_t refilled;
 	int64_t starved_since_ns;
+	/* A parked core has already been sent the interrupt it is waiting for. */
+	bool kicked;
 };
 
 static bool i2s_transmit_active(const i2s_state_t *state) {
@@ -93,7 +95,7 @@ static uint32_t i2s_transmit_frame_rate(const i2s_state_t *state) {
 
 #ifdef PMB887X_DSP_TESTS
 /* The tests drive the unit from executed cycles, with no host audio backend. */
-void i2s_pace(dsp_device_t *device, int64_t now) {}
+void i2s_pace(dsp_device_t *device, int64_t now, bool core_parked) {}
 bool i2s_is_paced(const dsp_device_t *device) { return false; }
 void i2s_apply_audio_format(dsp_device_t *device) {}
 void i2s_note_ram_write(dsp_device_t *device, uint16_t address, uint16_t value) {}
@@ -142,6 +144,7 @@ void i2s_note_ram_write(dsp_device_t *device, uint16_t address, uint16_t value) 
 	 */
 	state->refilled |= 1ULL << offset;
 	state->starved_since_ns = 0;
+	state->kicked = false;
 	if (mono != TEAK_I2S_TXCONF_MONO_STEREO) {
 		state->refilled |= 1ULL << (offset ^ 1);
 		state->frame[0] = state->frame[1] = value;
@@ -204,6 +207,7 @@ static bool i2s_write(dsp_device_t *device, uint16_t offset, uint32_t pc, uint16
 				state->sample_cycles = 0;
 				state->refilled = 0;
 				state->starved_since_ns = 0;
+				state->kicked = false;
 			}
 			break;
 
@@ -251,13 +255,23 @@ dsp_device_t *i2s_create(const pmb887x_dsp_peripheral_config_t *config, dsp_devi
  * asked for more. The wait resets the moment anything is written to the ring.
  */
 #define I2S_STARVE_LIMIT_NS	(50 * SCALE_MS)
+/*
+ * And how long it may wait on a core that has parked itself. That one is not
+ * merely behind: it is halted until the transmit interrupt this clock has yet
+ * to raise, so the wait is a deadlock and only the timeout ever ends it. Give
+ * it up after the half ring the firmware refills from one interrupt, which is
+ * long enough that a core still working through its batch is not cut short.
+ * Only until the interrupt has been raised, though: a core that does not answer
+ * one is not simply parked, and falls back to the limit above.
+ */
+#define I2S_PARKED_STARVE_WORDS	(I2S_RING_WORDS / 2)
 
-static bool i2s_starved_too_long(i2s_state_t *state, int64_t now) {
+static bool i2s_starved_too_long(i2s_state_t *state, int64_t now, int64_t limit) {
 	if (state->starved_since_ns == 0) {
 		state->starved_since_ns = now;
 		return false;
 	}
-	return now - state->starved_since_ns > I2S_STARVE_LIMIT_NS;
+	return now - state->starved_since_ns > limit;
 }
 
 /*
@@ -269,11 +283,12 @@ static bool i2s_starved_too_long(i2s_state_t *state, int64_t now) {
  * interrupt that would wake it to service the MCU never arrives.
  * Runs on the DSP worker thread, which owns the peripheral state.
  */
-void i2s_pace(dsp_device_t *device, int64_t now) {
+void i2s_pace(dsp_device_t *device, int64_t now, bool core_parked) {
 	i2s_state_t *state = device->state;
 	uint32_t rate = i2s_transmit_frame_rate(state);
-	int64_t period;
+	int64_t period, starve_limit;
 	size_t words = 0;
+	bool serviced = false;
 
 	if (rate == 0 || !i2s_transmit_active(state))
 		return;
@@ -312,24 +327,55 @@ void i2s_pace(dsp_device_t *device, int64_t now) {
 	 * firmware keeps counting the transmit interrupts it schedules notes
 	 * against, so the rest of the melody plays back short and too fast. Waiting
 	 * for the core instead costs wall-clock time and keeps the stream intact.
+	 *
+	 * Never wait on a core that has parked itself, though: the firmware refills
+	 * the ring from the transmit interrupt and then halts until the next one, so
+	 * waiting for a slot it has not written withholds the very interrupt that
+	 * would have it written. Nothing else breaks that out - this stream leaves
+	 * TXPCM clear, so the unit free-runs and the interrupt is the only handshake
+	 * there is - and the starve limit below then paces the whole melody at one
+	 * ring pass per timeout. Run on only as far as that interrupt and then wait
+	 * again: it is the one thing the parked core is missing, and handing it any
+	 * more than it can keep up with is what buries it - the firmware sizes each
+	 * refill by how much of the ring is free, so a clock that keeps overtaking
+	 * it leaves it filling ever smaller batches.
 	 */
+	starve_limit = core_parked && !state->kicked ?
+		period * I2S_PARKED_STARVE_WORDS : I2S_STARVE_LIMIT_NS;
 	while (state->next_word_ns <= now && words < I2S_MAX_CATCHUP_WORDS) {
 		uint16_t slot = (state->transmit_position + 1) & TEAK_I2S_RWADDR_RDADDR;
 		bool starving = (state->refilled & (1ULL << slot)) == 0;
 
-		if (starving && !i2s_starved_too_long(state, now))
+		if (starving && !i2s_starved_too_long(state, now, starve_limit))
 			break;
 		state->refilled &= ~(1ULL << slot);
 		words++;
 		state->next_word_ns += period;
 		i2s_advance(device, I2S_SAMPLE_CYCLES);
+		/*
+		 * Stop at the transmit interrupt and let the core service it before
+		 * shifting on. The firmware asks for the next one a fixed distance
+		 * past wherever it finds the read pointer, so a clock that runs a
+		 * whole ring ahead while the core is still waking pushes that request
+		 * a ring further out each time - and the interrupts it raised in the
+		 * meantime coalesce into the one the core finally sees, halving the
+		 * refills the melody needs.
+		 */
+		if (state->transmit_position == state->registers[TEAK_I2S_TXINTADDR]) {
+			if (starving)
+				state->kicked = true;
+			serviced = true;
+			break;
+		}
 	}
 
 	/*
 	 * Waiting for the core is not a backlog to catch up on later: resync, or the
 	 * next call shifts the whole wait out in one burst of transmit interrupts.
+	 * Stopping at an interrupt is a backlog, though - those words are due, and
+	 * the next call comes round as soon as the core has serviced it.
 	 */
-	if (state->next_word_ns <= now)
+	if (!serviced && state->next_word_ns <= now)
 		state->next_word_ns = now;
 }
 

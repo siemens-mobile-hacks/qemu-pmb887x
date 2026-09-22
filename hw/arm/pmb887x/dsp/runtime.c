@@ -201,7 +201,7 @@ static void dsp_runtime_pace_afe(dsp_runtime_t *runtime) {
 	/* Wall-clock (matches DSP_AFE_CLOCK in dsp.c) so the sample clock keeps
 	 * advancing even while the vCPU is parked in a handshake wait under -icount. */
 	now = qemu_clock_get_ns(QEMU_CLOCK_HOST);
-	dsp_bus_pace_i2s(runtime->bus, now);
+	dsp_bus_pace_i2s(runtime->bus, now, qatomic_read(&runtime->core_disabled));
 	next = runtime->afe_next_sample_ns;
 	if (next == 0 || next > now + AFE_SAMPLE_PERIOD_NS)
 		next = now;	/* first sample or clock skew: (re)sync */
