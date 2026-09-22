@@ -49,7 +49,6 @@ struct i2s_state_t {
 	int64_t next_word_ns;
 	uint32_t audio_rate;
 	uint16_t frame[I2S_OUT_CHANNELS];
-	uint32_t traced_rate;
 	/* Ring slots the core has refilled since they were last shifted out. */
 	uint64_t refilled;
 	int64_t starved_since_ns;
@@ -137,11 +136,7 @@ void i2s_note_ram_write(dsp_device_t *device, uint16_t address, uint16_t value) 
 	 */
 	state->frame[channel] = value;
 	mono = state->registers[TEAK_I2S_TXCONF] & TEAK_I2S_TXCONF_MONO;
-	/*
-	 * Mark the ring slot refilled so the serial clock may shift it out. In mono
-	 * the unit repeats the word on both channels and the firmware only ever
-	 * writes one slot of the pair, so both count as refilled.
-	 */
+	/* Mark the slot refilled so the serial clock may shift it out; in mono, both of the pair. */
 	state->refilled |= 1ULL << offset;
 	state->starved_since_ns = 0;
 	state->kicked = false;
@@ -293,13 +288,6 @@ void i2s_pace(dsp_device_t *device, int64_t now, bool core_parked) {
 	if (rate == 0 || !i2s_transmit_active(state))
 		return;
 
-	if (rate != state->traced_rate) {
-		state->traced_rate = rate;
-		DPRINTF("frame rate %u (NUM0=%04X DEN0=%04X TXCONF=%04X CTRL=%04X TXINT=%04X)\n", rate,
-			state->registers[TEAK_I2S_NUM0], state->registers[TEAK_I2S_DEN0],
-			state->registers[TEAK_I2S_TXCONF], state->registers[TEAK_I2S_CTRL],
-			state->registers[TEAK_I2S_TXINTADDR]);
-	}
 	qatomic_set(&state->audio_rate, rate);
 
 	/*
