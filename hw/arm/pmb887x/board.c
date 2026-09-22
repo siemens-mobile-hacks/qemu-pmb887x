@@ -291,10 +291,14 @@ static void pmb887x_init(MachineState *machine) {
 
 	// CAPCOM0
 	DeviceState *capcom0 = pmb887x_new_cpu_module("CAPCOM0");
+	if (object_property_find(OBJECT(capcom0), "cgu"))
+		object_property_set_link(OBJECT(capcom0), "cgu", OBJECT(cgu), &error_fatal);
 	sysbus_realize_and_unref(SYS_BUS_DEVICE(capcom0), &error_fatal);
 	
 	// CAPCOM1
 	DeviceState *capcom1 = pmb887x_new_cpu_module("CAPCOM1");
+	if (object_property_find(OBJECT(capcom1), "cgu"))
+		object_property_set_link(OBJECT(capcom1), "cgu", OBJECT(cgu), &error_fatal);
 	sysbus_realize_and_unref(SYS_BUS_DEVICE(capcom1), &error_fatal);
 
 	// RTC

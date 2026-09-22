@@ -9768,7 +9768,6 @@ void arm_cpu_do_interrupt(CPUState *cs)
     arm_do_plugin_vcpu_discon_cb(cs, last_pc);
 }
 
-#ifdef CONFIG_TCG_WASM64
 /*
  * The EXCP_SWI case of the function above, for the TB that executed the
  * svc (translate.c DISAS_SWI) on a core without EL2/EL3: the target is
@@ -9832,7 +9831,6 @@ void arm_take_svc_aarch32(CPUARMState *env, uint32_t syndrome)
         qatomic_set(&cs->neg.icount_decr.u16.high, -1);
     }
 }
-#endif /* CONFIG_TCG_WASM64 */
 #endif /* !CONFIG_USER_ONLY */
 
 uint64_t arm_sctlr(CPUARMState *env, int el)

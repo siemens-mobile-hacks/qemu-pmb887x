@@ -26,6 +26,8 @@
 #include "qemu/osdep.h"
 #include "qemu/lockable.h"
 #include "qemu/wasm-diag.h"
+#include "exec/cpu-interrupt.h"
+#include "qemu/error-report.h"
 #include "system/tcg.h"
 #include "system/replay.h"
 #include "exec/icount.h"
@@ -279,6 +281,20 @@ static void rr_wait_io_event(void)
     CPUState *cpu;
 
     while (all_cpu_threads_idle()) {
+#ifdef __EMSCRIPTEN__
+        /* canary: going idle with a hard interrupt pending is a lost
+         * wake by definition - the flag was set while the vCPU was
+         * already deciding to sleep.  Loud, once: it hangs a board. */
+        if (unlikely(first_cpu->interrupt_request & CPU_INTERRUPT_HARD)) {
+            static bool warned;
+            if (!warned) {
+                warned = true;
+                error_report("LOST WAKE: vCPU idle with CPU_INTERRUPT_HARD "
+                             "pending (interrupt_request=%d)",
+                             (int) first_cpu->interrupt_request);
+            }
+        }
+#endif
         rr_stop_kick_timer();
         qemu_cond_wait_bql(first_cpu->halt_cond);
     }
