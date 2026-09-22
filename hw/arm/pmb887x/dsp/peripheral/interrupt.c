@@ -31,31 +31,12 @@ struct dsp_int_state_t {
 
 static const uint8_t INTERRUPT_GROUP_LINES[] = { 0, 0, 1, 2 };
 
-/* The MCU command pipes do not all share INT0: pipe 1 is delivered on INT1
- * (vector P:000E) while pipes 0 and 2 use INT0 (vector P:0006). Routing pipe 1
- * through INT0 makes the firmware treat it as a pipe-0/boot request and park in
- * the mask ROM command pump at P:204F, deadlocking the ARM handshake. */
-static const uint8_t MCU_REQUEST_LINES[MCU_REQUEST_COUNT] = { 0, 1, 0 };
-
 static uint8_t dsp_int_compute_lines(const dsp_int_state_t *state) {
 	uint8_t lines = 0;
 
-	for (size_t group = 0; group < INTERRUPT_GROUP_COUNT; group++) {
-		uint16_t pending = qatomic_read(&state->flags[group]) & qatomic_read(&state->enable[group]);
-
-		if (pending == 0)
-			continue;
-		if (group == 0) {
-			for (size_t request = 0; request < MCU_REQUEST_COUNT; request++) {
-				if ((pending & BIT(request)) != 0)
-					lines |= BIT(MCU_REQUEST_LINES[request]);
-			}
-			pending &= (uint16_t) ~(BIT(MCU_REQUEST_COUNT) - 1);
-			if (pending == 0)
-				continue;
-		}
-		lines |= BIT(INTERRUPT_GROUP_LINES[group]);
-	}
+	for (size_t group = 0; group < INTERRUPT_GROUP_COUNT; group++)
+		if ((qatomic_read(&state->flags[group]) & qatomic_read(&state->enable[group])) != 0)
+			lines |= BIT(INTERRUPT_GROUP_LINES[group]);
 	return lines;
 }
 
