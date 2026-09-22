@@ -50,6 +50,9 @@ struct i2s_state_t {
 	uint32_t audio_rate;
 	uint16_t frame[I2S_OUT_CHANNELS];
 	uint32_t traced_rate;
+	/* Ring slots the core has refilled since they were last shifted out. */
+	uint64_t refilled;
+	int64_t starved_since_ns;
 };
 
 static bool i2s_transmit_active(const i2s_state_t *state) {
@@ -106,8 +109,8 @@ void i2s_note_ram_write(dsp_device_t *device, uint16_t address, uint16_t value) 
  * then laps it: it shifts words out twice and drops the ones written in
  * between, which leaves the melody's envelope and tempo intact but scrambles
  * the waveform into noise. Following the writes instead keeps every sample the
- * core computed, in order, and -- unlike holding the clock back -- leaves the
- * transmit interrupts the firmware synthesises against exactly as they were.
+ * core computed, in order. i2s_pace holds the clock to the same words, so the
+ * transmit interrupts stay in step with the stream the host is hearing.
  */
 void i2s_note_ram_write(dsp_device_t *device, uint16_t address, uint16_t value) {
 	i2s_state_t *state = device->state;
@@ -132,10 +135,19 @@ void i2s_note_ram_write(dsp_device_t *device, uint16_t address, uint16_t value) 
 	 */
 	state->frame[channel] = value;
 	mono = state->registers[TEAK_I2S_TXCONF] & TEAK_I2S_TXCONF_MONO;
-	if (mono != TEAK_I2S_TXCONF_MONO_STEREO)
+	/*
+	 * Mark the ring slot refilled so the serial clock may shift it out. In mono
+	 * the unit repeats the word on both channels and the firmware only ever
+	 * writes one slot of the pair, so both count as refilled.
+	 */
+	state->refilled |= 1ULL << offset;
+	state->starved_since_ns = 0;
+	if (mono != TEAK_I2S_TXCONF_MONO_STEREO) {
+		state->refilled |= 1ULL << (offset ^ 1);
 		state->frame[0] = state->frame[1] = value;
-	else if (channel != I2S_OUT_CHANNELS - 1)
+	} else if (channel != I2S_OUT_CHANNELS - 1) {
 		return;
+	}
 
 	afe_audio_push_samples(state->audio_sink, state->frame, I2S_OUT_CHANNELS);
 }
@@ -190,6 +202,8 @@ static bool i2s_write(dsp_device_t *device, uint16_t offset, uint32_t pc, uint16
 				state->transmit_position = 0;
 				state->receive_position = 0;
 				state->sample_cycles = 0;
+				state->refilled = 0;
+				state->starved_since_ns = 0;
 			}
 			break;
 
@@ -229,6 +243,23 @@ dsp_device_t *i2s_create(const pmb887x_dsp_peripheral_config_t *config, dsp_devi
 }
 
 #ifndef PMB887X_DSP_TESTS
+/*
+ * How long the serial clock may wait for the core to refill a slot before it
+ * gives up and free-runs again. Waiting is what keeps the stream intact, but the
+ * firmware refills the ring from the transmit interrupt, so a firmware that
+ * refills less of the ring than the clock is waiting on would otherwise never be
+ * asked for more. The wait resets the moment anything is written to the ring.
+ */
+#define I2S_STARVE_LIMIT_NS	(50 * SCALE_MS)
+
+static bool i2s_starved_too_long(i2s_state_t *state, int64_t now) {
+	if (state->starved_since_ns == 0) {
+		state->starved_since_ns = now;
+		return false;
+	}
+	return now - state->starved_since_ns > I2S_STARVE_LIMIT_NS;
+}
+
 /*
  * Advance the transmit ring by however many words are due in wall-clock time.
  * Like the AFE this is a real-time audio clock: driving it from executed DSP
@@ -273,13 +304,33 @@ void i2s_pace(dsp_device_t *device, int64_t now) {
 	if (state->next_word_ns == 0 || state->next_word_ns > now + period)
 		state->next_word_ns = now;	/* first word or clock skew: (re)sync */
 
+	/*
+	 * Only shift out ring slots the core has refilled since they last went out.
+	 * The emulated DSP cannot always synthesise the higher melody rates in real
+	 * time, and a serial clock that runs on regardless simply skips whatever has
+	 * not been written yet: those samples never reach the host at all, while the
+	 * firmware keeps counting the transmit interrupts it schedules notes
+	 * against, so the rest of the melody plays back short and too fast. Waiting
+	 * for the core instead costs wall-clock time and keeps the stream intact.
+	 */
 	while (state->next_word_ns <= now && words < I2S_MAX_CATCHUP_WORDS) {
+		uint16_t slot = (state->transmit_position + 1) & TEAK_I2S_RWADDR_RDADDR;
+		bool starving = (state->refilled & (1ULL << slot)) == 0;
+
+		if (starving && !i2s_starved_too_long(state, now))
+			break;
+		state->refilled &= ~(1ULL << slot);
 		words++;
 		state->next_word_ns += period;
-	}
-	/* One word per call: i2s_advance drops any remainder once it interrupts. */
-	for (size_t i = 0; i < words; i++)
 		i2s_advance(device, I2S_SAMPLE_CYCLES);
+	}
+
+	/*
+	 * Waiting for the core is not a backlog to catch up on later: resync, or the
+	 * next call shifts the whole wait out in one burst of transmit interrupts.
+	 */
+	if (state->next_word_ns <= now)
+		state->next_word_ns = now;
 }
 
 bool i2s_is_paced(const dsp_device_t *device) {

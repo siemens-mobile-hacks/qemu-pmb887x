@@ -13,6 +13,7 @@
 #include "qemu/fifo8.h"
 #include "qemu/thread.h"
 #include "qemu/timer.h"
+#include "hw/arm/pmb887x/pmic.h"
 #endif
 
 #define AFE_REGISTER_COUNT	(TEAK_AFE_RINGCTRL + 1)
@@ -190,7 +191,17 @@ static void afe_audio_report_stats(afe_audio_t *audio) {
 static void afe_audio_produce(afe_state_t *state, uint16_t sample_word) {
 	afe_audio_t *audio = &state->audio;
 	int16_t sample = (int16_t) sample_word;
-	uint8_t bytes[2] = { (uint8_t) sample_word, (uint8_t) (sample_word >> 8) };
+	uint8_t bytes[2];
+
+	/*
+	 * The DSP reaches the speaker through the codec's amplifier path 4, which is
+	 * where the phone's volume setting lands.
+	 */
+	sample = (int16_t) ((sample * (int64_t) pmb887x_pmic_output_gain(PMB887X_PMIC_PATH_STREAM)) /
+		PMB887X_PMIC_GAIN_UNITY);
+	sample_word = (uint16_t) sample;
+	bytes[0] = (uint8_t) sample_word;
+	bytes[1] = (uint8_t) (sample_word >> 8);
 
 	audio->stats_total++;
 	if (sample != 0) {
