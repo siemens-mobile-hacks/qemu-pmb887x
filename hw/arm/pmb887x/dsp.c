@@ -1002,6 +1002,8 @@ struct dsp_state_t {
 	uint16_t baseband_timeout_flags;
 	Clock *gsm_clock;
 	bool reset_pending;
+	/* Set by a reset until the core has run: see dsp_wait_boot(). */
+	bool boot_pending;
 	bool vm_running;
 	qemu_irq mcu_interrupts[PMB887X_DSP_MCU_INT_COUNT];
 	qemu_irq outputs[DSP_OUTPUT_COUNT];
@@ -1100,6 +1102,8 @@ static void *dsp_worker(void *opaque) {
 			qemu_mutex_lock(&p->worker.mutex);
 			p->worker.busy = false;
 			p->worker.sync_requested = false;
+			if (run_startup && !p->worker.reset)
+				p->boot_pending = false;
 			qemu_cond_broadcast(&p->worker.idle_cond);
 			if (p->worker.reset)
 				continue;
@@ -1148,6 +1152,8 @@ static void *dsp_worker(void *opaque) {
 		qatomic_set(&p->comm_status, dsp_runtime_get_comm(p->runtime));
 		p->worker.busy = false;
 		p->worker.sync_requested = false;
+		if (!p->worker.reset)
+			p->boot_pending = false;
 		qemu_cond_broadcast(&p->worker.idle_cond);
 
 		if (p->worker.reset)
@@ -1322,6 +1328,7 @@ static void dsp_reset_internal_state(dsp_state_t *p) {
 	qemu_mutex_lock(&p->worker.mutex);
 	p->worker.reset = true;
 	qatomic_set(&p->reset_pending, true);
+	p->boot_pending = true;
 	p->worker.enabled = p->vm_running && pmb887x_clc_is_enabled(&p->clc);
 	qatomic_set(&p->worker.interrupt_events, 0);
 	qatomic_set(&p->worker.output_events, 0);
@@ -1510,6 +1517,34 @@ static bool dsp_comm_handshake_pending(dsp_state_t *p) {
 	return (qatomic_read(&p->comm_status) & qatomic_read(&p->comm_pending)) != 0;
 }
 
+/*
+ * After a reset the mask ROM loader raises CF0, discards every pending request
+ * and only then clears CF0 to report that it is ready. Until the core has run
+ * that far a clear COM_STATUS means nothing: a command sent then is acknowledged
+ * unread, and every download after it lands one slot early.
+ */
+static void dsp_wait_boot(dsp_state_t *p) {
+	int64_t deadline = qemu_clock_get_ns(QEMU_CLOCK_HOST) + DSP_COMM_SYNC_TIMEOUT_MS * SCALE_MS;
+	bool bql = bql_locked();
+
+	if (bql)
+		bql_unlock();
+
+	qemu_mutex_lock(&p->worker.mutex);
+	while (p->boot_pending && p->worker.enabled && !p->worker.stop) {
+		int64_t remaining = deadline - qemu_clock_get_ns(QEMU_CLOCK_HOST);
+
+		if (remaining <= 0)
+			break;
+		qemu_event_set(&p->worker.event);
+		qemu_cond_timedwait(&p->worker.idle_cond, &p->worker.mutex, DIV_ROUND_UP(remaining, SCALE_MS));
+	}
+	qemu_mutex_unlock(&p->worker.mutex);
+
+	if (bql)
+		bql_lock();
+}
+
 static void dsp_wait_comm_clear(dsp_state_t *p) {
 	int64_t start;
 	int64_t deadline;
@@ -1604,7 +1639,11 @@ static uint64_t dsp_io_read(void *opaque, hwaddr haddr, unsigned size) {
 
 		case DSP_COM_STATUS: {
 			uint32_t program_start_pc;
-			bool reset_pending = qatomic_read(&p->reset_pending);
+			bool reset_pending;
+
+			if (qatomic_read(&p->boot_pending))
+				dsp_wait_boot(p);
+			reset_pending = qatomic_read(&p->reset_pending);
 
 			if (reset_pending) {
 				value = qatomic_read(&p->reset_comm_flags) | qatomic_read(&p->comm_status);
