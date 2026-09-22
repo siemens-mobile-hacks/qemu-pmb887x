@@ -455,6 +455,21 @@ void afe_audio_set_format(dsp_device_t *device, unsigned freq, unsigned channels
 	}
 }
 
+/* How much audio the backend still has to play out, in samples. */
+size_t afe_audio_queued_samples(dsp_device_t *device) {
+	afe_state_t *state = device->state;
+	afe_audio_t *audio = &state->audio;
+	size_t used;
+
+	if (!audio->fifo_ready)
+		return 0;
+
+	qemu_mutex_lock(&audio->lock);
+	used = fifo8_num_used(&audio->fifo);
+	qemu_mutex_unlock(&audio->lock);
+	return used / (sizeof(int16_t) * audio->out_channels);
+}
+
 bool afe_audio_has_room(dsp_device_t *device, size_t count) {
 	afe_state_t *state = device->state;
 	afe_audio_t *audio = &state->audio;
