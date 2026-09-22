@@ -241,6 +241,20 @@ void qemu_timer_notify_cb(void *opaque, QEMUClockType type)
 {
     if ((!icount_enabled() && !icount2_enabled()) ||
         type != QEMU_CLOCK_VIRTUAL) {
+#ifdef __EMSCRIPTEN__
+        /*
+         * A timer armed on the main-loop thread - nearly always a device
+         * timer callback re-arming itself - is seen by the deadline the
+         * next main_loop_wait() computes before it sleeps, so the notify
+         * wakes nobody.  It is not free: qemu_notify_bh makes that next
+         * iteration return without sleeping, one more BQL round trip
+         * that also ends the vCPU's deferred hold.  Through a KE970 boot
+         * (icount=none) this was ~90 % of the rearm notifies, 10-14 k/s.
+         */
+        if (qemu_in_main_loop_thread()) {
+            return;
+        }
+#endif
         qemu_notify_event();
         return;
     }

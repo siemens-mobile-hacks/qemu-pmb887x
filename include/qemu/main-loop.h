@@ -327,6 +327,15 @@ void bql_unlock_mmio(void);
 bool bql_wanted_by_other(void);
 void bql_release_lazy(void);
 
+#ifdef __EMSCRIPTEN__
+/**
+ * qemu_in_main_loop_thread: is this the thread that runs main_loop_wait()?
+ *
+ * Not qemu_in_main_thread(), which is true on a vCPU holding the BQL.
+ */
+bool qemu_in_main_loop_thread(void);
+#endif
+
 /**
  * bql_block: Allow/deny releasing the BQL
  *

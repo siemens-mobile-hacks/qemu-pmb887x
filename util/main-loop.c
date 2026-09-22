@@ -199,6 +199,12 @@ void qemu_notify_event(void)
 static uint32_t ml_futex_seq;   /* sequence counter: wake = seq++ */
 static uint32_t ml_wait_seq;    /* snapshot taken before the timeout
                                  * is computed (see main_loop_wait) */
+static __thread bool ml_thread; /* this thread runs main_loop_wait() */
+
+bool qemu_in_main_loop_thread(void)
+{
+    return ml_thread;
+}
 
 void qemu_main_loop_wake(void)
 {
@@ -666,6 +672,7 @@ void main_loop_wait(int nonblocking)
      * shows up as a value change in os_host_main_loop_wait's futex
      * wait (immediate -EWOULDBLOCK) instead of being erased. */
     ml_wait_seq = qatomic_read(&ml_futex_seq);
+    ml_thread = true;
 #endif
     /* XXX: separate device handlers from system ones */
     notifier_list_notify(&main_loop_poll_notifiers, &mlpoll);
