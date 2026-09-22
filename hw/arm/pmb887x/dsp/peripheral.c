@@ -65,7 +65,7 @@ static dsp_device_t *dsp_bus_create_device(dsp_bus_t *bus, const pmb887x_dsp_per
 			g_assert(bus->interrupt != NULL);
 			g_assert(bus->i2s_count < ARRAY_SIZE(bus->i2s));
 
-			device = i2s_create(config, bus->interrupt, (uint16_t) BIT(bus->i2s_count * 2));
+			device = i2s_create(config, bus->interrupt, (uint16_t) BIT(bus->i2s_count * 2), bus->afe);
 			bus->i2s[bus->i2s_count++] = device;
 			return device;
 
@@ -199,7 +199,7 @@ void dsp_bus_advance(dsp_bus_t *bus, size_t cycles) {
 	if (bus->equalizer != NULL && equalizer_is_active(bus->equalizer))
 		equalizer_advance(bus->equalizer, cycles);
 	for (size_t i = 0; i < bus->i2s_count; i++)
-		if (i2s_is_active(bus->i2s[i]))
+		if (i2s_is_active(bus->i2s[i]) && !i2s_is_paced(bus->i2s[i]))
 			i2s_advance(bus->i2s[i], cycles);
 	if (bus->i2s_tx != NULL && i2s_tx_is_active(bus->i2s_tx))
 		i2s_tx_advance(bus->i2s_tx, cycles);
@@ -216,6 +216,24 @@ void dsp_bus_advance(dsp_bus_t *bus, size_t cycles) {
 void dsp_bus_advance_afe(dsp_bus_t *bus, size_t cycles) {
 	if (bus->afe != NULL && afe_is_active(bus->afe))
 		afe_advance(bus->afe, cycles);
+}
+
+/* Real-time audio clocks that run on wall time rather than executed cycles. */
+void dsp_bus_pace_i2s(dsp_bus_t *bus, int64_t now) {
+	for (size_t i = 0; i < bus->i2s_count; i++)
+		if (i2s_is_active(bus->i2s[i]))
+			i2s_pace(bus->i2s[i], now);
+}
+
+/* Offer a DSP write to the serial units, whose audio out follows their ring. */
+void dsp_bus_note_ram_write(dsp_bus_t *bus, uint16_t address, uint16_t value) {
+	for (size_t i = 0; i < bus->i2s_count; i++)
+		i2s_note_ram_write(bus->i2s[i], address, value);
+}
+
+void dsp_bus_apply_audio_format(dsp_bus_t *bus) {
+	for (size_t i = 0; i < bus->i2s_count; i++)
+		i2s_apply_audio_format(bus->i2s[i]);
 }
 
 /*

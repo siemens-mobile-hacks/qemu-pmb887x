@@ -43,11 +43,27 @@
 #define DSP_COMM_SYNC_TIMEOUT_MS	50
 #define DSP_COMM_SPIN_NS	(100 * SCALE_US)
 #define DSP_SSC_BUS_NAME	"pmb887x-dsp-ssc"
+/*
+ * This file is compiled twice: once as itself for the core that executes the
+ * mask ROM, and once from dsp-stub.c with STUB_DSP set, which answers the
+ * firmware's runtime commands from the host instead. Only the PMB8875 ROM
+ * (0x0602) runs on the core so far, so board.c still picks the stub for the
+ * PMB8876. Everything below is static apart from pmb887x_dsp_set_config, and
+ * the two builds share nothing else.
+ */
+#ifndef STUB_DSP
+#define STUB_DSP 0
+#endif
+
+#if STUB_DSP
+#define TYPE_PMB887X_DSP	TYPE_PMB887X_DSP_STUB
+#define pmb887x_dsp_set_config	pmb887x_dsp_stub_set_config
+#else
 #define TYPE_PMB887X_DSP	"pmb887x-dsp"
+#endif
 #define PMB887X_DSP(obj)	OBJECT_CHECK(dsp_state_t, (obj), TYPE_PMB887X_DSP)
 
-#define STUB_DSP 1
-#ifdef STUB_DSP
+#if STUB_DSP
 #include "hw/arm/pmb887x/dsp/hle.h"
 
 #define DSP_CHAN0_CMD_ADDR	0x0005
@@ -1184,8 +1200,11 @@ static void dsp_afe_timer_cb(void *opaque) {
 		fprintf(stderr, "[afe-timer] n=%u active=%d\n", tn, active);
 #endif
 
-	if (active)
+	if (active) {
+		/* Under the BQL here, unlike the worker: safe to reopen the out voice. */
+		dsp_runtime_apply_audio_format(p->runtime);
 		dsp_worker_kick(p);
+	}
 	timer_mod(p->afe_timer, qemu_clock_get_ns(DSP_AFE_CLOCK) + DSP_AFE_TICK_NS);
 }
 
