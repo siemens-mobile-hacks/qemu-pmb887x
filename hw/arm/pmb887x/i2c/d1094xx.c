@@ -12,6 +12,8 @@
 #include "system/memory.h"
 #include "qemu/main-loop.h"
 #include "qemu/atomic.h"
+#include "qemu/audio.h"
+#include "qemu/timer.h"
 #include "hw/core/qdev-properties.h"
 #include "hw/i2c/i2c.h"
 #include "hw/arm/pmb887x/gen/peripheral/PASIC.h"
@@ -20,6 +22,21 @@
 
 #define TYPE_PMB887X_PMIC	"d1094xx"
 #define PMB887X_PMIC(obj)	OBJECT_CHECK(pmb887x_pmic_t, (obj), TYPE_PMB887X_PMIC)
+
+/*
+ * Key-click tone generator. Pitch and envelope are taken from a recording of a
+ * keypress on the phone: a 2963 Hz square held flat for 3 ms and gone inside 4.
+ * DURATION counts half-milliseconds against that recording, which puts the 7 the
+ * firmware writes at the 3.5 ms it shows.
+ */
+#define PMIC_CLICK_RATE			32000
+#define PMIC_CLICK_FREQ			2963
+#define PMIC_CLICK_DURATION_US		500
+#define PMIC_CLICK_RELEASE_US		1500
+/* Per-sample ring-down, reaching ~2% of full level across the release. */
+#define PMIC_CLICK_RELEASE_DECAY	0.92
+/* Leave the voice open well past the burst so the backend drains all of it. */
+#define PMIC_CLICK_LINGER_US		50000
 
 typedef struct pmb887x_pmic_t pmb887x_pmic_t;
 
@@ -33,6 +50,19 @@ struct pmb887x_pmic_t {
 
 	/* Published to the audio paths; read from the DSP worker thread. */
 	uint32_t path_gain[PMB887X_PMIC_PATH_COUNT];
+
+	AudioBackend *audio;
+	SWVoiceOut *click_voice;
+	QEMUTimer *click_timer;
+	bool click_active;
+	/* Published to the audio callback, which owns the envelope below. */
+	uint32_t click_step;
+	uint32_t click_level;
+	uint32_t click_pending;
+	uint32_t click_hold;
+	uint32_t click_release;
+	double click_phase;
+	double click_decay;
 };
 
 /* One codec per machine, and every audio path in it has to read the gain. */
@@ -168,6 +198,106 @@ uint32_t pmb887x_pmic_output_gain(pmb887x_pmic_path_t path) {
 	return qatomic_read(&pmic_device->path_gain[path]);
 }
 
+static void pmic_click_stop(void *opaque) {
+	pmb887x_pmic_t *p = opaque;
+
+	if (!p->click_active)
+		return;
+	p->click_active = false;
+	audio_be_set_active_out(p->audio, p->click_voice, false);
+}
+
+static void pmic_click_callback(void *opaque, int free_bytes) {
+	pmb887x_pmic_t *p = opaque;
+	int16_t chunk[256];
+
+	while (free_bytes >= (int) sizeof(chunk[0])) {
+		size_t count = MIN((size_t) free_bytes / sizeof(chunk[0]), ARRAY_SIZE(chunk));
+		uint32_t hold = qatomic_xchg(&p->click_pending, 0);
+		double step = qatomic_read(&p->click_step) / 65536.0;
+		uint32_t amplitude = qatomic_read(&p->click_level);
+		size_t written;
+
+		if (hold != 0) {
+			p->click_hold = hold;
+			p->click_release = PMIC_CLICK_RELEASE_US * PMIC_CLICK_RATE / 1000000;
+			p->click_phase = 0.0;
+			p->click_decay = 1.0;
+		}
+
+		for (size_t i = 0; i < count; i++) {
+			double level = p->click_phase < 0.5 ? 1.0 : -1.0;
+
+			if (p->click_hold > 0) {
+				p->click_hold--;
+			} else if (p->click_release > 0) {
+				p->click_release--;
+				p->click_decay *= PMIC_CLICK_RELEASE_DECAY;
+			} else {
+				/* Burst finished; hold the voice silent until it is closed. */
+				chunk[i] = 0;
+				continue;
+			}
+
+			chunk[i] = (int16_t) (level * amplitude * p->click_decay);
+			p->click_phase += step;
+			if (p->click_phase >= 1.0)
+				p->click_phase -= 1.0;
+		}
+
+		written = audio_be_write(p->audio, p->click_voice, chunk, count * sizeof(chunk[0]));
+		if (written == 0)
+			break;
+		free_bytes -= written;
+	}
+}
+
+/*
+ * The tone generator has a level field and an amplifier of its own, parked at
+ * 0x39 like any other path and opened to 0x22 to fire a click. It does not run
+ * through the output amplifiers -- clicks stay audible while both of those are
+ * parked silent -- so this is the whole chain. Every click the firmware fires
+ * uses the same two codes, so PMIC_CLICK_PEAK is the level they stand for: a
+ * click against music at the ratio the recordings show.
+ */
+#define PMIC_CLICK_PEAK			9772
+#define PMIC_CLICK_REF_GAIN		0x22
+#define PMIC_CLICK_REF_TONE_LEVEL	1
+
+static uint32_t pmic_tone_level(const pmb887x_pmic_t *p) {
+	uint8_t reg = p->regs[PASIC_AMPLIFIER_GAIN_2];
+	uint32_t tone = (reg & PASIC_AMPLIFIER_GAIN_2_TONE_LEVEL) >>
+		PASIC_AMPLIFIER_GAIN_2_TONE_LEVEL_SHIFT;
+	int attenuation = (reg & PASIC_AMPLIFIER_GAIN_2_GAIN) - PMIC_CLICK_REF_GAIN;
+	double level = PMIC_CLICK_PEAK * (tone + 1.0) / (PMIC_CLICK_REF_TONE_LEVEL + 1.0) *
+		pow(10.0, -attenuation / 20.0);
+
+	return MIN(level, INT16_MAX);
+}
+
+/*
+ * The codec makes the keypad click itself: the firmware sets the tone level and
+ * a duration, then raises KEY_CLICK_EN to fire one.
+ */
+static void pmic_click_start(pmb887x_pmic_t *p) {
+	uint32_t duration = p->regs[PASIC_TONE_CONTROL] & PASIC_TONE_CONTROL_DURATION;
+	uint64_t hold_us = (uint64_t) duration * PMIC_CLICK_DURATION_US;
+
+	if (p->click_voice == NULL)
+		return;
+
+	qatomic_set(&p->click_step, PMIC_CLICK_FREQ * 0x10000u / PMIC_CLICK_RATE);
+	qatomic_set(&p->click_level, pmic_tone_level(p));
+	qatomic_set(&p->click_pending, MAX(hold_us * PMIC_CLICK_RATE / 1000000, 1));
+
+	if (!p->click_active) {
+		p->click_active = true;
+		audio_be_set_active_out(p->audio, p->click_voice, true);
+	}
+	timer_mod(p->click_timer, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) +
+		(hold_us + PMIC_CLICK_RELEASE_US + PMIC_CLICK_LINGER_US) * SCALE_US);
+}
+
 static int pmic_event(I2CSlave *s, enum i2c_event event) {
 	pmb887x_pmic_t *p = PMB887X_PMIC(s);
 
@@ -212,6 +342,10 @@ static int pmic_send(I2CSlave *s, uint8_t data) {
 			case PASIC_AMPLIFIER_GAIN_4_5:
 				pmic_update_path_gains(p);
 				break;
+			case PASIC_MONO_CONTROL:
+				if ((data & PASIC_MONO_CONTROL_KEY_CLICK_EN) != 0)
+					pmic_click_start(p);
+				break;
 		}
 		p->reg_id = (p->reg_id + 1) % ARRAY_SIZE(p->regs);
 	}
@@ -241,6 +375,18 @@ static void pmic_realize(DeviceState *dev, Error **errp) {
 
 	pmic_device = p;
 	pmic_update_path_gains(p);
+
+	p->click_timer = timer_new_ns(QEMU_CLOCK_VIRTUAL, pmic_click_stop, p);
+	if (audio_be_check(&p->audio, NULL)) {
+		struct audsettings as = {
+			.freq = PMIC_CLICK_RATE,
+			.nchannels = 1,
+			.fmt = AUDIO_FORMAT_S16,
+			.big_endian = false,
+		};
+		p->click_voice = audio_be_open_out(p->audio, NULL, "pmb887x-pmic-click",
+			p, pmic_click_callback, &as);
+	}
 }
 
 static const Property pmic_properties[] = {
