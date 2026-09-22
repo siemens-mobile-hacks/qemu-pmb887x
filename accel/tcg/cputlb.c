@@ -300,10 +300,12 @@ static void tlb_mmu_resize_locked(CPUTLBDesc *desc, CPUTLBDescFast *fast,
 }
 
 /*
- * One bit per 32 MB block of physical address space, folded into 64 bits
+ * One bit per 16 MB block of physical address space, folded into 64 bits
  * (see CPUTLBDesc::phys_group).  The block size has to divide the ranges a
- * topology commit reports - the flash banks here are 32 MB - or a commit
- * against one bank would also match every entry of its neighbour.
+ * topology commit reports - the Siemens flash banks are 32 MB, the LG
+ * (KE800/KE970) romd window 16 MB - or a commit against one bank would also
+ * match every entry of its neighbour: with 32 MB blocks every KE970 romd
+ * flip walked ~2 300 entries of the running code to drop ~1.4.
  */
 static inline uint64_t tlb_phys_blk_bit(uint64_t blk)
 {

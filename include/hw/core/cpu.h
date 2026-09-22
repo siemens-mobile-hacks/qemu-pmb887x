@@ -209,13 +209,13 @@ typedef uint32_t MMUIdxMap;
 /*
  * Granularity of the per-TLB physical-address summary (see phys_group in
  * CPUTLBDesc): one 64-bit mask per group of 64 table entries, one bit per
- * 32 MB (1 << TLB_PHYS_BUCKET_BITS) of physical address space.  Tables
+ * 16 MB (1 << TLB_PHYS_BUCKET_BITS) of physical address space.  Tables
  * larger than
  * TLB_PHYS_GROUPS << TLB_PHYS_GROUP_BITS entries fall back to a full walk.
  */
 #define TLB_PHYS_GROUP_BITS 6
 #define TLB_PHYS_GROUPS 256
-#define TLB_PHYS_BUCKET_BITS 25
+#define TLB_PHYS_BUCKET_BITS 24
 
 /*
  * The full TLB entry, which is not accessed by generated TCG code,
