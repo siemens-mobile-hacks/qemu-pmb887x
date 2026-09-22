@@ -78,6 +78,7 @@ bool afe_is_active(const dsp_device_t *device);
 
 size_t afe_audio_push_samples(dsp_device_t *device, const uint16_t *samples, size_t count);
 bool afe_audio_has_room(dsp_device_t *device, size_t count);
+size_t afe_audio_queued_samples(dsp_device_t *device);
 void afe_audio_set_format(dsp_device_t *device, unsigned freq, unsigned channels);
 
 dsp_device_t *baseband_create(const pmb887x_dsp_peripheral_config_t *config, dsp_device_t *interrupt, const dsp_host_t *host);
