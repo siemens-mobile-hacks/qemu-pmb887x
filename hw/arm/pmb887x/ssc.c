@@ -213,7 +213,7 @@ static void ssc_schedule_transfer(pmb887x_ssc_t *p) {
 	p->transfer_pending = true;
 	p->status |= SSC_CON_BSY;
 	ssc_update_tx_request(p);
-	timer_mod(p->transfer_timer, 0);
+	timer_mod(p->transfer_timer, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + 1);
 }
 
 static void ssc_stop_transfer(pmb887x_ssc_t *p) {
@@ -498,7 +498,7 @@ static void ssc_realize(DeviceState *dev, Error **errp) {
 
 	pmb887x_fifo16_init(&p->tx_fifo_single, 1);
 	pmb887x_fifo16_init(&p->rx_fifo_single, 1);
-	p->transfer_timer = timer_new_ns(QEMU_CLOCK_REALTIME, ssc_transfer_complete, p);
+	p->transfer_timer = timer_new_ns(QEMU_CLOCK_VIRTUAL, ssc_transfer_complete, p);
 
 	ssc_set_fifo(p, SSC_FIFO_RX, false);
 	ssc_set_fifo(p, SSC_FIFO_TX, false);

@@ -152,7 +152,7 @@ static uint32_t pll_get_stm_freq(pmb887x_cgu_t *p) {
 	uint32_t freq = p->xtal;
 	if ((p->con1 & CGU_CON1_FSTM_DIV_EN)) {
 		uint32_t div = (p->con1 & CGU_CON1_FSTM_DIV) >> CGU_CON1_FSTM_DIV_SHIFT;
-		return freq / (4U << div);
+		return freq / (1U << div);
 	}
 	return freq;
 }
@@ -174,12 +174,15 @@ static void pll_update_state(struct pmb887x_cgu_t *p) {
 	uint32_t new_fstm = pll_get_stm_freq(p);
 	uint32_t new_fcpu = pll_get_cpu_freq(p);
 	uint32_t new_fahb = pll_get_ahb_freq(p);
+	/* fGPTU = the GPTU tap = the PLL product (see gptu.c's gptu_calc_freq()). */
+	uint32_t new_fgptu = pll_freq(p);
 	
 	bool is_changed = (
 		new_fsys != p->fsys ||
 		new_fstm != p->fstm ||
 		new_fcpu != p->fcpu ||
-		new_fahb != p->fahb
+		new_fahb != p->fahb ||
+		new_fgptu != p->fgptu
 	);
 	
 	if (is_changed) {
@@ -196,6 +199,7 @@ static void pll_update_state(struct pmb887x_cgu_t *p) {
 		p->fstm = new_fstm;
 		p->fcpu = new_fcpu;
 		p->fahb = new_fahb;
+		p->fgptu = new_fgptu;
 		
 		for (int i = 0; i < p->callbacks_count; ++i)
 			p->callbacks[i].callback(p->callbacks[i].opaque);
@@ -361,7 +365,9 @@ static void pll_reset(DeviceState *dev) {
 	pmb887x_src_reset(&p->src);
 
 	p->frtc = 32768;
-	p->fgptu = 1000000000;
+	/* fGPTU is the PLL product, computed by pll_update_state() at the end of this
+	   function; the old 1000000000 stub was read by nothing. */
+	p->fgptu = 0;
 	p->fsys = p->xtal;
 	p->osc = 0x01070001;
 	p->con0 = 0x22000012;
@@ -382,7 +388,9 @@ static void pll_realize(DeviceState *dev, Error **errp) {
 	pmb887x_src_init(&p->src, p->irq);
 	
 	p->frtc = 32768;
-	p->fgptu = 1000000000;
+	/* fGPTU is the PLL product, computed by pll_update_state() at the end of this
+	   function; the old 1000000000 stub was read by nothing. */
+	p->fgptu = 0;
 	p->fsys = p->xtal;
 	
 	p->callbacks = NULL;

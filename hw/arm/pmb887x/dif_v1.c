@@ -283,7 +283,9 @@ static void dif_schedule_transfer(pmb887x_dif_t *p) {
 	p->transfer_pending = true;
 	p->status |= DIFv1_CON_BSY;
 	dif_update_tx_request(p);
-	timer_mod(p->transfer_timer, 0);
+	/* Future deadline, not 0: this runs inside an MMIO write, and an already expired
+	 * virtual timer could run before that write unwinds. */
+	timer_mod(p->transfer_timer, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + 1);
 }
 
 static void dif_stop_transfer(pmb887x_dif_t *p) {
@@ -723,7 +725,7 @@ static void dif_realize(DeviceState *dev, Error **errp) {
 
 	pmb887x_fifo16_init(&p->tx_fifo_single, 1);
 	pmb887x_fifo16_init(&p->rx_fifo_single, 1);
-	p->transfer_timer = timer_new_ns(QEMU_CLOCK_REALTIME, dif_transfer_complete, p);
+	p->transfer_timer = timer_new_ns(QEMU_CLOCK_VIRTUAL, dif_transfer_complete, p);
 
 	dif_set_fifo(p, DIF_FIFO_RX, false);
 	dif_set_fifo(p, DIF_FIFO_TX, false);

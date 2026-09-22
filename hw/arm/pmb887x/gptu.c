@@ -127,19 +127,43 @@ struct pmb887x_gptu_t {
 
 static void gptu_sync_timer(pmb887x_gptu_t *p);
 static void gptu_t2_sync_timer(pmb887x_gptu_t *p);
+static void gptu_t2_update_state(pmb887x_gptu_t *p);
+static void gptu_rebuild_timers(pmb887x_gptu_t *p);
+static uint32_t gptu_calc_freq(pmb887x_gptu_t *p);
+static void gptu_update_state_callback(void *opaque);
 static void gptu_t2_internal_trigger(pmb887x_gptu_t *p, int trigger_id, uint64_t count);
 static void gptu_t01_external_count(pmb887x_gptu_t *p, int cnt_id, uint64_t count);
 
 /*
  * Common
- * */
-static void gptu_update_freq(pmb887x_gptu_t *p) {
+ */
+static uint32_t gptu_calc_freq(pmb887x_gptu_t *p) {
 	uint8_t rmc = pmb887x_clc_get_rmc(&p->clc);
 
-	p->freq = rmc > 0 ? pmb887x_pll_get_fsys(p->cgu) / rmc : 0;
+	return rmc > 0 ? pmb887x_pll_get_fgptu(p->cgu) / rmc : 0;
+}
+
+static void gptu_update_freq(pmb887x_gptu_t *p) {
+	p->freq = gptu_calc_freq(p);
 	p->enabled = pmb887x_clc_is_enabled(&p->clc) && p->freq > 0;
 
 	DPRINTF("fgptu=%d %s\n", p->freq, p->enabled ? "[ON]" : "[OFF]");
+}
+
+/* The tap follows the PLL, so a CGU write moves this counter's rate: re-derive,
+   and only re-arm the timers when it actually changed.  Same sequence as the
+   GPTU_CLC write path below, and the same callback idiom stm.c/tpu.c use. */
+static void gptu_update_state_callback(void *opaque) {
+	pmb887x_gptu_t *p = opaque;
+
+	if (gptu_calc_freq(p) == p->freq)
+		return;
+
+	gptu_sync_timer(p);
+	gptu_update_freq(p);
+	gptu_rebuild_timers(p);
+	gptu_t2_sync_timer(p);
+	gptu_t2_update_state(p);
 }
 
 static int64_t gptu_ticks_to_ns(pmb887x_gptu_t *p, uint64_t ticks) {
@@ -1223,6 +1247,7 @@ static void gptu_realize(DeviceState *dev, Error **errp) {
 	p->timer_t2 = timer_new_ns(QEMU_CLOCK_VIRTUAL, gptu_t2_ptimer_reset, p);
 
 	gptu_update_freq(p);
+	pmb887x_pll_add_freq_update_callback(p->cgu, gptu_update_state_callback, p);
 	gptu_update_events(p);
 	gptu_rebuild_timers(p);
 	gptu_sync_timer(p);
