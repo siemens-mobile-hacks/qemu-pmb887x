@@ -191,7 +191,7 @@ void icount2_sync(void) {
 	
 	if (deadline == 0) {
 		qemu_clock_run_timers(QEMU_CLOCK_VIRTUAL);
-		qemu_clock_notify(QEMU_CLOCK_VIRTUAL);
+		qemu_clock_notify_aio_contexts(QEMU_CLOCK_VIRTUAL);
 		deadline = qemu_clock_deadline_ns_all(QEMU_CLOCK_VIRTUAL, QEMU_TIMER_ATTR_ALL);
 	}
 	

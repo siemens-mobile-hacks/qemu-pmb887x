@@ -201,6 +201,16 @@ int64_t qemu_clock_deadline_ns_all(QEMUClockType type, int attr_mask);
 void qemu_clock_notify(QEMUClockType type);
 
 /**
+ * qemu_clock_notify_aio_contexts:
+ * @type: the clock type
+ *
+ * Wake the AioContexts that have timers on the clock, so they run the ones
+ * now due. Unlike qemu_clock_notify(), this leaves out the main loop's timer
+ * list, whose timers the caller runs itself, and lists with nothing to run.
+ */
+void qemu_clock_notify_aio_contexts(QEMUClockType type);
+
+/**
  * qemu_clock_enable:
  * @type: the clock type
  * @enabled: true to enable, false to disable
