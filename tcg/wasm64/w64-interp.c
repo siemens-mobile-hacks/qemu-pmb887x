@@ -23,8 +23,8 @@
 #include "tcg/helper-info.h"
 #include "exec/helper-head.h.inc"
 #include "tcg/tcg-ldst.h"
+#include "system/cpu-timers.h"
 #include "exec/translation-block.h"
-#include "qemu/wasm-diag.h"
 #include "wasm64.h"
 #include "w64-interp.h"
 
@@ -36,100 +36,39 @@
 static struct w64_irec *w64_irecs;
 
 /*
- * W64_INTERP=T: a TB is interpreted for its first T entries and only
- * then earns a module.  T=0 turns the tier off (the pre-tier behaviour);
- * a very large T never compiles, which is how the tier is gated for
- * correctness.  The default is flat from 32 to 512 -- 64 sits in the
- * middle of that plateau.
+ * A TB is interpreted for its first W64_INTERP_THRESH entries and only
+ * then earns a module.  The throughput is flat from 32 to 512.
  */
-#define W64_INTERP_DEFAULT  64
-
-static uint32_t w64_interp_thresh(void)
-{
-    static int64_t t = -1;
-
-    if (t < 0) {
-        const char *e = getenv("W64_INTERP");
-        t = e ? strtoll(e, NULL, 0) : W64_INTERP_DEFAULT;
-        if (t < 0) {
-            t = 0;
-        }
-    }
-    return (uint32_t)t;
-}
-
-bool w64_interp_on(void)
-{
-    return w64_interp_thresh() != 0;
-}
-
-uint32_t w64_interp_gate;
-
-/* W64_INTERP_RANGE=lo:hi restricts the tier to one span of tidx, which is
- * how a divergence is bisected down to the single TB that causes it. */
-static uint32_t w64_interp_lo, w64_interp_hi = UINT32_MAX;
-
-/*
- * Called from tcg_target_init, not from the first TB execution: accel/tcg
- * latches its speculation budget on the first lookup miss, which is
- * earlier than that, and reads w64_interp_gate to do it.
- */
-void w64_interp_init(void)
-{
-    const char *r = getenv("W64_INTERP_RANGE");
-    static bool done;
-
-    if (done) {
-        return;
-    }
-    done = true;
-
-    if (r) {
-        w64_interp_lo = strtoul(r, NULL, 0);
-        r = strchr(r, ':');
-        w64_interp_hi = r ? strtoul(r + 1, NULL, 0) : w64_interp_lo;
-    }
-    if (w64_interp_thresh()) {
-        w64_interp_gate = getenv("W64_INTERP_ALL") ? 2 : 1;
-    }
-}
+#define W64_INTERP_THRESH  64
 
 void w64_irec_put(uint32_t tidx, uint32_t *code, uint32_t n)
 {
     struct w64_irec *r;
 
-    if (tidx >= W64_TBHIST_N) {
+    if (tidx >= W64_TIDX_N) {
         g_free(code);
         return;
     }
     if (!w64_irecs) {
-        w64_irecs = g_malloc0((size_t)W64_TBHIST_N * sizeof(*w64_irecs));
+        w64_irecs = g_malloc0((size_t)W64_TIDX_N * sizeof(*w64_irecs));
     }
     r = &w64_irecs[tidx];
-    wasm_diag_stat[WASM_DIAG_IREC_FREED] += (size_t)r->n * sizeof(uint32_t);
     g_free(r->code);
     r->code = code;
     r->n = n;
-    wasm_diag_stat[WASM_DIAG_IREC_N]++;
-    wasm_diag_stat[WASM_DIAG_IREC_BYTES] += (size_t)n * sizeof(uint32_t);
 }
 
 
-/*
- * The TB has a module now, so the production gate will never consult its
- * record again.  Under W64_INTERP_ALL the record is the only way it ever
- * runs, so keep it.
- */
+/* The TB has a module now, so its record is never consulted again. */
 void w64_irec_drop(uint32_t tidx)
 {
     struct w64_irec *r;
 
-    if (w64_interp_gate != 1 || !w64_irecs || tidx >= W64_TBHIST_N) {
+    if (!w64_irecs || tidx >= W64_TIDX_N) {
         return;
     }
     r = &w64_irecs[tidx];
     if (r->code) {
-        wasm_diag_stat[WASM_DIAG_IREC_FREED] += (size_t)r->n * sizeof(uint32_t);
         g_free(r->code);
         r->code = NULL;
         r->n = 0;
@@ -143,9 +82,7 @@ void w64_irec_flush(void)
     if (!w64_irecs) {
         return;
     }
-    for (i = 0; i < W64_TBHIST_N; i++) {
-        wasm_diag_stat[WASM_DIAG_IREC_FREED] +=
-            (size_t)w64_irecs[i].n * sizeof(uint32_t);
+    for (i = 0; i < W64_TIDX_N; i++) {
         g_free(w64_irecs[i].code);
         w64_irecs[i].code = NULL;
         w64_irecs[i].n = 0;
@@ -156,20 +93,17 @@ static uint32_t w64_interp_run(const struct w64_irec *r, uintptr_t env,
                                uintptr_t sp, uintptr_t tp);
 
 /* the emitted prologue's per-TB-entry accounting, in C (wasm64.h) */
-static void w64_interp_acct(uint32_t tidx, uint32_t icount)
+static void w64_interp_acct(uint32_t icount)
 {
     uint32_t f = w64_acct_flags;
 
-    if (f & W64_ACCT_TBHIST) {
-        ++*w64_tbhist_slot(tidx);
-    }
     if (f & W64_ACCT_TBSTATS) {
-        wasm_tb_stats[0]++;
-        wasm_tb_stats[1] += icount;
+        wasm_guest_insns += icount;
     }
     if (f & W64_ACCT_ICOUNT2) {
-        uint64_t *ticks = (uint64_t *)(uintptr_t)w64_acct_addr[2];
-        int64_t *deadline = (int64_t *)(uintptr_t)w64_acct_addr[3];
+        uint64_t *ticks = (uint64_t *)(uintptr_t)w64_acct_addr[W64_ACCT_TICKS];
+        int64_t *deadline =
+            (int64_t *)(uintptr_t)w64_acct_addr[W64_ACCT_DEADLINE];
         uint64_t t = qatomic_read(ticks) + icount;
 
         qatomic_set(ticks, t);
@@ -187,18 +121,15 @@ bool w64_interp_try(uint32_t tidx, uint32_t icount, uintptr_t env,
 {
     struct w64_irec *r;
 
-    if (!w64_irecs || tidx >= W64_TBHIST_N ||
-        tidx < w64_interp_lo || tidx > w64_interp_hi) {
+    if (!w64_irecs || tidx >= W64_TIDX_N) {
         return false;
     }
     r = &w64_irecs[tidx];
-    if (!r->code ||
-        (w64_interp_gate != 2 && r->hits >= w64_interp_thresh())) {
+    if (!r->code || r->hits >= W64_INTERP_THRESH) {
         return false;
     }
     r->hits++;
-    wasm_diag_stat[WASM_DIAG_INTERP_ENT]++;
-    w64_interp_acct(tidx, icount);
+    w64_interp_acct(icount);
     *res = w64_interp_run(r, env, sp, tp);
     return true;
 }
@@ -208,20 +139,18 @@ bool w64_interp_try(uint32_t tidx, uint32_t icount, uintptr_t env,
 /* ------------------------------------------------------------------ */
 
 /*
- * Signature tag, identical in layout to tci_call_tag() so that
- * call-direct.c.inc can serve both interpreters:
+ * Signature tag for w64_call_direct():
  *   bits 0-2  argument count
  *   bits 3-4  return class (0 void, 1 u32, 2 u64)
  *   bits 5+   two bits per argument
- * The wasm64 build has no libffi, so it is computed from TCGHelperInfo's
- * typemask -- the same decoding tcg_out_call does to pick the wasm type
- * of every argument.
+ * Computed from TCGHelperInfo's typemask -- the same decoding tcg_out_call
+ * does to pick the wasm type of every argument.
  */
-#define TCI_CLS_U32 1
-#define TCI_CLS_U64 2
-#define TCI_TAG_UNCLASSIFIED UINT32_MAX
+#define W64_CLS_U32 1
+#define W64_CLS_U64 2
+#define W64_TAG_UNCLASSIFIED UINT32_MAX
 
-#include "../call-direct.c.inc"
+#include "w64-call-direct.c.inc"
 
 uint32_t w64_call_tag(uint32_t typemask, unsigned nargs)
 {
@@ -229,36 +158,36 @@ uint32_t w64_call_tag(uint32_t typemask, unsigned nargs)
     unsigned i;
 
     if (nargs > 5) {
-        return TCI_TAG_UNCLASSIFIED;
+        return W64_TAG_UNCLASSIFIED;
     }
     switch (typemask & 7) {
     case dh_typecode_void:
         break;
     case dh_typecode_i32:
     case dh_typecode_s32:
-        tag |= TCI_CLS_U32 << 3;
+        tag |= W64_CLS_U32 << 3;
         break;
     case dh_typecode_i64:
     case dh_typecode_s64:
     case dh_typecode_ptr:
-        tag |= TCI_CLS_U64 << 3;
+        tag |= W64_CLS_U64 << 3;
         break;
     default:
-        return TCI_TAG_UNCLASSIFIED;
+        return W64_TAG_UNCLASSIFIED;
     }
     for (i = 0; i < nargs; i++) {
         switch ((typemask >> ((i + 1) * 3)) & 7) {
         case dh_typecode_i32:
         case dh_typecode_s32:
-            tag |= TCI_CLS_U32 << (5 + 2 * i);
+            tag |= W64_CLS_U32 << (5 + 2 * i);
             break;
         case dh_typecode_i64:
         case dh_typecode_s64:
         case dh_typecode_ptr:
-            tag |= TCI_CLS_U64 << (5 + 2 * i);
+            tag |= W64_CLS_U64 << (5 + 2 * i);
             break;
         default:
-            return TCI_TAG_UNCLASSIFIED;
+            return W64_TAG_UNCLASSIFIED;
         }
     }
     return tag;
@@ -759,14 +688,14 @@ static uint32_t w64_interp_run(const struct w64_irec *r, uintptr_t env,
             uint64_t *stack = (uint64_t *)sp;
             pc += 5;
             *(uintptr_t *)tp = ra;
-            if (!tci_call_direct(fn, tag, stack)) {
+            if (!w64_call_direct(fn, tag, stack)) {
                 g_assert_not_reached();
             }
             /* the result lands in stack[0]; the emitted code leaves it
              * in R0 and nothing else reads the slot afterwards */
-            if (((tag >> 3) & 3) == TCI_CLS_U32) {
-                regs[TCG_REG_R0] = tci_slot_u32(stack, 0);
-            } else if (((tag >> 3) & 3) == TCI_CLS_U64) {
+            if (((tag >> 3) & 3) == W64_CLS_U32) {
+                regs[TCG_REG_R0] = w64_slot_u32(stack, 0);
+            } else if (((tag >> 3) & 3) == W64_CLS_U64) {
                 regs[TCG_REG_R0] = stack[0];
             }
             break;

@@ -88,6 +88,9 @@ void tb_check_watchpoint(CPUState *cpu, uintptr_t retaddr);
  *
  * Note: this function can trigger an exception.
  */
+tb_page_addr_t get_page_addr_code_hostp(CPUArchState *env, vaddr addr,
+                                        void **hostp);
+
 #ifdef CONFIG_TCG_WASM64
 void tb_unlink_inlined(void);
 void w64_inl_list_add(TranslationBlock *tb);
@@ -95,9 +98,6 @@ void w64_inl_list_clear(void);
 /* the index of the guest instruction @host_pc unwinds to, or -1 */
 int w64_tb_insn_index(TranslationBlock *tb, uintptr_t host_pc);
 #endif
-
-tb_page_addr_t get_page_addr_code_hostp(CPUArchState *env, vaddr addr,
-                                        void **hostp);
 
 /**
  * get_page_addr_code()
@@ -153,13 +153,6 @@ bool wasm_is_io_barrier(vaddr pc);
 
 void tb_phys_invalidate(TranslationBlock *tb, tb_page_addr_t page_addr);
 void tb_set_jmp_target(TranslationBlock *tb, int n, uintptr_t addr);
-
-#ifdef CONFIG_TCG_WASM64
-/* W64_EXCNS: the unwind span starts in cpu_loop_exit and ends where the
- * sigsetjmp returns, which is a different translation unit. */
-extern int64_t w64_exc_lj_t0;
-bool w64_exc_ns(void);
-#endif
 
 void tcg_get_stats(AccelState *accel, GString *buf);
 

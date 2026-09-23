@@ -795,12 +795,45 @@ static bool gptu_t01_free_running(pmb887x_gptu_t *p, int timer_id) {
 	return p->timers[timer_id].enabled && gptu_t01_input(p, timer_id) == INPUT_BYPASS;
 }
 
+static bool gptu_t01_observable(pmb887x_gptu_t *p, int timer_id);
+
+/*
+ * Can anything seen at the instant it happens depend on this timer's
+ * counter: an observable overflow of its own, or of a timer it carries into
+ * or reloads?  If not, a reload of it may be applied late - every read of a
+ * counter syncs first - and gptu_t01_add_ticks() reproduces it exactly.
+ */
+static bool gptu_t01_matters(pmb887x_gptu_t *p, int timer_id, uint32_t *seen) {
+	if (*seen & (1U << timer_id))
+		return false;
+	*seen |= 1U << timer_id;
+
+	if (gptu_t01_observable(p, timer_id))
+		return true;
+	for (int k = 0; k < 8; k++) {
+		if (!p->timers[k].enabled)
+			continue;
+		if ((gptu_t01_input(p, k) == INPUT_CONCAT &&
+			 gptu_t01_carry_source(p, k) == timer_id) ||
+			(!gptu_t01_reload_own(p, k) &&
+			 gptu_t01_reload_source(p, k) == timer_id)) {
+			if (gptu_t01_matters(p, k, seen))
+				return true;
+		}
+	}
+	return false;
+}
+
 static bool gptu_t01_reloads_others(pmb887x_gptu_t *p, int timer_id) {
 	if (!gptu_t01_reload_own(p, timer_id))
 		return false;
 	for (int i = 0; i < 8; i++) {
-		if (!gptu_t01_reload_own(p, i) && gptu_t01_reload_source(p, i) == timer_id)
-			return true;
+		if (!gptu_t01_reload_own(p, i) && gptu_t01_reload_source(p, i) == timer_id) {
+			uint32_t seen = 1U << timer_id;
+
+			if (gptu_t01_matters(p, i, &seen))
+				return true;
+		}
 	}
 	return false;
 }
@@ -833,6 +866,26 @@ static bool gptu_t2_trigger_used(pmb887x_gptu_t *p, int trigger_id) {
 }
 
 /*
+ * Can a service-request event raise a line right now?  A SETR on a source
+ * that is disabled or already pending only sets a bit nobody can see until
+ * the SRC is next accessed, and gptu_io_read/gptu_io_write sync first, so
+ * such an event may be applied late.
+ */
+static bool gptu_ev_wants_timer(pmb887x_gptu_t *p, int ev_id) {
+	uint32_t mask = p->events[ev_id].mask;
+
+	for (int i = 0; i < 8; i++) {
+		if (mask & (1 << i)) {
+			uint32_t v = pmb887x_src_get(&p->src[i]);
+
+			if ((v & MOD_SRC_SRE) && !(v & MOD_SRC_SRR))
+				return true;
+		}
+	}
+	return false;
+}
+
+/*
  * An overflow of this timer that somebody can see at the instant it happens:
  * a service request, or a trigger T2 is listening to.  Output toggles only
  * change the OUT register by the parity of the overflow count, so they are
@@ -847,7 +900,8 @@ static bool gptu_t01_observable(pmb887x_gptu_t *p, int timer_id) {
 		return false;
 
 	for (int j = 0; j < 2; j++) {
-		if (timer->ev_ssr[j] && p->events_ssr[group][j] == timer_id)
+		if (timer->ev_ssr[j] && p->events_ssr[group][j] == timer_id &&
+			gptu_ev_wants_timer(p, gptu_get_ssr_ev(group, j)))
 			return true;
 	}
 
@@ -1365,7 +1419,12 @@ static void gptu_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned s
 		case GPTU_SRC5:
 		case GPTU_SRC6:
 		case GPTU_SRC7:
+			/* deferred events land before the write; it may make them
+			 * observable again, so re-arm after it */
+			gptu_sync_timer(p);
+			gptu_t2_sync_timer(p);
 			pmb887x_src_update(&p->src[(haddr - GPTU_SRC0) / 4], 0, value);
+			gptu_sync_timer(p);
 			break;
 
 		default:

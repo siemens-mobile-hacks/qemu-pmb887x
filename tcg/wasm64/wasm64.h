@@ -23,7 +23,7 @@
  * A TB executes immediately after translation through a single-member
  * "temp" module (its fidx cached in the descriptor).  Simultaneously the
  * TB joins the open batch: its body bytes and per-TB import/type tables
- * are staged so that every N TBs (W64_BATCH_N, default 128) ONE batch
+ * are staged so that every N TBs (W64_BATCH_N) ONE batch
  * module can be assembled — union type/import tables (dedup across
  * members; each `call <imp>` operand is a fixed-width 2-byte LEB so the
  * batch assembler rewrites per-TB indices to union indices in place),
@@ -38,7 +38,7 @@
  * instances/modules become garbage-collectable.  Steady state holds
  * ~live_TBs/N instances instead of one per TB — the fix for the
  * renderer OOM wall at ~800k live TBs — and the per-TB instantiate
- * round-trip amortizes 128x.
+ * round-trip amortizes.
  *
  * goto_tb chaining (phase 2): the chain slot is tb->jmp_target_addr[n]
  * itself — qemu core keeps it linked (target tb->tc.ptr) or reset
@@ -46,8 +46,8 @@
  * it at runtime and tail-calls the target through the shared funcref
  * table ("e"/"t") when linked, else falls through to the exit_tb that
  * follows.  TBs entered via a chain still run their prologue's TB
- * accounting (inline, phase 3: the wasm_tb_stats counters on non-icount
- * boards / W64_TBSTATS=1, the icount2 fast path under
+ * accounting (inline: wasm_guest_insns on non-icount boards, the
+ * icount2 fast path under
  * ?icount=precise-clocks, imports only for the deadline-crossed sync
  * and the lockstep fold when W64_LOCKSTEP is armed), so accounting and
  * the lockstep fold stay per-TB-entry exact.  The chain also refuses targets whose descriptor
@@ -91,23 +91,6 @@
  * wasm64 heap is 2GB. */
 #define W64_EXIT_GOTOPTR 0x80000000u
 
-/*
- * Exit-code flag: continue the chain at table index (res & ~W64_EXIT_CHAIN).
- *
- * W64_CHAINLOOP=1 ends a TB by returning its successor's table index instead
- * of tail-calling it.  V8 compiles an unpredictable return_call_indirect far
- * worse than the same indirect call made from a loop: ~27 ns against ~12.7 ns
- * per transition in tests/wasm/dispatchbench.mjs, best-of-11 and interleaved,
- * with the gap vanishing entirely once the target is predictable.  The
- * emulator's own four-point W64_FTMAX regression prices a TB boundary at
- * 27.9 ns, which is the tail-call figure, so the loop form is worth ~15 ns on
- * each of the ~108k boundaries per Mi.
- *
- * Both bits 31 and 30 are set: the wasm64 heap is 2GB, so no exit_tb value
- * (tb | which) reaches 0xC0000000, and W64_EXIT_GOTOPTR stays distinct.
- */
-#define W64_EXIT_CHAIN   0xC0000000u
-
 /* desc+4 bit 31 once a batch landed: distinguishes the batch id from
  * the mod_len a not-yet-compiled temp module still carries there. */
 #define W64_BATCH_TAG    0x80000000u
@@ -148,19 +131,10 @@
 #define W64_UMAX_TYPES   64
 #define W64_UMAX_IMPORTS 192
 
-/* Default members per batch module; W64_BATCH_N env overrides
- * (clamped to 1..W64_BATCH_N_MAX; setting it to 1 exercises the whole
- * batch path with minimal batching), W64_NOBATCH=1 disables batching
- * entirely (pure per-TB temp modules).
- *
- * The default is the maximum on purpose: with the interpreter tier a
- * batch is closed by a member reaching its promotion threshold long
- * before it fills, so the cap only ever cuts a batch short.  At 1024 it
- * stops binding -- batches average 284 members and every close is a
- * promotion -- and the union tables never come close either (7 imports
- * per module against a 167 threshold). */
-#define W64_BATCH_N_DEF 1024
-#define W64_BATCH_N_MAX 1024
+/* Members per batch module.  With the interpreter tier a batch is closed
+ * by a member reaching its promotion threshold long before it fills, so
+ * the cap only ever cuts a batch short. */
+#define W64_BATCH_N 1024
 
 struct w64_type {
     uint8_t np;             /* number of params */
@@ -181,31 +155,23 @@ struct w64_cfix {
     uint16_t uimp;
 };
 
-/* W64_TBHIST=1 (measurement build): the TB prologue bumps a per-TB
- * entry counter at a translation-time-constant address, so the lifetime
- * entry count of every TB is available at the end of a run.  It answers
- * the one question the interpreter tier is gated on — what fraction of
- * translated TBs never run often enough to be worth a wasm module.
- * Counts are per tidx and tidx is recycled at tb_flush, so a run with
- * tbFlush > 0 merges the counts of unrelated TBs; check it. */
-#define W64_TBHIST_N   (1u << 21)
-#define W64_TBHIST_BUCKETS 24
-uint32_t *w64_tbhist_slot(uint32_t tidx);
-/* [0, BUCKETS)        TBs whose lifetime entry count is in [2^b, 2^(b+1))
- * [BUCKETS, 2*BUCKETS) entries contributed by those TBs
- * 2*BUCKETS           TBs translated but never entered */
-uint64_t w64_tbhist_bucket(int b);
+/* shared chain table capacity: tidx is below this */
+#define W64_TIDX_N   (1u << 21)
 
 /* runtime (wasm64.c), used by the emitters */
 uint32_t w64_alloc_tidx(void);   /* next shared-chain-table index (>=1) */
 extern uint32_t w64_chain_stop;  /* lockstep budget reached: stop chaining */
 
-/* Inline TB-prologue accounting (phase 3): addresses of the state the
- * emitted prologue touches directly, read at translation time.
- * Order: [0]=wasm_tb_stats[0] (tbs), [1]=wasm_tb_stats[1] (insns),
- * [2]=&timers_state.icount2_ticks, [3]=&timers_state.icount2_deadline,
- * [4]=&w64_ls_on. */
-extern uint64_t w64_acct_addr[5];
+/* Inline TB-prologue accounting: addresses of the state the emitted
+ * prologue touches directly, read at translation time. */
+enum {
+    W64_ACCT_INSNS,         /* &wasm_guest_insns */
+    W64_ACCT_TICKS,         /* &timers_state.icount2_ticks */
+    W64_ACCT_DEADLINE,      /* &timers_state.icount2_deadline */
+    W64_ACCT_LS_ON,         /* &w64_ls_on */
+    W64_ACCT_N,
+};
+extern uint64_t w64_acct_addr[W64_ACCT_N];
 
 /* One-time lazy fill of w64_acct_addr (called from the emitter's first
  * tcg_out_tb_start — translation of the first TB precedes first exec). */
@@ -220,19 +186,15 @@ void w64_icount2_sync_now(void);
 void w64_lockstep_account(unsigned insns);
 
 /* 1 once w64_ls_init() armed the lockstep fold; the emitted prologue
- * tests it via w64_acct_addr[4] to skip the import entirely when off. */
+ * tests it via w64_acct_addr[W64_ACCT_LS_ON] to skip the import when off. */
 extern uint32_t w64_ls_on;
 
 /* What the emitted TB prologue accounts for, published once by the
  * emitter so the interpreter tier can do the same work (w64-interp.c). */
-#define W64_ACCT_TBHIST   1
 #define W64_ACCT_TBSTATS  2
 #define W64_ACCT_ICOUNT2  4
 #define W64_ACCT_LS       8
 extern uint32_t w64_acct_flags;
-
-/* wasm_tb_stats as [tbs, insns] (ui/wasm.c); see w64_acct_addr above. */
-extern uint64_t wasm_tb_stats[2];
 
 /* batching API (wasm64.c) — called from tcg-target.c.inc */
 void w64_batch_begin_tb(void);
@@ -240,9 +202,6 @@ uint8_t w64_union_type(unsigned np, const uint8_t *p, uint8_t ret);
 uint8_t w64_union_import(uint32_t fptr, uint8_t utype);
 void w64_batch_member(uintptr_t tcptr, uint32_t body_len,
                       const struct w64_cfix *cf, uint32_t ncf);
-/* drop the member staged for @tcptr: its TB was generated and abandoned
- * without committing the code buffer (accel/tcg/translate-all.c) */
-void w64_batch_unstage(uintptr_t tcptr);
 void w64_batch_flush(void);     /* tb_flush teardown */
 
 #endif /* TCG_WASM64_H */

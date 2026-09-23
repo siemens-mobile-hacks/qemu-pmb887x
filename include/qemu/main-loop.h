@@ -334,6 +334,14 @@ void bql_release_lazy(void);
  * Not qemu_in_main_thread(), which is true on a vCPU holding the BQL.
  */
 bool qemu_in_main_loop_thread(void);
+
+/**
+ * qemu_main_loop_wake: wake the main loop's futex wait.
+ *
+ * emscripten's poll() cannot sleep, so the main loop waits on a futex
+ * instead and aio_notify() wakes it through this.
+ */
+void qemu_main_loop_wake(void);
 #endif
 
 /**

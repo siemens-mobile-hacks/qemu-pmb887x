@@ -11,7 +11,6 @@
 #include "qapi/error.h"
 #include "hw/core/qdev-properties.h"
 #include "hw/core/irq.h"
-#include "qemu/timer.h"
 
 #include "hw/arm/pmb887x/gen/cpu_regs.h"
 #include "hw/arm/pmb887x/io_bridge.h"
@@ -50,7 +49,6 @@ struct pmb887x_vic_t {
 	 * these (a handful of the 170 lines are ever asserted; the scan runs
 	 * on every line change — thousands per second on the display path) */
 	uint64_t asserted[(IRQS_COUNT + 63) / 64];
-	int64_t last_block_log_ns;
 
 	uint32_t fiq_con;
 	uint32_t irq_con;
@@ -139,20 +137,6 @@ static void vic_update_state(pmb887x_vic_t *p) {
 	p->pending_fiq = vic_pending_fiq(p);
 	int8_t irq = p->pending_irq >= 0;
 	int8_t fiq = p->pending_fiq >= 0;
-	if (p->pending_irq < 0 && true) {
-		/* diagnosis aid: an asserted line blocked by the threshold */
-		int64_t now = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
-		if (now - p->last_block_log_ns > SCALE_MS) {
-			for (int i = 0; i < IRQS_COUNT; i++) {
-				if (p->irq_state[i].level && p->irq_state[i].priority <= vic_get_irq_mask_priority(p)) {
-					DPRINTF("line %d asserted pri %d BLOCKED (mask %d, irq_depth %d)\n",
-						i, p->irq_state[i].priority, vic_get_irq_mask_priority(p), p->irq_depth);
-					p->last_block_log_ns = now;
-					break;
-				}
-			}
-		}
-	}
 	if (p->parent_irq_level != irq) {
 		p->parent_irq_level = irq;
 		qemu_set_irq(p->parent_irq, irq);
@@ -188,7 +172,6 @@ static int vic_current_irq(pmb887x_vic_t *p) {
 	p->irq_frames[p->irq_depth].irq = irq;
 	p->irq_frames[p->irq_depth].priority = p->irq_state[irq].priority;
 	p->irq_depth++;
-	DPRINTF("IRQ CURRENT push %d pri %d depth=%d\n", irq, p->irq_state[irq].priority, p->irq_depth);
 	vic_update_state(p);
 	return irq;
 }
@@ -209,7 +192,6 @@ static int vic_current_fiq(pmb887x_vic_t *p) {
 static void vic_ack_irq(pmb887x_vic_t *p) {
 	if (p->irq_depth)
 		p->irq_depth--;
-	DPRINTF("IRQ ACK pop depth=%d\n", p->irq_depth);
 	if (!p->irq_depth)
 		p->irq_con &= ~VIC_IRQ_CON_MASK_PRIORITY;
 	vic_update_state(p);

@@ -18,7 +18,6 @@
 #include "qemu/timer.h"
 #include "qemu/bitops.h"
 #include "qemu/qemu-print.h"
-#include "qemu/wasm-diag.h"
 #include "exec/cputlb.h"
 #include "exec/translation-block.h"
 #include "hw/core/irq.h"
@@ -9162,28 +9161,6 @@ static void arm_cpu_do_interrupt_aarch32(CPUState *cs)
         A32_BANKED_CURRENT_REG_SET(env, ifar, env->exception.vaddress);
         qemu_log_mask(CPU_LOG_INT, "...with IFSR 0x%x IFAR 0x%x\n",
                       env->exception.fsr, (uint32_t)env->exception.vaddress);
-#ifdef __EMSCRIPTEN__
-        /*
-         * QEMU_LOG_PABT=1: one stderr line per prefetch abort / BKPT.  The
-         * browser page cannot afford -d int (every IRQ and SVC crosses into
-         * JS and the timing change hides the race being chased); a boot
-         * takes essentially none of these until the firmware dies.
-         */
-        {
-            static int log_pabt = -1;
-
-            if (log_pabt < 0) {
-                log_pabt = getenv("QEMU_LOG_PABT") != NULL;
-            }
-            if (log_pabt) {
-                fprintf(stderr, "[pabt] excp=%d ifsr=0x%x ifar=0x%08x pc=0x%08x "
-                        "lr=0x%08x sp=0x%08x cpsr=0x%08x thumb=%d\n",
-                        cs->exception_index, env->exception.fsr,
-                        (uint32_t)env->exception.vaddress, env->regs[15],
-                        env->regs[14], env->regs[13], cpsr_read(env), env->thumb);
-            }
-        }
-#endif
         new_mode = ARM_CPU_MODE_ABT;
         addr = 0x0c;
         mask = CPSR_A | CPSR_I;
@@ -9704,15 +9681,6 @@ void arm_cpu_do_interrupt(CPUState *cs)
 
     assert(!arm_feature(env, ARM_FEATURE_M));
 
-#ifdef CONFIG_TCG_WASM64
-    {
-        unsigned e = cs->exception_index;
-
-        wasm_diag_stat[WASM_DIAG_ARM_IRQ]++;
-        wasm_diag_stat[WASM_DIAG_EXC_OTHER + (e <= EXCP_FIQ ? e : 0)]++;
-    }
-#endif
-
     arm_log_exception(cs);
     qemu_log_mask(CPU_LOG_INT, "...from EL%d to EL%d\n", arm_current_el(env),
                   new_el);
@@ -9798,7 +9766,6 @@ void arm_take_svc_aarch32(CPUARMState *env, uint32_t syndrome)
     cs->exception_index = EXCP_SWI;
     env->exception.syndrome = syndrome;
     env->exception.target_el = 1;
-    wasm_diag_stat[WASM_DIAG_EXC_SWI]++;
 
     if (unlikely(qemu_loglevel_mask(CPU_LOG_INT))) {
         arm_log_exception(cs);

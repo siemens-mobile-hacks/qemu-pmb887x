@@ -35,7 +35,6 @@
 #include "hw/core/boards.h"
 #include "migration/vmstate.h"
 #include "system/address-spaces.h"
-#include "qemu/wasm-diag.h"
 
 #include "memory-internal.h"
 
@@ -44,22 +43,6 @@
 static unsigned memory_region_transaction_depth;
 static bool memory_region_update_pending;
 static bool ioeventfd_update_pending;
-
-#ifdef __EMSCRIPTEN__
-/* see WASM_DIAG_TOPO_R_* - which setters are in the pending transaction */
-static uint32_t memory_region_update_reasons;
-#define MR_UPDATE_PENDING(cond, reason)                                 \
-    do {                                                                \
-        bool cond_ = (cond);                                            \
-        memory_region_update_pending |= cond_;                          \
-        if (cond_) {                                                    \
-            memory_region_update_reasons |= 1u << ((reason) - WASM_DIAG_TOPO_R_LOG); \
-        }                                                               \
-    } while (0)
-#else
-#define MR_UPDATE_PENDING(cond, reason)         \
-    (memory_region_update_pending |= (cond))
-#endif
 unsigned int global_dirty_tracking;
 
 static QTAILQ_HEAD(, MemoryListener) memory_listeners
@@ -264,13 +247,15 @@ static void romd_stash_drop_all(void)
     romd_stash_next = 0;
 }
 
-static void romd_off_mrs_remove(MemoryRegion *mr)
+static void romd_sig_forget(MemoryRegion *mr)
 {
     if (romd_off_mrs) {
         g_ptr_array_remove(romd_off_mrs, mr);
     }
+    if (ro_on_mrs) {
+        g_ptr_array_remove(ro_on_mrs, mr);
+    }
 }
-
 
 typedef struct AddrRange AddrRange;
 
@@ -1406,9 +1391,6 @@ static void flatviews_update_romd(void)
         }
         view = romd_stash_lookup(physmr, topo_gen, sig);
         if (view) {
-#ifdef __EMSCRIPTEN__
-            wasm_diag_stat[WASM_DIAG_TOPO_REUSED]++;
-#endif
             flatview_ref(view);
             g_hash_table_replace(flat_views, physmr, view);
         } else {
@@ -1433,22 +1415,6 @@ void memory_region_transaction_commit(void)
     --memory_region_transaction_depth;
     if (!memory_region_transaction_depth) {
         if (memory_region_update_pending) {
-#ifdef __EMSCRIPTEN__
-            wasm_diag_stat[WASM_DIAG_TOPO_COMMIT]++;
-            wasm_diag_stat[WASM_DIAG_TOPO_FULL]++;
-            /* the reason bits, not every counter that follows them:
-             * once the enum grew past TOPO_R_LOG + 32 this shifted by
-             * 1u << 32 (UB, wraps mod 32 on wasm) and bumped whatever
-             * sat at TOPO_R_LOG + 32 + bit -- a silent write into the
-             * newest counters, which read as small plausible numbers */
-            for (int r = 0;
-                 r <= WASM_DIAG_TOPO_R_DIRTY - WASM_DIAG_TOPO_R_LOG; r++) {
-                if (memory_region_update_reasons & (1u << r)) {
-                    wasm_diag_stat[WASM_DIAG_TOPO_R_LOG + r]++;
-                }
-            }
-            memory_region_update_reasons = 0;
-#endif
             topo_commit_gen++;
             topo_gen++;
             romd_stash_drop_all();
@@ -1472,10 +1438,6 @@ void memory_region_transaction_commit(void)
              * from the tags/stash instead of re-rendered
              * (flatviews_update_romd).
              */
-#ifdef __EMSCRIPTEN__
-            wasm_diag_stat[WASM_DIAG_TOPO_COMMIT]++;
-            wasm_diag_stat[WASM_DIAG_TOPO_VAR]++;
-#endif
             topo_commit_gen++;
             flatviews_update_romd();
             topo_commit_full = false;
@@ -2192,13 +2154,8 @@ static void memory_region_finalize(Object *obj)
 
     mr->destructor(mr);
     memory_region_clear_coalescing(mr);
-    /*
-     * The MR may currently be in the romd off-list; drop it so the
-     * signature never dereferences-or-compares a dangling pointer (its
-     * removal changes the sig, which forces a re-render at the next
-     * romd-only commit even if nothing else did).
-     */
-    romd_off_mrs_remove(mr);
+    /* A freed MR must not stay in the romd/readonly signature. */
+    romd_sig_forget(mr);
     g_free((char *)mr->name);
     g_free(mr->ioeventfds);
     object_unref(mr->rdm);
@@ -2596,7 +2553,7 @@ void memory_region_set_log(MemoryRegion *mr, bool log, unsigned client)
 
     memory_region_transaction_begin();
     mr->dirty_log_mask = (mr->dirty_log_mask & ~mask) | (log * mask);
-    MR_UPDATE_PENDING(mr->enabled, WASM_DIAG_TOPO_R_LOG);
+    memory_region_update_pending |= mr->enabled;
     memory_region_transaction_commit();
 }
 
@@ -2724,9 +2681,6 @@ bool memory_region_snapshot_get_dirty(MemoryRegion *mr, DirtyBitmapSnapshot *sna
 void memory_region_set_readonly(MemoryRegion *mr, bool readonly)
 {
     if (mr->readonly != readonly) {
-#ifdef __EMSCRIPTEN__
-        wasm_diag_stat[WASM_DIAG_RO_FLIP]++;
-#endif
         if (!ro_on_mrs) {
             ro_on_mrs = g_ptr_array_new();
         }
@@ -2751,7 +2705,7 @@ void memory_region_set_nonvolatile(MemoryRegion *mr, bool nonvolatile)
     if (mr->nonvolatile != nonvolatile) {
         memory_region_transaction_begin();
         mr->nonvolatile = nonvolatile;
-        MR_UPDATE_PENDING(mr->enabled, WASM_DIAG_TOPO_R_NONVOL);
+        memory_region_update_pending |= mr->enabled;
         memory_region_transaction_commit();
     }
 }
@@ -2759,9 +2713,6 @@ void memory_region_set_nonvolatile(MemoryRegion *mr, bool nonvolatile)
 void memory_region_rom_device_set_romd(MemoryRegion *mr, bool romd_mode)
 {
     if (mr->romd_mode != romd_mode) {
-#ifdef __EMSCRIPTEN__
-        wasm_diag_stat[WASM_DIAG_ROMD_FLIP]++;
-#endif
         if (!romd_off_mrs) {
             romd_off_mrs = g_ptr_array_new();
         }
@@ -2985,7 +2936,7 @@ void memory_region_add_eventfd(MemoryRegion *mr,
      * writes to ops->write and bypasses the eventfd (R-06).  Take the
      * full path so the entries are re-filled.
      */
-    MR_UPDATE_PENDING(mr->enabled, WASM_DIAG_TOPO_R_EVFD);
+    memory_region_update_pending |= mr->enabled;
     memory_region_transaction_commit();
 }
 
@@ -3023,7 +2974,7 @@ void memory_region_del_eventfd(MemoryRegion *mr,
                                   sizeof(*mr->ioeventfds)*mr->ioeventfd_nb + 1);
     /* see memory_region_add_eventfd: the full commit re-fills TLB
      * entries that cached the ioeventfd-free fast path */
-    MR_UPDATE_PENDING(mr->enabled, WASM_DIAG_TOPO_R_EVFD);
+    memory_region_update_pending |= mr->enabled;
     memory_region_transaction_commit();
 }
 
@@ -3046,7 +2997,7 @@ static void memory_region_update_container_subregions(MemoryRegion *subregion)
     }
     QTAILQ_INSERT_TAIL(&mr->subregions, subregion, subregions_link);
 done:
-    MR_UPDATE_PENDING(mr->enabled && subregion->enabled, WASM_DIAG_TOPO_R_ADDSUB);
+    memory_region_update_pending |= mr->enabled && subregion->enabled;
     memory_region_transaction_commit();
 }
 
@@ -3100,7 +3051,7 @@ void memory_region_del_subregion(MemoryRegion *mr,
         memory_region_unref(subregion);
     }
 
-    MR_UPDATE_PENDING(mr->enabled && subregion->enabled, WASM_DIAG_TOPO_R_DELSUB);
+    memory_region_update_pending |= mr->enabled && subregion->enabled;
     memory_region_transaction_commit();
 }
 
@@ -3111,7 +3062,7 @@ void memory_region_set_enabled(MemoryRegion *mr, bool enabled)
     }
     memory_region_transaction_begin();
     mr->enabled = enabled;
-    MR_UPDATE_PENDING(true, WASM_DIAG_TOPO_R_ENABLE);
+    memory_region_update_pending = true;
     memory_region_transaction_commit();
 }
 
@@ -3127,7 +3078,7 @@ void memory_region_set_size(MemoryRegion *mr, uint64_t size)
     }
     memory_region_transaction_begin();
     mr->size = s;
-    MR_UPDATE_PENDING(true, WASM_DIAG_TOPO_R_SIZE);
+    memory_region_update_pending = true;
     memory_region_transaction_commit();
 }
 
@@ -3163,7 +3114,7 @@ void memory_region_set_alias_offset(MemoryRegion *mr, hwaddr offset)
 
     memory_region_transaction_begin();
     mr->alias_offset = offset;
-    MR_UPDATE_PENDING(mr->enabled, WASM_DIAG_TOPO_R_ALIAS);
+    memory_region_update_pending |= mr->enabled;
     memory_region_transaction_commit();
 }
 
@@ -3175,7 +3126,7 @@ void memory_region_set_unmergeable(MemoryRegion *mr, bool unmergeable)
 
     memory_region_transaction_begin();
     mr->unmergeable = unmergeable;
-    MR_UPDATE_PENDING(mr->enabled, WASM_DIAG_TOPO_R_UNMERG);
+    memory_region_update_pending |= mr->enabled;
     memory_region_transaction_commit();
 }
 
@@ -3374,7 +3325,7 @@ bool memory_global_dirty_log_start(unsigned int flags, Error **errp)
         }
 
         memory_region_transaction_begin();
-        MR_UPDATE_PENDING(true, WASM_DIAG_TOPO_R_DIRTY);
+        memory_region_update_pending = true;
         memory_region_transaction_commit();
     }
     return true;
@@ -3390,7 +3341,7 @@ static void memory_global_dirty_log_do_stop(unsigned int flags)
 
     if (!global_dirty_tracking) {
         memory_region_transaction_begin();
-        MR_UPDATE_PENDING(true, WASM_DIAG_TOPO_R_DIRTY);
+        memory_region_update_pending = true;
         memory_region_transaction_commit();
         MEMORY_LISTENER_CALL_GLOBAL(log_global_stop, Reverse);
     }

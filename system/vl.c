@@ -462,6 +462,9 @@ static QemuOptsList qemu_icount_opts = {
         }, {
             .name = "precise-clocks",
             .type = QEMU_OPT_BOOL,
+        }, {
+            .name = "rtcap",
+            .type = QEMU_OPT_BOOL,
         },
         { /* end of list */ }
     },

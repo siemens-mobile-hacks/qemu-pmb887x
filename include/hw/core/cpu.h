@@ -278,7 +278,7 @@ struct CPUTLBEntryFull {
     uint16_t io_rmask;         /* exact sizes dispatchable directly */
     uint16_t io_wmask;
     uint8_t io_swap;           /* bit0: swap reads, bit1: swap writes */
-    uint8_t io_check_align;    /* honor ops->valid.unaligned == false */
+    uint8_t io_check_align;    /* misaligned: rejected or split by stock */
     uint8_t io_rom_device;     /* section->mr->rom_device, for the
                                   clock-window test on the access path */
     bool *io_guard;            /* re-entrancy guard flag, or NULL */
@@ -298,7 +298,6 @@ struct CPUTLBEntryFull {
 
     /*
      * Allow target-specific additions to this structure.
-
      * This may be used to cache items from the guest cpu
      * page tables for later use by the implementation.
      */
@@ -346,7 +345,7 @@ typedef struct CPUTLBDesc {
     /*
      * Physical-address summary, so a memory-topology commit does not have
      * to walk every entry (tlb_flush_phys_ranges).  phys_group[g] is a
-     * bitmap of the 32 MB physical buckets the entries of the 64-entry
+     * bitmap of the 16 MB physical buckets the entries of the 64-entry
      * group g translate into; phys_any is the OR over the groups and the
      * victim table.  Both are conservative - bits are added on fill and
      * never removed on eviction - and a commit that walks a group rewrites

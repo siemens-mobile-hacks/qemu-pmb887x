@@ -18,10 +18,6 @@
  */
 
 #include "qemu/osdep.h"
-#ifdef __EMSCRIPTEN__
-#include "qemu/wasm-diag.h"
-#include "qemu/timer.h"
-#endif
 
 #include "trace.h"
 #include "disas/disas.h"
@@ -274,40 +270,10 @@ static int setjmp_gen_code(CPUArchState *env, TranslationBlock *tb,
     return tcg_gen_code(tcg_ctx, tb, pc);
 }
 
-static TranslationBlock *tb_gen_code_inner(CPUState *cpu, TCGTBCPUState s);
-
-/*
- * Prices translation against module compilation (tools/modcost.mjs reads
- * the browser's half).  OFF by default and never shipped on: emscripten's
- * gettimeofday is a call out to JS, and at the ~4k translations a second
- * an early boot does, two of them per call are not free -- which is the
- * same reason the hot counters are off.  Enable it with
- * WASM_DIAG_TIME_PHASES in qemu/include/qemu/wasm-diag.h and read it
- * with tools/modcost.mjs.
- */
+/* Called with mmap_lock held for user mode emulation.  */
 TranslationBlock *tb_gen_code(CPUState *cpu, TCGTBCPUState s)
 {
-#if defined(CONFIG_TCG_WASM64) && defined(WASM_DIAG_TIME_PHASES)
-    int64_t t0 = get_clock_realtime();
-    TranslationBlock *tb = tb_gen_code_inner(cpu, s);
-
-    wasm_diag_stat[WASM_DIAG_TB_GEN_NS] += get_clock_realtime() - t0;
-    return tb;
-#else
-    return tb_gen_code_inner(cpu, s);
-#endif
-}
-
-/* Called with mmap_lock held for user mode emulation.  */
-static TranslationBlock *tb_gen_code_inner(CPUState *cpu, TCGTBCPUState s)
-{
     CPUArchState *env = cpu_env(cpu);
-#ifdef __EMSCRIPTEN__
-    wasm_diag_stat[WASM_DIAG_TB_GEN]++;
-    if (s.cflags & CF_COUNT_MASK) {
-        wasm_diag_stat[WASM_DIAG_TB_GEN_COUNTED]++;
-    }
-#endif
     TranslationBlock *tb, *existing_tb;
     tb_page_addr_t phys_pc, phys_p2;
     tcg_insn_unit *gen_code_buf;
@@ -357,8 +323,6 @@ static TranslationBlock *tb_gen_code_inner(CPUState *cpu, TCGTBCPUState s)
     tb->flags = s.flags;
     tb->cflags = s.cflags;
 #ifdef CONFIG_TCG_WASM64
-    tb->w64_nsucc = 0;
-    tb->w64_explored = 0;
     tb->w64_lc.gen = 0;
     tb->w64_inl = 0;
     memset(tb->w64_inl_vpage, 0, sizeof(tb->w64_inl_vpage));
@@ -381,19 +345,6 @@ static TranslationBlock *tb_gen_code_inner(CPUState *cpu, TCGTBCPUState s)
     tb->w64_inl = 0;
     memset(tb->w64_inl_vpage, 0, sizeof(tb->w64_inl_vpage));
     w64_inl_pending_n = 0;
-    {
-        /* W64_OPDUMP=<pc>: the optimised TCG ops of the TBs at that pc */
-        static int64_t dump_pc = -2;
-        if (dump_pc == -2) {
-            const char *e = getenv("W64_OPDUMP");
-            dump_pc = e ? (int64_t)strtoull(e, NULL, 0) : -1;
-        }
-        if (dump_pc >= 0) {
-            qemu_set_log((vaddr)dump_pc == s.pc ?
-                         CPU_LOG_TB_OP | CPU_LOG_TB_OP_OPT | CPU_LOG_TB_IN_ASM
-                         : 0, NULL);
-        }
-    }
 #endif
 
     gen_code_size = setjmp_gen_code(env, tb, s.pc, host_pc, &max_insns, &ti);
@@ -465,23 +416,6 @@ static TranslationBlock *tb_gen_code_inner(CPUState *cpu, TCGTBCPUState s)
     }
     tcg_ctx->gen_tb = NULL;
 
-#ifdef CONFIG_TCG_WASM64
-    /* tbIcount/tbGen = mean guest instructions per translated TB */
-    wasm_diag_stat[WASM_DIAG_TB_ICOUNT] += tb->icount;
-    {
-        extern int w64_spec_active;
-        static int tblog = -1;
-        if (tblog < 0) {
-            tblog = getenv("W64_TBLOG") != NULL;
-        }
-        if (tblog) {
-            fprintf(stderr, "TBGEN %08llx %u %u %x %c\n",
-                    (unsigned long long)s.pc, tb->size, tb->icount,
-                    tb->cflags, w64_spec_active ? 'S' : '-');
-        }
-    }
-#endif
-
     search_size = encode_search(tb, (void *)gen_code_buf + gen_code_size);
     if (unlikely(search_size < 0)) {
         trace_tb_gen_code_buffer_overflow("encode_search");
@@ -495,11 +429,7 @@ static TranslationBlock *tb_gen_code_inner(CPUState *cpu, TCGTBCPUState s)
          * tcg_gen_code(); withdraw it, or the batch assembles from
          * overwritten memory (SOURCE-CORRUPT).
          */
-        {
-            /* tcg/wasm64/wasm64.h is not on this file's include path */
-            extern void w64_batch_unstage(uintptr_t tcptr);
-            w64_batch_unstage((uintptr_t)gen_code_buf);
-        }
+        w64_batch_unstage((uintptr_t)gen_code_buf);
 #endif
         goto buffer_overflow;
     }
@@ -696,51 +626,22 @@ void tb_check_watchpoint(CPUState *cpu, uintptr_t retaddr)
 }
 
 #ifndef CONFIG_USER_ONLY
-/*
- * In deterministic execution mode, instructions doing device I/Os
- * must be at the end of the TB.
- *
- * Called by softmmu_template.h, with iothread mutex not held.
- */
-/*
- * wasm io barriers (see cpu_io_recompile): a small direct-mapped set of
- * guest insns whose first memory access in a multi-insn TB turned out to
- * be MMIO.  The translator keeps those insns in single-insn TBs so their
- * device callbacks run with can_do_io set (stock rewound-and-resplit
- * semantics) without the recurring cpu_loop_exit() unwind.
- */
 #ifdef __EMSCRIPTEN__
 /*
- * The set is direct-mapped, so two hot MMIO insns that land in one slot
- * evict each other on every pass and neither is ever kept out of the
- * middle of a TB: the recompile (unwind + invalidate + retranslate +
- * a wasm Module per pass) then repeats forever instead of once.  That
- * is what the 64-slot, (pc >> 2)-indexed original did on the LG boards,
- * which take this path for every mid-TB MMIO (io_prepare in cputlb.c):
- * ~790 recompiles/s at a standing idle screen.  Two changes:
- *   - index by (pc >> 1): Thumb insns are 2 bytes apart, and >> 2 mapped
- *     every adjacent Thumb pair onto one slot;
- *   - 4096 slots, two ways each, so a collision costs a second lookup
- *     rather than a permanent ping-pong.
- * W64_IO_BARRIERS=<n> caps the usable slots (a power of two, 1..4096) —
- * the same-wasm A/B knob that sized this.
+ * wasm io barriers (see cpu_io_recompile): guest insns whose memory access
+ * turned out to be MMIO in the middle of a TB.  The translator keeps them
+ * in single-insn TBs, where can_do_io is set, so the recompile and its
+ * JS-exception unwind happen once per insn rather than on every pass.
+ * Indexed by pc >> 1 (Thumb insns are 2 bytes apart), two ways per slot
+ * so that two hot insns sharing a slot do not evict each other forever.
  */
 #define WASM_IO_BARRIER_SLOTS 4096
 #define WASM_IO_BARRIER_WAYS  2
 static vaddr wasm_io_barriers[WASM_IO_BARRIER_SLOTS][WASM_IO_BARRIER_WAYS];
-static uint32_t wasm_io_barrier_mask;
 
 static uint32_t wasm_io_barrier_slot(vaddr pc)
 {
-    if (unlikely(!wasm_io_barrier_mask)) {
-        const char *e = getenv("W64_IO_BARRIERS");
-        unsigned long n = e ? strtoul(e, NULL, 0) : WASM_IO_BARRIER_SLOTS;
-        if (n < 1 || n > WASM_IO_BARRIER_SLOTS || (n & (n - 1))) {
-            n = WASM_IO_BARRIER_SLOTS;
-        }
-        wasm_io_barrier_mask = n - 1;
-    }
-    return (uint32_t)(pc >> 1) & wasm_io_barrier_mask;
+    return (uint32_t)(pc >> 1) & (WASM_IO_BARRIER_SLOTS - 1);
 }
 
 void wasm_add_io_barrier(vaddr pc)
@@ -751,9 +652,6 @@ void wasm_add_io_barrier(vaddr pc)
         if (ways[i] == pc) {
             return;
         }
-    }
-    if (ways[WASM_IO_BARRIER_WAYS - 1]) {
-        wasm_diag_stat[WASM_DIAG_IO_BARRIER_EVICT]++;
     }
     for (int i = WASM_IO_BARRIER_WAYS - 1; i > 0; i--) {
         ways[i] = ways[i - 1];
@@ -774,6 +672,12 @@ bool wasm_is_io_barrier(vaddr pc)
 }
 #endif /* __EMSCRIPTEN__ */
 
+/*
+ * In deterministic execution mode, instructions doing device I/Os
+ * must be at the end of the TB.
+ *
+ * Called by softmmu_template.h, with iothread mutex not held.
+ */
 void cpu_io_recompile(CPUState *cpu, uintptr_t retaddr)
 {
     TranslationBlock *tb;
@@ -798,11 +702,9 @@ void cpu_io_recompile(CPUState *cpu, uintptr_t retaddr)
      * the rewind (and its clock semantics: the callback sees the clock
      * of exactly that insn) is reproduced without any further unwinding.
      */
-    wasm_diag_stat[WASM_DIAG_IO_RECOMP]++;
     wasm_add_io_barrier(cpu->cc->get_pc(cpu));
     tb_phys_invalidate(tb, -1);
 #endif
-
 
     /*
      * Some guests must re-execute the branch when re-executing a delay
@@ -843,14 +745,13 @@ void cpu_io_recompile(CPUState *cpu, uintptr_t retaddr)
  * Retire every per-TB inline lookup cache (TranslationBlock w64_lc) by
  * moving the generation they are stamped with.  Called wherever a jump
  * cache entry is dropped and wherever the target's TB key changes for a
- * reason other than the PC; cold, so it counts itself.
+ * reason other than the PC.
  */
 void cpu_tb_key_gen_bump(CPUState *cpu)
 {
     uint32_t g = qatomic_read(&cpu->neg.tb_key_gen) + 1;
 
     qatomic_set(&cpu->neg.tb_key_gen, g ? g : 1);
-    wasm_diag_stat[WASM_DIAG_KEY_GEN]++;
 }
 #endif
 
@@ -863,9 +764,6 @@ void tcg_flush_jmp_cache(CPUState *cpu)
     CPUJumpCache *jc = cpu->tb_jmp_cache;
 
     cpu_tb_key_gen_bump(cpu);
-#ifdef __EMSCRIPTEN__
-    wasm_diag_stat[WASM_DIAG_KEY_GEN_FLUSH]++;
-#endif
 #ifdef CONFIG_TCG_WASM64
     /*
      * A mapping may have changed: drop the chains into TBs whose second
@@ -879,9 +777,6 @@ void tcg_flush_jmp_cache(CPUState *cpu)
     if (unlikely(jc == NULL)) {
         return;
     }
-#ifdef __EMSCRIPTEN__
-    wasm_diag_stat[WASM_DIAG_JC_FLUSH]++;
-#endif
 
     for (int i = 0; i < TB_JMP_CACHE_SIZE; i++) {
         qatomic_set(&jc->array[i].tb, NULL);

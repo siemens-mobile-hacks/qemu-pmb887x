@@ -18,7 +18,6 @@
  */
 
 #include "qemu/osdep.h"
-
 #include "qemu/main-loop.h"
 #include "qemu/target-info.h"
 #include "accel/tcg/cpu-loop.h"
@@ -27,7 +26,6 @@
 #include "accel/tcg/probe.h"
 #include "exec/page-protection.h"
 #include "system/memory.h"
-#include "qemu/wasm-diag.h"
 #include "qemu/timer.h"
 #include "system/physmem.h"
 #include "accel/tcg/cpu-ldst-common.h"
@@ -58,17 +56,6 @@
 #endif
 #include "tcg/tcg-ldst.h"
 #include "backend-ldst.h"
-
-/*
- * wasm diagnostics counters (see include/qemu/wasm-diag.h).  Defined
- * here - not in tcg/tci.c, the other writer - because this file is
- * compiled into every softmmu build, while tci.c only exists under
- * --enable-tcg-interpreter; the counters are cold-path, so they are
- * harmless even in builds with no reader (the wasm_memstat export is
- * emscripten-only).
- */
-uint64_t wasm_diag_stat[WASM_DIAG_N];
-
 
 /* DEBUG defines, enable DEBUG_TLB_LOG to log to the CPU_LOG_MMU target */
 /* #define DEBUG_TLB */
@@ -168,9 +155,6 @@ static void tb_jmp_cache_clear_page(CPUState *cpu, vaddr page_addr)
     int i, i0;
 
     cpu_tb_key_gen_bump(cpu);
-#ifdef __EMSCRIPTEN__
-    wasm_diag_stat[WASM_DIAG_KEY_GEN_PAGE]++;
-#endif
 #ifdef CONFIG_TCG_WASM64
     tb_unlink_inlined();    /* as in tcg_flush_jmp_cache: a mapping moved */
 #endif
@@ -353,9 +337,6 @@ static uint64_t tlb_phys_ranges_mask(const hwaddr *lo, const hwaddr *hi,
 
 static void tlb_mmu_flush_locked(CPUTLBDesc *desc, CPUTLBDescFast *fast)
 {
-#ifdef __EMSCRIPTEN__
-    wasm_diag_stat[WASM_DIAG_TLB_FLUSH]++;     /* every table clear */
-#endif
     desc->phys_any = 0;
     memset(desc->phys_group, 0, sizeof(desc->phys_group));
     desc->n_used_entries = 0;
@@ -592,9 +573,6 @@ void tlb_flush_phys_ranges(CPUState *cpu,
 
     qemu_spin_lock(&cpu->neg.tlb.c.lock);
 
-#ifdef __EMSCRIPTEN__
-    wasm_diag_stat[WASM_DIAG_PHYS_CALL]++;
-#endif
     for (mmu_idx = 0; mmu_idx < NB_MMU_MODES; mmu_idx++) {
         CPUTLBDesc *desc = &cpu->neg.tlb.d[mmu_idx];
         CPUTLBDescFast *fast = cpu_tlb_fast(cpu, mmu_idx);
@@ -628,9 +606,6 @@ void tlb_flush_phys_ranges(CPUState *cpu,
                     continue;
                 }
             }
-#ifdef __EMSCRIPTEN__
-            wasm_diag_stat[WASM_DIAG_PHYS_SCAN] += end - base;
-#endif
             for (i = base; i < end; i++) {
                 CPUTLBEntry *te = &fast->table[i];
                 hwaddr pa;
@@ -643,9 +618,6 @@ void tlb_flush_phys_ranges(CPUState *cpu,
                     if (pa >= lo[r] && pa < hi[r]) {
                         memset(te, -1, sizeof(*te));
                         tlb_n_used_entries_dec(cpu, mmu_idx);
-#ifdef __EMSCRIPTEN__
-                        wasm_diag_stat[WASM_DIAG_PHYS_DROP]++;
-#endif
                         goto dropped;
                     }
                 }
@@ -716,9 +688,6 @@ static void tlb_flush_page_locked(CPUState *cpu, int midx, vaddr page)
         tlb_debug("forcing full flush midx %d (%016"
                   VADDR_PRIx "/%016" VADDR_PRIx ")\n",
                   midx, lp_addr, lp_mask);
-#ifdef __EMSCRIPTEN__
-        wasm_diag_stat[WASM_DIAG_TLB_FLUSH_RANGE]++;   /* page-in-large-page */
-#endif
         tlb_flush_one_mmuidx_locked(cpu, midx, get_clock_realtime());
     } else {
         if (tlb_flush_entry_locked(tlb_entry(cpu, midx, page), page)) {
@@ -812,9 +781,6 @@ void tlb_flush_page_by_mmuidx(CPUState *cpu, vaddr addr, MMUIdxMap idxmap)
     tlb_debug("addr: %016" VADDR_PRIx " mmu_idx:%" PRIx16 "\n", addr, idxmap);
 
     assert_cpu_is_self(cpu);
-#ifdef __EMSCRIPTEN__
-    wasm_diag_stat[WASM_DIAG_TLB_FLUSH_RANGE]++;
-#endif
 
     /* This should already be page aligned */
     addr &= TARGET_PAGE_MASK;
@@ -908,9 +874,6 @@ static void tlb_flush_range_locked(CPUState *cpu, int midx,
         tlb_debug("forcing full flush midx %d ("
                   "%016" VADDR_PRIx "/%016" VADDR_PRIx ")\n",
                   midx, d->large_page_addr, d->large_page_mask);
-#ifdef __EMSCRIPTEN__
-        wasm_diag_stat[WASM_DIAG_TLB_FLUSH_RANGE]++;   /* range-in-large-page */
-#endif
         tlb_flush_one_mmuidx_locked(cpu, midx, get_clock_realtime());
         return;
     }
@@ -986,9 +949,6 @@ void tlb_flush_range_by_mmuidx(CPUState *cpu, vaddr addr,
     TLBFlushRangeData d;
 
     assert_cpu_is_self(cpu);
-#ifdef __EMSCRIPTEN__
-    wasm_diag_stat[WASM_DIAG_TLB_FLUSH_RANGE]++;
-#endif
 
     /* If no page bits are significant, this devolves to tlb_flush. */
     if (bits < TARGET_PAGE_BITS) {
@@ -1322,7 +1282,7 @@ static void tlb_resolve_io_dispatch(CPUTLBEntryFull *full, MemoryRegion *mr)
     full->io_opaque = mr->opaque;
     full->io_read_fn = ops->read;
     full->io_write_fn = ops->write;
-    full->io_check_align = !ops->valid.unaligned;
+    full->io_check_align = !(ops->valid.unaligned && ops->impl.unaligned);
 
     /* Same re-entrancy guard condition as access_with_adjusted_size(). */
     if (mr->dev && !mr->disable_reentrancy_guard && !mr->ram_device &&
@@ -1502,16 +1462,6 @@ void tlb_set_page_full(CPUState *cpu, int mmu_idx,
     /* Make sure there's no cached translation for the new page.  */
     tlb_flush_vtlb_page_locked(cpu, mmu_idx, addr_page);
 
-#ifdef __EMSCRIPTEN__
-    wasm_diag_stat[WASM_DIAG_FILL_SAMEPAGE] += tlb_hit_page_anyprot(te, addr_page);
-    wasm_diag_stat[WASM_DIAG_FILL_INVALID] += (read_flags & TLB_INVALID_MASK) != 0;
-    wasm_diag_stat[WASM_DIAG_FILL_LARGE] += full->lg_page_size > TARGET_PAGE_BITS;
-    wasm_diag_stat[WASM_DIAG_FILL_IDX] += mmu_idx;
-    wasm_diag_stat[WASM_DIAG_FILL_EVICT] +=
-        !tlb_hit_page_anyprot(te, addr_page) && !tlb_entry_is_empty(te);
-    wasm_diag_stat[WASM_DIAG_TLB_SIZE0] = tlb_n_entries(cpu_tlb_fast(cpu, 0));
-    wasm_diag_stat[WASM_DIAG_TLB_USED0] = tlb->d[0].n_used_entries;
-#endif
     /*
      * Only evict the old entry to the victim tlb if it's for a
      * different page; otherwise just overwrite the stale data.
@@ -1638,15 +1588,7 @@ static bool tlb_fill_align(CPUState *cpu, vaddr addr, MMUAccessType type,
                            int mmu_idx, MemOp memop, int size,
                            bool probe, uintptr_t ra)
 {
-#if defined(CONFIG_TCG_WASM64) && defined(WASM_DIAG_TIME_PHASES)
-    int64_t t0 = get_clock_realtime();
-    bool r = tlb_fill_align_1(cpu, addr, type, mmu_idx, memop, size, probe, ra);
-
-    wasm_diag_stat[WASM_DIAG_FILL_NS] += get_clock_realtime() - t0;
-    return r;
-#else
     return tlb_fill_align_1(cpu, addr, type, mmu_idx, memop, size, probe, ra);
-#endif
 }
 
 static bool tlb_fill_align_1(CPUState *cpu, vaddr addr, MMUAccessType type,
@@ -1656,11 +1598,6 @@ static bool tlb_fill_align_1(CPUState *cpu, vaddr addr, MMUAccessType type,
     const TCGCPUOps *ops = cpu->cc->tcg_ops;
     CPUTLBEntryFull full;
 
-#ifdef __EMSCRIPTEN__
-    wasm_diag_stat[WASM_DIAG_TLB_FILL]++;
-    wasm_diag_stat[WASM_DIAG_FILL_FETCH] += type == MMU_INST_FETCH;
-    wasm_diag_stat[WASM_DIAG_FILL_PROBE] += probe;
-#endif
     if (ops->tlb_fill_align) {
         if (ops->tlb_fill_align(cpu, &full, addr, type, mmu_idx,
                                 memop, size, probe, ra)) {
@@ -1689,96 +1626,39 @@ static inline void cpu_unaligned_access(CPUState *cpu, vaddr addr,
 }
 
 /*
- * The rare half of io_prepare(), kept out of line so that both it and
- * the fused single-piece path below are a load, a test and a
- * not-taken branch in the common case.
+ * A device access in the middle of a TB with !can_do_io.  Stock QEMU
+ * rewinds and re-translates (cpu_io_recompile) so the callback sees the
+ * clock of exactly this instruction; on emscripten that unwind is a JS
+ * exception, and a polling loop would pay it on every iteration.
  */
 static void __attribute__((noinline))
-io_open_clock_window(CPUState *cpu,
-                                                 MemoryRegionSection *section,
-                                                 uintptr_t retaddr)
+io_open_clock_window(CPUState *cpu, MemoryRegionSection *section,
+                     uintptr_t retaddr)
 {
 #ifdef __EMSCRIPTEN__
-    /*
-     * wasm: do not rewind the TB.  The rewind (cpu_io_recompile)
-     * exists so icount-mode device callbacks see the clock of the
-     * io insn, not of the TB boundary; but its cpu_loop_exit()
-     * longjmp costs ~150us under emscripten (JS-exception based)
-     * and an MMIO polling loop re-pays it on every iteration
-     * forever (the unsplit TB stays cached).
-     *
-     * With TB chaining the clock is advanced per TB by the
-     * tci_tbhdr header op (tcg/tci.c), so the callback already
-     * sees a clock that includes this TB - skipping the rewind
-     * changes nothing about clock visibility.  The earlier
-     * batched-after-TB accounting (patches 0002/0004 era) needed
-     * the boundary move here; a dropped patch that skipped it
-     * entirely left the GPTU SRC7 poll at 0x400118c reading a
-     * timer armed earlier in the same TB as never elapsed and
-     * aborted the boot (FILE: flash 0x0552,
-     * doc/early-crash-postmortem.md).
-     */
-    static bool rewind_mode, rewind_mode_init;
-    if (unlikely(!rewind_mode_init)) {
-        rewind_mode = getenv("QEMU_IO_REWIND") != NULL;
-        rewind_mode_init = true;
-    }
-    /*
-     * ROM devices (the flash command interface): keep the stock
-     * rewind.  The boot ROM's program/verify handshake over the
-     * flash command registers aborts without it (FILE: flash
-     * 0x0552); those accesses are rare, so the ~150us longjmp
-     * costs nothing.  QEMU_IO_REWIND=1 forces the stock rewind
-     * everywhere (A/B testing / fallback).
-     */
-    if (rewind_mode || section->mr->rom_device) {
-        wasm_diag_stat[WASM_DIAG_IO_REWIND]++;
+    if (section->mr->rom_device) {
+        /*
+         * The flash command interface: its program/verify handshake needs
+         * the exact clock, and it is rare enough that the unwind is free.
+         */
         cpu_io_recompile(cpu, retaddr);
     } else if (icount2_enabled()) {
         /*
-         * The chained-TB clock is already at/after this access
-         * (tci_tbhdr credited the whole TB at its start); just run
-         * any virtual timers whose deadline it crossed so the
-         * callback sees their effects (system/icount2.c).
+         * The TB header op already credited the whole TB; run any virtual
+         * timers whose deadline that crossed (system/icount2.c).
          */
         wasm_io_advance(0);
     } else if (icount_enabled()) {
         /*
-         * Stock icount: gen_tb_start() has already subtracted the
-         * whole TB's insn count from icount_decr.u16.low and stored
-         * it back, so the callback must see a clock that includes
-         * this TB - at most one TB (~5 guest insns on this
-         * firmware) ahead of the access, the same deviation the
-         * chained icount2 accounting above accepts, and in the safe
-         * direction (elapsed, never frozen - the GPTU SRC7 poll
-         * failure mode).  can_do_io alone is what that needs:
-         * icount_get_raw_locked() commits the running slice itself
-         * (icount_update_locked) on every virtual-clock read, so
-         * any callback that reads the clock gets the identical
-         * value whether or not we commit first - and without it
-         * would "Bad icount read" abort.  The next TB entry clears
-         * can_do_io again (the translator sets it false before the
-         * first insn of every multi-insn TB).
-         *
-         * An icount_update() here would be a *second* commit of the
-         * same slice, and a far more expensive one: it publishes
-         * under the vm_clock seqlock write lock, so a polling guest
-         * pays a spinlock acquire and four seq_cst barriers per
-         * MMIO access (wasm has no relaxed atomics - every
-         * qatomic_set on shared memory is an i64.atomic.store, and
-         * smp_rmb/smp_wmb are full atomic.fence).  Devices that do
-         * not read the clock simply publish at the TB boundary
-         * instead, which is where stock QEMU publishes anyway.
+         * gen_tb_start() has already charged the whole TB, so the callback
+         * sees a clock at most one TB ahead of the access.  can_do_io is
+         * all that needs: icount_get_raw_locked() commits the running slice
+         * on every read.  A later refund can move the clock back by as
+         * much, so device models must not assume it is monotonic.
          */
         cpu->neg.can_do_io = true;
     } else {
-        /*
-         * !can_do_io without any icount mode: this is the normal
-         * path for the LG boards - stock QEMU 11 manages can_do_io
-         * for every TB and recompiles any mid-TB MMIO regardless of
-         * icount; the io-barrier mechanism makes the recompile a
-         * one-time cost per faulting insn.
-         */
+        /* the io-barrier set makes this recompile a one-time cost */
         cpu_io_recompile(cpu, retaddr);
     }
 #else
@@ -1786,28 +1666,13 @@ io_open_clock_window(CPUState *cpu,
 #endif
 }
 
-/*
- * The whole of io_open_clock_window() under stock icount, once the two
- * out-of-line cases are excluded, is "set can_do_io".  It is reached on
- * every mid-TB device access - 3M times a second on an idle S75, which
- * made a noinline call that stores one byte 0.9 % of the vCPU thread.
- *
- * Decide the two exclusions once: whether QEMU_IO_REWIND forces the
- * stock rewind (a getenv), and which icount mode is running (fixed for
- * the machine's life).  The per-access remainder is this flag and the
- * region's precomputed rom_device bit.
- */
-static int io_cw_store_only = -1;
-
+/* The stock-icount case of io_open_clock_window(), inline. */
 static inline __attribute__((always_inline)) void
 io_clock_window(CPUState *cpu, CPUTLBEntryFull *full, uintptr_t retaddr)
 {
 #ifdef __EMSCRIPTEN__
-    if (unlikely(io_cw_store_only < 0)) {
-        io_cw_store_only = !getenv("QEMU_IO_REWIND") &&
-            !icount2_enabled() && icount_enabled();
-    }
-    if (likely(io_cw_store_only && !full->io_rom_device)) {
+    if (likely(icount_enabled() && !icount2_enabled() &&
+               !full->io_rom_device)) {
         cpu->neg.can_do_io = true;
         return;
     }
@@ -1887,39 +1752,20 @@ static bool victim_tlb_hit(CPUState *cpu, size_t mmu_idx, size_t index,
     return false;
 }
 
-/* W64_NOCLEANREUSE=1 restores the is_clean() call the comment below replaces. */
-static bool notdirty_reuse_code_flag(void)
-{
-    static int on = -1;
-    if (on < 0) {
-        on = getenv("W64_NOCLEANREUSE") == NULL;
-    }
-    return on != 0;
-}
-
 static void notdirty_write(CPUState *cpu, vaddr mem_vaddr, unsigned size,
                            CPUTLBEntryFull *full, uintptr_t retaddr)
 {
     ram_addr_t ram_addr = mem_vaddr + full->xlat_offset;
-    bool reuse = notdirty_reuse_code_flag();
     bool code_dirty;
 
     trace_memory_notdirty_write_access(mem_vaddr, ram_addr, size);
 
     code_dirty = physical_memory_get_dirty_flag(ram_addr, DIRTY_MEMORY_CODE);
-    if (!code_dirty) {
-        bool rescanned = tb_invalidate_phys_range_fast(cpu, ram_addr,
-                                                       size, retaddr);
-        /*
-         * Only the long path can have set CODE dirty under us, and only the
-         * reuse arm cares.  Leaving this out of the other arm keeps it doing
-         * exactly upstream's work, so the A/B measures the removal and not a
-         * probe added to the leg it is measured against.
-         */
-        if (reuse && rescanned) {
-            code_dirty = physical_memory_get_dirty_flag(ram_addr,
-                                                        DIRTY_MEMORY_CODE);
-        }
+    if (!code_dirty &&
+        tb_invalidate_phys_range_fast(cpu, ram_addr, size, retaddr)) {
+        /* only the long path can have set CODE dirty under us */
+        code_dirty = physical_memory_get_dirty_flag(ram_addr,
+                                                    DIRTY_MEMORY_CODE);
     }
 
     /*
@@ -1930,21 +1776,11 @@ static void notdirty_write(CPUState *cpu, vaddr mem_vaddr, unsigned size,
 
     /*
      * We remove the notdirty callback only if the code has been flushed.
-     *
      * physical_memory_is_clean() is !(vga && code && migration), and the
-     * line above has just set vga and migration, so its answer is the CODE
-     * bit -- which is already in hand, and which the scan above only
-     * disturbs when it reports that it went the long way.  Calling it here
-     * costs three more out-of-line dirty-bitmap probes, each an RCU guard
-     * and a find_next_bit, to recompute a value we hold; a J2ME game runs
-     * this path ~480 times per Mi.
+     * line above has just set vga and migration, so its answer is the
+     * CODE bit already in hand.
      */
-    if (reuse) {
-        if (code_dirty) {
-            trace_memory_notdirty_set_dirty(mem_vaddr);
-            tlb_set_dirty(cpu, mem_vaddr);
-        }
-    } else if (!physical_memory_is_clean(ram_addr)) {
+    if (code_dirty) {
         trace_memory_notdirty_set_dirty(mem_vaddr);
         tlb_set_dirty(cpu, mem_vaddr);
     }
@@ -2242,9 +2078,6 @@ static bool mmu_lookup1(CPUState *cpu, MMULookupPageData *data, MemOp memop,
     int flags;
 
     /* If the TLB entry is for a different page, reload and try again.  */
-#ifdef CONFIG_TCG_WASM64
-    bool w64_missed = !tlb_hit(tlb_addr, addr);
-#endif
     if (!tlb_hit(tlb_addr, addr)) {
         if (!victim_tlb_hit(cpu, mmu_idx, index, access_type,
                             addr & TARGET_PAGE_MASK)) {
@@ -2260,27 +2093,6 @@ static bool mmu_lookup1(CPUState *cpu, MMULookupPageData *data, MemOp memop,
     full = &cpu->neg.tlb.d[mmu_idx].fulltlb[index];
     flags = tlb_addr & (TLB_FLAGS_MASK & ~TLB_FORCE_SLOW);
     flags |= full->slow_flags[access_type];
-
-#ifdef CONFIG_TCG_WASM64
-    /*
-     * Why the wasm64 backend's inline TLB probe sent this access to the
-     * helper.  The probe fails on any flag bit, so "clean" below means the
-     * probe and this lookup disagree -- the access was resolvable inline
-     * and the round trip bought nothing.  ~745k/s on both EL71 and CX70,
-     * the same order as the unconditional WASM_DIAG_LOOKUP.
-     */
-    if (w64_missed) {
-        wasm_diag_stat[WASM_DIAG_SLOW_MISS]++;
-    } else if (flags & TLB_MMIO) {
-        wasm_diag_stat[WASM_DIAG_SLOW_MMIO]++;
-    } else if (flags & TLB_NOTDIRTY) {
-        wasm_diag_stat[WASM_DIAG_SLOW_NOTDIRTY]++;
-    } else if (flags) {
-        wasm_diag_stat[WASM_DIAG_SLOW_OTHER]++;
-    } else {
-        wasm_diag_stat[WASM_DIAG_SLOW_CLEAN]++;
-    }
-#endif
 
     if (likely(!maybe_resized)) {
         /* Alignment has not been checked by tlb_fill_align. */
@@ -2538,26 +2350,6 @@ static void *atomic_mmu_lookup(CPUState *cpu, vaddr addr, MemOpIdx oi,
  * We don't bother with this widened value for SOFTMMU_CODE_ACCESS.
  */
 
-/**
- * do_ld_mmio_beN:
- * @cpu: generic cpu state
- * @full: page parameters
- * @ret_be: accumulated data
- * @addr: virtual address
- * @size: number of bytes
- * @mmu_idx: virtual address context
- * @ra: return address into tcg generated code, or 0
- * Context: BQL held
- *
- * Load @size bytes from @addr, which is memory-mapped i/o.
- * The bytes are concatenated in big-endian order with @ret_be.
- */
-/*
- * always_inline: a plain "static inline" of this was left out of line by
- * the size heuristic and showed up as its own 0.5 % symbol in the S75
- * profile - a call and a return to swap four bytes, on a path taken
- * ~4M times a second.
- */
 static inline __attribute__((always_inline))
 uint64_t io_fast_bswap(uint64_t val, unsigned size)
 {
@@ -2585,6 +2377,20 @@ static inline bool tlb_io_in_range(const CPUTLBEntryFull *full,
     return off < full->io_len && size <= full->io_len - off;
 }
 
+/**
+ * do_ld_mmio_beN:
+ * @cpu: generic cpu state
+ * @full: page parameters
+ * @ret_be: accumulated data
+ * @addr: virtual address
+ * @size: number of bytes
+ * @mmu_idx: virtual address context
+ * @ra: return address into tcg generated code, or 0
+ * Context: BQL held
+ *
+ * Load @size bytes from @addr, which is memory-mapped i/o.
+ * The bytes are concatenated in big-endian order with @ret_be.
+ */
 static uint64_t int_ld_mmio_beN(CPUState *cpu, CPUTLBEntryFull *full,
                                 uint64_t ret_be, vaddr addr, int size,
                                 int mmu_idx, MMUAccessType type, uintptr_t ra,
@@ -2663,7 +2469,6 @@ static uint64_t do_ld_mmio_beN(CPUState *cpu, CPUTLBEntryFull *full,
 
     tcg_debug_assert(size > 0 && size <= 8);
 
-    WASM_DIAG_HOT(WASM_DIAG_IO_LD);
     section = io_prepare(&mr_offset, cpu, full, addr, ra);
     mr = section->mr;
 
@@ -2671,6 +2476,37 @@ static uint64_t do_ld_mmio_beN(CPUState *cpu, CPUTLBEntryFull *full,
     return int_ld_mmio_beN(cpu, full, ret_be, addr, size, mmu_idx,
                            type, ra, mr, mr_offset);
 }
+
+#ifdef CONFIG_TCG_WASM64
+/*
+ * The generated code's inline TLB probe (w64_tlb_setup/w64_tlb_probe),
+ * written once in C for the wasm64 interpreter tier, which reaches the
+ * guest only through helper_*_mmu.  One compare says the page is present,
+ * carries no flag bit, satisfies the alignment and does not cross a page.
+ */
+static inline __attribute__((always_inline))
+void *do_ram_1p(CPUState *cpu, vaddr addr, MemOpIdx oi, MMUAccessType type,
+                unsigned size)
+{
+    MemOp memop = get_memop(oi);
+    unsigned atom = memop & MO_ATOM_MASK;
+    unsigned a_mask = (1u << memop_alignment_bits(memop)) - 1;
+    unsigned s_mask = size - 1;
+    vaddr adj = a_mask >= s_mask ? 0 : s_mask - a_mask;
+    vaddr tlb_mask = (uint64_t)(int64_t)(int)TARGET_PAGE_MASK | a_mask;
+    CPUTLBEntry *entry;
+
+    if (unlikely((memop & MO_BSWAP) ||
+                 (atom != MO_ATOM_NONE && atom != MO_ATOM_IFALIGN))) {
+        return NULL;
+    }
+    entry = tlb_entry(cpu, get_mmuidx(oi), addr);
+    if (likely(tlb_read_idx(entry, type) == ((addr + adj) & tlb_mask))) {
+        return (void *)((uintptr_t)addr + entry->addend);
+    }
+    return NULL;
+}
+#endif
 
 /*
  * Fused single-piece MMIO load.
@@ -2697,111 +2533,6 @@ static uint64_t do_ld_mmio_beN(CPUState *cpu, CPUTLBEntryFull *full,
  * over, so unlike do_ld_mmio_beN() this does not stop at the
  * big-endian-assembled form.
  */
-/*
- * Byte swap for a size the caller knows at compile time; folds to a
- * single instruction, where io_fast_bswap() is an out-of-line call and
- * a br_table.
- */
-static inline __attribute__((always_inline))
-uint64_t io_bswap_const(uint64_t val, unsigned size)
-{
-    switch (size) {
-    case 2: return bswap16(val);
-    case 4: return bswap32(val);
-    case 8: return bswap64(val);
-    default: return val;
-    }
-}
-
-#if defined(CONFIG_TCG_WASM64) && defined(WASM_DIAG_TIME_PHASES)
-/*
- * Sampled timer for the fused MMIO dispatch, load and store both.  Two
- * get_clock_realtime() calls on a path taken ~680k times a second would
- * cost more than they measure (emscripten's gettimeofday is a call out to
- * JS), so time one dispatch in W64_IO_SAMPLE and report the mean: ioNs /
- * ioNsN is the ns per dispatch, and that times (ioLd + ioSt) is the share
- * of wall the devices take.
- */
-#define W64_IO_SAMPLE 8
-static uint32_t w64_io_tick;
-
-static inline bool w64_io_time_p(void)
-{
-    return (++w64_io_tick & (W64_IO_SAMPLE - 1)) == 0;
-}
-
-/*
- * Calibration: every timed interval is bounded by two get_clock_realtime()
- * calls, and their own latency sits inside the window, so a zero-length
- * phase still measures nonzero.  This times an EMPTY interval the same
- * sampled way; calNs/calNsN is that floor, to be subtracted from every
- * other ns-per-call figure taken with this instrument.
- */
-static inline void w64_cal_tick(void)
-{
-    int64_t a = get_clock_realtime();
-
-    wasm_diag_stat[WASM_DIAG_CAL_NS] += get_clock_realtime() - a;
-    wasm_diag_stat[WASM_DIAG_CAL_NS_N]++;
-}
-#endif
-
-#ifdef CONFIG_TCG_WASM64
-/*
- * The RAM twin of do_ld_mmio_1p, and the generated code's inline TLB probe
- * written once in C for the callers that have none.  The wasm64 interpreter
- * tier reaches the guest only through helper_*_mmu (tcg/wasm64/w64-interp.c),
- * and slowClean says 76 % of the lookups those do find a matching entry with
- * no flag set at all -- a round trip through mmu_lookup that bought nothing.
- *
- * The test is w64_tlb_setup/w64_tlb_probe's, exactly: comparator equal to
- * (addr + adj) & (TARGET_PAGE_MASK | a_mask), which in one compare says the
- * page is present, carries no flag bit (so no MMIO, no watchpoint, no
- * notdirty, no discard), satisfies the alignment the memop asked for, and
- * does not cross into the next page.  MO_BSWAP and the atomicity classes the
- * backend refuses are refused here too, so a fast-path access is exactly the
- * one the JIT would have done inline.
- *
- * W64_RAM1P=0 turns it off, so the two legs of an A/B live in one binary.
- */
-static bool do_ram_1p_on(void)
-{
-    static int mode = -1;
-
-    if (unlikely(mode < 0)) {
-        const char *e = getenv("W64_RAM1P");
-
-        mode = e == NULL || strtol(e, NULL, 0) != 0;
-    }
-    return mode != 0;
-}
-
-static inline __attribute__((always_inline))
-void *do_ram_1p(CPUState *cpu, vaddr addr, MemOpIdx oi, MMUAccessType type,
-                unsigned size)
-{
-    MemOp memop = get_memop(oi);
-    unsigned atom = memop & MO_ATOM_MASK;
-    unsigned a_mask = (1u << memop_alignment_bits(memop)) - 1;
-    unsigned s_mask = size - 1;
-    vaddr adj = a_mask >= s_mask ? 0 : s_mask - a_mask;
-    vaddr tlb_mask = (uint64_t)(int64_t)(int)TARGET_PAGE_MASK | a_mask;
-    CPUTLBEntry *entry;
-
-    if (unlikely((memop & MO_BSWAP) ||
-                 (atom != MO_ATOM_NONE && atom != MO_ATOM_IFALIGN) ||
-                 !do_ram_1p_on())) {
-        return NULL;
-    }
-    entry = tlb_entry(cpu, get_mmuidx(oi), addr);
-    if (likely(tlb_read_idx(entry, type) == ((addr + adj) & tlb_mask))) {
-        wasm_diag_stat[WASM_DIAG_RAM_1P]++;
-        return (void *)((uintptr_t)addr + entry->addend);
-    }
-    return NULL;
-}
-#endif
-
 /*
  * @size is a literal at every call site (helper_ld*_mmu already assert
  * it), so the mask tests, the alignment tests, the value mask and the
@@ -2865,20 +2596,7 @@ bool do_ld_mmio_1p(CPUState *cpu, vaddr addr, MemOpIdx oi,
         io_clock_window(cpu, full, ra);
     }
 
-#if defined(CONFIG_TCG_WASM64) && defined(WASM_DIAG_TIME_PHASES)
-    bool w64_timed = w64_io_time_p();
-    if (w64_timed) {
-        w64_cal_tick();
-    }
-    int64_t w64_t0 = w64_timed ? get_clock_realtime() : 0;
-#endif
     took_bql = bql_lock_mmio();
-#if defined(CONFIG_TCG_WASM64) && defined(WASM_DIAG_TIME_PHASES)
-    if (w64_timed) {
-        wasm_diag_stat[WASM_DIAG_BQL_NS] += get_clock_realtime() - w64_t0;
-        wasm_diag_stat[WASM_DIAG_BQL_NS_N]++;
-    }
-#endif
 
     guard = full->io_guard;
     if (unlikely(guard && *guard)) {
@@ -2888,36 +2606,19 @@ bool do_ld_mmio_1p(CPUState *cpu, vaddr addr, MemOpIdx oi,
         }
         return false;
     }
-    WASM_DIAG_HOT(WASM_DIAG_IO_LD);
-    WASM_DIAG_HOT(WASM_DIAG_IO_LD_FAST);
     if (guard) {
         *guard = true;
     }
-#if defined(CONFIG_TCG_WASM64) && defined(WASM_DIAG_TIME_PHASES)
-    int64_t w64_d0 = w64_timed ? get_clock_realtime() : 0;
-#endif
     val = full->io_read_fn(full->io_opaque, io_offset, size);
-#if defined(CONFIG_TCG_WASM64) && defined(WASM_DIAG_TIME_PHASES)
-    if (w64_timed) {
-        wasm_diag_stat[WASM_DIAG_DEV_R_NS] += get_clock_realtime() - w64_d0;
-        wasm_diag_stat[WASM_DIAG_DEV_R_NS_N]++;
-    }
-#endif
     if (guard) {
         *guard = false;
     }
     if (took_bql) {
         bql_unlock_mmio();
     }
-#if defined(CONFIG_TCG_WASM64) && defined(WASM_DIAG_TIME_PHASES)
-    if (w64_timed) {
-        wasm_diag_stat[WASM_DIAG_IO_NS] += get_clock_realtime() - w64_t0;
-        wasm_diag_stat[WASM_DIAG_IO_NS_N]++;
-    }
-#endif
     val &= MAKE_64BIT_MASK(0, size * 8);
     if (((full->io_swap & 1) != 0) ^ caller_le) {
-        val = io_bswap_const(val, size);
+        val = io_fast_bswap(val, size);
     }
     *out = val;
     return true;
@@ -3517,7 +3218,6 @@ static uint64_t do_st_mmio_leN(CPUState *cpu, CPUTLBEntryFull *full,
 
     tcg_debug_assert(size > 0 && size <= 8);
 
-    WASM_DIAG_HOT(WASM_DIAG_IO_ST);
     section = io_prepare(&mr_offset, cpu, full, addr, ra);
     mr = section->mr;
 
@@ -3579,20 +3279,7 @@ bool do_st_mmio_1p(CPUState *cpu, vaddr addr, uint64_t val,
         io_clock_window(cpu, full, ra);
     }
 
-#if defined(CONFIG_TCG_WASM64) && defined(WASM_DIAG_TIME_PHASES)
-    bool w64_timed = w64_io_time_p();
-    if (w64_timed) {
-        w64_cal_tick();
-    }
-    int64_t w64_t0 = w64_timed ? get_clock_realtime() : 0;
-#endif
     took_bql = bql_lock_mmio();
-#if defined(CONFIG_TCG_WASM64) && defined(WASM_DIAG_TIME_PHASES)
-    if (w64_timed) {
-        wasm_diag_stat[WASM_DIAG_BQL_NS] += get_clock_realtime() - w64_t0;
-        wasm_diag_stat[WASM_DIAG_BQL_NS_N]++;
-    }
-#endif
 
     guard = full->io_guard;
     if (unlikely(guard && *guard)) {
@@ -3601,59 +3288,20 @@ bool do_st_mmio_1p(CPUState *cpu, vaddr addr, uint64_t val,
         }
         return false;
     }
-    WASM_DIAG_HOT(WASM_DIAG_IO_ST);
-    WASM_DIAG_HOT(WASM_DIAG_IO_ST_FAST);
     if (guard) {
         *guard = true;
     }
     val &= MAKE_64BIT_MASK(0, size * 8);
     if (((full->io_swap & 2) != 0) ^ !caller_le) {
-        val = io_bswap_const(val, size);
+        val = io_fast_bswap(val, size);
     }
-#if defined(CONFIG_TCG_WASM64) && defined(WASM_DIAG_TIME_PHASES)
-    int64_t w64_d0 = w64_timed ? get_clock_realtime() : 0;
-#endif
     full->io_write_fn(full->io_opaque, io_offset, val, size);
-#if defined(CONFIG_TCG_WASM64) && defined(WASM_DIAG_TIME_PHASES)
-    if (w64_timed) {
-        int64_t dt = get_clock_realtime() - w64_d0;
-
-        wasm_diag_stat[WASM_DIAG_DEV_W_NS] += dt;
-        wasm_diag_stat[WASM_DIAG_DEV_W_NS_N]++;
-        /*
-         * Which device is slow.  The clock is 1 ms-quantized, so dt is 0 or
-         * 1 ms and a nonzero sample is one drawn in proportion to the call's
-         * duration: the phys_addr distribution of those samples is the
-         * duration-weighted one, and on pmb887x the page identifies the
-         * module.  Sum/min/max bracket it; min == max means one culprit.
-         */
-        if (dt) {
-            uint64_t a = (uint64_t)full->phys_addr;
-            wasm_diag_stat[WASM_DIAG_SLOWW_ADDR] += a;
-            wasm_diag_stat[WASM_DIAG_SLOWW_N]++;
-            if (!wasm_diag_stat[WASM_DIAG_SLOWW_MIN] ||
-                a < wasm_diag_stat[WASM_DIAG_SLOWW_MIN]) {
-                wasm_diag_stat[WASM_DIAG_SLOWW_MIN] = a;
-            }
-            if (a > wasm_diag_stat[WASM_DIAG_SLOWW_MAX]) {
-                wasm_diag_stat[WASM_DIAG_SLOWW_MAX] = a;
-            }
-            wasm_diag_stat[WASM_DIAG_SLOWW_B0 + ((a >> 24) & 15)]++;
-        }
-    }
-#endif
     if (guard) {
         *guard = false;
     }
     if (took_bql) {
         bql_unlock_mmio();
     }
-#if defined(CONFIG_TCG_WASM64) && defined(WASM_DIAG_TIME_PHASES)
-    if (w64_timed) {
-        wasm_diag_stat[WASM_DIAG_IO_ST_NS] += get_clock_realtime() - w64_t0;
-        wasm_diag_stat[WASM_DIAG_IO_ST_NS_N]++;
-    }
-#endif
     return true;
 }
 

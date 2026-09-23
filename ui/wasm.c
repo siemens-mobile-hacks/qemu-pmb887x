@@ -31,8 +31,10 @@
 #include "exec/icount.h"
 #include "hw/core/cpu.h"
 #include "qemu/seqlock.h"
+#include "system/cpu-timers.h"
 #include "system/cpu-timers-internal.h"
 #include "system/runstate.h"
+#include "system/tcg.h"
 #include "ui/console.h"
 #include "ui/input.h"
 #include "ui/surface.h"
@@ -145,44 +147,11 @@ uint64_t wasm_fb_updates(void)
 }
 
 /*
- * Per-TB execution statistics (diagnostics): fed once per executed TB
- * from the TCI interpreter's TB header op (see the wasm-tci-tb-chaining
- * patch); wasm_tbs()/wasm_insns() are what the page and the benchmark
- * tooling read as the guest-throughput metric.  Non-static array
- * [tbs, insns]: the wasm64 TCG backend inlines these increments into
- * TB prologues (w64_acct_addr, tcg/wasm64/) - but only on non-icount
- * boards or with W64_TBSTATS=1: under icount the instruction count is
- * already exact in the icount state and wasm_insns() reads it there,
- * so the shipped prologue carries no counter at all.
+ * Guest instructions executed on a board without icount, counted by the
+ * wasm64 TB prologue (w64_acct_addr).  Under icount the count is exact in
+ * the icount state and wasm_insns() reads it there instead.
  */
-uint64_t wasm_tb_stats[2];
-
-void wasm_tb_account(unsigned insns)
-{
-    wasm_tb_stats[0]++;
-    wasm_tb_stats[1] += insns;
-}
-
-/* TB entries; 0 on the wasm64 backend under icount unless W64_TBSTATS=1 */
-EMSCRIPTEN_KEEPALIVE
-uint64_t wasm_tbs(void)
-{
-    return wasm_tb_stats[0];
-}
-
-/*
- * The inline counter itself, which wasm_insns() below hides whenever
- * icount can answer better.  That is what makes it a self-check: run an
- * icount board with W64_TBSTATS=1 and the two must agree, which is the
- * only way to prove the charges and refunds around early TB exits and
- * loop back-edges (w64_acct_charge, target/arm/tcg/translate.c) keep
- * this exact on the boards that have nothing else to compare against.
- */
-EMSCRIPTEN_KEEPALIVE
-uint64_t wasm_tb_insns(void)
-{
-    return wasm_tb_stats[1];
-}
+uint64_t wasm_guest_insns;
 
 /*
  * Guest instructions executed so far.  Under icount: the finished
@@ -205,70 +174,14 @@ uint64_t wasm_insns(void)
         }
         return qatomic_read(&timers_state.qemu_icount) + slice;
     }
-    return wasm_tb_stats[1];
+    return wasm_guest_insns;
 }
 
-/* Diagnostics: memory-subsystem counters (see include/qemu/wasm-diag.h). */
-#include "qemu/wasm-diag.h"
-#include "hw/core/cpu.h"
+/* vCPU idle entries: the page's halt rate and stall detector */
 EMSCRIPTEN_KEEPALIVE
-uint64_t wasm_memstat(int32_t idx)
+uint64_t wasm_halts(void)
 {
-    return idx >= 0 && idx < WASM_DIAG_N ? wasm_diag_stat[idx] : 0;
-}
-
-/* Diagnostics: the per-TB entry-count histogram (W64_TBHIST=1; see
- * tcg/wasm64/wasm64.h).  Zero in an ordinary build. */
-#ifdef CONFIG_TCG_WASM64
-#include "tcg/wasm64/wasm64.h"
-EMSCRIPTEN_KEEPALIVE
-uint64_t wasm_tbhist(int32_t b)
-{
-    return w64_tbhist_bucket(b);
-}
-#endif
-
-/* Current guest pc of the first vCPU (diagnostics: where is it spinning). */
-EMSCRIPTEN_KEEPALIVE
-uint64_t wasm_pc(void)
-{
-    CPUState *cs = first_cpu;
-    return cs ? cs->cc->get_pc(cs) : 0;
-}
-
-/* Diagnostics: a gdb-numbered register (ARM: 25 = CPSR), the pending
- * interrupt_request mask, and a 32-bit guest memory word. */
-#include "exec/gdbstub.h"
-#include "exec/cpu-common.h"
-EMSCRIPTEN_KEEPALIVE
-uint64_t wasm_reg(int32_t idx)
-{
-    CPUState *cs = first_cpu;
-    GByteArray *buf = g_byte_array_sized_new(8);
-    uint64_t v = 0;
-    if (cs && gdb_read_register(cs, buf, idx)) {
-        memcpy(&v, buf->data, buf->len < 8 ? buf->len : 8);
-    }
-    g_byte_array_free(buf, TRUE);
-    return v;
-}
-
-EMSCRIPTEN_KEEPALIVE
-uint32_t wasm_irq_pending(void)
-{
-    CPUState *cs = first_cpu;
-    return cs ? (uint32_t)cs->interrupt_request : 0;
-}
-
-EMSCRIPTEN_KEEPALIVE
-uint32_t wasm_peek(uint32_t addr)
-{
-    CPUState *cs = first_cpu;
-    uint32_t v = 0;
-    if (cs) {
-        cpu_memory_rw_debug(cs, addr, &v, 4, 0);
-    }
-    return v;
+    return qatomic_read(&tcg_rr_idle_count);
 }
 
 /* Guest virtual clock in ns (diagnostics: boot progress). */
@@ -279,28 +192,14 @@ int64_t wasm_vclock(void)
 }
 
 /*
- * Real-time cap phase: 0 off, 1 banked (still banking), 2 strict, 3 budget
- * (banked for the boot window, then the repayable bank is capped at the
- * configured ms).  The page hides its "slow" warning while banked - v/wall
- * is below 1 by construction there, because the guest is behind and
- * allowed to catch up.
+ * Real-time cap phase: 0 off, 1 banked (the boot window), 3 budget (the
+ * repayable bank is capped).  The page hides its "slow" warning while
+ * banked - v/wall is below 1 by construction there.
  */
 EMSCRIPTEN_KEEPALIVE
 int32_t wasm_rtcap(void)
 {
     return icount_rtcap_mode();
-}
-
-/*
- * Drop or restore the cap mid-run.  Measurement only (tools/j2mebench.mjs):
- * navigating a firmware menu needs the guest paced against wall time, and
- * reading engine throughput needs it uncapped, and the two cannot both be
- * settled by a command line written before the guest boots.
- */
-EMSCRIPTEN_KEEPALIVE
-void wasm_rtcap_set(int32_t on)
-{
-    icount_rtcap_set_enabled(!!on);
 }
 
 /* ------------------------------------------------------------------ */

@@ -37,7 +37,6 @@
 #include "block/thread-pool.h"
 #include "qemu/error-report.h"
 #include "qemu/queue.h"
-#include "qemu/wasm-diag.h"
 #include "qom/object.h"
 
 #ifndef _WIN32
@@ -151,26 +150,12 @@ AioContext *qemu_get_aio_context(void)
     return qemu_aio_context;
 }
 
-#ifdef __EMSCRIPTEN__
-void qemu_main_loop_wake(void);
-#endif
-
 void qemu_notify_event(void)
 {
     if (!qemu_aio_context) {
         return;
     }
     qemu_bh_schedule(qemu_notify_bh);
-#ifdef __EMSCRIPTEN__
-    /*
-     * wasm: the main loop waits on ml_wait_cond (see
-     * os_host_main_loop_wait) - emscripten's poll() cannot sleep and
-     * its pipe/eventfd poll masks never report readiness, so the BH
-     * kick must also wake the waiter directly.
-     */
-    wasm_diag_stat[WASM_DIAG_ML_WAKE_DUP]++;
-    qemu_main_loop_wake();
-#endif
 }
 
 #ifdef __EMSCRIPTEN__
@@ -208,20 +193,10 @@ bool qemu_in_main_loop_thread(void)
 
 void qemu_main_loop_wake(void)
 {
-    wasm_diag_stat[WASM_DIAG_ML_WAKE]++;
     /*
-     * Atomic because two threads wake concurrently as a matter of course
-     * (qemu_notify_event issues one itself and a second through
-     * aio_notify, and the vCPU thread notifies on every timer_mod), and
-     * the increment is what the sleeping main loop's futex compares
-     * against: read-modify-write in the open lets a waker that is
-     * preempted between the read and the write store back a value the
-     * waiter has already snapshotted, erasing its own wake.  The loop
-     * then sleeps out its timeout -- INFINITY when no timer is armed --
-     * and with icount off nothing else runs QEMU_CLOCK_VIRTUAL deadlines
-     * (see main_loop_wait), so the guest stops dead.  Needs the losing
-     * waker to be descheduled across a whole main-loop iteration, which
-     * is why only a loaded or slow host ever sees it.
+     * Atomic: several threads wake concurrently, and a read-modify-write
+     * in the open can store back a value the waiter already snapshotted,
+     * erasing the wake; the loop then sleeps out its whole timeout.
      */
     qatomic_fetch_inc(&ml_futex_seq);
     emscripten_futex_wake(&ml_futex_seq, INT_MAX);

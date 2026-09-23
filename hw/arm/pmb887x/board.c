@@ -291,14 +291,12 @@ static void pmb887x_init(MachineState *machine) {
 
 	// CAPCOM0
 	DeviceState *capcom0 = pmb887x_new_cpu_module("CAPCOM0");
-	if (object_property_find(OBJECT(capcom0), "cgu"))
-		object_property_set_link(OBJECT(capcom0), "cgu", OBJECT(cgu), &error_fatal);
+	object_property_set_link(OBJECT(capcom0), "cgu", OBJECT(cgu), &error_fatal);
 	sysbus_realize_and_unref(SYS_BUS_DEVICE(capcom0), &error_fatal);
 	
 	// CAPCOM1
 	DeviceState *capcom1 = pmb887x_new_cpu_module("CAPCOM1");
-	if (object_property_find(OBJECT(capcom1), "cgu"))
-		object_property_set_link(OBJECT(capcom1), "cgu", OBJECT(cgu), &error_fatal);
+	object_property_set_link(OBJECT(capcom1), "cgu", OBJECT(cgu), &error_fatal);
 	sysbus_realize_and_unref(SYS_BUS_DEVICE(capcom1), &error_fatal);
 
 	// RTC
@@ -385,27 +383,12 @@ static void pmb887x_class_init(ObjectClass *oc, const void *data) {
 	mc->tcg_auxiliary_threads = 1;
 #ifdef CONFIG_TCG_WASM64
 	/*
-	 * minimum_page_bits is the only page-size lever that runs early enough.
-	 * vl.c reads it at qemu_create_machine time, just before
-	 * machine_memory_init() commits the size; the CPU's own request in
-	 * arm_cpu_realizefn runs after the commit, where set_preferred_target_
-	 * page_bits can only lower a size, never raise one.
+	 * 4 KB pages: a TB may then run and branch across more of its code
+	 * (the firmware maps only 1 MB sections).  This is the only page-size
+	 * lever that runs before machine_memory_init() commits the size; see
+	 * arm_cpu_realizefn.
 	 */
-	{
-		/*
-		 * 4 KB by default since round 40: the firmware maps only 1 MB
-		 * sections (fillLarge == tlbFill in every window measured), and
-		 * the 1 KB page ARMv5 defaults to is what stopped a translated
-		 * callee running or branching past its page edge.  Sound either
-		 * way - see arm_cpu_realizefn.
-		 */
-		const char *e = getenv("W64_PAGEBITS");
-		int want = e ? atoi(e) : 12;
-
-		if (want >= 10 && want <= 16) {
-			mc->minimum_page_bits = want;
-		}
-	}
+	mc->minimum_page_bits = 12;
 #endif
 }
 

@@ -9,13 +9,11 @@
  * modules, no chaining, helper calls through imported funcrefs.
  * Phase 2: goto_tb chaining through the shared funcref table + batched
  * modules.  Phase 3: qemu_ld/st emit the TLB probe + size-specialized
- * access inline (see the qemu_ld/st section below); W64_NOTLB=1 falls
- * back to the phase-1 helper-only path.
+ * access inline (see the qemu_ld/st section below).
  *
  * SPDX-License-Identifier: MIT
  */
 
-#include "qemu/wasm-diag.h"
 #include "wasm64.h"
 #include "w64-interp.h"
 #include "system/cpu-timers.h"      /* icount2_enabled() */
@@ -89,12 +87,6 @@ enum {
 static void w64_u8(TCGContext *s, uint8_t v)
 {
     *s->code_ptr++ = v;
-}
-
-static void w64_bytes(TCGContext *s, const void *p, unsigned n)
-{
-    memcpy(s->code_ptr, p, n);
-    s->code_ptr += n;
 }
 
 static void w64_uleb(TCGContext *s, uint64_t v)
@@ -201,51 +193,20 @@ static int w64_scr(TCGType t)
     return t == TCG_TYPE_I32 ? W64_L_SCR32 : W64_L_SCR0;
 }
 
-/* Translation-time knobs, fixed for the life of the process.
- *
- * The per-TB-entry statistics (wasm_tb_stats: TB entries and guest
- * insns, read by the page and the benchmark tooling through
- * wasm_tbs/wasm_insns) cost two read-modify-writes at every TB entry
- * (~5 M/s, ~50 of the ~560 bytes of an average TB module).  Under
- * icount the guest instruction count is already exact in the icount
- * state and wasm_insns() derives it there, so the prologue maintains
- * the counters only on non-icount boards (the LG ones) or when
- * W64_TBSTATS=1 asks for the TB-entry count too.
- *
- * The knob reads its value rather than its presence, so W64_TBSTATS=0
- * turns the accounting off where it is otherwise forced on.  That is the
- * only way to price it: on an LG board it is what the MIPS readout is
- * made of, so deleting it is a ceiling probe and not a configuration --
- * MIPS reads 0 with it off, and only the wall-clock rates (fps) mean
- * anything in that leg. */
+/*
+ * The guest-instruction counter the page reads (wasm_guest_insns) is kept
+ * by the prologue only on a board without icount; under icount the count
+ * is exact in the icount state and wasm_insns() derives it there.
+ */
 static bool w64_tbstats_inline(void)
 {
-    static int mode = -1;
-    if (mode < 0) {
-        const char *e = getenv("W64_TBSTATS");
-
-        mode = e ? atoi(e) != 0 : !icount_enabled();
-    }
-    return mode != 0;
+    return !icount_enabled();
 }
 
 /* The lockstep fold is armed per process (W64_LOCKSTEP, set by the page
  * before qemu starts).  An unarmed process omits the w64_ls_on test and
  * import from every prologue and the w64_chain_stop term from every
  * goto_tb/goto_ptr; nothing else ever sets w64_chain_stop. */
-/* W64_CHAINLOOP=1: end a TB by returning the successor's table index for
- * tcg_qemu_tb_exec's chain loop to call, rather than tail-calling it here.
- * See W64_EXIT_CHAIN in wasm64.h for what that is worth and why. */
-static bool w64_chainloop(void)
-{
-    static int on = -1;
-    if (on < 0) {
-        const char *e = getenv("W64_CHAINLOOP");
-        on = e ? atoi(e) : 0;
-    }
-    return on != 0;
-}
-
 static bool w64_ls_armed(void)
 {
     static int mode = -1;
@@ -450,69 +411,13 @@ static uint8_t w64_import_idx(uint32_t fptr, uint8_t type)
 /* ------------------------------------------------------------------ */
 
 
-/*
- * CEILING PROBE: W64_NONESTED=1 emits every TB with the $bp dispatch loop,
- * so the A/B prices the region walk against 100 % of TBs.  Sound either
- * way -- the loop scheme is the general one.
- */
-static bool w64_nested_enabled(void)
-{
-    static int on = -1;
-
-    if (on < 0) {
-        on = getenv("W64_NONESTED") == NULL;
-    }
-    return on != 0;
-}
-
-/*
- * How many memops could be served by a TLB mask/table pair cached in TB
- * locals.  A call can flush the TLB and a label is a join, so either drops
- * the cache; a memop does not, because the slow path can refresh it on the
- * way back.  The first memop after a barrier pays the load either way, so
- * only the ones after it are counted.
- *
- * Kept apart from w64_scan_labels, which returns early on label overflow.
- * It is a second walk of the op list, but it runs once per *translation*
- * and a J2ME game translates 1.25 TBs per Mi, so at ~40 ops a TB it costs
- * ~50 pointer steps per million guest instructions against 3.9 ms.
- */
-static void w64_scan_ldst_runs(TCGContext *s)
-{
-    bool run = false;
-    TCGOp *op;
-
-    QTAILQ_FOREACH(op, &s->ops, link) {
-        switch (op->opc) {
-        case INDEX_op_qemu_ld:
-        case INDEX_op_qemu_st:
-        case INDEX_op_qemu_ld2:
-        case INDEX_op_qemu_st2:
-            if (run) {
-                wasm_diag_stat[WASM_DIAG_LDST_RUN]++;
-            }
-            run = true;
-            break;
-        case INDEX_op_call:
-            run = false;
-            break;
-        default:
-            if (tcg_op_defs[op->opc].flags &
-                (TCG_OPF_BB_END | TCG_OPF_COND_BRANCH)) {
-                run = false;
-            }
-            break;
-        }
-    }
-}
-
 /* number the labels in set order and decide the branch scheme */
 static void w64_scan_labels(TCGContext *s)
 {
     TCGOp *op;
     int prologue_target = -1;   /* label branched to before any is placed */
 
-    W.nested = w64_nested_enabled();
+    W.nested = true;
     W.selfloop = false;
     QTAILQ_FOREACH(op, &s->ops, link) {
         TCGLabel *l;
@@ -573,7 +478,6 @@ static void w64_scan_labels(TCGContext *s)
                sizeof(W.label_idx[0]));
         W.n_labels = 0;
     }
-    wasm_diag_stat[W.nested ? WASM_DIAG_TB_NESTED : WASM_DIAG_TB_LOOPMODE]++;
 }
 
 static void w64_emit_loop_head(TCGContext *s)
@@ -627,7 +531,6 @@ static struct {
     uint32_t code[W64_IREC_MAX];
     uint32_t n;
     bool bad;
-    bool on;
     uint32_t lbl[W64_IREC_LBL];         /* label id -> word index */
     uint32_t fix_at[W64_IREC_FIX];      /* word holding a target to patch */
     uint16_t fix_lbl[W64_IREC_FIX];
@@ -644,12 +547,8 @@ static void w64_ir_reset(unsigned nlabels)
     IR.n = 0;
     IR.n_fix = 0;
     IR.bad = false;
-    IR.on = w64_interp_on();
-    if (IR.on) {
-        /* only ids below nb_labels are ever set or resolved */
-        memset(IR.lbl, 0xff,
-               MIN(nlabels, W64_IREC_LBL) * sizeof(IR.lbl[0]));
-    }
+    /* only ids below nb_labels are ever set or resolved */
+    memset(IR.lbl, 0xff, MIN(nlabels, W64_IREC_LBL) * sizeof(IR.lbl[0]));
 }
 
 static void w64_ir_w(uint32_t w)
@@ -669,18 +568,12 @@ static void w64_ir_w64(uint64_t v)
 
 static void w64_ir_op(unsigned op, unsigned a0, unsigned a1, unsigned a2)
 {
-    if (!IR.on) {
-        return;
-    }
     w64_ir_w(WI_W0(op, a0, a1, a2));
 }
 
 /* record the word index this label resolves to */
 static void w64_ir_set_label(const TCGLabel *l)
 {
-    if (!IR.on) {
-        return;
-    }
     if (l->id >= W64_IREC_LBL) {
         IR.bad = true;
         return;
@@ -691,9 +584,6 @@ static void w64_ir_set_label(const TCGLabel *l)
 /* emit a placeholder target word and note it for w64_ir_finish */
 static void w64_ir_target(const TCGLabel *l)
 {
-    if (!IR.on) {
-        return;
-    }
     if (l->id >= W64_IREC_LBL || IR.n_fix >= W64_IREC_FIX) {
         IR.bad = true;
         w64_ir_w(0);
@@ -707,23 +597,16 @@ static void w64_ir_target(const TCGLabel *l)
 
 static void w64_ir_imm32(uint32_t v)
 {
-    if (IR.on) {
-        w64_ir_w(v);
-    }
+    w64_ir_w(v);
 }
 
 static void w64_ir_imm64(uint64_t v)
 {
-    if (IR.on) {
-        w64_ir_w64(v);
-    }
+    w64_ir_w64(v);
 }
 
 static void w64_ir_ldst(unsigned op, TCGReg v, TCGReg b, intptr_t o)
 {
-    if (!IR.on) {
-        return;
-    }
     if (o != (intptr_t)(int32_t)o) {
         IR.bad = true;
         return;
@@ -734,9 +617,6 @@ static void w64_ir_ldst(unsigned op, TCGReg v, TCGReg b, intptr_t o)
 
 static void w64_ir_sti(TCGType t, tcg_target_long v, TCGReg b, intptr_t o)
 {
-    if (!IR.on) {
-        return;
-    }
     if (o != (intptr_t)(int32_t)o) {
         IR.bad = true;
         return;
@@ -748,9 +628,6 @@ static void w64_ir_sti(TCGType t, tcg_target_long v, TCGReg b, intptr_t o)
 
 static void w64_ir_movi(TCGType t, TCGReg r0, tcg_target_long v)
 {
-    if (!IR.on) {
-        return;
-    }
     if (t == TCG_TYPE_I32) {
         w64_ir_w(WI_W0(WI_MOVI32, r0, 0, 0));
         w64_ir_w((uint32_t)v);
@@ -866,9 +743,6 @@ static void w64_ir_memop(unsigned op, TCGReg data, TCGReg addr, MemOpIdx oi,
 static void w64_ir_call(const void *target, const TCGHelperInfo *info,
                         uintptr_t ra)
 {
-    if (!IR.on) {
-        return;
-    }
     if (info->out_kind != TCG_CALL_RET_NORMAL) {
         IR.bad = true;
         return;
@@ -891,7 +765,7 @@ static void w64_ir_finish(uint32_t tidx)
     uint32_t *code;
     uint32_t i;
 
-    if (!IR.on || IR.bad || IR.n == 0) {
+    if (IR.bad || IR.n == 0) {
         return;
     }
     for (i = 0; i < IR.n_fix; i++) {
@@ -1473,20 +1347,9 @@ static void tcg_out_exit_tb(TCGContext *s, uintptr_t arg)
     w64_u8(s, 0x0f);                        /* return */
 }
 
-static bool w64_xcount(void);
-static void w64_diag_bump(TCGContext *s, int idx);
-
 /* the chain transition itself: $scr0 holds the successor's table index */
 static void w64_chain_go(TCGContext *s)
 {
-    if (w64_chainloop()) {
-        w64_local_get(s, W64_L_SCR0);
-        w64_u8(s, 0xa7);                    /* i32.wrap_i64: the tidx */
-        w64_const_i32(s, (int32_t)W64_EXIT_CHAIN);
-        w64_u8(s, 0x72);                    /* i32.or */
-        w64_u8(s, 0x0f);                    /* return */
-        return;
-    }
     w64_local_get(s, W64_P_ENV);
     w64_local_get(s, W64_P_SP);
     w64_local_get(s, W64_P_TP);
@@ -1565,17 +1428,6 @@ static void tcg_out_goto_tb(TCGContext *s, int which)
     w64_u8(s, 0x0d);                        /* br_if */
     w64_uleb(s, 0);
 
-    if (w64_xcount()) {
-        w64_diag_bump(s, which ? WASM_DIAG_X_GOTOTB1 : WASM_DIAG_X_GOTOTB);
-        w64_local_get(s, W64_L_SCR0);
-        w64_u8(s, 0xa7);                    /* i32.wrap_i64 */
-        w64_const_i32(s, (int32_t)ldl_p(s->code_buf + W64_DESC_TIDX));
-        w64_u8(s, 0x46);                    /* i32.eq */
-        w64_blk_push(s, W64_BLK_IF, -1);
-        w64_diag_bump(s, WASM_DIAG_X_SELF);
-        w64_blk_pop(s);
-    }
-
     w64_chain_go(s);
 
     w64_blk_pop(s);                         /* end */
@@ -1624,10 +1476,6 @@ static void tcg_out_goto_ptr(TCGContext *s, TCGReg a0)
     }
     w64_u8(s, 0x0d);                        /* br_if */
     w64_uleb(s, 0);
-
-    if (w64_xcount()) {
-        w64_diag_bump(s, WASM_DIAG_X_GOTOPTR);
-    }
 
     w64_chain_go(s);
 
@@ -1781,25 +1629,6 @@ static void tcg_out_call(TCGContext *s, const tcg_insn_unit *target,
     w64_u8(s, 0x10);                        /* call */
     w64_callidx(s, imp, uimp);
 
-    {   /* translation-time helper-import diagnostics (W64_DEBUG=1) */
-        static int env_checked, debug;
-        if (!env_checked) {
-            env_checked = 1;
-            debug = getenv("W64_DEBUG") != NULL;
-        }
-        if (debug) {
-            fprintf(stderr, "W64CALL %s fptr=%u np=%u ret=%u mask=%08x rtc=%u "
-                    "rtcv=%u tcv0=%u tcv4=%u tcv6=%u\n",
-                    info->name ? info->name : "?",
-                    (unsigned)(uintptr_t)target, np, ret, mask,
-                    (unsigned)(mask & 7),
-                    (unsigned)w64_typecode_to_wasm(mask & 7),
-                    (unsigned)w64_typecode_to_wasm(0),
-                    (unsigned)w64_typecode_to_wasm(4),
-                    (unsigned)w64_typecode_to_wasm(6));
-        }
-    }
-
     /* result -> oarg register (ret: 0 = i32, 1 = i64, 0xff = void) */
     if (ret == 1) {
         w64_local_set(s, W64_L64(TCG_REG_R0));
@@ -1815,8 +1644,7 @@ static void tcg_out_call(TCGContext *s, const tcg_insn_unit *target,
 /* the miss arm is the phase-1 *_mmu helper path)                      */
 /* ------------------------------------------------------------------ */
 
-/* The probe mirrors tci_tlb_probe (patch 0011, lockstep-proven) with
- * the TLB layout constants from tcg.c's tlb_mask_table_ofs:
+/* The probe uses the TLB layout constants from tcg.c's tlb_mask_table_ofs:
  *
  *   entry = fast->table[(addr >> TARGET_PAGE_BITS) &
  *                        (fast->mask >> CPU_TLB_ENTRY_BITS)]
@@ -1849,97 +1677,6 @@ struct w64_tlb_ctx {
     unsigned cmp_ofs;     /* offsetof addr_read / addr_write */
 };
 
-/* W64_NOTLB=1 disables the inline probe (A/B measurement, debugging) */
-static bool w64_tlb_inline(void)
-{
-    static int mode = -1;
-    if (mode < 0) {
-        mode = getenv("W64_NOTLB") == NULL;
-    }
-    return mode != 0;
-}
-
-/* W64_LDSTCOUNT emits counter bumps into the generated code, which is how
- * the *dynamic* cost of a memop becomes visible at all: the static
- * WASM_DIAG_LDST_GEN* counters count translations, and a memop translated
- * once can run a billion times.
- *
- *   1  miss arms only -- the bump sits next to an indirect helper call
- *      that dwarfs it, so this one is nearly free
- *   2  ...and every execution (WASM_DIAG_LDST_EXEC), which is the memops
- *      -per-guest-instruction denominator.  On the hot path by
- *      construction: expect it to cost.
- *
- * Either way the generated code changes -- a measurement knob, never an
- * A/B.  Per-Mi rates stay exact under it (icount determinism); wall-clock
- * numbers do not. */
-static int w64_ldst_count(void)
-{
-    static int mode = -1;
-    if (mode < 0) {
-        const char *e = getenv("W64_LDSTCOUNT");
-        mode = e ? atoi(e) : 0;
-    }
-    return mode;
-}
-
-/* ++*(uint64_t *)&wasm_diag_stat[idx], at the link-time constant address:
- * the generated modules import the main module's linear memory, so the
- * counter the tools read through _wasm_memstat is directly addressable. */
-static void w64_diag_bump(TCGContext *s, int idx)
-{
-    uintptr_t a = (uintptr_t)&wasm_diag_stat[idx];
-
-    w64_const_addr(s, a);
-    w64_const_addr(s, a);
-    w64_u8(s, 0x29);                        /* i64.load */
-    w64_memarg(s, 3, 0);
-    w64_const_i64(s, 1);
-    w64_u8(s, 0x7c);                        /* i64.add */
-    w64_u8(s, 0x37);                        /* i64.store */
-    w64_memarg(s, 3, 0);
-}
-
-/* W64_TBHIST=1: ++w64_tbhist[tidx] in the prologue.  The slot address is
- * known at translation time, so this is one load and one store at a
- * constant address -- the cheapest per-TB-entry counter the backend can
- * emit, and still a measurement build like W64_LDSTCOUNT. */
-static bool w64_tbhist_on(void)
-{
-    static int on = -1;
-    if (on < 0) {
-        on = getenv("W64_TBHIST") != NULL;
-    }
-    return on;
-}
-
-static void w64_tbhist_emit(TCGContext *s, uint32_t tidx)
-{
-    uintptr_t a = (uintptr_t)w64_tbhist_slot(tidx);
-
-    w64_const_addr(s, a);
-    w64_const_addr(s, a);
-    w64_u8(s, 0x28);                        /* i32.load */
-    w64_memarg(s, 2, 0);
-    w64_const_i32(s, 1);
-    w64_u8(s, 0x6a);                        /* i32.add */
-    w64_u8(s, 0x36);                        /* i32.store */
-    w64_memarg(s, 2, 0);
-}
-
-/* W64_XCOUNT=1 counts TB exits in the generated code: which chain a TB
- * entry actually left by, and whether a goto_tb went back to its own TB.
- * Same class as W64_LDSTCOUNT -- the generated code changes, so per-Mi
- * rates stay exact and wall-clock numbers do not. */
-static bool w64_xcount(void)
-{
-    static int on = -1;
-    if (on < 0) {
-        on = getenv("W64_XCOUNT") != NULL;
-    }
-    return on;
-}
-
 static bool w64_tlb_setup(struct w64_tlb_ctx *tc, TCGContext *s,
                           MemOpIdx oi, bool is_ld)
 {
@@ -1948,7 +1685,7 @@ static bool w64_tlb_setup(struct w64_tlb_ctx *tc, TCGContext *s,
     unsigned a_mask = (1u << memop_alignment_bits(mop)) - 1;
     unsigned s_mask = (1u << (mop & MO_SIZE)) - 1;
 
-    if (!w64_tlb_inline() || (mop & MO_BSWAP) ||
+    if ((mop & MO_BSWAP) ||
         (atom != MO_ATOM_NONE && atom != MO_ATOM_IFALIGN)) {
         return false;
     }
@@ -2096,13 +1833,6 @@ static void tgen_qemu_ld(TCGContext *s, TCGType type, TCGReg data,
         (uint32_t)(uintptr_t)qemu_ld_helpers[mop & MO_SSIZE], ut);
 
     fast = w64_tlb_setup(&tc, s, oi, true);
-    wasm_diag_stat[WASM_DIAG_LDST_GEN]++;
-    if (!fast) {
-        wasm_diag_stat[WASM_DIAG_LDST_GEN_NOPROBE]++;
-    }
-    if (w64_ldst_count() >= 2) {
-        w64_diag_bump(s, WASM_DIAG_LDST_EXEC);
-    }
     if (fast) {
         /* Snapshot the zero-extended address before the arms: with
          * data == addr (legal — e.g. ldrd's 64-bit load into the
@@ -2117,10 +1847,7 @@ static void tgen_qemu_ld(TCGContext *s, TCGType type, TCGReg data,
         w64_u8(s, 0x05);                    /* else */
     }
 
-    /* miss (or probe disabled): the *_mmu helper (phase-1 path) */
-    if (w64_ldst_count()) {
-        w64_diag_bump(s, fast ? WASM_DIAG_LDST_MISS : WASM_DIAG_LDST_NOPROBE);
-    }
+    /* miss (or a memop the probe refuses): the *_mmu helper */
     w64_local_get(s, W64_P_ENV);
     if (fast) {
         w64_local_get(s, W64_L_SCR2);       /* addr snapshot */
@@ -2172,13 +1899,6 @@ static void tgen_qemu_st(TCGContext *s, TCGType type, TCGReg data,
         (uint32_t)(uintptr_t)qemu_st_helpers[s_bits], ut);
 
     fast = w64_tlb_setup(&tc, s, oi, false);
-    wasm_diag_stat[WASM_DIAG_LDST_GEN]++;
-    if (!fast) {
-        wasm_diag_stat[WASM_DIAG_LDST_GEN_NOPROBE]++;
-    }
-    if (w64_ldst_count() >= 2) {
-        w64_diag_bump(s, WASM_DIAG_LDST_EXEC);
-    }
     if (fast) {
         w64_get_i64(s, addr);               /* snapshot (see ld above) */
         w64_local_set(s, W64_L_SCR2);
@@ -2188,10 +1908,7 @@ static void tgen_qemu_st(TCGContext *s, TCGType type, TCGReg data,
         w64_u8(s, 0x05);                    /* else */
     }
 
-    /* miss (or probe disabled): the *_mmu helper (phase-1 path) */
-    if (w64_ldst_count()) {
-        w64_diag_bump(s, fast ? WASM_DIAG_LDST_MISS : WASM_DIAG_LDST_NOPROBE);
-    }
+    /* miss (or a memop the probe refuses): the *_mmu helper */
     w64_local_get(s, W64_P_ENV);
     if (fast) {
         w64_local_get(s, W64_L_SCR2);       /* addr snapshot */
@@ -3073,41 +2790,31 @@ static const TCGOutOpDivRem outop_divu2 = {
 /* ------------------------------------------------------------------ */
 
 /*
- * True while something reads tb->icount as a statistic, charged once per
+ * True while something reads tb->icount as a statistic charged once per
  * TB entry from the emitted prologue below.  A TB that can leave before
  * its last instruction over-charges those, so target/arm does not merge
  * a conditional branch's fall-through while any of them is armed.
  *
  * The lockstep fold is deliberately not in this set: it is a gate, and
  * excluding it would mean the gate never ran the shipping control flow.
- * Merged and unmerged 250 Mi lockstep runs return the same verdict, to
- * the digest -- the grid is TB-entry-keyed on both sides.
- *
- * wasm_tb_stats is not in the set either, and that one matters in
- * production: it is armed on exactly the boards icount is *off* for (see
- * w64_tbstats_inline), so leaving it in switched off TB lengthening --
- * the fold target and the conditional loop back-edge merge both -- for
- * the whole LG family, to protect a MIPS readout.  It is refundable
- * instead, through w64_tb_acct_insns below.
- *
- * w64_tbhist_on stays because it is a measurement build and costs
- * nothing shipped; icount2 stays because its counter drives virtual
- * time rather than a display.
+ * wasm_guest_insns is not either: an early exit refunds it instead,
+ * through w64_tb_acct_insns below.  icount2's counter drives virtual
+ * time, so it stays exact.
  */
 bool w64_tb_icount_exact(void)
 {
-    return w64_tbhist_on() || icount2_enabled();
+    return icount2_enabled();
 }
 
 /*
- * The guest-instruction half of wasm_tb_stats, for a frontend that emits
- * an early TB exit: the prologue prepays tb->icount at entry, so an exit
- * that skips instructions hands them back here the same way it hands
- * back icount_decr.  NULL while nothing charges the counter per entry.
+ * wasm_guest_insns, for a frontend that emits an early TB exit: the
+ * prologue prepays tb->icount at entry, so an exit that skips
+ * instructions hands them back here the same way it hands back
+ * icount_decr.  NULL while nothing charges the counter per entry.
  */
 uint64_t *w64_tb_acct_insns(void)
 {
-    return w64_tbstats_inline() ? &wasm_tb_stats[1] : NULL;
+    return w64_tbstats_inline() ? &wasm_guest_insns : NULL;
 }
 
 static void tcg_out_tb_start(TCGContext *s)
@@ -3140,16 +2847,14 @@ static void tcg_out_tb_start(TCGContext *s)
     n_cf = 0;
     w64_ir_reset(nlabels);
     w64_scan_labels(s);
-    w64_scan_ldst_runs(s);
     w64_batch_begin_tb();
 
     /* lazy one-time init of the inline-accounting address table
      * (translation of the first TB precedes w64_init/first exec) */
-    if (w64_acct_addr[0] == 0) {
+    if (w64_acct_addr[W64_ACCT_INSNS] == 0) {
         w64_acct_init();
     }
-    w64_acct_flags = (w64_tbhist_on() ? W64_ACCT_TBHIST : 0) |
-                     (w64_tbstats_inline() ? W64_ACCT_TBSTATS : 0) |
+    w64_acct_flags = (w64_tbstats_inline() ? W64_ACCT_TBSTATS : 0) |
                      (icount2_enabled() ? W64_ACCT_ICOUNT2 : 0) |
                      (w64_ls_armed() ? W64_ACCT_LS : 0);
 
@@ -3206,30 +2911,17 @@ static void tcg_out_tb_start(TCGContext *s)
     w64_u8(s, 0x03); w64_u8(s, 0x7e);       /* i64: $scr0..$scr2 */
 
     /* prologue: per-TB-entry accounting, inline */
-    if (w64_tbhist_on()) {
-        w64_tbhist_emit(s, tidx);
-    }
-
     if (w64_tbstats_inline()) {
-        /* wasm_tb_stats[0]++ and [1] += icount (plain RMWs — the fields
-         * are only ever written by this vCPU thread) */
-        w64_const_addr(s, w64_acct_addr[0]);
+        /* wasm_guest_insns += icount (a plain RMW: only this vCPU thread
+         * writes it) */
+        w64_const_addr(s, w64_acct_addr[W64_ACCT_INSNS]);
         w64_u8(s, 0x29);  w64_memarg(s, 3, 0);        /* i64.load */
-        w64_const_i64(s, 1);
+        w64_const_i64(s, s->gen_tb->icount);
         w64_u8(s, 0x7c);                              /* i64.add */
         w64_local_set(s, W64_L_SCR0);
-        w64_const_addr(s, w64_acct_addr[0]);
+        w64_const_addr(s, w64_acct_addr[W64_ACCT_INSNS]);
         w64_local_get(s, W64_L_SCR0);
         w64_u8(s, 0x37);  w64_memarg(s, 3, 0);        /* i64.store */
-
-        w64_const_addr(s, w64_acct_addr[1]);
-        w64_u8(s, 0x29);  w64_memarg(s, 3, 0);
-        w64_const_i64(s, s->gen_tb->icount);
-        w64_u8(s, 0x7c);
-        w64_local_set(s, W64_L_SCR0);
-        w64_const_addr(s, w64_acct_addr[1]);
-        w64_local_get(s, W64_L_SCR0);
-        w64_u8(s, 0x37);  w64_memarg(s, 3, 0);
     }
 
     if (icount2_enabled()) {
@@ -3241,20 +2933,20 @@ static void tcg_out_tb_start(TCGContext *s)
          * atomic RMW + a deadline compare per TB entry (~5M/s) would be
          * pure overhead there.  icount2 is fixed at command-line parse
          * time, before the first translation. */
-        w64_const_addr(s, w64_acct_addr[2]);
+        w64_const_addr(s, w64_acct_addr[W64_ACCT_TICKS]);
         w64_u8(s, 0xfe); w64_u8(s, 0x11);
         w64_memarg(s, 3, 0);                          /* i64.atomic.load */
         w64_const_i64(s, s->gen_tb->icount);
         w64_u8(s, 0x7c);
         w64_local_set(s, W64_L_SCR0);                /* new ticks */
-        w64_const_addr(s, w64_acct_addr[2]);
+        w64_const_addr(s, w64_acct_addr[W64_ACCT_TICKS]);
         w64_local_get(s, W64_L_SCR0);
         w64_u8(s, 0xfe); w64_u8(s, 0x18);
         w64_memarg(s, 3, 0);                          /* i64.atomic.store */
 
         /* if (deadline > 0 && new_ticks >= deadline)
          *     w64_icount2_sync_now()   — the rare slow path */
-        w64_const_addr(s, w64_acct_addr[3]);
+        w64_const_addr(s, w64_acct_addr[W64_ACCT_DEADLINE]);
         w64_u8(s, 0xfe); w64_u8(s, 0x11);
         w64_memarg(s, 3, 0);
         w64_local_tee(s, W64_L_SCR1);                /* deadline */
@@ -3274,7 +2966,7 @@ static void tcg_out_tb_start(TCGContext *s)
         /* if (w64_ls_on) w64_lockstep_account(icount) — the lockstep
          * fold import (w64_ls_on stays 0 when the log could not be
          * opened) */
-        w64_const_addr(s, w64_acct_addr[4]);
+        w64_const_addr(s, w64_acct_addr[W64_ACCT_LS_ON]);
         w64_u8(s, 0x28);  w64_memarg(s, 2, 0);        /* i32.load */
         w64_blk_push(s, W64_BLK_IF, -1);
         w64_const_i32(s, s->gen_tb->icount);
@@ -3354,7 +3046,6 @@ static int tcg_out_tb_finalize(TCGContext *s)
 
     body_total = s->code_ptr - (s->code_buf + W64_BODY_OFF);
     body_size = body_total - 5;
-    wasm_diag_stat[WASM_DIAG_TB_BYTES] += body_size;
 
     /* every forward branch must have been resolved by now */
     if (W.n_fixup != 0) {
@@ -3544,30 +3235,6 @@ static int tcg_out_tb_finalize(TCGContext *s)
      * right here (fill or union-table pressure) and flip this TB's
      * descriptor to the batch thunk (desc+4 = batch id, so the
      * dispatcher calls run(env, sp, tp, tidx) instead of the entry) */
-    {
-        /* W64_DUMPTB=N: hex of the Nth TB's complete temp module, so the
-         * emitted bytes can be disassembled (wasm-dis) and counted. */
-        static int dump = -2;
-        if (dump == -2) {
-            const char *e = getenv("W64_DUMPTB");
-            dump = e ? atoi(e) : -1;
-        }
-        if (dump >= 0 &&
-            wasm_diag_stat[WASM_DIAG_TB_GEN] == (uint64_t)dump) {
-            uint32_t n = W64_PRELUDE + body_total;
-            const uint8_t *b = s->code_buf + W64_MOD_OFF;
-            char *h = g_malloc(2 * (size_t)n + 1);
-            uint32_t i;
-
-            for (i = 0; i < n; i++) {
-                snprintf(h + 2 * i, 3, "%02x", b[i]);
-            }
-            fprintf(stderr, "W64TBDUMP icount=%u n=%u %s\n",
-                    s->gen_tb->icount, n, h);
-            g_free(h);
-        }
-    }
-
     w64_ir_finish(ldl_p(s->code_buf + W64_DESC_TIDX));
     w64_batch_member((uintptr_t)s->code_buf, body_total, CF, n_cf);
     return 0;
@@ -3652,7 +3319,6 @@ static void tcg_out_set_borrow(TCGContext *s)
 
 static void tcg_target_init(TCGContext *s)
 {
-    w64_interp_init();
     tcg_target_available_regs[TCG_TYPE_I32] = MAKE_64BIT_MASK(0, 13);
     tcg_target_available_regs[TCG_TYPE_I64] = MAKE_64BIT_MASK(0, 13);
 

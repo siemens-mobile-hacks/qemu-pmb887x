@@ -147,20 +147,11 @@ struct w64_irec {
 void w64_irec_put(uint32_t tidx, uint32_t *code, uint32_t n);
 void w64_irec_drop(uint32_t tidx);
 void w64_irec_flush(void);
-bool w64_interp_on(void);
-
-/*
- * Dispatcher gate, read on every TB entry: 0 off, 1 interpret only while
- * the TB has no module (the production tier), 2 interpret always
- * (W64_INTERP_ALL=1 -- full coverage for the correctness gate, and the
- * way the tier's own speed is priced).
- */
-void w64_interp_init(void);
 uint32_t w64_call_tag(uint32_t typemask, unsigned nargs);
 
 /*
  * Run TB `tidx` interpreted if it has a record and has not yet earned a
- * module (W64_INTERP=T promotes after T entries).  Returns false if the
+ * module (it is promoted after a fixed number of entries).  Returns false if the
  * caller must take the compiled path; otherwise *res is the exit word
  * the emitted TB would have returned.
  */

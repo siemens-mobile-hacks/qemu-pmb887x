@@ -13,8 +13,6 @@
 #include "exec/translation-block.h"
 #include "accel/tcg/cpu-ops.h"
 #include "cpregs.h"
-#include "qemu/wasm-diag.h"
-#include "qemu/timer.h"
 
 static inline bool fgt_svc(CPUARMState *env, int el)
 {
@@ -305,34 +303,14 @@ static CPUARMTBFlags rebuild_hflags_a32(CPUARMState *env, int fp_el,
     return rebuild_hflags_common_32(env, fp_el, mmu_idx, flags);
 }
 
-/*
- * The single AArch32 entry point: every caller has @el and nothing else.
- * Build with -DHFLAGS_FAST_VERIFY to take the short path, compute the
- * generic answer anyway, count the disagreements (hflagsBad) and return
- * the generic one - a build that is behaviourally the tip, so the whole
- * gate ladder can run on it.
- */
+/* The single AArch32 entry point: every caller has @el and nothing else. */
 static inline __attribute__((always_inline))
 CPUARMTBFlags rebuild_hflags_a32_el(CPUARMState *env, int el)
 {
     CPUARMTBFlags fast;
 
-    WASM_DIAG_HOT(WASM_DIAG_HFLAGS);
     if (rebuild_hflags_a32_fast(env, el, &fast)) {
-        WASM_DIAG_HOT(WASM_DIAG_HFLAGS_FAST);
-#ifndef HFLAGS_FAST_VERIFY
         return fast;
-#else
-        {
-            CPUARMTBFlags gen = rebuild_hflags_a32(env,
-                                                   fp_exception_el(env, el),
-                                                   arm_mmu_idx_el(env, el));
-            if (gen.flags != fast.flags || gen.flags2 != fast.flags2) {
-                wasm_diag_stat[WASM_DIAG_HFLAGS_BAD]++;
-            }
-            return gen;
-        }
-#endif
     }
     return rebuild_hflags_a32(env, fp_exception_el(env, el),
                               arm_mmu_idx_el(env, el));
@@ -766,48 +744,6 @@ bool arm_w64_lc_key_pc(CPUState *cs, uint32_t key32[3], uint32_t *pc)
 
 void arm_rebuild_hflags(CPUARMState *env)
 {
-#ifdef CONFIG_TCG_WASM64
-    /*
-     * Unconditional, and worth its one increment: this is the counter
-     * that prices the function.  A wasm profile credited it with 11 % of
-     * the vCPU on an idle CX70 while it was in fact called 11.6 k times
-     * a second.  See doc/lessons.md -- profile self-time here names the
-     * wrong function.
-     *
-     * "Under 0.3 %" used to follow, and it was an idle-screen number
-     * that does not transfer.  A call costs **12.3 +- 1.6 ns**: priced
-     * in round 47 by adding n rebuilds to every inline SVC and fitting
-     * the video meter's ms/Mi against the extra calls (n = 0 vs 8, one
-     * binary).  An earlier 31.6 ns came from WASM_DIAG_TIME_PHASES spans
-     * minus their clock floor, a difference of two quantized sums, and
-     * was 2.6x high.
-     *
-     * The rate is not a constant, so neither is the cost.  This counter
-     * tracks excSwi at ~2.5 rebuilds per SWI, and the SWI rate varies:
-     * 1065 calls/Mi on CX70 game 1, 5155 on the SWI-heavy game 2, 5937
-     * on SL65 video.  That is roughly **0.3 % to 2.6 % of wall**
-     * depending on the workload.  Quote the range, not one workload's
-     * number -- quoting one workload's rate as if general is the error
-     * this comment used to make.
-     */
-    wasm_diag_stat[WASM_DIAG_HFLAGS_CALLS]++;
-#endif
-#if defined(CONFIG_TCG_WASM64) && defined(WASM_DIAG_TIME_PHASES)
-    {
-        static uint32_t tick;
-
-        if (unlikely((++tick & 7) == 0)) {
-            int64_t t0 = get_clock_realtime();
-
-            arm_set_hflags(env, rebuild_hflags_internal(env));
-            wasm_diag_stat[WASM_DIAG_HFLAGS_NS] += get_clock_realtime() - t0;
-            wasm_diag_stat[WASM_DIAG_HFLAGS_NS_N]++;
-            t0 = get_clock_realtime();
-            wasm_diag_stat[WASM_DIAG_HFLAGS_CAL] += get_clock_realtime() - t0;
-            return;
-        }
-    }
-#endif
     arm_set_hflags(env, rebuild_hflags_internal(env));
 }
 

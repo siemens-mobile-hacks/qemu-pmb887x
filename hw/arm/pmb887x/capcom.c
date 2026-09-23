@@ -217,7 +217,9 @@ static void capcom_sync(pmb887x_capcom_t *p) {
 	}
 
 	int64_t now = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
-	uint64_t ticks = muldiv64(now - p->epoch_ns, p->freq, NANOSECONDS_PER_SECOND);
+	/* a mid-TB read can run ahead of a later one (see rtc_sync) */
+	uint64_t ticks = now > p->epoch_ns ?
+		muldiv64(now - p->epoch_ns, p->freq, NANOSECONDS_PER_SECOND) : 0;
 	if (ticks > p->ticks) {
 		for (int n = 0; n < 2; n++) {
 			if (capcom_t_run(p, n) && capcom_t_timer_mode(p, n))

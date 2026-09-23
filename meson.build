@@ -924,8 +924,9 @@ if have_tcg
       error('Unsupported CPU @0@, try --enable-tcg-interpreter'.format(cpu))
     endif
   elif host_arch == 'wasm64'
-    # Either the TCG interpreter or the wasm64 backend (tcg/wasm64/) —
-    # with --enable-tcg-interpreter unset, tcg_arch stays 'wasm64'.
+    if get_option('tcg_interpreter')
+      error('WebAssembly host uses the wasm64 TCG backend; --enable-tcg-interpreter is not supported')
+    endif
   elif get_option('tcg_interpreter')
     warning('Use of the TCG interpreter is not recommended on this host')
     warning('architecture. There is a native TCG execution backend available')

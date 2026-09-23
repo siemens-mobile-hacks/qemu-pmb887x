@@ -25,4 +25,9 @@ extern bool tcg_allowed;
  */
 bool qemu_tcg_mttcg_enabled(void);
 
+#ifdef __EMSCRIPTEN__
+/* Times the round-robin vCPU thread went idle, for the browser page. */
+extern uint64_t tcg_rr_idle_count;
+#endif
+
 #endif

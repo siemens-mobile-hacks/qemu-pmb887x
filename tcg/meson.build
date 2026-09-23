@@ -22,7 +22,7 @@ if get_option('tcg_interpreter')
   tcg_ss.add(files('tci.c'))
 endif
 
-if host_arch == 'wasm64' and not get_option('tcg_interpreter')
+if host_arch == 'wasm64'
   tcg_ss.add(files('wasm64/wasm64.c', 'wasm64/w64-interp.c'))
 endif
 

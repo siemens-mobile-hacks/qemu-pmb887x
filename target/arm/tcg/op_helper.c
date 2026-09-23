@@ -803,25 +803,26 @@ uint32_t HELPER(cpsr_read)(CPUARMState *env)
 }
 
 /*
- * The TB that wrote CPSR continues through goto_ptr rather than a plain
- * exit (gen_set_psr / gen_rfe): if any interrupt is pending — including
- * one that was masked until this write — make the next TB start unwind
- * to cpu_handle_interrupt, exactly where the plain exit would have gone.
- */
-/*
  * The CPSR bits cpsr_write() itself treats as hflags inputs: when the
  * write mask covers any of them (and the write is not Raw) it rebuilds
  * hflags at its tail.  Keep this in step with `rebuild_hflags` there.
  */
 #define CPSR_HFLAGS_INPUTS (CPSR_M | CPSR_E | CPSR_IL)
 
+/*
+ * On emscripten the TB that wrote CPSR continues through goto_ptr rather
+ * than a plain exit (gen_set_psr / gen_rfe): if any interrupt is pending,
+ * including one this write unmasked, end the next TB at its start.
+ */
 static void cpsr_write_check_irq(CPUARMState *env)
 {
+#ifdef __EMSCRIPTEN__
     CPUState *cs = env_cpu(env);
 
     if (qatomic_read(&cs->interrupt_request)) {
         qatomic_set(&cs->neg.icount_decr.u16.high, -1);
     }
+#endif
 }
 
 void HELPER(cpsr_write)(CPUARMState *env, uint32_t val, uint32_t mask)

@@ -10,7 +10,6 @@
 #include "qemu/osdep.h"
 #include "qemu/bswap.h"
 #include "qemu/log.h"
-#include "qemu/wasm-diag.h"
 #include "qemu/error-report.h"
 #include "accel/tcg/cpu-ldst-common.h"
 #include "accel/tcg/cpu-mmu-index.h"
@@ -109,55 +108,6 @@ bool translator_is_same_page(const DisasContextBase *db, vaddr addr)
     return ((addr ^ db->pc_first) & TARGET_PAGE_MASK) == 0;
 }
 
-#ifdef CONFIG_TCG_WASM64
-void translator_note_succ(DisasContextBase *db, vaddr dest)
-{
-    TranslationBlock *tb = db->tb;
-    unsigned i;
-
-    /*
-     * Narrow to the guest's address width.  The frontends compute a
-     * branch target as a 64-bit `pc + diff` (gen_goto_tb) and hand it
-     * over unnarrowed: on a 32-bit guest a target that wraps around zero
-     * arrives sign-extended.  Upstream only same-page-tests the value, so
-     * a wrong high half merely disables goto_tb, but w64_speculate feeds
-     * it to tb_gen_code as a real address — and translator_ld then aborts
-     * on "(base ^ pc) & TARGET_PAGE_MASK", comparing a sign-extended
-     * db->pc_first against a pc the frontend zero-extended.  KE800 died
-     * there ~90 s in: a TB at guest 0x0 branches back by -0xebb0 into the
-     * 0xffff0000 high vectors, which is where its GSM L1 interrupt path
-     * lives.
-     */
-    if (tcg_ctx->addr_type == TCG_TYPE_I32) {
-        dest = (uint32_t)dest;
-    }
-
-    for (i = 0; i < tb->w64_nsucc; i++) {
-        if (tb->w64_succ[i] == dest) {
-            return;
-        }
-    }
-    if (tb->w64_nsucc < ARRAY_SIZE(tb->w64_succ)) {
-        tb->w64_succ[tb->w64_nsucc++] = dest;
-    }
-}
-#endif
-
-#ifdef CONFIG_TCG_WASM64
-void translator_unnote_succ(DisasContextBase *db, vaddr dest)
-{
-    TranslationBlock *tb = db->tb;
-    unsigned i;
-
-    for (i = 0; i < tb->w64_nsucc; i++) {
-        if (tb->w64_succ[i] == dest) {
-            tb->w64_succ[i] = tb->w64_succ[--tb->w64_nsucc];
-            return;
-        }
-    }
-}
-#endif
-
 bool translator_use_goto_tb(DisasContextBase *db, vaddr dest)
 {
     /* Suppress goto_tb if requested. */
@@ -165,36 +115,13 @@ bool translator_use_goto_tb(DisasContextBase *db, vaddr dest)
         return false;
     }
 
-    translator_note_succ(db, dest);
-
     /*
      * Check for the dest on the same page as the start of the TB, or
-     * (wasm64) on any further page the TB has fetched from - the set it
-     * is registered on for invalidation - because a branch inside an
-     * inlined callee or an absorbed stream is on that page and would
-     * otherwise leave as an indirect exit.  Round 42 measured the
-     * widening at +1.34 % pooled / +2.2 % at matched host load on video
-     * (3 695 indirect exits per Mi become chained ones, boundary count
-     * unchanged) and reverted it with the soundness question open; it
-     * is settled now (retaken in round 43 with the same result: a
-     * 16-leg ABBA scored +2.6 % pooled, +2.4 % on the virtual-rate
-     * metric, +2.1 % at matched host load, xwOther 5 376 -> 1 672/Mi
-     * with the converted exits landing in xGototb exactly):
-     *
-     * A chain's target is guarded where it is patched (cpu-exec.c): a
-     * TB with a second physical page is never chained into, unless its
-     * second page is an inlined callee's - and those chains are dropped
-     * at every TLB-flush site (tb_unlink_inlined), falling back to the
-     * dispatcher, whose tb_lookup_cmp re-validates w64_inl_vpage.  That
-     * guard looks only at the target, so it holds whatever page the
-     * branch comes from.  A write to the target page invalidates the
-     * target and unlinks through its jmp list; a write to the source's
-     * callee page invalidates the source, which is registered there
-     * (tb_page_slots).  What survives is first-page remap staleness,
-     * which system emulation accepts for same-page chains already
-     * ("we don't take care of direct jumps when address mapping
-     * changes"), and CF_PCREL is off on this port, so the target is
-     * keyed by its full virtual pc.
+     * (wasm64) on any further page the TB has fetched from.  A TB with a
+     * second page is only chained into when that page is an inlined
+     * callee's (cpu-exec.c), and those chains are dropped at every
+     * TLB-flush site (tb_unlink_inlined), so the guard holds whichever
+     * page the branch comes from.
      */
 #ifdef CONFIG_TCG_WASM64
     if (likely(translator_is_same_page(db, dest))) {
@@ -274,7 +201,6 @@ void translator_loop(CPUState *cpu, TranslationBlock *tb, int *max_insns,
          */
         bool io_barrier = wasm_is_io_barrier(db->pc_next);
         if (unlikely(io_barrier) && db->num_insns > 0) {
-            wasm_diag_stat[WASM_DIAG_IO_BARRIER_SPLIT]++;
             db->is_jmp = DISAS_TOO_MANY;
             break;
         }

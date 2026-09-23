@@ -129,15 +129,6 @@ struct TranslationBlock {
     uintptr_t jmp_target_addr[2]; /* target address */
 #ifdef CONFIG_TCG_WASM64
     /*
-     * Guest addresses of this TB's goto_tb destinations, recorded by
-     * translator_use_goto_tb: the wasm64 backend translates them ahead
-     * of execution so the browser compiles TBs in batches
-     * (accel/tcg/cpu-exec.c w64_speculate).  A hint only.
-     */
-    vaddr w64_succ[3];
-    uint8_t w64_nsucc;
-    uint8_t w64_explored;   /* speculation: every successor already exists */
-    /*
      * Inline next-TB cache for this TB's goto_ptr exit (target/arm
      * gen_goto_ptr): the emitted code compares pc, tb_key_gen and the
      * key words flagged dynamic in @dynmask against the CPU and
@@ -267,15 +258,8 @@ struct W64PccShape {
 };
 
 const struct W64PccShape *w64_pcc_shape(void);
-bool w64_pcc_inline(void);
-
-/*
- * Interpreter-tier gate (tcg/wasm64/w64-interp.c): 0 off, 1 interpret a
- * TB until it earns a module, 2 interpret always.  accel/tcg reads it to
- * decide whether speculative successor translation is worth anything --
- * see w64_speculate().
- */
-extern uint32_t w64_interp_gate;
+/* withdraw the staged module body of a TB that was abandoned */
+void w64_batch_unstage(uintptr_t tcptr);
 #endif
 
 #ifdef CONFIG_TCG_WASM64

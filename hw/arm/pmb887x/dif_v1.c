@@ -803,10 +803,12 @@ static void dif_event_handler(void *opaque, int event_id, int level) {
  * request updates are done once at the end of the burst instead of per
  * word, which leaves the same levels only if none of the conditions the
  * per-word path would re-test per word can change inside it - which is
- * what this checks.
+ * what this checks.  A DMA channel draining RX between bursts would see
+ * words the burst overwrites, so RX must not be DMA-serviced.
  */
 static bool dif_can_run_burst(pmb887x_dif_t *p) {
 	return dif_is_running(p) &&
+		(pmb887x_srb_get_dmae(&p->srb) & DIFv1_RIS_RX) == 0 &&
 		!p->in_transfer && !p->transfer_pending &&
 		(p->sync_config & DIFv1_SYNC_CONFIG_SYNCEN) == 0 &&
 		(p->pbccon & DIFv1_PBCCON_PBBCONV_MODE) == 0 &&

@@ -12,21 +12,16 @@
 #include "qemu/rcu.h"
 #include "exec/cpu-common.h"
 
+#ifdef CONFIG_TCG_WASM64
 /*
- * 14, not upstream's 12.  The wasm64 backend reaches this cache through
- * helper_lookup_tb_ptr_lc on every inline-cache miss - ~15k per Mi - and
- * at 4096 entries 11.5 % of those fell through to the qht, 95 % of them
- * as conflict misses (WASM_DIAG_LOOKUP_CONFL, not cold pcs).  16384
- * entries cut qht lookups per Mi by 62 % (el71 1718 -> 649) and 55 %
- * (cx70 1814 -> 816).  16 bits is worse than 14 on both boards, so this
- * is the peak, not a floor: locality turns against the bigger table.
- *
- * The cost this trades against is the flush, and 0083 is what made the
- * trade affordable - with the EBU's readonly flips no longer forcing a
- * full topology commit, tcg_flush_jmp_cache runs ~0/s instead of 1135/s,
- * so walking 4x the entries costs nothing.  256 KB for the one vCPU.
+ * The wasm64 backend reaches this cache on every inline next-TB cache
+ * miss, and at 12 bits most of its qht lookups were conflict misses.
+ * 14 bits is the measured peak; 16 is worse again.
  */
 #define TB_JMP_CACHE_BITS 14
+#else
+#define TB_JMP_CACHE_BITS 12
+#endif
 #define TB_JMP_CACHE_SIZE (1 << TB_JMP_CACHE_BITS)
 
 /*

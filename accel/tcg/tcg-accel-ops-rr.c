@@ -25,9 +25,6 @@
 
 #include "qemu/osdep.h"
 #include "qemu/lockable.h"
-#include "qemu/wasm-diag.h"
-#include "exec/cpu-interrupt.h"
-#include "qemu/error-report.h"
 #include "system/tcg.h"
 #include "system/replay.h"
 #include "exec/icount.h"
@@ -109,6 +106,10 @@ static void rr_stop_kick_timer(void)
     }
 }
 
+#ifdef __EMSCRIPTEN__
+uint64_t tcg_rr_idle_count;
+#endif
+
 /*
  * All vCPUs are halted under icount.  Stock qemu hands the virtual-clock
  * warp to the main loop (icount_start_warp_timer: with sleep=off the
@@ -130,7 +131,7 @@ static void rr_idle_advance(void)
     int i;
 
 #ifdef __EMSCRIPTEN__
-    wasm_diag_stat[WASM_DIAG_HALT]++;
+    qatomic_set(&tcg_rr_idle_count, tcg_rr_idle_count + 1);
 #endif
     for (i = 0; i < 64 && all_cpu_threads_idle(); i++) {
         int64_t deadline = qemu_clock_deadline_ns_all(QEMU_CLOCK_VIRTUAL,
@@ -150,29 +151,12 @@ static void rr_idle_advance(void)
                     qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + deadline);
 
                 if (excess > 0) {
-#ifdef __EMSCRIPTEN__
-                    wasm_diag_stat[WASM_DIAG_RTCAP_WAIT]++;
-                    wasm_diag_stat[WASM_DIAG_RTCAP_WAIT_NS] += excess;
-                    if (excess > wasm_diag_stat[WASM_DIAG_RTCAP_WAIT_MAX]) {
-                        wasm_diag_stat[WASM_DIAG_RTCAP_WAIT_MAX] = excess;
-                    }
-#endif
                     icount_rtcap_set_waiting(true);
                     qemu_cond_timedwait_bql_ns(first_cpu->halt_cond, excess);
                     icount_rtcap_set_waiting(false);
                     continue;
                 }
             }
-#ifdef __EMSCRIPTEN__
-            {
-                int b = deadline < 1000 ? 0 : deadline < 10000 ? 1
-                      : deadline < 100000 ? 2 : deadline < 1000000 ? 3
-                      : deadline < 10000000 ? 4
-                      : deadline < 100000000 ? 5 : 6;
-                wasm_diag_stat[WASM_DIAG_WARP_NS] += deadline;
-                wasm_diag_stat[WASM_DIAG_WARP_B0 + b]++;
-            }
-#endif
             /*
              * Do not let the warp notify: with sleep=off it moves the
              * bias by exactly @deadline, so the ~EXTERNAL deadline is 0
@@ -266,10 +250,6 @@ static void rr_rtcap_throttle(void)
     excess = icount_rtcap_excess_ns(v);
     if (excess > 0) {
         int64_t wait = MIN(excess, 20 * SCALE_MS);
-#ifdef __EMSCRIPTEN__
-        wasm_diag_stat[WASM_DIAG_RTCAP_THROT]++;
-        wasm_diag_stat[WASM_DIAG_RTCAP_THROT_NS] += wait;
-#endif
         bql_lock();
         qemu_cond_timedwait_bql_ns(first_cpu->halt_cond, wait);
         bql_unlock();
@@ -281,20 +261,6 @@ static void rr_wait_io_event(void)
     CPUState *cpu;
 
     while (all_cpu_threads_idle()) {
-#ifdef __EMSCRIPTEN__
-        /* canary: going idle with a hard interrupt pending is a lost
-         * wake by definition - the flag was set while the vCPU was
-         * already deciding to sleep.  Loud, once: it hangs a board. */
-        if (unlikely(first_cpu->interrupt_request & CPU_INTERRUPT_HARD)) {
-            static bool warned;
-            if (!warned) {
-                warned = true;
-                error_report("LOST WAKE: vCPU idle with CPU_INTERRUPT_HARD "
-                             "pending (interrupt_request=%d)",
-                             (int) first_cpu->interrupt_request);
-            }
-        }
-#endif
         rr_stop_kick_timer();
         qemu_cond_wait_bql(first_cpu->halt_cond);
     }

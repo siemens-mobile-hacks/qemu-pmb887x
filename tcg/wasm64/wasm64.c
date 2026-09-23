@@ -10,9 +10,8 @@
  *
  * Phase 1 (doc/wasm-tcg-backend-plan.md §5): no chaining — every TB
  * returns to this loop (exit codes, or the goto_ptr handoff slot).
- * TB accounting (wasm_tb_account / icount2_advance) mirrors the TCI
- * build's INDEX_op_tci_tbhdr so the two engines stay observable in
- * the same units.
+ * TB accounting (wasm_guest_insns / icount2) runs once per TB entry, in
+ * the emitted prologue.
  *
  * SPDX-License-Identifier: MIT
  */
@@ -25,7 +24,6 @@
 #include "exec/gdbstub.h"
 #include "hw/core/cpu.h"
 #include <emscripten.h>
-#include "qemu/wasm-diag.h"
 #include "qemu/timer.h"
 #include "exec/translation-block.h"
 #include "wasm64.h"
@@ -95,123 +93,12 @@ EM_JS(int, w64_instantiate, (uintptr_t tb_ptr), {
       imports.e['f' + i] = wasmTable.get(T64 ? BigInt(fi) : fi);
     }
 
-    let mod;
+    let mod, inst;
     try {
         mod = new WebAssembly.Module(mod_bytes);
-    } catch (e) {
-        /* dump for offline analysis (W64DUMP<i>:<base64> lines) */
-        let bin = '';
-        const CH = 0x8000;
-        for (let i = 0; i < mod_bytes.length; i += CH) {
-            bin += String.fromCharCode.apply(null, mod_bytes.subarray(i, i + CH));
-        }
-        const b64 = btoa(bin);
-        for (let i = 0; i < b64.length; i += 3000) {
-            console.log('W64DUMPC' + (i / 3000) + ':' + b64.substr(i, 3000));
-        }
-        console.log('W64DUMPE:nimp=' + n_imp + ' len=' + mod_len);
-        throw e;
-    }
-    let inst;
-    try {
         inst = new WebAssembly.Instance(mod, imports);
     } catch (e) {
-        if (String(e).includes('does not match')) {
-            const idxs = [];
-            for (let i = 0; i < n_imp; i++) {
-                idxs.push(dv.getUint32(tbl + i * 4, true));
-            }
-            console.log('W64DBG link fail: ' + e + ' imps=' + n_imp +
-                        ' idx=[' + idxs.join(',') + ']');
-            /* decode our own type + import sections to show declared sigs */
-            try {
-                let q = 8;
-                const rd = () => mod_bytes[q++];
-                const ul = () => { let v = 0, s = 0, b; do { b = rd(); v |= (b & 0x7f) << s; s += 7; } while (b & 0x80); return v >>> 0; };
-                let types = null, imptype = [];
-                while (q < mod_bytes.length) {
-                    const id = rd(); const sz = ul(); const end = q + sz;
-                    if (id === 1) {
-                        const nt = ul(); types = [];
-                        for (let t = 0; t < nt; t++) {
-                            if (rd() !== 0x60) throw new Error('bad type');
-                            const np = ul(); const ps = [];
-                            for (let x = 0; x < np; x++) ps.push(rd());
-                            const nr = ul(); let r = null;
-                            if (nr) r = rd();
-                            types.push([ps, r]);
-                        }
-                    } else if (id === 2) {
-                        const ni = ul();
-                        for (let x = 0; x < ni; x++) {
-                            const ml = ul(); q += ml;
-                            const fl = ul(); q += fl;
-                            const kind = rd();
-                            if (kind === 0) imptype.push(ul());
-                            else if (kind === 2) { const flags = rd(); ul(); if (flags & 1) ul(); }
-                            else throw new Error('bad import kind ' + kind);
-                        }
-                    }
-                    q = end;
-                }
-                const hex0 = (x) => 'x' + x.toString(16);
-            const ts = (t) => '(' + t[0].map(x => x === 0x7e ? 'j' : x === 0x7f ? 'i' : hex0(x)).join(',') +
-                            ')->' + (t[1] === null ? 'void' : t[1] === 0x7e ? 'j' : t[1] === 0x7f ? 'i' : hex0(t[1]));
-                console.log('W64DEC types=' + types.map(ts).join(' ') +
-                            ' imports=[' + imptype.join(',') + ']');
-            } catch (e2) {
-                console.log('W64DEC parse failed: ' + e2);
-            }
-            /* probe the actual wasm type of each helper funcref */
-            const leb = (v) => {
-                const out = [];
-                do { let b = v & 0x7f; v >>>= 7; if (v) b |= 0x80; out.push(b); } while (v);
-                return out;
-            };
-            const sig = (params, ret) => {
-                const ft = [0x60].concat(leb(params.length), params,
-                                        ret ? [1, ret] : [0]);
-                const type = leb(1).concat(ft);   /* one type */
-                const entry = [1, 't'.charCodeAt(0), 1, 'f'.charCodeAt(0), 0]
-                    .concat(leb(0));
-                const content = leb(1).concat(entry);   /* count + entry */
-                const impsec = [2].concat(leb(content.length), content);
-                const bytes = [0, 0x61, 0x73, 0x6d, 1, 0, 0, 0]
-                    .concat([1], leb(type.length), type, impsec);
-                return bytes;
-            };
-            if (globalThis.__w64t64 === undefined) {
-                try { wasmTable.get(0); globalThis.__w64t64 = false; }
-                catch (e) { globalThis.__w64t64 = e instanceof TypeError; }
-            }
-            const T64 = globalThis.__w64t64;
-            for (let k = 0; k < n_imp; k++) {
-                const fr = wasmTable.get(T64 ? BigInt(idxs[k]) : idxs[k]);
-                const cands = [];
-                const J = 0x7e, I = 0x7f;
-                const F = 0x7d, D = 0x7c;
-                for (const ps of [[J,J,I,J], [J,J,I,I,J], [J,J,J,I,J],
-                                  [J,I,I,J], [J,J,I], [J,I], [J], [J,J],
-                                  [J,J,J,J], [I,I,I,I], [J,J,J], [I], [],
-                                  [J,F], [J,D], [J,J,D], [J,I,J], [J,J,F],
-                                  [J,I,I], [J,J,I,I], [I,I], [J,I,I,J,J]]) {
-                    for (const r of [J, I, D, F, null]) {
-                        try {
-                            new WebAssembly.Instance(
-                                new WebAssembly.Module(new Uint8Array(sig(ps, r))),
-                                { t: { f: fr } });
-                            cands.push('(' + ps.map(x => x === J ? 'j' : 'i').join(',') +
-                                       ')->' + (r === J ? 'j' : r === I ? 'i' : 'void'));
-                        } catch (_) { /* keep trying */ }
-                    }
-                }
-                console.log('W64SIG f' + k + ' idx=' + idxs[k] + ': ' +
-                            (cands.join(' | ') || 'none of the candidates'));
-                if (cands.length) {
-                    /* also dump the names the sig-printer can't: none */
-                }
-            }
-        }
+        console.log('W64FAIL nimp=' + n_imp + ' len=' + mod_len + ': ' + e);
         throw e;
     }
     /* register the entry for chaining before addFunction: a concurrent
@@ -253,7 +140,6 @@ static void w64_init(void)
          * its import call, so the fold must be armed before the first
          * executed TB's prologue runs. */
         w64_ls_init();
-        w64_interp_init();
     }
 }
 
@@ -262,7 +148,7 @@ static void w64_init(void)
  * the emitter's first tcg_out_tb_start — wasm cannot fold integer casts
  * of addresses into static initializers, and translation of the first
  * TB happens before w64_init()/first exec. */
-uint64_t w64_acct_addr[5];
+uint64_t w64_acct_addr[W64_ACCT_N];
 uint32_t w64_acct_flags;
 
 void w64_acct_init(void)
@@ -270,11 +156,10 @@ void w64_acct_init(void)
     uintptr_t ticks, deadline;
 
     icount2_w64_acct_addrs(&ticks, &deadline);
-    w64_acct_addr[0] = (uint64_t)(uintptr_t)&wasm_tb_stats[0];
-    w64_acct_addr[1] = (uint64_t)(uintptr_t)&wasm_tb_stats[1];
-    w64_acct_addr[2] = (uint64_t)ticks;
-    w64_acct_addr[3] = (uint64_t)deadline;
-    w64_acct_addr[4] = (uint64_t)(uintptr_t)&w64_ls_on;
+    w64_acct_addr[W64_ACCT_INSNS] = (uint64_t)(uintptr_t)&wasm_guest_insns;
+    w64_acct_addr[W64_ACCT_TICKS] = (uint64_t)ticks;
+    w64_acct_addr[W64_ACCT_DEADLINE] = (uint64_t)deadline;
+    w64_acct_addr[W64_ACCT_LS_ON] = (uint64_t)(uintptr_t)&w64_ls_on;
 }
 
 /* ------------------------------------------------------------------ */
@@ -564,54 +449,6 @@ uint32_t w64_alloc_tidx(void)
     return w64_next_tidx++;
 }
 
-/* Per-TB entry counts (W64_TBHIST=1); 8 MB, allocated only when the
- * emitter asks for the first slot. */
-static uint32_t *w64_tbhist;
-
-uint32_t *w64_tbhist_slot(uint32_t tidx)
-{
-    if (!w64_tbhist) {
-        w64_tbhist = g_malloc0((size_t)W64_TBHIST_N * sizeof(uint32_t));
-    }
-    return &w64_tbhist[tidx & (W64_TBHIST_N - 1)];
-}
-
-static uint32_t w64_tbhist_count(uint32_t tidx)
-{
-    return w64_tbhist ? w64_tbhist[tidx & (W64_TBHIST_N - 1)] : 0;
-}
-
-uint64_t w64_tbhist_bucket(int b)
-{
-    uint64_t acc = 0;
-    uint32_t i, n = w64_next_tidx;
-
-    if (!w64_tbhist || b < 0 || b > 2 * W64_TBHIST_BUCKETS) {
-        return 0;
-    }
-    if (n > W64_TBHIST_N) {
-        n = W64_TBHIST_N;
-    }
-    for (i = 1; i < n; i++) {
-        uint32_t c = w64_tbhist[i];
-        int lg = 0;
-
-        if (!c) {
-            acc += (b == 2 * W64_TBHIST_BUCKETS);
-            continue;
-        }
-        while ((c >> lg) > 1 && lg < W64_TBHIST_BUCKETS - 1) {
-            lg++;
-        }
-        if (b == lg) {
-            acc++;
-        } else if (b == W64_TBHIST_BUCKETS + lg) {
-            acc += c;
-        }
-    }
-    return acc;
-}
-
 /* ------------------------------------------------------------------ */
 /* batching (phase 2, doc/wasm-tcg-backend-plan.md §4.1)              */
 /*                                                                    */
@@ -642,7 +479,7 @@ static __thread struct {
     uint8_t n_utypes;
     struct w64_import uimp[W64_UMAX_IMPORTS];
     uint8_t n_uimp;
-    struct w64_member member[W64_BATCH_N_MAX];
+    struct w64_member member[W64_BATCH_N];
     uint16_t n_member;
     struct w64_cfix *fix;   /* per-member call fixups, in member order */
     uint32_t n_fix, cap_fix;
@@ -663,7 +500,7 @@ struct w64_bsrc {
 /* Landed batches, by id.  The staged bodies stay in the code buffer
  * until tb_flush, so a landed batch keeps only its records: enough to
  * re-assemble the identical module after an eviction.  The live set
- * (instantiated modules) is a FIFO capped at w64_live_max — Firefox
+ * (instantiated modules) is a FIFO capped at W64_LIVE_MAX — Firefox
  * caps a process at ~16k live wasm modules (64 KB of executable
  * address space each), and a boot translates far more TBs than that. */
 struct w64_landed {
@@ -686,73 +523,14 @@ static uint32_t w64_next_batch_id;
 #define W64_COMPACT_BATCHES 256
 #define W64_COMPACT_MEMBERS 1024
 
-/* Compaction thresholds, env-tunable so a benchmark can A/B them
- * (W64_COMPACT_BATCHES / W64_COMPACT_MEMBERS; a huge value = off). */
-static unsigned w64_compact_batches(void)
-{
-    static int v = -1;
-    if (v < 0) {
-        const char *e = getenv("W64_COMPACT_BATCHES");
-        v = e ? atoi(e) : W64_COMPACT_BATCHES;
-        v = MAX(v, 2);
-    }
-    return v;
-}
-
-static unsigned w64_compact_members(void)
-{
-    static int v = -1;
-    if (v < 0) {
-        const char *e = getenv("W64_COMPACT_MEMBERS");
-        v = e ? atoi(e) : W64_COMPACT_MEMBERS;
-        v = MAX(v, 2);
-    }
-    return v;
-}
-
 /*
  * Compaction is worth its re-compile only when live module slots are
- * actually scarce.  Before the interpreter tier a batch held 4.85
- * members, so the 1024-member bound merged ~256 of them and freed ~255
- * slots for ~530 KB; now a batch holds ~150, so the same bound merges 7
- * and frees 6 -- and a full boot plateaus at ~760 live against a cap of
- * 6144, so those 6 slots are worth nothing.  Measured on EL71 12 s
- * windows: compacting anyway costs 56 MB of re-compiled module bytes
- * per window and 14.8 % of throughput (3/3).  W64_COMPACT_LIVE=0
- * restores the unconditional behaviour.
+ * actually scarce: with the interpreter tier a batch holds ~150 members,
+ * a full boot plateaus far below the live cap, and compacting anyway
+ * re-compiles modules for nothing.
  */
-static unsigned w64_compact_live(void);
-
-static unsigned w64_live_max(void)
-{
-    static int v = -1;
-    if (v < 0) {
-        const char *e = getenv("W64_LIVE_MAX");
-        v = e ? atoi(e) : 6144;
-        v = MAX(v, 16);
-    }
-    return v;
-}
-
-/* batching mode: 0 = disabled (W64_NOBATCH), else members per batch
- * (W64_BATCH_N env override, default W64_BATCH_N_DEF) */
-static int w64_batch_mode(void)
-{
-    static int mode = -1;
-    if (mode < 0) {
-        const char *e;
-        mode = W64_BATCH_N_DEF;
-        if ((e = getenv("W64_NOBATCH")) != NULL && *e) {
-            mode = 0;
-        } else if ((e = getenv("W64_BATCH_N")) != NULL) {
-            int v = atoi(e);
-            if (v >= 1 && v <= W64_BATCH_N_MAX) {
-                mode = v;
-            }
-        }
-    }
-    return mode;
-}
+#define W64_LIVE_MAX        6144
+#define W64_COMPACT_LIVE    (W64_LIVE_MAX * 3 / 4)
 
 static void w64_batch_open(void)
 {
@@ -780,7 +558,7 @@ static void w64_batch_open(void)
  * effect. */
 void w64_batch_begin_tb(void)
 {
-    if (w64_batch_mode() && B.id == 0) {
+    if (B.id == 0) {
         w64_batch_open();
     }
 }
@@ -789,9 +567,6 @@ uint8_t w64_union_type(unsigned np, const uint8_t *p, uint8_t ret)
 {
     int i, j;
 
-    if (!w64_batch_mode()) {
-        return 0;
-    }
     if (B.id == 0) {
         w64_batch_open();
     }
@@ -818,9 +593,6 @@ uint8_t w64_union_import(uint32_t fptr, uint8_t utype)
 {
     int i;
 
-    if (!w64_batch_mode()) {
-        return 0;
-    }
     for (i = 0; i < B.n_uimp; i++) {
         if (B.uimp[i].fptr == fptr && B.uimp[i].type == utype) {
             return i;
@@ -905,118 +677,6 @@ static void mb_sec(struct w64_mb *mod, uint8_t id, struct w64_mb *sec)
     mb_put(mod, sec->b, sec->n);
 }
 
-EM_JS(int, w64_driver_make, (uintptr_t p, uint32_t len), {
-    if (!globalThis.__w64tab) {
-        globalThis.__w64tab =
-            new WebAssembly.Table({ element: 'anyfunc', initial: 1 << 14 });
-    }
-    const bytes = HEAPU8.slice(Number(p), Number(p) + Number(len));
-    const inst = new WebAssembly.Instance(new WebAssembly.Module(bytes),
-                                          { e: { t: globalThis.__w64tab } });
-    return addFunction(inst.exports.d, 'jjjii');
-});
-
-/*
- * W64_CHAINLOOP: the chain driver.
- *
- * A TB that ends its chain by returning W64_EXIT_CHAIN | tidx hands the
- * successor's index to this one-function module, which calls it, and its
- * successor, and so on, from a loop:
- *
- *   d(env, sp, tp, tidx):
- *     loop
- *       res = TAB[tidx](env, sp, tp)
- *       if (res >= 0xC0000000) { tidx = res & 0x3fffffff; continue }
- *     end
- *     return res
- *
- * It cannot be written in C: a tidx indexes the shared chain table, not
- * emscripten's indirect function table, so the call has to be a wasm
- * call_indirect against the table the TB modules import.  That is the
- * whole mechanism -- the same transition the tail call made, reached
- * from a loop V8 compiles far better (W64_EXIT_CHAIN in wasm64.h).
- */
-static uint32_t w64_driver(void)
-{
-    static uint32_t fidx;
-    struct w64_mb mod = { 0 }, sec = { 0 };
-    static const uint8_t magic[8] = { 0, 'a', 's', 'm', 1, 0, 0, 0 };
-
-    if (fidx) {
-        return fidx;
-    }
-    mb_put(&mod, magic, sizeof(magic));
-
-    /* type 0: the TB signature; type 1: the driver's own */
-    mb_uleb(&sec, 2);
-    mb_u8(&sec, 0x60);
-    mb_uleb(&sec, 3);
-    mb_u8(&sec, 0x7e); mb_u8(&sec, 0x7e); mb_u8(&sec, 0x7e);
-    mb_uleb(&sec, 1); mb_u8(&sec, 0x7f);
-    mb_u8(&sec, 0x60);
-    mb_uleb(&sec, 4);
-    mb_u8(&sec, 0x7e); mb_u8(&sec, 0x7e); mb_u8(&sec, 0x7e); mb_u8(&sec, 0x7f);
-    mb_uleb(&sec, 1); mb_u8(&sec, 0x7f);
-    mb_sec(&mod, 1, &sec);
-
-    sec.n = 0;                                  /* import: the chain table */
-    mb_uleb(&sec, 1);
-    mb_u8(&sec, 1); mb_u8(&sec, 'e');
-    mb_u8(&sec, 1); mb_u8(&sec, 't');
-    mb_u8(&sec, 0x01);
-    mb_u8(&sec, 0x70);
-    mb_u8(&sec, 0x00);
-    mb_uleb(&sec, 1);
-    mb_sec(&mod, 2, &sec);
-
-    sec.n = 0;
-    mb_uleb(&sec, 1); mb_uleb(&sec, 1);         /* one function, type 1 */
-    mb_sec(&mod, 3, &sec);
-
-    sec.n = 0;
-    mb_uleb(&sec, 1);
-    mb_u8(&sec, 1); mb_u8(&sec, 'd');
-    mb_u8(&sec, 0x00); mb_uleb(&sec, 0);
-    mb_sec(&mod, 7, &sec);
-
-    {
-        struct w64_mb body = { 0 };
-
-        mb_uleb(&body, 1); mb_uleb(&body, 1); mb_u8(&body, 0x7f); /* $res */
-        mb_u8(&body, 0x03); mb_u8(&body, 0x40);           /* loop void */
-        mb_u8(&body, 0x20); mb_uleb(&body, 0);
-        mb_u8(&body, 0x20); mb_uleb(&body, 1);
-        mb_u8(&body, 0x20); mb_uleb(&body, 2);
-        mb_u8(&body, 0x20); mb_uleb(&body, 3);
-        mb_u8(&body, 0x11); mb_uleb(&body, 0); mb_uleb(&body, 0);
-        mb_u8(&body, 0x22); mb_uleb(&body, 4);            /* local.tee $res */
-        mb_u8(&body, 0x41); mb_sleb32(&body, (int32_t)W64_EXIT_CHAIN);
-        mb_u8(&body, 0x4f);                               /* i32.ge_u */
-        mb_u8(&body, 0x04); mb_u8(&body, 0x40);           /* if void */
-        mb_u8(&body, 0x20); mb_uleb(&body, 4);
-        mb_u8(&body, 0x41); mb_sleb32(&body, (int32_t)~W64_EXIT_CHAIN);
-        mb_u8(&body, 0x71);                               /* i32.and */
-        mb_u8(&body, 0x21); mb_uleb(&body, 3);            /* local.set $tidx */
-        mb_u8(&body, 0x0c); mb_uleb(&body, 1);            /* br -> loop */
-        mb_u8(&body, 0x0b);                               /* end if */
-        mb_u8(&body, 0x0b);                               /* end loop */
-        mb_u8(&body, 0x20); mb_uleb(&body, 4);
-        mb_u8(&body, 0x0b);                               /* end function */
-
-        sec.n = 0;
-        mb_uleb(&sec, 1);
-        mb_uleb(&sec, body.n);
-        mb_put(&sec, body.b, body.n);
-        mb_sec(&mod, 10, &sec);
-        g_free(body.b);
-    }
-
-    fidx = w64_driver_make((uintptr_t)mod.b, mod.n);
-    g_free(mod.b);
-    g_free(sec.b);
-    return fidx;
-}
-
 EM_JS(void, w64_remove, (int fidx), {
     removeFunction(fidx);
 });
@@ -1044,54 +704,17 @@ EM_JS(void, w64_tab_clear, (void), {
  * union import table (u32 C function pointers).  The instance's
  * active element segments register every member into TAB at its tidx
  * (replacing the temp-module entries) before addFunction returns. */
-/*
- * The Firefox module-GC pressure in the EM_JS body: 32 MB of garbage every
- * 256 instantiations, which at the EL71 boot's ~1360 modules/s is
- * ~170 MB/s manufactured on purpose.  Firefox needs it - module code is
- * not GC pressure there and the worker never yields, so dropped modules
- * pile up against the ~16k executable-memory budget (0019, 0053).
- * Chromium does not, and pays 0.16 s per 25 s of EL71 boot for it, so the
- * default (-1) is to decide in JS from the user agent.  W64_GCNUDGE=0/1
- * forces it, which is how the two legs of the A/B run in one binary.
- */
-/* W64_MODBENCH=<n>: on the nth module close, time 200 back-to-back
- * compiles of that module's own bytes (see the EM_JS body). */
-static int w64_modbench(void)
-{
-    static int v = -1;
-    if (v < 0) {
-        const char *e = getenv("W64_MODBENCH");
-        v = e ? atoi(e) : 0;
-    }
-    return v;
-}
-
-static int w64_gc_nudge(void)
-{
-    static int v = -2;
-    if (v == -2) {
-        const char *e = getenv("W64_GCNUDGE");
-        v = e ? atoi(e) : -1;
-    }
-    return v;
-}
-
 EM_JS(int, w64_batch_instantiate,
       (uintptr_t modp, uint32_t modlen, uintptr_t ipp, uint32_t nimp,
-       uint32_t maxtidx, uintptr_t nsp, int nudge, int bench), {
-    const __tp = performance.now();
+       uint32_t maxtidx), {
     /*
-     * Views over HEAPU8.buffer, cached until the buffer identity changes
-     * (emscripten replaces HEAPU8 on a memory growth, so that is the only
-     * event that can invalidate them).  Built fresh per call this cost
-     * ~9.8 us a module, 1.4 % of an EL71 boot, for a DataView and a
-     * Float64Array over a 2 GB shared buffer plus a doubled copy of the
-     * module bytes -- HEAPU8.slice() already returns a Uint8Array, and
-     * wrapping it in new Uint8Array() copied it a second time.
+     * A DataView over HEAPU8.buffer, cached until the buffer identity
+     * changes (emscripten replaces HEAPU8 on a memory growth, the only
+     * event that can invalidate it).
      */
     let __v = globalThis.__w64v;
     if (__v === undefined || __v.b !== HEAPU8.buffer) {
-        __v = globalThis.__w64v = { b: HEAPU8.buffer, dv: new DataView(HEAPU8.buffer), ns: {} };
+        __v = globalThis.__w64v = { b: HEAPU8.buffer, dv: new DataView(HEAPU8.buffer) };
     }
     const dv = __v.dv;
     const mod_bytes = HEAPU8.slice(Number(modp), Number(modp) + Number(modlen));
@@ -1103,16 +726,6 @@ EM_JS(int, w64_batch_instantiate,
         TAB.grow(Math.max(4096, maxtidx + 1 - TAB.length));
     }
     const ip = Number(ipp);
-    const __nk = Number(nsp);
-    let __ns = __v.ns[__nk];
-    if (__ns === undefined) {
-        __ns = __v.ns[__nk] = new Float64Array(HEAPU8.buffer, __nk, 8);
-    }
-    let __t0 = performance.now();
-    __ns[6] += (__t0 - __tp) * 1e6;
-    /* 2.1 imports per module, and building this object is 0.7 % of the
-     * time this function costs: a cached namespace was built and measured
-     * against it, see the playbook's REJECTED table */
     const imports = { e: { m: wasmMemory, t: TAB } };
     /* i64- vs i32-indexed table; see w64_instantiate */
     if (globalThis.__w64t64 === undefined) {
@@ -1124,81 +737,36 @@ EM_JS(int, w64_batch_instantiate,
         const fi = dv.getUint32(ip + i * 4, true);
         imports.e['f' + i] = wasmTable.get(T64 ? BigInt(fi) : fi);
     }
-    let __t1 = performance.now(); __ns[0] += (__t1 - __t0) * 1e6;
     let inst;
     try {
-        const __m = new WebAssembly.Module(mod_bytes);
-        let __t2 = performance.now(); __ns[1] += (__t2 - __t1) * 1e6;
-        inst = new WebAssembly.Instance(__m, imports);
-        let __t3 = performance.now(); __ns[2] += (__t3 - __t2) * 1e6;
-        globalThis.__w64t3 = __t3;
+        inst = new WebAssembly.Instance(new WebAssembly.Module(mod_bytes), imports);
     } catch (e) {
         console.log('W64BATCHFAIL nimp=' + nimp + ' len=' + modlen + ': ' + e);
-        /* stash the failing module for post-mortem: the page FS survives
-         * the worker crash, unlike queued console messages (the lockstep
-         * driver salvages logs the same way) */
-        try {
-            globalThis.__w64nf = (globalThis.__w64nf || 0) + 1;
-            FS.writeFile('/w64fail-' + globalThis.__w64nf + '.wasm', mod_bytes);
-            console.log('W64FAILSAVED /w64fail-' + globalThis.__w64nf + '.wasm');
-        } catch (e2) { console.log('W64FAILSAVE-ERR ' + e2); }
         throw e;
     }
-    /* GC nudge: SpiderMonkey does not count a module's executable
-     * memory as GC pressure, so in a worker that never yields, dropped
-     * (evicted) modules pile up until the ~16k-module executable
-     * budget is exhausted (measured: a 6000-module FIFO OOMs at 16.3k
-     * created; ~80 KB of ordinary allocation per module keeps it
-     * collected).  A throwaway 32 MB buffer every 256 instantiations
-     * is that pressure; V8 is indifferent to it. */
+    /*
+     * GC nudge: SpiderMonkey does not count a module's executable memory
+     * as GC pressure, so in a worker that never yields, dropped (evicted)
+     * modules pile up until the ~16k-module executable budget is exhausted.
+     * A throwaway 32 MB buffer every 256 instantiations is that pressure.
+     * V8 does not need it, so only Firefox pays for it.
+     */
     globalThis.__w64ninst = (globalThis.__w64ninst || 0) + 1;
     if (globalThis.__w64gc === undefined) {
-        /* nudge < 0 is "decide here": the pressure is only needed where
-         * module code is not GC pressure, which is SpiderMonkey. */
-        globalThis.__w64gc = nudge < 0
-            ? navigator.userAgent.indexOf('Firefox') >= 0 : nudge > 0;
+        globalThis.__w64gc = navigator.userAgent.indexOf('Firefox') >= 0;
     }
     if (globalThis.__w64gc && (globalThis.__w64ninst & 255) === 0) {
         const junk = new ArrayBuffer(32 << 20);
         new Uint8Array(junk)[0] = 1;
     }
-    let __t3b = globalThis.__w64t3, __t4 = performance.now();
-    const __r = addFunction(inst.exports.run, 'jjjii');
-    __ns[3] += (performance.now() - __t4) * 1e6;
-    __ns[7] += (__t4 - __t3b) * 1e6;
-    if (bench && !globalThis.__w64bd) {
-        /*
-         * The same bytes, in this isolate, back to back.  A close module
-         * costs 83 us here and ~21 us for the same shape in the page, and
-         * nothing about the module explained the gap; this asks whether
-         * the gap is the isolate or the fact that a real compile runs once
-         * every ~700 us with the caches full of guest code.  The same
-         * bytes every time is fine: V8 has no content cache for a
-         * synchronous WebAssembly.Module, only for streaming compiles.
-         */
-        globalThis.__w64bd = 1;
-        const c = mod_bytes.slice();
-        let t = performance.now(), n = 0;
-        try {
-            for (; n < 200; n++) { new WebAssembly.Module(c); }
-        } catch (e) { console.log('W64MODBENCH-THROW ' + n + ' ' + e); }
-        __ns[4] += (performance.now() - t) * 1e6;
-        __ns[5] += n;
-    }
-    return __r;
+    return addFunction(inst.exports.run, 'jjjii');
 });
 
-/* flaky-batch-corruption forensics: stage-time vs close-time source
- * comparison.  Every member checksums its staged body bytes at add
- * time; w64_batch_close re-reads the source (LEB + checksum) before
- * assembling.  A mismatch means the CODE BUFFER was overwritten in
- * place between this member's staging and the batch close — nothing
- * in the batch machinery writes there, so that would be a foreign
- * writer.  On any failure the full evidence set is written to the
- * page FS as /w64bad-<id>.bin (all member sources + records + the
- * assembled module if any) — the console drops multi-line output.
- * All checks are O(bytes) per close (~60KB), amortized over a
- * WebAssembly.Module compile, and free when nothing fails. */
+/* Stage-time vs close-time source check.  Every member checksums its
+ * staged body bytes at add time; w64_batch_close re-reads the source
+ * (LEB + checksum) before assembling, and a batch whose code buffer was
+ * overwritten in place is skipped rather than assembled into wrong code.
+ * O(bytes) per close, amortized over a WebAssembly.Module compile. */
 
 #define W64_FNV0 0x811c9dc5u
 
@@ -1248,63 +816,6 @@ static const char *w64_member_src_bad(const struct w64_member *mb)
     return NULL;
 }
 
-/* append a forensic record to the open /w64bad file, if any */
-static FILE *w64_badf;
-static unsigned w64_badn;
-
-static void w64_bad_open(void)
-{
-    char name[32];
-    if (w64_badf) {
-        return;
-    }
-    snprintf(name, sizeof(name), "/w64bad-%u.bin", ++w64_badn);
-    w64_badf = fopen(name, "wb");
-    fprintf(stderr, "W64BADFILE %s\n", name);
-}
-
-static void w64_bad_member(unsigned m, const char *why)
-{
-    const uint8_t *src = (const uint8_t *)(uintptr_t)B.member[m].tcptr;
-    uint32_t fs = m ? B.member[m - 1].fix_end : 0;
-    unsigned i;
-
-    fprintf(stderr, "W64BADSRC member %u tcptr=%#x len=%u sum=%08x: %s\n",
-            m, B.member[m].tcptr, B.member[m].body_len, B.member[m].sum,
-            why);
-    if (!w64_badf) {
-        return;
-    }
-    /* records + full source region: descriptor, prelude, body and the
-     * following 64 bytes of slack (import table + next TB head) */
-    fprintf(w64_badf, "M %u tcptr=%#x body_len=%u fix_end=%u sum=%08x"
-            " why=%s fixes=%u\n",
-            m, B.member[m].tcptr, B.member[m].body_len,
-            B.member[m].fix_end, B.member[m].sum, why,
-            B.member[m].fix_end - fs);
-    for (i = fs; i < B.member[m].fix_end; i++) {
-        fprintf(w64_badf, "F pos=%u uimp=%u\n", B.fix[i].pos, B.fix[i].uimp);
-    }
-    fwrite(src, 1, W64_BODY_OFF + B.member[m].body_len + 64, w64_badf);
-    fprintf(w64_badf, "\nEOM %u\n", m);
-}
-
-static void w64_bad_close(void)
-{
-    if (w64_badf) {
-        unsigned i;
-        fprintf(w64_badf, "B id=%u members=%u utypes=%u uimps=%u"
-                " next_tidx=%u\n",
-                B.id, B.n_member, B.n_utypes, B.n_uimp, w64_next_tidx);
-        for (i = 0; i < B.n_uimp; i++) {
-            fprintf(w64_badf, "I fptr=%u type=%u\n",
-                    B.uimp[i].fptr, B.uimp[i].type);
-        }
-        fclose(w64_badf);
-        w64_badf = NULL;
-    }
-}
-
 /* the open batch, viewed as a source (B's arrays are inline) */
 static struct w64_bsrc B_src;
 
@@ -1319,67 +830,6 @@ static void w64_bsrc_of_open(void)
     B_src.n_member = B.n_member;
     B_src.n_fix = B.n_fix;
     B_src.id = B.id;
-}
-
-/*
- * W64_MERGE=1: assemble a batch's member bodies into ONE wasm function —
- * a br_table cascade over a module-local selector global — with a small
- * entry stub per member registered in the chain table in its place.
- *
- * V8 charges its tier-up budget per *function* and drains it per *call*
- * (~1–2.4e4 calls, independent of size), so a module's ~277 one-TB
- * functions each need their own 1e4 calls while one merged function
- * needs 1e4 in total: it reaches the optimizing tier ~277x sooner in
- * TB-entry terms.  The baseline tier is worth 3–6 % on a running game
- * (--no-liftoff, round thirty-one), and a browser flag is not a shipping
- * lever.  See performance-handoff.md, "The module-local dispatch loop".
- *
- * The merged function keeps type 0, the TB signature, rather than taking
- * the selector as a fourth parameter: locals are indexed after
- * parameters, so a fourth parameter would shift every local index in
- * every body and the bodies could no longer be copied verbatim.
- *
- * W64_MERGE=2 is the control: it adds the entry stub to every member
- * WITHOUT merging anything, so the table still reaches a per-TB function
- * by way of one extra tail call.  Merging buys tier-up amortisation and
- * pays for a hop; measured alone, W64_MERGE=1 reports only their sum.
- * Mode 2 prices the hop in the real system, and the difference is the
- * tier-up half — the number the --no-liftoff ceiling cannot give.
- */
-static int w64_merge_mode(void)
-{
-    static int on = -1;
-    if (on < 0) {
-        const char *e = getenv("W64_MERGE");
-        on = e ? atoi(e) : 0;
-    }
-    return on;
-}
-
-/* Byte length of a staged body's locals declaration, which follows the
- * five-byte padded size LEB.  The emitter writes four runs in nine fixed
- * bytes, but this parses the declaration rather than assuming it. */
-static uint32_t w64_locals_len(const uint8_t *body)
-{
-    const uint8_t *p = body + 5;
-    uint64_t runs = 0;
-    unsigned shift = 0;
-
-    for (;;) {
-        uint8_t b = *p++;
-        runs |= (uint64_t)(b & 0x7f) << shift;
-        if (!(b & 0x80)) {
-            break;
-        }
-        shift += 7;
-    }
-    while (runs--) {
-        while (*p++ & 0x80) {
-            continue;                   /* count LEB */
-        }
-        p++;                            /* value type */
-    }
-    return (uint32_t)(p - (body + 5));
 }
 
 /* Assemble the batch module from @src (staged bodies re-read from the
@@ -1397,7 +847,7 @@ static uint32_t w64_assemble_instantiate(const struct w64_bsrc *src,
         0x13, 0, 0,            /* return_call_indirect type 0, table 0 */
         0x0b,                                     /* end */
     };
-    struct w64_mb mod = { 0 }, sec = { 0 }, mg = { 0 };
+    struct w64_mb mod = { 0 }, sec = { 0 };
     uint8_t name[8];
     uint32_t maxtidx = 0;
     uint32_t *ip;
@@ -1405,97 +855,8 @@ static uint32_t w64_assemble_instantiate(const struct w64_bsrc *src,
     unsigned m, i;
     size_t code_sec = 0;
     uint64_t code_total = 0;
-    /*
-     * Defined-function layout.  Plain: members, then the thunk.  Merged
-     * (mode 1): the merged body, then one entry stub per member, then
-     * the thunk.  Stub-only (mode 2): the members unchanged, then the
-     * stubs, then the thunk — same extra hop, nothing merged, which is
-     * what separates the hop's cost from merging's gain.
-     */
-    int mmode = 0;
-    bool merge = false;                 /* mmode != 0 and preconditions met */
-    unsigned nfn, stub_base, stub_dst0;
-    uint32_t loc_len = 0;
-    uint32_t stub_len = 0;
-
+    unsigned nfn = src->n_member + 1;   /* members, then the thunk */
     mb_put(&mod, magic, sizeof(magic));
-
-    /*
-     * Merging needs every member to declare the same locals, because the
-     * merged function declares them once and a member whose declaration
-     * differed would resolve its local indices to the wrong slots.  They
-     * are byte-identical by construction; when one differs the batch is
-     * assembled unmerged rather than wrongly.
-     */
-    mmode = w64_merge_mode();
-    if (mmode && src->n_member >= 2) {
-        const uint8_t *b0 =
-            (const uint8_t *)(uintptr_t)src->member[0].tcptr + W64_BODY_OFF;
-
-        loc_len = w64_locals_len(b0);
-        merge = true;
-        for (m = 1; m < src->n_member; m++) {
-            const uint8_t *bm =
-                (const uint8_t *)(uintptr_t)src->member[m].tcptr + W64_BODY_OFF;
-            if (w64_locals_len(bm) != loc_len ||
-                memcmp(bm + 5, b0 + 5, loc_len) != 0) {
-                merge = false;
-                break;
-            }
-        }
-        /*
-         * Two more invariants the merge rests on, checked here so the
-         * build loop cannot half-write a wrong module: every body ends
-         * in the function `end` that becomes a `return`, and every call
-         * fixup lands inside the expr that gets copied.  Both hold by
-         * construction today; a batch that breaks one is assembled
-         * unmerged instead of silently mis-linked.
-         */
-        for (m = 0; m < src->n_member && merge; m++) {
-            const uint8_t *bm =
-                (const uint8_t *)(uintptr_t)src->member[m].tcptr + W64_BODY_OFF;
-            uint32_t bl = src->member[m].body_len;
-            uint32_t fs = m ? src->member[m - 1].fix_end : 0;
-            uint32_t skip = 5 + loc_len;
-
-            if (bl < skip + 2 || bm[bl - 1] != 0x0b) {
-                merge = false;
-                break;
-            }
-            for (i = fs; i < src->member[m].fix_end; i++) {
-                if (src->fix[i].pos < W64_BODY_OFF + skip ||
-                    src->fix[i].pos + 2 > W64_BODY_OFF + bl - 1) {
-                    merge = false;
-                    break;
-                }
-            }
-        }
-        if (!merge) {
-            wasm_diag_stat[WASM_DIAG_MERGE_SKIP]++;
-        }
-    }
-
-    /*
-     * Mode 2 needs none of those preconditions -- it merges nothing --
-     * but it is applied the same gate on purpose: the two modes must
-     * take the alternate path on exactly the same batches, or their
-     * difference is a difference in which batches were affected rather
-     * than in the mechanism.
-     */
-    if (!merge) {
-        mmode = 0;
-        nfn = src->n_member + 1;
-        stub_base = src->n_uimp;        /* no stubs: the table reaches member m */
-        stub_dst0 = 0;
-    } else if (mmode == 1) {
-        nfn = src->n_member + 2;
-        stub_base = src->n_uimp + 1;
-        stub_dst0 = src->n_uimp;        /* every stub targets the merged body */
-    } else {
-        nfn = 2 * src->n_member + 1;
-        stub_base = src->n_uimp + src->n_member;
-        stub_dst0 = src->n_uimp;        /* stub m targets member m */
-    }
 
     /* type section: union types + the thunk signature */
     mb_uleb(&sec, src->n_utypes + 1);
@@ -1549,9 +910,7 @@ static uint32_t w64_assemble_instantiate(const struct w64_bsrc *src,
     }
     mb_sec(&mod, 2, &sec);
 
-    /* function section: every defined function but the thunk has type 0 —
-     * member bodies, the merged body and the entry stubs all wear the TB
-     * signature, which is what lets a stub tail-call any of them */
+    /* function section: every member has type 0, the TB signature */
     sec.n = 0;
     mb_uleb(&sec, nfn);
     for (i = 0; i + 1 < nfn; i++) {
@@ -1559,20 +918,6 @@ static uint32_t w64_assemble_instantiate(const struct w64_bsrc *src,
     }
     mb_uleb(&sec, src->n_utypes);            /* the thunk's type index */
     mb_sec(&mod, 3, &sec);
-
-    /* global section: the merged cascade's selector.  Nothing else in a
-     * batch module has ever declared a global, so this is index 0 and no
-     * emitted body's indices move.  Mode 2 emits it too and its stubs
-     * still write it, so the hop it prices is the same hop. */
-    if (merge) {
-        sec.n = 0;
-        mb_uleb(&sec, 1);
-        mb_u8(&sec, 0x7f);                   /* i32 */
-        mb_u8(&sec, 0x01);                   /* mutable */
-        mb_u8(&sec, 0x41); mb_sleb32(&sec, 0);
-        mb_u8(&sec, 0x0b);
-        mb_sec(&mod, 6, &sec);
-    }
 
     /* export section: "run" -> the thunk, which is always the last
      * defined function (indices count only the helper imports) */
@@ -1583,9 +928,7 @@ static uint32_t w64_assemble_instantiate(const struct w64_bsrc *src,
     mb_uleb(&sec, src->n_uimp + nfn - 1);
     mb_sec(&mod, 7, &sec);
 
-    /* element section: one active segment per member —
-     * TAB[tidx] = the function that answers for member m, which is the
-     * member itself when nothing is merged and its entry stub otherwise */
+    /* element section: one active segment per member, TAB[tidx] = m */
     sec.n = 0;
     mb_uleb(&sec, src->n_member);
     for (m = 0; m < src->n_member; m++) {
@@ -1597,112 +940,18 @@ static uint32_t w64_assemble_instantiate(const struct w64_bsrc *src,
         mb_sleb32(&sec, (int32_t)tidx);
         mb_u8(&sec, 0x0b);                /* end */
         mb_uleb(&sec, 1);
-        mb_uleb(&sec, stub_base + m);
+        mb_uleb(&sec, src->n_uimp + m);
     }
     mb_sec(&mod, 9, &sec);
 
     /* code section: staged bodies (rewritten to union import indices)
      * + the thunk; the total size is a padded 5-byte LEB so it never
      * shifts when the body sum crosses a LEB width boundary */
-    if (mmode == 1) {
-        /*
-         * One function holding every member's expr, selected by a
-         * br_table over the selector global:
-         *
-         *     block ... block          (n_member of them)
-         *       global.get $sel
-         *       br_table 0 1 .. n-1, default
-         *     end   <- innermost; br 0 lands here
-         *     <member 0 expr> return
-         *     end
-         *     <member 1 expr> return
-         *     ...
-         *
-         * A body's own branches all target blocks inside itself
-         * (w64_br_to_label computes depth as n_blk-1-i, i >= 0, so none
-         * can reach function level), which is what makes the enclosing
-         * blocks safe to add and the bytes safe to copy verbatim.  Only
-         * the trailing `end` is rewritten, to `return`, so control
-         * cannot fall out of one arm into the next.
-         */
-        struct w64_mb mc = { 0 };
-        const uint8_t *b0 =
-            (const uint8_t *)(uintptr_t)src->member[0].tcptr + W64_BODY_OFF;
-        uint32_t skip = 5 + loc_len;
-
-        mb_put(&mc, b0 + 5, loc_len);
-        for (m = 0; m < src->n_member; m++) {
-            mb_u8(&mc, 0x02); mb_u8(&mc, 0x40);
-        }
-        mb_u8(&mc, 0x23); mb_uleb(&mc, 0);
-        mb_u8(&mc, 0x0e); mb_uleb(&mc, src->n_member);
-        for (m = 0; m < src->n_member; m++) {
-            mb_uleb(&mc, m);
-        }
-        mb_uleb(&mc, src->n_member - 1);     /* default: our stubs are in range */
-
-        for (m = 0; m < src->n_member; m++) {
-            const uint8_t *body =
-                (const uint8_t *)(uintptr_t)src->member[m].tcptr;
-            uint32_t fs = m ? src->member[m - 1].fix_end : 0;
-            size_t off;
-
-            mb_u8(&mc, 0x0b);
-            off = mc.n;
-            mb_put(&mc, body + W64_BODY_OFF + skip,
-                   src->member[m].body_len - skip - 1);
-            mb_u8(&mc, 0x0f);
-            for (i = fs; i < src->member[m].fix_end; i++) {
-                uint8_t *p = mc.b + off +
-                             (src->fix[i].pos - W64_BODY_OFF - skip);
-                p[0] = (uint8_t)((src->fix[i].uimp & 0x7f) | 0x80);
-                p[1] = (uint8_t)(src->fix[i].uimp >> 7);
-            }
-        }
-        mb_u8(&mc, 0x41); mb_sleb32(&mc, 0);
-        mb_u8(&mc, 0x0b);
-
-        mb_uleb(&mg, mc.n);
-        mb_put(&mg, mc.b, mc.n);
-        g_free(mc.b);
-    }
-
-    /* entry stubs: the chain table still holds one funcref per TB, so a
-     * caller that knows only a tidx keeps working.  The stub is what
-     * turns that tidx back into a cascade index -- and in mode 2, where
-     * there is no cascade, it does the same work and lands on the member
-     * itself, so what mode 2 measures is the stub and nothing else. */
-    if (mmode) {
-        struct w64_mb st = { 0 };
-
-        for (m = 0; m < src->n_member; m++) {
-            st.n = 0;
-            mb_u8(&st, 0x00);                        /* no locals */
-            mb_u8(&st, 0x41); mb_sleb32(&st, (int32_t)m);
-            mb_u8(&st, 0x24); mb_uleb(&st, 0);       /* global.set $sel */
-            mb_u8(&st, 0x20); mb_uleb(&st, 0);
-            mb_u8(&st, 0x20); mb_uleb(&st, 1);
-            mb_u8(&st, 0x20); mb_uleb(&st, 2);
-            mb_u8(&st, 0x12);                        /* return_call */
-            mb_uleb(&st, stub_dst0 + (mmode == 1 ? 0 : m));
-            mb_u8(&st, 0x0b);
-            mb_uleb(&mg, st.n);
-            mb_put(&mg, st.b, st.n);
-        }
-        stub_len = st.n;
-        g_free(st.b);
-
-        wasm_diag_stat[WASM_DIAG_MERGE_MOD]++;
-        wasm_diag_stat[WASM_DIAG_MERGE_MEMB] += src->n_member;
-    }
-
     {
-        uint64_t total = (nfn < 128 ? 1 : 2) + sizeof(thunk_body) + mg.n;
+        uint64_t total = (nfn < 128 ? 1 : 2) + sizeof(thunk_body);
 
-        if (mmode != 1) {
-            for (m = 0; m < src->n_member; m++) {
-                total += src->member[m].body_len;
-            }
+        for (m = 0; m < src->n_member; m++) {
+            total += src->member[m].body_len;
         }
         code_total = total;
         code_sec = mod.n;
@@ -1710,23 +959,18 @@ static uint32_t w64_assemble_instantiate(const struct w64_bsrc *src,
         mb_uleb_p5(&mod, (uint32_t)total);
         mb_uleb(&mod, nfn);
 
-        if (mmode != 1) {
-            for (m = 0; m < src->n_member; m++) {
-                const uint8_t *body =
-                    (const uint8_t *)(uintptr_t)src->member[m].tcptr;
-                uint32_t fs = m ? src->member[m - 1].fix_end : 0;
-                size_t off = mod.n;
+        for (m = 0; m < src->n_member; m++) {
+            const uint8_t *body =
+                (const uint8_t *)(uintptr_t)src->member[m].tcptr;
+            uint32_t fs = m ? src->member[m - 1].fix_end : 0;
+            size_t off = mod.n;
 
-                mb_put(&mod, body + W64_BODY_OFF, src->member[m].body_len);
-                for (i = fs; i < src->member[m].fix_end; i++) {
-                    uint8_t *p = mod.b + off + (src->fix[i].pos - W64_BODY_OFF);
-                    p[0] = (uint8_t)((src->fix[i].uimp & 0x7f) | 0x80);
-                    p[1] = (uint8_t)(src->fix[i].uimp >> 7);
-                }
+            mb_put(&mod, body + W64_BODY_OFF, src->member[m].body_len);
+            for (i = fs; i < src->member[m].fix_end; i++) {
+                uint8_t *p = mod.b + off + (src->fix[i].pos - W64_BODY_OFF);
+                p[0] = (uint8_t)((src->fix[i].uimp & 0x7f) | 0x80);
+                p[1] = (uint8_t)(src->fix[i].uimp >> 7);
             }
-        }
-        if (mg.n) {
-            mb_put(&mod, mg.b, mg.n);
         }
         mb_put(&mod, thunk_body, sizeof(thunk_body));
     }
@@ -1755,10 +999,7 @@ static uint32_t w64_assemble_instantiate(const struct w64_bsrc *src,
                     count, nfn);
             bad = true;
         }
-        for (m = 0; mmode != 1 && m < src->n_member && !bad; m++) {
-            uint32_t fs = m ? src->member[m - 1].fix_end : 0;
-            const uint8_t *srcp =
-                (const uint8_t *)(uintptr_t)src->member[m].tcptr;
+        for (m = 0; m < src->n_member && !bad; m++) {
             v = 0; shift = 0;
             for (;;) {
                 uint8_t b = mod.b[k++];
@@ -1769,66 +1010,10 @@ static uint32_t w64_assemble_instantiate(const struct w64_bsrc *src,
             }
             if (v != src->member[m].body_len - 5) {
                 fprintf(stderr, "W64BATCHBAD member %u: walked size %llu"
-                        " != staged %u (mod+0x%zx)\n",
-                        m, (unsigned long long)v,
-                        src->member[m].body_len - 5, k);
-                fprintf(stderr, "  staged hdr:");
-                for (i = 0; i < 12; i++) {
-                    fprintf(stderr, " %02x", srcp[W64_BODY_OFF + i]);
-                }
-                fprintf(stderr, "\n  body_len=%u fixes=%u\n",
-                        src->member[m].body_len,
-                        src->member[m].fix_end - fs);
-                /* source-vs-copy comparison around the desync, plus the
-                 * previous member's tail: pins whether the bytes were
-                 * already garbage in the code buffer or got mangled in
-                 * the assembled module */
-                {
-                    size_t mo = k - 4;   /* a few bytes back */
-                    fprintf(stderr, "  mod  @0x%zx:", mo);
-                    for (i = 0; i < 16; i++) {
-                        fprintf(stderr, " %02x", mod.b[mo + i]);
-                    }
-                    fprintf(stderr, "\n  src  @bodyoff-%u:",
-                            (unsigned)(4));
-                    for (i = 0; i < 16; i++) {
-                        fprintf(stderr, " %02x", srcp[W64_BODY_OFF - 4 + i]);
-                    }
-                    if (m > 0) {
-                        const uint8_t *pv =
-                            (const uint8_t *)(uintptr_t)src->member[m - 1].tcptr;
-                        uint32_t pl = src->member[m - 1].body_len;
-                        fprintf(stderr, "\n  prev tail (len %u):", pl);
-                        for (i = 0; i < 12; i++) {
-                            fprintf(stderr, " %02x",
-                                    pv[W64_BODY_OFF + pl - 12 + i]);
-                        }
-                    }
-                    fprintf(stderr, "\n");
-                }
+                        " != staged %u\n", m, (unsigned long long)v,
+                        src->member[m].body_len - 5);
                 bad = true;
                 break;
-            }
-            k += v;
-        }
-        /*
-         * The merged body and the entry stubs have no staged body_len to
-         * compare against, so walk their size LEBs the decoder's way and
-         * let the section-total check below be what catches a desync.
-         */
-        for (m = (mmode != 1) ? src->n_member : 0; m + 1 < nfn && !bad; m++) {
-            v = 0; shift = 0;
-            for (;;) {
-                uint8_t b = mod.b[k++];
-                v |= (uint64_t)(b & 0x7f) << shift;
-                if (!(b & 0x80)) {
-                    break;
-                }
-                shift += 7;
-                if (shift > 35) {
-                    bad = true;
-                    break;
-                }
             }
             k += v;
         }
@@ -1867,22 +1052,8 @@ static uint32_t w64_assemble_instantiate(const struct w64_bsrc *src,
             fprintf(stderr, "W64BATCHSKIP id=%u members=%u bytes=%zu "
                     "(members stay on temp modules)\n",
                     src->id, src->n_member, mod.n);
-            /* full evidence: all member sources + the assembled module
-             * bytes that failed the walk */
-            if (src == &B_src) {
-                w64_bad_open();
-                if (w64_badf) {
-                    fwrite(mod.b, 1, mod.n, w64_badf);
-                    fprintf(w64_badf, "\nEOMOD %zu\n", mod.n);
-                    for (m = 0; m < src->n_member; m++) {
-                        w64_bad_member(m, "assembled walk failed");
-                    }
-                    w64_bad_close();
-                }
-            }
             g_free(mod.b);
             g_free(sec.b);
-            g_free(mg.b);
             return 0;
         }
     }
@@ -1893,82 +1064,13 @@ static uint32_t w64_assemble_instantiate(const struct w64_bsrc *src,
         ip[i] = src->uimp[i].fptr;
     }
 
-    wasm_diag_stat[WASM_DIAG_MOD_BYTES] += mod.n;
-    wasm_diag_stat[WASM_DIAG_MOD_COUNT]++;
-    {
-        int k = wasm_diag_stat[WASM_DIAG_MOD_SRC];
-        wasm_diag_stat[WASM_DIAG_CLOSE_BYTES + (k ? k - 1 : 0)] += mod.n;
-        wasm_diag_stat[WASM_DIAG_CLOSE_N + (k ? k - 1 : 0)]++;
-    }
-    {
-        /*
-         * Timed on this side rather than in the EM_JS body: those
-         * __w64t* globals live in the vCPU worker, and the worker runs
-         * the guest without yielding, so a page-side evaluate() to read
-         * them never gets scheduled.  In wasm_diag_stat it reaches
-         * _wasm_memstat like every other counter.  ~1k modules/s at boot,
-         * so the two clock reads are noise -- but see WASM_DIAG_TIME_PHASES
-         * for the one that is not.
-         */
-        int64_t t0 = get_clock_realtime();
-
-        /* per assemble source, so that the fixed per-module cost and the
-         * per-byte cost can be separated: the two sources differ by 170x
-         * in bytes per module and 177x in count */
-        static double phase_ns[3][8];
-        static unsigned closes;
-        int k = wasm_diag_stat[WASM_DIAG_MOD_SRC];
-
-        closes++;
-
-        k = k ? k - 1 : 0;
-        thunk = w64_batch_instantiate((uintptr_t)mod.b, mod.n, (uintptr_t)ip,
-                                      src->n_uimp, maxtidx,
-                                      (uintptr_t)phase_ns[k],
-                                      w64_gc_nudge(),
-                                      w64_modbench() && closes == w64_modbench());
-        wasm_diag_stat[WASM_DIAG_MOD_NS] += get_clock_realtime() - t0;
-        wasm_diag_stat[WASM_DIAG_MOD_RESOLVE_NS] =
-            (uint64_t)(phase_ns[0][0] + phase_ns[1][0] + phase_ns[2][0]);
-        wasm_diag_stat[WASM_DIAG_MOD_COMPILE_NS] =
-            (uint64_t)(phase_ns[0][1] + phase_ns[1][1] + phase_ns[2][1]);
-        wasm_diag_stat[WASM_DIAG_MOD_INST_NS] =
-            (uint64_t)(phase_ns[0][2] + phase_ns[1][2] + phase_ns[2][2]);
-        wasm_diag_stat[WASM_DIAG_MOD_ADDFN_NS] =
-            (uint64_t)(phase_ns[0][3] + phase_ns[1][3] + phase_ns[2][3]);
-        wasm_diag_stat[WASM_DIAG_MOD_CLOSE_CNS] = (uint64_t)phase_ns[0][1];
-        wasm_diag_stat[WASM_DIAG_MOD_COMPACT_CNS] = (uint64_t)phase_ns[1][1];
-        wasm_diag_stat[WASM_DIAG_MOD_UIMP] += src->n_uimp;
-        wasm_diag_stat[WASM_DIAG_MODBENCH_NS] = (uint64_t)phase_ns[0][4];
-        wasm_diag_stat[WASM_DIAG_MODBENCH_N] = (uint64_t)phase_ns[0][5];
-        wasm_diag_stat[WASM_DIAG_MOD_PRE_NS] =
-            (uint64_t)(phase_ns[0][6] + phase_ns[1][6] + phase_ns[2][6]);
-        wasm_diag_stat[WASM_DIAG_MOD_POST_NS] =
-            (uint64_t)(phase_ns[0][7] + phase_ns[1][7] + phase_ns[2][7]);
-    }
+    thunk = w64_batch_instantiate((uintptr_t)mod.b, mod.n, (uintptr_t)ip,
+                                  src->n_uimp, maxtidx);
     tcg_debug_assert(thunk != 0);
     g_free(mod.b);
     g_free(sec.b);
-    g_free(mg.b);
     g_free(ip);
     *pmaxtidx = maxtidx;
-
-    {   /* batch diagnostics (W64_DEBUG=1) */
-        static int debug = -1;
-        if (debug < 0) {
-            debug = getenv("W64_DEBUG") != NULL;
-        }
-        if (debug) {
-            static uint32_t n_closed;
-            fprintf(stderr, "W64BATCH close#%u id=%u members=%u utypes=%u "
-                    "uimps=%u bytes=%zu fixes=%u maxtidx=%u live=%u "
-                    "merged=%d fns=%u locals=%u stub=%u\n",
-                    ++n_closed, src->id, src->n_member, src->n_utypes,
-                    src->n_uimp, mod.n, src->n_fix, maxtidx, w64_live_n,
-                    mmode, nfn, loc_len, stub_len);
-        }
-    }
-
     return thunk;
 }
 
@@ -2053,17 +1155,6 @@ static void w64_live_unlink(struct w64_landed *l)
     l->next = NULL;
 }
 
-static unsigned w64_compact_live(void)
-{
-    static int v = -1;
-    if (v < 0) {
-        const char *e = getenv("W64_COMPACT_LIVE");
-        v = e ? atoi(e) : (int)(w64_live_max() * 3 / 4);
-        v = MAX(v, 0);
-    }
-    return v;
-}
-
 static void w64_compact(unsigned max_members);
 
 static void w64_live_push(struct w64_landed *l)
@@ -2079,13 +1170,13 @@ static void w64_live_push(struct w64_landed *l)
     if (l->small) {
         w64_small_n++;
         w64_small_members += l->src.n_member;
-        if (w64_live_n >= w64_compact_live() &&
-            (w64_small_n >= w64_compact_batches() ||
-             w64_small_members >= w64_compact_members())) {
-            w64_compact(w64_compact_members());
+        if (w64_live_n >= W64_COMPACT_LIVE &&
+            (w64_small_n >= W64_COMPACT_BATCHES ||
+             w64_small_members >= W64_COMPACT_MEMBERS)) {
+            w64_compact(W64_COMPACT_MEMBERS);
         }
     }
-    while (w64_live_n > w64_live_max()) {
+    while (w64_live_n > W64_LIVE_MAX) {
         w64_batch_evict_oldest();
     }
 }
@@ -2105,7 +1196,6 @@ static void w64_landed_flip(struct w64_landed *l)
 static bool w64_batch_ensure(uint32_t id)
 {
     struct w64_landed *l;
-    static unsigned n_reensure;
 
     if (id == 0 || id >= w64_landed_cap || !(l = w64_landed_by_id[id])) {
         return false;
@@ -2125,16 +1215,9 @@ static bool w64_batch_ensure(uint32_t id)
             return false;
         }
     }
-    wasm_diag_stat[WASM_DIAG_MOD_SRC] = 3;
     l->thunk = w64_assemble_instantiate(&l->src, &l->maxtidx);
-    wasm_diag_stat[WASM_DIAG_MOD_SRC] = 0;
     if (!l->thunk) {
         return false;
-    }
-    n_reensure++;
-    if ((n_reensure & 1023) == 0 && getenv("W64_DEBUG")) {
-        fprintf(stderr, "W64BATCH re-ensure #%u (live=%u landed=%u)\n",
-                n_reensure, w64_live_n, w64_landed_n);
     }
     w64_landed_flip(l);
     w64_live_push(l);
@@ -2214,11 +1297,7 @@ static void w64_compact(unsigned max_members)
     unsigned cap_utypes = 0, cap_uimp = 0, cap_member = 0, cap_fix = 0;
     unsigned i, m;
     uint32_t maxtidx = 0, thunk;
-    static int debug = -1;
 
-    if (debug < 0) {
-        debug = getenv("W64_DEBUG") != NULL;
-    }
     if (cap_smalls == 0) {
         return;
     }
@@ -2307,9 +1386,7 @@ static void w64_compact(unsigned max_members)
     merged->tidx = tidx;
     merged->small = false;
 
-    wasm_diag_stat[WASM_DIAG_MOD_SRC] = 2;
     thunk = w64_assemble_instantiate(&merged->src, &merged->maxtidx);
-    wasm_diag_stat[WASM_DIAG_MOD_SRC] = 0;
     if (!thunk) {
         fprintf(stderr, "W64COMPACT id=%u FAILED (%u batches, %u members)\n",
                 merged->src.id, n_smalls, n_member);
@@ -2353,13 +1430,6 @@ static void w64_compact(unsigned max_members)
 
     w64_landed_register(merged);
     w64_live_push(merged);
-    if (debug) {
-        static unsigned n_compact;
-        fprintf(stderr, "W64COMPACT #%u id=%u batches=%u members=%u uimps=%u "
-                "utypes=%u fixes=%u live=%u landed=%u\n",
-                ++n_compact, merged->src.id, n_smalls, n_member, n_uimp,
-                n_utypes, n_fix, w64_live_n, w64_landed_n);
-    }
 }
 
 static void w64_batch_close(void)
@@ -2379,8 +1449,7 @@ static void w64_batch_close(void)
         for (m = 0; m < B.n_member; m++) {
             const char *why = w64_member_src_bad(&B.member[m]);
             if (why) {
-                w64_bad_open();
-                w64_bad_member(m, why);
+                fprintf(stderr, "W64BADSRC member %u: %s\n", m, why);
                 badsrc = true;
                 break;
             }
@@ -2388,7 +1457,6 @@ static void w64_batch_close(void)
         if (badsrc) {
             fprintf(stderr, "W64BATCHSKIP id=%u members=%u SOURCE-CORRUPT"
                     " (members stay on temp modules)\n", B.id, B.n_member);
-            w64_bad_close();
             B.id = 0;
             B.n_utypes = 0;
             B.n_uimp = 0;
@@ -2399,9 +1467,7 @@ static void w64_batch_close(void)
     }
 
     w64_bsrc_of_open();
-    wasm_diag_stat[WASM_DIAG_MOD_SRC] = 1;
     thunk = w64_assemble_instantiate(&B_src, &maxtidx);
-    wasm_diag_stat[WASM_DIAG_MOD_SRC] = 0;
     if (!thunk) {
         fprintf(stderr, "W64BATCHSKIP id=%u members=%u "
                 "(members stay on temp modules)\n", B.id, B.n_member);
@@ -2439,11 +1505,6 @@ static void w64_batch_close(void)
         desc[W64_DESC_BATCH / 4] = W64_BATCH_TAG | B.id;
         l->tidx[m] = desc[W64_DESC_TIDX / 4];
         w64_irec_drop(l->tidx[m]);
-        if (w64_tbhist) {
-            uint32_t c = w64_tbhist_count(l->tidx[m]);
-            wasm_diag_stat[WASM_DIAG_CLOSE_PRE_ENT] += c;
-            wasm_diag_stat[WASM_DIAG_CLOSE_PRE_TB] += (c != 0);
-        }
     }
 
     w64_landed_register(l);
@@ -2459,12 +1520,10 @@ static void w64_batch_close(void)
 void w64_batch_member(uintptr_t tcptr, uint32_t body_len,
                       const struct w64_cfix *cf, uint32_t ncf)
 {
-    int mode = w64_batch_mode();
-
-    if (!mode || B.id == 0) {
+    if (B.id == 0) {
         return;
     }
-    tcg_debug_assert(B.n_member < W64_BATCH_N_MAX);
+    tcg_debug_assert(B.n_member < W64_BATCH_N);
 
     /* TB-overflow retry in the same code buffer: the failed attempt's
      * finalize already staged a member (with the attempt's longer
@@ -2502,7 +1561,7 @@ void w64_batch_member(uintptr_t tcptr, uint32_t body_len,
 
     /* close on fill, or when a union table is within one TB's worth of
      * new entries (a TB adds at most W64_MAX_* of each) of full */
-    if (B.n_member >= (unsigned)mode ||
+    if (B.n_member >= W64_BATCH_N ||
         B.n_uimp > W64_UMAX_IMPORTS - W64_MAX_IMPORTS - 1 ||
         B.n_utypes > W64_UMAX_TYPES - W64_MAX_TYPES - 1) {
         w64_batch_close();
@@ -2527,7 +1586,7 @@ void w64_batch_member(uintptr_t tcptr, uint32_t body_len,
  * staging already closed the batch the bytes were still intact when the
  * module was assembled, so the landed module is correct; only its
  * re-assembly records go stale, which costs a re-ensure after an
- * eviction (w64_live_max) and cannot affect a batch that stays live.
+ * eviction (W64_LIVE_MAX) and cannot affect a batch that stays live.
  */
 void w64_batch_unstage(uintptr_t tcptr)
 {
@@ -2540,21 +1599,15 @@ void w64_batch_unstage(uintptr_t tcptr)
 }
 
 /* First execution of a TB that is still staged in the open batch:
- * assemble + compile the whole batch now (one module for every
- * pending member — the miss TB plus its speculatively translated
- * successors, see cpu-exec.c w64_speculate) instead of a throwaway
- * per-TB module.  Returns false when the TB is not a pending member
- * (batching off, or the batch was skipped for corruption), in which
- * case the caller falls back to the temp module. */
+ * assemble + compile the whole batch now (one module for every pending
+ * member) instead of a throwaway per-TB module.  Returns false when the
+ * TB is not a pending member (the batch was skipped for corruption), in
+ * which case the caller falls back to the temp module. */
 static bool w64_batch_close_pending(uintptr_t tcptr)
 {
-    static int off = -1;
     unsigned m;
 
-    if (off < 0) {
-        off = getenv("W64_NOCLOSEEXEC") != NULL;   /* A/B: temp modules */
-    }
-    if (B.id == 0 || off) {
+    if (B.id == 0) {
         return false;
     }
     for (m = 0; m < B.n_member; m++) {
@@ -2571,22 +1624,16 @@ static bool w64_batch_close_pending(uintptr_t tcptr)
  * code buffer — descriptors, staged bytes — is freed by the caller). */
 void w64_batch_flush(void)
 {
-    static int debug = -1;
-    unsigned landed;
     unsigned m;
 
     w64_irec_flush();
 
-    if (debug < 0) {
-        debug = getenv("W64_DEBUG") != NULL;
-    }
     {
         struct w64_landed *l;
         for (l = w64_live_head; l; l = l->next) {
             w64_remove((int)l->thunk);
             l->thunk = 0;
         }
-        landed = w64_live_n;
         w64_landed_free_all();
     }
     for (m = 0; m < B.n_member; m++) {
@@ -2595,10 +1642,6 @@ void w64_batch_flush(void)
         if (fidx) {
             w64_remove((int)fidx);
         }
-    }
-    if (debug && (landed || B.n_member)) {
-        fprintf(stderr, "W64BATCH flush: landed=%u open=%u tidx_next=%u\n",
-                landed, B.n_member, w64_next_tidx);
     }
     w64_tab_clear();
     w64_next_tidx = 1;
@@ -2619,16 +1662,12 @@ uintptr_t QEMU_DISABLE_CFI tcg_qemu_tb_exec(CPUArchState *env,
     uintptr_t tb = (uintptr_t)v_tb_ptr;
 
     w64_init();
-    WASM_DIAG_HOT(WASM_DIAG_DISP_CALL);
 
     for (;;) {
         uint32_t *desc = (uint32_t *)tb;
         uint32_t fidx, res;
 
-        WASM_DIAG_HOT(WASM_DIAG_DISP_ITER);
-
-        if (w64_interp_gate &&
-            (w64_interp_gate == 2 || desc[W64_DESC_FIDX / 4] == 0) &&
+        if (desc[W64_DESC_FIDX / 4] == 0 &&
             w64_interp_try(desc[W64_DESC_TIDX / 4],
                            desc[W64_DESC_ICOUNT / 4], (uintptr_t)env,
                            (uintptr_t)(w64_frame + 16),
@@ -2636,7 +1675,7 @@ uintptr_t QEMU_DISABLE_CFI tcg_qemu_tb_exec(CPUArchState *env,
             goto exited;
         }
 
-        /* per-TB accounting (wasm_tb_stats / icount2_advance / lockstep
+        /* per-TB accounting (wasm_guest_insns / icount2_advance / lockstep
          * fold) runs inline in the TB prologue (tcg_out_tb_start) so
          * chained entries are counted identically */
 
@@ -2657,9 +1696,6 @@ uintptr_t QEMU_DISABLE_CFI tcg_qemu_tb_exec(CPUArchState *env,
             } else if (w64_batch_close_pending(tb)) {
                 fidx = desc[W64_DESC_FIDX / 4];
             } else {
-                wasm_diag_stat[WASM_DIAG_MOD_BYTES] +=
-                    desc[W64_DESC_MODLEN / 4];
-                wasm_diag_stat[WASM_DIAG_MOD_COUNT]++;
                 fidx = w64_instantiate(tb);
                 tcg_debug_assert(fidx != 0);
                 desc[W64_DESC_FIDX / 4] = fidx;
@@ -2680,20 +1716,6 @@ uintptr_t QEMU_DISABLE_CFI tcg_qemu_tb_exec(CPUArchState *env,
             res = ((w64_tb_fn *)(uintptr_t)fidx)(
                 (uintptr_t)env, (uintptr_t)(w64_frame + 16),
                 (uintptr_t)&w64_tb_ptr);
-        }
-
-        /*
-         * W64_CHAINLOOP: the TB handed its successor's chain-table index
-         * back instead of tail-calling it.  The driver runs the rest of
-         * the chain from a loop and returns only a real exit code, so the
-         * whole run costs one extra C call per dispatcher iteration (745
-         * per Mi) and nothing per TB.
-         */
-        if (res >= W64_EXIT_CHAIN) {
-            wasm_diag_stat[WASM_DIAG_CHAIN_DRV]++;
-            res = ((w64_run_fn *)(uintptr_t)w64_driver())(
-                (uintptr_t)env, (uintptr_t)(w64_frame + 16),
-                (uintptr_t)&w64_tb_ptr, res & ~W64_EXIT_CHAIN);
         }
 
     exited:

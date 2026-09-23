@@ -37,35 +37,10 @@ typedef struct DisasDelayException {
 } DisasDelayException;
 
 #ifdef CONFIG_TCG_WASM64
-/*
- * Conditional branches whose taken path one TB may defer to its end.  This
- * is only the ceiling the array can hold; w64_ft_max() picks the extent
- * actually used.  A four-point sweep on a J2ME game fits
- * ns/insn = 9.83 + 27.87 * exits/insn to within 1.2 %, so the extent buys
- * time strictly by removing boundaries and the ceiling only has to be high
- * enough to find where that stops paying.
- */
-#define W64_FT_MAX 32
-
-/*
- * W64_XWHY reasons.  w64_xwhy_count maps these to WASM_DIAG_XW_* slots
- * through a table, so the four BL reasons can sit at the end of the
- * counter enum (which is append-only) while reading naturally here.
- */
-enum {
-    W64_WHY_OTHER, W64_WHY_PCST, W64_WHY_BX, W64_WHY_PSR,
-    W64_WHY_RFE, W64_WHY_DEFER, W64_WHY_NOCHAIN, W64_WHY_SVC, W64_WHY_BL,
-    /* why w64_inline_call refused this direct call, at runtime weight */
-    W64_WHY_BL_PAGE, W64_WHY_BL_DEPTH, W64_WHY_BL_COND, W64_WHY_BL_RET,
-    /*
-     * Which rule in w64_inl_pick_page refused the stream a page, for a
-     * call and for an absorbed branch alike.  Only W64_WHY_PG_THIRD is
-     * what another tracked page would collect.
-     */
-    W64_WHY_PG_THIRD, W64_WHY_PG_LIN, W64_WHY_PG_PROBE, W64_WHY_PG_RET,
-    W64_WHY_PG_MORE,
-    W64_WHY_N,
-};
+/* Conditional branches whose taken path one TB may defer to its end. */
+#define W64_FT_MAX 3
+/* How far forward (bytes) an unconditional branch may be absorbed. */
+#define W64_ABSORB_MAX 256
 #endif
 
 typedef struct DisasContext {
@@ -185,8 +160,6 @@ typedef struct DisasContext {
      */
     DisasLabel w64_loop_exit;
     int w64_loop_insns;
-    /* which instruction asked for the next goto_ptr, for W64_XWHY */
-    uint8_t w64_why;
     /*
      * Call inlining (w64_inline_call / w64_inline_return): a direct bl's
      * callee is translated in place and its bx lr becomes a compare of
@@ -200,7 +173,7 @@ typedef struct DisasContext {
      * instruction already recorded its bytes (a call or return moves
      * pc_next away before the generic tracking runs).
      */
-#define W64_INL_DEPTH 8
+#define W64_INL_DEPTH 4
 #define W64_INL_MISS  16
     vaddr w64_inl_ret[W64_INL_DEPTH];
     vaddr w64_inl_entry[W64_INL_DEPTH];
@@ -240,15 +213,6 @@ typedef struct DisasContext {
     CPUARMState *w64_env;
     /* max_insns before the A32 page bound: the cap a re-bound may not pass */
     int w64_max_insns0;
-    /*
-     * The distinct guest pages this TB's streams have asked for, granted or
-     * not, in request order: w64_pgset_slot's index is the tracked-page slot
-     * an N-page TB would have served the request from, which is what prices
-     * each further slot.  Measurement only -- nothing branches on it.
-     */
-#define W64_PGSET 8
-    vaddr w64_pgset[W64_PGSET];
-    uint8_t w64_pgset_n;
 #endif
     bool lse2;
     /*

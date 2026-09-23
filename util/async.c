@@ -487,10 +487,7 @@ void aio_notify(AioContext *ctx)
      * look, find nothing to do and sleep again on the same wake, and the
      * store that follows carries none of its own.
      */
-    {
-        extern void qemu_main_loop_wake(void);
-        qemu_main_loop_wake();
-    }
+    qemu_main_loop_wake();
 #endif
 }
 

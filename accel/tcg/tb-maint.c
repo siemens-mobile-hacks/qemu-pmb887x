@@ -18,9 +18,6 @@
  */
 
 #include "qemu/osdep.h"
-#ifdef __EMSCRIPTEN__
-#include "qemu/wasm-diag.h"
-#endif
 #include "qemu/interval-tree.h"
 #include "qemu/qtree.h"
 #include "exec/cputlb.h"
@@ -1049,9 +1046,6 @@ void tb_flush__exclusive_or_serial(void)
 {
     CPUState *cpu;
 
-#ifdef __EMSCRIPTEN__
-    wasm_diag_stat[WASM_DIAG_TB_FLUSH]++;
-#endif
     trace_tb_flush();
     assert(tcg_enabled());
     /* Note that cpu_in_serial_context checks cpu_in_exclusive_context. */
@@ -1213,8 +1207,6 @@ void tb_unlink_inlined(void)
     for (unsigned i = 0; i < w64_inl_ntbs; i++) {
         tb_jmp_unlink(w64_inl_tbs[i]);
     }
-    wasm_diag_stat[WASM_DIAG_INL_UNLINK] += w64_inl_ntbs;
-    wasm_diag_stat[WASM_DIAG_INL_WALK]++;
 }
 
 /*
@@ -1230,22 +1222,7 @@ static bool w64_inl_cross_stream(TranslationBlock *tb, uintptr_t retaddr,
 {
     int i = w64_tb_insn_index(tb, retaddr);
     int src = -1, dst = -1;
-    static int dbg = -1;
 
-    if (dbg < 0) {
-        dbg = getenv("W64_INLLOG") != NULL;
-    }
-    if (dbg) {
-        fprintf(stderr, "INL smc tb=%08" PRIx64 " i=%d nrec=%u write=%08lx..%08lx"
-                " page0=%08lx page1=%08lx\n", (uint64_t)tb->pc, i,
-                tb->w64_inl_nrec, (unsigned long)start, (unsigned long)last,
-                (unsigned long)tb_page_addr0(tb), (unsigned long)tb_page_addr1(tb));
-        for (unsigned r = 0; r < tb->w64_inl_nrec; r++) {
-            const struct W64InlRec *rec = &tb->w64_inl_rec[r];
-            fprintf(stderr, "  rec%u idx %u..%u page%u lo=%x hi=%x\n", r,
-                    rec->idx0, rec->idx1, rec->page, rec->lo, rec->hi);
-        }
-    }
     if (i < 0) {
         return false;
     }
@@ -1302,9 +1279,6 @@ static void tb_jmp_cache_inval_tb(TranslationBlock *tb)
             }
             /* the inline caches hold no back-reference: retire them all */
             cpu_tb_key_gen_bump(cpu);
-#ifdef __EMSCRIPTEN__
-            wasm_diag_stat[WASM_DIAG_KEY_GEN_INVAL]++;
-#endif
         }
     }
 }
@@ -1556,22 +1530,11 @@ tb_invalidate_phys_page_range__locked(CPUState *cpu,
                 cpu_restore_state_from_tb(cpu, current_tb, retaddr);
             }
 #ifdef CONFIG_TCG_WASM64
-            if (unlikely(tb->w64_inl) && getenv("W64_INLLOG")) {
-                fprintf(stderr, "INL smc hit tb=%p (pc %08" PRIx64 ") ra=%lx"
-                        " cpu=%d cflags=%x write=%08lx..%08lx\n", tb,
-                        (uint64_t)tb->pc, (unsigned long)retaddr, cpu != NULL,
-                        tb_cflags(tb), (unsigned long)start,
-                        (unsigned long)last);
-            }
             if (unlikely(tb->w64_inl) && retaddr && cpu &&
                 (tb_cflags(tb) & CF_COUNT_MASK) != 1) {
                 if (!w64_cur_known) {
                     w64_cur = tcg_tb_lookup(retaddr);
                     w64_cur_known = true;
-                    if (getenv("W64_INLLOG")) {
-                        fprintf(stderr, "INL smc cur=%p (pc %08" PRIx64 ")\n",
-                                w64_cur, w64_cur ? (uint64_t)w64_cur->pc : 0);
-                    }
                 }
                 if (w64_cur == tb &&
                     w64_inl_cross_stream(tb, retaddr, start, last)) {
@@ -1596,7 +1559,6 @@ tb_invalidate_phys_page_range__locked(CPUState *cpu,
          * in a one-instruction TB so that TB is exempt from this check;
          * the code after it is then translated from the patched bytes.
          */
-        wasm_diag_stat[WASM_DIAG_INL_SMC_RESUME]++;
         cpu_restore_state_from_tb(cpu, w64_cur, retaddr);
         current_tb_modified = true;
     }
@@ -1644,26 +1606,6 @@ void tb_invalidate_phys_range(CPUState *cpu, tb_page_addr_t start,
 }
 
 #ifdef CONFIG_TCG_WASM64
-/* W64_NOSMCSCAN=1 restores the unconditional page collection. */
-static bool tb_smc_scan_enabled(void)
-{
-    static int on = -1;
-    if (on < 0) {
-        on = getenv("W64_NOSMCSCAN") == NULL;
-    }
-    return on != 0;
-}
-
-/* W64_NOSMCMASK=1 restores the unconditional TB-list walk inside the scan. */
-static bool tb_smc_mask_enabled(void)
-{
-    static int on = -1;
-    if (on < 0) {
-        on = getenv("W64_NOSMCMASK") == NULL;
-    }
-    return on != 0;
-}
-
 /*
  * Is there anything for the invalidation below to do to [start, last]?
  *
@@ -1676,18 +1618,10 @@ static bool tb_smc_mask_enabled(void)
  * whenever no TB covers the write, and the walk that establishes that
  * costs nothing beyond the one page_collection_lock would do anyway.
  *
- * The walk itself is not cheap, though: it averages 51 TBs, each a
- * dependent load into a randomly placed TranslationBlock, and regressing
- * ms/Mi on the step counter prices it at 8-23 ns a step - 5-14 % of all
- * wall time.  code_mask answers it without touching the list.
- *
- * The mask is only ever grown, in tb_page_add, and cleared when the page
- * empties; it is never narrowed when one TB of several is removed.  That
- * is deliberate.  A stale set bit only costs a walk that upstream would
- * have done anyway, and on this workload a store outruns a TB removal
- * 5500:1, so there is nothing to narrow.  Rebuilding it exactly during the
- * walk - which an earlier version did, PAGE_FOR_EACH_TB visiting the whole
- * list regardless - taxes every step of the case the mask exists to avoid.
+ * The walk itself is not cheap (a dependent load per TB on the page), so
+ * code_mask answers most stores without touching the list.  The mask is
+ * only ever grown, in tb_page_add, and cleared when the page empties; a
+ * stale set bit only costs the walk upstream would have done anyway.
  *
  * An empty page still goes the long way: that is where the protection is
  * lifted, and it happens once.  Hence the first_tb test in front of the
@@ -1703,12 +1637,11 @@ static bool tb_page_covers(PageDesc *p, tb_page_addr_t start,
     TranslationBlock *tb;
     PageForEachNext n;
     bool covers;
-    unsigned lo, hi, steps = 0;
+    unsigned lo, hi;
 
-    if (tb_smc_mask_enabled() && p->first_tb != 0) {
+    if (p->first_tb != 0) {
         tb_page_granules(start, last, &lo, &hi);
         if (!tb_gmask_test(p->code_mask, lo, hi)) {
-            wasm_diag_stat[WASM_DIAG_SMC_MASK]++;
             return false;
         }
     }
@@ -1718,7 +1651,6 @@ static bool tb_page_covers(PageDesc *p, tb_page_addr_t start,
     PAGE_FOR_EACH_TB(start, last, p, tb, n) {
         tb_page_addr_t tb_start, tb_last;
 
-        steps++;
         tb_page_span(tb, n, &tb_start, &tb_last);
         if (!(tb_last < start || tb_start > last)) {
             covers = true;
@@ -1726,7 +1658,6 @@ static bool tb_page_covers(PageDesc *p, tb_page_addr_t start,
         }
     }
     page_unlock(p);
-    wasm_diag_stat[WASM_DIAG_SMC_WALK] += steps;
     return covers;
 }
 #endif /* CONFIG_TCG_WASM64 */
@@ -1747,16 +1678,12 @@ bool tb_invalidate_phys_range_fast(CPUState *cpu, ram_addr_t start,
 
 #ifdef CONFIG_TCG_WASM64
         /*
-         * wasm64 only: the skip is sound because a wasm board always runs
-         * with icount, so mttcg never auto-enables (tcg-all.c) and no
-         * other thread can link a TB into this page between the scan's
-         * page_unlock and the return.  A native mttcg guest has no such
-         * guarantee, and keeping the mechanism off there also makes the
-         * lockstep oracle an independent check of it rather than a
-         * mirror.
+         * wasm64 only: the skip is sound because a pmb887x machine has
+         * one vCPU, so no other thread can link a TB into this page
+         * between the scan's page_unlock and the return.  Keeping it off
+         * natively also makes the lockstep oracle an independent check.
          */
-        if (tb_smc_scan_enabled() && !tb_page_covers(p, start, last)) {
-            wasm_diag_stat[WASM_DIAG_SMC_MISS]++;
+        if (!tb_page_covers(p, start, last)) {
             return false;
         }
 #endif
