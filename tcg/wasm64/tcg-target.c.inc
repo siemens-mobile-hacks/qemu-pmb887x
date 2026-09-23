@@ -964,10 +964,17 @@ static void w64_addr(TCGContext *s, TCGReg base, intptr_t ofs)
         w64_get_addr(s, base);
         return;
     }
+#ifdef W64_MEM32
+    /* narrow first: one wrap of the base serves every access, and the
+     * i32 sum needs none (see w64_tlb_i32) */
+    w64_get_addr(s, base);
+    w64_const_i32(s, (int32_t)ofs);
+    w64_u8(s, 0x6a);                        /* i32.add */
+#else
     w64_get_i64(s, base);
     w64_const_i64(s, ofs);
     w64_u8(s, 0x7c);                        /* i64.add */
-    w64_wrap_addr(s);
+#endif
 }
 
 /* memarg (align, offset) with offset folded into the memarg when it
@@ -1495,10 +1502,7 @@ static void tcg_out_goto_ptr(TCGContext *s, TCGReg a0)
 
     /* store the next TB's code pointer at [sp-8] and return the
      * handoff code; the C dispatcher continues the chain. */
-    w64_local_get(s, W64_P_SP);
-    w64_const_i64(s, -8);
-    w64_u8(s, 0x7c);                        /* i64.add */
-    w64_wrap_addr(s);
+    w64_addr(s, TCG_REG_CALL_STACK, -8);
     w64_local_get(s, W64_L_SCR0);
     w64_u8(s, 0x37);                        /* i64.store */
     w64_memarg(s, 3, 0);
@@ -1723,6 +1727,61 @@ static void w64_tlb_key(TCGContext *s, int al, const struct w64_tlb_ctx *tc)
     w64_u8(s, 0x83);                        /* i64.and */
 }
 
+/*
+ * With a 32-bit memory index and a 32-bit guest the probe runs in i32:
+ * every i64 sum ahead of an address costs V8 a movl to narrow it, three
+ * on the chain of each access.  The low halves are exact -- the mask,
+ * the table pointer and the addend mod 2^32, and a comparator whose
+ * high half is nonzero is -1 (invalid), whose low half has the bits
+ * between the alignment and the page set and so matches no key.  The
+ * key's (addr + adj) may wrap past 2^32 to page 0, but it is compared
+ * against the entry of the last page's index, never page 0's.  QEMU's
+ * x86-64 backend compares 32 bits for a 32-bit guest the same way.
+ */
+static bool w64_tlb_i32(TCGContext *s)
+{
+#ifdef W64_MEM32
+    return s->addr_type == TCG_TYPE_I32;
+#else
+    return false;
+#endif
+}
+
+/* i32 probe: $scr32 = entry, hit condition on the value stack */
+static void w64_tlb_probe32(TCGContext *s, int al,
+                            const struct w64_tlb_ctx *tc)
+{
+    w64_local_get(s, W64_P_ENV);
+    w64_u8(s, 0xa7);                        /* i32.wrap_i64 */
+    w64_const_i32(s, tc->fast_ofs);
+    w64_u8(s, 0x6a);                        /* i32.add */
+    w64_local_tee(s, W64_L_SCR32);
+    w64_u8(s, 0x28);                        /* i32.load */
+    w64_memarg(s, 2, 0);                    /* mask */
+    w64_local_get(s, al);
+    w64_u8(s, 0xa7);                        /* i32.wrap_i64 */
+    w64_const_i32(s, tc->shr);
+    w64_u8(s, 0x76);                        /* i32.shr_u */
+    w64_u8(s, 0x71);                        /* i32.and */
+    w64_local_get(s, W64_L_SCR32);
+    w64_u8(s, 0x28);                        /* i32.load */
+    w64_memarg(s, 2, 8);                    /* table */
+    w64_u8(s, 0x6a);                        /* i32.add */
+    w64_local_tee(s, W64_L_SCR32);
+
+    w64_u8(s, 0x28);                        /* i32.load */
+    w64_memarg(s, 2, tc->cmp_ofs);
+    w64_local_get(s, al);
+    w64_u8(s, 0xa7);                        /* i32.wrap_i64 */
+    if (tc->adj) {
+        w64_const_i32(s, tc->adj);
+        w64_u8(s, 0x6a);                    /* i32.add */
+    }
+    w64_const_i32(s, (int32_t)tc->tlb_mask);
+    w64_u8(s, 0x71);                        /* i32.and */
+    w64_u8(s, 0x46);                        /* i32.eq */
+}
+
 /* Emit the probe: $scr0 = entry, $scr1 = tlb_addr, then the hit
  * condition (i32) on the value stack for the caller's `if`.  @al is
  * the local holding the zero-extended guest address (the $scr2
@@ -1730,6 +1789,11 @@ static void w64_tlb_key(TCGContext *s, int al, const struct w64_tlb_ctx *tc)
  * still mutate when data == addr). */
 static void w64_tlb_probe(TCGContext *s, int al, const struct w64_tlb_ctx *tc)
 {
+    if (w64_tlb_i32(s)) {
+        w64_tlb_probe32(s, al, tc);
+        return;
+    }
+
     /* $scr0 = env + fast_ofs (negative; memarg offsets are unsigned) */
     w64_local_get(s, W64_P_ENV);
     w64_const_i64(s, tc->fast_ofs);
@@ -1764,6 +1828,15 @@ static void w64_tlb_probe(TCGContext *s, int al, const struct w64_tlb_ctx *tc)
 /* push [addr + entry->addend] (i64) for the fast access; @al as above */
 static void w64_tlb_haddr(TCGContext *s, int al)
 {
+    if (w64_tlb_i32(s)) {
+        w64_local_get(s, al);
+        w64_u8(s, 0xa7);                    /* i32.wrap_i64 */
+        w64_local_get(s, W64_L_SCR32);
+        w64_u8(s, 0x28);                    /* i32.load */
+        w64_memarg(s, 2, 24);               /* addend */
+        w64_u8(s, 0x6a);                    /* i32.add */
+        return;
+    }
     w64_local_get(s, al);
     w64_local_get(s, W64_L_SCR0);
     w64_wrap_addr(s);
