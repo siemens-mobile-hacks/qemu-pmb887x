@@ -18,7 +18,7 @@
 #include "hw/arm/pmb887x/gen/cpu_regs.h"
 #include "hw/arm/pmb887x/regs_dump.h"
 #include "hw/arm/pmb887x/mod.h"
-#include "hw/arm/pmb887x/pll.h"
+#include "hw/arm/pmb887x/cgu.h"
 #include "hw/arm/pmb887x/fifo.h"
 #include "hw/arm/pmb887x/trace.h"
 
@@ -115,7 +115,7 @@ static void usart_schedule_accept_input(pmb887x_usart_t *p);
 
 static uint32_t usart_get_baud_rate(pmb887x_usart_t *p) {
 	uint32_t rmc = pmb887x_clc_get_rmc(&p->clc);
-	uint64_t frequency = rmc > 0 ? pmb887x_pll_get_fsys(p->cgu) / rmc : 0;
+	uint64_t frequency = rmc > 0 ? pmb887x_cgu_get_fsys(p->cgu) / rmc : 0;
 	uint64_t reload = (p->bg & 0x1FFF) + 1;
 	uint64_t numerator;
 	uint64_t denominator;

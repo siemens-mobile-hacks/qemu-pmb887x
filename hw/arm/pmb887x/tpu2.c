@@ -18,7 +18,7 @@
 #include "hw/core/qdev-properties.h"
 #include "qapi/error.h"
 
-#include "hw/arm/pmb887x/pll.h"
+#include "hw/arm/pmb887x/cgu.h"
 #include "hw/arm/pmb887x/gen/cpu_regs.h"
 #include "hw/arm/pmb887x/io_bridge.h"
 #include "hw/arm/pmb887x/regs_dump.h"
@@ -106,7 +106,7 @@ static void tpu_update_state(struct pmb887x_tpu_t *p) {
 	uint32_t div = pmb887x_clc_get_rmc(&p->clc);
 
 	// Input freq for module
-	uint32_t ftpu = div > 0 ? pmb887x_pll_get_fsys(p->cgu) / div : 0;
+	uint32_t ftpu = div > 0 ? pmb887x_cgu_get_fsys(p->cgu) / div : 0;
 
 	// Update clock
 	if ((p->pllcon2 & TPU_PLLCON2_INIT) || (p->pllcon2 & TPU_PLLCON2_LOAD)) {
@@ -133,7 +133,7 @@ static void tpu_update_state(struct pmb887x_tpu_t *p) {
 	if (!(p->param & TPU_PARAM_TINI))
 		pmb887x_dyn_timer_reset(p->timer);
 
-	DPRINTF("fsys=%d, ftpu=%d, fcounter=%d [%s]\n", pmb887x_pll_get_fsys(p->cgu), ftpu, freq, p->enabled ? "ON" : "OFF");
+	DPRINTF("fsys=%d, ftpu=%d, fcounter=%d [%s]\n", pmb887x_cgu_get_fsys(p->cgu), ftpu, freq, p->enabled ? "ON" : "OFF");
 	//	pmb887x_dyn_timer_run(p->timer);
 }
 
@@ -145,7 +145,7 @@ static void tpu_vic_callback(void *opaque, int action, int irq) {
 
 static void tpu_update_state_callback(void *opaque) {
 	struct pmb887x_tpu_t *p = (struct pmb887x_tpu_t *) opaque;
-	uint32_t fsys = pmb887x_pll_get_fsys(p->cgu);
+	uint32_t fsys = pmb887x_cgu_get_fsys(p->cgu);
 	if (p->last_fsys != fsys) {
 		tpu_update_state(p);
 		p->last_fsys = fsys;
@@ -454,7 +454,7 @@ static void tpu_realize(DeviceState *dev, Error **errp) {
 	p->timer = pmb887x_dyn_timer_new(2, pmb887x_tpu_timer_callback, p);
 	tpu_update_state(p);
 
-	pmb887x_pll_add_freq_update_callback(p->cgu, tpu_update_state_callback, p);
+	pmb887x_cgu_add_freq_update_callback(p->cgu, tpu_update_state_callback, p);
 }
 
 static void tpu_reset(DeviceState *dev) {

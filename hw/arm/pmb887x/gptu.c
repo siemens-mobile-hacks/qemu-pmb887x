@@ -13,7 +13,7 @@
 #include "qemu/main-loop.h"
 #include "hw/core/qdev-properties.h"
 
-#include "hw/arm/pmb887x/pll.h"
+#include "hw/arm/pmb887x/cgu.h"
 #include "hw/arm/pmb887x/gen/cpu_regs.h"
 #include "hw/arm/pmb887x/regs_dump.h"
 #include "hw/arm/pmb887x/mod.h"
@@ -140,7 +140,7 @@ static void gptu_t01_external_count(pmb887x_gptu_t *p, int cnt_id, uint64_t coun
 static uint32_t gptu_calc_freq(pmb887x_gptu_t *p) {
 	uint8_t rmc = pmb887x_clc_get_rmc(&p->clc);
 
-	return rmc > 0 ? pmb887x_pll_get_fgptu(p->cgu) / rmc : 0;
+	return rmc > 0 ? pmb887x_cgu_get_fgptu(p->cgu) / rmc : 0;
 }
 
 static void gptu_update_freq(pmb887x_gptu_t *p) {
@@ -1247,7 +1247,7 @@ static void gptu_realize(DeviceState *dev, Error **errp) {
 	p->timer_t2 = timer_new_ns(QEMU_CLOCK_VIRTUAL, gptu_t2_ptimer_reset, p);
 
 	gptu_update_freq(p);
-	pmb887x_pll_add_freq_update_callback(p->cgu, gptu_update_state_callback, p);
+	pmb887x_cgu_add_freq_update_callback(p->cgu, gptu_update_state_callback, p);
 	gptu_update_events(p);
 	gptu_rebuild_timers(p);
 	gptu_sync_timer(p);

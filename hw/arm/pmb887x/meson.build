@@ -29,7 +29,7 @@ arm_common_ss.add(when: 'CONFIG_PMB887X', if_true: files(
 	'ebu.c',
 	'dmac.c',
 	'stm.c',
-	'pll.c',
+	'cgu.c',
 	'scu.c',
 	'sccu.c',
 	'gpio.c',

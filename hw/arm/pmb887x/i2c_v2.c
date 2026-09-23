@@ -18,7 +18,7 @@
 #include "hw/arm/pmb887x/gen/cpu_regs.h"
 #include "hw/arm/pmb887x/regs_dump.h"
 #include "hw/arm/pmb887x/mod.h"
-#include "hw/arm/pmb887x/pll.h"
+#include "hw/arm/pmb887x/cgu.h"
 #include "hw/arm/pmb887x/trace.h"
 #include "hw/arm/pmb887x/fifo.h"
 
@@ -245,7 +245,7 @@ static void i2c_timer_reset(void *opaque) {
 
 static uint32_t i2c_get_baud_rate_hz(pmb887x_i2c_t *p) {
 	uint32_t rmc = pmb887x_clc_get_rmc(&p->clc);
-	uint64_t kernel_clock_hz = rmc > 0 ? pmb887x_pll_get_fsys(p->cgu) / rmc : 0;
+	uint64_t kernel_clock_hz = rmc > 0 ? pmb887x_cgu_get_fsys(p->cgu) / rmc : 0;
 	uint64_t dec = (p->fdivcfg & I2Cv2_FDIVCFG_DEC) >> I2Cv2_FDIVCFG_DEC_SHIFT;
 	uint64_t inc = (p->fdivcfg & I2Cv2_FDIVCFG_INC) >> I2Cv2_FDIVCFG_INC_SHIFT;
 

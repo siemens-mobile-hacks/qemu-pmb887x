@@ -19,7 +19,7 @@
 #include "hw/arm/pmb887x/mod.h"
 #include "hw/arm/pmb887x/dsp.h"
 #include "hw/arm/pmb887x/dmac.h"
-#include "hw/arm/pmb887x/pll.h"
+#include "hw/arm/pmb887x/cgu.h"
 #include "hw/arm/pmb887x/sccu.h"
 #include "hw/arm/pmb887x/trace.h"
 
@@ -83,7 +83,7 @@ struct pmb887x_scu_t {
 
 static uint32_t scu_wdt_get_frequency(pmb887x_scu_t *p) {
 	uint32_t divider = (p->wdt_status & SCU_WDT_SR_WDTIS) ? 256 : 16384;
-	return pmb887x_pll_get_fsys(p->cgu) / divider;
+	return pmb887x_cgu_get_fsys(p->cgu) / divider;
 }
 
 static uint16_t scu_wdt_get_counter(pmb887x_scu_t *p) {
@@ -685,7 +685,7 @@ static void scu_realize(DeviceState *dev, Error **errp) {
 		pmb887x_src_init(&p->unk_src[i], p->unk_irq[i]);
 	
 	p->wdt_timer = timer_new_ns(QEMU_CLOCK_VIRTUAL, scu_wdt_timer_reset, p);
-	pmb887x_pll_add_freq_update_callback(p->cgu, scu_wdt_update_frequency, p);
+	pmb887x_cgu_add_freq_update_callback(p->cgu, scu_wdt_update_frequency, p);
 }
 
 static const Property scu_properties[] = {

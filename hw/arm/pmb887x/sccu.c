@@ -15,7 +15,7 @@
 #include "hw/core/qdev-properties.h"
 
 #include "hw/arm/pmb887x/sccu.h"
-#include "hw/arm/pmb887x/pll.h"
+#include "hw/arm/pmb887x/cgu.h"
 #include "hw/arm/pmb887x/gen/cpu_regs.h"
 #include "hw/arm/pmb887x/mod.h"
 #include "hw/arm/pmb887x/trace.h"
@@ -86,9 +86,9 @@ static int64_t sccu_ticks_to_ns(pmb887x_sccu_t *p, uint64_t ticks) {
 
 static void sccu_cal_timer_reset(void *opaque) {
 	pmb887x_sccu_t *p = opaque;
-	uint32_t frtc = pmb887x_pll_get_frtc(p->cgu);
+	uint32_t frtc = pmb887x_cgu_get_frtc(p->cgu);
 	uint32_t rmc = pmb887x_clc_get_rmc(&p->clc);
-	uint32_t sccu_freq = pmb887x_pll_get_fosc(p->cgu) / (rmc ? rmc : 1);
+	uint32_t sccu_freq = pmb887x_cgu_get_fosc(p->cgu) / (rmc ? rmc : 1);
 	uint64_t standby_cycles = (uint64_t) sccu_get_nqtz(p) * 16 * sccu_freq / frtc;
 	uint32_t refout = standby_cycles < 960000 ? 960000 - standby_cycles : 0;
 	uint32_t refpos = 128;
@@ -147,7 +147,7 @@ static void sccu_ptimer_reset(void *opaque) {
 }
 
 static void sccu_start_sleep(pmb887x_sccu_t *p) {
-	p->timer_freq = pmb887x_pll_get_frtc(p->cgu) / sccu_get_nqtz(p);
+	p->timer_freq = pmb887x_cgu_get_frtc(p->cgu) / sccu_get_nqtz(p);
 	p->timer_cnt = 0;
 	p->start = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
 	p->enabled = true;
@@ -166,7 +166,7 @@ uint32_t pmb887x_sccu_clc_get(pmb887x_sccu_t *p) {
 
 void pmb887x_sccu_clc_set(pmb887x_sccu_t *p, uint32_t value) {
 	pmb887x_clc_set(&p->clc, value);
-	p->timer_freq = pmb887x_pll_get_frtc(p->cgu) / sccu_get_nqtz(p);
+	p->timer_freq = pmb887x_cgu_get_frtc(p->cgu) / sccu_get_nqtz(p);
 }
 
 static int sccu_get_reg_index(hwaddr haddr) {
@@ -277,7 +277,7 @@ static void sccu_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned s
 
 			if ((value & SCCU_SLPCTRL_REFEN) && !(status & SCCU_SLPCTRL_REFEN)) {
 				uint32_t rmc = pmb887x_clc_get_rmc(&p->clc);
-				uint32_t sccu_freq = pmb887x_pll_get_fosc(p->cgu) / (rmc ? rmc : 1);
+				uint32_t sccu_freq = pmb887x_cgu_get_fosc(p->cgu) / (rmc ? rmc : 1);
 				int64_t duration = (int64_t) muldiv64(16 * 60000, NANOSECONDS_PER_SECOND, sccu_freq);
 
 				p->slpctrl = (p->slpctrl | SCCU_SLPCTRL_REFEN) & ~SCCU_SLPCTRL_REFERR;
@@ -304,13 +304,13 @@ static void sccu_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned s
 
 		case SCCU_NQTZ:
 			p->nqtz = value & SCCU_NQTZ_NQTZ;
-			p->timer_freq = pmb887x_pll_get_frtc(p->cgu) / sccu_get_nqtz(p);
+			p->timer_freq = pmb887x_cgu_get_frtc(p->cgu) / sccu_get_nqtz(p);
 			break;
 
 		case SCCU_SCCTRL:
 			p->scctrl = value & (SCCU_SCCTRL_UCSLP | SCCU_SCCTRL_UCWUP | SCCU_SCCTRL_SSCRST);
 			if (p->scctrl) {
-				uint32_t frtc = pmb887x_pll_get_frtc(p->cgu);
+				uint32_t frtc = pmb887x_cgu_get_frtc(p->cgu);
 				int64_t duration = (int64_t) muldiv64(3, NANOSECONDS_PER_SECOND, frtc) + 1;
 				timer_mod(p->sc_timer, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + duration);
 			}
@@ -373,7 +373,7 @@ static void sccu_realize(DeviceState *dev, Error **errp) {
 
 	p->nqtz = 0x97;
 	p->wait = 3 << SCCU_WAIT_PREWUP_SHIFT;
-	p->timer_freq = pmb887x_pll_get_frtc(p->cgu) / sccu_get_nqtz(p);
+	p->timer_freq = pmb887x_cgu_get_frtc(p->cgu) / sccu_get_nqtz(p);
 	sccu_set_active_state(p);
 }
 
@@ -405,7 +405,7 @@ static void sccu_reset(DeviceState *dev) {
 	p->sccumsta = 0;
 	p->timer_cnt = 0;
 	p->tdmini = 0;
-	p->timer_freq = pmb887x_pll_get_frtc(p->cgu) / sccu_get_nqtz(p);
+	p->timer_freq = pmb887x_cgu_get_frtc(p->cgu) / sccu_get_nqtz(p);
 
 	sccu_set_active_state(p);
 }

@@ -19,7 +19,7 @@
 #include "hw/arm/pmb887x/gen/cpu_regs.h"
 #include "hw/arm/pmb887x/regs_dump.h"
 #include "hw/arm/pmb887x/mod.h"
-#include "hw/arm/pmb887x/pll.h"
+#include "hw/arm/pmb887x/cgu.h"
 #include "hw/arm/pmb887x/trace.h"
 
 #define TYPE_PMB887X_RTC	"pmb887x-rtc"
@@ -57,7 +57,7 @@ struct pmb887x_rtc_t {
 };
 
 static uint32_t rtc_get_freq(pmb887x_rtc_t *p) {
-	uint32_t frtc = pmb887x_pll_get_frtc(p->cgu);
+	uint32_t frtc = pmb887x_cgu_get_frtc(p->cgu);
 	return (p->con & RTC_CON_PRE) ? frtc / 8 : frtc;
 }
 

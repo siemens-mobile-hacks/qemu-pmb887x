@@ -13,7 +13,7 @@
 #include "qemu/main-loop.h"
 #include "hw/core/qdev-properties.h"
 
-#include "hw/arm/pmb887x/pll.h"
+#include "hw/arm/pmb887x/cgu.h"
 #include "hw/arm/pmb887x/gen/cpu_regs.h"
 #include "hw/arm/pmb887x/regs_dump.h"
 #include "hw/arm/pmb887x/mod.h"
@@ -50,7 +50,7 @@ static int64_t stm_get_time(pmb887x_stm_t *p) {
 
 static void stm_update_state(pmb887x_stm_t *p) {
 	uint32_t div = pmb887x_clc_get_rmc(&p->clc);
-	uint32_t new_freq = div > 0 ? pmb887x_pll_get_fstm(p->cgu) / div : 0;
+	uint32_t new_freq = div > 0 ? pmb887x_cgu_get_fstm(p->cgu) / div : 0;
 	bool new_enabled = new_freq > 0 && pmb887x_clc_is_enabled(&p->clc);
 	
 	if (new_enabled != p->enabled || new_freq != p->freq) {
@@ -64,7 +64,7 @@ static void stm_update_state(pmb887x_stm_t *p) {
 			p->start = 0;
 		}
 		
-		DPRINTF("fstm=%d, fstm / RMC=%d [%s]\n", pmb887x_pll_get_fstm(p->cgu), p->freq, p->enabled ? "ON" : "OFF");
+		DPRINTF("fstm=%d, fstm / RMC=%d [%s]\n", pmb887x_cgu_get_fstm(p->cgu), p->freq, p->enabled ? "ON" : "OFF");
 	}
 }
 
@@ -186,7 +186,7 @@ static void stm_realize(DeviceState *dev, Error **errp) {
 	pmb887x_clc_init(&p->clc);
 	
 	stm_update_state(p);
-	pmb887x_pll_add_freq_update_callback(p->cgu, stm_update_state_callback, p);
+	pmb887x_cgu_add_freq_update_callback(p->cgu, stm_update_state_callback, p);
 }
 
 static const Property stm_properties[] = {

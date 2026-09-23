@@ -12,7 +12,7 @@
 #include "hw/core/qdev-properties.h"
 
 #include "hw/arm/pmb887x/adc.h"
-#include "hw/arm/pmb887x/pll.h"
+#include "hw/arm/pmb887x/cgu.h"
 #include "hw/arm/pmb887x/gen/cpu_regs.h"
 #include "hw/arm/pmb887x/regs_dump.h"
 #include "hw/arm/pmb887x/mod.h"
@@ -207,7 +207,7 @@ static void adc_start_conversion(pmb887x_adc_t *p) {
 
 static void adc_update_state(pmb887x_adc_t *p) {
 	uint32_t div = pmb887x_clc_get_rmc(&p->clc);
-	uint32_t fadc = div > 0 ? pmb887x_pll_get_fsys(p->cgu) / div : 0;
+	uint32_t fadc = div > 0 ? pmb887x_cgu_get_fsys(p->cgu) / div : 0;
 	bool is_enabled = fadc > 0 && pmb887x_clc_is_enabled(&p->clc);
 	
 	if ((p->con1 & ADC_CTRL_ENTRIG)) {
