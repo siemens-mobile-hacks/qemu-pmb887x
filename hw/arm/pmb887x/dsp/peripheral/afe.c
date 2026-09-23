@@ -52,6 +52,9 @@
 #define AFE_OUT_FIFO_BYTES	(AFE_OUT_MAX_FREQ * AFE_OUT_MAX_CHANNELS * sizeof(int16_t))
 /* Quiet time after which the DSP counts as no longer streaming to the host. */
 #define AFE_STREAM_IDLE_MS	200
+/* Bounds of the cushion playback builds before it starts: see afe_audio_t.primed. */
+#define AFE_PREBUFFER_MIN_MS	40
+#define AFE_PREBUFFER_MAX_MS	320
 
 static const uint16_t AFE_POWER_DOWN_SAMPLES[] = {
 	0x85EA, 0x85F3, 0xB12F, 0x8000, 0x9048, 0x8A3B, 0x81C2, 0x8BCF,
@@ -105,6 +108,17 @@ typedef struct afe_audio_t {
 	/* When the producer last handed over a sample, in host milliseconds. */
 	uint32_t last_push_ms;
 
+	/*
+	 * The DSP produces on the guest's clock, which runs unevenly against the
+	 * host's, so playback holds back at the start of a stream until the FIFO
+	 * has prebuffer_ms in it, or has waited that long. Running dry
+	 * mid-stream holds it back again with twice the cushion; going idle
+	 * resets it.
+	 */
+	bool primed;
+	uint32_t prime_start_ms;
+	uint32_t prebuffer_ms;
+
 	/* Rate-limited non-zero-sample diagnostics (worker thread only). */
 	int64_t stats_deadline;
 	uint64_t stats_total;
@@ -156,15 +170,51 @@ static uint64_t afe_audio_bytes_to_format(afe_audio_t *audio) {
 	return g_array_index(audio->formats, afe_audio_format_t, 0).position - audio->popped;
 }
 
+static bool afe_audio_idle(afe_audio_t *audio) {
+	return afe_audio_host_ms() - qatomic_read(&audio->last_push_ms) >= AFE_STREAM_IDLE_MS;
+}
+
+/*
+ * Under the lock, as a callback starts: whether playback may take from the
+ * FIFO. Finding it empty a whole callback period after the last one took from
+ * it means the cushion was not enough.
+ */
+static bool afe_audio_primed(afe_audio_t *audio) {
+	uint32_t now = afe_audio_host_ms();
+	size_t used = fifo8_num_used(&audio->fifo);
+	size_t cushion;
+
+	if (used == 0) {
+		if (afe_audio_idle(audio))
+			audio->prebuffer_ms = AFE_PREBUFFER_MIN_MS;
+		else if (audio->primed)
+			audio->prebuffer_ms = MIN(audio->prebuffer_ms * 2, AFE_PREBUFFER_MAX_MS);
+		audio->primed = false;
+		audio->prime_start_ms = now;
+		return false;
+	}
+	if (!audio->primed) {
+		cushion = (size_t) audio->out_freq * audio->out_channels * sizeof(int16_t) * audio->prebuffer_ms / 1000;
+		audio->primed = used >= cushion || afe_audio_bytes_to_format(audio) <= used ||
+			now - audio->prime_start_ms >= audio->prebuffer_ms;
+	}
+	return audio->primed;
+}
+
 static void afe_audio_out_callback(void *opaque, int free_bytes) {
 	afe_state_t *state = opaque;
 	afe_audio_t *audio = &state->audio;
 	uint8_t chunk[512];
+	bool primed;
+
+	qemu_mutex_lock(&audio->lock);
+	primed = afe_audio_primed(audio);
+	qemu_mutex_unlock(&audio->lock);
 
 	while (free_bytes > 0) {
 		size_t want = MIN((size_t) free_bytes, sizeof(chunk));
 		uint64_t until_format;
-		size_t got;
+		size_t got = 0;
 		size_t written;
 
 		qemu_mutex_lock(&audio->lock);
@@ -174,19 +224,19 @@ static void afe_audio_out_callback(void *opaque, int free_bytes) {
 			qemu_bh_schedule(audio->format_bh);
 			break;
 		}
-		got = MIN(MIN(want, fifo8_num_used(&audio->fifo)), until_format);
-		got = got ? fifo8_pop_buf(&audio->fifo, chunk, got) : 0;
-		audio->popped += got;
+		if (primed) {
+			got = MIN(MIN(want, fifo8_num_used(&audio->fifo)), until_format);
+			got = got ? fifo8_pop_buf(&audio->fifo, chunk, got) : 0;
+			audio->popped += got;
+		}
 		qemu_mutex_unlock(&audio->lock);
 
 		if (got == 0) {
 			/*
-			 * Mid-stream underrun: write nothing. The DSP emits silence of
-			 * its own between sounds, so a gap here is only the emulated core
-			 * failing to synthesise in real time, and padding it over would
-			 * stretch out the stream that does arrive.
+			 * Mid-stream, whether still building the cushion or run dry:
+			 * write nothing, and let the backend play out what it has.
 			 */
-			if (afe_audio_host_ms() - qatomic_read(&audio->last_push_ms) < AFE_STREAM_IDLE_MS)
+			if (!afe_audio_idle(audio))
 				break;
 			/*
 			 * Idle: keep feeding the voice. It shares the host's mixer with
@@ -310,6 +360,7 @@ static void afe_audio_init(afe_state_t *state) {
 
 	audio->out_freq = AFE_OUT_FREQ;
 	audio->out_channels = AFE_OUT_CHANNELS;
+	audio->prebuffer_ms = AFE_PREBUFFER_MIN_MS;
 	audio->formats = g_array_new(false, false, sizeof(afe_audio_format_t));
 	qemu_mutex_init(&audio->lock);
 
