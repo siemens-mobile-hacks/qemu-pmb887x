@@ -2763,16 +2763,14 @@ static void store_pc_exc_ret(DisasContext *s, TCGv_i32 pc)
     tcg_gen_mov_i32(cpu_R[15], pc);
 }
 
-/* Generate a v6 exception return.  Marks both values as dead.  */
-static void gen_rfe(DisasContext *s, TCGv_i32 pc, TCGv_i32 cpsr)
+/*
+ * End the TB after gen_helper_cpsr_write_eret(), with the new PC stored.
+ * Every exception return goes through here: one that stays inside the
+ * TB takes an IRQ it unmasked only when something else next exits to the
+ * loop, which the S75/EL71 GSM layer 1 notices and aborts on.
+ */
+static void gen_eret_end_tb(DisasContext *s)
 {
-    store_pc_exc_ret(s, pc);
-    /* The cpsr_write_eret helper will mask the low bits of PC
-     * appropriately depending on the new Thumb bit, so it must
-     * be called after storing the new PC.
-     */
-    translator_io_start(&s->base);
-    gen_helper_cpsr_write_eret(tcg_env, cpsr);
 #ifdef __EMSCRIPTEN__
     /* Un-masked IRQs: the helper requests the next-TB-start exit */
     s->base.is_jmp = DISAS_JUMP;
@@ -2783,6 +2781,19 @@ static void gen_rfe(DisasContext *s, TCGv_i32 pc, TCGv_i32 cpsr)
     /* Must exit loop to check un-masked IRQs */
     s->base.is_jmp = DISAS_EXIT;
 #endif
+}
+
+/* Generate a v6 exception return.  Marks both values as dead.  */
+static void gen_rfe(DisasContext *s, TCGv_i32 pc, TCGv_i32 cpsr)
+{
+    store_pc_exc_ret(s, pc);
+    /* The cpsr_write_eret helper will mask the low bits of PC
+     * appropriately depending on the new Thumb bit, so it must
+     * be called after storing the new PC.
+     */
+    translator_io_start(&s->base);
+    gen_helper_cpsr_write_eret(tcg_env, cpsr);
+    gen_eret_end_tb(s);
 }
 
 /* Generate an old-style exception return. Marks pc as dead. */
@@ -6420,11 +6431,7 @@ static bool do_ldm(DisasContext *s, arg_ldst_block *a)
         tmp = load_cpu_field(spsr);
         translator_io_start(&s->base);
         gen_helper_cpsr_write_eret(tcg_env, tmp);
-        /* Un-masked IRQs: see gen_rfe */
-        s->base.is_jmp = DISAS_JUMP;
-#ifdef CONFIG_TCG_WASM64
-        s->w64_dynkey = true;
-#endif
+        gen_eret_end_tb(s);
     }
     clear_eci_state(s);
     return true;
