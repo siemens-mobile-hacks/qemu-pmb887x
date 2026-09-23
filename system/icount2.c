@@ -76,8 +76,23 @@ static void icount2_set_idle_end(int64_t end) {
 	seqlock_write_unlock(&timers_state.vm_clock_seqlock, &timers_state.vm_clock_lock);
 }
 
+/*
+ * Once woken, the vCPU resumes where the wake found it: see icount2_exit_sleep().
+ * An interrupt raised and dropped again before the vCPU thread looked leaves
+ * it asleep, and its clock carries on.
+ */
+static bool icount2_woken(void) {
+	if (!timers_state.icount2_idle_wakeup)
+		return false;
+	if (!all_cpu_threads_idle())
+		return true;
+	timers_state.icount2_idle_wakeup = false;
+	icount2_idle_timer_wakeup = false;
+	return false;
+}
+
 static void icount2_idle_timer(void *opaque) {
-	if (!timers_state.icount2_idle)
+	if (!timers_state.icount2_idle || icount2_woken())
 		return;
 
 	for (;;) {
@@ -91,7 +106,7 @@ static void icount2_idle_timer(void *opaque) {
 			qemu_clock_run_timers(QEMU_CLOCK_VIRTUAL);
 			icount2_idle_running_timers = false;
 			qemu_clock_notify(QEMU_CLOCK_VIRTUAL);
-			if (timers_state.icount2_idle_wakeup)
+			if (icount2_woken())
 				return;
 			continue;
 		}
@@ -154,6 +169,7 @@ int64_t icount2_get_horizon_delay(int64_t target) {
  * there.
  */
 void icount2_set_limit(int64_t (*fn)(void *opaque, int64_t want), void *opaque) {
+	g_assert(fn == NULL || icount2_limit_fn == NULL);
 	icount2_limit_opaque = opaque;
 	icount2_limit_fn = fn;
 }
@@ -415,7 +431,6 @@ void icount2_wakeup(int cpu_index, bool halted, int mask, int interrupt_request)
 
 	timers_state.icount2_idle_wakeup = true;
 	icount2_idle_timer_wakeup = icount2_idle_running_timers;
-	timer_del(timers_state.icount2_idle_timer);
 }
 
 void icount2_configure(QemuOpts *opts, Error **errp) {
