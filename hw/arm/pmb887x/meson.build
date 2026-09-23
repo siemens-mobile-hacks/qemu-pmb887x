@@ -127,6 +127,11 @@ host_unit_tests += {
 		'c_args': dsp_test_c_args,
 		'dependencies': [glib],
 	},
+	'pmb887x-dsp-timing': {
+		'sources': files('dsp/tests/timing.c') + dsp_peripheral_sources,
+		'c_args': dsp_test_c_args,
+		'dependencies': [glib],
+	},
 }
 
 target_unit_tests += {
