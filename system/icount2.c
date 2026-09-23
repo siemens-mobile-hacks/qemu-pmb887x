@@ -122,8 +122,12 @@ static void icount2_idle_timer(void *opaque) {
 			return;
 		}
 
-		/* The limit's owner calls icount2_limit_advanced() once it gets there. */
-		if (icount2_limit(end) < end)
+		/*
+		 * Short of the end but ahead of the vCPUs, the limit is something the
+		 * vCPUs must first reach, such as an interrupt on its way to them.
+		 * Otherwise its owner calls icount2_limit_advanced() once it gets there.
+		 */
+		if (icount2_limit(end) <= now)
 			return;
 	}
 }

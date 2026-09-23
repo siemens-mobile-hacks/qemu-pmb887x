@@ -1153,6 +1153,12 @@ static void dsp_queue_output(dsp_state_t *p, const dsp_output_t *output) {
 	w->output_added = true;
 	qemu_mutex_unlock(&w->mutex);
 	timer_mod_anticipate(p->delivery_timer, output->time);
+	/*
+	 * A sleeping vCPU may have looked at its timers before this one was armed
+	 * (the lead timer ahead of it hides it from the timer list's notifier),
+	 * and at the limit after the output capped it.
+	 */
+	icount2_limit_advanced();
 }
 
 /* On the worker, at the DSP time the core changed TOMCU or DSPOUT. */
