@@ -129,7 +129,6 @@ void i2s_set_frequency(dsp_device_t *device, uint32_t frequency);
 void i2s_advance(dsp_device_t *device, size_t cycles);
 size_t i2s_next_event(dsp_device_t *device);
 bool i2s_is_active(const dsp_device_t *device);
-void i2s_apply_audio_format(dsp_device_t *device);
 
 dsp_device_t *i2s_tx_create(const pmb887x_dsp_peripheral_config_t *config, dsp_device_t *interrupt);
 void i2s_tx_advance(dsp_device_t *device, size_t cycles);

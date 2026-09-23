@@ -22,7 +22,7 @@ struct dsp_host_t {
 	uint32_t (*ssc_transfer)(void *opaque, uint32_t value);
 	/* DSP time, in QEMU_CLOCK_VIRTUAL ns, as of the access being made. */
 	int64_t (*get_time_ns)(void *opaque);
-	/* Something the MCU side sees changed: TOMCU, DSPOUT or the audio format. */
+	/* Something the MCU side sees changed: TOMCU or DSPOUT. */
 	void (*events_changed)(void *opaque);
 };
 
@@ -33,7 +33,6 @@ void dsp_bus_set_clock(dsp_bus_t *bus, bool enabled);
 void dsp_bus_set_frequency(dsp_bus_t *bus, uint32_t frequency);
 void dsp_bus_advance(dsp_bus_t *bus, size_t cycles);
 size_t dsp_bus_next_event(dsp_bus_t *bus);
-void dsp_bus_apply_audio_format(dsp_bus_t *bus);
 bool dsp_bus_is_active(const dsp_bus_t *bus);
 uint16_t dsp_bus_read(dsp_bus_t *bus, uint16_t address);
 void dsp_bus_write(dsp_bus_t *bus, uint16_t address, uint16_t value);

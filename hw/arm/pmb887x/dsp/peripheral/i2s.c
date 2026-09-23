@@ -4,7 +4,7 @@
 
 #include "qemu/osdep.h"
 
-#include "qemu/atomic.h"
+#include "qemu/host-utils.h"
 
 #include "hw/arm/pmb887x/dsp/peripheral/internal.h"
 #include "hw/arm/pmb887x/gen/dsp.h"
@@ -22,7 +22,11 @@
  * melody path's NUM0=32 gives 16 kHz while a voice call's NUM0=16 gives 8 kHz.
  */
 #define I2S_FIXED_CLOCK_HZ	(104000000U / 4)
-/* The module clock is assumed to take the same /4 prescaler. */
+/*
+ * The module clock is assumed to take the same /4 prescaler. Either way the
+ * word clock is counted in DSP cycles, so it stops while the DSP clock is
+ * gated: this assumes the firmware never gates the DSP with a stream running.
+ */
 #define I2S_MODULE_CLOCK_PRESCALER	4U
 /* A frame is one word per channel, and the link is always stereo. */
 #define I2S_FRAME_WORDS		2
@@ -40,15 +44,20 @@ struct i2s_state_t {
 	uint16_t transmit_position;
 	uint16_t receive_position;
 	uint32_t frequency;
-	/* Word clock: advances by word_rate per DSP cycle, one word per word_period. */
+	/*
+	 * Word clock: runs while the unit is on, advancing by word_rate per DSP
+	 * cycle, one word per word_period. A stopped clock keeps its period, for
+	 * it to go on from the same place.
+	 */
 	uint64_t phase;
 	uint64_t word_rate;
 	uint64_t word_period;
-	bool transmitting;
-	/* Word of the frame being shifted out: 0 is the left channel. */
+	/* The word slot of the frame the clock is in: 0 is the left channel. */
 	uint8_t frame_word;
+	bool transmitting;
+	/* A started transmitter waits for a frame to begin before it shifts out a word. */
+	bool transmit_synced;
 	uint16_t frame[I2S_FRAME_WORDS];
-	uint32_t audio_rate;
 };
 
 static bool i2s_transmit_active(const i2s_state_t *state) {
@@ -88,14 +97,21 @@ static void i2s_update_clock(i2s_state_t *state) {
 		word_rate = numerator * I2S_FRAME_WORDS;
 		word_period = I2S_MODULE_CLOCK_PRESCALER * denominator * clocks;
 	}
-	if (word_rate == 0 || word_period == 0)
-		word_rate = word_period = 0;
-
-	if (word_rate != state->word_rate || word_period != state->word_period) {
-		state->phase = 0;
-		state->word_rate = word_rate;
-		state->word_period = word_period;
+	if (word_rate == 0 || word_period == 0) {
+		state->word_rate = 0;
+		return;
 	}
+
+	if (word_period != state->word_period && state->word_period != 0) {
+		uint64_t low, high;
+
+		/* The word under way is as far along at the new clock. */
+		mulu64(&low, &high, state->phase, word_period);
+		divu128(&low, &high, state->word_period);
+		state->phase = low;
+	}
+	state->word_rate = word_rate;
+	state->word_period = word_period;
 }
 
 static uint32_t i2s_transmit_frame_rate(const i2s_state_t *state) {
@@ -110,23 +126,26 @@ static uint32_t i2s_transmit_frame_rate(const i2s_state_t *state) {
 	return (uint64_t) state->frequency * numerator / (divisor * I2S_MODULE_CLOCK_PRESCALER);
 }
 
+/* The codec plays what the transmitter sends at the rate it sends it. */
+static void i2s_update_audio_format(i2s_state_t *state) {
+#ifndef PMB887X_DSP_TESTS
+	uint32_t rate = i2s_transmit_frame_rate(state);
+
+	if (rate != 0 && state->audio_sink != NULL && i2s_transmit_active(state))
+		afe_audio_set_format(state->audio_sink, rate, I2S_OUT_CHANNELS);
+#endif
+}
+
 static void i2s_update_transmit(i2s_state_t *state) {
 	bool transmitting = i2s_transmit_active(state);
 
 	if (transmitting && !state->transmitting) {
-		uint32_t rate = i2s_transmit_frame_rate(state);
-
-		/* A frame starts with the first word the transmitter shifts out. */
-		state->frame_word = 0;
-		DPRINTF("transmit start: position=%u rate=%u Hz txconf=%04X\n", state->transmit_position, rate,
-			state->registers[TEAK_I2S_TXCONF]);
-		if (rate != 0 && rate != qatomic_read(&state->audio_rate)) {
-			qatomic_set(&state->audio_rate, rate);
-			if (state->host.events_changed != NULL)
-				state->host.events_changed(state->host.opaque);
-		}
+		state->transmit_synced = false;
+		DPRINTF("transmit start: position=%u rate=%u Hz txconf=%04X\n", state->transmit_position,
+			i2s_transmit_frame_rate(state), state->registers[TEAK_I2S_TXCONF]);
 	}
 	state->transmitting = transmitting;
+	i2s_update_audio_format(state);
 }
 
 static void i2s_destroy(dsp_device_t *device) {
@@ -141,7 +160,6 @@ static void i2s_reset(dsp_device_t *device) {
 	uint16_t ram_base = state->ram_base;
 	uint16_t transmit_interrupt_flag = state->transmit_interrupt_flag;
 	uint32_t frequency = state->frequency;
-	uint32_t audio_rate = qatomic_read(&state->audio_rate);
 
 	memset(state, 0, sizeof(*state));
 	state->interrupt = interrupt;
@@ -150,7 +168,6 @@ static void i2s_reset(dsp_device_t *device) {
 	state->ram_base = ram_base;
 	state->transmit_interrupt_flag = transmit_interrupt_flag;
 	state->frequency = frequency;
-	state->audio_rate = audio_rate;
 	state->registers[TEAK_I2S_NUM0] = 1;
 	state->registers[TEAK_I2S_DEN0] = 2;
 	state->registers[TEAK_I2S_NUM1] = 1;
@@ -185,6 +202,7 @@ static bool i2s_write(dsp_device_t *device, uint16_t offset, uint32_t pc, uint16
 				state->transmit_position = 0;
 				state->receive_position = 0;
 				state->phase = 0;
+				state->frame_word = 0;
 			}
 			break;
 
@@ -256,13 +274,10 @@ static void i2s_output_frame(i2s_state_t *state) {
 #endif
 }
 
-static void i2s_transmit_word(i2s_state_t *state) {
-	state->frame[state->frame_word] = state->host.data_read(state->host.opaque,
-		state->ram_base + state->transmit_position);
-	if (++state->frame_word == I2S_FRAME_WORDS) {
-		state->frame_word = 0;
+static void i2s_transmit_word(i2s_state_t *state, uint8_t slot) {
+	state->frame[slot] = state->host.data_read(state->host.opaque, state->ram_base + state->transmit_position);
+	if (slot == I2S_FRAME_WORDS - 1)
 		i2s_output_frame(state);
-	}
 
 	state->transmit_position++;
 	state->transmit_position &= TEAK_I2S_RWADDR_RDADDR;
@@ -292,46 +307,52 @@ void i2s_set_frequency(dsp_device_t *device, uint32_t frequency) {
 
 	state->frequency = frequency;
 	i2s_update_clock(state);
+	i2s_update_audio_format(state);
+}
+
+static void i2s_clock_word(i2s_state_t *state) {
+	uint8_t slot = state->frame_word;
+
+	state->frame_word = (slot + 1) % I2S_FRAME_WORDS;
+	if (i2s_transmit_active(state)) {
+		if (slot == 0)
+			state->transmit_synced = true;
+		if (state->transmit_synced)
+			i2s_transmit_word(state, slot);
+	}
+	if (i2s_receive_active(state))
+		i2s_receive_word(state);
 }
 
 void i2s_advance(dsp_device_t *device, size_t cycles) {
 	i2s_state_t *state = device->state;
 
-	if (state->word_rate == 0 || !i2s_is_active(device))
+	if (!i2s_is_active(device))
 		return;
 
 	state->phase += (uint64_t) cycles * state->word_rate;
-	while (state->phase >= state->word_period && i2s_is_active(device)) {
+	while (state->phase >= state->word_period) {
+		if (!i2s_transmit_active(state) && !i2s_receive_active(state)) {
+			uint64_t words = state->phase / state->word_period;
+
+			state->phase -= words * state->word_period;
+			state->frame_word = (state->frame_word + words) % I2S_FRAME_WORDS;
+			break;
+		}
 		state->phase -= state->word_period;
-		if (i2s_transmit_active(state))
-			i2s_transmit_word(state);
-		if (i2s_receive_active(state))
-			i2s_receive_word(state);
+		i2s_clock_word(state);
 	}
 }
 
 size_t i2s_next_event(dsp_device_t *device) {
 	i2s_state_t *state = device->state;
 
-	if (!i2s_is_active(device))
+	if (!i2s_transmit_active(state) && !i2s_receive_active(state))
 		return SIZE_MAX;
 	return dsp_rate_cycles_until(state->phase, state->word_rate, state->word_period);
 }
 
 bool i2s_is_active(const dsp_device_t *device) {
 	const i2s_state_t *state = device->state;
-	return i2s_transmit_active(state) || i2s_receive_active(state);
+	return (state->registers[TEAK_I2S_CTRL] & TEAK_I2S_CTRL_I2SON) != 0 && state->word_rate != 0;
 }
-
-#ifdef PMB887X_DSP_TESTS
-void i2s_apply_audio_format(dsp_device_t *device) {}
-#else
-/* Under the BQL only: reopening the shared voice must not race its drain callback. */
-void i2s_apply_audio_format(dsp_device_t *device) {
-	i2s_state_t *state = device->state;
-	uint32_t rate = qatomic_read(&state->audio_rate);
-
-	if (rate != 0 && state->audio_sink != NULL)
-		afe_audio_set_format(state->audio_sink, rate, I2S_OUT_CHANNELS);
-}
-#endif

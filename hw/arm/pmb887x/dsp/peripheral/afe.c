@@ -4,6 +4,8 @@
 
 #include "qemu/osdep.h"
 
+#include "qemu/host-utils.h"
+
 #include "hw/arm/pmb887x/dsp/peripheral/internal.h"
 #include "hw/arm/pmb887x/gen/dsp.h"
 #include "hw/arm/pmb887x/trace.h"
@@ -11,6 +13,7 @@
 #ifndef PMB887X_DSP_TESTS
 #include "qemu/audio.h"
 #include "qemu/fifo8.h"
+#include "qemu/main-loop.h"
 #include "qemu/thread.h"
 #include "qemu/timer.h"
 #include "hw/arm/pmb887x/pmic.h"
@@ -19,7 +22,12 @@
 #define AFE_REGISTER_COUNT	(TEAK_AFE_RINGCTRL + 1)
 #define AFE_CONTROL_MASK	(TEAK_AFE_BCON_MODE | TEAK_AFE_BCON_RXSTART | TEAK_AFE_BCON_RXRATE | \
 	TEAK_AFE_BCON_TXSTART | TEAK_AFE_BCON_TXRATE)
-/* The voiceband converters run at 8 kHz off the crystal, whatever clock the DSP runs at. */
+/*
+ * The voiceband converters run at 8 kHz off the crystal, whatever clock the
+ * DSP runs at. They are counted in DSP cycles, so with the DSP clock gated
+ * they stop where the crystal would keep them going: this assumes the
+ * firmware never gates the DSP with a stream running.
+ */
 #define AFE_SAMPLE_RATE		8000U
 #define AFE_INTERRUPT_GROUP	1
 /*
@@ -59,6 +67,13 @@ static const uint16_t AFE_POWER_DOWN_SAMPLES[] = {
 typedef struct afe_state_t afe_state_t;
 
 #ifndef PMB887X_DSP_TESTS
+/* A format the samples take from @position, in bytes ever pushed, on. */
+typedef struct afe_audio_format_t {
+	uint64_t position;
+	int freq;
+	int channels;
+} afe_audio_format_t;
+
 /*
  * Bridges the DSP worker thread (which produces RX-DAC samples in afe_advance)
  * to the QEMU audio backend (which must be driven from the main loop via the
@@ -71,15 +86,20 @@ typedef struct afe_audio_t {
 	QemuMutex lock;
 	Fifo8 fifo;
 	bool fifo_ready;
+	uint64_t pushed;
+	uint64_t popped;
+	/*
+	 * Format changes still in the FIFO: the voice is reopened with each when
+	 * playback reaches it, so no sample plays at another stream's rate.
+	 */
+	GArray *formats;
+	QEMUBH *format_bh;
 
 	/*
-	 * Output sample rate. Defaults to the voiceband 8 kHz, but streamed PCM
-	 * (PCMPLAY) can run at higher rates, so the host driving the direct bridge
-	 * sets it per stream via afe_audio_set_rate() -- otherwise a 16 kHz clip
-	 * played at 8 kHz drops an octave and runs at half speed.
+	 * The format the voice plays. Defaults to the voiceband 8 kHz mono, but
+	 * streamed PCM can run at up to 48 kHz stereo.
 	 */
 	int out_freq;
-	/* Output channel count (1 mono / 2 interleaved LR); set per stream too. */
 	int out_channels;
 
 	/* When the producer last handed over a sample, in host milliseconds. */
@@ -102,6 +122,8 @@ struct afe_state_t {
 	uint16_t receive_position;
 	uint16_t transmit_position;
 	uint32_t frequency;
+	/* The clock the phases count in: the last one that ran. */
+	uint32_t phase_frequency;
 	uint64_t receive_phase;
 	uint64_t transmit_phase;
 #ifndef PMB887X_DSP_TESTS
@@ -127,6 +149,13 @@ static uint32_t afe_audio_host_ms(void) {
 	return (uint32_t) (qemu_clock_get_ns(QEMU_CLOCK_HOST) / SCALE_MS);
 }
 
+/* Under the lock: bytes that play before the next format change. */
+static uint64_t afe_audio_bytes_to_format(afe_audio_t *audio) {
+	if (audio->formats->len == 0)
+		return UINT64_MAX;
+	return g_array_index(audio->formats, afe_audio_format_t, 0).position - audio->popped;
+}
+
 static void afe_audio_out_callback(void *opaque, int free_bytes) {
 	afe_state_t *state = opaque;
 	afe_audio_t *audio = &state->audio;
@@ -134,13 +163,20 @@ static void afe_audio_out_callback(void *opaque, int free_bytes) {
 
 	while (free_bytes > 0) {
 		size_t want = MIN((size_t) free_bytes, sizeof(chunk));
+		uint64_t until_format;
 		size_t got;
 		size_t written;
 
 		qemu_mutex_lock(&audio->lock);
-		size_t avail = fifo8_num_used(&audio->fifo);
-		size_t take = MIN(want, avail);
-		got = take ? fifo8_pop_buf(&audio->fifo, chunk, take) : 0;
+		until_format = afe_audio_bytes_to_format(audio);
+		if (until_format == 0) {
+			qemu_mutex_unlock(&audio->lock);
+			qemu_bh_schedule(audio->format_bh);
+			break;
+		}
+		got = MIN(MIN(want, fifo8_num_used(&audio->fifo)), until_format);
+		got = got ? fifo8_pop_buf(&audio->fifo, chunk, got) : 0;
+		audio->popped += got;
 		qemu_mutex_unlock(&audio->lock);
 
 		if (got == 0) {
@@ -219,21 +255,62 @@ static void afe_audio_produce(afe_state_t *state, uint16_t sample_word) {
 		return;
 
 	qemu_mutex_lock(&audio->lock);
-	if (fifo8_num_used(&audio->fifo) + sizeof(bytes) <= AFE_OUT_FIFO_BYTES)
+	if (fifo8_num_used(&audio->fifo) + sizeof(bytes) <= AFE_OUT_FIFO_BYTES) {
 		fifo8_push_all(&audio->fifo, bytes, sizeof(bytes));
+		audio->pushed += sizeof(bytes);
+	}
 	qemu_mutex_unlock(&audio->lock);
+}
+
+static SWVoiceOut *afe_audio_open(afe_state_t *state, int freq, int channels) {
+	struct audsettings as = {
+		.freq = freq,
+		.nchannels = channels,
+		.fmt = AUDIO_FORMAT_S16,
+		.big_endian = false,
+	};
+
+	return audio_be_open_out(state->audio.backend, NULL, "pmb887x-afe", state, afe_audio_out_callback, &as);
+}
+
+/* In the main loop, once playback has reached a format change. */
+static void afe_audio_format_bh(void *opaque) {
+	afe_state_t *state = opaque;
+	afe_audio_t *audio = &state->audio;
+	int old_freq, old_channels;
+	int freq, channels;
+
+	qemu_mutex_lock(&audio->lock);
+	old_freq = freq = audio->out_freq;
+	old_channels = channels = audio->out_channels;
+	while (afe_audio_bytes_to_format(audio) == 0) {
+		afe_audio_format_t *format = &g_array_index(audio->formats, afe_audio_format_t, 0);
+
+		freq = format->freq;
+		channels = format->channels;
+		g_array_remove_index(audio->formats, 0);
+	}
+	audio->out_freq = freq;
+	audio->out_channels = channels;
+	qemu_mutex_unlock(&audio->lock);
+
+	if ((freq == old_freq && channels == old_channels) || audio->voice == NULL)
+		return;
+
+	DPRINTF("audio out format %d Hz/%dch -> %d Hz/%dch\n", old_freq, old_channels, freq, channels);
+	audio_be_set_active_out(audio->backend, audio->voice, false);
+	audio_be_close_out(audio->backend, audio->voice);
+	audio->voice = afe_audio_open(state, freq, channels);
+	if (audio->voice)
+		audio_be_set_active_out(audio->backend, audio->voice, true);
 }
 
 static void afe_audio_init(afe_state_t *state) {
 	afe_audio_t *audio = &state->audio;
-	struct audsettings as = {
-		.freq = AFE_OUT_FREQ,
-		.nchannels = AFE_OUT_CHANNELS,
-		.fmt = AUDIO_FORMAT_S16,
-		.big_endian = false,
-	};
+
 	audio->out_freq = AFE_OUT_FREQ;
 	audio->out_channels = AFE_OUT_CHANNELS;
+	audio->formats = g_array_new(false, false, sizeof(afe_audio_format_t));
 	qemu_mutex_init(&audio->lock);
 
 	/* Lazily bind the default -audiodev; degrade to silence if none. */
@@ -242,13 +319,13 @@ static void afe_audio_init(afe_state_t *state) {
 		return;
 	}
 
-	audio->voice = audio_be_open_out(audio->backend, NULL, "pmb887x-afe",
-		state, afe_audio_out_callback, &as);
+	audio->voice = afe_audio_open(state, AFE_OUT_FREQ, AFE_OUT_CHANNELS);
 	if (!audio->voice) {
 		EPRINTF("could not open audio out voice\n");
 		return;
 	}
 
+	audio->format_bh = qemu_bh_new(afe_audio_format_bh, state);
 	fifo8_create(&audio->fifo, AFE_OUT_FIFO_BYTES);
 	audio->fifo_ready = true;
 	/* Keep the voice active; the callback fills silence when idle. */
@@ -263,6 +340,10 @@ static void afe_audio_reset(afe_state_t *state) {
 
 	qemu_mutex_lock(&audio->lock);
 	fifo8_reset(&audio->fifo);
+	audio->pushed = audio->popped = 0;
+	/* Nothing is left to play in the old formats: the latest one applies at once. */
+	for (size_t i = 0; i < audio->formats->len; i++)
+		g_array_index(audio->formats, afe_audio_format_t, i).position = 0;
 	qemu_mutex_unlock(&audio->lock);
 }
 
@@ -275,9 +356,11 @@ static void afe_audio_destroy(afe_state_t *state) {
 		audio->voice = NULL;
 	}
 	if (audio->fifo_ready) {
+		qemu_bh_delete(audio->format_bh);
 		fifo8_destroy(&audio->fifo);
 		audio->fifo_ready = false;
 	}
+	g_array_free(audio->formats, true);
 	qemu_mutex_destroy(&audio->lock);
 }
 #endif /* PMB887X_DSP_TESTS */
@@ -291,24 +374,15 @@ static void afe_destroy(dsp_device_t *device) {
 
 static void afe_reset(dsp_device_t *device) {
 	afe_state_t *state = device->state;
-	dsp_device_t *interrupt = state->interrupt;
-	dsp_host_t host = state->host;
-	uint16_t ram_base = state->ram_base;
-	uint32_t frequency = state->frequency;
 
+	memset(state->registers, 0, sizeof(state->registers));
+	state->receive_position = 0;
+	state->transmit_position = 0;
+	state->receive_phase = 0;
+	state->transmit_phase = 0;
 #ifndef PMB887X_DSP_TESTS
-	afe_audio_t audio = state->audio;
-
 	afe_audio_reset(state);
-	memset(state, 0, sizeof(*state));
-	state->audio = audio;
-#else
-	memset(state, 0, sizeof(*state));
 #endif
-	state->interrupt = interrupt;
-	state->host = host;
-	state->ram_base = ram_base;
-	state->frequency = frequency;
 }
 
 static bool afe_read(dsp_device_t *device, uint16_t offset, uint32_t pc, uint16_t *value) {
@@ -418,12 +492,18 @@ static void afe_transmit_sample(afe_state_t *state) {
 		dsp_int_set_flags(state->interrupt, AFE_INTERRUPT_GROUP, TEAK_INT_FINTB0_VBTX);
 }
 
+/* The sample clocks keep their place across a change of DSP clock, and across a gap in it. */
 void afe_set_frequency(dsp_device_t *device, uint32_t frequency) {
 	afe_state_t *state = device->state;
 
-	state->receive_phase = 0;
-	state->transmit_phase = 0;
 	state->frequency = frequency;
+	if (frequency == 0)
+		return;
+	if (state->phase_frequency != 0) {
+		state->receive_phase = muldiv64(state->receive_phase, frequency, state->phase_frequency);
+		state->transmit_phase = muldiv64(state->transmit_phase, frequency, state->phase_frequency);
+	}
+	state->phase_frequency = frequency;
 }
 
 void afe_advance(dsp_device_t *device, size_t cycles) {
@@ -475,40 +555,33 @@ size_t afe_audio_push_samples(dsp_device_t *device, const uint16_t *samples, siz
 	return count;
 }
 
+/*
+ * From any thread: samples pushed from now on take this format. The voice
+ * switches to it when playback gets to them.
+ */
 void afe_audio_set_format(dsp_device_t *device, unsigned freq, unsigned channels) {
 	afe_state_t *state = device->state;
 	afe_audio_t *audio = &state->audio;
-	struct audsettings as = {
-		.fmt = AUDIO_FORMAT_S16,
-		.big_endian = false,
-	};
+	afe_audio_format_t format;
 
+	qemu_mutex_lock(&audio->lock);
+	if (audio->formats->len != 0)
+		format = g_array_index(audio->formats, afe_audio_format_t, audio->formats->len - 1);
+	else
+		format = (afe_audio_format_t) { .freq = audio->out_freq, .channels = audio->out_channels };
 	if (freq == 0)
-		freq = audio->out_freq;
-	if (channels == 0)
-		channels = audio->out_channels;
-	if (channels > AFE_OUT_MAX_CHANNELS)
-		channels = AFE_OUT_MAX_CHANNELS;
-	if ((int) freq == audio->out_freq && (int) channels == audio->out_channels)
-		return;
-
-	DPRINTF("audio out format %d Hz/%dch -> %u Hz/%uch\n",
-		audio->out_freq, audio->out_channels, freq, channels);
-	audio->out_freq = freq;
-	audio->out_channels = channels;
-	as.freq = freq;
-	as.nchannels = channels;
-
-	/* Reopen the live voice with the new format. Runs under the BQL alongside
-	 * the drain callback, so there is no concurrent access to the voice. */
-	if (audio->voice) {
-		audio_be_set_active_out(audio->backend, audio->voice, false);
-		audio_be_close_out(audio->backend, audio->voice);
-		audio->voice = audio_be_open_out(audio->backend, NULL, "pmb887x-afe",
-			state, afe_audio_out_callback, &as);
-		if (audio->voice)
-			audio_be_set_active_out(audio->backend, audio->voice, true);
+		freq = format.freq;
+	channels = MIN(channels == 0 ? format.channels : channels, AFE_OUT_MAX_CHANNELS);
+	if ((int) freq != format.freq || (int) channels != format.channels) {
+		format = (afe_audio_format_t) { .position = audio->pushed, .freq = freq, .channels = channels };
+		if (audio->fifo_ready) {
+			g_array_append_val(audio->formats, format);
+		} else {
+			audio->out_freq = freq;
+			audio->out_channels = channels;
+		}
 	}
+	qemu_mutex_unlock(&audio->lock);
 }
 
 /* How much audio the backend still has to play out, in samples. */
@@ -521,9 +594,9 @@ size_t afe_audio_queued_samples(dsp_device_t *device) {
 		return 0;
 
 	qemu_mutex_lock(&audio->lock);
-	used = fifo8_num_used(&audio->fifo);
+	used = fifo8_num_used(&audio->fifo) / (sizeof(int16_t) * audio->out_channels);
 	qemu_mutex_unlock(&audio->lock);
-	return used / (sizeof(int16_t) * audio->out_channels);
+	return used;
 }
 
 bool afe_audio_has_room(dsp_device_t *device, size_t count) {

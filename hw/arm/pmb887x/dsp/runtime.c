@@ -450,10 +450,6 @@ uint32_t dsp_runtime_get_frequency(const dsp_runtime_t *runtime) {
 	return runtime->frequency;
 }
 
-void dsp_runtime_apply_audio_format(dsp_runtime_t *runtime) {
-	dsp_bus_apply_audio_format(runtime->bus);
-}
-
 bool dsp_runtime_is_maskable_interrupt_active(const dsp_runtime_t *runtime) {
 	return qatomic_read(&runtime->core.state.maskable_interrupt_active);
 }

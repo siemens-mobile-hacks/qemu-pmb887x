@@ -1155,7 +1155,7 @@ static void dsp_queue_output(dsp_state_t *p, const dsp_output_t *output) {
 	timer_mod_anticipate(p->delivery_timer, output->time);
 }
 
-/* On the worker, at the DSP time the core changed TOMCU, DSPOUT or the audio format. */
+/* On the worker, at the DSP time the core changed TOMCU or DSPOUT. */
 static void dsp_worker_events_changed(void *opaque) {
 	dsp_state_t *p = opaque;
 	dsp_output_t output = {
@@ -1195,7 +1195,6 @@ static void dsp_deliver(dsp_state_t *p, int64_t time) {
 		for (size_t i = 0; i < ARRAY_SIZE(p->outputs); i++)
 			if ((output.output_events & BIT(i)) != 0)
 				qemu_set_irq(p->outputs[i], (output.outputs & BIT(i)) != 0);
-		dsp_runtime_apply_audio_format(p->runtime);
 		delivered = true;
 	}
 

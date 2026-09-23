@@ -23,7 +23,6 @@ void dsp_runtime_run_until(dsp_runtime_t *runtime, int64_t target);
 bool dsp_runtime_code_flush_pending(void);
 bool dsp_runtime_is_halted(const dsp_runtime_t *runtime);
 bool dsp_runtime_is_sleeping(const dsp_runtime_t *runtime);
-void dsp_runtime_apply_audio_format(dsp_runtime_t *runtime);
 bool dsp_runtime_is_maskable_interrupt_active(const dsp_runtime_t *runtime);
 uint16_t dsp_runtime_get_irq_flags(dsp_runtime_t *runtime, size_t group);
 uint16_t dsp_runtime_get_irq_pending_flags(dsp_runtime_t *runtime, size_t group);

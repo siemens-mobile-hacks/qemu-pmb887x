@@ -243,11 +243,6 @@ size_t dsp_bus_next_event(dsp_bus_t *bus) {
 	return cycles;
 }
 
-void dsp_bus_apply_audio_format(dsp_bus_t *bus) {
-	for (size_t i = 0; i < bus->i2s_count; i++)
-		i2s_apply_audio_format(bus->i2s[i]);
-}
-
 bool dsp_bus_is_active(const dsp_bus_t *bus) {
 	if (bus->afe != NULL && afe_is_active(bus->afe))
 		return true;
