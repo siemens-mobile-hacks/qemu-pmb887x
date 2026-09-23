@@ -874,10 +874,11 @@ enum {
 /*
  * The DSP runs on its own thread, on the same QEMU_CLOCK_VIRTUAL time line as
  * the ARM: its clock counts core cycles at fDSP. It never runs past the ARM
- * (icount2_get_horizon), and the ARM never gets more than DSP_QUANTUM_NS ahead
- * of it. Signals from the ARM reach the DSP at the time they were made, and
- * signals from the DSP reach the ARM through a VIRTUAL timer at the time the
- * DSP made them.
+ * (icount2_get_horizon), and a running ARM gets less than two DSP_QUANTUM_NS
+ * ahead of it. Everything the ARM does to the DSP, shared RAM writes included,
+ * reaches the DSP at the time it was made, and signals from the DSP reach the
+ * ARM through a VIRTUAL timer at the time the DSP made them, or later by as
+ * much as the ARM is ahead. Reads of DSP state bring the DSP to the ARM first.
  */
 #define DSP_QUANTUM_NS		(20 * SCALE_US)
 /* While the ARM runs, the DSP follows it in steps no smaller than this. */
@@ -885,9 +886,9 @@ enum {
 #define DSP_SPIN_NS		(100 * SCALE_US)
 /* While the ARM sleeps nobody waits on a busy DSP: it keeps up with the host in steps this long. */
 #define DSP_SLEEP_STEP_NS	(200 * SCALE_US)
-/* How far behind the ARM the DSP may be when the ARM reads the shared RAM. */
-#define DSP_SHARED_WINDOW_NS	(10 * SCALE_US)
 #define DSP_FLUSH_POLL_MS	1
+/* Applied events are dropped from the front of the queue in batches of at least this many. */
+#define DSP_EVENTS_COMPACT	256
 #define DSP_SLOW_SYNC_NS	(10 * SCALE_MS)
 #define DSP_OUTPUT_MASK		MAKE_64BIT_MASK(0, DSP_OUTPUT_COUNT)
 
@@ -907,6 +908,7 @@ typedef enum {
 	DSP_EVENT_REQUEST,
 	DSP_EVENT_INPUT,
 	DSP_EVENT_GSM_SIGNAL,
+	DSP_EVENT_SHARED_WRITE,
 } dsp_event_type_t;
 
 /* Something the ARM did to the DSP. */
@@ -916,6 +918,7 @@ struct dsp_event_t {
 	uint32_t index;
 	uint32_t value;
 	uint32_t frequency;
+	uint8_t size;
 };
 
 /* Something the DSP did that the ARM sees. */
@@ -932,14 +935,21 @@ struct dsp_worker_t {
 	QemuCond cond;
 	QemuCond progress;
 	GArray *events;
+	size_t events_head;
 	GArray *outputs;
 	uint64_t posted;
 	uint64_t applied;
-	uint64_t reset_seq;
 	int64_t last_event_time;
 	/* DSP time with every event up to it applied. */
 	int64_t now;
-	uint32_t frequency;
+	/* Unless the ARM does something, nothing happens on the DSP before this. */
+	int64_t quiet_until;
+	/*
+	 * ARM writes to the shared RAM that the DSP has yet to take, byte by
+	 * byte: the latest value and how many are outstanding.
+	 */
+	uint8_t *shared_pending;
+	uint32_t *shared_pending_count;
 	/* Sleeping vCPUs wait for the DSP to reach this, or -1. */
 	int64_t want;
 	uint32_t waiters;
@@ -1017,17 +1027,39 @@ static int64_t dsp_first_output_time(dsp_worker_t *w) {
 	return g_array_index(w->outputs, dsp_output_t, 0).time;
 }
 
-static int64_t dsp_first_event_time(dsp_worker_t *w) {
-	if (w->events->len == 0)
-		return INT64_MAX;
-	return g_array_index(w->events, dsp_event_t, 0).time;
+static bool dsp_has_events(dsp_worker_t *w) {
+	return w->events_head < w->events->len;
 }
 
-/* How far sleeping vCPUs may go: not past the DSP, nor past what it has yet to tell them. */
-static int64_t dsp_limit_locked(dsp_worker_t *w) {
-	if (!w->running || (w->frequency == 0 && w->events->len == 0))
+static int64_t dsp_first_event_time(dsp_worker_t *w) {
+	if (!dsp_has_events(w))
 		return INT64_MAX;
-	return MIN(qatomic_read(&w->now), dsp_first_output_time(w));
+	return g_array_index(w->events, dsp_event_t, w->events_head).time;
+}
+
+static dsp_event_t dsp_pop_event(dsp_worker_t *w) {
+	dsp_event_t event = g_array_index(w->events, dsp_event_t, w->events_head++);
+
+	if (w->events_head == w->events->len) {
+		g_array_set_size(w->events, 0);
+		w->events_head = 0;
+	} else if (w->events_head >= DSP_EVENTS_COMPACT && w->events_head * 2 >= w->events->len) {
+		g_array_remove_range(w->events, 0, w->events_head);
+		w->events_head = 0;
+	}
+	return event;
+}
+
+/*
+ * How far sleeping vCPUs may go: not past what the DSP has yet to tell them,
+ * nor past where it could next do something.
+ */
+static int64_t dsp_limit_locked(dsp_worker_t *w) {
+	int64_t now = qatomic_read(&w->now);
+
+	if (!w->running)
+		return INT64_MAX;
+	return MIN(dsp_first_output_time(w), MAX(now, MIN(w->quiet_until, dsp_first_event_time(w))));
 }
 
 static int64_t dsp_icount_limit(void *opaque, int64_t want) {
@@ -1045,25 +1077,72 @@ static int64_t dsp_icount_limit(void *opaque, int64_t want) {
 	return limit;
 }
 
-static void dsp_post(dsp_state_t *p, dsp_event_type_t type, uint32_t index, uint32_t value, uint32_t frequency) {
+static void dsp_post_event(dsp_state_t *p, dsp_event_t *event) {
 	dsp_worker_t *w = &p->worker;
+
+	event->time = MAX(qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL), w->last_event_time);
+	w->last_event_time = event->time;
+	g_array_append_val(w->events, *event);
+	w->posted++;
+	dsp_worker_kick_locked(w);
+}
+
+static void dsp_post(dsp_state_t *p, dsp_event_type_t type, uint32_t index, uint32_t value, uint32_t frequency) {
 	dsp_event_t event = {
-		.time = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL),
 		.type = type,
 		.index = index,
 		.value = value,
 		.frequency = frequency,
 	};
 
+	qemu_mutex_lock(&p->worker.mutex);
+	dsp_post_event(p, &event);
+	qemu_mutex_unlock(&p->worker.mutex);
+}
+
+static void dsp_post_shared_write(dsp_state_t *p, size_t offset, uint32_t value, unsigned size) {
+	dsp_worker_t *w = &p->worker;
+	dsp_event_t event = {
+		.type = DSP_EVENT_SHARED_WRITE,
+		.index = offset,
+		.value = value,
+		.size = size,
+	};
+
 	qemu_mutex_lock(&w->mutex);
-	event.time = MAX(event.time, w->last_event_time);
-	w->last_event_time = event.time;
-	g_array_append_val(w->events, event);
-	w->posted++;
-	if (type == DSP_EVENT_RESET)
-		qatomic_set(&w->reset_seq, w->posted);
-	dsp_worker_kick_locked(w);
+	for (unsigned i = 0; i < size; i++) {
+		w->shared_pending[offset + i] = value >> (i * 8);
+		w->shared_pending_count[offset + i]++;
+	}
+	dsp_post_event(p, &event);
 	qemu_mutex_unlock(&w->mutex);
+}
+
+/* On the worker, once the write is in the shared RAM. */
+static void dsp_shared_write_done(dsp_worker_t *w, const dsp_event_t *event) {
+	for (unsigned i = 0; i < event->size; i++)
+		w->shared_pending_count[event->index + i]--;
+}
+
+/* The shared RAM as the ARM sees it: with its own writes the DSP has yet to take. */
+static uint64_t dsp_shared_read(dsp_state_t *p, size_t offset, unsigned size) {
+	dsp_worker_t *w = &p->worker;
+	uint64_t value;
+
+	qemu_mutex_lock(&w->mutex);
+	value = dsp_runtime_shared_read_bytes(p->runtime, offset, size);
+	for (unsigned i = 0; i < size; i++) {
+		if (w->shared_pending_count[offset + i] != 0) {
+			value &= ~((uint64_t) UINT8_MAX << (i * 8));
+			value |= (uint64_t) w->shared_pending[offset + i] << (i * 8);
+		}
+	}
+	qemu_mutex_unlock(&w->mutex);
+	return value;
+}
+
+static uint16_t dsp_shared_read_word(dsp_state_t *p, size_t offset) {
+	return dsp_shared_read(p, offset * sizeof(uint16_t), sizeof(uint16_t));
 }
 
 static void dsp_queue_output(dsp_state_t *p, const dsp_output_t *output) {
@@ -1135,10 +1214,11 @@ static bool dsp_synced(dsp_worker_t *w, int64_t time, uint64_t seq) {
 /*
  * Wait for the DSP to reach @time with every event up to @seq applied. The
  * BQL is dropped meanwhile: the worker may need it for the SSC.
- */
-/*
+ *
  * Returns false when it gave up because the DSP is waiting for the vCPU to
  * flush the shared code buffer, which the vCPU can only do from its own loop.
+ * The lead timer retries; a register or RAM read gets the DSP state as it
+ * stands, which the flush, a rare event, makes a few microseconds stale.
  */
 static bool dsp_wait(dsp_state_t *p, int64_t time, uint64_t seq) {
 	dsp_worker_t *w = &p->worker;
@@ -1175,6 +1255,8 @@ static bool dsp_wait(dsp_state_t *p, int64_t time, uint64_t seq) {
 	if (get_clock() - start > DSP_SLOW_SYNC_NS)
 		DPRINTF("slow sync: time=%" PRId64 " host=%" PRId64 " us dsp_pc=%05X\n", time,
 			(get_clock() - start) / SCALE_US, dsp_runtime_get_pc(p->runtime));
+	if (!synced)
+		DPRINTF("sync deferred by code flush: time=%" PRId64 " dsp=%" PRId64 "\n", time, qatomic_read(&w->now));
 
 	if (bql)
 		bql_lock();
@@ -1187,14 +1269,6 @@ static void dsp_sync_exact(dsp_state_t *p) {
 
 	dsp_wait(p, now, qatomic_read(&p->worker.posted));
 	dsp_deliver(p, now);
-}
-
-/* A reset rewrites the shared RAM: nothing the ARM does there may overtake it. */
-static void dsp_sync_reset(dsp_state_t *p) {
-	uint64_t seq = qatomic_read(&p->worker.reset_seq);
-
-	if (qatomic_read(&p->worker.applied) < seq)
-		dsp_wait(p, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL), seq);
 }
 
 static void dsp_lead_timer(void *opaque) {
@@ -1275,6 +1349,10 @@ static void dsp_apply_event(dsp_state_t *p, const dsp_event_t *event) {
 			dsp_runtime_set_gsm_clock(p->runtime, event->frequency);
 			dsp_runtime_set_gsm_signal(p->runtime, event->index, event->value != 0);
 			break;
+
+		case DSP_EVENT_SHARED_WRITE:
+			dsp_runtime_shared_write_bytes(p->runtime, event->index, event->value, event->size);
+			break;
 	}
 }
 
@@ -1283,7 +1361,7 @@ static void dsp_worker_publish(dsp_state_t *p) {
 	bool advanced;
 
 	qatomic_set(&w->now, dsp_runtime_get_time(p->runtime));
-	w->frequency = dsp_runtime_get_frequency(p->runtime);
+	w->quiet_until = dsp_runtime_next_event_time(p->runtime);
 	if (w->waiters != 0)
 		qemu_cond_broadcast(&w->progress);
 
@@ -1304,9 +1382,13 @@ static void dsp_worker_sleep(dsp_state_t *p, int64_t now, int64_t event_time, bo
 
 		if (delay < 0)
 			return;
-		if (wake != INT64_MAX) {
+		/*
+		 * Delivering an output kicks the worker, and so does a vCPU that
+		 * wants to go further; the timer only paces a DSP that has work.
+		 */
+		if (wake != INT64_MAX && dsp_first_output_time(w) > now) {
 			timer_mod(p->wake_timer, qemu_clock_get_ns(QEMU_CLOCK_REALTIME) +
-				(delay == 0 ? DSP_QUANTUM_NS : delay));
+				(delay == 0 ? DSP_SLEEP_STEP_NS : delay));
 		}
 	} else {
 		int64_t spin_end = get_clock() + DSP_SPIN_NS;
@@ -1346,12 +1428,14 @@ static void *dsp_worker(void *opaque) {
 		w->kicked = false;
 
 		if (event_time <= now) {
-			dsp_event_t event = g_array_index(w->events, dsp_event_t, 0);
+			dsp_event_t event = dsp_pop_event(w);
 
-			g_array_remove_index(w->events, 0);
+			w->quiet_until = INT64_MIN;
 			qemu_mutex_unlock(&w->mutex);
 			dsp_apply_event(p, &event);
 			qemu_mutex_lock(&w->mutex);
+			if (event.type == DSP_EVENT_SHARED_WRITE)
+				dsp_shared_write_done(w, &event);
 			w->applied++;
 			dsp_worker_publish(p);
 			continue;
@@ -1405,6 +1489,8 @@ static void dsp_fdsp_changed(void *opaque) {
 static void dsp_reset_core(dsp_state_t *p) {
 	p->trace_boot_mode = true;
 	dsp_post(p, DSP_EVENT_RESET, 0, 0, 0);
+	/* The reset leaves the ROM version in the first word, over anything the ARM wrote there before it. */
+	dsp_post_shared_write(p, 0, p->rom_version, sizeof(uint16_t));
 }
 
 static void dsp_reset_input(void *opaque, int id, int level) {
@@ -1431,12 +1517,12 @@ static const char *dsp_boot_command_name(uint16_t command) {
 
 static void dsp_trace_command(dsp_state_t *p, size_t pipe) {
 	if (p->trace_boot_mode) {
-		uint16_t command = dsp_runtime_shared_read(p->runtime, DSP_BOOT_DATA_OFFSET);
-		uint16_t address = dsp_runtime_shared_read(p->runtime, DSP_BOOT_DATA_OFFSET + 1);
+		uint16_t command = dsp_shared_read_word(p, DSP_BOOT_DATA_OFFSET);
+		uint16_t address = dsp_shared_read_word(p, DSP_BOOT_DATA_OFFSET + 1);
 		uint16_t words = 0;
 
 		if (command != DSP_BOOT_BRANCH)
-			words = dsp_runtime_shared_read(p->runtime, DSP_BOOT_DATA_OFFSET + 2);
+			words = dsp_shared_read_word(p, DSP_BOOT_DATA_OFFSET + 2);
 
 		DPRINTF("boot command: %s(%u) address=%04X words=%u\n", dsp_boot_command_name(command), command, address, words);
 
@@ -1446,7 +1532,7 @@ static void dsp_trace_command(dsp_state_t *p, size_t pipe) {
 	}
 
 	uint16_t offset = DSP_RUNTIME_PIPE_OFFSET + pipe * DSP_RUNTIME_PIPE_STRIDE;
-	uint16_t command = dsp_runtime_shared_read(p->runtime, offset);
+	uint16_t command = dsp_shared_read_word(p, offset);
 	DPRINTF("runtime command: pipe=%zu command=%u (0x%04X)\n", pipe, command, command);
 }
 
@@ -1456,7 +1542,6 @@ static void dsp_interrupt_input(void *opaque, int id, int level) {
 	if (!level)
 		return;
 
-	dsp_sync_reset(p);
 	if (pmb887x_trace_log_enabled(PMB887X_TRACE_DSP))
 		dsp_trace_command(p, id);
 	dsp_post(p, DSP_EVENT_REQUEST, id, 0, 0);
@@ -1562,12 +1647,8 @@ static uint64_t dsp_ram_read(void *opaque, hwaddr haddr, unsigned size) {
 	uint64_t value = 0;
 
 	if (pmb887x_clc_is_enabled(&p->clc)) {
-		int64_t window = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) - DSP_SHARED_WINDOW_NS;
-
-		dsp_sync_reset(p);
-		if (qatomic_read(&p->worker.now) < window)
-			dsp_wait(p, window, 0);
-		value = dsp_runtime_shared_read_bytes(p->runtime, haddr, size);
+		dsp_sync_exact(p);
+		value = dsp_shared_read(p, haddr, size);
 	}
 
 	IO_DUMP_READ(haddr + p->mmio.addr + DSP_RAM0, size, value);
@@ -1582,8 +1663,7 @@ static void dsp_ram_write(void *opaque, hwaddr haddr, uint64_t value, unsigned s
 	if (!pmb887x_clc_is_enabled(&p->clc))
 		return;
 
-	dsp_sync_reset(p);
-	dsp_runtime_shared_write_bytes(p->runtime, haddr, value, size);
+	dsp_post_shared_write(p, haddr, value, size);
 }
 
 static const MemoryRegionOps ram_io_ops = {
@@ -1687,6 +1767,9 @@ static void dsp_realize(DeviceState *dev, Error **errp) {
 	qemu_cond_init(&p->worker.progress);
 	p->worker.events = g_array_new(false, false, sizeof(dsp_event_t));
 	p->worker.outputs = g_array_new(false, false, sizeof(dsp_output_t));
+	p->worker.shared_pending = g_new0(uint8_t, shared_ram_size);
+	p->worker.shared_pending_count = g_new0(uint32_t, shared_ram_size);
+	p->worker.quiet_until = INT64_MIN;
 	p->worker.want = -1;
 	p->delivery_timer = timer_new_ns(QEMU_CLOCK_VIRTUAL, dsp_delivery_timer, p);
 	p->lead_timer = timer_new_full(NULL, QEMU_CLOCK_VIRTUAL, SCALE_NS, QEMU_TIMER_ATTR_EXTERNAL, dsp_lead_timer, p);
@@ -1722,6 +1805,8 @@ static void dsp_unrealize(DeviceState *dev) {
 		timer_free(p->wake_timer);
 		g_array_free(p->worker.events, true);
 		g_array_free(p->worker.outputs, true);
+		g_free(p->worker.shared_pending);
+		g_free(p->worker.shared_pending_count);
 		qemu_cond_destroy(&p->worker.progress);
 		qemu_cond_destroy(&p->worker.cond);
 		qemu_mutex_destroy(&p->worker.mutex);
