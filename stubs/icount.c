@@ -66,3 +66,23 @@ void icount2_wakeup(int cpu_index, bool halted, int mask, int interrupt_request)
 {
 	abort();
 }
+
+int64_t icount2_get_horizon(void)
+{
+	abort();
+	return 0;
+}
+
+int64_t icount2_get_horizon_delay(int64_t target)
+{
+	abort();
+	return 0;
+}
+
+void icount2_set_limit(int64_t (*fn)(void *opaque, int64_t want), void *opaque)
+{
+}
+
+void icount2_limit_advanced(void)
+{
+}

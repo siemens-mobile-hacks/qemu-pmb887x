@@ -67,7 +67,7 @@ typedef struct TimersState {
     bool icount2_adjust_initialized;
     bool icount2_adjust_locked;
     int64_t icount2_idle_realtime;
-    int64_t icount2_idle_deadline;
+    int64_t icount2_idle_end;
     bool icount2_idle;
     bool icount2_idle_wakeup;
     QEMUTimer *icount2_idle_timer;

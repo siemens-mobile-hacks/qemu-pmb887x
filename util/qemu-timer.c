@@ -440,7 +440,8 @@ static bool timer_mod_ns_locked(QEMUTimerList *timer_list,
 
 static void timerlist_rearm(QEMUTimerList *timer_list)
 {
-    if (icount2_enabled() && timer_list->clock->type == QEMU_CLOCK_VIRTUAL) {
+    /* Off the BQL (another device thread), the notify makes the vCPU resync. */
+    if (icount2_enabled() && timer_list->clock->type == QEMU_CLOCK_VIRTUAL && bql_locked()) {
         icount2_sync();
     }
     timerlist_notify(timer_list);

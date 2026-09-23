@@ -30,34 +30,137 @@ static bool icount2_debug;
 #define ICOUNT2_ADJUST_MAX_ERROR (5 * NANOSECONDS_PER_SECOND)
 #define ICOUNT2_ADJUST_SCALE 1000000
 
+static int64_t icount2_get_locked(void);
+static int64_t (*icount2_limit_fn)(void *opaque, int64_t want);
+static bool icount2_idle_running_timers;
+/* The vCPU was woken by one of its timers, at that timer's time. */
+static bool icount2_idle_timer_wakeup;
+static void *icount2_limit_opaque;
+
+/* EXTERNAL timers follow the guest's progress, so they do not wake a sleeping vCPU. */
+static int64_t icount2_idle_deadline(void) {
+	return qemu_clock_deadline_ns_all(QEMU_CLOCK_VIRTUAL, QEMU_TIMER_ATTR_ALL & ~QEMU_TIMER_ATTR_EXTERNAL);
+}
+
+static int64_t icount2_limit(int64_t want) {
+	if (icount2_limit_fn == NULL)
+		return INT64_MAX;
+	return icount2_limit_fn(icount2_limit_opaque, want);
+}
+
+/*
+ * A sleeping vCPU's clock follows the real one, as it does on hardware, up to
+ * its next timer and no further than the hardware simulated beside it has got.
+ */
+static int64_t icount2_idle_catch_up(void) {
+	int64_t now = icount2_get();
+	int64_t deadline = icount2_idle_deadline();
+	int64_t target = cpu_get_clock();
+
+	if (deadline >= 0)
+		target = MIN(target, now + deadline);
+	if (target > now)
+		target = MIN(target, icount2_limit(-1));
+	if (target <= now)
+		return now;
+
+	seqlock_write_lock(&timers_state.vm_clock_seqlock, &timers_state.vm_clock_lock);
+	qatomic_set(&timers_state.icount2_bias, qatomic_read(&timers_state.icount2_bias) + target - now);
+	seqlock_write_unlock(&timers_state.vm_clock_seqlock, &timers_state.vm_clock_lock);
+	return target;
+}
+
+static void icount2_set_idle_end(int64_t end) {
+	seqlock_write_lock(&timers_state.vm_clock_seqlock, &timers_state.vm_clock_lock);
+	timers_state.icount2_idle_end = end;
+	seqlock_write_unlock(&timers_state.vm_clock_seqlock, &timers_state.vm_clock_lock);
+}
+
 static void icount2_idle_timer(void *opaque) {
-	int64_t virtual_ahead;
-	int64_t deadline;
-
-	if (timers_state.icount2_idle_deadline > 0) {
-		seqlock_write_lock(&timers_state.vm_clock_seqlock, &timers_state.vm_clock_lock);
-		int64_t bias = qatomic_read(&timers_state.icount2_bias);
-		qatomic_set(&timers_state.icount2_bias, bias + timers_state.icount2_idle_deadline);
-		seqlock_write_unlock(&timers_state.vm_clock_seqlock, &timers_state.vm_clock_lock);
-
-		timers_state.icount2_idle_deadline = 0;
-	}
-
-	deadline = qemu_clock_deadline_ns_all(QEMU_CLOCK_VIRTUAL, QEMU_TIMER_ATTR_ALL);
-	if (deadline == 0) {
-		qemu_clock_run_timers(QEMU_CLOCK_VIRTUAL);
-		qemu_clock_notify(QEMU_CLOCK_VIRTUAL);
-		if (timers_state.icount2_idle_wakeup)
-			return;
-		deadline = qemu_clock_deadline_ns_all(QEMU_CLOCK_VIRTUAL, QEMU_TIMER_ATTR_ALL);
-	}
-	
-	if (deadline < 0)
+	if (!timers_state.icount2_idle)
 		return;
 
-	virtual_ahead = MAX(icount2_get() - cpu_get_clock(), 0);
-	timers_state.icount2_idle_deadline = deadline;
-	timer_mod(timers_state.icount2_idle_timer, qemu_clock_get_ns(QEMU_CLOCK_REALTIME) + deadline + virtual_ahead);
+	for (;;) {
+		int64_t now = icount2_idle_catch_up();
+		int64_t deadline = icount2_idle_deadline();
+		int64_t real;
+		int64_t end;
+
+		if (deadline == 0) {
+			icount2_idle_running_timers = true;
+			qemu_clock_run_timers(QEMU_CLOCK_VIRTUAL);
+			icount2_idle_running_timers = false;
+			qemu_clock_notify(QEMU_CLOCK_VIRTUAL);
+			if (timers_state.icount2_idle_wakeup)
+				return;
+			continue;
+		}
+
+		end = deadline < 0 ? INT64_MAX : now + deadline;
+		icount2_set_idle_end(end);
+		if (deadline < 0)
+			return;
+
+		real = cpu_get_clock();
+		if (real < end) {
+			timer_mod(timers_state.icount2_idle_timer, qemu_clock_get_ns(QEMU_CLOCK_REALTIME) + end - real);
+			return;
+		}
+
+		/* The limit's owner calls icount2_limit_advanced() once it gets there. */
+		if (icount2_limit(end) < end)
+			return;
+	}
+}
+
+/*
+ * How far the vCPUs are known to have got: their clock while they run, or,
+ * while they sleep, as far as the real clock has carried them towards their
+ * next timer.
+ */
+int64_t icount2_get_horizon(void) {
+	int64_t time;
+	unsigned start;
+
+	do {
+		start = seqlock_read_begin(&timers_state.vm_clock_seqlock);
+		time = icount2_get_locked();
+		if (timers_state.icount2_idle)
+			time = MAX(time, MIN(cpu_get_clock_locked(), timers_state.icount2_idle_end));
+	} while (seqlock_read_retry(&timers_state.vm_clock_seqlock, start));
+	return time;
+}
+
+/* Real time until the horizon of sleeping vCPUs reaches @target, or -1 while they run. */
+int64_t icount2_get_horizon_delay(int64_t target) {
+	int64_t delay;
+	unsigned start;
+
+	do {
+		start = seqlock_read_begin(&timers_state.vm_clock_seqlock);
+		if (!timers_state.icount2_idle) {
+			delay = -1;
+		} else {
+			delay = MAX(MIN(target, timers_state.icount2_idle_end) - cpu_get_clock_locked(), 0);
+		}
+	} while (seqlock_read_retry(&timers_state.vm_clock_seqlock, start));
+	return delay;
+}
+
+/*
+ * Hardware simulated on another thread limits how far sleeping vCPUs may
+ * advance. @fn returns the virtual time it has been simulated up to; given a
+ * @want other than -1, it must call icount2_limit_advanced() once it gets
+ * there.
+ */
+void icount2_set_limit(int64_t (*fn)(void *opaque, int64_t want), void *opaque) {
+	icount2_limit_opaque = opaque;
+	icount2_limit_fn = fn;
+}
+
+void icount2_limit_advanced(void) {
+	if (qatomic_read(&timers_state.icount2_idle))
+		timer_mod(timers_state.icount2_idle_timer, qemu_clock_get_ns(QEMU_CLOCK_REALTIME));
 }
 
 void icount2_sync(void) {
@@ -240,17 +343,10 @@ static void icount2_adjust_rt(void *opaque) {
 }
 
 void icount2_enter_sleep(void) {
-	int64_t virtual = 0;
-	int64_t deadline = 0;
-
-	if (icount2_debug) {
-		virtual = icount2_get();
-		deadline = qemu_clock_deadline_ns_all(QEMU_CLOCK_VIRTUAL, QEMU_TIMER_ATTR_ALL);
-	}
-
 	seqlock_write_lock(&timers_state.vm_clock_seqlock, &timers_state.vm_clock_lock);
 	timers_state.icount2_idle_realtime = cpu_get_clock_locked();
-	timers_state.icount2_idle = true;
+	timers_state.icount2_idle_end = icount2_get_locked();
+	qatomic_set(&timers_state.icount2_idle, true);
 	seqlock_write_unlock(&timers_state.vm_clock_seqlock, &timers_state.vm_clock_lock);
 
 	if (icount2_debug) {
@@ -258,17 +354,21 @@ void icount2_enter_sleep(void) {
 			"icount2 sleep: event=enter realtime=%" PRId64 " virtual=%" PRId64
 			" deadline=%" PRId64 " ns\n",
 			timers_state.icount2_idle_realtime,
-			virtual,
-			deadline);
+			icount2_get(),
+			icount2_idle_deadline());
 	}
 
-	timers_state.icount2_idle_deadline = 0;
 	timers_state.icount2_idle_wakeup = false;
+	icount2_idle_timer_wakeup = false;
 	icount2_idle_timer(NULL);
 }
 
 void icount2_exit_sleep(void) {
 	int64_t idle_elapsed = 0;
+
+	timer_del(timers_state.icount2_idle_timer);
+	if (!icount2_idle_timer_wakeup)
+		icount2_idle_catch_up();
 
 	seqlock_write_lock(&timers_state.vm_clock_seqlock, &timers_state.vm_clock_lock);
 	if (timers_state.icount2_adjust_initialized || icount2_debug)
@@ -276,12 +376,10 @@ void icount2_exit_sleep(void) {
 	if (timers_state.icount2_adjust_initialized) {
 		timers_state.icount2_adjust_realtime += idle_elapsed;
 	}
-	timers_state.icount2_idle = false;
+	qatomic_set(&timers_state.icount2_idle, false);
 	seqlock_write_unlock(&timers_state.vm_clock_seqlock, &timers_state.vm_clock_lock);
 
-	timers_state.icount2_idle_deadline = 0;
 	timers_state.icount2_idle_wakeup = false;
-	timer_del(timers_state.icount2_idle_timer);
 	icount2_sync();
 
 	if (icount2_debug) {
@@ -316,6 +414,7 @@ void icount2_wakeup(int cpu_index, bool halted, int mask, int interrupt_request)
 		return;
 
 	timers_state.icount2_idle_wakeup = true;
+	icount2_idle_timer_wakeup = icount2_idle_running_timers;
 	timer_del(timers_state.icount2_idle_timer);
 }
 

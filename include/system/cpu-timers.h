@@ -61,5 +61,9 @@ int64_t icount2_get(void);
 void icount2_enter_sleep(void);
 void icount2_exit_sleep(void);
 void icount2_wakeup(int cpu_index, bool halted, int mask, int interrupt_request);
+int64_t icount2_get_horizon(void);
+int64_t icount2_get_horizon_delay(int64_t target);
+void icount2_set_limit(int64_t (*fn)(void *opaque, int64_t want), void *opaque);
+void icount2_limit_advanced(void);
 
 #endif /* SYSTEM_CPU_TIMERS_H */
