@@ -9,6 +9,7 @@
 #include "system/block-backend.h"
 #include "system/runstate.h"
 #include "qemu/main-loop.h"
+#include "qemu/timer.h"
 #include "hw/core/qdev-properties.h"
 #include "hw/core/qdev-properties-system.h"
 #include "hw/arm/pmb887x/trace.h"
@@ -29,8 +30,12 @@ struct pmb887x_flash_blk_t {
 	BlockBackend *blk;
 	/* write-behind (wasm): dirty ranges flushed by a main-loop BH */
 	GArray *dirty;
+	GArray *queue;
+	guint qpos;
+	QEMUIOVector qiov;
 	QEMUBH *flush_bh;
-	unsigned inflight;
+	QEMUTimer *flush_timer;
+	bool inflight;
 	VMChangeStateEntry *vmstate;
 };
 
@@ -48,68 +53,108 @@ int pmb887x_flash_blk_pread(pmb887x_flash_blk_t *flash, int64_t offset, int64_t 
  * from a main-loop bottom half (the coroutine-capable thread); the
  * storage array always holds the latest data, so writing later is exact.
  */
-static void flash_blk_write_sync(pmb887x_flash_blk_t *flash) {
-	GArray *dirty = flash->dirty;
+#define FLASH_BLK_FLUSH_MS	50
+#define FLASH_BLK_GAP	(64 * 1024)
 
-	if (!dirty->len)
-		return;
-	flash->dirty = g_array_new(false, false, sizeof(flash_blk_dirty_t));
-	for (guint i = 0; i < dirty->len; i++) {
-		flash_blk_dirty_t *d = &g_array_index(dirty, flash_blk_dirty_t, i);
-		int ret = blk_pwrite(flash->blk, d->offset, d->size, d->src, 0);
-		if (ret < 0) {
-			EPRINTF("Can't write to flash file: %d, %s", ret, strerror(-ret));
-			exit(1);
-		}
+static void flash_blk_write_range(pmb887x_flash_blk_t *flash, flash_blk_dirty_t *d) {
+	int ret = blk_pwrite(flash->blk, d->offset, d->size, d->src, 0);
+	if (ret < 0) {
+		EPRINTF("Can't write to flash file: %d, %s", ret, strerror(-ret));
+		exit(1);
 	}
-	g_array_free(dirty, true);
 }
 
-typedef struct {
-	pmb887x_flash_blk_t *flash;
-	QEMUIOVector qiov;
-} flash_blk_req_t;
+static void flash_blk_write_sync(pmb887x_flash_blk_t *flash) {
+	for (; flash->qpos < flash->queue->len; flash->qpos++)
+		flash_blk_write_range(flash, &g_array_index(flash->queue, flash_blk_dirty_t, flash->qpos));
+	for (guint i = 0; i < flash->dirty->len; i++)
+		flash_blk_write_range(flash, &g_array_index(flash->dirty, flash_blk_dirty_t, i));
+	g_array_set_size(flash->dirty, 0);
+}
+
+static void flash_blk_flush_arm(pmb887x_flash_blk_t *flash) {
+	timer_mod(flash->flush_timer, qemu_clock_get_ms(QEMU_CLOCK_REALTIME) + FLASH_BLK_FLUSH_MS);
+}
 
 static void flash_blk_write_done(void *opaque, int ret) {
-	flash_blk_req_t *req = opaque;
-	pmb887x_flash_blk_t *flash = req->flash;
+	pmb887x_flash_blk_t *flash = opaque;
 
 	if (ret < 0) {
 		EPRINTF("Can't write to flash file: %d, %s", ret, strerror(-ret));
 		exit(1);
 	}
-	qemu_iovec_destroy(&req->qiov);
-	g_free(req);
-	if (--flash->inflight == 0 && flash->dirty->len)
+	qemu_iovec_destroy(&flash->qiov);
+	flash->inflight = false;
+	if (flash->qpos < flash->queue->len)
 		qemu_bh_schedule(flash->flush_bh);
+	else if (flash->dirty->len)
+		flash_blk_flush_arm(flash);
+}
+
+static int flash_blk_dirty_cmp(const void *a, const void *b) {
+	const flash_blk_dirty_t *x = a, *y = b;
+	return x->offset < y->offset ? -1 : x->offset > y->offset;
 }
 
 /*
- * Asynchronous, one generation in flight.  A synchronous blk_pwrite() here
+ * Sorted and merged across gaps of up to FLASH_BLK_GAP: the storage array
+ * holds the gap's bytes too, so writing them is exact.
+ */
+static void flash_blk_take_dirty(pmb887x_flash_blk_t *flash) {
+	GArray *q = flash->dirty;
+	guint n = 0;
+
+	flash->dirty = flash->queue;
+	g_array_set_size(flash->dirty, 0);
+	flash->queue = q;
+	flash->qpos = 0;
+	qsort(q->data, q->len, sizeof(flash_blk_dirty_t), flash_blk_dirty_cmp);
+	for (guint i = 0; i < q->len; i++) {
+		flash_blk_dirty_t *d = &g_array_index(q, flash_blk_dirty_t, i);
+		flash_blk_dirty_t *m = n ? &g_array_index(q, flash_blk_dirty_t, n - 1) : NULL;
+		if (m && d->offset <= m->offset + m->size + FLASH_BLK_GAP && d->src - d->offset == m->src - m->offset)
+			m->size = MAX(m->size, d->offset + d->size - m->offset);
+		else
+			g_array_index(q, flash_blk_dirty_t, n++) = *d;
+	}
+	g_array_set_size(q, n);
+}
+
+/*
+ * Asynchronous, one request in flight (a batch can hold hundreds of ranges,
+ * and each concurrent request holds a coroutine stack: all at once ran the
+ * heap out of memory).  A synchronous blk_pwrite() here
  * polls the thread pool with the BQL held, so every flash MMIO the vCPU made
  * meanwhile waited for the file write: through a KE970 boot the main loop
  * sat in this BH ~240 ms of every second and the vCPU 230-370 ms in the BQL.
- * Ranges dirtied while a generation is in flight wait for all of it to
- * complete (flash_blk_write_done reschedules), so a later write of a range
- * always lands after an earlier one and the file converges on the storage.
+ * The first write of a batch arms a FLASH_BLK_FLUSH_MS timer instead of
+ * flushing at once: a boot programs ~80k words/s, and flushing each batch
+ * as it appeared cost the main loop a block request per ~30 words.
+ * Ranges dirtied while a batch is being written wait for all of it, so a
+ * later write of a range always lands after an earlier one and the file
+ * converges on the storage.
  */
 static void flash_blk_flush_bh(void *opaque) {
 	pmb887x_flash_blk_t *flash = opaque;
-	GArray *dirty = flash->dirty;
 
-	if (flash->inflight || !dirty->len)
+	if (flash->inflight)
 		return;
-	flash->dirty = g_array_new(false, false, sizeof(flash_blk_dirty_t));
-	for (guint i = 0; i < dirty->len; i++) {
-		flash_blk_dirty_t *d = &g_array_index(dirty, flash_blk_dirty_t, i);
-		flash_blk_req_t *req = g_new(flash_blk_req_t, 1);
-
-		req->flash = flash;
-		qemu_iovec_init_buf(&req->qiov, (void *) d->src, d->size);
-		flash->inflight++;
-		blk_aio_pwritev(flash->blk, d->offset, &req->qiov, 0, flash_blk_write_done, req);
+	if (flash->qpos >= flash->queue->len) {
+		if (!flash->dirty->len)
+			return;
+		flash_blk_take_dirty(flash);
 	}
-	g_array_free(dirty, true);
+	flash_blk_dirty_t *d = &g_array_index(flash->queue, flash_blk_dirty_t, flash->qpos++);
+	flash->inflight = true;
+	qemu_iovec_init_buf(&flash->qiov, (void *) d->src, d->size);
+	blk_aio_pwritev(flash->blk, d->offset, &flash->qiov, 0, flash_blk_write_done, flash);
+}
+
+/* the coroutine must start from a BH: timerlist_run_timers() is not on the Asyncify onlylist */
+static void flash_blk_flush_timer(void *opaque) {
+	pmb887x_flash_blk_t *flash = opaque;
+
+	qemu_bh_schedule(flash->flush_bh);
 }
 
 static void flash_blk_vm_state(void *opaque, bool running, RunState state) {
@@ -125,12 +170,12 @@ int pmb887x_flash_blk_pwrite(pmb887x_flash_blk_t *flash, int64_t offset, int64_t
 	flash_blk_dirty_t *last = flash->dirty->len ?
 		&g_array_index(flash->dirty, flash_blk_dirty_t, flash->dirty->len - 1) : NULL;
 	/*
-	 * A non-empty list always has its flush pending: either the BH is
-	 * scheduled, or a generation is in flight and its completion schedules
-	 * it (the BH swaps the list out before writing it, and flash MMIO runs
-	 * under the BQL).  qemu_bh_schedule() on a pending BH is not a
-	 * no-op: aio_bh_enqueue() still aio_notify()s, i.e. a futex wake of
-	 * the main loop per programmed word -- ~130k/s through a KE970 boot.
+	 * A non-empty list always has its flush pending: either the timer is
+	 * armed, or a batch is being written and its last completion arms it
+	 * (the BH swaps the list out before writing it, and flash MMIO runs
+	 * under the BQL).  Re-arming a pending timer or BH is not a no-op: it
+	 * still wakes the main loop, per programmed word -- ~80k/s through a
+	 * KE970 boot.
 	 */
 	bool schedule = !last;
 
@@ -144,7 +189,7 @@ int pmb887x_flash_blk_pwrite(pmb887x_flash_blk_t *flash, int64_t offset, int64_t
 		g_array_append_val(flash->dirty, d);
 	}
 	if (schedule)
-		qemu_bh_schedule(flash->flush_bh);
+		flash_blk_flush_arm(flash);
 	return 0;
 }
 #else
@@ -182,7 +227,9 @@ static void flash_blk_realize(DeviceState *dev, Error **errp) {
 
 #ifdef __EMSCRIPTEN__
 	flash->dirty = g_array_new(false, false, sizeof(flash_blk_dirty_t));
+	flash->queue = g_array_new(false, false, sizeof(flash_blk_dirty_t));
 	flash->flush_bh = qemu_bh_new(flash_blk_flush_bh, flash);
+	flash->flush_timer = timer_new_ms(QEMU_CLOCK_REALTIME, flash_blk_flush_timer, flash);
 	flash->vmstate = qemu_add_vm_change_state_handler(flash_blk_vm_state, flash);
 #endif
 
