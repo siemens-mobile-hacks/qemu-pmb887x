@@ -104,6 +104,10 @@ struct pmb887x_flash_t {
 	uint32_t size;
 	uint32_t offset;
 	
+	/* Refuse program/buffer opcodes the part's CFI command set does not
+	 * document (see flash_command_is_documented). Off by default. */
+	bool strict_opcodes;
+	
 	uint16_t *otp0_data;
 	uint16_t *otp1_data;
 	uint8_t *efa_storage;
@@ -207,7 +211,7 @@ static void flash_data_write(pmb887x_flash_part_t *p, uint32_t offset, uint32_t 
 			exit(1);
 	}
 	
-	if (pmb887x_flash_blk_is_rw(p->flash->blk)) {
+	if (p->flash->blk && pmb887x_flash_blk_is_rw(p->flash->blk)) {
 		int ret = pmb887x_flash_blk_pwrite(p->flash->blk, p->flash->offset + p->offset + offset, size, p->storage + offset);
 		if (ret < 0) {
 			flash_error_part(p, "Can't write to flash file: %d, %s", ret, strerror(ret));
@@ -488,7 +492,7 @@ static void flash_block_erase(pmb887x_flash_part_t *p, uint32_t offset) {
 
 	uint32_t erase_offset = base - p->offset;
 	memset(p->storage + erase_offset, 0xFF, sector_size);
-	if (pmb887x_flash_blk_is_rw(p->flash->blk)) {
+	if (p->flash->blk && pmb887x_flash_blk_is_rw(p->flash->blk)) {
 		int ret = pmb887x_flash_blk_pwrite(p->flash->blk, p->flash->offset + p->offset + erase_offset, sector_size,
 			p->storage + erase_offset);
 		if (ret < 0) {
@@ -630,8 +634,8 @@ static void flash_io_write(void *opaque, hwaddr part_offset, uint64_t value, uin
 	bool valid_command = false;
 	
 	if (p->wcycle == 0) {
-		if (!p->io_mode)
-			memory_region_rom_device_set_romd(&p->mem, false);
+		// A write is a command, and a command leaves read-array mode
+		memory_region_rom_device_set_romd(&p->mem, false);
 		
 		valid_command = true;
 		p->cmd_addr = offset;
@@ -677,9 +681,15 @@ static void flash_io_write(void *opaque, hwaddr part_offset, uint64_t value, uin
 				memory_region_rom_device_set_romd(&p->mem, p->cmd == 0);
 				break;
 
+			case 0x10:
+				if (p->flash->strict_opcodes) {
+					flash_trace_part(p, "cmd program word (%02"PRIX64") is not documented for command set 0200 -> ignored", value);
+					flash_reset(p);
+					break;
+				}
+				QEMU_FALLTHROUGH;
 			case 0x41:
 			case 0x40:
-			case 0x10:
 				flash_trace_part(p, "cmd program word (%02"PRIX64")", value);
 				p->cmd = value;
 				p->wcycle++;
@@ -691,8 +701,14 @@ static void flash_io_write(void *opaque, hwaddr part_offset, uint64_t value, uin
 				p->wcycle++;
 				break;
 
-			case 0xE9:
 			case 0xE8:
+				if (p->flash->strict_opcodes) {
+					flash_trace_part(p, "cmd buffered program (%02"PRIX64") is not documented for command set 0200 -> ignored", value);
+					flash_reset(p);
+					break;
+				}
+				QEMU_FALLTHROUGH;
+			case 0xE9:
 				flash_trace_part(p, "cmd buffered program (%02"PRIX64")", value);
 				p->cmd = value;
 				p->wcycle++;
@@ -955,7 +971,7 @@ static void flash_load_file(pmb887x_flash_t *flash, const char *path, void *data
 static void flash_save_file(pmb887x_flash_t *flash, int *fd, const char *path, const void *data, size_t total_size,
 	size_t offset, size_t size, const char *region)
 {
-	if (!path || !path[0] || !pmb887x_flash_blk_is_rw(flash->blk))
+	if (!path || !path[0] || !flash->blk || !pmb887x_flash_blk_is_rw(flash->blk))
 		return;
 
 	if (*fd < 0) {
@@ -982,7 +998,7 @@ static void flash_save_file(pmb887x_flash_t *flash, int *fd, const char *path, c
 
 static void flash_init_file_paths(pmb887x_flash_t *flash) {
 	const pmb887x_flash_cfg_t *cfg = flash->cfg;
-	if (strcmp(flash->name, "FLASH0") == 0) {
+	if (flash->blk && strcmp(flash->name, "FLASH0") == 0) {
 		const char *fullflash_file = pmb887x_flash_blk_filename(flash->blk);
 		if ((!flash->otp0_file || !flash->otp0_file[0]) && cfg->otp0_size) {
 			g_free(flash->otp0_file);
@@ -1062,10 +1078,14 @@ static void flash_init_part(pmb887x_flash_t *flash, const pmb887x_flash_cfg_part
 	
 	flash_trace_part(p, "hw partition 0x%08X ... 0x%08X", p->flash->offset + p->offset, p->flash->offset + p->offset + p->size - 1);
 	
-	int ret = pmb887x_flash_blk_pread(p->flash->blk, flash->offset + p->offset, p->size, p->storage);
-	if (ret < 0) {
-		flash_error(p->flash, "failed to read the initial flash content [offset=%08X, size=%08X]", p->flash->offset + p->offset, p->size);
-		exit(1);
+	if (flash->blk) {
+		int ret = pmb887x_flash_blk_pread(flash->blk, flash->offset + p->offset, p->size, p->storage);
+		if (ret < 0) {
+			flash_error(flash, "failed to read the initial flash content [offset=%08X, size=%08X]", flash->offset + p->offset, p->size);
+			exit(1);
+		}
+	} else {
+		memset(p->storage, 0xFF, p->size);
 	}
 	
 	p->blocks_n = 0;
@@ -1250,6 +1270,9 @@ static const Property flash_properties[] = {
 	DEFINE_PROP_UINT16("pid", pmb887x_flash_t, pid, 0),
 	DEFINE_PROP_UINT32("offset", pmb887x_flash_t, offset, 0),
 	DEFINE_PROP_UINT32("size", pmb887x_flash_t, size, 0),
+	/* Refuse program/buffer opcodes the part's CFI command set does not
+	 * document; see flash_command_is_documented(). */
+	DEFINE_PROP_BOOL("strict-opcodes", pmb887x_flash_t, strict_opcodes, false),
 	DEFINE_PROP_STRING("otp0-file", pmb887x_flash_t, otp0_file),
 	DEFINE_PROP_STRING("otp1-file", pmb887x_flash_t, otp1_file),
 	DEFINE_PROP_STRING("efa-file", pmb887x_flash_t, efa_file),

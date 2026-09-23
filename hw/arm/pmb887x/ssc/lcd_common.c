@@ -219,6 +219,13 @@ static inline void lcd_incr_px(pmb887x_lcd_t *lcd) {
 	}
 }
 
+static void lcd_flush_partial_command(pmb887x_lcd_t *lcd) {
+	if (lcd->wr_state != LCD_WR_STATE_CMD)
+		return;
+	lcd_clear_fifo(lcd);
+	lcd->wr_state = LCD_WR_STATE_NONE;
+}
+
 static void lcd_handle_command(pmb887x_lcd_t *lcd, uint8_t value) {
 	if (lcd->wr_state != LCD_WR_STATE_CMD) {
 		if (lcd->wr_state == LCD_WR_STATE_PARAM)
@@ -272,7 +279,21 @@ static void lcd_handle_param(pmb887x_lcd_t *lcd, uint8_t value) {
 	}
 }
 
+static const char *lcd_wr_state_name(enum pmb887x_lcd_wr_state_t state) {
+	switch (state) {
+		case LCD_WR_STATE_NONE:		return "NONE";
+		case LCD_WR_STATE_CMD:		return "CMD";
+		case LCD_WR_STATE_PARAM:	return "PARAM";
+		case LCD_WR_STATE_RAM:		return "RAM";
+		case LCD_WR_STATE_IGNORE:	return "IGNORE";
+	}
+	return "?";
+}
+
 static void lcd_write_control_byte(pmb887x_lcd_t *lcd, uint8_t value) {
+	DPRINTF("WR %02X cd=%d [%s] fifo=%d\n", value, lcd->cd, lcd_wr_state_name(lcd->wr_state),
+		pmb887x_fifo_count(&lcd->fifo));
+
 	if (lcd->k->direct_data_write) {
 		if (lcd->wr_state == LCD_WR_STATE_NONE || lcd->wr_state == LCD_WR_STATE_CMD) {
 			lcd_handle_command(lcd, value);
@@ -464,6 +485,9 @@ static uint32_t lcd_transfer(SSIPeripheral *dev, uint32_t data) {
 	}
 
 	if (lcd->wr_state == LCD_WR_STATE_RAM && !lcd->cd) {
+		if (!lcd->gram)
+			return 0;
+
 		lcd->tmp_pixel = lcd->tmp_pixel << 8 | (data & 0xFF);
 		lcd->tmp_index++;
 
@@ -626,6 +650,9 @@ static void lcd_handle_cd(void *opaque, int n, int level) {
 	pmb887x_lcd_t *lcd = PMB887X_LCD(opaque);
 	bool old_cd = lcd->cd;
 	bool new_cd = lcd->k->cd_polarity ? level == 1 : level == 0;
+	if (old_cd != new_cd)
+		DPRINTF("CD %d -> %d [%s] fifo=%d\n", old_cd, new_cd, lcd_wr_state_name(lcd->wr_state),
+			pmb887x_fifo_count(&lcd->fifo));
 	pmb887x_lcd_set_cd(lcd, new_cd);
 
 	if (lcd->reset_active)

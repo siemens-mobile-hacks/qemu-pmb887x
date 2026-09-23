@@ -335,15 +335,12 @@ static void pmb887x_init(MachineState *machine) {
 
 	// Flash
 	DriveInfo *flash_dinfo = drive_get(IF_PFLASH, 0, 0);
-	if (!flash_dinfo) {
-		error_report("Flash ROM must be specified with -drive if=pflash,format=raw,file=fullflash.bin");
-		exit(1);
+	if (flash_dinfo) {
+		DeviceState *flash_blk = qdev_new("pmb887x-flash-blk");
+		flash_blk->id = strdup("FULLFLASH");
+		qdev_prop_set_drive(flash_blk, "drive", blk_by_legacy_dinfo(flash_dinfo));
+		sysbus_realize_and_unref(SYS_BUS_DEVICE(flash_blk), &error_fatal);
 	}
-
-	DeviceState *flash_blk = qdev_new("pmb887x-flash-blk");
-	flash_blk->id = strdup("FULLFLASH");
-	qdev_prop_set_drive(flash_blk, "drive", blk_by_legacy_dinfo(flash_dinfo));
-	sysbus_realize_and_unref(SYS_BUS_DEVICE(flash_blk), &error_fatal);
 
 	pmb887x_cpu_modules_post_init();
 	pmb887x_board_init_analog();

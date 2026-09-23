@@ -384,7 +384,7 @@ static void dif_run_transfers(pmb887x_dif_t *p) {
 		 * then waits on something other than the CON read below stalls
 		 * outright.
 		 */
-		timer_mod(p->transfer_timer, 0);
+		timer_mod(p->transfer_timer, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + 1);
 	} else {
 		p->status &= ~DIFv1_CON_BSY;
 	}
@@ -1043,7 +1043,7 @@ static void dif_realize(DeviceState *dev, Error **errp) {
 
 	pmb887x_fifo16_init(&p->tx_fifo_single, 1);
 	pmb887x_fifo16_init(&p->rx_fifo_single, 1);
-	p->transfer_timer = timer_new_ns(pmb887x_completion_clock(), dif_transfer_complete, p);
+	p->transfer_timer = timer_new_ns(QEMU_CLOCK_VIRTUAL, dif_transfer_complete, p);
 
 	dif_set_fifo(p, DIF_FIFO_RX, false);
 	dif_set_fifo(p, DIF_FIFO_TX, false);
