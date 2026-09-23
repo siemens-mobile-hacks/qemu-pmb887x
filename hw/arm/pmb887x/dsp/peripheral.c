@@ -65,7 +65,7 @@ static dsp_device_t *dsp_bus_create_device(dsp_bus_t *bus, const pmb887x_dsp_per
 			g_assert(bus->interrupt != NULL);
 			g_assert(bus->i2s_count < ARRAY_SIZE(bus->i2s));
 
-			device = i2s_create(config, bus->interrupt, (uint16_t) BIT(bus->i2s_count * 2), bus->afe);
+			device = i2s_create(config, bus->interrupt, (uint16_t) BIT(bus->i2s_count * 2), bus->afe, host);
 			bus->i2s[bus->i2s_count++] = device;
 			return device;
 
@@ -178,15 +178,21 @@ void dsp_bus_set_clock(dsp_bus_t *bus, bool enabled) {
 		timer2_set_clock_enabled(bus->timer2, enabled);
 }
 
+void dsp_bus_set_frequency(dsp_bus_t *bus, uint32_t frequency) {
+	bus->frequency = frequency;
+	if (bus->afe != NULL)
+		afe_set_frequency(bus->afe, frequency);
+	if (bus->baseband != NULL)
+		baseband_set_frequency(bus->baseband, frequency);
+	for (size_t i = 0; i < bus->i2s_count; i++)
+		i2s_set_frequency(bus->i2s[i], frequency);
+}
+
 void dsp_bus_advance(dsp_bus_t *bus, size_t cycles) {
-	/*
-	 * The AFE is intentionally NOT advanced here. It is a real-time sample
-	 * clock (8 kHz) and must tick on wall-clock time, not on however many DSP
-	 * cycles happen to execute -- otherwise a DSP busy-loop advances it at full
-	 * speed, flooding the core with audio interrupts and starving the MCU
-	 * command handshake. It is driven from dsp_bus_advance_afe() instead, paced
-	 * to wall clock by the runtime.
-	 */
+	if (bus->afe != NULL && afe_is_active(bus->afe))
+		afe_advance(bus->afe, cycles);
+	if (bus->baseband != NULL && baseband_is_active(bus->baseband))
+		baseband_advance(bus->baseband, cycles);
 	if (bus->channel_decoder != NULL && chdec_is_active(bus->channel_decoder))
 		chdec_advance(bus->channel_decoder, cycles);
 	if (bus->cipher != NULL && cipher_is_active(bus->cipher))
@@ -194,7 +200,7 @@ void dsp_bus_advance(dsp_bus_t *bus, size_t cycles) {
 	if (bus->equalizer != NULL && equalizer_is_active(bus->equalizer))
 		equalizer_advance(bus->equalizer, cycles);
 	for (size_t i = 0; i < bus->i2s_count; i++)
-		if (i2s_is_active(bus->i2s[i]) && !i2s_is_paced(bus->i2s[i]))
+		if (i2s_is_active(bus->i2s[i]))
 			i2s_advance(bus->i2s[i], cycles);
 	if (bus->i2s_tx != NULL && i2s_tx_is_active(bus->i2s_tx))
 		i2s_tx_advance(bus->i2s_tx, cycles);
@@ -204,24 +210,37 @@ void dsp_bus_advance(dsp_bus_t *bus, size_t cycles) {
 		ssc_advance(bus->ssc, cycles);
 	if (bus->timer1 != NULL && timer1_is_active(bus->timer1))
 		timer1_advance(bus->timer1, cycles);
+	if (bus->timer2 != NULL && timer2_is_active(bus->timer2))
+		timer2_advance(bus->timer2, cycles);
 }
 
-void dsp_bus_advance_afe(dsp_bus_t *bus, size_t cycles) {
-	if (bus->afe != NULL && afe_is_active(bus->afe))
-		afe_advance(bus->afe, cycles);
-}
+/* Cycles until the next peripheral event the core or the MCU could observe. */
+size_t dsp_bus_next_event(dsp_bus_t *bus) {
+	size_t cycles = SIZE_MAX;
 
-/* Real-time audio clocks that run on wall time rather than executed cycles. */
-void dsp_bus_pace_i2s(dsp_bus_t *bus, int64_t now, bool core_parked) {
+	if (bus->afe != NULL)
+		cycles = MIN(cycles, afe_next_event(bus->afe));
+	if (bus->baseband != NULL)
+		cycles = MIN(cycles, baseband_next_event(bus->baseband));
+	if (bus->channel_decoder != NULL)
+		cycles = MIN(cycles, chdec_next_event(bus->channel_decoder));
+	if (bus->cipher != NULL)
+		cycles = MIN(cycles, cipher_next_event(bus->cipher));
+	if (bus->equalizer != NULL)
+		cycles = MIN(cycles, equalizer_next_event(bus->equalizer));
 	for (size_t i = 0; i < bus->i2s_count; i++)
-		if (i2s_is_active(bus->i2s[i]))
-			i2s_pace(bus->i2s[i], now, core_parked);
-}
-
-/* Offer a DSP write to the serial units, whose audio out follows their ring. */
-void dsp_bus_note_ram_write(dsp_bus_t *bus, uint16_t address, uint16_t value) {
-	for (size_t i = 0; i < bus->i2s_count; i++)
-		i2s_note_ram_write(bus->i2s[i], address, value);
+		cycles = MIN(cycles, i2s_next_event(bus->i2s[i]));
+	if (bus->i2s_tx != NULL)
+		cycles = MIN(cycles, i2s_tx_next_event(bus->i2s_tx));
+	if (bus->modulator != NULL)
+		cycles = MIN(cycles, modulator_next_event(bus->modulator));
+	if (bus->ssc != NULL)
+		cycles = MIN(cycles, ssc_next_event(bus->ssc));
+	if (bus->timer1 != NULL)
+		cycles = MIN(cycles, timer1_next_event(bus->timer1));
+	if (bus->timer2 != NULL)
+		cycles = MIN(cycles, timer2_next_event(bus->timer2));
+	return cycles;
 }
 
 void dsp_bus_apply_audio_format(dsp_bus_t *bus) {
@@ -229,22 +248,10 @@ void dsp_bus_apply_audio_format(dsp_bus_t *bus) {
 		i2s_apply_audio_format(bus->i2s[i]);
 }
 
-/*
- * Advance only the free-running DSP timers on wall-clock time while the core is
- * idle. Unlike the GSM baseband peripherals (channel decoder / modulator etc.),
- * the timers keep counting on the DSP clock regardless of core activity on real
- * hardware, and the firmware relies on a timer interrupt to periodically wake a
- * WFI-parked core so it can poll the MCU command mailbox. Pacing the whole bus
- * here instead would perturb cycle-sensitive GSM burst timing, so keep it
- * limited to the timers.
- */
-void dsp_bus_advance_timers(dsp_bus_t *bus, size_t cycles) {
-	if (bus->timer1 != NULL && timer1_is_active(bus->timer1))
-		timer1_advance(bus->timer1, cycles);
-}
-
 bool dsp_bus_is_active(const dsp_bus_t *bus) {
 	if (bus->afe != NULL && afe_is_active(bus->afe))
+		return true;
+	if (bus->baseband != NULL && baseband_is_active(bus->baseband))
 		return true;
 	if (bus->channel_decoder != NULL && chdec_is_active(bus->channel_decoder))
 		return true;

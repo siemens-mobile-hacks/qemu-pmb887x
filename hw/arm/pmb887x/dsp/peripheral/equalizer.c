@@ -874,3 +874,17 @@ dsp_device_t *equalizer_create(const pmb887x_dsp_peripheral_config_t *config, ds
 	equalizer_reset_state(state);
 	return dsp_device_create(config, &equalizer_ops, state);
 }
+
+size_t equalizer_next_event(dsp_device_t *device) {
+	equalizer_state_t *state = device->state;
+	size_t count, remaining;
+
+	if (!state->active)
+		return SIZE_MAX;
+
+	count = state->configured_count == 0 ? 1 : state->configured_count;
+	remaining = count > state->processed_count ? count - state->processed_count : 1;
+	if (state->starting)
+		remaining++;
+	return remaining * EQUALIZER_TIMESTAMP_CYCLES - state->elapsed_cycles;
+}

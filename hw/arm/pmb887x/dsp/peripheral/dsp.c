@@ -81,6 +81,8 @@ static bool control_write(dsp_device_t *device, uint16_t offset, uint32_t pc, ui
 
 			qatomic_set(&state->outputs, outputs);
 			qatomic_or(&state->output_events, changed);
+			if (changed != 0 && state->host.events_changed != NULL)
+				state->host.events_changed(state->host.opaque);
 			break;
 		}
 

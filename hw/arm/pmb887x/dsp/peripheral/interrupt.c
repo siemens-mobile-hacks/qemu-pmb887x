@@ -97,6 +97,8 @@ static bool dsp_int_write(dsp_device_t *device, uint16_t offset, uint32_t pc, ui
 	switch (offset) {
 		case TEAK_INT_TOMCU:
 			qatomic_or(&state->mcu_events, value & MCU_INTERRUPT_MASK);
+			if ((value & MCU_INTERRUPT_MASK) != 0 && state->host.events_changed != NULL)
+				state->host.events_changed(state->host.opaque);
 			break;
 
 		default:

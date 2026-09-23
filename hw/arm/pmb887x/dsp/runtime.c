@@ -4,6 +4,7 @@
 #include "qemu/osdep.h"
 #include "qemu/atomic.h"
 #include "qemu/bitops.h"
+#include "qemu/host-utils.h"
 #include "qemu/rcu.h"
 #include "qemu/timer.h"
 
@@ -14,22 +15,15 @@
 #include "hw/arm/pmb887x/dsp/runtime.h"
 #include "hw/arm/pmb887x/trace.h"
 
-#define DSP_ACTIVE_SLICE_CYCLES	32768
-#define DSP_STABLE_BLOCK_CYCLES	512
-/* Cycles to advance a real-time peripheral per step while the core waits idle. */
-#define DSP_IDLE_ADVANCE_CYCLES	16
-/* Wall-clock period of one AFE sample (8 kHz voiceband). */
-#define AFE_SAMPLE_PERIOD_NS	(NANOSECONDS_PER_SECOND / 8000)
-/* Cap how far the paced AFE can catch up in one go (e.g. after a stall). */
-#define AFE_MAX_CATCHUP_SAMPLES	64
+/* Longest run between two looks at the interrupt lines and the peripherals. */
+#define DSP_SLICE_CYCLES	4096
 
 struct dsp_runtime_t {
 	const pmb887x_dsp_config_t *config;
 	const uint8_t *program_rom;
 	const uint8_t *data_rom;
 	void *device_opaque;
-	void (*notify_activity)(void *opaque);
-	void (*notify_comm)(void *opaque, uint16_t flags, bool set);
+	void (*events_changed)(void *opaque);
 	teak_tcg_core_t core;
 	dsp_bus_t *bus;
 	uint16_t *program;
@@ -37,17 +31,15 @@ struct dsp_runtime_t {
 	size_t active_program_bank;
 	size_t active_data_bank;
 	uint16_t rom_version;
-	bool idle;
 	bool halted;
 	bool core_disabled;
 	bool pram_cache_active;
 	bool program_dirty;
-	bool program_warming;
-	bool mutable_program_started;
-	bool program_start;
-	bool reschedule;
-	uint32_t program_start_pc;
-	int64_t afe_next_sample_ns;
+	/* The core's clock: cycles run so far and when it last changed frequency. */
+	uint64_t cycles;
+	uint64_t base_cycles;
+	int64_t base_ns;
+	uint32_t frequency;
 };
 
 static uint16_t dsp_runtime_read_u16(const uint8_t *data) {
@@ -57,16 +49,6 @@ static uint16_t dsp_runtime_read_u16(const uint8_t *data) {
 static void dsp_runtime_load_words(uint16_t *destination, const uint8_t *source, size_t words) {
 	for (size_t i = 0; i < words; i++)
 		qatomic_set(&destination[i], dsp_runtime_read_u16(source + i * sizeof(uint16_t)));
-}
-
-void dsp_runtime_wake(dsp_runtime_t *runtime) {
-	qatomic_set(&runtime->idle, false);
-}
-
-void dsp_runtime_kick(dsp_runtime_t *runtime) {
-	dsp_runtime_wake(runtime);
-	qatomic_set(&runtime->reschedule, true);
-	teak_tcg_request_exit(&runtime->core);
 }
 
 static void dsp_runtime_map_program_bank(dsp_runtime_t *runtime, size_t bank) {
@@ -132,20 +114,23 @@ static void dsp_runtime_set_core_disabled(void *opaque, bool disabled) {
 
 static void dsp_runtime_set_interrupt_lines(void *opaque, uint8_t lines) {
 	dsp_runtime_t *runtime = opaque;
-
 	teak_tcg_update_irq_lines(&runtime->core, lines);
-	if (lines != 0) {
-		dsp_runtime_wake(runtime);
-		runtime->notify_activity(runtime->device_opaque);
-	}
 }
 
-static void dsp_runtime_comm_changed(void *opaque, uint16_t flags, bool set) {
+static void dsp_runtime_events_changed(void *opaque) {
 	dsp_runtime_t *runtime = opaque;
+	runtime->events_changed(runtime->device_opaque);
+}
 
-	runtime->notify_comm(runtime->device_opaque, flags, set);
-	if (set)
-		dsp_runtime_kick(runtime);
+int64_t dsp_runtime_get_time(const dsp_runtime_t *runtime) {
+	if (runtime->frequency == 0)
+		return runtime->base_ns;
+	return runtime->base_ns + muldiv64(runtime->cycles - runtime->base_cycles, NANOSECONDS_PER_SECOND,
+		runtime->frequency);
+}
+
+static int64_t dsp_runtime_time_ns(void *opaque) {
+	return dsp_runtime_get_time(opaque);
 }
 
 static uint16_t dsp_runtime_program_read(void *opaque, uint32_t address) {
@@ -169,8 +154,9 @@ static void dsp_runtime_program_write(void *opaque, uint32_t address, uint16_t v
 	if (address >= runtime->config->program_rom_base || qatomic_read(&runtime->program[address]) == value)
 		return;
 
-	if (!qatomic_read(&runtime->program_warming))
-		qatomic_set(&runtime->program_dirty, true);
+	/* The mask ROM loader is filling P-RAM: the next program must be compiled afresh. */
+	if (runtime->core.state.pc >= runtime->config->program_rom_base)
+		runtime->program_dirty = true;
 	qatomic_set(&runtime->program[address], value);
 }
 
@@ -183,60 +169,10 @@ static bool dsp_runtime_is_mmio(const dsp_runtime_t *runtime, uint16_t address) 
 	return address >= runtime->config->mmio_base && address - runtime->config->mmio_base < runtime->config->mmio_size;
 }
 
-/*
- * Advance the AFE sample clock by however many 8 kHz samples are due in
- * wall-clock time since the last call, capped so a long stall can't spiral.
- * Decoupling the AFE from DSP cycles keeps it at real 8 kHz no matter how fast
- * the core spins, so its audio interrupts don't monopolise the core and starve
- * the MCU command handshake. Runs on the worker thread (owns the AFE + IRQ
- * state), so no locking is needed; the dsp.c AFE timer just wakes this worker.
- */
-static void dsp_runtime_pace_afe(dsp_runtime_t *runtime) {
-	int64_t now, next;
-	size_t samples = 0;
-
-	if (!dsp_bus_is_active(runtime->bus))
-		return;
-
-	/* Wall-clock (matches DSP_AFE_CLOCK in dsp.c) so the sample clock keeps
-	 * advancing even while the vCPU is parked in a handshake wait under -icount. */
-	now = qemu_clock_get_ns(QEMU_CLOCK_HOST);
-	dsp_bus_pace_i2s(runtime->bus, now, qatomic_read(&runtime->core_disabled));
-	next = runtime->afe_next_sample_ns;
-	if (next == 0 || next > now + AFE_SAMPLE_PERIOD_NS)
-		next = now;	/* first sample or clock skew: (re)sync */
-
-	while (next <= now && samples < AFE_MAX_CATCHUP_SAMPLES) {
-		samples++;
-		next += AFE_SAMPLE_PERIOD_NS;
-	}
-	runtime->afe_next_sample_ns = next;
-
-	if (samples != 0) {
-		size_t cycles = samples * DSP_IDLE_ADVANCE_CYCLES;
-
-		dsp_bus_advance_afe(runtime->bus, cycles);
-		/*
-		 * Also clock the free-running DSP timers on wall-clock time. They are
-		 * otherwise only advanced by executed DSP cycles, so while the core sits
-		 * idle in a WFI-style wait they freeze -- and a timer the firmware left
-		 * enabled to periodically wake the core (to poll the MCU command mailbox)
-		 * never fires, deadlocking the ARM<->DSP handshake. Timers only, so we do
-		 * not perturb cycle-sensitive GSM baseband peripheral timing.
-		 */
-		dsp_bus_advance_timers(runtime->bus, cycles);
-#if 0	/* AFE pacing debug */
-		static uint32_t pn;
-		if ((pn++ & 0x1FF) == 0)
-			fprintf(stderr, "[afe-pace] n=%u samples=%zu irq=%02X pc=%05X idle=%d\n",
-				pn, samples, dsp_bus_get_irq_lines(runtime->bus),
-				runtime->core.state.pc, qatomic_read(&runtime->idle));
-#endif
-	}
-}
-
 static void dsp_runtime_advance_cycles(void *opaque, size_t cycles) {
 	dsp_runtime_t *runtime = opaque;
+
+	runtime->cycles += cycles;
 	dsp_bus_advance(runtime->bus, cycles);
 }
 
@@ -262,7 +198,6 @@ static void dsp_runtime_data_write(void *opaque, uint32_t address, uint16_t valu
 	if (data_address >= runtime->config->shared_base) {
 		uint16_t offset = data_address - runtime->config->shared_base;
 		qatomic_set(&runtime->data[data_address], value);
-		dsp_bus_note_ram_write(runtime->bus, data_address, value);
 		DPRINTF("shared write: address=%04X offset=%04X value=%04X pc=%05X\n", data_address,
 			offset, value, runtime->core.state.trace_pc);
 		return;
@@ -294,8 +229,7 @@ static void dsp_runtime_external_write(void *opaque, uint32_t index, uint16_t va
 
 dsp_runtime_t *dsp_runtime_create(
 	const pmb887x_dsp_config_t *config, uint16_t rom_version, const uint8_t *program_rom, const uint8_t *data_rom,
-	void *device_opaque, void (*notify_activity)(void *opaque), void (*notify_comm)(void *opaque, uint16_t flags, bool set),
-	uint32_t (*ssc_transfer)(void *opaque, uint32_t value)
+	void *device_opaque, void (*events_changed)(void *opaque), uint32_t (*ssc_transfer)(void *opaque, uint32_t value)
 ) {
 	dsp_runtime_t *runtime;
 	teak_memory_t memory;
@@ -307,8 +241,7 @@ dsp_runtime_t *dsp_runtime_create(
 	runtime->program_rom = program_rom;
 	runtime->data_rom = data_rom;
 	runtime->device_opaque = device_opaque;
-	runtime->notify_activity = notify_activity;
-	runtime->notify_comm = notify_comm;
+	runtime->events_changed = events_changed;
 	runtime->program = g_new0(uint16_t, PMB887X_DSP_ADDRESS_SPACE_WORDS);
 	runtime->data = g_new0(uint16_t, PMB887X_DSP_ADDRESS_SPACE_WORDS);
 	runtime->active_program_bank = SIZE_MAX;
@@ -320,10 +253,11 @@ dsp_runtime_t *dsp_runtime_create(
 		.set_page = dsp_runtime_set_page,
 		.set_core_disabled = dsp_runtime_set_core_disabled,
 		.set_interrupt_lines = dsp_runtime_set_interrupt_lines,
-		.comm_changed = dsp_runtime_comm_changed,
 		.data_read = dsp_runtime_bus_data_read,
 		.data_write = dsp_runtime_bus_data_write,
 		.ssc_transfer = ssc_transfer,
+		.get_time_ns = dsp_runtime_time_ns,
+		.events_changed = dsp_runtime_events_changed,
 	};
 	runtime->bus = dsp_bus_create(config, &host);
 
@@ -363,6 +297,17 @@ void dsp_runtime_set_clock(dsp_runtime_t *runtime, bool enabled) {
 	dsp_bus_set_clock(runtime->bus, enabled);
 }
 
+/* The clock changes now: time already run stays at the old frequency. */
+void dsp_runtime_set_frequency(dsp_runtime_t *runtime, uint32_t frequency) {
+	if (frequency == runtime->frequency)
+		return;
+
+	runtime->base_ns = dsp_runtime_get_time(runtime);
+	runtime->base_cycles = runtime->cycles;
+	runtime->frequency = frequency;
+	dsp_bus_set_frequency(runtime->bus, frequency);
+}
+
 void dsp_runtime_destroy(dsp_runtime_t *runtime) {
 	if (runtime == NULL)
 		return;
@@ -384,130 +329,125 @@ void dsp_runtime_reset(dsp_runtime_t *runtime) {
 	dsp_bus_reset(runtime->bus);
 	teak_tcg_reset(&runtime->core, config->program_rom_base + 2);
 
-	runtime->data[config->shared_base] = runtime->rom_version;
-	if (qatomic_xchg(&runtime->program_warming, false))
-		qatomic_set(&runtime->program_dirty, true);
-	qatomic_set(&runtime->mutable_program_started, false);
-	qatomic_set(&runtime->program_start, false);
-	qatomic_set(&runtime->reschedule, false);
-	qatomic_set(&runtime->idle, false);
-	qatomic_set(&runtime->core_disabled, false);
+	qatomic_set(&runtime->data[config->shared_base], runtime->rom_version);
+	runtime->core_disabled = false;
 	runtime->halted = false;
 }
 
-bool dsp_runtime_run(dsp_runtime_t *runtime) {
-	uint64_t cache_compiles = runtime->core.cache_compiles;
-	uint64_t cache_decoded_hits = runtime->core.cache_decoded_hits;
-	uint64_t cache_fast_hits = runtime->core.cache_fast_hits;
-	uint64_t jit_entries = runtime->core.jit_entries;
-	uint64_t chain_links = runtime->core.chain_links;
-	uint64_t chain_interrupts = runtime->core.chain_interrupts;
-	uint64_t chain_exit_stops = runtime->core.chain_exit_stops;
-	uint64_t chain_budget_stops = runtime->core.chain_budget_stops;
-	uint64_t chain_cache_stops = runtime->core.chain_cache_stops;
-	size_t slices = 0;
-	size_t blocks = 0;
-	size_t cycles = 0;
-
-	runtime->core.chain_exit_pc = 0;
-
-	qatomic_set(&runtime->idle, false);
-
-	while (cycles < DSP_ACTIVE_SLICE_CYCLES && !runtime->halted) {
-		uint8_t block_repeat_level;
-		uint32_t block_pc;
-		size_t remaining_cycles = DSP_ACTIVE_SLICE_CYCLES - cycles;
-		size_t slice_cycles = MIN(remaining_cycles, (size_t) DSP_STABLE_BLOCK_CYCLES);
-		bool mutable_program = runtime->core.state.pc < runtime->config->program_rom_base;
-		bool new_program_lifecycle = !qatomic_read(&runtime->mutable_program_started);
-		bool program_changed = qatomic_read(&runtime->program_dirty);
-		bool first_mutable_execution = mutable_program && (new_program_lifecycle || program_changed);
-
-		dsp_runtime_pace_afe(runtime);
-
-		if (first_mutable_execution) {
-			qatomic_set(&runtime->program_start_pc, runtime->core.state.pc);
-			qatomic_set(&runtime->program_start, true);
-			qatomic_set(&runtime->program_dirty, false);
-			qatomic_set(&runtime->program_warming, true);
-			qatomic_set(&runtime->mutable_program_started, true);
-			qatomic_set(&runtime->pram_cache_active, true);
-
-			size_t precompiled = teak_tcg_precompile_entry(&runtime->core, runtime->core.state.pc);
-			DPRINTF("cold program precompile: pc=%05X blocks=%zu\n", runtime->core.state.pc, precompiled);
-		}
-
-		if (qatomic_read(&runtime->core_disabled)) {
-			uint8_t active_lines;
-
-			dsp_bus_advance(runtime->bus, 0);
-			active_lines = dsp_bus_get_irq_lines(runtime->bus);
-			if (active_lines == 0) {
-				qatomic_set(&runtime->idle, true);
-				break;
-			}
-			qatomic_set(&runtime->core_disabled, false);
-		}
-
-		qatomic_xchg(&runtime->core.state.interrupt_request, 0);
-		teak_tcg_service_interrupt(&runtime->core);
-		block_pc = runtime->core.state.pc;
-		block_repeat_level = runtime->core.state.bcn;
-		runtime->core.state.exit_reason = TEAK_EXIT_NONE;
-		if (!teak_tcg_execute_slice(&runtime->core, slice_cycles)) {
-			teak_insn_t instruction;
-			uint32_t pc = runtime->core.translation_error_address;
-			uint16_t word = teak_program_read(&runtime->core, pc);
-			bool decoded = teak_decode(&runtime->core, pc, &instruction);
-
-			DPRINTF("native execution stopped: cpu=%s pc=%05X opcode=%04X op=%u decoded=%u error=%u lp=%u bcn=%u\n",
-				runtime->config->name, pc, word, instruction.opcode, decoded, runtime->core.translation_error,
-				runtime->core.state.lp, runtime->core.state.bcn);
-			if (runtime->core.state.bcn != 0) {
-				size_t level = runtime->core.state.bcn - 1;
-				DPRINTF("active block repeat: level=%zu start=%04X end=%04X lc=%04X\n", level,
-					runtime->core.state.block_repeat_start[level], runtime->core.state.block_repeat_end[level],
-					runtime->core.state.block_repeat_lc[level]);
-			}
-			runtime->halted = true;
-			break;
-		}
-
-		if (qatomic_xchg(&runtime->reschedule, false))
-			break;
-
-		cycles += runtime->core.last_block_cycles;
-		blocks += runtime->core.last_block_count;
-		slices++;
-
-		if (runtime->core.state.bcn != block_repeat_level)
-			DPRINTF("block repeat nesting: pc=%05X next=%05X bcn=%u->%u lp=%u\n", block_pc,
-				runtime->core.state.pc, block_repeat_level, runtime->core.state.bcn, runtime->core.state.lp);
-	}
-
-	if (blocks != 0) {
-		DPRINTF("slices=%zu blocks=%zu jit=%"PRIu64" cycles=%zu run=%u idle=%u pc=%04X\n", slices, blocks,
-			runtime->core.jit_entries - jit_entries, cycles, !runtime->halted, qatomic_read(&runtime->idle),
-			runtime->core.state.pc);
-		DPRINTF("cache=%"PRIu64"/%"PRIu64" compile=%"PRIu64" chain=%"PRIu64" irq=%"PRIu64
-			" stop=%"PRIu64"/%"PRIu64"/%"PRIu64" exit_pc=%04X\n",
-			runtime->core.cache_fast_hits - cache_fast_hits,
-			runtime->core.cache_decoded_hits - cache_decoded_hits,
-			runtime->core.cache_compiles - cache_compiles, runtime->core.chain_links - chain_links,
-			runtime->core.chain_interrupts - chain_interrupts,
-			runtime->core.chain_exit_stops - chain_exit_stops,
-			runtime->core.chain_budget_stops - chain_budget_stops,
-			runtime->core.chain_cache_stops - chain_cache_stops, runtime->core.chain_exit_pc);
-	}
-	return !runtime->halted;
+static void dsp_runtime_skip(dsp_runtime_t *runtime, size_t cycles) {
+	dsp_runtime_advance_cycles(runtime, cycles);
 }
 
-bool dsp_runtime_is_idle(const dsp_runtime_t *runtime) {
-	return qatomic_read(&runtime->idle);
+static void dsp_runtime_precompile(dsp_runtime_t *runtime) {
+	uint32_t pc = runtime->core.state.pc;
+
+	if (!runtime->program_dirty || pc >= runtime->config->program_rom_base)
+		return;
+
+	runtime->program_dirty = false;
+	qatomic_set(&runtime->pram_cache_active, true);
+	DPRINTF("program precompile: pc=%05X blocks=%zu\n", pc, teak_tcg_precompile_entry(&runtime->core, pc));
 }
 
-bool dsp_runtime_realtime_active(const dsp_runtime_t *runtime) {
-	return dsp_bus_is_active(runtime->bus);
+static void dsp_runtime_execute(dsp_runtime_t *runtime, size_t budget) {
+	uint8_t block_repeat_level = runtime->core.state.bcn;
+	uint32_t block_pc = runtime->core.state.pc;
+
+	dsp_runtime_precompile(runtime);
+	qatomic_xchg(&runtime->core.state.interrupt_request, 0);
+	teak_tcg_service_interrupt(&runtime->core);
+	runtime->core.state.exit_reason = TEAK_EXIT_NONE;
+
+	if (!teak_tcg_execute_slice(&runtime->core, budget)) {
+		teak_insn_t instruction;
+		uint32_t pc = runtime->core.translation_error_address;
+		uint16_t word = teak_program_read(&runtime->core, pc);
+		bool decoded = teak_decode(&runtime->core, pc, &instruction);
+
+		DPRINTF("native execution stopped: cpu=%s pc=%05X opcode=%04X op=%u decoded=%u error=%u lp=%u bcn=%u\n",
+			runtime->config->name, pc, word, instruction.opcode, decoded, runtime->core.translation_error,
+			runtime->core.state.lp, runtime->core.state.bcn);
+		if (runtime->core.state.bcn != 0) {
+			size_t level = runtime->core.state.bcn - 1;
+			DPRINTF("active block repeat: level=%zu start=%04X end=%04X lc=%04X\n", level,
+				runtime->core.state.block_repeat_start[level], runtime->core.state.block_repeat_end[level],
+				runtime->core.state.block_repeat_lc[level]);
+		}
+		runtime->halted = true;
+		return;
+	}
+
+	if (runtime->core.state.bcn != block_repeat_level)
+		DPRINTF("block repeat nesting: pc=%05X next=%05X bcn=%u->%u lp=%u\n", block_pc,
+			runtime->core.state.pc, block_repeat_level, runtime->core.state.bcn, runtime->core.state.lp);
+}
+
+/*
+ * Run the core and its peripherals on the DSP clock until its time reaches
+ * @target. A slice ends at the next peripheral event, so interrupts are raised
+ * at the cycle they are due; the last slice may pass @target by one block.
+ */
+void dsp_runtime_run_until(dsp_runtime_t *runtime, int64_t target) {
+	while (dsp_runtime_get_time(runtime) < target) {
+		uint64_t goal;
+		size_t budget;
+		size_t next_event;
+		bool sleeping;
+
+		if (runtime->frequency == 0) {
+			runtime->base_ns = target;
+			runtime->base_cycles = runtime->cycles;
+			return;
+		}
+
+		goal = runtime->base_cycles + muldiv64_round_up(target - runtime->base_ns, runtime->frequency,
+			NANOSECONDS_PER_SECOND);
+		budget = MAX(goal - runtime->cycles, (uint64_t) 1);
+		next_event = MAX(dsp_bus_next_event(runtime->bus), (size_t) 1);
+
+		if (runtime->core_disabled && dsp_bus_get_irq_lines(runtime->bus) != 0)
+			runtime->core_disabled = false;
+		sleeping = runtime->halted || runtime->core_disabled;
+
+		if (sleeping) {
+			dsp_runtime_skip(runtime, MIN(budget, next_event));
+		} else {
+			dsp_runtime_execute(runtime, MIN(MIN(budget, next_event), (size_t) DSP_SLICE_CYCLES));
+		}
+	}
+}
+
+bool dsp_runtime_code_flush_pending(void) {
+	return teak_tcg_flush_pending();
+}
+
+bool dsp_runtime_is_halted(const dsp_runtime_t *runtime) {
+	return runtime->halted;
+}
+
+bool dsp_runtime_is_sleeping(const dsp_runtime_t *runtime) {
+	return runtime->halted || (runtime->core_disabled && dsp_bus_get_irq_lines(runtime->bus) == 0);
+}
+
+/* When the DSP next does something: now while the core runs, else its next peripheral event. */
+int64_t dsp_runtime_next_event_time(dsp_runtime_t *runtime) {
+	int64_t now = dsp_runtime_get_time(runtime);
+	size_t cycles;
+
+	if (runtime->frequency == 0)
+		return INT64_MAX;
+	if (!dsp_runtime_is_sleeping(runtime))
+		return now;
+
+	cycles = dsp_bus_next_event(runtime->bus);
+	if (cycles == SIZE_MAX)
+		return INT64_MAX;
+	return runtime->base_ns + muldiv64_round_up(runtime->cycles + cycles - runtime->base_cycles,
+		NANOSECONDS_PER_SECOND, runtime->frequency);
+}
+
+uint32_t dsp_runtime_get_frequency(const dsp_runtime_t *runtime) {
+	return runtime->frequency;
 }
 
 void dsp_runtime_apply_audio_format(dsp_runtime_t *runtime) {
@@ -534,22 +474,6 @@ void dsp_runtime_get_irq_debug(dsp_runtime_t *runtime, uint8_t *ie, uint8_t *int
 
 uint16_t dsp_runtime_peek(dsp_runtime_t *runtime, uint16_t address) {
 	return qatomic_read(&runtime->data[address]);
-}
-
-bool dsp_runtime_take_program_start(dsp_runtime_t *runtime, uint32_t *pc) {
-	if (!qatomic_xchg(&runtime->program_start, false))
-		return false;
-	*pc = qatomic_read(&runtime->program_start_pc);
-	return true;
-}
-
-bool dsp_runtime_is_program_warming(const dsp_runtime_t *runtime) {
-	return qatomic_read(&runtime->program_warming);
-}
-
-void dsp_runtime_finish_program_warmup(dsp_runtime_t *runtime) {
-	qatomic_set(&runtime->program_warming, false);
-	qatomic_set(&runtime->program_start, false);
 }
 
 void dsp_runtime_thread_enter(void) {
@@ -628,7 +552,6 @@ void dsp_runtime_set_request(dsp_runtime_t *runtime, size_t index, bool level) {
 		return;
 
 	dsp_bus_set_request(runtime->bus, index, level);
-	dsp_runtime_wake(runtime);
 }
 
 void dsp_runtime_set_input(dsp_runtime_t *runtime, size_t index, bool level) {
@@ -641,9 +564,6 @@ void dsp_runtime_set_gsm_clock(dsp_runtime_t *runtime, uint32_t frequency) {
 
 void dsp_runtime_set_gsm_signal(dsp_runtime_t *runtime, pmb887x_dsp_gsm_signal_t signal, bool level) {
 	dsp_bus_set_gsm_signal(runtime->bus, signal, level);
-
-	dsp_runtime_wake(runtime);
-	runtime->notify_activity(runtime->device_opaque);
 }
 
 uint16_t dsp_runtime_get_outputs(dsp_runtime_t *runtime) {
@@ -652,10 +572,6 @@ uint16_t dsp_runtime_get_outputs(dsp_runtime_t *runtime) {
 
 uint32_t dsp_runtime_get_pc(const dsp_runtime_t *runtime) {
 	return qatomic_read(&runtime->core.state.pc);
-}
-
-uint64_t dsp_runtime_get_cache_compiles(const dsp_runtime_t *runtime) {
-	return qatomic_read(&runtime->core.cache_compiles);
 }
 
 uint16_t dsp_runtime_take_output_events(dsp_runtime_t *runtime) {
@@ -668,18 +584,10 @@ uint16_t dsp_runtime_get_comm(dsp_runtime_t *runtime) {
 
 void dsp_runtime_set_comm(dsp_runtime_t *runtime, uint16_t value) {
 	dsp_bus_set_comm(runtime->bus, value);
-
-	dsp_runtime_wake(runtime);
 }
 
 void dsp_runtime_clear_comm(dsp_runtime_t *runtime, uint16_t value) {
 	dsp_bus_clear_comm(runtime->bus, value);
-
-	dsp_runtime_wake(runtime);
-}
-
-uint16_t dsp_runtime_take_comm_clear(dsp_runtime_t *runtime) {
-	return dsp_bus_take_comm_clear(runtime->bus);
 }
 
 uint16_t dsp_runtime_take_mcu_irqs(dsp_runtime_t *runtime) {
@@ -692,12 +600,8 @@ uint16_t dsp_runtime_get_mcu_semaphores(dsp_runtime_t *runtime) {
 
 void dsp_runtime_request_mcu_semaphores(dsp_runtime_t *runtime, uint16_t value) {
 	dsp_bus_request_mcu_semaphores(runtime->bus, value);
-
-	dsp_runtime_wake(runtime);
 }
 
 void dsp_runtime_release_mcu_semaphores(dsp_runtime_t *runtime, uint16_t value) {
 	dsp_bus_release_mcu_semaphores(runtime->bus, value);
-
-	dsp_runtime_wake(runtime);
 }

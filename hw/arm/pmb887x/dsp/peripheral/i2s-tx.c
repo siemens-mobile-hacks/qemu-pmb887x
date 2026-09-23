@@ -127,3 +127,14 @@ bool i2s_tx_is_active(const dsp_device_t *device) {
 	const i2s_tx_state_t *state = device->state;
 	return i2s_tx_active(state);
 }
+
+size_t i2s_tx_next_event(dsp_device_t *device) {
+	i2s_tx_state_t *state = device->state;
+	uint16_t distance;
+
+	if (!i2s_tx_active(state))
+		return SIZE_MAX;
+
+	distance = (state->registers[TEAK_I2S3_TXINTADDR] - state->position - 1) & TEAK_I2S3_RADDR_RDADDR;
+	return ((size_t) distance + 1) * I2S_TX_SAMPLE_CYCLES - state->sample_cycles;
+}

@@ -401,3 +401,13 @@ bool ssc_is_active(const dsp_device_t *device) {
 	const ssc_state_t *state = device->state;
 	return ssc_running(state) && (state->transfer_active || state->transmit_fifo.base.count != 0);
 }
+
+size_t ssc_next_event(dsp_device_t *device) {
+	ssc_state_t *state = device->state;
+
+	if (!ssc_is_active(device))
+		return SIZE_MAX;
+	if (state->transfer_active)
+		return MAX(state->transfer_cycles, (size_t) 1);
+	return MAX(state->start_cycles, (size_t) 1);
+}

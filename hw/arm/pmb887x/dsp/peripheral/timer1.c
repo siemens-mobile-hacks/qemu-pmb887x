@@ -156,3 +156,19 @@ bool timer1_is_active(const dsp_device_t *device) {
 	const timer1_state_t *state = device->state;
 	return state->restart_pending || (state->control & TEAK_TMR1_CTRL_DT1ACT) != 0;
 }
+
+size_t timer1_next_event(dsp_device_t *device) {
+	timer1_state_t *state = device->state;
+	size_t ticks;
+
+	if (state->restart_pending)
+		return state->restart_cycles;
+	if ((state->control & TEAK_TMR1_CTRL_DT1ACT) == 0)
+		return SIZE_MAX;
+
+	ticks = TEAK_TMR1_CNT_T1CNT - state->counter;
+	for (size_t i = 0; i < ARRAY_SIZE(state->compare); i++)
+		if (state->compare[i] > state->counter)
+			ticks = MIN(ticks, (size_t) (state->compare[i] - state->counter));
+	return ticks * TIMER1_DIVIDER - state->prescaler;
+}

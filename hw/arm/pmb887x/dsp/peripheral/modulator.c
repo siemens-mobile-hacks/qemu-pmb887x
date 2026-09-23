@@ -148,3 +148,14 @@ bool modulator_is_active(const dsp_device_t *device) {
 	const modulator_state_t *state = device->state;
 	return modulator_active(state);
 }
+
+size_t modulator_next_event(dsp_device_t *device) {
+	modulator_state_t *state = device->state;
+	uint16_t distance;
+
+	if (!modulator_active(state))
+		return SIZE_MAX;
+
+	distance = (state->registers[TEAK_MOD_INT_ADDR] - state->position - 1) & TEAK_MOD_INT_ADDR_MINT_ADDR;
+	return ((size_t) distance + 1) * MODULATOR_SAMPLE_CYCLES - state->sample_cycles;
+}

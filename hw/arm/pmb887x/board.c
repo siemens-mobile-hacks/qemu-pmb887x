@@ -201,6 +201,8 @@ static void pmb887x_init(MachineState *machine) {
 		pmb887x_dsp_stub_set_config(dsp, pmb887x_cpu_get(pmb887x_board()->cpu)->dsp_config);
 	else
 		pmb887x_dsp_set_config(dsp, pmb887x_cpu_get(pmb887x_board()->cpu)->dsp_config);
+	if (object_property_find(OBJECT(dsp), "cgu"))
+		object_property_set_link(OBJECT(dsp), "cgu", OBJECT(cgu), &error_fatal);
 	pmb887x_board_init_dsp(dsp);
 	qdev_connect_clock_in(dsp, "GSM_CLOCK", qdev_get_clock_out(tpu, "GSM_CLOCK"));
 	sysbus_realize_and_unref(SYS_BUS_DEVICE(dsp), &error_fatal);

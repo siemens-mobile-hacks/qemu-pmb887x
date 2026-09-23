@@ -928,13 +928,26 @@ void HELPER(teak_tcg_alb_register)(void *opaque, uint32_t register_code, uint32_
 #include "exec/helper-info.c.inc"
 #undef HELPER_H
 
+static unsigned int tcg_flush_waiters;
+
+/*
+ * The code buffer is shared with the ARM, and only the ARM vCPU can flush it,
+ * from its own loop. A thread that makes the vCPU wait for the DSP must give
+ * up while this is true.
+ */
+bool teak_tcg_flush_pending(void) {
+	return qatomic_read(&tcg_flush_waiters) != 0;
+}
+
 static void tcg_request_tb_flush(void) {
 	unsigned int flush_count = qatomic_read(&tb_ctx.tb_flush_count);
 
 	g_assert(first_cpu != NULL);
+	qatomic_inc(&tcg_flush_waiters);
 	queue_tb_flush(first_cpu);
 	while (qatomic_read(&tb_ctx.tb_flush_count) == flush_count)
 		g_thread_yield();
+	qatomic_dec(&tcg_flush_waiters);
 }
 
 static TranslationBlock *tcg_compile_block(uint32_t pc, uint16_t words, uint16_t instruction_count,

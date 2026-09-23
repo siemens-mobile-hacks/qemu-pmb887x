@@ -3,26 +3,13 @@
 #define PMB887X_TRACE_IO		PMB887X_TRACE_IO_DSP
 
 #include "qemu/osdep.h"
-#include "qemu/thread.h"
-#include "qemu/timer.h"
 
 #include "hw/arm/pmb887x/dsp/peripheral/internal.h"
 #include "hw/arm/pmb887x/gen/dsp.h"
 #include "hw/arm/pmb887x/trace.h"
 
 #define TIMER2_DIVIDER		96U
-#define TIMER2_CLOCK_NUMERATOR	13U
-#define TIMER2_CLOCK_DENOMINATOR_NS	125U
 #define TIMER_INTERRUPT_GROUP	2
-/*
- * The timer divides down the DSP's crystal, so it counts host time at the full
- * 104 MHz whether or not the emulated core is running - which retires only a
- * fraction of that many cycles, and varies with how often it parks. The
- * firmware's melody sequencer steps on this timer's interrupt; paced by
- * executed cycles it slowed with every rest and stretched them several times
- * over. QEMU_CLOCK_VIRTUAL would not do either: it stops with the vCPU.
- */
-#define TIMER2_CLOCK		QEMU_CLOCK_HOST
 
 typedef struct timer2_state_t timer2_state_t;
 
@@ -30,126 +17,30 @@ struct timer2_state_t {
 	uint16_t control;
 	uint16_t counter;
 	uint16_t maximum;
-	uint64_t prescaler;
-	uint64_t clock_remainder;
-	int64_t last_update;
-	QEMUTimer *timer;
-	QemuMutex mutex;
+	size_t prescaler;
 	bool clock_enabled;
 	dsp_device_t *interrupt;
 };
 
+static bool timer2_running(const timer2_state_t *state) {
+	return state->clock_enabled && (state->control & TEAK_TMR2_CTRL_DT2ACT) != 0;
+}
+
 static void timer2_destroy(dsp_device_t *device) {
-	timer2_state_t *state = device->state;
-	timer_free(state->timer);
-	qemu_mutex_destroy(&state->mutex);
-	g_free(state);
+	g_free(device->state);
 }
 
 static void timer2_reset(dsp_device_t *device) {
 	timer2_state_t *state = device->state;
 
-	qemu_mutex_lock(&state->mutex);
-	timer_del(state->timer);
 	state->control = 0;
 	state->counter = 0;
 	state->maximum = TEAK_TMR2_MAX_T2MAX;
 	state->prescaler = 0;
-	state->clock_remainder = 0;
-	state->last_update = qemu_clock_get_ns(TIMER2_CLOCK);
-	qemu_mutex_unlock(&state->mutex);
-}
-
-static bool timer2_advance_cycles_locked(timer2_state_t *state, uint64_t cycles) {
-	uint64_t ticks;
-	bool interrupt = false;
-
-	if (!state->clock_enabled || (state->control & TEAK_TMR2_CTRL_DT2ACT) == 0)
-		return false;
-
-	ticks = (state->prescaler + cycles) / TIMER2_DIVIDER;
-	state->prescaler = (state->prescaler + cycles) % TIMER2_DIVIDER;
-
-	while (ticks != 0) {
-		ticks--;
-		if (state->counter == state->maximum) {
-			state->counter = 0;
-			continue;
-		}
-		state->counter++;
-		if (state->counter == state->maximum)
-			interrupt = true;
-	}
-	return interrupt;
-}
-
-static bool timer2_update_locked(timer2_state_t *state, int64_t now) {
-	int64_t elapsed = MAX(now - state->last_update, 0);
-	uint64_t scaled_cycles;
-	uint64_t cycles;
-
-	state->last_update = now;
-
-	scaled_cycles = (uint64_t) elapsed * TIMER2_CLOCK_NUMERATOR + state->clock_remainder;
-	cycles = scaled_cycles / TIMER2_CLOCK_DENOMINATOR_NS;
-	state->clock_remainder = scaled_cycles % TIMER2_CLOCK_DENOMINATOR_NS;
-	return timer2_advance_cycles_locked(state, cycles);
-}
-
-static uint64_t timer2_ticks_until_interrupt(const timer2_state_t *state) {
-	uint16_t distance = state->maximum - state->counter;
-
-	if (distance != 0)
-		return distance;
-	return (uint64_t) state->maximum + 1;
-}
-
-static void timer2_schedule_locked(timer2_state_t *state, int64_t now) {
-	uint64_t ticks;
-	uint64_t cycles;
-	uint64_t scaled_time;
-	uint64_t delay;
-	bool stopped;
-
-	stopped = !state->clock_enabled ||
-		(state->control & TEAK_TMR2_CTRL_DT2ACT) == 0 || state->maximum == 0;
-	if (stopped) {
-		timer_del(state->timer);
-		return;
-	}
-
-	ticks = timer2_ticks_until_interrupt(state);
-	cycles = ticks * TIMER2_DIVIDER - state->prescaler;
-	scaled_time = cycles * TIMER2_CLOCK_DENOMINATOR_NS - state->clock_remainder;
-	delay = DIV_ROUND_UP(scaled_time, TIMER2_CLOCK_NUMERATOR);
-	timer_mod(state->timer, now + delay);
-}
-
-static void timer2_raise_interrupt(timer2_state_t *state) {
-	dsp_int_set_flags(state->interrupt, TIMER_INTERRUPT_GROUP, TEAK_INT_FINT1_TMR2);
-}
-
-static void timer2_timer(void *opaque) {
-	timer2_state_t *state = opaque;
-	int64_t now = qemu_clock_get_ns(TIMER2_CLOCK);
-	bool interrupt;
-
-	qemu_mutex_lock(&state->mutex);
-	interrupt = timer2_update_locked(state, now);
-	timer2_schedule_locked(state, now);
-	qemu_mutex_unlock(&state->mutex);
-
-	if (interrupt)
-		timer2_raise_interrupt(state);
 }
 
 static bool timer2_read(dsp_device_t *device, uint16_t offset, uint32_t pc, uint16_t *value) {
 	timer2_state_t *state = device->state;
-	int64_t now = qemu_clock_get_ns(TIMER2_CLOCK);
-	bool interrupt;
-
-	qemu_mutex_lock(&state->mutex);
-	interrupt = timer2_update_locked(state, now);
 
 	switch (offset) {
 		case TEAK_TMR2_CTRL:
@@ -169,23 +60,12 @@ static bool timer2_read(dsp_device_t *device, uint16_t offset, uint32_t pc, uint
 			break;
 	}
 
-	timer2_schedule_locked(state, now);
-	qemu_mutex_unlock(&state->mutex);
-
-	if (interrupt)
-		timer2_raise_interrupt(state);
-
 	IO_DUMP_READ_EX(device->config->base + offset, sizeof(*value), *value, pc, 0);
 	return true;
 }
 
 static bool timer2_write(dsp_device_t *device, uint16_t offset, uint32_t pc, uint16_t value) {
 	timer2_state_t *state = device->state;
-	int64_t now = qemu_clock_get_ns(TIMER2_CLOCK);
-	bool interrupt;
-
-	qemu_mutex_lock(&state->mutex);
-	interrupt = timer2_update_locked(state, now);
 
 	switch (offset) {
 		case TEAK_TMR2_CTRL:
@@ -202,12 +82,6 @@ static bool timer2_write(dsp_device_t *device, uint16_t offset, uint32_t pc, uin
 			break;
 	}
 
-	timer2_schedule_locked(state, now);
-	qemu_mutex_unlock(&state->mutex);
-
-	if (interrupt)
-		timer2_raise_interrupt(state);
-
 	IO_DUMP_WRITE_EX(device->config->base + offset, sizeof(value), value, pc, 0);
 	return true;
 }
@@ -222,35 +96,67 @@ static const dsp_device_ops_t timer2_ops = {
 dsp_device_t *timer2_create(const pmb887x_dsp_peripheral_config_t *config, dsp_device_t *interrupt) {
 	timer2_state_t *state = g_new0(timer2_state_t, 1);
 	state->interrupt = interrupt;
-	state->last_update = qemu_clock_get_ns(TIMER2_CLOCK);
-	qemu_mutex_init(&state->mutex);
-	state->timer = timer_new_ns(TIMER2_CLOCK, timer2_timer, state);
+	state->maximum = TEAK_TMR2_MAX_T2MAX;
 	return dsp_device_create(config, &timer2_ops, state);
 }
 
 void timer2_set_clock_enabled(dsp_device_t *device, bool enabled) {
 	timer2_state_t *state = device->state;
-	int64_t now = qemu_clock_get_ns(TIMER2_CLOCK);
-	bool interrupt;
-
-	qemu_mutex_lock(&state->mutex);
-	interrupt = timer2_update_locked(state, now);
 	state->clock_enabled = enabled;
-	state->last_update = now;
-	timer2_schedule_locked(state, now);
-	qemu_mutex_unlock(&state->mutex);
-
-	if (interrupt)
-		timer2_raise_interrupt(state);
 }
 
-bool timer2_is_active(dsp_device_t *device) {
+/* The counter runs up to the maximum, interrupts there and restarts from 0 on the next tick. */
+void timer2_advance(dsp_device_t *device, size_t cycles) {
 	timer2_state_t *state = device->state;
-	bool active;
+	size_t ticks;
 
-	qemu_mutex_lock(&state->mutex);
-	active = (state->control & TEAK_TMR2_CTRL_DT2ACT) != 0;
-	qemu_mutex_unlock(&state->mutex);
+	if (!timer2_running(state))
+		return;
 
-	return active;
+	ticks = (state->prescaler + cycles) / TIMER2_DIVIDER;
+	state->prescaler = (state->prescaler + cycles) % TIMER2_DIVIDER;
+
+	while (ticks != 0) {
+		size_t period = (size_t) state->maximum + 1;
+		uint16_t distance;
+
+		if (state->counter == state->maximum) {
+			state->counter = 0;
+			ticks--;
+			continue;
+		}
+
+		distance = state->maximum - state->counter;
+		if (ticks < distance) {
+			state->counter += ticks;
+			break;
+		}
+
+		ticks -= distance;
+		state->counter = state->maximum;
+		dsp_int_set_flags(state->interrupt, TIMER_INTERRUPT_GROUP, TEAK_INT_FINT1_TMR2);
+		/* Whole periods only raise the same flag again. */
+		ticks %= period;
+	}
+}
+
+size_t timer2_next_event(dsp_device_t *device) {
+	timer2_state_t *state = device->state;
+	size_t ticks;
+
+	if (!timer2_running(state))
+		return SIZE_MAX;
+
+	if (state->counter != state->maximum)
+		ticks = (uint16_t) (state->maximum - state->counter);
+	else if (state->maximum != 0)
+		ticks = (size_t) state->maximum + 1;
+	else
+		return SIZE_MAX;
+	return ticks * TIMER2_DIVIDER - state->prescaler;
+}
+
+bool timer2_is_active(const dsp_device_t *device) {
+	const timer2_state_t *state = device->state;
+	return timer2_running(state);
 }

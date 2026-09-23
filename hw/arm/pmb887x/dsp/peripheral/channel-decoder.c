@@ -369,3 +369,15 @@ dsp_device_t *chdec_create(const pmb887x_dsp_peripheral_config_t *config, dsp_de
 	state->interrupt = interrupt;
 	return dsp_device_create(config, &chdec_ops, state);
 }
+
+size_t chdec_next_event(dsp_device_t *device) {
+	chdec_state_t *state = device->state;
+	size_t remaining;
+
+	if (!state->active)
+		return SIZE_MAX;
+
+	remaining = state->configured_count > state->completed_count ?
+		state->configured_count - state->completed_count : 1;
+	return remaining * CHANNEL_DECODER_TIMESTAMP_CYCLES - state->elapsed_cycles;
+}

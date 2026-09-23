@@ -50,7 +50,15 @@ struct dsp_bus_t {
 	dsp_device_t *ssc;
 	dsp_device_t *timer1;
 	dsp_device_t *timer2;
+	uint32_t frequency;
 };
+
+/* Cycles until an event paced by @rate ticks per second of a @frequency Hz clock, given its @phase. */
+static inline size_t dsp_rate_cycles_until(uint64_t phase, uint64_t rate, uint64_t frequency) {
+	if (rate == 0 || frequency == 0)
+		return SIZE_MAX;
+	return phase >= frequency ? 0 : DIV_ROUND_UP(frequency - phase, rate);
+}
 
 static inline uint16_t dsp_bus_read_at(dsp_bus_t *bus, uint16_t address, uint32_t pc) {
 	dsp_route_t *route = &bus->routes[address - bus->fallback_config.base];
@@ -73,7 +81,9 @@ static inline void dsp_bus_write_at(dsp_bus_t *bus, uint16_t address, uint16_t v
 dsp_device_t *dsp_device_create(const pmb887x_dsp_peripheral_config_t *config, const dsp_device_ops_t *ops, void *state);
 
 dsp_device_t *afe_create(const pmb887x_dsp_peripheral_config_t *config, dsp_device_t *interrupt, const dsp_host_t *host);
+void afe_set_frequency(dsp_device_t *device, uint32_t frequency);
 void afe_advance(dsp_device_t *device, size_t cycles);
+size_t afe_next_event(dsp_device_t *device);
 bool afe_is_active(const dsp_device_t *device);
 
 size_t afe_audio_push_samples(dsp_device_t *device, const uint16_t *samples, size_t count);
@@ -84,15 +94,21 @@ void afe_audio_set_format(dsp_device_t *device, unsigned freq, unsigned channels
 dsp_device_t *baseband_create(const pmb887x_dsp_peripheral_config_t *config, dsp_device_t *interrupt, const dsp_host_t *host);
 void baseband_set_clock(dsp_device_t *device, uint32_t frequency);
 void baseband_set_signal(dsp_device_t *device, pmb887x_dsp_gsm_signal_t signal, bool level);
+void baseband_set_frequency(dsp_device_t *device, uint32_t frequency);
+void baseband_advance(dsp_device_t *device, size_t cycles);
+size_t baseband_next_event(dsp_device_t *device);
+bool baseband_is_active(const dsp_device_t *device);
 
 dsp_device_t *chdec_create(const pmb887x_dsp_peripheral_config_t *config, dsp_device_t *interrupt);
 void chdec_advance(dsp_device_t *device, size_t cycles);
+size_t chdec_next_event(dsp_device_t *device);
 bool chdec_is_active(const dsp_device_t *device);
 uint16_t chdec_external_read(dsp_device_t *device);
 void chdec_external_write(dsp_device_t *device, uint16_t value);
 
 dsp_device_t *cipher_create(const pmb887x_dsp_peripheral_config_t *config, dsp_device_t *interrupt, const dsp_host_t *host);
 void cipher_advance(dsp_device_t *device, size_t cycles);
+size_t cipher_next_event(dsp_device_t *device);
 bool cipher_is_active(const dsp_device_t *device);
 
 dsp_device_t *control_create(const pmb887x_dsp_peripheral_config_t *config, const dsp_host_t *host);
@@ -102,21 +118,22 @@ uint16_t control_take_output_events(dsp_device_t *device);
 
 dsp_device_t *equalizer_create(const pmb887x_dsp_peripheral_config_t *config, dsp_device_t *interrupt);
 void equalizer_advance(dsp_device_t *device, size_t cycles);
+size_t equalizer_next_event(dsp_device_t *device);
 bool equalizer_is_active(const dsp_device_t *device);
 uint16_t equalizer_external_read(dsp_device_t *device);
 void equalizer_external_write(dsp_device_t *device, uint16_t value);
 
 dsp_device_t *i2s_create(const pmb887x_dsp_peripheral_config_t *config, dsp_device_t *interrupt,
-	uint16_t interrupt_flag, dsp_device_t *audio_sink);
+	uint16_t interrupt_flag, dsp_device_t *audio_sink, const dsp_host_t *host);
+void i2s_set_frequency(dsp_device_t *device, uint32_t frequency);
 void i2s_advance(dsp_device_t *device, size_t cycles);
+size_t i2s_next_event(dsp_device_t *device);
 bool i2s_is_active(const dsp_device_t *device);
-void i2s_pace(dsp_device_t *device, int64_t now, bool core_parked);
-bool i2s_is_paced(const dsp_device_t *device);
 void i2s_apply_audio_format(dsp_device_t *device);
-void i2s_note_ram_write(dsp_device_t *device, uint16_t address, uint16_t value);
 
 dsp_device_t *i2s_tx_create(const pmb887x_dsp_peripheral_config_t *config, dsp_device_t *interrupt);
 void i2s_tx_advance(dsp_device_t *device, size_t cycles);
+size_t i2s_tx_next_event(dsp_device_t *device);
 bool i2s_tx_is_active(const dsp_device_t *device);
 
 dsp_device_t *dsp_int_create(const pmb887x_dsp_peripheral_config_t *config, const dsp_host_t *host);
@@ -139,19 +156,24 @@ void mcs_release_mcu_semaphores(dsp_device_t *device, uint16_t value);
 dsp_device_t *modulator_create(const pmb887x_dsp_peripheral_config_t *config, dsp_device_t *interrupt);
 void modulator_set_codon(dsp_device_t *device, bool level);
 void modulator_advance(dsp_device_t *device, size_t cycles);
+size_t modulator_next_event(dsp_device_t *device);
 bool modulator_is_active(const dsp_device_t *device);
 
 dsp_device_t *ssc_create(const pmb887x_dsp_peripheral_config_t *config, dsp_device_t *interrupt, const dsp_host_t *host);
 void ssc_advance(dsp_device_t *device, size_t cycles);
+size_t ssc_next_event(dsp_device_t *device);
 bool ssc_is_active(const dsp_device_t *device);
 
 dsp_device_t *timer1_create(const pmb887x_dsp_peripheral_config_t *config, dsp_device_t *interrupt);
 void timer1_advance(dsp_device_t *device, size_t cycles);
+size_t timer1_next_event(dsp_device_t *device);
 bool timer1_is_active(const dsp_device_t *device);
 
 dsp_device_t *timer2_create(const pmb887x_dsp_peripheral_config_t *config, dsp_device_t *interrupt);
 void timer2_set_clock_enabled(dsp_device_t *device, bool enabled);
-bool timer2_is_active(dsp_device_t *device);
+void timer2_advance(dsp_device_t *device, size_t cycles);
+size_t timer2_next_event(dsp_device_t *device);
+bool timer2_is_active(const dsp_device_t *device);
 
 dsp_device_t *unknown_create(const pmb887x_dsp_peripheral_config_t *config);
 

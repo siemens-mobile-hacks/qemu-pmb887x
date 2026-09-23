@@ -13,3 +13,4 @@ uint32_t pmb887x_pll_get_fstm(pmb887x_cgu_t *p);
 uint32_t pmb887x_pll_get_fcpu(pmb887x_cgu_t *p);
 uint32_t pmb887x_pll_get_fahb(pmb887x_cgu_t *p);
 uint32_t pmb887x_pll_get_fgptu(pmb887x_cgu_t *p);
+uint32_t pmb887x_pll_get_fdsp(pmb887x_cgu_t *p);

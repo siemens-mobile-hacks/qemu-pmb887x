@@ -5,6 +5,7 @@
 #include "qemu/osdep.h"
 #include "qemu/atomic.h"
 #include "qemu/bitops.h"
+#include "qemu/host-utils.h"
 #include "qemu/timer.h"
 
 #include "hw/arm/pmb887x/dsp/peripheral/internal.h"
@@ -27,7 +28,6 @@ typedef struct baseband_state_t baseband_state_t;
 struct baseband_state_t {
 	dsp_device_t *interrupt;
 	dsp_host_t host;
-	QEMUTimer *full_timer;
 	uint16_t ram_base;
 	uint16_t ram_size;
 	uint16_t control;
@@ -46,30 +46,31 @@ struct baseband_state_t {
 	uint64_t produced_words;
 	uint16_t rate_divisor;
 	uint32_t gsm_frequency;
+	uint32_t dsp_frequency;
 	bool job_active;
 	uint8_t startup_pointer_reads;
 };
 
 static void baseband_destroy(dsp_device_t *device) {
-	baseband_state_t *state = device->state;
-
-	timer_free(state->full_timer);
 	g_free(device->state);
+}
+
+static int64_t baseband_now(const baseband_state_t *state) {
+	return state->host.get_time_ns ? state->host.get_time_ns(state->host.opaque) : 0;
 }
 
 static void baseband_reset(dsp_device_t *device) {
 	baseband_state_t *state = device->state;
 	dsp_device_t *interrupt = state->interrupt;
 	dsp_host_t host = state->host;
-	QEMUTimer *full_timer = state->full_timer;
+	uint32_t dsp_frequency = state->dsp_frequency;
 	uint16_t ram_base = state->ram_base;
 	uint16_t ram_size = state->ram_size;
 
-	timer_del(full_timer);
 	memset(state, 0, sizeof(*state));
 	state->interrupt = interrupt;
 	state->host = host;
-	state->full_timer = full_timer;
+	state->dsp_frequency = dsp_frequency;
 	state->ram_base = ram_base;
 	state->ram_size = ram_size;
 	state->control = BASEBAND_CTRL_RESET;
@@ -117,19 +118,16 @@ static uint16_t baseband_update_pointer(baseband_state_t *state, int64_t now) {
 static void baseband_schedule_interrupt(baseband_state_t *state, int64_t now) {
 	if (!qatomic_read(&state->job_active)) {
 		qatomic_set(&state->full_time, INT64_MAX);
-		timer_del(state->full_timer);
 		return;
 	}
 
 	if (qatomic_read(&state->interrupt_pointer) >= BASEBAND_RING_WORDS) {
 		qatomic_set(&state->full_time, INT64_MAX);
-		timer_del(state->full_timer);
 		return;
 	}
 
 	if (qatomic_read(&state->gsm_frequency) == 0) {
 		qatomic_set(&state->full_time, INT64_MAX);
-		timer_del(state->full_timer);
 		return;
 	}
 
@@ -146,7 +144,6 @@ static void baseband_schedule_interrupt(baseband_state_t *state, int64_t now) {
 		NANOSECONDS_PER_SECOND, frequency);
 
 	qatomic_set(&state->full_time, deadline);
-	timer_mod(state->full_timer, deadline);
 }
 
 static bool baseband_read(dsp_device_t *device, uint16_t offset, uint32_t pc, uint16_t *value) {
@@ -162,7 +159,7 @@ static bool baseband_read(dsp_device_t *device, uint16_t offset, uint32_t pc, ui
 			break;
 
 		case TEAK_BB_WR_POINTER: {
-			int64_t now = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
+			int64_t now = baseband_now(state);
 
 			if (qatomic_read(&state->job_active) && qatomic_read(&state->startup_pointer_reads) < 2) {
 				uint8_t reads = qatomic_read(&state->startup_pointer_reads) + 1;
@@ -236,7 +233,7 @@ static bool baseband_write(dsp_device_t *device, uint16_t offset, uint32_t pc, u
 			break;
 
 		case TEAK_BB_INT_POINTER: {
-			int64_t now = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
+			int64_t now = baseband_now(state);
 
 			qatomic_set(&state->interrupt_pointer, value & TEAK_BB_INT_POINTER_VALUE);
 			baseband_schedule_interrupt(state, now);
@@ -275,28 +272,44 @@ static const dsp_device_ops_t baseband_ops = {
 	.write = baseband_write,
 };
 
-static void baseband_full_timer(void *opaque) {
-	baseband_state_t *state = opaque;
-	int64_t now = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
+void baseband_advance(dsp_device_t *device, size_t cycles) {
+	baseband_state_t *state = device->state;
 	int64_t deadline = qatomic_read(&state->full_time);
 
-	if (deadline == INT64_MAX)
+	if (deadline == INT64_MAX || baseband_now(state) < deadline)
 		return;
 
-	if (deadline > now) {
-		timer_mod(state->full_timer, deadline);
-		return;
-	}
-
-	if (qatomic_cmpxchg(&state->full_time, deadline, INT64_MAX) != deadline)
-		return;
-
+	qatomic_set(&state->full_time, INT64_MAX);
 	if (!qatomic_read(&state->job_active))
 		return;
 
 	qatomic_set(&state->startup_pointer_reads, 2);
 	baseband_update_pointer(state, deadline);
 	dsp_int_set_flags(state->interrupt, BASEBAND_INTERRUPT_GROUP, TEAK_INT_FINTA0_BB_FULL);
+}
+
+size_t baseband_next_event(dsp_device_t *device) {
+	baseband_state_t *state = device->state;
+	int64_t deadline = qatomic_read(&state->full_time);
+	int64_t remaining;
+
+	if (deadline == INT64_MAX || state->dsp_frequency == 0)
+		return SIZE_MAX;
+
+	remaining = deadline - baseband_now(state);
+	if (remaining <= 0)
+		return 1;
+	return MAX(muldiv64_round_up(remaining, state->dsp_frequency, NANOSECONDS_PER_SECOND), 1);
+}
+
+bool baseband_is_active(const dsp_device_t *device) {
+	const baseband_state_t *state = device->state;
+	return qatomic_read(&state->full_time) != INT64_MAX;
+}
+
+void baseband_set_frequency(dsp_device_t *device, uint32_t frequency) {
+	baseband_state_t *state = device->state;
+	state->dsp_frequency = frequency;
 }
 
 dsp_device_t *baseband_create(const pmb887x_dsp_peripheral_config_t *config, dsp_device_t *interrupt, const dsp_host_t *host) {
@@ -306,7 +319,6 @@ dsp_device_t *baseband_create(const pmb887x_dsp_peripheral_config_t *config, dsp
 	state->ram_base = config->ram_base;
 	state->ram_size = config->ram_size;
 	state->full_time = INT64_MAX;
-	state->full_timer = timer_new_ns(QEMU_CLOCK_VIRTUAL, baseband_full_timer, state);
 	return dsp_device_create(config, &baseband_ops, state);
 }
 
@@ -372,7 +384,6 @@ static void baseband_apply_signal(baseband_state_t *state, pmb887x_dsp_gsm_signa
 			baseband_update_pointer(state, now);
 			qatomic_set(&state->job_active, false);
 			qatomic_set(&state->full_time, INT64_MAX);
-			timer_del(state->full_timer);
 		}
 
 		qatomic_and(&state->status, (uint16_t) ~mask);
@@ -387,7 +398,7 @@ static void baseband_apply_signal(baseband_state_t *state, pmb887x_dsp_gsm_signa
 
 void baseband_set_signal(dsp_device_t *device, pmb887x_dsp_gsm_signal_t signal, bool level) {
 	baseband_state_t *state = device->state;
-	int64_t now = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
+	int64_t now = baseband_now(state);
 
 	baseband_apply_signal(state, signal, level, now);
 }

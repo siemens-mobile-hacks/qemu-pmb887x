@@ -51,6 +51,7 @@ struct pmb887x_cgu_t {
 	uint32_t fahb;
 	uint32_t fcpu;
 	uint32_t fgptu;
+	uint32_t fdsp;
 	
 	uint32_t osc;
 	uint32_t con0;
@@ -88,9 +89,19 @@ static uint32_t pll_freq(pmb887x_cgu_t *p) {
 	return muldiv64(p->xtal, ndiv + 1, mdiv + 1);
 }
 
+// PHASEn_K1 > 0: fPLL * 12 / (PHASEn_K1 * 6 + PHASEn_K2); PHASEn_K1 = 0: fPLL / 8
+static uint32_t pll_phase_freq(pmb887x_cgu_t *p, unsigned phase) {
+	static const uint32_t k1_masks[] = { CGU_CON0_PHASE1_K1, CGU_CON0_PHASE2_K1, CGU_CON0_PHASE3_K1, CGU_CON0_PHASE4_K1 };
+	static const uint32_t k1_shifts[] = { CGU_CON0_PHASE1_K1_SHIFT, CGU_CON0_PHASE2_K1_SHIFT, CGU_CON0_PHASE3_K1_SHIFT, CGU_CON0_PHASE4_K1_SHIFT };
+	static const uint32_t k2_masks[] = { CGU_CON0_PHASE1_K2, CGU_CON0_PHASE2_K2, CGU_CON0_PHASE3_K2, CGU_CON0_PHASE4_K2 };
+	static const uint32_t k2_shifts[] = { CGU_CON0_PHASE1_K2_SHIFT, CGU_CON0_PHASE2_K2_SHIFT, CGU_CON0_PHASE3_K2_SHIFT, CGU_CON0_PHASE4_K2_SHIFT };
+	uint32_t k1 = (p->con0 & k1_masks[phase - 1]) >> k1_shifts[phase - 1];
+	uint32_t k2 = (p->con0 & k2_masks[phase - 1]) >> k2_shifts[phase - 1];
+	return pll_ahb_div(pll_freq(p), k1, k2);
+}
+
 // Get AHB bus freq
 static uint32_t pll_get_ahb_freq(pmb887x_cgu_t *p) {
-	uint32_t k1, k2;
 	switch ((p->con1 & CGU_CON1_AHB_CLKSEL)) {
 		case CGU_CON1_AHB_CLKSEL_BYPASS:
 			// fAHB = fOSC
@@ -101,34 +112,43 @@ static uint32_t pll_get_ahb_freq(pmb887x_cgu_t *p) {
 			return pll_freq(p);
 		
 		case CGU_CON1_AHB_CLKSEL_PHASE1:
-			// PLL1_K1 > 0:		fAHB = (fPLL * 12) / (PLL1_K1 * 6 + PLL1_K2)
-			// PLL1_K1 = 0:		fAHB = fPLL / 8
-			k1 = (p->con0 & CGU_CON0_PHASE1_K1) >> CGU_CON0_PHASE1_K1_SHIFT;
-			k2 = (p->con0 & CGU_CON0_PHASE1_K2) >> CGU_CON0_PHASE1_K2_SHIFT;
-			return pll_ahb_div(pll_freq(p), k1, k2);
+			return pll_phase_freq(p, 1);
 		
 		case CGU_CON1_AHB_CLKSEL_PHASE2:
-			// PLL2_K1 > 0:		fAHB = (fPLL * 12) / (PLL2_K1 * 6 + PLL2_K2)
-			// PLL2_K1 = 0:		fAHB = fPLL / 8
-			k1 = (p->con0 & CGU_CON0_PHASE2_K1) >> CGU_CON0_PHASE2_K1_SHIFT;
-			k2 = (p->con0 & CGU_CON0_PHASE2_K2) >> CGU_CON0_PHASE2_K2_SHIFT;
-			return pll_ahb_div(pll_freq(p), k1, k2);
+			return pll_phase_freq(p, 2);
 		
 		case CGU_CON1_AHB_CLKSEL_PHASE3:
-			// PLL3_K1 > 0:		fAHB = (fPLL * 12) / (PLL3_K1 * 6 + PLL3_K2)
-			// PLL3_K1 = 0:		fAHB = fPLL / 8
-			k1 = (p->con0 & CGU_CON0_PHASE3_K1) >> CGU_CON0_PHASE3_K1_SHIFT;
-			k2 = (p->con0 & CGU_CON0_PHASE3_K2) >> CGU_CON0_PHASE3_K2_SHIFT;
-			return pll_ahb_div(pll_freq(p), k1, k2);
+			return pll_phase_freq(p, 3);
 		
 		case CGU_CON1_AHB_CLKSEL_PHASE4:
-			// PLL4_K1 > 0:		fAHB = (fPLL * 12) / (PLL4_K1 * 6 + PLL4_K2)
-			// PLL4_K1 = 0:		fAHB = fPLL / 8
-			k1 = (p->con0 & CGU_CON0_PHASE4_K1) >> CGU_CON0_PHASE4_K1_SHIFT;
-			k2 = (p->con0 & CGU_CON0_PHASE4_K2) >> CGU_CON0_PHASE4_K2_SHIFT;
-			return pll_ahb_div(pll_freq(p), k1, k2);
+			return pll_phase_freq(p, 4);
 	}
 	return 0;
+}
+
+/*
+ * The register description names only PHASE1 (3) and DISABLE (7). The rest
+ * follows the neighbouring EBU_CLKSEL field (OSC, -, PLL, PHASE1..4): SL65
+ * firmware selects 2 and SL98 firmware selects 3 (156 MHz, measured).
+ */
+static uint32_t pll_get_dsp_freq(pmb887x_cgu_t *p) {
+	uint32_t clksel = (p->con2 & CGU_CON2_DSP_CLKSEL) >> CGU_CON2_DSP_CLKSEL_SHIFT;
+
+	switch (clksel) {
+		case 0:
+			return p->xtal;
+		
+		case 2:
+			return pll_freq(p);
+		
+		case 3 ... 6:
+			return pll_phase_freq(p, clksel - 2);
+		
+		case CGU_CON2_DSP_CLKSEL_DISABLE:
+			return 0;
+	}
+	DPRINTF("unknown DSP_CLKSEL %u, assuming the oscillator\n", clksel);
+	return p->xtal;
 }
 
 static uint32_t pll_get_sys_freq(pmb887x_cgu_t *p) {
@@ -176,13 +196,15 @@ static void pll_update_state(struct pmb887x_cgu_t *p) {
 	uint32_t new_fahb = pll_get_ahb_freq(p);
 	/* fGPTU = the GPTU tap = the PLL product (see gptu.c's gptu_calc_freq()). */
 	uint32_t new_fgptu = pll_freq(p);
+	uint32_t new_fdsp = pll_get_dsp_freq(p);
 	
 	bool is_changed = (
 		new_fsys != p->fsys ||
 		new_fstm != p->fstm ||
 		new_fcpu != p->fcpu ||
 		new_fahb != p->fahb ||
-		new_fgptu != p->fgptu
+		new_fgptu != p->fgptu ||
+		new_fdsp != p->fdsp
 	);
 	
 	if (is_changed) {
@@ -194,12 +216,15 @@ static void pll_update_state(struct pmb887x_cgu_t *p) {
 			DPRINTF("fSYS: %u -> %u Hz\n", p->fsys, new_fsys);
 		if (new_fstm != p->fstm)
 			DPRINTF("fSTM: %u -> %u Hz\n", p->fstm, new_fstm);
+		if (new_fdsp != p->fdsp)
+			DPRINTF("fDSP: %u -> %u Hz\n", p->fdsp, new_fdsp);
 
 		p->fsys = new_fsys;
 		p->fstm = new_fstm;
 		p->fcpu = new_fcpu;
 		p->fahb = new_fahb;
 		p->fgptu = new_fgptu;
+		p->fdsp = new_fdsp;
 		
 		for (int i = 0; i < p->callbacks_count; ++i)
 			p->callbacks[i].callback(p->callbacks[i].opaque);
@@ -339,6 +364,10 @@ uint32_t pmb887x_pll_get_fahb(pmb887x_cgu_t *p) {
 
 uint32_t pmb887x_pll_get_fgptu(pmb887x_cgu_t *p) {
 	return p->fgptu;
+}
+
+uint32_t pmb887x_pll_get_fdsp(pmb887x_cgu_t *p) {
+	return p->fdsp;
 }
 
 void pmb887x_pll_add_freq_update_callback(pmb887x_cgu_t *p, void (*callback)(void *), void *opaque) {

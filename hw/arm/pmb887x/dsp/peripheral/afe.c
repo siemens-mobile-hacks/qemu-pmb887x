@@ -19,7 +19,8 @@
 #define AFE_REGISTER_COUNT	(TEAK_AFE_RINGCTRL + 1)
 #define AFE_CONTROL_MASK	(TEAK_AFE_BCON_MODE | TEAK_AFE_BCON_RXSTART | TEAK_AFE_BCON_RXRATE | \
 	TEAK_AFE_BCON_TXSTART | TEAK_AFE_BCON_TXRATE)
-#define AFE_SAMPLE_CYCLES	16U
+/* The voiceband converters run at 8 kHz off the crystal, whatever clock the DSP runs at. */
+#define AFE_SAMPLE_RATE		8000U
 #define AFE_INTERRUPT_GROUP	1
 /*
  * The 0x80-word AFE RAM is split into two 0x40-word rings addressed by the
@@ -100,8 +101,9 @@ struct afe_state_t {
 	uint16_t ram_base;
 	uint16_t receive_position;
 	uint16_t transmit_position;
-	size_t receive_cycles;
-	size_t transmit_cycles;
+	uint32_t frequency;
+	uint64_t receive_phase;
+	uint64_t transmit_phase;
 #ifndef PMB887X_DSP_TESTS
 	afe_audio_t audio;
 #endif
@@ -292,6 +294,7 @@ static void afe_reset(dsp_device_t *device) {
 	dsp_device_t *interrupt = state->interrupt;
 	dsp_host_t host = state->host;
 	uint16_t ram_base = state->ram_base;
+	uint32_t frequency = state->frequency;
 
 #ifndef PMB887X_DSP_TESTS
 	afe_audio_t audio = state->audio;
@@ -305,6 +308,7 @@ static void afe_reset(dsp_device_t *device) {
 	state->interrupt = interrupt;
 	state->host = host;
 	state->ram_base = ram_base;
+	state->frequency = frequency;
 }
 
 static bool afe_read(dsp_device_t *device, uint16_t offset, uint32_t pc, uint16_t *value) {
@@ -340,11 +344,11 @@ static bool afe_write(dsp_device_t *device, uint16_t offset, uint32_t pc, uint16
 			state->registers[offset] = value & AFE_CONTROL_MASK;
 			if (!afe_receive_active(state)) {
 				state->receive_position = 0;
-				state->receive_cycles = 0;
+				state->receive_phase = 0;
 			}
 			if (!afe_transmit_active(state)) {
 				state->transmit_position = 0;
-				state->transmit_cycles = 0;
+				state->transmit_phase = 0;
 			}
 			break;
 
@@ -379,59 +383,81 @@ dsp_device_t *afe_create(const pmb887x_dsp_peripheral_config_t *config, dsp_devi
 	return dsp_device_create(config, &afe_ops, state);
 }
 
+static void afe_receive_sample(afe_state_t *state) {
+	uint16_t interrupt_position = state->registers[TEAK_AFE_INTPTR] & TEAK_AFE_INTPTR_RXINTPTR;
+
+	state->receive_position++;
+	state->receive_position &= TEAK_AFE_RWADDR_RDADDR;
+
+	if (state->receive_position == interrupt_position)
+		dsp_int_set_flags(state->interrupt, AFE_INTERRUPT_GROUP, TEAK_INT_FINTB0_VBRX);
+}
+
+static void afe_transmit_sample(afe_state_t *state) {
+	uint16_t interrupt_position = state->registers[TEAK_AFE_INTPTR] >> TEAK_AFE_INTPTR_TXINTPTR_SHIFT;
+	bool power_down = (state->registers[TEAK_AFE_VTXCTRL] & TEAK_AFE_VTXCTRL_TXMODE) ==
+		TEAK_AFE_VTXCTRL_TXMODE_POWER_DOWN;
+
+#ifndef PMB887X_DSP_TESTS
+	/* Play out the DSP's decoded sample sitting at the DAC read pointer. */
+	afe_audio_produce(state, state->host.data_read(state->host.opaque,
+		state->ram_base + AFE_DAC_RING_OFFSET + state->transmit_position));
+#endif
+
+	if (power_down) {
+		state->host.data_write(state->host.opaque, state->ram_base + state->transmit_position,
+			AFE_POWER_DOWN_SAMPLES[state->transmit_position]);
+	} else {
+		state->host.data_write(state->host.opaque, state->ram_base + state->transmit_position, 0);
+	}
+
+	state->transmit_position++;
+	state->transmit_position &= TEAK_AFE_RWADDR_WRADDR >> TEAK_AFE_RWADDR_WRADDR_SHIFT;
+
+	if (state->transmit_position == interrupt_position)
+		dsp_int_set_flags(state->interrupt, AFE_INTERRUPT_GROUP, TEAK_INT_FINTB0_VBTX);
+}
+
+void afe_set_frequency(dsp_device_t *device, uint32_t frequency) {
+	afe_state_t *state = device->state;
+
+	state->receive_phase = 0;
+	state->transmit_phase = 0;
+	state->frequency = frequency;
+}
+
 void afe_advance(dsp_device_t *device, size_t cycles) {
 	afe_state_t *state = device->state;
 
+	if (state->frequency == 0)
+		return;
+
 	if (afe_receive_active(state)) {
-		uint16_t interrupt_position = state->registers[TEAK_AFE_INTPTR] & TEAK_AFE_INTPTR_RXINTPTR;
-
-		state->receive_cycles += cycles;
-		while (state->receive_cycles >= AFE_SAMPLE_CYCLES) {
-			state->receive_cycles -= AFE_SAMPLE_CYCLES;
-			state->receive_position++;
-			state->receive_position &= TEAK_AFE_RWADDR_RDADDR;
-
-			if (state->receive_position == interrupt_position) {
-				dsp_int_set_flags(state->interrupt, AFE_INTERRUPT_GROUP, TEAK_INT_FINTB0_VBRX);
-				state->receive_cycles = 0;
-				break;
-			}
+		state->receive_phase += (uint64_t) cycles * AFE_SAMPLE_RATE;
+		while (state->receive_phase >= state->frequency) {
+			state->receive_phase -= state->frequency;
+			afe_receive_sample(state);
 		}
 	}
 
 	if (afe_transmit_active(state)) {
-		uint16_t interrupt_position = state->registers[TEAK_AFE_INTPTR] >> TEAK_AFE_INTPTR_TXINTPTR_SHIFT;
-
-		state->transmit_cycles += cycles;
-		while (state->transmit_cycles >= AFE_SAMPLE_CYCLES) {
-			bool power_down = (state->registers[TEAK_AFE_VTXCTRL] & TEAK_AFE_VTXCTRL_TXMODE) ==
-				TEAK_AFE_VTXCTRL_TXMODE_POWER_DOWN;
-
-			state->transmit_cycles -= AFE_SAMPLE_CYCLES;
-
-#ifndef PMB887X_DSP_TESTS
-			/* Play out the DSP's decoded sample sitting at the DAC read pointer. */
-			afe_audio_produce(state, state->host.data_read(state->host.opaque,
-				state->ram_base + AFE_DAC_RING_OFFSET + state->transmit_position));
-#endif
-
-			if (power_down) {
-				state->host.data_write(state->host.opaque, state->ram_base + state->transmit_position,
-					AFE_POWER_DOWN_SAMPLES[state->transmit_position]);
-			} else {
-				state->host.data_write(state->host.opaque, state->ram_base + state->transmit_position, 0);
-			}
-
-			state->transmit_position++;
-			state->transmit_position &= TEAK_AFE_RWADDR_WRADDR >> TEAK_AFE_RWADDR_WRADDR_SHIFT;
-
-			if (state->transmit_position == interrupt_position) {
-				dsp_int_set_flags(state->interrupt, AFE_INTERRUPT_GROUP, TEAK_INT_FINTB0_VBTX);
-				state->transmit_cycles = 0;
-				break;
-			}
+		state->transmit_phase += (uint64_t) cycles * AFE_SAMPLE_RATE;
+		while (state->transmit_phase >= state->frequency) {
+			state->transmit_phase -= state->frequency;
+			afe_transmit_sample(state);
 		}
 	}
+}
+
+size_t afe_next_event(dsp_device_t *device) {
+	afe_state_t *state = device->state;
+	size_t cycles = SIZE_MAX;
+
+	if (afe_receive_active(state))
+		cycles = dsp_rate_cycles_until(state->receive_phase, AFE_SAMPLE_RATE, state->frequency);
+	if (afe_transmit_active(state))
+		cycles = MIN(cycles, dsp_rate_cycles_until(state->transmit_phase, AFE_SAMPLE_RATE, state->frequency));
+	return cycles;
 }
 
 bool afe_is_active(const dsp_device_t *device) {

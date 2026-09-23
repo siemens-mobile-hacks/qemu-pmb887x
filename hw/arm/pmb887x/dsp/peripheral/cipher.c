@@ -358,3 +358,8 @@ bool cipher_is_active(const dsp_device_t *device) {
 	cipher_state_t *state = device->state;
 	return state->active;
 }
+
+size_t cipher_next_event(dsp_device_t *device) {
+	cipher_state_t *state = device->state;
+	return state->active ? MAX(state->cycles_remaining, (size_t) 1) : SIZE_MAX;
+}

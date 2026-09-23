@@ -10,26 +10,25 @@ typedef struct dsp_runtime_t dsp_runtime_t;
 
 dsp_runtime_t *dsp_runtime_create(
 	const pmb887x_dsp_config_t *config, uint16_t rom_version, const uint8_t *program_rom, const uint8_t *data_rom,
-	void *device_opaque, void (*notify_activity)(void *opaque), void (*notify_comm)(void *opaque, uint16_t flags, bool set),
-	uint32_t (*ssc_transfer)(void *opaque, uint32_t value)
+	void *device_opaque, void (*events_changed)(void *opaque), uint32_t (*ssc_transfer)(void *opaque, uint32_t value)
 );
 void dsp_runtime_destroy(dsp_runtime_t *runtime);
 void dsp_runtime_reset(dsp_runtime_t *runtime);
 void dsp_runtime_set_clock(dsp_runtime_t *runtime, bool enabled);
-bool dsp_runtime_run(dsp_runtime_t *runtime);
-bool dsp_runtime_is_idle(const dsp_runtime_t *runtime);
-bool dsp_runtime_realtime_active(const dsp_runtime_t *runtime);
+void dsp_runtime_set_frequency(dsp_runtime_t *runtime, uint32_t frequency);
+uint32_t dsp_runtime_get_frequency(const dsp_runtime_t *runtime);
+int64_t dsp_runtime_get_time(const dsp_runtime_t *runtime);
+int64_t dsp_runtime_next_event_time(dsp_runtime_t *runtime);
+void dsp_runtime_run_until(dsp_runtime_t *runtime, int64_t target);
+bool dsp_runtime_code_flush_pending(void);
+bool dsp_runtime_is_halted(const dsp_runtime_t *runtime);
+bool dsp_runtime_is_sleeping(const dsp_runtime_t *runtime);
 void dsp_runtime_apply_audio_format(dsp_runtime_t *runtime);
 bool dsp_runtime_is_maskable_interrupt_active(const dsp_runtime_t *runtime);
 uint16_t dsp_runtime_get_irq_flags(dsp_runtime_t *runtime, size_t group);
 uint16_t dsp_runtime_get_irq_pending_flags(dsp_runtime_t *runtime, size_t group);
 void dsp_runtime_get_irq_debug(dsp_runtime_t *runtime, uint8_t *ie, uint8_t *interrupt_mask, uint8_t *lines);
 uint16_t dsp_runtime_peek(dsp_runtime_t *runtime, uint16_t address);
-void dsp_runtime_wake(dsp_runtime_t *runtime);
-void dsp_runtime_kick(dsp_runtime_t *runtime);
-bool dsp_runtime_take_program_start(dsp_runtime_t *runtime, uint32_t *pc);
-bool dsp_runtime_is_program_warming(const dsp_runtime_t *runtime);
-void dsp_runtime_finish_program_warmup(dsp_runtime_t *runtime);
 void dsp_runtime_thread_enter(void);
 void dsp_runtime_thread_exit(void);
 uint16_t dsp_runtime_shared_read(dsp_runtime_t *runtime, uint16_t offset);
@@ -42,12 +41,10 @@ void dsp_runtime_set_gsm_clock(dsp_runtime_t *runtime, uint32_t frequency);
 void dsp_runtime_set_gsm_signal(dsp_runtime_t *runtime, pmb887x_dsp_gsm_signal_t signal, bool level);
 uint16_t dsp_runtime_get_outputs(dsp_runtime_t *runtime);
 uint32_t dsp_runtime_get_pc(const dsp_runtime_t *runtime);
-uint64_t dsp_runtime_get_cache_compiles(const dsp_runtime_t *runtime);
 uint16_t dsp_runtime_take_output_events(dsp_runtime_t *runtime);
 uint16_t dsp_runtime_get_comm(dsp_runtime_t *runtime);
 void dsp_runtime_set_comm(dsp_runtime_t *runtime, uint16_t value);
 void dsp_runtime_clear_comm(dsp_runtime_t *runtime, uint16_t value);
-uint16_t dsp_runtime_take_comm_clear(dsp_runtime_t *runtime);
 uint16_t dsp_runtime_take_mcu_irqs(dsp_runtime_t *runtime);
 uint16_t dsp_runtime_get_mcu_semaphores(dsp_runtime_t *runtime);
 void dsp_runtime_request_mcu_semaphores(dsp_runtime_t *runtime, uint16_t value);
