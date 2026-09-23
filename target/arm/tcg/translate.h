@@ -201,13 +201,17 @@ typedef struct DisasContext {
      * it can move is hflags.  When hflags still matches the TB's and no
      * interrupt is pending, translation carries on; @w64_psr_miss are the
      * deferred exits for when either test fails, refunded and emitted at
-     * the TB's end like a deferred taken path.
+     * the TB's end like a deferred taken path.  A miss with @val set is an
+     * inline CPSR write that bailed out before writing anything: its exit
+     * makes the helper call first.
      */
 #define W64_PSR_MISS 8
     struct {
         DisasLabel label;
         vaddr dest;
         int insns;
+        TCGv_i32 val;
+        uint32_t mask;
     } w64_psr_miss[W64_PSR_MISS];
     uint8_t w64_psr_miss_n;
     CPUARMState *w64_env;

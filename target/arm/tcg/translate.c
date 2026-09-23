@@ -2346,12 +2346,9 @@ static uint32_t msr_mask(DisasContext *s, int flags, int spsr)
  * lockstep divergence, which is the trap round forty fell into with the
  * eret BQL pair.
  */
-static bool w64_psr_continue(DisasContext *s, uint32_t mask)
+static bool w64_psr_can_continue(DisasContext *s)
 {
-    /* what cpsr_write() lets move hflags, plus PAN for good measure */
-    const uint32_t hflags_in = CPSR_M | CPSR_E | CPSR_IL | CPSR_PAN;
     TranslationBlock *tb = s->base.tb;
-    TCGv_i32 a;
 
     if (s->base.is_jmp != DISAS_NEXT ||
         s->eci || unlikely(s->ss_active) || s->pc_save == -1 ||
@@ -2362,27 +2359,113 @@ static bool w64_psr_continue(DisasContext *s, uint32_t mask)
     if (s->condjmp || s->condexec_mask) {
         return false;
     }
-    if (s->w64_psr_miss_n >= W64_PSR_MISS) {
-        return false;
-    }
+    return s->w64_psr_miss_n < W64_PSR_MISS;
+}
 
-    a = tcg_temp_new_i32();
-    s->w64_psr_miss[s->w64_psr_miss_n].label = gen_disas_label(s);
-    s->w64_psr_miss[s->w64_psr_miss_n].dest = s->base.pc_next;
-    s->w64_psr_miss[s->w64_psr_miss_n].insns = s->base.num_insns;
+static TCGLabel *w64_psr_new_miss(DisasContext *s, TCGv_i32 val, uint32_t mask)
+{
+    unsigned n = s->w64_psr_miss_n++;
 
-    if (mask & hflags_in) {
-        tcg_gen_ld_i32(a, tcg_env, offsetof(CPUARMState, hflags.flags));
-        tcg_gen_brcondi_i32(TCG_COND_NE, a, (uint32_t)tb->flags,
-                            s->w64_psr_miss[s->w64_psr_miss_n].label.label);
-    }
+    s->w64_psr_miss[n].label = gen_disas_label(s);
+    s->w64_psr_miss[n].dest = s->base.pc_next;
+    s->w64_psr_miss[n].insns = s->base.num_insns;
+    s->w64_psr_miss[n].val = val;
+    s->w64_psr_miss[n].mask = mask;
+    return s->w64_psr_miss[n].label.label;
+}
+
+static void w64_gen_irq_pending_br(TCGv_i32 a, TCGLabel *miss)
+{
     tcg_gen_ld_i32(a, tcg_env,
                    offsetof(ARMCPU, parent_obj.interrupt_request) -
                    offsetof(ARMCPU, env));
-    tcg_gen_brcondi_i32(TCG_COND_NE, a, 0,
-                        s->w64_psr_miss[s->w64_psr_miss_n].label.label);
+    tcg_gen_brcondi_i32(TCG_COND_NE, a, 0, miss);
+}
 
-    s->w64_psr_miss_n++;
+static bool w64_psr_continue(DisasContext *s, uint32_t mask)
+{
+    /* what cpsr_write() lets move hflags, plus PAN for good measure */
+    const uint32_t hflags_in = CPSR_M | CPSR_E | CPSR_IL | CPSR_PAN;
+    TCGLabel *miss;
+    TCGv_i32 a;
+
+    if (!w64_psr_can_continue(s)) {
+        return false;
+    }
+    a = tcg_temp_new_i32();
+    miss = w64_psr_new_miss(s, NULL, 0);
+    if (mask & hflags_in) {
+        tcg_gen_ld_i32(a, tcg_env, offsetof(CPUARMState, hflags.flags));
+        tcg_gen_brcondi_i32(TCG_COND_NE, a, (uint32_t)s->base.tb->flags, miss);
+    }
+    w64_gen_irq_pending_br(a, miss);
+    return true;
+}
+
+/*
+ * cpsr_write(CPSRWriteByInstr) in emitted code, for the write that leaves
+ * the mode alone: `msr cpsr_c` around a critical section, `msr cpsr_f`.
+ * The helper carries no call flags, so the call alone cost a sync and
+ * reload of every global besides its body.
+ *
+ * With the mask limited to NZCV, Q, A/I/F and M, and M unchanged, what
+ * cpsr_write() does reduces to the flag fields and daif: uncached_cpsr
+ * receives only M bits it already holds, so hflags cannot move and
+ * HELPER(cpsr_write) skips its rebuild.  The SCR.AW/FW and NMFI filters
+ * apply only with EL3, which is tested here at translation time.
+ *
+ * The tests run before anything is written, so the miss exit can hand the
+ * untouched state to the helper.  A pending interrupt takes the miss too:
+ * the helper then kicks icount_decr exactly as it did on the called path,
+ * and the next TB stops at its prologue.
+ */
+static bool w64_cpsr_write_inline(DisasContext *s, TCGv_i32 val, uint32_t mask)
+{
+    const uint32_t inline_ok = CPSR_NZCV | CPSR_Q | CPSR_AIF | CPSR_M;
+    uint32_t aif = mask & CPSR_AIF;
+    TCGLabel *miss;
+    TCGv_i32 t;
+
+    if ((mask & ~inline_ok) || arm_dc_feature(s, ARM_FEATURE_EL3) ||
+        !w64_psr_can_continue(s)) {
+        return false;
+    }
+    t = tcg_temp_new_i32();
+    miss = w64_psr_new_miss(s, val, mask);
+    if (mask & CPSR_M) {
+        /* cpsr_write() ORs in M4 before comparing: PMB887x ignores it */
+        TCGv_i32 u = tcg_temp_new_i32();
+
+        tcg_gen_ld_i32(u, tcg_env, offsetof(CPUARMState, uncached_cpsr));
+        tcg_gen_ori_i32(t, val, 0x10);
+        tcg_gen_xor_i32(t, t, u);
+        tcg_gen_andi_i32(t, t, mask & CPSR_M);
+        tcg_gen_brcondi_i32(TCG_COND_NE, t, 0, miss);
+    }
+    w64_gen_irq_pending_br(t, miss);
+
+    if (mask & CPSR_NZCV) {
+        tcg_gen_not_i32(cpu_ZF, val);
+        tcg_gen_andi_i32(cpu_ZF, cpu_ZF, CPSR_Z);
+        tcg_gen_mov_i32(cpu_NF, val);
+        tcg_gen_extract_i32(cpu_CF, val, 29, 1);
+        tcg_gen_shli_i32(cpu_VF, val, 3);
+        tcg_gen_andi_i32(cpu_VF, cpu_VF, 0x80000000);
+    }
+    if (mask & CPSR_Q) {
+        tcg_gen_extract_i32(t, val, 27, 1);
+        tcg_gen_st_i32(t, tcg_env, offsetof(CPUARMState, QF));
+    }
+    if (aif) {
+        TCGv_i32 d = tcg_temp_new_i32();
+
+        /* the low word of the u64: little-endian host (wasm) */
+        tcg_gen_ld_i32(d, tcg_env, offsetof(CPUARMState, daif));
+        tcg_gen_andi_i32(d, d, ~aif);
+        tcg_gen_andi_i32(t, val, aif);
+        tcg_gen_or_i32(d, d, t);
+        tcg_gen_st_i32(d, tcg_env, offsetof(CPUARMState, daif));
+    }
     return true;
 }
 
@@ -2393,6 +2476,9 @@ static void w64_emit_psr_misses(DisasContext *dc)
         int64_t diff = dc->w64_psr_miss[i].dest - dc->pc_curr;
 
         set_disas_label(dc, dc->w64_psr_miss[i].label);
+        if (dc->w64_psr_miss[i].val) {
+            gen_set_cpsr(dc->w64_psr_miss[i].val, dc->w64_psr_miss[i].mask);
+        }
         w64_refund(dc, dc->base.num_insns - dc->w64_psr_miss[i].insns);
         gen_update_pc(dc, diff);
         dc->w64_dynkey = true;
@@ -2416,6 +2502,11 @@ static int gen_set_psr(DisasContext *s, uint32_t mask, int spsr, TCGv_i32 t0)
         tcg_gen_or_i32(tmp, tmp, t0);
         store_cpu_field(tmp, spsr);
     } else {
+#ifdef CONFIG_TCG_WASM64
+        if (w64_cpsr_write_inline(s, t0, mask)) {
+            return 0;
+        }
+#endif
         gen_set_cpsr(t0, mask);
     }
 #ifdef CONFIG_TCG_WASM64
