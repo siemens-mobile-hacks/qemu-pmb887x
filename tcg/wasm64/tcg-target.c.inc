@@ -154,17 +154,29 @@ static void w64_sleb64(TCGContext *s, int64_t v)
 static __thread struct w64_cfix *CF;
 static __thread uint32_t n_cf, cap_cf;
 
-static void w64_callidx(TCGContext *s, uint8_t imp, uint8_t uimp)
+static void w64_cf_add(uint32_t pos, uint16_t uimp)
 {
-    w64_u8(s, (uint8_t)((imp & 0x7f) | 0x80));
-    w64_u8(s, (uint8_t)(imp >> 7));
     if (n_cf == cap_cf) {
         cap_cf = cap_cf ? cap_cf * 2 : 32;
         CF = g_realloc(CF, (size_t)cap_cf * sizeof(*CF));
     }
-    CF[n_cf].pos = s->code_ptr - 2 - s->code_buf;
+    CF[n_cf].pos = pos;
     CF[n_cf].uimp = uimp;
     n_cf++;
+}
+
+static void w64_callidx(TCGContext *s, uint8_t imp, uint8_t uimp)
+{
+    w64_u8(s, (uint8_t)((imp & 0x7f) | 0x80));
+    w64_u8(s, (uint8_t)(imp >> 7));
+    w64_cf_add(s->code_ptr - 2 - s->code_buf, uimp);
+}
+
+/* the `if` / `br_if` emitted next is almost always (not) taken */
+static void w64_hint(TCGContext *s, bool likely)
+{
+    w64_cf_add(s->code_ptr - s->code_buf,
+               likely ? W64_CFIX_LIKELY : W64_CFIX_UNLIKELY);
 }
 
 /* ------------------------------------------------------------------ */
@@ -1842,6 +1854,7 @@ static void tgen_qemu_ld(TCGContext *s, TCGType type, TCGReg data,
         w64_get_i64(s, addr);
         w64_local_set(s, W64_L_SCR2);
         w64_tlb_probe(s, W64_L_SCR2, &tc);
+        w64_hint(s, true);
         w64_blk_push(s, W64_BLK_IF, -1);
         w64_ld_fast(s, type, data, mop, s_bits);
         w64_u8(s, 0x05);                    /* else */
@@ -1903,6 +1916,7 @@ static void tgen_qemu_st(TCGContext *s, TCGType type, TCGReg data,
         w64_get_i64(s, addr);               /* snapshot (see ld above) */
         w64_local_set(s, W64_L_SCR2);
         w64_tlb_probe(s, W64_L_SCR2, &tc);
+        w64_hint(s, true);
         w64_blk_push(s, W64_BLK_IF, -1);
         w64_st_fast(s, data, q, s_bits);
         w64_u8(s, 0x05);                    /* else */

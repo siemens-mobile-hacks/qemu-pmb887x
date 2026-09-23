@@ -944,6 +944,53 @@ static uint32_t w64_assemble_instantiate(const struct w64_bsrc *src,
     }
     mb_sec(&mod, 9, &sec);
 
+    /*
+     * metadata.code.branch_hint (must precede the code section): per
+     * member, the hinted if / br_if opcodes, as offsets from the start
+     * of the function body — the byte after its size LEB.
+     */
+    {
+        static const char hname[] = "metadata.code.branch_hint";
+        unsigned nf = 0;
+
+        sec.n = 0;
+        mb_uleb(&sec, sizeof(hname) - 1);
+        mb_put(&sec, hname, sizeof(hname) - 1);
+        for (m = 0; m < src->n_member; m++) {
+            uint32_t fs = m ? src->member[m - 1].fix_end : 0;
+            for (i = fs; i < src->member[m].fix_end; i++) {
+                if (W64_CFIX_IS_HINT(src->fix[i].uimp)) {
+                    nf++;
+                    break;
+                }
+            }
+        }
+        mb_uleb(&sec, nf);
+        for (m = 0; nf && m < src->n_member; m++) {
+            uint32_t fs = m ? src->member[m - 1].fix_end : 0;
+            unsigned nh = 0;
+
+            for (i = fs; i < src->member[m].fix_end; i++) {
+                nh += W64_CFIX_IS_HINT(src->fix[i].uimp);
+            }
+            if (!nh) {
+                continue;
+            }
+            mb_uleb(&sec, src->n_uimp + m);
+            mb_uleb(&sec, nh);
+            for (i = fs; i < src->member[m].fix_end; i++) {
+                if (W64_CFIX_IS_HINT(src->fix[i].uimp)) {
+                    mb_uleb(&sec, src->fix[i].pos - W64_BODY_OFF - 5);
+                    mb_u8(&sec, 1);
+                    mb_u8(&sec, src->fix[i].uimp == W64_CFIX_LIKELY);
+                }
+            }
+        }
+        if (nf) {
+            mb_sec(&mod, 0, &sec);
+        }
+    }
+
     /* code section: staged bodies (rewritten to union import indices)
      * + the thunk; the total size is a padded 5-byte LEB so it never
      * shifts when the body sum crosses a LEB width boundary */
@@ -968,6 +1015,9 @@ static uint32_t w64_assemble_instantiate(const struct w64_bsrc *src,
             mb_put(&mod, body + W64_BODY_OFF, src->member[m].body_len);
             for (i = fs; i < src->member[m].fix_end; i++) {
                 uint8_t *p = mod.b + off + (src->fix[i].pos - W64_BODY_OFF);
+                if (W64_CFIX_IS_HINT(src->fix[i].uimp)) {
+                    continue;
+                }
                 p[0] = (uint8_t)((src->fix[i].uimp & 0x7f) | 0x80);
                 p[1] = (uint8_t)(src->fix[i].uimp >> 7);
             }
@@ -1361,7 +1411,9 @@ static void w64_compact(unsigned max_members)
             uint32_t fs = m ? src->member[m - 1].fix_end : 0;
             for (f = fs; f < src->member[m].fix_end; f++) {
                 fix[n_fix].pos = src->fix[f].pos;
-                fix[n_fix].uimp = imap[src->fix[f].uimp];
+                fix[n_fix].uimp = W64_CFIX_IS_HINT(src->fix[f].uimp)
+                                  ? src->fix[f].uimp
+                                  : imap[src->fix[f].uimp];
                 n_fix++;
             }
             member[n_member] = src->member[m];

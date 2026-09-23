@@ -155,6 +155,17 @@ struct w64_cfix {
     uint16_t uimp;
 };
 
+/*
+ * A w64_cfix whose uimp is one of these is a branch hint, not a call
+ * site: pos is an `if` / `br_if` opcode, and the batch module's
+ * metadata.code.branch_hint section tells the engine which way it goes.
+ * TurboFan then compiles the other arm as deferred code, which is where
+ * its register allocator puts the spills and reloads a call forces.
+ */
+#define W64_CFIX_UNLIKELY   0xfffe
+#define W64_CFIX_LIKELY     0xffff
+#define W64_CFIX_IS_HINT(u) ((u) >= W64_CFIX_UNLIKELY)
+
 /* shared chain table capacity: tidx is below this */
 #define W64_TIDX_N   (1u << 21)
 
