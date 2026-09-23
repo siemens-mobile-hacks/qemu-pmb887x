@@ -129,7 +129,9 @@ static uint32_t pll_get_ahb_freq(pmb887x_cgu_t *p) {
 /*
  * The register description names only PHASE1 (3) and DISABLE (7). The rest
  * follows the neighbouring EBU_CLKSEL field (OSC, -, PLL, PHASE1..4): SL65
- * firmware selects 2 and SL98 firmware selects 3 (156 MHz, measured).
+ * firmware selects 2 and SL98 firmware selects 3 (156 MHz, measured). The
+ * SL65 melody tempo, which the DSP timers set, bears out 2 as the PLL: a .imy
+ * loop takes 2.945 s here against 2.939 s on the phone.
  */
 static uint32_t pll_get_dsp_freq(pmb887x_cgu_t *p) {
 	uint32_t clksel = (p->con2 & CGU_CON2_DSP_CLKSEL) >> CGU_CON2_DSP_CLKSEL_SHIFT;

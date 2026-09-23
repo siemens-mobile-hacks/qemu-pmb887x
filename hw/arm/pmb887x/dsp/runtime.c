@@ -421,10 +421,6 @@ bool dsp_runtime_code_flush_pending(void) {
 	return teak_tcg_flush_pending();
 }
 
-bool dsp_runtime_is_halted(const dsp_runtime_t *runtime) {
-	return runtime->halted;
-}
-
 bool dsp_runtime_is_sleeping(const dsp_runtime_t *runtime) {
 	return runtime->halted || (runtime->core_disabled && dsp_bus_get_irq_lines(runtime->bus) == 0);
 }
@@ -446,32 +442,6 @@ int64_t dsp_runtime_next_event_time(dsp_runtime_t *runtime) {
 		NANOSECONDS_PER_SECOND, runtime->frequency);
 }
 
-uint32_t dsp_runtime_get_frequency(const dsp_runtime_t *runtime) {
-	return runtime->frequency;
-}
-
-bool dsp_runtime_is_maskable_interrupt_active(const dsp_runtime_t *runtime) {
-	return qatomic_read(&runtime->core.state.maskable_interrupt_active);
-}
-
-uint16_t dsp_runtime_get_irq_flags(dsp_runtime_t *runtime, size_t group) {
-	return dsp_bus_get_irq_flags(runtime->bus, group);
-}
-
-uint16_t dsp_runtime_get_irq_pending_flags(dsp_runtime_t *runtime, size_t group) {
-	return dsp_bus_get_irq_pending_flags(runtime->bus, group);
-}
-
-void dsp_runtime_get_irq_debug(dsp_runtime_t *runtime, uint8_t *ie, uint8_t *interrupt_mask, uint8_t *lines) {
-	*ie = qatomic_read(&runtime->core.state.ie);
-	*interrupt_mask = qatomic_read(&runtime->core.state.interrupt_mask);
-	*lines = dsp_bus_get_irq_lines(runtime->bus);
-}
-
-uint16_t dsp_runtime_peek(dsp_runtime_t *runtime, uint16_t address) {
-	return qatomic_read(&runtime->data[address]);
-}
-
 void dsp_runtime_thread_enter(void) {
 	rcu_register_thread();
 	tcg_register_thread();
@@ -484,11 +454,6 @@ void dsp_runtime_thread_exit(void) {
 uint16_t dsp_runtime_shared_read(dsp_runtime_t *runtime, uint16_t offset) {
 	g_assert(offset < runtime->config->shared_size);
 	return qatomic_read(&runtime->data[runtime->config->shared_base + offset]);
-}
-
-void dsp_runtime_shared_write(dsp_runtime_t *runtime, uint16_t offset, uint16_t value) {
-	g_assert(offset < runtime->config->shared_size);
-	qatomic_set(&runtime->data[runtime->config->shared_base + offset], value);
 }
 
 uint64_t dsp_runtime_shared_read_bytes(dsp_runtime_t *runtime, size_t offset, size_t size) {

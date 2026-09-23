@@ -288,7 +288,6 @@ typedef dsp_host_t pmb887x_dsp_peripheral_host_t;
 #define pmb887x_dsp_peripheral_bus_reset dsp_bus_reset
 #define pmb887x_dsp_peripheral_bus_set_clock_enabled dsp_bus_set_clock
 #define pmb887x_dsp_peripheral_bus_advance dsp_bus_advance
-#define pmb887x_dsp_peripheral_bus_is_active dsp_bus_is_active
 #define pmb887x_dsp_peripheral_bus_read dsp_bus_read
 #define pmb887x_dsp_peripheral_bus_write dsp_bus_write
 #define pmb887x_dsp_peripheral_bus_external_read dsp_bus_external_read

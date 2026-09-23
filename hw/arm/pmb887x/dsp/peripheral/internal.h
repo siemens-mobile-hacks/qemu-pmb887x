@@ -50,7 +50,6 @@ struct dsp_bus_t {
 	dsp_device_t *ssc;
 	dsp_device_t *timer1;
 	dsp_device_t *timer2;
-	uint32_t frequency;
 };
 
 /* Cycles until an event paced by @rate ticks per second of a @frequency Hz clock, given its @phase. */
@@ -137,8 +136,6 @@ bool i2s_tx_is_active(const dsp_device_t *device);
 
 dsp_device_t *dsp_int_create(const pmb887x_dsp_peripheral_config_t *config, const dsp_host_t *host);
 uint8_t dsp_int_get_lines(dsp_device_t *device);
-uint16_t dsp_int_get_flags(dsp_device_t *device, size_t group);
-uint16_t dsp_int_get_pending_flags(dsp_device_t *device, size_t group);
 void dsp_int_set_request(dsp_device_t *device, size_t index, bool level);
 void dsp_int_set_flags(dsp_device_t *device, size_t group, uint16_t flags);
 uint16_t dsp_int_take_mcu_events(dsp_device_t *device);

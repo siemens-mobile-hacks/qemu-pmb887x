@@ -179,7 +179,6 @@ void dsp_bus_set_clock(dsp_bus_t *bus, bool enabled) {
 }
 
 void dsp_bus_set_frequency(dsp_bus_t *bus, uint32_t frequency) {
-	bus->frequency = frequency;
 	if (bus->afe != NULL)
 		afe_set_frequency(bus->afe, frequency);
 	if (bus->baseband != NULL)
@@ -243,33 +242,6 @@ size_t dsp_bus_next_event(dsp_bus_t *bus) {
 	return cycles;
 }
 
-bool dsp_bus_is_active(const dsp_bus_t *bus) {
-	if (bus->afe != NULL && afe_is_active(bus->afe))
-		return true;
-	if (bus->baseband != NULL && baseband_is_active(bus->baseband))
-		return true;
-	if (bus->channel_decoder != NULL && chdec_is_active(bus->channel_decoder))
-		return true;
-	if (bus->cipher != NULL && cipher_is_active(bus->cipher))
-		return true;
-	if (bus->equalizer != NULL && equalizer_is_active(bus->equalizer))
-		return true;
-	for (size_t i = 0; i < bus->i2s_count; i++)
-		if (i2s_is_active(bus->i2s[i]))
-			return true;
-	if (bus->i2s_tx != NULL && i2s_tx_is_active(bus->i2s_tx))
-		return true;
-	if (bus->modulator != NULL && modulator_is_active(bus->modulator))
-		return true;
-	if (bus->ssc != NULL && ssc_is_active(bus->ssc))
-		return true;
-	if (bus->timer1 != NULL && timer1_is_active(bus->timer1))
-		return true;
-	if (bus->timer2 != NULL && timer2_is_active(bus->timer2))
-		return true;
-	return false;
-}
-
 uint16_t dsp_bus_read(dsp_bus_t *bus, uint16_t address) {
 	size_t offset = address - bus->fallback_config.base;
 	uint32_t pc = bus->host.get_pc(bus->host.opaque);
@@ -309,14 +281,6 @@ void dsp_bus_external_write(dsp_bus_t *bus, size_t index, uint16_t value) {
 
 uint8_t dsp_bus_get_irq_lines(dsp_bus_t *bus) {
 	return dsp_int_get_lines(bus->interrupt);
-}
-
-uint16_t dsp_bus_get_irq_flags(dsp_bus_t *bus, size_t group) {
-	return dsp_int_get_flags(bus->interrupt, group);
-}
-
-uint16_t dsp_bus_get_irq_pending_flags(dsp_bus_t *bus, size_t group) {
-	return dsp_int_get_pending_flags(bus->interrupt, group);
 }
 
 void dsp_bus_set_request(dsp_bus_t *bus, size_t index, bool level) {
