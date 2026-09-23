@@ -515,11 +515,11 @@ void pmb887x_board_init_devices(DeviceState *ebuc) {
 	}
 
 	DeviceState *flash_blk = qdev_find_recursive(sysbus_get_default(), "FULLFLASH");
-	g_assert(flash_blk != NULL);
-
-	int64_t total_flash_size = pmb887x_flash_blk_size(pmb887x_flash_blk_self(flash_blk));
-	if (board->flash_offset != total_flash_size)
-		hw_error("Invalid fullflash size=0x%08"PRIX64". Please, specify fullflash with size=0x%08X", total_flash_size, board->flash_offset);
+	if (flash_blk) {
+		int64_t total_flash_size = pmb887x_flash_blk_size(pmb887x_flash_blk_self(flash_blk));
+		if (board->flash_offset != total_flash_size)
+			hw_error("Invalid fullflash size=0x%08"PRIX64". Please, specify fullflash with size=0x%08X", total_flash_size, board->flash_offset);
+	}
 
 	sysbus_realize_and_unref(SYS_BUS_DEVICE(ebuc), &error_fatal);
 }

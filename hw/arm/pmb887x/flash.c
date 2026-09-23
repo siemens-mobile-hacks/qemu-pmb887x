@@ -211,7 +211,7 @@ static void flash_data_write(pmb887x_flash_part_t *p, uint32_t offset, uint32_t 
 			exit(1);
 	}
 	
-	if (pmb887x_flash_blk_is_rw(p->flash->blk)) {
+	if (p->flash->blk && pmb887x_flash_blk_is_rw(p->flash->blk)) {
 		int ret = pmb887x_flash_blk_pwrite(p->flash->blk, p->flash->offset + p->offset + offset, size, p->storage + offset);
 		if (ret < 0) {
 			flash_error_part(p, "Can't write to flash file: %d, %s", ret, strerror(ret));
@@ -492,7 +492,7 @@ static void flash_block_erase(pmb887x_flash_part_t *p, uint32_t offset) {
 
 	uint32_t erase_offset = base - p->offset;
 	memset(p->storage + erase_offset, 0xFF, sector_size);
-	if (pmb887x_flash_blk_is_rw(p->flash->blk)) {
+	if (p->flash->blk && pmb887x_flash_blk_is_rw(p->flash->blk)) {
 		int ret = pmb887x_flash_blk_pwrite(p->flash->blk, p->flash->offset + p->offset + erase_offset, sector_size,
 			p->storage + erase_offset);
 		if (ret < 0) {
@@ -971,7 +971,7 @@ static void flash_load_file(pmb887x_flash_t *flash, const char *path, void *data
 static void flash_save_file(pmb887x_flash_t *flash, int *fd, const char *path, const void *data, size_t total_size,
 	size_t offset, size_t size, const char *region)
 {
-	if (!path || !path[0] || !pmb887x_flash_blk_is_rw(flash->blk))
+	if (!path || !path[0] || !flash->blk || !pmb887x_flash_blk_is_rw(flash->blk))
 		return;
 
 	if (*fd < 0) {
@@ -998,7 +998,7 @@ static void flash_save_file(pmb887x_flash_t *flash, int *fd, const char *path, c
 
 static void flash_init_file_paths(pmb887x_flash_t *flash) {
 	const pmb887x_flash_cfg_t *cfg = flash->cfg;
-	if (strcmp(flash->name, "FLASH0") == 0) {
+	if (flash->blk && strcmp(flash->name, "FLASH0") == 0) {
 		const char *fullflash_file = pmb887x_flash_blk_filename(flash->blk);
 		if ((!flash->otp0_file || !flash->otp0_file[0]) && cfg->otp0_size) {
 			g_free(flash->otp0_file);
@@ -1078,10 +1078,14 @@ static void flash_init_part(pmb887x_flash_t *flash, const pmb887x_flash_cfg_part
 	
 	flash_trace_part(p, "hw partition 0x%08X ... 0x%08X", p->flash->offset + p->offset, p->flash->offset + p->offset + p->size - 1);
 	
-	int ret = pmb887x_flash_blk_pread(p->flash->blk, flash->offset + p->offset, p->size, p->storage);
-	if (ret < 0) {
-		flash_error(p->flash, "failed to read the initial flash content [offset=%08X, size=%08X]", p->flash->offset + p->offset, p->size);
-		exit(1);
+	if (flash->blk) {
+		int ret = pmb887x_flash_blk_pread(flash->blk, flash->offset + p->offset, p->size, p->storage);
+		if (ret < 0) {
+			flash_error(flash, "failed to read the initial flash content [offset=%08X, size=%08X]", flash->offset + p->offset, p->size);
+			exit(1);
+		}
+	} else {
+		memset(p->storage, 0xFF, p->size);
 	}
 	
 	p->blocks_n = 0;
