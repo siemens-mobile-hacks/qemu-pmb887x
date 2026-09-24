@@ -5978,15 +5978,14 @@ static const pmb887x_io_field_t usart_whbabstat_fields[] = {
 };
 
 static const pmb887x_io_field_t usart_fccon_fields[] = {
-	{"CTSEN",		USART_FCCON_CTSEN,			USART_FCCON_CTSEN_SHIFT,		NULL,	0},
 	{"RTSEN",		USART_FCCON_RTSEN,			USART_FCCON_RTSEN_SHIFT,		NULL,	0},
+	{"CTSEN",		USART_FCCON_CTSEN,			USART_FCCON_CTSEN_SHIFT,		NULL,	0},
 	{"RTS",			USART_FCCON_RTS,			USART_FCCON_RTS_SHIFT,			NULL,	0},
 	{"RTS_TRIGGER",	USART_FCCON_RTS_TRIGGER,	USART_FCCON_RTS_TRIGGER_SHIFT,	NULL,	0},
 };
 
 static const pmb887x_io_field_t usart_fcstat_fields[] = {
 	{"CTS",	USART_FCSTAT_CTS,	USART_FCSTAT_CTS_SHIFT,	NULL,	0},
-	{"RTS",	USART_FCSTAT_RTS,	USART_FCSTAT_RTS_SHIFT,	NULL,	0},
 };
 
 static const pmb887x_io_field_t usart_imsc_fields[] = {

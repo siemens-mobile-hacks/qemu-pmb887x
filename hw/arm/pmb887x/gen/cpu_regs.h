@@ -7008,10 +7008,10 @@
 #define USART_WHBABSTAT_SETDETWAIT_SHIFT	9
 
 #define USART_FCCON							0x5C
-#define USART_FCCON_CTSEN					(1 << 0)	 // RTS enbled (0: disable; 1: enable)
-#define USART_FCCON_CTSEN_SHIFT				0
-#define USART_FCCON_RTSEN					(1 << 1)	 // CTS enable (0: disable; 1: enable)
-#define USART_FCCON_RTSEN_SHIFT				1
+#define USART_FCCON_RTSEN					(1 << 0)	 // RTS enable (0: disable; 1: enable)
+#define USART_FCCON_RTSEN_SHIFT				0
+#define USART_FCCON_CTSEN					(1 << 1)	 // CTS enable (0: disable; 1: enable)
+#define USART_FCCON_CTSEN_SHIFT				1
 #define USART_FCCON_RTS						(1 << 4)	 // RTS control bit
 #define USART_FCCON_RTS_SHIFT				4
 #define USART_FCCON_RTS_TRIGGER				(0x3F << 8)	 // RTS receive FIFO trigger level
@@ -7020,8 +7020,6 @@
 #define USART_FCSTAT						0x60
 #define USART_FCSTAT_CTS					(1 << 0)	 // CTS Status (0: inactive; 1: active)
 #define USART_FCSTAT_CTS_SHIFT				0
-#define USART_FCSTAT_RTS					(1 << 1)	 // RTS Status (0: inactive; 1: active)
-#define USART_FCSTAT_RTS_SHIFT				1
 
 #define USART_IMSC							0x64
 #define USART_IMSC_TX						(1 << 0)	 // Transmit interrupt mask
