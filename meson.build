@@ -680,10 +680,6 @@ endif
 # Check further flags that make QEMU more robust against malicious parties
 
 hardening_flags = [
-    # Initialize all stack variables to zero. This makes
-    # it harder to take advantage of uninitialized stack
-    # data to drive exploits
-    '-ftrivial-auto-var-init=zero',
     # Ensure GCC zero-initializes padding bits and trailing fields in
     # unions. This avoids potentially leaking host data into the guest
     # when we init a struct and copy it into guest memory.  GCC prior
@@ -691,6 +687,18 @@ hardening_flags = [
     # and trailing portions of a union by default.
     '-fzero-init-padding-bits=all',
 ]
+
+# Initialize all stack variables to zero. This makes
+# it harder to take advantage of uninitialized stack
+# data to drive exploits
+#
+# Not on emscripten: the browser build already runs in the tab's sandbox,
+# and the zeroing costs it 4.2 % on video playback and 1.5 % on J2ME.
+# Native keeps it, so an uninitialized read that the wasm build starts to
+# depend on shows up as a lockstep divergence between the two.
+if host_os != 'emscripten'
+  hardening_flags += '-ftrivial-auto-var-init=zero'
+endif
 
 # Zero out registers used during a function call
 # upon its return. This makes it harder to assemble
