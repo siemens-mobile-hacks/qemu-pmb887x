@@ -937,7 +937,7 @@ void tb_flush__exclusive_or_serial(void)
     tb_remove_all();
 
 #ifdef CONFIG_TCG_WASM64
-    /* drop the batch modules/thunks and temp modules before the code
+    /* drop the batch modules and thunks before the code
      * buffer (which holds their staged bytes and descriptors) resets */
     w64_batch_flush();
     w64_inl_list_clear();

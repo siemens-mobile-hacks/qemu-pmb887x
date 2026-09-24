@@ -1,15 +1,17 @@
 /*
  * Tiny Code Generator for QEMU — wasm64 target.
  *
- * The "machine code" is WebAssembly: each TB becomes one standalone
- * module with a single exported function
+ * The "machine code" is WebAssembly: each TB becomes one function
  *
  *   (func $tb (param $env i64) (param $sp i64) (param $tp i64)
  *             (result i32) ...)
  *
- * compiled through the browser WebAssembly API at first execution (see
- * tcg/wasm64/wasm64.c).  TCG registers are wasm locals: every TCG reg
- * has both an i32-typed and an i64-typed local; which one holds the
+ * staged into its thread's batch; the batch is compiled through the
+ * browser WebAssembly API as one module when a member first has to run
+ * compiled, and a C interpreter runs the TB until then (see
+ * tcg/wasm64/wasm64.c and w64-interp.h).  TCG registers are wasm
+ * locals: every allocatable TCG reg has both an i32-typed and an
+ * i64-typed local; which one holds the
  * value is tracked per-reg at translation time ("rep").  Values in the
  * i32 local are the plain 32-bit pattern; converting to i64 is always
  * zero-extension, converting back is a wrap — the same invariants TCI
@@ -21,18 +23,13 @@
  * thread-local w64_tb_ptr, which generated code updates before every
  * helper call so that GETPC()-using helpers unwind correctly.
  *
- * Intra-TB branches use a label-region scheme compatible with wasm's
- * structured control flow: the whole body is wrapped in one `loop`; a
- * branch to TCG label L writes L's region index into the $bp local and
- * breaks to the loop head, where a chain of `if (bp <= k)` guards —
- * one per label, opened at set_label time — admits control flow at the
- * right region.  Fall-through between regions is free, not-taken
- * conditional branches cost nothing, and taken branches walk the
- * region chain (a phase-2 br_table will remove even that).
- *
- * Phase 1 scope (doc/wasm-tcg-backend-plan.md §5): single-TB modules,
- * no chaining — every goto_tb exits to the C dispatcher, goto_ptr
- * hands the next TB back to the dispatcher through a frame slot.
+ * Intra-TB branches are forward in practice, so labels become nested
+ * blocks and a branch is a plain br / br_if (see "nested mode" in
+ * tcg-target.c.inc).  A TB with any other backward branch falls back to
+ * a label-region scheme: the body is wrapped in one `loop`; a branch to
+ * label L writes L's region index into the $bp local and breaks to the
+ * loop head, where a chain of `if (bp <= k)` guards admits control flow
+ * at the right region.
  *
  * SPDX-License-Identifier: MIT
  */
@@ -47,7 +44,7 @@
 /* Number of abstract registers (= wasm locals).  Every register costs two
  * declared locals in every TB function (an i32 and an i64 one), and a
  * declared local is not free: the baseline tier zeroes all of them at
- * entry.  W64_LOCALPAD prices one at 8.09 us/Mi, so the 32-register file
+ * entry.  One costs about 8 us/Mi guest instructions, so the 32-register file
  * was ~5.6 % of wall for registers TCG never allocated — tcgSpill reads 0
  * with 13 allocatable and 29 over 64 631 TBs with 10.  env and sp are
  * function parameters, so only the 13 allocatable registers get locals. */

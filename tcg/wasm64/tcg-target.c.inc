@@ -1,15 +1,12 @@
 /*
  * Tiny Code Generator for QEMU — wasm64 target emitters.
  *
- * Emits raw wasm bytecode (one module per TB) into the code generation
- * buffer; see tcg/wasm64/tcg-target.h for the design overview and
- * tcg/wasm64/wasm64.h for the descriptor layout.
- *
- * Phase 1 skeleton (doc/wasm-tcg-backend-plan.md §5): single-TB
- * modules, no chaining, helper calls through imported funcrefs.
- * Phase 2: goto_tb chaining through the shared funcref table + batched
- * modules.  Phase 3: qemu_ld/st emit the TLB probe + size-specialized
- * access inline (see the qemu_ld/st section below).
+ * Emits one wasm function body per TB into the code generation buffer;
+ * wasm64.c batches the bodies into modules.  See tcg/wasm64/tcg-target.h
+ * for the design overview and tcg/wasm64/wasm64.h for the descriptor
+ * layout.  Helper calls go through imported funcrefs, goto_tb chains
+ * through the shared funcref table, and qemu_ld/st emit the TLB probe
+ * and a size-specialized access inline.
  *
  * SPDX-License-Identifier: MIT
  */
@@ -1279,7 +1276,7 @@ static void w64_chain_go(TCGContext *s)
 static void tcg_out_goto_tb(TCGContext *s, int which)
 {
     w64_ir_op(WI_GOTO_TB, which, 0, 0);
-    /* Chaining through the shared funcref table (phase 2).  The chain
+    /* Chaining through the shared funcref table.  The chain
      * slot is tb->jmp_target_addr[which] — qemu core links it
      * (tb_add_jump) and resets it to this TB's own reset address
      * (tb_reset_jump), exactly as with TCI's indirect jumps; we read the
@@ -1546,8 +1543,8 @@ static void tcg_out_call(TCGContext *s, const tcg_insn_unit *target,
 }
 
 /* ------------------------------------------------------------------ */
-/* qemu_ld/st (phase 3: inline TLB probe + size-specialized access;   */
-/* the miss arm is the phase-1 *_mmu helper path)                      */
+/* qemu_ld/st: inline TLB probe + size-specialized access; the miss   */
+/* arm calls the *_mmu helper                                          */
 /* ------------------------------------------------------------------ */
 
 /* The probe uses the TLB layout constants from tcg.c's tlb_mask_table_ofs:
