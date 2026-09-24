@@ -148,8 +148,9 @@ void w64_batch_begin_tb(void);
 uint8_t w64_union_type(unsigned np, const uint8_t *p, uint8_t ret);
 uint8_t w64_union_import(uint32_t fptr, uint8_t utype);
 bool w64_batch_tb_overflow(void);
-void w64_batch_member(uintptr_t tcptr, uint32_t body_len,
-                      const struct w64_hint *h, uint32_t nh);
+void w64_batch_member(uintptr_t tcptr, const uint8_t *body,
+                      uint32_t body_len, const struct w64_hint *h,
+                      uint32_t nh);
 void w64_batch_flush(void);     /* tb_flush teardown */
 
 #endif /* TCG_WASM64_H */

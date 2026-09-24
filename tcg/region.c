@@ -247,14 +247,23 @@ void tcg_tb_remove(TranslationBlock *tb)
  */
 TranslationBlock *tcg_tb_lookup(uintptr_t tc_ptr)
 {
-    struct tcg_region_tree *rt = tc_ptr_to_region_tree((void *)tc_ptr);
+    struct tcg_region_tree *rt;
     TranslationBlock *tb;
-    struct tb_tc s = { .ptr = (void *)tc_ptr };
+    struct tb_tc s;
 
+#ifdef CONFIG_TCG_WASM64
+    /* a retaddr names the TB by its descriptor (exec/translation-block.h) */
+    if (w64_ra_encoded(tc_ptr)) {
+        tc_ptr = w64_ra_desc(tc_ptr);
+    }
+#endif
+    rt = tc_ptr_to_region_tree((void *)tc_ptr);
     if (rt == NULL) {
         return NULL;
     }
 
+    /* size 0 marks a lookup key to tb_tc_cmp */
+    s = (struct tb_tc) { .ptr = (void *)tc_ptr };
     qemu_mutex_lock(&rt->lock);
     tb = q_tree_lookup(rt->tree, &s);
     qemu_mutex_unlock(&rt->lock);

@@ -1454,12 +1454,16 @@ void tb_target_set_jmp_target(const TranslationBlock *tb, int n,
  * which the strict comparison attributes to this insn.  The call
  * sequence that follows is always longer than the bias, so the marker
  * still refers to this insn and never to the next one.
+ *
+ * The value is not a pointer into the body — the body leaves the code
+ * buffer once staged (tcg_out_tb_finalize) — but the descriptor address
+ * and the offset packed as exec/translation-block.h's W64_RA encoding.
  */
 #define W64_GETPC_ADJ 2         /* GETPC_ADJ, accel/tcg/tb-internal.h */
 static inline uintptr_t w64_pc(TCGContext *s)
 {
-    return (uintptr_t)s->code_buf + (s->code_ptr - s->code_buf)
-           + W64_GETPC_ADJ;
+    return ((uintptr_t)s->code_buf << W64_RA_SHIFT)
+           | ((s->code_ptr - s->code_buf) + W64_GETPC_ADJ);
 }
 
 /* typemask typecode -> wasm type (0 = i32, 1 = i64); 0xff invalid */
@@ -2894,9 +2898,14 @@ static int tcg_out_tb_finalize(TCGContext *s)
     }
 
     /* join the open batch: may assemble + instantiate the batch module
-     * right here (fill or union-table pressure) */
+     * right here (fill or union-table pressure).  The batch takes its own
+     * copy of the body, and the bytes go back to the code buffer: a TB
+     * costs it the descriptor and the unwind data, not the ~1.7 KB module
+     * body that nothing reads once the batch has landed. */
     w64_ir_finish(ldl_p(s->code_buf + W64_DESC_TIDX));
-    w64_batch_member((uintptr_t)s->code_buf, body_total, HINT, n_hint);
+    w64_batch_member((uintptr_t)s->code_buf, s->code_buf + W64_BODY_OFF,
+                     body_total, HINT, n_hint);
+    s->code_ptr = s->code_buf + W64_BODY_OFF;
     return 0;
 }
 

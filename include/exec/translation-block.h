@@ -229,6 +229,29 @@ struct TranslationBlock {
 
 #ifdef CONFIG_TCG_WASM64
 /*
+ * A retaddr baked into emitted code or an IR record (w64_pc in
+ * tcg-target.c.inc): the TB's descriptor address above W64_RA_SHIFT, the
+ * offset of the call within the TB below.  The body's bytes leave the code
+ * buffer as soon as the TB is staged (tcg_out_tb_finalize), so a pointer
+ * into the body would name whatever TB came next.  tcg_tb_lookup() and
+ * cpu_unwind_data_from_tb() decode it; a real pointer is < 2 GB and never
+ * has the high half set.
+ */
+#define W64_RA_SHIFT    20
+static inline bool w64_ra_encoded(uintptr_t ra)
+{
+    return (ra >> 32) != 0;
+}
+static inline uintptr_t w64_ra_desc(uintptr_t ra)
+{
+    return ra >> W64_RA_SHIFT;
+}
+static inline uintptr_t w64_ra_off(uintptr_t ra)
+{
+    return ra & ((1u << W64_RA_SHIFT) - 1);
+}
+
+/*
  * The global pc-keyed next-TB cache (accel/tcg/cpu-exec.c) as the
  * generated code sees it.  A goto_ptr whose per-TB slot misses used to
  * call the helper for this table's six-word compare; the translator emits
@@ -274,6 +297,10 @@ extern __thread unsigned w64_inl_pending_n;
 #ifdef CONFIG_TCG_WASM64
 /* accel/tcg/tb-maint.c, for tcg/wasm64/wasm64.c's batch eviction. */
 void tb_w64_unlink_incoming(TranslationBlock *dest);
+/* accel/tcg/translate-all.c: drop an evicted TB and re-enter the loop */
+G_NORETURN void tb_w64_retire(CPUState *cpu, TranslationBlock *tb);
+/* tcg/wasm64/wasm64.c: false once the chain table needs a tb_flush */
+bool w64_tidx_left(void);
 
 /*
  * True while something charges tb->icount once per TB entry from the

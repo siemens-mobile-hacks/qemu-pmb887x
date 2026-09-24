@@ -354,6 +354,19 @@ uint32_t w64_alloc_tidx(void)
     return w64_next_tidx++;
 }
 
+/*
+ * tb_gen_code() treats a nearly full chain table like a full code buffer:
+ * the indices are recycled by tb_flush, and now that a TB costs the buffer
+ * a few hundred bytes the table would otherwise run out first (w64-interp.c
+ * drops the records of an index past W64_TIDX_N, which silently turns the
+ * interpreter tier off).  A translation takes one index, a restarted one a
+ * few more.
+ */
+bool w64_tidx_left(void)
+{
+    return w64_next_tidx < W64_TIDX_N - 16;
+}
+
 /* ------------------------------------------------------------------ */
 /* batching                                                           */
 /* ------------------------------------------------------------------ */
@@ -362,6 +375,7 @@ struct w64_member {
     uint32_t tcptr;         /* descriptor address (code buffer) */
     uint32_t body_len;      /* [size LEB][locals][expr] bytes */
     uint32_t hint_end;      /* hint arena entries below this are ours */
+    uint8_t *body;          /* staged copy; freed when the batch lands */
 };
 
 static __thread struct {
@@ -390,12 +404,13 @@ struct w64_bsrc {
     uint32_t id;
 };
 
-/* Landed batches, by id.  The staged bodies stay in the code buffer
- * until tb_flush, so a landed batch keeps only its records: enough to
- * re-assemble the identical module after an eviction.  The live set
- * (instantiated modules) is a FIFO capped at W64_LIVE_MAX — Firefox
- * caps a process at ~16k live wasm modules (64 KB of executable
- * address space each). */
+/* Landed batches, by id.  A landed batch keeps only its records — which
+ * descriptors and chain-table entries are its members — for eviction.
+ * The staged bodies are freed at landing, so an evicted member cannot be
+ * re-instantiated: the dispatcher retires it and the TB is translated
+ * afresh (w64_batch_retire).  The live set (instantiated modules) is a
+ * FIFO capped at W64_LIVE_MAX — Firefox caps a process at ~16k live wasm
+ * modules (64 KB of executable address space each). */
 struct w64_landed {
     struct w64_bsrc src;
     uint32_t thunk;         /* run-thunk fidx; 0 = evicted */
@@ -675,8 +690,8 @@ static void w64_bsrc_of_open(void)
     B_src.id = B.id;
 }
 
-/* Assemble the batch module from @src (staged bodies re-read from the
- * code buffer) and instantiate it; returns the run-thunk fidx. */
+/* Assemble the batch module from @src and instantiate it; returns the
+ * run-thunk fidx. */
 static uint32_t w64_assemble_instantiate(const struct w64_bsrc *src)
 {
     static const uint8_t magic[8] = { 0, 'a', 's', 'm', 1, 0, 0, 0 };
@@ -831,9 +846,7 @@ static uint32_t w64_assemble_instantiate(const struct w64_bsrc *src)
         mb_uleb_p5(&mod, (uint32_t)total);
         mb_uleb(&mod, nfn);
         for (m = 0; m < src->n_member; m++) {
-            const uint8_t *body =
-                (const uint8_t *)(uintptr_t)src->member[m].tcptr;
-            mb_put(&mod, body + W64_BODY_OFF, src->member[m].body_len);
+            mb_put(&mod, src->member[m].body, src->member[m].body_len);
         }
         mb_put(&mod, thunk_body, sizeof(thunk_body));
     }
@@ -854,7 +867,7 @@ static uint32_t w64_assemble_instantiate(const struct w64_bsrc *src)
 }
 
 /* Drop the oldest live batch: its members fall back to the dispatcher
- * (fidx 0 + batch tag), which re-assembles the module on demand. */
+ * (fidx 0 + batch tag), which retires them. */
 static void w64_batch_evict_oldest(void)
 {
     struct w64_landed *l = w64_live_head;
@@ -923,32 +936,23 @@ static void w64_live_push(struct w64_landed *l)
     }
 }
 
-static void w64_landed_flip(struct w64_landed *l)
+/*
+ * Evicted member executed again.  Its module is gone and so is the staged
+ * body, so the TB is retired and the loop translates the address afresh,
+ * the way cpu_io_recompile drops a TB.  Nothing can still reach the old
+ * one: eviction unlinked its incoming chains and retired the goto_ptr
+ * inline caches, and the dispatcher is the only other way in.
+ */
+static G_NORETURN void w64_batch_retire(CPUArchState *env, uintptr_t tcptr)
 {
-    unsigned m;
-    for (m = 0; m < l->src.n_member; m++) {
-        uint32_t *desc = (uint32_t *)(uintptr_t)l->src.member[m].tcptr;
-        if (desc[W64_DESC_BATCH / 4] == (W64_BATCH_TAG | l->src.id)) {
-            desc[W64_DESC_FIDX / 4] = l->thunk;
-        }
-    }
-}
+    TranslationBlock *tb = tcg_tb_lookup(tcptr);
 
-/* Evicted member executed again: re-instantiate its batch. */
-static void w64_batch_ensure(uint32_t id)
-{
-    struct w64_landed *l;
-
-    if (id == 0 || id >= w64_landed_cap || !(l = w64_landed_by_id[id])) {
-        fprintf(stderr, "w64: evicted batch %u is not known\n", id);
+    if (!tb) {
+        fprintf(stderr, "w64: evicted TB %#x is not known\n",
+                (unsigned)tcptr);
         abort();
     }
-    if (l->thunk) {
-        return;
-    }
-    l->thunk = w64_assemble_instantiate(&l->src);
-    w64_landed_flip(l);
-    w64_live_push(l);
+    tb_w64_retire(env_cpu(env), tb);
 }
 
 static void w64_landed_free_all(void)
@@ -991,6 +995,12 @@ static void w64_batch_close(void)
     w64_bsrc_of_open();
     thunk = w64_assemble_instantiate(&B_src);
 
+    /* the module holds the code now */
+    for (m = 0; m < B.n_member; m++) {
+        g_free(B.member[m].body);
+        B.member[m].body = NULL;
+    }
+
     /* landed record: compact copies of the open batch's tables */
     l = g_new0(struct w64_landed, 1);
     l->src.utype = g_memdup2(B.utype, B.n_utypes * sizeof(*B.utype));
@@ -1019,8 +1029,9 @@ static void w64_batch_close(void)
     B.id = 0;
 }
 
-void w64_batch_member(uintptr_t tcptr, uint32_t body_len,
-                      const struct w64_hint *h, uint32_t nh)
+void w64_batch_member(uintptr_t tcptr, const uint8_t *body,
+                      uint32_t body_len, const struct w64_hint *h,
+                      uint32_t nh)
 {
     tcg_debug_assert(B.id != 0 && B.n_member < W64_BATCH_N);
 
@@ -1034,6 +1045,7 @@ void w64_batch_member(uintptr_t tcptr, uint32_t body_len,
     B.member[B.n_member].tcptr = (uint32_t)tcptr;
     B.member[B.n_member].body_len = body_len;
     B.member[B.n_member].hint_end = B.n_hint;
+    B.member[B.n_member].body = g_memdup2(body, body_len);
     B.n_member++;
 
     /* close on fill, or when a union table is within one TB's worth of
@@ -1050,13 +1062,14 @@ void w64_batch_member(uintptr_t tcptr, uint32_t body_len,
  * (so tcg_out_tb_finalize already staged it) and then abandoned it
  * without advancing code_gen_ptr — encode_search() running past the
  * region's highwater does exactly that.  The next tcg_tb_alloc() then
- * carves a TranslationBlock out of the very bytes this member points at,
- * and the batch would assemble from a body that has been overwritten.
+ * carves a TranslationBlock out of the very bytes this member's
+ * descriptor address names, and landing the batch would write that TB's
+ * fidx into it.
  *
  * Staging is synchronous, so the abandoned TB is always the last member.
- * If staging already closed the batch the bytes were still intact when
- * the module was assembled; only its re-assembly records go stale, which
- * matters only after an eviction.
+ * If staging already closed the batch, its landed record names a
+ * descriptor another TB now owns; eviction checks the batch word before
+ * touching one.
  */
 void w64_batch_unstage(uintptr_t tcptr)
 {
@@ -1066,6 +1079,8 @@ void w64_batch_unstage(uintptr_t tcptr)
     }
     B.n_hint = B.n_member > 1 ? B.member[B.n_member - 2].hint_end : 0;
     B.n_member--;
+    g_free(B.member[B.n_member].body);
+    B.member[B.n_member].body = NULL;
 }
 
 /*
@@ -1088,12 +1103,13 @@ static void w64_batch_close_pending(uintptr_t tcptr)
     abort();
 }
 
-/* tb_flush teardown: drop every landed batch thunk, clear the chain
- * table and recycle the tidx space (the code buffer — descriptors,
- * staged bytes — is freed by the caller). */
+/* tb_flush teardown: drop every landed batch thunk and the open batch's
+ * staged bodies, clear the chain table and recycle the tidx space (the
+ * code buffer — the descriptors — is freed by the caller). */
 void w64_batch_flush(void)
 {
     struct w64_landed *l;
+    unsigned m;
 
     w64_irec_flush();
     for (l = w64_live_head; l; l = l->next) {
@@ -1103,6 +1119,11 @@ void w64_batch_flush(void)
     w64_landed_free_all();
     w64_tab_clear();
     w64_next_tidx = 1;
+    for (m = 0; m < B.n_member; m++) {
+        g_free(B.member[m].body);
+        B.member[m].body = NULL;
+    }
+    B.n_member = 0;
     B.id = 0;
 }
 
@@ -1132,11 +1153,9 @@ uintptr_t QEMU_DISABLE_CFI tcg_qemu_tb_exec(CPUArchState *env,
         fidx = desc[W64_DESC_FIDX / 4];
         if (fidx == 0) {
             if (desc[W64_DESC_BATCH / 4] & W64_BATCH_TAG) {
-                /* evicted batch member: re-assemble its batch */
-                w64_batch_ensure(desc[W64_DESC_BATCH / 4] & ~W64_BATCH_TAG);
-            } else {
-                w64_batch_close_pending(tb);
+                w64_batch_retire(env, tb);      /* evicted: does not return */
             }
+            w64_batch_close_pending(tb);
             fidx = desc[W64_DESC_FIDX / 4];
             tcg_debug_assert(fidx != 0);
         }
