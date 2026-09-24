@@ -231,6 +231,7 @@ static const MemoryRegionOps gprscu_io_ops = {
 
 static void gprscu_init(Object *obj) {
 	pmb887x_gprscu_t *p = PMB887X_GPRSCU(obj);
+	pmb887x_clc_init(&p->clc, DEVICE(obj));
 
 	memory_region_init_io(&p->mmio, obj, &gprscu_io_ops, p, TYPE_PMB887X_GPRSCU, GPRSCU_IO_SIZE);
 	sysbus_init_mmio(SYS_BUS_DEVICE(obj), &p->mmio);

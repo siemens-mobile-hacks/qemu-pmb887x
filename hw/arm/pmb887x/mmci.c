@@ -91,6 +91,7 @@ static void mmci_handle_gpio_input(void *opaque, int id, int level) {
 static void mmci_init(Object *obj) {
 	DeviceState *dev = DEVICE(obj);
 	pmb887x_mmci_t *p = PMB887X_MMCI(obj);
+	pmb887x_clc_init(&p->clc, dev);
 	memory_region_init_io(&p->mmio, obj, &io_ops, p, "pmb887x-mmci", MMCI_IO_SIZE);
 	sysbus_init_mmio(SYS_BUS_DEVICE(obj), &p->mmio);
 
@@ -106,12 +107,12 @@ static void mmci_init(Object *obj) {
 
 static void mmci_reset(DeviceState *dev) {
 	pmb887x_mmci_t *p = PMB887X_MMCI(dev);
-	pmb887x_clc_init(&p->clc);
+	pmb887x_clc_set(&p->clc, 1U << MOD_CLC_RMC_SHIFT);
 }
 
 static void mmci_realize(DeviceState *dev, Error **errp) {
 	pmb887x_mmci_t *p = PMB887X_MMCI(dev);
-	pmb887x_clc_init(&p->clc);
+	pmb887x_clc_set(&p->clc, 1U << MOD_CLC_RMC_SHIFT);
 }
 
 static const Property mmci_properties[] = {

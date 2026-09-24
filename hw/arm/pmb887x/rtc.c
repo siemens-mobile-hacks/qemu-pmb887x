@@ -15,11 +15,11 @@
 #include "qemu/main-loop.h"
 #include "qemu/cutils.h"
 #include "hw/core/qdev-properties.h"
+#include "hw/core/qdev-clock.h"
 
 #include "hw/arm/pmb887x/gen/cpu_regs.h"
 #include "hw/arm/pmb887x/regs_dump.h"
 #include "hw/arm/pmb887x/mod.h"
-#include "hw/arm/pmb887x/cgu.h"
 #include "hw/arm/pmb887x/trace.h"
 
 #define TYPE_PMB887X_RTC	"pmb887x-rtc"
@@ -42,7 +42,6 @@ struct pmb887x_rtc_t {
 
 	pmb887x_clc_reg_t clc;
 	pmb887x_src_reg_t src;
-	pmb887x_cgu_t *cgu;
 	qemu_irq irq;
 	QEMUTimer *timer;
 	
@@ -57,7 +56,7 @@ struct pmb887x_rtc_t {
 };
 
 static uint32_t rtc_get_freq(pmb887x_rtc_t *p) {
-	uint32_t frtc = pmb887x_cgu_get_frtc(p->cgu);
+	uint32_t frtc = clock_get_hz(p->clc.clock);
 	return (p->con & RTC_CON_PRE) ? frtc / 8 : frtc;
 }
 
@@ -304,6 +303,7 @@ static const MemoryRegionOps io_ops = {
 
 static void rtc_init(Object *obj) {
 	pmb887x_rtc_t *p = PMB887X_RTC(obj);
+	pmb887x_clc_init(&p->clc, DEVICE(obj));
 	memory_region_init_io(&p->mmio, obj, &io_ops, p, "pmb887x-rtc", RTC_IO_SIZE);
 	sysbus_init_mmio(SYS_BUS_DEVICE(obj), &p->mmio);
 	sysbus_init_irq(SYS_BUS_DEVICE(obj), &p->irq);
@@ -353,7 +353,7 @@ static void rtc_reset(DeviceState *dev) {
 
 	timer_del(p->timer);
 
-	pmb887x_clc_init(&p->clc);
+	pmb887x_clc_set(&p->clc, 1U << MOD_CLC_RMC_SHIFT);
 	pmb887x_src_reset(&p->src);
 
 	p->ctrl = 0;
@@ -372,8 +372,6 @@ static void rtc_reset(DeviceState *dev) {
 static void rtc_realize(DeviceState *dev, Error **errp) {
 	pmb887x_rtc_t *p = PMB887X_RTC(dev);
 	
-	if (!p->cgu)
-		hw_error("CGU not found...");
 	if (!p->irq)
 		hw_error("pmb887x-rtc: irq not set");
 	if (p->cnt_format && strcmp(p->cnt_format, "unix") && strcmp(p->cnt_format, "calendar")) {
@@ -381,7 +379,7 @@ static void rtc_realize(DeviceState *dev, Error **errp) {
 		return;
 	}
 
-	pmb887x_clc_init(&p->clc);
+	pmb887x_clc_set(&p->clc, 1U << MOD_CLC_RMC_SHIFT);
 	pmb887x_src_init(&p->src, p->irq);
 	p->timer = timer_new_ns(QEMU_CLOCK_VIRTUAL, rtc_ptimer_reset, p);
 	p->con = RTC_CON_RUN | RTC_CON_PRE;
@@ -395,7 +393,6 @@ static void rtc_realize(DeviceState *dev, Error **errp) {
 static const Property rtc_properties[] = {
 	DEFINE_PROP_UINT32("revision", pmb887x_rtc_t, revision, 0),
 	DEFINE_PROP_STRING("cnt-format", pmb887x_rtc_t, cnt_format),
-	DEFINE_PROP_LINK("cgu", pmb887x_rtc_t, cgu, "pmb887x-cgu", pmb887x_cgu_t *),
 };
 
 static void rtc_class_init(ObjectClass *klass, const void *data) {

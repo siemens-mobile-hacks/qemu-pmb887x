@@ -390,6 +390,7 @@ static const MemoryRegionOps io_ops = {
 static void capcom_init(Object *obj) {
 	DeviceState *dev = DEVICE(obj);
 	pmb887x_capcom_t *p = PMB887X_CAPCOM(obj);
+	pmb887x_clc_init(&p->clc, dev);
 	memory_region_init_io(&p->mmio, obj, &io_ops, p, "pmb887x-capcom", CAPCOM_IO_SIZE);
 	sysbus_init_mmio(SYS_BUS_DEVICE(obj), &p->mmio);
 	
@@ -412,7 +413,7 @@ static void capcom_init(Object *obj) {
 static void capcom_reset(DeviceState *dev) {
 	pmb887x_capcom_t *p = PMB887X_CAPCOM(dev);
 
-	pmb887x_clc_init(&p->clc);
+	pmb887x_clc_set(&p->clc, 1U << MOD_CLC_RMC_SHIFT);
 
 	for (size_t i = 0; i < ARRAY_SIZE(p->t_src); i++)
 		pmb887x_src_reset(&p->t_src[i]);
@@ -443,7 +444,7 @@ static void capcom_reset(DeviceState *dev) {
 static void capcom_realize(DeviceState *dev, Error **errp) {
 	pmb887x_capcom_t *p = PMB887X_CAPCOM(dev);
 	
-	pmb887x_clc_init(&p->clc);
+	pmb887x_clc_set(&p->clc, 1U << MOD_CLC_RMC_SHIFT);
 	
 	int irqn = 0;
 	

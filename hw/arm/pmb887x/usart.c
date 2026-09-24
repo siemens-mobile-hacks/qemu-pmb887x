@@ -18,7 +18,6 @@
 #include "hw/arm/pmb887x/gen/cpu_regs.h"
 #include "hw/arm/pmb887x/regs_dump.h"
 #include "hw/arm/pmb887x/mod.h"
-#include "hw/arm/pmb887x/cgu.h"
 #include "hw/arm/pmb887x/fifo.h"
 #include "hw/arm/pmb887x/trace.h"
 
@@ -53,7 +52,6 @@ struct pmb887x_usart_t {
 	pmb887x_clc_reg_t clc;
 	pmb887x_srb_reg_t srb;
 	qemu_irq irq[USART_IRQ_NR];
-	pmb887x_cgu_t *cgu;
 
 	QEMUTimer *timer;
 	QEMUTimer *tmo_timer;
@@ -114,13 +112,12 @@ static void usart_transmit_fifo(pmb887x_usart_t *p);
 static void usart_schedule_accept_input(pmb887x_usart_t *p);
 
 static uint32_t usart_get_baud_rate(pmb887x_usart_t *p) {
-	uint32_t rmc = pmb887x_clc_get_rmc(&p->clc);
-	uint64_t frequency = rmc > 0 ? pmb887x_cgu_get_fsys(p->cgu) / rmc : 0;
+	uint64_t frequency = pmb887x_clc_get_hz(&p->clc);
 	uint64_t reload = (p->bg & 0x1FFF) + 1;
 	uint64_t numerator;
 	uint64_t denominator;
 
-	if (!pmb887x_clc_is_enabled(&p->clc) || frequency == 0)
+	if (frequency == 0)
 		return 0;
 
 	if ((p->con & USART_CON_M) == USART_CON_M_SYNC_8BIT) {
@@ -869,6 +866,7 @@ static void usart_event_handler(void *opaque, int event_id, int level) {
 static void usart_init(Object *obj) {
 	DeviceState *dev = DEVICE(obj);
 	pmb887x_usart_t *p = PMB887X_USART(obj);
+	pmb887x_clc_init(&p->clc, dev);
 	memory_region_init_io(&p->mmio, obj, &io_ops, p, "pmb887x-usart", USART_IO_SIZE);
 	sysbus_init_mmio(SYS_BUS_DEVICE(obj), &p->mmio);
 	
@@ -891,7 +889,7 @@ static void usart_init(Object *obj) {
 static void usart_realize(DeviceState *dev, Error **errp) {
 	pmb887x_usart_t *p = PMB887X_USART(dev);
 	
-	pmb887x_clc_init(&p->clc);
+	pmb887x_clc_set(&p->clc, 1U << MOD_CLC_RMC_SHIFT);
 	
 	for (int i = 0; i < ARRAY_SIZE(p->irq); i++) {
 		if (!p->irq[i])
@@ -974,7 +972,6 @@ static void usart_reset(DeviceState *dev) {
 
 static const Property usart_properties[] = {
 	DEFINE_PROP_UINT32("revision", pmb887x_usart_t, revision, 0),
-	DEFINE_PROP_LINK("cgu", pmb887x_usart_t, cgu, "pmb887x-cgu", pmb887x_cgu_t *),
     DEFINE_PROP_CHR("chardev", struct pmb887x_usart_t, chr),
 };
 

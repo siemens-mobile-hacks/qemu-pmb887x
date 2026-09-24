@@ -341,6 +341,7 @@ static const MemoryRegionOps unmapped_io_ops = {
 
 static void ebu_init(Object *obj) {
 	struct pmb887x_ebu_t *p = PMB887X_EBU(obj);
+	pmb887x_clc_init(&p->clc, DEVICE(obj));
 	memory_region_init_io(&p->mmio, obj, &io_ops, p, "pmb887x-ebu", EBU_IO_SIZE);
 	sysbus_init_mmio(SYS_BUS_DEVICE(obj), &p->mmio);
 }

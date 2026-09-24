@@ -18,7 +18,6 @@
 #include "hw/core/qdev-clock.h"
 #include "hw/ssi/ssi.h"
 
-#include "hw/arm/pmb887x/cgu.h"
 #include "hw/arm/pmb887x/dsp/signals.h"
 #include "hw/arm/pmb887x/gen/cpu_regs.h"
 #include "hw/arm/pmb887x/regs_dump.h"
@@ -133,10 +132,7 @@ struct pmb887x_tpu_t {
 	uint32_t L;
 	uint32_t K;
 	
-	uint32_t last_fsys;
 	uint32_t unk;
-	
-	pmb887x_cgu_t *cgu;
 };
 
 static uint64_t tpu_get_counter(pmb887x_tpu_t *p) {
@@ -408,10 +404,8 @@ static void tpu_update_state(pmb887x_tpu_t *p) {
 	if (was_enabled)
 		tpu_update_timer(p);
 
-	uint32_t div = pmb887x_clc_get_rmc(&p->clc);
-	
 	// Input freq for module
-	uint32_t ftpu = div > 0 ? pmb887x_cgu_get_fsys(p->cgu) / div : 0;
+	uint32_t ftpu = pmb887x_clc_get_hz(&p->clc);
 	
 	// Update clock
 	if ((p->gsmclk3 & TPU_GSMCLK3_INIT) || (p->gsmclk3 & TPU_GSMCLK3_LOAD)) {
@@ -444,12 +438,12 @@ static void tpu_update_state(pmb887x_tpu_t *p) {
 		p->triggers = 0;
 	}
 	
-	bool enabled = pmb887x_clc_is_enabled(&p->clc) && new_freq > 0 && (p->param & TPU_PARAM_TINI) != 0 && p->overflow >= 2;
+	bool enabled = new_freq > 0 && (p->param & TPU_PARAM_TINI) != 0 && p->overflow >= 2;
 	if (p->freq != new_freq || p->enabled != enabled) {
 		p->freq = new_freq;
 		p->enabled = enabled;
 		clock_update_hz(p->gsm_clock, p->freq);
-		DPRINTF("fsys=%d, ftpu=%d, fcounter=%d [%s]\n", pmb887x_cgu_get_fsys(p->cgu), ftpu, p->freq, p->enabled ? "ON" : "OFF");
+		DPRINTF("input=%d, ftpu=%d, fcounter=%d [%s]\n", clock_get_hz(p->clc.clock), ftpu, p->freq, p->enabled ? "ON" : "OFF");
 	}
 
 	if (p->enabled && !was_enabled) {
@@ -471,13 +465,8 @@ static void tpu_update_state(pmb887x_tpu_t *p) {
 	tpu_update_timer(p);
 }
 
-static void tpu_update_state_callback(void *opaque) {
-	pmb887x_tpu_t *p = opaque;
-	uint32_t fsys = pmb887x_cgu_get_fsys(p->cgu);
-	if (p->last_fsys != fsys) {
-		tpu_update_state(p);
-		p->last_fsys = fsys;
-	}
+static void tpu_clock_update(void *opaque) {
+	tpu_update_state(opaque);
 }
 
 static uint32_t tpu_ram_read(pmb887x_tpu_t *p, uint32_t offset, size_t size) {
@@ -661,7 +650,7 @@ static void tpu_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned si
 	switch (haddr) {
 		case TPU_CLC:
 			pmb887x_clc_set(&p->clc, value);
-			break;
+			return;
 
 		case TPU_RFCON1:
 			p->rfcon1 = value;
@@ -806,6 +795,8 @@ static const MemoryRegionOps io_ops = {
 
 static void tpu_init(Object *obj) {
 	pmb887x_tpu_t *p = PMB887X_TPU(obj);
+	pmb887x_clc_init(&p->clc, DEVICE(obj));
+	pmb887x_clc_set_callback(&p->clc, tpu_clock_update, p);
 	p->rfssc_bus = ssi_create_bus(DEVICE(obj), TPU_RFSSC_BUS_NAME);
 	memory_region_init_io(&p->mmio, obj, &io_ops, p, "pmb887x-tpu", TPU_RAM0 + TPU_RAM_SIZE);
 	sysbus_init_mmio(SYS_BUS_DEVICE(obj), &p->mmio);
@@ -841,7 +832,6 @@ static void tpu_realize(DeviceState *dev, Error **errp) {
 	p->enabled = false;
 	
 	tpu_update_state(p);
-	pmb887x_cgu_add_freq_update_callback(p->cgu, tpu_update_state_callback, p);
 }
 
 static void tpu_reset(DeviceState *dev) {
@@ -897,7 +887,6 @@ static void tpu_reset(DeviceState *dev) {
 	p->triggers = 0;
 	p->L = 2;
 	p->K = 1;
-	p->last_fsys = 0;
 	p->unk = 0;
 
 	tpu_update_state(p);
@@ -905,7 +894,6 @@ static void tpu_reset(DeviceState *dev) {
 
 static const Property tpu_properties[] = {
 	DEFINE_PROP_UINT32("revision", pmb887x_tpu_t, revision, 0),
-	DEFINE_PROP_LINK("cgu", struct pmb887x_tpu_t, cgu, "pmb887x-cgu", struct pmb887x_cgu_t *),
 	DEFINE_PROP_LINK("bus_rfssc", struct pmb887x_tpu_t, rfssc_bus, "SSI", SSIBus *),
 };
 

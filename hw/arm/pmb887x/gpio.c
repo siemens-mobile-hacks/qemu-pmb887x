@@ -230,6 +230,7 @@ static void gpio_input_alt6_handler(void *opaque, int id, int level) {
 static void gpio_init(Object *obj) {
 	DeviceState *dev = DEVICE(obj);
 	pmb887x_gpio_t *p = PMB887X_GPIO(obj);
+	pmb887x_clc_init(&p->clc, dev);
 	memory_region_init_io(&p->mmio, obj, &io_ops, p, "pmb887x-gpio", GPIO_IO_SIZE);
 	sysbus_init_mmio(SYS_BUS_DEVICE(obj), &p->mmio);
 	DPRINTF("gpio count: %d\n", GPIOS_COUNT);
@@ -265,7 +266,7 @@ static void gpio_init(Object *obj) {
 static void gpio_reset(DeviceState *dev) {
 	pmb887x_gpio_t *p = PMB887X_GPIO(dev);
 
-	pmb887x_clc_init(&p->clc);
+	pmb887x_clc_set(&p->clc, 1U << MOD_CLC_RMC_SHIFT);
 	memset(p->mon_cr, 0, sizeof(p->mon_cr));
 
 	for (int id = 0; id < GPIOS_COUNT; id++) {
@@ -280,7 +281,7 @@ static void gpio_reset(DeviceState *dev) {
 
 static void gpio_realize(DeviceState *dev, Error **errp) {
 	pmb887x_gpio_t *p = PMB887X_GPIO(dev);
-	pmb887x_clc_init(&p->clc);
+	pmb887x_clc_set(&p->clc, 1U << MOD_CLC_RMC_SHIFT);
 	for (int id = 0; id < GPIOS_COUNT; id++) {
 		p->pins[id] = GPIO_PS_MANUAL | GPIO_DIR_IN | GPIO_ENAQ_ON | GPIO_PDPU_PULLDOWN | GPIO_PPEN_PUSHPULL;
 		gpio_sync_pin_state(p, id);

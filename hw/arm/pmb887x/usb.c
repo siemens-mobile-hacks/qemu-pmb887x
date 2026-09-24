@@ -131,6 +131,7 @@ static const MemoryRegionOps usb_io_ops = {
 static void usb_init(Object *obj) {
 	DeviceState *dev = DEVICE(obj);
 	pmb887x_usb_t *p = PMB887X_USB(obj);
+	pmb887x_clc_init(&p->clc, dev);
 
 	memory_region_init_io(&p->mmio, obj, &usb_io_ops, p, TYPE_PMB887X_USB, USB_IO_SIZE);
 	sysbus_init_mmio(SYS_BUS_DEVICE(obj), &p->mmio);

@@ -464,6 +464,7 @@ static void ssc_handle_dmac_rx_clr(void *opaque, int id, int level) {
 static void ssc_init(Object *obj) {
 	DeviceState *dev = DEVICE(obj);
 	pmb887x_ssc_t *p = PMB887X_SSC(obj);
+	pmb887x_clc_init(&p->clc, dev);
 	memory_region_init_io(&p->mmio, obj, &io_ops, p, TYPE_PMB887X_SSC, SSC_IO_SIZE);
 	sysbus_init_mmio(SYS_BUS_DEVICE(obj), &p->mmio);
 
@@ -489,7 +490,7 @@ static void ssc_init(Object *obj) {
 
 static void ssc_realize(DeviceState *dev, Error **errp) {
 	pmb887x_ssc_t *p = PMB887X_SSC(dev);
-	pmb887x_clc_init(&p->clc);
+	pmb887x_clc_set(&p->clc, 1U << MOD_CLC_RMC_SHIFT);
 	pmb887x_srb_init(&p->srb, p->irq, ARRAY_SIZE(p->irq));
 	pmb887x_srb_set_event_handler(&p->srb, dev, ssc_event_handler);
 

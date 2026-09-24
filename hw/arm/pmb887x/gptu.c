@@ -12,8 +12,8 @@
 #include "qemu/timer.h"
 #include "qemu/main-loop.h"
 #include "hw/core/qdev-properties.h"
+#include "hw/core/qdev-clock.h"
 
-#include "hw/arm/pmb887x/cgu.h"
 #include "hw/arm/pmb887x/gen/cpu_regs.h"
 #include "hw/arm/pmb887x/regs_dump.h"
 #include "hw/arm/pmb887x/mod.h"
@@ -102,8 +102,6 @@ struct pmb887x_gptu_t {
 	pmb887x_gptu_ev_t events[16];
 	uint32_t events_ssr[2][2];
 
-	struct pmb887x_cgu_t *cgu;
-
 	int64_t next;
 	int64_t next_t2;
 
@@ -129,34 +127,24 @@ static void gptu_sync_timer(pmb887x_gptu_t *p);
 static void gptu_t2_sync_timer(pmb887x_gptu_t *p);
 static void gptu_t2_update_state(pmb887x_gptu_t *p);
 static void gptu_rebuild_timers(pmb887x_gptu_t *p);
-static uint32_t gptu_calc_freq(pmb887x_gptu_t *p);
-static void gptu_update_state_callback(void *opaque);
+static void gptu_clock_update(void *opaque);
 static void gptu_t2_internal_trigger(pmb887x_gptu_t *p, int trigger_id, uint64_t count);
 static void gptu_t01_external_count(pmb887x_gptu_t *p, int cnt_id, uint64_t count);
 
 /*
  * Common
  */
-static uint32_t gptu_calc_freq(pmb887x_gptu_t *p) {
-	uint8_t rmc = pmb887x_clc_get_rmc(&p->clc);
-
-	return rmc > 0 ? pmb887x_cgu_get_fgptu(p->cgu) / rmc : 0;
-}
-
 static void gptu_update_freq(pmb887x_gptu_t *p) {
-	p->freq = gptu_calc_freq(p);
-	p->enabled = pmb887x_clc_is_enabled(&p->clc) && p->freq > 0;
+	p->freq = pmb887x_clc_get_hz(&p->clc);
+	p->enabled = p->freq > 0;
 
 	DPRINTF("fgptu=%d %s\n", p->freq, p->enabled ? "[ON]" : "[OFF]");
 }
 
-/* The tap follows the PLL, so a CGU write moves this counter's rate: re-derive,
-   and only re-arm the timers when it actually changed.  Same sequence as the
-   GPTU_CLC write path below, and the same callback idiom stm.c/tpu.c use. */
-static void gptu_update_state_callback(void *opaque) {
+static void gptu_clock_update(void *opaque) {
 	pmb887x_gptu_t *p = opaque;
 
-	if (gptu_calc_freq(p) == p->freq)
+	if (pmb887x_clc_get_hz(&p->clc) == p->freq)
 		return;
 
 	gptu_sync_timer(p);
@@ -1044,11 +1032,6 @@ static void gptu_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned s
 	switch (haddr) {
 		case GPTU_CLC:
 			pmb887x_clc_set(&p->clc, value);
-			gptu_sync_timer(p);
-			gptu_update_freq(p);
-			gptu_rebuild_timers(p);
-			gptu_t2_sync_timer(p);
-			gptu_t2_update_state(p);
 			break;
 
 		case GPTU_T01IRS:
@@ -1216,6 +1199,8 @@ static const MemoryRegionOps io_ops = {
 
 static void gptu_init(Object *obj) {
 	pmb887x_gptu_t *p = PMB887X_GPTU(obj);
+	pmb887x_clc_init(&p->clc, DEVICE(obj));
+	pmb887x_clc_set_callback(&p->clc, gptu_clock_update, p);
 	memory_region_init_io(&p->mmio, obj, &io_ops, p, "pmb887x-gptu", GPTU_IO_SIZE);
 	sysbus_init_mmio(SYS_BUS_DEVICE(obj), &p->mmio);
 
@@ -1232,9 +1217,6 @@ static void gptu_init(Object *obj) {
 static void gptu_realize(DeviceState *dev, Error **errp) {
 	pmb887x_gptu_t *p = PMB887X_GPTU(dev);
 
-	if (!p->cgu)
-		hw_error("PLL not found...");
-
 	pmb887x_clc_set(&p->clc, MOD_CLC_DISR);
 
 	for (int i = 0; i < ARRAY_SIZE(p->src); i++) {
@@ -1247,7 +1229,6 @@ static void gptu_realize(DeviceState *dev, Error **errp) {
 	p->timer_t2 = timer_new_ns(QEMU_CLOCK_VIRTUAL, gptu_t2_ptimer_reset, p);
 
 	gptu_update_freq(p);
-	pmb887x_cgu_add_freq_update_callback(p->cgu, gptu_update_state_callback, p);
 	gptu_update_events(p);
 	gptu_rebuild_timers(p);
 	gptu_sync_timer(p);
@@ -1300,7 +1281,6 @@ static void gptu_reset(DeviceState *dev) {
 
 static const Property gptu_properties[] = {
 	DEFINE_PROP_UINT32("revision", pmb887x_gptu_t, revision, 0),
-	DEFINE_PROP_LINK("cgu", pmb887x_gptu_t, cgu, "pmb887x-cgu", struct pmb887x_cgu_t *),
 };
 
 static void gptu_class_init(ObjectClass *klass, const void *data) {

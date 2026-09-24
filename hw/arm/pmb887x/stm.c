@@ -12,8 +12,8 @@
 #include "qemu/timer.h"
 #include "qemu/main-loop.h"
 #include "hw/core/qdev-properties.h"
+#include "hw/core/qdev-clock.h"
 
-#include "hw/arm/pmb887x/cgu.h"
 #include "hw/arm/pmb887x/gen/cpu_regs.h"
 #include "hw/arm/pmb887x/regs_dump.h"
 #include "hw/arm/pmb887x/mod.h"
@@ -36,8 +36,6 @@ struct pmb887x_stm_t {
 	int64_t start;
 	int64_t capture;
 	int64_t counter;
-
-	pmb887x_cgu_t *cgu;
 };
 
 static int64_t stm_get_time(pmb887x_stm_t *p) {
@@ -49,9 +47,8 @@ static int64_t stm_get_time(pmb887x_stm_t *p) {
 }
 
 static void stm_update_state(pmb887x_stm_t *p) {
-	uint32_t div = pmb887x_clc_get_rmc(&p->clc);
-	uint32_t new_freq = div > 0 ? pmb887x_cgu_get_fstm(p->cgu) / div : 0;
-	bool new_enabled = new_freq > 0 && pmb887x_clc_is_enabled(&p->clc);
+	uint32_t new_freq = pmb887x_clc_get_hz(&p->clc);
+	bool new_enabled = new_freq > 0;
 	
 	if (new_enabled != p->enabled || new_freq != p->freq) {
 		p->counter = stm_get_time(p);
@@ -64,11 +61,11 @@ static void stm_update_state(pmb887x_stm_t *p) {
 			p->start = 0;
 		}
 		
-		DPRINTF("fstm=%d, fstm / RMC=%d [%s]\n", pmb887x_cgu_get_fstm(p->cgu), p->freq, p->enabled ? "ON" : "OFF");
+		DPRINTF("fstm=%d, fstm / RMC=%d [%s]\n", clock_get_hz(p->clc.clock), p->freq, p->enabled ? "ON" : "OFF");
 	}
 }
 
-static void stm_update_state_callback(void *opaque) {
+static void stm_clock_update(void *opaque) {
 	stm_update_state(opaque);
 }
 
@@ -143,14 +140,12 @@ static void stm_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned si
 	switch (haddr) {
 		case STM_CLC:
 			pmb887x_clc_set(&p->clc, value);
-		break;
+			break;
 		
 		default:
 			EPRINTF("unknown reg access: %02"PRIX64"\n", haddr);
 			exit(1);
 	}
-	
-	stm_update_state(p);
 }
 
 static const MemoryRegionOps io_ops = {
@@ -165,6 +160,8 @@ static const MemoryRegionOps io_ops = {
 
 static void stm_init(Object *obj) {
 	struct pmb887x_stm_t *p = PMB887X_STM(obj);
+	pmb887x_clc_init(&p->clc, DEVICE(obj));
+	pmb887x_clc_set_callback(&p->clc, stm_clock_update, p);
 	memory_region_init_io(&p->mmio, obj, &io_ops, p, "pmb887x-stm", STM_IO_SIZE);
 	sysbus_init_mmio(SYS_BUS_DEVICE(obj), &p->mmio);
 }
@@ -172,7 +169,7 @@ static void stm_init(Object *obj) {
 static void stm_reset(DeviceState *dev) {
 	pmb887x_stm_t *p = PMB887X_STM(dev);
 
-	pmb887x_clc_init(&p->clc);
+	pmb887x_clc_set(&p->clc, 1U << MOD_CLC_RMC_SHIFT);
 	p->enabled = false;
 	p->start = 0;
 	p->capture = 0;
@@ -183,15 +180,13 @@ static void stm_reset(DeviceState *dev) {
 static void stm_realize(DeviceState *dev, Error **errp) {
 	struct pmb887x_stm_t *p = PMB887X_STM(dev);
 	
-	pmb887x_clc_init(&p->clc);
+	pmb887x_clc_set(&p->clc, 1U << MOD_CLC_RMC_SHIFT);
 	
 	stm_update_state(p);
-	pmb887x_cgu_add_freq_update_callback(p->cgu, stm_update_state_callback, p);
 }
 
 static const Property stm_properties[] = {
 	DEFINE_PROP_UINT32("revision", pmb887x_stm_t, revision, 0),
-	DEFINE_PROP_LINK("cgu", struct pmb887x_stm_t, cgu, "pmb887x-cgu", struct pmb887x_cgu_t *),
 };
 
 static void stm_class_init(ObjectClass *klass, const void *data) {

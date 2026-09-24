@@ -518,6 +518,7 @@ static void i2c_handle_reset(void *opaque, int id, int level) {
 static void i2c_init(Object *obj) {
 	DeviceState *dev = DEVICE(obj);
 	pmb887x_i2c_t *p = PMB887X_I2C(obj);
+	pmb887x_clc_init(&p->clc, dev);
 	memory_region_init_io(&p->mmio, obj, &io_ops, p, "pmb887x-i2c-v1", I2Cv2_IO_SIZE);
 	sysbus_init_mmio(SYS_BUS_DEVICE(obj), &p->mmio);
 
@@ -536,7 +537,7 @@ static void i2c_init(Object *obj) {
 static void i2c_realize(DeviceState *dev, Error **errp) {
 	pmb887x_i2c_t *p = PMB887X_I2C(dev);
 
-	pmb887x_clc_init(&p->clc);
+	pmb887x_clc_set(&p->clc, 1U << MOD_CLC_RMC_SHIFT);
 
 	pmb887x_src_init(&p->data_src, p->irq[0]);
 	pmb887x_src_init(&p->proto_src, p->irq[1]);

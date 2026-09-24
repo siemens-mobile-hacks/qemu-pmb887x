@@ -162,7 +162,6 @@ static void pmb887x_init(MachineState *machine) {
 
 	// Port Control Logic
 	DeviceState *gpio = pmb887x_new_cpu_module("GPIO");
-	sysbus_realize_and_unref(SYS_BUS_DEVICE(gpio), &error_fatal);
 
 	// VIC
 	DeviceState *vic = pmb887x_new_cpu_module("VIC");
@@ -173,15 +172,17 @@ static void pmb887x_init(MachineState *machine) {
 	// CGU
 	DeviceState *cgu = pmb887x_new_cpu_module("CGU");
 	sysbus_realize_and_unref(SYS_BUS_DEVICE(cgu), &error_fatal);
+	qdev_connect_clock_in(gpio, "clk", qdev_get_clock_out(cgu, "FPI1"));
+	sysbus_realize_and_unref(SYS_BUS_DEVICE(gpio), &error_fatal);
 
 	// System Timer
 	DeviceState *stm = pmb887x_new_cpu_module("STM");
-	object_property_set_link(OBJECT(stm), "cgu", OBJECT(cgu), &error_fatal);
+	qdev_connect_clock_in(stm, "clk", qdev_get_clock_out(cgu, "FSTM"));
 	sysbus_realize_and_unref(SYS_BUS_DEVICE(stm), &error_fatal);
 
 	// Time Processing Unit
 	DeviceState *tpu = pmb887x_new_cpu_module("TPU");
-	object_property_set_link(OBJECT(tpu), "cgu", OBJECT(cgu), &error_fatal);
+	qdev_connect_clock_in(tpu, "clk", qdev_get_clock_out(cgu, "FSYS"));
 	sysbus_realize_and_unref(SYS_BUS_DEVICE(tpu), &error_fatal);
 
 	// DMA Controller
@@ -191,10 +192,12 @@ static void pmb887x_init(MachineState *machine) {
 
 	// USB Device Controller
 	DeviceState *usb = pmb887x_new_cpu_module("USB");
+	qdev_connect_clock_in(usb, "clk", qdev_get_clock_out(cgu, "FPI1"));
 	sysbus_realize_and_unref(SYS_BUS_DEVICE(usb), &error_fatal);
 
 	// DSP
 	DeviceState *dsp = pmb887x_new_cpu_module("DSP");
+	qdev_connect_clock_in(dsp, "clk", qdev_get_clock_out(cgu, "FSYS"));
 	pmb887x_dsp_set_config(dsp, pmb887x_cpu_get(pmb887x_board()->cpu)->dsp_config);
 	pmb887x_board_init_dsp(dsp);
 	qdev_connect_clock_in(dsp, "GSM_CLOCK", qdev_get_clock_out(tpu, "GSM_CLOCK"));
@@ -204,65 +207,73 @@ static void pmb887x_init(MachineState *machine) {
 
 	// GPRS Ciphering Unit
 	DeviceState *gprscu = pmb887x_new_cpu_module("GPRSCU");
+	qdev_connect_clock_in(gprscu, "clk", qdev_get_clock_out(cgu, "FSYS"));
 	sysbus_realize_and_unref(SYS_BUS_DEVICE(gprscu), &error_fatal);
 
 	// Automatic Frequency Correction
 	DeviceState *afc = pmb887x_new_cpu_module("AFC");
+	qdev_connect_clock_in(afc, "clk", qdev_get_clock_out(cgu, "FSYS"));
 	sysbus_realize_and_unref(SYS_BUS_DEVICE(afc), &error_fatal);
 
 	if (pmb887x_board()->cpu == CPU_PMB8876) {
 		// MMCI
 		DeviceState *mmci = pmb887x_new_cpu_module("MMCI");
+		qdev_connect_clock_in(mmci, "clk", qdev_get_clock_out(cgu, "FSYS"));
 		sysbus_realize_and_unref(SYS_BUS_DEVICE(mmci), &error_fatal);
 
 		// Multi Media Controller Interface
 		DeviceState *mmicif = pmb887x_new_cpu_module("MMICIF");
+		qdev_connect_clock_in(mmicif, "clk", qdev_get_clock_out(cgu, "FSYS"));
 		sysbus_mmio_map(SYS_BUS_DEVICE(mmicif), 1, PMB8876_MMICIF_BASE + MMICIF_MMAP_BASE);
 		sysbus_realize_and_unref(SYS_BUS_DEVICE(mmicif), &error_fatal);
 	}
 
 	// SIM card interface
 	DeviceState *sim = pmb887x_new_cpu_module("SIM");
+	qdev_connect_clock_in(sim, "clk", qdev_get_clock_out(cgu, "FPI1"));
 	sysbus_realize_and_unref(SYS_BUS_DEVICE(sim), &error_fatal);
 
 	// USART0
 	DeviceState *usart0 = pmb887x_new_cpu_module("USART0");
-	object_property_set_link(OBJECT(usart0), "cgu", OBJECT(cgu), &error_fatal);
+	qdev_connect_clock_in(usart0, "clk", qdev_get_clock_out(cgu, "FPI1"));
 	qdev_prop_set_chr(DEVICE(usart0), "chardev", serial_hd(0));
 	sysbus_realize_and_unref(SYS_BUS_DEVICE(usart0), &error_fatal);
 
 	// USART1
 	DeviceState *usart1 = pmb887x_new_cpu_module("USART1");
-	object_property_set_link(OBJECT(usart1), "cgu", OBJECT(cgu), &error_fatal);
+	qdev_connect_clock_in(usart1, "clk", qdev_get_clock_out(cgu, "FPI1"));
 	qdev_prop_set_chr(DEVICE(usart1), "chardev", serial_hd(1));
 	sysbus_realize_and_unref(SYS_BUS_DEVICE(usart1), &error_fatal);
 
 	// USIF (Bluetooth HCI transport, PMB8876 only)
 	if (pmb887x_board()->cpu == CPU_PMB8876) {
 		DeviceState *usif = pmb887x_new_cpu_module("USIF");
+		qdev_connect_clock_in(usif, "clk", qdev_get_clock_out(cgu, "FPI1"));
 		qdev_prop_set_chr(DEVICE(usif), "chardev", serial_hd(2));
 		sysbus_realize_and_unref(SYS_BUS_DEVICE(usif), &error_fatal);
 	}
 
 	// DIF
 	DeviceState *dif = pmb887x_new_cpu_module("DIF");
+	qdev_connect_clock_in(dif, "clk", qdev_get_clock_out(cgu, "FPI1"));
 	if (object_property_find(OBJECT(dif), "dmac"))
 		object_property_set_link(OBJECT(dif), "dmac", OBJECT(dmac), &error_fatal);
 	sysbus_realize_and_unref(SYS_BUS_DEVICE(dif), &error_fatal);
 
 	// I2C
 	DeviceState *i2c = pmb887x_new_cpu_module("I2C");
-	if (object_property_find(OBJECT(i2c), "cgu"))
-		object_property_set_link(OBJECT(i2c), "cgu", OBJECT(cgu), &error_fatal);
+	qdev_connect_clock_in(i2c, "clk", qdev_get_clock_out(cgu, "FSYS"));
 	sysbus_realize_and_unref(SYS_BUS_DEVICE(i2c), &error_fatal);
 
 	// Synchronous Serial Controller
 	DeviceState *ssc = pmb887x_new_cpu_module("SSC");
+	qdev_connect_clock_in(ssc, "clk", qdev_get_clock_out(cgu, "FPI1"));
 	sysbus_realize_and_unref(SYS_BUS_DEVICE(ssc), &error_fatal);
 
 	// Standby Clock Control Unit
 	DeviceState *sccu = pmb887x_new_cpu_module("SCCU");
-	object_property_set_link(OBJECT(sccu), "cgu", OBJECT(cgu), &error_fatal);
+	qdev_connect_clock_in(sccu, "clk", qdev_get_clock_out(cgu, "OSC"));
+	qdev_connect_clock_in(sccu, "clk32", qdev_get_clock_out(cgu, "RTC"));
 	sysbus_realize_and_unref(SYS_BUS_DEVICE(sccu), &error_fatal);
 
 	// System Control Unit
@@ -270,7 +281,7 @@ static void pmb887x_init(MachineState *machine) {
 	const char *stop_on_excp = getenv("QEMU_ARM_STOP_ON_EXCP");
 	if (stop_on_excp && strcmp(stop_on_excp, "1") == 0)
 		object_property_set_bool(OBJECT(scu), "stop_on_watchdog", true, &error_fatal);
-	object_property_set_link(OBJECT(scu), "cgu", OBJECT(cgu), &error_fatal);
+	qdev_connect_clock_in(scu, "clk", qdev_get_clock_out(cgu, "FSYS"));
 	object_property_set_link(OBJECT(scu), "brom_mirror", OBJECT(brom_mirror), &error_fatal);
 	object_property_set_link(OBJECT(scu), "sccu", OBJECT(sccu), &error_fatal);
 	object_property_set_link(OBJECT(scu), "dmac", OBJECT(dmac), &error_fatal);
@@ -291,15 +302,17 @@ static void pmb887x_init(MachineState *machine) {
 
 	// CAPCOM0
 	DeviceState *capcom0 = pmb887x_new_cpu_module("CAPCOM0");
+	qdev_connect_clock_in(capcom0, "clk", qdev_get_clock_out(cgu, "FSYS"));
 	sysbus_realize_and_unref(SYS_BUS_DEVICE(capcom0), &error_fatal);
 	
 	// CAPCOM1
 	DeviceState *capcom1 = pmb887x_new_cpu_module("CAPCOM1");
+	qdev_connect_clock_in(capcom1, "clk", qdev_get_clock_out(cgu, "FSYS"));
 	sysbus_realize_and_unref(SYS_BUS_DEVICE(capcom1), &error_fatal);
 
 	// RTC
 	DeviceState *rtc = pmb887x_new_cpu_module("RTC");
-	object_property_set_link(OBJECT(rtc), "cgu", OBJECT(cgu), &error_fatal);
+	qdev_connect_clock_in(rtc, "clk", qdev_get_clock_out(cgu, "RTC"));
 	// [rtc] format = "unix" | "calendar": how the firmware reads CNT at
 	// power-on (see rtc.c); LG boards set calendar in their config.
 	qdev_prop_set_string(rtc, "cnt-format",
@@ -308,17 +321,17 @@ static void pmb887x_init(MachineState *machine) {
 
 	// GPTU0
 	DeviceState *gptu0 = pmb887x_new_cpu_module("GPTU0");
-	object_property_set_link(OBJECT(gptu0), "cgu", OBJECT(cgu), &error_fatal);
+	qdev_connect_clock_in(gptu0, "clk", qdev_get_clock_out(cgu, "FGPTU"));
 	sysbus_realize_and_unref(SYS_BUS_DEVICE(gptu0), &error_fatal);
 	
 	// GPTU1
 	DeviceState *gptu1 = pmb887x_new_cpu_module("GPTU1");
-	object_property_set_link(OBJECT(gptu1), "cgu", OBJECT(cgu), &error_fatal);
+	qdev_connect_clock_in(gptu1, "clk", qdev_get_clock_out(cgu, "FGPTU"));
 	sysbus_realize_and_unref(SYS_BUS_DEVICE(gptu1), &error_fatal);
 
 	// ADC
 	DeviceState *adc = pmb887x_new_cpu_module("ADC");
-	object_property_set_link(OBJECT(adc), "cgu", OBJECT(cgu), &error_fatal);
+	qdev_connect_clock_in(adc, "clk", qdev_get_clock_out(cgu, "FSYS"));
 	sysbus_realize_and_unref(SYS_BUS_DEVICE(adc), &error_fatal);
 
 	// KEYPAD
@@ -328,6 +341,7 @@ static void pmb887x_init(MachineState *machine) {
 
 	// External Bus Unit
 	DeviceState *ebuc = pmb887x_new_cpu_module("EBU");
+	qdev_connect_clock_in(ebuc, "clk", qdev_get_clock_out(cgu, "FSYS"));
 
 	// Flash
 	DriveInfo *flash_dinfo = drive_get(IF_PFLASH, 0, 0);

@@ -18,7 +18,6 @@
 #include "hw/arm/pmb887x/gen/cpu_regs.h"
 #include "hw/arm/pmb887x/regs_dump.h"
 #include "hw/arm/pmb887x/mod.h"
-#include "hw/arm/pmb887x/cgu.h"
 #include "hw/arm/pmb887x/trace.h"
 #include "hw/arm/pmb887x/fifo.h"
 
@@ -56,7 +55,6 @@ struct pmb887x_i2c_t {
 	bool transfer_pending;
 
 	pmb887x_clc_reg_t clc;
-	pmb887x_cgu_t *cgu;
 	pmb887x_srb_reg_t srb;
 	pmb887x_srb_ext_reg_t srb_proto;
 	pmb887x_srb_ext_reg_t srb_err;
@@ -244,13 +242,10 @@ static void i2c_timer_reset(void *opaque) {
 }
 
 static uint32_t i2c_get_baud_rate_hz(pmb887x_i2c_t *p) {
-	uint32_t rmc = pmb887x_clc_get_rmc(&p->clc);
-	uint64_t kernel_clock_hz = rmc > 0 ? pmb887x_cgu_get_fsys(p->cgu) / rmc : 0;
+	uint64_t kernel_clock_hz = pmb887x_clc_get_hz(&p->clc);
 	uint64_t dec = (p->fdivcfg & I2Cv2_FDIVCFG_DEC) >> I2Cv2_FDIVCFG_DEC_SHIFT;
 	uint64_t inc = (p->fdivcfg & I2Cv2_FDIVCFG_INC) >> I2Cv2_FDIVCFG_INC_SHIFT;
 
-	if (!pmb887x_clc_is_enabled(&p->clc))
-		return 0;
 	if (kernel_clock_hz == 0)
 		return 0;
 	if (inc == 0)
@@ -827,6 +822,7 @@ static void i2c_event_handler(void *opaque, int event_id, int level) {
 static void i2c_init(Object *obj) {
 	DeviceState *dev = DEVICE(obj);
 	pmb887x_i2c_t *p = PMB887X_I2C(obj);
+	pmb887x_clc_init(&p->clc, dev);
 	memory_region_init_io(&p->mmio, obj, &io_ops, p, TYPE_PMB887X_I2C, I2C_IO_SIZE);
 	sysbus_init_mmio(SYS_BUS_DEVICE(obj), &p->mmio);
 
@@ -852,7 +848,7 @@ static void i2c_realize(DeviceState *dev, Error **errp) {
 
 	p->bus = i2c_init_bus(dev, TYPE_PMB887X_I2C);
 
-	pmb887x_clc_init(&p->clc);
+	pmb887x_clc_set(&p->clc, 1U << MOD_CLC_RMC_SHIFT);
 
 	pmb887x_srb_init(&p->srb, p->irq, ARRAY_SIZE(p->irq));
 	pmb887x_srb_set_irq_router(&p->srb, p, i2c_irq_router);
@@ -906,7 +902,6 @@ static void i2c_reset(DeviceState *dev) {
 
 static const Property i2c_properties[] = {
 	DEFINE_PROP_UINT32("revision", pmb887x_i2c_t, revision, 0),
-	DEFINE_PROP_LINK("cgu", pmb887x_i2c_t, cgu, "pmb887x-cgu", pmb887x_cgu_t *),
 	DEFINE_PROP_LINK("bus", pmb887x_i2c_t, bus, TYPE_I2C_BUS, I2CBus *),
 };
 

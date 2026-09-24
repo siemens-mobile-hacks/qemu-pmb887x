@@ -9,10 +9,10 @@
 #include "hw/core/hw-error.h"
 #include "system/memory.h"
 #include "hw/core/qdev-properties.h"
+#include "hw/core/qdev-clock.h"
 #include "cpu.h"
 #include "qemu/timer.h"
 
-#include "hw/arm/pmb887x/cgu.h"
 #include "hw/arm/pmb887x/gen/cpu_regs.h"
 #include "hw/arm/pmb887x/regs_dump.h"
 #include "hw/arm/pmb887x/mod.h"
@@ -22,20 +22,12 @@
 #define PMB887X_CGU(obj)	OBJECT_CHECK(pmb887x_cgu_t, (obj), TYPE_PMB887X_CGU)
 #define PLL_LOCK_DELAY_NS	(10 * SCALE_US)
 
-typedef struct pmb887x_cgu_callback_t pmb887x_cgu_callback_t;
-
-struct pmb887x_cgu_callback_t {
-	void *opaque;
-	void (*callback)(void *);
-};
+typedef struct pmb887x_cgu_t pmb887x_cgu_t;
 
 struct pmb887x_cgu_t {
 	SysBusDevice parent_obj;
 	MemoryRegion mmio;
 	uint32_t revision;
-	
-	pmb887x_cgu_callback_t *callbacks;
-	int callbacks_count;
 	
 	pmb887x_src_reg_t src;
 	qemu_irq irq;
@@ -50,7 +42,12 @@ struct pmb887x_cgu_t {
 	uint32_t fstm;
 	uint32_t fahb;
 	uint32_t fcpu;
-	uint32_t fgptu;
+	Clock *osc_clock;
+	Clock *rtc_clock;
+	Clock *sys_clock;
+	Clock *stm_clock;
+	Clock *gptu_clock;
+	Clock *fpi1_clock;
 	
 	uint32_t osc;
 	uint32_t con0;
@@ -157,6 +154,26 @@ static uint32_t cgu_get_stm_freq(pmb887x_cgu_t *p) {
 	return freq;
 }
 
+static uint32_t cgu_get_fpi1_freq(pmb887x_cgu_t *p) {
+	uint32_t freq;
+
+	switch (p->con1 & CGU_CON1_FPI1_CLKSEL) {
+		case CGU_CON1_FPI1_CLKSEL_OSC:
+			freq = p->xtal;
+			break;
+		case CGU_CON1_FPI1_CLKSEL_CLK32K:
+			return p->frtc;
+		case CGU_CON1_FPI1_CLKSEL_PLL_DIV_2:
+			freq = cgu_get_pll_freq(p) / 2;
+			break;
+		default:
+			return 0;
+	}
+
+	uint32_t div = (p->con1 & CGU_CON1_FPI1_CLKDIV) >> CGU_CON1_FPI1_CLKDIV_SHIFT;
+	return freq >> div;
+}
+
 // CPU freq from AHB
 static uint32_t cgu_get_cpu_freq(pmb887x_cgu_t *p) {
 	uint32_t ahb_freq = cgu_get_ahb_freq(p);
@@ -174,36 +191,26 @@ static void cgu_update_state(struct pmb887x_cgu_t *p) {
 	uint32_t new_fstm = cgu_get_stm_freq(p);
 	uint32_t new_fcpu = cgu_get_cpu_freq(p);
 	uint32_t new_fahb = cgu_get_ahb_freq(p);
-	/* fGPTU = the GPTU tap = the PLL product (see gptu.c's gptu_calc_freq()). */
 	uint32_t new_fgptu = cgu_get_pll_freq(p);
 	
-	bool is_changed = (
-		new_fsys != p->fsys ||
-		new_fstm != p->fstm ||
-		new_fcpu != p->fcpu ||
-		new_fahb != p->fahb ||
-		new_fgptu != p->fgptu
-	);
-	
-	if (is_changed) {
-		if (new_fcpu != p->fcpu)
-			DPRINTF("fCPU: %u -> %u Hz\n", p->fcpu, new_fcpu);
-		if (new_fahb != p->fahb)
-			DPRINTF("fAHB: %u -> %u Hz\n", p->fahb, new_fahb);
-		if (new_fsys != p->fsys)
-			DPRINTF("fSYS: %u -> %u Hz\n", p->fsys, new_fsys);
-		if (new_fstm != p->fstm)
-			DPRINTF("fSTM: %u -> %u Hz\n", p->fstm, new_fstm);
+	if (new_fcpu != p->fcpu)
+		DPRINTF("fCPU: %u -> %u Hz\n", p->fcpu, new_fcpu);
+	if (new_fahb != p->fahb)
+		DPRINTF("fAHB: %u -> %u Hz\n", p->fahb, new_fahb);
+	if (new_fsys != p->fsys)
+		DPRINTF("fSYS: %u -> %u Hz\n", p->fsys, new_fsys);
+	if (new_fstm != p->fstm)
+		DPRINTF("fSTM: %u -> %u Hz\n", p->fstm, new_fstm);
 
-		p->fsys = new_fsys;
-		p->fstm = new_fstm;
-		p->fcpu = new_fcpu;
-		p->fahb = new_fahb;
-		p->fgptu = new_fgptu;
-		
-		for (int i = 0; i < p->callbacks_count; ++i)
-			p->callbacks[i].callback(p->callbacks[i].opaque);
-	}
+	p->fsys = new_fsys;
+	p->fstm = new_fstm;
+	p->fcpu = new_fcpu;
+	p->fahb = new_fahb;
+
+	clock_update_hz(p->sys_clock, new_fsys);
+	clock_update_hz(p->stm_clock, new_fstm);
+	clock_update_hz(p->gptu_clock, new_fgptu);
+	clock_update_hz(p->fpi1_clock, cgu_get_fpi1_freq(p));
 }
 
 static uint64_t cgu_io_read(void *opaque, hwaddr haddr, unsigned size) {
@@ -309,45 +316,6 @@ static const MemoryRegionOps io_ops = {
 	}
 };
 
-pmb887x_cgu_t *pmb887x_cgu_get_self(DeviceState *dev) {
-	return PMB887X_CGU(dev);
-}
-
-uint32_t pmb887x_cgu_get_fosc(pmb887x_cgu_t *p) {
-	return p->xtal;
-}
-
-uint32_t pmb887x_cgu_get_frtc(pmb887x_cgu_t *p) {
-	return p->frtc;
-}
-
-uint32_t pmb887x_cgu_get_fsys(pmb887x_cgu_t *p) {
-	return p->fsys;
-}
-
-uint32_t pmb887x_cgu_get_fstm(pmb887x_cgu_t *p) {
-	return p->fstm;
-}
-
-uint32_t pmb887x_cgu_get_fcpu(pmb887x_cgu_t *p) {
-	return p->fcpu;
-}
-
-uint32_t pmb887x_cgu_get_fahb(pmb887x_cgu_t *p) {
-	return p->fahb;
-}
-
-uint32_t pmb887x_cgu_get_fgptu(pmb887x_cgu_t *p) {
-	return p->fgptu;
-}
-
-void pmb887x_cgu_add_freq_update_callback(pmb887x_cgu_t *p, void (*callback)(void *), void *opaque) {
-	p->callbacks = g_realloc(p->callbacks, (p->callbacks_count + 1) * sizeof(struct pmb887x_cgu_callback_t));
-	p->callbacks[p->callbacks_count].opaque = opaque;
-	p->callbacks[p->callbacks_count].callback = callback;
-	p->callbacks_count++;
-}
-
 static void cgu_init(Object *obj) {
 	DeviceState *dev = DEVICE(obj);
 	pmb887x_cgu_t *p = PMB887X_CGU(obj);
@@ -355,6 +323,12 @@ static void cgu_init(Object *obj) {
 	sysbus_init_mmio(SYS_BUS_DEVICE(obj), &p->mmio);
 	sysbus_init_irq(SYS_BUS_DEVICE(obj), &p->irq);
 	qdev_init_gpio_out_named(dev, &p->gpio_clk32, "CLK32_OUT", 1);
+	p->osc_clock = qdev_init_clock_out(dev, "OSC");
+	p->rtc_clock = qdev_init_clock_out(dev, "RTC");
+	p->sys_clock = qdev_init_clock_out(dev, "FSYS");
+	p->stm_clock = qdev_init_clock_out(dev, "FSTM");
+	p->gptu_clock = qdev_init_clock_out(dev, "FGPTU");
+	p->fpi1_clock = qdev_init_clock_out(dev, "FPI1");
 	p->lock_timer = timer_new_ns(QEMU_CLOCK_VIRTUAL, cgu_pll_lock_timer_expired, p);
 }
 
@@ -365,9 +339,8 @@ static void cgu_reset(DeviceState *dev) {
 	pmb887x_src_reset(&p->src);
 
 	p->frtc = 32768;
-	/* fGPTU is the PLL product, computed by cgu_update_state() at the end of this
-	   function; the old 1000000000 stub was read by nothing. */
-	p->fgptu = 0;
+	clock_update_hz(p->osc_clock, p->xtal);
+	clock_update_hz(p->rtc_clock, p->frtc);
 	p->fsys = p->xtal;
 	p->osc = 0x01070001;
 	p->con0 = 0x22000012;
@@ -388,13 +361,9 @@ static void cgu_realize(DeviceState *dev, Error **errp) {
 	pmb887x_src_init(&p->src, p->irq);
 	
 	p->frtc = 32768;
-	/* fGPTU is the PLL product, computed by cgu_update_state() at the end of this
-	   function; the old 1000000000 stub was read by nothing. */
-	p->fgptu = 0;
+	clock_set_hz(p->osc_clock, p->xtal);
+	clock_set_hz(p->rtc_clock, p->frtc);
 	p->fsys = p->xtal;
-	
-	p->callbacks = NULL;
-	p->callbacks_count = 0;
 	
 	// Initial values
 	p->osc	= 0x01070001;

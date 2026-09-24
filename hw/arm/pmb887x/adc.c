@@ -12,7 +12,6 @@
 #include "hw/core/qdev-properties.h"
 
 #include "hw/arm/pmb887x/adc.h"
-#include "hw/arm/pmb887x/cgu.h"
 #include "hw/arm/pmb887x/gen/cpu_regs.h"
 #include "hw/arm/pmb887x/regs_dump.h"
 #include "hw/arm/pmb887x/mod.h"
@@ -83,7 +82,6 @@ struct pmb887x_adc_t {
 	uint16_t data[8];
 	
 	pmb887x_adc_input_t inputs[PMB887X_ADC_MAX_INPUTS];
-	pmb887x_cgu_t *cgu;
 };
 
 // Known channels with known parameters
@@ -206,9 +204,8 @@ static void adc_start_conversion(pmb887x_adc_t *p) {
 }
 
 static void adc_update_state(pmb887x_adc_t *p) {
-	uint32_t div = pmb887x_clc_get_rmc(&p->clc);
-	uint32_t fadc = div > 0 ? pmb887x_cgu_get_fsys(p->cgu) / div : 0;
-	bool is_enabled = fadc > 0 && pmb887x_clc_is_enabled(&p->clc);
+	uint32_t fadc = pmb887x_clc_get_hz(&p->clc);
+	bool is_enabled = fadc > 0;
 	
 	if ((p->con1 & ADC_CTRL_ENTRIG)) {
 		p->measure_mode = ADC_MEASURE_MODE_TRIG;
@@ -335,6 +332,7 @@ static const MemoryRegionOps io_ops = {
 
 static void adc_init(Object *obj) {
 	pmb887x_adc_t *p = PMB887X_ADC(obj);
+	pmb887x_clc_init(&p->clc, DEVICE(obj));
 	memory_region_init_io(&p->mmio, obj, &io_ops, p, "pmb887x-adc", ADC_IO_SIZE);
 	sysbus_init_mmio(SYS_BUS_DEVICE(obj), &p->mmio);
 
@@ -345,7 +343,7 @@ static void adc_init(Object *obj) {
 static void adc_reset(DeviceState *dev) {
 	pmb887x_adc_t *p = PMB887X_ADC(dev);
 
-	pmb887x_clc_init(&p->clc);
+	pmb887x_clc_set(&p->clc, 1U << MOD_CLC_RMC_SHIFT);
 
 	for (size_t i = 0; i < ARRAY_SIZE(p->src); i++)
 		pmb887x_src_reset(&p->src[i]);
@@ -363,7 +361,7 @@ static void adc_reset(DeviceState *dev) {
 static void adc_realize(DeviceState *dev, Error **errp) {
 	pmb887x_adc_t *p = PMB887X_ADC(dev);
 	
-	pmb887x_clc_init(&p->clc);
+	pmb887x_clc_set(&p->clc, 1U << MOD_CLC_RMC_SHIFT);
 	
 	for (size_t i = 0; i < ARRAY_SIZE(p->irq); i++)
 		pmb887x_src_init(&p->src[i], p->irq[i]);
@@ -373,7 +371,6 @@ static void adc_realize(DeviceState *dev, Error **errp) {
 
 static const Property adc_properties[] = {
 	DEFINE_PROP_UINT32("revision", pmb887x_adc_t, revision, 0),
-	DEFINE_PROP_LINK("cgu", pmb887x_adc_t, cgu, "pmb887x-cgu", struct pmb887x_cgu_t *),
 };
 
 static void adc_class_init(ObjectClass *klass, const void *data) {

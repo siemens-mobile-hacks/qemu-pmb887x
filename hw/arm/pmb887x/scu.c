@@ -14,12 +14,12 @@
 #include "qemu/timer.h"
 #include "system/runstate.h"
 #include "hw/core/qdev-properties.h"
+#include "hw/core/qdev-clock.h"
 
 #include "hw/arm/pmb887x/regs_dump.h"
 #include "hw/arm/pmb887x/mod.h"
 #include "hw/arm/pmb887x/dsp.h"
 #include "hw/arm/pmb887x/dmac.h"
-#include "hw/arm/pmb887x/cgu.h"
 #include "hw/arm/pmb887x/sccu.h"
 #include "hw/arm/pmb887x/trace.h"
 
@@ -75,7 +75,7 @@ struct pmb887x_scu_t {
 	uint32_t sleep_req;
 
 	pmb887x_dmac_t *dmac;
-	pmb887x_cgu_t *cgu;
+	Clock *clock;
 	struct pmb887x_sccu_t *sccu;
 	MemoryRegion *brom_mirror;
 	QEMUTimer *wdt_timer;
@@ -83,7 +83,7 @@ struct pmb887x_scu_t {
 
 static uint32_t scu_wdt_get_frequency(pmb887x_scu_t *p) {
 	uint32_t divider = (p->wdt_status & SCU_WDT_SR_WDTIS) ? 256 : 16384;
-	return pmb887x_cgu_get_fsys(p->cgu) / divider;
+	return clock_get_hz(p->clock) / divider;
 }
 
 static uint16_t scu_wdt_get_counter(pmb887x_scu_t *p) {
@@ -109,8 +109,9 @@ static void scu_wdt_schedule(pmb887x_scu_t *p) {
 		p->wdt_counter, p->wdt_frequency, duration, p->wdt_start);
 }
 
-static void scu_wdt_update_frequency(void *opaque) {
+static void scu_wdt_update_frequency(void *opaque, ClockEvent event) {
 	pmb887x_scu_t *p = opaque;
+	(void) event;
 
 	p->wdt_counter = scu_wdt_get_counter(p);
 	p->wdt_frequency = scu_wdt_get_frequency(p);
@@ -580,6 +581,7 @@ static const MemoryRegionOps io_ops = {
 static void scu_init(Object *obj) {
 	DeviceState *dev = DEVICE(obj);
 	pmb887x_scu_t *p = PMB887X_SCU(obj);
+	p->clock = qdev_init_clock_in(dev, "clk", scu_wdt_update_frequency, p, ClockUpdate);
 	memory_region_init_io(&p->mmio, obj, &io_ops, p, "pmb887x-scu", SCU_IO_SIZE);
 	sysbus_init_mmio(SYS_BUS_DEVICE(obj), &p->mmio);
 	
@@ -674,7 +676,12 @@ static void scu_reset(DeviceState *dev) {
 
 static void scu_realize(DeviceState *dev, Error **errp) {
 	pmb887x_scu_t *p = PMB887X_SCU(dev);
-	
+
+	if (!clock_has_source(p->clock)) {
+		error_setg(errp, "pmb887x-scu: clk input is not connected");
+		return;
+	}
+
 	for (size_t i = 0; i < ARRAY_SIZE(p->exti_src); i++)
 		pmb887x_src_init(&p->exti_src[i], p->exti_irq[i]);
 
@@ -685,7 +692,6 @@ static void scu_realize(DeviceState *dev, Error **errp) {
 		pmb887x_src_init(&p->unk_src[i], p->unk_irq[i]);
 	
 	p->wdt_timer = timer_new_ns(QEMU_CLOCK_VIRTUAL, scu_wdt_timer_reset, p);
-	pmb887x_cgu_add_freq_update_callback(p->cgu, scu_wdt_update_frequency, p);
 }
 
 static const Property scu_properties[] = {
@@ -696,7 +702,6 @@ static const Property scu_properties[] = {
 	DEFINE_PROP_UINT32("cpu_uid1", pmb887x_scu_t, cpu_uid[1], 0),
 	DEFINE_PROP_UINT32("cpu_uid2", pmb887x_scu_t, cpu_uid[2], 0),
 	DEFINE_PROP_BOOL("stop_on_watchdog", pmb887x_scu_t, stop_on_watchdog, false),
-	DEFINE_PROP_LINK("cgu", pmb887x_scu_t, cgu, "pmb887x-cgu", pmb887x_cgu_t *),
 	DEFINE_PROP_LINK("sccu", pmb887x_scu_t, sccu, "pmb887x-sccu", struct pmb887x_sccu_t *),
 	DEFINE_PROP_LINK("dmac", pmb887x_scu_t, dmac, "pmb887x-dmac", pmb887x_dmac_t *),
 	DEFINE_PROP_LINK("brom_mirror", pmb887x_scu_t, brom_mirror, TYPE_MEMORY_REGION, MemoryRegion *),

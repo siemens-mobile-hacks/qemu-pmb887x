@@ -7,10 +7,42 @@
 #include "hw/arm/pmb887x/mod.h"
 #include "hw/arm/pmb887x/gen/cpu_regs.h"
 #include "hw/core/hw-error.h"
+#include "hw/core/qdev.h"
 #include "hw/arm/pmb887x/trace.h"
 
-void pmb887x_clc_init(pmb887x_clc_reg_t *reg) {
-	pmb887x_clc_set(reg, 1 << MOD_CLC_RMC_SHIFT);
+static uint32_t pmb887x_clc_calculate_hz(pmb887x_clc_reg_t *reg) {
+	if (!reg->clock || !clock_has_source(reg->clock))
+		hw_error("[%s] clk input is not connected\n", object_get_typename(OBJECT(reg->device)));
+
+	uint32_t rmc = pmb887x_clc_get_rmc(reg);
+	if (!pmb887x_clc_is_enabled(reg) || rmc == 0)
+		return 0;
+	return clock_get_hz(reg->clock) / rmc;
+}
+
+static void pmb887x_clc_clock_update(void *opaque, ClockEvent event) {
+	pmb887x_clc_reg_t *reg = opaque;
+	(void) event;
+
+	uint32_t frequency_hz = pmb887x_clc_calculate_hz(reg);
+
+	if (frequency_hz == reg->frequency_hz)
+		return;
+
+	reg->frequency_hz = frequency_hz;
+	if (reg->callback && reg->device->realized && !device_is_in_reset(reg->device))
+		reg->callback(reg->callback_opaque);
+}
+
+void pmb887x_clc_init(pmb887x_clc_reg_t *reg, DeviceState *dev) {
+	reg->value = 1U << MOD_CLC_RMC_SHIFT;
+	reg->device = dev;
+	reg->clock = qdev_init_clock_in(dev, "clk", pmb887x_clc_clock_update, reg, ClockUpdate);
+}
+
+void pmb887x_clc_set_callback(pmb887x_clc_reg_t *reg, void (*callback)(void *), void *opaque) {
+	reg->callback = callback;
+	reg->callback_opaque = opaque;
 }
 
 uint8_t pmb887x_clc_get_rmc(pmb887x_clc_reg_t *reg) {
@@ -21,17 +53,20 @@ uint8_t pmb887x_clc_is_enabled(pmb887x_clc_reg_t *reg) {
 	return (reg->value & MOD_CLC_DISR) == 0;
 }
 
+uint32_t pmb887x_clc_get_hz(pmb887x_clc_reg_t *reg) {
+	return reg->frequency_hz;
+}
+
 uint32_t pmb887x_clc_get(pmb887x_clc_reg_t *reg) {
 	return reg->value;
 }
 
 void pmb887x_clc_set(pmb887x_clc_reg_t *reg, uint32_t value) {
-	if ((value & MOD_CLC_DISR)) {
-		value |= MOD_CLC_DISS;
-	} else {
-		value &= ~MOD_CLC_DISS;
-	}
-	reg->value = value;
+	uint32_t old_hz = reg->frequency_hz;
+	reg->value = (value & MOD_CLC_DISR) ? (value | MOD_CLC_DISS) : (value & ~MOD_CLC_DISS);
+	reg->frequency_hz = pmb887x_clc_calculate_hz(reg);
+	if (reg->callback && reg->device->realized && !device_is_in_reset(reg->device) && old_hz != reg->frequency_hz)
+		reg->callback(reg->callback_opaque);
 }
 
 void pmb887x_src_init(pmb887x_src_reg_t *reg, qemu_irq irq) {

@@ -16,9 +16,9 @@
 #include "qemu/main-loop.h"
 #include "hw/core/irq.h"
 #include "hw/core/qdev-properties.h"
+#include "hw/core/qdev-clock.h"
 #include "qapi/error.h"
 
-#include "hw/arm/pmb887x/cgu.h"
 #include "hw/arm/pmb887x/gen/cpu_regs.h"
 #include "hw/arm/pmb887x/io_bridge.h"
 #include "hw/arm/pmb887x/regs_dump.h"
@@ -61,9 +61,6 @@ struct pmb887x_tpu_t {
 	uint32_t L;
 	uint32_t K;
 
-	uint32_t last_fsys;
-
-	struct pmb887x_cgu_t *cgu;
 	pmb887x_vic_t *vic;
 };
 
@@ -103,10 +100,8 @@ static void pmb887x_tpu_timer_callback(void *opaque, int irq_id) {
 }
 
 static void tpu_update_state(struct pmb887x_tpu_t *p) {
-	uint32_t div = pmb887x_clc_get_rmc(&p->clc);
-
 	// Input freq for module
-	uint32_t ftpu = div > 0 ? pmb887x_cgu_get_fsys(p->cgu) / div : 0;
+	uint32_t ftpu = pmb887x_clc_get_hz(&p->clc);
 
 	// Update clock
 	if ((p->pllcon2 & TPU_PLLCON2_INIT) || (p->pllcon2 & TPU_PLLCON2_LOAD)) {
@@ -124,7 +119,7 @@ static void tpu_update_state(struct pmb887x_tpu_t *p) {
 	}
 
 	// Check if timer is enabled
-	p->enabled = pmb887x_clc_is_enabled(&p->clc) && freq > 0 && (p->param & TPU_PARAM_TINI) != 0 && pmb887x_dyn_timer_get_overflow(p->timer) >= 2;
+	p->enabled = freq > 0 && (p->param & TPU_PARAM_TINI) != 0 && pmb887x_dyn_timer_get_overflow(p->timer) >= 2;
 
 	pmb887x_dyn_timer_set_freq(p->timer, freq);
 	tpu_timer_control(p);
@@ -133,7 +128,7 @@ static void tpu_update_state(struct pmb887x_tpu_t *p) {
 	if (!(p->param & TPU_PARAM_TINI))
 		pmb887x_dyn_timer_reset(p->timer);
 
-	DPRINTF("fsys=%d, ftpu=%d, fcounter=%d [%s]\n", pmb887x_cgu_get_fsys(p->cgu), ftpu, freq, p->enabled ? "ON" : "OFF");
+	DPRINTF("input=%d, ftpu=%d, fcounter=%d [%s]\n", clock_get_hz(p->clc.clock), ftpu, freq, p->enabled ? "ON" : "OFF");
 	//	pmb887x_dyn_timer_run(p->timer);
 }
 
@@ -143,13 +138,8 @@ static void tpu_vic_callback(void *opaque, int action, int irq) {
 	DPRINTF("{{{{ VIC }}}} - %d %d\n", action, irq);
 }
 
-static void tpu_update_state_callback(void *opaque) {
-	struct pmb887x_tpu_t *p = (struct pmb887x_tpu_t *) opaque;
-	uint32_t fsys = pmb887x_cgu_get_fsys(p->cgu);
-	if (p->last_fsys != fsys) {
-		tpu_update_state(p);
-		p->last_fsys = fsys;
-	}
+static void tpu_clock_update(void *opaque) {
+	tpu_update_state(opaque);
 }
 
 static uint32_t tpu_ram_read(struct pmb887x_tpu_t *p, uint32_t offset, unsigned size) {
@@ -315,7 +305,6 @@ static void tpu_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned si
 	switch (haddr) {
 		case TPU_CLC:
 			pmb887x_clc_set(&p->clc, value);
-			tpu_update_state(p);
 		break;
 
 		case TPU_CORRECTION:
@@ -416,6 +405,8 @@ static const MemoryRegionOps io_ops = {
 
 static void tpu_init(Object *obj) {
 	struct pmb887x_tpu_t *p = PMB887X_TPU(obj);
+	pmb887x_clc_init(&p->clc, DEVICE(obj));
+	pmb887x_clc_set_callback(&p->clc, tpu_clock_update, p);
 	memory_region_init_io(&p->mmio, obj, &io_ops, p, "pmb887x-tpu", TPU_RAM0 + TPU_RAM_SIZE);
 	sysbus_init_mmio(SYS_BUS_DEVICE(obj), &p->mmio);
 
@@ -433,7 +424,7 @@ static void tpu_init(Object *obj) {
 static void tpu_realize(DeviceState *dev, Error **errp) {
 	struct pmb887x_tpu_t *p = PMB887X_TPU(dev);
 
-	pmb887x_clc_init(&p->clc);
+	pmb887x_clc_set(&p->clc, 1U << MOD_CLC_RMC_SHIFT);
 
 	int index = 0;
 
@@ -454,7 +445,6 @@ static void tpu_realize(DeviceState *dev, Error **errp) {
 	p->timer = pmb887x_dyn_timer_new(2, pmb887x_tpu_timer_callback, p);
 	tpu_update_state(p);
 
-	pmb887x_cgu_add_freq_update_callback(p->cgu, tpu_update_state_callback, p);
 }
 
 static void tpu_reset(DeviceState *dev) {
@@ -466,7 +456,7 @@ static void tpu_reset(DeviceState *dev) {
 	pmb887x_dyn_timer_irq_set_threshold(p->timer, 0, 0);
 	pmb887x_dyn_timer_irq_set_threshold(p->timer, 1, 0);
 
-	pmb887x_clc_init(&p->clc);
+	pmb887x_clc_set(&p->clc, 1U << MOD_CLC_RMC_SHIFT);
 
 	for (size_t i = 0; i < ARRAY_SIZE(p->src); i++)
 		pmb887x_src_reset(&p->src[i]);
@@ -486,13 +476,11 @@ static void tpu_reset(DeviceState *dev) {
 	memset(p->unk, 0, sizeof(p->unk));
 	p->L = 0;
 	p->K = 0;
-	p->last_fsys = 0;
 
 	tpu_update_state(p);
 }
 
 static const Property tpu_properties[] = {
-	DEFINE_PROP_LINK("cgu", struct pmb887x_tpu_t, cgu, "pmb887x-cgu", struct pmb887x_cgu_t *),
 	DEFINE_PROP_LINK("vic", struct pmb887x_tpu_t, vic, "pmb887x-vic", struct pmb887x_vic_t *),
 };
 

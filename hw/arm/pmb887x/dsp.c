@@ -520,6 +520,7 @@ static const MemoryRegionOps io_ops = {
 
 static void dsp_init(Object *obj) {
 	dsp_state_t *p = PMB887X_DSP(obj);
+	pmb887x_clc_init(&p->clc, DEVICE(obj));
 	memory_region_init_io(&p->mmio, obj, &io_ops, p, "pmb887x-dsp", DSP_IO_SIZE);
 	sysbus_init_mmio(SYS_BUS_DEVICE(obj), &p->mmio);
 	qdev_init_gpio_in_named(DEVICE(obj), dsp_reset_input, "RESET_IN", 1);
@@ -569,7 +570,7 @@ static void dsp_realize(DeviceState *dev, Error **errp) {
 	dsp_state_t *p = PMB887X_DSP(dev);
 	const pmb887x_dsp_peripheral_config_t *afe_config;
 
-	pmb887x_clc_init(&p->clc);
+	pmb887x_clc_set(&p->clc, 1U << MOD_CLC_RMC_SHIFT);
 
 	p->sem_set = 0x01;
 	p->sem_status = 0x00;
@@ -1452,6 +1453,7 @@ static const MemoryRegionOps ram_io_ops = {
 
 static void dsp_init(Object *obj) {
 	dsp_state_t *p = PMB887X_DSP(obj);
+	pmb887x_clc_init(&p->clc, DEVICE(obj));
 	p->ssc_bus = ssi_create_bus(DEVICE(obj), DSP_SSC_BUS_NAME);
 	memory_region_init(&p->mmio, obj, "pmb887x-dsp", DSP_IO_SIZE);
 	memory_region_init_io(&p->regs, obj, &io_ops, p, "pmb887x-dsp-regs", DSP_RAM0);
