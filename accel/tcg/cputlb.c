@@ -1967,7 +1967,19 @@ tb_page_addr_t get_page_addr_code_hostp(CPUArchState *env, vaddr addr,
         return -1;
     }
 
-    return qemu_ram_addr_from_host_nofail(p);
+    /*
+     * The entry already knows the page's ram_addr_t: xlat_offset is
+     * ram_addr - vaddr for RAM and the offset within the region for a
+     * ROMD device, whose RAM block starts at the region's ram_addr.
+     * qemu_ram_addr_from_host_nofail() would take the RCU read lock
+     * and walk the block list for the same number, on every jump-cache
+     * miss that falls through to the qht.
+     */
+    if (full->io_rom_device) {
+        return memory_region_get_ram_addr(full->section->mr)
+               + addr + full->xlat_offset;
+    }
+    return addr + full->xlat_offset;
 }
 
 /* Load/store with atomicity primitives. */
