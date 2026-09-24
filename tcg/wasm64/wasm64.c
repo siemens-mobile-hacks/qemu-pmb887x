@@ -25,11 +25,12 @@ QEMU_BUILD_BUG_ON(W64_TCP_TIDX != W64_DESC_TIDX);
 
 __thread uintptr_t w64_tb_ptr;
 
-/* per-vCPU state: frame + slot layout
+/* per-thread state: frame + slot layout
  *   frame + 0 .. 8    goto_ptr handoff slot ([sp-8])
- *   frame + 16 ...    call frame ($sp = frame + 16) */
-static bool w64_inited;
-static uint8_t *w64_frame;
+ *   frame + 16 ...    call frame ($sp = frame + 16)
+ * Per thread because the pmb887x DSP JIT runs TBs through this dispatcher
+ * on a thread of its own. */
+static __thread uint8_t *w64_frame;
 
 typedef uint32_t w64_run_fn(uintptr_t env, uintptr_t sp, uintptr_t tp,
                             uint32_t tidx);
@@ -48,10 +49,14 @@ void w64_icount2_sync_now(void)
 
 static void w64_init(void)
 {
-    if (!w64_inited) {
-        size_t sz = 16 + TCG_STATIC_CALL_ARGS_SIZE + TCG_STATIC_FRAME_SIZE;
-        w64_frame = g_malloc0(sz);
-        w64_inited = true;
+    static bool ls_armed;
+
+    if (!w64_frame) {
+        w64_frame = g_malloc0(16 + TCG_STATIC_CALL_ARGS_SIZE +
+                              TCG_STATIC_FRAME_SIZE);
+    }
+    if (!ls_armed) {
+        ls_armed = true;
         /* Eager lockstep init: an armed prologue tests w64_ls_on before
          * its import call, so the fold must be armed before the first
          * executed TB's prologue runs. */
