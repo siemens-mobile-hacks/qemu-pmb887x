@@ -8276,20 +8276,16 @@ void cpsr_write(CPUARMState *env, uint32_t val, uint32_t mask,
     val |= 0x10;
 
     /*
-     * Only M, E and IL feed hflags (thumb and condexec are read straight
-     * out of env by arm_get_tb_cpu_state, not cached here), and only a
-     * write that actually moves one of them needs the rebuild.  Testing
-     * the mask alone rebuilt on every `msr cpsr_c`, which is how firmware
-     * masks interrupts - so every critical section in the guest, 873k
-     * rebuilds a second on an EL71 boot, one per 67 guest instructions.
-     * Computed after the M4 quirk above, so @val is the value that will
-     * actually land.  Conservative where the mode switch is later refused
-     * (mask loses CPSR_M): that rebuilds once for nothing, and the
-     * bad-mode path that adds CPSR_IL is only reached when the mode bits
-     * differ, which this test has already caught.
+     * M, E, IL and PAN are the only CPSR bits hflags read, so rebuild only
+     * when a write moves one of them.  Testing the mask alone rebuilt on
+     * every `msr cpsr_c` - every guest critical section, 873k rebuilds a
+     * second on an EL71 boot.  A mode switch refused below rebuilds once
+     * for nothing; the bad-mode path that sets IL is only reached when the
+     * mode bits differ, which this test already caught.
      */
     rebuild_hflags = (write_type != CPSRWriteRaw) &&
-        ((env->uncached_cpsr ^ val) & mask & (CPSR_M | CPSR_E | CPSR_IL)) != 0;
+        ((env->uncached_cpsr ^ val) & mask &
+         (CPSR_M | CPSR_E | CPSR_IL | CPSR_PAN)) != 0;
 
     if (mask & CPSR_NZCV) {
         env->ZF = (~val) & CPSR_Z;
@@ -9736,6 +9732,7 @@ void arm_cpu_do_interrupt(CPUState *cs)
     arm_do_plugin_vcpu_discon_cb(cs, last_pc);
 }
 
+#ifdef CONFIG_TCG_WASM64
 /*
  * The EXCP_SWI case of the function above, for the TB that executed the
  * svc (translate.c DISAS_SWI) on a core without EL2/EL3: the target is
@@ -9798,6 +9795,7 @@ void arm_take_svc_aarch32(CPUARMState *env, uint32_t syndrome)
         qatomic_set(&cs->neg.icount_decr.u16.high, -1);
     }
 }
+#endif /* CONFIG_TCG_WASM64 */
 #endif /* !CONFIG_USER_ONLY */
 
 uint64_t arm_sctlr(CPUARMState *env, int el)

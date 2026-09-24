@@ -161,9 +161,6 @@ void arm_gen_condlabel(DisasContext *s)
     if (!s->condjmp) {
         s->condlabel = gen_disas_label(s);
         s->condjmp = 1;
-#ifdef CONFIG_TCG_WASM64
-        s->condlabel.label->w64_condskip = true;
-#endif
     }
 }
 
@@ -1479,8 +1476,7 @@ static void gen_goto_ptr(DisasContext *s, uint32_t condexec)
      */
     if (!(tb_cflags(s->base.tb) & CF_NO_GOTO_PTR) &&
         !arm_dc_feature(s, ARM_FEATURE_M)) {
-        struct W64LookupCache *lc =
-            (struct W64LookupCache *)&s->base.tb->w64_lc;
+        struct W64LookupCache *lc = &s->base.tb->w64_lc;
         uint32_t key[3] = { s->base.tb->flags, s->w64_thumb, condexec };
         uint8_t mask = 0;
 
@@ -1491,12 +1487,10 @@ static void gen_goto_ptr(DisasContext *s, uint32_t condexec)
         }
         if (s->w64_lc_sites == 0) {
             s->w64_lc_sites = 1;
-            memcpy(s->w64_lc_key, key, sizeof(key));
-            s->w64_lc_mask = mask;
             memcpy(lc->key32, key, sizeof(key));
             lc->dynmask = mask;
-        } else if (mask != s->w64_lc_mask ||
-                   memcmp(s->w64_lc_key, key, sizeof(key)) != 0) {
+        } else if (mask != lc->dynmask ||
+                   memcmp(lc->key32, key, sizeof(key)) != 0) {
             /* a second exit keyed differently: it stays off the slot, but
              * the global cache is not the slot's and still covers it */
             gen_goto_ptr_pcc(tcg_temp_new_ptr(), NULL, key, mask);
@@ -1948,7 +1942,7 @@ static bool w64_abs_cross_page(DisasContext *s, vaddr dest)
 
     if (s->w64_inl_depth || s->w64_abs_rec >= 0 ||
         w64_inl_pending_n >= W64_INL_REC || s->pc_save == -1 ||
-        (tb_cflags(db->tb) & (CF_PCREL | CF_COUNT_MASK)) ||
+        (tb_cflags(db->tb) & CF_COUNT_MASK) ||
         w64_tb_icount_exact()) {
         return false;
     }
@@ -1998,16 +1992,10 @@ static bool w64_inline_call(DisasContext *s, int64_t diff)
     }
     if (db->is_jmp != DISAS_NEXT ||
         s->eci || unlikely(s->ss_active) ||
-        (tb_cflags(tb) & (CF_SINGLE_STEP | CF_PCREL | CF_COUNT_MASK)) ||
+        (tb_cflags(tb) & (CF_SINGLE_STEP | CF_COUNT_MASK)) ||
         s->pc_save == -1 ||
         w64_tb_icount_exact() || arm_dc_feature(s, ARM_FEATURE_M) ||
         s->w64_thumb != s->thumb) {
-        /*
-         * CF_PCREL: the unwind data then holds page offsets that
-         * restore_state_to_opc completes from the page cpu_R[15] holds,
-         * which a callee on another page breaks (wasm64 runs without it,
-         * target/arm/cpu.c).
-         */
         return false;
     }
     /* a bl in the last word of its page returns to a page this TB has no
@@ -2034,7 +2022,6 @@ static bool w64_inline_call(DisasContext *s, int64_t diff)
         s->w64_inl_recidx[depth] = w64_inl_pending_n++;
     }
     s->w64_inl_ret[depth] = ret | s->thumb;
-    s->w64_inl_entry[depth] = dest;
     s->w64_inl_pstart[depth] = s->page_start;
     s->w64_inl_page_save[depth] = s->w64_inl_page;
     s->w64_inl_depth = depth + 1;
@@ -2079,7 +2066,7 @@ static bool w64_inline_return(DisasContext *s, int rm)
         s->w64_inl_tracked = true;
     }
 
-    /* the return address as lr holds it, pc-relative under CF_PCREL */
+    /* the return address as lr holds it */
     lr = load_reg(s, 14);
     want = tcg_temp_new_i32();
     gen_pc_plus_diff(s, want, (int64_t)ret - (int64_t)s->pc_curr);
@@ -2340,7 +2327,7 @@ static bool w64_psr_can_continue(DisasContext *s)
 
     if (s->base.is_jmp != DISAS_NEXT ||
         s->eci || unlikely(s->ss_active) || s->pc_save == -1 ||
-        (tb_cflags(tb) & (CF_SINGLE_STEP | CF_PCREL | CF_COUNT_MASK)) ||
+        (tb_cflags(tb) & (CF_SINGLE_STEP | CF_COUNT_MASK)) ||
         w64_tb_icount_exact()) {
         return false;
     }
@@ -2509,7 +2496,7 @@ static int gen_set_psr(DisasContext *s, uint32_t mask, int spsr, TCGv_i32 t0)
         return 0;
     }
 #endif
-#ifdef __EMSCRIPTEN__
+#ifdef CONFIG_TCG_WASM64
     /*
      * Continue through goto_ptr instead of a plain exit: helper_cpsr_write
      * requests the next-TB-start exit whenever an interrupt is pending,
@@ -2517,9 +2504,7 @@ static int gen_set_psr(DisasContext *s, uint32_t mask, int spsr, TCGv_i32 t0)
      */
     gen_pc_plus_diff(s, cpu_R[15], curr_insn_len(s));
     s->base.is_jmp = DISAS_JUMP;
-#ifdef CONFIG_TCG_WASM64
     s->w64_dynkey = true;
-#endif
 #else
     gen_lookup_tb(s);
 #endif
@@ -2759,12 +2744,10 @@ static void store_pc_exc_ret(DisasContext *s, TCGv_i32 pc)
  */
 static void gen_eret_end_tb(DisasContext *s)
 {
-#ifdef __EMSCRIPTEN__
+#ifdef CONFIG_TCG_WASM64
     /* Un-masked IRQs: the helper requests the next-TB-start exit */
     s->base.is_jmp = DISAS_JUMP;
-#ifdef CONFIG_TCG_WASM64
     s->w64_dynkey = true;
-#endif
 #else
     /* Must exit loop to check un-masked IRQs */
     s->base.is_jmp = DISAS_EXIT;
@@ -8225,6 +8208,7 @@ static void arm_tr_tb_stop(DisasContextBase *dcbase, CPUState *cpu)
             tcg_gen_exit_tb(NULL, 0);
             break;
         case DISAS_NORETURN:
+            /* nothing more to generate */
             break;
         case DISAS_WFI:
             gen_helper_wfi(tcg_env, tcg_constant_i32(curr_insn_len(dc)));

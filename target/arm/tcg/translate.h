@@ -130,8 +130,6 @@ typedef struct DisasContext {
     int8_t w64_thumb;
     bool w64_dynkey;
     uint8_t w64_lc_sites;
-    uint32_t w64_lc_key[3];
-    uint8_t w64_lc_mask;
     /*
      * Deferred taken paths of conditional branches (gen_jmp_tb): instead
      * of ending the TB there, the branch jumps to @label and translation
@@ -176,7 +174,6 @@ typedef struct DisasContext {
 #define W64_INL_DEPTH 4
 #define W64_INL_MISS  16
     vaddr w64_inl_ret[W64_INL_DEPTH];
-    vaddr w64_inl_entry[W64_INL_DEPTH];
     vaddr w64_inl_pstart[W64_INL_DEPTH];
     uint8_t w64_inl_page_save[W64_INL_DEPTH];
     uint8_t w64_inl_recidx[W64_INL_DEPTH];  /* w64_inl_pending slot per level */

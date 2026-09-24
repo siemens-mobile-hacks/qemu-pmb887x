@@ -1581,12 +1581,14 @@ bool pmsav8_mpu_lookup(CPUARMState *env, uint32_t address,
 
 void arm_log_exception(CPUState *cs);
 
+#ifdef CONFIG_TCG_WASM64
 /*
  * Take an SVC to EL1 from within the TB that executed it, on a core
  * without EL2/EL3 (translate.c DISAS_SWI, wasm64 only): the EXCP_SWI
  * case of arm_cpu_do_interrupt() without the dispatcher round trip.
  */
 void arm_take_svc_aarch32(CPUARMState *env, uint32_t syndrome);
+#endif
 
 /* Implementation of SysemuCPUOps::translate_for_debug */
 bool arm_cpu_translate_for_debug(CPUState *cs, vaddr addr,

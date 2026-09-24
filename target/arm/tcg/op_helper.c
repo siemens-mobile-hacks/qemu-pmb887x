@@ -407,7 +407,7 @@ void HELPER(wfi)(CPUARMState *env, uint32_t insn_len)
     env->halt_reason = HALT_WFI;
     cs->exception_index = EXCP_HLT;
     cs->halted = 1;
-#ifdef __EMSCRIPTEN__
+#ifdef CONFIG_TCG_WASM64
     /*
      * No unwind: WFI always ends its TB, whose exit_tb(0) follows this
      * call, and cpu_handle_interrupt delivers a pending exception_index
@@ -803,20 +803,13 @@ uint32_t HELPER(cpsr_read)(CPUARMState *env)
 }
 
 /*
- * The CPSR bits cpsr_write() itself treats as hflags inputs: when the
- * write mask covers any of them (and the write is not Raw) it rebuilds
- * hflags at its tail.  Keep this in step with `rebuild_hflags` there.
- */
-#define CPSR_HFLAGS_INPUTS (CPSR_M | CPSR_E | CPSR_IL)
-
-/*
- * On emscripten the TB that wrote CPSR continues through goto_ptr rather
- * than a plain exit (gen_set_psr / gen_rfe): if any interrupt is pending,
+ * On wasm64 the TB that wrote CPSR continues through goto_ptr rather than
+ * a plain exit (gen_set_psr / gen_rfe): if any interrupt is pending,
  * including one this write unmasked, end the next TB at its start.
  */
 static void cpsr_write_check_irq(CPUARMState *env)
 {
-#ifdef __EMSCRIPTEN__
+#ifdef CONFIG_TCG_WASM64
     CPUState *cs = env_cpu(env);
 
     if (qatomic_read(&cs->interrupt_request)) {
@@ -827,31 +820,8 @@ static void cpsr_write_check_irq(CPUARMState *env)
 
 void HELPER(cpsr_write)(CPUARMState *env, uint32_t val, uint32_t mask)
 {
-    uint32_t before = env->uncached_cpsr;
-
+    /* cpsr_write() rebuilds hflags itself when an input to them moves. */
     cpsr_write(env, val, mask, CPSRWriteByInstr);
-    /*
-     * Upstream rebuilds hflags unconditionally here, with a TODO saying
-     * not all cpsr bits are relevant.  They are not: every field hflags
-     * reads out of the CPSR (mode -> EL/mmu_idx/sctlr, E, IL, PAN) lives
-     * in uncached_cpsr, while the bits this firmware writes hundreds of
-     * thousands of times a second - the I/F interrupt masks of its
-     * critical sections, and the condition flags - are held in the
-     * dedicated env fields listed by CACHED_CPSR_BITS and are not hflags
-     * inputs.  So an unchanged uncached_cpsr means unchanged hflags, and
-     * the ~76 ns full rebuild can be skipped.
-     *
-     * And when the mask does touch M/E/IL, cpsr_write() has already
-     * rebuilt them at its own tail, after writing every bit of
-     * uncached_cpsr - so a rebuild here would be a second full pass over
-     * identical state.  PAN is why the test is the mask and not just
-     * "did anything change": a write that moves PAN alone leaves
-     * cpsr_write()'s own condition false and still needs this one.
-     */
-    if (unlikely(before != env->uncached_cpsr) &&
-        !(mask & CPSR_HFLAGS_INPUTS)) {
-        arm_rebuild_hflags(env);
-    }
     cpsr_write_check_irq(env);
 }
 
@@ -864,16 +834,9 @@ void HELPER(cpsr_write_eret)(CPUARMState *env, uint32_t val)
      * wasm64: the hook lists are empty on a core without a PMU or GICv3
      * cpuif, and taking the BQL around nothing cost two lock/unlock pairs
      * per exception return - 1.29 M bql_lock() calls a second while the
-     * SL65 plays a video.
-     *
-     * The pair's real bql_unlock() is load-bearing, though, and is kept
-     * below as bql_release_lazy(): it ends the hold a bql_unlock_mmio()
-     * deferred (system/cpus.c).  An ISR acks its device through MMIO and
-     * returns here into the firmware's idle spin, which on an icount=none
-     * board is one chained loop that never comes back to cpu_exec_loop();
-     * keeping the hold across the return starved the main loop of the BQL,
-     * and so of the timer that ends the spin - KE970 sat at 408 MIPS with
-     * the main loop stopped.
+     * SL65 plays a video.  The pair's unlock still has to end a hold that
+     * bql_unlock_mmio() deferred, or an idle spin entered by this return
+     * starves the main loop of the BQL (KE970 froze at 408 MIPS).
      */
 #ifdef CONFIG_TCG_WASM64
     bool hooks = !QLIST_EMPTY(&cpu->pre_el_change_hooks) ||
@@ -897,12 +860,6 @@ void HELPER(cpsr_write_eret)(CPUARMState *env, uint32_t val)
      * state. Do the masking now.
      */
     env->regs[15] &= (env->thumb ? ~1 : ~3);
-    /* as in HELPER(cpsr_write): cpsr_write() has already rebuilt them
-     * when the mask covered M/E/IL, and the PC masking just above is not
-     * an hflags input. */
-    if (!(mask & CPSR_HFLAGS_INPUTS)) {
-        arm_rebuild_hflags(env);
-    }
 
     if (hooks) {
         bql_lock();
@@ -917,6 +874,7 @@ void HELPER(cpsr_write_eret)(CPUARMState *env, uint32_t val)
     cpsr_write_check_irq(env);
 }
 
+#ifdef CONFIG_TCG_WASM64
 void HELPER(svc_inline)(CPUARMState *env, uint32_t syndrome)
 {
 #ifdef CONFIG_USER_ONLY
@@ -925,6 +883,7 @@ void HELPER(svc_inline)(CPUARMState *env, uint32_t syndrome)
     arm_take_svc_aarch32(env, syndrome);
 #endif
 }
+#endif
 
 /* Access to user mode registers from privileged modes.  */
 uint32_t HELPER(get_user_reg)(CPUARMState *env, uint32_t regno)

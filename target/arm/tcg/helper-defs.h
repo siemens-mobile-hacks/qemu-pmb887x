@@ -66,7 +66,9 @@ DEF_HELPER_1(sev, void, env)
 
 DEF_HELPER_3(cpsr_write, void, env, i32, i32)
 DEF_HELPER_2(cpsr_write_eret, void, env, i32)
+#ifdef CONFIG_TCG_WASM64
 DEF_HELPER_2(svc_inline, void, env, i32)
+#endif
 DEF_HELPER_1(cpsr_read, i32, env)
 
 DEF_HELPER_3(v7m_msr, void, env, i32, i32)
