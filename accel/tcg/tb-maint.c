@@ -1665,6 +1665,24 @@ static bool tb_page_covers(PageDesc *p, tb_page_addr_t start,
     page_unlock(p);
     return covers;
 }
+
+/*
+ * The store fast path's question (cputlb.c do_ram_notdirty_1p): the page
+ * holds TBs, so its protection stays, and code_mask says none of them
+ * covers these bytes.  An empty or unknown page answers false: that is
+ * where notdirty_write lifts the protection.
+ */
+bool tb_store_misses_code(ram_addr_t start, unsigned len)
+{
+    PageDesc *p = page_find(start >> TARGET_PAGE_BITS);
+    unsigned lo, hi;
+
+    if (!p || p->first_tb == 0) {
+        return false;
+    }
+    tb_page_granules(start, start + len - 1, &lo, &hi);
+    return !tb_gmask_test(p->code_mask, lo, hi);
+}
 #endif /* CONFIG_TCG_WASM64 */
 
 /*

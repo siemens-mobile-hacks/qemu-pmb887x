@@ -67,6 +67,10 @@ void tb_unlock_page_n(TranslationBlock *, unsigned, tb_page_addr_t);
  */
 bool tb_invalidate_phys_range_fast(CPUState *cpu, ram_addr_t ram_addr,
                                    unsigned size, uintptr_t retaddr);
+#ifdef CONFIG_TCG_WASM64
+/* True if @ram_addr's page holds TBs and none of them covers the store. */
+bool tb_store_misses_code(ram_addr_t ram_addr, unsigned size);
+#endif
 #endif /* CONFIG_SOFTMMU */
 
 bool tb_invalidate_phys_page_unwind(CPUState *cpu, tb_page_addr_t addr,

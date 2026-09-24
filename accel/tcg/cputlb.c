@@ -2506,6 +2506,55 @@ void *do_ram_1p(CPUState *cpu, vaddr addr, MemOpIdx oi, MMUAccessType type,
     }
     return NULL;
 }
+
+/*
+ * A store to a RAM page that holds translated code, when no TB covers the
+ * bytes stored.  Such a page keeps TLB_NOTDIRTY for as long as it holds
+ * any TB, so every store to it leaves the generated code; the generic
+ * route is mmu_lookup, mmu_watch_or_dirty and notdirty_write, which reads
+ * the CODE dirty bit and asks tb_page_covers whether to invalidate, and
+ * the answer is almost always no.  A J2ME game keeps its data on its code
+ * pages: 6700 such stores per Mi on game 5, 0.06 of them hitting a TB.
+ *
+ * Take exactly that shape here: a TLB hit whose only flag is NOTDIRTY
+ * (so no TLB_FORCE_SLOW and no slow_flags), aligned, within one page,
+ * and code_mask clear for the bytes.  The dirty bits notdirty_write
+ * would set are still set; what is skipped is the lookup frames, the
+ * CODE bit read, and tb_page_covers.  Everything else returns NULL and
+ * takes the generic path.
+ */
+static inline __attribute__((always_inline))
+void *do_ram_notdirty_1p(CPUState *cpu, vaddr addr, MemOpIdx oi,
+                         unsigned size)
+{
+    MemOp memop = get_memop(oi);
+    unsigned atom = memop & MO_ATOM_MASK;
+    unsigned a_mask = (1u << memop_alignment_bits(memop)) - 1;
+    unsigned s_mask = size - 1;
+    vaddr adj = a_mask >= s_mask ? 0 : s_mask - a_mask;
+    vaddr tlb_mask = (uint64_t)(int64_t)(int)TARGET_PAGE_MASK | a_mask;
+    uintptr_t mmu_idx = get_mmuidx(oi);
+    CPUTLBEntry *entry;
+    ram_addr_t ram_addr;
+
+    if (unlikely((memop & MO_BSWAP) ||
+                 (atom != MO_ATOM_NONE && atom != MO_ATOM_IFALIGN))) {
+        return NULL;
+    }
+    entry = tlb_entry(cpu, mmu_idx, addr);
+    if (tlb_read_idx(entry, MMU_DATA_STORE) !=
+        (((addr + adj) & tlb_mask) | TLB_NOTDIRTY)) {
+        return NULL;
+    }
+    ram_addr = addr +
+        cpu->neg.tlb.d[mmu_idx].fulltlb[tlb_index(cpu, mmu_idx, addr)]
+            .xlat_offset;
+    if (!tb_store_misses_code(ram_addr, size)) {
+        return NULL;
+    }
+    physical_memory_set_dirty_range(ram_addr, size, DIRTY_CLIENTS_NOCODE);
+    return (void *)((uintptr_t)addr + entry->addend);
+}
 #endif
 
 /*
@@ -3505,7 +3554,8 @@ static void do_st1_mmu(CPUState *cpu, vaddr addr, uint8_t val,
     {
         void *h = do_ram_1p(cpu, addr, oi, MMU_DATA_STORE, 1);
 
-        if (likely(h != NULL)) {
+        if (likely(h != NULL) ||
+            (h = do_ram_notdirty_1p(cpu, addr, oi, 1)) != NULL) {
             stb_p(h, val);
             return;
         }
@@ -3532,7 +3582,8 @@ static void do_st2_mmu(CPUState *cpu, vaddr addr, uint16_t val,
     {
         void *h = do_ram_1p(cpu, addr, oi, MMU_DATA_STORE, 2);
 
-        if (likely(h != NULL)) {
+        if (likely(h != NULL) ||
+            (h = do_ram_notdirty_1p(cpu, addr, oi, 2)) != NULL) {
             stw_he_p(h, val);
             return;
         }
@@ -3568,7 +3619,8 @@ static void do_st4_mmu(CPUState *cpu, vaddr addr, uint32_t val,
     {
         void *h = do_ram_1p(cpu, addr, oi, MMU_DATA_STORE, 4);
 
-        if (likely(h != NULL)) {
+        if (likely(h != NULL) ||
+            (h = do_ram_notdirty_1p(cpu, addr, oi, 4)) != NULL) {
             stl_he_p(h, val);
             return;
         }
@@ -3603,7 +3655,8 @@ static void do_st8_mmu(CPUState *cpu, vaddr addr, uint64_t val,
     {
         void *h = do_ram_1p(cpu, addr, oi, MMU_DATA_STORE, 8);
 
-        if (likely(h != NULL)) {
+        if (likely(h != NULL) ||
+            (h = do_ram_notdirty_1p(cpu, addr, oi, 8)) != NULL) {
             stq_he_p(h, val);
             return;
         }
