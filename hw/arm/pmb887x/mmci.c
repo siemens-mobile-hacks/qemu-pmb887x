@@ -30,6 +30,8 @@ struct pmb887x_mmci_t {
 	pmb887x_clc_reg_t clc;
 	qemu_irq gpio_dat0;
 	qemu_irq gpio_dat1;
+	qemu_irq gpio_dat2;
+	qemu_irq gpio_dat3;
 	qemu_irq gpio_cmd;
 	qemu_irq gpio_clk;
 };
@@ -97,10 +99,14 @@ static void mmci_init(Object *obj) {
 
 	qdev_init_gpio_in_named(dev, mmci_handle_gpio_input, "DAT0_IN", 1);
 	qdev_init_gpio_in_named(dev, mmci_handle_gpio_input, "DAT1_IN", 1);
+	qdev_init_gpio_in_named(dev, mmci_handle_gpio_input, "DAT2_IN", 1);
+	qdev_init_gpio_in_named(dev, mmci_handle_gpio_input, "DAT3_IN", 1);
 	qdev_init_gpio_in_named(dev, mmci_handle_gpio_input, "CMD_IN", 1);
 	qdev_init_gpio_in_named(dev, mmci_handle_gpio_input, "CLK_IN", 1);
 	qdev_init_gpio_out_named(dev, &p->gpio_dat0, "DAT0_OUT", 1);
 	qdev_init_gpio_out_named(dev, &p->gpio_dat1, "DAT1_OUT", 1);
+	qdev_init_gpio_out_named(dev, &p->gpio_dat2, "DAT2_OUT", 1);
+	qdev_init_gpio_out_named(dev, &p->gpio_dat3, "DAT3_OUT", 1);
 	qdev_init_gpio_out_named(dev, &p->gpio_cmd, "CMD_OUT", 1);
 	qdev_init_gpio_out_named(dev, &p->gpio_clk, "CLK_OUT", 1);
 }

@@ -172,12 +172,14 @@ static void pmb887x_init(MachineState *machine) {
 	// CGU
 	DeviceState *cgu = pmb887x_new_cpu_module("CGU");
 	sysbus_realize_and_unref(SYS_BUS_DEVICE(cgu), &error_fatal);
-	qdev_connect_clock_in(gpio, "clk", qdev_get_clock_out(cgu, "FPI1"));
+	qdev_connect_clock_in(gpio, "clk", qdev_get_clock_out(cgu, "FPI2"));
 	sysbus_realize_and_unref(SYS_BUS_DEVICE(gpio), &error_fatal);
 
 	// System Timer
 	DeviceState *stm = pmb887x_new_cpu_module("STM");
-	qdev_connect_clock_in(stm, "clk", qdev_get_clock_out(cgu, "FSTM"));
+	qdev_connect_clock_in(stm, "clk", qdev_get_clock_out(cgu, "FPI2"));
+	pmb887x_qdev_connect_gpio_out(cgu, "FPI2_PLL_SELECTED", 0,
+		qdev_get_gpio_in_named(stm, "RMC2_ENABLE_IN", 0));
 	sysbus_realize_and_unref(SYS_BUS_DEVICE(stm), &error_fatal);
 
 	// Time Processing Unit
@@ -187,6 +189,7 @@ static void pmb887x_init(MachineState *machine) {
 
 	// DMA Controller
 	DeviceState *dmac = pmb887x_new_cpu_module("DMAC");
+	qdev_connect_clock_in(dmac, "clk", qdev_get_clock_out(cgu, "DMA"));
 	object_property_set_link(OBJECT(dmac), "downstream", OBJECT(sysmem), &error_fatal);
 	sysbus_realize_and_unref(SYS_BUS_DEVICE(dmac), &error_fatal);
 
@@ -197,7 +200,7 @@ static void pmb887x_init(MachineState *machine) {
 
 	// DSP
 	DeviceState *dsp = pmb887x_new_cpu_module("DSP");
-	qdev_connect_clock_in(dsp, "clk", qdev_get_clock_out(cgu, "FSYS"));
+	qdev_connect_clock_in(dsp, "clk", qdev_get_clock_out(cgu, "DSP"));
 	pmb887x_dsp_set_config(dsp, pmb887x_cpu_get(pmb887x_board()->cpu)->dsp_config);
 	pmb887x_board_init_dsp(dsp);
 	qdev_connect_clock_in(dsp, "GSM_CLOCK", qdev_get_clock_out(tpu, "GSM_CLOCK"));
@@ -218,7 +221,7 @@ static void pmb887x_init(MachineState *machine) {
 	if (pmb887x_board()->cpu == CPU_PMB8876) {
 		// MMCI
 		DeviceState *mmci = pmb887x_new_cpu_module("MMCI");
-		qdev_connect_clock_in(mmci, "clk", qdev_get_clock_out(cgu, "FSYS"));
+		qdev_connect_clock_in(mmci, "clk", qdev_get_clock_out(cgu, "MMCI"));
 		sysbus_realize_and_unref(SYS_BUS_DEVICE(mmci), &error_fatal);
 
 		// Multi Media Controller Interface
@@ -248,7 +251,7 @@ static void pmb887x_init(MachineState *machine) {
 	// USIF (Bluetooth HCI transport, PMB8876 only)
 	if (pmb887x_board()->cpu == CPU_PMB8876) {
 		DeviceState *usif = pmb887x_new_cpu_module("USIF");
-		qdev_connect_clock_in(usif, "clk", qdev_get_clock_out(cgu, "FPI1"));
+		qdev_connect_clock_in(usif, "clk", qdev_get_clock_out(cgu, "MMCI"));
 		qdev_prop_set_chr(DEVICE(usif), "chardev", serial_hd(2));
 		sysbus_realize_and_unref(SYS_BUS_DEVICE(usif), &error_fatal);
 	}
@@ -281,7 +284,7 @@ static void pmb887x_init(MachineState *machine) {
 	const char *stop_on_excp = getenv("QEMU_ARM_STOP_ON_EXCP");
 	if (stop_on_excp && strcmp(stop_on_excp, "1") == 0)
 		object_property_set_bool(OBJECT(scu), "stop_on_watchdog", true, &error_fatal);
-	qdev_connect_clock_in(scu, "clk", qdev_get_clock_out(cgu, "FSYS"));
+	qdev_connect_clock_in(scu, "clk", qdev_get_clock_out(cgu, "WDT"));
 	object_property_set_link(OBJECT(scu), "brom_mirror", OBJECT(brom_mirror), &error_fatal);
 	object_property_set_link(OBJECT(scu), "sccu", OBJECT(sccu), &error_fatal);
 	object_property_set_link(OBJECT(scu), "dmac", OBJECT(dmac), &error_fatal);
@@ -302,12 +305,12 @@ static void pmb887x_init(MachineState *machine) {
 
 	// CAPCOM0
 	DeviceState *capcom0 = pmb887x_new_cpu_module("CAPCOM0");
-	qdev_connect_clock_in(capcom0, "clk", qdev_get_clock_out(cgu, "FSYS"));
+	qdev_connect_clock_in(capcom0, "clk", qdev_get_clock_out(cgu, "FPI2"));
 	sysbus_realize_and_unref(SYS_BUS_DEVICE(capcom0), &error_fatal);
 	
 	// CAPCOM1
 	DeviceState *capcom1 = pmb887x_new_cpu_module("CAPCOM1");
-	qdev_connect_clock_in(capcom1, "clk", qdev_get_clock_out(cgu, "FSYS"));
+	qdev_connect_clock_in(capcom1, "clk", qdev_get_clock_out(cgu, "FPI2"));
 	sysbus_realize_and_unref(SYS_BUS_DEVICE(capcom1), &error_fatal);
 
 	// RTC
@@ -321,12 +324,12 @@ static void pmb887x_init(MachineState *machine) {
 
 	// GPTU0
 	DeviceState *gptu0 = pmb887x_new_cpu_module("GPTU0");
-	qdev_connect_clock_in(gptu0, "clk", qdev_get_clock_out(cgu, "FGPTU"));
+	qdev_connect_clock_in(gptu0, "clk", qdev_get_clock_out(cgu, "FPI2"));
 	sysbus_realize_and_unref(SYS_BUS_DEVICE(gptu0), &error_fatal);
 	
 	// GPTU1
 	DeviceState *gptu1 = pmb887x_new_cpu_module("GPTU1");
-	qdev_connect_clock_in(gptu1, "clk", qdev_get_clock_out(cgu, "FGPTU"));
+	qdev_connect_clock_in(gptu1, "clk", qdev_get_clock_out(cgu, "FPI2"));
 	sysbus_realize_and_unref(SYS_BUS_DEVICE(gptu1), &error_fatal);
 
 	// ADC

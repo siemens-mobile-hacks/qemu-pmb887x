@@ -39,15 +39,19 @@ struct pmb887x_cgu_t {
 	
 	uint32_t frtc;
 	uint32_t fsys;
-	uint32_t fstm;
+	uint32_t fpi2;
 	uint32_t fahb;
 	uint32_t fcpu;
+	bool fpi2_pll_selected;
 	Clock *osc_clock;
 	Clock *rtc_clock;
 	Clock *sys_clock;
-	Clock *stm_clock;
-	Clock *gptu_clock;
+	Clock *fpi2_clock;
+	Clock *wdt_clock;
 	Clock *fpi1_clock;
+	Clock *dsp_clock;
+	Clock *dma_clock;
+	Clock *mmci_clock;
 	
 	uint32_t osc;
 	uint32_t con0;
@@ -56,7 +60,10 @@ struct pmb887x_cgu_t {
 	uint32_t con3;
 
 	qemu_irq gpio_clk32;
+	qemu_irq gpio_fpi2_pll_selected;
 };
+
+static void cgu_update_state(struct pmb887x_cgu_t *p);
 
 static void cgu_pll_lock_timer_expired(void *opaque) {
 	pmb887x_cgu_t *p = opaque;
@@ -65,29 +72,73 @@ static void cgu_pll_lock_timer_expired(void *opaque) {
 		return;
 
 	p->locked = true;
+	cgu_update_state(p);
 	pmb887x_src_update(&p->src, 0, MOD_SRC_SETR);
 }
 
-// Apply dividers for AHB freq
-static uint32_t cgu_ahb_div(uint32_t freq, uint32_t k1, uint32_t k2) {
-	if (freq == 0)
-		return 0;
-	if (k1 == 0)
-		return freq / 8;
-	return muldiv64(freq, 12, k1 * 6 + k2);
-}
-
 // Freq after PLL
-static uint32_t cgu_get_pll_freq(pmb887x_cgu_t *p) {
+static uint32_t cgu_get_pll_core_freq(pmb887x_cgu_t *p) {
+	if ((p->osc & CGU_OSC_PLL_POWER_UP) == 0 || !p->locked)
+		return 0;
+
 	// fPLL = fOSC * (NDIV + 1) / (MDIV + 1)
 	uint32_t ndiv = (p->osc & CGU_OSC_NDIV) >> CGU_OSC_NDIV_SHIFT;
 	uint32_t mdiv = (p->osc & CGU_OSC_MDIV) >> CGU_OSC_MDIV_SHIFT;
 	return muldiv64(p->xtal, ndiv + 1, mdiv + 1);
 }
 
+static uint32_t cgu_get_pll_freq(pmb887x_cgu_t *p) {
+	if ((p->osc & CGU_OSC_PLL_BYPASS_N) == 0)
+		return p->xtal;
+
+	return cgu_get_pll_core_freq(p);
+}
+
+static uint32_t cgu_get_phase_freq(pmb887x_cgu_t *p, uint32_t phase) {
+	uint32_t power_up;
+	uint32_t bypass_n;
+	uint32_t k1;
+	uint32_t k2;
+
+	switch (phase) {
+		case 1:
+			power_up = CGU_OSC_PHASE1_POWER_UP;
+			bypass_n = CGU_OSC_PHASE1_BYPASS_N;
+			k1 = (p->con0 & CGU_CON0_PHASE1_K1) >> CGU_CON0_PHASE1_K1_SHIFT;
+			k2 = (p->con0 & CGU_CON0_PHASE1_K2) >> CGU_CON0_PHASE1_K2_SHIFT;
+			break;
+		case 2:
+			power_up = CGU_OSC_PHASE2_POWER_UP;
+			bypass_n = CGU_OSC_PHASE2_BYPASS_N;
+			k1 = (p->con0 & CGU_CON0_PHASE2_K1) >> CGU_CON0_PHASE2_K1_SHIFT;
+			k2 = (p->con0 & CGU_CON0_PHASE2_K2) >> CGU_CON0_PHASE2_K2_SHIFT;
+			break;
+		case 3:
+			power_up = CGU_OSC_PHASE3_POWER_UP;
+			bypass_n = CGU_OSC_PHASE3_BYPASS_N;
+			k1 = (p->con0 & CGU_CON0_PHASE3_K1) >> CGU_CON0_PHASE3_K1_SHIFT;
+			k2 = (p->con0 & CGU_CON0_PHASE3_K2) >> CGU_CON0_PHASE3_K2_SHIFT;
+			break;
+		case 4:
+			power_up = CGU_OSC_PHASE4_POWER_UP;
+			bypass_n = CGU_OSC_PHASE4_BYPASS_N;
+			k1 = (p->con0 & CGU_CON0_PHASE4_K1) >> CGU_CON0_PHASE4_K1_SHIFT;
+			k2 = (p->con0 & CGU_CON0_PHASE4_K2) >> CGU_CON0_PHASE4_K2_SHIFT;
+			break;
+		default:
+			return 0;
+	}
+
+	if ((p->osc & bypass_n) == 0)
+		return cgu_get_pll_freq(p);
+	if ((p->osc & power_up) == 0 || k1 == 0 || k2 > 5)
+		return 0;
+
+	return muldiv64(cgu_get_pll_core_freq(p), 12, k1 * 6 + k2);
+}
+
 // Get AHB bus freq
 static uint32_t cgu_get_ahb_freq(pmb887x_cgu_t *p) {
-	uint32_t k1, k2;
 	switch ((p->con1 & CGU_CON1_AHB_CLKSEL)) {
 		case CGU_CON1_AHB_CLKSEL_BYPASS:
 			// fAHB = fOSC
@@ -98,34 +149,53 @@ static uint32_t cgu_get_ahb_freq(pmb887x_cgu_t *p) {
 			return cgu_get_pll_freq(p);
 		
 		case CGU_CON1_AHB_CLKSEL_PHASE1:
-			// PLL1_K1 > 0:		fAHB = (fPLL * 12) / (PLL1_K1 * 6 + PLL1_K2)
-			// PLL1_K1 = 0:		fAHB = fPLL / 8
-			k1 = (p->con0 & CGU_CON0_PHASE1_K1) >> CGU_CON0_PHASE1_K1_SHIFT;
-			k2 = (p->con0 & CGU_CON0_PHASE1_K2) >> CGU_CON0_PHASE1_K2_SHIFT;
-			return cgu_ahb_div(cgu_get_pll_freq(p), k1, k2);
+			return cgu_get_phase_freq(p, 1);
 		
 		case CGU_CON1_AHB_CLKSEL_PHASE2:
-			// PLL2_K1 > 0:		fAHB = (fPLL * 12) / (PLL2_K1 * 6 + PLL2_K2)
-			// PLL2_K1 = 0:		fAHB = fPLL / 8
-			k1 = (p->con0 & CGU_CON0_PHASE2_K1) >> CGU_CON0_PHASE2_K1_SHIFT;
-			k2 = (p->con0 & CGU_CON0_PHASE2_K2) >> CGU_CON0_PHASE2_K2_SHIFT;
-			return cgu_ahb_div(cgu_get_pll_freq(p), k1, k2);
+			return cgu_get_phase_freq(p, 2);
 		
 		case CGU_CON1_AHB_CLKSEL_PHASE3:
-			// PLL3_K1 > 0:		fAHB = (fPLL * 12) / (PLL3_K1 * 6 + PLL3_K2)
-			// PLL3_K1 = 0:		fAHB = fPLL / 8
-			k1 = (p->con0 & CGU_CON0_PHASE3_K1) >> CGU_CON0_PHASE3_K1_SHIFT;
-			k2 = (p->con0 & CGU_CON0_PHASE3_K2) >> CGU_CON0_PHASE3_K2_SHIFT;
-			return cgu_ahb_div(cgu_get_pll_freq(p), k1, k2);
+			return cgu_get_phase_freq(p, 3);
 		
 		case CGU_CON1_AHB_CLKSEL_PHASE4:
-			// PLL4_K1 > 0:		fAHB = (fPLL * 12) / (PLL4_K1 * 6 + PLL4_K2)
-			// PLL4_K1 = 0:		fAHB = fPLL / 8
-			k1 = (p->con0 & CGU_CON0_PHASE4_K1) >> CGU_CON0_PHASE4_K1_SHIFT;
-			k2 = (p->con0 & CGU_CON0_PHASE4_K2) >> CGU_CON0_PHASE4_K2_SHIFT;
-			return cgu_ahb_div(cgu_get_pll_freq(p), k1, k2);
+			return cgu_get_phase_freq(p, 4);
 	}
 	return 0;
+}
+
+static uint32_t cgu_get_dsp_freq(pmb887x_cgu_t *p) {
+	if ((p->con2 & CGU_CON2_DSP_CLKSEL) == CGU_CON2_DSP_CLKSEL_PHASE1)
+		return cgu_get_phase_freq(p, 1);
+
+	return 0;
+}
+
+static uint32_t cgu_get_dma_freq(pmb887x_cgu_t *p) {
+	if ((p->con3 & CGU_CON3_DMA_CLK_DISABLE) != 0)
+		return 0;
+
+	return cgu_get_pll_freq(p);
+}
+
+static uint32_t cgu_get_mmci_freq(pmb887x_cgu_t *p) {
+	uint32_t frequency;
+
+	switch (p->con3 & CGU_CON3_MMCI_CLKSEL) {
+		case CGU_CON3_MMCI_CLKSEL_OSC:
+			frequency = p->xtal;
+			break;
+		case CGU_CON3_MMCI_CLKSEL_CLK32K:
+			frequency = p->frtc;
+			break;
+		case CGU_CON3_MMCI_CLKSEL_PHASE4:
+			frequency = cgu_get_phase_freq(p, 4);
+			break;
+		default:
+			return 0;
+	}
+
+	uint32_t divider = (p->con3 & CGU_CON3_MMCI_CLKDIV) >> CGU_CON3_MMCI_CLKDIV_SHIFT;
+	return frequency >> divider;
 }
 
 static uint32_t cgu_get_sys_freq(pmb887x_cgu_t *p) {
@@ -145,13 +215,16 @@ static uint32_t cgu_get_sys_freq(pmb887x_cgu_t *p) {
 	return p->xtal;
 }
 
-static uint32_t cgu_get_stm_freq(pmb887x_cgu_t *p) {
-	uint32_t freq = p->xtal;
-	if ((p->con1 & CGU_CON1_FSTM_DIV_EN)) {
-		uint32_t div = (p->con1 & CGU_CON1_FSTM_DIV) >> CGU_CON1_FSTM_DIV_SHIFT;
-		return freq / (1U << div);
+static uint32_t cgu_get_fpi2_freq(pmb887x_cgu_t *p) {
+	if ((p->con1 & CGU_CON1_FPI2_CLKSEL) == CGU_CON1_FPI2_CLKSEL_PLL) {
+		uint32_t divider = (p->con1 & CGU_CON1_FPI2_CLKDIV) >> CGU_CON1_FPI2_CLKDIV_SHIFT;
+
+		return cgu_get_pll_freq(p) >> (divider + 1);
 	}
-	return freq;
+	if ((p->con1 & CGU_CON1_FPI2_OSC_DISABLE) != 0)
+		return 0;
+
+	return p->xtal;
 }
 
 static uint32_t cgu_get_fpi1_freq(pmb887x_cgu_t *p) {
@@ -188,10 +261,11 @@ static uint32_t cgu_get_cpu_freq(pmb887x_cgu_t *p) {
 
 static void cgu_update_state(struct pmb887x_cgu_t *p) {
 	uint32_t new_fsys = cgu_get_sys_freq(p);
-	uint32_t new_fstm = cgu_get_stm_freq(p);
+	uint32_t new_fpi2 = cgu_get_fpi2_freq(p);
 	uint32_t new_fcpu = cgu_get_cpu_freq(p);
 	uint32_t new_fahb = cgu_get_ahb_freq(p);
-	uint32_t new_fgptu = cgu_get_pll_freq(p);
+	uint32_t new_fwdt = new_fpi2 / 16384;
+	bool new_fpi2_pll_selected = (p->con1 & CGU_CON1_FPI2_CLKSEL) == CGU_CON1_FPI2_CLKSEL_PLL;
 	
 	if (new_fcpu != p->fcpu)
 		DPRINTF("fCPU: %u -> %u Hz\n", p->fcpu, new_fcpu);
@@ -199,18 +273,25 @@ static void cgu_update_state(struct pmb887x_cgu_t *p) {
 		DPRINTF("fAHB: %u -> %u Hz\n", p->fahb, new_fahb);
 	if (new_fsys != p->fsys)
 		DPRINTF("fSYS: %u -> %u Hz\n", p->fsys, new_fsys);
-	if (new_fstm != p->fstm)
-		DPRINTF("fSTM: %u -> %u Hz\n", p->fstm, new_fstm);
+	if (new_fpi2 != p->fpi2)
+		DPRINTF("fPI2: %u -> %u Hz\n", p->fpi2, new_fpi2);
 
 	p->fsys = new_fsys;
-	p->fstm = new_fstm;
 	p->fcpu = new_fcpu;
 	p->fahb = new_fahb;
 
 	clock_update_hz(p->sys_clock, new_fsys);
-	clock_update_hz(p->stm_clock, new_fstm);
-	clock_update_hz(p->gptu_clock, new_fgptu);
+	p->fpi2 = new_fpi2;
+	clock_update_hz(p->fpi2_clock, new_fpi2);
+	if (p->fpi2_pll_selected != new_fpi2_pll_selected) {
+		p->fpi2_pll_selected = new_fpi2_pll_selected;
+		qemu_set_irq(p->gpio_fpi2_pll_selected, new_fpi2_pll_selected);
+	}
+	clock_update_hz(p->wdt_clock, new_fwdt);
 	clock_update_hz(p->fpi1_clock, cgu_get_fpi1_freq(p));
+	clock_update_hz(p->dsp_clock, cgu_get_dsp_freq(p));
+	clock_update_hz(p->dma_clock, cgu_get_dma_freq(p));
+	clock_update_hz(p->mmci_clock, cgu_get_mmci_freq(p));
 }
 
 static uint64_t cgu_io_read(void *opaque, hwaddr haddr, unsigned size) {
@@ -323,12 +404,16 @@ static void cgu_init(Object *obj) {
 	sysbus_init_mmio(SYS_BUS_DEVICE(obj), &p->mmio);
 	sysbus_init_irq(SYS_BUS_DEVICE(obj), &p->irq);
 	qdev_init_gpio_out_named(dev, &p->gpio_clk32, "CLK32_OUT", 1);
+	qdev_init_gpio_out_named(dev, &p->gpio_fpi2_pll_selected, "FPI2_PLL_SELECTED", 1);
 	p->osc_clock = qdev_init_clock_out(dev, "OSC");
 	p->rtc_clock = qdev_init_clock_out(dev, "RTC");
 	p->sys_clock = qdev_init_clock_out(dev, "FSYS");
-	p->stm_clock = qdev_init_clock_out(dev, "FSTM");
-	p->gptu_clock = qdev_init_clock_out(dev, "FGPTU");
+	p->fpi2_clock = qdev_init_clock_out(dev, "FPI2");
+	p->wdt_clock = qdev_init_clock_out(dev, "WDT");
 	p->fpi1_clock = qdev_init_clock_out(dev, "FPI1");
+	p->dsp_clock = qdev_init_clock_out(dev, "DSP");
+	p->dma_clock = qdev_init_clock_out(dev, "DMA");
+	p->mmci_clock = qdev_init_clock_out(dev, "MMCI");
 	p->lock_timer = timer_new_ns(QEMU_CLOCK_VIRTUAL, cgu_pll_lock_timer_expired, p);
 }
 

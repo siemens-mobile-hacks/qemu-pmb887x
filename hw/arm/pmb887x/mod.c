@@ -25,7 +25,6 @@ static void pmb887x_clc_clock_update(void *opaque, ClockEvent event) {
 	(void) event;
 
 	uint32_t frequency_hz = pmb887x_clc_calculate_hz(reg);
-
 	if (frequency_hz == reg->frequency_hz)
 		return;
 
@@ -62,10 +61,12 @@ uint32_t pmb887x_clc_get(pmb887x_clc_reg_t *reg) {
 }
 
 void pmb887x_clc_set(pmb887x_clc_reg_t *reg, uint32_t value) {
+	uint32_t old_value = reg->value;
 	uint32_t old_hz = reg->frequency_hz;
 	reg->value = (value & MOD_CLC_DISR) ? (value | MOD_CLC_DISS) : (value & ~MOD_CLC_DISS);
 	reg->frequency_hz = pmb887x_clc_calculate_hz(reg);
-	if (reg->callback && reg->device->realized && !device_is_in_reset(reg->device) && old_hz != reg->frequency_hz)
+	bool changed = old_value != reg->value || old_hz != reg->frequency_hz;
+	if (reg->callback && reg->device->realized && !device_is_in_reset(reg->device) && changed)
 		reg->callback(reg->callback_opaque);
 }
 

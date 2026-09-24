@@ -144,7 +144,7 @@ static void rtc_advance(pmb887x_rtc_t *p, uint64_t ticks) {
 }
 
 static void rtc_sync(pmb887x_rtc_t *p) {
-	if (!(p->con & RTC_CON_RUN)) {
+	if (!(p->con & RTC_CON_RUN) || !pmb887x_clc_is_enabled(&p->clc)) {
 		p->start = 0;
 		timer_del(p->timer);
 		return;

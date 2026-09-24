@@ -1502,20 +1502,26 @@ static const pmb887x_io_value_t cgu_cgu_con1_ahb_clksel_values[] = {
 	{"PHASE4",	CGU_CON1_AHB_CLKSEL_PHASE4},
 };
 
-static const pmb887x_io_value_t cgu_cgu_con1_fstm_div_values[] = {
-	{"4",	CGU_CON1_FSTM_DIV_4},
-	{"8",	CGU_CON1_FSTM_DIV_8},
-	{"16",	CGU_CON1_FSTM_DIV_16},
-	{"32",	CGU_CON1_FSTM_DIV_32},
+static const pmb887x_io_value_t cgu_cgu_con1_fpi2_clksel_values[] = {
+	{"OSC",	CGU_CON1_FPI2_CLKSEL_OSC},
+	{"PLL",	CGU_CON1_FPI2_CLKSEL_PLL},
+};
+
+static const pmb887x_io_value_t cgu_cgu_con1_fpi2_clkdiv_values[] = {
+	{"DIV1",	CGU_CON1_FPI2_CLKDIV_DIV1},
+	{"DIV2",	CGU_CON1_FPI2_CLKDIV_DIV2},
+	{"DIV4",	CGU_CON1_FPI2_CLKDIV_DIV4},
+	{"DIV8",	CGU_CON1_FPI2_CLKDIV_DIV8},
 };
 
 static const pmb887x_io_field_t cgu_con1_fields[] = {
-	{"FPI1_CLKSEL",	CGU_CON1_FPI1_CLKSEL,	CGU_CON1_FPI1_CLKSEL_SHIFT,	cgu_cgu_con1_fpi1_clksel_values,	ARRAY_SIZE(cgu_cgu_con1_fpi1_clksel_values)},
-	{"FPI1_CLKDIV",	CGU_CON1_FPI1_CLKDIV,	CGU_CON1_FPI1_CLKDIV_SHIFT,	cgu_cgu_con1_fpi1_clkdiv_values,	ARRAY_SIZE(cgu_cgu_con1_fpi1_clkdiv_values)},
-	{"FSYS_CLKSEL",	CGU_CON1_FSYS_CLKSEL,	CGU_CON1_FSYS_CLKSEL_SHIFT,	cgu_cgu_con1_fsys_clksel_values,	ARRAY_SIZE(cgu_cgu_con1_fsys_clksel_values)},
-	{"AHB_CLKSEL",	CGU_CON1_AHB_CLKSEL,	CGU_CON1_AHB_CLKSEL_SHIFT,	cgu_cgu_con1_ahb_clksel_values,		ARRAY_SIZE(cgu_cgu_con1_ahb_clksel_values)},
-	{"FSTM_DIV_EN",	CGU_CON1_FSTM_DIV_EN,	CGU_CON1_FSTM_DIV_EN_SHIFT,	NULL,								0},
-	{"FSTM_DIV",	CGU_CON1_FSTM_DIV,		CGU_CON1_FSTM_DIV_SHIFT,	cgu_cgu_con1_fstm_div_values,		ARRAY_SIZE(cgu_cgu_con1_fstm_div_values)},
+	{"FPI1_CLKSEL",			CGU_CON1_FPI1_CLKSEL,		CGU_CON1_FPI1_CLKSEL_SHIFT,			cgu_cgu_con1_fpi1_clksel_values,	ARRAY_SIZE(cgu_cgu_con1_fpi1_clksel_values)},
+	{"FPI1_CLKDIV",			CGU_CON1_FPI1_CLKDIV,		CGU_CON1_FPI1_CLKDIV_SHIFT,			cgu_cgu_con1_fpi1_clkdiv_values,	ARRAY_SIZE(cgu_cgu_con1_fpi1_clkdiv_values)},
+	{"FSYS_CLKSEL",			CGU_CON1_FSYS_CLKSEL,		CGU_CON1_FSYS_CLKSEL_SHIFT,			cgu_cgu_con1_fsys_clksel_values,	ARRAY_SIZE(cgu_cgu_con1_fsys_clksel_values)},
+	{"AHB_CLKSEL",			CGU_CON1_AHB_CLKSEL,		CGU_CON1_AHB_CLKSEL_SHIFT,			cgu_cgu_con1_ahb_clksel_values,		ARRAY_SIZE(cgu_cgu_con1_ahb_clksel_values)},
+	{"FPI2_OSC_DISABLE",	CGU_CON1_FPI2_OSC_DISABLE,	CGU_CON1_FPI2_OSC_DISABLE_SHIFT,	NULL,								0},
+	{"FPI2_CLKSEL",			CGU_CON1_FPI2_CLKSEL,		CGU_CON1_FPI2_CLKSEL_SHIFT,			cgu_cgu_con1_fpi2_clksel_values,	ARRAY_SIZE(cgu_cgu_con1_fpi2_clksel_values)},
+	{"FPI2_CLKDIV",			CGU_CON1_FPI2_CLKDIV,		CGU_CON1_FPI2_CLKDIV_SHIFT,			cgu_cgu_con1_fpi2_clkdiv_values,	ARRAY_SIZE(cgu_cgu_con1_fpi2_clkdiv_values)},
 };
 
 static const pmb887x_io_value_t cgu_cgu_con2_dsp_clksel_values[] = {
@@ -5621,6 +5627,7 @@ static const pmb887x_io_field_t stm_clc_fields[] = {
 	{"SBWE",	MOD_CLC_SBWE,	MOD_CLC_SBWE_SHIFT,	NULL,	0},
 	{"FSOE",	MOD_CLC_FSOE,	MOD_CLC_FSOE_SHIFT,	NULL,	0},
 	{"RMC",		MOD_CLC_RMC,	MOD_CLC_RMC_SHIFT,	NULL,	0},
+	{"RMC2",	STM_CLC_RMC2,	STM_CLC_RMC2_SHIFT,	NULL,	0},
 };
 
 static const pmb887x_io_field_t stm_id_fields[] = {
@@ -11437,6 +11444,48 @@ static const pmb887x_io_reg_t dsp_timer2_regs[] = {
 	{ "MAX",	0x2,	dsp_timer2_max_fields,	ARRAY_SIZE(dsp_timer2_max_fields),	0 },
 };
 
+static const pmb887x_cpu_meta_irq_t pmb8878_irqs[] = {
+};
+
+static const pmb887x_cpu_meta_gpio_t pmb8878_gpios[] = {
+};
+
+static const pmb887x_cpu_io_t pmb8878_modules[] = {
+	{"SSC",			PMB8878_SSC_BASE,		SSC_IO_SIZE,	ssc_regs,		ARRAY_SIZE(ssc_regs)},
+	{"USB",			PMB8878_USB_BASE,		USB_IO_SIZE,	usb_regs,		ARRAY_SIZE(usb_regs)},
+	{"VIC",			PMB8878_VIC_BASE,		VIC_IO_SIZE,	vic_regs,		ARRAY_SIZE(vic_regs)},
+	{"DMAC",		PMB8878_DMAC_BASE,		DMAC_IO_SIZE,	dmac_regs,		ARRAY_SIZE(dmac_regs)},
+	{"SCU",			PMB8878_SCU_BASE,		SCU_IO_SIZE,	scu_regs,		ARRAY_SIZE(scu_regs)},
+	{"CGU",			PMB8878_CGU_BASE,		CGU_IO_SIZE,	cgu_regs,		ARRAY_SIZE(cgu_regs)},
+	{"SCCU",		PMB8878_SCCU_BASE,		SCCU_IO_SIZE,	sccu_regs,		ARRAY_SIZE(sccu_regs)},
+	{"RTC",			PMB8878_RTC_BASE,		RTC_IO_SIZE,	rtc_regs,		ARRAY_SIZE(rtc_regs)},
+	{"ADC",			PMB8878_ADC_BASE,		ADC_IO_SIZE,	adc_regs,		ARRAY_SIZE(adc_regs)},
+	{"DSP_RAM",		0xF6001000,				0x1800,			NULL,			0},
+	{"DSP",			PMB8878_DSP_BASE,		DSP_IO_SIZE,	dsp_regs,		ARRAY_SIZE(dsp_regs)},
+	{"TPU_RAM",		0xF6401000,				0x1000,			NULL,			0},
+	{"TPU",			PMB8878_TPU_BASE,		TPU_IO_SIZE,	tpu_regs,		ARRAY_SIZE(tpu_regs)},
+	{"MMICIF_MMAP",	0xFA000000,				0x100000,		NULL,			0},
+	{"MMICIF_MMAP",	0xFA100000,				0x100000,		NULL,			0},
+	{"MMICIF_MMAP",	0xFA200000,				0x100000,		NULL,			0},
+	{"MMICIF_MMAP",	0xFA300000,				0x100000,		NULL,			0},
+	{"MMICIF_MMAP",	0xFA400000,				0x100000,		NULL,			0},
+	{"MMICIF_MMAP",	0xFA500000,				0x100000,		NULL,			0},
+	{"MMICIF_MMAP",	0xFA600000,				0x100000,		NULL,			0},
+	{"MMICIF_MMAP",	0xFA700000,				0x100000,		NULL,			0},
+	{"MMICIF_MMAP",	0xFA800000,				0x100000,		NULL,			0},
+	{"MMICIF_MMAP",	0xFA900000,				0x100000,		NULL,			0},
+	{"MMICIF_MMAP",	0xFAA00000,				0x100000,		NULL,			0},
+	{"MMICIF_MMAP",	0xFAB00000,				0x100000,		NULL,			0},
+	{"MMICIF_MMAP",	0xFAC00000,				0x100000,		NULL,			0},
+	{"MMICIF_MMAP",	0xFAD00000,				0x100000,		NULL,			0},
+	{"MMICIF_MMAP",	0xFAE00000,				0x100000,		NULL,			0},
+	{"MMICIF_MMAP",	0xFAF00000,				0x100000,		NULL,			0},
+	{"MMICIF",		PMB8878_MMICIF_BASE,	MMICIF_IO_SIZE,	mmicif_regs,	ARRAY_SIZE(mmicif_regs)},
+};
+
+static const pmb887x_cpu_io_t pmb8878_dsp_modules[] = {
+};
+
 static const pmb887x_cpu_meta_irq_t pmb8876_irqs[] = {
 	{"USART0_TX",		PMB8876_USART0_TX_IRQ,		VIC_CON4},
 	{"USART0_TBUF",		PMB8876_USART0_TBUF_IRQ,	VIC_CON5},
@@ -11590,14 +11639,14 @@ static const pmb887x_cpu_meta_gpio_t pmb8876_gpios[] = {
 	{"PIN29",	"I2C_SDA",			"GPIO_PIN29_I2C_SDA",			PMB8876_GPIO_I2C_SDA},
 	{"PIN30",	"DIF_D1",			"GPIO_PIN30_DIF_D1",			PMB8876_GPIO_DIF_D1},
 	{"PIN31",	"PIN31",			"GPIO_PIN31",					PMB8876_GPIO_PIN31},
-	{"PIN32",	"PIN32",			"GPIO_PIN32",					PMB8876_GPIO_PIN32},
-	{"PIN33",	"PIN33",			"GPIO_PIN33",					PMB8876_GPIO_PIN33},
+	{"PIN32",	"I2S2_RX",			"GPIO_PIN32_I2S2_RX",			PMB8876_GPIO_I2S2_RX},
+	{"PIN33",	"I2S2_TX",			"GPIO_PIN33_I2S2_TX",			PMB8876_GPIO_I2S2_TX},
 	{"PIN34",	"PIN34",			"GPIO_PIN34",					PMB8876_GPIO_PIN34},
 	{"PIN35",	"PIN35",			"GPIO_PIN35",					PMB8876_GPIO_PIN35},
 	{"PIN36",	"PIN36",			"GPIO_PIN36",					PMB8876_GPIO_PIN36},
 	{"PIN37",	"PIN37",			"GPIO_PIN37",					PMB8876_GPIO_PIN37},
 	{"PIN38",	"I2S1_WA0",			"GPIO_PIN38_I2S1_WA0",			PMB8876_GPIO_I2S1_WA0},
-	{"PIN39",	"DIF_HD",			"GPIO_PIN39_DIF_HD",			PMB8876_GPIO_DIF_HD},
+	{"PIN39",	"MMCI_DAT1",		"GPIO_PIN39_MMCI_DAT1",			PMB8876_GPIO_MMCI_DAT1},
 	{"PIN40",	"MMCI_DAT2",		"GPIO_PIN40_MMCI_DAT2",			PMB8876_GPIO_MMCI_DAT2},
 	{"PIN41",	"MMCI_DAT3",		"GPIO_PIN41_MMCI_DAT3",			PMB8876_GPIO_MMCI_DAT3},
 	{"PIN42",	"PIN42",			"GPIO_PIN42",					PMB8876_GPIO_PIN42},
@@ -11657,7 +11706,7 @@ static const pmb887x_cpu_meta_gpio_t pmb8876_gpios[] = {
 	{"PIN96",	"DIF_CS2",			"GPIO_PIN96_DIF_CS2",			PMB8876_GPIO_DIF_CS2},
 	{"PIN97",	"DIF_WR",			"GPIO_PIN97_DIF_WR",			PMB8876_GPIO_DIF_WR},
 	{"PIN98",	"DIF_RD",			"GPIO_PIN98_DIF_RD",			PMB8876_GPIO_DIF_RD},
-	{"PIN99",	"MMCI_DAT1",		"GPIO_PIN99_MMCI_DAT1",			PMB8876_GPIO_MMCI_DAT1},
+	{"PIN99",	"DIF_HD",			"GPIO_PIN99_DIF_HD",			PMB8876_GPIO_DIF_HD},
 	{"PIN100",	"DIF_VD",			"GPIO_PIN100_DIF_VD",			PMB8876_GPIO_DIF_VD},
 	{"PIN101",	"PIN101",			"GPIO_PIN101",					PMB8876_GPIO_PIN101},
 	{"PIN102",	"PIN102",			"GPIO_PIN102",					PMB8876_GPIO_PIN102},
@@ -11989,6 +12038,7 @@ static const pmb887x_cpu_io_t pmb8875_dsp_modules[] = {
 };
 
 static const pmb887x_cpu_meta_t cpus_metadata[] = {
+	{"pmb8878",	pmb8878_irqs,	ARRAY_SIZE(pmb8878_irqs),	pmb8878_gpios,	ARRAY_SIZE(pmb8878_gpios),	pmb8878_modules,	ARRAY_SIZE(pmb8878_modules),	pmb8878_dsp_modules,	ARRAY_SIZE(pmb8878_dsp_modules)},
 	{"pmb8876",	pmb8876_irqs,	ARRAY_SIZE(pmb8876_irqs),	pmb8876_gpios,	ARRAY_SIZE(pmb8876_gpios),	pmb8876_modules,	ARRAY_SIZE(pmb8876_modules),	pmb8876_dsp_modules,	ARRAY_SIZE(pmb8876_dsp_modules)},
 	{"pmb8875",	pmb8875_irqs,	ARRAY_SIZE(pmb8875_irqs),	pmb8875_gpios,	ARRAY_SIZE(pmb8875_gpios),	pmb8875_modules,	ARRAY_SIZE(pmb8875_modules),	pmb8875_dsp_modules,	ARRAY_SIZE(pmb8875_dsp_modules)},
 };

@@ -427,6 +427,12 @@ static uint64_t dsp_io_read(void *opaque, hwaddr haddr, unsigned size) {
 	
 	uint64_t value = 0;
 
+	if (haddr != DSP_CLC && pmb887x_clc_get_hz(&p->clc) == 0) {
+		value = UINT32_MAX;
+		IO_DUMP_READ(haddr + p->mmio.addr, size, value);
+		return value;
+	}
+
 	switch (haddr) {
 		case DSP_CLC:
 			value = pmb887x_clc_get(&p->clc);
@@ -465,6 +471,9 @@ static void dsp_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned si
 	dsp_state_t *p = opaque;
 	
 	IO_DUMP_WRITE(haddr + p->mmio.addr, size, value);
+
+	if (haddr != DSP_CLC && pmb887x_clc_get_hz(&p->clc) == 0)
+		return;
 
 	switch (haddr) {
 		case DSP_CLC:
@@ -703,6 +712,12 @@ struct dsp_state_t {
 	SSIBus *ssc_bus;
 };
 
+static void dsp_clock_update(void *opaque);
+
+static bool dsp_is_clock_enabled(dsp_state_t *p) {
+	return pmb887x_clc_get_hz(&p->clc) != 0;
+}
+
 static uint32_t dsp_ssc_transfer(void *opaque, uint32_t value) {
 	dsp_state_t *p = opaque;
 	bool locked = bql_locked();
@@ -921,9 +936,17 @@ static void dsp_worker_set_enabled(dsp_state_t *p, bool enabled) {
 		timer_del(p->afe_timer);
 }
 
+static void dsp_clock_update(void *opaque) {
+	dsp_state_t *p = opaque;
+	bool enabled = dsp_is_clock_enabled(p);
+
+	dsp_runtime_set_clock(p->runtime, enabled);
+	dsp_worker_set_enabled(p, p->vm_running && enabled);
+}
+
 static void dsp_vm_state_change(void *opaque, bool running, RunState state) {
 	dsp_state_t *p = opaque;
-	bool enabled = running && pmb887x_clc_is_enabled(&p->clc);
+	bool enabled = running && dsp_is_clock_enabled(p);
 
 	p->vm_running = running;
 
@@ -1014,7 +1037,7 @@ static void dsp_reset_internal_state(dsp_state_t *p) {
 	qemu_mutex_lock(&p->worker.mutex);
 	p->worker.reset = true;
 	qatomic_set(&p->reset_pending, true);
-	p->worker.enabled = p->vm_running && pmb887x_clc_is_enabled(&p->clc);
+	p->worker.enabled = p->vm_running && dsp_is_clock_enabled(p);
 	qatomic_set(&p->worker.interrupt_events, 0);
 	qatomic_set(&p->worker.output_events, 0);
 	qatomic_set(&p->worker.outputs, 0);
@@ -1359,8 +1382,6 @@ static void dsp_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned si
 	switch (haddr) {
 		case DSP_CLC:
 			pmb887x_clc_set(&p->clc, value);
-			dsp_runtime_set_clock(p->runtime, pmb887x_clc_is_enabled(&p->clc));
-			dsp_worker_set_enabled(p, p->vm_running && pmb887x_clc_is_enabled(&p->clc));
 			break;
 
 		case DSP_COM_SET:
@@ -1417,7 +1438,7 @@ static const MemoryRegionOps io_ops = {
 
 static uint64_t dsp_ram_read(void *opaque, hwaddr haddr, unsigned size) {
 	dsp_state_t *p = opaque;
-	uint64_t value = pmb887x_clc_is_enabled(&p->clc) ? dsp_runtime_shared_read_bytes(p->runtime, haddr, size) : 0;
+	uint64_t value = dsp_is_clock_enabled(p) ? dsp_runtime_shared_read_bytes(p->runtime, haddr, size) : 0;
 
 	IO_DUMP_READ(haddr + p->mmio.addr + DSP_RAM0, size, value);
 	return value;
@@ -1428,7 +1449,7 @@ static void dsp_ram_write(void *opaque, hwaddr haddr, uint64_t value, unsigned s
 
 	IO_DUMP_WRITE(haddr + p->mmio.addr + DSP_RAM0, size, value);
 
-	if (!pmb887x_clc_is_enabled(&p->clc))
+	if (!dsp_is_clock_enabled(p))
 		return;
 
 	dsp_runtime_shared_write_bytes(p->runtime, haddr, value, size);
@@ -1454,6 +1475,7 @@ static const MemoryRegionOps ram_io_ops = {
 static void dsp_init(Object *obj) {
 	dsp_state_t *p = PMB887X_DSP(obj);
 	pmb887x_clc_init(&p->clc, DEVICE(obj));
+	pmb887x_clc_set_callback(&p->clc, dsp_clock_update, p);
 	p->ssc_bus = ssi_create_bus(DEVICE(obj), DSP_SSC_BUS_NAME);
 	memory_region_init(&p->mmio, obj, "pmb887x-dsp", DSP_IO_SIZE);
 	memory_region_init_io(&p->regs, obj, &io_ops, p, "pmb887x-dsp-regs", DSP_RAM0);

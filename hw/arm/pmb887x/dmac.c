@@ -13,6 +13,7 @@
 #include "qemu/bswap.h"
 #include "qemu/main-loop.h"
 #include "hw/core/qdev-properties.h"
+#include "hw/core/qdev-clock.h"
 
 #include "hw/arm/pmb887x/gen/cpu_regs.h"
 #include "hw/arm/pmb887x/regs_dump.h"
@@ -61,6 +62,7 @@ struct pmb887x_dmac_t {
 	uint32_t revision;
 	uint32_t peripheral_id;
 
+	Clock *clock;
 	QEMUTimer *timer;
 	MemoryRegion *downstream;
 	AddressSpace downstream_as;
@@ -141,8 +143,19 @@ static void dmac_write(pmb887x_dmac_t *p, hwaddr addr, const uint8_t *buffer, ui
 }
 
 static void dmac_schedule(pmb887x_dmac_t *p) {
-	if (!p->dmac_pending) {
-		p->dmac_pending = true;
+	p->dmac_pending = true;
+
+	if (clock_is_enabled(p->clock) && !timer_pending(p->timer))
+		timer_mod(p->timer, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + 1);
+}
+
+static void dmac_clock_update(void *opaque, ClockEvent event) {
+	pmb887x_dmac_t *p = opaque;
+	(void) event;
+
+	if (!clock_is_enabled(p->clock)) {
+		timer_del(p->timer);
+	} else if (p->dmac_pending) {
 		timer_mod(p->timer, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + 1);
 	}
 }
@@ -613,6 +626,11 @@ static uint64_t dmac_io_read(void *opaque, hwaddr haddr, unsigned size) {
 
 	uint64_t value = 0;
 
+	if (!clock_is_enabled(p->clock)) {
+		IO_DUMP_READ(haddr + p->mmio.addr, size, value);
+		return value;
+	}
+
 	switch (haddr) {
 		case DMAC_CONFIG:
 			value = p->config;
@@ -759,6 +777,8 @@ static void dmac_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned s
 	pmb887x_dmac_t *p = opaque;
 
 	IO_DUMP_WRITE(haddr + p->mmio.addr, size, value);
+	if (!clock_is_enabled(p->clock))
+		return;
 
 	switch (haddr) {
 		case DMAC_CONFIG:
@@ -877,6 +897,10 @@ uint32_t pmb887x_dmac_get_sel(pmb887x_dmac_t *p) {
 
 static void dmac_timer_reset(void *opaque) {
 	pmb887x_dmac_t *p = opaque;
+
+	if (!clock_is_enabled(p->clock))
+		return;
+
 	int budget = DMAC_MAX_BURSTS_PER_PASS;
 	while (p->dmac_pending && budget-- > 0) {
 		p->dmac_pending = false;
@@ -949,6 +973,8 @@ static void dmac_handle_reset(void *opaque, int id, int level) {
 static void dmac_init(Object *obj) {
 	DeviceState *dev = DEVICE(obj);
 	pmb887x_dmac_t *p = PMB887X_DMAC(obj);
+	p->clock = qdev_init_clock_in(dev, "clk", dmac_clock_update, p, ClockUpdate);
+	p->timer = timer_new_ns(QEMU_CLOCK_VIRTUAL, dmac_timer_reset, p);
 	memory_region_init_io(&p->mmio, obj, &io_ops, p, "pmb887x-dmac", DMAC_IO_SIZE);
 	sysbus_init_mmio(SYS_BUS_DEVICE(obj), &p->mmio);
 
@@ -989,6 +1015,10 @@ static int dmac_err_irq_router(void *opaque, int event_id) {
 static void dmac_realize(DeviceState *dev, Error **errp) {
 	pmb887x_dmac_t *p = PMB887X_DMAC(dev);
 
+	if (!clock_has_source(p->clock)) {
+		error_setg(errp, "DMAC 'clk' input is not connected");
+		return;
+	}
 	if (!p->downstream) {
 		error_setg(errp, "DMAC 'downstream' link not set");
 		return;
@@ -1004,8 +1034,6 @@ static void dmac_realize(DeviceState *dev, Error **errp) {
 
 	pmb887x_srb_init(&p->srb_tc, p->irq_tc, ARRAY_SIZE(p->irq_tc));
 	pmb887x_srb_set_irq_router(&p->srb_tc, p, dmac_tc_irq_router);
-
-	p->timer = timer_new_ns(QEMU_CLOCK_VIRTUAL, dmac_timer_reset, p);
 }
 
 static void dmac_reset(DeviceState *dev) {

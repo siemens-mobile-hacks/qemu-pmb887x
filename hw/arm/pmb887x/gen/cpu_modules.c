@@ -6,6 +6,27 @@
 
 #include "hw/core/hw-error.h"
 
+static const pmb887x_cpu_module_t pmb8878_modules[] = {
+	{"SSC",		0x00004531,	PMB8878_SSC_BASE,		"pmb887x-ssc",		NULL,	0,	NULL,	0,	NULL,	0},
+	{"USB",		0xF047C012,	PMB8878_USB_BASE,		"pmb887x-usb",		NULL,	0,	NULL,	0,	NULL,	0},
+	{"VIC",		0x0031C011,	PMB8878_VIC_BASE,		"pmb887x-vic",		NULL,	0,	NULL,	0,	NULL,	0},
+	{"DMAC",	0x0A141080,	PMB8878_DMAC_BASE,		"pmb887x-dmac",		NULL,	0,	NULL,	0,	NULL,	0},
+	{"SCU",		0xF040C012,	PMB8878_SCU_BASE,		"pmb887x-scu",		NULL,	0,	NULL,	0,	NULL,	0},
+	{"CGU",		0x00000001,	PMB8878_CGU_BASE,		"pmb887x-cgu",		NULL,	0,	NULL,	0,	NULL,	0},
+	{"SCCU",	0x00000002,	PMB8878_SCCU_BASE,		"pmb887x-sccu",		NULL,	0,	NULL,	0,	NULL,	0},
+	{"RTC",		0xF049C011,	PMB8878_RTC_BASE,		"pmb887x-rtc",		NULL,	0,	NULL,	0,	NULL,	0},
+	{"ADC",		0xF024C010,	PMB8878_ADC_BASE,		"pmb887x-adc",		NULL,	0,	NULL,	0,	NULL,	0},
+	{"DSP",		0xF022C010,	PMB8878_DSP_BASE,		"pmb887x-dsp",		NULL,	0,	NULL,	0,	NULL,	0},
+	{"TPU",		0xF021C000,	PMB8878_TPU_BASE,		"pmb887x-tpu",		NULL,	0,	NULL,	0,	NULL,	0},
+	{"MMICIF",	0xF053C012,	PMB8878_MMICIF_BASE,	"pmb887x-mmicif",	NULL,	0,	NULL,	0,	NULL,	0},
+};
+
+static const pmb887x_cpu_t pmb8878_cpu = {
+	.modules = pmb8878_modules,
+	.modules_count = ARRAY_SIZE(pmb8878_modules),
+	.dsp_config = NULL,
+};
+
 static const pmb887x_dsp_peripheral_config_t pmb8876_dsp_peripherals[] = {
 	{
 		.name = "INT",
@@ -313,7 +334,7 @@ static const pmb887x_cpu_module_gpio_t pmb8876_scu_gpios[] = {
 	{"EXTI6_IN",	PMB8876_GPIO_I2C_SCL,		2},
 	{"EXTI2_IN",	PMB8876_GPIO_I2C_SDA,		2},
 	{"EXTI3_IN",	PMB8876_GPIO_PIN31,			3},
-	{"EXTI1_IN",	PMB8876_GPIO_DIF_HD,		2},
+	{"EXTI1_IN",	PMB8876_GPIO_MMCI_DAT1,		2},
 	{"EXTI5_IN",	PMB8876_GPIO_T_OUT1,		4},
 	{"EXTI6_IN",	PMB8876_GPIO_T_OUT4,		4},
 	{"EXTI5_IN",	PMB8876_GPIO_T_OUT7,		4},
@@ -452,12 +473,25 @@ static const pmb887x_cpu_module_dma_t pmb8876_dif_dma[] = {
 static const pmb887x_cpu_module_gpio_t pmb8876_mmci_gpios[] = {
 	{"DAT1_IN",		PMB8876_GPIO_MMCI_DAT1,	0},
 	{"DAT1_OUT",	PMB8876_GPIO_MMCI_DAT1,	0},
+	{"DAT2_IN",		PMB8876_GPIO_MMCI_DAT2,	0},
+	{"DAT2_OUT",	PMB8876_GPIO_MMCI_DAT2,	0},
+	{"DAT3_IN",		PMB8876_GPIO_MMCI_DAT3,	0},
+	{"DAT3_OUT",	PMB8876_GPIO_MMCI_DAT3,	0},
 	{"CMD_IN",		PMB8876_GPIO_MMCI_CMD,	0},
 	{"CMD_OUT",		PMB8876_GPIO_MMCI_CMD,	0},
 	{"DAT0_IN",		PMB8876_GPIO_MMCI_DAT0,	0},
 	{"DAT0_OUT",	PMB8876_GPIO_MMCI_DAT0,	0},
 	{"CLK_IN",		PMB8876_GPIO_MMCI_CLK,	0},
 	{"CLK_OUT",		PMB8876_GPIO_MMCI_CLK,	0},
+};
+
+static const int pmb8876_mci_irqs[] = {
+	PMB8876_MCI_IRQ
+};
+
+static const pmb887x_cpu_module_dma_t pmb8876_mci_dma[] = {
+	{"TX",	PMB887X_DMAC_BUS_AHB2,	13,	1},
+	{"RX",	PMB887X_DMAC_BUS_AHB2,	6,	1},
 };
 
 static const pmb887x_cpu_module_dma_t pmb8876_usif_dma[] = {
@@ -511,6 +545,7 @@ static const pmb887x_cpu_module_t pmb8876_modules[] = {
 	{"TPU",		0xF021C012,	PMB8876_TPU_BASE,		"pmb887x-tpu",		pmb8876_tpu_irqs,		ARRAY_SIZE(pmb8876_tpu_irqs),		NULL,					0,									NULL,				0},
 	{"DIF",		0xF043C012,	PMB8876_DIF_BASE,		"pmb887x-dif-v2",	pmb8876_dif_irqs,		ARRAY_SIZE(pmb8876_dif_irqs),		pmb8876_dif_gpios,		ARRAY_SIZE(pmb8876_dif_gpios),		pmb8876_dif_dma,	ARRAY_SIZE(pmb8876_dif_dma)},
 	{"MMCI",	0xF041C022,	PMB8876_MMCI_BASE,		"pmb887x-mmci",		NULL,					0,									pmb8876_mmci_gpios,		ARRAY_SIZE(pmb8876_mmci_gpios),		NULL,				0},
+	{"MCI",		0x00041180,	PMB8876_MCI_BASE,		"pmb887x-mci",		pmb8876_mci_irqs,		ARRAY_SIZE(pmb8876_mci_irqs),		NULL,					0,									pmb8876_mci_dma,	ARRAY_SIZE(pmb8876_mci_dma)},
 	{"USIF",	0xF051C012,	PMB8876_USIF_BASE,		"pmb887x-usif",		NULL,					0,									NULL,					0,									pmb8876_usif_dma,	ARRAY_SIZE(pmb8876_usif_dma)},
 	{"I2C",		0xF057C012,	PMB8876_I2C_BASE,		"pmb887x-i2c-v2",	pmb8876_i2c_irqs,		ARRAY_SIZE(pmb8876_i2c_irqs),		pmb8876_i2c_gpios,		ARRAY_SIZE(pmb8876_i2c_gpios),		pmb8876_i2c_dma,	ARRAY_SIZE(pmb8876_i2c_dma)},
 	{"MMICIF",	0xF053C012,	PMB8876_MMICIF_BASE,	"pmb887x-mmicif",	NULL,					0,									NULL,					0,									NULL,				0},
@@ -980,11 +1015,14 @@ static const pmb887x_cpu_t pmb8875_cpu = {
 
 const pmb887x_cpu_t *pmb887x_cpu_get(int cpu_id) {
 	switch (cpu_id) {
-		case CPU_PMB8875:
-			return &pmb8875_cpu;
+		case CPU_PMB8878:
+			return &pmb8878_cpu;
 
 		case CPU_PMB8876:
 			return &pmb8876_cpu;
+
+		case CPU_PMB8875:
+			return &pmb8875_cpu;
 
 		default:
 			hw_error("Invalid CPU type: %d", cpu_id);

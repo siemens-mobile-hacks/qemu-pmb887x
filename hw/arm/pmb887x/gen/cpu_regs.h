@@ -1,7 +1,25 @@
 #pragma once
 
+/* CPU: pmb8878 */
+#define CPU_PMB8878			0
+#define PMB8878_SSC_BASE	0xF1100000
+#define PMB8878_USB_BASE	0xF2200000
+#define PMB8878_VIC_BASE	0xF2800000
+#define PMB8878_DMAC_BASE	0xF3000000
+#define PMB8878_SCU_BASE	0xF4400000
+#define PMB8878_CGU_BASE	0xF4500000
+#define PMB8878_SCCU_BASE	0xF4600000
+#define PMB8878_RTC_BASE	0xF4700000
+#define PMB8878_ADC_BASE	0xF4C00000
+#define PMB8878_DSP_BASE	0xF6000000
+#define PMB8878_TPU_BASE	0xF6400000
+#define PMB8878_MMICIF_BASE	0xF8000000
+
+
+
+
 /* CPU: pmb8876 */
-#define CPU_PMB8876					0
+#define CPU_PMB8876					1
 #define PMB8876_EBU_BASE			0xF0000000
 #define PMB8876_USART0_BASE			0xF1000000
 #define PMB8876_SSC_BASE			0xF1100000
@@ -180,8 +198,10 @@
 #define PMB8876_GPIO_I2C_SCL		PMB8876_GPIO_PIN28
 #define PMB8876_GPIO_I2C_SDA		PMB8876_GPIO_PIN29
 #define PMB8876_GPIO_DIF_D1			PMB8876_GPIO_PIN30
+#define PMB8876_GPIO_I2S2_RX		PMB8876_GPIO_PIN32
+#define PMB8876_GPIO_I2S2_TX		PMB8876_GPIO_PIN33
 #define PMB8876_GPIO_I2S1_WA0		PMB8876_GPIO_PIN38
-#define PMB8876_GPIO_DIF_HD			PMB8876_GPIO_PIN39
+#define PMB8876_GPIO_MMCI_DAT1		PMB8876_GPIO_PIN39
 #define PMB8876_GPIO_MMCI_DAT2		PMB8876_GPIO_PIN40
 #define PMB8876_GPIO_MMCI_DAT3		PMB8876_GPIO_PIN41
 #define PMB8876_GPIO_T_OUT0			PMB8876_GPIO_PIN43
@@ -234,7 +254,7 @@
 #define PMB8876_GPIO_DIF_CS2		PMB8876_GPIO_PIN96
 #define PMB8876_GPIO_DIF_WR			PMB8876_GPIO_PIN97
 #define PMB8876_GPIO_DIF_RD			PMB8876_GPIO_PIN98
-#define PMB8876_GPIO_MMCI_DAT1		PMB8876_GPIO_PIN99
+#define PMB8876_GPIO_DIF_HD			PMB8876_GPIO_PIN99
 #define PMB8876_GPIO_DIF_VD			PMB8876_GPIO_PIN100
 #define PMB8876_GPIO_I2S2_WA1		PMB8876_GPIO_PIN103
 #define PMB8876_GPIO_MMCI_CMD		PMB8876_GPIO_PIN104
@@ -363,7 +383,7 @@
 #define PMB8876_I2C_PROTOCOL_IRQ	158
 
 /* CPU: pmb8875 */
-#define CPU_PMB8875					1
+#define CPU_PMB8875					2
 #define PMB8875_EBU_BASE			0xF0000000
 #define PMB8875_USART0_BASE			0xF1000000
 #define PMB8875_SSC_BASE			0xF1100000
@@ -1911,11 +1931,11 @@
 #define CAPCOM_OUT_O7_SHIFT						7
 
 #define CAPCOM_IOC								0x28
-#define CAPCOM_IOC_PL							(1 << 1)			 // Port Lock
+#define CAPCOM_IOC_PL							(1 << 1)		 // Port Lock
 #define CAPCOM_IOC_PL_SHIFT						1
-#define CAPCOM_IOC_STAG							(1 << 2)			 // Stagger
+#define CAPCOM_IOC_STAG							(1 << 2)		 // Stagger
 #define CAPCOM_IOC_STAG_SHIFT					2
-#define CAPCOM_IOC_PDS							(1 << 3)			 // Port Direction Select
+#define CAPCOM_IOC_PDS							(1 << 3)		 // Port Direction Select
 #define CAPCOM_IOC_PDS_SHIFT					3
 #define CAPCOM_IOC_PDS_OUT						0x0
 #define CAPCOM_IOC_PDS_IN						0x8
@@ -2051,7 +2071,7 @@
 #define CAPCOM_WHBCSEE_CLRSEE7_CLR				0x80
 
 #define CAPCOM_T0								0x40
-#define CAPCOM_T0_T0							(0x7FFFFFFF << 0)
+#define CAPCOM_T0_T0							(0xFFFF << 0)
 #define CAPCOM_T0_T0_SHIFT						0
 #define CAPCOM_T0_OVF0							(1 << 31)
 #define CAPCOM_T0_OVF0_SHIFT					31
@@ -2059,11 +2079,11 @@
 #define CAPCOM_T0_OVF0_SET						0x80000000
 
 #define CAPCOM_T0REL							0x44
-#define CAPCOM_T0REL_T0REL						(0x7FFFFFFF << 0)
+#define CAPCOM_T0REL_T0REL						(0xFFFF << 0)
 #define CAPCOM_T0REL_T0REL_SHIFT				0
 
 #define CAPCOM_T1								0x48
-#define CAPCOM_T1_T1							(0x7FFFFFFF << 0)
+#define CAPCOM_T1_T1							(0xFFFF << 0)
 #define CAPCOM_T1_T1_SHIFT						0
 #define CAPCOM_T1_OVF1							(1 << 31)
 #define CAPCOM_T1_OVF1_SHIFT					31
@@ -2071,7 +2091,7 @@
 #define CAPCOM_T1_OVF1_SET						0x80000000
 
 #define CAPCOM_T1REL							0x4C
-#define CAPCOM_T1REL_T1REL						(0x7FFFFFFF << 0)
+#define CAPCOM_T1REL_T1REL						(0xFFFF << 0)
 #define CAPCOM_T1REL_T1REL_SHIFT				0
 
 #define CAPCOM_CC0								0x50
@@ -2245,14 +2265,18 @@
 #define CGU_CON1_AHB_CLKSEL_PHASE2			0x400000
 #define CGU_CON1_AHB_CLKSEL_PHASE3			0x500000
 #define CGU_CON1_AHB_CLKSEL_PHASE4			0x600000
-#define CGU_CON1_FSTM_DIV_EN				(1 << 25)		 // Enable fSTM divider
-#define CGU_CON1_FSTM_DIV_EN_SHIFT			25
-#define CGU_CON1_FSTM_DIV					(0x3 << 28)		 // fSTM divider: divide fOSC by 4 * 2^n
-#define CGU_CON1_FSTM_DIV_SHIFT				28
-#define CGU_CON1_FSTM_DIV_4					0x0
-#define CGU_CON1_FSTM_DIV_8					0x10000000
-#define CGU_CON1_FSTM_DIV_16				0x20000000
-#define CGU_CON1_FSTM_DIV_32				0x30000000
+#define CGU_CON1_FPI2_OSC_DISABLE			(1 << 24)		 // Disable the oscillator source for FPI2
+#define CGU_CON1_FPI2_OSC_DISABLE_SHIFT		24
+#define CGU_CON1_FPI2_CLKSEL				(1 << 25)		 // Source clock for FPI2; PLL takes priority over FPI2_OSC_DISABLE
+#define CGU_CON1_FPI2_CLKSEL_SHIFT			25
+#define CGU_CON1_FPI2_CLKSEL_OSC			0x0
+#define CGU_CON1_FPI2_CLKSEL_PLL			0x2000000
+#define CGU_CON1_FPI2_CLKDIV				(0x3 << 28)		 // FPI2 divider after the fixed PLL divide-by-two stage
+#define CGU_CON1_FPI2_CLKDIV_SHIFT			28
+#define CGU_CON1_FPI2_CLKDIV_DIV1			0x0
+#define CGU_CON1_FPI2_CLKDIV_DIV2			0x10000000
+#define CGU_CON1_FPI2_CLKDIV_DIV4			0x20000000
+#define CGU_CON1_FPI2_CLKDIV_DIV8			0x30000000
 
 /* Clock Generation Unit Control Register 5 (CGU_CTL5) */
 #define CGU_CON2							0xAC
@@ -6615,28 +6639,30 @@
 // STM [MOD_NUM=0000, MOD_REV=02, MOD_32BIT=C0]
 // STM [MOD_NUM=0000, MOD_REV=11, MOD_32BIT=C0]
 // System Timer (see STM in TC1766 datasheet)
-#define STM_IO_SIZE	0x00000030
+#define STM_IO_SIZE			0x00000030
 /* Clock Control Register */
-#define STM_CLC		0x00
+#define STM_CLC				0x00
+#define STM_CLC_RMC2		(0xFF << 16)	 // Additional PLL-source divider; total divisor is RMC + RMC2
+#define STM_CLC_RMC2_SHIFT	16
 
 /* Module Identifier Register */
-#define STM_ID		0x08
+#define STM_ID				0x08
 
-#define STM_TIM0	0x10
+#define STM_TIM0			0x10
 
-#define STM_TIM1	0x14
+#define STM_TIM1			0x14
 
-#define STM_TIM2	0x18
+#define STM_TIM2			0x18
 
-#define STM_TIM3	0x1C
+#define STM_TIM3			0x1C
 
-#define STM_TIM4	0x20
+#define STM_TIM4			0x20
 
-#define STM_TIM5	0x24
+#define STM_TIM5			0x24
 
-#define STM_TIM6	0x28
+#define STM_TIM6			0x28
 
-#define STM_CAP		0x2C
+#define STM_CAP				0x2C
 
 
 // TPU [MOD_NUM=F021, MOD_REV=00, MOD_32BIT=C0]
@@ -7351,7 +7377,7 @@
 #define USIF_MODEM_STAT_DSR			(1 << 1)
 #define USIF_MODEM_STAT_DSR_SHIFT	1
 
-/* TX Transfer Count / Pending Size [read-only] */
+/* TX Transfer Count / Pending Size */
 #define USIF_TPS					0x3C
 
 /* TX FIFO Status Register [read-only] */

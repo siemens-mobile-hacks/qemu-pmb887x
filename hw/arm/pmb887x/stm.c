@@ -21,6 +21,7 @@
 
 #define TYPE_PMB887X_STM	"pmb887x-stm"
 #define PMB887X_STM(obj)	OBJECT_CHECK(pmb887x_stm_t, (obj), TYPE_PMB887X_STM)
+#define STM_CLC_RESET_VALUE	((1U << MOD_CLC_RMC_SHIFT) | (1U << STM_CLC_RMC2_SHIFT))
 
 typedef struct pmb887x_stm_t pmb887x_stm_t;
 
@@ -30,6 +31,7 @@ struct pmb887x_stm_t {
 	uint32_t revision;
 	
 	pmb887x_clc_reg_t clc;
+	bool rmc2_enabled;
 	
 	bool enabled;
 	uint32_t freq;
@@ -46,8 +48,22 @@ static int64_t stm_get_time(pmb887x_stm_t *p) {
 	return p->counter;
 }
 
+static uint32_t stm_get_frequency_hz(pmb887x_stm_t *p) {
+	if (!pmb887x_clc_is_enabled(&p->clc))
+		return 0;
+
+	uint32_t divider = pmb887x_clc_get_rmc(&p->clc);
+	if (divider == 0)
+		return 0;
+
+	if (p->rmc2_enabled)
+		divider += (pmb887x_clc_get(&p->clc) & STM_CLC_RMC2) >> STM_CLC_RMC2_SHIFT;
+
+	return clock_get_hz(p->clc.clock) / divider;
+}
+
 static void stm_update_state(pmb887x_stm_t *p) {
-	uint32_t new_freq = pmb887x_clc_get_hz(&p->clc);
+	uint32_t new_freq = stm_get_frequency_hz(p);
 	bool new_enabled = new_freq > 0;
 	
 	if (new_enabled != p->enabled || new_freq != p->freq) {
@@ -61,12 +77,20 @@ static void stm_update_state(pmb887x_stm_t *p) {
 			p->start = 0;
 		}
 		
-		DPRINTF("fstm=%d, fstm / RMC=%d [%s]\n", clock_get_hz(p->clc.clock), p->freq, p->enabled ? "ON" : "OFF");
+		DPRINTF("clk=%u, fSTM=%u [%s]\n", clock_get_hz(p->clc.clock), p->freq, p->enabled ? "ON" : "OFF");
 	}
 }
 
 static void stm_clock_update(void *opaque) {
 	stm_update_state(opaque);
+}
+
+static void stm_handle_rmc2_enable(void *opaque, int line, int level) {
+	pmb887x_stm_t *p = opaque;
+	(void) line;
+
+	p->rmc2_enabled = level;
+	stm_update_state(p);
 }
 
 static uint64_t stm_io_read(void *opaque, hwaddr haddr, unsigned size) {
@@ -162,6 +186,7 @@ static void stm_init(Object *obj) {
 	struct pmb887x_stm_t *p = PMB887X_STM(obj);
 	pmb887x_clc_init(&p->clc, DEVICE(obj));
 	pmb887x_clc_set_callback(&p->clc, stm_clock_update, p);
+	qdev_init_gpio_in_named(DEVICE(obj), stm_handle_rmc2_enable, "RMC2_ENABLE_IN", 1);
 	memory_region_init_io(&p->mmio, obj, &io_ops, p, "pmb887x-stm", STM_IO_SIZE);
 	sysbus_init_mmio(SYS_BUS_DEVICE(obj), &p->mmio);
 }
@@ -169,7 +194,7 @@ static void stm_init(Object *obj) {
 static void stm_reset(DeviceState *dev) {
 	pmb887x_stm_t *p = PMB887X_STM(dev);
 
-	pmb887x_clc_set(&p->clc, 1U << MOD_CLC_RMC_SHIFT);
+	pmb887x_clc_set(&p->clc, STM_CLC_RESET_VALUE);
 	p->enabled = false;
 	p->start = 0;
 	p->capture = 0;
@@ -180,7 +205,7 @@ static void stm_reset(DeviceState *dev) {
 static void stm_realize(DeviceState *dev, Error **errp) {
 	struct pmb887x_stm_t *p = PMB887X_STM(dev);
 	
-	pmb887x_clc_set(&p->clc, 1U << MOD_CLC_RMC_SHIFT);
+	pmb887x_clc_set(&p->clc, STM_CLC_RESET_VALUE);
 	
 	stm_update_state(p);
 }

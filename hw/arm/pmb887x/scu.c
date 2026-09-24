@@ -82,8 +82,8 @@ struct pmb887x_scu_t {
 };
 
 static uint32_t scu_wdt_get_frequency(pmb887x_scu_t *p) {
-	uint32_t divider = (p->wdt_status & SCU_WDT_SR_WDTIS) ? 256 : 16384;
-	return clock_get_hz(p->clock) / divider;
+	uint32_t multiplier = (p->wdt_status & SCU_WDT_SR_WDTIS) ? 64 : 1;
+	return clock_get_hz(p->clock) * multiplier;
 }
 
 static uint16_t scu_wdt_get_counter(pmb887x_scu_t *p) {
