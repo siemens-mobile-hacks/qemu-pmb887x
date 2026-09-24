@@ -612,16 +612,85 @@ static inline void gen_arm_shift_im(TCGv_i32 var, int shiftop,
     }
 };
 
+#ifdef CONFIG_TCG_WASM64
+/*
+ * The flag-setting register shifts, inline: on wasm64 a helper call
+ * syncs every global around an import call, and `lsls r1, r5` sat on a
+ * blit's hot path as the one helper left in it.  A 64-bit shift by the
+ * count clamped to 63 covers every count from 1 to 255 at once: the
+ * result is the low half, and the carry out is bit 32 of the shifted
+ * value (LSL) or bit 0 after shifting a copy left by one first (LSR,
+ * ASR - the sign fill of ASR gives CF = x[31] past 32, as the helper
+ * does).  A count of 0 leaves CF alone.  ROR takes its count mod 32 and
+ * its carry from the result's top bit whenever the count is not 0.
+ */
+static void gen_shift_cc_w64(TCGv_i32 var, int shiftop, TCGv_i32 shift)
+{
+    TCGv_i32 cnt = tcg_temp_new_i32();
+    TCGv_i32 cf = tcg_temp_new_i32();
+    TCGv_i32 zero = tcg_constant_i32(0);
+
+    tcg_gen_andi_i32(cnt, shift, 0xff);
+    if (shiftop == 3) {
+        TCGv_i32 res = tcg_temp_new_i32();
+        TCGv_i32 cnt5 = tcg_temp_new_i32();
+
+        tcg_gen_andi_i32(cnt5, cnt, 0x1f);
+        tcg_gen_rotr_i32(res, var, cnt5);
+        tcg_gen_shri_i32(cf, res, 31);
+        tcg_gen_movcond_i32(TCG_COND_NE, cpu_CF, cnt, zero, cf, cpu_CF);
+        tcg_gen_mov_i32(var, res);
+    } else {
+        TCGv_i64 x = tcg_temp_new_i64();
+        TCGv_i64 c64 = tcg_temp_new_i64();
+        TCGv_i64 r = tcg_temp_new_i64();
+
+        tcg_gen_umin_i32(cnt, cnt, tcg_constant_i32(63));
+        tcg_gen_extu_i32_i64(c64, cnt);
+        if (shiftop == 0) {
+            tcg_gen_extu_i32_i64(x, var);
+            tcg_gen_shl_i64(r, x, c64);
+            tcg_gen_extrh_i64_i32(cf, r);
+        } else {
+            if (shiftop == 1) {
+                tcg_gen_extu_i32_i64(x, var);
+            } else {
+                tcg_gen_ext_i32_i64(x, var);
+            }
+            tcg_gen_shli_i64(r, x, 1);
+            if (shiftop == 1) {
+                tcg_gen_shr_i64(r, r, c64);
+            } else {
+                tcg_gen_sar_i64(r, r, c64);
+            }
+            tcg_gen_extrl_i64_i32(cf, r);
+            if (shiftop == 1) {
+                tcg_gen_shr_i64(r, x, c64);
+            } else {
+                tcg_gen_sar_i64(r, x, c64);
+            }
+        }
+        tcg_gen_andi_i32(cf, cf, 1);
+        tcg_gen_extrl_i64_i32(var, r);
+        tcg_gen_movcond_i32(TCG_COND_NE, cpu_CF, cnt, zero, cf, cpu_CF);
+    }
+}
+#endif
+
 static inline void gen_arm_shift_reg(TCGv_i32 var, int shiftop,
                                      TCGv_i32 shift, int flags)
 {
     if (flags) {
+#ifdef CONFIG_TCG_WASM64
+        gen_shift_cc_w64(var, shiftop, shift);
+#else
         switch (shiftop) {
         case 0: gen_helper_shl_cc(var, tcg_env, var, shift); break;
         case 1: gen_helper_shr_cc(var, tcg_env, var, shift); break;
         case 2: gen_helper_sar_cc(var, tcg_env, var, shift); break;
         case 3: gen_helper_ror_cc(var, tcg_env, var, shift); break;
         }
+#endif
     } else {
         switch (shiftop) {
         case 0:
