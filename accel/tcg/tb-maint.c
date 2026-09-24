@@ -194,8 +194,8 @@ static int v_l2_levels;
 static void *l1_map[V_L1_MAX_SIZE];
 
 #ifdef CONFIG_TCG_WASM64
-/* one code_mask bit per 1/256th of a page; see the comment below */
-#define TB_GMASK_BITS_LOG 8
+/* one code_mask bit per 1/1024th of a page; see the comment below */
+#define TB_GMASK_BITS_LOG 10
 #define TB_GMASK_WORDS    (1 << (TB_GMASK_BITS_LOG - 6))
 #endif
 
@@ -218,10 +218,15 @@ struct PageDesc {
  * emitted code, and it answered "no" 485.6 times out of 485.7 -- after 50.9
  * list steps each, because 60-odd TBs pile up on a single page.
  *
- * code_mask caches that answer per page, one bit per 1/256th of a page:
- * four bytes, one guest instruction, at this board's 1 KB pages.  A 64-bit
+ * code_mask caches that answer per page, one bit per 1/1024th of a page:
+ * four bytes, one guest instruction, at this board's 4 KB pages.  A 64-bit
  * version of the same mask rejected only 57 % of the stores -- the rest were
- * data words close enough to code to share a granule with it.
+ * data words close enough to code to share a granule with it.  The mask
+ * was 256 bits while pages were 1 KB, and kept that size when they became
+ * 4 KB: at 16-byte granules game 1 was back to 55 % rejected, and game 5
+ * walked 149 TBs per unrejected store (38 600 list steps per Mi, for 0.06
+ * hits).  At four bytes game 5 walks 0.7 times per Mi.  The price is 96
+ * bytes more per PageDesc.
  *
  * Bits are only ever added when a TB is linked, and cleared wholesale when
  * the page empties, so the mask is a conservative superset: a stale bit
