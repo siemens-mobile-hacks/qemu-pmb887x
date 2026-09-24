@@ -1887,53 +1887,41 @@ static bool w64_inl_pick_page(DisasContext *s, vaddr dest, uint8_t *on_page)
      * page: refuse the whole TB to another stream, even one that would stay
      * on page 0.
      */
-    if (tb_page_addr_n(tb, 1) != -1 && !(tb->w64_inl & W64_INL_VPAGE(1))) {
+    if (tb_page_addr1(tb) != -1 && !(tb->w64_inl & W64_INL_VPAGE1)) {
         return false;
     }
     if (page == page0) {
         *on_page = 0;
         return true;
     }
-    /*
-     * A slot already holding this callee page: reuse it.  Its hull and its
-     * QEMU page registration are already there, so nothing is claimed.
-     */
-    for (unsigned n = 1; n < TB_PAGES; n++) {
-        if ((tb->w64_inl & W64_INL_VPAGE(n)) &&
-            tb->w64_inl_vpage[n] == page - page0) {
-            db->w64_page_base[n] = page;
-            *on_page = n;
-            return true;
+    if (tb->w64_inl & W64_INL_VPAGE1) {
+        /* page 1 already holds a callee page: reuse it if it is this one */
+        if (tb->w64_inl_vpage1 != page - page0) {
+            return false;
         }
-    }
-    /*
-     * A free slot.  Slot n is free when no stream has claimed it and no
-     * linear crossing has fetched through it -- a crossing carries no hull,
-     * so tb_page_span would have nothing to invalidate that page by.
-     */
-    for (unsigned n = 1; n < TB_PAGES; n++) {
+    } else {
+        /*
+         * Page 1 is free unless a linear crossing has fetched through it --
+         * a crossing carries no hull, so tb_page_span would have nothing to
+         * invalidate that page by.
+         */
         void *host;
         int fl;
 
-        if ((tb->w64_inl & W64_INL_VPAGE(n)) || db->host_addr[n] != NULL ||
-            tb_page_addr_n(tb, n) != -1) {
-            continue;
+        if (db->host_addr[1] != NULL) {
+            return false;
         }
         fl = probe_access_flags(s->w64_env, page, 0, MMU_INST_FETCH,
                                 db->code_mmuidx, true, &host, 0);
         if ((fl & (TLB_INVALID_MASK | TLB_MMIO)) || host == NULL) {
             return false;
         }
-        db->w64_page_base[n] = page;
-        /* relative to the entry page: with CF_PCREL the TB may be entered
-         * at another virtual alias, and the bl offset is what is fixed */
-        tb->w64_inl_vpage[n] = page - page0;
-        tb->w64_inl |= W64_INL_VPAGE(n);
-        *on_page = n;
-        return true;
+        tb->w64_inl_vpage1 = page - page0;
+        tb->w64_inl |= W64_INL_VPAGE1;
     }
-    /* every slot is spoken for */
-    return false;
+    db->w64_page1 = page;
+    *on_page = 1;
+    return true;
 }
 
 /*

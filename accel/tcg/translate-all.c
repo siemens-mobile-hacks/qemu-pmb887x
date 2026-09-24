@@ -325,12 +325,10 @@ TranslationBlock *tb_gen_code(CPUState *cpu, TCGTBCPUState s)
 #ifdef CONFIG_TCG_WASM64
     tb->w64_lc.gen = 0;
     tb->w64_inl = 0;
-    memset(tb->w64_inl_vpage, 0, sizeof(tb->w64_inl_vpage));
+    tb->w64_inl_vpage1 = 0;
 #endif
     tb_set_page_addr0(tb, phys_pc);
-    for (unsigned i = 1; i < TB_PAGES; i++) {
-        tb_set_page_addr_n(tb, i, -1);
-    }
+    tb_set_page_addr1(tb, -1);
     if (phys_pc != -1) {
         tb_lock_page0(phys_pc);
     }
@@ -343,7 +341,7 @@ TranslationBlock *tb_gen_code(CPUState *cpu, TCGTBCPUState s)
 #ifdef CONFIG_TCG_WASM64
     /* a retry re-decides every inline; the -2 case dropped page 1 too */
     tb->w64_inl = 0;
-    memset(tb->w64_inl_vpage, 0, sizeof(tb->w64_inl_vpage));
+    tb->w64_inl_vpage1 = 0;
     w64_inl_pending_n = 0;
 #endif
 
@@ -390,12 +388,10 @@ TranslationBlock *tb_gen_code(CPUState *cpu, TCGTBCPUState s)
              * TODO: Fix all targets that cross pages except with
              * the first insn, at which point this can't be reached.
              */
-            for (unsigned i = TB_PAGES; i-- > 1; ) {
-                phys_p2 = tb_page_addr_n(tb, i);
-                if (unlikely(phys_p2 != -1)) {
-                    tb_unlock_page_n(tb, i, phys_p2);
-                    tb_set_page_addr_n(tb, i, -1);
-                }
+            phys_p2 = tb_page_addr1(tb);
+            if (unlikely(phys_p2 != -1)) {
+                tb_unlock_page1(phys_pc, phys_p2);
+                tb_set_page_addr1(tb, -1);
             }
             goto restart_translate;
 
@@ -593,7 +589,7 @@ TranslationBlock *tb_gen_code(CPUState *cpu, TCGTBCPUState s)
         return existing_tb;
     }
 #ifdef CONFIG_TCG_WASM64
-    if (tb->w64_inl && tb_page_addr_n(tb, 1) != -1) {
+    if (tb->w64_inl && tb_page_addr1(tb) != -1) {
         w64_inl_list_add(tb);
     }
 #endif

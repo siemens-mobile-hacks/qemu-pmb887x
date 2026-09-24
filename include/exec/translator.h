@@ -19,7 +19,6 @@
  */
 
 #include "exec/memop.h"
-#include "exec/tb-pages.h"             /* TB_PAGES: host_addr[] is per page */
 #include "exec/vaddr.h"
 #include "tcg/tcg.h"
 
@@ -77,7 +76,7 @@ struct DisasContextBase {
     bool fake_insn;
     uint8_t code_mmuidx;
     struct TCGOp *insn_start;
-    void *host_addr[TB_PAGES];
+    void *host_addr[2];
 
     /*
      * Record insn data that we cannot read directly from host memory.
@@ -92,33 +91,15 @@ struct DisasContextBase {
     uint8_t record[32];
 #ifdef CONFIG_TCG_WASM64
     /*
-     * The guest page host_addr[n] maps, for n >= 1: the page after
-     * pc_first unless the frontend inlined a callee from elsewhere
-     * (target/arm w64_inline_call), which can put a different page in
-     * each slot.  [0] is unused -- host_addr[0] is always pc_first's
-     * page.  @w64_lin_end, when set, is where the TB's linear range ends
-     * because translation stopped inside a callee.
+     * The guest page host_addr[1] maps: the page after pc_first unless the
+     * frontend inlined a callee from elsewhere (target/arm
+     * w64_inline_call).  @w64_lin_end, when set, is where the TB's linear
+     * range ends because translation stopped inside a callee.
      */
-    vaddr w64_page_base[TB_PAGES];
+    vaddr w64_page1;
     vaddr w64_lin_end;
 #endif
 };
-
-#ifdef CONFIG_TCG_WASM64
-/*
- * Which host_addr[] slot maps @page, or 0 if none does (slot 0 is the entry
- * page and never a match here, so 0 doubles as "not tracked").
- */
-static inline unsigned w64_page_slot(const DisasContextBase *db, vaddr page)
-{
-    for (unsigned n = 1; n < TB_PAGES; n++) {
-        if (db->w64_page_base[n] == page) {
-            return n;
-        }
-    }
-    return 0;
-}
-#endif
 
 /**
  * TranslatorOps:

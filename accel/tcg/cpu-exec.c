@@ -173,17 +173,13 @@ static bool tb_lookup_cmp(const void *p, const void *d)
         tb->cs_base == desc->s.cs_base &&
         tb->flags == desc->s.flags &&
         tb_cflags(tb) == desc->s.cflags) {
-        /* check every further tracked page if needed */
-        unsigned slot;
-
-        for (slot = 1; slot < TB_PAGES; slot++) {
-            tb_page_addr_t tb_phys_page1 = tb_page_addr_n(tb, slot);
+        /* check next page if needed */
+        tb_page_addr_t tb_phys_page1 = tb_page_addr1(tb);
+        if (tb_phys_page1 == -1) {
+            return true;
+        } else {
             tb_page_addr_t phys_page1;
             vaddr virt_page1;
-
-            if (tb_phys_page1 == -1) {
-                continue;
-            }
 
             /*
              * We know that the first page matched, and an otherwise valid TB
@@ -196,7 +192,7 @@ static bool tb_lookup_cmp(const void *p, const void *d)
              */
             virt_page1 = TARGET_PAGE_ALIGN(desc->s.pc);
 #ifdef CONFIG_TCG_WASM64
-            if (unlikely(tb->w64_inl & W64_INL_VPAGE(slot))) {
+            if (unlikely(tb->w64_inl & W64_INL_VPAGE1)) {
                 /*
                  * Page 1 is an inlined callee's page (translation-block.h
                  * w64_inl), reached only after the instructions before
@@ -207,9 +203,8 @@ static bool tb_lookup_cmp(const void *p, const void *d)
                 void *host;
                 int fl;
 
-                /* the callee page, relative to the entry page (CF_PCREL) */
                 virt_page1 = (desc->s.pc & TARGET_PAGE_MASK) +
-                             tb->w64_inl_vpage[slot];
+                             tb->w64_inl_vpage1;
                 if (desc->s.pc <= UINT32_MAX) {
                     virt_page1 = (uint32_t)virt_page1;
                 }
@@ -223,11 +218,10 @@ static bool tb_lookup_cmp(const void *p, const void *d)
             }
 #endif
             phys_page1 = get_page_addr_code(desc->env, virt_page1);
-            if (tb_phys_page1 != phys_page1) {
-                return false;
+            if (tb_phys_page1 == phys_page1) {
+                return true;
             }
         }
-        return true;
     }
     return false;
 }

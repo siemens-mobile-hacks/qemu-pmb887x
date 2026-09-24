@@ -117,7 +117,7 @@ bool translator_use_goto_tb(DisasContextBase *db, vaddr dest)
 
     /*
      * Check for the dest on the same page as the start of the TB, or
-     * (wasm64) on any further page the TB has fetched from.  A TB with a
+     * (wasm64) on the second page the TB has fetched from.  A TB with a
      * second page is only chained into when that page is an inlined
      * callee's (cpu-exec.c), and those chains are dropped at every
      * TLB-flush site (tb_unlink_inlined), so the guard holds whichever
@@ -127,17 +127,8 @@ bool translator_use_goto_tb(DisasContextBase *db, vaddr dest)
     if (likely(translator_is_same_page(db, dest))) {
         return true;
     }
-    {
-        vaddr page = dest & TARGET_PAGE_MASK;
-        unsigned n;
-
-        for (n = 1; n < TB_PAGES; n++) {
-            if (db->w64_page_base[n] == page && db->host_addr[n] != NULL) {
-                return true;
-            }
-        }
-    }
-    return false;
+    return (dest & TARGET_PAGE_MASK) == db->w64_page1 &&
+           db->host_addr[1] != NULL;
 #else
     return translator_is_same_page(db, dest);
 #endif
@@ -164,15 +155,12 @@ void translator_loop(CPUState *cpu, TranslationBlock *tb, int *max_insns,
     db->insn_start = NULL;
     db->fake_insn = false;
     db->host_addr[0] = host_pc;
-    memset(&db->host_addr[1], 0, sizeof(db->host_addr) - sizeof(db->host_addr[0]));
+    db->host_addr[1] = NULL;
     db->record_start = 0;
     db->record_len = 0;
     db->code_mmuidx = cpu_mmu_index(cpu, true);
 #ifdef CONFIG_TCG_WASM64
-    for (unsigned i = 1; i < TB_PAGES; i++) {
-        db->w64_page_base[i] = -1;
-    }
-    db->w64_page_base[1] = (pc & TARGET_PAGE_MASK) + TARGET_PAGE_SIZE;
+    db->w64_page1 = (pc & TARGET_PAGE_MASK) + TARGET_PAGE_SIZE;
     db->w64_lin_end = 0;
 #endif
 
@@ -315,7 +303,6 @@ static bool translator_ld(CPUArchState *env, DisasContextBase *db,
     vaddr last = pc + len - 1;
     void *host;
     vaddr base;
-    unsigned slot = 1;
 
     /* Use slow path if first page is MMIO. */
     if (unlikely(tb_page_addr0(tb) == -1)) {
@@ -341,11 +328,11 @@ static bool translator_ld(CPUArchState *env, DisasContextBase *db,
 #ifdef CONFIG_TCG_WASM64
         /*
          * A straddling read concludes on the *linear* next page, so it is
-         * translatable only while some slot still holds that page; an
-         * inlined callee may have taken every other one.
+         * translatable only while page 1 is still that page; an inlined
+         * callee may have taken it.
          */
-        if (unlikely(w64_page_slot(db, (base & TARGET_PAGE_MASK)
-                                   + TARGET_PAGE_SIZE) == 0)) {
+        if (unlikely(db->w64_page1 !=
+                     (base & TARGET_PAGE_MASK) + TARGET_PAGE_SIZE)) {
             return false;
         }
 #endif
@@ -366,22 +353,21 @@ static bool translator_ld(CPUArchState *env, DisasContextBase *db,
      * In the meantime, assert.
      */
 #ifdef CONFIG_TCG_WASM64
-    slot = w64_page_slot(db, pc & TARGET_PAGE_MASK);
-    if (unlikely(slot == 0)) {
+    if (unlikely((pc & TARGET_PAGE_MASK) != db->w64_page1)) {
         return false;
     }
-    base = db->w64_page_base[slot];
+    base = db->w64_page1;
 #else
     base = (base & TARGET_PAGE_MASK) + TARGET_PAGE_SIZE;
 #endif
     assert(((base ^ pc) & TARGET_PAGE_MASK) == 0);
     assert(((base ^ last) & TARGET_PAGE_MASK) == 0);
-    host = db->host_addr[slot];
+    host = db->host_addr[1];
 
     if (host == NULL) {
-        tb_page_addr_t old_page1, new_page1;
+        tb_page_addr_t page0, old_page1, new_page1;
 
-        new_page1 = get_page_addr_code_hostp(env, base, &db->host_addr[slot]);
+        new_page1 = get_page_addr_code_hostp(env, base, &db->host_addr[1]);
 
         /*
          * If the second page is MMIO, treat as if the first page
@@ -396,21 +382,22 @@ static bool translator_ld(CPUArchState *env, DisasContextBase *db,
         }
 
         /*
-         * If this is not the first time around, and the page matches,
+         * If this is not the first time around, and page1 matches,
          * then we already have the page locked.  Alternately, we're
          * not doing anything to prevent the PTE from changing, so
          * we might wind up with a different page, requiring us to
          * re-do the locking.
          */
-        old_page1 = tb_page_addr_n(tb, slot);
+        old_page1 = tb_page_addr1(tb);
         if (likely(new_page1 != old_page1)) {
+            page0 = tb_page_addr0(tb);
             if (unlikely(old_page1 != -1)) {
-                tb_unlock_page_n(tb, slot, old_page1);
+                tb_unlock_page1(page0, old_page1);
             }
-            tb_set_page_addr_n(tb, slot, new_page1);
-            tb_lock_page_n(tb, slot, new_page1);
+            tb_set_page_addr1(tb, new_page1);
+            tb_lock_page1(page0, new_page1);
         }
-        host = db->host_addr[slot];
+        host = db->host_addr[1];
     }
 
  do_read:
