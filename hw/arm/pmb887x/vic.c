@@ -49,7 +49,7 @@ struct pmb887x_vic_t {
 	 * these (a handful of the 170 lines are ever asserted; the scan runs
 	 * on every line change — thousands per second on the display path) */
 	uint64_t asserted[(IRQS_COUNT + 63) / 64];
-
+	
 	uint32_t fiq_con;
 	uint32_t irq_con;
 
@@ -61,7 +61,7 @@ struct pmb887x_vic_t {
 	 * request line toggles through here twice per display word */
 	int8_t parent_irq_level;
 	int8_t parent_fiq_level;
-
+	
 	int pending_irq;
 	int pending_fiq;
 
@@ -120,7 +120,7 @@ static int vic_pending(pmb887x_vic_t *p, bool fiq, uint32_t mask_priority) {
 			}
 		}
 	}
-
+	
 	return irq_n;
 }
 
@@ -149,14 +149,14 @@ static void vic_update_state(pmb887x_vic_t *p) {
 
 static void vic_irq_handler(void *opaque, int irq, int level) {
 	pmb887x_vic_t *p = (pmb887x_vic_t *) opaque;
-
+	
 	#if PMB887X_IO_BRIDGE
 	if (level == 100000) {
 		p->irq_state[irq].bridge = true;
 		level = 1;
 	}
 	#endif
-
+	
 	if (p->irq_state[irq].level == level)
 		return;         /* nothing changed: the pending state cannot have */
 	vic_set_level(p, irq, level);

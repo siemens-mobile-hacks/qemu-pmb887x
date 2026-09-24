@@ -123,7 +123,6 @@ struct pmb887x_tpu_t {
 	int64_t start;
 	int64_t next;
 	int64_t armed;
-	bool armed_valid;
 	uint32_t frame_ticks;
 	uint32_t next_frame_ticks;
 	bool skip_extended;
@@ -390,7 +389,6 @@ static void tpu_advance(pmb887x_tpu_t *p) {
 
 static void tpu_update_timer(pmb887x_tpu_t *p) {
 	if (!p->enabled) {
-		p->armed_valid = false;
 		timer_del(p->timer);
 		return;
 	}
@@ -405,17 +403,14 @@ static void tpu_update_timer(pmb887x_tpu_t *p) {
 	 * it and may notify the main loop - so only re-arm when the
 	 * deadline actually moved.
 	 */
-	if (!p->armed_valid || p->armed != p->next || !timer_pending(p->timer)) {
+	if (p->armed != p->next || !timer_pending(p->timer)) {
 		p->armed = p->next;
-		p->armed_valid = true;
 		timer_mod(p->timer, p->next);
 	}
 }
 
 static void tpu_timer_callback(void *opaque) {
-	pmb887x_tpu_t *p = opaque;
-	p->armed_valid = false;   /* the timer has fired; it is not armed */
-	tpu_update_timer(p);
+	tpu_update_timer(opaque);
 }
 
 static void tpu_apply_offset(pmb887x_tpu_t *p) {
@@ -755,7 +750,7 @@ static void tpu_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned si
 	pmb887x_tpu_t *p = (struct pmb887x_tpu_t *) opaque;
 	
 	IO_DUMP_WRITE(haddr + p->mmio.addr, size, value);
-
+	
 	switch (haddr) {
 		case TPU_CLC:
 			pmb887x_clc_set(&p->clc, value);
@@ -947,7 +942,6 @@ static void tpu_realize(DeviceState *dev, Error **errp) {
 static void tpu_reset(DeviceState *dev) {
 	pmb887x_tpu_t *p = PMB887X_TPU(dev);
 
-	p->armed_valid = false;
 	timer_del(p->timer);
 
 	pmb887x_clc_set(&p->clc, MOD_CLC_DISR);

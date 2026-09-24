@@ -51,9 +51,7 @@ struct pmb887x_capcom_t {
 	uint32_t drm;
 	uint32_t whbssee;
 	uint32_t whbcsee;
-	uint32_t t0;
 	uint32_t t0rel;
-	uint32_t t1;
 	uint32_t t1rel;
 	uint32_t t01ocr;
 	uint32_t whbsout;
@@ -117,8 +115,6 @@ static enum pmb887x_capcom_cc_mode_t capcom_get_mode(pmb887x_capcom_t *p, int id
 	return (ccm & cc->mod_mask) >> cc->mod_shift;
 }
 
-static void capcom_timer_cb(void *opaque);
-
 static bool capcom_t_run(pmb887x_capcom_t *p, int n) {
 	return (p->t01con & (n ? CAPCOM_T01CON_T1R : CAPCOM_T01CON_T0R)) != 0;
 }
@@ -129,7 +125,7 @@ static bool capcom_t_timer_mode(pmb887x_capcom_t *p, int n) {
 }
 
 static uint32_t capcom_t_rel(pmb887x_capcom_t *p, int n) {
-	return (n ? p->t1rel : p->t0rel) & CAPCOM_T0_T0;
+	return (n ? p->t1rel : p->t0rel) & 0xFFFF;
 }
 
 static void capcom_update_freq(pmb887x_capcom_t *p) {
@@ -290,13 +286,6 @@ static uint64_t capcom_io_read(void *opaque, hwaddr haddr, unsigned size) {
 	/* SRR and OVF bits of events nobody timed are only applied here */
 	capcom_sync(p);
 	
-	if (haddr == CAPCOM_T0 || haddr == CAPCOM_T1) {
-		int n = haddr == CAPCOM_T1;
-		value = p->count[n] | (p->ovf[n] ? CAPCOM_T0_OVF0 : 0);
-		IO_DUMP_READ(haddr + p->mmio.addr, size, value);
-		return value;
-	}
-	
 	switch (haddr) {
 		case CAPCOM_CLC:
 			value = pmb887x_clc_get(&p->clc);
@@ -351,7 +340,7 @@ static uint64_t capcom_io_read(void *opaque, hwaddr haddr, unsigned size) {
 			break;
 		
 		case CAPCOM_T0:
-			value = p->t0;
+			value = p->count[0] | (p->ovf[0] ? CAPCOM_T0_OVF0 : 0);
 			break;
 		
 		case CAPCOM_T0REL:
@@ -359,7 +348,7 @@ static uint64_t capcom_io_read(void *opaque, hwaddr haddr, unsigned size) {
 			break;
 		
 		case CAPCOM_T1:
-			value = p->t1;
+			value = p->count[1] | (p->ovf[1] ? CAPCOM_T1_OVF1 : 0);
 			break;
 		
 		case CAPCOM_T1REL:
@@ -475,8 +464,7 @@ static void capcom_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned
 			break;
 		
 		case CAPCOM_T0:
-			p->t0 = value;
-			p->count[0] = value & CAPCOM_T0_T0;
+			p->count[0] = value & 0xFFFF;
 			p->ovf[0] = !!(value & CAPCOM_T0_OVF0);
 			break;
 		
@@ -485,8 +473,7 @@ static void capcom_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned
 			break;
 		
 		case CAPCOM_T1:
-			p->t1 = value;
-			p->count[1] = value & CAPCOM_T1_T1;
+			p->count[1] = value & 0xFFFF;
 			p->ovf[1] = !!(value & CAPCOM_T1_OVF1);
 			break;
 		
@@ -649,9 +636,7 @@ static void capcom_reset(DeviceState *dev) {
 	p->drm = 0;
 	p->whbssee = 0;
 	p->whbcsee = 0;
-	p->t0 = 0;
 	p->t0rel = 0;
-	p->t1 = 0;
 	p->t1rel = 0;
 	p->t01ocr = 0;
 	p->whbsout = 0;

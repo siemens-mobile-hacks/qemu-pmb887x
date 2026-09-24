@@ -109,7 +109,7 @@ struct pmb887x_dif_t {
 	 * together, plus the constant bits (bcsel == 1) and the invert mask —
 	 * rebuilt by dif_update_mux, exactly the bit-per-bit result */
 	uint32_t mux_tab[2][4][256];
-	uint32_t mux_const[2];
+	uint32_t mux_const;
 	uint32_t mux_invert;
 	/* a BMREG/BCSEL/BCREG/INVERT_BIT write changed the mux registers; the
 	 * tables are rebuilt on the next word (the firmware rewrites them far
@@ -451,7 +451,7 @@ static inline uint32_t dif_mux(pmb887x_dif_t *p, uint32_t value) {
 	const uint32_t (*t)[256] = p->mux_tab[cd];
 	return (t[0][value & 0xFF] | t[1][(value >> 8) & 0xFF] |
 	        t[2][(value >> 16) & 0xFF] | t[3][value >> 24] |
-	        p->mux_const[cd]) ^ p->mux_invert;
+	        p->mux_const) ^ p->mux_invert;
 }
 
 /* The bit-per-bit definition: output bit o is input bit (cd ? o :
@@ -481,8 +481,7 @@ static void dif_build_mux_tables(pmb887x_dif_t *p) {
 		}
 	}
 	p->mux_invert = invert;
-	p->mux_const[0] = cst;
-	p->mux_const[1] = cst;
+	p->mux_const = cst;
 }
 
 static uint32_t dif_convert_color(pmb887x_dif_t *p, uint32_t value) {

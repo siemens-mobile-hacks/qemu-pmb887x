@@ -36,7 +36,6 @@ struct pmb887x_flash_blk_t {
 	QEMUBH *flush_bh;
 	QEMUTimer *flush_timer;
 	bool inflight;
-	VMChangeStateEntry *vmstate;
 };
 
 int pmb887x_flash_blk_pread(pmb887x_flash_blk_t *flash, int64_t offset, int64_t size, void *storage) {
@@ -224,13 +223,13 @@ static void flash_blk_realize(DeviceState *dev, Error **errp) {
 	}
 	
 	DPRINTF("Drive size: %08"PRIX64"\n", blk_co_getlength(flash->blk));
-
+	
 #ifdef __EMSCRIPTEN__
 	flash->dirty = g_array_new(false, false, sizeof(flash_blk_dirty_t));
 	flash->queue = g_array_new(false, false, sizeof(flash_blk_dirty_t));
 	flash->flush_bh = qemu_bh_new(flash_blk_flush_bh, flash);
 	flash->flush_timer = timer_new_ms(QEMU_CLOCK_REALTIME, flash_blk_flush_timer, flash);
-	flash->vmstate = qemu_add_vm_change_state_handler(flash_blk_vm_state, flash);
+	qemu_add_vm_change_state_handler(flash_blk_vm_state, flash);
 #endif
 
 	if (pmb887x_flash_blk_is_rw(flash)) {
