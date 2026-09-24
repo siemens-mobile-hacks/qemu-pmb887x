@@ -44,11 +44,6 @@ static __thread struct {
     struct w64_fixup fixup[W64_MAX_FIXUPS];
     int n_fixup;
 
-    struct w64_type type[W64_MAX_TYPES];
-    uint8_t n_types;
-    struct w64_import imp[W64_MAX_IMPORTS];
-    uint8_t n_imp;
-
     /* structured-control-flow block stack (for br depth arithmetic) */
     struct { uint8_t kind; int label; } blk[W64_MAX_BLK];
     int n_blk;
@@ -140,61 +135,51 @@ static void w64_sleb64(TCGContext *s, int64_t v)
 }
 
 /* ------------------------------------------------------------------ */
-/* helper-call emission (per-TB import indices + batch fixups)        */
+/* branch hints and helper calls                                       */
 /* ------------------------------------------------------------------ */
 
-/* `call <funcidx>`: the index LEB is padded to 2 bytes so the batch
- * assembler (wasm64.c) can rewrite it in place — per-TB temp-module
- * index -> batch-union index — without shifting any byte that follows.
- * w64_callidx records the site (position + union index) in CF; the
- * list is reset at every tcg_out_tb_start, so aborted overflow
- * retries cannot leak entries into the batch arena — only finalized
- * TBs contribute (w64_batch_member copies CF under the member's
- * fixed range). */
-static __thread struct w64_cfix *CF;
-static __thread uint32_t n_cf, cap_cf;
-
-static void w64_cf_add(uint32_t pos, uint16_t uimp)
-{
-    if (n_cf == cap_cf) {
-        cap_cf = cap_cf ? cap_cf * 2 : 32;
-        CF = g_realloc(CF, (size_t)cap_cf * sizeof(*CF));
-    }
-    CF[n_cf].pos = pos;
-    CF[n_cf].uimp = uimp;
-    n_cf++;
-}
-
-static void w64_callidx(TCGContext *s, uint8_t imp, uint8_t uimp)
-{
-    w64_u8(s, (uint8_t)((imp & 0x7f) | 0x80));
-    w64_u8(s, (uint8_t)(imp >> 7));
-    w64_cf_add(s->code_ptr - 2 - s->code_buf, uimp);
-}
+/* Branch hints of the TB being translated; reset at every
+ * tcg_out_tb_start, so an aborted attempt leaks nothing into the batch
+ * (w64_batch_member copies them at finalize). */
+static __thread struct w64_hint *HINT;
+static __thread uint32_t n_hint, cap_hint;
 
 /* the `if` / `br_if` emitted next is almost always (not) taken */
 static void w64_hint(TCGContext *s, bool likely)
 {
-    w64_cf_add(s->code_ptr - s->code_buf,
-               likely ? W64_CFIX_LIKELY : W64_CFIX_UNLIKELY);
+    if (n_hint == cap_hint) {
+        cap_hint = cap_hint ? cap_hint * 2 : 32;
+        HINT = g_realloc(HINT, (size_t)cap_hint * sizeof(*HINT));
+    }
+    HINT[n_hint].pos = s->code_ptr - s->code_buf;
+    HINT[n_hint].likely = likely;
+    n_hint++;
+}
+
+/* `call <import>`: @uimp indexes the batch's union import table */
+static void w64_call(TCGContext *s, uint8_t uimp)
+{
+    w64_u8(s, 0x10);
+    w64_uleb(s, uimp);
 }
 
 /* ------------------------------------------------------------------ */
 /* locals and register access                                          */
 /* ------------------------------------------------------------------ */
 
-/* params: 0 = $env, 1 = $sp, 2 = $tp; then locals:
- *   3 .. 3+NB-1                 i32 reg locals (+ $bp at 3+NB)
- *   3+NB+1 .. 3+NB+NB           i64 reg locals
- *   3+2*NB+1                    i32 scratch ($scr32)
- *   3+2*NB+2..+4                three i64 scratch locals              */
+/* params: 0 = $env, 1 = $sp, 2 = $tp; then, for the NL allocatable regs:
+ *   3 .. 3+NL-1                 i32 reg locals (+ $bp at 3+NL)
+ *   3+NL+1 .. 3+NL+NL           i64 reg locals
+ *   3+2*NL+1                    i32 scratch ($scr32)
+ *   3+2*NL+2..+4                three i64 scratch locals              */
+#define W64_NL        TCG_AREG0
 #define W64_P_ENV     0
 #define W64_P_SP      1
 #define W64_P_TP      2
 #define W64_L32(r)    (3 + (r))
-#define W64_L64(r)    (3 + TCG_TARGET_NB_REGS + 1 + (r))
-#define W64_L_BP      (3 + TCG_TARGET_NB_REGS)
-#define W64_L_SCR32   (3 + 2 * TCG_TARGET_NB_REGS + 1)
+#define W64_L64(r)    (3 + W64_NL + 1 + (r))
+#define W64_L_BP      (3 + W64_NL)
+#define W64_L_SCR32   (3 + 2 * W64_NL + 1)
 #define W64_L_SCR0    (W64_L_SCR32 + 1)
 #define W64_L_SCR1    (W64_L_SCR0 + 1)
 #define W64_L_SCR2    (W64_L_SCR1 + 1)   /* ld/st addr snapshot */
@@ -368,60 +353,6 @@ static void w64_br_loop(TCGContext *s)
     w64_u8(s, 0x0c);                        /* br */
     w64_uleb(s, W.n_blk - 1 - W.loop_idx);
 }
-
-/* ------------------------------------------------------------------ */
-/* types and imports                                                   */
-/* ------------------------------------------------------------------ */
-
-static uint8_t w64_add_type(unsigned np, const uint8_t *p, uint8_t ret)
-{
-    int i, j;
-    for (i = 0; i < W.n_types; i++) {
-        if (W.type[i].np != np || W.type[i].ret != ret) {
-            continue;
-        }
-        for (j = 0; j < (int)np; j++) {
-            if (W.type[i].p[j] != p[j]) {
-                break;
-            }
-        }
-        if (j == (int)np) {
-            return i;
-        }
-    }
-    tcg_debug_assert(W.n_types < W64_MAX_TYPES);
-    if (W.n_types >= W64_MAX_TYPES) {
-        W.overflow = true;
-        return 0;
-    }
-    W.type[W.n_types].np = np;
-    memcpy(W.type[W.n_types].p, p, np);
-    W.type[W.n_types].ret = ret;
-    return W.n_types++;
-}
-
-static uint8_t w64_import_idx(uint32_t fptr, uint8_t type)
-{
-    int i;
-    for (i = 0; i < W.n_imp; i++) {
-        if (W.imp[i].fptr == fptr && W.imp[i].type == type) {
-            return i;
-        }
-    }
-    tcg_debug_assert(W.n_imp < W64_MAX_IMPORTS);
-    if (W.n_imp >= W64_MAX_IMPORTS) {
-        W.overflow = true;
-        return 0;
-    }
-    W.imp[W.n_imp].fptr = fptr;
-    W.imp[W.n_imp].type = type;
-    return W.n_imp++;
-}
-
-/* ------------------------------------------------------------------ */
-/* module frame (emitted around the body at fixed offsets)             */
-/* ------------------------------------------------------------------ */
-
 
 /* number the labels in set order and decide the branch scheme */
 static void w64_scan_labels(TCGContext *s)
@@ -607,16 +538,6 @@ static void w64_ir_target(const TCGLabel *l)
     w64_ir_w(0);
 }
 
-static void w64_ir_imm32(uint32_t v)
-{
-    w64_ir_w(v);
-}
-
-static void w64_ir_imm64(uint64_t v)
-{
-    w64_ir_w64(v);
-}
-
 static void w64_ir_ldst(unsigned op, TCGReg v, TCGReg b, intptr_t o)
 {
     if (o != (intptr_t)(int32_t)o) {
@@ -666,35 +587,35 @@ static void w64_ir_alui(TCGType t, unsigned alu, TCGReg r0, TCGReg r1,
 {
     w64_ir_op((t == TCG_TYPE_I32 ? WI_ALU32_RRI : WI_ALU64_RRI) + alu,
               r0, r1, 0);
-    w64_ir_imm64((uint64_t)(int64_t)i2);
+    w64_ir_w64((uint64_t)(int64_t)i2);
 }
 
 static void w64_ir_subir(TCGType t, TCGReg r0, tcg_target_long i1, TCGReg r2)
 {
     w64_ir_op(t == TCG_TYPE_I32 ? WI_SUBIR32 : WI_SUBIR64, r0, 0, r2);
-    w64_ir_imm64((uint64_t)(int64_t)i1);
+    w64_ir_w64((uint64_t)(int64_t)i1);
 }
 
 static void w64_ir_setcond(TCGType t, TCGCond c, TCGReg r0, TCGReg r1,
                            TCGReg r2)
 {
     w64_ir_op(t == TCG_TYPE_I32 ? WI_SETCOND32 : WI_SETCOND64, r0, r1, r2);
-    w64_ir_imm32(c);
+    w64_ir_w(c);
 }
 
 static void w64_ir_setcondi(TCGType t, TCGCond c, TCGReg r0, TCGReg r1,
                             tcg_target_long i2)
 {
     w64_ir_op(t == TCG_TYPE_I32 ? WI_SETCONDI32 : WI_SETCONDI64, r0, r1, 0);
-    w64_ir_imm32(c);
-    w64_ir_imm64((uint64_t)(int64_t)i2);
+    w64_ir_w(c);
+    w64_ir_w64((uint64_t)(int64_t)i2);
 }
 
 static void w64_ir_brcond(TCGType t, TCGCond c, TCGReg r1, TCGReg r2,
                           const TCGLabel *l)
 {
     w64_ir_op(t == TCG_TYPE_I32 ? WI_BRCOND32 : WI_BRCOND64, 0, r1, r2);
-    w64_ir_imm32(c);
+    w64_ir_w(c);
     w64_ir_target(l);
 }
 
@@ -702,8 +623,8 @@ static void w64_ir_brcondi(TCGType t, TCGCond c, TCGReg r1,
                            tcg_target_long i2, const TCGLabel *l)
 {
     w64_ir_op(t == TCG_TYPE_I32 ? WI_BRCONDI32 : WI_BRCONDI64, 0, r1, 0);
-    w64_ir_imm32(c);
-    w64_ir_imm64((uint64_t)(int64_t)i2);
+    w64_ir_w(c);
+    w64_ir_w64((uint64_t)(int64_t)i2);
     w64_ir_target(l);
 }
 
@@ -716,17 +637,17 @@ static void w64_ir_movcond(TCGType t, TCGCond c, TCGReg ret, TCGReg c1,
 
     w64_ir_op(t == TCG_TYPE_I32 ? WI_MOVCOND32 : WI_MOVCOND64,
               ret, c1, const_c2 ? 0 : (unsigned)c2);
-    w64_ir_imm32(c);
-    w64_ir_imm32(flags | ((const_vt ? 0u : (unsigned)vt) << 8) |
+    w64_ir_w(c);
+    w64_ir_w(flags | ((const_vt ? 0u : (unsigned)vt) << 8) |
                  ((const_vf ? 0u : (unsigned)vf) << 16));
     if (const_c2) {
-        w64_ir_imm64((uint64_t)(int64_t)c2);
+        w64_ir_w64((uint64_t)(int64_t)c2);
     }
     if (const_vt) {
-        w64_ir_imm64((uint64_t)(int64_t)vt);
+        w64_ir_w64((uint64_t)(int64_t)vt);
     }
     if (const_vf) {
-        w64_ir_imm64((uint64_t)(int64_t)vf);
+        w64_ir_w64((uint64_t)(int64_t)vf);
     }
 }
 
@@ -734,22 +655,22 @@ static void w64_ir_mul2(unsigned op, TCGReg a0, TCGReg a1, TCGReg a2,
                         TCGReg a3)
 {
     w64_ir_op(op, a0, a1, a2);
-    w64_ir_imm32(a3);
+    w64_ir_w(a3);
 }
 
 static void w64_ir_field(unsigned op, TCGReg a0, TCGReg a1, TCGReg a2,
                          unsigned ofs, unsigned len)
 {
     w64_ir_op(op, a0, a1, a2);
-    w64_ir_imm32(ofs | (len << 8));
+    w64_ir_w(ofs | (len << 8));
 }
 
 static void w64_ir_memop(unsigned op, TCGReg data, TCGReg addr, MemOpIdx oi,
                          uintptr_t ra)
 {
     w64_ir_op(op, data, addr, 0);
-    w64_ir_imm32(oi);
-    w64_ir_imm64(ra);
+    w64_ir_w(oi);
+    w64_ir_w64(ra);
 }
 
 static void w64_ir_call(const void *target, const TCGHelperInfo *info,
@@ -922,7 +843,7 @@ static void w64_binop_rri(TCGContext *s, TCGType t, uint8_t op32, uint8_t op64,
 
 /*
  * Address operands.  Everything this backend pushes as an address is a
- * 64-bit host pointer; under W64_MEM32 the memory indexes in i32, so the
+ * 64-bit host pointer; the memory indexes in i32 (wasm64.h), so the
  * address -- and only the address -- is narrowed at the point of use.
  * Truncating after the arithmetic is exact: wrap(a + b) == wrap(a) +
  * wrap(b) mod 2^32, so a fold like base+ofs may still be done in i64.
@@ -935,19 +856,12 @@ static void w64_binop_rri(TCGContext *s, TCGType t, uint8_t op32, uint8_t op64,
  */
 static void w64_wrap_addr(TCGContext *s)
 {
-#ifdef W64_MEM32
     w64_u8(s, 0xa7);                        /* i32.wrap_i64 */
-#endif
 }
 
-/* push a constant address: free under W64_MEM32, it just gets shorter */
 static void w64_const_addr(TCGContext *s, uint64_t v)
 {
-#ifdef W64_MEM32
     w64_const_i32(s, (int32_t)v);
-#else
-    w64_const_i64(s, (int64_t)v);
-#endif
 }
 
 /* push register base as an address */
@@ -964,17 +878,11 @@ static void w64_addr(TCGContext *s, TCGReg base, intptr_t ofs)
         w64_get_addr(s, base);
         return;
     }
-#ifdef W64_MEM32
     /* narrow first: one wrap of the base serves every access, and the
-     * i32 sum needs none (see w64_tlb_i32) */
+     * i32 sum needs none */
     w64_get_addr(s, base);
     w64_const_i32(s, (int32_t)ofs);
     w64_u8(s, 0x6a);                        /* i32.add */
-#else
-    w64_get_i64(s, base);
-    w64_const_i64(s, ofs);
-    w64_u8(s, 0x7c);                        /* i64.add */
-#endif
 }
 
 /* memarg (align, offset) with offset folded into the memarg when it
@@ -1066,7 +974,7 @@ static void tcg_out_st(TCGContext *s, TCGType type, TCGReg val, TCGReg base,
 
 static void tcg_out_ld8u(TCGContext *s, TCGType t, TCGReg v, TCGReg b, intptr_t o)
 {
-    w64_ir_ldst(t == TCG_TYPE_I32 ? WI_LD8U : WI_LD8U, v, b, o);
+    w64_ir_ldst(WI_LD8U, v, b, o);
     w64_load(s, t == TCG_TYPE_I32 ? 0x2d : 0x31, t, v, b, o, 0);
 }
 
@@ -1078,7 +986,7 @@ static void tcg_out_ld8s(TCGContext *s, TCGType t, TCGReg v, TCGReg b, intptr_t 
 
 static void tcg_out_ld16u(TCGContext *s, TCGType t, TCGReg v, TCGReg b, intptr_t o)
 {
-    w64_ir_ldst(t == TCG_TYPE_I32 ? WI_LD16U : WI_LD16U, v, b, o);
+    w64_ir_ldst(WI_LD16U, v, b, o);
     w64_load(s, t == TCG_TYPE_I32 ? 0x2f : 0x33, t, v, b, o, 1);
 }
 
@@ -1090,13 +998,13 @@ static void tcg_out_ld16s(TCGContext *s, TCGType t, TCGReg v, TCGReg b, intptr_t
 
 static void tcg_out_ld32u(TCGContext *s, TCGType t, TCGReg v, TCGReg b, intptr_t o)
 {
-    w64_ir_ldst(t == TCG_TYPE_I32 ? WI_LD32U : WI_LD32U, v, b, o);
+    w64_ir_ldst(WI_LD32U, v, b, o);
     w64_load(s, t == TCG_TYPE_I32 ? 0x28 : 0x35, t, v, b, o, 2);
 }
 
 static void tcg_out_ld32s(TCGContext *s, TCGType t, TCGReg v, TCGReg b, intptr_t o)
 {
-    w64_ir_ldst(t == TCG_TYPE_I32 ? WI_LD32S64 : WI_LD32S64, v, b, o);
+    w64_ir_ldst(WI_LD32S64, v, b, o);
     w64_load(s, 0x34, TCG_TYPE_I64, v, b, o, 2);
 }
 
@@ -1141,22 +1049,11 @@ static bool tcg_out_mov(TCGContext *s, TCGType type, TCGReg ret, TCGReg arg)
 {
     w64_ir_op(type == TCG_TYPE_I32 ? WI_MOV32 : WI_MOV64, ret, arg, 0);
     tcg_debug_assert(ret != arg);
+    w64_get(s, arg, type);
     if (type == TCG_TYPE_I32) {
-        if (w64_rep_is64(arg)) {
-            w64_get_i32(s, arg);
-            w64_set_i32(s, ret);
-        } else {
-            w64_local_get(s, w64_local32(arg));
-            w64_set_i32(s, ret);
-        }
+        w64_set_i32(s, ret);
     } else {
-        if (w64_rep_is64(arg)) {
-            w64_local_get(s, w64_local64(arg));
-            w64_set_i64(s, ret);
-        } else {
-            w64_get_i64(s, arg);
-            w64_set_i64(s, ret);
-        }
+        w64_set_i64(s, ret);
     }
     return true;
 }
@@ -1361,7 +1258,7 @@ static void tcg_out_br(TCGContext *s, TCGLabel *l)
 static void tcg_out_exit_tb(TCGContext *s, uintptr_t arg)
 {
     w64_ir_op(WI_EXIT_TB, 0, 0, 0);
-    w64_ir_imm32((uint32_t)arg);
+    w64_ir_w((uint32_t)arg);
     w64_const_i32(s, (int32_t)arg);
     w64_u8(s, 0x0f);                        /* return */
 }
@@ -1512,9 +1409,6 @@ static void tcg_out_goto_ptr(TCGContext *s, TCGReg a0)
 
 static void tcg_out_mb(TCGContext *s, unsigned a0)
 {
-    if (a0 != 0) {
-        w64_ir_op(WI_MB, 0, 0, 0);
-    }
     /*
      * The guest is single-vCPU, but the linear memory is shared with
      * other pthreads (main-loop timers, the DSP worker); wasm plain
@@ -1523,6 +1417,7 @@ static void tcg_out_mb(TCGContext *s, unsigned a0)
      * essentially no barriers, so the cost is nil.
      */
     if (a0 != 0) {
+        w64_ir_op(WI_MB, 0, 0, 0);
         w64_u8(s, 0xfe);
         w64_u8(s, 0x03);
         w64_u8(s, 0x00);
@@ -1593,7 +1488,7 @@ static void tcg_out_call(TCGContext *s, const tcg_insn_unit *target,
     uint8_t p[8], ret;
     unsigned np = info->nr_in, i;
     uintptr_t ra = w64_pc(s);
-    uint8_t imp, uimp;
+    uint8_t uimp;
 
     tcg_debug_assert(info->out_kind == TCG_CALL_RET_NORMAL);
     tcg_debug_assert(np <= ARRAY_SIZE(p));
@@ -1636,14 +1531,9 @@ static void tcg_out_call(TCGContext *s, const tcg_insn_unit *target,
         g_assert_not_reached();
     }
 
-    {
-        uint8_t lt = w64_add_type(np, p, ret);
-        uint8_t ut = w64_union_type(np, p, ret);
-        imp = w64_import_idx((uint32_t)(uintptr_t)target, lt);
-        uimp = w64_union_import((uint32_t)(uintptr_t)target, ut);
-    }
-    w64_u8(s, 0x10);                        /* call */
-    w64_callidx(s, imp, uimp);
+    uimp = w64_union_import((uint32_t)(uintptr_t)target,
+                            w64_union_type(np, p, ret));
+    w64_call(s, uimp);
 
     /* result -> oarg register (ret: 0 = i32, 1 = i64, 0xff = void) */
     if (ret == 1) {
@@ -1701,7 +1591,7 @@ static bool w64_tlb_setup(struct w64_tlb_ctx *tc, TCGContext *s,
     unsigned a_mask = (1u << memop_alignment_bits(mop)) - 1;
     unsigned s_mask = (1u << (mop & MO_SIZE)) - 1;
 
-    if ((mop & MO_BSWAP) ||
+    if (s->addr_type != TCG_TYPE_I32 || (mop & MO_BSWAP) ||
         (atom != MO_ATOM_NONE && atom != MO_ATOM_IFALIGN)) {
         return false;
     }
@@ -1715,41 +1605,24 @@ static bool w64_tlb_setup(struct w64_tlb_ctx *tc, TCGContext *s,
     return true;
 }
 
-/* push the address tag an entry's addr_read/addr_write must equal */
-static void w64_tlb_key(TCGContext *s, int al, const struct w64_tlb_ctx *tc)
-{
-    w64_local_get(s, al);
-    if (tc->adj) {
-        w64_const_i64(s, tc->adj);
-        w64_u8(s, 0x7c);                    /* i64.add */
-    }
-    w64_const_i64(s, (int64_t)tc->tlb_mask);
-    w64_u8(s, 0x83);                        /* i64.and */
-}
-
 /*
- * With a 32-bit memory index and a 32-bit guest the probe runs in i32:
- * every i64 sum ahead of an address costs V8 a movl to narrow it, three
- * on the chain of each access.  The low halves are exact -- the mask,
- * the table pointer and the addend mod 2^32, and a comparator whose
- * high half is nonzero is -1 (invalid), whose low half has the bits
- * between the alignment and the page set and so matches no key.  The
- * key's (addr + adj) may wrap past 2^32 to page 0, but it is compared
- * against the entry of the last page's index, never page 0's.  QEMU's
- * x86-64 backend compares 32 bits for a 32-bit guest the same way.
+ * The probe runs in i32 (a 32-bit guest, w64_tlb_setup): every i64 sum
+ * ahead of an address costs V8 a movl to narrow it, three on the chain
+ * of each access.  The low halves are exact -- the mask, the table
+ * pointer and the addend mod 2^32, and a comparator whose high half is
+ * nonzero is -1 (invalid), whose low half has the bits between the
+ * alignment and the page set and so matches no key.  The key's
+ * (addr + adj) may wrap past 2^32 to page 0, but it is compared against
+ * the entry of the last page's index, never page 0's.  QEMU's x86-64
+ * backend compares 32 bits for a 32-bit guest the same way.
+ *
+ * $scr32 = entry, then the hit condition (i32) on the value stack for
+ * the caller's `if`.  @al is the local holding the zero-extended guest
+ * address (the $scr2 snapshot — never a TCG register, whose
+ * representation the arms may still mutate when data == addr).
  */
-static bool w64_tlb_i32(TCGContext *s)
-{
-#ifdef W64_MEM32
-    return s->addr_type == TCG_TYPE_I32;
-#else
-    return false;
-#endif
-}
-
 /* i32 probe: $scr32 = entry, hit condition on the value stack */
-static void w64_tlb_probe32(TCGContext *s, int al,
-                            const struct w64_tlb_ctx *tc)
+static void w64_tlb_probe(TCGContext *s, int al, const struct w64_tlb_ctx *tc)
 {
     w64_local_get(s, W64_P_ENV);
     w64_u8(s, 0xa7);                        /* i32.wrap_i64 */
@@ -1782,68 +1655,15 @@ static void w64_tlb_probe32(TCGContext *s, int al,
     w64_u8(s, 0x46);                        /* i32.eq */
 }
 
-/* Emit the probe: $scr0 = entry, $scr1 = tlb_addr, then the hit
- * condition (i32) on the value stack for the caller's `if`.  @al is
- * the local holding the zero-extended guest address (the $scr2
- * snapshot — never a TCG register, whose representation the arms may
- * still mutate when data == addr). */
-static void w64_tlb_probe(TCGContext *s, int al, const struct w64_tlb_ctx *tc)
-{
-    if (w64_tlb_i32(s)) {
-        w64_tlb_probe32(s, al, tc);
-        return;
-    }
-
-    /* $scr0 = env + fast_ofs (negative; memarg offsets are unsigned) */
-    w64_local_get(s, W64_P_ENV);
-    w64_const_i64(s, tc->fast_ofs);
-    w64_u8(s, 0x7c);                        /* i64.add */
-    w64_local_tee(s, W64_L_SCR0);
-    w64_wrap_addr(s);
-
-    /* $scr0 = table[(addr >> page_bits) & (mask >> entry_bits)] */
-    w64_u8(s, 0x29);                        /* i64.load */
-    w64_memarg(s, 3, 0);                    /* mask */
-    w64_local_get(s, al);
-    w64_const_i64(s, tc->shr);
-    w64_u8(s, 0x88);                        /* i64.shr_u */
-    w64_u8(s, 0x83);                        /* i64.and */
-    w64_local_get(s, W64_L_SCR0);
-    w64_wrap_addr(s);
-    w64_u8(s, 0x29);                        /* i64.load */
-    w64_memarg(s, 3, 8);                    /* table */
-    w64_u8(s, 0x7c);                        /* i64.add */
-    w64_local_tee(s, W64_L_SCR0);
-    w64_wrap_addr(s);
-
-    /* hit = (tlb_addr == ((addr + adj) & tlb_mask)); tlb_addr has no
-     * other reader, so it stays on the value stack */
-    w64_u8(s, 0x29);                        /* i64.load */
-    w64_memarg(s, 3, tc->cmp_ofs);
-
-    w64_tlb_key(s, al, tc);
-    w64_u8(s, 0x51);                        /* i64.eq */
-}
-
-/* push [addr + entry->addend] (i64) for the fast access; @al as above */
+/* push the host address [addr + entry->addend] for the fast access */
 static void w64_tlb_haddr(TCGContext *s, int al)
 {
-    if (w64_tlb_i32(s)) {
-        w64_local_get(s, al);
-        w64_u8(s, 0xa7);                    /* i32.wrap_i64 */
-        w64_local_get(s, W64_L_SCR32);
-        w64_u8(s, 0x28);                    /* i32.load */
-        w64_memarg(s, 2, 24);               /* addend */
-        w64_u8(s, 0x6a);                    /* i32.add */
-        return;
-    }
     w64_local_get(s, al);
-    w64_local_get(s, W64_L_SCR0);
-    w64_wrap_addr(s);
-    w64_u8(s, 0x29);                        /* i64.load */
-    w64_memarg(s, 3, 24);                   /* addend */
-    w64_u8(s, 0x7c);                        /* i64.add */
-    w64_wrap_addr(s);
+    w64_u8(s, 0xa7);                        /* i32.wrap_i64 */
+    w64_local_get(s, W64_L_SCR32);
+    w64_u8(s, 0x28);                        /* i32.load */
+    w64_memarg(s, 2, 24);                   /* addend */
+    w64_u8(s, 0x6a);                        /* i32.add */
 }
 
 /* size/sign-specialized fast access opcodes, indexed [is64][MO_SSIZE]
@@ -1895,7 +1715,7 @@ static void tgen_qemu_ld(TCGContext *s, TCGType type, TCGReg data,
     MemOp mop = get_memop(oi);
     uintptr_t ra = w64_pc(s);
     uint8_t p[4] = { 1, 1, 0, 1 };
-    uint8_t imp, uimp, lt, ut;
+    uint8_t uimp;
     struct w64_tlb_ctx tc;
     bool fast;
     unsigned s_bits = mop & MO_SIZE;
@@ -1910,12 +1730,9 @@ static void tgen_qemu_ld(TCGContext *s, TCGType type, TCGReg data,
 
     /* helper signature: (env*, uint64_t addr, uint32_t oi, uintptr_t ra)
      * -> tcg_target_ulong (i64) */
-    lt = w64_add_type(4, p, 1);
-    ut = w64_union_type(4, p, 1);
-    imp = w64_import_idx(
-        (uint32_t)(uintptr_t)qemu_ld_helpers[mop & MO_SSIZE], lt);
     uimp = w64_union_import(
-        (uint32_t)(uintptr_t)qemu_ld_helpers[mop & MO_SSIZE], ut);
+        (uint32_t)(uintptr_t)qemu_ld_helpers[mop & MO_SSIZE],
+        w64_union_type(4, p, 1));
 
     fast = w64_tlb_setup(&tc, s, oi, true);
     if (fast) {
@@ -1942,8 +1759,7 @@ static void tgen_qemu_ld(TCGContext *s, TCGType type, TCGReg data,
     }
     w64_const_i32(s, oi);
     w64_const_i64(s, ra);
-    w64_u8(s, 0x10);
-    w64_callidx(s, imp, uimp);
+    w64_call(s, uimp);
     if (type == TCG_TYPE_I32) {
         w64_u8(s, 0xa7);                    /* i32.wrap_i64 */
         w64_set_i32(s, data);
@@ -1968,7 +1784,7 @@ static void tgen_qemu_st(TCGContext *s, TCGType type, TCGReg data,
     uintptr_t ra = w64_pc(s);
     bool q = (mop & MO_SIZE) == MO_64;
     uint8_t p[5] = { 1, 1, q, 0, 1 };
-    uint8_t imp, uimp, lt, ut;
+    uint8_t uimp;
     struct w64_tlb_ctx tc;
     bool fast;
     unsigned s_bits = mop & MO_SIZE;
@@ -1977,12 +1793,9 @@ static void tgen_qemu_st(TCGContext *s, TCGType type, TCGReg data,
      * uintptr_t ra) -> void; val: i32 for b/w/l, i64 for q */
     w64_ir_memop(type == TCG_TYPE_I32 ? WI_QEMU_ST32 : WI_QEMU_ST64,
                  data, addr, oi, ra);
-    lt = w64_add_type(5, p, 0xff);
-    ut = w64_union_type(5, p, 0xff);
-    imp = w64_import_idx(
-        (uint32_t)(uintptr_t)qemu_st_helpers[s_bits], lt);
     uimp = w64_union_import(
-        (uint32_t)(uintptr_t)qemu_st_helpers[s_bits], ut);
+        (uint32_t)(uintptr_t)qemu_st_helpers[s_bits],
+        w64_union_type(5, p, 0xff));
 
     fast = w64_tlb_setup(&tc, s, oi, false);
     if (fast) {
@@ -2009,8 +1822,7 @@ static void tgen_qemu_st(TCGContext *s, TCGType type, TCGReg data,
     }
     w64_const_i32(s, oi);
     w64_const_i64(s, ra);
-    w64_u8(s, 0x10);
-    w64_callidx(s, imp, uimp);
+    w64_call(s, uimp);
 
     if (fast) {
         w64_blk_pop(s);                     /* end (if/else) */
@@ -2615,9 +2427,8 @@ static void tgen_bswap16(TCGContext *s, TCGType t, TCGReg r0, TCGReg r1,
                          unsigned flags)
 {
     w64_ir_op(WI_BSWAP16, r0, r1, t != TCG_TYPE_I32);
-    w64_ir_imm32(flags);
+    w64_ir_w(flags);
     unsigned top = t == TCG_TYPE_I32 ? 32 : 64;
-    uint64_t lowmask = t == TCG_TYPE_I32 ? 0xffff : 0xffff;
 
     /* swapped low half */
     w64_get(s, r1, t);
@@ -2646,7 +2457,7 @@ static void tgen_bswap16(TCGContext *s, TCGType t, TCGReg r0, TCGReg r1,
         /* preserve input upper bits (default) */
         w64_local_get(s, scr_);
         w64_get(s, r1, t);
-        w64_const(s, t, (tcg_target_long)~lowmask);
+        w64_const(s, t, ~(tcg_target_long)0xffff);
         w64_u8(s, t == TCG_TYPE_I32 ? 0x71 : 0x83);       /* and */
         w64_u8(s, t == TCG_TYPE_I32 ? 0x72 : 0x84);       /* or */
     }
@@ -2666,7 +2477,7 @@ static void tgen_bswap32(TCGContext *s, TCGType t, TCGReg r0, TCGReg r1,
                          unsigned flags)
 {
     w64_ir_op(WI_BSWAP32, r0, r1, t != TCG_TYPE_I32);
-    w64_ir_imm32(flags);
+    w64_ir_w(flags);
     unsigned top = t == TCG_TYPE_I32 ? 32 : 64;
 
     if (t == TCG_TYPE_I32) {
@@ -2906,16 +2717,14 @@ uint64_t *w64_tb_acct_insns(void)
 
 static void tcg_out_tb_start(TCGContext *s)
 {
-    static const uint8_t magic[8] = { 0, 'a', 's', 'm', 1, 0, 0, 0 };
     static const uint8_t p1[1] = { 0 };    /* (i32) */
-    uint8_t sync_type = 0, sync_imp = 0, sync_uimp = 0;
-    uint8_t ls_type = 0, ls_imp = 0, ls_uimp = 0;
+    uint8_t sync_uimp = 0, ls_uimp = 0;
     uint32_t tidx;
     unsigned nlabels = MIN((unsigned)s->nb_labels, W64_MAX_LABELS);
 
     /*
      * Only the counters and the live prefix of label_idx carry state
-     * from the previous TB: fixup[], type[], imp[] and blk[] are all
+     * from the previous TB: fixup[] and blk[] are both
      * bounded by their own counters and are written before they are
      * read.  Zeroing the whole struct was 11.6 KB of memset per
      * translation, against the ~10 label slots a TB actually uses.
@@ -2924,14 +2733,12 @@ static void tcg_out_tb_start(TCGContext *s)
     W.n_labels = 0;
     W.overflow = false;
     W.n_fixup = 0;
-    W.n_types = 0;
-    W.n_imp = 0;
     W.n_blk = 0;
     W.loop_idx = 0;
     W.nested = false;
     W.selfloop = false;
     W.rep = 0;
-    n_cf = 0;
+    n_hint = 0;
     w64_ir_reset(nlabels);
     w64_scan_labels(s);
     w64_batch_begin_tb();
@@ -2947,52 +2754,31 @@ static void tcg_out_tb_start(TCGContext *s)
 
     /* descriptor */
     stl_p(s->code_buf + W64_DESC_FIDX, 0);
-    stl_p(s->code_buf + W64_DESC_MODLEN, 0);
+    stl_p(s->code_buf + W64_DESC_BATCH, 0);
     stl_p(s->code_buf + W64_DESC_ICOUNT, s->gen_tb->icount);
-    stl_p(s->code_buf + W64_DESC_NIMP, 0);
     tidx = w64_alloc_tidx();
     stl_p(s->code_buf + W64_DESC_TIDX, tidx);
 
-    /* module prelude reservation */
-    memcpy(s->code_buf + W64_MOD_OFF, magic, sizeof(magic));
-
-    /* type 0: the TB entry signature (i64, i64, i64) -> i32 — also the
-     * call_indirect signature used by goto_tb chaining */
-    {
-        uint8_t p[3] = { 1, 1, 1 };
-        w64_add_type(3, p, 0);
-    }
-
-    /* TB accounting (phase 3): the prologue performs the per-TB-entry
-     * accounting INLINE and imports only the rare/conditional tails -
-     * the icount2 deadline sync (opt-in ?icount=precise-clocks) and the
-     * lockstep fold (W64_LOCKSTEP).  Registered first so their indices
-     * are deterministic (the prologue's calls are the body's first
-     * instructions). */
+    /* the rare tails of the prologue accounting: the icount2 deadline
+     * sync (?icount=precise-clocks) and the lockstep fold (W64_LOCKSTEP) */
     if (icount2_enabled()) {
-        sync_type = w64_add_type(0, (const uint8_t *)"", 0xff);  /* () -> () */
-        sync_uimp = w64_union_type(0, NULL, 0xff);
-        sync_imp = w64_import_idx(
-            (uint32_t)(uintptr_t)w64_icount2_sync_now, sync_type);
         sync_uimp = w64_union_import(
-            (uint32_t)(uintptr_t)w64_icount2_sync_now, sync_uimp);
+            (uint32_t)(uintptr_t)w64_icount2_sync_now,
+            w64_union_type(0, NULL, 0xff));
     }
     if (w64_ls_armed()) {
-        ls_type = w64_add_type(1, p1, 0xff);            /* (i32) -> () */
-        ls_uimp = w64_union_type(1, p1, 0xff);
-        ls_imp = w64_import_idx((uint32_t)(uintptr_t)w64_lockstep_account,
-                                ls_type);
         ls_uimp = w64_union_import(
-            (uint32_t)(uintptr_t)w64_lockstep_account, ls_uimp);
+            (uint32_t)(uintptr_t)w64_lockstep_account,
+            w64_union_type(1, p1, 0xff));
     }
 
     /* body: [body-size LEB (patched)] [locals] [expr...] */
     s->code_ptr = s->code_buf + W64_BODY_OFF;
     w64_uleb32_p5(s, 0);
     w64_u8(s, 0x04);                        /* local runs */
-    w64_uleb(s, TCG_TARGET_NB_REGS + 1);    /* i32: regs + $bp */
+    w64_uleb(s, W64_NL + 1);                /* i32: regs + $bp */
     w64_u8(s, 0x7f);
-    w64_uleb(s, TCG_TARGET_NB_REGS);        /* i64: regs */
+    w64_uleb(s, W64_NL);                    /* i64: regs */
     w64_u8(s, 0x7e);
     w64_u8(s, 0x01); w64_u8(s, 0x7f);       /* i32: $scr32 */
     w64_u8(s, 0x03); w64_u8(s, 0x7e);       /* i64: $scr0..$scr2 */
@@ -3044,8 +2830,7 @@ static void tcg_out_tb_start(TCGContext *s)
         w64_u8(s, 0x59);                              /* i64.ge_s */
         w64_u8(s, 0x71);                              /* i32.and */
         w64_blk_push(s, W64_BLK_IF, -1);
-        w64_u8(s, 0x10);                              /* call */
-        w64_callidx(s, sync_imp, sync_uimp);
+        w64_call(s, sync_uimp);
         w64_blk_pop(s);
     }
 
@@ -3057,56 +2842,18 @@ static void tcg_out_tb_start(TCGContext *s)
         w64_u8(s, 0x28);  w64_memarg(s, 2, 0);        /* i32.load */
         w64_blk_push(s, W64_BLK_IF, -1);
         w64_const_i32(s, s->gen_tb->icount);
-        w64_u8(s, 0x10);                              /* call */
-        w64_callidx(s, ls_imp, ls_uimp);
+        w64_call(s, ls_uimp);
         w64_blk_pop(s);
     }
 
     w64_emit_loop_head(s);
 }
 
-/* small growable buffer for the prelude sections */
-struct w64_buf {
-    uint8_t b[W64_PRELUDE + 16];
-    unsigned n;
-    bool overflow;
-};
-
-static void wb_u8(struct w64_buf *w, uint8_t v)
-{
-    if (w->n >= sizeof(w->b)) {
-        w->overflow = true;
-        return;
-    }
-    w->b[w->n++] = v;
-}
-
-static void wb_bytes(struct w64_buf *w, const void *p, unsigned n)
-{
-    if (w->n + n > sizeof(w->b)) {
-        w->overflow = true;
-        return;
-    }
-    memcpy(w->b + w->n, p, n);
-    w->n += n;
-}
-
-static void wb_uleb(struct w64_buf *w, uint64_t v)
-{
-    do {
-        uint8_t b = v & 0x7f;
-        v >>= 7;
-        wb_u8(w, v ? b | 0x80 : b);
-    } while (v);
-}
-
 static int tcg_out_tb_finalize(TCGContext *s)
 {
-    struct w64_buf w;
-    size_t body_total, body_size;
-    unsigned i;
+    size_t body_total;
 
-    if (W.overflow) {
+    if (W.overflow || w64_batch_tb_overflow()) {
         /* an emitter table filled up mid-translation: report "TB too
          * large" so tb_gen_code retries with half the insns instead of
          * emitting a corrupt module */
@@ -3131,18 +2878,16 @@ static int tcg_out_tb_finalize(TCGContext *s)
     w64_const_i32(s, 0);
     w64_u8(s, 0x0b);                       /* end: function expr */
 
-    body_total = s->code_ptr - (s->code_buf + W64_BODY_OFF);
-    body_size = body_total - 5;
-
     /* every forward branch must have been resolved by now */
     if (W.n_fixup != 0) {
         return -2;
     }
 
     /* patch the body-size LEB */
+    body_total = s->code_ptr - (s->code_buf + W64_BODY_OFF);
     {
         tcg_insn_unit *p = s->code_buf + W64_BODY_OFF;
-        uint32_t v = body_size;
+        uint32_t v = body_total - 5;
         int b;
         for (b = 0; b < 4; b++) {
             p[b] = (v & 0x7f) | 0x80;
@@ -3151,179 +2896,10 @@ static int tcg_out_tb_finalize(TCGContext *s)
         p[4] = v & 0x7f;
     }
 
-    /* sections */
-    w.n = 0;
-    w.overflow = false;
-    wb_bytes(&w, s->code_buf + W64_MOD_OFF, 8);         /* magic */
-
-    /* type section */
-    {
-        unsigned start;
-        wb_u8(&w, 0x01);                       /* section id */
-        start = ++w.n;                         /* size slot */
-        wb_uleb(&w, W.n_types);
-        for (i = 0; i < W.n_types; i++) {
-            unsigned j;
-            wb_u8(&w, 0x60);
-            wb_uleb(&w, W.type[i].np);
-            for (j = 0; j < W.type[i].np; j++) {
-                wb_u8(&w, W.type[i].p[j] ? 0x7e : 0x7f);
-            }
-            if (W.type[i].ret == 0xff) {
-                wb_uleb(&w, 0);
-            } else {
-                wb_uleb(&w, 1);
-                wb_u8(&w, W.type[i].ret ? 0x7e : 0x7f);
-            }
-        }
-        w.b[start - 1] = w.n - start;
-        if (w.n - start >= 128) {
-            return -2;                  /* 1-byte section size overflow */
-        }
-    }
-
-    /* import section: memory + shared chain table + helpers */
-    {
-        unsigned start;
-        wb_u8(&w, 0x02);                       /* section id */
-        start = ++w.n;                         /* size slot */
-        wb_uleb(&w, W.n_imp + 2);
-        wb_u8(&w, 1); wb_u8(&w, 'e');       /* module "e" */
-        wb_u8(&w, 1); wb_u8(&w, 'm');       /* field  "m" */
-        wb_u8(&w, 0x02);                    /* memory */
-        wb_u8(&w, W64_MEM_LIMITS);
-        wb_uleb(&w, W64_MEM_PAGES);
-        wb_uleb(&w, W64_MEM_PAGES);
-        /* the shared chain table (goto_tb targets); min must not exceed
-         * the actual table size at instantiation time */
-        wb_u8(&w, 1); wb_u8(&w, 'e');       /* module "e" */
-        wb_u8(&w, 1); wb_u8(&w, 't');       /* field  "t" */
-        wb_u8(&w, 0x01);                    /* table (import kind) */
-        wb_u8(&w, 0x70);                    /* funcref */
-        wb_u8(&w, 0x00);                    /* limits: min only */
-        wb_uleb(&w, 1);
-        for (i = 0; i < W.n_imp; i++) {
-            char name[8];
-            int len = snprintf(name, sizeof(name), "f%u", i);
-            wb_u8(&w, 1); wb_u8(&w, 'e');
-            wb_u8(&w, len);
-            wb_bytes(&w, name, len);
-            wb_u8(&w, 0x00);                /* function */
-            wb_uleb(&w, W.imp[i].type);
-        }
-        w.b[start - 1] = w.n - start;
-        if (w.n - start >= 128) {
-            return -2;                  /* 1-byte section size overflow */
-        }
-    }
-
-    /* function section: one defined function, type 0 */
-    wb_u8(&w, 0x03); wb_u8(&w, 0x02); wb_u8(&w, 0x01); wb_u8(&w, 0x00);
-
-    /* export section: "tb" -> function index n_imp */
-    {
-        unsigned start;
-        wb_u8(&w, 0x07);                       /* section id */
-        start = ++w.n;                         /* size slot */
-        wb_uleb(&w, 1);
-        wb_u8(&w, 2); wb_u8(&w, 't'); wb_u8(&w, 'b');
-        wb_u8(&w, 0x00);
-        wb_uleb(&w, W.n_imp);
-        w.b[start - 1] = w.n - start;
-        if (w.n - start >= 128) {
-            return -2;                  /* 1-byte section size overflow */
-        }
-    }
-
-    /* custom-section filler + code section header, ending at BODY_OFF */
-    {
-        unsigned payload = 1 + body_total;  /* count + body */
-        unsigned trailer = 1 + 5 + 1;       /* id + size LEB + count */
-        unsigned target = W64_PRELUDE - trailer;
-        unsigned room;
-
-        if (w.n > target || target - w.n == 1 || target - w.n == 2) {
-            /* cannot fill the gap with a well-formed custom section */
-            return -2;
-        }
-        room = target - w.n;
-
-        if (room > 0) {
-            /* one custom section: id 0, size LEB, content = name + payload.
-             * The size counts the content only (name length + payload).
-             * NOTE: bytes are computed into locals BEFORE writing — an
-             * emscripten -O3 inlining artifact was observed mangling the
-             * reassigned `content` when the else-branch lands exactly on
-             * content==127 (the emitted LEB said 255), so keep the value
-             * flow trivially simple for the optimizer. */
-            unsigned content, nleb;
-            uint8_t b0, b1 = 0;
-            if (room - 2 <= 127) {
-                content = room - 2;
-                b0 = (uint8_t)content;
-                nleb = 1;
-            } else {
-                content = room - 3;
-                if (content < 127 || content >= 16384) {
-                    return -2;
-                }
-                b0 = (uint8_t)((content & 0x7f) | 0x80);
-                b1 = (uint8_t)(content >> 7);
-                nleb = 2;
-            }
-            wb_u8(&w, 0x00);               /* section id */
-            wb_u8(&w, b0);
-            if (nleb == 2) {
-                wb_u8(&w, b1);
-            }
-            wb_u8(&w, 0);                  /* name length 0 */
-            room -= 2 + nleb;
-            while (room--) {
-                wb_u8(&w, 0);
-            }
-        }
-        if (w.n != target) {
-            return -2;
-        }
-
-        wb_u8(&w, 0x0a);                    /* code section */
-        w.n += 5;                           /* patched below */
-        wb_u8(&w, 0x01);                    /* one body */
-
-        if (w.overflow) {
-            return -2;
-        }
-        memcpy(s->code_buf + W64_MOD_OFF, w.b, W64_PRELUDE);
-
-        /* code section size (5-byte padded LEB) */
-        {
-            uint8_t *p = s->code_buf + W64_MOD_OFF + target + 1;
-            uint32_t v = payload;
-            int b;
-            for (b = 0; b < 4; b++) {
-                p[b] = (v & 0x7f) | 0x80;
-                v >>= 7;
-            }
-            p[4] = v & 0x7f;
-        }
-    }
-
-    /* import table follows the module */
-    for (i = 0; i < W.n_imp; i++) {
-        stl_p(s->code_ptr, W.imp[i].fptr);
-        s->code_ptr += 4;
-    }
-
-    /* descriptor */
-    stl_p(s->code_buf + W64_DESC_MODLEN, W64_PRELUDE + body_total);
-    stl_p(s->code_buf + W64_DESC_NIMP, W.n_imp);
-
     /* join the open batch: may assemble + instantiate the batch module
-     * right here (fill or union-table pressure) and flip this TB's
-     * descriptor to the batch thunk (desc+4 = batch id, so the
-     * dispatcher calls run(env, sp, tp, tidx) instead of the entry) */
+     * right here (fill or union-table pressure) */
     w64_ir_finish(ldl_p(s->code_buf + W64_DESC_TIDX));
-    w64_batch_member((uintptr_t)s->code_buf, body_total, CF, n_cf);
+    w64_batch_member((uintptr_t)s->code_buf, body_total, HINT, n_hint);
     return 0;
 }
 
@@ -3351,7 +2927,7 @@ static TCGReg tcg_target_call_oarg_reg(TCGCallReturnKind kind, int slot)
 #ifdef CONFIG_DEBUG_TCG
 static const char *const tcg_target_reg_names[TCG_TARGET_NB_REGS] = {
     "r00", "r01", "r02", "r03", "r04", "r05", "r06", "r07",
-    "r08", "r09", "r10", "r11", "r12", "tmp", "env", "sp",
+    "r08", "r09", "r10", "r11", "r12", "env", "sp",
 };
 #endif
 
@@ -3406,14 +2982,13 @@ static void tcg_out_set_borrow(TCGContext *s)
 
 static void tcg_target_init(TCGContext *s)
 {
-    tcg_target_available_regs[TCG_TYPE_I32] = MAKE_64BIT_MASK(0, 13);
-    tcg_target_available_regs[TCG_TYPE_I64] = MAKE_64BIT_MASK(0, 13);
+    tcg_target_available_regs[TCG_TYPE_I32] = MAKE_64BIT_MASK(0, W64_NL);
+    tcg_target_available_regs[TCG_TYPE_I64] = MAKE_64BIT_MASK(0, W64_NL);
 
     /* wasm calls preserve locals; only the result registers change */
     tcg_target_call_clobber_regs = MAKE_64BIT_MASK(TCG_REG_R0, 2);
 
     s->reserved_regs = 0;
-    tcg_regset_set_reg(s->reserved_regs, TCG_REG_TMP);
     tcg_regset_set_reg(s->reserved_regs, TCG_AREG0);
     tcg_regset_set_reg(s->reserved_regs, TCG_REG_CALL_STACK);
 

@@ -49,8 +49,9 @@
  * declared local is not free: the baseline tier zeroes all of them at
  * entry.  W64_LOCALPAD prices one at 8.09 us/Mi, so the 32-register file
  * was ~5.6 % of wall for registers TCG never allocated — tcgSpill reads 0
- * with 13 allocatable and 29 over 64 631 TBs with 10. */
-#define TCG_TARGET_NB_REGS 16
+ * with 13 allocatable and 29 over 64 631 TBs with 10.  env and sp are
+ * function parameters, so only the 13 allocatable registers get locals. */
+#define TCG_TARGET_NB_REGS 15
 
 typedef enum {
     TCG_REG_R0 = 0,
@@ -68,12 +69,10 @@ typedef enum {
     TCG_REG_R12,
     TCG_REG_R13,
     TCG_REG_R14,
-    TCG_REG_R15,
 } TCGReg;
 
-#define TCG_REG_TMP        TCG_REG_R13   /* generic scratch (reserved) */
-#define TCG_AREG0          TCG_REG_R14   /* env — wasm local $env       */
-#define TCG_REG_CALL_STACK TCG_REG_R15   /* frame — wasm local $sp      */
+#define TCG_AREG0          TCG_REG_R13   /* env — wasm param $env */
+#define TCG_REG_CALL_STACK TCG_REG_R14   /* frame — wasm param $sp */
 
 /* Function call generation: no argument registers; all arguments are
  * stored into the call frame at $sp (TCG_STATIC_CALL_ARGS_SIZE layout),
@@ -87,12 +86,5 @@ typedef enum {
 #define TCG_TARGET_CALL_RET_I128        TCG_CALL_RET_NORMAL
 
 #define HAVE_TCG_QEMU_TB_EXEC
-
-/* Optional instructions: op availability is decided solely by the
- * outop_* tables and tcg-target-has.h (see W-16 in
- * doc/wasm-port-review.md); the per-op TCG_TARGET_HAS_* block that used
- * to live here referenced macros the core no longer reads. */
-
-#define TCG_TARGET_HAS_qemu_ldst_i128 0
 
 #endif /* TCG_TARGET_H */

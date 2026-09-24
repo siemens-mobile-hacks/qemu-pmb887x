@@ -487,16 +487,12 @@ case "$cpu" in
     CPU_CFLAGS="-m64"
     ;;
   wasm64)
-    CPU_CFLAGS="-m64 -sMEMORY64=$wasm64_memory64"
-    # meson ignores the cross file's [built-in options] c_args, so nothing
-    # in --extra-cflags ever reaches a compile line; CPU_CFLAGS becomes the
-    # compiler's own argv ([binaries] c) and does.  The modules the JIT
-    # emits import the main module's memory and must declare the type it
-    # was linked with, so this define has to travel with -sMEMORY64=2
-    # rather than beside it: out of step, every TB fails to instantiate.
-    if test "$wasm64_memory64" = 2; then
-      CPU_CFLAGS="$CPU_CFLAGS -DW64_MEM32"
+    # The wasm64 TCG backend's modules import the main module's memory
+    # with a 32-bit index (tcg/wasm64/wasm64.h W64_MEM_LIMITS).
+    if test "$wasm64_memory64" != 2; then
+      error_exit "wasm64 needs --wasm64-32bit-address-limit"
     fi
+    CPU_CFLAGS="-m64 -sMEMORY64=$wasm64_memory64"
     ;;
 esac
 

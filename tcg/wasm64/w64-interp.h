@@ -20,8 +20,7 @@
  *
  * and ops that need more read a fixed number of following words, known
  * from op alone.  A 64-bit immediate is two words, low first.  Register
- * numbers are TCG target registers (0..31), which is why TCI's own
- * bytecode cannot be reused -- it packs them into 4 bits.
+ * numbers are TCG target registers.
  *
  * The op set is exactly what tcg/wasm64/tcg-target.c.inc emits: the
  * carry-arithmetic family, divs2/divu2, negsetcond, extract2 and the
@@ -55,8 +54,6 @@ enum {
 
 #define WI_ALU_STRIDE  32
 #define WI_UN_STRIDE   16
-
-#define WI_OP_END        0x00
 
 #define WI_ALU32_RRR     0x01                               /* .. 0x18 */
 #define WI_ALU64_RRR     (WI_ALU32_RRR + WI_ALU_STRIDE)     /* 0x21 */
@@ -111,9 +108,7 @@ enum {
     WI_SEXTRACT64,
 
     WI_MULU2_32,        /* a0 = lo, a1 = hi, a2 = x;  +1: y            */
-    WI_MULU2_64,
     WI_MULS2_32,
-    WI_MULS2_64,
 
     WI_QEMU_LD32,       /* a0 = dst, a1 = addr; +1: oi, +2: retaddr    */
     WI_QEMU_LD64,

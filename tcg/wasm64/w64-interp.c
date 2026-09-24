@@ -341,16 +341,6 @@ static uint64_t w64_ialu64(unsigned op, uint64_t a, uint64_t b)
     case WI_ALU_REMU: return a % b;
     case WI_ALU_CLZ:  return a ? clz64(a) : b;
     case WI_ALU_CTZ:  return a ? ctz64(a) : b;
-    case WI_ALU_MULUH: {
-        uint64_t hi;
-        mulu64(&(uint64_t){0}, &hi, a, b);
-        return hi;
-    }
-    case WI_ALU_MULSH: {
-        uint64_t hi;
-        muls64(&(uint64_t){0}, &hi, a, b);
-        return hi;
-    }
     default:          g_assert_not_reached();
     }
 }
@@ -649,14 +639,6 @@ static uint32_t w64_interp_run(const struct w64_irec *r, uintptr_t env,
             pc += 1;
             break;
         }
-        case WI_MULU2_64:
-            mulu64(&regs[a0], &regs[a1], regs[a2], regs[c[pc]]);
-            pc += 1;
-            break;
-        case WI_MULS2_64:
-            muls64(&regs[a0], &regs[a1], regs[a2], regs[c[pc]]);
-            pc += 1;
-            break;
 
         case WI_QEMU_LD32:
         case WI_QEMU_LD64: {
@@ -716,7 +698,6 @@ static uint32_t w64_interp_run(const struct w64_irec *r, uintptr_t env,
             smp_mb();
             break;
 
-        case WI_OP_END:
         default:
             g_assert_not_reached();
         }
