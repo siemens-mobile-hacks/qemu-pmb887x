@@ -138,7 +138,7 @@ extern uint32_t w64_ls_on;
 
 /* What the emitted TB prologue accounts for, published once by the
  * emitter so the interpreter tier can do the same work (w64-interp.c). */
-#define W64_ACCT_TBSTATS  2
+#define W64_ACCT_GUEST_INSNS  2
 #define W64_ACCT_ICOUNT2  4
 #define W64_ACCT_LS       8
 extern uint32_t w64_acct_flags;

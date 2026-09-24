@@ -277,11 +277,9 @@ static int64_t icount_get_raw_locked(void)
          *
          * Publishing here is not needed for the value this returns -
          * qemu_icount + icount_get_executed(cpu) is the same number -
-         * and the store is not free: it is ~1.5M writes a second on a
-         * polling guest, to a line other threads read.  Not publishing
-         * was measured on the EL71 busy state (2026-09-14) and is a
-         * 7.8 % MIPS *regression*, twice: a global icount that only
-         * moves at slice boundaries changes how the main loop paces
+         * and the store is not free on a polling guest.  Not publishing
+         * measured as a regression all the same: a global icount that
+         * only moves at slice boundaries changes how the main loop paces
          * itself, and that costs more than the store.  Leave it.
          */
         icount_update_locked(cpu);

@@ -192,7 +192,7 @@ static int w64_scr(TCGType t)
  * by the prologue only on a board without icount; under icount the count
  * is exact in the icount state and wasm_insns() derives it there.
  */
-static bool w64_tbstats_inline(void)
+static bool w64_guest_insns_inline(void)
 {
     return !icount_enabled();
 }
@@ -2713,7 +2713,7 @@ bool w64_tb_icount_exact(void)
  */
 uint64_t *w64_tb_acct_insns(void)
 {
-    return w64_tbstats_inline() ? &wasm_guest_insns : NULL;
+    return w64_guest_insns_inline() ? &wasm_guest_insns : NULL;
 }
 
 static void tcg_out_tb_start(TCGContext *s)
@@ -2749,7 +2749,7 @@ static void tcg_out_tb_start(TCGContext *s)
     if (w64_acct_addr[W64_ACCT_INSNS] == 0) {
         w64_acct_init();
     }
-    w64_acct_flags = (w64_tbstats_inline() ? W64_ACCT_TBSTATS : 0) |
+    w64_acct_flags = (w64_guest_insns_inline() ? W64_ACCT_GUEST_INSNS : 0) |
                      (icount2_enabled() ? W64_ACCT_ICOUNT2 : 0) |
                      (w64_ls_armed() ? W64_ACCT_LS : 0);
 
@@ -2785,7 +2785,7 @@ static void tcg_out_tb_start(TCGContext *s)
     w64_u8(s, 0x03); w64_u8(s, 0x7e);       /* i64: $scr0..$scr2 */
 
     /* prologue: per-TB-entry accounting, inline */
-    if (w64_tbstats_inline()) {
+    if (w64_guest_insns_inline()) {
         /* wasm_guest_insns += icount (a plain RMW: only this vCPU thread
          * writes it) */
         w64_const_addr(s, w64_acct_addr[W64_ACCT_INSNS]);

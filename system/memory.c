@@ -2933,8 +2933,8 @@ void memory_region_add_eventfd(MemoryRegion *mr,
      * run the listeners, but the fill-time MMIO dispatch caches
      * !mr->ioeventfd_nb in the TLB entry: without a full commit, a TLB
      * entry filled before the queue was configured keeps dispatching
-     * writes to ops->write and bypasses the eventfd (R-06).  Take the
-     * full path so the entries are re-filled.
+     * writes to ops->write and bypasses the eventfd.  Take the full
+     * path so the entries are re-filled.
      */
     memory_region_update_pending |= mr->enabled;
     memory_region_transaction_commit();

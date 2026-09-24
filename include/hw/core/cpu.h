@@ -260,9 +260,8 @@ struct CPUTLBEntryFull {
     uint8_t slow_flags[MMU_ACCESS_COUNT];
 
     /*
-     * Fill-time resolved MMIO dispatch (doc/performance-handoff.md,
-     * device-path slice 1): when the entry's section is a leaf I/O
-     * region whose ops allow a direct call for a given exact size,
+     * Fill-time resolved MMIO dispatch: when the entry's section is a
+     * leaf I/O region whose ops allow a direct call for a given exact size,
      * tlb_set_page_full resolves the callback + opaque + allowed-size
      * mask + endianness swap here, so the access path is one mask
      * test + one indirect call instead of the generic

@@ -1453,14 +1453,10 @@ static void gen_goto_ptr(DisasContext *s, uint32_t condexec)
 {
 #ifdef CONFIG_TCG_WASM64
     /*
-     * Every bx lr / pop {pc} / ldr pc and (0027) every msr CPSR_* ends
-     * here — one lookup per ~12 guest insns, 153 M per boot, ~12 % of
-     * the vCPU in helper_lookup_tb_ptr + jump cache + the ARM key.
-     * The 2026-09-11 inline cache recomputed that key in wasm and was
-     * flat, and a first cut of this one that compared every key word
-     * (pc, gen, hflags, thumb, condexec) at an 84 % hit rate measured
-     * +2..+4 % SLOWER: Liftoff code for a dozen loads and six branches
-     * costs more than the TurboFan-compiled helper's jump-cache hit.
+     * Every bx lr / pop {pc} / ldr pc and every msr CPSR_* ends here, one
+     * lookup per ~12 guest insns, so the inline test has to be cheaper
+     * than the helper's own jump-cache hit: comparing every key word
+     * (pc, gen, hflags, thumb, condexec) was measured slower.
      *
      * So the emitted test compares only what can differ at this exit
      * from what the translator knows.  hflags cannot: any insn that
@@ -2317,9 +2313,8 @@ static uint32_t msr_mask(DisasContext *s, int flags, int spsr)
  * cpsr_write_check_irq, so a pending interrupt has set icount_decr's high
  * half; taking the miss exit here reaches the same next TB, which stops
  * at its own prologue just as it did before.  Continuing instead would
- * push the interrupt to the end of this TB -- architecturally legal and a
- * lockstep divergence, which is the trap round forty fell into with the
- * eret BQL pair.
+ * push the interrupt to the end of this TB -- architecturally legal, but
+ * a divergence from the native reference the lockstep gate compares.
  */
 static bool w64_psr_can_continue(DisasContext *s)
 {
@@ -2495,8 +2490,6 @@ static int gen_set_psr(DisasContext *s, uint32_t mask, int spsr, TCGv_i32 t0)
     if (!spsr && w64_psr_continue(s, mask)) {
         return 0;
     }
-#endif
-#ifdef CONFIG_TCG_WASM64
     /*
      * Continue through goto_ptr instead of a plain exit: helper_cpsr_write
      * requests the next-TB-start exit whenever an interrupt is pending,
@@ -4491,9 +4484,9 @@ static bool trans_MSR_bank(DisasContext *s, arg_MSR_bank *a)
  * HELPER(cpsr_read) in emitted code: cpsr_read() & ~CPSR_EXEC.  The EXEC
  * bits (T, IT, J, IL) are dropped, so thumb and condexec_bits are not
  * read; the flag globals are used where they live instead of being
- * synced for the helper and reloaded after it.  An import call inside a
- * TB costs ~14.5 ns in situ and SL65 video runs 7 710 of these per Mi
- * (critical sections: mrs, orr #0xc0, msr cpsr_c): -2.9 % ms/Mi.
+ * synced for the helper and reloaded after it.  Critical sections (mrs,
+ * orr #0xc0, msr cpsr_c) make this one of the most frequent helper calls
+ * a TB used to make.
  */
 static TCGv_i32 w64_gen_cpsr_read(void)
 {

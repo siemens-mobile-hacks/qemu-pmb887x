@@ -397,22 +397,7 @@ static inline bool check_for_breakpoints(CPUState *cpu, vaddr pc,
         check_for_breakpoints_slow(cpu, pc, cflags);
 }
 
-/*
- * wasm64 shortcuts on the lookup path, which runs once per indirect jump:
- *
- *  - get_tb_cpu_state is reached through cpu->cc->tcg_ops, i.e. a wasm
- *    call_indirect around a function the linker could call directly.
- *    This file is target-independent (TARGET_* are poisoned here), so the
- *    direct call is keyed on the backend: wasm64 is only ever linked with
- *    the ARM target, and any other target would fail to link on this
- *    symbol rather than silently fall back;
- *  - curr_cflags() lives in another translation unit, so the debug-only
- *    conditions it tests cost a call instead of folding away.
- */
 #ifdef CONFIG_TCG_WASM64
-TCGTBCPUState arm_get_tb_cpu_state(CPUState *cs);
-#define W64_GET_TB_CPU_STATE(cpu)  arm_get_tb_cpu_state(cpu)
-
 /*
  * What a goto_ptr exit is handed (exec/translation-block.h): the target's
  * shared-table index, tagged, so the emitted dispatch tail-calls it without
@@ -429,22 +414,11 @@ static inline const void *w64_dispatch_target(const TranslationBlock *tb)
     return (const void *)(uintptr_t)(W64_TIDX_TAG | desc[W64_TCP_TIDX / 4]);
 }
 
-static inline uint32_t curr_cflags_fast(CPUState *cpu)
-{
-    if (likely(!cpu_single_stepping(cpu) &&
-               !qatomic_read(&one_insn_per_tb) &&
-               !qemu_loglevel_mask(CPU_LOG_TB_NOCHAIN))) {
-        return cpu->tcg_cflags;
-    }
-    return curr_cflags(cpu);
-}
-#else
-#define W64_GET_TB_CPU_STATE(cpu)  ((cpu)->cc->tcg_ops->get_tb_cpu_state(cpu))
-#define curr_cflags_fast(cpu)      curr_cflags(cpu)
-#endif
-
-#ifdef CONFIG_TCG_WASM64
-/* ARM-only, like W64_GET_TB_CPU_STATE above (same linking argument). */
+/*
+ * ARM-only.  This file is target-independent (TARGET_* are poisoned), but
+ * wasm64 is only ever linked with the ARM target; any other target would
+ * fail to link on these symbols rather than silently fall back.
+ */
 bool arm_w64_lc_key(CPUState *cs, uint32_t key32[3]);
 bool arm_w64_lc_key_pc(CPUState *cs, uint32_t key32[3], uint32_t *pc);
 #define W64_LC_KEY(cpu, k32)  arm_w64_lc_key(cpu, k32)
@@ -570,8 +544,8 @@ const void *HELPER(lookup_tb_ptr)(CPUArchState *env)
     }
 #endif
 
-    TCGTBCPUState s = W64_GET_TB_CPU_STATE(cpu);
-    s.cflags = curr_cflags_fast(cpu);
+    TCGTBCPUState s = cpu->cc->tcg_ops->get_tb_cpu_state(cpu);
+    s.cflags = curr_cflags(cpu);
 
     if (check_for_breakpoints(cpu, s.pc, &s.cflags)) {
         cpu_loop_exit(cpu);
@@ -657,8 +631,8 @@ const void *HELPER(lookup_tb_ptr_lc)(CPUArchState *env, void *slot)
         return target;
     }
 
-    TCGTBCPUState s = W64_GET_TB_CPU_STATE(cpu);
-    s.cflags = curr_cflags_fast(cpu);
+    TCGTBCPUState s = cpu->cc->tcg_ops->get_tb_cpu_state(cpu);
+    s.cflags = curr_cflags(cpu);
 
     if (check_for_breakpoints(cpu, s.pc, &s.cflags)) {
         cpu_loop_exit(cpu);
@@ -1054,8 +1028,7 @@ static inline bool cpu_handle_exception(CPUState *cpu, int *ret)
         /*
          * The lean pair, for the same reason cputlb.c uses it on the MMIO
          * path: this guest takes an exception every few hundred
-         * instructions - 2360 SVCs per Mi while the SL65 decodes a video,
-         * ~540 k a second - and BQL_LOCK_GUARD's ~22 non-inlinable calls
+         * instructions, and BQL_LOCK_GUARD's ~22 non-inlinable calls
          * are then a percent of the vCPU on their own.  bql_unlock_mmio()
          * also defers the release, so a run of exceptions with nobody
          * contending costs one thread-local read each instead of a
@@ -1201,10 +1174,6 @@ static inline bool cpu_handle_interrupt(CPUState *cpu,
          * race the other way (the bit arriving just after the test) is
          * what the stock path does too - the kick that comes with it ends
          * the next TB and the following iteration takes the full path.
-         *
-         * The guest's syscall rate is what makes this worth a branch: an
-         * SL65 decoding video takes 2360 exceptions per Mi, so this is
-         * ~500 k BQL round trips a second that buy nothing.
          */
         if (likely(qatomic_load_acquire(&cpu->interrupt_request)
                    == CPU_INTERRUPT_EXITTB)) {
@@ -1373,7 +1342,7 @@ cpu_exec_loop(CPUState *cpu, SyncClocks *sc)
             }
 #endif
 
-            TCGTBCPUState s = W64_GET_TB_CPU_STATE(cpu);
+            TCGTBCPUState s = cpu->cc->tcg_ops->get_tb_cpu_state(cpu);
             s.cflags = cpu->cflags_next_tb;
 
             /*

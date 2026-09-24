@@ -97,7 +97,7 @@ static void w64_interp_acct(uint32_t icount)
 {
     uint32_t f = w64_acct_flags;
 
-    if (f & W64_ACCT_TBSTATS) {
+    if (f & W64_ACCT_GUEST_INSNS) {
         wasm_guest_insns += icount;
     }
     if (f & W64_ACCT_ICOUNT2) {
