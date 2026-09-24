@@ -1562,7 +1562,7 @@ bool tb_store_misses_code(ram_addr_t start, unsigned len)
  * Called via softmmu_template.h when code areas are written to with
  * iothread mutex not held.
  */
-bool tb_invalidate_phys_range_fast(CPUState *cpu, ram_addr_t start,
+void tb_invalidate_phys_range_fast(CPUState *cpu, ram_addr_t start,
                                    unsigned len, uintptr_t ra)
 {
     PageDesc *p = page_find(start >> TARGET_PAGE_BITS);
@@ -1579,7 +1579,7 @@ bool tb_invalidate_phys_range_fast(CPUState *cpu, ram_addr_t start,
          * natively also makes the lockstep oracle an independent check.
          */
         if (!tb_page_covers(p, start, last)) {
-            return false;
+            return;
         }
 #endif
 
@@ -1587,9 +1587,7 @@ bool tb_invalidate_phys_range_fast(CPUState *cpu, ram_addr_t start,
         tb_invalidate_phys_page_range__locked(cpu, pages, p,
                                               start, last, ra);
         page_collection_unlock(pages);
-        return true;
     }
-    return false;
 }
 
 #endif /* CONFIG_USER_ONLY */

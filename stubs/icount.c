@@ -33,10 +33,6 @@ void icount_start_warp_timer(void)
 {
     abort();
 }
-void icount_start_warp_timer_full(bool notify)
-{
-    abort();
-}
 void icount_account_warp_timer(void)
 {
     abort();

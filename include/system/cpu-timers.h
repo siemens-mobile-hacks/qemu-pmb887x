@@ -62,11 +62,10 @@ void icount2_enter_sleep(void);
 void icount2_exit_sleep(void);
 void icount2_wakeup(int cpu_index, bool halted, int mask, int interrupt_request);
 
-#ifdef CONFIG_TCG
+#ifdef CONFIG_TCG_WASM64
 /* icount2 / wasm accounting helpers (system/icount2.c) */
-int64_t icount2_ticks_now(void);
 void icount2_w64_acct_addrs(uintptr_t *ticks, uintptr_t *deadline);
-void wasm_io_advance(unsigned cycles);
+void wasm_io_sync_timers(void);
 #endif
 
 #ifdef __EMSCRIPTEN__

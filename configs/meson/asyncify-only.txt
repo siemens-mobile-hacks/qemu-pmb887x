@@ -170,7 +170,6 @@ qemu_machine_creation_done
 qemu_main*
 qemu_main_loop
 qemu_opts_foreach
-qemu_run_machine_init_done_notifiers
 qemu_system_*
 qemu_thread_start
 qmp_*
@@ -178,10 +177,8 @@ qmp_x_exit_preconfig
 raw_*
 raw_apply_options
 raw_co_preadv
-raw_co_preadv_20784
 raw_co_prw
 raw_co_pwritev
-raw_co_pwritev_20786
 raw_open
 replay_*
 resettable_assert_reset

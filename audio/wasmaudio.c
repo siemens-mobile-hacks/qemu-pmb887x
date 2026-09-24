@@ -70,12 +70,6 @@ void *wasm_audio_ring_ptr(void)
     return &wasm_audio_ring;
 }
 
-EMSCRIPTEN_KEEPALIVE
-uint32_t wasm_audio_ring_bytes(void)
-{
-    return sizeof(wasm_audio_ring);
-}
-
 typedef struct WasmVoiceOut {
     HWVoiceOut hw;
     RateCtl rate;

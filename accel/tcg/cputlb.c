@@ -26,7 +26,6 @@
 #include "accel/tcg/probe.h"
 #include "exec/page-protection.h"
 #include "system/memory.h"
-#include "qemu/timer.h"
 #include "system/physmem.h"
 #include "accel/tcg/cpu-ldst-common.h"
 #include "system/cpu-timers.h"
@@ -56,6 +55,7 @@
 #endif
 #include "tcg/tcg-ldst.h"
 #include "backend-ldst.h"
+
 
 /* DEBUG defines, enable DEBUG_TLB_LOG to log to the CPU_LOG_MMU target */
 /* #define DEBUG_TLB */
@@ -654,7 +654,6 @@ void tlb_flush_phys_ranges(CPUState *cpu,
 
     qemu_spin_unlock(&cpu->neg.tlb.c.lock);
 }
-
 
 /* Called with tlb_c.lock held */
 static void tlb_flush_vtlb_page_mask_locked(CPUState *cpu, int mmu_idx,
@@ -1580,20 +1579,9 @@ static inline bool tlb_hit(uint64_t tlb_addr, vaddr addr)
  * (e.g. CPUTLBEntry pointers) must be discarded and looked up again
  * (e.g. via tlb_entry()).
  */
-static bool tlb_fill_align_1(CPUState *cpu, vaddr addr, MMUAccessType type,
-                             int mmu_idx, MemOp memop, int size,
-                             bool probe, uintptr_t ra);
-
 static bool tlb_fill_align(CPUState *cpu, vaddr addr, MMUAccessType type,
                            int mmu_idx, MemOp memop, int size,
                            bool probe, uintptr_t ra)
-{
-    return tlb_fill_align_1(cpu, addr, type, mmu_idx, memop, size, probe, ra);
-}
-
-static bool tlb_fill_align_1(CPUState *cpu, vaddr addr, MMUAccessType type,
-                             int mmu_idx, MemOp memop, int size,
-                             bool probe, uintptr_t ra)
 {
     const TCGCPUOps *ops = cpu->cc->tcg_ops;
     CPUTLBEntryFull full;
@@ -1647,7 +1635,7 @@ io_open_clock_window(CPUState *cpu, MemoryRegionSection *section,
          * The TB header op already credited the whole TB; run any virtual
          * timers whose deadline that crossed (system/icount2.c).
          */
-        wasm_io_advance(0);
+        wasm_io_sync_timers();
     } else if (icount_enabled()) {
         /*
          * gen_tb_start() has already charged the whole TB, so the callback
@@ -1684,14 +1672,17 @@ static MemoryRegionSection *
 io_prepare(hwaddr *out_offset, CPUState *cpu, CPUTLBEntryFull *full,
            vaddr addr, uintptr_t retaddr)
 {
-    MemoryRegionSection *section = full->section;
+    MemoryRegionSection *section;
+    hwaddr mr_offset;
 
+    section = full->section;
+    mr_offset = full->xlat_offset + addr;
     cpu->mem_io_pc = retaddr;
-    if (unlikely(!cpu->neg.can_do_io)) {
+    if (!cpu->neg.can_do_io) {
         io_clock_window(cpu, full, retaddr);
     }
 
-    *out_offset = full->xlat_offset + addr;
+    *out_offset = mr_offset;
     return section;
 }
 
@@ -1756,16 +1747,11 @@ static void notdirty_write(CPUState *cpu, vaddr mem_vaddr, unsigned size,
                            CPUTLBEntryFull *full, uintptr_t retaddr)
 {
     ram_addr_t ram_addr = mem_vaddr + full->xlat_offset;
-    bool code_dirty;
 
     trace_memory_notdirty_write_access(mem_vaddr, ram_addr, size);
 
-    code_dirty = physical_memory_get_dirty_flag(ram_addr, DIRTY_MEMORY_CODE);
-    if (!code_dirty &&
-        tb_invalidate_phys_range_fast(cpu, ram_addr, size, retaddr)) {
-        /* only the long path can have set CODE dirty under us */
-        code_dirty = physical_memory_get_dirty_flag(ram_addr,
-                                                    DIRTY_MEMORY_CODE);
+    if (!physical_memory_get_dirty_flag(ram_addr, DIRTY_MEMORY_CODE)) {
+        tb_invalidate_phys_range_fast(cpu, ram_addr, size, retaddr);
     }
 
     /*
@@ -1774,13 +1760,8 @@ static void notdirty_write(CPUState *cpu, vaddr mem_vaddr, unsigned size,
      */
     physical_memory_set_dirty_range(ram_addr, size, DIRTY_CLIENTS_NOCODE);
 
-    /*
-     * We remove the notdirty callback only if the code has been flushed.
-     * physical_memory_is_clean() is !(vga && code && migration), and the
-     * line above has just set vga and migration, so its answer is the
-     * CODE bit already in hand.
-     */
-    if (code_dirty) {
+    /* We remove the notdirty callback only if the code has been flushed. */
+    if (!physical_memory_is_clean(ram_addr)) {
         trace_memory_notdirty_set_dirty(mem_vaddr);
         tlb_set_dirty(cpu, mem_vaddr);
     }

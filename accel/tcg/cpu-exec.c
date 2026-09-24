@@ -806,7 +806,6 @@ static void cpu_exec_longjmp_cleanup(CPUState *cpu)
     /* Non-buggy compilers preserve this; assert the correct value. */
     g_assert(cpu == current_cpu);
 
-
 #ifdef CONFIG_USER_ONLY
     clear_helper_retaddr();
     if (have_mmap_lock()) {
@@ -1361,7 +1360,6 @@ cpu_exec_loop(CPUState *cpu, SyncClocks *sc)
 
         while (!cpu_handle_interrupt(cpu, &last_tb)) {
             TranslationBlock *tb;
-
 
 #ifndef CONFIG_USER_ONLY
             /*

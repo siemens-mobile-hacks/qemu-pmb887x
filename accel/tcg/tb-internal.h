@@ -45,12 +45,7 @@ void tb_unlock_pages(TranslationBlock *);
 #endif
 
 #ifdef CONFIG_SOFTMMU
-/*
- * Returns true if the call may have lifted the page's code protection,
- * i.e. if DIRTY_MEMORY_CODE may have changed under it.  A caller that
- * already read that bit can reuse its value when this returns false.
- */
-bool tb_invalidate_phys_range_fast(CPUState *cpu, ram_addr_t ram_addr,
+void tb_invalidate_phys_range_fast(CPUState *cpu, ram_addr_t ram_addr,
                                    unsigned size, uintptr_t retaddr);
 #ifdef CONFIG_TCG_WASM64
 /* True if @ram_addr's page holds TBs and none of them covers the store. */
