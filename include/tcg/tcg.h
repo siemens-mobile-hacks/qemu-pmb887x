@@ -100,6 +100,10 @@ typedef struct TCGLabel TCGLabel;
 struct TCGLabel {
     bool present;
     bool has_value;
+#ifdef CONFIG_TCG_WASM64
+    /* set by arm_gen_condlabel, read by liveness to split GSYNC_BBEND */
+    bool w64_condskip;
+#endif
     uint16_t id;
     union {
         uintptr_t value;
@@ -934,7 +938,7 @@ static inline size_t tcg_current_code_size(TCGContext *s)
 #define TB_EXIT_IDXMAX    1
 #define TB_EXIT_REQUESTED 3
 
-#ifdef CONFIG_TCG_INTERPRETER
+#ifdef HAVE_TCG_QEMU_TB_EXEC
 uintptr_t tcg_qemu_tb_exec(CPUArchState *env, const void *tb_ptr);
 #else
 typedef uintptr_t tcg_prologue_fn(CPUArchState *env, const void *tb_ptr);

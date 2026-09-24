@@ -36,6 +36,13 @@ typedef struct DisasDelayException {
     uint32_t target_el;
 } DisasDelayException;
 
+#ifdef CONFIG_TCG_WASM64
+/* Conditional branches whose taken path one TB may defer to its end. */
+#define W64_FT_MAX 3
+/* How far forward (bytes) an unconditional branch may be absorbed. */
+#define W64_ABSORB_MAX 256
+#endif
+
 typedef struct DisasContext {
     DisasContextBase base;
     const ARMISARegisters *isar;
@@ -110,6 +117,107 @@ typedef struct DisasContext {
     uint64_t features; /* CPU features bits */
     bool aarch64;
     bool thumb;
+#ifdef CONFIG_TCG_WASM64
+    /*
+     * Inline TB-lookup cache classification of this TB's goto_ptr exit
+     * (gen_goto_ptr): w64_thumb is the thumb state the exit leaves
+     * behind when the translator knows it (-1 after gen_bx: dynamic);
+     * w64_dynkey marks an exit that follows a CPSR write, after which
+     * hflags/thumb/condexec are all dynamic.  w64_lc_sites counts the
+     * exits that used the TB's slot so a second, differently-keyed
+     * exit can be kept off it.
+     */
+    int8_t w64_thumb;
+    bool w64_dynkey;
+    uint8_t w64_lc_sites;
+    uint32_t w64_lc_key[3];
+    uint8_t w64_lc_mask;
+    /*
+     * Deferred taken paths of conditional branches (gen_jmp_tb): instead
+     * of ending the TB there, the branch jumps to @label and translation
+     * continues into the fall-through, so both basic blocks share one TB.
+     * @dest is the branch target, @insns the instruction count at the
+     * branch -- the difference from the final count is what the taken
+     * path has to hand back to icount_decr, because the TB charges for
+     * every instruction it contains the moment it is entered.
+     * @w64_slots is the set of goto_tb slots already spent by this TB;
+     * each deferred path takes one that is left, or goto_ptr if none is.
+     */
+    struct {
+        DisasLabel label;
+        vaddr dest;
+        int insns;
+    } w64_ft[W64_FT_MAX];
+    uint8_t w64_ft_n;
+    uint8_t w64_slots;
+    /* the TB's own first instruction, as a branch target (arm_tr_tb_start) */
+    DisasLabel w64_loop;
+    /*
+     * A back-edge that is a brcond's taken arm leaves the rest of the TB
+     * after the loop, so its interrupt exit has to hand back the icount
+     * the TB prologue prepaid for that tail.  @w64_loop_insns is the loop
+     * body's length, 0 when no such exit was emitted.
+     */
+    DisasLabel w64_loop_exit;
+    int w64_loop_insns;
+    /*
+     * Call inlining (w64_inline_call / w64_inline_return): a direct bl's
+     * callee is translated in place and its bx lr becomes a compare of
+     * lr against the return address.  Per nesting level: the return
+     * address as lr holds it (Thumb bit included), the page_start to
+     * restore, and which tracked page the enclosing code is on.
+     * @w64_inl_miss are the deferred exits of a mismatched return,
+     * refunded and emitted at the TB's end like a deferred taken path.
+     * @w64_inl_page is the tracked page (translation-block.h w64_inl)
+     * the current instruction stream is on, @w64_inl_tracked that the
+     * instruction already recorded its bytes (a call or return moves
+     * pc_next away before the generic tracking runs).
+     */
+#define W64_INL_DEPTH 4
+#define W64_INL_MISS  16
+    vaddr w64_inl_ret[W64_INL_DEPTH];
+    vaddr w64_inl_entry[W64_INL_DEPTH];
+    vaddr w64_inl_pstart[W64_INL_DEPTH];
+    uint8_t w64_inl_page_save[W64_INL_DEPTH];
+    uint8_t w64_inl_recidx[W64_INL_DEPTH];  /* w64_inl_pending slot per level */
+    uint8_t w64_inl_depth;
+    uint8_t w64_inl_page;
+    bool w64_inl_tracked;
+    struct {
+        DisasLabel label;
+        int insns;
+    } w64_inl_miss[W64_INL_MISS];
+    uint8_t w64_inl_miss_n;
+    /*
+     * An unconditional direct branch that w64_absorb took to the TB's
+     * *other* tracked page: >= 0 is the w64_inl_pending record of the
+     * stream that follows it, which is what w64_inl_track charges once
+     * the call-inlining depth stack is empty.  One per TB.
+     */
+    int16_t w64_abs_rec;
+    /*
+     * `msr cpsr` continued in place (gen_set_psr): the write cannot touch
+     * T, IT or J (gen_set_psr masks CPSR_EXEC out), so the only key word
+     * it can move is hflags.  When hflags still matches the TB's and no
+     * interrupt is pending, translation carries on; @w64_psr_miss are the
+     * deferred exits for when either test fails, refunded and emitted at
+     * the TB's end like a deferred taken path.  A miss with @val set is an
+     * inline CPSR write that bailed out before writing anything: its exit
+     * makes the helper call first.
+     */
+#define W64_PSR_MISS 8
+    struct {
+        DisasLabel label;
+        vaddr dest;
+        int insns;
+        TCGv_i32 val;
+        uint32_t mask;
+    } w64_psr_miss[W64_PSR_MISS];
+    uint8_t w64_psr_miss_n;
+    CPUARMState *w64_env;
+    /* max_insns before the A32 page bound: the cap a re-bound may not pass */
+    int w64_max_insns0;
+#endif
     bool lse2;
     /*
      * Because unallocated encodings generate different exception syndrome

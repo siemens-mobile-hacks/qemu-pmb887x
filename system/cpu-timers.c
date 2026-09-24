@@ -241,6 +241,20 @@ void qemu_timer_notify_cb(void *opaque, QEMUClockType type)
 {
     if ((!icount_enabled() && !icount2_enabled()) ||
         type != QEMU_CLOCK_VIRTUAL) {
+#ifdef __EMSCRIPTEN__
+        /*
+         * A timer armed on the main-loop thread - nearly always a device
+         * timer callback re-arming itself - is seen by the deadline the
+         * next main_loop_wait() computes before it sleeps, so the notify
+         * wakes nobody.  It is not free: qemu_notify_bh makes that next
+         * iteration return without sleeping, one more BQL round trip
+         * that also ends the vCPU's deferred hold.  Through a KE970 boot
+         * (icount=none) this was ~90 % of the rearm notifies, 10-14 k/s.
+         */
+        if (qemu_in_main_loop_thread()) {
+            return;
+        }
+#endif
         qemu_notify_event();
         return;
     }
@@ -249,8 +263,36 @@ void qemu_timer_notify_cb(void *opaque, QEMUClockType type)
         /*
          * A CPU is currently running; send it out of the
          * tcg_cpu_exec() loop so it will recalculate its
-         * icount deadline immediately.
+         * icount deadline immediately - but only when the new deadline
+         * falls inside the budget it is running on.  A timer re-armed
+         * (or added) beyond the remaining budget cannot be missed: the
+         * budget ends first and the loop recomputes.  Measured on the
+         * pmb887x boot: 37k notifies/s on the vCPU thread (every
+         * timer_mod from a device callback or from the idle warp's own
+         * timer run), 1.2 % of them inside the budget - each needless
+         * exit_request cost an empty cpu_exec round plus a
+         * TB_EXIT_REQUESTED unwind of the first TB.
          */
+        if (icount_enabled()) {
+            CPUState *cpu = current_cpu;
+            int64_t deadline, left;
+
+            if (!cpu->neg.can_do_io) {
+                /* Reading the virtual clock here would hit
+                 * icount_get_raw_locked()'s "Bad icount read" exit when
+                 * the caller cannot do io - keep the stock unconditional
+                 * cpu_exit instead. */
+                cpu_exit(current_cpu);
+                return;
+            }
+            deadline = qemu_clock_deadline_ns_all(QEMU_CLOCK_VIRTUAL,
+                                                  QEMU_TIMER_ATTR_ALL);
+            left = cpu->neg.icount_decr.u16.low + cpu->icount_extra;
+
+            if (deadline >= 0 && icount_round(deadline) >= left) {
+                return;
+            }
+        }
         cpu_exit(current_cpu);
     } else if (first_cpu) {
         /*

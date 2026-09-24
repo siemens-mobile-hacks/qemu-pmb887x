@@ -289,6 +289,62 @@ bool mutex_is_bql(QemuMutex *mutex);
 void bql_update_status(bool locked);
 
 /**
+ * bql_lock_mmio: take the BQL for one device access, leanly.
+ * bql_unlock_mmio: drop it again.
+ *
+ * The BQL_LOCK_GUARD() pair costs ~22 non-inlinable calls, which a
+ * device-polling guest pays millions of times a second.  This pair does
+ * the same job with the thread-local flag read once and written once,
+ * giving up the mutex trace points and the lock-profiling hook.  Use it
+ * only on a path that is hot enough to care - see system/cpus.c.
+ *
+ * bql_lock_mmio() returns true if it took the lock; only then may
+ * bql_unlock_mmio() be called.
+ */
+bool bql_lock_mmio(void);
+void bql_unlock_mmio(void);
+
+/**
+ * bql_wanted_by_other: is a thread blocked (or about to block) on the BQL?
+ * bql_release_lazy: give up a BQL held only by a deferred bql_unlock_mmio().
+ *
+ * bql_unlock_mmio() on a vCPU thread does not really unlock: an idle S75
+ * takes and drops the BQL three million times a second for device
+ * accesses that nobody is contending, and the atomic pair alone is ~3.5 %
+ * of the vCPU.  It keeps the lock instead, and the next bql_lock_mmio()
+ * sees the thread-local flag already set and does nothing at all.
+ *
+ * What ends the deferral: an explicit bql_lock() on this thread adopts it
+ * (the rr loop's own bql_lock() after tcg_cpu_exec()), an explicit
+ * bql_unlock() drops it, and cpu_exec_loop() calls bql_release_lazy()
+ * whenever bql_wanted_by_other() says somebody is waiting.  One pass of
+ * that loop is not a bound on its own: chained TBs never come back to it,
+ * and without icount no budget ends the chain, so a firmware idle spin
+ * after an MMIO access would keep the lock forever.  An exception return
+ * releases it too (HELPER(cpsr_write_eret)), which is what ends the hold
+ * on the way into such a spin.
+ */
+bool bql_wanted_by_other(void);
+void bql_release_lazy(void);
+
+#ifdef __EMSCRIPTEN__
+/**
+ * qemu_in_main_loop_thread: is this the thread that runs main_loop_wait()?
+ *
+ * Not qemu_in_main_thread(), which is true on a vCPU holding the BQL.
+ */
+bool qemu_in_main_loop_thread(void);
+
+/**
+ * qemu_main_loop_wake: wake the main loop's futex wait.
+ *
+ * emscripten's poll() cannot sleep, so the main loop waits on a futex
+ * instead and aio_notify() wakes it through this.
+ */
+void qemu_main_loop_wake(void);
+#endif
+
+/**
  * bql_block: Allow/deny releasing the BQL
  *
  * The Big QEMU Lock (BQL) is used to provide interior mutability to
@@ -423,6 +479,7 @@ void qemu_cond_wait_bql(QemuCond *cond);
  * qemu_cond_timedwait_bql: like the previous, but with timeout
  */
 void qemu_cond_timedwait_bql(QemuCond *cond, int ms);
+bool qemu_cond_timedwait_bql_ns(QemuCond *cond, int64_t ns);
 
 /* internal interfaces */
 

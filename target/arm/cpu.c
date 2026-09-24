@@ -1820,8 +1820,14 @@ static void arm_cpu_realizefn(DeviceState *dev, Error **errp)
     Error *local_err = NULL;
 
 #if defined(CONFIG_TCG) && !defined(CONFIG_USER_ONLY)
-    /* Use pc-relative instructions in system-mode */
+#ifndef CONFIG_TCG_WASM64
+    /*
+     * Use pc-relative instructions in system-mode.  Not on wasm64: call
+     * inlining puts a callee from another page into the TB, and CF_PCREL's
+     * unwind data (a page offset) cannot name an instruction there.
+     */
     tcg_cflags_set(cs, CF_PCREL);
+#endif
 #endif
 
     /* If we needed to query the host kernel for the CPU features
@@ -2137,6 +2143,15 @@ static void arm_cpu_realizefn(DeviceState *dev, Error **errp)
              */
             pagebits = 10;
         }
+#ifdef CONFIG_TCG_WASM64
+        /*
+         * The board raises the page to 4 KB through minimum_page_bits
+         * (hw/arm/pmb887x/board.c), which is committed before we get
+         * here.  A guest page smaller than TARGET_PAGE is still exact:
+         * tlb_set_page_full() refills it on every access.
+         */
+        pagebits = MAX(pagebits, 12);
+#endif
         if (!set_preferred_target_page_bits(pagebits)) {
             /*
              * This can only ever happen for hotplugging a CPU, or if

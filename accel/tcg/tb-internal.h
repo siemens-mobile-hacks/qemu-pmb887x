@@ -38,14 +38,34 @@ static inline void tb_lock_page1(tb_page_addr_t p0, tb_page_addr_t p1)
 
 static inline void tb_unlock_page1(tb_page_addr_t p0, tb_page_addr_t p1) { }
 static inline void tb_unlock_pages(TranslationBlock *tb) { }
+static inline void tb_lock_page_n(TranslationBlock *tb, unsigned n,
+                                  tb_page_addr_t paddr)
+{
+    tb_lock_page0(paddr);
+}
+static inline void tb_unlock_page_n(TranslationBlock *tb, unsigned n,
+                                    tb_page_addr_t paddr) { }
 #else
 void tb_lock_page1(tb_page_addr_t, tb_page_addr_t);
 void tb_unlock_page1(tb_page_addr_t, tb_page_addr_t);
 void tb_unlock_pages(TranslationBlock *);
+/*
+ * Claim @paddr for slot @n of @tb, which already holds the locks for its
+ * set slots below @n.  Locks are taken in ascending page index, so a page
+ * above every held one may simply be locked and a page below one must be
+ * tried; see tb_lock_page1, which this generalises.
+ */
+void tb_lock_page_n(TranslationBlock *, unsigned, tb_page_addr_t);
+void tb_unlock_page_n(TranslationBlock *, unsigned, tb_page_addr_t);
 #endif
 
 #ifdef CONFIG_SOFTMMU
-void tb_invalidate_phys_range_fast(CPUState *cpu, ram_addr_t ram_addr,
+/*
+ * Returns true if the call may have lifted the page's code protection,
+ * i.e. if DIRTY_MEMORY_CODE may have changed under it.  A caller that
+ * already read that bit can reuse its value when this returns false.
+ */
+bool tb_invalidate_phys_range_fast(CPUState *cpu, ram_addr_t ram_addr,
                                    unsigned size, uintptr_t retaddr);
 #endif /* CONFIG_SOFTMMU */
 

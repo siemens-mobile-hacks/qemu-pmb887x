@@ -91,6 +91,14 @@ void tb_check_watchpoint(CPUState *cpu, uintptr_t retaddr);
 tb_page_addr_t get_page_addr_code_hostp(CPUArchState *env, vaddr addr,
                                         void **hostp);
 
+#ifdef CONFIG_TCG_WASM64
+void tb_unlink_inlined(void);
+void w64_inl_list_add(TranslationBlock *tb);
+void w64_inl_list_clear(void);
+/* the index of the guest instruction @host_pc unwinds to, or -1 */
+int w64_tb_insn_index(TranslationBlock *tb, uintptr_t host_pc);
+#endif
+
 /**
  * get_page_addr_code()
  * @env: CPUArchState
@@ -135,6 +143,12 @@ void page_table_config_init(void);
 
 #ifndef CONFIG_USER_ONLY
 G_NORETURN void cpu_io_recompile(CPUState *cpu, uintptr_t retaddr);
+
+#ifdef __EMSCRIPTEN__
+/* MMIO barrier insns: single-insn TBs to avoid recurring io_recompile. */
+void wasm_add_io_barrier(vaddr pc);
+bool wasm_is_io_barrier(vaddr pc);
+#endif
 #endif /* CONFIG_USER_ONLY */
 
 void tb_phys_invalidate(TranslationBlock *tb, tb_page_addr_t page_addr);

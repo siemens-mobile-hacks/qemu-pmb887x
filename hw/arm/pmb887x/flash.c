@@ -63,12 +63,13 @@ struct pmb887x_flash_part_t {
 	uint8_t cmd;
 	uint32_t cmd_addr;
 	uint16_t status;
-	bool io_mode;
+	uint32_t array_reads;
 	
 	uint8_t *storage;
 	
 	uint32_t buffer_size;
 	uint32_t buffer_index;
+	uint32_t buffer_top;
 	pmb887x_flash_buffer_t *buffer;
 	const pmb887x_flash_cfg_part_t *cfg;
 	
@@ -133,15 +134,24 @@ static void flash_buffer_clear(pmb887x_flash_part_t *p) {
 	g_clear_pointer(&p->buffer, g_free);
 	p->buffer_size = 0;
 	p->buffer_index = 0;
+	p->buffer_top = 0;
 }
+
+/*
+ * Back in read-array mode the partition stays on the I/O path until this
+ * many array reads arrive with no command in between; only then is it
+ * mapped as ROM again.  Every ROMD flip is a memory transaction (flatview
+ * rebuild, TLB flush on every vCPU), and a program loop or the EFA scan
+ * issues a command and a reset per word: a KE970 boot flipped 327k times.
+ */
+#define FLASH_ROMD_READS	16
 
 static void flash_reset(pmb887x_flash_part_t *p) {
 	flash_trace_part(p, "back to read array mode");
 	flash_buffer_clear(p);
 	p->cmd = 0;
 	p->wcycle = 0;
-	if (!p->io_mode)
-		memory_region_rom_device_set_romd(&p->mem, true);
+	p->array_reads = 0;
 }
 
 static pmb887x_flash_block_t *flash_part_find_block(pmb887x_flash_part_t *p, uint32_t offset) {
@@ -542,10 +552,13 @@ static void flash_buffer_add(pmb887x_flash_part_t *p, uint32_t offset, uint64_t 
 
 	for (uint32_t i = 0; i < size; i += 2) {
 		pmb887x_flash_buffer_t *buffer_entry = NULL;
-		for (uint32_t j = 0; j < p->buffer_size; j++) {
-			if (p->buffer[j].offset == offset + i && p->buffer[j].size == 2) {
-				buffer_entry = &p->buffer[j];
-				break;
+		/* words arrive in ascending order: one above every earlier word can't be a rewrite */
+		if (offset + i < p->buffer_top) {
+			for (uint32_t j = 0; j < p->buffer_index; j++) {
+				if (p->buffer[j].offset == offset + i && p->buffer[j].size == 2) {
+					buffer_entry = &p->buffer[j];
+					break;
+				}
 			}
 		}
 
@@ -554,6 +567,7 @@ static void flash_buffer_add(pmb887x_flash_part_t *p, uint32_t offset, uint64_t 
 			buffer_entry->offset = offset + i;
 			buffer_entry->size = 2;
 			p->buffer_index++;
+			p->buffer_top = MAX(p->buffer_top, offset + i + 1);
 		}
 		buffer_entry->value = value >> i * 8 & 0xFFFF;
 
@@ -591,6 +605,8 @@ static uint64_t flash_io_read(void *opaque, hwaddr part_offset, uint32_t size) {
 	switch (p->cmd) {
 		case 0x00:
 			value = flash_array_read(p, offset, size);
+			if (++p->array_reads >= FLASH_ROMD_READS)
+				memory_region_rom_device_set_romd(&p->mem, true);
 			break;
 
 		case 0x94:
@@ -636,6 +652,7 @@ static void flash_io_write(void *opaque, hwaddr part_offset, uint64_t value, uin
 	if (p->wcycle == 0) {
 		// A write is a command, and a command leaves read-array mode
 		memory_region_rom_device_set_romd(&p->mem, false);
+		p->array_reads = 0;
 		
 		valid_command = true;
 		p->cmd_addr = offset;
@@ -666,8 +683,6 @@ static void flash_io_write(void *opaque, hwaddr part_offset, uint64_t value, uin
 			case 0x94:
 				flash_trace_part(p, "cmd read EFA (%02"PRIX64")", value);
 				p->cmd = value;
-				// EFA is scanned byte-by-byte; keep this partition in I/O mode to avoid remapping it per byte.
-				p->io_mode = true;
 				break;
 
 			case 0x98:
@@ -678,7 +693,6 @@ static void flash_io_write(void *opaque, hwaddr part_offset, uint64_t value, uin
 			case 0x50:
 				flash_trace_part(p, "cmd clear status (%02"PRIX64")", value);
 				p->status &= ~FLASH_STATUS_ERRORS;
-				memory_region_rom_device_set_romd(&p->mem, p->cmd == 0);
 				break;
 
 			case 0x10:
@@ -743,7 +757,6 @@ static void flash_io_write(void *opaque, hwaddr part_offset, uint64_t value, uin
 
 			case 0xB0:
 				flash_trace_part(p, "cmd suspend (%02"PRIX64")", value);
-				memory_region_rom_device_set_romd(&p->mem, p->cmd == 0);
 				break;
 
 			case 0x60:
@@ -823,6 +836,7 @@ static void flash_io_write(void *opaque, hwaddr part_offset, uint64_t value, uin
 				} else {
 					p->buffer_size = (value & 0xFFFF) + 1;
 					p->buffer_index = 0;
+					p->buffer_top = 0;
 					p->buffer = g_new0(pmb887x_flash_buffer_t, p->buffer_size);
 					flash_trace_part(p, "buffered program %d words", p->buffer_size);
 					p->wcycle++;

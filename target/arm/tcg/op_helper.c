@@ -407,7 +407,18 @@ void HELPER(wfi)(CPUARMState *env, uint32_t insn_len)
     env->halt_reason = HALT_WFI;
     cs->exception_index = EXCP_HLT;
     cs->halted = 1;
+#ifdef __EMSCRIPTEN__
+    /*
+     * No unwind: WFI always ends its TB, whose exit_tb(0) follows this
+     * call, and cpu_handle_interrupt delivers a pending exception_index
+     * before running anything else (the gen_exception_exit path) — the
+     * same outcome as the longjmp, minus the ~15 us JS-exception unwind
+     * per halt (one per display-DMA word).
+     */
+    cs->neg.can_do_io = true;
+#else
     cpu_loop_exit(cs);
+#endif
 #endif
 }
 
@@ -791,21 +802,91 @@ uint32_t HELPER(cpsr_read)(CPUARMState *env)
     return cpsr_read(env) & ~CPSR_EXEC;
 }
 
+/*
+ * The CPSR bits cpsr_write() itself treats as hflags inputs: when the
+ * write mask covers any of them (and the write is not Raw) it rebuilds
+ * hflags at its tail.  Keep this in step with `rebuild_hflags` there.
+ */
+#define CPSR_HFLAGS_INPUTS (CPSR_M | CPSR_E | CPSR_IL)
+
+/*
+ * On emscripten the TB that wrote CPSR continues through goto_ptr rather
+ * than a plain exit (gen_set_psr / gen_rfe): if any interrupt is pending,
+ * including one this write unmasked, end the next TB at its start.
+ */
+static void cpsr_write_check_irq(CPUARMState *env)
+{
+#ifdef __EMSCRIPTEN__
+    CPUState *cs = env_cpu(env);
+
+    if (qatomic_read(&cs->interrupt_request)) {
+        qatomic_set(&cs->neg.icount_decr.u16.high, -1);
+    }
+#endif
+}
+
 void HELPER(cpsr_write)(CPUARMState *env, uint32_t val, uint32_t mask)
 {
+    uint32_t before = env->uncached_cpsr;
+
     cpsr_write(env, val, mask, CPSRWriteByInstr);
-    /* TODO: Not all cpsr bits are relevant to hflags.  */
-    arm_rebuild_hflags(env);
+    /*
+     * Upstream rebuilds hflags unconditionally here, with a TODO saying
+     * not all cpsr bits are relevant.  They are not: every field hflags
+     * reads out of the CPSR (mode -> EL/mmu_idx/sctlr, E, IL, PAN) lives
+     * in uncached_cpsr, while the bits this firmware writes hundreds of
+     * thousands of times a second - the I/F interrupt masks of its
+     * critical sections, and the condition flags - are held in the
+     * dedicated env fields listed by CACHED_CPSR_BITS and are not hflags
+     * inputs.  So an unchanged uncached_cpsr means unchanged hflags, and
+     * the ~76 ns full rebuild can be skipped.
+     *
+     * And when the mask does touch M/E/IL, cpsr_write() has already
+     * rebuilt them at its own tail, after writing every bit of
+     * uncached_cpsr - so a rebuild here would be a second full pass over
+     * identical state.  PAN is why the test is the mask and not just
+     * "did anything change": a write that moves PAN alone leaves
+     * cpsr_write()'s own condition false and still needs this one.
+     */
+    if (unlikely(before != env->uncached_cpsr) &&
+        !(mask & CPSR_HFLAGS_INPUTS)) {
+        arm_rebuild_hflags(env);
+    }
+    cpsr_write_check_irq(env);
 }
 
 /* Write the CPSR for a 32-bit exception return */
 void HELPER(cpsr_write_eret)(CPUARMState *env, uint32_t val)
 {
+    ARMCPU *cpu = env_archcpu(env);
     uint32_t mask;
+    /*
+     * wasm64: the hook lists are empty on a core without a PMU or GICv3
+     * cpuif, and taking the BQL around nothing cost two lock/unlock pairs
+     * per exception return - 1.29 M bql_lock() calls a second while the
+     * SL65 plays a video.
+     *
+     * The pair's real bql_unlock() is load-bearing, though, and is kept
+     * below as bql_release_lazy(): it ends the hold a bql_unlock_mmio()
+     * deferred (system/cpus.c).  An ISR acks its device through MMIO and
+     * returns here into the firmware's idle spin, which on an icount=none
+     * board is one chained loop that never comes back to cpu_exec_loop();
+     * keeping the hold across the return starved the main loop of the BQL,
+     * and so of the timer that ends the spin - KE970 sat at 408 MIPS with
+     * the main loop stopped.
+     */
+#ifdef CONFIG_TCG_WASM64
+    bool hooks = !QLIST_EMPTY(&cpu->pre_el_change_hooks) ||
+                 !QLIST_EMPTY(&cpu->el_change_hooks);
+#else
+    bool hooks = true;
+#endif
 
-    bql_lock();
-    arm_call_pre_el_change_hook(env_archcpu(env));
-    bql_unlock();
+    if (hooks) {
+        bql_lock();
+        arm_call_pre_el_change_hook(cpu);
+        bql_unlock();
+    }
 
     mask = aarch32_cpsr_valid_mask(env->features, &env_archcpu(env)->isar);
     cpsr_write(env, val, mask, CPSRWriteExceptionReturn);
@@ -816,11 +897,33 @@ void HELPER(cpsr_write_eret)(CPUARMState *env, uint32_t val)
      * state. Do the masking now.
      */
     env->regs[15] &= (env->thumb ? ~1 : ~3);
-    arm_rebuild_hflags(env);
+    /* as in HELPER(cpsr_write): cpsr_write() has already rebuilt them
+     * when the mask covered M/E/IL, and the PC masking just above is not
+     * an hflags input. */
+    if (!(mask & CPSR_HFLAGS_INPUTS)) {
+        arm_rebuild_hflags(env);
+    }
 
-    bql_lock();
-    arm_call_el_change_hook(env_archcpu(env));
-    bql_unlock();
+    if (hooks) {
+        bql_lock();
+        arm_call_el_change_hook(cpu);
+        bql_unlock();
+    }
+#ifdef CONFIG_TCG_WASM64
+    else {
+        bql_release_lazy();
+    }
+#endif
+    cpsr_write_check_irq(env);
+}
+
+void HELPER(svc_inline)(CPUARMState *env, uint32_t syndrome)
+{
+#ifdef CONFIG_USER_ONLY
+    g_assert_not_reached();
+#else
+    arm_take_svc_aarch32(env, syndrome);
+#endif
 }
 
 /* Access to user mode registers from privileged modes.  */

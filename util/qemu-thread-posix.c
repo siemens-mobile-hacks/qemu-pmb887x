@@ -21,6 +21,9 @@
 #if defined(CONFIG_PTHREAD_SET_NAME_NP) || defined(CONFIG_PTHREAD_GET_NAME_NP)
 #include <pthread_np.h>
 #endif
+#ifdef __EMSCRIPTEN__
+#include <emscripten/threading.h>
+#endif
 
 /*
  * This is not defined on Linux, but the man page indicates
@@ -174,6 +177,112 @@ void qemu_rec_mutex_unlock_impl(QemuRecMutex *mutex, const char *file, int line)
     qemu_mutex_unlock_impl(&mutex->m, file, line);
 }
 
+#ifdef __EMSCRIPTEN__
+/*
+ * Asyncify-safe condition variable on top of the emscripten futex.
+ *
+ * Emscripten's pthread_cond_signal/broadcast only wakes a waiter when its
+ * wait times out while the waiter executes under Asyncify, so a cond used
+ * for cross-thread wakeup (e.g. the pmb887x DSP worker handshake) can stay
+ * asleep forever.  The engine-level futex (Atomics.wait/notify) does not
+ * go through the Asyncify machinery and wakes reliably.
+ *
+ * Implementation: waiters snapshot cond->seq while still holding the user
+ * mutex and then futex-wait on &cond->seq; signalers bump cond->seq (which
+ * makes any concurrent futex_wait return immediately via its value check)
+ * and notify.  qemu cond users always re-check their predicate around the
+ * wait, so spurious/early wakes are fine.
+ */
+void qemu_cond_init(QemuCond *cond)
+{
+    qatomic_set(&cond->seq, 0);
+    qatomic_set(&cond->waiters, 0);
+}
+
+void qemu_cond_destroy(QemuCond *cond)
+{
+}
+
+static void qemu_cond_wake(QemuCond *cond, int count)
+{
+    qatomic_fetch_inc(&cond->seq);
+    if (qatomic_read(&cond->waiters) > 0) {
+        emscripten_futex_wake(&cond->seq, count);
+    }
+}
+
+void qemu_cond_signal(QemuCond *cond)
+{
+    qemu_cond_wake(cond, 1);
+}
+
+void qemu_cond_broadcast(QemuCond *cond)
+{
+    qemu_cond_wake(cond, INT_MAX);
+}
+
+static bool qemu_cond_wait_common(QemuCond *cond, QemuMutex *mutex,
+                                  double timeout_ms,
+                                  const char *file, const int line)
+{
+    unsigned seq;
+    int rc;
+
+    qatomic_fetch_inc(&cond->waiters);
+    /* Snapshot seq while still holding the user mutex: a signaler that
+     * runs after we release it bumps seq and our futex_wait returns at
+     * once via its value check. */
+    seq = qatomic_read(&cond->seq);
+
+    qemu_mutex_unlock_impl(mutex, file, line);
+
+    rc = emscripten_futex_wait(&cond->seq, seq, timeout_ms);
+
+    qatomic_fetch_dec(&cond->waiters);
+    qemu_mutex_lock_impl(mutex, file, line);
+
+    /* False only on a real timeout: -EWOULDBLOCK is a value change
+     * (i.e. a signal) and rc == 0 is a wake; callers must of course
+     * still re-check their predicate. */
+    return rc != -ETIMEDOUT;
+}
+
+void qemu_cond_wait_impl(QemuCond *cond, QemuMutex *mutex,
+                         const char *file, const int line)
+{
+    /* INFINITY: emscripten_futex_wait treats 0 ms as "return at once"
+     * (a timed-out wait), which turned every untimed cond wait — the
+     * vCPU's halt wait included — into a lock/unlock spin. */
+    qemu_cond_wait_common(cond, mutex, INFINITY, file, line);
+}
+
+bool qemu_cond_timedwait_impl(QemuCond *cond, QemuMutex *mutex, int ms,
+                              const char *file, const int line)
+{
+    return qemu_cond_wait_common(cond, mutex, ms, file, line);
+}
+
+bool qemu_cond_timedwait_ns(QemuCond *cond, QemuMutex *mutex, int64_t ns)
+{
+    /* emscripten_futex_wait takes a double ms with sub-ms precision; 0 ms
+     * means "return at once", which is what a non-positive wait wants */
+    return qemu_cond_wait_common(cond, mutex, ns > 0 ? ns / 1e6 : 0,
+                                 __FILE__, __LINE__);
+}
+
+static bool qemu_cond_timedwait_ts(QemuCond *cond, QemuMutex *mutex,
+                                   struct timespec *ts,
+                                   const char *file, const int line)
+{
+    struct timespec now;
+    int64_t ms;
+
+    clock_gettime(qemu_timedwait_clockid(), &now);
+    ms = (int64_t)(ts->tv_sec - now.tv_sec) * 1000
+       + (ts->tv_nsec - now.tv_nsec) / 1000000;
+    return qemu_cond_wait_common(cond, mutex, ms < 0 ? 0 : ms, file, line);
+}
+#else
 void qemu_cond_init(QemuCond *cond)
 {
     pthread_condattr_t attr;
@@ -267,6 +376,23 @@ bool qemu_cond_timedwait_impl(QemuCond *cond, QemuMutex *mutex, int ms,
     compute_abs_deadline(&ts, ms);
     return qemu_cond_timedwait_ts(cond, mutex, &ts, file, line);
 }
+
+bool qemu_cond_timedwait_ns(QemuCond *cond, QemuMutex *mutex, int64_t ns)
+{
+    struct timespec ts;
+
+    clock_gettime(qemu_timedwait_clockid(), &ts);
+    if (ns > 0) {
+        ts.tv_nsec += ns % 1000000000;
+        ts.tv_sec += ns / 1000000000;
+        if (ts.tv_nsec >= 1000000000) {
+            ts.tv_sec++;
+            ts.tv_nsec -= 1000000000;
+        }
+    }
+    return qemu_cond_timedwait_ts(cond, mutex, &ts, __FILE__, __LINE__);
+}
+#endif /* __EMSCRIPTEN__ */
 
 void qemu_sem_init(QemuSemaphore *sem, int init)
 {

@@ -70,7 +70,28 @@ int64_t icount_round(int64_t count);
 
 /* if the CPUs are idle, start accounting real time to virtual clock. */
 void icount_start_warp_timer(void);
+/*
+ * As icount_start_warp_timer(), but @notify false suppresses the
+ * qemu_clock_notify(QEMU_CLOCK_VIRTUAL) that tells other threads the
+ * clock jumped.  Only for a caller that notifies itself immediately
+ * afterwards on the same thread - each notify is a cross-thread wake,
+ * and the idle path takes this thousands of times a second.
+ */
+void icount_start_warp_timer_full(bool notify);
 void icount_account_warp_timer(void);
 void icount_notify_exit(void);
+
+/*
+ * Real-time cap for sleep=off icount (-icount ...,rtcap=on|off; on by
+ * default on emscripten): QEMU_CLOCK_VIRTUAL is not allowed to run ahead
+ * of wall time.  The vCPU thread asks how many host ns must pass before
+ * virtual time may reach @vtarget and sleeps for them (rr_idle_advance
+ * before a warp, the rr loop after a budget round).
+ */
+extern bool icount_rtcap;
+int64_t icount_rtcap_excess_ns(int64_t vtarget);
+void icount_rtcap_set_waiting(bool waiting);
+/* 0 = off, 1 = banked (the boot window), 3 = budget.  Safe from any thread. */
+int icount_rtcap_mode(void);
 
 #endif /* EXEC_ICOUNT_H */

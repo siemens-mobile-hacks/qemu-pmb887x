@@ -14,6 +14,7 @@
 #include "hw/core/qdev-properties.h"
 #include "qemu/module.h"
 #include "qemu/timer.h"
+#include "qemu/bswap.h"
 #include "qom/object.h"
 
 #include "hw/arm/pmb887x/gen/cpu_regs.h"
@@ -76,11 +77,18 @@ struct pmb887x_dif_t {
 	QEMUTimer *transfer_timer;
 	uint16_t tx_data;
 	bool transfer_pending;
+	bool in_transfer;         /* dif_run_transfers() re-entrancy guard */
 
 	uint32_t mask;
 	uint32_t bits;
 	uint16_t pbc_word;
 	bool is_pbc_word_valid;
+
+	/* dif_mux() as a byte-lane lookup; see dif_build_mux_table() */
+	uint32_t mux_tab[4][256];
+	uint32_t mux_const;
+	bool mux_dirty;
+	bool mux_identity;        /* dif_mux() is (value & mask); see below */
 
 	pmb887x_clc_reg_t clc;
 	pmb887x_srb_reg_t srb;
@@ -97,6 +105,8 @@ struct pmb887x_dif_t {
 
 	qemu_irq dmac_tx_breq;
 	qemu_irq dmac_rx_breq;
+	int dmac_tx_breq_level;   /* last level driven; -1 = never */
+	int dmac_rx_breq_level;
 };
 
 static void dif_reset_fifo(pmb887x_dif_t *p, enum DIFFifoType fifo) {
@@ -117,6 +127,7 @@ static void dif_set_fifo(pmb887x_dif_t *p, enum DIFFifoType fifo, bool buffered)
 }
 
 static void dif_reset_bit_mapping(pmb887x_dif_t *p) {
+	p->mux_dirty = true;
 	memset(p->bmreg, 0, sizeof(p->bmreg));
 	for (uint32_t bit = 0; bit < 32; bit++) {
 		uint32_t reg_index = bit / 6;
@@ -128,19 +139,29 @@ static void dif_reset_bit_mapping(pmb887x_dif_t *p) {
 	}
 }
 
+/*
+ * Every srb_set_isr/icr on the transfer path ends here through the event
+ * handler, so this runs ~4x per transferred word - and the level almost
+ * never changes.  The DMAC end already drops a repeat (dmac_handle_signal
+ * returns when request->level is unchanged), but only after an indirect
+ * call and two wrappers; these two lines are the DIF's own outputs and
+ * nothing else drives them, so dropping it here is the same decision taken
+ * one level earlier.
+ */
+static void dif_set_breq(qemu_irq line, int *last, int level) {
+	if (*last == level)
+		return;
+	*last = level;
+	qemu_set_irq(line, level);
+}
+
 static void dif_trigger_dma(pmb887x_dif_t *p) {
 	uint32_t ris = pmb887x_srb_get_ris_dma(&p->srb);
-	if (p->dmac_tx_clr) {
-		qemu_set_irq(p->dmac_tx_breq, 0);
-	} else {
-		qemu_set_irq(p->dmac_tx_breq, (ris & DIFv1_RIS_TX) != 0);
-	}
 
-	if (p->dmac_rx_clr) {
-		qemu_set_irq(p->dmac_rx_breq, 0);
-	} else {
-		qemu_set_irq(p->dmac_rx_breq, (ris & DIFv1_RIS_RX) != 0);
-	}
+	dif_set_breq(p->dmac_tx_breq, &p->dmac_tx_breq_level,
+		     p->dmac_tx_clr ? 0 : (ris & DIFv1_RIS_TX) != 0);
+	dif_set_breq(p->dmac_rx_breq, &p->dmac_rx_breq_level,
+		     p->dmac_rx_clr ? 0 : (ris & DIFv1_RIS_RX) != 0);
 }
 
 static bool dif_is_running(pmb887x_dif_t *p) {
@@ -181,30 +202,87 @@ static void dif_update_rx_request(pmb887x_dif_t *p) {
 	}
 }
 
-static uint16_t dif_mux(pmb887x_dif_t *p, uint32_t value) {
-	uint16_t output = 0;
+/*
+ * The bit-per-bit definition: output bit o (o < bits) is input bit bmreg[o]
+ * when bcsel[o] == 0, the constant bcreg[o] when bcsel[o] == 1, else 0.  A
+ * bcsel == 0 bit is therefore set in exactly those entries of its input's
+ * byte lane whose index has that input bit, which is what the inner loop
+ * enumerates.  Same shape as DIF v2's dif_build_mux_tables(), minus the
+ * command/data dimension and the inverter, which v1 does not have.
+ */
+/*
+ * Is dif_mux() the identity over the mask, for every value a burst can
+ * carry?  A burst word is at most 16 bits (dif_can_run_burst), so lanes 2
+ * and 3 are always indexed at 0 and
+ *
+ *     mux(v) = tab0[v & 0xFF] | tab1[v >> 8] | K,  K = tab2[0]|tab3[0]|cst
+ *
+ * Bits are only ever set by an OR, so mux(0) & mask == 0 forces each of
+ * tab0[0], tab1[0] and K to be empty within the mask; the two lane tests
+ * that follow are then exactly mux(v) & mask == v & mask for every v,
+ * since the lanes contribute disjoint bit ranges.  512 compares once per
+ * table build, against four loads and four ORs on every word of every
+ * burst - the display's mux is the identity and never needed either.
+ */
+static bool dif_mux_is_identity(pmb887x_dif_t *p) {
+	if (((p->mux_tab[2][0] | p->mux_tab[3][0] | p->mux_const) & p->mask))
+		return false;
 
+	for (uint32_t b = 0; b < 256; b++) {
+		if ((p->mux_tab[0][b] & p->mask) != (b & p->mask))
+			return false;
+		if ((p->mux_tab[1][b] & p->mask) != ((b << 8) & p->mask))
+			return false;
+	}
+	return true;
+}
+
+static void dif_build_mux_table(pmb887x_dif_t *p) {
+	uint32_t cst = 0;
+
+	memset(p->mux_tab, 0, sizeof(p->mux_tab));
 	for (uint32_t output_bit = 0; output_bit < p->bits; output_bit++) {
-		uint32_t bmreg_index = output_bit / 6;
+		uint32_t obit = 1U << output_bit;
 		uint32_t bmreg_shift = (output_bit % 6) * 5;
-		uint32_t bcsel_index = output_bit / 16;
-		uint32_t bcsel_shift = (output_bit % 16) * 2;
-		uint32_t bit = 0;
 
 		if (bmreg_shift >= 15)
 			bmreg_shift++;
 
-		uint32_t mux = ((p->bmreg[bmreg_index] >> bmreg_shift) & 0x1F);
-		uint32_t bcsel = ((p->bcsel[bcsel_index] >> bcsel_shift) & 3);
-		if (bcsel == 0) {
-			bit = ((value >> mux) & 1);
-		} else if (bcsel == 1) {
-			bit = ((p->bcreg >> output_bit) & 1);
-		}
-		output |= (bit << output_bit);
-	}
+		uint32_t mux = ((p->bmreg[output_bit / 6] >> bmreg_shift) & 0x1F);
+		uint32_t bcsel = ((p->bcsel[output_bit / 16] >>
+				   ((output_bit % 16) * 2)) & 3);
 
-	return output;
+		if (bcsel == 1) {
+			if ((p->bcreg >> output_bit) & 1)
+				cst |= obit;
+			continue;
+		}
+		if (bcsel != 0)
+			continue;
+
+		uint32_t *t = p->mux_tab[mux >> 3];
+		uint32_t ibit = 1U << (mux & 7);
+		for (uint32_t b = ibit; b < 256; b = (b + 1) | ibit)
+			t[b] |= obit;
+	}
+	p->mux_const = cst;
+	p->mux_dirty = false;
+	p->mux_identity = dif_mux_is_identity(p);
+}
+
+/*
+ * Once per transferred word, and the per-bit form above was ~16 iterations
+ * of two divisions and two modulos each - 3.4 % of the vCPU on a CX70.
+ */
+static inline uint16_t dif_mux(pmb887x_dif_t *p, uint32_t value) {
+	if (unlikely(p->mux_dirty))
+		dif_build_mux_table(p);
+
+	return p->mux_tab[0][value & 0xFF] |
+	       p->mux_tab[1][(value >> 8) & 0xFF] |
+	       p->mux_tab[2][(value >> 16) & 0xFF] |
+	       p->mux_tab[3][value >> 24] |
+	       p->mux_const;
 }
 
 static bool dif_convert_word(pmb887x_dif_t *p, uint16_t value, uint16_t *output) {
@@ -227,6 +305,24 @@ static bool dif_convert_word(pmb887x_dif_t *p, uint16_t value, uint16_t *output)
 
 static void dif_schedule_transfer(pmb887x_dif_t *p);
 
+/* Clear the overrun flags, drop the oldest stage of a full FIFO (the push
+ * below overwrites it; an overrun under REN latches RE and the sticky
+ * ISR_ERR), then push the received word. */
+static void dif_rx_push(pmb887x_dif_t *p, uint16_t received) {
+	p->status &= ~(DIFv1_CON_TE | DIFv1_CON_RE);
+
+	if (pmb887x_fifo_is_full(p->rx_fifo)) {
+		if ((p->con & DIFv1_CON_REN)) {
+			DPRINTF("RX FIFO overflow\n");
+			p->status |= DIFv1_CON_RE;
+			pmb887x_srb_set_isr(&p->srb, DIFv1_ISR_ERR);
+		}
+		pmb887x_fifo16_pop(p->rx_fifo);
+	}
+
+	pmb887x_fifo16_push(p->rx_fifo, received & p->mask);
+}
+
 static void dif_transfer_word(pmb887x_dif_t *p) {
 	p->status &= ~(DIFv1_CON_TE | DIFv1_CON_RE);
 
@@ -245,22 +341,28 @@ static void dif_transfer_word(pmb887x_dif_t *p) {
 			}
 		}
 
-		if (pmb887x_fifo_is_full(p->rx_fifo)) {
-			if ((p->con & DIFv1_CON_REN)) {
-				DPRINTF("RX FIFO overflow\n");
-				p->status |= DIFv1_CON_RE;
-				pmb887x_srb_set_isr(&p->srb, DIFv1_ISR_ERR);
-			}
-			pmb887x_fifo16_pop(p->rx_fifo); // overwrite last fifo stage
-		}
-
-		pmb887x_fifo16_push(p->rx_fifo, received & p->mask);
+		dif_rx_push(p, received);
 		dif_update_rx_request(p);
 	}
 }
 
-static void dif_transfer_complete(void *opaque) {
-	pmb887x_dif_t *p = opaque;
+/*
+ * Run the queued words here rather than from a timer: v1 used to hand
+ * every single word to timer_mod(transfer_timer, 0), and because the DIF's
+ * breq then reached the DMAC from outside its own run loop, the DMAC armed
+ * its timer per burst too.  The loop still stops as soon as an interrupt
+ * is raised - the RX FIFO is four words deep and would overflow if a whole
+ * TX FIFO were drained without anyone reading it - so the transfer has to
+ * be resumable.  Every point that can drop the raised request calls back
+ * in: the DMAC or CPU pushing the next word, reading the RX FIFO, and the
+ * event handler when a request is cleared (which is what v2 resumes on).
+ */
+static void dif_run_transfers(pmb887x_dif_t *p) {
+	if (p->in_transfer)
+		return;   /* an outer call is looping; it will take the work */
+
+	p->in_transfer = true;
+	dif_schedule_transfer(p);
 	while (p->transfer_pending) {
 		p->transfer_pending = false;
 		if (!dif_is_running(p))
@@ -271,10 +373,32 @@ static void dif_transfer_complete(void *opaque) {
 		if (pmb887x_srb_get_ris(&p->srb) != 0)
 			break;
 	}
-	if (!p->transfer_pending)
+	if (p->transfer_pending) {
+		/*
+		 * The loop stopped on a raised request with a word already popped
+		 * into tx_data, and only an external call can carry it forward -
+		 * so guarantee one.  A word is only held when the TX FIFO had
+		 * another one ready, and the DMAC feeds it a word at a time, so on
+		 * the display path the FIFO is empty here and the timer is never
+		 * armed.  Without it a CPU-driven burst that fills the FIFO and
+		 * then waits on something other than the CON read below stalls
+		 * outright.
+		 */
+		timer_mod(p->transfer_timer, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + 1);
+	} else {
 		p->status &= ~DIFv1_CON_BSY;
+	}
+	p->in_transfer = false;
 }
 
+/* Runs a held word whose resume never came: dif_run_transfers() arms the
+ * timer only when it stops on a raised request with a word already popped
+ * into tx_data (see there). */
+static void dif_transfer_complete(void *opaque) {
+	dif_run_transfers(opaque);
+}
+
+/* Pop the next word into tx_data; the caller runs it. */
 static void dif_schedule_transfer(pmb887x_dif_t *p) {
 	if (p->transfer_pending || !dif_is_running(p) || pmb887x_fifo_is_empty(p->tx_fifo))
 		return;
@@ -283,9 +407,6 @@ static void dif_schedule_transfer(pmb887x_dif_t *p) {
 	p->transfer_pending = true;
 	p->status |= DIFv1_CON_BSY;
 	dif_update_tx_request(p);
-	/* Future deadline, not 0: this runs inside an MMIO write, and an already expired
-	 * virtual timer could run before that write unwinds. */
-	timer_mod(p->transfer_timer, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + 1);
 }
 
 static void dif_stop_transfer(pmb887x_dif_t *p) {
@@ -298,7 +419,7 @@ static void dif_stop_transfer(pmb887x_dif_t *p) {
 
 static void dif_update_transfer(pmb887x_dif_t *p) {
 	if (dif_is_running(p)) {
-		dif_schedule_transfer(p);
+		dif_run_transfers(p);
 	} else {
 		dif_stop_transfer(p);
 	}
@@ -315,6 +436,8 @@ static uint16_t dif_read_fifo(pmb887x_dif_t *p) {
 	}
 	uint16_t value = pmb887x_fifo16_pop(p->rx_fifo);
 	dif_update_rx_request(p);
+	/* draining RX may have dropped the request the loop stopped on */
+	dif_run_transfers(p);
 	return value;
 }
 
@@ -332,11 +455,13 @@ static void dif_write_fifo(pmb887x_dif_t *p, uint16_t value) {
 	}
 	pmb887x_fifo16_push(p->tx_fifo, p->tb & p->mask);
 	dif_update_tx_request(p);
-	dif_schedule_transfer(p);
+	dif_run_transfers(p);
 }
 
 static void dif_update_state(pmb887x_dif_t *p) {
 	uint32_t bits = ((p->con & DIFv1_CON_BM) >> DIFv1_CON_BM_SHIFT) + 1;
+	if (bits != p->bits)
+		p->mux_dirty = true;
 	p->bits = bits;
 	p->mask = (1 << bits) - 1;
 
@@ -411,6 +536,10 @@ static uint64_t dif_io_read(void *opaque, hwaddr haddr, unsigned size) {
 			break;
 
 		case DIFv1_CON:
+			/* this is where BSY is read, so it is where a CPU that
+			 * spins on it without touching anything else would
+			 * otherwise wait for a word the loop is still holding */
+			dif_run_transfers(p);
 			value = (p->con & DIFv1_CON_EN) ? p->status | (p->con & DIF_CON_STATUS) : p->con;
 			break;
 
@@ -619,6 +748,7 @@ static void dif_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned si
 		case DIFv1_BCSEL0:
 		case DIFv1_BCSEL1:
 			p->bcsel[(haddr - DIFv1_BCSEL0) / 4] = value;
+			p->mux_dirty = true;
 			dif_dump_bit_mux(p);
 			break;
 
@@ -629,11 +759,13 @@ static void dif_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned si
 		case DIFv1_BMREG4:
 		case DIFv1_BMREG5:
 			p->bmreg[(haddr - DIFv1_BMREG0) / 4] = value;
+			p->mux_dirty = true;
 			dif_dump_bit_mux(p);
 			break;
 
 		case DIFv1_BCREG:
 			p->bcreg = value;
+			p->mux_dirty = true;
 			dif_dump_bit_mux(p);
 			break;
 
@@ -660,11 +792,199 @@ static void dif_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned si
 static void dif_event_handler(void *opaque, int event_id, int level) {
 	pmb887x_dif_t *p = opaque;
 	dif_trigger_dma(p);
+	/* a cleared request is what dif_run_transfers() stopped on; v2's
+	 * dif_event_handler resumes on exactly this */
+	if (level == 0)
+		dif_run_transfers(p);
+}
+
+/*
+ * The state a whole DMA burst can be pushed through in one loop: the
+ * request updates are done once at the end of the burst instead of per
+ * word, which leaves the same levels only if none of the conditions the
+ * per-word path would re-test per word can change inside it - which is
+ * what this checks.  A DMA channel draining RX between bursts would see
+ * words the burst overwrites, so RX must not be DMA-serviced.
+ */
+static bool dif_can_run_burst(pmb887x_dif_t *p) {
+	return dif_is_running(p) &&
+		(pmb887x_srb_get_dmae(&p->srb) & DIFv1_RIS_RX) == 0 &&
+		!p->in_transfer && !p->transfer_pending &&
+		(p->sync_config & DIFv1_SYNC_CONFIG_SYNCEN) == 0 &&
+		(p->pbccon & DIFv1_PBCCON_PBBCONV_MODE) == 0 &&
+		(p->con & DIFv1_CON_LB) == 0 &&
+		p->bits >= 8 && p->bits <= 16 && (p->bits & 7) == 0 &&
+		pmb887x_fifo_is_empty(p->tx_fifo);
+}
+
+/* One transferred word, with everything that is invariant over the burst
+ * hoisted out: the FIFO round trip, the mux-table check and the request
+ * updates.  What is left is what a word actually does. */
+static void dif_run_word(pmb887x_dif_t *p, uint16_t value) {
+	p->status &= ~(DIFv1_CON_TE | DIFv1_CON_RE);
+
+	uint16_t transmitted = dif_mux(p, value) & p->mask;
+	uint16_t received = 0;
+	if ((p->con & DIFv1_CON_HB_MSB) != 0) {
+		for (int shift = p->bits - 8; shift >= 0; shift -= 8)
+			received |= (ssi_transfer(p->bus, (transmitted >> shift) & 0xFF) & 0xFF) << shift;
+	} else {
+		for (int shift = 0; shift < p->bits; shift += 8)
+			received |= (ssi_transfer(p->bus, (transmitted >> shift) & 0xFF) & 0xFF) << shift;
+	}
+
+	dif_rx_push(p, received);
+}
+
+/*
+ * The same burst again, one step lower: the bytes of every word at once,
+ * so the bus below is walked once instead of once per byte.  What the SSI
+ * side gives back is the same sequence of received bytes either way, so
+ * the RX FIFO is filled from it afterwards exactly as dif_run_word()
+ * would have - only the transfers themselves move.  Returns false, having
+ * transferred nothing, when the bus has no run path.
+ */
+#define DIF_RUN_CHUNK 128
+
+/*
+ * No guest instruction runs inside a burst, so the only received words the
+ * guest can ever read back are the last RX_FIFO_SIZE of it: everything
+ * earlier is pushed and then popped again by the pushes that follow.  For
+ * a chunk longer than the FIFO the leading words can therefore skip the
+ * reassembly and the FIFO round trip entirely, as long as what they would
+ * have left behind is put back afterwards: the FIFO drained so the tail
+ * lands in the same order, and the overrun effects (RE, sticky ISR_ERR)
+ * applied once at the end, which is where the last word would have left
+ * them.
+ */
+static bool dif_run_ssi_burst(pmb887x_dif_t *p, const uint8_t *buf, unsigned size, unsigned count) {
+	uint8_t tx[DIF_RUN_CHUNK * 2], rx[DIF_RUN_CHUNK * 2];
+	unsigned word_bytes = p->bits / 8;
+	bool msb_first = (p->con & DIFv1_CON_HB_MSB) != 0;
+
+	if (unlikely(p->mux_dirty))
+		dif_build_mux_table(p);
+
+	/* The display's own shape: 16-bit words, MSB first, no mux. Packing
+	 * those is a byte swap, so do that and skip the table entirely. */
+	bool tx_bswap16 = size == 2 && word_bytes == 2 &&
+		msb_first && p->mask == 0xFFFF && p->mux_identity;
+	uint16_t last = 0;
+
+	for (unsigned done = 0; done < count; done += DIF_RUN_CHUNK) {
+		unsigned chunk = MIN(count - done, DIF_RUN_CHUNK);
+
+		if (tx_bswap16) {
+			const uint8_t *src = buf + done * 2;
+			for (unsigned i = 0; i < chunk; i++) {
+				uint16_t value = lduw_he_p(src + i * 2);
+				tx[i * 2] = value >> 8;
+				tx[i * 2 + 1] = (uint8_t)value;
+			}
+			last = lduw_he_p(src + (chunk - 1) * 2);
+		} else {
+			for (unsigned i = 0; i < chunk; i++) {
+				uint16_t value = ldn_he_p(buf + (done + i) * size, size) & p->mask;
+				uint16_t transmitted = dif_mux(p, value) & p->mask;
+				last = value;
+				for (unsigned k = 0; k < word_bytes; k++) {
+					unsigned shift = (msb_first ? word_bytes - 1 - k : k) * 8;
+					tx[i * word_bytes + k] = (transmitted >> shift) & 0xFF;
+				}
+			}
+		}
+
+		if (!ssi_transfer_run(p->bus, tx, rx, chunk * word_bytes)) {
+			if (done == 0)
+				return false;
+			/* the bus lost its run path after an earlier chunk; the
+			 * remaining words still have to move, so run them one
+			 * word at a time from the source */
+			for (unsigned i = done; i < count; i++) {
+				uint16_t value = ldn_he_p(buf + i * size, size) & p->mask;
+				p->tb = value;
+				dif_run_word(p, value);
+			}
+			return true;
+		}
+
+		unsigned first = 0;
+		bool overrun = false;
+		if (chunk > pmb887x_fifo_total(p->rx_fifo)) {
+			first = chunk - pmb887x_fifo_total(p->rx_fifo);
+			pmb887x_fifo_reset(p->rx_fifo);
+			overrun = true;
+		}
+
+		for (unsigned i = first; i < chunk; i++) {
+			uint16_t received = 0;
+			for (unsigned k = 0; k < word_bytes; k++) {
+				unsigned shift = (msb_first ? word_bytes - 1 - k : k) * 8;
+				received |= (uint16_t)rx[i * word_bytes + k] << shift;
+			}
+
+			dif_rx_push(p, received);
+		}
+
+		if (overrun) {
+			/* the skipped words each left RE behind under REN; the
+			 * last of them is where the flags stand now */
+			p->status &= ~(DIFv1_CON_TE | DIFv1_CON_RE);
+			if ((p->con & DIFv1_CON_REN)) {
+				p->status |= DIFv1_CON_RE;
+				pmb887x_srb_set_isr(&p->srb, DIFv1_ISR_ERR);
+			}
+		}
+
+		p->tb = last;
+	}
+	return true;
+}
+
+/* Returns whether the words were consumed as one burst; false means they
+ * were written word by word, exactly as dif_io_write() would. */
+static bool dif_io_write_run(void *opaque, hwaddr haddr, const uint8_t *buf, unsigned size, unsigned count) {
+	pmb887x_dif_t *p = opaque;
+
+	if (haddr != DIFv1_TB || !dif_can_run_burst(p)) {
+		for (unsigned i = 0; i < count; i++)
+			dif_io_write(opaque, haddr, ldn_he_p(buf + i * size, size), size);
+		return false;
+	}
+
+	/* burst words bypass dif_io_write(), so log them here: the mask
+	 * test is hoisted out of the loop - the per-word form would put a
+	 * global load on every word of the display stream */
+	if (pmb887x_trace_io_enabled(PMB887X_MOD_CONST_NAME(PMB887X_TRACE_ID))) {
+		for (unsigned i = 0; i < count; i++)
+			pmb887x_dump_io_write(PMB887X_TRACE_IO, haddr + p->mmio.addr, size,
+				ldn_he_p(buf + i * size, size));
+	}
+
+	/* the srb event handler re-enters dif_run_transfers(); the burst is
+	 * the transfer, so hold it off exactly as the per-word loop does */
+	p->in_transfer = true;
+	bool burst = dif_run_ssi_burst(p, buf, size, count);
+	if (!burst) {
+		for (unsigned i = 0; i < count; i++) {
+			p->tb = ldn_he_p(buf + i * size, size) & p->mask;
+			dif_run_word(p, p->tb);
+		}
+	}
+	p->in_transfer = false;
+
+	dif_update_tx_request(p);
+	dif_update_rx_request(p);
+	/* the per-word path ends inside dif_run_transfers(); a request the
+	 * updates above cleared is resumed from there and nowhere else */
+	dif_run_transfers(p);
+	return burst;
 }
 
 static const MemoryRegionOps io_ops = {
 	.read			= dif_io_read,
 	.write			= dif_io_write,
+	.write_run		= dif_io_write_run,
 	.endianness		= DEVICE_NATIVE_ENDIAN,
 	.valid			= {
 		.min_access_size	= 1,
@@ -754,6 +1074,7 @@ static void dif_reset(DeviceState *dev) {
 	p->pbccon = 0;
 	p->bcreg = 0;
 	memset(p->bcsel, 0, sizeof(p->bcsel));
+	p->mux_dirty = true;
 	p->sync_config = 0;
 	p->lcd_unk9c = 0;
 	p->sync_count = 0;
@@ -761,13 +1082,17 @@ static void dif_reset(DeviceState *dev) {
 	p->bits = 0;
 	p->tx_data = 0;
 	p->transfer_pending = false;
+	p->in_transfer = false;
+	/* the DMAC's own recorded level resets with it: re-drive both lines */
+	p->dmac_tx_breq_level = -1;
+	p->dmac_rx_breq_level = -1;
 	p->pbc_word = 0;
 	p->is_pbc_word_valid = false;
 	p->dmac_tx_clr = 0;
 	p->dmac_rx_clr = 0;
 
-	qemu_set_irq(p->dmac_tx_breq, 0);
-	qemu_set_irq(p->dmac_rx_breq, 0);
+	dif_set_breq(p->dmac_tx_breq, &p->dmac_tx_breq_level, 0);
+	dif_set_breq(p->dmac_rx_breq, &p->dmac_rx_breq_level, 0);
 
 	dif_set_fifo(p, DIF_FIFO_RX, false);
 	dif_set_fifo(p, DIF_FIFO_TX, false);

@@ -1517,6 +1517,9 @@
 #
 # @dbus: Start a D-Bus service for the display.  (Since 7.0)
 #
+# @wasm: Render to a browser-controlled framebuffer via the wasm UI
+#     backend (emscripten builds only).
+#
 # Since: 2.12
 ##
 { 'enum'    : 'DisplayType',
@@ -1529,7 +1532,8 @@
     { 'name': 'curses', 'if': 'CONFIG_CURSES' },
     { 'name': 'cocoa', 'if': 'CONFIG_COCOA' },
     { 'name': 'spice-app', 'if': 'CONFIG_SPICE' },
-    { 'name': 'dbus', 'if': 'CONFIG_DBUS_DISPLAY' }
+    { 'name': 'dbus', 'if': 'CONFIG_DBUS_DISPLAY' },
+    { 'name': 'wasm', 'if': 'CONFIG_WASM_UI' }
   ]
 }
 

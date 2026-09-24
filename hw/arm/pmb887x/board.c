@@ -291,10 +291,12 @@ static void pmb887x_init(MachineState *machine) {
 
 	// CAPCOM0
 	DeviceState *capcom0 = pmb887x_new_cpu_module("CAPCOM0");
+	object_property_set_link(OBJECT(capcom0), "cgu", OBJECT(cgu), &error_fatal);
 	sysbus_realize_and_unref(SYS_BUS_DEVICE(capcom0), &error_fatal);
 	
 	// CAPCOM1
 	DeviceState *capcom1 = pmb887x_new_cpu_module("CAPCOM1");
+	object_property_set_link(OBJECT(capcom1), "cgu", OBJECT(cgu), &error_fatal);
 	sysbus_realize_and_unref(SYS_BUS_DEVICE(capcom1), &error_fatal);
 
 	// RTC
@@ -379,6 +381,15 @@ static void pmb887x_class_init(ObjectClass *oc, const void *data) {
 	mc->default_cpu_type = ARM_CPU_TYPE_NAME("arm926");
 	mc->default_ram_size = 16 * 1024 * 1024;
 	mc->tcg_auxiliary_threads = 1;
+#ifdef CONFIG_TCG_WASM64
+	/*
+	 * 4 KB pages: a TB may then run and branch across more of its code
+	 * (the firmware maps only 1 MB sections).  This is the only page-size
+	 * lever that runs before machine_memory_init() commits the size; see
+	 * arm_cpu_realizefn.
+	 */
+	mc->minimum_page_bits = 12;
+#endif
 }
 
 static const TypeInfo pmb887x_type = {

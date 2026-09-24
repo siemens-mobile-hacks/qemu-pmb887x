@@ -12,7 +12,16 @@
 #include "qemu/rcu.h"
 #include "exec/cpu-common.h"
 
+#ifdef CONFIG_TCG_WASM64
+/*
+ * The wasm64 backend reaches this cache on every inline next-TB cache
+ * miss, and at 12 bits most of its qht lookups were conflict misses.
+ * 14 bits is the measured peak; 16 is worse again.
+ */
+#define TB_JMP_CACHE_BITS 14
+#else
 #define TB_JMP_CACHE_BITS 12
+#endif
 #define TB_JMP_CACHE_SIZE (1 << TB_JMP_CACHE_BITS)
 
 /*

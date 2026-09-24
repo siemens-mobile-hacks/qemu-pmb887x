@@ -45,10 +45,18 @@ static int64_t icount_get_limit(void)
          */
         deadline = qemu_clock_deadline_ns_all(QEMU_CLOCK_VIRTUAL,
                                               QEMU_TIMER_ATTR_ALL);
-        /* Check realtime timers, because they help with input processing */
+#ifndef __EMSCRIPTEN__
+        /*
+         * Check realtime timers, because they help with input processing.
+         * Not on wasm: the realtime timers run on the main-loop worker,
+         * which paces its own futex wait on them, and this host-clock
+         * read is a JS import (~3 us) taken twice per vCPU loop round —
+         * 6 % of the vCPU during the halt-dense display-DMA stretch.
+         */
         deadline = qemu_soonest_timeout(deadline,
                 qemu_clock_deadline_ns_all(QEMU_CLOCK_REALTIME,
                                            QEMU_TIMER_ATTR_ALL));
+#endif
 
         /*
          * Maintain prior (possibly buggy) behaviour where if no deadline

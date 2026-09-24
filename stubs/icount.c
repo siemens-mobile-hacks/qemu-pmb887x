@@ -19,7 +19,21 @@ int64_t icount_get_raw(void)
     abort();
     return 0;
 }
+/*
+ * Referenced by qemu_clock_get_ns() under CONFIG_TCG so it can skip the
+ * cpus_get_virtual_clock() frame; unreachable here, where use_icount is
+ * ICOUNT_DISABLED.
+ */
+int64_t icount_get(void)
+{
+    abort();
+    return 0;
+}
 void icount_start_warp_timer(void)
+{
+    abort();
+}
+void icount_start_warp_timer_full(bool notify)
 {
     abort();
 }

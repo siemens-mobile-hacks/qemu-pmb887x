@@ -2679,6 +2679,12 @@ void arm_register_el_change_hook(ARMCPU *cpu, ARMELChangeHookFn *hook, void
  * Rebuild the cached TBFLAGS for arbitrary changed processor state.
  */
 void arm_rebuild_hflags(CPUARMState *env);
+#ifdef CONFIG_TCG_WASM64
+/* dynamic words of the wasm64 inline TB-lookup cache key (hflags.c) */
+bool arm_w64_lc_key(CPUState *cs, uint32_t key32[3]);
+/* ... and the PC the key belongs to, for the PC-keyed variant */
+bool arm_w64_lc_key_pc(CPUState *cs, uint32_t key32[3], uint32_t *pc);
+#endif
 
 /**
  * aa32_vfp_dreg:

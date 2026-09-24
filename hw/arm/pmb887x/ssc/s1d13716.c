@@ -49,7 +49,9 @@ struct pmb887x_gimmick_t {
 #define PMB887X_GIMMICK(obj)	OBJECT_CHECK(pmb887x_gimmick_t, (obj), TYPE_PMB887X_GIMMICK)
 
 static uint32_t gimmick_transfer(SSIPeripheral *dev, uint32_t in) {
-	pmb887x_gimmick_t *p = PMB887X_GIMMICK(dev);
+	/* per transferred byte: the class installs this transfer only on
+	 * pmb887x_gimmick_t peripherals, so the checked cast is skipped */
+	pmb887x_gimmick_t *p = (pmb887x_gimmick_t *)dev;
 
 	if (!p->cs_app && p->cs_lcd)
 		return ssi_transfer(p->bus, in);
@@ -83,6 +85,16 @@ static uint32_t gimmick_transfer(SSIPeripheral *dev, uint32_t in) {
 	}
 
 	return response;
+}
+
+/* Pass-through is the display stream; anything addressed to the chip's own
+ * registers is a command sequence and goes back to the per-byte path. */
+static unsigned gimmick_transfer_run(SSIPeripheral *dev, const uint8_t *tx, uint8_t *rx, unsigned n) {
+	pmb887x_gimmick_t *p = (pmb887x_gimmick_t *)dev;
+
+	if (p->cs_app || !p->cs_lcd)
+		return 0;
+	return ssi_transfer_run(p->bus, tx, rx, n);
 }
 
 static void gimmick_handle_rs(void *opaque, int n, int level) {
@@ -133,6 +145,7 @@ static void gimmick_class_init(ObjectClass *klass, const void *data) {
 	device_class_set_props(dc, gimmick_properties);
 	k->realize = gimmick_realize;
 	k->transfer = gimmick_transfer;
+	k->transfer_run = gimmick_transfer_run;
 	k->cs_polarity = SSI_CS_LOW;
 }
 

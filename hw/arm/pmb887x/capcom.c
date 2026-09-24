@@ -17,6 +17,8 @@
 #include "hw/arm/pmb887x/regs_dump.h"
 #include "hw/arm/pmb887x/mod.h"
 #include "hw/arm/pmb887x/trace.h"
+#include "hw/arm/pmb887x/pll.h"
+#include "qemu/timer.h"
 
 #define TYPE_PMB887X_CAPCOM	"pmb887x-capcom"
 #define PMB887X_CAPCOM(obj)	OBJECT_CHECK(pmb887x_capcom_t, (obj), TYPE_PMB887X_CAPCOM)
@@ -37,6 +39,7 @@ struct pmb887x_capcom_t {
 	pmb887x_src_reg_t cc_src[8];
 	
 	pmb887x_clc_reg_t clc;
+	struct pmb887x_cgu_t *cgu;
 	
 	uint32_t pisel;
 	uint32_t t01con;
@@ -55,6 +58,27 @@ struct pmb887x_capcom_t {
 	uint32_t t01ocr;
 	uint32_t whbsout;
 	uint32_t whbcout;
+	uint32_t cc[8];
+	
+	/* The counting engine: T0/T1 are free-running up-counters at
+	 * f_capcom = fsys / RMC while their TnR run bit is set, wrapping at
+	 * 0xFFFF and reloading from TnREL.  Compares (CCm in MODE0..3 with
+	 * ACCm selecting T0/T1) fire cc_src[m] when the accumulated counter
+	 * is equal to CCm; wraps fire t_src[n].  One QEMU_CLOCK_VIRTUAL timer
+	 * serves the next event that can raise an interrupt (the KE970
+	 * firmware boots into a wait for exactly such a compare, and the stub
+	 * hung it).  Events whose source cannot raise one (SRE clear, or SRR
+	 * already pending) only set bits, so they are applied on the next
+	 * access instead: the SL65 runs T0 as a 179 kHz PWM with no interrupt
+	 * enabled, and a timer per wrap was a 7x slowdown.  Ticks are counted
+	 * from epoch_ns, so the counter values do not depend on when the
+	 * accesses sync them. */
+	QEMUTimer *timer;
+	uint32_t freq;
+	int64_t epoch_ns;		/* virtual time of tick 0 at the current freq */
+	uint64_t ticks;			/* ticks since epoch_ns applied to count[] */
+	uint32_t count[2];
+	bool ovf[2];
 };
 
 struct pmb887x_capcom_cc_t {
@@ -93,8 +117,153 @@ static enum pmb887x_capcom_cc_mode_t capcom_get_mode(pmb887x_capcom_t *p, int id
 	return (ccm & cc->mod_mask) >> cc->mod_shift;
 }
 
+static void capcom_timer_cb(void *opaque);
+
+static bool capcom_t_run(pmb887x_capcom_t *p, int n) {
+	return (p->t01con & (n ? CAPCOM_T01CON_T1R : CAPCOM_T01CON_T0R)) != 0;
+}
+
+static bool capcom_t_timer_mode(pmb887x_capcom_t *p, int n) {
+	/* TnM: 0 = timer (module clock), 1 = counter (external input) */
+	return (p->t01con & (n ? CAPCOM_T01CON_T1M : CAPCOM_T01CON_T0M)) == 0;
+}
+
+static uint32_t capcom_t_rel(pmb887x_capcom_t *p, int n) {
+	return (n ? p->t1rel : p->t0rel) & CAPCOM_T0_T0;
+}
+
+static void capcom_update_freq(pmb887x_capcom_t *p) {
+	uint8_t rmc = pmb887x_clc_get_rmc(&p->clc);
+	uint32_t f = rmc > 0 && p->cgu ? pmb887x_pll_get_fsys(p->cgu) / rmc : 0;
+	if (f != p->freq) {
+		p->freq = f;
+		p->epoch_ns = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
+		p->ticks = 0;
+		DPRINTF("fcapcom=%d %s\n", p->freq,
+				pmb887x_clc_is_enabled(&p->clc) && p->freq > 0 ? "[ON]" : "[OFF]");
+	}
+}
+
+/* Which timer does CCm accumulate, and is it in a compare mode? */
+static bool capcom_cc_compare(pmb887x_capcom_t *p, int m, int *acc) {
+	const pmb887x_capcom_cc_t *cc = &capcom_cc_list[m];
+	uint32_t ccm = p->ccm[cc->ccm_index];
+	int mode = (ccm & cc->mod_mask) >> cc->mod_shift;
+	if (mode < CAPCOM_CC_MODE_0)
+		return false;
+	*acc = (ccm & cc->acc_mask) ? 1 : 0;
+	return true;
+}
+
+/* The compares on Tn that the counter passes moving through (lo, hi] */
+static uint32_t capcom_hits(pmb887x_capcom_t *p, int n, uint32_t lo, uint32_t hi) {
+	uint32_t hits = 0;
+	for (int m = 0; m < 8; m++) {
+		int acc;
+		if (!capcom_cc_compare(p, m, &acc) || acc != n)
+			continue;
+		uint32_t ccv = p->cc[m] & 0xFFFF;
+		if (ccv > lo && ccv <= hi)
+			hits |= 1u << m;
+	}
+	return hits;
+}
+
+/* Only an event that raises the line has to happen on time */
+static bool capcom_src_wants_timer(pmb887x_src_reg_t *src) {
+	uint32_t v = pmb887x_src_get(src);
+	return (v & MOD_SRC_SRE) && !(v & MOD_SRC_SRR);
+}
+
+static void capcom_advance(pmb887x_capcom_t *p, int n, uint64_t elapsed) {
+	uint32_t rel = capcom_t_rel(p, n);
+	uint32_t cur = p->count[n];
+	uint32_t pass = MIN((uint64_t) 0x10000 - cur, elapsed);
+	uint32_t hits = capcom_hits(p, n, cur, cur + pass);
+	bool wrap = cur + pass == 0x10000;
+
+	if (wrap) {
+		uint32_t period = 0x10000 - rel;
+		elapsed -= pass;
+		if (elapsed >= period)
+			hits |= capcom_hits(p, n, rel, 0x10000);
+		elapsed %= period;
+		hits |= capcom_hits(p, n, rel, rel + elapsed);
+		cur = rel + elapsed;
+	} else {
+		cur += pass;
+	}
+	p->count[n] = cur;
+
+	for (int m = 0; m < 8; m++) {
+		if (hits & (1u << m)) {
+			DPRINTF("CC%d compare hit (cc=%04x, t=%04x)\n", m, p->cc[m] & 0xFFFF, cur);
+			pmb887x_src_update(&p->cc_src[m], 0, MOD_SRC_SETR);
+		}
+	}
+	if (wrap) {
+		p->ovf[n] = true;
+		DPRINTF("T%d wrap (rel=%04x)\n", n, rel);
+		pmb887x_src_update(&p->t_src[n], 0, MOD_SRC_SETR);
+	}
+}
+
+/* Advance the counters to now, firing every event passed on the way, and
+ * re-arm.  Everything else (reads, writes, timer) goes through here first. */
+static void capcom_sync(pmb887x_capcom_t *p) {
+	if (p->freq == 0) {
+		timer_del(p->timer);
+		return;
+	}
+
+	int64_t now = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
+	/* a mid-TB read can run ahead of a later one (see rtc_sync) */
+	uint64_t ticks = now > p->epoch_ns ?
+		muldiv64(now - p->epoch_ns, p->freq, NANOSECONDS_PER_SECOND) : 0;
+	if (ticks > p->ticks) {
+		for (int n = 0; n < 2; n++) {
+			if (capcom_t_run(p, n) && capcom_t_timer_mode(p, n))
+				capcom_advance(p, n, ticks - p->ticks);
+		}
+		p->ticks = ticks;
+	}
+
+	uint64_t best = UINT64_MAX;
+	for (int n = 0; n < 2; n++) {
+		if (!capcom_t_run(p, n) || !capcom_t_timer_mode(p, n))
+			continue;
+		uint32_t cur = p->count[n];
+		uint32_t rel = capcom_t_rel(p, n);
+		if (capcom_src_wants_timer(&p->t_src[n]))
+			best = MIN(best, (uint64_t) 0x10000 - cur);
+		for (int m = 0; m < 8; m++) {
+			int acc;
+			if (!capcom_cc_compare(p, m, &acc) || acc != n ||
+				!capcom_src_wants_timer(&p->cc_src[m]))
+				continue;
+			uint32_t ccv = p->cc[m] & 0xFFFF;
+			/* after a wrap the counter restarts above rel */
+			if (ccv > cur)
+				best = MIN(best, (uint64_t) ccv - cur);
+			else if (ccv > rel)
+				best = MIN(best, (uint64_t) (0x10000 - cur) + (ccv - rel));
+		}
+	}
+	if (best == UINT64_MAX) {
+		timer_del(p->timer);
+	} else {
+		timer_mod(p->timer, p->epoch_ns +
+			muldiv64_round_up(p->ticks + best, NANOSECONDS_PER_SECOND, p->freq));
+	}
+}
+
+static void capcom_timer_cb(void *opaque) {
+	capcom_sync(opaque);
+}
+
 static void capcom_update_state(pmb887x_capcom_t *p) {
-	// TODO
+	capcom_update_freq(p);
+	capcom_sync(p);
 }
 
 static int capcom_get_index_from_reg(uint32_t reg) {
@@ -117,6 +286,16 @@ static uint64_t capcom_io_read(void *opaque, hwaddr haddr, unsigned size) {
 	pmb887x_capcom_t *p = opaque;
 	
 	uint64_t value = 0;
+	
+	/* SRR and OVF bits of events nobody timed are only applied here */
+	capcom_sync(p);
+	
+	if (haddr == CAPCOM_T0 || haddr == CAPCOM_T1) {
+		int n = haddr == CAPCOM_T1;
+		value = p->count[n] | (p->ovf[n] ? CAPCOM_T0_OVF0 : 0);
+		IO_DUMP_READ(haddr + p->mmio.addr, size, value);
+		return value;
+	}
 	
 	switch (haddr) {
 		case CAPCOM_CLC:
@@ -199,6 +378,17 @@ static uint64_t capcom_io_read(void *opaque, hwaddr haddr, unsigned size) {
 			value = p->whbcout;
 			break;
 		
+		case CAPCOM_CC0:
+		case CAPCOM_CC1:
+		case CAPCOM_CC2:
+		case CAPCOM_CC3:
+		case CAPCOM_CC4:
+		case CAPCOM_CC5:
+		case CAPCOM_CC6:
+		case CAPCOM_CC7:
+			value = p->cc[(haddr - CAPCOM_CC0) / 4];
+			break;
+		
 		case CAPCOM_CC7_SRC:
 		case CAPCOM_CC6_SRC:
 		case CAPCOM_CC5_SRC:
@@ -228,6 +418,10 @@ static uint64_t capcom_io_read(void *opaque, hwaddr haddr, unsigned size) {
 
 static void capcom_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned size) {
 	pmb887x_capcom_t *p = opaque;
+	
+	/* advance with the old configuration first, so the write takes
+	 * effect from now on and no tick in flight is lost or re-counted */
+	capcom_sync(p);
 	
 	IO_DUMP_WRITE(haddr + p->mmio.addr, size, value);
 	
@@ -282,6 +476,8 @@ static void capcom_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned
 		
 		case CAPCOM_T0:
 			p->t0 = value;
+			p->count[0] = value & CAPCOM_T0_T0;
+			p->ovf[0] = !!(value & CAPCOM_T0_OVF0);
 			break;
 		
 		case CAPCOM_T0REL:
@@ -290,6 +486,8 @@ static void capcom_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned
 		
 		case CAPCOM_T1:
 			p->t1 = value;
+			p->count[1] = value & CAPCOM_T1_T1;
+			p->ovf[1] = !!(value & CAPCOM_T1_OVF1);
 			break;
 		
 		case CAPCOM_T1REL:
@@ -306,6 +504,17 @@ static void capcom_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned
 		
 		case CAPCOM_WHBCOUT:
 			p->whbcout = value;
+			break;
+		
+		case CAPCOM_CC0:
+		case CAPCOM_CC1:
+		case CAPCOM_CC2:
+		case CAPCOM_CC3:
+		case CAPCOM_CC4:
+		case CAPCOM_CC5:
+		case CAPCOM_CC6:
+		case CAPCOM_CC7:
+			p->cc[(haddr - CAPCOM_CC0) / 4] = value;
 			break;
 		
 		case CAPCOM_CC7_SRC:
@@ -334,6 +543,17 @@ static void capcom_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned
 
 static void capcom_handle_input_change(pmb887x_capcom_t *p, int id, int level) {
 	DPRINTF("CC%d MODE=%d\n", id, capcom_get_mode(p, id));
+
+	/* a capture latches the accumulated counter into CCm on the edge,
+	 * then raises the service request */
+	if (capcom_get_mode(p, id) >= CAPCOM_CC_MODE_RISING_EDGE &&
+		capcom_get_mode(p, id) <= CAPCOM_CC_MODE_BOTH_EDGES) {
+		const pmb887x_capcom_cc_t *cc = &capcom_cc_list[id];
+		uint32_t ccm = p->ccm[cc->ccm_index];
+		int acc = (ccm & cc->acc_mask) ? 1 : 0;
+		capcom_sync(p);
+		p->cc[id] = p->count[acc];
+	}
 
 	if (capcom_get_mode(p, id) == CAPCOM_CC_MODE_RISING_EDGE && level == 1)
 		pmb887x_src_update(&p->cc_src[id], 0, MOD_SRC_SETR);
@@ -436,6 +656,11 @@ static void capcom_reset(DeviceState *dev) {
 	p->t01ocr = 0;
 	p->whbsout = 0;
 	p->whbcout = 0;
+	memset(p->cc, 0, sizeof(p->cc));
+	p->count[0] = p->count[1] = 0;
+	p->ovf[0] = p->ovf[1] = false;
+	p->epoch_ns = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
+	p->ticks = 0;
 
 	capcom_update_state(p);
 }
@@ -444,6 +669,8 @@ static void capcom_realize(DeviceState *dev, Error **errp) {
 	pmb887x_capcom_t *p = PMB887X_CAPCOM(dev);
 	
 	pmb887x_clc_init(&p->clc);
+	p->timer = timer_new_ns(QEMU_CLOCK_VIRTUAL, capcom_timer_cb, p);
+	p->epoch_ns = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
 	
 	int irqn = 0;
 	
@@ -466,6 +693,7 @@ static void capcom_realize(DeviceState *dev, Error **errp) {
 
 static const Property capcom_properties[] = {
 	DEFINE_PROP_UINT32("revision", pmb887x_capcom_t, revision, 0),
+	DEFINE_PROP_LINK("cgu", pmb887x_capcom_t, cgu, "pmb887x-cgu", struct pmb887x_cgu_t *),
 };
 
 static void capcom_class_init(ObjectClass *klass, const void *data) {
