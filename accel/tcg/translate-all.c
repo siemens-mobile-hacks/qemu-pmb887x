@@ -816,6 +816,14 @@ void tcg_flush_jmp_cache(CPUState *cpu)
         return;
     }
 
+#ifdef CONFIG_TCG_WASM64
+    /* a new generation retires every entry at once (tb-jmp-cache.h);
+     * the array is only cleared when the counter wraps */
+    if (likely(++jc->gen != 0)) {
+        return;
+    }
+    jc->gen = 1;
+#endif
     for (int i = 0; i < TB_JMP_CACHE_SIZE; i++) {
         qatomic_set(&jc->array[i].tb, NULL);
     }

@@ -36,10 +36,30 @@
  */
 typedef struct CPUJumpCache {
     struct rcu_head rcu;
+#ifdef CONFIG_TCG_WASM64
+    /*
+     * A full flush moves this generation instead of storing NULL into
+     * 65536 entries: an entry is valid only while the generation stamped
+     * into the unused upper half of its pc (the guest pc is 32-bit)
+     * matches.  The per-page clear and the per-TB invalidation still
+     * store NULL, so a TLBIMVA does not empty the whole cache.
+     */
+    uint32_t gen;
+#endif
     struct {
         TranslationBlock *tb;
         vaddr pc;
     } array[TB_JMP_CACHE_SIZE];
 } CPUJumpCache;
+
+/* the pc as stored in an entry and compared against it */
+static inline vaddr tb_jmp_cache_key(const CPUJumpCache *jc, vaddr pc)
+{
+#ifdef CONFIG_TCG_WASM64
+    return pc | ((vaddr)jc->gen << 32);
+#else
+    return pc;
+#endif
+}
 
 #endif /* ACCEL_TCG_TB_JMP_CACHE_H */
