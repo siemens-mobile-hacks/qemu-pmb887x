@@ -53,6 +53,7 @@ void pmb887x_clc_init(pmb887x_clc_reg_t *reg, DeviceState *dev);
 void pmb887x_clc_set_callback(pmb887x_clc_reg_t *reg, void (*callback)(void *), void *opaque);
 uint8_t pmb887x_clc_get_rmc(pmb887x_clc_reg_t *reg);
 uint8_t pmb887x_clc_is_enabled(pmb887x_clc_reg_t *reg);
+uint32_t pmb887x_clc_get_input_hz(pmb887x_clc_reg_t *reg);
 uint32_t pmb887x_clc_get_hz(pmb887x_clc_reg_t *reg);
 uint32_t pmb887x_clc_get(pmb887x_clc_reg_t *reg);
 void pmb887x_clc_set(pmb887x_clc_reg_t *reg, uint32_t value);

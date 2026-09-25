@@ -86,7 +86,6 @@ static bool dsp_int_read(dsp_device_t *device, uint16_t offset, uint32_t pc, uin
 			}
 			break;
 	}
-
 	IO_DUMP_READ_EX(device->config->base + offset, sizeof(*value), *value, pc, 0);
 	return true;
 }

@@ -4,24 +4,13 @@
 #include "qemu/osdep.h"
 #include "qemu/atomic.h"
 #include "qemu/bitops.h"
-#include "qemu/rcu.h"
-#include "qemu/timer.h"
-
-#include "tcg/startup.h"
-
 #include "hw/arm/pmb887x/dsp/peripheral/internal.h"
 #include "hw/arm/pmb887x/dsp/tcg.h"
 #include "hw/arm/pmb887x/dsp/runtime.h"
 #include "hw/arm/pmb887x/trace.h"
 
-#define DSP_ACTIVE_SLICE_CYCLES	32768
-#define DSP_STABLE_BLOCK_CYCLES	512
-/* Cycles to advance a real-time peripheral per step while the core waits idle. */
-#define DSP_IDLE_ADVANCE_CYCLES	16
-/* Wall-clock period of one AFE sample (8 kHz voiceband). */
-#define AFE_SAMPLE_PERIOD_NS	(NANOSECONDS_PER_SECOND / 8000)
-/* Cap how far the paced AFE can catch up in one go (e.g. after a stall). */
-#define AFE_MAX_CATCHUP_SAMPLES	64
+#define DSP_SLICE_CYCLES	4096
+#define DSP_AFE_SAMPLE_CYCLES	16
 
 struct dsp_runtime_t {
 	const pmb887x_dsp_config_t *config;
@@ -47,11 +36,11 @@ struct dsp_runtime_t {
 	bool program_start;
 	bool reschedule;
 	uint32_t program_start_pc;
-	int64_t afe_next_sample_ns;
+	uint32_t clock_divider;
 };
 
 static uint16_t dsp_runtime_read_u16(const uint8_t *data) {
-	return data[0] | (uint16_t) data[1] << 8;
+	return (data[0] | ((uint16_t) data[1] << 8));
 }
 
 static void dsp_runtime_load_words(uint16_t *destination, const uint8_t *source, size_t words) {
@@ -63,7 +52,7 @@ void dsp_runtime_wake(dsp_runtime_t *runtime) {
 	qatomic_set(&runtime->idle, false);
 }
 
-void dsp_runtime_kick(dsp_runtime_t *runtime) {
+static void dsp_runtime_kick(dsp_runtime_t *runtime) {
 	dsp_runtime_wake(runtime);
 	qatomic_set(&runtime->reschedule, true);
 	teak_tcg_request_exit(&runtime->core);
@@ -112,14 +101,14 @@ static void dsp_runtime_map_data_bank(dsp_runtime_t *runtime, size_t bank) {
 static void dsp_runtime_set_page(void *opaque, uint16_t page) {
 	dsp_runtime_t *runtime = opaque;
 	const pmb887x_dsp_config_t *config = runtime->config;
-	uint16_t program_page_mask = config->page_field_mask << config->program_page_shift;
-	uint16_t page_mask = program_page_mask | config->page_field_mask;
+	uint16_t program_page_mask = (config->page_field_mask << config->program_page_shift);
+	uint16_t page_mask = (program_page_mask | config->page_field_mask);
 
 	if ((page & ~page_mask) != 0)
-		DPRINTF("unknown DSP page bits: cpu=%s value=%04X unknown=%04X\n", config->name, page, page & ~page_mask);
+		DPRINTF("unknown DSP page bits: cpu=%s value=%04X unknown=%04X\n", config->name, page, (page & ~page_mask));
 
-	dsp_runtime_map_program_bank(runtime, page >> config->program_page_shift & config->page_field_mask);
-	dsp_runtime_map_data_bank(runtime, page & config->page_field_mask);
+	dsp_runtime_map_program_bank(runtime, (page >> config->program_page_shift) & config->page_field_mask);
+	dsp_runtime_map_data_bank(runtime, (page & config->page_field_mask));
 }
 
 static void dsp_runtime_set_core_disabled(void *opaque, bool disabled) {
@@ -144,7 +133,7 @@ static void dsp_runtime_comm_changed(void *opaque, uint16_t flags, bool set) {
 	dsp_runtime_t *runtime = opaque;
 
 	runtime->notify_comm(runtime->device_opaque, flags, set);
-	if (set)
+	if (!set || qatomic_read(&runtime->mutable_program_started))
 		dsp_runtime_kick(runtime);
 }
 
@@ -183,60 +172,9 @@ static bool dsp_runtime_is_mmio(const dsp_runtime_t *runtime, uint16_t address) 
 	return address >= runtime->config->mmio_base && address - runtime->config->mmio_base < runtime->config->mmio_size;
 }
 
-/*
- * Advance the AFE sample clock by however many 8 kHz samples are due in
- * wall-clock time since the last call, capped so a long stall can't spiral.
- * Decoupling the AFE from DSP cycles keeps it at real 8 kHz no matter how fast
- * the core spins, so its audio interrupts don't monopolise the core and starve
- * the MCU command handshake. Runs on the worker thread (owns the AFE + IRQ
- * state), so no locking is needed; the dsp.c AFE timer just wakes this worker.
- */
-static void dsp_runtime_pace_afe(dsp_runtime_t *runtime) {
-	int64_t now, next;
-	size_t samples = 0;
-
-	if (!dsp_bus_is_active(runtime->bus))
-		return;
-
-	/* Wall-clock (matches DSP_AFE_CLOCK in dsp.c) so the sample clock keeps
-	 * advancing even while the vCPU is parked in a handshake wait under -icount. */
-	now = qemu_clock_get_ns(QEMU_CLOCK_HOST);
-	next = runtime->afe_next_sample_ns;
-	if (next == 0 || next > now + AFE_SAMPLE_PERIOD_NS)
-		next = now;	/* first sample or clock skew: (re)sync */
-
-	while (next <= now && samples < AFE_MAX_CATCHUP_SAMPLES) {
-		samples++;
-		next += AFE_SAMPLE_PERIOD_NS;
-	}
-	runtime->afe_next_sample_ns = next;
-
-	if (samples != 0) {
-		size_t cycles = samples * DSP_IDLE_ADVANCE_CYCLES;
-
-		dsp_bus_advance_afe(runtime->bus, cycles);
-		/*
-		 * Also clock the free-running DSP timers on wall-clock time. They are
-		 * otherwise only advanced by executed DSP cycles, so while the core sits
-		 * idle in a WFI-style wait they freeze -- and a timer the firmware left
-		 * enabled to periodically wake the core (to poll the MCU command mailbox)
-		 * never fires, deadlocking the ARM<->DSP handshake. Timers only, so we do
-		 * not perturb cycle-sensitive GSM baseband peripheral timing.
-		 */
-		dsp_bus_advance_timers(runtime->bus, cycles);
-#if 0	/* AFE pacing debug */
-		static uint32_t pn;
-		if ((pn++ & 0x1FF) == 0)
-			fprintf(stderr, "[afe-pace] n=%u samples=%zu irq=%02X pc=%05X idle=%d\n",
-				pn, samples, dsp_bus_get_irq_lines(runtime->bus),
-				runtime->core.state.pc, qatomic_read(&runtime->idle));
-#endif
-	}
-}
-
 static void dsp_runtime_advance_cycles(void *opaque, size_t cycles) {
 	dsp_runtime_t *runtime = opaque;
-	dsp_bus_advance(runtime->bus, cycles);
+	dsp_bus_advance(runtime->bus, cycles * runtime->clock_divider);
 }
 
 static uint16_t dsp_runtime_data_read(void *opaque, uint32_t address) {
@@ -291,8 +229,13 @@ static void dsp_runtime_external_write(void *opaque, uint32_t index, uint16_t va
 }
 
 dsp_runtime_t *dsp_runtime_create(
-	const pmb887x_dsp_config_t *config, uint16_t rom_version, const uint8_t *program_rom, const uint8_t *data_rom,
-	void *device_opaque, void (*notify_activity)(void *opaque), void (*notify_comm)(void *opaque, uint16_t flags, bool set),
+	const pmb887x_dsp_config_t *config,
+	uint16_t rom_version,
+	const uint8_t *program_rom,
+	const uint8_t *data_rom,
+	void *device_opaque,
+	void (*notify_activity)(void *opaque),
+	void (*notify_comm)(void *opaque, uint16_t flags, bool set),
 	uint32_t (*ssc_transfer)(void *opaque, uint32_t value)
 ) {
 	dsp_runtime_t *runtime;
@@ -311,6 +254,7 @@ dsp_runtime_t *dsp_runtime_create(
 	runtime->data = g_new0(uint16_t, PMB887X_DSP_ADDRESS_SPACE_WORDS);
 	runtime->active_program_bank = SIZE_MAX;
 	runtime->active_data_bank = SIZE_MAX;
+	runtime->clock_divider = 1;
 
 	host = (dsp_host_t) {
 		.opaque = runtime,
@@ -349,6 +293,9 @@ dsp_runtime_t *dsp_runtime_create(
 		.advance_cycles = dsp_runtime_advance_cycles,
 		.cycle_sensitive_base = config->mmio_base,
 		.cycle_sensitive_size = config->mmio_size,
+		.wait_state_base = config->shared_base,
+		.wait_state_size = config->shared_size,
+		.wait_state_cycles = 2,
 		.y_space_base = config->y_space_base,
 	};
 
@@ -394,7 +341,7 @@ void dsp_runtime_reset(dsp_runtime_t *runtime) {
 	runtime->halted = false;
 }
 
-bool dsp_runtime_run(dsp_runtime_t *runtime) {
+size_t dsp_runtime_run(dsp_runtime_t *runtime, size_t max_cycles, bool *deferred) {
 	uint64_t cache_compiles = runtime->core.cache_compiles;
 	uint64_t cache_decoded_hits = runtime->core.cache_decoded_hits;
 	uint64_t cache_fast_hits = runtime->core.cache_fast_hits;
@@ -408,22 +355,20 @@ bool dsp_runtime_run(dsp_runtime_t *runtime) {
 	size_t blocks = 0;
 	size_t cycles = 0;
 
+	*deferred = false;
 	runtime->core.chain_exit_pc = 0;
-
 	qatomic_set(&runtime->idle, false);
 	dsp_bus_set_core_idle(runtime->bus, false);
 
-	while (cycles < DSP_ACTIVE_SLICE_CYCLES && !runtime->halted) {
+	while (cycles < max_cycles && !runtime->halted) {
 		uint8_t block_repeat_level;
 		uint32_t block_pc;
-		size_t remaining_cycles = DSP_ACTIVE_SLICE_CYCLES - cycles;
-		size_t slice_cycles = MIN(remaining_cycles, (size_t) DSP_STABLE_BLOCK_CYCLES);
+		size_t remaining_cycles = max_cycles - cycles;
+		size_t slice_cycles = MIN(remaining_cycles, (size_t) DSP_SLICE_CYCLES);
 		bool mutable_program = runtime->core.state.pc < runtime->config->program_rom_base;
 		bool new_program_lifecycle = !qatomic_read(&runtime->mutable_program_started);
 		bool program_changed = qatomic_read(&runtime->program_dirty);
 		bool first_mutable_execution = mutable_program && (new_program_lifecycle || program_changed);
-
-		dsp_runtime_pace_afe(runtime);
 
 		if (first_mutable_execution) {
 			qatomic_set(&runtime->program_start_pc, runtime->core.state.pc);
@@ -456,6 +401,11 @@ bool dsp_runtime_run(dsp_runtime_t *runtime) {
 		block_repeat_level = runtime->core.state.bcn;
 		runtime->core.state.exit_reason = TEAK_EXIT_NONE;
 		if (!teak_tcg_execute_slice(&runtime->core, slice_cycles)) {
+			if (runtime->core.translation_error == TEAK_TRANSLATION_ERROR_RETRY) {
+				*deferred = true;
+				break;
+			}
+
 			teak_insn_t instruction;
 			uint32_t pc = runtime->core.translation_error_address;
 			uint16_t word = teak_program_read(&runtime->core, pc);
@@ -474,12 +424,11 @@ bool dsp_runtime_run(dsp_runtime_t *runtime) {
 			break;
 		}
 
-		if (qatomic_xchg(&runtime->reschedule, false))
-			break;
-
 		cycles += runtime->core.last_block_cycles;
 		blocks += runtime->core.last_block_count;
 		slices++;
+		if (qatomic_xchg(&runtime->reschedule, false))
+			break;
 
 		if (runtime->core.state.bcn != block_repeat_level)
 			DPRINTF("block repeat nesting: pc=%05X next=%05X bcn=%u->%u lp=%u\n", block_pc,
@@ -500,6 +449,22 @@ bool dsp_runtime_run(dsp_runtime_t *runtime) {
 			runtime->core.chain_budget_stops - chain_budget_stops,
 			runtime->core.chain_cache_stops - chain_cache_stops, runtime->core.chain_exit_pc);
 	}
+	return cycles;
+}
+
+void dsp_runtime_advance_idle(dsp_runtime_t *runtime, size_t cycles, size_t afe_samples) {
+	if (cycles != 0)
+		dsp_bus_advance_idle(runtime->bus, cycles * runtime->clock_divider);
+	if (afe_samples != 0)
+		dsp_bus_advance_afe(runtime->bus, afe_samples * DSP_AFE_SAMPLE_CYCLES);
+}
+
+void dsp_runtime_set_clock_divider(dsp_runtime_t *runtime, uint32_t divider) {
+	g_assert(divider != 0);
+	runtime->clock_divider = divider;
+}
+
+bool dsp_runtime_is_running(const dsp_runtime_t *runtime) {
 	return !runtime->halted;
 }
 
@@ -507,35 +472,10 @@ bool dsp_runtime_is_idle(const dsp_runtime_t *runtime) {
 	return qatomic_read(&runtime->idle);
 }
 
-bool dsp_runtime_realtime_active(const dsp_runtime_t *runtime) {
-	return dsp_bus_is_active(runtime->bus);
-}
-
-bool dsp_runtime_is_maskable_interrupt_active(const dsp_runtime_t *runtime) {
-	return qatomic_read(&runtime->core.state.maskable_interrupt_active);
-}
-
-uint16_t dsp_runtime_get_irq_flags(dsp_runtime_t *runtime, size_t group) {
-	return dsp_bus_get_irq_flags(runtime->bus, group);
-}
-
-uint16_t dsp_runtime_get_irq_pending_flags(dsp_runtime_t *runtime, size_t group) {
-	return dsp_bus_get_irq_pending_flags(runtime->bus, group);
-}
-
-void dsp_runtime_get_irq_debug(dsp_runtime_t *runtime, uint8_t *ie, uint8_t *interrupt_mask, uint8_t *lines) {
-	*ie = qatomic_read(&runtime->core.state.ie);
-	*interrupt_mask = qatomic_read(&runtime->core.state.interrupt_mask);
-	*lines = dsp_bus_get_irq_lines(runtime->bus);
-}
-
-uint16_t dsp_runtime_peek(dsp_runtime_t *runtime, uint16_t address) {
-	return qatomic_read(&runtime->data[address]);
-}
-
 bool dsp_runtime_take_program_start(dsp_runtime_t *runtime, uint32_t *pc) {
 	if (!qatomic_xchg(&runtime->program_start, false))
 		return false;
+
 	*pc = qatomic_read(&runtime->program_start_pc);
 	return true;
 }
@@ -547,15 +487,6 @@ bool dsp_runtime_is_program_warming(const dsp_runtime_t *runtime) {
 void dsp_runtime_finish_program_warmup(dsp_runtime_t *runtime) {
 	qatomic_set(&runtime->program_warming, false);
 	qatomic_set(&runtime->program_start, false);
-}
-
-void dsp_runtime_thread_enter(void) {
-	rcu_register_thread();
-	tcg_register_thread();
-}
-
-void dsp_runtime_thread_exit(void) {
-	rcu_unregister_thread();
 }
 
 uint16_t dsp_runtime_shared_read(dsp_runtime_t *runtime, uint16_t offset) {
@@ -582,7 +513,7 @@ uint64_t dsp_runtime_shared_read_bytes(dsp_runtime_t *runtime, size_t offset, si
 		uint16_t word = dsp_runtime_shared_read(runtime, word_offset);
 		uint16_t mask = bytes == sizeof(uint16_t) ? UINT16_MAX : UINT8_MAX;
 
-		value |= (uint64_t) (word >> (byte_offset * 8) & mask) << value_shift;
+		value |= ((uint64_t) ((word >> (byte_offset * 8)) & mask) << value_shift);
 
 		offset += bytes;
 		size -= bytes;
@@ -602,15 +533,15 @@ void dsp_runtime_shared_write_bytes(dsp_runtime_t *runtime, size_t offset, uint6
 		size_t byte_offset = offset % sizeof(uint16_t);
 		size_t bytes = MIN(size, sizeof(uint16_t) - byte_offset);
 		uint16_t field_mask = bytes == sizeof(uint16_t) ? UINT16_MAX : UINT8_MAX;
-		uint16_t mask = field_mask << (byte_offset * 8);
-		uint16_t field = (uint16_t) (value >> value_shift) << (byte_offset * 8) & mask;
+		uint16_t mask = (field_mask << (byte_offset * 8));
+		uint16_t field = (((uint16_t) (value >> value_shift) << (byte_offset * 8)) & mask);
 		uint16_t *word = &runtime->data[runtime->config->shared_base + word_offset];
 		uint16_t previous;
 		uint16_t updated;
 
 		do {
 			previous = qatomic_read(word);
-			updated = previous & ~mask;
+			updated = (previous & ~mask);
 			updated |= field;
 		} while (qatomic_cmpxchg(word, previous, updated) != previous);
 
@@ -632,8 +563,8 @@ void dsp_runtime_set_input(dsp_runtime_t *runtime, size_t index, bool level) {
 	dsp_bus_set_input(runtime->bus, index, level);
 }
 
-void dsp_runtime_set_gsm_clock(dsp_runtime_t *runtime, uint32_t frequency) {
-	dsp_bus_set_gsm_clock(runtime->bus, frequency);
+void dsp_runtime_set_iq_source(dsp_runtime_t *runtime, pmb887x_rf_iq_source_t *source) {
+	dsp_bus_set_iq_source(runtime->bus, source);
 }
 
 void dsp_runtime_set_gsm_signal(dsp_runtime_t *runtime, pmb887x_dsp_gsm_signal_t signal, bool level) {

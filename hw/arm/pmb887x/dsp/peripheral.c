@@ -184,14 +184,7 @@ void dsp_bus_set_core_idle(dsp_bus_t *bus, bool idle) {
 }
 
 void dsp_bus_advance(dsp_bus_t *bus, size_t cycles) {
-	/*
-	 * The AFE is intentionally NOT advanced here. It is a real-time sample
-	 * clock (8 kHz) and must tick on wall-clock time, not on however many DSP
-	 * cycles happen to execute -- otherwise a DSP busy-loop advances it at full
-	 * speed, flooding the core with audio interrupts and starving the MCU
-	 * command handshake. It is driven from dsp_bus_advance_afe() instead, paced
-	 * to wall clock by the runtime.
-	 */
+	/* The AFE has its own 8 kHz clock and advances separately. */
 	if (bus->channel_decoder != NULL && chdec_is_active(bus->channel_decoder))
 		chdec_advance(bus->channel_decoder, cycles);
 	if (bus->cipher != NULL && cipher_is_active(bus->cipher))
@@ -218,20 +211,8 @@ void dsp_bus_advance_afe(dsp_bus_t *bus, size_t cycles) {
 		afe_advance(bus->afe, cycles);
 }
 
-/*
- * Advance only the free-running DSP timers on wall-clock time while the core is
- * idle. Unlike the GSM baseband peripherals (channel decoder / modulator etc.),
- * the timers keep counting on the DSP clock regardless of core activity on real
- * hardware, and the firmware relies on a timer interrupt to periodically wake a
- * WFI-parked core so it can poll the MCU command mailbox. Pacing the whole bus
- * here instead would perturb cycle-sensitive GSM burst timing, so keep it
- * limited to the timers.
- */
-void dsp_bus_advance_timers(dsp_bus_t *bus, size_t cycles) {
-	if (bus->timer1 != NULL && timer1_is_active(bus->timer1))
-		timer1_advance(bus->timer1, cycles);
-	if (bus->timer2 != NULL && timer2_is_active(bus->timer2))
-		timer2_advance(bus->timer2, cycles);
+void dsp_bus_advance_idle(dsp_bus_t *bus, size_t cycles) {
+	dsp_bus_advance(bus, cycles);
 }
 
 bool dsp_bus_is_active(const dsp_bus_t *bus) {
@@ -322,9 +303,9 @@ void dsp_bus_set_input(dsp_bus_t *bus, size_t index, bool level) {
 	dsp_int_set_flags(bus->interrupt, 2, flag);
 }
 
-void dsp_bus_set_gsm_clock(dsp_bus_t *bus, uint32_t frequency) {
+void dsp_bus_set_iq_source(dsp_bus_t *bus, pmb887x_rf_iq_source_t *source) {
 	if (bus->baseband != NULL)
-		baseband_set_clock(bus->baseband, frequency);
+		baseband_set_iq_source(bus->baseband, source);
 }
 
 void dsp_bus_set_gsm_signal(dsp_bus_t *bus, pmb887x_dsp_gsm_signal_t signal, bool level) {

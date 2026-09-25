@@ -11,13 +11,11 @@
 #include "system/memory.h"
 #include "cpu.h"
 #include "qapi/error.h"
-#include "qemu/atomic.h"
-#include "qemu/main-loop.h"
-#include "qemu/thread.h"
 #include "qemu/timer.h"
 #include "hw/core/qdev-properties.h"
 #include "hw/core/qdev-clock.h"
 #include "hw/ssi/ssi.h"
+#include "system/cpu-timers.h"
 #include "system/runstate.h"
 
 #include "hw/arm/pmb887x/dsp/runtime.h"
@@ -37,16 +35,16 @@
 #define DSP_RUNTIME_PIPE_OFFSET	5
 #define DSP_RUNTIME_PIPE_STRIDE	0x1C
 #define DSP_OUTPUT_COUNT	3
-#define DSP_BASEBAND_SYNC_TIMEOUT_MS	50
-#define DSP_BASEBAND_SPIN_NS	(100 * SCALE_US)
-#define DSP_BASEBAND_IRQ_MASK	(TEAK_INT_FINTA0_BBHI | TEAK_INT_FINTA0_BBLO | TEAK_INT_FINTA0_BB_FULL)
-#define DSP_COMM_SYNC_TIMEOUT_MS	50
-#define DSP_COMM_SPIN_NS	(100 * SCALE_US)
+#define DSP_SYNC_PERIOD_NS	(100 * SCALE_US)
+#define DSP_REGISTER_READ_WAIT_CYCLES	108
+#define DSP_RAM_READ_WAIT_CYCLES	240
+#define DSP_RAM_WRITE16_WAIT_CYCLES	276
+#define DSP_RAM_WRITE32_WAIT_CYCLES	264
+#define DSP_AFE_FREQUENCY	8000
 #define DSP_SSC_BUS_NAME	"pmb887x-dsp-ssc"
 #define TYPE_PMB887X_DSP	"pmb887x-dsp"
 #define PMB887X_DSP(obj)	OBJECT_CHECK(dsp_state_t, (obj), TYPE_PMB887X_DSP)
 
-#define STUB_DSP 1
 #ifdef STUB_DSP
 #include "hw/arm/pmb887x/dsp/hle.h"
 
@@ -633,6 +631,11 @@ void pmb887x_dsp_set_config(DeviceState *dev, const pmb887x_dsp_config_t *config
 	p->config = config;
 }
 
+void pmb887x_dsp_set_iq_source(DeviceState *dev, pmb887x_rf_iq_source_t *source) {
+	(void) dev;
+	(void) source;
+}
+
 static const TypeInfo dsp_info = {
 	.name          	= TYPE_PMB887X_DSP,
 	.parent        	= TYPE_SYS_BUS_DEVICE,
@@ -658,30 +661,11 @@ enum {
 
 typedef struct dsp_state_t dsp_state_t;
 typedef struct dsp_events_t dsp_events_t;
-typedef struct dsp_worker_t dsp_worker_t;
 
 struct dsp_events_t {
 	uint16_t interrupts;
 	uint16_t output_events;
 	uint16_t outputs;
-};
-
-struct dsp_worker_t {
-	QEMUBH *bh;
-	QemuThread thread;
-	QemuMutex mutex;
-	QemuCond cond;
-	QemuCond idle_cond;
-	QemuEvent event;
-	uint16_t interrupt_events;
-	uint16_t output_events;
-	uint16_t outputs;
-	bool enabled;
-	bool busy;
-	bool sync_requested;
-	bool reset;
-	bool stop;
-	bool created;
 };
 
 struct dsp_state_t {
@@ -695,18 +679,26 @@ struct dsp_state_t {
 	bool trace_boot_mode;
 	pmb887x_clc_reg_t clc;
 	dsp_runtime_t *runtime;
-	dsp_worker_t worker;
-	bool runtime_running;
-	QEMUTimer *afe_timer;
+	CPUState *cpu;
+	QEMUTimer *sync_timer;
 	VMChangeStateEntry *vmstate;
+	uint64_t pending_cycles;
+	uint64_t cycle_debt;
+	uint64_t cycle_remainder;
+	uint64_t afe_remainder;
+	size_t pending_afe_samples;
+	int64_t sync_time_ns;
+	uint32_t clock_hz;
 	uint16_t comm_status;
 	uint16_t comm_pending;
 	uint16_t reset_comm_flags;
 	uint16_t reset_requests;
-	uint16_t baseband_timeout_flags;
 	Clock *gsm_clock;
-	bool reset_pending;
 	bool vm_running;
+	bool reset_pending;
+	bool reset_boot_flag_seen;
+	bool sync_queued;
+	bool syncing;
 	qemu_irq mcu_interrupts[PMB887X_DSP_MCU_INT_COUNT];
 	qemu_irq outputs[DSP_OUTPUT_COUNT];
 	SSIBus *ssc_bus;
@@ -715,343 +707,223 @@ struct dsp_state_t {
 static void dsp_clock_update(void *opaque);
 
 static bool dsp_is_clock_enabled(dsp_state_t *p) {
-	return pmb887x_clc_get_hz(&p->clc) != 0;
+	return p->clock_hz != 0;
 }
+
+static void dsp_schedule_sync(dsp_state_t *p);
 
 static uint32_t dsp_ssc_transfer(void *opaque, uint32_t value) {
 	dsp_state_t *p = opaque;
-	bool locked = bql_locked();
-	uint32_t received;
-
-	if (!locked)
-		bql_lock();
-	received = ssi_transfer(p->ssc_bus, value);
-	if (!locked)
-		bql_unlock();
-	return received;
+	return ssi_transfer(p->ssc_bus, value);
 }
 
-static void dsp_run(dsp_state_t *p, dsp_events_t *events) {
-	p->runtime_running = dsp_runtime_run(p->runtime);
+static void dsp_take_events(dsp_state_t *p, dsp_events_t *events) {
 	events->interrupts = dsp_runtime_take_mcu_irqs(p->runtime);
 	events->output_events = dsp_runtime_take_output_events(p->runtime);
 	events->outputs = dsp_runtime_get_outputs(p->runtime);
 }
 
-static bool dsp_runnable(dsp_state_t *p) {
-	if (!p->runtime_running)
-		return false;
-	return !dsp_runtime_is_idle(p->runtime);
-}
+static void dsp_publish_events(dsp_state_t *p, const dsp_events_t *events) {
+	uint16_t interrupts = (events->interrupts & MAKE_64BIT_MASK(0, PMB887X_DSP_MCU_INT_COUNT));
 
-static void dsp_worker_bh(void *opaque) {
-	dsp_state_t *p = opaque;
-	uint16_t events = qatomic_xchg(&p->worker.interrupt_events, 0);
-	uint16_t output_events = qatomic_xchg(&p->worker.output_events, 0);
-	uint16_t outputs = qatomic_read(&p->worker.outputs);
-	bool locked = bql_locked();
-
-	events &= MAKE_64BIT_MASK(0, PMB887X_DSP_MCU_INT_COUNT);
-
-	if (!locked)
-		bql_lock();
 	for (size_t i = 0; i < ARRAY_SIZE(p->mcu_interrupts); i++)
-		if ((events & BIT(i)) != 0)
-			qemu_irq_raise(p->mcu_interrupts[i]);
+		if ((interrupts & BIT(i)) != 0)
+			qemu_irq_pulse(p->mcu_interrupts[i]);
 
 	for (size_t i = 0; i < ARRAY_SIZE(p->outputs); i++)
-		if ((output_events & BIT(i)) != 0)
-			qemu_set_irq(p->outputs[i], (outputs & BIT(i)) != 0);
-	if (!locked)
-		bql_unlock();
+		if ((events->output_events & BIT(i)) != 0)
+			qemu_set_irq(p->outputs[i], (events->outputs & BIT(i)) != 0);
 }
 
-static void dsp_worker_publish_events(dsp_state_t *p, const dsp_events_t *events) {
-	if (events->interrupts == 0 && events->output_events == 0)
+static int64_t dsp_get_time(void) {
+	if (icount2_enabled())
+		return icount2_get();
+	return qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
+}
+
+static void dsp_account_time(dsp_state_t *p) {
+	int64_t now = dsp_get_time();
+	uint64_t elapsed = MAX(now - p->sync_time_ns, 0);
+	uint64_t scaled_cycles = elapsed * p->clock_hz + p->cycle_remainder;
+	uint64_t scaled_samples = p->afe_remainder;
+	uint64_t elapsed_cycles = scaled_cycles / NANOSECONDS_PER_SECOND;
+	if (p->clock_hz != 0)
+		scaled_samples += elapsed * DSP_AFE_FREQUENCY;
+
+	p->sync_time_ns = now;
+	if (p->cycle_debt >= elapsed_cycles) {
+		p->cycle_debt -= elapsed_cycles;
+	} else {
+		p->pending_cycles += elapsed_cycles - p->cycle_debt;
+		p->cycle_debt = 0;
+	}
+	p->cycle_remainder = scaled_cycles % NANOSECONDS_PER_SECOND;
+	p->pending_afe_samples += scaled_samples / NANOSECONDS_PER_SECOND;
+	p->afe_remainder = scaled_samples % NANOSECONDS_PER_SECOND;
+}
+
+static void dsp_finish_reset(dsp_state_t *p) {
+	p->reset_pending = false;
+	if (p->reset_comm_flags != 0)
+		dsp_runtime_set_comm(p->runtime, p->reset_comm_flags);
+	for (size_t i = 0; i < PMB887X_DSP_INT_COUNT; i++)
+		if ((p->reset_requests & BIT(i)) != 0)
+			dsp_runtime_set_request(p->runtime, i, true);
+	p->reset_comm_flags = 0;
+	p->reset_requests = 0;
+}
+
+static void dsp_sync(dsp_state_t *p) {
+	dsp_events_t events = {};
+	uint64_t cache_compiles = dsp_runtime_get_cache_compiles(p->runtime);
+
+	dsp_account_time(p);
+	if (!p->vm_running || p->clock_hz == 0)
 		return;
 
-	qatomic_or(&p->worker.interrupt_events, events->interrupts);
-	qatomic_set(&p->worker.outputs, events->outputs);
-	qatomic_or(&p->worker.output_events, events->output_events);
-	qemu_bh_schedule(p->worker.bh);
-}
+	int64_t realtime_start = icount2_enabled() ? cpu_get_clock() : 0;
+	size_t remaining_cycles = p->pending_cycles;
 
-static void *dsp_worker(void *opaque) {
-	dsp_state_t *p = opaque;
+	p->pending_cycles = 0;
+	p->syncing = true;
+	while (remaining_cycles != 0 && dsp_runtime_is_running(p->runtime) && !dsp_runtime_is_idle(p->runtime)) {
+		bool deferred;
+		size_t executed = dsp_runtime_run(p->runtime, remaining_cycles, &deferred);
 
-	dsp_runtime_thread_enter();
-
-	qemu_mutex_lock(&p->worker.mutex);
-	while (!p->worker.stop) {
-		dsp_events_t events = {};
-		bool runnable;
-
-		while (!p->worker.enabled && !p->worker.reset && !p->worker.stop)
-			qemu_cond_wait(&p->worker.cond, &p->worker.mutex);
-
-		if (p->worker.stop)
+		if (executed > remaining_cycles) {
+			p->cycle_debt += executed - remaining_cycles;
+			remaining_cycles = 0;
+		} else {
+			remaining_cycles -= executed;
+		}
+		if (executed == 0 || deferred) {
+			p->pending_cycles += remaining_cycles;
+			remaining_cycles = 0;
 			break;
-
-		if (p->worker.reset) {
-			bool run_startup = p->worker.enabled;
-			uint16_t comm_flags;
-			uint16_t requests;
-
-			p->worker.busy = true;
-			p->worker.reset = false;
-			qemu_mutex_unlock(&p->worker.mutex);
-			dsp_runtime_reset(p->runtime);
-			p->runtime_running = true;
-			DPRINTF("core reset: startup=%d\n", run_startup);
-
-			if (run_startup)
-				dsp_run(p, &events);
-
-			qemu_mutex_lock(&p->worker.mutex);
-			p->worker.busy = false;
-			p->worker.sync_requested = false;
-			qemu_cond_broadcast(&p->worker.idle_cond);
-			if (p->worker.reset)
-				continue;
-
-			comm_flags = qatomic_read(&p->reset_comm_flags);
-			requests = qatomic_read(&p->reset_requests);
-			dsp_runtime_set_comm(p->runtime, comm_flags);
-			qatomic_set(&p->comm_status, dsp_runtime_get_comm(p->runtime));
-			for (size_t i = 0; i < PMB887X_DSP_INT_COUNT; i++)
-				if ((requests & BIT(i)) != 0)
-					dsp_runtime_set_request(p->runtime, i, true);
-
-			qatomic_set(&p->reset_pending, false);
-			qatomic_set(&p->reset_comm_flags, 0);
-			qatomic_set(&p->reset_requests, 0);
-			qemu_cond_broadcast(&p->worker.idle_cond);
-			dsp_worker_publish_events(p, &events);
-			continue;
-		}
-
-		/*
-		 * Sleep only when truly idle. If a real-time peripheral (the AFE) is
-		 * active, fall through and run one iteration even though the core is
-		 * idle: dsp_run() -> dsp_runtime_pace_afe() feeds the AFE its wall-clock
-		 * due samples, which may raise VBRX/VBTX and wake the core. We pace
-		 * rather than busy-spin because we sleep again at the end of the loop
-		 * until the AFE timer re-kicks us (see below).
-		 */
-		runnable = dsp_runnable(p);
-		if (!runnable && !dsp_runtime_realtime_active(p->runtime)) {
-			qemu_event_reset(&p->worker.event);
-			if (!dsp_runnable(p)) {
-				qemu_mutex_unlock(&p->worker.mutex);
-				qemu_event_wait(&p->worker.event);
-				qemu_mutex_lock(&p->worker.mutex);
-				continue;
-			}
-		}
-
-		p->worker.busy = true;
-		qemu_mutex_unlock(&p->worker.mutex);
-
-		dsp_run(p, &events);
-
-		qemu_mutex_lock(&p->worker.mutex);
-		qatomic_set(&p->comm_status, dsp_runtime_get_comm(p->runtime));
-		p->worker.busy = false;
-		p->worker.sync_requested = false;
-		qemu_cond_broadcast(&p->worker.idle_cond);
-
-		if (p->worker.reset)
-			continue;
-		dsp_worker_publish_events(p, &events);
-
-		/*
-		 * Idle but a real-time peripheral (AFE) is still active: sleep until the
-		 * AFE timer ticks (or a command kick arrives) so we advance the sample
-		 * clock at its real 8 kHz rate instead of spinning this thread at 100%.
-		 */
-		if (!dsp_runnable(p) && dsp_runtime_realtime_active(p->runtime)) {
-			qemu_event_reset(&p->worker.event);
-			if (!dsp_runnable(p) && dsp_runtime_realtime_active(p->runtime)) {
-				qemu_mutex_unlock(&p->worker.mutex);
-				qemu_event_wait(&p->worker.event);
-				qemu_mutex_lock(&p->worker.mutex);
-			}
 		}
 	}
+	if (p->reset_pending && p->reset_boot_flag_seen && (dsp_runtime_get_comm(p->runtime) & BIT(0)) == 0)
+		dsp_finish_reset(p);
+	dsp_runtime_advance_idle(p->runtime, remaining_cycles, p->pending_afe_samples);
+	p->pending_afe_samples = 0;
+	p->syncing = false;
 
-	qemu_mutex_unlock(&p->worker.mutex);
-	dsp_runtime_thread_exit();
-	return NULL;
+	p->comm_status = (dsp_runtime_get_comm(p->runtime) | p->reset_comm_flags);
+	dsp_take_events(p, &events);
+	dsp_publish_events(p, &events);
+
+	cache_compiles = dsp_runtime_get_cache_compiles(p->runtime) - cache_compiles;
+	if (dsp_runtime_is_program_warming(p->runtime) && cache_compiles == 0 && p->comm_status == 0)
+		dsp_runtime_finish_program_warmup(p->runtime);
+
+	if (icount2_enabled())
+		icount2_exclude_realtime(cpu_get_clock() - realtime_start);
 }
 
-/*
- * Wall-clock heartbeat for the real-time DSP peripherals (the AFE sample clock).
- * While the DSP worker is enabled this fires every DSP_AFE_TICK_NS and kicks the
- * worker so the paced idle loop in dsp_runtime_run feeds the AFE the samples that
- * are due. Without it the worker would sleep between samples and the AFE clock
- * would stop (see the paced advance in runtime.c). Only kicks when a real-time
- * peripheral is actually running, so it costs nothing when there is no audio.
- */
-#define DSP_AFE_TICK_NS	(1 * SCALE_MS)
-/*
- * The AFE sample clock / DSP timer pacing runs on QEMU_CLOCK_HOST (true
- * wall-clock) deliberately. The DSP executes on its own worker thread in real
- * time, and the ARM<->DSP handshake (dsp_wait_comm_clear) blocks the vCPU while
- * the worker makes progress. Under -icount, blocking the vCPU freezes
- * QEMU_CLOCK_VIRTUAL, which would in turn freeze the AFE/timers and deadlock the
- * DSP -- so the pacing must stay on a clock that keeps advancing while the vCPU
- * is parked. QEMU_CLOCK_HOST does; QEMU_CLOCK_VIRTUAL does not.
- */
-#define DSP_AFE_CLOCK	QEMU_CLOCK_HOST
+static void dsp_sync_on_cpu(CPUState *cpu, run_on_cpu_data data) {
+	(void) cpu;
 
-static void dsp_worker_kick(void *opaque);
+	dsp_state_t *p = data.host_ptr;
 
-static void dsp_afe_timer_cb(void *opaque) {
+	p->sync_queued = false;
+	dsp_sync(p);
+}
+
+static void dsp_schedule_sync(dsp_state_t *p) {
+	if (!p->vm_running || p->clock_hz == 0 || p->syncing || p->sync_queued)
+		return;
+
+	p->sync_queued = true;
+	async_run_on_cpu(p->cpu, dsp_sync_on_cpu, RUN_ON_CPU_HOST_PTR(p));
+}
+
+static void dsp_sync_access(dsp_state_t *p) {
+	if (current_cpu == p->cpu) {
+		dsp_sync(p);
+	} else {
+		dsp_schedule_sync(p);
+	}
+}
+
+static void dsp_sync_timer(void *opaque) {
 	dsp_state_t *p = opaque;
-	bool active = dsp_runtime_realtime_active(p->runtime);
 
-#if 0	/* AFE timer debug */
-	static uint32_t tn;
-	if ((tn++ & 0x3FF) == 0)
-		fprintf(stderr, "[afe-timer] n=%u active=%d\n", tn, active);
-#endif
-
-	if (active)
-		dsp_worker_kick(p);
-	timer_mod(p->afe_timer, qemu_clock_get_ns(DSP_AFE_CLOCK) + DSP_AFE_TICK_NS);
+	dsp_sync_access(p);
+	if (p->vm_running && p->clock_hz != 0)
+		timer_mod(p->sync_timer, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + DSP_SYNC_PERIOD_NS);
 }
 
-static void dsp_worker_set_enabled(dsp_state_t *p, bool enabled) {
-	qemu_mutex_lock(&p->worker.mutex);
-	p->worker.enabled = enabled;
-	if (enabled) {
-		qemu_cond_signal(&p->worker.cond);
-		qemu_event_set(&p->worker.event);
+static void dsp_update_timer(dsp_state_t *p) {
+	if (p->vm_running && p->clock_hz != 0) {
+		timer_mod(p->sync_timer, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + DSP_SYNC_PERIOD_NS);
+	} else {
+		timer_del(p->sync_timer);
 	}
-	qemu_mutex_unlock(&p->worker.mutex);
-
-	if (enabled)
-		timer_mod(p->afe_timer, qemu_clock_get_ns(DSP_AFE_CLOCK) + DSP_AFE_TICK_NS);
-	else
-		timer_del(p->afe_timer);
 }
 
 static void dsp_clock_update(void *opaque) {
 	dsp_state_t *p = opaque;
-	bool enabled = dsp_is_clock_enabled(p);
+	uint32_t divider = pmb887x_clc_get_rmc(&p->clc);
 
-	dsp_runtime_set_clock(p->runtime, enabled);
-	dsp_worker_set_enabled(p, p->vm_running && enabled);
+	dsp_account_time(p);
+	p->clock_hz = pmb887x_clc_get_hz(&p->clc);
+	dsp_runtime_set_clock(p->runtime, p->clock_hz != 0);
+	if (divider != 0)
+		dsp_runtime_set_clock_divider(p->runtime, divider);
+	dsp_update_timer(p);
+	dsp_schedule_sync(p);
 }
 
 static void dsp_vm_state_change(void *opaque, bool running, RunState state) {
-	dsp_state_t *p = opaque;
-	bool enabled = running && dsp_is_clock_enabled(p);
+	(void) state;
 
+	dsp_state_t *p = opaque;
+
+	dsp_account_time(p);
 	p->vm_running = running;
-
-	qemu_mutex_lock(&p->worker.mutex);
-	p->worker.enabled = enabled;
-	if (enabled) {
-		qemu_cond_signal(&p->worker.cond);
-		qemu_event_set(&p->worker.event);
-	}
-
-	while (!running && (p->worker.busy || p->worker.reset))
-		qemu_cond_wait(&p->worker.idle_cond, &p->worker.mutex);
-	qemu_mutex_unlock(&p->worker.mutex);
+	dsp_update_timer(p);
+	dsp_schedule_sync(p);
 }
 
-static void dsp_worker_kick(void *opaque) {
+static void dsp_notify_activity(void *opaque) {
 	dsp_state_t *p = opaque;
 
-	if (qemu_thread_is_self(&p->worker.thread)) {
-		qemu_event_set(&p->worker.event);
-		return;
-	}
-
-	qemu_mutex_lock(&p->worker.mutex);
-	if (p->worker.busy) {
-		dsp_runtime_kick(p->runtime);
-	} else {
-		dsp_runtime_wake(p->runtime);
-	}
-	qemu_event_set(&p->worker.event);
-	qemu_mutex_unlock(&p->worker.mutex);
-}
-
-static void dsp_worker_notify_activity(void *opaque) {
-	dsp_state_t *p = opaque;
-
-	if (qemu_thread_is_self(&p->worker.thread)) {
-		qemu_event_set(&p->worker.event);
-		return;
-	}
-
-	qemu_mutex_lock(&p->worker.mutex);
 	dsp_runtime_wake(p->runtime);
-	qemu_event_set(&p->worker.event);
-	qemu_mutex_unlock(&p->worker.mutex);
+	dsp_schedule_sync(p);
 }
 
-static void dsp_worker_notify_comm(void *opaque, uint16_t flags, bool set) {
+static void dsp_notify_comm(void *opaque, uint16_t flags, bool set) {
 	dsp_state_t *p = opaque;
+	DPRINTF("comm: flags=%04X set=%u pc=%05X time=%" PRId64 "\n", flags, set,
+		dsp_runtime_get_pc(p->runtime), dsp_get_time());
 
 	if (set) {
-		qatomic_or(&p->comm_status, flags);
-		return;
+		p->comm_status |= flags;
+		if (p->reset_pending && (flags & BIT(0)) != 0)
+			p->reset_boot_flag_seen = true;
+	} else {
+		p->comm_status &= (uint16_t) ~flags;
+		p->comm_pending &= (uint16_t) ~flags;
 	}
-
-	qatomic_and(&p->comm_status, (uint16_t) ~flags);
-	qatomic_and(&p->comm_pending, (uint16_t) ~flags);
-}
-
-static void dsp_worker_synchronize_cold_program(dsp_state_t *p) {
-	int64_t start = qemu_clock_get_ns(QEMU_CLOCK_HOST);
-	uint64_t cache_compiles = dsp_runtime_get_cache_compiles(p->runtime);
-	bool waited = false;
-
-	qemu_mutex_lock(&p->worker.mutex);
-	if (p->worker.enabled && !p->worker.stop && dsp_runnable(p)) {
-		p->worker.sync_requested = true;
-		qemu_event_set(&p->worker.event);
-	}
-	while (p->worker.sync_requested && p->worker.enabled && !p->worker.stop) {
-		waited = true;
-		qemu_cond_wait(&p->worker.idle_cond, &p->worker.mutex);
-	}
-	qemu_mutex_unlock(&p->worker.mutex);
-
-	cache_compiles = dsp_runtime_get_cache_compiles(p->runtime) - cache_compiles;
-	if (cache_compiles == 0 && dsp_runtime_get_comm(p->runtime) == 0)
-		dsp_runtime_finish_program_warmup(p->runtime);
-
-	DPRINTF("cold program sync: waited=%u host_delay=%" PRId64 " ns compile=%" PRIu64 " warming=%u\n",
-		waited, qemu_clock_get_ns(QEMU_CLOCK_HOST) - start, cache_compiles,
-		dsp_runtime_is_program_warming(p->runtime));
 }
 
 static void dsp_reset_internal_state(dsp_state_t *p) {
-	qemu_bh_cancel(p->worker.bh);
-
-	qemu_mutex_lock(&p->worker.mutex);
-	p->worker.reset = true;
-	qatomic_set(&p->reset_pending, true);
-	p->worker.enabled = p->vm_running && dsp_is_clock_enabled(p);
-	qatomic_set(&p->worker.interrupt_events, 0);
-	qatomic_set(&p->worker.output_events, 0);
-	qatomic_set(&p->worker.outputs, 0);
-	qatomic_set(&p->comm_status, 0);
-	qatomic_set(&p->comm_pending, 0);
-	qatomic_set(&p->reset_comm_flags, 0);
-	qatomic_set(&p->reset_requests, 0);
-	p->baseband_timeout_flags = 0;
+	dsp_runtime_reset(p->runtime);
+	p->comm_status = 0;
+	p->comm_pending = 0;
+	p->reset_comm_flags = 0;
+	p->reset_requests = 0;
+	p->reset_boot_flag_seen = false;
+	p->pending_cycles = 0;
+	p->cycle_debt = 0;
+	p->pending_afe_samples = 0;
+	p->cycle_remainder = 0;
+	p->afe_remainder = 0;
+	p->sync_time_ns = dsp_get_time();
+	p->reset_pending = true;
 	for (size_t i = 0; i < ARRAY_SIZE(p->outputs); i++)
 		qemu_irq_lower(p->outputs[i]);
 	p->trace_boot_mode = true;
-	qemu_cond_signal(&p->worker.cond);
-	qemu_event_set(&p->worker.event);
-	qemu_mutex_unlock(&p->worker.mutex);
 }
 
 static void dsp_reset_input(void *opaque, int id, int level) {
@@ -1097,9 +969,6 @@ static void dsp_trace_command(dsp_state_t *p, size_t pipe) {
 	DPRINTF("runtime command: pipe=%zu command=%u (0x%04X)\n", pipe, command, command);
 }
 
-static bool dsp_comm_handshake_pending(dsp_state_t *p);
-static void dsp_wait_comm_clear(dsp_state_t *p);
-
 static void dsp_interrupt_input(void *opaque, int id, int level) {
 	dsp_state_t *p = opaque;
 
@@ -1109,35 +978,17 @@ static void dsp_interrupt_input(void *opaque, int id, int level) {
 	if (pmb887x_trace_log_enabled(PMB887X_TRACE_DSP))
 		dsp_trace_command(p, id);
 
-	if (!qatomic_read(&p->reset_pending)) {
-		dsp_runtime_set_request(p->runtime, id, true);
-		dsp_worker_kick(p);
-		/*
-		 * SCU_DSP_INT is the causal trigger for a runtime command: the ARM has
-		 * already staged the request in DSP_COM_SET and now pulses this IRQ.
-		 * Rendezvous here -- drive the DSP until it acks (clears the comm flag)
-		 * so the ensuing dwd_dsp_com_set poll of DSP_COM_STATUS finds the answer
-		 * ready on its first iteration, inside the firmware's 1000-poll budget.
-		 * The DSP's real-time peripherals run on wall-clock (DSP_AFE_CLOCK) so it
-		 * keeps making progress even under -icount while the vCPU parks here.
-		 */
-		if (dsp_comm_handshake_pending(p))
-			dsp_wait_comm_clear(p);
-		return;
-	}
-
-	qemu_mutex_lock(&p->worker.mutex);
-	if (qatomic_read(&p->reset_pending)) {
-		qatomic_or(&p->reset_requests, BIT(id));
+	if (p->reset_pending) {
+		p->reset_requests |= BIT(id);
 	} else {
 		dsp_runtime_set_request(p->runtime, id, true);
 	}
-	qemu_mutex_unlock(&p->worker.mutex);
-	dsp_worker_kick(p);
+	dsp_schedule_sync(p);
 }
 
 static void dsp_set_input(dsp_state_t *p, size_t index, int level) {
 	dsp_runtime_set_input(p->runtime, index, level != 0);
+	dsp_schedule_sync(p);
 }
 
 static void dsp_input0(void *opaque, int id, int level) {
@@ -1148,165 +999,21 @@ static void dsp_input1(void *opaque, int id, int level) {
 	dsp_set_input(opaque, 1, level);
 }
 
-static bool dsp_baseband_event_blocked(dsp_state_t *p) {
-	uint16_t pending = dsp_runtime_get_irq_pending_flags(p->runtime, 0);
-	uint16_t pending_baseband = pending & DSP_BASEBAND_IRQ_MASK;
-
-	if (dsp_runtime_is_maskable_interrupt_active(p->runtime))
-		return true;
-
-	if (pending_baseband == 0) {
-		p->baseband_timeout_flags = 0;
-		return false;
-	}
-
-	return pending_baseband != p->baseband_timeout_flags;
-}
-
-static void dsp_wait_baseband_irq(dsp_state_t *p, int signal, int level) {
-	if (!dsp_baseband_event_blocked(p))
-		return;
-
-	int64_t start = qemu_clock_get_ns(QEMU_CLOCK_HOST);
-	int64_t deadline = start + DSP_BASEBAND_SYNC_TIMEOUT_MS * SCALE_MS;
-	int64_t spin_deadline = start + DSP_BASEBAND_SPIN_NS;
-	uint32_t sleeps = 0;
-	bool timed_out = false;
-
-	dsp_worker_kick(p);
-	while (dsp_baseband_event_blocked(p) && qemu_clock_get_ns(QEMU_CLOCK_HOST) < spin_deadline)
-		cpu_relax();
-
-	qemu_mutex_lock(&p->worker.mutex);
-	while (dsp_baseband_event_blocked(p)) {
-		bool worker_stopped = !p->worker.enabled || !p->runtime_running || p->worker.stop;
-
-		if (worker_stopped)
-			break;
-
-		int64_t remaining = deadline - qemu_clock_get_ns(QEMU_CLOCK_HOST);
-
-		if (remaining <= 0) {
-			timed_out = true;
-			break;
-		}
-		sleeps++;
-		qemu_cond_timedwait(&p->worker.idle_cond, &p->worker.mutex, DIV_ROUND_UP(remaining, SCALE_MS));
-	}
-	qemu_mutex_unlock(&p->worker.mutex);
-
-	if (timed_out)
-		p->baseband_timeout_flags = dsp_runtime_get_irq_pending_flags(p->runtime, 0) & DSP_BASEBAND_IRQ_MASK;
-
-	if (sleeps == 0)
-		return;
-
-	int64_t host_wait_us = (qemu_clock_get_ns(QEMU_CLOCK_HOST) - start) / SCALE_US;
-	uint16_t flags = dsp_runtime_get_irq_flags(p->runtime, 0) & DSP_BASEBAND_IRQ_MASK;
-	uint32_t pc = dsp_runtime_get_pc(p->runtime);
-
-	DPRINTF("ARM wait: sig=%d/%d irq=%04X active=%u pc=%05X wait=%" PRId64 " us sleeps=%u timeout=%u\n",
-		signal, level, flags, dsp_runtime_is_maskable_interrupt_active(p->runtime), pc, host_wait_us, sleeps, timed_out);
-}
-
 static void dsp_gsm_input(void *opaque, int signal, int level) {
 	dsp_state_t *p = opaque;
-	uint32_t gsm_frequency = clock_get_hz(p->gsm_clock);
-	bool baseband_irq = signal < PMB887X_DSP_GSM_SIGNAL_RXON;
 
-	dsp_runtime_set_gsm_clock(p->runtime, gsm_frequency);
-	if (baseband_irq)
-		dsp_wait_baseband_irq(p, signal, level);
-
+	dsp_sync_access(p);
 	dsp_runtime_set_gsm_signal(p->runtime, signal, level != 0);
-}
-
-static bool dsp_comm_handshake_pending(dsp_state_t *p) {
-	return (qatomic_read(&p->comm_status) & qatomic_read(&p->comm_pending)) != 0;
-}
-
-static void dsp_wait_comm_clear(dsp_state_t *p) {
-	int64_t start;
-	int64_t deadline;
-	int64_t spin_deadline;
-
-	if (!dsp_comm_handshake_pending(p))
-		return;
-
-	start = qemu_clock_get_ns(QEMU_CLOCK_HOST);
-	deadline = start + DSP_COMM_SYNC_TIMEOUT_MS * SCALE_MS;
-	spin_deadline = start + DSP_COMM_SPIN_NS;
-
-	/*
-	 * This runs inside the ARM's DSP_COM_STATUS MMIO read, which holds the
-	 * BQL. The DSP worker's notify callbacks (dsp_worker_notify_comm etc.)
-	 * take the BQL to publish events, so waiting for the worker while holding
-	 * it would deadlock: the worker could never clear the flag we wait on.
-	 * Drop the BQL for the duration of the wait and reacquire it after.
-	 */
-	bool bql = bql_locked();
-	if (bql)
-		bql_unlock();
-
-	dsp_worker_kick(p);
-	while (dsp_comm_handshake_pending(p) && qemu_clock_get_ns(QEMU_CLOCK_HOST) < spin_deadline)
-		cpu_relax();
-
-	qemu_mutex_lock(&p->worker.mutex);
-	while (dsp_comm_handshake_pending(p)) {
-		int64_t remaining;
-
-		if (!p->worker.enabled || !p->runtime_running || p->worker.stop)
-			break;
-		/*
-		 * If the core is idle keep waiting only while a real-time peripheral
-		 * (the AFE) is active: it is clocked by the AFE timer, which will soon
-		 * advance it, raise its IRQ and wake the core to service the pending
-		 * command. Without this, a core momentarily idle between 8 kHz AFE
-		 * samples makes every ARM poll return instantly, so the firmware burns
-		 * its 1000-poll budget in microseconds and panics before the AFE ticks.
-		 */
-		if (!dsp_runnable(p) && !dsp_runtime_realtime_active(p->runtime))
-			break;
-
-		remaining = deadline - qemu_clock_get_ns(QEMU_CLOCK_HOST);
-		if (remaining <= 0)
-			break;
-		qemu_cond_timedwait(&p->worker.idle_cond, &p->worker.mutex, DIV_ROUND_UP(remaining, SCALE_MS));
-	}
-	qemu_mutex_unlock(&p->worker.mutex);
-
-	if (dsp_comm_handshake_pending(p)) {
-		uint8_t ie = 0, mask = 0, lines = 0;
-
-		dsp_runtime_get_irq_debug(p->runtime, &ie, &mask, &lines);
-		DPRINTF("comm handshake STALL: status=%04X pending=%04X dsp_pc=%05X int0_flags=%04X int0_pending=%04X "
-			"ie=%d mask=%X lines=%X isr_active=%d running=%d idle=%d realtime=%d\n",
-			qatomic_read(&p->comm_status), qatomic_read(&p->comm_pending),
-			dsp_runtime_get_pc(p->runtime), dsp_runtime_get_irq_flags(p->runtime, 0),
-			dsp_runtime_get_irq_pending_flags(p->runtime, 0), ie, mask, lines,
-			dsp_runtime_is_maskable_interrupt_active(p->runtime), p->runtime_running,
-			dsp_runtime_is_idle(p->runtime), dsp_runtime_realtime_active(p->runtime));
-
-		/* If stuck in the mask-ROM timer-queue insert (0x2340-0x2346), dump the
-		 * event-queue region: 0x7c54 sentinel, 0x7c55 head, 0x7c56.. node pool. */
-		uint32_t pc = dsp_runtime_get_pc(p->runtime);
-		if (pc >= 0x2340 && pc <= 0x2346) {
-			char buf[256];
-			int n = 0;
-			for (uint16_t a = 0x7C54; a <= 0x7C63; a++)
-				n += snprintf(buf + n, sizeof(buf) - n, "%04X ", dsp_runtime_peek(p->runtime, a));
-			DPRINTF("evq[7C54..7C63]: %s\n", buf);
-		}
-	}
-
-	if (bql)
-		bql_lock();
+	dsp_schedule_sync(p);
 }
 
 static uint64_t dsp_io_read(void *opaque, hwaddr haddr, unsigned size) {
 	dsp_state_t *p = opaque;
 	uint64_t value = 0;
+
+	if (icount2_enabled())
+		icount2_advance(DSP_REGISTER_READ_WAIT_CYCLES);
+	dsp_sync_access(p);
 
 	switch (haddr) {
 		case DSP_CLC:
@@ -1314,43 +1021,15 @@ static uint64_t dsp_io_read(void *opaque, hwaddr haddr, unsigned size) {
 			break;
 
 		case DSP_ID:
-			value = 0xF022C000 | p->revision;
+			value = (0xF022C000 | p->revision);
 			break;
 
 		case DSP_COM_STATUS: {
 			uint32_t program_start_pc;
-			bool reset_pending = qatomic_read(&p->reset_pending);
 
-			if (reset_pending) {
-				value = qatomic_read(&p->reset_comm_flags) | qatomic_read(&p->comm_status);
-			} else {
-				value = qatomic_read(&p->comm_status);
-			}
-
-			if (!reset_pending && dsp_runtime_take_program_start(p->runtime, &program_start_pc))
+			value = p->comm_status;
+			if (dsp_runtime_take_program_start(p->runtime, &program_start_pc))
 				DPRINTF("cold program start: pc=%05X flags=%04" PRIX64 "\n", program_start_pc, value);
-
-			if (!reset_pending) {
-				/*
-				 * Two independent concerns are composed here rather than
-				 * chosen between: (1) warming a freshly loaded program so its
-				 * P-space is compiled, and (2) waiting for an ARM-requested
-				 * comm handshake flag to be cleared by the DSP. A runtime
-				 * audio command (e.g. VB_ON via comm flag 2) is issued right
-				 * after a cmd-67 module load leaves the runtime in the warming
-				 * state, so the handshake wait must NOT be gated behind
-				 * "not warming" or those handshakes race and time out. The
-				 * wait is uniform across every comm-flag bit: it triggers
-				 * solely on dsp_comm_handshake_pending().
-				 */
-				if (dsp_runtime_is_program_warming(p->runtime))
-					dsp_worker_synchronize_cold_program(p);
-
-				if (dsp_comm_handshake_pending(p))
-					dsp_wait_comm_clear(p);
-
-				value = qatomic_read(&p->comm_status);
-			}
 			break;
 		}
 
@@ -1365,7 +1044,6 @@ static uint64_t dsp_io_read(void *opaque, hwaddr haddr, unsigned size) {
 			break;
 
 		default:
-			IO_DUMP_READ(haddr + p->mmio.addr, size, 0xFFFFFFFF);
 			EPRINTF("unknown reg access: %02"PRIX64"\n", haddr);
 			break;
 	}
@@ -1377,7 +1055,7 @@ static uint64_t dsp_io_read(void *opaque, hwaddr haddr, unsigned size) {
 static void dsp_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned size) {
 	dsp_state_t *p = opaque;
 
-	IO_DUMP_WRITE(haddr + p->mmio.addr, size, value);
+	dsp_sync_access(p);
 
 	switch (haddr) {
 		case DSP_CLC:
@@ -1385,45 +1063,38 @@ static void dsp_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned si
 			break;
 
 		case DSP_COM_SET:
-			qemu_mutex_lock(&p->worker.mutex);
-			if (qatomic_read(&p->reset_pending)) {
-				qatomic_or(&p->reset_comm_flags, value & DSP_COM_SET_FLAGS);
+			if (p->reset_pending) {
+				p->reset_comm_flags |= (value & DSP_COM_SET_FLAGS);
 			} else {
-				dsp_runtime_set_comm(p->runtime, value & DSP_COM_SET_FLAGS);
-				qatomic_or(&p->comm_status, value & DSP_COM_SET_FLAGS);
-				qatomic_or(&p->comm_pending, value & DSP_COM_SET_FLAGS);
+				dsp_runtime_set_comm(p->runtime, (value & DSP_COM_SET_FLAGS));
 			}
-			qemu_mutex_unlock(&p->worker.mutex);
-			dsp_worker_kick(p);
+			p->comm_status |= (value & DSP_COM_SET_FLAGS);
+			p->comm_pending |= (value & DSP_COM_SET_FLAGS);
 			break;
 
 		case DSP_COM_CLEAR:
-			qemu_mutex_lock(&p->worker.mutex);
-			if (qatomic_read(&p->reset_pending)) {
-				qatomic_and(&p->reset_comm_flags, (uint16_t) ~(value & DSP_COM_CLEAR_FLAGS));
-			} else {
-				dsp_runtime_clear_comm(p->runtime, value & DSP_COM_CLEAR_FLAGS);
-				qatomic_and(&p->comm_status, (uint16_t) ~(value & DSP_COM_CLEAR_FLAGS));
-				qatomic_and(&p->comm_pending, (uint16_t) ~(value & DSP_COM_CLEAR_FLAGS));
-			}
-			qemu_mutex_unlock(&p->worker.mutex);
-			dsp_worker_kick(p);
+			dsp_runtime_clear_comm(p->runtime, (value & DSP_COM_CLEAR_FLAGS));
+			if (p->reset_pending)
+				p->reset_comm_flags &= (uint16_t) ~(value & DSP_COM_CLEAR_FLAGS);
+			p->comm_status &= (uint16_t) ~(value & DSP_COM_CLEAR_FLAGS);
+			p->comm_pending &= (uint16_t) ~(value & DSP_COM_CLEAR_FLAGS);
 			break;
 
 		case DSP_SEM_SET:
-			dsp_runtime_request_mcu_semaphores(p->runtime, value & DSP_SEM_SET_FLAGS);
-			dsp_worker_kick(p);
+			dsp_runtime_request_mcu_semaphores(p->runtime, (value & DSP_SEM_SET_FLAGS));
 			break;
 
 		case DSP_SEM_CLEAR:
-			dsp_runtime_release_mcu_semaphores(p->runtime, value & DSP_SEM_CLEAR_FLAGS);
-			dsp_worker_kick(p);
+			dsp_runtime_release_mcu_semaphores(p->runtime, (value & DSP_SEM_CLEAR_FLAGS));
 			break;
 
 		default:
 			EPRINTF("unknown reg access: %02"PRIX64"\n", haddr);
 			break;
 	}
+
+	dsp_schedule_sync(p);
+	IO_DUMP_WRITE(haddr + p->mmio.addr, size, value);
 }
 
 static const MemoryRegionOps io_ops = {
@@ -1438,7 +1109,12 @@ static const MemoryRegionOps io_ops = {
 
 static uint64_t dsp_ram_read(void *opaque, hwaddr haddr, unsigned size) {
 	dsp_state_t *p = opaque;
-	uint64_t value = dsp_is_clock_enabled(p) ? dsp_runtime_shared_read_bytes(p->runtime, haddr, size) : 0;
+	uint64_t value;
+
+	if (icount2_enabled())
+		icount2_advance(DSP_RAM_READ_WAIT_CYCLES);
+	dsp_sync_access(p);
+	value = dsp_is_clock_enabled(p) ? dsp_runtime_shared_read_bytes(p->runtime, haddr, size) : 0;
 
 	IO_DUMP_READ(haddr + p->mmio.addr + DSP_RAM0, size, value);
 	return value;
@@ -1447,13 +1123,16 @@ static uint64_t dsp_ram_read(void *opaque, hwaddr haddr, unsigned size) {
 static void dsp_ram_write(void *opaque, hwaddr haddr, uint64_t value, unsigned size) {
 	dsp_state_t *p = opaque;
 
+	if (icount2_enabled())
+		icount2_advance(size == 4 ? DSP_RAM_WRITE32_WAIT_CYCLES : DSP_RAM_WRITE16_WAIT_CYCLES);
+	dsp_sync_access(p);
+
+	if (dsp_is_clock_enabled(p)) {
+		dsp_runtime_shared_write_bytes(p->runtime, haddr, value, size);
+		dsp_schedule_sync(p);
+	}
+
 	IO_DUMP_WRITE(haddr + p->mmio.addr + DSP_RAM0, size, value);
-
-	if (!dsp_is_clock_enabled(p))
-		return;
-
-	dsp_runtime_shared_write_bytes(p->runtime, haddr, value, size);
-	dsp_worker_kick(p);
 }
 
 static const MemoryRegionOps ram_io_ops = {
@@ -1474,6 +1153,7 @@ static const MemoryRegionOps ram_io_ops = {
 
 static void dsp_init(Object *obj) {
 	dsp_state_t *p = PMB887X_DSP(obj);
+
 	pmb887x_clc_init(&p->clc, DEVICE(obj));
 	pmb887x_clc_set_callback(&p->clc, dsp_clock_update, p);
 	p->ssc_bus = ssi_create_bus(DEVICE(obj), DSP_SSC_BUS_NAME);
@@ -1497,8 +1177,11 @@ static void dsp_init(Object *obj) {
 
 static void dsp_reset(DeviceState *dev) {
 	dsp_state_t *p = PMB887X_DSP(dev);
+
 	pmb887x_clc_set(&p->clc, MOD_CLC_DISR);
+	p->clock_hz = 0;
 	dsp_runtime_set_clock(p->runtime, false);
+	dsp_update_timer(p);
 	dsp_reset_internal_state(p);
 }
 
@@ -1507,9 +1190,16 @@ void pmb887x_dsp_set_config(DeviceState *dev, const pmb887x_dsp_config_t *config
 	p->config = config;
 }
 
+void pmb887x_dsp_set_iq_source(DeviceState *dev, pmb887x_rf_iq_source_t *source) {
+	dsp_state_t *p = PMB887X_DSP(dev);
+
+	dsp_runtime_set_iq_source(p->runtime, source);
+}
+
 static const Property dsp_properties[] = {
 	DEFINE_PROP_UINT32("revision", dsp_state_t, revision, 0),
 	DEFINE_PROP_UINT32("rom_version", dsp_state_t, rom_version, 0),
+	DEFINE_PROP_LINK("cpu", dsp_state_t, cpu, TYPE_CPU, CPUState *),
 	DEFINE_PROP_LINK("bus_ssc", dsp_state_t, ssc_bus, "SSI", SSIBus *),
 };
 
@@ -1521,6 +1211,10 @@ static void dsp_realize(DeviceState *dev, Error **errp) {
 
 	if (p->config == NULL) {
 		error_setg(errp, "DSP configuration is not set");
+		return;
+	}
+	if (p->cpu == NULL) {
+		error_setg(errp, "DSP CPU link is not set");
 		return;
 	}
 
@@ -1539,18 +1233,9 @@ static void dsp_realize(DeviceState *dev, Error **errp) {
 	}
 
 	p->runtime = dsp_runtime_create(config, p->rom_version, rom->program_rom, rom->data_rom,
-		p, dsp_worker_notify_activity, dsp_worker_notify_comm, dsp_ssc_transfer);
-
-	p->worker.stop = false;
-	p->worker.enabled = false;
-	qemu_mutex_init(&p->worker.mutex);
-	qemu_cond_init(&p->worker.cond);
-	qemu_cond_init(&p->worker.idle_cond);
-	qemu_event_init(&p->worker.event, false);
-	p->worker.bh = qemu_bh_new(dsp_worker_bh, p);
-	p->afe_timer = timer_new_ns(DSP_AFE_CLOCK, dsp_afe_timer_cb, p);
-	qemu_thread_create(&p->worker.thread, "pmb887x-dsp", dsp_worker, p, QEMU_THREAD_JOINABLE);
-	p->worker.created = true;
+		p, dsp_notify_activity, dsp_notify_comm, dsp_ssc_transfer);
+	p->sync_timer = timer_new_ns(QEMU_CLOCK_VIRTUAL, dsp_sync_timer, p);
+	p->sync_time_ns = dsp_get_time();
 
 	p->vmstate = qdev_add_vm_change_state_handler(dev, dsp_vm_state_change, NULL, p);
 	pmb887x_clc_set(&p->clc, MOD_CLC_DISR);
@@ -1563,21 +1248,10 @@ static void dsp_unrealize(DeviceState *dev) {
 
 	qemu_del_vm_change_state_handler(p->vmstate);
 	p->vmstate = NULL;
-	if (p->worker.created) {
-		qemu_mutex_lock(&p->worker.mutex);
-		p->worker.stop = true;
-		qemu_cond_signal(&p->worker.cond);
-		qemu_event_set(&p->worker.event);
-		qemu_mutex_unlock(&p->worker.mutex);
-		qemu_thread_join(&p->worker.thread);
-		qemu_bh_delete(p->worker.bh);
-		p->worker.bh = NULL;
-		p->worker.created = false;
-		qemu_cond_destroy(&p->worker.idle_cond);
-		qemu_cond_destroy(&p->worker.cond);
-		qemu_event_destroy(&p->worker.event);
-		qemu_mutex_destroy(&p->worker.mutex);
-	}
+	timer_del(p->sync_timer);
+	run_on_cpu(p->cpu, dsp_sync_on_cpu, RUN_ON_CPU_HOST_PTR(p));
+	timer_free(p->sync_timer);
+	p->sync_timer = NULL;
 
 	dsp_runtime_destroy(p->runtime);
 	p->runtime = NULL;
@@ -1585,6 +1259,7 @@ static void dsp_unrealize(DeviceState *dev) {
 
 static void dsp_class_init(ObjectClass *klass, const void *data) {
 	DeviceClass *dc = DEVICE_CLASS(klass);
+
 	device_class_set_props(dc, dsp_properties);
 	device_class_set_legacy_reset(dc, dsp_reset);
 	dc->realize = dsp_realize;

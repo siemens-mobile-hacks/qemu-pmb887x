@@ -704,6 +704,11 @@ static void tcg_synchronize_data_access(teak_tcg_core_t *core, uint32_t address,
 	}
 }
 
+static void tcg_add_data_wait_cycles(teak_tcg_core_t *core, uint32_t address) {
+	if (address - core->memory.wait_state_base < core->memory.wait_state_size)
+		core->wait_cycles += core->memory.wait_state_cycles;
+}
+
 static bool tcg_direct_data_read(teak_tcg_core_t *core, uint32_t address, uint16_t *value) {
 	if (core->memory.direct_data == NULL || address >= core->memory.direct_data_read_size)
 		return false;
@@ -730,6 +735,7 @@ uint32_t HELPER(teak_tcg_data_read_at)(void *opaque, uint32_t address, uint32_t 
 
 	state->trace_pc = pc;
 	tcg_synchronize_data_access(core, address, cycle_offset, access);
+	tcg_add_data_wait_cycles(core, address);
 	return teak_data_read(core, address);
 }
 
@@ -744,6 +750,7 @@ uint32_t HELPER(teak_tcg_data_read_xz_at)(void *opaque, uint32_t address, uint32
 	if (tcg_direct_data_read(core, address, &value))
 		return value;
 	tcg_synchronize_data_access(core, address, cycle_offset, access);
+	tcg_add_data_wait_cycles(core, address);
 	return teak_data_read(core, address);
 }
 
@@ -758,6 +765,7 @@ uint32_t HELPER(teak_tcg_data_read_y_at)(void *opaque, uint32_t address, uint32_
 	if (tcg_direct_data_read(core, address, &value))
 		return value;
 	tcg_synchronize_data_access(core, address, cycle_offset, access);
+	tcg_add_data_wait_cycles(core, address);
 	return teak_data_read(core, address);
 }
 
@@ -772,6 +780,7 @@ void HELPER(teak_tcg_data_write_at)(void *opaque, uint32_t address, uint32_t val
 
 	state->trace_pc = pc;
 	tcg_synchronize_data_access(core, address, cycle_offset, access);
+	tcg_add_data_wait_cycles(core, address);
 	teak_data_write(core, address, (uint16_t) value);
 }
 
@@ -929,12 +938,8 @@ void HELPER(teak_tcg_alb_register)(void *opaque, uint32_t register_code, uint32_
 #undef HELPER_H
 
 static void tcg_request_tb_flush(void) {
-	unsigned int flush_count = qatomic_read(&tb_ctx.tb_flush_count);
-
 	g_assert(first_cpu != NULL);
 	queue_tb_flush(first_cpu);
-	while (qatomic_read(&tb_ctx.tb_flush_count) == flush_count)
-		g_thread_yield();
 }
 
 static TranslationBlock *tcg_compile_block(uint32_t pc, uint16_t words, uint16_t instruction_count,
@@ -1047,7 +1052,6 @@ static teak_tcg_block_cache_entry_t *tcg_find_cached_entry_fast(teak_tcg_core_t 
 	teak_tcg_block_cache_entry_t *entry;
 	uint8_t level = core->state.bcn;
 
-	tcg_check_block_cache();
 	entry = tcg_block_cache[core->state.pc];
 	while (entry != NULL) {
 		bool same_cache = entry->cache_id == core->cache_id;
@@ -1348,6 +1352,7 @@ static bool tcg_can_translate(const teak_insn_t *instruction) {
 				case 8:
 				case 9:
 				case 10:
+				case 11:
 				case 12:
 				case 13:
 				case 14:
@@ -1379,7 +1384,8 @@ static bool tcg_can_translate(const teak_insn_t *instruction) {
 			bool external_register = instruction->register_code >= 20 && instruction->register_code <= 23;
 			bool accumulator = instruction->register_code >= 24 && instruction->register_code <= 29;
 			bool program_counter = instruction->register_code == 12;
-			return basic_register || b_half || external_register || accumulator || program_counter;
+			bool shift_value = instruction->register_code == 31;
+			return basic_register || b_half || external_register || accumulator || program_counter || shift_value;
 		}
 
 		case TEAK_OP_MOV_REGISTER_DATA_RN_STEP: {
@@ -1544,6 +1550,7 @@ static uint8_t tcg_delay_slot_cycles(const teak_insn_t *instruction) {
 		case TEAK_OP_LOAD_MODJ:
 		case TEAK_OP_LOAD_STEPI:
 		case TEAK_OP_LOAD_STEPJ:
+		case TEAK_OP_BREAK:
 			return 1;
 
 		case TEAK_OP_NORMALIZE:
@@ -3344,6 +3351,10 @@ static void tcg_emit_mov_data_rn_step_register(const teak_insn_t *instruction) {
 			tcg_constant_i32(instruction->register_code), value);
 		return;
 	}
+	if (instruction->register_code == 31) {
+		tcg_gen_st16_i32(value, tcg_env, offsetof(teak_state_t, shift_value));
+		return;
+	}
 
 	accumulator_offset = tcg_accumulator_register_offset(instruction->register_code);
 	accumulator = tcg_temp_new_i64();
@@ -3746,6 +3757,10 @@ static void tcg_emit_mov_imm_register(const teak_insn_t *instruction) {
 
 		case 10:
 			tcg_emit_mov_imm_st2(instruction->expansion);
+			break;
+
+		case 11:
+			gen_helper_teak_tcg_register_write(tcg_env, tcg_constant_i32(instruction->register_code), value);
 			break;
 
 		case 12:
@@ -4339,6 +4354,7 @@ static bool tcg_decode_block(teak_tcg_core_t *core, teak_tcg_block_t *block, siz
 			delayed_transfer_cycles -= delay_slot_cycles;
 			if (delayed_transfer_cycles == 0)
 				return true;
+			continue;
 		}
 		if (repeat_pending)
 			return true;
@@ -4534,7 +4550,8 @@ static void tcg_emit_block(void *opaque) {
 			tcg_gen_st_i32(tcg_constant_i32(TEAK_EXIT_BRANCH), tcg_env,
 				offsetof(teak_state_t, exit_reason));
 		}
-		if (tcg_may_write_data(instruction)) {
+		bool inside_delay_slots = delayed_transfer_target != NULL && i + 1 != block->instruction_count;
+		if (tcg_may_write_data(instruction) && !inside_delay_slots) {
 			TCGv_i32 exit_request = tcg_temp_new_i32();
 			TCGv_i32 interrupt_request = tcg_temp_new_i32();
 
@@ -4586,6 +4603,7 @@ static TranslationBlock *tcg_prepare_block(teak_tcg_core_t *core, teak_tcg_block
 	size_t max_instructions = TEAK_TCG_MAX_BLOCK_INSTRUCTIONS;
 	int compile_error;
 
+	tcg_check_block_cache();
 	tb = tcg_find_cached_block_fast(core, block);
 
 	while (tb == NULL) {
@@ -4607,8 +4625,8 @@ static TranslationBlock *tcg_prepare_block(teak_tcg_core_t *core, teak_tcg_block
 		}
 
 		if (compile_error == TEAK_TCG_COMPILE_RETRY) {
-			tcg_check_block_cache();
-			continue;
+			core->translation_error = TEAK_TRANSLATION_ERROR_RETRY;
+			return NULL;
 		}
 
 		if (compile_error != -2 || block->instruction_count == 1) {
@@ -4730,6 +4748,8 @@ void *HELPER(teak_tcg_chain)(void *opaque, uint32_t block_cycles, uint32_t block
 	g_assert(block_cycles != 0);
 	g_assert(block_count != 0);
 
+	block_cycles += core->wait_cycles;
+	core->wait_cycles = 0;
 	tcg_complete_block_cycles(core, block_cycles);
 	core->last_block_cycles += block_cycles;
 	core->last_block_count += block_count;
@@ -4812,6 +4832,7 @@ bool teak_tcg_execute_block(teak_tcg_core_t *core) {
 	core->last_block_cycles = 0;
 	core->last_block_count = 0;
 	core->pending_cycles = 0;
+	core->wait_cycles = 0;
 
 	tb = tcg_prepare_block(core, &block);
 	if (tb == NULL)
@@ -4909,10 +4930,12 @@ bool teak_tcg_execute_slice(teak_tcg_core_t *core, size_t max_cycles) {
 	core->last_block_cycles = 0;
 	core->last_block_count = 0;
 	core->pending_cycles = 0;
+	core->wait_cycles = 0;
 
 	if (qatomic_xchg(&core->state.exit_request, 0) != 0)
 		return true;
 
+	tcg_check_block_cache();
 	entry = tcg_find_cached_entry_fast(core);
 	if (entry == NULL) {
 		success = tcg_execute_slice_slow(core, max_cycles);

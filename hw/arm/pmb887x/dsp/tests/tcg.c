@@ -13,6 +13,7 @@ typedef struct test_memory_t test_memory_t;
 
 struct test_memory_t {
 	uint16_t words[TEST_MEMORY_WORDS];
+	pmb887x_dsp_tcg_core_t *exit_core_on_write;
 };
 
 int (*qemu_main)(void);
@@ -29,6 +30,8 @@ static void test_memory_write(void *opaque, uint32_t address, uint16_t value) {
 
 	g_assert_cmpuint(address, <, ARRAY_SIZE(memory->words));
 	memory->words[address] = value;
+	if (memory->exit_core_on_write != NULL)
+		memory->exit_core_on_write->state.exit_request = 1;
 }
 
 static pmb887x_dsp_tcg_memory_space_t test_memory_space(test_memory_t *memory) {
@@ -90,6 +93,22 @@ static void test_mov_full_accumulator(void) {
 static void test_mov_full_accumulator_alias(void) {
 	/* PMB8875 MASK ROM 0602 uses this REG-to-b0 encoding at P:5E49. */
 	test_mov_a0_b0(0x5ED8);
+}
+
+static void test_mov_immediate_product_high(void) {
+	/* PMB8876 Mask ROM 0801 CCH receiver uses this instruction at P:A056. */
+	test_memory_t program = {
+		.words = { 0x5E0B, 0x0090, 0x4180, 0x0004 },
+	};
+	test_memory_t data = {};
+	pmb887x_dsp_tcg_core_t core = test_core_create(&program, &data);
+
+	core.state.p[0] = 0x12345678;
+	core.state.product_extension[0] = 1;
+	g_assert_true(pmb887x_dsp_tcg_execute_block(&core));
+	g_assert_cmphex(core.state.p[0], ==, 0x00905678);
+	g_assert_cmphex(core.state.product_extension[0], ==, 0);
+	g_assert_cmphex(core.state.pc, ==, 4);
 }
 
 static void test_pop_full_accumulator(void) {
@@ -225,6 +244,22 @@ static void test_direct_data_read_write(void) {
 	g_assert_cmphex(core.state.a[0], ==, 0x8001);
 }
 
+static void test_mov_data_shift_value(void) {
+	test_memory_t program = {
+		/* mov [r4++], sv */
+		.words = { 0x1FEC, 0x4180, 0x0003 },
+	};
+	test_memory_t data = {
+		.words = { [0x10] = 0xA55A },
+	};
+	pmb887x_dsp_tcg_core_t core = test_core_create(&program, &data);
+
+	core.state.r[4] = 0x10;
+	g_assert_true(pmb887x_dsp_tcg_execute_block(&core));
+	g_assert_cmphex(core.state.shift_value, ==, 0xA55A);
+	g_assert_cmphex(core.state.r[4], ==, 0x11);
+}
+
 static void test_mov_accumulator_high_extension_unaffected(void) {
 	test_memory_t program = {
 		.words = { 0x6500, 0x4180, 0x0003 },
@@ -348,6 +383,7 @@ static void test_movr_b_destination(void) {
 }
 
 static void test_delayed_interrupt_return(void) {
+	/* 0xD7C0 0x2102 0xD4BC 0x0010: retid; mov 2, a0l; mov a0l, [0x0010]. */
 	test_memory_t program = {
 		.words = { 0xD7C0, 0x2102, 0xD4BC, 0x0010 },
 	};
@@ -365,6 +401,50 @@ static void test_delayed_interrupt_return(void) {
 	g_assert_cmphex(core.state.ie, ==, 1);
 	g_assert_cmphex(core.state.maskable_interrupt_active, ==, 0);
 	g_assert_cmphex(data.words[0x10], ==, 0xA55A);
+}
+
+static void test_delayed_interrupt_return_exit_request(void) {
+	/* 0xD7C0 0x2010 0x0000: retid; mov r0, [0x10]; nop. */
+	test_memory_t program = {
+		.words = { 0xD7C0, 0x2010, 0x0000 },
+	};
+	test_memory_t data = {
+		.words = { [5] = 10 },
+	};
+	pmb887x_dsp_tcg_core_t core = test_core_create(&program, &data);
+
+	data.exit_core_on_write = &core;
+	core.state.r[0] = 0xA55A;
+	core.state.sp = 5;
+	core.state.maskable_interrupt_active = 1;
+	g_assert_true(pmb887x_dsp_tcg_execute_block(&core));
+	g_assert_cmphex(core.state.pc, ==, 11);
+	g_assert_cmphex(core.state.sp, ==, 6);
+	g_assert_cmphex(core.state.ie, ==, 1);
+	g_assert_cmphex(core.state.maskable_interrupt_active, ==, 0);
+	g_assert_cmphex(data.words[0x10], ==, 0xA55A);
+}
+
+static void test_delayed_return_break(void) {
+	/* 0xD780 0xD3C0 0x0000: retd; break; nop at EL71 GSM DSP P:0x08D98. */
+	test_memory_t program = {
+		.words = { 0xD780, 0xD3C0, 0x0000 },
+	};
+	test_memory_t data = {
+		.words = { [5] = 10 },
+	};
+	pmb887x_dsp_tcg_core_t core = test_core_create(&program, &data);
+
+	core.state.sp = 5;
+	core.state.lp = 1;
+	core.state.bcn = 1;
+	core.state.block_repeat_start[0] = 0;
+	core.state.block_repeat_end[0] = 2;
+	g_assert_true(pmb887x_dsp_tcg_execute_block(&core));
+	g_assert_cmphex(core.state.pc, ==, 10);
+	g_assert_cmphex(core.state.sp, ==, 6);
+	g_assert_cmphex(core.state.lp, ==, 0);
+	g_assert_cmphex(core.state.bcn, ==, 0);
 }
 
 static void test_nested_nmi_interrupt_return(void) {
@@ -395,6 +475,7 @@ int main(int argc, char **argv) {
 
 	g_test_add_func("/pmb887x/dsp/tcg/mov-full-accumulator", test_mov_full_accumulator);
 	g_test_add_func("/pmb887x/dsp/tcg/mov-full-accumulator-alias", test_mov_full_accumulator_alias);
+	g_test_add_func("/pmb887x/dsp/tcg/mov-immediate-product-high", test_mov_immediate_product_high);
 	g_test_add_func("/pmb887x/dsp/tcg/pop-full-accumulator", test_pop_full_accumulator);
 	g_test_add_func("/pmb887x/dsp/tcg/long-block-repeat", test_long_block_repeat);
 	g_test_add_func("/pmb887x/dsp/tcg/status-reserved-read-bits", test_status_reserved_read_bits);
@@ -402,6 +483,7 @@ int main(int argc, char **argv) {
 	g_test_add_func("/pmb887x/dsp/tcg/alu-status-register", test_alu_status_register);
 	g_test_add_func("/pmb887x/dsp/tcg/dual-memory-spaces", test_dual_memory_spaces);
 	g_test_add_func("/pmb887x/dsp/tcg/direct-data-read-write", test_direct_data_read_write);
+	g_test_add_func("/pmb887x/dsp/tcg/mov-data-shift-value", test_mov_data_shift_value);
 	g_test_add_func("/pmb887x/dsp/tcg/mov-accumulator-high-extension-unaffected", test_mov_accumulator_high_extension_unaffected);
 	g_test_add_func("/pmb887x/dsp/tcg/alu-accumulator-masks", test_alu_accumulator_masks);
 	g_test_add_func("/pmb887x/dsp/tcg/multiply-subtract-status-register", test_multiply_subtract_status_register);
@@ -410,6 +492,8 @@ int main(int argc, char **argv) {
 	g_test_add_func("/pmb887x/dsp/tcg/external-registers-disconnected", test_external_registers_disconnected);
 	g_test_add_func("/pmb887x/dsp/tcg/movr-b-destination", test_movr_b_destination);
 	g_test_add_func("/pmb887x/dsp/tcg/delayed-interrupt-return", test_delayed_interrupt_return);
+	g_test_add_func("/pmb887x/dsp/tcg/delayed-interrupt-return-exit-request", test_delayed_interrupt_return_exit_request);
+	g_test_add_func("/pmb887x/dsp/tcg/delayed-return-break", test_delayed_return_break);
 	g_test_add_func("/pmb887x/dsp/tcg/nested-nmi-interrupt-return", test_nested_nmi_interrupt_return);
 	return g_test_run();
 }

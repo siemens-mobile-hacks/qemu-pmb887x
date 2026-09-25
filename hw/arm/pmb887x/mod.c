@@ -52,6 +52,10 @@ uint8_t pmb887x_clc_is_enabled(pmb887x_clc_reg_t *reg) {
 	return (reg->value & MOD_CLC_DISR) == 0;
 }
 
+uint32_t pmb887x_clc_get_input_hz(pmb887x_clc_reg_t *reg) {
+	return clock_get_hz(reg->clock);
+}
+
 uint32_t pmb887x_clc_get_hz(pmb887x_clc_reg_t *reg) {
 	return reg->frequency_hz;
 }

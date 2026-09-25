@@ -3,7 +3,6 @@
 #define PMB887X_TRACE_IO		PMB887X_TRACE_IO_DSP
 
 #include "qemu/osdep.h"
-#include "qemu/thread.h"
 #include "qemu/timer.h"
 
 #include "hw/arm/pmb887x/dsp/peripheral/internal.h"
@@ -25,7 +24,6 @@ struct timer2_state_t {
 	uint64_t clock_remainder;
 	int64_t last_update;
 	QEMUTimer *timer;
-	QemuMutex mutex;
 	bool clock_enabled;
 	bool core_idle;
 	dsp_device_t *interrupt;
@@ -34,14 +32,12 @@ struct timer2_state_t {
 static void timer2_destroy(dsp_device_t *device) {
 	timer2_state_t *state = device->state;
 	timer_free(state->timer);
-	qemu_mutex_destroy(&state->mutex);
 	g_free(state);
 }
 
 static void timer2_reset(dsp_device_t *device) {
 	timer2_state_t *state = device->state;
 
-	qemu_mutex_lock(&state->mutex);
 	timer_del(state->timer);
 	state->control = 0;
 	state->counter = 0;
@@ -49,10 +45,9 @@ static void timer2_reset(dsp_device_t *device) {
 	state->prescaler = 0;
 	state->clock_remainder = 0;
 	state->last_update = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
-	qemu_mutex_unlock(&state->mutex);
 }
 
-static bool timer2_advance_cycles_locked(timer2_state_t *state, uint64_t cycles) {
+static bool timer2_advance_cycles(timer2_state_t *state, uint64_t cycles) {
 	uint64_t ticks;
 	bool interrupt = false;
 
@@ -75,7 +70,7 @@ static bool timer2_advance_cycles_locked(timer2_state_t *state, uint64_t cycles)
 	return interrupt;
 }
 
-static bool timer2_update_idle_locked(timer2_state_t *state, int64_t now) {
+static bool timer2_update_idle(timer2_state_t *state, int64_t now) {
 	int64_t elapsed = MAX(now - state->last_update, 0);
 	uint64_t scaled_cycles;
 	uint64_t cycles;
@@ -88,7 +83,7 @@ static bool timer2_update_idle_locked(timer2_state_t *state, int64_t now) {
 	scaled_cycles = (uint64_t) elapsed * TIMER2_CLOCK_NUMERATOR + state->clock_remainder;
 	cycles = scaled_cycles / TIMER2_CLOCK_DENOMINATOR_NS;
 	state->clock_remainder = scaled_cycles % TIMER2_CLOCK_DENOMINATOR_NS;
-	return timer2_advance_cycles_locked(state, cycles);
+	return timer2_advance_cycles(state, cycles);
 }
 
 static uint64_t timer2_ticks_until_interrupt(const timer2_state_t *state) {
@@ -99,7 +94,7 @@ static uint64_t timer2_ticks_until_interrupt(const timer2_state_t *state) {
 	return (uint64_t) state->maximum + 1;
 }
 
-static void timer2_schedule_locked(timer2_state_t *state, int64_t now) {
+static void timer2_schedule(timer2_state_t *state, int64_t now) {
 	uint64_t ticks;
 	uint64_t cycles;
 	uint64_t scaled_time;
@@ -129,10 +124,8 @@ static void timer2_timer(void *opaque) {
 	int64_t now = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
 	bool interrupt;
 
-	qemu_mutex_lock(&state->mutex);
-	interrupt = timer2_update_idle_locked(state, now);
-	timer2_schedule_locked(state, now);
-	qemu_mutex_unlock(&state->mutex);
+	interrupt = timer2_update_idle(state, now);
+	timer2_schedule(state, now);
 
 	if (interrupt)
 		timer2_raise_interrupt(state);
@@ -143,8 +136,7 @@ static bool timer2_read(dsp_device_t *device, uint16_t offset, uint32_t pc, uint
 	int64_t now = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
 	bool interrupt;
 
-	qemu_mutex_lock(&state->mutex);
-	interrupt = timer2_update_idle_locked(state, now);
+	interrupt = timer2_update_idle(state, now);
 
 	switch (offset) {
 		case TEAK_TMR2_CTRL:
@@ -164,8 +156,7 @@ static bool timer2_read(dsp_device_t *device, uint16_t offset, uint32_t pc, uint
 			break;
 	}
 
-	timer2_schedule_locked(state, now);
-	qemu_mutex_unlock(&state->mutex);
+	timer2_schedule(state, now);
 
 	if (interrupt)
 		timer2_raise_interrupt(state);
@@ -179,8 +170,7 @@ static bool timer2_write(dsp_device_t *device, uint16_t offset, uint32_t pc, uin
 	int64_t now = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
 	bool interrupt;
 
-	qemu_mutex_lock(&state->mutex);
-	interrupt = timer2_update_idle_locked(state, now);
+	interrupt = timer2_update_idle(state, now);
 
 	switch (offset) {
 		case TEAK_TMR2_CTRL:
@@ -197,8 +187,7 @@ static bool timer2_write(dsp_device_t *device, uint16_t offset, uint32_t pc, uin
 			break;
 	}
 
-	timer2_schedule_locked(state, now);
-	qemu_mutex_unlock(&state->mutex);
+	timer2_schedule(state, now);
 
 	if (interrupt)
 		timer2_raise_interrupt(state);
@@ -218,7 +207,6 @@ dsp_device_t *timer2_create(const pmb887x_dsp_peripheral_config_t *config, dsp_d
 	timer2_state_t *state = g_new0(timer2_state_t, 1);
 	state->interrupt = interrupt;
 	state->last_update = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
-	qemu_mutex_init(&state->mutex);
 	state->timer = timer_new_ns(QEMU_CLOCK_VIRTUAL, timer2_timer, state);
 	return dsp_device_create(config, &timer2_ops, state);
 }
@@ -228,12 +216,10 @@ void timer2_set_clock_enabled(dsp_device_t *device, bool enabled) {
 	int64_t now = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
 	bool interrupt;
 
-	qemu_mutex_lock(&state->mutex);
-	interrupt = timer2_update_idle_locked(state, now);
+	interrupt = timer2_update_idle(state, now);
 	state->clock_enabled = enabled;
 	state->last_update = now;
-	timer2_schedule_locked(state, now);
-	qemu_mutex_unlock(&state->mutex);
+	timer2_schedule(state, now);
 
 	if (interrupt)
 		timer2_raise_interrupt(state);
@@ -244,12 +230,10 @@ void timer2_set_core_idle(dsp_device_t *device, bool idle) {
 	int64_t now = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
 	bool interrupt;
 
-	qemu_mutex_lock(&state->mutex);
-	interrupt = timer2_update_idle_locked(state, now);
+	interrupt = timer2_update_idle(state, now);
 	state->core_idle = idle;
 	state->last_update = now;
-	timer2_schedule_locked(state, now);
-	qemu_mutex_unlock(&state->mutex);
+	timer2_schedule(state, now);
 
 	if (interrupt)
 		timer2_raise_interrupt(state);
@@ -257,12 +241,7 @@ void timer2_set_core_idle(dsp_device_t *device, bool idle) {
 
 void timer2_advance(dsp_device_t *device, size_t cycles) {
 	timer2_state_t *state = device->state;
-	bool interrupt = false;
-
-	qemu_mutex_lock(&state->mutex);
-	if (!state->core_idle)
-		interrupt = timer2_advance_cycles_locked(state, cycles);
-	qemu_mutex_unlock(&state->mutex);
+	bool interrupt = !state->core_idle && timer2_advance_cycles(state, cycles);
 
 	if (interrupt)
 		timer2_raise_interrupt(state);
@@ -270,11 +249,5 @@ void timer2_advance(dsp_device_t *device, size_t cycles) {
 
 bool timer2_is_active(dsp_device_t *device) {
 	timer2_state_t *state = device->state;
-	bool active;
-
-	qemu_mutex_lock(&state->mutex);
-	active = (state->control & TEAK_TMR2_CTRL_DT2ACT) != 0;
-	qemu_mutex_unlock(&state->mutex);
-
-	return active;
+	return (state->control & TEAK_TMR2_CTRL_DT2ACT) != 0;
 }

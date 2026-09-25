@@ -52,6 +52,7 @@ enum teak_translation_error_t {
 	TEAK_TRANSLATION_ERROR_DELAY_SLOT,
 	TEAK_TRANSLATION_ERROR_COMPILE,
 	TEAK_TRANSLATION_ERROR_EXECUTION,
+	TEAK_TRANSLATION_ERROR_RETRY,
 };
 
 enum teak_opcode_t {
@@ -313,6 +314,9 @@ struct teak_memory_t {
 	teak_advance_cycles_fn *advance_cycles;
 	uint32_t cycle_sensitive_base;
 	uint32_t cycle_sensitive_size;
+	uint32_t wait_state_base;
+	uint32_t wait_state_size;
+	uint32_t wait_state_cycles;
 	uint16_t y_space_base;
 };
 
@@ -437,6 +441,7 @@ struct teak_tcg_core_t {
 	uint32_t synchronization_offset;
 	uint32_t synchronization_access;
 	uint32_t pending_cycles;
+	uint32_t wait_cycles;
 	uint32_t batch_iterations;
 	uint32_t batch_block_cycles;
 	uint32_t batch_cycles_remaining;

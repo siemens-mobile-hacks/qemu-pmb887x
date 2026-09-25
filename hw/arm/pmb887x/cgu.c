@@ -164,8 +164,12 @@ static uint32_t cgu_get_ahb_freq(pmb887x_cgu_t *p) {
 }
 
 static uint32_t cgu_get_dsp_freq(pmb887x_cgu_t *p) {
-	if ((p->con2 & CGU_CON2_DSP_CLKSEL) == CGU_CON2_DSP_CLKSEL_PHASE1)
-		return cgu_get_phase_freq(p, 1);
+	switch (p->con2 & CGU_CON2_DSP_CLKSEL) {
+		case CGU_CON2_DSP_CLKSEL_OSC:
+			return p->xtal;
+		case CGU_CON2_DSP_CLKSEL_PHASE1:
+			return cgu_get_phase_freq(p, 1);
+	}
 
 	return 0;
 }

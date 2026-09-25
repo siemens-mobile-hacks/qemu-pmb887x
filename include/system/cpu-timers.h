@@ -58,6 +58,7 @@ void icount2_configure(QemuOpts *opts, Error **errp);
 void icount2_advance(uint32_t cycles);
 void icount2_sync(void);
 int64_t icount2_get(void);
+void icount2_exclude_realtime(int64_t elapsed_ns);
 void icount2_enter_sleep(void);
 void icount2_exit_sleep(void);
 void icount2_wakeup(int cpu_index, bool halted, int mask, int interrupt_request);

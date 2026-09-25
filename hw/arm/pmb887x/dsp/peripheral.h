@@ -8,6 +8,7 @@
 
 typedef struct dsp_bus_t dsp_bus_t;
 typedef struct dsp_host_t dsp_host_t;
+typedef struct pmb887x_rf_iq_source_t pmb887x_rf_iq_source_t;
 
 struct dsp_host_t {
 	void *opaque;
@@ -29,7 +30,7 @@ void dsp_bus_set_clock(dsp_bus_t *bus, bool enabled);
 void dsp_bus_set_core_idle(dsp_bus_t *bus, bool idle);
 void dsp_bus_advance(dsp_bus_t *bus, size_t cycles);
 void dsp_bus_advance_afe(dsp_bus_t *bus, size_t cycles);
-void dsp_bus_advance_timers(dsp_bus_t *bus, size_t cycles);
+void dsp_bus_advance_idle(dsp_bus_t *bus, size_t cycles);
 bool dsp_bus_is_active(const dsp_bus_t *bus);
 uint16_t dsp_bus_read(dsp_bus_t *bus, uint16_t address);
 void dsp_bus_write(dsp_bus_t *bus, uint16_t address, uint16_t value);
@@ -40,7 +41,7 @@ uint16_t dsp_bus_get_irq_flags(dsp_bus_t *bus, size_t group);
 uint16_t dsp_bus_get_irq_pending_flags(dsp_bus_t *bus, size_t group);
 void dsp_bus_set_request(dsp_bus_t *bus, size_t index, bool level);
 void dsp_bus_set_input(dsp_bus_t *bus, size_t index, bool level);
-void dsp_bus_set_gsm_clock(dsp_bus_t *bus, uint32_t frequency);
+void dsp_bus_set_iq_source(dsp_bus_t *bus, pmb887x_rf_iq_source_t *source);
 void dsp_bus_set_gsm_signal(dsp_bus_t *bus, pmb887x_dsp_gsm_signal_t signal, bool level);
 uint16_t dsp_bus_get_outputs(dsp_bus_t *bus);
 uint16_t dsp_bus_take_output_events(dsp_bus_t *bus);

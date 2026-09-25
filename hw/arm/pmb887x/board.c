@@ -201,6 +201,7 @@ static void pmb887x_init(MachineState *machine) {
 	// DSP
 	DeviceState *dsp = pmb887x_new_cpu_module("DSP");
 	qdev_connect_clock_in(dsp, "clk", qdev_get_clock_out(cgu, "DSP"));
+	object_property_set_link(OBJECT(dsp), "cpu", OBJECT(cpu), &error_fatal);
 	pmb887x_dsp_set_config(dsp, pmb887x_cpu_get(pmb887x_board()->cpu)->dsp_config);
 	pmb887x_board_init_dsp(dsp);
 	qdev_connect_clock_in(dsp, "GSM_CLOCK", qdev_get_clock_out(tpu, "GSM_CLOCK"));

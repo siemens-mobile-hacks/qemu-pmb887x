@@ -31,7 +31,7 @@ static bool icount2_debug;
 #define ICOUNT2_ADJUST_SCALE 1000000
 
 static void icount2_idle_timer(void *opaque) {
-	int64_t virtual_ahead;
+	int64_t realtime_delay;
 	int64_t deadline;
 
 	if (timers_state.icount2_idle_deadline > 0) {
@@ -55,9 +55,9 @@ static void icount2_idle_timer(void *opaque) {
 	if (deadline < 0)
 		return;
 
-	virtual_ahead = MAX(icount2_get() - cpu_get_clock(), 0);
+	realtime_delay = MAX(deadline + icount2_get() - cpu_get_clock(), 0);
 	timers_state.icount2_idle_deadline = deadline;
-	timer_mod(timers_state.icount2_idle_timer, qemu_clock_get_ns(QEMU_CLOCK_REALTIME) + deadline + virtual_ahead);
+	timer_mod(timers_state.icount2_idle_timer, qemu_clock_get_ns(QEMU_CLOCK_REALTIME) + realtime_delay);
 }
 
 void icount2_sync(void) {
@@ -94,9 +94,13 @@ void icount2_advance(uint32_t cycles) {
 	
 	int64_t deadline = qatomic_read(&timers_state.icount2_deadline);
 	if (deadline > 0 && new_ticks >= deadline) {
-		bql_lock();
+		bool locked = bql_locked();
+
+		if (!locked)
+			bql_lock();
 		icount2_sync();
-		bql_unlock();
+		if (!locked)
+			bql_unlock();
 	}
 }
 
@@ -116,6 +120,16 @@ int64_t icount2_get(void) {
 		time = icount2_get_locked();
 	} while (seqlock_read_retry(&timers_state.vm_clock_seqlock, start));
 	return time;
+}
+
+void icount2_exclude_realtime(int64_t elapsed_ns) {
+	if (elapsed_ns <= 0)
+		return;
+
+	seqlock_write_lock(&timers_state.vm_clock_seqlock, &timers_state.vm_clock_lock);
+	if (timers_state.icount2_adjust_initialized)
+		timers_state.icount2_adjust_realtime += elapsed_ns;
+	seqlock_write_unlock(&timers_state.vm_clock_seqlock, &timers_state.vm_clock_lock);
 }
 
 static void icount2_set_frequency_locked(uint32_t frequency) {

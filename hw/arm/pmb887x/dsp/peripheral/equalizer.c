@@ -9,7 +9,8 @@
 #include "hw/arm/pmb887x/gen/dsp.h"
 #include "hw/arm/pmb887x/trace.h"
 
-#define EQUALIZER_STATES			8U
+#define EQUALIZER_EDGE_STATES		8U
+#define EQUALIZER_GMSK_STATES		16U
 #define EQUALIZER_SYMBOLS		64U
 #define EQUALIZER_RECEIVED_VALUES	32U
 #define EQUALIZER_BRANCH_VALUES		64U
@@ -20,12 +21,15 @@
 #define EQUALIZER_SOFT_DELAY		1U
 #define EQUALIZER_HARD_DELAY		6U
 #define EQUALIZER_PATH_MASK		0x3FFFFFFFU
+#define EQUALIZER_GMSK_PATH_MASK		0x7FFFU
 #define EQUALIZER_HARD_HISTORY_WORDS	(EQUALIZER_SYMBOLS + EQUALIZER_TRAINING_SYMBOLS + 1U)
 #define EQUALIZER_COMBINED_WORDS		96U
+#define EQUALIZER_GMSK_SOFT_BYTES	64U
 #define EQUALIZER_BRANCH_WORD_BASE	32U
 #define EQUALIZER_INTERRUPT_GROUP	0U
 
-static const uint8_t EQUALIZER_SCRATCH_ORDER[EQUALIZER_STATES] = { 0, 2, 4, 6, 1, 3, 5, 7 };
+static const uint8_t EQUALIZER_SCRATCH_ORDER[EQUALIZER_EDGE_STATES] = { 0, 2, 4, 6, 1, 3, 5, 7 };
+static const uint16_t EQUALIZER_GMSK_FINAL_PATHS[] = { 0, 4, 2, 6, 1, 5, 3, 7 };
 
 typedef enum equalizer_external_target_t equalizer_external_target_t;
 
@@ -54,6 +58,7 @@ typedef struct equalizer_state_t equalizer_state_t;
 struct equalizer_state_t {
 	dsp_device_t *interrupt;
 	uint16_t config2;
+	uint16_t operation_config;
 	uint16_t configured_count;
 	uint16_t completed_count;
 	uint16_t soft_scale;
@@ -62,10 +67,10 @@ struct equalizer_state_t {
 	uint32_t branch[EQUALIZER_BRANCH_VALUES];
 	uint16_t ram2[EQUALIZER_RAM2_WORDS];
 	equalizer_working_ram_t working[2];
-	int16_t metrics[EQUALIZER_STATES];
-	uint32_t paths[EQUALIZER_STATES];
-	uint32_t survivor_paths[2][EQUALIZER_STATES];
-	uint8_t survivor_history[2][EQUALIZER_STATES][EQUALIZER_HARD_HISTORY_WORDS];
+	int16_t metrics[EQUALIZER_GMSK_STATES];
+	uint32_t paths[EQUALIZER_GMSK_STATES];
+	uint32_t survivor_paths[2][EQUALIZER_GMSK_STATES];
+	uint8_t survivor_history[2][EQUALIZER_GMSK_STATES][EQUALIZER_HARD_HISTORY_WORDS];
 	uint8_t decisions[EQUALIZER_SYMBOLS];
 	uint8_t combined_hard[EQUALIZER_HARD_HISTORY_WORDS];
 	equalizer_external_target_t external_target;
@@ -102,9 +107,11 @@ static void equalizer_reset(dsp_device_t *device) {
 
 static void equalizer_reset_operation(equalizer_state_t *state) {
 	state->config2 &= TEAK_EQ_CONF2_HW_ENA_EQ;
+	state->operation_config = 0;
 	state->configured_count = 0;
 	state->completed_count = 0;
 	memset(state->working_source_bank, 0, sizeof(state->working_source_bank));
+	memset(state->side_processed_count, 0, sizeof(state->side_processed_count));
 	memset(state->context_valid, 0, sizeof(state->context_valid));
 	state->processed_count = 0;
 	state->elapsed_cycles = 0;
@@ -116,6 +123,7 @@ static void equalizer_reset_operation(equalizer_state_t *state) {
 
 static void equalizer_reset_registers(equalizer_state_t *state) {
 	state->config2 = 0;
+	state->operation_config = 0;
 	state->configured_count = 0;
 	state->completed_count = 0;
 	state->soft_scale = 0;
@@ -173,14 +181,14 @@ static void equalizer_select_external(equalizer_state_t *state, uint16_t value) 
 
 static uint16_t equalizer_working_read(const equalizer_state_t *state, size_t bank, size_t halfword) {
 	uint32_t value = state->working[bank].words[halfword / 2];
-	return halfword & 1 ? value >> 16 : value;
+	return (halfword & 1) != 0 ? (value >> 16) : value;
 }
 
 static void equalizer_working_write(equalizer_state_t *state, size_t bank, size_t halfword, uint16_t value) {
 	uint32_t *word = &state->working[bank].words[halfword / 2];
 
 	if ((halfword & 1) != 0) {
-		*word = (*word & UINT16_MAX) | (uint32_t) value << 16;
+		*word = (*word & UINT16_MAX) | ((uint32_t) value << 16);
 	} else {
 		*word = (*word & ~UINT16_MAX) | value;
 	}
@@ -226,32 +234,39 @@ static bool equalizer_external_working(const equalizer_state_t *state, size_t *w
 
 static void equalizer_start(equalizer_state_t *state) {
 	bool right = (state->config2 & TEAK_EQ_CONF2_EQ_RIGHT) != 0;
+	bool edge = (state->config2 & TEAK_EQ_CONF2_EQ_EDGE) != 0;
 	size_t side = right;
 	size_t metric_base = right ? 0 : 8;
 	size_t path_base = right ? 16 : 24;
 	size_t metric_bank;
+	size_t state_count = edge ? EQUALIZER_EDGE_STATES : EQUALIZER_GMSK_STATES;
+
+	state->operation_config = state->config2;
 
 	state->continuing = state->context_valid[side];
 	if (!state->continuing) {
-		metric_bank = 1;
-		state->working_source_bank[side] = 1;
+		metric_bank = edge ? 1 : 0;
+		state->working_source_bank[side] = metric_bank;
 		state->context_valid[side] = true;
 	} else {
 		metric_bank = state->working_source_bank[side];
 	}
 
-	for (size_t i = 0; i < EQUALIZER_STATES; i++) {
+	for (size_t i = 0; i < state_count; i++) {
 		state->metrics[i] = equalizer_working_read(state, metric_bank, metric_base * 2 + i);
 		if (state->continuing) {
 			state->paths[i] = state->survivor_paths[side][i];
+		} else if (edge) {
+			state->paths[i] = (state->working[0].words[path_base + i] & EQUALIZER_PATH_MASK);
 		} else {
-			state->paths[i] = state->working[0].words[path_base + i] & EQUALIZER_PATH_MASK;
+			size_t path = ((i & 7) & ~1U);
+			state->paths[i] = (state->working[0].words[path_base + path] & EQUALIZER_PATH_MASK);
 		}
 	}
 
 	size_t best_state = 0;
 
-	for (size_t i = 1; i < EQUALIZER_STATES; i++) {
+	for (size_t i = 1; i < state_count; i++) {
 		if (state->metrics[i] < state->metrics[best_state])
 			best_state = i;
 	}
@@ -274,10 +289,10 @@ static void equalizer_start(equalizer_state_t *state) {
 			state->side_processed_count[side] = 0;
 			memset(state->ram2 + 128, 0, EQUALIZER_SYMBOLS * sizeof(state->ram2[0]));
 
-			for (size_t path = 0; path < EQUALIZER_STATES; path++) {
+			for (size_t path = 0; path < EQUALIZER_EDGE_STATES; path++) {
 				for (size_t group = 1; group < 7; group++) {
 					size_t output = EQUALIZER_TRAINING_SYMBOLS + 1 - group;
-					uint8_t symbol = state->paths[path] >> ((group - 1) * 3) & 7;
+					uint8_t symbol = ((state->paths[path] >> ((group - 1) * 3)) & 7);
 					state->survivor_history[side][path][output] = symbol;
 				}
 			}
@@ -348,10 +363,10 @@ static bool equalizer_write(dsp_device_t *device, uint16_t offset, uint32_t pc, 
 			if ((value & TEAK_EQ_CONF2_RES_ALL) != 0) {
 				equalizer_reset_registers(state);
 			} else {
-				bool enabled = value & TEAK_EQ_CONF2_HW_ENA_EQ;
-				bool start_requested = value & TEAK_EQ_CONF2_EQ_ON;
+				bool enabled = (value & TEAK_EQ_CONF2_HW_ENA_EQ) != 0;
+				bool start_requested = (value & TEAK_EQ_CONF2_EQ_ON) != 0;
 
-				state->config2 = value & ~TEAK_EQ_CONF2_RES_EQ;
+				state->config2 = (value & ~TEAK_EQ_CONF2_RES_EQ);
 
 				if ((value & TEAK_EQ_CONF2_RES_EQ) != 0)
 					equalizer_reset_operation(state);
@@ -361,7 +376,7 @@ static bool equalizer_write(dsp_device_t *device, uint16_t offset, uint32_t pc, 
 			break;
 
 		case TEAK_EQ_CONF_CNT:
-			state->configured_count = value & TEAK_EQ_CONF_CNT_C_EQ;
+			state->configured_count = (value & TEAK_EQ_CONF_CNT_C_EQ);
 			break;
 
 		case TEAK_EQ_SC_SOUT:
@@ -434,11 +449,20 @@ static uint16_t *equalizer_external_ram16(equalizer_state_t *state, size_t *word
 }
 
 static uint8_t equalizer_combine_soft(const equalizer_state_t *state, size_t source) {
-	int8_t soft = state->ram2[source / 2] >> ((source & 1) * 8);
-	size_t hard_index = EQUALIZER_HARD_DELAY - EQUALIZER_SOFT_DELAY + source / 2;
-	size_t bit = source & 3;
-	bool valid_hard_index = hard_index < ARRAY_SIZE(state->combined_hard);
-	bool negative = valid_hard_index && (state->combined_hard[hard_index] & BIT(bit)) != 0;
+	uint16_t config = state->operation_config != 0 ? state->operation_config : state->config2;
+	bool edge = (config & TEAK_EQ_CONF2_EQ_EDGE) != 0;
+	size_t soft_source = edge ? source : source % EQUALIZER_GMSK_SOFT_BYTES;
+	int8_t soft = (state->ram2[soft_source / 2] >> ((soft_source & 1) * 8));
+	size_t hard_delay = edge ? EQUALIZER_HARD_DELAY - EQUALIZER_SOFT_DELAY :
+		EQUALIZER_TRAINING_SYMBOLS + EQUALIZER_SOFT_DELAY;
+	size_t hard_index = hard_delay + source / 2;
+	size_t bit = (source & 3);
+	bool negative = false;
+
+	if (hard_index < ARRAY_SIZE(state->combined_hard)) {
+		negative = edge ? (state->combined_hard[hard_index] & BIT(bit)) != 0 :
+			state->combined_hard[hard_index] != 0;
+	}
 
 	if (negative)
 		return soft < 0 ? (uint8_t) soft : UINT8_MAX;
@@ -448,23 +472,42 @@ static uint8_t equalizer_combine_soft(const equalizer_state_t *state, size_t sou
 static uint16_t equalizer_combine_pair(const equalizer_state_t *state, size_t high_source, size_t low_source) {
 	uint8_t high = equalizer_combine_soft(state, high_source);
 	uint8_t low = equalizer_combine_soft(state, low_source);
-	return (uint16_t) high << 8 | low;
+	return ((uint16_t) high << 8) | low;
 }
 
 static uint16_t equalizer_combined_read(const equalizer_state_t *state, size_t word) {
-	bool segment = (state->config2 & TEAK_EQ_CONF2_S_SEG) != 0;
+	uint16_t config = state->operation_config != 0 ? state->operation_config : state->config2;
+	bool segment = (config & TEAK_EQ_CONF2_S_SEG) != 0;
+	bool right = (config & TEAK_EQ_CONF2_EQ_RIGHT) != 0;
 
 	if (word >= EQUALIZER_COMBINED_WORDS)
 		return 0;
 
 	if (!segment) {
+		size_t source_base = (state->side_processed_count[right] - state->configured_count) * 2;
+		bool gmsk_operation = state->operation_config != 0 && (config & TEAK_EQ_CONF2_EQ_EDGE) == 0;
+
+		if (gmsk_operation && word == 1)
+			return 0x0101;
+		if (gmsk_operation && word == 3) {
+			bool first_segment = state->side_processed_count[right] == state->configured_count;
+
+			if (first_segment)
+				return right ? 0x01FF : 0xFF01;
+			return 0x0101;
+		}
 		if (word == 3 || word == 5)
 			return 0x0101;
-		if (word == 7)
-			return 0x0100 | equalizer_combine_soft(state, 0);
+		if (word == 7) {
+			uint8_t soft = equalizer_combine_soft(state, source_base);
+
+			return right ? (((uint16_t) soft << 8) | 1) : (0x0100 | soft);
+		}
 		if (word < 9 || (word & 1) == 0)
 			return 0;
-		return equalizer_combine_pair(state, word * 2 - 16, word * 2 - 14);
+		if (right)
+			return equalizer_combine_pair(state, source_base + word * 2 - 14, source_base + word * 2 - 16);
+		return equalizer_combine_pair(state, source_base + word * 2 - 16, source_base + word * 2 - 14);
 	}
 
 	if (word == 1) {
@@ -476,7 +519,7 @@ static uint16_t equalizer_combined_read(const equalizer_state_t *state, size_t w
 		uint8_t low = equalizer_combine_soft(state, 182);
 		if (state->processed_count != 0)
 			return low;
-		return (uint16_t) equalizer_combine_soft(state, 180) << 8 | low;
+		return ((uint16_t) equalizer_combine_soft(state, 180) << 8) | low;
 	}
 	if (word == 4)
 		return equalizer_combine_pair(state, 184, 186);
@@ -493,9 +536,10 @@ uint16_t equalizer_external_read(dsp_device_t *device) {
 	uint16_t *ram16 = equalizer_external_ram16(state, &word_count);
 
 	if (ram16 != NULL) {
+		uint16_t config = state->operation_config != 0 ? state->operation_config : state->config2;
 		bool packed = (state->config2 & TEAK_EQ_CONF2_PC_EQ_1) != 0;
 		bool combined = state->external_target == EQUALIZER_EXTERNAL_SOUT &&
-			(state->config2 & TEAK_EQ_CONF2_S_COMB) != 0;
+			(config & TEAK_EQ_CONF2_S_COMB) != 0;
 		uint16_t value;
 
 		if (combined)
@@ -508,7 +552,7 @@ uint16_t equalizer_external_read(dsp_device_t *device) {
 			state->external_pointer++;
 			return value;
 		}
-		value = state->external_high ? value >> 8 : value & UINT8_MAX;
+		value = state->external_high ? (value >> 8) : (value & UINT8_MAX);
 		state->external_high = !state->external_high;
 		if (!state->external_high)
 			state->external_pointer++;
@@ -546,7 +590,7 @@ uint16_t equalizer_external_read(dsp_device_t *device) {
 		state->external_pointer++;
 		return value;
 	}
-	value = state->external_high ? value >> 16 : value & UINT16_MAX;
+	value = state->external_high ? (value >> 16) : (value & UINT16_MAX);
 	state->external_high = !state->external_high;
 	if (!state->external_high)
 		state->external_pointer++;
@@ -571,9 +615,9 @@ void equalizer_external_write(dsp_device_t *device, uint16_t value) {
 
 		if (state->external_high) {
 			ram16[state->external_pointer] &= UINT8_MAX;
-			ram16[state->external_pointer] |= (value & UINT8_MAX) << 8;
+			ram16[state->external_pointer] |= ((value & UINT8_MAX) << 8);
 		} else {
-			ram16[state->external_pointer] = value & UINT8_MAX;
+			ram16[state->external_pointer] = (value & UINT8_MAX);
 		}
 		state->external_high = !state->external_high;
 		if (!state->external_high)
@@ -616,7 +660,7 @@ void equalizer_external_write(dsp_device_t *device, uint16_t value) {
 	}
 	if (state->external_high) {
 		ram32[state->external_pointer] &= UINT16_MAX;
-		ram32[state->external_pointer] |= (uint32_t) value << 16;
+		ram32[state->external_pointer] |= ((uint32_t) value << 16);
 	} else {
 		ram32[state->external_pointer] = value;
 	}
@@ -635,12 +679,12 @@ static int16_t equalizer_saturate_int16(int32_t value) {
 
 static int32_t equalizer_arithmetic_shift_right(int32_t value, size_t shift) {
 	if (value >= 0)
-		return value >> shift;
+		return (value >> shift);
 	return -((-value + (1 << shift) - 1) >> shift);
 }
 
 static int16_t equalizer_scale_soft(int16_t value, uint16_t scale) {
-	uint16_t first_stage = scale & UINT8_MAX;
+	uint16_t first_stage = (scale & UINT8_MAX);
 	int32_t scaled = value;
 
 	if (first_stage == UINT8_MAX) {
@@ -665,7 +709,7 @@ static int16_t equalizer_scale_soft(int16_t value, uint16_t scale) {
 	if ((scale & BIT(15)) != 0)
 		scaled += equalizer_arithmetic_shift_right(shifted, 1);
 
-	uint16_t saturation = scale & 0x1E00;
+	uint16_t saturation = (scale & 0x1E00);
 	int32_t limit = 127;
 
 	if (saturation == 0x0200) {
@@ -687,7 +731,7 @@ static void equalizer_write_soft(equalizer_state_t *state, size_t offset, int16_
 	uint16_t *word = &state->ram2[offset / 2];
 
 	if ((offset & 1) != 0) {
-		*word = (*word & UINT8_MAX) | (value & UINT8_MAX) << 8;
+		*word = (*word & UINT8_MAX) | ((value & UINT8_MAX) << 8);
 	} else {
 		*word = (*word & ~UINT8_MAX) | (value & UINT8_MAX);
 	}
@@ -696,7 +740,7 @@ static void equalizer_write_soft(equalizer_state_t *state, size_t offset, int16_
 static uint16_t equalizer_branch_metric(const equalizer_state_t *state, size_t timestamp, uint32_t path, size_t next) {
 	uint32_t received = state->received[timestamp % EQUALIZER_RECEIVED_VALUES];
 	int16_t real = received;
-	int16_t imaginary = received >> 16;
+	int16_t imaginary = (received >> 16);
 
 	for (size_t group = 0; group < 7; group++) {
 		size_t selector;
@@ -704,12 +748,12 @@ static uint16_t equalizer_branch_metric(const equalizer_state_t *state, size_t t
 		if (group == 0) {
 			selector = next;
 		} else if (group < 6) {
-			selector = path >> ((group - 1) * 3) & 7;
+			selector = ((path >> ((group - 1) * 3)) & 7);
 		} else {
-			selector = path >> 15 & 7;
+			selector = ((path >> 15) & 7);
 		}
 
-		uint32_t branch = state->branch[group * EQUALIZER_STATES + selector];
+		uint32_t branch = state->branch[group * EQUALIZER_EDGE_STATES + selector];
 		real = equalizer_saturate_int16(real + (int16_t) branch);
 		imaginary = equalizer_saturate_int16(imaginary + (int16_t) (branch >> 16));
 	}
@@ -717,26 +761,42 @@ static uint16_t equalizer_branch_metric(const equalizer_state_t *state, size_t t
 	uint32_t real_square = (int32_t) real * real;
 	uint32_t imaginary_square = (int32_t) imaginary * imaginary;
 	uint32_t distance = (real_square >> 10) + (imaginary_square >> 10);
-	return distance >> 1 & 0x7FFF;
+	return ((distance >> 1) & 0x7FFF);
 }
 
-static uint8_t equalizer_step(equalizer_state_t *state, size_t timestamp) {
-	int16_t candidates[EQUALIZER_STATES][EQUALIZER_STATES];
-	uint16_t branch_metrics[EQUALIZER_STATES][EQUALIZER_STATES];
-	int16_t next_metrics[EQUALIZER_STATES];
-	uint16_t survivor_branches[EQUALIZER_STATES];
-	uint32_t next_paths[EQUALIZER_STATES];
-	uint8_t next_history[EQUALIZER_STATES][EQUALIZER_HARD_HISTORY_WORDS];
+static uint16_t equalizer_gmsk_branch_metric(
+	const equalizer_state_t *state,
+	size_t timestamp,
+	uint32_t path,
+	size_t branch
+) {
+	uint32_t received = state->received[timestamp % EQUALIZER_RECEIVED_VALUES];
+	uint32_t expected = state->branch[((path & 0x1F) << 1) | branch];
+	int16_t real = equalizer_saturate_int16((int16_t) received + (int16_t) expected);
+	int16_t imaginary = equalizer_saturate_int16((int16_t) (received >> 16) + (int16_t) (expected >> 16));
+	uint32_t real_square = (int32_t) real * real;
+	uint32_t imaginary_square = (int32_t) imaginary * imaginary;
+	uint32_t distance = (real_square >> 10) + (imaginary_square >> 10);
+
+	return ((distance >> 1) & 0x7FFF);
+}
+
+static uint8_t equalizer_edge_step(equalizer_state_t *state, size_t timestamp) {
+	int16_t candidates[EQUALIZER_EDGE_STATES][EQUALIZER_EDGE_STATES];
+	uint16_t branch_metrics[EQUALIZER_EDGE_STATES][EQUALIZER_EDGE_STATES];
+	int16_t next_metrics[EQUALIZER_EDGE_STATES];
+	uint16_t survivor_branches[EQUALIZER_EDGE_STATES];
+	uint32_t next_paths[EQUALIZER_EDGE_STATES];
+	uint8_t next_history[EQUALIZER_EDGE_STATES][EQUALIZER_HARD_HISTORY_WORDS];
 	uint8_t best_state = 0;
-	bool edge = (state->config2 & TEAK_EQ_CONF2_EQ_EDGE) != 0;
 	bool right = (state->config2 & TEAK_EQ_CONF2_EQ_RIGHT) != 0;
 	size_t side = right;
 	size_t history_index = EQUALIZER_TRAINING_SYMBOLS + 1 + state->side_processed_count[side] + timestamp;
 
-	for (size_t next = 0; next < EQUALIZER_STATES; next++) {
+	for (size_t next = 0; next < EQUALIZER_EDGE_STATES; next++) {
 		size_t best_predecessor = 0;
 
-		for (size_t previous = 0; previous < EQUALIZER_STATES; previous++) {
+		for (size_t previous = 0; previous < EQUALIZER_EDGE_STATES; previous++) {
 			uint16_t branch = equalizer_branch_metric(state, timestamp, state->paths[previous], next);
 			branch_metrics[next][previous] = branch;
 			candidates[next][previous] = equalizer_saturate_int16(state->metrics[previous] + branch);
@@ -746,38 +806,34 @@ static uint8_t equalizer_step(equalizer_state_t *state, size_t timestamp) {
 
 		next_metrics[next] = candidates[next][best_predecessor];
 		survivor_branches[next] = branch_metrics[next][best_predecessor];
-		next_paths[next] = (state->paths[best_predecessor] << 3 | next) & EQUALIZER_PATH_MASK;
+		next_paths[next] = (((state->paths[best_predecessor] << 3) | next) & EQUALIZER_PATH_MASK);
 		memcpy(next_history[next], state->survivor_history[side][best_predecessor], history_index);
 		next_history[next][history_index] = next;
 		if (next_metrics[next] < next_metrics[best_state])
 			best_state = next;
 	}
 
-	if (edge) {
-		for (size_t bit = 0; bit < 3; bit++) {
-			int16_t minimum[2] = { INT16_MAX, INT16_MAX };
-			for (size_t next = 0; next < EQUALIZER_STATES; next++) {
-				for (size_t previous = 0; previous < EQUALIZER_STATES; previous++) {
-					size_t hypothesis = previous >> bit & 1;
-					if (candidates[next][previous] < minimum[hypothesis])
-						minimum[hypothesis] = candidates[next][previous];
-				}
+	for (size_t bit = 0; bit < 3; bit++) {
+		int16_t minimum[2] = { INT16_MAX, INT16_MAX };
+		for (size_t next = 0; next < EQUALIZER_EDGE_STATES; next++) {
+			for (size_t previous = 0; previous < EQUALIZER_EDGE_STATES; previous++) {
+				size_t hypothesis = ((previous >> bit) & 1);
+				if (candidates[next][previous] < minimum[hypothesis])
+					minimum[hypothesis] = candidates[next][previous];
 			}
-			int16_t soft = equalizer_scale_soft(minimum[1] - minimum[0], state->soft_scale);
-			equalizer_write_soft(state, timestamp * 4 + bit, soft);
 		}
-		equalizer_write_soft(state, timestamp * 4 + 3, 0);
+		int16_t soft = equalizer_scale_soft(minimum[1] - minimum[0], state->soft_scale);
+		equalizer_write_soft(state, timestamp * 4 + bit, soft);
 	}
+	equalizer_write_soft(state, timestamp * 4 + 3, 0);
 
-	if (edge) {
-		for (size_t next = 0; next < EQUALIZER_STATES; next++)
-			state->ram2[192 + next] = branch_metrics[next][EQUALIZER_STATES - 1];
+	for (size_t next = 0; next < EQUALIZER_EDGE_STATES; next++)
+		state->ram2[192 + next] = branch_metrics[next][EQUALIZER_EDGE_STATES - 1];
 
-		size_t output_count = MIN(history_index + 1 - state->side_processed_count[side], EQUALIZER_SYMBOLS);
-		for (size_t i = 0; i < output_count; i++) {
-			state->ram2[128 + i] = next_history[best_state][state->side_processed_count[side] + i];
-			state->combined_hard[i] = state->ram2[128 + i];
-		}
+	size_t output_count = MIN(history_index + 1 - state->side_processed_count[side], EQUALIZER_SYMBOLS);
+	for (size_t i = 0; i < output_count; i++) {
+		state->ram2[128 + i] = next_history[best_state][state->side_processed_count[side] + i];
+		state->combined_hard[i] = state->ram2[128 + i];
 	}
 
 	state->signal_quality[ARRAY_SIZE(state->signal_quality) - 1] = 3;
@@ -785,7 +841,7 @@ static uint8_t equalizer_step(equalizer_state_t *state, size_t timestamp) {
 	size_t destination_bank = state->working_source_bank[side] ^ 1;
 	size_t metric_base = right ? 0 : 8;
 	size_t path_base = right ? 16 : 24;
-	for (size_t i = 0; i < EQUALIZER_STATES; i++) {
+	for (size_t i = 0; i < EQUALIZER_EDGE_STATES; i++) {
 		state->metrics[i] = next_metrics[i];
 		state->paths[i] = next_paths[i];
 		equalizer_working_write(state, destination_bank, metric_base * 2 + i, next_metrics[i]);
@@ -796,8 +852,8 @@ static uint8_t equalizer_step(equalizer_state_t *state, size_t timestamp) {
 	}
 
 	size_t scratch_bank = destination_bank ^ 1;
-	size_t scratch_base = EQUALIZER_BRANCH_WORD_BASE + side * EQUALIZER_STATES;
-	for (size_t i = 0; i < EQUALIZER_STATES; i++) {
+	size_t scratch_base = EQUALIZER_BRANCH_WORD_BASE + side * EQUALIZER_EDGE_STATES;
+	for (size_t i = 0; i < EQUALIZER_EDGE_STATES; i++) {
 		uint32_t *scratch = &state->working[scratch_bank].words[scratch_base + i];
 		*scratch = (*scratch & ~UINT16_MAX) | survivor_branches[EQUALIZER_SCRATCH_ORDER[i]];
 	}
@@ -806,8 +862,89 @@ static uint8_t equalizer_step(equalizer_state_t *state, size_t timestamp) {
 	return best_state;
 }
 
+static uint8_t equalizer_gmsk_step(equalizer_state_t *state, size_t timestamp) {
+	int16_t next_metrics[EQUALIZER_GMSK_STATES];
+	uint32_t next_paths[EQUALIZER_GMSK_STATES];
+	uint8_t next_history[EQUALIZER_GMSK_STATES][EQUALIZER_HARD_HISTORY_WORDS];
+	uint8_t predecessors[EQUALIZER_GMSK_STATES];
+	int16_t minimum[2] = { INT16_MAX, INT16_MAX };
+	bool right = (state->config2 & TEAK_EQ_CONF2_EQ_RIGHT) != 0;
+	size_t side = right;
+	size_t history_index = EQUALIZER_TRAINING_SYMBOLS + 1 + state->side_processed_count[side] + timestamp;
+	size_t best_state = 0;
+
+	for (size_t next = 0; next < EQUALIZER_GMSK_STATES; next++) {
+		size_t branch = (next >> 3);
+		size_t first = ((next & 7) << 1);
+		size_t second = first + 1;
+		uint16_t first_branch = equalizer_gmsk_branch_metric(state, timestamp, state->paths[first], branch);
+		uint16_t second_branch = equalizer_gmsk_branch_metric(state, timestamp, state->paths[second], branch);
+		int16_t first_metric = equalizer_saturate_int16(state->metrics[first] + first_branch);
+		int16_t second_metric = equalizer_saturate_int16(state->metrics[second] + second_branch);
+		size_t previous = second_metric < first_metric ? second : first;
+
+		minimum[0] = MIN(minimum[0], first_metric);
+		minimum[1] = MIN(minimum[1], second_metric);
+		next_metrics[next] = MIN(first_metric, second_metric);
+		predecessors[next] = previous;
+		next_paths[next] = (((state->paths[previous] << 1) | branch) & EQUALIZER_GMSK_PATH_MASK);
+		memcpy(next_history[next], state->survivor_history[side][previous], history_index);
+		next_history[next][history_index] = (previous & 1);
+		if (next_metrics[next] < next_metrics[best_state])
+			best_state = next;
+	}
+
+	int16_t soft = equalizer_scale_soft(minimum[1] - minimum[0], state->soft_scale);
+	uint8_t decision = (predecessors[best_state] & 1);
+
+	if ((state->config2 & TEAK_EQ_CONF2_S_COMB) != 0) {
+		size_t output = (state->side_processed_count[side] + timestamp) * 2 % EQUALIZER_GMSK_SOFT_BYTES;
+		equalizer_write_soft(state, output, soft);
+	} else {
+		state->ram2[timestamp] = soft;
+	}
+
+	size_t destination_bank = state->working_source_bank[side] ^ 1;
+	size_t metric_base = right ? 0 : 8;
+	size_t path_base = right ? 16 : 24;
+
+	for (size_t next = 0; next < EQUALIZER_GMSK_STATES; next++) {
+		state->metrics[next] = next_metrics[next];
+		state->paths[next] = next_paths[next];
+		equalizer_working_write(state, destination_bank, metric_base * 2 + next, next_metrics[next]);
+		state->survivor_paths[side][next] = next_paths[next];
+		memcpy(state->survivor_history[side][next], next_history[next], sizeof(next_history[next]));
+	}
+
+	for (size_t branch = 0; branch < 2; branch++) {
+		for (size_t group = 0; group < 4; group++) {
+			size_t first = group + branch * 8;
+			size_t second = first + 4;
+			size_t survivor = next_metrics[second] < next_metrics[first] ? second : first;
+			size_t output = group + branch * 4;
+
+			state->working[destination_bank].words[path_base + output] = next_paths[survivor];
+		}
+	}
+
+	if ((state->operation_config & TEAK_EQ_CONF2_S_COMB) != 0) {
+		size_t output_count = MIN(history_index + 1, EQUALIZER_SYMBOLS);
+
+		for (size_t i = 0; i < output_count; i++) {
+			state->ram2[128 + i] = next_history[best_state][i];
+			state->combined_hard[i] = state->ram2[128 + i];
+		}
+	}
+
+	state->working_source_bank[side] = destination_bank;
+	state->signal_quality[ARRAY_SIZE(state->signal_quality) - 1] = 3;
+	return decision;
+}
+
 static void equalizer_store_gmsk_outputs(equalizer_state_t *state, size_t timestamp) {
-	if (timestamp >= EQUALIZER_TRAINING_SYMBOLS + EQUALIZER_SOFT_DELAY) {
+	bool combined = (state->operation_config & TEAK_EQ_CONF2_S_COMB) != 0;
+
+	if (!combined && timestamp >= EQUALIZER_TRAINING_SYMBOLS + EQUALIZER_SOFT_DELAY) {
 		uint8_t decision = state->decisions[timestamp - EQUALIZER_SOFT_DELAY];
 		state->ram2[timestamp] = decision != 0 ? UINT8_MAX : 1;
 	}
@@ -817,6 +954,17 @@ static void equalizer_store_gmsk_outputs(equalizer_state_t *state, size_t timest
 
 static void equalizer_complete(equalizer_state_t *state) {
 	bool right = (state->config2 & TEAK_EQ_CONF2_EQ_RIGHT) != 0;
+	bool edge = (state->config2 & TEAK_EQ_CONF2_EQ_EDGE) != 0;
+
+	if (!edge && state->processed_count >= EQUALIZER_TRAINING_SYMBOLS) {
+		size_t path_base = right ? 16 : 24;
+
+		for (size_t bank = 0; bank < ARRAY_SIZE(state->working); bank++) {
+			for (size_t i = 0; i < ARRAY_SIZE(EQUALIZER_GMSK_FINAL_PATHS); i++)
+				state->working[bank].words[path_base + i] = EQUALIZER_GMSK_FINAL_PATHS[i];
+		}
+	}
+
 	state->side_processed_count[right] += state->processed_count;
 	state->active = false;
 	state->config2 &= ~TEAK_EQ_CONF2_EQ_ON;
@@ -828,14 +976,14 @@ static void equalizer_complete(equalizer_state_t *state) {
 static void equalizer_advance_timestamp(equalizer_state_t *state) {
 	size_t count = state->configured_count == 0 ? 1 : state->configured_count;
 	size_t timestamp = state->processed_count;
-	uint8_t symbol = equalizer_step(state, timestamp);
+	bool edge = (state->config2 & TEAK_EQ_CONF2_EQ_EDGE) != 0;
+	uint8_t symbol = edge ? equalizer_edge_step(state, timestamp) : equalizer_gmsk_step(state, timestamp);
 
-	if ((state->config2 & TEAK_EQ_CONF2_EQ_EDGE) != 0) {
-		state->decisions[timestamp] = symbol;
-	} else {
-		state->decisions[timestamp] = (int16_t) state->received[timestamp % EQUALIZER_RECEIVED_VALUES] >= 0;
+	if (!edge && (state->operation_config & TEAK_EQ_CONF2_S_COMB) == 0)
+		symbol = (int16_t) state->received[timestamp % EQUALIZER_RECEIVED_VALUES] >= 0;
+	state->decisions[timestamp] = symbol;
+	if (!edge)
 		equalizer_store_gmsk_outputs(state, timestamp);
-	}
 
 	state->processed_count++;
 	state->completed_count = state->processed_count;

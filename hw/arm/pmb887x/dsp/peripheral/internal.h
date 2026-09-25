@@ -81,8 +81,8 @@ bool afe_audio_has_room(dsp_device_t *device, size_t count);
 void afe_audio_set_format(dsp_device_t *device, unsigned freq, unsigned channels);
 
 dsp_device_t *baseband_create(const pmb887x_dsp_peripheral_config_t *config, dsp_device_t *interrupt, const dsp_host_t *host);
-void baseband_set_clock(dsp_device_t *device, uint32_t frequency);
 void baseband_set_signal(dsp_device_t *device, pmb887x_dsp_gsm_signal_t signal, bool level);
+void baseband_set_iq_source(dsp_device_t *device, pmb887x_rf_iq_source_t *source);
 
 dsp_device_t *chdec_create(const pmb887x_dsp_peripheral_config_t *config, dsp_device_t *interrupt);
 void chdec_advance(dsp_device_t *device, size_t cycles);

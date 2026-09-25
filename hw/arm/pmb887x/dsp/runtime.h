@@ -7,37 +7,37 @@
 #include "hw/arm/pmb887x/dsp/signals.h"
 
 typedef struct dsp_runtime_t dsp_runtime_t;
+typedef struct pmb887x_rf_iq_source_t pmb887x_rf_iq_source_t;
 
 dsp_runtime_t *dsp_runtime_create(
-	const pmb887x_dsp_config_t *config, uint16_t rom_version, const uint8_t *program_rom, const uint8_t *data_rom,
-	void *device_opaque, void (*notify_activity)(void *opaque), void (*notify_comm)(void *opaque, uint16_t flags, bool set),
+	const pmb887x_dsp_config_t *config,
+	uint16_t rom_version,
+	const uint8_t *program_rom,
+	const uint8_t *data_rom,
+	void *device_opaque,
+	void (*notify_activity)(void *opaque),
+	void (*notify_comm)(void *opaque, uint16_t flags, bool set),
 	uint32_t (*ssc_transfer)(void *opaque, uint32_t value)
 );
 void dsp_runtime_destroy(dsp_runtime_t *runtime);
 void dsp_runtime_reset(dsp_runtime_t *runtime);
 void dsp_runtime_set_clock(dsp_runtime_t *runtime, bool enabled);
-bool dsp_runtime_run(dsp_runtime_t *runtime);
+void dsp_runtime_set_clock_divider(dsp_runtime_t *runtime, uint32_t divider);
+size_t dsp_runtime_run(dsp_runtime_t *runtime, size_t max_cycles, bool *deferred);
+void dsp_runtime_advance_idle(dsp_runtime_t *runtime, size_t cycles, size_t afe_samples);
+bool dsp_runtime_is_running(const dsp_runtime_t *runtime);
 bool dsp_runtime_is_idle(const dsp_runtime_t *runtime);
-bool dsp_runtime_realtime_active(const dsp_runtime_t *runtime);
-bool dsp_runtime_is_maskable_interrupt_active(const dsp_runtime_t *runtime);
-uint16_t dsp_runtime_get_irq_flags(dsp_runtime_t *runtime, size_t group);
-uint16_t dsp_runtime_get_irq_pending_flags(dsp_runtime_t *runtime, size_t group);
-void dsp_runtime_get_irq_debug(dsp_runtime_t *runtime, uint8_t *ie, uint8_t *interrupt_mask, uint8_t *lines);
-uint16_t dsp_runtime_peek(dsp_runtime_t *runtime, uint16_t address);
 void dsp_runtime_wake(dsp_runtime_t *runtime);
-void dsp_runtime_kick(dsp_runtime_t *runtime);
 bool dsp_runtime_take_program_start(dsp_runtime_t *runtime, uint32_t *pc);
 bool dsp_runtime_is_program_warming(const dsp_runtime_t *runtime);
 void dsp_runtime_finish_program_warmup(dsp_runtime_t *runtime);
-void dsp_runtime_thread_enter(void);
-void dsp_runtime_thread_exit(void);
 uint16_t dsp_runtime_shared_read(dsp_runtime_t *runtime, uint16_t offset);
 void dsp_runtime_shared_write(dsp_runtime_t *runtime, uint16_t offset, uint16_t value);
 uint64_t dsp_runtime_shared_read_bytes(dsp_runtime_t *runtime, size_t offset, size_t size);
 void dsp_runtime_shared_write_bytes(dsp_runtime_t *runtime, size_t offset, uint64_t value, size_t size);
 void dsp_runtime_set_request(dsp_runtime_t *runtime, size_t index, bool level);
 void dsp_runtime_set_input(dsp_runtime_t *runtime, size_t index, bool level);
-void dsp_runtime_set_gsm_clock(dsp_runtime_t *runtime, uint32_t frequency);
+void dsp_runtime_set_iq_source(dsp_runtime_t *runtime, pmb887x_rf_iq_source_t *source);
 void dsp_runtime_set_gsm_signal(dsp_runtime_t *runtime, pmb887x_dsp_gsm_signal_t signal, bool level);
 uint16_t dsp_runtime_get_outputs(dsp_runtime_t *runtime);
 uint32_t dsp_runtime_get_pc(const dsp_runtime_t *runtime);

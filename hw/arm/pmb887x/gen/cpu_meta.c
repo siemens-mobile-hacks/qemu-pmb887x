@@ -1525,6 +1525,7 @@ static const pmb887x_io_field_t cgu_con1_fields[] = {
 };
 
 static const pmb887x_io_value_t cgu_cgu_con2_dsp_clksel_values[] = {
+	{"OSC",		CGU_CON2_DSP_CLKSEL_OSC},
 	{"PHASE1",	CGU_CON2_DSP_CLKSEL_PHASE1},
 	{"DISABLE",	CGU_CON2_DSP_CLKSEL_DISABLE},
 };

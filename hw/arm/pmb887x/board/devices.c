@@ -5,7 +5,9 @@
 #include "hw/arm/pmb887x/board/gpio.h"
 #include "hw/arm/pmb887x/board/keyboard.h"
 #include "hw/arm/pmb887x/board/memory.h"
+#include "hw/arm/pmb887x/dsp.h"
 #include "hw/arm/pmb887x/mmicif.h"
+#include "hw/arm/pmb887x/rf.h"
 #include "hw/arm/pmb887x/sim.h"
 #include "hw/arm/pmb887x/sim/sim_card.h"
 #include "hw/arm/pmb887x/utils/regexp.h"
@@ -29,6 +31,7 @@ enum pmb887x_dev_bus_type_t {
 	DEV_BUS_NONE,
 	DEV_BUS_I2C,
 	DEV_BUS_SSI,
+	DEV_BUS_RFSSC,
 	DEV_BUS_SIM,
 	DEV_BUS_EBU,
 	DEV_BUS_MMICIF,
@@ -202,6 +205,10 @@ static pmb887x_dev_t devices_meta[] = {
 
 	// RF transceiver
 	{
+		.name = "hd155153np",
+		.props = {},
+	},
+	{
 		.name = "pmb6272",
 		.props = {},
 	},
@@ -290,6 +297,8 @@ static pmb887x_dev_bus_type_t bus_get_type(Object *dev) {
 		return DEV_BUS_I2C;
 	if (strcmp(typename, "SSI") == 0)
 		return DEV_BUS_SSI;
+	if (strcmp(typename, TYPE_PMB887X_RFSSC_BUS) == 0)
+		return DEV_BUS_RFSSC;
 	if (strcmp(typename, TYPE_PMB887X_SIM) == 0)
 		return DEV_BUS_SIM;
 	if (strcmp(typename, "pmb887x-ebu") == 0)
@@ -445,9 +454,11 @@ static DeviceState *device_create_from_config(DeviceState *ebuc, const char *id,
 			device_init_keys_from_config(dev, table);
 			break;
 		}
-		case DEV_BUS_SSI: {
+		case DEV_BUS_SSI:
+		case DEV_BUS_RFSSC: {
 			dev = qdev_new(type);
-			qdev_prop_set_uint8(DEVICE(dev), "cs", global_cs_index++);
+			if (bus_type == DEV_BUS_SSI)
+				qdev_prop_set_uint8(DEVICE(dev), "cs", global_cs_index++);
 			dev->id = g_strdup(id);
 			device_init_props_from_config(dev, meta, table);
 			qdev_realize_and_unref(dev, BUS(bus), &error_fatal);
@@ -455,6 +466,7 @@ static DeviceState *device_create_from_config(DeviceState *ebuc, const char *id,
 			device_init_keys_from_config(dev, table);
 			break;
 		}
+
 		case DEV_BUS_SIM: {
 			dev = qdev_new(type);
 			dev->id = g_strdup(id);
@@ -504,6 +516,7 @@ static DeviceState *device_create_from_config(DeviceState *ebuc, const char *id,
 
 void pmb887x_board_init_devices(DeviceState *ebuc) {
 	pmb887x_board_t *board = pmb887x_board();
+	pmb887x_rf_iq_source_t *iq_source = NULL;
 
 	toml_datum_t value = toml_table_get(board->config, TOML_TABLE, "peripheral", false);
 	if (value.type == TOML_UNKNOWN)
@@ -511,7 +524,21 @@ void pmb887x_board_init_devices(DeviceState *ebuc) {
 
 	for (int i = 0; i < value.u.tab.size; i++) {
 		const char *id = value.u.tab.key[i];
-		device_create_from_config(ebuc, id, toml_table_get(value, TOML_TABLE, id, true));
+		DeviceState *dev = device_create_from_config(ebuc, id, toml_table_get(value, TOML_TABLE, id, true));
+		Object *source = dev != NULL ? object_dynamic_cast(OBJECT(dev), TYPE_PMB887X_RF_IQ_SOURCE) : NULL;
+
+		if (source != NULL) {
+			if (iq_source != NULL)
+				hw_error("Multiple RF I/Q sources are not supported");
+			iq_source = PMB887X_RF_IQ_SOURCE(source);
+		}
+	}
+
+	if (iq_source != NULL) {
+		DeviceState *dsp = qdev_find_recursive(sysbus_get_default(), "DSP");
+
+		g_assert(dsp != NULL);
+		pmb887x_dsp_set_iq_source(dsp, iq_source);
 	}
 
 	DeviceState *flash_blk = qdev_find_recursive(sysbus_get_default(), "FULLFLASH");

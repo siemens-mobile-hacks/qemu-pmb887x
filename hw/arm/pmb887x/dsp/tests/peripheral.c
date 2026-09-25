@@ -1,5 +1,6 @@
 #include "qemu/osdep.h"
 
+#include "hw/arm/pmb887x/gen/dsp.h"
 #include "hw/arm/pmb887x/dsp/peripheral.h"
 #include "hw/arm/pmb887x/regs_dump.h"
 #include "hw/arm/pmb887x/trace_common.h"
@@ -10,6 +11,7 @@
 #define TEST_MODULATOR_BASE	0x1040
 #define TEST_AFE_BASE		0x1050
 #define TEST_UNKNOWN_BASE	0x1060
+#define TEST_I2S_BASE		0x1070
 
 uint64_t pmb887x_trace_io_mask;
 uint64_t pmb887x_trace_log_mask;
@@ -75,6 +77,7 @@ static pmb887x_dsp_peripheral_bus_t *test_bus_create(test_host_t *host) {
 		{ "DSP", PMB887X_DSP_PERIPHERAL_DSP, TEST_DSP_BASE, 0x09 },
 		{ "MOD", PMB887X_DSP_PERIPHERAL_MODULATOR, TEST_MODULATOR_BASE, 0x0B },
 		{ "AFE", PMB887X_DSP_PERIPHERAL_AFE, TEST_AFE_BASE, 0x10 },
+		{ "I2S1", PMB887X_DSP_PERIPHERAL_I2S, TEST_I2S_BASE, 0x0B },
 	};
 	static const pmb887x_dsp_config_t config = {
 		.mmio_base = TEST_INTERRUPT_BASE,
@@ -155,6 +158,12 @@ static void test_mcs(void) {
 	g_assert_cmphex(pmb887x_dsp_peripheral_bus_read(bus, TEST_MCS_BASE + 3), ==, 0xFFFA);
 	pmb887x_dsp_peripheral_bus_write(bus, TEST_MCS_BASE + 5, 1);
 	g_assert_cmphex(pmb887x_dsp_peripheral_bus_read(bus, TEST_MCS_BASE + 3), ==, 0xFFFB);
+
+	pmb887x_dsp_peripheral_bus_request_mcu_semaphores(bus, 3);
+	pmb887x_dsp_peripheral_bus_write(bus, TEST_MCS_BASE + 4, 1);
+	pmb887x_dsp_peripheral_bus_reset(bus);
+	g_assert_cmphex(pmb887x_dsp_peripheral_bus_get_mcu_semaphore_status(bus), ==, 0xFFFC);
+	g_assert_cmphex(pmb887x_dsp_peripheral_bus_read(bus, TEST_MCS_BASE + 3), ==, UINT16_MAX);
 	pmb887x_dsp_peripheral_bus_destroy(bus);
 }
 
@@ -185,6 +194,20 @@ static void test_modulator(void) {
 	g_assert_cmphex(pmb887x_dsp_peripheral_bus_read(bus, TEST_MODULATOR_BASE), ==, 0x0101);
 	pmb887x_dsp_peripheral_bus_write(bus, TEST_MODULATOR_BASE + 4, UINT16_MAX);
 	g_assert_cmphex(pmb887x_dsp_peripheral_bus_read(bus, TEST_MODULATOR_BASE + 4), ==, 0x0FFF);
+	pmb887x_dsp_peripheral_bus_destroy(bus);
+}
+
+static void test_i2s_idle_clock(void) {
+	test_host_t host = {};
+	pmb887x_dsp_peripheral_bus_t *bus = test_bus_create(&host);
+
+	pmb887x_dsp_peripheral_bus_reset(bus);
+	pmb887x_dsp_peripheral_bus_write(bus, TEST_I2S_BASE + TEAK_I2S_TXINTADDR, 2);
+	pmb887x_dsp_peripheral_bus_write(bus, TEST_I2S_BASE + TEAK_I2S_CTRL,
+		TEAK_I2S_CTRL_I2SON | TEAK_I2S_CTRL_I2STXSTART);
+	pmb887x_dsp_peripheral_bus_advance_idle(bus, 128);
+	g_assert_cmphex(pmb887x_dsp_peripheral_bus_read(bus, TEST_I2S_BASE + TEAK_I2S_RWADDR), ==, 2);
+	g_assert_cmphex(dsp_bus_get_irq_flags(bus, 1), ==, TEAK_INT_FINTB0_I2S1TX);
 	pmb887x_dsp_peripheral_bus_destroy(bus);
 }
 
@@ -233,6 +256,7 @@ int main(int argc, char **argv) {
 	g_test_add_func("/pmb887x/dsp/peripheral/mcs", test_mcs);
 	g_test_add_func("/pmb887x/dsp/peripheral/interrupt", test_interrupt);
 	g_test_add_func("/pmb887x/dsp/peripheral/modulator", test_modulator);
+	g_test_add_func("/pmb887x/dsp/peripheral/i2s-idle-clock", test_i2s_idle_clock);
 	g_test_add_func("/pmb887x/dsp/peripheral/unknown", test_unknown);
 	g_test_add_func("/pmb887x/dsp/peripheral/trace", test_trace);
 	return g_test_run();

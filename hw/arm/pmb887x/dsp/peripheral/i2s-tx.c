@@ -9,7 +9,8 @@
 #include "hw/arm/pmb887x/trace.h"
 
 #define I2S_TX_REGISTER_COUNT	(TEAK_I2S3_TXINTADDR + 1)
-#define I2S_TX_SAMPLE_CYCLES	16U
+#define I2S_TX_FRAME_CLOCKS	64U
+#define I2S_TX_CHANNELS		2U
 #define I2S_TX_INTERRUPT_GROUP	1
 
 typedef struct i2s_tx_state_t i2s_tx_state_t;
@@ -25,6 +26,15 @@ static bool i2s_tx_active(const i2s_tx_state_t *state) {
 	uint16_t control = state->registers[TEAK_I2S3_CTRL];
 	uint16_t active = TEAK_I2S3_CTRL_I2SON | TEAK_I2S3_CTRL_I2STXSTART;
 	return (control & active) == active;
+}
+
+static size_t i2s_tx_sample_cycles(const i2s_tx_state_t *state) {
+	uint16_t numerator = (state->registers[TEAK_I2S3_NUM] & TEAK_I2S3_NUM_NUMERATOR);
+	uint16_t denominator = state->registers[TEAK_I2S3_DEN];
+
+	if (numerator == 0)
+		return 0;
+	return (size_t) denominator * I2S_TX_FRAME_CLOCKS / I2S_TX_CHANNELS / numerator;
 }
 
 static void i2s_tx_destroy(dsp_device_t *device) {
@@ -102,14 +112,15 @@ dsp_device_t *i2s_tx_create(const pmb887x_dsp_peripheral_config_t *config, dsp_d
 
 void i2s_tx_advance(dsp_device_t *device, size_t cycles) {
 	i2s_tx_state_t *state = device->state;
+	size_t sample_cycles = i2s_tx_sample_cycles(state);
 
-	if (!i2s_tx_active(state))
+	if (!i2s_tx_active(state) || sample_cycles == 0)
 		return;
 
 	state->sample_cycles += cycles;
 
-	while (i2s_tx_active(state) && state->sample_cycles >= I2S_TX_SAMPLE_CYCLES) {
-		state->sample_cycles -= I2S_TX_SAMPLE_CYCLES;
+	while (i2s_tx_active(state) && state->sample_cycles >= sample_cycles) {
+		state->sample_cycles -= sample_cycles;
 		state->position++;
 		state->position &= TEAK_I2S3_RADDR_RDADDR;
 
