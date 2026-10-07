@@ -61,6 +61,7 @@ struct pmb887x_i2c_t {
 
 	bool wait_for_next_tick;
 	bool in_work;
+	bool nack_received;
 	uint32_t trx_cnt;
 	uint32_t wcycle;
 
@@ -96,13 +97,17 @@ static void i2c_timer_schedule(pmb887x_i2c_t *p) {
 }
 
 static void i2c_update_syscon(pmb887x_i2c_t *p, uint32_t value) {
-	if ((p->syscon & I2Cv1_SYSCON_IRQD) && !(value & I2Cv1_SYSCON_IRQD))
+	if ((p->syscon & I2Cv1_SYSCON_IRQD) && !(value & I2Cv1_SYSCON_IRQD)) {
 		DPRINTF("reset IRQD\n");
+		pmb887x_src_update(&p->data_src, 0, MOD_SRC_CLRR);
+	}
 	if (!(p->syscon & I2Cv1_SYSCON_IRQD) && (value & I2Cv1_SYSCON_IRQD))
 		DPRINTF("set IRQD\n");
 
-	if ((p->syscon & I2Cv1_SYSCON_IRQE) && !(value & I2Cv1_SYSCON_IRQE))
+	if ((p->syscon & I2Cv1_SYSCON_IRQE) && !(value & I2Cv1_SYSCON_IRQE)) {
 		DPRINTF("reset IRQE\n");
+		pmb887x_src_update(&p->end_src, 0, MOD_SRC_CLRR);
+	}
 	if (!(p->syscon & I2Cv1_SYSCON_IRQE) && (value & I2Cv1_SYSCON_IRQE))
 		DPRINTF("set IRQE\n");
 
@@ -124,6 +129,8 @@ static void i2c_update_syscon(pmb887x_i2c_t *p, uint32_t value) {
 	if (!(p->syscon & I2Cv1_SYSCON_IRQD) && (value & I2Cv1_SYSCON_IRQD))
 		pmb887x_src_update(&p->data_src, 0, MOD_SRC_SETR);
 
+	if ((p->syscon & I2Cv1_SYSCON_IRQP) && !(value & I2Cv1_SYSCON_IRQP))
+		pmb887x_src_update(&p->proto_src, 0, MOD_SRC_CLRR);
 	if (!(p->syscon & I2Cv1_SYSCON_IRQP) && (value & I2Cv1_SYSCON_IRQP))
 		pmb887x_src_update(&p->proto_src, 0, MOD_SRC_SETR);
 
@@ -146,11 +153,11 @@ static void i2c_update_syscon(pmb887x_i2c_t *p, uint32_t value) {
 
 	if ((p->syscon & I2Cv1_SYSCON_MOD) == I2Cv1_SYSCON_MOD_DISABLED) {
 		p->state = I2C_STATE_NONE;
+		p->nack_received = false;
 		p->trx_cnt = 0;
 		p->wcycle = 0;
 		p->syscon = p->syscon & ~(
 			I2Cv1_SYSCON_BB |
-			I2Cv1_SYSCON_STP |
 			I2Cv1_SYSCON_IRQE |
 			I2Cv1_SYSCON_IRQD |
 			I2Cv1_SYSCON_IRQP
@@ -161,6 +168,7 @@ static void i2c_update_syscon(pmb887x_i2c_t *p, uint32_t value) {
 		if ((p->syscon & I2Cv1_SYSCON_BUM)) {
 			if ((p->syscon & I2Cv1_SYSCON_TRX)) {
 				p->state = I2C_STATE_TX;
+				p->nack_received = false;
 				p->trx_cnt = 0;
 				p->wcycle = 0;
 			} else {
@@ -181,6 +189,8 @@ static uint32_t i2c_get_trx_size(pmb887x_i2c_t *p) {
 
 static bool i2c_tx(pmb887x_i2c_t *p) {
 	uint8_t byte = (p->rtb >> (p->trx_cnt * 8)) & 0xFF;
+	bool nack;
+
 	if (p->wcycle == 0) {
 		if ((byte & 1)) {
 			DPRINTF("[TX] i2c_start_transfer: %02X (read)\n", byte >> 1);
@@ -188,7 +198,7 @@ static bool i2c_tx(pmb887x_i2c_t *p) {
 			DPRINTF("[TX] i2c_start_transfer: %02X (write)\n", byte >> 1);
 		}
 
-		bool nack = i2c_start_transfer(p->bus, byte >> 1, (byte & 1) != 0);
+		nack = i2c_start_transfer(p->bus, byte >> 1, (byte & 1) != 0);
 		p->syscon |= I2Cv1_SYSCON_BB;
 		p->syscon &= ~I2Cv1_SYSCON_RSC;
 		p->syscon &= ~I2Cv1_SYSCON_IRQE;
@@ -201,11 +211,17 @@ static bool i2c_tx(pmb887x_i2c_t *p) {
 		}
 	} else {
 		DPRINTF("[TX] send %02X\n", byte);
-		i2c_send(p->bus, byte);
+		nack = i2c_send(p->bus, byte) != 0;
+		if (nack) {
+			p->syscon |= I2Cv1_SYSCON_LRB;
+			DPRINTF("[TX] NACK for data: %02X\n", byte);
+		} else {
+			p->syscon &= ~I2Cv1_SYSCON_LRB;
+		}
 	}
 	p->wcycle++;
 	p->trx_cnt++;
-	return true;
+	return !nack;
 }
 
 static void i2c_work(pmb887x_i2c_t *p) {
@@ -221,13 +237,14 @@ static void i2c_work(pmb887x_i2c_t *p) {
 
 	if (p->state == I2C_STATE_TX) {
 		if (!(p->syscon & I2Cv1_SYSCON_IRQD)) {
+			bool acknowledged = true;
 			if (p->trx_cnt < i2c_get_trx_size(p))
-				i2c_tx(p);
+				acknowledged = i2c_tx(p);
 
-			if (p->trx_cnt >= i2c_get_trx_size(p)) {
+			if (!acknowledged || p->trx_cnt >= i2c_get_trx_size(p)) {
+				p->nack_received = !acknowledged;
 				DPRINTF("[TX] all bytes transmitted\n");
 				i2c_update_syscon(p, p->syscon | I2Cv1_SYSCON_IRQD);
-				pmb887x_src_update(&p->data_src, 0, MOD_SRC_SETR);
 				p->state = I2C_STATE_TX_DONE;
 			}
 			i2c_timer_schedule(p);
@@ -241,13 +258,15 @@ static void i2c_work(pmb887x_i2c_t *p) {
 			p->state = I2C_STATE_RX;
 			p->trx_cnt = 0;
 			p->wcycle = 0;
+		} else if (p->nack_received && !(p->syscon & I2Cv1_SYSCON_IRQD)) {
+			i2c_update_syscon(p, p->syscon | I2Cv1_SYSCON_IRQE);
+			p->state = I2C_STATE_END;
 		} else if (!(p->syscon & I2Cv1_SYSCON_IRQD)) {
 			DPRINTF("[TX] new transfer requested\n");
 			p->state = I2C_STATE_TX;
 			p->trx_cnt = 0;
 		} else {
 			i2c_update_syscon(p, p->syscon | I2Cv1_SYSCON_IRQD);
-			pmb887x_src_update(&p->data_src, 0, MOD_SRC_SETR);
 		}
 		i2c_timer_schedule(p);
 	} else if (p->state == I2C_STATE_RX) {
@@ -260,7 +279,7 @@ static void i2c_work(pmb887x_i2c_t *p) {
 					i2c_ack(p->bus);
 				}
 				p->rtb &= ~(0xFF << (8 * p->trx_cnt));
-				p->rtb |= byte << (8 * p->trx_cnt);
+				p->rtb |= (byte << (8 * p->trx_cnt));
 				p->trx_cnt++;
 				DPRINTF("[RX] read %02X\n", byte);
 			}
@@ -269,7 +288,6 @@ static void i2c_work(pmb887x_i2c_t *p) {
 			if (p->trx_cnt >= i2c_get_trx_size(p)) {
 				DPRINTF("[RX] all bytes read\n");
 				i2c_update_syscon(p, p->syscon | I2Cv1_SYSCON_IRQD);
-				pmb887x_src_update(&p->data_src, 0, MOD_SRC_SETR);
 				if (!(p->syscon & I2Cv1_SYSCON_STP)) {
 					p->state = I2C_STATE_RX_DONE;
 				} else {
@@ -291,19 +309,29 @@ static void i2c_work(pmb887x_i2c_t *p) {
 			p->trx_cnt = 0;
 		} else {
 			i2c_update_syscon(p, p->syscon | I2Cv1_SYSCON_IRQD);
-			pmb887x_src_update(&p->data_src, 0, MOD_SRC_SETR);
 		}
 		i2c_timer_schedule(p);
 	} else if (p->state == I2C_STATE_END) {
-		DPRINTF("[TRX] i2c_end_transfer\n");
-		if (!(p->state & I2Cv1_SYSCON_RSC)) {
-			i2c_end_transfer(p->bus);
-			i2c_update_syscon(p, (p->syscon & ~(I2Cv1_SYSCON_BB | I2Cv1_SYSCON_BUM | I2Cv1_SYSCON_STP | I2Cv1_SYSCON_ACKDIS)) | I2Cv1_SYSCON_IRQE);
-		} else {
-			i2c_update_syscon(p, (p->syscon & ~(I2Cv1_SYSCON_BB | I2Cv1_SYSCON_STP | I2Cv1_SYSCON_ACKDIS)) | I2Cv1_SYSCON_IRQE);
+		uint32_t clear = I2Cv1_SYSCON_BB | I2Cv1_SYSCON_STP | I2Cv1_SYSCON_ACKDIS;
+
+		if ((p->syscon & I2Cv1_SYSCON_IRQD) != 0) {
+			i2c_timer_schedule(p);
+			p->in_work = false;
+			return;
 		}
-		pmb887x_src_update(&p->end_src, 0, MOD_SRC_SETR);
+		if (p->nack_received && (p->syscon & I2Cv1_SYSCON_BUM) != 0) {
+			p->in_work = false;
+			return;
+		}
+
+		DPRINTF("[TRX] i2c_end_transfer\n");
+		if (!(p->syscon & I2Cv1_SYSCON_RSC)) {
+			i2c_end_transfer(p->bus);
+			clear |= I2Cv1_SYSCON_BUM;
+		}
+		i2c_update_syscon(p, (p->syscon & ~clear) | I2Cv1_SYSCON_IRQE);
 		p->state = I2C_STATE_NONE;
+		p->nack_received = false;
 		p->wcycle = 0;
 	}
 
@@ -331,7 +359,7 @@ static uint64_t i2c_io_read(void *opaque, hwaddr haddr, unsigned size) {
 		case I2Cv1_SYSCON:
 			value = p->syscon;
 			value &= ~I2Cv1_SYSCON_CO;
-			value |= p->trx_cnt <<I2Cv1_SYSCON_CO_SHIFT;
+			value |= (p->trx_cnt << I2Cv1_SYSCON_CO_SHIFT);
 			break;
 
 		case I2Cv1_BUSCON:
@@ -365,9 +393,8 @@ static uint64_t i2c_io_read(void *opaque, hwaddr haddr, unsigned size) {
 			break;
 
 		default:
-			// IO_DUMP_READ(haddr + p->mmio.addr, size, 0xFFFFFFFF);
 			EPRINTF("unknown reg access: %02"PRIX64"\n", haddr);
-			// exit(1);
+			break;
 	}
 
 	IO_DUMP_READ(haddr + p->mmio.addr, size, value);
@@ -490,7 +517,7 @@ static void i2c_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned si
 
 		default:
 			EPRINTF("unknown reg access: %02"PRIX64"\n", haddr);
-			exit(1);
+			break;
 	}
 }
 
@@ -562,6 +589,7 @@ static void i2c_reset(DeviceState *dev) {
 	p->state = I2C_STATE_NONE;
 	p->wait_for_next_tick = false;
 	p->in_work = false;
+	p->nack_received = false;
 	p->trx_cnt = 0;
 	p->wcycle = 0;
 
