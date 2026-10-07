@@ -14,6 +14,7 @@
 #include "qemu/timer.h"
 #include "hw/core/qdev-properties.h"
 #include "hw/core/qdev-clock.h"
+#include "hw/audio/i2s.h"
 #include "hw/ssi/ssi.h"
 #include "system/cpu-timers.h"
 #include "system/runstate.h"
@@ -28,6 +29,7 @@
 #include "hw/arm/pmb887x/dsp/peripheral/internal.h"
 #include "hw/arm/pmb887x/regs_dump.h"
 #include "hw/arm/pmb887x/mod.h"
+#include "hw/arm/pmb887x/rf.h"
 #include "hw/arm/pmb887x/trace.h"
 
 #define DSP_RAM_SIZE		(DSP_IO_SIZE - DSP_RAM0)
@@ -40,8 +42,13 @@
 #define DSP_RAM_READ_WAIT_CYCLES	240
 #define DSP_RAM_WRITE16_WAIT_CYCLES	276
 #define DSP_RAM_WRITE32_WAIT_CYCLES	264
-#define DSP_AFE_FREQUENCY	8000
+#define DSP_AFE_CLOCK_HZ	8000000
 #define DSP_SSC_BUS_NAME	"pmb887x-dsp-ssc"
+#define DSP_I2S1_TX_BUS_NAME	"pmb887x-dsp-i2s1-tx"
+#define DSP_I2S1_RX_BUS_NAME	"pmb887x-dsp-i2s1-rx"
+#define DSP_I2S2_TX_BUS_NAME	"pmb887x-dsp-i2s2-tx"
+#define DSP_I2S2_RX_BUS_NAME	"pmb887x-dsp-i2s2-rx"
+#define DSP_IQ_RX_BUS_NAME	"pmb887x-dsp-iq-rx"
 #define TYPE_PMB887X_DSP	"pmb887x-dsp"
 #define PMB887X_DSP(obj)	OBJECT_CHECK(dsp_state_t, (obj), TYPE_PMB887X_DSP)
 
@@ -75,12 +82,17 @@ struct dsp_state_t {
 	uint32_t sem_set;
 	uint32_t sem_status;
 	uint8_t ram[DSP_RAM_SIZE];
-	uint32_t ram0_value;
 	uint32_t revision;
 	uint32_t rom_version;
 	Clock *gsm_clock;
+	Clock *ms_clock;
 	qemu_irq mcu_interrupts[PMB887X_DSP_MCU_INT_COUNT];
 	qemu_irq outputs[DSP_OUTPUT_COUNT];
+	qemu_irq i2s2_outputs[PMB887X_DSP_I2S_OUTPUT_COUNT];
+	qemu_irq active_output;
+	dsp_i2s_port_t i2s1;
+	dsp_i2s_port_t i2s2;
+	pmb887x_iq_bus_t *iq_rx_bus;
 
 	pmb887x_clc_reg_t clc;
 
@@ -121,6 +133,10 @@ static void dsp_input1(void *opaque, int id, int level) {
 }
 
 static void dsp_gsm_input(void *opaque, int signal, int level) {
+}
+
+static void dsp_i2s2_input(void *_opaque, int _signal, int _level) {
+	/* The GPIOs describe pin state; audio frames use the I2S bus. */
 }
 
 static uint32_t dsp_ram_read(dsp_state_t *p, uint32_t offset, unsigned size) {
@@ -528,6 +544,11 @@ static const MemoryRegionOps io_ops = {
 static void dsp_init(Object *obj) {
 	dsp_state_t *p = PMB887X_DSP(obj);
 	pmb887x_clc_init(&p->clc, DEVICE(obj));
+	p->i2s1.tx_bus = i2s_tx_bus_init(DEVICE(obj), DSP_I2S1_TX_BUS_NAME);
+	p->i2s1.rx_bus = i2s_rx_bus_init(DEVICE(obj), DSP_I2S1_RX_BUS_NAME);
+	p->i2s2.tx_bus = i2s_tx_bus_init(DEVICE(obj), DSP_I2S2_TX_BUS_NAME);
+	p->i2s2.rx_bus = i2s_rx_bus_init(DEVICE(obj), DSP_I2S2_RX_BUS_NAME);
+	p->iq_rx_bus = pmb887x_iq_bus_create(DEVICE(obj), DSP_IQ_RX_BUS_NAME);
 	memory_region_init_io(&p->mmio, obj, &io_ops, p, "pmb887x-dsp", DSP_IO_SIZE);
 	sysbus_init_mmio(SYS_BUS_DEVICE(obj), &p->mmio);
 	qdev_init_gpio_in_named(DEVICE(obj), dsp_reset_input, "RESET_IN", 1);
@@ -536,19 +557,34 @@ static void dsp_init(Object *obj) {
 	qdev_init_gpio_in_named(DEVICE(obj), dsp_input0, "DSPIN0_IN", 1);
 	qdev_init_gpio_in_named(DEVICE(obj), dsp_input1, "DSPIN1_IN", 1);
 	qdev_init_gpio_in_named(DEVICE(obj), dsp_gsm_input, "GSM_IN", PMB887X_DSP_GSM_SIGNAL_COUNT);
+	qdev_init_gpio_in_named(DEVICE(obj), dsp_i2s2_input, "I2S2_RX_IN", 1);
 	p->gsm_clock = qdev_init_clock_in(DEVICE(obj), "GSM_CLOCK", NULL, p, 0);
+	p->ms_clock = qdev_init_clock_in(DEVICE(obj), "MS_CLOCK", NULL, p, 0);
 	qdev_init_gpio_out_named(DEVICE(obj), &p->outputs[0], "DSPOUT0_OUT", 1);
 	qdev_init_gpio_out_named(DEVICE(obj), &p->outputs[1], "DSPOUT1_OUT", 1);
 	qdev_init_gpio_out_named(DEVICE(obj), &p->outputs[2], "DSPOUT2_OUT", 1);
+	qdev_init_gpio_out_named(DEVICE(obj), &p->i2s2_outputs[PMB887X_DSP_I2S_OUTPUT_CLK0], "I2S2_CLK0_OUT", 1);
+	qdev_init_gpio_out_named(DEVICE(obj), &p->i2s2_outputs[PMB887X_DSP_I2S_OUTPUT_TX], "I2S2_TX_OUT", 1);
+	qdev_init_gpio_out_named(DEVICE(obj), &p->i2s2_outputs[PMB887X_DSP_I2S_OUTPUT_WA0], "I2S2_WA0_OUT", 1);
+	qdev_init_gpio_out_named(DEVICE(obj), &p->i2s2_outputs[PMB887X_DSP_I2S_OUTPUT_CLK1], "I2S2_CLK1_OUT", 1);
+	qdev_init_gpio_out_named(DEVICE(obj), &p->i2s2_outputs[PMB887X_DSP_I2S_OUTPUT_WA1], "I2S2_WA1_OUT", 1);
+	qdev_init_gpio_out_named(DEVICE(obj), &p->active_output, "ACTIVE_OUT", 1);
 }
 
 static const Property dsp_properties[] = {
-	DEFINE_PROP_UINT32("ram0_value", dsp_state_t, ram0_value, 0x0801),
 	DEFINE_PROP_UINT32("revision", dsp_state_t, revision, 0),
 	DEFINE_PROP_UINT32("rom_version", dsp_state_t, rom_version, 0),
+	DEFINE_PROP_LINK("bus_i2s1_tx", dsp_state_t, i2s1.tx_bus, TYPE_I2S_TX_BUS, I2STxBus *),
+	DEFINE_PROP_LINK("bus_i2s1_rx", dsp_state_t, i2s1.rx_bus, TYPE_I2S_RX_BUS, I2SRxBus *),
+	DEFINE_PROP_LINK("bus_i2s2_tx", dsp_state_t, i2s2.tx_bus, TYPE_I2S_TX_BUS, I2STxBus *),
+	DEFINE_PROP_LINK("bus_i2s2_rx", dsp_state_t, i2s2.rx_bus, TYPE_I2S_RX_BUS, I2SRxBus *),
+	DEFINE_PROP_LINK("bus_iq_rx", dsp_state_t, iq_rx_bus, TYPE_PMB887X_IQ_BUS, pmb887x_iq_bus_t *),
 };
 
-static const pmb887x_dsp_peripheral_config_t *dsp_find_peripheral(const pmb887x_dsp_config_t *config, pmb887x_dsp_peripheral_type_t type) {
+static const pmb887x_dsp_peripheral_config_t *dsp_find_peripheral(
+	const pmb887x_dsp_config_t *config,
+	pmb887x_dsp_peripheral_type_t type
+) {
 	if (config == NULL)
 		return NULL;
 	for (size_t i = 0; i < config->peripheral_count; i++)
@@ -596,10 +632,8 @@ static void dsp_realize(DeviceState *dev, Error **errp) {
 
 	p->refill_timer = timer_new_ns(DSP_PCM_REFILL_CLOCK, dsp_pcm_refill_tick, p);
 
-	/* The ARM reads the mask ROM version from shared RAM word 0 and refuses to
-	 * boot (ddsphw fatal exit) when it does not match the SoC it expects. */                                                                                                
-	if (p->rom_version == 0 && p->config != NULL)                                                                                                                                                                                                    
-			p->rom_version = p->config->default_rom_version;
+	if (p->rom_version == 0 && p->config != NULL)
+		p->rom_version = p->config->default_rom_version;
 	dsp_ram_write(p, 0, p->rom_version, 2);
 
 	dsp_update_state(p);
@@ -629,11 +663,6 @@ static void dsp_class_init(ObjectClass *klass, const void *data) {
 void pmb887x_dsp_set_config(DeviceState *dev, const pmb887x_dsp_config_t *config) {
 	dsp_state_t *p = PMB887X_DSP(dev);
 	p->config = config;
-}
-
-void pmb887x_dsp_set_iq_source(DeviceState *dev, pmb887x_rf_iq_source_t *source) {
-	(void) dev;
-	(void) source;
 }
 
 static const TypeInfo dsp_info = {
@@ -686,7 +715,7 @@ struct dsp_state_t {
 	uint64_t cycle_debt;
 	uint64_t cycle_remainder;
 	uint64_t afe_remainder;
-	size_t pending_afe_samples;
+	size_t pending_afe_cycles;
 	int64_t sync_time_ns;
 	uint32_t clock_hz;
 	uint16_t comm_status;
@@ -694,6 +723,7 @@ struct dsp_state_t {
 	uint16_t reset_comm_flags;
 	uint16_t reset_requests;
 	Clock *gsm_clock;
+	Clock *ms_clock;
 	bool vm_running;
 	bool reset_pending;
 	bool reset_boot_flag_seen;
@@ -701,6 +731,11 @@ struct dsp_state_t {
 	bool syncing;
 	qemu_irq mcu_interrupts[PMB887X_DSP_MCU_INT_COUNT];
 	qemu_irq outputs[DSP_OUTPUT_COUNT];
+	qemu_irq i2s2_outputs[PMB887X_DSP_I2S_OUTPUT_COUNT];
+	qemu_irq active_output;
+	dsp_i2s_port_t i2s1;
+	dsp_i2s_port_t i2s2;
+	pmb887x_iq_bus_t *iq_rx_bus;
 	SSIBus *ssc_bus;
 };
 
@@ -708,6 +743,13 @@ static void dsp_clock_update(void *opaque);
 
 static bool dsp_is_clock_enabled(dsp_state_t *p) {
 	return p->clock_hz != 0;
+}
+
+static void dsp_update_active_output(dsp_state_t *p) {
+	bool active = dsp_is_clock_enabled(p) && dsp_runtime_is_running(p->runtime) &&
+		!dsp_runtime_is_idle(p->runtime);
+
+	qemu_set_irq(p->active_output, active);
 }
 
 static void dsp_schedule_sync(dsp_state_t *p);
@@ -745,10 +787,10 @@ static void dsp_account_time(dsp_state_t *p) {
 	int64_t now = dsp_get_time();
 	uint64_t elapsed = MAX(now - p->sync_time_ns, 0);
 	uint64_t scaled_cycles = elapsed * p->clock_hz + p->cycle_remainder;
-	uint64_t scaled_samples = p->afe_remainder;
+	uint64_t scaled_afe_cycles = p->afe_remainder;
 	uint64_t elapsed_cycles = scaled_cycles / NANOSECONDS_PER_SECOND;
 	if (p->clock_hz != 0)
-		scaled_samples += elapsed * DSP_AFE_FREQUENCY;
+		scaled_afe_cycles += elapsed * DSP_AFE_CLOCK_HZ;
 
 	p->sync_time_ns = now;
 	if (p->cycle_debt >= elapsed_cycles) {
@@ -758,8 +800,8 @@ static void dsp_account_time(dsp_state_t *p) {
 		p->cycle_debt = 0;
 	}
 	p->cycle_remainder = scaled_cycles % NANOSECONDS_PER_SECOND;
-	p->pending_afe_samples += scaled_samples / NANOSECONDS_PER_SECOND;
-	p->afe_remainder = scaled_samples % NANOSECONDS_PER_SECOND;
+	p->pending_afe_cycles += scaled_afe_cycles / NANOSECONDS_PER_SECOND;
+	p->afe_remainder = scaled_afe_cycles % NANOSECONDS_PER_SECOND;
 }
 
 static void dsp_finish_reset(dsp_state_t *p) {
@@ -804,11 +846,12 @@ static void dsp_sync(dsp_state_t *p) {
 	}
 	if (p->reset_pending && p->reset_boot_flag_seen && (dsp_runtime_get_comm(p->runtime) & BIT(0)) == 0)
 		dsp_finish_reset(p);
-	dsp_runtime_advance_idle(p->runtime, remaining_cycles, p->pending_afe_samples);
-	p->pending_afe_samples = 0;
+	size_t advanced_afe_cycles = dsp_runtime_advance_idle(p->runtime, remaining_cycles, p->pending_afe_cycles);
+	p->pending_afe_cycles -= advanced_afe_cycles;
 	p->syncing = false;
 
 	p->comm_status = (dsp_runtime_get_comm(p->runtime) | p->reset_comm_flags);
+	dsp_update_active_output(p);
 	dsp_take_events(p, &events);
 	dsp_publish_events(p, &events);
 
@@ -867,10 +910,20 @@ static void dsp_clock_update(void *opaque) {
 
 	dsp_account_time(p);
 	p->clock_hz = pmb887x_clc_get_hz(&p->clc);
-	dsp_runtime_set_clock(p->runtime, p->clock_hz != 0);
+	dsp_runtime_set_clock_hz(p->runtime, p->clock_hz);
 	if (divider != 0)
 		dsp_runtime_set_clock_divider(p->runtime, divider);
+	dsp_update_active_output(p);
 	dsp_update_timer(p);
+	dsp_schedule_sync(p);
+}
+
+static void dsp_ms_clock_update(void *opaque, ClockEvent _event) {
+	dsp_state_t *p = opaque;
+	if (p->runtime == NULL)
+		return;
+	dsp_account_time(p);
+	dsp_runtime_set_ms_clock_hz(p->runtime, clock_get_hz(p->ms_clock));
 	dsp_schedule_sync(p);
 }
 
@@ -889,6 +942,7 @@ static void dsp_notify_activity(void *opaque) {
 	dsp_state_t *p = opaque;
 
 	dsp_runtime_wake(p->runtime);
+	dsp_update_active_output(p);
 	dsp_schedule_sync(p);
 }
 
@@ -916,13 +970,14 @@ static void dsp_reset_internal_state(dsp_state_t *p) {
 	p->reset_boot_flag_seen = false;
 	p->pending_cycles = 0;
 	p->cycle_debt = 0;
-	p->pending_afe_samples = 0;
+	p->pending_afe_cycles = 0;
 	p->cycle_remainder = 0;
 	p->afe_remainder = 0;
 	p->sync_time_ns = dsp_get_time();
 	p->reset_pending = true;
 	for (size_t i = 0; i < ARRAY_SIZE(p->outputs); i++)
 		qemu_irq_lower(p->outputs[i]);
+	dsp_update_active_output(p);
 	p->trace_boot_mode = true;
 }
 
@@ -983,6 +1038,7 @@ static void dsp_interrupt_input(void *opaque, int id, int level) {
 	} else {
 		dsp_runtime_set_request(p->runtime, id, true);
 	}
+	dsp_update_active_output(p);
 	dsp_schedule_sync(p);
 }
 
@@ -1005,6 +1061,10 @@ static void dsp_gsm_input(void *opaque, int signal, int level) {
 	dsp_sync_access(p);
 	dsp_runtime_set_gsm_signal(p->runtime, signal, level != 0);
 	dsp_schedule_sync(p);
+}
+
+static void dsp_i2s2_input(void *_opaque, int _signal, int _level) {
+	/* The GPIOs describe pin state; audio frames use the I2S bus. */
 }
 
 static uint64_t dsp_io_read(void *opaque, hwaddr haddr, unsigned size) {
@@ -1114,7 +1174,7 @@ static uint64_t dsp_ram_read(void *opaque, hwaddr haddr, unsigned size) {
 	if (icount2_enabled())
 		icount2_advance(DSP_RAM_READ_WAIT_CYCLES);
 	dsp_sync_access(p);
-	value = dsp_is_clock_enabled(p) ? dsp_runtime_shared_read_bytes(p->runtime, haddr, size) : 0;
+	value = dsp_runtime_shared_read_bytes(p->runtime, haddr, size);
 
 	IO_DUMP_READ(haddr + p->mmio.addr + DSP_RAM0, size, value);
 	return value;
@@ -1127,10 +1187,8 @@ static void dsp_ram_write(void *opaque, hwaddr haddr, uint64_t value, unsigned s
 		icount2_advance(size == 4 ? DSP_RAM_WRITE32_WAIT_CYCLES : DSP_RAM_WRITE16_WAIT_CYCLES);
 	dsp_sync_access(p);
 
-	if (dsp_is_clock_enabled(p)) {
-		dsp_runtime_shared_write_bytes(p->runtime, haddr, value, size);
-		dsp_schedule_sync(p);
-	}
+	dsp_runtime_shared_write_bytes(p->runtime, haddr, value, size);
+	dsp_schedule_sync(p);
 
 	IO_DUMP_WRITE(haddr + p->mmio.addr + DSP_RAM0, size, value);
 }
@@ -1157,6 +1215,11 @@ static void dsp_init(Object *obj) {
 	pmb887x_clc_init(&p->clc, DEVICE(obj));
 	pmb887x_clc_set_callback(&p->clc, dsp_clock_update, p);
 	p->ssc_bus = ssi_create_bus(DEVICE(obj), DSP_SSC_BUS_NAME);
+	p->i2s1.tx_bus = i2s_tx_bus_init(DEVICE(obj), DSP_I2S1_TX_BUS_NAME);
+	p->i2s1.rx_bus = i2s_rx_bus_init(DEVICE(obj), DSP_I2S1_RX_BUS_NAME);
+	p->i2s2.tx_bus = i2s_tx_bus_init(DEVICE(obj), DSP_I2S2_TX_BUS_NAME);
+	p->i2s2.rx_bus = i2s_rx_bus_init(DEVICE(obj), DSP_I2S2_RX_BUS_NAME);
+	p->iq_rx_bus = pmb887x_iq_bus_create(DEVICE(obj), DSP_IQ_RX_BUS_NAME);
 	memory_region_init(&p->mmio, obj, "pmb887x-dsp", DSP_IO_SIZE);
 	memory_region_init_io(&p->regs, obj, &io_ops, p, "pmb887x-dsp-regs", DSP_RAM0);
 	memory_region_init_io(&p->ram, obj, &ram_io_ops, p, "pmb887x-dsp-ram", DSP_RAM_SIZE);
@@ -1169,10 +1232,18 @@ static void dsp_init(Object *obj) {
 	qdev_init_gpio_in_named(DEVICE(obj), dsp_input0, "DSPIN0_IN", 1);
 	qdev_init_gpio_in_named(DEVICE(obj), dsp_input1, "DSPIN1_IN", 1);
 	qdev_init_gpio_in_named(DEVICE(obj), dsp_gsm_input, "GSM_IN", PMB887X_DSP_GSM_SIGNAL_COUNT);
+	qdev_init_gpio_in_named(DEVICE(obj), dsp_i2s2_input, "I2S2_RX_IN", 1);
 	p->gsm_clock = qdev_init_clock_in(DEVICE(obj), "GSM_CLOCK", NULL, p, 0);
+	p->ms_clock = qdev_init_clock_in(DEVICE(obj), "MS_CLOCK", dsp_ms_clock_update, p, ClockUpdate);
 	qdev_init_gpio_out_named(DEVICE(obj), &p->outputs[0], "DSPOUT0_OUT", 1);
 	qdev_init_gpio_out_named(DEVICE(obj), &p->outputs[1], "DSPOUT1_OUT", 1);
 	qdev_init_gpio_out_named(DEVICE(obj), &p->outputs[2], "DSPOUT2_OUT", 1);
+	qdev_init_gpio_out_named(DEVICE(obj), &p->i2s2_outputs[PMB887X_DSP_I2S_OUTPUT_CLK0], "I2S2_CLK0_OUT", 1);
+	qdev_init_gpio_out_named(DEVICE(obj), &p->i2s2_outputs[PMB887X_DSP_I2S_OUTPUT_TX], "I2S2_TX_OUT", 1);
+	qdev_init_gpio_out_named(DEVICE(obj), &p->i2s2_outputs[PMB887X_DSP_I2S_OUTPUT_WA0], "I2S2_WA0_OUT", 1);
+	qdev_init_gpio_out_named(DEVICE(obj), &p->i2s2_outputs[PMB887X_DSP_I2S_OUTPUT_CLK1], "I2S2_CLK1_OUT", 1);
+	qdev_init_gpio_out_named(DEVICE(obj), &p->i2s2_outputs[PMB887X_DSP_I2S_OUTPUT_WA1], "I2S2_WA1_OUT", 1);
+	qdev_init_gpio_out_named(DEVICE(obj), &p->active_output, "ACTIVE_OUT", 1);
 }
 
 static void dsp_reset(DeviceState *dev) {
@@ -1180,7 +1251,8 @@ static void dsp_reset(DeviceState *dev) {
 
 	pmb887x_clc_set(&p->clc, MOD_CLC_DISR);
 	p->clock_hz = 0;
-	dsp_runtime_set_clock(p->runtime, false);
+	dsp_runtime_set_clock_hz(p->runtime, 0);
+	dsp_update_active_output(p);
 	dsp_update_timer(p);
 	dsp_reset_internal_state(p);
 }
@@ -1190,17 +1262,16 @@ void pmb887x_dsp_set_config(DeviceState *dev, const pmb887x_dsp_config_t *config
 	p->config = config;
 }
 
-void pmb887x_dsp_set_iq_source(DeviceState *dev, pmb887x_rf_iq_source_t *source) {
-	dsp_state_t *p = PMB887X_DSP(dev);
-
-	dsp_runtime_set_iq_source(p->runtime, source);
-}
-
 static const Property dsp_properties[] = {
 	DEFINE_PROP_UINT32("revision", dsp_state_t, revision, 0),
 	DEFINE_PROP_UINT32("rom_version", dsp_state_t, rom_version, 0),
 	DEFINE_PROP_LINK("cpu", dsp_state_t, cpu, TYPE_CPU, CPUState *),
 	DEFINE_PROP_LINK("bus_ssc", dsp_state_t, ssc_bus, "SSI", SSIBus *),
+	DEFINE_PROP_LINK("bus_i2s1_tx", dsp_state_t, i2s1.tx_bus, TYPE_I2S_TX_BUS, I2STxBus *),
+	DEFINE_PROP_LINK("bus_i2s1_rx", dsp_state_t, i2s1.rx_bus, TYPE_I2S_RX_BUS, I2SRxBus *),
+	DEFINE_PROP_LINK("bus_i2s2_tx", dsp_state_t, i2s2.tx_bus, TYPE_I2S_TX_BUS, I2STxBus *),
+	DEFINE_PROP_LINK("bus_i2s2_rx", dsp_state_t, i2s2.rx_bus, TYPE_I2S_RX_BUS, I2SRxBus *),
+	DEFINE_PROP_LINK("bus_iq_rx", dsp_state_t, iq_rx_bus, TYPE_PMB887X_IQ_BUS, pmb887x_iq_bus_t *),
 };
 
 static void dsp_realize(DeviceState *dev, Error **errp) {
@@ -1232,8 +1303,22 @@ static void dsp_realize(DeviceState *dev, Error **errp) {
 		return;
 	}
 
+	const dsp_ports_t ports = {
+		.i2s = {
+			{
+				.tx_bus = p->i2s1.tx_bus,
+				.rx_bus = p->i2s1.rx_bus,
+			},
+			{
+				.tx_bus = p->i2s2.tx_bus,
+				.rx_bus = p->i2s2.rx_bus,
+			},
+		},
+	};
 	p->runtime = dsp_runtime_create(config, p->rom_version, rom->program_rom, rom->data_rom,
-		p, dsp_notify_activity, dsp_notify_comm, dsp_ssc_transfer);
+		p, dsp_notify_activity, dsp_notify_comm, dsp_ssc_transfer, &ports);
+	dsp_runtime_set_iq_bus(p->runtime, p->iq_rx_bus);
+	dsp_runtime_set_ms_clock_hz(p->runtime, clock_get_hz(p->ms_clock));
 	p->sync_timer = timer_new_ns(QEMU_CLOCK_VIRTUAL, dsp_sync_timer, p);
 	p->sync_time_ns = dsp_get_time();
 

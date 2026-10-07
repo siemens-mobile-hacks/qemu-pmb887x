@@ -964,7 +964,7 @@ static void tpu_init(Object *obj) {
 	pmb887x_tpu_t *p = PMB887X_TPU(obj);
 	pmb887x_clc_init(&p->clc, DEVICE(obj));
 	pmb887x_clc_set_callback(&p->clc, tpu_clock_update, p);
-	p->rfssc_bus = pmb887x_rfssc_create_bus(DEVICE(obj), "RFSSC");
+	p->rfssc_bus = pmb887x_rfssc_bus_create(DEVICE(obj), "RFSSC");
 	memory_region_init_io(&p->mmio, obj, &io_ops, p, "pmb887x-tpu", TPU_RAM0 + TPU_RAM_SIZE);
 	sysbus_init_mmio(SYS_BUS_DEVICE(obj), &p->mmio);
 	

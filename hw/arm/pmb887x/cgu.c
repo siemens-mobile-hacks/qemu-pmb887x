@@ -50,6 +50,7 @@ struct pmb887x_cgu_t {
 	Clock *wdt_clock;
 	Clock *fpi1_clock;
 	Clock *dsp_clock;
+	Clock *ms_clock;
 	Clock *dma_clock;
 	Clock *mmci_clock;
 	
@@ -61,6 +62,7 @@ struct pmb887x_cgu_t {
 
 	qemu_irq gpio_clk32;
 	qemu_irq gpio_fpi2_pll_selected;
+	bool dsp_active;
 };
 
 static void cgu_update_state(struct pmb887x_cgu_t *p);
@@ -74,6 +76,11 @@ static void cgu_pll_lock_timer_expired(void *opaque) {
 	p->locked = true;
 	cgu_update_state(p);
 	pmb887x_src_update(&p->src, 0, MOD_SRC_SETR);
+}
+
+static void cgu_dsp_active_input(void *opaque, int _id, int level) {
+	pmb887x_cgu_t *p = opaque;
+	p->dsp_active = level != 0;
 }
 
 // Freq after PLL
@@ -169,8 +176,19 @@ static uint32_t cgu_get_dsp_freq(pmb887x_cgu_t *p) {
 			return p->xtal;
 		case CGU_CON2_DSP_CLKSEL_PHASE1:
 			return cgu_get_phase_freq(p, 1);
+		case CGU_CON2_DSP_CLKSEL_PLL:
+			return cgu_get_pll_freq(p);
 	}
+	return 0;
+}
 
+static uint32_t cgu_get_ms_freq(pmb887x_cgu_t *p) {
+	switch (p->con2 & CGU_CON2_MS_CLKSEL) {
+		case CGU_CON2_MS_CLKSEL_CLK_IN:
+			return p->xtal;
+		case CGU_CON2_MS_CLKSEL_PLL:
+			return cgu_get_pll_freq(p);
+	}
 	return 0;
 }
 
@@ -294,6 +312,7 @@ static void cgu_update_state(struct pmb887x_cgu_t *p) {
 	clock_update_hz(p->wdt_clock, new_fwdt);
 	clock_update_hz(p->fpi1_clock, cgu_get_fpi1_freq(p));
 	clock_update_hz(p->dsp_clock, cgu_get_dsp_freq(p));
+	clock_update_hz(p->ms_clock, cgu_get_ms_freq(p));
 	clock_update_hz(p->dma_clock, cgu_get_dma_freq(p));
 	clock_update_hz(p->mmci_clock, cgu_get_mmci_freq(p));
 }
@@ -321,7 +340,7 @@ static uint64_t cgu_io_read(void *opaque, hwaddr haddr, unsigned size) {
 			break;
 		
 		case CGU_STAT:
-			value = p->locked ? CGU_STAT_LOCK : 0;
+			value = (p->locked ? CGU_STAT_LOCK : 0) | (p->dsp_active ? CGU_STAT_DSP_CLK : 0);
 			break;
 		
 		case CGU_CON3:
@@ -333,9 +352,8 @@ static uint64_t cgu_io_read(void *opaque, hwaddr haddr, unsigned size) {
 			break;
 		
 		default:
-			IO_DUMP_READ(haddr + p->mmio.addr, size, 0xFFFFFFFF);
 			EPRINTF("unknown reg access: %02"PRIX64"\n", haddr);
-			exit(1);
+			break;
 	}
 	
 	IO_DUMP_READ(haddr + p->mmio.addr, size, value);
@@ -385,7 +403,7 @@ static void cgu_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned si
 		
 		default:
 			EPRINTF("unknown reg access: %02"PRIX64"\n", haddr);
-			exit(1);
+			break;
 	}
 	
 	cgu_update_state(p);
@@ -396,7 +414,7 @@ static const MemoryRegionOps io_ops = {
 	.write			= cgu_io_write,
 	.endianness		= DEVICE_NATIVE_ENDIAN,
 	.valid			= {
-		.min_access_size	= 1,
+		.min_access_size	= 4,
 		.max_access_size	= 4
 	}
 };
@@ -409,6 +427,7 @@ static void cgu_init(Object *obj) {
 	sysbus_init_irq(SYS_BUS_DEVICE(obj), &p->irq);
 	qdev_init_gpio_out_named(dev, &p->gpio_clk32, "CLK32_OUT", 1);
 	qdev_init_gpio_out_named(dev, &p->gpio_fpi2_pll_selected, "FPI2_PLL_SELECTED", 1);
+	qdev_init_gpio_in_named(dev, cgu_dsp_active_input, "DSP_ACTIVE_IN", 1);
 	p->osc_clock = qdev_init_clock_out(dev, "OSC");
 	p->rtc_clock = qdev_init_clock_out(dev, "RTC");
 	p->sys_clock = qdev_init_clock_out(dev, "FSYS");
@@ -416,6 +435,7 @@ static void cgu_init(Object *obj) {
 	p->wdt_clock = qdev_init_clock_out(dev, "WDT");
 	p->fpi1_clock = qdev_init_clock_out(dev, "FPI1");
 	p->dsp_clock = qdev_init_clock_out(dev, "DSP");
+	p->ms_clock = qdev_init_clock_out(dev, "MS");
 	p->dma_clock = qdev_init_clock_out(dev, "DMA");
 	p->mmci_clock = qdev_init_clock_out(dev, "MMCI");
 	p->lock_timer = timer_new_ns(QEMU_CLOCK_VIRTUAL, cgu_pll_lock_timer_expired, p);
@@ -437,6 +457,7 @@ static void cgu_reset(DeviceState *dev) {
 	p->con2 = 0;
 	p->con3 = 0;
 	p->locked = true;
+	p->dsp_active = false;
 
 	cgu_update_state(p);
 }

@@ -3,12 +3,26 @@
 
 #include <stdbool.h>
 
+#include "hw/audio/i2s.h"
 #include "hw/arm/pmb887x/dsp/config.h"
 #include "hw/arm/pmb887x/dsp/signals.h"
 
 typedef struct dsp_bus_t dsp_bus_t;
 typedef struct dsp_host_t dsp_host_t;
-typedef struct pmb887x_rf_iq_source_t pmb887x_rf_iq_source_t;
+typedef struct dsp_i2s_port_t dsp_i2s_port_t;
+typedef struct dsp_ports_t dsp_ports_t;
+typedef struct pmb887x_iq_bus_t pmb887x_iq_bus_t;
+
+#define DSP_I2S_COUNT	2
+
+struct dsp_i2s_port_t {
+	I2STxBus *tx_bus;
+	I2SRxBus *rx_bus;
+};
+
+struct dsp_ports_t {
+	dsp_i2s_port_t i2s[DSP_I2S_COUNT];
+};
 
 struct dsp_host_t {
 	void *opaque;
@@ -23,13 +37,14 @@ struct dsp_host_t {
 	uint32_t (*ssc_transfer)(void *opaque, uint32_t value);
 };
 
-dsp_bus_t *dsp_bus_create(const pmb887x_dsp_config_t *config, const dsp_host_t *host);
+dsp_bus_t *dsp_bus_create(const pmb887x_dsp_config_t *config, const dsp_host_t *host, const dsp_ports_t *ports);
 void dsp_bus_destroy(dsp_bus_t *bus);
 void dsp_bus_reset(dsp_bus_t *bus);
-void dsp_bus_set_clock(dsp_bus_t *bus, bool enabled);
+void dsp_bus_set_clock_hz(dsp_bus_t *bus, uint32_t frequency_hz);
+void dsp_bus_set_ms_clock_hz(dsp_bus_t *bus, uint32_t frequency_hz);
 void dsp_bus_set_core_idle(dsp_bus_t *bus, bool idle);
 void dsp_bus_advance(dsp_bus_t *bus, size_t cycles);
-void dsp_bus_advance_afe(dsp_bus_t *bus, size_t cycles);
+size_t dsp_bus_advance_afe(dsp_bus_t *bus, size_t cycles);
 void dsp_bus_advance_idle(dsp_bus_t *bus, size_t cycles);
 bool dsp_bus_is_active(const dsp_bus_t *bus);
 uint16_t dsp_bus_read(dsp_bus_t *bus, uint16_t address);
@@ -41,7 +56,7 @@ uint16_t dsp_bus_get_irq_flags(dsp_bus_t *bus, size_t group);
 uint16_t dsp_bus_get_irq_pending_flags(dsp_bus_t *bus, size_t group);
 void dsp_bus_set_request(dsp_bus_t *bus, size_t index, bool level);
 void dsp_bus_set_input(dsp_bus_t *bus, size_t index, bool level);
-void dsp_bus_set_iq_source(dsp_bus_t *bus, pmb887x_rf_iq_source_t *source);
+void dsp_bus_set_iq_bus(dsp_bus_t *bus, pmb887x_iq_bus_t *iq_bus);
 void dsp_bus_set_gsm_signal(dsp_bus_t *bus, pmb887x_dsp_gsm_signal_t signal, bool level);
 uint16_t dsp_bus_get_outputs(dsp_bus_t *bus);
 uint16_t dsp_bus_take_output_events(dsp_bus_t *bus);

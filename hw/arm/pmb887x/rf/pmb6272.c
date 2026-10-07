@@ -10,6 +10,7 @@
 #include "hw/arm/pmb887x/gen/peripheral/PMB6272.h"
 #include "hw/arm/pmb887x/rf.h"
 #include "hw/arm/pmb887x/trace.h"
+#include "hw/core/sysbus.h"
 
 #define TYPE_PMB887X_RF_TRX	"pmb6272"
 #define PMB887X_RF_TRX(obj)	OBJECT_CHECK(pmb887x_rf_trx_t, (obj), TYPE_PMB887X_RF_TRX)
@@ -29,7 +30,9 @@
 typedef struct pmb887x_rf_trx_t pmb887x_rf_trx_t;
 
 struct pmb887x_rf_trx_t {
-	pmb887x_rfssc_device_t parent_obj;
+	SysBusDevice parent_obj;
+	pmb887x_rfssc_target_port_t rfssc_port;
+	pmb887x_iq_source_port_t iq_port;
 	uint32_t registers[PMB6272_REGISTER_COUNT];
 	uint32_t telegram;
 	uint32_t channel_fraction;
@@ -79,8 +82,8 @@ static void rf_trx_write_telegram(pmb887x_rf_trx_t *p, uint32_t telegram, uint8_
 	IO_DUMP_WRITE(address, bits >> PMB6272_BITS_TO_BYTES_SHIFT, telegram);
 }
 
-static void rf_trx_transfer(pmb887x_rfssc_device_t *device, uint32_t value, uint8_t bits) {
-	pmb887x_rf_trx_t *p = PMB887X_RF_TRX(device);
+static void rf_trx_transfer(pmb887x_rfssc_target_t *target, uint32_t value, uint8_t bits) {
+	pmb887x_rf_trx_t *p = PMB887X_RF_TRX(OBJECT(target));
 
 	if (bits != PMB6272_TELEGRAM_HALF_BITS) {
 		p->telegram_pending = false;
@@ -125,9 +128,16 @@ static void rf_trx_reset(DeviceState *device) {
 	p->telegram_pending = false;
 }
 
+static void rf_trx_init(Object *obj) {
+	pmb887x_rf_trx_t *p = PMB887X_RF_TRX(obj);
+
+	pmb887x_rfssc_target_port_init(&p->rfssc_port, DEVICE(obj), "RFSSC", PMB887X_RFSSC_TARGET(obj));
+	pmb887x_iq_source_port_init(&p->iq_port, DEVICE(obj), "IQ_TX", PMB887X_RF_IQ_SOURCE(obj));
+}
+
 static void rf_trx_class_init(ObjectClass *klass, const void *data) {
 	DeviceClass *device_class = DEVICE_CLASS(klass);
-	pmb887x_rfssc_device_class_t *rfssc_class = PMB887X_RFSSC_DEVICE_CLASS(klass);
+	pmb887x_rfssc_target_class_t *rfssc_class = PMB887X_RFSSC_TARGET_CLASS(klass);
 	pmb887x_rf_iq_source_class_t *iq_class = PMB887X_RF_IQ_SOURCE_CLASS(klass);
 
 	(void) data;
@@ -139,10 +149,12 @@ static void rf_trx_class_init(ObjectClass *klass, const void *data) {
 
 static const TypeInfo rf_trx_info = {
 	.name = TYPE_PMB887X_RF_TRX,
-	.parent = TYPE_PMB887X_RFSSC_DEVICE,
+	.parent = TYPE_SYS_BUS_DEVICE,
 	.instance_size = sizeof(pmb887x_rf_trx_t),
+	.instance_init = rf_trx_init,
 	.class_init = rf_trx_class_init,
 	.interfaces = (const InterfaceInfo[]) {
+		{ TYPE_PMB887X_RFSSC_TARGET },
 		{ TYPE_PMB887X_RF_IQ_SOURCE },
 		{ NULL },
 	},

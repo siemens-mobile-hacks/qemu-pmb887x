@@ -201,10 +201,13 @@ static void pmb887x_init(MachineState *machine) {
 	// DSP
 	DeviceState *dsp = pmb887x_new_cpu_module("DSP");
 	qdev_connect_clock_in(dsp, "clk", qdev_get_clock_out(cgu, "DSP"));
+	qdev_connect_clock_in(dsp, "MS_CLOCK", qdev_get_clock_out(cgu, "MS"));
 	object_property_set_link(OBJECT(dsp), "cpu", OBJECT(cpu), &error_fatal);
 	pmb887x_dsp_set_config(dsp, pmb887x_cpu_get(pmb887x_board()->cpu)->dsp_config);
 	pmb887x_board_init_dsp(dsp);
 	qdev_connect_clock_in(dsp, "GSM_CLOCK", qdev_get_clock_out(tpu, "GSM_CLOCK"));
+	qdev_connect_gpio_out_named(dsp, "ACTIVE_OUT", 0,
+		qdev_get_gpio_in_named(cgu, "DSP_ACTIVE_IN", 0));
 	sysbus_realize_and_unref(SYS_BUS_DEVICE(dsp), &error_fatal);
 	for (size_t i = 0; i < PMB887X_DSP_GSM_SIGNAL_COUNT; i++)
 		qdev_connect_gpio_out_named(tpu, "GSM_OUT", i, qdev_get_gpio_in_named(dsp, "GSM_IN", i));
@@ -361,6 +364,7 @@ static void pmb887x_init(MachineState *machine) {
 	pmb887x_board_gpio_init_fixed_inputs();
 	pmb887x_board_gpio_init_fixed_connections();
 	pmb887x_board_init_devices(ebuc);
+	sysbus_realize_and_unref(SYS_BUS_DEVICE(ebuc), &error_fatal);
 	pmb887x_board_keyboard_connect_gpios(keypad);
 	pmb887x_qdev_connect_gpio_outputs();
 	pmb887x_board_startup_init(keypad);

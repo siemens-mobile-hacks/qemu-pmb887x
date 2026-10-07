@@ -1279,7 +1279,7 @@
 /* Branch metric reference 4 */
 #define	TEAK_CHDEC_REF_BR_BFLY7_REF4			0xF000
 #define	TEAK_CHDEC_REF_BR_BFLY7_REF4_SHIFT		12
-/* Interrupt pointer (write-only) */
+/* Interrupt pointer */
 #define	TEAK_AFE_INTPTR							0x00
 /* Receive ring-buffer interrupt position */
 #define	TEAK_AFE_INTPTR_RXINTPTR				0x003F

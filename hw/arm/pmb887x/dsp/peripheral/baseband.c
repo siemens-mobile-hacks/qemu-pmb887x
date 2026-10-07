@@ -53,7 +53,7 @@ typedef struct baseband_state_t baseband_state_t;
 struct baseband_state_t {
 	dsp_device_t *interrupt;
 	dsp_host_t host;
-	pmb887x_rf_iq_source_t *iq_source;
+	pmb887x_iq_bus_t *iq_bus;
 	QEMUTimer *full_timer;
 	uint16_t ram_base;
 	uint16_t ram_size;
@@ -237,7 +237,7 @@ static void baseband_filter_stop(baseband_state_t *state) {
 }
 
 static void baseband_filter_advance(baseband_state_t *state, uint64_t target_input_sample) {
-	pmb887x_rf_iq_source_t *iq_source = qatomic_read(&state->iq_source);
+	pmb887x_iq_bus_t *iq_bus = qatomic_read(&state->iq_bus);
 	uint64_t history_samples = BASEBAND_FILTER_MAX_TAPS - 1U;
 	uint64_t first_needed = target_input_sample > history_samples ? target_input_sample - history_samples : 0;
 
@@ -254,15 +254,15 @@ static void baseband_filter_advance(baseband_state_t *state, uint64_t target_inp
 			input_sample * BASEBAND_NARROW_SAMPLE_CLOCK_DIVISOR, NANOSECONDS_PER_SECOND,
 			BASEBAND_SAMPLE_CLOCK_HZ);
 
-		baseband_filter_push(state, pmb887x_rf_iq_read(iq_source, timestamp, input_sample));
+		baseband_filter_push(state, pmb887x_iq_bus_read(iq_bus, timestamp, input_sample));
 		state->filter_next_input_sample++;
 	}
 }
 
 static pmb887x_iq_sample_t baseband_filter_sample(baseband_state_t *state, uint64_t output_sample) {
-	pmb887x_rf_iq_source_t *iq_source = qatomic_read(&state->iq_source);
+	pmb887x_iq_bus_t *iq_bus = qatomic_read(&state->iq_bus);
 
-	if (!state->rx_active || iq_source == NULL)
+	if (!state->rx_active || !pmb887x_iq_bus_has_source(iq_bus))
 		return (pmb887x_iq_sample_t) { 0, 0 };
 
 	size_t half_length = baseband_filter_get_half_length(state);
@@ -276,10 +276,10 @@ static pmb887x_iq_sample_t baseband_filter_sample(baseband_state_t *state, uint6
 
 /* Symbol-rate MSK approximation of GMSK: differential encoding followed by +/-pi/2 phase steps. */
 static uint16_t baseband_signal_word(baseband_state_t *state, uint64_t word) {
-	pmb887x_rf_iq_source_t *iq_source = qatomic_read(&state->iq_source);
+	pmb887x_iq_bus_t *iq_bus = qatomic_read(&state->iq_bus);
 	bool fcch = qatomic_read(&state->job_signal) == PMB887X_DSP_GSM_SIGNAL_FCON;
 
-	if (iq_source != NULL) {
+	if (pmb887x_iq_bus_has_source(iq_bus)) {
 		uint64_t sample_index = word / BASEBAND_WORDS_PER_SAMPLE;
 
 		if ((word % BASEBAND_WORDS_PER_SAMPLE) == 0)
@@ -625,8 +625,8 @@ void baseband_set_signal(dsp_device_t *device, pmb887x_dsp_gsm_signal_t signal, 
 	baseband_apply_signal(state, signal, level, now);
 }
 
-void baseband_set_iq_source(dsp_device_t *device, pmb887x_rf_iq_source_t *source) {
+void baseband_set_iq_bus(dsp_device_t *device, pmb887x_iq_bus_t *iq_bus) {
 	baseband_state_t *state = device->state;
 
-	qatomic_set(&state->iq_source, source);
+	qatomic_set(&state->iq_bus, iq_bus);
 }

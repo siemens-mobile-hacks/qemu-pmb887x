@@ -10,7 +10,6 @@
 #include "hw/arm/pmb887x/trace.h"
 
 #define DSP_SLICE_CYCLES	4096
-#define DSP_AFE_SAMPLE_CYCLES	16
 
 struct dsp_runtime_t {
 	const pmb887x_dsp_config_t *config;
@@ -236,7 +235,8 @@ dsp_runtime_t *dsp_runtime_create(
 	void *device_opaque,
 	void (*notify_activity)(void *opaque),
 	void (*notify_comm)(void *opaque, uint16_t flags, bool set),
-	uint32_t (*ssc_transfer)(void *opaque, uint32_t value)
+	uint32_t (*ssc_transfer)(void *opaque, uint32_t value),
+	const dsp_ports_t *ports
 ) {
 	dsp_runtime_t *runtime;
 	teak_memory_t memory;
@@ -267,7 +267,7 @@ dsp_runtime_t *dsp_runtime_create(
 		.data_write = dsp_runtime_bus_data_write,
 		.ssc_transfer = ssc_transfer,
 	};
-	runtime->bus = dsp_bus_create(config, &host);
+	runtime->bus = dsp_bus_create(config, &host, ports);
 
 	memory = (teak_memory_t) {
 		.program = {
@@ -304,8 +304,12 @@ dsp_runtime_t *dsp_runtime_create(
 	return runtime;
 }
 
-void dsp_runtime_set_clock(dsp_runtime_t *runtime, bool enabled) {
-	dsp_bus_set_clock(runtime->bus, enabled);
+void dsp_runtime_set_clock_hz(dsp_runtime_t *runtime, uint32_t frequency_hz) {
+	dsp_bus_set_clock_hz(runtime->bus, frequency_hz);
+}
+
+void dsp_runtime_set_ms_clock_hz(dsp_runtime_t *runtime, uint32_t frequency_hz) {
+	dsp_bus_set_ms_clock_hz(runtime->bus, frequency_hz);
 }
 
 void dsp_runtime_destroy(dsp_runtime_t *runtime) {
@@ -452,11 +456,12 @@ size_t dsp_runtime_run(dsp_runtime_t *runtime, size_t max_cycles, bool *deferred
 	return cycles;
 }
 
-void dsp_runtime_advance_idle(dsp_runtime_t *runtime, size_t cycles, size_t afe_samples) {
+size_t dsp_runtime_advance_idle(dsp_runtime_t *runtime, size_t cycles, size_t afe_cycles) {
 	if (cycles != 0)
 		dsp_bus_advance_idle(runtime->bus, cycles * runtime->clock_divider);
-	if (afe_samples != 0)
-		dsp_bus_advance_afe(runtime->bus, afe_samples * DSP_AFE_SAMPLE_CYCLES);
+	if (afe_cycles != 0)
+		return dsp_bus_advance_afe(runtime->bus, afe_cycles);
+	return 0;
 }
 
 void dsp_runtime_set_clock_divider(dsp_runtime_t *runtime, uint32_t divider) {
@@ -563,8 +568,8 @@ void dsp_runtime_set_input(dsp_runtime_t *runtime, size_t index, bool level) {
 	dsp_bus_set_input(runtime->bus, index, level);
 }
 
-void dsp_runtime_set_iq_source(dsp_runtime_t *runtime, pmb887x_rf_iq_source_t *source) {
-	dsp_bus_set_iq_source(runtime->bus, source);
+void dsp_runtime_set_iq_bus(dsp_runtime_t *runtime, pmb887x_iq_bus_t *iq_bus) {
+	dsp_bus_set_iq_bus(runtime->bus, iq_bus);
 }
 
 void dsp_runtime_set_gsm_signal(dsp_runtime_t *runtime, pmb887x_dsp_gsm_signal_t signal, bool level) {

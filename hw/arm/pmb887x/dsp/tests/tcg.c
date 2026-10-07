@@ -447,6 +447,25 @@ static void test_delayed_return_break(void) {
 	g_assert_cmphex(core.state.bcn, ==, 0);
 }
 
+static void test_delayed_return_stores(void) {
+	/* 0xD780 0x3810 0x3811: retd; mov a0l, [page:0x10]; mov a0l, [page:0x11]. */
+	test_memory_t program = {
+		.words = { 0xD780, 0x3810, 0x3811 },
+	};
+	test_memory_t data = {
+		.words = { [5] = 10, [0x10] = 0xA55A, [0x11] = 0x5AA5 },
+	};
+	pmb887x_dsp_tcg_core_t core = test_core_create(&program, &data);
+
+	core.state.a[0] = 0x1234;
+	core.state.sp = 5;
+	g_assert_true(pmb887x_dsp_tcg_execute_block(&core));
+	g_assert_cmphex(core.state.pc, ==, 10);
+	g_assert_cmphex(core.state.sp, ==, 6);
+	g_assert_cmphex(data.words[0x10], ==, 0x1234);
+	g_assert_cmphex(data.words[0x11], ==, 0x1234);
+}
+
 static void test_nested_nmi_interrupt_return(void) {
 	test_memory_t program = {
 		.words = { 0xD7C0, 0x2102, 0xD4BC, 0x0010 },
@@ -494,6 +513,7 @@ int main(int argc, char **argv) {
 	g_test_add_func("/pmb887x/dsp/tcg/delayed-interrupt-return", test_delayed_interrupt_return);
 	g_test_add_func("/pmb887x/dsp/tcg/delayed-interrupt-return-exit-request", test_delayed_interrupt_return_exit_request);
 	g_test_add_func("/pmb887x/dsp/tcg/delayed-return-break", test_delayed_return_break);
+	g_test_add_func("/pmb887x/dsp/tcg/delayed-return-stores", test_delayed_return_stores);
 	g_test_add_func("/pmb887x/dsp/tcg/nested-nmi-interrupt-return", test_nested_nmi_interrupt_return);
 	return g_test_run();
 }

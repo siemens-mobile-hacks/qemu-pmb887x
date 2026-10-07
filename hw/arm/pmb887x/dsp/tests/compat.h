@@ -1,9 +1,11 @@
 #ifndef HW_ARM_PMB887X_DSP_TESTS_COMPAT_H
 #define HW_ARM_PMB887X_DSP_TESTS_COMPAT_H
 
+#include "qemu/osdep.h"
+
 /*
  * The host unit-test build links only glib, not the QEMU audio subsystem, so
- * peripheral sources must compile out any audio-backend usage when built here.
+ * AFE backend code is disabled and the peripheral test provides I2S bus stubs.
  */
 #define PMB887X_DSP_TESTS
 
@@ -286,9 +288,11 @@ typedef dsp_host_t pmb887x_dsp_peripheral_host_t;
 #define pmb887x_dsp_peripheral_bus_create dsp_bus_create
 #define pmb887x_dsp_peripheral_bus_destroy dsp_bus_destroy
 #define pmb887x_dsp_peripheral_bus_reset dsp_bus_reset
-#define pmb887x_dsp_peripheral_bus_set_clock_enabled dsp_bus_set_clock
+#define pmb887x_dsp_peripheral_bus_set_clock_hz dsp_bus_set_clock_hz
+#define pmb887x_dsp_peripheral_bus_set_ms_clock_hz dsp_bus_set_ms_clock_hz
 #define pmb887x_dsp_peripheral_bus_set_core_idle dsp_bus_set_core_idle
 #define pmb887x_dsp_peripheral_bus_advance dsp_bus_advance
+#define pmb887x_dsp_peripheral_bus_advance_afe dsp_bus_advance_afe
 #define pmb887x_dsp_peripheral_bus_advance_idle dsp_bus_advance_idle
 #define pmb887x_dsp_peripheral_bus_is_active dsp_bus_is_active
 #define pmb887x_dsp_peripheral_bus_read dsp_bus_read
@@ -296,6 +300,7 @@ typedef dsp_host_t pmb887x_dsp_peripheral_host_t;
 #define pmb887x_dsp_peripheral_bus_external_read dsp_bus_external_read
 #define pmb887x_dsp_peripheral_bus_external_write dsp_bus_external_write
 #define pmb887x_dsp_peripheral_bus_get_interrupt_lines dsp_bus_get_irq_lines
+#define pmb887x_dsp_peripheral_bus_get_interrupt_flags dsp_bus_get_irq_flags
 #define pmb887x_dsp_peripheral_bus_set_request dsp_bus_set_request
 #define pmb887x_dsp_peripheral_bus_set_input dsp_bus_set_input
 #define pmb887x_dsp_peripheral_bus_set_gsm_signal dsp_bus_set_gsm_signal

@@ -12,33 +12,33 @@ dsp_device_t *dsp_device_create(const pmb887x_dsp_peripheral_config_t *config, c
 	return device;
 }
 
-static dsp_device_t *dsp_bus_create_device(dsp_bus_t *bus, const pmb887x_dsp_peripheral_config_t *config, const dsp_host_t *host) {
+static dsp_device_t *dsp_bus_create_device(dsp_bus_t *bus, const pmb887x_dsp_peripheral_config_t *config) {
 	dsp_device_t *device;
 
 	switch (config->type) {
 		case PMB887X_DSP_PERIPHERAL_AFE:
 			g_assert(bus->interrupt != NULL);
 
-			device = afe_create(config, bus->interrupt, host);
+			device = afe_create(config, bus->interrupt, &bus->host);
 			bus->afe = device;
 			return device;
 
 		case PMB887X_DSP_PERIPHERAL_BASEBAND:
 			g_assert(bus->interrupt != NULL);
 
-			device = baseband_create(config, bus->interrupt, host);
+			device = baseband_create(config, bus->interrupt, &bus->host);
 			bus->baseband = device;
 			return device;
 
 		case PMB887X_DSP_PERIPHERAL_DSP:
-			device = control_create(config, host);
+			device = control_create(config, &bus->host);
 			bus->dsp = device;
 			return device;
 
 		case PMB887X_DSP_PERIPHERAL_CIPHER:
 			g_assert(bus->interrupt != NULL);
 
-			device = cipher_create(config, bus->interrupt, host);
+			device = cipher_create(config, bus->interrupt, &bus->host);
 			bus->cipher = device;
 			return device;
 
@@ -57,7 +57,7 @@ static dsp_device_t *dsp_bus_create_device(dsp_bus_t *bus, const pmb887x_dsp_per
 			return device;
 
 		case PMB887X_DSP_PERIPHERAL_INTERRUPT:
-			device = dsp_int_create(config, host);
+			device = dsp_int_create(config, &bus->host);
 			bus->interrupt = device;
 			return device;
 
@@ -65,19 +65,21 @@ static dsp_device_t *dsp_bus_create_device(dsp_bus_t *bus, const pmb887x_dsp_per
 			g_assert(bus->interrupt != NULL);
 			g_assert(bus->i2s_count < ARRAY_SIZE(bus->i2s));
 
-			device = i2s_create(config, bus->interrupt, (uint16_t) BIT(bus->i2s_count * 2));
+			const dsp_i2s_port_t *i2s_port = &bus->ports.i2s[bus->i2s_count];
+			uint16_t interrupt_flag = (uint16_t) BIT(bus->i2s_count * 2);
+			device = dsp_i2s_create(config, bus->interrupt, &bus->host, i2s_port, interrupt_flag);
 			bus->i2s[bus->i2s_count++] = device;
 			return device;
 
 		case PMB887X_DSP_PERIPHERAL_I2S_TX:
 			g_assert(bus->interrupt != NULL);
 
-			device = i2s_tx_create(config, bus->interrupt);
+			device = dsp_i2s_tx_create(config, bus->interrupt);
 			bus->i2s_tx = device;
 			return device;
 
 		case PMB887X_DSP_PERIPHERAL_MCS:
-			device = mcs_create(config, host);
+			device = mcs_create(config, &bus->host);
 			bus->mcs = device;
 			return device;
 
@@ -91,7 +93,7 @@ static dsp_device_t *dsp_bus_create_device(dsp_bus_t *bus, const pmb887x_dsp_per
 		case PMB887X_DSP_PERIPHERAL_SSC:
 			g_assert(bus->interrupt != NULL);
 
-			device = ssc_create(config, bus->interrupt, host);
+			device = ssc_create(config, bus->interrupt, &bus->host);
 			bus->ssc = device;
 			return device;
 
@@ -114,13 +116,14 @@ static dsp_device_t *dsp_bus_create_device(dsp_bus_t *bus, const pmb887x_dsp_per
 	}
 }
 
-dsp_bus_t *dsp_bus_create(const pmb887x_dsp_config_t *config, const dsp_host_t *host) {
+dsp_bus_t *dsp_bus_create(const pmb887x_dsp_config_t *config, const dsp_host_t *host, const dsp_ports_t *ports) {
 	dsp_bus_t *bus = g_new0(dsp_bus_t, 1);
 	bus->device_count = config->peripheral_count;
 	bus->host = *host;
+	bus->ports = *ports;
 	bus->devices = g_new0(dsp_device_t *, bus->device_count);
 	for (size_t i = 0; i < bus->device_count; i++)
-		bus->devices[i] = dsp_bus_create_device(bus, &config->peripherals[i], host);
+		bus->devices[i] = dsp_bus_create_device(bus, &config->peripherals[i]);
 
 	bus->fallback_config = (pmb887x_dsp_peripheral_config_t) {
 		.name = "unknown",
@@ -173,9 +176,20 @@ void dsp_bus_reset(dsp_bus_t *bus) {
 		bus->devices[i]->ops->reset(bus->devices[i]);
 }
 
-void dsp_bus_set_clock(dsp_bus_t *bus, bool enabled) {
+void dsp_bus_set_clock_hz(dsp_bus_t *bus, uint32_t frequency_hz) {
+	for (size_t i = 0; i < bus->i2s_count; i++)
+		dsp_i2s_set_clock_hz(bus->i2s[i], frequency_hz);
+	if (bus->i2s_tx != NULL)
+		dsp_i2s_tx_set_clock_hz(bus->i2s_tx, frequency_hz);
 	if (bus->timer2 != NULL)
-		timer2_set_clock_enabled(bus->timer2, enabled);
+		timer2_set_clock_enabled(bus->timer2, frequency_hz != 0);
+}
+
+void dsp_bus_set_ms_clock_hz(dsp_bus_t *bus, uint32_t frequency_hz) {
+	for (size_t i = 0; i < bus->i2s_count; i++)
+		dsp_i2s_set_ms_clock_hz(bus->i2s[i], frequency_hz);
+	if (bus->i2s_tx != NULL)
+		dsp_i2s_tx_set_ms_clock_hz(bus->i2s_tx, frequency_hz);
 }
 
 void dsp_bus_set_core_idle(dsp_bus_t *bus, bool idle) {
@@ -184,7 +198,7 @@ void dsp_bus_set_core_idle(dsp_bus_t *bus, bool idle) {
 }
 
 void dsp_bus_advance(dsp_bus_t *bus, size_t cycles) {
-	/* The AFE has its own 8 kHz clock and advances separately. */
+	/* The AFE has its own 8 MHz analog clock and advances separately. */
 	if (bus->channel_decoder != NULL && chdec_is_active(bus->channel_decoder))
 		chdec_advance(bus->channel_decoder, cycles);
 	if (bus->cipher != NULL && cipher_is_active(bus->cipher))
@@ -192,10 +206,10 @@ void dsp_bus_advance(dsp_bus_t *bus, size_t cycles) {
 	if (bus->equalizer != NULL && equalizer_is_active(bus->equalizer))
 		equalizer_advance(bus->equalizer, cycles);
 	for (size_t i = 0; i < bus->i2s_count; i++)
-		if (i2s_is_active(bus->i2s[i]))
-			i2s_advance(bus->i2s[i], cycles);
-	if (bus->i2s_tx != NULL && i2s_tx_is_active(bus->i2s_tx))
-		i2s_tx_advance(bus->i2s_tx, cycles);
+		if (dsp_i2s_is_active(bus->i2s[i]))
+			dsp_i2s_advance(bus->i2s[i], cycles);
+	if (bus->i2s_tx != NULL && dsp_i2s_tx_is_active(bus->i2s_tx))
+		dsp_i2s_tx_advance(bus->i2s_tx, cycles);
 	if (bus->modulator != NULL && modulator_is_active(bus->modulator))
 		modulator_advance(bus->modulator, cycles);
 	if (bus->ssc != NULL && ssc_is_active(bus->ssc))
@@ -206,9 +220,10 @@ void dsp_bus_advance(dsp_bus_t *bus, size_t cycles) {
 		timer2_advance(bus->timer2, cycles);
 }
 
-void dsp_bus_advance_afe(dsp_bus_t *bus, size_t cycles) {
+size_t dsp_bus_advance_afe(dsp_bus_t *bus, size_t cycles) {
 	if (bus->afe != NULL && afe_is_active(bus->afe))
-		afe_advance(bus->afe, cycles);
+		return afe_advance(bus->afe, cycles);
+	return cycles;
 }
 
 void dsp_bus_advance_idle(dsp_bus_t *bus, size_t cycles) {
@@ -225,9 +240,9 @@ bool dsp_bus_is_active(const dsp_bus_t *bus) {
 	if (bus->equalizer != NULL && equalizer_is_active(bus->equalizer))
 		return true;
 	for (size_t i = 0; i < bus->i2s_count; i++)
-		if (i2s_is_active(bus->i2s[i]))
+		if (dsp_i2s_is_active(bus->i2s[i]))
 			return true;
-	if (bus->i2s_tx != NULL && i2s_tx_is_active(bus->i2s_tx))
+	if (bus->i2s_tx != NULL && dsp_i2s_tx_is_active(bus->i2s_tx))
 		return true;
 	if (bus->modulator != NULL && modulator_is_active(bus->modulator))
 		return true;
@@ -303,9 +318,9 @@ void dsp_bus_set_input(dsp_bus_t *bus, size_t index, bool level) {
 	dsp_int_set_flags(bus->interrupt, 2, flag);
 }
 
-void dsp_bus_set_iq_source(dsp_bus_t *bus, pmb887x_rf_iq_source_t *source) {
+void dsp_bus_set_iq_bus(dsp_bus_t *bus, pmb887x_iq_bus_t *iq_bus) {
 	if (bus->baseband != NULL)
-		baseband_set_iq_source(bus->baseband, source);
+		baseband_set_iq_bus(bus->baseband, iq_bus);
 }
 
 void dsp_bus_set_gsm_signal(dsp_bus_t *bus, pmb887x_dsp_gsm_signal_t signal, bool level) {
