@@ -1,5 +1,6 @@
 # core qdev-related obj files, also used by *-user and unit tests
 hwcore_ss.add(files(
+  'bus-port.c',
   'bus.c',
   'gpio.c',
   'qdev-properties.c',

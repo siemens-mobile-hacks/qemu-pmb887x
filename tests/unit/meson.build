@@ -164,7 +164,15 @@ if have_system
       'test-qdev-global-props': [qom, hwcore]
     }
   endif
-  tests += {'test-qdev': [qom, hwcore]}
+  tests += {
+    'test-bus-port': [
+      qom,
+      hwcore,
+      meson.project_source_root() / 'hw/audio/i2s.c',
+      meson.project_source_root() / 'hw/i2c/core.c',
+    ],
+    'test-qdev': [qom, hwcore],
+  }
 endif
 
 if have_ga and host_os == 'linux'

@@ -34,6 +34,7 @@
 #include "qemu/option.h"
 #include "qom/compat-properties.h"
 #include "hw/core/irq.h"
+#include "hw/core/bus-port.h"
 #include "hw/core/qdev-properties.h"
 #include "hw/core/boards.h"
 #include "hw/core/sysbus.h"
@@ -517,6 +518,11 @@ static void device_set_realized(Object *obj, bool value, Error **errp)
             }
         }
 
+        qdev_connect_bus_ports(dev, &local_err);
+        if (local_err != NULL) {
+            goto post_realize_fail;
+        }
+
         DEVICE_LISTENER_CALL(realize, Forward, dev);
 
         /*
@@ -593,6 +599,7 @@ static void device_set_realized(Object *obj, bool value, Error **errp)
          */
         smp_wmb();
 
+        qdev_disconnect_bus_ports(dev);
         QLIST_FOREACH(bus, &dev->child_bus, sibling) {
             qbus_unrealize(bus);
         }
@@ -619,6 +626,7 @@ child_realize_fail:
     }
 
 post_realize_fail:
+    qdev_disconnect_bus_ports(dev);
     g_free(dev->canonical_path);
     dev->canonical_path = NULL;
     if (dc->unrealize) {
@@ -668,6 +676,7 @@ static void device_initfn(Object *obj)
 
     QLIST_INIT(&dev->gpios);
     QLIST_INIT(&dev->clocks);
+    QLIST_INIT(&dev->bus_ports);
 }
 
 static void device_post_init(Object *obj)

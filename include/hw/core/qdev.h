@@ -200,6 +200,7 @@ struct NamedGPIOList {
 
 typedef struct Clock Clock;
 typedef struct NamedClockList NamedClockList;
+typedef struct QDevBusPort QDevBusPort;
 
 struct NamedClockList {
     char *name;
@@ -211,6 +212,7 @@ struct NamedClockList {
 
 typedef QLIST_HEAD(, NamedGPIOList) NamedGPIOListHead;
 typedef QLIST_HEAD(, NamedClockList) NamedClockListHead;
+typedef QLIST_HEAD(, QDevBusPort) QDevBusPortHead;
 typedef QLIST_HEAD(, BusState) BusStateHead;
 
 /**
@@ -264,6 +266,10 @@ struct DeviceState {
      * @clocks: QLIST of named clocks the device provides.
      */
     NamedClockListHead clocks;
+    /**
+     * @bus_ports: QLIST of named bus ports the device provides.
+     */
+    QDevBusPortHead bus_ports;
     /**
      * @child_bus: QLIST of child buses
      */

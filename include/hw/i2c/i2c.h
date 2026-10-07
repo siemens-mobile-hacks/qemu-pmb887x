@@ -1,7 +1,7 @@
 #ifndef QEMU_I2C_H
 #define QEMU_I2C_H
 
-#include "hw/core/qdev.h"
+#include "hw/core/bus-port.h"
 #include "qom/object.h"
 
 /* The QEMU I2C implementation only supports simple transfers that complete
@@ -18,6 +18,28 @@ enum i2c_event {
 };
 
 typedef struct I2CNodeList I2CNodeList;
+
+#define TYPE_I2C_TARGET "i2c-target"
+
+typedef struct I2CTarget I2CTarget;
+typedef struct I2CTargetClass I2CTargetClass;
+typedef struct I2CTargetPort I2CTargetPort;
+
+DECLARE_CLASS_CHECKERS(I2CTargetClass, I2C_TARGET, TYPE_I2C_TARGET)
+#define I2C_TARGET(obj) INTERFACE_CHECK(I2CTarget, (obj), TYPE_I2C_TARGET)
+
+struct I2CTargetClass {
+    InterfaceClass parent_class;
+    int (*send)(I2CTarget *target, uint8_t data);
+    uint8_t (*recv)(I2CTarget *target);
+    int (*event)(I2CTarget *target, enum i2c_event event);
+};
+
+struct I2CTargetPort {
+    QDevBusPort parent;
+    I2CTarget *target;
+    const uint32_t *address;
+};
 
 #define TYPE_I2C_SLAVE "i2c-slave"
 OBJECT_DECLARE_TYPE(I2CSlave, I2CSlaveClass,
@@ -95,6 +117,9 @@ struct I2CBus {
 };
 
 I2CBus *i2c_init_bus(DeviceState *parent, const char *name);
+void i2c_target_port_init(I2CTargetPort *port, DeviceState *dev,
+                          const char *name, I2CTarget *target,
+                          const uint32_t *address);
 int i2c_bus_busy(I2CBus *bus);
 
 /**
