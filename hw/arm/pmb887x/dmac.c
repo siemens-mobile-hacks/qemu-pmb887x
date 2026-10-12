@@ -325,6 +325,7 @@ static void dmac_transfer_memory(pmb887x_dmac_t *p, pmb887x_dmac_ch_t *ch, uint3
 	uint32_t tx_size = (ch->control & DMAC_CH_CONTROL_TRANSFER_SIZE) >> DMAC_CH_CONTROL_TRANSFER_SIZE_SHIFT;
 	enum device_endian src_endian = dmac_master_endian(p, (ch->control & DMAC_CH_CONTROL_S_AHB2) != 0);
 	enum device_endian dst_endian = dmac_master_endian(p, (ch->control & DMAC_CH_CONTROL_D_AHB2) != 0);
+	bool is_mixed_endian = src_endian != dst_endian;
 
 	bool is_simple_memcpy = (
 		flow_ctrl == DMAC_CH_CONFIG_FLOW_CTRL_MEM2MEM &&
@@ -373,7 +374,7 @@ static void dmac_transfer_memory(pmb887x_dmac_t *p, pmb887x_dmac_ch_t *ch, uint3
 		uint32_t buffer_size = 0;
 		while (transferred < burst_size) {
 			dmac_read(p, ch->src_addr, buffer + buffer_size, src_width, 1, src_endian);
-			if (src_endian == DEVICE_BIG_ENDIAN && src_width > 1)
+			if (is_mixed_endian && src_endian == DEVICE_BIG_ENDIAN && src_width > 1)
 				dmac_swap_byte_order(buffer + buffer_size, src_width, 1);
 			buffer_size += src_width;
 
@@ -381,7 +382,7 @@ static void dmac_transfer_memory(pmb887x_dmac_t *p, pmb887x_dmac_ch_t *ch, uint3
 				ch->src_addr += src_width;
 
 			if (buffer_size == dst_width) {
-				if (dst_endian == DEVICE_BIG_ENDIAN && dst_width > 1)
+				if (is_mixed_endian && dst_endian == DEVICE_BIG_ENDIAN && dst_width > 1)
 					dmac_swap_byte_order(buffer, dst_width, 1);
 				dmac_write(p, ch->dst_addr, buffer, dst_width);
 				buffer_size = 0;
@@ -397,14 +398,14 @@ static void dmac_transfer_memory(pmb887x_dmac_t *p, pmb887x_dmac_ch_t *ch, uint3
 		uint32_t src_burst_size_bytes = src_burst_size * src_width;
 		while (transferred < burst_size) {
 			dmac_read(p, ch->src_addr, buffer, src_width, src_burst_size, src_endian);
-			if (src_endian == DEVICE_BIG_ENDIAN)
+			if (is_mixed_endian && src_endian == DEVICE_BIG_ENDIAN)
 				dmac_swap_byte_order(buffer, src_width, src_burst_size);
 
 			if ((ch->control & DMAC_CH_CONTROL_SI))
 				ch->src_addr += src_burst_size_bytes;
 
 			for (uint32_t j = 0; j < src_burst_size_bytes; j += dst_width) {
-				if (dst_endian == DEVICE_BIG_ENDIAN && dst_width > 1)
+				if (is_mixed_endian && dst_endian == DEVICE_BIG_ENDIAN && dst_width > 1)
 					dmac_swap_byte_order(buffer + j, dst_width, 1);
 				dmac_write(p, ch->dst_addr, buffer + j, dst_width);
 
