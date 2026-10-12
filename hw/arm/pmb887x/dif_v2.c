@@ -13,9 +13,9 @@
 #include "hw/ssi/ssi.h"
 #include "hw/core/sysbus.h"
 #include "qemu/module.h"
+#include "qemu/main-loop.h"
 #include "qom/object.h"
 #include "hw/core/qdev-properties.h"
-#include "qemu/timer.h"
 
 #include "hw/arm/pmb887x/gen/cpu_regs.h"
 #include "hw/arm/pmb887x/regs_dump.h"
@@ -71,7 +71,7 @@ struct pmb887x_dif_t {
 	qemu_irq gpio_wr;
 	qemu_irq gpio_rd;
 
-	QEMUTimer *timer;
+	QEMUBH *rx_refill_bh;
 	bool in_schedule;
 	bool transfer_pending;
 
@@ -487,7 +487,7 @@ static void dif_fifo_read(pmb887x_dif_t *p, uint64_t *value) {
 	p->rx_words_in_fifo -= MIN(p->rx_words_in_fifo, 4 / dif_get_rx_align(p));
 
 	if (p->rx_words_remaining != 0 || p->rx_words_in_fifo == 0)
-		dif_schedule(p);
+		qemu_bh_schedule(p->rx_refill_bh);
 }
 
 static bool dif_is_running(pmb887x_dif_t *p) {
@@ -794,14 +794,8 @@ static void dif_work(pmb887x_dif_t *p) {
 	}
 }
 
-static void dif_timer_reset(void *opaque) {
-	pmb887x_dif_t *p = opaque;
-	while (p->transfer_pending) {
-		p->transfer_pending = false;
-		dif_work(p);
-		if (pmb887x_srb_get_ris(&p->srb) != 0)
-			break;
-	}
+static void dif_rx_refill(void *opaque) {
+	dif_schedule(opaque);
 }
 
 static void dif_update_mux(pmb887x_dif_t *p) {
@@ -1348,13 +1342,19 @@ static void dif_realize(DeviceState *dev, Error **errp) {
 	}
 	dif_update_mux(p);
 
-	p->timer = timer_new_ns(QEMU_CLOCK_VIRTUAL, dif_timer_reset, p);
+	p->rx_refill_bh = qemu_bh_new(dif_rx_refill, p);
+}
+
+static void dif_unrealize(DeviceState *dev) {
+	pmb887x_dif_t *p = PMB887X_DIF(dev);
+
+	qemu_bh_delete(p->rx_refill_bh);
 }
 
 static void dif_reset(DeviceState *dev) {
 	pmb887x_dif_t *p = PMB887X_DIF(dev);
 
-	timer_del(p->timer);
+	qemu_bh_cancel(p->rx_refill_bh);
 
 	pmb887x_clc_set(&p->clc, MOD_CLC_DISR);
 	pmb887x_srb_reset(&p->srb);
@@ -1432,6 +1432,7 @@ static void dif_class_init(ObjectClass *klass, const void *data) {
 	device_class_set_props(dc, dif_properties);
 	device_class_set_legacy_reset(dc, dif_reset);
 	dc->realize = dif_realize;
+	dc->unrealize = dif_unrealize;
 }
 
 static const TypeInfo dif_info = {

@@ -12,6 +12,7 @@
 #include "hw/ssi/ssi.h"
 #include "hw/core/sysbus.h"
 #include "hw/core/qdev-properties.h"
+#include "qemu/main-loop.h"
 #include "qemu/module.h"
 #include "qemu/timer.h"
 #include "qom/object.h"
@@ -73,6 +74,7 @@ struct pmb887x_dif_t {
 
 	pmb887x_fifo16_t *rx_fifo;
 	pmb887x_fifo16_t *tx_fifo;
+	QEMUBH *transfer_bh;
 	QEMUTimer *transfer_timer;
 	uint16_t tx_data;
 	bool transfer_pending;
@@ -144,8 +146,7 @@ static void dif_trigger_dma(pmb887x_dif_t *p) {
 }
 
 static bool dif_is_running(pmb887x_dif_t *p) {
-	return pmb887x_clc_is_enabled(&p->clc) &&
-		pmb887x_clc_get_rmc(&p->clc) &&
+	return pmb887x_clc_get_hz(&p->clc) != 0 &&
 		(p->con & DIFv1_CON_EN) != 0 &&
 		(p->con & DIFv1_CON_MS) == DIFv1_CON_MS_MASTER;
 }
@@ -225,8 +226,6 @@ static bool dif_convert_word(pmb887x_dif_t *p, uint16_t value, uint16_t *output)
 	return true;
 }
 
-static void dif_schedule_transfer(pmb887x_dif_t *p);
-
 static void dif_transfer_word(pmb887x_dif_t *p) {
 	p->status &= ~(DIFv1_CON_TE | DIFv1_CON_RE);
 
@@ -259,37 +258,45 @@ static void dif_transfer_word(pmb887x_dif_t *p) {
 	}
 }
 
+static bool dif_transfer_load(pmb887x_dif_t *p) {
+	if (p->transfer_pending || !dif_is_running(p) || pmb887x_fifo_is_empty(p->tx_fifo))
+		return false;
+
+	p->tx_data = pmb887x_fifo16_pop(p->tx_fifo);
+	p->transfer_pending = true;
+	p->status |= DIFv1_CON_BSY;
+	dif_update_tx_request(p);
+	return true;
+}
+
 static void dif_transfer_complete(void *opaque) {
 	pmb887x_dif_t *p = opaque;
+
 	while (p->transfer_pending) {
 		p->transfer_pending = false;
 		if (!dif_is_running(p))
 			break;
 
 		dif_transfer_word(p);
-		dif_schedule_transfer(p);
-		if (pmb887x_srb_get_ris(&p->srb) != 0)
+		if (!dif_transfer_load(p))
 			break;
+		if (pmb887x_srb_get_ris(&p->srb) != 0) {
+			timer_mod(p->transfer_timer, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + 1);
+			break;
+		}
 	}
 	if (!p->transfer_pending)
 		p->status &= ~DIFv1_CON_BSY;
 }
 
 static void dif_schedule_transfer(pmb887x_dif_t *p) {
-	if (p->transfer_pending || !dif_is_running(p) || pmb887x_fifo_is_empty(p->tx_fifo))
-		return;
-
-	p->tx_data = pmb887x_fifo16_pop(p->tx_fifo);
-	p->transfer_pending = true;
-	p->status |= DIFv1_CON_BSY;
-	dif_update_tx_request(p);
-	/* Future deadline, not 0: this runs inside an MMIO write, and an already expired
-	 * virtual timer could run before that write unwinds. */
-	timer_mod(p->transfer_timer, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + 1);
+	if (dif_transfer_load(p))
+		qemu_bh_schedule_idle(p->transfer_bh);
 }
 
 static void dif_stop_transfer(pmb887x_dif_t *p) {
 	if (p->transfer_pending) {
+		qemu_bh_cancel(p->transfer_bh);
 		timer_del(p->transfer_timer);
 		p->transfer_pending = false;
 	}
@@ -726,12 +733,20 @@ static void dif_realize(DeviceState *dev, Error **errp) {
 
 	pmb887x_fifo16_init(&p->tx_fifo_single, 1);
 	pmb887x_fifo16_init(&p->rx_fifo_single, 1);
+	p->transfer_bh = qemu_bh_new(dif_transfer_complete, p);
 	p->transfer_timer = timer_new_ns(QEMU_CLOCK_VIRTUAL, dif_transfer_complete, p);
 
 	dif_set_fifo(p, DIF_FIFO_RX, false);
 	dif_set_fifo(p, DIF_FIFO_TX, false);
 
 	dif_update_state(p);
+}
+
+static void dif_unrealize(DeviceState *dev) {
+	pmb887x_dif_t *p = PMB887X_DIF(dev);
+
+	qemu_bh_delete(p->transfer_bh);
+	timer_free(p->transfer_timer);
 }
 
 static void dif_reset(DeviceState *dev) {
@@ -786,6 +801,7 @@ static void dif_class_init(ObjectClass *klass, const void *data) {
 	device_class_set_props(dc, dif_properties);
 	device_class_set_legacy_reset(dc, dif_reset);
 	dc->realize = dif_realize;
+	dc->unrealize = dif_unrealize;
 }
 
 static const TypeInfo dif_info = {
