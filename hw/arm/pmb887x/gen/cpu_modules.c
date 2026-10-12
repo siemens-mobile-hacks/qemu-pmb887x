@@ -852,6 +852,10 @@ static const pmb887x_cpu_module_gpio_t pmb8875_capcom1_gpios[] = {
 	{"CC7_IN",	PMB8875_GPIO_SSC2_MRST,		2},
 };
 
+static const pmb887x_cpu_module_gpio_t pmb8875_gpio_gpios[] = {
+	{"MON4_OUT",	PMB8875_GPIO_KP_OUT0,	1},
+};
+
 static const int pmb8875_scu_irqs[] = {
 	PMB8875_SCU_EXTI0_IRQ,
 	PMB8875_SCU_EXTI1_IRQ,
@@ -1002,7 +1006,7 @@ static const pmb887x_cpu_module_t pmb8875_modules[] = {
 	{"DMAC",	0x02041080,	PMB8875_DMAC_BASE,		"pmb887x-dmac",		pmb8875_dmac_irqs,		ARRAY_SIZE(pmb8875_dmac_irqs),		NULL,					0,									NULL,				0},
 	{"CAPCOM0",	0x00005003,	PMB8875_CAPCOM0_BASE,	"pmb887x-capcom",	pmb8875_capcom0_irqs,	ARRAY_SIZE(pmb8875_capcom0_irqs),	pmb8875_capcom0_gpios,	ARRAY_SIZE(pmb8875_capcom0_gpios),	NULL,				0},
 	{"CAPCOM1",	0x00005003,	PMB8875_CAPCOM1_BASE,	"pmb887x-capcom",	pmb8875_capcom1_irqs,	ARRAY_SIZE(pmb8875_capcom1_irqs),	pmb8875_capcom1_gpios,	ARRAY_SIZE(pmb8875_capcom1_gpios),	NULL,				0},
-	{"GPIO",	0xF023C000,	PMB8875_GPIO_BASE,		"pmb887x-gpio",		NULL,					0,									NULL,					0,									NULL,				0},
+	{"GPIO",	0xF023C000,	PMB8875_GPIO_BASE,		"pmb887x-gpio",		NULL,					0,									pmb8875_gpio_gpios,		ARRAY_SIZE(pmb8875_gpio_gpios),		NULL,				0},
 	{"SCU",		0xF040C000,	PMB8875_SCU_BASE,		"pmb887x-scu",		pmb8875_scu_irqs,		ARRAY_SIZE(pmb8875_scu_irqs),		pmb8875_scu_gpios,		ARRAY_SIZE(pmb8875_scu_gpios),		NULL,				0},
 	{"CGU",		0x00000001,	PMB8875_CGU_BASE,		"pmb887x-cgu",		pmb8875_cgu_irqs,		ARRAY_SIZE(pmb8875_cgu_irqs),		pmb8875_cgu_gpios,		ARRAY_SIZE(pmb8875_cgu_gpios),		NULL,				0},
 	{"SCCU",	0x00000002,	PMB8875_SCCU_BASE,		"pmb887x-sccu",		pmb8875_sccu_irqs,		ARRAY_SIZE(pmb8875_sccu_irqs),		NULL,					0,									NULL,				0},

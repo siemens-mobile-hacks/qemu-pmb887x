@@ -45,7 +45,7 @@ struct pmb887x_gpio_t {
 };
 
 static uint8_t gpio_get_mux_is(pmb887x_gpio_t *p, int pin) {
-	if ((p->pins[pin] & GPIO_PS) == GPIO_PS_ALT && (p->pins[pin] & GPIO_IS) != GPIO_IS_NONE)
+	if ((p->pins[pin] & GPIO_IS) != GPIO_IS_NONE)
 		return ((p->pins[pin] & GPIO_IS) >> GPIO_IS_SHIFT);
 	return 0;
 }
@@ -64,19 +64,21 @@ static bool gpio_get_pad_level(pmb887x_gpio_t *p, int id) {
 }
 
 static void gpio_sync_pin_state(pmb887x_gpio_t *p, int id) {
-	if ((p->pins[id] & GPIO_PS) == GPIO_PS_MANUAL) {
-		bool level = (p->pins[id] & GPIO_DIR) == GPIO_DIR_OUT ?
-			(p->pins[id] & GPIO_DATA) == GPIO_DATA_HIGH : gpio_get_pad_level(p, id);
-		qemu_set_irq(p->pins_out[0][id], level);
-	} else {
-		int pin_mux_is = gpio_get_mux_is(p, id);
-		int pin_mux_os = gpio_get_mux_os(p, id);
+	int pin_mux_is = gpio_get_mux_is(p, id);
+	bool output_enabled = (p->pins[id] & GPIO_ENAQ) == GPIO_ENAQ_OUTPUT_ENABLED;
+	bool pad_level;
 
-		if (pin_mux_is != 0)
-			qemu_set_irq(p->pins_out[pin_mux_is][id], gpio_get_pad_level(p, id));
-		if (pin_mux_os != 0)
-			qemu_set_irq(p->pins_out[0][id], p->input_state[pin_mux_os][id]);
+	if ((p->pins[id] & GPIO_PS) == GPIO_PS_MANUAL) {
+		bool gpio_output = (p->pins[id] & GPIO_DIR) == GPIO_DIR_OUT && output_enabled;
+		pad_level = gpio_output ? (p->pins[id] & GPIO_DATA) == GPIO_DATA_HIGH : gpio_get_pad_level(p, id);
+	} else {
+		int pin_mux_os = gpio_get_mux_os(p, id);
+		pad_level = pin_mux_os != 0 && output_enabled ? p->input_state[pin_mux_os][id] : gpio_get_pad_level(p, id);
 	}
+
+	qemu_set_irq(p->pins_out[0][id], pad_level);
+	for (unsigned mux = 1; mux < ARRAY_SIZE(p->pins_out); mux++)
+		qemu_set_irq(p->pins_out[mux][id], mux == pin_mux_is ? pad_level : 0);
 }
 
 static uint64_t gpio_io_read(void *opaque, hwaddr haddr, unsigned size) {
