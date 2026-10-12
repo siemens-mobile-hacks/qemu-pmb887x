@@ -38,6 +38,8 @@
 #define DSP_RUNTIME_PIPE_STRIDE	0x1C
 #define DSP_OUTPUT_COUNT	3
 #define DSP_SYNC_PERIOD_NS	(100 * SCALE_US)
+#define DSP_REALTIME_BOOT_RUN_CYCLES	512
+#define DSP_REALTIME_PROGRAM_RUN_CYCLES	16384
 #define DSP_REGISTER_READ_WAIT_CYCLES	108
 #define DSP_RAM_READ_WAIT_CYCLES	240
 #define DSP_RAM_WRITE16_WAIT_CYCLES	276
@@ -824,8 +826,27 @@ static void dsp_sync(dsp_state_t *p) {
 
 	int64_t realtime_start = icount2_enabled() ? cpu_get_clock() : 0;
 	size_t remaining_cycles = p->pending_cycles;
+	size_t peripheral_cycles = 0;
 
 	p->pending_cycles = 0;
+	if (!icount2_enabled()) {
+		/*
+		 * Account every elapsed cycle in peripherals, but do not let a
+		 * polling program monopolize the main loop while catching up.
+		 * Loaded programs get a complete maximum-frequency sync slice so
+		 * their short command sequences preserve instruction ordering.
+		 */
+		bool mutable_program = dsp_runtime_get_pc(p->runtime) < p->config->program_rom_base;
+		size_t run_cycles = p->reset_pending || mutable_program ?
+			DSP_REALTIME_PROGRAM_RUN_CYCLES : DSP_REALTIME_BOOT_RUN_CYCLES;
+
+		if (remaining_cycles > run_cycles) {
+			peripheral_cycles = remaining_cycles - run_cycles;
+			remaining_cycles = run_cycles;
+		}
+	}
+	if (peripheral_cycles != 0)
+		dsp_runtime_advance_idle(p->runtime, peripheral_cycles, 0);
 	p->syncing = true;
 	while (remaining_cycles != 0 && dsp_runtime_is_running(p->runtime) && !dsp_runtime_is_idle(p->runtime)) {
 		bool deferred;
@@ -858,8 +879,12 @@ static void dsp_sync(dsp_state_t *p) {
 	if (dsp_runtime_is_program_warming(p->runtime) && cache_compiles == 0 && p->comm_status == 0)
 		dsp_runtime_finish_program_warmup(p->runtime);
 
-	if (icount2_enabled())
+	if (icount2_enabled()) {
 		icount2_exclude_realtime(cpu_get_clock() - realtime_start);
+	} else if (cache_compiles != 0) {
+		/* Do not carry a cold-compilation pause into the next DSP interval. */
+		p->sync_time_ns = dsp_get_time();
+	}
 }
 
 static void dsp_sync_on_cpu(CPUState *cpu, run_on_cpu_data data) {
@@ -980,9 +1005,18 @@ static void dsp_reset_internal_state(dsp_state_t *p) {
 	p->trace_boot_mode = true;
 }
 
-static void dsp_reset_input(void *opaque, int id, int level) {
-	if (level)
-		dsp_reset_internal_state(opaque);
+static void dsp_reset_input(void *opaque, int _id, int level) {
+	dsp_state_t *p = opaque;
+
+	if (!level)
+		return;
+
+	dsp_reset_internal_state(p);
+	if (!icount2_enabled() && p->vm_running && p->clock_hz != 0) {
+		/* Make reset completion visible before the ARM resumes polling. */
+		p->pending_cycles = DSP_REALTIME_PROGRAM_RUN_CYCLES;
+		dsp_sync(p);
+	}
 }
 
 static const char *dsp_boot_command_name(uint16_t command) {
