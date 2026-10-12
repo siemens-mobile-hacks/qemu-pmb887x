@@ -78,6 +78,7 @@ struct equalizer_state_t {
 	size_t external_bank;
 	size_t working_source_bank[2];
 	size_t side_processed_count[2];
+	size_t side_history_count[2];
 	size_t processed_count;
 	size_t signal_quality_pointer;
 	size_t elapsed_cycles;
@@ -112,6 +113,7 @@ static void equalizer_reset_operation(equalizer_state_t *state) {
 	state->completed_count = 0;
 	memset(state->working_source_bank, 0, sizeof(state->working_source_bank));
 	memset(state->side_processed_count, 0, sizeof(state->side_processed_count));
+	memset(state->side_history_count, 0, sizeof(state->side_history_count));
 	memset(state->context_valid, 0, sizeof(state->context_valid));
 	state->processed_count = 0;
 	state->elapsed_cycles = 0;
@@ -139,6 +141,7 @@ static void equalizer_reset_registers(equalizer_state_t *state) {
 	state->external_bank = 0;
 	memset(state->working_source_bank, 0, sizeof(state->working_source_bank));
 	memset(state->side_processed_count, 0, sizeof(state->side_processed_count));
+	memset(state->side_history_count, 0, sizeof(state->side_history_count));
 	memset(state->context_valid, 0, sizeof(state->context_valid));
 	state->processed_count = 0;
 	state->signal_quality_pointer = ARRAY_SIZE(state->signal_quality) - 1;
@@ -232,10 +235,24 @@ static bool equalizer_external_working(const equalizer_state_t *state, size_t *w
 	g_assert_not_reached();
 }
 
+static void equalizer_compact_history(equalizer_state_t *state, size_t side, size_t state_count) {
+	size_t history_count = state->side_history_count[side];
+	size_t retained_count = EQUALIZER_TRAINING_SYMBOLS + 1;
+
+	for (size_t path = 0; path < state_count; path++) {
+		uint8_t *history = state->survivor_history[side][path];
+
+		memmove(history, history + history_count, retained_count);
+		memset(history + retained_count, 0, sizeof(state->survivor_history[side][path]) - retained_count);
+	}
+	state->side_history_count[side] = 0;
+}
+
 static void equalizer_start(equalizer_state_t *state) {
 	bool right = (state->config2 & TEAK_EQ_CONF2_EQ_RIGHT) != 0;
 	bool edge = (state->config2 & TEAK_EQ_CONF2_EQ_EDGE) != 0;
 	size_t side = right;
+	size_t operation_count = state->configured_count == 0 ? 1 : state->configured_count;
 	size_t metric_base = right ? 0 : 8;
 	size_t path_base = right ? 16 : 24;
 	size_t metric_bank;
@@ -274,7 +291,7 @@ static void equalizer_start(equalizer_state_t *state) {
 	if ((state->config2 & TEAK_EQ_CONF2_EQ_EDGE) != 0) {
 		if (state->continuing) {
 			for (size_t i = 0; i < EQUALIZER_SYMBOLS; i++) {
-				size_t source = state->side_processed_count[side] + i;
+				size_t source = state->side_history_count[side] + i;
 
 				state->ram2[128 + i] = 0;
 				state->combined_hard[i] = 0;
@@ -287,6 +304,7 @@ static void equalizer_start(equalizer_state_t *state) {
 		} else {
 			memset(state->survivor_history[side], 0, sizeof(state->survivor_history[side]));
 			state->side_processed_count[side] = 0;
+			state->side_history_count[side] = 0;
 			memset(state->ram2 + 128, 0, EQUALIZER_SYMBOLS * sizeof(state->ram2[0]));
 
 			for (size_t path = 0; path < EQUALIZER_EDGE_STATES; path++) {
@@ -303,6 +321,8 @@ static void equalizer_start(equalizer_state_t *state) {
 				state->combined_hard[i] = state->ram2[128 + i];
 		}
 	}
+	if (state->continuing && state->side_history_count[side] + operation_count > EQUALIZER_SYMBOLS)
+		equalizer_compact_history(state, side, state_count);
 
 	memset(state->decisions, 0, sizeof(state->decisions));
 	state->completed_count = 0;
@@ -844,7 +864,7 @@ static uint8_t equalizer_edge_step(equalizer_state_t *state, size_t timestamp) {
 	uint8_t best_state = 0;
 	bool right = (state->config2 & TEAK_EQ_CONF2_EQ_RIGHT) != 0;
 	size_t side = right;
-	size_t history_index = EQUALIZER_TRAINING_SYMBOLS + 1 + state->side_processed_count[side] + timestamp;
+	size_t history_index = EQUALIZER_TRAINING_SYMBOLS + 1 + state->side_history_count[side] + timestamp;
 
 	for (size_t next = 0; next < EQUALIZER_EDGE_STATES; next++) {
 		size_t best_predecessor = 0;
@@ -883,9 +903,9 @@ static uint8_t equalizer_edge_step(equalizer_state_t *state, size_t timestamp) {
 	for (size_t next = 0; next < EQUALIZER_EDGE_STATES; next++)
 		state->ram2[192 + next] = branch_metrics[next][EQUALIZER_EDGE_STATES - 1];
 
-	size_t output_count = MIN(history_index + 1 - state->side_processed_count[side], EQUALIZER_SYMBOLS);
+	size_t output_count = MIN(history_index + 1 - state->side_history_count[side], EQUALIZER_SYMBOLS);
 	for (size_t i = 0; i < output_count; i++) {
-		state->ram2[128 + i] = next_history[best_state][state->side_processed_count[side] + i];
+		state->ram2[128 + i] = next_history[best_state][state->side_history_count[side] + i];
 		state->combined_hard[i] = state->ram2[128 + i];
 	}
 
@@ -923,7 +943,7 @@ static uint8_t equalizer_gmsk_step(equalizer_state_t *state, size_t timestamp) {
 	int16_t minimum[2] = { INT16_MAX, INT16_MAX };
 	bool right = (state->config2 & TEAK_EQ_CONF2_EQ_RIGHT) != 0;
 	size_t side = right;
-	size_t history_index = EQUALIZER_TRAINING_SYMBOLS + 1 + state->side_processed_count[side] + timestamp;
+	size_t history_index = EQUALIZER_TRAINING_SYMBOLS + 1 + state->side_history_count[side] + timestamp;
 	size_t best_state = 0;
 
 	for (size_t next = 0; next < EQUALIZER_GMSK_STATES; next++) {
@@ -1019,6 +1039,7 @@ static void equalizer_complete(equalizer_state_t *state) {
 	}
 
 	state->side_processed_count[right] += state->processed_count;
+	state->side_history_count[right] += state->processed_count;
 	state->active = false;
 	state->config2 &= ~TEAK_EQ_CONF2_EQ_ON;
 	state->completed_count = (state->config2 & TEAK_EQ_CONF2_EQ_EDGE) != 0 ? state->configured_count : 0;
