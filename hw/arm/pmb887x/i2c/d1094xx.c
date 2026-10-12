@@ -52,7 +52,7 @@ struct pmb887x_pmic_t {
 	qemu_irq on_off_out;
 };
 
-static void pmic_handle_on_input(void *opaque, int _line, int level) {
+static void pmic_handle_on_off_input(void *opaque, int _line, int level) {
 	pmb887x_pmic_t *p = opaque;
 
 	p->on_pressed = level != 0;
@@ -379,8 +379,8 @@ static const Property pmic_properties[] = {
 static void pmic_init(Object *obj) {
 	pmb887x_pmic_t *p = PMB887X_PMIC(obj);
 
-	qdev_init_gpio_in_named(DEVICE(obj), pmic_handle_on_input, "ON_IN", 1);
-	qdev_init_gpio_out_named(DEVICE(obj), &p->on_off_out, "ON_OFF_OUT", 1);
+	qdev_init_gpio_in_named(DEVICE(obj), pmic_handle_on_off_input, "ON_OFF_IN", 1);
+	qdev_init_gpio_out_named(DEVICE(obj), &p->on_off_out, "ON_OFF_OUT_OUT", 1);
 	i2c_target_port_init(&p->i2c_port, DEVICE(obj), "I2C", I2C_TARGET(obj), &p->i2c_address);
 	i2s_sink_port_init(&p->i2s_rx_port, DEVICE(obj), "I2S_RX", I2S_SINK(obj));
 	i2s_source_port_init(&p->i2s_tx_port, DEVICE(obj), "I2S_TX", I2S_SOURCE(obj));

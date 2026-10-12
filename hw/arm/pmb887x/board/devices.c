@@ -3,7 +3,6 @@
 #include "hw/arm/pmb887x/flash-blk.h"
 #include "hw/arm/pmb887x/board/board.h"
 #include "hw/arm/pmb887x/board/gpio.h"
-#include "hw/arm/pmb887x/board/keyboard.h"
 #include "hw/arm/pmb887x/board/memory.h"
 #include "hw/arm/pmb887x/dsp.h"
 #include "hw/arm/pmb887x/mmicif.h"
@@ -363,31 +362,6 @@ static void device_init_props_from_config(DeviceState *dev, const pmb887x_dev_t 
 	}
 }
 
-static void device_init_keys_from_config(DeviceState *dev, toml_datum_t table) {
-	toml_datum_t keys_tab = toml_table_get(table, TOML_TABLE, "key", false);
-	if (keys_tab.type == TOML_UNKNOWN)
-		return;
-
-	DeviceState *keypad = qdev_find_recursive(sysbus_get_default(), "KEYPAD");
-	if (!keypad)
-		hw_error("KEYPAD not found, required by '%s' key bindings", dev->id);
-
-	for (size_t i = 0; i < keys_tab.u.tab.size; i++) {
-		const char *pin_name = keys_tab.u.tab.key[i];
-		const char *key_name = toml_table_get_string(keys_tab, pin_name, NULL, true);
-
-		char gpio_in_name[64];
-		snprintf(gpio_in_name, sizeof(gpio_in_name), "%s_IN", pin_name);
-
-		if (!pmb887x_qdev_is_gpio_in_exists(dev, gpio_in_name, 0))
-			hw_error("GPIO_IN '%s' not found in '%s'", gpio_in_name, dev->id);
-
-		qemu_irq input = qdev_get_gpio_in_named(dev, gpio_in_name, 0);
-		if (!pmb887x_board_connect_key_to_gpio(keypad, key_name, input))
-			hw_error("Unknown key '%s' in '%s' key bindings", key_name, dev->id);
-	}
-}
-
 static void device_init_gpios_from_config(DeviceState *dev, toml_datum_t table) {
 	toml_datum_t gpio_in_tab = toml_table_get(table, TOML_TABLE, "in", false);
 	toml_datum_t gpio_out_tab = toml_table_get(table, TOML_TABLE, "out", false);
@@ -468,7 +442,6 @@ static void device_realize_from_config(GHashTable *devices, const char *id, toml
 			qdev_realize_and_unref(dev, NULL, &error_fatal);
 		}
 		device_init_gpios_from_config(dev, table);
-		device_init_keys_from_config(dev, table);
 		return;
 	}
 
@@ -481,7 +454,6 @@ static void device_realize_from_config(GHashTable *devices, const char *id, toml
 			qdev_prop_set_uint8(dev, "address", addr);
 			i2c_slave_realize_and_unref(I2C_SLAVE(dev), I2C_BUS(bus), &error_fatal);
 			device_init_gpios_from_config(dev, table);
-			device_init_keys_from_config(dev, table);
 			break;
 		}
 
@@ -491,14 +463,12 @@ static void device_realize_from_config(GHashTable *devices, const char *id, toml
 				qdev_prop_set_uint8(dev, "cs", global_cs_index++);
 			qdev_realize_and_unref(dev, BUS(bus), &error_fatal);
 			device_init_gpios_from_config(dev, table);
-			device_init_keys_from_config(dev, table);
 			break;
 
 		case DEV_BUS_SIM:
 			sim_card_apply_runtime_options(dev);
 			sim_card_realize_and_attach(dev, PMB887X_SIM(bus));
 			device_init_gpios_from_config(dev, table);
-			device_init_keys_from_config(dev, table);
 			object_unref(OBJECT(dev));
 			break;
 
@@ -525,7 +495,6 @@ static void device_realize_from_config(GHashTable *devices, const char *id, toml
 		case DEV_BUS_MMICIF:
 			qdev_realize_and_unref(dev, BUS(bus), &error_fatal);
 			device_init_gpios_from_config(dev, table);
-			device_init_keys_from_config(dev, table);
 			break;
 
 		default:
