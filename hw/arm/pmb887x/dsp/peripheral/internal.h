@@ -15,6 +15,7 @@ struct dsp_device_ops_t {
 };
 
 struct dsp_device_t {
+	const pmb887x_dsp_config_t *dsp_config;
 	const pmb887x_dsp_peripheral_config_t *config;
 	const dsp_device_ops_t *ops;
 	void *state;
@@ -128,6 +129,7 @@ uint16_t dsp_int_get_flags(dsp_device_t *device, size_t group);
 uint16_t dsp_int_get_pending_flags(dsp_device_t *device, size_t group);
 void dsp_int_set_request(dsp_device_t *device, size_t index, bool level);
 void dsp_int_set_flags(dsp_device_t *device, size_t group, uint16_t flags);
+void dsp_int_set_i2s3_tx(dsp_device_t *device);
 uint16_t dsp_int_take_mcu_events(dsp_device_t *device);
 
 dsp_device_t *mcs_create(const pmb887x_dsp_peripheral_config_t *config, const dsp_host_t *host);

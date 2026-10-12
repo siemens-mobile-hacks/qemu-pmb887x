@@ -5,6 +5,8 @@
 #include <stdint.h>
 
 #define PMB887X_DSP_ADDRESS_SPACE_WORDS	0x10000U
+#define PMB887X_DSP_HW_VERSION_E001	0xE001U
+#define PMB887X_DSP_HW_VERSION_E101	0xE101U
 
 typedef struct pmb887x_dsp_config_t pmb887x_dsp_config_t;
 typedef struct pmb887x_dsp_peripheral_config_t pmb887x_dsp_peripheral_config_t;
@@ -40,6 +42,7 @@ struct pmb887x_dsp_peripheral_config_t {
 struct pmb887x_dsp_config_t {
 	const char *name;
 	uint16_t default_rom_version;
+	uint16_t hardware_version;
 	uint16_t page_field_mask;
 	uint8_t program_page_shift;
 	uint16_t program_rom_base;

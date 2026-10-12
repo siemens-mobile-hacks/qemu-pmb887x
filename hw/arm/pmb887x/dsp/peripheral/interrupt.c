@@ -19,6 +19,9 @@
 #define MCU_INTERRUPT_MASK		(TEAK_INT_TOMCU_TOMCU0 | TEAK_INT_TOMCU_TOMCU1 | \
 	TEAK_INT_TOMCU_TOMCU2 | TEAK_INT_TOMCU_TOMCU3)
 #define MCU_REQUEST_COUNT	3
+#define E001_FINTB0_VALID_MASK	0x07FF
+#define E101_FINTB0_VALID_MASK	0x0FEF
+#define E001_FINTB0_I2S3TX	BIT(4)
 
 typedef struct dsp_int_state_t dsp_int_state_t;
 
@@ -30,6 +33,13 @@ struct dsp_int_state_t {
 };
 
 static const uint8_t INTERRUPT_GROUP_LINES[] = { 0, 0, 1, 2 };
+
+static uint16_t dsp_int_valid_mask(const dsp_device_t *device, size_t group) {
+	if (group != 1)
+		return UINT16_MAX;
+	return device->dsp_config->hardware_version == PMB887X_DSP_HW_VERSION_E001 ?
+		E001_FINTB0_VALID_MASK : E101_FINTB0_VALID_MASK;
+}
 
 static uint8_t dsp_int_compute_lines(const dsp_int_state_t *state) {
 	uint8_t lines = 0;
@@ -106,15 +116,15 @@ static bool dsp_int_write(dsp_device_t *device, uint16_t offset, uint32_t pc, ui
 			size_t register_index = offset % INTERRUPT_GROUP_STRIDE;
 			switch (register_index) {
 				case INTERRUPT_ENABLE_REGISTER:
-					qatomic_set(&state->enable[group], value);
+					qatomic_set(&state->enable[group], value & dsp_int_valid_mask(device, group));
 					break;
 
 				case INTERRUPT_RESET_REGISTER:
-					qatomic_and(&state->flags[group], (uint16_t) ~value);
+					qatomic_and(&state->flags[group], (uint16_t) ~(value & dsp_int_valid_mask(device, group)));
 					break;
 
 				case INTERRUPT_SET_REGISTER:
-					qatomic_or(&state->flags[group], value);
+					qatomic_or(&state->flags[group], value & dsp_int_valid_mask(device, group));
 					break;
 			}
 			dsp_int_update_lines(state);
@@ -175,8 +185,15 @@ void dsp_int_set_flags(dsp_device_t *device, size_t group, uint16_t flags) {
 
 	g_assert(group < INTERRUPT_GROUP_COUNT);
 
-	qatomic_or(&state->flags[group], flags);
+	qatomic_or(&state->flags[group], flags & dsp_int_valid_mask(device, group));
 	dsp_int_update_lines(state);
+}
+
+void dsp_int_set_i2s3_tx(dsp_device_t *device) {
+	uint16_t mask = device->dsp_config->hardware_version == PMB887X_DSP_HW_VERSION_E001 ?
+		E001_FINTB0_I2S3TX : TEAK_INT_FINTB0_I2S3TX;
+
+	dsp_int_set_flags(device, 1, mask);
 }
 
 uint16_t dsp_int_take_mcu_events(dsp_device_t *device) {

@@ -448,6 +448,12 @@ static uint16_t *equalizer_external_ram16(equalizer_state_t *state, size_t *word
 	g_assert_not_reached();
 }
 
+static uint8_t equalizer_apply_hard_sign(int8_t soft, bool negative) {
+	if (negative)
+		return soft < 0 ? (uint8_t) soft : UINT8_MAX;
+	return soft > 0 ? (uint8_t) soft : 1;
+}
+
 static uint8_t equalizer_combine_soft(const equalizer_state_t *state, size_t source) {
 	uint16_t config = state->operation_config != 0 ? state->operation_config : state->config2;
 	bool edge = (config & TEAK_EQ_CONF2_EQ_EDGE) != 0;
@@ -464,9 +470,7 @@ static uint8_t equalizer_combine_soft(const equalizer_state_t *state, size_t sou
 			state->combined_hard[hard_index] != 0;
 	}
 
-	if (negative)
-		return soft < 0 ? (uint8_t) soft : UINT8_MAX;
-	return soft > 0 ? (uint8_t) soft : 1;
+	return equalizer_apply_hard_sign(soft, negative);
 }
 
 static uint16_t equalizer_combine_pair(const equalizer_state_t *state, size_t high_source, size_t low_source) {
@@ -475,20 +479,69 @@ static uint16_t equalizer_combine_pair(const equalizer_state_t *state, size_t hi
 	return ((uint16_t) high << 8) | low;
 }
 
-static uint16_t equalizer_combined_read(const equalizer_state_t *state, size_t word) {
+static uint8_t equalizer_e001_combine_soft(const equalizer_state_t *state, int source) {
+	int timestamp = source / 3;
+	int bit = source % 3;
+
+	if (bit < 0) {
+		bit += 3;
+		timestamp--;
+	}
+
+	int8_t soft = 0;
+	if (source >= 0) {
+		size_t soft_source = timestamp * 4 + bit;
+		soft = (state->ram2[soft_source / 2] >> ((soft_source & 1) * 8));
+	}
+
+	int hard_index = timestamp + EQUALIZER_TRAINING_SYMBOLS;
+	bool negative = hard_index >= 0 && hard_index < (int) ARRAY_SIZE(state->combined_hard) &&
+		(state->combined_hard[hard_index] & BIT(bit)) != 0;
+	return equalizer_apply_hard_sign(soft, negative);
+}
+
+static uint16_t equalizer_e001_combined_read(const equalizer_state_t *state, size_t word, bool segment) {
+	size_t group_word = word % 4;
+
+	if ((!segment && group_word == 3) || (segment && group_word == 1))
+		return 0;
+
+	size_t packed_word = word / 4 * 3;
+	if (segment)
+		packed_word += group_word == 0 ? 0 : group_word - 1;
+	else
+		packed_word += group_word;
+
+	int source = (int) (packed_word * 2) - (segment ? 29 : 30);
+	uint8_t high = equalizer_e001_combine_soft(state, source);
+	uint8_t low = equalizer_e001_combine_soft(state, source + 1);
+	return ((uint16_t) high << 8) | low;
+}
+
+static uint16_t equalizer_combined_read(const dsp_device_t *device, size_t word) {
+	const equalizer_state_t *state = device->state;
 	uint16_t config = state->operation_config != 0 ? state->operation_config : state->config2;
 	bool segment = (config & TEAK_EQ_CONF2_S_SEG) != 0;
 	bool right = (config & TEAK_EQ_CONF2_EQ_RIGHT) != 0;
-
 	if (word >= EQUALIZER_COMBINED_WORDS)
 		return 0;
+	if (device->dsp_config->hardware_version == PMB887X_DSP_HW_VERSION_E001 &&
+		(config & TEAK_EQ_CONF2_EQ_EDGE) != 0)
+		return equalizer_e001_combined_read(state, word, segment);
 
 	if (!segment) {
 		size_t source_base = (state->side_processed_count[right] - state->configured_count) * 2;
 		bool gmsk_operation = state->operation_config != 0 && (config & TEAK_EQ_CONF2_EQ_EDGE) == 0;
 
-		if (gmsk_operation && word == 1)
+		if (gmsk_operation && word == 1) {
+			if (device->dsp_config->hardware_version == PMB887X_DSP_HW_VERSION_E001 && source_base != 0 &&
+				source_base < EQUALIZER_GMSK_SOFT_BYTES) {
+				uint8_t soft = equalizer_combine_soft(state, 0);
+
+				return right ? (0x0100 | soft) : (((uint16_t) soft << 8) | 1);
+			}
 			return 0x0101;
+		}
 		if (gmsk_operation && word == 3) {
 			bool first_segment = state->side_processed_count[right] == state->configured_count;
 
@@ -543,7 +596,7 @@ uint16_t equalizer_external_read(dsp_device_t *device) {
 		uint16_t value;
 
 		if (combined)
-			return equalizer_combined_read(state, state->external_pointer++);
+			return equalizer_combined_read(device, state->external_pointer++);
 		if (state->external_pointer >= word_count)
 			return 0;
 

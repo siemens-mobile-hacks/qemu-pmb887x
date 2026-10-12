@@ -186,7 +186,7 @@ void dsp_i2s_tx_advance(dsp_device_t *device, size_t cycles) {
 		if (state->position == state->registers[TEAK_I2S3_TXINTADDR]) {
 			if ((state->registers[TEAK_I2S3_CTRL] & TEAK_I2S3_CTRL_TXPCM) != 0)
 				state->registers[TEAK_I2S3_CTRL] &= (uint16_t) ~TEAK_I2S3_CTRL_I2STXSTART;
-			dsp_int_set_flags(state->interrupt, I2S_TX_INTERRUPT_GROUP, TEAK_INT_FINTB0_I2S3TX);
+			dsp_int_set_i2s3_tx(state->interrupt);
 			state->phase = 0;
 			break;
 		}

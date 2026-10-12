@@ -137,6 +137,7 @@ static pmb887x_dsp_peripheral_bus_t *test_bus_create(test_host_t *host) {
 		{ "I2S3", PMB887X_DSP_PERIPHERAL_I2S_TX, TEST_I2S_TX_BASE, 0x0B },
 	};
 	static const pmb887x_dsp_config_t config = {
+		.hardware_version = PMB887X_DSP_HW_VERSION_E101,
 		.mmio_base = TEST_INTERRUPT_BASE,
 		.mmio_size = 0x100,
 		.peripherals = peripherals,

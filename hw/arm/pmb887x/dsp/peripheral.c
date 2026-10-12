@@ -122,8 +122,10 @@ dsp_bus_t *dsp_bus_create(const pmb887x_dsp_config_t *config, const dsp_host_t *
 	bus->host = *host;
 	bus->ports = *ports;
 	bus->devices = g_new0(dsp_device_t *, bus->device_count);
-	for (size_t i = 0; i < bus->device_count; i++)
+	for (size_t i = 0; i < bus->device_count; i++) {
 		bus->devices[i] = dsp_bus_create_device(bus, &config->peripherals[i]);
+		bus->devices[i]->dsp_config = config;
+	}
 
 	bus->fallback_config = (pmb887x_dsp_peripheral_config_t) {
 		.name = "unknown",
