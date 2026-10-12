@@ -4736,8 +4736,8 @@ static const pmb887x_io_field_t sccu_scctrl_fields[] = {
 };
 
 static const pmb887x_io_field_t sccu_wait_fields[] = {
-	{"PREWUP",	SCCU_WAIT_PREWUP,	SCCU_WAIT_PREWUP_SHIFT,	NULL,	0},
 	{"WAIT",	SCCU_WAIT_WAIT,		SCCU_WAIT_WAIT_SHIFT,	NULL,	0},
+	{"PREWUP",	SCCU_WAIT_PREWUP,	SCCU_WAIT_PREWUP_SHIFT,	NULL,	0},
 };
 
 static const pmb887x_io_field_t sccu_hwwakeup_fields[] = {

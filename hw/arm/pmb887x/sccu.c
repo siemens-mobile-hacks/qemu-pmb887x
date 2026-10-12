@@ -90,6 +90,11 @@ static int64_t sccu_ticks_to_ns(pmb887x_sccu_t *p, uint64_t ticks) {
 	return (int64_t) muldiv64(ticks, NANOSECONDS_PER_SECOND, p->timer_freq) + (ticks ? 1 : 0);
 }
 
+static uint32_t sccu_get_wakeup_count(pmb887x_sccu_t *p) {
+	uint32_t prewup = (p->wait & SCCU_WAIT_PREWUP) >> SCCU_WAIT_PREWUP_SHIFT;
+	return p->tdmini - MIN(p->tdmini, prewup);
+}
+
 static void sccu_cal_timer_reset(void *opaque) {
 	pmb887x_sccu_t *p = opaque;
 	uint32_t frtc = clock_get_hz(p->clock32);
@@ -107,7 +112,7 @@ static void sccu_cal_timer_reset(void *opaque) {
 
 static void sccu_set_active_state(pmb887x_sccu_t *p) {
 	p->sccuclksta = SCCU_SCCUCLKSTA_CPUCLK | SCCU_SCCUCLKSTA_GSMCLK;
-	p->sccumsta = SCCU_SCCUMSTA_UC_ON | SCCU_SCCUMSTA_TCXO_ON | SCCU_SCCUMSTA_SHAP_ON;
+	p->sccumsta = SCCU_SCCUMSTA_UC_ON;
 }
 
 static void sccu_sc_timer_reset(void *opaque) {
@@ -132,7 +137,7 @@ static void sccu_ptimer_reset(void *opaque) {
 	uint32_t overflow = p->tdmini + 1;
 	uint64_t counter = sccu_get_counter(p, true);
 
-	if (counter >= p->tdmini && !p->irq_fired) {
+	if (counter >= sccu_get_wakeup_count(p) && !p->irq_fired) {
 		p->irq_fired = true;
 		pmb887x_src_update(&p->src[SCCU_IRQ_WAKE], 0, MOD_SRC_SETR);
 	}
@@ -160,7 +165,7 @@ static void sccu_start_sleep(pmb887x_sccu_t *p) {
 	p->slpctrl |= SCCU_SLPCTRL_SLPEN;
 	p->sccuclksta &= ~SCCU_SCCUCLKSTA_GSMCLK;
 
-	uint32_t first_event = p->tdmini ? p->tdmini : p->tdmini + 1;
+	uint32_t first_event = sccu_get_wakeup_count(p);
 	timer_mod(p->timer, p->start + sccu_ticks_to_ns(p, first_event));
 	DPRINTF("sleep timer start %d ms\n", (uint32_t) (sccu_ticks_to_ns(p, p->tdmini + 1) / 1000000));
 }
@@ -382,8 +387,9 @@ static void sccu_realize(DeviceState *dev, Error **errp) {
 	p->cal_timer = timer_new_ns(QEMU_CLOCK_VIRTUAL, sccu_cal_timer_reset, p);
 	p->sc_timer = timer_new_ns(QEMU_CLOCK_VIRTUAL, sccu_sc_timer_reset, p);
 
+	p->ref = 0x5E0;
 	p->nqtz = 0x97;
-	p->wait = 3 << SCCU_WAIT_PREWUP_SHIFT;
+	p->wait = (3 << SCCU_WAIT_PREWUP_SHIFT) | (0x3F << SCCU_WAIT_WAIT_SHIFT);
 	p->timer_freq = clock_get_hz(p->clock32) / sccu_get_nqtz(p);
 	sccu_set_active_state(p);
 }
@@ -407,10 +413,10 @@ static void sccu_reset(DeviceState *dev) {
 	p->spcr = 0;
 	p->slpctrl = 0;
 	p->refin = 0;
-	p->ref = 0;
+	p->ref = 0x5E0;
 	p->nqtz = 0x97;
 	p->scctrl = 0;
-	p->wait = 3 << SCCU_WAIT_PREWUP_SHIFT;
+	p->wait = (3 << SCCU_WAIT_PREWUP_SHIFT) | (0x3F << SCCU_WAIT_WAIT_SHIFT);
 	p->hwwakeup = 0;
 	p->sccuclksta = 0;
 	p->sccumsta = 0;

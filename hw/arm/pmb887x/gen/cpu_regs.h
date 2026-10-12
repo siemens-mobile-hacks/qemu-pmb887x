@@ -5836,10 +5836,10 @@
 
 /* Wakeup Timing Register */
 #define SCCU_WAIT						0x30
-#define SCCU_WAIT_PREWUP				(0x3 << 0)		 // Pre-Wakeup Time in TDMA Frames Minus 1
-#define SCCU_WAIT_PREWUP_SHIFT			0
-#define SCCU_WAIT_WAIT					(0x3 << 16)		 // VCXO Wait Loop Duration
-#define SCCU_WAIT_WAIT_SHIFT			16
+#define SCCU_WAIT_WAIT					(0x3F << 0)		 // VCXO Wait Loop Duration
+#define SCCU_WAIT_WAIT_SHIFT			0
+#define SCCU_WAIT_PREWUP				(0x3 << 16)		 // Pre-Wakeup Time in TDMA Frames Minus 1
+#define SCCU_WAIT_PREWUP_SHIFT			16
 
 /* Hardware Wakeup Control Register */
 #define SCCU_HWWAKEUP					0x34
