@@ -122,10 +122,10 @@ static void rtc_advance(pmb887x_rtc_t *p, uint64_t ticks) {
 		p->con &= ~RTC_CON_T14DEC;
 	}
 	if (ticks && (p->con & RTC_CON_T14INC)) {
-		if (count != 0xFFFF) {
+		if (p->revision != 0 && count != 0xFFFF) {
 			count++;
-			p->con &= ~RTC_CON_T14INC;
 		}
+		p->con &= ~RTC_CON_T14INC;
 	}
 
 	while (ticks) {
@@ -301,12 +301,20 @@ static const MemoryRegionOps io_ops = {
 	}
 };
 
+static void rtc_reset(DeviceState *dev);
+
+static void rtc_handle_reset(void *opaque, int _line, int level) {
+	if (level)
+		rtc_reset(DEVICE(opaque));
+}
+
 static void rtc_init(Object *obj) {
 	pmb887x_rtc_t *p = PMB887X_RTC(obj);
 	pmb887x_clc_init(&p->clc, DEVICE(obj));
 	memory_region_init_io(&p->mmio, obj, &io_ops, p, "pmb887x-rtc", RTC_IO_SIZE);
 	sysbus_init_mmio(SYS_BUS_DEVICE(obj), &p->mmio);
 	sysbus_init_irq(SYS_BUS_DEVICE(obj), &p->irq);
+	qdev_init_gpio_in_named(DEVICE(obj), rtc_handle_reset, "RESET_IN", 1);
 }
 
 static uint32_t rtc_pack_cnt(uint32_t day_rel, uint32_t yday, uint32_t hour, uint32_t min, uint32_t sec) {
@@ -353,7 +361,7 @@ static void rtc_reset(DeviceState *dev) {
 
 	timer_del(p->timer);
 
-	pmb887x_clc_set(&p->clc, 1U << MOD_CLC_RMC_SHIFT);
+	pmb887x_clc_set(&p->clc, MOD_CLC_DISR);
 	pmb887x_src_reset(&p->src);
 
 	p->ctrl = 0;

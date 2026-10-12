@@ -325,6 +325,7 @@ static void pmb887x_init(MachineState *machine) {
 	qdev_prop_set_string(rtc, "cnt-format",
 		toml_table_get_string(pmb887x_board()->config, "rtc.format", "unix", false));
 	sysbus_realize_and_unref(SYS_BUS_DEVICE(rtc), &error_fatal);
+	qdev_connect_gpio_out_named(scu, "RTC_RESET_OUT", 0, qdev_get_gpio_in_named(rtc, "RESET_IN", 0));
 
 	// GPTU0
 	DeviceState *gptu0 = pmb887x_new_cpu_module("GPTU0");
