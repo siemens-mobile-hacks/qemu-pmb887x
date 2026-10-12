@@ -6,6 +6,7 @@
 #define PMB887X_TRACE_IO		p->trace_io
 
 #include "qemu/osdep.h"
+#include "hw/core/irq.h"
 #include "hw/core/sysbus.h"
 #include "hw/core/hw-error.h"
 #include "system/memory.h"
@@ -47,7 +48,16 @@ struct pmb887x_pmic_t {
 	uint32_t audio_sample_rate_hz;
 	uint32_t audio_channels;
 	bool i2s_capture_unimplemented_reported;
+	bool on_pressed;
+	qemu_irq on_off_out;
 };
+
+static void pmic_handle_on_input(void *opaque, int _line, int level) {
+	pmb887x_pmic_t *p = opaque;
+
+	p->on_pressed = level != 0;
+	qemu_set_irq(p->on_off_out, !p->on_pressed);
+}
 
 static void pasic_audio_callback(void *opaque, int free_bytes) {
 	pmb887x_pmic_t *p = opaque;
@@ -329,6 +339,7 @@ static int pmic_send(I2CTarget *target, uint8_t data) {
 static void pmic_reset(DeviceState *dev) {
 	pmb887x_pmic_t *p = PMB887X_PMIC(dev);
 
+	qemu_set_irq(p->on_off_out, !p->on_pressed);
 	p->reg_id = 0;
 	p->wcycle = 0;
 	p->i2s_capture_unimplemented_reported = false;
@@ -368,6 +379,8 @@ static const Property pmic_properties[] = {
 static void pmic_init(Object *obj) {
 	pmb887x_pmic_t *p = PMB887X_PMIC(obj);
 
+	qdev_init_gpio_in_named(DEVICE(obj), pmic_handle_on_input, "ON_IN", 1);
+	qdev_init_gpio_out_named(DEVICE(obj), &p->on_off_out, "ON_OFF_OUT", 1);
 	i2c_target_port_init(&p->i2c_port, DEVICE(obj), "I2C", I2C_TARGET(obj), &p->i2c_address);
 	i2s_sink_port_init(&p->i2s_rx_port, DEVICE(obj), "I2S_RX", I2S_SINK(obj));
 	i2s_source_port_init(&p->i2s_tx_port, DEVICE(obj), "I2S_TX", I2S_SOURCE(obj));
