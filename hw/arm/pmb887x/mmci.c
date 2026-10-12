@@ -1,25 +1,20 @@
 /*
- * MMC Interface
- * */
-#define PMB887X_TRACE_ID		MMCI
-#define PMB887X_TRACE_PREFIX	"pmb887x-mmci"
-
-#define MMCI_EXTI_COUNT 7
+ * MMC interface wrapper
+ */
+#define PMB887X_TRACE_ID MMCI
+#define PMB887X_TRACE_PREFIX "pmb887x-mmci"
 
 #include "qemu/osdep.h"
-#include "hw/core/sysbus.h"
-#include "system/memory.h"
 #include "hw/core/qdev-properties.h"
-#include "qapi/error.h"
-#include "cpu.h"
+#include "hw/core/sysbus.h"
 
 #include "hw/arm/pmb887x/gen/cpu_regs.h"
-#include "hw/arm/pmb887x/regs_dump.h"
 #include "hw/arm/pmb887x/mod.h"
+#include "hw/arm/pmb887x/regs_dump.h"
 #include "hw/arm/pmb887x/trace.h"
 
-#define TYPE_PMB887X_MMCI	"pmb887x-mmci"
-#define PMB887X_MMCI(obj)	OBJECT_CHECK(pmb887x_mmci_t, (obj), TYPE_PMB887X_MMCI)
+#define TYPE_PMB887X_MMCI "pmb887x-mmci"
+#define PMB887X_MMCI(obj) OBJECT_CHECK(pmb887x_mmci_t, (obj), TYPE_PMB887X_MMCI)
 
 typedef struct pmb887x_mmci_t pmb887x_mmci_t;
 
@@ -38,71 +33,59 @@ struct pmb887x_mmci_t {
 
 static uint64_t mmci_io_read(void *opaque, hwaddr haddr, unsigned size) {
 	pmb887x_mmci_t *p = opaque;
-	
 	uint64_t value = 0;
-	
+
 	switch (haddr) {
 		case MMCI_CLC:
 			value = pmb887x_clc_get(&p->clc);
 			break;
-		
 		case MMCI_ID:
 			value = 0xF041C000 | p->revision;
 			break;
-		
-		default:
-			EPRINTF("unknown reg access: %02"PRIX64"\n", haddr);
-			exit(1);
 	}
-	
+
 	IO_DUMP_READ(haddr + p->mmio.addr, size, value);
-	
 	return value;
 }
 
 static void mmci_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned size) {
 	pmb887x_mmci_t *p = opaque;
-	
+
 	IO_DUMP_WRITE(haddr + p->mmio.addr, size, value);
-	
 	switch (haddr) {
-		case GPIO_CLC:
+		case MMCI_CLC:
 			pmb887x_clc_set(&p->clc, value);
 			break;
-		
-		default:
-			EPRINTF("unknown reg access: %02"PRIX64"\n", haddr);
-			exit(1);
 	}
 }
 
-static const MemoryRegionOps io_ops = {
-	.read			= mmci_io_read,
-	.write			= mmci_io_write,
-	.endianness		= DEVICE_NATIVE_ENDIAN,
-	.valid			= {
-		.min_access_size	= 1,
-		.max_access_size	= 4
-	}
+static const MemoryRegionOps mmci_io_ops = {
+	.read = mmci_io_read,
+	.write = mmci_io_write,
+	.endianness = DEVICE_NATIVE_ENDIAN,
+	.valid = {
+		.min_access_size = 4,
+		.max_access_size = 4,
+	},
 };
 
-static void mmci_handle_gpio_input(void *opaque, int id, int level) {
-	// nothing
+static void mmci_gpio_input(void *_opaque, int _id, int _level) {
 }
 
 static void mmci_init(Object *obj) {
 	DeviceState *dev = DEVICE(obj);
 	pmb887x_mmci_t *p = PMB887X_MMCI(obj);
+
 	pmb887x_clc_init(&p->clc, dev);
-	memory_region_init_io(&p->mmio, obj, &io_ops, p, "pmb887x-mmci", MMCI_IO_SIZE);
+	memory_region_init_io(&p->mmio, obj, &mmci_io_ops, p, "pmb887x-mmci", MMCI_IO_SIZE);
 	sysbus_init_mmio(SYS_BUS_DEVICE(obj), &p->mmio);
 
-	qdev_init_gpio_in_named(dev, mmci_handle_gpio_input, "DAT0_IN", 1);
-	qdev_init_gpio_in_named(dev, mmci_handle_gpio_input, "DAT1_IN", 1);
-	qdev_init_gpio_in_named(dev, mmci_handle_gpio_input, "DAT2_IN", 1);
-	qdev_init_gpio_in_named(dev, mmci_handle_gpio_input, "DAT3_IN", 1);
-	qdev_init_gpio_in_named(dev, mmci_handle_gpio_input, "CMD_IN", 1);
-	qdev_init_gpio_in_named(dev, mmci_handle_gpio_input, "CLK_IN", 1);
+	qdev_init_gpio_in_named(dev, mmci_gpio_input, "DAT0_IN", 1);
+	qdev_init_gpio_in_named(dev, mmci_gpio_input, "DAT1_IN", 1);
+	qdev_init_gpio_in_named(dev, mmci_gpio_input, "DAT2_IN", 1);
+	qdev_init_gpio_in_named(dev, mmci_gpio_input, "DAT3_IN", 1);
+	qdev_init_gpio_in_named(dev, mmci_gpio_input, "CMD_IN", 1);
+	qdev_init_gpio_in_named(dev, mmci_gpio_input, "CLK_IN", 1);
 	qdev_init_gpio_out_named(dev, &p->gpio_dat0, "DAT0_OUT", 1);
 	qdev_init_gpio_out_named(dev, &p->gpio_dat1, "DAT1_OUT", 1);
 	qdev_init_gpio_out_named(dev, &p->gpio_dat2, "DAT2_OUT", 1);
@@ -113,11 +96,13 @@ static void mmci_init(Object *obj) {
 
 static void mmci_reset(DeviceState *dev) {
 	pmb887x_mmci_t *p = PMB887X_MMCI(dev);
+
 	pmb887x_clc_set(&p->clc, 1U << MOD_CLC_RMC_SHIFT);
 }
 
-static void mmci_realize(DeviceState *dev, Error **errp) {
+static void mmci_realize(DeviceState *dev, Error **_errp) {
 	pmb887x_mmci_t *p = PMB887X_MMCI(dev);
+
 	pmb887x_clc_set(&p->clc, 1U << MOD_CLC_RMC_SHIFT);
 }
 
@@ -125,22 +110,24 @@ static const Property mmci_properties[] = {
 	DEFINE_PROP_UINT32("revision", pmb887x_mmci_t, revision, 0),
 };
 
-static void mmci_class_init(ObjectClass *klass, const void *data) {
+static void mmci_class_init(ObjectClass *klass, const void *_data) {
 	DeviceClass *dc = DEVICE_CLASS(klass);
+
 	device_class_set_props(dc, mmci_properties);
 	device_class_set_legacy_reset(dc, mmci_reset);
 	dc->realize = mmci_realize;
 }
 
 static const TypeInfo mmci_info = {
-    .name          	= TYPE_PMB887X_MMCI,
-    .parent        	= TYPE_SYS_BUS_DEVICE,
-    .instance_size 	= sizeof(pmb887x_mmci_t),
-    .instance_init 	= mmci_init,
-    .class_init    	= mmci_class_init,
+	.name = TYPE_PMB887X_MMCI,
+	.parent = TYPE_SYS_BUS_DEVICE,
+	.instance_size = sizeof(pmb887x_mmci_t),
+	.instance_init = mmci_init,
+	.class_init = mmci_class_init,
 };
 
 static void mmci_register_types(void) {
 	type_register_static(&mmci_info);
 }
+
 type_init(mmci_register_types)
