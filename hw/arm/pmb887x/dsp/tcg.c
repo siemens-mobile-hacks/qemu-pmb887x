@@ -4185,11 +4185,15 @@ static void tcg_emit_instruction(teak_insn_t *instruction, uint8_t block_repeat_
 
 static bool tcg_block_repeat_setup_valid(const teak_tcg_core_t *core, const teak_insn_t *instruction) {
 	uint8_t level = core->state.bcn;
+	bool interrupt_active = core->state.maskable_interrupt_active || core->state.nmi_active ||
+		core->state.trap_active;
+
 	if (level == TEAK_BLOCK_REPEAT_LEVELS)
 		return false;
 	if (instruction->branch_target < instruction->address + instruction->words)
 		return false;
-	if (level != 0 && instruction->branch_target >= core->state.block_repeat_end[level - 1])
+	if (level != 0 && !interrupt_active &&
+		instruction->branch_target >= core->state.block_repeat_end[level - 1])
 		return false;
 	if (instruction->opcode == TEAK_OP_BLOCK_REPEAT_REGISTER) {
 		bool full_accumulator = instruction->register_code == 24 || instruction->register_code == 25;

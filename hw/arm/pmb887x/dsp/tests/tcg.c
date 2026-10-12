@@ -159,6 +159,45 @@ static void test_long_block_repeat(void) {
 	g_assert_cmphex(core.state.bcn, ==, 0);
 }
 
+static void test_interrupt_block_repeat(void) {
+	test_memory_t program = {
+		.words = {
+			[20] = 0x5D06, [21] = 0x0019, /* bkrep r7, 0x0019. */
+			[22] = 0x67D0, /* inc a0. */
+			[23] = 0x67D0, /* inc a0. */
+			[24] = 0x67D0, /* inc a0. */
+			[25] = 0x67D0, /* inc a0. */
+			[26] = 0x45C0, /* reti true. */
+		},
+	};
+	test_memory_t data = {
+		.words = { [10] = 5 },
+	};
+	pmb887x_dsp_tcg_core_t core = test_core_create(&program, &data);
+
+	core.state.pc = 20;
+	core.state.sp = 10;
+	core.state.r[7] = 1;
+	core.state.ie = 0;
+	core.state.maskable_interrupt_active = 1;
+	core.state.lp = 1;
+	core.state.bcn = 1;
+	core.state.block_repeat_start[0] = 2;
+	core.state.block_repeat_end[0] = 10;
+	core.state.block_repeat_lc[0] = 7;
+
+	test_execute_until(&core, 5, 16);
+	g_assert_cmphex(core.state.a[0], ==, 8);
+	g_assert_cmphex(core.state.block_repeat_start[0], ==, 2);
+	g_assert_cmphex(core.state.block_repeat_end[0], ==, 10);
+	g_assert_cmphex(core.state.block_repeat_lc[0], ==, 7);
+	g_assert_cmphex(core.state.bcn, ==, 1);
+	g_assert_cmphex(core.state.lp, ==, 1);
+	g_assert_cmphex(core.state.sp, ==, 11);
+	g_assert_cmphex(core.state.ie, ==, 1);
+	g_assert_cmphex(core.state.maskable_interrupt_active, ==, 0);
+}
+
 static void test_status_reserved_read_bits(void) {
 	test_memory_t program = {
 		.words = { 0x5809, 0x582A, 0x4180, 0x0004 },
@@ -497,6 +536,7 @@ int main(int argc, char **argv) {
 	g_test_add_func("/pmb887x/dsp/tcg/mov-immediate-product-high", test_mov_immediate_product_high);
 	g_test_add_func("/pmb887x/dsp/tcg/pop-full-accumulator", test_pop_full_accumulator);
 	g_test_add_func("/pmb887x/dsp/tcg/long-block-repeat", test_long_block_repeat);
+	g_test_add_func("/pmb887x/dsp/tcg/interrupt-block-repeat", test_interrupt_block_repeat);
 	g_test_add_func("/pmb887x/dsp/tcg/status-reserved-read-bits", test_status_reserved_read_bits);
 	g_test_add_func("/pmb887x/dsp/tcg/multiply-status-register", test_multiply_status_register);
 	g_test_add_func("/pmb887x/dsp/tcg/alu-status-register", test_alu_status_register);
