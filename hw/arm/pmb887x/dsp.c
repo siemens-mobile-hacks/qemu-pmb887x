@@ -741,13 +741,12 @@ struct dsp_state_t {
 
 static void dsp_clock_update(void *opaque);
 
-static bool dsp_is_clock_enabled(dsp_state_t *p) {
-	return p->clock_hz != 0;
+static bool dsp_mcu_interface_is_enabled(dsp_state_t *p) {
+	return pmb887x_clc_is_enabled(&p->clc) && pmb887x_clc_get_rmc(&p->clc) != 0;
 }
 
 static void dsp_update_active_output(dsp_state_t *p) {
-	bool active = dsp_is_clock_enabled(p) && dsp_runtime_is_running(p->runtime) &&
-		!dsp_runtime_is_idle(p->runtime);
+	bool active = dsp_runtime_is_running(p->runtime) && !dsp_runtime_is_idle(p->runtime);
 
 	qemu_set_irq(p->active_output, active);
 }
@@ -906,13 +905,13 @@ static void dsp_update_timer(dsp_state_t *p) {
 
 static void dsp_clock_update(void *opaque) {
 	dsp_state_t *p = opaque;
-	uint32_t divider = pmb887x_clc_get_rmc(&p->clc);
 
 	dsp_account_time(p);
-	p->clock_hz = pmb887x_clc_get_hz(&p->clc);
+	p->clock_hz = pmb887x_clc_get_input_hz(&p->clc);
+	if (!dsp_mcu_interface_is_enabled(p) && dsp_runtime_is_idle(p->runtime))
+		p->clock_hz = 0;
 	dsp_runtime_set_clock_hz(p->runtime, p->clock_hz);
-	if (divider != 0)
-		dsp_runtime_set_clock_divider(p->runtime, divider);
+	dsp_runtime_set_clock_divider(p->runtime, 1);
 	dsp_update_active_output(p);
 	dsp_update_timer(p);
 	dsp_schedule_sync(p);
@@ -1078,6 +1077,8 @@ static uint64_t dsp_io_read(void *opaque, hwaddr haddr, unsigned size) {
 	switch (haddr) {
 		case DSP_CLC:
 			value = pmb887x_clc_get(&p->clc);
+			if (pmb887x_clc_get_rmc(&p->clc) == 0)
+				value |= MOD_CLC_DISS;
 			break;
 
 		case DSP_ID:
@@ -1171,6 +1172,10 @@ static uint64_t dsp_ram_read(void *opaque, hwaddr haddr, unsigned size) {
 	dsp_state_t *p = opaque;
 	uint64_t value;
 
+	if (!dsp_mcu_interface_is_enabled(p)) {
+		IO_DUMP_READ(haddr + p->mmio.addr + DSP_RAM0, size, 0);
+		return 0;
+	}
 	if (icount2_enabled())
 		icount2_advance(DSP_RAM_READ_WAIT_CYCLES);
 	dsp_sync_access(p);
@@ -1183,6 +1188,10 @@ static uint64_t dsp_ram_read(void *opaque, hwaddr haddr, unsigned size) {
 static void dsp_ram_write(void *opaque, hwaddr haddr, uint64_t value, unsigned size) {
 	dsp_state_t *p = opaque;
 
+	if (!dsp_mcu_interface_is_enabled(p)) {
+		IO_DUMP_WRITE(haddr + p->mmio.addr + DSP_RAM0, size, value);
+		return;
+	}
 	if (icount2_enabled())
 		icount2_advance(size == 4 ? DSP_RAM_WRITE32_WAIT_CYCLES : DSP_RAM_WRITE16_WAIT_CYCLES);
 	dsp_sync_access(p);
