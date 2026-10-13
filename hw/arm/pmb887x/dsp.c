@@ -738,6 +738,7 @@ struct dsp_state_t {
 	bool vm_running;
 	bool reset_pending;
 	bool reset_boot_flag_seen;
+	bool comm_transition_pending;
 	bool sync_queued;
 	bool syncing;
 	qemu_irq mcu_interrupts[PMB887X_DSP_MCU_INT_COUNT];
@@ -873,7 +874,7 @@ static void dsp_sync(dsp_state_t *p) {
 		} else {
 			remaining_cycles -= executed;
 		}
-		if (executed == 0 || deferred) {
+		if (executed == 0 || deferred || p->comm_transition_pending) {
 			p->pending_cycles += remaining_cycles;
 			remaining_cycles = 0;
 			break;
@@ -908,7 +909,8 @@ static void dsp_sync_on_cpu(CPUState *cpu, run_on_cpu_data data) {
 	dsp_state_t *p = data.host_ptr;
 
 	p->sync_queued = false;
-	dsp_sync(p);
+	if (!p->comm_transition_pending)
+		dsp_sync(p);
 }
 
 static void dsp_schedule_sync(dsp_state_t *p) {
@@ -930,6 +932,7 @@ static void dsp_sync_access(dsp_state_t *p) {
 static void dsp_sync_timer(void *opaque) {
 	dsp_state_t *p = opaque;
 
+	p->comm_transition_pending = false;
 	dsp_sync_access(p);
 	if (p->vm_running && p->clock_hz != 0)
 		timer_mod(p->sync_timer, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + DSP_SYNC_PERIOD_NS);
@@ -949,8 +952,10 @@ static void dsp_clock_update(void *opaque) {
 
 	if (!dsp_mcu_interface_is_enabled(p) && dsp_runtime_is_idle(p->runtime))
 		clock_hz = 0;
-	if (clock_hz != p->clock_hz)
+	if (clock_hz != p->clock_hz) {
+		p->comm_transition_pending = false;
 		dsp_sync(p);
+	}
 	p->clock_hz = clock_hz;
 	dsp_runtime_set_clock_hz(p->runtime, p->clock_hz);
 	dsp_runtime_set_clock_divider(p->runtime, 1);
@@ -1000,6 +1005,12 @@ static void dsp_notify_comm(void *opaque, uint16_t flags, bool set) {
 		p->comm_status &= (uint16_t) ~flags;
 		p->comm_pending &= (uint16_t) ~flags;
 	}
+	if (!icount2_enabled()) {
+		p->comm_transition_pending = true;
+		dsp_runtime_request_reschedule(p->runtime);
+		if (p->vm_running && p->clock_hz != 0)
+			timer_mod(p->sync_timer, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + DSP_SYNC_PERIOD_NS);
+	}
 }
 
 static void dsp_reset_internal_state(dsp_state_t *p) {
@@ -1009,6 +1020,7 @@ static void dsp_reset_internal_state(dsp_state_t *p) {
 	p->reset_comm_flags = 0;
 	p->reset_requests = 0;
 	p->reset_boot_flag_seen = false;
+	p->comm_transition_pending = false;
 	p->pending_cycles = 0;
 	p->cycle_debt = 0;
 	p->pending_afe_cycles = 0;
@@ -1030,7 +1042,7 @@ static void dsp_reset_input(void *opaque, int _id, int level) {
 
 	dsp_reset_internal_state(p);
 	if (!icount2_enabled() && p->vm_running && p->clock_hz != 0) {
-		/* Make reset completion visible before the ARM resumes polling. */
+		/* Run until the Mask ROM publishes its first communication state. */
 		p->pending_cycles = DSP_REALTIME_PROGRAM_RUN_CYCLES;
 		dsp_sync(p);
 	}
@@ -1088,11 +1100,13 @@ static void dsp_interrupt_input(void *opaque, int id, int level) {
 	} else {
 		dsp_runtime_set_request(p->runtime, id, true);
 	}
+	p->comm_transition_pending = false;
 	dsp_update_active_output(p);
 	dsp_schedule_sync(p);
 }
 
 static void dsp_set_input(dsp_state_t *p, size_t index, int level) {
+	p->comm_transition_pending = false;
 	dsp_runtime_set_input(p->runtime, index, level != 0);
 	dsp_schedule_sync(p);
 }
@@ -1113,6 +1127,7 @@ void pmb887x_dsp_set_gsm_signal(
 ) {
 	dsp_state_t *p = PMB887X_DSP(dev);
 
+	p->comm_transition_pending = false;
 	dsp_sync_access(p);
 	dsp_runtime_set_gsm_signal(p->runtime, signal, level, timestamp_ns);
 	dsp_schedule_sync(p);
@@ -1130,10 +1145,14 @@ static void dsp_i2s2_input(void *_opaque, int _signal, int _level) {
 static uint64_t dsp_io_read(void *opaque, hwaddr haddr, unsigned size) {
 	dsp_state_t *p = opaque;
 	uint64_t value = 0;
+	bool observe_comm_transition = haddr == DSP_COM_STATUS && p->comm_transition_pending;
 
 	if (icount2_enabled())
 		icount2_advance(DSP_REGISTER_READ_WAIT_CYCLES);
-	dsp_sync_access(p);
+	if (!observe_comm_transition) {
+		p->comm_transition_pending = false;
+		dsp_sync_access(p);
+	}
 
 	switch (haddr) {
 		case DSP_CLC:
@@ -1150,6 +1169,10 @@ static uint64_t dsp_io_read(void *opaque, hwaddr haddr, unsigned size) {
 			uint32_t program_start_pc;
 
 			value = p->comm_status;
+			if (observe_comm_transition) {
+				p->comm_transition_pending = false;
+				dsp_schedule_sync(p);
+			}
 			if (dsp_runtime_take_program_start(p->runtime, &program_start_pc))
 				DPRINTF("cold program start: pc=%05X flags=%04" PRIX64 "\n", program_start_pc, value);
 			break;
@@ -1177,6 +1200,7 @@ static uint64_t dsp_io_read(void *opaque, hwaddr haddr, unsigned size) {
 static void dsp_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned size) {
 	dsp_state_t *p = opaque;
 
+	p->comm_transition_pending = false;
 	dsp_sync_access(p);
 
 	switch (haddr) {
@@ -1239,6 +1263,7 @@ static uint64_t dsp_ram_read(void *opaque, hwaddr haddr, unsigned size) {
 	}
 	if (icount2_enabled())
 		icount2_advance(DSP_RAM_READ_WAIT_CYCLES);
+	p->comm_transition_pending = false;
 	dsp_sync_access(p);
 	value = dsp_runtime_shared_read_bytes(p->runtime, haddr, size);
 
@@ -1255,6 +1280,7 @@ static void dsp_ram_write(void *opaque, hwaddr haddr, uint64_t value, unsigned s
 	}
 	if (icount2_enabled())
 		icount2_advance(size == 4 ? DSP_RAM_WRITE32_WAIT_CYCLES : DSP_RAM_WRITE16_WAIT_CYCLES);
+	p->comm_transition_pending = false;
 	dsp_sync_access(p);
 
 	dsp_runtime_shared_write_bytes(p->runtime, haddr, value, size);

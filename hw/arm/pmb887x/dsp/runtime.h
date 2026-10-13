@@ -29,6 +29,7 @@ bool dsp_runtime_is_running(const dsp_runtime_t *runtime);
 bool dsp_runtime_is_idle(const dsp_runtime_t *runtime);
 bool dsp_runtime_needs_core_catchup(const dsp_runtime_t *runtime);
 void dsp_runtime_wake(dsp_runtime_t *runtime);
+void dsp_runtime_request_reschedule(dsp_runtime_t *runtime);
 bool dsp_runtime_take_program_start(dsp_runtime_t *runtime, uint32_t *pc);
 bool dsp_runtime_is_program_warming(const dsp_runtime_t *runtime);
 void dsp_runtime_finish_program_warmup(dsp_runtime_t *runtime);

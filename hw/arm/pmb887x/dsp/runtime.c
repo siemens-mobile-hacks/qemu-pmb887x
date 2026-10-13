@@ -59,6 +59,10 @@ static void dsp_runtime_kick(dsp_runtime_t *runtime) {
 	teak_tcg_request_exit(&runtime->core);
 }
 
+void dsp_runtime_request_reschedule(dsp_runtime_t *runtime) {
+	dsp_runtime_kick(runtime);
+}
+
 static void dsp_runtime_update_program_context(dsp_runtime_t *runtime) {
 	uint32_t bank = runtime->active_program_bank == SIZE_MAX ? 0 : runtime->active_program_bank;
 	teak_tcg_set_program_context(&runtime->core,
