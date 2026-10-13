@@ -187,14 +187,20 @@ static uint32_t i2c_get_trx_size(pmb887x_i2c_t *p) {
 	return ((p->syscon & I2Cv1_SYSCON_CI) >> I2Cv1_SYSCON_CI_SHIFT) + 1;
 }
 
-static void i2c_stop_transfer(pmb887x_i2c_t *p) {
+static void i2c_stop_transfer(pmb887x_i2c_t *p, bool raise_end_irq) {
 	uint32_t clear = I2Cv1_SYSCON_BB | I2Cv1_SYSCON_BUM | I2Cv1_SYSCON_STP | I2Cv1_SYSCON_ACKDIS;
+	uint32_t syscon = p->syscon & ~clear;
 
+	if (raise_end_irq)
+		syscon |= I2Cv1_SYSCON_IRQE;
+
+	timer_del(p->timer);
+	p->wait_for_next_tick = false;
 	i2c_end_transfer(p->bus);
-	i2c_update_syscon(p, (p->syscon & ~clear) | I2Cv1_SYSCON_IRQE);
 	p->state = I2C_STATE_NONE;
 	p->nack_received = false;
 	p->wcycle = 0;
+	i2c_update_syscon(p, syscon);
 }
 
 static bool i2c_tx(pmb887x_i2c_t *p) {
@@ -263,7 +269,7 @@ static void i2c_work(pmb887x_i2c_t *p) {
 	} else if (p->state == I2C_STATE_TX_DONE) {
 		if (!(p->syscon & I2Cv1_SYSCON_BUM)) {
 			DPRINTF("[TX] STOP\n");
-			i2c_stop_transfer(p);
+			i2c_stop_transfer(p, true);
 			p->trx_cnt = 0;
 		} else if (!(p->syscon & I2Cv1_SYSCON_TRX)) {
 			DPRINTF("[TX] switch to RX\n");
@@ -303,7 +309,7 @@ static void i2c_work(pmb887x_i2c_t *p) {
 					p->state = I2C_STATE_RX_DONE;
 				} else {
 					DPRINTF("[RX] STOP\n");
-					i2c_stop_transfer(p);
+					i2c_stop_transfer(p, true);
 				}
 			} else {
 				i2c_timer_schedule(p);
@@ -334,7 +340,7 @@ static void i2c_work(pmb887x_i2c_t *p) {
 
 		DPRINTF("[TRX] i2c_end_transfer\n");
 		if (!(p->syscon & I2Cv1_SYSCON_RSC)) {
-			i2c_stop_transfer(p);
+			i2c_stop_transfer(p, true);
 		} else {
 			uint32_t clear = I2Cv1_SYSCON_BB | I2Cv1_SYSCON_STP | I2Cv1_SYSCON_ACKDIS;
 
@@ -427,9 +433,15 @@ static void i2c_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned si
 			p->pisel = value;
 			break;
 
-		case I2Cv1_SYSCON:
+		case I2Cv1_SYSCON: {
+			bool stop_requested = p->state != I2C_STATE_NONE && (p->syscon & I2Cv1_SYSCON_BUM) &&
+				!(value & I2Cv1_SYSCON_BUM);
+
 			i2c_update_syscon(p, value);
+			if (stop_requested)
+				i2c_stop_transfer(p, true);
 			break;
+		}
 
 		case I2Cv1_BUSCON:
 			p->buscon = value;
@@ -453,6 +465,8 @@ static void i2c_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned si
 
 		case I2Cv1_WHBSYSCON: {
 			uint32_t new_syscon = p->syscon;
+			bool stop_requested = p->state != I2C_STATE_NONE && (p->syscon & I2Cv1_SYSCON_BUM) &&
+				(value & I2Cv1_WHBSYSCON_CLRBUM);
 
 			if ((value & I2Cv1_WHBSYSCON_CLRAL))
 				new_syscon &= ~I2Cv1_SYSCON_AL;
@@ -510,6 +524,8 @@ static void i2c_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned si
 				new_syscon |= I2Cv1_SYSCON_TRX;
 
 			i2c_update_syscon(p, new_syscon);
+			if (stop_requested)
+				i2c_stop_transfer(p, !(value & I2Cv1_WHBSYSCON_CLRIRQE));
 			break;
 		}
 
