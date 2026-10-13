@@ -27,7 +27,7 @@ size_t dsp_runtime_run(dsp_runtime_t *runtime, size_t max_cycles, bool *deferred
 size_t dsp_runtime_advance_idle(dsp_runtime_t *runtime, size_t cycles, size_t afe_cycles);
 bool dsp_runtime_is_running(const dsp_runtime_t *runtime);
 bool dsp_runtime_is_idle(const dsp_runtime_t *runtime);
-bool dsp_runtime_has_active_peripheral(const dsp_runtime_t *runtime);
+bool dsp_runtime_needs_core_catchup(const dsp_runtime_t *runtime);
 void dsp_runtime_wake(dsp_runtime_t *runtime);
 bool dsp_runtime_take_program_start(dsp_runtime_t *runtime, uint32_t *pc);
 bool dsp_runtime_is_program_warming(const dsp_runtime_t *runtime);

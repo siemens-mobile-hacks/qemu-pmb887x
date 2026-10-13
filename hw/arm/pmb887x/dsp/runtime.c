@@ -506,8 +506,8 @@ bool dsp_runtime_is_idle(const dsp_runtime_t *runtime) {
 	return qatomic_read(&runtime->idle);
 }
 
-bool dsp_runtime_has_active_peripheral(const dsp_runtime_t *runtime) {
-	return dsp_bus_is_active(runtime->bus);
+bool dsp_runtime_needs_core_catchup(const dsp_runtime_t *runtime) {
+	return dsp_bus_needs_core_catchup(runtime->bus);
 }
 
 bool dsp_runtime_take_program_start(dsp_runtime_t *runtime, uint32_t *pc) {

@@ -833,17 +833,17 @@ static void dsp_sync(dsp_state_t *p) {
 		/*
 		 * Account every elapsed cycle in peripherals, but do not let a
 		 * polling program monopolize the main loop while catching up.
-		 * Loaded programs and programs driving active peripherals get a
-		 * complete maximum-frequency sync slice so the core does not fall
-		 * behind the devices it feeds.
+		 * Loaded programs and programs feeding core-coupled peripherals get
+		 * a complete maximum-frequency sync slice. Independent timers can
+		 * advance in bulk without making the core carry their backlog.
 		 */
 		bool mutable_program = dsp_runtime_get_pc(p->runtime) < p->config->program_rom_base;
-		bool active_peripheral = dsp_runtime_has_active_peripheral(p->runtime);
-		size_t run_cycles = p->reset_pending || mutable_program || active_peripheral ?
+		bool core_catchup = dsp_runtime_needs_core_catchup(p->runtime);
+		size_t run_cycles = p->reset_pending || mutable_program || core_catchup ?
 			DSP_REALTIME_PROGRAM_RUN_CYCLES : DSP_REALTIME_BOOT_RUN_CYCLES;
 
 		if (remaining_cycles > run_cycles) {
-			if (active_peripheral) {
+			if (core_catchup) {
 				p->pending_cycles += remaining_cycles - run_cycles;
 			} else {
 				peripheral_cycles = remaining_cycles - run_cycles;

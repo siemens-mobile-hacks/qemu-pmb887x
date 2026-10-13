@@ -232,7 +232,7 @@ void dsp_bus_advance_idle(dsp_bus_t *bus, size_t cycles) {
 	dsp_bus_advance(bus, cycles);
 }
 
-bool dsp_bus_is_active(const dsp_bus_t *bus) {
+bool dsp_bus_needs_core_catchup(const dsp_bus_t *bus) {
 	if (bus->afe != NULL && afe_is_active(bus->afe))
 		return true;
 	if (bus->channel_decoder != NULL && chdec_is_active(bus->channel_decoder))
@@ -249,10 +249,6 @@ bool dsp_bus_is_active(const dsp_bus_t *bus) {
 	if (bus->modulator != NULL && modulator_is_active(bus->modulator))
 		return true;
 	if (bus->ssc != NULL && ssc_is_active(bus->ssc))
-		return true;
-	if (bus->timer1 != NULL && timer1_is_active(bus->timer1))
-		return true;
-	if (bus->timer2 != NULL && timer2_is_active(bus->timer2))
 		return true;
 	return false;
 }
