@@ -51,7 +51,6 @@
 #define DSP_I2S2_TX_BUS_NAME	"pmb887x-dsp-i2s2-tx"
 #define DSP_I2S2_RX_BUS_NAME	"pmb887x-dsp-i2s2-rx"
 #define DSP_IQ_RX_BUS_NAME	"pmb887x-dsp-iq-rx"
-#define TYPE_PMB887X_DSP	"pmb887x-dsp"
 #define PMB887X_DSP(obj)	OBJECT_CHECK(dsp_state_t, (obj), TYPE_PMB887X_DSP)
 
 #ifdef STUB_DSP
@@ -134,7 +133,17 @@ static void dsp_input0(void *opaque, int id, int level) {
 static void dsp_input1(void *opaque, int id, int level) {
 }
 
+void pmb887x_dsp_set_gsm_signal(
+	DeviceState *_dev,
+	pmb887x_dsp_gsm_signal_t _signal,
+	bool _level,
+	int64_t _timestamp_ns
+) {
+}
+
 static void dsp_gsm_input(void *opaque, int signal, int level) {
+	pmb887x_dsp_set_gsm_signal(DEVICE(opaque), signal, level != 0,
+		qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL));
 }
 
 static void dsp_i2s2_input(void *_opaque, int _signal, int _level) {
@@ -1096,12 +1105,22 @@ static void dsp_input1(void *opaque, int id, int level) {
 	dsp_set_input(opaque, 1, level);
 }
 
-static void dsp_gsm_input(void *opaque, int signal, int level) {
-	dsp_state_t *p = opaque;
+void pmb887x_dsp_set_gsm_signal(
+	DeviceState *dev,
+	pmb887x_dsp_gsm_signal_t signal,
+	bool level,
+	int64_t timestamp_ns
+) {
+	dsp_state_t *p = PMB887X_DSP(dev);
 
 	dsp_sync_access(p);
-	dsp_runtime_set_gsm_signal(p->runtime, signal, level != 0);
+	dsp_runtime_set_gsm_signal(p->runtime, signal, level, timestamp_ns);
 	dsp_schedule_sync(p);
+}
+
+static void dsp_gsm_input(void *opaque, int signal, int level) {
+	pmb887x_dsp_set_gsm_signal(DEVICE(opaque), signal, level != 0,
+		qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL));
 }
 
 static void dsp_i2s2_input(void *_opaque, int _signal, int _level) {

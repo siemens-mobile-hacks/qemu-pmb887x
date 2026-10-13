@@ -39,7 +39,12 @@ void dsp_runtime_shared_write_bytes(dsp_runtime_t *runtime, size_t offset, uint6
 void dsp_runtime_set_request(dsp_runtime_t *runtime, size_t index, bool level);
 void dsp_runtime_set_input(dsp_runtime_t *runtime, size_t index, bool level);
 void dsp_runtime_set_iq_bus(dsp_runtime_t *runtime, pmb887x_iq_bus_t *iq_bus);
-void dsp_runtime_set_gsm_signal(dsp_runtime_t *runtime, pmb887x_dsp_gsm_signal_t signal, bool level);
+void dsp_runtime_set_gsm_signal(
+	dsp_runtime_t *runtime,
+	pmb887x_dsp_gsm_signal_t signal,
+	bool level,
+	int64_t timestamp_ns
+);
 uint16_t dsp_runtime_get_outputs(dsp_runtime_t *runtime);
 uint32_t dsp_runtime_get_pc(const dsp_runtime_t *runtime);
 uint64_t dsp_runtime_get_cache_compiles(const dsp_runtime_t *runtime);

@@ -18,10 +18,12 @@
 #include "hw/core/qdev-clock.h"
 
 #include "hw/arm/pmb887x/rf.h"
+#include "hw/arm/pmb887x/dsp.h"
 #include "hw/arm/pmb887x/dsp/signals.h"
 #include "hw/arm/pmb887x/gen/cpu_regs.h"
 #include "hw/arm/pmb887x/regs_dump.h"
 #include "hw/arm/pmb887x/mod.h"
+#include "hw/arm/pmb887x/tpu.h"
 #include "hw/arm/pmb887x/trace.h"
 
 #define TYPE_PMB887X_TPU	"pmb887x-tpu"
@@ -113,6 +115,7 @@ struct pmb887x_tpu_t {
 	qemu_irq gp_irq[TPU_GP_COUNT];
 	qemu_irq rfssc_irq;
 	qemu_irq gsm_outputs[PMB887X_DSP_GSM_SIGNAL_COUNT];
+	DeviceState *dsp;
 	pmb887x_rfssc_bus_t *rfssc_bus;
 	Clock *gsm_clock;
 	uint16_t gsm_signals;
@@ -295,7 +298,12 @@ static void tpu_begin_event_frame(pmb887x_tpu_t *p) {
 	p->events_finished = false;
 }
 
-static void tpu_set_gsm_signal(pmb887x_tpu_t *p, pmb887x_dsp_gsm_signal_t signal, bool level) {
+static void tpu_set_gsm_signal(
+	pmb887x_tpu_t *p,
+	pmb887x_dsp_gsm_signal_t signal,
+	bool level,
+	int64_t timestamp_ns
+) {
 	static const char *const SIGNAL_NAMES[] = {
 		[PMB887X_DSP_GSM_SIGNAL_EQON] = "EQON",
 		[PMB887X_DSP_GSM_SIGNAL_MONON] = "MONON",
@@ -317,70 +325,80 @@ static void tpu_set_gsm_signal(pmb887x_tpu_t *p, pmb887x_dsp_gsm_signal_t signal
 		p->gsm_signals &= (uint16_t) ~mask;
 	}
 	DPRINTF("GSM signal: counter=%04X time=%" PRId64 " ns signal=%s level=%u\n", p->counter,
-		qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL), SIGNAL_NAMES[signal], level);
+		timestamp_ns, SIGNAL_NAMES[signal], level);
+	if (p->dsp != NULL)
+		pmb887x_dsp_set_gsm_signal(p->dsp, signal, level, timestamp_ns);
 	qemu_set_irq(p->gsm_outputs[signal], level);
 }
 
-static void tpu_decode_gsm_signal(pmb887x_tpu_t *p, uint32_t decoder) {
+static void tpu_decode_gsm_signal(pmb887x_tpu_t *p, uint32_t decoder, int64_t timestamp_ns) {
 	switch (decoder) {
 		case TPU_EVENT_DECODER_EQON_SET:
-			tpu_set_gsm_signal(p, PMB887X_DSP_GSM_SIGNAL_EQON, true);
+			tpu_set_gsm_signal(p, PMB887X_DSP_GSM_SIGNAL_EQON, true, timestamp_ns);
 			break;
 
 		case TPU_EVENT_DECODER_MONON_SET:
-			tpu_set_gsm_signal(p, PMB887X_DSP_GSM_SIGNAL_MONON, true);
+			tpu_set_gsm_signal(p, PMB887X_DSP_GSM_SIGNAL_MONON, true, timestamp_ns);
 			break;
 
 		case TPU_EVENT_DECODER_SCON_SET:
-			tpu_set_gsm_signal(p, PMB887X_DSP_GSM_SIGNAL_SCON, true);
+			tpu_set_gsm_signal(p, PMB887X_DSP_GSM_SIGNAL_SCON, true, timestamp_ns);
 			break;
 
 		case TPU_EVENT_DECODER_FCON_SET:
-			tpu_set_gsm_signal(p, PMB887X_DSP_GSM_SIGNAL_FCON, true);
+			tpu_set_gsm_signal(p, PMB887X_DSP_GSM_SIGNAL_FCON, true, timestamp_ns);
 			break;
 
 		case TPU_EVENT_DECODER_RECEIVE_CLEAR:
-			tpu_set_gsm_signal(p, PMB887X_DSP_GSM_SIGNAL_EQON, false);
-			tpu_set_gsm_signal(p, PMB887X_DSP_GSM_SIGNAL_MONON, false);
-			tpu_set_gsm_signal(p, PMB887X_DSP_GSM_SIGNAL_SCON, false);
-			tpu_set_gsm_signal(p, PMB887X_DSP_GSM_SIGNAL_FCON, false);
+			tpu_set_gsm_signal(p, PMB887X_DSP_GSM_SIGNAL_EQON, false, timestamp_ns);
+			tpu_set_gsm_signal(p, PMB887X_DSP_GSM_SIGNAL_MONON, false, timestamp_ns);
+			tpu_set_gsm_signal(p, PMB887X_DSP_GSM_SIGNAL_SCON, false, timestamp_ns);
+			tpu_set_gsm_signal(p, PMB887X_DSP_GSM_SIGNAL_FCON, false, timestamp_ns);
 			break;
 
 		case TPU_EVENT_DECODER_RXON_SET:
-			tpu_set_gsm_signal(p, PMB887X_DSP_GSM_SIGNAL_RXON, true);
+			tpu_set_gsm_signal(p, PMB887X_DSP_GSM_SIGNAL_RXON, true, timestamp_ns);
 			break;
 
 		case TPU_EVENT_DECODER_RXON_CLEAR:
-			tpu_set_gsm_signal(p, PMB887X_DSP_GSM_SIGNAL_RXON, false);
+			tpu_set_gsm_signal(p, PMB887X_DSP_GSM_SIGNAL_RXON, false, timestamp_ns);
 			break;
 
 		case TPU_EVENT_DECODER_TXON_SET:
-			tpu_set_gsm_signal(p, PMB887X_DSP_GSM_SIGNAL_TXON, true);
+			tpu_set_gsm_signal(p, PMB887X_DSP_GSM_SIGNAL_TXON, true, timestamp_ns);
 			break;
 
 		case TPU_EVENT_DECODER_TXON_CLEAR:
-			tpu_set_gsm_signal(p, PMB887X_DSP_GSM_SIGNAL_TXON, false);
+			tpu_set_gsm_signal(p, PMB887X_DSP_GSM_SIGNAL_TXON, false, timestamp_ns);
 			break;
 
 		case TPU_EVENT_DECODER_FRAME:
-			qemu_irq_pulse(p->gsm_outputs[PMB887X_DSP_GSM_SIGNAL_FRAME]);
+			tpu_set_gsm_signal(p, PMB887X_DSP_GSM_SIGNAL_FRAME, true, timestamp_ns);
+			tpu_set_gsm_signal(p, PMB887X_DSP_GSM_SIGNAL_FRAME, false, timestamp_ns);
 			break;
 
 		case TPU_EVENT_DECODER_SYSMCU:
-			qemu_irq_pulse(p->gsm_outputs[PMB887X_DSP_GSM_SIGNAL_SYSMCU]);
+			tpu_set_gsm_signal(p, PMB887X_DSP_GSM_SIGNAL_SYSMCU, true, timestamp_ns);
+			tpu_set_gsm_signal(p, PMB887X_DSP_GSM_SIGNAL_SYSMCU, false, timestamp_ns);
 			break;
 
 		case TPU_EVENT_DECODER_CODON_SET:
-			tpu_set_gsm_signal(p, PMB887X_DSP_GSM_SIGNAL_CODON, true);
+			tpu_set_gsm_signal(p, PMB887X_DSP_GSM_SIGNAL_CODON, true, timestamp_ns);
 			break;
 
 		case TPU_EVENT_DECODER_CODON_CLEAR:
-			tpu_set_gsm_signal(p, PMB887X_DSP_GSM_SIGNAL_CODON, false);
+			tpu_set_gsm_signal(p, PMB887X_DSP_GSM_SIGNAL_CODON, false, timestamp_ns);
 			break;
 	}
 }
 
-static void tpu_execute_event(pmb887x_tpu_t *p, uint32_t event, uint16_t control, uint16_t timer_bits_low) {
+static void tpu_execute_event(
+	pmb887x_tpu_t *p,
+	uint32_t event,
+	uint16_t control,
+	uint16_t timer_bits_low,
+	int64_t timestamp_ns
+) {
 	uint32_t timer_bits = ((control & TPU_EVENT_TIMER_BITS_HIGH_MASK) << 16) | timer_bits_low;
 	uint32_t old_triggers = p->triggers;
 	uint32_t high_triggers;
@@ -411,7 +429,7 @@ static void tpu_execute_event(pmb887x_tpu_t *p, uint32_t event, uint16_t control
 	DPRINTF("event execute: event=%03X counter=%04X control=%04X action=%04X triggers=%06X->%06X decoder=%u rf=%u\n",
 		event, p->counter, control, timer_bits_low, old_triggers, p->triggers, decoder, rf_trigger);
 	tpu_rf_control_trigger(p);
-	tpu_decode_gsm_signal(p, decoder);
+	tpu_decode_gsm_signal(p, decoder, timestamp_ns);
 	if (decoder >= TPU_EVENT_GP_FIRST && decoder <= TPU_EVENT_GP_LAST)
 		pmb887x_src_update(&p->gp_src[decoder - TPU_EVENT_GP_FIRST], 0, MOD_SRC_SETR);
 }
@@ -448,7 +466,9 @@ static int64_t tpu_run_events(pmb887x_tpu_t *p, uint32_t counter, int64_t now, i
 			break;
 		}
 
-		tpu_execute_event(p, p->ceap, control, timer_bits_low);
+		int64_t event_time_ns = now - tpu_ticks_to_ns(p, counter - compare);
+
+		tpu_execute_event(p, p->ceap, control, timer_bits_low, event_time_ns);
 		p->ceap += TPU_EVENT_WORDS;
 	}
 
@@ -1043,9 +1063,9 @@ static void tpu_reset(DeviceState *dev) {
 	p->rfssc_pending = false;
 	p->fade = TPU_FADE_RESET;
 	p->irq_fired = 0;
+	int64_t now_ns = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
 	for (size_t i = 0; i < PMB887X_DSP_GSM_SIGNAL_COUNT; i++)
-		qemu_irq_lower(p->gsm_outputs[i]);
-	p->gsm_signals = 0;
+		tpu_set_gsm_signal(p, i, false, now_ns);
 
 	p->enabled = false;
 	p->freq = 0;
@@ -1087,6 +1107,12 @@ static const TypeInfo tpu_info = {
     .instance_init 	= tpu_init,
     .class_init    	= tpu_class_init,
 };
+
+void pmb887x_tpu_set_dsp(DeviceState *dev, DeviceState *dsp) {
+	pmb887x_tpu_t *p = PMB887X_TPU(dev);
+
+	p->dsp = dsp;
+}
 
 static void tpu_register_types(void) {
 	type_register_static(&tpu_info);

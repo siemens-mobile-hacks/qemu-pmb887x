@@ -32,6 +32,7 @@
 
 #include "hw/arm/pmb887x/io_bridge.h"
 #include "hw/arm/pmb887x/regs_dump.h"
+#include "hw/arm/pmb887x/tpu.h"
 #include "hw/arm/pmb887x/trace_common.h"
 
 void qmp_pmemsave(uint64_t addr, uint64_t size, const char *filename, Error **errp);
@@ -209,8 +210,7 @@ static void pmb887x_init(MachineState *machine) {
 	qdev_connect_gpio_out_named(dsp, "ACTIVE_OUT", 0,
 		qdev_get_gpio_in_named(cgu, "DSP_ACTIVE_IN", 0));
 	sysbus_realize_and_unref(SYS_BUS_DEVICE(dsp), &error_fatal);
-	for (size_t i = 0; i < PMB887X_DSP_GSM_SIGNAL_COUNT; i++)
-		qdev_connect_gpio_out_named(tpu, "GSM_OUT", i, qdev_get_gpio_in_named(dsp, "GSM_IN", i));
+	pmb887x_tpu_set_dsp(tpu, dsp);
 
 	// GPRS Ciphering Unit
 	DeviceState *gprscu = pmb887x_new_cpu_module("GPRSCU");

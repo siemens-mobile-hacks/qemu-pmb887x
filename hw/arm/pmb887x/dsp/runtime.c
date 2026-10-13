@@ -605,8 +605,13 @@ void dsp_runtime_set_iq_bus(dsp_runtime_t *runtime, pmb887x_iq_bus_t *iq_bus) {
 	dsp_bus_set_iq_bus(runtime->bus, iq_bus);
 }
 
-void dsp_runtime_set_gsm_signal(dsp_runtime_t *runtime, pmb887x_dsp_gsm_signal_t signal, bool level) {
-	dsp_bus_set_gsm_signal(runtime->bus, signal, level);
+void dsp_runtime_set_gsm_signal(
+	dsp_runtime_t *runtime,
+	pmb887x_dsp_gsm_signal_t signal,
+	bool level,
+	int64_t timestamp_ns
+) {
+	dsp_bus_set_gsm_signal(runtime->bus, signal, level, timestamp_ns);
 
 	dsp_runtime_wake(runtime);
 	runtime->notify_activity(runtime->device_opaque);

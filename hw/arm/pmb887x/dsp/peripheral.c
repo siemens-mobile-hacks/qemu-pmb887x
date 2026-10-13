@@ -201,6 +201,8 @@ void dsp_bus_set_core_idle(dsp_bus_t *bus, bool idle) {
 
 void dsp_bus_advance(dsp_bus_t *bus, size_t cycles) {
 	/* The AFE has its own 8 MHz analog clock and advances separately. */
+	if (bus->baseband != NULL && baseband_is_active(bus->baseband))
+		baseband_advance(bus->baseband);
 	if (bus->channel_decoder != NULL && chdec_is_active(bus->channel_decoder))
 		chdec_advance(bus->channel_decoder, cycles);
 	if (bus->cipher != NULL && cipher_is_active(bus->cipher))
@@ -233,6 +235,8 @@ void dsp_bus_advance_idle(dsp_bus_t *bus, size_t cycles) {
 }
 
 bool dsp_bus_needs_core_catchup(const dsp_bus_t *bus) {
+	if (bus->baseband != NULL && baseband_is_active(bus->baseband))
+		return true;
 	if (bus->afe != NULL && afe_is_active(bus->afe))
 		return true;
 	if (bus->channel_decoder != NULL && chdec_is_active(bus->channel_decoder))
@@ -321,7 +325,12 @@ void dsp_bus_set_iq_bus(dsp_bus_t *bus, pmb887x_iq_bus_t *iq_bus) {
 		baseband_set_iq_bus(bus->baseband, iq_bus);
 }
 
-void dsp_bus_set_gsm_signal(dsp_bus_t *bus, pmb887x_dsp_gsm_signal_t signal, bool level) {
+void dsp_bus_set_gsm_signal(
+	dsp_bus_t *bus,
+	pmb887x_dsp_gsm_signal_t signal,
+	bool level,
+	int64_t timestamp_ns
+) {
 	uint16_t mask;
 	uint16_t old_signals;
 
@@ -339,7 +348,7 @@ void dsp_bus_set_gsm_signal(dsp_bus_t *bus, pmb887x_dsp_gsm_signal_t signal, boo
 
 	if (signal <= PMB887X_DSP_GSM_SIGNAL_RXON) {
 		if (bus->baseband != NULL)
-			baseband_set_signal(bus->baseband, signal, level);
+			baseband_set_signal(bus->baseband, signal, level, timestamp_ns);
 		return;
 	}
 
