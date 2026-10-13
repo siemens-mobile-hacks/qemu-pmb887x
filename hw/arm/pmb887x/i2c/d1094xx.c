@@ -19,6 +19,7 @@
 #include "hw/audio/i2s.h"
 #include "hw/i2c/i2c.h"
 #include "hw/arm/pmb887x/audio/buffer.h"
+#include "hw/arm/pmb887x/audio/pasic.h"
 #include "hw/arm/pmb887x/gen/peripheral/PASIC.h"
 #include "hw/arm/pmb887x/trace.h"
 
@@ -51,6 +52,25 @@ struct pmb887x_pmic_t {
 	bool on_pressed;
 	qemu_irq on_off_out;
 };
+
+static bool pasic_audio_output_is_enabled(const pmb887x_pmic_t *p) {
+	return pmb887x_pasic_audio_output_is_enabled(p->regs[PASIC_MONO_CONTROL],
+		p->regs[PASIC_STEREO_CONTROL], p->regs[PASIC_AMPLIFIER_GAIN_4_5]);
+}
+
+static void pasic_audio_output_set_active(pmb887x_pmic_t *p, bool active) {
+	if (p->audio_voice == NULL)
+		return;
+
+	if (!active)
+		audio_be_set_active_out(p->audio_backend, p->audio_voice, false);
+	qemu_mutex_lock(&p->audio_lock);
+	fifo8_reset(&p->audio_fifo);
+	qemu_mutex_unlock(&p->audio_lock);
+	pmb887x_audio_buffer_reset(&p->audio_buffer);
+	if (active)
+		audio_be_set_active_out(p->audio_backend, p->audio_voice, true);
+}
 
 static void pmic_handle_on_off_input(void *opaque, int _line, int level) {
 	pmb887x_pmic_t *p = opaque;
@@ -104,7 +124,7 @@ static bool pasic_audio_configure(pmb887x_pmic_t *p, uint32_t sample_rate_hz, ui
 		p, pasic_audio_callback, &settings);
 	if (p->audio_voice == NULL)
 		return false;
-	audio_be_set_active_out(p->audio_backend, p->audio_voice, true);
+	audio_be_set_active_out(p->audio_backend, p->audio_voice, pasic_audio_output_is_enabled(p));
 	return true;
 }
 
@@ -124,7 +144,7 @@ static void pasic_i2s_write(I2SSink *sink, const int16_t *samples, size_t frame_
 	size_t sample_count = frame_count * p->audio_channels;
 	if (!p->audio_fifo_ready || p->audio_voice == NULL)
 		return;
-	if (p->regs[PASIC_MONO_CONTROL] == 0 && p->regs[PASIC_STEREO_CONTROL] == 0)
+	if (!pasic_audio_output_is_enabled(p))
 		return;
 
 	qemu_mutex_lock(&p->audio_lock);
@@ -326,8 +346,13 @@ static int pmic_send(I2CTarget *target, uint8_t data) {
 	if (p->wcycle == 0) {
 		p->reg_id = data % ARRAY_SIZE(p->regs);
 	} else {
+		bool audio_was_enabled = pasic_audio_output_is_enabled(p);
+
 		IO_DUMP_WRITE(p->reg_id, 1, data);
 		p->regs[p->reg_id] = data;
+		bool audio_is_enabled = pasic_audio_output_is_enabled(p);
+		if (audio_is_enabled != audio_was_enabled)
+			pasic_audio_output_set_active(p, audio_is_enabled);
 		p->reg_id = (p->reg_id + 1) % ARRAY_SIZE(p->regs);
 	}
 

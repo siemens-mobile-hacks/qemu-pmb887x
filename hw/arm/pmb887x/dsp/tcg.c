@@ -66,6 +66,7 @@ struct teak_tcg_block_cache_entry_t {
 	teak_tcg_block_t block;
 	TranslationBlock *tb;
 	uint64_t cache_id;
+	uint32_t program_context;
 	uint32_t block_repeat_end[TEAK_BLOCK_REPEAT_LEVELS];
 	uint8_t block_repeat_level;
 	teak_tcg_block_cache_entry_t *next;
@@ -98,11 +99,27 @@ static TCGv_ptr tcg_emit_direct_data_pointer(TCGv_i32 address) {
 	return pointer;
 }
 
+static TCGv_ptr tcg_emit_direct_data_bank_pointer(TCGv_i32 offset) {
+	TCGv_i32 byte_offset = tcg_temp_new_i32();
+	TCGv_ptr base = tcg_temp_new_ptr();
+	TCGv_ptr pointer = tcg_temp_new_ptr();
+
+	tcg_gen_shli_i32(byte_offset, offset, 1);
+	tcg_gen_ext_i32_ptr(pointer, byte_offset);
+	tcg_gen_ld_ptr(base, tcg_env, offsetof(teak_tcg_core_t, memory.direct_data_bank));
+	tcg_gen_add_ptr(pointer, pointer, base);
+	return pointer;
+}
+
 static void tcg_emit_data_read(TCGv_i32 result, TCGv_i32 address, teak_tcg_data_space_t space) {
 	TCGLabel *slow = gen_new_label();
+	TCGLabel *direct = gen_new_label();
 	TCGLabel *done = gen_new_label();
 	TCGLabel *zero = space == TEAK_TCG_DATA_SPACE_ALL ? NULL : gen_new_label();
 	TCGv_i32 limit = tcg_temp_new_i32();
+	TCGv_i32 bank_base = tcg_temp_new_i32();
+	TCGv_i32 bank_offset = tcg_temp_new_i32();
+	TCGv_i32 bank_size = tcg_temp_new_i32();
 	uint32_t access = tcg_memory_access++;
 
 	if (space != TEAK_TCG_DATA_SPACE_ALL) {
@@ -115,6 +132,14 @@ static void tcg_emit_data_read(TCGv_i32 result, TCGv_i32 address, teak_tcg_data_
 
 	tcg_gen_ld_i32(limit, tcg_env, offsetof(teak_tcg_core_t, memory.direct_data_read_size));
 	tcg_gen_brcond_i32(TCG_COND_GEU, address, limit, slow);
+	tcg_gen_ld_i32(bank_base, tcg_env, offsetof(teak_tcg_core_t, memory.direct_data_bank_base));
+	tcg_gen_sub_i32(bank_offset, address, bank_base);
+	tcg_gen_ld_i32(bank_size, tcg_env, offsetof(teak_tcg_core_t, memory.direct_data_bank_size));
+	tcg_gen_brcond_i32(TCG_COND_GEU, bank_offset, bank_size, direct);
+	tcg_gen_ld16u_i32(result, tcg_emit_direct_data_bank_pointer(bank_offset), 0);
+	tcg_gen_br(done);
+
+	gen_set_label(direct);
 	tcg_gen_ld16u_i32(result, tcg_emit_direct_data_pointer(address), 0);
 	tcg_gen_br(done);
 
@@ -712,6 +737,10 @@ static void tcg_add_data_wait_cycles(teak_tcg_core_t *core, uint32_t address) {
 static bool tcg_direct_data_read(teak_tcg_core_t *core, uint32_t address, uint16_t *value) {
 	if (core->memory.direct_data == NULL || address >= core->memory.direct_data_read_size)
 		return false;
+	if (address - core->memory.direct_data_bank_base < core->memory.direct_data_bank_size) {
+		*value = qatomic_read(&core->memory.direct_data_bank[address - core->memory.direct_data_bank_base]);
+		return true;
+	}
 
 	*value = qatomic_read(&core->memory.direct_data[address]);
 	return true;
@@ -1031,7 +1060,7 @@ static TranslationBlock *tcg_find_cached_block(teak_tcg_core_t *core, teak_tcg_b
 	while (entry != NULL) {
 		bool longer_prefix = prefix == NULL || entry->block.instruction_count > prefix->block.instruction_count;
 
-		if (entry->cache_id != core->cache_id) {
+		if (entry->cache_id != core->cache_id || entry->program_context != core->program_context) {
 			entry = entry->next;
 			continue;
 		}
@@ -1055,8 +1084,9 @@ static teak_tcg_block_cache_entry_t *tcg_find_cached_entry_fast(teak_tcg_core_t 
 	entry = tcg_block_cache[core->state.pc];
 	while (entry != NULL) {
 		bool same_cache = entry->cache_id == core->cache_id;
+		bool same_context = entry->program_context == core->program_context;
 		bool same_level = entry->block_repeat_level == level;
-		if (same_cache && same_level) {
+		if (same_cache && same_context && same_level) {
 			bool same_repeat_end;
 
 			if (level == 0) {
@@ -1088,6 +1118,7 @@ static void tcg_cache_block(const teak_tcg_core_t *core, const teak_tcg_block_t 
 	entry->block = *block;
 	entry->tb = tb;
 	entry->cache_id = core->cache_id;
+	entry->program_context = core->program_context;
 	memcpy(entry->block_repeat_end, core->state.block_repeat_end, sizeof(entry->block_repeat_end));
 	entry->block_repeat_level = core->state.bcn;
 	entry->next = tcg_block_cache[block->pc];
@@ -1167,6 +1198,10 @@ void teak_tcg_invalidate_all(teak_tcg_core_t *core) {
 			}
 		}
 	}
+}
+
+void teak_tcg_set_program_context(teak_tcg_core_t *core, uint32_t context) {
+	core->program_context = context;
 }
 
 static bool tcg_alu_uses_multiply(teak_alu_operation_t operation) {
@@ -4192,9 +4227,14 @@ static bool tcg_block_repeat_setup_valid(const teak_tcg_core_t *core, const teak
 		return false;
 	if (instruction->branch_target < instruction->address + instruction->words)
 		return false;
-	if (level != 0 && !interrupt_active &&
-		instruction->branch_target >= core->state.block_repeat_end[level - 1])
-		return false;
+	if (level != 0 && !interrupt_active) {
+		uint32_t active_start = core->state.block_repeat_start[level - 1];
+		uint32_t active_end = core->state.block_repeat_end[level - 1];
+		bool setup_in_active_body = instruction->address >= active_start && instruction->address <= active_end;
+
+		if (setup_in_active_body && instruction->branch_target >= active_end)
+			return false;
+	}
 	if (instruction->opcode == TEAK_OP_BLOCK_REPEAT_REGISTER) {
 		bool full_accumulator = instruction->register_code == 24 || instruction->register_code == 25;
 		bool nested_lc = level != 0 && instruction->register_code == 30;

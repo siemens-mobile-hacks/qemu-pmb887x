@@ -146,10 +146,12 @@ void teak_tcg_init(teak_tcg_core_t *core, const teak_memory_t *memory) {
 void teak_tcg_reset(teak_tcg_core_t *core, uint32_t pc) {
 	teak_memory_t memory = core->memory;
 	uint64_t cache_id = core->cache_id;
+	uint32_t program_context = core->program_context;
 
 	memset(core, 0, sizeof(*core));
 	core->memory = memory;
 	core->cache_id = cache_id;
+	core->program_context = program_context;
 	core->state.pc = pc & TEAK_PROGRAM_ADDRESS_MASK;
 	core->state.sata = 1;
 	core->state.cpc = 1;

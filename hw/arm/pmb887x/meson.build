@@ -79,6 +79,7 @@ arm_common_ss.add(when: 'CONFIG_PMB887X', if_true: files(
 	'board/keyboard.c',
 	'board/memory.c',
 	'board/startup.c',
+	'audio/pasic.c',
 
 	'utils/regexp.c',
 	'utils/strings.c',

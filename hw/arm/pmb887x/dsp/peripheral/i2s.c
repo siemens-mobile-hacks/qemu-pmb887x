@@ -11,6 +11,7 @@
 #define I2S_REGISTER_COUNT	(TEAK_I2S_TXINTADDR + 1)
 #define I2S_FRACTIONAL_DIVIDER_FACTOR	4U
 #define I2S_FRAME_SLOTS			2U
+#define I2S_RING_WORDS			(TEAK_I2S_RWADDR_RDADDR + 1U)
 #define I2S_OUTPUT_BATCH_FRAMES		256U
 #define I2S_INTERRUPT_GROUP	1
 #define I2S_CLOCK_DIVIDER_0		0
@@ -367,7 +368,7 @@ void dsp_i2s_advance(dsp_device_t *device, size_t cycles) {
 			i2s_rx_read(state->port.rx_bus, samples, input_frames);
 
 			for (size_t i = 0; i < input_frames; i++) {
-				uint16_t address = device->config->ram_base + state->receive_position;
+				uint16_t address = device->config->ram_base + I2S_RING_WORDS + state->receive_position;
 				const int16_t *frame = &samples[i * channels];
 
 				state->host.data_write(state->host.opaque, address, frame[0]);

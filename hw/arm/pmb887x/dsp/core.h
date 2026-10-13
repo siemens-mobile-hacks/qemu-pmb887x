@@ -308,8 +308,11 @@ struct teak_memory_t {
 	teak_memory_space_t data;
 	teak_memory_space_t external;
 	uint16_t *direct_data;
+	uint16_t *direct_data_bank;
 	uint32_t direct_data_read_size;
 	uint32_t direct_data_write_size;
+	uint32_t direct_data_bank_base;
+	uint32_t direct_data_bank_size;
 	void *cycle_opaque;
 	teak_advance_cycles_fn *advance_cycles;
 	uint32_t cycle_sensitive_base;
@@ -433,6 +436,7 @@ struct teak_tcg_core_t {
 	teak_state_t state;
 	teak_memory_t memory;
 	uint64_t cache_id;
+	uint32_t program_context;
 	uint32_t last_block_cycles;
 	uint32_t last_block_count;
 	uint32_t translation_error_address;

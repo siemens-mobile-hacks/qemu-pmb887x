@@ -22,8 +22,10 @@ struct dsp_runtime_t {
 	dsp_bus_t *bus;
 	uint16_t *program;
 	uint16_t *data;
+	uint16_t *data_banks;
 	size_t active_program_bank;
 	size_t active_data_bank;
+	uint32_t program_generation;
 	uint16_t rom_version;
 	bool idle;
 	bool halted;
@@ -57,11 +59,14 @@ static void dsp_runtime_kick(dsp_runtime_t *runtime) {
 	teak_tcg_request_exit(&runtime->core);
 }
 
+static void dsp_runtime_update_program_context(dsp_runtime_t *runtime) {
+	uint32_t bank = runtime->active_program_bank == SIZE_MAX ? 0 : runtime->active_program_bank;
+	teak_tcg_set_program_context(&runtime->core,
+		runtime->program_generation * runtime->config->program_bank_count + bank);
+}
+
 static void dsp_runtime_map_program_bank(dsp_runtime_t *runtime, size_t bank) {
 	const pmb887x_dsp_config_t *config = runtime->config;
-	const uint8_t *bank_data;
-	size_t fixed_words = config->program_bank_base - config->program_rom_base;
-	size_t bank_words = PMB887X_DSP_ADDRESS_SPACE_WORDS - config->program_bank_base;
 
 	if (runtime->active_program_bank == bank)
 		return;
@@ -71,17 +76,13 @@ static void dsp_runtime_map_program_bank(dsp_runtime_t *runtime, size_t bank) {
 		return;
 	}
 
-	bank_data = runtime->program_rom + (fixed_words + bank * bank_words) * sizeof(uint16_t);
-	dsp_runtime_load_words(runtime->program + config->program_bank_base, bank_data, bank_words);
 	teak_tcg_request_exit(&runtime->core);
-	teak_tcg_invalidate_program_range(&runtime->core, config->program_bank_base, bank_words);
 	runtime->active_program_bank = bank;
+	dsp_runtime_update_program_context(runtime);
 }
 
 static void dsp_runtime_map_data_bank(dsp_runtime_t *runtime, size_t bank) {
 	const pmb887x_dsp_config_t *config = runtime->config;
-	const uint8_t *bank_data;
-	size_t fixed_words = config->data_bank_base - config->data_rom_base;
 	size_t bank_words = config->shared_base - config->data_bank_base;
 
 	if (runtime->active_data_bank == bank)
@@ -92,8 +93,7 @@ static void dsp_runtime_map_data_bank(dsp_runtime_t *runtime, size_t bank) {
 		return;
 	}
 
-	bank_data = runtime->data_rom + (fixed_words + bank * bank_words) * sizeof(uint16_t);
-	dsp_runtime_load_words(runtime->data + config->data_bank_base, bank_data, bank_words);
+	runtime->core.memory.direct_data_bank = runtime->data_banks + bank * bank_words;
 	runtime->active_data_bank = bank;
 }
 
@@ -138,10 +138,19 @@ static void dsp_runtime_comm_changed(void *opaque, uint16_t flags, bool set) {
 
 static uint16_t dsp_runtime_program_read(void *opaque, uint32_t address) {
 	dsp_runtime_t *runtime = opaque;
+	const pmb887x_dsp_config_t *config = runtime->config;
 
 	if (address >= PMB887X_DSP_ADDRESS_SPACE_WORDS) {
 		DPRINTF("program read outside address space: address=%05X pc=%05X\n", address, runtime->core.state.pc);
 		return UINT16_MAX;
+	}
+	if (address >= config->program_bank_base) {
+		size_t fixed_words = config->program_bank_base - config->program_rom_base;
+		size_t bank_words = PMB887X_DSP_ADDRESS_SPACE_WORDS - config->program_bank_base;
+		size_t bank_offset = fixed_words + runtime->active_program_bank * bank_words;
+
+		return dsp_runtime_read_u16(runtime->program_rom +
+			(bank_offset + address - config->program_bank_base) * sizeof(uint16_t));
 	}
 	return qatomic_read(&runtime->program[address]);
 }
@@ -160,6 +169,9 @@ static void dsp_runtime_program_write(void *opaque, uint32_t address, uint16_t v
 	if (!qatomic_read(&runtime->program_warming))
 		qatomic_set(&runtime->program_dirty, true);
 	qatomic_set(&runtime->program[address], value);
+	runtime->program_generation++;
+	dsp_runtime_update_program_context(runtime);
+	teak_tcg_request_exit(&runtime->core);
 }
 
 static bool dsp_runtime_program_should_invalidate(void *opaque, uint32_t address) {
@@ -182,6 +194,8 @@ static uint16_t dsp_runtime_data_read(void *opaque, uint32_t address) {
 
 	if (dsp_runtime_is_mmio(runtime, data_address))
 		return dsp_bus_read_at(runtime->bus, data_address, runtime->core.state.trace_pc);
+	if (data_address - runtime->config->data_bank_base < runtime->core.memory.direct_data_bank_size)
+		return runtime->core.memory.direct_data_bank[data_address - runtime->config->data_bank_base];
 	if (data_address >= runtime->config->shared_base)
 		return qatomic_read(&runtime->data[data_address]);
 	return runtime->data[data_address];
@@ -209,6 +223,8 @@ static void dsp_runtime_data_write(void *opaque, uint32_t address, uint16_t valu
 
 static uint16_t dsp_runtime_bus_data_read(void *opaque, uint16_t address) {
 	dsp_runtime_t *runtime = opaque;
+	if (address - runtime->config->data_bank_base < runtime->core.memory.direct_data_bank_size)
+		return runtime->core.memory.direct_data_bank[address - runtime->config->data_bank_base];
 	return qatomic_read(&runtime->data[address]);
 }
 
@@ -241,6 +257,8 @@ dsp_runtime_t *dsp_runtime_create(
 	dsp_runtime_t *runtime;
 	teak_memory_t memory;
 	dsp_host_t host;
+	size_t fixed_data_words = config->data_bank_base - config->data_rom_base;
+	size_t data_bank_words = config->shared_base - config->data_bank_base;
 
 	runtime = g_new0(dsp_runtime_t, 1);
 	runtime->config = config;
@@ -252,6 +270,12 @@ dsp_runtime_t *dsp_runtime_create(
 	runtime->notify_comm = notify_comm;
 	runtime->program = g_new0(uint16_t, PMB887X_DSP_ADDRESS_SPACE_WORDS);
 	runtime->data = g_new0(uint16_t, PMB887X_DSP_ADDRESS_SPACE_WORDS);
+	runtime->data_banks = g_new(uint16_t, config->data_bank_count * data_bank_words);
+	for (size_t bank = 0; bank < config->data_bank_count; bank++) {
+		const uint8_t *bank_data = data_rom + (fixed_data_words + bank * data_bank_words) * sizeof(uint16_t);
+
+		dsp_runtime_load_words(runtime->data_banks + bank * data_bank_words, bank_data, data_bank_words);
+	}
 	runtime->active_program_bank = SIZE_MAX;
 	runtime->active_data_bank = SIZE_MAX;
 	runtime->clock_divider = 1;
@@ -289,6 +313,8 @@ dsp_runtime_t *dsp_runtime_create(
 		.direct_data = runtime->data,
 		.direct_data_read_size = config->shared_base,
 		.direct_data_write_size = config->data_rom_base,
+		.direct_data_bank_base = config->data_bank_base,
+		.direct_data_bank_size = data_bank_words,
 		.cycle_opaque = runtime,
 		.advance_cycles = dsp_runtime_advance_cycles,
 		.cycle_sensitive_base = config->mmio_base,
@@ -317,6 +343,7 @@ void dsp_runtime_destroy(dsp_runtime_t *runtime) {
 		return;
 
 	dsp_bus_destroy(runtime->bus);
+	g_free(runtime->data_banks);
 	g_free(runtime->data);
 	g_free(runtime->program);
 	g_free(runtime);
@@ -333,6 +360,8 @@ void dsp_runtime_reset(dsp_runtime_t *runtime) {
 	dsp_bus_reset(runtime->bus);
 	dsp_bus_set_core_idle(runtime->bus, false);
 	teak_tcg_reset(&runtime->core, config->program_rom_base + 2);
+	runtime->program_generation++;
+	dsp_runtime_update_program_context(runtime);
 
 	runtime->data[config->shared_base] = runtime->rom_version;
 	if (qatomic_xchg(&runtime->program_warming, false))
@@ -475,6 +504,10 @@ bool dsp_runtime_is_running(const dsp_runtime_t *runtime) {
 
 bool dsp_runtime_is_idle(const dsp_runtime_t *runtime) {
 	return qatomic_read(&runtime->idle);
+}
+
+bool dsp_runtime_has_active_peripheral(const dsp_runtime_t *runtime) {
+	return dsp_bus_is_active(runtime->bus);
 }
 
 bool dsp_runtime_take_program_start(dsp_runtime_t *runtime, uint32_t *pc) {

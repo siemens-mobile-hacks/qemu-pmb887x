@@ -13,6 +13,7 @@
 #define TEST_UNKNOWN_BASE	0x1060
 #define TEST_I2S_BASE		0x1070
 #define TEST_I2S_TX_BASE	0x1080
+#define TEST_I2S_RX_RAM_BASE	(TEAK_I2S_RWADDR_RDADDR + 1U)
 
 uint64_t pmb887x_trace_io_mask;
 uint64_t pmb887x_trace_log_mask;
@@ -425,10 +426,11 @@ static void test_i2s_clock(void) {
 	pmb887x_dsp_peripheral_bus_advance_idle(bus, 1180);
 	g_assert_cmpuint(host.i2s_sample_rate_hz, ==, 44100);
 	g_assert_cmpuint(host.i2s_channels, ==, 2);
-	g_assert_cmphex(host.i2s_samples[0], ==, 0x1234);
-	g_assert_cmphex(host.i2s_samples[1], ==, 0xFEDC);
-	g_assert_cmphex(host.i2s_samples[2], ==, 0);
-	g_assert_cmphex(host.i2s_samples[3], ==, 0);
+	g_assert_cmphex(host.i2s_samples[0], ==, 0x8000);
+	g_assert_cmphex(host.i2s_samples[TEST_I2S_RX_RAM_BASE], ==, 0x1234);
+	g_assert_cmphex(host.i2s_samples[TEST_I2S_RX_RAM_BASE + 1], ==, 0xFEDC);
+	g_assert_cmphex(host.i2s_samples[TEST_I2S_RX_RAM_BASE + 2], ==, 0);
+	g_assert_cmphex(host.i2s_samples[TEST_I2S_RX_RAM_BASE + 3], ==, 0);
 	g_assert_cmphex(pmb887x_dsp_peripheral_bus_read(bus, TEST_I2S_BASE + TEAK_I2S_RWADDR), ==, 0x0400);
 	g_assert_cmphex(pmb887x_dsp_peripheral_bus_get_interrupt_flags(bus, 1), ==, TEAK_INT_FINTB0_I2S1RX);
 
