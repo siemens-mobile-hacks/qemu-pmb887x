@@ -4,7 +4,6 @@
 #include "qemu/osdep.h"
 #include "qemu/atomic.h"
 #include "qemu/bitops.h"
-#include "qemu/timer.h"
 #include "hw/arm/pmb887x/dsp/peripheral/internal.h"
 #include "hw/arm/pmb887x/dsp/tcg.h"
 #include "hw/arm/pmb887x/dsp/runtime.h"
@@ -20,9 +19,6 @@ struct dsp_runtime_t {
 	void (*notify_activity)(void *opaque);
 	void (*notify_comm)(void *opaque, uint16_t flags, bool set);
 	int64_t (*get_time_ns)(void *opaque);
-	int64_t time_ns;
-	uint64_t time_remainder;
-	uint32_t clock_hz;
 	teak_tcg_core_t core;
 	dsp_bus_t *bus;
 	uint16_t *program;
@@ -145,7 +141,7 @@ static void dsp_runtime_comm_changed(void *opaque, uint16_t flags, bool set) {
 
 static int64_t dsp_runtime_get_time_ns(void *opaque) {
 	dsp_runtime_t *runtime = opaque;
-	return runtime->time_ns;
+	return runtime->get_time_ns(runtime->device_opaque);
 }
 
 static uint16_t dsp_runtime_program_read(void *opaque, uint32_t address) {
@@ -197,21 +193,8 @@ static bool dsp_runtime_is_mmio(const dsp_runtime_t *runtime, uint16_t address) 
 	return address >= runtime->config->mmio_base && address - runtime->config->mmio_base < runtime->config->mmio_size;
 }
 
-static void dsp_runtime_advance_time(dsp_runtime_t *runtime, size_t cycles) {
-	uint64_t scaled_ns;
-
-	if (runtime->clock_hz == 0)
-		return;
-
-	scaled_ns = cycles * NANOSECONDS_PER_SECOND + runtime->time_remainder;
-	runtime->time_ns += scaled_ns / runtime->clock_hz;
-	runtime->time_remainder = scaled_ns % runtime->clock_hz;
-	dsp_bus_update_time(runtime->bus);
-}
-
 static void dsp_runtime_advance_cycles(void *opaque, size_t cycles) {
 	dsp_runtime_t *runtime = opaque;
-	dsp_runtime_advance_time(runtime, cycles * runtime->clock_divider);
 	dsp_bus_advance(runtime->bus, cycles * runtime->clock_divider);
 }
 
@@ -295,7 +278,6 @@ dsp_runtime_t *dsp_runtime_create(
 	runtime->notify_activity = notify_activity;
 	runtime->notify_comm = notify_comm;
 	runtime->get_time_ns = get_time_ns;
-	runtime->time_ns = get_time_ns(device_opaque);
 	runtime->program = g_new0(uint16_t, PMB887X_DSP_ADDRESS_SPACE_WORDS);
 	runtime->data = g_new0(uint16_t, PMB887X_DSP_ADDRESS_SPACE_WORDS);
 	runtime->data_banks = g_new(uint16_t, config->data_bank_count * data_bank_words);
@@ -361,8 +343,6 @@ dsp_runtime_t *dsp_runtime_create(
 
 void dsp_runtime_set_clock_hz(dsp_runtime_t *runtime, uint32_t frequency_hz) {
 	dsp_bus_set_clock_hz(runtime->bus, frequency_hz);
-	runtime->clock_hz = frequency_hz;
-	runtime->time_remainder = 0;
 }
 
 void dsp_runtime_set_ms_clock_hz(dsp_runtime_t *runtime, uint32_t frequency_hz) {
@@ -388,8 +368,6 @@ void dsp_runtime_reset(dsp_runtime_t *runtime) {
 	dsp_runtime_load_words(runtime->program + config->program_rom_base, runtime->program_rom, program_fixed_words);
 	dsp_runtime_load_words(runtime->data + config->data_rom_base, runtime->data_rom, data_fixed_words);
 
-	runtime->time_ns = runtime->get_time_ns(runtime->device_opaque);
-	runtime->time_remainder = 0;
 	dsp_bus_reset(runtime->bus);
 	teak_tcg_reset(&runtime->core, config->program_rom_base + 2);
 	runtime->program_generation++;
@@ -515,10 +493,8 @@ size_t dsp_runtime_run(dsp_runtime_t *runtime, size_t max_cycles, bool *deferred
 }
 
 size_t dsp_runtime_advance_idle(dsp_runtime_t *runtime, size_t cycles, size_t afe_cycles) {
-	if (cycles != 0) {
-		dsp_runtime_advance_time(runtime, cycles * runtime->clock_divider);
+	if (cycles != 0)
 		dsp_bus_advance_idle(runtime->bus, cycles * runtime->clock_divider);
-	}
 	if (afe_cycles != 0)
 		return dsp_bus_advance_afe(runtime->bus, afe_cycles);
 	return 0;
