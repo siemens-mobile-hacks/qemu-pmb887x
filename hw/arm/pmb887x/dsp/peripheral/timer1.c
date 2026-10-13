@@ -3,6 +3,7 @@
 #define PMB887X_TRACE_IO		PMB887X_TRACE_IO_DSP
 
 #include "qemu/osdep.h"
+#include "qemu/timer.h"
 
 #include "hw/arm/pmb887x/dsp/peripheral/internal.h"
 #include "hw/arm/pmb887x/gen/dsp.h"
@@ -20,8 +21,12 @@ struct timer1_state_t {
 	uint16_t compare[2];
 	size_t prescaler;
 	size_t restart_cycles;
+	uint64_t clock_remainder;
+	int64_t last_update_ns;
+	uint32_t clock_hz;
 	bool restart_pending;
 	dsp_device_t *interrupt;
+	dsp_host_t host;
 };
 
 static void timer1_destroy(dsp_device_t *device) {
@@ -31,15 +36,73 @@ static void timer1_destroy(dsp_device_t *device) {
 static void timer1_reset(dsp_device_t *device) {
 	timer1_state_t *state = device->state;
 	dsp_device_t *interrupt = state->interrupt;
+	dsp_host_t host = state->host;
+	uint32_t clock_hz = state->clock_hz;
 
 	memset(state, 0, sizeof(*state));
 	state->interrupt = interrupt;
+	state->host = host;
+	state->clock_hz = clock_hz;
+	state->last_update_ns = state->host.get_time_ns(state->host.opaque);
 	state->compare[0] = TEAK_TMR1_INT0_T1INT0;
 	state->compare[1] = TEAK_TMR1_INT1_T1INT1;
 }
 
+static void timer1_update_state(timer1_state_t *state) {
+	int64_t now = state->host.get_time_ns(state->host.opaque);
+	uint64_t elapsed_ns = MAX(now - state->last_update_ns, 0);
+	uint64_t scaled_cycles;
+	uint64_t cycles;
+
+	state->last_update_ns = now;
+	bool active = state->restart_pending || (state->control & TEAK_TMR1_CTRL_DT1ACT) != 0;
+	if (state->clock_hz == 0 || !active)
+		return;
+
+	scaled_cycles = elapsed_ns * state->clock_hz + state->clock_remainder;
+	cycles = scaled_cycles / NANOSECONDS_PER_SECOND;
+	state->clock_remainder = scaled_cycles % NANOSECONDS_PER_SECOND;
+
+	if (state->restart_pending) {
+		if (cycles < state->restart_cycles) {
+			state->restart_cycles -= cycles;
+			return;
+		}
+		cycles -= state->restart_cycles;
+		state->counter = 0;
+		state->prescaler = 0;
+		state->restart_cycles = 0;
+		state->control |= TEAK_TMR1_CTRL_DT1ACT;
+		state->restart_pending = false;
+	}
+
+	if ((state->control & TEAK_TMR1_CTRL_DT1ACT) == 0)
+		return;
+
+	state->prescaler += cycles;
+	while (state->prescaler >= TIMER1_DIVIDER) {
+		uint16_t interrupts = 0;
+
+		state->prescaler -= TIMER1_DIVIDER;
+		state->counter++;
+
+		if (state->counter == state->compare[0])
+			interrupts |= TEAK_INT_FINT1_TMR10;
+		if (state->counter == state->compare[1])
+			interrupts |= TEAK_INT_FINT1_TMR11;
+		if (interrupts != 0)
+			dsp_int_set_flags(state->interrupt, TIMER_INTERRUPT_GROUP, interrupts);
+
+		if (state->counter == TEAK_TMR1_CNT_T1CNT) {
+			state->control &= (uint16_t) ~TEAK_TMR1_CTRL_DT1ACT;
+			break;
+		}
+	}
+}
+
 static bool timer1_read(dsp_device_t *device, uint16_t offset, uint32_t pc, uint16_t *value) {
 	timer1_state_t *state = device->state;
+	timer1_update_state(state);
 
 	switch (offset) {
 		case TEAK_TMR1_CTRL:
@@ -69,6 +132,7 @@ static bool timer1_read(dsp_device_t *device, uint16_t offset, uint32_t pc, uint
 
 static bool timer1_write(dsp_device_t *device, uint16_t offset, uint32_t pc, uint16_t value) {
 	timer1_state_t *state = device->state;
+	timer1_update_state(state);
 
 	switch (offset) {
 		case TEAK_TMR1_CTRL:
@@ -78,6 +142,7 @@ static bool timer1_write(dsp_device_t *device, uint16_t offset, uint32_t pc, uin
 				state->restart_pending = false;
 			} else if ((value & TEAK_TMR1_CTRL_RESTART) != 0) {
 				state->control = TEAK_TMR1_CTRL_DT1ENA;
+				state->clock_remainder = 0;
 				state->restart_cycles = TIMER1_RESTART_CYCLES;
 				state->restart_pending = true;
 			} else {
@@ -105,51 +170,26 @@ static const dsp_device_ops_t timer1_ops = {
 	.write = timer1_write,
 };
 
-dsp_device_t *timer1_create(const pmb887x_dsp_peripheral_config_t *config, dsp_device_t *interrupt) {
+dsp_device_t *timer1_create(
+	const pmb887x_dsp_peripheral_config_t *config,
+	dsp_device_t *interrupt,
+	const dsp_host_t *host
+) {
 	timer1_state_t *state = g_new0(timer1_state_t, 1);
 	state->interrupt = interrupt;
+	state->host = *host;
+	state->last_update_ns = state->host.get_time_ns(state->host.opaque);
 	return dsp_device_create(config, &timer1_ops, state);
 }
 
-void timer1_advance(dsp_device_t *device, size_t cycles) {
+void timer1_set_clock_hz(dsp_device_t *device, uint32_t frequency_hz) {
 	timer1_state_t *state = device->state;
+	timer1_update_state(state);
+	state->clock_hz = frequency_hz;
+}
 
-	if (state->restart_pending) {
-		if (cycles < state->restart_cycles) {
-			state->restart_cycles -= cycles;
-			return;
-		}
-		cycles -= state->restart_cycles;
-		state->counter = 0;
-		state->prescaler = 0;
-		state->restart_cycles = 0;
-		state->control |= TEAK_TMR1_CTRL_DT1ACT;
-		state->restart_pending = false;
-	}
-
-	if ((state->control & TEAK_TMR1_CTRL_DT1ACT) == 0)
-		return;
-
-	state->prescaler += cycles;
-
-	while (state->prescaler >= TIMER1_DIVIDER) {
-		uint16_t interrupts = 0;
-
-		state->prescaler -= TIMER1_DIVIDER;
-		state->counter++;
-
-		if (state->counter == state->compare[0])
-			interrupts |= TEAK_INT_FINT1_TMR10;
-		if (state->counter == state->compare[1])
-			interrupts |= TEAK_INT_FINT1_TMR11;
-		if (interrupts != 0)
-			dsp_int_set_flags(state->interrupt, TIMER_INTERRUPT_GROUP, interrupts);
-
-		if (state->counter == TEAK_TMR1_CNT_T1CNT) {
-			state->control &= (uint16_t) ~TEAK_TMR1_CTRL_DT1ACT;
-			break;
-		}
-	}
+void timer1_update(dsp_device_t *device) {
+	timer1_update_state(device->state);
 }
 
 bool timer1_is_active(const dsp_device_t *device) {

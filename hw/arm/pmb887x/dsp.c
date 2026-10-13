@@ -14,7 +14,6 @@
 #include "hw/core/qdev-clock.h"
 #include "hw/audio/i2s.h"
 #include "hw/ssi/ssi.h"
-#include "system/cpu-timers.h"
 #include "system/runstate.h"
 
 #include "hw/arm/pmb887x/dsp/runtime.h"
@@ -36,12 +35,8 @@
 #define DSP_RUNTIME_PIPE_STRIDE	0x1C
 #define DSP_OUTPUT_COUNT	3
 #define DSP_SYNC_PERIOD_NS	(100 * SCALE_US)
-#define DSP_REALTIME_RESET_START_CYCLES	512
-#define DSP_REALTIME_RUN_CYCLES	16384
-#define DSP_REGISTER_READ_WAIT_CYCLES	108
-#define DSP_RAM_READ_WAIT_CYCLES	240
-#define DSP_RAM_WRITE16_WAIT_CYCLES	276
-#define DSP_RAM_WRITE32_WAIT_CYCLES	264
+#define DSP_RESET_START_CYCLES	512
+#define DSP_RUN_CYCLES		16384
 #define DSP_AFE_CLOCK_HZ	8000000
 #define DSP_SSC_BUS_NAME	"pmb887x-dsp-ssc"
 #define DSP_I2S1_TX_BUS_NAME	"pmb887x-dsp-i2s1-tx"
@@ -144,14 +139,12 @@ static void dsp_publish_events(dsp_state_t *p, const dsp_events_t *events) {
 			qemu_set_irq(p->outputs[i], (events->outputs & BIT(i)) != 0);
 }
 
-static int64_t dsp_get_time(void) {
-	if (icount2_enabled())
-		return icount2_get();
+static int64_t dsp_get_time_ns(void *_opaque) {
 	return qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
 }
 
 static void dsp_account_time(dsp_state_t *p) {
-	int64_t now = dsp_get_time();
+	int64_t now = dsp_get_time_ns(p);
 	uint64_t elapsed = MAX(now - p->sync_time_ns, 0);
 	uint64_t scaled_cycles = elapsed * p->clock_hz + p->cycle_remainder;
 	uint64_t scaled_afe_cycles = p->afe_remainder;
@@ -178,29 +171,27 @@ static void dsp_sync(dsp_state_t *p) {
 	dsp_account_time(p);
 	if (!p->vm_running || p->clock_hz == 0)
 		return;
+	dsp_runtime_update_time(p->runtime);
 
-	int64_t realtime_start = icount2_enabled() ? cpu_get_clock() : 0;
 	size_t remaining_cycles = p->pending_cycles;
 	size_t peripheral_cycles = 0;
 
 	p->pending_cycles = 0;
-	if (!icount2_enabled()) {
-		/*
-		 * Account every elapsed cycle in peripherals, but do not let a
-		 * polling program monopolize the main loop while catching up.
-		 * The core gets a complete maximum-frequency sync slice. Independent
-		 * timers can advance in bulk without making it carry their backlog.
-		 */
-		bool core_catchup = dsp_runtime_needs_core_catchup(p->runtime);
+	/*
+	 * Account every elapsed cycle in peripherals, but do not let a
+	 * polling program monopolize the main loop while catching up.
+	 * The core gets a complete maximum-frequency sync slice. Independent
+	 * peripherals can advance in bulk without making it carry their backlog.
+	 */
+	bool core_catchup = dsp_runtime_needs_core_catchup(p->runtime);
 
-		if (remaining_cycles > DSP_REALTIME_RUN_CYCLES) {
-			if (core_catchup) {
-				p->pending_cycles += remaining_cycles - DSP_REALTIME_RUN_CYCLES;
-			} else {
-				peripheral_cycles = remaining_cycles - DSP_REALTIME_RUN_CYCLES;
-			}
-			remaining_cycles = DSP_REALTIME_RUN_CYCLES;
+	if (remaining_cycles > DSP_RUN_CYCLES) {
+		if (core_catchup) {
+			p->pending_cycles += remaining_cycles - DSP_RUN_CYCLES;
+		} else {
+			peripheral_cycles = remaining_cycles - DSP_RUN_CYCLES;
 		}
+		remaining_cycles = DSP_RUN_CYCLES;
 	}
 	if (peripheral_cycles != 0)
 		dsp_runtime_advance_idle(p->runtime, peripheral_cycles, 0);
@@ -236,11 +227,9 @@ static void dsp_sync(dsp_state_t *p) {
 		dsp_runtime_finish_program_warmup(p->runtime);
 	}
 
-	if (icount2_enabled()) {
-		icount2_exclude_realtime(cpu_get_clock() - realtime_start);
-	} else if (cache_compiles != 0) {
+	if (cache_compiles != 0) {
 		/* Do not carry a cold-compilation pause into the next DSP interval. */
-		p->sync_time_ns = dsp_get_time();
+		p->sync_time_ns = dsp_get_time_ns(p);
 	}
 }
 
@@ -332,7 +321,7 @@ static void dsp_notify_activity(void *opaque) {
 static void dsp_notify_comm(void *opaque, uint16_t flags, bool set) {
 	dsp_state_t *p = opaque;
 	DPRINTF("comm: flags=%04X set=%u pc=%05X time=%" PRId64 "\n", flags, set,
-		dsp_runtime_get_pc(p->runtime), dsp_get_time());
+		dsp_runtime_get_pc(p->runtime), dsp_get_time_ns(p));
 
 	if (set) {
 		p->comm_status |= flags;
@@ -340,12 +329,10 @@ static void dsp_notify_comm(void *opaque, uint16_t flags, bool set) {
 		p->comm_status &= (uint16_t) ~flags;
 		p->comm_pending &= (uint16_t) ~flags;
 	}
-	if (!icount2_enabled()) {
-		p->comm_transition_pending = true;
-		dsp_runtime_request_reschedule(p->runtime);
-		if (p->vm_running && p->clock_hz != 0)
-			timer_mod(p->sync_timer, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + DSP_SYNC_PERIOD_NS);
-	}
+	p->comm_transition_pending = true;
+	dsp_runtime_request_reschedule(p->runtime);
+	if (p->vm_running && p->clock_hz != 0)
+		timer_mod(p->sync_timer, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + DSP_SYNC_PERIOD_NS);
 }
 
 static void dsp_reset_internal_state(dsp_state_t *p) {
@@ -358,7 +345,7 @@ static void dsp_reset_internal_state(dsp_state_t *p) {
 	p->pending_afe_cycles = 0;
 	p->cycle_remainder = 0;
 	p->afe_remainder = 0;
-	p->sync_time_ns = dsp_get_time();
+	p->sync_time_ns = dsp_get_time_ns(p);
 	for (size_t i = 0; i < ARRAY_SIZE(p->outputs); i++)
 		qemu_irq_lower(p->outputs[i]);
 	dsp_update_active_output(p);
@@ -372,9 +359,9 @@ static void dsp_reset_input(void *opaque, int _id, int level) {
 		return;
 
 	dsp_reset_internal_state(p);
-	if (!icount2_enabled() && p->vm_running && p->clock_hz != 0) {
+	if (p->vm_running && p->clock_hz != 0) {
 		/* Let the reset vector start before the MCU resumes. */
-		p->pending_cycles = DSP_REALTIME_RESET_START_CYCLES;
+		p->pending_cycles = DSP_RESET_START_CYCLES;
 		dsp_sync(p);
 	} else {
 		dsp_schedule_sync(p);
@@ -476,8 +463,6 @@ static uint64_t dsp_io_read(void *opaque, hwaddr haddr, unsigned size) {
 	uint64_t value = 0;
 	bool observe_comm_transition = haddr == DSP_COM_STATUS && p->comm_transition_pending;
 
-	if (icount2_enabled())
-		icount2_advance(DSP_REGISTER_READ_WAIT_CYCLES);
 	if (!observe_comm_transition) {
 		p->comm_transition_pending = false;
 		dsp_sync_access(p);
@@ -584,10 +569,8 @@ static uint64_t dsp_ram_read(void *opaque, hwaddr haddr, unsigned size) {
 		IO_DUMP_READ(haddr + p->mmio.addr + DSP_RAM0, size, 0);
 		return 0;
 	}
-	if (icount2_enabled())
-		icount2_advance(DSP_RAM_READ_WAIT_CYCLES);
-	p->comm_transition_pending = false;
-	dsp_sync_access(p);
+	if (!p->comm_transition_pending)
+		dsp_sync_access(p);
 	value = dsp_runtime_shared_read_bytes(p->runtime, haddr, size);
 
 	IO_DUMP_READ(haddr + p->mmio.addr + DSP_RAM0, size, value);
@@ -601,8 +584,6 @@ static void dsp_ram_write(void *opaque, hwaddr haddr, uint64_t value, unsigned s
 		IO_DUMP_WRITE(haddr + p->mmio.addr + DSP_RAM0, size, value);
 		return;
 	}
-	if (icount2_enabled())
-		icount2_advance(size == 4 ? DSP_RAM_WRITE32_WAIT_CYCLES : DSP_RAM_WRITE16_WAIT_CYCLES);
 	p->comm_transition_pending = false;
 	dsp_sync_access(p);
 
@@ -735,11 +716,11 @@ static void dsp_realize(DeviceState *dev, Error **errp) {
 		},
 	};
 	p->runtime = dsp_runtime_create(config, rom->program_rom, rom->data_rom,
-		p, dsp_notify_activity, dsp_notify_comm, dsp_ssc_transfer, &ports);
+		p, dsp_notify_activity, dsp_notify_comm, dsp_get_time_ns, dsp_ssc_transfer, &ports);
 	dsp_runtime_set_iq_bus(p->runtime, p->iq_rx_bus);
 	dsp_runtime_set_ms_clock_hz(p->runtime, clock_get_hz(p->ms_clock));
 	p->sync_timer = timer_new_ns(QEMU_CLOCK_VIRTUAL, dsp_sync_timer, p);
-	p->sync_time_ns = dsp_get_time();
+	p->sync_time_ns = dsp_get_time_ns(p);
 
 	p->vmstate = qdev_add_vm_change_state_handler(dev, dsp_vm_state_change, NULL, p);
 	pmb887x_clc_set(&p->clc, MOD_CLC_DISR);

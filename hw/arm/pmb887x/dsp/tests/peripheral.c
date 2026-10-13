@@ -15,6 +15,8 @@
 #define TEST_UNKNOWN_BASE	0x1060
 #define TEST_I2S_BASE		0x1070
 #define TEST_I2S_TX_BASE	0x1080
+#define TEST_TIMER1_BASE	0x1090
+#define TEST_TIMER2_BASE	0x10A0
 #define TEST_AFE_DAC_RING_OFFSET	0x40
 #define TEST_I2S_RX_RAM_BASE	(TEAK_I2S_RWADDR_RDADDR + 1U)
 
@@ -54,6 +56,7 @@ pmb887x_iq_sample_t pmb887x_iq_bus_read(pmb887x_iq_bus_t *bus, int64_t _timestam
 }
 
 typedef struct test_host_t {
+	int64_t time_ns;
 	uint16_t page;
 	uint32_t pc;
 	bool core_disabled;
@@ -119,6 +122,11 @@ static void test_set_core_disabled(void *opaque, bool disabled) {
 	host->core_disabled = disabled;
 }
 
+static int64_t test_get_time_ns(void *opaque) {
+	test_host_t *host = opaque;
+	return host->time_ns;
+}
+
 static uint16_t test_data_read(void *opaque, uint16_t address) {
 	test_host_t *host = opaque;
 	host->data_read_count++;
@@ -175,6 +183,8 @@ static pmb887x_dsp_peripheral_bus_t *test_bus_create(test_host_t *host) {
 		{ "AFE", PMB887X_DSP_PERIPHERAL_AFE, TEST_AFE_BASE, 0x10 },
 		{ "I2S1", PMB887X_DSP_PERIPHERAL_I2S, TEST_I2S_BASE, 0x0B },
 		{ "I2S3", PMB887X_DSP_PERIPHERAL_I2S_TX, TEST_I2S_TX_BASE, 0x0B },
+		{ "TIMER1", PMB887X_DSP_PERIPHERAL_TIMER1, TEST_TIMER1_BASE, 0x04 },
+		{ "TIMER2", PMB887X_DSP_PERIPHERAL_TIMER2, TEST_TIMER2_BASE, 0x03 },
 	};
 	static const pmb887x_dsp_config_t config = {
 		.hardware_version = PMB887X_DSP_HW_VERSION_E101,
@@ -195,12 +205,46 @@ static pmb887x_dsp_peripheral_bus_t *test_bus_create(test_host_t *host) {
 		.opaque = host,
 		.set_page = test_set_page,
 		.set_core_disabled = test_set_core_disabled,
+		.get_time_ns = test_get_time_ns,
 		.get_pc = test_get_pc,
 		.data_read = test_data_read,
 		.data_write = test_data_write,
 	};
 
 	return pmb887x_dsp_peripheral_bus_create(&config, &peripheral_host, &ports);
+}
+
+static void test_timer_clock(void) {
+	test_host_t host = {};
+	pmb887x_dsp_peripheral_bus_t *bus = test_bus_create(&host);
+
+	pmb887x_dsp_peripheral_bus_reset(bus);
+	pmb887x_dsp_peripheral_bus_set_clock_hz(bus, 104000000);
+	pmb887x_dsp_peripheral_bus_write(bus, TEST_TIMER1_BASE + TEAK_TMR1_CTRL, TEAK_TMR1_CTRL_DT1ENA);
+	pmb887x_dsp_peripheral_bus_write(bus, TEST_TIMER1_BASE + TEAK_TMR1_CTRL,
+		TEAK_TMR1_CTRL_DT1ENA | TEAK_TMR1_CTRL_RESTART);
+	pmb887x_dsp_peripheral_bus_write(bus, TEST_TIMER2_BASE + TEAK_TMR2_CTRL, TEAK_TMR2_CTRL_DT2ACT);
+	pmb887x_dsp_peripheral_bus_advance_idle(bus, 104000000);
+	g_assert_cmphex(pmb887x_dsp_peripheral_bus_read(bus, TEST_TIMER1_BASE + TEAK_TMR1_CNT), ==, 0);
+	g_assert_cmphex(pmb887x_dsp_peripheral_bus_read(bus, TEST_TIMER2_BASE + TEAK_TMR2_CNT), ==, 0);
+
+	host.time_ns += 1000000;
+	pmb887x_dsp_peripheral_bus_update_time(bus);
+	g_assert_cmphex(pmb887x_dsp_peripheral_bus_read(bus, TEST_TIMER1_BASE + TEAK_TMR1_CNT), ==, 270);
+	g_assert_cmphex(pmb887x_dsp_peripheral_bus_read(bus, TEST_TIMER2_BASE + TEAK_TMR2_CNT), ==, 1083);
+
+	pmb887x_dsp_peripheral_bus_reset(bus);
+	pmb887x_dsp_peripheral_bus_set_clock_hz(bus, 156000000);
+	pmb887x_dsp_peripheral_bus_write(bus, TEST_TIMER1_BASE + TEAK_TMR1_CTRL, TEAK_TMR1_CTRL_DT1ENA);
+	pmb887x_dsp_peripheral_bus_write(bus, TEST_TIMER1_BASE + TEAK_TMR1_CTRL,
+		TEAK_TMR1_CTRL_DT1ENA | TEAK_TMR1_CTRL_RESTART);
+	pmb887x_dsp_peripheral_bus_write(bus, TEST_TIMER2_BASE + TEAK_TMR2_CTRL, TEAK_TMR2_CTRL_DT2ACT);
+	host.time_ns += 1000000;
+	pmb887x_dsp_peripheral_bus_update_time(bus);
+	g_assert_cmphex(pmb887x_dsp_peripheral_bus_read(bus, TEST_TIMER1_BASE + TEAK_TMR1_CNT), ==, 406);
+	g_assert_cmphex(pmb887x_dsp_peripheral_bus_read(bus, TEST_TIMER2_BASE + TEAK_TMR2_CNT), ==, 1625);
+
+	pmb887x_dsp_peripheral_bus_destroy(bus);
 }
 
 static void test_control(void) {
@@ -599,6 +643,7 @@ int main(int argc, char **argv) {
 	g_test_add_func("/pmb887x/dsp/peripheral/afe-clock", test_afe_clock);
 	g_test_add_func("/pmb887x/dsp/peripheral/i2s-clock", test_i2s_clock);
 	g_test_add_func("/pmb887x/dsp/peripheral/i2s-tx-clock", test_i2s_tx_clock);
+	g_test_add_func("/pmb887x/dsp/peripheral/timer-clock", test_timer_clock);
 	g_test_add_func("/pmb887x/dsp/peripheral/unknown", test_unknown);
 	g_test_add_func("/pmb887x/dsp/peripheral/trace", test_trace);
 	return g_test_run();
