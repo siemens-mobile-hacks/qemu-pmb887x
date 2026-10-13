@@ -371,6 +371,46 @@ static void test_program_invalidation(void) {
 	g_assert_cmpuint(core.cache_compiles, ==, 2);
 }
 
+static void test_precompile_bounded_indirect_dispatch(void) {
+	test_memory_t program = {
+		.words = {
+			/* Isolate the mandatory interrupt-vector precompile roots. */
+			[0x04] = 0x4180, 0x0004, /* br 0x0004, true. */
+			[0x06] = 0x4180, 0x0006, /* br 0x0006, true. */
+			[0x0E] = 0x4180, 0x000E, /* br 0x000e, true. */
+			[0x10] = 0x4180, 0x0010, /* br 0x0010, true. */
+			[0x14] = 0x4180, 0x0014, /* br 0x0014, true. */
+			[0x16] = 0x4180, 0x0016, /* br 0x0016, true. */
+			[0x18] = 0x4180, 0x0018, /* br 0x0018, true. */
+			[0x20] = 0x1F40, /* mov [r0], a0l. */
+			0x50A6, /* brr 0x002c, le. */
+			0xCC03, /* cmp 0x0003, a0. */
+			0x5083, /* brr 0x002c, gt. */
+			0x86C0, 0x002F, /* add 0x002f, a0. */
+			0x583A, /* mov a0l, r1. */
+			0x1F41, /* mov [r1], a0l. */
+			0xD480, /* calla a0l. */
+			0x4180, 0x0029, /* br 0x0029, true. */
+			[0x2C] = 0x4180, 0x002C, /* br 0x002c, true. */
+		},
+	};
+	test_memory_t data = {
+		.words = { [0x30] = 0x10, [0x31] = 0x14, [0x32] = 0x18 },
+	};
+	pmb887x_dsp_tcg_core_t core = test_core_create(&program, &data);
+
+	test_core_set_direct_data(&core, &data);
+	teak_tcg_precompile_entry(&core, 0x20);
+	uint64_t compiles = core.cache_compiles;
+
+	for (uint16_t pc = 0x10; pc <= 0x18; pc += 4) {
+		core.state.pc = pc;
+		g_assert_true(pmb887x_dsp_tcg_execute_block(&core));
+		g_assert_cmphex(core.state.pc, ==, pc);
+	}
+	g_assert_cmpuint(core.cache_compiles, ==, compiles);
+}
+
 static void test_direct_data_bank(void) {
 	test_memory_t program = {
 		/* mov [r1], a0; br 0x0003 always. */
@@ -659,6 +699,7 @@ int main(int argc, char **argv) {
 	g_test_add_func("/pmb887x/dsp/tcg/direct-data-read-write", test_direct_data_read_write);
 	g_test_add_func("/pmb887x/dsp/tcg/program-context-cache", test_program_context_cache);
 	g_test_add_func("/pmb887x/dsp/tcg/program-invalidation", test_program_invalidation);
+	g_test_add_func("/pmb887x/dsp/tcg/precompile-bounded-indirect-dispatch", test_precompile_bounded_indirect_dispatch);
 	g_test_add_func("/pmb887x/dsp/tcg/direct-data-bank", test_direct_data_bank);
 	g_test_add_func("/pmb887x/dsp/tcg/mov-data-shift-value", test_mov_data_shift_value);
 	g_test_add_func("/pmb887x/dsp/tcg/mov-accumulator-high-extension-unaffected", test_mov_accumulator_high_extension_unaffected);

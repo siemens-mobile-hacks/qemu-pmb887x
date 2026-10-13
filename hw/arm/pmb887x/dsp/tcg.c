@@ -33,11 +33,55 @@
 #define TEAK_INTERRUPT_NMI	3
 #define TEAK_OPCODE_RETID	0xD7C0U
 #define TEAK_TCG_COMPILE_RETRY	-3
+#define TEAK_TCG_PRECOMPILE_VALUES	128
 
 typedef struct teak_tcg_block_t teak_tcg_block_t;
 typedef struct teak_tcg_block_cache_entry_t teak_tcg_block_cache_entry_t;
 typedef struct teak_tcg_swap_mapping_t teak_tcg_swap_mapping_t;
+typedef struct teak_tcg_precompile_node_t teak_tcg_precompile_node_t;
+typedef struct teak_tcg_precompile_state_t teak_tcg_precompile_state_t;
+typedef struct teak_tcg_precompile_value_t teak_tcg_precompile_value_t;
 typedef void teak_tcg_emit_fn(void *opaque);
+
+/*
+ * Precompilation uses bounded value propagation to discover indirect-call
+ * targets. The result is only a cache hint: unknown values stay
+ * on the normal decode-and-compile path, and compiled code is still subject to
+ * the regular program-memory invalidation rules.
+ */
+typedef enum teak_tcg_precompile_value_kind_t {
+	TEAK_TCG_PRECOMPILE_UNKNOWN,
+	TEAK_TCG_PRECOMPILE_RANGE,
+	TEAK_TCG_PRECOMPILE_SET,
+} teak_tcg_precompile_value_kind_t;
+
+typedef enum teak_tcg_precompile_flags_source_t {
+	TEAK_TCG_PRECOMPILE_FLAGS_UNKNOWN,
+	TEAK_TCG_PRECOMPILE_FLAGS_A0,
+	TEAK_TCG_PRECOMPILE_FLAGS_A1,
+} teak_tcg_precompile_flags_source_t;
+
+struct teak_tcg_precompile_value_t {
+	teak_tcg_precompile_value_kind_t kind;
+	int32_t minimum;
+	int32_t maximum;
+	uint16_t values[TEAK_TCG_PRECOMPILE_VALUES];
+	uint8_t count;
+};
+
+struct teak_tcg_precompile_state_t {
+	teak_tcg_precompile_value_t a[2];
+	teak_tcg_precompile_value_t r[8];
+	teak_tcg_precompile_flags_source_t flags_source;
+	int32_t comparison;
+};
+
+struct teak_tcg_precompile_node_t {
+	teak_tcg_precompile_state_t state;
+	uint16_t pc;
+	bool queued;
+	bool reached;
+};
 
 enum teak_tcg_accumulator_slot_t {
 	TEAK_TCG_ACCUMULATOR_A0,
@@ -4682,20 +4726,428 @@ static TranslationBlock *tcg_prepare_block(teak_tcg_core_t *core, teak_tcg_block
 	return tb;
 }
 
-static void tcg_precompile_enqueue(uint16_t *queue, bool *queued, size_t *tail, uint32_t address) {
-	uint16_t pc = (uint16_t) address;
+static void tcg_precompile_value_set(teak_tcg_precompile_value_t *value, uint16_t item) {
+	value->kind = TEAK_TCG_PRECOMPILE_SET;
+	value->values[0] = item;
+	value->count = 1;
+}
 
-	if (queued[pc])
+static bool tcg_precompile_value_merge(teak_tcg_precompile_value_t *destination,
+	const teak_tcg_precompile_value_t *source
+) {
+	if (destination->kind == TEAK_TCG_PRECOMPILE_UNKNOWN)
+		return false;
+	if (source->kind == TEAK_TCG_PRECOMPILE_UNKNOWN) {
+		destination->kind = TEAK_TCG_PRECOMPILE_UNKNOWN;
+		return true;
+	}
+	if (destination->kind == TEAK_TCG_PRECOMPILE_RANGE || source->kind == TEAK_TCG_PRECOMPILE_RANGE) {
+		int32_t minimum = destination->minimum;
+		int32_t maximum = destination->maximum;
+
+		if (destination->kind == TEAK_TCG_PRECOMPILE_SET) {
+			minimum = (int16_t) destination->values[0];
+			maximum = minimum;
+			for (size_t i = 1; i < destination->count; i++) {
+				minimum = MIN(minimum, (int16_t) destination->values[i]);
+				maximum = MAX(maximum, (int16_t) destination->values[i]);
+			}
+		}
+		if (source->kind == TEAK_TCG_PRECOMPILE_RANGE) {
+			minimum = MIN(minimum, source->minimum);
+			maximum = MAX(maximum, source->maximum);
+		} else {
+			for (size_t i = 0; i < source->count; i++) {
+				minimum = MIN(minimum, (int16_t) source->values[i]);
+				maximum = MAX(maximum, (int16_t) source->values[i]);
+			}
+		}
+		bool changed = destination->kind != TEAK_TCG_PRECOMPILE_RANGE ||
+			destination->minimum != minimum || destination->maximum != maximum;
+		destination->kind = TEAK_TCG_PRECOMPILE_RANGE;
+		destination->minimum = minimum;
+		destination->maximum = maximum;
+		return changed;
+	}
+
+	bool changed = false;
+	for (size_t i = 0; i < source->count; i++) {
+		bool found = false;
+
+		for (size_t j = 0; j < destination->count; j++)
+			found |= destination->values[j] == source->values[i];
+		if (found)
+			continue;
+		if (destination->count == TEAK_TCG_PRECOMPILE_VALUES) {
+			destination->kind = TEAK_TCG_PRECOMPILE_UNKNOWN;
+			return true;
+		}
+		destination->values[destination->count++] = source->values[i];
+		changed = true;
+	}
+	return changed;
+}
+
+static bool tcg_precompile_state_merge(teak_tcg_precompile_state_t *destination,
+	const teak_tcg_precompile_state_t *source
+) {
+	bool changed = false;
+
+	for (size_t i = 0; i < ARRAY_SIZE(destination->a); i++)
+		changed |= tcg_precompile_value_merge(&destination->a[i], &source->a[i]);
+	for (size_t i = 0; i < ARRAY_SIZE(destination->r); i++)
+		changed |= tcg_precompile_value_merge(&destination->r[i], &source->r[i]);
+	if (destination->flags_source != source->flags_source || destination->comparison != source->comparison) {
+		if (destination->flags_source != TEAK_TCG_PRECOMPILE_FLAGS_UNKNOWN) {
+			destination->flags_source = TEAK_TCG_PRECOMPILE_FLAGS_UNKNOWN;
+			changed = true;
+		}
+	}
+	return changed;
+}
+
+static teak_tcg_precompile_value_t *tcg_precompile_register(teak_tcg_precompile_state_t *state,
+	uint8_t register_code
+) {
+	if (register_code < 6)
+		return &state->r[register_code];
+	if (register_code == 6)
+		return &state->r[7];
+	if (register_code >= 24 && register_code <= 27)
+		return &state->a[register_code & 1U];
+	return NULL;
+}
+
+static void tcg_precompile_value_add(teak_tcg_precompile_value_t *value, int32_t operand) {
+	if (value->kind == TEAK_TCG_PRECOMPILE_SET) {
+		for (size_t i = 0; i < value->count; i++)
+			value->values[i] = (uint16_t) ((int16_t) value->values[i] + operand);
 		return;
-	queued[pc] = true;
-	queue[(*tail)++] = pc;
+	}
+	if (value->kind != TEAK_TCG_PRECOMPILE_RANGE)
+		return;
+
+	int32_t minimum = value->minimum + operand;
+	int32_t maximum = value->maximum + operand;
+	if (minimum < INT16_MIN || maximum > INT16_MAX) {
+		value->kind = TEAK_TCG_PRECOMPILE_UNKNOWN;
+		return;
+	}
+	value->minimum = minimum;
+	value->maximum = maximum;
+}
+
+static void tcg_precompile_data_read(teak_tcg_core_t *core, const teak_tcg_precompile_value_t *address,
+	teak_tcg_precompile_value_t *result
+) {
+	uint16_t addresses[TEAK_TCG_PRECOMPILE_VALUES];
+	size_t count;
+
+	if (address->kind == TEAK_TCG_PRECOMPILE_SET) {
+		count = address->count;
+		memcpy(addresses, address->values, count * sizeof(addresses[0]));
+	} else if (address->kind == TEAK_TCG_PRECOMPILE_RANGE &&
+		address->maximum - address->minimum < TEAK_TCG_PRECOMPILE_VALUES) {
+		count = (size_t) (address->maximum - address->minimum + 1);
+		for (size_t i = 0; i < count; i++)
+			addresses[i] = (uint16_t) (address->minimum + (int32_t) i);
+	} else {
+		result->kind = TEAK_TCG_PRECOMPILE_UNKNOWN;
+		return;
+	}
+
+	result->kind = TEAK_TCG_PRECOMPILE_SET;
+	result->count = 0;
+	for (size_t i = 0; i < count; i++) {
+		uint16_t item;
+
+		if (!tcg_direct_data_read(core, addresses[i], &item)) {
+			result->kind = TEAK_TCG_PRECOMPILE_UNKNOWN;
+			return;
+		}
+		bool found = false;
+		for (size_t j = 0; j < result->count; j++)
+			found |= result->values[j] == item;
+		if (!found)
+			result->values[result->count++] = item;
+	}
+}
+
+static void tcg_precompile_set_flags(teak_tcg_precompile_state_t *state, uint8_t accumulator_index,
+	int32_t comparison
+) {
+	state->flags_source = accumulator_index == 0 ? TEAK_TCG_PRECOMPILE_FLAGS_A0 :
+		TEAK_TCG_PRECOMPILE_FLAGS_A1;
+	state->comparison = comparison;
+}
+
+static void tcg_precompile_apply_instruction(teak_tcg_core_t *core, teak_tcg_precompile_state_t *state,
+	const teak_insn_t *instruction
+) {
+	teak_tcg_precompile_value_t *destination;
+	teak_tcg_precompile_value_t *source;
+
+	switch (instruction->opcode) {
+		case TEAK_OP_MOV_IMM_REGISTER:
+			destination = tcg_precompile_register(state, instruction->register_code);
+			if (destination != NULL)
+				tcg_precompile_value_set(destination, instruction->expansion);
+			state->flags_source = TEAK_TCG_PRECOMPILE_FLAGS_UNKNOWN;
+			break;
+
+		case TEAK_OP_MOV_IMM8_ACCUMULATOR_LOW:
+			tcg_precompile_value_set(&state->a[instruction->accumulator_index], instruction->immediate);
+			tcg_precompile_set_flags(state, instruction->accumulator_index, 0);
+			break;
+
+		case TEAK_OP_MOV_REGISTER_REGISTER:
+			destination = tcg_precompile_register(state, instruction->destination_register_code);
+			source = tcg_precompile_register(state, instruction->register_code);
+			if (destination != NULL)
+				*destination = source != NULL ? *source : (teak_tcg_precompile_value_t) {};
+			state->flags_source = TEAK_TCG_PRECOMPILE_FLAGS_UNKNOWN;
+			break;
+
+		case TEAK_OP_MOV_ACCUMULATOR_ACCUMULATOR:
+			if (instruction->destination_accumulator >= 2) {
+				uint8_t destination_index = instruction->destination_accumulator & 1U;
+
+				if (instruction->source_accumulator >= 2) {
+					state->a[destination_index] = state->a[instruction->source_accumulator & 1U];
+				} else {
+					state->a[destination_index].kind = TEAK_TCG_PRECOMPILE_UNKNOWN;
+				}
+				tcg_precompile_set_flags(state, destination_index, 0);
+			} else {
+				state->flags_source = TEAK_TCG_PRECOMPILE_FLAGS_UNKNOWN;
+			}
+			break;
+
+		case TEAK_OP_MOV_DATA_IMM16_ACCUMULATOR: {
+			teak_tcg_precompile_value_t address = {};
+
+			tcg_precompile_value_set(&address, instruction->expansion);
+			tcg_precompile_data_read(core, &address, &state->a[instruction->accumulator_index]);
+			tcg_precompile_set_flags(state, instruction->accumulator_index, 0);
+			break;
+		}
+
+		case TEAK_OP_MOV_DATA_RN_STEP_REGISTER:
+			destination = tcg_precompile_register(state, instruction->register_code);
+			if (destination != NULL)
+				tcg_precompile_data_read(core, &state->r[instruction->address_register], destination);
+			if (instruction->step != TEAK_STEP_ZERO)
+				state->r[instruction->address_register].kind = TEAK_TCG_PRECOMPILE_UNKNOWN;
+			if (instruction->register_code >= 24 && instruction->register_code <= 27) {
+				tcg_precompile_set_flags(state, instruction->register_code & 1U, 0);
+			} else {
+				state->flags_source = TEAK_TCG_PRECOMPILE_FLAGS_UNKNOWN;
+			}
+			break;
+
+		case TEAK_OP_ALU_IMMEDIATE_ACCUMULATOR:
+			if (instruction->alu_operation == TEAK_ALU_ADD) {
+				tcg_precompile_value_add(&state->a[instruction->accumulator_index],
+					(int16_t) instruction->immediate);
+				tcg_precompile_set_flags(state, instruction->accumulator_index, 0);
+			} else if (instruction->alu_operation == TEAK_ALU_CMP) {
+				tcg_precompile_set_flags(state, instruction->accumulator_index,
+					(int16_t) instruction->immediate);
+			} else {
+				state->a[instruction->accumulator_index].kind = TEAK_TCG_PRECOMPILE_UNKNOWN;
+				state->flags_source = TEAK_TCG_PRECOMPILE_FLAGS_UNKNOWN;
+			}
+			break;
+
+		case TEAK_OP_MODA4_ACCUMULATOR:
+			state->a[instruction->accumulator_index].kind = TEAK_TCG_PRECOMPILE_UNKNOWN;
+			state->flags_source = TEAK_TCG_PRECOMPILE_FLAGS_UNKNOWN;
+			break;
+
+		case TEAK_OP_NOP:
+		case TEAK_OP_EINT:
+		case TEAK_OP_DINT:
+		case TEAK_OP_LOAD_PAGE:
+		case TEAK_OP_LOAD_STEPI:
+		case TEAK_OP_LOAD_STEPJ:
+		case TEAK_OP_LOAD_MODI:
+		case TEAK_OP_LOAD_MODJ:
+		case TEAK_OP_LOAD_PRODUCT_SHIFT:
+		case TEAK_OP_PUSH_IMMEDIATE:
+		case TEAK_OP_PUSH_REGISTER:
+		case TEAK_OP_BRANCH_ABSOLUTE:
+		case TEAK_OP_BRANCH_RELATIVE:
+		case TEAK_OP_CALL_ABSOLUTE:
+		case TEAK_OP_CALL_ACCUMULATOR:
+		case TEAK_OP_CALL_RELATIVE:
+		case TEAK_OP_RETURN:
+		case TEAK_OP_RETURN_INTERRUPT:
+		case TEAK_OP_RETURN_STACK:
+		case TEAK_OP_DELAYED_RETURN:
+		case TEAK_OP_DELAYED_RETURN_INTERRUPT:
+			break;
+
+		case TEAK_OP_MOV_IMM_B_ACCUMULATOR:
+		case TEAK_OP_MOV_REGISTER_B_ACCUMULATOR:
+		case TEAK_OP_MOVR_B_ACCUMULATOR:
+			state->flags_source = TEAK_TCG_PRECOMPILE_FLAGS_UNKNOWN;
+			break;
+
+		default:
+			for (size_t i = 0; i < ARRAY_SIZE(state->a); i++)
+				state->a[i].kind = TEAK_TCG_PRECOMPILE_UNKNOWN;
+			for (size_t i = 0; i < ARRAY_SIZE(state->r); i++)
+				state->r[i].kind = TEAK_TCG_PRECOMPILE_UNKNOWN;
+			state->flags_source = TEAK_TCG_PRECOMPILE_FLAGS_UNKNOWN;
+			break;
+	}
+}
+
+static bool tcg_precompile_value_refine(teak_tcg_precompile_value_t *value, teak_condition_t condition,
+	int32_t comparison, bool taken
+) {
+	int32_t minimum = INT16_MIN;
+	int32_t maximum = INT16_MAX;
+	bool exclude_equal = false;
+
+	switch (condition) {
+		case TEAK_COND_EQ:
+			minimum = comparison;
+			maximum = comparison;
+			exclude_equal = !taken;
+			break;
+		case TEAK_COND_NEQ:
+			minimum = comparison;
+			maximum = comparison;
+			exclude_equal = taken;
+			break;
+		case TEAK_COND_GT:
+			minimum = comparison + 1;
+			if (!taken) {
+				minimum = INT16_MIN;
+				maximum = comparison;
+			}
+			break;
+		case TEAK_COND_GE:
+			minimum = comparison;
+			if (!taken) {
+				minimum = INT16_MIN;
+				maximum = comparison - 1;
+			}
+			break;
+		case TEAK_COND_LT:
+			maximum = comparison - 1;
+			if (!taken) {
+				minimum = comparison;
+				maximum = INT16_MAX;
+			}
+			break;
+		case TEAK_COND_LE:
+			maximum = comparison;
+			if (!taken) {
+				minimum = comparison + 1;
+				maximum = INT16_MAX;
+			}
+			break;
+		default:
+			return true;
+	}
+
+	if (value->kind == TEAK_TCG_PRECOMPILE_UNKNOWN) {
+		if (exclude_equal)
+			return true;
+		value->kind = TEAK_TCG_PRECOMPILE_RANGE;
+		value->minimum = minimum;
+		value->maximum = maximum;
+		return minimum <= maximum;
+	}
+	if (value->kind == TEAK_TCG_PRECOMPILE_RANGE) {
+		if (exclude_equal && comparison > value->minimum && comparison < value->maximum)
+			return true;
+		if (exclude_equal) {
+			if (value->minimum == comparison)
+				value->minimum++;
+			if (value->maximum == comparison)
+				value->maximum--;
+		} else {
+			value->minimum = MAX(value->minimum, minimum);
+			value->maximum = MIN(value->maximum, maximum);
+		}
+		return value->minimum <= value->maximum;
+	}
+
+	size_t output = 0;
+	for (size_t i = 0; i < value->count; i++) {
+		int32_t item = (int16_t) value->values[i];
+		bool keep = exclude_equal ? item != comparison : item >= minimum && item <= maximum;
+
+		if (keep)
+			value->values[output++] = value->values[i];
+	}
+	value->count = output;
+	return output != 0;
+}
+
+static bool tcg_precompile_refine(teak_tcg_precompile_state_t *state, teak_condition_t condition, bool taken) {
+	teak_tcg_precompile_value_t *value;
+
+	switch (state->flags_source) {
+		case TEAK_TCG_PRECOMPILE_FLAGS_A0:
+			value = &state->a[0];
+			break;
+		case TEAK_TCG_PRECOMPILE_FLAGS_A1:
+			value = &state->a[1];
+			break;
+		default:
+			return true;
+	}
+	return tcg_precompile_value_refine(value, condition, state->comparison, taken);
+}
+
+static void tcg_precompile_enqueue(teak_tcg_precompile_node_t **nodes, GQueue *queue, uint32_t address,
+	const teak_tcg_precompile_state_t *state
+) {
+	uint16_t pc = (uint16_t) address;
+	teak_tcg_precompile_node_t *node = nodes[pc];
+	bool changed;
+
+	if (node == NULL) {
+		node = g_new0(teak_tcg_precompile_node_t, 1);
+		node->pc = pc;
+		nodes[pc] = node;
+	}
+	if (!node->reached) {
+		node->state = *state;
+		node->reached = true;
+		changed = true;
+	} else {
+		changed = tcg_precompile_state_merge(&node->state, state);
+	}
+	if (changed && !node->queued) {
+		node->queued = true;
+		g_queue_push_tail(queue, node);
+	}
+}
+
+static void tcg_precompile_enqueue_value(teak_tcg_precompile_node_t **nodes, GQueue *queue,
+	const teak_tcg_precompile_value_t *value, const teak_tcg_precompile_state_t *state
+) {
+	if (value->kind == TEAK_TCG_PRECOMPILE_SET) {
+		for (size_t i = 0; i < value->count; i++)
+			tcg_precompile_enqueue(nodes, queue, value->values[i], state);
+	} else if (value->kind == TEAK_TCG_PRECOMPILE_RANGE &&
+		value->maximum - value->minimum < TEAK_TCG_PRECOMPILE_VALUES) {
+		for (int32_t item = value->minimum; item <= value->maximum; item++)
+			tcg_precompile_enqueue(nodes, queue, (uint16_t) item, state);
+	}
 }
 
 size_t teak_tcg_precompile_entry(teak_tcg_core_t *core, uint32_t entry) {
-	uint16_t *queue = g_new(uint16_t, (size_t) TEAK_PROGRAM_ADDRESS_MASK + 1);
-	bool *queued = g_new0(bool, (size_t) TEAK_PROGRAM_ADDRESS_MASK + 1);
-	size_t head = 0;
-	size_t tail = 0;
+	teak_tcg_precompile_node_t **nodes = g_new0(teak_tcg_precompile_node_t *,
+		(size_t) TEAK_PROGRAM_ADDRESS_MASK + 1);
+	bool *compiled = g_new0(bool, (size_t) TEAK_PROGRAM_ADDRESS_MASK + 1);
+	GQueue *queue = g_queue_new();
+	teak_tcg_precompile_state_t initial_state = {};
 	size_t blocks = 0;
 
 	uint32_t saved_pc = core->state.pc;
@@ -4704,46 +5156,64 @@ size_t teak_tcg_precompile_entry(teak_tcg_core_t *core, uint32_t entry) {
 	uint8_t saved_bcn = core->state.bcn;
 	uint8_t saved_lp = core->state.lp;
 
-	tcg_precompile_enqueue(queue, queued, &tail, entry);
+	tcg_precompile_enqueue(nodes, queue, entry, &initial_state);
 	for (size_t i = 0; i < ARRAY_SIZE(teak_interrupt_vectors); i++)
-		tcg_precompile_enqueue(queue, queued, &tail, teak_interrupt_vectors[i]);
+		tcg_precompile_enqueue(nodes, queue, teak_interrupt_vectors[i], &initial_state);
 
-	while (head < tail) {
+	while (!g_queue_is_empty(queue)) {
+		teak_tcg_precompile_node_t *node = g_queue_pop_head(queue);
 		teak_tcg_block_t block;
+		teak_tcg_precompile_state_t state = node->state;
 
-		core->state.pc = queue[head++];
+		node->queued = false;
+		core->state.pc = node->pc;
 		core->state.bcn = 0;
 		core->state.lp = 0;
 		TranslationBlock *tb = tcg_prepare_block(core, &block);
 		if (tb == NULL)
 			continue;
 
-		blocks++;
+		if (!compiled[node->pc]) {
+			compiled[node->pc] = true;
+			blocks++;
+		}
+		for (size_t i = 0; i < block.instruction_count; i++)
+			tcg_precompile_apply_instruction(core, &state, &block.instructions[i]);
 		const teak_insn_t *last = &block.instructions[block.instruction_count - 1];
 		uint16_t fallthrough = (uint16_t) (last->address + last->words);
 
 		switch (last->opcode) {
 			case TEAK_OP_BRANCH_ABSOLUTE:
-			case TEAK_OP_BRANCH_RELATIVE:
-				tcg_precompile_enqueue(queue, queued, &tail, last->branch_target);
-				if (last->condition != TEAK_COND_TRUE)
-					tcg_precompile_enqueue(queue, queued, &tail, fallthrough);
+			case TEAK_OP_BRANCH_RELATIVE: {
+				teak_tcg_precompile_state_t taken = state;
+				teak_tcg_precompile_state_t not_taken = state;
+
+				if (last->condition == TEAK_COND_TRUE) {
+					tcg_precompile_enqueue(nodes, queue, last->branch_target, &state);
+				} else {
+					if (tcg_precompile_refine(&taken, last->condition, true))
+						tcg_precompile_enqueue(nodes, queue, last->branch_target, &taken);
+					if (tcg_precompile_refine(&not_taken, last->condition, false))
+						tcg_precompile_enqueue(nodes, queue, fallthrough, &not_taken);
+				}
 				break;
+			}
 
 			case TEAK_OP_CALL_ABSOLUTE:
 			case TEAK_OP_CALL_RELATIVE:
-				tcg_precompile_enqueue(queue, queued, &tail, last->branch_target);
-				tcg_precompile_enqueue(queue, queued, &tail, fallthrough);
+				tcg_precompile_enqueue(nodes, queue, last->branch_target, &state);
+				tcg_precompile_enqueue(nodes, queue, fallthrough, &state);
 				break;
 
 			case TEAK_OP_CALL_ACCUMULATOR:
-				tcg_precompile_enqueue(queue, queued, &tail, fallthrough);
+				tcg_precompile_enqueue_value(nodes, queue, &state.a[last->accumulator_index], &state);
+				tcg_precompile_enqueue(nodes, queue, fallthrough, &state);
 				break;
 
 			case TEAK_OP_RETURN:
 			case TEAK_OP_RETURN_INTERRUPT:
 				if (last->condition != TEAK_COND_TRUE)
-					tcg_precompile_enqueue(queue, queued, &tail, fallthrough);
+					tcg_precompile_enqueue(nodes, queue, fallthrough, &state);
 				break;
 
 			case TEAK_OP_RETURN_STACK:
@@ -4752,12 +5222,12 @@ size_t teak_tcg_precompile_entry(teak_tcg_core_t *core, uint32_t entry) {
 				break;
 
 			case TEAK_OP_TRAP:
-				tcg_precompile_enqueue(queue, queued, &tail, 2);
-				tcg_precompile_enqueue(queue, queued, &tail, fallthrough);
+				tcg_precompile_enqueue(nodes, queue, 2, &state);
+				tcg_precompile_enqueue(nodes, queue, fallthrough, &state);
 				break;
 
 			default:
-				tcg_precompile_enqueue(queue, queued, &tail, fallthrough);
+				tcg_precompile_enqueue(nodes, queue, fallthrough, &state);
 				break;
 		}
 	}
@@ -4768,8 +5238,11 @@ size_t teak_tcg_precompile_entry(teak_tcg_core_t *core, uint32_t entry) {
 	core->translation_error_address = saved_error_address;
 	core->translation_error = saved_error;
 
-	g_free(queued);
-	g_free(queue);
+	for (size_t i = 0; i <= TEAK_PROGRAM_ADDRESS_MASK; i++)
+		g_free(nodes[i]);
+	g_queue_free(queue);
+	g_free(compiled);
+	g_free(nodes);
 	return blocks;
 }
 
