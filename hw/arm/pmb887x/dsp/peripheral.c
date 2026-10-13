@@ -179,6 +179,8 @@ void dsp_bus_reset(dsp_bus_t *bus) {
 }
 
 void dsp_bus_set_clock_hz(dsp_bus_t *bus, uint32_t frequency_hz) {
+	if (bus->cipher != NULL)
+		cipher_set_clock_hz(bus->cipher, frequency_hz);
 	if (bus->timer1 != NULL)
 		timer1_set_clock_hz(bus->timer1, frequency_hz);
 	if (bus->timer2 != NULL)
@@ -197,6 +199,8 @@ void dsp_bus_set_ms_clock_hz(dsp_bus_t *bus, uint32_t frequency_hz) {
 }
 
 void dsp_bus_update_time(dsp_bus_t *bus) {
+	if (bus->cipher != NULL)
+		cipher_update_time(bus->cipher);
 	if (bus->timer1 != NULL)
 		timer1_update(bus->timer1);
 	if (bus->timer2 != NULL)
@@ -209,8 +213,6 @@ void dsp_bus_advance(dsp_bus_t *bus, size_t cycles) {
 		baseband_advance(bus->baseband);
 	if (bus->channel_decoder != NULL && chdec_is_active(bus->channel_decoder))
 		chdec_advance(bus->channel_decoder, cycles);
-	if (bus->cipher != NULL && cipher_is_active(bus->cipher))
-		cipher_advance(bus->cipher, cycles);
 	if (bus->equalizer != NULL && equalizer_is_active(bus->equalizer))
 		equalizer_advance(bus->equalizer, cycles);
 	for (size_t i = 0; i < bus->i2s_count; i++)
@@ -240,8 +242,6 @@ bool dsp_bus_needs_core_catchup(const dsp_bus_t *bus) {
 	if (bus->afe != NULL && afe_is_active(bus->afe))
 		return true;
 	if (bus->channel_decoder != NULL && chdec_is_active(bus->channel_decoder))
-		return true;
-	if (bus->cipher != NULL && cipher_is_active(bus->cipher))
 		return true;
 	if (bus->equalizer != NULL && equalizer_is_active(bus->equalizer))
 		return true;

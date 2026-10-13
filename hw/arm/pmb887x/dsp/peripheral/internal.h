@@ -94,8 +94,8 @@ uint16_t chdec_external_read(dsp_device_t *device);
 void chdec_external_write(dsp_device_t *device, uint16_t value);
 
 dsp_device_t *cipher_create(const pmb887x_dsp_peripheral_config_t *config, dsp_device_t *interrupt, const dsp_host_t *host);
-void cipher_advance(dsp_device_t *device, size_t cycles);
-bool cipher_is_active(const dsp_device_t *device);
+void cipher_set_clock_hz(dsp_device_t *device, uint32_t frequency_hz);
+void cipher_update_time(dsp_device_t *device);
 
 dsp_device_t *control_create(const pmb887x_dsp_peripheral_config_t *config, const dsp_host_t *host);
 int control_set_input(dsp_device_t *device, size_t index, bool level);
