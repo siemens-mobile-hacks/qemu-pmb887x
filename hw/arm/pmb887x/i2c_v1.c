@@ -256,8 +256,9 @@ static void i2c_work(pmb887x_i2c_t *p) {
 				DPRINTF("[TX] all bytes transmitted\n");
 				i2c_update_syscon(p, p->syscon | I2Cv1_SYSCON_IRQD);
 				p->state = I2C_STATE_TX_DONE;
+			} else {
+				i2c_timer_schedule(p);
 			}
-			i2c_timer_schedule(p);
 		}
 	} else if (p->state == I2C_STATE_TX_DONE) {
 		if (!(p->syscon & I2Cv1_SYSCON_BUM)) {
@@ -269,6 +270,7 @@ static void i2c_work(pmb887x_i2c_t *p) {
 			p->state = I2C_STATE_RX;
 			p->trx_cnt = 0;
 			p->wcycle = 0;
+			i2c_timer_schedule(p);
 		} else if (p->nack_received && !(p->syscon & I2Cv1_SYSCON_IRQD)) {
 			i2c_update_syscon(p, p->syscon | I2Cv1_SYSCON_IRQE);
 			p->state = I2C_STATE_END;
@@ -276,11 +278,8 @@ static void i2c_work(pmb887x_i2c_t *p) {
 			DPRINTF("[TX] new transfer requested\n");
 			p->state = I2C_STATE_TX;
 			p->trx_cnt = 0;
-		} else {
-			i2c_update_syscon(p, p->syscon | I2Cv1_SYSCON_IRQD);
-		}
-		if (p->state != I2C_STATE_NONE)
 			i2c_timer_schedule(p);
+		}
 	} else if (p->state == I2C_STATE_RX) {
 		if (!(p->syscon & I2Cv1_SYSCON_IRQD)) {
 			if (p->trx_cnt < i2c_get_trx_size(p)) {
@@ -306,9 +305,9 @@ static void i2c_work(pmb887x_i2c_t *p) {
 					DPRINTF("[RX] STOP\n");
 					i2c_stop_transfer(p);
 				}
-			}
-			if (p->state != I2C_STATE_NONE)
+			} else {
 				i2c_timer_schedule(p);
+			}
 		}
 	} else if (p->state == I2C_STATE_RX_DONE) {
 		if ((p->syscon & I2Cv1_SYSCON_TRX)) {
@@ -316,17 +315,15 @@ static void i2c_work(pmb887x_i2c_t *p) {
 			p->state = I2C_STATE_TX;
 			p->trx_cnt = 0;
 			p->wcycle = 0;
+			i2c_timer_schedule(p);
 		} else if (!(p->syscon & I2Cv1_SYSCON_IRQD)) {
 			DPRINTF("[RX] new transfer requested\n");
 			p->state = I2C_STATE_RX;
 			p->trx_cnt = 0;
-		} else {
-			i2c_update_syscon(p, p->syscon | I2Cv1_SYSCON_IRQD);
+			i2c_timer_schedule(p);
 		}
-		i2c_timer_schedule(p);
 	} else if (p->state == I2C_STATE_END) {
 		if ((p->syscon & I2Cv1_SYSCON_IRQD) != 0) {
-			i2c_timer_schedule(p);
 			p->in_work = false;
 			return;
 		}
