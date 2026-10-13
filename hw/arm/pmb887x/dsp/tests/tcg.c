@@ -348,6 +348,29 @@ static void test_program_context_cache(void) {
 	g_assert_cmpuint(core.cache_compiles, ==, 2);
 }
 
+static void test_program_invalidation(void) {
+	test_memory_t program = {
+		.words = {
+			0x67D0, /* inc a0. */
+			0x67D0, /* inc a0. */
+			0x4180, 0x0004, /* br 0x0004, true. */
+		},
+	};
+	test_memory_t data = {};
+	pmb887x_dsp_tcg_core_t core = test_core_create(&program, &data);
+
+	g_assert_true(pmb887x_dsp_tcg_execute_block(&core));
+	g_assert_cmphex(core.state.a[0], ==, 2);
+	g_assert_cmpuint(core.cache_compiles, ==, 1);
+
+	program.words[1] = 0x67E0; /* dec a0. */
+	pmb887x_dsp_tcg_invalidate_program(&core, 1);
+	core.state.pc = 0;
+	g_assert_true(pmb887x_dsp_tcg_execute_block(&core));
+	g_assert_cmphex(core.state.a[0], ==, 2);
+	g_assert_cmpuint(core.cache_compiles, ==, 2);
+}
+
 static void test_direct_data_bank(void) {
 	test_memory_t program = {
 		/* mov [r1], a0; br 0x0003 always. */
@@ -635,6 +658,7 @@ int main(int argc, char **argv) {
 	g_test_add_func("/pmb887x/dsp/tcg/dual-memory-spaces", test_dual_memory_spaces);
 	g_test_add_func("/pmb887x/dsp/tcg/direct-data-read-write", test_direct_data_read_write);
 	g_test_add_func("/pmb887x/dsp/tcg/program-context-cache", test_program_context_cache);
+	g_test_add_func("/pmb887x/dsp/tcg/program-invalidation", test_program_invalidation);
 	g_test_add_func("/pmb887x/dsp/tcg/direct-data-bank", test_direct_data_bank);
 	g_test_add_func("/pmb887x/dsp/tcg/mov-data-shift-value", test_mov_data_shift_value);
 	g_test_add_func("/pmb887x/dsp/tcg/mov-accumulator-high-extension-unaffected", test_mov_accumulator_high_extension_unaffected);

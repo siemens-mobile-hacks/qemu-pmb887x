@@ -1,7 +1,9 @@
 #include "qemu/osdep.h"
 
 #include "hw/arm/pmb887x/gen/dsp.h"
+#include "hw/arm/pmb887x/dsp/peripheral/afe-audio.h"
 #include "hw/arm/pmb887x/dsp/peripheral.h"
+#include "hw/arm/pmb887x/rf.h"
 #include "hw/arm/pmb887x/regs_dump.h"
 #include "hw/arm/pmb887x/trace_common.h"
 
@@ -13,18 +15,53 @@
 #define TEST_UNKNOWN_BASE	0x1060
 #define TEST_I2S_BASE		0x1070
 #define TEST_I2S_TX_BASE	0x1080
+#define TEST_AFE_DAC_RING_OFFSET	0x40
 #define TEST_I2S_RX_RAM_BASE	(TEAK_I2S_RWADDR_RDADDR + 1U)
 
 uint64_t pmb887x_trace_io_mask;
 uint64_t pmb887x_trace_log_mask;
 
+/* The host-unit test replaces external frontends, never DSP model code. */
+static size_t test_audio_sample_count;
+static uint16_t test_audio_sample;
+
+afe_audio_t *afe_audio_create(void) {
+	return NULL;
+}
+
+void afe_audio_destroy(afe_audio_t *_audio) {
+}
+
+void afe_audio_reset(afe_audio_t *_audio) {
+}
+
+void afe_audio_set_rate(afe_audio_t *_audio, unsigned _frequency_hz) {
+}
+
+void afe_audio_produce(afe_audio_t *_audio, uint16_t sample_word) {
+	test_audio_sample_count++;
+	test_audio_sample = sample_word;
+}
+
+bool pmb887x_iq_bus_has_source(const pmb887x_iq_bus_t *bus) {
+	g_assert_null(bus);
+	return false;
+}
+
+pmb887x_iq_sample_t pmb887x_iq_bus_read(pmb887x_iq_bus_t *bus, int64_t _timestamp, uint64_t _sample_index) {
+	g_assert_null(bus);
+	return (pmb887x_iq_sample_t) { 0, 0 };
+}
+
 typedef struct test_host_t {
 	uint16_t page;
 	uint32_t pc;
 	bool core_disabled;
-	uint16_t i2s_samples[128];
+	uint16_t data[128];
 	uint32_t i2s_sample_rate_hz;
 	unsigned i2s_channels;
+	size_t data_read_count;
+	uint16_t data_read_address;
 	size_t i2s_configure_count;
 	bool i2s_transmit;
 	int16_t i2s_output[2];
@@ -84,14 +121,16 @@ static void test_set_core_disabled(void *opaque, bool disabled) {
 
 static uint16_t test_data_read(void *opaque, uint16_t address) {
 	test_host_t *host = opaque;
-	return address < ARRAY_SIZE(host->i2s_samples) ? host->i2s_samples[address] : 0;
+	host->data_read_count++;
+	host->data_read_address = address;
+	return address < ARRAY_SIZE(host->data) ? host->data[address] : 0;
 }
 
 static void test_data_write(void *opaque, uint16_t address, uint16_t value) {
 	test_host_t *host = opaque;
 
-	if (address < ARRAY_SIZE(host->i2s_samples))
-		host->i2s_samples[address] = value;
+	if (address < ARRAY_SIZE(host->data))
+		host->data[address] = value;
 }
 
 static void test_i2s_configure(test_host_t *host, bool transmit, const I2SFormat *format) {
@@ -287,6 +326,18 @@ static void test_afe_clock(void) {
 	test_host_t host = {};
 	pmb887x_dsp_peripheral_bus_t *bus = test_bus_create(&host);
 
+	host.data[TEST_AFE_DAC_RING_OFFSET] = 0x1234;
+	test_audio_sample_count = 0;
+	pmb887x_dsp_peripheral_bus_reset(bus);
+	pmb887x_dsp_peripheral_bus_write(bus, TEST_AFE_BASE + TEAK_AFE_INTPTR, 0x3F3F);
+	pmb887x_dsp_peripheral_bus_write(bus, TEST_AFE_BASE + TEAK_AFE_BCON,
+		TEAK_AFE_BCON_MODE | TEAK_AFE_BCON_RXSTART | TEAK_AFE_BCON_RXRATE_KHZ_8);
+	pmb887x_dsp_peripheral_bus_advance_afe(bus, 1000);
+	g_assert_cmpuint(host.data_read_count, ==, 1);
+	g_assert_cmphex(host.data_read_address, ==, TEST_AFE_DAC_RING_OFFSET);
+	g_assert_cmpuint(test_audio_sample_count, ==, 1);
+	g_assert_cmphex(test_audio_sample, ==, 0x1234);
+
 	for (size_t i = 0; i < ARRAY_SIZE(receive_rates); i++) {
 		pmb887x_dsp_peripheral_bus_reset(bus);
 		pmb887x_dsp_peripheral_bus_write(bus, TEST_AFE_BASE + TEAK_AFE_INTPTR, 0x3F3F);
@@ -341,7 +392,7 @@ static void test_afe_clock(void) {
 }
 
 static void test_i2s_clock(void) {
-	test_host_t host = { .i2s_samples = { 0x8000, 0 } };
+	test_host_t host = { .data = { 0x8000, 0 } };
 	pmb887x_dsp_peripheral_bus_t *bus = test_bus_create(&host);
 
 	pmb887x_dsp_peripheral_bus_reset(bus);
@@ -426,16 +477,16 @@ static void test_i2s_clock(void) {
 	pmb887x_dsp_peripheral_bus_advance_idle(bus, 1180);
 	g_assert_cmpuint(host.i2s_sample_rate_hz, ==, 44100);
 	g_assert_cmpuint(host.i2s_channels, ==, 2);
-	g_assert_cmphex(host.i2s_samples[0], ==, 0x8000);
-	g_assert_cmphex(host.i2s_samples[TEST_I2S_RX_RAM_BASE], ==, 0x1234);
-	g_assert_cmphex(host.i2s_samples[TEST_I2S_RX_RAM_BASE + 1], ==, 0xFEDC);
-	g_assert_cmphex(host.i2s_samples[TEST_I2S_RX_RAM_BASE + 2], ==, 0);
-	g_assert_cmphex(host.i2s_samples[TEST_I2S_RX_RAM_BASE + 3], ==, 0);
+	g_assert_cmphex(host.data[0], ==, 0x8000);
+	g_assert_cmphex(host.data[TEST_I2S_RX_RAM_BASE], ==, 0x1234);
+	g_assert_cmphex(host.data[TEST_I2S_RX_RAM_BASE + 1], ==, 0xFEDC);
+	g_assert_cmphex(host.data[TEST_I2S_RX_RAM_BASE + 2], ==, 0);
+	g_assert_cmphex(host.data[TEST_I2S_RX_RAM_BASE + 3], ==, 0);
 	g_assert_cmphex(pmb887x_dsp_peripheral_bus_read(bus, TEST_I2S_BASE + TEAK_I2S_RWADDR), ==, 0x0400);
 	g_assert_cmphex(pmb887x_dsp_peripheral_bus_get_interrupt_flags(bus, 1), ==, TEAK_INT_FINTB0_I2S1RX);
 
-	host.i2s_samples[0] = 0x8000;
-	host.i2s_samples[1] = 0;
+	host.data[0] = 0x8000;
+	host.data[1] = 0;
 	pmb887x_dsp_peripheral_bus_reset(bus);
 	pmb887x_dsp_peripheral_bus_write(bus, TEST_I2S_BASE + TEAK_I2S_TXCONF, TEAK_I2S_TXCONF_MONO_LEFT);
 	pmb887x_dsp_peripheral_bus_write(bus, TEST_I2S_BASE + TEAK_I2S_CTRL,

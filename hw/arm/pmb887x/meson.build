@@ -18,6 +18,7 @@ dsp_peripheral_sources = files(
 	'dsp/peripheral/timer2.c',
 	'dsp/peripheral/unknown.c',
 )
+dsp_audio_sources = files('dsp/peripheral/afe-audio.c')
 
 arm_common_ss.add(when: 'CONFIG_PMB887X', if_true: files(
 	'board.c',
@@ -115,7 +116,7 @@ arm_common_ss.add(when: 'CONFIG_PMB887X', if_true: files(
 	'sim/sim_fs.c',
 	'sim/sim_card.c',
 ))
-arm_common_ss.add(when: 'CONFIG_PMB887X', if_true: dsp_core_sources + dsp_peripheral_sources +
+arm_common_ss.add(when: 'CONFIG_PMB887X', if_true: dsp_core_sources + dsp_peripheral_sources + dsp_audio_sources +
 	files('dsp/tcg.c', 'dsp/runtime.c'))
 
 dsp_test_c_args = ['-include', meson.current_source_dir() / 'dsp/tests/compat.h']

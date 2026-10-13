@@ -26,7 +26,6 @@ struct dsp_runtime_t {
 	size_t active_program_bank;
 	size_t active_data_bank;
 	uint32_t program_generation;
-	uint16_t rom_version;
 	bool idle;
 	bool halted;
 	bool core_disabled;
@@ -136,8 +135,7 @@ static void dsp_runtime_comm_changed(void *opaque, uint16_t flags, bool set) {
 	dsp_runtime_t *runtime = opaque;
 
 	runtime->notify_comm(runtime->device_opaque, flags, set);
-	if (!set || qatomic_read(&runtime->mutable_program_started))
-		dsp_runtime_kick(runtime);
+	dsp_runtime_kick(runtime);
 }
 
 static uint16_t dsp_runtime_program_read(void *opaque, uint32_t address) {
@@ -173,8 +171,10 @@ static void dsp_runtime_program_write(void *opaque, uint32_t address, uint16_t v
 	if (!qatomic_read(&runtime->program_warming))
 		qatomic_set(&runtime->program_dirty, true);
 	qatomic_set(&runtime->program[address], value);
-	runtime->program_generation++;
-	dsp_runtime_update_program_context(runtime);
+	if (!qatomic_read(&runtime->pram_cache_active)) {
+		runtime->program_generation++;
+		dsp_runtime_update_program_context(runtime);
+	}
 	teak_tcg_request_exit(&runtime->core);
 }
 
@@ -249,7 +249,6 @@ static void dsp_runtime_external_write(void *opaque, uint32_t index, uint16_t va
 
 dsp_runtime_t *dsp_runtime_create(
 	const pmb887x_dsp_config_t *config,
-	uint16_t rom_version,
 	const uint8_t *program_rom,
 	const uint8_t *data_rom,
 	void *device_opaque,
@@ -266,7 +265,6 @@ dsp_runtime_t *dsp_runtime_create(
 
 	runtime = g_new0(dsp_runtime_t, 1);
 	runtime->config = config;
-	runtime->rom_version = rom_version;
 	runtime->program_rom = program_rom;
 	runtime->data_rom = data_rom;
 	runtime->device_opaque = device_opaque;
@@ -367,7 +365,6 @@ void dsp_runtime_reset(dsp_runtime_t *runtime) {
 	runtime->program_generation++;
 	dsp_runtime_update_program_context(runtime);
 
-	runtime->data[config->shared_base] = runtime->rom_version;
 	if (qatomic_xchg(&runtime->program_warming, false))
 		qatomic_set(&runtime->program_dirty, true);
 	qatomic_set(&runtime->mutable_program_started, false);

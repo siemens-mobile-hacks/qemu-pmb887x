@@ -42,20 +42,6 @@ void pmb887x_iq_source_port_init(
 );
 pmb887x_iq_sample_t pmb887x_gsm_read_iq(uint32_t frequency, int64_t timestamp, int32_t amplitude);
 
-#ifdef PMB887X_DSP_TESTS
-static inline bool pmb887x_iq_bus_has_source(const pmb887x_iq_bus_t *_bus) {
-	return false;
-}
-
-static inline pmb887x_iq_sample_t pmb887x_iq_bus_read(
-	pmb887x_iq_bus_t *_bus,
-	int64_t _timestamp,
-	uint64_t _sample_index
-) {
-	return (pmb887x_iq_sample_t) { 0, 0 };
-}
-#else
 bool pmb887x_iq_bus_has_source(const pmb887x_iq_bus_t *bus);
 /* timestamp is the virtual time of the requested sample. */
 pmb887x_iq_sample_t pmb887x_iq_bus_read(pmb887x_iq_bus_t *bus, int64_t timestamp, uint64_t sample_index);
-#endif

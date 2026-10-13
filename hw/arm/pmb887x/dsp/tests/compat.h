@@ -1,13 +1,7 @@
-#ifndef HW_ARM_PMB887X_DSP_TESTS_COMPAT_H
-#define HW_ARM_PMB887X_DSP_TESTS_COMPAT_H
+#ifndef HW_ARM_PMB887X_DSP_TEST_COMPAT_H
+#define HW_ARM_PMB887X_DSP_TEST_COMPAT_H
 
 #include "qemu/osdep.h"
-
-/*
- * The host unit-test build links only glib, not the QEMU audio subsystem, so
- * AFE backend code is disabled and the peripheral test provides I2S bus stubs.
- */
-#define PMB887X_DSP_TESTS
 
 #include "hw/arm/pmb887x/dsp/core.h"
 #include "hw/arm/pmb887x/dsp/tcg.h"

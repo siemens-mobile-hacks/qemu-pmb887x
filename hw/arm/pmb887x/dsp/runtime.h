@@ -9,7 +9,6 @@ typedef struct dsp_runtime_t dsp_runtime_t;
 
 dsp_runtime_t *dsp_runtime_create(
 	const pmb887x_dsp_config_t *config,
-	uint16_t rom_version,
 	const uint8_t *program_rom,
 	const uint8_t *data_rom,
 	void *device_opaque,
