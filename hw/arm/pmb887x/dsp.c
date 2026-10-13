@@ -936,11 +936,13 @@ static void dsp_update_timer(dsp_state_t *p) {
 
 static void dsp_clock_update(void *opaque) {
 	dsp_state_t *p = opaque;
+	uint32_t clock_hz = pmb887x_clc_get_input_hz(&p->clc);
 
-	dsp_account_time(p);
-	p->clock_hz = pmb887x_clc_get_input_hz(&p->clc);
 	if (!dsp_mcu_interface_is_enabled(p) && dsp_runtime_is_idle(p->runtime))
-		p->clock_hz = 0;
+		clock_hz = 0;
+	if (clock_hz != p->clock_hz)
+		dsp_sync(p);
+	p->clock_hz = clock_hz;
 	dsp_runtime_set_clock_hz(p->runtime, p->clock_hz);
 	dsp_runtime_set_clock_divider(p->runtime, 1);
 	dsp_update_active_output(p);
