@@ -493,6 +493,11 @@ static uint32_t tpu_regular_frame_ticks(pmb887x_tpu_t *p) {
 
 static void tpu_finish_frame(pmb887x_tpu_t *p) {
 	uint32_t regular_frame_ticks = tpu_regular_frame_ticks(p);
+	uint32_t final_counter = p->frame_ticks - 1;
+	int64_t final_time_ns = p->start - tpu_ticks_to_ns(p, p->counter - final_counter);
+
+	tpu_run_irq(p, final_counter, final_time_ns, final_time_ns);
+	tpu_run_events(p, final_counter, final_time_ns, final_time_ns);
 
 	if ((p->skip & TPU_SKIP_SKIPC) && !p->skip_extended) {
 		p->frame_ticks += regular_frame_ticks;
