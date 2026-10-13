@@ -30,7 +30,6 @@ enum pmb887x_dev_bus_type_t {
 	DEV_BUS_NONE,
 	DEV_BUS_I2C,
 	DEV_BUS_SSI,
-	DEV_BUS_RFSSC,
 	DEV_BUS_SIM,
 	DEV_BUS_EBU,
 	DEV_BUS_MMICIF,
@@ -302,8 +301,6 @@ static pmb887x_dev_bus_type_t bus_get_type(Object *dev) {
 		return DEV_BUS_I2C;
 	if (strcmp(typename, "SSI") == 0)
 		return DEV_BUS_SSI;
-	if (strcmp(typename, TYPE_PMB887X_RFSSC_BUS) == 0)
-		return DEV_BUS_RFSSC;
 	if (strcmp(typename, TYPE_PMB887X_SIM) == 0)
 		return DEV_BUS_SIM;
 	if (strcmp(typename, "pmb887x-ebu") == 0)
@@ -458,9 +455,7 @@ static void device_realize_from_config(GHashTable *devices, const char *id, toml
 		}
 
 		case DEV_BUS_SSI:
-		case DEV_BUS_RFSSC:
-			if (bus_type == DEV_BUS_SSI)
-				qdev_prop_set_uint8(dev, "cs", global_cs_index++);
+			qdev_prop_set_uint8(dev, "cs", global_cs_index++);
 			qdev_realize_and_unref(dev, BUS(bus), &error_fatal);
 			device_init_gpios_from_config(dev, table);
 			break;

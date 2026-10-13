@@ -170,6 +170,7 @@ if have_system
       hwcore,
       meson.project_source_root() / 'hw/audio/i2s.c',
       meson.project_source_root() / 'hw/i2c/core.c',
+      meson.project_source_root() / 'hw/ssi/three-wire-serial.c',
     ],
     'test-qdev': [qom, hwcore],
   }

@@ -11,6 +11,7 @@
 #include "hw/arm/pmb887x/rf.h"
 #include "hw/arm/pmb887x/trace.h"
 #include "hw/core/sysbus.h"
+#include "hw/ssi/three-wire-serial.h"
 
 #define TYPE_PMB887X_RF_TRX	"pmb6272"
 #define PMB887X_RF_TRX(obj)	OBJECT_CHECK(pmb887x_rf_trx_t, (obj), TYPE_PMB887X_RF_TRX)
@@ -19,8 +20,6 @@
 #define PMB6272_REGISTER_ADDRESS_SHIFT	0U
 #define PMB6272_BITS_TO_BYTES_SHIFT	3U
 #define PMB6272_REFERENCE_FREQUENCY	26000000U
-#define PMB6272_TELEGRAM_HALF_BITS	12U
-#define PMB6272_TELEGRAM_HALF_MASK	MAKE_64BIT_MASK(0, PMB6272_TELEGRAM_HALF_BITS)
 #define PMB6272_TELEGRAM_BITS	24U
 #define PMB6272_TELEGRAM_MASK	MAKE_64BIT_MASK(0, PMB6272_TELEGRAM_BITS)
 #define PMB6272_REGISTER_COUNT	16U
@@ -31,18 +30,20 @@ typedef struct pmb887x_rf_trx_t pmb887x_rf_trx_t;
 
 struct pmb887x_rf_trx_t {
 	SysBusDevice parent_obj;
-	pmb887x_rfssc_target_port_t rfssc_port;
+	ThreeWireSerialTargetPort serial_port;
 	pmb887x_iq_source_port_t iq_port;
 	uint32_t registers[PMB6272_REGISTER_COUNT];
 	uint32_t telegram;
 	uint32_t channel_fraction;
 	uint32_t frequency;
-	uint16_t telegram_high;
+	uint64_t shift_register;
 	uint8_t telegram_bits;
+	uint8_t shift_bits;
 	uint8_t channel_integer;
 	uint8_t band;
 	bool transmit;
-	bool telegram_pending;
+	bool strobe_asserted;
+	bool shift_overflow;
 };
 
 static void rf_trx_write_telegram(pmb887x_rf_trx_t *p, uint32_t telegram, uint8_t bits) {
@@ -82,33 +83,42 @@ static void rf_trx_write_telegram(pmb887x_rf_trx_t *p, uint32_t telegram, uint8_
 	IO_DUMP_WRITE(address, bits >> PMB6272_BITS_TO_BYTES_SHIFT, telegram);
 }
 
-static void rf_trx_transfer(pmb887x_rfssc_target_t *target, uint32_t value, uint8_t bits) {
+static void rf_trx_set_strobe(ThreeWireSerialTarget *target, bool asserted) {
 	pmb887x_rf_trx_t *p = PMB887X_RF_TRX(OBJECT(target));
 
-	if (bits != PMB6272_TELEGRAM_HALF_BITS) {
-		p->telegram_pending = false;
-		rf_trx_write_telegram(p, value & PMB6272_TELEGRAM_MASK, bits);
+	if (asserted) {
+		p->shift_register = 0;
+		p->shift_bits = 0;
+		p->shift_overflow = false;
+		p->strobe_asserted = true;
 		return;
 	}
 
-	uint16_t telegram_half = (value & PMB6272_TELEGRAM_HALF_MASK);
-
-	if (!p->telegram_pending) {
-		p->telegram_high = telegram_half;
-		p->telegram_pending = true;
+	if (!p->strobe_asserted)
 		return;
-	}
 
-	uint32_t telegram = ((uint32_t) p->telegram_high << PMB6272_TELEGRAM_HALF_BITS) | telegram_half;
-	p->telegram_pending = false;
-	rf_trx_write_telegram(p, telegram, PMB6272_TELEGRAM_BITS);
+	p->strobe_asserted = false;
+	if (!p->shift_overflow && p->shift_bits != 0)
+		rf_trx_write_telegram(p, p->shift_register & PMB6272_TELEGRAM_MASK, p->shift_bits);
 }
 
-static pmb887x_iq_sample_t rf_trx_read_iq(pmb887x_rf_iq_source_t *source, int64_t timestamp, uint64_t sample_index) {
+static void rf_trx_write(ThreeWireSerialTarget *target, uint32_t value, unsigned int bits) {
+	pmb887x_rf_trx_t *p = PMB887X_RF_TRX(OBJECT(target));
+
+	if (!p->strobe_asserted || p->shift_overflow)
+		return;
+	if (bits > PMB6272_TELEGRAM_BITS - p->shift_bits) {
+		p->shift_overflow = true;
+		return;
+	}
+
+	p->shift_register = (p->shift_register << bits) | (value & MAKE_64BIT_MASK(0, bits));
+	p->shift_bits += bits;
+}
+
+static pmb887x_iq_sample_t rf_trx_read_iq(pmb887x_rf_iq_source_t *source, int64_t timestamp, uint64_t _sample_index) {
 	pmb887x_rf_trx_t *p = PMB887X_RF_TRX(source);
 	uint32_t frequency = p->transmit ? 0 : qatomic_read(&p->frequency);
-
-	(void) sample_index;
 
 	return pmb887x_gsm_read_iq(frequency, timestamp, PMB6272_SIGNAL_AMPLITUDE);
 }
@@ -120,29 +130,35 @@ static void rf_trx_reset(DeviceState *device) {
 	p->telegram = 0;
 	p->channel_fraction = 0;
 	qatomic_set(&p->frequency, 0);
-	p->telegram_high = 0;
+	p->shift_register = 0;
 	p->telegram_bits = 0;
+	p->shift_bits = 0;
 	p->channel_integer = 0;
 	p->band = 0;
 	p->transmit = false;
-	p->telegram_pending = false;
+	p->strobe_asserted = false;
+	p->shift_overflow = false;
 }
 
 static void rf_trx_init(Object *obj) {
 	pmb887x_rf_trx_t *p = PMB887X_RF_TRX(obj);
 
-	pmb887x_rfssc_target_port_init(&p->rfssc_port, DEVICE(obj), "RFSSC", PMB887X_RFSSC_TARGET(obj));
+	three_wire_serial_target_port_init(
+		&p->serial_port,
+		DEVICE(obj),
+		"RFSSC",
+		THREE_WIRE_SERIAL_TARGET(obj)
+	);
 	pmb887x_iq_source_port_init(&p->iq_port, DEVICE(obj), "IQ_TX", PMB887X_RF_IQ_SOURCE(obj));
 }
 
-static void rf_trx_class_init(ObjectClass *klass, const void *data) {
+static void rf_trx_class_init(ObjectClass *klass, const void *_data) {
 	DeviceClass *device_class = DEVICE_CLASS(klass);
-	pmb887x_rfssc_target_class_t *rfssc_class = PMB887X_RFSSC_TARGET_CLASS(klass);
+	ThreeWireSerialTargetClass *serial_class = THREE_WIRE_SERIAL_TARGET_CLASS(klass);
 	pmb887x_rf_iq_source_class_t *iq_class = PMB887X_RF_IQ_SOURCE_CLASS(klass);
 
-	(void) data;
-
-	rfssc_class->transfer = rf_trx_transfer;
+	serial_class->set_strobe = rf_trx_set_strobe;
+	serial_class->write = rf_trx_write;
 	iq_class->read_iq = rf_trx_read_iq;
 	device_class_set_legacy_reset(device_class, rf_trx_reset);
 }
@@ -154,7 +170,7 @@ static const TypeInfo rf_trx_info = {
 	.instance_init = rf_trx_init,
 	.class_init = rf_trx_class_init,
 	.interfaces = (const InterfaceInfo[]) {
-		{ TYPE_PMB887X_RFSSC_TARGET },
+		{ TYPE_THREE_WIRE_SERIAL_TARGET },
 		{ TYPE_PMB887X_RF_IQ_SOURCE },
 		{ NULL },
 	},

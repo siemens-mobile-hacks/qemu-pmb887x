@@ -5,6 +5,7 @@
 #include "hw/audio/i2s.h"
 #include "hw/core/bus-port.h"
 #include "hw/i2c/i2c.h"
+#include "hw/ssi/three-wire-serial.h"
 #include "qapi/error.h"
 #include "qemu/module.h"
 
@@ -32,6 +33,7 @@ struct ProtocolTestDevice {
     I2CTargetPort i2c_port;
     I2SSinkPort i2s_sink_port;
     I2SSourcePort i2s_source_port;
+    ThreeWireSerialTargetPort serial_port;
     uint32_t i2c_address;
     enum i2c_event i2c_event;
     uint8_t i2c_sent;
@@ -42,6 +44,10 @@ struct ProtocolTestDevice {
     int16_t i2s_sink_samples[2];
     int16_t i2s_source_samples[2];
     size_t i2s_frames;
+    bool serial_strobe_asserted;
+    uint32_t serial_value[2];
+    unsigned int serial_bits[2];
+    size_t serial_write_count;
 };
 
 struct EmptyI2CTarget {
@@ -190,6 +196,25 @@ static size_t protocol_i2s_read(I2SSource *source, int16_t *samples,
     return frames;
 }
 
+static void protocol_serial_set_strobe(ThreeWireSerialTarget *target,
+                                       bool asserted)
+{
+    ProtocolTestDevice *dev = PROTOCOL_TEST_DEVICE(OBJECT(target));
+
+    dev->serial_strobe_asserted = asserted;
+}
+
+static void protocol_serial_write(ThreeWireSerialTarget *target,
+                                  uint32_t value, unsigned int bits)
+{
+    ProtocolTestDevice *dev = PROTOCOL_TEST_DEVICE(OBJECT(target));
+    size_t index = dev->serial_write_count++;
+
+    g_assert_cmpuint(index, <, ARRAY_SIZE(dev->serial_value));
+    dev->serial_value[index] = value;
+    dev->serial_bits[index] = bits;
+}
+
 static void protocol_test_device_init(Object *obj)
 {
     ProtocolTestDevice *dev = PROTOCOL_TEST_DEVICE(obj);
@@ -201,13 +226,17 @@ static void protocol_test_device_init(Object *obj)
                        I2S_SINK(dev));
     i2s_source_port_init(&dev->i2s_source_port, DEVICE(dev), "I2S_TX",
                          I2S_SOURCE(dev));
+    three_wire_serial_target_port_init(&dev->serial_port, DEVICE(dev),
+                                       "SERIAL", THREE_WIRE_SERIAL_TARGET(dev));
 }
 
-static void protocol_test_device_class_init(ObjectClass *oc, const void *data)
+static void protocol_test_device_class_init(ObjectClass *oc, const void *_data)
 {
     I2CTargetClass *tc = I2C_TARGET_CLASS(oc);
     I2SSinkClass *sc = I2S_SINK_CLASS(oc);
     I2SSourceClass *source_class = I2S_SOURCE_CLASS(oc);
+    ThreeWireSerialTargetClass *serial_class =
+        THREE_WIRE_SERIAL_TARGET_CLASS(oc);
 
     tc->event = protocol_i2c_event;
     tc->send = protocol_i2c_send;
@@ -216,6 +245,8 @@ static void protocol_test_device_class_init(ObjectClass *oc, const void *data)
     sc->write = protocol_i2s_write;
     source_class->configure = protocol_i2s_source_configure;
     source_class->read = protocol_i2s_read;
+    serial_class->set_strobe = protocol_serial_set_strobe;
+    serial_class->write = protocol_serial_write;
 }
 
 static void empty_i2c_target_init(Object *obj)
@@ -265,6 +296,7 @@ static const TypeInfo protocol_test_device_info = {
         { TYPE_I2C_TARGET },
         { TYPE_I2S_SINK },
         { TYPE_I2S_SOURCE },
+        { TYPE_THREE_WIRE_SERIAL_TARGET },
         { NULL },
     },
 };
@@ -483,6 +515,46 @@ static void test_i2c_adapter(void)
     object_destroy(OBJECT(bus_owner));
 }
 
+static void test_three_wire_serial_adapter(void)
+{
+    DeviceState *bus_owner = test_bus_owner_create();
+    ThreeWireSerialBus *bus = three_wire_serial_bus_init(bus_owner, "serial");
+    ProtocolTestDevice *dev =
+        PROTOCOL_TEST_DEVICE(object_new(TYPE_PROTOCOL_TEST_DEVICE));
+    ProtocolTestDevice *second =
+        PROTOCOL_TEST_DEVICE(object_new(TYPE_PROTOCOL_TEST_DEVICE));
+
+    object_property_set_link(OBJECT(dev), "port.SERIAL", OBJECT(bus),
+                             &error_fatal);
+    qdev_realize(DEVICE(dev), NULL, &error_fatal);
+    object_property_set_link(OBJECT(second), "port.SERIAL", OBJECT(bus),
+                             &error_fatal);
+    qdev_realize(DEVICE(second), NULL, &error_fatal);
+
+    three_wire_serial_set_strobe(bus, true);
+    g_assert_true(dev->serial_strobe_asserted);
+
+    three_wire_serial_write(bus, 0xfffff868, 12);
+    three_wire_serial_write(bus, 0x00e, 12);
+    g_assert_cmpuint(dev->serial_write_count, ==, 2);
+    g_assert_cmphex(dev->serial_value[0], ==, 0x868);
+    g_assert_cmpuint(dev->serial_bits[0], ==, 12);
+    g_assert_cmphex(dev->serial_value[1], ==, 0x00e);
+    g_assert_cmpuint(dev->serial_bits[1], ==, 12);
+    g_assert_cmpuint(second->serial_write_count, ==, 2);
+    g_assert_cmphex(second->serial_value[0], ==, 0x868);
+    g_assert_cmphex(second->serial_value[1], ==, 0x00e);
+    g_assert_true(second->serial_strobe_asserted);
+
+    three_wire_serial_set_strobe(bus, false);
+    g_assert_false(dev->serial_strobe_asserted);
+    g_assert_false(second->serial_strobe_asserted);
+
+    object_destroy(OBJECT(second));
+    object_destroy(OBJECT(dev));
+    object_destroy(OBJECT(bus_owner));
+}
+
 static void test_i2c_adapter_defaults_and_address(void)
 {
     DeviceState *bus_owner = test_bus_owner_create();
@@ -549,6 +621,8 @@ int main(int argc, char **argv)
                     test_bus_owner_destroyed_first);
     g_test_add_func("/qdev/bus-port/i2s-adapter", test_i2s_adapter);
     g_test_add_func("/qdev/bus-port/i2c-adapter", test_i2c_adapter);
+    g_test_add_func("/qdev/bus-port/three-wire-serial-adapter",
+                    test_three_wire_serial_adapter);
     g_test_add_func("/qdev/bus-port/i2c-defaults-and-address",
                     test_i2c_adapter_defaults_and_address);
     return g_test_run();
