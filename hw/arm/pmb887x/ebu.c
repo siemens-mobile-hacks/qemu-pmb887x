@@ -59,6 +59,7 @@ struct pmb887x_ebu_t {
 static void ebu_update_state(pmb887x_ebu_t *p) {
 	bool is_ebu_enabled = pmb887x_clc_is_enabled(&p->clc);
 	
+	memory_region_transaction_begin();
 	for (int i = 0; i < 8; ++i) {
 		MemoryRegion *region = &p->regions[i];
 		
@@ -97,6 +98,7 @@ static void ebu_update_state(pmb887x_ebu_t *p) {
 			}
 		}
 	}
+	memory_region_transaction_commit();
 }
 
 static uint64_t ebu_io_read(void *opaque, hwaddr haddr, unsigned size) {
