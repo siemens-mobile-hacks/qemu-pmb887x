@@ -8,6 +8,7 @@
 #include "hw/arm/pmb887x/utils/strings.h"
 #include "hw/core/hw-error.h"
 #include "hw/core/irq.h"
+#include "hw/core/qdev-clock.h"
 #include "hw/core/sysbus.h"
 #include "hw/core/qdev.h"
 #include "hw/core/qdev-properties.h"
@@ -34,6 +35,12 @@ DeviceState *pmb887x_new_cpu_module(const char *name) {
 		qdev_prop_set_uint32(dev, "peripheral-id", mod->id);
 
 	sysbus_mmio_map(SYS_BUS_DEVICE(dev), 0, mod->base);
+
+	if (mod->clock[0]) {
+		DeviceState *cgu = qdev_find_recursive(sysbus_get_default(), "CGU");
+		g_assert(cgu != NULL);
+		qdev_connect_clock_in(dev, "clk", qdev_get_clock_out(cgu, mod->clock));
+	}
 
 	if (mod->irqs_count > 0) {
 		DeviceState *vic = qdev_find_recursive(sysbus_get_default(), "VIC");
