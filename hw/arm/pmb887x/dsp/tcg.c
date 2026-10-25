@@ -1121,6 +1121,14 @@ static TranslationBlock *tcg_find_cached_block(teak_tcg_core_t *core, teak_tcg_b
 	return NULL;
 }
 
+static bool tcg_same_block_repeat_ends(const uint32_t *cached_ends, const uint32_t *current_ends, uint8_t level) {
+	for (uint8_t i = 0; i < level; i++) {
+		if (cached_ends[i] != current_ends[i])
+			return false;
+	}
+	return true;
+}
+
 static teak_tcg_block_cache_entry_t *tcg_find_cached_entry_fast(teak_tcg_core_t *core) {
 	teak_tcg_block_cache_entry_t *entry;
 	uint8_t level = core->state.bcn;
@@ -1130,19 +1138,10 @@ static teak_tcg_block_cache_entry_t *tcg_find_cached_entry_fast(teak_tcg_core_t 
 		bool same_cache = entry->cache_id == core->cache_id;
 		bool same_context = entry->program_context == core->program_context;
 		bool same_level = entry->block_repeat_level == level;
-		if (same_cache && same_context && same_level) {
-			bool same_repeat_end;
-
-			if (level == 0) {
-				core->cache_fast_hits++;
-				return entry;
-			}
-			same_repeat_end = memcmp(entry->block_repeat_end, core->state.block_repeat_end,
-				level * sizeof(entry->block_repeat_end[0])) == 0;
-			if (same_repeat_end) {
-				core->cache_fast_hits++;
-				return entry;
-			}
+		if (same_cache && same_context && same_level &&
+			tcg_same_block_repeat_ends(entry->block_repeat_end, core->state.block_repeat_end, level)) {
+			core->cache_fast_hits++;
+			return entry;
 		}
 		entry = entry->next;
 	}
