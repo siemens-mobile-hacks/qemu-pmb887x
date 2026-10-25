@@ -244,6 +244,7 @@ DEF("accel", HAS_ARG, QEMU_OPTION_accel,
     "                eager-split-size=n (KVM Eager Page Split chunk size, default 0, disabled. ARM only)\n"
     "                notify-vmexit=run|internal-error|disable,notify-window=n (enable notify VM exit and set notify window, x86 only)\n"
     "                thread=single|multi (enable multi-threaded TCG)\n"
+    "                vcpu-timers=on|off (run virtual timers on the vCPU thread)\n"
     "                device=path (KVM device path, default /dev/kvm)\n", QEMU_ARCH_ALL)
 SRST
 ``-accel name[,prop=value[,...]]``
@@ -282,6 +283,14 @@ SRST
 
     ``tb-size=n``
         Controls the size (in MiB) of the TCG translation block cache.
+
+    ``vcpu-timers=on|off``
+        Runs the virtual clock timers on the vCPU thread instead of the
+        main loop. The virtual clock then counts guest CPU cycles at the
+        CPU clock rate and waits for the timers, so devices see their
+        events at the guest time they were scheduled for however busy
+        the host is. Requires ``thread=multi`` and one vCPU; not
+        compatible with ``-icount``.
 
     ``thread=single|multi``
         Controls number of TCG threads. When the TCG is multi-threaded
@@ -5314,21 +5323,17 @@ SRST
 ERST
 
 DEF("icount", HAS_ARG, QEMU_OPTION_icount, \
-    "-icount [shift=N|auto|precise-clocks=on][,align=on|off][,sleep=on|off][,rr=record|replay,rrfile=<filename>[,rrsnapshot=<snapshot>]]\n" \
+    "-icount [shift=N|auto][,align=on|off][,sleep=on|off][,rr=record|replay,rrfile=<filename>[,rrsnapshot=<snapshot>]]\n" \
     "                enable virtual instruction counter with 2^N clock ticks per\n" \
     "                instruction, enable aligning the host and virtual clocks\n" \
     "                or disable real time cpu sleeping, and optionally enable\n" \
     "                record-and-replay mode\n", QEMU_ARCH_ALL)
 SRST
-``-icount [shift=N|auto|precise-clocks=on][,align=on|off][,sleep=on|off][,rr=record|replay,rrfile=filename[,rrsnapshot=snapshot]]``
+``-icount [shift=N|auto][,align=on|off][,sleep=on|off][,rr=record|replay,rrfile=filename[,rrsnapshot=snapshot]]``
     Enable virtual instruction counter. The virtual cpu will execute one
     instruction every 2^N ns of virtual time. If ``auto`` is specified
     then the virtual cpu speed will be automatically adjusted to keep
     virtual time within a few seconds of real time.
-
-    ``precise-clocks=on`` enables a cycle-based virtual clock. It keeps virtual
-    time monotonic and dynamically adjusts the number of emulated CPU cycles
-    per virtual second to follow the VM-aware real-time clock.
 
     Note that while this option can give deterministic behavior, it does
     not provide cycle accurate emulation. Modern CPUs contain

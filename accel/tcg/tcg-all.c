@@ -40,6 +40,10 @@
 #include "hw/core/boards.h"
 #include "exec/tb-flush.h"
 #include "system/runstate.h"
+#include "system/cpu-timers.h"
+#include "qemu/timer.h"
+#include "qemu/aio.h"
+#include "qemu/main-loop.h"
 #endif
 #include "accel/accel-ops.h"
 #include "accel/accel-cpu-ops.h"
@@ -54,6 +58,7 @@ struct TCGState {
     bool one_insn_per_tb;
     int splitwx_enabled;
     unsigned long tb_size;
+    bool vcpu_timers;
 };
 typedef struct TCGState TCGState;
 
@@ -142,6 +147,16 @@ static int tcg_init_machine(AccelState *as, MachineState *ms)
         break;
     default:
         g_assert_not_reached();
+    }
+
+    if (s->vcpu_timers) {
+        if (s->mttcg_enabled != ON_OFF_AUTO_ON || icount_enabled() ||
+            ms->smp.max_cpus > 1) {
+            error_report("vcpu-timers requires thread=multi, one vCPU "
+                         "and no icount");
+            return -EINVAL;
+        }
+        qemu_virtual_timers_on_vcpu = true;
     }
 
     qemu_add_vm_change_state_handler(tcg_vm_change_state, NULL);
@@ -257,6 +272,18 @@ static void tcg_set_one_insn_per_tb(Object *obj, bool value, Error **errp)
     qatomic_set(&one_insn_per_tb, value);
 }
 
+#ifndef CONFIG_USER_ONLY
+static bool tcg_get_vcpu_timers(Object *obj, Error **errp)
+{
+    return TCG_STATE(obj)->vcpu_timers;
+}
+
+static void tcg_set_vcpu_timers(Object *obj, bool value, Error **errp)
+{
+    TCG_STATE(obj)->vcpu_timers = value;
+}
+#endif
+
 static void tcg_accel_class_init(ObjectClass *oc, const void *data)
 {
     AccelClass *ac = ACCEL_CLASS(oc);
@@ -287,6 +314,15 @@ static void tcg_accel_class_init(ObjectClass *oc, const void *data)
                                    tcg_set_one_insn_per_tb);
     object_class_property_set_description(oc, "one-insn-per-tb",
         "Only put one guest insn in each translation block");
+
+#ifndef CONFIG_USER_ONLY
+    object_class_property_add_bool(oc, "vcpu-timers",
+                                   tcg_get_vcpu_timers,
+                                   tcg_set_vcpu_timers);
+    object_class_property_set_description(oc, "vcpu-timers",
+        "Run virtual clock timers on the vCPU thread instead of the main "
+        "loop");
+#endif
 }
 
 static const TypeInfo tcg_accel_type = {

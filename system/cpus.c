@@ -463,15 +463,30 @@ void qemu_process_cpu_events_common(CPUState *cpu)
 
 void qemu_process_cpu_events(CPUState *cpu)
 {
+    qemu_process_cpu_events_timed(cpu, NULL);
+}
+
+void qemu_process_cpu_events_timed(CPUState *cpu,
+                                   int64_t (*run_timers)(CPUState *cpu))
+{
     bool slept = false;
 
     qatomic_set(&cpu->exit_request, false);
     while (cpu_thread_is_idle(cpu)) {
+        int64_t timeout_ns = run_timers ? run_timers(cpu) : -1;
+
+        if (!cpu_thread_is_idle(cpu)) {
+            break;
+        }
         if (!slept) {
             slept = true;
             qemu_plugin_vcpu_idle_cb(cpu);
         }
-        qemu_cond_wait(cpu->halt_cond, &bql);
+        if (timeout_ns < 0) {
+            qemu_cond_wait(cpu->halt_cond, &bql);
+        } else if (timeout_ns > 0) {
+            qemu_cond_timedwait_ns(cpu->halt_cond, &bql, timeout_ns);
+        }
     }
     if (slept) {
         qemu_plugin_vcpu_resume_cb(cpu);
@@ -500,6 +515,7 @@ void cpus_kick_thread(CPUState *cpu)
 
 void qemu_cpu_kick(CPUState *cpu)
 {
+    cpu_clock_owner_wake();
     qemu_cond_broadcast(cpu->halt_cond);
     if (cpus_accel->kick_vcpu_thread) {
         cpus_accel->kick_vcpu_thread(cpu);
@@ -585,6 +601,11 @@ void bql_unlock(void)
     g_assert(bql_locked());
     g_assert(!bql_unlock_blocked);
     qemu_mutex_unlock(&bql);
+}
+
+void qemu_cpu_sleep_ns(CPUState *cpu, int64_t ns)
+{
+    qemu_cond_timedwait_ns(cpu->halt_cond, &bql, ns);
 }
 
 void qemu_cond_wait_bql(QemuCond *cond)

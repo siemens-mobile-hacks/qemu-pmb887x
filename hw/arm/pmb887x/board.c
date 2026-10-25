@@ -15,6 +15,7 @@
 #include "hw/arm/machines-qom.h"
 #include "system/system.h"
 #include "target/arm/cpregs.h"
+#include "system/cpu-timers.h"
 
 #include "hw/arm/pmb887x/board/dsp.h"
 #include "hw/arm/pmb887x/dsp.h"
@@ -77,6 +78,10 @@ static void memory_dump_at_exit(void) {
 //	qmp_pmemsave(0xA8000000, 8 * 1024 * 1024, "/tmp/ram.bin", NULL);
 //	qmp_pmemsave(0x00000000, 0x4000, "/tmp/tcm.bin", NULL);
 //	qmp_pmemsave(0x00080000, 96 * 1024, "/tmp/sram.bin", NULL);
+}
+
+static void pmb887x_cpu_clock_update(void *opaque, ClockEvent _event) {
+	cpu_clock_set_cpu_hz(clock_get_hz(opaque));
 }
 
 static void pmb887x_init_keymap(DeviceState *keypad, const uint32_t *map, int map_size) {
@@ -170,6 +175,10 @@ static void pmb887x_init(MachineState *machine) {
 	// CGU
 	DeviceState *cgu = pmb887x_new_cpu_module("CGU");
 	sysbus_realize_and_unref(SYS_BUS_DEVICE(cgu), &error_fatal);
+	Clock *cpu_clock = clock_new(OBJECT(cgu), "cpu-clock");
+	clock_set_callback(cpu_clock, pmb887x_cpu_clock_update, cpu_clock, ClockUpdate);
+	clock_set_source(cpu_clock, qdev_get_clock_out(cgu, "CPU"));
+	pmb887x_cpu_clock_update(cpu_clock, ClockUpdate);
 
 	// Port Control Logic
 	DeviceState *gpio = pmb887x_new_cpu_module("GPIO");

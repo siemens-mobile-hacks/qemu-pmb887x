@@ -372,6 +372,14 @@ typedef struct CPUNegativeOffsetState {
     int32_t plugin_cb_flags;
 #endif
     IcountDecr icount_decr;
+    /*
+     * With CF_COUNT_CYCLES: CPU cycles of the instructions executed, counted
+     * when a TB is entered and
+     * wrapping around; a TB entered with cycle_count reaching
+     * cycle_limit exits instead (see cpu_cycle_budget_expired()).
+     */
+    uint32_t cycle_count;
+    uint32_t cycle_limit;
     bool can_do_io;
 } CPUNegativeOffsetState;
 
@@ -1177,6 +1185,20 @@ G_NORETURN void cpu_abort(CPUState *cpu, const char *fmt, ...)
  * the inner execution loop.
  */
 void qemu_process_cpu_events(CPUState *cpu);
+
+/**
+ * qemu_process_cpu_events_timed:
+ * @cpu: The vCPU
+ * @run_timers: called with the BQL before each idle wait; runs the timers
+ *              the vCPU thread owns and returns the nanoseconds until the
+ *              next one is due, or -1 if none.
+ *
+ * Like qemu_process_cpu_events(), but an idle vCPU wakes up for its timers.
+ */
+void qemu_process_cpu_events_timed(CPUState *cpu,
+                                   int64_t (*run_timers)(CPUState *cpu));
+
+void qemu_cpu_sleep_ns(CPUState *cpu, int64_t ns);
 
 /* $(top_srcdir)/cpu.c */
 void cpu_class_init_props(DeviceClass *dc);

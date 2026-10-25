@@ -87,7 +87,7 @@ int64_t cpu_get_clock_locked(void)
  * Return the monotonic time elapsed in VM, i.e.,
  * the time between vm_start and vm_stop
  */
-int64_t cpu_get_clock(void)
+static int64_t cpu_get_raw_clock(void)
 {
     int64_t ti;
     unsigned start;
@@ -98,6 +98,218 @@ int64_t cpu_get_clock(void)
     } while (seqlock_read_retry(&timers_state.vm_clock_seqlock, start));
 
     return ti;
+}
+
+#define CPU_CLOCK_PS_PER_S 1000000000000ULL
+#define CPU_CLOCK_BUDGET_MIN 64
+#define CPU_CLOCK_BUDGET_MAX (1u << 30)
+
+/*
+ * The owner and threads waking it write under the mutex; a reader that meets
+ * a write in progress waits for it on the mutex rather than spin. The anchor
+ * is INT64_MAX while the guest waits for an interrupt.
+ */
+static __thread bool cpu_clock_owner;
+static QemuSeqLock cpu_clock_owner_seq;
+static QemuMutex cpu_clock_owner_lock;
+static int64_t cpu_clock_owner_anchor = INT64_MAX;
+static uint32_t cpu_clock_owner_anchor_cycles;
+static uint32_t *cpu_clock_owner_cycles;
+static uint32_t *cpu_clock_owner_cycle_limit;
+static uint32_t cpu_clock_cycle_ps = CPU_CLOCK_PS_PER_S / (100 * 1000 * 1000);
+
+/*
+ * A thread may read the running clock just before qemu_virtual_clock_cap
+ * holds it: never return less than a time already returned, timer code
+ * relies on the clock not going back.
+ */
+static int64_t cpu_clock_monotonic(int64_t time)
+{
+    int64_t last = qatomic_read(&qemu_virtual_clock_last);
+
+    while (time > last) {
+        int64_t seen = qatomic_cmpxchg(&qemu_virtual_clock_last, last, time);
+
+        if (seen == last) {
+            return time;
+        }
+        last = seen;
+    }
+    return last;
+}
+
+static int64_t cpu_clock_cycles_ns(uint32_t cycles, uint32_t cycle_ps)
+{
+    return (uint64_t)cycles * cycle_ps / 1000;
+}
+
+static int64_t cpu_clock_position_locked(uint32_t cycles)
+{
+    if (cpu_clock_owner_anchor == INT64_MAX) {
+        return INT64_MAX;
+    }
+    return cpu_clock_owner_anchor +
+           cpu_clock_cycles_ns(cycles - cpu_clock_owner_anchor_cycles,
+                               cpu_clock_cycle_ps);
+}
+
+int64_t cpu_clock_owner_position(void)
+{
+    uint32_t *cycles = qatomic_read(&cpu_clock_owner_cycles);
+    int64_t position;
+    unsigned start;
+
+    if (!cycles) {
+        return INT64_MAX;
+    }
+    start = seqlock_read_begin(&cpu_clock_owner_seq);
+    position = cpu_clock_position_locked(qatomic_read(cycles));
+    if (seqlock_read_retry(&cpu_clock_owner_seq, start)) {
+        qemu_mutex_lock(&cpu_clock_owner_lock);
+        position = cpu_clock_position_locked(qatomic_read(cycles));
+        qemu_mutex_unlock(&cpu_clock_owner_lock);
+    }
+    return position;
+}
+
+int64_t cpu_get_real_clock(void)
+{
+    int64_t ti = MIN(cpu_get_raw_clock(), cpu_clock_owner_position());
+
+    return MIN(ti, qatomic_read(&qemu_virtual_clock_cap));
+}
+
+int64_t cpu_get_clock(void)
+{
+    int64_t position;
+
+    if (!qemu_virtual_timers_on_vcpu) {
+        return cpu_get_raw_clock();
+    }
+    if (cpu_clock_owner) {
+        position = cpu_clock_owner_position();
+        if (position != INT64_MAX) {
+            return cpu_clock_monotonic(position);
+        }
+    }
+    return cpu_clock_monotonic(cpu_get_real_clock());
+}
+
+static void cpu_clock_owner_write(int64_t anchor, uint32_t cycles,
+                                  uint32_t cycle_ps)
+{
+    seqlock_write_begin(&cpu_clock_owner_seq);
+    cpu_clock_owner_anchor = anchor;
+    cpu_clock_owner_anchor_cycles = cycles;
+    cpu_clock_cycle_ps = cycle_ps;
+    seqlock_write_end(&cpu_clock_owner_seq);
+}
+
+void cpu_clock_set_owner(uint32_t *cycles, uint32_t *cycle_limit)
+{
+    cpu_clock_owner = true;
+    qatomic_set(&cpu_clock_owner_cycle_limit, cycle_limit);
+    qatomic_store_release(&cpu_clock_owner_cycles, cycles);
+}
+
+void cpu_clock_set_cpu_hz(uint64_t hz)
+{
+    uint32_t *counter = qatomic_load_acquire(&cpu_clock_owner_cycles);
+    uint32_t cycle_ps;
+    uint32_t cycles;
+
+    if (!hz) {
+        return;
+    }
+    cycle_ps = MAX(CPU_CLOCK_PS_PER_S / hz, 1);
+    if (!counter) {
+        cpu_clock_cycle_ps = cycle_ps;
+        return;
+    }
+    qemu_mutex_lock(&cpu_clock_owner_lock);
+    cycles = qatomic_read(counter);
+    cpu_clock_owner_write(cpu_clock_position_locked(cycles), cycles, cycle_ps);
+    qemu_mutex_unlock(&cpu_clock_owner_lock);
+}
+
+void cpu_clock_owner_progress(bool idle)
+{
+    int64_t now = cpu_get_clock();
+    uint32_t cycles;
+
+    qemu_mutex_lock(&cpu_clock_owner_lock);
+    cycles = qatomic_read(cpu_clock_owner_cycles);
+    if (idle) {
+        cpu_clock_owner_write(INT64_MAX, cycles, cpu_clock_cycle_ps);
+    } else if (cpu_clock_owner_anchor == INT64_MAX) {
+        cpu_clock_owner_write(now, cycles, cpu_clock_cycle_ps);
+    } else {
+        cpu_clock_owner_write(cpu_clock_position_locked(cycles), cycles,
+                              cpu_clock_cycle_ps);
+    }
+    qemu_mutex_unlock(&cpu_clock_owner_lock);
+}
+
+void cpu_clock_owner_wake(void)
+{
+    uint32_t *counter = qatomic_load_acquire(&cpu_clock_owner_cycles);
+    int64_t now;
+
+    if (!counter) {
+        return;
+    }
+    now = cpu_get_clock();
+    qemu_mutex_lock(&cpu_clock_owner_lock);
+    if (cpu_clock_owner_anchor == INT64_MAX) {
+        cpu_clock_owner_write(now, qatomic_read(counter), cpu_clock_cycle_ps);
+    }
+    qemu_mutex_unlock(&cpu_clock_owner_lock);
+}
+
+static uint32_t cpu_clock_owner_budget(int64_t deadline)
+{
+    uint32_t cycle_ps = qatomic_read(&cpu_clock_cycle_ps);
+    int64_t position = cpu_clock_owner_position();
+    int64_t until = cpu_get_real_clock() + CPU_CLOCK_OWNER_LEAD_NS;
+    uint64_t cycles;
+
+    if (deadline >= 0) {
+        until = MIN(until, deadline);
+    }
+    cycles = muldiv64(MAX(until - position, 0), 1000, cycle_ps);
+    return MAX(MIN(cycles, CPU_CLOCK_BUDGET_MAX), CPU_CLOCK_BUDGET_MIN);
+}
+
+void cpu_clock_owner_shorten_budget(void)
+{
+    uint32_t *cycles = qatomic_load_acquire(&cpu_clock_owner_cycles);
+    uint32_t *cycle_limit = qatomic_read(&cpu_clock_owner_cycle_limit);
+    int64_t deadline;
+    uint32_t limit, old;
+
+    if (!cycles) {
+        return;
+    }
+    deadline = qemu_clock_expire_time_ns(QEMU_CLOCK_VIRTUAL);
+    limit = qatomic_read(cycles) + cpu_clock_owner_budget(deadline);
+    old = qatomic_read(cycle_limit);
+    while ((int32_t)(limit - old) < 0) {
+        uint32_t seen = qatomic_cmpxchg(cycle_limit, old, limit);
+
+        if (seen == old) {
+            break;
+        }
+        old = seen;
+    }
+}
+
+void cpu_clock_owner_start_budget(void)
+{
+    qatomic_set(cpu_clock_owner_cycle_limit,
+                qatomic_read(cpu_clock_owner_cycles) + CPU_CLOCK_BUDGET_MAX);
+    /* Then a limit lowered meanwhile cannot be missed. */
+    smp_mb();
+    cpu_clock_owner_shorten_budget();
 }
 
 /*
@@ -239,8 +451,23 @@ static void do_nothing(CPUState *cpu, run_on_cpu_data unused)
 
 void qemu_timer_notify_cb(void *opaque, QEMUClockType type)
 {
-    if ((!icount_enabled() && !icount2_enabled()) ||
-        type != QEMU_CLOCK_VIRTUAL) {
+    if (type != QEMU_CLOCK_VIRTUAL) {
+        qemu_notify_event();
+        return;
+    }
+
+    if (qemu_virtual_timers_on_vcpu) {
+        if (cpu_clock_owner && qatomic_read(&current_cpu->running)) {
+            cpu_clock_owner_shorten_budget();
+        } else if (!qemu_in_vcpu_thread() && first_cpu) {
+            cpu_clock_owner_shorten_budget();
+            cpu_clock_owner_wake();
+            qemu_cond_broadcast(first_cpu->halt_cond);
+        }
+        return;
+    }
+
+    if (!icount_enabled()) {
         qemu_notify_event();
         return;
     }
@@ -272,5 +499,7 @@ void cpu_timers_init(void)
 {
     seqlock_init(&timers_state.vm_clock_seqlock);
     qemu_spin_init(&timers_state.vm_clock_lock);
+    seqlock_init(&cpu_clock_owner_seq);
+    qemu_mutex_init(&cpu_clock_owner_lock);
     vmstate_register(NULL, 0, &vmstate_timers, &timers_state);
 }

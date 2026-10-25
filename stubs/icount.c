@@ -31,38 +31,3 @@ void icount_notify_exit(void)
 {
     abort();
 }
-
-/*
- * Precise clocks
- * */
-bool use_icount2;
-
-void icount2_advance(uint32_t cycles) {
-	abort();
-}
-
-void icount2_sync(void)
-{
-	abort();
-}
-
-int64_t icount2_get(void)
-{
-	abort();
-	return 0;
-}
-
-void icount2_enter_sleep(void)
-{
-	abort();
-}
-
-void icount2_exit_sleep(void)
-{
-	abort();
-}
-
-void icount2_wakeup(int cpu_index, bool halted, int mask, int interrupt_request)
-{
-	abort();
-}

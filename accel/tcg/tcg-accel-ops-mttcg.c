@@ -28,8 +28,11 @@
 #include "system/tcg.h"
 #include "system/replay.h"
 #include "system/cpu-timers.h"
+#include "system/cpus.h"
 #include "exec/icount.h"
 #include "qemu/main-loop.h"
+#include "exec/translation-block.h"
+#include "qemu/timer.h"
 #include "qemu/notify.h"
 #include "qemu/guest-random.h"
 #include "hw/core/boards.h"
@@ -45,6 +48,45 @@ typedef struct MttcgForceRcuNotifier {
 
 static void do_nothing(CPUState *cpu, run_on_cpu_data d)
 {
+}
+
+static int64_t mttcg_next_virtual_timer_ns(void)
+{
+    int64_t expire = qemu_clock_expire_time_ns(QEMU_CLOCK_VIRTUAL);
+
+    if (expire < 0) {
+        return -1;
+    }
+    return MAX(expire - qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL), 0);
+}
+
+static int64_t mttcg_idle_virtual_timers(CPUState *cpu)
+{
+    cpu_clock_owner_progress(false);
+    qemu_clock_run_timers(QEMU_CLOCK_VIRTUAL);
+    if (!cpu_thread_is_idle(cpu)) {
+        return 0;
+    }
+    /* Interrupts are raised under the BQL, held until the thread sleeps. */
+    cpu_clock_owner_progress(true);
+    return mttcg_next_virtual_timer_ns();
+}
+
+static bool mttcg_wait_for_clock(CPUState *cpu)
+{
+    int64_t position, real, until;
+
+    cpu_clock_owner_progress(false);
+    position = cpu_clock_owner_position();
+    real = cpu_get_real_clock();
+    if (position - real < CPU_CLOCK_OWNER_LEAD_NS) {
+        return false;
+    }
+    until = position - CPU_CLOCK_OWNER_LEAD_NS / 2;
+    if (cpu_get_real_clock() < until) {
+        qemu_cpu_sleep_ns(cpu, MAX(until - real, CPU_CLOCK_OWNER_LEAD_NS / 2));
+    }
+    return true;
 }
 
 static void mttcg_force_rcu(Notifier *notify, void *data)
@@ -87,25 +129,27 @@ static void *mttcg_cpu_thread_fn(void *arg)
     cpu_thread_signal_created(cpu);
     qemu_guest_random_seed_thread_part2(cpu->random_seed);
 
+    if (qemu_virtual_timers_on_vcpu) {
+        tcg_cflags_set(cpu, CF_COUNT_CYCLES);
+        cpu_clock_set_owner(&cpu->neg.cycle_count, &cpu->neg.cycle_limit);
+    }
+
     do {
-        bool idle = icount2_enabled() && cpu_thread_is_idle(cpu) && !cpu_is_stopped(cpu);
-
-        if (idle) {
-            icount2_enter_sleep();
-        }
-
-        qemu_process_cpu_events(cpu);
-
-        if (idle) {
-            icount2_exit_sleep();
-        }
-
-        if (icount2_enabled()) {
-            icount2_sync();
+        if (qemu_virtual_timers_on_vcpu) {
+            qemu_process_cpu_events_timed(cpu, mttcg_idle_virtual_timers);
+        } else {
+            qemu_process_cpu_events(cpu);
         }
 
         if (cpu_can_run(cpu)) {
             int r;
+            if (qemu_virtual_timers_on_vcpu) {
+                qemu_clock_run_timers(QEMU_CLOCK_VIRTUAL);
+                if (mttcg_wait_for_clock(cpu)) {
+                    continue;
+                }
+                cpu_clock_owner_start_budget();
+            }
             bql_unlock();
             r = tcg_cpu_exec(cpu);
             bql_lock();

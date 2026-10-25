@@ -459,9 +459,6 @@ static QemuOptsList qemu_icount_opts = {
         }, {
             .name = "rrsnapshot",
             .type = QEMU_OPT_STRING,
-        }, {
-            .name = "precise-clocks",
-            .type = QEMU_OPT_BOOL,
         },
         { /* end of list */ }
     },

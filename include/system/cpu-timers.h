@@ -36,31 +36,29 @@ int64_t cpu_get_ticks(void);
  */
 int64_t cpu_get_clock(void);
 
+/*
+ * With TCG "vcpu-timers" the vCPU thread that runs virtual timers owns the
+ * virtual clock. While the guest runs, the clock advances by one CPU clock
+ * period (cpu_clock_set_cpu_hz()) per CF_COUNT_CYCLES cycle; other threads
+ * read real time bounded by the owner's position, so a slow host slows the
+ * clock, which catches up while the guest waits. The owner waits while its
+ * position leads real time by CPU_CLOCK_OWNER_LEAD_NS.
+ */
+#define CPU_CLOCK_OWNER_LEAD_NS (200 * SCALE_US)
+void cpu_clock_set_cpu_hz(uint64_t hz);
+void cpu_clock_set_owner(uint32_t *cycles, uint32_t *cycle_limit);
+int64_t cpu_clock_owner_position(void);
+void cpu_clock_owner_progress(bool idle);
+void cpu_clock_owner_wake(void);
+int64_t cpu_get_real_clock(void);
+void cpu_clock_owner_start_budget(void);
+void cpu_clock_owner_shorten_budget(void);
+
 void qemu_timer_notify_cb(void *opaque, QEMUClockType type);
 
 /* get/set VIRTUAL clock and VM elapsed ticks via the cpus accel interface */
 int64_t cpus_get_virtual_clock(void);
 void cpus_set_virtual_clock(int64_t new_time);
 int64_t cpus_get_elapsed_ticks(void);
-
-/*
- * Precise QEMU_CLOCK_VIRUAL
- * */
-extern bool use_icount2;
-
-#ifdef CONFIG_TCG
-#define icount2_enabled() (use_icount2)
-#else
-#define icount2_enabled() (0)
-#endif
-
-void icount2_configure(QemuOpts *opts, Error **errp);
-void icount2_advance(uint32_t cycles);
-void icount2_sync(void);
-int64_t icount2_get(void);
-void icount2_exclude_realtime(int64_t elapsed_ns);
-void icount2_enter_sleep(void);
-void icount2_exit_sleep(void);
-void icount2_wakeup(int cpu_index, bool halted, int mask, int interrupt_request);
 
 #endif /* SYSTEM_CPU_TIMERS_H */

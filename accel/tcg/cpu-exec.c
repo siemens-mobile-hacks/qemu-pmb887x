@@ -766,6 +766,12 @@ void tcg_kick_vcpu_thread(CPUState *cpu)
     qatomic_store_release(&cpu->neg.icount_decr.u16.high, -1);
 }
 
+static inline bool cpu_cycle_budget_expired(CPUState *cpu)
+{
+    return (cpu->tcg_cflags & CF_COUNT_CYCLES) &&
+           (int32_t)(cpu->neg.cycle_limit - cpu->neg.cycle_count) <= 0;
+}
+
 static inline bool icount_exit_request(CPUState *cpu)
 {
     if (!icount_enabled()) {
@@ -874,7 +880,8 @@ static inline bool cpu_handle_interrupt(CPUState *cpu,
      * Finally, check if we need to exit to the main loop.
      * The corresponding store-release is in cpu_exit.
      */
-    if (unlikely(qatomic_load_acquire(&cpu->exit_request)) || icount_exit_request(cpu)) {
+    if (unlikely(qatomic_load_acquire(&cpu->exit_request)) ||
+        icount_exit_request(cpu) || cpu_cycle_budget_expired(cpu)) {
         if (cpu->exception_index == -1) {
             cpu->exception_index = EXCP_INTERRUPT;
         }
@@ -904,6 +911,10 @@ static inline void cpu_loop_exec_tb(CPUState *cpu, TranslationBlock *tb,
          * cpu_handle_interrupt.  cpu_handle_interrupt will also
          * clear cpu->icount_decr.u16.high.
          */
+        return;
+    }
+
+    if (cpu_cycle_budget_expired(cpu)) {
         return;
     }
 

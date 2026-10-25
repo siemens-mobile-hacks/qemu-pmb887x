@@ -54,6 +54,7 @@ struct pmb887x_cgu_t {
 	Clock *dma_clock;
 	Clock *mmci_clock;
 	Clock *ahb_per_clock;
+	Clock *cpu_clock;
 	
 	uint32_t osc;
 	uint32_t con0;
@@ -332,6 +333,7 @@ static void cgu_update_state(struct pmb887x_cgu_t *p) {
 	clock_update_hz(p->dma_clock, cgu_get_dma_freq(p));
 	clock_update_hz(p->mmci_clock, cgu_get_mmci_freq(p));
 	clock_update_hz(p->ahb_per_clock, cgu_get_ahb_per_freq(p));
+	clock_update_hz(p->cpu_clock, new_fcpu);
 }
 
 static uint64_t cgu_io_read(void *opaque, hwaddr haddr, unsigned size) {
@@ -456,6 +458,7 @@ static void cgu_init(Object *obj) {
 	p->dma_clock = qdev_init_clock_out(dev, "DMA");
 	p->mmci_clock = qdev_init_clock_out(dev, "MMCI");
 	p->ahb_per_clock = qdev_init_clock_out(dev, "AHB_PER");
+	p->cpu_clock = qdev_init_clock_out(dev, "CPU");
 	p->lock_timer = timer_new_ns(QEMU_CLOCK_VIRTUAL, cgu_pll_lock_timer_expired, p);
 }
 
