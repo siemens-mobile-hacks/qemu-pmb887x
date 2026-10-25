@@ -11,6 +11,7 @@
 #include "qapi/error.h"
 #include "hw/core/qdev-properties.h"
 #include "hw/core/irq.h"
+#include "qemu/bitmap.h"
 
 #include "hw/arm/pmb887x/gen/cpu_regs.h"
 #include "hw/arm/pmb887x/io_bridge.h"
@@ -45,6 +46,7 @@ struct pmb887x_vic_t {
 	uint32_t revision;
 	
 	pmb887x_vic_irq_t irq_state[IRQS_COUNT];
+	DECLARE_BITMAP(asserted, IRQS_COUNT);
 	
 	uint32_t fiq_con;
 	uint32_t irq_con;
@@ -79,51 +81,42 @@ static uint32_t vic_get_fiq_mask_priority(pmb887x_vic_t *p) {
 	return (p->fiq_con & VIC_FIQ_CON_MASK_PRIORITY) >> VIC_FIQ_CON_MASK_PRIORITY_SHIFT;
 }
 
-static int vic_pending_irq(pmb887x_vic_t *p) {
-	int irq_n = -1;
-	uint32_t max_priority = 0;
-	uint32_t mask_priority = vic_get_irq_mask_priority(p);
+static void vic_update_pending(pmb887x_vic_t *p) {
+	uint32_t irq_mask_priority = vic_get_irq_mask_priority(p);
+	uint32_t fiq_mask_priority = vic_get_fiq_mask_priority(p);
+	uint32_t irq_max_priority = 0;
+	uint32_t fiq_max_priority = 0;
 
-	for (int i = 0; i < IRQS_COUNT; ++i) {
+	p->pending_irq = -1;
+	p->pending_fiq = -1;
+	int i = find_first_bit(p->asserted, IRQS_COUNT);
+	for (; i < IRQS_COUNT; i = find_next_bit(p->asserted, IRQS_COUNT, i + 1)) {
 		pmb887x_vic_irq_t *line = &p->irq_state[i];
-		
-		if (line->fiq || !line->level || line->priority <= mask_priority)
-			continue;
-		
 		uint32_t priority = vic_get_nested_priority(line);
-		if (max_priority < priority) {
-			irq_n = i;
-			max_priority = priority;
+
+		if (line->fiq) {
+			if (line->priority > fiq_mask_priority && fiq_max_priority < priority) {
+				p->pending_fiq = i;
+				fiq_max_priority = priority;
+			}
+		} else if (line->priority > irq_mask_priority && irq_max_priority < priority) {
+			p->pending_irq = i;
+			irq_max_priority = priority;
 		}
 	}
-	
-	return irq_n;
 }
 
-static int vic_pending_fiq(pmb887x_vic_t *p) {
-	int irq_n = -1;
-	uint32_t max_priority = 0;
-	uint32_t mask_priority = vic_get_fiq_mask_priority(p);
-
-	for (int i = 0; i < IRQS_COUNT; ++i) {
-		pmb887x_vic_irq_t *line = &p->irq_state[i];
-
-		if (!line->fiq || !line->level || line->priority <= mask_priority)
-			continue;
-
-		uint32_t priority = vic_get_nested_priority(line);
-		if (max_priority < priority) {
-			irq_n = i;
-			max_priority = priority;
-		}
+static void vic_set_line_level(pmb887x_vic_t *p, int irq, int level) {
+	p->irq_state[irq].level = level;
+	if (level) {
+		set_bit(irq, p->asserted);
+	} else {
+		clear_bit(irq, p->asserted);
 	}
-	
-	return irq_n;
 }
 
 static void vic_update_state(pmb887x_vic_t *p) {
-	p->pending_irq = vic_pending_irq(p);
-	p->pending_fiq = vic_pending_fiq(p);
+	vic_update_pending(p);
 	qemu_set_irq(p->parent_irq, p->pending_irq >= 0);
 	qemu_set_irq(p->parent_fiq, p->pending_fiq >= 0);
 }
@@ -138,8 +131,11 @@ static void vic_irq_handler(void *opaque, int irq, int level) {
 	}
 	#endif
 	
-	p->irq_state[irq].level = level;
-	vic_update_state(p);
+	bool was_asserted = p->irq_state[irq].level != 0;
+
+	vic_set_line_level(p, irq, level);
+	if (was_asserted != (level != 0))
+		vic_update_state(p);
 }
 
 static int vic_current_irq(pmb887x_vic_t *p) {
@@ -251,7 +247,7 @@ static void vic_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned si
 		case VIC_IRQ_ACK:
 			#if PMB887X_IO_BRIDGE
 			if (p->irq_depth && p->irq_state[p->irq_frames[p->irq_depth - 1].irq].bridge) {
-				p->irq_state[p->irq_frames[p->irq_depth - 1].irq].level = 0;
+				vic_set_line_level(p, p->irq_frames[p->irq_depth - 1].irq, 0);
 				pmb8876_io_bridge_write(haddr + p->mmio.addr, size, value);
 			}
 			#endif
@@ -331,6 +327,7 @@ static void vic_reset(DeviceState *dev) {
 		p->irq_state[i].level = 0;
 		p->irq_state[i].bridge = false;
 	}
+	bitmap_zero(p->asserted, IRQS_COUNT);
 
 	p->fiq_con = 0;
 	p->irq_con = 0;
