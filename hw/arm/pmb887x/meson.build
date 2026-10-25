@@ -125,6 +125,10 @@ host_unit_tests += {
 		'sources': files('tests/audio/buffer.c', 'audio/buffer.c'),
 		'dependencies': [glib],
 	},
+	'pmb887x-fifo': {
+		'sources': files('tests/fifo.c', 'fifo.c'),
+		'dependencies': [glib],
+	},
 	'pmb887x-dsp-core': {
 		'sources': files('dsp/tests/core.c') + dsp_core_sources,
 		'c_args': dsp_test_c_args,
