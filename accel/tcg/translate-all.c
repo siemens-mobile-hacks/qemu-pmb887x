@@ -117,6 +117,11 @@ static int encode_search(TranslationBlock *tb, uint8_t *block)
             curr = insn_data[i * INSN_START_WORDS + j];
             p = encode_sleb128(p, curr - prev);
         }
+        if (tb_cflags(tb) & CF_COUNT_CYCLES) {
+            prev = (i == 0 ? 0 : tcg_ctx->gen_insn_cycles[i - 1]);
+            curr = tcg_ctx->gen_insn_cycles[i];
+            p = encode_sleb128(p, curr - prev);
+        }
         prev = (i == 0 ? 0 : insn_end_off[i - 1]);
         curr = insn_end_off[i];
         p = encode_sleb128(p, curr - prev);
@@ -134,7 +139,7 @@ static int encode_search(TranslationBlock *tb, uint8_t *block)
 }
 
 static int cpu_unwind_data_from_tb(TranslationBlock *tb, uintptr_t host_pc,
-                                   uint64_t *data)
+                                   uint64_t *data, uint32_t *cycles)
 {
     uintptr_t iter_pc = (uintptr_t)tb->tc.ptr;
     const uint8_t *p = tb->tc.ptr + tb->tc.size;
@@ -159,6 +164,9 @@ static int cpu_unwind_data_from_tb(TranslationBlock *tb, uintptr_t host_pc,
         for (j = 0; j < INSN_START_WORDS; ++j) {
             data[j] += decode_sleb128(&p);
         }
+        if (tb_cflags(tb) & CF_COUNT_CYCLES) {
+            *cycles += decode_sleb128(&p);
+        }
         iter_pc += decode_sleb128(&p);
         if (iter_pc > host_pc) {
             return num_insns - i;
@@ -175,7 +183,8 @@ void cpu_restore_state_from_tb(CPUState *cpu, TranslationBlock *tb,
                                uintptr_t host_pc)
 {
     uint64_t data[INSN_START_WORDS];
-    int insns_left = cpu_unwind_data_from_tb(tb, host_pc, data);
+    uint32_t cycles_left = 0;
+    int insns_left = cpu_unwind_data_from_tb(tb, host_pc, data, &cycles_left);
 
     if (insns_left < 0) {
         return;
@@ -189,6 +198,8 @@ void cpu_restore_state_from_tb(CPUState *cpu, TranslationBlock *tb,
          */
         cpu->neg.icount_decr.u16.low += insns_left;
     }
+    /* The insns left are counted again when they run. */
+    cpu->neg.cycle_count -= cycles_left;
 
     cpu->cc->tcg_ops->restore_state_to_opc(cpu, tb, data);
 }
@@ -220,7 +231,10 @@ bool cpu_unwind_state_data(CPUState *cpu, uintptr_t host_pc, uint64_t *data)
     if (in_code_gen_buffer((const void *)(host_pc - tcg_splitwx_diff))) {
         TranslationBlock *tb = tcg_tb_lookup(host_pc);
         if (tb) {
-            return cpu_unwind_data_from_tb(tb, host_pc, data) >= 0;
+            uint32_t cycles_left = 0;
+
+            return cpu_unwind_data_from_tb(tb, host_pc, data,
+                                           &cycles_left) >= 0;
         }
     }
     return false;

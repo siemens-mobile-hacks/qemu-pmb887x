@@ -235,6 +235,11 @@ void translator_loop(CPUState *cpu, TranslationBlock *tb, int *max_insns,
     ops->tb_stop(db, cpu);
     gen_tb_end(tb, cflags, icount_start_insn, db->num_insns, count_cycles_op,
                db->num_insns);
+    if (cflags & CF_COUNT_CYCLES) {
+        for (int i = 0; i < db->num_insns; i++) {
+            tcg_ctx->gen_insn_cycles[i] = db->num_insns - i;
+        }
+    }
 
     /*
      * Manage can_do_io for the translation block: set to false before
