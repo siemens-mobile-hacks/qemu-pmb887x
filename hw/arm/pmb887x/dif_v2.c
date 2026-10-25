@@ -31,6 +31,12 @@
 	DIFv2_PERREG_CS1POL | DIFv2_PERREG_CS2POL | DIFv2_PERREG_CS3POL | \
 	DIFv2_PERREG_CDPOL | DIFv2_PERREG_RDPOL | DIFv2_PERREG_WRPOL \
 )
+#define DIF_TX_DMA_REQUESTS	( \
+	DIFv2_RIS_TXSREQ | DIFv2_RIS_TXBREQ | DIFv2_RIS_TXLSREQ | DIFv2_RIS_TXLBREQ \
+)
+#define DIF_RX_DMA_REQUESTS	( \
+	DIFv2_RIS_RXSREQ | DIFv2_RIS_RXBREQ | DIFv2_RIS_RXLSREQ | DIFv2_RIS_RXLBREQ \
+)
 #define FIFO_ICR_MASK	( \
 	DIFv2_ICR_RXLSREQ | DIFv2_ICR_RXSREQ | \
 	DIFv2_ICR_RXLBREQ | DIFv2_ICR_RXBREQ | \
@@ -151,6 +157,8 @@ struct pmb887x_dif_t {
 	qemu_irq dmac_rx_sreq;
 	qemu_irq dmac_rx_lbreq;
 	qemu_irq dmac_rx_lsreq;
+	uint32_t dma_requests;
+	bool are_dma_requests_driven;
 };
 
 static inline uint32_t dif_get_transfer_csreg(pmb887x_dif_t *p) {
@@ -284,29 +292,35 @@ static void dif_schedule(pmb887x_dif_t *p) {
 }
 
 static void dif_trigger_dma(pmb887x_dif_t *p) {
-	uint32_t ris = pmb887x_srb_get_ris_dma(&p->srb);
-	if (p->dmac_tx_clr) {
-		qemu_set_irq(p->dmac_tx_sreq, 0);
-		qemu_set_irq(p->dmac_tx_breq, 0);
-		qemu_set_irq(p->dmac_tx_lsreq, 0);
-		qemu_set_irq(p->dmac_tx_lbreq, 0);
-	} else {
-		qemu_set_irq(p->dmac_tx_sreq, (ris & DIFv2_RIS_TXSREQ) != 0);
-		qemu_set_irq(p->dmac_tx_breq, (ris & DIFv2_RIS_TXBREQ) != 0);
-		qemu_set_irq(p->dmac_tx_lsreq, (ris & DIFv2_RIS_TXLSREQ) != 0);
-		qemu_set_irq(p->dmac_tx_lbreq, (ris & DIFv2_RIS_TXLBREQ) != 0);
-	}
+	uint32_t requests = pmb887x_srb_get_ris_dma(&p->srb) & (DIF_TX_DMA_REQUESTS | DIF_RX_DMA_REQUESTS);
+	if (p->dmac_tx_clr)
+		requests &= ~DIF_TX_DMA_REQUESTS;
+	if (p->dmac_rx_clr)
+		requests &= ~DIF_RX_DMA_REQUESTS;
 
-	if (p->dmac_rx_clr) {
-		qemu_set_irq(p->dmac_rx_sreq, 0);
-		qemu_set_irq(p->dmac_rx_breq, 0);
-		qemu_set_irq(p->dmac_rx_lsreq, 0);
-		qemu_set_irq(p->dmac_rx_lbreq, 0);
-	} else {
-		qemu_set_irq(p->dmac_rx_sreq, (ris & DIFv2_RIS_RXSREQ) != 0);
-		qemu_set_irq(p->dmac_rx_breq, (ris & DIFv2_RIS_RXBREQ) != 0);
-		qemu_set_irq(p->dmac_rx_lsreq, (ris & DIFv2_RIS_RXLSREQ) != 0);
-		qemu_set_irq(p->dmac_rx_lbreq, (ris & DIFv2_RIS_RXLBREQ) != 0);
+	uint32_t changed_requests = p->are_dma_requests_driven ? requests ^ p->dma_requests :
+		DIF_TX_DMA_REQUESTS | DIF_RX_DMA_REQUESTS;
+	if (changed_requests == 0)
+		return;
+
+	struct {
+		uint32_t request;
+		qemu_irq line;
+	} lines[] = {
+		{ DIFv2_RIS_TXSREQ, p->dmac_tx_sreq },
+		{ DIFv2_RIS_TXBREQ, p->dmac_tx_breq },
+		{ DIFv2_RIS_TXLSREQ, p->dmac_tx_lsreq },
+		{ DIFv2_RIS_TXLBREQ, p->dmac_tx_lbreq },
+		{ DIFv2_RIS_RXSREQ, p->dmac_rx_sreq },
+		{ DIFv2_RIS_RXBREQ, p->dmac_rx_breq },
+		{ DIFv2_RIS_RXLSREQ, p->dmac_rx_lsreq },
+		{ DIFv2_RIS_RXLBREQ, p->dmac_rx_lbreq },
+	};
+	p->dma_requests = requests;
+	p->are_dma_requests_driven = true;
+	for (int i = 0; i < ARRAY_SIZE(lines); i++) {
+		if ((changed_requests & lines[i].request) != 0)
+			qemu_set_irq(lines[i].line, (requests & lines[i].request) != 0);
 	}
 }
 
@@ -1447,6 +1461,7 @@ static void dif_reset(DeviceState *dev) {
 
 	p->are_pins_driven = false;
 	dif_update_gpio_state(p);
+	p->are_dma_requests_driven = false;
 	dif_trigger_dma(p);
 }
 
