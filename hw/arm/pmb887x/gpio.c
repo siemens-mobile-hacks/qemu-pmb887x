@@ -172,6 +172,9 @@ static const MemoryRegionOps io_ops = {
 };
 
 static void gpio_handle_gpio_change(pmb887x_gpio_t *p, int mux, int id, int level) {
+	if (p->input_driven[mux][id] && p->input_state[mux][id] == (level != 0))
+		return;
+
 	p->input_state[mux][id] = level;
 	p->input_driven[mux][id] = true;
 	gpio_sync_pin_state(p, id);
