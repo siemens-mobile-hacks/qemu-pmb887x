@@ -73,6 +73,7 @@ arm_common_user_system_ss.add(
   'neon_helper.c',
   'op_helper.c',
   'translate.c',
+  'arm9e-cycles.c',
   'translate-m-nocp.c',
   'translate-mve.c',
   'translate-neon.c',

@@ -71,6 +71,8 @@ struct DisasContextBase {
     vaddr pc_next;
     DisasJumpType is_jmp;
     int num_insns;
+    /* CF_COUNT_CYCLES cycles beyond one per instruction. */
+    int num_extra_cycles;
     int max_insns;
     bool plugin_enabled;
     bool fake_insn;
@@ -160,6 +162,17 @@ void translator_loop(CPUState *cpu, TranslationBlock *tb, int *max_insns,
  * and the destination PC.
  */
 bool translator_use_goto_tb(DisasContextBase *db, vaddr dest);
+
+/**
+ * translator_count_cycles:
+ * @db: disassembly context
+ * @cycles: CPU cycles beyond the one every instruction takes
+ * @dynamic: count them only when execution reaches this point of the TB
+ *
+ * Adds @cycles to the CF_COUNT_CYCLES count of the TB.
+ */
+void translator_count_cycles(DisasContextBase *db, uint32_t cycles,
+                             bool dynamic);
 
 /**
  * translator_io_start

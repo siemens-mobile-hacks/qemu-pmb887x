@@ -27,9 +27,9 @@
 #include "qemu/log.h"
 #include "semihosting/semihost.h"
 #include "cpregs.h"
-#include "system/cpu-timers.h"
 #include "exec/target_page.h"
 #include "exec/translator.h"
+#include "arm9e-cycles.h"
 #include "helper.h"
 #include "helper-mve.h"
 
@@ -5362,6 +5362,9 @@ static bool trans_B_cond_thumb(DisasContext *s, arg_ci *a)
         return true;
     }
     arm_skip_unless(s, a->cond);
+    if (s->arm9e_cycles) {
+        translator_count_cycles(&s->base, 2, true);
+    }
     gen_jmp(s, jmp_diff(s, a->imm));
     return true;
 }
@@ -6113,6 +6116,10 @@ static void disas_arm_insn(DisasContext *s, unsigned int insn)
             return;
         }
 
+        if (s->arm9e_cycles) {
+            translator_count_cycles(&s->base, arm9e_a32_cycles(insn) - 1,
+                                    false);
+        }
 
         /* Unconditional instructions.  */
         /* TODO: Perhaps merge these into one decodetree output file.  */
@@ -6131,6 +6138,10 @@ static void disas_arm_insn(DisasContext *s, unsigned int insn)
         arm_skip_unless(s, cond);
     }
 
+    if (s->arm9e_cycles) {
+        translator_count_cycles(&s->base, arm9e_a32_cycles(insn) - 1,
+                                s->condjmp);
+    }
 
     /* TODO: Perhaps merge these into one decodetree output file.  */
     if (disas_a32(s, insn) ||
@@ -6386,6 +6397,9 @@ static void arm_tr_init_disas_context(DisasContextBase *dcbase, CPUState *cs)
     dc->lse2 = false; /* applies only to aarch64 */
     dc->cp_regs = cpu->cp_regs;
     dc->features = env->features;
+    dc->arm9e_cycles = (tb_cflags(dc->base.tb) & CF_COUNT_CYCLES) &&
+                       arm_dc_feature(dc, ARM_FEATURE_V5) &&
+                       !arm_dc_feature(dc, ARM_FEATURE_V6);
 
     /* Single step state. The code-generation logic here is:
      *  SS_ACTIVE == 0:
@@ -6577,6 +6591,10 @@ static void arm_tr_translate_insn(DisasContextBase *dcbase, CPUState *cpu)
     insn = arm_ldl_code(env, &dc->base, pc, dc->sctlr_b);
     dc->insn = insn;
     dc->base.pc_next = pc + 4;
+    if (dc->arm9e_cycles) {
+        translator_count_cycles(&dc->base,
+                                arm9e_a32_stall(&dc->arm9e_late, insn), false);
+    }
     disas_arm_insn(dc, insn);
 
     arm_post_translate_insn(dc);
@@ -6662,6 +6680,12 @@ static void thumb_tr_translate_insn(DisasContextBase *dcbase, CPUState *cpu)
     dc->base.pc_next = pc;
     dc->insn = insn;
 
+    if (dc->arm9e_cycles) {
+        uint32_t stall = arm9e_thumb_stall(&dc->arm9e_late, insn);
+
+        translator_count_cycles(&dc->base, stall, false);
+    }
+
     if (dc->pstate_il) {
         /*
          * Illegal execution state. This has priority over BTI
@@ -6718,6 +6742,10 @@ static void thumb_tr_translate_insn(DisasContextBase *dcbase, CPUState *cpu)
         }
     }
 
+    if (dc->arm9e_cycles) {
+        translator_count_cycles(&dc->base, arm9e_thumb_cycles(insn) - 1,
+                                dc->condjmp);
+    }
 
     if (is_16bit) {
         disas_thumb_insn(dc, insn);
