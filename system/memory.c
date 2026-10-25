@@ -744,8 +744,67 @@ static MemoryRegion *memory_region_get_flatview_root(MemoryRegion *mr)
     return NULL;
 }
 
+static FlatRange *flatview_lookup(FlatView *view, AddrRange addr);
+
+static bool flatview_same_layout(FlatView *a, FlatView *b)
+{
+    if (a->nr != b->nr) {
+        return false;
+    }
+
+    for (unsigned i = 0; i < a->nr; i++) {
+        FlatRange *ra = &a->ranges[i];
+        FlatRange *rb = &b->ranges[i];
+
+        if (ra->mr != rb->mr ||
+            !addrrange_equal(ra->addr, rb->addr) ||
+            ra->offset_in_region != rb->offset_in_region ||
+            ra->unmergeable != rb->unmergeable) {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+static void flatview_update_dispatch_section(FlatView *view,
+                                             MemoryRegionSection *section)
+{
+    AddrRange addr = addrrange_make(
+        int128_make64(section->offset_within_address_space), int128_one());
+    FlatRange *fr = flatview_lookup(view, addr);
+
+    assert(fr && fr->mr == section->mr);
+    qatomic_set(&section->readonly, fr->readonly);
+    qatomic_set(&section->nonvolatile, fr->nonvolatile);
+}
+
+/*
+ * Readers may observe old and new attributes mixed until the listeners'
+ * commit flushes the TLBs.
+ */
+static void flatview_update_attributes(FlatView *view, FlatView *update)
+{
+    assert(!view->prev_ranges);
+    view->prev_ranges = g_memdup2(view->ranges,
+                                  view->nr * sizeof(*view->ranges));
+
+    for (unsigned i = 0; i < view->nr; i++) {
+        FlatRange *fr = &view->ranges[i];
+        FlatRange *new_fr = &update->ranges[i];
+
+        qatomic_set(&fr->dirty_log_mask, new_fr->dirty_log_mask);
+        qatomic_set(&fr->romd_mode, new_fr->romd_mode);
+        qatomic_set(&fr->readonly, new_fr->readonly);
+        qatomic_set(&fr->nonvolatile, new_fr->nonvolatile);
+    }
+
+    address_space_dispatch_update_sections(view->dispatch, view,
+                                           flatview_update_dispatch_section);
+}
+
 /* Render a memory topology into a list of disjoint absolute ranges. */
-static FlatView *generate_memory_topology(MemoryRegion *mr)
+static FlatView *generate_memory_topology(MemoryRegion *mr, FlatView *old_view)
 {
     int i;
     FlatView *view;
@@ -759,13 +818,21 @@ static FlatView *generate_memory_topology(MemoryRegion *mr)
     }
     flatview_simplify(view);
 
-    view->dispatch = address_space_dispatch_new(view);
-    for (i = 0; i < view->nr; i++) {
-        MemoryRegionSection mrs =
-            section_from_flat_range(&view->ranges[i], view);
-        flatview_add_to_dispatch(view, &mrs);
+    if (old_view && old_view->dispatch &&
+        flatview_same_layout(old_view, view)) {
+        flatview_update_attributes(old_view, view);
+        flatview_destroy(view);
+        view = old_view;
+        flatview_ref(view);
+    } else {
+        view->dispatch = address_space_dispatch_new(view);
+        for (i = 0; i < view->nr; i++) {
+            MemoryRegionSection mrs =
+                section_from_flat_range(&view->ranges[i], view);
+            flatview_add_to_dispatch(view, &mrs);
+        }
+        address_space_dispatch_compact(view->dispatch);
     }
-    address_space_dispatch_compact(view->dispatch);
     g_hash_table_replace(flat_views, mr, view);
 
     return view;
@@ -1050,7 +1117,7 @@ static void flatviews_init(void)
     flat_views = g_hash_table_new_full(g_direct_hash, g_direct_equal, NULL,
                                        (GDestroyNotify) flatview_unref);
     if (!empty_view) {
-        empty_view = generate_memory_topology(NULL);
+        empty_view = generate_memory_topology(NULL, NULL);
         /* We keep it alive forever in the global variable.  */
         flatview_ref(empty_view);
     } else {
@@ -1059,25 +1126,40 @@ static void flatviews_init(void)
     }
 }
 
+static void flatviews_clear_prev_ranges(void)
+{
+    GHashTableIter iter;
+    FlatView *view;
+
+    g_hash_table_iter_init(&iter, flat_views);
+    while (g_hash_table_iter_next(&iter, NULL, (gpointer *) &view)) {
+        g_clear_pointer(&view->prev_ranges, g_free);
+    }
+}
+
 static void flatviews_reset(void)
 {
     AddressSpace *as;
+    GHashTable *old_views = flat_views;
 
-    if (flat_views) {
-        g_hash_table_unref(flat_views);
-        flat_views = NULL;
-    }
+    flat_views = NULL;
     flatviews_init();
 
     /* Render unique FVs */
     QTAILQ_FOREACH(as, &address_spaces, address_spaces_link) {
         MemoryRegion *physmr = memory_region_get_flatview_root(as->root);
+        FlatView *old_view;
 
         if (g_hash_table_lookup(flat_views, physmr)) {
             continue;
         }
 
-        generate_memory_topology(physmr);
+        old_view = old_views ? g_hash_table_lookup(old_views, physmr) : NULL;
+        generate_memory_topology(physmr, old_view);
+    }
+
+    if (old_views) {
+        g_hash_table_unref(old_views);
     }
 }
 
@@ -1090,6 +1172,15 @@ static void address_space_set_flatview(AddressSpace *as)
     assert(new_view);
 
     if (old_view == new_view) {
+        if (new_view->prev_ranges && !QTAILQ_EMPTY(&as->listeners)) {
+            FlatView prev_view = {
+                .ranges = new_view->prev_ranges,
+                .nr = new_view->nr,
+            };
+
+            address_space_update_topology_pass(as, &prev_view, new_view, false);
+            address_space_update_topology_pass(as, &prev_view, new_view, true);
+        }
         return;
     }
 
@@ -1132,7 +1223,7 @@ static void address_space_update_topology(AddressSpace *as)
 
     flatviews_init();
     if (!g_hash_table_lookup(flat_views, physmr)) {
-        generate_memory_topology(physmr);
+        generate_memory_topology(physmr, NULL);
     }
     address_space_set_flatview(as);
 }
@@ -1161,6 +1252,7 @@ void memory_region_transaction_commit(void)
                 address_space_set_flatview(as);
                 address_space_update_ioeventfds(as);
             }
+            flatviews_clear_prev_ranges();
             memory_region_update_pending = false;
             ioeventfd_update_pending = false;
             MEMORY_LISTENER_CALL_GLOBAL(commit, Forward);

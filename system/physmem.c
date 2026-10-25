@@ -3021,6 +3021,19 @@ AddressSpaceDispatch *address_space_dispatch_new(FlatView *fv)
     return d;
 }
 
+void address_space_dispatch_update_sections(
+    AddressSpaceDispatch *d, FlatView *fv,
+    void (*update_section)(FlatView *fv, MemoryRegionSection *section))
+{
+    for (unsigned i = 0; i < d->map.sections_nb; i++) {
+        MemoryRegionSection *section = &d->map.sections[i];
+
+        if (i != PHYS_SECTION_UNASSIGNED && !section->mr->subpage) {
+            update_section(fv, section);
+        }
+    }
+}
+
 void address_space_dispatch_free(AddressSpaceDispatch *d)
 {
     phys_sections_free(&d->map);

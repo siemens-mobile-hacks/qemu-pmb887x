@@ -941,6 +941,7 @@ struct FlatView {
     unsigned nr_allocated;
     struct AddressSpaceDispatch *dispatch;
     MemoryRegion *root;
+    FlatRange *prev_ranges;
 };
 
 static inline FlatView *address_space_to_flatview(const AddressSpace *as)
