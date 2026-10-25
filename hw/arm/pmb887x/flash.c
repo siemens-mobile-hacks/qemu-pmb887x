@@ -24,6 +24,8 @@
 #define CFI_ADDR	0x10
 #define CFI_INDEX_MASK	0xFFF
 
+#define FLASH_LAZY_ROMD_THRESHOLD	42
+
 #define FLASH_STATUS_BLOCK_LOCKED		BIT(1)
 #define FLASH_STATUS_PROGRAM_ERROR		BIT(4)
 #define FLASH_STATUS_BLOCK_ERASE_ERROR	BIT(5)
@@ -64,6 +66,7 @@ struct pmb887x_flash_part_t {
 	uint32_t cmd_addr;
 	uint16_t status;
 	bool io_mode;
+	uint32_t mmio_array_reads;
 	
 	uint8_t *storage;
 	
@@ -135,13 +138,22 @@ static void flash_buffer_clear(pmb887x_flash_part_t *p) {
 	p->buffer_index = 0;
 }
 
+static bool flash_is_read_array_mappable(pmb887x_flash_part_t *p) {
+	return !p->io_mode && p->cmd == 0;
+}
+
+static void flash_unmap_inactive_read_array(pmb887x_flash_part_t *p) {
+	if (!flash_is_read_array_mappable(p)) {
+		memory_region_rom_device_set_romd(&p->mem, false);
+		p->mmio_array_reads = 0;
+	}
+}
+
 static void flash_reset(pmb887x_flash_part_t *p) {
 	flash_trace_part(p, "back to read array mode");
 	flash_buffer_clear(p);
 	p->cmd = 0;
 	p->wcycle = 0;
-	if (!p->io_mode)
-		memory_region_rom_device_set_romd(&p->mem, true);
 }
 
 static pmb887x_flash_block_t *flash_part_find_block(pmb887x_flash_part_t *p, uint32_t offset) {
@@ -526,7 +538,6 @@ static void flash_buffer_abort(pmb887x_flash_part_t *p, uint32_t offset) {
 	p->cmd = 0x70;
 	p->wcycle = 0;
 	p->status |= FLASH_STATUS_READY | FLASH_STATUS_SEQUENCE_ERROR;
-	memory_region_rom_device_set_romd(&p->mem, false);
 }
 
 static void flash_buffer_add(pmb887x_flash_part_t *p, uint32_t offset, uint64_t value, uint32_t size) {
@@ -591,6 +602,8 @@ static uint64_t flash_io_read(void *opaque, hwaddr part_offset, uint32_t size) {
 	switch (p->cmd) {
 		case 0x00:
 			value = flash_array_read(p, offset, size);
+			if (flash_is_read_array_mappable(p) && ++p->mmio_array_reads > FLASH_LAZY_ROMD_THRESHOLD)
+				memory_region_rom_device_set_romd(&p->mem, true);
 			break;
 
 		case 0x94:
@@ -634,9 +647,6 @@ static void flash_io_write(void *opaque, hwaddr part_offset, uint64_t value, uin
 	bool valid_command = false;
 	
 	if (p->wcycle == 0) {
-		// A write is a command, and a command leaves read-array mode
-		memory_region_rom_device_set_romd(&p->mem, false);
-		
 		valid_command = true;
 		p->cmd_addr = offset;
 		
@@ -678,7 +688,6 @@ static void flash_io_write(void *opaque, hwaddr part_offset, uint64_t value, uin
 			case 0x50:
 				flash_trace_part(p, "cmd clear status (%02"PRIX64")", value);
 				p->status &= ~FLASH_STATUS_ERRORS;
-				memory_region_rom_device_set_romd(&p->mem, p->cmd == 0);
 				break;
 
 			case 0x10:
@@ -743,7 +752,6 @@ static void flash_io_write(void *opaque, hwaddr part_offset, uint64_t value, uin
 
 			case 0xB0:
 				flash_trace_part(p, "cmd suspend (%02"PRIX64")", value);
-				memory_region_rom_device_set_romd(&p->mem, p->cmd == 0);
 				break;
 
 			case 0x60:
@@ -878,6 +886,8 @@ static void flash_io_write(void *opaque, hwaddr part_offset, uint64_t value, uin
 		flash_error_part(p, "not implemented %d cycle for command %02X [addr: %08"PRIX64", value: %08"PRIX64"]", p->wcycle, p->cmd, p->flash->offset + offset, value);
 		exit(1);
 	}
+
+	flash_unmap_inactive_read_array(p);
 }
 
 static uint64_t flash_io_unaligned_read(void *opaque, hwaddr offset, uint32_t size) {
