@@ -67,7 +67,8 @@ static void ebu_update_state(pmb887x_ebu_t *p) {
 		uint32_t mask = (p->addrsel[i] & EBU_ADDRSEL_MASK) >> EBU_ADDRSEL_MASK_SHIFT;
 		
 		bool is_enabled = is_ebu_enabled && (p->addrsel[i] & EBU_ADDRSEL_REGENAB);
-		bool is_ro = (p->buscon[i] & EBU_BUSCON_WRITE) != 0;
+		bool is_ram = p->cs[i] && memory_region_is_ram(p->cs[i]);
+		bool is_ro = is_ram && (p->buscon[i] & EBU_BUSCON_WRITE) != 0;
 		uint32_t addr = base << 12;
 		uint32_t size = (1 << (27 - mask));
 		
