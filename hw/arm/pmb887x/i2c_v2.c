@@ -230,6 +230,11 @@ static void i2c_fifo_clr_req(pmb887x_i2c_t *p) {
 	p->fifo_req = false;
 }
 
+static void i2c_rx_discard(pmb887x_i2c_t *p) {
+	pmb887x_fifo_reset(&p->fifo);
+	p->rx_bytes_in_fifo = 0;
+}
+
 static void i2c_fifo_reset(pmb887x_i2c_t *p) {
 	pmb887x_fifo_reset(&p->fifo);
 	p->tx_staging_valid = false;
@@ -908,6 +913,8 @@ static void i2c_event_handler(void *opaque, int event_id, int level) {
 
 	i2c_trigger_dma(p);
 	if (level == 0 && (mask & FIFO_ICR_MASK) != 0) {
+		if (p->state == I2C_STATE_MASTER_RX && (mask & (I2Cv2_ICR_LSREQ_INT | I2Cv2_ICR_LBREQ_INT)) != 0)
+			i2c_rx_discard(p);
 		if (p->state == I2C_STATE_MASTER_RX || p->state == I2C_STATE_MASTER_TX) {
 			i2c_fifo_clr_req(p);
 			i2c_timer_schedule(p);
