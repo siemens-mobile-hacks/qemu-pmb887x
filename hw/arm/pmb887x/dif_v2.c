@@ -91,6 +91,9 @@ struct pmb887x_dif_t {
 	uint8_t bit_invert[32];
 	uint8_t bit_bcreg[32];
 	uint8_t bit_bcsel[32];
+	uint32_t mux_select_mask;
+	uint32_t mux_constant_bits;
+	bool is_mux_identity;
 
 	uint32_t con;
 	uint32_t perreg;
@@ -410,22 +413,14 @@ static void dif_reset_rx_fifo(pmb887x_dif_t *p) {
 }
 
 static inline uint32_t dif_mux(pmb887x_dif_t *p, uint32_t value) {
-	uint32_t csreg = dif_get_transfer_csreg(p);
-	uint32_t new_value = 0;
-	for (uint32_t output_bit = 0; output_bit < 32; output_bit++) {
-		uint32_t bit = 0;
-
-		if (p->bit_bcsel[output_bit] == 0) {
-			uint32_t input_bit = (csreg & DIFv2_CSREG_CD) ? output_bit : p->bit_mux[output_bit];
-			bit = (value >> input_bit) & 1;
-		} else if (p->bit_bcsel[output_bit] == 1) {
-			bit = p->bit_bcreg[output_bit];
-		}
-		if (p->bit_invert[output_bit])
-			bit = bit ? 0 : 1;
-		new_value |= (bit << output_bit);
+	bool is_mux_bypassed = p->is_mux_identity || (dif_get_transfer_csreg(p) & DIFv2_CSREG_CD) != 0;
+	uint32_t selected = value;
+	if (!is_mux_bypassed) {
+		selected = 0;
+		for (uint32_t output_bit = 0; output_bit < 32; output_bit++)
+			selected |= ((value >> p->bit_mux[output_bit]) & 1) << output_bit;
 	}
-	return new_value;
+	return ((selected & p->mux_select_mask) | p->mux_constant_bits) ^ p->invert_bit;
 }
 
 static uint32_t dif_convert_color(pmb887x_dif_t *p, uint32_t value) {
@@ -799,6 +794,10 @@ static void dif_rx_refill(void *opaque) {
 }
 
 static void dif_update_mux(pmb887x_dif_t *p) {
+	p->mux_select_mask = 0;
+	p->mux_constant_bits = 0;
+	p->is_mux_identity = true;
+
 	for (uint32_t i = 0; i < 32; i++) {
 		// DIF_BMREGx
 		uint32_t bm_reg_index = i / 6;
@@ -817,6 +816,14 @@ static void dif_update_mux(pmb887x_dif_t *p) {
 
 		// DIF_INVERT_BIT
 		p->bit_invert[i] = p->invert_bit & (1 << i) ? 1 : 0;
+
+		if (p->bit_bcsel[i] == 0) {
+			p->mux_select_mask |= 1U << i;
+			if (p->bit_mux[i] != i)
+				p->is_mux_identity = false;
+		} else if (p->bit_bcsel[i] == 1) {
+			p->mux_constant_bits |= (uint32_t) p->bit_bcreg[i] << i;
+		}
 	}
 
 #if PMB887X_DIF_DUMP_BIT_MUX
