@@ -1357,10 +1357,7 @@ static void dmac_reset(DeviceState *dev) {
 	p->config = 0;
 	p->sync = 0;
 	memset(p->sel, 0, sizeof(p->sel));
-	memset(&p->sreq, 0, sizeof(p->sreq));
-	memset(&p->breq, 0, sizeof(p->breq));
-	memset(&p->lbreq, 0, sizeof(p->lbreq));
-	memset(&p->lsreq, 0, sizeof(p->lsreq));
+	dmac_clear_software_requests(p);
 
 	for (size_t sel = 0; sel < DMAC_MULTIPLEXOR; sel++) {
 		for (size_t request = 0; request < DMAC_REQUESTS; request++) {
