@@ -84,6 +84,17 @@ uint32_t arm9e_a32_cycles(uint32_t insn)
         return cycles;
     }
 
+    /* MCR p15, 0, Rd, c7, CRm, opc2 */
+    if ((insn & 0x0fff0f10) == 0x0e070f10) {
+        switch (insn & 0xef) {
+        case 0x25: /* c5, 1: invalidate an I-cache line */
+            return 12;
+        case 0x26: /* c6, 1: invalidate a D-cache line */
+            return 11;
+        case 0x8a: /* c10, 4: drain the write buffer */
+            return 6;
+        }
+    }
     return 1;
 }
 
