@@ -62,6 +62,8 @@ struct baseband_event_t {
 struct baseband_state_t {
 	dsp_device_t *interrupt;
 	dsp_host_t host;
+	uint8_t normal_burst_phases[BASEBAND_NORMAL_BURST_SYMBOLS];
+	uint8_t fcch_phases[BASEBAND_NORMAL_BURST_SYMBOLS];
 	pmb887x_iq_bus_t *iq_bus;
 	QEMUTimer *full_timer;
 	uint16_t ram_base;
@@ -297,6 +299,19 @@ static pmb887x_iq_sample_t baseband_filter_sample(baseband_state_t *state, uint6
 }
 
 /* Symbol-rate MSK approximation of GMSK: differential encoding followed by +/-pi/2 phase steps. */
+static void baseband_init_symbol_phases(uint8_t phases[BASEBAND_NORMAL_BURST_SYMBOLS], bool fcch) {
+	uint8_t phase = 0;
+	bool previous_bit = false;
+
+	for (size_t symbol = 0; symbol < BASEBAND_NORMAL_BURST_SYMBOLS; symbol++) {
+		bool bit = !fcch && baseband_is_normal_burst_bit(symbol);
+		uint8_t phase_delta = bit != previous_bit ? 3U : 1U;
+		phase = (phase + phase_delta) % ARRAY_SIZE(BASEBAND_PHASE_I);
+		previous_bit = bit;
+		phases[symbol] = phase;
+	}
+}
+
 static uint16_t baseband_signal_word(baseband_state_t *state, uint64_t word) {
 	pmb887x_iq_bus_t *iq_bus = qatomic_read(&state->iq_bus);
 	bool fcch = qatomic_read(&state->job_signal) == PMB887X_DSP_GSM_SIGNAL_FCON;
@@ -312,15 +327,7 @@ static uint16_t baseband_signal_word(baseband_state_t *state, uint64_t word) {
 	}
 
 	size_t symbol = word / BASEBAND_WORDS_PER_SAMPLE % BASEBAND_NORMAL_BURST_SYMBOLS;
-	uint8_t phase = 0;
-	bool previous_bit = false;
-
-	for (size_t i = 0; i <= symbol; i++) {
-		bool bit = !fcch && baseband_is_normal_burst_bit(i);
-		uint8_t phase_delta = bit != previous_bit ? 3U : 1U;
-		phase = (phase + phase_delta) % ARRAY_SIZE(BASEBAND_PHASE_I);
-		previous_bit = bit;
-	}
+	uint8_t phase = fcch ? state->fcch_phases[symbol] : state->normal_burst_phases[symbol];
 
 	int16_t sample = word % BASEBAND_WORDS_PER_SAMPLE ? BASEBAND_PHASE_Q[phase] : BASEBAND_PHASE_I[phase];
 	return (uint16_t) sample;
@@ -550,6 +557,8 @@ dsp_device_t *baseband_create(const pmb887x_dsp_peripheral_config_t *config, dsp
 	baseband_state_t *state = g_new0(baseband_state_t, 1);
 	state->interrupt = interrupt;
 	state->host = *host;
+	baseband_init_symbol_phases(state->normal_burst_phases, false);
+	baseband_init_symbol_phases(state->fcch_phases, true);
 	state->ram_base = config->ram_base;
 	state->ram_size = config->ram_size;
 	state->full_time = BASEBAND_NO_DEADLINE;
