@@ -27,6 +27,10 @@
 
 #define FIFO_IO_SIZE	0x3FFF
 #define FIFO_SIZE		16
+#define DIF_PINS_POLARITY_MASK	( \
+	DIFv2_PERREG_CS1POL | DIFv2_PERREG_CS2POL | DIFv2_PERREG_CS3POL | \
+	DIFv2_PERREG_CDPOL | DIFv2_PERREG_RDPOL | DIFv2_PERREG_WRPOL \
+)
 #define FIFO_ICR_MASK	( \
 	DIFv2_ICR_RXLSREQ | DIFv2_ICR_RXSREQ | \
 	DIFv2_ICR_RXLBREQ | DIFv2_ICR_RXBREQ | \
@@ -70,6 +74,8 @@ struct pmb887x_dif_t {
 	qemu_irq gpio_cd;
 	qemu_irq gpio_wr;
 	qemu_irq gpio_rd;
+	uint32_t pin_levels;
+	bool are_pins_driven;
 
 	QEMUBH *rx_refill_bh;
 	bool in_schedule;
@@ -220,31 +226,45 @@ static inline bool dif_is_pbc_enabled(pmb887x_dif_t *p) {
 	return (p->pbccon & DIFv2_PBCCON_PBBCONV_MODE) != 0;
 }
 
-static void dif_update_gpio_state(pmb887x_dif_t *p) {
+static uint32_t dif_get_pin_levels(pmb887x_dif_t *p) {
 	uint32_t csreg = dif_get_transfer_csreg(p);
+	uint32_t active_pins = (
+		((csreg & DIFv2_CSREG_CS1) ? DIFv2_PERREG_CS1POL : 0) |
+		((csreg & DIFv2_CSREG_CS2) ? DIFv2_PERREG_CS2POL : 0) |
+		((csreg & DIFv2_CSREG_CS3) ? DIFv2_PERREG_CS3POL : 0) |
+		((csreg & DIFv2_CSREG_CD) ? DIFv2_PERREG_CDPOL : 0) |
+		(p->state == DIF_STATE_RX ? DIFv2_PERREG_RDPOL : DIFv2_PERREG_WRPOL)
+	);
+	return ~(active_pins ^ p->perreg) & DIF_PINS_POLARITY_MASK;
+}
+
+static void dif_update_gpio_state(pmb887x_dif_t *p) {
+	uint32_t pin_levels = dif_get_pin_levels(p);
+	uint32_t changed_pins = p->are_pins_driven ? pin_levels ^ p->pin_levels : DIF_PINS_POLARITY_MASK;
+	if (changed_pins == 0)
+		return;
+
 	struct {
-		bool value;
-		uint32_t perreg;
+		uint32_t polarity;
 		qemu_irq pin;
-		char name[32];
-	} cs_pins[] = {
-		{ (csreg & DIFv2_CSREG_CS1) != 0, DIFv2_PERREG_CS1POL, p->gpio_cs[0], "CS1" },
-		{ (csreg & DIFv2_CSREG_CS2) != 0, DIFv2_PERREG_CS2POL, p->gpio_cs[1], "CS2" },
-		{ (csreg & DIFv2_CSREG_CS3) != 0, DIFv2_PERREG_CS3POL, p->gpio_cs[2], "CS3" },
-		{ (csreg & DIFv2_CSREG_CD) != 0, DIFv2_PERREG_CDPOL, p->gpio_cd, "CD" },
-		{ p->state == DIF_STATE_RX, DIFv2_PERREG_RDPOL, p->gpio_rd, "RD" },
-		{ p->state != DIF_STATE_RX, DIFv2_PERREG_WRPOL, p->gpio_wr, "WR" },
+		const char *name;
+	} pins[] = {
+		{ DIFv2_PERREG_CS1POL, p->gpio_cs[0], "CS1" },
+		{ DIFv2_PERREG_CS2POL, p->gpio_cs[1], "CS2" },
+		{ DIFv2_PERREG_CS3POL, p->gpio_cs[2], "CS3" },
+		{ DIFv2_PERREG_CDPOL, p->gpio_cd, "CD" },
+		{ DIFv2_PERREG_RDPOL, p->gpio_rd, "RD" },
+		{ DIFv2_PERREG_WRPOL, p->gpio_wr, "WR" },
 	};
-	for (int i = 0; i < ARRAY_SIZE(cs_pins); i++) {
-		bool polarity = (p->perreg & cs_pins[i].perreg) != 0;
-		bool value = cs_pins[i].value;
-		if (polarity) {
-			// DPRINTF("%s=%d set %s\n", cs_pins[i].name, value, value ? "HIGH" : "LOW");
-			qemu_set_irq(cs_pins[i].pin, value ? 1 : 0);
-		} else {
-			// DPRINTF("%s=%d set %s\n", cs_pins[i].name, value, value ? "LOW" : "HIGH");
-			qemu_set_irq(cs_pins[i].pin, value ? 0 : 1);
-		}
+	p->pin_levels = pin_levels;
+	p->are_pins_driven = true;
+	for (int i = 0; i < ARRAY_SIZE(pins); i++) {
+		if ((changed_pins & pins[i].polarity) == 0)
+			continue;
+
+		bool level = (pin_levels & pins[i].polarity) != 0;
+		DPRINTF("%s set %s\n", pins[i].name, level ? "HIGH" : "LOW");
+		qemu_set_irq(pins[i].pin, level);
 	}
 }
 
@@ -1425,6 +1445,7 @@ static void dif_reset(DeviceState *dev) {
 	p->rx_fifo_req = false;
 	p->is_tx_started = false;
 
+	p->are_pins_driven = false;
 	dif_update_gpio_state(p);
 	dif_trigger_dma(p);
 }
