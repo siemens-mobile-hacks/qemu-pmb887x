@@ -2082,10 +2082,30 @@ static void tcg_emit_call_accumulator(const teak_insn_t *instruction) {
 		offsetof(teak_state_t, exit_reason));
 }
 
-static void tcg_emit_interrupt_return_state(void) {
+static void tcg_emit_repeat_resume(TCGv_i32 return_pc) {
+	TCGv_i32 repeat_suspended = tcg_temp_new_i32();
+	TCGv_i32 suspended_repeat_pc = tcg_temp_new_i32();
+	TCGv_i32 repc = tcg_temp_new_i32();
+	TCGLabel *done = gen_new_label();
+
+	tcg_gen_ld8u_i32(repeat_suspended, tcg_env, offsetof(teak_state_t, repeat_suspended));
+	tcg_gen_brcondi_i32(TCG_COND_EQ, repeat_suspended, 0, done);
+	tcg_gen_ld_i32(suspended_repeat_pc, tcg_env, offsetof(teak_state_t, suspended_repeat_pc));
+	tcg_gen_brcond_i32(TCG_COND_NE, return_pc, suspended_repeat_pc, done);
+
+	tcg_gen_ld16u_i32(repc, tcg_env, offsetof(teak_state_t, suspended_repc));
+	tcg_gen_st16_i32(repc, tcg_env, offsetof(teak_state_t, repc));
+	tcg_gen_st8_i32(tcg_constant_i32(1), tcg_env, offsetof(teak_state_t, repeat_active));
+	tcg_gen_st8_i32(tcg_constant_i32(0), tcg_env, offsetof(teak_state_t, repeat_suspended));
+	gen_set_label(done);
+}
+
+static void tcg_emit_interrupt_return_state(TCGv_i32 return_pc) {
 	TCGv_i32 trap_active = tcg_temp_new_i32();
 	TCGv_i32 nmi_active = tcg_temp_new_i32();
 	TCGLabel *done = gen_new_label();
+
+	tcg_emit_repeat_resume(return_pc);
 
 	tcg_gen_ld8u_i32(trap_active, tcg_env, offsetof(teak_state_t, trap_active));
 	tcg_gen_ld8u_i32(nmi_active, tcg_env, offsetof(teak_state_t, nmi_active));
@@ -2114,7 +2134,7 @@ static void tcg_emit_return(const teak_insn_t *instruction) {
 		target_pc = tcg_emit_pop_pc(stack_adjust, true);
 		tcg_gen_st_i32(target_pc, tcg_env, offsetof(teak_state_t, pc));
 		if (enable_interrupt)
-			tcg_emit_interrupt_return_state();
+			tcg_emit_interrupt_return_state(target_pc);
 		if (restore_context)
 			gen_helper_teak_tcg_context_switch(tcg_env, tcg_constant_i32(1));
 		tcg_gen_st_i32(branch_exit, tcg_env, offsetof(teak_state_t, exit_reason));
@@ -2126,7 +2146,7 @@ static void tcg_emit_return(const teak_insn_t *instruction) {
 	target_pc = tcg_emit_pop_pc(stack_adjust, true);
 	tcg_gen_st_i32(target_pc, tcg_env, offsetof(teak_state_t, pc));
 	if (enable_interrupt)
-		tcg_emit_interrupt_return_state();
+		tcg_emit_interrupt_return_state(target_pc);
 	if (restore_context)
 		gen_helper_teak_tcg_context_switch(tcg_env, tcg_constant_i32(1));
 	tcg_gen_st_i32(branch_exit, tcg_env, offsetof(teak_state_t, exit_reason));
@@ -4689,7 +4709,7 @@ static void tcg_emit_block(void *opaque) {
 		if (delayed_transfer_target != NULL && i + 1 == block->instruction_count) {
 			tcg_gen_st_i32(delayed_transfer_target, tcg_env, offsetof(teak_state_t, pc));
 			if (delayed_transfer_interrupt)
-				tcg_emit_interrupt_return_state();
+				tcg_emit_interrupt_return_state(delayed_transfer_target);
 			tcg_gen_st_i32(tcg_constant_i32(TEAK_EXIT_BRANCH), tcg_env,
 				offsetof(teak_state_t, exit_reason));
 		}
@@ -5306,14 +5326,6 @@ size_t teak_tcg_precompile_entry(teak_tcg_core_t *core, uint32_t entry) {
 	return blocks;
 }
 
-static void tcg_resume_suspended_repeat(teak_state_t *state) {
-	if (!state->repeat_suspended || state->pc != state->suspended_repeat_pc)
-		return;
-	state->repc = state->suspended_repc;
-	state->repeat_active = 1;
-	state->repeat_suspended = 0;
-}
-
 static uint32_t tcg_repeat_stop_repc(
 	const teak_tcg_core_t *core,
 	const teak_tcg_block_t *block,
@@ -5380,7 +5392,6 @@ void *HELPER(teak_tcg_chain)(void *opaque, uint32_t block_cycles, uint32_t block
 		return NULL;
 	}
 
-	tcg_resume_suspended_repeat(state);
 	entry = tcg_find_cached_entry_fast(core);
 	if (entry == NULL || tcg_block_has_dynamic_cycles(&entry->block)) {
 		core->chain_cache_stops++;
@@ -5441,7 +5452,6 @@ bool teak_tcg_execute_block(teak_tcg_core_t *core) {
 	core->pending_cycles = 0;
 	core->wait_cycles = 0;
 
-	tcg_resume_suspended_repeat(&core->state);
 	tb = tcg_prepare_block(core, &block);
 	if (tb == NULL)
 		return false;
@@ -5508,7 +5518,6 @@ static bool tcg_execute_cached_slice(teak_tcg_core_t *core, teak_tcg_block_cache
 		if (core->last_block_cycles >= max_cycles)
 			break;
 
-		tcg_resume_suspended_repeat(&core->state);
 		next = tcg_find_cached_entry_fast(core);
 		if (next == NULL)
 			break;
@@ -5545,7 +5554,6 @@ bool teak_tcg_execute_slice(teak_tcg_core_t *core, size_t max_cycles) {
 		return true;
 
 	tcg_check_block_cache();
-	tcg_resume_suspended_repeat(&core->state);
 	entry = tcg_find_cached_entry_fast(core);
 	if (entry == NULL) {
 		success = tcg_execute_slice_slow(core, max_cycles);

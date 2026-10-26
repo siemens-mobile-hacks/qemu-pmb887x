@@ -283,6 +283,38 @@ static void test_interrupt_repeat_nested_repeat(void) {
 	g_assert_cmphex(core.state.repeat_suspended, ==, 0);
 }
 
+static void test_interrupt_repeat_resumes_on_return(void) {
+	test_memory_t program = {
+		.words = {
+			0x0C1F, /* rep 0x001fu8. */
+			0x67D0, /* inc a0. */
+			0x4180, 0x0002, /* br 0x0002. */
+			[6] = 0x45C0, /* reti true. */
+		},
+	};
+	test_memory_t data = {};
+	pmb887x_dsp_tcg_core_t core = test_core_create(&program, &data);
+
+	core.state.sp = 10;
+	g_assert_true(pmb887x_dsp_tcg_execute_slice(&core, 5));
+	g_assert_cmphex(core.state.a[0], ==, 4);
+	core.state.ie = 1;
+	core.state.interrupt_mask = BIT(0);
+	core.state.pending_interrupts = BIT(0);
+	g_assert_true(pmb887x_dsp_tcg_service_interrupt(&core));
+
+	core.state.pc = 1;
+	g_assert_true(pmb887x_dsp_tcg_execute_block(&core));
+	g_assert_cmphex(core.state.a[0], ==, 5);
+	g_assert_cmphex(core.state.pc, ==, 2);
+	g_assert_cmphex(core.state.repeat_suspended, ==, 1);
+
+	core.state.pc = 6;
+	test_execute_slices_until(&core, 2, 4);
+	g_assert_cmphex(core.state.a[0], ==, 33);
+	g_assert_cmphex(core.state.repeat_suspended, ==, 0);
+}
+
 static void test_subroutine_block_repeat(void) {
 	test_memory_t program = {
 		.words = {
@@ -830,6 +862,7 @@ int main(int argc, char **argv) {
 	g_test_add_func("/pmb887x/dsp/tcg/repeat-cycle-budget", test_repeat_cycle_budget);
 	g_test_add_func("/pmb887x/dsp/tcg/repeated-instruction-without-repeat", test_repeated_instruction_without_repeat);
 	g_test_add_func("/pmb887x/dsp/tcg/interrupt-repeat-nested-repeat", test_interrupt_repeat_nested_repeat);
+	g_test_add_func("/pmb887x/dsp/tcg/interrupt-repeat-resumes-on-return", test_interrupt_repeat_resumes_on_return);
 	g_test_add_func("/pmb887x/dsp/tcg/subroutine-block-repeat", test_subroutine_block_repeat);
 	g_test_add_func("/pmb887x/dsp/tcg/status-reserved-read-bits", test_status_reserved_read_bits);
 	g_test_add_func("/pmb887x/dsp/tcg/multiply-status-register", test_multiply_status_register);
