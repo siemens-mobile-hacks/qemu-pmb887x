@@ -158,9 +158,13 @@ static TCGv_ptr tcg_emit_direct_data_bank_pointer(TCGv_i32 offset) {
 static void tcg_emit_data_read(TCGv_i32 result, TCGv_i32 address, teak_tcg_data_space_t space) {
 	TCGLabel *slow = gen_new_label();
 	TCGLabel *direct = gen_new_label();
+	TCGLabel *high = gen_new_label();
 	TCGLabel *done = gen_new_label();
 	TCGLabel *zero = space == TEAK_TCG_DATA_SPACE_ALL ? NULL : gen_new_label();
 	TCGv_i32 limit = tcg_temp_new_i32();
+	TCGv_i32 high_base = tcg_temp_new_i32();
+	TCGv_i32 high_offset = tcg_temp_new_i32();
+	TCGv_i32 high_size = tcg_temp_new_i32();
 	TCGv_i32 bank_base = tcg_temp_new_i32();
 	TCGv_i32 bank_offset = tcg_temp_new_i32();
 	TCGv_i32 bank_size = tcg_temp_new_i32();
@@ -175,13 +179,19 @@ static void tcg_emit_data_read(TCGv_i32 result, TCGv_i32 address, teak_tcg_data_
 	}
 
 	tcg_gen_ld_i32(limit, tcg_env, offsetof(teak_tcg_core_t, memory.direct_data_read_size));
-	tcg_gen_brcond_i32(TCG_COND_GEU, address, limit, slow);
+	tcg_gen_brcond_i32(TCG_COND_GEU, address, limit, high);
 	tcg_gen_ld_i32(bank_base, tcg_env, offsetof(teak_tcg_core_t, memory.direct_data_bank_base));
 	tcg_gen_sub_i32(bank_offset, address, bank_base);
 	tcg_gen_ld_i32(bank_size, tcg_env, offsetof(teak_tcg_core_t, memory.direct_data_bank_size));
 	tcg_gen_brcond_i32(TCG_COND_GEU, bank_offset, bank_size, direct);
 	tcg_gen_ld16u_i32(result, tcg_emit_direct_data_bank_pointer(bank_offset), 0);
 	tcg_gen_br(done);
+
+	gen_set_label(high);
+	tcg_gen_ld_i32(high_base, tcg_env, offsetof(teak_tcg_core_t, memory.direct_data_high_read_base));
+	tcg_gen_sub_i32(high_offset, address, high_base);
+	tcg_gen_ld_i32(high_size, tcg_env, offsetof(teak_tcg_core_t, memory.direct_data_high_read_size));
+	tcg_gen_brcond_i32(TCG_COND_GEU, high_offset, high_size, slow);
 
 	gen_set_label(direct);
 	tcg_gen_ld16u_i32(result, tcg_emit_direct_data_pointer(address), 0);
@@ -783,7 +793,13 @@ static void tcg_add_data_wait_cycles(teak_tcg_core_t *core, uint32_t address) {
 }
 
 static bool tcg_direct_data_read(teak_tcg_core_t *core, uint32_t address, uint16_t *value) {
-	if (core->memory.direct_data == NULL || address >= core->memory.direct_data_read_size)
+	if (core->memory.direct_data == NULL)
+		return false;
+	if (address - core->memory.direct_data_high_read_base < core->memory.direct_data_high_read_size) {
+		*value = qatomic_read(&core->memory.direct_data[address]);
+		return true;
+	}
+	if (address >= core->memory.direct_data_read_size)
 		return false;
 	if (address - core->memory.direct_data_bank_base < core->memory.direct_data_bank_size) {
 		*value = qatomic_read(&core->memory.direct_data_bank[address - core->memory.direct_data_bank_base]);

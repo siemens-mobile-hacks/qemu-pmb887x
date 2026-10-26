@@ -326,6 +326,8 @@ dsp_runtime_t *dsp_runtime_create(
 		.direct_data_write_size = config->data_rom_base,
 		.direct_data_bank_base = config->data_bank_base,
 		.direct_data_bank_size = data_bank_words,
+		.direct_data_high_read_base = config->mmio_base + config->mmio_size,
+		.direct_data_high_read_size = PMB887X_DSP_ADDRESS_SPACE_WORDS - (config->mmio_base + config->mmio_size),
 		.cycle_opaque = runtime,
 		.advance_cycles = dsp_runtime_advance_cycles,
 		.cycle_sensitive_base = config->mmio_base,
