@@ -24,6 +24,8 @@ struct dsp_runtime_t {
 	uint16_t *program;
 	uint16_t *data;
 	uint16_t *data_banks;
+	const pmb887x_dsp_peripheral_config_t *modulator;
+	uint16_t modulator_ram_stored_bits;
 	size_t active_program_bank;
 	size_t active_data_bank;
 	uint32_t program_generation;
@@ -219,6 +221,9 @@ static void dsp_runtime_data_write(void *opaque, uint32_t address, uint16_t valu
 		dsp_bus_write_at(runtime->bus, data_address, value, runtime->core.state.trace_pc);
 		return;
 	}
+	if (runtime->modulator != NULL &&
+		(uint16_t) (data_address - runtime->modulator->ram_base) < runtime->modulator->ram_size)
+		value &= runtime->modulator_ram_stored_bits;
 	if (data_address >= runtime->config->shared_base) {
 		uint16_t offset = data_address - runtime->config->shared_base;
 		qatomic_set(&runtime->data[data_address], value);
@@ -289,6 +294,11 @@ dsp_runtime_t *dsp_runtime_create(
 	runtime->active_program_bank = SIZE_MAX;
 	runtime->active_data_bank = SIZE_MAX;
 	runtime->clock_divider = 1;
+	for (size_t i = 0; i < config->peripheral_count; i++) {
+		if (config->peripherals[i].type == PMB887X_DSP_PERIPHERAL_MODULATOR)
+			runtime->modulator = &config->peripherals[i];
+	}
+	runtime->modulator_ram_stored_bits = modulator_ram_stored_bits(config->hardware_version);
 
 	host = (dsp_host_t) {
 		.opaque = runtime,

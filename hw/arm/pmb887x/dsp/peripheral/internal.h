@@ -145,6 +145,7 @@ void mcs_request_mcu_semaphores(dsp_device_t *device, uint16_t value);
 void mcs_release_mcu_semaphores(dsp_device_t *device, uint16_t value);
 
 dsp_device_t *modulator_create(const pmb887x_dsp_peripheral_config_t *config, dsp_device_t *interrupt);
+uint16_t modulator_ram_stored_bits(uint16_t hardware_version);
 void modulator_set_codon(dsp_device_t *device, bool level);
 void modulator_advance(dsp_device_t *device, size_t cycles);
 bool modulator_is_active(const dsp_device_t *device);
