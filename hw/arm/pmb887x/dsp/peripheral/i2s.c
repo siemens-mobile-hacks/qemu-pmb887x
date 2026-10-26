@@ -16,6 +16,7 @@
 #define I2S_INTERRUPT_GROUP	1
 #define I2S_CLOCK_DIVIDER_0		0
 #define I2S_CLOCK_DIVIDER_1		3
+#define I2S_TRANSMIT_FIFO_WORDS		4U
 
 static const uint16_t I2S_CONTROL_MASK = TEAK_I2S_CTRL_I2SON | TEAK_I2S_CTRL_I2STXSTART |
 	TEAK_I2S_CTRL_I2SRXSTART | TEAK_I2S_CTRL_TXPCM | TEAK_I2S_CTRL_RXPCM | TEAK_I2S_CTRL_DAI_EN;
@@ -29,6 +30,8 @@ struct i2s_state_t {
 	dsp_i2s_port_t port;
 	uint16_t transmit_interrupt_flag;
 	uint16_t transmit_position;
+	uint16_t transmit_fifo_words;
+	int16_t transmit_fifo[I2S_TRANSMIT_FIFO_WORDS];
 	uint16_t receive_position;
 	uint32_t clock_hz;
 	uint32_t ms_clock_hz;
@@ -79,6 +82,44 @@ static uint32_t i2s_period_clocks(uint16_t configuration) {
 
 static uint16_t i2s_positions_per_frame(bool pcm) {
 	return pcm ? 1 : I2S_FRAME_SLOTS;
+}
+
+static bool i2s_transmit_pcm(const i2s_state_t *state) {
+	return (state->registers[TEAK_I2S_CTRL] & TEAK_I2S_CTRL_TXPCM) != 0;
+}
+
+static uint16_t i2s_transmit_frame_words(const i2s_state_t *state) {
+	bool wide_slots = (state->registers[TEAK_I2S_TXCONF] & TEAK_I2S_TXCONF_WIDTH) != TEAK_I2S_TXCONF_WIDTH_BITS_16;
+	uint16_t slot_words = wide_slots ? 2 : 1;
+	return slot_words * i2s_positions_per_frame(i2s_transmit_pcm(state));
+}
+
+static uint16_t i2s_transmit_fifo_capacity(const i2s_state_t *state) {
+	uint16_t start_words = i2s_transmit_pcm(state) ? 1 : I2S_TRANSMIT_FIFO_WORDS;
+	return MAX(start_words, i2s_transmit_frame_words(state));
+}
+
+static void i2s_transmit_fetch(dsp_device_t *device, uint16_t words) {
+	i2s_state_t *state = device->state;
+
+	for (uint16_t i = 0; i < words && i2s_transmit_active(state); i++) {
+		uint16_t address = device->config->ram_base + state->transmit_position;
+		state->transmit_fifo[state->transmit_fifo_words++] = state->host.data_read(state->host.opaque, address);
+		state->transmit_position = (state->transmit_position + 1) & TEAK_I2S_RWADDR_RDADDR;
+		if (state->transmit_position == state->registers[TEAK_I2S_TXINTADDR]) {
+			if (i2s_transmit_pcm(state))
+				state->registers[TEAK_I2S_CTRL] &= (uint16_t) ~TEAK_I2S_CTRL_I2STXSTART;
+			dsp_int_set_flags(state->interrupt, I2S_INTERRUPT_GROUP, state->transmit_interrupt_flag);
+		}
+	}
+}
+
+static void i2s_transmit_fill(dsp_device_t *device) {
+	i2s_state_t *state = device->state;
+	uint16_t capacity = i2s_transmit_fifo_capacity(state);
+
+	if (state->transmit_fifo_words < capacity)
+		i2s_transmit_fetch(device, capacity - state->transmit_fifo_words);
 }
 
 static void i2s_configure(i2s_state_t *state, bool transmit, uint32_t sample_rate_hz, uint32_t channels) {
@@ -227,12 +268,17 @@ static bool i2s_register_write(dsp_device_t *device, uint16_t offset, uint32_t p
 				state->receive_position = 0;
 				state->transmit_phase = 0;
 				state->receive_phase = 0;
+				state->transmit_fifo_words = 0;
+				state->registers[TEAK_I2S_RXINTADDR] = 0;
+				state->registers[TEAK_I2S_TXINTADDR] = 0;
 			}
+			i2s_transmit_fill(device);
 			break;
 
 		case TEAK_I2S_RXINTADDR:
 		case TEAK_I2S_TXINTADDR:
-			state->registers[offset] = value & TEAK_I2S_RXINTADDR_RXINTPTR;
+			if ((state->registers[TEAK_I2S_CTRL] & TEAK_I2S_CTRL_I2SON) != 0)
+				state->registers[offset] = value & TEAK_I2S_RXINTADDR_RXINTPTR;
 			break;
 
 		case TEAK_I2S_RWADDR:
@@ -298,7 +344,7 @@ void dsp_i2s_advance(dsp_device_t *device, size_t cycles) {
 		size_t frames = i2s_advance_frames(state, true, configuration,
 			&state->transmit_phase, cycles);
 		uint32_t sample_rate_hz = i2s_sample_rate_hz(state, true, configuration);
-		bool pcm = (state->registers[TEAK_I2S_CTRL] & TEAK_I2S_CTRL_TXPCM) != 0;
+		bool pcm = i2s_transmit_pcm(state);
 		uint32_t channels = pcm ? 1 : I2S_FRAME_SLOTS;
 		i2s_configure(state, true, sample_rate_hz, channels);
 
@@ -307,14 +353,16 @@ void dsp_i2s_advance(dsp_device_t *device, size_t cycles) {
 			size_t output_frames = 0;
 
 			while (i2s_transmit_active(state) && frames != 0 && output_frames < I2S_OUTPUT_BATCH_FRAMES) {
-				uint16_t address = device->config->ram_base + state->transmit_position;
+				uint16_t frame_words = i2s_transmit_frame_words(state);
 				int16_t *frame = &samples[output_frames * channels];
 
-				if (pcm) {
-					frame[0] = state->host.data_read(state->host.opaque, address);
-				} else {
-					frame[0] = state->host.data_read(state->host.opaque, address);
-					frame[1] = state->host.data_read(state->host.opaque, address + 1);
+				i2s_transmit_fill(device);
+				if (state->transmit_fifo_words < frame_words)
+					break;
+
+				frame[0] = state->transmit_fifo[0];
+				if (!pcm) {
+					frame[1] = state->transmit_fifo[frame_words / I2S_FRAME_SLOTS];
 
 					switch (configuration & TEAK_I2S_TXCONF_MONO) {
 						case TEAK_I2S_TXCONF_MONO_RIGHT:
@@ -327,18 +375,13 @@ void dsp_i2s_advance(dsp_device_t *device, size_t cycles) {
 					}
 				}
 
+				state->transmit_fifo_words -= frame_words;
+				memmove(state->transmit_fifo, &state->transmit_fifo[frame_words],
+					state->transmit_fifo_words * sizeof(*state->transmit_fifo));
+				i2s_transmit_fill(device);
+
 				frames--;
 				output_frames++;
-				state->transmit_position += i2s_positions_per_frame(pcm);
-				state->transmit_position &= TEAK_I2S_RWADDR_RDADDR;
-				if (state->transmit_position == state->registers[TEAK_I2S_TXINTADDR]) {
-					if ((state->registers[TEAK_I2S_CTRL] & TEAK_I2S_CTRL_TXPCM) != 0)
-						state->registers[TEAK_I2S_CTRL] &= (uint16_t) ~TEAK_I2S_CTRL_I2STXSTART;
-					dsp_int_set_flags(state->interrupt, I2S_INTERRUPT_GROUP, state->transmit_interrupt_flag);
-					state->transmit_phase = 0;
-					frames = 0;
-					break;
-				}
 			}
 			i2s_tx_write(state->port.tx_bus, samples, output_frames);
 		}

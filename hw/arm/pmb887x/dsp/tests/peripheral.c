@@ -442,11 +442,12 @@ static void test_i2s_clock(void) {
 	pmb887x_dsp_peripheral_bus_reset(bus);
 	pmb887x_dsp_peripheral_bus_set_clock_hz(bus, 26000000);
 	pmb887x_dsp_peripheral_bus_set_ms_clock_hz(bus, 104000000);
-	pmb887x_dsp_peripheral_bus_write(bus, TEST_I2S_BASE + TEAK_I2S_TXINTADDR, 2);
+	pmb887x_dsp_peripheral_bus_write(bus, TEST_I2S_BASE + TEAK_I2S_CTRL, TEAK_I2S_CTRL_I2SON);
+	pmb887x_dsp_peripheral_bus_write(bus, TEST_I2S_BASE + TEAK_I2S_TXINTADDR, 6);
 	pmb887x_dsp_peripheral_bus_write(bus, TEST_I2S_BASE + TEAK_I2S_CTRL,
 		TEAK_I2S_CTRL_I2SON | TEAK_I2S_CTRL_I2STXSTART);
 	pmb887x_dsp_peripheral_bus_advance_idle(bus, 512);
-	g_assert_cmphex(pmb887x_dsp_peripheral_bus_read(bus, TEST_I2S_BASE + TEAK_I2S_RWADDR), ==, 2);
+	g_assert_cmphex(pmb887x_dsp_peripheral_bus_read(bus, TEST_I2S_BASE + TEAK_I2S_RWADDR), ==, 6);
 	g_assert_cmphex(pmb887x_dsp_peripheral_bus_get_interrupt_flags(bus, 1), ==, TEAK_INT_FINTB0_I2S1TX);
 
 	pmb887x_dsp_peripheral_bus_reset(bus);
@@ -460,10 +461,10 @@ static void test_i2s_clock(void) {
 	pmb887x_dsp_peripheral_bus_advance_idle(bus, 9433);
 	g_assert_cmpuint(host.i2s_configure_count, ==, configure_count + 1);
 	g_assert_true(host.i2s_transmit);
-	g_assert_cmphex(pmb887x_dsp_peripheral_bus_read(bus, TEST_I2S_BASE + TEAK_I2S_RWADDR), ==, 0);
+	g_assert_cmphex(pmb887x_dsp_peripheral_bus_read(bus, TEST_I2S_BASE + TEAK_I2S_RWADDR), ==, 4);
 	pmb887x_dsp_peripheral_bus_advance_idle(bus, 1);
 	g_assert_cmpuint(host.i2s_configure_count, ==, configure_count + 1);
-	g_assert_cmphex(pmb887x_dsp_peripheral_bus_read(bus, TEST_I2S_BASE + TEAK_I2S_RWADDR), ==, 2);
+	g_assert_cmphex(pmb887x_dsp_peripheral_bus_read(bus, TEST_I2S_BASE + TEAK_I2S_RWADDR), ==, 6);
 
 	pmb887x_dsp_peripheral_bus_write(bus, TEST_I2S_BASE + TEAK_I2S_CTRL, 0);
 	pmb887x_dsp_peripheral_bus_write(bus, TEST_I2S_BASE + TEAK_I2S_NUM0,
@@ -471,9 +472,9 @@ static void test_i2s_clock(void) {
 	pmb887x_dsp_peripheral_bus_write(bus, TEST_I2S_BASE + TEAK_I2S_CTRL,
 		TEAK_I2S_CTRL_I2SON | TEAK_I2S_CTRL_I2STXSTART);
 	pmb887x_dsp_peripheral_bus_advance_idle(bus, 2358);
-	g_assert_cmphex(pmb887x_dsp_peripheral_bus_read(bus, TEST_I2S_BASE + TEAK_I2S_RWADDR), ==, 0);
+	g_assert_cmphex(pmb887x_dsp_peripheral_bus_read(bus, TEST_I2S_BASE + TEAK_I2S_RWADDR), ==, 4);
 	pmb887x_dsp_peripheral_bus_advance_idle(bus, 1);
-	g_assert_cmphex(pmb887x_dsp_peripheral_bus_read(bus, TEST_I2S_BASE + TEAK_I2S_RWADDR), ==, 2);
+	g_assert_cmphex(pmb887x_dsp_peripheral_bus_read(bus, TEST_I2S_BASE + TEAK_I2S_RWADDR), ==, 6);
 
 	pmb887x_dsp_peripheral_bus_write(bus, TEST_I2S_BASE + TEAK_I2S_CTRL, 0);
 	pmb887x_dsp_peripheral_bus_write(bus, TEST_I2S_BASE + TEAK_I2S_NUM1,
@@ -484,26 +485,46 @@ static void test_i2s_clock(void) {
 	pmb887x_dsp_peripheral_bus_write(bus, TEST_I2S_BASE + TEAK_I2S_CTRL,
 		TEAK_I2S_CTRL_I2SON | TEAK_I2S_CTRL_I2STXSTART);
 	pmb887x_dsp_peripheral_bus_advance_idle(bus, 589);
-	g_assert_cmphex(pmb887x_dsp_peripheral_bus_read(bus, TEST_I2S_BASE + TEAK_I2S_RWADDR), ==, 0);
+	g_assert_cmphex(pmb887x_dsp_peripheral_bus_read(bus, TEST_I2S_BASE + TEAK_I2S_RWADDR), ==, 4);
 	pmb887x_dsp_peripheral_bus_advance_idle(bus, 1);
-	g_assert_cmphex(pmb887x_dsp_peripheral_bus_read(bus, TEST_I2S_BASE + TEAK_I2S_RWADDR), ==, 2);
+	g_assert_cmphex(pmb887x_dsp_peripheral_bus_read(bus, TEST_I2S_BASE + TEAK_I2S_RWADDR), ==, 6);
 
 	pmb887x_dsp_peripheral_bus_write(bus, TEST_I2S_BASE + TEAK_I2S_CTRL, 0);
 	pmb887x_dsp_peripheral_bus_set_ms_clock_hz(bus, 26000000);
 	pmb887x_dsp_peripheral_bus_write(bus, TEST_I2S_BASE + TEAK_I2S_CTRL,
 		TEAK_I2S_CTRL_I2SON | TEAK_I2S_CTRL_I2STXSTART);
 	pmb887x_dsp_peripheral_bus_advance_idle(bus, 2358);
-	g_assert_cmphex(pmb887x_dsp_peripheral_bus_read(bus, TEST_I2S_BASE + TEAK_I2S_RWADDR), ==, 0);
+	g_assert_cmphex(pmb887x_dsp_peripheral_bus_read(bus, TEST_I2S_BASE + TEAK_I2S_RWADDR), ==, 4);
 	pmb887x_dsp_peripheral_bus_advance_idle(bus, 1);
-	g_assert_cmphex(pmb887x_dsp_peripheral_bus_read(bus, TEST_I2S_BASE + TEAK_I2S_RWADDR), ==, 2);
+	g_assert_cmphex(pmb887x_dsp_peripheral_bus_read(bus, TEST_I2S_BASE + TEAK_I2S_RWADDR), ==, 6);
 
 	pmb887x_dsp_peripheral_bus_write(bus, TEST_I2S_BASE + TEAK_I2S_CTRL, 0);
 	pmb887x_dsp_peripheral_bus_set_ms_clock_hz(bus, 0);
 	pmb887x_dsp_peripheral_bus_write(bus, TEST_I2S_BASE + TEAK_I2S_CTRL,
 		TEAK_I2S_CTRL_I2SON | TEAK_I2S_CTRL_I2STXSTART);
 	pmb887x_dsp_peripheral_bus_advance_idle(bus, 10000);
-	g_assert_cmphex(pmb887x_dsp_peripheral_bus_read(bus, TEST_I2S_BASE + TEAK_I2S_RWADDR), ==, 0);
+	g_assert_cmphex(pmb887x_dsp_peripheral_bus_read(bus, TEST_I2S_BASE + TEAK_I2S_RWADDR), ==, 4);
 	pmb887x_dsp_peripheral_bus_set_ms_clock_hz(bus, 104000000);
+
+	pmb887x_dsp_peripheral_bus_write(bus, TEST_I2S_BASE + TEAK_I2S_CTRL, TEAK_I2S_CTRL_I2SON);
+	pmb887x_dsp_peripheral_bus_write(bus, TEST_I2S_BASE + TEAK_I2S_CTRL,
+		TEAK_I2S_CTRL_I2SON | TEAK_I2S_CTRL_I2STXSTART);
+	g_assert_cmphex(pmb887x_dsp_peripheral_bus_read(bus, TEST_I2S_BASE + TEAK_I2S_RWADDR), ==, 4);
+
+	pmb887x_dsp_peripheral_bus_write(bus, TEST_I2S_BASE + TEAK_I2S_CTRL, 0);
+	pmb887x_dsp_peripheral_bus_write(bus, TEST_I2S_BASE + TEAK_I2S_CSEL, TEAK_I2S_CSEL_TXCLKSEL);
+	pmb887x_dsp_peripheral_bus_write(bus, TEST_I2S_BASE + TEAK_I2S_TXCONF,
+		TEAK_I2S_TXCONF_PERIOD_CLOCKS_32 | TEAK_I2S_TXCONF_WIDTH_BITS_32);
+	pmb887x_dsp_peripheral_bus_write(bus, TEST_I2S_BASE + TEAK_I2S_CTRL,
+		TEAK_I2S_CTRL_I2SON | TEAK_I2S_CTRL_I2STXSTART);
+	pmb887x_dsp_peripheral_bus_advance_idle(bus, 590);
+	g_assert_cmphex(pmb887x_dsp_peripheral_bus_read(bus, TEST_I2S_BASE + TEAK_I2S_RWADDR), ==, 8);
+
+	pmb887x_dsp_peripheral_bus_write(bus, TEST_I2S_BASE + TEAK_I2S_CTRL, 0);
+	pmb887x_dsp_peripheral_bus_write(bus, TEST_I2S_BASE + TEAK_I2S_TXCONF, TEAK_I2S_TXCONF_PERIOD_CLOCKS_32);
+	pmb887x_dsp_peripheral_bus_write(bus, TEST_I2S_BASE + TEAK_I2S_CTRL,
+		TEAK_I2S_CTRL_I2SON | TEAK_I2S_CTRL_I2STXSTART | TEAK_I2S_CTRL_TXPCM);
+	g_assert_cmphex(pmb887x_dsp_peripheral_bus_read(bus, TEST_I2S_BASE + TEAK_I2S_RWADDR), ==, 1);
 
 	pmb887x_dsp_peripheral_bus_reset(bus);
 	pmb887x_dsp_peripheral_bus_write(bus, TEST_I2S_BASE + TEAK_I2S_NUM1,
@@ -515,6 +536,7 @@ static void test_i2s_clock(void) {
 	host.i2s_input[1] = (int16_t) 0xFEDC;
 	host.i2s_input_frame_count = 1;
 	host.i2s_input_position = 0;
+	pmb887x_dsp_peripheral_bus_write(bus, TEST_I2S_BASE + TEAK_I2S_CTRL, TEAK_I2S_CTRL_I2SON);
 	pmb887x_dsp_peripheral_bus_write(bus, TEST_I2S_BASE + TEAK_I2S_RXINTADDR, 4);
 	pmb887x_dsp_peripheral_bus_write(bus, TEST_I2S_BASE + TEAK_I2S_CTRL,
 		TEAK_I2S_CTRL_I2SON | TEAK_I2S_CTRL_I2SRXSTART);
