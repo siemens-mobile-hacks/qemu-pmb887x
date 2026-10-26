@@ -271,6 +271,7 @@ static void tcg_restore_shadow_registers(teak_state_t *state) {
 	state->product_shift = state->shadow_st1 >> 10 & 3U;
 	state->modulo_enable = state->shadow_st2 & 0x3FU;
 	state->s = state->shadow_st2 >> 7 & 1U;
+	teak_update_modulo_steps(state);
 }
 
 static void tcg_swap_context_registers(teak_state_t *state) {
@@ -384,6 +385,7 @@ static void tcg_unpack_st2(teak_state_t *state, uint16_t value) {
 	state->s = value >> 7 & 1U;
 	state->ou[0] = value >> 8 & 1U;
 	state->ou[1] = value >> 9 & 1U;
+	teak_update_modulo_steps(state);
 }
 
 static void tcg_unpack_icr(teak_state_t *state, uint16_t value) {
@@ -624,10 +626,12 @@ static void tcg_write_register(teak_state_t *state, uint8_t register_code, uint1
 		case 14:
 			state->stepi = value & 0x7FU;
 			state->modi = value >> 7;
+			teak_update_modulo_steps(state);
 			return;
 		case 15:
 			state->stepj = value & 0x7FU;
 			state->modj = value >> 7;
+			teak_update_modulo_steps(state);
 			return;
 		case 20:
 		case 21:
@@ -908,9 +912,8 @@ void HELPER(teak_tcg_special_register_write)(void *opaque, uint32_t special_regi
 	tcg_write_special_register(state, (teak_special_register_t) special_register, (uint16_t) value);
 }
 
-uint32_t HELPER(teak_tcg_modulo_address)(void *opaque, uint32_t register_index, uint32_t address, uint32_t step) {
-	teak_state_t *state = opaque;
-	return teak_modulo_address(state, (uint8_t) register_index, (uint16_t) address, (int16_t) step);
+void HELPER(teak_tcg_update_modulo_steps)(void *opaque) {
+	teak_update_modulo_steps(opaque);
 }
 
 void HELPER(teak_tcg_context_switch)(void *opaque, uint32_t restore) {
@@ -2799,6 +2802,7 @@ static void tcg_emit_bank_exchange(const teak_insn_t *instruction) {
 	if ((instruction->immediate & TEAK_BANK_CFGI) != 0) {
 		tcg_emit_swap8(offsetof(teak_state_t, stepi), offsetof(teak_state_t, stepib));
 		tcg_emit_swap16(offsetof(teak_state_t, modi), offsetof(teak_state_t, modib));
+		gen_helper_teak_tcg_update_modulo_steps(tcg_env);
 	}
 	if ((instruction->immediate & TEAK_BANK_R4) != 0)
 		tcg_emit_swap16(offsetof(teak_state_t, r) + 4 * sizeof(uint16_t),
@@ -3176,6 +3180,28 @@ static void tcg_emit_alu_r7_offset16_accumulator(const teak_insn_t *instruction)
 	tcg_emit_alu_data_accumulator(instruction, tcg_emit_r7_address(instruction->memory_offset));
 }
 
+static void tcg_emit_modulo_address(TCGv_i32 updated, TCGv_i32 address, TCGv_i32 step, uint8_t address_register,
+	teak_step_t step_mode
+) {
+	size_t entry_offset = offsetof(teak_state_t, modulo_steps) +
+		(address_register * TEAK_MODULO_STEP_MODES + step_mode - TEAK_STEP_INCREASE) * sizeof(teak_modulo_step_t);
+	TCGv_i32 mask = tcg_temp_new_i32();
+	TCGv_i32 boundary = tcg_temp_new_i32();
+	TCGv_i32 wrap_target = tcg_temp_new_i32();
+	TCGv_i32 low = tcg_temp_new_i32();
+
+	tcg_gen_ld_i32(mask, tcg_env, entry_offset + offsetof(teak_modulo_step_t, mask));
+	tcg_gen_ld_i32(boundary, tcg_env, entry_offset + offsetof(teak_modulo_step_t, boundary));
+	tcg_gen_ld_i32(wrap_target, tcg_env, entry_offset + offsetof(teak_modulo_step_t, wrap_target));
+
+	tcg_gen_and_i32(low, address, mask);
+	tcg_gen_add_i32(updated, low, step);
+	tcg_gen_and_i32(updated, updated, mask);
+	tcg_gen_movcond_i32(TCG_COND_EQ, updated, low, boundary, wrap_target, updated);
+	tcg_gen_andc_i32(low, address, mask);
+	tcg_gen_or_i32(updated, updated, low);
+}
+
 static TCGv_i32 tcg_emit_rn_address(uint8_t address_register, teak_step_t step_mode, bool disable_modulo) {
 	size_t register_offset = offsetof(teak_state_t, r) + address_register * sizeof(uint16_t);
 	TCGv_i32 address = tcg_temp_new_i32();
@@ -3213,20 +3239,8 @@ static TCGv_i32 tcg_emit_rn_address(uint8_t address_register, teak_step_t step_m
 			g_assert_not_reached();
 	}
 
-	if (address_register < 6 && !disable_modulo) {
-		TCGv_i32 modulo_enabled = tcg_temp_new_i32();
-		TCGLabel *linear = gen_new_label();
-		TCGLabel *done = gen_new_label();
-
-		tcg_gen_ld8u_i32(modulo_enabled, tcg_env, offsetof(teak_state_t, modulo_enable));
-		tcg_gen_andi_i32(modulo_enabled, modulo_enabled, BIT(address_register));
-		tcg_gen_brcondi_i32(TCG_COND_EQ, modulo_enabled, 0, linear);
-		gen_helper_teak_tcg_modulo_address(updated, tcg_env,
-			tcg_constant_i32(address_register), address, step);
-		tcg_gen_br(done);
-		gen_set_label(linear);
-		tcg_gen_add_i32(updated, address, step);
-		gen_set_label(done);
+	if (address_register < TEAK_MODULO_REGISTERS && !disable_modulo) {
+		tcg_emit_modulo_address(updated, address, step, address_register, step_mode);
 	} else {
 		tcg_gen_add_i32(updated, address, step);
 	}
@@ -3974,15 +3988,19 @@ static void tcg_emit_instruction(teak_insn_t *instruction, uint8_t block_repeat_
 			break;
 		case TEAK_OP_LOAD_STEPI:
 			tcg_gen_st8_i32(tcg_constant_i32(instruction->immediate), tcg_env, offsetof(teak_state_t, stepi));
+			gen_helper_teak_tcg_update_modulo_steps(tcg_env);
 			break;
 		case TEAK_OP_LOAD_STEPJ:
 			tcg_gen_st8_i32(tcg_constant_i32(instruction->immediate), tcg_env, offsetof(teak_state_t, stepj));
+			gen_helper_teak_tcg_update_modulo_steps(tcg_env);
 			break;
 		case TEAK_OP_LOAD_MODI:
 			tcg_gen_st16_i32(tcg_constant_i32(instruction->immediate), tcg_env, offsetof(teak_state_t, modi));
+			gen_helper_teak_tcg_update_modulo_steps(tcg_env);
 			break;
 		case TEAK_OP_LOAD_MODJ:
 			tcg_gen_st16_i32(tcg_constant_i32(instruction->immediate), tcg_env, offsetof(teak_state_t, modj));
+			gen_helper_teak_tcg_update_modulo_steps(tcg_env);
 			break;
 		case TEAK_OP_LOAD_PRODUCT_SHIFT:
 			tcg_gen_st8_i32(tcg_constant_i32(instruction->immediate), tcg_env, offsetof(teak_state_t, product_shift));

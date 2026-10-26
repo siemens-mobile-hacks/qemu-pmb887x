@@ -275,6 +275,56 @@ static void test_alu_status_register(void) {
 	g_assert_cmphex(core.state.a[0], ==, 3);
 }
 
+static uint16_t test_zero_data_read(void *opaque, uint32_t address) {
+	return 0;
+}
+
+static void test_modulo_address(void) {
+	static const struct {
+		uint8_t address_register;
+		uint16_t modulo;
+		uint16_t address;
+		int8_t step;
+		uint16_t expected;
+	} vectors[] = {
+		{ 0, 6, 0x0010, 1, 0x0011 },
+		{ 0, 6, 0x0016, 1, 0x0010 },
+		{ 2, 6, 0x0014, 2, 0x0016 },
+		{ 2, 6, 0x0016, 2, 0x0010 },
+		{ 4, 6, 0x0010, -3, 0x0016 },
+		{ 5, 6, 0x0013, -3, 0x0010 },
+		{ 1, 5, 0x0016, 3, 0x0011 },
+		{ 1, 5, 0x0015, 3, 0x0010 },
+		{ 3, 0, 0x1234, 1, 0x1234 },
+	};
+
+	for (size_t i = 0; i < ARRAY_SIZE(vectors); i++) {
+		uint8_t address_register = vectors[i].address_register;
+		int8_t step = vectors[i].step;
+		pmb887x_dsp_tcg_step_t step_mode = step == 1 ? PMB887X_DSP_TCG_STEP_INCREASE :
+			step == -1 ? PMB887X_DSP_TCG_STEP_DECREASE : PMB887X_DSP_TCG_STEP_PLUS_STEP;
+		bool is_i_register = address_register < 4;
+		uint16_t load_modulo = (is_i_register ? 0x0200U : 0x0A00U) | vectors[i].modulo;
+		uint16_t load_step = (is_i_register ? 0xDB80U : 0xDF80U) | (step & 0x7F);
+		uint16_t mov_data = 0x98C0U | step_mode << 3 | address_register;
+		test_memory_t program = {};
+		size_t words = 0;
+
+		program.words[words++] = load_modulo;
+		if (step_mode == PMB887X_DSP_TCG_STEP_PLUS_STEP)
+			program.words[words++] = load_step;
+		program.words[words] = mov_data;
+		test_memory_t data = {};
+		pmb887x_dsp_tcg_core_t core = test_core_create(&program, &data);
+
+		core.memory.data.read = test_zero_data_read;
+		core.state.r[address_register] = vectors[i].address;
+		core.state.modulo_enable = BIT(address_register);
+		g_assert_true(pmb887x_dsp_tcg_execute_block(&core));
+		g_assert_cmphex(core.state.r[address_register], ==, vectors[i].expected);
+	}
+}
+
 static void test_dual_memory_spaces(void) {
 	test_memory_t program = {
 		.words = { 0xD000, 0x4180, 0x0003 },
@@ -685,6 +735,7 @@ int main(int argc, char **argv) {
 	tcg_prologue_init();
 	tcg_register_thread();
 
+	g_test_add_func("/pmb887x/dsp/tcg/modulo-address", test_modulo_address);
 	g_test_add_func("/pmb887x/dsp/tcg/mov-full-accumulator", test_mov_full_accumulator);
 	g_test_add_func("/pmb887x/dsp/tcg/mov-full-accumulator-alias", test_mov_full_accumulator_alias);
 	g_test_add_func("/pmb887x/dsp/tcg/mov-immediate-product-high", test_mov_immediate_product_high);

@@ -7,12 +7,15 @@
 
 #define TEAK_BLOCK_REPEAT_LEVELS	4
 #define TEAK_PROGRAM_ADDRESS_MASK	UINT16_MAX
+#define TEAK_MODULO_REGISTERS	6
+#define TEAK_MODULO_STEP_MODES	3
 
 typedef struct teak_tcg_core_t teak_tcg_core_t;
 typedef struct teak_insn_t teak_insn_t;
 typedef struct teak_memory_t teak_memory_t;
 typedef struct teak_memory_space_t teak_memory_space_t;
 typedef struct teak_state_t teak_state_t;
+typedef struct teak_modulo_step_t teak_modulo_step_t;
 
 typedef enum teak_accumulator_test_t teak_accumulator_test_t;
 typedef enum teak_alb_operation_t teak_alb_operation_t;
@@ -362,6 +365,12 @@ struct teak_insn_t {
 	bool context_switch;
 };
 
+struct teak_modulo_step_t {
+	uint32_t mask;
+	uint32_t boundary;
+	uint32_t wrap_target;
+};
+
 struct teak_state_t {
 	uint64_t a[2];
 	uint64_t b[2];
@@ -390,6 +399,7 @@ struct teak_state_t {
 	uint16_t r1b;
 	uint16_t r4b;
 	uint16_t modib;
+	teak_modulo_step_t modulo_steps[TEAK_MODULO_REGISTERS][TEAK_MODULO_STEP_MODES];
 	uint16_t shadow_st0;
 	uint16_t shadow_st1;
 	uint16_t shadow_st2;
@@ -465,11 +475,11 @@ struct teak_tcg_core_t {
 
 void teak_tcg_init(teak_tcg_core_t *core, const teak_memory_t *memory);
 void teak_tcg_reset(teak_tcg_core_t *core, uint32_t pc);
+void teak_update_modulo_steps(teak_state_t *state);
 uint16_t teak_program_read(teak_tcg_core_t *core, uint32_t address);
 void teak_program_write(teak_tcg_core_t *core, uint32_t address, uint16_t value);
 uint16_t teak_data_read(teak_tcg_core_t *core, uint32_t address);
 void teak_data_write(teak_tcg_core_t *core, uint32_t address, uint16_t value);
-uint16_t teak_modulo_address(const teak_state_t *state, uint8_t register_index, uint16_t address, int16_t step);
 bool teak_decode(teak_tcg_core_t *core, uint32_t address, teak_insn_t *instruction);
 
 #endif

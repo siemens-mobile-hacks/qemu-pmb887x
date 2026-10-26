@@ -89,26 +89,6 @@ static void test_reset(void) {
 	g_assert_true(core.memory.data.opaque == &data);
 }
 
-static void test_modulo_address(void) {
-	pmb887x_dsp_tcg_state_t state = {
-		.modi = 6,
-		.modj = 6,
-	};
-
-	g_assert_cmphex(pmb887x_dsp_tcg_modulo_address(&state, 0, 0x0010, 1), ==, 0x0011);
-	g_assert_cmphex(pmb887x_dsp_tcg_modulo_address(&state, 0, 0x0016, 1), ==, 0x0010);
-	g_assert_cmphex(pmb887x_dsp_tcg_modulo_address(&state, 2, 0x0014, 2), ==, 0x0016);
-	g_assert_cmphex(pmb887x_dsp_tcg_modulo_address(&state, 2, 0x0016, 2), ==, 0x0010);
-	g_assert_cmphex(pmb887x_dsp_tcg_modulo_address(&state, 4, 0x0010, -3), ==, 0x0016);
-	g_assert_cmphex(pmb887x_dsp_tcg_modulo_address(&state, 5, 0x0013, -3), ==, 0x0010);
-
-	state.modi = 5;
-	g_assert_cmphex(pmb887x_dsp_tcg_modulo_address(&state, 1, 0x0016, 3), ==, 0x0011);
-	g_assert_cmphex(pmb887x_dsp_tcg_modulo_address(&state, 1, 0x0015, 3), ==, 0x0010);
-	state.modi = 0;
-	g_assert_cmphex(pmb887x_dsp_tcg_modulo_address(&state, 3, 0x1234, 1), ==, 0x1234);
-}
-
 static void test_memory_spaces(void) {
 	test_memory_t program = {};
 	test_memory_t data = {};
@@ -1717,7 +1697,6 @@ int main(int argc, char **argv) {
 	g_test_init(&argc, &argv, NULL);
 	g_test_add_func("/pmb887x/dsp/tcg/reset", test_reset);
 	g_test_add_func("/pmb887x/dsp/tcg/memory-spaces", test_memory_spaces);
-	g_test_add_func("/pmb887x/dsp/tcg/modulo-address", test_modulo_address);
 	g_test_add_func("/pmb887x/dsp/tcg/decode", test_decode);
 	return g_test_run();
 }

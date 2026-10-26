@@ -261,7 +261,6 @@ typedef teak_translation_error_t pmb887x_dsp_tcg_translation_error_t;
 #define pmb887x_dsp_tcg_program_write teak_program_write
 #define pmb887x_dsp_tcg_data_read teak_data_read
 #define pmb887x_dsp_tcg_data_write teak_data_write
-#define pmb887x_dsp_tcg_modulo_address teak_modulo_address
 #define pmb887x_dsp_tcg_decode teak_decode
 
 #define pmb887x_dsp_tcg_request_interrupt teak_tcg_request_interrupt
