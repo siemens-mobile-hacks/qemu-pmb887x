@@ -154,23 +154,13 @@ dsp_device_t *ssc_create(const pmb887x_dsp_peripheral_config_t *config, dsp_devi
 void ssc_advance(dsp_device_t *device, size_t cycles);
 bool ssc_is_active(const dsp_device_t *device);
 
-dsp_device_t *timer1_create(
-	const pmb887x_dsp_peripheral_config_t *config,
-	dsp_device_t *interrupt,
-	const dsp_host_t *host
-);
-void timer1_set_clock_hz(dsp_device_t *device, uint32_t frequency_hz);
-void timer1_update(dsp_device_t *device);
+dsp_device_t *timer1_create(const pmb887x_dsp_peripheral_config_t *config, dsp_device_t *interrupt);
+void timer1_advance(dsp_device_t *device, size_t cycles);
 bool timer1_is_active(const dsp_device_t *device);
 
-dsp_device_t *timer2_create(
-	const pmb887x_dsp_peripheral_config_t *config,
-	dsp_device_t *interrupt,
-	const dsp_host_t *host
-);
-void timer2_set_clock_hz(dsp_device_t *device, uint32_t frequency_hz);
-void timer2_update(dsp_device_t *device);
-bool timer2_is_active(dsp_device_t *device);
+dsp_device_t *timer2_create(const pmb887x_dsp_peripheral_config_t *config, dsp_device_t *interrupt);
+void timer2_advance(dsp_device_t *device, size_t cycles);
+bool timer2_is_active(const dsp_device_t *device);
 
 dsp_device_t *unknown_create(const pmb887x_dsp_peripheral_config_t *config);
 

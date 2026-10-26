@@ -100,14 +100,14 @@ static dsp_device_t *dsp_bus_create_device(dsp_bus_t *bus, const pmb887x_dsp_per
 		case PMB887X_DSP_PERIPHERAL_TIMER1:
 			g_assert(bus->interrupt != NULL);
 
-			device = timer1_create(config, bus->interrupt, &bus->host);
+			device = timer1_create(config, bus->interrupt);
 			bus->timer1 = device;
 			return device;
 
 		case PMB887X_DSP_PERIPHERAL_TIMER2:
 			g_assert(bus->interrupt != NULL);
 
-			device = timer2_create(config, bus->interrupt, &bus->host);
+			device = timer2_create(config, bus->interrupt);
 			bus->timer2 = device;
 			return device;
 
@@ -181,10 +181,6 @@ void dsp_bus_reset(dsp_bus_t *bus) {
 void dsp_bus_set_clock_hz(dsp_bus_t *bus, uint32_t frequency_hz) {
 	if (bus->cipher != NULL)
 		cipher_set_clock_hz(bus->cipher, frequency_hz);
-	if (bus->timer1 != NULL)
-		timer1_set_clock_hz(bus->timer1, frequency_hz);
-	if (bus->timer2 != NULL)
-		timer2_set_clock_hz(bus->timer2, frequency_hz);
 	for (size_t i = 0; i < bus->i2s_count; i++)
 		dsp_i2s_set_clock_hz(bus->i2s[i], frequency_hz);
 	if (bus->i2s_tx != NULL)
@@ -201,10 +197,6 @@ void dsp_bus_set_ms_clock_hz(dsp_bus_t *bus, uint32_t frequency_hz) {
 void dsp_bus_update_time(dsp_bus_t *bus) {
 	if (bus->cipher != NULL)
 		cipher_update_time(bus->cipher);
-	if (bus->timer1 != NULL)
-		timer1_update(bus->timer1);
-	if (bus->timer2 != NULL)
-		timer2_update(bus->timer2);
 }
 
 void dsp_bus_advance(dsp_bus_t *bus, size_t cycles) {
@@ -224,6 +216,10 @@ void dsp_bus_advance(dsp_bus_t *bus, size_t cycles) {
 		modulator_advance(bus->modulator, cycles);
 	if (bus->ssc != NULL && ssc_is_active(bus->ssc))
 		ssc_advance(bus->ssc, cycles);
+	if (bus->timer1 != NULL && timer1_is_active(bus->timer1))
+		timer1_advance(bus->timer1, cycles);
+	if (bus->timer2 != NULL && timer2_is_active(bus->timer2))
+		timer2_advance(bus->timer2, cycles);
 }
 
 size_t dsp_bus_advance_afe(dsp_bus_t *bus, size_t cycles) {

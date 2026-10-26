@@ -219,30 +219,13 @@ static void test_timer_clock(void) {
 	pmb887x_dsp_peripheral_bus_t *bus = test_bus_create(&host);
 
 	pmb887x_dsp_peripheral_bus_reset(bus);
-	pmb887x_dsp_peripheral_bus_set_clock_hz(bus, 104000000);
 	pmb887x_dsp_peripheral_bus_write(bus, TEST_TIMER1_BASE + TEAK_TMR1_CTRL, TEAK_TMR1_CTRL_DT1ENA);
 	pmb887x_dsp_peripheral_bus_write(bus, TEST_TIMER1_BASE + TEAK_TMR1_CTRL,
 		TEAK_TMR1_CTRL_DT1ENA | TEAK_TMR1_CTRL_RESTART);
 	pmb887x_dsp_peripheral_bus_write(bus, TEST_TIMER2_BASE + TEAK_TMR2_CTRL, TEAK_TMR2_CTRL_DT2ACT);
-	pmb887x_dsp_peripheral_bus_advance_idle(bus, 104000000);
-	g_assert_cmphex(pmb887x_dsp_peripheral_bus_read(bus, TEST_TIMER1_BASE + TEAK_TMR1_CNT), ==, 0);
-	g_assert_cmphex(pmb887x_dsp_peripheral_bus_read(bus, TEST_TIMER2_BASE + TEAK_TMR2_CNT), ==, 0);
-
-	host.time_ns += 1000000;
-	pmb887x_dsp_peripheral_bus_update_time(bus);
+	pmb887x_dsp_peripheral_bus_advance_idle(bus, 104000);
 	g_assert_cmphex(pmb887x_dsp_peripheral_bus_read(bus, TEST_TIMER1_BASE + TEAK_TMR1_CNT), ==, 270);
 	g_assert_cmphex(pmb887x_dsp_peripheral_bus_read(bus, TEST_TIMER2_BASE + TEAK_TMR2_CNT), ==, 1083);
-
-	pmb887x_dsp_peripheral_bus_reset(bus);
-	pmb887x_dsp_peripheral_bus_set_clock_hz(bus, 156000000);
-	pmb887x_dsp_peripheral_bus_write(bus, TEST_TIMER1_BASE + TEAK_TMR1_CTRL, TEAK_TMR1_CTRL_DT1ENA);
-	pmb887x_dsp_peripheral_bus_write(bus, TEST_TIMER1_BASE + TEAK_TMR1_CTRL,
-		TEAK_TMR1_CTRL_DT1ENA | TEAK_TMR1_CTRL_RESTART);
-	pmb887x_dsp_peripheral_bus_write(bus, TEST_TIMER2_BASE + TEAK_TMR2_CTRL, TEAK_TMR2_CTRL_DT2ACT);
-	host.time_ns += 1000000;
-	pmb887x_dsp_peripheral_bus_update_time(bus);
-	g_assert_cmphex(pmb887x_dsp_peripheral_bus_read(bus, TEST_TIMER1_BASE + TEAK_TMR1_CNT), ==, 406);
-	g_assert_cmphex(pmb887x_dsp_peripheral_bus_read(bus, TEST_TIMER2_BASE + TEAK_TMR2_CNT), ==, 1625);
 
 	pmb887x_dsp_peripheral_bus_destroy(bus);
 }
