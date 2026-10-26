@@ -385,12 +385,14 @@ struct teak_state_t {
 	uint32_t exit_request;
 	uint32_t block_repeat_start[TEAK_BLOCK_REPEAT_LEVELS];
 	uint32_t block_repeat_end[TEAK_BLOCK_REPEAT_LEVELS];
+	uint32_t suspended_repeat_pc;
 	teak_exit_t exit_reason;
 	uint16_t r[8];
 	uint16_t x[2];
 	uint16_t y[2];
 	uint16_t sp;
 	uint16_t repc;
+	uint16_t suspended_repc;
 	uint16_t shift_value;
 	uint16_t mixp;
 	uint16_t dvm;
@@ -434,6 +436,7 @@ struct teak_state_t {
 	uint8_t modulo_enable;
 	uint8_t cpc;
 	uint8_t repeat_active;
+	uint8_t repeat_suspended;
 	uint8_t lp;
 	uint8_t bcn;
 	uint8_t iu[2];
@@ -462,6 +465,7 @@ struct teak_tcg_core_t {
 	uint32_t batch_block_cycles;
 	uint32_t batch_cycles_remaining;
 	uint32_t chain_cycle_limit;
+	uint32_t repeat_stop_repc;
 	uint32_t chain_exit_pc;
 	uint64_t cache_fast_hits;
 	uint64_t cache_decoded_hits;

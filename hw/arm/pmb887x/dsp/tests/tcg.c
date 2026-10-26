@@ -68,6 +68,12 @@ static void test_execute_until(pmb887x_dsp_tcg_core_t *core, uint16_t pc, size_t
 	g_assert_cmphex(core->state.pc, ==, pc);
 }
 
+static void test_execute_slices_until(pmb887x_dsp_tcg_core_t *core, uint16_t pc, size_t max_slices) {
+	for (size_t i = 0; i < max_slices && core->state.pc != pc; i++)
+		g_assert_true(pmb887x_dsp_tcg_execute_slice(core, 1000));
+	g_assert_cmphex(core->state.pc, ==, pc);
+}
+
 static void test_mov_a0_b0(uint16_t opcode) {
 	test_memory_t program = {
 		.words = { opcode, 0x4180, 0x0003 },
@@ -196,6 +202,85 @@ static void test_interrupt_block_repeat(void) {
 	g_assert_cmphex(core.state.sp, ==, 11);
 	g_assert_cmphex(core.state.ie, ==, 1);
 	g_assert_cmphex(core.state.maskable_interrupt_active, ==, 0);
+}
+
+static void test_repeat_cycle_budget(void) {
+	test_memory_t program = {
+		.words = {
+			0x0CFF, /* rep 0x00ffu8. */
+			0x67D0, /* inc a0. */
+			0x4180, 0x0002, /* br 0x0002. */
+		},
+	};
+	test_memory_t data = {};
+	pmb887x_dsp_tcg_core_t core = test_core_create(&program, &data);
+
+	g_assert_true(pmb887x_dsp_tcg_execute_slice(&core, 10));
+	g_assert_cmpuint(core.last_block_cycles, ==, 10);
+	g_assert_cmphex(core.state.a[0], ==, 9);
+	g_assert_cmphex(core.state.pc, ==, 1);
+	g_assert_cmphex(core.state.repeat_active, ==, 1);
+	g_assert_cmphex(core.state.repc, ==, 246);
+
+	test_execute_slices_until(&core, 2, 4);
+	g_assert_cmphex(core.state.a[0], ==, 256);
+	g_assert_cmphex(core.state.repeat_active, ==, 0);
+}
+
+static void test_repeated_instruction_without_repeat(void) {
+	test_memory_t program = {
+		.words = {
+			0x0CFF, /* rep 0x00ffu8. */
+			0x67D0, /* inc a0. */
+			0x4180, 0x0002, /* br 0x0002. */
+		},
+	};
+	test_memory_t data = {};
+	pmb887x_dsp_tcg_core_t core = test_core_create(&program, &data);
+
+	g_assert_true(pmb887x_dsp_tcg_execute_slice(&core, 10));
+	g_assert_cmphex(core.state.repeat_active, ==, 1);
+
+	core.state.pc = 1;
+	core.state.repeat_active = 0;
+	core.state.a[0] = 0;
+	g_assert_true(pmb887x_dsp_tcg_execute_block(&core));
+	g_assert_cmphex(core.state.a[0], ==, 1);
+	g_assert_cmphex(core.state.pc, ==, 2);
+}
+
+static void test_interrupt_repeat_nested_repeat(void) {
+	test_memory_t program = {
+		.words = {
+			0x0C1F, /* rep 0x001fu8. */
+			0x67D0, /* inc a0. */
+			0x4180, 0x0002, /* br 0x0002. */
+			[6] = 0x0C03, /* rep 0x0003u8. */
+			[7] = 0x77D0, /* inc a1. */
+			[8] = 0x45C0, /* reti true. */
+		},
+	};
+	test_memory_t data = {};
+	pmb887x_dsp_tcg_core_t core = test_core_create(&program, &data);
+
+	core.state.sp = 10;
+	g_assert_true(pmb887x_dsp_tcg_execute_slice(&core, 5));
+	g_assert_cmphex(core.state.a[0], ==, 4);
+	g_assert_cmphex(core.state.pc, ==, 1);
+
+	core.state.ie = 1;
+	core.state.interrupt_mask = BIT(0);
+	core.state.pending_interrupts = BIT(0);
+	g_assert_true(pmb887x_dsp_tcg_service_interrupt(&core));
+	g_assert_cmphex(core.state.pc, ==, 6);
+	g_assert_cmphex(data.words[9], ==, 1);
+
+	test_execute_slices_until(&core, 2, 4);
+	g_assert_cmphex(core.state.a[1], ==, 4);
+	g_assert_cmphex(core.state.a[0], ==, 32);
+	g_assert_cmphex(core.state.sp, ==, 10);
+	g_assert_cmphex(core.state.repeat_active, ==, 0);
+	g_assert_cmphex(core.state.repeat_suspended, ==, 0);
 }
 
 static void test_subroutine_block_repeat(void) {
@@ -742,6 +827,9 @@ int main(int argc, char **argv) {
 	g_test_add_func("/pmb887x/dsp/tcg/pop-full-accumulator", test_pop_full_accumulator);
 	g_test_add_func("/pmb887x/dsp/tcg/long-block-repeat", test_long_block_repeat);
 	g_test_add_func("/pmb887x/dsp/tcg/interrupt-block-repeat", test_interrupt_block_repeat);
+	g_test_add_func("/pmb887x/dsp/tcg/repeat-cycle-budget", test_repeat_cycle_budget);
+	g_test_add_func("/pmb887x/dsp/tcg/repeated-instruction-without-repeat", test_repeated_instruction_without_repeat);
+	g_test_add_func("/pmb887x/dsp/tcg/interrupt-repeat-nested-repeat", test_interrupt_repeat_nested_repeat);
 	g_test_add_func("/pmb887x/dsp/tcg/subroutine-block-repeat", test_subroutine_block_repeat);
 	g_test_add_func("/pmb887x/dsp/tcg/status-reserved-read-bits", test_status_reserved_read_bits);
 	g_test_add_func("/pmb887x/dsp/tcg/multiply-status-register", test_multiply_status_register);
