@@ -8270,11 +8270,12 @@ void cpsr_write(CPUARMState *env, uint32_t val, uint32_t mask,
                 CPSRWriteType write_type)
 {
     uint32_t changed_daif;
-    bool rebuild_hflags = (write_type != CPSRWriteRaw) &&
-        (mask & (CPSR_M | CPSR_E | CPSR_IL));
+    bool rebuild_hflags;
 
     // PMB887X: real hardware just ignores M4
     val |= 0x10;
+    rebuild_hflags = (write_type != CPSRWriteRaw) &&
+        ((cpsr_read(env) ^ val) & mask & (CPSR_M | CPSR_E | CPSR_IL | CPSR_PAN));
 
     if (mask & CPSR_NZCV) {
         env->ZF = (~val) & CPSR_Z;
