@@ -179,15 +179,50 @@ static int cpu_unwind_data_from_tb(TranslationBlock *tb, uintptr_t host_pc,
  * The cpu state corresponding to 'host_pc' is restored in
  * preparation for exiting the TB.
  */
-void cpu_restore_state_from_tb(CPUState *cpu, TranslationBlock *tb,
-                               uintptr_t host_pc)
+#define TB_IO_LIMIT_ENTRIES 4096
+
+typedef struct TBIOLimit {
+    tb_page_addr_t phys_pc;
+    int max_insns;
+} TBIOLimit;
+
+static TBIOLimit tb_io_limits[TB_IO_LIMIT_ENTRIES];
+
+static TBIOLimit *tb_io_limit_entry(tb_page_addr_t phys_pc)
+{
+    return &tb_io_limits[(phys_pc >> 1) & (TB_IO_LIMIT_ENTRIES - 1)];
+}
+
+static int tb_io_max_insns(tb_page_addr_t phys_pc, int max_insns)
+{
+    TBIOLimit *limit = tb_io_limit_entry(phys_pc);
+
+    if (limit->phys_pc == phys_pc && limit->max_insns != 0) {
+        return MIN(max_insns, limit->max_insns);
+    }
+    return max_insns;
+}
+
+static void tb_io_limit_insns(TranslationBlock *tb, int max_insns)
+{
+    TBIOLimit *limit = tb_io_limit_entry(tb_page_addr0(tb));
+
+    if (limit->phys_pc != tb_page_addr0(tb) || limit->max_insns == 0 ||
+        max_insns < limit->max_insns) {
+        limit->phys_pc = tb_page_addr0(tb);
+        limit->max_insns = max_insns;
+    }
+}
+
+static int tb_restore_state(CPUState *cpu, TranslationBlock *tb,
+                            uintptr_t host_pc)
 {
     uint64_t data[INSN_START_WORDS];
     uint32_t cycles_left = 0;
     int insns_left = cpu_unwind_data_from_tb(tb, host_pc, data, &cycles_left);
 
     if (insns_left < 0) {
-        return;
+        return insns_left;
     }
 
     if (tb_cflags(tb) & CF_USE_ICOUNT) {
@@ -202,6 +237,13 @@ void cpu_restore_state_from_tb(CPUState *cpu, TranslationBlock *tb,
     cpu->neg.cycle_count -= cycles_left;
 
     cpu->cc->tcg_ops->restore_state_to_opc(cpu, tb, data);
+    return insns_left;
+}
+
+void cpu_restore_state_from_tb(CPUState *cpu, TranslationBlock *tb,
+                               uintptr_t host_pc)
+{
+    tb_restore_state(cpu, tb, host_pc);
 }
 
 bool cpu_restore_state(CPUState *cpu, uintptr_t host_pc)
@@ -295,6 +337,9 @@ TranslationBlock *tb_gen_code(CPUState *cpu, TCGTBCPUState s)
     max_insns = s.cflags & CF_COUNT_MASK;
     if (max_insns == 0) {
         max_insns = TCG_MAX_INSNS;
+        if ((s.cflags & CF_COUNT_CYCLES) && phys_pc != -1) {
+            max_insns = tb_io_max_insns(phys_pc, max_insns);
+        }
     }
     QEMU_BUILD_BUG_ON(CF_COUNT_MASK + 1 != TCG_MAX_INSNS);
 
@@ -591,13 +636,19 @@ void cpu_io_recompile(CPUState *cpu, uintptr_t retaddr)
     TranslationBlock *tb;
     const CPUClass *cc = cpu->cc;
     uint32_t n;
+    int insns_left;
 
     tb = tcg_tb_lookup(retaddr);
     if (!tb) {
         cpu_abort(cpu, "cpu_io_recompile: could not find TB for pc=%p",
                   (void *)retaddr);
     }
-    cpu_restore_state_from_tb(cpu, tb, retaddr);
+    insns_left = tb_restore_state(cpu, tb, retaddr);
+    if ((tb_cflags(tb) & CF_COUNT_CYCLES) && insns_left > 0 &&
+        tb_page_addr0(tb) != -1) {
+        tb_io_limit_insns(tb, tb->icount - insns_left + 1);
+        tb_phys_invalidate(tb, -1);
+    }
 
     /*
      * Some guests must re-execute the branch when re-executing a delay
