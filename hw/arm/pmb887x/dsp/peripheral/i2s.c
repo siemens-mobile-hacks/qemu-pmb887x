@@ -426,9 +426,6 @@ void dsp_i2s_advance(dsp_device_t *device, size_t cycles) {
 						state->registers[TEAK_I2S_CTRL] &= (uint16_t) ~TEAK_I2S_CTRL_I2SRXSTART;
 					dsp_int_set_flags(state->interrupt, I2S_INTERRUPT_GROUP,
 						state->transmit_interrupt_flag << 1);
-					state->receive_phase = 0;
-					frames = 0;
-					break;
 				}
 			}
 		}
