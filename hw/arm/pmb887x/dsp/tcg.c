@@ -3595,6 +3595,7 @@ static void tcg_emit_mov_imm_st2(uint16_t value) {
 
 	tcg_gen_st8_i32(tcg_constant_i32(value & 0x3FU), tcg_env,
 		offsetof(teak_state_t, modulo_enable));
+	gen_helper_teak_tcg_update_modulo_steps(tcg_env);
 	tcg_gen_ld8u_i32(interrupt_mask, tcg_env, offsetof(teak_state_t, interrupt_mask));
 	tcg_gen_andi_i32(interrupt_mask, interrupt_mask, 3);
 	tcg_gen_ori_i32(interrupt_mask, interrupt_mask, value >> 4 & 4U);
@@ -3916,6 +3917,7 @@ static void tcg_emit_mov_imm_register(const teak_insn_t *instruction) {
 				offsetof(teak_state_t, stepi));
 			tcg_gen_st16_i32(tcg_constant_i32(instruction->expansion >> 7), tcg_env,
 				offsetof(teak_state_t, modi));
+			gen_helper_teak_tcg_update_modulo_steps(tcg_env);
 			break;
 
 		case 15:
@@ -3923,6 +3925,7 @@ static void tcg_emit_mov_imm_register(const teak_insn_t *instruction) {
 				offsetof(teak_state_t, stepj));
 			tcg_gen_st16_i32(tcg_constant_i32(instruction->expansion >> 7), tcg_env,
 				offsetof(teak_state_t, modj));
+			gen_helper_teak_tcg_update_modulo_steps(tcg_env);
 			break;
 
 		case 16:
