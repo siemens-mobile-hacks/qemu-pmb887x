@@ -785,6 +785,25 @@ static void test_delayed_interrupt_return_exit_request(void) {
 	g_assert_cmphex(data.words[0x10], ==, 0xA55A);
 }
 
+static void test_exit_request_counts_executed_cycles(void) {
+	test_memory_t program = {
+		.words = {
+			0x2010, /* mov r0, [0x10]. */
+			0x0000, /* nop. */
+			0x0000, /* nop. */
+			0x0000, /* nop. */
+			0x4180, 0x0006, /* br 0x0006. */
+		},
+	};
+	test_memory_t data = {};
+	pmb887x_dsp_tcg_core_t core = test_core_create(&program, &data);
+
+	data.exit_core_on_write = &core;
+	g_assert_true(pmb887x_dsp_tcg_execute_block(&core));
+	g_assert_cmphex(core.state.pc, ==, 1);
+	g_assert_cmpuint(core.last_block_cycles, ==, 1);
+}
+
 static void test_delayed_return_break(void) {
 	/* 0xD780 0xD3C0 0x0000: retd; break; nop at EL71 GSM DSP P:0x08D98. */
 	test_memory_t program = {
@@ -883,6 +902,7 @@ int main(int argc, char **argv) {
 	g_test_add_func("/pmb887x/dsp/tcg/movr-b-destination", test_movr_b_destination);
 	g_test_add_func("/pmb887x/dsp/tcg/delayed-interrupt-return", test_delayed_interrupt_return);
 	g_test_add_func("/pmb887x/dsp/tcg/delayed-interrupt-return-exit-request", test_delayed_interrupt_return_exit_request);
+	g_test_add_func("/pmb887x/dsp/tcg/exit-request-counts-executed-cycles", test_exit_request_counts_executed_cycles);
 	g_test_add_func("/pmb887x/dsp/tcg/delayed-return-break", test_delayed_return_break);
 	g_test_add_func("/pmb887x/dsp/tcg/delayed-return-stores", test_delayed_return_stores);
 	g_test_add_func("/pmb887x/dsp/tcg/nested-nmi-interrupt-return", test_nested_nmi_interrupt_return);

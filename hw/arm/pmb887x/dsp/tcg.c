@@ -4663,15 +4663,27 @@ static void tcg_emit_block_chain(const teak_tcg_block_t *block, bool batched_loo
 	gen_set_label(done);
 }
 
+static void tcg_emit_early_exit(TCGLabel *early_exit, uint32_t skipped_instructions, TCGLabel *exit) {
+	TCGv_i32 block_cycles = tcg_temp_new_i32();
+
+	gen_set_label(early_exit);
+	tcg_gen_ld_i32(block_cycles, tcg_env, offsetof(teak_tcg_core_t, batch_block_cycles));
+	tcg_gen_subi_i32(block_cycles, block_cycles, skipped_instructions);
+	tcg_gen_st_i32(block_cycles, tcg_env, offsetof(teak_tcg_core_t, batch_block_cycles));
+	tcg_gen_br(exit);
+}
+
 static void tcg_emit_block(void *opaque) {
 	teak_tcg_block_t *block = opaque;
 	TCGv_i32 delayed_transfer_target = NULL;
+	TCGLabel *early_exits[TEAK_TCG_MAX_BLOCK_INSTRUCTIONS] = {};
 	TCGLabel *exit = gen_new_label();
 	TCGLabel *repeat = block->repeat_resume ? gen_new_label() : NULL;
 	TCGLabel *loop = NULL;
 	bool delayed_transfer_interrupt = false;
 	bool repeat_pending = block->repeat_resume;
 	bool can_batch = tcg_block_can_batch(block);
+	bool has_early_exit = false;
 
 	tcg_gen_st_i32(tcg_constant_i32(0), tcg_env, offsetof(teak_tcg_core_t, batch_iterations));
 	if (!tcg_block_has_dynamic_cycles(block))
@@ -4718,14 +4730,23 @@ static void tcg_emit_block(void *opaque) {
 			TCGv_i32 exit_request = tcg_temp_new_i32();
 			TCGv_i32 interrupt_request = tcg_temp_new_i32();
 
+			early_exits[i] = gen_new_label();
+			has_early_exit = true;
 			tcg_gen_ld_i32(exit_request, tcg_env, offsetof(teak_state_t, exit_request));
-			tcg_gen_brcondi_i32(TCG_COND_NE, exit_request, 0, exit);
+			tcg_gen_brcondi_i32(TCG_COND_NE, exit_request, 0, early_exits[i]);
 			tcg_gen_ld_i32(interrupt_request, tcg_env, offsetof(teak_state_t, interrupt_request));
-			tcg_gen_brcondi_i32(TCG_COND_NE, interrupt_request, 0, exit);
+			tcg_gen_brcondi_i32(TCG_COND_NE, interrupt_request, 0, early_exits[i]);
 		}
 	}
 	if (can_batch)
 		tcg_emit_block_batch(block, loop, exit);
+	if (has_early_exit) {
+		tcg_gen_br(exit);
+		for (size_t i = 0; i < block->instruction_count; i++) {
+			if (early_exits[i] != NULL)
+				tcg_emit_early_exit(early_exits[i], block->instruction_count - 1 - i, exit);
+		}
+	}
 	gen_set_label(exit);
 	tcg_emit_block_chain(block, can_batch);
 }
