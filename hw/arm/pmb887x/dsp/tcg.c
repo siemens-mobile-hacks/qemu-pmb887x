@@ -797,8 +797,10 @@ static void tcg_synchronize_data_access(teak_tcg_core_t *core, uint32_t address,
 }
 
 static void tcg_add_data_wait_cycles(teak_tcg_core_t *core, uint32_t address) {
-	if (address - core->memory.wait_state_base < core->memory.wait_state_size)
-		core->wait_cycles += core->memory.wait_state_cycles;
+	if (address - core->memory.wait_state_base >= core->memory.wait_state_size)
+		return;
+	core->wait_cycles += core->memory.wait_state_cycles;
+	core->batch_cycles_remaining -= MIN(core->batch_cycles_remaining, core->memory.wait_state_cycles);
 }
 
 static bool tcg_direct_data_read(teak_tcg_core_t *core, uint32_t address, uint16_t *value) {
@@ -4639,9 +4641,9 @@ static void tcg_emit_block_batch(const teak_tcg_block_t *block, TCGLabel *loop, 
 	tcg_gen_brcondi_i32(TCG_COND_NE, exit_reason, TEAK_EXIT_BRANCH, exit);
 
 	tcg_gen_ld_i32(cycles_remaining, tcg_env, offsetof(teak_tcg_core_t, batch_cycles_remaining));
+	tcg_gen_brcondi_i32(TCG_COND_LTU, cycles_remaining, 2 * block->instruction_count, exit);
 	tcg_gen_subi_i32(cycles_remaining, cycles_remaining, block->instruction_count);
 	tcg_gen_st_i32(cycles_remaining, tcg_env, offsetof(teak_tcg_core_t, batch_cycles_remaining));
-	tcg_gen_brcondi_i32(TCG_COND_LTU, cycles_remaining, block->instruction_count, exit);
 
 	tcg_gen_st_i32(tcg_constant_i32(TEAK_EXIT_NONE), tcg_env, offsetof(teak_state_t, exit_reason));
 	tcg_gen_br(loop);

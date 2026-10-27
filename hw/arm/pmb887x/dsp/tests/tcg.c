@@ -227,6 +227,23 @@ static void test_repeat_cycle_budget(void) {
 	g_assert_cmphex(core.state.repeat_active, ==, 0);
 }
 
+static void test_batched_loop_wait_state_budget(void) {
+	test_memory_t program = {
+		.words = {
+			0xD4B8, 0x0010, /* mov [0x0010] a0. */
+			0x4180, 0x0000, /* br 0x0000. */
+		},
+	};
+	test_memory_t data = {};
+	pmb887x_dsp_tcg_core_t core = test_core_create(&program, &data);
+
+	core.memory.wait_state_base = 0x10;
+	core.memory.wait_state_size = 1;
+	core.memory.wait_state_cycles = 2;
+	g_assert_true(pmb887x_dsp_tcg_execute_slice(&core, 40));
+	g_assert_cmpuint(core.last_block_cycles, ==, 40);
+}
+
 static void test_repeated_instruction_without_repeat(void) {
 	test_memory_t program = {
 		.words = {
@@ -879,6 +896,7 @@ int main(int argc, char **argv) {
 	g_test_add_func("/pmb887x/dsp/tcg/long-block-repeat", test_long_block_repeat);
 	g_test_add_func("/pmb887x/dsp/tcg/interrupt-block-repeat", test_interrupt_block_repeat);
 	g_test_add_func("/pmb887x/dsp/tcg/repeat-cycle-budget", test_repeat_cycle_budget);
+	g_test_add_func("/pmb887x/dsp/tcg/batched-loop-wait-state-budget", test_batched_loop_wait_state_budget);
 	g_test_add_func("/pmb887x/dsp/tcg/repeated-instruction-without-repeat", test_repeated_instruction_without_repeat);
 	g_test_add_func("/pmb887x/dsp/tcg/interrupt-repeat-nested-repeat", test_interrupt_repeat_nested_repeat);
 	g_test_add_func("/pmb887x/dsp/tcg/interrupt-repeat-resumes-on-return", test_interrupt_repeat_resumes_on_return);
