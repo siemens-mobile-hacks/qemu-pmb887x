@@ -141,6 +141,11 @@ static void dsp_runtime_comm_changed(void *opaque, uint16_t flags, bool set) {
 	dsp_runtime_kick(runtime);
 }
 
+static void dsp_runtime_events_changed(void *opaque) {
+	dsp_runtime_t *runtime = opaque;
+	teak_tcg_request_exit(&runtime->core);
+}
+
 static int64_t dsp_runtime_get_time_ns(void *opaque) {
 	dsp_runtime_t *runtime = opaque;
 	return runtime->get_time_ns(runtime->device_opaque);
@@ -307,6 +312,7 @@ dsp_runtime_t *dsp_runtime_create(
 		.set_core_disabled = dsp_runtime_set_core_disabled,
 		.set_interrupt_lines = dsp_runtime_set_interrupt_lines,
 		.comm_changed = dsp_runtime_comm_changed,
+		.events_changed = dsp_runtime_events_changed,
 		.get_time_ns = dsp_runtime_get_time_ns,
 		.data_read = dsp_runtime_bus_data_read,
 		.data_write = dsp_runtime_bus_data_write,
@@ -395,6 +401,10 @@ void dsp_runtime_reset(dsp_runtime_t *runtime) {
 	runtime->halted = false;
 }
 
+static size_t dsp_runtime_get_event_cycles(const dsp_runtime_t *runtime) {
+	return MAX(dsp_bus_get_cycles_until_event(runtime->bus) / runtime->clock_divider, (size_t) 1);
+}
+
 size_t dsp_runtime_run(dsp_runtime_t *runtime, size_t max_cycles, bool *deferred) {
 	uint64_t cache_compiles = runtime->core.cache_compiles;
 	uint64_t cache_decoded_hits = runtime->core.cache_decoded_hits;
@@ -417,7 +427,8 @@ size_t dsp_runtime_run(dsp_runtime_t *runtime, size_t max_cycles, bool *deferred
 		uint8_t block_repeat_level;
 		uint32_t block_pc;
 		size_t remaining_cycles = max_cycles - cycles;
-		size_t slice_cycles = MIN(remaining_cycles, (size_t) DSP_SLICE_CYCLES);
+		size_t event_cycles = dsp_runtime_get_event_cycles(runtime);
+		size_t slice_cycles = MIN(MIN(remaining_cycles, (size_t) DSP_SLICE_CYCLES), event_cycles);
 		bool mutable_program = runtime->core.state.pc < runtime->config->program_rom_base;
 		bool new_program_lifecycle = !qatomic_read(&runtime->mutable_program_started);
 		bool program_changed = qatomic_read(&runtime->program_dirty);
@@ -501,6 +512,13 @@ size_t dsp_runtime_run(dsp_runtime_t *runtime, size_t max_cycles, bool *deferred
 			runtime->core.chain_budget_stops - chain_budget_stops,
 			runtime->core.chain_cache_stops - chain_cache_stops, runtime->core.chain_exit_pc);
 	}
+	return cycles;
+}
+
+size_t dsp_runtime_advance_idle_until_event(dsp_runtime_t *runtime, size_t max_cycles) {
+	size_t cycles = MIN(max_cycles, dsp_runtime_get_event_cycles(runtime));
+
+	dsp_bus_advance_idle(runtime->bus, cycles * runtime->clock_divider);
 	return cycles;
 }
 

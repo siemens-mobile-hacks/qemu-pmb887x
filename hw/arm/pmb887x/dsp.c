@@ -196,7 +196,12 @@ static void dsp_sync(dsp_state_t *p) {
 	if (peripheral_cycles != 0)
 		dsp_runtime_advance_idle(p->runtime, peripheral_cycles, 0);
 	p->syncing = true;
-	while (remaining_cycles != 0 && dsp_runtime_is_running(p->runtime) && !dsp_runtime_is_idle(p->runtime)) {
+	while (remaining_cycles != 0 && dsp_runtime_is_running(p->runtime)) {
+		if (dsp_runtime_is_idle(p->runtime)) {
+			remaining_cycles -= dsp_runtime_advance_idle_until_event(p->runtime, remaining_cycles);
+			continue;
+		}
+
 		bool deferred;
 		size_t executed = dsp_runtime_run(p->runtime, remaining_cycles, &deferred);
 
@@ -206,6 +211,8 @@ static void dsp_sync(dsp_state_t *p) {
 		} else {
 			remaining_cycles -= executed;
 		}
+		if (executed == 0 && !deferred && dsp_runtime_is_idle(p->runtime))
+			continue;
 		if (executed == 0 || deferred || p->comm_transition_pending) {
 			p->pending_cycles += remaining_cycles;
 			remaining_cycles = 0;

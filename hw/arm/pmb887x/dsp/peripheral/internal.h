@@ -118,6 +118,7 @@ dsp_device_t *dsp_i2s_create(
 void dsp_i2s_set_clock_hz(dsp_device_t *device, uint32_t frequency_hz);
 void dsp_i2s_set_ms_clock_hz(dsp_device_t *device, uint32_t frequency_hz);
 void dsp_i2s_advance(dsp_device_t *device, size_t cycles);
+size_t dsp_i2s_get_cycles_until_receive_interrupt(const dsp_device_t *device);
 bool dsp_i2s_is_active(const dsp_device_t *device);
 
 dsp_device_t *dsp_i2s_tx_create(const pmb887x_dsp_peripheral_config_t *config, dsp_device_t *interrupt);

@@ -232,6 +232,14 @@ void dsp_bus_advance_idle(dsp_bus_t *bus, size_t cycles) {
 	dsp_bus_advance(bus, cycles);
 }
 
+size_t dsp_bus_get_cycles_until_event(const dsp_bus_t *bus) {
+	size_t cycles = SIZE_MAX;
+
+	for (size_t i = 0; i < bus->i2s_count; i++)
+		cycles = MIN(cycles, dsp_i2s_get_cycles_until_receive_interrupt(bus->i2s[i]));
+	return cycles;
+}
+
 bool dsp_bus_needs_core_catchup(const dsp_bus_t *bus) {
 	if (bus->baseband != NULL && baseband_is_active(bus->baseband))
 		return true;

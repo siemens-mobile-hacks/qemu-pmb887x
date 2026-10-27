@@ -88,6 +88,10 @@ static bool i2s_transmit_pcm(const i2s_state_t *state) {
 	return (state->registers[TEAK_I2S_CTRL] & TEAK_I2S_CTRL_TXPCM) != 0;
 }
 
+static bool i2s_receive_pcm(const i2s_state_t *state) {
+	return (state->registers[TEAK_I2S_CTRL] & TEAK_I2S_CTRL_RXPCM) != 0;
+}
+
 static uint16_t i2s_transmit_frame_words(const i2s_state_t *state) {
 	bool wide_slots = (state->registers[TEAK_I2S_TXCONF] & TEAK_I2S_TXCONF_WIDTH) != TEAK_I2S_TXCONF_WIDTH_BITS_16;
 	uint16_t slot_words = wide_slots ? 2 : 1;
@@ -186,6 +190,31 @@ static uint32_t i2s_sample_rate_hz(const i2s_state_t *state, bool transmit, uint
 		((uint64_t) denominator * period_clocks * I2S_FRACTIONAL_DIVIDER_FACTOR);
 }
 
+static bool i2s_frame_phase_get(
+	const i2s_state_t *state,
+	bool transmit,
+	uint16_t configuration,
+	uint64_t *cycle_phase,
+	uint64_t *frame_phase
+) {
+	uint16_t numerator_register;
+	uint16_t denominator;
+
+	if (!i2s_divider_get(state, transmit, &numerator_register, &denominator))
+		return false;
+
+	uint32_t reference_hz = i2s_reference_hz(state, numerator_register);
+	uint16_t numerator = numerator_register & TEAK_I2S_NUM0_NUMERATOR;
+	uint32_t period_clocks = i2s_period_clocks(configuration);
+
+	if (state->clock_hz == 0 || reference_hz == 0 || numerator == 0 || denominator == 0 || period_clocks == 0)
+		return false;
+
+	*cycle_phase = (uint64_t) reference_hz * numerator;
+	*frame_phase = (uint64_t) state->clock_hz * denominator * period_clocks * I2S_FRACTIONAL_DIVIDER_FACTOR;
+	return true;
+}
+
 static size_t i2s_advance_frames(
 	const i2s_state_t *state,
 	bool transmit,
@@ -193,22 +222,13 @@ static size_t i2s_advance_frames(
 	uint64_t *phase,
 	size_t cycles
 ) {
-	uint16_t numerator_register;
-	uint16_t denominator;
+	uint64_t cycle_phase;
+	uint64_t frame_phase;
 
-	if (!i2s_divider_get(state, transmit, &numerator_register, &denominator))
+	if (!i2s_frame_phase_get(state, transmit, configuration, &cycle_phase, &frame_phase))
 		return 0;
 
-	uint32_t reference_hz = i2s_reference_hz(state, numerator_register);
-	uint16_t numerator = numerator_register & TEAK_I2S_NUM0_NUMERATOR;
-	uint32_t period_clocks = i2s_period_clocks(configuration);
-
-	if (state->clock_hz == 0 || reference_hz == 0 || numerator == 0 || denominator == 0 || period_clocks == 0)
-		return 0;
-
-	uint64_t frame_phase = (uint64_t) state->clock_hz * denominator * period_clocks *
-		I2S_FRACTIONAL_DIVIDER_FACTOR;
-	*phase += (uint64_t) cycles * reference_hz * numerator;
+	*phase += cycles * cycle_phase;
 	size_t frames = *phase / frame_phase;
 	*phase %= frame_phase;
 	return frames;
@@ -289,6 +309,8 @@ static bool i2s_register_write(dsp_device_t *device, uint16_t offset, uint32_t p
 				state->registers[offset] = value;
 			break;
 	}
+	if (state->host.events_changed != NULL)
+		state->host.events_changed(state->host.opaque);
 
 	IO_DUMP_WRITE_EX(device->config->base + offset, sizeof(value), value, pc, 0);
 	return true;
@@ -391,7 +413,7 @@ void dsp_i2s_advance(dsp_device_t *device, size_t cycles) {
 		size_t frames = i2s_advance_frames(state, false, configuration,
 			&state->receive_phase, cycles);
 		uint32_t sample_rate_hz = i2s_sample_rate_hz(state, false, configuration);
-		bool pcm = (state->registers[TEAK_I2S_CTRL] & TEAK_I2S_CTRL_RXPCM) != 0;
+		bool pcm = i2s_receive_pcm(state);
 		uint32_t channels = pcm ? 1 : I2S_FRAME_SLOTS;
 		i2s_configure(state, false, sample_rate_hz, channels);
 
@@ -430,6 +452,28 @@ void dsp_i2s_advance(dsp_device_t *device, size_t cycles) {
 			}
 		}
 	}
+}
+
+size_t dsp_i2s_get_cycles_until_receive_interrupt(const dsp_device_t *device) {
+	const i2s_state_t *state = device->state;
+	uint16_t configuration = state->registers[TEAK_I2S_RXCONF];
+	uint64_t cycle_phase;
+	uint64_t frame_phase;
+
+	if (!i2s_receive_active(state))
+		return SIZE_MAX;
+	if (!i2s_frame_phase_get(state, false, configuration, &cycle_phase, &frame_phase))
+		return SIZE_MAX;
+
+	uint16_t frame_positions = i2s_positions_per_frame(i2s_receive_pcm(state));
+	uint16_t positions = (state->registers[TEAK_I2S_RXINTADDR] - state->receive_position) & TEAK_I2S_RWADDR_RDADDR;
+	if (positions == 0)
+		positions = I2S_RING_WORDS;
+	if (positions % frame_positions != 0)
+		return SIZE_MAX;
+
+	uint64_t remaining_phase = positions / frame_positions * frame_phase - state->receive_phase;
+	return DIV_ROUND_UP(remaining_phase, cycle_phase);
 }
 
 bool dsp_i2s_is_active(const dsp_device_t *device) {

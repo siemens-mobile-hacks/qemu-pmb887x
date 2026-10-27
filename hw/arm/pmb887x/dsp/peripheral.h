@@ -31,6 +31,7 @@ struct dsp_host_t {
 	void (*set_core_disabled)(void *opaque, bool disabled);
 	void (*set_interrupt_lines)(void *opaque, uint8_t lines);
 	void (*comm_changed)(void *opaque, uint16_t flags, bool set);
+	void (*events_changed)(void *opaque);
 	int64_t (*get_time_ns)(void *opaque);
 	uint32_t (*get_pc)(void *opaque);
 	uint16_t (*data_read)(void *opaque, uint16_t address);
@@ -47,6 +48,7 @@ void dsp_bus_update_time(dsp_bus_t *bus);
 void dsp_bus_advance(dsp_bus_t *bus, size_t cycles);
 size_t dsp_bus_advance_afe(dsp_bus_t *bus, size_t cycles);
 void dsp_bus_advance_idle(dsp_bus_t *bus, size_t cycles);
+size_t dsp_bus_get_cycles_until_event(const dsp_bus_t *bus);
 bool dsp_bus_needs_core_catchup(const dsp_bus_t *bus);
 uint16_t dsp_bus_read(dsp_bus_t *bus, uint16_t address);
 void dsp_bus_write(dsp_bus_t *bus, uint16_t address, uint16_t value);
