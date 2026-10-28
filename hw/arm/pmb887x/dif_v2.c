@@ -107,6 +107,7 @@ struct pmb887x_dif_t {
 	uint8_t bit_bcsel[32];
 	uint32_t mux_select_mask;
 	uint32_t mux_constant_bits;
+	uint32_t mux_byte_bits[4][256];
 	bool is_mux_identity;
 
 	uint32_t con;
@@ -529,9 +530,12 @@ static inline uint32_t dif_mux(pmb887x_dif_t *p, uint32_t value) {
 	bool is_mux_bypassed = p->is_mux_identity || (dif_get_transfer_csreg(p) & DIFv2_CSREG_CD) != 0;
 	uint32_t selected = value;
 	if (!is_mux_bypassed) {
-		selected = 0;
-		for (uint32_t output_bit = 0; output_bit < 32; output_bit++)
-			selected |= ((value >> p->bit_mux[output_bit]) & 1) << output_bit;
+		selected = (
+			p->mux_byte_bits[0][value & 0xFF] |
+			p->mux_byte_bits[1][(value >> 8) & 0xFF] |
+			p->mux_byte_bits[2][(value >> 16) & 0xFF] |
+			p->mux_byte_bits[3][value >> 24]
+		);
 	}
 	return ((selected & p->mux_select_mask) | p->mux_constant_bits) ^ p->invert_bit;
 }
@@ -942,6 +946,19 @@ static void dif_update_mux(pmb887x_dif_t *p) {
 				p->is_mux_identity = false;
 		} else if (p->bit_bcsel[i] == 1) {
 			p->mux_constant_bits |= (uint32_t) p->bit_bcreg[i] << i;
+		}
+	}
+
+	uint32_t input_bit_outputs[32] = { 0 };
+	for (uint32_t output_bit = 0; output_bit < 32; output_bit++)
+		input_bit_outputs[p->bit_mux[output_bit]] |= 1U << output_bit;
+
+	for (uint32_t lane = 0; lane < 4; lane++) {
+		uint32_t *outputs = p->mux_byte_bits[lane];
+		outputs[0] = 0;
+		for (uint32_t byte = 1; byte < 256; byte++) {
+			uint32_t lowest_bit = ctz32(byte);
+			outputs[byte] = outputs[byte & (byte - 1)] | input_bit_outputs[lane * 8 + lowest_bit];
 		}
 	}
 
