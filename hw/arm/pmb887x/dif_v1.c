@@ -235,13 +235,23 @@ static void dif_transfer_word(pmb887x_dif_t *p) {
 		if ((p->con & DIFv1_CON_LB)) {
 			received = transmitted;
 		} else {
+			uint32_t shifts[2];
+			uint32_t bytes[2];
+			uint32_t replies[2];
+			size_t count = 0;
+
 			if ((p->con & DIFv1_CON_HB_MSB) != 0) {
 				for (int shift = p->bits - 8; shift >= 0; shift -= 8)
-					received |= (ssi_transfer(p->bus, (transmitted >> shift) & 0xFF) & 0xFF) << shift;
+					shifts[count++] = shift;
 			} else {
 				for (int shift = 0; shift < p->bits; shift += 8)
-					received |= (ssi_transfer(p->bus, (transmitted >> shift) & 0xFF) & 0xFF) << shift;
+					shifts[count++] = shift;
 			}
+			for (size_t i = 0; i < count; i++)
+				bytes[i] = (transmitted >> shifts[i]) & 0xFF;
+			ssi_transfer_block(p->bus, bytes, replies, count);
+			for (size_t i = 0; i < count; i++)
+				received |= (replies[i] & 0xFF) << shifts[i];
 		}
 
 		if (pmb887x_fifo_is_full(p->rx_fifo)) {
