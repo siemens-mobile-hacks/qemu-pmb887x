@@ -307,7 +307,9 @@ static void dif_wake_on_tx_fifo_free(pmb887x_dif_t *p, uint32_t stages) {
 		return;
 
 	int64_t end_ps = p->tx_bus_end_ps[(p->tx_bus_first + retiring_stages - 1) % FIFO_SIZE];
-	timer_mod(p->tx_bus_timer, DIV_ROUND_UP(end_ps, 1000));
+	int64_t wake_ns = DIV_ROUND_UP(end_ps, 1000);
+	if ((int64_t) timer_expire_time_ns(p->tx_bus_timer) != wake_ns)
+		timer_mod(p->tx_bus_timer, wake_ns);
 }
 
 static uint32_t dif_get_pin_levels(pmb887x_dif_t *p) {
