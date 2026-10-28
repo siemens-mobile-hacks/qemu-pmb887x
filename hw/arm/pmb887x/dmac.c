@@ -172,7 +172,7 @@ static void dmac_schedule(pmb887x_dmac_t *p) {
 	p->dmac_pending = true;
 
 	if (clock_is_enabled(p->clock) && !timer_pending(p->timer))
-		timer_mod(p->timer, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + 1);
+		timer_mod(p->timer, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL));
 }
 
 static void dmac_clock_update(void *opaque, ClockEvent event) {
