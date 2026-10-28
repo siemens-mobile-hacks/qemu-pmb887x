@@ -400,7 +400,9 @@ static int usart_can_receive(void *opaque) {
 	}
 	if ((p->con & USART_CON_REN) == 0)
 		return 1;
-	return pmb887x_fifo_free_count(p->rx_fifo);
+	if (timer_pending(p->rx_timer))
+		return 0;
+	return MIN(1, pmb887x_fifo_free_count(p->rx_fifo));
 }
 
 static bool usart_autobaud_receive(pmb887x_usart_t *p, uint8_t value) {
@@ -493,7 +495,7 @@ static void usart_receive(void *opaque, const uint8_t *buf, int size) {
 
 	if (input_handled)
 		usart_receive_complete(p);
-	if ((p->abcon & USART_ABCON_ABEN) && !p->autobaud_pending)
+	if (!p->autobaud_pending && (input_handled || (p->abcon & USART_ABCON_ABEN)))
 		usart_schedule_accept_input(p);
 }
 
