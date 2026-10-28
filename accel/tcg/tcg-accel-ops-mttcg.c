@@ -77,6 +77,7 @@ static bool mttcg_wait_for_clock(CPUState *cpu)
     int64_t position, real, until;
 
     cpu_clock_owner_progress(false);
+    cpu_clock_owner_limit_lag();
     position = cpu_clock_owner_position();
     real = cpu_get_real_clock();
     if (position - real < CPU_CLOCK_OWNER_LEAD_NS) {

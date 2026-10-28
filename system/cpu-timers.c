@@ -266,6 +266,28 @@ void cpu_clock_owner_wake(void)
     qemu_mutex_unlock(&cpu_clock_owner_lock);
 }
 
+/* Caller must hold BQL which serves as mutex for vm_clock_seqlock. */
+void cpu_clock_owner_limit_lag(void)
+{
+    int64_t position = cpu_clock_owner_position();
+
+    if (position == INT64_MAX ||
+        cpu_get_raw_clock() - position <= CPU_CLOCK_OWNER_LAG_MAX_NS) {
+        return;
+    }
+    seqlock_write_lock(&timers_state.vm_clock_seqlock,
+                       &timers_state.vm_clock_lock);
+    if (timers_state.cpu_ticks_enabled) {
+        int64_t lag = cpu_get_clock_locked() - position;
+
+        if (lag > CPU_CLOCK_OWNER_LAG_MAX_NS) {
+            timers_state.cpu_clock_offset -= lag - CPU_CLOCK_OWNER_LAG_MAX_NS;
+        }
+    }
+    seqlock_write_unlock(&timers_state.vm_clock_seqlock,
+                         &timers_state.vm_clock_lock);
+}
+
 static uint32_t cpu_clock_owner_budget(int64_t deadline)
 {
     uint32_t cycle_ps = qatomic_read(&cpu_clock_cycle_ps);

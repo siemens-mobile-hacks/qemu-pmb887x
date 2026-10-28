@@ -42,14 +42,18 @@ int64_t cpu_get_clock(void);
  * period (cpu_clock_set_cpu_hz()) per CF_COUNT_CYCLES cycle; other threads
  * read real time bounded by the owner's position, so a slow host slows the
  * clock, which catches up while the guest waits. The owner waits while its
- * position leads real time by CPU_CLOCK_OWNER_LEAD_NS.
+ * position leads real time by CPU_CLOCK_OWNER_LEAD_NS. Real time never leads
+ * the position by more than CPU_CLOCK_OWNER_LAG_MAX_NS: a longer host stall
+ * pauses the clock instead of making the guest catch it up at full speed.
  */
 #define CPU_CLOCK_OWNER_LEAD_NS (200 * SCALE_US)
+#define CPU_CLOCK_OWNER_LAG_MAX_NS (100 * SCALE_MS)
 void cpu_clock_set_cpu_hz(uint64_t hz);
 void cpu_clock_set_owner(uint32_t *cycles, uint32_t *cycle_limit);
 int64_t cpu_clock_owner_position(void);
 void cpu_clock_owner_progress(bool idle);
 void cpu_clock_owner_wake(void);
+void cpu_clock_owner_limit_lag(void);
 int64_t cpu_get_real_clock(void);
 void cpu_clock_owner_start_budget(void);
 void cpu_clock_owner_shorten_budget(void);
