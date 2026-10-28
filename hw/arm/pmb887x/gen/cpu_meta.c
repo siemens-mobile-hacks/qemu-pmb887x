@@ -7223,6 +7223,29 @@ static const pmb887x_io_reg_t jbt6k71_regs[] = {
 	{ "OSD_SCREEN2_START",			0x505,	jbt6k71_osd_screen2_start_fields,		ARRAY_SIZE(jbt6k71_osd_screen2_start_fields),		0 },
 };
 
+static const pmb887x_io_field_t lh15kah2_x_start_fields[] = {
+	{ "ADDR",	0x000000FF,	0,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t lh15kah2_y_start_fields[] = {
+	{ "ADDR",	0x000000FF,	0,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t lh15kah2_x_end_fields[] = {
+	{ "ADDR",	0x000000FF,	0,	NULL,	0 },
+};
+
+static const pmb887x_io_field_t lh15kah2_y_end_fields[] = {
+	{ "ADDR",	0x000000FF,	0,	NULL,	0 },
+};
+
+static const pmb887x_io_reg_t lh15kah2_regs[] = {
+	{ "X_START",	0x4,	lh15kah2_x_start_fields,	ARRAY_SIZE(lh15kah2_x_start_fields),	0 },
+	{ "Y_START",	0x5,	lh15kah2_y_start_fields,	ARRAY_SIZE(lh15kah2_y_start_fields),	0 },
+	{ "X_END",		0x6,	lh15kah2_x_end_fields,		ARRAY_SIZE(lh15kah2_x_end_fields),		0 },
+	{ "Y_END",		0x7,	lh15kah2_y_end_fields,		ARRAY_SIZE(lh15kah2_y_end_fields),		0 },
+};
+
 static const pmb887x_io_value_t lm4946_mode_fields_mc_values[] = {
 	{ "ALL_SHUTDOWN",		0x00000000 },
 	{ "MONO_IN_TO_SPK",		0x00000001 },
@@ -11359,6 +11382,7 @@ static const pmb887x_io_meta_t io_metadata[PMB887X_TRACE_IO_COUNT] = {
 	[PMB887X_TRACE_IO_HD155153NP] = { "hd155153np",	hd155153np_regs,	ARRAY_SIZE(hd155153np_regs) },
 	[PMB887X_TRACE_IO_ILI9320] = { "ili9320",		ili9320_regs,		ARRAY_SIZE(ili9320_regs) },
 	[PMB887X_TRACE_IO_JBT6K71] = { "jbt6k71",		jbt6k71_regs,		ARRAY_SIZE(jbt6k71_regs) },
+	[PMB887X_TRACE_IO_LH15KAH2] = { "lh15kah2",		lh15kah2_regs,		ARRAY_SIZE(lh15kah2_regs) },
 	[PMB887X_TRACE_IO_LM4946] = { "lm4946",			lm4946_regs,		ARRAY_SIZE(lm4946_regs) },
 	[PMB887X_TRACE_IO_PASIC] = { "pasic",			pasic_regs,			ARRAY_SIZE(pasic_regs) },
 	[PMB887X_TRACE_IO_PCF8833] = { "pcf8833",		pcf8833_regs,		ARRAY_SIZE(pcf8833_regs) },

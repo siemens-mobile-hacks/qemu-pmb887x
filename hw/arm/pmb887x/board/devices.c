@@ -78,6 +78,7 @@ static pmb887x_dev_t devices_meta[] = {
 	{ .name = "l2f50333t" },
 	{ .name = "l2f50126t" },
 	{ .name = "l2f50250" },
+	{ .name = "lh15kah2" },
 	{ .name = "lr38826" },
 	{ .name = "r61505" },
 	{ .name = "r63400" },
