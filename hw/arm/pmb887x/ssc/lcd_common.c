@@ -34,9 +34,10 @@ static void lcd_invalidate_full(pmb887x_lcd_t *lcd) {
 static void lcd_update_source_surface(pmb887x_lcd_t *lcd) {
 	/* Reinterpreting 0x00RRGGBB as ABGR swaps red and blue without changing GRAM. */
 	pixman_format_code_t format = lcd->output_bgr != lcd->bgr_filter ? PIXMAN_x8b8g8r8 : PIXMAN_x8r8g8b8;
+	uint32_t *matrix = lcd->gram + lcd->gram_y * lcd->gram_width + lcd->gram_x;
 	qemu_free_displaysurface(lcd->surface);
 	lcd->surface = qemu_create_displaysurface_from(lcd->width, lcd->height, format,
-		lcd->width * 4, (uint8_t *) lcd->gram);
+		lcd->gram_width * 4, (uint8_t *) matrix);
 
 	pixman_transform_t transform;
 	pixman_transform_init_identity(&transform);
@@ -146,7 +147,7 @@ void pmb887x_lcd_set_transform(pmb887x_lcd_t *lcd, bool flip_h_pins, bool flip_v
 	lcd->flip_vertical = new_flip_vertical;
 
 	if (!lcd->gram)
-		lcd->gram = g_new0(uint32_t, lcd->width * lcd->height);
+		lcd->gram = g_new0(uint32_t, lcd->gram_width * lcd->gram_height);
 
 	uint32_t output_width = lcd->rotation == 90 || lcd->rotation == 270 ? lcd->height : lcd->width;
 	uint32_t output_height = lcd->rotation == 90 || lcd->rotation == 270 ? lcd->width : lcd->height;
@@ -168,7 +169,15 @@ void pmb887x_lcd_set_transform(pmb887x_lcd_t *lcd, bool flip_h_pins, bool flip_v
 		lcd->flip_vertical);
 }
 
-static void lcd_mark_dirty(pmb887x_lcd_t *lcd, uint32_t x, uint32_t y) {
+static void lcd_mark_dirty(pmb887x_lcd_t *lcd, uint32_t column, uint32_t row) {
+	if (column < lcd->gram_x || row < lcd->gram_y)
+		return;
+
+	uint32_t x = column - lcd->gram_x;
+	uint32_t y = row - lcd->gram_y;
+	if (x >= lcd->width || y >= lcd->height)
+		return;
+
 	lcd->dirty.x1 = MIN(lcd->dirty.x1, x);
 	lcd->dirty.y1 = MIN(lcd->dirty.y1, y);
 	lcd->dirty.x2 = MAX(lcd->dirty.x2, x);
@@ -463,7 +472,7 @@ static uint32_t lcd_transfer(SSIPeripheral *dev, uint32_t data) {
 			if (!lcd->gram)
 				return 0;
 
-			uint32_t index = lcd->buffer_y * lcd->width + lcd->buffer_x;
+			uint32_t index = lcd->buffer_y * lcd->gram_width + lcd->buffer_x;
 			if (lcd->tmp_index == 0)
 				lcd->tmp_pixel = lcd->encode_pixel(lcd->gram[index]);
 			uint32_t shift = (lcd->byte_pp - lcd->tmp_index - 1) * 8;
@@ -490,7 +499,7 @@ static uint32_t lcd_transfer(SSIPeripheral *dev, uint32_t data) {
 		lcd->tmp_index++;
 
 		if (lcd->tmp_index == lcd->byte_pp) {
-			uint32_t index = lcd->buffer_y * lcd->width + lcd->buffer_x;
+			uint32_t index = lcd->buffer_y * lcd->gram_width + lcd->buffer_x;
 			lcd->gram[index] = lcd->decode_pixel(lcd->tmp_pixel);
 			lcd_mark_dirty(lcd, lcd->buffer_x, lcd->buffer_y);
 			lcd->tmp_pixel = 0;
@@ -512,6 +521,10 @@ static const GraphicHwOps pmb887x_lcd_gfx_ops = {
 static const Property lcd_props[] = {
 	DEFINE_PROP_UINT32("width", pmb887x_lcd_t, width, 240),
 	DEFINE_PROP_UINT32("height", pmb887x_lcd_t, height, 320),
+	DEFINE_PROP_UINT32("gram_width", pmb887x_lcd_t, gram_width, 0),
+	DEFINE_PROP_UINT32("gram_height", pmb887x_lcd_t, gram_height, 0),
+	DEFINE_PROP_UINT32("gram_x", pmb887x_lcd_t, gram_x, 0),
+	DEFINE_PROP_UINT32("gram_y", pmb887x_lcd_t, gram_y, 0),
 	DEFINE_PROP_UINT32("rotation", pmb887x_lcd_t, default_rotation, 0),
 	DEFINE_PROP_BOOL("flip_horizontal", pmb887x_lcd_t, default_flip_horizontal, false),
 	DEFINE_PROP_BOOL("flip_vertical", pmb887x_lcd_t, default_flip_vertical, false),
@@ -564,6 +577,17 @@ static void lcd_handle_reset(void *opaque, int n, int level) {
 }
 
 static void lcd_init(Object *obj) {
+	pmb887x_lcd_t *lcd = PMB887X_LCD(obj);
+	const pmb887x_lcd_geometry_t *geometry = PMB887X_LCD_GET_CLASS(obj)->geometry;
+	if (geometry) {
+		lcd->width = geometry->width;
+		lcd->height = geometry->height;
+		lcd->gram_width = geometry->gram_width;
+		lcd->gram_height = geometry->gram_height;
+		lcd->gram_x = geometry->gram_x;
+		lcd->gram_y = geometry->gram_y;
+	}
+
 	DeviceState *dev = DEVICE(obj);
 	qdev_init_gpio_in_named(DEVICE(dev), lcd_handle_rd, "RD_IN", 1);
 	qdev_init_gpio_in_named(DEVICE(dev), lcd_handle_wr, "WR_IN", 1);
@@ -576,6 +600,14 @@ static void lcd_realize(SSIPeripheral *d, Error **errp) {
 	lcd->k = PMB887X_LCD_GET_CLASS(d);
 	lcd->read_active = false;
 	lcd->reset_active = false;
+
+	if (lcd->gram_width == 0)
+		lcd->gram_width = lcd->width;
+	if (lcd->gram_height == 0)
+		lcd->gram_height = lcd->height;
+	if (lcd->gram_x + lcd->width > lcd->gram_width || lcd->gram_y + lcd->height > lcd->gram_height)
+		hw_error("LCD matrix %ux%u at %u,%u does not fit %ux%u GRAM", lcd->width, lcd->height,
+			lcd->gram_x, lcd->gram_y, lcd->gram_width, lcd->gram_height);
 
 	pmb887x_fifo8_init(&lcd->fifo, LCD_CMD_MAX_PARAMS);
 
@@ -595,8 +627,8 @@ static void lcd_realize(SSIPeripheral *d, Error **errp) {
 
 	pmb887x_lcd_set_window_x1(lcd, 0);
 	pmb887x_lcd_set_window_y1(lcd, 0);
-	pmb887x_lcd_set_window_x2(lcd, lcd->width - 1);
-	pmb887x_lcd_set_window_y2(lcd, lcd->height - 1);
+	pmb887x_lcd_set_window_x2(lcd, lcd->gram_width - 1);
+	pmb887x_lcd_set_window_y2(lcd, lcd->gram_height - 1);
 
 	if (lcd->k->realize)
 		lcd->k->realize(lcd, errp);

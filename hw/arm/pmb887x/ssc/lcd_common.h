@@ -14,6 +14,7 @@ OBJECT_DECLARE_TYPE(pmb887x_lcd_t, pmb887x_lcd_class_t, PMB887X_LCD);
 #define LCD_DATA_IS_CMD (1 << 8)
 
 typedef struct pmb887x_lcd_rect_t pmb887x_lcd_rect_t;
+typedef struct pmb887x_lcd_geometry_t pmb887x_lcd_geometry_t;
 
 enum pmb887x_lcd_wr_state_t {
 	LCD_WR_STATE_NONE,
@@ -40,6 +41,15 @@ struct pmb887x_lcd_rect_t {
 	int y2;
 };
 
+struct pmb887x_lcd_geometry_t {
+	uint32_t width;
+	uint32_t height;
+	uint32_t gram_width;
+	uint32_t gram_height;
+	uint32_t gram_x;
+	uint32_t gram_y;
+};
+
 struct pmb887x_lcd_t {
 	SSIPeripheral parent;
 	pmb887x_lcd_class_t *k;
@@ -51,6 +61,10 @@ struct pmb887x_lcd_t {
 
 	uint32_t width;
 	uint32_t height;
+	uint32_t gram_width;
+	uint32_t gram_height;
+	uint32_t gram_x;
+	uint32_t gram_y;
 
 	uint32_t rotation;
 	bool flip_horizontal;
@@ -101,6 +115,7 @@ struct pmb887x_lcd_t {
 
 struct pmb887x_lcd_class_t {
 	SSIPeripheralClass parent_class;
+	const pmb887x_lcd_geometry_t *geometry;
 	uint16_t cmd_width;
 	uint16_t param_width;
 	uint8_t gram_read_dummy_pixels;
@@ -128,25 +143,25 @@ static inline void pmb887x_lcd_set_cd(pmb887x_lcd_t *lcd, bool value) {
 }
 
 static inline void pmb887x_lcd_set_window_y1(pmb887x_lcd_t *lcd, uint32_t value) {
-	lcd->window.y1 = MIN(value, lcd->height - 1);
+	lcd->window.y1 = MIN(value, lcd->gram_height - 1);
 }
 
 static inline void pmb887x_lcd_set_window_y2(pmb887x_lcd_t *lcd, uint32_t value) {
-	lcd->window.y2 = MIN(value, lcd->height - 1);
+	lcd->window.y2 = MIN(value, lcd->gram_height - 1);
 }
 
 static inline void pmb887x_lcd_set_window_x1(pmb887x_lcd_t *lcd, uint32_t value) {
-	lcd->window.x1 = MIN(value, lcd->width - 1);
+	lcd->window.x1 = MIN(value, lcd->gram_width - 1);
 }
 
 static inline void pmb887x_lcd_set_window_x2(pmb887x_lcd_t *lcd, uint32_t value) {
-	lcd->window.x2 = MIN(value, lcd->width - 1);
+	lcd->window.x2 = MIN(value, lcd->gram_width - 1);
 }
 
 static inline void pmb887x_lcd_set_x(pmb887x_lcd_t *lcd, uint32_t value) {
-	lcd->buffer_x = MIN(value, lcd->width - 1);
+	lcd->buffer_x = MIN(value, lcd->gram_width - 1);
 }
 
 static inline void pmb887x_lcd_set_y(pmb887x_lcd_t *lcd, uint32_t value) {
-	lcd->buffer_y = MIN(value, lcd->height - 1);
+	lcd->buffer_y = MIN(value, lcd->gram_height - 1);
 }

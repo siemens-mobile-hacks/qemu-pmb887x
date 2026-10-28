@@ -1,5 +1,5 @@
 /*
- * Epson L2F50250 (TFT, 128x128)
+ * Epson L2F50250 (TFT, 130x130)
  * */
 #define PMB887X_TRACE_ID		LCD
 #define PMB887X_TRACE_PREFIX	"l2f50250"
@@ -16,6 +16,15 @@
 
 #define L2F50333T_MAX_BPP		18
 #define L2F50333T_MAX_REGS		256
+
+static const pmb887x_lcd_geometry_t L2F50250_GEOMETRY = {
+	.width = 130,
+	.height = 130,
+	.gram_width = 132,
+	.gram_height = 132,
+	.gram_x = 1,
+	.gram_y = 1,
+};
 
 static const uint16_t DEFAULT_REGS[][128] = {
 	[0x36] = { 0x00 }, // MADCTL
@@ -135,6 +144,7 @@ static void lcd_realize(pmb887x_lcd_t *lcd, Error **errp) {
 
 static void lcd_class_init(ObjectClass *oc, const void *data) {
 	pmb887x_lcd_class_t *k = PMB887X_LCD_CLASS(oc);
+	k->geometry = &L2F50250_GEOMETRY;
 	k->cmd_width = 1;
 	k->param_width = 1;
 	k->on_cmd = lcd_on_cmd;

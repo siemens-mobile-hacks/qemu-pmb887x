@@ -9,6 +9,7 @@
 #include "hw/arm/pmb887x/rf.h"
 #include "hw/arm/pmb887x/sim.h"
 #include "hw/arm/pmb887x/sim/sim_card.h"
+#include "hw/arm/pmb887x/ssc/lcd_common.h"
 #include "hw/arm/pmb887x/utils/regexp.h"
 #include "hw/arm/pmb887x/utils/toml.h"
 
@@ -55,118 +56,31 @@ struct pmb887x_dev_t {
 
 static int global_cs_index = 0;
 
+static const pmb887x_dev_prop_t LCD_PROPS[] = {
+	{ "width", DEV_PROP_UINT, false },
+	{ "height", DEV_PROP_UINT, false },
+	{ "gram_width", DEV_PROP_UINT, false },
+	{ "gram_height", DEV_PROP_UINT, false },
+	{ "gram_x", DEV_PROP_UINT, false },
+	{ "gram_y", DEV_PROP_UINT, false },
+	{ "rotation", DEV_PROP_UINT, false },
+	{ "flip_horizontal", DEV_PROP_BOOL, false },
+	{ "flip_vertical", DEV_PROP_BOOL, false },
+	{ "bgr_filter", DEV_PROP_BOOL, false },
+};
+
 static pmb887x_dev_t devices_meta[] = {
 	// LCD
-	{
-		.name = "jbt6k71",
-		.props = {
-			{ "width", DEV_PROP_UINT, true },
-			{ "height", DEV_PROP_UINT, true },
-			{ "rotation", DEV_PROP_UINT, false },
-			{ "flip_horizontal", DEV_PROP_BOOL, false },
-			{ "flip_vertical", DEV_PROP_BOOL, false },
-			{ "bgr_filter", DEV_PROP_BOOL, false },
-		},
-	},
-	{
-		.name = "ssd1286",
-		.props = {
-			{ "width", DEV_PROP_UINT, true },
-			{ "height", DEV_PROP_UINT, true },
-			{ "rotation", DEV_PROP_UINT, false },
-			{ "flip_horizontal", DEV_PROP_BOOL, false },
-			{ "flip_vertical", DEV_PROP_BOOL, false },
-			{ "bgr_filter", DEV_PROP_BOOL, false },
-		},
-	},
-	{
-		.name = "pcf8882",
-		.props = {
-			{ "width", DEV_PROP_UINT, true },
-			{ "height", DEV_PROP_UINT, true },
-			{ "rotation", DEV_PROP_UINT, false },
-			{ "flip_horizontal", DEV_PROP_BOOL, false },
-			{ "flip_vertical", DEV_PROP_BOOL, false },
-			{ "bgr_filter", DEV_PROP_BOOL, false },
-		},
-	},
-	{
-		.name = "hx5050a",
-		.props = {
-			{ "width", DEV_PROP_UINT, true },
-			{ "height", DEV_PROP_UINT, true },
-			{ "rotation", DEV_PROP_UINT, false },
-			{ "flip_horizontal", DEV_PROP_BOOL, false },
-			{ "flip_vertical", DEV_PROP_BOOL, false },
-			{ "bgr_filter", DEV_PROP_BOOL, false },
-		},
-	},
-	{
-		.name = "l2f50333t",
-		.props = {
-			{ "width", DEV_PROP_UINT, true },
-			{ "height", DEV_PROP_UINT, true },
-			{ "rotation", DEV_PROP_UINT, false },
-			{ "flip_horizontal", DEV_PROP_BOOL, false },
-			{ "flip_vertical", DEV_PROP_BOOL, false },
-			{ "bgr_filter", DEV_PROP_BOOL, false },
-		},
-	},
-	{
-		.name = "l2f50126t",
-		.props = {
-			{ "width", DEV_PROP_UINT, true },
-			{ "height", DEV_PROP_UINT, true },
-			{ "rotation", DEV_PROP_UINT, false },
-			{ "flip_horizontal", DEV_PROP_BOOL, false },
-			{ "flip_vertical", DEV_PROP_BOOL, false },
-			{ "bgr_filter", DEV_PROP_BOOL, false },
-		},
-	},
-	{
-		.name = "l2f50250",
-		.props = {
-			{ "width", DEV_PROP_UINT, true },
-			{ "height", DEV_PROP_UINT, true },
-			{ "rotation", DEV_PROP_UINT, false },
-			{ "flip_horizontal", DEV_PROP_BOOL, false },
-			{ "flip_vertical", DEV_PROP_BOOL, false },
-			{ "bgr_filter", DEV_PROP_BOOL, false },
-		},
-	},
-	{
-		.name = "lr38826",
-		.props = {
-			{ "width", DEV_PROP_UINT, true },
-			{ "height", DEV_PROP_UINT, true },
-			{ "rotation", DEV_PROP_UINT, false },
-			{ "flip_horizontal", DEV_PROP_BOOL, false },
-			{ "flip_vertical", DEV_PROP_BOOL, false },
-			{ "bgr_filter", DEV_PROP_BOOL, false },
-		},
-	},
-	{
-		.name = "r61505",
-		.props = {
-			{ "width", DEV_PROP_UINT, true },
-			{ "height", DEV_PROP_UINT, true },
-			{ "rotation", DEV_PROP_UINT, false },
-			{ "flip_horizontal", DEV_PROP_BOOL, false },
-			{ "flip_vertical", DEV_PROP_BOOL, false },
-			{ "bgr_filter", DEV_PROP_BOOL, false },
-		},
-	},
-	{
-		.name = "r63400",
-		.props = {
-			{ "width", DEV_PROP_UINT, true },
-			{ "height", DEV_PROP_UINT, true },
-			{ "rotation", DEV_PROP_UINT, false },
-			{ "flip_horizontal", DEV_PROP_BOOL, false },
-			{ "flip_vertical", DEV_PROP_BOOL, false },
-			{ "bgr_filter", DEV_PROP_BOOL, false },
-		},
-	},
+	{ .name = "jbt6k71" },
+	{ .name = "ssd1286" },
+	{ .name = "pcf8882" },
+	{ .name = "hx5050a" },
+	{ .name = "l2f50333t" },
+	{ .name = "l2f50126t" },
+	{ .name = "l2f50250" },
+	{ .name = "lr38826" },
+	{ .name = "r61505" },
+	{ .name = "r63400" },
 
 	// PMIC
 	{
@@ -328,35 +242,41 @@ static void device_init_ports_from_config(GHashTable *devices, DeviceState *dev,
 	}
 }
 
-static void device_init_props_from_config(DeviceState *dev, const pmb887x_dev_t *meta, toml_datum_t table) {
-	for (int i = 0; i < ARRAY_SIZE(meta->props); i++) {
-		const pmb887x_dev_prop_t *prop = &meta->props[i];
-		if (!prop->required && toml_seek(table, prop->name).type == TOML_UNKNOWN)
-			continue;
+static void device_init_prop_from_config(DeviceState *dev, const pmb887x_dev_prop_t *prop, toml_datum_t table) {
+	if (!prop->required && toml_seek(table, prop->name).type == TOML_UNKNOWN)
+		return;
 
-		switch (prop->type) {
-			case DEV_PROP_INT: {
-				int value = toml_table_get_int32(table, prop->name, -1, true);
-				qdev_prop_set_uint32(dev, prop->name, value);
-				break;
-			}
-			case DEV_PROP_UINT: {
-				uint32_t value = toml_table_get_uint32(table, prop->name, 0, true);
-				qdev_prop_set_uint32(dev, prop->name, value);
-				break;
-			}
-			case DEV_PROP_STRING: {
-				const char *value = toml_table_get_string(table, prop->name, NULL, true);
-				qdev_prop_set_string(dev, prop->name, value);
-				break;
-			}
-			case DEV_PROP_BOOL: {
-				bool value = toml_table_get_bool(table, prop->name, false, true);
-				object_property_set_bool(OBJECT(dev), prop->name, value, &error_fatal);
-				break;
-			}
+	switch (prop->type) {
+		case DEV_PROP_INT: {
+			int value = toml_table_get_int32(table, prop->name, -1, true);
+			qdev_prop_set_uint32(dev, prop->name, value);
+			break;
+		}
+		case DEV_PROP_UINT: {
+			uint32_t value = toml_table_get_uint32(table, prop->name, 0, true);
+			qdev_prop_set_uint32(dev, prop->name, value);
+			break;
+		}
+		case DEV_PROP_STRING: {
+			const char *value = toml_table_get_string(table, prop->name, NULL, true);
+			qdev_prop_set_string(dev, prop->name, value);
+			break;
+		}
+		case DEV_PROP_BOOL: {
+			bool value = toml_table_get_bool(table, prop->name, false, true);
+			object_property_set_bool(OBJECT(dev), prop->name, value, &error_fatal);
+			break;
 		}
 	}
+}
+
+static void device_init_props_from_config(DeviceState *dev, const pmb887x_dev_t *meta, toml_datum_t table) {
+	if (object_dynamic_cast(OBJECT(dev), TYPE_PMB887X_LCD)) {
+		for (int i = 0; i < ARRAY_SIZE(LCD_PROPS); i++)
+			device_init_prop_from_config(dev, &LCD_PROPS[i], table);
+	}
+	for (int i = 0; i < ARRAY_SIZE(meta->props); i++)
+		device_init_prop_from_config(dev, &meta->props[i], table);
 }
 
 static void device_init_gpios_from_config(DeviceState *dev, toml_datum_t table) {

@@ -159,8 +159,8 @@ static void lcd_reset(pmb887x_lcd_t *lcd) {
 	pmb887x_lcd_panel_t *priv = PMB887X_LCD_PANEL(lcd);
 	memset(priv->regs, 0, sizeof(priv->regs));
 	memcpy(priv->regs, DEFAULT_REGS, sizeof(DEFAULT_REGS));
-	priv->regs[JBT6K71_HORIZONTAL_RAM_END] = lcd->width - 1;
-	priv->regs[JBT6K71_VERTICAL_RAM_END] = lcd->height - 1;
+	priv->regs[JBT6K71_HORIZONTAL_RAM_END] = lcd->gram_width - 1;
+	priv->regs[JBT6K71_VERTICAL_RAM_END] = lcd->gram_height - 1;
 
 	lcd_update_state(lcd);
 	pmb887x_lcd_set_x(lcd, priv->regs[JBT6K71_RAM_ADDRESS_LOW]);

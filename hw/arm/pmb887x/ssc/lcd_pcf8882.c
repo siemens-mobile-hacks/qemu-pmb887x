@@ -18,6 +18,11 @@
 #define PCF8882_REGISTER_COUNT 0x100
 #define PCF8882_MAX_PARAMS 4
 
+static const pmb887x_lcd_geometry_t PCF8882_GEOMETRY = {
+    .width = 132,
+    .height = 176,
+};
+
 typedef struct pmb887x_lcd_pcf8882_t pmb887x_lcd_pcf8882_t;
 
 struct pmb887x_lcd_pcf8882_t {
@@ -139,9 +144,9 @@ static void pcf8882_reset(pmb887x_lcd_t *lcd) {
     pmb887x_lcd_set_x(lcd, 0);
     pmb887x_lcd_set_y(lcd, 0);
     pmb887x_lcd_set_window_x1(lcd, 0);
-    pmb887x_lcd_set_window_x2(lcd, lcd->width - 1);
+    pmb887x_lcd_set_window_x2(lcd, lcd->gram_width - 1);
     pmb887x_lcd_set_window_y1(lcd, 0);
-    pmb887x_lcd_set_window_y2(lcd, lcd->height - 1);
+    pmb887x_lcd_set_window_y2(lcd, lcd->gram_height - 1);
 }
 
 static void pcf8882_realize(pmb887x_lcd_t *lcd, Error **errp) {
@@ -150,6 +155,7 @@ static void pcf8882_realize(pmb887x_lcd_t *lcd, Error **errp) {
 
 static void pcf8882_class_init(ObjectClass *oc, const void *data) {
     pmb887x_lcd_class_t *k = PMB887X_LCD_CLASS(oc);
+    k->geometry = &PCF8882_GEOMETRY;
     k->cmd_width = 1;
     k->param_width = 1;
     k->on_cmd = pcf8882_on_cmd;
