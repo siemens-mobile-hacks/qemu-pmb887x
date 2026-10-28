@@ -14,6 +14,7 @@
 #include "hw/core/sysbus.h"
 #include "qemu/module.h"
 #include "qemu/main-loop.h"
+#include "qemu/timer.h"
 #include "qom/object.h"
 #include "hw/core/qdev-properties.h"
 
@@ -27,6 +28,7 @@
 
 #define FIFO_IO_SIZE	0x3FFF
 #define FIFO_SIZE		16
+#define PS_PER_S		1000000000000ULL
 #define DIF_PINS_POLARITY_MASK	( \
 	DIFv2_PERREG_CS1POL | DIFv2_PERREG_CS2POL | DIFv2_PERREG_CS3POL | \
 	DIFv2_PERREG_CDPOL | DIFv2_PERREG_RDPOL | DIFv2_PERREG_WRPOL \
@@ -135,6 +137,13 @@ struct pmb887x_dif_t {
 
 	pmb887x_fifo32_t tx_fifo;
 	pmb887x_fifo32_t tx_csreg_fifo;
+	/* Stages already sent to the device but still on the parallel bus, oldest first. */
+	int64_t tx_bus_end_ps[FIFO_SIZE];
+	uint32_t tx_bus_first;
+	uint32_t tx_bus_count;
+	uint32_t tx_bus_words;
+	int64_t tx_bus_free_ps;
+	QEMUTimer *tx_bus_timer;
 	pmb887x_fifo32_t rx_fifo;
 	uint32_t tx_csreg;
 	bool is_tx_csreg_active;
@@ -232,6 +241,72 @@ static inline uint32_t dif_get_word_mask(uint32_t word_bits) {
 
 static inline bool dif_is_pbc_enabled(pmb887x_dif_t *p) {
 	return (p->pbccon & DIFv2_PBCCON_PBBCONV_MODE) != 0;
+}
+
+static int64_t dif_get_now_ps(void) {
+	return qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) * 1000;
+}
+
+/* bsp dif-v2-timings: a parallel bus word takes ((ACCESSCYCLE - 1) mod 32) + 2 module clock cycles. */
+static uint64_t dif_get_bus_word_ps(pmb887x_dif_t *p) {
+	uint32_t hz = pmb887x_clc_get_hz(&p->clc);
+	if (dif_is_serial(p) || hz == 0)
+		return 0;
+
+	uint32_t access_cycle = (p->lcdtim[0] & DIFv2_LCDTIM1_ACCESSCYCLE) >> DIFv2_LCDTIM1_ACCESSCYCLE_SHIFT;
+	uint32_t cycles = ((access_cycle - 1) & 0x1F) + 2;
+	return cycles * PS_PER_S / hz;
+}
+
+static void dif_retire_tx_bus(pmb887x_dif_t *p) {
+	int64_t now_ps = dif_get_now_ps();
+	while (p->tx_bus_count != 0 && p->tx_bus_end_ps[p->tx_bus_first] <= now_ps) {
+		p->tx_bus_first = (p->tx_bus_first + 1) % FIFO_SIZE;
+		p->tx_bus_count--;
+	}
+}
+
+static void dif_reset_tx_bus(pmb887x_dif_t *p) {
+	timer_del(p->tx_bus_timer);
+	p->tx_bus_first = 0;
+	p->tx_bus_count = 0;
+	p->tx_bus_words = 0;
+	p->tx_bus_free_ps = 0;
+}
+
+static uint32_t dif_get_tx_fifo_level(pmb887x_dif_t *p) {
+	return pmb887x_fifo_count(&p->tx_fifo) + p->tx_bus_count;
+}
+
+static bool dif_has_tx_fifo_free(pmb887x_dif_t *p, uint32_t stages) {
+	if (FIFO_SIZE - dif_get_tx_fifo_level(p) >= stages)
+		return true;
+
+	dif_retire_tx_bus(p);
+	return FIFO_SIZE - dif_get_tx_fifo_level(p) >= stages;
+}
+
+static void dif_occupy_tx_bus(pmb887x_dif_t *p) {
+	uint64_t word_ps = dif_get_bus_word_ps(p);
+	uint32_t words = p->tx_bus_words;
+	p->tx_bus_words = 0;
+	if (word_ps == 0 || words == 0)
+		return;
+
+	g_assert(p->tx_bus_count < FIFO_SIZE);
+	int64_t end_ps = MAX(p->tx_bus_free_ps, dif_get_now_ps()) + words * word_ps;
+	p->tx_bus_end_ps[(p->tx_bus_first + p->tx_bus_count) % FIFO_SIZE] = end_ps;
+	p->tx_bus_count++;
+	p->tx_bus_free_ps = end_ps;
+}
+
+static void dif_wake_on_tx_fifo_free(pmb887x_dif_t *p, uint32_t stages) {
+	uint32_t retiring_stages = stages - (FIFO_SIZE - dif_get_tx_fifo_level(p));
+	if (p->tx_bus_count < retiring_stages)
+		return;
+
+	int64_t end_ps = p->tx_bus_end_ps[(p->tx_bus_first + retiring_stages - 1) % FIFO_SIZE];
+	timer_mod(p->tx_bus_timer, DIV_ROUND_UP(end_ps, 1000));
 }
 
 static uint32_t dif_get_pin_levels(pmb887x_dif_t *p) {
@@ -337,10 +412,12 @@ static void dif_tx_fifo_req(pmb887x_dif_t *p) {
 			return;
 		if ((p->txfifo_cfg & DIFv2_TXFIFO_CFG_TXFC) != 0)
 			return;
-		if (pmb887x_fifo_free_count(&p->tx_fifo) >= burst_req_count) {
-			pmb887x_srb_set_isr(&p->srb, DIFv2_ISR_TXBREQ);
-			p->tx_fifo_req = true;
+		if (!dif_has_tx_fifo_free(p, burst_req_count)) {
+			dif_wake_on_tx_fifo_free(p, burst_req_count);
+			return;
 		}
+		pmb887x_srb_set_isr(&p->srb, DIFv2_ISR_TXBREQ);
+		p->tx_fifo_req = true;
 		return;
 	}
 
@@ -353,12 +430,15 @@ static void dif_tx_fifo_req(pmb887x_dif_t *p) {
 
 	if (tx_words_remaining == 0)
 		return;
-	if (tx_words_remaining >= burst_req_size && pmb887x_fifo_free_count(&p->tx_fifo) < burst_req_count)
-		return;
-	if (tx_words_remaining < burst_req_size && pmb887x_fifo_free_count(&p->tx_fifo) < 1)
-		return;
 
-	if ((p->txfifo_cfg & DIFv2_TXFIFO_CFG_TXFC) != 0) {
+	bool is_flow_controlled = (p->txfifo_cfg & DIFv2_TXFIFO_CFG_TXFC) != 0;
+	uint32_t required_free = (!is_flow_controlled || tx_words_remaining >= burst_req_size) ? burst_req_count : 1;
+	if (!dif_has_tx_fifo_free(p, required_free)) {
+		dif_wake_on_tx_fifo_free(p, required_free);
+		return;
+	}
+
+	if (is_flow_controlled) {
 		if (tx_words_remaining > burst_req_size) {
 			pmb887x_srb_set_isr(&p->srb, DIFv2_ISR_TXBREQ);
 		} else if (pending_req_count == burst_req_count) {
@@ -368,11 +448,10 @@ static void dif_tx_fifo_req(pmb887x_dif_t *p) {
 		} else {
 			pmb887x_srb_set_isr(&p->srb, DIFv2_ISR_TXLSREQ);
 		}
-		p->tx_fifo_req = true;
-	} else if (pmb887x_fifo_free_count(&p->tx_fifo) >= burst_req_count) {
+	} else {
 		pmb887x_srb_set_isr(&p->srb, DIFv2_ISR_TXBREQ);
-		p->tx_fifo_req = true;
 	}
+	p->tx_fifo_req = true;
 }
 
 static void dif_rx_fifo_req(pmb887x_dif_t *p) {
@@ -489,7 +568,7 @@ static uint32_t dif_convert_color(pmb887x_dif_t *p, uint32_t value) {
 static void dif_rx_from_bus(pmb887x_dif_t *p);
 
 static void dif_fifo_write(pmb887x_dif_t *p, uint32_t value) {
-	if (!pmb887x_fifo_free_count(&p->tx_fifo)) {
+	if (!dif_has_tx_fifo_free(p, 1)) {
 		DPRINTF("TX FIFO overflow!\n");
 		pmb887x_srb_ext_set_isr(&p->srb_err, DIFv2_ERRIRQSS_TXFOFL);
 		dif_kernel_reset(p, DIF_STATE_NONE);
@@ -665,6 +744,7 @@ static bool dif_send_word(pmb887x_dif_t *p, uint16_t value) {
 	DPRINTF("BUS %03X cd=%d\n", value, (dif_get_transfer_csreg(p) & DIFv2_CSREG_CD) != 0);
 
 	uint16_t received = dif_bus_transfer(p, value);
+	p->tx_bus_words++;
 	if (dif_is_serial(p))
 		return dif_push_rx_word(p, received);
 
@@ -763,6 +843,7 @@ static void dif_tx_from_fifo(pmb887x_dif_t *p) {
 					goto done;
 			}
 		}
+		dif_occupy_tx_bus(p);
 		if (p->tx_words_remaining != 0) {
 			dif_rx_fifo_req(p);
 			if (p->rx_fifo_req)
@@ -824,6 +905,10 @@ static void dif_work(pmb887x_dif_t *p) {
 }
 
 static void dif_rx_refill(void *opaque) {
+	dif_schedule(opaque);
+}
+
+static void dif_tx_bus_wake(void *opaque) {
 	dif_schedule(opaque);
 }
 
@@ -928,11 +1013,12 @@ static uint64_t dif_io_read(void *opaque, hwaddr haddr, unsigned size) {
 			break;
 
 		case DIFv2_STAT:
+			dif_retire_tx_bus(p);
 			if (dif_is_running(p)) {
 				bool is_busy = (
 					(p->state == DIF_STATE_TX && p->is_tx_started) ||
 					(p->state == DIF_STATE_RX && (p->startlcdrd & DIFv2_STARTLCDRD_STARTREAD) != 0) ||
-					pmb887x_fifo_count(&p->tx_fifo) > 0
+					dif_get_tx_fifo_level(p) > 0
 				);
 				value |= is_busy ? DIFv2_STAT_BSY : 0;
 			}
@@ -1017,7 +1103,8 @@ static uint64_t dif_io_read(void *opaque, hwaddr haddr, unsigned size) {
 			break;
 
 		case DIFv2_TXFFS_STAT:
-			value = pmb887x_fifo_count(&p->tx_fifo);
+			dif_retire_tx_bus(p);
+			value = dif_get_tx_fifo_level(p);
 			break;
 
 		case DIFv2_ERRIRQSM:
@@ -1096,6 +1183,7 @@ static void dif_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned si
 				dif_kernel_reset(p, DIF_STATE_NONE);
 				pmb887x_fifo_reset(&p->tx_fifo);
 				pmb887x_fifo_reset(&p->tx_csreg_fifo);
+				dif_reset_tx_bus(p);
 				dif_reset_rx_fifo(p);
 			}
 			/* Without this a byte queued while stopped stays in the FIFO until the next
@@ -1384,12 +1472,14 @@ static void dif_realize(DeviceState *dev, Error **errp) {
 	dif_update_mux(p);
 
 	p->rx_refill_bh = qemu_bh_new(dif_rx_refill, p);
+	p->tx_bus_timer = timer_new_ns(QEMU_CLOCK_VIRTUAL, dif_tx_bus_wake, p);
 }
 
 static void dif_unrealize(DeviceState *dev) {
 	pmb887x_dif_t *p = PMB887X_DIF(dev);
 
 	qemu_bh_delete(p->rx_refill_bh);
+	timer_free(p->tx_bus_timer);
 }
 
 static void dif_reset(DeviceState *dev) {
@@ -1405,6 +1495,7 @@ static void dif_reset(DeviceState *dev) {
 	pmb887x_fifo_reset(&p->tx_fifo);
 	pmb887x_fifo_reset(&p->tx_csreg_fifo);
 	pmb887x_fifo_reset(&p->rx_fifo);
+	dif_reset_tx_bus(p);
 
 	p->in_schedule = false;
 	p->transfer_pending = false;
