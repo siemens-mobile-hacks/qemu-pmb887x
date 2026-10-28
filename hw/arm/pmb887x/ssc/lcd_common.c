@@ -513,6 +513,14 @@ static uint32_t lcd_transfer(SSIPeripheral *dev, uint32_t data) {
 	return 0;
 }
 
+static void lcd_transfer_block(SSIPeripheral *dev, const uint32_t *tx, uint32_t *rx, size_t count) {
+	for (size_t i = 0; i < count; i++) {
+		uint32_t reply = lcd_transfer(dev, tx[i]);
+		if (rx)
+			rx[i] = reply;
+	}
+}
+
 static const GraphicHwOps pmb887x_lcd_gfx_ops = {
 	.invalidate = lcd_invalidate_display,
 	.gfx_update = lcd_update_display
@@ -645,6 +653,7 @@ static void lcd_class_init(ObjectClass *klass, const void *data) {
 	device_class_set_legacy_reset(dc, lcd_reset);
 	k->realize = lcd_realize;
 	k->transfer = lcd_transfer;
+	k->transfer_block = lcd_transfer_block;
 	k->cs_polarity = SSI_CS_LOW;
 }
 
