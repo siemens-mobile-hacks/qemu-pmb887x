@@ -41,6 +41,13 @@ struct SSIPeripheralClass {
      * See ssi_transfer().
      */
     uint32_t (*transfer)(SSIPeripheral *dev, uint32_t val);
+    /* optional: transfer several words while the device is selected, with
+     * the same effect as calling transfer for each of them in order. @rx,
+     * when not NULL, receives the reply to each word.
+     * See ssi_transfer_block().
+     */
+    void (*transfer_block)(SSIPeripheral *dev, const uint32_t *tx,
+                           uint32_t *rx, size_t count);
     /* called when the CS line changes. Optional, devices only need to implement
      * this if they have side effects associated with the cs line (beyond
      * tristating the txrx lines).
@@ -125,6 +132,12 @@ SSIBus *ssi_create_bus(DeviceState *parent, const char *name);
  * Return: word value received
  */
 uint32_t ssi_transfer(SSIBus *bus, uint32_t val);
+/*
+ * Transfers the words in order, with the same effect as calling ssi_transfer()
+ * for each of them. @rx, when not NULL, receives the reply to each word.
+ */
+void ssi_transfer_block(SSIBus *bus, const uint32_t *tx, uint32_t *rx,
+                        size_t count);
 
 DeviceState *ssi_get_cs(SSIBus *bus, uint8_t cs_index);
 
