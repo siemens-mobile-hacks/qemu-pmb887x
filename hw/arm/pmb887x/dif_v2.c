@@ -755,6 +755,13 @@ static bool dif_send_word(pmb887x_dif_t *p, uint16_t value) {
 	return true;
 }
 
+static void dif_send_parallel_words(pmb887x_dif_t *p, const uint32_t *words, uint32_t count) {
+	DPRINTF("BUS %u words cd=%d\n", count, (dif_get_transfer_csreg(p) & DIFv2_CSREG_CD) != 0);
+
+	ssi_transfer_block(p->bus, words, NULL, count);
+	p->tx_bus_words += count;
+}
+
 static bool dif_convert_word(pmb887x_dif_t *p, uint16_t value, uint32_t *output) {
 	if (!dif_is_pbc_enabled(p)) {
 		uint32_t word_mask = dif_get_word_mask(dif_get_tx_word_bits(p));
@@ -830,14 +837,21 @@ static void dif_tx_from_fifo(pmb887x_dif_t *p) {
 				value = dif_convert_color(p, value);
 
 			uint32_t lanes = 4 / align;
+			uint32_t parallel_words[4 * 4];
+			uint32_t parallel_word_count = 0;
 			for (uint32_t lane = 0; lane < lanes; lane++) {
 				for (uint32_t i = 0; i < bsconf_word_count; i++) {
 					uint16_t word = (value >> (bsconf_word_bits * (lane * align + i))) & ((1 << bsconf_word_bits) - 1);
 
-					if (!dif_send_word(p, word))
+					if (!dif_is_serial(p)) {
+						parallel_words[parallel_word_count++] = word;
+					} else if (!dif_send_word(p, word)) {
 						goto done;
+					}
 				}
 			}
+			if (parallel_word_count != 0)
+				dif_send_parallel_words(p, parallel_words, parallel_word_count);
 		} else {
 			for (uint32_t i = 0; i < words_in_fifo_reg; i++) {
 				uint32_t converted;
