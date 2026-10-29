@@ -287,8 +287,7 @@ static bool dif_has_tx_fifo_free(pmb887x_dif_t *p, uint32_t stages) {
 	return FIFO_SIZE - dif_get_tx_fifo_level(p) >= stages;
 }
 
-static void dif_occupy_tx_bus(pmb887x_dif_t *p) {
-	uint64_t word_ps = dif_get_bus_word_ps(p);
+static void dif_occupy_tx_bus(pmb887x_dif_t *p, uint64_t word_ps) {
 	uint32_t words = p->tx_bus_words;
 	p->tx_bus_words = 0;
 	if (word_ps == 0 || words == 0)
@@ -761,7 +760,6 @@ static void dif_send_parallel_words(pmb887x_dif_t *p, const uint32_t *words, uin
 	DPRINTF("BUS %u words cd=%d\n", count, (dif_get_transfer_csreg(p) & DIFv2_CSREG_CD) != 0);
 
 	ssi_transfer_block(p->bus, words, NULL, count);
-	p->tx_bus_words += count;
 }
 
 static bool dif_convert_word(pmb887x_dif_t *p, uint16_t value, uint32_t *output) {
@@ -804,9 +802,17 @@ static void dif_tx_from_fifo(pmb887x_dif_t *p) {
 	uint32_t align = dif_get_tx_align(p);
 	uint32_t word_bits = dif_get_tx_word_bits(p);
 
+	uint64_t bus_word_ps = dif_get_bus_word_ps(p);
+	uint32_t parallel_words[FIFO_SIZE * 4 * 4];
+	uint32_t parallel_word_count = 0;
 	while (pmb887x_fifo_count(&p->tx_fifo) > 0) {
 		uint32_t value = pmb887x_fifo32_pop(&p->tx_fifo);
-		p->tx_csreg = pmb887x_fifo32_pop(&p->tx_csreg_fifo);
+		uint32_t tx_csreg = pmb887x_fifo32_pop(&p->tx_csreg_fifo);
+		if (parallel_word_count != 0 && tx_csreg != p->tx_csreg) {
+			dif_send_parallel_words(p, parallel_words, parallel_word_count);
+			parallel_word_count = 0;
+		}
+		p->tx_csreg = tx_csreg;
 		p->is_tx_csreg_active = true;
 		dif_update_gpio_state(p);
 		uint32_t bsconf_word_count = dif_get_bsconf_word_count(p);
@@ -839,22 +845,23 @@ static void dif_tx_from_fifo(pmb887x_dif_t *p) {
 				value = dif_convert_color(p, value);
 
 			uint32_t lanes = 4 / align;
-			uint32_t parallel_words[4 * 4];
-			uint32_t parallel_word_count = 0;
 			for (uint32_t lane = 0; lane < lanes; lane++) {
 				for (uint32_t i = 0; i < bsconf_word_count; i++) {
 					uint16_t word = (value >> (bsconf_word_bits * (lane * align + i))) & ((1 << bsconf_word_bits) - 1);
 
 					if (!dif_is_serial(p)) {
 						parallel_words[parallel_word_count++] = word;
+						p->tx_bus_words++;
 					} else if (!dif_send_word(p, word)) {
 						goto done;
 					}
 				}
 			}
-			if (parallel_word_count != 0)
-				dif_send_parallel_words(p, parallel_words, parallel_word_count);
 		} else {
+			if (parallel_word_count != 0) {
+				dif_send_parallel_words(p, parallel_words, parallel_word_count);
+				parallel_word_count = 0;
+			}
 			for (uint32_t i = 0; i < words_in_fifo_reg; i++) {
 				uint32_t converted;
 				uint16_t word = (value >> (8 * i * align)) & dif_get_word_mask(word_bits);
@@ -863,7 +870,7 @@ static void dif_tx_from_fifo(pmb887x_dif_t *p) {
 					goto done;
 			}
 		}
-		dif_occupy_tx_bus(p);
+		dif_occupy_tx_bus(p, bus_word_ps);
 		if (p->tx_words_remaining != 0) {
 			dif_rx_fifo_req(p);
 			if (p->rx_fifo_req)
@@ -875,6 +882,8 @@ static void dif_tx_from_fifo(pmb887x_dif_t *p) {
 		dif_flush_rx_buffer(p);
 
 done:
+	if (parallel_word_count != 0)
+		dif_send_parallel_words(p, parallel_words, parallel_word_count);
 	p->is_tx_csreg_active = false;
 	dif_update_gpio_state(p);
 }
