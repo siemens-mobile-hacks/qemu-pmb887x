@@ -726,8 +726,7 @@ static void dsp_realize(DeviceState *dev, Error **errp) {
 		p, dsp_notify_activity, dsp_notify_comm, dsp_get_time_ns, dsp_ssc_transfer, &ports);
 	dsp_runtime_set_iq_bus(p->runtime, p->iq_rx_bus);
 	dsp_runtime_set_ms_clock_hz(p->runtime, clock_get_hz(p->ms_clock));
-	p->sync_timer = timer_new_full(NULL, QEMU_CLOCK_VIRTUAL, SCALE_NS, QEMU_TIMER_ATTR_SOFT,
-		dsp_sync_timer, p);
+	p->sync_timer = timer_new_ns(QEMU_CLOCK_VIRTUAL, dsp_sync_timer, p);
 	p->sync_time_ns = dsp_get_time_ns(p);
 
 	p->vmstate = qdev_add_vm_change_state_handler(dev, dsp_vm_state_change, NULL, p);

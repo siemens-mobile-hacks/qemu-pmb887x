@@ -72,14 +72,13 @@ static int64_t mttcg_idle_virtual_timers(CPUState *cpu)
     return mttcg_next_virtual_timer_ns();
 }
 
-static bool mttcg_wait_for_clock(CPUState *cpu)
+static bool mttcg_wait_for_clock(CPUState *cpu, int64_t *realp)
 {
     int64_t position, real, until;
 
     cpu_clock_owner_progress(false);
-    cpu_clock_owner_limit_lag();
+    real = *realp = cpu_clock_owner_limit_lag();
     position = cpu_clock_owner_position();
-    real = cpu_get_real_clock();
     if (position - real < CPU_CLOCK_OWNER_LEAD_NS) {
         return false;
     }
@@ -145,11 +144,13 @@ static void *mttcg_cpu_thread_fn(void *arg)
         if (cpu_can_run(cpu)) {
             int r;
             if (qemu_virtual_timers_on_vcpu) {
+                int64_t real;
+
                 qemu_clock_run_timers(QEMU_CLOCK_VIRTUAL);
-                if (mttcg_wait_for_clock(cpu)) {
+                if (mttcg_wait_for_clock(cpu, &real)) {
                     continue;
                 }
-                cpu_clock_owner_start_budget();
+                cpu_clock_owner_start_budget(real);
             }
             bql_unlock();
             r = tcg_cpu_exec(cpu);

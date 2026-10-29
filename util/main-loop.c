@@ -658,36 +658,9 @@ void main_loop_wait(int nonblocking)
         timeout_ns = (uint64_t)mlpoll.timeout * (int64_t)(SCALE_MS);
     }
 
-#ifdef __EMSCRIPTEN__
-    /*
-     * wasm icount: virtual-clock deadlines belong to the vCPU thread
-     * (icount_handle_deadline / 0023's idle warp) - the
-     * main loop would wake for every one of them (~24k/s during boot)
-     * for nothing.  Time the poll on the remaining clocks only.
-     *
-     * Without icount nobody else runs them: the vCPU never exits for a
-     * virtual deadline, so a device completion timer only fires when
-     * some unrelated event happens to wake the loop.  The LG boards boot
-     * with icount off (site/app.js) and hung there - KE800 polled
-     * I2C_PIRQSS forever for a transfer whose QEMU_CLOCK_VIRTUAL
-     * completion timer (hw/arm/pmb887x/i2c_v2.c) never came due.  Keep
-     * the stock timing for that case.
-     */
-    {
-        int type;
-        for (type = 0; type < QEMU_CLOCK_MAX; type++) {
-            if (type == QEMU_CLOCK_VIRTUAL && icount_enabled()) {
-                continue;
-            }
-            timeout_ns = qemu_soonest_timeout(
-                timeout_ns, timerlist_deadline_ns(main_loop_tlg.tl[type]));
-        }
-    }
-#else
     timeout_ns = qemu_soonest_timeout(timeout_ns,
                                       timerlistgroup_deadline_ns(
                                           &main_loop_tlg));
-#endif
 
     ret = os_host_main_loop_wait(timeout_ns);
     mlpoll.state = ret < 0 ? MAIN_LOOP_POLL_ERR : MAIN_LOOP_POLL_OK;

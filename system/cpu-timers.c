@@ -266,33 +266,41 @@ void cpu_clock_owner_wake(void)
     qemu_mutex_unlock(&cpu_clock_owner_lock);
 }
 
-/* Caller must hold BQL which serves as mutex for vm_clock_seqlock. */
-void cpu_clock_owner_limit_lag(void)
+/*
+ * Caller must hold BQL which serves as mutex for vm_clock_seqlock.
+ * Returns cpu_get_real_clock() as of the lag check: reading the host clock
+ * is a call out to JavaScript on wasm, and the owner needs it once per
+ * budget, not once per helper.
+ */
+int64_t cpu_clock_owner_limit_lag(void)
 {
     int64_t position = cpu_clock_owner_position();
+    int64_t raw = cpu_get_raw_clock();
 
-    if (position == INT64_MAX ||
-        cpu_get_raw_clock() - position <= CPU_CLOCK_OWNER_LAG_MAX_NS) {
-        return;
-    }
-    seqlock_write_lock(&timers_state.vm_clock_seqlock,
-                       &timers_state.vm_clock_lock);
-    if (timers_state.cpu_ticks_enabled) {
-        int64_t lag = cpu_get_clock_locked() - position;
+    if (position != INT64_MAX &&
+        raw - position > CPU_CLOCK_OWNER_LAG_MAX_NS) {
+        seqlock_write_lock(&timers_state.vm_clock_seqlock,
+                           &timers_state.vm_clock_lock);
+        if (timers_state.cpu_ticks_enabled) {
+            int64_t lag = cpu_get_clock_locked() - position;
 
-        if (lag > CPU_CLOCK_OWNER_LAG_MAX_NS) {
-            timers_state.cpu_clock_offset -= lag - CPU_CLOCK_OWNER_LAG_MAX_NS;
+            if (lag > CPU_CLOCK_OWNER_LAG_MAX_NS) {
+                timers_state.cpu_clock_offset -=
+                    lag - CPU_CLOCK_OWNER_LAG_MAX_NS;
+            }
         }
+        seqlock_write_unlock(&timers_state.vm_clock_seqlock,
+                             &timers_state.vm_clock_lock);
+        raw = cpu_get_raw_clock();
     }
-    seqlock_write_unlock(&timers_state.vm_clock_seqlock,
-                         &timers_state.vm_clock_lock);
+    return MIN(MIN(raw, position), qatomic_read(&qemu_virtual_clock_cap));
 }
 
-static uint32_t cpu_clock_owner_budget(int64_t deadline)
+static uint32_t cpu_clock_owner_budget(int64_t deadline, int64_t real)
 {
     uint32_t cycle_ps = qatomic_read(&cpu_clock_cycle_ps);
     int64_t position = cpu_clock_owner_position();
-    int64_t until = cpu_get_real_clock() + CPU_CLOCK_OWNER_LEAD_NS;
+    int64_t until = real + CPU_CLOCK_OWNER_LEAD_NS;
     uint64_t cycles;
 
     if (deadline >= 0) {
@@ -302,7 +310,7 @@ static uint32_t cpu_clock_owner_budget(int64_t deadline)
     return MAX(MIN(cycles, CPU_CLOCK_BUDGET_MAX), CPU_CLOCK_BUDGET_MIN);
 }
 
-void cpu_clock_owner_shorten_budget(void)
+static void cpu_clock_owner_shorten_budget_at(int64_t real)
 {
     uint32_t *cycles = qatomic_load_acquire(&cpu_clock_owner_cycles);
     uint32_t *cycle_limit = qatomic_read(&cpu_clock_owner_cycle_limit);
@@ -313,7 +321,7 @@ void cpu_clock_owner_shorten_budget(void)
         return;
     }
     deadline = qemu_clock_expire_time_ns(QEMU_CLOCK_VIRTUAL);
-    limit = qatomic_read(cycles) + cpu_clock_owner_budget(deadline);
+    limit = qatomic_read(cycles) + cpu_clock_owner_budget(deadline, real);
     old = qatomic_read(cycle_limit);
     while ((int32_t)(limit - old) < 0) {
         uint32_t seen = qatomic_cmpxchg(cycle_limit, old, limit);
@@ -325,13 +333,19 @@ void cpu_clock_owner_shorten_budget(void)
     }
 }
 
-void cpu_clock_owner_start_budget(void)
+void cpu_clock_owner_shorten_budget(void)
+{
+    cpu_clock_owner_shorten_budget_at(cpu_get_real_clock());
+}
+
+/* @real: cpu_get_real_clock(), e.g. from cpu_clock_owner_limit_lag() */
+void cpu_clock_owner_start_budget(int64_t real)
 {
     qatomic_set(cpu_clock_owner_cycle_limit,
                 qatomic_read(cpu_clock_owner_cycles) + CPU_CLOCK_BUDGET_MAX);
     /* Then a limit lowered meanwhile cannot be missed. */
     smp_mb();
-    cpu_clock_owner_shorten_budget();
+    cpu_clock_owner_shorten_budget_at(real);
 }
 
 /*

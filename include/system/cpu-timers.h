@@ -53,9 +53,9 @@ void cpu_clock_set_owner(uint32_t *cycles, uint32_t *cycle_limit);
 int64_t cpu_clock_owner_position(void);
 void cpu_clock_owner_progress(bool idle);
 void cpu_clock_owner_wake(void);
-void cpu_clock_owner_limit_lag(void);
+int64_t cpu_clock_owner_limit_lag(void);
 int64_t cpu_get_real_clock(void);
-void cpu_clock_owner_start_budget(void);
+void cpu_clock_owner_start_budget(int64_t real);
 void cpu_clock_owner_shorten_budget(void);
 
 void qemu_timer_notify_cb(void *opaque, QEMUClockType type);
