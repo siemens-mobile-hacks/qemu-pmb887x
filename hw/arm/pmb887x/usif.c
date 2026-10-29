@@ -19,7 +19,7 @@
 #define TYPE_PMB887X_USIF	"pmb887x-usif"
 #define PMB887X_USIF(obj)	OBJECT_CHECK(pmb887x_usif_t, (obj), TYPE_PMB887X_USIF)
 
-#define USIF_TX_DMA_BURST	4
+#define USIF_TX_WORD_SIZE	4
 #define USIF_REG_BLOCK_SIZE	0x100
 
 typedef struct pmb887x_usif_t pmb887x_usif_t;
@@ -38,17 +38,23 @@ struct pmb887x_usif_t {
 	int dmac_tx_clr;
 	int dmac_rx_clr;
 
-	qemu_irq dmac_tx_breq;
-	qemu_irq dmac_tx_lbreq;
+	qemu_irq dmac_tx_sreq;
+	qemu_irq dmac_tx_lsreq;
 	qemu_irq dmac_rx_breq;
 	qemu_irq dmac_rx_lbreq;
 };
 
+/*
+ * The USIF is the flow controller of the TX channel and requests one TX FIFO
+ * word per DMA request: a burst request would make the DMAC move DB_SIZE
+ * destination words at once (16 bytes for the 4 x DWORD channel the firmware
+ * programs), overrunning short packets and never reaching the last request.
+ */
 static void usif_update_tx_dma(pmb887x_usif_t *p) {
-	bool active = p->tx_dma_remaining > 0;
-	bool last = p->tx_dma_remaining <= USIF_TX_DMA_BURST;
-	qemu_set_irq(p->dmac_tx_breq, active && !last);
-	qemu_set_irq(p->dmac_tx_lbreq, active && last);
+	bool active = p->tx_dma_remaining > 0 && !p->dmac_tx_clr;
+	bool last = p->tx_dma_remaining <= USIF_TX_WORD_SIZE;
+	qemu_set_irq(p->dmac_tx_sreq, active && !last);
+	qemu_set_irq(p->dmac_tx_lsreq, active && last);
 }
 
 static uint64_t usif_io_read(void *opaque, hwaddr haddr, unsigned size) {
@@ -153,6 +159,7 @@ static const MemoryRegionOps io_ops = {
 static void usif_handle_dmac_tx_clr(void *opaque, int id, int level) {
 	pmb887x_usif_t *p = opaque;
 	p->dmac_tx_clr = level;
+	usif_update_tx_dma(p);
 }
 
 static void usif_handle_dmac_rx_clr(void *opaque, int id, int level) {
@@ -167,8 +174,8 @@ static void usif_init(Object *obj) {
 	memory_region_init_io(&p->mmio, obj, &io_ops, p, "pmb887x-usif", USIF_IO_SIZE);
 	sysbus_init_mmio(SYS_BUS_DEVICE(obj), &p->mmio);
 
-	qdev_init_gpio_out_named(dev, &p->dmac_tx_breq, "DMAC_TX_BREQ", 1);
-	qdev_init_gpio_out_named(dev, &p->dmac_tx_lbreq, "DMAC_TX_LBREQ", 1);
+	qdev_init_gpio_out_named(dev, &p->dmac_tx_sreq, "DMAC_TX_SREQ", 1);
+	qdev_init_gpio_out_named(dev, &p->dmac_tx_lsreq, "DMAC_TX_LSREQ", 1);
 	qdev_init_gpio_in_named(dev, usif_handle_dmac_tx_clr, "DMAC_TX_CLR", 1);
 
 	qdev_init_gpio_out_named(dev, &p->dmac_rx_breq, "DMAC_RX_BREQ", 1);

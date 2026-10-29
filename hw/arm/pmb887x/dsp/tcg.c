@@ -1490,22 +1490,11 @@ static bool tcg_can_translate(const teak_insn_t *instruction) {
 					return false;
 			}
 
-		case TEAK_OP_MOV_DATA_RN_STEP_REGISTER: {
-			bool basic_register = instruction->register_code <= 7;
-			bool b_half = instruction->register_code >= 16 && instruction->register_code <= 19;
-			bool external_register = instruction->register_code >= 20 && instruction->register_code <= 23;
-			bool accumulator = instruction->register_code >= 24 && instruction->register_code <= 29;
-			bool program_counter = instruction->register_code == 12;
-			bool shift_value = instruction->register_code == 31;
-			return basic_register || b_half || external_register || accumulator || program_counter || shift_value;
-		}
+		case TEAK_OP_MOV_DATA_RN_STEP_REGISTER:
+			return true;
 
-		case TEAK_OP_MOV_REGISTER_DATA_RN_STEP: {
-			bool basic_register = instruction->register_code <= 7;
-			bool b_half = instruction->register_code >= 16 && instruction->register_code <= 19;
-			bool accumulator_half = instruction->register_code >= 26 && instruction->register_code <= 29;
-			return basic_register || b_half || accumulator_half;
-		}
+		case TEAK_OP_MOV_REGISTER_DATA_RN_STEP:
+			return instruction->register_code != 11 && instruction->register_code != 12;
 
 		case TEAK_OP_ALU_REGISTER_ACCUMULATOR: {
 			if (tcg_alu_uses_multiply(instruction->alu_operation))
@@ -2924,6 +2913,14 @@ static void tcg_emit_minimum_maximum(const teak_insn_t *instruction) {
 	tcg_gen_st16_i32(mixp, tcg_env, offsetof(teak_state_t, mixp));
 }
 
+static bool tcg_mov_register_is_accumulator_half(uint8_t register_code) {
+	return (register_code >= 16 && register_code <= 19) || (register_code >= 26 && register_code <= 29);
+}
+
+static bool tcg_mov_register_is_accumulator(uint8_t register_code) {
+	return tcg_mov_register_is_accumulator_half(register_code) || register_code == 24 || register_code == 25;
+}
+
 static size_t tcg_accumulator_register_offset(uint8_t register_code) {
 	if (register_code >= 16 && register_code <= 19)
 		return offsetof(teak_state_t, b) + (register_code & 1U) * sizeof(uint64_t);
@@ -3489,13 +3486,13 @@ static void tcg_emit_mov_data_rn_step_register(const teak_insn_t *instruction) {
 		tcg_gen_st16_i32(value, tcg_env, tcg_rn_old_offset(instruction->register_code));
 		return;
 	}
-	if (instruction->register_code >= 20 && instruction->register_code <= 23) {
-		gen_helper_teak_tcg_mov_register_write(tcg_env,
-			tcg_constant_i32(instruction->register_code), value);
-		return;
-	}
 	if (instruction->register_code == 31) {
 		tcg_gen_st16_i32(value, tcg_env, offsetof(teak_state_t, shift_value));
+		return;
+	}
+	if (!tcg_mov_register_is_accumulator(instruction->register_code)) {
+		gen_helper_teak_tcg_mov_register_write(tcg_env,
+			tcg_constant_i32(instruction->register_code), value);
 		return;
 	}
 
@@ -3522,6 +3519,9 @@ static void tcg_emit_mov_register_data_rn_step(const teak_insn_t *instruction) {
 	if (instruction->register_code <= 7) {
 		value = tcg_temp_new_i32();
 		tcg_gen_ld16u_i32(value, tcg_env, tcg_rn_old_offset(instruction->register_code));
+	} else if (!tcg_mov_register_is_accumulator_half(instruction->register_code)) {
+		value = tcg_temp_new_i32();
+		gen_helper_teak_tcg_mov_register_read(value, tcg_env, tcg_constant_i32(instruction->register_code));
 	} else {
 		size_t accumulator_offset = tcg_accumulator_register_offset(instruction->register_code);
 		TCGv_i64 accumulator = tcg_temp_new_i64();

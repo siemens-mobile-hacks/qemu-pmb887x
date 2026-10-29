@@ -637,6 +637,43 @@ static void test_mov_data_shift_value(void) {
 	g_assert_cmphex(core.state.r[4], ==, 0x11);
 }
 
+static void test_mov_data_control_register(void) {
+	test_memory_t program = {
+		/* mov [r2++], cfgj; mov [r3], st1 */
+		.words = { 0x1DEA, 0x1D23, 0x4180, 0x0004 },
+	};
+	test_memory_t data = {
+		.words = { [0x10] = 0x0183, [0x18] = 0x0005 },
+	};
+	pmb887x_dsp_tcg_core_t core = test_core_create(&program, &data);
+
+	core.state.r[2] = 0x10;
+	core.state.r[3] = 0x18;
+	g_assert_true(pmb887x_dsp_tcg_execute_block(&core));
+	g_assert_cmphex(core.state.stepj, ==, 0x03);
+	g_assert_cmphex(core.state.modj, ==, 0x03);
+	g_assert_cmphex(core.state.r[2], ==, 0x11);
+	g_assert_cmphex(core.state.page, ==, 0x05);
+}
+
+static void test_mov_control_register_data(void) {
+	test_memory_t program = {
+		/* mov cfgi, [r1]; mov a0, [r0] */
+		.words = { 0x19C1, 0x1B00, 0x4180, 0x0004 },
+	};
+	test_memory_t data = {};
+	pmb887x_dsp_tcg_core_t core = test_core_create(&program, &data);
+
+	core.state.stepi = 0x05;
+	core.state.modi = 0x02;
+	core.state.r[0] = 0x10;
+	core.state.r[1] = 0x11;
+	core.state.a[0] = 0x0000000123456789ULL;
+	g_assert_true(pmb887x_dsp_tcg_execute_block(&core));
+	g_assert_cmphex(data.words[0x11], ==, 0x0105);
+	g_assert_cmphex(data.words[0x10], ==, 0x6789);
+}
+
 static void test_mov_accumulator_high_extension_unaffected(void) {
 	test_memory_t program = {
 		.words = { 0x6500, 0x4180, 0x0003 },
@@ -911,6 +948,8 @@ int main(int argc, char **argv) {
 	g_test_add_func("/pmb887x/dsp/tcg/precompile-bounded-indirect-dispatch", test_precompile_bounded_indirect_dispatch);
 	g_test_add_func("/pmb887x/dsp/tcg/direct-data-bank", test_direct_data_bank);
 	g_test_add_func("/pmb887x/dsp/tcg/mov-data-shift-value", test_mov_data_shift_value);
+	g_test_add_func("/pmb887x/dsp/tcg/mov-data-control-register", test_mov_data_control_register);
+	g_test_add_func("/pmb887x/dsp/tcg/mov-control-register-data", test_mov_control_register_data);
 	g_test_add_func("/pmb887x/dsp/tcg/mov-accumulator-high-extension-unaffected", test_mov_accumulator_high_extension_unaffected);
 	g_test_add_func("/pmb887x/dsp/tcg/alu-accumulator-masks", test_alu_accumulator_masks);
 	g_test_add_func("/pmb887x/dsp/tcg/multiply-subtract-status-register", test_multiply_subtract_status_register);

@@ -86,8 +86,11 @@ static void pasic_audio_callback(void *opaque, int free_bytes) {
 		size_t size;
 		size_t bytes;
 		const uint8_t *data = pmb887x_audio_buffer_peek(&p->audio_buffer,
-			&p->audio_fifo, &p->audio_lock, (size_t) free_bytes, &size);
+			&p->audio_fifo, &p->audio_lock, (size_t) free_bytes,
+			qemu_clock_get_ns(QEMU_CLOCK_REALTIME), &size);
 
+		if (size == 0)
+			return;
 		bytes = audio_be_write(p->audio_backend, p->audio_voice, (void *) data, size);
 		if (bytes == 0)
 			return;
@@ -155,6 +158,7 @@ static void pasic_i2s_write(I2SSink *sink, const int16_t *samples, size_t frame_
 			fifo8_push(&p->audio_fifo, sample >> 8);
 		}
 	}
+	pmb887x_audio_buffer_note_push(&p->audio_buffer, qemu_clock_get_ns(QEMU_CLOCK_REALTIME));
 	qemu_mutex_unlock(&p->audio_lock);
 }
 

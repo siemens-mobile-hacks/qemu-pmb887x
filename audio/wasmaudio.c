@@ -10,16 +10,19 @@
  * nothing to copy on the main thread.
  *
  * The ring is static: its address never changes, so the page can map it once
- * before qemu has opened a voice.  A short write is the whole pacing story -
- * audio_generic_run_buffer_out() stops on it, the mixeng buffer fills, and
- * the device's callback stops being asked for samples, which is what keeps a
- * guest that renders faster than real time from running away.
+ * before qemu has opened a voice.  Writes are paced on the host clock: a
+ * device pads silence while the guest is quiet, and unpaced that padding
+ * would keep the ring full, which is the ring's whole length of latency.  A
+ * short write stops audio_generic_run_buffer_out(), the mixeng buffer fills,
+ * and the device's callback stops being asked for samples.
  */
 
 #include "qemu/osdep.h"
 #include "qemu/module.h"
 #include "qemu/audio.h"
 #include "qemu/atomic.h"
+#include "qemu/host-utils.h"
+#include "qemu/timer.h"
 #include "qom/object.h"
 
 #include <emscripten.h>
@@ -35,7 +38,9 @@ struct AudioWasm {
 
 #define WASM_AUDIO_MAGIC        0x57534e44  /* "WSND" */
 #define WASM_AUDIO_MAX_CHANNELS 2
-#define WASM_AUDIO_RING_FRAMES  32768       /* power of two, 0.68 s @ 48 kHz */
+/* Power of two, 5.4 s @ 48 kHz: room for the cushion audio-worklet.js banks
+ * while the guest renders slower than real time. */
+#define WASM_AUDIO_RING_FRAMES  262144
 
 /*
  * Header fields are int32 so the page can view them as one Int32Array and use
@@ -70,11 +75,37 @@ void *wasm_audio_ring_ptr(void)
     return &wasm_audio_ring;
 }
 
+/* How far the paced writes may catch up after the device fell behind. */
+#define WASM_AUDIO_PACE_SLACK_NS (100 * SCALE_MS)
+
 typedef struct WasmVoiceOut {
     HWVoiceOut hw;
     RateCtl rate;
     bool listening;
+    int64_t pace_start;
+    uint64_t pace_frames;
 } WasmVoiceOut;
+
+static void wasm_pace_start(WasmVoiceOut *w)
+{
+    w->pace_start = qemu_clock_get_ns(QEMU_CLOCK_REALTIME);
+    w->pace_frames = 0;
+}
+
+/* Frames the host clock has made room for since the last write. */
+static size_t wasm_pace_room(WasmVoiceOut *w, uint32_t freq)
+{
+    int64_t now = qemu_clock_get_ns(QEMU_CLOCK_REALTIME);
+    int64_t due = w->pace_start +
+        muldiv64(w->pace_frames, NANOSECONDS_PER_SECOND, freq);
+
+    if (now - due > WASM_AUDIO_PACE_SLACK_NS) {
+        w->pace_start = now - WASM_AUDIO_PACE_SLACK_NS;
+        w->pace_frames = 0;
+        due = w->pace_start;
+    }
+    return now > due ? muldiv64(now - due, freq, NANOSECONDS_PER_SECOND) : 0;
+}
 
 static size_t wasm_write(HWVoiceOut *hw, void *buf, size_t len)
 {
@@ -94,6 +125,7 @@ static size_t wasm_write(HWVoiceOut *hw, void *buf, size_t len)
          * offered, and only then resets itself. */
         w->listening = listening;
         audio_rate_start(&w->rate);
+        wasm_pace_start(w);
     }
 
     if (!listening) {
@@ -102,7 +134,7 @@ static size_t wasm_write(HWVoiceOut *hw, void *buf, size_t len)
         return audio_rate_get_bytes(&w->rate, &hw->info, len);
     }
 
-    frames = len / bpf;
+    frames = MIN(len / bpf, wasm_pace_room(w, hw->info.freq));
     rd = qatomic_load_acquire(&ring->read);
     wr = ring->write;
     used = wr - rd;
@@ -123,6 +155,7 @@ static size_t wasm_write(HWVoiceOut *hw, void *buf, size_t len)
     }
 
     qatomic_store_release(&ring->write, wr + (int32_t) n);
+    w->pace_frames += n;
     return n * bpf;
 }
 
@@ -150,6 +183,7 @@ static int wasm_init_out(HWVoiceOut *hw, struct audsettings *as)
 
     w->listening = qatomic_read(&ring->active);
     audio_rate_start(&w->rate);
+    wasm_pace_start(w);
     return 0;
 }
 
@@ -167,6 +201,7 @@ static void wasm_enable_out(HWVoiceOut *hw, bool enable)
 
     if (enable) {
         audio_rate_start(&w->rate);
+        wasm_pace_start(w);
     }
 }
 

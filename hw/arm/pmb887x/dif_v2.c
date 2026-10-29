@@ -145,6 +145,7 @@ struct pmb887x_dif_t {
 	uint32_t tx_bus_words;
 	int64_t tx_bus_free_ps;
 	QEMUTimer *tx_bus_timer;
+	uint32_t tx_isr_deferred;
 	pmb887x_fifo32_t rx_fifo;
 	uint32_t tx_csreg;
 	bool is_tx_csreg_active;
@@ -273,6 +274,7 @@ static void dif_reset_tx_bus(pmb887x_dif_t *p) {
 	p->tx_bus_count = 0;
 	p->tx_bus_words = 0;
 	p->tx_bus_free_ps = 0;
+	p->tx_isr_deferred = 0;
 }
 
 static uint32_t dif_get_tx_fifo_level(pmb887x_dif_t *p) {
@@ -308,6 +310,26 @@ static void dif_wake_on_tx_fifo_free(pmb887x_dif_t *p, uint32_t stages) {
 
 	int64_t end_ps = p->tx_bus_end_ps[(p->tx_bus_first + retiring_stages - 1) % FIFO_SIZE];
 	timer_mod(p->tx_bus_timer, DIV_ROUND_UP(end_ps, 1000));
+}
+
+/*
+ * Firmware may set a TX DMA request through ISR while earlier bursts are still
+ * on the parallel bus. The DMAC serves a request at once, so apply it only when
+ * the FIFO has room for the transfer instead of overflowing the FIFO.
+ */
+static uint32_t dif_defer_tx_isr(pmb887x_dif_t *p, uint32_t value) {
+	uint32_t requests = value & DIF_TX_DMA_REQUESTS;
+	if (requests == 0)
+		return value;
+
+	uint32_t stages = (requests & (DIFv2_ISR_TXBREQ | DIFv2_ISR_TXLBREQ)) != 0 ?
+		dif_get_tx_burst_size(p) / (4 / dif_get_tx_align(p)) : 1;
+	if (dif_has_tx_fifo_free(p, stages))
+		return value;
+
+	p->tx_isr_deferred |= requests;
+	dif_wake_on_tx_fifo_free(p, stages);
+	return value & ~requests;
 }
 
 static uint32_t dif_get_pin_levels(pmb887x_dif_t *p) {
@@ -927,7 +949,14 @@ static void dif_rx_refill(void *opaque) {
 }
 
 static void dif_tx_bus_wake(void *opaque) {
-	dif_schedule(opaque);
+	pmb887x_dif_t *p = opaque;
+	uint32_t deferred = p->tx_isr_deferred;
+
+	dif_schedule(p);
+	if (deferred != 0) {
+		p->tx_isr_deferred &= ~deferred;
+		pmb887x_srb_set_isr(&p->srb, dif_defer_tx_isr(p, deferred));
+	}
 }
 
 static void dif_update_mux(pmb887x_dif_t *p) {
@@ -1349,7 +1378,7 @@ static void dif_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned si
 			break;
 
 		case DIFv2_ISR:
-			pmb887x_srb_set_isr(&p->srb, value);
+			pmb887x_srb_set_isr(&p->srb, dif_defer_tx_isr(p, value));
 			break;
 
 		case DIFv2_DMAE:

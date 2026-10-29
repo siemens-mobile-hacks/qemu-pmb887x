@@ -1156,10 +1156,16 @@ static uintptr_t QEMU_DISABLE_CFI w64_exec(CPUArchState *env, uintptr_t tb,
              * qemu_system_shutdown_request trips an uninitialized
              * main-loop mutex on the wasm build and exit() from the
              * main loop never happens — emscripten exit() from the vCPU
-             * is the stop path (flushes stdio, fires onExit). */
-            fflush(LS.f);
+             * is the stop path (flushes stdio, fires onExit).  Only with
+             * the BQL free: DSP code runs here too, nested in an ARM MMIO
+             * access or from a run_on_cpu work item, holding the BQL for
+             * real, and exiting with it deadlocks.  The next ARM TB that
+             * runs without it stops instead. */
             bql_release_lazy();
-            exit(0);
+            if (!bql_locked()) {
+                fflush(LS.f);
+                exit(0);
+            }
         }
 
         if (res & W64_EXIT_GOTOPTR) {
