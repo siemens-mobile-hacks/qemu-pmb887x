@@ -17,6 +17,10 @@ void perf_enable_jitdump(void);
 /* Add information about TCG prologue to profiler maps. */
 void perf_report_prologue(const void *start, size_t size);
 
+/* Add information about named JITted code to perf-<pid>.map. */
+void perf_report_named(const void *start, size_t size, const char *fmt, ...)
+    G_GNUC_PRINTF(3, 4);
+
 /* Add information about JITted guest code to profiler maps. */
 void perf_report_code(uint64_t guest_pc, TranslationBlock *tb,
                       const void *start);
@@ -33,6 +37,11 @@ static inline void perf_enable_jitdump(void)
 }
 
 static inline void perf_report_prologue(const void *start, size_t size)
+{
+}
+
+static inline void G_GNUC_PRINTF(3, 4)
+perf_report_named(const void *start, size_t size, const char *fmt, ...)
 {
 }
 
