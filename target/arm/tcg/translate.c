@@ -29,6 +29,8 @@
 #include "cpregs.h"
 #include "exec/target_page.h"
 #include "exec/translator.h"
+#include "exec/tlb-flags.h"
+#include "accel/tcg/probe.h"
 #include "arm9e-cycles.h"
 #include "helper.h"
 #include "helper-mve.h"
@@ -6797,9 +6799,46 @@ static void thumb_tr_translate_insn(DisasContextBase *dcbase, CPUState *cpu)
     }
 }
 
+/*
+ * The next TB starts without the interlock state of this one, so a TB that
+ * falls through charges the stalls of the instructions that follow it.
+ */
+static void arm9e_count_fallthrough_stalls(DisasContext *dc, CPUState *cpu)
+{
+    uint32_t late = dc->arm9e_late;
+    vaddr pc = dc->base.pc_next;
+    uint32_t insn_len = dc->thumb ? 2 : 4;
+
+    if (dc->sctlr_b) {
+        return;
+    }
+    for (int i = 0; i < 2 && late; i++) {
+        void *host;
+        int flags = probe_access_flags(cpu_env(cpu), pc, insn_len,
+                                       MMU_INST_FETCH, dc->base.code_mmuidx,
+                                       true, &host, 0);
+        uint32_t stall;
+
+        if ((flags & TLB_INVALID_MASK) || !host) {
+            return;
+        }
+        if (dc->thumb) {
+            stall = arm9e_thumb_stall(&late, lduw_le_p(host));
+        } else {
+            stall = arm9e_a32_stall(&late, ldl_le_p(host));
+        }
+        translator_count_cycles(&dc->base, stall, false);
+        pc += insn_len;
+    }
+}
+
 static void arm_tr_tb_stop(DisasContextBase *dcbase, CPUState *cpu)
 {
     DisasContext *dc = container_of(dcbase, DisasContext, base);
+
+    if (dc->arm9e_cycles && dc->base.is_jmp == DISAS_TOO_MANY) {
+        arm9e_count_fallthrough_stalls(dc, cpu);
+    }
 
     /* At this stage dc->condjmp will only be set when the skipped
        instruction was a conditional branch or trap, and the PC has
