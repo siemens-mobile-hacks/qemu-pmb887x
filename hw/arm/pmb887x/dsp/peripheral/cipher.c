@@ -4,6 +4,7 @@
 
 #include "qemu/osdep.h"
 #include "qemu/bitops.h"
+#include "qemu/timer.h"
 #include "hw/arm/pmb887x/dsp/peripheral/cipher-kasumi.h"
 #include "hw/arm/pmb887x/dsp/peripheral/internal.h"
 #include "hw/arm/pmb887x/gen/dsp.h"
@@ -44,8 +45,12 @@ struct cipher_state_t {
 	uint16_t registers[CIPHER_REGISTER_COUNT];
 	dsp_device_t *interrupt;
 	dsp_host_t host;
+	QEMUTimer *timer;
 	uint16_t ram_base;
-	size_t cycles_remaining;
+	uint64_t cycles_remaining;
+	uint64_t clock_remainder;
+	int64_t last_update_ns;
+	uint32_t clock_hz;
 	bool active;
 };
 
@@ -279,19 +284,64 @@ static void cipher_run(cipher_state_t *state) {
 	dsp_int_set_flags(state->interrupt, CIPHER_INTERRUPT_GROUP, TEAK_INT_FINT1_CIPH);
 }
 
+static void cipher_update(cipher_state_t *state);
+
+static void cipher_schedule(cipher_state_t *state) {
+	if (!state->active || state->clock_hz == 0) {
+		timer_del(state->timer);
+		return;
+	}
+
+	uint64_t delay_ns = muldiv64_round_up(state->cycles_remaining, NANOSECONDS_PER_SECOND, state->clock_hz);
+	timer_mod(state->timer, state->last_update_ns + MAX(delay_ns, 1));
+}
+
+static void cipher_update(cipher_state_t *state) {
+	int64_t now = state->host.get_time_ns(state->host.opaque);
+	uint64_t elapsed_ns = MAX(now - state->last_update_ns, 0);
+	uint64_t scaled_cycles;
+	uint64_t cycles;
+
+	state->last_update_ns = now;
+	if (!state->active || state->clock_hz == 0)
+		return;
+
+	scaled_cycles = elapsed_ns * state->clock_hz + state->clock_remainder;
+	cycles = scaled_cycles / NANOSECONDS_PER_SECOND;
+	state->clock_remainder = scaled_cycles % NANOSECONDS_PER_SECOND;
+	if (cycles < state->cycles_remaining) {
+		state->cycles_remaining -= cycles;
+		cipher_schedule(state);
+		return;
+	}
+
+	cipher_run(state);
+}
+
+static void cipher_timer(void *opaque) {
+	cipher_update(opaque);
+}
+
 static void cipher_destroy(dsp_device_t *device) {
-	g_free(device->state);
+	cipher_state_t *state = device->state;
+
+	timer_free(state->timer);
+	g_free(state);
 }
 
 static void cipher_reset(dsp_device_t *device) {
 	cipher_state_t *state = device->state;
 	memset(state->registers, 0, sizeof(state->registers));
 	state->cycles_remaining = 0;
+	state->clock_remainder = 0;
+	state->last_update_ns = state->host.get_time_ns(state->host.opaque);
 	state->active = false;
+	timer_del(state->timer);
 }
 
 static bool cipher_read(dsp_device_t *device, uint16_t offset, uint32_t pc, uint16_t *value) {
 	cipher_state_t *state = device->state;
+	cipher_update(state);
 
 	*value = offset < CIPHER_REGISTER_COUNT ? state->registers[offset] : 0;
 
@@ -301,6 +351,7 @@ static bool cipher_read(dsp_device_t *device, uint16_t offset, uint32_t pc, uint
 
 static bool cipher_write(dsp_device_t *device, uint16_t offset, uint32_t pc, uint16_t value) {
 	cipher_state_t *state = device->state;
+	cipher_update(state);
 
 	switch (offset) {
 		case TEAK_CIPH_CSTAT: {
@@ -310,8 +361,13 @@ static bool cipher_write(dsp_device_t *device, uint16_t offset, uint32_t pc, uin
 
 			state->registers[offset] = value;
 			state->active = a53_start || a512_start;
-			if (state->active)
+			if (state->active) {
+				state->clock_remainder = 0;
 				state->cycles_remaining = cipher_operation_cycles(value);
+				cipher_schedule(state);
+			} else {
+				timer_del(state->timer);
+			}
 			break;
 		}
 
@@ -337,24 +393,19 @@ dsp_device_t *cipher_create(const pmb887x_dsp_peripheral_config_t *config, dsp_d
 	state->interrupt = interrupt;
 	state->host = *host;
 	state->ram_base = config->ram_base;
+	state->last_update_ns = state->host.get_time_ns(state->host.opaque);
+	state->timer = timer_new_ns(QEMU_CLOCK_VIRTUAL, cipher_timer, state);
 	return dsp_device_create(config, &cipher_ops, state);
 }
 
-void cipher_advance(dsp_device_t *device, size_t cycles) {
+void cipher_set_clock_hz(dsp_device_t *device, uint32_t frequency_hz) {
 	cipher_state_t *state = device->state;
 
-	if (!state->active)
-		return;
-
-	if (cycles < state->cycles_remaining) {
-		state->cycles_remaining -= cycles;
-		return;
-	}
-
-	cipher_run(state);
+	cipher_update(state);
+	state->clock_hz = frequency_hz;
+	cipher_schedule(state);
 }
 
-bool cipher_is_active(const dsp_device_t *device) {
-	cipher_state_t *state = device->state;
-	return state->active;
+void cipher_update_time(dsp_device_t *device) {
+	cipher_update(device->state);
 }

@@ -1,5 +1,3 @@
-system_ss.add(when: 'CONFIG_TCG', if_true: files('icount2.c'))
-
 system_ss.add(files(
   'vl.c',
 ), sdl, libpmem, libdaxctl)

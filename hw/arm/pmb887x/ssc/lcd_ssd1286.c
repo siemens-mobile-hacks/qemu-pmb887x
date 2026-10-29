@@ -19,6 +19,11 @@
 #define SSD1286_MAX_BPP		18
 #define SSD1286_MAX_REGS	0x100
 
+static const pmb887x_lcd_geometry_t SSD1286_GEOMETRY = {
+	.width = 132,
+	.height = 176,
+};
+
 static const uint16_t DEFAULT_REGS[] = {
 	[SSD1286_DRIVER_OUTPUT_CONTROL] = 0x0001,
 	[SSD1286_ENTRY_MODE] = 0x6830,
@@ -119,6 +124,7 @@ static void lcd_realize(pmb887x_lcd_t *lcd, Error **errp) {
 
 static void lcd_class_init(ObjectClass *oc, const void *data) {
 	pmb887x_lcd_class_t *k = PMB887X_LCD_CLASS(oc);
+	k->geometry = &SSD1286_GEOMETRY;
 	k->cmd_width = 1;
 	k->param_width = 2;
 	k->on_cmd = lcd_on_cmd;

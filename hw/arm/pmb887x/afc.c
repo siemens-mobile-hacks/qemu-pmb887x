@@ -85,6 +85,7 @@ static const MemoryRegionOps afc_io_ops = {
 
 static void afc_init(Object *obj) {
 	pmb887x_afc_t *p = PMB887X_AFC(obj);
+	pmb887x_clc_init(&p->clc, DEVICE(obj));
 
 	memory_region_init_io(&p->mmio, obj, &afc_io_ops, p, TYPE_PMB887X_AFC, AFC_IO_SIZE);
 	sysbus_init_mmio(SYS_BUS_DEVICE(obj), &p->mmio);

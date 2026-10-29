@@ -6,27 +6,166 @@
 #define PMB887X_TRACE_IO		p->trace_io
 
 #include "qemu/osdep.h"
+#include "hw/core/irq.h"
 #include "hw/core/sysbus.h"
 #include "hw/core/hw-error.h"
 #include "system/memory.h"
 #include "qemu/main-loop.h"
+#include "qemu/audio.h"
+#include "qemu/fifo8.h"
+#include "qemu/log.h"
+#include "qemu/thread.h"
 #include "hw/core/qdev-properties.h"
+#include "hw/audio/i2s.h"
 #include "hw/i2c/i2c.h"
+#include "hw/arm/pmb887x/audio/buffer.h"
+#include "hw/arm/pmb887x/audio/pasic.h"
+#include "hw/arm/pmb887x/gen/peripheral/PASIC.h"
 #include "hw/arm/pmb887x/trace.h"
 
 #define TYPE_PMB887X_PMIC	"d1094xx"
 #define PMB887X_PMIC(obj)	OBJECT_CHECK(pmb887x_pmic_t, (obj), TYPE_PMB887X_PMIC)
+#define PASIC_AUDIO_FIFO_BYTES	(48000 * 2 * sizeof(int16_t))
 
 typedef struct pmb887x_pmic_t pmb887x_pmic_t;
 
 struct pmb887x_pmic_t {
-	I2CSlave parent_obj;
+	SysBusDevice parent_obj;
+	I2CTargetPort i2c_port;
+	I2SSinkPort i2s_rx_port;
+	I2SSourcePort i2s_tx_port;
 	pmb887x_trace_io_t trace_io;
 	uint32_t reg_id;
 	uint8_t wcycle;
 	uint8_t regs[256];
 	uint32_t revision;
+	uint32_t i2c_address;
+	AudioBackend *audio_backend;
+	SWVoiceOut *audio_voice;
+	QemuMutex audio_lock;
+	Fifo8 audio_fifo;
+	bool audio_fifo_ready;
+	pmb887x_audio_buffer_t audio_buffer;
+	uint32_t audio_sample_rate_hz;
+	uint32_t audio_channels;
+	bool i2s_capture_unimplemented_reported;
+	bool on_pressed;
+	qemu_irq on_off_out;
 };
+
+static bool pasic_audio_output_is_enabled(const pmb887x_pmic_t *p) {
+	return pmb887x_pasic_audio_output_is_enabled(p->regs[PASIC_MONO_CONTROL],
+		p->regs[PASIC_STEREO_CONTROL], p->regs[PASIC_AMPLIFIER_GAIN_4_5]);
+}
+
+static void pasic_audio_output_set_active(pmb887x_pmic_t *p, bool active) {
+	if (p->audio_voice == NULL)
+		return;
+
+	if (!active)
+		audio_be_set_active_out(p->audio_backend, p->audio_voice, false);
+	qemu_mutex_lock(&p->audio_lock);
+	fifo8_reset(&p->audio_fifo);
+	qemu_mutex_unlock(&p->audio_lock);
+	pmb887x_audio_buffer_reset(&p->audio_buffer);
+	if (active)
+		audio_be_set_active_out(p->audio_backend, p->audio_voice, true);
+}
+
+static void pmic_handle_on_off_input(void *opaque, int _line, int level) {
+	pmb887x_pmic_t *p = opaque;
+
+	p->on_pressed = level != 0;
+	qemu_set_irq(p->on_off_out, !p->on_pressed);
+}
+
+static void pasic_audio_callback(void *opaque, int free_bytes) {
+	pmb887x_pmic_t *p = opaque;
+
+	while (free_bytes > 0) {
+		size_t size;
+		size_t bytes;
+		const uint8_t *data = pmb887x_audio_buffer_peek(&p->audio_buffer,
+			&p->audio_fifo, &p->audio_lock, (size_t) free_bytes, &size);
+
+		bytes = audio_be_write(p->audio_backend, p->audio_voice, (void *) data, size);
+		if (bytes == 0)
+			return;
+		pmb887x_audio_buffer_consume(&p->audio_buffer, bytes);
+		free_bytes -= bytes;
+	}
+}
+
+static void pasic_audio_stop(pmb887x_pmic_t *p);
+
+static bool pasic_audio_configure(pmb887x_pmic_t *p, uint32_t sample_rate_hz, uint32_t channels) {
+	struct audsettings settings = {
+		.freq = sample_rate_hz,
+		.nchannels = channels,
+		.fmt = AUDIO_FORMAT_S16,
+		.big_endian = false,
+	};
+
+	if (p->audio_voice != NULL && p->audio_sample_rate_hz == sample_rate_hz && p->audio_channels == channels)
+		return true;
+	if (p->audio_voice != NULL) {
+		audio_be_set_active_out(p->audio_backend, p->audio_voice, false);
+		audio_be_close_out(p->audio_backend, p->audio_voice);
+		p->audio_voice = NULL;
+	}
+	p->audio_sample_rate_hz = sample_rate_hz;
+	p->audio_channels = channels;
+	qemu_mutex_lock(&p->audio_lock);
+	fifo8_reset(&p->audio_fifo);
+	qemu_mutex_unlock(&p->audio_lock);
+	pmb887x_audio_buffer_reset(&p->audio_buffer);
+
+	p->audio_voice = audio_be_open_out(p->audio_backend, NULL, "pmb887x-pasic",
+		p, pasic_audio_callback, &settings);
+	if (p->audio_voice == NULL)
+		return false;
+	audio_be_set_active_out(p->audio_backend, p->audio_voice, pasic_audio_output_is_enabled(p));
+	return true;
+}
+
+static void pasic_i2s_configure(I2SSink *sink, const I2SFormat *format) {
+	pmb887x_pmic_t *p = PMB887X_PMIC(OBJECT(sink));
+	if (!p->audio_fifo_ready)
+		return;
+	if (format->sample_rate_hz == 0 || (format->channels != 1 && format->channels != 2)) {
+		pasic_audio_stop(p);
+		return;
+	}
+	pasic_audio_configure(p, format->sample_rate_hz, format->channels);
+}
+
+static void pasic_i2s_write(I2SSink *sink, const int16_t *samples, size_t frame_count) {
+	pmb887x_pmic_t *p = PMB887X_PMIC(OBJECT(sink));
+	size_t sample_count = frame_count * p->audio_channels;
+	if (!p->audio_fifo_ready || p->audio_voice == NULL)
+		return;
+	if (!pasic_audio_output_is_enabled(p))
+		return;
+
+	qemu_mutex_lock(&p->audio_lock);
+	if (fifo8_num_free(&p->audio_fifo) >= sample_count * sizeof(uint16_t)) {
+		for (size_t i = 0; i < sample_count; i++) {
+			uint16_t sample = samples[i];
+			fifo8_push(&p->audio_fifo, sample);
+			fifo8_push(&p->audio_fifo, sample >> 8);
+		}
+	}
+	qemu_mutex_unlock(&p->audio_lock);
+}
+
+static size_t pasic_i2s_read(I2SSource *source, int16_t *_samples, size_t _frame_capacity) {
+	pmb887x_pmic_t *p = PMB887X_PMIC(OBJECT(source));
+	if (!p->i2s_capture_unimplemented_reported) {
+		qemu_log_mask(LOG_UNIMP, "PASIC I2S capture is not implemented\n");
+		p->i2s_capture_unimplemented_reported = true;
+	}
+	return 0;
+}
 
 static const uint8_t regs_D1094EC[256] = { // Siemens CX75 & M75
 	0x94, 0x00, 0x00, 0x00, 0x00, 0x08, 0x2F, 0x09, 0x00, 0xFF, 0x0E, 0x01, 0x06, 0x00, 0x10, 0x00,
@@ -123,8 +262,55 @@ static const uint8_t regs_D1094BB[256] = { // Siemens CX65/C65 (proto)
 	0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
 };
 
-static int pmic_event(I2CSlave *s, enum i2c_event event) {
-	pmb887x_pmic_t *p = PMB887X_PMIC(s);
+static void pmic_load_registers(pmb887x_pmic_t *p) {
+	const uint8_t *registers;
+
+	switch (p->revision) {
+		case 0xEC:
+			registers = regs_D1094EC;
+			break;
+
+		case 0xED:
+			registers = regs_D1094ED;
+			break;
+
+		case 0xDB:
+			registers = regs_D1094DB;
+			break;
+
+		case 0xBB:
+			registers = regs_D1094BB;
+			break;
+
+		case 0xAA:
+			registers = regs_D1601AA;
+			break;
+
+		default:
+			hw_error("pmb887x-pmic: unknown revision %02X", p->revision);
+	}
+
+	memcpy(p->regs, registers, sizeof(p->regs));
+}
+
+static void pasic_audio_stop(pmb887x_pmic_t *p) {
+	if (p->audio_voice != NULL) {
+		audio_be_set_active_out(p->audio_backend, p->audio_voice, false);
+		audio_be_close_out(p->audio_backend, p->audio_voice);
+		p->audio_voice = NULL;
+	}
+	p->audio_sample_rate_hz = 0;
+	p->audio_channels = 0;
+	if (p->audio_fifo_ready) {
+		qemu_mutex_lock(&p->audio_lock);
+		fifo8_reset(&p->audio_fifo);
+		qemu_mutex_unlock(&p->audio_lock);
+	}
+	pmb887x_audio_buffer_reset(&p->audio_buffer);
+}
+
+static int pmic_event(I2CTarget *target, enum i2c_event event) {
+	pmb887x_pmic_t *p = PMB887X_PMIC(OBJECT(target));
 
 	switch (event) {
 		case I2C_START_SEND:
@@ -147,21 +333,26 @@ static int pmic_event(I2CSlave *s, enum i2c_event event) {
 	return 0;
 }
 
-static uint8_t pmic_recv(I2CSlave *s) {
-	pmb887x_pmic_t *p = PMB887X_PMIC(s);
+static uint8_t pmic_recv(I2CTarget *target) {
+	pmb887x_pmic_t *p = PMB887X_PMIC(OBJECT(target));
 	uint8_t data = p->regs[p->reg_id];
 	IO_DUMP_READ(p->reg_id, 1, data);
 	p->reg_id = (p->reg_id + 1) % ARRAY_SIZE(p->regs);
 	return data;
 }
 
-static int pmic_send(I2CSlave *s, uint8_t data) {
-	pmb887x_pmic_t *p = PMB887X_PMIC(s);
+static int pmic_send(I2CTarget *target, uint8_t data) {
+	pmb887x_pmic_t *p = PMB887X_PMIC(OBJECT(target));
 	if (p->wcycle == 0) {
 		p->reg_id = data % ARRAY_SIZE(p->regs);
 	} else {
+		bool audio_was_enabled = pasic_audio_output_is_enabled(p);
+
 		IO_DUMP_WRITE(p->reg_id, 1, data);
 		p->regs[p->reg_id] = data;
+		bool audio_is_enabled = pasic_audio_output_is_enabled(p);
+		if (audio_is_enabled != audio_was_enabled)
+			pasic_audio_output_set_active(p, audio_is_enabled);
 		p->reg_id = (p->reg_id + 1) % ARRAY_SIZE(p->regs);
 	}
 
@@ -170,44 +361,86 @@ static int pmic_send(I2CSlave *s, uint8_t data) {
 	return 0;
 }
 
+static void pmic_reset(DeviceState *dev) {
+	pmb887x_pmic_t *p = PMB887X_PMIC(dev);
+
+	qemu_set_irq(p->on_off_out, !p->on_pressed);
+	p->reg_id = 0;
+	p->wcycle = 0;
+	p->i2s_capture_unimplemented_reported = false;
+	pasic_audio_stop(p);
+	pmic_load_registers(p);
+}
+
 static void pmic_realize(DeviceState *dev, Error **errp) {
 	pmb887x_pmic_t *p = PMB887X_PMIC(dev);
+
 	p->trace_io = PMB887X_TRACE_IO_PASIC;
-	DPRINTF("PMIC revision: %02X\n", p->revision);
-	if (p->revision == 0xEC) {
-		memcpy(p->regs, regs_D1094EC, sizeof(regs_D1094EC));
-	} else if (p->revision == 0xED) {
-		memcpy(p->regs, regs_D1094ED, sizeof(regs_D1094ED));
-	} else if (p->revision == 0xDB) {
-		memcpy(p->regs, regs_D1094DB, sizeof(regs_D1094DB));
-	} else if (p->revision == 0xBB) {
-		memcpy(p->regs, regs_D1094BB, sizeof(regs_D1094BB));
-	} else if (p->revision == 0xAA) {
-		memcpy(p->regs, regs_D1601AA, sizeof(regs_D1601AA));
-	} else {
-		hw_error("pmb887x-pmic: unknown revision %02X", p->revision);
+	qemu_mutex_init(&p->audio_lock);
+	if (audio_be_check(&p->audio_backend, NULL)) {
+		fifo8_create(&p->audio_fifo, PASIC_AUDIO_FIFO_BYTES);
+		p->audio_fifo_ready = true;
 	}
+	DPRINTF("PMIC revision: %02X\n", p->revision);
+	pmic_load_registers(p);
+}
+
+static void pmic_unrealize(DeviceState *dev) {
+	pmb887x_pmic_t *p = PMB887X_PMIC(dev);
+
+	pasic_audio_stop(p);
+	if (p->audio_fifo_ready) {
+		fifo8_destroy(&p->audio_fifo);
+		p->audio_fifo_ready = false;
+	}
+	qemu_mutex_destroy(&p->audio_lock);
 }
 
 static const Property pmic_properties[] = {
+	DEFINE_PROP_UINT32("addr", pmb887x_pmic_t, i2c_address, 0x31),
 	DEFINE_PROP_UINT32("revision", pmb887x_pmic_t, revision, 0xAA),
 };
 
+static void pmic_init(Object *obj) {
+	pmb887x_pmic_t *p = PMB887X_PMIC(obj);
+
+	qdev_init_gpio_in_named(DEVICE(obj), pmic_handle_on_off_input, "ON_OFF_IN", 1);
+	qdev_init_gpio_out_named(DEVICE(obj), &p->on_off_out, "ON_OFF_OUT_OUT", 1);
+	i2c_target_port_init(&p->i2c_port, DEVICE(obj), "I2C", I2C_TARGET(obj), &p->i2c_address);
+	i2s_sink_port_init(&p->i2s_rx_port, DEVICE(obj), "I2S_RX", I2S_SINK(obj));
+	i2s_source_port_init(&p->i2s_tx_port, DEVICE(obj), "I2S_TX", I2S_SOURCE(obj));
+}
+
 static void pmic_class_init(ObjectClass *klass, const void *data) {
 	DeviceClass *dc = DEVICE_CLASS(klass);
-	I2CSlaveClass *k = I2C_SLAVE_CLASS(klass);
+	I2CTargetClass *target_class = I2C_TARGET_CLASS(klass);
+	I2SSinkClass *sink_class = I2S_SINK_CLASS(klass);
+	I2SSourceClass *source_class = I2S_SOURCE_CLASS(klass);
+
 	device_class_set_props(dc, pmic_properties);
 	dc->realize = pmic_realize;
-	k->event = &pmic_event;
-	k->recv = &pmic_recv;
-	k->send = &pmic_send;
+	dc->unrealize = pmic_unrealize;
+	device_class_set_legacy_reset(dc, pmic_reset);
+	target_class->event = pmic_event;
+	target_class->recv = pmic_recv;
+	target_class->send = pmic_send;
+	sink_class->configure = pasic_i2s_configure;
+	sink_class->write = pasic_i2s_write;
+	source_class->read = pasic_i2s_read;
 }
 
 static const TypeInfo pmic_info = {
 	.name = TYPE_PMB887X_PMIC,
-	.parent = TYPE_I2C_SLAVE,
+	.parent = TYPE_SYS_BUS_DEVICE,
 	.instance_size = sizeof(pmb887x_pmic_t),
+	.instance_init = pmic_init,
 	.class_init = pmic_class_init,
+	.interfaces = (const InterfaceInfo[]) {
+		{ TYPE_I2C_TARGET },
+		{ TYPE_I2S_SINK },
+		{ TYPE_I2S_SOURCE },
+		{ NULL },
+	},
 };
 
 static void pmic_register_types(void) {

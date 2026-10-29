@@ -40,7 +40,8 @@ bool translator_io_start(DisasContextBase *db)
     return true;
 }
 
-static TCGOp *gen_tb_start(DisasContextBase *db, uint32_t cflags)
+static TCGOp *gen_tb_start(DisasContextBase *db, uint32_t cflags,
+                           TCGOp **count_cycles_op)
 {
     TCGv_i32 count = NULL;
     TCGOp *icount_start_insn = NULL;
@@ -82,11 +83,33 @@ static TCGOp *gen_tb_start(DisasContextBase *db, uint32_t cflags)
                          sizeof(CPUState));
     }
 
+    *count_cycles_op = NULL;
+    if (cflags & CF_COUNT_CYCLES) {
+        TCGv_i32 cycles = tcg_temp_new_i32();
+
+        tcg_gen_ld_i32(cycles, tcg_env,
+                       offsetof(CPUState, neg.cycle_count) - sizeof(CPUState));
+        if (tcg_ctx->exitreq_label) {
+            TCGv_i32 left = tcg_temp_new_i32();
+
+            tcg_gen_ld_i32(left, tcg_env, offsetof(CPUState, neg.cycle_limit) -
+                                          sizeof(CPUState));
+            tcg_gen_sub_i32(left, left, cycles);
+            tcg_gen_brcondi_i32(TCG_COND_LE, left, 0, tcg_ctx->exitreq_label);
+        }
+        /* Like the icount sub, the immediate is patched in gen_tb_end(). */
+        tcg_gen_add_i32(cycles, cycles, tcg_constant_i32(0));
+        *count_cycles_op = tcg_last_op();
+        tcg_gen_st_i32(cycles, tcg_env,
+                       offsetof(CPUState, neg.cycle_count) - sizeof(CPUState));
+    }
+
     return icount_start_insn;
 }
 
 static void gen_tb_end(const TranslationBlock *tb, uint32_t cflags,
-                       TCGOp *icount_start_insn, int num_insns)
+                       TCGOp *icount_start_insn, int num_insns,
+                       TCGOp *count_cycles_op, int num_cycles)
 {
     if (cflags & CF_USE_ICOUNT) {
         /*
@@ -95,6 +118,10 @@ static void gen_tb_end(const TranslationBlock *tb, uint32_t cflags,
          */
         tcg_set_insn_param(icount_start_insn, 2,
                            tcgv_i32_arg(tcg_constant_i32(num_insns)));
+    }
+    if (count_cycles_op) {
+        tcg_set_insn_param(count_cycles_op, 2,
+                           tcgv_i32_arg(tcg_constant_i32(num_cycles)));
     }
 
     if (tcg_ctx->exitreq_label) {
@@ -106,6 +133,22 @@ static void gen_tb_end(const TranslationBlock *tb, uint32_t cflags,
 bool translator_is_same_page(const DisasContextBase *db, vaddr addr)
 {
     return ((addr ^ db->pc_first) & TARGET_PAGE_MASK) == 0;
+}
+
+void translator_count_cycles(DisasContextBase *db, uint32_t cycles,
+                             bool dynamic)
+{
+    if (!dynamic) {
+        db->num_extra_cycles += cycles;
+    } else if (cycles) {
+        TCGv_i32 count = tcg_temp_new_i32();
+        intptr_t offset = offsetof(CPUState, neg.cycle_count) -
+                          sizeof(CPUState);
+
+        tcg_gen_ld_i32(count, tcg_env, offset);
+        tcg_gen_addi_i32(count, count, cycles);
+        tcg_gen_st_i32(count, tcg_env, offset);
+    }
 }
 
 bool translator_use_goto_tb(DisasContextBase *db, vaddr dest)
@@ -140,6 +183,7 @@ void translator_loop(CPUState *cpu, TranslationBlock *tb, int *max_insns,
 {
     uint32_t cflags = tb_cflags(tb);
     TCGOp *icount_start_insn;
+    TCGOp *count_cycles_op;
     TCGOp *first_insn_start = NULL;
     bool plugin_enabled;
 
@@ -151,6 +195,7 @@ void translator_loop(CPUState *cpu, TranslationBlock *tb, int *max_insns,
     db->pc_next = pc;
     db->is_jmp = DISAS_NEXT;
     db->num_insns = 0;
+    db->num_extra_cycles = 0;
     db->max_insns = *max_insns;
     db->insn_start = NULL;
     db->fake_insn = false;
@@ -168,7 +213,7 @@ void translator_loop(CPUState *cpu, TranslationBlock *tb, int *max_insns,
     tcg_debug_assert(db->is_jmp == DISAS_NEXT);  /* no early exit */
 
     /* Start translating.  */
-    icount_start_insn = gen_tb_start(db, cflags);
+    icount_start_insn = gen_tb_start(db, cflags, &count_cycles_op);
     ops->tb_start(db, cpu);
     tcg_debug_assert(db->is_jmp == DISAS_NEXT);  /* no early exit */
 
@@ -195,6 +240,10 @@ void translator_loop(CPUState *cpu, TranslationBlock *tb, int *max_insns,
 #endif
 
         *max_insns = ++db->num_insns;
+        if (cflags & CF_COUNT_CYCLES) {
+            tcg_ctx->gen_insn_cycles[db->num_insns - 1] =
+                db->num_insns - 1 + db->num_extra_cycles;
+        }
         ops->insn_start(db, cpu);
         db->insn_start = tcg_last_op();
         if (first_insn_start == NULL) {
@@ -249,7 +298,15 @@ void translator_loop(CPUState *cpu, TranslationBlock *tb, int *max_insns,
 
     /* Emit code to exit the TB, as indicated by db->is_jmp.  */
     ops->tb_stop(db, cpu);
-    gen_tb_end(tb, cflags, icount_start_insn, db->num_insns);
+    gen_tb_end(tb, cflags, icount_start_insn, db->num_insns, count_cycles_op,
+               db->num_insns + db->num_extra_cycles);
+    if (cflags & CF_COUNT_CYCLES) {
+        for (int i = 0; i < db->num_insns; i++) {
+            tcg_ctx->gen_insn_cycles[i] = db->num_insns +
+                                          db->num_extra_cycles -
+                                          tcg_ctx->gen_insn_cycles[i];
+        }
+    }
 
     /*
      * Manage can_do_io for the translation block: set to false before

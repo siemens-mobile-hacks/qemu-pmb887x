@@ -13,6 +13,7 @@ typedef struct test_memory_t test_memory_t;
 
 struct test_memory_t {
 	uint16_t words[TEST_MEMORY_WORDS];
+	pmb887x_dsp_tcg_core_t *exit_core_on_write;
 };
 
 int (*qemu_main)(void);
@@ -29,6 +30,8 @@ static void test_memory_write(void *opaque, uint32_t address, uint16_t value) {
 
 	g_assert_cmpuint(address, <, ARRAY_SIZE(memory->words));
 	memory->words[address] = value;
+	if (memory->exit_core_on_write != NULL)
+		memory->exit_core_on_write->state.exit_request = 1;
 }
 
 static pmb887x_dsp_tcg_memory_space_t test_memory_space(test_memory_t *memory) {
@@ -65,6 +68,12 @@ static void test_execute_until(pmb887x_dsp_tcg_core_t *core, uint16_t pc, size_t
 	g_assert_cmphex(core->state.pc, ==, pc);
 }
 
+static void test_execute_slices_until(pmb887x_dsp_tcg_core_t *core, uint16_t pc, size_t max_slices) {
+	for (size_t i = 0; i < max_slices && core->state.pc != pc; i++)
+		g_assert_true(pmb887x_dsp_tcg_execute_slice(core, 1000));
+	g_assert_cmphex(core->state.pc, ==, pc);
+}
+
 static void test_mov_a0_b0(uint16_t opcode) {
 	test_memory_t program = {
 		.words = { opcode, 0x4180, 0x0003 },
@@ -90,6 +99,22 @@ static void test_mov_full_accumulator(void) {
 static void test_mov_full_accumulator_alias(void) {
 	/* PMB8875 MASK ROM 0602 uses this REG-to-b0 encoding at P:5E49. */
 	test_mov_a0_b0(0x5ED8);
+}
+
+static void test_mov_immediate_product_high(void) {
+	/* PMB8876 Mask ROM 0801 CCH receiver uses this instruction at P:A056. */
+	test_memory_t program = {
+		.words = { 0x5E0B, 0x0090, 0x4180, 0x0004 },
+	};
+	test_memory_t data = {};
+	pmb887x_dsp_tcg_core_t core = test_core_create(&program, &data);
+
+	core.state.p[0] = 0x12345678;
+	core.state.product_extension[0] = 1;
+	g_assert_true(pmb887x_dsp_tcg_execute_block(&core));
+	g_assert_cmphex(core.state.p[0], ==, 0x00905678);
+	g_assert_cmphex(core.state.product_extension[0], ==, 0);
+	g_assert_cmphex(core.state.pc, ==, 4);
 }
 
 static void test_pop_full_accumulator(void) {
@@ -140,6 +165,210 @@ static void test_long_block_repeat(void) {
 	g_assert_cmphex(core.state.bcn, ==, 0);
 }
 
+static void test_interrupt_block_repeat(void) {
+	test_memory_t program = {
+		.words = {
+			[20] = 0x5D06, [21] = 0x0019, /* bkrep r7, 0x0019. */
+			[22] = 0x67D0, /* inc a0. */
+			[23] = 0x67D0, /* inc a0. */
+			[24] = 0x67D0, /* inc a0. */
+			[25] = 0x67D0, /* inc a0. */
+			[26] = 0x45C0, /* reti true. */
+		},
+	};
+	test_memory_t data = {
+		.words = { [10] = 5 },
+	};
+	pmb887x_dsp_tcg_core_t core = test_core_create(&program, &data);
+
+	core.state.pc = 20;
+	core.state.sp = 10;
+	core.state.r[7] = 1;
+	core.state.ie = 0;
+	core.state.maskable_interrupt_active = 1;
+	core.state.lp = 1;
+	core.state.bcn = 1;
+	core.state.block_repeat_start[0] = 2;
+	core.state.block_repeat_end[0] = 10;
+	core.state.block_repeat_lc[0] = 7;
+
+	test_execute_until(&core, 5, 16);
+	g_assert_cmphex(core.state.a[0], ==, 8);
+	g_assert_cmphex(core.state.block_repeat_start[0], ==, 2);
+	g_assert_cmphex(core.state.block_repeat_end[0], ==, 10);
+	g_assert_cmphex(core.state.block_repeat_lc[0], ==, 7);
+	g_assert_cmphex(core.state.bcn, ==, 1);
+	g_assert_cmphex(core.state.lp, ==, 1);
+	g_assert_cmphex(core.state.sp, ==, 11);
+	g_assert_cmphex(core.state.ie, ==, 1);
+	g_assert_cmphex(core.state.maskable_interrupt_active, ==, 0);
+}
+
+static void test_repeat_cycle_budget(void) {
+	test_memory_t program = {
+		.words = {
+			0x0CFF, /* rep 0x00ffu8. */
+			0x67D0, /* inc a0. */
+			0x4180, 0x0002, /* br 0x0002. */
+		},
+	};
+	test_memory_t data = {};
+	pmb887x_dsp_tcg_core_t core = test_core_create(&program, &data);
+
+	g_assert_true(pmb887x_dsp_tcg_execute_slice(&core, 10));
+	g_assert_cmpuint(core.last_block_cycles, ==, 10);
+	g_assert_cmphex(core.state.a[0], ==, 9);
+	g_assert_cmphex(core.state.pc, ==, 1);
+	g_assert_cmphex(core.state.repeat_active, ==, 1);
+	g_assert_cmphex(core.state.repc, ==, 246);
+
+	test_execute_slices_until(&core, 2, 4);
+	g_assert_cmphex(core.state.a[0], ==, 256);
+	g_assert_cmphex(core.state.repeat_active, ==, 0);
+}
+
+static void test_batched_loop_wait_state_budget(void) {
+	test_memory_t program = {
+		.words = {
+			0xD4B8, 0x0010, /* mov [0x0010] a0. */
+			0x4180, 0x0000, /* br 0x0000. */
+		},
+	};
+	test_memory_t data = {};
+	pmb887x_dsp_tcg_core_t core = test_core_create(&program, &data);
+
+	core.memory.wait_state_base = 0x10;
+	core.memory.wait_state_size = 1;
+	core.memory.wait_state_cycles = 2;
+	g_assert_true(pmb887x_dsp_tcg_execute_slice(&core, 40));
+	g_assert_cmpuint(core.last_block_cycles, ==, 40);
+}
+
+static void test_repeated_instruction_without_repeat(void) {
+	test_memory_t program = {
+		.words = {
+			0x0CFF, /* rep 0x00ffu8. */
+			0x67D0, /* inc a0. */
+			0x4180, 0x0002, /* br 0x0002. */
+		},
+	};
+	test_memory_t data = {};
+	pmb887x_dsp_tcg_core_t core = test_core_create(&program, &data);
+
+	g_assert_true(pmb887x_dsp_tcg_execute_slice(&core, 10));
+	g_assert_cmphex(core.state.repeat_active, ==, 1);
+
+	core.state.pc = 1;
+	core.state.repeat_active = 0;
+	core.state.a[0] = 0;
+	g_assert_true(pmb887x_dsp_tcg_execute_block(&core));
+	g_assert_cmphex(core.state.a[0], ==, 1);
+	g_assert_cmphex(core.state.pc, ==, 2);
+}
+
+static void test_interrupt_repeat_nested_repeat(void) {
+	test_memory_t program = {
+		.words = {
+			0x0C1F, /* rep 0x001fu8. */
+			0x67D0, /* inc a0. */
+			0x4180, 0x0002, /* br 0x0002. */
+			[6] = 0x0C03, /* rep 0x0003u8. */
+			[7] = 0x77D0, /* inc a1. */
+			[8] = 0x45C0, /* reti true. */
+		},
+	};
+	test_memory_t data = {};
+	pmb887x_dsp_tcg_core_t core = test_core_create(&program, &data);
+
+	core.state.sp = 10;
+	g_assert_true(pmb887x_dsp_tcg_execute_slice(&core, 5));
+	g_assert_cmphex(core.state.a[0], ==, 4);
+	g_assert_cmphex(core.state.pc, ==, 1);
+
+	core.state.ie = 1;
+	core.state.interrupt_mask = BIT(0);
+	core.state.pending_interrupts = BIT(0);
+	g_assert_true(pmb887x_dsp_tcg_service_interrupt(&core));
+	g_assert_cmphex(core.state.pc, ==, 6);
+	g_assert_cmphex(data.words[9], ==, 1);
+
+	test_execute_slices_until(&core, 2, 4);
+	g_assert_cmphex(core.state.a[1], ==, 4);
+	g_assert_cmphex(core.state.a[0], ==, 32);
+	g_assert_cmphex(core.state.sp, ==, 10);
+	g_assert_cmphex(core.state.repeat_active, ==, 0);
+	g_assert_cmphex(core.state.repeat_suspended, ==, 0);
+}
+
+static void test_interrupt_repeat_resumes_on_return(void) {
+	test_memory_t program = {
+		.words = {
+			0x0C1F, /* rep 0x001fu8. */
+			0x67D0, /* inc a0. */
+			0x4180, 0x0002, /* br 0x0002. */
+			[6] = 0x45C0, /* reti true. */
+		},
+	};
+	test_memory_t data = {};
+	pmb887x_dsp_tcg_core_t core = test_core_create(&program, &data);
+
+	core.state.sp = 10;
+	g_assert_true(pmb887x_dsp_tcg_execute_slice(&core, 5));
+	g_assert_cmphex(core.state.a[0], ==, 4);
+	core.state.ie = 1;
+	core.state.interrupt_mask = BIT(0);
+	core.state.pending_interrupts = BIT(0);
+	g_assert_true(pmb887x_dsp_tcg_service_interrupt(&core));
+
+	core.state.pc = 1;
+	g_assert_true(pmb887x_dsp_tcg_execute_block(&core));
+	g_assert_cmphex(core.state.a[0], ==, 5);
+	g_assert_cmphex(core.state.pc, ==, 2);
+	g_assert_cmphex(core.state.repeat_suspended, ==, 1);
+
+	core.state.pc = 6;
+	test_execute_slices_until(&core, 2, 4);
+	g_assert_cmphex(core.state.a[0], ==, 33);
+	g_assert_cmphex(core.state.repeat_suspended, ==, 0);
+}
+
+static void test_subroutine_block_repeat(void) {
+	test_memory_t program = {
+		.words = {
+			[0] = 0x5E05, [1] = 0x0003, /* mov 0x0003, r5. */
+			[2] = 0x5D05, [3] = 0x000C, /* bkrep r5, 0x000c. */
+			[4] = 0x41C0, [5] = 0x0014, /* call 0x0014, true. */
+			[6] = 0x67D0, /* inc a0, true. */
+			[7] = 0x0000, /* nop. */
+			[8] = 0x0000, /* nop. */
+			[9] = 0x0000, /* nop. */
+			[10] = 0x0000, /* nop. */
+			[11] = 0x0000, /* nop. */
+			[12] = 0x0000, /* nop. */
+			[13] = 0x4180, [14] = 0x000F, /* br 0x000f, true. */
+			[15] = 0x4180, [16] = 0x000F, /* br 0x000f, true. */
+			[20] = 0x5E06, [21] = 0x0002, /* mov 0x0002, r7. */
+			[22] = 0x5D06, [23] = 0x001C, /* bkrep r7, 0x001c. */
+			[24] = 0x77D0, /* inc a1, true. */
+			[25] = 0x0000, /* nop. */
+			[26] = 0x0000, /* nop. */
+			[27] = 0x0000, /* nop. */
+			[28] = 0x0000, /* nop. */
+			[29] = 0x4580, /* ret true. */
+		},
+	};
+	test_memory_t data = {};
+	pmb887x_dsp_tcg_core_t core = test_core_create(&program, &data);
+
+	core.state.sp = 10;
+	test_execute_until(&core, 15, 128);
+	g_assert_cmphex(core.state.a[0], ==, 4);
+	g_assert_cmphex(core.state.a[1], ==, 12);
+	g_assert_cmphex(core.state.sp, ==, 10);
+	g_assert_cmphex(core.state.lp, ==, 0);
+	g_assert_cmphex(core.state.bcn, ==, 0);
+}
+
 static void test_status_reserved_read_bits(void) {
 	test_memory_t program = {
 		.words = { 0x5809, 0x582A, 0x4180, 0x0004 },
@@ -178,6 +407,56 @@ static void test_alu_status_register(void) {
 	core.state.ie = 1;
 	g_assert_true(pmb887x_dsp_tcg_execute_block(&core));
 	g_assert_cmphex(core.state.a[0], ==, 3);
+}
+
+static uint16_t test_zero_data_read(void *opaque, uint32_t address) {
+	return 0;
+}
+
+static void test_modulo_address(void) {
+	static const struct {
+		uint8_t address_register;
+		uint16_t modulo;
+		uint16_t address;
+		int8_t step;
+		uint16_t expected;
+	} vectors[] = {
+		{ 0, 6, 0x0010, 1, 0x0011 },
+		{ 0, 6, 0x0016, 1, 0x0010 },
+		{ 2, 6, 0x0014, 2, 0x0016 },
+		{ 2, 6, 0x0016, 2, 0x0010 },
+		{ 4, 6, 0x0010, -3, 0x0016 },
+		{ 5, 6, 0x0013, -3, 0x0010 },
+		{ 1, 5, 0x0016, 3, 0x0011 },
+		{ 1, 5, 0x0015, 3, 0x0010 },
+		{ 3, 0, 0x1234, 1, 0x1234 },
+	};
+
+	for (size_t i = 0; i < ARRAY_SIZE(vectors); i++) {
+		uint8_t address_register = vectors[i].address_register;
+		int8_t step = vectors[i].step;
+		pmb887x_dsp_tcg_step_t step_mode = step == 1 ? PMB887X_DSP_TCG_STEP_INCREASE :
+			step == -1 ? PMB887X_DSP_TCG_STEP_DECREASE : PMB887X_DSP_TCG_STEP_PLUS_STEP;
+		bool is_i_register = address_register < 4;
+		uint16_t load_modulo = (is_i_register ? 0x0200U : 0x0A00U) | vectors[i].modulo;
+		uint16_t load_step = (is_i_register ? 0xDB80U : 0xDF80U) | (step & 0x7F);
+		uint16_t mov_data = 0x98C0U | step_mode << 3 | address_register;
+		test_memory_t program = {};
+		size_t words = 0;
+
+		program.words[words++] = load_modulo;
+		if (step_mode == PMB887X_DSP_TCG_STEP_PLUS_STEP)
+			program.words[words++] = load_step;
+		program.words[words] = mov_data;
+		test_memory_t data = {};
+		pmb887x_dsp_tcg_core_t core = test_core_create(&program, &data);
+
+		core.memory.data.read = test_zero_data_read;
+		core.state.r[address_register] = vectors[i].address;
+		core.state.modulo_enable = BIT(address_register);
+		g_assert_true(pmb887x_dsp_tcg_execute_block(&core));
+		g_assert_cmphex(core.state.r[address_register], ==, vectors[i].expected);
+	}
 }
 
 static void test_dual_memory_spaces(void) {
@@ -223,6 +502,139 @@ static void test_direct_data_read_write(void) {
 	g_assert_true(pmb887x_dsp_tcg_execute_block(&core));
 	g_assert_cmphex(data.words[0x11], ==, 0xA55A);
 	g_assert_cmphex(core.state.a[0], ==, 0x8001);
+}
+
+static void test_program_context_cache(void) {
+	test_memory_t program = {
+		/* inc a0; br 0x0003 always. */
+		.words = { 0x67D0, 0x4180, 0x0003 },
+	};
+	test_memory_t data = {};
+	pmb887x_dsp_tcg_core_t core = test_core_create(&program, &data);
+
+	g_assert_true(pmb887x_dsp_tcg_execute_block(&core));
+	g_assert_cmphex(core.state.a[0], ==, 1);
+	g_assert_cmpuint(core.cache_compiles, ==, 1);
+
+	/* dec a0; br 0x0003 always. */
+	program.words[0] = 0x67E0;
+	core.state.pc = 0;
+	pmb887x_dsp_tcg_set_program_context(&core, 1);
+	g_assert_true(pmb887x_dsp_tcg_execute_block(&core));
+	g_assert_cmphex(core.state.a[0], ==, 0);
+	g_assert_cmpuint(core.cache_compiles, ==, 2);
+
+	program.words[0] = 0x67D0;
+	core.state.pc = 0;
+	pmb887x_dsp_tcg_set_program_context(&core, 0);
+	g_assert_true(pmb887x_dsp_tcg_execute_block(&core));
+	g_assert_cmphex(core.state.a[0], ==, 1);
+	g_assert_cmpuint(core.cache_compiles, ==, 2);
+}
+
+static void test_program_invalidation(void) {
+	test_memory_t program = {
+		.words = {
+			0x67D0, /* inc a0. */
+			0x67D0, /* inc a0. */
+			0x4180, 0x0004, /* br 0x0004, true. */
+		},
+	};
+	test_memory_t data = {};
+	pmb887x_dsp_tcg_core_t core = test_core_create(&program, &data);
+
+	g_assert_true(pmb887x_dsp_tcg_execute_block(&core));
+	g_assert_cmphex(core.state.a[0], ==, 2);
+	g_assert_cmpuint(core.cache_compiles, ==, 1);
+
+	program.words[1] = 0x67E0; /* dec a0. */
+	pmb887x_dsp_tcg_invalidate_program(&core, 1);
+	core.state.pc = 0;
+	g_assert_true(pmb887x_dsp_tcg_execute_block(&core));
+	g_assert_cmphex(core.state.a[0], ==, 2);
+	g_assert_cmpuint(core.cache_compiles, ==, 2);
+}
+
+static void test_precompile_bounded_indirect_dispatch(void) {
+	test_memory_t program = {
+		.words = {
+			/* Isolate the mandatory interrupt-vector precompile roots. */
+			[0x04] = 0x4180, 0x0004, /* br 0x0004, true. */
+			[0x06] = 0x4180, 0x0006, /* br 0x0006, true. */
+			[0x0E] = 0x4180, 0x000E, /* br 0x000e, true. */
+			[0x10] = 0x4180, 0x0010, /* br 0x0010, true. */
+			[0x14] = 0x4180, 0x0014, /* br 0x0014, true. */
+			[0x16] = 0x4180, 0x0016, /* br 0x0016, true. */
+			[0x18] = 0x4180, 0x0018, /* br 0x0018, true. */
+			[0x20] = 0x1F40, /* mov [r0], a0l. */
+			0x50A6, /* brr 0x002c, le. */
+			0xCC03, /* cmp 0x0003, a0. */
+			0x5083, /* brr 0x002c, gt. */
+			0x86C0, 0x002F, /* add 0x002f, a0. */
+			0x583A, /* mov a0l, r1. */
+			0x1F41, /* mov [r1], a0l. */
+			0xD480, /* calla a0l. */
+			0x4180, 0x0029, /* br 0x0029, true. */
+			[0x2C] = 0x4180, 0x002C, /* br 0x002c, true. */
+		},
+	};
+	test_memory_t data = {
+		.words = { [0x30] = 0x10, [0x31] = 0x14, [0x32] = 0x18 },
+	};
+	pmb887x_dsp_tcg_core_t core = test_core_create(&program, &data);
+
+	test_core_set_direct_data(&core, &data);
+	teak_tcg_precompile_entry(&core, 0x20);
+	uint64_t compiles = core.cache_compiles;
+
+	for (uint16_t pc = 0x10; pc <= 0x18; pc += 4) {
+		core.state.pc = pc;
+		g_assert_true(pmb887x_dsp_tcg_execute_block(&core));
+		g_assert_cmphex(core.state.pc, ==, pc);
+	}
+	g_assert_cmpuint(core.cache_compiles, ==, compiles);
+}
+
+static void test_direct_data_bank(void) {
+	test_memory_t program = {
+		/* mov [r1], a0; br 0x0003 always. */
+		.words = { 0x1F41, 0x4180, 0x0003 },
+	};
+	test_memory_t data = {
+		.words = { [0x10] = 0x1234 },
+	};
+	uint16_t first_bank[] = { 0xA55A };
+	uint16_t second_bank[] = { 0xBEEF };
+	pmb887x_dsp_tcg_core_t core = test_core_create(&program, &data);
+
+	test_core_set_direct_data(&core, &data);
+	core.memory.direct_data_bank = first_bank;
+	core.memory.direct_data_bank_base = 0x10;
+	core.memory.direct_data_bank_size = ARRAY_SIZE(first_bank);
+	core.state.r[1] = 0x10;
+	g_assert_true(pmb887x_dsp_tcg_execute_block(&core));
+	g_assert_cmphex(core.state.a[0], ==, 0xA55A);
+
+	core.memory.direct_data_bank = second_bank;
+	core.state.pc = 0;
+	g_assert_true(pmb887x_dsp_tcg_execute_block(&core));
+	g_assert_cmphex(core.state.a[0], ==, 0xBEEF);
+}
+
+static void test_mov_data_shift_value(void) {
+	test_memory_t program = {
+		/* mov [r4++], sv */
+		.words = { 0x1FEC, 0x4180, 0x0003 },
+	};
+	test_memory_t data = {
+		.words = { [0x10] = 0xA55A },
+	};
+	pmb887x_dsp_tcg_core_t core = test_core_create(&program, &data);
+
+	core.state.r[4] = 0x10;
+	g_assert_true(pmb887x_dsp_tcg_execute_block(&core));
+	g_assert_cmphex(core.state.shift_value, ==, 0xA55A);
+	g_assert_cmphex(core.state.r[4], ==, 0x11);
 }
 
 static void test_mov_accumulator_high_extension_unaffected(void) {
@@ -348,6 +760,7 @@ static void test_movr_b_destination(void) {
 }
 
 static void test_delayed_interrupt_return(void) {
+	/* 0xD7C0 0x2102 0xD4BC 0x0010: retid; mov 2, a0l; mov a0l, [0x0010]. */
 	test_memory_t program = {
 		.words = { 0xD7C0, 0x2102, 0xD4BC, 0x0010 },
 	};
@@ -365,6 +778,88 @@ static void test_delayed_interrupt_return(void) {
 	g_assert_cmphex(core.state.ie, ==, 1);
 	g_assert_cmphex(core.state.maskable_interrupt_active, ==, 0);
 	g_assert_cmphex(data.words[0x10], ==, 0xA55A);
+}
+
+static void test_delayed_interrupt_return_exit_request(void) {
+	/* 0xD7C0 0x2010 0x0000: retid; mov r0, [0x10]; nop. */
+	test_memory_t program = {
+		.words = { 0xD7C0, 0x2010, 0x0000 },
+	};
+	test_memory_t data = {
+		.words = { [5] = 10 },
+	};
+	pmb887x_dsp_tcg_core_t core = test_core_create(&program, &data);
+
+	data.exit_core_on_write = &core;
+	core.state.r[0] = 0xA55A;
+	core.state.sp = 5;
+	core.state.maskable_interrupt_active = 1;
+	g_assert_true(pmb887x_dsp_tcg_execute_block(&core));
+	g_assert_cmphex(core.state.pc, ==, 11);
+	g_assert_cmphex(core.state.sp, ==, 6);
+	g_assert_cmphex(core.state.ie, ==, 1);
+	g_assert_cmphex(core.state.maskable_interrupt_active, ==, 0);
+	g_assert_cmphex(data.words[0x10], ==, 0xA55A);
+}
+
+static void test_exit_request_counts_executed_cycles(void) {
+	test_memory_t program = {
+		.words = {
+			0x2010, /* mov r0, [0x10]. */
+			0x0000, /* nop. */
+			0x0000, /* nop. */
+			0x0000, /* nop. */
+			0x4180, 0x0006, /* br 0x0006. */
+		},
+	};
+	test_memory_t data = {};
+	pmb887x_dsp_tcg_core_t core = test_core_create(&program, &data);
+
+	data.exit_core_on_write = &core;
+	g_assert_true(pmb887x_dsp_tcg_execute_block(&core));
+	g_assert_cmphex(core.state.pc, ==, 1);
+	g_assert_cmpuint(core.last_block_cycles, ==, 1);
+}
+
+static void test_delayed_return_break(void) {
+	/* 0xD780 0xD3C0 0x0000: retd; break; nop at EL71 GSM DSP P:0x08D98. */
+	test_memory_t program = {
+		.words = { 0xD780, 0xD3C0, 0x0000 },
+	};
+	test_memory_t data = {
+		.words = { [5] = 10 },
+	};
+	pmb887x_dsp_tcg_core_t core = test_core_create(&program, &data);
+
+	core.state.sp = 5;
+	core.state.lp = 1;
+	core.state.bcn = 1;
+	core.state.block_repeat_start[0] = 0;
+	core.state.block_repeat_end[0] = 2;
+	g_assert_true(pmb887x_dsp_tcg_execute_block(&core));
+	g_assert_cmphex(core.state.pc, ==, 10);
+	g_assert_cmphex(core.state.sp, ==, 6);
+	g_assert_cmphex(core.state.lp, ==, 0);
+	g_assert_cmphex(core.state.bcn, ==, 0);
+}
+
+static void test_delayed_return_stores(void) {
+	/* 0xD780 0x3810 0x3811: retd; mov a0l, [page:0x10]; mov a0l, [page:0x11]. */
+	test_memory_t program = {
+		.words = { 0xD780, 0x3810, 0x3811 },
+	};
+	test_memory_t data = {
+		.words = { [5] = 10, [0x10] = 0xA55A, [0x11] = 0x5AA5 },
+	};
+	pmb887x_dsp_tcg_core_t core = test_core_create(&program, &data);
+
+	core.state.a[0] = 0x1234;
+	core.state.sp = 5;
+	g_assert_true(pmb887x_dsp_tcg_execute_block(&core));
+	g_assert_cmphex(core.state.pc, ==, 10);
+	g_assert_cmphex(core.state.sp, ==, 6);
+	g_assert_cmphex(data.words[0x10], ==, 0x1234);
+	g_assert_cmphex(data.words[0x11], ==, 0x1234);
 }
 
 static void test_nested_nmi_interrupt_return(void) {
@@ -393,15 +888,29 @@ int main(int argc, char **argv) {
 	tcg_prologue_init();
 	tcg_register_thread();
 
+	g_test_add_func("/pmb887x/dsp/tcg/modulo-address", test_modulo_address);
 	g_test_add_func("/pmb887x/dsp/tcg/mov-full-accumulator", test_mov_full_accumulator);
 	g_test_add_func("/pmb887x/dsp/tcg/mov-full-accumulator-alias", test_mov_full_accumulator_alias);
+	g_test_add_func("/pmb887x/dsp/tcg/mov-immediate-product-high", test_mov_immediate_product_high);
 	g_test_add_func("/pmb887x/dsp/tcg/pop-full-accumulator", test_pop_full_accumulator);
 	g_test_add_func("/pmb887x/dsp/tcg/long-block-repeat", test_long_block_repeat);
+	g_test_add_func("/pmb887x/dsp/tcg/interrupt-block-repeat", test_interrupt_block_repeat);
+	g_test_add_func("/pmb887x/dsp/tcg/repeat-cycle-budget", test_repeat_cycle_budget);
+	g_test_add_func("/pmb887x/dsp/tcg/batched-loop-wait-state-budget", test_batched_loop_wait_state_budget);
+	g_test_add_func("/pmb887x/dsp/tcg/repeated-instruction-without-repeat", test_repeated_instruction_without_repeat);
+	g_test_add_func("/pmb887x/dsp/tcg/interrupt-repeat-nested-repeat", test_interrupt_repeat_nested_repeat);
+	g_test_add_func("/pmb887x/dsp/tcg/interrupt-repeat-resumes-on-return", test_interrupt_repeat_resumes_on_return);
+	g_test_add_func("/pmb887x/dsp/tcg/subroutine-block-repeat", test_subroutine_block_repeat);
 	g_test_add_func("/pmb887x/dsp/tcg/status-reserved-read-bits", test_status_reserved_read_bits);
 	g_test_add_func("/pmb887x/dsp/tcg/multiply-status-register", test_multiply_status_register);
 	g_test_add_func("/pmb887x/dsp/tcg/alu-status-register", test_alu_status_register);
 	g_test_add_func("/pmb887x/dsp/tcg/dual-memory-spaces", test_dual_memory_spaces);
 	g_test_add_func("/pmb887x/dsp/tcg/direct-data-read-write", test_direct_data_read_write);
+	g_test_add_func("/pmb887x/dsp/tcg/program-context-cache", test_program_context_cache);
+	g_test_add_func("/pmb887x/dsp/tcg/program-invalidation", test_program_invalidation);
+	g_test_add_func("/pmb887x/dsp/tcg/precompile-bounded-indirect-dispatch", test_precompile_bounded_indirect_dispatch);
+	g_test_add_func("/pmb887x/dsp/tcg/direct-data-bank", test_direct_data_bank);
+	g_test_add_func("/pmb887x/dsp/tcg/mov-data-shift-value", test_mov_data_shift_value);
 	g_test_add_func("/pmb887x/dsp/tcg/mov-accumulator-high-extension-unaffected", test_mov_accumulator_high_extension_unaffected);
 	g_test_add_func("/pmb887x/dsp/tcg/alu-accumulator-masks", test_alu_accumulator_masks);
 	g_test_add_func("/pmb887x/dsp/tcg/multiply-subtract-status-register", test_multiply_subtract_status_register);
@@ -410,6 +919,10 @@ int main(int argc, char **argv) {
 	g_test_add_func("/pmb887x/dsp/tcg/external-registers-disconnected", test_external_registers_disconnected);
 	g_test_add_func("/pmb887x/dsp/tcg/movr-b-destination", test_movr_b_destination);
 	g_test_add_func("/pmb887x/dsp/tcg/delayed-interrupt-return", test_delayed_interrupt_return);
+	g_test_add_func("/pmb887x/dsp/tcg/delayed-interrupt-return-exit-request", test_delayed_interrupt_return_exit_request);
+	g_test_add_func("/pmb887x/dsp/tcg/exit-request-counts-executed-cycles", test_exit_request_counts_executed_cycles);
+	g_test_add_func("/pmb887x/dsp/tcg/delayed-return-break", test_delayed_return_break);
+	g_test_add_func("/pmb887x/dsp/tcg/delayed-return-stores", test_delayed_return_stores);
 	g_test_add_func("/pmb887x/dsp/tcg/nested-nmi-interrupt-return", test_nested_nmi_interrupt_return);
 	return g_test_run();
 }

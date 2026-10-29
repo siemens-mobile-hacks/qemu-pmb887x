@@ -970,6 +970,7 @@ struct FlatView {
      * re-rendering.  Zero = untagged/never reuse. */
     uint64_t topo_gen;
     uint64_t romd_sig;
+    FlatRange *prev_ranges;
 };
 
 static inline FlatView *address_space_to_flatview(const AddressSpace *as)

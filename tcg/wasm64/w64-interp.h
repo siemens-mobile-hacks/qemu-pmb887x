@@ -142,6 +142,7 @@ struct w64_irec {
 void w64_irec_put(uint32_t tidx, uint32_t *code, uint32_t n);
 void w64_irec_drop(uint32_t tidx);
 void w64_irec_flush(void);
+void w64_interp_unwound(void);
 uint32_t w64_call_tag(uint32_t typemask, unsigned nargs);
 
 /*

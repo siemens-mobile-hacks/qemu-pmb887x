@@ -73,6 +73,9 @@ struct QEMUTimerList {
     QEMUTimerListNotifyCB *notify_cb;
     void *notify_opaque;
 
+    /* Expiry of the timer whose callback is running, INT64_MAX if none. */
+    int64_t running_expire;
+
     /* lightweight method to mark the end of timerlist's running */
     QemuEvent timers_done_ev;
 };
@@ -107,6 +110,7 @@ QEMUTimerList *timerlist_new(QEMUClockType type,
     timer_list->clock = clock;
     timer_list->notify_cb = cb;
     timer_list->notify_opaque = opaque;
+    timer_list->running_expire = INT64_MAX;
     qemu_mutex_init(&timer_list->active_timers_lock);
     QLIST_INSERT_HEAD(&clock->timerlists, timer_list, list);
     return timer_list;
@@ -135,9 +139,31 @@ static void qemu_clock_init(QEMUClockType type, QEMUTimerListNotifyCB *notify_cb
     main_loop_tlg.tl[type] = timerlist_new(type, notify_cb, NULL);
 }
 
+bool qemu_virtual_timers_on_vcpu;
+int64_t qemu_virtual_clock_cap = INT64_MAX;
+int64_t qemu_virtual_clock_last;
+
+static void timerlist_publish_cap(QEMUTimerList *timer_list)
+{
+    int64_t expire;
+
+    if (!qemu_virtual_timers_on_vcpu ||
+        timer_list != main_loop_tlg.tl[QEMU_CLOCK_VIRTUAL]) {
+        return;
+    }
+    expire = timer_list->running_expire;
+    if (timer_list->active_timers) {
+        expire = MIN(expire, timer_list->active_timers->expire_time);
+    }
+    if (expire != INT64_MAX) {
+        expire = MAX(expire, qatomic_read(&qemu_virtual_clock_last));
+    }
+    qatomic_set(&qemu_virtual_clock_cap, expire);
+}
+
 bool qemu_clock_use_for_deadline(QEMUClockType type)
 {
-    return !((icount_enabled() || icount2_enabled()) && (type == QEMU_CLOCK_VIRTUAL));
+    return !(icount_enabled() && (type == QEMU_CLOCK_VIRTUAL));
 }
 
 void qemu_clock_notify(QEMUClockType type)
@@ -172,7 +198,7 @@ void qemu_clock_notify(QEMUClockType type)
          * 38k wakes/s are exactly the ones that run icount.
          */
         if (type == QEMU_CLOCK_VIRTUAL &&
-            (icount_enabled() || icount2_enabled()) &&
+            icount_enabled() &&
             !qatomic_read(&timer_list->active_timers)) {
             continue;
         }
@@ -241,6 +267,22 @@ bool qemu_clock_expired(QEMUClockType type)
  * As above, but return -1 for no deadline, and do not cap to 2^32
  * as we know the result is always positive.
  */
+
+int64_t qemu_clock_expire_time_ns(QEMUClockType type)
+{
+    QEMUTimerList *timer_list = main_loop_tlg.tl[type];
+
+    if (!qatomic_read(&timer_list->active_timers) ||
+        !timer_list->clock->enabled) {
+        return -1;
+    }
+    WITH_QEMU_LOCK_GUARD(&timer_list->active_timers_lock) {
+        if (timer_list->active_timers) {
+            return timer_list->active_timers->expire_time;
+        }
+    }
+    return -1;
+}
 
 int64_t timerlist_deadline_ns(QEMUTimerList *timer_list)
 {
@@ -413,6 +455,9 @@ static void timer_del_locked(QEMUTimerList *timer_list, QEMUTimer *ts)
             break;
         if (t == ts) {
             qatomic_set(pt, t->next);
+            if (pt == &timer_list->active_timers) {
+                timerlist_publish_cap(timer_list);
+            }
             break;
         }
         pt = &t->next;
@@ -465,15 +510,15 @@ static bool timer_mod_ns_locked(QEMUTimerList *timer_list,
     ts->expire_time = MAX(expire_time, 0);
     ts->next = *pt;
     qatomic_set(pt, ts);
+    if (pt == &timer_list->active_timers) {
+        timerlist_publish_cap(timer_list);
+    }
 
     return pt == &timer_list->active_timers;
 }
 
 static void timerlist_rearm(QEMUTimerList *timer_list)
 {
-    if (icount2_enabled() && timer_list->clock->type == QEMU_CLOCK_VIRTUAL) {
-        icount2_sync();
-    }
     timerlist_notify(timer_list);
 }
 
@@ -617,6 +662,8 @@ bool timerlist_run_timers(QEMUTimerList *timer_list)
 
         /* remove timer from the list before calling the callback */
         timer_list->active_timers = ts->next;
+        timer_list->running_expire = ts->expire_time;
+        timerlist_publish_cap(timer_list);
         ts->next = NULL;
         ts->expire_time = -1;
         cb = ts->cb;
@@ -626,6 +673,8 @@ bool timerlist_run_timers(QEMUTimerList *timer_list)
         qemu_mutex_unlock(&timer_list->active_timers_lock);
         cb(opaque);
         qemu_mutex_lock(&timer_list->active_timers_lock);
+        timer_list->running_expire = INT64_MAX;
+        timerlist_publish_cap(timer_list);
 
         progress = true;
     }
@@ -668,12 +717,23 @@ bool timerlistgroup_run_timers(QEMUTimerListGroup *tlg)
     return progress;
 }
 
+static bool main_loop_runs_timers(QEMUClockType type)
+{
+    return qemu_clock_use_for_deadline(type) &&
+           !(qemu_virtual_timers_on_vcpu && type == QEMU_CLOCK_VIRTUAL);
+}
+
 int64_t timerlistgroup_deadline_ns(QEMUTimerListGroup *tlg)
 {
     int64_t deadline = -1;
     QEMUClockType type;
     for (type = 0; type < QEMU_CLOCK_MAX; type++) {
-        if (qemu_clock_use_for_deadline(type)) {
+        bool runs = qemu_clock_use_for_deadline(type);
+
+        if (tlg == &main_loop_tlg) {
+            runs = main_loop_runs_timers(type);
+        }
+        if (runs) {
             deadline = qemu_soonest_timeout(deadline,
                                             timerlist_deadline_ns(tlg->tl[type]));
         }
@@ -697,9 +757,6 @@ int64_t qemu_clock_get_ns(QEMUClockType type)
          * runs ~4M times a second on the S75, that frame is ~2 % of the
          * vCPU on its own.
          */
-        if (icount2_enabled()) {
-            return icount2_get();
-        }
         if (icount_enabled()) {
             return icount_get();
         }
@@ -740,7 +797,7 @@ bool qemu_clock_run_all_timers(void)
     QEMUClockType type;
 
     for (type = 0; type < QEMU_CLOCK_MAX; type++) {
-        if (qemu_clock_use_for_deadline(type)) {
+        if (main_loop_runs_timers(type)) {
             progress |= qemu_clock_run_timers(type);
         }
     }

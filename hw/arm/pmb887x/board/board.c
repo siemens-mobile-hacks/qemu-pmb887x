@@ -18,7 +18,7 @@ static struct {
 	uint32_t uid1;
 	uint32_t uid2;
 } default_cpu_id[] = {
-	[CPU_PMB8875] = { 0x05, 0x00000000, 0x00000000, 0x00000000 },
+	[CPU_PMB8875] = { 0x05, 0x1324A000, 0x008D3106, 0x00051F1F },
 	[CPU_PMB8876] = { 0x10, 0x006025DB, 0x180121A5, 0x00071303 },
 };
 

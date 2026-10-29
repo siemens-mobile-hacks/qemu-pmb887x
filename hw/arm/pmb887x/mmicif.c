@@ -366,6 +366,7 @@ static const MemoryRegionOps mmicif_mmap_ops = {
 
 static void mmicif_init(Object *obj) {
     pmb887x_mmicif_t *p = PMB887X_MMICIF(obj);
+    pmb887x_clc_init(&p->clc, DEVICE(obj));
     memory_region_init_io(&p->mmio, obj, &mmicif_io_ops, p, TYPE_PMB887X_MMICIF, MMICIF_IO_SIZE);
     sysbus_init_mmio(SYS_BUS_DEVICE(obj), &p->mmio);
     memory_region_init_io(&p->mmap, obj, &mmicif_mmap_ops, p, "pmb887x-mmicif-mmap", MMICIF_MMAP_SIZE);

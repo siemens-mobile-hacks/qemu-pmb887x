@@ -41,6 +41,7 @@ struct pmb887x_sim_card_t {
 	QEMUTimer *tx_timer;
 	Fifo8 output;
 
+	bool inserted;
 	bool reset;
 	enum sim_card_state_t state;
 	uint8_t command[PMB887X_APDU_MAX_COMMAND_SIZE];
@@ -193,9 +194,11 @@ static void sim_card_receive(pmb887x_sim_card_t *card, uint8_t value) {
 	}
 }
 
-static void sim_card_handle_reset(void *opaque, int id, int level) {
+static void sim_card_handle_reset(void *opaque, int _id, int level) {
 	pmb887x_sim_card_t *card = opaque;
 	bool reset = level != 0;
+	if (!card->inserted)
+		return;
 
 	if (!reset) {
 		if (!card->reset)
@@ -231,7 +234,7 @@ static void sim_card_init(Object *obj) {
 static void sim_card_realize(DeviceState *dev, Error **errp) {
 	pmb887x_sim_card_t *card = PMB887X_SIM_CARD(dev);
 
-	if (!card->apdu) {
+	if (card->inserted && !card->apdu) {
 		const char *backend_type = TYPE_PMB887X_GSM_SIM;
 		if (card->apdu_backend) {
 			if (strcmp(card->apdu_backend, "cacard") != 0) {
@@ -263,7 +266,8 @@ static void sim_card_realize(DeviceState *dev, Error **errp) {
 		card->apdu = PMB887X_APDU_BACKEND(backend);
 		object_unref(OBJECT(backend));
 	}
-	DPRINTF("APDU backend: %s\n", object_get_typename(OBJECT(card->apdu)));
+	if (card->apdu)
+		DPRINTF("APDU backend: %s\n", object_get_typename(OBJECT(card->apdu)));
 
 	fifo8_create(&card->output, SIM_CARD_OUTPUT_SIZE);
 	card->tx_timer = timer_new_ns(QEMU_CLOCK_VIRTUAL, sim_card_tx, card);
@@ -328,6 +332,7 @@ static const Property sim_card_properties[] = {
 	DEFINE_PROP_STRING("imsi", pmb887x_sim_card_t, imsi),
 	DEFINE_PROP_STRING("operator_code", pmb887x_sim_card_t, operator_code),
 	DEFINE_PROP_STRING("reader", pmb887x_sim_card_t, reader_name),
+	DEFINE_PROP_BOOL("inserted", pmb887x_sim_card_t, inserted, true),
 };
 
 static void sim_card_class_init(ObjectClass *klass, const void *data) {

@@ -70,6 +70,8 @@ typedef struct DisasContext {
     int condjmp;
     /* The label that will be jumped to when the instruction is skipped.  */
     DisasLabel condlabel;
+    bool arm9e_cycles;
+    uint32_t arm9e_late;
     /* Thumb-2 conditional execution bits.  */
     int condexec_mask;
     int condexec_cond;

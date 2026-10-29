@@ -112,6 +112,10 @@ static const dsp_device_ops_t modulator_ops = {
 	.write = modulator_write,
 };
 
+uint16_t modulator_ram_stored_bits(uint16_t hardware_version) {
+	return hardware_version == PMB887X_DSP_HW_VERSION_E101 ? 0x000F : 0x0001;
+}
+
 dsp_device_t *modulator_create(const pmb887x_dsp_peripheral_config_t *config, dsp_device_t *interrupt) {
 	modulator_state_t *state = g_new0(modulator_state_t, 1);
 	state->interrupt = interrupt;

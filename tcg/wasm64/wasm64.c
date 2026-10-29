@@ -10,7 +10,7 @@
 #include "qemu/osdep.h"
 #include "tcg/tcg.h"
 #include "system/cpu-timers.h"
-#include "qemu/main-loop.h"             /* bql_lock (w64_icount2_sync_now) */
+#include "qemu/main-loop.h"             /* bql_release_lazy */
 #include "exec/cpu-common.h"
 #include "exec/gdbstub.h"
 #include "hw/core/cpu.h"
@@ -28,33 +28,22 @@ __thread uintptr_t w64_tb_ptr;
 /* per-thread state: frame + slot layout
  *   frame + 0 .. 8    goto_ptr handoff slot ([sp-8])
  *   frame + 16 ...    call frame ($sp = frame + 16)
- * Per thread because the pmb887x DSP JIT runs TBs through this dispatcher
- * on a thread of its own. */
-static __thread uint8_t *w64_frame;
+ * One frame per nesting level: the pmb887x DSP JIT runs its blocks
+ * through this dispatcher from inside an ARM device access (dsp_sync),
+ * while the ARM TB that made the access still has its frame live. */
+#define W64_EXEC_NEST_MAX 4
+static __thread uint8_t *w64_frames[W64_EXEC_NEST_MAX];
+static __thread unsigned w64_exec_depth;
 
 typedef uint32_t w64_run_fn(uintptr_t env, uintptr_t sp, uintptr_t tp,
                             uint32_t tidx);
 
 static void w64_ls_init(void);
 
-/* Rare slow path for the inline TB-prologue accounting: the icount2
- * virtual-clock deadline was crossed.  Mirrors icount2_advance()'s
- * tail exactly — the ticks themselves were already advanced inline. */
-void w64_icount2_sync_now(void)
-{
-    bql_lock();
-    icount2_sync();
-    bql_unlock();
-}
-
 static void w64_init(void)
 {
     static bool ls_armed;
 
-    if (!w64_frame) {
-        w64_frame = g_malloc0(16 + TCG_STATIC_CALL_ARGS_SIZE +
-                              TCG_STATIC_FRAME_SIZE);
-    }
     if (!ls_armed) {
         ls_armed = true;
         /* Eager lockstep init: an armed prologue tests w64_ls_on before
@@ -74,12 +63,7 @@ uint32_t w64_acct_flags;
 
 void w64_acct_init(void)
 {
-    uintptr_t ticks, deadline;
-
-    icount2_w64_acct_addrs(&ticks, &deadline);
     w64_acct_addr[W64_ACCT_INSNS] = (uint64_t)(uintptr_t)&wasm_guest_insns;
-    w64_acct_addr[W64_ACCT_TICKS] = (uint64_t)ticks;
-    w64_acct_addr[W64_ACCT_DEADLINE] = (uint64_t)deadline;
     w64_acct_addr[W64_ACCT_LS_ON] = (uint64_t)(uintptr_t)&w64_ls_on;
 }
 
@@ -1136,13 +1120,9 @@ void w64_batch_flush(void)
  * this at runtime and refuses to chain, unwinding to the dispatcher. */
 uint32_t w64_chain_stop;
 
-uintptr_t QEMU_DISABLE_CFI tcg_qemu_tb_exec(CPUArchState *env,
-                                            const void *v_tb_ptr)
+static uintptr_t QEMU_DISABLE_CFI w64_exec(CPUArchState *env, uintptr_t tb,
+                                            uint8_t *frame)
 {
-    uintptr_t tb = (uintptr_t)v_tb_ptr;
-
-    w64_init();
-
     for (;;) {
         uint32_t *desc = (uint32_t *)tb;
         uint32_t fidx, res;
@@ -1150,7 +1130,7 @@ uintptr_t QEMU_DISABLE_CFI tcg_qemu_tb_exec(CPUArchState *env,
         if (desc[W64_DESC_FIDX / 4] == 0 &&
             w64_interp_try(desc[W64_DESC_TIDX / 4],
                            desc[W64_DESC_ICOUNT / 4], (uintptr_t)env,
-                           (uintptr_t)(w64_frame + 16),
+                           (uintptr_t)(frame + 16),
                            (uintptr_t)&w64_tb_ptr, &res)) {
             goto exited;
         }
@@ -1167,7 +1147,7 @@ uintptr_t QEMU_DISABLE_CFI tcg_qemu_tb_exec(CPUArchState *env,
 
         /* the batch's run thunk tail-calls TAB[tidx] with (env, sp, tp) */
         res = ((w64_run_fn *)(uintptr_t)fidx)(
-            (uintptr_t)env, (uintptr_t)(w64_frame + 16),
+            (uintptr_t)env, (uintptr_t)(frame + 16),
             (uintptr_t)&w64_tb_ptr, desc[W64_DESC_TIDX / 4]);
 
     exited:
@@ -1186,7 +1166,7 @@ uintptr_t QEMU_DISABLE_CFI tcg_qemu_tb_exec(CPUArchState *env,
             /* the handoff slot is [sp-8] = frame+8 (sp = frame+16); the
              * dispatcher read frame+0 — always 0 — so every goto_ptr
              * unwound to cpu_exec_loop (14.9M of 16.8M exits per boot) */
-            uintptr_t next = *(uintptr_t *)(w64_frame + 8);
+            uintptr_t next = *(uintptr_t *)(frame + 8);
             if (next == 0 || next == (uintptr_t)tcg_code_gen_epilogue) {
                 return 0;
             }
@@ -1195,4 +1175,31 @@ uintptr_t QEMU_DISABLE_CFI tcg_qemu_tb_exec(CPUArchState *env,
         }
         return res;
     }
+}
+
+/* cpu_loop_exit() longjmped out of every TB this thread was running. */
+void w64_exec_unwound(void)
+{
+    w64_exec_depth = 0;
+    w64_interp_unwound();
+}
+
+uintptr_t tcg_qemu_tb_exec(CPUArchState *env, const void *v_tb_ptr)
+{
+    unsigned depth = w64_exec_depth;
+    uintptr_t outer_tb_ptr = w64_tb_ptr;
+    uintptr_t res;
+
+    w64_init();
+    g_assert(depth < W64_EXEC_NEST_MAX);
+    if (!w64_frames[depth]) {
+        w64_frames[depth] = g_malloc0(16 + TCG_STATIC_CALL_ARGS_SIZE +
+                                      TCG_STATIC_FRAME_SIZE);
+    }
+    w64_exec_depth = depth + 1;
+    res = w64_exec(env, (uintptr_t)v_tb_ptr, w64_frames[depth]);
+    w64_exec_depth = depth;
+    /* the outer TB's helper may still fault and unwind through it */
+    w64_tb_ptr = outer_tb_ptr;
+    return res;
 }

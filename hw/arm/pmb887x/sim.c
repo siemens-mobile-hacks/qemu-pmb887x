@@ -642,6 +642,7 @@ static void sim_event_handler(void *opaque, int event_id, int level) {
 static void sim_init(Object *obj) {
 	DeviceState *dev = DEVICE(obj);
 	pmb887x_sim_t *p = PMB887X_SIM(obj);
+	pmb887x_clc_init(&p->clc, dev);
 
 	memory_region_init_io(&p->mmio, obj, &sim_io_ops, p, TYPE_PMB887X_SIM, SIM_IO_SIZE);
 	sysbus_init_mmio(SYS_BUS_DEVICE(obj), &p->mmio);
@@ -664,7 +665,7 @@ static void sim_init(Object *obj) {
 
 static void sim_realize(DeviceState *dev, Error **errp) {
 	pmb887x_sim_t *p = PMB887X_SIM(dev);
-	pmb887x_clc_init(&p->clc);
+	pmb887x_clc_set(&p->clc, 1U << MOD_CLC_RMC_SHIFT);
 	pmb887x_srb_init(&p->srb, p->irq, ARRAY_SIZE(p->irq));
 	pmb887x_srb_set_event_handler(&p->srb, p, sim_event_handler);
 	if (p->chr.chr)

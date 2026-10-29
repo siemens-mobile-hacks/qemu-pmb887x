@@ -1,7 +1,25 @@
 #pragma once
 
+/* CPU: pmb8878 */
+#define CPU_PMB8878			0
+#define PMB8878_SSC_BASE	0xF1100000
+#define PMB8878_USB_BASE	0xF2200000
+#define PMB8878_VIC_BASE	0xF2800000
+#define PMB8878_DMAC_BASE	0xF3000000
+#define PMB8878_SCU_BASE	0xF4400000
+#define PMB8878_CGU_BASE	0xF4500000
+#define PMB8878_SCCU_BASE	0xF4600000
+#define PMB8878_RTC_BASE	0xF4700000
+#define PMB8878_ADC_BASE	0xF4C00000
+#define PMB8878_DSP_BASE	0xF6000000
+#define PMB8878_TPU_BASE	0xF6400000
+#define PMB8878_MMICIF_BASE	0xF8000000
+
+
+
+
 /* CPU: pmb8876 */
-#define CPU_PMB8876					0
+#define CPU_PMB8876					1
 #define PMB8876_EBU_BASE			0xF0000000
 #define PMB8876_USART0_BASE			0xF1000000
 #define PMB8876_SSC_BASE			0xF1100000
@@ -180,8 +198,12 @@
 #define PMB8876_GPIO_I2C_SCL		PMB8876_GPIO_PIN28
 #define PMB8876_GPIO_I2C_SDA		PMB8876_GPIO_PIN29
 #define PMB8876_GPIO_DIF_D1			PMB8876_GPIO_PIN30
+#define PMB8876_GPIO_I2S2_CLK0		PMB8876_GPIO_PIN31
+#define PMB8876_GPIO_I2S2_RX		PMB8876_GPIO_PIN32
+#define PMB8876_GPIO_I2S2_TX		PMB8876_GPIO_PIN33
+#define PMB8876_GPIO_I2S2_WA0		PMB8876_GPIO_PIN34
 #define PMB8876_GPIO_I2S1_WA0		PMB8876_GPIO_PIN38
-#define PMB8876_GPIO_DIF_HD			PMB8876_GPIO_PIN39
+#define PMB8876_GPIO_MMCI_DAT1		PMB8876_GPIO_PIN39
 #define PMB8876_GPIO_MMCI_DAT2		PMB8876_GPIO_PIN40
 #define PMB8876_GPIO_MMCI_DAT3		PMB8876_GPIO_PIN41
 #define PMB8876_GPIO_T_OUT0			PMB8876_GPIO_PIN43
@@ -234,8 +256,9 @@
 #define PMB8876_GPIO_DIF_CS2		PMB8876_GPIO_PIN96
 #define PMB8876_GPIO_DIF_WR			PMB8876_GPIO_PIN97
 #define PMB8876_GPIO_DIF_RD			PMB8876_GPIO_PIN98
-#define PMB8876_GPIO_MMCI_DAT1		PMB8876_GPIO_PIN99
+#define PMB8876_GPIO_DIF_HD			PMB8876_GPIO_PIN99
 #define PMB8876_GPIO_DIF_VD			PMB8876_GPIO_PIN100
+#define PMB8876_GPIO_I2S2_CLK1		PMB8876_GPIO_PIN102
 #define PMB8876_GPIO_I2S2_WA1		PMB8876_GPIO_PIN103
 #define PMB8876_GPIO_MMCI_CMD		PMB8876_GPIO_PIN104
 #define PMB8876_GPIO_MMCI_DAT0		PMB8876_GPIO_PIN105
@@ -363,7 +386,7 @@
 #define PMB8876_I2C_PROTOCOL_IRQ	158
 
 /* CPU: pmb8875 */
-#define CPU_PMB8875					1
+#define CPU_PMB8875					2
 #define PMB8875_EBU_BASE			0xF0000000
 #define PMB8875_USART0_BASE			0xF1000000
 #define PMB8875_SSC_BASE			0xF1100000
@@ -499,6 +522,10 @@
 #define PMB8875_GPIO_DIF_RESET		PMB8875_GPIO_PIN27
 #define PMB8875_GPIO_I2C_SCL		PMB8875_GPIO_PIN28
 #define PMB8875_GPIO_I2C_SDA		PMB8875_GPIO_PIN29
+#define PMB8875_GPIO_I2S2_CLK0		PMB8875_GPIO_PIN31
+#define PMB8875_GPIO_I2S2_RX		PMB8875_GPIO_PIN32
+#define PMB8875_GPIO_I2S2_TX		PMB8875_GPIO_PIN33
+#define PMB8875_GPIO_I2S2_WA0		PMB8875_GPIO_PIN34
 #define PMB8875_GPIO_T_OUT0			PMB8875_GPIO_PIN43
 #define PMB8875_GPIO_T_OUT1			PMB8875_GPIO_PIN44
 #define PMB8875_GPIO_T_OUT2			PMB8875_GPIO_PIN45
@@ -1911,11 +1938,11 @@
 #define CAPCOM_OUT_O7_SHIFT						7
 
 #define CAPCOM_IOC								0x28
-#define CAPCOM_IOC_PL							(1 << 1)			 // Port Lock
+#define CAPCOM_IOC_PL							(1 << 1)		 // Port Lock
 #define CAPCOM_IOC_PL_SHIFT						1
-#define CAPCOM_IOC_STAG							(1 << 2)			 // Stagger
+#define CAPCOM_IOC_STAG							(1 << 2)		 // Stagger
 #define CAPCOM_IOC_STAG_SHIFT					2
-#define CAPCOM_IOC_PDS							(1 << 3)			 // Port Direction Select
+#define CAPCOM_IOC_PDS							(1 << 3)		 // Port Direction Select
 #define CAPCOM_IOC_PDS_SHIFT					3
 #define CAPCOM_IOC_PDS_OUT						0x0
 #define CAPCOM_IOC_PDS_IN						0x8
@@ -2051,7 +2078,7 @@
 #define CAPCOM_WHBCSEE_CLRSEE7_CLR				0x80
 
 #define CAPCOM_T0								0x40
-#define CAPCOM_T0_T0							(0x7FFFFFFF << 0)
+#define CAPCOM_T0_T0							(0xFFFF << 0)
 #define CAPCOM_T0_T0_SHIFT						0
 #define CAPCOM_T0_OVF0							(1 << 31)
 #define CAPCOM_T0_OVF0_SHIFT					31
@@ -2059,11 +2086,11 @@
 #define CAPCOM_T0_OVF0_SET						0x80000000
 
 #define CAPCOM_T0REL							0x44
-#define CAPCOM_T0REL_T0REL						(0x7FFFFFFF << 0)
+#define CAPCOM_T0REL_T0REL						(0xFFFF << 0)
 #define CAPCOM_T0REL_T0REL_SHIFT				0
 
 #define CAPCOM_T1								0x48
-#define CAPCOM_T1_T1							(0x7FFFFFFF << 0)
+#define CAPCOM_T1_T1							(0xFFFF << 0)
 #define CAPCOM_T1_T1_SHIFT						0
 #define CAPCOM_T1_OVF1							(1 << 31)
 #define CAPCOM_T1_OVF1_SHIFT					31
@@ -2071,7 +2098,7 @@
 #define CAPCOM_T1_OVF1_SET						0x80000000
 
 #define CAPCOM_T1REL							0x4C
-#define CAPCOM_T1REL_T1REL						(0x7FFFFFFF << 0)
+#define CAPCOM_T1REL_T1REL						(0xFFFF << 0)
 #define CAPCOM_T1REL_T1REL_SHIFT				0
 
 #define CAPCOM_CC0								0x50
@@ -2245,19 +2272,25 @@
 #define CGU_CON1_AHB_CLKSEL_PHASE2			0x400000
 #define CGU_CON1_AHB_CLKSEL_PHASE3			0x500000
 #define CGU_CON1_AHB_CLKSEL_PHASE4			0x600000
-#define CGU_CON1_FSTM_DIV_EN				(1 << 25)		 // Enable fSTM divider
-#define CGU_CON1_FSTM_DIV_EN_SHIFT			25
-#define CGU_CON1_FSTM_DIV					(0x3 << 28)		 // fSTM divider: divide fOSC by 4 * 2^n
-#define CGU_CON1_FSTM_DIV_SHIFT				28
-#define CGU_CON1_FSTM_DIV_4					0x0
-#define CGU_CON1_FSTM_DIV_8					0x10000000
-#define CGU_CON1_FSTM_DIV_16				0x20000000
-#define CGU_CON1_FSTM_DIV_32				0x30000000
+#define CGU_CON1_FPI2_OSC_DISABLE			(1 << 24)		 // Disable the oscillator source for FPI2
+#define CGU_CON1_FPI2_OSC_DISABLE_SHIFT		24
+#define CGU_CON1_FPI2_CLKSEL				(1 << 25)		 // Source clock for FPI2; PLL takes priority over FPI2_OSC_DISABLE
+#define CGU_CON1_FPI2_CLKSEL_SHIFT			25
+#define CGU_CON1_FPI2_CLKSEL_OSC			0x0
+#define CGU_CON1_FPI2_CLKSEL_PLL			0x2000000
+#define CGU_CON1_FPI2_CLKDIV				(0x3 << 28)		 // FPI2 divider after the fixed PLL divide-by-two stage
+#define CGU_CON1_FPI2_CLKDIV_SHIFT			28
+#define CGU_CON1_FPI2_CLKDIV_DIV1			0x0
+#define CGU_CON1_FPI2_CLKDIV_DIV2			0x10000000
+#define CGU_CON1_FPI2_CLKDIV_DIV4			0x20000000
+#define CGU_CON1_FPI2_CLKDIV_DIV8			0x30000000
 
 /* Clock Generation Unit Control Register 5 (CGU_CTL5) */
 #define CGU_CON2							0xAC
 #define CGU_CON2_DSP_CLKSEL					(0x7 << 0)		 // Source clock for DSP
 #define CGU_CON2_DSP_CLKSEL_SHIFT			0
+#define CGU_CON2_DSP_CLKSEL_OSC				0x0
+#define CGU_CON2_DSP_CLKSEL_PLL				0x2
 #define CGU_CON2_DSP_CLKSEL_PHASE1			0x3
 #define CGU_CON2_DSP_CLKSEL_DISABLE			0x7
 #define CGU_CON2_EBU_CLKSEL					(0x7 << 4)		 // Source clock for EBU
@@ -2301,13 +2334,15 @@
 #define CGU_CON2_CLK32K_EN_SHIFT			24
 #define CGU_CON2_MS_CLKSEL					(0x3 << 28)		 // Source clock for the mixed-signal domain (CLK_MS_O)
 #define CGU_CON2_MS_CLKSEL_SHIFT			28
-#define CGU_CON2_MS_CLKSEL_OSC				0x0
-#define CGU_CON2_MS_CLKSEL_CLK32K			0x10000000
-#define CGU_CON2_MS_CLKSEL_OSC_DIV_64		0x20000000
-#define CGU_CON2_MS_CLKSEL_DISABLE			0x30000000
+#define CGU_CON2_MS_CLKSEL_CLK_IN			0x0
+#define CGU_CON2_MS_CLKSEL_DISABLE_01		0x10000000
+#define CGU_CON2_MS_CLKSEL_PLL				0x20000000
+#define CGU_CON2_MS_CLKSEL_DISABLE_11		0x30000000
 
 /* PLL Status Register */
 #define CGU_STAT							0xB0
+#define CGU_STAT_DSP_CLK					(1 << 9)		 // DSP core is active (not idle)
+#define CGU_STAT_DSP_CLK_SHIFT				9
 #define CGU_STAT_LOCK						(1 << 13)		 // PLL lock status
 #define CGU_STAT_LOCK_SHIFT					13
 
@@ -3995,7 +4030,7 @@
 #define GPIO_ID								0x08
 
 #define GPIO_MON_CR1						0x10
-#define GPIO_MON_CR1_SIGNAL_SELECT			(0xFF << 0)
+#define GPIO_MON_CR1_SIGNAL_SELECT			(0x7F << 0)
 #define GPIO_MON_CR1_SIGNAL_SELECT_SHIFT	0
 #define GPIO_MON_CR1_BLOCK_SELECT			(0xF << 8)
 #define GPIO_MON_CR1_BLOCK_SELECT_SHIFT		8
@@ -4010,7 +4045,7 @@
 #define GPIO_MON_CR1_ENAQ_TRISTATE			0x8000
 
 #define GPIO_MON_CR2						0x14
-#define GPIO_MON_CR2_SIGNAL_SELECT			(0xFF << 0)
+#define GPIO_MON_CR2_SIGNAL_SELECT			(0x7F << 0)
 #define GPIO_MON_CR2_SIGNAL_SELECT_SHIFT	0
 #define GPIO_MON_CR2_BLOCK_SELECT			(0xF << 8)
 #define GPIO_MON_CR2_BLOCK_SELECT_SHIFT		8
@@ -4025,7 +4060,7 @@
 #define GPIO_MON_CR2_ENAQ_TRISTATE			0x8000
 
 #define GPIO_MON_CR3						0x18
-#define GPIO_MON_CR3_SIGNAL_SELECT			(0xFF << 0)
+#define GPIO_MON_CR3_SIGNAL_SELECT			(0x7F << 0)
 #define GPIO_MON_CR3_SIGNAL_SELECT_SHIFT	0
 #define GPIO_MON_CR3_BLOCK_SELECT			(0xF << 8)
 #define GPIO_MON_CR3_BLOCK_SELECT_SHIFT		8
@@ -4040,7 +4075,7 @@
 #define GPIO_MON_CR3_ENAQ_TRISTATE			0x8000
 
 #define GPIO_MON_CR4						0x1C
-#define GPIO_MON_CR4_SIGNAL_SELECT			(0xFF << 0)
+#define GPIO_MON_CR4_SIGNAL_SELECT			(0x7F << 0)
 #define GPIO_MON_CR4_SIGNAL_SELECT_SHIFT	0
 #define GPIO_MON_CR4_BLOCK_SELECT			(0xF << 8)
 #define GPIO_MON_CR4_BLOCK_SELECT_SHIFT		8
@@ -5801,10 +5836,10 @@
 
 /* Wakeup Timing Register */
 #define SCCU_WAIT						0x30
-#define SCCU_WAIT_PREWUP				(0x3 << 0)		 // Pre-Wakeup Time in TDMA Frames Minus 1
-#define SCCU_WAIT_PREWUP_SHIFT			0
-#define SCCU_WAIT_WAIT					(0x3 << 16)		 // VCXO Wait Loop Duration
-#define SCCU_WAIT_WAIT_SHIFT			16
+#define SCCU_WAIT_WAIT					(0x3F << 0)		 // VCXO Wait Loop Duration
+#define SCCU_WAIT_WAIT_SHIFT			0
+#define SCCU_WAIT_PREWUP				(0x3 << 16)		 // Pre-Wakeup Time in TDMA Frames Minus 1
+#define SCCU_WAIT_PREWUP_SHIFT			16
 
 /* Hardware Wakeup Control Register */
 #define SCCU_HWWAKEUP					0x34
@@ -6615,28 +6650,30 @@
 // STM [MOD_NUM=0000, MOD_REV=02, MOD_32BIT=C0]
 // STM [MOD_NUM=0000, MOD_REV=11, MOD_32BIT=C0]
 // System Timer (see STM in TC1766 datasheet)
-#define STM_IO_SIZE	0x00000030
+#define STM_IO_SIZE			0x00000030
 /* Clock Control Register */
-#define STM_CLC		0x00
+#define STM_CLC				0x00
+#define STM_CLC_RMC2		(0xFF << 16)	 // Additional PLL-source divider; total divisor is RMC + RMC2
+#define STM_CLC_RMC2_SHIFT	16
 
 /* Module Identifier Register */
-#define STM_ID		0x08
+#define STM_ID				0x08
 
-#define STM_TIM0	0x10
+#define STM_TIM0			0x10
 
-#define STM_TIM1	0x14
+#define STM_TIM1			0x14
 
-#define STM_TIM2	0x18
+#define STM_TIM2			0x18
 
-#define STM_TIM3	0x1C
+#define STM_TIM3			0x1C
 
-#define STM_TIM4	0x20
+#define STM_TIM4			0x20
 
-#define STM_TIM5	0x24
+#define STM_TIM5			0x24
 
-#define STM_TIM6	0x28
+#define STM_TIM6			0x28
 
-#define STM_CAP		0x2C
+#define STM_CAP				0x2C
 
 
 // TPU [MOD_NUM=F021, MOD_REV=00, MOD_32BIT=C0]
@@ -6982,10 +7019,10 @@
 #define USART_WHBABSTAT_SETDETWAIT_SHIFT	9
 
 #define USART_FCCON							0x5C
-#define USART_FCCON_CTSEN					(1 << 0)	 // RTS enbled (0: disable; 1: enable)
-#define USART_FCCON_CTSEN_SHIFT				0
-#define USART_FCCON_RTSEN					(1 << 1)	 // CTS enable (0: disable; 1: enable)
-#define USART_FCCON_RTSEN_SHIFT				1
+#define USART_FCCON_RTSEN					(1 << 0)	 // RTS enable (0: disable; 1: enable)
+#define USART_FCCON_RTSEN_SHIFT				0
+#define USART_FCCON_CTSEN					(1 << 1)	 // CTS enable (0: disable; 1: enable)
+#define USART_FCCON_CTSEN_SHIFT				1
 #define USART_FCCON_RTS						(1 << 4)	 // RTS control bit
 #define USART_FCCON_RTS_SHIFT				4
 #define USART_FCCON_RTS_TRIGGER				(0x3F << 8)	 // RTS receive FIFO trigger level
@@ -6994,8 +7031,6 @@
 #define USART_FCSTAT						0x60
 #define USART_FCSTAT_CTS					(1 << 0)	 // CTS Status (0: inactive; 1: active)
 #define USART_FCSTAT_CTS_SHIFT				0
-#define USART_FCSTAT_RTS					(1 << 1)	 // RTS Status (0: inactive; 1: active)
-#define USART_FCSTAT_RTS_SHIFT				1
 
 #define USART_IMSC							0x64
 #define USART_IMSC_TX						(1 << 0)	 // Transmit interrupt mask
@@ -7351,7 +7386,7 @@
 #define USIF_MODEM_STAT_DSR			(1 << 1)
 #define USIF_MODEM_STAT_DSR_SHIFT	1
 
-/* TX Transfer Count / Pending Size [read-only] */
+/* TX Transfer Count / Pending Size */
 #define USIF_TPS					0x3C
 
 /* TX FIFO Status Register [read-only] */

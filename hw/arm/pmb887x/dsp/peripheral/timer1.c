@@ -98,19 +98,6 @@ static bool timer1_write(dsp_device_t *device, uint16_t offset, uint32_t pc, uin
 	return true;
 }
 
-static const dsp_device_ops_t timer1_ops = {
-	.destroy = timer1_destroy,
-	.reset = timer1_reset,
-	.read = timer1_read,
-	.write = timer1_write,
-};
-
-dsp_device_t *timer1_create(const pmb887x_dsp_peripheral_config_t *config, dsp_device_t *interrupt) {
-	timer1_state_t *state = g_new0(timer1_state_t, 1);
-	state->interrupt = interrupt;
-	return dsp_device_create(config, &timer1_ops, state);
-}
-
 void timer1_advance(dsp_device_t *device, size_t cycles) {
 	timer1_state_t *state = device->state;
 
@@ -131,7 +118,6 @@ void timer1_advance(dsp_device_t *device, size_t cycles) {
 		return;
 
 	state->prescaler += cycles;
-
 	while (state->prescaler >= TIMER1_DIVIDER) {
 		uint16_t interrupts = 0;
 
@@ -150,6 +136,19 @@ void timer1_advance(dsp_device_t *device, size_t cycles) {
 			break;
 		}
 	}
+}
+
+static const dsp_device_ops_t timer1_ops = {
+	.destroy = timer1_destroy,
+	.reset = timer1_reset,
+	.read = timer1_read,
+	.write = timer1_write,
+};
+
+dsp_device_t *timer1_create(const pmb887x_dsp_peripheral_config_t *config, dsp_device_t *interrupt) {
+	timer1_state_t *state = g_new0(timer1_state_t, 1);
+	state->interrupt = interrupt;
+	return dsp_device_create(config, &timer1_ops, state);
 }
 
 bool timer1_is_active(const dsp_device_t *device) {

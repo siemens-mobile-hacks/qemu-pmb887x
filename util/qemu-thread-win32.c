@@ -171,6 +171,14 @@ void qemu_cond_wait_impl(QemuCond *cond, QemuMutex *mutex, const char *file, con
     qemu_mutex_post_lock(mutex, file, line);
 }
 
+bool qemu_cond_timedwait_ns(QemuCond *cond, QemuMutex *mutex, int64_t ns)
+{
+    /* SleepConditionVariableSRW() has millisecond resolution. */
+    int ms = MIN(DIV_ROUND_UP(ns, SCALE_MS), INT_MAX);
+
+    return qemu_cond_timedwait_impl(cond, mutex, ms, __FILE__, __LINE__);
+}
+
 bool qemu_cond_timedwait_impl(QemuCond *cond, QemuMutex *mutex, int ms,
                               const char *file, const int line)
 {

@@ -12,7 +12,6 @@
 
 #define DSP_OUTPUT_MASK	(TEAK_DSP_DSPOUT_DSPOUT0 | TEAK_DSP_DSPOUT_DSPOUT1 | TEAK_DSP_DSPOUT_DSPOUT2)
 #define DSP_INPUT_COUNT	2
-#define DSP_HARDWARE_VERSION	0xE101U
 
 typedef struct control_state_t control_state_t;
 
@@ -42,7 +41,7 @@ static bool control_read(dsp_device_t *device, uint16_t offset, uint32_t pc, uin
 
 	switch (offset) {
 		case TEAK_DSP_ID:
-			*value = DSP_HARDWARE_VERSION;
+			*value = device->dsp_config->hardware_version;
 			break;
 
 		case TEAK_DSP_DEBUG:

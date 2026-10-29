@@ -15,6 +15,7 @@
 #include "hw/arm/machines-qom.h"
 #include "system/system.h"
 #include "target/arm/cpregs.h"
+#include "system/cpu-timers.h"
 
 #include "hw/arm/pmb887x/board/dsp.h"
 #include "hw/arm/pmb887x/dsp.h"
@@ -32,6 +33,7 @@
 
 #include "hw/arm/pmb887x/io_bridge.h"
 #include "hw/arm/pmb887x/regs_dump.h"
+#include "hw/arm/pmb887x/tpu.h"
 #include "hw/arm/pmb887x/trace_common.h"
 
 void qmp_pmemsave(uint64_t addr, uint64_t size, const char *filename, Error **errp);
@@ -76,6 +78,10 @@ static void memory_dump_at_exit(void) {
 //	qmp_pmemsave(0xA8000000, 8 * 1024 * 1024, "/tmp/ram.bin", NULL);
 //	qmp_pmemsave(0x00000000, 0x4000, "/tmp/tcm.bin", NULL);
 //	qmp_pmemsave(0x00080000, 96 * 1024, "/tmp/sram.bin", NULL);
+}
+
+static void pmb887x_cpu_clock_update(void *opaque, ClockEvent _event) {
+	cpu_clock_set_cpu_hz(clock_get_hz(opaque));
 }
 
 static void pmb887x_init_keymap(DeviceState *keypad, const uint32_t *map, int map_size) {
@@ -160,10 +166,6 @@ static void pmb887x_init(MachineState *machine) {
 
 	rom_add_blob_fixed("BROM", brom_data, brom_size, 0x00400000);
 
-	// Port Control Logic
-	DeviceState *gpio = pmb887x_new_cpu_module("GPIO");
-	sysbus_realize_and_unref(SYS_BUS_DEVICE(gpio), &error_fatal);
-
 	// VIC
 	DeviceState *vic = pmb887x_new_cpu_module("VIC");
 	sysbus_connect_irq(SYS_BUS_DEVICE(vic), 0, qdev_get_gpio_in(DEVICE(cpu), ARM_CPU_IRQ));
@@ -173,15 +175,23 @@ static void pmb887x_init(MachineState *machine) {
 	// CGU
 	DeviceState *cgu = pmb887x_new_cpu_module("CGU");
 	sysbus_realize_and_unref(SYS_BUS_DEVICE(cgu), &error_fatal);
+	Clock *cpu_clock = clock_new(OBJECT(cgu), "cpu-clock");
+	clock_set_callback(cpu_clock, pmb887x_cpu_clock_update, cpu_clock, ClockUpdate);
+	clock_set_source(cpu_clock, qdev_get_clock_out(cgu, "CPU"));
+	pmb887x_cpu_clock_update(cpu_clock, ClockUpdate);
+
+	// Port Control Logic
+	DeviceState *gpio = pmb887x_new_cpu_module("GPIO");
+	sysbus_realize_and_unref(SYS_BUS_DEVICE(gpio), &error_fatal);
 
 	// System Timer
 	DeviceState *stm = pmb887x_new_cpu_module("STM");
-	object_property_set_link(OBJECT(stm), "cgu", OBJECT(cgu), &error_fatal);
+	pmb887x_qdev_connect_gpio_out(cgu, "FPI2_PLL_SELECTED", 0,
+		qdev_get_gpio_in_named(stm, "RMC2_ENABLE_IN", 0));
 	sysbus_realize_and_unref(SYS_BUS_DEVICE(stm), &error_fatal);
 
 	// Time Processing Unit
 	DeviceState *tpu = pmb887x_new_cpu_module("TPU");
-	object_property_set_link(OBJECT(tpu), "cgu", OBJECT(cgu), &error_fatal);
 	sysbus_realize_and_unref(SYS_BUS_DEVICE(tpu), &error_fatal);
 
 	// DMA Controller
@@ -195,12 +205,15 @@ static void pmb887x_init(MachineState *machine) {
 
 	// DSP
 	DeviceState *dsp = pmb887x_new_cpu_module("DSP");
+	qdev_connect_clock_in(dsp, "MS_CLOCK", qdev_get_clock_out(cgu, "MS"));
+	object_property_set_link(OBJECT(dsp), "cpu", OBJECT(cpu), &error_fatal);
 	pmb887x_dsp_set_config(dsp, pmb887x_cpu_get(pmb887x_board()->cpu)->dsp_config);
 	pmb887x_board_init_dsp(dsp);
 	qdev_connect_clock_in(dsp, "GSM_CLOCK", qdev_get_clock_out(tpu, "GSM_CLOCK"));
+	qdev_connect_gpio_out_named(dsp, "ACTIVE_OUT", 0,
+		qdev_get_gpio_in_named(cgu, "DSP_ACTIVE_IN", 0));
 	sysbus_realize_and_unref(SYS_BUS_DEVICE(dsp), &error_fatal);
-	for (size_t i = 0; i < PMB887X_DSP_GSM_SIGNAL_COUNT; i++)
-		qdev_connect_gpio_out_named(tpu, "GSM_OUT", i, qdev_get_gpio_in_named(dsp, "GSM_IN", i));
+	pmb887x_tpu_set_dsp(tpu, dsp);
 
 	// GPRS Ciphering Unit
 	DeviceState *gprscu = pmb887x_new_cpu_module("GPRSCU");
@@ -227,13 +240,11 @@ static void pmb887x_init(MachineState *machine) {
 
 	// USART0
 	DeviceState *usart0 = pmb887x_new_cpu_module("USART0");
-	object_property_set_link(OBJECT(usart0), "cgu", OBJECT(cgu), &error_fatal);
 	qdev_prop_set_chr(DEVICE(usart0), "chardev", serial_hd(0));
 	sysbus_realize_and_unref(SYS_BUS_DEVICE(usart0), &error_fatal);
 
 	// USART1
 	DeviceState *usart1 = pmb887x_new_cpu_module("USART1");
-	object_property_set_link(OBJECT(usart1), "cgu", OBJECT(cgu), &error_fatal);
 	qdev_prop_set_chr(DEVICE(usart1), "chardev", serial_hd(1));
 	sysbus_realize_and_unref(SYS_BUS_DEVICE(usart1), &error_fatal);
 
@@ -252,8 +263,6 @@ static void pmb887x_init(MachineState *machine) {
 
 	// I2C
 	DeviceState *i2c = pmb887x_new_cpu_module("I2C");
-	if (object_property_find(OBJECT(i2c), "cgu"))
-		object_property_set_link(OBJECT(i2c), "cgu", OBJECT(cgu), &error_fatal);
 	sysbus_realize_and_unref(SYS_BUS_DEVICE(i2c), &error_fatal);
 
 	// Synchronous Serial Controller
@@ -262,7 +271,7 @@ static void pmb887x_init(MachineState *machine) {
 
 	// Standby Clock Control Unit
 	DeviceState *sccu = pmb887x_new_cpu_module("SCCU");
-	object_property_set_link(OBJECT(sccu), "cgu", OBJECT(cgu), &error_fatal);
+	qdev_connect_clock_in(sccu, "clk32", qdev_get_clock_out(cgu, "RTC"));
 	sysbus_realize_and_unref(SYS_BUS_DEVICE(sccu), &error_fatal);
 
 	// System Control Unit
@@ -270,7 +279,6 @@ static void pmb887x_init(MachineState *machine) {
 	const char *stop_on_excp = getenv("QEMU_ARM_STOP_ON_EXCP");
 	if (stop_on_excp && strcmp(stop_on_excp, "1") == 0)
 		object_property_set_bool(OBJECT(scu), "stop_on_watchdog", true, &error_fatal);
-	object_property_set_link(OBJECT(scu), "cgu", OBJECT(cgu), &error_fatal);
 	object_property_set_link(OBJECT(scu), "brom_mirror", OBJECT(brom_mirror), &error_fatal);
 	object_property_set_link(OBJECT(scu), "sccu", OBJECT(sccu), &error_fatal);
 	object_property_set_link(OBJECT(scu), "dmac", OBJECT(dmac), &error_fatal);
@@ -291,36 +299,31 @@ static void pmb887x_init(MachineState *machine) {
 
 	// CAPCOM0
 	DeviceState *capcom0 = pmb887x_new_cpu_module("CAPCOM0");
-	object_property_set_link(OBJECT(capcom0), "cgu", OBJECT(cgu), &error_fatal);
 	sysbus_realize_and_unref(SYS_BUS_DEVICE(capcom0), &error_fatal);
 	
 	// CAPCOM1
 	DeviceState *capcom1 = pmb887x_new_cpu_module("CAPCOM1");
-	object_property_set_link(OBJECT(capcom1), "cgu", OBJECT(cgu), &error_fatal);
 	sysbus_realize_and_unref(SYS_BUS_DEVICE(capcom1), &error_fatal);
 
 	// RTC
 	DeviceState *rtc = pmb887x_new_cpu_module("RTC");
-	object_property_set_link(OBJECT(rtc), "cgu", OBJECT(cgu), &error_fatal);
 	// [rtc] format = "unix" | "calendar": how the firmware reads CNT at
 	// power-on (see rtc.c); LG boards set calendar in their config.
 	qdev_prop_set_string(rtc, "cnt-format",
 		toml_table_get_string(pmb887x_board()->config, "rtc.format", "unix", false));
 	sysbus_realize_and_unref(SYS_BUS_DEVICE(rtc), &error_fatal);
+	qdev_connect_gpio_out_named(scu, "RTC_RESET_OUT", 0, qdev_get_gpio_in_named(rtc, "RESET_IN", 0));
 
 	// GPTU0
 	DeviceState *gptu0 = pmb887x_new_cpu_module("GPTU0");
-	object_property_set_link(OBJECT(gptu0), "cgu", OBJECT(cgu), &error_fatal);
 	sysbus_realize_and_unref(SYS_BUS_DEVICE(gptu0), &error_fatal);
 	
 	// GPTU1
 	DeviceState *gptu1 = pmb887x_new_cpu_module("GPTU1");
-	object_property_set_link(OBJECT(gptu1), "cgu", OBJECT(cgu), &error_fatal);
 	sysbus_realize_and_unref(SYS_BUS_DEVICE(gptu1), &error_fatal);
 
 	// ADC
 	DeviceState *adc = pmb887x_new_cpu_module("ADC");
-	object_property_set_link(OBJECT(adc), "cgu", OBJECT(cgu), &error_fatal);
 	sysbus_realize_and_unref(SYS_BUS_DEVICE(adc), &error_fatal);
 
 	// KEYPAD
@@ -345,6 +348,7 @@ static void pmb887x_init(MachineState *machine) {
 	pmb887x_board_gpio_init_fixed_inputs();
 	pmb887x_board_gpio_init_fixed_connections();
 	pmb887x_board_init_devices(ebuc);
+	sysbus_realize_and_unref(SYS_BUS_DEVICE(ebuc), &error_fatal);
 	pmb887x_board_keyboard_connect_gpios(keypad);
 	pmb887x_qdev_connect_gpio_outputs();
 	pmb887x_board_startup_init(keypad);

@@ -661,7 +661,7 @@ void main_loop_wait(int nonblocking)
 #ifdef __EMSCRIPTEN__
     /*
      * wasm icount: virtual-clock deadlines belong to the vCPU thread
-     * (icount_handle_deadline / icount2_sync / 0023's idle warp) - the
+     * (icount_handle_deadline / 0023's idle warp) - the
      * main loop would wake for every one of them (~24k/s during boot)
      * for nothing.  Time the poll on the remaining clocks only.
      *

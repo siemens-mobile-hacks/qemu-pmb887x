@@ -10,6 +10,7 @@
 #include "hw/ssi/ssi.h"
 #include "hw/core/sysbus.h"
 #include "hw/core/qdev-properties.h"
+#include "qemu/main-loop.h"
 #include "qemu/module.h"
 #include "qemu/timer.h"
 #include "qom/object.h"
@@ -65,6 +66,7 @@ struct pmb887x_ssc_t {
 
 	pmb887x_fifo16_t *rx_fifo;
 	pmb887x_fifo16_t *tx_fifo;
+	QEMUBH *transfer_bh;
 	QEMUTimer *transfer_timer;
 	uint16_t tx_data;
 	bool transfer_pending;
@@ -122,8 +124,7 @@ static void ssc_trigger_dma(pmb887x_ssc_t *p) {
 }
 
 static bool ssc_is_running(pmb887x_ssc_t *p) {
-	return pmb887x_clc_is_enabled(&p->clc) &&
-		pmb887x_clc_get_rmc(&p->clc) &&
+	return pmb887x_clc_get_hz(&p->clc) != 0 &&
 		(p->con & SSC_CON_EN) != 0 &&
 		(p->con & SSC_CON_MS) == SSC_CON_MS_MASTER;
 }
@@ -159,8 +160,6 @@ static void ssc_update_rx_request(pmb887x_ssc_t *p) {
 	}
 }
 
-static void ssc_schedule_transfer(pmb887x_ssc_t *p);
-
 static void ssc_transfer_word(pmb887x_ssc_t *p) {
 	p->status &= ~(SSC_CON_TE | SSC_CON_RE);
 
@@ -189,35 +188,45 @@ static void ssc_transfer_word(pmb887x_ssc_t *p) {
 	ssc_update_rx_request(p);
 }
 
+static bool ssc_transfer_load(pmb887x_ssc_t *p) {
+	if (p->transfer_pending || !ssc_is_running(p) || pmb887x_fifo_is_empty(p->tx_fifo))
+		return false;
+
+	p->tx_data = pmb887x_fifo16_pop(p->tx_fifo);
+	p->transfer_pending = true;
+	p->status |= SSC_CON_BSY;
+	ssc_update_tx_request(p);
+	return true;
+}
+
 static void ssc_transfer_complete(void *opaque) {
 	pmb887x_ssc_t *p = opaque;
+
 	while (p->transfer_pending) {
 		p->transfer_pending = false;
 		if (!ssc_is_running(p))
 			break;
 
 		ssc_transfer_word(p);
-		ssc_schedule_transfer(p);
-		if (pmb887x_srb_get_ris(&p->srb) != 0)
+		if (!ssc_transfer_load(p))
 			break;
+		if (pmb887x_srb_get_ris(&p->srb) != 0) {
+			timer_mod(p->transfer_timer, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + 1);
+			break;
+		}
 	}
 	if (!p->transfer_pending)
 		p->status &= ~SSC_CON_BSY;
 }
 
 static void ssc_schedule_transfer(pmb887x_ssc_t *p) {
-	if (p->transfer_pending || !ssc_is_running(p) || pmb887x_fifo_is_empty(p->tx_fifo))
-		return;
-
-	p->tx_data = pmb887x_fifo16_pop(p->tx_fifo);
-	p->transfer_pending = true;
-	p->status |= SSC_CON_BSY;
-	ssc_update_tx_request(p);
-	timer_mod(p->transfer_timer, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + 1);
+	if (ssc_transfer_load(p))
+		qemu_bh_schedule_idle(p->transfer_bh);
 }
 
 static void ssc_stop_transfer(pmb887x_ssc_t *p) {
 	if (p->transfer_pending) {
+		qemu_bh_cancel(p->transfer_bh);
 		timer_del(p->transfer_timer);
 		p->transfer_pending = false;
 	}
@@ -464,6 +473,7 @@ static void ssc_handle_dmac_rx_clr(void *opaque, int id, int level) {
 static void ssc_init(Object *obj) {
 	DeviceState *dev = DEVICE(obj);
 	pmb887x_ssc_t *p = PMB887X_SSC(obj);
+	pmb887x_clc_init(&p->clc, dev);
 	memory_region_init_io(&p->mmio, obj, &io_ops, p, TYPE_PMB887X_SSC, SSC_IO_SIZE);
 	sysbus_init_mmio(SYS_BUS_DEVICE(obj), &p->mmio);
 
@@ -489,7 +499,7 @@ static void ssc_init(Object *obj) {
 
 static void ssc_realize(DeviceState *dev, Error **errp) {
 	pmb887x_ssc_t *p = PMB887X_SSC(dev);
-	pmb887x_clc_init(&p->clc);
+	pmb887x_clc_set(&p->clc, 1U << MOD_CLC_RMC_SHIFT);
 	pmb887x_srb_init(&p->srb, p->irq, ARRAY_SIZE(p->irq));
 	pmb887x_srb_set_event_handler(&p->srb, dev, ssc_event_handler);
 
@@ -498,12 +508,20 @@ static void ssc_realize(DeviceState *dev, Error **errp) {
 
 	pmb887x_fifo16_init(&p->tx_fifo_single, 1);
 	pmb887x_fifo16_init(&p->rx_fifo_single, 1);
+	p->transfer_bh = qemu_bh_new(ssc_transfer_complete, p);
 	p->transfer_timer = timer_new_ns(QEMU_CLOCK_VIRTUAL, ssc_transfer_complete, p);
 
 	ssc_set_fifo(p, SSC_FIFO_RX, false);
 	ssc_set_fifo(p, SSC_FIFO_TX, false);
 
 	ssc_update_state(p);
+}
+
+static void ssc_unrealize(DeviceState *dev) {
+	pmb887x_ssc_t *p = PMB887X_SSC(dev);
+
+	qemu_bh_delete(p->transfer_bh);
+	timer_free(p->transfer_timer);
 }
 
 static void ssc_reset(DeviceState *dev) {
@@ -551,6 +569,7 @@ static void ssc_class_init(ObjectClass *klass, const void *data) {
 	device_class_set_props(dc, ssc_properties);
 	device_class_set_legacy_reset(dc, ssc_reset);
 	dc->realize = ssc_realize;
+	dc->unrealize = ssc_unrealize;
 }
 
 static const TypeInfo ssc_info = {

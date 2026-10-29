@@ -18,7 +18,6 @@
 #include "hw/arm/pmb887x/gen/cpu_regs.h"
 #include "hw/arm/pmb887x/regs_dump.h"
 #include "hw/arm/pmb887x/mod.h"
-#include "hw/arm/pmb887x/pll.h"
 #include "hw/arm/pmb887x/trace.h"
 #include "hw/arm/pmb887x/fifo.h"
 
@@ -32,12 +31,12 @@ OBJECT_DECLARE_SIMPLE_TYPE(pmb887x_i2c_t, PMB887X_I2C);
 
 #define FIFO_ICR_MASK		(I2Cv2_ICR_BREQ_INT | I2Cv2_ICR_LBREQ_INT | I2Cv2_ICR_SREQ_INT | I2Cv2_ICR_LSREQ_INT)
 
-enum {
+typedef enum pmb887x_i2c_state_t {
 	I2C_STATE_NONE,
 	I2C_STATE_MASTER_TX,
 	I2C_STATE_MASTER_RX,
 	I2C_STATE_MASTER_RESTART,
-};
+} pmb887x_i2c_state_t;
 
 enum {
 	I2C_SINGLE_REQ_IRQ = 0,
@@ -56,13 +55,14 @@ struct pmb887x_i2c_t {
 	bool transfer_pending;
 
 	pmb887x_clc_reg_t clc;
-	pmb887x_cgu_t *cgu;
 	pmb887x_srb_reg_t srb;
 	pmb887x_srb_ext_reg_t srb_proto;
 	pmb887x_srb_ext_reg_t srb_err;
 
-	int state;
+	pmb887x_i2c_state_t state;
 	pmb887x_fifo32_t fifo;
+	uint32_t tx_staging;
+	bool tx_staging_valid;
 
 	bool is_read;
 	uint8_t addr;
@@ -74,6 +74,10 @@ struct pmb887x_i2c_t {
 	bool enddctrl_restart;
 	uint32_t rx_total_bytes;
 	uint32_t rx_bytes_in_fifo;
+	bool rx_unbounded;
+	bool rx_overflow_pending;
+	bool rx_packet_done;
+	pmb887x_i2c_state_t rx_next_state;
 
 	bool fifo_req;
 	uint32_t tx_remaining;
@@ -182,7 +186,7 @@ static void i2c_fifo_req(pmb887x_i2c_t *p) {
 			}
 			p->fifo_req = true;
 		} else {
-			if (pmb887x_fifo_free_count(&p->fifo) >= burst_req_size) {
+			if (pmb887x_fifo_free_count(&p->fifo) >= burst_req_count) {
 				pmb887x_srb_set_isr(&p->srb, I2Cv2_ISR_BREQ_INT);
 				p->fifo_req = true;
 			}
@@ -191,15 +195,22 @@ static void i2c_fifo_req(pmb887x_i2c_t *p) {
 	} else if (p->state == I2C_STATE_MASTER_RX) {
 		uint32_t burst_req_size = i2c_get_rx_burst_size(p);
 		uint32_t single_req_size = 4 / i2c_get_rx_align(p);
-		uint32_t rx_pending = p->rx_remaining + p->rx_bytes_in_fifo;
-		uint32_t pending_req_count = DIV_ROUND_UP(rx_pending, single_req_size);
-		uint32_t burst_req_count = burst_req_size / single_req_size;
 
 		if (!p->rx_bytes_in_fifo)
 			return;
 
 		bool is_fc = (p->fifocfg & I2Cv2_FIFOCFG_RXFC) != 0;
-		if (is_fc) {
+		if (!is_fc || p->rx_unbounded) {
+			if (p->rx_bytes_in_fifo >= burst_req_size) {
+				pmb887x_srb_set_isr(&p->srb, I2Cv2_ISR_BREQ_INT);
+			} else {
+				pmb887x_srb_set_isr(&p->srb, I2Cv2_ISR_SREQ_INT);
+			}
+		} else {
+			uint32_t rx_pending = p->rx_remaining + p->rx_bytes_in_fifo;
+			uint32_t pending_req_count = DIV_ROUND_UP(rx_pending, single_req_size);
+			uint32_t burst_req_count = burst_req_size / single_req_size;
+
 			if (rx_pending > burst_req_size) {
 				pmb887x_srb_set_isr(&p->srb, I2Cv2_ISR_BREQ_INT);
 			} else if (pending_req_count == burst_req_count) {
@@ -208,12 +219,6 @@ static void i2c_fifo_req(pmb887x_i2c_t *p) {
 				pmb887x_srb_set_isr(&p->srb, I2Cv2_ISR_SREQ_INT);
 			} else {
 				pmb887x_srb_set_isr(&p->srb, I2Cv2_ISR_LSREQ_INT);
-			}
-		} else {
-			if (p->rx_bytes_in_fifo >= burst_req_size) {
-				pmb887x_srb_set_isr(&p->srb, I2Cv2_ISR_BREQ_INT);
-			} else {
-				pmb887x_srb_set_isr(&p->srb, I2Cv2_ISR_SREQ_INT);
 			}
 		}
 
@@ -225,13 +230,27 @@ static void i2c_fifo_clr_req(pmb887x_i2c_t *p) {
 	p->fifo_req = false;
 }
 
-static void i2c_kernel_reset(pmb887x_i2c_t *p, uint32_t new_state) {
+static void i2c_rx_discard(pmb887x_i2c_t *p) {
+	pmb887x_fifo_reset(&p->fifo);
+	p->rx_bytes_in_fifo = 0;
+}
+
+static void i2c_fifo_reset(pmb887x_i2c_t *p) {
+	pmb887x_fifo_reset(&p->fifo);
+	p->tx_staging_valid = false;
+}
+
+static void i2c_kernel_reset(pmb887x_i2c_t *p, pmb887x_i2c_state_t new_state) {
 	p->state = new_state;
 	p->addr_is_sent = false;
 	p->tx_remaining = 0;
 	p->rx_remaining = 0;
 	p->rx_total_bytes = 0;
 	p->rx_bytes_in_fifo = 0;
+	p->rx_unbounded = false;
+	p->rx_overflow_pending = false;
+	p->rx_packet_done = false;
+	p->rx_next_state = I2C_STATE_NONE;
 	p->enddctrl_end = false;
 	p->enddctrl_restart = false;
 	i2c_fifo_clr_req(p);
@@ -244,13 +263,10 @@ static void i2c_timer_reset(void *opaque) {
 }
 
 static uint32_t i2c_get_baud_rate_hz(pmb887x_i2c_t *p) {
-	uint32_t rmc = pmb887x_clc_get_rmc(&p->clc);
-	uint64_t kernel_clock_hz = rmc > 0 ? pmb887x_pll_get_fsys(p->cgu) / rmc : 0;
+	uint64_t kernel_clock_hz = pmb887x_clc_get_hz(&p->clc);
 	uint64_t dec = (p->fdivcfg & I2Cv2_FDIVCFG_DEC) >> I2Cv2_FDIVCFG_DEC_SHIFT;
 	uint64_t inc = (p->fdivcfg & I2Cv2_FDIVCFG_INC) >> I2Cv2_FDIVCFG_INC_SHIFT;
 
-	if (!pmb887x_clc_is_enabled(&p->clc))
-		return 0;
 	if (kernel_clock_hz == 0)
 		return 0;
 	if (inc == 0)
@@ -287,9 +303,15 @@ static void i2c_fifo_write(pmb887x_i2c_t *p, uint64_t value) {
 	// 	hw_error("Wriring to FIFO in MASTER_RX is not allowed!");
 
 	if (!pmb887x_fifo_free_count(&p->fifo)) {
+		if (!p->tx_staging_valid) {
+			p->tx_staging = value;
+			p->tx_staging_valid = true;
+			i2c_timer_schedule(p);
+			return;
+		}
+
 		DPRINTF("TX FIFO overflow!\n");
 		pmb887x_srb_ext_set_isr(&p->srb_err, I2Cv2_ERRIRQSS_TXF_OFL);
-		i2c_transfer_error(p);
 		return;
 	}
 
@@ -301,7 +323,8 @@ static void i2c_fifo_read(pmb887x_i2c_t *p, uint64_t *value) {
 	if (pmb887x_fifo_is_empty(&p->fifo)) {
 		DPRINTF("RX FIFO underflow!\n");
 		pmb887x_srb_ext_set_isr(&p->srb_err, I2Cv2_ERRIRQSS_RXF_UFL);
-		i2c_transfer_error(p);
+		if (p->state != I2C_STATE_NONE)
+			i2c_transfer_error(p);
 		return;
 	}
 
@@ -316,6 +339,10 @@ static bool i2c_tx_from_fifo(pmb887x_i2c_t *p) {
 	uint32_t align = i2c_get_tx_align(p);
 	while (pmb887x_fifo_count(&p->fifo) > 0) {
 		uint32_t value = pmb887x_fifo32_pop(&p->fifo);
+		if (p->tx_staging_valid) {
+			pmb887x_fifo32_push(&p->fifo, p->tx_staging);
+			p->tx_staging_valid = false;
+		}
 
 		uint32_t bytes_in_fifo_reg = MIN(4, p->tx_remaining);
 		if (bytes_in_fifo_reg == 0)
@@ -340,10 +367,8 @@ static bool i2c_tx_from_fifo(pmb887x_i2c_t *p) {
 				if (i2c_start_transfer(p->bus, p->addr, p->is_read) != 0)
 					return false;
 
-				if (p->enddctrl_end) {
-					i2c_nack(p->bus);
+				if (p->enddctrl_end)
 					return true;
-				}
 
 				if (p->enddctrl_restart)
 					return true;
@@ -352,10 +377,8 @@ static bool i2c_tx_from_fifo(pmb887x_i2c_t *p) {
 				if (i2c_send(p->bus, byte) != 0)
 					return false;
 
-				if (p->enddctrl_end) {
-					i2c_nack(p->bus);
+				if (p->enddctrl_end)
 					return true;
-				}
 
 				if (p->enddctrl_restart)
 					return true;
@@ -365,9 +388,22 @@ static bool i2c_tx_from_fifo(pmb887x_i2c_t *p) {
 	return true;
 }
 
-static void i2c_rx_to_fifo(pmb887x_i2c_t *p) {
+static void i2c_rx_to_fifo(pmb887x_i2c_t *p, uint32_t byte_limit) {
 	uint32_t align = i2c_get_rx_align(p);
-	uint32_t rx_remaining = MIN(p->rx_remaining, i2c_get_rx_burst_size(p));
+	uint32_t rx_remaining = p->rx_unbounded ? 4 / align : MIN(p->rx_remaining, i2c_get_rx_burst_size(p));
+	rx_remaining = MIN(rx_remaining, byte_limit);
+
+	if (pmb887x_fifo_is_full(&p->fifo)) {
+		pmb887x_srb_ext_set_isr(&p->srb_err, I2Cv2_ERRIRQSS_RXF_OFL);
+		uint32_t request = pmb887x_srb_get_ris(&p->srb) & FIFO_ICR_MASK;
+		pmb887x_srb_set_icr(&p->srb, request);
+		i2c_fifo_reset(p);
+		p->rx_bytes_in_fifo = 0;
+		pmb887x_srb_set_isr(&p->srb, I2Cv2_ISR_LBREQ_INT);
+		p->fifo_req = true;
+		p->rx_overflow_pending = true;
+		return;
+	}
 
 	uint32_t bytes_read = 0;
 	while (bytes_read < rx_remaining && !pmb887x_fifo_is_full(&p->fifo)) {
@@ -388,20 +424,23 @@ static void i2c_rx_to_fifo(pmb887x_i2c_t *p) {
 			break;
 	}
 
-	p->rx_remaining -= bytes_read;
+	if (!p->rx_unbounded)
+		p->rx_remaining -= bytes_read;
 	p->rx_total_bytes += bytes_read;
 	p->rx_bytes_in_fifo += bytes_read;
-
-	if (bytes_read && !(p->fifocfg & I2Cv2_FIFOCFG_RXFC))
-		pmb887x_srb_ext_set_isr(&p->srb_err, I2Cv2_ERRIRQSS_RXF_OFL);
 }
 
 static void i2c_start_tx(pmb887x_i2c_t *p) {
 	if (!i2c_is_running(p))
 		return;
 
-	if (p->state == I2C_STATE_MASTER_RX && p->rx_remaining == 0 && pmb887x_fifo_is_empty(&p->fifo))
-		i2c_transfer_done(p);
+	if (p->state == I2C_STATE_MASTER_RX && p->rx_packet_done) {
+		if (!pmb887x_fifo_is_empty(&p->fifo) || p->fifo_req)
+			return;
+
+		pmb887x_i2c_state_t next_state = p->rx_next_state;
+		i2c_kernel_reset(p, next_state);
+	}
 
 	if (p->state != I2C_STATE_MASTER_RESTART && p->state != I2C_STATE_NONE)
 		return;
@@ -418,6 +457,16 @@ static void i2c_start_tx(pmb887x_i2c_t *p) {
 }
 
 static void i2c_handle_enddctrl(pmb887x_i2c_t *p, uint32_t value) {
+	if (p->state == I2C_STATE_MASTER_RX && p->rx_packet_done) {
+		if ((value & I2Cv2_ENDDCTRL_SETEND) && p->rx_next_state == I2C_STATE_MASTER_RESTART) {
+			DPRINTF("------ STOP ------\n");
+			i2c_end_transfer(p->bus);
+			p->rx_next_state = I2C_STATE_NONE;
+		}
+		i2c_timer_schedule(p);
+		return;
+	}
+
 	if (p->state == I2C_STATE_MASTER_TX || p->state == I2C_STATE_MASTER_RX) {
 		if ((value & I2Cv2_ENDDCTRL_SETEND))
 			p->enddctrl_end = true;
@@ -431,21 +480,17 @@ static void i2c_handle_enddctrl(pmb887x_i2c_t *p, uint32_t value) {
 }
 
 static void i2c_transfer_error(pmb887x_i2c_t *p) {
-	p->mrpsctrl = 0;
 	pmb887x_srb_ext_set_isr(&p->srb_proto, I2Cv2_PIRQSS_TX_END);
-	pmb887x_srb_ext_set_icr(&p->srb_proto, I2Cv2_PIRQSS_RX);
 	DPRINTF("------ STOP ------\n");
 	i2c_end_transfer(p->bus);
-	pmb887x_fifo_reset(&p->fifo);
+	i2c_fifo_reset(p);
 	i2c_kernel_reset(p, I2C_STATE_NONE);
 	i2c_timer_schedule(p);
 }
 
 static void i2c_transfer_done(pmb887x_i2c_t *p) {
 	p->rpsstat = p->rx_total_bytes;
-	p->mrpsctrl = 0;
 	pmb887x_srb_ext_set_isr(&p->srb_proto, I2Cv2_PIRQSS_TX_END);
-	pmb887x_srb_ext_set_icr(&p->srb_proto, I2Cv2_PIRQSS_RX);
 
 	if (p->enddctrl_end) {
 		DPRINTF("------ STOP ------\n");
@@ -465,6 +510,31 @@ static void i2c_transfer_done(pmb887x_i2c_t *p) {
 	i2c_timer_schedule(p);
 }
 
+static void i2c_receive_done(pmb887x_i2c_t *p) {
+	p->rpsstat = p->rx_total_bytes;
+	pmb887x_srb_ext_set_isr(&p->srb_proto, I2Cv2_PIRQSS_TX_END);
+	i2c_nack(p->bus);
+
+	if (p->enddctrl_end) {
+		DPRINTF("------ STOP ------\n");
+		i2c_end_transfer(p->bus);
+		p->rx_next_state = I2C_STATE_NONE;
+	} else if (p->enddctrl_restart) {
+		p->rx_next_state = I2C_STATE_MASTER_RESTART;
+	} else if (p->addrcfg & I2Cv2_ADDRCFG_SOPE) {
+		DPRINTF("------ STOP ------\n");
+		i2c_end_transfer(p->bus);
+		p->rx_next_state = I2C_STATE_NONE;
+	} else {
+		p->rx_next_state = I2C_STATE_MASTER_RESTART;
+	}
+
+	p->rx_packet_done = true;
+	p->enddctrl_end = false;
+	p->enddctrl_restart = false;
+	i2c_timer_schedule(p);
+}
+
 static void i2c_work(pmb887x_i2c_t *p) {
 	if (!i2c_is_running(p))
 		return;
@@ -475,15 +545,19 @@ static void i2c_work(pmb887x_i2c_t *p) {
 	} else if (p->state == I2C_STATE_MASTER_TX) {
 		if (!i2c_tx_from_fifo(p)) {
 			DPRINTF("NACK!\n");
-			if ((p->addrcfg & I2Cv2_ADDRCFG_SONA))
-				pmb887x_fifo_reset(&p->fifo);
+			i2c_fifo_reset(p);
+			if ((p->addrcfg & (I2Cv2_ADDRCFG_SONA | I2Cv2_ADDRCFG_SOPE)) != 0) {
+				p->enddctrl_end = true;
+			} else {
+				p->enddctrl_restart = true;
+			}
 			pmb887x_srb_ext_set_isr(&p->srb_proto, I2Cv2_PIRQSS_NACK);
 			i2c_transfer_done(p);
 			return;
 		}
 
 		if (p->enddctrl_restart) {
-			pmb887x_fifo_reset(&p->fifo);
+			i2c_fifo_reset(p);
 			i2c_transfer_done(p);
 			return;
 		}
@@ -496,8 +570,13 @@ static void i2c_work(pmb887x_i2c_t *p) {
 		i2c_fifo_req(p);
 
 		if (p->tx_remaining == 0) {
-			if (p->mrpsctrl > 0) {
-				p->rx_remaining = p->mrpsctrl;
+			bool rx_flow_control = (p->fifocfg & I2Cv2_FIFOCFG_RXFC) != 0;
+
+			if (p->is_read) {
+				uint32_t packet_size = p->mrpsctrl;
+				p->mrpsctrl = 0;
+				p->rx_unbounded = !rx_flow_control || packet_size == 0;
+				p->rx_remaining = p->rx_unbounded ? 0 : packet_size;
 				p->state = I2C_STATE_MASTER_RX;
 				pmb887x_srb_ext_set_isr(&p->srb_proto, I2Cv2_PIRQSS_RX);
 				i2c_fifo_clr_req(p);
@@ -507,29 +586,44 @@ static void i2c_work(pmb887x_i2c_t *p) {
 			i2c_timer_schedule(p);
 		}
 	} else if (p->state == I2C_STATE_MASTER_RX) {
+		if (p->rx_packet_done) {
+			if (!p->fifo_req && p->rx_bytes_in_fifo) {
+				i2c_fifo_req(p);
+				return;
+			}
+			i2c_start_tx(p);
+			return;
+		}
+		if (p->rx_overflow_pending) {
+			if (!p->fifo_req)
+				i2c_transfer_error(p);
+			return;
+		}
 		if (p->enddctrl_restart) {
-			i2c_nack(p->bus);
-			i2c_transfer_done(p);
+			i2c_rx_to_fifo(p, 1);
+			if (p->rx_overflow_pending)
+				return;
+			i2c_receive_done(p);
+			return;
+		}
+		if (p->enddctrl_end) {
+			i2c_rx_to_fifo(p, 1);
+			if (p->rx_overflow_pending)
+				return;
+			i2c_receive_done(p);
 			return;
 		}
 
-		i2c_rx_to_fifo(p);
-		if (p->enddctrl_end) {
-			i2c_nack(p->bus);
-			i2c_transfer_done(p);
+		i2c_rx_to_fifo(p, i2c_get_rx_burst_size(p));
+		if (p->rx_overflow_pending)
 			return;
-		}
 
 		i2c_fifo_req(p);
+		if ((p->fifocfg & I2Cv2_FIFOCFG_RXFC) == 0)
+			i2c_timer_schedule(p);
 
-		if (p->rx_remaining == 0) {
-			p->rpsstat = p->rx_total_bytes;
-			p->mrpsctrl = 0;
-			if (pmb887x_fifo_is_empty(&p->fifo)) {
-				i2c_transfer_done(p);
-			} else {
-				pmb887x_srb_ext_set_isr(&p->srb_proto, I2Cv2_PIRQSS_TX_END);
-			}
+		if (!p->rx_unbounded && p->rx_remaining == 0) {
+			i2c_receive_done(p);
 		}
 	} else if (p->state == I2C_STATE_MASTER_RESTART) {
 		if (p->enddctrl_end) {
@@ -575,7 +669,10 @@ static uint64_t i2c_io_read(void *opaque, hwaddr haddr, unsigned size) {
 			break;
 
 		case I2Cv2_BUSSTAT:
-			if (p->state != I2C_STATE_NONE) {
+			if (p->state == I2C_STATE_MASTER_RX && p->rx_packet_done) {
+				value = p->rx_next_state == I2C_STATE_NONE ?
+					I2Cv2_BUSSTAT_BS_FREE : I2Cv2_BUSSTAT_BS_BUSY_MASTER;
+			} else if (p->state != I2C_STATE_NONE) {
 				value = I2Cv2_BUSSTAT_BS_BUSY_MASTER;
 			} else if (i2c_bus_busy(p->bus)) {
 				value = I2Cv2_BUSSTAT_BS_BUSY_OTHER_MASTER;
@@ -583,7 +680,7 @@ static uint64_t i2c_io_read(void *opaque, hwaddr haddr, unsigned size) {
 				value = I2Cv2_BUSSTAT_BS_FREE;
 			}
 
-			if (p->state == I2C_STATE_MASTER_RX)
+			if (p->state == I2C_STATE_MASTER_RX && !p->rx_packet_done)
 				value |= I2Cv2_BUSSTAT_RnW;
 			break;
 
@@ -665,9 +762,8 @@ static uint64_t i2c_io_read(void *opaque, hwaddr haddr, unsigned size) {
 			break;
 
 		default:
-			IO_DUMP_READ(haddr + p->mmio.addr, size, 0xFFFFFFFF);
 			EPRINTF("unknown reg access: %02"PRIX64"\n", haddr);
-			exit(1);
+			break;
 	}
 
 	IO_DUMP_READ(haddr + p->mmio.addr, size, value);
@@ -694,7 +790,7 @@ static void i2c_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned si
 					DPRINTF("------ STOP ------\n");
 					i2c_end_transfer(p->bus);
 					i2c_kernel_reset(p, I2C_STATE_NONE);
-					pmb887x_fifo_reset(&p->fifo);
+					i2c_fifo_reset(p);
 				}
 			}
 			break;
@@ -774,7 +870,7 @@ static void i2c_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned si
 
 		default:
 			EPRINTF("unknown reg access: %02"PRIX64"\n", haddr);
-			exit(1);
+			break;
 	}
 }
 
@@ -817,6 +913,8 @@ static void i2c_event_handler(void *opaque, int event_id, int level) {
 
 	i2c_trigger_dma(p);
 	if (level == 0 && (mask & FIFO_ICR_MASK) != 0) {
+		if (p->state == I2C_STATE_MASTER_RX && (mask & (I2Cv2_ICR_LSREQ_INT | I2Cv2_ICR_LBREQ_INT)) != 0)
+			i2c_rx_discard(p);
 		if (p->state == I2C_STATE_MASTER_RX || p->state == I2C_STATE_MASTER_TX) {
 			i2c_fifo_clr_req(p);
 			i2c_timer_schedule(p);
@@ -827,6 +925,7 @@ static void i2c_event_handler(void *opaque, int event_id, int level) {
 static void i2c_init(Object *obj) {
 	DeviceState *dev = DEVICE(obj);
 	pmb887x_i2c_t *p = PMB887X_I2C(obj);
+	pmb887x_clc_init(&p->clc, dev);
 	memory_region_init_io(&p->mmio, obj, &io_ops, p, TYPE_PMB887X_I2C, I2C_IO_SIZE);
 	sysbus_init_mmio(SYS_BUS_DEVICE(obj), &p->mmio);
 
@@ -852,7 +951,7 @@ static void i2c_realize(DeviceState *dev, Error **errp) {
 
 	p->bus = i2c_init_bus(dev, TYPE_PMB887X_I2C);
 
-	pmb887x_clc_init(&p->clc);
+	pmb887x_clc_set(&p->clc, 1U << MOD_CLC_RMC_SHIFT);
 
 	pmb887x_srb_init(&p->srb, p->irq, ARRAY_SIZE(p->irq));
 	pmb887x_srb_set_irq_router(&p->srb, p, i2c_irq_router);
@@ -881,7 +980,7 @@ static void i2c_reset(DeviceState *dev) {
 		I2Cv2_PIRQSM_AL | I2Cv2_PIRQSM_NACK | I2Cv2_PIRQSM_TX_END | I2Cv2_PIRQSM_RX);
 	pmb887x_srb_ext_set_imsc(&p->srb_err,
 		I2Cv2_ERRIRQSM_RXF_UFL | I2Cv2_ERRIRQSM_RXF_OFL | I2Cv2_ERRIRQSM_TXF_UFL | I2Cv2_ERRIRQSM_TXF_OFL);
-	pmb887x_fifo_reset(&p->fifo);
+	i2c_fifo_reset(p);
 
 	p->transfer_pending = false;
 	p->is_read = false;
@@ -906,7 +1005,6 @@ static void i2c_reset(DeviceState *dev) {
 
 static const Property i2c_properties[] = {
 	DEFINE_PROP_UINT32("revision", pmb887x_i2c_t, revision, 0),
-	DEFINE_PROP_LINK("cgu", pmb887x_i2c_t, cgu, "pmb887x-cgu", pmb887x_cgu_t *),
 	DEFINE_PROP_LINK("bus", pmb887x_i2c_t, bus, TYPE_I2C_BUS, I2CBus *),
 };
 

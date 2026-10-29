@@ -12,8 +12,8 @@
 #include "qapi/error.h"
 #include "qemu/bswap.h"
 #include "qemu/main-loop.h"
-#include "qemu/rcu.h"
 #include "hw/core/qdev-properties.h"
+#include "hw/core/qdev-clock.h"
 
 #include "hw/arm/pmb887x/gen/cpu_regs.h"
 #include "hw/arm/pmb887x/regs_dump.h"
@@ -24,6 +24,7 @@
 #define DMAC_MULTIPLEXOR	2
 #define DMAC_CHANNELS		8
 #define DMAC_REQUESTS		16
+#define DMAC_FIFO_SIZE		16
 
 /* Max bursts serviced per timer callback before yielding the BQL back to the
  * main loop / vCPU. Bounds how long a single pass can hold the lock. */
@@ -40,22 +41,6 @@ struct pmb887x_dmac_request_t {
 	uint16_t soft;
 };
 
-/* One translated window of the downstream address space.  The display
- * DMA is one word per request (~500 k/s at 60 fps) and every word walked
- * the flatview twice, for its RAM source and its FIFO destination; the
- * window is valid while memory_region_topology_gen() is unchanged. */
-typedef struct {
-	uint64_t gen;
-	hwaddr addr;       /* first bus address covered */
-	hwaddr len;        /* bytes covered from addr */
-	hwaddr xlat;       /* addr's offset within mr */
-	MemoryRegion *mr;
-	uint8_t *host;     /* direct RAM pointer for addr; NULL for MMIO */
-	uint32_t direct_width;  /* width memory_region_write_direct_ok() was asked about */
-	bool direct_ok;
-	bool run_ok;       /* the last write to this window went as a run */
-} pmb887x_dmac_xlat_t;
-
 struct pmb887x_dmac_ch_t {
 	uint8_t id;
 	uint32_t src_addr;
@@ -63,9 +48,12 @@ struct pmb887x_dmac_ch_t {
 	uint32_t lli;
 	uint32_t control;
 	uint32_t config;
-	uint32_t last_source_count;
-	pmb887x_dmac_xlat_t src_xlat;
-	pmb887x_dmac_xlat_t dst_xlat;
+	uint32_t remaining_last_source_bytes;
+	uint32_t remaining_source_count;
+	uint32_t fifo_bytes;
+	uint32_t delivered_byte_remainder;
+	bool is_source_address_final;
+	uint8_t fifo[DMAC_FIFO_SIZE];
 };
 
 struct pmb887x_dmac_pending_request_t {
@@ -80,6 +68,7 @@ struct pmb887x_dmac_t {
 	uint32_t revision;
 	uint32_t peripheral_id;
 
+	Clock *clock;
 	QEMUTimer *timer;
 	MemoryRegion *downstream;
 	AddressSpace downstream_as;
@@ -93,7 +82,6 @@ struct pmb887x_dmac_t {
 	pmb887x_dmac_ch_t ch[DMAC_CHANNELS];
 
 	bool dmac_pending;
-	bool in_run;
 	bool is_busy;
 	uint32_t config;
 	uint32_t sync;
@@ -123,8 +111,28 @@ static inline uint32_t dmac_get_burst_size(uint32_t s) {
 	return 1 << (s + 1);
 }
 
+static uint32_t dmac_destination_count_to_source_count(pmb887x_dmac_ch_t *ch, uint32_t destination_count) {
+	uint32_t src_width = dmac_get_width((ch->control & DMAC_CH_CONTROL_S_WIDTH) >> DMAC_CH_CONTROL_S_WIDTH_SHIFT);
+	uint32_t dst_width = dmac_get_width((ch->control & DMAC_CH_CONTROL_D_WIDTH) >> DMAC_CH_CONTROL_D_WIDTH_SHIFT);
+	return destination_count * dst_width / src_width;
+}
+
 static enum device_endian dmac_master_endian(pmb887x_dmac_t *p, bool is_ahb2) {
 	return (p->config & (is_ahb2 ? DMAC_CONFIG_M2 : DMAC_CONFIG_M1)) ? DEVICE_BIG_ENDIAN : DEVICE_LITTLE_ENDIAN;
+}
+
+static uint8_t dmac_peripheral_id_byte(const pmb887x_dmac_t *p, unsigned int index) {
+	return extract32(p->peripheral_id, index * 8, 8);
+}
+
+static bool dmac_lli_uses_master_endian(const pmb887x_dmac_t *p) {
+	uint8_t id2 = dmac_peripheral_id_byte(p, 2);
+	return extract32(id2, 4, 4) != 0;
+}
+
+static bool dmac_has_second_master(const pmb887x_dmac_t *p) {
+	uint8_t id3 = dmac_peripheral_id_byte(p, 3);
+	return (id3 & BIT(3)) != 0;
 }
 
 static void dmac_swap_byte_order(uint8_t *buffer, uint32_t width, uint32_t count) {
@@ -145,167 +153,35 @@ static void dmac_swap_byte_order(uint8_t *buffer, uint32_t width, uint32_t count
 	}
 }
 
-#define DMAC_XLAT_WINDOW	(64 * 1024)
-
-/* Resolve [addr, addr + len) through the cached window, refilling it from
- * the flatview when the topology changed or the range moved out.  The
- * window is the flat range around addr (the firmware walks the DIF's
- * 16 KB FIFO window with an incrementing destination, so an MMIO window
- * must cover the range, not one access), clipped to DMAC_XLAT_WINDOW. */
-static bool dmac_xlat(pmb887x_dmac_t *p, pmb887x_dmac_xlat_t *x, hwaddr addr, uint32_t len, bool is_write) {
-	uint64_t gen = memory_region_topology_gen();
-	if (likely(x->gen == gen && addr >= x->addr && addr + len <= x->addr + x->len))
-		return true;
-
-	MemoryRegionSection sec = memory_region_find(p->downstream, addr, DMAC_XLAT_WINDOW);
-	if (!sec.mr)
-		return false;
-	memory_region_unref(sec.mr);
-	hwaddr size = int128_get64(sec.size);
-	if (size < len)
-		return false;
-	/* memory_region_find() clips to the intersection with the probe: when
-	 * addr itself is unmapped but a mapped region begins later inside the
-	 * window, the section starts past addr and must not be recorded as
-	 * covering it */
-	if (sec.offset_within_address_space != addr)
-		return false;
-	x->gen = gen;
-	x->addr = addr;
-	x->len = size;
-	x->xlat = sec.offset_within_region;
-	x->mr = sec.mr;
-	x->direct_width = 0;
-	x->run_ok = false;
-	x->host = memory_access_is_direct(sec.mr, is_write, MEMTXATTRS_UNSPECIFIED) ?
-		(uint8_t *) memory_region_get_ram_ptr(sec.mr) + sec.offset_within_region : NULL;
-	return true;
-}
-
-static void dmac_read(pmb887x_dmac_t *p, pmb887x_dmac_xlat_t *x, hwaddr addr, uint8_t *buffer, uint32_t width, uint32_t count, enum device_endian endian) {
+static void dmac_read(pmb887x_dmac_t *p, hwaddr addr, uint8_t *buffer, uint32_t width, uint32_t count, enum device_endian endian) {
 	if (endian == DEVICE_BIG_ENDIAN && width < sizeof(uint32_t)) {
 		for (uint32_t i = 0; i < count; i++) {
 			hwaddr transfer_addr = (addr + i * width) ^ (sizeof(uint32_t) - width);
 			address_space_read(&p->downstream_as, transfer_addr, MEMTXATTRS_UNSPECIFIED, buffer + i * width, width);
 		}
-	} else if (x && dmac_xlat(p, x, addr, width * count, false) && x->host) {
-		memcpy(buffer, x->host + (addr - x->addr), width * count);
 	} else {
 		address_space_read(&p->downstream_as, addr, MEMTXATTRS_UNSPECIFIED, buffer, width * count);
 	}
 }
 
-static void dmac_write(pmb887x_dmac_t *p, pmb887x_dmac_xlat_t *x, hwaddr addr, const uint8_t *buffer, uint32_t width) {
-	if (x && dmac_xlat(p, x, addr, width, true) && !x->host) {
-		MemoryRegion *mr = x->mr;
-		hwaddr off = x->xlat + (addr - x->addr);
-		/* the one step address_space_write takes for an aligned
-		 * width-sized store to an MMIO region; RAM keeps the API for
-		 * its dirty tracking.  Whether the dispatch's own per-access
-		 * work (validity, endianness, ioeventfds, access splitting)
-		 * can be skipped depends only on the region and the width, so
-		 * it is decided once per window rather than per word. */
-		if (x->direct_width != width) {
-			x->direct_width = width;
-			x->direct_ok = memory_region_write_direct_ok(mr, width);
-		}
-		if (x->direct_ok && !(off & (width - 1))) {
-			RCU_READ_LOCK_GUARD();
-			bool release_lock = prepare_mmio_access(mr);
-			memory_region_dispatch_write_direct(mr, off, ldn_he_p(buffer, width), width);
-			if (release_lock)
-				bql_unlock();
-			return;
-		}
-		if (memory_access_size(mr, width, off) == width) {
-			RCU_READ_LOCK_GUARD();
-			bool release_lock = prepare_mmio_access(mr);
-			memory_region_dispatch_write(mr, off, ldn_he_p(buffer, width), size_memop(width), MEMTXATTRS_UNSPECIFIED);
-			if (release_lock)
-				bql_unlock();
-			return;
-		}
-	}
+static void dmac_write(pmb887x_dmac_t *p, hwaddr addr, const uint8_t *buffer, uint32_t width) {
 	address_space_write(&p->downstream_as, addr, MEMTXATTRS_UNSPECIFIED, buffer, width);
 }
 
-/*
- * The whole burst into one non-incrementing register, in one call, so the
- * per-access work above the device (RCU section, BQL check, dispatch,
- * register switch) is paid once per burst instead of once per word.  A
- * device that cannot take a run says so by not having the op - or by
- * reporting that it did not burst - and the caller falls back to the
- * per-word loop.
- *
- * Returns whether the words reached the device; x->run_ok records whether
- * they went as one burst, which is what allows the next pass to coalesce:
- * a device that degraded to per-word writes inside the run may have
- * dropped its request between the words, so the request round trip must
- * be respected again.
- */
-static bool dmac_write_run(pmb887x_dmac_t *p, pmb887x_dmac_xlat_t *x, hwaddr addr, const uint8_t *buffer, uint32_t width, uint32_t count) {
-	if (!x || !dmac_xlat(p, x, addr, width, true) || x->host)
-		return false;
-
-	x->run_ok = false;
-
-	MemoryRegion *mr = x->mr;
-	hwaddr off = x->xlat + (addr - x->addr);
-
-	if (x->direct_width != width) {
-		x->direct_width = width;
-		x->direct_ok = memory_region_write_direct_ok(mr, width);
-	}
-	if (!x->direct_ok || (off & (width - 1)))
-		return false;
-
-	RCU_READ_LOCK_GUARD();
-	bool release_lock = prepare_mmio_access(mr);
-	bool burst = false;
-	bool done = memory_region_dispatch_write_run(mr, off, buffer, width, count, &burst);
-	if (release_lock)
-		bql_unlock();
-	x->run_ok = done && burst;
-	return done;
-}
-
-/*
- * How many source words one pass of a memory-to-peripheral stream may
- * carry.  A destination that took the previous pass through its run-write
- * path as one burst cannot back-pressure inside one, so the request it
- * raises after each burst is a foregone conclusion and the next burst can
- * be handed over without waiting for it.  run_ok is only set for a genuine
- * burst, so a destination that degraded to per-word writes stops the
- * coalescing and its request is re-checked per burst, as the base did.
- *
- * Only the DMAC-as-flow-controller case coalesces: there the transfer
- * size is the DMAC's own and the tail is exact, so the interrupt still
- * lands on the word it always landed on.
- */
-#define DMAC_COALESCE_WORDS	256
-
-static uint32_t dmac_stream_burst(pmb887x_dmac_ch_t *ch, uint32_t burst_size) {
-	if (!ch->dst_xlat.run_ok || burst_size == 0)
-		return burst_size;
-	if ((ch->control & DMAC_CH_CONTROL_DI) || !(ch->control & DMAC_CH_CONTROL_SI))
-		return burst_size;
-
-	if (DMAC_COALESCE_WORDS < burst_size)
-		return burst_size;
-	return (DMAC_COALESCE_WORDS / burst_size) * burst_size;
-}
-
 static void dmac_schedule(pmb887x_dmac_t *p) {
-	if (p->dmac_pending)
-		return;
 	p->dmac_pending = true;
-	/* a request raised from inside dmac_timer_reset (the peripheral
-	 * re-requesting as its burst is acknowledged) is picked up by that
-	 * loop's next pass; arming the timer would only recompute the clock
-	 * deadline per burst */
-	if (!p->in_run) {
-		/* Future deadline, not 0: this runs inside an MMIO write, and an already expired
-		 * virtual timer could run before that write unwinds. */
+
+	if (clock_is_enabled(p->clock) && !timer_pending(p->timer))
+		timer_mod(p->timer, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL));
+}
+
+static void dmac_clock_update(void *opaque, ClockEvent event) {
+	pmb887x_dmac_t *p = opaque;
+	(void) event;
+
+	if (!clock_is_enabled(p->clock)) {
+		timer_del(p->timer);
+	} else if (p->dmac_pending) {
 		timer_mod(p->timer, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + 1);
 	}
 }
@@ -364,7 +240,7 @@ static void dmac_update_final_addresses(pmb887x_dmac_ch_t *ch) {
 	/* A stopped PL080 channel exposes the addresses of the last transfer. */
 	uint32_t src_width = dmac_get_width((ch->control & DMAC_CH_CONTROL_S_WIDTH) >> DMAC_CH_CONTROL_S_WIDTH_SHIFT);
 	uint32_t dst_width = dmac_get_width((ch->control & DMAC_CH_CONTROL_D_WIDTH) >> DMAC_CH_CONTROL_D_WIDTH_SHIFT);
-	if ((ch->control & DMAC_CH_CONTROL_SI))
+	if ((ch->control & DMAC_CH_CONTROL_SI) && !ch->is_source_address_final)
 		ch->src_addr -= src_width;
 	if ((ch->control & DMAC_CH_CONTROL_DI))
 		ch->dst_addr -= dst_width;
@@ -377,11 +253,17 @@ static void dmac_transfer_finish(pmb887x_dmac_t *p, pmb887x_dmac_ch_t *ch) {
 	uint8_t src_sel = p->sel[src_periph];
 	uint8_t dst_sel = p->sel[dst_periph];
 
+	ch->fifo_bytes = 0;
+	ch->delivered_byte_remainder = 0;
+	ch->remaining_last_source_bytes = 0;
+	ch->remaining_source_count = 0;
+
 	uint32_t lli_addr = ch->lli & DMAC_CH_LLI_ITEM;
 	if (lli_addr) {
 		uint32_t lli[4];
-		enum device_endian lli_endian = dmac_master_endian(p, (ch->lli & DMAC_CH_LLI_LM) != 0);
-		dmac_read(p, NULL, lli_addr, (uint8_t *) lli, sizeof(uint32_t), ARRAY_SIZE(lli), lli_endian);
+		enum device_endian lli_endian = dmac_lli_uses_master_endian(p) ?
+			dmac_master_endian(p, (ch->lli & DMAC_CH_LLI_LM) != 0) : DEVICE_LITTLE_ENDIAN;
+		dmac_read(p, lli_addr, (uint8_t *) lli, sizeof(uint32_t), ARRAY_SIZE(lli), lli_endian);
 		if (lli_endian == DEVICE_BIG_ENDIAN)
 			dmac_swap_byte_order((uint8_t *) lli, sizeof(uint32_t), ARRAY_SIZE(lli));
 
@@ -419,51 +301,31 @@ static void dmac_transfer_finish(pmb887x_dmac_t *p, pmb887x_dmac_ch_t *ch) {
 
 	if (is_src_tc)
 		qemu_set_irq(p->TC[src_sel][src_periph], 1);
+
+	ch->is_source_address_final = false;
 }
 
-static void dmac_transfer_stream(pmb887x_dmac_t *p, pmb887x_dmac_ch_t *ch,
-	uint32_t burst_size, bool is_src_memory, uint32_t src_width, uint32_t dst_width,
-	enum device_endian src_endian, enum device_endian dst_endian, uint8_t *buffer)
-{
-	uint32_t transferred = 0;
-	uint32_t src_burst_size = is_src_memory && (ch->control & DMAC_CH_CONTROL_SI) ? burst_size : 1;
-	uint32_t src_burst_size_bytes = src_burst_size * src_width;
-	/* A memory source with a narrower fixed destination: one read of the
-	 * source per pass, the destination written per word as before */
-	bool try_run = !(ch->control & DMAC_CH_CONTROL_DI) &&
-		(dst_endian != DEVICE_BIG_ENDIAN || dst_width == 1);
-	while (transferred < burst_size) {
-		dmac_read(p, &ch->src_xlat, ch->src_addr, buffer, src_width, src_burst_size, src_endian);
-		if (src_endian == DEVICE_BIG_ENDIAN)
-			dmac_swap_byte_order(buffer, src_width, src_burst_size);
+static void dmac_transfer_advance(pmb887x_dmac_t *p, pmb887x_dmac_ch_t *ch, uint32_t source_count) {
+	uint32_t tx_size_mask = DMAC_CH_CONTROL_TRANSFER_SIZE >> DMAC_CH_CONTROL_TRANSFER_SIZE_SHIFT;
+	uint32_t tx_size = (ch->control & DMAC_CH_CONTROL_TRANSFER_SIZE) >> DMAC_CH_CONTROL_TRANSFER_SIZE_SHIFT;
+	tx_size = (tx_size - source_count) & tx_size_mask;
+	ch->control &= ~DMAC_CH_CONTROL_TRANSFER_SIZE;
+	ch->control |= (tx_size << DMAC_CH_CONTROL_TRANSFER_SIZE_SHIFT);
 
-		if ((ch->control & DMAC_CH_CONTROL_SI))
-			ch->src_addr += src_burst_size_bytes;
-
-		bool run = try_run && dmac_write_run(p, &ch->dst_xlat, ch->dst_addr, buffer, dst_width,
-			src_burst_size_bytes / dst_width);
-		for (uint32_t j = 0; !run && j < src_burst_size_bytes; j += dst_width) {
-			if (dst_endian == DEVICE_BIG_ENDIAN && dst_width > 1)
-				dmac_swap_byte_order(buffer + j, dst_width, 1);
-			dmac_write(p, &ch->dst_xlat, ch->dst_addr, buffer + j, dst_width);
-
-			if ((ch->control & DMAC_CH_CONTROL_DI))
-				ch->dst_addr += dst_width;
-		}
-		transferred += src_burst_size;
-	}
+	uint32_t flow_ctrl = (ch->config & DMAC_CH_CONFIG_FLOW_CTRL);
+	if (tx_size == 0 && dmac_is_dmac_flow_controller(flow_ctrl))
+		dmac_transfer_finish(p, ch);
 }
 
 static void dmac_transfer_memory(pmb887x_dmac_t *p, pmb887x_dmac_ch_t *ch, uint32_t burst_size) {
-	/* QEMU_UNINITIALIZED: -ftrivial-auto-var-init=zero would clear all 16 KB
-	 * on every call, and the display path calls this once per 4-byte word */
-	uint8_t buffer[16 * 1024] QEMU_ALIGNED(4) QEMU_UNINITIALIZED; // 12bit TransferSize x DWORD
+	uint8_t buffer[16 * 1024] QEMU_ALIGNED(4); // 12bit TransferSize x DWORD
 	uint32_t src_width = dmac_get_width((ch->control & DMAC_CH_CONTROL_S_WIDTH) >> DMAC_CH_CONTROL_S_WIDTH_SHIFT);
 	uint32_t dst_width = dmac_get_width((ch->control & DMAC_CH_CONTROL_D_WIDTH) >> DMAC_CH_CONTROL_D_WIDTH_SHIFT);
 	uint32_t flow_ctrl = (ch->config & DMAC_CH_CONFIG_FLOW_CTRL);
 	uint32_t tx_size = (ch->control & DMAC_CH_CONTROL_TRANSFER_SIZE) >> DMAC_CH_CONTROL_TRANSFER_SIZE_SHIFT;
 	enum device_endian src_endian = dmac_master_endian(p, (ch->control & DMAC_CH_CONTROL_S_AHB2) != 0);
 	enum device_endian dst_endian = dmac_master_endian(p, (ch->control & DMAC_CH_CONTROL_D_AHB2) != 0);
+	bool is_mixed_endian = src_endian != dst_endian;
 
 	bool is_simple_memcpy = (
 		flow_ctrl == DMAC_CH_CONFIG_FLOW_CTRL_MEM2MEM &&
@@ -491,30 +353,13 @@ static void dmac_transfer_memory(pmb887x_dmac_t *p, pmb887x_dmac_ch_t *ch, uint3
 		address_space_write(&p->downstream_as, ch->dst_addr, MEMTXATTRS_UNSPECIFIED, buffer, dst_width * burst_size);
 		ch->src_addr += src_width * burst_size;
 		ch->dst_addr += dst_width * burst_size;
-	} else if (dst_width == src_width && is_src_memory && (ch->control & DMAC_CH_CONTROL_SI)) {
-		/* memory source with an incrementing address (the display path:
-		 * RAM -> DIF FIFO): one address_space_read for the whole burst
-		 * instead of one dispatch per word; the destination is written
-		 * per word as before (a FIFO register sees each word) */
-		dmac_read(p, &ch->src_xlat, ch->src_addr, buffer, src_width, burst_size, src_endian);
-		ch->src_addr += src_width * burst_size;
-		bool run = src_endian == dst_endian && !(ch->control & DMAC_CH_CONTROL_DI) &&
-			dmac_write_run(p, &ch->dst_xlat, ch->dst_addr, buffer, dst_width, burst_size);
-		for (uint32_t i = 0; !run && i < burst_size; i++) {
-			uint8_t *w = buffer + i * src_width;
-			if (src_endian != dst_endian && src_width > 1)
-				dmac_swap_byte_order(w, dst_width, 1);
-			dmac_write(p, &ch->dst_xlat, ch->dst_addr, w, dst_width);
-			if ((ch->control & DMAC_CH_CONTROL_DI))
-				ch->dst_addr += dst_width;
-		}
 	} else if (dst_width == src_width) {
 		uint32_t transferred = 0;
 		while (transferred < burst_size) {
-			dmac_read(p, &ch->src_xlat, ch->src_addr, buffer, src_width, 1, src_endian);
+			dmac_read(p, ch->src_addr, buffer, src_width, 1, src_endian);
 			if (src_endian != dst_endian && src_width > 1)
 				dmac_swap_byte_order(buffer, dst_width, 1);
-			dmac_write(p, &ch->dst_xlat, ch->dst_addr, buffer, dst_width);
+			dmac_write(p, ch->dst_addr, buffer, dst_width);
 
 			if ((ch->control & DMAC_CH_CONTROL_SI))
 				ch->src_addr += src_width;
@@ -528,8 +373,8 @@ static void dmac_transfer_memory(pmb887x_dmac_t *p, pmb887x_dmac_ch_t *ch, uint3
 		uint32_t transferred = 0;
 		uint32_t buffer_size = 0;
 		while (transferred < burst_size) {
-			dmac_read(p, &ch->src_xlat, ch->src_addr, buffer + buffer_size, src_width, 1, src_endian);
-			if (src_endian == DEVICE_BIG_ENDIAN && src_width > 1)
+			dmac_read(p, ch->src_addr, buffer + buffer_size, src_width, 1, src_endian);
+			if (is_mixed_endian && src_endian == DEVICE_BIG_ENDIAN && src_width > 1)
 				dmac_swap_byte_order(buffer + buffer_size, src_width, 1);
 			buffer_size += src_width;
 
@@ -537,9 +382,9 @@ static void dmac_transfer_memory(pmb887x_dmac_t *p, pmb887x_dmac_ch_t *ch, uint3
 				ch->src_addr += src_width;
 
 			if (buffer_size == dst_width) {
-				if (dst_endian == DEVICE_BIG_ENDIAN && dst_width > 1)
+				if (is_mixed_endian && dst_endian == DEVICE_BIG_ENDIAN && dst_width > 1)
 					dmac_swap_byte_order(buffer, dst_width, 1);
-				dmac_write(p, &ch->dst_xlat, ch->dst_addr, buffer, dst_width);
+				dmac_write(p, ch->dst_addr, buffer, dst_width);
 				buffer_size = 0;
 
 				if ((ch->control & DMAC_CH_CONTROL_DI))
@@ -548,28 +393,188 @@ static void dmac_transfer_memory(pmb887x_dmac_t *p, pmb887x_dmac_ch_t *ch, uint3
 			transferred++;
 		}
 	} else {
-		dmac_transfer_stream(p, ch, burst_size, is_src_memory, src_width, dst_width,
-			src_endian, dst_endian, buffer);
+		uint32_t transferred = 0;
+		uint32_t src_burst_size = is_src_memory && (ch->control & DMAC_CH_CONTROL_SI) ? burst_size : 1;
+		uint32_t src_burst_size_bytes = src_burst_size * src_width;
+		while (transferred < burst_size) {
+			dmac_read(p, ch->src_addr, buffer, src_width, src_burst_size, src_endian);
+			if (is_mixed_endian && src_endian == DEVICE_BIG_ENDIAN)
+				dmac_swap_byte_order(buffer, src_width, src_burst_size);
+
+			if ((ch->control & DMAC_CH_CONTROL_SI))
+				ch->src_addr += src_burst_size_bytes;
+
+			for (uint32_t j = 0; j < src_burst_size_bytes; j += dst_width) {
+				if (is_mixed_endian && dst_endian == DEVICE_BIG_ENDIAN && dst_width > 1)
+					dmac_swap_byte_order(buffer + j, dst_width, 1);
+				dmac_write(p, ch->dst_addr, buffer + j, dst_width);
+
+				if ((ch->control & DMAC_CH_CONTROL_DI))
+					ch->dst_addr += dst_width;
+			}
+			transferred += src_burst_size;
+		}
 	}
 
-	uint32_t tx_size_mask = DMAC_CH_CONTROL_TRANSFER_SIZE >> DMAC_CH_CONTROL_TRANSFER_SIZE_SHIFT;
-	tx_size = (tx_size - burst_size) & tx_size_mask;
-	ch->control &= ~DMAC_CH_CONTROL_TRANSFER_SIZE;
-	ch->control |= tx_size << DMAC_CH_CONTROL_TRANSFER_SIZE_SHIFT;
-
-	if (tx_size == 0 && dmac_is_dmac_flow_controller(flow_ctrl))
-		dmac_transfer_finish(p, ch);
+	dmac_transfer_advance(p, ch, burst_size);
 }
 
-static bool dmac_service_request(
-	pmb887x_dmac_t *p, pmb887x_dmac_ch_t *ch, pmb887x_dmac_request_t *request,
-	pmb887x_dmac_request_t *last_request, uint8_t sel, uint8_t id, uint32_t count
+static void dmac_fifo_fill(pmb887x_dmac_t *p, pmb887x_dmac_ch_t *ch, uint32_t max_source_count) {
+	uint32_t src_width = dmac_get_width((ch->control & DMAC_CH_CONTROL_S_WIDTH) >> DMAC_CH_CONTROL_S_WIDTH_SHIFT);
+	uint32_t fifo_capacity = (DMAC_FIFO_SIZE - ch->fifo_bytes) / src_width;
+	uint32_t source_count = MIN(max_source_count, fifo_capacity);
+
+	if (dmac_is_dmac_flow_controller(ch->config & DMAC_CH_CONFIG_FLOW_CTRL)) {
+		uint32_t transfer_count = (ch->control & DMAC_CH_CONTROL_TRANSFER_SIZE) >>
+			DMAC_CH_CONTROL_TRANSFER_SIZE_SHIFT;
+		uint32_t buffered_count = (ch->delivered_byte_remainder + ch->fifo_bytes) / src_width;
+		source_count = MIN(source_count, transfer_count - buffered_count);
+	}
+
+	ch->src_addr &= ~(src_width - 1);
+	if (source_count == 0)
+		return;
+
+	enum device_endian src_endian = dmac_master_endian(p, (ch->control & DMAC_CH_CONTROL_S_AHB2) != 0);
+	uint8_t *fifo_tail = ch->fifo + ch->fifo_bytes;
+	if ((ch->control & DMAC_CH_CONTROL_SI)) {
+		dmac_read(p, ch->src_addr, fifo_tail, src_width, source_count, src_endian);
+		ch->src_addr += src_width * source_count;
+	} else {
+		for (uint32_t i = 0; i < source_count; i++)
+			dmac_read(p, ch->src_addr, fifo_tail + i * src_width, src_width, 1, src_endian);
+	}
+
+	if (src_endian == DEVICE_BIG_ENDIAN && src_width > 1)
+		dmac_swap_byte_order(fifo_tail, src_width, source_count);
+	ch->fifo_bytes += source_count * src_width;
+}
+
+static void dmac_fifo_drain(pmb887x_dmac_t *p, pmb887x_dmac_ch_t *ch, uint32_t bytes) {
+	uint8_t buffer[DMAC_FIFO_SIZE] QEMU_ALIGNED(4) = { 0 };
+	uint32_t src_width = dmac_get_width((ch->control & DMAC_CH_CONTROL_S_WIDTH) >> DMAC_CH_CONTROL_S_WIDTH_SHIFT);
+	uint32_t dst_width = dmac_get_width((ch->control & DMAC_CH_CONTROL_D_WIDTH) >> DMAC_CH_CONTROL_D_WIDTH_SHIFT);
+	enum device_endian dst_endian = dmac_master_endian(p, (ch->control & DMAC_CH_CONTROL_D_AHB2) != 0);
+	uint32_t remaining_bytes = ch->fifo_bytes - bytes;
+	memcpy(buffer, ch->fifo, bytes);
+	memmove(ch->fifo, ch->fifo + bytes, remaining_bytes);
+	ch->fifo_bytes -= bytes;
+
+	ch->dst_addr &= ~(dst_width - 1);
+	for (uint32_t offset = 0; offset < bytes; offset += dst_width) {
+		if (dst_endian == DEVICE_BIG_ENDIAN && dst_width > 1)
+			dmac_swap_byte_order(buffer + offset, dst_width, 1);
+		dmac_write(p, ch->dst_addr, buffer + offset, dst_width);
+		if ((ch->control & DMAC_CH_CONTROL_DI))
+			ch->dst_addr += dst_width;
+	}
+
+	uint32_t delivered_bytes = ch->delivered_byte_remainder + bytes;
+	ch->delivered_byte_remainder = delivered_bytes % src_width;
+	dmac_transfer_advance(p, ch, delivered_bytes / src_width);
+}
+
+static void dmac_fifo_write_to_memory(pmb887x_dmac_t *p, pmb887x_dmac_ch_t *ch) {
+	uint8_t buffer[sizeof(uint32_t)] QEMU_ALIGNED(4);
+	uint32_t dst_width = dmac_get_width((ch->control & DMAC_CH_CONTROL_D_WIDTH) >> DMAC_CH_CONTROL_D_WIDTH_SHIFT);
+	enum device_endian dst_endian = dmac_master_endian(p, (ch->control & DMAC_CH_CONTROL_D_AHB2) != 0);
+	while (ch->fifo_bytes >= dst_width) {
+		memcpy(buffer, ch->fifo, dst_width);
+		memmove(ch->fifo, ch->fifo + dst_width, ch->fifo_bytes - dst_width);
+		ch->fifo_bytes -= dst_width;
+
+		ch->dst_addr &= ~(dst_width - 1);
+		if (dst_endian == DEVICE_BIG_ENDIAN && dst_width > 1)
+			dmac_swap_byte_order(buffer, dst_width, 1);
+		dmac_write(p, ch->dst_addr, buffer, dst_width);
+		if ((ch->control & DMAC_CH_CONTROL_DI))
+			ch->dst_addr += dst_width;
+	}
+}
+
+static void dmac_transfer_source_to_memory(pmb887x_dmac_t *p, pmb887x_dmac_ch_t *ch, uint32_t source_count) {
+	uint32_t src_width = dmac_get_width((ch->control & DMAC_CH_CONTROL_S_WIDTH) >> DMAC_CH_CONTROL_S_WIDTH_SHIFT);
+	enum device_endian src_endian = dmac_master_endian(p, (ch->control & DMAC_CH_CONTROL_S_AHB2) != 0);
+	ch->src_addr &= ~(src_width - 1);
+	for (uint32_t i = 0; i < source_count; i++) {
+		uint8_t *destination = ch->fifo + ch->fifo_bytes;
+		dmac_read(p, ch->src_addr, destination, src_width, 1, src_endian);
+		if (src_endian == DEVICE_BIG_ENDIAN && src_width > 1)
+			dmac_swap_byte_order(destination, src_width, 1);
+		ch->fifo_bytes += src_width;
+
+		if ((ch->control & DMAC_CH_CONTROL_SI))
+			ch->src_addr += src_width;
+		dmac_fifo_write_to_memory(p, ch);
+	}
+
+	dmac_transfer_advance(p, ch, source_count);
+}
+
+static bool dmac_transfer_memory_to_destination(
+	pmb887x_dmac_t *p,
+	pmb887x_dmac_ch_t *ch,
+	uint32_t destination_count,
+	bool prefetch_after_transfer
+) {
+	uint32_t src_width = dmac_get_width((ch->control & DMAC_CH_CONTROL_S_WIDTH) >> DMAC_CH_CONTROL_S_WIDTH_SHIFT);
+	uint32_t dst_width = dmac_get_width((ch->control & DMAC_CH_CONTROL_D_WIDTH) >> DMAC_CH_CONTROL_D_WIDTH_SHIFT);
+	uint32_t remaining_bytes = destination_count * dst_width;
+	while (remaining_bytes > 0 && (ch->config & DMAC_CH_CONFIG_ENABLE)) {
+		if (ch->fifo_bytes == 0) {
+			if ((ch->config & DMAC_CH_CONFIG_HALT))
+				break;
+			uint32_t source_count = DIV_ROUND_UP(remaining_bytes, src_width);
+			dmac_fifo_fill(p, ch, prefetch_after_transfer ? UINT32_MAX : source_count);
+			if (ch->fifo_bytes == 0)
+				break;
+		}
+
+		uint32_t bytes = MIN(remaining_bytes, ch->fifo_bytes);
+		dmac_fifo_drain(p, ch, bytes);
+		remaining_bytes -= bytes;
+	}
+
+	if (prefetch_after_transfer && (ch->config & DMAC_CH_CONFIG_ENABLE) && !(ch->config & DMAC_CH_CONFIG_HALT))
+		dmac_fifo_fill(p, ch, UINT32_MAX);
+	return remaining_bytes == 0 || !(ch->config & DMAC_CH_CONFIG_ENABLE);
+}
+
+static bool dmac_service_destination_request(
+	pmb887x_dmac_t *p,
+	pmb887x_dmac_ch_t *ch,
+	pmb887x_dmac_request_t *request,
+	pmb887x_dmac_request_t *last_request,
+	uint8_t sel,
+	uint8_t id,
+	uint32_t count
 ) {
 	bool is_last = dmac_is_request_pending(last_request, sel, id);
 	if (!is_last && !dmac_is_request_pending(request, sel, id))
 		return false;
 
-	dmac_transfer_memory(p, ch, count);
+	if (!dmac_transfer_memory_to_destination(p, ch, count, false))
+		return false;
+	if (is_last)
+		dmac_transfer_finish(p, ch);
+	dmac_ack_request(p, is_last ? last_request : request, sel, id);
+	return true;
+}
+
+static bool dmac_service_source_request(
+	pmb887x_dmac_t *p,
+	pmb887x_dmac_ch_t *ch,
+	pmb887x_dmac_request_t *request,
+	pmb887x_dmac_request_t *last_request,
+	uint8_t sel,
+	uint8_t id,
+	uint32_t count
+) {
+	bool is_last = dmac_is_request_pending(last_request, sel, id);
+	if (!is_last && !dmac_is_request_pending(request, sel, id))
+		return false;
+
+	dmac_transfer_source_to_memory(p, ch, count);
 	if (is_last)
 		dmac_transfer_finish(p, ch);
 	dmac_ack_request(p, is_last ? last_request : request, sel, id);
@@ -577,7 +582,11 @@ static bool dmac_service_request(
 }
 
 static bool dmac_get_pending_request(
-	pmb887x_dmac_t *p, uint8_t sel, uint8_t id, uint32_t burst_size, pmb887x_dmac_pending_request_t *pending
+	pmb887x_dmac_t *p,
+	uint8_t sel,
+	uint8_t id,
+	uint32_t burst_size,
+	pmb887x_dmac_pending_request_t *pending
 ) {
 	if (dmac_is_request_pending(&p->lsreq, sel, id)) {
 		*pending = (pmb887x_dmac_pending_request_t) { &p->lsreq, 1, true };
@@ -603,70 +612,168 @@ static bool dmac_get_pending_request(
 }
 
 static void dmac_run_per2per_destination(
-	pmb887x_dmac_t *p, pmb887x_dmac_ch_t *ch, uint8_t src_sel, uint8_t src_periph, uint32_t src_burst_size,
-	uint8_t dst_sel, uint8_t dst_periph, uint32_t dst_burst_size
+	pmb887x_dmac_t *p,
+	pmb887x_dmac_ch_t *ch,
+	uint8_t src_sel,
+	uint8_t src_periph,
+	uint32_t src_burst_size,
+	uint8_t dst_sel,
+	uint8_t dst_periph,
+	uint32_t dst_burst_size
 ) {
 	pmb887x_dmac_pending_request_t source;
 	pmb887x_dmac_pending_request_t destination;
-
+	uint32_t src_width = dmac_get_width(
+		(ch->control & DMAC_CH_CONTROL_S_WIDTH) >> DMAC_CH_CONTROL_S_WIDTH_SHIFT
+	);
+	uint32_t dst_width = dmac_get_width(
+		(ch->control & DMAC_CH_CONTROL_D_WIDTH) >> DMAC_CH_CONTROL_D_WIDTH_SHIFT
+	);
 	if (!dmac_get_pending_request(p, dst_sel, dst_periph, dst_burst_size, &destination))
 		return;
+
+	uint32_t destination_bytes = destination.count * dst_width;
+	if (ch->fifo_bytes != 0 || destination_bytes < src_width) {
+		if (ch->fifo_bytes < destination_bytes) {
+			if (!dmac_get_pending_request(p, src_sel, src_periph, src_burst_size, &source))
+				return;
+
+			uint32_t capacity = (DMAC_FIFO_SIZE - ch->fifo_bytes) / src_width;
+			if (source.count > capacity)
+				return;
+
+			dmac_fifo_fill(p, ch, source.count);
+			dmac_ack_request(p, source.request, src_sel, src_periph);
+		}
+		if (ch->fifo_bytes < destination_bytes)
+			return;
+
+		dmac_fifo_drain(p, ch, destination_bytes);
+		dmac_ack_request(p, destination.request, dst_sel, dst_periph);
+		if (destination.last)
+			dmac_transfer_finish(p, ch);
+		return;
+	}
 
 	if (!dmac_get_pending_request(p, src_sel, src_periph, src_burst_size, &source))
 		return;
 
-	if (source.count < destination.count)
+	uint32_t source_count = dmac_destination_count_to_source_count(ch, destination.count);
+	if (source.count < source_count)
 		return;
 
-	dmac_transfer_memory(p, ch, destination.count);
+	dmac_transfer_memory(p, ch, source_count);
 	dmac_ack_request(p, source.request, src_sel, src_periph);
 	dmac_ack_request(p, destination.request, dst_sel, dst_periph);
 	if (destination.last)
 		dmac_transfer_finish(p, ch);
 }
 
+static void dmac_last_source_capture(
+	pmb887x_dmac_t *p,
+	pmb887x_dmac_ch_t *ch,
+	uint8_t src_sel,
+	uint8_t src_periph,
+	uint32_t src_width
+) {
+	uint32_t capacity = (DMAC_FIFO_SIZE - ch->fifo_bytes) / src_width;
+	uint32_t count = MIN(ch->remaining_source_count, capacity);
+	if (count) {
+		dmac_fifo_fill(p, ch, count);
+		ch->remaining_source_count -= count;
+	}
+	if (ch->remaining_source_count || ch->is_source_address_final)
+		return;
+
+	pmb887x_dmac_request_t *request = dmac_is_request_pending(&p->lsreq, src_sel, src_periph) ?
+		&p->lsreq : &p->lbreq;
+	dmac_ack_request(p, request, src_sel, src_periph);
+	if ((ch->control & DMAC_CH_CONTROL_SI))
+		ch->src_addr -= src_width;
+	ch->is_source_address_final = true;
+}
+
 static void dmac_run_per2per_source(
-	pmb887x_dmac_t *p, pmb887x_dmac_ch_t *ch, uint8_t src_sel, uint8_t src_periph, uint32_t src_burst_size,
-	uint8_t dst_sel, uint8_t dst_periph, uint32_t dst_burst_size
+	pmb887x_dmac_t *p,
+	pmb887x_dmac_ch_t *ch,
+	uint8_t src_sel,
+	uint8_t src_periph,
+	uint32_t src_burst_size,
+	uint8_t dst_sel,
+	uint8_t dst_periph,
+	uint32_t dst_burst_size
 ) {
 	pmb887x_dmac_pending_request_t source;
 	bool destination_pending = dmac_is_request_pending(&p->breq, dst_sel, dst_periph);
+	uint32_t src_width = dmac_get_width(
+		(ch->control & DMAC_CH_CONTROL_S_WIDTH) >> DMAC_CH_CONTROL_S_WIDTH_SHIFT
+	);
+	uint32_t dst_width = dmac_get_width(
+		(ch->control & DMAC_CH_CONTROL_D_WIDTH) >> DMAC_CH_CONTROL_D_WIDTH_SHIFT
+	);
+	uint32_t destination_bytes = dst_burst_size * dst_width;
+	if (ch->remaining_last_source_bytes == 0) {
+		if (ch->fifo_bytes != 0) {
+			if (!destination_pending)
+				return;
 
-	if (ch->last_source_count == 0) {
+			dmac_fifo_drain(p, ch, MIN(destination_bytes, ch->fifo_bytes));
+			dmac_ack_request(p, &p->breq, dst_sel, dst_periph);
+			return;
+		}
+
 		if (!dmac_get_pending_request(p, src_sel, src_periph, src_burst_size, &source))
 			return;
 
 		if (source.last) {
-			ch->last_source_count = source.count;
-			dmac_ack_request(p, source.request, src_sel, src_periph);
+			ch->remaining_last_source_bytes = source.count * src_width;
+			ch->remaining_source_count = source.count;
 		} else {
 			if (!destination_pending)
 				return;
 
-			uint32_t count = MIN(source.count, dst_burst_size);
-			dmac_transfer_memory(p, ch, count);
+			uint32_t capacity = (DMAC_FIFO_SIZE - ch->fifo_bytes) / src_width;
+			if (source.count > capacity)
+				return;
+
+			dmac_fifo_fill(p, ch, source.count);
+			dmac_fifo_drain(p, ch, MIN(destination_bytes, ch->fifo_bytes));
 			dmac_ack_request(p, source.request, src_sel, src_periph);
 			dmac_ack_request(p, &p->breq, dst_sel, dst_periph);
 			return;
 		}
 	}
 
+	dmac_last_source_capture(p, ch, src_sel, src_periph, src_width);
+
 	if (!destination_pending)
 		return;
 
-	uint32_t count = MIN(ch->last_source_count, dst_burst_size);
-	dmac_transfer_memory(p, ch, count);
-	ch->last_source_count -= count;
+	while (destination_bytes && ch->fifo_bytes) {
+		uint32_t bytes = MIN(destination_bytes, ch->fifo_bytes);
+		dmac_fifo_drain(p, ch, bytes);
+		ch->remaining_last_source_bytes -= bytes;
+		destination_bytes -= bytes;
+
+		dmac_last_source_capture(p, ch, src_sel, src_periph, src_width);
+	}
+	if (destination_bytes && ch->remaining_last_source_bytes)
+		return;
+
 	dmac_ack_request(p, &p->breq, dst_sel, dst_periph);
-	if (ch->last_source_count == 0)
+	if (ch->remaining_last_source_bytes == 0)
 		dmac_transfer_finish(p, ch);
 }
 
 static void dmac_channel_run(pmb887x_dmac_t *p, pmb887x_dmac_ch_t *ch) {
 	if (!(ch->config & DMAC_CH_CONFIG_ENABLE) || !(p->config & DMAC_CONFIG_ENABLE))
 		return;
-	if ((ch->config & DMAC_CH_CONFIG_HALT))
+	if (!dmac_has_second_master(p) &&
+		(ch->config & DMAC_CH_CONFIG_FLOW_CTRL) == DMAC_CH_CONFIG_FLOW_CTRL_MEM2MEM &&
+		(ch->control & (DMAC_CH_CONTROL_S_AHB2 | DMAC_CH_CONTROL_D_AHB2)) ==
+			(DMAC_CH_CONTROL_S_AHB2 | DMAC_CH_CONTROL_D_AHB2)) {
 		return;
+	}
 
 	uint32_t src_burst_size = dmac_get_burst_size((ch->control & DMAC_CH_CONTROL_SB_SIZE) >> DMAC_CH_CONTROL_SB_SIZE_SHIFT);
 	uint32_t dst_burst_size = dmac_get_burst_size((ch->control & DMAC_CH_CONTROL_DB_SIZE) >> DMAC_CH_CONTROL_DB_SIZE_SHIFT);
@@ -677,6 +784,14 @@ static void dmac_channel_run(pmb887x_dmac_t *p, pmb887x_dmac_ch_t *ch) {
 	uint32_t flow_ctrl = (ch->config & DMAC_CH_CONFIG_FLOW_CTRL);
 	uint32_t tx_size = (ch->control & DMAC_CH_CONTROL_TRANSFER_SIZE) >> DMAC_CH_CONTROL_TRANSFER_SIZE_SHIFT;
 	if (dmac_is_dmac_flow_controller(flow_ctrl) && !tx_size)
+		return;
+
+	bool can_drain_fifo = ch->fifo_bytes && (
+		flow_ctrl == DMAC_CH_CONFIG_FLOW_CTRL_MEM2PER ||
+		flow_ctrl == DMAC_CH_CONFIG_FLOW_CTRL_MEM2PER_PER ||
+		flow_ctrl == DMAC_CH_CONFIG_FLOW_CTRL_PER2PER_SRC
+	);
+	if ((ch->config & DMAC_CH_CONFIG_HALT) && !can_drain_fifo)
 		return;
 
 	switch (flow_ctrl) {
@@ -692,16 +807,15 @@ static void dmac_channel_run(pmb887x_dmac_t *p, pmb887x_dmac_ch_t *ch) {
 
 		case DMAC_CH_CONFIG_FLOW_CTRL_MEM2PER: {
 			pmb887x_dmac_request_t *req = dmac_pending_burst(p, dst_sel, dst_periph);
-			if (req) {
-				dmac_transfer_memory(p, ch, MIN(tx_size, dmac_stream_burst(ch, src_burst_size)));
+			if (req && dmac_transfer_memory_to_destination(p, ch, dst_burst_size, true))
 				dmac_ack_request(p, req, dst_sel, dst_periph);
-			}
 			break;
 		}
 
 		case DMAC_CH_CONFIG_FLOW_CTRL_MEM2PER_PER: {
-			if (!dmac_service_request(p, ch, &p->breq, &p->lbreq, dst_sel, dst_periph, dst_burst_size))
-				dmac_service_request(p, ch, &p->sreq, &p->lsreq, dst_sel, dst_periph, 1);
+			if (!dmac_service_destination_request(p, ch, &p->breq, &p->lbreq, dst_sel, dst_periph, dst_burst_size)) {
+				dmac_service_destination_request(p, ch, &p->sreq, &p->lsreq, dst_sel, dst_periph, 1);
+			}
 			break;
 		}
 
@@ -713,7 +827,7 @@ static void dmac_channel_run(pmb887x_dmac_t *p, pmb887x_dmac_ch_t *ch) {
 				count = 1;
 			}
 			if (req) {
-				dmac_transfer_memory(p, ch, MIN(tx_size, count));
+				dmac_transfer_source_to_memory(p, ch, MIN(tx_size, count));
 				dmac_ack_request(p, req, src_sel, src_periph);
 			}
 			break;
@@ -722,7 +836,8 @@ static void dmac_channel_run(pmb887x_dmac_t *p, pmb887x_dmac_ch_t *ch) {
 		case DMAC_CH_CONFIG_FLOW_CTRL_PER2PER:
 			if (dmac_is_request_pending(&p->breq, src_sel, src_periph) &&
 				dmac_is_request_pending(&p->breq, dst_sel, dst_periph)) {
-				dmac_transfer_memory(p, ch, MIN(tx_size, MIN(src_burst_size, dst_burst_size)));
+				uint32_t source_count = dmac_destination_count_to_source_count(ch, dst_burst_size);
+				dmac_transfer_memory(p, ch, MIN(tx_size, MIN(src_burst_size, source_count)));
 				dmac_ack_request(p, &p->breq, src_sel, src_periph);
 				dmac_ack_request(p, &p->breq, dst_sel, dst_periph);
 			}
@@ -739,8 +854,8 @@ static void dmac_channel_run(pmb887x_dmac_t *p, pmb887x_dmac_ch_t *ch) {
 			break;
 
 		case DMAC_CH_CONFIG_FLOW_CTRL_PER2MEM_PER:
-			if (!dmac_service_request(p, ch, &p->breq, &p->lbreq, src_sel, src_periph, src_burst_size))
-				dmac_service_request(p, ch, &p->sreq, &p->lsreq, src_sel, src_periph, 1);
+			if (!dmac_service_source_request(p, ch, &p->breq, &p->lbreq, src_sel, src_periph, src_burst_size))
+				dmac_service_source_request(p, ch, &p->sreq, &p->lsreq, src_sel, src_periph, 1);
 			break;
 
 		default:
@@ -808,6 +923,11 @@ static uint64_t dmac_io_read(void *opaque, hwaddr haddr, unsigned size) {
 	pmb887x_dmac_t *p = opaque;
 
 	uint64_t value = 0;
+
+	if (!clock_is_enabled(p->clock)) {
+		IO_DUMP_READ(haddr + p->mmio.addr, size, value);
+		return value;
+	}
 
 	switch (haddr) {
 		case DMAC_CONFIG:
@@ -893,8 +1013,7 @@ static uint64_t dmac_io_read(void *opaque, hwaddr haddr, unsigned size) {
 		case DMAC_CH_CONFIG6:
 		case DMAC_CH_CONFIG7: {
 			pmb887x_dmac_ch_t *ch = &p->ch[(haddr - DMAC_CH_CONFIG0) / 0x20];
-			/* The channel FIFO is not modeled, so ACTIVE is always clear. */
-			value = ch->config;
+			value = ch->config | (ch->fifo_bytes ? DMAC_CH_CONFIG_ACTIVE : 0);
 			break;
 		}
 
@@ -941,9 +1060,8 @@ static uint64_t dmac_io_read(void *opaque, hwaddr haddr, unsigned size) {
 			break;
 
 		default:
-			IO_DUMP_READ(haddr + p->mmio.addr, size, 0xFFFFFFFF);
 			EPRINTF("unknown reg access: %02"PRIX64"\n", haddr);
-			exit(1);
+			break;
 	}
 
 	IO_DUMP_READ(haddr + p->mmio.addr, size, value);
@@ -955,6 +1073,8 @@ static void dmac_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned s
 	pmb887x_dmac_t *p = opaque;
 
 	IO_DUMP_WRITE(haddr + p->mmio.addr, size, value);
+	if (!clock_is_enabled(p->clock))
+		return;
 
 	switch (haddr) {
 		case DMAC_CONFIG:
@@ -1002,8 +1122,17 @@ static void dmac_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned s
 		case DMAC_CH_CONFIG6:
 		case DMAC_CH_CONFIG7: {
 			pmb887x_dmac_ch_t *ch = &p->ch[(haddr - DMAC_CH_CONFIG0) / 0x20];
-			if (!(ch->config & DMAC_CH_CONFIG_ENABLE) && (value & DMAC_CH_CONFIG_ENABLE))
-				ch->last_source_count = 0;
+			if (!(ch->config & DMAC_CH_CONFIG_ENABLE) && (value & DMAC_CH_CONFIG_ENABLE)) {
+				ch->remaining_last_source_bytes = 0;
+				ch->remaining_source_count = 0;
+				ch->fifo_bytes = 0;
+				ch->delivered_byte_remainder = 0;
+				ch->is_source_address_final = false;
+			}
+			if (!(value & DMAC_CH_CONFIG_ENABLE)) {
+				ch->fifo_bytes = 0;
+				ch->delivered_byte_remainder = 0;
+			}
 			ch->config = value & ~DMAC_CH_CONFIG_ACTIVE;
 			break;
 		}
@@ -1052,7 +1181,7 @@ static void dmac_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned s
 
 		default:
 			EPRINTF("unknown reg access: %02"PRIX64"\n", haddr);
-			exit(1);
+			break;
 	}
 
 	dmac_update(p);
@@ -1073,8 +1202,11 @@ uint32_t pmb887x_dmac_get_sel(pmb887x_dmac_t *p) {
 
 static void dmac_timer_reset(void *opaque) {
 	pmb887x_dmac_t *p = opaque;
+
+	if (!clock_is_enabled(p->clock))
+		return;
+
 	int budget = DMAC_MAX_BURSTS_PER_PASS;
-	p->in_run = true;
 	while (p->dmac_pending && budget-- > 0) {
 		p->dmac_pending = false;
 		for (int i = 0; i < DMAC_CHANNELS; i++)
@@ -1082,7 +1214,6 @@ static void dmac_timer_reset(void *opaque) {
 		if (pmb887x_srb_get_ris(&p->srb_tc) || pmb887x_srb_get_ris(&p->srb_err))
 			break;
 	}
-	p->in_run = false;
 	if (p->dmac_pending)
 		timer_mod(p->timer, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + 1);
 }
@@ -1132,7 +1263,7 @@ static const MemoryRegionOps io_ops = {
 	.write			= dmac_io_write,
 	.endianness		= DEVICE_NATIVE_ENDIAN,
 	.valid			= {
-		.min_access_size	= 1,
+		.min_access_size	= 4,
 		.max_access_size	= 4
 	}
 };
@@ -1147,6 +1278,8 @@ static void dmac_handle_reset(void *opaque, int id, int level) {
 static void dmac_init(Object *obj) {
 	DeviceState *dev = DEVICE(obj);
 	pmb887x_dmac_t *p = PMB887X_DMAC(obj);
+	p->clock = qdev_init_clock_in(dev, "clk", dmac_clock_update, p, ClockUpdate);
+	p->timer = timer_new_ns(QEMU_CLOCK_VIRTUAL, dmac_timer_reset, p);
 	memory_region_init_io(&p->mmio, obj, &io_ops, p, "pmb887x-dmac", DMAC_IO_SIZE);
 	sysbus_init_mmio(SYS_BUS_DEVICE(obj), &p->mmio);
 
@@ -1187,6 +1320,10 @@ static int dmac_err_irq_router(void *opaque, int event_id) {
 static void dmac_realize(DeviceState *dev, Error **errp) {
 	pmb887x_dmac_t *p = PMB887X_DMAC(dev);
 
+	if (!clock_has_source(p->clock)) {
+		error_setg(errp, "DMAC 'clk' input is not connected");
+		return;
+	}
 	if (!p->downstream) {
 		error_setg(errp, "DMAC 'downstream' link not set");
 		return;
@@ -1202,8 +1339,6 @@ static void dmac_realize(DeviceState *dev, Error **errp) {
 
 	pmb887x_srb_init(&p->srb_tc, p->irq_tc, ARRAY_SIZE(p->irq_tc));
 	pmb887x_srb_set_irq_router(&p->srb_tc, p, dmac_tc_irq_router);
-
-	p->timer = timer_new_ns(QEMU_CLOCK_VIRTUAL, dmac_timer_reset, p);
 }
 
 static void dmac_reset(DeviceState *dev) {
@@ -1218,15 +1353,11 @@ static void dmac_reset(DeviceState *dev) {
 		p->ch[i] = (pmb887x_dmac_ch_t) { .id = i };
 
 	p->dmac_pending = false;
-	p->in_run = false;
 	p->is_busy = false;
 	p->config = 0;
 	p->sync = 0;
 	memset(p->sel, 0, sizeof(p->sel));
-	memset(&p->sreq, 0, sizeof(p->sreq));
-	memset(&p->breq, 0, sizeof(p->breq));
-	memset(&p->lbreq, 0, sizeof(p->lbreq));
-	memset(&p->lsreq, 0, sizeof(p->lsreq));
+	dmac_clear_software_requests(p);
 
 	for (size_t sel = 0; sel < DMAC_MULTIPLEXOR; sel++) {
 		for (size_t request = 0; request < DMAC_REQUESTS; request++) {

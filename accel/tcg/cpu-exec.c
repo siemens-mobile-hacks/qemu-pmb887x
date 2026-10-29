@@ -158,7 +158,7 @@ static void init_delay_params(SyncClocks *sc, const CPUState *cpu)
 #endif /* CONFIG USER ONLY */
 
 struct tb_desc {
-    TCGTBCPUState s;
+    const TCGTBCPUState *s;
     CPUArchState *env;
     tb_page_addr_t page_addr0;
 };
@@ -168,11 +168,11 @@ static bool tb_lookup_cmp(const void *p, const void *d)
     const TranslationBlock *tb = p;
     const struct tb_desc *desc = d;
 
-    if ((tb_cflags(tb) & CF_PCREL || tb->pc == desc->s.pc) &&
+    if ((tb_cflags(tb) & CF_PCREL || tb->pc == desc->s->pc) &&
         tb_page_addr0(tb) == desc->page_addr0 &&
-        tb->cs_base == desc->s.cs_base &&
-        tb->flags == desc->s.flags &&
-        tb_cflags(tb) == desc->s.cflags) {
+        tb->cs_base == desc->s->cs_base &&
+        tb->flags == desc->s->flags &&
+        tb_cflags(tb) == desc->s->cflags) {
         /* check next page if needed */
         tb_page_addr_t tb_phys_page1 = tb_page_addr1(tb);
         if (tb_phys_page1 == -1) {
@@ -190,7 +190,7 @@ static bool tb_lookup_cmp(const void *p, const void *d)
              * is different for the new TB.  Therefore any exception raised
              * here by the faulting lookup is not premature.
              */
-            virt_page1 = TARGET_PAGE_ALIGN(desc->s.pc);
+            virt_page1 = TARGET_PAGE_ALIGN(desc->s->pc);
 #ifdef CONFIG_TCG_WASM64
             if (unlikely(tb->w64_inl & W64_INL_VPAGE1)) {
                 /*
@@ -203,9 +203,9 @@ static bool tb_lookup_cmp(const void *p, const void *d)
                 void *host;
                 int fl;
 
-                virt_page1 = (desc->s.pc & TARGET_PAGE_MASK) +
+                virt_page1 = (desc->s->pc & TARGET_PAGE_MASK) +
                              tb->w64_inl_vpage1;
-                if (desc->s.pc <= UINT32_MAX) {
+                if (desc->s->pc <= UINT32_MAX) {
                     virt_page1 = (uint32_t)virt_page1;
                 }
                 fl = probe_access_flags(desc->env, virt_page1, 0,
@@ -226,7 +226,8 @@ static bool tb_lookup_cmp(const void *p, const void *d)
     return false;
 }
 
-static TranslationBlock *tb_htable_lookup(CPUState *cpu, TCGTBCPUState s)
+static TranslationBlock *tb_htable_lookup(CPUState *cpu,
+                                          const TCGTBCPUState *s)
 {
     tb_page_addr_t phys_pc;
     struct tb_desc desc;
@@ -234,13 +235,13 @@ static TranslationBlock *tb_htable_lookup(CPUState *cpu, TCGTBCPUState s)
 
     desc.s = s;
     desc.env = cpu_env(cpu);
-    phys_pc = get_page_addr_code(desc.env, s.pc);
+    phys_pc = get_page_addr_code(desc.env, s->pc);
     if (phys_pc == -1) {
         return NULL;
     }
     desc.page_addr0 = phys_pc;
-    h = tb_hash_func(phys_pc, (s.cflags & CF_PCREL ? 0 : s.pc),
-                     s.flags, s.cs_base, s.cflags);
+    h = tb_hash_func(phys_pc, (s->cflags & CF_PCREL ? 0 : s->pc),
+                     s->flags, s->cs_base, s->cflags);
     return qht_lookup_custom(&tb_ctx.htable, &desc, h, tb_lookup_cmp);
 }
 
@@ -258,24 +259,25 @@ static TranslationBlock *tb_htable_lookup(CPUState *cpu, TCGTBCPUState s)
  *
  * Returns: an existing translation block or NULL.
  */
-static inline TranslationBlock *tb_lookup(CPUState *cpu, TCGTBCPUState s)
+static inline TranslationBlock *tb_lookup(CPUState *cpu,
+                                         const TCGTBCPUState *s)
 {
     TranslationBlock *tb;
     CPUJumpCache *jc;
     uint32_t hash;
 
     /* we should never be trying to look up an INVALID tb */
-    tcg_debug_assert(!(s.cflags & CF_INVALID));
+    tcg_debug_assert(!(s->cflags & CF_INVALID));
 
-    hash = tb_jmp_cache_hash_func(s.pc);
+    hash = tb_jmp_cache_hash_func(s->pc);
     jc = cpu->tb_jmp_cache;
 
     tb = qatomic_read(&jc->array[hash].tb);
     if (likely(tb &&
-               jc->array[hash].pc == tb_jmp_cache_key(jc, s.pc) &&
-               tb->cs_base == s.cs_base &&
-               tb->flags == s.flags &&
-               tb_cflags(tb) == s.cflags)) {
+               jc->array[hash].pc == tb_jmp_cache_key(jc, s->pc) &&
+               tb->cs_base == s->cs_base &&
+               tb->flags == s->flags &&
+               tb_cflags(tb) == s->cflags)) {
         goto hit;
     }
 
@@ -284,7 +286,7 @@ static inline TranslationBlock *tb_lookup(CPUState *cpu, TCGTBCPUState s)
         return NULL;
     }
 
-    jc->array[hash].pc = tb_jmp_cache_key(jc, s.pc);
+    jc->array[hash].pc = tb_jmp_cache_key(jc, s->pc);
     qatomic_set(&jc->array[hash].tb, tb);
 
 hit:
@@ -292,7 +294,7 @@ hit:
      * As long as tb is not NULL, the contents are consistent.  Therefore,
      * the virtual PC has to match for non-CF_PCREL translations.
      */
-    assert((tb_cflags(tb) & CF_PCREL) || tb->pc == s.pc);
+    assert((tb_cflags(tb) & CF_PCREL) || tb->pc == s->pc);
     return tb;
 }
 
@@ -551,7 +553,7 @@ const void *HELPER(lookup_tb_ptr)(CPUArchState *env)
         cpu_loop_exit(cpu);
     }
 
-    tb = tb_lookup(cpu, s);
+    tb = tb_lookup(cpu, &s);
     if (tb == NULL) {
         return tcg_code_gen_epilogue;
     }
@@ -638,7 +640,7 @@ const void *HELPER(lookup_tb_ptr_lc)(CPUArchState *env, void *slot)
         cpu_loop_exit(cpu);
     }
 
-    tb = tb_lookup(cpu, s);
+    tb = tb_lookup(cpu, &s);
     if (tb == NULL) {
         return tcg_code_gen_epilogue;
     }
@@ -779,6 +781,9 @@ static void cpu_exec_longjmp_cleanup(CPUState *cpu)
 {
     /* Non-buggy compilers preserve this; assert the correct value. */
     g_assert(cpu == current_cpu);
+#ifdef CONFIG_TCG_WASM64
+    w64_exec_unwound();
+#endif
 
 #ifdef CONFIG_USER_ONLY
     clear_helper_retaddr();
@@ -837,7 +842,7 @@ void cpu_exec_step_atomic(CPUState *cpu)
          * Any breakpoint for this insn will have been recognized earlier.
          */
 
-        tb = tb_lookup(cpu, s);
+        tb = tb_lookup(cpu, &s);
         if (tb == NULL) {
             mmap_lock();
             tb = tb_gen_code(cpu, s);
@@ -1089,6 +1094,12 @@ void tcg_kick_vcpu_thread(CPUState *cpu)
     qatomic_store_release(&cpu->neg.icount_decr.u16.high, -1);
 }
 
+static inline bool cpu_cycle_budget_expired(CPUState *cpu)
+{
+    return (cpu->tcg_cflags & CF_COUNT_CYCLES) &&
+           (int32_t)(cpu->neg.cycle_limit - cpu->neg.cycle_count) <= 0;
+}
+
 static inline bool icount_exit_request(CPUState *cpu)
 {
     if (!icount_enabled()) {
@@ -1259,7 +1270,8 @@ after_interrupts:
      * Finally, check if we need to exit to the main loop.
      * The corresponding store-release is in cpu_exit.
      */
-    if (unlikely(qatomic_load_acquire(&cpu->exit_request)) || icount_exit_request(cpu)) {
+    if (unlikely(qatomic_load_acquire(&cpu->exit_request)) ||
+        icount_exit_request(cpu) || cpu_cycle_budget_expired(cpu)) {
         if (cpu->exception_index == -1) {
             cpu->exception_index = EXCP_INTERRUPT;
         }
@@ -1289,6 +1301,10 @@ static inline void cpu_loop_exec_tb(CPUState *cpu, TranslationBlock *tb,
          * cpu_handle_interrupt.  cpu_handle_interrupt will also
          * clear cpu->icount_decr.u16.high.
          */
+        return;
+    }
+
+    if (cpu_cycle_budget_expired(cpu)) {
         return;
     }
 
@@ -1362,7 +1378,7 @@ cpu_exec_loop(CPUState *cpu, SyncClocks *sc)
                 break;
             }
 
-            tb = tb_lookup(cpu, s);
+            tb = tb_lookup(cpu, &s);
             if (tb == NULL) {
                 CPUJumpCache *jc;
                 uint32_t h;

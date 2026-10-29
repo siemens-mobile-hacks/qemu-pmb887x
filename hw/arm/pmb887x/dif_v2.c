@@ -13,9 +13,10 @@
 #include "hw/ssi/ssi.h"
 #include "hw/core/sysbus.h"
 #include "qemu/module.h"
+#include "qemu/main-loop.h"
+#include "qemu/timer.h"
 #include "qom/object.h"
 #include "hw/core/qdev-properties.h"
-#include "qemu/timer.h"
 
 #include "hw/arm/pmb887x/gen/cpu_regs.h"
 #include "hw/arm/pmb887x/regs_dump.h"
@@ -27,6 +28,17 @@
 
 #define FIFO_IO_SIZE	0x3FFF
 #define FIFO_SIZE		16
+#define PS_PER_S		1000000000000ULL
+#define DIF_PINS_POLARITY_MASK	( \
+	DIFv2_PERREG_CS1POL | DIFv2_PERREG_CS2POL | DIFv2_PERREG_CS3POL | \
+	DIFv2_PERREG_CDPOL | DIFv2_PERREG_RDPOL | DIFv2_PERREG_WRPOL \
+)
+#define DIF_TX_DMA_REQUESTS	( \
+	DIFv2_RIS_TXSREQ | DIFv2_RIS_TXBREQ | DIFv2_RIS_TXLSREQ | DIFv2_RIS_TXLBREQ \
+)
+#define DIF_RX_DMA_REQUESTS	( \
+	DIFv2_RIS_RXSREQ | DIFv2_RIS_RXBREQ | DIFv2_RIS_RXLSREQ | DIFv2_RIS_RXLBREQ \
+)
 #define FIFO_ICR_MASK	( \
 	DIFv2_ICR_RXLSREQ | DIFv2_ICR_RXSREQ | \
 	DIFv2_ICR_RXLBREQ | DIFv2_ICR_RXBREQ | \
@@ -43,7 +55,6 @@ static bool dif_is_running(pmb887x_dif_t *p);
 static void dif_tx_from_fifo(pmb887x_dif_t *p);
 static void dif_work(pmb887x_dif_t *p);
 static uint16_t dif_bus_transfer(pmb887x_dif_t *p, uint16_t value);
-static void dif_update_mux(pmb887x_dif_t *p);
 
 enum DIFIrqType {
 	DIF_RX_SINGLE_IRQ = 0,
@@ -69,23 +80,12 @@ struct pmb887x_dif_t {
 	qemu_irq gpio_data[8];
 	qemu_irq gpio_cs[3];
 	qemu_irq gpio_cd;
-	/* last level driven on CS1..3/CD/RD/WR (-1 = never): the pins are
-	 * re-driven on every FIFO word and every consumer (GPIO proxy, LCD
-	 * CD/RD, SSI CS) is level-idempotent, so an unchanged level is skipped */
-	int8_t gpio_pin_level[6];
-	/* same for the eight DMAC request lines (dmac_handle_signal ignores an
-	 * unchanged level anyway) */
-	int8_t dmac_req_level[8];
-	/* inputs of the last dif_update_gpio_state pass: it runs twice per
-	 * FIFO word, usually with nothing changed (no such cache for
-	 * dif_trigger_dma - its inputs differ on every call of a word's
-	 * request / acknowledge sequence) */
-	uint64_t gpio_state_key;
-	bool gpio_state_rx;
 	qemu_irq gpio_wr;
 	qemu_irq gpio_rd;
+	uint32_t pin_levels;
+	bool are_pins_driven;
 
-	QEMUTimer *timer;
+	QEMUBH *rx_refill_bh;
 	bool in_schedule;
 	bool transfer_pending;
 
@@ -105,16 +105,10 @@ struct pmb887x_dif_t {
 	uint8_t bit_invert[32];
 	uint8_t bit_bcreg[32];
 	uint8_t bit_bcsel[32];
-	/* dif_mux() as four byte-lane lookups: mux_tab[cd][lane][byte] ORed
-	 * together, plus the constant bits (bcsel == 1) and the invert mask —
-	 * rebuilt by dif_update_mux, exactly the bit-per-bit result */
-	uint32_t mux_tab[2][4][256];
-	uint32_t mux_const;
-	uint32_t mux_invert;
-	/* a BMREG/BCSEL/BCREG/INVERT_BIT write changed the mux registers; the
-	 * tables are rebuilt on the next word (the firmware rewrites them far
-	 * more often than it transfers) */
-	bool mux_dirty;
+	uint32_t mux_select_mask;
+	uint32_t mux_constant_bits;
+	uint32_t mux_byte_bits[4][256];
+	bool is_mux_identity;
 
 	uint32_t con;
 	uint32_t perreg;
@@ -144,6 +138,13 @@ struct pmb887x_dif_t {
 
 	pmb887x_fifo32_t tx_fifo;
 	pmb887x_fifo32_t tx_csreg_fifo;
+	/* Stages already sent to the device but still on the parallel bus, oldest first. */
+	int64_t tx_bus_end_ps[FIFO_SIZE];
+	uint32_t tx_bus_first;
+	uint32_t tx_bus_count;
+	uint32_t tx_bus_words;
+	int64_t tx_bus_free_ps;
+	QEMUTimer *tx_bus_timer;
 	pmb887x_fifo32_t rx_fifo;
 	uint32_t tx_csreg;
 	bool is_tx_csreg_active;
@@ -166,6 +167,8 @@ struct pmb887x_dif_t {
 	qemu_irq dmac_rx_sreq;
 	qemu_irq dmac_rx_lbreq;
 	qemu_irq dmac_rx_lsreq;
+	uint32_t dma_requests;
+	bool are_dma_requests_driven;
 };
 
 static inline uint32_t dif_get_transfer_csreg(pmb887x_dif_t *p) {
@@ -241,43 +244,112 @@ static inline bool dif_is_pbc_enabled(pmb887x_dif_t *p) {
 	return (p->pbccon & DIFv2_PBCCON_PBBCONV_MODE) != 0;
 }
 
-static void dif_update_gpio_state(pmb887x_dif_t *p) {
-	uint32_t csreg = dif_get_transfer_csreg(p);
-	bool rx = p->state == DIF_STATE_RX;
-	uint64_t key = ((uint64_t)csreg << 32) | p->perreg;
-	if (p->gpio_state_key == key && p->gpio_state_rx == rx)
-		return;
-	p->gpio_state_key = key;
-	p->gpio_state_rx = rx;
-	/* CS1, CS2, CS3, CD, RD, WR - built twice per FIFO word, keep it small */
-	const struct {
-		bool value;
-		uint32_t perreg;
-		qemu_irq pin;
-	} cs_pins[] = {
-		{ (csreg & DIFv2_CSREG_CS1) != 0, DIFv2_PERREG_CS1POL, p->gpio_cs[0] },
-		{ (csreg & DIFv2_CSREG_CS2) != 0, DIFv2_PERREG_CS2POL, p->gpio_cs[1] },
-		{ (csreg & DIFv2_CSREG_CS3) != 0, DIFv2_PERREG_CS3POL, p->gpio_cs[2] },
-		{ (csreg & DIFv2_CSREG_CD) != 0, DIFv2_PERREG_CDPOL, p->gpio_cd },
-		{ p->state == DIF_STATE_RX, DIFv2_PERREG_RDPOL, p->gpio_rd },
-		{ p->state != DIF_STATE_RX, DIFv2_PERREG_WRPOL, p->gpio_wr },
-	};
-	for (int i = 0; i < ARRAY_SIZE(cs_pins); i++) {
-		bool polarity = (p->perreg & cs_pins[i].perreg) != 0;
-		bool value = cs_pins[i].value;
-		int level = polarity ? (value ? 1 : 0) : (value ? 0 : 1);
-		if (p->gpio_pin_level[i] == level)
-			continue;
-		p->gpio_pin_level[i] = level;
-		qemu_set_irq(cs_pins[i].pin, level);
+static int64_t dif_get_now_ps(void) {
+	return qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) * 1000;
+}
+
+/* bsp dif-v2-timings: a parallel bus word takes ((ACCESSCYCLE - 1) mod 32) + 2 module clock cycles. */
+static uint64_t dif_get_bus_word_ps(pmb887x_dif_t *p) {
+	uint32_t hz = pmb887x_clc_get_hz(&p->clc);
+	if (dif_is_serial(p) || hz == 0)
+		return 0;
+
+	uint32_t access_cycle = (p->lcdtim[0] & DIFv2_LCDTIM1_ACCESSCYCLE) >> DIFv2_LCDTIM1_ACCESSCYCLE_SHIFT;
+	uint32_t cycles = ((access_cycle - 1) & 0x1F) + 2;
+	return cycles * PS_PER_S / hz;
+}
+
+static void dif_retire_tx_bus(pmb887x_dif_t *p) {
+	int64_t now_ps = dif_get_now_ps();
+	while (p->tx_bus_count != 0 && p->tx_bus_end_ps[p->tx_bus_first] <= now_ps) {
+		p->tx_bus_first = (p->tx_bus_first + 1) % FIFO_SIZE;
+		p->tx_bus_count--;
 	}
 }
 
-static inline void dif_set_dmac_req(pmb887x_dif_t *p, int i, qemu_irq req, int level) {
-	if (p->dmac_req_level[i] == level)
+static void dif_reset_tx_bus(pmb887x_dif_t *p) {
+	timer_del(p->tx_bus_timer);
+	p->tx_bus_first = 0;
+	p->tx_bus_count = 0;
+	p->tx_bus_words = 0;
+	p->tx_bus_free_ps = 0;
+}
+
+static uint32_t dif_get_tx_fifo_level(pmb887x_dif_t *p) {
+	return pmb887x_fifo_count(&p->tx_fifo) + p->tx_bus_count;
+}
+
+static bool dif_has_tx_fifo_free(pmb887x_dif_t *p, uint32_t stages) {
+	if (FIFO_SIZE - dif_get_tx_fifo_level(p) >= stages)
+		return true;
+
+	dif_retire_tx_bus(p);
+	return FIFO_SIZE - dif_get_tx_fifo_level(p) >= stages;
+}
+
+static void dif_occupy_tx_bus(pmb887x_dif_t *p) {
+	uint64_t word_ps = dif_get_bus_word_ps(p);
+	uint32_t words = p->tx_bus_words;
+	p->tx_bus_words = 0;
+	if (word_ps == 0 || words == 0)
 		return;
-	p->dmac_req_level[i] = level;
-	qemu_set_irq(req, level);
+
+	g_assert(p->tx_bus_count < FIFO_SIZE);
+	int64_t end_ps = MAX(p->tx_bus_free_ps, dif_get_now_ps()) + words * word_ps;
+	p->tx_bus_end_ps[(p->tx_bus_first + p->tx_bus_count) % FIFO_SIZE] = end_ps;
+	p->tx_bus_count++;
+	p->tx_bus_free_ps = end_ps;
+}
+
+static void dif_wake_on_tx_fifo_free(pmb887x_dif_t *p, uint32_t stages) {
+	uint32_t retiring_stages = stages - (FIFO_SIZE - dif_get_tx_fifo_level(p));
+	if (p->tx_bus_count < retiring_stages)
+		return;
+
+	int64_t end_ps = p->tx_bus_end_ps[(p->tx_bus_first + retiring_stages - 1) % FIFO_SIZE];
+	timer_mod(p->tx_bus_timer, DIV_ROUND_UP(end_ps, 1000));
+}
+
+static uint32_t dif_get_pin_levels(pmb887x_dif_t *p) {
+	uint32_t csreg = dif_get_transfer_csreg(p);
+	uint32_t active_pins = (
+		((csreg & DIFv2_CSREG_CS1) ? DIFv2_PERREG_CS1POL : 0) |
+		((csreg & DIFv2_CSREG_CS2) ? DIFv2_PERREG_CS2POL : 0) |
+		((csreg & DIFv2_CSREG_CS3) ? DIFv2_PERREG_CS3POL : 0) |
+		((csreg & DIFv2_CSREG_CD) ? DIFv2_PERREG_CDPOL : 0) |
+		(p->state == DIF_STATE_RX ? DIFv2_PERREG_RDPOL : DIFv2_PERREG_WRPOL)
+	);
+	return ~(active_pins ^ p->perreg) & DIF_PINS_POLARITY_MASK;
+}
+
+static void dif_update_gpio_state(pmb887x_dif_t *p) {
+	uint32_t pin_levels = dif_get_pin_levels(p);
+	uint32_t changed_pins = p->are_pins_driven ? pin_levels ^ p->pin_levels : DIF_PINS_POLARITY_MASK;
+	if (changed_pins == 0)
+		return;
+
+	struct {
+		uint32_t polarity;
+		qemu_irq pin;
+		const char *name;
+	} pins[] = {
+		{ DIFv2_PERREG_CS1POL, p->gpio_cs[0], "CS1" },
+		{ DIFv2_PERREG_CS2POL, p->gpio_cs[1], "CS2" },
+		{ DIFv2_PERREG_CS3POL, p->gpio_cs[2], "CS3" },
+		{ DIFv2_PERREG_CDPOL, p->gpio_cd, "CD" },
+		{ DIFv2_PERREG_RDPOL, p->gpio_rd, "RD" },
+		{ DIFv2_PERREG_WRPOL, p->gpio_wr, "WR" },
+	};
+	p->pin_levels = pin_levels;
+	p->are_pins_driven = true;
+	for (int i = 0; i < ARRAY_SIZE(pins); i++) {
+		if ((changed_pins & pins[i].polarity) == 0)
+			continue;
+
+		bool level = (pin_levels & pins[i].polarity) != 0;
+		DPRINTF("%s set %s\n", pins[i].name, level ? "HIGH" : "LOW");
+		qemu_set_irq(pins[i].pin, level);
+	}
 }
 
 static void dif_schedule(pmb887x_dif_t *p) {
@@ -296,29 +368,35 @@ static void dif_schedule(pmb887x_dif_t *p) {
 }
 
 static void dif_trigger_dma(pmb887x_dif_t *p) {
-	uint32_t ris = pmb887x_srb_get_ris_dma(&p->srb);
-	if (p->dmac_tx_clr) {
-		dif_set_dmac_req(p, 0, p->dmac_tx_sreq, 0);
-		dif_set_dmac_req(p, 1, p->dmac_tx_breq, 0);
-		dif_set_dmac_req(p, 2, p->dmac_tx_lsreq, 0);
-		dif_set_dmac_req(p, 3, p->dmac_tx_lbreq, 0);
-	} else {
-		dif_set_dmac_req(p, 0, p->dmac_tx_sreq, (ris & DIFv2_RIS_TXSREQ) != 0);
-		dif_set_dmac_req(p, 1, p->dmac_tx_breq, (ris & DIFv2_RIS_TXBREQ) != 0);
-		dif_set_dmac_req(p, 2, p->dmac_tx_lsreq, (ris & DIFv2_RIS_TXLSREQ) != 0);
-		dif_set_dmac_req(p, 3, p->dmac_tx_lbreq, (ris & DIFv2_RIS_TXLBREQ) != 0);
-	}
+	uint32_t requests = pmb887x_srb_get_ris_dma(&p->srb) & (DIF_TX_DMA_REQUESTS | DIF_RX_DMA_REQUESTS);
+	if (p->dmac_tx_clr)
+		requests &= ~DIF_TX_DMA_REQUESTS;
+	if (p->dmac_rx_clr)
+		requests &= ~DIF_RX_DMA_REQUESTS;
 
-	if (p->dmac_rx_clr) {
-		dif_set_dmac_req(p, 4, p->dmac_rx_sreq, 0);
-		dif_set_dmac_req(p, 5, p->dmac_rx_breq, 0);
-		dif_set_dmac_req(p, 6, p->dmac_rx_lsreq, 0);
-		dif_set_dmac_req(p, 7, p->dmac_rx_lbreq, 0);
-	} else {
-		dif_set_dmac_req(p, 4, p->dmac_rx_sreq, (ris & DIFv2_RIS_RXSREQ) != 0);
-		dif_set_dmac_req(p, 5, p->dmac_rx_breq, (ris & DIFv2_RIS_RXBREQ) != 0);
-		dif_set_dmac_req(p, 6, p->dmac_rx_lsreq, (ris & DIFv2_RIS_RXLSREQ) != 0);
-		dif_set_dmac_req(p, 7, p->dmac_rx_lbreq, (ris & DIFv2_RIS_RXLBREQ) != 0);
+	uint32_t changed_requests = p->are_dma_requests_driven ? requests ^ p->dma_requests :
+		DIF_TX_DMA_REQUESTS | DIF_RX_DMA_REQUESTS;
+	if (changed_requests == 0)
+		return;
+
+	struct {
+		uint32_t request;
+		qemu_irq line;
+	} lines[] = {
+		{ DIFv2_RIS_TXSREQ, p->dmac_tx_sreq },
+		{ DIFv2_RIS_TXBREQ, p->dmac_tx_breq },
+		{ DIFv2_RIS_TXLSREQ, p->dmac_tx_lsreq },
+		{ DIFv2_RIS_TXLBREQ, p->dmac_tx_lbreq },
+		{ DIFv2_RIS_RXSREQ, p->dmac_rx_sreq },
+		{ DIFv2_RIS_RXBREQ, p->dmac_rx_breq },
+		{ DIFv2_RIS_RXLSREQ, p->dmac_rx_lsreq },
+		{ DIFv2_RIS_RXLBREQ, p->dmac_rx_lbreq },
+	};
+	p->dma_requests = requests;
+	p->are_dma_requests_driven = true;
+	for (int i = 0; i < ARRAY_SIZE(lines); i++) {
+		if ((changed_requests & lines[i].request) != 0)
+			qemu_set_irq(lines[i].line, (requests & lines[i].request) != 0);
 	}
 }
 
@@ -335,10 +413,12 @@ static void dif_tx_fifo_req(pmb887x_dif_t *p) {
 			return;
 		if ((p->txfifo_cfg & DIFv2_TXFIFO_CFG_TXFC) != 0)
 			return;
-		if (pmb887x_fifo_free_count(&p->tx_fifo) >= burst_req_count) {
-			pmb887x_srb_set_isr(&p->srb, DIFv2_ISR_TXBREQ);
-			p->tx_fifo_req = true;
+		if (!dif_has_tx_fifo_free(p, burst_req_count)) {
+			dif_wake_on_tx_fifo_free(p, burst_req_count);
+			return;
 		}
+		pmb887x_srb_set_isr(&p->srb, DIFv2_ISR_TXBREQ);
+		p->tx_fifo_req = true;
 		return;
 	}
 
@@ -351,12 +431,15 @@ static void dif_tx_fifo_req(pmb887x_dif_t *p) {
 
 	if (tx_words_remaining == 0)
 		return;
-	if (tx_words_remaining >= burst_req_size && pmb887x_fifo_free_count(&p->tx_fifo) < burst_req_count)
-		return;
-	if (tx_words_remaining < burst_req_size && pmb887x_fifo_free_count(&p->tx_fifo) < 1)
-		return;
 
-	if ((p->txfifo_cfg & DIFv2_TXFIFO_CFG_TXFC) != 0) {
+	bool is_flow_controlled = (p->txfifo_cfg & DIFv2_TXFIFO_CFG_TXFC) != 0;
+	uint32_t required_free = (!is_flow_controlled || tx_words_remaining >= burst_req_size) ? burst_req_count : 1;
+	if (!dif_has_tx_fifo_free(p, required_free)) {
+		dif_wake_on_tx_fifo_free(p, required_free);
+		return;
+	}
+
+	if (is_flow_controlled) {
 		if (tx_words_remaining > burst_req_size) {
 			pmb887x_srb_set_isr(&p->srb, DIFv2_ISR_TXBREQ);
 		} else if (pending_req_count == burst_req_count) {
@@ -366,11 +449,10 @@ static void dif_tx_fifo_req(pmb887x_dif_t *p) {
 		} else {
 			pmb887x_srb_set_isr(&p->srb, DIFv2_ISR_TXLSREQ);
 		}
-		p->tx_fifo_req = true;
-	} else if (pmb887x_fifo_free_count(&p->tx_fifo) >= burst_req_count) {
+	} else {
 		pmb887x_srb_set_isr(&p->srb, DIFv2_ISR_TXBREQ);
-		p->tx_fifo_req = true;
 	}
+	p->tx_fifo_req = true;
 }
 
 static void dif_rx_fifo_req(pmb887x_dif_t *p) {
@@ -445,43 +527,17 @@ static void dif_reset_rx_fifo(pmb887x_dif_t *p) {
 }
 
 static inline uint32_t dif_mux(pmb887x_dif_t *p, uint32_t value) {
-	if (unlikely(p->mux_dirty))
-		dif_update_mux(p);
-	int cd = (dif_get_transfer_csreg(p) & DIFv2_CSREG_CD) != 0;
-	const uint32_t (*t)[256] = p->mux_tab[cd];
-	return (t[0][value & 0xFF] | t[1][(value >> 8) & 0xFF] |
-	        t[2][(value >> 16) & 0xFF] | t[3][value >> 24] |
-	        p->mux_const) ^ p->mux_invert;
-}
-
-/* The bit-per-bit definition: output bit o is input bit (cd ? o :
- * bit_mux[o]) when bcsel[o] == 0, the constant bcreg[o] when bcsel[o] == 1,
- * else 0, then XOR invert[o].  A bcsel == 0 bit is therefore set in the
- * entries of its input's byte lane whose index has that bit. */
-static void dif_build_mux_tables(pmb887x_dif_t *p) {
-	uint32_t invert = 0, cst = 0;
-	memset(p->mux_tab, 0, sizeof(p->mux_tab));
-	for (uint32_t o = 0; o < 32; o++) {
-		uint32_t obit = 1U << o;
-		if (p->bit_invert[o])
-			invert |= obit;
-		if (p->bit_bcsel[o] == 1) {
-			if (p->bit_bcreg[o])
-				cst |= obit;
-			continue;
-		}
-		if (p->bit_bcsel[o] != 0)
-			continue;
-		for (int cd = 0; cd < 2; cd++) {
-			uint32_t in = cd ? o : p->bit_mux[o];
-			uint32_t *t = p->mux_tab[cd][in >> 3];
-			uint32_t ibit = 1U << (in & 7);
-			for (uint32_t b = ibit; b < 256; b = (b + 1) | ibit)
-				t[b] |= obit;
-		}
+	bool is_mux_bypassed = p->is_mux_identity || (dif_get_transfer_csreg(p) & DIFv2_CSREG_CD) != 0;
+	uint32_t selected = value;
+	if (!is_mux_bypassed) {
+		selected = (
+			p->mux_byte_bits[0][value & 0xFF] |
+			p->mux_byte_bits[1][(value >> 8) & 0xFF] |
+			p->mux_byte_bits[2][(value >> 16) & 0xFF] |
+			p->mux_byte_bits[3][value >> 24]
+		);
 	}
-	p->mux_invert = invert;
-	p->mux_const = cst;
+	return ((selected & p->mux_select_mask) | p->mux_constant_bits) ^ p->invert_bit;
 }
 
 static uint32_t dif_convert_color(pmb887x_dif_t *p, uint32_t value) {
@@ -516,7 +572,7 @@ static uint32_t dif_convert_color(pmb887x_dif_t *p, uint32_t value) {
 static void dif_rx_from_bus(pmb887x_dif_t *p);
 
 static void dif_fifo_write(pmb887x_dif_t *p, uint32_t value) {
-	if (!pmb887x_fifo_free_count(&p->tx_fifo)) {
+	if (!dif_has_tx_fifo_free(p, 1)) {
 		DPRINTF("TX FIFO overflow!\n");
 		pmb887x_srb_ext_set_isr(&p->srb_err, DIFv2_ERRIRQSS_TXFOFL);
 		dif_kernel_reset(p, DIF_STATE_NONE);
@@ -543,7 +599,7 @@ static void dif_fifo_read(pmb887x_dif_t *p, uint64_t *value) {
 	p->rx_words_in_fifo -= MIN(p->rx_words_in_fifo, 4 / dif_get_rx_align(p));
 
 	if (p->rx_words_remaining != 0 || p->rx_words_in_fifo == 0)
-		dif_schedule(p);
+		qemu_bh_schedule(p->rx_refill_bh);
 }
 
 static bool dif_is_running(pmb887x_dif_t *p) {
@@ -692,10 +748,18 @@ static bool dif_send_word(pmb887x_dif_t *p, uint16_t value) {
 	DPRINTF("BUS %03X cd=%d\n", value, (dif_get_transfer_csreg(p) & DIFv2_CSREG_CD) != 0);
 
 	uint16_t received = dif_bus_transfer(p, value);
+	p->tx_bus_words++;
 	if (dif_is_serial(p))
 		return dif_push_rx_word(p, received);
 
 	return true;
+}
+
+static void dif_send_parallel_words(pmb887x_dif_t *p, const uint32_t *words, uint32_t count) {
+	DPRINTF("BUS %u words cd=%d\n", count, (dif_get_transfer_csreg(p) & DIFv2_CSREG_CD) != 0);
+
+	ssi_transfer_block(p->bus, words, NULL, count);
+	p->tx_bus_words += count;
 }
 
 static bool dif_convert_word(pmb887x_dif_t *p, uint16_t value, uint32_t *output) {
@@ -722,9 +786,6 @@ static bool dif_convert_word(pmb887x_dif_t *p, uint16_t value, uint32_t *output)
 
 static bool dif_is_pbc_selection_valid(pmb887x_dif_t *p) {
 	uint32_t word_bits = dif_get_tx_word_bits(p);
-
-	if (unlikely(p->mux_dirty))
-		dif_update_mux(p);
 
 	for (uint32_t output_bit = 0; output_bit < word_bits; output_bit++) {
 		if (p->bit_bcsel[output_bit] > 1)
@@ -776,14 +837,21 @@ static void dif_tx_from_fifo(pmb887x_dif_t *p) {
 				value = dif_convert_color(p, value);
 
 			uint32_t lanes = 4 / align;
+			uint32_t parallel_words[4 * 4];
+			uint32_t parallel_word_count = 0;
 			for (uint32_t lane = 0; lane < lanes; lane++) {
 				for (uint32_t i = 0; i < bsconf_word_count; i++) {
 					uint16_t word = (value >> (bsconf_word_bits * (lane * align + i))) & ((1 << bsconf_word_bits) - 1);
 
-					if (!dif_send_word(p, word))
+					if (!dif_is_serial(p)) {
+						parallel_words[parallel_word_count++] = word;
+					} else if (!dif_send_word(p, word)) {
 						goto done;
+					}
 				}
 			}
+			if (parallel_word_count != 0)
+				dif_send_parallel_words(p, parallel_words, parallel_word_count);
 		} else {
 			for (uint32_t i = 0; i < words_in_fifo_reg; i++) {
 				uint32_t converted;
@@ -793,6 +861,7 @@ static void dif_tx_from_fifo(pmb887x_dif_t *p) {
 					goto done;
 			}
 		}
+		dif_occupy_tx_bus(p);
 		if (p->tx_words_remaining != 0) {
 			dif_rx_fifo_req(p);
 			if (p->rx_fifo_req)
@@ -853,17 +922,19 @@ static void dif_work(pmb887x_dif_t *p) {
 	}
 }
 
-static void dif_timer_reset(void *opaque) {
-	pmb887x_dif_t *p = opaque;
-	while (p->transfer_pending) {
-		p->transfer_pending = false;
-		dif_work(p);
-		if (pmb887x_srb_get_ris(&p->srb) != 0)
-			break;
-	}
+static void dif_rx_refill(void *opaque) {
+	dif_schedule(opaque);
+}
+
+static void dif_tx_bus_wake(void *opaque) {
+	dif_schedule(opaque);
 }
 
 static void dif_update_mux(pmb887x_dif_t *p) {
+	p->mux_select_mask = 0;
+	p->mux_constant_bits = 0;
+	p->is_mux_identity = true;
+
 	for (uint32_t i = 0; i < 32; i++) {
 		// DIF_BMREGx
 		uint32_t bm_reg_index = i / 6;
@@ -882,9 +953,28 @@ static void dif_update_mux(pmb887x_dif_t *p) {
 
 		// DIF_INVERT_BIT
 		p->bit_invert[i] = p->invert_bit & (1 << i) ? 1 : 0;
+
+		if (p->bit_bcsel[i] == 0) {
+			p->mux_select_mask |= 1U << i;
+			if (p->bit_mux[i] != i)
+				p->is_mux_identity = false;
+		} else if (p->bit_bcsel[i] == 1) {
+			p->mux_constant_bits |= (uint32_t) p->bit_bcreg[i] << i;
+		}
 	}
-	dif_build_mux_tables(p);
-	p->mux_dirty = false;
+
+	uint32_t input_bit_outputs[32] = { 0 };
+	for (uint32_t output_bit = 0; output_bit < 32; output_bit++)
+		input_bit_outputs[p->bit_mux[output_bit]] |= 1U << output_bit;
+
+	for (uint32_t lane = 0; lane < 4; lane++) {
+		uint32_t *outputs = p->mux_byte_bits[lane];
+		outputs[0] = 0;
+		for (uint32_t byte = 1; byte < 256; byte++) {
+			uint32_t lowest_bit = ctz32(byte);
+			outputs[byte] = outputs[byte & (byte - 1)] | input_bit_outputs[lane * 8 + lowest_bit];
+		}
+	}
 
 #if PMB887X_DIF_DUMP_BIT_MUX
 	g_autoptr(GString) mux_str = g_string_new("");
@@ -954,11 +1044,12 @@ static uint64_t dif_io_read(void *opaque, hwaddr haddr, unsigned size) {
 			break;
 
 		case DIFv2_STAT:
+			dif_retire_tx_bus(p);
 			if (dif_is_running(p)) {
 				bool is_busy = (
 					(p->state == DIF_STATE_TX && p->is_tx_started) ||
 					(p->state == DIF_STATE_RX && (p->startlcdrd & DIFv2_STARTLCDRD_STARTREAD) != 0) ||
-					pmb887x_fifo_count(&p->tx_fifo) > 0
+					dif_get_tx_fifo_level(p) > 0
 				);
 				value |= is_busy ? DIFv2_STAT_BSY : 0;
 			}
@@ -1043,7 +1134,8 @@ static uint64_t dif_io_read(void *opaque, hwaddr haddr, unsigned size) {
 			break;
 
 		case DIFv2_TXFFS_STAT:
-			value = pmb887x_fifo_count(&p->tx_fifo);
+			dif_retire_tx_bus(p);
+			value = dif_get_tx_fifo_level(p);
 			break;
 
 		case DIFv2_ERRIRQSM:
@@ -1122,6 +1214,7 @@ static void dif_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned si
 				dif_kernel_reset(p, DIF_STATE_NONE);
 				pmb887x_fifo_reset(&p->tx_fifo);
 				pmb887x_fifo_reset(&p->tx_csreg_fifo);
+				dif_reset_tx_bus(p);
 				dif_reset_rx_fifo(p);
 			}
 			/* Without this a byte queued while stopped stays in the FIFO until the next
@@ -1176,41 +1269,29 @@ static void dif_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned si
 		case DIFv2_BMREG2:
 		case DIFv2_BMREG3:
 		case DIFv2_BMREG4:
-		case DIFv2_BMREG5: {
-			uint32_t *reg = &p->bmreg[(haddr - DIFv2_BMREG0) / 4];
-			if (*reg != (uint32_t) value) {
-				*reg = value;
-				p->mux_dirty = true;
-			}
+		case DIFv2_BMREG5:
+			p->bmreg[(haddr - DIFv2_BMREG0) / 4] = value;
+			dif_update_mux(p);
 			break;
-		}
 
 		case DIFv2_PBCCON:
 			p->pbccon = value;
 			break;
 
 		case DIFv2_BCSEL0:
-		case DIFv2_BCSEL1: {
-			uint32_t *reg = &p->bcsel[(haddr - DIFv2_BCSEL0) / 4];
-			if (*reg != (uint32_t) value) {
-				*reg = value;
-				p->mux_dirty = true;
-			}
+		case DIFv2_BCSEL1:
+			p->bcsel[(haddr - DIFv2_BCSEL0) / 4] = value;
+			dif_update_mux(p);
 			break;
-		}
 
 		case DIFv2_BCREG:
-			if (p->bcreg != (uint32_t) value) {
-				p->bcreg = value;
-				p->mux_dirty = true;
-			}
+			p->bcreg = value;
+			dif_update_mux(p);
 			break;
 
 		case DIFv2_INVERT_BIT:
-			if (p->invert_bit != (uint32_t) value) {
-				p->invert_bit = value;
-				p->mux_dirty = true;
-			}
+			p->invert_bit = value;
+			dif_update_mux(p);
 			break;
 
 		case DIFv2_SYNC_CONFIG:
@@ -1303,12 +1384,8 @@ static void dif_handle_gpio_data_input(void *opaque, int id, int level) {
 static void dif_handle_dmac_tx_clr(void *opaque, int id, int level) {
 	pmb887x_dif_t *p = opaque;
 	p->dmac_tx_clr = level;
-	/* only the raised request(s): clearing an already-clear one is a
-	 * no-op for the register but re-runs the event handler (dif_schedule,
-	 * dif_trigger_dma) once per bit, on every DMA burst acknowledgement */
 	if (level == 1)
-		pmb887x_srb_set_icr(&p->srb, pmb887x_srb_get_ris(&p->srb) &
-			(DIFv2_ICR_TXSREQ | DIFv2_ICR_TXBREQ | DIFv2_ICR_TXLSREQ | DIFv2_ICR_TXLBREQ));
+		pmb887x_srb_set_icr(&p->srb, DIFv2_ICR_TXSREQ | DIFv2_ICR_TXBREQ | DIFv2_ICR_TXLSREQ | DIFv2_ICR_TXLBREQ);
 	dif_trigger_dma(p);
 }
 
@@ -1316,8 +1393,7 @@ static void dif_handle_dmac_rx_clr(void *opaque, int id, int level) {
 	pmb887x_dif_t *p = opaque;
 	p->dmac_rx_clr = level;
 	if (level == 1)
-		pmb887x_srb_set_icr(&p->srb, pmb887x_srb_get_ris(&p->srb) &
-			(DIFv2_ICR_RXSREQ | DIFv2_ICR_RXBREQ | DIFv2_ICR_RXLSREQ | DIFv2_ICR_RXLBREQ));
+		pmb887x_srb_set_icr(&p->srb, DIFv2_ICR_RXSREQ | DIFv2_ICR_RXBREQ | DIFv2_ICR_RXLSREQ | DIFv2_ICR_RXLBREQ);
 	dif_trigger_dma(p);
 }
 
@@ -1356,6 +1432,7 @@ static void dif_event_handler(void *opaque, int event_id, int level) {
 static void dif_init(Object *obj) {
 	DeviceState *dev = DEVICE(obj);
 	pmb887x_dif_t *p = PMB887X_DIF(obj);
+	pmb887x_clc_init(&p->clc, dev);
 	memory_region_init_io(&p->mmio, obj, &io_ops, p, "pmb887x-dif-v2", DIFv2_IO_SIZE);
 	sysbus_init_mmio(SYS_BUS_DEVICE(obj), &p->mmio);
 
@@ -1405,7 +1482,7 @@ static void dif_init(Object *obj) {
 static void dif_realize(DeviceState *dev, Error **errp) {
 	pmb887x_dif_t *p = PMB887X_DIF(dev);
 
-	pmb887x_clc_init(&p->clc);
+	pmb887x_clc_set(&p->clc, 1U << MOD_CLC_RMC_SHIFT);
 	pmb887x_srb_init(&p->srb, p->irq, ARRAY_SIZE(p->irq));
 	pmb887x_srb_set_irq_router(&p->srb, p, dif_irq_router);
 	pmb887x_srb_set_event_handler(&p->srb, p, dif_event_handler);
@@ -1425,18 +1502,22 @@ static void dif_realize(DeviceState *dev, Error **errp) {
 	}
 	dif_update_mux(p);
 
-	p->timer = timer_new_ns(QEMU_CLOCK_VIRTUAL, dif_timer_reset, p);
+	p->rx_refill_bh = qemu_bh_new(dif_rx_refill, p);
+	p->tx_bus_timer = timer_new_ns(QEMU_CLOCK_VIRTUAL, dif_tx_bus_wake, p);
+}
+
+static void dif_unrealize(DeviceState *dev) {
+	pmb887x_dif_t *p = PMB887X_DIF(dev);
+
+	qemu_bh_delete(p->rx_refill_bh);
+	timer_free(p->tx_bus_timer);
 }
 
 static void dif_reset(DeviceState *dev) {
 	pmb887x_dif_t *p = PMB887X_DIF(dev);
 
-	timer_del(p->timer);
-	memset(p->gpio_pin_level, -1, sizeof(p->gpio_pin_level));
-	memset(p->dmac_req_level, -1, sizeof(p->dmac_req_level));
-	p->gpio_state_key = ~0ULL;
+	qemu_bh_cancel(p->rx_refill_bh);
 
-	pmb887x_clc_init(&p->clc);
 	pmb887x_clc_set(&p->clc, MOD_CLC_DISR);
 	pmb887x_srb_reset(&p->srb);
 	pmb887x_srb_ext_reset(&p->srb_err);
@@ -1445,6 +1526,7 @@ static void dif_reset(DeviceState *dev) {
 	pmb887x_fifo_reset(&p->tx_fifo);
 	pmb887x_fifo_reset(&p->tx_csreg_fifo);
 	pmb887x_fifo_reset(&p->rx_fifo);
+	dif_reset_tx_bus(p);
 
 	p->in_schedule = false;
 	p->transfer_pending = false;
@@ -1499,7 +1581,9 @@ static void dif_reset(DeviceState *dev) {
 	p->rx_fifo_req = false;
 	p->is_tx_started = false;
 
+	p->are_pins_driven = false;
 	dif_update_gpio_state(p);
+	p->are_dma_requests_driven = false;
 	dif_trigger_dma(p);
 }
 
@@ -1513,6 +1597,7 @@ static void dif_class_init(ObjectClass *klass, const void *data) {
 	device_class_set_props(dc, dif_properties);
 	device_class_set_legacy_reset(dc, dif_reset);
 	dc->realize = dif_realize;
+	dc->unrealize = dif_unrealize;
 }
 
 static const TypeInfo dif_info = {

@@ -3,11 +3,13 @@
 #include "hw/arm/pmb887x/flash-blk.h"
 #include "hw/arm/pmb887x/board/board.h"
 #include "hw/arm/pmb887x/board/gpio.h"
-#include "hw/arm/pmb887x/board/keyboard.h"
 #include "hw/arm/pmb887x/board/memory.h"
+#include "hw/arm/pmb887x/dsp.h"
 #include "hw/arm/pmb887x/mmicif.h"
+#include "hw/arm/pmb887x/rf.h"
 #include "hw/arm/pmb887x/sim.h"
 #include "hw/arm/pmb887x/sim/sim_card.h"
+#include "hw/arm/pmb887x/ssc/lcd_common.h"
 #include "hw/arm/pmb887x/utils/regexp.h"
 #include "hw/arm/pmb887x/utils/toml.h"
 
@@ -54,123 +56,38 @@ struct pmb887x_dev_t {
 
 static int global_cs_index = 0;
 
+static const pmb887x_dev_prop_t LCD_PROPS[] = {
+	{ "width", DEV_PROP_UINT, false },
+	{ "height", DEV_PROP_UINT, false },
+	{ "gram_width", DEV_PROP_UINT, false },
+	{ "gram_height", DEV_PROP_UINT, false },
+	{ "gram_x", DEV_PROP_UINT, false },
+	{ "gram_y", DEV_PROP_UINT, false },
+	{ "rotation", DEV_PROP_UINT, false },
+	{ "flip_horizontal", DEV_PROP_BOOL, false },
+	{ "flip_vertical", DEV_PROP_BOOL, false },
+	{ "bgr_filter", DEV_PROP_BOOL, false },
+};
+
 static pmb887x_dev_t devices_meta[] = {
 	// LCD
-	{
-		.name = "jbt6k71",
-		.props = {
-			{ "width", DEV_PROP_UINT, true },
-			{ "height", DEV_PROP_UINT, true },
-			{ "rotation", DEV_PROP_UINT, false },
-			{ "flip_horizontal", DEV_PROP_BOOL, false },
-			{ "flip_vertical", DEV_PROP_BOOL, false },
-			{ "bgr_filter", DEV_PROP_BOOL, false },
-		},
-	},
-	{
-		.name = "ssd1286",
-		.props = {
-			{ "width", DEV_PROP_UINT, true },
-			{ "height", DEV_PROP_UINT, true },
-			{ "rotation", DEV_PROP_UINT, false },
-			{ "flip_horizontal", DEV_PROP_BOOL, false },
-			{ "flip_vertical", DEV_PROP_BOOL, false },
-			{ "bgr_filter", DEV_PROP_BOOL, false },
-		},
-	},
-	{
-		.name = "pcf8882",
-		.props = {
-			{ "width", DEV_PROP_UINT, true },
-			{ "height", DEV_PROP_UINT, true },
-			{ "rotation", DEV_PROP_UINT, false },
-			{ "flip_horizontal", DEV_PROP_BOOL, false },
-			{ "flip_vertical", DEV_PROP_BOOL, false },
-			{ "bgr_filter", DEV_PROP_BOOL, false },
-		},
-	},
-	{
-		.name = "hx5050a",
-		.props = {
-			{ "width", DEV_PROP_UINT, true },
-			{ "height", DEV_PROP_UINT, true },
-			{ "rotation", DEV_PROP_UINT, false },
-			{ "flip_horizontal", DEV_PROP_BOOL, false },
-			{ "flip_vertical", DEV_PROP_BOOL, false },
-			{ "bgr_filter", DEV_PROP_BOOL, false },
-		},
-	},
-	{
-		.name = "l2f50333t",
-		.props = {
-			{ "width", DEV_PROP_UINT, true },
-			{ "height", DEV_PROP_UINT, true },
-			{ "rotation", DEV_PROP_UINT, false },
-			{ "flip_horizontal", DEV_PROP_BOOL, false },
-			{ "flip_vertical", DEV_PROP_BOOL, false },
-			{ "bgr_filter", DEV_PROP_BOOL, false },
-		},
-	},
-	{
-		.name = "l2f50126t",
-		.props = {
-			{ "width", DEV_PROP_UINT, true },
-			{ "height", DEV_PROP_UINT, true },
-			{ "rotation", DEV_PROP_UINT, false },
-			{ "flip_horizontal", DEV_PROP_BOOL, false },
-			{ "flip_vertical", DEV_PROP_BOOL, false },
-			{ "bgr_filter", DEV_PROP_BOOL, false },
-		},
-	},
-	{
-		.name = "l2f50250",
-		.props = {
-			{ "width", DEV_PROP_UINT, true },
-			{ "height", DEV_PROP_UINT, true },
-			{ "rotation", DEV_PROP_UINT, false },
-			{ "flip_horizontal", DEV_PROP_BOOL, false },
-			{ "flip_vertical", DEV_PROP_BOOL, false },
-			{ "bgr_filter", DEV_PROP_BOOL, false },
-		},
-	},
-	{
-		.name = "lr38826",
-		.props = {
-			{ "width", DEV_PROP_UINT, true },
-			{ "height", DEV_PROP_UINT, true },
-			{ "rotation", DEV_PROP_UINT, false },
-			{ "flip_horizontal", DEV_PROP_BOOL, false },
-			{ "flip_vertical", DEV_PROP_BOOL, false },
-			{ "bgr_filter", DEV_PROP_BOOL, false },
-		},
-	},
-	{
-		.name = "r61505",
-		.props = {
-			{ "width", DEV_PROP_UINT, true },
-			{ "height", DEV_PROP_UINT, true },
-			{ "rotation", DEV_PROP_UINT, false },
-			{ "flip_horizontal", DEV_PROP_BOOL, false },
-			{ "flip_vertical", DEV_PROP_BOOL, false },
-			{ "bgr_filter", DEV_PROP_BOOL, false },
-		},
-	},
-	{
-		.name = "r63400",
-		.props = {
-			{ "width", DEV_PROP_UINT, true },
-			{ "height", DEV_PROP_UINT, true },
-			{ "rotation", DEV_PROP_UINT, false },
-			{ "flip_horizontal", DEV_PROP_BOOL, false },
-			{ "flip_vertical", DEV_PROP_BOOL, false },
-			{ "bgr_filter", DEV_PROP_BOOL, false },
-		},
-	},
+	{ .name = "jbt6k71" },
+	{ .name = "ssd1286" },
+	{ .name = "pcf8882" },
+	{ .name = "hx5050a" },
+	{ .name = "l2f50333t" },
+	{ .name = "l2f50126t" },
+	{ .name = "l2f50250" },
+	{ .name = "lh15kah2" },
+	{ .name = "lr38826" },
+	{ .name = "r61505" },
+	{ .name = "r63400" },
 
 	// PMIC
 	{
 		.name = "d1094xx",
 		.props = {
+			{ "addr", DEV_PROP_UINT, true },
 			{ "revision", DEV_PROP_UINT, true },
 		},
 	},
@@ -201,6 +118,10 @@ static pmb887x_dev_t devices_meta[] = {
 	},
 
 	// RF transceiver
+	{
+		.name = "hd155153np",
+		.props = {},
+	},
 	{
 		.name = "pmb6272",
 		.props = {},
@@ -253,7 +174,12 @@ static const pmb887x_dev_t *dev_get_metadata(const char *name) {
 	return NULL;
 }
 
-static Object *bus_find_by_id(const char *name) {
+static DeviceState *device_find_by_id(GHashTable *devices, const char *name) {
+	DeviceState *dev = g_hash_table_lookup(devices, name);
+	return dev != NULL ? dev : qdev_find_recursive(sysbus_get_default(), name);
+}
+
+static Object *bus_find_by_id(GHashTable *devices, const char *name) {
 	g_autofree char *device_name = g_strdup(name);
 	g_autofree char *normalized_bus_name = NULL;
 	g_autofree char *bus_property_name = NULL;
@@ -264,7 +190,7 @@ static Object *bus_find_by_id(const char *name) {
 		*bus_name = '\0';
 		bus_name++;
 	}
-	dev = qdev_find_recursive(sysbus_get_default(), device_name);
+	dev = device_find_by_id(devices, device_name);
 	if (!dev)
 		hw_error("Bus device not found: %s", device_name);
 	if (bus_name != NULL) {
@@ -300,60 +226,58 @@ static pmb887x_dev_bus_type_t bus_get_type(Object *dev) {
 	return DEV_BUS_NONE;
 }
 
-static void device_init_props_from_config(DeviceState *dev, const pmb887x_dev_t *meta, toml_datum_t table) {
-	for (int i = 0; i < ARRAY_SIZE(meta->props); i++) {
-		const pmb887x_dev_prop_t *prop = &meta->props[i];
-		if (!prop->required && toml_seek(table, prop->name).type == TOML_UNKNOWN)
-			continue;
+static void device_init_ports_from_config(GHashTable *devices, DeviceState *dev, toml_datum_t table) {
+	toml_datum_t ports = toml_table_get(table, TOML_TABLE, "port", false);
+	if (ports.type == TOML_UNKNOWN)
+		return;
 
-		switch (prop->type) {
-			case DEV_PROP_INT: {
-				int value = toml_table_get_int32(table, prop->name, -1, true);
-				qdev_prop_set_uint32(dev, prop->name, value);
-				break;
-			}
-			case DEV_PROP_UINT: {
-				uint32_t value = toml_table_get_uint32(table, prop->name, 0, true);
-				qdev_prop_set_uint32(dev, prop->name, value);
-				break;
-			}
-			case DEV_PROP_STRING: {
-				const char *value = toml_table_get_string(table, prop->name, NULL, true);
-				qdev_prop_set_string(dev, prop->name, value);
-				break;
-			}
-			case DEV_PROP_BOOL: {
-				bool value = toml_table_get_bool(table, prop->name, false, true);
-				object_property_set_bool(OBJECT(dev), prop->name, value, &error_fatal);
-				break;
-			}
+	for (size_t i = 0; i < ports.u.tab.size; i++) {
+		const char *name = ports.u.tab.key[i];
+		const char *bus_name = toml_table_get_string(ports, name, NULL, true);
+		g_autofree char *property_name = g_strdup_printf("port.%s", name);
+		Object *bus = bus_find_by_id(devices, bus_name);
+
+		if (!object_property_find(OBJECT(dev), property_name))
+			hw_error("Device '%s' has no bus port '%s'", dev->id, name);
+		object_property_set_link(OBJECT(dev), property_name, bus, &error_fatal);
+	}
+}
+
+static void device_init_prop_from_config(DeviceState *dev, const pmb887x_dev_prop_t *prop, toml_datum_t table) {
+	if (!prop->required && toml_seek(table, prop->name).type == TOML_UNKNOWN)
+		return;
+
+	switch (prop->type) {
+		case DEV_PROP_INT: {
+			int value = toml_table_get_int32(table, prop->name, -1, true);
+			qdev_prop_set_uint32(dev, prop->name, value);
+			break;
+		}
+		case DEV_PROP_UINT: {
+			uint32_t value = toml_table_get_uint32(table, prop->name, 0, true);
+			qdev_prop_set_uint32(dev, prop->name, value);
+			break;
+		}
+		case DEV_PROP_STRING: {
+			const char *value = toml_table_get_string(table, prop->name, NULL, true);
+			qdev_prop_set_string(dev, prop->name, value);
+			break;
+		}
+		case DEV_PROP_BOOL: {
+			bool value = toml_table_get_bool(table, prop->name, false, true);
+			object_property_set_bool(OBJECT(dev), prop->name, value, &error_fatal);
+			break;
 		}
 	}
 }
 
-static void device_init_keys_from_config(DeviceState *dev, toml_datum_t table) {
-	toml_datum_t keys_tab = toml_table_get(table, TOML_TABLE, "key", false);
-	if (keys_tab.type == TOML_UNKNOWN)
-		return;
-
-	DeviceState *keypad = qdev_find_recursive(sysbus_get_default(), "KEYPAD");
-	if (!keypad)
-		hw_error("KEYPAD not found, required by '%s' key bindings", dev->id);
-
-	for (size_t i = 0; i < keys_tab.u.tab.size; i++) {
-		const char *pin_name = keys_tab.u.tab.key[i];
-		const char *key_name = toml_table_get_string(keys_tab, pin_name, NULL, true);
-
-		char gpio_in_name[64];
-		snprintf(gpio_in_name, sizeof(gpio_in_name), "%s_IN", pin_name);
-
-		if (!pmb887x_qdev_is_gpio_in_exists(dev, gpio_in_name, 0))
-			hw_error("GPIO_IN '%s' not found in '%s'", gpio_in_name, dev->id);
-
-		qemu_irq input = qdev_get_gpio_in_named(dev, gpio_in_name, 0);
-		if (!pmb887x_board_connect_key_to_gpio(keypad, key_name, input))
-			hw_error("Unknown key '%s' in '%s' key bindings", key_name, dev->id);
+static void device_init_props_from_config(DeviceState *dev, const pmb887x_dev_t *meta, toml_datum_t table) {
+	if (object_dynamic_cast(OBJECT(dev), TYPE_PMB887X_LCD)) {
+		for (int i = 0; i < ARRAY_SIZE(LCD_PROPS); i++)
+			device_init_prop_from_config(dev, &LCD_PROPS[i], table);
 	}
+	for (int i = 0; i < ARRAY_SIZE(meta->props); i++)
+		device_init_prop_from_config(dev, &meta->props[i], table);
 }
 
 static void device_init_gpios_from_config(DeviceState *dev, toml_datum_t table) {
@@ -384,7 +308,9 @@ static void sim_card_apply_runtime_options(DeviceState *dev) {
 	if (!source)
 		return;
 
-	if (strcmp(source, "virtual") == 0) {
+	if (strcmp(source, "none") == 0) {
+		qdev_prop_set_bit(dev, "inserted", false);
+	} else if (strcmp(source, "virtual") == 0) {
 		const char *imsi = getenv("PMB887X_SIM_IMSI");
 		const char *operator_code = getenv("PMB887X_SIM_OPERATOR");
 		if (imsi)
@@ -409,97 +335,88 @@ static void sim_card_realize_and_attach(DeviceState *card, pmb887x_sim_t *sim) {
 	pmb887x_sim_set_chardev(sim, pmb887x_sim_card_get_chardev(PMB887X_SIM_CARD(card)), &error_fatal);
 }
 
-static DeviceState *device_create_from_config(DeviceState *ebuc, const char *id, toml_datum_t table) {
-	pmb887x_board_t *board = pmb887x_board();
+static DeviceState *device_create_from_config(const char *id, toml_datum_t table) {
 	const char *type = toml_table_get_string(table, "type", NULL, true);
-	const char *sim_source = getenv("PMB887X_SIM");
-	if (strcmp(type, TYPE_PMB887X_SIM_CARD) == 0 && sim_source && strcmp(sim_source, "none") == 0)
-		return NULL;
 	const char *bus_id = toml_table_get_string(table, "bus", NULL, false);
 	const pmb887x_dev_t *meta = dev_get_metadata(type);
+	if (bus_id && strcmp(bus_id, "EBU") == 0)
+		return NULL;
 
-	DeviceState *dev = NULL;
+	DeviceState *dev = qdev_new(type);
+	dev->id = g_strdup(id);
+	device_init_props_from_config(dev, meta, table);
+	return dev;
+}
 
-	/* Board-level device that hangs off no bus at all (e.g. the KE970 jog dial). */
+static void device_realize_from_config(GHashTable *devices, const char *id, toml_datum_t table) {
+	const char *type = toml_table_get_string(table, "type", NULL, true);
+	const char *bus_id = toml_table_get_string(table, "bus", NULL, false);
+	DeviceState *dev = g_hash_table_lookup(devices, id);
+
 	if (!bus_id) {
-		dev = qdev_new(type);
-		dev->id = g_strdup(id);
-		device_init_props_from_config(dev, meta, table);
-		sysbus_realize_and_unref(SYS_BUS_DEVICE(dev), &error_fatal);
+		if (object_dynamic_cast(OBJECT(dev), TYPE_SYS_BUS_DEVICE)) {
+			sysbus_realize_and_unref(SYS_BUS_DEVICE(dev), &error_fatal);
+		} else {
+			qdev_realize_and_unref(dev, NULL, &error_fatal);
+		}
 		device_init_gpios_from_config(dev, table);
-		device_init_keys_from_config(dev, table);
-		return dev;
+		return;
 	}
 
-	Object *bus = strcmp(bus_id, "EBU") == 0 ? OBJECT(ebuc) : bus_find_by_id(bus_id);
+	Object *bus = bus_find_by_id(devices, bus_id);
 	pmb887x_dev_bus_type_t bus_type = bus_get_type(bus);
 
 	switch (bus_type) {
 		case DEV_BUS_I2C: {
 			uint32_t addr = toml_table_get_uint32(table, "addr", 0, true);
-			dev = DEVICE(i2c_slave_new(type, addr));
-			dev->id = g_strdup(id);
-			device_init_props_from_config(dev, meta, table);
+			qdev_prop_set_uint8(dev, "address", addr);
 			i2c_slave_realize_and_unref(I2C_SLAVE(dev), I2C_BUS(bus), &error_fatal);
 			device_init_gpios_from_config(dev, table);
-			device_init_keys_from_config(dev, table);
 			break;
 		}
-		case DEV_BUS_SSI: {
-			dev = qdev_new(type);
-			qdev_prop_set_uint8(DEVICE(dev), "cs", global_cs_index++);
-			dev->id = g_strdup(id);
-			device_init_props_from_config(dev, meta, table);
+
+		case DEV_BUS_SSI:
+			qdev_prop_set_uint8(dev, "cs", global_cs_index++);
 			qdev_realize_and_unref(dev, BUS(bus), &error_fatal);
 			device_init_gpios_from_config(dev, table);
-			device_init_keys_from_config(dev, table);
 			break;
-		}
-		case DEV_BUS_SIM: {
-			dev = qdev_new(type);
-			dev->id = g_strdup(id);
-			device_init_props_from_config(dev, meta, table);
+
+		case DEV_BUS_SIM:
 			sim_card_apply_runtime_options(dev);
 			sim_card_realize_and_attach(dev, PMB887X_SIM(bus));
 			device_init_gpios_from_config(dev, table);
-			device_init_keys_from_config(dev, table);
 			object_unref(OBJECT(dev));
 			break;
-		}
-		case DEV_BUS_EBU: {
+
+		case DEV_BUS_EBU:
 			if (strcmp(type, "sdram") == 0) {
 				uint32_t cs = toml_table_get_uint32(table, "ebu.cs", 0, true);
 				uint32_t size = toml_table_get_uint32(table, "ram.size", 0, true);
 				pmb887x_board_ebu_connect(DEVICE(bus), cs, pmb887x_board_create_sdram(id, size));
 			} else if (strcmp(type, "cfi-flash") == 0) {
+				pmb887x_board_t *board = pmb887x_board();
 				uint32_t cs = toml_table_get_uint32(table, "ebu.cs", 0, true);
 				uint32_t vid = toml_table_get_uint32(table, "flash.vid", 0, true);
 				uint32_t pid = toml_table_get_uint32(table, "flash.pid", 0, true);
 				uint32_t bank_size = toml_table_get_uint32(table, "flash.size", 0, false);
-				pmb887x_board_ebu_connect(DEVICE(bus), cs, pmb887x_board_create_nor_flash(id, vid, pid, board->flash_offset, &bank_size));
+				pmb887x_board_ebu_connect(DEVICE(bus), cs, pmb887x_board_create_nor_flash(id, vid, pid,
+					board->flash_offset, &bank_size));
 				board->flash_offset += bank_size;
 			} else {
 				error_report("Invalid dev type: %s", type);
 				exit(EXIT_FAILURE);
 			}
 			break;
-		}
 
 		case DEV_BUS_MMICIF:
-			dev = qdev_new(type);
-			dev->id = g_strdup(id);
-			device_init_props_from_config(dev, meta, table);
 			qdev_realize_and_unref(dev, BUS(bus), &error_fatal);
 			device_init_gpios_from_config(dev, table);
-			device_init_keys_from_config(dev, table);
 			break;
 
 		default:
-			error_report("Unknown bus type: %s", bus_id);
+			error_report("Invalid parent bus for device '%s'", id);
 			exit(EXIT_FAILURE);
 	}
-
-	return dev;
 }
 
 void pmb887x_board_init_devices(DeviceState *ebuc) {
@@ -509,10 +426,32 @@ void pmb887x_board_init_devices(DeviceState *ebuc) {
 	if (value.type == TOML_UNKNOWN)
 		return;
 
+	GHashTable *devices = g_hash_table_new(g_str_hash, g_str_equal);
+	g_hash_table_insert(devices, ebuc->id, ebuc);
+
 	for (int i = 0; i < value.u.tab.size; i++) {
 		const char *id = value.u.tab.key[i];
-		device_create_from_config(ebuc, id, toml_table_get(value, TOML_TABLE, id, true));
+		toml_datum_t table = toml_table_get(value, TOML_TABLE, id, true);
+		DeviceState *dev = device_create_from_config(id, table);
+		if (dev != NULL && !g_hash_table_insert(devices, dev->id, dev))
+			hw_error("Duplicate device id: %s", id);
 	}
+
+	for (int i = 0; i < value.u.tab.size; i++) {
+		const char *id = value.u.tab.key[i];
+		toml_datum_t table = toml_table_get(value, TOML_TABLE, id, true);
+		DeviceState *dev = g_hash_table_lookup(devices, id);
+		if (dev != NULL)
+			device_init_ports_from_config(devices, dev, table);
+	}
+
+	for (int i = 0; i < value.u.tab.size; i++) {
+		const char *id = value.u.tab.key[i];
+		toml_datum_t table = toml_table_get(value, TOML_TABLE, id, true);
+		device_realize_from_config(devices, id, table);
+	}
+
+	g_hash_table_unref(devices);
 
 	DeviceState *flash_blk = qdev_find_recursive(sysbus_get_default(), "FULLFLASH");
 	if (flash_blk) {
@@ -520,6 +459,4 @@ void pmb887x_board_init_devices(DeviceState *ebuc) {
 		if (board->flash_offset != total_flash_size)
 			hw_error("Invalid fullflash size=0x%08"PRIX64". Please, specify fullflash with size=0x%08X", total_flash_size, board->flash_offset);
 	}
-
-	sysbus_realize_and_unref(SYS_BUS_DEVICE(ebuc), &error_fatal);
 }

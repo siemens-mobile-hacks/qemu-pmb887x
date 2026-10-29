@@ -1,5 +1,7 @@
 #include "qemu/osdep.h"
 #include "qemu/atomic.h"
+#include "qemu/bitops.h"
+#include "qemu/host-utils.h"
 
 #include "hw/arm/pmb887x/dsp/core.h"
 #include "hw/arm/pmb887x/dsp/tcg.h"
@@ -129,6 +131,32 @@ static const teak_step_t DSP_MINMAX_ALIAS_STEPS[] = {
 
 static uint64_t teak_next_cache_id;
 
+static teak_modulo_step_t teak_modulo_step(uint16_t modulo, int16_t step, bool enabled) {
+	if (!enabled)
+		return (teak_modulo_step_t) { .mask = UINT16_MAX, .boundary = UINT16_MAX + 1U };
+	if (modulo == 0 || step == 0)
+		return (teak_modulo_step_t) { .mask = 0, .boundary = UINT16_MAX + 1U };
+
+	uint16_t step_magnitude = step < 0 ? ~step : step;
+	return (teak_modulo_step_t) {
+		.mask = UINT32_MAX >> clz32(modulo | step_magnitude),
+		.boundary = step < 0 ? 0 : modulo,
+		.wrap_target = step < 0 ? modulo : 0,
+	};
+}
+
+void teak_update_modulo_steps(teak_state_t *state) {
+	for (uint8_t i = 0; i < TEAK_MODULO_REGISTERS; i++) {
+		uint16_t modulo = i < 4 ? state->modi : state->modj;
+		int16_t step = sextract32(i < 4 ? state->stepi : state->stepj, 0, 7);
+		bool enabled = (state->modulo_enable & BIT(i)) != 0;
+
+		state->modulo_steps[i][TEAK_STEP_INCREASE - 1] = teak_modulo_step(modulo, 1, enabled);
+		state->modulo_steps[i][TEAK_STEP_DECREASE - 1] = teak_modulo_step(modulo, -1, enabled);
+		state->modulo_steps[i][TEAK_STEP_PLUS_STEP - 1] = teak_modulo_step(modulo, step, enabled);
+	}
+}
+
 void teak_tcg_init(teak_tcg_core_t *core, const teak_memory_t *memory) {
 	g_assert(memory->program.read != NULL);
 	g_assert(memory->program.write != NULL);
@@ -141,18 +169,22 @@ void teak_tcg_init(teak_tcg_core_t *core, const teak_memory_t *memory) {
 	core->cache_id = qatomic_fetch_inc(&teak_next_cache_id) + 1;
 	core->state.sata = 1;
 	core->state.cpc = 1;
+	teak_update_modulo_steps(&core->state);
 }
 
 void teak_tcg_reset(teak_tcg_core_t *core, uint32_t pc) {
 	teak_memory_t memory = core->memory;
 	uint64_t cache_id = core->cache_id;
+	uint32_t program_context = core->program_context;
 
 	memset(core, 0, sizeof(*core));
 	core->memory = memory;
 	core->cache_id = cache_id;
+	core->program_context = program_context;
 	core->state.pc = pc & TEAK_PROGRAM_ADDRESS_MASK;
 	core->state.sata = 1;
 	core->state.cpc = 1;
+	teak_update_modulo_steps(&core->state);
 }
 
 uint16_t teak_program_read(teak_tcg_core_t *core, uint32_t address) {
@@ -169,41 +201,6 @@ uint16_t teak_data_read(teak_tcg_core_t *core, uint32_t address) {
 
 void teak_data_write(teak_tcg_core_t *core, uint32_t address, uint16_t value) {
 	core->memory.data.write(core->memory.data.opaque, address, value);
-}
-
-uint16_t teak_modulo_address(const teak_state_t *state, uint8_t register_index, uint16_t address, int16_t step) {
-	uint16_t modulo = register_index < 4 ? state->modi : state->modj;
-	uint16_t combined;
-	uint16_t mask = 0;
-	uint16_t low;
-	uint16_t updated;
-
-	g_assert(register_index < 6);
-
-	if (step == 0 || modulo == 0)
-		return address;
-
-	if (step < 0) {
-		combined = modulo | (uint16_t) ~step;
-	} else {
-		combined = modulo | (uint16_t) step;
-	}
-	while (combined != 0) {
-		mask = mask << 1 | 1U;
-		combined >>= 1;
-	}
-
-	low = address & mask;
-	updated = low + step;
-	updated &= mask;
-	if (step >= 0 && low == modulo)
-		updated = 0;
-	if (step < 0 && low == 0)
-		updated = modulo;
-
-	address &= ~mask;
-	address |= updated;
-	return address;
 }
 
 static bool teak_is_minmax_word(uint16_t word) {

@@ -1630,12 +1630,6 @@ io_open_clock_window(CPUState *cpu, MemoryRegionSection *section,
          * the exact clock, and it is rare enough that the unwind is free.
          */
         cpu_io_recompile(cpu, retaddr);
-    } else if (icount2_enabled()) {
-        /*
-         * The TB header op already credited the whole TB; run any virtual
-         * timers whose deadline that crossed (system/icount2.c).
-         */
-        wasm_io_sync_timers();
     } else if (icount_enabled()) {
         /*
          * gen_tb_start() has already charged the whole TB, so the callback
@@ -1659,8 +1653,7 @@ static inline __attribute__((always_inline)) void
 io_clock_window(CPUState *cpu, CPUTLBEntryFull *full, uintptr_t retaddr)
 {
 #ifdef __EMSCRIPTEN__
-    if (likely(icount_enabled() && !icount2_enabled() &&
-               !full->io_rom_device)) {
+    if (likely(icount_enabled() && !full->io_rom_device)) {
         cpu->neg.can_do_io = true;
         return;
     }

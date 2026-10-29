@@ -97,8 +97,10 @@
 #define	PASIC_RF_VOLTAGE								0x0B
 #define	PASIC_RF_VOLTAGE_VRF1_LEVEL						MAKE_64BIT_MASK(0, 2)	 // RF regulator 1 level
 #define	PASIC_RF_VOLTAGE_VRF1_LEVEL_SHIFT				0
+#define	PASIC_RF_VOLTAGE_VRF1_LEVEL_2850MV				0x2
 #define	PASIC_RF_VOLTAGE_VRF2_LEVEL						MAKE_64BIT_MASK(2, 2)	 // RF regulator 2 level
 #define	PASIC_RF_VOLTAGE_VRF2_LEVEL_SHIFT				2
+#define	PASIC_RF_VOLTAGE_VRF2_LEVEL_2850MV				0x8
 #define	PASIC_RF_VOLTAGE_VRF3_LEVEL						MAKE_64BIT_MASK(4, 2)	 // RF regulator 3 level
 #define	PASIC_RF_VOLTAGE_VRF3_LEVEL_SHIFT				4
 
@@ -269,9 +271,9 @@
 #define	PASIC_PP_ROUTE_2_VALUE							MAKE_64BIT_MASK(0, 4)	 // Route selection from 0 to 8
 #define	PASIC_PP_ROUTE_2_VALUE_SHIFT					0
 
-/* Audio switch-mux path 4 */
+/* DAC-to-mono-output routing */
 #define	PASIC_SWITCH_MUX_4								0x4F
-#define	PASIC_SWITCH_MUX_4_VALUE						MAKE_64BIT_MASK(0, 8)	 // Mux control value
+#define	PASIC_SWITCH_MUX_4_VALUE						MAKE_64BIT_MASK(0, 8)	 // Route mask
 #define	PASIC_SWITCH_MUX_4_VALUE_SHIFT					0
 
 /* Amplifier paths 4 and 5 gain */
@@ -301,19 +303,19 @@
 #define	PASIC_AMPLIFIER_GAIN_9_GAIN						MAKE_64BIT_MASK(0, 7)	 // Amplifier gain code
 #define	PASIC_AMPLIFIER_GAIN_9_GAIN_SHIFT				0
 
-/* Audio switch-mux path 5 */
+/* DAC-to-stereo-output routing */
 #define	PASIC_SWITCH_MUX_5								0x55
-#define	PASIC_SWITCH_MUX_5_VALUE						MAKE_64BIT_MASK(0, 8)	 // Mux control value
+#define	PASIC_SWITCH_MUX_5_VALUE						MAKE_64BIT_MASK(0, 8)	 // Route mask
 #define	PASIC_SWITCH_MUX_5_VALUE_SHIFT					0
 
-/* Audio mux-input selection */
+/* Audio-mux input selection */
 #define	PASIC_MUX_INPUT									0x56
-#define	PASIC_MUX_INPUT_VALUE							MAKE_64BIT_MASK(0, 8)	 // Mux input code
+#define	PASIC_MUX_INPUT_VALUE							MAKE_64BIT_MASK(0, 8)	 // Input code
 #define	PASIC_MUX_INPUT_VALUE_SHIFT						0
 
-/* Audio switch-mux path 3 */
+/* LINEA/LINEB output routing */
 #define	PASIC_SWITCH_MUX_3								0x57
-#define	PASIC_SWITCH_MUX_3_VALUE						MAKE_64BIT_MASK(0, 8)	 // Mux control value
+#define	PASIC_SWITCH_MUX_3_VALUE						MAKE_64BIT_MASK(0, 8)	 // Route mask
 #define	PASIC_SWITCH_MUX_3_VALUE_SHIFT					0
 
 /* OUTPORT control */

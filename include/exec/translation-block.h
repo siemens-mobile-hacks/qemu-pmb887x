@@ -84,6 +84,7 @@ struct TranslationBlock {
 #define CF_NOIRQ         0x00010000 /* Generate an uninterruptible TB */
 #define CF_PCREL         0x00020000 /* Opcodes in TB are PC-relative */
 #define CF_BP_PAGE       0x00040000 /* Breakpoint present in code page */
+#define CF_COUNT_CYCLES  0x00080000 /* Count CPU cycles in neg.cycle_count */
 #define CF_CLUSTER_MASK  0xff000000 /* Top 8 bits are cluster ID */
 #define CF_CLUSTER_SHIFT 24
 
@@ -301,6 +302,8 @@ void tb_w64_unlink_incoming(TranslationBlock *dest);
 G_NORETURN void tb_w64_retire(CPUState *cpu, TranslationBlock *tb);
 /* tcg/wasm64/wasm64.c: false once the chain table needs a tb_flush */
 bool w64_tidx_left(void);
+/* tcg/wasm64/wasm64.c: a cpu_loop_exit() longjmp left every running TB */
+void w64_exec_unwound(void);
 
 /*
  * True while something charges tb->icount once per TB entry from the

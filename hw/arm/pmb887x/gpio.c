@@ -34,6 +34,7 @@ struct pmb887x_gpio_t {
 	uint32_t mon_cr[4];
 	
 	bool input_state[8][GPIOS_COUNT];
+	bool input_driven[8][GPIOS_COUNT];
 	qemu_irq pins_out[8][GPIOS_COUNT];
 
 	qemu_irq mon3_out;
@@ -43,12 +44,8 @@ struct pmb887x_gpio_t {
 	uint32_t names_count;
 };
 
-static void gpio_update_state(pmb887x_gpio_t *p) {
-	// TODO
-}
-
 static uint8_t gpio_get_mux_is(pmb887x_gpio_t *p, int pin) {
-	if ((p->pins[pin] & GPIO_PS) == GPIO_PS_ALT && (p->pins[pin] & GPIO_IS) != GPIO_IS_NONE)
+	if ((p->pins[pin] & GPIO_IS) != GPIO_IS_NONE)
 		return ((p->pins[pin] & GPIO_IS) >> GPIO_IS_SHIFT);
 	return 0;
 }
@@ -59,24 +56,29 @@ static uint8_t gpio_get_mux_os(pmb887x_gpio_t *p, int pin) {
 	return 0;
 }
 
+static bool gpio_get_pad_level(pmb887x_gpio_t *p, int id) {
+	if (p->input_driven[0][id])
+		return p->input_state[0][id];
+
+	return (p->pins[id] & GPIO_PDPU) == GPIO_PDPU_PULLUP;
+}
+
 static void gpio_sync_pin_state(pmb887x_gpio_t *p, int id) {
+	int pin_mux_is = gpio_get_mux_is(p, id);
+	bool output_enabled = (p->pins[id] & GPIO_ENAQ) == GPIO_ENAQ_OUTPUT_ENABLED;
+	bool pad_level;
+
 	if ((p->pins[id] & GPIO_PS) == GPIO_PS_MANUAL) {
-		bool level = (p->pins[id] & GPIO_DIR) == GPIO_DIR_OUT ? (p->pins[id] & GPIO_DATA) == GPIO_DATA_HIGH : p->input_state[0][id];
-		qemu_set_irq(p->pins_out[0][id], level);
+		bool gpio_output = (p->pins[id] & GPIO_DIR) == GPIO_DIR_OUT && output_enabled;
+		pad_level = gpio_output ? (p->pins[id] & GPIO_DATA) == GPIO_DATA_HIGH : gpio_get_pad_level(p, id);
 	} else {
-		int pin_mux_is = gpio_get_mux_is(p, id);
 		int pin_mux_os = gpio_get_mux_os(p, id);
-
-		if (pin_mux_is != 0) {
-			// proxy GPIO_IN -> PERIPHERAL
-			qemu_set_irq(p->pins_out[pin_mux_is][id], p->input_state[0][id]);
-		}
-
-		if (pin_mux_os != 0) {
-			// proxy PERIPHERAL -> GPIO_OUT
-			qemu_set_irq(p->pins_out[0][id], p->input_state[pin_mux_os][id]);
-		}
+		pad_level = pin_mux_os != 0 && output_enabled ? p->input_state[pin_mux_os][id] : gpio_get_pad_level(p, id);
 	}
+
+	qemu_set_irq(p->pins_out[0][id], pad_level);
+	for (unsigned mux = 1; mux < ARRAY_SIZE(p->pins_out); mux++)
+		qemu_set_irq(p->pins_out[mux][id], mux == pin_mux_is ? pad_level : 0);
 }
 
 static uint64_t gpio_io_read(void *opaque, hwaddr haddr, unsigned size) {
@@ -104,10 +106,10 @@ static uint64_t gpio_io_read(void *opaque, hwaddr haddr, unsigned size) {
 			value = p->pins[id];
 			if ((value & GPIO_PS) == GPIO_PS_MANUAL && (value & GPIO_DIR) == GPIO_DIR_IN) {
 				value &= ~GPIO_DATA;
-				value |= (p->input_state[0][id] ? GPIO_DATA_HIGH : GPIO_DATA_LOW);
+				value |= gpio_get_pad_level(p, id) ? GPIO_DATA_HIGH : GPIO_DATA_LOW;
 			} else if ((value & GPIO_PS) == GPIO_PS_ALT && (value & GPIO_OS) == GPIO_OS_NONE) {
 				value &= ~GPIO_DATA;
-				value |= (p->input_state[0][id] ? GPIO_DATA_HIGH : GPIO_DATA_LOW);
+				value |= gpio_get_pad_level(p, id) ? GPIO_DATA_HIGH : GPIO_DATA_LOW;
 			}
 			break;
 		}
@@ -117,9 +119,8 @@ static uint64_t gpio_io_read(void *opaque, hwaddr haddr, unsigned size) {
 		break;
 		
 		default:
-			IO_DUMP_READ(haddr + p->mmio.addr, size, 0xFFFFFFFF);
 			EPRINTF("unknown reg access: %02"PRIX64"\n", haddr);
-			exit(1);
+			break;
 	}
 	
 	IO_DUMP_READ(haddr + p->mmio.addr, size, value);
@@ -156,10 +157,8 @@ static void gpio_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned s
 		
 		default:
 			EPRINTF("unknown reg access: %02"PRIX64"\n", haddr);
-			exit(1);
+			break;
 	}
-	
-	gpio_update_state(p);
 }
 
 static const MemoryRegionOps io_ops = {
@@ -167,32 +166,18 @@ static const MemoryRegionOps io_ops = {
 	.write			= gpio_io_write,
 	.endianness		= DEVICE_NATIVE_ENDIAN,
 	.valid			= {
-		.min_access_size	= 1,
+		.min_access_size	= 4,
 		.max_access_size	= 4
 	}
 };
 
-static void gpio_update_pin_state(pmb887x_gpio_t *p, int mux, int id) {
-	int pin_mux_is = gpio_get_mux_is(p, id);
-	int pin_mux_os = gpio_get_mux_os(p, id);
-	if (mux == 0) {
-		if ((p->pins[id] & GPIO_PS) == GPIO_PS_MANUAL && (p->pins[id] & GPIO_DIR) == GPIO_DIR_IN) {
-			qemu_set_irq(p->pins_out[0][id], p->input_state[0][id]);
-		} else if (pin_mux_is != 0) {
-			// proxy GPIO_IN -> PERIPHERAL
-			qemu_set_irq(p->pins_out[pin_mux_is][id], p->input_state[0][id]);
-		}
-	} else {
-		if (pin_mux_os != 0 && pin_mux_os == mux) {
-			// proxy PERIPHERAL -> GPIO_OUT
-			qemu_set_irq(p->pins_out[0][id], p->input_state[pin_mux_os][id]);
-		}
-	}
-}
-
 static void gpio_handle_gpio_change(pmb887x_gpio_t *p, int mux, int id, int level) {
+	if (p->input_driven[mux][id] && p->input_state[mux][id] == (level != 0))
+		return;
+
 	p->input_state[mux][id] = level;
-	gpio_update_pin_state(p, mux, id);
+	p->input_driven[mux][id] = true;
+	gpio_sync_pin_state(p, id);
 }
 
 static void gpio_input_handler(void *opaque, int id, int level) {
@@ -230,6 +215,7 @@ static void gpio_input_alt6_handler(void *opaque, int id, int level) {
 static void gpio_init(Object *obj) {
 	DeviceState *dev = DEVICE(obj);
 	pmb887x_gpio_t *p = PMB887X_GPIO(obj);
+	pmb887x_clc_init(&p->clc, dev);
 	memory_region_init_io(&p->mmio, obj, &io_ops, p, "pmb887x-gpio", GPIO_IO_SIZE);
 	sysbus_init_mmio(SYS_BUS_DEVICE(obj), &p->mmio);
 	DPRINTF("gpio count: %d\n", GPIOS_COUNT);
@@ -265,7 +251,7 @@ static void gpio_init(Object *obj) {
 static void gpio_reset(DeviceState *dev) {
 	pmb887x_gpio_t *p = PMB887X_GPIO(dev);
 
-	pmb887x_clc_init(&p->clc);
+	pmb887x_clc_set(&p->clc, 1U << MOD_CLC_RMC_SHIFT);
 	memset(p->mon_cr, 0, sizeof(p->mon_cr));
 
 	for (int id = 0; id < GPIOS_COUNT; id++) {
@@ -275,17 +261,15 @@ static void gpio_reset(DeviceState *dev) {
 		gpio_sync_pin_state(p, id);
 	}
 
-	gpio_update_state(p);
 }
 
 static void gpio_realize(DeviceState *dev, Error **errp) {
 	pmb887x_gpio_t *p = PMB887X_GPIO(dev);
-	pmb887x_clc_init(&p->clc);
+	pmb887x_clc_set(&p->clc, 1U << MOD_CLC_RMC_SHIFT);
 	for (int id = 0; id < GPIOS_COUNT; id++) {
 		p->pins[id] = GPIO_PS_MANUAL | GPIO_DIR_IN | GPIO_ENAQ_ON | GPIO_PDPU_PULLDOWN | GPIO_PPEN_PUSHPULL;
 		gpio_sync_pin_state(p, id);
 	}
-	gpio_update_state(p);
 }
 
 static const Property gpio_properties[] = {

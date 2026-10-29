@@ -2,6 +2,7 @@
 #define HW_ARM_PMB887X_DSP_SIGNALS_H
 
 typedef enum pmb887x_dsp_gsm_signal_t pmb887x_dsp_gsm_signal_t;
+typedef enum pmb887x_dsp_i2s_output_t pmb887x_dsp_i2s_output_t;
 
 enum pmb887x_dsp_gsm_signal_t {
 	PMB887X_DSP_GSM_SIGNAL_EQON,
@@ -14,6 +15,15 @@ enum pmb887x_dsp_gsm_signal_t {
 	PMB887X_DSP_GSM_SIGNAL_FRAME,
 	PMB887X_DSP_GSM_SIGNAL_SYSMCU,
 	PMB887X_DSP_GSM_SIGNAL_COUNT,
+};
+
+enum pmb887x_dsp_i2s_output_t {
+	PMB887X_DSP_I2S_OUTPUT_CLK0,
+	PMB887X_DSP_I2S_OUTPUT_TX,
+	PMB887X_DSP_I2S_OUTPUT_WA0,
+	PMB887X_DSP_I2S_OUTPUT_CLK1,
+	PMB887X_DSP_I2S_OUTPUT_WA1,
+	PMB887X_DSP_I2S_OUTPUT_COUNT,
 };
 
 #endif

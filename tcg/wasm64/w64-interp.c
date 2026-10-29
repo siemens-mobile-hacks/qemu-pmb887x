@@ -41,6 +41,41 @@ static struct w64_irec *w64_irecs;
  */
 #define W64_INTERP_THRESH  64
 
+/*
+ * The pmb887x DSP translates and runs its blocks from inside an ARM device
+ * access, so a batch can land - and drop its members' records - while one
+ * of those members is being interpreted further up this thread's stack.
+ * A record freed then waits until the outermost run on the thread returns.
+ */
+static __thread unsigned w64_interp_active;
+static __thread GPtrArray *w64_irec_deferred;
+
+static void w64_irec_free(uint32_t *code)
+{
+    if (!w64_interp_active) {
+        g_free(code);
+        return;
+    }
+    if (!w64_irec_deferred) {
+        w64_irec_deferred = g_ptr_array_new_with_free_func(g_free);
+    }
+    g_ptr_array_add(w64_irec_deferred, code);
+}
+
+static void w64_irec_free_deferred(void)
+{
+    if (w64_irec_deferred) {
+        g_ptr_array_set_size(w64_irec_deferred, 0);
+    }
+}
+
+/* A cpu_loop_exit() longjmp left every interpreter run on this thread. */
+void w64_interp_unwound(void)
+{
+    w64_interp_active = 0;
+    w64_irec_free_deferred();
+}
+
 void w64_irec_put(uint32_t tidx, uint32_t *code, uint32_t n)
 {
     struct w64_irec *r;
@@ -53,7 +88,7 @@ void w64_irec_put(uint32_t tidx, uint32_t *code, uint32_t n)
         w64_irecs = g_malloc0((size_t)W64_TIDX_N * sizeof(*w64_irecs));
     }
     r = &w64_irecs[tidx];
-    g_free(r->code);
+    w64_irec_free(r->code);
     r->code = code;
     r->n = n;
 }
@@ -69,7 +104,7 @@ void w64_irec_drop(uint32_t tidx)
     }
     r = &w64_irecs[tidx];
     if (r->code) {
-        g_free(r->code);
+        w64_irec_free(r->code);
         r->code = NULL;
         r->n = 0;
     }
@@ -100,17 +135,6 @@ static void w64_interp_acct(uint32_t icount)
     if (f & W64_ACCT_GUEST_INSNS) {
         wasm_guest_insns += icount;
     }
-    if (f & W64_ACCT_ICOUNT2) {
-        uint64_t *ticks = (uint64_t *)(uintptr_t)w64_acct_addr[W64_ACCT_TICKS];
-        int64_t *deadline =
-            (int64_t *)(uintptr_t)w64_acct_addr[W64_ACCT_DEADLINE];
-        uint64_t t = qatomic_read(ticks) + icount;
-
-        qatomic_set(ticks, t);
-        if (qatomic_read(deadline) > 0 && (int64_t)t >= qatomic_read(deadline)) {
-            w64_icount2_sync_now();
-        }
-    }
     if ((f & W64_ACCT_LS) && w64_ls_on) {
         w64_lockstep_account(icount);
     }
@@ -130,7 +154,11 @@ bool w64_interp_try(uint32_t tidx, uint32_t icount, uintptr_t env,
     }
     r->hits++;
     w64_interp_acct(icount);
+    w64_interp_active++;
     *res = w64_interp_run(r, env, sp, tp);
+    if (--w64_interp_active == 0) {
+        w64_irec_free_deferred();
+    }
     return true;
 }
 

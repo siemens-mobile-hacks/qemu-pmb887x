@@ -4088,12 +4088,19 @@ bool get_phys_addr(CPUARMState *env, vaddr address,
         return false;
     }
 
-    /* DTCM intercepts data accesses, while instruction fetches use system memory. */
+    /*
+     * A TLB entry has one physical mapping for all access types. Restrict its
+     * permissions so data and instruction accesses can select different backing.
+     */
     if (cpu->dtcm_size &&
-        access_type != MMU_INST_FETCH &&
         result->f.phys_addr >= cpu->dtcm_base &&
         result->f.phys_addr - cpu->dtcm_base < cpu->dtcm_size) {
-        result->f.phys_addr = cpu->dtcm_phys_base + (result->f.phys_addr - cpu->dtcm_base);
+        if (access_type == MMU_INST_FETCH) {
+            result->f.prot &= PAGE_EXEC;
+        } else {
+            result->f.phys_addr = cpu->dtcm_phys_base + (result->f.phys_addr - cpu->dtcm_base);
+            result->f.prot &= PAGE_READ | PAGE_WRITE;
+        }
     }
 
     return true;

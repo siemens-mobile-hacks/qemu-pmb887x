@@ -16,31 +16,52 @@
 #include "hw/core/irq.h"
 #include "hw/core/qdev-properties.h"
 #include "hw/core/qdev-clock.h"
-#include "hw/ssi/ssi.h"
+#include "hw/ssi/three-wire-serial.h"
 
-#include "hw/arm/pmb887x/pll.h"
+#include "hw/arm/pmb887x/rf.h"
+#include "hw/arm/pmb887x/dsp.h"
 #include "hw/arm/pmb887x/dsp/signals.h"
 #include "hw/arm/pmb887x/gen/cpu_regs.h"
 #include "hw/arm/pmb887x/regs_dump.h"
 #include "hw/arm/pmb887x/mod.h"
+#include "hw/arm/pmb887x/tpu.h"
 #include "hw/arm/pmb887x/trace.h"
 
 #define TYPE_PMB887X_TPU	"pmb887x-tpu"
 #define PMB887X_TPU(obj)	OBJECT_CHECK(pmb887x_tpu_t, (obj), TYPE_PMB887X_TPU)
-#define TPU_RFSSC_BUS_NAME	"pmb887x-tpu-rfssc"
 #define TPU_RAM_WORDS 1024
 #define TPU_RF_RAM_WORDS 512
+#define TPU_RF_CONTROL_RAM_BASE 64U /* X-Bus offset 0x080 */
 #define TPU_TIMER_RAM_WORDS (TPU_RAM_WORDS - TPU_RF_RAM_WORDS)
 #define TPU_TIMER_RAM_BASE TPU_RF_RAM_WORDS
 #define TPU_RAM_WORD_STRIDE 4
 #define TPU_RAM_SIZE (TPU_RAM_WORDS * TPU_RAM_WORD_STRIDE)
 #define TPU_RF_RAM_WORD_MASK 0x07FF
 
+#define TPU_RF_TRIGGER_MASK MAKE_64BIT_MASK(0, 6)
+#define TPU_RF_TELEGRAM_WORDS 4U
+#define TPU_RF_TELEGRAM_DATA_MASK MAKE_64BIT_MASK(0, 8)
+#define TPU_RF_TELEGRAM_BURST BIT(0)
+#define TPU_RF_TELEGRAM_STROBE_MASK MAKE_64BIT_MASK(1, 3)
+#define TPU_RF_TELEGRAM_STROBE_SHIFT 1U
+#define TPU_RF_TELEGRAM_LENGTH_MASK MAKE_64BIT_MASK(4, 2)
+#define TPU_RF_TELEGRAM_LENGTH_SHIFT 4U
+#define TPU_RF_TELEGRAM_CLOCK BIT(7)
+#define TPU_RF_TELEGRAM_PHASE BIT(8)
+#define TPU_RF_TELEGRAM_HEADING BIT(9)
+#define TPU_RF_TYPE1_TRIGGER_FIRST 8U
+#define TPU_RF_TYPE1_TRIGGER_LIMIT 48U
+#define TPU_RF_TYPE1_TELEGRAMS 40U
+#define TPU_RF_TYPE2_TRIGGER_SPLIT 50U
+#define TPU_RF_TYPE2_TELEGRAMS 112U
+#define TPU_RFSSC_STROBE_COUNT 4U
+
 #define TPU_EVENT_WORDS 3
 #define TPU_EVENT_TIMER_BITS_HIGH_MASK 0x00FF
 #define TPU_EVENT_GROUP_MASK 0x3E00
 #define TPU_EVENT_GROUP_SHIFT 9
 #define TPU_EVENT_TYPE_MASK 0xC000
+#define TPU_EVENT_TYPE_SHIFT 14
 #define TPU_EVENT_TYPE_REPLACE 0x0000
 #define TPU_EVENT_TYPE_SET 0x4000
 #define TPU_EVENT_TYPE_CLEAR 0x8000
@@ -66,7 +87,6 @@
 #define TPU_EVENT_GP_FIRST 10
 #define TPU_EVENT_GP_LAST 14
 #define TPU_GP_COUNT (TPU_EVENT_GP_LAST - TPU_EVENT_GP_FIRST + 1)
-
 #define TPU_OVERFLOW_RESET 0x270F
 #define TPU_FADE_RESET 0x0700
 #define TPU_GSMCLK1_RESET (1U << TPU_GSMCLK1_K_SHIFT)
@@ -96,8 +116,9 @@ struct pmb887x_tpu_t {
 	qemu_irq irq[2];
 	qemu_irq gp_irq[TPU_GP_COUNT];
 	qemu_irq rfssc_irq;
-	SSIBus *rfssc_bus;
 	qemu_irq gsm_outputs[PMB887X_DSP_GSM_SIGNAL_COUNT];
+	DeviceState *dsp;
+	ThreeWireSerialBus *rfssc_bus[TPU_RFSSC_STROBE_COUNT];
 	Clock *gsm_clock;
 	uint16_t gsm_signals;
 	
@@ -108,10 +129,19 @@ struct pmb887x_tpu_t {
 	uint32_t ceap;
 	uint32_t eapt;
 	uint32_t eapb;
+	uint32_t next_eapt;
+	uint32_t next_eapb;
 	uint32_t tger;
 	uint32_t next_tger;
 	uint32_t rfcon1;
 	uint32_t rfcon2;
+	uint16_t rfssc_tb;
+	bool rfssc_active;
+	bool rfssc_buffer_full;
+	bool rfssc_direct_transfer;
+	bool rfssc_strobe_asserted;
+	uint8_t rfssc_strobe;
+	QEMUBH *rfssc_bh;
 	uint32_t fade;
 
 	uint32_t irq_fired;
@@ -125,6 +155,7 @@ struct pmb887x_tpu_t {
 	int64_t armed;
 	uint32_t frame_ticks;
 	uint32_t next_frame_ticks;
+	bool frame_corrected;
 	bool skip_extended;
 	bool offset_pending;
 	bool events_finished;
@@ -134,10 +165,7 @@ struct pmb887x_tpu_t {
 	uint32_t L;
 	uint32_t K;
 	
-	uint32_t last_fsys;
 	uint32_t unk;
-	
-	pmb887x_cgu_t *cgu;
 };
 
 static uint64_t tpu_get_counter(pmb887x_tpu_t *p) {
@@ -161,8 +189,6 @@ static int64_t tpu_run_irq(pmb887x_tpu_t *p, int64_t counter, uint64_t now, int6
 			if (counter >= p->intr[i]) {
 				pmb887x_src_update(&p->src[i], 0, MOD_SRC_SETR);
 				p->irq_fired |= (1 << i);
-				DPRINTF("IRQ%d: counter=%" PRId64 " virtual=%" PRId64 " ns host=%" PRId64 " ns\n",
-					i, counter, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL), qemu_clock_get_ns(QEMU_CLOCK_HOST));
 			} else {
 				next = MIN(next, now + tpu_ticks_to_ns(p, p->intr[i] - counter));
 			}
@@ -177,12 +203,177 @@ static uint16_t tpu_ram_word_read(pmb887x_tpu_t *p, uint32_t index) {
 	return p->ram[offset] | p->ram[offset + 1] << 8;
 }
 
+static void tpu_rfssc_end_frame(pmb887x_tpu_t *p) {
+	if (!p->rfssc_strobe_asserted)
+		return;
+
+	three_wire_serial_set_strobe(p->rfssc_bus[p->rfssc_strobe], false);
+	p->rfssc_strobe_asserted = false;
+}
+
+static bool tpu_rfssc_start_frame(pmb887x_tpu_t *p) {
+	uint8_t strobe = (p->rfcon2 & TPU_RFCON2_SSCSB) >> TPU_RFCON2_SSCSB_SHIFT;
+
+	if (p->rfssc_strobe_asserted && p->rfssc_strobe == strobe)
+		return true;
+
+	tpu_rfssc_end_frame(p);
+	if (strobe >= ARRAY_SIZE(p->rfssc_bus))
+		return false;
+
+	p->rfssc_strobe = strobe;
+	p->rfssc_strobe_asserted = true;
+	three_wire_serial_set_strobe(p->rfssc_bus[strobe], true);
+	return true;
+}
+
+static uint32_t tpu_rfssc_wire_value(pmb887x_tpu_t *p, uint32_t value, uint8_t bits) {
+	uint32_t mask = MAKE_64BIT_MASK(0, bits);
+	value &= mask;
+	if (!(p->rfcon2 & TPU_RFCON2_SSCHB))
+		value = revbit32(value) >> (32 - bits);
+	return value;
+}
+
+static void tpu_rfssc_start_shift(
+	pmb887x_tpu_t *p,
+	uint32_t value,
+	uint8_t bits,
+	bool direct_transfer
+) {
+	if (tpu_rfssc_start_frame(p))
+		three_wire_serial_write(p->rfssc_bus[p->rfssc_strobe], tpu_rfssc_wire_value(p, value, bits), bits);
+	if (!direct_transfer)
+		tpu_rfssc_end_frame(p);
+
+	p->rfssc_active = true;
+	p->rfssc_direct_transfer = direct_transfer;
+	pmb887x_src_update(&p->rfssc_src, 0, MOD_SRC_SETR);
+	if (!direct_transfer)
+		qemu_bh_schedule_idle(p->rfssc_bh);
+}
+
+static void tpu_rfssc_start_buffered(pmb887x_tpu_t *p) {
+	if (p->rfssc_active || !p->rfssc_buffer_full || !(p->rfcon2 & TPU_RFCON2_SSCEN))
+		return;
+
+	uint8_t bits = (p->rfcon2 & TPU_RFCON2_SSCBM) + 1;
+	p->rfssc_buffer_full = false;
+	tpu_rfssc_start_shift(p, p->rfssc_tb, bits, true);
+}
+
+/* Direct transfers advance at MMIO boundaries; control-block transfers use the idle BH. */
+static void tpu_rfssc_finish_shift(pmb887x_tpu_t *p) {
+	p->rfssc_active = false;
+	if (p->rfssc_buffer_full && (p->rfcon2 & TPU_RFCON2_SSCEN)) {
+		tpu_rfssc_start_buffered(p);
+		return;
+	}
+
+	p->rfcon2 &= ~TPU_RFCON2_SSCEN;
+	p->rfssc_direct_transfer = false;
+	tpu_rfssc_end_frame(p);
+}
+
+static void tpu_rfssc_complete_shift(void *opaque) {
+	pmb887x_tpu_t *p = opaque;
+
+	tpu_rfssc_finish_shift(p);
+}
+
+static bool tpu_rf_telegram_index(pmb887x_tpu_t *p, uint32_t trigger, uint32_t *index, uint32_t *limit) {
+	if (!(p->rfcon1 & TPU_RFCON1_RAMTYPE)) {
+		if (trigger < TPU_RF_TYPE1_TRIGGER_FIRST || trigger >= TPU_RF_TYPE1_TRIGGER_LIMIT)
+			return false;
+
+		*index = trigger - TPU_RF_TYPE1_TRIGGER_FIRST;
+		*limit = TPU_RF_TYPE1_TELEGRAMS;
+		return true;
+	}
+
+	if (trigger == 0)
+		return false;
+
+	*index = trigger < TPU_RF_TYPE2_TRIGGER_SPLIT ? trigger * 2 - 2 : trigger + 48;
+	*limit = TPU_RF_TYPE2_TELEGRAMS;
+	return true;
+}
+
+static uint32_t tpu_rf_telegram_control(uint16_t control, uint8_t bits) {
+	uint32_t strobe = ((control & TPU_RF_TELEGRAM_STROBE_MASK) >> TPU_RF_TELEGRAM_STROBE_SHIFT);
+	uint32_t rfcon2 = bits - 1;
+
+	rfcon2 |= (strobe << TPU_RFCON2_SSCSB_SHIFT);
+	if (control & TPU_RF_TELEGRAM_CLOCK)
+		rfcon2 |= TPU_RFCON2_SSCFB;
+	if (control & TPU_RF_TELEGRAM_PHASE)
+		rfcon2 |= TPU_RFCON2_SSCPB;
+	if (control & TPU_RF_TELEGRAM_HEADING)
+		rfcon2 |= TPU_RFCON2_SSCHB;
+
+	return (rfcon2 | TPU_RFCON2_SSCEN);
+}
+
+static void tpu_rf_control_trigger(pmb887x_tpu_t *p) {
+	uint32_t trigger = (p->triggers & TPU_RF_TRIGGER_MASK);
+	uint32_t index;
+	uint32_t limit;
+
+	if (!tpu_rf_telegram_index(p, trigger, &index, &limit))
+		return;
+
+	bool burst;
+	do {
+		uint32_t word = TPU_RF_CONTROL_RAM_BASE + index * TPU_RF_TELEGRAM_WORDS;
+		uint16_t control = tpu_ram_word_read(p, word);
+		uint32_t length = ((control & TPU_RF_TELEGRAM_LENGTH_MASK) >> TPU_RF_TELEGRAM_LENGTH_SHIFT);
+
+		if (length == 3)
+			return;
+
+		uint8_t bytes = length + 1;
+		uint8_t bits = bytes * 8;
+		uint32_t value = 0;
+
+		for (uint32_t i = 0; i < bytes; i++)
+			value = (value << 8) | (tpu_ram_word_read(p, word + i + 1) & TPU_RF_TELEGRAM_DATA_MASK);
+
+		uint32_t strobe = ((control & TPU_RF_TELEGRAM_STROBE_MASK) >> TPU_RF_TELEGRAM_STROBE_SHIFT);
+		DPRINTF("RF trigger: counter=%04X trigger=%u slot=%u control=%04X bits=%u strobe=%u value=%08X\n",
+			p->counter, trigger, index, control, bits, strobe, value);
+
+		p->rfcon2 = tpu_rf_telegram_control(control, bits);
+		p->rfssc_tb = (uint16_t) value;
+		p->rfssc_buffer_full = false;
+		tpu_rfssc_start_shift(p, value, bits, false);
+
+		burst = (control & TPU_RF_TELEGRAM_BURST) != 0;
+		index++;
+	} while (burst && index < limit);
+}
+
 static void tpu_begin_event_frame(pmb887x_tpu_t *p) {
 	p->ceap = p->eapb;
 	p->events_finished = false;
 }
 
-static void tpu_set_gsm_signal(pmb887x_tpu_t *p, pmb887x_dsp_gsm_signal_t signal, bool level) {
+static void tpu_set_gsm_signal(
+	pmb887x_tpu_t *p,
+	pmb887x_dsp_gsm_signal_t signal,
+	bool level,
+	int64_t timestamp_ns
+) {
+	static const char *const SIGNAL_NAMES[] = {
+		[PMB887X_DSP_GSM_SIGNAL_EQON] = "EQON",
+		[PMB887X_DSP_GSM_SIGNAL_MONON] = "MONON",
+		[PMB887X_DSP_GSM_SIGNAL_SCON] = "SCON",
+		[PMB887X_DSP_GSM_SIGNAL_FCON] = "FCON",
+		[PMB887X_DSP_GSM_SIGNAL_RXON] = "RXON",
+		[PMB887X_DSP_GSM_SIGNAL_TXON] = "TXON",
+		[PMB887X_DSP_GSM_SIGNAL_CODON] = "CODON",
+		[PMB887X_DSP_GSM_SIGNAL_FRAME] = "FRAME",
+		[PMB887X_DSP_GSM_SIGNAL_SYSMCU] = "SYSMCU",
+	};
 	uint16_t mask = (uint16_t) BIT(signal);
 
 	if (((p->gsm_signals & mask) != 0) == level)
@@ -192,72 +383,83 @@ static void tpu_set_gsm_signal(pmb887x_tpu_t *p, pmb887x_dsp_gsm_signal_t signal
 	} else {
 		p->gsm_signals &= (uint16_t) ~mask;
 	}
+	DPRINTF("GSM signal: counter=%04X time=%" PRId64 " ns signal=%s level=%u\n", p->counter,
+		timestamp_ns, SIGNAL_NAMES[signal], level);
+	if (p->dsp != NULL)
+		pmb887x_dsp_set_gsm_signal(p->dsp, signal, level, timestamp_ns);
 	qemu_set_irq(p->gsm_outputs[signal], level);
-	DPRINTF("GSM signal=%u level=%u counter=%u virtual=%" PRId64 " ns host=%" PRId64 " ns\n",
-		signal, level, p->counter, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL), qemu_clock_get_ns(QEMU_CLOCK_HOST));
 }
 
-static void tpu_decode_gsm_signal(pmb887x_tpu_t *p, uint32_t decoder) {
+static void tpu_decode_gsm_signal(pmb887x_tpu_t *p, uint32_t decoder, int64_t timestamp_ns) {
 	switch (decoder) {
 		case TPU_EVENT_DECODER_EQON_SET:
-			tpu_set_gsm_signal(p, PMB887X_DSP_GSM_SIGNAL_EQON, true);
+			tpu_set_gsm_signal(p, PMB887X_DSP_GSM_SIGNAL_EQON, true, timestamp_ns);
 			break;
 
 		case TPU_EVENT_DECODER_MONON_SET:
-			tpu_set_gsm_signal(p, PMB887X_DSP_GSM_SIGNAL_MONON, true);
+			tpu_set_gsm_signal(p, PMB887X_DSP_GSM_SIGNAL_MONON, true, timestamp_ns);
 			break;
 
 		case TPU_EVENT_DECODER_SCON_SET:
-			tpu_set_gsm_signal(p, PMB887X_DSP_GSM_SIGNAL_SCON, true);
+			tpu_set_gsm_signal(p, PMB887X_DSP_GSM_SIGNAL_SCON, true, timestamp_ns);
 			break;
 
 		case TPU_EVENT_DECODER_FCON_SET:
-			tpu_set_gsm_signal(p, PMB887X_DSP_GSM_SIGNAL_FCON, true);
+			tpu_set_gsm_signal(p, PMB887X_DSP_GSM_SIGNAL_FCON, true, timestamp_ns);
 			break;
 
 		case TPU_EVENT_DECODER_RECEIVE_CLEAR:
-			tpu_set_gsm_signal(p, PMB887X_DSP_GSM_SIGNAL_EQON, false);
-			tpu_set_gsm_signal(p, PMB887X_DSP_GSM_SIGNAL_MONON, false);
-			tpu_set_gsm_signal(p, PMB887X_DSP_GSM_SIGNAL_SCON, false);
-			tpu_set_gsm_signal(p, PMB887X_DSP_GSM_SIGNAL_FCON, false);
+			tpu_set_gsm_signal(p, PMB887X_DSP_GSM_SIGNAL_EQON, false, timestamp_ns);
+			tpu_set_gsm_signal(p, PMB887X_DSP_GSM_SIGNAL_MONON, false, timestamp_ns);
+			tpu_set_gsm_signal(p, PMB887X_DSP_GSM_SIGNAL_SCON, false, timestamp_ns);
+			tpu_set_gsm_signal(p, PMB887X_DSP_GSM_SIGNAL_FCON, false, timestamp_ns);
 			break;
 
 		case TPU_EVENT_DECODER_RXON_SET:
-			tpu_set_gsm_signal(p, PMB887X_DSP_GSM_SIGNAL_RXON, true);
+			tpu_set_gsm_signal(p, PMB887X_DSP_GSM_SIGNAL_RXON, true, timestamp_ns);
 			break;
 
 		case TPU_EVENT_DECODER_RXON_CLEAR:
-			tpu_set_gsm_signal(p, PMB887X_DSP_GSM_SIGNAL_RXON, false);
+			tpu_set_gsm_signal(p, PMB887X_DSP_GSM_SIGNAL_RXON, false, timestamp_ns);
 			break;
 
 		case TPU_EVENT_DECODER_TXON_SET:
-			tpu_set_gsm_signal(p, PMB887X_DSP_GSM_SIGNAL_TXON, true);
+			tpu_set_gsm_signal(p, PMB887X_DSP_GSM_SIGNAL_TXON, true, timestamp_ns);
 			break;
 
 		case TPU_EVENT_DECODER_TXON_CLEAR:
-			tpu_set_gsm_signal(p, PMB887X_DSP_GSM_SIGNAL_TXON, false);
+			tpu_set_gsm_signal(p, PMB887X_DSP_GSM_SIGNAL_TXON, false, timestamp_ns);
 			break;
 
 		case TPU_EVENT_DECODER_FRAME:
-			qemu_irq_pulse(p->gsm_outputs[PMB887X_DSP_GSM_SIGNAL_FRAME]);
+			tpu_set_gsm_signal(p, PMB887X_DSP_GSM_SIGNAL_FRAME, true, timestamp_ns);
+			tpu_set_gsm_signal(p, PMB887X_DSP_GSM_SIGNAL_FRAME, false, timestamp_ns);
 			break;
 
 		case TPU_EVENT_DECODER_SYSMCU:
-			qemu_irq_pulse(p->gsm_outputs[PMB887X_DSP_GSM_SIGNAL_SYSMCU]);
+			tpu_set_gsm_signal(p, PMB887X_DSP_GSM_SIGNAL_SYSMCU, true, timestamp_ns);
+			tpu_set_gsm_signal(p, PMB887X_DSP_GSM_SIGNAL_SYSMCU, false, timestamp_ns);
 			break;
 
 		case TPU_EVENT_DECODER_CODON_SET:
-			tpu_set_gsm_signal(p, PMB887X_DSP_GSM_SIGNAL_CODON, true);
+			tpu_set_gsm_signal(p, PMB887X_DSP_GSM_SIGNAL_CODON, true, timestamp_ns);
 			break;
 
 		case TPU_EVENT_DECODER_CODON_CLEAR:
-			tpu_set_gsm_signal(p, PMB887X_DSP_GSM_SIGNAL_CODON, false);
+			tpu_set_gsm_signal(p, PMB887X_DSP_GSM_SIGNAL_CODON, false, timestamp_ns);
 			break;
 	}
 }
 
-static void tpu_execute_event(pmb887x_tpu_t *p, uint16_t control, uint16_t timer_bits_low) {
+static void tpu_execute_event(
+	pmb887x_tpu_t *p,
+	uint32_t event,
+	uint16_t control,
+	uint16_t timer_bits_low,
+	int64_t timestamp_ns
+) {
 	uint32_t timer_bits = ((control & TPU_EVENT_TIMER_BITS_HIGH_MASK) << 16) | timer_bits_low;
+	uint32_t old_triggers = p->triggers;
 	uint32_t high_triggers;
 	uint32_t decoder;
 
@@ -281,8 +483,12 @@ static void tpu_execute_event(pmb887x_tpu_t *p, uint16_t control, uint16_t timer
 	}
 
 	p->triggers &= TPU_EVENT_TRIGGER_MASK;
-	decoder = p->triggers >> TPU_EVENT_DECODER_SHIFT & TPU_EVENT_DECODER_MASK;
-	tpu_decode_gsm_signal(p, decoder);
+	decoder = (p->triggers >> TPU_EVENT_DECODER_SHIFT) & TPU_EVENT_DECODER_MASK;
+	uint32_t rf_trigger = (p->triggers & TPU_RF_TRIGGER_MASK);
+	DPRINTF("event execute: event=%03X counter=%04X control=%04X action=%04X triggers=%06X->%06X decoder=%u rf=%u\n",
+		event, p->counter, control, timer_bits_low, old_triggers, p->triggers, decoder, rf_trigger);
+	tpu_rf_control_trigger(p);
+	tpu_decode_gsm_signal(p, decoder, timestamp_ns);
 	if (decoder >= TPU_EVENT_GP_FIRST && decoder <= TPU_EVENT_GP_LAST)
 		pmb887x_src_update(&p->gp_src[decoder - TPU_EVENT_GP_FIRST], 0, MOD_SRC_SETR);
 }
@@ -319,7 +525,9 @@ static int64_t tpu_run_events(pmb887x_tpu_t *p, uint32_t counter, int64_t now, i
 			break;
 		}
 
-		tpu_execute_event(p, control, timer_bits_low);
+		int64_t event_time_ns = now - tpu_ticks_to_ns(p, counter - compare);
+
+		tpu_execute_event(p, p->ceap, control, timer_bits_low, event_time_ns);
 		p->ceap += TPU_EVENT_WORDS;
 	}
 
@@ -344,6 +552,11 @@ static uint32_t tpu_regular_frame_ticks(pmb887x_tpu_t *p) {
 
 static void tpu_finish_frame(pmb887x_tpu_t *p) {
 	uint32_t regular_frame_ticks = tpu_regular_frame_ticks(p);
+	uint32_t final_counter = p->frame_ticks - 1;
+	int64_t final_time_ns = p->start - tpu_ticks_to_ns(p, p->counter - final_counter);
+
+	tpu_run_irq(p, final_counter, final_time_ns, final_time_ns);
+	tpu_run_events(p, final_counter, final_time_ns, final_time_ns);
 
 	if ((p->skip & TPU_SKIP_SKIPC) && !p->skip_extended) {
 		p->frame_ticks += regular_frame_ticks;
@@ -353,8 +566,11 @@ static void tpu_finish_frame(pmb887x_tpu_t *p) {
 
 	p->counter -= p->frame_ticks;
 	p->irq_fired = 0;
+	p->frame_corrected = p->next_frame_ticks != 0;
 	p->frame_ticks = p->next_frame_ticks ? p->next_frame_ticks : regular_frame_ticks;
 	p->next_frame_ticks = 0;
+	p->eapt = p->next_eapt;
+	p->eapb = p->next_eapb;
 	p->tger = p->next_tger;
 	tpu_begin_event_frame(p);
 
@@ -428,10 +644,8 @@ static void tpu_apply_offset(pmb887x_tpu_t *p) {
 static void tpu_update_state(pmb887x_tpu_t *p) {
 	bool was_enabled = p->enabled;
 
-	uint32_t div = pmb887x_clc_get_rmc(&p->clc);
-	
 	// Input freq for module
-	uint32_t ftpu = div > 0 ? pmb887x_pll_get_fsys(p->cgu) / div : 0;
+	uint32_t ftpu = pmb887x_clc_get_hz(&p->clc);
 	
 	// Update clock
 	if ((p->gsmclk3 & TPU_GSMCLK3_INIT) || (p->gsmclk3 & TPU_GSMCLK3_LOAD)) {
@@ -478,6 +692,7 @@ static void tpu_update_state(pmb887x_tpu_t *p) {
 		p->next = 0;
 		p->frame_ticks = tpu_regular_frame_ticks(p);
 		p->next_frame_ticks = 0;
+		p->frame_corrected = false;
 		p->skip_extended = false;
 		tpu_begin_event_frame(p);
 		p->timing_advance = 0;
@@ -488,7 +703,8 @@ static void tpu_update_state(pmb887x_tpu_t *p) {
 		p->freq = new_freq;
 		p->enabled = new_enabled;
 		clock_update_hz(p->gsm_clock, p->freq);
-		DPRINTF("fsys=%d, ftpu=%d, fcounter=%d [%s]\n", pmb887x_pll_get_fsys(p->cgu), ftpu, p->freq, p->enabled ? "ON" : "OFF");
+		DPRINTF("input=%d, ftpu=%d, fcounter=%d [%s]\n", pmb887x_clc_get_input_hz(&p->clc), ftpu,
+			p->freq, p->enabled ? "ON" : "OFF");
 	}
 
 	if (p->enabled && !was_enabled) {
@@ -496,7 +712,10 @@ static void tpu_update_state(pmb887x_tpu_t *p) {
 		p->irq_fired = 0;
 		p->frame_ticks = tpu_regular_frame_ticks(p);
 		p->next_frame_ticks = 0;
+		p->frame_corrected = false;
 		p->skip_extended = false;
+		p->eapt = p->next_eapt;
+		p->eapb = p->next_eapb;
 		p->tger = p->next_tger;
 		tpu_begin_event_frame(p);
 		p->timing_advance = 0;
@@ -510,13 +729,8 @@ static void tpu_update_state(pmb887x_tpu_t *p) {
 	tpu_update_timer(p);
 }
 
-static void tpu_update_state_callback(void *opaque) {
-	pmb887x_tpu_t *p = opaque;
-	uint32_t fsys = pmb887x_pll_get_fsys(p->cgu);
-	if (p->last_fsys != fsys) {
-		tpu_update_state(p);
-		p->last_fsys = fsys;
-	}
+static void tpu_clock_update(void *opaque) {
+	tpu_update_state(opaque);
 }
 
 static uint32_t tpu_ram_read(pmb887x_tpu_t *p, uint32_t offset, size_t size) {
@@ -607,6 +821,8 @@ static uint64_t tpu_io_read(void *opaque, hwaddr haddr, unsigned size) {
 			break;
 
 		case TPU_RFCON2:
+			if (p->rfssc_active && p->rfssc_direct_transfer)
+				tpu_rfssc_finish_shift(p);
 			value = p->rfcon2;
 			break;
 
@@ -762,24 +978,41 @@ static void tpu_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned si
 
 		case TPU_RFCON2:
 			p->rfcon2 = value;
+			if (!(value & TPU_RFCON2_SSCEN) && p->rfssc_active) {
+				qemu_bh_cancel(p->rfssc_bh);
+				p->rfssc_active = false;
+				p->rfssc_direct_transfer = false;
+				tpu_rfssc_end_frame(p);
+			}
+			tpu_rfssc_start_buffered(p);
 			break;
 
 		case TPU_RFSSCTB:
 			DPRINTF("RF control: %04X\n", (uint16_t) value);
-			ssi_transfer(p->rfssc_bus, value & TPU_RFSSCTB_VALUE);
-			pmb887x_src_set(&p->rfssc_src, MOD_SRC_SETR);
-			p->rfcon2 &= ~TPU_RFCON2_SSCEN;
+			p->rfssc_tb = (uint16_t) value;
+			p->rfssc_buffer_full = true;
+			if (p->rfssc_active && p->rfssc_direct_transfer) {
+				tpu_rfssc_finish_shift(p);
+			} else {
+				tpu_rfssc_start_buffered(p);
+			}
 			break;
 
 		case TPU_CORRECTION:
 			tpu_update_timer(p);
+			if (p->frame_corrected || p->next_frame_ticks != 0)
+				break;
+
 			p->correction = value;
 			if (p->enabled) {
 				uint32_t correction_ticks = (p->correction & TPU_CORRECTION_VALUE) + 1;
-				if (p->correction & TPU_CORRECTION_CTRL) {
+				bool next_frame = (p->correction & TPU_CORRECTION_CTRL) != 0 || correction_ticks <= p->counter;
+
+				if (next_frame) {
 					p->next_frame_ticks = correction_ticks;
 				} else {
 					p->frame_ticks = correction_ticks;
+					p->frame_corrected = true;
 				}
 			}
 			break;
@@ -789,6 +1022,7 @@ static void tpu_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned si
 			p->overflow = value & TPU_OVERFLOW_VALUE;
 			p->frame_ticks = tpu_regular_frame_ticks(p);
 			p->next_frame_ticks = 0;
+			p->frame_corrected = false;
 			break;
 		
 		case TPU_INT0:
@@ -848,11 +1082,11 @@ static void tpu_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned si
 			break;
 
 		case TPU_EAPT:
-			p->eapt = value & TPU_EAPT_VALUE;
+			p->next_eapt = (value & TPU_EAPT_VALUE);
 			break;
 
 		case TPU_EAPB:
-			p->eapb = value & TPU_EAPB_VALUE;
+			p->next_eapb = (value & TPU_EAPB_VALUE);
 			break;
 
 		case TPU_TGER:
@@ -901,7 +1135,12 @@ static const MemoryRegionOps io_ops = {
 
 static void tpu_init(Object *obj) {
 	pmb887x_tpu_t *p = PMB887X_TPU(obj);
-	p->rfssc_bus = ssi_create_bus(DEVICE(obj), TPU_RFSSC_BUS_NAME);
+	pmb887x_clc_init(&p->clc, DEVICE(obj));
+	pmb887x_clc_set_callback(&p->clc, tpu_clock_update, p);
+	p->rfssc_bus[0] = three_wire_serial_bus_init(DEVICE(obj), "RFSSC0");
+	p->rfssc_bus[1] = three_wire_serial_bus_init(DEVICE(obj), "RFSSC1");
+	p->rfssc_bus[2] = three_wire_serial_bus_init(DEVICE(obj), "RFSSC2");
+	p->rfssc_bus[3] = three_wire_serial_bus_init(DEVICE(obj), "RFSSC3");
 	memory_region_init_io(&p->mmio, obj, &io_ops, p, "pmb887x-tpu", TPU_RAM0 + TPU_RAM_SIZE);
 	sysbus_init_mmio(SYS_BUS_DEVICE(obj), &p->mmio);
 	
@@ -914,7 +1153,7 @@ static void tpu_init(Object *obj) {
 	p->gsm_clock = qdev_init_clock_out(DEVICE(obj), "GSM_CLOCK");
 }
 
-static void tpu_realize(DeviceState *dev, Error **errp) {
+static void tpu_realize(DeviceState *dev, Error **_errp) {
 	pmb887x_tpu_t *p = PMB887X_TPU(dev);
 	
 	pmb887x_clc_set(&p->clc, MOD_CLC_DISR);
@@ -933,16 +1172,26 @@ static void tpu_realize(DeviceState *dev, Error **errp) {
 	}
 	
 	p->timer = timer_new_ns(QEMU_CLOCK_VIRTUAL, tpu_timer_callback, p);
+	p->rfssc_bh = qemu_bh_new(tpu_rfssc_complete_shift, p);
 	p->enabled = false;
 	
 	tpu_update_state(p);
-	pmb887x_pll_add_freq_update_callback(p->cgu, tpu_update_state_callback, p);
+}
+
+static void tpu_unrealize(DeviceState *dev) {
+	pmb887x_tpu_t *p = PMB887X_TPU(dev);
+
+	tpu_rfssc_end_frame(p);
+	qemu_bh_delete(p->rfssc_bh);
+	timer_free(p->timer);
 }
 
 static void tpu_reset(DeviceState *dev) {
 	pmb887x_tpu_t *p = PMB887X_TPU(dev);
 
 	timer_del(p->timer);
+	qemu_bh_cancel(p->rfssc_bh);
+	tpu_rfssc_end_frame(p);
 
 	pmb887x_clc_set(&p->clc, MOD_CLC_DISR);
 
@@ -967,15 +1216,23 @@ static void tpu_reset(DeviceState *dev) {
 	p->ceap = 0;
 	p->eapt = 0;
 	p->eapb = 0;
+	p->next_eapt = 0;
+	p->next_eapb = 0;
 	p->tger = 0;
 	p->next_tger = 0;
 	p->rfcon1 = 0;
 	p->rfcon2 = 0;
+	p->rfssc_tb = 0;
+	p->rfssc_active = false;
+	p->rfssc_buffer_full = false;
+	p->rfssc_direct_transfer = false;
+	p->rfssc_strobe_asserted = false;
+	p->rfssc_strobe = 0;
 	p->fade = TPU_FADE_RESET;
 	p->irq_fired = 0;
+	int64_t now_ns = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
 	for (size_t i = 0; i < PMB887X_DSP_GSM_SIGNAL_COUNT; i++)
-		qemu_irq_lower(p->gsm_outputs[i]);
-	p->gsm_signals = 0;
+		tpu_set_gsm_signal(p, i, false, now_ns);
 
 	p->enabled = false;
 	p->freq = 0;
@@ -985,6 +1242,7 @@ static void tpu_reset(DeviceState *dev) {
 	p->next = 0;
 	p->frame_ticks = tpu_regular_frame_ticks(p);
 	p->next_frame_ticks = 0;
+	p->frame_corrected = false;
 	p->skip_extended = false;
 	p->offset_pending = false;
 	p->events_finished = false;
@@ -992,7 +1250,6 @@ static void tpu_reset(DeviceState *dev) {
 	p->triggers = 0;
 	p->L = 2;
 	p->K = 1;
-	p->last_fsys = 0;
 	p->unk = 0;
 
 	tpu_update_state(p);
@@ -1000,15 +1257,22 @@ static void tpu_reset(DeviceState *dev) {
 
 static const Property tpu_properties[] = {
 	DEFINE_PROP_UINT32("revision", pmb887x_tpu_t, revision, 0),
-	DEFINE_PROP_LINK("cgu", struct pmb887x_tpu_t, cgu, "pmb887x-cgu", struct pmb887x_cgu_t *),
-	DEFINE_PROP_LINK("bus_rfssc", struct pmb887x_tpu_t, rfssc_bus, "SSI", SSIBus *),
+	DEFINE_PROP_LINK("bus_rfssc0", pmb887x_tpu_t, rfssc_bus[0],
+		TYPE_THREE_WIRE_SERIAL_BUS, ThreeWireSerialBus *),
+	DEFINE_PROP_LINK("bus_rfssc1", pmb887x_tpu_t, rfssc_bus[1],
+		TYPE_THREE_WIRE_SERIAL_BUS, ThreeWireSerialBus *),
+	DEFINE_PROP_LINK("bus_rfssc2", pmb887x_tpu_t, rfssc_bus[2],
+		TYPE_THREE_WIRE_SERIAL_BUS, ThreeWireSerialBus *),
+	DEFINE_PROP_LINK("bus_rfssc3", pmb887x_tpu_t, rfssc_bus[3],
+		TYPE_THREE_WIRE_SERIAL_BUS, ThreeWireSerialBus *),
 };
 
-static void tpu_class_init(ObjectClass *klass, const void *data) {
+static void tpu_class_init(ObjectClass *klass, const void *_data) {
 	DeviceClass *dc = DEVICE_CLASS(klass);
 	device_class_set_props(dc, tpu_properties);
 	device_class_set_legacy_reset(dc, tpu_reset);
 	dc->realize = tpu_realize;
+	dc->unrealize = tpu_unrealize;
 }
 
 static const TypeInfo tpu_info = {
@@ -1018,6 +1282,12 @@ static const TypeInfo tpu_info = {
     .instance_init 	= tpu_init,
     .class_init    	= tpu_class_init,
 };
+
+void pmb887x_tpu_set_dsp(DeviceState *dev, DeviceState *dsp) {
+	pmb887x_tpu_t *p = PMB887X_TPU(dev);
+
+	p->dsp = dsp;
+}
 
 static void tpu_register_types(void) {
 	type_register_static(&tpu_info);

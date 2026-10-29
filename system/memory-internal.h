@@ -35,6 +35,9 @@ extern const MemoryRegionOps unassigned_mem_ops;
 void flatview_add_to_dispatch(FlatView *fv, MemoryRegionSection *section);
 AddressSpaceDispatch *address_space_dispatch_new(FlatView *fv);
 void address_space_dispatch_compact(AddressSpaceDispatch *d);
+void address_space_dispatch_update_sections(
+    AddressSpaceDispatch *d, FlatView *fv,
+    void (*update_section)(FlatView *fv, MemoryRegionSection *section));
 void address_space_dispatch_free(AddressSpaceDispatch *d);
 
 void mtree_print_dispatch(struct AddressSpaceDispatch *d,

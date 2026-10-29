@@ -18,6 +18,14 @@
 
 #define I2C_BROADCAST 0x00
 
+#define TYPE_I2C_TARGET_ENDPOINT "i2c-target-endpoint"
+OBJECT_DECLARE_SIMPLE_TYPE(I2CTargetEndpoint, I2C_TARGET_ENDPOINT)
+
+struct I2CTargetEndpoint {
+    I2CSlave parent_obj;
+    I2CTarget *target;
+};
+
 static const Property i2c_props[] = {
     DEFINE_PROP_UINT8("address", struct I2CSlave, address, 0),
 };
@@ -65,6 +73,60 @@ I2CBus *i2c_init_bus(DeviceState *parent, const char *name)
     QSIMPLEQ_INIT(&bus->pending_masters);
     vmstate_register_any(NULL, &vmstate_i2c_bus, bus);
     return bus;
+}
+
+static int i2c_target_endpoint_send(I2CSlave *slave, uint8_t data)
+{
+    I2CTarget *target = I2C_TARGET_ENDPOINT(slave)->target;
+    I2CTargetClass *tc = I2C_TARGET_GET_CLASS(target);
+
+    return tc->send ? tc->send(target, data) : -1;
+}
+
+static uint8_t i2c_target_endpoint_recv(I2CSlave *slave)
+{
+    I2CTarget *target = I2C_TARGET_ENDPOINT(slave)->target;
+    I2CTargetClass *tc = I2C_TARGET_GET_CLASS(target);
+
+    return tc->recv ? tc->recv(target) : 0xff;
+}
+
+static int i2c_target_endpoint_event(I2CSlave *slave, enum i2c_event event)
+{
+    I2CTarget *target = I2C_TARGET_ENDPOINT(slave)->target;
+    I2CTargetClass *tc = I2C_TARGET_GET_CLASS(target);
+
+    return tc->event ? tc->event(target, event) : 0;
+}
+
+static DeviceState *i2c_target_port_create_endpoint(QDevBusPort *base,
+                                                    Error **errp)
+{
+    I2CTargetPort *port = container_of(base, I2CTargetPort, parent);
+    DeviceState *dev;
+    I2CTargetEndpoint *endpoint;
+
+    if (*port->address > UINT8_MAX) {
+        error_setg(errp, "I2C target address 0x%x is out of range",
+                   *port->address);
+        return NULL;
+    }
+
+    dev = qdev_new(TYPE_I2C_TARGET_ENDPOINT);
+    endpoint = I2C_TARGET_ENDPOINT(dev);
+    endpoint->target = port->target;
+    qdev_prop_set_uint8(dev, "address", *port->address);
+    return dev;
+}
+
+void i2c_target_port_init(I2CTargetPort *port, DeviceState *dev,
+                          const char *name, I2CTarget *target,
+                          const uint32_t *address)
+{
+    port->target = target;
+    port->address = address;
+    qdev_init_bus_port(dev, &port->parent, name, TYPE_I2C_BUS,
+                       i2c_target_port_create_endpoint);
 }
 
 void i2c_slave_set_address(I2CSlave *dev, uint8_t address)
@@ -411,6 +473,18 @@ static void i2c_slave_class_init(ObjectClass *klass, const void *data)
     sc->match_and_add = i2c_slave_match;
 }
 
+static void i2c_target_endpoint_class_init(ObjectClass *klass,
+                                           const void *data)
+{
+    DeviceClass *dc = DEVICE_CLASS(klass);
+    I2CSlaveClass *sc = I2C_SLAVE_CLASS(klass);
+
+    dc->vmsd = &vmstate_i2c_slave;
+    sc->send = i2c_target_endpoint_send;
+    sc->recv = i2c_target_endpoint_recv;
+    sc->event = i2c_target_endpoint_event;
+}
+
 static const TypeInfo i2c_slave_type_info = {
     .name = TYPE_I2C_SLAVE,
     .parent = TYPE_DEVICE,
@@ -420,10 +494,25 @@ static const TypeInfo i2c_slave_type_info = {
     .class_init = i2c_slave_class_init,
 };
 
+static const TypeInfo i2c_target_info = {
+    .name = TYPE_I2C_TARGET,
+    .parent = TYPE_INTERFACE,
+    .class_size = sizeof(I2CTargetClass),
+};
+
+static const TypeInfo i2c_target_endpoint_info = {
+    .name = TYPE_I2C_TARGET_ENDPOINT,
+    .parent = TYPE_I2C_SLAVE,
+    .instance_size = sizeof(I2CTargetEndpoint),
+    .class_init = i2c_target_endpoint_class_init,
+};
+
 static void i2c_slave_register_types(void)
 {
     type_register_static(&i2c_bus_info);
     type_register_static(&i2c_slave_type_info);
+    type_register_static(&i2c_target_info);
+    type_register_static(&i2c_target_endpoint_info);
 }
 
 type_init(i2c_slave_register_types)

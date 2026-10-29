@@ -87,14 +87,20 @@ static uint32_t gimmick_transfer(SSIPeripheral *dev, uint32_t in) {
 	return response;
 }
 
-/* Pass-through is the display stream; anything addressed to the chip's own
- * registers is a command sequence and goes back to the per-byte path. */
-static unsigned gimmick_transfer_run(SSIPeripheral *dev, const uint8_t *tx, uint8_t *rx, unsigned n) {
+/* Pass-through is the display stream: hand the whole block to the LCD.
+ * Anything addressed to the chip's own registers goes word by word. */
+static void gimmick_transfer_block(SSIPeripheral *dev, const uint32_t *tx, uint32_t *rx, size_t count) {
 	pmb887x_gimmick_t *p = (pmb887x_gimmick_t *)dev;
 
-	if (p->cs_app || !p->cs_lcd)
-		return 0;
-	return ssi_transfer_run(p->bus, tx, rx, n);
+	if (!p->cs_app && p->cs_lcd) {
+		ssi_transfer_block(p->bus, tx, rx, count);
+		return;
+	}
+	for (size_t i = 0; i < count; i++) {
+		uint32_t reply = gimmick_transfer(dev, tx[i]);
+		if (rx)
+			rx[i] = reply;
+	}
 }
 
 static void gimmick_handle_rs(void *opaque, int n, int level) {
@@ -145,7 +151,7 @@ static void gimmick_class_init(ObjectClass *klass, const void *data) {
 	device_class_set_props(dc, gimmick_properties);
 	k->realize = gimmick_realize;
 	k->transfer = gimmick_transfer;
-	k->transfer_run = gimmick_transfer_run;
+	k->transfer_block = gimmick_transfer_block;
 	k->cs_polarity = SSI_CS_LOW;
 }
 

@@ -59,6 +59,7 @@ struct pmb887x_ebu_t {
 static void ebu_update_state(pmb887x_ebu_t *p) {
 	bool is_ebu_enabled = pmb887x_clc_is_enabled(&p->clc);
 	
+	memory_region_transaction_begin();
 	for (int i = 0; i < 8; ++i) {
 		MemoryRegion *region = &p->regions[i];
 		
@@ -66,7 +67,8 @@ static void ebu_update_state(pmb887x_ebu_t *p) {
 		uint32_t mask = (p->addrsel[i] & EBU_ADDRSEL_MASK) >> EBU_ADDRSEL_MASK_SHIFT;
 		
 		bool is_enabled = is_ebu_enabled && (p->addrsel[i] & EBU_ADDRSEL_REGENAB);
-		bool is_ro = (p->buscon[i] & EBU_BUSCON_WRITE) != 0;
+		bool is_ram = p->cs[i] && memory_region_is_ram(p->cs[i]);
+		bool is_ro = is_ram && (p->buscon[i] & EBU_BUSCON_WRITE) != 0;
 		uint32_t addr = base << 12;
 		uint32_t size = (1 << (27 - mask));
 		
@@ -97,6 +99,7 @@ static void ebu_update_state(pmb887x_ebu_t *p) {
 			}
 		}
 	}
+	memory_region_transaction_commit();
 }
 
 static uint64_t ebu_io_read(void *opaque, hwaddr haddr, unsigned size) {
@@ -341,6 +344,7 @@ static const MemoryRegionOps unmapped_io_ops = {
 
 static void ebu_init(Object *obj) {
 	struct pmb887x_ebu_t *p = PMB887X_EBU(obj);
+	pmb887x_clc_init(&p->clc, DEVICE(obj));
 	memory_region_init_io(&p->mmio, obj, &io_ops, p, "pmb887x-ebu", EBU_IO_SIZE);
 	sysbus_init_mmio(SYS_BUS_DEVICE(obj), &p->mmio);
 }

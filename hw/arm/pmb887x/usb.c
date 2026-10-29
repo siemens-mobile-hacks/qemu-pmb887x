@@ -48,7 +48,7 @@ static void usb_register_write(pmb887x_usb_t *p, hwaddr haddr, uint64_t value, u
 		p->registers[haddr + index] = (uint8_t) (value >> (index * CHAR_BIT));
 }
 
-static void usb_reset_internal_state(pmb887x_usb_t *p) {
+static void usb_reset_state(pmb887x_usb_t *p) {
 	static const uint8_t endpoint_config_reset[USB_ENDPOINT_COUNT] = {
 		0x2C, 0x28, 0x20, 0x28, 0x20, 0x28, 0x20, 0x28, 0x20, 0x28, 0x20,
 	};
@@ -59,11 +59,13 @@ static void usb_reset_internal_state(pmb887x_usb_t *p) {
 		0x50, 0x50, 0xA0, 0x50, 0xA0, 0x50, 0xA0, 0x50, 0xA0, 0x50, 0xA0,
 	};
 
+	pmb887x_clc_set(&p->clc, MOD_CLC_DISR);
+	qemu_set_irq(p->irq, 0);
 	memset(p->registers, 0, sizeof(p->registers));
+	p->registers[USB_CONTROL] = USB_CONTROL_ENABLE;
 	if (p->revision != USB_PMB8876_REVISION)
 		return;
 
-	p->registers[USB_CONTROL] = USB_CONTROL_ENABLE;
 	p->registers[USB_EP0_STATUS] = 0x24;
 	p->registers[USB_EVENT_INT_STATUS] = BIT(3);
 	for (uint32_t endpoint = 0; endpoint < USB_ENDPOINT_COUNT; endpoint++) {
@@ -73,9 +75,9 @@ static void usb_reset_internal_state(pmb887x_usb_t *p) {
 	}
 }
 
-static void usb_reset_input(void *opaque, int id, int level) {
+static void usb_reset_input(void *opaque, int _id, int level) {
 	if (level)
-		usb_reset_internal_state(opaque);
+		usb_reset_state(opaque);
 }
 
 static uint64_t usb_io_read(void *opaque, hwaddr haddr, unsigned int size) {
@@ -131,6 +133,7 @@ static const MemoryRegionOps usb_io_ops = {
 static void usb_init(Object *obj) {
 	DeviceState *dev = DEVICE(obj);
 	pmb887x_usb_t *p = PMB887X_USB(obj);
+	pmb887x_clc_init(&p->clc, dev);
 
 	memory_region_init_io(&p->mmio, obj, &usb_io_ops, p, TYPE_PMB887X_USB, USB_IO_SIZE);
 	sysbus_init_mmio(SYS_BUS_DEVICE(obj), &p->mmio);
@@ -141,9 +144,7 @@ static void usb_init(Object *obj) {
 static void usb_reset(DeviceState *dev) {
 	pmb887x_usb_t *p = PMB887X_USB(dev);
 
-	pmb887x_clc_set(&p->clc, MOD_CLC_DISR);
-	usb_reset_internal_state(p);
-	qemu_set_irq(p->irq, 0);
+	usb_reset_state(p);
 }
 
 static void usb_realize(DeviceState *dev, Error **errp) {

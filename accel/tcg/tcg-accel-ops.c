@@ -101,11 +101,6 @@ static void tcg_cpu_reset_hold(CPUState *cpu)
 /* mask must never be zero, except for A20 change call */
 void tcg_handle_interrupt(CPUState *cpu, int mask)
 {
-    if (icount2_enabled()) {
-        icount2_wakeup(cpu->cpu_index, cpu->halted, mask,
-                       cpu->interrupt_request);
-    }
-
     cpu_set_interrupt(cpu, mask);
 
     /*
@@ -225,11 +220,6 @@ static void tcg_accel_ops_init(AccelClass *ac)
         } else {
             ops->handle_interrupt = tcg_handle_interrupt;
         }
-    }
-
-    if (icount2_enabled()) {
-        ops->get_virtual_clock = icount2_get;
-        ops->get_elapsed_ticks = icount2_get;
     }
 
     ops->cpu_reset_hold = tcg_cpu_reset_hold;

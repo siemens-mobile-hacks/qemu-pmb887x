@@ -18,9 +18,11 @@ dsp_peripheral_sources = files(
 	'dsp/peripheral/timer2.c',
 	'dsp/peripheral/unknown.c',
 )
+dsp_audio_sources = files('dsp/peripheral/afe-audio.c')
 
 arm_common_ss.add(when: 'CONFIG_PMB887X', if_true: files(
 	'board.c',
+	'audio/buffer.c',
 	'fifo.c',
 	'flash.c',
 	'flash-blk.c',
@@ -29,7 +31,7 @@ arm_common_ss.add(when: 'CONFIG_PMB887X', if_true: files(
 	'ebu.c',
 	'dmac.c',
 	'stm.c',
-	'pll.c',
+	'cgu.c',
 	'scu.c',
 	'sccu.c',
 	'gpio.c',
@@ -57,6 +59,10 @@ arm_common_ss.add(when: 'CONFIG_PMB887X', if_true: files(
 	'unknown.c',
 	'io_bridge.c',
 	'regs_dump.c',
+	'rf.c',
+	'rf/gsm.c',
+	'rf/hd155153np.c',
+	'rf/pmb6272.c',
 	'trace_common.c',
 
 	'gen/brom.c',
@@ -74,6 +80,7 @@ arm_common_ss.add(when: 'CONFIG_PMB887X', if_true: files(
 	'board/keyboard.c',
 	'board/memory.c',
 	'board/startup.c',
+	'audio/pasic.c',
 
 	'utils/regexp.c',
 	'utils/strings.c',
@@ -92,11 +99,10 @@ arm_common_ss.add(when: 'CONFIG_PMB887X', if_true: files(
 	'ssc/lcd_l2f50333t.c',
 	'ssc/lcd_l2f50126t.c',
 	'ssc/lcd_l2f50250.c',
+	'ssc/lcd_lh15kah2.c',
 	'ssc/lcd_lr38826.c',
 	'ssc/lcd_r61505.c',
 	'ssc/lcd_r63400.c',
-	'ssc/pmb6272.c',
-
 	'input/ke970_scroll.c',
 
 	'i2c/d1094xx.c',
@@ -111,11 +117,19 @@ arm_common_ss.add(when: 'CONFIG_PMB887X', if_true: files(
 	'sim/sim_fs.c',
 	'sim/sim_card.c',
 ))
-arm_common_ss.add(when: 'CONFIG_PMB887X', if_true: dsp_core_sources + dsp_peripheral_sources +
+arm_common_ss.add(when: 'CONFIG_PMB887X', if_true: dsp_core_sources + dsp_peripheral_sources + dsp_audio_sources +
 	files('dsp/tcg.c', 'dsp/runtime.c'))
 
 dsp_test_c_args = ['-include', meson.current_source_dir() / 'dsp/tests/compat.h']
 host_unit_tests += {
+	'pmb887x-audio-buffer': {
+		'sources': files('tests/audio/buffer.c', 'audio/buffer.c'),
+		'dependencies': [glib],
+	},
+	'pmb887x-fifo': {
+		'sources': files('tests/fifo.c', 'fifo.c'),
+		'dependencies': [glib],
+	},
 	'pmb887x-dsp-core': {
 		'sources': files('dsp/tests/core.c') + dsp_core_sources,
 		'c_args': dsp_test_c_args,

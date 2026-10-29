@@ -177,6 +177,26 @@ bool qemu_clock_expired(QEMUClockType type);
  */
 bool qemu_clock_use_for_deadline(QEMUClockType type);
 
+extern bool qemu_virtual_timers_on_vcpu;
+
+/*
+ * With qemu_virtual_timers_on_vcpu, the virtual clock reads no later than the
+ * expiry of the earliest pending main_loop_tlg virtual timer; INT64_MAX
+ * otherwise.
+ */
+extern int64_t qemu_virtual_clock_cap;
+extern int64_t qemu_virtual_clock_last;
+
+/**
+ * qemu_clock_expire_time_ns:
+ * @type: the clock type
+ *
+ * Returns: the expiry time of the earliest timer of @type in the main loop
+ * timer list group, in the clock's time base, or -1 if there is none or
+ * the clock is disabled.
+ */
+int64_t qemu_clock_expire_time_ns(QEMUClockType type);
+
 /**
  * qemu_clock_deadline_ns_all:
  * @type: the clock type

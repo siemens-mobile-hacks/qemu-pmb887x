@@ -163,6 +163,7 @@ static void usif_handle_dmac_rx_clr(void *opaque, int id, int level) {
 static void usif_init(Object *obj) {
 	DeviceState *dev = DEVICE(obj);
 	pmb887x_usif_t *p = PMB887X_USIF(obj);
+	pmb887x_clc_init(&p->clc, dev);
 	memory_region_init_io(&p->mmio, obj, &io_ops, p, "pmb887x-usif", USIF_IO_SIZE);
 	sysbus_init_mmio(SYS_BUS_DEVICE(obj), &p->mmio);
 
@@ -177,7 +178,7 @@ static void usif_init(Object *obj) {
 
 static void usif_realize(DeviceState *dev, Error **errp) {
 	pmb887x_usif_t *p = PMB887X_USIF(dev);
-	pmb887x_clc_init(&p->clc);
+	pmb887x_clc_set(&p->clc, 1U << MOD_CLC_RMC_SHIFT);
 }
 
 static void usif_reset(DeviceState *dev) {

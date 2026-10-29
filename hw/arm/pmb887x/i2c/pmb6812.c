@@ -27,7 +27,9 @@ struct pmb887x_pmic_t {
 	uint8_t wcycle;
 	uint8_t rcycle;
 	uint8_t wr_val;
+	uint8_t confirmation;
 	uint8_t regs[256];
+	bool confirmation_pending;
 	bool on_level;
 	bool lon_frozen;
 };
@@ -79,9 +81,11 @@ static int pmic_event(I2CSlave *s, enum i2c_event event) {
 	switch (event) {
 		case I2C_START_SEND:
 			p->wcycle = 0;
+			p->confirmation_pending = false;
 			break;
 		case I2C_START_SEND_ASYNC:
 			p->wcycle = 0;
+			p->confirmation_pending = false;
 			break;
 		case I2C_START_RECV:
 			p->wcycle = 0;
@@ -101,11 +105,21 @@ static int pmic_event(I2CSlave *s, enum i2c_event event) {
 static uint8_t pmic_recv(I2CSlave *s) {
 	pmb887x_pmic_t *p = PMB887X_PMIC(s);
 
-	bool readable = p->rcycle == 0 && p->reg_id >= PMB6812_GEF1 && p->reg_id <= PMB6812_GEF2;
-	uint8_t data = readable ? p->regs[p->reg_id] : 0xFF;
+	bool is_confirmation = p->rcycle == 0 && p->confirmation_pending;
+	bool is_register = !is_confirmation && p->rcycle == 0 &&
+		p->reg_id >= PMB6812_GEF1 && p->reg_id <= PMB6812_GEF2;
+	uint8_t data = 0xFF;
+
+	if (is_confirmation) {
+		data = p->confirmation;
+	} else if (is_register) {
+		data = p->regs[p->reg_id];
+	}
 
 	IO_DUMP_READ(p->reg_id, 1, data);
-	if (readable && p->reg_id == PMB6812_ISF) {
+	if (is_confirmation)
+		p->confirmation_pending = false;
+	if (is_register && p->reg_id == PMB6812_ISF) {
 		p->lon_frozen = false;
 		pmic_update_on_level(p);
 	}
@@ -140,6 +154,8 @@ static int pmic_send(I2CSlave *s, uint8_t data) {
 		case 2: {
 			uint8_t expect = pmic_pec((s->address << 1), p->reg_id, p->wr_val);
 			if (data != expect) {
+				p->confirmation = ~data;
+				p->confirmation_pending = true;
 				qemu_log_mask(LOG_GUEST_ERROR, "pmb6812: bad CRC on write reg=0x%02X val=0x%02X: "
 					"got 0x%02X expected 0x%02X\n",
 					p->reg_id, p->wr_val, data, expect);
@@ -147,6 +163,8 @@ static int pmic_send(I2CSlave *s, uint8_t data) {
 				return 1;
 			}
 
+			p->confirmation = data;
+			p->confirmation_pending = true;
 			IO_DUMP_WRITE(p->reg_id, 1, p->wr_val);
 			p->regs[p->reg_id] = p->wr_val;
 			if (p->reg_id == PMB6812_INTCTRL2) {
@@ -173,6 +191,8 @@ static void pmic_reset(DeviceState *dev) {
 	p->reg_id = 0;
 	p->wcycle = 0;
 	p->rcycle = 0;
+	p->confirmation = 0;
+	p->confirmation_pending = false;
 	p->lon_frozen = false;
 	memcpy(p->regs, regs_PMB6812, sizeof(regs_PMB6812));
 	pmic_update_on_level(p);

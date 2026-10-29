@@ -13,7 +13,7 @@
 
 #include "wasm64.h"
 #include "w64-interp.h"
-#include "system/cpu-timers.h"      /* icount2_enabled() */
+#include "system/cpu-timers.h"      /* wasm_guest_insns */
 #include "exec/icount.h"            /* icount_enabled() */
 
 /* ------------------------------------------------------------------ */
@@ -2697,12 +2697,13 @@ static const TCGOutOpDivRem outop_divu2 = {
  * The lockstep fold is deliberately not in this set: it is a gate, and
  * excluding it would mean the gate never ran the shipping control flow.
  * wasm_guest_insns is not either: an early exit refunds it instead,
- * through w64_tb_acct_insns below.  icount2's counter drives virtual
- * time, so it stays exact.
+ * through w64_tb_acct_insns below.  The vcpu-timers clock charges
+ * CF_COUNT_CYCLES cycles per TB entry and drives virtual time, so it
+ * stays exact.
  */
 bool w64_tb_icount_exact(void)
 {
-    return icount2_enabled();
+    return qemu_virtual_timers_on_vcpu;
 }
 
 /*
@@ -2719,7 +2720,7 @@ uint64_t *w64_tb_acct_insns(void)
 static void tcg_out_tb_start(TCGContext *s)
 {
     static const uint8_t p1[1] = { 0 };    /* (i32) */
-    uint8_t sync_uimp = 0, ls_uimp = 0;
+    uint8_t ls_uimp = 0;
     uint32_t tidx;
     unsigned nlabels = MIN((unsigned)s->nb_labels, W64_MAX_LABELS);
 
@@ -2750,7 +2751,6 @@ static void tcg_out_tb_start(TCGContext *s)
         w64_acct_init();
     }
     w64_acct_flags = (w64_guest_insns_inline() ? W64_ACCT_GUEST_INSNS : 0) |
-                     (icount2_enabled() ? W64_ACCT_ICOUNT2 : 0) |
                      (w64_ls_armed() ? W64_ACCT_LS : 0);
 
     /* descriptor */
@@ -2760,13 +2760,8 @@ static void tcg_out_tb_start(TCGContext *s)
     tidx = w64_alloc_tidx();
     stl_p(s->code_buf + W64_DESC_TIDX, tidx);
 
-    /* the rare tails of the prologue accounting: the icount2 deadline
-     * sync (?icount=precise-clocks) and the lockstep fold (W64_LOCKSTEP) */
-    if (icount2_enabled()) {
-        sync_uimp = w64_union_import(
-            (uint32_t)(uintptr_t)w64_icount2_sync_now,
-            w64_union_type(0, NULL, 0xff));
-    }
+    /* the rare tail of the prologue accounting: the lockstep fold
+     * (W64_LOCKSTEP) */
     if (w64_ls_armed()) {
         ls_uimp = w64_union_import(
             (uint32_t)(uintptr_t)w64_lockstep_account,
@@ -2796,43 +2791,6 @@ static void tcg_out_tb_start(TCGContext *s)
         w64_const_addr(s, w64_acct_addr[W64_ACCT_INSNS]);
         w64_local_get(s, W64_L_SCR0);
         w64_u8(s, 0x37);  w64_memarg(s, 3, 0);        /* i64.store */
-    }
-
-    if (icount2_enabled()) {
-        /* icount2_advance fast path: ticks += icount — atomic accesses,
-         * mirroring the qatomic_read/qatomic_set the C function emits
-         * (timers_state is read/written cross-thread).  Only for the
-         * opt-in icount2 (?icount=precise-clocks) timing model: the
-         * default stock-icount boot never sets icount2_deadline, so an
-         * atomic RMW + a deadline compare per TB entry (~5M/s) would be
-         * pure overhead there.  icount2 is fixed at command-line parse
-         * time, before the first translation. */
-        w64_const_addr(s, w64_acct_addr[W64_ACCT_TICKS]);
-        w64_u8(s, 0xfe); w64_u8(s, 0x11);
-        w64_memarg(s, 3, 0);                          /* i64.atomic.load */
-        w64_const_i64(s, s->gen_tb->icount);
-        w64_u8(s, 0x7c);
-        w64_local_set(s, W64_L_SCR0);                /* new ticks */
-        w64_const_addr(s, w64_acct_addr[W64_ACCT_TICKS]);
-        w64_local_get(s, W64_L_SCR0);
-        w64_u8(s, 0xfe); w64_u8(s, 0x18);
-        w64_memarg(s, 3, 0);                          /* i64.atomic.store */
-
-        /* if (deadline > 0 && new_ticks >= deadline)
-         *     w64_icount2_sync_now()   — the rare slow path */
-        w64_const_addr(s, w64_acct_addr[W64_ACCT_DEADLINE]);
-        w64_u8(s, 0xfe); w64_u8(s, 0x11);
-        w64_memarg(s, 3, 0);
-        w64_local_tee(s, W64_L_SCR1);                /* deadline */
-        w64_const_i64(s, 0);
-        w64_u8(s, 0x55);                              /* i64.gt_s */
-        w64_local_get(s, W64_L_SCR0);
-        w64_local_get(s, W64_L_SCR1);
-        w64_u8(s, 0x59);                              /* i64.ge_s */
-        w64_u8(s, 0x71);                              /* i32.and */
-        w64_blk_push(s, W64_BLK_IF, -1);
-        w64_call(s, sync_uimp);
-        w64_blk_pop(s);
     }
 
     if (w64_ls_armed()) {

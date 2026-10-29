@@ -177,6 +177,7 @@ void qemu_cond_signal(QemuCond *cond);
 void qemu_cond_broadcast(QemuCond *cond);
 void TSA_NO_TSA qemu_cond_wait_impl(QemuCond *cond, QemuMutex *mutex,
                                     const char *file, const int line);
+bool qemu_cond_timedwait_ns(QemuCond *cond, QemuMutex *mutex, int64_t ns);
 bool qemu_cond_timedwait_impl(QemuCond *cond, QemuMutex *mutex, int ms,
                               const char *file, const int line);
 
@@ -191,9 +192,6 @@ static inline bool (qemu_cond_timedwait)(QemuCond *cond, QemuMutex *mutex,
 {
     return qemu_cond_timedwait(cond, mutex, ms);
 }
-
-/* Sub-millisecond timed wait (host ns); same return as qemu_cond_timedwait */
-bool qemu_cond_timedwait_ns(QemuCond *cond, QemuMutex *mutex, int64_t ns);
 
 void qemu_sem_init(QemuSemaphore *sem, int init);
 void qemu_sem_post(QemuSemaphore *sem);

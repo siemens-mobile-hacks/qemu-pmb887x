@@ -111,9 +111,20 @@ static void mcs_destroy(dsp_device_t *device) {
 
 static void mcs_reset(dsp_device_t *device) {
 	mcs_state_t *state = device->state;
+	uint64_t semaphores = qatomic_read(&state->semaphores);
+	uint64_t preserved = 0;
+
+	for (size_t i = 0; i < MCS_SEMAPHORE_COUNT; i++) {
+		uint32_t shift = i * MCS_SEMAPHORE_STATE_BITS;
+		uint64_t owner = (semaphores >> shift) & MCS_SEMAPHORE_OWNER_MASK;
+
+		if (owner == MCS_SEMAPHORE_MCU)
+			preserved |= (uint64_t) MCS_SEMAPHORE_MCU << shift;
+	}
+
 	qatomic_set(&state->comm_status, 0);
 	qatomic_set(&state->comm_cleared, 0);
-	qatomic_set(&state->semaphores, 0);
+	qatomic_set(&state->semaphores, preserved);
 }
 
 static bool mcs_read(dsp_device_t *device, uint16_t offset, uint32_t pc, uint16_t *value) {

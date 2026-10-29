@@ -82,14 +82,19 @@ static void ssi_cs_default(void *opaque, int n, int level)
     s->cs = cs;
 }
 
-static uint32_t ssi_transfer_raw_default(SSIPeripheral *dev, uint32_t val)
+static bool ssi_is_selected(SSIPeripheral *dev)
 {
     SSIPeripheralClass *ssc = dev->spc;
 
-    if ((dev->cs && ssc->cs_polarity == SSI_CS_HIGH) ||
-        (!dev->cs && ssc->cs_polarity == SSI_CS_LOW) ||
-        ssc->cs_polarity == SSI_CS_NONE) {
-        return ssc->transfer(dev, val);
+    return (dev->cs && ssc->cs_polarity == SSI_CS_HIGH) ||
+           (!dev->cs && ssc->cs_polarity == SSI_CS_LOW) ||
+           ssc->cs_polarity == SSI_CS_NONE;
+}
+
+static uint32_t ssi_transfer_raw_default(SSIPeripheral *dev, uint32_t val)
+{
+    if (ssi_is_selected(dev)) {
+        return dev->spc->transfer(dev, val);
     }
     return 0;
 }
@@ -170,34 +175,35 @@ uint32_t ssi_transfer(SSIBus *bus, uint32_t val)
     return r;
 }
 
-unsigned ssi_transfer_run(SSIBus *bus, const uint8_t *tx, uint8_t *rx,
-                          unsigned n)
+void ssi_transfer_block(SSIBus *bus, const uint32_t *tx, uint32_t *rx,
+                        size_t count)
 {
-    BusState *b = &bus->parent_obj;
+    BusState *b = BUS(bus);
     BusChild *kid = QTAILQ_FIRST(&b->children);
-    SSIPeripheral *p;
+    bool is_single_device = kid != NULL && QTAILQ_NEXT(kid, sibling) == NULL;
 
-    /*
-     * ssi_transfer() ORs every child's answer together.  One child is the
-     * only shape a run can reproduce without a separate rx buffer per
-     * child, and it is the shape of every bus on a display path.
-     */
-    if (!kid || QTAILQ_NEXT(kid, sibling)) {
-        return 0;
-    }
+    if (is_single_device) {
+        SSIPeripheral *p = SSI_PERIPHERAL(kid->child);
+        SSIPeripheralClass *ssc = p->spc;
 
-    p = (SSIPeripheral *)kid->child;
-    if (!p->spc->transfer_run ||
-        p->spc->transfer_raw != ssi_transfer_raw_default) {
-        return 0;
+        if (ssc->transfer_block &&
+            ssc->transfer_raw == ssi_transfer_raw_default) {
+            if (ssi_is_selected(p)) {
+                ssc->transfer_block(p, tx, rx, count);
+            } else if (rx) {
+                memset(rx, 0, count * sizeof(*rx));
+            }
+            return;
+        }
     }
-    if (!((p->cs && p->spc->cs_polarity == SSI_CS_HIGH) ||
-          (!p->cs && p->spc->cs_polarity == SSI_CS_LOW) ||
-          p->spc->cs_polarity == SSI_CS_NONE)) {
-        return 0;
-    }
+    /* Devices see the words interleaved, as with ssi_transfer(). */
+    for (size_t i = 0; i < count; i++) {
+        uint32_t reply = ssi_transfer(bus, tx[i]);
 
-    return p->spc->transfer_run(p, tx, rx, n);
+        if (rx) {
+            rx[i] = reply;
+        }
+    }
 }
 
 const VMStateDescription vmstate_ssi_peripheral = {

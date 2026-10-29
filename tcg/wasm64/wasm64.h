@@ -113,8 +113,6 @@ extern uint32_t w64_chain_stop;  /* lockstep budget reached: stop chaining */
  * prologue touches directly, read at translation time. */
 enum {
     W64_ACCT_INSNS,         /* &wasm_guest_insns */
-    W64_ACCT_TICKS,         /* &timers_state.icount2_ticks */
-    W64_ACCT_DEADLINE,      /* &timers_state.icount2_deadline */
     W64_ACCT_LS_ON,         /* &w64_ls_on */
     W64_ACCT_N,
 };
@@ -123,10 +121,6 @@ extern uint64_t w64_acct_addr[W64_ACCT_N];
 /* One-time lazy fill of w64_acct_addr (called from the emitter's first
  * tcg_out_tb_start — translation of the first TB precedes first exec). */
 void w64_acct_init(void);
-
-/* Rare slow path from the inline prologue: the icount2 virtual-clock
- * deadline was crossed (mirrors icount2_advance's tail — BQL + sync). */
-void w64_icount2_sync_now(void);
 
 /* Lockstep fold accounting (emitted prologue calls it only when armed;
  * exported for the emitter's import registration). */
@@ -139,7 +133,6 @@ extern uint32_t w64_ls_on;
 /* What the emitted TB prologue accounts for, published once by the
  * emitter so the interpreter tier can do the same work (w64-interp.c). */
 #define W64_ACCT_GUEST_INSNS  2
-#define W64_ACCT_ICOUNT2  4
 #define W64_ACCT_LS       8
 extern uint32_t w64_acct_flags;
 

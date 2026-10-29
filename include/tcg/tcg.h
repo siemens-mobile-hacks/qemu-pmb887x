@@ -435,6 +435,8 @@ struct TCGContext {
 
     uint16_t gen_insn_end_off[TCG_MAX_INSNS];
     uint64_t *gen_insn_data;
+    /* CF_COUNT_CYCLES: cycles from each insn to the end of the TB. */
+    uint32_t gen_insn_cycles[TCG_MAX_INSNS];
 
     /* Exit to translator on overflow. */
     sigjmp_buf jmp_trans;

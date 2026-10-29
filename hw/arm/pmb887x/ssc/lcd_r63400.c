@@ -134,8 +134,8 @@ static void lcd_reset(pmb887x_lcd_t *lcd) {
 	pmb887x_lcd_panel_t *priv = PMB887X_LCD_PANEL(lcd);
 	memset(priv->regs, 0, sizeof(priv->regs));
 	memcpy(priv->regs, DEFAULT_REGS, sizeof(DEFAULT_REGS));
-	priv->regs[R63400_R_WINDOW_HEND] = lcd->width - 1;
-	priv->regs[R63400_R_WINDOW_VEND] = lcd->height - 1;
+	priv->regs[R63400_R_WINDOW_HEND] = lcd->gram_width - 1;
+	priv->regs[R63400_R_WINDOW_VEND] = lcd->gram_height - 1;
 
 	lcd_update_state(lcd);
 	pmb887x_lcd_set_x(lcd, priv->regs[R63400_R_GRAM_X]);
