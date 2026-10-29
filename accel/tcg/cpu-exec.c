@@ -1281,6 +1281,25 @@ after_interrupts:
     return false;
 }
 
+#ifndef CONFIG_USER_ONLY
+/*
+ * Whether only QEMU_TIMER_ATTR_SOFT deadlines fall inside @tb, so it may
+ * run whole instead of being cut at the first one.  Blocks that are already
+ * cut, or must stay exact, are never extended.
+ */
+static bool icount_soft_deadline_only(TranslationBlock *tb)
+{
+    int64_t hard;
+
+    if (tb->cflags & (CF_COUNT_MASK | CF_NOIRQ | CF_MEMI_ONLY)) {
+        return false;
+    }
+    hard = qemu_clock_deadline_ns_all(QEMU_CLOCK_VIRTUAL,
+                                      ~QEMU_TIMER_ATTR_SOFT);
+    return hard < 0 || icount_round(hard) >= tb->icount;
+}
+#endif
+
 static inline void cpu_loop_exec_tb(CPUState *cpu, TranslationBlock *tb,
                                     vaddr pc, TranslationBlock **last_tb,
                                     int *tb_exit)
@@ -1326,7 +1345,12 @@ static inline void cpu_loop_exec_tb(CPUState *cpu, TranslationBlock *tb,
     if (insns_left > 0 && insns_left < tb->icount)  {
         assert(insns_left <= CF_COUNT_MASK);
         assert(cpu->icount_extra == 0);
-        cpu->cflags_next_tb = (tb->cflags & ~CF_COUNT_MASK) | insns_left;
+        if (icount_soft_deadline_only(tb)) {
+            cpu->icount_budget += tb->icount - insns_left;
+            cpu->neg.icount_decr.u16.low = tb->icount;
+        } else {
+            cpu->cflags_next_tb = (tb->cflags & ~CF_COUNT_MASK) | insns_left;
+        }
     }
 #endif
 }

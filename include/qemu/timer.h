@@ -63,14 +63,24 @@ typedef enum {
  * The following attributes are available:
  *
  * QEMU_TIMER_ATTR_EXTERNAL: drives external subsystem
+ * QEMU_TIMER_ATTR_SOFT: may fire late by up to one translation block
  * QEMU_TIMER_ATTR_ALL: mask for all existing attributes
  *
  * Timers with this attribute do not recorded in rr mode, therefore it could be
  * used for the subsystems that operate outside the guest core. Applicable only
  * with virtual clock type.
+ *
+ * Under icount, a deadline that falls inside a translation block normally
+ * makes the vCPU translate and run a block cut at exactly that instruction
+ * (and then one starting right after it).  When every timer due before the
+ * end of the block is QEMU_TIMER_ATTR_SOFT, the block runs whole and those
+ * timers fire at its end instead.  For timers that catch up on the elapsed
+ * time anyway: a frequent one would otherwise cut a fresh pair of blocks at
+ * a different instruction on nearly every expiry.
  */
 
 #define QEMU_TIMER_ATTR_EXTERNAL ((int)BIT(0))
+#define QEMU_TIMER_ATTR_SOFT     ((int)BIT(1))
 #define QEMU_TIMER_ATTR_ALL      0xffffffff
 
 typedef struct QEMUTimerList QEMUTimerList;

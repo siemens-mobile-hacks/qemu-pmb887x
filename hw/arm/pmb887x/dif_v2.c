@@ -1532,7 +1532,8 @@ static void dif_realize(DeviceState *dev, Error **errp) {
 	dif_update_mux(p);
 
 	p->rx_refill_bh = qemu_bh_new(dif_rx_refill, p);
-	p->tx_bus_timer = timer_new_ns(QEMU_CLOCK_VIRTUAL, dif_tx_bus_wake, p);
+	p->tx_bus_timer = timer_new_full(NULL, QEMU_CLOCK_VIRTUAL, SCALE_NS, QEMU_TIMER_ATTR_SOFT,
+		dif_tx_bus_wake, p);
 }
 
 static void dif_unrealize(DeviceState *dev) {
