@@ -29,7 +29,6 @@
 #include "hw/arm/pmb887x/rf.h"
 #include "hw/arm/pmb887x/trace.h"
 
-#define DSP_RAM_SIZE		(DSP_IO_SIZE - DSP_RAM0)
 #define DSP_BOOT_DATA_OFFSET	2
 #define DSP_RUNTIME_PIPE_OFFSET	5
 #define DSP_RUNTIME_PIPE_STRIDE	0x1C
@@ -629,9 +628,7 @@ static void dsp_init(Object *obj) {
 	p->iq_rx_bus = pmb887x_iq_bus_create(DEVICE(obj), DSP_IQ_RX_BUS_NAME);
 	memory_region_init(&p->mmio, obj, "pmb887x-dsp", DSP_IO_SIZE);
 	memory_region_init_io(&p->regs, obj, &io_ops, p, "pmb887x-dsp-regs", DSP_RAM0);
-	memory_region_init_io(&p->ram, obj, &ram_io_ops, p, "pmb887x-dsp-ram", DSP_RAM_SIZE);
 	memory_region_add_subregion(&p->mmio, 0, &p->regs);
-	memory_region_add_subregion(&p->mmio, DSP_RAM0, &p->ram);
 	sysbus_init_mmio(SYS_BUS_DEVICE(obj), &p->mmio);
 	qdev_init_gpio_in_named(DEVICE(obj), dsp_reset_input, "RESET_IN", 1);
 	qdev_init_gpio_in_named(DEVICE(obj), dsp_interrupt_input, "INT_IN", PMB887X_DSP_INT_COUNT);
@@ -699,8 +696,8 @@ static void dsp_realize(DeviceState *dev, Error **errp) {
 	config = p->config;
 
 	shared_ram_size = config->shared_size * sizeof(uint16_t);
-	memory_region_set_size(&p->ram, shared_ram_size);
-	memory_region_set_size(&p->mmio, DSP_RAM0 + shared_ram_size);
+	memory_region_init_io(&p->ram, OBJECT(dev), &ram_io_ops, p, "pmb887x-dsp-ram", shared_ram_size);
+	memory_region_add_subregion(&p->mmio, DSP_RAM0, &p->ram);
 	if (p->rom_version == 0)
 		p->rom_version = config->default_rom_version;
 

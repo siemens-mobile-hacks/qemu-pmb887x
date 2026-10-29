@@ -727,7 +727,7 @@
 // ADC [MOD_NUM=F024, MOD_REV=10, MOD_32BIT=C0]
 // ADC [MOD_NUM=F024, MOD_REV=21, MOD_32BIT=C0]
 // Measurement Interface and Analog Control
-#define ADC_IO_SIZE						0x00000200
+#define ADC_IO_SIZE						0x00100000
 /* Clock Control Register */
 #define ADC_CLC							0x00
 
@@ -869,7 +869,7 @@
 // AFC [MOD_NUM=F004, MOD_REV=00, MOD_32BIT=C0]
 // AFC [MOD_NUM=F004, MOD_REV=11, MOD_32BIT=C0]
 // Automatic Frequency Correction
-#define AFC_IO_SIZE				0x00000200
+#define AFC_IO_SIZE				0x00100000
 /* Clock Control Register */
 #define AFC_CLC					0x00
 
@@ -886,7 +886,7 @@
 
 // DMAC [AMBA PL080]
 // PrimeCell DMA Controller (PL080)
-#define DMAC_IO_SIZE							0x00001000
+#define DMAC_IO_SIZE							0x00100000
 /* Status of the DMA interrupts after masking */
 #define DMAC_INT_STATUS							0x00
 #define DMAC_INT_STATUS_CH0						(1 << 0)
@@ -1752,7 +1752,7 @@
 // CAPCOM [MOD_NUM=0050, MOD_REV=03, MOD_32BIT=00]
 // CAPCOM [MOD_NUM=0050, MOD_REV=11, MOD_32BIT=00]
 // CAPture/COMpare (see drivers/clocksource/xgold_capcom_timer.c)
-#define CAPCOM_IO_SIZE							0x00000100
+#define CAPCOM_IO_SIZE							0x00100000
 /* Clock Control Register */
 #define CAPCOM_CLC								0x00
 
@@ -2189,7 +2189,7 @@
 
 // CGU
 // Clock Generation Unit
-#define CGU_IO_SIZE							0x00000200
+#define CGU_IO_SIZE							0x00100000
 /* Clock Generation Unit Control Register 1 (CGU_CTL1) */
 #define CGU_OSC								0xA0
 #define CGU_OSC_PLL_POWER_UP				(1 << 0)		 // Power up PLL
@@ -2395,7 +2395,7 @@
 
 // CIF [MOD_NUM=F052, MOD_REV=12, MOD_32BIT=C0]
 // Camera Interface
-#define CIF_IO_SIZE	0x00000200
+#define CIF_IO_SIZE	0x00100000
 /* Clock Control Register */
 #define CIF_CLC		0x00
 
@@ -2421,7 +2421,7 @@
 
 // DIFv1 [MOD_NUM=F043, MOD_REV=00, MOD_32BIT=C0]
 // Display Interface (see SSC module)
-#define DIFv1_IO_SIZE					0x00000200
+#define DIFv1_IO_SIZE					0x00100000
 /* Clock Control Register */
 #define DIFv1_CLC						0x00
 
@@ -2887,7 +2887,7 @@
 
 // DIFv2 [MOD_NUM=F043, MOD_REV=12, MOD_32BIT=C0]
 // Display Interface (see linux-sofia-3gr/drivers/video/xgold/dcc/dcc-hwregs.h)
-#define DIFv2_IO_SIZE						0x0000C004
+#define DIFv2_IO_SIZE						0x00100000
 /* Clock Control Register */
 #define DIFv2_CLC							0x00
 
@@ -3672,7 +3672,7 @@
 // DSP [MOD_NUM=F022, MOD_REV=10, MOD_32BIT=C0]
 // DSP [MOD_NUM=F022, MOD_REV=31, MOD_32BIT=C0]
 // Digital Signal Processor
-#define DSP_IO_SIZE					0x00002800
+#define DSP_IO_SIZE					0x00100000
 #define DSP_RAM_BASE				0x1000
 #define DSP_RAM0					DSP_RAM_BASE
 #define DSP_RAM(n)					(DSP_RAM_BASE + ((n) * 0x4))
@@ -3717,7 +3717,7 @@
 // EBU [MOD_NUM=0014, MOD_REV=04, MOD_32BIT=C0]
 // EBU [MOD_NUM=0014, MOD_REV=05, MOD_32BIT=C0]
 // External Bus Unit (see EBU in XMC4500)
-#define EBU_IO_SIZE							0x00000194
+#define EBU_IO_SIZE							0x00100000
 /* Clock Control Register */
 #define EBU_CLC								0x00
 
@@ -4022,7 +4022,7 @@
 // GPIO [MOD_NUM=F023, MOD_REV=00, MOD_32BIT=C0]
 // GPIO [MOD_NUM=F023, MOD_REV=32, MOD_32BIT=C0]
 // Port Control Logic
-#define GPIO_IO_SIZE						0x000001E8
+#define GPIO_IO_SIZE						0x00100000
 /* Clock Control Register */
 #define GPIO_CLC							0x00
 
@@ -4255,7 +4255,7 @@
 // GPRSCU [MOD_NUM=F003, MOD_REV=10, MOD_32BIT=C0]
 // GPRSCU [MOD_NUM=F003, MOD_REV=22, MOD_32BIT=C0]
 // GPRS Cipher Unit
-#define GPRSCU_IO_SIZE						0x00000200
+#define GPRSCU_IO_SIZE						0x00100000
 /* Clock Control Register */
 #define GPRSCU_CLC							0x00
 
@@ -4346,7 +4346,7 @@
 // GPTU [MOD_NUM=0001, MOD_REV=02, MOD_32BIT=C0]
 // GPTU [MOD_NUM=0001, MOD_REV=11, MOD_32BIT=C0]
 // General Purpose Timer Unit (see GPTUx in TC1765 datasheet)
-#define GPTU_IO_SIZE						0x00000100
+#define GPTU_IO_SIZE						0x00100000
 /* Clock Control Register */
 #define GPTU_CLC							0x00
 
@@ -5061,7 +5061,7 @@
 
 // I2Cv1 [MOD_NUM=0046, MOD_REV=04, MOD_32BIT=00]
 // Old I2C interface (see I2C in TC1100 datasheet)
-#define I2Cv1_IO_SIZE					0x00000200
+#define I2Cv1_IO_SIZE					0x00100000
 /* Clock Control Register */
 #define I2Cv1_CLC						0x00
 
@@ -5230,7 +5230,7 @@
 
 // I2Cv2 [MOD_NUM=F057, MOD_REV=12, MOD_32BIT=C0]
 // New I2C interface (see I2C in TC27x datasheet)
-#define I2Cv2_IO_SIZE							0x0000C004
+#define I2Cv2_IO_SIZE							0x00100000
 /* Clock Control Register */
 #define I2Cv2_CLC								0x00
 
@@ -5551,7 +5551,7 @@
 // KEYPAD [MOD_NUM=F046, MOD_REV=00, MOD_32BIT=C0]
 // KEYPAD [MOD_NUM=F046, MOD_REV=21, MOD_32BIT=C0]
 // Keypad scanner module
-#define KEYPAD_IO_SIZE						0x00000200
+#define KEYPAD_IO_SIZE						0x00100000
 /* Module Identifier Register */
 #define KEYPAD_ID							0x08
 
@@ -5611,7 +5611,7 @@
 
 // MMICIF [MOD_NUM=F053, MOD_REV=12, MOD_32BIT=C0]
 // Multi Media Controller Interface
-#define MMICIF_IO_SIZE						0x00000200
+#define MMICIF_IO_SIZE						0x00100000
 #define MMICIF_MMAP_BASE					0x2000000
 #define MMICIF_MMAP_SIZE					0x1000000
 
@@ -5662,7 +5662,7 @@
 // RTC [MOD_NUM=F049, MOD_REV=00, MOD_32BIT=C0]
 // RTC [MOD_NUM=F049, MOD_REV=11, MOD_32BIT=C0]
 // Realtime Clock (see RTC in XC27x5X datasheet)
-#define RTC_IO_SIZE					0x000000F4
+#define RTC_IO_SIZE					0x00100000
 /* Clock Control Register */
 #define RTC_CLC						0x00
 
@@ -5771,7 +5771,7 @@
 
 // SCCU
 // Standby Clock Control Unit
-#define SCCU_IO_SIZE					0x00000200
+#define SCCU_IO_SIZE					0x00100000
 /* Standby Power Control Register */
 #define SCCU_SPCR						0x10
 #define SCCU_SPCR_DPDN					(1 << 0)		 // VDD DSP Supply Domain Reset in Standby Mode
@@ -5882,7 +5882,7 @@
 // SCU [MOD_NUM=F040, MOD_REV=00, MOD_32BIT=C0]
 // SCU [MOD_NUM=F040, MOD_REV=12, MOD_32BIT=C0]
 // System Control Unit (see SCU in TC1766 datasheet)
-#define SCU_IO_SIZE						0x00000200
+#define SCU_IO_SIZE						0x00100000
 /* Clock Control Register */
 #define SCU_CLC							0x00
 
@@ -6268,7 +6268,7 @@
 
 // SIM [MOD_NUM=F000, MOD_REV=32, MOD_32BIT=C0]
 // SIM Card Interface
-#define SIM_IO_SIZE					0x00000200
+#define SIM_IO_SIZE					0x00100000
 /* Clock Control Register */
 #define SIM_CLC						0x00
 
@@ -6467,7 +6467,7 @@
 // SSC [MOD_NUM=0045, MOD_REV=25, MOD_32BIT=00]
 // SSC [MOD_NUM=0045, MOD_REV=31, MOD_32BIT=00]
 // SSC (see SSC0 in lantiq)
-#define SSC_IO_SIZE				0x00000100
+#define SSC_IO_SIZE				0x00100000
 /* Clock Control Register */
 #define SSC_CLC					0x00
 
@@ -6650,7 +6650,7 @@
 // STM [MOD_NUM=0000, MOD_REV=02, MOD_32BIT=C0]
 // STM [MOD_NUM=0000, MOD_REV=11, MOD_32BIT=C0]
 // System Timer (see STM in TC1766 datasheet)
-#define STM_IO_SIZE			0x00000030
+#define STM_IO_SIZE			0x00100000
 /* Clock Control Register */
 #define STM_CLC				0x00
 #define STM_CLC_RMC2		(0xFF << 16)	 // Additional PLL-source divider; total divisor is RMC + RMC2
@@ -6679,7 +6679,7 @@
 // TPU [MOD_NUM=F021, MOD_REV=00, MOD_32BIT=C0]
 // TPU [MOD_NUM=F021, MOD_REV=12, MOD_32BIT=C0]
 // Time Processing Unit
-#define TPU_IO_SIZE									0x00002000
+#define TPU_IO_SIZE									0x00100000
 #define TPU_RAM_BASE								0x1000
 #define TPU_RAM0									TPU_RAM_BASE
 #define TPU_RAM(n)									(TPU_RAM_BASE + ((n) * 0x4))
@@ -6852,7 +6852,7 @@
 // USART [MOD_NUM=0044, MOD_REV=F1, MOD_32BIT=00]
 // USART [MOD_NUM=0044, MOD_REV=E2, MOD_32BIT=00]
 // USART interface (see ASCx in TC1766 datasheet)
-#define USART_IO_SIZE						0x00000080
+#define USART_IO_SIZE						0x00100000
 /* Clock Control Register */
 #define USART_CLC							0x00
 
@@ -7346,7 +7346,7 @@
 
 // USIF [MOD_NUM=F051, MOD_REV=12, MOD_32BIT=C0]
 // Universal Serial Interface (Infineon USIF, used for the Bluetooth HCI transport)
-#define USIF_IO_SIZE				0x00010000
+#define USIF_IO_SIZE				0x00100000
 /* Clock Control Register */
 #define USIF_CLC					0x00
 
@@ -7412,7 +7412,7 @@
 // VIC [MOD_NUM=0031, MOD_REV=01, MOD_32BIT=C0]
 // VIC [MOD_NUM=0031, MOD_REV=11, MOD_32BIT=C0]
 // Vectored Interrupt Controller
-#define VIC_IO_SIZE						0x000002D8
+#define VIC_IO_SIZE						0x00100000
 /* Module Identifier Register */
 #define VIC_ID							0x00
 

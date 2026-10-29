@@ -1045,7 +1045,7 @@ static void tpu_init(Object *obj) {
 	p->rfssc_bus[1] = three_wire_serial_bus_init(DEVICE(obj), "RFSSC1");
 	p->rfssc_bus[2] = three_wire_serial_bus_init(DEVICE(obj), "RFSSC2");
 	p->rfssc_bus[3] = three_wire_serial_bus_init(DEVICE(obj), "RFSSC3");
-	memory_region_init_io(&p->mmio, obj, &io_ops, p, "pmb887x-tpu", TPU_RAM0 + TPU_RAM_SIZE);
+	memory_region_init_io(&p->mmio, obj, &io_ops, p, "pmb887x-tpu", TPU_IO_SIZE);
 	sysbus_init_mmio(SYS_BUS_DEVICE(obj), &p->mmio);
 	
 	sysbus_init_irq(SYS_BUS_DEVICE(obj), &p->rfssc_irq);

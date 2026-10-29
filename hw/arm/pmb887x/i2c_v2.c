@@ -26,7 +26,6 @@ OBJECT_DECLARE_SIMPLE_TYPE(pmb887x_i2c_t, PMB887X_I2C);
 
 #define FIFO_IO_SIZE		0x3FFF
 #define FIFO_SIZE			8
-#define I2C_IO_SIZE			(I2Cv2_RXD + FIFO_IO_SIZE + 1)
 #define I2C_BYTE_SCL_PERIODS	9 /* Eight data bits and ACK. */
 
 #define FIFO_ICR_MASK		(I2Cv2_ICR_BREQ_INT | I2Cv2_ICR_LBREQ_INT | I2Cv2_ICR_SREQ_INT | I2Cv2_ICR_LSREQ_INT)
@@ -926,7 +925,7 @@ static void i2c_init(Object *obj) {
 	DeviceState *dev = DEVICE(obj);
 	pmb887x_i2c_t *p = PMB887X_I2C(obj);
 	pmb887x_clc_init(&p->clc, dev);
-	memory_region_init_io(&p->mmio, obj, &io_ops, p, TYPE_PMB887X_I2C, I2C_IO_SIZE);
+	memory_region_init_io(&p->mmio, obj, &io_ops, p, TYPE_PMB887X_I2C, I2Cv2_IO_SIZE);
 	sysbus_init_mmio(SYS_BUS_DEVICE(obj), &p->mmio);
 
 	for (int i = 0; i < ARRAY_SIZE(p->irq); i++)

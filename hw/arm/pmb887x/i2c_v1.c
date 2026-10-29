@@ -619,7 +619,7 @@ static void i2c_init(Object *obj) {
 	DeviceState *dev = DEVICE(obj);
 	pmb887x_i2c_t *p = PMB887X_I2C(obj);
 	pmb887x_clc_init(&p->clc, dev);
-	memory_region_init_io(&p->mmio, obj, &io_ops, p, "pmb887x-i2c-v1", I2Cv2_IO_SIZE);
+	memory_region_init_io(&p->mmio, obj, &io_ops, p, "pmb887x-i2c-v1", I2Cv1_IO_SIZE);
 	sysbus_init_mmio(SYS_BUS_DEVICE(obj), &p->mmio);
 
 	p->bus = i2c_init_bus(DEVICE(obj), NULL);
