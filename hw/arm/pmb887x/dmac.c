@@ -1206,6 +1206,7 @@ static void dmac_timer_reset(void *opaque) {
 	if (!clock_is_enabled(p->clock))
 		return;
 
+	RCU_READ_LOCK_GUARD();
 	int budget = DMAC_MAX_BURSTS_PER_PASS;
 	p->is_in_pass = true;
 	while (p->dmac_pending && budget-- > 0) {
