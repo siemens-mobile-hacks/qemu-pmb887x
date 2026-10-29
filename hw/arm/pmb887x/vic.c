@@ -228,9 +228,8 @@ static uint64_t vic_io_read(void *opaque, hwaddr haddr, unsigned size) {
 		}
 		
 		default:
-			IO_DUMP_READ(haddr + p->mmio.addr, size, 0xFFFFFFFF);
 			EPRINTF("unknown reg access: %02"PRIX64"\n", haddr);
-			exit(1);
+			break;
 	}
 	
 	IO_DUMP_READ(haddr + p->mmio.addr, size, value);
@@ -283,7 +282,7 @@ static void vic_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned si
 
 		default:
 			EPRINTF("unknown reg access: %02"PRIX64"\n", haddr);
-			exit(1);
+			break;
 	}
 	
 	vic_update_state(p);
