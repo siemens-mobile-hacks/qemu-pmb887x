@@ -250,12 +250,11 @@ static void *lcd_ram_writer_run(void *opaque) {
 	uint32_t tail = 0;
 
 	while (true) {
+		qemu_event_wait(&lcd->ram_queue_ready);
 		qemu_event_reset(&lcd->ram_queue_ready);
 		uint32_t head = qatomic_load_acquire(&lcd->ram_queue_head);
-		if (tail == head) {
-			qemu_event_wait(&lcd->ram_queue_ready);
+		if (tail == head)
 			continue;
-		}
 
 		for (; tail != head; tail++)
 			lcd_write_ram_byte(lcd, lcd->ram_queue[tail % LCD_RAM_QUEUE_SIZE]);
