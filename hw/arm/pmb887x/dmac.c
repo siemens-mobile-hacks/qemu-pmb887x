@@ -82,7 +82,7 @@ struct pmb887x_dmac_t {
 	pmb887x_dmac_ch_t ch[DMAC_CHANNELS];
 
 	bool dmac_pending;
-	bool is_busy;
+	bool is_in_pass;
 	uint32_t config;
 	uint32_t sync;
 
@@ -171,7 +171,7 @@ static void dmac_write(pmb887x_dmac_t *p, hwaddr addr, const uint8_t *buffer, ui
 static void dmac_schedule(pmb887x_dmac_t *p) {
 	p->dmac_pending = true;
 
-	if (clock_is_enabled(p->clock) && !timer_pending(p->timer))
+	if (!p->is_in_pass && clock_is_enabled(p->clock) && !timer_pending(p->timer))
 		timer_mod(p->timer, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL));
 }
 
@@ -1207,6 +1207,7 @@ static void dmac_timer_reset(void *opaque) {
 		return;
 
 	int budget = DMAC_MAX_BURSTS_PER_PASS;
+	p->is_in_pass = true;
 	while (p->dmac_pending && budget-- > 0) {
 		p->dmac_pending = false;
 		for (int i = 0; i < DMAC_CHANNELS; i++)
@@ -1214,6 +1215,7 @@ static void dmac_timer_reset(void *opaque) {
 		if (pmb887x_srb_get_ris(&p->srb_tc) || pmb887x_srb_get_ris(&p->srb_err))
 			break;
 	}
+	p->is_in_pass = false;
 	if (p->dmac_pending)
 		timer_mod(p->timer, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + 1);
 }
@@ -1353,7 +1355,7 @@ static void dmac_reset(DeviceState *dev) {
 		p->ch[i] = (pmb887x_dmac_ch_t) { .id = i };
 
 	p->dmac_pending = false;
-	p->is_busy = false;
+	p->is_in_pass = false;
 	p->config = 0;
 	p->sync = 0;
 	memset(p->sel, 0, sizeof(p->sel));
