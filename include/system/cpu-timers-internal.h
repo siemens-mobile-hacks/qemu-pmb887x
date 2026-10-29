@@ -52,17 +52,8 @@ typedef struct TimersState {
     int64_t vm_clock_warp_start;
     int64_t cpu_clock_offset;
 
-    /*
-     * Only written by the TCG thread - and written *often*: a guest
-     * that polls a device register commits the running slice on every
-     * virtual-clock read (icount_get_raw_locked), millions of times a
-     * second.  Give it a cache line of its own: every field above is
-     * read by other threads (the seqlock and the spin lock most of all),
-     * and a store to a line another core holds costs an order of
-     * magnitude more than one to an uncontended line.
-     */
-    int64_t qemu_icount QEMU_ALIGNED(64);
-    char qemu_icount_pad[64 - sizeof(int64_t)];
+    /* Only written by TCG thread */
+    int64_t qemu_icount;
 
     /* for adjusting icount */
     QEMUTimer *icount_rt_timer;

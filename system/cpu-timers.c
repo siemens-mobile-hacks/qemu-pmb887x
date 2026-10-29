@@ -266,6 +266,19 @@ void cpu_clock_owner_wake(void)
     qemu_mutex_unlock(&cpu_clock_owner_lock);
 }
 
+/* Guest time before which lag is caught up instead of dropped. */
+static int64_t cpu_clock_bank_end;
+
+void cpu_clock_set_bank(int64_t ns)
+{
+    cpu_clock_bank_end = ns;
+}
+
+bool cpu_clock_banked(void)
+{
+    return qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) < cpu_clock_bank_end;
+}
+
 /*
  * Caller must hold BQL which serves as mutex for vm_clock_seqlock.
  * Returns cpu_get_real_clock() as of the lag check: reading the host clock
@@ -277,7 +290,7 @@ int64_t cpu_clock_owner_limit_lag(void)
     int64_t position = cpu_clock_owner_position();
     int64_t raw = cpu_get_raw_clock();
 
-    if (position != INT64_MAX &&
+    if (position != INT64_MAX && position >= cpu_clock_bank_end &&
         raw - position > CPU_CLOCK_OWNER_LAG_MAX_NS) {
         seqlock_write_lock(&timers_state.vm_clock_seqlock,
                            &timers_state.vm_clock_lock);
@@ -531,36 +544,8 @@ void qemu_timer_notify_cb(void *opaque, QEMUClockType type)
         /*
          * A CPU is currently running; send it out of the
          * tcg_cpu_exec() loop so it will recalculate its
-         * icount deadline immediately - but only when the new deadline
-         * falls inside the budget it is running on.  A timer re-armed
-         * (or added) beyond the remaining budget cannot be missed: the
-         * budget ends first and the loop recomputes.  Measured on the
-         * pmb887x boot: 37k notifies/s on the vCPU thread (every
-         * timer_mod from a device callback or from the idle warp's own
-         * timer run), 1.2 % of them inside the budget - each needless
-         * exit_request cost an empty cpu_exec round plus a
-         * TB_EXIT_REQUESTED unwind of the first TB.
+         * icount deadline immediately.
          */
-        if (icount_enabled()) {
-            CPUState *cpu = current_cpu;
-            int64_t deadline, left;
-
-            if (!cpu->neg.can_do_io) {
-                /* Reading the virtual clock here would hit
-                 * icount_get_raw_locked()'s "Bad icount read" exit when
-                 * the caller cannot do io - keep the stock unconditional
-                 * cpu_exit instead. */
-                cpu_exit(current_cpu);
-                return;
-            }
-            deadline = qemu_clock_deadline_ns_all(QEMU_CLOCK_VIRTUAL,
-                                                  QEMU_TIMER_ATTR_ALL);
-            left = cpu->neg.icount_decr.u16.low + cpu->icount_extra;
-
-            if (deadline >= 0 && icount_round(deadline) >= left) {
-                return;
-            }
-        }
         cpu_exit(current_cpu);
     } else if (first_cpu) {
         /*

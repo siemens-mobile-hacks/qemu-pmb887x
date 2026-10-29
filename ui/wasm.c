@@ -181,7 +181,7 @@ uint64_t wasm_insns(void)
 EMSCRIPTEN_KEEPALIVE
 uint64_t wasm_halts(void)
 {
-    return qatomic_read(&tcg_rr_idle_count);
+    return qatomic_read(&wasm_vcpu_idle_count);
 }
 
 /* Guest virtual clock in ns (diagnostics: boot progress). */
@@ -192,14 +192,13 @@ int64_t wasm_vclock(void)
 }
 
 /*
- * Real-time cap phase: 0 off, 1 banked (the boot window), 3 budget (the
- * repayable bank is capped).  The page hides its "slow" warning while
- * banked - v/wall is below 1 by construction there.
+ * 1 while the guest is still in its vcpu-timers-bank window: it catches up
+ * on time lost to the host, so v/wall below 1 is not yet "slow".
  */
 EMSCRIPTEN_KEEPALIVE
-int32_t wasm_rtcap(void)
+int32_t wasm_clock_banked(void)
 {
-    return icount_rtcap_mode();
+    return cpu_clock_banked();
 }
 
 /* ------------------------------------------------------------------ */

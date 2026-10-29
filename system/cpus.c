@@ -466,6 +466,10 @@ void qemu_process_cpu_events(CPUState *cpu)
     qemu_process_cpu_events_timed(cpu, NULL);
 }
 
+#ifdef __EMSCRIPTEN__
+uint64_t wasm_vcpu_idle_count;
+#endif
+
 void qemu_process_cpu_events_timed(CPUState *cpu,
                                    int64_t (*run_timers)(CPUState *cpu))
 {
@@ -481,6 +485,9 @@ void qemu_process_cpu_events_timed(CPUState *cpu,
         if (!slept) {
             slept = true;
             qemu_plugin_vcpu_idle_cb(cpu);
+#ifdef __EMSCRIPTEN__
+            qatomic_set(&wasm_vcpu_idle_count, wasm_vcpu_idle_count + 1);
+#endif
         }
         if (timeout_ns < 0) {
             qemu_cond_wait(cpu->halt_cond, &bql);

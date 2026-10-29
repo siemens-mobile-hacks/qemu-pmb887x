@@ -106,114 +106,6 @@ static void rr_stop_kick_timer(void)
     }
 }
 
-#ifdef __EMSCRIPTEN__
-uint64_t tcg_rr_idle_count;
-#endif
-
-/*
- * All vCPUs are halted under icount.  Stock qemu hands the virtual-clock
- * warp to the main loop (icount_start_warp_timer: with sleep=off the
- * bias jumps to the next deadline) which then kicks the vCPU back through
- * async_run_on_cpu so that icount_handle_deadline can run the expired
- * QEMU_CLOCK_VIRTUAL timers here — two cross-thread hops (futex wake +
- * BQL handoff each) per deadline, and a halted guest spends most of its
- * wall time in them (wasm: ~30 % of the early boot in the halt wait).
- * Do the warp and the timer run on this thread, under the BQL we hold:
- * the same clock steps in the same order, without the handoffs.  Only
- * QEMU_CLOCK_VIRTUAL is touched (it is this thread's clock under icount
- * anyway); host-clock timers stay with the main loop, which gets the BQL
- * between iterations so a due host-clock event (DMA completion, DSP,
- * input) is not starved.  Bounded so a self-rearming zero-deadline timer
- * cannot keep the cond wait below from ever being reached.
- */
-static void rr_idle_advance(void)
-{
-    int i;
-
-#ifdef __EMSCRIPTEN__
-    qatomic_set(&tcg_rr_idle_count, tcg_rr_idle_count + 1);
-#endif
-    for (i = 0; i < 64 && all_cpu_threads_idle(); i++) {
-        int64_t deadline = qemu_clock_deadline_ns_all(QEMU_CLOCK_VIRTUAL,
-                                                      ~QEMU_TIMER_ATTR_EXTERNAL);
-        if (deadline < 0) {
-            return;
-        }
-        if (deadline > 0) {
-            if (icount_rtcap) {
-                /*
-                 * Real-time cap: the warp would put the virtual clock
-                 * ahead of wall time — sleep the difference first (a kick
-                 * ends the wait early; an interrupt then makes the guest
-                 * non-idle and we leave without warping).
-                 */
-                int64_t excess = icount_rtcap_excess_ns(
-                    qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + deadline);
-
-                if (excess > 0) {
-                    icount_rtcap_set_waiting(true);
-                    qemu_cond_timedwait_bql_ns(first_cpu->halt_cond, excess);
-                    icount_rtcap_set_waiting(false);
-                    continue;
-                }
-            }
-            /*
-             * Do not let the warp notify: with sleep=off it moves the
-             * bias by exactly @deadline, so the ~EXTERNAL deadline is 0
-             * afterwards and the ATTR_ALL deadline icount_handle_deadline()
-             * tests - a superset, so never larger - is 0 too.  It always
-             * notifies, on this thread, a few instructions later.  The
-             * suppressed one was a second cross-thread wake per idle
-             * round, and this loop runs thousands of times a second (the
-             * S75 idle screen: PROF_FN=emscripten_futex_wake put it at
-             * ~4.7 % of the vCPU).
-             */
-            icount_start_warp_timer_full(false);
-            if (qemu_clock_deadline_ns_all(QEMU_CLOCK_VIRTUAL,
-                                           ~QEMU_TIMER_ATTR_EXTERNAL) > 0) {
-                /*
-                 * sleep=on paces via the warp timer and we return
-                 * without running the deadline - so nobody notified.
-                 */
-                qemu_clock_notify(QEMU_CLOCK_VIRTUAL);
-                /* icount sleep=on: the warp timer paces the clock */
-                return;
-            }
-        }
-        icount_handle_deadline();
-        if (i > 0) {
-            bql_unlock();
-            bql_lock();
-        }
-    }
-}
-
-/*
- * Real-time cap while the guest runs: after a budget round, sleep if the
- * virtual clock got ahead of wall time.  The host-clock read is a JS
- * import on wasm, so it is taken at most once per ms of virtual time.
- * Called without the BQL; the wait is kick-interruptible and bounded so
- * an interrupt is never delayed by more than a few ms.
- */
-static void rr_rtcap_throttle(void)
-{
-    static int64_t last_v;
-    int64_t v = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
-    int64_t excess;
-
-    if (v - last_v < SCALE_MS) {
-        return;
-    }
-    last_v = v;
-    excess = icount_rtcap_excess_ns(v);
-    if (excess > 0) {
-        int64_t wait = MIN(excess, 20 * SCALE_MS);
-        bql_lock();
-        qemu_cond_timedwait_bql_ns(first_cpu->halt_cond, wait);
-        bql_unlock();
-    }
-}
-
 static void rr_wait_io_event(void)
 {
     CPUState *cpu;
@@ -335,14 +227,11 @@ static void *rr_cpu_thread_fn(void *arg)
         }
 
         if (icount_enabled() && all_cpu_threads_idle()) {
-            rr_idle_advance();
             /*
              * When all cpus are sleeping (e.g in WFI), to avoid a deadlock
              * in the main_loop, wake it up in order to start the warp timer.
              */
-            if (all_cpu_threads_idle()) {
-                qemu_notify_event();
-            }
+            qemu_notify_event();
         }
 
         rr_wait_io_event();
@@ -398,9 +287,6 @@ static void *rr_cpu_thread_fn(void *arg)
                 r = tcg_cpu_exec(cpu);
                 if (icount_enabled()) {
                     icount_process_data(cpu);
-                    if (icount_rtcap) {
-                        rr_rtcap_throttle();
-                    }
                 }
                 bql_lock();
 

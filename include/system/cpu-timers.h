@@ -44,7 +44,9 @@ int64_t cpu_get_clock(void);
  * clock, which catches up while the guest waits. The owner waits while its
  * position leads real time by CPU_CLOCK_OWNER_LEAD_NS. Real time never leads
  * the position by more than CPU_CLOCK_OWNER_LAG_MAX_NS: a longer host stall
- * pauses the clock instead of making the guest catch it up at full speed.
+ * pauses the clock instead of making the guest catch it up at full speed -
+ * except before the guest time given to cpu_clock_set_bank() (the boot):
+ * there the guest catches up on all of it, which it does whenever it idles.
  */
 #define CPU_CLOCK_OWNER_LEAD_NS (200 * SCALE_US)
 #define CPU_CLOCK_OWNER_LAG_MAX_NS (100 * SCALE_MS)
@@ -54,6 +56,8 @@ int64_t cpu_clock_owner_position(void);
 void cpu_clock_owner_progress(bool idle);
 void cpu_clock_owner_wake(void);
 int64_t cpu_clock_owner_limit_lag(void);
+void cpu_clock_set_bank(int64_t ns);
+bool cpu_clock_banked(void);
 int64_t cpu_get_real_clock(void);
 void cpu_clock_owner_start_budget(int64_t real);
 void cpu_clock_owner_shorten_budget(void);
@@ -68,6 +72,8 @@ int64_t cpus_get_elapsed_ticks(void);
 #ifdef __EMSCRIPTEN__
 /* guest instructions run on a board without icount (ui/wasm.c) */
 extern uint64_t wasm_guest_insns;
+/* times the vCPU went to sleep idle (ui/wasm.c) */
+extern uint64_t wasm_vcpu_idle_count;
 #endif
 
 #endif /* SYSTEM_CPU_TIMERS_H */
