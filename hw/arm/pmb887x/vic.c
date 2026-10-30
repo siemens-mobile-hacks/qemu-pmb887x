@@ -56,6 +56,8 @@ struct pmb887x_vic_t {
 	
 	int pending_irq;
 	int pending_fiq;
+	bool is_irq_asserted;
+	bool is_fiq_asserted;
 
 	pmb887x_vic_frame_t irq_frames[VIC_FRAME_DEPTH];
 	pmb887x_vic_frame_t fiq_frames[VIC_FRAME_DEPTH];
@@ -117,8 +119,18 @@ static void vic_set_line_level(pmb887x_vic_t *p, int irq, int level) {
 
 static void vic_update_state(pmb887x_vic_t *p) {
 	vic_update_pending(p);
-	qemu_set_irq(p->parent_irq, p->pending_irq >= 0);
-	qemu_set_irq(p->parent_fiq, p->pending_fiq >= 0);
+
+	bool is_irq_pending = p->pending_irq >= 0;
+	if (p->is_irq_asserted != is_irq_pending) {
+		p->is_irq_asserted = is_irq_pending;
+		qemu_set_irq(p->parent_irq, is_irq_pending);
+	}
+
+	bool is_fiq_pending = p->pending_fiq >= 0;
+	if (p->is_fiq_asserted != is_fiq_pending) {
+		p->is_fiq_asserted = is_fiq_pending;
+		qemu_set_irq(p->parent_fiq, is_fiq_pending);
+	}
 }
 
 static void vic_irq_handler(void *opaque, int irq, int level) {
@@ -228,9 +240,8 @@ static uint64_t vic_io_read(void *opaque, hwaddr haddr, unsigned size) {
 		}
 		
 		default:
-			IO_DUMP_READ(haddr + p->mmio.addr, size, 0xFFFFFFFF);
 			EPRINTF("unknown reg access: %02"PRIX64"\n", haddr);
-			exit(1);
+			break;
 	}
 	
 	IO_DUMP_READ(haddr + p->mmio.addr, size, value);
@@ -283,7 +294,7 @@ static void vic_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned si
 
 		default:
 			EPRINTF("unknown reg access: %02"PRIX64"\n", haddr);
-			exit(1);
+			break;
 	}
 	
 	vic_update_state(p);

@@ -30,6 +30,7 @@ arm_common_ss.add(when: 'CONFIG_PMB887X', if_true: files(
 	'adc.c',
 	'ebu.c',
 	'dmac.c',
+	'dma_sink.c',
 	'stm.c',
 	'cgu.c',
 	'scu.c',

@@ -241,6 +241,23 @@ void perf_report_prologue(const void *start, size_t size)
     }
 }
 
+void perf_report_named(const void *start, size_t size, const char *fmt, ...)
+{
+    va_list ap;
+
+    if (!perfmap) {
+        return;
+    }
+
+    flockfile(perfmap);
+    fprintf(perfmap, "%"PRIxPTR" %zx ", (uintptr_t)start, size);
+    va_start(ap, fmt);
+    vfprintf(perfmap, fmt, ap);
+    va_end(ap);
+    fputc('\n', perfmap);
+    funlockfile(perfmap);
+}
+
 /* Write a JIT_CODE_DEBUG_INFO jitdump entry. */
 static void write_jr_code_debug_info(const void *start,
                                      const struct debuginfo_query *q,

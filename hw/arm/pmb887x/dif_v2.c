@@ -21,6 +21,7 @@
 #include "hw/arm/pmb887x/gen/cpu_regs.h"
 #include "hw/arm/pmb887x/regs_dump.h"
 #include "hw/arm/pmb887x/mod.h"
+#include "hw/arm/pmb887x/dma_sink.h"
 #include "hw/arm/pmb887x/trace.h"
 
 #define TYPE_PMB887X_DIF	"pmb887x-dif-v2"
@@ -289,8 +290,7 @@ static bool dif_has_tx_fifo_free(pmb887x_dif_t *p, uint32_t stages) {
 	return FIFO_SIZE - dif_get_tx_fifo_level(p) >= stages;
 }
 
-static void dif_occupy_tx_bus(pmb887x_dif_t *p) {
-	uint64_t word_ps = dif_get_bus_word_ps(p);
+static void dif_occupy_tx_bus(pmb887x_dif_t *p, uint64_t word_ps) {
 	uint32_t words = p->tx_bus_words;
 	p->tx_bus_words = 0;
 	if (word_ps == 0 || words == 0)
@@ -309,7 +309,9 @@ static void dif_wake_on_tx_fifo_free(pmb887x_dif_t *p, uint32_t stages) {
 		return;
 
 	int64_t end_ps = p->tx_bus_end_ps[(p->tx_bus_first + retiring_stages - 1) % FIFO_SIZE];
-	timer_mod(p->tx_bus_timer, DIV_ROUND_UP(end_ps, 1000));
+	int64_t wake_ns = DIV_ROUND_UP(end_ps, 1000);
+	if ((int64_t) timer_expire_time_ns(p->tx_bus_timer) != wake_ns)
+		timer_mod(p->tx_bus_timer, wake_ns);
 }
 
 /*
@@ -593,6 +595,11 @@ static uint32_t dif_convert_color(pmb887x_dif_t *p, uint32_t value) {
 
 static void dif_rx_from_bus(pmb887x_dif_t *p);
 
+static void dif_tx_fifo_push(pmb887x_dif_t *p, uint32_t value) {
+	pmb887x_fifo32_push(&p->tx_fifo, value);
+	pmb887x_fifo32_push(&p->tx_csreg_fifo, p->csreg);
+}
+
 static void dif_fifo_write(pmb887x_dif_t *p, uint32_t value) {
 	if (!dif_has_tx_fifo_free(p, 1)) {
 		DPRINTF("TX FIFO overflow!\n");
@@ -604,9 +611,58 @@ static void dif_fifo_write(pmb887x_dif_t *p, uint32_t value) {
 	DPRINTF("TXD %08X csreg=%02X run=%d state=%d fifo=%d\n", value, p->csreg, dif_is_running(p),
 		p->state, pmb887x_fifo_count(&p->tx_fifo));
 
-	pmb887x_fifo32_push(&p->tx_fifo, value);
-	pmb887x_fifo32_push(&p->tx_csreg_fifo, p->csreg);
+	dif_tx_fifo_push(p, value);
 	dif_schedule(p);
+}
+
+static bool dif_can_write_tx_block(pmb887x_dif_t *p, uint32_t count) {
+	if (dif_is_serial(p))
+		return false;
+	if (!p->tx_fifo_req)
+		return false;
+	if (p->rx_words_in_fifo != 0)
+		return false;
+	if (!dif_has_tx_fifo_free(p, count))
+		return false;
+	if (p->state == DIF_STATE_NONE)
+		return true;
+	if (p->state != DIF_STATE_TX)
+		return false;
+
+	uint32_t words_per_entry = 4 / dif_get_tx_align(p);
+	uint32_t queued_words = pmb887x_fifo_count(&p->tx_fifo) * words_per_entry;
+	return p->tx_words_remaining > queued_words + (count - 1) * words_per_entry;
+}
+
+static bool dif_dma_write_block(
+	pmb887x_dma_sink_t *sink,
+	MemoryRegion *mr,
+	hwaddr addr,
+	const uint8_t *data,
+	uint32_t width,
+	uint32_t count,
+	bool is_increment
+) {
+	pmb887x_dif_t *p = PMB887X_DIF(sink);
+	if (mr != &p->mmio)
+		return false;
+	if (width != sizeof(uint32_t))
+		return false;
+
+	hwaddr last_addr = is_increment ? addr + (count - 1) * width : addr;
+	if (addr < DIFv2_TXD || last_addr > DIFv2_TXD + FIFO_IO_SIZE)
+		return false;
+	if (!dif_can_write_tx_block(p, count))
+		return false;
+
+	for (uint32_t i = 0; i < count; i++) {
+		hwaddr word_addr = is_increment ? addr + i * width : addr;
+		uint32_t value = ldl_le_p(data + i * width);
+		IO_DUMP_WRITE(word_addr + p->mmio.addr, width, value);
+		dif_tx_fifo_push(p, value);
+	}
+	dif_schedule(p);
+	return true;
 }
 
 static void dif_fifo_read(pmb887x_dif_t *p, uint64_t *value) {
@@ -781,7 +837,6 @@ static void dif_send_parallel_words(pmb887x_dif_t *p, const uint32_t *words, uin
 	DPRINTF("BUS %u words cd=%d\n", count, (dif_get_transfer_csreg(p) & DIFv2_CSREG_CD) != 0);
 
 	ssi_transfer_block(p->bus, words, NULL, count);
-	p->tx_bus_words += count;
 }
 
 static bool dif_convert_word(pmb887x_dif_t *p, uint16_t value, uint32_t *output) {
@@ -824,9 +879,17 @@ static void dif_tx_from_fifo(pmb887x_dif_t *p) {
 	uint32_t align = dif_get_tx_align(p);
 	uint32_t word_bits = dif_get_tx_word_bits(p);
 
+	uint64_t bus_word_ps = dif_get_bus_word_ps(p);
+	uint32_t parallel_words[FIFO_SIZE * 4 * 4];
+	uint32_t parallel_word_count = 0;
 	while (pmb887x_fifo_count(&p->tx_fifo) > 0) {
 		uint32_t value = pmb887x_fifo32_pop(&p->tx_fifo);
-		p->tx_csreg = pmb887x_fifo32_pop(&p->tx_csreg_fifo);
+		uint32_t tx_csreg = pmb887x_fifo32_pop(&p->tx_csreg_fifo);
+		if (parallel_word_count != 0 && tx_csreg != p->tx_csreg) {
+			dif_send_parallel_words(p, parallel_words, parallel_word_count);
+			parallel_word_count = 0;
+		}
+		p->tx_csreg = tx_csreg;
 		p->is_tx_csreg_active = true;
 		dif_update_gpio_state(p);
 		uint32_t bsconf_word_count = dif_get_bsconf_word_count(p);
@@ -859,22 +922,23 @@ static void dif_tx_from_fifo(pmb887x_dif_t *p) {
 				value = dif_convert_color(p, value);
 
 			uint32_t lanes = 4 / align;
-			uint32_t parallel_words[4 * 4];
-			uint32_t parallel_word_count = 0;
 			for (uint32_t lane = 0; lane < lanes; lane++) {
 				for (uint32_t i = 0; i < bsconf_word_count; i++) {
 					uint16_t word = (value >> (bsconf_word_bits * (lane * align + i))) & ((1 << bsconf_word_bits) - 1);
 
 					if (!dif_is_serial(p)) {
 						parallel_words[parallel_word_count++] = word;
+						p->tx_bus_words++;
 					} else if (!dif_send_word(p, word)) {
 						goto done;
 					}
 				}
 			}
-			if (parallel_word_count != 0)
-				dif_send_parallel_words(p, parallel_words, parallel_word_count);
 		} else {
+			if (parallel_word_count != 0) {
+				dif_send_parallel_words(p, parallel_words, parallel_word_count);
+				parallel_word_count = 0;
+			}
 			for (uint32_t i = 0; i < words_in_fifo_reg; i++) {
 				uint32_t converted;
 				uint16_t word = (value >> (8 * i * align)) & dif_get_word_mask(word_bits);
@@ -883,7 +947,7 @@ static void dif_tx_from_fifo(pmb887x_dif_t *p) {
 					goto done;
 			}
 		}
-		dif_occupy_tx_bus(p);
+		dif_occupy_tx_bus(p, bus_word_ps);
 		if (p->tx_words_remaining != 0) {
 			dif_rx_fifo_req(p);
 			if (p->rx_fifo_req)
@@ -895,6 +959,8 @@ static void dif_tx_from_fifo(pmb887x_dif_t *p) {
 		dif_flush_rx_buffer(p);
 
 done:
+	if (parallel_word_count != 0)
+		dif_send_parallel_words(p, parallel_words, parallel_word_count);
 	p->is_tx_csreg_active = false;
 	dif_update_gpio_state(p);
 }
@@ -1209,9 +1275,8 @@ static uint64_t dif_io_read(void *opaque, hwaddr haddr, unsigned size) {
 			break;
 
 		default:
-			IO_DUMP_READ(haddr + p->mmio.addr, size, 0xFFFFFFFF);
 			EPRINTF("unknown reg access: %02"PRIX64"\n", haddr);
-			exit(1);
+			break;
 	}
 
 	IO_DUMP_READ(haddr + p->mmio.addr, size, value);
@@ -1392,7 +1457,7 @@ static void dif_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned si
 
 		default:
 			EPRINTF("unknown reg access: %02"PRIX64"\n", haddr);
-			exit(1);
+			break;
 	}
 }
 
@@ -1627,6 +1692,9 @@ static void dif_class_init(ObjectClass *klass, const void *data) {
 	device_class_set_legacy_reset(dc, dif_reset);
 	dc->realize = dif_realize;
 	dc->unrealize = dif_unrealize;
+
+	pmb887x_dma_sink_class_t *dma_sink = PMB887X_DMA_SINK_CLASS(klass);
+	dma_sink->write_block = dif_dma_write_block;
 }
 
 static const TypeInfo dif_info = {
@@ -1635,6 +1703,10 @@ static const TypeInfo dif_info = {
     .instance_size 	= sizeof(pmb887x_dif_t),
     .instance_init 	= dif_init,
     .class_init    	= dif_class_init,
+    .interfaces		= (const InterfaceInfo[]) {
+        { TYPE_PMB887X_DMA_SINK },
+        { }
+    },
 };
 
 static void dif_register_types(void) {

@@ -261,7 +261,7 @@ static uint64_t tpu_io_read(void *opaque, hwaddr haddr, unsigned size) {
 			DPRINTF("TPU_COUNTER=%ld\n", value);
 		break;
 
-		case TPU_RAM0 ... (TPU_RAM0 + TPU_RAM_SIZE):
+		case TPU_RAM0 ... (TPU_RAM0 + TPU_RAM_SIZE - 1):
 			value = tpu_ram_read(p, haddr, size);
 		break;
 
@@ -286,10 +286,8 @@ static uint64_t tpu_io_read(void *opaque, hwaddr haddr, unsigned size) {
 		break;
 
 		default:
-			IO_DUMP_READ(haddr + p->mmio.addr, size, 0xFFFFFFFF);
 			EPRINTF("unknown reg access: %02"PRIX64"\n", haddr);
-			exit(1);
-		break;
+			break;
 	}
 
 	IO_DUMP_READ(haddr + p->mmio.addr, size, value);
@@ -362,7 +360,7 @@ static void tpu_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned si
 			tpu_update_state(p);
 		break;
 
-		case TPU_RAM0 ... (TPU_RAM0 + TPU_RAM_SIZE):
+		case TPU_RAM0 ... (TPU_RAM0 + TPU_RAM_SIZE - 1):
 			tpu_ram_write(p, haddr, value, size);
 		break;
 
@@ -388,8 +386,7 @@ static void tpu_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned si
 
 		default:
 			EPRINTF("unknown reg access: %02"PRIX64"\n", haddr);
-			exit(1);
-		break;
+			break;
 	}
 }
 
@@ -407,7 +404,7 @@ static void tpu_init(Object *obj) {
 	struct pmb887x_tpu_t *p = PMB887X_TPU(obj);
 	pmb887x_clc_init(&p->clc, DEVICE(obj));
 	pmb887x_clc_set_callback(&p->clc, tpu_clock_update, p);
-	memory_region_init_io(&p->mmio, obj, &io_ops, p, "pmb887x-tpu", TPU_RAM0 + TPU_RAM_SIZE);
+	memory_region_init_io(&p->mmio, obj, &io_ops, p, "pmb887x-tpu", TPU_IO_SIZE);
 	sysbus_init_mmio(SYS_BUS_DEVICE(obj), &p->mmio);
 
 	sysbus_init_irq(SYS_BUS_DEVICE(obj), &p->unk_irq[0]);

@@ -19,6 +19,7 @@
 #include "hw/arm/pmb887x/regs_dump.h"
 #include "hw/arm/pmb887x/mod.h"
 #include "hw/arm/pmb887x/dmac.h"
+#include "hw/arm/pmb887x/dma_sink.h"
 #include "hw/arm/pmb887x/trace.h"
 
 #define DMAC_MULTIPLEXOR	2
@@ -82,7 +83,7 @@ struct pmb887x_dmac_t {
 	pmb887x_dmac_ch_t ch[DMAC_CHANNELS];
 
 	bool dmac_pending;
-	bool is_busy;
+	bool is_in_pass;
 	uint32_t config;
 	uint32_t sync;
 
@@ -171,7 +172,7 @@ static void dmac_write(pmb887x_dmac_t *p, hwaddr addr, const uint8_t *buffer, ui
 static void dmac_schedule(pmb887x_dmac_t *p) {
 	p->dmac_pending = true;
 
-	if (clock_is_enabled(p->clock) && !timer_pending(p->timer))
+	if (!p->is_in_pass && clock_is_enabled(p->clock) && !timer_pending(p->timer))
 		timer_mod(p->timer, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL));
 }
 
@@ -461,13 +462,22 @@ static void dmac_fifo_drain(pmb887x_dmac_t *p, pmb887x_dmac_ch_t *ch, uint32_t b
 	ch->fifo_bytes -= bytes;
 
 	ch->dst_addr &= ~(dst_width - 1);
-	for (uint32_t offset = 0; offset < bytes; offset += dst_width) {
-		if (dst_endian == DEVICE_BIG_ENDIAN && dst_width > 1)
-			dmac_swap_byte_order(buffer + offset, dst_width, 1);
-		dmac_write(p, ch->dst_addr, buffer + offset, dst_width);
-		if ((ch->control & DMAC_CH_CONTROL_DI))
-			ch->dst_addr += dst_width;
+	uint32_t count = DIV_ROUND_UP(bytes, dst_width);
+	if (dst_endian == DEVICE_BIG_ENDIAN && dst_width > 1)
+		dmac_swap_byte_order(buffer, dst_width, count);
+
+	bool is_increment = (ch->control & DMAC_CH_CONTROL_DI) != 0;
+	bool has_whole_transfers = (bytes % dst_width) == 0;
+	bool is_block_written = has_whole_transfers &&
+		pmb887x_dma_sink_write_block(&p->downstream_as, ch->dst_addr, buffer, dst_width, count, is_increment);
+	if (!is_block_written) {
+		for (uint32_t i = 0; i < count; i++) {
+			hwaddr addr = is_increment ? ch->dst_addr + i * dst_width : ch->dst_addr;
+			dmac_write(p, addr, buffer + i * dst_width, dst_width);
+		}
 	}
+	if (is_increment)
+		ch->dst_addr += count * dst_width;
 
 	uint32_t delivered_bytes = ch->delivered_byte_remainder + bytes;
 	ch->delivered_byte_remainder = delivered_bytes % src_width;
@@ -1206,7 +1216,9 @@ static void dmac_timer_reset(void *opaque) {
 	if (!clock_is_enabled(p->clock))
 		return;
 
+	RCU_READ_LOCK_GUARD();
 	int budget = DMAC_MAX_BURSTS_PER_PASS;
+	p->is_in_pass = true;
 	while (p->dmac_pending && budget-- > 0) {
 		p->dmac_pending = false;
 		for (int i = 0; i < DMAC_CHANNELS; i++)
@@ -1214,6 +1226,7 @@ static void dmac_timer_reset(void *opaque) {
 		if (pmb887x_srb_get_ris(&p->srb_tc) || pmb887x_srb_get_ris(&p->srb_err))
 			break;
 	}
+	p->is_in_pass = false;
 	if (p->dmac_pending)
 		timer_mod(p->timer, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + 1);
 }
@@ -1353,7 +1366,7 @@ static void dmac_reset(DeviceState *dev) {
 		p->ch[i] = (pmb887x_dmac_ch_t) { .id = i };
 
 	p->dmac_pending = false;
-	p->is_busy = false;
+	p->is_in_pass = false;
 	p->config = 0;
 	p->sync = 0;
 	memset(p->sel, 0, sizeof(p->sel));

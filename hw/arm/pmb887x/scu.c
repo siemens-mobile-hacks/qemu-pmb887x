@@ -377,9 +377,8 @@ static uint64_t scu_io_read(void *opaque, hwaddr haddr, unsigned size) {
 			break;
 
 		default:
-			IO_DUMP_READ(haddr + p->mmio.addr, size, 0xFFFFFFFF);
 			EPRINTF("unknown reg access: %02"PRIX64"\n", haddr);
-			exit(1);
+			break;
 	}
 	
 	IO_DUMP_READ(haddr + p->mmio.addr, size, value);
@@ -521,7 +520,7 @@ static void scu_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned si
 			break;
 		default:
 			EPRINTF("unknown reg access: %02"PRIX64"\n", haddr);
-			exit(1);
+			break;
 	}
 	
 	scu_update_state(p);

@@ -6,6 +6,7 @@
 #include "tcg/tcg.h"
 #include "tcg/tcg-internal.h"
 #include "tcg/tcg-op-common.h"
+#include "tcg/perf.h"
 
 #include "hw/arm/pmb887x/dsp/tcg.h"
 #include "hw/arm/pmb887x/dsp/core.h"
@@ -1329,6 +1330,7 @@ static TranslationBlock *tcg_compile_block(uint32_t pc, uint16_t words, uint16_t
 	}
 
 	tb->tc.size = code_size;
+	perf_report_named(tb->tc.ptr, code_size, "dsp-0x%05" PRIx32, pc);
 	qatomic_set(&tcg_ctx->code_gen_ptr, (void *) ROUND_UP((uintptr_t) code + code_size, CODE_GEN_ALIGN));
 	*error = 0;
 	return tb;
