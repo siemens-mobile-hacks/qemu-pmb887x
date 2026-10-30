@@ -37,6 +37,7 @@
 #include "qemu/guest-random.h"
 #include "hw/core/boards.h"
 #include "accel/tcg/cpu-loop.h"
+#include "accel/tcg/memory-timing.h"
 #include "tcg/startup.h"
 #include "tcg-accel-ops.h"
 #include "tcg-accel-ops-mttcg.h"
@@ -131,7 +132,7 @@ static void *mttcg_cpu_thread_fn(void *arg)
     qemu_guest_random_seed_thread_part2(cpu->random_seed);
 
     if (qemu_virtual_timers_on_vcpu) {
-        tcg_cflags_set(cpu, CF_COUNT_CYCLES);
+        tcg_cflags_set(cpu, CF_COUNT_CYCLES | tcg_memory_timing_cflags());
         cpu_clock_set_owner(&cpu->neg.cycle_count, &cpu->neg.cycle_limit);
     }
 

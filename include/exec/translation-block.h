@@ -85,6 +85,8 @@ struct TranslationBlock {
 #define CF_PCREL         0x00020000 /* Opcodes in TB are PC-relative */
 #define CF_BP_PAGE       0x00040000 /* Breakpoint present in code page */
 #define CF_COUNT_CYCLES  0x00080000 /* Count CPU cycles in neg.cycle_count */
+#define CF_MEMORY_TIMING 0x00700000 /* CF_COUNT_CYCLES memory timing class */
+#define CF_MEMORY_TIMING_SHIFT 20
 #define CF_CLUSTER_MASK  0xff000000 /* Top 8 bits are cluster ID */
 #define CF_CLUSTER_SHIFT 24
 
@@ -95,6 +97,14 @@ struct TranslationBlock {
     /* size of target code for this block (1 <= size <= TARGET_PAGE_SIZE) */
     uint16_t size;
     uint16_t icount;
+
+    /*
+     * CF_COUNT_CYCLES: the cycles of entering this code from a cold I-cache,
+     * its code lines, and tcg_memory_fetch_lines at its last lookup.
+     */
+    uint32_t fetch_cycles;
+    uint32_t fetch_line_count;
+    uint32_t fetch_mark;
 
     struct tb_tc tc;
 

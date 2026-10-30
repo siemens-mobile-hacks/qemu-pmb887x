@@ -23,6 +23,7 @@
 #include "qapi/type-helpers.h"
 #include "hw/core/cpu.h"
 #include "accel/tcg/cpu-loop.h"
+#include "accel/tcg/memory-timing.h"
 #include "accel/tcg/cpu-ops.h"
 #include "accel/tcg/helper-retaddr.h"
 #include "trace.h"
@@ -400,6 +401,9 @@ const void *HELPER(lookup_tb_ptr)(CPUArchState *env)
     tb = tb_lookup(cpu, &s);
     if (tb == NULL) {
         return tcg_code_gen_epilogue;
+    }
+    if (tb_cflags(tb) & CF_MEMORY_TIMING) {
+        tcg_memory_timing_fetch(cpu, tb);
     }
 
     if (qemu_loglevel_mask(CPU_LOG_TB_CPU | CPU_LOG_EXEC)) {
@@ -995,6 +999,9 @@ cpu_exec_loop(CPUState *cpu, SyncClocks *sc)
                 jc->array[h].pc = s.pc;
                 qatomic_set(&jc->array[h].tb, tb);
             }
+            if (tb_cflags(tb) & CF_MEMORY_TIMING) {
+                tcg_memory_timing_fetch(cpu, tb);
+            }
 
 #ifndef CONFIG_USER_ONLY
             /*
@@ -1007,6 +1014,11 @@ cpu_exec_loop(CPUState *cpu, SyncClocks *sc)
                 last_tb = NULL;
             }
 #endif
+            /* A TB must not jump into code timed for another memory class. */
+            if (last_tb &&
+                ((tb_cflags(last_tb) ^ tb_cflags(tb)) & CF_MEMORY_TIMING)) {
+                last_tb = NULL;
+            }
             /* See if we can patch the calling TB. */
             if (last_tb) {
                 tb_add_jump(last_tb, tb_exit, tb);

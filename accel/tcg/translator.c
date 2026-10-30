@@ -15,6 +15,7 @@
 #include "accel/tcg/cpu-mmu-index.h"
 #include "exec/target_page.h"
 #include "exec/translator.h"
+#include "accel/tcg/memory-timing.h"
 #include "exec/plugin-gen.h"
 #include "tcg/tcg-op-common.h"
 #include "internal-common.h"
@@ -181,6 +182,8 @@ void translator_loop(CPUState *cpu, TranslationBlock *tb, int *max_insns,
     db->is_jmp = DISAS_NEXT;
     db->num_insns = 0;
     db->num_extra_cycles = 0;
+    db->fetch_cycles = 0;
+    db->fetch_line_count = 0;
     db->max_insns = *max_insns;
     db->insn_start = NULL;
     db->fake_insn = false;
@@ -254,6 +257,9 @@ void translator_loop(CPUState *cpu, TranslationBlock *tb, int *max_insns,
 
     /* Emit code to exit the TB, as indicated by db->is_jmp.  */
     ops->tb_stop(db, cpu);
+    tb->fetch_cycles = db->fetch_cycles;
+    tb->fetch_line_count = db->fetch_line_count;
+    tb->fetch_mark = tcg_memory_fetch_lines - tcg_memory_fetch_cache_lines - 1;
     gen_tb_end(tb, cflags, icount_start_insn, db->num_insns, count_cycles_op,
                db->num_insns + db->num_extra_cycles);
     if (cflags & CF_COUNT_CYCLES) {

@@ -1952,6 +1952,9 @@ static uint64_t int_ld_mmio_beN(CPUState *cpu, CPUTLBEntryFull *full,
         this_size = 1 << this_mop;
         this_mop |= MO_BE;
 
+        if (tcg_cflags_has(cpu, CF_MEMORY_TIMING)) {
+            cpu->neg.cycle_count += memory_region_get_read_cycles(mr);
+        }
         r = memory_region_dispatch_read(mr, mr_offset, &val,
                                         this_mop, full->attrs);
         if (unlikely(r != MEMTX_OK)) {

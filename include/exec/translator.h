@@ -73,6 +73,9 @@ struct DisasContextBase {
     int num_insns;
     /* CF_COUNT_CYCLES cycles beyond one per instruction. */
     int num_extra_cycles;
+    /* CF_COUNT_CYCLES cycles and code lines of entering the TB from a cold I-cache. */
+    uint32_t fetch_cycles;
+    uint32_t fetch_line_count;
     int max_insns;
     bool plugin_enabled;
     bool fake_insn;
