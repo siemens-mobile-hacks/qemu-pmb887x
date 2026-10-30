@@ -2383,6 +2383,36 @@ bool memory_region_snapshot_get_dirty(MemoryRegion *mr, DirtyBitmapSnapshot *sna
                 memory_region_get_ram_addr(mr) + addr, size);
 }
 
+void memory_region_set_read_cycles(MemoryRegion *mr, uint32_t cycles)
+{
+    mr->read_cycles = cycles;
+}
+
+uint32_t memory_region_get_read_cycles(MemoryRegion *mr)
+{
+    for (; mr; mr = mr->container) {
+        if (mr->read_cycles) {
+            return mr->read_cycles;
+        }
+    }
+    return 0;
+}
+
+void memory_region_set_fetch_kind(MemoryRegion *mr, uint8_t kind)
+{
+    mr->fetch_kind = kind;
+}
+
+uint8_t memory_region_get_fetch_kind(MemoryRegion *mr)
+{
+    for (; mr; mr = mr->container) {
+        if (mr->fetch_kind) {
+            return mr->fetch_kind;
+        }
+    }
+    return 0;
+}
+
 void memory_region_set_readonly(MemoryRegion *mr, bool readonly)
 {
     if (mr->readonly != readonly) {
