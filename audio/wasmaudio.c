@@ -44,7 +44,8 @@ struct AudioWasm {
 
 /*
  * Header fields are int32 so the page can view them as one Int32Array and use
- * Atomics on the two cursors.  @read and @underruns are written only by the
+ * Atomics on the two cursors.  @read, @underruns and the playback stats
+ * after it (read by tools, never by qemu) are written only by the
  * consumer, @write only by the producer, @active only by the page.  Both
  * cursors are free-running frame counters; they wrap together, so the
  * difference stays correct as two's complement.
@@ -59,7 +60,10 @@ typedef struct WasmAudioRing {
     int32_t active;
     int32_t generation;                 /* bumped whenever the format changes */
     int32_t underruns;
-    int32_t reserved[7];
+    int32_t gap_frames;                 /* output frames silenced by dropouts */
+    int32_t prime_ms;                   /* current cushion */
+    int32_t rate_milli;                 /* producer speed, 1000 = real time */
+    int32_t reserved[4];
     int16_t data[WASM_AUDIO_RING_FRAMES * WASM_AUDIO_MAX_CHANNELS];
 } WasmAudioRing;
 

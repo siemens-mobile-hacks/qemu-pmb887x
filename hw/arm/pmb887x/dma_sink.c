@@ -18,12 +18,23 @@ bool pmb887x_dma_sink_write_block(
 	if (mapped_size < size)
 		return false;
 
+	/*
+	 * An interface cast is a type-table lookup by name on every call, and a
+	 * display refill drains the DMAC FIFO hundreds of thousands of times per
+	 * second into the same few owners; their types never change.
+	 */
+	static __thread Object *last_owner;
+	static __thread pmb887x_dma_sink_class_t *last_class;
 	Object *owner = memory_region_owner(mr);
-	pmb887x_dma_sink_t *sink = (pmb887x_dma_sink_t *) object_dynamic_cast(owner, TYPE_PMB887X_DMA_SINK);
-	if (!sink)
+	if (owner != last_owner) {
+		Object *sink = object_dynamic_cast(owner, TYPE_PMB887X_DMA_SINK);
+		last_class = sink ? PMB887X_DMA_SINK_GET_CLASS(sink) : NULL;
+		last_owner = owner;
+	}
+	if (!last_class)
 		return false;
 
-	return PMB887X_DMA_SINK_GET_CLASS(sink)->write_block(sink, mr, offset, data, width, count, is_increment);
+	return last_class->write_block((pmb887x_dma_sink_t *) owner, mr, offset, data, width, count, is_increment);
 }
 
 static const TypeInfo dma_sink_info = {

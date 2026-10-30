@@ -117,6 +117,8 @@ struct teak_tcg_block_cache_entry_t {
 	uint32_t block_repeat_end[TEAK_BLOCK_REPEAT_LEVELS];
 	uint8_t block_repeat_level;
 	bool repeat_resume;
+	/* the decode depends on no block-repeat state but repeat_resume */
+	bool level_free;
 	teak_tcg_block_cache_entry_t *next;
 };
 
@@ -1349,6 +1351,8 @@ static void tcg_clear_block_cache(void) {
 	}
 }
 
+static bool tcg_is_block_repeat(const teak_insn_t *instruction);
+
 static void tcg_check_block_cache(void) {
 	unsigned int flush_count = qatomic_read(&tb_ctx.tb_flush_count);
 	if (tcg_block_cache_context == tcg_ctx && tcg_block_cache_flush_count == flush_count)
@@ -1406,6 +1410,35 @@ static bool tcg_same_block_repeat_ends(const uint32_t *cached_ends, const uint32
 	return true;
 }
 
+static bool tcg_block_overlaps(const teak_tcg_block_t *block, uint32_t start, uint32_t end) {
+	return block->pc <= end && block->pc + block->words - 1 >= start;
+}
+
+/*
+ * TEAK_TCG_CHECK_LEVEL_FREE=1: decode every block a level-free hit reuses
+ * under the state it runs in and abort unless the cached one matches.
+ */
+static bool tcg_check_level_free;
+static bool tcg_decode_block(teak_tcg_core_t *core, teak_tcg_block_t *block, size_t max_instructions);
+
+static void tcg_verify_level_free(teak_tcg_core_t *core, const teak_tcg_block_cache_entry_t *entry) {
+	teak_tcg_block_t *decoded = g_new(teak_tcg_block_t, 1);
+	teak_translation_error_t error = core->translation_error;
+	uint32_t error_address = core->translation_error_address;
+	bool same = tcg_decode_block(core, decoded, TEAK_TCG_MAX_BLOCK_INSTRUCTIONS) &&
+		(memcmp(decoded, &entry->block, sizeof(*decoded)) == 0 ||
+			tcg_cached_block_is_prefix(&entry->block, decoded));
+
+	core->translation_error = error;
+	core->translation_error_address = error_address;
+	g_free(decoded);
+	if (!same) {
+		fprintf(stderr, "teak: level-free block %04X decodes differently at bcn=%u (cached at %u)\n",
+			entry->block.pc, core->state.bcn, entry->block_repeat_level);
+		abort();
+	}
+}
+
 static inline QEMU_ALWAYS_INLINE teak_tcg_block_cache_entry_t *tcg_find_cached_entry_fast(teak_tcg_core_t *core) {
 	teak_tcg_block_cache_entry_t *entry;
 	uint8_t level = core->state.bcn;
@@ -1414,12 +1447,28 @@ static inline QEMU_ALWAYS_INLINE teak_tcg_block_cache_entry_t *tcg_find_cached_e
 	while (entry != NULL) {
 		bool same_cache = entry->cache_id == core->cache_id;
 		bool same_context = entry->program_context == core->program_context;
-		bool same_level = entry->block_repeat_level == level;
 		bool same_repeat = entry->repeat_resume == core->state.repeat_active;
-		if (same_cache && same_context && same_level && same_repeat &&
-			tcg_same_block_repeat_ends(entry->block_repeat_end, core->state.block_repeat_end, level)) {
-			core->cache_fast_hits++;
-			return entry;
+		if (same_cache && same_context && same_repeat) {
+			bool same_level = entry->block_repeat_level == level;
+			/*
+			 * A level-free block outside the active repeat body decodes the
+			 * same at any nesting: the routines a loop body calls are reached
+			 * under every loop in the program.
+			 */
+			bool any_level = entry->level_free && (level == 0 ||
+				!tcg_block_overlaps(&entry->block, core->state.block_repeat_start[level - 1],
+					core->state.block_repeat_end[level - 1]));
+			if (same_level &&
+				tcg_same_block_repeat_ends(entry->block_repeat_end, core->state.block_repeat_end, level)) {
+				core->cache_fast_hits++;
+				return entry;
+			}
+			if (any_level) {
+				if (unlikely(tcg_check_level_free))
+					tcg_verify_level_free(core, entry);
+				core->cache_fast_hits++;
+				return entry;
+			}
 		}
 		entry = entry->next;
 	}
@@ -1443,6 +1492,19 @@ static void tcg_cache_block(const teak_tcg_core_t *core, const teak_tcg_block_t 
 	memcpy(entry->block_repeat_end, core->state.block_repeat_end, sizeof(entry->block_repeat_end));
 	entry->block_repeat_level = core->state.bcn;
 	entry->repeat_resume = block->repeat_resume;
+	/*
+	 * tcg_decode_block() reads the block-repeat state only for a repeat
+	 * setup, a break, and instructions inside the active body, and the
+	 * emitted code takes it from the setup levels it recorded.
+	 */
+	entry->level_free = core->state.bcn == 0 ||
+		!tcg_block_overlaps(block, core->state.block_repeat_start[core->state.bcn - 1],
+			core->state.block_repeat_end[core->state.bcn - 1]);
+	for (size_t i = 0; i < block->instruction_count && entry->level_free; i++) {
+		const teak_insn_t *instruction = &block->instructions[i];
+		if (tcg_is_block_repeat(instruction) || instruction->opcode == TEAK_OP_BREAK)
+			entry->level_free = false;
+	}
 	entry->next = tcg_block_cache[block->pc];
 	tcg_block_cache[block->pc] = entry;
 }
@@ -5038,8 +5100,10 @@ static TranslationBlock *tcg_prepare_block(teak_tcg_core_t *core, teak_tcg_block
 	int compile_error;
 	static int debug_max = -1;
 
-	if (debug_max < 0)
+	if (debug_max < 0) {
 		debug_max = getenv("TEAK_TCG_MAX_BLOCK") ? atoi(getenv("TEAK_TCG_MAX_BLOCK")) : 0;
+		tcg_check_level_free = getenv("TEAK_TCG_CHECK_LEVEL_FREE") != NULL;
+	}
 	if (debug_max > 0)
 		max_instructions = debug_max;
 	tcg_memory = &core->memory;
