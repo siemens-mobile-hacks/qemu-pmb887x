@@ -91,16 +91,6 @@ struct DisasContextBase {
     int record_start;
     int record_len;
     uint8_t record[32];
-#ifdef CONFIG_TCG_WASM64
-    /*
-     * The guest page host_addr[1] maps: the page after pc_first unless the
-     * frontend inlined a callee from elsewhere (target/arm
-     * w64_inline_call).  @w64_lin_end, when set, is where the TB's linear
-     * range ends because translation stopped inside a callee.
-     */
-    vaddr w64_page1;
-    vaddr w64_lin_end;
-#endif
 };
 
 /**

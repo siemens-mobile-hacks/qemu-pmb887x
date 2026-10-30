@@ -182,20 +182,6 @@ static int cpu_unwind_data_from_tb(TranslationBlock *tb, uintptr_t host_pc,
     return -1;
 }
 
-#ifdef CONFIG_TCG_WASM64
-__thread struct W64InlRec w64_inl_pending[W64_INL_REC];
-__thread unsigned w64_inl_pending_n;
-
-int w64_tb_insn_index(TranslationBlock *tb, uintptr_t host_pc)
-{
-    uint64_t data[INSN_START_WORDS];
-    uint32_t cycles = 0;
-    int left = cpu_unwind_data_from_tb(tb, host_pc, data, &cycles);
-
-    return left < 0 ? -1 : tb->icount - left;
-}
-#endif
-
 /* Does @host_pc name a TB at all?  (See cpu_restore_state.) */
 static bool host_pc_in_code_gen_buffer(uintptr_t host_pc)
 {
@@ -407,8 +393,6 @@ TranslationBlock *tb_gen_code(CPUState *cpu, TCGTBCPUState s)
     tb->cflags = s.cflags;
 #ifdef CONFIG_TCG_WASM64
     tb->w64_lc.gen = 0;
-    tb->w64_inl = 0;
-    tb->w64_inl_vpage1 = 0;
 #endif
     tb_set_page_addr0(tb, phys_pc);
     tb_set_page_addr1(tb, -1);
@@ -421,12 +405,6 @@ TranslationBlock *tb_gen_code(CPUState *cpu, TCGTBCPUState s)
 
  restart_translate:
     trace_translate_block(tb, s.pc, tb->tc.ptr);
-#ifdef CONFIG_TCG_WASM64
-    /* a retry re-decides every inline; the -2 case dropped page 1 too */
-    tb->w64_inl = 0;
-    tb->w64_inl_vpage1 = 0;
-    w64_inl_pending_n = 0;
-#endif
 
     gen_code_size = setjmp_gen_code(env, tb, s.pc, host_pc, &max_insns, &ti);
     if (unlikely(gen_code_size < 0)) {
@@ -593,22 +571,6 @@ TranslationBlock *tb_gen_code(CPUState *cpu, TCGTBCPUState s)
         }
     }
 
-#ifdef CONFIG_TCG_WASM64
-    /* the inline records ride behind the unwind data; they fit in the
-     * TCG_HIGHWATER slack encode_search has already stayed under */
-    tb->w64_inl_rec = NULL;
-    tb->w64_inl_nrec = 0;
-    if (tb->w64_inl && w64_inl_pending_n) {
-        size_t rec_size = w64_inl_pending_n * sizeof(struct W64InlRec);
-        void *p = (void *)gen_code_buf + gen_code_size + search_size;
-
-        memcpy(p, w64_inl_pending, rec_size);
-        tb->w64_inl_rec = p;
-        tb->w64_inl_nrec = w64_inl_pending_n;
-        search_size += rec_size;
-    }
-#endif
-
     qatomic_set(&tcg_ctx->code_gen_ptr, (void *)
         ROUND_UP((uintptr_t)gen_code_buf + gen_code_size + search_size,
                  CODE_GEN_ALIGN));
@@ -675,11 +637,6 @@ TranslationBlock *tb_gen_code(CPUState *cpu, TCGTBCPUState s)
         tcg_tb_remove(tb);
         return existing_tb;
     }
-#ifdef CONFIG_TCG_WASM64
-    if (tb->w64_inl && tb_page_addr1(tb) != -1) {
-        w64_inl_list_add(tb);
-    }
-#endif
     return tb;
 }
 
@@ -868,14 +825,6 @@ void tcg_flush_jmp_cache(CPUState *cpu)
     CPUJumpCache *jc = cpu->tb_jmp_cache;
 
     cpu_tb_key_gen_bump(cpu);
-#ifdef CONFIG_TCG_WASM64
-    /*
-     * A mapping may have changed: drop the chains into TBs whose second
-     * page is an inlined callee's (tb-maint.c tb_unlink_inlined).  Not in
-     * cpu_tb_key_gen_bump() itself, which every TB invalidation calls.
-     */
-    tb_unlink_inlined();
-#endif
 
     /* During early initialization, the cache may not yet be allocated. */
     if (unlikely(jc == NULL)) {

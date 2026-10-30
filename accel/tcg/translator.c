@@ -161,16 +161,15 @@ bool translator_use_goto_tb(DisasContextBase *db, vaddr dest)
     /*
      * Check for the dest on the same page as the start of the TB, or
      * (wasm64) on the second page the TB has fetched from.  A TB with a
-     * second page is only chained into when that page is an inlined
-     * callee's (cpu-exec.c), and those chains are dropped at every
-     * TLB-flush site (tb_unlink_inlined), so the guard holds whichever
-     * page the branch comes from.
+     * second page is never chained into (cpu-exec.c), so it is entered
+     * only through a lookup, which checks that page's mapping too.
      */
 #ifdef CONFIG_TCG_WASM64
     if (likely(translator_is_same_page(db, dest))) {
         return true;
     }
-    return (dest & TARGET_PAGE_MASK) == db->w64_page1 &&
+    return (dest & TARGET_PAGE_MASK) ==
+           (db->pc_first & TARGET_PAGE_MASK) + TARGET_PAGE_SIZE &&
            db->host_addr[1] != NULL;
 #else
     return translator_is_same_page(db, dest);
@@ -204,10 +203,6 @@ void translator_loop(CPUState *cpu, TranslationBlock *tb, int *max_insns,
     db->record_start = 0;
     db->record_len = 0;
     db->code_mmuidx = cpu_mmu_index(cpu, true);
-#ifdef CONFIG_TCG_WASM64
-    db->w64_page1 = (pc & TARGET_PAGE_MASK) + TARGET_PAGE_SIZE;
-    db->w64_lin_end = 0;
-#endif
 
     ops->init_disas_context(db, cpu);
     tcg_debug_assert(db->is_jmp == DISAS_NEXT);  /* no early exit */
@@ -325,11 +320,6 @@ void translator_loop(CPUState *cpu, TranslationBlock *tb, int *max_insns,
 
     /* May be used by disas_log or plugin callbacks. */
     tb->size = db->pc_next - db->pc_first;
-#ifdef CONFIG_TCG_WASM64
-    if (unlikely(db->w64_lin_end)) {
-        tb->size = db->w64_lin_end - db->pc_first;
-    }
-#endif
     tb->icount = db->num_insns;
 
     if (plugin_enabled) {
@@ -382,17 +372,6 @@ static bool translator_ld(CPUArchState *env, DisasContextBase *db,
          * The unaligned read is never atomic.
          */
         size_t len0 = -(pc | TARGET_PAGE_MASK);
-#ifdef CONFIG_TCG_WASM64
-        /*
-         * A straddling read concludes on the *linear* next page, so it is
-         * translatable only while page 1 is still that page; an inlined
-         * callee may have taken it.
-         */
-        if (unlikely(db->w64_page1 !=
-                     (base & TARGET_PAGE_MASK) + TARGET_PAGE_SIZE)) {
-            return false;
-        }
-#endif
         memcpy(dest, host + (pc - base), len0);
         pc += len0;
         dest += len0;
@@ -409,14 +388,7 @@ static bool translator_ld(CPUArchState *env, DisasContextBase *db,
      * we would need to know the current width of the address space.
      * In the meantime, assert.
      */
-#ifdef CONFIG_TCG_WASM64
-    if (unlikely((pc & TARGET_PAGE_MASK) != db->w64_page1)) {
-        return false;
-    }
-    base = db->w64_page1;
-#else
     base = (base & TARGET_PAGE_MASK) + TARGET_PAGE_SIZE;
-#endif
     assert(((base ^ pc) & TARGET_PAGE_MASK) == 0);
     assert(((base ^ last) & TARGET_PAGE_MASK) == 0);
     host = db->host_addr[1];

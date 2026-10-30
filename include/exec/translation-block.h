@@ -148,35 +148,6 @@ struct TranslationBlock {
 #define W64_LC_DYN_FLAGS     1
 #define W64_LC_DYN_THUMB     2
 #define W64_LC_DYN_CONDEXEC  4
-    /*
-     * Call inlining (target/arm w64_inline_call): the TB's guest bytes
-     * are then not one linear span.  The linear part stays on the entry
-     * page, [pc, pc + size); the inlined callee's bytes occupy the
-     * page-relative range w64_inl_lo..hi[n] (inclusive) on page n.  Page
-     * 1, which such a TB never uses for a linear crossing, is the callee's
-     * page when the callee is not on the entry page: @w64_inl_vpage1 holds
-     * it as an offset from the entry page, because under CF_PCREL the TB
-     * may be entered at any virtual alias and only the bl displacement is
-     * fixed.  W64_INL_PAGE(n) says which hulls are set, W64_INL_VPAGE1 that
-     * page 1 is a callee page (tb_page_span, tb_lookup_cmp).
-     */
-    vaddr w64_inl_vpage1;
-    uint16_t w64_inl_lo[2];
-    uint16_t w64_inl_hi[2];
-    uint8_t w64_inl;
-#define W64_INL_PAGE(n)  (1u << (n))
-#define W64_INL_PAGE0    W64_INL_PAGE(0)
-#define W64_INL_VPAGE1   (1u << 2)
-    /*
-     * One record per inlined callee, in the code buffer after the unwind
-     * data: the callee's instructions are the TB's indices (idx0, idx1]
-     * and its bytes the page-relative hull lo..hi on tracked page @page.
-     * A store from one stream into another's bytes resumes after the
-     * store on fresh code (tb-maint.c), where the stale-to-completion
-     * rule of a non-precise-SMC target would run a callee's old bytes.
-     */
-    const struct W64InlRec *w64_inl_rec;
-    uint8_t w64_inl_nrec;
 
 /*
  * What a goto_ptr operand means to the wasm64 backend.
@@ -279,19 +250,6 @@ const struct W64PccShape *w64_pcc_shape(void);
 void w64_batch_unstage(uintptr_t tcptr);
 #endif
 
-#ifdef CONFIG_TCG_WASM64
-struct W64InlRec {
-    uint16_t idx0, idx1;
-    uint16_t lo, hi;
-    uint8_t page;
-};
-#define W64_INL_REC 8
-/* the records of the TB being translated (target/arm fills, tb_gen_code
- * copies) */
-extern __thread struct W64InlRec w64_inl_pending[W64_INL_REC];
-extern __thread unsigned w64_inl_pending_n;
-#endif
-
 /* The alignment given to TranslationBlock during allocation. */
 #define CODE_GEN_ALIGN  16
 
@@ -304,22 +262,6 @@ G_NORETURN void tb_w64_retire(CPUState *cpu, TranslationBlock *tb);
 bool w64_tidx_left(void);
 /* tcg/wasm64/wasm64.c: a cpu_loop_exit() longjmp left every running TB */
 void w64_exec_unwound(void);
-
-/*
- * True while something charges tb->icount once per TB entry from the
- * emitted prologue (tcg/wasm64/tcg-target.c.inc).  A TB that can leave
- * before its last instruction over-charges those, so a frontend must
- * not merge a conditional branch's fall-through while any is armed.
- */
-bool w64_tb_icount_exact(void);
-
-/*
- * The per-TB-entry guest-instruction counter, when one is charged from
- * the prologue, else NULL.  A frontend that exits a TB early subtracts
- * what it skipped, which is what keeps that counter out of
- * w64_tb_icount_exact.
- */
-uint64_t *w64_tb_acct_insns(void);
 #endif
 
 /* Hide the qatomic_read to make code a little easier on the eyes */

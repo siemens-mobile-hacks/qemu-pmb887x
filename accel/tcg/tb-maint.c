@@ -290,31 +290,6 @@ static inline void tb_page_span(const TranslationBlock *tb, unsigned n,
     tb_page_addr_t s = tb_page_addr0(tb);
     tb_page_addr_t l = s + tb->size - 1;
 
-    if (unlikely(tb->w64_inl)) {
-        /*
-         * An inlined callee (translation-block.h w64_inl): the linear
-         * range never leaves page 0, and each tracked page carries the
-         * hull of the callee bytes translated from it.  Page 0's span is
-         * the hull joined with the linear range - a callee before the
-         * entry point makes the join cover the gap, which only costs a
-         * needless invalidation.
-         */
-        if (n == 0) {
-            if (tb->w64_inl & W64_INL_PAGE0) {
-                tb_page_addr_t pg = s & TARGET_PAGE_MASK;
-
-                s = MIN(s, pg + tb->w64_inl_lo[0]);
-                l = MAX(l, pg + tb->w64_inl_hi[0]);
-            }
-        } else {
-            s = tb_page_addr1(tb);
-            l = s + tb->w64_inl_hi[n];
-            s += tb->w64_inl_lo[n];
-        }
-        *start = s;
-        *last = l;
-        return;
-    }
     if (n == 0) {
         l = MIN(l, s | ~TARGET_PAGE_MASK);
     } else {
@@ -940,7 +915,6 @@ void tb_flush__exclusive_or_serial(void)
     /* drop the batch modules and thunks before the code
      * buffer (which holds their staged bytes and descriptors) resets */
     w64_batch_flush();
-    w64_inl_list_clear();
 #endif
 
     tcg_region_reset_all();
@@ -1049,78 +1023,6 @@ static inline void tb_jmp_unlink(TranslationBlock *dest)
 
     qemu_spin_unlock(&dest->jmp_lock);
 }
-
-#ifdef CONFIG_TCG_WASM64
-/*
- * A goto_tb chain into a TB with an inlined callee on its second page
- * (translation-block.h w64_inl) skips the page-1 check tb_lookup_cmp
- * makes, so the chains are dropped whenever a mapping may have changed
- * (the TLB-flush sites): the sources fall back to the dispatcher, which
- * looks the TB up again and re-links them.  The TBs are kept in a list
- * of their own - a walk of every TB per page flush crawled the lockstep
- * boot, where one-insn-per-tb makes millions of them and none inlined.
- * An invalidated TB stays listed until tb_flush; unlinking it again is a
- * no-op on an empty jump list.
- */
-static TranslationBlock **w64_inl_tbs;
-static unsigned w64_inl_ntbs, w64_inl_cap;
-
-void w64_inl_list_add(TranslationBlock *tb)
-{
-    if (w64_inl_ntbs == w64_inl_cap) {
-        w64_inl_cap = w64_inl_cap ? w64_inl_cap * 2 : 1024;
-        w64_inl_tbs = g_renew(TranslationBlock *, w64_inl_tbs, w64_inl_cap);
-    }
-    w64_inl_tbs[w64_inl_ntbs++] = tb;
-}
-
-void w64_inl_list_clear(void)
-{
-    w64_inl_ntbs = 0;
-}
-
-void tb_unlink_inlined(void)
-{
-    for (unsigned i = 0; i < w64_inl_ntbs; i++) {
-        tb_jmp_unlink(w64_inl_tbs[i]);
-    }
-}
-
-/*
- * A non-precise-SMC target lets the TB a store just patched run to
- * completion on its old code (the "same-TB" rule); an inlined TB would
- * then run a *callee's* old bytes after `str; bl callee`, which used to
- * be a lookup and is now the same TB.  Resume after the store on fresh
- * code when the store and the patched bytes belong to different streams
- * of the TB; a stream patching itself keeps the same-TB rule.
- */
-static bool w64_inl_cross_stream(TranslationBlock *tb, uintptr_t retaddr,
-                                 tb_page_addr_t start, tb_page_addr_t last)
-{
-    int i = w64_tb_insn_index(tb, retaddr);
-    int src = -1, dst = -1;
-
-    if (i < 0) {
-        return false;
-    }
-    for (unsigned r = 0; r < tb->w64_inl_nrec; r++) {
-        const struct W64InlRec *rec = &tb->w64_inl_rec[r];
-        tb_page_addr_t base = rec->page ? tb_page_addr1(tb)
-                              : (tb_page_addr0(tb) & TARGET_PAGE_MASK);
-
-        /* idx0/idx1 are 1-based counts at the bl and at the return; @i is
-         * the 0-based index, so the callee's instructions are [idx0, idx1) */
-        if (rec->idx0 <= i && i < rec->idx1) {
-            src = r;                    /* innermost: the last that matches */
-        }
-        if (rec->lo <= rec->hi &&
-            !(base + rec->hi < start || base + rec->lo > last)) {
-            dst = r;
-        }
-    }
-    return src != dst;
-}
-#endif
 
 #ifdef CONFIG_TCG_WASM64
 /*
@@ -1361,10 +1263,6 @@ tb_invalidate_phys_page_range__locked(CPUState *cpu,
     PageForEachNext n;
     bool current_tb_modified = false;
     TranslationBlock *current_tb = NULL;
-#ifdef CONFIG_TCG_WASM64
-    TranslationBlock *w64_cur = NULL;
-    bool w64_cur_known = false, w64_resume = false;
-#endif
 
     /* Range may not cross a page. */
     tcg_debug_assert(((start ^ last) & TARGET_PAGE_MASK) == 0);
@@ -1381,9 +1279,6 @@ tb_invalidate_phys_page_range__locked(CPUState *cpu,
         tb_page_addr_t tb_start, tb_last;
 
         /* NOTE: this is subtle as a TB may span two physical pages */
-#ifdef CONFIG_TCG_WASM64
-        tb_page_span(tb, n, &tb_start, &tb_last);
-#else
         tb_start = tb_page_addr0(tb);
         tb_last = tb_start + tb->size - 1;
         if (n == 0) {
@@ -1392,7 +1287,6 @@ tb_invalidate_phys_page_range__locked(CPUState *cpu,
             tb_start = tb_page_addr1(tb);
             tb_last = tb_start + (tb_last & ~TARGET_PAGE_MASK);
         }
-#endif
         if (!(tb_last < start || tb_start > last)) {
             if (unlikely(current_tb == tb) &&
                 (tb_cflags(current_tb) & CF_COUNT_MASK) != 1) {
@@ -1406,19 +1300,6 @@ tb_invalidate_phys_page_range__locked(CPUState *cpu,
                 current_tb_modified = true;
                 cpu_restore_state_from_tb(cpu, current_tb, retaddr);
             }
-#ifdef CONFIG_TCG_WASM64
-            if (unlikely(tb->w64_inl) && retaddr && cpu &&
-                (tb_cflags(tb) & CF_COUNT_MASK) != 1) {
-                if (!w64_cur_known) {
-                    w64_cur = tcg_tb_lookup(retaddr);
-                    w64_cur_known = true;
-                }
-                if (w64_cur == tb &&
-                    w64_inl_cross_stream(tb, retaddr, start, last)) {
-                    w64_resume = true;
-                }
-            }
-#endif
             do_tb_phys_invalidate(tb, true);
         }
     }
@@ -1427,19 +1308,6 @@ tb_invalidate_phys_page_range__locked(CPUState *cpu,
     if (!p->first_tb) {
         tlb_unprotect_code(start);
     }
-
-#ifdef CONFIG_TCG_WASM64
-    if (unlikely(w64_resume) && !current_tb_modified) {
-        /*
-         * As a precise-SMC target would: back to the store, which
-         * notdirty_write() unwinds before it has landed, and run it alone
-         * in a one-instruction TB so that TB is exempt from this check;
-         * the code after it is then translated from the patched bytes.
-         */
-        cpu_restore_state_from_tb(cpu, w64_cur, retaddr);
-        current_tb_modified = true;
-    }
-#endif
 
     if (unlikely(current_tb_modified)) {
         page_collection_unlock(pages);

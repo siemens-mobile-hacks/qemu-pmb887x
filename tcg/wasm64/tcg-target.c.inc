@@ -2688,35 +2688,6 @@ static const TCGOutOpDivRem outop_divu2 = {
 /* module assembly                                                     */
 /* ------------------------------------------------------------------ */
 
-/*
- * True while something reads tb->icount as a statistic charged once per
- * TB entry from the emitted prologue below.  A TB that can leave before
- * its last instruction over-charges those, so target/arm does not merge
- * a conditional branch's fall-through while any of them is armed.
- *
- * The lockstep fold is deliberately not in this set: it is a gate, and
- * excluding it would mean the gate never ran the shipping control flow.
- * wasm_guest_insns is not either: an early exit refunds it instead,
- * through w64_tb_acct_insns below.  The vcpu-timers clock charges
- * CF_COUNT_CYCLES cycles per TB entry and drives virtual time, so it
- * stays exact.
- */
-bool w64_tb_icount_exact(void)
-{
-    return qemu_virtual_timers_on_vcpu;
-}
-
-/*
- * wasm_guest_insns, for a frontend that emits an early TB exit: the
- * prologue prepays tb->icount at entry, so an exit that skips
- * instructions hands them back here the same way it hands back
- * icount_decr.  NULL while nothing charges the counter per entry.
- */
-uint64_t *w64_tb_acct_insns(void)
-{
-    return w64_guest_insns_inline() ? &wasm_guest_insns : NULL;
-}
-
 static void tcg_out_tb_start(TCGContext *s)
 {
     static const uint8_t p1[1] = { 0 };    /* (i32) */

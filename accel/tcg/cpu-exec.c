@@ -48,11 +48,6 @@
 #include "internal-common.h"
 #if !defined(CONFIG_USER_ONLY)
 #include "accel/tcg/iommu.h"
-#ifdef CONFIG_TCG_WASM64
-#include "accel/tcg/probe.h"
-#include "accel/tcg/cpu-mmu-index.h"
-#include "exec/tlb-flags.h"
-#endif
 #endif
 
 /* -icount align implementation. */
@@ -191,32 +186,6 @@ static bool tb_lookup_cmp(const void *p, const void *d)
              * here by the faulting lookup is not premature.
              */
             virt_page1 = TARGET_PAGE_ALIGN(desc->s->pc);
-#ifdef CONFIG_TCG_WASM64
-            if (unlikely(tb->w64_inl & W64_INL_VPAGE1)) {
-                /*
-                 * Page 1 is an inlined callee's page (translation-block.h
-                 * w64_inl), reached only after the instructions before
-                 * the call ran - so a fault here would be premature: a
-                 * page the guest has unmapped just makes this TB not
-                 * match, and the retranslation will not inline from it.
-                 */
-                void *host;
-                int fl;
-
-                virt_page1 = (desc->s->pc & TARGET_PAGE_MASK) +
-                             tb->w64_inl_vpage1;
-                if (desc->s->pc <= UINT32_MAX) {
-                    virt_page1 = (uint32_t)virt_page1;
-                }
-                fl = probe_access_flags(desc->env, virt_page1, 0,
-                                        MMU_INST_FETCH,
-                                        cpu_mmu_index(env_cpu(desc->env), true),
-                                        true, &host, 0);
-                if ((fl & (TLB_INVALID_MASK | TLB_MMIO)) || host == NULL) {
-                    return false;
-                }
-            }
-#endif
             phys_page1 = get_page_addr_code(desc->env, virt_page1);
             if (tb_phys_page1 == phys_page1) {
                 return true;
@@ -1405,16 +1374,6 @@ cpu_exec_loop(CPUState *cpu, SyncClocks *sc)
              * for the second page can change.
              */
             if (tb_page_addr1(tb) != -1) {
-#ifdef CONFIG_TCG_WASM64
-                /*
-                 * Unless the second page is an inlined callee's
-                 * (translation-block.h w64_inl): those chains are dropped
-                 * whenever the mapping may have changed
-                 * (tb_unlink_inlined, from cpu_tb_key_gen_bump), which
-                 * is what makes a direct jump into the TB safe.
-                 */
-                if (!tb->w64_inl)
-#endif
                 last_tb = NULL;
             }
 #endif

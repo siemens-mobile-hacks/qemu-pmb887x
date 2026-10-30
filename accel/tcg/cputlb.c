@@ -155,9 +155,6 @@ static void tb_jmp_cache_clear_page(CPUState *cpu, vaddr page_addr)
     int i, i0;
 
     cpu_tb_key_gen_bump(cpu);
-#ifdef CONFIG_TCG_WASM64
-    tb_unlink_inlined();    /* as in tcg_flush_jmp_cache: a mapping moved */
-#endif
     if (unlikely(!jc)) {
         return;
     }
