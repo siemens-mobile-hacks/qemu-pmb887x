@@ -107,6 +107,8 @@ struct teak_tcg_block_t {
 	uint16_t words;
 	uint16_t instruction_count;
 	bool repeat_resume;
+	/* bcn of the block-repeat whose whole body this block is, else 0 */
+	uint8_t repeat_body_level;
 };
 
 struct teak_tcg_block_cache_entry_t {
@@ -1057,6 +1059,55 @@ void HELPER(teak_tcg_context_switch)(void *opaque, uint32_t restore) {
 	} else {
 		tcg_context_store(state);
 	}
+}
+
+/* Registers that read and write as a plain state field, whichever mov or ALU form touches them. */
+static ptrdiff_t tcg_plain_register_offset(uint8_t register_code) {
+	if (register_code < 6)
+		return offsetof(teak_state_t, r) + register_code * sizeof(uint16_t);
+	if (register_code == 6)
+		return offsetof(teak_state_t, r) + 7 * sizeof(uint16_t);
+	if (register_code == 7)
+		return offsetof(teak_state_t, y);
+	if (register_code == 13)
+		return offsetof(teak_state_t, sp);
+	return -1;
+}
+
+static void tcg_emit_register_read(TCGv_i32 value, uint8_t register_code) {
+	ptrdiff_t offset = tcg_plain_register_offset(register_code);
+
+	if (offset >= 0)
+		tcg_gen_ld16u_i32(value, tcg_env, offset);
+	else
+		gen_helper_teak_tcg_register_read(value, tcg_env, tcg_constant_i32(register_code));
+}
+
+static void tcg_emit_register_write(uint8_t register_code, TCGv_i32 value) {
+	ptrdiff_t offset = tcg_plain_register_offset(register_code);
+
+	if (offset >= 0)
+		tcg_gen_st16_i32(value, tcg_env, offset);
+	else
+		gen_helper_teak_tcg_register_write(tcg_env, tcg_constant_i32(register_code), value);
+}
+
+static void tcg_emit_mov_register_read(TCGv_i32 value, uint8_t register_code) {
+	ptrdiff_t offset = tcg_plain_register_offset(register_code);
+
+	if (offset >= 0)
+		tcg_gen_ld16u_i32(value, tcg_env, offset);
+	else
+		gen_helper_teak_tcg_mov_register_read(value, tcg_env, tcg_constant_i32(register_code));
+}
+
+static void tcg_emit_mov_register_write(uint8_t register_code, TCGv_i32 value) {
+	ptrdiff_t offset = tcg_plain_register_offset(register_code);
+
+	if (offset >= 0)
+		tcg_gen_st16_i32(value, tcg_env, offset);
+	else
+		gen_helper_teak_tcg_mov_register_write(tcg_env, tcg_constant_i32(register_code), value);
 }
 
 static void tcg_shift_bus(teak_state_t *state, uint64_t canonical, int16_t shift, uint8_t destination) {
@@ -2157,7 +2208,7 @@ static void tcg_emit_trap(const teak_insn_t *instruction) {
 static void tcg_emit_push_register(uint8_t register_code) {
 	TCGv_i32 value = tcg_temp_new_i32();
 
-	gen_helper_teak_tcg_mov_register_read(value, tcg_env, tcg_constant_i32(register_code));
+	tcg_emit_mov_register_read(value, register_code);
 	tcg_emit_push_value(value);
 }
 
@@ -2177,9 +2228,9 @@ static void tcg_emit_pop_register(uint8_t register_code) {
 	TCGv_i32 value = tcg_emit_pop_value();
 	bool accumulator = register_code >= 24 && register_code <= 29;
 	if (accumulator) {
-		gen_helper_teak_tcg_mov_register_write(tcg_env, tcg_constant_i32(register_code), value);
+		tcg_emit_mov_register_write(register_code, value);
 	} else {
-		gen_helper_teak_tcg_register_write(tcg_env, tcg_constant_i32(register_code), value);
+		tcg_emit_register_write(register_code, value);
 	}
 }
 
@@ -2189,7 +2240,7 @@ static void tcg_emit_mov_stack_register(uint8_t register_code) {
 
 	tcg_gen_ld16u_i32(sp, tcg_env, offsetof(teak_state_t, sp));
 	gen_helper_teak_tcg_data_read(value, tcg_env, sp);
-	gen_helper_teak_tcg_mov_register_write(tcg_env, tcg_constant_i32(register_code), value);
+	tcg_emit_mov_register_write(register_code, value);
 }
 
 static void tcg_emit_accumulator_value_flags(TCGv_i64 value);
@@ -2211,10 +2262,9 @@ static void tcg_emit_mov_register_register(const teak_insn_t *instruction) {
 	if (instruction->register_code == 12) {
 		tcg_gen_movi_i32(value, tcg_instruction_end(instruction));
 	} else {
-		gen_helper_teak_tcg_mov_register_read(value, tcg_env, tcg_constant_i32(instruction->register_code));
+		tcg_emit_mov_register_read(value, instruction->register_code);
 	}
-	gen_helper_teak_tcg_mov_register_write(tcg_env,
-		tcg_constant_i32(instruction->destination_register_code), value);
+	tcg_emit_mov_register_write(instruction->destination_register_code, value);
 }
 
 static void tcg_emit_mov_b_accumulator(uint8_t accumulator_index, TCGv_i32 value) {
@@ -2247,7 +2297,7 @@ static void tcg_emit_mov_register_b_accumulator(const teak_insn_t *instruction) 
 	if (instruction->register_code == 12) {
 		tcg_gen_movi_i32(value, tcg_instruction_end(instruction));
 	} else {
-		gen_helper_teak_tcg_mov_register_read(value, tcg_env, tcg_constant_i32(instruction->register_code));
+		tcg_emit_mov_register_read(value, instruction->register_code);
 	}
 	tcg_emit_mov_b_accumulator(instruction->accumulator_index, value);
 }
@@ -2291,7 +2341,7 @@ static void tcg_emit_multiply_immediate(const teak_insn_t *instruction) {
 static void tcg_emit_multiply_register(const teak_insn_t *instruction) {
 	TCGv_i32 x = tcg_temp_new_i32();
 
-	gen_helper_teak_tcg_mov_register_read(x, tcg_env, tcg_constant_i32(instruction->register_code));
+	tcg_emit_mov_register_read(x, instruction->register_code);
 	tcg_emit_multiply_operation(instruction, x);
 }
 
@@ -2310,7 +2360,7 @@ static void tcg_emit_repeat(TCGv_i32 count) {
 static void tcg_emit_repeat_register(uint8_t register_code) {
 	TCGv_i32 count = tcg_temp_new_i32();
 
-	gen_helper_teak_tcg_register_read(count, tcg_env, tcg_constant_i32(register_code));
+	tcg_emit_register_read(count, register_code);
 	tcg_emit_repeat(count);
 }
 
@@ -2947,7 +2997,7 @@ static TCGv_i64 tcg_emit_exponent_source(const teak_insn_t *instruction) {
 			if (instruction->register_code == 12) {
 				tcg_gen_movi_i32(value16, tcg_instruction_end(instruction));
 			} else {
-				gen_helper_teak_tcg_register_read(value16, tcg_env, tcg_constant_i32(instruction->register_code));
+				tcg_emit_register_read(value16, instruction->register_code);
 			}
 			return tcg_emit_exponent_16(value16);
 
@@ -3431,14 +3481,14 @@ static void tcg_emit_alu_register_accumulator(const teak_insn_t *instruction) {
 	bool test_one = instruction->alu_operation == TEAK_ALU_TST1;
 	if (test_zero || test_one) {
 		operand32 = tcg_temp_new_i32();
-		gen_helper_teak_tcg_mov_register_read(operand32, tcg_env, tcg_constant_i32(instruction->register_code));
+		tcg_emit_mov_register_read(operand32, instruction->register_code);
 		tcg_emit_accumulator_test(instruction->accumulator_index, test_one, operand32);
 		return;
 	}
 
 	if (multiply) {
 		operand32 = tcg_temp_new_i32();
-		gen_helper_teak_tcg_mov_register_read(operand32, tcg_env, tcg_constant_i32(instruction->register_code));
+		tcg_emit_mov_register_read(operand32, instruction->register_code);
 		tcg_emit_alu_multiply_operation(instruction, operand32);
 		return;
 	}
@@ -3459,7 +3509,7 @@ static void tcg_emit_alu_register_accumulator(const teak_insn_t *instruction) {
 		tcg_emit_alu_accumulator(instruction, operand);
 		return;
 	}
-	gen_helper_teak_tcg_mov_register_read(operand32, tcg_env, tcg_constant_i32(instruction->register_code));
+	tcg_emit_mov_register_read(operand32, instruction->register_code);
 	tcg_gen_andi_i32(operand32, operand32, 0xFFFFU);
 	tcg_gen_extu_i32_i64(operand, operand32);
 	if (sign_extend)
@@ -3696,7 +3746,7 @@ static void tcg_emit_tstb_register(const teak_insn_t *instruction) {
 	if (instruction->register_code == 24) {
 		tcg_gen_ld16u_i32(value, tcg_env, offsetof(teak_state_t, r) + 6 * sizeof(uint16_t));
 	} else {
-		gen_helper_teak_tcg_register_read(value, tcg_env, tcg_constant_i32(instruction->register_code));
+		tcg_emit_register_read(value, instruction->register_code);
 	}
 	tcg_gen_shri_i32(value, value, instruction->bit_index);
 	tcg_gen_andi_i32(value, value, 1);
@@ -3708,7 +3758,7 @@ static void tcg_emit_mov_data_imm8_register(const teak_insn_t *instruction) {
 	TCGv_i32 value = tcg_temp_new_i32();
 
 	gen_helper_teak_tcg_data_read(value, tcg_env, address);
-	gen_helper_teak_tcg_mov_register_write(tcg_env, tcg_constant_i32(instruction->register_code), value);
+	tcg_emit_mov_register_write(instruction->register_code, value);
 }
 
 static void tcg_emit_mov_data_imm8_accumulator(const teak_insn_t *instruction) {
@@ -3746,7 +3796,7 @@ static void tcg_emit_mov_register_data_imm8(const teak_insn_t *instruction) {
 	TCGv_i32 address = tcg_emit_imm8_data_address(instruction->memory_address);
 	TCGv_i32 value = tcg_temp_new_i32();
 
-	gen_helper_teak_tcg_mov_register_read(value, tcg_env, tcg_constant_i32(instruction->register_code));
+	tcg_emit_mov_register_read(value, instruction->register_code);
 	gen_helper_teak_tcg_data_write(tcg_env, address, value);
 }
 
@@ -3767,7 +3817,7 @@ static void tcg_emit_mov_accumulator_low_data_r7(const teak_insn_t *instruction)
 	TCGv_i32 address = tcg_emit_r7_address(instruction->memory_offset);
 	TCGv_i32 value = tcg_temp_new_i32();
 
-	gen_helper_teak_tcg_mov_register_read(value, tcg_env, tcg_constant_i32(26 + instruction->accumulator_index));
+	tcg_emit_mov_register_read(value, 26 + instruction->accumulator_index);
 	gen_helper_teak_tcg_data_write(tcg_env, address, value);
 }
 
@@ -3792,8 +3842,7 @@ static void tcg_emit_mov_data_rn_step_register(const teak_insn_t *instruction) {
 		return;
 	}
 	if (!tcg_mov_register_is_accumulator(instruction->register_code)) {
-		gen_helper_teak_tcg_mov_register_write(tcg_env,
-			tcg_constant_i32(instruction->register_code), value);
+		tcg_emit_mov_register_write(instruction->register_code, value);
 		return;
 	}
 
@@ -3822,7 +3871,7 @@ static void tcg_emit_mov_register_data_rn_step(const teak_insn_t *instruction) {
 		tcg_gen_ld16u_i32(value, tcg_env, tcg_rn_old_offset(instruction->register_code));
 	} else if (!tcg_mov_register_is_accumulator_half(instruction->register_code)) {
 		value = tcg_temp_new_i32();
-		gen_helper_teak_tcg_mov_register_read(value, tcg_env, tcg_constant_i32(instruction->register_code));
+		tcg_emit_mov_register_read(value, instruction->register_code);
 	} else {
 		size_t accumulator_offset = tcg_accumulator_register_offset(instruction->register_code);
 		TCGv_i64 accumulator = tcg_temp_new_i64();
@@ -3978,8 +4027,7 @@ static void tcg_emit_movp_accumulator_low_register(const teak_insn_t *instructio
 	if (instruction->destination_register_code == 12)
 		return;
 	value = tcg_emit_movp_accumulator_low_read(instruction);
-	gen_helper_teak_tcg_mov_register_write(tcg_env,
-		tcg_constant_i32(instruction->destination_register_code), value);
+	tcg_emit_mov_register_write(instruction->destination_register_code, value);
 }
 
 static void tcg_emit_movp_rn_rn(const teak_insn_t *instruction) {
@@ -4011,7 +4059,7 @@ static void tcg_emit_movs_register(const teak_insn_t *instruction) {
 	TCGv_i32 value = tcg_temp_new_i32();
 	TCGv_i32 shift = tcg_temp_new_i32();
 
-	gen_helper_teak_tcg_register_read(value, tcg_env, tcg_constant_i32(instruction->register_code));
+	tcg_emit_register_read(value, instruction->register_code);
 	tcg_gen_ld16u_i32(shift, tcg_env, offsetof(teak_state_t, shift_value));
 	tcg_emit_movs_result(instruction, value, shift);
 }
@@ -4105,7 +4153,7 @@ static void tcg_emit_movr_register(const teak_insn_t *instruction) {
 	}
 
 	TCGv_i32 value = tcg_temp_new_i32();
-	gen_helper_teak_tcg_register_read(value, tcg_env, tcg_constant_i32(instruction->register_code));
+	tcg_emit_register_read(value, instruction->register_code);
 	tcg_emit_movr_16(instruction, value);
 }
 
@@ -4205,7 +4253,7 @@ static void tcg_emit_mov_imm_register(const teak_insn_t *instruction) {
 			break;
 
 		case 11:
-			gen_helper_teak_tcg_register_write(tcg_env, tcg_constant_i32(instruction->register_code), value);
+			tcg_emit_register_write(instruction->register_code, value);
 			break;
 
 		case 12:
@@ -4235,7 +4283,7 @@ static void tcg_emit_mov_imm_register(const teak_insn_t *instruction) {
 		case 17:
 		case 18:
 		case 19:
-			gen_helper_teak_tcg_mov_register_write(tcg_env, tcg_constant_i32(instruction->register_code), value);
+			tcg_emit_mov_register_write(instruction->register_code, value);
 			break;
 
 		case 20:
@@ -4256,7 +4304,7 @@ static void tcg_emit_mov_imm_register(const teak_insn_t *instruction) {
 			break;
 
 		case 30:
-			gen_helper_teak_tcg_mov_register_write(tcg_env, tcg_constant_i32(instruction->register_code), value);
+			tcg_emit_mov_register_write(instruction->register_code, value);
 			break;
 
 		case 31:
@@ -4269,8 +4317,7 @@ static void tcg_emit_mov_imm_register(const teak_insn_t *instruction) {
 }
 
 static void tcg_emit_mov_short_register(const teak_insn_t *instruction) {
-	gen_helper_teak_tcg_mov_register_write(tcg_env, tcg_constant_i32(instruction->register_code),
-		tcg_constant_i32(instruction->immediate));
+	tcg_emit_mov_register_write(instruction->register_code, tcg_constant_i32(instruction->immediate));
 }
 
 static void tcg_emit_mov_accumulator_accumulator(const teak_insn_t *instruction) {
@@ -4285,8 +4332,7 @@ static void tcg_emit_mov_accumulator_low_special(const teak_insn_t *instruction)
 	static const uint8_t accumulator_low_registers[] = { 18, 19, 26, 27 };
 	TCGv_i32 value = tcg_temp_new_i32();
 
-	gen_helper_teak_tcg_mov_register_read(value, tcg_env,
-		tcg_constant_i32(accumulator_low_registers[instruction->source_accumulator]));
+	tcg_emit_mov_register_read(value, accumulator_low_registers[instruction->source_accumulator]);
 	gen_helper_teak_tcg_special_register_write(tcg_env,
 		tcg_constant_i32(instruction->special_register), value);
 }
@@ -4308,14 +4354,13 @@ static void tcg_emit_mov_mixp_register(const teak_insn_t *instruction) {
 	if (instruction->destination_register_code == 12)
 		return;
 	gen_helper_teak_tcg_special_register_read(value, tcg_env, tcg_constant_i32(TEAK_SPECIAL_MIXP));
-	gen_helper_teak_tcg_mov_register_write(tcg_env,
-		tcg_constant_i32(instruction->destination_register_code), value);
+	tcg_emit_mov_register_write(instruction->destination_register_code, value);
 }
 
 static void tcg_emit_mov_register_special(const teak_insn_t *instruction) {
 	TCGv_i32 value = tcg_temp_new_i32();
 
-	gen_helper_teak_tcg_mov_register_read(value, tcg_env, tcg_constant_i32(instruction->register_code));
+	tcg_emit_mov_register_read(value, instruction->register_code);
 	gen_helper_teak_tcg_special_register_write(tcg_env,
 		tcg_constant_i32(instruction->special_register), value);
 }
@@ -4593,7 +4638,7 @@ static void tcg_emit_instruction(teak_insn_t *instruction, uint8_t block_repeat_
 		case TEAK_OP_BLOCK_REPEAT_REGISTER: {
 			TCGv_i32 count = tcg_temp_new_i32();
 
-			gen_helper_teak_tcg_register_read(count, tcg_env, tcg_constant_i32(instruction->register_code));
+			tcg_emit_register_read(count, instruction->register_code);
 			tcg_emit_block_repeat(instruction, count, block_repeat_level);
 			break;
 		}
@@ -4707,10 +4752,6 @@ static bool tcg_block_can_batch(const teak_tcg_block_t *block) {
 
 	if (block->instruction_count == 0)
 		return false;
-
-	for (size_t i = 0; i < block->instruction_count; i++)
-		if (tcg_may_write_data(&block->instructions[i]))
-			return false;
 
 	instruction = &block->instructions[block->instruction_count - 1];
 	if (instruction->opcode != TEAK_OP_BRANCH_ABSOLUTE && instruction->opcode != TEAK_OP_BRANCH_RELATIVE)
@@ -4831,8 +4872,11 @@ static bool tcg_decode_block(teak_tcg_core_t *core, teak_tcg_block_t *block, siz
 		}
 		if (instruction->opcode == TEAK_OP_BREAK)
 			return true;
-		if (core->state.bcn != 0 && instruction_end == core->state.block_repeat_end[core->state.bcn - 1])
+		if (core->state.bcn != 0 && instruction_end == core->state.block_repeat_end[core->state.bcn - 1]) {
+			if (block->pc == core->state.block_repeat_start[core->state.bcn - 1])
+				block->repeat_body_level = core->state.bcn;
 			return true;
+		}
 		if (instruction->opcode == TEAK_OP_MOVD_RN_RN || tcg_is_loop_control(instruction))
 			return true;
 	}
@@ -4891,7 +4935,7 @@ static TCGv_i32 tcg_emit_delayed_transfer_target(const teak_insn_t *instruction)
 			return tcg_constant_i32(instruction->expansion);
 		case TEAK_OP_MOV_REGISTER_REGISTER:
 			target = tcg_temp_new_i32();
-			gen_helper_teak_tcg_mov_register_read(target, tcg_env, tcg_constant_i32(instruction->register_code));
+			tcg_emit_mov_register_read(target, instruction->register_code);
 			return target;
 		case TEAK_OP_MOV_MIXP_REGISTER:
 			target = tcg_temp_new_i32();
@@ -4911,20 +4955,11 @@ static TCGv_i32 tcg_emit_delayed_transfer_target(const teak_insn_t *instruction)
 	}
 }
 
-static void tcg_emit_block_batch(const teak_tcg_block_t *block, TCGLabel *loop, TCGLabel *exit) {
-	TCGv_i32 block_repeat_level = tcg_temp_new_i32();
-	TCGv_i32 cycles_remaining = tcg_temp_new_i32();
-	TCGv_i32 exit_reason = tcg_temp_new_i32();
+static void tcg_emit_batch_requests(TCGLabel *exit) {
 	TCGv_i32 exit_request = tcg_temp_new_i32();
 	TCGv_i32 interrupt_request = tcg_temp_new_i32();
-	TCGv_i32 iterations = tcg_temp_new_i32();
 	TCGv_i32 interrupt_lines = tcg_temp_new_i32();
 	TCGv_i32 pending_interrupts = tcg_temp_new_i32();
-	TCGv_i32 pc = tcg_temp_new_i32();
-
-	tcg_gen_ld_i32(iterations, tcg_env, offsetof(teak_tcg_core_t, batch_iterations));
-	tcg_gen_addi_i32(iterations, iterations, 1);
-	tcg_gen_st_i32(iterations, tcg_env, offsetof(teak_tcg_core_t, batch_iterations));
 
 	tcg_gen_ld_i32(exit_request, tcg_env, offsetof(teak_state_t, exit_request));
 	tcg_gen_brcondi_i32(TCG_COND_NE, exit_request, 0, exit);
@@ -4934,19 +4969,73 @@ static void tcg_emit_block_batch(const teak_tcg_block_t *block, TCGLabel *loop, 
 	tcg_gen_ld_i32(interrupt_lines, tcg_env, offsetof(teak_state_t, interrupt_lines));
 	tcg_gen_or_i32(pending_interrupts, pending_interrupts, interrupt_lines);
 	tcg_gen_brcondi_i32(TCG_COND_NE, pending_interrupts, 0, exit);
-	tcg_gen_ld_i32(pc, tcg_env, offsetof(teak_state_t, pc));
-	tcg_gen_brcondi_i32(TCG_COND_NE, pc, block->pc, exit);
-	tcg_gen_ld8u_i32(block_repeat_level, tcg_env, offsetof(teak_state_t, bcn));
-	tcg_gen_brcondi_i32(TCG_COND_NE, block_repeat_level, 0, exit);
-	tcg_gen_ld_i32(exit_reason, tcg_env, offsetof(teak_state_t, exit_reason));
-	tcg_gen_brcondi_i32(TCG_COND_NE, exit_reason, TEAK_EXIT_BRANCH, exit);
+}
+
+/* Charges the next iteration to the budget, or exits when it is spent. */
+static void tcg_emit_batch_next(const teak_tcg_block_t *block, TCGLabel *exit) {
+	TCGv_i32 cycles_remaining = tcg_temp_new_i32();
+	TCGv_i32 iterations = tcg_temp_new_i32();
 
 	tcg_gen_ld_i32(cycles_remaining, tcg_env, offsetof(teak_tcg_core_t, batch_cycles_remaining));
 	tcg_gen_brcondi_i32(TCG_COND_LTU, cycles_remaining, 2 * block->instruction_count, exit);
 	tcg_gen_subi_i32(cycles_remaining, cycles_remaining, block->instruction_count);
 	tcg_gen_st_i32(cycles_remaining, tcg_env, offsetof(teak_tcg_core_t, batch_cycles_remaining));
 
+	tcg_gen_ld_i32(iterations, tcg_env, offsetof(teak_tcg_core_t, batch_iterations));
+	tcg_gen_addi_i32(iterations, iterations, 1);
+	tcg_gen_st_i32(iterations, tcg_env, offsetof(teak_tcg_core_t, batch_iterations));
+}
+
+static void tcg_emit_block_batch(const teak_tcg_block_t *block, TCGLabel *loop, TCGLabel *exit) {
+	TCGv_i32 block_repeat_level = tcg_temp_new_i32();
+	TCGv_i32 exit_reason = tcg_temp_new_i32();
+	TCGv_i32 pc = tcg_temp_new_i32();
+
+	tcg_emit_batch_requests(exit);
+	tcg_gen_ld_i32(pc, tcg_env, offsetof(teak_state_t, pc));
+	tcg_gen_brcondi_i32(TCG_COND_NE, pc, block->pc, exit);
+	tcg_gen_ld8u_i32(block_repeat_level, tcg_env, offsetof(teak_state_t, bcn));
+	tcg_gen_brcondi_i32(TCG_COND_NE, block_repeat_level, 0, exit);
+	tcg_gen_ld_i32(exit_reason, tcg_env, offsetof(teak_state_t, exit_reason));
+	tcg_gen_brcondi_i32(TCG_COND_NE, exit_reason, TEAK_EXIT_BRANCH, exit);
+	tcg_emit_batch_next(block, exit);
 	tcg_gen_st_i32(tcg_constant_i32(TEAK_EXIT_NONE), tcg_env, offsetof(teak_state_t, exit_reason));
+	tcg_gen_br(loop);
+}
+
+static bool tcg_block_can_batch_repeat_body(const teak_tcg_block_t *block) {
+	if (block->repeat_body_level == 0 || tcg_block_has_dynamic_cycles(block))
+		return false;
+	for (size_t i = 0; i < block->instruction_count; i++)
+		if (tcg_is_loop_control(&block->instructions[i]) || block->instructions[i].opcode == TEAK_OP_MOVD_RN_RN)
+			return false;
+	return true;
+}
+
+/* The block is a whole block-repeat body: run the next pass in place, as tcg_complete_block_repeat would. */
+static void tcg_emit_block_repeat_batch(const teak_tcg_block_t *block, TCGLabel *loop, TCGLabel *exit) {
+	const teak_insn_t *last = &block->instructions[block->instruction_count - 1];
+	uint8_t level = block->repeat_body_level - 1;
+	TCGv_i32 value = tcg_temp_new_i32();
+
+	tcg_emit_batch_requests(exit);
+	tcg_gen_ld_i32(value, tcg_env, offsetof(teak_state_t, pc));
+	tcg_gen_brcondi_i32(TCG_COND_NE, value, tcg_instruction_end(last), exit);
+	tcg_gen_ld8u_i32(value, tcg_env, offsetof(teak_state_t, bcn));
+	tcg_gen_brcondi_i32(TCG_COND_NE, value, level + 1, exit);
+	tcg_gen_ld8u_i32(value, tcg_env, offsetof(teak_state_t, lp));
+	tcg_gen_brcondi_i32(TCG_COND_EQ, value, 0, exit);
+	tcg_gen_ld_i32(value, tcg_env, offsetof(teak_state_t, block_repeat_start) + level * sizeof(uint32_t));
+	tcg_gen_brcondi_i32(TCG_COND_NE, value, block->pc, exit);
+	tcg_gen_ld_i32(value, tcg_env, offsetof(teak_state_t, block_repeat_end) + level * sizeof(uint32_t));
+	tcg_gen_brcondi_i32(TCG_COND_NE, value, last->address + last->words - 1, exit);
+	tcg_gen_ld16u_i32(value, tcg_env, offsetof(teak_state_t, block_repeat_lc) + level * sizeof(uint16_t));
+	tcg_gen_brcondi_i32(TCG_COND_EQ, value, 0, exit);
+	tcg_emit_batch_next(block, exit);
+	tcg_gen_ld16u_i32(value, tcg_env, offsetof(teak_state_t, block_repeat_lc) + level * sizeof(uint16_t));
+	tcg_gen_subi_i32(value, value, 1);
+	tcg_gen_st16_i32(value, tcg_env, offsetof(teak_state_t, block_repeat_lc) + level * sizeof(uint16_t));
+	tcg_gen_st_i32(tcg_constant_i32(block->pc), tcg_env, offsetof(teak_state_t, pc));
 	tcg_gen_br(loop);
 }
 
@@ -4958,8 +5047,13 @@ static void tcg_emit_block_chain(const teak_tcg_block_t *block, bool batched_loo
 
 	tcg_gen_ld_i32(block_cycles, tcg_env, offsetof(teak_tcg_core_t, batch_block_cycles));
 	if (batched_loop) {
-		tcg_gen_ld_i32(block_count, tcg_env, offsetof(teak_tcg_core_t, batch_iterations));
-		tcg_gen_mul_i32(block_cycles, block_cycles, block_count);
+		/* Whole iterations, plus the current one, which an early exit may have cut short. */
+		TCGv_i32 iterations = tcg_temp_new_i32();
+
+		tcg_gen_ld_i32(iterations, tcg_env, offsetof(teak_tcg_core_t, batch_iterations));
+		tcg_gen_muli_i32(block_count, iterations, block->instruction_count);
+		tcg_gen_add_i32(block_cycles, block_cycles, block_count);
+		tcg_gen_addi_i32(block_count, iterations, 1);
 	} else {
 		tcg_gen_movi_i32(block_count, 1);
 	}
@@ -4989,6 +5083,7 @@ static void tcg_emit_block(void *opaque) {
 	bool delayed_transfer_interrupt = false;
 	bool repeat_pending = block->repeat_resume;
 	bool can_batch = tcg_block_can_batch(block);
+	bool can_batch_repeat_body = !can_batch && tcg_block_can_batch_repeat_body(block);
 	bool has_early_exit = false;
 
 	tcg_temp_pool_reset();
@@ -4996,7 +5091,7 @@ static void tcg_emit_block(void *opaque) {
 	if (!tcg_block_has_dynamic_cycles(block))
 		tcg_gen_st_i32(tcg_constant_i32(block->instruction_count), tcg_env,
 			offsetof(teak_tcg_core_t, batch_block_cycles));
-	if (can_batch) {
+	if (can_batch || can_batch_repeat_body) {
 		loop = gen_new_label();
 		gen_set_label(loop);
 	}
@@ -5050,6 +5145,8 @@ static void tcg_emit_block(void *opaque) {
 	tcg_temp_pool_release();
 	if (can_batch)
 		tcg_emit_block_batch(block, loop, exit);
+	if (can_batch_repeat_body)
+		tcg_emit_block_repeat_batch(block, loop, exit);
 	if (has_early_exit) {
 		tcg_gen_br(exit);
 		for (size_t i = 0; i < block->instruction_count; i++) {
@@ -5058,7 +5155,7 @@ static void tcg_emit_block(void *opaque) {
 		}
 	}
 	gen_set_label(exit);
-	tcg_emit_block_chain(block, can_batch);
+	tcg_emit_block_chain(block, can_batch || can_batch_repeat_body);
 }
 
 static void tcg_complete_block_repeat(teak_state_t *state) {
@@ -6961,6 +7058,15 @@ void *HELPER(teak_tcg_chain)(void *opaque, uint32_t block_cycles, uint32_t block
 	core->batch_cycles_remaining = core->chain_cycle_limit - core->last_block_cycles;
 	state->exit_reason = TEAK_EXIT_NONE;
 	core->chain_links++;
+#ifdef CONFIG_TCG_WASM64
+	{
+		/* goto_ptr tail-calls a tagged table index (exec/translation-block.h) */
+		const uint32_t *desc = entry->tb->tc.ptr;
+
+		if (desc[W64_TCP_FIDX / 4] != 0)
+			return (void *) (uintptr_t) (W64_TIDX_TAG | desc[W64_TCP_TIDX / 4]);
+	}
+#endif
 	return (void *) entry->tb->tc.ptr;
 }
 

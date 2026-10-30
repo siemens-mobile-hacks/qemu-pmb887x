@@ -14,6 +14,9 @@ typedef struct test_memory_t test_memory_t;
 struct test_memory_t {
 	uint16_t words[TEST_MEMORY_WORDS];
 	pmb887x_dsp_tcg_core_t *exit_core_on_write;
+	/* exit on this write only (1-based), or on every write when 0 */
+	unsigned exit_write;
+	unsigned writes;
 };
 
 int (*qemu_main)(void);
@@ -30,7 +33,9 @@ static void test_memory_write(void *opaque, uint32_t address, uint16_t value) {
 
 	g_assert_cmpuint(address, <, ARRAY_SIZE(memory->words));
 	memory->words[address] = value;
-	if (memory->exit_core_on_write != NULL)
+	memory->writes++;
+	if (memory->exit_core_on_write != NULL &&
+		(memory->exit_write == 0 || memory->writes == memory->exit_write))
 		memory->exit_core_on_write->state.exit_request = 1;
 }
 
@@ -72,6 +77,18 @@ static void test_execute_slices_until(pmb887x_dsp_tcg_core_t *core, uint16_t pc,
 	for (size_t i = 0; i < max_slices && core->state.pc != pc; i++)
 		g_assert_true(pmb887x_dsp_tcg_execute_slice(core, 1000));
 	g_assert_cmphex(core->state.pc, ==, pc);
+}
+
+/* Runs slices until the data write that requests an exit; returns the cycles they took. */
+static size_t test_execute_slices_until_exit(pmb887x_dsp_tcg_core_t *core, test_memory_t *data, size_t max_slices) {
+	size_t cycles = 0;
+
+	for (size_t i = 0; i < max_slices && data->writes < data->exit_write; i++) {
+		g_assert_true(pmb887x_dsp_tcg_execute_slice(core, 1000));
+		cycles += core->last_block_cycles;
+	}
+	g_assert_cmpuint(data->writes, ==, data->exit_write);
+	return cycles;
 }
 
 static void test_mov_a0_b0(uint16_t opcode) {
@@ -242,6 +259,52 @@ static void test_batched_loop_wait_state_budget(void) {
 	core.memory.wait_state_cycles = 2;
 	g_assert_true(pmb887x_dsp_tcg_execute_slice(&core, 40));
 	g_assert_cmpuint(core.last_block_cycles, ==, 40);
+}
+
+static void test_batched_loop_exit_after_write(void) {
+	test_memory_t program = {
+		.words = {
+			0x2010, /* mov r0, [0x10]. */
+			0x67D0, /* inc a0. */
+			0x4180, 0x0000, /* br 0x0000. */
+		},
+	};
+	test_memory_t data = { .exit_write = 3 };
+	pmb887x_dsp_tcg_core_t core = test_core_create(&program, &data);
+
+	data.exit_core_on_write = &core;
+	g_assert_cmpuint(test_execute_slices_until_exit(&core, &data, 4), ==, 2 * 3 + 1);
+	g_assert_cmphex(core.state.pc, ==, 1);
+	g_assert_cmphex(core.state.a[0], ==, 2);
+}
+
+static void test_block_repeat_body_exit_after_write(void) {
+	test_memory_t program = {
+		.words = {
+			0x5C04, 0x0004, /* bkrep 0x04, 0x0004. */
+			0x2010, /* mov r0, [0x10]. */
+			0x67D0, /* inc a0. */
+			0x67D0, /* inc a0. */
+			0x4180, 0x0005, /* br 0x0005. */
+		},
+	};
+	test_memory_t data = { .exit_write = 3 };
+	pmb887x_dsp_tcg_core_t core = test_core_create(&program, &data);
+
+	data.exit_core_on_write = &core;
+	g_assert_cmpuint(test_execute_slices_until_exit(&core, &data, 4), ==, 1 + 2 * 3 + 1);
+	g_assert_cmphex(core.state.pc, ==, 3);
+	g_assert_cmphex(core.state.a[0], ==, 4);
+	g_assert_cmphex(core.state.block_repeat_lc[0], ==, 2);
+	g_assert_cmphex(core.state.bcn, ==, 1);
+
+	data.exit_core_on_write = NULL;
+	test_execute_slices_until(&core, 5, 4);
+	g_assert_cmphex(core.state.a[0], ==, 10);
+	g_assert_cmpuint(data.writes, ==, 5);
+	g_assert_cmphex(core.state.block_repeat_lc[0], ==, 0);
+	g_assert_cmphex(core.state.lp, ==, 0);
+	g_assert_cmphex(core.state.bcn, ==, 0);
 }
 
 static void test_repeated_instruction_without_repeat(void) {
@@ -934,6 +997,8 @@ int main(int argc, char **argv) {
 	g_test_add_func("/pmb887x/dsp/tcg/interrupt-block-repeat", test_interrupt_block_repeat);
 	g_test_add_func("/pmb887x/dsp/tcg/repeat-cycle-budget", test_repeat_cycle_budget);
 	g_test_add_func("/pmb887x/dsp/tcg/batched-loop-wait-state-budget", test_batched_loop_wait_state_budget);
+	g_test_add_func("/pmb887x/dsp/tcg/batched-loop-exit-after-write", test_batched_loop_exit_after_write);
+	g_test_add_func("/pmb887x/dsp/tcg/block-repeat-body-exit-after-write", test_block_repeat_body_exit_after_write);
 	g_test_add_func("/pmb887x/dsp/tcg/repeated-instruction-without-repeat", test_repeated_instruction_without_repeat);
 	g_test_add_func("/pmb887x/dsp/tcg/interrupt-repeat-nested-repeat", test_interrupt_repeat_nested_repeat);
 	g_test_add_func("/pmb887x/dsp/tcg/interrupt-repeat-resumes-on-return", test_interrupt_repeat_resumes_on_return);
