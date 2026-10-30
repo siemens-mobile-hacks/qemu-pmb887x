@@ -307,6 +307,52 @@ static void test_block_repeat_body_exit_after_write(void) {
 	g_assert_cmphex(core.state.bcn, ==, 0);
 }
 
+static void test_relocated_fast_loop_init(test_memory_t *program, test_memory_t *data,
+	pmb887x_dsp_tcg_core_t *core
+) {
+	static const uint16_t kernel[] = {
+		/* The EL71 kernel at P:643F, here at P:0002, as the SL65 has it at P:566B. */
+		0x802A, 0x1F89, 0x1FA9, 0x9688, 0x9788, 0x822A, 0x87AB, 0x1B8A, 0x1BB2,
+	};
+
+	*program = (test_memory_t) { .words = { 0x5C03, 0x000A } }; /* bkrep 0x03, 0x000a. */
+	memcpy(&program->words[2], kernel, sizeof(kernel));
+	program->words[11] = 0x4180; /* br 0x000d. */
+	program->words[12] = 0x000D;
+	*data = (test_memory_t) {};
+	for (size_t i = 0; i < ARRAY_SIZE(data->words); i++)
+		data->words[i] = 0x1234 + i * 0x0F31;
+	*core = test_core_create(program, data);
+	test_core_set_direct_data(core, data);
+	core->state.r[0] = 0x04;
+	core->state.r[1] = 0x10;
+	core->state.r[2] = 0x24;
+	core->state.y[0] = 0x0321;
+}
+
+static void test_relocated_fast_loop(void) {
+	test_memory_t program, data, reference_program, reference_data;
+	pmb887x_dsp_tcg_core_t core, reference;
+
+	/* The first pass compiles the body, which maps the loop for the second. */
+	test_relocated_fast_loop_init(&program, &data, &core);
+	test_execute_slices_until(&core, 13, 8);
+	core.state.pc = 0;
+	test_execute_slices_until(&core, 13, 8);
+	g_assert_cmpuint(core.fast_runs, !=, 0);
+
+	/* Single blocks never enter a fast loop. */
+	test_relocated_fast_loop_init(&reference_program, &reference_data, &reference);
+	test_execute_until(&reference, 13, 64);
+	reference.state.pc = 0;
+	test_execute_until(&reference, 13, 64);
+	g_assert_cmpuint(reference.fast_runs, ==, 0);
+
+	core.state.exit_reason = reference.state.exit_reason;
+	g_assert_cmpmem(&core.state, sizeof(core.state), &reference.state, sizeof(reference.state));
+	g_assert_cmpmem(data.words, sizeof(data.words), reference_data.words, sizeof(reference_data.words));
+}
+
 static void test_repeated_instruction_without_repeat(void) {
 	test_memory_t program = {
 		.words = {
@@ -999,6 +1045,7 @@ int main(int argc, char **argv) {
 	g_test_add_func("/pmb887x/dsp/tcg/batched-loop-wait-state-budget", test_batched_loop_wait_state_budget);
 	g_test_add_func("/pmb887x/dsp/tcg/batched-loop-exit-after-write", test_batched_loop_exit_after_write);
 	g_test_add_func("/pmb887x/dsp/tcg/block-repeat-body-exit-after-write", test_block_repeat_body_exit_after_write);
+	g_test_add_func("/pmb887x/dsp/tcg/relocated-fast-loop", test_relocated_fast_loop);
 	g_test_add_func("/pmb887x/dsp/tcg/repeated-instruction-without-repeat", test_repeated_instruction_without_repeat);
 	g_test_add_func("/pmb887x/dsp/tcg/interrupt-repeat-nested-repeat", test_interrupt_repeat_nested_repeat);
 	g_test_add_func("/pmb887x/dsp/tcg/interrupt-repeat-resumes-on-return", test_interrupt_repeat_resumes_on_return);

@@ -478,6 +478,7 @@ struct teak_tcg_core_t {
 	uint64_t chain_exit_stops;
 	uint64_t chain_budget_stops;
 	uint64_t chain_cache_stops;
+	uint64_t fast_runs;
 	bool synchronization_valid;
 };
 

@@ -222,6 +222,7 @@ static TCGv_ptr tcg_pool_temp_new_ptr(void) {
 
 /* Memory layout of the core being translated; only the bank pointer may change at run time. */
 static void tcg_fast_invalidate(void);
+static void tcg_fast_discover(teak_tcg_core_t *core, uint32_t pc);
 static const teak_memory_t *tcg_memory;
 /* Out-of-range accesses load from or store to these before the helper takes over. */
 static const uint16_t tcg_data_read_sink;
@@ -5214,6 +5215,8 @@ static TranslationBlock *tcg_prepare_block(teak_tcg_core_t *core, teak_tcg_block
 		tb = tcg_find_cached_block(core, block);
 		if (tb != NULL) {
 			core->cache_decoded_hits++;
+			/* the same block under this nesting: let the fast lookup find it next time */
+			tcg_cache_block(core, block, tb);
 			break;
 		}
 
@@ -5221,6 +5224,7 @@ static TranslationBlock *tcg_prepare_block(teak_tcg_core_t *core, teak_tcg_block
 			block, &compile_error);
 		if (tb != NULL) {
 			tcg_cache_block(core, block, tb);
+			tcg_fast_discover(core, block->pc);
 			core->cache_compiles++;
 			break;
 		}
@@ -6780,8 +6784,16 @@ static const teak_tcg_fast_loop_t tcg_fast_loops[] = {
 	TEAK_FAST_LOOP(64a9, true),
 };
 
+/* A loop at the addresses of its table (delta 0), or where another firmware placed the same code. */
+typedef struct teak_tcg_fast_site_t {
+	const teak_tcg_fast_loop_t *loop;
+	uint32_t delta;
+	int8_t verified;
+} teak_tcg_fast_site_t;
+
 static uint8_t tcg_fast_map[TEAK_PROGRAM_ADDRESS_MASK + 1];
-static int8_t tcg_fast_verified[ARRAY_SIZE(tcg_fast_loops)];
+static teak_tcg_fast_site_t tcg_fast_sites[32];
+static size_t tcg_fast_site_count;
 static uint64_t tcg_fast_cache_id;
 static uint32_t tcg_fast_program_context;
 static int tcg_fast_mode = -1;
@@ -6809,28 +6821,37 @@ static bool tcg_fast_same_instruction(const teak_insn_t *left, const teak_insn_t
 		left->context_switch == right->context_switch;
 }
 
-static bool tcg_fast_verify(teak_tcg_core_t *core, const teak_tcg_fast_loop_t *loop) {
+static bool tcg_fast_verify(teak_tcg_core_t *core, const teak_tcg_fast_site_t *site) {
+	const teak_tcg_fast_loop_t *loop = site->loop;
+
 	for (size_t i = 0; i < loop->count; i++) {
-		const teak_insn_t *expected = &loop->instructions[i];
+		teak_insn_t expected = loop->instructions[i];
 		teak_insn_t instruction;
 
+		expected.address += site->delta;
+		if (expected.branch_target != 0)
+			expected.branch_target += site->delta;
 		memset(&instruction, 0, sizeof(instruction));
-		if (!teak_decode(core, expected->address, &instruction) || !tcg_fast_same_instruction(&instruction, expected))
+		if (!teak_decode(core, expected.address, &instruction) || !tcg_fast_same_instruction(&instruction, &expected))
 			return false;
-		if (!tcg_fast_supported(expected))
+		if (!tcg_fast_supported(&loop->instructions[i]))
 			return false;
 	}
 	return true;
 }
 
 static void tcg_fast_invalidate(void) {
-	memset(tcg_fast_verified, 0, sizeof(tcg_fast_verified));
+	for (size_t i = 0; i < tcg_fast_site_count; i++)
+		tcg_fast_sites[i].verified = 0;
 }
 
-static const teak_tcg_fast_loop_t *tcg_fast_lookup(teak_tcg_core_t *core) {
+static const teak_tcg_fast_site_t *tcg_fast_lookup(teak_tcg_core_t *core) {
+	const teak_tcg_fast_site_t *site;
 	const teak_tcg_fast_loop_t *loop;
 	const teak_state_t *state = &core->state;
 	uint8_t index = tcg_fast_map[state->pc & TEAK_PROGRAM_ADDRESS_MASK];
+	uint32_t first;
+	uint32_t last;
 	bool inside_repeat;
 
 	if (index == 0)
@@ -6840,26 +6861,28 @@ static const teak_tcg_fast_loop_t *tcg_fast_lookup(teak_tcg_core_t *core) {
 		tcg_fast_program_context = core->program_context;
 		tcg_fast_invalidate();
 	}
-	loop = &tcg_fast_loops[index - 1];
-	if (tcg_fast_verified[index - 1] == 0)
-		tcg_fast_verified[index - 1] = tcg_fast_verify(core, loop) ? 1 : -1;
-	if (tcg_fast_verified[index - 1] < 0 || state->repeat_active)
+	site = &tcg_fast_sites[index - 1];
+	loop = site->loop;
+	if (site->verified == 0)
+		tcg_fast_sites[index - 1].verified = tcg_fast_verify(core, site) ? 1 : -1;
+	if (site->verified < 0 || state->repeat_active)
 		return NULL;
 
+	first = loop->instructions[0].address + site->delta;
+	last = loop->instructions[loop->count - 1].address + site->delta;
 	inside_repeat = state->lp && state->bcn != 0;
 	if (loop->block_repeat) {
 		uint8_t level = state->bcn - 1;
 
-		if (!inside_repeat || state->block_repeat_start[level] != loop->instructions[0].address ||
-			state->block_repeat_end[level] != loop->instructions[loop->count - 1].address)
+		if (!inside_repeat || state->block_repeat_start[level] != first || state->block_repeat_end[level] != last)
 			return NULL;
 	} else if (inside_repeat) {
 		uint32_t end = state->block_repeat_end[state->bcn - 1];
 
-		if (end >= loop->instructions[0].address && end <= loop->instructions[loop->count - 1].address)
+		if (end >= first && end <= last)
 			return NULL;
 	}
-	return loop;
+	return site;
 }
 
 static void tcg_fast_init(void) {
@@ -6868,9 +6891,77 @@ static void tcg_fast_init(void) {
 	tcg_fast_mode = mode == NULL ? 1 : atoi(mode);
 	if (tcg_fast_mode == 0)
 		return;
-	for (size_t i = 0; i < ARRAY_SIZE(tcg_fast_loops); i++)
+	QEMU_BUILD_BUG_ON(ARRAY_SIZE(tcg_fast_loops) > ARRAY_SIZE(tcg_fast_sites));
+	for (size_t i = 0; i < ARRAY_SIZE(tcg_fast_loops); i++) {
+		tcg_fast_sites[i].loop = &tcg_fast_loops[i];
 		for (size_t j = 0; j < tcg_fast_loops[i].count; j++)
 			tcg_fast_map[tcg_fast_loops[i].instructions[j].address] = i + 1;
+	}
+	tcg_fast_site_count = ARRAY_SIZE(tcg_fast_loops);
+}
+
+static bool tcg_fast_words_at(teak_tcg_core_t *core, const teak_tcg_fast_loop_t *loop, uint32_t delta) {
+	for (size_t i = 0; i < loop->count; i++) {
+		const teak_insn_t *instruction = &loop->instructions[i];
+		uint32_t address = instruction->address + delta;
+
+		if (teak_program_read(core, address & TEAK_PROGRAM_ADDRESS_MASK) != instruction->word ||
+			(instruction->words == 2 &&
+				teak_program_read(core, (address + 1) & TEAK_PROGRAM_ADDRESS_MASK) != instruction->expansion))
+			return false;
+	}
+	return true;
+}
+
+/* Maps a loop the firmware placed elsewhere when a block compiled at @pc starts its code. */
+static void tcg_fast_discover(teak_tcg_core_t *core, uint32_t pc) {
+	/* a new program is precompiled before its first slice */
+	if (tcg_fast_mode < 0)
+		tcg_fast_init();
+	if (tcg_fast_mode == 0)
+		return;
+	for (size_t i = 0; i < ARRAY_SIZE(tcg_fast_loops); i++) {
+		const teak_tcg_fast_loop_t *loop = &tcg_fast_loops[i];
+		uint32_t delta = pc - loop->instructions[0].address;
+		size_t index;
+
+		if (!tcg_fast_words_at(core, loop, delta))
+			continue;
+		for (index = 0; index < tcg_fast_site_count; index++)
+			if (tcg_fast_sites[index].loop == loop && tcg_fast_sites[index].delta == delta)
+				break;
+		if (index == ARRAY_SIZE(tcg_fast_sites))
+			return;
+		if (index == tcg_fast_site_count)
+			tcg_fast_site_count++;
+		tcg_fast_sites[index] = (teak_tcg_fast_site_t) { .loop = loop, .delta = delta };
+		for (size_t k = 0; k < loop->count; k++)
+			tcg_fast_map[(loop->instructions[k].address + delta) & TEAK_PROGRAM_ADDRESS_MASK] = index + 1;
+		return;
+	}
+}
+
+/* Moves the program addresses in @state by @delta. */
+static void tcg_fast_relocate(teak_state_t *state, uint32_t delta) {
+	state->pc += delta;
+	state->trace_pc += delta;
+	state->suspended_repeat_pc += delta;
+	for (size_t i = 0; i < TEAK_BLOCK_REPEAT_LEVELS; i++) {
+		state->block_repeat_start[i] += delta;
+		state->block_repeat_end[i] += delta;
+	}
+}
+
+/* Runs the loop in the addresses of its table. */
+static uint32_t tcg_fast_site_run(teak_tcg_core_t *core, const teak_tcg_fast_site_t *site, uint32_t budget) {
+	uint32_t cycles;
+
+	if (site->delta == 0)
+		return site->loop->run(core, budget);
+	tcg_fast_relocate(&core->state, -site->delta);
+	cycles = site->loop->run(core, budget);
+	tcg_fast_relocate(&core->state, site->delta);
+	return cycles;
 }
 
 static void tcg_fast_account(teak_tcg_core_t *core, uint32_t cycles) {
@@ -6887,7 +6978,7 @@ static bool tcg_execute_prepared_block(teak_tcg_core_t *core, const teak_tcg_blo
 	size_t max_cycles);
 
 /* TEAK_TCG_FAST=2 (with TEAK_TCG_MAX_BLOCK=1): replay every fast run through the translator and compare. */
-static uint32_t tcg_fast_check(teak_tcg_core_t *core, const teak_tcg_fast_loop_t *loop, uint32_t budget) {
+static uint32_t tcg_fast_check(teak_tcg_core_t *core, const teak_tcg_fast_site_t *site, uint32_t budget) {
 	static uint16_t *memory_before;
 	static uint16_t *memory_fast;
 	size_t words = TEAK_PROGRAM_ADDRESS_MASK + 1;
@@ -6904,7 +6995,7 @@ static uint32_t tcg_fast_check(teak_tcg_core_t *core, const teak_tcg_fast_loop_t
 		memory_fast = g_new(uint16_t, words);
 	}
 	memcpy(memory_before, core->memory.direct_data, words * sizeof(uint16_t));
-	cycles = loop->run(core, budget);
+	cycles = tcg_fast_site_run(core, site, budget);
 	if (cycles == 0)
 		return 0;
 	fast = core->state;
@@ -6933,8 +7024,8 @@ static uint32_t tcg_fast_check(teak_tcg_core_t *core, const teak_tcg_fast_loop_t
 		const uint8_t *r = (const uint8_t *) &reference;
 		const uint8_t *f = (const uint8_t *) &fast;
 
-		fprintf(stderr, "teak fast check: mismatch loop=%04X start=%04X cycles=%u\n", loop->instructions[0].address,
-			before.pc, cycles);
+		fprintf(stderr, "teak fast check: mismatch loop=%04X start=%04X cycles=%u\n",
+			site->loop->instructions[0].address + site->delta, before.pc, cycles);
 		for (size_t i = 0; i < sizeof(fast); i++)
 			if (r[i] != f[i])
 				fprintf(stderr, "  state+%zu: tcg=%02X fast=%02X\n", i, r[i], f[i]);
@@ -6950,28 +7041,29 @@ static uint32_t tcg_fast_check(teak_tcg_core_t *core, const teak_tcg_fast_loop_t
 	return cycles;
 }
 
-static bool tcg_execute_fast(teak_tcg_core_t *core, const teak_tcg_fast_loop_t *loop, size_t max_cycles) {
+static bool tcg_execute_fast(teak_tcg_core_t *core, const teak_tcg_fast_site_t *site, size_t max_cycles) {
 	static uint64_t checked;
 	uint32_t budget = max_cycles - core->last_block_cycles;
 	uint32_t cycles;
 
 	if (tcg_fast_mode == 2) {
-		static uint64_t loop_cycles[ARRAY_SIZE(tcg_fast_loops)];
-		cycles = tcg_fast_check(core, loop, budget);
-		loop_cycles[loop - tcg_fast_loops] += cycles;
+		static uint64_t site_cycles[ARRAY_SIZE(tcg_fast_sites)];
+		cycles = tcg_fast_check(core, site, budget);
+		site_cycles[site - tcg_fast_sites] += cycles;
 		if (cycles != 0 && (++checked & 0xFFFF) == 0) {
 			fprintf(stderr, "teak fast check: %" PRIu64 " runs verified, cycles", checked);
-			for (size_t i = 0; i < ARRAY_SIZE(tcg_fast_loops); i++)
-				fprintf(stderr, " %04X:%d:%" PRIu64, tcg_fast_loops[i].instructions[0].address, tcg_fast_verified[i],
-					loop_cycles[i]);
+			for (size_t i = 0; i < tcg_fast_site_count; i++)
+				fprintf(stderr, " %04X:%d:%" PRIu64, tcg_fast_sites[i].loop->instructions[0].address +
+					tcg_fast_sites[i].delta, tcg_fast_sites[i].verified, site_cycles[i]);
 			fprintf(stderr, "\n");
 		}
 	} else {
-		cycles = loop->run(core, budget);
+		cycles = tcg_fast_site_run(core, site, budget);
 	}
 	if (cycles == 0)
 		return false;
 	tcg_fast_account(core, cycles);
+	core->fast_runs++;
 	return true;
 }
 
@@ -7227,12 +7319,12 @@ bool teak_tcg_execute_slice(teak_tcg_core_t *core, size_t max_cycles) {
 		tcg_fast_init();
 	success = true;
 	while (true) {
-		const teak_tcg_fast_loop_t *loop = NULL;
+		const teak_tcg_fast_site_t *site = NULL;
 		bool fast_next = false;
 
 		if (tcg_fast_map[core->state.pc & TEAK_PROGRAM_ADDRESS_MASK] != 0)
-			loop = tcg_fast_lookup(core);
-		if (loop != NULL && tcg_execute_fast(core, loop, max_cycles)) {
+			site = tcg_fast_lookup(core);
+		if (site != NULL && tcg_execute_fast(core, site, max_cycles)) {
 			if (qatomic_xchg(&core->state.exit_request, 0) != 0)
 				break;
 
