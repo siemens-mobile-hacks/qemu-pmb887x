@@ -6,6 +6,8 @@
 #ifndef TARGET_ARM_TCG_ARM9E_CYCLES_H
 #define TARGET_ARM_TCG_ARM9E_CYCLES_H
 
+#include "accel/tcg/memory-timing.h"
+
 /* Cycles an instruction takes when it executes; a skipped one takes one. */
 uint32_t arm9e_a32_cycles(uint32_t insn);
 uint32_t arm9e_thumb_cycles(uint32_t insn);
@@ -17,5 +19,14 @@ uint32_t arm9e_thumb_cycles(uint32_t insn);
  */
 uint32_t arm9e_a32_stall(uint32_t *late, uint32_t insn);
 uint32_t arm9e_thumb_stall(uint32_t *late, uint32_t insn);
+
+/*
+ * Cycles beyond its instructions that one iteration of the loop @insns takes
+ * for streaming memory traffic; Thumb @insns are halfwords. A loop that
+ * calls or computes a jump costs none.
+ */
+uint32_t arm9e_loop_memory_cycles(const uint32_t *insns, size_t count,
+                                  bool is_thumb,
+                                  const TCGMemoryTiming *timing);
 
 #endif

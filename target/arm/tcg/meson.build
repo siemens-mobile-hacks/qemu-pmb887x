@@ -74,6 +74,7 @@ arm_common_user_system_ss.add(
   'op_helper.c',
   'translate.c',
   'arm9e-cycles.c',
+  'arm9e-memory.c',
   'translate-m-nocp.c',
   'translate-mve.c',
   'translate-neon.c',
