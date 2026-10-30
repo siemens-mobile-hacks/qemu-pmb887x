@@ -55,6 +55,7 @@ struct pmb887x_cgu_t {
 	Clock *mmci_clock;
 	Clock *ahb_per_clock;
 	Clock *cpu_clock;
+	Clock *ebu_clock;
 	
 	uint32_t osc;
 	uint32_t con0;
@@ -286,6 +287,26 @@ static uint32_t cgu_get_fpi1_freq(pmb887x_cgu_t *p) {
 	return freq >> div;
 }
 
+static uint32_t cgu_get_ebu_freq(pmb887x_cgu_t *p) {
+	switch (p->con2 & CGU_CON2_EBU_CLKSEL) {
+		case CGU_CON2_EBU_CLKSEL_OSC:
+			return p->xtal;
+		case CGU_CON2_EBU_CLKSEL_PLL:
+			return cgu_get_pll_freq(p);
+		case CGU_CON2_EBU_CLKSEL_PHASE1:
+			return cgu_get_phase_freq(p, 1);
+		case CGU_CON2_EBU_CLKSEL_PHASE2:
+			return cgu_get_phase_freq(p, 2);
+		case CGU_CON2_EBU_CLKSEL_PHASE3:
+			return cgu_get_phase_freq(p, 3);
+		case CGU_CON2_EBU_CLKSEL_PHASE4:
+			return cgu_get_phase_freq(p, 4);
+		case CGU_CON2_EBU_CLKSEL_AHB:
+			return cgu_get_ahb_freq(p);
+	}
+	return 0;
+}
+
 // CPU freq from AHB
 static uint32_t cgu_get_cpu_freq(pmb887x_cgu_t *p) {
 	uint32_t ahb_freq = cgu_get_ahb_freq(p);
@@ -334,6 +355,7 @@ static void cgu_update_state(struct pmb887x_cgu_t *p) {
 	clock_update_hz(p->mmci_clock, cgu_get_mmci_freq(p));
 	clock_update_hz(p->ahb_per_clock, cgu_get_ahb_per_freq(p));
 	clock_update_hz(p->cpu_clock, new_fcpu);
+	clock_update_hz(p->ebu_clock, cgu_get_ebu_freq(p));
 }
 
 static uint64_t cgu_io_read(void *opaque, hwaddr haddr, unsigned size) {
@@ -459,6 +481,7 @@ static void cgu_init(Object *obj) {
 	p->mmci_clock = qdev_init_clock_out(dev, "MMCI");
 	p->ahb_per_clock = qdev_init_clock_out(dev, "AHB_PER");
 	p->cpu_clock = qdev_init_clock_out(dev, "CPU");
+	p->ebu_clock = qdev_init_clock_out(dev, "EBU");
 	p->lock_timer = timer_new_ns(QEMU_CLOCK_VIRTUAL, cgu_pll_lock_timer_expired, p);
 }
 
