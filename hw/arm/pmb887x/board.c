@@ -21,6 +21,9 @@
 #include "hw/arm/pmb887x/dsp.h"
 #include "hw/arm/pmb887x/board/devices.h"
 #include "hw/arm/pmb887x/board/board.h"
+#include "hw/arm/pmb887x/board/timings/bus.h"
+#include "hw/arm/pmb887x/board/timings/memory.h"
+#include "hw/arm/pmb887x/board/memory.h"
 #include "hw/arm/pmb887x/board/analog.h"
 #include "hw/arm/pmb887x/board/gpio.h"
 #include "hw/arm/pmb887x/board/keyboard.h"
@@ -48,6 +51,11 @@ static uint32_t pmb887x_get_initial_pc(void) {
 	const char *wait_for_serial = getenv("PMB887X_WAIT_FOR_SERIAL");
 	return wait_for_serial && strcmp(wait_for_serial, "1") == 0 ? 0x00082000 : 0x00000000;
 #endif
+}
+
+static bool pmb887x_has_memory_timing(void) {
+	const char *memory_timing = getenv("PMB887X_MEMORY_TIMING");
+	return memory_timing && strcmp(memory_timing, "1") == 0;
 }
 
 static void pmb887x_cpu_reset(void *opaque) {
@@ -100,6 +108,8 @@ static void pmb887x_init(MachineState *machine) {
 		exit(1);
 	}
 
+	bool has_memory_timing = pmb887x_has_memory_timing();
+
 	pmb887x_trace_init();
 	pmb887x_board_init(board_config_file);
 
@@ -140,6 +150,7 @@ static void pmb887x_init(MachineState *machine) {
 	// 0x00800000 (Internal SRAM, 96k)
 	MemoryRegion *sram = g_new(MemoryRegion, 1);
 	memory_region_init_ram(sram, NULL, "SRAM", 0x18000, &error_fatal);
+	memory_region_set_fetch_kind(sram, PMB887X_FETCH_SRAM);
 	memory_region_add_subregion_overlap(sysmem, 0x00800000, sram, 1);
 
 	// Mirrors of SRAM
@@ -179,6 +190,8 @@ static void pmb887x_init(MachineState *machine) {
 	clock_set_callback(cpu_clock, pmb887x_cpu_clock_update, cpu_clock, ClockUpdate);
 	clock_set_source(cpu_clock, qdev_get_clock_out(cgu, "CPU"));
 	pmb887x_cpu_clock_update(cpu_clock, ClockUpdate);
+	if (has_memory_timing)
+		pmb887x_bus_init(cgu);
 
 	// Port Control Logic
 	DeviceState *gpio = pmb887x_new_cpu_module("GPIO");
@@ -276,6 +289,8 @@ static void pmb887x_init(MachineState *machine) {
 
 	// System Control Unit
 	DeviceState *scu = pmb887x_new_cpu_module("SCU");
+	if (has_memory_timing)
+		pmb887x_memory_timing_init(CPU(cpu), cgu, scu);
 	const char *stop_on_excp = getenv("QEMU_ARM_STOP_ON_EXCP");
 	if (stop_on_excp && strcmp(stop_on_excp, "1") == 0)
 		object_property_set_bool(OBJECT(scu), "stop_on_watchdog", true, &error_fatal);

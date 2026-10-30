@@ -20,6 +20,7 @@ void pmb887x_board_ebu_connect(DeviceState *ebuc, int cs, MemoryRegion *region) 
 MemoryRegion *pmb887x_board_create_sdram(const char *id, uint32_t size) {
 	MemoryRegion *sdram = g_new(MemoryRegion, 1);
 	memory_region_init_ram(sdram, NULL, id, size, &error_fatal);
+	memory_region_set_fetch_kind(sdram, PMB887X_FETCH_SDRAM);
 	return sdram;
 }
 
@@ -49,5 +50,7 @@ MemoryRegion *pmb887x_board_create_nor_flash(const char *id, uint32_t vid, uint3
 
 	*size = object_property_get_uint(OBJECT(flash), "size", &error_fatal);
 
-	return sysbus_mmio_get_region(SYS_BUS_DEVICE(flash), 0);
+	MemoryRegion *region = sysbus_mmio_get_region(SYS_BUS_DEVICE(flash), 0);
+	memory_region_set_fetch_kind(region, PMB887X_FETCH_FLASH);
+	return region;
 }
