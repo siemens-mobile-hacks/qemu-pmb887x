@@ -158,7 +158,7 @@ static void pasic_i2s_write(I2SSink *sink, const int16_t *samples, size_t frame_
 			fifo8_push(&p->audio_fifo, sample >> 8);
 		}
 	}
-	pmb887x_audio_buffer_note_push(&p->audio_buffer, qemu_clock_get_ns(QEMU_CLOCK_REALTIME));
+	pmb887x_audio_buffer_note_push(&p->audio_buffer);
 	qemu_mutex_unlock(&p->audio_lock);
 }
 

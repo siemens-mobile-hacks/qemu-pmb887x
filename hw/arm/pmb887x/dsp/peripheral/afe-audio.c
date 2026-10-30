@@ -177,6 +177,6 @@ void afe_audio_produce(afe_audio_t *audio, uint16_t sample_word) {
 	qemu_mutex_lock(&audio->lock);
 	if (fifo8_num_used(&audio->fifo) + sizeof(bytes) <= AFE_AUDIO_FIFO_BYTES)
 		fifo8_push_all(&audio->fifo, bytes, sizeof(bytes));
-	pmb887x_audio_buffer_note_push(&audio->buffer, qemu_clock_get_ns(QEMU_CLOCK_REALTIME));
+	pmb887x_audio_buffer_note_push(&audio->buffer);
 	qemu_mutex_unlock(&audio->lock);
 }

@@ -17,7 +17,10 @@ struct pmb887x_audio_buffer_t {
 	uint8_t data[PMB887X_AUDIO_BUFFER_CAPACITY];
 	size_t length;
 	size_t position;
-	/* Guarded by the FIFO's lock. */
+	/* Guarded by the FIFO's lock.  The producer only counts its pushes; the
+	 * consumer, which reads the clock anyway, times when the count moved. */
+	uint64_t pushes;
+	uint64_t seen_pushes;
 	int64_t last_push_ns;
 };
 
@@ -30,5 +33,5 @@ const uint8_t *pmb887x_audio_buffer_peek(
 	int64_t now_ns,
 	size_t *available
 );
-void pmb887x_audio_buffer_note_push(pmb887x_audio_buffer_t *buffer, int64_t now_ns);
+void pmb887x_audio_buffer_note_push(pmb887x_audio_buffer_t *buffer);
 void pmb887x_audio_buffer_consume(pmb887x_audio_buffer_t *buffer, size_t consumed);

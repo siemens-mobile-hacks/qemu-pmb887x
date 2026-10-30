@@ -59,7 +59,7 @@ static void test_underrun_mid_stream(void) {
 	qemu_mutex_init(&lock);
 	fifo8_create(&fifo, 8);
 	fifo8_push_all(&fifo, SAMPLES, sizeof(SAMPLES));
-	pmb887x_audio_buffer_note_push(&buffer, 1000);
+	pmb887x_audio_buffer_note_push(&buffer);
 
 	data = pmb887x_audio_buffer_peek(&buffer, &fifo, &lock, 4, 1000, &size);
 	g_assert_cmpmem(data, size, SAMPLES, sizeof(SAMPLES));
