@@ -50,16 +50,6 @@ static void do_nothing(CPUState *cpu, run_on_cpu_data d)
 {
 }
 
-static int64_t mttcg_next_virtual_timer_ns(void)
-{
-    int64_t expire = qemu_clock_expire_time_ns(QEMU_CLOCK_VIRTUAL);
-
-    if (expire < 0) {
-        return -1;
-    }
-    return MAX(expire - qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL), 0);
-}
-
 static int64_t mttcg_idle_virtual_timers(CPUState *cpu)
 {
     cpu_clock_owner_progress(false);
@@ -68,8 +58,7 @@ static int64_t mttcg_idle_virtual_timers(CPUState *cpu)
         return 0;
     }
     /* Interrupts are raised under the BQL, held until the thread sleeps. */
-    cpu_clock_owner_progress(true);
-    return mttcg_next_virtual_timer_ns();
+    return cpu_clock_owner_idle(qemu_clock_expire_time_ns(QEMU_CLOCK_VIRTUAL));
 }
 
 static bool mttcg_wait_for_clock(CPUState *cpu, int64_t *realp)
@@ -87,6 +76,33 @@ static bool mttcg_wait_for_clock(CPUState *cpu, int64_t *realp)
         qemu_cpu_sleep_ns(cpu, MAX(until - real, CPU_CLOCK_OWNER_LEAD_NS / 2));
     }
     return true;
+}
+
+/*
+ * cpu_exec() found the vcpu-timers cycle budget spent and nothing else to
+ * do: run the virtual timers that are due and start the next budget
+ * without leaving it, as the loop below would.  A display refill spends a
+ * budget on every DMA burst, and leaving cpu_exec() for each costs more
+ * than the burst.  False when the loop has to act first: queued work, a
+ * stop request, or a clock that must wait for real time.
+ */
+bool mttcg_cpu_next_budget(CPUState *cpu)
+{
+    int64_t real;
+    bool next = false;
+
+    bql_lock();
+    qemu_clock_run_timers(QEMU_CLOCK_VIRTUAL);
+    if (!qatomic_read(&cpu->exit_request) && cpu_can_run(cpu)) {
+        cpu_clock_owner_progress(false);
+        real = cpu_clock_owner_limit_lag();
+        if (cpu_clock_owner_position() - real < CPU_CLOCK_OWNER_LEAD_NS) {
+            cpu_clock_owner_start_budget(real);
+            next = true;
+        }
+    }
+    bql_unlock();
+    return next;
 }
 
 static void mttcg_force_rcu(Notifier *notify, void *data)

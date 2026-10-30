@@ -1069,6 +1069,17 @@ static inline bool cpu_cycle_budget_expired(CPUState *cpu)
            (int32_t)(cpu->neg.cycle_limit - cpu->neg.cycle_count) <= 0;
 }
 
+/* A spent budget is renewed in place unless the loop outside has work. */
+static inline bool cpu_cycle_budget_exit(CPUState *cpu)
+{
+#ifdef CONFIG_USER_ONLY
+    return false;
+#else
+    return cpu_cycle_budget_expired(cpu) &&
+           (cpu->exception_index != -1 || !mttcg_cpu_next_budget(cpu));
+#endif
+}
+
 static inline bool icount_exit_request(CPUState *cpu)
 {
     if (!icount_enabled()) {
@@ -1240,7 +1251,8 @@ after_interrupts:
      * The corresponding store-release is in cpu_exit.
      */
     if (unlikely(qatomic_load_acquire(&cpu->exit_request)) ||
-        icount_exit_request(cpu) || cpu_cycle_budget_expired(cpu)) {
+        icount_exit_request(cpu) ||
+        cpu_cycle_budget_exit(cpu)) {
         if (cpu->exception_index == -1) {
             cpu->exception_index = EXCP_INTERRUPT;
         }

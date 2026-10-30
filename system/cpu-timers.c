@@ -279,6 +279,68 @@ bool cpu_clock_banked(void)
     return qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) < cpu_clock_bank_end;
 }
 
+static int64_t cpu_clock_idle_lead;
+
+void cpu_clock_set_idle_lead(int64_t ns)
+{
+    cpu_clock_idle_lead = ns;
+}
+
+/*
+ * For an owner waiting for an interrupt, once its expired timers have run;
+ * @deadline is the next one, -1 for none.  Returns 0 after moving the
+ * owner's clock to a deadline at most cpu_clock_idle_lead ahead of real
+ * time - the caller runs timers again - else how long to sleep with the
+ * clock following real time.  A timer every 100 us would otherwise cost a
+ * sleep and a wakeup each.
+ */
+int64_t cpu_clock_owner_idle(int64_t deadline)
+{
+    int64_t raw;
+
+    if (deadline < 0 || !cpu_clock_idle_lead) {
+        cpu_clock_owner_progress(true);
+        return deadline < 0 ? -1 :
+               MAX(deadline - qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL), 0);
+    }
+    raw = cpu_get_raw_clock();
+    if (deadline - raw <= cpu_clock_idle_lead) {
+        qemu_mutex_lock(&cpu_clock_owner_lock);
+        cpu_clock_owner_write(deadline, qatomic_read(cpu_clock_owner_cycles),
+                              cpu_clock_cycle_ps);
+        qemu_mutex_unlock(&cpu_clock_owner_lock);
+        return 0;
+    }
+    cpu_clock_owner_progress(true);
+    return deadline - cpu_clock_idle_lead - raw;
+}
+
+/*
+ * The owner's last host clock reading and its position at the time.  While
+ * the position is still more than CPU_CLOCK_OWNER_LEAD_NS behind that
+ * reading the guest is behind real time, so cpu_get_real_clock() is the
+ * position itself and a fresh reading would change nothing - but it is a
+ * call out to JavaScript on wasm, once per budget, and a compute-bound
+ * guest is exactly the one that cannot spare it.  The reading is renewed
+ * every CPU_CLOCK_OWNER_REREAD_NS of guest time anyway, so lag past
+ * CPU_CLOCK_OWNER_LAG_MAX_NS is still dropped promptly.
+ */
+#define CPU_CLOCK_OWNER_REREAD_NS (10 * SCALE_MS)
+static int64_t cpu_clock_owner_raw_seen;
+static int64_t cpu_clock_owner_raw_at;
+
+static int64_t cpu_clock_owner_raw(int64_t position)
+{
+    if (position != INT64_MAX &&
+        cpu_clock_owner_raw_seen - position > CPU_CLOCK_OWNER_LEAD_NS &&
+        position - cpu_clock_owner_raw_at < CPU_CLOCK_OWNER_REREAD_NS) {
+        return cpu_clock_owner_raw_seen;
+    }
+    cpu_clock_owner_raw_seen = cpu_get_raw_clock();
+    cpu_clock_owner_raw_at = position;
+    return cpu_clock_owner_raw_seen;
+}
+
 /*
  * Caller must hold BQL which serves as mutex for vm_clock_seqlock.
  * Returns cpu_get_real_clock() as of the lag check: reading the host clock
@@ -288,7 +350,7 @@ bool cpu_clock_banked(void)
 int64_t cpu_clock_owner_limit_lag(void)
 {
     int64_t position = cpu_clock_owner_position();
-    int64_t raw = cpu_get_raw_clock();
+    int64_t raw = cpu_clock_owner_raw(position);
 
     if (position != INT64_MAX && position >= cpu_clock_bank_end &&
         raw - position > CPU_CLOCK_OWNER_LAG_MAX_NS) {
@@ -304,7 +366,8 @@ int64_t cpu_clock_owner_limit_lag(void)
         }
         seqlock_write_unlock(&timers_state.vm_clock_seqlock,
                              &timers_state.vm_clock_lock);
-        raw = cpu_get_raw_clock();
+        cpu_clock_owner_raw_seen = 0;
+        raw = cpu_clock_owner_raw(position);
     }
     return MIN(MIN(raw, position), qatomic_read(&qemu_virtual_clock_cap));
 }
@@ -348,7 +411,17 @@ static void cpu_clock_owner_shorten_budget_at(int64_t real)
 
 void cpu_clock_owner_shorten_budget(void)
 {
-    cpu_clock_owner_shorten_budget_at(cpu_get_real_clock());
+    int64_t position;
+
+    if (!cpu_clock_owner) {
+        cpu_clock_owner_shorten_budget_at(cpu_get_real_clock());
+        return;
+    }
+    /* the owner arms timers by the thousand during a display refill */
+    position = cpu_clock_owner_position();
+    cpu_clock_owner_shorten_budget_at(
+        MIN(MIN(cpu_clock_owner_raw(position), position),
+            qatomic_read(&qemu_virtual_clock_cap)));
 }
 
 /* @real: cpu_get_real_clock(), e.g. from cpu_clock_owner_limit_lag() */

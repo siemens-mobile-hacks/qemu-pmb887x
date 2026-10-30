@@ -47,6 +47,8 @@ int64_t cpu_get_clock(void);
  * pauses the clock instead of making the guest catch it up at full speed -
  * except before the guest time given to cpu_clock_set_bank() (the boot):
  * there the guest catches up on all of it, which it does whenever it idles.
+ * A waiting guest's clock follows real time, except that with
+ * cpu_clock_set_idle_lead() its timers run in batches up to that far ahead.
  */
 #define CPU_CLOCK_OWNER_LEAD_NS (200 * SCALE_US)
 #define CPU_CLOCK_OWNER_LAG_MAX_NS (100 * SCALE_MS)
@@ -58,6 +60,8 @@ void cpu_clock_owner_wake(void);
 int64_t cpu_clock_owner_limit_lag(void);
 void cpu_clock_set_bank(int64_t ns);
 bool cpu_clock_banked(void);
+void cpu_clock_set_idle_lead(int64_t ns);
+int64_t cpu_clock_owner_idle(int64_t deadline);
 int64_t cpu_get_real_clock(void);
 void cpu_clock_owner_start_budget(int64_t real);
 void cpu_clock_owner_shorten_budget(void);
