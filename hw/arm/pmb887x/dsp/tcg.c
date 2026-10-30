@@ -1466,31 +1466,6 @@ static bool tcg_block_overlaps(const teak_tcg_block_t *block, uint32_t start, ui
 	return block->pc <= end && block->pc + block->words - 1 >= start;
 }
 
-/*
- * TEAK_TCG_CHECK_LEVEL_FREE=1: decode every block a level-free hit reuses
- * under the state it runs in and abort unless the cached one matches.
- */
-static bool tcg_check_level_free;
-static bool tcg_decode_block(teak_tcg_core_t *core, teak_tcg_block_t *block, size_t max_instructions);
-
-static void tcg_verify_level_free(teak_tcg_core_t *core, const teak_tcg_block_cache_entry_t *entry) {
-	teak_tcg_block_t *decoded = g_new(teak_tcg_block_t, 1);
-	teak_translation_error_t error = core->translation_error;
-	uint32_t error_address = core->translation_error_address;
-	bool same = tcg_decode_block(core, decoded, TEAK_TCG_MAX_BLOCK_INSTRUCTIONS) &&
-		(memcmp(decoded, &entry->block, sizeof(*decoded)) == 0 ||
-			tcg_cached_block_is_prefix(&entry->block, decoded));
-
-	core->translation_error = error;
-	core->translation_error_address = error_address;
-	g_free(decoded);
-	if (!same) {
-		fprintf(stderr, "teak: level-free block %04X decodes differently at bcn=%u (cached at %u)\n",
-			entry->block.pc, core->state.bcn, entry->block_repeat_level);
-		abort();
-	}
-}
-
 static inline QEMU_ALWAYS_INLINE teak_tcg_block_cache_entry_t *tcg_find_cached_entry_fast(teak_tcg_core_t *core) {
 	teak_tcg_block_cache_entry_t *entry;
 	uint8_t level = core->state.bcn;
@@ -1510,14 +1485,8 @@ static inline QEMU_ALWAYS_INLINE teak_tcg_block_cache_entry_t *tcg_find_cached_e
 			bool any_level = entry->level_free && (level == 0 ||
 				!tcg_block_overlaps(&entry->block, core->state.block_repeat_start[level - 1],
 					core->state.block_repeat_end[level - 1]));
-			if (same_level &&
-				tcg_same_block_repeat_ends(entry->block_repeat_end, core->state.block_repeat_end, level)) {
-				core->cache_fast_hits++;
-				return entry;
-			}
-			if (any_level) {
-				if (unlikely(tcg_check_level_free))
-					tcg_verify_level_free(core, entry);
+			if (any_level || (same_level &&
+				tcg_same_block_repeat_ends(entry->block_repeat_end, core->state.block_repeat_end, level))) {
 				core->cache_fast_hits++;
 				return entry;
 			}
@@ -5196,14 +5165,7 @@ static TranslationBlock *tcg_prepare_block(teak_tcg_core_t *core, teak_tcg_block
 	TranslationBlock *tb;
 	size_t max_instructions = TEAK_TCG_MAX_BLOCK_INSTRUCTIONS;
 	int compile_error;
-	static int debug_max = -1;
 
-	if (debug_max < 0) {
-		debug_max = getenv("TEAK_TCG_MAX_BLOCK") ? atoi(getenv("TEAK_TCG_MAX_BLOCK")) : 0;
-		tcg_check_level_free = getenv("TEAK_TCG_CHECK_LEVEL_FREE") != NULL;
-	}
-	if (debug_max > 0)
-		max_instructions = debug_max;
 	tcg_memory = &core->memory;
 	tcg_check_block_cache();
 	tb = tcg_find_cached_block_fast(core, block);
@@ -6796,7 +6758,7 @@ static teak_tcg_fast_site_t tcg_fast_sites[32];
 static size_t tcg_fast_site_count;
 static uint64_t tcg_fast_cache_id;
 static uint32_t tcg_fast_program_context;
-static int tcg_fast_mode = -1;
+static bool tcg_fast_ready;
 
 static bool tcg_fast_same_instruction(const teak_insn_t *left, const teak_insn_t *right) {
 	return left->opcode == right->opcode && left->address == right->address && left->word == right->word &&
@@ -6886,11 +6848,9 @@ static const teak_tcg_fast_site_t *tcg_fast_lookup(teak_tcg_core_t *core) {
 }
 
 static void tcg_fast_init(void) {
-	const char *mode = getenv("TEAK_TCG_FAST");
-
-	tcg_fast_mode = mode == NULL ? 1 : atoi(mode);
-	if (tcg_fast_mode == 0)
+	if (tcg_fast_ready)
 		return;
+	tcg_fast_ready = true;
 	QEMU_BUILD_BUG_ON(ARRAY_SIZE(tcg_fast_loops) > ARRAY_SIZE(tcg_fast_sites));
 	for (size_t i = 0; i < ARRAY_SIZE(tcg_fast_loops); i++) {
 		tcg_fast_sites[i].loop = &tcg_fast_loops[i];
@@ -6916,10 +6876,7 @@ static bool tcg_fast_words_at(teak_tcg_core_t *core, const teak_tcg_fast_loop_t 
 /* Maps a loop the firmware placed elsewhere when a block compiled at @pc starts its code. */
 static void tcg_fast_discover(teak_tcg_core_t *core, uint32_t pc) {
 	/* a new program is precompiled before its first slice */
-	if (tcg_fast_mode < 0)
-		tcg_fast_init();
-	if (tcg_fast_mode == 0)
-		return;
+	tcg_fast_init();
 	for (size_t i = 0; i < ARRAY_SIZE(tcg_fast_loops); i++) {
 		const teak_tcg_fast_loop_t *loop = &tcg_fast_loops[i];
 		uint32_t delta = pc - loop->instructions[0].address;
@@ -6974,92 +6931,9 @@ static void tcg_fast_account(teak_tcg_core_t *core, uint32_t cycles) {
 	core->synchronization_valid = false;
 }
 
-static bool tcg_execute_prepared_block(teak_tcg_core_t *core, const teak_tcg_block_t *block, TranslationBlock *tb,
-	size_t max_cycles);
-
-/* TEAK_TCG_FAST=2 (with TEAK_TCG_MAX_BLOCK=1): replay every fast run through the translator and compare. */
-static uint32_t tcg_fast_check(teak_tcg_core_t *core, const teak_tcg_fast_site_t *site, uint32_t budget) {
-	static uint16_t *memory_before;
-	static uint16_t *memory_fast;
-	size_t words = TEAK_PROGRAM_ADDRESS_MASK + 1;
-	teak_state_t before = core->state;
-	teak_state_t fast;
-	teak_state_t reference;
-	uint32_t last_block_cycles = core->last_block_cycles;
-	uint32_t last_block_count = core->last_block_count;
-	uint32_t pending_cycles = core->pending_cycles;
-	uint32_t cycles;
-
-	if (memory_before == NULL) {
-		memory_before = g_new(uint16_t, words);
-		memory_fast = g_new(uint16_t, words);
-	}
-	memcpy(memory_before, core->memory.direct_data, words * sizeof(uint16_t));
-	cycles = tcg_fast_site_run(core, site, budget);
-	if (cycles == 0)
-		return 0;
-	fast = core->state;
-	memcpy(memory_fast, core->memory.direct_data, words * sizeof(uint16_t));
-	core->state = before;
-	memcpy(core->memory.direct_data, memory_before, words * sizeof(uint16_t));
-
-	for (uint32_t i = 0; i < cycles; i++) {
-		teak_tcg_block_t block;
-		TranslationBlock *tb = tcg_prepare_block(core, &block);
-
-		if (tb == NULL || block.instruction_count != 1 || tcg_block_has_dynamic_cycles(&block)) {
-			fprintf(stderr, "teak fast check: no single-instruction block at %04X (set TEAK_TCG_MAX_BLOCK=1)\n",
-				core->state.pc);
-			abort();
-		}
-		core->last_block_cycles = 0;
-		if (!tcg_execute_prepared_block(core, &block, tb, 1))
-			abort();
-		core->state.exit_reason = TEAK_EXIT_NONE;
-	}
-	reference = core->state;
-	reference.exit_reason = fast.exit_reason;
-	if (memcmp(&reference, &fast, sizeof(fast)) != 0 ||
-		memcmp(core->memory.direct_data, memory_fast, words * sizeof(uint16_t)) != 0) {
-		const uint8_t *r = (const uint8_t *) &reference;
-		const uint8_t *f = (const uint8_t *) &fast;
-
-		fprintf(stderr, "teak fast check: mismatch loop=%04X start=%04X cycles=%u\n",
-			site->loop->instructions[0].address + site->delta, before.pc, cycles);
-		for (size_t i = 0; i < sizeof(fast); i++)
-			if (r[i] != f[i])
-				fprintf(stderr, "  state+%zu: tcg=%02X fast=%02X\n", i, r[i], f[i]);
-		for (size_t i = 0; i < words; i++)
-			if (core->memory.direct_data[i] != memory_fast[i])
-				fprintf(stderr, "  data[%04zX]: tcg=%04X fast=%04X\n", i, core->memory.direct_data[i], memory_fast[i]);
-		abort();
-	}
-	core->state = fast;
-	core->last_block_cycles = last_block_cycles;
-	core->last_block_count = last_block_count;
-	core->pending_cycles = pending_cycles;
-	return cycles;
-}
-
 static bool tcg_execute_fast(teak_tcg_core_t *core, const teak_tcg_fast_site_t *site, size_t max_cycles) {
-	static uint64_t checked;
-	uint32_t budget = max_cycles - core->last_block_cycles;
-	uint32_t cycles;
+	uint32_t cycles = tcg_fast_site_run(core, site, max_cycles - core->last_block_cycles);
 
-	if (tcg_fast_mode == 2) {
-		static uint64_t site_cycles[ARRAY_SIZE(tcg_fast_sites)];
-		cycles = tcg_fast_check(core, site, budget);
-		site_cycles[site - tcg_fast_sites] += cycles;
-		if (cycles != 0 && (++checked & 0xFFFF) == 0) {
-			fprintf(stderr, "teak fast check: %" PRIu64 " runs verified, cycles", checked);
-			for (size_t i = 0; i < tcg_fast_site_count; i++)
-				fprintf(stderr, " %04X:%d:%" PRIu64, tcg_fast_sites[i].loop->instructions[0].address +
-					tcg_fast_sites[i].delta, tcg_fast_sites[i].verified, site_cycles[i]);
-			fprintf(stderr, "\n");
-		}
-	} else {
-		cycles = tcg_fast_site_run(core, site, budget);
-	}
 	if (cycles == 0)
 		return false;
 	tcg_fast_account(core, cycles);
@@ -7315,8 +7189,7 @@ bool teak_tcg_execute_slice(teak_tcg_core_t *core, size_t max_cycles) {
 		return true;
 
 	tcg_check_block_cache();
-	if (tcg_fast_mode < 0)
-		tcg_fast_init();
+	tcg_fast_init();
 	success = true;
 	while (true) {
 		const teak_tcg_fast_site_t *site = NULL;

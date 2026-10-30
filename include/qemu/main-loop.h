@@ -479,7 +479,6 @@ void qemu_cond_wait_bql(QemuCond *cond);
  * qemu_cond_timedwait_bql: like the previous, but with timeout
  */
 void qemu_cond_timedwait_bql(QemuCond *cond, int ms);
-bool qemu_cond_timedwait_bql_ns(QemuCond *cond, int64_t ns);
 
 /* internal interfaces */
 
