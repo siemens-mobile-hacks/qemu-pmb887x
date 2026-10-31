@@ -347,6 +347,18 @@ static void tcg_emit_data_write(TCGv_i32 address, TCGv_i32 value) {
 		tcg_constant_i64((intptr_t) &tcg_data_write_sink));
 	tcg_gen_st16_i32(value, tcg_emit_host_pointer(pointer), 0);
 	tcg_gen_brcondi_i32(TCG_COND_NE, in_range, 0, done);
+	if (tcg_memory->direct_data_high_write_size != 0) {
+		/* Above MMIO, dsp_runtime_data_write is a plain store that marks trace_pc. */
+		TCGLabel *slow = gen_new_label();
+		TCGv_i32 high_offset = tcg_temp_new_i32();
+
+		tcg_gen_subi_i32(high_offset, address, tcg_memory->direct_data_high_write_base);
+		tcg_gen_brcondi_i32(TCG_COND_GEU, high_offset, tcg_memory->direct_data_high_write_size, slow);
+		tcg_gen_st16_i32(value, tcg_emit_host_pointer(tcg_emit_direct_data_address(address)), 0);
+		tcg_gen_st_i32(tcg_memory_pc, tcg_env, offsetof(teak_state_t, trace_pc));
+		tcg_gen_br(done);
+		gen_set_label(slow);
+	}
 	gen_helper_teak_tcg_data_write_at(tcg_env, address, value, tcg_memory_pc, tcg_memory_cycle,
 		tcg_constant_i32(access));
 	gen_set_label(done);
