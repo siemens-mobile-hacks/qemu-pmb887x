@@ -23,6 +23,7 @@
 #define W64_MAX_FIXUPS  1024
 #define W64_MAX_BLK     128     /* nested mode: one block per label */
 #define W64_MAX_LABELS  1024
+#define W64_FRAME_WORDS ((TCG_STATIC_CALL_ARGS_SIZE + TCG_STATIC_FRAME_SIZE) / 4)
 
 /* w64_type / w64_import / table caps come from wasm64.h (the batch
  * union tables in wasm64.c use them too) */
@@ -62,6 +63,18 @@ static __thread struct {
 
     /* register representation: bit r set = value in the i64 local */
     uint32_t rep;
+
+    /*
+     * The call frame lives in wasm locals: nothing but the TB itself reads
+     * it (helper arguments are reloaded here as wasm parameters, and no
+     * value outlives the TB), so each 4-byte-aligned offset the TB touches
+     * gets an i64 local, numbered in order of first use, and the frame
+     * locals run of the header is patched to their count.
+     */
+    uint16_t frame_local[W64_FRAME_WORDS];  /* 1 + local's ordinal, 0: none */
+    uint16_t frame_ofs[W64_FRAME_WORDS];    /* offset / 4 of each ordinal */
+    uint16_t n_frame;
+    size_t frame_count_pos;
 } W;
 
 enum {
@@ -179,6 +192,7 @@ static void w64_call(TCGContext *s, uint8_t uimp)
 #define W64_L_SCR0    (W64_L_SCR32 + 1)
 #define W64_L_SCR1    (W64_L_SCR0 + 1)
 #define W64_L_SCR2    (W64_L_SCR1 + 1)   /* ld/st addr snapshot */
+#define W64_L_FRAME   (W64_L_SCR2 + 1)   /* first frame local (i64) */
 
 /* type-matched scratch local */
 static int w64_scr(TCGType t)
@@ -889,10 +903,86 @@ static void w64_memarg(TCGContext *s, unsigned align, uint64_t offset)
     w64_uleb(s, offset);
 }
 
+/* frame slots ------------------------------------------------------- */
+
+/* the local holding the frame word at @ofs, or -1 to access memory */
+static int w64_frame_local(TCGReg base, intptr_t ofs)
+{
+    unsigned w;
+
+    if (base != TCG_REG_CALL_STACK || ofs < 0 || (ofs & 3) ||
+        ofs >= W64_FRAME_WORDS * 4) {
+        return -1;
+    }
+    w = ofs / 4;
+    if (W.frame_local[w] == 0) {
+        W.frame_ofs[W.n_frame] = w;
+        W.frame_local[w] = ++W.n_frame;
+    }
+    return W64_L_FRAME + W.frame_local[w] - 1;
+}
+
+/* the load opcode's result from a local holding the bytes zero-extended */
+static void w64_frame_extend(TCGContext *s, uint8_t opc)
+{
+    switch (opc) {
+    case 0x28:                              /* i32.load */
+    case 0x2d:                              /* i32.load8_u */
+    case 0x2f:                              /* i32.load16_u */
+        w64_u8(s, 0xa7);                    /* i32.wrap_i64 */
+        break;
+    case 0x2c:                              /* i32.load8_s */
+        w64_u8(s, 0xa7);
+        w64_u8(s, 0xc0);                    /* i32.extend8_s */
+        break;
+    case 0x2e:                              /* i32.load16_s */
+        w64_u8(s, 0xa7);
+        w64_u8(s, 0xc1);                    /* i32.extend16_s */
+        break;
+    case 0x30:                              /* i64.load8_s */
+        w64_u8(s, 0xc2);
+        break;
+    case 0x32:                              /* i64.load16_s */
+        w64_u8(s, 0xc3);
+        break;
+    case 0x34:                              /* i64.load32_s */
+        w64_u8(s, 0xc4);
+        break;
+    case 0x31:                              /* i64.load8_u */
+        w64_const_i64(s, 0xff);
+        w64_u8(s, 0x83);                    /* i64.and */
+        break;
+    case 0x33:                              /* i64.load16_u */
+        w64_const_i64(s, 0xffff);
+        w64_u8(s, 0x83);
+        break;
+    case 0x35:                              /* i64.load32_u */
+        w64_const_i64(s, 0xffffffffu);
+        w64_u8(s, 0x83);
+        break;
+    default:                                /* i64.load */
+        break;
+    }
+}
+
+/* truncate the i64 on the stack to a store of 1 << @align bytes */
+static void w64_frame_truncate(TCGContext *s, unsigned align)
+{
+    if (align < 3) {
+        w64_const_i64(s, MAKE_64BIT_MASK(0, 8 << align));
+        w64_u8(s, 0x83);                    /* i64.and */
+    }
+}
+
 static void w64_load(TCGContext *s, uint8_t opc, TCGType t, TCGReg r0,
                      TCGReg base, intptr_t ofs, unsigned align)
 {
-    if (ofs >= 0 && ofs <= 0xffffffffu) {
+    int frame = w64_frame_local(base, ofs);
+
+    if (frame >= 0) {
+        w64_local_get(s, frame);
+        w64_frame_extend(s, opc);
+    } else if (ofs >= 0 && ofs <= 0xffffffffu) {
         w64_get_addr(s, base);
         w64_u8(s, opc);
         w64_memarg(s, align, ofs);
@@ -911,7 +1001,13 @@ static void w64_load(TCGContext *s, uint8_t opc, TCGType t, TCGReg r0,
 static void w64_store(TCGContext *s, uint8_t opc, TCGType t, TCGReg val,
                       TCGReg base, intptr_t ofs, unsigned align)
 {
-    if (ofs >= 0 && ofs <= 0xffffffffu) {
+    int frame = w64_frame_local(base, ofs);
+
+    if (frame >= 0) {
+        w64_get_i64(s, val);
+        w64_frame_truncate(s, align);
+        w64_local_set(s, frame);
+    } else if (ofs >= 0 && ofs <= 0xffffffffu) {
         w64_get_addr(s, base);
         w64_get(s, val, t);
         w64_u8(s, opc);
@@ -1022,8 +1118,13 @@ static bool tcg_out_sti(TCGContext *s, TCGType t, TCGArg v, TCGReg b, intptr_t o
     uint8_t opc = t == TCG_TYPE_I32 ? 0x36 : 0x37;
     unsigned align = t == TCG_TYPE_I32 ? 2 : 3;
 
+    int frame = w64_frame_local(b, o);
+
     w64_frame_check(b, o);
-    if (o >= 0 && o <= 0xffffffffu) {
+    if (frame >= 0) {
+        w64_const_i64(s, t == TCG_TYPE_I32 ? (uint32_t)v : v);
+        w64_local_set(s, frame);
+    } else if (o >= 0 && o <= 0xffffffffu) {
         w64_get_addr(s, b);
         w64_const(s, t, v);
         w64_u8(s, opc);
@@ -1501,15 +1602,15 @@ static void tcg_out_call(TCGContext *s, const tcg_insn_unit *target,
     w64_u8(s, 0x37);
     w64_memarg(s, 3, 0);
 
-    /* reload arguments from the call frame (slot i at $sp + 8*i) */
+    /* the arguments from the call frame (slot i at $sp + 8*i) */
     for (i = 0; i < np; i++) {
         int tc = (mask >> ((i + 1) * 3)) & 7;
         p[i] = w64_typecode_to_wasm(tc);
         tcg_debug_assert(p[i] != 0xff);
-        w64_local_get(s, W64_P_SP);
-        w64_wrap_addr(s);
-        w64_u8(s, p[i] ? 0x29 /* i64.load */ : 0x28 /* i32.load */);
-        w64_memarg(s, p[i] ? 3 : 2, 8 * i);
+        w64_local_get(s, w64_frame_local(TCG_REG_CALL_STACK, 8 * i));
+        if (!p[i]) {
+            w64_u8(s, 0xa7);                /* i32.wrap_i64 */
+        }
     }
 
     /* ret type: inline switch — a literal decoding, no helper (bring-up
@@ -2710,6 +2811,10 @@ static void tcg_out_tb_start(TCGContext *s)
     W.nested = false;
     W.selfloop = false;
     W.rep = 0;
+    for (unsigned k = 0; k < W.n_frame; k++) {
+        W.frame_local[W.frame_ofs[k]] = 0;
+    }
+    W.n_frame = 0;
     n_hint = 0;
     w64_ir_reset(nlabels);
     w64_scan_labels(s);
@@ -2741,13 +2846,16 @@ static void tcg_out_tb_start(TCGContext *s)
     /* body: [body-size LEB (patched)] [locals] [expr...] */
     s->code_ptr = s->code_buf + W64_BODY_OFF;
     w64_uleb32_p5(s, 0);
-    w64_u8(s, 0x04);                        /* local runs */
+    w64_u8(s, 0x05);                        /* local runs */
     w64_uleb(s, W64_NL + 1);                /* i32: regs + $bp */
     w64_u8(s, 0x7f);
     w64_uleb(s, W64_NL);                    /* i64: regs */
     w64_u8(s, 0x7e);
     w64_u8(s, 0x01); w64_u8(s, 0x7f);       /* i32: $scr32 */
     w64_u8(s, 0x03); w64_u8(s, 0x7e);       /* i64: $scr0..$scr2 */
+    W.frame_count_pos = s->code_ptr - s->code_buf;
+    w64_uleb32_p5(s, 0);                    /* i64: frame (patched) */
+    w64_u8(s, 0x7e);
 
     /* prologue: per-TB-entry accounting, inline */
     if (w64_guest_insns_inline()) {
@@ -2812,7 +2920,16 @@ static int tcg_out_tb_finalize(TCGContext *s)
         return -2;
     }
 
-    /* patch the body-size LEB */
+    /* patch the frame locals' count and the body-size LEB */
+    {
+        tcg_insn_unit *p = s->code_buf + W.frame_count_pos;
+        uint32_t v = W.n_frame;
+        for (int b = 0; b < 4; b++) {
+            p[b] = (v & 0x7f) | 0x80;
+            v >>= 7;
+        }
+        p[4] = v & 0x7f;
+    }
     body_total = s->code_ptr - (s->code_buf + W64_BODY_OFF);
     {
         tcg_insn_unit *p = s->code_buf + W64_BODY_OFF;
