@@ -72,6 +72,7 @@ struct pmb887x_flash_part_t {
 	
 	uint32_t buffer_size;
 	uint32_t buffer_index;
+	uint32_t buffer_end;
 	pmb887x_flash_buffer_t *buffer;
 	const pmb887x_flash_cfg_part_t *cfg;
 	
@@ -136,6 +137,7 @@ static void flash_buffer_clear(pmb887x_flash_part_t *p) {
 	g_clear_pointer(&p->buffer, g_free);
 	p->buffer_size = 0;
 	p->buffer_index = 0;
+	p->buffer_end = 0;
 }
 
 static bool flash_is_read_array_mappable(pmb887x_flash_part_t *p) {
@@ -553,10 +555,12 @@ static void flash_buffer_add(pmb887x_flash_part_t *p, uint32_t offset, uint64_t 
 
 	for (uint32_t i = 0; i < size; i += 2) {
 		pmb887x_flash_buffer_t *buffer_entry = NULL;
-		for (uint32_t j = 0; j < p->buffer_size; j++) {
-			if (p->buffer[j].offset == offset + i && p->buffer[j].size == 2) {
-				buffer_entry = &p->buffer[j];
-				break;
+		if (offset + i < p->buffer_end) {
+			for (uint32_t j = 0; j < p->buffer_index; j++) {
+				if (p->buffer[j].offset == offset + i && p->buffer[j].size == 2) {
+					buffer_entry = &p->buffer[j];
+					break;
+				}
 			}
 		}
 
@@ -565,6 +569,7 @@ static void flash_buffer_add(pmb887x_flash_part_t *p, uint32_t offset, uint64_t 
 			buffer_entry->offset = offset + i;
 			buffer_entry->size = 2;
 			p->buffer_index++;
+			p->buffer_end = MAX(p->buffer_end, offset + i + 2);
 		}
 		buffer_entry->value = value >> i * 8 & 0xFFFF;
 
@@ -831,6 +836,7 @@ static void flash_io_write(void *opaque, hwaddr part_offset, uint64_t value, uin
 				} else {
 					p->buffer_size = (value & 0xFFFF) + 1;
 					p->buffer_index = 0;
+					p->buffer_end = 0;
 					p->buffer = g_new0(pmb887x_flash_buffer_t, p->buffer_size);
 					flash_trace_part(p, "buffered program %d words", p->buffer_size);
 					p->wcycle++;
