@@ -1986,6 +1986,10 @@ static uint64_t do_ld_mmio_beN(CPUState *cpu, CPUTLBEntryFull *full,
     section = io_prepare(&mr_offset, cpu, full, addr, ra);
     mr = section->mr;
 
+    if (mr->lockless_io) {
+        return int_ld_mmio_beN(cpu, full, ret_be, addr, size, mmu_idx,
+                               type, ra, mr, mr_offset);
+    }
     BQL_LOCK_GUARD();
     return int_ld_mmio_beN(cpu, full, ret_be, addr, size, mmu_idx,
                            type, ra, mr, mr_offset);
