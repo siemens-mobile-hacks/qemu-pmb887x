@@ -20,6 +20,8 @@
 #include "hw/arm/pmb887x/gen/cpu_regs.h"
 #include "hw/arm/pmb887x/regs_dump.h"
 #include "hw/arm/pmb887x/mod.h"
+#include "hw/arm/pmb887x/dmac.h"
+#include "hw/arm/pmb887x/dma_sink.h"
 #include "hw/arm/pmb887x/trace.h"
 #include "hw/arm/pmb887x/fifo.h"
 
@@ -78,9 +80,16 @@ struct pmb887x_dif_t {
 	QEMUTimer *transfer_timer;
 	uint16_t tx_data;
 	bool transfer_pending;
+	bool can_serve_tx_burst;
+	bool is_tx_burst_served;
+	int tx_breq_level;
 
 	uint32_t mask;
 	uint32_t bits;
+	/* dif_mux() as a table per input byte, rebuilt when mux_dirty */
+	uint16_t mux_lut[4][256];
+	uint16_t mux_const;
+	bool mux_dirty;
 	uint16_t pbc_word;
 	bool is_pbc_word_valid;
 
@@ -128,14 +137,35 @@ static void dif_reset_bit_mapping(pmb887x_dif_t *p) {
 			shift++;
 		p->bmreg[reg_index] |= bit << shift;
 	}
+	p->mux_dirty = true;
+}
+
+static void dif_set_tx_breq(pmb887x_dif_t *p, int level) {
+	p->tx_breq_level = level;
+	qemu_set_irq(p->dmac_tx_breq, level);
+}
+
+/*
+ * The transfer timer raising the TX burst request runs no guest code before
+ * the DMAC pass serves it and only the DMAC sees the line, so the DMAC can
+ * serve it at once; the TX interrupt still pulses as it would.
+ */
+static bool dif_serve_tx_burst(pmb887x_dif_t *p) {
+	if (!p->can_serve_tx_burst || p->tx_breq_level)
+		return false;
+	p->can_serve_tx_burst = false;
+	p->is_tx_burst_served = pmb887x_dmac_serve_burst(p->dmac_tx_breq);
+	return p->is_tx_burst_served;
 }
 
 static void dif_trigger_dma(pmb887x_dif_t *p) {
 	uint32_t ris = pmb887x_srb_get_ris_dma(&p->srb);
 	if (p->dmac_tx_clr) {
-		qemu_set_irq(p->dmac_tx_breq, 0);
+		dif_set_tx_breq(p, 0);
+	} else if ((ris & DIFv1_RIS_TX) == 0 || !dif_serve_tx_burst(p)) {
+		dif_set_tx_breq(p, (ris & DIFv1_RIS_TX) != 0);
 	} else {
-		qemu_set_irq(p->dmac_tx_breq, (ris & DIFv1_RIS_TX) != 0);
+		ris = pmb887x_srb_get_ris_dma(&p->srb);
 	}
 
 	if (p->dmac_rx_clr) {
@@ -182,15 +212,15 @@ static void dif_update_rx_request(pmb887x_dif_t *p) {
 	}
 }
 
-static uint16_t dif_mux(pmb887x_dif_t *p, uint32_t value) {
-	uint16_t output = 0;
+static void dif_build_mux_lut(pmb887x_dif_t *p) {
+	memset(p->mux_lut, 0, sizeof(p->mux_lut));
+	p->mux_const = 0;
 
-	for (uint32_t output_bit = 0; output_bit < p->bits; output_bit++) {
+	for (uint32_t output_bit = 0; output_bit < MIN(p->bits, 16); output_bit++) {
 		uint32_t bmreg_index = output_bit / 6;
 		uint32_t bmreg_shift = (output_bit % 6) * 5;
 		uint32_t bcsel_index = output_bit / 16;
 		uint32_t bcsel_shift = (output_bit % 16) * 2;
-		uint32_t bit = 0;
 
 		if (bmreg_shift >= 15)
 			bmreg_shift++;
@@ -198,14 +228,26 @@ static uint16_t dif_mux(pmb887x_dif_t *p, uint32_t value) {
 		uint32_t mux = ((p->bmreg[bmreg_index] >> bmreg_shift) & 0x1F);
 		uint32_t bcsel = ((p->bcsel[bcsel_index] >> bcsel_shift) & 3);
 		if (bcsel == 0) {
-			bit = ((value >> mux) & 1);
+			for (uint32_t byte = 0; byte < 256; byte++) {
+				if ((byte >> (mux % 8)) & 1)
+					p->mux_lut[mux / 8][byte] |= 1 << output_bit;
+			}
 		} else if (bcsel == 1) {
-			bit = ((p->bcreg >> output_bit) & 1);
+			p->mux_const |= ((p->bcreg >> output_bit) & 1) << output_bit;
 		}
-		output |= (bit << output_bit);
 	}
+	p->mux_dirty = false;
+}
 
-	return output;
+static uint16_t dif_mux(pmb887x_dif_t *p, uint32_t value) {
+	if (unlikely(p->mux_dirty))
+		dif_build_mux_lut(p);
+
+	return p->mux_const |
+		p->mux_lut[0][value & 0xFF] |
+		p->mux_lut[1][(value >> 8) & 0xFF] |
+		p->mux_lut[2][(value >> 16) & 0xFF] |
+		p->mux_lut[3][value >> 24];
 }
 
 static bool dif_convert_word(pmb887x_dif_t *p, uint16_t value, uint16_t *output) {
@@ -279,24 +321,34 @@ static bool dif_transfer_load(pmb887x_dif_t *p) {
 	return true;
 }
 
-static void dif_transfer_complete(void *opaque) {
-	pmb887x_dif_t *p = opaque;
-
+static void dif_transfer_run(pmb887x_dif_t *p, bool is_timer) {
 	while (p->transfer_pending) {
 		p->transfer_pending = false;
 		if (!dif_is_running(p))
 			break;
 
 		dif_transfer_word(p);
-		if (!dif_transfer_load(p))
+		p->can_serve_tx_burst = is_timer;
+		p->is_tx_burst_served = false;
+		bool is_loaded = dif_transfer_load(p);
+		p->can_serve_tx_burst = false;
+		if (!is_loaded)
 			break;
-		if (pmb887x_srb_get_ris(&p->srb) != 0) {
+		if (pmb887x_srb_get_ris(&p->srb) != 0 || p->is_tx_burst_served) {
 			timer_mod(p->transfer_timer, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + 1);
 			break;
 		}
 	}
 	if (!p->transfer_pending)
 		p->status &= ~DIFv1_CON_BSY;
+}
+
+static void dif_transfer_complete(void *opaque) {
+	dif_transfer_run(opaque, false);
+}
+
+static void dif_transfer_timer(void *opaque) {
+	dif_transfer_run(opaque, true);
 }
 
 static void dif_schedule_transfer(pmb887x_dif_t *p) {
@@ -356,6 +408,7 @@ static void dif_update_state(pmb887x_dif_t *p) {
 	uint32_t bits = ((p->con & DIFv1_CON_BM) >> DIFv1_CON_BM_SHIFT) + 1;
 	p->bits = bits;
 	p->mask = (1 << bits) - 1;
+	p->mux_dirty = true;
 
 	dif_update_transfer(p);
 }
@@ -635,6 +688,7 @@ static void dif_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned si
 		case DIFv1_BCSEL0:
 		case DIFv1_BCSEL1:
 			p->bcsel[(haddr - DIFv1_BCSEL0) / 4] = value;
+			p->mux_dirty = true;
 			dif_dump_bit_mux(p);
 			break;
 
@@ -645,11 +699,13 @@ static void dif_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned si
 		case DIFv1_BMREG4:
 		case DIFv1_BMREG5:
 			p->bmreg[(haddr - DIFv1_BMREG0) / 4] = value;
+			p->mux_dirty = true;
 			dif_dump_bit_mux(p);
 			break;
 
 		case DIFv1_BCREG:
 			p->bcreg = value;
+			p->mux_dirty = true;
 			dif_dump_bit_mux(p);
 			break;
 
@@ -671,6 +727,26 @@ static void dif_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned si
 			EPRINTF("unknown reg access: %02"PRIX64"\n", haddr);
 			break;
 	}
+}
+
+static bool dif_dma_write_block(
+	pmb887x_dma_sink_t *sink,
+	MemoryRegion *mr,
+	hwaddr addr,
+	const uint8_t *data,
+	uint32_t width,
+	uint32_t count,
+	bool is_increment
+) {
+	pmb887x_dif_t *p = (pmb887x_dif_t *) sink;
+	if (mr != &p->mmio || addr != DIFv1_TB || (is_increment && count > 1))
+		return false;
+	if (width != 1 && width != 2 && width != 4)
+		return false;
+
+	for (uint32_t i = 0; i < count; i++)
+		dif_io_write(p, addr, ldn_le_p(data + i * width, width), width);
+	return true;
 }
 
 static void dif_event_handler(void *opaque, int event_id, int level) {
@@ -743,7 +819,7 @@ static void dif_realize(DeviceState *dev, Error **errp) {
 	pmb887x_fifo16_init(&p->tx_fifo_single, 1);
 	pmb887x_fifo16_init(&p->rx_fifo_single, 1);
 	p->transfer_bh = qemu_bh_new(dif_transfer_complete, p);
-	p->transfer_timer = timer_new_ns(QEMU_CLOCK_VIRTUAL, dif_transfer_complete, p);
+	p->transfer_timer = timer_new_ns(QEMU_CLOCK_VIRTUAL, dif_transfer_timer, p);
 
 	dif_set_fifo(p, DIF_FIFO_RX, false);
 	dif_set_fifo(p, DIF_FIFO_TX, false);
@@ -791,7 +867,7 @@ static void dif_reset(DeviceState *dev) {
 	p->dmac_tx_clr = 0;
 	p->dmac_rx_clr = 0;
 
-	qemu_set_irq(p->dmac_tx_breq, 0);
+	dif_set_tx_breq(p, 0);
 	qemu_set_irq(p->dmac_rx_breq, 0);
 
 	dif_set_fifo(p, DIF_FIFO_RX, false);
@@ -811,6 +887,9 @@ static void dif_class_init(ObjectClass *klass, const void *data) {
 	device_class_set_legacy_reset(dc, dif_reset);
 	dc->realize = dif_realize;
 	dc->unrealize = dif_unrealize;
+
+	pmb887x_dma_sink_class_t *dma_sink = PMB887X_DMA_SINK_CLASS(klass);
+	dma_sink->write_block = dif_dma_write_block;
 }
 
 static const TypeInfo dif_info = {
@@ -819,6 +898,10 @@ static const TypeInfo dif_info = {
 	.instance_size 	= sizeof(pmb887x_dif_t),
 	.instance_init 	= dif_init,
 	.class_init    	= dif_class_init,
+	.interfaces		= (const InterfaceInfo[]) {
+		{ TYPE_PMB887X_DMA_SINK },
+		{ }
+	},
 };
 
 static void dif_register_types(void) {

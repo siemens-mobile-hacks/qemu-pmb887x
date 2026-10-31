@@ -1340,13 +1340,14 @@ static bool dmac_has_pending_requests(const pmb887x_dmac_t *p) {
 }
 
 /*
- * Serves a burst request, not the last one, of a peripheral that controls the
- * flow, as the pass raising the request line would start, without the line and
- * the pass: the peripheral calls it where it would raise the line and nothing
- * can run before that pass. A display refill raises and clears the line once
- * per word. Returns false, changing nothing, unless that pass would move one
- * burst on the one channel serving the peripheral and do nothing else; after a
- * partial burst it returns false and the raised line leaves the rest to a pass.
+ * Serves a burst request, not the last one, of a memory-to-peripheral channel
+ * (either side controlling the flow), as the pass raising the request line
+ * would start, without the line and the pass: the peripheral calls it where it
+ * would raise the line and nothing can run before that pass. A display refill
+ * raises and clears the line once per word. Returns false, changing nothing,
+ * unless that pass would move one burst on the one channel serving the
+ * peripheral and do nothing else; after a partial burst it returns false and
+ * the raised line leaves the rest to a pass.
  */
 bool pmb887x_dmac_serve_burst(qemu_irq line) {
 	int sel;
@@ -1377,20 +1378,28 @@ bool pmb887x_dmac_serve_burst(qemu_irq line) {
 			return false;
 		if (src_periph != id && dst_periph != id)
 			continue;
-		if (ch != NULL || flow_ctrl != DMAC_CH_CONFIG_FLOW_CTRL_MEM2PER_PER || dst_periph != id)
+		if (ch != NULL || dst_periph != id)
+			return false;
+		if (flow_ctrl != DMAC_CH_CONFIG_FLOW_CTRL_MEM2PER_PER && flow_ctrl != DMAC_CH_CONFIG_FLOW_CTRL_MEM2PER)
 			return false;
 		ch = other;
 	}
 	if (ch == NULL || (ch->config & DMAC_CH_CONFIG_HALT))
 		return false;
 
+	bool is_dmac_flow = (ch->config & DMAC_CH_CONFIG_FLOW_CTRL) == DMAC_CH_CONFIG_FLOW_CTRL_MEM2PER;
+	if (is_dmac_flow && (ch->control & DMAC_CH_CONTROL_TRANSFER_SIZE) == 0)
+		return false;
+
 	RCU_READ_LOCK_GUARD();
 	uint32_t dst_burst_size = dmac_get_burst_size((ch->control & DMAC_CH_CONTROL_DB_SIZE) >> DMAC_CH_CONTROL_DB_SIZE_SHIFT);
 	p->is_in_pass = true;
-	bool is_served = dmac_transfer_memory_to_destination(p, ch, dst_burst_size, false);
+	bool is_served = dmac_transfer_memory_to_destination(p, ch, dst_burst_size, is_dmac_flow);
 	p->is_in_pass = false;
-	if (p->dmac_pending)
-		timer_mod(p->timer, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL));
+	if (p->dmac_pending) {
+		bool is_pass_cut = pmb887x_srb_get_ris(&p->srb_tc) || pmb887x_srb_get_ris(&p->srb_err);
+		timer_mod(p->timer, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + (is_pass_cut ? 1 : 0));
+	}
 	return is_served;
 }
 
