@@ -353,6 +353,67 @@ static void test_relocated_fast_loop(void) {
 	g_assert_cmpmem(data.words, sizeof(data.words), reference_data.words, sizeof(reference_data.words));
 }
 
+#define TEST_35BE_DATA_WORDS	0x10000
+
+static void test_35be_iterations_init(test_memory_t *program, uint16_t *data, pmb887x_dsp_tcg_core_t *core,
+	const uint8_t *mode
+) {
+	static const uint16_t kernel[] = {
+		/* The EL71 correlator at P:35BE, here at P:0002. */
+		0x1F08, 0x1B4C, 0x1F08, 0x1B4C, 0x67C0, 0x77C0, 0xD022, 0xD22A, 0xDA22, 0xD22A, 0xDA22, 0xD22A, 0xDA22, 0xD22A,
+		0xDA22, 0xD22A, 0xDA22, 0xD22A, 0xDA22, 0xD22A, 0xDA22, 0xD22A, 0xDA22, 0xD22A, 0xDA22, 0xD22A, 0xDA22, 0xD22A,
+		0xDA22, 0xD22A, 0xDA22, 0xD23A, 0x87AB, 0x1B89, 0x1BA9, 0x1F08, 0x1B4C, 0x1F08, 0x1B4C, 0x0095, 0x557C,
+	};
+	static test_memory_t unused_data;
+
+	*program = (test_memory_t) {};
+	memcpy(&program->words[2], kernel, sizeof(kernel));
+	program->words[2 + ARRAY_SIZE(kernel)] = 0x4180; /* br 0x002b. */
+	program->words[3 + ARRAY_SIZE(kernel)] = 2 + ARRAY_SIZE(kernel);
+	for (size_t i = 0; i < TEST_35BE_DATA_WORDS; i++)
+		data[i] = !mode[2] ? 0x1234 + i * 0x0F31 : i % 7 == 0 ? 0x8000 | (i & 0xFF) : 0x7F00 | (i & 0xFF);
+	*core = test_core_create(program, &unused_data);
+	core->memory.direct_data = data;
+	core->memory.direct_data_read_size = TEST_35BE_DATA_WORDS;
+	core->memory.direct_data_write_size = TEST_35BE_DATA_WORDS;
+	core->memory.y_space_base = 0x8000;
+	core->state.pc = 2;
+	core->state.r[0] = 0x0100;
+	core->state.r[1] = 0x3000;
+	core->state.r[2] = 0x1000;
+	core->state.r[4] = 0x8000;
+	core->state.r[5] = 8;
+	core->state.sata = mode[0];
+	core->state.product_shift = mode[1];
+}
+
+/* Whole 35BE iterations against the translator: saturation on and off, shifts, mostly large positive products. */
+static void test_35be_iterations(void) {
+	static uint16_t data[TEST_35BE_DATA_WORDS];
+	static uint16_t reference_data[TEST_35BE_DATA_WORDS];
+	static const uint8_t modes[][3] = { { 0, 0, 0 }, { 0, 3, 0 }, { 1, 1, 0 }, { 1, 3, 0 }, { 0, 2, 1 }, { 1, 2, 1 } };
+
+	for (size_t i = 0; i < ARRAY_SIZE(modes); i++) {
+		test_memory_t program, reference_program;
+		pmb887x_dsp_tcg_core_t core, reference;
+
+		/* The translator runs the first pass whole; its compile maps the loop for the next core. */
+		test_35be_iterations_init(&program, data, &core, modes[i]);
+		test_execute_slices_until(&core, 0x2B, 64);
+		test_35be_iterations_init(&program, data, &core, modes[i]);
+		test_execute_slices_until(&core, 0x2B, 64);
+		g_assert_cmpuint(core.fast_runs, !=, 0);
+
+		test_35be_iterations_init(&reference_program, reference_data, &reference, modes[i]);
+		test_execute_until(&reference, 0x2B, 1024);
+		g_assert_cmpuint(reference.fast_runs, ==, 0);
+
+		core.state.exit_reason = reference.state.exit_reason;
+		g_assert_cmpmem(&core.state, sizeof(core.state), &reference.state, sizeof(reference.state));
+		g_assert_cmpmem(data, sizeof(data), reference_data, sizeof(reference_data));
+	}
+}
+
 static void test_repeated_instruction_without_repeat(void) {
 	test_memory_t program = {
 		.words = {
@@ -1046,6 +1107,7 @@ int main(int argc, char **argv) {
 	g_test_add_func("/pmb887x/dsp/tcg/batched-loop-exit-after-write", test_batched_loop_exit_after_write);
 	g_test_add_func("/pmb887x/dsp/tcg/block-repeat-body-exit-after-write", test_block_repeat_body_exit_after_write);
 	g_test_add_func("/pmb887x/dsp/tcg/relocated-fast-loop", test_relocated_fast_loop);
+	g_test_add_func("/pmb887x/dsp/tcg/35be-iterations", test_35be_iterations);
 	g_test_add_func("/pmb887x/dsp/tcg/repeated-instruction-without-repeat", test_repeated_instruction_without_repeat);
 	g_test_add_func("/pmb887x/dsp/tcg/interrupt-repeat-nested-repeat", test_interrupt_repeat_nested_repeat);
 	g_test_add_func("/pmb887x/dsp/tcg/interrupt-repeat-resumes-on-return", test_interrupt_repeat_resumes_on_return);
