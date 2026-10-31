@@ -172,16 +172,23 @@ static bool dmac_translate(pmb887x_dmac_t *p, pmb887x_dmac_translation_t *transl
 	if (addr >= translation->start && addr + size <= translation->end)
 		return true;
 
-	RCU_READ_LOCK_GUARD();
-	hwaddr len = UINT64_MAX - addr;
-	hwaddr xlat;
-	MemoryRegion *mr = address_space_translate(&p->downstream_as, addr, &xlat, &len, is_write, MEMTXATTRS_UNSPECIFIED);
+	MemoryRegionSection section = memory_region_find(p->downstream, addr, UINT64_MAX - addr);
+	if (!section.mr || section.offset_within_address_space != addr) {
+		if (section.mr)
+			memory_region_unref(section.mr);
+		*translation = (pmb887x_dmac_translation_t) { 0 };
+		return false;
+	}
+
+	MemoryRegion *mr = section.mr;
+	hwaddr xlat = section.offset_within_region + (addr - section.offset_within_address_space);
 	translation->start = addr;
-	translation->end = addr + len;
+	translation->end = section.offset_within_address_space + int128_get64(section.size);
 	translation->mr = mr;
 	translation->xlat = xlat;
 	translation->host = memory_access_is_direct(mr, is_write, MEMTXATTRS_UNSPECIFIED) ?
 		(uint8_t *) memory_region_get_ram_ptr(mr) + xlat : NULL;
+	memory_region_unref(mr);
 	return addr + size <= translation->end;
 }
 
@@ -515,10 +522,17 @@ static void dmac_fifo_drain(pmb887x_dmac_t *p, pmb887x_dmac_ch_t *ch, uint32_t b
 	bool is_increment = (ch->control & DMAC_CH_CONTROL_DI) != 0;
 	bool has_whole_transfers = (bytes % dst_width) == 0;
 	pmb887x_dmac_translation_t *sink = &p->sink_translation;
-	bool is_block_written = has_whole_transfers &&
-		dmac_translate(p, sink, ch->dst_addr, is_increment ? (hwaddr) dst_width * count : dst_width, true) &&
-		pmb887x_dma_sink_write_block(sink->mr, sink->xlat + (ch->dst_addr - sink->start), buffer, dst_width, count,
-			is_increment);
+	bool is_block_written = false;
+	if (has_whole_transfers &&
+		dmac_translate(p, sink, ch->dst_addr, is_increment ? (hwaddr) dst_width * count : dst_width, true)) {
+		if (sink->host && is_increment) {
+			dmac_write(p, ch->dst_addr, buffer, dst_width * count);
+			is_block_written = true;
+		} else {
+			is_block_written = pmb887x_dma_sink_write_block(sink->mr, sink->xlat + (ch->dst_addr - sink->start),
+				buffer, dst_width, count, is_increment);
+		}
+	}
 	if (!is_block_written) {
 		for (uint32_t i = 0; i < count; i++) {
 			hwaddr addr = is_increment ? ch->dst_addr + i * dst_width : ch->dst_addr;
