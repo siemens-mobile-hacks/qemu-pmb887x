@@ -4811,6 +4811,7 @@ static TranslationBlock *tcg_prepare_block(teak_tcg_core_t *core, teak_tcg_block
 
 		tb = tcg_find_cached_block(core, block);
 		if (tb != NULL) {
+			tcg_cache_block(core, block, tb);
 			core->cache_decoded_hits++;
 			break;
 		}
