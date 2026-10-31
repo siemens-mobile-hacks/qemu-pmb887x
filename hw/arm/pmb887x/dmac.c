@@ -58,6 +58,15 @@ struct pmb887x_dmac_ch_t {
 	uint8_t fifo[DMAC_FIFO_SIZE];
 };
 
+/* A bus range known to map to one region, valid until the next memory topology change. */
+typedef struct {
+	hwaddr start;
+	hwaddr end;
+	MemoryRegion *mr;
+	hwaddr xlat;
+	uint8_t *host;
+} pmb887x_dmac_translation_t;
+
 struct pmb887x_dmac_pending_request_t {
 	pmb887x_dmac_request_t *request;
 	uint32_t count;
@@ -74,6 +83,9 @@ struct pmb887x_dmac_t {
 	QEMUTimer *timer;
 	MemoryRegion *downstream;
 	AddressSpace downstream_as;
+	MemoryListener downstream_listener;
+	pmb887x_dmac_translation_t read_translation;
+	pmb887x_dmac_translation_t sink_translation;
 
 	qemu_irq irq_err;
 	qemu_irq irq_tc[DMAC_CHANNELS];
@@ -156,14 +168,46 @@ static void dmac_swap_byte_order(uint8_t *buffer, uint32_t width, uint32_t count
 	}
 }
 
+static bool dmac_translate(pmb887x_dmac_t *p, pmb887x_dmac_translation_t *translation, hwaddr addr, hwaddr size, bool is_write) {
+	if (addr >= translation->start && addr + size <= translation->end)
+		return true;
+
+	RCU_READ_LOCK_GUARD();
+	hwaddr len = UINT64_MAX - addr;
+	hwaddr xlat;
+	MemoryRegion *mr = address_space_translate(&p->downstream_as, addr, &xlat, &len, is_write, MEMTXATTRS_UNSPECIFIED);
+	translation->start = addr;
+	translation->end = addr + len;
+	translation->mr = mr;
+	translation->xlat = xlat;
+	translation->host = memory_access_is_direct(mr, is_write, MEMTXATTRS_UNSPECIFIED) ?
+		(uint8_t *) memory_region_get_ram_ptr(mr) + xlat : NULL;
+	return addr + size <= translation->end;
+}
+
+static void dmac_memory_commit(MemoryListener *listener) {
+	pmb887x_dmac_t *p = container_of(listener, pmb887x_dmac_t, downstream_listener);
+	p->read_translation = (pmb887x_dmac_translation_t) { 0 };
+	p->sink_translation = (pmb887x_dmac_translation_t) { 0 };
+}
+
+static void dmac_read_bytes(pmb887x_dmac_t *p, hwaddr addr, uint8_t *buffer, uint32_t size) {
+	pmb887x_dmac_translation_t *translation = &p->read_translation;
+	if (dmac_translate(p, translation, addr, size, false) && translation->host) {
+		memcpy(buffer, translation->host + (addr - translation->start), size);
+	} else {
+		address_space_read(&p->downstream_as, addr, MEMTXATTRS_UNSPECIFIED, buffer, size);
+	}
+}
+
 static void dmac_read(pmb887x_dmac_t *p, hwaddr addr, uint8_t *buffer, uint32_t width, uint32_t count, enum device_endian endian) {
 	if (endian == DEVICE_BIG_ENDIAN && width < sizeof(uint32_t)) {
 		for (uint32_t i = 0; i < count; i++) {
 			hwaddr transfer_addr = (addr + i * width) ^ (sizeof(uint32_t) - width);
-			address_space_read(&p->downstream_as, transfer_addr, MEMTXATTRS_UNSPECIFIED, buffer + i * width, width);
+			dmac_read_bytes(p, transfer_addr, buffer + i * width, width);
 		}
 	} else {
-		address_space_read(&p->downstream_as, addr, MEMTXATTRS_UNSPECIFIED, buffer, width * count);
+		dmac_read_bytes(p, addr, buffer, width * count);
 	}
 }
 
@@ -470,8 +514,11 @@ static void dmac_fifo_drain(pmb887x_dmac_t *p, pmb887x_dmac_ch_t *ch, uint32_t b
 
 	bool is_increment = (ch->control & DMAC_CH_CONTROL_DI) != 0;
 	bool has_whole_transfers = (bytes % dst_width) == 0;
+	pmb887x_dmac_translation_t *sink = &p->sink_translation;
 	bool is_block_written = has_whole_transfers &&
-		pmb887x_dma_sink_write_block(&p->downstream_as, ch->dst_addr, buffer, dst_width, count, is_increment);
+		dmac_translate(p, sink, ch->dst_addr, is_increment ? (hwaddr) dst_width * count : dst_width, true) &&
+		pmb887x_dma_sink_write_block(sink->mr, sink->xlat + (ch->dst_addr - sink->start), buffer, dst_width, count,
+			is_increment);
 	if (!is_block_written) {
 		for (uint32_t i = 0; i < count; i++) {
 			hwaddr addr = is_increment ? ch->dst_addr + i * dst_width : ch->dst_addr;
@@ -1405,6 +1452,11 @@ static void dmac_realize(DeviceState *dev, Error **errp) {
 	}
 
 	address_space_init(&p->downstream_as, p->downstream, "pl080-downstream");
+	p->downstream_listener = (MemoryListener) {
+		.name = "pmb887x-dmac",
+		.commit = dmac_memory_commit,
+	};
+	memory_listener_register(&p->downstream_listener, &p->downstream_as);
 
 	for (int i = 0; i < DMAC_CHANNELS; i++)
 		p->ch[i].id = i;

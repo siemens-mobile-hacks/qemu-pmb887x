@@ -30,8 +30,8 @@ struct pmb887x_dma_sink_class_t {
 };
 
 bool pmb887x_dma_sink_write_block(
-	AddressSpace *as,
-	hwaddr addr,
+	MemoryRegion *mr,
+	hwaddr offset,
 	const uint8_t *data,
 	uint32_t width,
 	uint32_t count,
