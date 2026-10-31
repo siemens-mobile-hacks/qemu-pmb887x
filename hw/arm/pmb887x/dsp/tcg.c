@@ -1265,44 +1265,23 @@ static void tcg_request_tb_flush(void) {
 }
 
 /*
- * Every ALU instruction stores all of its flags to the state, and a run of
- * MACs overwrites them on every step. Drop the flag stores that every path
- * overwrites before anything can observe them; TCG's liveness then drops
- * the computations that fed them. The pc, which every instruction stores,
- * is tracked the same way.
+ * Every instruction stores the registers it writes, its flags and the next
+ * pc to the state, and a run of MACs overwrites them on every step. Drop the
+ * state stores that every path overwrites before anything can observe them;
+ * TCG's liveness then drops the computations that fed them.
  *
  * Observers are explicit loads from env, every exit from the block, and any
- * helper call except the data accessors, which never touch the flags or the
- * pc (they reach peripherals, and no peripheral reads the core's status bits
- * or its pc; data accesses report trace_pc).
+ * helper call except the data accessors. Those reach peripherals and the
+ * runtime, which read nothing of the state but trace_pc, and the accessors
+ * set that themselves before they use it.
  */
-#define TCG_FLAG_FIRST	offsetof(teak_state_t, fz)
-#define TCG_FLAG_BYTES	(offsetof(teak_state_t, fr) + 1 - TCG_FLAG_FIRST)
-#define TCG_FLAG_PC_BIT	TCG_FLAG_BYTES
-#define TCG_FLAG_BITS	(TCG_FLAG_BYTES + sizeof(uint32_t))
+#define TCG_STATE_WORDS	DIV_ROUND_UP(sizeof(teak_state_t), 64)
 
-QEMU_BUILD_BUG_ON(TCG_FLAG_BITS > 32);
+typedef struct tcg_state_bytes_t {
+	uint64_t word[TCG_STATE_WORDS];
+} tcg_state_bytes_t;
 
-static uint32_t tcg_flag_mask(TCGOp *op, unsigned size) {
-	TCGTemp *base = arg_temp(op->args[1]);
-	intptr_t offset = op->args[2];
-	uint32_t mask = 0;
-
-	if (base != tcgv_ptr_temp(tcg_env))
-		return 0;
-	for (unsigned i = 0; i < size; i++) {
-		intptr_t byte = offset + i - (intptr_t) TCG_FLAG_FIRST;
-		intptr_t pc_byte = offset + i - (intptr_t) offsetof(teak_state_t, pc);
-
-		if (byte >= 0 && byte < (intptr_t) TCG_FLAG_BYTES)
-			mask |= BIT(byte);
-		if (pc_byte >= 0 && pc_byte < (intptr_t) sizeof(uint32_t))
-			mask |= BIT(TCG_FLAG_PC_BIT + pc_byte);
-	}
-	return mask;
-}
-
-static unsigned tcg_flag_access_size(TCGOp *op) {
+static unsigned tcg_env_access_size(TCGOp *op) {
 	switch (op->opc) {
 		case INDEX_op_ld8u:
 		case INDEX_op_ld8s:
@@ -1324,12 +1303,31 @@ static unsigned tcg_flag_access_size(TCGOp *op) {
 	}
 }
 
-static bool tcg_flag_store(TCGOp *op) {
+static bool tcg_env_store(TCGOp *op) {
 	return op->opc == INDEX_op_st8 || op->opc == INDEX_op_st16 ||
 		op->opc == INDEX_op_st32 || op->opc == INDEX_op_st;
 }
 
-static bool tcg_call_hides_flags(TCGOp *op) {
+/* The state bytes @op loads or stores; false if it accesses none. */
+static bool tcg_state_access(TCGOp *op, tcg_state_bytes_t *bytes) {
+	unsigned size = tcg_env_access_size(op);
+	bool any = false;
+
+	if (size == 0 || arg_temp(op->args[1]) != tcgv_ptr_temp(tcg_env))
+		return false;
+	memset(bytes, 0, sizeof(*bytes));
+	for (unsigned i = 0; i < size; i++) {
+		intptr_t byte = op->args[2] + i;
+
+		if (byte >= 0 && byte < (intptr_t) sizeof(teak_state_t)) {
+			bytes->word[byte / 64] |= BIT_ULL(byte % 64);
+			any = true;
+		}
+	}
+	return any;
+}
+
+static bool tcg_call_hides_state(TCGOp *op) {
 	void *func = tcg_call_func(op);
 
 	return func == (void *) helper_teak_tcg_data_read_at ||
@@ -1338,75 +1336,87 @@ static bool tcg_call_hides_flags(TCGOp *op) {
 		func == (void *) helper_teak_tcg_data_write_at;
 }
 
-/* Backward liveness of the flag bytes at one op; label_live holds the
+/* Backward liveness of the state bytes at one op; label_live holds the
  * state at every label, taken from the previous sweep. */
-static uint32_t tcg_flag_live_before(TCGOp *op, uint32_t live, const uint32_t *label_live) {
-	const uint32_t all = MAKE_64BIT_MASK(0, TCG_FLAG_BITS);
-	unsigned size;
+static void tcg_state_live_before(TCGOp *op, tcg_state_bytes_t *live, const tcg_state_bytes_t *label_live) {
+	tcg_state_bytes_t bytes;
 
 	switch (op->opc) {
 		case INDEX_op_br:
-			return label_live[arg_label(op->args[0])->id];
+			*live = label_live[arg_label(op->args[0])->id];
+			return;
 		case INDEX_op_brcond:
-			return live | label_live[arg_label(op->args[3])->id];
+			for (unsigned i = 0; i < TCG_STATE_WORDS; i++)
+				live->word[i] |= label_live[arg_label(op->args[3])->id].word[i];
+			return;
 		case INDEX_op_exit_tb:
 		case INDEX_op_goto_tb:
 		case INDEX_op_goto_ptr:
-			return all;
+			memset(live, 0xff, sizeof(*live));
+			return;
 		case INDEX_op_call:
-			return tcg_call_hides_flags(op) ? live : all;
+			if (!tcg_call_hides_state(op))
+				memset(live, 0xff, sizeof(*live));
+			return;
 		default:
 			break;
 	}
-	size = tcg_flag_access_size(op);
-	if (size == 0)
-		return live;
-	if (tcg_flag_store(op))
-		return live & ~tcg_flag_mask(op, size);
-	return live | tcg_flag_mask(op, size);
+	if (!tcg_state_access(op, &bytes))
+		return;
+	for (unsigned i = 0; i < TCG_STATE_WORDS; i++) {
+		if (tcg_env_store(op))
+			live->word[i] &= ~bytes.word[i];
+		else
+			live->word[i] |= bytes.word[i];
+	}
 }
 
-static void tcg_remove_dead_flag_stores(TCGContext *s) {
-	const uint32_t all = MAKE_64BIT_MASK(0, TCG_FLAG_BITS);
-	g_autofree uint32_t *label_live = g_new0(uint32_t, s->nb_labels);
+static void tcg_remove_dead_state_stores(TCGContext *s) {
+	g_autofree tcg_state_bytes_t *label_live = g_new0(tcg_state_bytes_t, s->nb_labels);
+	tcg_state_bytes_t live;
 	TCGOp *op, *prev;
 	bool changed;
 
 	/* Labels start dead and only grow, so loops converge. */
 	do {
-		uint32_t live = all;
-
 		changed = false;
+		memset(&live, 0xff, sizeof(live));
 		QTAILQ_FOREACH_REVERSE(op, &s->ops, link) {
 			if (op->opc == INDEX_op_set_label) {
-				TCGLabel *label = arg_label(op->args[0]);
-				if ((label_live[label->id] | live) != label_live[label->id]) {
-					label_live[label->id] |= live;
-					changed = true;
+				tcg_state_bytes_t *in = &label_live[arg_label(op->args[0])->id];
+
+				for (unsigned i = 0; i < TCG_STATE_WORDS; i++) {
+					if ((in->word[i] | live.word[i]) != in->word[i]) {
+						in->word[i] |= live.word[i];
+						changed = true;
+					}
 				}
-				live = label_live[label->id];
+				live = *in;
 				continue;
 			}
-			live = tcg_flag_live_before(op, live, label_live);
+			tcg_state_live_before(op, &live, label_live);
 		}
 	} while (changed);
 
-	uint32_t live = all;
+	memset(&live, 0xff, sizeof(live));
 	QTAILQ_FOREACH_REVERSE_SAFE(op, &s->ops, link, prev) {
-		uint32_t mask;
-		unsigned size;
+		tcg_state_bytes_t bytes;
 
 		if (op->opc == INDEX_op_set_label) {
 			live = label_live[arg_label(op->args[0])->id];
 			continue;
 		}
-		size = tcg_flag_store(op) ? tcg_flag_access_size(op) : 0;
-		mask = size != 0 ? tcg_flag_mask(op, size) : 0;
-		if (mask != 0 && (mask & live) == 0) {
-			tcg_op_remove(s, op);
-			continue;
+		if (tcg_env_store(op) && tcg_state_access(op, &bytes)) {
+			bool dead = true;
+
+			for (unsigned i = 0; i < TCG_STATE_WORDS; i++)
+				dead &= (bytes.word[i] & live.word[i]) == 0;
+			if (dead) {
+				tcg_op_remove(s, op);
+				continue;
+			}
 		}
-		live = tcg_flag_live_before(op, live, label_live);
+		tcg_state_live_before(op, &live, label_live);
 	}
 }
 
@@ -1521,7 +1531,7 @@ static TranslationBlock *tcg_compile_block(uint32_t pc, uint16_t words, uint16_t
 		tcg_func_start(tcg_ctx);
 		emit(opaque);
 		tcg_gen_exit_tb(NULL, 0);
-		tcg_remove_dead_flag_stores(tcg_ctx);
+		tcg_remove_dead_state_stores(tcg_ctx);
 		tcg_demote_label_dead_temps(tcg_ctx);
 		code_size = tcg_gen_code(tcg_ctx, tb, pc);
 	}
