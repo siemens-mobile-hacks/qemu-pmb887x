@@ -293,14 +293,17 @@ static bool dif_has_tx_fifo_free(pmb887x_dif_t *p, uint32_t stages) {
 	return FIFO_SIZE - dif_get_tx_fifo_level(p) >= stages;
 }
 
-static void dif_occupy_tx_bus(pmb887x_dif_t *p, uint64_t word_ps) {
+/* *now_ps caches the clock across one FIFO pass; -1 until first read. */
+static void dif_occupy_tx_bus(pmb887x_dif_t *p, uint64_t word_ps, int64_t *now_ps) {
 	uint32_t words = p->tx_bus_words;
 	p->tx_bus_words = 0;
 	if (word_ps == 0 || words == 0)
 		return;
 
 	g_assert(p->tx_bus_count < FIFO_SIZE);
-	int64_t end_ps = MAX(p->tx_bus_free_ps, dif_get_now_ps()) + words * word_ps;
+	if (*now_ps < 0)
+		*now_ps = dif_get_now_ps();
+	int64_t end_ps = MAX(p->tx_bus_free_ps, *now_ps) + words * word_ps;
 	p->tx_bus_end_ps[(p->tx_bus_first + p->tx_bus_count) % FIFO_SIZE] = end_ps;
 	p->tx_bus_count++;
 	p->tx_bus_free_ps = end_ps;
@@ -923,6 +926,7 @@ static void dif_tx_from_fifo(pmb887x_dif_t *p) {
 	uint32_t word_bits = dif_get_tx_word_bits(p);
 
 	uint64_t bus_word_ps = dif_get_bus_word_ps(p);
+	int64_t now_ps = -1;
 	uint32_t parallel_words[FIFO_SIZE * 4 * 4];
 	uint32_t parallel_word_count = 0;
 	while (pmb887x_fifo_count(&p->tx_fifo) > 0) {
@@ -990,7 +994,7 @@ static void dif_tx_from_fifo(pmb887x_dif_t *p) {
 					goto done;
 			}
 		}
-		dif_occupy_tx_bus(p, bus_word_ps);
+		dif_occupy_tx_bus(p, bus_word_ps, &now_ps);
 		if (p->tx_words_remaining != 0) {
 			dif_rx_fifo_req(p);
 			if (p->rx_fifo_req)
