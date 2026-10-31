@@ -6,6 +6,7 @@
 
 #include "qemu/osdep.h"
 #include "hw/core/sysbus.h"
+#include "hw/core/irq.h"
 #include "hw/core/hw-error.h"
 #include "system/memory.h"
 #include "cpu.h"
@@ -84,6 +85,7 @@ struct pmb887x_dmac_t {
 
 	bool dmac_pending;
 	bool is_in_pass;
+	uint32_t raised_levels;
 	uint32_t config;
 	uint32_t sync;
 
@@ -912,6 +914,7 @@ static void dmac_handle_signal(pmb887x_dmac_t *p, pmb887x_dmac_request_t *reques
 		return;
 
 	DPRINTF("%s request=%d, level=%d\n", dmac_request_name(p, request), id, level);
+	p->raised_levels += (level != 0) - (request->level[sel][id] != 0);
 	request->level[sel][id] = level;
 
 	if (level == 0) {
@@ -1269,6 +1272,65 @@ static void dmac_handle_signal_sel1_lsreq(void *opaque, int request, int level) 
 static void dmac_handle_signal_sel1_lbreq(void *opaque, int request, int level) {
 	pmb887x_dmac_t *p = opaque;
 	dmac_handle_signal(p, &p->lbreq, 1, request, level);
+}
+
+static bool dmac_has_pending_requests(const pmb887x_dmac_t *p) {
+	return p->raised_levels != 0 || p->sreq.soft || p->breq.soft || p->lsreq.soft || p->lbreq.soft;
+}
+
+/*
+ * Serves a burst request, not the last one, of a peripheral that controls the
+ * flow, as the pass raising the request line would start, without the line and
+ * the pass: the peripheral calls it where it would raise the line and nothing
+ * can run before that pass. A display refill raises and clears the line once
+ * per word. Returns false, changing nothing, unless that pass would move one
+ * burst on the one channel serving the peripheral and do nothing else; after a
+ * partial burst it returns false and the raised line leaves the rest to a pass.
+ */
+bool pmb887x_dmac_serve_burst(qemu_irq line) {
+	int sel;
+	if (line->handler == dmac_handle_signal_sel0_breq) {
+		sel = 0;
+	} else if (line->handler == dmac_handle_signal_sel1_breq) {
+		sel = 1;
+	} else {
+		return false;
+	}
+
+	pmb887x_dmac_t *p = line->opaque;
+	int id = line->n;
+	if (p->sel[id] != sel || p->is_in_pass || p->dmac_pending || timer_pending(p->timer))
+		return false;
+	if (!clock_is_enabled(p->clock) || !(p->config & DMAC_CONFIG_ENABLE) || dmac_has_pending_requests(p))
+		return false;
+
+	pmb887x_dmac_ch_t *ch = NULL;
+	for (int i = 0; i < DMAC_CHANNELS; i++) {
+		pmb887x_dmac_ch_t *other = &p->ch[i];
+		if (!(other->config & DMAC_CH_CONFIG_ENABLE))
+			continue;
+		uint32_t flow_ctrl = other->config & DMAC_CH_CONFIG_FLOW_CTRL;
+		uint8_t src_periph = (other->config & DMAC_CH_CONFIG_SRC_PERIPH) >> DMAC_CH_CONFIG_SRC_PERIPH_SHIFT;
+		uint8_t dst_periph = (other->config & DMAC_CH_CONFIG_DST_PERIPH) >> DMAC_CH_CONFIG_DST_PERIPH_SHIFT;
+		if (flow_ctrl == DMAC_CH_CONFIG_FLOW_CTRL_MEM2MEM)
+			return false;
+		if (src_periph != id && dst_periph != id)
+			continue;
+		if (ch != NULL || flow_ctrl != DMAC_CH_CONFIG_FLOW_CTRL_MEM2PER_PER || dst_periph != id)
+			return false;
+		ch = other;
+	}
+	if (ch == NULL || (ch->config & DMAC_CH_CONFIG_HALT))
+		return false;
+
+	RCU_READ_LOCK_GUARD();
+	uint32_t dst_burst_size = dmac_get_burst_size((ch->control & DMAC_CH_CONTROL_DB_SIZE) >> DMAC_CH_CONTROL_DB_SIZE_SHIFT);
+	p->is_in_pass = true;
+	bool is_served = dmac_transfer_memory_to_destination(p, ch, dst_burst_size, false);
+	p->is_in_pass = false;
+	if (p->dmac_pending)
+		timer_mod(p->timer, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL));
+	return is_served;
 }
 
 static const MemoryRegionOps io_ops = {

@@ -21,6 +21,7 @@
 #include "hw/arm/pmb887x/gen/cpu_regs.h"
 #include "hw/arm/pmb887x/regs_dump.h"
 #include "hw/arm/pmb887x/mod.h"
+#include "hw/arm/pmb887x/dmac.h"
 #include "hw/arm/pmb887x/dma_sink.h"
 #include "hw/arm/pmb887x/trace.h"
 
@@ -89,6 +90,8 @@ struct pmb887x_dif_t {
 	QEMUBH *rx_refill_bh;
 	bool in_schedule;
 	bool transfer_pending;
+	bool in_dma_handshake;
+	bool in_tx_bus_wake;
 
 	bool tx_fifo_req;
 	bool rx_fifo_req;
@@ -424,6 +427,44 @@ static void dif_trigger_dma(pmb887x_dif_t *p) {
 	}
 }
 
+/*
+ * A bus wake raising the TX burst request runs no guest code before the DMAC
+ * pass serves it, and the DMAC alone sees the request line, so the DMAC can
+ * serve it at once: the request still raises and clears the TX interrupt as it
+ * would, only the line and the pass are skipped.
+ */
+static bool dif_serve_tx_burst(pmb887x_dif_t *p) {
+	if (!p->in_tx_bus_wake || p->dmac_tx_clr || p->tx_isr_deferred != 0)
+		return false;
+	if ((pmb887x_srb_get_dmae(&p->srb) & DIFv2_ISR_TXBREQ) == 0 || pmb887x_srb_get_ris(&p->srb) != 0)
+		return false;
+	if (!p->are_dma_requests_driven || (p->dma_requests & DIF_TX_DMA_REQUESTS) != 0)
+		return false;
+
+	p->in_dma_handshake = true;
+	pmb887x_srb_set_isr(&p->srb, DIFv2_ISR_TXBREQ);
+	p->tx_fifo_req = true;
+	bool is_served = pmb887x_dmac_serve_burst(p->dmac_tx_breq);
+	if (is_served)
+		pmb887x_srb_set_icr(&p->srb, DIFv2_ICR_TXBREQ);
+	p->in_dma_handshake = false;
+
+	if (is_served) {
+		p->tx_fifo_req = false;
+		dif_schedule(p);
+	} else {
+		dif_trigger_dma(p);
+	}
+	return true;
+}
+
+static void dif_raise_tx_burst_request(pmb887x_dif_t *p) {
+	if (dif_serve_tx_burst(p))
+		return;
+	pmb887x_srb_set_isr(&p->srb, DIFv2_ISR_TXBREQ);
+	p->tx_fifo_req = true;
+}
+
 static void dif_tx_fifo_req(pmb887x_dif_t *p) {
 	if (p->tx_fifo_req)
 		return;
@@ -465,7 +506,8 @@ static void dif_tx_fifo_req(pmb887x_dif_t *p) {
 
 	if (is_flow_controlled) {
 		if (tx_words_remaining > burst_req_size) {
-			pmb887x_srb_set_isr(&p->srb, DIFv2_ISR_TXBREQ);
+			dif_raise_tx_burst_request(p);
+			return;
 		} else if (pending_req_count == burst_req_count) {
 			pmb887x_srb_set_isr(&p->srb, DIFv2_ISR_TXLBREQ);
 		} else if (tx_words_remaining > single_req_size) {
@@ -474,7 +516,8 @@ static void dif_tx_fifo_req(pmb887x_dif_t *p) {
 			pmb887x_srb_set_isr(&p->srb, DIFv2_ISR_TXLSREQ);
 		}
 	} else {
-		pmb887x_srb_set_isr(&p->srb, DIFv2_ISR_TXBREQ);
+		dif_raise_tx_burst_request(p);
+		return;
 	}
 	p->tx_fifo_req = true;
 }
@@ -1018,7 +1061,9 @@ static void dif_tx_bus_wake(void *opaque) {
 	pmb887x_dif_t *p = opaque;
 	uint32_t deferred = p->tx_isr_deferred;
 
+	p->in_tx_bus_wake = true;
 	dif_schedule(p);
+	p->in_tx_bus_wake = false;
 	if (deferred != 0) {
 		p->tx_isr_deferred &= ~deferred;
 		pmb887x_srb_set_isr(&p->srb, dif_defer_tx_isr(p, deferred));
@@ -1475,11 +1520,25 @@ static void dif_handle_gpio_data_input(void *opaque, int id, int level) {
 	// nothing
 }
 
+/*
+ * A DMAC clear withdraws all four requests of a direction. Only the DMAC sees
+ * the request lines, so react once to the cleared set instead of per request:
+ * per request, a request not yet cleared re-raised the line for a moment and
+ * cost the DMAC an empty pass, once per transferred word.
+ */
+static void dif_clear_dma_requests(pmb887x_dif_t *p, uint32_t requests) {
+	p->in_dma_handshake = true;
+	pmb887x_srb_set_icr(&p->srb, requests);
+	p->in_dma_handshake = false;
+	dif_fifo_clr_req(p, requests);
+	dif_schedule(p);
+}
+
 static void dif_handle_dmac_tx_clr(void *opaque, int id, int level) {
 	pmb887x_dif_t *p = opaque;
 	p->dmac_tx_clr = level;
 	if (level == 1)
-		pmb887x_srb_set_icr(&p->srb, DIFv2_ICR_TXSREQ | DIFv2_ICR_TXBREQ | DIFv2_ICR_TXLSREQ | DIFv2_ICR_TXLBREQ);
+		dif_clear_dma_requests(p, DIFv2_ICR_TXSREQ | DIFv2_ICR_TXBREQ | DIFv2_ICR_TXLSREQ | DIFv2_ICR_TXLBREQ);
 	dif_trigger_dma(p);
 }
 
@@ -1487,7 +1546,7 @@ static void dif_handle_dmac_rx_clr(void *opaque, int id, int level) {
 	pmb887x_dif_t *p = opaque;
 	p->dmac_rx_clr = level;
 	if (level == 1)
-		pmb887x_srb_set_icr(&p->srb, DIFv2_ICR_RXSREQ | DIFv2_ICR_RXBREQ | DIFv2_ICR_RXLSREQ | DIFv2_ICR_RXLBREQ);
+		dif_clear_dma_requests(p, DIFv2_ICR_RXSREQ | DIFv2_ICR_RXBREQ | DIFv2_ICR_RXLSREQ | DIFv2_ICR_RXLBREQ);
 	dif_trigger_dma(p);
 }
 
@@ -1515,6 +1574,8 @@ static int dif_irq_router(void *opaque, int event_id) {
 static void dif_event_handler(void *opaque, int event_id, int level) {
 	pmb887x_dif_t *p = opaque;
 	uint32_t mask = 1 << event_id;
+	if (p->in_dma_handshake)
+		return;
 	if (level == 0 && (mask & FIFO_ICR_MASK) != 0) {
 		dif_fifo_clr_req(p, mask);
 		dif_schedule(p);
