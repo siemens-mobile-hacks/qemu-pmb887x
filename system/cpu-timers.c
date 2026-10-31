@@ -415,17 +415,21 @@ static void cpu_clock_owner_shorten_budget_at(int64_t real)
 
 void cpu_clock_owner_shorten_budget(void)
 {
-    int64_t position;
-
     if (!cpu_clock_owner) {
         cpu_clock_owner_shorten_budget_at(cpu_get_real_clock());
         return;
     }
-    /* the owner arms timers by the thousand during a display refill */
-    position = cpu_clock_owner_position();
+    /*
+     * The owner arms timers by the thousand during a display refill.  Its
+     * budget already ends no later than real time and its position, as of
+     * the budget's start, plus the lead; both only move forward, so they
+     * cannot lower the limit now - only the new deadline and the cap can.
+     * A keeping-up guest stays within the lead of real time, where
+     * cpu_clock_owner_raw() reads the host clock (JavaScript) every call.
+     */
     cpu_clock_owner_shorten_budget_at(
-        MIN(MIN(cpu_clock_owner_raw(position), position),
-            qatomic_read(&qemu_virtual_clock_cap)));
+        MIN(qatomic_read(&qemu_virtual_clock_cap),
+            INT64_MAX - CPU_CLOCK_OWNER_LEAD_NS));
 }
 
 /* @real: cpu_get_real_clock(), e.g. from cpu_clock_owner_limit_lag() */
