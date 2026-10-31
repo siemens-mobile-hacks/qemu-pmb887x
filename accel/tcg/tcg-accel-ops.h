@@ -19,5 +19,6 @@ int tcg_cpu_exec(CPUState *cpu);
 void tcg_handle_interrupt(CPUState *cpu, int mask);
 void tcg_cpu_init_cflags(CPUState *cpu, bool parallel);
 void tcg_kick_vcpu_thread(CPUState *cpu);
+bool mttcg_cpu_next_budget(CPUState *cpu);
 
 #endif /* TCG_ACCEL_OPS_H */

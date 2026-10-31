@@ -36,6 +36,11 @@ typedef struct DisasDelayException {
     uint32_t target_el;
 } DisasDelayException;
 
+#ifdef CONFIG_TCG_WASM64
+/* How far forward (bytes) an unconditional branch may be absorbed. */
+#define W64_ABSORB_MAX 256
+#endif
+
 typedef struct DisasContext {
     DisasContextBase base;
     const ARMISARegisters *isar;
@@ -112,6 +117,20 @@ typedef struct DisasContext {
     uint64_t features; /* CPU features bits */
     bool aarch64;
     bool thumb;
+#ifdef CONFIG_TCG_WASM64
+    /*
+     * Inline TB-lookup cache classification of this TB's goto_ptr exit
+     * (gen_goto_ptr): w64_thumb is the thumb state the exit leaves
+     * behind when the translator knows it (-1 after gen_bx: dynamic);
+     * w64_dynkey marks an exit that follows a CPSR write, after which
+     * hflags/thumb/condexec are all dynamic.  w64_lc_sites counts the
+     * exits that used the TB's slot so a second, differently-keyed
+     * exit can be kept off it.
+     */
+    int8_t w64_thumb;
+    bool w64_dynkey;
+    uint8_t w64_lc_sites;
+#endif
     bool lse2;
     /*
      * Because unallocated encodings generate different exception syndrome

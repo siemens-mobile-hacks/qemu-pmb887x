@@ -344,6 +344,9 @@ dsp_runtime_t *dsp_runtime_create(
 		.direct_data_bank_size = data_bank_words,
 		.direct_data_high_read_base = config->mmio_base + config->mmio_size,
 		.direct_data_high_read_size = PMB887X_DSP_ADDRESS_SPACE_WORDS - (config->mmio_base + config->mmio_size),
+		/* Above MMIO, dsp_runtime_data_write is a plain store (the modulator RAM sits below MMIO). */
+		.direct_data_high_write_base = config->mmio_base + config->mmio_size,
+		.direct_data_high_write_size = PMB887X_DSP_ADDRESS_SPACE_WORDS - (config->mmio_base + config->mmio_size),
 		.cycle_opaque = runtime,
 		.advance_cycles = dsp_runtime_advance_cycles,
 		.cycle_sensitive_base = config->mmio_base,

@@ -127,6 +127,55 @@ struct TranslationBlock {
     uint16_t jmp_reset_offset[2]; /* offset of original jump target */
     uint16_t jmp_insn_offset[2];  /* offset of direct jump insn */
     uintptr_t jmp_target_addr[2]; /* target address */
+#ifdef CONFIG_TCG_WASM64
+    /*
+     * Inline next-TB cache for this TB's goto_ptr exit (target/arm
+     * gen_goto_ptr): the emitted code compares pc, tb_key_gen and the
+     * key words flagged dynamic in @dynmask against the CPU and
+     * tail-calls @tc on a match instead of calling helper_lookup_tb_ptr.
+     * The other key words were stamped by the translator (the exit's
+     * static key) and helper_lookup_tb_ptr_lc fills the slot only when
+     * they match the CPU; a bump of cpu->neg.tb_key_gen retires every
+     * slot at once.  @gen 0 = empty.
+     */
+    struct W64LookupCache {
+        uint32_t pc;
+        uint32_t gen;
+        uint32_t key32[3];  /* ARM: hflags.flags, thumb, condexec_bits */
+        uint8_t dynmask;    /* W64_LC_DYN_* bits: key32[i] is dynamic */
+        const void *tc;
+    } w64_lc;
+#define W64_LC_DYN_FLAGS     1
+#define W64_LC_DYN_THUMB     2
+#define W64_LC_DYN_CONDEXEC  4
+
+/*
+ * What a goto_ptr operand means to the wasm64 backend.
+ *
+ * The emitted dispatch is a return_call_indirect through the shared chain
+ * table, so all it needs is the target's table index.  That index used to
+ * be read out of the descriptor at tb->tc.ptr — one u32 per ~576-byte
+ * module staging area, i.e. one cache line per TB in a ~20 MB region that
+ * nothing else in the execution path touches.  A synthetic dispatch chain
+ * (tools/dispatch-probe.mjs) prices that dependent load at +2 ns over a
+ * 256-TB working set and +8..9 ns over 1024-4096 TBs, on a dispatch that
+ * runs ~11 M times a second.
+ *
+ * So the lookup helpers hand the index over directly, tagged in the high
+ * half (a wasm64 heap pointer is < 2 GB, so a real pointer never has one):
+ *
+ *   hi != 0   W64_TIDX_TAG | tidx — tail-call table[tidx]
+ *   hi == 0   a descriptor pointer (target not compiled yet, or its batch
+ *             was evicted) or NULL (lookup miss): hand off to the C
+ *             dispatcher, which is what used to happen when fidx was 0.
+ *
+ * The offsets mirror W64_DESC_FIDX / W64_DESC_TIDX in tcg/wasm64/wasm64.h,
+ * which asserts they agree.
+ */
+#define W64_TCP_FIDX     0
+#define W64_TCP_TIDX    12
+#define W64_TIDX_TAG    (1ULL << 32)
+#endif
 
     /*
      * Each TB has a NULL-terminated list (jmp_list_head) of incoming jumps.
@@ -150,8 +199,70 @@ struct TranslationBlock {
     uintptr_t jmp_dest[2];
 };
 
+#ifdef CONFIG_TCG_WASM64
+/*
+ * A retaddr baked into emitted code or an IR record (w64_pc in
+ * tcg-target.c.inc): the TB's descriptor address above W64_RA_SHIFT, the
+ * offset of the call within the TB below.  The body's bytes leave the code
+ * buffer as soon as the TB is staged (tcg_out_tb_finalize), so a pointer
+ * into the body would name whatever TB came next.  tcg_tb_lookup() and
+ * cpu_unwind_data_from_tb() decode it; a real pointer is < 2 GB and never
+ * has the high half set.
+ */
+#define W64_RA_SHIFT    20
+static inline bool w64_ra_encoded(uintptr_t ra)
+{
+    return (ra >> 32) != 0;
+}
+static inline uintptr_t w64_ra_desc(uintptr_t ra)
+{
+    return ra >> W64_RA_SHIFT;
+}
+static inline uintptr_t w64_ra_off(uintptr_t ra)
+{
+    return ra & ((1u << W64_RA_SHIFT) - 1);
+}
+
+/*
+ * The global pc-keyed next-TB cache (accel/tcg/cpu-exec.c) as the
+ * generated code sees it.  A goto_ptr whose per-TB slot misses used to
+ * call the helper for this table's six-word compare; the translator emits
+ * that compare instead, so the entry layout and the hash's own constants
+ * have to leave cpu-exec.c.
+ */
+struct W64PccEnt {
+    uint32_t pc;
+    uint32_t gen;
+    uint32_t key32[3];
+    uint32_t cpu_index;
+    const void *tc;
+};
+
+struct W64PccShape {
+    struct W64PccEnt *tab;
+    unsigned shift;         /* TARGET_PAGE_BITS - TB_JMP_PAGE_BITS */
+    uint32_t page_mask;     /* TB_JMP_PAGE_MASK */
+    uint32_t addr_mask;     /* TB_JMP_ADDR_MASK */
+};
+
+const struct W64PccShape *w64_pcc_shape(void);
+/* withdraw the staged module body of a TB that was abandoned */
+void w64_batch_unstage(uintptr_t tcptr);
+#endif
+
 /* The alignment given to TranslationBlock during allocation. */
 #define CODE_GEN_ALIGN  16
+
+#ifdef CONFIG_TCG_WASM64
+/* accel/tcg/tb-maint.c, for tcg/wasm64/wasm64.c's batch eviction. */
+void tb_w64_unlink_incoming(TranslationBlock *dest);
+/* accel/tcg/translate-all.c: drop an evicted TB and re-enter the loop */
+G_NORETURN void tb_w64_retire(CPUState *cpu, TranslationBlock *tb);
+/* tcg/wasm64/wasm64.c: false once the chain table needs a tb_flush */
+bool w64_tidx_left(void);
+/* tcg/wasm64/wasm64.c: a cpu_loop_exit() longjmp left every running TB */
+void w64_exec_unwound(void);
+#endif
 
 /* Hide the qatomic_read to make code a little easier on the eyes */
 static inline uint32_t tb_cflags(const TranslationBlock *tb)

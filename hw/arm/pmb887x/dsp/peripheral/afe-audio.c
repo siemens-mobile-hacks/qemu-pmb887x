@@ -38,8 +38,11 @@ static void afe_audio_out_callback(void *opaque, int free_bytes) {
 		size_t size;
 		size_t written;
 		const uint8_t *data = pmb887x_audio_buffer_peek(&audio->buffer,
-			&audio->fifo, &audio->lock, (size_t) free_bytes, &size);
+			&audio->fifo, &audio->lock, (size_t) free_bytes,
+			qemu_clock_get_ns(QEMU_CLOCK_REALTIME), &size);
 
+		if (size == 0)
+			break;
 		written = audio_be_write(audio->backend, audio->voice, (void *) data, size);
 		if (written == 0)
 			break;
@@ -140,9 +143,11 @@ void afe_audio_set_rate(afe_audio_t *audio, unsigned frequency_hz) {
 	if (!audio->voice)
 		return;
 
-	audio_be_set_active_out(audio->backend, audio->voice, false);
-	audio_be_close_out(audio->backend, audio->voice);
-	audio->voice = audio_be_open_out(audio->backend, NULL, "pmb887x-afe",
+	/*
+	 * Reinitialize the voice in place: closing it first would also tear down
+	 * the backend voice (the wav backend then truncates its file).
+	 */
+	audio->voice = audio_be_open_out(audio->backend, audio->voice, "pmb887x-afe",
 		audio, afe_audio_out_callback, &settings);
 	if (audio->voice)
 		audio_be_set_active_out(audio->backend, audio->voice, true);
@@ -172,5 +177,6 @@ void afe_audio_produce(afe_audio_t *audio, uint16_t sample_word) {
 	qemu_mutex_lock(&audio->lock);
 	if (fifo8_num_used(&audio->fifo) + sizeof(bytes) <= AFE_AUDIO_FIFO_BYTES)
 		fifo8_push_all(&audio->fifo, bytes, sizeof(bytes));
+	pmb887x_audio_buffer_note_push(&audio->buffer);
 	qemu_mutex_unlock(&audio->lock);
 }

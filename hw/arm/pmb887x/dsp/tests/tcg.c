@@ -14,6 +14,9 @@ typedef struct test_memory_t test_memory_t;
 struct test_memory_t {
 	uint16_t words[TEST_MEMORY_WORDS];
 	pmb887x_dsp_tcg_core_t *exit_core_on_write;
+	/* exit on this write only (1-based), or on every write when 0 */
+	unsigned exit_write;
+	unsigned writes;
 };
 
 int (*qemu_main)(void);
@@ -30,7 +33,9 @@ static void test_memory_write(void *opaque, uint32_t address, uint16_t value) {
 
 	g_assert_cmpuint(address, <, ARRAY_SIZE(memory->words));
 	memory->words[address] = value;
-	if (memory->exit_core_on_write != NULL)
+	memory->writes++;
+	if (memory->exit_core_on_write != NULL &&
+		(memory->exit_write == 0 || memory->writes == memory->exit_write))
 		memory->exit_core_on_write->state.exit_request = 1;
 }
 
@@ -72,6 +77,18 @@ static void test_execute_slices_until(pmb887x_dsp_tcg_core_t *core, uint16_t pc,
 	for (size_t i = 0; i < max_slices && core->state.pc != pc; i++)
 		g_assert_true(pmb887x_dsp_tcg_execute_slice(core, 1000));
 	g_assert_cmphex(core->state.pc, ==, pc);
+}
+
+/* Runs slices until the data write that requests an exit; returns the cycles they took. */
+static size_t test_execute_slices_until_exit(pmb887x_dsp_tcg_core_t *core, test_memory_t *data, size_t max_slices) {
+	size_t cycles = 0;
+
+	for (size_t i = 0; i < max_slices && data->writes < data->exit_write; i++) {
+		g_assert_true(pmb887x_dsp_tcg_execute_slice(core, 1000));
+		cycles += core->last_block_cycles;
+	}
+	g_assert_cmpuint(data->writes, ==, data->exit_write);
+	return cycles;
 }
 
 static void test_mov_a0_b0(uint16_t opcode) {
@@ -242,6 +259,159 @@ static void test_batched_loop_wait_state_budget(void) {
 	core.memory.wait_state_cycles = 2;
 	g_assert_true(pmb887x_dsp_tcg_execute_slice(&core, 40));
 	g_assert_cmpuint(core.last_block_cycles, ==, 40);
+}
+
+static void test_batched_loop_exit_after_write(void) {
+	test_memory_t program = {
+		.words = {
+			0x2010, /* mov r0, [0x10]. */
+			0x67D0, /* inc a0. */
+			0x4180, 0x0000, /* br 0x0000. */
+		},
+	};
+	test_memory_t data = { .exit_write = 3 };
+	pmb887x_dsp_tcg_core_t core = test_core_create(&program, &data);
+
+	data.exit_core_on_write = &core;
+	g_assert_cmpuint(test_execute_slices_until_exit(&core, &data, 4), ==, 2 * 3 + 1);
+	g_assert_cmphex(core.state.pc, ==, 1);
+	g_assert_cmphex(core.state.a[0], ==, 2);
+}
+
+static void test_block_repeat_body_exit_after_write(void) {
+	test_memory_t program = {
+		.words = {
+			0x5C04, 0x0004, /* bkrep 0x04, 0x0004. */
+			0x2010, /* mov r0, [0x10]. */
+			0x67D0, /* inc a0. */
+			0x67D0, /* inc a0. */
+			0x4180, 0x0005, /* br 0x0005. */
+		},
+	};
+	test_memory_t data = { .exit_write = 3 };
+	pmb887x_dsp_tcg_core_t core = test_core_create(&program, &data);
+
+	data.exit_core_on_write = &core;
+	g_assert_cmpuint(test_execute_slices_until_exit(&core, &data, 4), ==, 1 + 2 * 3 + 1);
+	g_assert_cmphex(core.state.pc, ==, 3);
+	g_assert_cmphex(core.state.a[0], ==, 4);
+	g_assert_cmphex(core.state.block_repeat_lc[0], ==, 2);
+	g_assert_cmphex(core.state.bcn, ==, 1);
+
+	data.exit_core_on_write = NULL;
+	test_execute_slices_until(&core, 5, 4);
+	g_assert_cmphex(core.state.a[0], ==, 10);
+	g_assert_cmpuint(data.writes, ==, 5);
+	g_assert_cmphex(core.state.block_repeat_lc[0], ==, 0);
+	g_assert_cmphex(core.state.lp, ==, 0);
+	g_assert_cmphex(core.state.bcn, ==, 0);
+}
+
+static void test_relocated_fast_loop_init(test_memory_t *program, test_memory_t *data,
+	pmb887x_dsp_tcg_core_t *core
+) {
+	static const uint16_t kernel[] = {
+		/* The EL71 kernel at P:643F, here at P:0002, as the SL65 has it at P:566B. */
+		0x802A, 0x1F89, 0x1FA9, 0x9688, 0x9788, 0x822A, 0x87AB, 0x1B8A, 0x1BB2,
+	};
+
+	*program = (test_memory_t) { .words = { 0x5C03, 0x000A } }; /* bkrep 0x03, 0x000a. */
+	memcpy(&program->words[2], kernel, sizeof(kernel));
+	program->words[11] = 0x4180; /* br 0x000d. */
+	program->words[12] = 0x000D;
+	*data = (test_memory_t) {};
+	for (size_t i = 0; i < ARRAY_SIZE(data->words); i++)
+		data->words[i] = 0x1234 + i * 0x0F31;
+	*core = test_core_create(program, data);
+	test_core_set_direct_data(core, data);
+	core->state.r[0] = 0x04;
+	core->state.r[1] = 0x10;
+	core->state.r[2] = 0x24;
+	core->state.y[0] = 0x0321;
+}
+
+static void test_relocated_fast_loop(void) {
+	test_memory_t program, data, reference_program, reference_data;
+	pmb887x_dsp_tcg_core_t core, reference;
+
+	/* The first pass compiles the body, which maps the loop for the second. */
+	test_relocated_fast_loop_init(&program, &data, &core);
+	test_execute_slices_until(&core, 13, 8);
+	core.state.pc = 0;
+	test_execute_slices_until(&core, 13, 8);
+	g_assert_cmpuint(core.fast_runs, !=, 0);
+
+	/* Single blocks never enter a fast loop. */
+	test_relocated_fast_loop_init(&reference_program, &reference_data, &reference);
+	test_execute_until(&reference, 13, 64);
+	reference.state.pc = 0;
+	test_execute_until(&reference, 13, 64);
+	g_assert_cmpuint(reference.fast_runs, ==, 0);
+
+	core.state.exit_reason = reference.state.exit_reason;
+	g_assert_cmpmem(&core.state, sizeof(core.state), &reference.state, sizeof(reference.state));
+	g_assert_cmpmem(data.words, sizeof(data.words), reference_data.words, sizeof(reference_data.words));
+}
+
+#define TEST_35BE_DATA_WORDS	0x10000
+
+static void test_35be_iterations_init(test_memory_t *program, uint16_t *data, pmb887x_dsp_tcg_core_t *core,
+	const uint8_t *mode
+) {
+	static const uint16_t kernel[] = {
+		/* The EL71 correlator at P:35BE, here at P:0002. */
+		0x1F08, 0x1B4C, 0x1F08, 0x1B4C, 0x67C0, 0x77C0, 0xD022, 0xD22A, 0xDA22, 0xD22A, 0xDA22, 0xD22A, 0xDA22, 0xD22A,
+		0xDA22, 0xD22A, 0xDA22, 0xD22A, 0xDA22, 0xD22A, 0xDA22, 0xD22A, 0xDA22, 0xD22A, 0xDA22, 0xD22A, 0xDA22, 0xD22A,
+		0xDA22, 0xD22A, 0xDA22, 0xD23A, 0x87AB, 0x1B89, 0x1BA9, 0x1F08, 0x1B4C, 0x1F08, 0x1B4C, 0x0095, 0x557C,
+	};
+	static test_memory_t unused_data;
+
+	*program = (test_memory_t) {};
+	memcpy(&program->words[2], kernel, sizeof(kernel));
+	program->words[2 + ARRAY_SIZE(kernel)] = 0x4180; /* br 0x002b. */
+	program->words[3 + ARRAY_SIZE(kernel)] = 2 + ARRAY_SIZE(kernel);
+	for (size_t i = 0; i < TEST_35BE_DATA_WORDS; i++)
+		data[i] = !mode[2] ? 0x1234 + i * 0x0F31 : i % 7 == 0 ? 0x8000 | (i & 0xFF) : 0x7F00 | (i & 0xFF);
+	*core = test_core_create(program, &unused_data);
+	core->memory.direct_data = data;
+	core->memory.direct_data_read_size = TEST_35BE_DATA_WORDS;
+	core->memory.direct_data_write_size = TEST_35BE_DATA_WORDS;
+	core->memory.y_space_base = 0x8000;
+	core->state.pc = 2;
+	core->state.r[0] = 0x0100;
+	core->state.r[1] = 0x3000;
+	core->state.r[2] = 0x1000;
+	core->state.r[4] = 0x8000;
+	core->state.r[5] = 8;
+	core->state.sata = mode[0];
+	core->state.product_shift = mode[1];
+}
+
+/* Whole 35BE iterations against the translator: saturation on and off, shifts, mostly large positive products. */
+static void test_35be_iterations(void) {
+	static uint16_t data[TEST_35BE_DATA_WORDS];
+	static uint16_t reference_data[TEST_35BE_DATA_WORDS];
+	static const uint8_t modes[][3] = { { 0, 0, 0 }, { 0, 3, 0 }, { 1, 1, 0 }, { 1, 3, 0 }, { 0, 2, 1 }, { 1, 2, 1 } };
+
+	for (size_t i = 0; i < ARRAY_SIZE(modes); i++) {
+		test_memory_t program, reference_program;
+		pmb887x_dsp_tcg_core_t core, reference;
+
+		/* The translator runs the first pass whole; its compile maps the loop for the next core. */
+		test_35be_iterations_init(&program, data, &core, modes[i]);
+		test_execute_slices_until(&core, 0x2B, 64);
+		test_35be_iterations_init(&program, data, &core, modes[i]);
+		test_execute_slices_until(&core, 0x2B, 64);
+		g_assert_cmpuint(core.fast_runs, !=, 0);
+
+		test_35be_iterations_init(&reference_program, reference_data, &reference, modes[i]);
+		test_execute_until(&reference, 0x2B, 1024);
+		g_assert_cmpuint(reference.fast_runs, ==, 0);
+
+		core.state.exit_reason = reference.state.exit_reason;
+		g_assert_cmpmem(&core.state, sizeof(core.state), &reference.state, sizeof(reference.state));
+		g_assert_cmpmem(data, sizeof(data), reference_data, sizeof(reference_data));
+	}
 }
 
 static void test_repeated_instruction_without_repeat(void) {
@@ -637,6 +807,43 @@ static void test_mov_data_shift_value(void) {
 	g_assert_cmphex(core.state.r[4], ==, 0x11);
 }
 
+static void test_mov_data_control_register(void) {
+	test_memory_t program = {
+		/* mov [r2++], cfgj; mov [r3], st1 */
+		.words = { 0x1DEA, 0x1D23, 0x4180, 0x0004 },
+	};
+	test_memory_t data = {
+		.words = { [0x10] = 0x0183, [0x18] = 0x0005 },
+	};
+	pmb887x_dsp_tcg_core_t core = test_core_create(&program, &data);
+
+	core.state.r[2] = 0x10;
+	core.state.r[3] = 0x18;
+	g_assert_true(pmb887x_dsp_tcg_execute_block(&core));
+	g_assert_cmphex(core.state.stepj, ==, 0x03);
+	g_assert_cmphex(core.state.modj, ==, 0x03);
+	g_assert_cmphex(core.state.r[2], ==, 0x11);
+	g_assert_cmphex(core.state.page, ==, 0x05);
+}
+
+static void test_mov_control_register_data(void) {
+	test_memory_t program = {
+		/* mov cfgi, [r1]; mov a0, [r0] */
+		.words = { 0x19C1, 0x1B00, 0x4180, 0x0004 },
+	};
+	test_memory_t data = {};
+	pmb887x_dsp_tcg_core_t core = test_core_create(&program, &data);
+
+	core.state.stepi = 0x05;
+	core.state.modi = 0x02;
+	core.state.r[0] = 0x10;
+	core.state.r[1] = 0x11;
+	core.state.a[0] = 0x0000000123456789ULL;
+	g_assert_true(pmb887x_dsp_tcg_execute_block(&core));
+	g_assert_cmphex(data.words[0x11], ==, 0x0105);
+	g_assert_cmphex(data.words[0x10], ==, 0x6789);
+}
+
 static void test_mov_accumulator_high_extension_unaffected(void) {
 	test_memory_t program = {
 		.words = { 0x6500, 0x4180, 0x0003 },
@@ -897,6 +1104,10 @@ int main(int argc, char **argv) {
 	g_test_add_func("/pmb887x/dsp/tcg/interrupt-block-repeat", test_interrupt_block_repeat);
 	g_test_add_func("/pmb887x/dsp/tcg/repeat-cycle-budget", test_repeat_cycle_budget);
 	g_test_add_func("/pmb887x/dsp/tcg/batched-loop-wait-state-budget", test_batched_loop_wait_state_budget);
+	g_test_add_func("/pmb887x/dsp/tcg/batched-loop-exit-after-write", test_batched_loop_exit_after_write);
+	g_test_add_func("/pmb887x/dsp/tcg/block-repeat-body-exit-after-write", test_block_repeat_body_exit_after_write);
+	g_test_add_func("/pmb887x/dsp/tcg/relocated-fast-loop", test_relocated_fast_loop);
+	g_test_add_func("/pmb887x/dsp/tcg/35be-iterations", test_35be_iterations);
 	g_test_add_func("/pmb887x/dsp/tcg/repeated-instruction-without-repeat", test_repeated_instruction_without_repeat);
 	g_test_add_func("/pmb887x/dsp/tcg/interrupt-repeat-nested-repeat", test_interrupt_repeat_nested_repeat);
 	g_test_add_func("/pmb887x/dsp/tcg/interrupt-repeat-resumes-on-return", test_interrupt_repeat_resumes_on_return);
@@ -911,6 +1122,8 @@ int main(int argc, char **argv) {
 	g_test_add_func("/pmb887x/dsp/tcg/precompile-bounded-indirect-dispatch", test_precompile_bounded_indirect_dispatch);
 	g_test_add_func("/pmb887x/dsp/tcg/direct-data-bank", test_direct_data_bank);
 	g_test_add_func("/pmb887x/dsp/tcg/mov-data-shift-value", test_mov_data_shift_value);
+	g_test_add_func("/pmb887x/dsp/tcg/mov-data-control-register", test_mov_data_control_register);
+	g_test_add_func("/pmb887x/dsp/tcg/mov-control-register-data", test_mov_control_register_data);
 	g_test_add_func("/pmb887x/dsp/tcg/mov-accumulator-high-extension-unaffected", test_mov_accumulator_high_extension_unaffected);
 	g_test_add_func("/pmb887x/dsp/tcg/alu-accumulator-masks", test_alu_accumulator_masks);
 	g_test_add_func("/pmb887x/dsp/tcg/multiply-subtract-status-register", test_multiply_subtract_status_register);

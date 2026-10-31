@@ -135,6 +135,12 @@ void page_table_config_init(void);
 
 #ifndef CONFIG_USER_ONLY
 G_NORETURN void cpu_io_recompile(CPUState *cpu, uintptr_t retaddr);
+
+#ifdef __EMSCRIPTEN__
+/* MMIO barrier insns: single-insn TBs to avoid recurring io_recompile. */
+void wasm_add_io_barrier(vaddr pc);
+bool wasm_is_io_barrier(vaddr pc);
+#endif
 #endif /* CONFIG_USER_ONLY */
 
 void tb_phys_invalidate(TranslationBlock *tb, tb_page_addr_t page_addr);

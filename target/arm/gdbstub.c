@@ -192,6 +192,7 @@ static int vfp_gdb_set_sysreg(CPUState *cs, uint8_t *buf, int reg)
         return 4;
     case 1:
         env->vfp.xregs[ARM_VFP_FPEXC] = ldl_p(buf) & (1 << 30);
+        cpu_tb_key_gen_bump(env_cpu(env));     /* FPEXC.EN is a TB-key input */
         return 4;
     }
     return 0;

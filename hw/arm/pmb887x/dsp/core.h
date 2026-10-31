@@ -318,6 +318,8 @@ struct teak_memory_t {
 	uint32_t direct_data_bank_size;
 	uint32_t direct_data_high_read_base;
 	uint32_t direct_data_high_read_size;
+	uint32_t direct_data_high_write_base;
+	uint32_t direct_data_high_write_size;
 	void *cycle_opaque;
 	teak_advance_cycles_fn *advance_cycles;
 	uint32_t cycle_sensitive_base;
@@ -476,6 +478,7 @@ struct teak_tcg_core_t {
 	uint64_t chain_exit_stops;
 	uint64_t chain_budget_stops;
 	uint64_t chain_cache_stops;
+	uint64_t fast_runs;
 	bool synchronization_valid;
 };
 

@@ -7,6 +7,9 @@ audio_ss.add(files(
   'noaudio.c',
   'wavaudio.c',
 ))
+if host_os == 'emscripten'
+  audio_ss.add(files('wasmaudio.c'))
+endif
 
 # deprecated since v10.2, to be removed
 system_ss.add(files('audio-hmp-cmds.c', 'wavcapture.c'))

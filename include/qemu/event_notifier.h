@@ -25,6 +25,9 @@ struct EventNotifier {
     int rfd;
     int wfd;
     bool initialized;
+#ifdef __EMSCRIPTEN__
+    int wasm_pending;       /* set/test_and_clear without the eventfd */
+#endif
 #endif
 };
 

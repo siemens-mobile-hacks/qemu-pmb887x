@@ -158,8 +158,22 @@ bool translator_use_goto_tb(DisasContextBase *db, vaddr dest)
         return false;
     }
 
-    /* Check for the dest on the same page as the start of the TB.  */
+    /*
+     * Check for the dest on the same page as the start of the TB, or
+     * (wasm64) on the second page the TB has fetched from.  A TB with a
+     * second page is never chained into (cpu-exec.c), so it is entered
+     * only through a lookup, which checks that page's mapping too.
+     */
+#ifdef CONFIG_TCG_WASM64
+    if (likely(translator_is_same_page(db, dest))) {
+        return true;
+    }
+    return (dest & TARGET_PAGE_MASK) ==
+           (db->pc_first & TARGET_PAGE_MASK) + TARGET_PAGE_SIZE &&
+           db->host_addr[1] != NULL;
+#else
     return translator_is_same_page(db, dest);
+#endif
 }
 
 void translator_loop(CPUState *cpu, TranslationBlock *tb, int *max_insns,
@@ -202,6 +216,24 @@ void translator_loop(CPUState *cpu, TranslationBlock *tb, int *max_insns,
     db->plugin_enabled = plugin_enabled;
 
     while (true) {
+#ifdef __EMSCRIPTEN__
+        /*
+         * Keep an io-barrier insn out of the middle of a TB: stop before
+         * it so it starts a single-insn TB of its own (can_do_io is true
+         * there; see cpu_io_recompile in translate-all.c).  This has to
+         * happen before num_insns is bumped and insn_start emitted, or
+         * the TB carries a phantom instruction it never translates:
+         * tb->icount one too high (an extra insn charged to the icount
+         * budget per split TB) and a duplicate entry in the unwind
+         * search data.
+         */
+        bool io_barrier = wasm_is_io_barrier(db->pc_next);
+        if (unlikely(io_barrier) && db->num_insns > 0) {
+            db->is_jmp = DISAS_TOO_MANY;
+            break;
+        }
+#endif
+
         *max_insns = ++db->num_insns;
         if (cflags & CF_COUNT_CYCLES) {
             tcg_ctx->gen_insn_cycles[db->num_insns - 1] =
@@ -225,6 +257,13 @@ void translator_loop(CPUState *cpu, TranslationBlock *tb, int *max_insns,
          * the next instruction.
          */
         ops->translate_insn(db, cpu);
+
+#ifdef __EMSCRIPTEN__
+        if (unlikely(io_barrier) && db->is_jmp == DISAS_NEXT) {
+            /* Barrier is the first insn of this TB: make it single-insn. */
+            db->is_jmp = DISAS_TOO_MANY;
+        }
+#endif
 
         /*
          * We can't instrument after instructions that change control

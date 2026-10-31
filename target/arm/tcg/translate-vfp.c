@@ -892,6 +892,11 @@ static bool trans_VMSR_VMRS(DisasContext *s, arg_VMSR_VMRS *a)
             tmp = load_reg(s, a->rt);
             tcg_gen_andi_i32(tmp, tmp, 1 << 30);
             store_cpu_field(tmp, vfp.xregs[a->reg]);
+#ifdef CONFIG_TCG_WASM64
+            /* FPEXC.EN is a TB-key input the inline lookup caches
+             * do not compare: retire them (gen_goto_ptr) */
+            gen_helper_tb_key_gen_bump(tcg_env);
+#endif
             gen_lookup_tb(s);
             break;
         case ARM_VFP_FPINST:

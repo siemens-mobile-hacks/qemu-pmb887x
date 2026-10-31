@@ -160,12 +160,15 @@ SSIBus *ssi_create_bus(DeviceState *parent, const char *name)
 
 uint32_t ssi_transfer(SSIBus *bus, uint32_t val)
 {
-    BusState *b = BUS(bus);
+    /* plain casts: the checked ones' trace point costs a call per
+     * transferred byte on the LCD path; every child of an SSI bus is an
+     * SSIPeripheral (qdev checks the bus type at attach) */
+    BusState *b = &bus->parent_obj;
     BusChild *kid;
     uint32_t r = 0;
 
     QTAILQ_FOREACH(kid, &b->children, sibling) {
-        SSIPeripheral *p = SSI_PERIPHERAL(kid->child);
+        SSIPeripheral *p = (SSIPeripheral *)kid->child;
         r |= p->spc->transfer_raw(p, val);
     }
 
