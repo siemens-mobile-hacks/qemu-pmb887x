@@ -1268,16 +1268,20 @@ static void tcg_request_tb_flush(void) {
  * Every ALU instruction stores all of its flags to the state, and a run of
  * MACs overwrites them on every step. Drop the flag stores that every path
  * overwrites before anything can observe them; TCG's liveness then drops
- * the computations that fed them.
+ * the computations that fed them. The pc, which every instruction stores,
+ * is tracked the same way.
  *
  * Observers are explicit loads from env, every exit from the block, and any
- * helper call except the data accessors, which never touch the flags (they
- * reach peripherals, and no peripheral reads the core's status bits).
+ * helper call except the data accessors, which never touch the flags or the
+ * pc (they reach peripherals, and no peripheral reads the core's status bits
+ * or its pc; data accesses report trace_pc).
  */
 #define TCG_FLAG_FIRST	offsetof(teak_state_t, fz)
 #define TCG_FLAG_BYTES	(offsetof(teak_state_t, fr) + 1 - TCG_FLAG_FIRST)
+#define TCG_FLAG_PC_BIT	TCG_FLAG_BYTES
+#define TCG_FLAG_BITS	(TCG_FLAG_BYTES + sizeof(uint32_t))
 
-QEMU_BUILD_BUG_ON(TCG_FLAG_BYTES > 32);
+QEMU_BUILD_BUG_ON(TCG_FLAG_BITS > 32);
 
 static uint32_t tcg_flag_mask(TCGOp *op, unsigned size) {
 	TCGTemp *base = arg_temp(op->args[1]);
@@ -1288,8 +1292,12 @@ static uint32_t tcg_flag_mask(TCGOp *op, unsigned size) {
 		return 0;
 	for (unsigned i = 0; i < size; i++) {
 		intptr_t byte = offset + i - (intptr_t) TCG_FLAG_FIRST;
+		intptr_t pc_byte = offset + i - (intptr_t) offsetof(teak_state_t, pc);
+
 		if (byte >= 0 && byte < (intptr_t) TCG_FLAG_BYTES)
 			mask |= BIT(byte);
+		if (pc_byte >= 0 && pc_byte < (intptr_t) sizeof(uint32_t))
+			mask |= BIT(TCG_FLAG_PC_BIT + pc_byte);
 	}
 	return mask;
 }
@@ -1333,7 +1341,7 @@ static bool tcg_call_hides_flags(TCGOp *op) {
 /* Backward liveness of the flag bytes at one op; label_live holds the
  * state at every label, taken from the previous sweep. */
 static uint32_t tcg_flag_live_before(TCGOp *op, uint32_t live, const uint32_t *label_live) {
-	const uint32_t all = MAKE_64BIT_MASK(0, TCG_FLAG_BYTES);
+	const uint32_t all = MAKE_64BIT_MASK(0, TCG_FLAG_BITS);
 	unsigned size;
 
 	switch (op->opc) {
@@ -1359,7 +1367,7 @@ static uint32_t tcg_flag_live_before(TCGOp *op, uint32_t live, const uint32_t *l
 }
 
 static void tcg_remove_dead_flag_stores(TCGContext *s) {
-	const uint32_t all = MAKE_64BIT_MASK(0, TCG_FLAG_BYTES);
+	const uint32_t all = MAKE_64BIT_MASK(0, TCG_FLAG_BITS);
 	g_autofree uint32_t *label_live = g_new0(uint32_t, s->nb_labels);
 	TCGOp *op, *prev;
 	bool changed;

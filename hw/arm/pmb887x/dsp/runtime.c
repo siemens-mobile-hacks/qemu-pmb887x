@@ -669,6 +669,10 @@ uint32_t dsp_runtime_get_pc(const dsp_runtime_t *runtime) {
 	return qatomic_read(&runtime->core.state.pc);
 }
 
+uint32_t dsp_runtime_get_trace_pc(const dsp_runtime_t *runtime) {
+	return qatomic_read(&runtime->core.state.trace_pc);
+}
+
 uint64_t dsp_runtime_get_cache_compiles(const dsp_runtime_t *runtime) {
 	return qatomic_read(&runtime->core.cache_compiles);
 }
