@@ -292,18 +292,22 @@ void cpu_clock_set_idle_lead(int64_t ns)
  * owner's clock to a deadline at most cpu_clock_idle_lead ahead of real
  * time - the caller runs timers again - else how long to sleep with the
  * clock following real time.  A timer every 100 us would otherwise cost a
- * sleep and a wakeup each.
+ * sleep and a wakeup each.  The host clock only moves forward, so a
+ * deadline within the lead of an earlier reading is within it now: the
+ * clock is read again only when that reading would put the owner to sleep.
  */
 int64_t cpu_clock_owner_idle(int64_t deadline)
 {
-    int64_t raw;
+    static int64_t raw;
 
     if (deadline < 0 || !cpu_clock_idle_lead) {
         cpu_clock_owner_progress(true);
         return deadline < 0 ? -1 :
                MAX(deadline - qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL), 0);
     }
-    raw = cpu_get_raw_clock();
+    if (deadline - raw > cpu_clock_idle_lead) {
+        raw = cpu_get_raw_clock();
+    }
     if (deadline - raw <= cpu_clock_idle_lead) {
         qemu_mutex_lock(&cpu_clock_owner_lock);
         cpu_clock_owner_write(deadline, qatomic_read(cpu_clock_owner_cycles),
