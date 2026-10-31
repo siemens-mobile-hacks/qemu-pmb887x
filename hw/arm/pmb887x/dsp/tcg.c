@@ -1342,6 +1342,90 @@ static void tcg_remove_dead_flag_stores(TCGContext *s) {
 	}
 }
 
+/*
+ * TCG keeps a TEMP_TB temp in memory at every branch, since it cannot see
+ * whether the target reads it, and the temp pool reuses a few TEMP_TB temps
+ * for every instruction: almost every value the block computes was stored
+ * to the frame and never read. A TB-wide liveness over the labels finds the
+ * temps no label is entered with a value of, which TCG may then treat as
+ * TEMP_EBB, dead at every label.
+ */
+static void tcg_demote_label_dead_temps(TCGContext *s) {
+	unsigned words = DIV_ROUND_UP(s->nb_temps, 64);
+	g_autofree uint64_t *label_live = g_new0(uint64_t, (size_t) s->nb_labels * words);
+	g_autofree uint64_t *live = g_new0(uint64_t, words);
+	g_autofree uint64_t *crossing = g_new0(uint64_t, words);
+	TCGOp *op;
+	bool changed;
+
+	/* Labels start dead and only grow, so loops converge. */
+	do {
+		changed = false;
+		memset(live, 0, words * sizeof(uint64_t));
+		QTAILQ_FOREACH_REVERSE(op, &s->ops, link) {
+			const TCGOpDef *def = &tcg_op_defs[op->opc];
+			unsigned nb_oargs, nb_iargs;
+			uint64_t *target = NULL;
+
+			switch (op->opc) {
+				case INDEX_op_set_label: {
+					uint64_t *in = label_live + (size_t) arg_label(op->args[0])->id * words;
+					for (unsigned i = 0; i < words; i++) {
+						if ((in[i] | live[i]) != in[i]) {
+							in[i] |= live[i];
+							changed = true;
+						}
+					}
+					continue;
+				}
+				case INDEX_op_br:
+					memcpy(live, label_live + (size_t) arg_label(op->args[0])->id * words, words * sizeof(uint64_t));
+					continue;
+				case INDEX_op_brcond:
+					target = label_live + (size_t) arg_label(op->args[3])->id * words;
+					break;
+				case INDEX_op_discard:
+					live[temp_idx(arg_temp(op->args[0])) / 64] &= ~BIT_ULL(temp_idx(arg_temp(op->args[0])) % 64);
+					continue;
+				case INDEX_op_call:
+					nb_oargs = TCGOP_CALLO(op);
+					nb_iargs = TCGOP_CALLI(op);
+					goto operands;
+				default:
+					break;
+			}
+			if (def->flags & TCG_OPF_BB_EXIT)
+				memset(live, 0, words * sizeof(uint64_t));
+			else if (def->flags & TCG_OPF_BB_END && target == NULL)
+				g_assert_not_reached();
+			nb_oargs = def->nb_oargs;
+			nb_iargs = def->nb_iargs;
+		operands:
+			if (target != NULL) {
+				for (unsigned i = 0; i < words; i++)
+					live[i] |= target[i];
+			}
+			for (unsigned i = 0; i < nb_oargs; i++) {
+				size_t index = temp_idx(arg_temp(op->args[i]));
+				live[index / 64] &= ~BIT_ULL(index % 64);
+			}
+			for (unsigned i = nb_oargs; i < nb_oargs + nb_iargs; i++) {
+				size_t index = temp_idx(arg_temp(op->args[i]));
+				live[index / 64] |= BIT_ULL(index % 64);
+			}
+		}
+	} while (changed);
+
+	for (size_t label = 0; label < s->nb_labels; label++) {
+		for (unsigned i = 0; i < words; i++)
+			crossing[i] |= label_live[label * words + i];
+	}
+	for (int i = s->nb_globals; i < s->nb_temps; i++) {
+		if (s->temps[i].kind == TEMP_TB && !(crossing[i / 64] & BIT_ULL(i % 64)))
+			s->temps[i].kind = TEMP_EBB;
+	}
+}
+
 static TranslationBlock *tcg_compile_block(uint32_t pc, uint16_t words, uint16_t instruction_count,
 	teak_tcg_emit_fn *emit, void *opaque, int *error
 ) {
@@ -1370,6 +1454,7 @@ static TranslationBlock *tcg_compile_block(uint32_t pc, uint16_t words, uint16_t
 		emit(opaque);
 		tcg_gen_exit_tb(NULL, 0);
 		tcg_remove_dead_flag_stores(tcg_ctx);
+		tcg_demote_label_dead_temps(tcg_ctx);
 		code_size = tcg_gen_code(tcg_ctx, tb, pc);
 	}
 	tcg_ctx->gen_tb = NULL;
