@@ -6658,10 +6658,10 @@ out:
 		return tcg_fast_run(core, budget, tcg_fast_loop_##name, ARRAY_SIZE(tcg_fast_loop_##name), false); \
 	}
 
-/* The addresses @count post-increments of one address register visit, as at most two linear runs. */
+/* The addresses @count post-increments of one address register visit, as at most three linear runs. */
 typedef struct teak_fast_walk_t {
-	uint32_t start[2];
-	uint32_t length[2];
+	uint32_t start[3];
+	uint32_t length[3];
 	uint32_t runs;
 	uint32_t last;
 	uint32_t next;
@@ -6747,7 +6747,10 @@ static bool tcg_fast_walk_reads(const teak_memory_t *memory, const teak_fast_wal
 
 /* The address of the @index-th walked address. */
 TEAK_FAST_INLINE uint32_t tcg_fast_walk_address(const teak_fast_walk_t *walk, uint32_t index) {
-	return index < walk->length[0] ? walk->start[0] + index : walk->start[1] + index - walk->length[0];
+	if (index < walk->length[0])
+		return walk->start[0] + index;
+	index -= walk->length[0];
+	return index < walk->length[1] ? walk->start[1] + index : walk->start[2] + index - walk->length[1];
 }
 
 /* Whether MOV_REGISTER_DATA_RN_STEP can store at @address; high stores mark trace_pc. */
@@ -6785,7 +6788,13 @@ static uint32_t tcg_fast_iterate_35be(teak_tcg_core_t *core, uint32_t budget) {
 	QEMU_BUILD_BUG_ON(ITERATION_CYCLES != 41);
 	if (data == NULL)
 		return 0;
-	while (state.pc == 0x35BE && budget - cycles >= ITERATION_CYCLES && !(state.lp && state.bcn != 0) &&
+	/*
+	 * A block repeat completes when an instruction leaves pc at its end + 1;
+	 * iterations reach 35BF..35E6 and then 35BE or 35E7.
+	 */
+	while (state.pc == 0x35BE && budget - cycles >= ITERATION_CYCLES &&
+		!(state.lp && state.bcn != 0 &&
+			(uint16_t) (state.block_repeat_end[state.bcn - 1] + 1 - 0x35BE) <= 0x35E7 - 0x35BE) &&
 		(qatomic_read(&core->state.exit_request) | qatomic_read(&core->state.interrupt_request)) == 0) {
 		teak_fast_walk_t r0_walk, r1_walk, r2_walk, r4_walk;
 		const uint16_t *source[4];

@@ -355,7 +355,8 @@ static void test_relocated_fast_loop(void) {
 
 #define TEST_35BE_DATA_WORDS	0x10000
 
-static void test_35be_iterations_init(test_memory_t *program, uint16_t *data, pmb887x_dsp_tcg_core_t *core,
+/* mode: sata, product shift, data pattern, r4 in a 26-word ring, inside a block repeat. */
+static uint16_t test_35be_iterations_init(test_memory_t *program, uint16_t *data, pmb887x_dsp_tcg_core_t *core,
 	const uint8_t *mode
 ) {
 	static const uint16_t kernel[] = {
@@ -365,11 +366,18 @@ static void test_35be_iterations_init(test_memory_t *program, uint16_t *data, pm
 		0xDA22, 0xD22A, 0xDA22, 0xD23A, 0x87AB, 0x1B89, 0x1BA9, 0x1F08, 0x1B4C, 0x1F08, 0x1B4C, 0x0095, 0x557C,
 	};
 	static test_memory_t unused_data;
+	uint16_t stop = 2 + ARRAY_SIZE(kernel);
 
 	*program = (test_memory_t) {};
 	memcpy(&program->words[2], kernel, sizeof(kernel));
-	program->words[2 + ARRAY_SIZE(kernel)] = 0x4180; /* br 0x002b. */
-	program->words[3 + ARRAY_SIZE(kernel)] = 2 + ARRAY_SIZE(kernel);
+	if (mode[4]) {
+		/* bkrep 0x00, 0x002b; the body ends at a nop after the loop. */
+		program->words[0] = 0x5C00;
+		program->words[1] = stop;
+		program->words[stop++] = 0x0000;
+	}
+	program->words[stop] = 0x4180; /* br stop. */
+	program->words[stop + 1] = stop;
 	for (size_t i = 0; i < TEST_35BE_DATA_WORDS; i++)
 		data[i] = !mode[2] ? 0x1234 + i * 0x0F31 : i % 7 == 0 ? 0x8000 | (i & 0xFF) : 0x7F00 | (i & 0xFF);
 	*core = test_core_create(program, &unused_data);
@@ -377,35 +385,49 @@ static void test_35be_iterations_init(test_memory_t *program, uint16_t *data, pm
 	core->memory.direct_data_read_size = TEST_35BE_DATA_WORDS;
 	core->memory.direct_data_write_size = TEST_35BE_DATA_WORDS;
 	core->memory.y_space_base = 0x8000;
-	core->state.pc = 2;
+	core->state.pc = mode[4] ? 0 : 2;
 	core->state.r[0] = 0x0100;
 	core->state.r[1] = 0x3000;
 	core->state.r[2] = 0x1000;
-	core->state.r[4] = 0x8000;
-	core->state.r[5] = 8;
+	core->state.r[4] = mode[3] ? 0x8003 : 0x8000;
+	core->state.r[5] = mode[3] ? 26 : 8;
 	core->state.sata = mode[0];
 	core->state.product_shift = mode[1];
+	if (mode[3]) {
+		/* 30 r4 accesses per iteration wrap the ring once or twice. */
+		core->state.modj = 25;
+		core->state.modulo_enable = BIT(4);
+		teak_update_modulo_steps(&core->state);
+	}
+	return stop;
 }
 
-/* Whole 35BE iterations against the translator: saturation on and off, shifts, mostly large positive products. */
+/*
+ * Whole 35BE iterations against the translator: saturation on and off, shifts, mostly large positive products,
+ * modulo walks and an enclosing block repeat.
+ */
 static void test_35be_iterations(void) {
 	static uint16_t data[TEST_35BE_DATA_WORDS];
 	static uint16_t reference_data[TEST_35BE_DATA_WORDS];
-	static const uint8_t modes[][3] = { { 0, 0, 0 }, { 0, 3, 0 }, { 1, 1, 0 }, { 1, 3, 0 }, { 0, 2, 1 }, { 1, 2, 1 } };
+	static const uint8_t modes[][5] = {
+		{ 0, 0, 0, 0, 0 }, { 0, 3, 0, 0, 0 }, { 1, 1, 0, 0, 0 }, { 1, 3, 0, 0, 0 }, { 0, 2, 1, 0, 0 }, { 1, 2, 1, 0, 0 },
+		{ 0, 0, 0, 1, 0 }, { 0, 0, 0, 0, 1 }, { 1, 2, 1, 1, 1 },
+	};
 
 	for (size_t i = 0; i < ARRAY_SIZE(modes); i++) {
 		test_memory_t program, reference_program;
 		pmb887x_dsp_tcg_core_t core, reference;
+		uint16_t stop;
 
 		/* The translator runs the first pass whole; its compile maps the loop for the next core. */
+		stop = test_35be_iterations_init(&program, data, &core, modes[i]);
+		test_execute_slices_until(&core, stop, 64);
 		test_35be_iterations_init(&program, data, &core, modes[i]);
-		test_execute_slices_until(&core, 0x2B, 64);
-		test_35be_iterations_init(&program, data, &core, modes[i]);
-		test_execute_slices_until(&core, 0x2B, 64);
+		test_execute_slices_until(&core, stop, 64);
 		g_assert_cmpuint(core.fast_runs, !=, 0);
 
 		test_35be_iterations_init(&reference_program, reference_data, &reference, modes[i]);
-		test_execute_until(&reference, 0x2B, 1024);
+		test_execute_until(&reference, stop, 1024);
 		g_assert_cmpuint(reference.fast_runs, ==, 0);
 
 		core.state.exit_reason = reference.state.exit_reason;
