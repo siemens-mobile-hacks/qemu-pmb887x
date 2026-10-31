@@ -24,11 +24,13 @@ struct I2SRxBus {
 struct I2SSinkEndpoint {
     DeviceState parent_obj;
     I2SSink *sink;
+    I2SSinkClass *klass;
 };
 
 struct I2SSourceEndpoint {
     DeviceState parent_obj;
     I2SSource *source;
+    I2SSourceClass *klass;
 };
 
 I2STxBus *i2s_tx_bus_init(DeviceState *parent, const char *name)
@@ -49,6 +51,7 @@ static DeviceState *i2s_sink_port_create_endpoint(QDevBusPort *base,
     I2SSinkEndpoint *endpoint = I2S_SINK_ENDPOINT(dev);
 
     endpoint->sink = port->sink;
+    endpoint->klass = I2S_SINK_GET_CLASS(port->sink);
     return dev;
 }
 
@@ -68,6 +71,7 @@ static DeviceState *i2s_source_port_create_endpoint(QDevBusPort *base,
     I2SSourceEndpoint *endpoint = I2S_SOURCE_ENDPOINT(dev);
 
     endpoint->source = port->source;
+    endpoint->klass = I2S_SOURCE_GET_CLASS(port->source);
     return dev;
 }
 
@@ -100,17 +104,17 @@ void i2s_tx_configure(I2STxBus *bus, const I2SFormat *format)
 void i2s_tx_write(I2STxBus *bus, const int16_t *samples,
                   size_t frame_count)
 {
-    BusChild *child = QTAILQ_FIRST(&BUS(bus)->children);
+    BusChild *child = QTAILQ_FIRST(&bus->parent_obj.children);
 
     if (!bus->configured || child == NULL) {
         return;
     }
 
-    I2SSink *sink = I2S_SINK_ENDPOINT(child->child)->sink;
-    I2SSinkClass *klass = I2S_SINK_GET_CLASS(sink);
+    I2SSinkEndpoint *endpoint = container_of(child->child, I2SSinkEndpoint,
+                                             parent_obj);
 
-    if (klass->write != NULL) {
-        klass->write(sink, samples, frame_count);
+    if (endpoint->klass->write != NULL) {
+        endpoint->klass->write(endpoint->sink, samples, frame_count);
     }
 }
 
@@ -135,20 +139,20 @@ void i2s_rx_configure(I2SRxBus *bus, const I2SFormat *format)
 size_t i2s_rx_read(I2SRxBus *bus, int16_t *samples,
                    size_t frame_capacity)
 {
-    BusChild *child = QTAILQ_FIRST(&BUS(bus)->children);
+    BusChild *child = QTAILQ_FIRST(&bus->parent_obj.children);
 
     if (!bus->configured || child == NULL) {
         return 0;
     }
 
-    I2SSource *source = I2S_SOURCE_ENDPOINT(child->child)->source;
-    I2SSourceClass *klass = I2S_SOURCE_GET_CLASS(source);
+    I2SSourceEndpoint *endpoint = container_of(child->child,
+                                               I2SSourceEndpoint, parent_obj);
 
-    if (klass->read == NULL) {
+    if (endpoint->klass->read == NULL) {
         return 0;
     }
 
-    return klass->read(source, samples, frame_capacity);
+    return endpoint->klass->read(endpoint->source, samples, frame_capacity);
 }
 
 static bool i2s_bus_check_address(BusState *bus, DeviceState *dev,

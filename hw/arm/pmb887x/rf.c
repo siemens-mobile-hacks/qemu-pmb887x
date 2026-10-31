@@ -36,7 +36,7 @@ void pmb887x_iq_source_port_init(
 }
 
 bool pmb887x_iq_bus_has_source(const pmb887x_iq_bus_t *bus) {
-	return bus != NULL && !QTAILQ_EMPTY(&BUS(bus)->children);
+	return bus != NULL && !QTAILQ_EMPTY(&bus->parent_obj.children);
 }
 
 pmb887x_iq_sample_t pmb887x_iq_bus_read(pmb887x_iq_bus_t *bus, int64_t timestamp, uint64_t sample_index) {
