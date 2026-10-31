@@ -1075,12 +1075,60 @@ static ptrdiff_t tcg_plain_register_offset(uint8_t register_code) {
 	return -1;
 }
 
+static void tcg_emit_data_bus_saturation(TCGv_i64 value);
+
+/*
+ * Reads that need no helper beyond a plain field: an accumulator half (through
+ * the data bus saturation for a mov, as tcg_mov_read_register does) and the
+ * step/modulo packs. Returns false for any other register.
+ */
+static bool tcg_emit_inline_register_read(TCGv_i32 value, uint8_t register_code, bool mov) {
+	ptrdiff_t offset;
+	bool high;
+
+	if (register_code == 14 || register_code == 15) {
+		TCGv_i32 modulo = tcg_temp_new_i32();
+
+		tcg_gen_ld8u_i32(value, tcg_env, register_code == 14 ? offsetof(teak_state_t, stepi) :
+			offsetof(teak_state_t, stepj));
+		tcg_gen_ld16u_i32(modulo, tcg_env, register_code == 14 ? offsetof(teak_state_t, modi) :
+			offsetof(teak_state_t, modj));
+		tcg_gen_shli_i32(modulo, modulo, 7);
+		tcg_gen_or_i32(value, value, modulo);
+		tcg_gen_ext16u_i32(value, value);
+		return true;
+	}
+	if (register_code >= 16 && register_code <= 19) {
+		offset = offsetof(teak_state_t, b) + (register_code & 1U) * sizeof(uint64_t);
+		high = register_code < 18;
+	} else if (register_code >= 26 && register_code <= 29) {
+		offset = offsetof(teak_state_t, a) + (register_code & 1U) * sizeof(uint64_t);
+		high = register_code >= 28;
+	} else {
+		return false;
+	}
+
+	TCGv_i64 accumulator = tcg_temp_new_i64();
+
+	tcg_gen_ld_i64(accumulator, tcg_env, offset);
+	if (mov) {
+		tcg_gen_shli_i64(accumulator, accumulator, TEAK_ACCUMULATOR_HOST_SHIFT);
+		tcg_gen_sari_i64(accumulator, accumulator, TEAK_ACCUMULATOR_HOST_SHIFT);
+		tcg_emit_data_bus_saturation(accumulator);
+	}
+	if (high)
+		tcg_gen_shri_i64(accumulator, accumulator, 16);
+	tcg_gen_extrl_i64_i32(value, accumulator);
+	tcg_gen_ext16u_i32(value, value);
+	return true;
+}
+
 static void tcg_emit_register_read(TCGv_i32 value, uint8_t register_code) {
 	ptrdiff_t offset = tcg_plain_register_offset(register_code);
 
 	if (offset >= 0)
 		tcg_gen_ld16u_i32(value, tcg_env, offset);
-	else
+	else if (!tcg_emit_inline_register_read(value, register_code, false))
 		gen_helper_teak_tcg_register_read(value, tcg_env, tcg_constant_i32(register_code));
 }
 
@@ -1098,7 +1146,7 @@ static void tcg_emit_mov_register_read(TCGv_i32 value, uint8_t register_code) {
 
 	if (offset >= 0)
 		tcg_gen_ld16u_i32(value, tcg_env, offset);
-	else
+	else if (!tcg_emit_inline_register_read(value, register_code, true))
 		gen_helper_teak_tcg_mov_register_read(value, tcg_env, tcg_constant_i32(register_code));
 }
 
