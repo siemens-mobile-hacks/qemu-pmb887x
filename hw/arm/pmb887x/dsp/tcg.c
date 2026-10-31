@@ -100,23 +100,23 @@ struct teak_tcg_swap_mapping_t {
 };
 
 struct teak_tcg_block_t {
-	teak_insn_t instructions[TEAK_TCG_MAX_BLOCK_INSTRUCTIONS];
-	uint8_t block_repeat_setup_level[TEAK_TCG_MAX_BLOCK_INSTRUCTIONS];
 	uint32_t pc;
 	uint16_t words;
 	uint16_t instruction_count;
 	bool repeat_resume;
+	uint8_t block_repeat_setup_level[TEAK_TCG_MAX_BLOCK_INSTRUCTIONS];
+	teak_insn_t instructions[TEAK_TCG_MAX_BLOCK_INSTRUCTIONS];
 };
 
 struct teak_tcg_block_cache_entry_t {
-	teak_tcg_block_t block;
-	TranslationBlock *tb;
+	teak_tcg_block_cache_entry_t *next;
 	uint64_t cache_id;
 	uint32_t program_context;
 	uint32_t block_repeat_end[TEAK_BLOCK_REPEAT_LEVELS];
 	uint8_t block_repeat_level;
 	bool repeat_resume;
-	teak_tcg_block_cache_entry_t *next;
+	TranslationBlock *tb;
+	teak_tcg_block_t block;
 };
 
 static teak_tcg_block_cache_entry_t *tcg_block_cache[TEAK_TCG_BLOCK_CACHE_ENTRIES];
@@ -1164,21 +1164,27 @@ static bool tcg_same_block_repeat_ends(const uint32_t *cached_ends, const uint32
 }
 
 static inline QEMU_ALWAYS_INLINE teak_tcg_block_cache_entry_t *tcg_find_cached_entry_fast(teak_tcg_core_t *core) {
-	teak_tcg_block_cache_entry_t *entry;
+	teak_tcg_block_cache_entry_t **head = &tcg_block_cache[core->state.pc];
+	teak_tcg_block_cache_entry_t **link = head;
 	uint8_t level = core->state.bcn;
 
-	entry = tcg_block_cache[core->state.pc];
-	while (entry != NULL) {
+	while (*link != NULL) {
+		teak_tcg_block_cache_entry_t *entry = *link;
 		bool same_cache = entry->cache_id == core->cache_id;
 		bool same_context = entry->program_context == core->program_context;
 		bool same_level = entry->block_repeat_level == level;
 		bool same_repeat = entry->repeat_resume == core->state.repeat_active;
 		if (same_cache && same_context && same_level && same_repeat &&
 			tcg_same_block_repeat_ends(entry->block_repeat_end, core->state.block_repeat_end, level)) {
+			if (link != head) {
+				*link = entry->next;
+				entry->next = *head;
+				*head = entry;
+			}
 			core->cache_fast_hits++;
 			return entry;
 		}
-		entry = entry->next;
+		link = &entry->next;
 	}
 	return NULL;
 }
