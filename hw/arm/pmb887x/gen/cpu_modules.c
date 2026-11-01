@@ -343,8 +343,8 @@ static const pmb887x_cpu_module_gpio_t pmb8876_scu_gpios[] = {
 	{"EXTI4_IN",	PMB8876_GPIO_RF_STR0,		1},
 	{"EXTI4_IN",	PMB8876_GPIO_CLKOUT0,		3},
 	{"EXTI4_IN",	PMB8876_GPIO_DIF_RD,		1},
-	{"EXTI6_IN",	PMB8876_GPIO_PIN101,		2},
-	{"EXTI5_IN",	PMB8876_GPIO_PIN108,		1},
+	{"EXTI6_IN",	PMB8876_GPIO_DIF_RESET2,	2},
+	{"EXTI5_IN",	PMB8876_GPIO_USIF_RXD_MRST,	1},
 };
 
 static const int pmb8876_cgu_irqs[] = {
