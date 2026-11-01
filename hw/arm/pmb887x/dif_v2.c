@@ -1214,14 +1214,27 @@ static bool dif_plan_fed_tx_bus(pmb887x_dif_t *p, dif_fed_tx_bus_t *bus, int64_t
 }
 
 /* The bus words of the FIFO entries in @data, as dif_tx_from_fifo() sends them. */
-static uint32_t dif_get_fed_tx_bus_words(pmb887x_dif_t *p, const uint8_t *data, uint32_t count, uint32_t *words) {
+static uint32_t dif_get_fed_tx_bus_words(pmb887x_dif_t *p, const uint8_t *data, uint32_t count,
+	uint32_t *restrict words) {
 	uint32_t align = dif_get_tx_align(p);
 	uint32_t words_per_entry = 4 / align;
 	uint32_t bsconf_word_count = dif_is_bsconf_9bit(p) ? 1 : dif_get_bsconf_word_count(p);
+	bool is_gracmd = (dif_get_transfer_csreg(p) & DIFv2_CSREG_GRACMD) != 0;
 	uint32_t word_count = 0;
+
+	if (words_per_entry == 1 && bsconf_word_count == 4 && !is_gracmd) {
+		for (uint32_t n = 0; n < count; n++) {
+			uint32_t value = dif_mux(p, ldl_le_p(data + n * sizeof(uint32_t)));
+			words[n * 4] = value & 0xFF;
+			words[n * 4 + 1] = (value >> 8) & 0xFF;
+			words[n * 4 + 2] = (value >> 16) & 0xFF;
+			words[n * 4 + 3] = value >> 24;
+		}
+		return count * 4;
+	}
 	for (uint32_t n = 0; n < count; n++) {
 		uint32_t value = dif_mux(p, ldl_le_p(data + n * sizeof(uint32_t)));
-		if ((dif_get_transfer_csreg(p) & DIFv2_CSREG_GRACMD) != 0)
+		if (is_gracmd)
 			value = dif_convert_color(p, value);
 		for (uint32_t lane = 0; lane < words_per_entry; lane++) {
 			for (uint32_t i = 0; i < bsconf_word_count; i++)
