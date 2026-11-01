@@ -205,6 +205,7 @@ typedef uint32_t MMUIdxMap;
 
 /* Use a fully associative victim tlb of 8 entries. */
 #define CPU_VTLB_SIZE 8
+#define TLB_RAM_WATCH_LOG 128
 
 /*
  * Granularity of the per-TLB physical-address summary (see phys_group in
@@ -370,6 +371,19 @@ typedef struct CPUTLBCommon {
      * Protected by tlb_c.lock.
      */
     MMUIdxMap dirty;
+    /*
+     * The pages that entries have made writable without TLB_NOTDIRTY within
+     * the range of tlb_watch_ram_dirty() since the last reset of all of it,
+     * mmu_idx -1 for every mode; ram_watch_n > TLB_RAM_WATCH_LOG: unknown.
+     * Protected by tlb_c.lock.
+     */
+    uint64_t ram_watch_start;
+    uint64_t ram_watch_length;
+    unsigned ram_watch_n;
+    struct {
+        vaddr page;
+        int mmu_idx;
+    } ram_watch_log[TLB_RAM_WATCH_LOG];
     /*
      * Statistics.  These are not lock protected, but are read and
      * written atomically.  This allows the monitor to print a snapshot

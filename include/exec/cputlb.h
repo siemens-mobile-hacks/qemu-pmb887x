@@ -28,8 +28,18 @@
 #ifndef CONFIG_USER_ONLY
 #include "system/ram_addr.h"
 
-void tlb_reset_dirty(CPUState *cpu, uintptr_t start, uintptr_t length);
+void tlb_reset_dirty(CPUState *cpu, ram_addr_t ram_start, uintptr_t start,
+                     uintptr_t length);
 void tlb_reset_dirty_range_all(ram_addr_t start, ram_addr_t length);
+
+/*
+ * Each vCPU logs the TLB entries that make [@start, @start + @length)
+ * writable without TLB_NOTDIRTY, so that tlb_reset_dirty_range_all() within
+ * the range revisits those instead of walking the whole TLB.  One range at a
+ * time, called with the BQL held; a new one is unknown until a reset of all
+ * of it.
+ */
+void tlb_watch_ram_dirty(ram_addr_t start, ram_addr_t length);
 
 /*
  * Until cleared (@length 0), a CPU store into [@start, @start + @length) that

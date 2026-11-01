@@ -1357,6 +1357,7 @@ static ram_addr_t dif_get_guarded_tx_source(pmb887x_dif_t *p, ram_addr_t start, 
 		ram_addr_t end = start + length;
 		if (p->tx_pass_end > end && p->tx_pass_end - start <= available)
 			end = p->tx_pass_end;
+		tlb_watch_ram_dirty(start, end - start);
 		physical_memory_test_and_clear_dirty(start, end - start, DIRTY_MEMORY_VGA, NULL);
 		p->tx_clean_end = end;
 		p->tx_pass_end = start + length;

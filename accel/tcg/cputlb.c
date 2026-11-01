@@ -1088,16 +1088,127 @@ static inline void copy_tlb_helper_locked(CPUTLBEntry *d, const CPUTLBEntry *s)
     *d = *s;
 }
 
+void tlb_watch_ram_dirty(ram_addr_t start, ram_addr_t length)
+{
+    static ram_addr_t cur_start, cur_length;
+    CPUState *cpu;
+
+    assert(bql_locked());
+    length = TARGET_PAGE_ALIGN(start + length) - (start & TARGET_PAGE_MASK);
+    start &= TARGET_PAGE_MASK;
+    if (start == cur_start && length == cur_length) {
+        return;
+    }
+    cur_start = start;
+    cur_length = length;
+    CPU_FOREACH(cpu) {
+        CPUTLBCommon *c = &cpu->neg.tlb.c;
+
+        qemu_spin_lock(&c->lock);
+        c->ram_watch_start = start;
+        c->ram_watch_length = length;
+        c->ram_watch_n = TLB_RAM_WATCH_LOG + 1;
+        qemu_spin_unlock(&c->lock);
+    }
+}
+
+/*
+ * Called with tlb_c.lock held, after the entry for @page of @mmu_idx (-1:
+ * of every mode) may have become writable without TLB_NOTDIRTY.
+ */
+static void tlb_ram_watch_note(CPUState *cpu, ram_addr_t ram_addr,
+                               int mmu_idx, vaddr page)
+{
+    CPUTLBCommon *c = &cpu->neg.tlb.c;
+    unsigned i;
+
+    ram_addr &= TARGET_PAGE_MASK;
+    if (ram_addr - c->ram_watch_start >= c->ram_watch_length ||
+        c->ram_watch_n > TLB_RAM_WATCH_LOG) {
+        return;
+    }
+    for (i = 0; i < c->ram_watch_n; i++) {
+        if (c->ram_watch_log[i].page == page &&
+            (c->ram_watch_log[i].mmu_idx < 0 ||
+             c->ram_watch_log[i].mmu_idx == mmu_idx)) {
+            return;
+        }
+    }
+    if (i == TLB_RAM_WATCH_LOG) {
+        c->ram_watch_n = TLB_RAM_WATCH_LOG + 1;
+        return;
+    }
+    c->ram_watch_log[i].page = page;
+    c->ram_watch_log[i].mmu_idx = mmu_idx;
+    c->ram_watch_n = i + 1;
+}
+
+/* Called with tlb_c.lock held. */
+static void tlb_reset_dirty_logged(CPUState *cpu, uintptr_t start,
+                                   uintptr_t length)
+{
+    CPUTLBCommon *c = &cpu->neg.tlb.c;
+    int mmu_idx;
+    unsigned i;
+
+    for (i = 0; i < c->ram_watch_n; i++) {
+        vaddr page = c->ram_watch_log[i].page;
+
+        for (mmu_idx = 0; mmu_idx < NB_MMU_MODES; mmu_idx++) {
+            if ((c->ram_watch_log[i].mmu_idx >= 0 &&
+                 c->ram_watch_log[i].mmu_idx != mmu_idx) ||
+                !(c->dirty & (1 << mmu_idx))) {
+                continue;
+            }
+            tlb_reset_dirty_range_locked(
+                &cpu->neg.tlb.d[mmu_idx].fulltlb[tlb_index(cpu, mmu_idx, page)],
+                tlb_entry(cpu, mmu_idx, page), start, length);
+        }
+    }
+    for (mmu_idx = 0; mmu_idx < NB_MMU_MODES; mmu_idx++) {
+        CPUTLBDesc *desc = &cpu->neg.tlb.d[mmu_idx];
+
+        if (!(c->dirty & (1 << mmu_idx))) {
+            continue;
+        }
+        for (i = 0; i < CPU_VTLB_SIZE; i++) {
+            tlb_reset_dirty_range_locked(&desc->vfulltlb[i], &desc->vtable[i],
+                                         start, length);
+        }
+    }
+}
+
 /* This is a cross vCPU call (i.e. another vCPU resetting the flags of
  * the target vCPU).
  * We must take tlb_c.lock to avoid racing with another vCPU update. The only
  * thing actually updated is the target TLB entry ->addr_write flags.
  */
-void tlb_reset_dirty(CPUState *cpu, uintptr_t start, uintptr_t length)
+void tlb_reset_dirty(CPUState *cpu, ram_addr_t ram_start, uintptr_t start,
+                     uintptr_t length)
 {
+    CPUTLBCommon *c = &cpu->neg.tlb.c;
+    ram_addr_t off, lead;
+    bool in_watch, all_watch;
     int mmu_idx;
 
-    qemu_spin_lock(&cpu->neg.tlb.c.lock);
+    qemu_spin_lock(&c->lock);
+    off = ram_start - c->ram_watch_start;
+    lead = c->ram_watch_start - ram_start;
+    in_watch = off < c->ram_watch_length &&
+               length <= c->ram_watch_length - off;
+    all_watch = c->ram_watch_length && lead < length &&
+                c->ram_watch_length <= length - lead;
+    if (in_watch && c->ram_watch_n <= TLB_RAM_WATCH_LOG) {
+        tlb_reset_dirty_logged(cpu, start, length);
+        if (all_watch) {
+            c->ram_watch_n = 0;
+        }
+        qemu_spin_unlock(&c->lock);
+        return;
+    }
+    if (all_watch) {
+        c->ram_watch_n = 0;
+    }
     for (mmu_idx = 0; mmu_idx < NB_MMU_MODES; mmu_idx++) {
         CPUTLBDesc *desc = &cpu->neg.tlb.d[mmu_idx];
         CPUTLBDescFast *fast = cpu_tlb_fast(cpu, mmu_idx);
@@ -1133,7 +1244,7 @@ static inline void tlb_set_dirty1_locked(CPUTLBEntry *tlb_entry,
 
 /* update the TLB corresponding to virtual page vaddr
    so that it is no longer dirty */
-static void tlb_set_dirty(CPUState *cpu, vaddr addr)
+static void tlb_set_dirty(CPUState *cpu, vaddr addr, ram_addr_t ram_addr)
 {
     int mmu_idx;
 
@@ -1141,6 +1252,7 @@ static void tlb_set_dirty(CPUState *cpu, vaddr addr)
 
     addr &= TARGET_PAGE_MASK;
     qemu_spin_lock(&cpu->neg.tlb.c.lock);
+    tlb_ram_watch_note(cpu, ram_addr, -1, addr);
     for (mmu_idx = 0; mmu_idx < NB_MMU_MODES; mmu_idx++) {
         tlb_set_dirty1_locked(tlb_entry(cpu, mmu_idx, addr), addr);
     }
@@ -1526,6 +1638,9 @@ void tlb_set_page_full(CPUState *cpu, int mmu_idx,
     }
     tlb_set_compare(full, &tn, addr_page, write_flags,
                     MMU_DATA_STORE, prot & PAGE_WRITE);
+    if (is_ram && (prot & PAGE_WRITE) && !(write_flags & TLB_NOTDIRTY)) {
+        tlb_ram_watch_note(cpu, iotlb, mmu_idx, addr_page);
+    }
 
     copy_tlb_helper_locked(te, &tn);
     tlb_n_used_entries_inc(cpu, mmu_idx);
@@ -1811,7 +1926,7 @@ static void notdirty_write(CPUState *cpu, vaddr mem_vaddr, unsigned size,
     /* We remove the notdirty callback only if the code has been flushed. */
     if (!physical_memory_is_clean(ram_addr)) {
         trace_memory_notdirty_set_dirty(mem_vaddr);
-        tlb_set_dirty(cpu, mem_vaddr);
+        tlb_set_dirty(cpu, mem_vaddr, ram_addr);
     }
 }
 
