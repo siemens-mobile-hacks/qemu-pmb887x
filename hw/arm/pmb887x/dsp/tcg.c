@@ -6618,6 +6618,34 @@ TEAK_FAST_INLINE bool tcg_fast_is_branch(const teak_insn_t *instruction) {
 	return instruction->opcode == TEAK_OP_BRANCH_ABSOLUTE || instruction->opcode == TEAK_OP_BRANCH_RELATIVE;
 }
 
+/* The per-instruction loop of the fast runners, from @cycles of @budget. */
+TEAK_FAST_INLINE uint32_t tcg_fast_steps(teak_tcg_core_t *core, teak_state_t *state, const teak_memory_t *memory,
+	uint32_t budget, uint32_t cycles, const teak_insn_t *instructions, size_t count, bool stop_at_head
+) {
+	bool progressed;
+
+	do {
+		progressed = false;
+		TEAK_FAST_UNROLL
+		for (size_t i = 0; i < count; i++) {
+			if (state->pc != instructions[i].address)
+				continue;
+			if (cycles >= budget || !tcg_fast_execute(state, memory, &instructions[i]))
+				return cycles;
+			cycles++;
+			progressed = true;
+			if (state->lp && state->bcn != 0)
+				tcg_fast_complete_block_repeat(state);
+			if (instructions[i].opcode == TEAK_OP_MOV_REGISTER_DATA_RN_STEP &&
+				(qatomic_read(&core->state.exit_request) | qatomic_read(&core->state.interrupt_request)) != 0)
+				return cycles;
+			if (stop_at_head && state->pc == instructions[0].address)
+				return cycles;
+		}
+	} while (progressed);
+	return cycles;
+}
+
 TEAK_FAST_INLINE uint32_t tcg_fast_run(teak_tcg_core_t *core, uint32_t budget,
 	const teak_insn_t *instructions, size_t count, bool stop_at_head, bool block_repeat
 ) {
@@ -6625,7 +6653,6 @@ TEAK_FAST_INLINE uint32_t tcg_fast_run(teak_tcg_core_t *core, uint32_t budget,
 	const teak_memory_t memory_copy = core->memory;
 	const teak_memory_t *memory = &memory_copy;
 	uint32_t cycles = 0;
-	bool progressed;
 
 	/*
 	 * A block-repeat loop is the innermost repeat, so only its last instruction
@@ -6648,25 +6675,7 @@ TEAK_FAST_INLINE uint32_t tcg_fast_run(teak_tcg_core_t *core, uint32_t budget,
 		}
 	}
 
-	do {
-		progressed = false;
-		TEAK_FAST_UNROLL
-		for (size_t i = 0; i < count; i++) {
-			if (state.pc != instructions[i].address)
-				continue;
-			if (cycles >= budget || !tcg_fast_execute(&state, memory, &instructions[i]))
-				goto out;
-			cycles++;
-			progressed = true;
-			if (state.lp && state.bcn != 0)
-				tcg_fast_complete_block_repeat(&state);
-			if (instructions[i].opcode == TEAK_OP_MOV_REGISTER_DATA_RN_STEP &&
-				(qatomic_read(&core->state.exit_request) | qatomic_read(&core->state.interrupt_request)) != 0)
-				goto out;
-			if (stop_at_head && state.pc == instructions[0].address)
-				goto out;
-		}
-	} while (progressed);
+	cycles = tcg_fast_steps(core, &state, memory, budget, cycles, instructions, count, stop_at_head);
 
 out:
 	state.pending_interrupts = qatomic_read(&core->state.pending_interrupts);
@@ -6770,6 +6779,44 @@ static bool tcg_fast_walk_reads(const teak_memory_t *memory, const teak_fast_wal
 	return true;
 }
 
+/* Where tcg_fast_read() finds each run of @walk, or false unless each is one flat array. */
+static bool tcg_fast_walk_spans(const teak_memory_t *memory, const teak_fast_walk_t *walk, const uint16_t **spans) {
+	for (uint32_t run = 0; run < walk->runs; run++) {
+		spans[run] = tcg_fast_read_span(memory, walk->start[run], walk->length[run]);
+		if (spans[run] == NULL)
+			return false;
+	}
+	return true;
+}
+
+/* The words @spans hold for the walked addresses, in visiting order. */
+TEAK_FAST_INLINE void tcg_fast_walk_values(const teak_fast_walk_t *walk, const uint16_t *const *spans,
+	uint16_t *values
+) {
+	for (uint32_t run = 0; run < walk->runs; run++)
+		for (uint32_t i = 0; i < walk->length[run]; i++)
+			*values++ = spans[run][i];
+}
+
+/* Whether the walked addresses @first..@last - 1 are all at or above @base. */
+TEAK_FAST_INLINE bool tcg_fast_walk_above(const teak_fast_walk_t *walk, uint32_t first, uint32_t last,
+	uint32_t base
+) {
+	uint32_t offset = 0;
+	bool above = true;
+
+	for (uint32_t run = 0; run < walk->runs; run++) {
+		uint32_t low = MAX(offset, first);
+		uint32_t high = MIN(offset + walk->length[run], last);
+
+		/* addresses rise within a run */
+		if (low < high)
+			above &= walk->start[run] + (low - offset) >= base;
+		offset += walk->length[run];
+	}
+	return above;
+}
+
 /* The address of the @index-th walked address. */
 TEAK_FAST_INLINE uint32_t tcg_fast_walk_address(const teak_fast_walk_t *walk, uint32_t index) {
 	if (index < walk->length[0])
@@ -6823,8 +6870,10 @@ static uint32_t tcg_fast_iterate_35be(teak_tcg_core_t *core, uint32_t budget) {
 		(qatomic_read(&core->state.exit_request) | qatomic_read(&core->state.interrupt_request)) == 0) {
 		teak_fast_walk_t r0_walk, r1_walk, r2_walk, r4_walk;
 		const uint16_t *source[4];
-		const uint16_t *x_values[X_READS];
-		const uint16_t *r4_values[R4_ACCESSES];
+		const uint16_t *x_spans[ARRAY_SIZE(r2_walk.start)];
+		const uint16_t *r4_spans[ARRAY_SIZE(r4_walk.start)];
+		uint16_t x_values[X_READS];
+		uint16_t r4_values[R4_ACCESSES];
 		uint32_t r4_address[4];
 		bool r4_high[4];
 		bool r1_high[2];
@@ -6841,8 +6890,7 @@ static uint32_t tcg_fast_iterate_35be(teak_tcg_core_t *core, uint32_t budget) {
 		/* X reads below Y space, Y reads (r4 accesses 2..27) in it. */
 		for (uint32_t run = 0; run < r2_walk.runs; run++)
 			ok &= r2_walk.start[run] + r2_walk.length[run] <= memory->y_space_base;
-		for (uint32_t i = 2; i < 2 + MULTIPLIES; i++)
-			ok &= tcg_fast_walk_address(&r4_walk, i) >= memory->y_space_base;
+		ok &= tcg_fast_walk_above(&r4_walk, 2, 2 + MULTIPLIES, memory->y_space_base);
 		for (uint32_t i = 0; i < 4; i++) {
 			r4_address[i] = tcg_fast_walk_address(&r4_walk, r4_store_index[i]);
 			ok &= tcg_fast_writable(memory, r4_address[i], &r4_high[i]);
@@ -6850,13 +6898,16 @@ static uint32_t tcg_fast_iterate_35be(teak_tcg_core_t *core, uint32_t budget) {
 		for (uint32_t i = 0; i < 2; i++)
 			ok &= tcg_fast_writable(memory, tcg_fast_walk_address(&r1_walk, i), &r1_high[i]);
 		if (!ok || !tcg_fast_walk_reads(memory, &r0_walk, source) ||
-			!tcg_fast_walk_reads(memory, &r2_walk, x_values) || !tcg_fast_walk_reads(memory, &r4_walk, r4_values))
+			!tcg_fast_walk_spans(memory, &r2_walk, x_spans) || !tcg_fast_walk_spans(memory, &r4_walk, r4_spans))
 			break;
 
 		value = *source[0];
 		data[r4_address[0]] = value;
 		value = *source[1];
 		data[r4_address[1]] = value;
+		/* after the stores: in a short ring the last reads are their addresses */
+		tcg_fast_walk_values(&r2_walk, x_spans, x_values);
+		tcg_fast_walk_values(&r4_walk, r4_spans, r4_values);
 		a0 = 0x8000;
 		a1 = 0x8000;
 
@@ -6875,8 +6926,8 @@ static uint32_t tcg_fast_iterate_35be(teak_tcg_core_t *core, uint32_t budget) {
 			shift -= shift != 0;
 			TEAK_FAST_UNROLL
 			for (uint32_t i = 0; i < MULTIPLIES; i++) {
-				x = *x_values[i / 2];
-				y = *r4_values[2 + i];
+				x = x_values[i / 2];
+				y = r4_values[2 + i];
 				product = (uint32_t) ((int32_t) (int16_t) x * (int32_t) (int16_t) y);
 				if (i < MULTIPLIES - 1)
 					sum[i & 1] += (int64_t) ((uint64_t) (int64_t) (int32_t) product << (shift & 63U)) >> right;
@@ -6892,7 +6943,7 @@ static uint32_t tcg_fast_iterate_35be(teak_tcg_core_t *core, uint32_t budget) {
 			uint32_t shift = state.product_shift;
 			uint32_t right = shift == 1;
 			uint8_t sata = state.sata, flm = state.flm, fvl = state.fvl;
-			uint16_t x = *x_values[0], y = *r4_values[2];
+			uint16_t x = x_values[0], y = r4_values[2];
 			uint32_t product = (uint32_t) ((int32_t) (int16_t) x * (int32_t) (int16_t) y);
 
 			shift -= shift != 0;
@@ -6905,8 +6956,8 @@ static uint32_t tcg_fast_iterate_35be(teak_tcg_core_t *core, uint32_t budget) {
 					a0 = tcg_fast_mac_lazy(a0, shifted, sata, &flm, &fvl);
 				else
 					a1 = tcg_fast_mac_lazy(a1, shifted, sata, &flm, &fvl);
-				y = *r4_values[2 + i];
-				x = *x_values[i / 2];
+				y = r4_values[2 + i];
+				x = x_values[i / 2];
 				product = (uint32_t) ((int32_t) (int16_t) x * (int32_t) (int16_t) y);
 			}
 			state.x[0] = x;
@@ -6961,8 +7012,10 @@ static uint32_t tcg_fast_iterate_35be(teak_tcg_core_t *core, uint32_t budget) {
 	return cycles;
 }
 
+/* A run of a few instructions: on core->state itself, without the copies of tcg_fast_run(). */
 static uint32_t tcg_fast_step_35be(teak_tcg_core_t *core, uint32_t budget) {
-	return tcg_fast_run(core, budget, tcg_fast_loop_35be, ARRAY_SIZE(tcg_fast_loop_35be), true, false);
+	return tcg_fast_steps(core, &core->state, &core->memory, budget, 0, tcg_fast_loop_35be,
+		ARRAY_SIZE(tcg_fast_loop_35be), true);
 }
 
 /*
