@@ -2327,9 +2327,24 @@ static void w64_try_join(DisasContext *s, vaddr pc)
     }
 }
 
+/*
+ * The exits tb_stop emits after the TB's last instruction leave from
+ * points inside it, where the key is the TB's own: whatever ended the TB
+ * (a BLX to the other instruction set, a bx, a CPSR write) is not on
+ * their path.  Left as that instruction set them, a Thumb TB's deferred
+ * exits after a BLX <imm> to ARM code were keyed ARM, and their inline
+ * lookup could never hit.
+ */
+static void w64_key_static(DisasContext *dc)
+{
+    dc->w64_thumb = dc->thumb;
+    dc->w64_dynkey = false;
+}
+
 /* the deferred taken paths and the loop's interrupt exit, from tb_stop */
 static void w64_emit_deferred_taken(DisasContext *dc)
 {
+    w64_key_static(dc);
     if (dc->w64_loop_insns) {
         set_disas_label(dc, dc->w64_loop_exit);
         w64_refund(dc, dc->base.num_insns - dc->w64_loop_insns,
@@ -8290,6 +8305,9 @@ static void arm_tr_tb_stop(DisasContextBase *dcbase, CPUState *cpu)
     if (dc->condjmp) {
         /* "Condition failed" instruction codepath for the branch/trap insn */
         set_disas_label(dc, dc->condlabel);
+#ifdef CONFIG_TCG_WASM64
+        w64_key_static(dc);
+#endif
         gen_set_condexec(dc);
         if (unlikely(dc->ss_active)) {
             gen_update_pc(dc, curr_insn_len(dc));
