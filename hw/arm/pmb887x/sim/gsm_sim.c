@@ -169,7 +169,7 @@ static void gsm_sim_exchange(
 					PMB887X_APDU_STATUS_RESPONSE_AVAILABLE | response_size
 				);
 			} else {
-				pmb887x_apdu_response_set_status(&response, PMB887X_APDU_STATUS_FILE_NOT_FOUND);
+				pmb887x_apdu_response_set_status(&response, PMB887X_APDU_STATUS_FILE_ID_NOT_FOUND);
 			}
 			break;
 		}
