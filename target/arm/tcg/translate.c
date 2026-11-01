@@ -1440,6 +1440,32 @@ static uint32_t msr_mask(DisasContext *s, int flags, int spsr)
     return mask;
 }
 
+/*
+ * A CPSR write can unmask a pending interrupt, which must be taken before the
+ * next instruction.  Return to the main loop only in that case.
+ */
+static void gen_lookup_tb_after_cpsr_write(DisasContext *s)
+{
+    TCGLabel *no_interrupt;
+    TCGv_i32 interrupt_request;
+
+    if (s->ss_active) {
+        gen_lookup_tb(s);
+        return;
+    }
+
+    no_interrupt = gen_new_label();
+    interrupt_request = tcg_temp_new_i32();
+    gen_pc_plus_diff(s, cpu_R[15], curr_insn_len(s));
+    tcg_gen_ld_i32(interrupt_request, tcg_env,
+                   offsetof(CPUState, interrupt_request) - sizeof(CPUState));
+    tcg_gen_brcondi_i32(TCG_COND_EQ, interrupt_request, 0, no_interrupt);
+    gen_set_condexec(s);
+    tcg_gen_exit_tb(NULL, 0);
+    gen_set_label(no_interrupt);
+    s->base.is_jmp = DISAS_JUMP;
+}
+
 /* Returns nonzero if access to the PSR is not permitted. Marks t0 as dead. */
 static int gen_set_psr(DisasContext *s, uint32_t mask, int spsr, TCGv_i32 t0)
 {
@@ -1454,10 +1480,11 @@ static int gen_set_psr(DisasContext *s, uint32_t mask, int spsr, TCGv_i32 t0)
         tcg_gen_andi_i32(t0, t0, mask);
         tcg_gen_or_i32(tmp, tmp, t0);
         store_cpu_field(tmp, spsr);
+        gen_lookup_tb(s);
     } else {
         gen_set_cpsr(t0, mask);
+        gen_lookup_tb_after_cpsr_write(s);
     }
-    gen_lookup_tb(s);
     return 0;
 }
 
