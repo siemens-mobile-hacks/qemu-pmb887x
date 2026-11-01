@@ -2942,7 +2942,7 @@
 #define DIFv2_PERREG_DIFPERMODE_SHIFT		0
 #define DIFv2_PERREG_DIFPERMODE_SERIAL		0x0
 #define DIFv2_PERREG_DIFPERMODE_PARALLEL	0x1
-#define DIFv2_PERREG_INBAND					(1 << 1)
+#define DIFv2_PERREG_INBAND					(1 << 1)		 // Take CS, CD, BSCONF, and GRACMD from TXD byte 3 instead of CSREG
 #define DIFv2_PERREG_INBAND_SHIFT			1
 #define DIFv2_PERREG_CS1POL					(1 << 2)
 #define DIFv2_PERREG_CS1POL_SHIFT			2
@@ -3656,6 +3656,26 @@
 #define DIFv2_TXD_BYTE2_SHIFT				16
 #define DIFv2_TXD_BYTE3						(0xFF << 24)
 #define DIFv2_TXD_BYTE3_SHIFT				24
+#define DIFv2_TXD_INBAND_GRACMD				(1 << 24)		 // PERREG.INBAND: apply the color matrix to this word
+#define DIFv2_TXD_INBAND_GRACMD_SHIFT		24
+#define DIFv2_TXD_INBAND_FORMAT				(0x7 << 25)		 // PERREG.INBAND: bus words taken from this TXD word
+#define DIFv2_TXD_INBAND_FORMAT_SHIFT		25
+#define DIFv2_TXD_INBAND_FORMAT_OFF			0x0
+#define DIFv2_TXD_INBAND_FORMAT_1x9BIT		0x2000000
+#define DIFv2_TXD_INBAND_FORMAT_2x9BIT		0x4000000
+#define DIFv2_TXD_INBAND_FORMAT_3x9BIT		0x6000000
+#define DIFv2_TXD_INBAND_FORMAT_1x8BIT		0x8000000
+#define DIFv2_TXD_INBAND_FORMAT_2x8BIT		0xA000000
+#define DIFv2_TXD_INBAND_FORMAT_3x8BIT		0xC000000
+#define DIFv2_TXD_INBAND_FORMAT_4x8BIT		0xE000000
+#define DIFv2_TXD_INBAND_CS3				(1 << 28)		 // PERREG.INBAND: assert CS3 for this word
+#define DIFv2_TXD_INBAND_CS3_SHIFT			28
+#define DIFv2_TXD_INBAND_CD					(1 << 29)		 // PERREG.INBAND: send this word as a command
+#define DIFv2_TXD_INBAND_CD_SHIFT			29
+#define DIFv2_TXD_INBAND_CS2				(1 << 30)		 // PERREG.INBAND: assert CS2 for this word
+#define DIFv2_TXD_INBAND_CS2_SHIFT			30
+#define DIFv2_TXD_INBAND_CS1				(1 << 31)		 // PERREG.INBAND: assert CS1 for this word
+#define DIFv2_TXD_INBAND_CS1_SHIFT			31
 
 /* Receive Data Register */
 #define DIFv2_RXD							0xC000
