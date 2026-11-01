@@ -6835,18 +6835,34 @@ static uint32_t tcg_fast_iterate_35be(teak_tcg_core_t *core, uint32_t budget) {
 		a0 = 0x8000;
 		a1 = 0x8000;
 
-		state.y[0] = *r4_values[2];
-		tcg_fast_multiply(&state, *x_values[0], false, false);
-		TEAK_FAST_UNROLL
-		for (uint32_t i = 1; i < MULTIPLIES; i++) {
-			uint64_t product = tcg_fast_shifted_product(&state);
+		{
+			/* the chain on locals: state is in memory, its fields would round-trip */
+			uint32_t shift = state.product_shift;
+			uint32_t right = shift == 1;
+			uint8_t sata = state.sata, flm = state.flm, fvl = state.fvl;
+			uint16_t x = *x_values[0], y = *r4_values[2];
+			uint32_t product = (uint32_t) ((int32_t) (int16_t) x * (int32_t) (int16_t) y);
 
-			if (i & 1)
-				a0 = tcg_fast_mac_lazy(a0, product, state.sata, &state.flm, &state.fvl);
-			else
-				a1 = tcg_fast_mac_lazy(a1, product, state.sata, &state.flm, &state.fvl);
-			state.y[0] = *r4_values[2 + i];
-			tcg_fast_multiply(&state, *x_values[i / 2], false, false);
+			shift -= shift != 0;
+			TEAK_FAST_UNROLL
+			for (uint32_t i = 1; i < MULTIPLIES; i++) {
+				uint64_t shifted = (uint64_t) product | (uint64_t) (product >> 31) * 0xF00000000ULL;
+
+				shifted = (uint64_t) ((int64_t) ((uint64_t) tcg_fast_sign_extend(shifted) << (shift & 63U)) >> right);
+				if (i & 1)
+					a0 = tcg_fast_mac_lazy(a0, shifted, sata, &flm, &fvl);
+				else
+					a1 = tcg_fast_mac_lazy(a1, shifted, sata, &flm, &fvl);
+				y = *r4_values[2 + i];
+				x = *x_values[i / 2];
+				product = (uint32_t) ((int32_t) (int16_t) x * (int32_t) (int16_t) y);
+			}
+			state.x[0] = x;
+			state.y[0] = y;
+			state.p[0] = product;
+			state.product_extension[0] = product >> 31;
+			state.flm = flm;
+			state.fvl = fvl;
 		}
 
 		state.a[0] = a0;
@@ -6893,6 +6909,18 @@ static uint32_t tcg_fast_iterate_35be(teak_tcg_core_t *core, uint32_t budget) {
 	return cycles;
 }
 
+static uint32_t tcg_fast_step_35be(teak_tcg_core_t *core, uint32_t budget) {
+	return tcg_fast_run(core, budget, tcg_fast_loop_35be, ARRAY_SIZE(tcg_fast_loop_35be), true);
+}
+
+/*
+ * The per-instruction runner takes ~1 % of the 35BE cycles.  Called through
+ * a volatile pointer, neither LLVM nor Binaryen inlines it: in one function
+ * with the iterations, its instruction switch cost TurboFan the registers of
+ * the iteration loop (SL65 video: the kernel 24.4 -> ~20 % of the vCPU).
+ */
+static uint32_t (*volatile tcg_fast_step_35be_fn)(teak_tcg_core_t *core, uint32_t budget) = tcg_fast_step_35be;
+
 static uint32_t tcg_fast_run_35be(teak_tcg_core_t *core, uint32_t budget) {
 	uint32_t cycles = 0;
 
@@ -6900,7 +6928,7 @@ static uint32_t tcg_fast_run_35be(teak_tcg_core_t *core, uint32_t budget) {
 		uint32_t run;
 
 		cycles += tcg_fast_iterate_35be(core, budget - cycles);
-		run = tcg_fast_run(core, budget - cycles, tcg_fast_loop_35be, ARRAY_SIZE(tcg_fast_loop_35be), true);
+		run = tcg_fast_step_35be_fn(core, budget - cycles);
 		cycles += run;
 		if (run == 0 || core->state.pc != 0x35BE)
 			return cycles;
