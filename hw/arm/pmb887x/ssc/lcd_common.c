@@ -19,6 +19,8 @@
 #define LCD_CMD_MAX_PARAMS 256
 #define LCD_RAM_QUEUE_SIZE (64 * 1024)
 #define LCD_RAM_QUEUE_WAKE_BYTES (4 * 1024)
+#define LCD_RAM_WRITER_POLL_US 1000
+#define LCD_RAM_WRITER_IDLE_POLLS 50
 
 static void lcd_incr_px(pmb887x_lcd_t *lcd);
 
@@ -255,12 +257,30 @@ static void lcd_write_queued_ram_bytes(pmb887x_lcd_t *lcd) {
 	qatomic_store_release(&lcd->ram_queue_tail, tail);
 }
 
+/*
+ * Waking the writer cost the producer ~2 % of the vCPU on the stopwatch
+ * (Atomics.notify, one per 4 KB), about as much as writing the bytes
+ * itself.  So the writer only sleeps on the event when the queue stays
+ * empty for LCD_RAM_WRITER_IDLE_POLLS polls; while it polls, the event is
+ * not waited on and setting it wakes nobody.
+ */
 static void *lcd_ram_writer_run(void *opaque) {
 	pmb887x_lcd_t *lcd = opaque;
+	unsigned idle_polls = LCD_RAM_WRITER_IDLE_POLLS;
 
 	while (true) {
-		qemu_event_wait(&lcd->ram_queue_ready);
-		qemu_event_reset(&lcd->ram_queue_ready);
+		if (idle_polls >= LCD_RAM_WRITER_IDLE_POLLS) {
+			qemu_event_wait(&lcd->ram_queue_ready);
+			qemu_event_reset(&lcd->ram_queue_ready);
+			idle_polls = 0;
+		} else {
+			g_usleep(LCD_RAM_WRITER_POLL_US);
+		}
+		if (qatomic_load_acquire(&lcd->ram_queue_head) == qatomic_read(&lcd->ram_queue_tail)) {
+			idle_polls++;
+			continue;
+		}
+		idle_polls = 0;
 		qemu_mutex_lock(&lcd->ram_queue_lock);
 		lcd_write_queued_ram_bytes(lcd);
 		qemu_mutex_unlock(&lcd->ram_queue_lock);
