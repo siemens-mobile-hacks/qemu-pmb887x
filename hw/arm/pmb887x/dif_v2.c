@@ -1213,6 +1213,12 @@ static bool dif_plan_fed_tx_bus(pmb887x_dif_t *p, dif_fed_tx_bus_t *bus, int64_t
 	return bus->wakes != 0;
 }
 
+/* Whether the bus words of a FIFO entry are the bytes of its muxed value, low first. */
+static bool dif_is_fed_tx_bus_bytes(pmb887x_dif_t *p) {
+	return dif_get_tx_align(p) == 4 && !dif_is_bsconf_9bit(p) && dif_get_bsconf_word_count(p) == 4 &&
+		(dif_get_transfer_csreg(p) & DIFv2_CSREG_GRACMD) == 0;
+}
+
 /* The bus words of the FIFO entries in @data, as dif_tx_from_fifo() sends them. */
 static uint32_t dif_get_fed_tx_bus_words(pmb887x_dif_t *p, const uint8_t *data, uint32_t count,
 	uint32_t *restrict words) {
@@ -1222,16 +1228,6 @@ static uint32_t dif_get_fed_tx_bus_words(pmb887x_dif_t *p, const uint8_t *data, 
 	bool is_gracmd = (dif_get_transfer_csreg(p) & DIFv2_CSREG_GRACMD) != 0;
 	uint32_t word_count = 0;
 
-	if (words_per_entry == 1 && bsconf_word_count == 4 && !is_gracmd) {
-		for (uint32_t n = 0; n < count; n++) {
-			uint32_t value = dif_mux(p, ldl_le_p(data + n * sizeof(uint32_t)));
-			words[n * 4] = value & 0xFF;
-			words[n * 4 + 1] = (value >> 8) & 0xFF;
-			words[n * 4 + 2] = (value >> 16) & 0xFF;
-			words[n * 4 + 3] = value >> 24;
-		}
-		return count * 4;
-	}
 	for (uint32_t n = 0; n < count; n++) {
 		uint32_t value = dif_mux(p, ldl_le_p(data + n * sizeof(uint32_t)));
 		if (is_gracmd)
@@ -1287,13 +1283,23 @@ static int64_t dif_run_fed_tx_bus(pmb887x_dif_t *p, int64_t wake_ns, int64_t nex
 	/* static: 40 KB is too much for a thread stack; consumed before the handshake below */
 	static uint8_t data[DIF_FED_TX_WAKES_MAX * sizeof(uint32_t)] QEMU_ALIGNED(4);
 	static uint32_t words[DIF_FED_TX_WAKES_MAX * 4 * 4];
+	static bool is_sending;
+	g_assert(!is_sending);
+	is_sending = true;
 	uint32_t entries = bus.wakes * bulk.burst_words;
 	pmb887x_dmac_serve_bulk_bursts(p->dmac_tx_breq, data, bus.wakes);
 	for (uint32_t n = 0; n < entries; n++) {
 		hwaddr addr = bulk.sink_addr + (bulk.is_increment ? n * sizeof(uint32_t) : 0);
 		IO_DUMP_WRITE(addr + p->mmio.addr, sizeof(uint32_t), ldl_le_p(data + n * sizeof(uint32_t)));
 	}
-	dif_send_parallel_words(p, words, dif_get_fed_tx_bus_words(p, data, entries, words));
+	if (dif_is_fed_tx_bus_bytes(p)) {
+		for (uint32_t n = 0; n < entries; n++)
+			stl_le_p(data + n * sizeof(uint32_t), dif_mux(p, ldl_le_p(data + n * sizeof(uint32_t))));
+		ssi_transfer_bytes(p->bus, data, entries * sizeof(uint32_t));
+	} else {
+		dif_send_parallel_words(p, words, dif_get_fed_tx_bus_words(p, data, entries, words));
+	}
+	is_sending = false;
 
 	p->in_dma_handshake = true;
 	pmb887x_srb_set_isr(&p->srb, DIFv2_ISR_TXBREQ);

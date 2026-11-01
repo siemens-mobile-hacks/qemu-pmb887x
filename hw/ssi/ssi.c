@@ -206,6 +206,36 @@ void ssi_transfer_block(SSIBus *bus, const uint32_t *tx, uint32_t *rx,
     }
 }
 
+void ssi_transfer_bytes(SSIBus *bus, const uint8_t *tx, size_t count)
+{
+    BusState *b = BUS(bus);
+    BusChild *kid = QTAILQ_FIRST(&b->children);
+    uint32_t words[256];
+
+    if (kid != NULL && QTAILQ_NEXT(kid, sibling) == NULL) {
+        SSIPeripheral *p = SSI_PERIPHERAL(kid->child);
+        SSIPeripheralClass *ssc = p->spc;
+
+        if (ssc->transfer_bytes &&
+            ssc->transfer_raw == ssi_transfer_raw_default) {
+            if (ssi_is_selected(p)) {
+                ssc->transfer_bytes(p, tx, count);
+            }
+            return;
+        }
+    }
+    while (count != 0) {
+        size_t n = MIN(count, ARRAY_SIZE(words));
+
+        for (size_t i = 0; i < n; i++) {
+            words[i] = tx[i];
+        }
+        ssi_transfer_block(bus, words, NULL, n);
+        tx += n;
+        count -= n;
+    }
+}
+
 const VMStateDescription vmstate_ssi_peripheral = {
     .name = "SSISlave",
     .version_id = 1,

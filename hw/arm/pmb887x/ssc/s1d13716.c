@@ -103,6 +103,17 @@ static void gimmick_transfer_block(SSIPeripheral *dev, const uint32_t *tx, uint3
 	}
 }
 
+static void gimmick_transfer_bytes(SSIPeripheral *dev, const uint8_t *tx, size_t count) {
+	pmb887x_gimmick_t *p = (pmb887x_gimmick_t *)dev;
+
+	if (!p->cs_app && p->cs_lcd) {
+		ssi_transfer_bytes(p->bus, tx, count);
+		return;
+	}
+	for (size_t i = 0; i < count; i++)
+		gimmick_transfer(dev, tx[i]);
+}
+
 static void gimmick_handle_rs(void *opaque, int n, int level) {
 	pmb887x_gimmick_t *p = PMB887X_GIMMICK(opaque);
 	p->is_command = level == 0;
@@ -152,6 +163,7 @@ static void gimmick_class_init(ObjectClass *klass, const void *data) {
 	k->realize = gimmick_realize;
 	k->transfer = gimmick_transfer;
 	k->transfer_block = gimmick_transfer_block;
+	k->transfer_bytes = gimmick_transfer_bytes;
 	k->cs_polarity = SSI_CS_LOW;
 }
 

@@ -298,6 +298,20 @@ static void lcd_queue_ram_bytes(pmb887x_lcd_t *lcd, const uint32_t *values, size
 		qemu_event_set(&lcd->ram_queue_ready);
 }
 
+static void lcd_queue_ram_byte_run(pmb887x_lcd_t *lcd, const uint8_t *bytes, size_t count) {
+	uint32_t head = lcd->ram_queue_head;
+	if (head - qatomic_load_acquire(&lcd->ram_queue_tail) > LCD_RAM_QUEUE_SIZE - count)
+		lcd_drain_ram_queue(lcd);
+
+	uint32_t pos = head % LCD_RAM_QUEUE_SIZE;
+	size_t first = MIN(count, LCD_RAM_QUEUE_SIZE - pos);
+	memcpy(lcd->ram_queue + pos, bytes, first);
+	memcpy(lcd->ram_queue, bytes + first, count - first);
+	qatomic_store_release(&lcd->ram_queue_head, head + count);
+	if ((head + count) / LCD_RAM_QUEUE_WAKE_BYTES != head / LCD_RAM_QUEUE_WAKE_BYTES)
+		qemu_event_set(&lcd->ram_queue_ready);
+}
+
 static void lcd_flush_partial_command(pmb887x_lcd_t *lcd) {
 	if (lcd->wr_state != LCD_WR_STATE_CMD)
 		return;
@@ -591,6 +605,17 @@ static void lcd_transfer_block(SSIPeripheral *dev, const uint32_t *tx, uint32_t 
 	}
 }
 
+static void lcd_transfer_bytes(SSIPeripheral *dev, const uint8_t *tx, size_t count) {
+	pmb887x_lcd_t *lcd = PMB887X_LCD(dev);
+	if (lcd_is_writing_ram(lcd) && count <= LCD_RAM_QUEUE_SIZE) {
+		lcd_queue_ram_byte_run(lcd, tx, count);
+		return;
+	}
+
+	for (size_t i = 0; i < count; i++)
+		lcd_transfer(dev, tx[i]);
+}
+
 static const GraphicHwOps pmb887x_lcd_gfx_ops = {
 	.invalidate = lcd_invalidate_display,
 	.gfx_update = lcd_update_display
@@ -734,6 +759,7 @@ static void lcd_class_init(ObjectClass *klass, const void *data) {
 	k->realize = lcd_realize;
 	k->transfer = lcd_transfer;
 	k->transfer_block = lcd_transfer_block;
+	k->transfer_bytes = lcd_transfer_bytes;
 	k->cs_polarity = SSI_CS_LOW;
 }
 
