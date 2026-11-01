@@ -118,6 +118,11 @@ struct pmb887x_dif_t {
 	uint32_t mux_select_mask;
 	uint32_t mux_constant_bits;
 	uint32_t mux_byte_bits[4][256];
+	/* the selected bits as (value & mask0) | (value << lshift & lmask) | (value >> rshift & rmask) */
+	bool is_mux_shifts;
+	uint32_t mux_mask0;
+	uint8_t mux_lshift[2], mux_rshift[2];
+	uint32_t mux_lmask[2], mux_rmask[2];
 	bool is_mux_identity;
 	bool is_mux_dirty;
 
@@ -951,6 +956,39 @@ static bool dif_convert_word(pmb887x_dif_t *p, uint16_t value, uint32_t *output)
 	return true;
 }
 
+/* dif_mux() of @count 32-bit entries in place */
+static void dif_mux_entries(pmb887x_dif_t *p, uint8_t *data, uint32_t count) {
+	dif_sync_mux(p);
+	uint32_t select = p->mux_select_mask;
+	uint32_t constant = p->mux_constant_bits;
+	uint32_t invert = p->invert_bit;
+
+	if (p->is_mux_identity || (dif_get_transfer_csreg(p) & DIFv2_CSREG_CD) != 0) {
+		if (select == UINT32_MAX && constant == 0 && invert == 0)
+			return;
+		for (uint32_t n = 0; n < count; n++)
+			stl_le_p(data + n * sizeof(uint32_t), ((ldl_le_p(data + n * sizeof(uint32_t)) & select) | constant) ^ invert);
+		return;
+	}
+	if (p->is_mux_shifts) {
+		uint32_t mask0 = p->mux_mask0;
+		uint32_t lshift0 = p->mux_lshift[0], lshift1 = p->mux_lshift[1];
+		uint32_t rshift0 = p->mux_rshift[0], rshift1 = p->mux_rshift[1];
+		uint32_t lmask0 = p->mux_lmask[0], lmask1 = p->mux_lmask[1];
+		uint32_t rmask0 = p->mux_rmask[0], rmask1 = p->mux_rmask[1];
+		for (uint32_t n = 0; n < count; n++) {
+			uint32_t value = ldl_le_p(data + n * sizeof(uint32_t));
+			uint32_t selected = (value & mask0) |
+				((value << lshift0) & lmask0) | ((value << lshift1) & lmask1) |
+				((value >> rshift0) & rmask0) | ((value >> rshift1) & rmask1);
+			stl_le_p(data + n * sizeof(uint32_t), (selected | constant) ^ invert);
+		}
+		return;
+	}
+	for (uint32_t n = 0; n < count; n++)
+		stl_le_p(data + n * sizeof(uint32_t), dif_mux(p, ldl_le_p(data + n * sizeof(uint32_t))));
+}
+
 static bool dif_is_pbc_selection_valid(pmb887x_dif_t *p) {
 	uint32_t word_bits = dif_get_tx_word_bits(p);
 
@@ -1335,8 +1373,7 @@ static int64_t dif_run_fed_tx_bus(pmb887x_dif_t *p, int64_t wake_ns, int64_t nex
 		IO_DUMP_WRITE(addr + p->mmio.addr, sizeof(uint32_t), ldl_le_p(data + n * sizeof(uint32_t)));
 	}
 	if (dif_is_fed_tx_bus_bytes(p)) {
-		for (uint32_t n = 0; n < entries; n++)
-			stl_le_p(data + n * sizeof(uint32_t), dif_mux(p, ldl_le_p(data + n * sizeof(uint32_t))));
+		dif_mux_entries(p, data, entries);
 		ssi_transfer_bytes(p->bus, data, entries * sizeof(uint32_t));
 	} else {
 		dif_send_parallel_words(p, words, dif_get_fed_tx_bus_words(p, data, entries, words));
@@ -1538,6 +1575,33 @@ static void dif_update_mux(pmb887x_dif_t *p) {
 		} else if (p->bit_bcsel[i] == 1) {
 			p->mux_constant_bits |= (uint32_t) p->bit_bcreg[i] << i;
 		}
+	}
+
+	p->is_mux_shifts = true;
+	p->mux_mask0 = 0;
+	memset(p->mux_lshift, 0, sizeof(p->mux_lshift));
+	memset(p->mux_rshift, 0, sizeof(p->mux_rshift));
+	memset(p->mux_lmask, 0, sizeof(p->mux_lmask));
+	memset(p->mux_rmask, 0, sizeof(p->mux_rmask));
+	for (uint32_t i = 0; i < 32 && p->is_mux_shifts; i++) {
+		if ((p->mux_select_mask & (1U << i)) == 0)
+			continue;
+		int shift = (int) i - p->bit_mux[i];
+		uint8_t *shifts = shift > 0 ? p->mux_lshift : p->mux_rshift;
+		uint32_t *masks = shift > 0 ? p->mux_lmask : p->mux_rmask;
+		if (shift == 0) {
+			p->mux_mask0 |= 1U << i;
+			continue;
+		}
+		uint32_t k = 0;
+		while (k < 2 && masks[k] != 0 && shifts[k] != abs(shift))
+			k++;
+		if (k == 2) {
+			p->is_mux_shifts = false;
+			break;
+		}
+		shifts[k] = abs(shift);
+		masks[k] |= 1U << i;
 	}
 
 	uint32_t input_bit_outputs[32] = { 0 };
