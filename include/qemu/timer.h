@@ -198,6 +198,16 @@ extern int64_t qemu_virtual_clock_last;
 int64_t qemu_clock_expire_time_ns(QEMUClockType type);
 
 /**
+ * timer_others_expire_time_ns:
+ * @ts: the timer
+ *
+ * Returns: the expiry time of the earliest timer on @ts's timer list other
+ * than @ts, in the clock's time base, or -1 if there is none or the clock
+ * is disabled.
+ */
+int64_t timer_others_expire_time_ns(QEMUTimer *ts);
+
+/**
  * qemu_clock_deadline_ns_all:
  * @type: the clock type
  * @attr_mask: mask for the timer attributes that are included

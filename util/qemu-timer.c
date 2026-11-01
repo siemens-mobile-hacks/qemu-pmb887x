@@ -253,6 +253,26 @@ int64_t qemu_clock_expire_time_ns(QEMUClockType type)
     return -1;
 }
 
+int64_t timer_others_expire_time_ns(QEMUTimer *ts)
+{
+    QEMUTimerList *timer_list = ts->timer_list;
+    QEMUTimer *t;
+
+    if (!timer_list->clock->enabled) {
+        return -1;
+    }
+    WITH_QEMU_LOCK_GUARD(&timer_list->active_timers_lock) {
+        t = timer_list->active_timers;
+        if (t == ts) {
+            t = t->next;
+        }
+        if (t) {
+            return t->expire_time;
+        }
+    }
+    return -1;
+}
+
 int64_t timerlist_deadline_ns(QEMUTimerList *timer_list)
 {
     int64_t delta;

@@ -1339,6 +1339,51 @@ static bool dmac_has_pending_requests(const pmb887x_dmac_t *p) {
 	return p->raised_levels != 0 || p->sreq.soft || p->breq.soft || p->lsreq.soft || p->lbreq.soft;
 }
 
+/* The one channel pmb887x_dmac_serve_burst() can serve on @line, if any. */
+static pmb887x_dmac_ch_t *dmac_get_served_channel(qemu_irq line) {
+	int sel;
+	if (line->handler == dmac_handle_signal_sel0_breq) {
+		sel = 0;
+	} else if (line->handler == dmac_handle_signal_sel1_breq) {
+		sel = 1;
+	} else {
+		return NULL;
+	}
+
+	pmb887x_dmac_t *p = line->opaque;
+	int id = line->n;
+	if (p->sel[id] != sel || p->is_in_pass || p->dmac_pending || timer_pending(p->timer))
+		return NULL;
+	if (!clock_is_enabled(p->clock) || !(p->config & DMAC_CONFIG_ENABLE) || dmac_has_pending_requests(p))
+		return NULL;
+
+	pmb887x_dmac_ch_t *ch = NULL;
+	for (int i = 0; i < DMAC_CHANNELS; i++) {
+		pmb887x_dmac_ch_t *other = &p->ch[i];
+		if (!(other->config & DMAC_CH_CONFIG_ENABLE))
+			continue;
+		uint32_t flow_ctrl = other->config & DMAC_CH_CONFIG_FLOW_CTRL;
+		uint8_t src_periph = (other->config & DMAC_CH_CONFIG_SRC_PERIPH) >> DMAC_CH_CONFIG_SRC_PERIPH_SHIFT;
+		uint8_t dst_periph = (other->config & DMAC_CH_CONFIG_DST_PERIPH) >> DMAC_CH_CONFIG_DST_PERIPH_SHIFT;
+		if (flow_ctrl == DMAC_CH_CONFIG_FLOW_CTRL_MEM2MEM)
+			return NULL;
+		if (src_periph != id && dst_periph != id)
+			continue;
+		if (ch != NULL || dst_periph != id)
+			return NULL;
+		if (flow_ctrl != DMAC_CH_CONFIG_FLOW_CTRL_MEM2PER_PER && flow_ctrl != DMAC_CH_CONFIG_FLOW_CTRL_MEM2PER)
+			return NULL;
+		ch = other;
+	}
+	if (ch == NULL || (ch->config & DMAC_CH_CONFIG_HALT))
+		return NULL;
+
+	bool is_dmac_flow = (ch->config & DMAC_CH_CONFIG_FLOW_CTRL) == DMAC_CH_CONFIG_FLOW_CTRL_MEM2PER;
+	if (is_dmac_flow && (ch->control & DMAC_CH_CONTROL_TRANSFER_SIZE) == 0)
+		return NULL;
+	return ch;
+}
+
 /*
  * Serves a burst request, not the last one, of a memory-to-peripheral channel
  * (either side controlling the flow), as the pass raising the request line
@@ -1350,46 +1395,12 @@ static bool dmac_has_pending_requests(const pmb887x_dmac_t *p) {
  * the raised line leaves the rest to a pass.
  */
 bool pmb887x_dmac_serve_burst(qemu_irq line) {
-	int sel;
-	if (line->handler == dmac_handle_signal_sel0_breq) {
-		sel = 0;
-	} else if (line->handler == dmac_handle_signal_sel1_breq) {
-		sel = 1;
-	} else {
+	pmb887x_dmac_ch_t *ch = dmac_get_served_channel(line);
+	if (ch == NULL)
 		return false;
-	}
 
 	pmb887x_dmac_t *p = line->opaque;
-	int id = line->n;
-	if (p->sel[id] != sel || p->is_in_pass || p->dmac_pending || timer_pending(p->timer))
-		return false;
-	if (!clock_is_enabled(p->clock) || !(p->config & DMAC_CONFIG_ENABLE) || dmac_has_pending_requests(p))
-		return false;
-
-	pmb887x_dmac_ch_t *ch = NULL;
-	for (int i = 0; i < DMAC_CHANNELS; i++) {
-		pmb887x_dmac_ch_t *other = &p->ch[i];
-		if (!(other->config & DMAC_CH_CONFIG_ENABLE))
-			continue;
-		uint32_t flow_ctrl = other->config & DMAC_CH_CONFIG_FLOW_CTRL;
-		uint8_t src_periph = (other->config & DMAC_CH_CONFIG_SRC_PERIPH) >> DMAC_CH_CONFIG_SRC_PERIPH_SHIFT;
-		uint8_t dst_periph = (other->config & DMAC_CH_CONFIG_DST_PERIPH) >> DMAC_CH_CONFIG_DST_PERIPH_SHIFT;
-		if (flow_ctrl == DMAC_CH_CONFIG_FLOW_CTRL_MEM2MEM)
-			return false;
-		if (src_periph != id && dst_periph != id)
-			continue;
-		if (ch != NULL || dst_periph != id)
-			return false;
-		if (flow_ctrl != DMAC_CH_CONFIG_FLOW_CTRL_MEM2PER_PER && flow_ctrl != DMAC_CH_CONFIG_FLOW_CTRL_MEM2PER)
-			return false;
-		ch = other;
-	}
-	if (ch == NULL || (ch->config & DMAC_CH_CONFIG_HALT))
-		return false;
-
 	bool is_dmac_flow = (ch->config & DMAC_CH_CONFIG_FLOW_CTRL) == DMAC_CH_CONFIG_FLOW_CTRL_MEM2PER;
-	if (is_dmac_flow && (ch->control & DMAC_CH_CONTROL_TRANSFER_SIZE) == 0)
-		return false;
 
 	RCU_READ_LOCK_GUARD();
 	uint32_t dst_burst_size = dmac_get_burst_size((ch->control & DMAC_CH_CONTROL_DB_SIZE) >> DMAC_CH_CONTROL_DB_SIZE_SHIFT);
@@ -1401,6 +1412,74 @@ bool pmb887x_dmac_serve_burst(qemu_irq line) {
 		timer_mod(p->timer, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + (is_pass_cut ? 1 : 0));
 	}
 	return is_served;
+}
+
+/*
+ * The bursts pmb887x_dmac_serve_burst() would serve one after another on
+ * @line while nothing else runs, for a peripheral-controlled transfer of
+ * 32-bit words from RAM, of which the peripheral ends the last: 0 if the
+ * channel moves data any other way.  *bulk is where the bursts go, one after
+ * another if is_increment.
+ */
+uint32_t pmb887x_dmac_count_bulk_bursts(qemu_irq line, pmb887x_dmac_bulk_t *bulk) {
+	pmb887x_dmac_ch_t *ch = dmac_get_served_channel(line);
+	if (ch == NULL)
+		return 0;
+
+	pmb887x_dmac_t *p = line->opaque;
+	uint32_t src_width = dmac_get_width((ch->control & DMAC_CH_CONTROL_S_WIDTH) >> DMAC_CH_CONTROL_S_WIDTH_SHIFT);
+	uint32_t dst_width = dmac_get_width((ch->control & DMAC_CH_CONTROL_D_WIDTH) >> DMAC_CH_CONTROL_D_WIDTH_SHIFT);
+	if ((ch->config & DMAC_CH_CONFIG_FLOW_CTRL) != DMAC_CH_CONFIG_FLOW_CTRL_MEM2PER_PER)
+		return 0;
+	if (src_width != sizeof(uint32_t) || dst_width != sizeof(uint32_t))
+		return 0;
+	if (!(ch->control & DMAC_CH_CONTROL_SI))
+		return 0;
+	if (ch->fifo_bytes != 0 || ch->delivered_byte_remainder != 0 || (ch->src_addr & 3) != 0 || (ch->dst_addr & 3) != 0)
+		return 0;
+
+	RCU_READ_LOCK_GUARD();
+	uint32_t burst_words = dmac_get_burst_size((ch->control & DMAC_CH_CONTROL_DB_SIZE) >> DMAC_CH_CONTROL_DB_SIZE_SHIFT);
+	uint32_t burst_bytes = burst_words * sizeof(uint32_t);
+	pmb887x_dmac_translation_t *source = &p->read_translation;
+	if (!dmac_translate(p, source, ch->src_addr, burst_bytes, false) || !source->host)
+		return 0;
+	pmb887x_dmac_translation_t *sink = &p->sink_translation;
+	if (!dmac_translate(p, sink, ch->dst_addr, dst_width, true) || sink->host)
+		return 0;
+
+	bulk->sink = sink->mr;
+	bulk->sink_addr = sink->xlat + (ch->dst_addr - sink->start);
+	bulk->burst_words = burst_words;
+	bulk->is_increment = (ch->control & DMAC_CH_CONTROL_DI) != 0;
+	uint32_t count = (source->end - ch->src_addr) / burst_bytes;
+	if (bulk->is_increment)
+		count = MIN(count, (sink->end - ch->dst_addr) / burst_bytes);
+	return count;
+}
+
+/* Serves @count of the bursts pmb887x_dmac_count_bulk_bursts() counted into @data, as the sink would get them. */
+void pmb887x_dmac_serve_bulk_bursts(qemu_irq line, uint8_t *data, uint32_t count) {
+	pmb887x_dmac_ch_t *ch = dmac_get_served_channel(line);
+	pmb887x_dmac_t *p = line->opaque;
+	g_assert(ch != NULL);
+
+	RCU_READ_LOCK_GUARD();
+	uint32_t burst_words = dmac_get_burst_size((ch->control & DMAC_CH_CONTROL_DB_SIZE) >> DMAC_CH_CONTROL_DB_SIZE_SHIFT);
+	uint32_t words = burst_words * count;
+	pmb887x_dmac_translation_t *source = &p->read_translation;
+	bool is_translated = dmac_translate(p, source, ch->src_addr, words * sizeof(uint32_t), false);
+	g_assert(is_translated && source->host);
+	memcpy(data, source->host + (ch->src_addr - source->start), words * sizeof(uint32_t));
+
+	enum device_endian src_endian = dmac_master_endian(p, (ch->control & DMAC_CH_CONTROL_S_AHB2) != 0);
+	enum device_endian dst_endian = dmac_master_endian(p, (ch->control & DMAC_CH_CONTROL_D_AHB2) != 0);
+	if (src_endian != dst_endian)
+		dmac_swap_byte_order(data, sizeof(uint32_t), words);
+	ch->src_addr += words * sizeof(uint32_t);
+	if ((ch->control & DMAC_CH_CONTROL_DI))
+		ch->dst_addr += words * sizeof(uint32_t);
+	dmac_transfer_advance(p, ch, words);
 }
 
 static const MemoryRegionOps io_ops = {

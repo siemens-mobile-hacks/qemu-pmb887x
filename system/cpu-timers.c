@@ -296,9 +296,11 @@ void cpu_clock_set_idle_lead(int64_t ns)
  * deadline within the lead of an earlier reading is within it now: the
  * clock is read again only when that reading would put the owner to sleep.
  */
+static int64_t cpu_clock_owner_idle_raw;
+
 int64_t cpu_clock_owner_idle(int64_t deadline)
 {
-    static int64_t raw;
+    int64_t raw = cpu_clock_owner_idle_raw;
 
     if (deadline < 0 || !cpu_clock_idle_lead) {
         cpu_clock_owner_progress(true);
@@ -306,7 +308,7 @@ int64_t cpu_clock_owner_idle(int64_t deadline)
                MAX(deadline - qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL), 0);
     }
     if (deadline - raw > cpu_clock_idle_lead) {
-        raw = cpu_get_raw_clock();
+        raw = cpu_clock_owner_idle_raw = cpu_get_raw_clock();
     }
     if (deadline - raw <= cpu_clock_idle_lead) {
         qemu_mutex_lock(&cpu_clock_owner_lock);
@@ -317,6 +319,33 @@ int64_t cpu_clock_owner_idle(int64_t deadline)
     }
     cpu_clock_owner_progress(true);
     return deadline - cpu_clock_idle_lead - raw;
+}
+
+/*
+ * For a virtual timer callback on an owner waiting for an interrupt, when
+ * nothing else is due before @deadline: whether cpu_clock_owner_idle() would
+ * move the clock to a timer at @deadline rather than sleep first.  The
+ * callback can then do that timer's work at once, and move the clock with
+ * cpu_clock_owner_idle_advance().
+ */
+bool cpu_clock_owner_idle_reaches(int64_t deadline)
+{
+    if (!qemu_virtual_timers_on_vcpu || !cpu_clock_owner ||
+        !cpu_clock_idle_lead) {
+        return false;
+    }
+    if (deadline - cpu_clock_owner_idle_raw > cpu_clock_idle_lead) {
+        cpu_clock_owner_idle_raw = cpu_get_raw_clock();
+    }
+    return deadline - cpu_clock_owner_idle_raw <= cpu_clock_idle_lead;
+}
+
+void cpu_clock_owner_idle_advance(int64_t deadline)
+{
+    qemu_mutex_lock(&cpu_clock_owner_lock);
+    cpu_clock_owner_write(deadline, qatomic_read(cpu_clock_owner_cycles),
+                          cpu_clock_cycle_ps);
+    qemu_mutex_unlock(&cpu_clock_owner_lock);
 }
 
 /*

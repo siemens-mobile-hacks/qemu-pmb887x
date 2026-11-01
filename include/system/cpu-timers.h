@@ -62,6 +62,8 @@ void cpu_clock_set_bank(int64_t ns);
 bool cpu_clock_banked(void);
 void cpu_clock_set_idle_lead(int64_t ns);
 int64_t cpu_clock_owner_idle(int64_t deadline);
+bool cpu_clock_owner_idle_reaches(int64_t deadline);
+void cpu_clock_owner_idle_advance(int64_t deadline);
 int64_t cpu_get_real_clock(void);
 void cpu_clock_owner_start_budget(int64_t real);
 void cpu_clock_owner_shorten_budget(void);
