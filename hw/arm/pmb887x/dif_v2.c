@@ -1152,7 +1152,7 @@ static uint32_t dif_get_tx_burst_entries(pmb887x_dif_t *p) {
 	return dif_get_tx_burst_size(p) / (4 / dif_get_tx_align(p));
 }
 
-#define DIF_FED_TX_WAKES_MAX	128
+#define DIF_FED_TX_WAKES_MAX	512
 
 typedef struct {
 	int64_t end_ps[FIFO_SIZE];
@@ -1284,8 +1284,9 @@ static int64_t dif_run_fed_tx_bus(pmb887x_dif_t *p, int64_t wake_ns, int64_t nex
 	p->tx_words_remaining = bus.words_remaining;
 	p->is_tx_started = true;
 
-	uint8_t data[DIF_FED_TX_WAKES_MAX * sizeof(uint32_t)] QEMU_ALIGNED(4);
-	uint32_t words[DIF_FED_TX_WAKES_MAX * 4 * 4];
+	/* static: 40 KB is too much for a thread stack; consumed before the handshake below */
+	static uint8_t data[DIF_FED_TX_WAKES_MAX * sizeof(uint32_t)] QEMU_ALIGNED(4);
+	static uint32_t words[DIF_FED_TX_WAKES_MAX * 4 * 4];
 	uint32_t entries = bus.wakes * bulk.burst_words;
 	pmb887x_dmac_serve_bulk_bursts(p->dmac_tx_breq, data, bus.wakes);
 	for (uint32_t n = 0; n < entries; n++) {
