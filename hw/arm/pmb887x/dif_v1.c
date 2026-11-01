@@ -321,6 +321,18 @@ static bool dif_transfer_load(pmb887x_dif_t *p) {
 	return true;
 }
 
+/*
+ * The transfer yields to the guest and the DMAC pass while a request is
+ * raised. A TX burst the DMAC served inline leaves the TX request up for the
+ * next word, which the next iteration serves the same way, so there it only
+ * yields for an unmasked interrupt or another DMA request.
+ */
+static bool dif_transfer_should_yield(pmb887x_dif_t *p) {
+	if (!p->is_tx_burst_served)
+		return pmb887x_srb_get_ris(&p->srb) != 0;
+	return pmb887x_srb_get_mis(&p->srb) != 0 || (pmb887x_srb_get_ris_dma(&p->srb) & ~DIFv1_RIS_TX) != 0;
+}
+
 static void dif_transfer_run(pmb887x_dif_t *p, bool is_timer) {
 	while (p->transfer_pending) {
 		p->transfer_pending = false;
@@ -334,7 +346,7 @@ static void dif_transfer_run(pmb887x_dif_t *p, bool is_timer) {
 		p->can_serve_tx_burst = false;
 		if (!is_loaded)
 			break;
-		if (pmb887x_srb_get_ris(&p->srb) != 0 || p->is_tx_burst_served) {
+		if (dif_transfer_should_yield(p)) {
 			timer_mod(p->transfer_timer, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + 1);
 			break;
 		}
