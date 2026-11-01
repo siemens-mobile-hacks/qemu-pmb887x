@@ -2684,6 +2684,8 @@ void arm_rebuild_hflags(CPUARMState *env);
 bool arm_w64_lc_key(CPUState *cs, uint32_t key32[3]);
 /* ... and the PC the key belongs to, for the PC-keyed variant */
 bool arm_w64_lc_key_pc(CPUState *cs, uint32_t key32[3], uint32_t *pc);
+/* arm_rebuild_hflags() after an AArch32 mode change from CPSR @old_cpsr */
+void arm_rebuild_hflags_mode_change(CPUARMState *env, uint32_t old_cpsr);
 #endif
 
 /**

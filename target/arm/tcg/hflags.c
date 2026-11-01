@@ -747,6 +747,46 @@ void arm_rebuild_hflags(CPUARMState *env)
     arm_set_hflags(env, rebuild_hflags_internal(env));
 }
 
+#ifdef CONFIG_TCG_WASM64
+/*
+ * hflags read CPSR only through E, IL, PAN and the EL.  Every AArch32
+ * mode but USR, HYP and MON is the same EL, so a switch between two of
+ * them keeps the hflags it has; and on a core rebuild_hflags_a32_fast()
+ * takes, USR <-> privileged moves the MMU index and nothing else.
+ * These are the SVC/IRQ entries, exception returns and mode-changing
+ * MSRs - ~740k a second on an EL71 running a stopwatch.
+ */
+void arm_rebuild_hflags_mode_change(CPUARMState *env, uint32_t old_cpsr)
+{
+    uint32_t cpsr = env->uncached_cpsr;
+    uint32_t old_m = old_cpsr & CPSR_M, m = cpsr & CPSR_M;
+    ARMMMUIdx mmu_idx;
+
+    if (arm_feature(env, ARM_FEATURE_M) ||
+        ((old_cpsr ^ cpsr) & (CPSR_E | CPSR_IL | CPSR_PAN)) ||
+        old_m == ARM_CPU_MODE_HYP || old_m == ARM_CPU_MODE_MON ||
+        m == ARM_CPU_MODE_HYP || m == ARM_CPU_MODE_MON) {
+        arm_rebuild_hflags(env);
+        return;
+    }
+    if ((old_m == ARM_CPU_MODE_USR) == (m == ARM_CPU_MODE_USR)) {
+        return;
+    }
+    if (env->features & HFLAGS_A32_FAST_FEATURES) {
+        arm_rebuild_hflags(env);
+        return;
+    }
+    if (m == ARM_CPU_MODE_USR) {
+        mmu_idx = ARMMMUIdx_E10_0;
+    } else if (cpsr & CPSR_PAN) {
+        mmu_idx = ARMMMUIdx_E10_1_PAN;
+    } else {
+        mmu_idx = ARMMMUIdx_E10_1;
+    }
+    DP_TBFLAG_ANY(env->hflags, MMUIDX, arm_to_core_mmu_idx(mmu_idx));
+}
+#endif
+
 /*
  * If we have triggered a EL state change we can't rely on the
  * translator having passed it to us, we need to recompute.

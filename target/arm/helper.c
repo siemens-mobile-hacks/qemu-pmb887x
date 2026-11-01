@@ -8271,6 +8271,9 @@ void cpsr_write(CPUARMState *env, uint32_t val, uint32_t mask,
 {
     uint32_t changed_daif;
     bool rebuild_hflags;
+#ifdef CONFIG_TCG_WASM64
+    uint32_t old_cpsr = env->uncached_cpsr;
+#endif
 
     // PMB887X: real hardware just ignores M4
     val |= 0x10;
@@ -8441,7 +8444,11 @@ void cpsr_write(CPUARMState *env, uint32_t val, uint32_t mask,
     mask &= ~CACHED_CPSR_BITS;
     env->uncached_cpsr = (env->uncached_cpsr & ~mask) | (val & mask);
     if (tcg_enabled() && rebuild_hflags) {
+#ifdef CONFIG_TCG_WASM64
+        arm_rebuild_hflags_mode_change(env, old_cpsr);
+#else
         arm_rebuild_hflags(env);
+#endif
     }
 }
 
@@ -8890,6 +8897,9 @@ static void take_aarch32_exception(CPUARMState *env, int new_mode,
                                    uint32_t newpc)
 {
     int new_el;
+#ifdef CONFIG_TCG_WASM64
+    uint32_t old_cpsr = env->uncached_cpsr;
+#endif
 
     /* Change the CPU state so as to actually take the exception. */
     switch_mode(env, new_mode);
@@ -8961,7 +8971,11 @@ static void take_aarch32_exception(CPUARMState *env, int new_mode,
     env->regs[15] = newpc;
 
     if (tcg_enabled()) {
+#ifdef CONFIG_TCG_WASM64
+        arm_rebuild_hflags_mode_change(env, old_cpsr);
+#else
         arm_rebuild_hflags(env);
+#endif
     }
 }
 
