@@ -160,7 +160,11 @@ bool translator_use_goto_tb(DisasContextBase *db, vaddr dest)
     }
 
     /* Check for the dest on the same page as the start of the TB.  */
-    return translator_is_same_page(db, dest);
+    if (translator_is_same_page(db, dest)) {
+        return true;
+    }
+    return tcg_cross_page_links &&
+           !(tb_cflags(db->tb) & (CF_PCREL | CF_MEMORY_TIMING));
 }
 
 void translator_loop(CPUState *cpu, TranslationBlock *tb, int *max_insns,

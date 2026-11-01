@@ -392,6 +392,7 @@ static void tlb_flush_by_mmuidx_async_work(CPUState *cpu, run_on_cpu_data data)
     qemu_spin_unlock(&cpu->neg.tlb.c.lock);
 
     tcg_flush_jmp_cache(cpu);
+    tb_unlink_cross_page_jumps();
 
     if (to_clean == ALL_MMUIDX_BITS) {
         qatomic_set(&cpu->neg.tlb.c.full_flush_count,
@@ -552,6 +553,7 @@ static void tlb_flush_page_by_mmuidx_async_0(CPUState *cpu,
      */
     tb_jmp_cache_clear_page(cpu, addr - TARGET_PAGE_SIZE);
     tb_jmp_cache_clear_page(cpu, addr);
+    tb_unlink_cross_page_jumps();
 }
 
 /**
@@ -735,6 +737,8 @@ static void tlb_flush_range_by_mmuidx_async_0(CPUState *cpu,
         }
     }
     qemu_spin_unlock(&cpu->neg.tlb.c.lock);
+
+    tb_unlink_cross_page_jumps();
 
     /*
      * If the length is larger than the jump cache size, then it will take

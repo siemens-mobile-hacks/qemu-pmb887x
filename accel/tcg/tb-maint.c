@@ -52,6 +52,15 @@
 #define TB_FOR_EACH_JMP(head_tb, tb, n)                                 \
     TB_FOR_EACH_TAGGED((head_tb)->jmp_list_head, tb, n, jmp_list_next)
 
+typedef struct TBJump {
+    TranslationBlock *tb;
+    int n;
+} TBJump;
+
+bool tcg_cross_page_links;
+static QemuSpin tb_cross_page_jumps_lock;
+static GArray *tb_cross_page_jumps;
+
 static bool tb_cmp(const void *ap, const void *bp)
 {
     const TranslationBlock *a = ap;
@@ -70,6 +79,7 @@ void tb_htable_init(void)
     unsigned int mode = QHT_MODE_AUTO_RESIZE;
 
     qht_init(&tb_ctx.htable, tb_cmp, CODE_GEN_HTABLE_SIZE, mode);
+    qemu_spin_init(&tb_cross_page_jumps_lock);
 }
 
 typedef struct PageDesc PageDesc;
@@ -782,6 +792,12 @@ void tb_flush__exclusive_or_serial(void)
         tcg_flush_jmp_cache(cpu);
     }
 
+    qemu_spin_lock(&tb_cross_page_jumps_lock);
+    if (tb_cross_page_jumps) {
+        g_array_set_size(tb_cross_page_jumps, 0);
+    }
+    qemu_spin_unlock(&tb_cross_page_jumps_lock);
+
     qht_reset_size(&tb_ctx.htable, CODE_GEN_HTABLE_SIZE);
     tb_remove_all();
 
@@ -872,6 +888,74 @@ void tb_reset_jump(TranslationBlock *tb, int n)
 {
     uintptr_t addr = (uintptr_t)(tb->tc.ptr + tb->jmp_reset_offset[n]);
     tb_set_jmp_target(tb, n, addr);
+}
+
+void tb_record_cross_page_jump(TranslationBlock *tb, int n)
+{
+    TBJump jump = { tb, n };
+
+    qemu_spin_lock(&tb_cross_page_jumps_lock);
+    if (!tb_cross_page_jumps) {
+        tb_cross_page_jumps = g_array_new(false, false, sizeof(TBJump));
+    }
+    g_array_append_val(tb_cross_page_jumps, jump);
+    qemu_spin_unlock(&tb_cross_page_jumps_lock);
+}
+
+/*
+ * Unlike tb_remove_from_jmp_list(), leave jmp_dest[n] clear so that the jump
+ * can be linked again once the destination is looked up through the TLB.
+ */
+static void tb_unlink_jump(TranslationBlock *orig, int n_orig)
+{
+    uintptr_t ptr = qatomic_read(&orig->jmp_dest[n_orig]);
+    TranslationBlock *dest = (TranslationBlock *)ptr;
+    TranslationBlock *tb;
+    uintptr_t *pprev;
+    int n;
+
+    if (ptr == 0 || (ptr & 1)) {
+        return;
+    }
+
+    qemu_spin_lock(&dest->jmp_lock);
+    /*
+     * A concurrent invalidation of @orig marks jmp_dest[n] first and then
+     * removes @orig from the list itself; leave the entry to it.
+     */
+    if (qatomic_cmpxchg(&orig->jmp_dest[n_orig], ptr, 0) != ptr) {
+        qemu_spin_unlock(&dest->jmp_lock);
+        return;
+    }
+    pprev = &dest->jmp_list_head;
+    TB_FOR_EACH_JMP(dest, tb, n) {
+        if (tb == orig && n == n_orig) {
+            *pprev = tb->jmp_list_next[n];
+            break;
+        }
+        pprev = &tb->jmp_list_next[n];
+    }
+    tb_reset_jump(orig, n_orig);
+    qemu_spin_unlock(&dest->jmp_lock);
+}
+
+void tb_unlink_cross_page_jumps(void)
+{
+    if (!tcg_cross_page_links) {
+        return;
+    }
+
+    qemu_spin_lock(&tb_cross_page_jumps_lock);
+    if (tb_cross_page_jumps && tb_cross_page_jumps->len) {
+        qemu_thread_jit_write();
+        for (guint i = 0; i < tb_cross_page_jumps->len; i++) {
+            TBJump *jump = &g_array_index(tb_cross_page_jumps, TBJump, i);
+            tb_unlink_jump(jump->tb, jump->n);
+        }
+        g_array_set_size(tb_cross_page_jumps, 0);
+        qemu_thread_jit_execute();
+    }
+    qemu_spin_unlock(&tb_cross_page_jumps_lock);
 }
 
 /* remove any jumps to the TB */

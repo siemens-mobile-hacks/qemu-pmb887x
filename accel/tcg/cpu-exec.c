@@ -651,6 +651,10 @@ static inline void tb_add_jump(TranslationBlock *tb, int n,
 
     qemu_spin_unlock(&tb_next->jmp_lock);
 
+    if (tcg_cross_page_links && ((tb->pc ^ tb_next->pc) & TARGET_PAGE_MASK)) {
+        tb_record_cross_page_jump(tb, n);
+    }
+
     qemu_log_mask(CPU_LOG_EXEC, "Linking TBs %p index %d -> %p\n",
                   tb->tc.ptr, n, tb_next->tc.ptr);
     return;
@@ -1091,6 +1095,14 @@ bool tcg_exec_realizefn(CPUState *cpu, Error **errp)
         assert(tcg_ops->mmu_index);
         tcg_ops->initialize();
         tcg_target_initialized = true;
+    }
+
+    /*
+     * A pc-relative TB runs at any virtual address that maps its code, so a
+     * direct link to another page would be wrong for all but one of them.
+     */
+    if (tcg_cross_page_links) {
+        cpu->tcg_cflags &= ~CF_PCREL;
     }
 
     cpu->tb_jmp_cache = g_new0(CPUJumpCache, 1);
