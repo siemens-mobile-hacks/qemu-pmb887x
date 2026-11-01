@@ -6614,14 +6614,39 @@ TEAK_FAST_INLINE bool tcg_fast_execute(teak_state_t *state, const teak_memory_t 
 #define TEAK_FAST_UNROLL _Pragma("GCC unroll 64")
 #endif
 
+TEAK_FAST_INLINE bool tcg_fast_is_branch(const teak_insn_t *instruction) {
+	return instruction->opcode == TEAK_OP_BRANCH_ABSOLUTE || instruction->opcode == TEAK_OP_BRANCH_RELATIVE;
+}
+
 TEAK_FAST_INLINE uint32_t tcg_fast_run(teak_tcg_core_t *core, uint32_t budget,
-	const teak_insn_t *instructions, size_t count, bool stop_at_head
+	const teak_insn_t *instructions, size_t count, bool stop_at_head, bool block_repeat
 ) {
 	teak_state_t state = core->state;
 	const teak_memory_t memory_copy = core->memory;
 	const teak_memory_t *memory = &memory_copy;
 	uint32_t cycles = 0;
 	bool progressed;
+
+	/*
+	 * A block-repeat loop is the innermost repeat, so only its last instruction
+	 * or a branch can complete it: whole iterations check the budget once and
+	 * the repeat only there.
+	 */
+	while (block_repeat && state.pc == instructions[0].address && budget - cycles >= count) {
+		TEAK_FAST_UNROLL
+		for (size_t i = 0; i < count; i++) {
+			if (state.pc != instructions[i].address)
+				continue;
+			if (!tcg_fast_execute(&state, memory, &instructions[i]))
+				goto out;
+			cycles++;
+			if ((i == count - 1 || tcg_fast_is_branch(&instructions[i])) && state.lp && state.bcn != 0)
+				tcg_fast_complete_block_repeat(&state);
+			if (instructions[i].opcode == TEAK_OP_MOV_REGISTER_DATA_RN_STEP &&
+				(qatomic_read(&core->state.exit_request) | qatomic_read(&core->state.interrupt_request)) != 0)
+				goto out;
+		}
+	}
 
 	do {
 		progressed = false;
@@ -6655,7 +6680,7 @@ out:
 #define TEAK_FAST_LOOP(name, repeat) { tcg_fast_loop_##name, ARRAY_SIZE(tcg_fast_loop_##name), tcg_fast_run_##name, repeat }
 #define TEAK_FAST_RUNNER(name) \
 	static uint32_t tcg_fast_run_##name(teak_tcg_core_t *core, uint32_t budget) { \
-		return tcg_fast_run(core, budget, tcg_fast_loop_##name, ARRAY_SIZE(tcg_fast_loop_##name), false); \
+		return tcg_fast_run(core, budget, tcg_fast_loop_##name, ARRAY_SIZE(tcg_fast_loop_##name), false, true); \
 	}
 
 /* The addresses @count post-increments of one address register visit, as at most three linear runs. */
@@ -6910,7 +6935,7 @@ static uint32_t tcg_fast_iterate_35be(teak_tcg_core_t *core, uint32_t budget) {
 }
 
 static uint32_t tcg_fast_step_35be(teak_tcg_core_t *core, uint32_t budget) {
-	return tcg_fast_run(core, budget, tcg_fast_loop_35be, ARRAY_SIZE(tcg_fast_loop_35be), true);
+	return tcg_fast_run(core, budget, tcg_fast_loop_35be, ARRAY_SIZE(tcg_fast_loop_35be), true, false);
 }
 
 /*
