@@ -6860,7 +6860,34 @@ static uint32_t tcg_fast_iterate_35be(teak_tcg_core_t *core, uint32_t budget) {
 		a0 = 0x8000;
 		a1 = 0x8000;
 
-		{
+		if (state.sata && state.product_shift <= 2) {
+			/*
+			 * From 0x8000, 13 products of magnitude at most 2^31 (shifted left
+			 * by at most 1) cannot overflow 36 bits: without saturation the
+			 * chain is two plain sums.
+			 */
+			uint32_t shift = state.product_shift;
+			uint32_t right = shift == 1;
+			int64_t sum[2] = { 0x8000, 0x8000 };
+			uint16_t x = 0, y = 0;
+			uint32_t product = 0;
+
+			shift -= shift != 0;
+			TEAK_FAST_UNROLL
+			for (uint32_t i = 0; i < MULTIPLIES; i++) {
+				x = *x_values[i / 2];
+				y = *r4_values[2 + i];
+				product = (uint32_t) ((int32_t) (int16_t) x * (int32_t) (int16_t) y);
+				if (i < MULTIPLIES - 1)
+					sum[i & 1] += (int64_t) ((uint64_t) (int64_t) (int32_t) product << (shift & 63U)) >> right;
+			}
+			a0 = sum[0];
+			a1 = sum[1];
+			state.x[0] = x;
+			state.y[0] = y;
+			state.p[0] = product;
+			state.product_extension[0] = product >> 31;
+		} else {
 			/* the chain on locals: state is in memory, its fields would round-trip */
 			uint32_t shift = state.product_shift;
 			uint32_t right = shift == 1;
