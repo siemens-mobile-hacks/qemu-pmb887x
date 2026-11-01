@@ -269,7 +269,7 @@ static inline TranslationBlock *tb_lookup(CPUState *cpu,
     /* we should never be trying to look up an INVALID tb */
     tcg_debug_assert(!(s->cflags & CF_INVALID));
 
-    hash = tb_jmp_cache_hash_func(s->pc);
+    hash = tb_jmp_cache_hash_func(s->pc, s->flags);
     jc = cpu->tb_jmp_cache;
 
     tb = qatomic_read(&jc->array[hash].tb);
@@ -454,9 +454,12 @@ const struct W64PccShape *w64_pcc_shape(void)
     static struct W64PccShape shape;
 
     if (!shape.tab) {
-        shape.shift = TARGET_PAGE_BITS - TB_JMP_PAGE_BITS;
-        shape.page_mask = TB_JMP_PAGE_MASK;
-        shape.addr_mask = TB_JMP_ADDR_MASK;
+        assert(TARGET_PAGE_BITS <= TB_JMP_HASH_PAGE_SHIFT);
+        shape.page_shift = TB_JMP_HASH_PAGE_SHIFT;
+        shape.mul = TB_JMP_HASH_MUL;
+        shape.mul_shift = TB_JMP_HASH_MUL_SHIFT;
+        shape.page_bits = TB_JMP_PAGE_BITS;
+        shape.flags_shift = TB_JMP_HASH_FLAGS_SHIFT;
         shape.tab = w64_pcc;
     }
     return &shape;
@@ -471,7 +474,7 @@ static inline const void *w64_pcc_get(CPUState *cpu, uint32_t gen,
     if (!W64_LC_KEY_PC(cpu, key, &pc)) {
         return NULL;
     }
-    e = &w64_pcc[tb_jmp_cache_hash_func(pc)];
+    e = &w64_pcc[tb_jmp_cache_hash_func(pc, key[0])];
     if (likely(e->pc == pc && e->gen == gen &&
                e->cpu_index == (uint32_t)cpu->cpu_index &&
                e->key32[0] == key[0] &&
@@ -500,7 +503,7 @@ static inline void w64_pcc_put(CPUState *cpu, TCGTBCPUState s, uint32_t gen,
         !W64_LC_KEY(cpu, key)) {
         return;
     }
-    e = &w64_pcc[tb_jmp_cache_hash_func((uint32_t)s.pc)];
+    e = &w64_pcc[tb_jmp_cache_hash_func((uint32_t)s.pc, key[0])];
     e->pc = (uint32_t)s.pc;
     e->key32[0] = key[0];
     e->key32[1] = key[1];
@@ -1403,7 +1406,7 @@ cpu_exec_loop(CPUState *cpu, SyncClocks *sc)
                  * We add the TB in the virtual pc hash table
                  * for the fast lookup
                  */
-                h = tb_jmp_cache_hash_func(s.pc);
+                h = tb_jmp_cache_hash_func(s.pc, s.flags);
                 jc = cpu->tb_jmp_cache;
                 jc->array[h].pc = tb_jmp_cache_key(jc, s.pc);
                 qatomic_set(&jc->array[h].tb, tb);

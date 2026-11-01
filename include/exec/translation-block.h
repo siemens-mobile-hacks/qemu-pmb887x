@@ -269,9 +269,11 @@ struct W64PccEnt {
 
 struct W64PccShape {
     struct W64PccEnt *tab;
-    unsigned shift;         /* TARGET_PAGE_BITS - TB_JMP_PAGE_BITS */
-    uint32_t page_mask;     /* TB_JMP_PAGE_MASK */
-    uint32_t addr_mask;     /* TB_JMP_ADDR_MASK */
+    unsigned page_shift;    /* TB_JMP_HASH_PAGE_SHIFT */
+    uint32_t mul;           /* TB_JMP_HASH_MUL */
+    unsigned mul_shift;     /* TB_JMP_HASH_MUL_SHIFT */
+    unsigned page_bits;     /* TB_JMP_PAGE_BITS */
+    unsigned flags_shift;   /* TB_JMP_HASH_FLAGS_SHIFT */
 };
 
 const struct W64PccShape *w64_pcc_shape(void);
