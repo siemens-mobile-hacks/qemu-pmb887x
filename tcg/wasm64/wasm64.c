@@ -88,7 +88,7 @@ struct w64_ls_state {
     int stop;                   /* budget crossed: run this insn, then halt */
     uint64_t period, epoch, meminsns, limit;
     uint64_t from, to;          /* dense T-line window */
-    uint64_t count;             /* executed insns, residual-kept */
+    int64_t count;              /* executed insns, residual-kept */
     uint64_t samples;
     uint64_t regs, regs_all;
     struct { uint64_t addr, len; } mem[LS_MAX_MEM];
@@ -316,7 +316,7 @@ static void w64_ls_init(void)
 void w64_lockstep_account(unsigned insns)
 {
     LS.count += insns;
-    while (LS.count >= LS.period) {
+    while (LS.count >= (int64_t)LS.period) {
         LS.count -= LS.period;
         w64_ls_sample();
         if (LS.stop) {
@@ -331,6 +331,16 @@ void w64_lockstep_account(unsigned insns)
          * plugin's stop_at */
         w64_chain_stop = 1;
     }
+}
+
+int64_t *w64_ls_count(void)
+{
+    static int armed = -1;
+
+    if (armed < 0) {
+        armed = getenv("W64_LOCKSTEP") != NULL;
+    }
+    return armed ? &LS.count : NULL;
 }
 
 /* Shared-chain-table index allocator: one index per translated TB,
@@ -839,6 +849,36 @@ static uint32_t w64_assemble_instantiate(const struct w64_bsrc *src)
         }
         mb_put(&mod, thunk_body, sizeof(thunk_body));
     }
+
+#ifdef W64_NAME_TBS
+    /* debug: name each TB function tb_<pc>_<icount>_<flags>, so V8 CPU
+     * profiles show which guest code the time goes to */
+    {
+        static const char nname[] = "name";
+        struct w64_mb sub = { 0 };
+        char buf[40];
+
+        sec.n = 0;
+        mb_uleb(&sec, sizeof(nname) - 1);
+        mb_put(&sec, nname, sizeof(nname) - 1);
+        mb_uleb(&sub, src->n_member);
+        for (m = 0; m < src->n_member; m++) {
+            TranslationBlock *tb = tcg_tb_lookup(src->member[m].tcptr);
+            int len = tb ? snprintf(buf, sizeof(buf), "tb_%08x_%u_%x",
+                                    (unsigned)tb->pc, tb->icount, tb->flags)
+                         : snprintf(buf, sizeof(buf), "x_%x",
+                                    src->member[m].tcptr);
+            mb_uleb(&sub, src->n_uimp + m);
+            mb_uleb(&sub, len);
+            mb_put(&sub, buf, len);
+        }
+        mb_u8(&sec, 1);
+        mb_uleb(&sec, sub.n);
+        mb_put(&sec, sub.b, sub.n);
+        mb_sec(&mod, 0, &sec);
+        g_free(sub.b);
+    }
+#endif
 
     /* union import table for the JS resolver */
     ip = g_malloc_n(src->n_uimp ? src->n_uimp : 1, sizeof(uint32_t));

@@ -2788,6 +2788,17 @@ static const TCGOutOpDivRem outop_divu2 = {
 /* module assembly                                                     */
 /* ------------------------------------------------------------------ */
 
+/*
+ * wasm_guest_insns, for a frontend that emits an early TB exit: the
+ * prologue prepays tb->icount at entry, so an exit that skips
+ * instructions hands them back here the same way it hands back
+ * icount_decr.  NULL while nothing charges the counter per entry.
+ */
+uint64_t *w64_tb_acct_insns(void)
+{
+    return w64_guest_insns_inline() ? &wasm_guest_insns : NULL;
+}
+
 static void tcg_out_tb_start(TCGContext *s)
 {
     static const uint8_t p1[1] = { 0 };    /* (i32) */
