@@ -1101,6 +1101,11 @@ void tlb_reset_dirty(CPUState *cpu, uintptr_t start, uintptr_t length)
         unsigned int n = tlb_n_entries(fast);
         unsigned int i;
 
+        /* Flushed since its last fill: no entry, the victims included. */
+        if (!(cpu->neg.tlb.c.dirty & (1 << mmu_idx))) {
+            continue;
+        }
+
         for (i = 0; i < n; i++) {
             tlb_reset_dirty_range_locked(&desc->fulltlb[i], &fast->table[i],
                                          start, length);
@@ -1733,6 +1738,52 @@ static bool victim_tlb_hit(CPUState *cpu, size_t mmu_idx, size_t index,
     return false;
 }
 
+static struct {
+    ram_addr_t start;
+    ram_addr_t length;
+    void (*fn)(void *opaque);
+    void *opaque;
+} ram_write_guard;
+
+void tlb_set_ram_write_guard(ram_addr_t start, ram_addr_t length,
+                             void (*fn)(void *opaque), void *opaque)
+{
+    assert(bql_locked());
+    qatomic_set(&ram_write_guard.length, 0);
+    smp_wmb();
+    ram_write_guard.start = start;
+    ram_write_guard.fn = fn;
+    ram_write_guard.opaque = opaque;
+    smp_wmb();
+    qatomic_set(&ram_write_guard.length, length);
+    /* Against notdirty_write(): it sets the dirty bit, then reads the guard. */
+    smp_mb();
+}
+
+static inline bool ram_write_guard_hits(ram_addr_t ram_addr, unsigned size)
+{
+    ram_addr_t length = qatomic_read(&ram_write_guard.length);
+
+    return unlikely(length != 0) &&
+           ram_addr + size > ram_write_guard.start &&
+           ram_addr < ram_write_guard.start + length;
+}
+
+static void ram_write_guard_trap(ram_addr_t ram_addr, unsigned size)
+{
+    bool took_bql = !bql_locked();
+
+    if (took_bql) {
+        bql_lock();
+    }
+    if (ram_write_guard_hits(ram_addr, size)) {
+        ram_write_guard.fn(ram_write_guard.opaque);
+    }
+    if (took_bql) {
+        bql_unlock();
+    }
+}
+
 static void notdirty_write(CPUState *cpu, vaddr mem_vaddr, unsigned size,
                            CPUTLBEntryFull *full, uintptr_t retaddr)
 {
@@ -1749,6 +1800,10 @@ static void notdirty_write(CPUState *cpu, vaddr mem_vaddr, unsigned size,
      * the notdirty callback faster.
      */
     physical_memory_set_dirty_range(ram_addr, size, DIRTY_CLIENTS_NOCODE);
+    smp_mb();
+    if (ram_write_guard_hits(ram_addr, size)) {
+        ram_write_guard_trap(ram_addr, size);
+    }
 
     /* We remove the notdirty callback only if the code has been flushed. */
     if (!physical_memory_is_clean(ram_addr)) {
@@ -2532,7 +2587,8 @@ void *do_ram_notdirty_1p(CPUState *cpu, vaddr addr, MemOpIdx oi,
     ram_addr = addr +
         cpu->neg.tlb.d[mmu_idx].fulltlb[tlb_index(cpu, mmu_idx, addr)]
             .xlat_offset;
-    if (!tb_store_misses_code(ram_addr, size)) {
+    if (!tb_store_misses_code(ram_addr, size) ||
+        ram_write_guard_hits(ram_addr, size)) {
         return NULL;
     }
     physical_memory_set_dirty_range(ram_addr, size, DIRTY_CLIENTS_NOCODE);

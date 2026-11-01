@@ -17,6 +17,9 @@
 #include "qemu/timer.h"
 #include "system/cpus.h"
 #include "system/cpu-timers.h"
+#include "system/physmem.h"
+#include "exec/cputlb.h"
+#include "exec/target_page.h"
 #include "qom/object.h"
 #include "hw/core/qdev-properties.h"
 
@@ -151,6 +154,19 @@ struct pmb887x_dif_t {
 	uint32_t tx_bus_words;
 	int64_t tx_bus_free_ps;
 	QEMUTimer *tx_bus_timer;
+	/* Fed wakes the vCPU runs past; tx_bus_timer waits at tx_lazy_stop_ns, the first wake not fed. */
+	QEMUTimer *tx_lazy_timer;
+	int64_t tx_lazy_wake_ns;
+	int64_t tx_lazy_stop_ns;
+	/* The clock the lazy wakes run with, should it change before they catch up. */
+	uint32_t tx_lazy_hz;
+	bool in_tx_catch_up;
+	bool is_dmac_catch_up_set;
+	/* The TX source RAM up to tx_clean_end had its VGA dirty bits cleared, at tx_clean_pos or before. */
+	ram_addr_t tx_clean_pos;
+	ram_addr_t tx_clean_end;
+	/* The end of the source RAM the lazy wakes went over since the last pass started. */
+	ram_addr_t tx_pass_end;
 	uint32_t tx_isr_deferred;
 	pmb887x_fifo32_t rx_fifo;
 	uint32_t tx_csreg;
@@ -257,7 +273,7 @@ static int64_t dif_get_now_ps(void) {
 
 /* bsp dif-v2-timings: a parallel bus word takes ((ACCESSCYCLE - 1) mod 32) + 2 module clock cycles. */
 static uint64_t dif_get_bus_word_ps(pmb887x_dif_t *p) {
-	uint32_t hz = pmb887x_clc_get_hz(&p->clc);
+	uint32_t hz = p->in_tx_catch_up ? p->tx_lazy_hz : pmb887x_clc_get_hz(&p->clc);
 	if (dif_is_serial(p) || hz == 0)
 		return 0;
 
@@ -276,6 +292,10 @@ static void dif_retire_tx_bus(pmb887x_dif_t *p) {
 
 static void dif_reset_tx_bus(pmb887x_dif_t *p) {
 	timer_del(p->tx_bus_timer);
+	timer_del(p->tx_lazy_timer);
+	if (p->tx_lazy_wake_ns >= 0)
+		tlb_set_ram_write_guard(0, 0, NULL, NULL);
+	p->tx_lazy_wake_ns = -1;
 	p->tx_bus_first = 0;
 	p->tx_bus_count = 0;
 	p->tx_bus_words = 0;
@@ -384,7 +404,20 @@ static void dif_update_gpio_state(pmb887x_dif_t *p) {
 	}
 }
 
+static void dif_tx_bus_catch_up(pmb887x_dif_t *p, int64_t until_ns, bool is_leaving);
+
+/*
+ * Before anything else sees the bus: the lazy wakes the guest has passed run,
+ * the rest turn eager.  A wake at the very time of the access has not run yet,
+ * as an eager one would not have.
+ */
+static void dif_tx_bus_leave_lazy(pmb887x_dif_t *p) {
+	if (p->tx_lazy_wake_ns >= 0)
+		dif_tx_bus_catch_up(p, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) - 1, true);
+}
+
 static void dif_schedule(pmb887x_dif_t *p) {
+	dif_tx_bus_leave_lazy(p);
 	p->transfer_pending = true;
 	if (p->in_schedule)
 		return;
@@ -1099,7 +1132,14 @@ static bool dif_is_fed_tx_bus(pmb887x_dif_t *p) {
 		return false;
 	if (dif_get_bsconf_word_count(p) == 0 || dif_get_bus_word_ps(p) == 0)
 		return false;
-	return dif_get_tx_burst_size(p) == 4 / dif_get_tx_align(p);
+	uint32_t burst_size = dif_get_tx_burst_size(p);
+	uint32_t words_per_entry = 4 / dif_get_tx_align(p);
+	return burst_size != 0 && burst_size % words_per_entry == 0 && burst_size / words_per_entry <= FIFO_SIZE;
+}
+
+/* FIFO stages one TX burst request moves. */
+static uint32_t dif_get_tx_burst_entries(pmb887x_dif_t *p) {
+	return dif_get_tx_burst_size(p) / (4 / dif_get_tx_align(p));
 }
 
 #define DIF_FED_TX_WAKES_MAX	128
@@ -1121,8 +1161,9 @@ typedef struct {
  * if none can run.
  */
 static bool dif_plan_fed_tx_bus(pmb887x_dif_t *p, dif_fed_tx_bus_t *bus, int64_t wake_ns, int64_t next_ns,
-	uint32_t max_wakes) {
+	int64_t limit_ns, uint32_t max_wakes) {
 	uint32_t words_per_entry = 4 / dif_get_tx_align(p);
+	uint32_t burst_entries = dif_get_tx_burst_entries(p);
 	uint32_t bsconf_word_count = dif_is_bsconf_9bit(p) ? 1 : dif_get_bsconf_word_count(p);
 	uint64_t entry_ps = words_per_entry * bsconf_word_count * dif_get_bus_word_ps(p);
 
@@ -1132,26 +1173,30 @@ static bool dif_plan_fed_tx_bus(pmb887x_dif_t *p, dif_fed_tx_bus_t *bus, int64_t
 	bus->free_ps = p->tx_bus_free_ps;
 	bus->words_remaining = p->tx_words_remaining;
 	bus->wakes = 0;
-	while (bus->wakes < max_wakes && bus->words_remaining > words_per_entry) {
-		if (bus->wakes != 0 && ((next_ns >= 0 && wake_ns >= next_ns) || !cpu_clock_owner_idle_reaches(wake_ns)))
+	while (bus->wakes < max_wakes && bus->words_remaining > burst_entries * words_per_entry) {
+		if (bus->wakes != 0 && next_ns >= 0 && wake_ns >= next_ns)
+			break;
+		if (bus->wakes != 0 && (limit_ns >= 0 ? wake_ns > limit_ns : !cpu_clock_owner_idle_reaches(wake_ns)))
 			break;
 
 		int64_t now_ps = wake_ns * 1000;
 		uint32_t retired = 0;
 		while (retired < bus->count && bus->end_ps[(bus->first + retired) % FIFO_SIZE] <= now_ps)
 			retired++;
-		if (bus->count - retired != FIFO_SIZE - 1)
+		if (bus->count - retired != FIFO_SIZE - burst_entries)
 			break;
 
 		bus->first = (bus->first + retired) % FIFO_SIZE;
 		bus->count -= retired;
-		bus->words_remaining -= words_per_entry;
-		int64_t end_ps = MAX(bus->free_ps, now_ps) + entry_ps;
-		bus->end_ps[(bus->first + bus->count) % FIFO_SIZE] = end_ps;
-		bus->count++;
-		bus->free_ps = end_ps;
+		bus->words_remaining -= burst_entries * words_per_entry;
+		for (uint32_t i = 0; i < burst_entries; i++) {
+			int64_t end_ps = MAX(bus->free_ps, now_ps) + entry_ps;
+			bus->end_ps[(bus->first + bus->count) % FIFO_SIZE] = end_ps;
+			bus->count++;
+			bus->free_ps = end_ps;
+		}
 		bus->last_wake_ns = wake_ns;
-		wake_ns = DIV_ROUND_UP(bus->end_ps[bus->first], 1000);
+		wake_ns = DIV_ROUND_UP(bus->end_ps[(bus->first + burst_entries - 1) % FIFO_SIZE], 1000);
 		bus->wakes++;
 	}
 	bus->next_wake_ns = wake_ns;
@@ -1176,27 +1221,37 @@ static uint32_t dif_get_fed_tx_bus_words(pmb887x_dif_t *p, const uint8_t *data, 
 	return word_count;
 }
 
+/* How many fed wakes the DMAC can serve from now on, into *bulk: 0 unless the bus is fed. */
+static uint32_t dif_count_fed_tx_wakes(pmb887x_dif_t *p, pmb887x_dmac_bulk_t *bulk) {
+	if (!dif_is_fed_tx_bus(p))
+		return 0;
+
+	uint32_t max_wakes = pmb887x_dmac_count_bulk_bursts(p->dmac_tx_breq, bulk);
+	if (max_wakes == 0 || bulk->sink != &p->mmio || bulk->burst_words != dif_get_tx_burst_entries(p))
+		return 0;
+	if (bulk->sink_addr < DIFv2_TXD || bulk->sink_addr > DIFv2_TXD + FIFO_IO_SIZE)
+		return 0;
+	if (bulk->is_increment)
+		max_wakes = MIN(max_wakes, ((DIFv2_TXD + FIFO_IO_SIZE - bulk->sink_addr) / sizeof(uint32_t) + 1) / bulk->burst_words);
+	return max_wakes;
+}
+
 /*
  * Runs the wakes of a fed TX bus from @wake_ns on while nothing else is due
  * (before @next_ns) and the clock may get there, the DMAC bursts and the bus
  * words of all of them at the end: 0 if none could run.  Returns the time
- * of the wake after the last, which the clock has not reached yet.
+ * of the wake after the last, which the clock has not reached yet.  With
+ * @limit_ns, the vCPU runs: the wakes up to then, without moving the clock.
  */
-static int64_t dif_run_fed_tx_bus(pmb887x_dif_t *p, int64_t wake_ns, int64_t next_ns) {
-	if (!dif_is_fed_tx_bus(p))
-		return 0;
-
+static int64_t dif_run_fed_tx_bus(pmb887x_dif_t *p, int64_t wake_ns, int64_t next_ns, int64_t limit_ns) {
 	pmb887x_dmac_bulk_t bulk;
-	uint32_t max_wakes = MIN(pmb887x_dmac_count_bulk_bursts(p->dmac_tx_breq, &bulk), DIF_FED_TX_WAKES_MAX);
-	if (max_wakes == 0 || bulk.sink != &p->mmio || bulk.burst_words != 1)
+	uint32_t max_wakes = dif_count_fed_tx_wakes(p, &bulk);
+	if (max_wakes == 0)
 		return 0;
-	if (bulk.sink_addr < DIFv2_TXD || bulk.sink_addr > DIFv2_TXD + FIFO_IO_SIZE)
-		return 0;
-	if (bulk.is_increment)
-		max_wakes = MIN(max_wakes, (DIFv2_TXD + FIFO_IO_SIZE - bulk.sink_addr) / sizeof(uint32_t) + 1);
+	max_wakes = MIN(max_wakes, DIF_FED_TX_WAKES_MAX / bulk.burst_words);
 
 	dif_fed_tx_bus_t bus;
-	if (!dif_plan_fed_tx_bus(p, &bus, wake_ns, next_ns, max_wakes))
+	if (!dif_plan_fed_tx_bus(p, &bus, wake_ns, next_ns, limit_ns, max_wakes))
 		return 0;
 
 	memcpy(p->tx_bus_end_ps, bus.end_ps, sizeof(bus.end_ps));
@@ -1208,20 +1263,145 @@ static int64_t dif_run_fed_tx_bus(pmb887x_dif_t *p, int64_t wake_ns, int64_t nex
 
 	uint8_t data[DIF_FED_TX_WAKES_MAX * sizeof(uint32_t)] QEMU_ALIGNED(4);
 	uint32_t words[DIF_FED_TX_WAKES_MAX * 4 * 4];
+	uint32_t entries = bus.wakes * bulk.burst_words;
 	pmb887x_dmac_serve_bulk_bursts(p->dmac_tx_breq, data, bus.wakes);
-	for (uint32_t n = 0; n < bus.wakes; n++) {
+	for (uint32_t n = 0; n < entries; n++) {
 		hwaddr addr = bulk.sink_addr + (bulk.is_increment ? n * sizeof(uint32_t) : 0);
 		IO_DUMP_WRITE(addr + p->mmio.addr, sizeof(uint32_t), ldl_le_p(data + n * sizeof(uint32_t)));
 	}
-	dif_send_parallel_words(p, words, dif_get_fed_tx_bus_words(p, data, bus.wakes, words));
+	dif_send_parallel_words(p, words, dif_get_fed_tx_bus_words(p, data, entries, words));
 
 	p->in_dma_handshake = true;
 	pmb887x_srb_set_isr(&p->srb, DIFv2_ISR_TXBREQ);
 	pmb887x_srb_set_icr(&p->srb, DIFv2_ICR_TXBREQ);
 	p->in_dma_handshake = false;
 
-	cpu_clock_owner_idle_advance(bus.last_wake_ns);
+	if (limit_ns < 0)
+		cpu_clock_owner_idle_advance(bus.last_wake_ns);
 	return bus.next_wake_ns;
+}
+
+/*
+ * Runs the lazy wakes due by @until_ns, each at its own time, before anything
+ * else can see the bus: a later timer, a register access, a DMAC change, a
+ * store into the RAM they read.  @is_leaving re-arms the wake after them as
+ * an eager one.
+ */
+static void dif_tx_bus_catch_up(pmb887x_dif_t *p, int64_t until_ns, bool is_leaving) {
+	if (p->in_tx_catch_up)
+		return;
+	p->in_tx_catch_up = true;
+	while (p->tx_lazy_wake_ns >= 0 && p->tx_lazy_wake_ns <= until_ns) {
+		int64_t wake_ns = p->tx_lazy_wake_ns;
+		int64_t next_ns = timer_others_expire_time_ns(p->tx_lazy_timer);
+		if (next_ns >= 0 && next_ns <= wake_ns) {
+			if (!timer_pending(p->tx_lazy_timer))
+				timer_mod(p->tx_lazy_timer, wake_ns);
+			break;
+		}
+		timer_del(p->tx_lazy_timer);
+		p->tx_lazy_wake_ns = -1;
+		int64_t fed_wake_ns = dif_run_fed_tx_bus(p, wake_ns, next_ns, next_ns >= 0 ? MIN(until_ns, next_ns - 1) : until_ns);
+		if (fed_wake_ns == 0) {
+			timer_mod(p->tx_bus_timer, wake_ns);
+			break;
+		}
+		if (fed_wake_ns < p->tx_lazy_stop_ns) {
+			p->tx_lazy_wake_ns = fed_wake_ns;
+			timer_mod(p->tx_lazy_timer, fed_wake_ns);
+		}
+	}
+	if (is_leaving && p->tx_lazy_wake_ns >= 0) {
+		timer_del(p->tx_lazy_timer);
+		timer_mod(p->tx_bus_timer, p->tx_lazy_wake_ns);
+		p->tx_lazy_wake_ns = -1;
+	}
+	if (p->tx_lazy_wake_ns < 0)
+		tlb_set_ram_write_guard(0, 0, NULL, NULL);
+	p->in_tx_catch_up = false;
+}
+
+static void dif_tx_bus_lazy_wake(void *opaque) {
+	pmb887x_dif_t *p = opaque;
+	dif_tx_bus_catch_up(p, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL), false);
+}
+
+static void dif_tx_bus_write_trap(void *opaque) {
+	dif_tx_bus_leave_lazy(opaque);
+}
+
+static void dif_tx_bus_dmac_catch_up(void *opaque) {
+	dif_tx_bus_leave_lazy(opaque);
+}
+
+/*
+ * How much of the TX source RAM from @start on CPU stores reach the write
+ * guard for: the pages with their VGA dirty bit clear.  A store sets the bit
+ * of its page again.  Clearing the bits walks the whole TLB, so a pass over a
+ * frame, a transfer going back in the RAM, clears at once what the previous
+ * pass went over, and a transfer after that only what lies beyond.
+ */
+static ram_addr_t dif_get_guarded_tx_source(pmb887x_dif_t *p, ram_addr_t start, ram_addr_t length,
+	ram_addr_t available) {
+	if (start < p->tx_clean_pos) {
+		ram_addr_t end = start + length;
+		if (p->tx_pass_end > end && p->tx_pass_end - start <= available)
+			end = p->tx_pass_end;
+		physical_memory_test_and_clear_dirty(start, end - start, DIRTY_MEMORY_VGA, NULL);
+		p->tx_clean_end = end;
+		p->tx_pass_end = start + length;
+	} else if (start >= p->tx_clean_end) {
+		physical_memory_test_and_clear_dirty(start, length, DIRTY_MEMORY_VGA, NULL);
+		p->tx_clean_end = start + length;
+	}
+	p->tx_clean_pos = start;
+	p->tx_pass_end = MAX(p->tx_pass_end, start + length);
+
+	ram_addr_t end = MIN(start + length, p->tx_clean_end);
+	ram_addr_t addr = start;
+	while (addr < end && !physical_memory_get_dirty_flag(addr, DIRTY_MEMORY_VGA))
+		addr = (addr & qemu_target_page_mask()) + qemu_target_page_size();
+	return MIN(addr, end) - start;
+}
+
+/*
+ * While the vCPU runs, the wakes of a fed bus up to the first one that is not
+ * fed go lazy: nothing but the bus sees them until then.
+ */
+static void dif_tx_bus_go_lazy(pmb887x_dif_t *p) {
+	if (!qemu_virtual_timers_on_vcpu)
+		return;
+
+	pmb887x_dmac_bulk_t bulk;
+	uint32_t max_wakes = dif_count_fed_tx_wakes(p, &bulk);
+	uint32_t wake_words = bulk.burst_words * (4 / dif_get_tx_align(p));
+	if (max_wakes < 2 || p->tx_words_remaining / wake_words < 2)
+		return;
+	max_wakes = MIN(max_wakes, p->tx_words_remaining / wake_words);
+
+	ram_addr_t start, length, available;
+	if (!pmb887x_dmac_get_bulk_source(p->dmac_tx_breq, max_wakes, &start, &length, &available))
+		return;
+	tlb_set_ram_write_guard(start, length, dif_tx_bus_write_trap, p);
+	max_wakes = MIN(max_wakes, dif_get_guarded_tx_source(p, start, length, available) / (bulk.burst_words * sizeof(uint32_t)));
+
+	int64_t wake_ns = timer_expire_time_ns(p->tx_bus_timer);
+	dif_fed_tx_bus_t bus;
+	if (max_wakes < 2 || !dif_plan_fed_tx_bus(p, &bus, wake_ns, -1, INT64_MAX, max_wakes) || bus.wakes < 2) {
+		tlb_set_ram_write_guard(0, 0, NULL, NULL);
+		return;
+	}
+	tlb_set_ram_write_guard(start, (ram_addr_t) bus.wakes * bulk.burst_words * sizeof(uint32_t), dif_tx_bus_write_trap, p);
+
+	if (!p->is_dmac_catch_up_set) {
+		pmb887x_dmac_set_catch_up(p->dmac_tx_breq, dif_tx_bus_dmac_catch_up, p);
+		p->is_dmac_catch_up_set = true;
+	}
+	p->tx_lazy_hz = pmb887x_clc_get_hz(&p->clc);
+	p->tx_lazy_stop_ns = bus.next_wake_ns;
+	p->tx_lazy_wake_ns = wake_ns;
+	timer_mod(p->tx_lazy_timer, wake_ns);
+	timer_mod(p->tx_bus_timer, bus.next_wake_ns);
 }
 
 /*
@@ -1241,7 +1421,7 @@ static void dif_tx_bus_wake(void *opaque) {
 		if (wake_ns <= qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) || !cpu_clock_owner_idle_reaches(wake_ns))
 			break;
 		timer_del(p->tx_bus_timer);
-		int64_t fed_wake_ns = dif_run_fed_tx_bus(p, wake_ns, next_ns);
+		int64_t fed_wake_ns = dif_run_fed_tx_bus(p, wake_ns, next_ns, -1);
 		if (fed_wake_ns != 0) {
 			timer_mod(p->tx_bus_timer, fed_wake_ns);
 			continue;
@@ -1249,6 +1429,8 @@ static void dif_tx_bus_wake(void *opaque) {
 		cpu_clock_owner_idle_advance(wake_ns);
 		dif_tx_bus_wake_once(p);
 	}
+	if (timer_pending(p->tx_bus_timer) && p->tx_lazy_wake_ns < 0 && !all_cpu_threads_idle())
+		dif_tx_bus_go_lazy(p);
 }
 
 static void dif_update_mux(pmb887x_dif_t *p) {
@@ -1328,6 +1510,8 @@ static void dif_update_mux(pmb887x_dif_t *p) {
 
 static uint64_t dif_io_read(void *opaque, hwaddr haddr, unsigned size) {
 	pmb887x_dif_t *p = opaque;
+
+	dif_tx_bus_leave_lazy(p);
 
 	uint64_t value = 0;
 	switch (haddr) {
@@ -1512,6 +1696,8 @@ static uint64_t dif_io_read(void *opaque, hwaddr haddr, unsigned size) {
 
 static void dif_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned size) {
 	pmb887x_dif_t *p = opaque;
+
+	dif_tx_bus_leave_lazy(p);
 
 	IO_DUMP_WRITE(haddr + p->mmio.addr, size, value);
 
@@ -1765,6 +1951,10 @@ static void dif_event_handler(void *opaque, int event_id, int level) {
 		dif_trigger_dma(p);
 }
 
+static void dif_clock_changed(void *opaque) {
+	dif_tx_bus_leave_lazy(opaque);
+}
+
 static void dif_init(Object *obj) {
 	DeviceState *dev = DEVICE(obj);
 	pmb887x_dif_t *p = PMB887X_DIF(obj);
@@ -1819,6 +2009,7 @@ static void dif_realize(DeviceState *dev, Error **errp) {
 	pmb887x_dif_t *p = PMB887X_DIF(dev);
 
 	pmb887x_clc_set(&p->clc, 1U << MOD_CLC_RMC_SHIFT);
+	pmb887x_clc_set_callback(&p->clc, dif_clock_changed, p);
 	pmb887x_srb_init(&p->srb, p->irq, ARRAY_SIZE(p->irq));
 	pmb887x_srb_set_irq_router(&p->srb, p, dif_irq_router);
 	pmb887x_srb_set_event_handler(&p->srb, p, dif_event_handler);
@@ -1840,6 +2031,9 @@ static void dif_realize(DeviceState *dev, Error **errp) {
 
 	p->rx_refill_bh = qemu_bh_new(dif_rx_refill, p);
 	p->tx_bus_timer = timer_new_ns(QEMU_CLOCK_VIRTUAL, dif_tx_bus_wake, p);
+	p->tx_lazy_timer = timer_new_full(NULL, QEMU_CLOCK_VIRTUAL, SCALE_NS, QEMU_TIMER_ATTR_LAZY,
+		dif_tx_bus_lazy_wake, p);
+	p->tx_lazy_wake_ns = -1;
 }
 
 static void dif_unrealize(DeviceState *dev) {
@@ -1847,6 +2041,7 @@ static void dif_unrealize(DeviceState *dev) {
 
 	qemu_bh_delete(p->rx_refill_bh);
 	timer_free(p->tx_bus_timer);
+	timer_free(p->tx_lazy_timer);
 }
 
 static void dif_reset(DeviceState *dev) {

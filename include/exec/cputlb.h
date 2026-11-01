@@ -30,6 +30,16 @@
 
 void tlb_reset_dirty(CPUState *cpu, uintptr_t start, uintptr_t length);
 void tlb_reset_dirty_range_all(ram_addr_t start, ram_addr_t length);
+
+/*
+ * Until cleared (@length 0), a CPU store into [@start, @start + @length) that
+ * reaches notdirty_write() first calls @fn with the BQL held.  Stores reach it
+ * only on pages whose DIRTY_MEMORY_VGA bit the caller has cleared, and only
+ * until the first such store sets it again.  For a device that reads RAM
+ * behind the clock.
+ */
+void tlb_set_ram_write_guard(ram_addr_t start, ram_addr_t length,
+                             void (*fn)(void *opaque), void *opaque);
 #endif
 
 /**

@@ -97,6 +97,8 @@ struct pmb887x_dmac_t {
 
 	bool dmac_pending;
 	bool is_in_pass;
+	void (*catch_up)(void *opaque);
+	void *catch_up_opaque;
 	uint32_t raised_levels;
 	uint32_t config;
 	uint32_t sync;
@@ -229,9 +231,15 @@ static void dmac_schedule(pmb887x_dmac_t *p) {
 		timer_mod(p->timer, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL));
 }
 
+static void dmac_catch_up(pmb887x_dmac_t *p);
+
 static void dmac_clock_update(void *opaque, ClockEvent event) {
 	pmb887x_dmac_t *p = opaque;
-	(void) event;
+
+	if (event == ClockPreUpdate) {
+		dmac_catch_up(p);
+		return;
+	}
 
 	if (!clock_is_enabled(p->clock)) {
 		timer_del(p->timer);
@@ -970,10 +978,16 @@ static const char *dmac_request_name(pmb887x_dmac_t *p, const pmb887x_dmac_reque
 	return "UNK";
 }
 
+static void dmac_catch_up(pmb887x_dmac_t *p) {
+	if (p->catch_up)
+		p->catch_up(p->catch_up_opaque);
+}
+
 static void dmac_handle_signal(pmb887x_dmac_t *p, pmb887x_dmac_request_t *request, int sel, int id, int level) {
 	if (request->level[sel][id] == level)
 		return;
 
+	dmac_catch_up(p);
 	DPRINTF("%s request=%d, level=%d\n", dmac_request_name(p, request), id, level);
 	p->raised_levels += (level != 0) - (request->level[sel][id] != 0);
 	request->level[sel][id] = level;
@@ -996,6 +1010,7 @@ static void dmac_handle_signal(pmb887x_dmac_t *p, pmb887x_dmac_request_t *reques
 static uint64_t dmac_io_read(void *opaque, hwaddr haddr, unsigned size) {
 	pmb887x_dmac_t *p = opaque;
 
+	dmac_catch_up(p);
 	uint64_t value = 0;
 
 	if (!clock_is_enabled(p->clock)) {
@@ -1146,6 +1161,7 @@ static uint64_t dmac_io_read(void *opaque, hwaddr haddr, unsigned size) {
 static void dmac_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned size) {
 	pmb887x_dmac_t *p = opaque;
 
+	dmac_catch_up(p);
 	IO_DUMP_WRITE(haddr + p->mmio.addr, size, value);
 	if (!clock_is_enabled(p->clock))
 		return;
@@ -1262,12 +1278,14 @@ static void dmac_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned s
 }
 
 void pmb887x_dmac_set_sel(pmb887x_dmac_t *p, uint32_t value) {
+	dmac_catch_up(p);
 	for (int i = 0; i < DMAC_REQUESTS; i++)
 		p->sel[i] = (value & (1 << i)) ? 1 : 0;
 	dmac_schedule(p);
 }
 
 uint32_t pmb887x_dmac_get_sel(pmb887x_dmac_t *p) {
+	dmac_catch_up(p);
 	uint32_t value = 0;
 	for (int i = 0; i < DMAC_REQUESTS; i++)
 		value |= p->sel[i] << i;
@@ -1458,6 +1476,31 @@ uint32_t pmb887x_dmac_count_bulk_bursts(qemu_irq line, pmb887x_dmac_bulk_t *bulk
 	return count;
 }
 
+bool pmb887x_dmac_get_bulk_source(qemu_irq line, uint32_t count, ram_addr_t *start, ram_addr_t *length,
+	ram_addr_t *available) {
+	pmb887x_dmac_ch_t *ch = dmac_get_served_channel(line);
+	if (ch == NULL)
+		return false;
+
+	pmb887x_dmac_t *p = line->opaque;
+	uint32_t burst_words = dmac_get_burst_size((ch->control & DMAC_CH_CONTROL_DB_SIZE) >> DMAC_CH_CONTROL_DB_SIZE_SHIFT);
+	hwaddr bytes = (hwaddr) burst_words * count * sizeof(uint32_t);
+	pmb887x_dmac_translation_t *source = &p->read_translation;
+	if (!dmac_translate(p, source, ch->src_addr, bytes, false) || !source->host || !memory_region_is_ram(source->mr))
+		return false;
+	*start = memory_region_get_ram_addr(source->mr) + source->xlat + (ch->src_addr - source->start);
+	*length = bytes;
+	*available = source->end - ch->src_addr;
+	return true;
+}
+
+void pmb887x_dmac_set_catch_up(qemu_irq line, void (*fn)(void *opaque), void *opaque) {
+	pmb887x_dmac_t *p = line->opaque;
+	g_assert(p->catch_up == NULL || p->catch_up == fn);
+	p->catch_up = fn;
+	p->catch_up_opaque = opaque;
+}
+
 /* Serves @count of the bursts pmb887x_dmac_count_bulk_bursts() counted into @data, as the sink would get them. */
 void pmb887x_dmac_serve_bulk_bursts(qemu_irq line, uint8_t *data, uint32_t count) {
 	pmb887x_dmac_ch_t *ch = dmac_get_served_channel(line);
@@ -1502,7 +1545,7 @@ static void dmac_handle_reset(void *opaque, int id, int level) {
 static void dmac_init(Object *obj) {
 	DeviceState *dev = DEVICE(obj);
 	pmb887x_dmac_t *p = PMB887X_DMAC(obj);
-	p->clock = qdev_init_clock_in(dev, "clk", dmac_clock_update, p, ClockUpdate);
+	p->clock = qdev_init_clock_in(dev, "clk", dmac_clock_update, p, ClockPreUpdate | ClockUpdate);
 	p->timer = timer_new_ns(QEMU_CLOCK_VIRTUAL, dmac_timer_reset, p);
 	memory_region_init_io(&p->mmio, obj, &io_ops, p, "pmb887x-dmac", DMAC_IO_SIZE);
 	sysbus_init_mmio(SYS_BUS_DEVICE(obj), &p->mmio);

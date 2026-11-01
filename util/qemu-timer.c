@@ -143,8 +143,18 @@ bool qemu_virtual_timers_on_vcpu;
 int64_t qemu_virtual_clock_cap = INT64_MAX;
 int64_t qemu_virtual_clock_last;
 
+/* The first timer of @ts on that is not QEMU_TIMER_ATTR_LAZY. */
+static QEMUTimer *timer_first_eager(QEMUTimer *ts)
+{
+    while (ts && (ts->attributes & QEMU_TIMER_ATTR_LAZY)) {
+        ts = ts->next;
+    }
+    return ts;
+}
+
 static void timerlist_publish_cap(QEMUTimerList *timer_list)
 {
+    QEMUTimer *ts;
     int64_t expire;
 
     if (!qemu_virtual_timers_on_vcpu ||
@@ -152,8 +162,9 @@ static void timerlist_publish_cap(QEMUTimerList *timer_list)
         return;
     }
     expire = timer_list->running_expire;
-    if (timer_list->active_timers) {
-        expire = MIN(expire, timer_list->active_timers->expire_time);
+    ts = timer_first_eager(timer_list->active_timers);
+    if (ts) {
+        expire = MIN(expire, ts->expire_time);
     }
     if (expire != INT64_MAX) {
         expire = MAX(expire, qatomic_read(&qemu_virtual_clock_last));
@@ -246,8 +257,9 @@ int64_t qemu_clock_expire_time_ns(QEMUClockType type)
         return -1;
     }
     WITH_QEMU_LOCK_GUARD(&timer_list->active_timers_lock) {
-        if (timer_list->active_timers) {
-            return timer_list->active_timers->expire_time;
+        QEMUTimer *ts = timer_first_eager(timer_list->active_timers);
+        if (ts) {
+            return ts->expire_time;
         }
     }
     return -1;
@@ -435,6 +447,7 @@ void timer_deinit(QEMUTimer *ts)
 static void timer_del_locked(QEMUTimerList *timer_list, QEMUTimer *ts)
 {
     QEMUTimer **pt, *t;
+    bool is_first = true;
 
     ts->expire_time = -1;
     pt = &timer_list->active_timers;
@@ -444,11 +457,12 @@ static void timer_del_locked(QEMUTimerList *timer_list, QEMUTimer *ts)
             break;
         if (t == ts) {
             qatomic_set(pt, t->next);
-            if (pt == &timer_list->active_timers) {
+            if (is_first) {
                 timerlist_publish_cap(timer_list);
             }
             break;
         }
+        is_first &= !!(t->attributes & QEMU_TIMER_ATTR_LAZY);
         pt = &t->next;
     }
 }
@@ -464,6 +478,7 @@ static bool timer_mod_ns_locked(QEMUTimerList *timer_list,
                                 QEMUTimer *ts, int64_t expire_time)
 {
     QEMUTimer **pt, *t;
+    bool is_first;
 
     /*
      * Normally during record-replay virtual clock timers and CPU work are
@@ -488,22 +503,24 @@ static bool timer_mod_ns_locked(QEMUTimerList *timer_list,
     }
 
     /* add the timer in the sorted list */
+    is_first = !(ts->attributes & QEMU_TIMER_ATTR_LAZY);
     pt = &timer_list->active_timers;
     for (;;) {
         t = *pt;
         if (!timer_expired_ns(t, expire_time)) {
             break;
         }
+        is_first &= !!(t->attributes & QEMU_TIMER_ATTR_LAZY);
         pt = &t->next;
     }
     ts->expire_time = MAX(expire_time, 0);
     ts->next = *pt;
     qatomic_set(pt, ts);
-    if (pt == &timer_list->active_timers) {
+    if (is_first) {
         timerlist_publish_cap(timer_list);
     }
 
-    return pt == &timer_list->active_timers;
+    return is_first;
 }
 
 static void timerlist_rearm(QEMUTimerList *timer_list)
