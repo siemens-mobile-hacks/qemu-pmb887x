@@ -1166,6 +1166,45 @@ typedef struct {
 } dif_fed_tx_bus_t;
 
 /*
+ * Once the plan has refilled every stage, the stages end @entry_ps apart and
+ * each wake retires and refills @burst_entries of them, so the wakes up to the
+ * first that cannot run follow in closed form.  Returns the next wake.
+ */
+static int64_t dif_skip_fed_tx_wakes(dif_fed_tx_bus_t *bus, int64_t wake_ns, uint32_t burst_entries,
+	uint32_t wake_words, int64_t entry_ps, int64_t next_ns, int64_t limit_ns, uint32_t max_wakes) {
+	if (entry_ps < 1000 || burst_entries >= FIFO_SIZE || bus->count != FIFO_SIZE)
+		return wake_ns;
+	int64_t first_end_ps = bus->end_ps[bus->first];
+	for (uint32_t i = 1; i < FIFO_SIZE; i++) {
+		if (bus->end_ps[(bus->first + i) % FIFO_SIZE] != first_end_ps + i * entry_ps)
+			return wake_ns;
+	}
+	if (bus->free_ps != first_end_ps + (FIFO_SIZE - 1) * entry_ps)
+		return wake_ns;
+
+	int64_t step_ps = burst_entries * entry_ps;
+	int64_t leave_ps = first_end_ps + (burst_entries - 1) * entry_ps;
+	uint64_t n = MIN(max_wakes - bus->wakes, bus->words_remaining > wake_words ? (bus->words_remaining - 1) / wake_words : 0);
+	int64_t until_ns = next_ns >= 0 ? MIN(limit_ns, next_ns - 1) : limit_ns;
+	if (until_ns < INT64_MAX / 1000) {
+		int64_t room_ps = until_ns * 1000 - leave_ps;
+		n = room_ps < 0 ? 0 : MIN(n, room_ps / step_ps + 1);
+	}
+	if (n == 0)
+		return wake_ns;
+
+	first_end_ps += n * step_ps;
+	bus->first = (bus->first + n * burst_entries) % FIFO_SIZE;
+	for (uint32_t i = 0; i < FIFO_SIZE; i++)
+		bus->end_ps[(bus->first + i) % FIFO_SIZE] = first_end_ps + i * entry_ps;
+	bus->free_ps = first_end_ps + (FIFO_SIZE - 1) * entry_ps;
+	bus->words_remaining -= n * wake_words;
+	bus->wakes += n;
+	bus->last_wake_ns = DIV_ROUND_UP(leave_ps + (n - 1) * step_ps, 1000);
+	return DIV_ROUND_UP(leave_ps + n * step_ps, 1000);
+}
+
+/*
  * Plans the wakes of a fed TX bus from @wake_ns on while nothing else is due
  * (before @next_ns) and the clock may get there, at most @max_wakes: false
  * if none can run.
@@ -1208,6 +1247,9 @@ static bool dif_plan_fed_tx_bus(pmb887x_dif_t *p, dif_fed_tx_bus_t *bus, int64_t
 		bus->last_wake_ns = wake_ns;
 		wake_ns = DIV_ROUND_UP(bus->end_ps[(bus->first + burst_entries - 1) % FIFO_SIZE], 1000);
 		bus->wakes++;
+		if (limit_ns >= 0 && bus->wakes > FIFO_SIZE / burst_entries && bus->wakes < max_wakes)
+			wake_ns = dif_skip_fed_tx_wakes(bus, wake_ns, burst_entries, burst_entries * words_per_entry, entry_ps,
+				next_ns, limit_ns, max_wakes);
 	}
 	bus->next_wake_ns = wake_ns;
 	return bus->wakes != 0;
