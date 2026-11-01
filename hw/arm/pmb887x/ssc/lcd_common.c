@@ -245,37 +245,40 @@ static void lcd_write_ram_byte(pmb887x_lcd_t *lcd, uint8_t value) {
 	}
 }
 
+/* Called with ram_queue_lock held. */
+static void lcd_write_queued_ram_bytes(pmb887x_lcd_t *lcd) {
+	uint32_t head = qatomic_load_acquire(&lcd->ram_queue_head);
+	uint32_t tail = lcd->ram_queue_tail;
+
+	for (; tail != head; tail++)
+		lcd_write_ram_byte(lcd, lcd->ram_queue[tail % LCD_RAM_QUEUE_SIZE]);
+	qatomic_store_release(&lcd->ram_queue_tail, tail);
+}
+
 static void *lcd_ram_writer_run(void *opaque) {
 	pmb887x_lcd_t *lcd = opaque;
-	uint32_t tail = 0;
 
 	while (true) {
 		qemu_event_wait(&lcd->ram_queue_ready);
 		qemu_event_reset(&lcd->ram_queue_ready);
-		uint32_t head = qatomic_load_acquire(&lcd->ram_queue_head);
-		if (tail == head)
-			continue;
-
-		for (; tail != head; tail++)
-			lcd_write_ram_byte(lcd, lcd->ram_queue[tail % LCD_RAM_QUEUE_SIZE]);
-
 		qemu_mutex_lock(&lcd->ram_queue_lock);
-		qatomic_store_release(&lcd->ram_queue_tail, tail);
-		qemu_cond_broadcast(&lcd->ram_queue_drained);
+		lcd_write_queued_ram_bytes(lcd);
 		qemu_mutex_unlock(&lcd->ram_queue_lock);
 	}
 	return NULL;
 }
 
+/*
+ * Writes what the writer has not taken yet here instead of waking it and
+ * waiting: a drain at a CD edge usually finds it asleep below the wake
+ * threshold.
+ */
 static void lcd_drain_ram_queue(pmb887x_lcd_t *lcd) {
-	uint32_t head = lcd->ram_queue_head;
-	if (qatomic_load_acquire(&lcd->ram_queue_tail) == head)
+	if (qatomic_load_acquire(&lcd->ram_queue_tail) == lcd->ram_queue_head)
 		return;
 
-	qemu_event_set(&lcd->ram_queue_ready);
 	qemu_mutex_lock(&lcd->ram_queue_lock);
-	while (qatomic_read(&lcd->ram_queue_tail) != head)
-		qemu_cond_wait(&lcd->ram_queue_drained, &lcd->ram_queue_lock);
+	lcd_write_queued_ram_bytes(lcd);
 	qemu_mutex_unlock(&lcd->ram_queue_lock);
 }
 
@@ -691,7 +694,6 @@ static void lcd_realize(SSIPeripheral *d, Error **errp) {
 
 	lcd->ram_queue = g_new(uint8_t, LCD_RAM_QUEUE_SIZE);
 	qemu_mutex_init(&lcd->ram_queue_lock);
-	qemu_cond_init(&lcd->ram_queue_drained);
 	qemu_event_init(&lcd->ram_queue_ready, false);
 	qemu_thread_create(&lcd->ram_writer, "lcd-ram-writer", lcd_ram_writer_run, lcd, QEMU_THREAD_DETACHED);
 

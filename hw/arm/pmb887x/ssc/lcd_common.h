@@ -92,12 +92,11 @@ struct pmb887x_lcd_t {
 	uint32_t *gram; /* 0x00RRGGBB */
 
 	/*
-	 * GRAM write bytes are decoded by ram_writer. Only the BQL holder appends, and it drains the queue
-	 * before anything else reads or changes the state the writer uses.
+	 * GRAM write bytes are decoded under ram_queue_lock, by ram_writer or by a drain. Only the BQL holder
+	 * appends, and it drains the queue before anything else reads or changes the state the writer uses.
 	 */
 	QemuThread ram_writer;
 	QemuMutex ram_queue_lock;
-	QemuCond ram_queue_drained;
 	QemuEvent ram_queue_ready;
 	uint8_t *ram_queue;
 	uint32_t ram_queue_head;
