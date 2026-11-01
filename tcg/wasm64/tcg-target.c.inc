@@ -75,6 +75,10 @@ static __thread struct {
     uint16_t frame_ofs[W64_FRAME_WORDS];    /* offset / 4 of each ordinal */
     uint16_t n_frame;
     size_t frame_count_pos;
+
+    /* fast_ofs whose mask and table $tmask/$ttab hold at this point of
+     * the emission, -1: none (see w64_tlb_probe) */
+    int tlbc;
 } W;
 
 enum {
@@ -168,6 +172,7 @@ static void w64_hint(TCGContext *s, bool likely)
 /* `call <import>`: @uimp indexes the batch's union import table */
 static void w64_call(TCGContext *s, uint8_t uimp)
 {
+    W.tlbc = -1;                            /* a helper may resize the TLB */
     w64_u8(s, 0x10);
     w64_uleb(s, uimp);
 }
@@ -192,7 +197,9 @@ static void w64_call(TCGContext *s, uint8_t uimp)
 #define W64_L_SCR0    (W64_L_SCR32 + 1)
 #define W64_L_SCR1    (W64_L_SCR0 + 1)
 #define W64_L_SCR2    (W64_L_SCR1 + 1)   /* ld/st addr snapshot */
-#define W64_L_FRAME   (W64_L_SCR2 + 1)   /* first frame local (i64) */
+#define W64_L_TMASK   (W64_L_SCR2 + 1)   /* i32: cached fast->mask */
+#define W64_L_TTAB    (W64_L_SCR2 + 2)   /* i32: cached fast->table */
+#define W64_L_FRAME   (W64_L_SCR2 + 3)   /* first frame local (i64) */
 
 /* type-matched scratch local */
 static int w64_scr(TCGType t)
@@ -345,6 +352,9 @@ static void w64_blk_push(TCGContext *s, uint8_t kind, int label)
     w64_u8(s, kind == W64_BLK_LOOP ? 0x03 :
               kind == W64_BLK_LABEL ? 0x02 : 0x04);
     w64_u8(s, 0x40);                        /* void */
+    if (kind == W64_BLK_LOOP) {
+        W.tlbc = -1;                        /* entered from the back-edge */
+    }
     W.blk[W.n_blk].kind = kind;
     W.blk[W.n_blk].label = label;
     W.n_blk++;
@@ -354,6 +364,7 @@ static void w64_blk_pop(TCGContext *s)
 {
     tcg_debug_assert(W.n_blk > 0);
     W.n_blk--;
+    W.tlbc = -1;                            /* a merge point */
     w64_u8(s, 0x0b);                        /* end */
 }
 
@@ -1722,24 +1733,42 @@ static bool w64_tlb_setup(struct w64_tlb_ctx *tc, TCGContext *s,
  * address (the $scr2 snapshot — never a TCG register, whose
  * representation the arms may still mutate when data == addr).
  */
-/* i32 probe: $scr32 = entry, hit condition on the value stack */
-static void w64_tlb_probe(TCGContext *s, int al, const struct w64_tlb_ctx *tc)
+/*
+ * $tmask/$ttab = fast->mask/table of @fast_ofs.  Only vCPU-thread C code
+ * changes them (a flush resizing the TLB), so they stay valid in the TB
+ * until a helper call; W.tlbc tracks that at emission time and is dropped
+ * wherever control can arrive from elsewhere (every block end, a loop).
+ */
+static void w64_tlbc_load(TCGContext *s, int fast_ofs)
 {
     w64_local_get(s, W64_P_ENV);
     w64_u8(s, 0xa7);                        /* i32.wrap_i64 */
-    w64_const_i32(s, tc->fast_ofs);
+    w64_const_i32(s, fast_ofs);
     w64_u8(s, 0x6a);                        /* i32.add */
     w64_local_tee(s, W64_L_SCR32);
     w64_u8(s, 0x28);                        /* i32.load */
     w64_memarg(s, 2, 0);                    /* mask */
+    w64_local_set(s, W64_L_TMASK);
+    w64_local_get(s, W64_L_SCR32);
+    w64_u8(s, 0x28);                        /* i32.load */
+    w64_memarg(s, 2, 8);                    /* table */
+    w64_local_set(s, W64_L_TTAB);
+    W.tlbc = fast_ofs;
+}
+
+/* i32 probe: $scr32 = entry, hit condition on the value stack */
+static void w64_tlb_probe(TCGContext *s, int al, const struct w64_tlb_ctx *tc)
+{
+    if (W.tlbc != tc->fast_ofs) {
+        w64_tlbc_load(s, tc->fast_ofs);
+    }
+    w64_local_get(s, W64_L_TMASK);
     w64_local_get(s, al);
     w64_u8(s, 0xa7);                        /* i32.wrap_i64 */
     w64_const_i32(s, tc->shr);
     w64_u8(s, 0x76);                        /* i32.shr_u */
     w64_u8(s, 0x71);                        /* i32.and */
-    w64_local_get(s, W64_L_SCR32);
-    w64_u8(s, 0x28);                        /* i32.load */
-    w64_memarg(s, 2, 8);                    /* table */
+    w64_local_get(s, W64_L_TTAB);
     w64_u8(s, 0x6a);                        /* i32.add */
     w64_local_tee(s, W64_L_SCR32);
 
@@ -1869,7 +1898,10 @@ static void tgen_qemu_ld(TCGContext *s, TCGType type, TCGReg data,
     }
 
     if (fast) {
+        /* both arms leave the cache valid at the merge */
+        w64_tlbc_load(s, tc.fast_ofs);
         w64_blk_pop(s);                     /* end (if/else) */
+        W.tlbc = tc.fast_ofs;
     }
 }
 
@@ -1926,7 +1958,9 @@ static void tgen_qemu_st(TCGContext *s, TCGType type, TCGReg data,
     w64_call(s, uimp);
 
     if (fast) {
+        w64_tlbc_load(s, tc.fast_ofs);
         w64_blk_pop(s);                     /* end (if/else) */
+        W.tlbc = tc.fast_ofs;
     }
 }
 
@@ -2822,6 +2856,7 @@ static void tcg_out_tb_start(TCGContext *s)
     W.nested = false;
     W.selfloop = false;
     W.rep = 0;
+    W.tlbc = -1;
     for (unsigned k = 0; k < W.n_frame; k++) {
         W.frame_local[W.frame_ofs[k]] = 0;
     }
@@ -2857,13 +2892,14 @@ static void tcg_out_tb_start(TCGContext *s)
     /* body: [body-size LEB (patched)] [locals] [expr...] */
     s->code_ptr = s->code_buf + W64_BODY_OFF;
     w64_uleb32_p5(s, 0);
-    w64_u8(s, 0x05);                        /* local runs */
+    w64_u8(s, 0x06);                        /* local runs */
     w64_uleb(s, W64_NL + 1);                /* i32: regs + $bp */
     w64_u8(s, 0x7f);
     w64_uleb(s, W64_NL);                    /* i64: regs */
     w64_u8(s, 0x7e);
     w64_u8(s, 0x01); w64_u8(s, 0x7f);       /* i32: $scr32 */
     w64_u8(s, 0x03); w64_u8(s, 0x7e);       /* i64: $scr0..$scr2 */
+    w64_u8(s, 0x02); w64_u8(s, 0x7f);       /* i32: $tmask, $ttab */
     W.frame_count_pos = s->code_ptr - s->code_buf;
     w64_uleb32_p5(s, 0);                    /* i64: frame (patched) */
     w64_u8(s, 0x7e);
