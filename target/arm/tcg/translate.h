@@ -38,7 +38,7 @@ typedef struct DisasDelayException {
 
 #ifdef CONFIG_TCG_WASM64
 /* Conditional branches whose taken path one TB may defer to its end. */
-#define W64_FT_MAX 3
+#define W64_FT_MAX 6
 /* How far forward (bytes) an unconditional branch may be absorbed. */
 #define W64_ABSORB_MAX 256
 #endif
