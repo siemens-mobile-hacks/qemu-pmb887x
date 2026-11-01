@@ -10,6 +10,7 @@
 #include "qemu/timer.h"
 #include "chardev/char-fe.h"
 #include "hw/core/irq.h"
+#include "hw/core/qdev-clock.h"
 #include "hw/core/qdev-properties.h"
 #include "hw/core/qdev-properties-system.h"
 #include "hw/core/sysbus.h"
@@ -33,7 +34,6 @@
 	SIM_IRQEN_UNK6 \
 )
 #define SIM_CON_MASK 0xFFFF
-#define SIM_BYTE_TIME_NS SCALE_MS
 #define SIM_T0_TX_FIFO_SIZE 16
 
 #define SIM_BRF_RESET 0x5D
@@ -41,8 +41,9 @@
 #define SIM_CHTIMER_RESET 0x2580
 #define SIM_BWT_RESET 0x3C0B
 
-#define SIM_CARD_CLOCK_HZ 3250000
-#define SIM_BRF_CLOCKS_PER_ETU 4
+#define SIM_CLOCK_DIVIDER 4
+#define SIM_CLOCKS_PER_BRF_ETU 4
+#define SIM_CHARACTER_ETU 12
 
 enum {
 	SIM_IRQ_ERR,
@@ -108,7 +109,7 @@ struct pmb887x_sim_t {
 
 	qemu_irq cc_rst;
 	qemu_irq cc_io;
-	qemu_irq cc_clk;
+	Clock *cc_clk;
 	qemu_irq dmac_tx_breq;
 	qemu_irq dmac_rx_breq;
 	qemu_irq dmac_tx_lbreq;
@@ -118,6 +119,14 @@ struct pmb887x_sim_t {
 static bool sim_is_uart_running(pmb887x_sim_t *p) {
 	return pmb887x_clc_is_enabled(&p->clc) && pmb887x_clc_get_rmc(&p->clc) != 0 &&
 		(p->con & (SIM_CON_SIMEN | SIM_CON_UARTON)) == (SIM_CON_SIMEN | SIM_CON_UARTON);
+}
+
+static uint32_t sim_get_clock_hz(pmb887x_sim_t *p) {
+	return pmb887x_clc_get_hz(&p->clc) / SIM_CLOCK_DIVIDER;
+}
+
+static int64_t sim_etu_to_ns(pmb887x_sim_t *p, uint64_t etu) {
+	return muldiv64(etu * SIM_CLOCKS_PER_BRF_ETU * p->brf, NANOSECONDS_PER_SECOND, sim_get_clock_hz(p));
 }
 
 static bool sim_is_t0_running(pmb887x_sim_t *p) {
@@ -156,7 +165,7 @@ static void sim_update_dma_request(pmb887x_sim_t *p) {
 static void sim_update_outputs(pmb887x_sim_t *p) {
 	bool enabled = (p->con & SIM_CON_SIMEN) != 0;
 	qemu_set_irq(p->cc_rst, enabled && (p->con & SIM_CON_SIMRST) != 0);
-	qemu_set_irq(p->cc_clk, enabled && (p->con & SIM_CON_SIMON) != 0);
+	clock_update_hz(p->cc_clk, enabled && (p->con & SIM_CON_SIMON) != 0 ? sim_get_clock_hz(p) : 0);
 	qemu_set_irq(p->cc_io, enabled && (p->con & SIM_CON_SIMIOL) != 0);
 }
 
@@ -182,18 +191,14 @@ static void sim_update_character_timer(pmb887x_sim_t *p) {
 			p->t0_state == SIM_T0_STATE_SW1 || p->t0_state == SIM_T0_STATE_SW2) &&
 		(p->con & SIM_CON_RPTOFF) == 0 &&
 		p->chtimer != 0 &&
-		p->brf != 0
+		p->brf != 0 &&
+		sim_get_clock_hz(p) != 0
 	);
 	timer_del(p->character_timer);
 	if (!character_timer_enabled)
 		return;
 
-	uint64_t timeout_ns = muldiv64(
-		(uint64_t) p->chtimer * p->brf * SIM_BRF_CLOCKS_PER_ETU,
-		NANOSECONDS_PER_SECOND,
-		SIM_CARD_CLOCK_HZ
-	);
-	timer_mod(p->character_timer, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + timeout_ns);
+	timer_mod(p->character_timer, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + sim_etu_to_ns(p, p->chtimer));
 }
 
 static void sim_character_timeout(void *opaque) {
@@ -340,6 +345,13 @@ static void sim_t0_tx_advance(pmb887x_sim_t *p) {
 	}
 }
 
+static void sim_schedule_tx(pmb887x_sim_t *p) {
+	if (sim_get_clock_hz(p) == 0)
+		return;
+	int64_t character_ns = sim_etu_to_ns(p, SIM_CHARACTER_ETU + p->txspc);
+	timer_mod(p->tx_timer, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + character_ns);
+}
+
 static void sim_tx_complete(void *opaque) {
 	pmb887x_sim_t *p = opaque;
 
@@ -348,7 +360,7 @@ static void sim_tx_complete(void *opaque) {
 		qemu_chr_fe_write_all(&p->chr, &value, 1);
 		sim_t0_tx_advance(p);
 		if (!fifo8_is_empty(&p->t0_tx_fifo)) {
-			timer_mod(p->tx_timer, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + SIM_BYTE_TIME_NS);
+			sim_schedule_tx(p);
 		} else {
 			p->tx_pending = false;
 			p->t0_tx_slot = true;
@@ -379,7 +391,7 @@ static void sim_t0_write_txb(pmb887x_sim_t *p, uint8_t value) {
 
 	if (!p->tx_pending) {
 		p->tx_pending = true;
-		timer_mod(p->tx_timer, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + SIM_BYTE_TIME_NS);
+		sim_schedule_tx(p);
 	}
 }
 
@@ -398,7 +410,7 @@ static void sim_write_txb(pmb887x_sim_t *p, uint8_t value) {
 
 	p->txb = value;
 	p->tx_pending = true;
-	timer_mod(p->tx_timer, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + SIM_BYTE_TIME_NS);
+	sim_schedule_tx(p);
 }
 
 static uint64_t sim_io_read(void *opaque, hwaddr haddr, unsigned size) {
@@ -639,10 +651,18 @@ static void sim_event_handler(void *opaque, int event_id, int level) {
 	sim_update_dma_request(p);
 }
 
+static void sim_clock_update(void *opaque) {
+	pmb887x_sim_t *p = opaque;
+	sim_update_outputs(p);
+	if (p->tx_pending && !timer_pending(p->tx_timer))
+		sim_schedule_tx(p);
+}
+
 static void sim_init(Object *obj) {
 	DeviceState *dev = DEVICE(obj);
 	pmb887x_sim_t *p = PMB887X_SIM(obj);
 	pmb887x_clc_init(&p->clc, dev);
+	pmb887x_clc_set_callback(&p->clc, sim_clock_update, p);
 
 	memory_region_init_io(&p->mmio, obj, &sim_io_ops, p, TYPE_PMB887X_SIM, SIM_IO_SIZE);
 	sysbus_init_mmio(SYS_BUS_DEVICE(obj), &p->mmio);
@@ -652,8 +672,8 @@ static void sim_init(Object *obj) {
 
 	qdev_init_gpio_in_named(dev, sim_handle_cc_io, "CC_IO_IN", 1);
 	qdev_init_gpio_out_named(dev, &p->cc_io, "CC_IO_OUT", 1);
-	qdev_init_gpio_out_named(dev, &p->cc_clk, "CC_CLK_OUT", 1);
 	qdev_init_gpio_out_named(dev, &p->cc_rst, "CC_RST_OUT", 1);
+	p->cc_clk = qdev_init_clock_out(dev, "CC_CLK");
 
 	qdev_init_gpio_in_named(dev, sim_handle_dmac_tx_clr, "DMAC_TX_CLR", 1);
 	qdev_init_gpio_out_named(dev, &p->dmac_tx_breq, "DMAC_TX_BREQ", 1);

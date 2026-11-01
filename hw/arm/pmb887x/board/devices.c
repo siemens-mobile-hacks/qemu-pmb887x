@@ -15,6 +15,7 @@
 
 #include "hw/arm/pmb887x/utils/tomlc17.h"
 #include "hw/core/hw-error.h"
+#include "hw/core/qdev-clock.h"
 #include "hw/core/sysbus.h"
 #include "hw/core/qdev.h"
 #include "qom/object.h"
@@ -331,6 +332,7 @@ static void sim_card_realize_and_attach(DeviceState *card, pmb887x_sim_t *sim) {
 	if (!object_dynamic_cast(OBJECT(card), TYPE_PMB887X_SIM_CARD))
 		hw_error("Device '%s' is not a SIM card", object_get_typename(OBJECT(card)));
 	object_property_add_child(OBJECT(sim), card->id, OBJECT(card));
+	qdev_connect_clock_in(card, "clk", qdev_get_clock_out(DEVICE(sim), "CC_CLK"));
 	qdev_realize(card, NULL, &error_fatal);
 	pmb887x_sim_set_chardev(sim, pmb887x_sim_card_get_chardev(PMB887X_SIM_CARD(card)), &error_fatal);
 }
