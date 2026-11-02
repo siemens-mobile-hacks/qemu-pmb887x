@@ -392,8 +392,8 @@ static __thread struct {
     bool tb_overflow;       /* the translation added too many */
 } B;
 
-/* A batch as the assembler sees it: the open batch (B) or the copy kept
- * for a landed one. */
+/* A batch as the assembler sees it (the open batch, B); a landed batch
+ * keeps only its members and id in one. */
 struct w64_bsrc {
     const struct w64_type *utype;
     const struct w64_import *uimp;
@@ -995,10 +995,7 @@ static void w64_landed_free_all(void)
     for (i = 0; i < w64_landed_cap; i++) {
         struct w64_landed *l = w64_landed_by_id[i];
         if (l) {
-            g_free((void *)l->src.utype);
-            g_free((void *)l->src.uimp);
             g_free((void *)l->src.member);
-            g_free((void *)l->src.hint);
             g_free(l->tidx);
             g_free(l);
             w64_landed_by_id[i] = NULL;
@@ -1035,16 +1032,10 @@ static void w64_batch_close(void)
         B.member[m].body = NULL;
     }
 
-    /* landed record: compact copies of the open batch's tables */
+    /* landed record: the members, for eviction */
     l = g_new0(struct w64_landed, 1);
-    l->src.utype = g_memdup2(B.utype, B.n_utypes * sizeof(*B.utype));
-    l->src.uimp = g_memdup2(B.uimp, B.n_uimp * sizeof(*B.uimp));
     l->src.member = g_memdup2(B.member, B.n_member * sizeof(*B.member));
-    l->src.hint = g_memdup2(B.hint, B.n_hint * sizeof(*B.hint));
-    l->src.n_utypes = B.n_utypes;
-    l->src.n_uimp = B.n_uimp;
     l->src.n_member = B.n_member;
-    l->src.n_hint = B.n_hint;
     l->src.id = B.id;
     l->thunk = thunk;
     l->tidx = g_new(uint32_t, B.n_member);

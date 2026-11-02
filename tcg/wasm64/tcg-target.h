@@ -23,9 +23,9 @@
  * thread-local w64_tb_ptr, which generated code updates before every
  * helper call so that GETPC()-using helpers unwind correctly.
  *
- * Intra-TB branches are forward in practice, so labels become nested
- * blocks and a branch is a plain br / br_if (see "nested mode" in
- * tcg-target.c.inc).  A TB with any other backward branch falls back to
+ * Intra-TB branches are forward or a back-edge to the first label, so
+ * labels become nested blocks and a branch is a plain br / br_if (see
+ * "nested mode" in tcg-target.c.inc).  A TB with any other backward branch falls back to
  * a label-region scheme: the body is wrapped in one `loop`; a branch to
  * label L writes L's region index into the $bp local and breaks to the
  * loop head, where a chain of `if (bp <= k)` guards admits control flow

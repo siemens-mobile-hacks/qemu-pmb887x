@@ -423,9 +423,7 @@ static inline const void *w64_dispatch_target(const TranslationBlock *tb)
  * fail to link on these symbols rather than silently fall back.
  */
 bool arm_w64_lc_key(CPUState *cs, uint32_t key32[3]);
-bool arm_w64_lc_key_pc(CPUState *cs, uint32_t key32[3], uint32_t *pc);
 #define W64_LC_KEY(cpu, k32)  arm_w64_lc_key(cpu, k32)
-#define W64_LC_KEY_PC(cpu, k32, pcp)  arm_w64_lc_key_pc(cpu, k32, pcp)
 
 /*
  * The global next-TB cache, keyed on the target PC: the per-TB slot is
@@ -464,27 +462,6 @@ const struct W64PccShape *w64_pcc_shape(void)
         shape.tab = w64_pcc;
     }
     return &shape;
-}
-
-static inline const void *w64_pcc_get(CPUState *cpu, uint32_t gen,
-                                      uint32_t key[3], uint32_t *pc_out)
-{
-    uint32_t pc;
-    const struct W64PccEnt *e;
-
-    if (!W64_LC_KEY_PC(cpu, key, &pc)) {
-        return NULL;
-    }
-    e = &w64_pcc[tb_jmp_cache_hash_func(pc, key[0])];
-    if (likely(e->pc == pc && e->gen == gen &&
-               e->cpu_index == (uint32_t)cpu->cpu_index &&
-               e->key32[0] == key[0] &&
-               e->key32[1] == key[1] &&
-               e->key32[2] == key[2])) {
-        *pc_out = pc;
-        return e->tc;
-    }
-    return NULL;
 }
 
 /*
@@ -540,14 +517,6 @@ const void *HELPER(lookup_tb_ptr)(CPUArchState *env)
 
 #ifdef CONFIG_TCG_WASM64
     uint32_t pcc_gen = qatomic_read(&cpu->neg.tb_key_gen);
-    {
-        uint32_t key[3], pc;
-        const void *pcc_hit = w64_pcc_get(cpu, pcc_gen, key, &pc);
-
-        if (likely(pcc_hit != NULL)) {
-            return pcc_hit;
-        }
-    }
 #endif
 
     TCGTBCPUState s = cpu->cc->tcg_ops->get_tb_cpu_state(cpu);
@@ -629,16 +598,8 @@ const void *HELPER(lookup_tb_ptr_lc)(CPUArchState *env, void *slot)
     const void *target;
     uint32_t gen = qatomic_read(&cpu->neg.tb_key_gen);
     uint32_t cur[3];
-    uint32_t pc;
 
     cpu->neg.can_do_io = true;
-
-    target = w64_pcc_get(cpu, gen, cur, &pc);
-    if (likely(target != NULL)) {
-        /* the inline test missed; without a refill it keeps missing */
-        w64_lc_fill(lc, cur, pc, target, gen);
-        return target;
-    }
 
     TCGTBCPUState s = cpu->cc->tcg_ops->get_tb_cpu_state(cpu);
     s.cflags = curr_cflags(cpu);
@@ -1159,17 +1120,15 @@ static inline bool icount_exit_request(CPUState *cpu)
 static inline bool cpu_handle_interrupt(CPUState *cpu,
                                         TranslationBlock **last_tb)
 {
+#ifdef CONFIG_TCG_WASM64
     /*
-     * A guest exception left pending by generated code that ended its
-     * TB with a plain exit instead of a cpu_loop_exit() unwind (see
-     * gen_exception_exit in the target frontends): deliver it before
-     * anything else, exactly like the longjmp would have.  Clear the
-     * exit-kick flag the same way the normal path below does so a kick
-     * that raced with the TB cannot force one-exit-per-TB spinning.
-     * wasm-only: it exists for the Asyncify unwind, and costs every
-     * build a branch per loop iteration. */
-#ifdef __EMSCRIPTEN__
-    /*
+     * A guest exception left pending by a helper that returned instead
+     * of unwinding with cpu_loop_exit() (the wasm64 WFI, see
+     * HELPER(wfi)): deliver it before anything else, exactly like the
+     * longjmp would have.  Clear the exit-kick flag the same way the
+     * normal path below does so a kick that raced with the TB cannot
+     * force one-exit-per-TB spinning.
+     *
      * Not under record/replay: replay delivers interrupts ahead of
      * pending exceptions via the cpu_handle_exception() fall-through
      * below, and bouncing back here first would livelock it.
@@ -1179,7 +1138,7 @@ static inline bool cpu_handle_interrupt(CPUState *cpu,
         qatomic_set_mb(&cpu->neg.icount_decr.u16.high, 0);
         return true;
     }
-#endif /* __EMSCRIPTEN__ */
+#endif
     /*
      * If we have requested custom cflags with CF_NOIRQ we should
      * skip checking here. Any pending interrupts will get picked up

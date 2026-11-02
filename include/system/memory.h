@@ -313,29 +313,6 @@ struct MemoryRegionOps {
                                     unsigned size,
                                     MemTxAttrs attrs);
 
-    /*
-     * Optional: @count writes of @size bytes each, all to @addr, taken
-     * in one call.  A DMA burst into a FIFO register is the whole
-     * display path on a phone - a framebuffer arrives one pixel per
-     * dispatch - and the per-access work above the device is then most
-     * of the cost.  A device that sets this must leave exactly the
-     * state @write would leave after the same @count writes; it is
-     * reached only through memory_region_dispatch_write_run(), so a
-     * caller that does not know about it is unaffected.
-     *
-     * Returns whether the device took the words as one burst.  A device
-     * that cannot must still deliver them exactly as @write would (the
-     * usual fallback is a per-word loop) and return false: the return
-     * value says the caller cannot rely on burst semantics (a device
-     * that just took a run word by word may drop its request between
-     * the words), not that the words went missing.
-     */
-    bool (*write_run)(void *opaque,
-                      hwaddr addr,
-                      const uint8_t *buf,
-                      unsigned size,
-                      unsigned count);
-
     enum device_endian endianness;
     /* Guest-visible constraints: */
     struct {
@@ -2426,17 +2403,6 @@ void memory_region_transaction_begin(void);
 void memory_region_transaction_commit(void);
 
 /**
- * memory_region_topology_gen: generation of the installed flatviews.
- *
- * Changes on every committed transaction that installed new views (romd
- * toggles included).  A translation obtained under one value stays
- * valid while the value is unchanged, so a device that dispatches many
- * accesses to one address may cache the (MemoryRegion, offset) pair
- * keyed on it instead of walking the flatview per access.
- */
-uint64_t memory_region_topology_gen(void);
-
-/**
  * memory_listener_register: register callbacks to be called when memory
  *                           sections are mapped or unmapped into an address
  *                           space
@@ -2508,48 +2474,6 @@ MemTxResult memory_region_dispatch_write(MemoryRegion *mr,
                                          MemTxAttrs attrs);
 
 /**
- * memory_region_write_direct_ok: whether aligned @size-byte writes to @mr
- * may use memory_region_dispatch_write_direct().  Depends only on @mr and
- * @size, so a caller writing the same region repeatedly can cache it.
- *
- * @mr: #MemoryRegion to access
- * @size: access size in bytes
- */
-bool memory_region_write_direct_ok(MemoryRegion *mr, unsigned size);
-
-/**
- * memory_region_dispatch_write_direct: memory_region_dispatch_write for a
- * caller that has already established memory_region_write_direct_ok() and
- * an @addr aligned to @size.
- *
- * @mr: #MemoryRegion to access
- * @addr: address within that region
- * @data: data to write, in the device's own byte order
- * @size: access size in bytes
- */
-MemTxResult memory_region_dispatch_write_direct(MemoryRegion *mr, hwaddr addr,
-                                                uint64_t data, unsigned size);
-
-/**
- * memory_region_dispatch_write_run: hand @count @size-byte writes of @buf,
- * all to @addr, to the device in one call.  Same preconditions as
- * memory_region_dispatch_write_direct().  Returns false - having written
- * nothing - when @mr has no such path, so the caller writes word by word.
- * When the words were written, @burst (if non-NULL) reports whether the
- * device consumed them as one burst or handled them word by word - see
- * MemoryRegionOps::write_run.
- *
- * @mr: #MemoryRegion to access
- * @addr: address within that region
- * @buf: @count * @size bytes, each word in the device's own byte order
- * @size: access size in bytes
- * @count: number of writes
- */
-bool memory_region_dispatch_write_run(MemoryRegion *mr, hwaddr addr,
-                                      const uint8_t *buf, unsigned size,
-                                      unsigned count, bool *burst);
-
-/**
  * memory_region_subpage_leaf: resolve one level of a subpage container.
  *
  * A target page shared by several regions is represented by a subpage
@@ -2560,7 +2484,7 @@ bool memory_region_dispatch_write_run(MemoryRegion *mr, hwaddr addr,
  * offsets that resolve to the same leaf, so the caller can cache the
  * resolution and range-check instead of re-walking.
  *
- * Valid only while memory_region_topology_gen() is unchanged.
+ * Valid until a topology commit flushes the TLB entry that cached it.
  *
  * @mr: the container; NULL is returned unless it is a subpage
  * @offset: offset within @mr (i.e. within one target page)

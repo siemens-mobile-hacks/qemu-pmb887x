@@ -46,14 +46,15 @@ static __thread struct {
     struct { uint8_t kind; int label; } blk[W64_MAX_BLK];
     int n_blk;
     int loop_idx;           /* blk[] index of the top-level label loop */
-    /* nested mode: every TCG branch in this TB is forward (the ARM
-     * frontend never emits a backward one), so the labels become nested
+    /* nested mode: every TCG branch in this TB is forward (or a
+     * back-edge to the first label, see below), so the labels become nested
      * blocks opened at TB start in set order (last label outermost) and
      * a branch is a plain br / br_if — no dispatch loop, no $bp, no
      * per-label compare, no loop phis for V8's register allocator.  A
      * backward branch falls back to the loop + sibling-if scheme --
-     * unless it goes to the first label placed, the back-edge of the
-     * Teak DSP translator's batched loops (dsp/tcg.c tcg_emit_block).
+     * unless it goes to the first label placed: the back-edge of the
+     * Teak DSP translator's batched loops (dsp/tcg.c tcg_emit_block) and
+     * of the ARM superblock loops (target/arm translate.c w64_back_edge).
      * Nested mode keeps its blocks then: a wasm loop opens where label 1
      * sits, so the code before it is not re-run, and the labels after it
      * nest inside.  Only the last label, the one that code may branch

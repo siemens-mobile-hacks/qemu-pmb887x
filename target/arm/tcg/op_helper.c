@@ -410,7 +410,7 @@ void HELPER(wfi)(CPUARMState *env, uint32_t insn_len)
     /*
      * No unwind: WFI always ends its TB, whose exit_tb(0) follows this
      * call, and cpu_handle_interrupt delivers a pending exception_index
-     * before running anything else (the gen_exception_exit path) — the
+     * before running anything else — the
      * same outcome as the longjmp, minus the ~15 us JS-exception unwind
      * per halt (one per display-DMA word).
      */

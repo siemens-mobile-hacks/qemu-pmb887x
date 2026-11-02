@@ -250,7 +250,7 @@ TCGv_env tcg_env;
 const void *tcg_code_gen_epilogue;
 ptrdiff_t tcg_splitwx_diff;
 
-#if !defined(HAVE_TCG_QEMU_TB_EXEC)
+#ifndef HAVE_TCG_QEMU_TB_EXEC
 tcg_prologue_fn *tcg_qemu_tb_exec;
 #endif
 
@@ -1861,7 +1861,7 @@ void tcg_prologue_init(void)
     s->code_buf = s->code_gen_ptr;
     s->data_gen_ptr = NULL;
 
-#if !defined(HAVE_TCG_QEMU_TB_EXEC)
+#ifndef HAVE_TCG_QEMU_TB_EXEC
     tcg_qemu_tb_exec = (tcg_prologue_fn *)tcg_splitwx_to_rx(s->code_ptr);
 #endif
 

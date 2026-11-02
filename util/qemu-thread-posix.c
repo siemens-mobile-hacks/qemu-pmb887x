@@ -368,6 +368,17 @@ qemu_cond_timedwait_ts(QemuCond *cond, QemuMutex *mutex, struct timespec *ts,
     return err != ETIMEDOUT;
 }
 
+bool qemu_cond_timedwait_ns(QemuCond *cond, QemuMutex *mutex, int64_t ns)
+{
+    struct timespec ts;
+
+    clock_gettime(qemu_timedwait_clockid(), &ts);
+    ns += ts.tv_nsec;
+    ts.tv_sec += ns / 1000000000;
+    ts.tv_nsec = ns % 1000000000;
+    return qemu_cond_timedwait_ts(cond, mutex, &ts, __FILE__, __LINE__);
+}
+
 bool qemu_cond_timedwait_impl(QemuCond *cond, QemuMutex *mutex, int ms,
                               const char *file, const int line)
 {
@@ -375,22 +386,6 @@ bool qemu_cond_timedwait_impl(QemuCond *cond, QemuMutex *mutex, int ms,
 
     compute_abs_deadline(&ts, ms);
     return qemu_cond_timedwait_ts(cond, mutex, &ts, file, line);
-}
-
-bool qemu_cond_timedwait_ns(QemuCond *cond, QemuMutex *mutex, int64_t ns)
-{
-    struct timespec ts;
-
-    clock_gettime(qemu_timedwait_clockid(), &ts);
-    if (ns > 0) {
-        ts.tv_nsec += ns % 1000000000;
-        ts.tv_sec += ns / 1000000000;
-        if (ts.tv_nsec >= 1000000000) {
-            ts.tv_sec++;
-            ts.tv_nsec -= 1000000000;
-        }
-    }
-    return qemu_cond_timedwait_ts(cond, mutex, &ts, __FILE__, __LINE__);
 }
 #endif /* __EMSCRIPTEN__ */
 
