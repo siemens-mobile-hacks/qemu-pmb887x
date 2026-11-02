@@ -1429,6 +1429,22 @@ static void gen_pcc_key_cmp(TCGv_ptr ep, TCGv_i32 a32, TCGv_i32 t32,
 }
 
 /*
+ * The base and bias that address the host object @p: env when this lone
+ * CPU's env is the one the TB will run with (see w64_tb_env), so the TCG
+ * optimizer keeps forwarding env values across the access and the backend
+ * emits a constant address; a constant pointer otherwise.
+ */
+static TCGv_ptr w64_abs_base(DisasContext *s, const void *p, intptr_t *bias)
+{
+    if (!CPU_NEXT(first_cpu)) {
+        *bias = (uintptr_t)p - (uintptr_t)s->w64_env;
+        return tcg_env;
+    }
+    *bias = 0;
+    return tcg_constant_ptr(p);
+}
+
+/*
  * The global pc-keyed cache (accel/tcg/cpu-exec.c w64_pcc), compared in
  * emitted code instead of behind a helper call.
  *
@@ -1454,7 +1470,8 @@ static void gen_pcc_key_cmp(TCGv_ptr ep, TCGv_i32 a32, TCGv_i32 t32,
  * never reach here and SS_ACTIVE is a bit of hflags.flags, so a
  * single-stepping CPU cannot match an entry filled by a normal one.
  */
-static void gen_goto_ptr_pcc(TCGv_ptr tc, struct W64LookupCache *lc,
+static void gen_goto_ptr_pcc(DisasContext *s, TCGv_ptr tc,
+                             struct W64LookupCache *lc,
                              const uint32_t key[3], uint8_t mask)
 {
     const struct W64PccShape *sh = w64_pcc_shape();
@@ -1506,18 +1523,19 @@ static void gen_goto_ptr_pcc(TCGv_ptr tc, struct W64LookupCache *lc,
 
     tcg_gen_ld_ptr(tc, ep, offsetof(struct W64PccEnt, tc));
     if (lc) {
-        TCGv_ptr lcp = tcg_constant_ptr(lc);
+        intptr_t lco;
+        TCGv_ptr lcb = w64_abs_base(s, lc, &lco);
 
         for (int i = 0; i < 3; i++) {
             if (mask & (1 << i)) {
                 tcg_gen_ld_i32(a32, ep, offsetof(struct W64PccEnt, key32[i]));
-                tcg_gen_st_i32(a32, lcp,
-                               offsetof(struct W64LookupCache, key32[i]));
+                tcg_gen_st_i32(a32, lcb,
+                               lco + offsetof(struct W64LookupCache, key32[i]));
             }
         }
-        tcg_gen_st_i32(cpu_R[15], lcp, offsetof(struct W64LookupCache, pc));
-        tcg_gen_st_ptr(tc, lcp, offsetof(struct W64LookupCache, tc));
-        tcg_gen_st_i32(gen32, lcp, offsetof(struct W64LookupCache, gen));
+        tcg_gen_st_i32(cpu_R[15], lcb, lco + offsetof(struct W64LookupCache, pc));
+        tcg_gen_st_ptr(tc, lcb, lco + offsetof(struct W64LookupCache, tc));
+        tcg_gen_st_i32(gen32, lcb, lco + offsetof(struct W64LookupCache, gen));
     }
     tcg_gen_goto_ptr(tc);
     gen_set_label(miss);
@@ -1568,12 +1586,13 @@ static void gen_goto_ptr(DisasContext *s, uint32_t condexec)
                    memcmp(lc->key32, key, sizeof(key)) != 0) {
             /* a second exit keyed differently: it stays off the slot, but
              * the global cache is not the slot's and still covers it */
-            gen_goto_ptr_pcc(tcg_temp_new_ptr(), NULL, key, mask);
+            gen_goto_ptr_pcc(s, tcg_temp_new_ptr(), NULL, key, mask);
             tcg_gen_lookup_and_goto_ptr();
             return;
         }
 
-        TCGv_ptr lcp = tcg_constant_ptr(lc);
+        intptr_t lco;
+        TCGv_ptr lcb = w64_abs_base(s, lc, &lco);
         TCGv_ptr tc = tcg_temp_new_ptr();
 
         {
@@ -1581,39 +1600,39 @@ static void gen_goto_ptr(DisasContext *s, uint32_t condexec)
         TCGv_i32 a32 = tcg_temp_new_i32();
         TCGv_i32 b32 = tcg_temp_new_i32();
 
-        tcg_gen_ld_i32(a32, lcp, offsetof(struct W64LookupCache, pc));
+        tcg_gen_ld_i32(a32, lcb, lco + offsetof(struct W64LookupCache, pc));
         tcg_gen_brcond_i32(TCG_COND_NE, a32, cpu_R[15], slow);
-        tcg_gen_ld_i32(a32, lcp, offsetof(struct W64LookupCache, gen));
+        tcg_gen_ld_i32(a32, lcb, lco + offsetof(struct W64LookupCache, gen));
         tcg_gen_ld_i32(b32, tcg_env,
                        offsetof(ARMCPU, parent_obj.neg.tb_key_gen) -
                        offsetof(ARMCPU, env));
         tcg_gen_brcond_i32(TCG_COND_NE, a32, b32, slow);
         if (mask & W64_LC_DYN_FLAGS) {
-            tcg_gen_ld_i32(a32, lcp,
-                           offsetof(struct W64LookupCache, key32[0]));
+            tcg_gen_ld_i32(a32, lcb,
+                           lco + offsetof(struct W64LookupCache, key32[0]));
             tcg_gen_ld_i32(b32, tcg_env,
                            offsetof(CPUARMState, hflags.flags));
             tcg_gen_brcond_i32(TCG_COND_NE, a32, b32, slow);
         }
         if (mask & W64_LC_DYN_THUMB) {
-            tcg_gen_ld_i32(a32, lcp,
-                           offsetof(struct W64LookupCache, key32[1]));
+            tcg_gen_ld_i32(a32, lcb,
+                           lco + offsetof(struct W64LookupCache, key32[1]));
             tcg_gen_ld8u_i32(b32, tcg_env, offsetof(CPUARMState, thumb));
             tcg_gen_brcond_i32(TCG_COND_NE, a32, b32, slow);
         }
         if (mask & W64_LC_DYN_CONDEXEC) {
-            tcg_gen_ld_i32(a32, lcp,
-                           offsetof(struct W64LookupCache, key32[2]));
+            tcg_gen_ld_i32(a32, lcb,
+                           lco + offsetof(struct W64LookupCache, key32[2]));
             tcg_gen_ld_i32(b32, tcg_env,
                            offsetof(CPUARMState, condexec_bits));
             tcg_gen_brcond_i32(TCG_COND_NE, a32, b32, slow);
         }
-        tcg_gen_ld_ptr(tc, lcp, offsetof(struct W64LookupCache, tc));
+        tcg_gen_ld_ptr(tc, lcb, lco + offsetof(struct W64LookupCache, tc));
         tcg_gen_goto_ptr(tc);
         gen_set_label(slow);
         }
-        gen_goto_ptr_pcc(tc, lc, key, mask);
-        gen_helper_lookup_tb_ptr_lc(tc, tcg_env, lcp);
+        gen_goto_ptr_pcc(s, tc, lc, key, mask);
+        gen_helper_lookup_tb_ptr_lc(tc, tcg_env, tcg_constant_ptr(lc));
         tcg_gen_goto_ptr(tc);
         return;
     }
@@ -1664,19 +1683,15 @@ static void gen_goto_tb(DisasContext *s, unsigned tb_slot_idx, int64_t diff)
  */
 static void w64_acct_add(DisasContext *s, void *acct, int insns)
 {
-    /*
-     * Addressed off env: a store through any other base makes the TCG
-     * optimizer forget every env value it could forward, and a loop pass
-     * would reload the cycle counter it has just stored.  With a fixed
-     * env (w64_tb_env) the address is also a constant, without a bounds
-     * check where V8 has no trap handler.
-     */
-    intptr_t ofs = (uintptr_t)acct - (uintptr_t)s->w64_env;
+    /* off env: a loop pass would otherwise reload the cycle counter it
+     * has just stored (w64_abs_base) */
+    intptr_t ofs;
+    TCGv_ptr base = w64_abs_base(s, acct, &ofs);
     TCGv_i64 v = tcg_temp_new_i64();
 
-    tcg_gen_ld_i64(v, tcg_env, ofs);
+    tcg_gen_ld_i64(v, base, ofs);
     tcg_gen_addi_i64(v, v, insns);
-    tcg_gen_st_i64(v, tcg_env, ofs);
+    tcg_gen_st_i64(v, base, ofs);
 }
 
 static void w64_acct_charge(DisasContext *s, int insns)
