@@ -897,6 +897,8 @@ static uint32_t w64_assemble_instantiate(const struct w64_bsrc *src)
 
 /* Drop the oldest live batch: its members fall back to the dispatcher
  * (fidx 0 + batch tag), which retires them. */
+uint32_t w64_evict_epoch;
+
 static void w64_batch_evict_oldest(void)
 {
     struct w64_landed *l = w64_live_head;
@@ -912,6 +914,7 @@ static void w64_batch_evict_oldest(void)
     }
     l->next = NULL;
     w64_live_n--;
+    w64_evict_epoch++;
 
     for (m = 0; m < l->src.n_member; m++) {
         uint32_t *desc = (uint32_t *)(uintptr_t)l->src.member[m].tcptr;

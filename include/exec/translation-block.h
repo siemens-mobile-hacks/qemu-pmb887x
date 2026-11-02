@@ -252,6 +252,9 @@ static inline uintptr_t w64_ra_off(uintptr_t ra)
     return ra & ((1u << W64_RA_SHIFT) - 1);
 }
 
+/* Bumped whenever an evicted batch clears the fidx of its descriptors. */
+extern uint32_t w64_evict_epoch;
+
 /*
  * The global pc-keyed next-TB cache (accel/tcg/cpu-exec.c) as the
  * generated code sees it.  A goto_ptr whose per-TB slot misses used to

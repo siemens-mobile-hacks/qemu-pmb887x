@@ -121,10 +121,26 @@ struct teak_tcg_block_cache_entry_t {
 	bool repeat_resume;
 	/* the decode depends on no block-repeat state but repeat_resume */
 	bool level_free;
+	/* what a chain link reads, next to the lookup keys */
+	bool dynamic_cycles;
+	/* tcg_fast_map[pc] != 0, as of fast_epoch */
+	bool fast;
+	uint32_t fast_epoch;
 	teak_tcg_block_cache_entry_t *next;
+	void *code;
+#ifdef CONFIG_TCG_WASM64
+	/* the tagged table index of a landed tb, as of evict_epoch */
+	uintptr_t target;
+	uint32_t evict_epoch;
+#endif
+	/* list heads chained to from this entry, as of succ_epoch */
+	teak_tcg_block_cache_entry_t *succ[2];
+	uint32_t succ_epoch;
 };
 
 static teak_tcg_block_cache_entry_t *tcg_block_cache[TEAK_TCG_BLOCK_CACHE_ENTRIES];
+/* Bumped whenever an entry is added or freed; never 0. */
+static uint32_t tcg_block_cache_epoch = 1;
 static TCGContext *tcg_block_cache_context;
 static unsigned int tcg_block_cache_flush_count;
 static TCGv_i32 tcg_memory_pc;
@@ -1564,6 +1580,7 @@ static void tcg_clear_block_cache(void) {
 		}
 		tcg_block_cache[i] = NULL;
 	}
+	tcg_block_cache_epoch++;
 }
 
 static bool tcg_is_block_repeat(const teak_insn_t *instruction);
@@ -1629,34 +1646,72 @@ static bool tcg_block_overlaps(const teak_tcg_block_t *block, uint32_t start, ui
 	return block->pc <= end && block->pc + block->words - 1 >= start;
 }
 
+static inline QEMU_ALWAYS_INLINE bool tcg_cached_entry_matches(const teak_tcg_core_t *core,
+	const teak_tcg_block_cache_entry_t *entry) {
+	uint8_t level = core->state.bcn;
+	bool same_cache = entry->cache_id == core->cache_id;
+	bool same_context = entry->program_context == core->program_context;
+	bool same_repeat = entry->repeat_resume == core->state.repeat_active;
+
+	if (!same_cache || !same_context || !same_repeat)
+		return false;
+	bool same_level = entry->block_repeat_level == level;
+	/*
+	 * A level-free block outside the active repeat body decodes the
+	 * same at any nesting: the routines a loop body calls are reached
+	 * under every loop in the program.
+	 */
+	bool any_level = entry->level_free && (level == 0 ||
+		!tcg_block_overlaps(&entry->block, core->state.block_repeat_start[level - 1],
+			core->state.block_repeat_end[level - 1]));
+	return any_level || (same_level &&
+		tcg_same_block_repeat_ends(entry->block_repeat_end, core->state.block_repeat_end, level));
+}
+
 static inline QEMU_ALWAYS_INLINE teak_tcg_block_cache_entry_t *tcg_find_cached_entry_fast(teak_tcg_core_t *core) {
 	teak_tcg_block_cache_entry_t *entry;
-	uint8_t level = core->state.bcn;
 
 	entry = tcg_block_cache[core->state.pc];
 	while (entry != NULL) {
-		bool same_cache = entry->cache_id == core->cache_id;
-		bool same_context = entry->program_context == core->program_context;
-		bool same_repeat = entry->repeat_resume == core->state.repeat_active;
-		if (same_cache && same_context && same_repeat) {
-			bool same_level = entry->block_repeat_level == level;
-			/*
-			 * A level-free block outside the active repeat body decodes the
-			 * same at any nesting: the routines a loop body calls are reached
-			 * under every loop in the program.
-			 */
-			bool any_level = entry->level_free && (level == 0 ||
-				!tcg_block_overlaps(&entry->block, core->state.block_repeat_start[level - 1],
-					core->state.block_repeat_end[level - 1]));
-			if (any_level || (same_level &&
-				tcg_same_block_repeat_ends(entry->block_repeat_end, core->state.block_repeat_end, level))) {
-				core->cache_fast_hits++;
-				return entry;
-			}
+		if (tcg_cached_entry_matches(core, entry)) {
+			core->cache_fast_hits++;
+			return entry;
 		}
 		entry = entry->next;
 	}
 	return NULL;
+}
+
+/*
+ * tcg_find_cached_entry_fast() for a chain link, first through the list
+ * heads the previous link's entry went to.  A head that matches is what the
+ * walk returns as long as no entry was added or freed since.
+ */
+static inline QEMU_ALWAYS_INLINE teak_tcg_block_cache_entry_t *tcg_find_chained_entry(teak_tcg_core_t *core) {
+	teak_tcg_block_cache_entry_t *prev = core->chain_prev;
+	teak_tcg_block_cache_entry_t *entry;
+	uint32_t pc = core->state.pc;
+
+	if (prev != NULL && prev->succ_epoch == tcg_block_cache_epoch) {
+		for (size_t i = 0; i < ARRAY_SIZE(prev->succ); i++) {
+			entry = prev->succ[i];
+			if (entry != NULL && entry->block.pc == pc && tcg_cached_entry_matches(core, entry)) {
+				core->cache_fast_hits++;
+				return entry;
+			}
+		}
+	}
+	entry = tcg_find_cached_entry_fast(core);
+	if (prev != NULL && entry != NULL && tcg_block_cache[pc] == entry) {
+		if (prev->succ_epoch != tcg_block_cache_epoch) {
+			prev->succ[0] = NULL;
+			prev->succ[1] = NULL;
+			prev->succ_epoch = tcg_block_cache_epoch;
+		}
+		prev->succ[1] = prev->succ[0];
+		prev->succ[0] = entry;
+	}
+	return entry;
 }
 
 static TranslationBlock *tcg_find_cached_block_fast(teak_tcg_core_t *core, teak_tcg_block_t *block) {
@@ -1667,10 +1722,18 @@ static TranslationBlock *tcg_find_cached_block_fast(teak_tcg_core_t *core, teak_
 	return entry->tb;
 }
 
+static bool tcg_block_has_dynamic_cycles(const teak_tcg_block_t *block);
+
 static void tcg_cache_block(const teak_tcg_core_t *core, const teak_tcg_block_t *block, TranslationBlock *tb) {
 	teak_tcg_block_cache_entry_t *entry = g_new(teak_tcg_block_cache_entry_t, 1);
 	entry->block = *block;
 	entry->tb = tb;
+	entry->code = tb->tc.ptr;
+	entry->dynamic_cycles = tcg_block_has_dynamic_cycles(block);
+	entry->fast_epoch = 0;
+#ifdef CONFIG_TCG_WASM64
+	entry->evict_epoch = w64_evict_epoch - 1;
+#endif
 	entry->cache_id = core->cache_id;
 	entry->program_context = core->program_context;
 	memcpy(entry->block_repeat_end, core->state.block_repeat_end, sizeof(entry->block_repeat_end));
@@ -1689,8 +1752,10 @@ static void tcg_cache_block(const teak_tcg_core_t *core, const teak_tcg_block_t 
 		if (tcg_is_block_repeat(instruction) || instruction->opcode == TEAK_OP_BREAK)
 			entry->level_free = false;
 	}
+	entry->succ_epoch = 0;
 	entry->next = tcg_block_cache[block->pc];
 	tcg_block_cache[block->pc] = entry;
+	tcg_block_cache_epoch++;
 }
 
 static bool tcg_block_contains_address(const teak_tcg_block_t *block, uint16_t address) {
@@ -1719,6 +1784,8 @@ void teak_tcg_invalidate_program(teak_tcg_core_t *core, uint32_t address) {
 			if (matching_entry) {
 				*link = entry->next;
 				g_free(entry);
+				tcg_block_cache_epoch++;
+				core->chain_prev = NULL;
 			} else {
 				link = &entry->next;
 			}
@@ -1747,6 +1814,8 @@ void teak_tcg_invalidate_program_range(teak_tcg_core_t *core, uint32_t address, 
 			if (entry->cache_id == core->cache_id && intersects) {
 				*link = entry->next;
 				g_free(entry);
+				tcg_block_cache_epoch++;
+				core->chain_prev = NULL;
 			} else {
 				link = &entry->next;
 			}
@@ -1764,6 +1833,8 @@ void teak_tcg_invalidate_all(teak_tcg_core_t *core) {
 			if (entry->cache_id == core->cache_id) {
 				*link = entry->next;
 				g_free(entry);
+				tcg_block_cache_epoch++;
+				core->chain_prev = NULL;
 			} else {
 				link = &entry->next;
 			}
@@ -7059,6 +7130,8 @@ typedef struct teak_tcg_fast_site_t {
 } teak_tcg_fast_site_t;
 
 static uint8_t tcg_fast_map[TEAK_PROGRAM_ADDRESS_MASK + 1];
+/* Bumped whenever tcg_fast_map changes; never 0. */
+static uint32_t tcg_fast_map_epoch = 1;
 static teak_tcg_fast_site_t tcg_fast_sites[32];
 static size_t tcg_fast_site_count;
 static uint64_t tcg_fast_cache_id;
@@ -7162,6 +7235,7 @@ static void tcg_fast_init(void) {
 		for (size_t j = 0; j < tcg_fast_loops[i].count; j++)
 			tcg_fast_map[tcg_fast_loops[i].instructions[j].address] = i + 1;
 	}
+	tcg_fast_map_epoch++;
 	tcg_fast_site_count = ARRAY_SIZE(tcg_fast_loops);
 }
 
@@ -7199,6 +7273,7 @@ static void tcg_fast_discover(teak_tcg_core_t *core, uint32_t pc) {
 		tcg_fast_sites[index] = (teak_tcg_fast_site_t) { .loop = loop, .delta = delta };
 		for (size_t k = 0; k < loop->count; k++)
 			tcg_fast_map[(loop->instructions[k].address + delta) & TEAK_PROGRAM_ADDRESS_MASK] = index + 1;
+		tcg_fast_map_epoch++;
 		return;
 	}
 }
@@ -7312,12 +7387,18 @@ void *HELPER(teak_tcg_chain)(void *opaque, uint32_t block_cycles, uint32_t block
 		return NULL;
 	}
 
-	if (tcg_fast_map[state->pc & TEAK_PROGRAM_ADDRESS_MASK] != 0 && tcg_fast_lookup(core) != NULL) {
+	entry = tcg_find_chained_entry(core);
+	if (entry == NULL) {
+		if (tcg_fast_map[state->pc & TEAK_PROGRAM_ADDRESS_MASK] != 0)
+			tcg_fast_lookup(core);
 		core->chain_cache_stops++;
 		return NULL;
 	}
-	entry = tcg_find_cached_entry_fast(core);
-	if (entry == NULL || tcg_block_has_dynamic_cycles(&entry->block)) {
+	if (entry->fast_epoch != tcg_fast_map_epoch) {
+		entry->fast = tcg_fast_map[state->pc & TEAK_PROGRAM_ADDRESS_MASK] != 0;
+		entry->fast_epoch = tcg_fast_map_epoch;
+	}
+	if ((entry->fast && tcg_fast_lookup(core) != NULL) || entry->dynamic_cycles) {
 		core->chain_cache_stops++;
 		return NULL;
 	}
@@ -7329,16 +7410,23 @@ void *HELPER(teak_tcg_chain)(void *opaque, uint32_t block_cycles, uint32_t block
 	core->batch_cycles_remaining = core->chain_cycle_limit - core->last_block_cycles;
 	state->exit_reason = TEAK_EXIT_NONE;
 	core->chain_links++;
+	core->chain_prev = entry;
 #ifdef CONFIG_TCG_WASM64
+	if (entry->evict_epoch == w64_evict_epoch)
+		return (void *) entry->target;
 	{
 		/* goto_ptr tail-calls a tagged table index (exec/translation-block.h) */
-		const uint32_t *desc = entry->tb->tc.ptr;
+		const uint32_t *desc = entry->code;
 
-		if (desc[W64_TCP_FIDX / 4] != 0)
-			return (void *) (uintptr_t) (W64_TIDX_TAG | desc[W64_TCP_TIDX / 4]);
+		if (desc[W64_TCP_FIDX / 4] != 0) {
+			/* landed: stays so until a batch eviction */
+			entry->target = (uintptr_t) (W64_TIDX_TAG | desc[W64_TCP_TIDX / 4]);
+			entry->evict_epoch = w64_evict_epoch;
+			return (void *) entry->target;
+		}
 	}
 #endif
-	return (void *) entry->tb->tc.ptr;
+	return entry->code;
 }
 
 static bool tcg_execute_prepared_block(
@@ -7356,6 +7444,7 @@ static bool tcg_execute_prepared_block(
 	core->synchronization_valid = false;
 	core->batch_iterations = 0;
 	core->batch_block_cycles = block_cycles;
+	core->chain_prev = NULL;
 	core->batch_cycles_remaining = MAX(max_cycles, (size_t) block_cycles);
 	core->chain_cycle_limit = core->last_block_cycles + core->batch_cycles_remaining;
 	core->repeat_stop_repc = tcg_repeat_stop_repc(core, block, block_cycles, max_cycles);
