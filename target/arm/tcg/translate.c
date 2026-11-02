@@ -33,6 +33,7 @@
 #include "system/memory.h"
 #include "accel/tcg/probe.h"
 #include "arm9e-cycles.h"
+#include "w64-fill.h"
 #include "helper.h"
 #include "helper-mve.h"
 
@@ -1753,6 +1754,72 @@ static void w64_charge_cycles(DisasContext *s, TCGLabel *exit)
     tcg_gen_st_i32(cycles, tcg_env, oc);
 }
 
+/*
+ * WASM PORT FAST PATH (removable): a TB that is exactly the fill loop
+ * w64-fill.c describes hands the passes after the one just charged to
+ * HELPER(w64_fill).
+ */
+static void w64_fill_match(DisasContext *s)
+{
+    const uint16_t *w = s->w64_fill_words;
+    unsigned rv = w[0] & 7, rp = (w[0] >> 3) & 7;
+    unsigned rd = (w[1] >> 3) & 7, rc, rn, lg, width;
+    uint32_t desc, charge, taken;
+
+    if (!s->thumb || s->base.num_insns != 6 ||
+        s->pc_curr != s->base.pc_first + 10 ||
+        (w[0] & 0xffc0) != 0x6800 || (w[1] & 7) != rv) {
+        return;
+    }
+    switch (w[1] & 0xffc0) {
+    case 0x7000:
+        lg = 0;
+        break;
+    case 0x8000:
+        lg = 1;
+        break;
+    case 0x6000:
+        lg = 2;
+        break;
+    default:
+        return;
+    }
+    width = 1u << lg;
+    if ((w[2] & 0xff00) == (0x3000 | rd << 8) && (w[2] & 0xff) == width) {
+        rc = (w[3] >> 8) & 7;
+        if (w[3] != (0x3000 | rc << 8 | 1)) {
+            return;
+        }
+    } else if ((w[3] & 0xff00) == (0x3000 | rd << 8) &&
+               (w[3] & 0xff) == width) {
+        rc = (w[2] >> 8) & 7;
+        if (w[2] != (0x3000 | rc << 8 | 1)) {
+            return;
+        }
+    } else {
+        return;
+    }
+    rn = (w[4] >> 3) & 7;
+    if (w[4] != (0x4280 | rn << 3 | rc) || w[5] != 0xdbf9) {
+        return;
+    }
+    if (ctpop32(1u << rv | 1u << rp | 1u << rd | 1u << rc | 1u << rn) != 5) {
+        return;
+    }
+    desc = rv | rp << 4 | rd << 8 | rc << 12 | rn << 16 | lg << 20;
+    if (tb_cflags(s->base.tb) & CF_USE_ICOUNT) {
+        desc |= W64_FILL_ICOUNT;
+    }
+    if (tb_cflags(s->base.tb) & CF_COUNT_CYCLES) {
+        desc |= W64_FILL_CYCLES;
+    }
+    /* trans_B_cond_thumb charges a taken branch's cycles at run time */
+    taken = s->arm9e_cycles ? 2 : 0;
+    charge = s->base.num_insns | taken << 8 | w64_cycles(s) << 16;
+    gen_helper_w64_fill(tcg_env, tcg_constant_i32(desc),
+                        tcg_constant_i32(charge));
+}
+
 static bool w64_back_edge(DisasContext *s, int64_t diff)
 {
     intptr_t off32 = offsetof(CPUState, neg.icount_decr.u32) -
@@ -1803,6 +1870,9 @@ static bool w64_back_edge(DisasContext *s, int64_t diff)
     }
     w64_acct_charge(s, s->base.num_insns);
     w64_charge_cycles(s, exit);
+    if (conditional) {
+        w64_fill_match(s);  /* WASM PORT FAST PATH (removable) */
+    }
     tcg_gen_br(s->w64_loop.label);
 
     if (conditional) {
@@ -8112,6 +8182,11 @@ static void thumb_tr_translate_insn(DisasContextBase *dcbase, CPUState *cpu)
     }
     dc->base.pc_next = pc;
     dc->insn = insn;
+#ifdef CONFIG_TCG_WASM64
+    if (dc->base.num_insns <= 6) {  /* WASM PORT FAST PATH (removable) */
+        dc->w64_fill_words[dc->base.num_insns - 1] = is_16bit ? insn : 0xffff;
+    }
+#endif
 
     if (dc->arm9e_cycles) {
         uint32_t stall = arm9e_thumb_stall(&dc->arm9e_late, insn);

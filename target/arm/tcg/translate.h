@@ -163,6 +163,11 @@ typedef struct DisasContext {
     int w64_loop_insns;
     int w64_loop_cycles;
     /*
+     * WASM PORT FAST PATH (removable): w64-fill.c.  The TB's first six
+     * Thumb halfwords (0xffff for a 32-bit insn), for w64_fill_match().
+     */
+    uint16_t w64_fill_words[6];
+    /*
      * Call inlining (w64_inline_call / w64_inline_return): a direct bl's
      * callee is translated in place and its bx lr becomes a compare of
      * lr against the return address.  Per nesting level: the return
