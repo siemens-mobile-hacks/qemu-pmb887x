@@ -10,6 +10,9 @@
 #include "hw/arm/pmb887x/trace.h"
 
 #define DSP_SLICE_CYCLES	4096
+#define DSP_RESET_VECTOR_WORDS	2
+#define DSP_BRANCH_ALWAYS_WORD	0x4180U
+#define DSP_PROGRAM_ROM_ENTRY_OFFSET	2
 
 struct dsp_runtime_t {
 	const pmb887x_dsp_config_t *config;
@@ -178,7 +181,11 @@ static void dsp_runtime_program_write(void *opaque, uint32_t address, uint16_t v
 			address, value, runtime->core.state.pc);
 		return;
 	}
-	if (address >= runtime->config->program_rom_base || qatomic_read(&runtime->program[address]) == value)
+	if (address < DSP_RESET_VECTOR_WORDS)
+		return;
+	if (address >= runtime->config->program_rom_base)
+		return;
+	if (qatomic_read(&runtime->program[address]) == value)
 		return;
 
 	if (!qatomic_read(&runtime->program_warming))
@@ -382,12 +389,16 @@ void dsp_runtime_reset(dsp_runtime_t *runtime) {
 	const pmb887x_dsp_config_t *config = runtime->config;
 	size_t program_fixed_words = config->program_bank_base - config->program_rom_base;
 	size_t data_fixed_words = config->data_bank_base - config->data_rom_base;
+	uint16_t rom_entry = config->program_rom_base + DSP_PROGRAM_ROM_ENTRY_OFFSET;
 
 	dsp_runtime_load_words(runtime->program + config->program_rom_base, runtime->program_rom, program_fixed_words);
 	dsp_runtime_load_words(runtime->data + config->data_rom_base, runtime->data_rom, data_fixed_words);
+	/* P:0000 is the reset vector (TeakLite 4.41, 3.6.1); hardware holds a br to the ROM entry and ignores writes. */
+	qatomic_set(&runtime->program[0], DSP_BRANCH_ALWAYS_WORD);
+	qatomic_set(&runtime->program[1], rom_entry);
 
 	dsp_bus_reset(runtime->bus);
-	teak_tcg_reset(&runtime->core, config->program_rom_base + 2);
+	teak_tcg_reset(&runtime->core, rom_entry);
 	runtime->program_generation++;
 	dsp_runtime_update_program_context(runtime);
 
