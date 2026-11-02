@@ -127,7 +127,7 @@ struct teak_tcg_block_cache_entry_t {
 	bool fast;
 	uint32_t fast_epoch;
 	teak_tcg_block_cache_entry_t *next;
-	void *code;
+	const void *code;
 #ifdef CONFIG_TCG_WASM64
 	/* the tagged table index of a landed tb, as of evict_epoch */
 	uintptr_t target;
@@ -1178,12 +1178,44 @@ static void tcg_emit_mov_register_read(TCGv_i32 value, uint8_t register_code) {
 		gen_helper_teak_tcg_mov_register_read(value, tcg_env, tcg_constant_i32(register_code));
 }
 
+static void tcg_emit_accumulator_value_flags(TCGv_i64 value);
+
+/* tcg_mov_write_register() of an accumulator half: the whole accumulator is replaced. */
+static bool tcg_emit_inline_mov_accumulator_write(uint8_t register_code, TCGv_i32 value) {
+	ptrdiff_t offset;
+	bool high;
+
+	if (register_code >= 16 && register_code <= 19) {
+		offset = offsetof(teak_state_t, b) + (register_code & 1U) * sizeof(uint64_t);
+		high = register_code < 18;
+	} else if (register_code >= 26 && register_code <= 29) {
+		offset = offsetof(teak_state_t, a) + (register_code & 1U) * sizeof(uint64_t);
+		high = register_code >= 28;
+	} else {
+		return false;
+	}
+
+	TCGv_i32 half = tcg_temp_new_i32();
+	TCGv_i64 accumulator = tcg_temp_new_i64();
+
+	if (high) {
+		tcg_gen_shli_i32(half, value, 16);
+		tcg_gen_ext_i32_i64(accumulator, half);
+	} else {
+		tcg_gen_ext16u_i32(half, value);
+		tcg_gen_extu_i32_i64(accumulator, half);
+	}
+	tcg_gen_st_i64(accumulator, tcg_env, offset);
+	tcg_emit_accumulator_value_flags(accumulator);
+	return true;
+}
+
 static void tcg_emit_mov_register_write(uint8_t register_code, TCGv_i32 value) {
 	ptrdiff_t offset = tcg_plain_register_offset(register_code);
 
 	if (offset >= 0)
 		tcg_gen_st16_i32(value, tcg_env, offset);
-	else
+	else if (!tcg_emit_inline_mov_accumulator_write(register_code, value))
 		gen_helper_teak_tcg_mov_register_write(tcg_env, tcg_constant_i32(register_code), value);
 }
 
@@ -4414,7 +4446,97 @@ static void tcg_emit_alb_rn_step(const teak_insn_t *instruction) {
 	tcg_emit_alb_memory(instruction, address);
 }
 
+/* tcg_alb_result() on a plain register or an accumulator half, whose writes have no side effects. */
+static bool tcg_emit_inline_alb_register(const teak_insn_t *instruction) {
+	uint8_t register_code = instruction->register_code;
+	teak_alb_operation_t operation = instruction->alb_operation;
+	uint16_t mask = instruction->expansion;
+	ptrdiff_t offset = tcg_plain_register_offset(register_code);
+	bool accumulator_half = (register_code >= 16 && register_code <= 19) ||
+		(register_code >= 26 && register_code <= 29);
+
+	if (offset < 0 && !accumulator_half)
+		return false;
+
+	TCGv_i32 value = tcg_temp_new_i32();
+	TCGv_i32 result = tcg_temp_new_i32();
+	TCGv_i32 flag = tcg_temp_new_i32();
+
+	if (offset >= 0)
+		tcg_gen_ld16u_i32(value, tcg_env, offset);
+	else
+		tcg_emit_inline_register_read(value, register_code, false);
+
+	switch (operation) {
+		case TEAK_ALB_SET:
+			tcg_gen_ori_i32(result, value, mask);
+			break;
+		case TEAK_ALB_RST:
+			tcg_gen_andi_i32(result, value, (uint16_t) ~mask);
+			break;
+		case TEAK_ALB_CHNG:
+			tcg_gen_xori_i32(result, value, mask);
+			break;
+		case TEAK_ALB_ADDV:
+			tcg_gen_addi_i32(result, value, mask);
+			tcg_gen_shri_i32(flag, result, 16);
+			tcg_gen_st8_i32(flag, tcg_env, offsetof(teak_state_t, fc0));
+			tcg_gen_ext16u_i32(result, result);
+			break;
+		case TEAK_ALB_TST0:
+		case TEAK_ALB_TST1:
+			tcg_gen_andi_i32(flag, value, mask);
+			tcg_gen_setcondi_i32(TCG_COND_EQ, flag, flag, operation == TEAK_ALB_TST0 ? 0 : mask);
+			tcg_gen_st8_i32(flag, tcg_env, offsetof(teak_state_t, fz));
+			return true;
+		case TEAK_ALB_CMPV:
+		case TEAK_ALB_SUBV:
+			tcg_gen_setcondi_i32(TCG_COND_LTU, flag, value, mask);
+			tcg_gen_st8_i32(flag, tcg_env, offsetof(teak_state_t, fc0));
+			tcg_gen_subi_i32(result, value, mask);
+			tcg_gen_ext16u_i32(result, result);
+			break;
+		default:
+			g_assert_not_reached();
+	}
+	tcg_gen_setcondi_i32(TCG_COND_EQ, flag, result, 0);
+	tcg_gen_st8_i32(flag, tcg_env, offsetof(teak_state_t, fz));
+	tcg_gen_shri_i32(flag, result, 15);
+	tcg_gen_st8_i32(flag, tcg_env, offsetof(teak_state_t, fm));
+	if (!tcg_alb_modifies_operand(operation))
+		return true;
+
+	if (offset >= 0) {
+		tcg_gen_st16_i32(result, tcg_env, offset);
+		return true;
+	}
+
+	/* tcg_write_accumulator_half() */
+	bool high = register_code < 18 || register_code >= 28;
+	ptrdiff_t accumulator_offset = (register_code < 20 ? offsetof(teak_state_t, b) : offsetof(teak_state_t, a)) +
+		(register_code & 1U) * sizeof(uint64_t);
+	TCGv_i64 accumulator = tcg_temp_new_i64();
+	TCGv_i64 half = tcg_temp_new_i64();
+
+	tcg_gen_ld_i64(accumulator, tcg_env, accumulator_offset);
+	tcg_gen_extu_i32_i64(half, result);
+	if (high) {
+		tcg_gen_andi_i64(accumulator, accumulator, ~0xFFFF0000ULL);
+		tcg_gen_shli_i64(half, half, 16);
+	} else {
+		tcg_gen_andi_i64(accumulator, accumulator, ~0xFFFFULL);
+	}
+	tcg_gen_or_i64(accumulator, accumulator, half);
+	tcg_gen_shli_i64(accumulator, accumulator, TEAK_ACCUMULATOR_HOST_SHIFT);
+	tcg_gen_sari_i64(accumulator, accumulator, TEAK_ACCUMULATOR_HOST_SHIFT);
+	tcg_gen_st_i64(accumulator, tcg_env, accumulator_offset);
+	return true;
+}
+
 static void tcg_emit_alb_register(const teak_insn_t *instruction) {
+	if (tcg_emit_inline_alb_register(instruction))
+		return;
+
 	TCGv_i32 register_code = tcg_constant_i32(instruction->register_code);
 	TCGv_i32 mask = tcg_constant_i32(instruction->expansion);
 	TCGv_i32 operation = tcg_constant_i32(instruction->alb_operation);
@@ -7426,7 +7548,7 @@ void *HELPER(teak_tcg_chain)(void *opaque, uint32_t block_cycles, uint32_t block
 		}
 	}
 #endif
-	return entry->code;
+	return (void *) entry->code;
 }
 
 static bool tcg_execute_prepared_block(
