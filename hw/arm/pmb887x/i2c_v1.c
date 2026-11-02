@@ -24,6 +24,7 @@ OBJECT_DECLARE_SIMPLE_TYPE(pmb887x_i2c_t, PMB887X_I2C);
 
 #define FIFO_SIZE 4
 #define I2C_BYTE_BITS 9
+#define I2C_RTB_BYTES 4
 #define I2C_RECIPROCAL_DIVIDER 4
 #define I2C_FRACTIONAL_DIVIDER 1024
 
@@ -507,6 +508,12 @@ static void i2c_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned si
 				(value & I2Cv1_WHBSYSCON_CLRBUM);
 			bool resume_requested = (p->syscon & I2Cv1_SYSCON_IRQD) &&
 				(value & I2Cv1_WHBSYSCON_CLRIRQD);
+			/*
+			 * Clearing IRQD starts the next transfer at once, so a STOP requested in the same write follows
+			 * one more byte from the buffer. Only buffers shorter than RTB have been measured.
+			 */
+			bool trailing_byte = stop_requested && resume_requested && p->state == I2C_STATE_TX_DONE &&
+				p->trx_cnt < I2C_RTB_BYTES;
 
 			if ((value & I2Cv1_WHBSYSCON_CLRAL))
 				new_syscon &= ~I2Cv1_SYSCON_AL;
@@ -564,6 +571,8 @@ static void i2c_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned si
 				new_syscon |= I2Cv1_SYSCON_TRX;
 
 			i2c_update_syscon(p, new_syscon);
+			if (trailing_byte)
+				i2c_tx(p);
 			if (stop_requested) {
 				i2c_stop_transfer(p, !(value & I2Cv1_WHBSYSCON_CLRIRQE));
 			} else if ((value & (I2Cv1_WHBSYSCON_SETBUM | I2Cv1_WHBSYSCON_SETRSC)) || resume_requested) {
