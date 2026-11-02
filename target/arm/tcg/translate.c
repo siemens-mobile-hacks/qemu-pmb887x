@@ -1662,17 +1662,24 @@ static void gen_goto_tb(DisasContext *s, unsigned tb_slot_idx, int64_t diff)
  * without coming back through the prologue.  Nothing to do unless that
  * counter is being charged inline.
  */
-static void w64_acct_add(void *acct, int insns)
+static void w64_acct_add(DisasContext *s, void *acct, int insns)
 {
-    TCGv_ptr p = tcg_constant_ptr(acct);
+    /*
+     * Addressed off env: a store through any other base makes the TCG
+     * optimizer forget every env value it could forward, and a loop pass
+     * would reload the cycle counter it has just stored.  With a fixed
+     * env (w64_tb_env) the address is also a constant, without a bounds
+     * check where V8 has no trap handler.
+     */
+    intptr_t ofs = (uintptr_t)acct - (uintptr_t)s->w64_env;
     TCGv_i64 v = tcg_temp_new_i64();
 
-    tcg_gen_ld_i64(v, p, 0);
+    tcg_gen_ld_i64(v, tcg_env, ofs);
     tcg_gen_addi_i64(v, v, insns);
-    tcg_gen_st_i64(v, p, 0);
+    tcg_gen_st_i64(v, tcg_env, ofs);
 }
 
-static void w64_acct_charge(int insns)
+static void w64_acct_charge(DisasContext *s, int insns)
 {
     uint64_t *acct = w64_tb_acct_insns();
     int64_t *ls = w64_ls_count();
@@ -1681,10 +1688,10 @@ static void w64_acct_charge(int insns)
         return;
     }
     if (acct) {
-        w64_acct_add(acct, insns);
+        w64_acct_add(s, acct, insns);
     }
     if (ls) {
-        w64_acct_add(ls, insns);
+        w64_acct_add(s, ls, insns);
     }
 }
 
@@ -1779,7 +1786,7 @@ static bool w64_back_edge(DisasContext *s, int64_t diff)
     if (icount) {
         tcg_gen_st16_i32(count, tcg_env, off16);
     }
-    w64_acct_charge(s->base.num_insns);
+    w64_acct_charge(s, s->base.num_insns);
     w64_charge_cycles(s, exit);
     tcg_gen_br(s->w64_loop.label);
 
@@ -1853,7 +1860,7 @@ static void w64_refund(DisasContext *dc, int skipped, int cycles)
         tcg_gen_st16_i32(c, tcg_env, off);
     }
     if (skipped > 0) {
-        w64_acct_charge(-skipped);
+        w64_acct_charge(dc, -skipped);
     }
     /*
      * Without icount no device reads a prepaid clock: a mid-TB access
