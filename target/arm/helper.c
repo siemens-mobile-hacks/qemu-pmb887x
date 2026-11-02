@@ -8271,24 +8271,11 @@ void cpsr_write(CPUARMState *env, uint32_t val, uint32_t mask,
 {
     uint32_t changed_daif;
     bool rebuild_hflags;
-#ifdef CONFIG_TCG_WASM64
-    uint32_t old_cpsr = env->uncached_cpsr;
-#endif
 
     // PMB887X: real hardware just ignores M4
     val |= 0x10;
-
-    /*
-     * M, E, IL and PAN are the only CPSR bits hflags read, so rebuild only
-     * when a write moves one of them.  Testing the mask alone rebuilt on
-     * every `msr cpsr_c` - every guest critical section, 873k rebuilds a
-     * second on an EL71 boot.  A mode switch refused below rebuilds once
-     * for nothing; the bad-mode path that sets IL is only reached when the
-     * mode bits differ, which this test already caught.
-     */
     rebuild_hflags = (write_type != CPSRWriteRaw) &&
-        ((env->uncached_cpsr ^ val) & mask &
-         (CPSR_M | CPSR_E | CPSR_IL | CPSR_PAN)) != 0;
+        ((cpsr_read(env) ^ val) & mask & (CPSR_M | CPSR_E | CPSR_IL | CPSR_PAN));
 
     if (mask & CPSR_NZCV) {
         env->ZF = (~val) & CPSR_Z;
@@ -8444,11 +8431,7 @@ void cpsr_write(CPUARMState *env, uint32_t val, uint32_t mask,
     mask &= ~CACHED_CPSR_BITS;
     env->uncached_cpsr = (env->uncached_cpsr & ~mask) | (val & mask);
     if (tcg_enabled() && rebuild_hflags) {
-#ifdef CONFIG_TCG_WASM64
-        arm_rebuild_hflags_mode_change(env, old_cpsr);
-#else
         arm_rebuild_hflags(env);
-#endif
     }
 }
 
@@ -8897,9 +8880,6 @@ static void take_aarch32_exception(CPUARMState *env, int new_mode,
                                    uint32_t newpc)
 {
     int new_el;
-#ifdef CONFIG_TCG_WASM64
-    uint32_t old_cpsr = env->uncached_cpsr;
-#endif
 
     /* Change the CPU state so as to actually take the exception. */
     switch_mode(env, new_mode);
@@ -8971,11 +8951,7 @@ static void take_aarch32_exception(CPUARMState *env, int new_mode,
     env->regs[15] = newpc;
 
     if (tcg_enabled()) {
-#ifdef CONFIG_TCG_WASM64
-        arm_rebuild_hflags_mode_change(env, old_cpsr);
-#else
         arm_rebuild_hflags(env);
-#endif
     }
 }
 

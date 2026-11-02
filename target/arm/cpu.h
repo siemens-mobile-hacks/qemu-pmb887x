@@ -2682,8 +2682,6 @@ void arm_rebuild_hflags(CPUARMState *env);
 #ifdef CONFIG_TCG_WASM64
 /* dynamic words of the wasm64 inline TB-lookup cache key (hflags.c) */
 bool arm_w64_lc_key(CPUState *cs, uint32_t key32[3]);
-/* arm_rebuild_hflags() after an AArch32 mode change from CPSR @old_cpsr */
-void arm_rebuild_hflags_mode_change(CPUARMState *env, uint32_t old_cpsr);
 #endif
 
 /**

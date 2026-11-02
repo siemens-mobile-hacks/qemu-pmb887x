@@ -1024,35 +1024,9 @@ static inline bool cpu_handle_exception(CPUState *cpu, int *ret)
     if (replay_exception()) {
         const TCGCPUOps *tcg_ops = cpu->cc->tcg_ops;
 
-#ifdef CONFIG_TCG_WASM64
-        /*
-         * The lean pair, for the same reason cputlb.c uses it on the MMIO
-         * path: this guest takes an exception every few hundred
-         * instructions, and BQL_LOCK_GUARD's ~22 non-inlinable calls
-         * are then a percent of the vCPU on their own.  bql_unlock_mmio()
-         * also defers the release, so a run of exceptions with nobody
-         * contending costs one thread-local read each instead of a
-         * pthread_mutex round trip; cpu_exec_loop() gives the lock back
-         * on its next iteration as soon as another thread asks
-         * (bql_wanted_by_other()), which bounds the hold exactly as it
-         * does for a device access.
-         *
-         * do_interrupt() may itself reach a device (an IRQ acknowledged
-         * through the VIC) and take the BQL again - that nests through
-         * the same thread-local flag and is what took_bql is for.
-         */
-        bool took_bql;
-
-        took_bql = bql_lock_mmio();
-        tcg_ops->do_interrupt(cpu);
-        if (took_bql) {
-            bql_unlock_mmio();
-        }
-#else
         bql_lock();
         tcg_ops->do_interrupt(cpu);
         bql_unlock();
-#endif
         cpu->exception_index = -1;
 
         if (unlikely(cpu_single_stepping(cpu))) {
@@ -1120,25 +1094,6 @@ static inline bool icount_exit_request(CPUState *cpu)
 static inline bool cpu_handle_interrupt(CPUState *cpu,
                                         TranslationBlock **last_tb)
 {
-#ifdef CONFIG_TCG_WASM64
-    /*
-     * A guest exception left pending by a helper that returned instead
-     * of unwinding with cpu_loop_exit() (the wasm64 WFI, see
-     * HELPER(wfi)): deliver it before anything else, exactly like the
-     * longjmp would have.  Clear the exit-kick flag the same way the
-     * normal path below does so a kick that raced with the TB cannot
-     * force one-exit-per-TB spinning.
-     *
-     * Not under record/replay: replay delivers interrupts ahead of
-     * pending exceptions via the cpu_handle_exception() fall-through
-     * below, and bouncing back here first would livelock it.
-     */
-    if (unlikely(cpu->exception_index >= 0) &&
-        replay_mode == REPLAY_MODE_NONE) {
-        qatomic_set_mb(&cpu->neg.icount_decr.u16.high, 0);
-        return true;
-    }
-#endif
     /*
      * If we have requested custom cflags with CF_NOIRQ we should
      * skip checking here. Any pending interrupts will get picked up
@@ -1153,51 +1108,13 @@ static inline bool cpu_handle_interrupt(CPUState *cpu,
      * Ensure zeroing happens before reading cpu->exit_request or
      * cpu->interrupt_request (see also store-release in
      * tcg_kick_vcpu_thread())
-     *
-     * Only when there is something to clear.  The barrier is what this
-     * costs - it stops the interrupt_request load below being hoisted
-     * above the store, which would let a kick that landed in between be
-     * cleared without being acted on - and if the flag already reads 0
-     * there is no store for the load to be hoisted above: a kicker sets
-     * interrupt_request and *then* the flag, so a flag of 0 means any
-     * kick is still to come, and the iteration that sees the flag set
-     * will take the full path.  On wasm the skipped pair is a seq_cst
-     * i32.atomic.store plus an atomic.fence, on a loop that runs about
-     * 1.6M times a second on an idle S75.
      */
-    if (unlikely(qatomic_read(&cpu->neg.icount_decr.u16.high))) {
-        qatomic_set_mb(&cpu->neg.icount_decr.u16.high, 0);
-    }
+    qatomic_set_mb(&cpu->neg.icount_decr.u16.high, 0);
 
 #ifdef CONFIG_USER_ONLY
     assert(!cpu_test_interrupt(cpu, ~0));
 #else
     if (unlikely(cpu_test_interrupt(cpu, ~0))) {
-#ifdef CONFIG_TCG_WASM64
-        /*
-         * EXITTB on its own, which is what every guest exception leaves
-         * behind: arm_cpu_do_interrupt() sets it, and the very next
-         * iteration of this loop comes here to take it off again.  The
-         * generic path below then spends a BQL round trip and a call to
-         * cpu_exec_interrupt() - which, with no other bit pending, can
-         * only return false - to do what these two lines do.
-         *
-         * Dropping the lock is safe because the only state this touches
-         * is cpu->interrupt_request, and it touches it with the same
-         * atomic-and the locked path uses: a device thread's concurrent
-         * qatomic_or of CPU_INTERRUPT_HARD cannot be lost, and losing the
-         * race the other way (the bit arriving just after the test) is
-         * what the stock path does too - the kick that comes with it ends
-         * the next TB and the following iteration takes the full path.
-         */
-        if (likely(qatomic_load_acquire(&cpu->interrupt_request)
-                   == CPU_INTERRUPT_EXITTB)) {
-            cpu_reset_interrupt(cpu, CPU_INTERRUPT_EXITTB);
-            /* as below: the program flow changed, so do not patch a jump */
-            *last_tb = NULL;
-            goto after_interrupts;
-        }
-#endif
         bql_lock();
         if (cpu_test_interrupt(cpu, CPU_INTERRUPT_DEBUG)) {
             cpu_reset_interrupt(cpu, CPU_INTERRUPT_DEBUG);
@@ -1265,9 +1182,6 @@ static inline bool cpu_handle_interrupt(CPUState *cpu,
         /* If we exit via cpu_loop_exit/longjmp it is reset in cpu_exec */
         bql_unlock();
     }
-#ifdef CONFIG_TCG_WASM64
-after_interrupts:
-#endif
 #endif /* !CONFIG_USER_ONLY */
 
     /*

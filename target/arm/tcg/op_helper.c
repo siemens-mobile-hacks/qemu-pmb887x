@@ -406,18 +406,7 @@ void HELPER(wfi)(CPUARMState *env, uint32_t insn_len)
     env->halt_reason = HALT_WFI;
     cs->exception_index = EXCP_HLT;
     cs->halted = 1;
-#ifdef CONFIG_TCG_WASM64
-    /*
-     * No unwind: WFI always ends its TB, whose exit_tb(0) follows this
-     * call, and cpu_handle_interrupt delivers a pending exception_index
-     * before running anything else — the
-     * same outcome as the longjmp, minus the ~15 us JS-exception unwind
-     * per halt (one per display-DMA word).
-     */
-    cs->neg.can_do_io = true;
-#else
     cpu_loop_exit(cs);
-#endif
 #endif
 }
 
@@ -813,7 +802,6 @@ static void cpsr_write_check_irq(CPUARMState *env)
 
 void HELPER(cpsr_write)(CPUARMState *env, uint32_t val, uint32_t mask)
 {
-    /* cpsr_write() rebuilds hflags itself when an input to them moves. */
     cpsr_write(env, val, mask, CPSRWriteByInstr);
     cpsr_write_check_irq(env);
 }
