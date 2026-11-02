@@ -575,8 +575,8 @@ static uint64_t dsp_ram_read(void *opaque, hwaddr haddr, unsigned size) {
 		IO_DUMP_READ(haddr + p->mmio.addr + DSP_RAM0, size, 0);
 		return 0;
 	}
-	if (!p->comm_transition_pending)
-		dsp_sync_access(p);
+	p->comm_transition_pending = false;
+	dsp_sync_access(p);
 	value = dsp_runtime_shared_read_bytes(p->runtime, haddr, size);
 
 	IO_DUMP_READ(haddr + p->mmio.addr + DSP_RAM0, size, value);
