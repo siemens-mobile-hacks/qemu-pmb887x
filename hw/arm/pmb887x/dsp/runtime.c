@@ -477,11 +477,11 @@ size_t dsp_runtime_run(dsp_runtime_t *runtime, size_t max_cycles, bool *deferred
 			DPRINTF("native execution stopped: cpu=%s pc=%05X opcode=%04X op=%u decoded=%u error=%u lp=%u bcn=%u\n",
 				runtime->config->name, pc, word, instruction.opcode, decoded, runtime->core.translation_error,
 				runtime->core.state.lp, runtime->core.state.bcn);
-			if (runtime->core.state.bcn != 0) {
-				size_t level = runtime->core.state.bcn - 1;
-				DPRINTF("active block repeat: level=%zu start=%04X end=%04X lc=%04X\n", level,
-					runtime->core.state.block_repeat_start[level], runtime->core.state.block_repeat_end[level],
-					runtime->core.state.block_repeat_lc[level]);
+			if (runtime->core.state.lp) {
+				uint8_t slot = teak_block_repeat_slot(runtime->core.state.bcn);
+				DPRINTF("active block repeat: slot=%u start=%04X end=%04X lc=%04X\n", slot,
+					runtime->core.state.block_repeat_start[slot], runtime->core.state.block_repeat_end[slot],
+					runtime->core.state.block_repeat_lc[slot]);
 			}
 			runtime->halted = true;
 			break;
