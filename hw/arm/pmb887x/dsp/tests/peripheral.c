@@ -34,7 +34,7 @@ afe_audio_t *afe_audio_create(void) {
 void afe_audio_destroy(afe_audio_t *_audio) {
 }
 
-void afe_audio_reset(afe_audio_t *_audio) {
+void afe_audio_set_active(afe_audio_t *_audio, bool _active) {
 }
 
 void afe_audio_set_format(afe_audio_t *_audio, unsigned _frequency_hz, unsigned _channels) {

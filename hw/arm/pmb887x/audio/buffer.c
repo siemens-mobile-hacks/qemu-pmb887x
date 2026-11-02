@@ -2,9 +2,18 @@
 
 #include "hw/arm/pmb887x/audio/buffer.h"
 
+/* Covers DSP output that arrives in bursts of about 20 ms plus the 10 ms audio mixer period. */
+#define AUDIO_BUFFER_PREFILL_MS	60
+
+void pmb887x_audio_buffer_configure(pmb887x_audio_buffer_t *buffer, size_t frame_bytes, uint32_t rate_hz) {
+	buffer->prefill_bytes = frame_bytes * rate_hz * AUDIO_BUFFER_PREFILL_MS / 1000;
+	pmb887x_audio_buffer_reset(buffer);
+}
+
 void pmb887x_audio_buffer_reset(pmb887x_audio_buffer_t *buffer) {
 	buffer->length = 0;
 	buffer->position = 0;
+	buffer->playing = false;
 }
 
 const uint8_t *pmb887x_audio_buffer_peek(
@@ -19,14 +28,11 @@ const uint8_t *pmb887x_audio_buffer_peek(
 	requested = MIN(requested, sizeof(buffer->data));
 	if (buffer->position == buffer->length) {
 		qemu_mutex_lock(lock);
-		buffer->length = fifo8_pop_buf(fifo, buffer->data,
-			MIN(requested, (size_t) fifo8_num_used(fifo)));
+		size_t queued = fifo8_num_used(fifo);
+		buffer->playing = queued != 0 && (buffer->playing || queued >= buffer->prefill_bytes);
+		buffer->length = buffer->playing ? fifo8_pop_buf(fifo, buffer->data, MIN(requested, queued)) : 0;
 		qemu_mutex_unlock(lock);
 		buffer->position = 0;
-	}
-	if (buffer->length == 0) {
-		memset(buffer->data, 0, requested);
-		buffer->length = requested;
 	}
 
 	*available = MIN(requested, buffer->length - buffer->position);

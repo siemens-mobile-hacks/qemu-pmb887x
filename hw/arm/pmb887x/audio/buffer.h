@@ -11,8 +11,11 @@ struct pmb887x_audio_buffer_t {
 	uint8_t data[PMB887X_AUDIO_BUFFER_CAPACITY];
 	size_t length;
 	size_t position;
+	size_t prefill_bytes;
+	bool playing;
 };
 
+void pmb887x_audio_buffer_configure(pmb887x_audio_buffer_t *buffer, size_t frame_bytes, uint32_t rate_hz);
 void pmb887x_audio_buffer_reset(pmb887x_audio_buffer_t *buffer);
 const uint8_t *pmb887x_audio_buffer_peek(
 	pmb887x_audio_buffer_t *buffer,

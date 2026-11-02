@@ -78,7 +78,7 @@ static void afe_reset(dsp_device_t *device) {
 	uint16_t ram_base = state->ram_base;
 	afe_audio_t *audio = state->audio;
 
-	afe_audio_reset(audio);
+	afe_audio_set_active(audio, false);
 	memset(state, 0, sizeof(*state));
 	state->audio = audio;
 	state->interrupt = interrupt;
@@ -172,6 +172,7 @@ static bool afe_write(dsp_device_t *device, uint16_t offset, uint32_t pc, uint16
 				state->receive_position = 0;
 				state->receive_cycles = 0;
 			}
+			afe_audio_set_active(state->audio, afe_receive_active(state));
 			if (!afe_transmit_active(state)) {
 				state->transmit_position = 0;
 				state->transmit_cycles = 0;
