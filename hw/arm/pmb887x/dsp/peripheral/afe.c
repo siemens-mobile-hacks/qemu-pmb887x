@@ -45,6 +45,7 @@ struct afe_state_t {
 	dsp_host_t host;
 	uint16_t ram_base;
 	uint16_t receive_position;
+	uint16_t receive_first_word;
 	uint16_t transmit_position;
 	size_t receive_cycles;
 	size_t transmit_cycles;
@@ -83,7 +84,7 @@ static void afe_reset(dsp_device_t *device) {
 	state->interrupt = interrupt;
 	state->host = host;
 	state->ram_base = ram_base;
-	afe_audio_set_rate(audio, AFE_DEFAULT_RATE_HZ);
+	afe_audio_set_format(audio, AFE_DEFAULT_RATE_HZ, 1);
 }
 
 static bool afe_read(dsp_device_t *device, uint16_t offset, uint32_t pc, uint16_t *value) {
@@ -103,18 +104,28 @@ static bool afe_read(dsp_device_t *device, uint16_t offset, uint32_t pc, uint16_
 	return true;
 }
 
-static size_t afe_receive_sample_cycles(const afe_state_t *state) {
+/* From 31.746 kHz each receive sample is a pair of ring words. */
+static bool afe_receive_is_stereo(const afe_state_t *state) {
+	switch (state->registers[TEAK_AFE_BCON] & TEAK_AFE_BCON_RXRATE) {
+		case TEAK_AFE_BCON_RXRATE_KHZ_8:
+		case TEAK_AFE_BCON_RXRATE_KHZ_16:
+			return false;
+	}
+	return true;
+}
+
+static size_t afe_receive_word_cycles(const afe_state_t *state) {
 	switch (state->registers[TEAK_AFE_BCON] & TEAK_AFE_BCON_RXRATE) {
 		case TEAK_AFE_BCON_RXRATE_KHZ_8:
 			return 1000;
 		case TEAK_AFE_BCON_RXRATE_KHZ_16:
 			return 500;
 		case TEAK_AFE_BCON_RXRATE_KHZ_31_746:
-			return 252;
+			return 126;
 		case TEAK_AFE_BCON_RXRATE_KHZ_44_444:
-			return 180;
+			return 90;
 		case TEAK_AFE_BCON_RXRATE_KHZ_47_619:
-			return 168;
+			return 84;
 	}
 	return 1000;
 }
@@ -153,8 +164,10 @@ static bool afe_write(dsp_device_t *device, uint16_t offset, uint32_t pc, uint16
 			uint16_t previous_control = state->registers[offset];
 
 			state->registers[offset] = value & AFE_CONTROL_MASK;
-			if (((previous_control ^ state->registers[offset]) & TEAK_AFE_BCON_RXRATE) != 0)
-				afe_audio_set_rate(state->audio, afe_receive_sample_rate_hz(state));
+			if (((previous_control ^ state->registers[offset]) & TEAK_AFE_BCON_RXRATE) != 0) {
+				afe_audio_set_format(state->audio, afe_receive_sample_rate_hz(state),
+					afe_receive_is_stereo(state) ? 2 : 1);
+			}
 			if (!afe_receive_active(state)) {
 				state->receive_position = 0;
 				state->receive_cycles = 0;
@@ -195,11 +208,25 @@ dsp_device_t *afe_create(const pmb887x_dsp_peripheral_config_t *config, dsp_devi
 	return dsp_device_create(config, &afe_ops, state);
 }
 
-static bool afe_receive_sample(afe_state_t *state) {
-	uint16_t interrupt_position = state->registers[TEAK_AFE_INTPTR] & TEAK_AFE_INTPTR_RXINTPTR;
+static void afe_receive_publish(afe_state_t *state, uint16_t word) {
+	if (!afe_receive_is_stereo(state)) {
+		afe_audio_produce(state->audio, &word, 1);
+		return;
+	}
+	if ((state->receive_position & 1) == 0) {
+		state->receive_first_word = word;
+		return;
+	}
+	uint16_t frame[] = { state->receive_first_word, word };
+	afe_audio_produce(state->audio, frame, ARRAY_SIZE(frame));
+}
 
-	afe_audio_produce(state->audio, state->host.data_read(state->host.opaque,
-		state->ram_base + AFE_DAC_RING_OFFSET + state->receive_position));
+static bool afe_receive_word(afe_state_t *state) {
+	uint16_t interrupt_position = state->registers[TEAK_AFE_INTPTR] & TEAK_AFE_INTPTR_RXINTPTR;
+	uint16_t word = state->host.data_read(state->host.opaque,
+		state->ram_base + AFE_DAC_RING_OFFSET + state->receive_position);
+
+	afe_receive_publish(state, word);
 
 	state->receive_position++;
 	state->receive_position &= TEAK_AFE_RWADDR_RDADDR;
@@ -242,13 +269,13 @@ size_t afe_advance(dsp_device_t *device, size_t cycles) {
 		if (!receive_active && !transmit_active)
 			return cycles;
 
-		size_t receive_period = afe_receive_sample_cycles(state);
+		size_t receive_period = afe_receive_word_cycles(state);
 		size_t transmit_period = afe_transmit_sample_cycles(state);
 		bool interrupt = false;
 
 		if (receive_active && state->receive_cycles >= receive_period) {
 			state->receive_cycles -= receive_period;
-			interrupt |= afe_receive_sample(state);
+			interrupt |= afe_receive_word(state);
 		}
 		if (transmit_active && state->transmit_cycles >= transmit_period) {
 			state->transmit_cycles -= transmit_period;
@@ -269,7 +296,7 @@ size_t afe_advance(dsp_device_t *device, size_t cycles) {
 
 		if (receive_active && state->receive_cycles == receive_period) {
 			state->receive_cycles = 0;
-			interrupt |= afe_receive_sample(state);
+			interrupt |= afe_receive_word(state);
 		}
 		if (transmit_active && state->transmit_cycles == transmit_period) {
 			state->transmit_cycles = 0;
