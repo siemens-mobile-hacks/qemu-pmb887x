@@ -916,6 +916,14 @@ static inline void tb_add_jump(TranslationBlock *tb, int n,
                                TranslationBlock *tb_next)
 {
     uintptr_t old;
+#ifdef CONFIG_TCG_WASM64
+    /* chains into it are dropped at every TLB flush (tb_unlink_inlined) */
+    bool inl = tb_next->w64_inl && tb_page_addr1(tb_next) != -1;
+
+    if (inl) {
+        w64_inl_lock_acquire();
+    }
+#endif
 
     qemu_thread_jit_write();
     assert(n < ARRAY_SIZE(tb->jmp_list_next));
@@ -949,10 +957,20 @@ static inline void tb_add_jump(TranslationBlock *tb, int n,
     tb_set_jmp_target(tb, n, (uintptr_t)tb_next->tc.ptr);
 
     /* add in TB jmp list */
+#ifdef CONFIG_TCG_WASM64
+    if (inl && !tb_next->jmp_list_head) {
+        w64_inl_list_add(tb_next);
+    }
+#endif
     tb->jmp_list_next[n] = tb_next->jmp_list_head;
     tb_next->jmp_list_head = (uintptr_t)tb | n;
 
     qemu_spin_unlock(&tb_next->jmp_lock);
+#ifdef CONFIG_TCG_WASM64
+    if (inl) {
+        w64_inl_lock_release();
+    }
+#endif
 
     if (tcg_cross_page_links && ((tb->pc ^ tb_next->pc) & TARGET_PAGE_MASK)) {
         tb_record_cross_page_jump(tb, n);
@@ -964,6 +982,11 @@ static inline void tb_add_jump(TranslationBlock *tb, int n,
 
  out_unlock_next:
     qemu_spin_unlock(&tb_next->jmp_lock);
+#ifdef CONFIG_TCG_WASM64
+    if (inl) {
+        w64_inl_lock_release();
+    }
+#endif
 }
 
 static inline bool cpu_handle_halt(CPUState *cpu)

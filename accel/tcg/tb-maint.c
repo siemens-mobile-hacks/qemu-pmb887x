@@ -1140,15 +1140,29 @@ static inline void tb_jmp_unlink(TranslationBlock *dest)
  * (translation-block.h w64_inl) skips the page-1 check tb_lookup_cmp
  * makes, so the chains are dropped whenever a mapping may have changed
  * (the TLB-flush sites): the sources fall back to the dispatcher, which
- * looks the TB up again and re-links them.  The TBs are kept in a list
- * of their own - a walk of every TB per page flush crawled the lockstep
- * boot, where one-insn-per-tb makes millions of them and none inlined.
- * An invalidated TB stays listed until tb_flush; unlinking it again is a
- * no-op on an empty jump list.
+ * looks the TB up again and re-links them.  Only TBs that have incoming
+ * chains are listed: tb_add_jump lists one when it gains its first chain
+ * (empty jump list), and every unlink empties the list.  Listing every
+ * inlined TB at translation made each page flush walk all of them, twice
+ * (tlb_flush_page clears the page and the one before it) - up to 40 % of
+ * the vCPU thread during the EL71 boot.  Lock order: w64_inl_lock, then a
+ * TB's jmp_lock.
  */
 static TranslationBlock **w64_inl_tbs;
 static unsigned w64_inl_ntbs, w64_inl_cap;
+static QemuSpin w64_inl_lock;
 
+void w64_inl_lock_acquire(void)
+{
+    qemu_spin_lock(&w64_inl_lock);
+}
+
+void w64_inl_lock_release(void)
+{
+    qemu_spin_unlock(&w64_inl_lock);
+}
+
+/* with w64_inl_lock held */
 void w64_inl_list_add(TranslationBlock *tb)
 {
     if (w64_inl_ntbs == w64_inl_cap) {
@@ -1160,14 +1174,19 @@ void w64_inl_list_add(TranslationBlock *tb)
 
 void w64_inl_list_clear(void)
 {
+    qemu_spin_lock(&w64_inl_lock);
     w64_inl_ntbs = 0;
+    qemu_spin_unlock(&w64_inl_lock);
 }
 
 void tb_unlink_inlined(void)
 {
+    qemu_spin_lock(&w64_inl_lock);
     for (unsigned i = 0; i < w64_inl_ntbs; i++) {
         tb_jmp_unlink(w64_inl_tbs[i]);
     }
+    w64_inl_ntbs = 0;
+    qemu_spin_unlock(&w64_inl_lock);
 }
 
 /*

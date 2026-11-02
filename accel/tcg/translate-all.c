@@ -675,11 +675,6 @@ TranslationBlock *tb_gen_code(CPUState *cpu, TCGTBCPUState s)
         tcg_tb_remove(tb);
         return existing_tb;
     }
-#ifdef CONFIG_TCG_WASM64
-    if (tb->w64_inl && tb_page_addr1(tb) != -1) {
-        w64_inl_list_add(tb);
-    }
-#endif
     return tb;
 }
 
