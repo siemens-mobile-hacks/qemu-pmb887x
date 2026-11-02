@@ -2909,14 +2909,99 @@ static void tcg_emit_shift_immediate(const teak_insn_t *instruction) {
 	tcg_gen_st_i64(result, tcg_env, destination_offset);
 }
 
+/*
+ * tcg_shift_bus() by the shift value register for |shift| < 40, without
+ * branches: the left and right forms are both computed (each is the identity
+ * with no carry or overflow at amount 0) and the sign picks one.  Longer
+ * shifts take the helper.
+ */
+static void tcg_emit_shift_by_value(uint8_t source, uint8_t destination) {
+	TCGLabel *slow = gen_new_label();
+	TCGLabel *done = gen_new_label();
+	TCGv_i32 shift32 = tcg_temp_new_i32();
+	TCGv_i32 bound = tcg_temp_new_i32();
+	TCGv_i64 zero = tcg_constant_i64(0);
+
+	tcg_gen_ld16s_i32(shift32, tcg_env, offsetof(teak_state_t, shift_value));
+	tcg_gen_addi_i32(bound, shift32, TEAK_ACCUMULATOR_BITS - 1);
+	tcg_gen_brcondi_i32(TCG_COND_GTU, bound, 2 * (TEAK_ACCUMULATOR_BITS - 1), slow);
+
+	TCGv_i64 shift = tcg_temp_new_i64();
+	TCGv_i64 left = tcg_temp_new_i64();
+	TCGv_i64 right = tcg_temp_new_i64();
+	TCGv_i64 canonical = tcg_temp_new_i64();
+	TCGv_i64 signed_value = tcg_temp_new_i64();
+	TCGv_i64 left_result = tcg_temp_new_i64();
+	TCGv_i64 right_result = tcg_temp_new_i64();
+	TCGv_i64 arithmetic = tcg_temp_new_i64();
+	TCGv_i64 carry64 = tcg_temp_new_i64();
+	TCGv_i64 temporary64 = tcg_temp_new_i64();
+	TCGv_i64 shift_mode64 = tcg_temp_new_i64();
+	TCGv_i32 shift_mode = tcg_temp_new_i32();
+	TCGv_i32 carry = tcg_temp_new_i32();
+	TCGv_i32 overflow = tcg_temp_new_i32();
+	TCGv_i32 actual_overflow = tcg_temp_new_i32();
+	TCGv_i32 latched_overflow = tcg_temp_new_i32();
+	TCGv_i32 zero32 = tcg_constant_i32(0);
+
+	tcg_gen_ext_i32_i64(shift, shift32);
+	tcg_gen_movcond_i64(TCG_COND_GT, left, shift, zero, shift, zero);
+	tcg_gen_neg_i64(right, shift);
+	tcg_gen_movcond_i64(TCG_COND_GT, right, right, zero, right, zero);
+	tcg_gen_ld_i64(canonical, tcg_env, tcg_ab_offset(source));
+	tcg_gen_andi_i64(canonical, canonical, TEAK_ACCUMULATOR_MASK);
+	tcg_gen_shli_i64(signed_value, canonical, TEAK_ACCUMULATOR_HOST_SHIFT);
+	tcg_gen_sari_i64(signed_value, signed_value, TEAK_ACCUMULATOR_HOST_SHIFT);
+	tcg_gen_ld8u_i32(shift_mode, tcg_env, offsetof(teak_state_t, s));
+	tcg_gen_extu_i32_i64(shift_mode64, shift_mode);
+
+	tcg_gen_shl_i64(left_result, canonical, left);
+	tcg_gen_andi_i64(left_result, left_result, TEAK_ACCUMULATOR_MASK);
+	tcg_gen_subfi_i64(temporary64, TEAK_ACCUMULATOR_BITS, left);
+	tcg_gen_shr_i64(carry64, canonical, temporary64);
+	tcg_gen_shli_i64(temporary64, left_result, TEAK_ACCUMULATOR_HOST_SHIFT);
+	tcg_gen_sari_i64(temporary64, temporary64, TEAK_ACCUMULATOR_HOST_SHIFT);
+	tcg_gen_sar_i64(temporary64, temporary64, left);
+	tcg_gen_setcond_i64(TCG_COND_NE, temporary64, temporary64, signed_value);
+	tcg_gen_extrl_i64_i32(overflow, temporary64);
+
+	tcg_gen_shli_i64(temporary64, canonical, 1);
+	tcg_gen_shr_i64(temporary64, temporary64, right);
+	tcg_gen_or_i64(carry64, carry64, temporary64);
+	tcg_gen_shr_i64(right_result, canonical, right);
+	tcg_gen_sar_i64(arithmetic, signed_value, right);
+	tcg_gen_andi_i64(arithmetic, arithmetic, TEAK_ACCUMULATOR_MASK);
+	tcg_gen_movcond_i64(TCG_COND_EQ, right_result, shift_mode64, zero, arithmetic, right_result);
+	tcg_gen_movcond_i64(TCG_COND_GT, left_result, shift, zero, left_result, right_result);
+
+	tcg_gen_extrl_i64_i32(carry, carry64);
+	tcg_gen_andi_i32(carry, carry, 1);
+	tcg_gen_st8_i32(carry, tcg_env, offsetof(teak_state_t, fc0));
+	tcg_gen_ld8u_i32(actual_overflow, tcg_env, offsetof(teak_state_t, fv));
+	tcg_gen_movcond_i32(TCG_COND_EQ, actual_overflow, shift_mode, zero32, overflow, actual_overflow);
+	tcg_gen_st8_i32(actual_overflow, tcg_env, offsetof(teak_state_t, fv));
+	tcg_gen_movcond_i32(TCG_COND_EQ, overflow, shift_mode, zero32, overflow, zero32);
+	tcg_gen_ld8u_i32(latched_overflow, tcg_env, offsetof(teak_state_t, fvl));
+	tcg_gen_or_i32(latched_overflow, latched_overflow, overflow);
+	tcg_gen_st8_i32(latched_overflow, tcg_env, offsetof(teak_state_t, fvl));
+
+	tcg_gen_shli_i64(left_result, left_result, TEAK_ACCUMULATOR_HOST_SHIFT);
+	tcg_gen_sari_i64(left_result, left_result, TEAK_ACCUMULATOR_HOST_SHIFT);
+	tcg_emit_accumulator_value_flags(left_result);
+	tcg_gen_st_i64(left_result, tcg_env, tcg_ab_offset(destination));
+	tcg_gen_br(done);
+
+	gen_set_label(slow);
+	gen_helper_teak_tcg_shift_accumulator(tcg_env, tcg_constant_i32(source), tcg_constant_i32(destination));
+	gen_set_label(done);
+}
+
 static void tcg_emit_shift_conditional(const teak_insn_t *instruction) {
-	TCGv_i32 source = tcg_constant_i32(instruction->source_accumulator);
-	TCGv_i32 destination = tcg_constant_i32(instruction->destination_accumulator);
 	TCGLabel *skip = NULL;
 
 	if (instruction->condition != TEAK_COND_TRUE)
 		skip = tcg_emit_condition_skip(instruction->condition);
-	gen_helper_teak_tcg_shift_accumulator(tcg_env, source, destination);
+	tcg_emit_shift_by_value(instruction->source_accumulator, instruction->destination_accumulator);
 	if (skip != NULL)
 		gen_set_label(skip);
 }
