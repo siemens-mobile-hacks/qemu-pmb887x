@@ -28,8 +28,6 @@
 #include "system/memory.h"
 #include "system/physmem.h"
 #include "accel/tcg/cpu-ldst-common.h"
-#include "system/cpu-timers.h"
-#include "exec/icount.h"
 #include "accel/tcg/cpu-mmu-index.h"
 #include "exec/cputlb.h"
 #include "exec/tb-flush.h"
@@ -1737,54 +1735,6 @@ static inline void cpu_unaligned_access(CPUState *cpu, vaddr addr,
                                           mmu_idx, retaddr);
 }
 
-/*
- * A device access in the middle of a TB with !can_do_io.  Stock QEMU
- * rewinds and re-translates (cpu_io_recompile) so the callback sees the
- * clock of exactly this instruction; on emscripten that unwind is a JS
- * exception, and a polling loop would pay it on every iteration.
- */
-static void __attribute__((noinline))
-io_open_clock_window(CPUState *cpu, MemoryRegionSection *section,
-                     uintptr_t retaddr)
-{
-#ifdef __EMSCRIPTEN__
-    if (section->mr->rom_device) {
-        /*
-         * The flash command interface: its program/verify handshake needs
-         * the exact clock, and it is rare enough that the unwind is free.
-         */
-        cpu_io_recompile(cpu, retaddr);
-    } else if (icount_enabled()) {
-        /*
-         * gen_tb_start() has already charged the whole TB, so the callback
-         * sees a clock at most one TB ahead of the access.  can_do_io is
-         * all that needs: icount_get_raw_locked() commits the running slice
-         * on every read.  A later refund can move the clock back by as
-         * much, so device models must not assume it is monotonic.
-         */
-        cpu->neg.can_do_io = true;
-    } else {
-        /* the io-barrier set makes this recompile a one-time cost */
-        cpu_io_recompile(cpu, retaddr);
-    }
-#else
-    cpu_io_recompile(cpu, retaddr);
-#endif
-}
-
-/* The stock-icount case of io_open_clock_window(), inline. */
-static inline __attribute__((always_inline)) void
-io_clock_window(CPUState *cpu, CPUTLBEntryFull *full, uintptr_t retaddr)
-{
-#ifdef __EMSCRIPTEN__
-    if (likely(icount_enabled() && !full->io_rom_device)) {
-        cpu->neg.can_do_io = true;
-        return;
-    }
-#endif
-    io_open_clock_window(cpu, full->section, retaddr);
-}
-
 static MemoryRegionSection *
 io_prepare(hwaddr *out_offset, CPUState *cpu, CPUTLBEntryFull *full,
            vaddr addr, uintptr_t retaddr)
@@ -1796,7 +1746,7 @@ io_prepare(hwaddr *out_offset, CPUState *cpu, CPUTLBEntryFull *full,
     mr_offset = full->xlat_offset + addr;
     cpu->mem_io_pc = retaddr;
     if (!cpu->neg.can_do_io) {
-        io_clock_window(cpu, full, retaddr);
+        cpu_io_recompile(cpu, retaddr);
     }
 
     *out_offset = mr_offset;
@@ -2810,7 +2760,7 @@ bool do_ld_mmio_1p(CPUState *cpu, vaddr addr, MemOpIdx oi,
 
     cpu->mem_io_pc = ra;
     if (unlikely(!cpu->neg.can_do_io)) {
-        io_clock_window(cpu, full, ra);
+        cpu_io_recompile(cpu, ra);
     }
 
     took_bql = bql_lock_mmio();
@@ -3493,7 +3443,7 @@ bool do_st_mmio_1p(CPUState *cpu, vaddr addr, uint64_t val,
 
     cpu->mem_io_pc = ra;
     if (unlikely(!cpu->neg.can_do_io)) {
-        io_clock_window(cpu, full, ra);
+        cpu_io_recompile(cpu, ra);
     }
 
     took_bql = bql_lock_mmio();
