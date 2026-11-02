@@ -73,7 +73,7 @@ arm_common_user_system_ss.add(
   'neon_helper.c',
   'op_helper.c',
   'translate.c',
-  'w64-fill.c',
+  'w64-fill.c',  # WASM PORT FAST PATH (removable)
   'arm9e-cycles.c',
   'arm9e-memory.c',
   'translate-m-nocp.c',
