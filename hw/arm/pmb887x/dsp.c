@@ -36,7 +36,6 @@
 #define DSP_SYNC_PERIOD_NS	(100 * SCALE_US)
 #define DSP_RESET_START_CYCLES	512
 #define DSP_RUN_CYCLES		16384
-#define DSP_AFE_MS_CLOCK_DIVIDER	13
 #define DSP_SSC_BUS_NAME	"pmb887x-dsp-ssc"
 #define DSP_I2S1_TX_BUS_NAME	"pmb887x-dsp-i2s1-tx"
 #define DSP_I2S1_RX_BUS_NAME	"pmb887x-dsp-i2s1-rx"
@@ -79,11 +78,8 @@ struct dsp_state_t {
 	uint64_t pending_cycles;
 	uint64_t cycle_debt;
 	uint64_t cycle_remainder;
-	uint64_t afe_remainder;
-	size_t pending_afe_cycles;
 	int64_t sync_time_ns;
 	uint32_t clock_hz;
-	uint32_t afe_clock_hz;
 	uint16_t comm_status;
 	uint16_t comm_pending;
 	Clock *gsm_clock;
@@ -147,10 +143,7 @@ static void dsp_account_time(dsp_state_t *p) {
 	int64_t now = dsp_get_time_ns(p);
 	uint64_t elapsed = MAX(now - p->sync_time_ns, 0);
 	uint64_t scaled_cycles = elapsed * p->clock_hz + p->cycle_remainder;
-	uint64_t scaled_afe_cycles = p->afe_remainder;
 	uint64_t elapsed_cycles = scaled_cycles / NANOSECONDS_PER_SECOND;
-	if (p->clock_hz != 0)
-		scaled_afe_cycles += elapsed * p->afe_clock_hz;
 
 	p->sync_time_ns = now;
 	if (p->cycle_debt >= elapsed_cycles) {
@@ -160,8 +153,6 @@ static void dsp_account_time(dsp_state_t *p) {
 		p->cycle_debt = 0;
 	}
 	p->cycle_remainder = scaled_cycles % NANOSECONDS_PER_SECOND;
-	p->pending_afe_cycles += scaled_afe_cycles / NANOSECONDS_PER_SECOND;
-	p->afe_remainder = scaled_afe_cycles % NANOSECONDS_PER_SECOND;
 }
 
 static void dsp_sync(dsp_state_t *p) {
@@ -194,7 +185,7 @@ static void dsp_sync(dsp_state_t *p) {
 		remaining_cycles = DSP_RUN_CYCLES;
 	}
 	if (peripheral_cycles != 0)
-		dsp_runtime_advance_idle(p->runtime, peripheral_cycles, 0);
+		dsp_runtime_advance_idle(p->runtime, peripheral_cycles);
 	p->syncing = true;
 	while (remaining_cycles != 0 && dsp_runtime_is_running(p->runtime)) {
 		if (dsp_runtime_is_idle(p->runtime)) {
@@ -219,8 +210,7 @@ static void dsp_sync(dsp_state_t *p) {
 			break;
 		}
 	}
-	size_t advanced_afe_cycles = dsp_runtime_advance_idle(p->runtime, remaining_cycles, p->pending_afe_cycles);
-	p->pending_afe_cycles -= advanced_afe_cycles;
+	dsp_runtime_advance_idle(p->runtime, remaining_cycles);
 	p->syncing = false;
 
 	p->comm_status = dsp_runtime_get_comm(p->runtime);
@@ -304,7 +294,6 @@ static void dsp_ms_clock_update(void *opaque, ClockEvent _event) {
 	if (p->runtime == NULL)
 		return;
 	dsp_account_time(p);
-	p->afe_clock_hz = clock_get_hz(p->ms_clock) / DSP_AFE_MS_CLOCK_DIVIDER;
 	dsp_runtime_set_ms_clock_hz(p->runtime, clock_get_hz(p->ms_clock));
 	dsp_schedule_sync(p);
 }
@@ -350,9 +339,7 @@ static void dsp_reset_internal_state(dsp_state_t *p) {
 	p->comm_transition_pending = false;
 	p->pending_cycles = 0;
 	p->cycle_debt = 0;
-	p->pending_afe_cycles = 0;
 	p->cycle_remainder = 0;
-	p->afe_remainder = 0;
 	p->sync_time_ns = dsp_get_time_ns(p);
 	for (size_t i = 0; i < ARRAY_SIZE(p->outputs); i++)
 		qemu_irq_lower(p->outputs[i]);
@@ -724,7 +711,6 @@ static void dsp_realize(DeviceState *dev, Error **errp) {
 	p->runtime = dsp_runtime_create(config, rom->program_rom, rom->data_rom,
 		p, dsp_notify_activity, dsp_notify_comm, dsp_get_time_ns, dsp_ssc_transfer, &ports);
 	dsp_runtime_set_iq_bus(p->runtime, p->iq_rx_bus);
-	p->afe_clock_hz = clock_get_hz(p->ms_clock) / DSP_AFE_MS_CLOCK_DIVIDER;
 	dsp_runtime_set_ms_clock_hz(p->runtime, clock_get_hz(p->ms_clock));
 	p->sync_timer = timer_new_ns(QEMU_CLOCK_VIRTUAL, dsp_sync_timer, p);
 	p->sync_time_ns = dsp_get_time_ns(p);

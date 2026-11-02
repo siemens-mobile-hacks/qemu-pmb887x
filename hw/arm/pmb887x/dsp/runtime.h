@@ -26,7 +26,7 @@ void dsp_runtime_set_clock_divider(dsp_runtime_t *runtime, uint32_t divider);
 void dsp_runtime_update_time(dsp_runtime_t *runtime);
 size_t dsp_runtime_run(dsp_runtime_t *runtime, size_t max_cycles, bool *deferred);
 size_t dsp_runtime_advance_idle_until_event(dsp_runtime_t *runtime, size_t max_cycles);
-size_t dsp_runtime_advance_idle(dsp_runtime_t *runtime, size_t cycles, size_t afe_cycles);
+void dsp_runtime_advance_idle(dsp_runtime_t *runtime, size_t cycles);
 bool dsp_runtime_is_running(const dsp_runtime_t *runtime);
 bool dsp_runtime_is_idle(const dsp_runtime_t *runtime);
 bool dsp_runtime_needs_core_catchup(const dsp_runtime_t *runtime);

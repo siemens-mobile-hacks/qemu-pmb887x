@@ -179,6 +179,8 @@ void dsp_bus_reset(dsp_bus_t *bus) {
 }
 
 void dsp_bus_set_clock_hz(dsp_bus_t *bus, uint32_t frequency_hz) {
+	if (bus->afe != NULL)
+		afe_set_clock_hz(bus->afe, frequency_hz);
 	if (bus->cipher != NULL)
 		cipher_set_clock_hz(bus->cipher, frequency_hz);
 	for (size_t i = 0; i < bus->i2s_count; i++)
@@ -188,6 +190,8 @@ void dsp_bus_set_clock_hz(dsp_bus_t *bus, uint32_t frequency_hz) {
 }
 
 void dsp_bus_set_ms_clock_hz(dsp_bus_t *bus, uint32_t frequency_hz) {
+	if (bus->afe != NULL)
+		afe_set_ms_clock_hz(bus->afe, frequency_hz);
 	for (size_t i = 0; i < bus->i2s_count; i++)
 		dsp_i2s_set_ms_clock_hz(bus->i2s[i], frequency_hz);
 	if (bus->i2s_tx != NULL)
@@ -200,7 +204,8 @@ void dsp_bus_update_time(dsp_bus_t *bus) {
 }
 
 void dsp_bus_advance(dsp_bus_t *bus, size_t cycles) {
-	/* The AFE has its own 8 MHz analog clock and advances separately. */
+	if (bus->afe != NULL && afe_is_active(bus->afe))
+		afe_advance(bus->afe, cycles);
 	if (bus->baseband != NULL && baseband_is_active(bus->baseband))
 		baseband_advance(bus->baseband);
 	if (bus->channel_decoder != NULL && chdec_is_active(bus->channel_decoder))
@@ -222,12 +227,6 @@ void dsp_bus_advance(dsp_bus_t *bus, size_t cycles) {
 		timer2_advance(bus->timer2, cycles);
 }
 
-size_t dsp_bus_advance_afe(dsp_bus_t *bus, size_t cycles) {
-	if (bus->afe != NULL && afe_is_active(bus->afe))
-		return afe_advance(bus->afe, cycles);
-	return cycles;
-}
-
 void dsp_bus_advance_idle(dsp_bus_t *bus, size_t cycles) {
 	dsp_bus_advance(bus, cycles);
 }
@@ -235,6 +234,8 @@ void dsp_bus_advance_idle(dsp_bus_t *bus, size_t cycles) {
 size_t dsp_bus_get_cycles_until_event(const dsp_bus_t *bus) {
 	size_t cycles = SIZE_MAX;
 
+	if (bus->afe != NULL && afe_is_active(bus->afe))
+		cycles = afe_get_cycles_until_event(bus->afe);
 	for (size_t i = 0; i < bus->i2s_count; i++)
 		cycles = MIN(cycles, dsp_i2s_get_cycles_until_receive_interrupt(bus->i2s[i]));
 	return cycles;

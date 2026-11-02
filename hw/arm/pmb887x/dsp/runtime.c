@@ -533,12 +533,9 @@ size_t dsp_runtime_advance_idle_until_event(dsp_runtime_t *runtime, size_t max_c
 	return cycles;
 }
 
-size_t dsp_runtime_advance_idle(dsp_runtime_t *runtime, size_t cycles, size_t afe_cycles) {
+void dsp_runtime_advance_idle(dsp_runtime_t *runtime, size_t cycles) {
 	if (cycles != 0)
 		dsp_bus_advance_idle(runtime->bus, cycles * runtime->clock_divider);
-	if (afe_cycles != 0)
-		return dsp_bus_advance_afe(runtime->bus, afe_cycles);
-	return 0;
 }
 
 void dsp_runtime_set_clock_divider(dsp_runtime_t *runtime, uint32_t divider) {

@@ -353,13 +353,16 @@ static void test_afe_clock(void) {
 	test_host_t host = {};
 	pmb887x_dsp_peripheral_bus_t *bus = test_bus_create(&host);
 
+	/* With these clocks one DSP cycle is one AFE cycle. */
+	pmb887x_dsp_peripheral_bus_set_clock_hz(bus, 8000000);
+	pmb887x_dsp_peripheral_bus_set_ms_clock_hz(bus, 104000000);
 	host.data[TEST_AFE_DAC_RING_OFFSET] = 0x1234;
 	test_audio_sample_count = 0;
 	pmb887x_dsp_peripheral_bus_reset(bus);
 	pmb887x_dsp_peripheral_bus_write(bus, TEST_AFE_BASE + TEAK_AFE_INTPTR, 0x3F3F);
 	pmb887x_dsp_peripheral_bus_write(bus, TEST_AFE_BASE + TEAK_AFE_BCON,
 		TEAK_AFE_BCON_MODE | TEAK_AFE_BCON_RXSTART | TEAK_AFE_BCON_RXRATE_KHZ_8);
-	pmb887x_dsp_peripheral_bus_advance_afe(bus, 1000);
+	pmb887x_dsp_peripheral_bus_advance_idle(bus, 1000);
 	g_assert_cmpuint(host.data_read_count, ==, 1);
 	g_assert_cmphex(host.data_read_address, ==, TEST_AFE_DAC_RING_OFFSET);
 	g_assert_cmpuint(test_audio_sample_count, ==, 1);
@@ -370,9 +373,9 @@ static void test_afe_clock(void) {
 		pmb887x_dsp_peripheral_bus_write(bus, TEST_AFE_BASE + TEAK_AFE_INTPTR, 0x3F3F);
 		pmb887x_dsp_peripheral_bus_write(bus, TEST_AFE_BASE + TEAK_AFE_BCON,
 			TEAK_AFE_BCON_MODE | TEAK_AFE_BCON_RXSTART | receive_rates[i].rate);
-		pmb887x_dsp_peripheral_bus_advance_afe(bus, receive_rates[i].word_cycles - 1);
+		pmb887x_dsp_peripheral_bus_advance_idle(bus, receive_rates[i].word_cycles - 1);
 		g_assert_cmphex(pmb887x_dsp_peripheral_bus_read(bus, TEST_AFE_BASE + TEAK_AFE_RWADDR), ==, 0);
-		pmb887x_dsp_peripheral_bus_advance_afe(bus, 1);
+		pmb887x_dsp_peripheral_bus_advance_idle(bus, 1);
 		g_assert_cmphex(pmb887x_dsp_peripheral_bus_read(bus, TEST_AFE_BASE + TEAK_AFE_RWADDR), ==, 1);
 	}
 
@@ -381,27 +384,27 @@ static void test_afe_clock(void) {
 	g_assert_cmphex(pmb887x_dsp_peripheral_bus_read(bus, TEST_AFE_BASE + TEAK_AFE_INTPTR), ==, 0x0101);
 	pmb887x_dsp_peripheral_bus_write(bus, TEST_AFE_BASE + TEAK_AFE_BCON,
 		TEAK_AFE_BCON_MODE | TEAK_AFE_BCON_RXSTART | TEAK_AFE_BCON_RXRATE_KHZ_47_619);
-	pmb887x_dsp_peripheral_bus_advance_afe(bus, 84);
+	pmb887x_dsp_peripheral_bus_advance_idle(bus, 84);
 	g_assert_cmphex(pmb887x_dsp_peripheral_bus_get_interrupt_flags(bus, 1), ==, TEAK_INT_FINTB0_VBRX);
 
 	pmb887x_dsp_peripheral_bus_reset(bus);
 	pmb887x_dsp_peripheral_bus_write(bus, TEST_AFE_BASE + TEAK_AFE_INTPTR, 0x3F3F);
 	pmb887x_dsp_peripheral_bus_write(bus, TEST_AFE_BASE + TEAK_AFE_BCON,
 		TEAK_AFE_BCON_MODE | TEAK_AFE_BCON_RXSTART | TEAK_AFE_BCON_RXRATE_KHZ_8);
-	pmb887x_dsp_peripheral_bus_advance_afe(bus, 255);
+	pmb887x_dsp_peripheral_bus_advance_idle(bus, 255);
 	pmb887x_dsp_peripheral_bus_write(bus, TEST_AFE_BASE + TEAK_AFE_BCON,
 		TEAK_AFE_BCON_MODE | TEAK_AFE_BCON_RXSTART | TEAK_AFE_BCON_RXRATE_KHZ_47_619);
-	pmb887x_dsp_peripheral_bus_advance_afe(bus, 1);
+	pmb887x_dsp_peripheral_bus_advance_idle(bus, 1);
 	g_assert_cmphex(pmb887x_dsp_peripheral_bus_read(bus, TEST_AFE_BASE + TEAK_AFE_RWADDR), ==, 1);
 
 	pmb887x_dsp_peripheral_bus_reset(bus);
 	pmb887x_dsp_peripheral_bus_write(bus, TEST_AFE_BASE + TEAK_AFE_INTPTR, 0x3F3F);
 	pmb887x_dsp_peripheral_bus_write(bus, TEST_AFE_BASE + TEAK_AFE_BCON,
 		TEAK_AFE_BCON_MODE | TEAK_AFE_BCON_TXSTART | TEAK_AFE_BCON_TXRATE_KHZ_8);
-	pmb887x_dsp_peripheral_bus_advance_afe(bus, 750);
+	pmb887x_dsp_peripheral_bus_advance_idle(bus, 750);
 	pmb887x_dsp_peripheral_bus_write(bus, TEST_AFE_BASE + TEAK_AFE_BCON,
 		TEAK_AFE_BCON_MODE | TEAK_AFE_BCON_TXSTART | TEAK_AFE_BCON_TXRATE_KHZ_16);
-	pmb887x_dsp_peripheral_bus_advance_afe(bus, 1);
+	pmb887x_dsp_peripheral_bus_advance_idle(bus, 1);
 	g_assert_cmphex(pmb887x_dsp_peripheral_bus_read(bus, TEST_AFE_BASE + TEAK_AFE_RWADDR), ==, 0x0100);
 
 	for (size_t i = 0; i < ARRAY_SIZE(transmit_rates); i++) {
@@ -409,9 +412,9 @@ static void test_afe_clock(void) {
 		pmb887x_dsp_peripheral_bus_write(bus, TEST_AFE_BASE + TEAK_AFE_INTPTR, 0x0101);
 		pmb887x_dsp_peripheral_bus_write(bus, TEST_AFE_BASE + TEAK_AFE_BCON,
 			TEAK_AFE_BCON_MODE | TEAK_AFE_BCON_TXSTART | transmit_rates[i].rate);
-		pmb887x_dsp_peripheral_bus_advance_afe(bus, transmit_rates[i].sample_cycles - 1);
+		pmb887x_dsp_peripheral_bus_advance_idle(bus, transmit_rates[i].sample_cycles - 1);
 		g_assert_cmphex(pmb887x_dsp_peripheral_bus_read(bus, TEST_AFE_BASE + TEAK_AFE_RWADDR), ==, 0);
-		pmb887x_dsp_peripheral_bus_advance_afe(bus, 1);
+		pmb887x_dsp_peripheral_bus_advance_idle(bus, 1);
 		g_assert_cmphex(pmb887x_dsp_peripheral_bus_read(bus, TEST_AFE_BASE + TEAK_AFE_RWADDR), ==, 0x0100);
 		g_assert_cmphex(pmb887x_dsp_peripheral_bus_get_interrupt_flags(bus, 1), ==, TEAK_INT_FINTB0_VBTX);
 	}

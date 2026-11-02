@@ -73,8 +73,11 @@ static inline void dsp_bus_write_at(dsp_bus_t *bus, uint16_t address, uint16_t v
 dsp_device_t *dsp_device_create(const pmb887x_dsp_peripheral_config_t *config, const dsp_device_ops_t *ops, void *state);
 
 dsp_device_t *afe_create(const pmb887x_dsp_peripheral_config_t *config, dsp_device_t *interrupt, const dsp_host_t *host);
-size_t afe_advance(dsp_device_t *device, size_t cycles);
+void afe_advance(dsp_device_t *device, size_t cycles);
 bool afe_is_active(const dsp_device_t *device);
+size_t afe_get_cycles_until_event(const dsp_device_t *device);
+void afe_set_clock_hz(dsp_device_t *device, uint32_t frequency_hz);
+void afe_set_ms_clock_hz(dsp_device_t *device, uint32_t frequency_hz);
 
 dsp_device_t *baseband_create(const pmb887x_dsp_peripheral_config_t *config, dsp_device_t *interrupt, const dsp_host_t *host);
 void baseband_set_signal(
