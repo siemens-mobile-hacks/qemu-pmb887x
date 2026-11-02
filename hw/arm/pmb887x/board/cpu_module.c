@@ -1,6 +1,7 @@
 #include "hw/arm/pmb887x/board/cpu_module.h"
 
 #include "hw/arm/pmb887x/board/board.h"
+#include "hw/arm/pmb887x/board/timings/bus.h"
 #include "hw/arm/pmb887x/board/gpio.h"
 #include "hw/arm/pmb887x/gen/cpu_modules.h"
 #include "hw/arm/pmb887x/gen/cpu_regs.h"
@@ -35,6 +36,8 @@ DeviceState *pmb887x_new_cpu_module(const char *name) {
 		qdev_prop_set_uint32(dev, "peripheral-id", mod->id);
 
 	sysbus_mmio_map(SYS_BUS_DEVICE(dev), 0, mod->base);
+	if (mod->bus[0])
+		pmb887x_bus_add_region(mod->bus, sysbus_mmio_get_region(SYS_BUS_DEVICE(dev), 0));
 
 	if (mod->clock[0]) {
 		DeviceState *cgu = qdev_find_recursive(sysbus_get_default(), "CGU");

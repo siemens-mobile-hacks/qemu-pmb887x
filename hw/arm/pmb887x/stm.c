@@ -11,6 +11,7 @@
 #include "qapi/error.h"
 #include "qemu/timer.h"
 #include "qemu/main-loop.h"
+#include "qemu/seqlock.h"
 #include "hw/core/qdev-properties.h"
 #include "hw/core/qdev-clock.h"
 
@@ -33,6 +34,7 @@ struct pmb887x_stm_t {
 	pmb887x_clc_reg_t clc;
 	bool rmc2_enabled;
 	
+	QemuSeqLock seq;
 	bool enabled;
 	uint32_t freq;
 	int64_t start;
@@ -40,12 +42,26 @@ struct pmb887x_stm_t {
 	int64_t counter;
 };
 
+static uint64_t stm_ns_to_ticks(uint64_t ns, uint32_t freq) {
+	uint64_t seconds = ns / NANOSECONDS_PER_SECOND;
+	uint64_t remainder_ns = ns % NANOSECONDS_PER_SECOND;
+
+	return seconds * freq + remainder_ns * freq / NANOSECONDS_PER_SECOND;
+}
+
 static int64_t stm_get_time(pmb887x_stm_t *p) {
-	if (p->enabled) {
-		uint64_t delta_ns = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) - p->start;
-		return p->counter + muldiv64(delta_ns, p->freq, NANOSECONDS_PER_SECOND);
-	}
-	return p->counter;
+	int64_t time;
+	unsigned start;
+
+	do {
+		start = seqlock_read_begin(&p->seq);
+		int64_t now_ns = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
+		time = p->counter;
+		if (p->enabled)
+			time += stm_ns_to_ticks(now_ns - p->start, p->freq);
+	} while (seqlock_read_retry(&p->seq, start));
+
+	return time;
 }
 
 static uint32_t stm_get_frequency_hz(pmb887x_stm_t *p) {
@@ -67,7 +83,10 @@ static void stm_update_state(pmb887x_stm_t *p) {
 	bool new_enabled = new_freq > 0;
 	
 	if (new_enabled != p->enabled || new_freq != p->freq) {
-		p->counter = stm_get_time(p);
+		int64_t counter = stm_get_time(p);
+
+		seqlock_write_begin(&p->seq);
+		p->counter = counter;
 		p->freq = new_freq;
 		p->enabled = new_enabled;
 		
@@ -76,6 +95,7 @@ static void stm_update_state(pmb887x_stm_t *p) {
 		} else {
 			p->start = 0;
 		}
+		seqlock_write_end(&p->seq);
 		
 		DPRINTF("clk=%u, fSTM=%u [%s]\n", clock_get_hz(p->clc.clock), p->freq, p->enabled ? "ON" : "OFF");
 	}
@@ -158,6 +178,7 @@ static uint64_t stm_io_read(void *opaque, hwaddr haddr, unsigned size) {
 static void stm_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned size) {
 	pmb887x_stm_t *p = opaque;
 	
+	BQL_LOCK_GUARD();
 	IO_DUMP_WRITE(haddr + p->mmio.addr, size, value);
 	
 	switch (haddr) {
@@ -186,7 +207,9 @@ static void stm_init(Object *obj) {
 	pmb887x_clc_init(&p->clc, DEVICE(obj));
 	pmb887x_clc_set_callback(&p->clc, stm_clock_update, p);
 	qdev_init_gpio_in_named(DEVICE(obj), stm_handle_rmc2_enable, "RMC2_ENABLE_IN", 1);
+	seqlock_init(&p->seq);
 	memory_region_init_io(&p->mmio, obj, &io_ops, p, "pmb887x-stm", STM_IO_SIZE);
+	memory_region_enable_lockless_io(&p->mmio);
 	sysbus_init_mmio(SYS_BUS_DEVICE(obj), &p->mmio);
 }
 
@@ -194,10 +217,12 @@ static void stm_reset(DeviceState *dev) {
 	pmb887x_stm_t *p = PMB887X_STM(dev);
 
 	pmb887x_clc_set(&p->clc, STM_CLC_RESET_VALUE);
+	seqlock_write_begin(&p->seq);
 	p->enabled = false;
 	p->start = 0;
-	p->capture = 0;
 	p->counter = 0;
+	seqlock_write_end(&p->seq);
+	p->capture = 0;
 	stm_update_state(p);
 }
 

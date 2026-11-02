@@ -11,6 +11,7 @@ struct pmb887x_iq_bus_t {
 typedef struct pmb887x_iq_endpoint_t {
 	DeviceState parent_obj;
 	pmb887x_rf_iq_source_t *source;
+	pmb887x_rf_iq_source_class_t *source_class;
 } pmb887x_iq_endpoint_t;
 
 pmb887x_iq_bus_t *pmb887x_iq_bus_create(DeviceState *parent, const char *name) {
@@ -22,6 +23,7 @@ static DeviceState *iq_source_port_create_endpoint(QDevBusPort *base, Error **_e
 	DeviceState *dev = qdev_new(TYPE_PMB887X_IQ_ENDPOINT);
 	pmb887x_iq_endpoint_t *endpoint = PMB887X_IQ_ENDPOINT(dev);
 	endpoint->source = port->source;
+	endpoint->source_class = PMB887X_RF_IQ_SOURCE_GET_CLASS(port->source);
 	return dev;
 }
 
@@ -43,10 +45,9 @@ pmb887x_iq_sample_t pmb887x_iq_bus_read(pmb887x_iq_bus_t *bus, int64_t timestamp
 	if (!pmb887x_iq_bus_has_source(bus))
 		return (pmb887x_iq_sample_t) { 0, 0 };
 
-	BusChild *child = QTAILQ_FIRST(&BUS(bus)->children);
-	pmb887x_rf_iq_source_t *source = PMB887X_IQ_ENDPOINT(child->child)->source;
-	pmb887x_rf_iq_source_class_t *klass = PMB887X_RF_IQ_SOURCE_GET_CLASS(source);
-	return klass->read_iq(source, timestamp, sample_index);
+	BusChild *child = QTAILQ_FIRST(&bus->parent_obj.children);
+	pmb887x_iq_endpoint_t *endpoint = container_of(child->child, pmb887x_iq_endpoint_t, parent_obj);
+	return endpoint->source_class->read_iq(endpoint->source, timestamp, sample_index);
 }
 
 static bool iq_bus_check_address(BusState *bus, DeviceState *_dev, Error **errp) {

@@ -629,6 +629,10 @@ struct MemoryRegion {
     bool disable_reentrancy_guard;
     /* RAM device region that does not require IOMMU mapping for P2P */
     bool ram_device_skip_iommu_map;
+    /* CF_COUNT_CYCLES CPU cycles a read takes beyond the instruction */
+    uint32_t read_cycles;
+    /* CF_COUNT_CYCLES memory timing index of instruction fetches */
+    uint8_t fetch_kind;
 };
 
 struct IOMMUMemoryRegion {
@@ -1957,6 +1961,47 @@ void memory_region_reset_dirty(MemoryRegion *mr, hwaddr addr,
  * @size: the size, in bytes, of the range being flushed.
  */
 void memory_region_flush_rom_device(MemoryRegion *mr, hwaddr addr, hwaddr size);
+
+/**
+ * memory_region_set_read_cycles: Set the CPU cycles of a read
+ *
+ * A vCPU that counts cycles (CF_COUNT_CYCLES) spends @cycles beyond the
+ * load instruction on every read of the region and of its subregions,
+ * before the read reaches them.
+ *
+ * @mr: the region being updated.
+ * @cycles: the CPU cycles of one read.
+ */
+void memory_region_set_read_cycles(MemoryRegion *mr, uint32_t cycles);
+
+/**
+ * memory_region_get_read_cycles: Get the CPU cycles of a read
+ *
+ * Returns the read cycles of @mr or of its nearest container that has them.
+ *
+ * @mr: the region being read.
+ */
+uint32_t memory_region_get_read_cycles(MemoryRegion *mr);
+
+/**
+ * memory_region_set_fetch_kind: Set how instruction fetches from a region cost
+ *
+ * A vCPU that counts cycles (CF_COUNT_CYCLES) looks up the cost of code it
+ * fetches from the region and its subregions by @kind; kind 0 costs none.
+ *
+ * @mr: the region being updated.
+ * @kind: the index into the fetch costs of the memory timing.
+ */
+void memory_region_set_fetch_kind(MemoryRegion *mr, uint8_t kind);
+
+/**
+ * memory_region_get_fetch_kind: Get how instruction fetches from a region cost
+ *
+ * Returns the fetch kind of @mr or of its nearest container that has one.
+ *
+ * @mr: the region code is fetched from.
+ */
+uint8_t memory_region_get_fetch_kind(MemoryRegion *mr);
 
 /**
  * memory_region_set_readonly: Turn a memory region read-only (or read-write)

@@ -453,6 +453,7 @@ static void tlb_flush_by_mmuidx_async_work(CPUState *cpu, run_on_cpu_data data)
     qemu_spin_unlock(&cpu->neg.tlb.c.lock);
 
     tcg_flush_jmp_cache(cpu);
+    tb_unlink_cross_page_jumps();
 
     if (to_clean == ALL_MMUIDX_BITS) {
         qatomic_set(&cpu->neg.tlb.c.full_flush_count,
@@ -729,6 +730,7 @@ static void tlb_flush_page_by_mmuidx_async_0(CPUState *cpu,
      */
     tb_jmp_cache_clear_page(cpu, addr - TARGET_PAGE_SIZE);
     tb_jmp_cache_clear_page(cpu, addr);
+    tb_unlink_cross_page_jumps();
 }
 
 /**
@@ -912,6 +914,8 @@ static void tlb_flush_range_by_mmuidx_async_0(CPUState *cpu,
         }
     }
     qemu_spin_unlock(&cpu->neg.tlb.c.lock);
+
+    tb_unlink_cross_page_jumps();
 
     /*
      * If the length is larger than the jump cache size, then it will take
@@ -2563,6 +2567,9 @@ static uint64_t int_ld_mmio_beN(CPUState *cpu, CPUTLBEntryFull *full,
         this_size = 1 << this_mop;
         this_mop |= MO_BE;
 
+        if (tcg_cflags_has(cpu, CF_MEMORY_TIMING)) {
+            cpu->neg.cycle_count += memory_region_get_read_cycles(mr);
+        }
         /* Fill-time resolved dispatch: one mask test + indirect call. */
         hwaddr io_offset = mr_offset + full->io_off_delta;
 
@@ -2628,6 +2635,10 @@ static uint64_t do_ld_mmio_beN(CPUState *cpu, CPUTLBEntryFull *full,
     section = io_prepare(&mr_offset, cpu, full, addr, ra);
     mr = section->mr;
 
+    if (mr->lockless_io) {
+        return int_ld_mmio_beN(cpu, full, ret_be, addr, size, mmu_idx,
+                               type, ra, mr, mr_offset);
+    }
     BQL_LOCK_GUARD();
     return int_ld_mmio_beN(cpu, full, ret_be, addr, size, mmu_idx,
                            type, ra, mr, mr_offset);

@@ -10,6 +10,7 @@
 #include "qemu/timer.h"
 #include "chardev/char.h"
 #include "hw/core/irq.h"
+#include "hw/core/qdev-clock.h"
 #include "hw/core/qdev-properties.h"
 #include "qapi/error.h"
 
@@ -22,7 +23,8 @@ OBJECT_DECLARE_SIMPLE_TYPE(pmb887x_sim_card_chardev_t, PMB887X_SIM_CARD_CHARDEV)
 
 #define SIM_CARD_PROCEDURE_BYTE_SIZE 1
 #define SIM_CARD_OUTPUT_SIZE (PMB887X_APDU_MAX_RESPONSE_SIZE + 2 * SIM_CARD_PROCEDURE_BYTE_SIZE + PMB887X_APDU_STATUS_SIZE)
-#define SIM_CARD_BYTE_TIME_NS SCALE_MS
+#define SIM_CARD_CHARACTER_ETU 12
+#define SIM_CARD_CLOCKS_PER_ETU 372
 
 enum sim_card_state_t {
 	SIM_CARD_STATE_HEADER,
@@ -38,6 +40,7 @@ struct pmb887x_sim_card_t {
 	char *imsi;
 	char *operator_code;
 	char *reader_name;
+	Clock *clock;
 	QEMUTimer *tx_timer;
 	Fifo8 output;
 
@@ -72,8 +75,12 @@ static void sim_card_trace_bytes(const char *name, const uint8_t *data, size_t s
 }
 
 static void sim_card_schedule_output(pmb887x_sim_card_t *card) {
-	if (!timer_pending(card->tx_timer) && !fifo8_is_empty(&card->output))
-		timer_mod(card->tx_timer, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + SIM_CARD_BYTE_TIME_NS);
+	uint32_t clock_hz = clock_get_hz(card->clock);
+	if (fifo8_is_empty(&card->output) || clock_hz == 0 || timer_pending(card->tx_timer))
+		return;
+
+	int64_t character_ns = muldiv64(SIM_CARD_CHARACTER_ETU * SIM_CARD_CLOCKS_PER_ETU, NANOSECONDS_PER_SECOND, clock_hz);
+	timer_mod(card->tx_timer, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + character_ns);
 }
 
 static void sim_card_queue_bytes(pmb887x_sim_card_t *card, const uint8_t *data, size_t size) {
@@ -227,8 +234,14 @@ static void sim_card_handle_reset(void *opaque, int _id, int level) {
 	}
 }
 
+static void sim_card_clock_update(void *opaque, ClockEvent _event) {
+	sim_card_schedule_output(opaque);
+}
+
 static void sim_card_init(Object *obj) {
+	pmb887x_sim_card_t *card = PMB887X_SIM_CARD(obj);
 	qdev_init_gpio_in_named(DEVICE(obj), sim_card_handle_reset, "RST_IN", 1);
+	card->clock = qdev_init_clock_in(DEVICE(obj), "clk", sim_card_clock_update, card, ClockUpdate);
 }
 
 static void sim_card_realize(DeviceState *dev, Error **errp) {

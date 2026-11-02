@@ -223,6 +223,10 @@ static inline uint32_t dif_get_tx_burst_size(pmb887x_dif_t *p) {
 	return bs * (4 / dif_get_tx_align(p));
 }
 
+static inline bool dif_is_serial(pmb887x_dif_t *p) {
+	return (p->perreg & DIFv2_PERREG_DIFPERMODE) == DIFv2_PERREG_DIFPERMODE_SERIAL;
+}
+
 static inline uint32_t dif_get_bsconf_word_count(pmb887x_dif_t *p) {
 	uint32_t csreg = dif_get_transfer_csreg(p);
 
@@ -230,32 +234,24 @@ static inline uint32_t dif_get_bsconf_word_count(pmb887x_dif_t *p) {
 		case DIFv2_CSREG_BSCONF_OFF:
 			return 0;
 		case DIFv2_CSREG_BSCONF_1x8BIT:
-		case DIFv2_CSREG_BSCONF_1x9BIT:
 			return 1;
 		case DIFv2_CSREG_BSCONF_2x8BIT:
-		case DIFv2_CSREG_BSCONF_2x9BIT:
 			return 2;
 		case DIFv2_CSREG_BSCONF_3x8BIT:
-		case DIFv2_CSREG_BSCONF_3x9BIT:
 			return 3;
 		case DIFv2_CSREG_BSCONF_4x8BIT:
 			return 4;
+		case DIFv2_CSREG_BSCONF_1x9BIT:
+		case DIFv2_CSREG_BSCONF_2x9BIT:
+		case DIFv2_CSREG_BSCONF_3x9BIT:
+			return dif_is_serial(p) ? 0 : 1;
 	}
 	hw_error("Invalid bsconf value: %08X", (csreg & DIFv2_CSREG_BSCONF) >> DIFv2_CSREG_BSCONF_SHIFT);
 	return 0;
 }
 
-static inline bool dif_is_bsconf_9bit(pmb887x_dif_t *p) {
-	uint32_t bsconf = dif_get_transfer_csreg(p) & DIFv2_CSREG_BSCONF;
-	return bsconf == DIFv2_CSREG_BSCONF_1x9BIT || bsconf == DIFv2_CSREG_BSCONF_2x9BIT || bsconf == DIFv2_CSREG_BSCONF_3x9BIT;
-}
-
 static inline uint32_t dif_get_word_bits(pmb887x_dif_t *p) {
 	return ((p->con & DIFv2_CON_BM) >> DIFv2_CON_BM_SHIFT) + 1;
-}
-
-static inline bool dif_is_serial(pmb887x_dif_t *p) {
-	return (p->perreg & DIFv2_PERREG_DIFPERMODE) == DIFv2_PERREG_DIFPERMODE_SERIAL;
 }
 
 static inline uint32_t dif_get_tx_word_bits(pmb887x_dif_t *p) {
@@ -665,7 +661,7 @@ static uint32_t dif_convert_color(pmb887x_dif_t *p, uint32_t value) {
 		(value >> 8) & 0xFF,
 		(value >> 16) & 0xFF,
 	};
-	uint32_t output = 0;
+	uint32_t output = value & 0xFF000000;
 
 	for (uint32_t row = 0; row < 3; row++) {
 		int32_t result = 0;
@@ -831,15 +827,12 @@ static void dif_start_rx(pmb887x_dif_t *p) {
 
 static bool dif_push_rx_word(pmb887x_dif_t *p, uint16_t value) {
 	uint32_t align = dif_get_rx_align(p);
-	bool is_packed_9bit = dif_is_serial(p) && dif_is_bsconf_9bit(p);
-	uint32_t words_per_stage = is_packed_9bit ? dif_get_bsconf_word_count(p) : 4 / align;
-	uint32_t word_shift = is_packed_9bit ? 9 : align * 8;
 
-	p->rx_buffer |= ((uint32_t) value << (p->rx_buffer_word_count * word_shift));
+	p->rx_buffer |= ((uint32_t) value << (p->rx_buffer_word_count * align * 8));
 	p->rx_buffer_word_count++;
 
-	if (p->rx_buffer_word_count == words_per_stage) {
-		uint32_t received_words = is_packed_9bit ? 1 : p->rx_buffer_word_count;
+	if (p->rx_buffer_word_count == 4 / align) {
+		uint32_t received_words = p->rx_buffer_word_count;
 
 		if (pmb887x_fifo_is_full(&p->rx_fifo)) {
 			DPRINTF("RX FIFO overflow!\n");
@@ -864,7 +857,7 @@ static bool dif_push_rx_word(pmb887x_dif_t *p, uint16_t value) {
 
 static bool dif_flush_rx_buffer(pmb887x_dif_t *p) {
 	if (p->rx_buffer_word_count != 0) {
-		uint32_t received_words = dif_is_bsconf_9bit(p) ? 1 : p->rx_buffer_word_count;
+		uint32_t received_words = p->rx_buffer_word_count;
 
 		if (pmb887x_fifo_is_full(&p->rx_fifo)) {
 			DPRINTF("RX FIFO overflow!\n");
@@ -1001,6 +994,54 @@ static bool dif_is_pbc_selection_valid(pmb887x_dif_t *p) {
 	return true;
 }
 
+static const uint32_t DIF_INBAND_FORMATS[] = {
+	[DIFv2_CSREG_BSCONF_OFF >> DIFv2_CSREG_BSCONF_SHIFT] = DIFv2_TXD_INBAND_FORMAT_OFF,
+	[DIFv2_CSREG_BSCONF_1x8BIT >> DIFv2_CSREG_BSCONF_SHIFT] = DIFv2_TXD_INBAND_FORMAT_1x8BIT,
+	[DIFv2_CSREG_BSCONF_1x9BIT >> DIFv2_CSREG_BSCONF_SHIFT] = DIFv2_TXD_INBAND_FORMAT_1x9BIT,
+	[DIFv2_CSREG_BSCONF_2x8BIT >> DIFv2_CSREG_BSCONF_SHIFT] = DIFv2_TXD_INBAND_FORMAT_2x8BIT,
+	[DIFv2_CSREG_BSCONF_2x9BIT >> DIFv2_CSREG_BSCONF_SHIFT] = DIFv2_TXD_INBAND_FORMAT_2x9BIT,
+	[DIFv2_CSREG_BSCONF_3x8BIT >> DIFv2_CSREG_BSCONF_SHIFT] = DIFv2_TXD_INBAND_FORMAT_3x8BIT,
+	[DIFv2_CSREG_BSCONF_3x9BIT >> DIFv2_CSREG_BSCONF_SHIFT] = DIFv2_TXD_INBAND_FORMAT_3x9BIT,
+	[DIFv2_CSREG_BSCONF_4x8BIT >> DIFv2_CSREG_BSCONF_SHIFT] = DIFv2_TXD_INBAND_FORMAT_4x8BIT,
+};
+
+static uint32_t dif_csreg_to_txd_control(uint32_t csreg) {
+	uint32_t bsconf_index = (csreg & DIFv2_CSREG_BSCONF) >> DIFv2_CSREG_BSCONF_SHIFT;
+
+	return (
+		((csreg & DIFv2_CSREG_CS1) ? DIFv2_TXD_INBAND_CS1 : 0) |
+		((csreg & DIFv2_CSREG_CS2) ? DIFv2_TXD_INBAND_CS2 : 0) |
+		((csreg & DIFv2_CSREG_CD) ? DIFv2_TXD_INBAND_CD : 0) |
+		((csreg & DIFv2_CSREG_CS3) ? DIFv2_TXD_INBAND_CS3 : 0) |
+		DIF_INBAND_FORMATS[bsconf_index] |
+		((csreg & DIFv2_CSREG_GRACMD) ? DIFv2_TXD_INBAND_GRACMD : 0)
+	);
+}
+
+static uint32_t dif_txd_control_to_csreg(uint32_t txd) {
+	uint32_t bsconf = DIFv2_CSREG_BSCONF_OFF;
+
+	for (uint32_t i = 0; i < ARRAY_SIZE(DIF_INBAND_FORMATS); i++) {
+		if (DIF_INBAND_FORMATS[i] == (txd & DIFv2_TXD_INBAND_FORMAT))
+			bsconf = i << DIFv2_CSREG_BSCONF_SHIFT;
+	}
+
+	return (
+		((txd & DIFv2_TXD_INBAND_CS1) ? DIFv2_CSREG_CS1 : 0) |
+		((txd & DIFv2_TXD_INBAND_CS2) ? DIFv2_CSREG_CS2 : 0) |
+		((txd & DIFv2_TXD_INBAND_CD) ? DIFv2_CSREG_CD : 0) |
+		((txd & DIFv2_TXD_INBAND_CS3) ? DIFv2_CSREG_CS3 : 0) |
+		bsconf |
+		((txd & DIFv2_TXD_INBAND_GRACMD) ? DIFv2_CSREG_GRACMD : 0)
+	);
+}
+
+static uint32_t dif_get_tx_lane(uint32_t value, uint32_t align, uint32_t lane) {
+	uint32_t lane_bits = align * 8;
+
+	return (value >> (lane * lane_bits)) & dif_get_word_mask(lane_bits);
+}
+
 static void dif_tx_from_fifo(pmb887x_dif_t *p) {
 	if (p->state != DIF_STATE_TX && p->state != DIF_STATE_NONE)
 		return;
@@ -1015,6 +1056,12 @@ static void dif_tx_from_fifo(pmb887x_dif_t *p) {
 	while (pmb887x_fifo_count(&p->tx_fifo) > 0) {
 		uint32_t value = pmb887x_fifo32_pop(&p->tx_fifo);
 		uint32_t tx_csreg = pmb887x_fifo32_pop(&p->tx_csreg_fifo);
+		if ((p->perreg & DIFv2_PERREG_INBAND) != 0) {
+			uint32_t inband_csreg = dif_txd_control_to_csreg(value);
+
+			value = (value & ~DIFv2_TXD_BYTE3) | dif_csreg_to_txd_control(tx_csreg);
+			tx_csreg = inband_csreg;
+		}
 		if (parallel_word_count != 0 && tx_csreg != p->tx_csreg) {
 			dif_send_parallel_words(p, parallel_words, parallel_word_count);
 			parallel_word_count = 0;
@@ -1023,9 +1070,6 @@ static void dif_tx_from_fifo(pmb887x_dif_t *p) {
 		p->is_tx_csreg_active = true;
 		dif_update_gpio_state(p);
 		uint32_t bsconf_word_count = dif_get_bsconf_word_count(p);
-		uint32_t bsconf_word_bits = dif_is_serial(p) && dif_is_bsconf_9bit(p) ? 9 : 8;
-		if (!dif_is_serial(p) && dif_is_bsconf_9bit(p))
-			bsconf_word_count = 1;
 		uint32_t words_in_fifo_reg = MIN(4 / align, p->tx_words_remaining);
 		bool is_direct_write = p->state == DIF_STATE_NONE;
 
@@ -1036,25 +1080,29 @@ static void dif_tx_from_fifo(pmb887x_dif_t *p) {
 			words_in_fifo_reg = 4 / align; // Direct TXD writes do not require TPS_CTRL.
 		if (p->state == DIF_STATE_NONE)
 			p->tx_words_preloaded += bsconf_word_count != 0 ? 1 : words_in_fifo_reg;
+		bool is_color_converted = (dif_get_transfer_csreg(p) & DIFv2_CSREG_GRACMD) != 0;
 
 		if (bsconf_word_count != 0) {
-			uint32_t converted;
-			bool is_color_configured = (p->coeff[0] | p->coeff[1] | p->coeff[2] | p->coeff[3]) != 0;
+			bool has_bus_words = false;
 
-			if (!dif_is_pbc_enabled(p) && (!dif_is_serial(p) || !dif_is_bsconf_9bit(p) || is_color_configured)) {
-				value = dif_mux(p, value);
-			} else {
-				if (!dif_convert_word(p, value, &converted))
-					continue;
-				value = converted;
-			}
-			if ((dif_get_transfer_csreg(p) & DIFv2_CSREG_GRACMD) != 0)
-				value = dif_convert_color(p, value);
+			for (uint32_t lane = 0; lane < 4 / align; lane++) {
+				uint32_t lane_value = dif_get_tx_lane(value, align, lane);
 
-			uint32_t lanes = 4 / align;
-			for (uint32_t lane = 0; lane < lanes; lane++) {
+				if (is_color_converted)
+					lane_value = dif_convert_color(p, lane_value);
+				if (dif_is_pbc_enabled(p)) {
+					uint32_t converted;
+
+					if (!dif_convert_word(p, lane_value, &converted))
+						continue;
+					lane_value = converted;
+				} else {
+					lane_value = dif_mux(p, lane_value);
+				}
+
+				has_bus_words = true;
 				for (uint32_t i = 0; i < bsconf_word_count; i++) {
-					uint16_t word = (value >> (bsconf_word_bits * (lane * align + i))) & ((1 << bsconf_word_bits) - 1);
+					uint16_t word = (lane_value >> (8 * i)) & 0xFF;
 
 					if (!dif_is_serial(p)) {
 						parallel_words[parallel_word_count++] = word;
@@ -1064,14 +1112,20 @@ static void dif_tx_from_fifo(pmb887x_dif_t *p) {
 					}
 				}
 			}
+			if (!has_bus_words)
+				continue;
 		} else {
 			if (parallel_word_count != 0) {
 				dif_send_parallel_words(p, parallel_words, parallel_word_count);
 				parallel_word_count = 0;
 			}
-			for (uint32_t i = 0; i < words_in_fifo_reg; i++) {
+			for (uint32_t lane = 0; lane < words_in_fifo_reg; lane++) {
+				uint32_t lane_value = dif_get_tx_lane(value, align, lane);
 				uint32_t converted;
-				uint16_t word = (value >> (8 * i * align)) & dif_get_word_mask(word_bits);
+
+				if (is_color_converted)
+					lane_value = dif_convert_color(p, lane_value);
+				uint16_t word = lane_value & dif_get_word_mask(word_bits);
 
 				if (dif_convert_word(p, word, &converted) && !dif_send_word(p, converted))
 					goto done;
@@ -1164,7 +1218,8 @@ static void dif_tx_bus_wake_once(pmb887x_dif_t *p) {
  * TX interrupt pulses meanwhile, rising and clearing again.
  */
 static bool dif_is_fed_tx_bus(pmb887x_dif_t *p) {
-	if (p->state != DIF_STATE_TX || dif_is_serial(p) || dif_is_pbc_enabled(p))
+	if (p->state != DIF_STATE_TX || dif_is_serial(p) || dif_is_pbc_enabled(p) ||
+		(p->perreg & DIFv2_PERREG_INBAND) != 0)
 		return false;
 	if (!pmb887x_fifo_is_empty(&p->tx_fifo) || p->tx_fifo_req || p->rx_words_in_fifo != 0)
 		return false;
@@ -1251,7 +1306,7 @@ static bool dif_plan_fed_tx_bus(pmb887x_dif_t *p, dif_fed_tx_bus_t *bus, int64_t
 	int64_t limit_ns, uint32_t max_wakes) {
 	uint32_t words_per_entry = 4 / dif_get_tx_align(p);
 	uint32_t burst_entries = dif_get_tx_burst_entries(p);
-	uint32_t bsconf_word_count = dif_is_bsconf_9bit(p) ? 1 : dif_get_bsconf_word_count(p);
+	uint32_t bsconf_word_count = dif_get_bsconf_word_count(p);
 	uint64_t entry_ps = words_per_entry * bsconf_word_count * dif_get_bus_word_ps(p);
 
 	memcpy(bus->end_ps, p->tx_bus_end_ps, sizeof(bus->end_ps));
@@ -1295,7 +1350,7 @@ static bool dif_plan_fed_tx_bus(pmb887x_dif_t *p, dif_fed_tx_bus_t *bus, int64_t
 
 /* Whether the bus words of a FIFO entry are the bytes of its muxed value, low first. */
 static bool dif_is_fed_tx_bus_bytes(pmb887x_dif_t *p) {
-	return dif_get_tx_align(p) == 4 && !dif_is_bsconf_9bit(p) && dif_get_bsconf_word_count(p) == 4 &&
+	return dif_get_tx_align(p) == 4 && dif_get_bsconf_word_count(p) == 4 &&
 		(dif_get_transfer_csreg(p) & DIFv2_CSREG_GRACMD) == 0;
 }
 
@@ -1304,17 +1359,20 @@ static uint32_t dif_get_fed_tx_bus_words(pmb887x_dif_t *p, const uint8_t *data, 
 	uint32_t *restrict words) {
 	uint32_t align = dif_get_tx_align(p);
 	uint32_t words_per_entry = 4 / align;
-	uint32_t bsconf_word_count = dif_is_bsconf_9bit(p) ? 1 : dif_get_bsconf_word_count(p);
+	uint32_t bsconf_word_count = dif_get_bsconf_word_count(p);
 	bool is_gracmd = (dif_get_transfer_csreg(p) & DIFv2_CSREG_GRACMD) != 0;
 	uint32_t word_count = 0;
 
 	for (uint32_t n = 0; n < count; n++) {
-		uint32_t value = dif_mux(p, ldl_le_p(data + n * sizeof(uint32_t)));
-		if (is_gracmd)
-			value = dif_convert_color(p, value);
+		uint32_t value = ldl_le_p(data + n * sizeof(uint32_t));
 		for (uint32_t lane = 0; lane < words_per_entry; lane++) {
+			uint32_t lane_value = dif_get_tx_lane(value, align, lane);
+
+			if (is_gracmd)
+				lane_value = dif_convert_color(p, lane_value);
+			lane_value = dif_mux(p, lane_value);
 			for (uint32_t i = 0; i < bsconf_word_count; i++)
-				words[word_count++] = (value >> (8 * (lane * align + i))) & 0xFF;
+				words[word_count++] = (lane_value >> (8 * i)) & 0xFF;
 		}
 	}
 	return word_count;

@@ -24,7 +24,9 @@
 #define CFI_ADDR	0x10
 #define CFI_INDEX_MASK	0xFFF
 
-#define FLASH_LAZY_ROMD_THRESHOLD	42
+#define FLASH_ROMD_THRESHOLD_MIN		42
+#define FLASH_ROMD_THRESHOLD_MAX		(64 * 1024)
+#define FLASH_ROMD_SHORT_PERIOD_NS		(1 * SCALE_MS)
 
 #define FLASH_STATUS_BLOCK_LOCKED		BIT(1)
 #define FLASH_STATUS_PROGRAM_ERROR		BIT(4)
@@ -65,13 +67,15 @@ struct pmb887x_flash_part_t {
 	uint8_t cmd;
 	uint32_t cmd_addr;
 	uint16_t status;
-	bool io_mode;
 	uint32_t mmio_array_reads;
+	uint32_t romd_threshold;
+	int64_t romd_since_ns;
 	
 	uint8_t *storage;
 	
 	uint32_t buffer_size;
 	uint32_t buffer_index;
+	uint32_t buffer_end;
 	pmb887x_flash_buffer_t *buffer;
 	const pmb887x_flash_cfg_part_t *cfg;
 	
@@ -136,17 +140,31 @@ static void flash_buffer_clear(pmb887x_flash_part_t *p) {
 	g_clear_pointer(&p->buffer, g_free);
 	p->buffer_size = 0;
 	p->buffer_index = 0;
+	p->buffer_end = 0;
 }
 
-static bool flash_is_read_array_mappable(pmb887x_flash_part_t *p) {
-	return !p->io_mode && p->cmd == 0;
+static void flash_romd_map(pmb887x_flash_part_t *p) {
+	p->romd_since_ns = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
+	memory_region_rom_device_set_romd(&p->mem, true);
+}
+
+static void flash_romd_unmap(pmb887x_flash_part_t *p) {
+	int64_t romd_period_ns = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) - p->romd_since_ns;
+
+	if (romd_period_ns < FLASH_ROMD_SHORT_PERIOD_NS) {
+		p->romd_threshold = MIN(p->romd_threshold * 2, FLASH_ROMD_THRESHOLD_MAX);
+	} else {
+		p->romd_threshold = MAX(p->romd_threshold / 2, FLASH_ROMD_THRESHOLD_MIN);
+	}
+	memory_region_rom_device_set_romd(&p->mem, false);
 }
 
 static void flash_unmap_inactive_read_array(pmb887x_flash_part_t *p) {
-	if (!flash_is_read_array_mappable(p)) {
-		memory_region_rom_device_set_romd(&p->mem, false);
-		p->mmio_array_reads = 0;
-	}
+	if (p->cmd == 0)
+		return;
+	if (memory_region_is_romd(&p->mem))
+		flash_romd_unmap(p);
+	p->mmio_array_reads = 0;
 }
 
 static void flash_reset(pmb887x_flash_part_t *p) {
@@ -553,10 +571,12 @@ static void flash_buffer_add(pmb887x_flash_part_t *p, uint32_t offset, uint64_t 
 
 	for (uint32_t i = 0; i < size; i += 2) {
 		pmb887x_flash_buffer_t *buffer_entry = NULL;
-		for (uint32_t j = 0; j < p->buffer_size; j++) {
-			if (p->buffer[j].offset == offset + i && p->buffer[j].size == 2) {
-				buffer_entry = &p->buffer[j];
-				break;
+		if (offset + i < p->buffer_end) {
+			for (uint32_t j = 0; j < p->buffer_index; j++) {
+				if (p->buffer[j].offset == offset + i && p->buffer[j].size == 2) {
+					buffer_entry = &p->buffer[j];
+					break;
+				}
 			}
 		}
 
@@ -565,6 +585,7 @@ static void flash_buffer_add(pmb887x_flash_part_t *p, uint32_t offset, uint64_t 
 			buffer_entry->offset = offset + i;
 			buffer_entry->size = 2;
 			p->buffer_index++;
+			p->buffer_end = MAX(p->buffer_end, offset + i + 2);
 		}
 		buffer_entry->value = value >> i * 8 & 0xFFFF;
 
@@ -602,8 +623,8 @@ static uint64_t flash_io_read(void *opaque, hwaddr part_offset, uint32_t size) {
 	switch (p->cmd) {
 		case 0x00:
 			value = flash_array_read(p, offset, size);
-			if (flash_is_read_array_mappable(p) && ++p->mmio_array_reads > FLASH_LAZY_ROMD_THRESHOLD)
-				memory_region_rom_device_set_romd(&p->mem, true);
+			if (++p->mmio_array_reads > p->romd_threshold)
+				flash_romd_map(p);
 			break;
 
 		case 0x94:
@@ -676,8 +697,6 @@ static void flash_io_write(void *opaque, hwaddr part_offset, uint64_t value, uin
 			case 0x94:
 				flash_trace_part(p, "cmd read EFA (%02"PRIX64")", value);
 				p->cmd = value;
-				// EFA is scanned byte-by-byte; keep this partition in I/O mode to avoid remapping it per byte.
-				p->io_mode = true;
 				break;
 
 			case 0x98:
@@ -831,6 +850,7 @@ static void flash_io_write(void *opaque, hwaddr part_offset, uint64_t value, uin
 				} else {
 					p->buffer_size = (value & 0xFFFF) + 1;
 					p->buffer_index = 0;
+					p->buffer_end = 0;
 					p->buffer = g_new0(pmb887x_flash_buffer_t, p->buffer_size);
 					flash_trace_part(p, "buffered program %d words", p->buffer_size);
 					p->wcycle++;
@@ -1077,6 +1097,7 @@ static void flash_init_part(pmb887x_flash_t *flash, const pmb887x_flash_cfg_part
 	p->size = part_cfg->size;
 	p->cfg = part_cfg;
 	p->status = FLASH_STATUS_READY;
+	p->romd_threshold = FLASH_ROMD_THRESHOLD_MIN;
 	
 	char *name = g_strdup_printf("pmb887x-flash[%s][%d]", p->flash->name, p->n);
 	memory_region_init_rom_device(&p->mem, OBJECT(p->flash->dev), &io_ops, p, name, p->size, NULL);
@@ -1212,6 +1233,9 @@ static void flash_device_reset(DeviceState *dev) {
 			}
 		}
 		flash_reset(p);
+		p->mmio_array_reads = 0;
+		p->romd_threshold = FLASH_ROMD_THRESHOLD_MIN;
+		flash_romd_map(p);
 	}
 
 	for (uint32_t i = 0; i < flash->efa_blocks_n; i++) {

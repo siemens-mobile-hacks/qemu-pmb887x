@@ -26,6 +26,7 @@ struct pmb887x_cpu_module_t {
 	uint32_t base;
 	const char dev[64];
 	const char clock[64];
+	const char bus[64];
 
 	const int *irqs;
 	size_t irqs_count;

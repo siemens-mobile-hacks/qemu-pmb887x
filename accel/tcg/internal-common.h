@@ -19,6 +19,13 @@ extern int64_t max_advance;
 
 extern bool one_insn_per_tb;
 
+/*
+ * Allow direct jumps to TBs on another guest page.  Such links depend on the
+ * virtual-to-physical mapping of the destination page, so they are recorded
+ * and unlinked whenever the TLB is flushed.
+ */
+extern bool tcg_cross_page_links;
+
 extern bool icount_align_option;
 
 /*
@@ -51,6 +58,8 @@ TranslationBlock *tb_gen_code(CPUState *cpu, TCGTBCPUState s);
 void page_init(void);
 void tb_htable_init(void);
 void tb_reset_jump(TranslationBlock *tb, int n);
+void tb_record_cross_page_jump(TranslationBlock *tb, int n);
+void tb_unlink_cross_page_jumps(void);
 TranslationBlock *tb_link_page(TranslationBlock *tb);
 void cpu_restore_state_from_tb(CPUState *cpu, TranslationBlock *tb,
                                uintptr_t host_pc);

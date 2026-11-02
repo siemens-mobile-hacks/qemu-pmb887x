@@ -23,6 +23,7 @@
 #include "qapi/type-helpers.h"
 #include "hw/core/cpu.h"
 #include "accel/tcg/cpu-loop.h"
+#include "accel/tcg/memory-timing.h"
 #include "accel/tcg/cpu-ops.h"
 #include "accel/tcg/helper-retaddr.h"
 #include "trace.h"
@@ -560,6 +561,9 @@ const void *HELPER(lookup_tb_ptr)(CPUArchState *env)
     if (tb == NULL) {
         return tcg_code_gen_epilogue;
     }
+    if (tb_cflags(tb) & CF_MEMORY_TIMING) {
+        tcg_memory_timing_fetch(cpu, tb);
+    }
 
     if (qemu_loglevel_mask(CPU_LOG_TB_CPU | CPU_LOG_EXEC)) {
         log_cpu_exec(s.pc, cpu, tb);
@@ -949,6 +953,10 @@ static inline void tb_add_jump(TranslationBlock *tb, int n,
     tb_next->jmp_list_head = (uintptr_t)tb | n;
 
     qemu_spin_unlock(&tb_next->jmp_lock);
+
+    if (tcg_cross_page_links && ((tb->pc ^ tb_next->pc) & TARGET_PAGE_MASK)) {
+        tb_record_cross_page_jump(tb, n);
+    }
 
     qemu_log_mask(CPU_LOG_EXEC, "Linking TBs %p index %d -> %p\n",
                   tb->tc.ptr, n, tb_next->tc.ptr);
@@ -1411,6 +1419,9 @@ cpu_exec_loop(CPUState *cpu, SyncClocks *sc)
                 jc->array[h].pc = tb_jmp_cache_key(jc, s.pc);
                 qatomic_set(&jc->array[h].tb, tb);
             }
+            if (tb_cflags(tb) & CF_MEMORY_TIMING) {
+                tcg_memory_timing_fetch(cpu, tb);
+            }
 
 #ifndef CONFIG_USER_ONLY
             /*
@@ -1433,6 +1444,11 @@ cpu_exec_loop(CPUState *cpu, SyncClocks *sc)
                 last_tb = NULL;
             }
 #endif
+            /* A TB must not jump into code timed for another memory class. */
+            if (last_tb &&
+                ((tb_cflags(last_tb) ^ tb_cflags(tb)) & CF_MEMORY_TIMING)) {
+                last_tb = NULL;
+            }
             /* See if we can patch the calling TB. */
             if (last_tb) {
                 tb_add_jump(last_tb, tb_exit, tb);
@@ -1505,6 +1521,14 @@ bool tcg_exec_realizefn(CPUState *cpu, Error **errp)
         assert(tcg_ops->mmu_index);
         tcg_ops->initialize();
         tcg_target_initialized = true;
+    }
+
+    /*
+     * A pc-relative TB runs at any virtual address that maps its code, so a
+     * direct link to another page would be wrong for all but one of them.
+     */
+    if (tcg_cross_page_links) {
+        cpu->tcg_cflags &= ~CF_PCREL;
     }
 
     cpu->tb_jmp_cache = g_new0(CPUJumpCache, 1);

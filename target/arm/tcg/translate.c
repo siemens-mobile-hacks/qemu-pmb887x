@@ -29,11 +29,10 @@
 #include "cpregs.h"
 #include "exec/target_page.h"
 #include "exec/translator.h"
-#include "arm9e-cycles.h"
-#ifdef CONFIG_TCG_WASM64
-#include "accel/tcg/probe.h"
 #include "exec/tlb-flags.h"
-#endif
+#include "system/memory.h"
+#include "accel/tcg/probe.h"
+#include "arm9e-cycles.h"
 #include "helper.h"
 #include "helper-mve.h"
 
@@ -2649,6 +2648,35 @@ static void w64_emit_psr_misses(DisasContext *dc)
 }
 #endif
 
+#ifndef CONFIG_TCG_WASM64
+/*
+ * A CPSR write can unmask a pending interrupt, which must be taken before the
+ * next instruction.  Return to the main loop only in that case.
+ */
+static void gen_lookup_tb_after_cpsr_write(DisasContext *s)
+{
+    TCGLabel *no_interrupt;
+    TCGv_i32 interrupt_request;
+
+    if (s->ss_active) {
+        gen_lookup_tb(s);
+        return;
+    }
+
+    no_interrupt = gen_new_label();
+    interrupt_request = tcg_temp_new_i32();
+    gen_pc_plus_diff(s, cpu_R[15], curr_insn_len(s));
+    tcg_gen_ld_i32(interrupt_request, tcg_env,
+                   offsetof(CPUState, interrupt_request) - sizeof(CPUState));
+    tcg_gen_brcondi_i32(TCG_COND_EQ, interrupt_request, 0, no_interrupt);
+    gen_set_condexec(s);
+    tcg_gen_exit_tb(NULL, 0);
+    gen_set_label(no_interrupt);
+    s->base.is_jmp = DISAS_JUMP;
+}
+
+#endif
+
 /* Returns nonzero if access to the PSR is not permitted. Marks t0 as dead. */
 static int gen_set_psr(DisasContext *s, uint32_t mask, int spsr, TCGv_i32 t0)
 {
@@ -2663,6 +2691,9 @@ static int gen_set_psr(DisasContext *s, uint32_t mask, int spsr, TCGv_i32 t0)
         tcg_gen_andi_i32(t0, t0, mask);
         tcg_gen_or_i32(tmp, tmp, t0);
         store_cpu_field(tmp, spsr);
+#ifndef CONFIG_TCG_WASM64
+        gen_lookup_tb(s);
+#endif
     } else {
 #ifdef CONFIG_TCG_WASM64
         if (w64_cpsr_write_inline(s, t0, mask)) {
@@ -2670,6 +2701,9 @@ static int gen_set_psr(DisasContext *s, uint32_t mask, int spsr, TCGv_i32 t0)
         }
 #endif
         gen_set_cpsr(t0, mask);
+#ifndef CONFIG_TCG_WASM64
+        gen_lookup_tb_after_cpsr_write(s);
+#endif
     }
 #ifdef CONFIG_TCG_WASM64
     /*
@@ -2690,8 +2724,6 @@ static int gen_set_psr(DisasContext *s, uint32_t mask, int spsr, TCGv_i32 t0)
     gen_pc_plus_diff(s, cpu_R[15], curr_insn_len(s));
     s->base.is_jmp = DISAS_JUMP;
     s->w64_dynkey = true;
-#else
-    gen_lookup_tb(s);
 #endif
     return 0;
 }
@@ -8176,6 +8208,220 @@ static void thumb_tr_translate_insn(DisasContextBase *dcbase, CPUState *cpu)
     }
 }
 
+#define ARM9E_LOOP_MAX_INSNS 64
+
+/* Reads guest code without a fault; MMIO and unmapped code read as absent. */
+static bool arm9e_code_peek(DisasContext *dc, CPUState *cpu, vaddr pc,
+                            uint32_t *insn)
+{
+    uint32_t insn_len = dc->thumb ? 2 : 4;
+    void *host;
+    int flags = probe_access_flags(cpu_env(cpu), pc, insn_len,
+                                   MMU_INST_FETCH, dc->base.code_mmuidx,
+                                   true, &host, 0);
+
+    if (dc->sctlr_b || (flags & TLB_INVALID_MASK) || !host) {
+        return false;
+    }
+    *insn = dc->thumb ? lduw_le_p(host) : ldl_le_p(host);
+    return true;
+}
+
+/*
+ * The next TB starts without the interlock state of this one, so a TB that
+ * falls through charges the stalls of the instructions that follow it.
+ */
+static void arm9e_count_fallthrough_stalls(DisasContext *dc, CPUState *cpu)
+{
+    uint32_t late = dc->arm9e_late;
+    vaddr pc = dc->base.pc_next;
+
+    for (int i = 0; i < 2 && late; i++) {
+        uint32_t insn;
+        uint32_t stall;
+
+        if (!arm9e_code_peek(dc, cpu, pc, &insn)) {
+            return;
+        }
+        if (dc->thumb) {
+            stall = arm9e_thumb_stall(&late, insn);
+        } else {
+            stall = arm9e_a32_stall(&late, insn);
+        }
+        translator_count_cycles(&dc->base, stall, false);
+        pc += dc->thumb ? 2 : 4;
+    }
+}
+
+/* Returns false unless @insn is a direct branch; @offset is from its own PC. */
+static bool arm9e_branch_offset(bool is_thumb, uint32_t insn, int32_t *offset)
+{
+    if (!is_thumb && (insn & 0x0f000000) == 0x0a000000 &&
+        (insn >> 28) != 0xf) {
+        *offset = 8 + (sextract32(insn, 0, 24) << 2);
+    } else if (is_thumb && insn <= 0xffff && (insn & 0xf000) == 0xd000 &&
+               extract32(insn, 8, 4) < 0xe) {
+        *offset = 4 + (sextract32(insn, 0, 8) << 1);
+    } else if (is_thumb && insn <= 0xffff && (insn & 0xf800) == 0xe000) {
+        *offset = 4 + (sextract32(insn, 0, 11) << 1);
+    } else {
+        return false;
+    }
+    return true;
+}
+
+/* Returns false unless the last instruction is a direct backward branch. */
+static bool arm9e_backward_branch_target(DisasContext *dc, vaddr *target)
+{
+    int32_t offset;
+
+    if (!arm9e_branch_offset(dc->thumb, dc->insn, &offset) || offset > 0) {
+        return false;
+    }
+    *target = dc->pc_curr + offset;
+    return true;
+}
+
+/*
+ * The TB that closes a loop charges the memory traffic of a whole iteration:
+ * the bus overlaps the loads and stores of all TBs of the loop body.
+ */
+static void arm9e_count_loop_memory(DisasContext *dc, CPUState *cpu,
+                                    const TCGMemoryTiming *timing)
+{
+    uint32_t insn_len = dc->thumb ? 2 : 4;
+    uint32_t insns[ARM9E_LOOP_MAX_INSNS];
+    size_t count;
+    vaddr target;
+
+    if (!arm9e_backward_branch_target(dc, &target)) {
+        return;
+    }
+    count = (dc->pc_curr - target) / insn_len + 1;
+    if (count > ARM9E_LOOP_MAX_INSNS) {
+        return;
+    }
+    for (size_t i = 0; i < count; i++) {
+        if (!arm9e_code_peek(dc, cpu, target + i * insn_len, &insns[i])) {
+            return;
+        }
+    }
+    translator_count_cycles(&dc->base,
+                            arm9e_loop_memory_cycles(insns, count, dc->thumb,
+                                                     timing),
+                            false);
+}
+
+/* Returns true if the code after @insn does not run after it. */
+static bool arm9e_is_jump(bool is_thumb, uint32_t insn)
+{
+    if (is_thumb) {
+        return (insn & 0xf800) == 0xe000 || (insn & 0xff00) == 0x4700 ||
+               (insn & 0xff00) == 0xbd00;
+    }
+    return (insn & 0xff000000) == 0xea000000 ||
+           (insn & 0xfffffff0) == 0xe12fff10 || insn == 0xe1a0f00e ||
+           (insn & 0xffff8000) == 0xe8bd8000;
+}
+
+#define ARM9E_LITERAL_LINES_MAX 4
+
+/* Returns false unless @insn loads a literal; @literal is its address. */
+static bool arm9e_literal_address(bool is_thumb, vaddr pc, uint32_t insn,
+                                  vaddr *literal)
+{
+    if (is_thumb && (insn & 0xf800) == 0x4800) {
+        *literal = ((pc + 4) & ~3) + extract32(insn, 0, 8) * 4;
+        return true;
+    }
+    if (!is_thumb && (insn & 0x0f3f0000) == 0x051f0000) {
+        int32_t offset = extract32(insn, 0, 12);
+
+        *literal = pc + 8 + ((insn & (1 << 23)) ? offset : -offset);
+        return true;
+    }
+    return false;
+}
+
+/*
+ * Cold code reads cold literals: each literal line of the TB misses the
+ * D-cache.
+ */
+static uint32_t arm9e_literal_lines(DisasContext *dc, CPUState *cpu,
+                                    uint32_t line_bytes)
+{
+    uint32_t insn_len = dc->thumb ? 2 : 4;
+    vaddr lines[ARM9E_LITERAL_LINES_MAX];
+    uint32_t count = 0;
+
+    for (vaddr pc = dc->base.pc_first; pc < dc->base.pc_next; pc += insn_len) {
+        uint32_t insn;
+        vaddr literal;
+        bool is_new = true;
+
+        if (!arm9e_code_peek(dc, cpu, pc, &insn) ||
+            !arm9e_literal_address(dc->thumb, pc, insn, &literal)) {
+            continue;
+        }
+        for (uint32_t i = 0; i < count; i++) {
+            is_new &= lines[i] != literal / line_bytes;
+        }
+        if (is_new && count < ARM9E_LITERAL_LINES_MAX) {
+            lines[count++] = literal / line_bytes;
+        }
+    }
+    return count;
+}
+
+/*
+ * Fetches of the code a TB runs into from a cold I-cache: the first word of a
+ * line, or the lines up to the first jump or the end of the page, since
+ * another page is a lookup of its own; and the first words of its literals.
+ */
+static void arm9e_set_fetch_cycles(DisasContext *dc, CPUState *cpu,
+                                   const TCGMemoryTiming *timing)
+{
+    uint32_t insn_len = dc->thumb ? 2 : 4;
+    vaddr start = dc->base.pc_first;
+    vaddr page_end = (start | ~TARGET_PAGE_MASK) + 1;
+    vaddr pc = start;
+    void *host;
+    int flags = probe_access_flags(cpu_env(cpu), start, 0, MMU_INST_FETCH,
+                                   dc->base.code_mmuidx, true, &host, 0);
+    ram_addr_t offset;
+    MemoryRegion *mr;
+    uint8_t kind;
+    uint64_t mcycles;
+
+    if ((flags & TLB_INVALID_MASK) || !host) {
+        return;
+    }
+    mr = memory_region_from_host(host, &offset);
+    if (!mr) {
+        return;
+    }
+    while (pc < page_end) {
+        uint32_t insn;
+
+        if (!arm9e_code_peek(dc, cpu, pc, &insn)) {
+            break;
+        }
+        pc += insn_len;
+        if (arm9e_is_jump(dc->thumb, insn)) {
+            break;
+        }
+    }
+    kind = memory_region_get_fetch_kind(mr);
+    mcycles = MAX(timing->fetch_first_mcycles[kind],
+                  (uint64_t) timing->fetch_line_mcycles[kind] * (pc - start) /
+                  timing->line_bytes) +
+              (uint64_t) timing->data_first_mcycles[kind] *
+              arm9e_literal_lines(dc, cpu, timing->line_bytes);
+    dc->base.fetch_cycles = (mcycles + 500) / 1000;
+    dc->base.fetch_line_count = (pc - 1) / timing->line_bytes -
+                                start / timing->line_bytes + 1;
+}
+
 static void arm_tr_tb_stop(DisasContextBase *dcbase, CPUState *cpu)
 {
     DisasContext *dc = container_of(dcbase, DisasContext, base);
@@ -8183,6 +8429,19 @@ static void arm_tr_tb_stop(DisasContextBase *dcbase, CPUState *cpu)
 #ifdef CONFIG_TCG_WASM64
     w64_inl_close_records(dc);
 #endif
+    if (dc->arm9e_cycles) {
+        const TCGMemoryTiming *timing =
+            tcg_memory_timing_get(tb_cflags(dc->base.tb));
+
+        if (dc->base.is_jmp == DISAS_TOO_MANY) {
+            arm9e_count_fallthrough_stalls(dc, cpu);
+        }
+        if (timing) {
+            arm9e_count_loop_memory(dc, cpu, timing);
+            arm9e_set_fetch_cycles(dc, cpu, timing);
+        }
+    }
+
     /* At this stage dc->condjmp will only be set when the skipped
        instruction was a conditional branch or trap, and the PC has
        already been written.  */

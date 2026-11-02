@@ -45,6 +45,7 @@ struct pmb887x_scu_t {
 	qemu_irq dmac_reset;
 	qemu_irq i2c_reset;
 	qemu_irq rtc_reset;
+	qemu_irq ebu_sync;
 	qemu_irq dsp_request[PMB887X_DSP_INT_COUNT];
 	
 	uint32_t cpu_type;
@@ -436,6 +437,7 @@ static void scu_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned si
 		
 		case SCU_EBUCLC2:
 			p->ebuclc2 = value;
+			qemu_set_irq(p->ebu_sync, (value & SCU_EBUCLC2_FLAG1) != 0);
 		break;
 		
 		case SCU_RTCIF:
@@ -619,6 +621,7 @@ static void scu_init(Object *obj) {
 	qdev_init_gpio_out_named(dev, &p->dmac_reset, "DMAC_RESET_OUT", 1);
 	qdev_init_gpio_out_named(dev, &p->i2c_reset, "I2C_RESET_OUT", 1);
 	qdev_init_gpio_out_named(dev, &p->rtc_reset, "RTC_RESET_OUT", 1);
+	qdev_init_gpio_out_named(dev, &p->ebu_sync, "EBU_SYNC_OUT", 1);
 	qdev_init_gpio_out_named(dev, p->dsp_request, "DSP_INT_OUT", ARRAY_SIZE(p->dsp_request));
 }
 
@@ -661,6 +664,7 @@ static void scu_reset(DeviceState *dev) {
 	p->ebuclc = 0;
 	p->ebuclc1 = 0;
 	p->ebuclc2 = 0;
+	qemu_set_irq(p->ebu_sync, 0);
 	p->rtcif = 0;
 	p->boot_flag = 0;
 	p->dmars = 0;

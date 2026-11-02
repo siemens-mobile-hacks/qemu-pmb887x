@@ -29,6 +29,7 @@
 #define BASEBAND_FILTER_NORMAL_HALF_LENGTH	16U
 #define BASEBAND_FILTER_MAX_HALF_LENGTH	32U
 #define BASEBAND_FILTER_MAX_TAPS		(BASEBAND_FILTER_MAX_HALF_LENGTH * 2U + 1U)
+#define BASEBAND_FILTER_HISTORY_SIZE	(BASEBAND_FILTER_MAX_TAPS * 2U)
 #define BASEBAND_FILTER_SCALING_BIAS	13U
 #define BASEBAND_INTERRUPT_GROUP	0U
 #define BASEBAND_CTRL_RESET		0x0110U
@@ -90,8 +91,8 @@ struct baseband_state_t {
 	bool rx_active;
 	uint8_t startup_pointer_reads;
 	pmb887x_iq_sample_t filter_sample;
-	int16_t filter_history_i[BASEBAND_FILTER_MAX_TAPS];
-	int16_t filter_history_q[BASEBAND_FILTER_MAX_TAPS];
+	int16_t filter_history_i[BASEBAND_FILTER_HISTORY_SIZE];
+	int16_t filter_history_q[BASEBAND_FILTER_HISTORY_SIZE];
 	uint64_t filter_next_input_sample;
 	uint8_t filter_position;
 	baseband_event_queue_t events;
@@ -211,25 +212,35 @@ static size_t baseband_filter_get_half_length(const baseband_state_t *state) {
 }
 
 static void baseband_filter_push(baseband_state_t *state, pmb887x_iq_sample_t sample) {
+	size_t mirror_position = state->filter_position + BASEBAND_FILTER_MAX_TAPS;
+
 	state->filter_history_i[state->filter_position] = sample.i;
 	state->filter_history_q[state->filter_position] = sample.q;
+	state->filter_history_i[mirror_position] = sample.i;
+	state->filter_history_q[mirror_position] = sample.q;
 	state->filter_position = (state->filter_position + 1U) % BASEBAND_FILTER_MAX_TAPS;
 }
 
 static pmb887x_iq_sample_t baseband_filter_output(baseband_state_t *state, size_t half_length) {
 	size_t taps = half_length * 2U + 1U;
+	size_t window_start = state->filter_position + BASEBAND_FILTER_MAX_TAPS - taps;
+	const int16_t *window_i = &state->filter_history_i[window_start];
+	const int16_t *window_q = &state->filter_history_q[window_start];
 	int64_t accumulator_i = 0;
 	int64_t accumulator_q = 0;
 
-	for (size_t tap = 0; tap < taps; tap++) {
-		size_t history_index = (state->filter_position + BASEBAND_FILTER_MAX_TAPS - taps + tap) %
-			BASEBAND_FILTER_MAX_TAPS;
-		size_t coefficient_index = tap <= half_length ? tap : taps - tap - 1U;
-		int16_t coefficient = state->host.data_read(state->host.opaque,
-			state->ram_base + BASEBAND_RING_WORDS + coefficient_index);
+	for (size_t tap = 0; tap <= half_length; tap++) {
+		size_t mirror_tap = taps - tap - 1U;
+		int16_t coefficient = state->host.data_read(state->host.opaque, state->ram_base + BASEBAND_RING_WORDS + tap);
+		int pair_i = window_i[tap];
+		int pair_q = window_q[tap];
 
-		accumulator_i += (int32_t) state->filter_history_i[history_index] * coefficient;
-		accumulator_q += (int32_t) state->filter_history_q[history_index] * coefficient;
+		if (mirror_tap != tap) {
+			pair_i += window_i[mirror_tap];
+			pair_q += window_q[mirror_tap];
+		}
+		accumulator_i += (int64_t) pair_i * coefficient;
+		accumulator_q += (int64_t) pair_q * coefficient;
 	}
 
 	uint16_t filter_control = qatomic_read(&state->filter_control);

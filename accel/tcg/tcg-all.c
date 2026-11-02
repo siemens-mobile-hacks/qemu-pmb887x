@@ -163,6 +163,11 @@ static int tcg_init_machine(AccelState *as, MachineState *ms)
         cpu_clock_set_idle_lead(s->vcpu_timers_idle_lead * SCALE_US);
     }
 
+    if (tcg_cross_page_links && ms->smp.max_cpus > 1) {
+        error_report("cross-page-links requires one vCPU");
+        return -EINVAL;
+    }
+
     qemu_add_vm_change_state_handler(tcg_vm_change_state, NULL);
     max_threads += MACHINE_GET_CLASS(ms)->tcg_auxiliary_threads;
 #endif
@@ -328,6 +333,16 @@ static void tcg_set_vcpu_timers_idle_lead(Object *obj, Visitor *v,
     }
     TCG_STATE(obj)->vcpu_timers_idle_lead = value;
 }
+
+static bool tcg_get_cross_page_links(Object *obj, Error **errp)
+{
+    return tcg_cross_page_links;
+}
+
+static void tcg_set_cross_page_links(Object *obj, bool value, Error **errp)
+{
+    tcg_cross_page_links = value;
+}
 #endif
 
 static void tcg_accel_class_init(ObjectClass *oc, const void *data)
@@ -383,6 +398,13 @@ static void tcg_accel_class_init(ObjectClass *oc, const void *data)
         "With vcpu-timers: while the guest waits for an interrupt, run its "
         "timers up to this many microseconds ahead of real time and sleep "
         "once per batch instead of once per timer");
+
+    object_class_property_add_bool(oc, "cross-page-links",
+                                   tcg_get_cross_page_links,
+                                   tcg_set_cross_page_links);
+    object_class_property_set_description(oc, "cross-page-links",
+        "Link translation blocks directly across guest pages and unlink "
+        "them on TLB flushes");
 #endif
 }
 

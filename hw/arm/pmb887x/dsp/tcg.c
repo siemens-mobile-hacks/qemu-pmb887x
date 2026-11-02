@@ -101,19 +101,18 @@ struct teak_tcg_swap_mapping_t {
 };
 
 struct teak_tcg_block_t {
-	teak_insn_t instructions[TEAK_TCG_MAX_BLOCK_INSTRUCTIONS];
-	uint8_t block_repeat_setup_level[TEAK_TCG_MAX_BLOCK_INSTRUCTIONS];
 	uint32_t pc;
 	uint16_t words;
 	uint16_t instruction_count;
 	bool repeat_resume;
 	/* bcn of the block-repeat whose whole body this block is, else 0 */
 	uint8_t repeat_body_level;
+	uint8_t block_repeat_setup_level[TEAK_TCG_MAX_BLOCK_INSTRUCTIONS];
+	teak_insn_t instructions[TEAK_TCG_MAX_BLOCK_INSTRUCTIONS];
 };
 
 struct teak_tcg_block_cache_entry_t {
-	teak_tcg_block_t block;
-	TranslationBlock *tb;
+	teak_tcg_block_cache_entry_t *next;
 	uint64_t cache_id;
 	uint32_t program_context;
 	uint32_t block_repeat_end[TEAK_BLOCK_REPEAT_LEVELS];
@@ -126,7 +125,6 @@ struct teak_tcg_block_cache_entry_t {
 	/* tcg_fast_map[pc] != 0, as of fast_epoch */
 	bool fast;
 	uint32_t fast_epoch;
-	teak_tcg_block_cache_entry_t *next;
 	const void *code;
 #ifdef CONFIG_TCG_WASM64
 	/* the tagged table index of a landed tb, as of evict_epoch */
@@ -136,6 +134,8 @@ struct teak_tcg_block_cache_entry_t {
 	/* list heads chained to from this entry, as of succ_epoch */
 	teak_tcg_block_cache_entry_t *succ[2];
 	uint32_t succ_epoch;
+	TranslationBlock *tb;
+	teak_tcg_block_t block;
 };
 
 static teak_tcg_block_cache_entry_t *tcg_block_cache[TEAK_TCG_BLOCK_CACHE_ENTRIES];
