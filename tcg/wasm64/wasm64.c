@@ -895,6 +895,8 @@ static uint32_t w64_assemble_instantiate(const struct w64_bsrc *src)
     return thunk;
 }
 
+uintptr_t w64_tb_env;
+
 /* Drop the oldest live batch: its members fall back to the dispatcher
  * (fidx 0 + batch tag), which retires them. */
 uint32_t w64_evict_epoch;

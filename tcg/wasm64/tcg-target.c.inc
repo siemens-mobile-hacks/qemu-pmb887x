@@ -888,6 +888,10 @@ static void w64_const_addr(TCGContext *s, uint64_t v)
 /* push register base as an address */
 static void w64_get_addr(TCGContext *s, TCGReg base)
 {
+    if (base == TCG_AREG0 && w64_tb_env) {
+        w64_const_addr(s, w64_tb_env);      /* no bounds check (see w64_tb_env) */
+        return;
+    }
     w64_get_i64(s, base);
     w64_wrap_addr(s);
 }
@@ -897,6 +901,10 @@ static void w64_addr(TCGContext *s, TCGReg base, intptr_t ofs)
 {
     if (ofs == 0) {
         w64_get_addr(s, base);
+        return;
+    }
+    if (base == TCG_AREG0 && w64_tb_env) {
+        w64_const_addr(s, w64_tb_env + ofs);
         return;
     }
     /* narrow first: one wrap of the base serves every access, and the
@@ -1741,10 +1749,19 @@ static bool w64_tlb_setup(struct w64_tlb_ctx *tc, TCGContext *s,
  */
 static void w64_tlbc_load(TCGContext *s, int fast_ofs)
 {
-    w64_local_get(s, W64_P_ENV);
-    w64_u8(s, 0xa7);                        /* i32.wrap_i64 */
-    w64_const_i32(s, fast_ofs);
-    w64_u8(s, 0x6a);                        /* i32.add */
+    if (w64_tb_env) {
+        w64_const_addr(s, w64_tb_env + fast_ofs);
+        w64_u8(s, 0x28);                    /* i32.load */
+        w64_memarg(s, 2, 0);                /* mask */
+        w64_local_set(s, W64_L_TMASK);
+        w64_const_addr(s, w64_tb_env + fast_ofs);
+        w64_u8(s, 0x28);                    /* i32.load */
+        w64_memarg(s, 2, 8);                /* table */
+        w64_local_set(s, W64_L_TTAB);
+        W.tlbc = fast_ofs;
+        return;
+    }
+    w64_addr(s, TCG_AREG0, fast_ofs);
     w64_local_tee(s, W64_L_SCR32);
     w64_u8(s, 0x28);                        /* i32.load */
     w64_memarg(s, 2, 0);                    /* mask */

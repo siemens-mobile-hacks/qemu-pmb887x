@@ -266,6 +266,15 @@ static inline uintptr_t w64_ra_off(uintptr_t ra)
 extern uint32_t w64_evict_epoch;
 
 /*
+ * The env the TB being translated will always run with, or 0 when that
+ * is not known.  The backend then addresses env fields as constants:
+ * V8 proves a constant address in bounds of the fixed-size memory, while
+ * an env-relative one needs an explicit bounds check wherever V8 has no
+ * trap handler (Android: v8 src/trap-handler/trap-handler.h).
+ */
+extern uintptr_t w64_tb_env;
+
+/*
  * The global pc-keyed next-TB cache (accel/tcg/cpu-exec.c) as the
  * generated code sees it.  A goto_ptr whose per-TB slot misses used to
  * call the helper for this table's six-word compare; the translator emits

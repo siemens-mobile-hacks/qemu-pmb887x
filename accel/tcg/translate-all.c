@@ -342,7 +342,19 @@ static int setjmp_gen_code(CPUArchState *env, TranslationBlock *tb,
     tcg_ctx->cpu = NULL;
     *max_insns = tb->icount;
 
+#ifdef CONFIG_TCG_WASM64
+    {
+        int r;
+
+        /* TBs are shared between CPUs: only a lone CPU fixes the env */
+        w64_tb_env = CPU_NEXT(first_cpu) ? 0 : (uintptr_t)env;
+        r = tcg_gen_code(tcg_ctx, tb, pc);
+        w64_tb_env = 0;
+        return r;
+    }
+#else
     return tcg_gen_code(tcg_ctx, tb, pc);
+#endif
 }
 
 /* Called with mmap_lock held for user mode emulation.  */

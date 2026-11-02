@@ -5623,8 +5623,15 @@ static TranslationBlock *tcg_prepare_block(teak_tcg_core_t *core, teak_tcg_block
 			break;
 		}
 
+#ifdef CONFIG_TCG_WASM64
+		/* the block's code is this core's already (tcg_memory) */
+		w64_tb_env = (uintptr_t) &core->state;
+#endif
 		tb = tcg_compile_block(block->pc, block->words, block->instruction_count, tcg_emit_block,
 			block, &compile_error);
+#ifdef CONFIG_TCG_WASM64
+		w64_tb_env = 0;
+#endif
 		if (tb != NULL) {
 			tcg_cache_block(core, block, tb);
 			tcg_fast_discover(core, block->pc);
