@@ -268,23 +268,18 @@ static uint32_t cgu_get_fpi2_freq(pmb887x_cgu_t *p) {
 }
 
 static uint32_t cgu_get_fpi1_freq(pmb887x_cgu_t *p) {
-	uint32_t freq;
-
 	switch (p->con1 & CGU_CON1_FPI1_CLKSEL) {
 		case CGU_CON1_FPI1_CLKSEL_OSC:
-			freq = p->xtal;
-			break;
+			return p->xtal;
 		case CGU_CON1_FPI1_CLKSEL_CLK32K:
 			return p->frtc;
-		case CGU_CON1_FPI1_CLKSEL_PLL_DIV_2:
-			freq = cgu_get_pll_freq(p) / 2;
-			break;
+		case CGU_CON1_FPI1_CLKSEL_PLL_DIV_2: {
+			uint32_t div = (p->con1 & CGU_CON1_FPI1_CLKDIV) >> CGU_CON1_FPI1_CLKDIV_SHIFT;
+			return (cgu_get_pll_freq(p) / 2) >> div;
+		}
 		default:
 			return 0;
 	}
-
-	uint32_t div = (p->con1 & CGU_CON1_FPI1_CLKDIV) >> CGU_CON1_FPI1_CLKDIV_SHIFT;
-	return freq >> div;
 }
 
 static uint32_t cgu_get_ebu_freq(pmb887x_cgu_t *p) {
