@@ -24,8 +24,8 @@ static void test_memory_write(void *opaque, uint32_t address, uint16_t value) {
 	memory->words[address] = value;
 }
 
-static pmb887x_dsp_tcg_memory_space_t test_memory_space(test_memory_t *memory) {
-	pmb887x_dsp_tcg_memory_space_t space = {
+static teak_memory_space_t test_memory_space(test_memory_t *memory) {
+	teak_memory_space_t space = {
 		.opaque = memory,
 		.read = test_memory_read,
 		.write = test_memory_write,
@@ -36,20 +36,20 @@ static pmb887x_dsp_tcg_memory_space_t test_memory_space(test_memory_t *memory) {
 static void test_reset(void) {
 	test_memory_t program = {};
 	test_memory_t data = {};
-	pmb887x_dsp_tcg_memory_t memory = {
+	teak_memory_t memory = {
 		.program = test_memory_space(&program),
 		.data = test_memory_space(&data),
 		.y_space_base = 0x20,
 	};
-	pmb887x_dsp_tcg_core_t core;
-	pmb887x_dsp_tcg_core_init(&core, &memory);
+	teak_tcg_core_t core;
+	teak_tcg_init(&core, &memory);
 
 	memset(&core.state, 0xFF, sizeof(core.state));
-	pmb887x_dsp_tcg_core_reset(&core, 0x52345);
+	teak_tcg_reset(&core, 0x52345);
 
 	g_assert_cmphex(core.state.pc, ==, 0x2345);
 	g_assert_cmphex(core.state.pending_interrupts, ==, 0);
-	g_assert_cmpint(core.state.exit_reason, ==, PMB887X_DSP_TCG_EXIT_NONE);
+	g_assert_cmpint(core.state.exit_reason, ==, TEAK_EXIT_NONE);
 	g_assert_cmphex(core.state.a[0], ==, 0);
 	g_assert_cmphex(core.state.r[7], ==, 0);
 	g_assert_cmphex(core.state.fz, ==, 0);
@@ -92,21 +92,21 @@ static void test_reset(void) {
 static void test_memory_spaces(void) {
 	test_memory_t program = {};
 	test_memory_t data = {};
-	pmb887x_dsp_tcg_memory_t memory = {
+	teak_memory_t memory = {
 		.program = test_memory_space(&program),
 		.data = test_memory_space(&data),
 		.y_space_base = 0x20,
 	};
-	pmb887x_dsp_tcg_core_t core;
-	pmb887x_dsp_tcg_core_init(&core, &memory);
+	teak_tcg_core_t core;
+	teak_tcg_init(&core, &memory);
 
 	program.words[3] = 0x1234;
 	data.words[3] = 0x5678;
-	g_assert_cmphex(pmb887x_dsp_tcg_program_read(&core, 3), ==, 0x1234);
-	g_assert_cmphex(pmb887x_dsp_tcg_data_read(&core, 3), ==, 0x5678);
+	g_assert_cmphex(teak_program_read(&core, 3), ==, 0x1234);
+	g_assert_cmphex(teak_data_read(&core, 3), ==, 0x5678);
 
-	pmb887x_dsp_tcg_program_write(&core, 5, 0xABCD);
-	pmb887x_dsp_tcg_data_write(&core, 5, 0xEF01);
+	teak_program_write(&core, 5, 0xABCD);
+	teak_data_write(&core, 5, 0xEF01);
 	g_assert_cmphex(program.words[5], ==, 0xABCD);
 	g_assert_cmphex(data.words[5], ==, 0xEF01);
 }
@@ -178,840 +178,840 @@ static void test_decode(void) {
 		},
 	};
 	test_memory_t data = {};
-	pmb887x_dsp_tcg_memory_t memory = {
+	teak_memory_t memory = {
 		.program = test_memory_space(&program),
 		.data = test_memory_space(&data),
 		.y_space_base = 0x20,
 	};
-	pmb887x_dsp_tcg_core_t core;
-	pmb887x_dsp_tcg_core_init(&core, &memory);
-	pmb887x_dsp_tcg_instruction_t instruction;
+	teak_tcg_core_t core;
+	teak_tcg_init(&core, &memory);
+	teak_insn_t instruction;
 	const uint8_t moda_operations[] = { 0, 1, 2, 3, 4, 5, 6, 8, 9, 10, 11, 12, 13, 14, 15 };
 	const uint8_t modb_operations[] = { 0, 1, 2, 3, 4, 5, 6 };
 	const uint16_t short_extension_bases[] = { 0x2900, 0x2D00, 0x3900, 0x3D00 };
 
-	g_assert_true(pmb887x_dsp_tcg_decode(&core, 0, &instruction));
-	g_assert_cmpint(instruction.opcode, ==, PMB887X_DSP_TCG_OPCODE_MOV_IMM_REGISTER);
+	g_assert_true(teak_decode(&core, 0, &instruction));
+	g_assert_cmpint(instruction.opcode, ==, TEAK_OP_MOV_IMM_REGISTER);
 	g_assert_cmphex(instruction.expansion, ==, 0x0001);
 	g_assert_cmpuint(instruction.words, ==, 2);
 	g_assert_cmpuint(instruction.register_code, ==, 8);
 
-	g_assert_true(pmb887x_dsp_tcg_decode(&core, 2, &instruction));
-	g_assert_cmpint(instruction.opcode, ==, PMB887X_DSP_TCG_OPCODE_EINT);
+	g_assert_true(teak_decode(&core, 2, &instruction));
+	g_assert_cmpint(instruction.opcode, ==, TEAK_OP_EINT);
 	g_assert_cmpuint(instruction.words, ==, 1);
 
-	g_assert_true(pmb887x_dsp_tcg_decode(&core, 3, &instruction));
-	g_assert_cmpint(instruction.opcode, ==, PMB887X_DSP_TCG_OPCODE_BRANCH_ABSOLUTE);
+	g_assert_true(teak_decode(&core, 3, &instruction));
+	g_assert_cmpint(instruction.opcode, ==, TEAK_OP_BRANCH_ABSOLUTE);
 	g_assert_cmphex(instruction.expansion, ==, 0x2010);
 	g_assert_cmphex(instruction.branch_target, ==, 0x2010);
-	g_assert_cmpint(instruction.condition, ==, PMB887X_DSP_TCG_CONDITION_TRUE);
+	g_assert_cmpint(instruction.condition, ==, TEAK_COND_TRUE);
 	g_assert_cmpuint(instruction.words, ==, 2);
 
-	g_assert_true(pmb887x_dsp_tcg_decode(&core, 5, &instruction));
-	g_assert_cmpint(instruction.opcode, ==, PMB887X_DSP_TCG_OPCODE_TSTB_IMM8);
+	g_assert_true(teak_decode(&core, 5, &instruction));
+	g_assert_cmpint(instruction.opcode, ==, TEAK_OP_TSTB_IMM8);
 	g_assert_cmpuint(instruction.words, ==, 1);
 	g_assert_cmphex(instruction.memory_address, ==, 0xFF);
 	g_assert_cmpuint(instruction.bit_index, ==, 0xF);
 
-	g_assert_true(pmb887x_dsp_tcg_decode(&core, 6, &instruction));
-	g_assert_cmpint(instruction.opcode, ==, PMB887X_DSP_TCG_OPCODE_NOP);
-	g_assert_true(pmb887x_dsp_tcg_decode(&core, 7, &instruction));
-	g_assert_cmpint(instruction.opcode, ==, PMB887X_DSP_TCG_OPCODE_MODA4_ACCUMULATOR);
+	g_assert_true(teak_decode(&core, 6, &instruction));
+	g_assert_cmpint(instruction.opcode, ==, TEAK_OP_NOP);
+	g_assert_true(teak_decode(&core, 7, &instruction));
+	g_assert_cmpint(instruction.opcode, ==, TEAK_OP_MODA4_ACCUMULATOR);
 	g_assert_cmpuint(instruction.accumulator_index, ==, 0);
-	g_assert_cmpint(instruction.moda_operation, ==, PMB887X_DSP_TCG_MODA_INC);
+	g_assert_cmpint(instruction.moda_operation, ==, TEAK_MODA_INC);
 
-	g_assert_true(pmb887x_dsp_tcg_decode(&core, 8, &instruction));
-	g_assert_cmpint(instruction.opcode, ==, PMB887X_DSP_TCG_OPCODE_MODA4_ACCUMULATOR);
+	g_assert_true(teak_decode(&core, 8, &instruction));
+	g_assert_cmpint(instruction.opcode, ==, TEAK_OP_MODA4_ACCUMULATOR);
 	g_assert_cmpuint(instruction.accumulator_index, ==, 1);
-	g_assert_cmpint(instruction.moda_operation, ==, PMB887X_DSP_TCG_MODA_INC);
+	g_assert_cmpint(instruction.moda_operation, ==, TEAK_MODA_INC);
 
-	g_assert_true(pmb887x_dsp_tcg_decode(&core, 9, &instruction));
-	g_assert_cmpint(instruction.moda_operation, ==, PMB887X_DSP_TCG_MODA_DEC);
+	g_assert_true(teak_decode(&core, 9, &instruction));
+	g_assert_cmpint(instruction.moda_operation, ==, TEAK_MODA_DEC);
 
-	g_assert_true(pmb887x_dsp_tcg_decode(&core, 10, &instruction));
-	g_assert_cmpint(instruction.moda_operation, ==, PMB887X_DSP_TCG_MODA_CLR);
+	g_assert_true(teak_decode(&core, 10, &instruction));
+	g_assert_cmpint(instruction.moda_operation, ==, TEAK_MODA_CLR);
 
-	g_assert_true(pmb887x_dsp_tcg_decode(&core, 11, &instruction));
-	g_assert_cmpint(instruction.moda_operation, ==, PMB887X_DSP_TCG_MODA_NOT);
+	g_assert_true(teak_decode(&core, 11, &instruction));
+	g_assert_cmpint(instruction.moda_operation, ==, TEAK_MODA_NOT);
 
-	g_assert_true(pmb887x_dsp_tcg_decode(&core, 12, &instruction));
-	g_assert_cmpint(instruction.moda_operation, ==, PMB887X_DSP_TCG_MODA_ROR);
+	g_assert_true(teak_decode(&core, 12, &instruction));
+	g_assert_cmpint(instruction.moda_operation, ==, TEAK_MODA_ROR);
 
-	g_assert_true(pmb887x_dsp_tcg_decode(&core, 13, &instruction));
-	g_assert_cmpint(instruction.moda_operation, ==, PMB887X_DSP_TCG_MODA_ROL);
+	g_assert_true(teak_decode(&core, 13, &instruction));
+	g_assert_cmpint(instruction.moda_operation, ==, TEAK_MODA_ROL);
 
-	g_assert_true(pmb887x_dsp_tcg_decode(&core, 14, &instruction));
-	g_assert_cmpint(instruction.moda_operation, ==, PMB887X_DSP_TCG_MODA_NEG);
+	g_assert_true(teak_decode(&core, 14, &instruction));
+	g_assert_cmpint(instruction.moda_operation, ==, TEAK_MODA_NEG);
 
-	g_assert_true(pmb887x_dsp_tcg_decode(&core, 15, &instruction));
-	g_assert_cmpint(instruction.moda_operation, ==, PMB887X_DSP_TCG_MODA_SHR);
+	g_assert_true(teak_decode(&core, 15, &instruction));
+	g_assert_cmpint(instruction.moda_operation, ==, TEAK_MODA_SHR);
 
-	g_assert_true(pmb887x_dsp_tcg_decode(&core, 16, &instruction));
-	g_assert_cmpint(instruction.moda_operation, ==, PMB887X_DSP_TCG_MODA_SHR4);
+	g_assert_true(teak_decode(&core, 16, &instruction));
+	g_assert_cmpint(instruction.moda_operation, ==, TEAK_MODA_SHR4);
 
-	g_assert_true(pmb887x_dsp_tcg_decode(&core, 17, &instruction));
-	g_assert_cmpint(instruction.moda_operation, ==, PMB887X_DSP_TCG_MODA_SHL);
+	g_assert_true(teak_decode(&core, 17, &instruction));
+	g_assert_cmpint(instruction.moda_operation, ==, TEAK_MODA_SHL);
 
-	g_assert_true(pmb887x_dsp_tcg_decode(&core, 18, &instruction));
-	g_assert_cmpint(instruction.moda_operation, ==, PMB887X_DSP_TCG_MODA_SHL4);
+	g_assert_true(teak_decode(&core, 18, &instruction));
+	g_assert_cmpint(instruction.moda_operation, ==, TEAK_MODA_SHL4);
 
-	g_assert_true(pmb887x_dsp_tcg_decode(&core, 19, &instruction));
-	g_assert_cmpint(instruction.moda_operation, ==, PMB887X_DSP_TCG_MODA_INC);
-	g_assert_cmpint(instruction.condition, ==, PMB887X_DSP_TCG_CONDITION_IU1);
+	g_assert_true(teak_decode(&core, 19, &instruction));
+	g_assert_cmpint(instruction.moda_operation, ==, TEAK_MODA_INC);
+	g_assert_cmpint(instruction.condition, ==, TEAK_COND_IU1);
 
 	/* 0x7FFF: modb <reserved 111> b1, cond 15; reserved in TeakLite 4.41 (modb), executed by dsp-lle-opcode-map. */
-	g_assert_true(pmb887x_dsp_tcg_decode(&core, 20, &instruction));
-	g_assert_cmpint(instruction.opcode, ==, PMB887X_DSP_TCG_OPCODE_MODB3_ACCUMULATOR);
-	g_assert_cmpint(instruction.moda_operation, ==, PMB887X_DSP_TCG_MODA_RESERVED);
+	g_assert_true(teak_decode(&core, 20, &instruction));
+	g_assert_cmpint(instruction.opcode, ==, TEAK_OP_MODB3_ACCUMULATOR);
+	g_assert_cmpint(instruction.moda_operation, ==, TEAK_MODA_RESERVED);
 	g_assert_cmpuint(instruction.accumulator_index, ==, 1);
 
-	g_assert_true(pmb887x_dsp_tcg_decode(&core, 21, &instruction));
-	g_assert_cmpint(instruction.opcode, ==, PMB887X_DSP_TCG_OPCODE_MOV_DATA_IMM8_REGISTER);
+	g_assert_true(teak_decode(&core, 21, &instruction));
+	g_assert_cmpint(instruction.opcode, ==, TEAK_OP_MOV_DATA_IMM8_REGISTER);
 	g_assert_cmpuint(instruction.register_code, ==, 2);
 	g_assert_cmphex(instruction.memory_address, ==, 8);
 
-	g_assert_true(pmb887x_dsp_tcg_decode(&core, 22, &instruction));
-	g_assert_cmpint(instruction.opcode, ==, PMB887X_DSP_TCG_OPCODE_MOV_REGISTER_DATA_IMM8);
+	g_assert_true(teak_decode(&core, 22, &instruction));
+	g_assert_cmpint(instruction.opcode, ==, TEAK_OP_MOV_REGISTER_DATA_IMM8);
 	g_assert_cmpuint(instruction.register_code, ==, 4);
 	g_assert_cmphex(instruction.memory_address, ==, 9);
 
-	g_assert_true(pmb887x_dsp_tcg_decode(&core, 23, &instruction));
-	g_assert_cmpint(instruction.opcode, ==, PMB887X_DSP_TCG_OPCODE_LOAD_PAGE);
+	g_assert_true(teak_decode(&core, 23, &instruction));
+	g_assert_cmpint(instruction.opcode, ==, TEAK_OP_LOAD_PAGE);
 	g_assert_cmphex(instruction.immediate, ==, 0x2A);
 
-	g_assert_true(pmb887x_dsp_tcg_decode(&core, 24, &instruction));
-	g_assert_cmpint(instruction.opcode, ==, PMB887X_DSP_TCG_OPCODE_DINT);
+	g_assert_true(teak_decode(&core, 24, &instruction));
+	g_assert_cmpint(instruction.opcode, ==, TEAK_OP_DINT);
 
-	g_assert_true(pmb887x_dsp_tcg_decode(&core, 25, &instruction));
-	g_assert_cmpint(instruction.opcode, ==, PMB887X_DSP_TCG_OPCODE_BRANCH_ABSOLUTE);
+	g_assert_true(teak_decode(&core, 25, &instruction));
+	g_assert_cmpint(instruction.opcode, ==, TEAK_OP_BRANCH_ABSOLUTE);
 	g_assert_cmphex(instruction.branch_target, ==, 0x3456);
-	g_assert_cmpint(instruction.condition, ==, PMB887X_DSP_TCG_CONDITION_EQ);
+	g_assert_cmpint(instruction.condition, ==, TEAK_COND_EQ);
 	g_assert_cmpuint(instruction.words, ==, 2);
 
-	g_assert_true(pmb887x_dsp_tcg_decode(&core, 27, &instruction));
-	g_assert_cmpint(instruction.opcode, ==, PMB887X_DSP_TCG_OPCODE_BRANCH_RELATIVE);
+	g_assert_true(teak_decode(&core, 27, &instruction));
+	g_assert_cmpint(instruction.opcode, ==, TEAK_OP_BRANCH_RELATIVE);
 	g_assert_cmphex(instruction.branch_target, ==, 31);
-	g_assert_cmpint(instruction.condition, ==, PMB887X_DSP_TCG_CONDITION_NEQ);
+	g_assert_cmpint(instruction.condition, ==, TEAK_COND_NEQ);
 	g_assert_cmpuint(instruction.words, ==, 1);
 
-	g_assert_true(pmb887x_dsp_tcg_decode(&core, 28, &instruction));
-	g_assert_cmpint(instruction.opcode, ==, PMB887X_DSP_TCG_OPCODE_CALL_ABSOLUTE);
+	g_assert_true(teak_decode(&core, 28, &instruction));
+	g_assert_cmpint(instruction.opcode, ==, TEAK_OP_CALL_ABSOLUTE);
 	g_assert_cmphex(instruction.branch_target, ==, 0xABCD);
-	g_assert_cmpint(instruction.condition, ==, PMB887X_DSP_TCG_CONDITION_GE);
+	g_assert_cmpint(instruction.condition, ==, TEAK_COND_GE);
 	g_assert_cmpuint(instruction.words, ==, 2);
 
-	g_assert_true(pmb887x_dsp_tcg_decode(&core, 30, &instruction));
-	g_assert_cmpint(instruction.opcode, ==, PMB887X_DSP_TCG_OPCODE_CALL_RELATIVE);
+	g_assert_true(teak_decode(&core, 30, &instruction));
+	g_assert_cmpint(instruction.opcode, ==, TEAK_OP_CALL_RELATIVE);
 	g_assert_cmphex(instruction.branch_target, ==, 29);
-	g_assert_cmpint(instruction.condition, ==, PMB887X_DSP_TCG_CONDITION_LT);
+	g_assert_cmpint(instruction.condition, ==, TEAK_COND_LT);
 	g_assert_cmpuint(instruction.words, ==, 1);
 
-	g_assert_true(pmb887x_dsp_tcg_decode(&core, 31, &instruction));
-	g_assert_cmpint(instruction.opcode, ==, PMB887X_DSP_TCG_OPCODE_RETURN);
-	g_assert_cmpint(instruction.condition, ==, PMB887X_DSP_TCG_CONDITION_EQ);
+	g_assert_true(teak_decode(&core, 31, &instruction));
+	g_assert_cmpint(instruction.opcode, ==, TEAK_OP_RETURN);
+	g_assert_cmpint(instruction.condition, ==, TEAK_COND_EQ);
 	g_assert_cmpuint(instruction.words, ==, 1);
 
-	g_assert_true(pmb887x_dsp_tcg_decode(&core, 32, &instruction));
-	g_assert_cmpint(instruction.opcode, ==, PMB887X_DSP_TCG_OPCODE_RETURN_INTERRUPT);
-	g_assert_cmpint(instruction.condition, ==, PMB887X_DSP_TCG_CONDITION_EQ);
+	g_assert_true(teak_decode(&core, 32, &instruction));
+	g_assert_cmpint(instruction.opcode, ==, TEAK_OP_RETURN_INTERRUPT);
+	g_assert_cmpint(instruction.condition, ==, TEAK_COND_EQ);
 	g_assert_false(instruction.context_switch);
 
-	g_assert_true(pmb887x_dsp_tcg_decode(&core, 33, &instruction));
-	g_assert_cmpint(instruction.opcode, ==, PMB887X_DSP_TCG_OPCODE_RETURN_STACK);
+	g_assert_true(teak_decode(&core, 33, &instruction));
+	g_assert_cmpint(instruction.opcode, ==, TEAK_OP_RETURN_STACK);
 	g_assert_cmphex(instruction.immediate, ==, 0x10);
 
-	g_assert_true(pmb887x_dsp_tcg_decode(&core, 34, &instruction));
-	g_assert_cmpint(instruction.opcode, ==, PMB887X_DSP_TCG_OPCODE_ALU_IMMEDIATE_ACCUMULATOR);
-	g_assert_cmpint(instruction.alu_operation, ==, PMB887X_DSP_TCG_ALU_ADD);
+	g_assert_true(teak_decode(&core, 34, &instruction));
+	g_assert_cmpint(instruction.opcode, ==, TEAK_OP_ALU_IMMEDIATE_ACCUMULATOR);
+	g_assert_cmpint(instruction.alu_operation, ==, TEAK_ALU_ADD);
 	g_assert_cmpuint(instruction.accumulator_index, ==, 0);
 	g_assert_cmphex(instruction.immediate, ==, 0x7F);
 
-	g_assert_true(pmb887x_dsp_tcg_decode(&core, 35, &instruction));
-	g_assert_cmpint(instruction.alu_operation, ==, PMB887X_DSP_TCG_ALU_CMP);
+	g_assert_true(teak_decode(&core, 35, &instruction));
+	g_assert_cmpint(instruction.alu_operation, ==, TEAK_ALU_CMP);
 	g_assert_cmpuint(instruction.accumulator_index, ==, 1);
 	g_assert_cmphex(instruction.immediate, ==, 0x80);
 
-	g_assert_true(pmb887x_dsp_tcg_decode(&core, 36, &instruction));
-	g_assert_cmpint(instruction.alu_operation, ==, PMB887X_DSP_TCG_ALU_SUB);
+	g_assert_true(teak_decode(&core, 36, &instruction));
+	g_assert_cmpint(instruction.alu_operation, ==, TEAK_ALU_SUB);
 	g_assert_cmpuint(instruction.accumulator_index, ==, 0);
 	g_assert_cmphex(instruction.immediate, ==, 0x55);
 
-	g_assert_true(pmb887x_dsp_tcg_decode(&core, 37, &instruction));
-	g_assert_cmpint(instruction.alu_operation, ==, PMB887X_DSP_TCG_ALU_OR);
+	g_assert_true(teak_decode(&core, 37, &instruction));
+	g_assert_cmpint(instruction.alu_operation, ==, TEAK_ALU_OR);
 	g_assert_cmpuint(instruction.accumulator_index, ==, 0);
 	g_assert_cmphex(instruction.immediate, ==, 0x12);
 
-	g_assert_true(pmb887x_dsp_tcg_decode(&core, 38, &instruction));
-	g_assert_cmpint(instruction.alu_operation, ==, PMB887X_DSP_TCG_ALU_AND);
+	g_assert_true(teak_decode(&core, 38, &instruction));
+	g_assert_cmpint(instruction.alu_operation, ==, TEAK_ALU_AND);
 	g_assert_cmpuint(instruction.accumulator_index, ==, 1);
 	g_assert_cmphex(instruction.immediate, ==, 0x34);
 
-	g_assert_true(pmb887x_dsp_tcg_decode(&core, 39, &instruction));
-	g_assert_cmpint(instruction.alu_operation, ==, PMB887X_DSP_TCG_ALU_XOR);
+	g_assert_true(teak_decode(&core, 39, &instruction));
+	g_assert_cmpint(instruction.alu_operation, ==, TEAK_ALU_XOR);
 	g_assert_cmpuint(instruction.accumulator_index, ==, 1);
 	g_assert_cmphex(instruction.immediate, ==, 0x56);
 
-	g_assert_true(pmb887x_dsp_tcg_decode(&core, 40, &instruction));
-	g_assert_cmpint(instruction.opcode, ==, PMB887X_DSP_TCG_OPCODE_TEST_ACCUMULATOR_DATA_IMM8);
-	g_assert_cmpint(instruction.accumulator_test, ==, PMB887X_DSP_TCG_ACCUMULATOR_TST0);
+	g_assert_true(teak_decode(&core, 40, &instruction));
+	g_assert_cmpint(instruction.opcode, ==, TEAK_OP_TEST_ACCUMULATOR_DATA_IMM8);
+	g_assert_cmpint(instruction.accumulator_test, ==, TEAK_ACCUMULATOR_TST0);
 	g_assert_cmpuint(instruction.accumulator_index, ==, 0);
 	g_assert_cmphex(instruction.memory_address, ==, 0x12);
 
-	g_assert_true(pmb887x_dsp_tcg_decode(&core, 41, &instruction));
-	g_assert_cmpint(instruction.accumulator_test, ==, PMB887X_DSP_TCG_ACCUMULATOR_TST1);
+	g_assert_true(teak_decode(&core, 41, &instruction));
+	g_assert_cmpint(instruction.accumulator_test, ==, TEAK_ACCUMULATOR_TST1);
 	g_assert_cmpuint(instruction.accumulator_index, ==, 1);
 	g_assert_cmphex(instruction.memory_address, ==, 0x34);
 
-	g_assert_true(pmb887x_dsp_tcg_decode(&core, 42, &instruction));
-	g_assert_cmpint(instruction.opcode, ==, PMB887X_DSP_TCG_OPCODE_ALU_IMMEDIATE_ACCUMULATOR);
-	g_assert_cmpint(instruction.alu_operation, ==, PMB887X_DSP_TCG_ALU_ADD);
+	g_assert_true(teak_decode(&core, 42, &instruction));
+	g_assert_cmpint(instruction.opcode, ==, TEAK_OP_ALU_IMMEDIATE_ACCUMULATOR);
+	g_assert_cmpint(instruction.alu_operation, ==, TEAK_ALU_ADD);
 	g_assert_cmpuint(instruction.accumulator_index, ==, 0);
 	g_assert_cmpuint(instruction.words, ==, 2);
 	g_assert_cmphex(instruction.immediate, ==, 0xFFFF);
 	g_assert_cmphex(instruction.alu_operand, ==, UINT64_MAX);
 
-	g_assert_true(pmb887x_dsp_tcg_decode(&core, 44, &instruction));
-	g_assert_cmpint(instruction.alu_operation, ==, PMB887X_DSP_TCG_ALU_CMP);
+	g_assert_true(teak_decode(&core, 44, &instruction));
+	g_assert_cmpint(instruction.alu_operation, ==, TEAK_ALU_CMP);
 	g_assert_cmpuint(instruction.accumulator_index, ==, 1);
 	g_assert_cmphex(instruction.alu_operand, ==, 0x1234);
 
-	g_assert_true(pmb887x_dsp_tcg_decode(&core, 46, &instruction));
-	g_assert_cmpint(instruction.alu_operation, ==, PMB887X_DSP_TCG_ALU_OR);
+	g_assert_true(teak_decode(&core, 46, &instruction));
+	g_assert_cmpint(instruction.alu_operation, ==, TEAK_ALU_OR);
 	g_assert_cmpuint(instruction.accumulator_index, ==, 0);
 	g_assert_cmphex(instruction.alu_operand, ==, 0xABCD);
 
-	g_assert_true(pmb887x_dsp_tcg_decode(&core, 48, &instruction));
-	g_assert_cmpint(instruction.opcode, ==, PMB887X_DSP_TCG_OPCODE_ALU_DATA_IMM8_ACCUMULATOR);
-	g_assert_cmpint(instruction.alu_operation, ==, PMB887X_DSP_TCG_ALU_OR);
+	g_assert_true(teak_decode(&core, 48, &instruction));
+	g_assert_cmpint(instruction.opcode, ==, TEAK_OP_ALU_DATA_IMM8_ACCUMULATOR);
+	g_assert_cmpint(instruction.alu_operation, ==, TEAK_ALU_OR);
 	g_assert_cmpuint(instruction.accumulator_index, ==, 0);
 	g_assert_cmphex(instruction.memory_address, ==, 0x12);
 
-	g_assert_true(pmb887x_dsp_tcg_decode(&core, 49, &instruction));
-	g_assert_cmpint(instruction.alu_operation, ==, PMB887X_DSP_TCG_ALU_AND);
+	g_assert_true(teak_decode(&core, 49, &instruction));
+	g_assert_cmpint(instruction.alu_operation, ==, TEAK_ALU_AND);
 	g_assert_cmpuint(instruction.accumulator_index, ==, 1);
 
-	g_assert_true(pmb887x_dsp_tcg_decode(&core, 50, &instruction));
-	g_assert_cmpint(instruction.alu_operation, ==, PMB887X_DSP_TCG_ALU_XOR);
-	g_assert_true(pmb887x_dsp_tcg_decode(&core, 51, &instruction));
-	g_assert_cmpint(instruction.alu_operation, ==, PMB887X_DSP_TCG_ALU_ADD);
-	g_assert_true(pmb887x_dsp_tcg_decode(&core, 52, &instruction));
-	g_assert_cmpint(instruction.alu_operation, ==, PMB887X_DSP_TCG_ALU_CMP);
-	g_assert_true(pmb887x_dsp_tcg_decode(&core, 53, &instruction));
-	g_assert_cmpint(instruction.alu_operation, ==, PMB887X_DSP_TCG_ALU_SUB);
+	g_assert_true(teak_decode(&core, 50, &instruction));
+	g_assert_cmpint(instruction.alu_operation, ==, TEAK_ALU_XOR);
+	g_assert_true(teak_decode(&core, 51, &instruction));
+	g_assert_cmpint(instruction.alu_operation, ==, TEAK_ALU_ADD);
+	g_assert_true(teak_decode(&core, 52, &instruction));
+	g_assert_cmpint(instruction.alu_operation, ==, TEAK_ALU_CMP);
+	g_assert_true(teak_decode(&core, 53, &instruction));
+	g_assert_cmpint(instruction.alu_operation, ==, TEAK_ALU_SUB);
 	g_assert_cmpuint(instruction.accumulator_index, ==, 1);
 	g_assert_cmphex(instruction.memory_address, ==, 0xBC);
 
-	g_assert_true(pmb887x_dsp_tcg_decode(&core, 54, &instruction));
-	g_assert_cmpint(instruction.opcode, ==, PMB887X_DSP_TCG_OPCODE_ALU_R7_OFFSET7_ACCUMULATOR);
-	g_assert_cmpint(instruction.alu_operation, ==, PMB887X_DSP_TCG_ALU_OR);
+	g_assert_true(teak_decode(&core, 54, &instruction));
+	g_assert_cmpint(instruction.opcode, ==, TEAK_OP_ALU_R7_OFFSET7_ACCUMULATOR);
+	g_assert_cmpint(instruction.alu_operation, ==, TEAK_ALU_OR);
 	g_assert_cmpuint(instruction.accumulator_index, ==, 0);
 	g_assert_cmpint(instruction.memory_offset, ==, 0x12);
 
-	g_assert_true(pmb887x_dsp_tcg_decode(&core, 55, &instruction));
-	g_assert_cmpint(instruction.alu_operation, ==, PMB887X_DSP_TCG_ALU_AND);
+	g_assert_true(teak_decode(&core, 55, &instruction));
+	g_assert_cmpint(instruction.alu_operation, ==, TEAK_ALU_AND);
 	g_assert_cmpuint(instruction.accumulator_index, ==, 1);
 	g_assert_cmpint(instruction.memory_offset, ==, -1);
 
-	g_assert_true(pmb887x_dsp_tcg_decode(&core, 56, &instruction));
-	g_assert_cmpint(instruction.alu_operation, ==, PMB887X_DSP_TCG_ALU_XOR);
-	g_assert_true(pmb887x_dsp_tcg_decode(&core, 57, &instruction));
-	g_assert_cmpint(instruction.alu_operation, ==, PMB887X_DSP_TCG_ALU_ADD);
+	g_assert_true(teak_decode(&core, 56, &instruction));
+	g_assert_cmpint(instruction.alu_operation, ==, TEAK_ALU_XOR);
+	g_assert_true(teak_decode(&core, 57, &instruction));
+	g_assert_cmpint(instruction.alu_operation, ==, TEAK_ALU_ADD);
 	g_assert_cmpuint(instruction.accumulator_index, ==, 1);
-	g_assert_true(pmb887x_dsp_tcg_decode(&core, 58, &instruction));
-	g_assert_cmpint(instruction.alu_operation, ==, PMB887X_DSP_TCG_ALU_CMP);
-	g_assert_true(pmb887x_dsp_tcg_decode(&core, 59, &instruction));
-	g_assert_cmpint(instruction.alu_operation, ==, PMB887X_DSP_TCG_ALU_SUB);
+	g_assert_true(teak_decode(&core, 58, &instruction));
+	g_assert_cmpint(instruction.alu_operation, ==, TEAK_ALU_CMP);
+	g_assert_true(teak_decode(&core, 59, &instruction));
+	g_assert_cmpint(instruction.alu_operation, ==, TEAK_ALU_SUB);
 	g_assert_cmpuint(instruction.accumulator_index, ==, 1);
 	g_assert_cmpint(instruction.memory_offset, ==, -64);
 
-	g_assert_true(pmb887x_dsp_tcg_decode(&core, 60, &instruction));
-	g_assert_cmpint(instruction.opcode, ==, PMB887X_DSP_TCG_OPCODE_ALU_DATA_IMM16_ACCUMULATOR);
-	g_assert_cmpint(instruction.alu_operation, ==, PMB887X_DSP_TCG_ALU_OR);
+	g_assert_true(teak_decode(&core, 60, &instruction));
+	g_assert_cmpint(instruction.opcode, ==, TEAK_OP_ALU_DATA_IMM16_ACCUMULATOR);
+	g_assert_cmpint(instruction.alu_operation, ==, TEAK_ALU_OR);
 	g_assert_cmpuint(instruction.accumulator_index, ==, 0);
 	g_assert_cmphex(instruction.expansion, ==, 0x0108);
 	g_assert_cmpuint(instruction.words, ==, 2);
 
-	g_assert_true(pmb887x_dsp_tcg_decode(&core, 62, &instruction));
-	g_assert_cmpint(instruction.alu_operation, ==, PMB887X_DSP_TCG_ALU_AND);
+	g_assert_true(teak_decode(&core, 62, &instruction));
+	g_assert_cmpint(instruction.alu_operation, ==, TEAK_ALU_AND);
 	g_assert_cmpuint(instruction.accumulator_index, ==, 1);
-	g_assert_true(pmb887x_dsp_tcg_decode(&core, 64, &instruction));
-	g_assert_cmpint(instruction.alu_operation, ==, PMB887X_DSP_TCG_ALU_XOR);
+	g_assert_true(teak_decode(&core, 64, &instruction));
+	g_assert_cmpint(instruction.alu_operation, ==, TEAK_ALU_XOR);
 
-	g_assert_true(pmb887x_dsp_tcg_decode(&core, 66, &instruction));
-	g_assert_cmpint(instruction.opcode, ==, PMB887X_DSP_TCG_OPCODE_ALU_R7_OFFSET16_ACCUMULATOR);
-	g_assert_cmpint(instruction.alu_operation, ==, PMB887X_DSP_TCG_ALU_ADD);
+	g_assert_true(teak_decode(&core, 66, &instruction));
+	g_assert_cmpint(instruction.opcode, ==, TEAK_OP_ALU_R7_OFFSET16_ACCUMULATOR);
+	g_assert_cmpint(instruction.alu_operation, ==, TEAK_ALU_ADD);
 	g_assert_cmpuint(instruction.accumulator_index, ==, 1);
 	g_assert_cmphex(instruction.expansion, ==, 8);
-	g_assert_true(pmb887x_dsp_tcg_decode(&core, 68, &instruction));
-	g_assert_cmpint(instruction.alu_operation, ==, PMB887X_DSP_TCG_ALU_CMP);
-	g_assert_true(pmb887x_dsp_tcg_decode(&core, 70, &instruction));
-	g_assert_cmpint(instruction.alu_operation, ==, PMB887X_DSP_TCG_ALU_SUB);
+	g_assert_true(teak_decode(&core, 68, &instruction));
+	g_assert_cmpint(instruction.alu_operation, ==, TEAK_ALU_CMP);
+	g_assert_true(teak_decode(&core, 70, &instruction));
+	g_assert_cmpint(instruction.alu_operation, ==, TEAK_ALU_SUB);
 	g_assert_cmpuint(instruction.accumulator_index, ==, 1);
 
-	g_assert_true(pmb887x_dsp_tcg_decode(&core, 72, &instruction));
-	g_assert_cmpint(instruction.opcode, ==, PMB887X_DSP_TCG_OPCODE_ALU_REGISTER_ACCUMULATOR);
-	g_assert_cmpint(instruction.alu_operation, ==, PMB887X_DSP_TCG_ALU_OR);
+	g_assert_true(teak_decode(&core, 72, &instruction));
+	g_assert_cmpint(instruction.opcode, ==, TEAK_OP_ALU_REGISTER_ACCUMULATOR);
+	g_assert_cmpint(instruction.alu_operation, ==, TEAK_ALU_OR);
 	g_assert_cmpuint(instruction.register_code, ==, 0);
 	g_assert_cmpuint(instruction.accumulator_index, ==, 0);
-	g_assert_true(pmb887x_dsp_tcg_decode(&core, 73, &instruction));
-	g_assert_cmpint(instruction.alu_operation, ==, PMB887X_DSP_TCG_ALU_AND);
+	g_assert_true(teak_decode(&core, 73, &instruction));
+	g_assert_cmpint(instruction.alu_operation, ==, TEAK_ALU_AND);
 	g_assert_cmpuint(instruction.register_code, ==, 5);
 	g_assert_cmpuint(instruction.accumulator_index, ==, 1);
-	g_assert_true(pmb887x_dsp_tcg_decode(&core, 74, &instruction));
-	g_assert_cmpint(instruction.alu_operation, ==, PMB887X_DSP_TCG_ALU_XOR);
+	g_assert_true(teak_decode(&core, 74, &instruction));
+	g_assert_cmpint(instruction.alu_operation, ==, TEAK_ALU_XOR);
 	g_assert_cmpuint(instruction.register_code, ==, 6);
-	g_assert_true(pmb887x_dsp_tcg_decode(&core, 75, &instruction));
-	g_assert_cmpint(instruction.alu_operation, ==, PMB887X_DSP_TCG_ALU_ADD);
+	g_assert_true(teak_decode(&core, 75, &instruction));
+	g_assert_cmpint(instruction.alu_operation, ==, TEAK_ALU_ADD);
 	g_assert_cmpuint(instruction.register_code, ==, 7);
-	g_assert_true(pmb887x_dsp_tcg_decode(&core, 76, &instruction));
-	g_assert_cmpint(instruction.alu_operation, ==, PMB887X_DSP_TCG_ALU_CMP);
-	g_assert_true(pmb887x_dsp_tcg_decode(&core, 77, &instruction));
-	g_assert_cmpint(instruction.alu_operation, ==, PMB887X_DSP_TCG_ALU_SUB);
+	g_assert_true(teak_decode(&core, 76, &instruction));
+	g_assert_cmpint(instruction.alu_operation, ==, TEAK_ALU_CMP);
+	g_assert_true(teak_decode(&core, 77, &instruction));
+	g_assert_cmpint(instruction.alu_operation, ==, TEAK_ALU_SUB);
 	g_assert_cmpuint(instruction.accumulator_index, ==, 1);
 
-	g_assert_true(pmb887x_dsp_tcg_decode(&core, 78, &instruction));
-	g_assert_cmpint(instruction.opcode, ==, PMB887X_DSP_TCG_OPCODE_ALU_REGISTER_ACCUMULATOR);
-	g_assert_cmpint(instruction.alu_operation, ==, PMB887X_DSP_TCG_ALU_OR);
+	g_assert_true(teak_decode(&core, 78, &instruction));
+	g_assert_cmpint(instruction.opcode, ==, TEAK_OP_ALU_REGISTER_ACCUMULATOR);
+	g_assert_cmpint(instruction.alu_operation, ==, TEAK_ALU_OR);
 	g_assert_cmpuint(instruction.register_code, ==, 24);
 	g_assert_cmpuint(instruction.accumulator_index, ==, 1);
-	g_assert_true(pmb887x_dsp_tcg_decode(&core, 79, &instruction));
-	g_assert_cmpint(instruction.alu_operation, ==, PMB887X_DSP_TCG_ALU_AND);
+	g_assert_true(teak_decode(&core, 79, &instruction));
+	g_assert_cmpint(instruction.alu_operation, ==, TEAK_ALU_AND);
 	g_assert_cmpuint(instruction.register_code, ==, 25);
-	g_assert_true(pmb887x_dsp_tcg_decode(&core, 80, &instruction));
-	g_assert_cmpint(instruction.alu_operation, ==, PMB887X_DSP_TCG_ALU_XOR);
-	g_assert_true(pmb887x_dsp_tcg_decode(&core, 81, &instruction));
-	g_assert_cmpint(instruction.alu_operation, ==, PMB887X_DSP_TCG_ALU_ADD);
-	g_assert_true(pmb887x_dsp_tcg_decode(&core, 82, &instruction));
-	g_assert_cmpint(instruction.alu_operation, ==, PMB887X_DSP_TCG_ALU_CMP);
-	g_assert_true(pmb887x_dsp_tcg_decode(&core, 83, &instruction));
-	g_assert_cmpint(instruction.alu_operation, ==, PMB887X_DSP_TCG_ALU_SUB);
+	g_assert_true(teak_decode(&core, 80, &instruction));
+	g_assert_cmpint(instruction.alu_operation, ==, TEAK_ALU_XOR);
+	g_assert_true(teak_decode(&core, 81, &instruction));
+	g_assert_cmpint(instruction.alu_operation, ==, TEAK_ALU_ADD);
+	g_assert_true(teak_decode(&core, 82, &instruction));
+	g_assert_cmpint(instruction.alu_operation, ==, TEAK_ALU_CMP);
+	g_assert_true(teak_decode(&core, 83, &instruction));
+	g_assert_cmpint(instruction.alu_operation, ==, TEAK_ALU_SUB);
 	g_assert_cmpuint(instruction.register_code, ==, 25);
 
-	g_assert_true(pmb887x_dsp_tcg_decode(&core, 84, &instruction));
-	g_assert_cmpint(instruction.alu_operation, ==, PMB887X_DSP_TCG_ALU_OR);
+	g_assert_true(teak_decode(&core, 84, &instruction));
+	g_assert_cmpint(instruction.alu_operation, ==, TEAK_ALU_OR);
 	g_assert_cmpuint(instruction.register_code, ==, 26);
-	g_assert_true(pmb887x_dsp_tcg_decode(&core, 85, &instruction));
-	g_assert_cmpint(instruction.alu_operation, ==, PMB887X_DSP_TCG_ALU_AND);
+	g_assert_true(teak_decode(&core, 85, &instruction));
+	g_assert_cmpint(instruction.alu_operation, ==, TEAK_ALU_AND);
 	g_assert_cmpuint(instruction.register_code, ==, 27);
-	g_assert_true(pmb887x_dsp_tcg_decode(&core, 86, &instruction));
-	g_assert_cmpint(instruction.alu_operation, ==, PMB887X_DSP_TCG_ALU_XOR);
+	g_assert_true(teak_decode(&core, 86, &instruction));
+	g_assert_cmpint(instruction.alu_operation, ==, TEAK_ALU_XOR);
 	g_assert_cmpuint(instruction.register_code, ==, 28);
-	g_assert_true(pmb887x_dsp_tcg_decode(&core, 87, &instruction));
-	g_assert_cmpint(instruction.alu_operation, ==, PMB887X_DSP_TCG_ALU_ADD);
+	g_assert_true(teak_decode(&core, 87, &instruction));
+	g_assert_cmpint(instruction.alu_operation, ==, TEAK_ALU_ADD);
 	g_assert_cmpuint(instruction.register_code, ==, 29);
-	g_assert_true(pmb887x_dsp_tcg_decode(&core, 88, &instruction));
-	g_assert_cmpint(instruction.alu_operation, ==, PMB887X_DSP_TCG_ALU_CMP);
-	g_assert_true(pmb887x_dsp_tcg_decode(&core, 89, &instruction));
-	g_assert_cmpint(instruction.alu_operation, ==, PMB887X_DSP_TCG_ALU_SUB);
+	g_assert_true(teak_decode(&core, 88, &instruction));
+	g_assert_cmpint(instruction.alu_operation, ==, TEAK_ALU_CMP);
+	g_assert_true(teak_decode(&core, 89, &instruction));
+	g_assert_cmpint(instruction.alu_operation, ==, TEAK_ALU_SUB);
 	g_assert_cmpuint(instruction.register_code, ==, 29);
 
-	g_assert_true(pmb887x_dsp_tcg_decode(&core, 90, &instruction));
-	g_assert_cmpint(instruction.alu_operation, ==, PMB887X_DSP_TCG_ALU_OR);
+	g_assert_true(teak_decode(&core, 90, &instruction));
+	g_assert_cmpint(instruction.alu_operation, ==, TEAK_ALU_OR);
 	g_assert_cmpuint(instruction.register_code, ==, 13);
-	g_assert_true(pmb887x_dsp_tcg_decode(&core, 91, &instruction));
-	g_assert_cmpint(instruction.alu_operation, ==, PMB887X_DSP_TCG_ALU_AND);
+	g_assert_true(teak_decode(&core, 91, &instruction));
+	g_assert_cmpint(instruction.alu_operation, ==, TEAK_ALU_AND);
 	g_assert_cmpuint(instruction.register_code, ==, 16);
-	g_assert_true(pmb887x_dsp_tcg_decode(&core, 92, &instruction));
-	g_assert_cmpint(instruction.alu_operation, ==, PMB887X_DSP_TCG_ALU_XOR);
+	g_assert_true(teak_decode(&core, 92, &instruction));
+	g_assert_cmpint(instruction.alu_operation, ==, TEAK_ALU_XOR);
 	g_assert_cmpuint(instruction.register_code, ==, 17);
-	g_assert_true(pmb887x_dsp_tcg_decode(&core, 93, &instruction));
-	g_assert_cmpint(instruction.alu_operation, ==, PMB887X_DSP_TCG_ALU_ADD);
+	g_assert_true(teak_decode(&core, 93, &instruction));
+	g_assert_cmpint(instruction.alu_operation, ==, TEAK_ALU_ADD);
 	g_assert_cmpuint(instruction.register_code, ==, 18);
-	g_assert_true(pmb887x_dsp_tcg_decode(&core, 94, &instruction));
-	g_assert_cmpint(instruction.alu_operation, ==, PMB887X_DSP_TCG_ALU_CMP);
+	g_assert_true(teak_decode(&core, 94, &instruction));
+	g_assert_cmpint(instruction.alu_operation, ==, TEAK_ALU_CMP);
 	g_assert_cmpuint(instruction.register_code, ==, 19);
-	g_assert_true(pmb887x_dsp_tcg_decode(&core, 95, &instruction));
-	g_assert_cmpint(instruction.alu_operation, ==, PMB887X_DSP_TCG_ALU_SUB);
+	g_assert_true(teak_decode(&core, 95, &instruction));
+	g_assert_cmpint(instruction.alu_operation, ==, TEAK_ALU_SUB);
 	g_assert_cmpuint(instruction.register_code, ==, 13);
 
-	g_assert_true(pmb887x_dsp_tcg_decode(&core, 96, &instruction));
-	g_assert_cmpint(instruction.opcode, ==, PMB887X_DSP_TCG_OPCODE_ALU_RN_STEP_ACCUMULATOR);
-	g_assert_cmpint(instruction.alu_operation, ==, PMB887X_DSP_TCG_ALU_OR);
+	g_assert_true(teak_decode(&core, 96, &instruction));
+	g_assert_cmpint(instruction.opcode, ==, TEAK_OP_ALU_RN_STEP_ACCUMULATOR);
+	g_assert_cmpint(instruction.alu_operation, ==, TEAK_ALU_OR);
 	g_assert_cmpuint(instruction.address_register, ==, 0);
-	g_assert_cmpint(instruction.step, ==, PMB887X_DSP_TCG_STEP_ZERO);
+	g_assert_cmpint(instruction.step, ==, TEAK_STEP_ZERO);
 	g_assert_cmpuint(instruction.accumulator_index, ==, 0);
 
-	g_assert_true(pmb887x_dsp_tcg_decode(&core, 97, &instruction));
-	g_assert_cmpint(instruction.alu_operation, ==, PMB887X_DSP_TCG_ALU_AND);
+	g_assert_true(teak_decode(&core, 97, &instruction));
+	g_assert_cmpint(instruction.alu_operation, ==, TEAK_ALU_AND);
 	g_assert_cmpuint(instruction.address_register, ==, 1);
-	g_assert_cmpint(instruction.step, ==, PMB887X_DSP_TCG_STEP_INCREASE);
+	g_assert_cmpint(instruction.step, ==, TEAK_STEP_INCREASE);
 	g_assert_cmpuint(instruction.accumulator_index, ==, 1);
 
-	g_assert_true(pmb887x_dsp_tcg_decode(&core, 98, &instruction));
-	g_assert_cmpint(instruction.alu_operation, ==, PMB887X_DSP_TCG_ALU_XOR);
+	g_assert_true(teak_decode(&core, 98, &instruction));
+	g_assert_cmpint(instruction.alu_operation, ==, TEAK_ALU_XOR);
 	g_assert_cmpuint(instruction.address_register, ==, 4);
-	g_assert_cmpint(instruction.step, ==, PMB887X_DSP_TCG_STEP_DECREASE);
+	g_assert_cmpint(instruction.step, ==, TEAK_STEP_DECREASE);
 
-	g_assert_true(pmb887x_dsp_tcg_decode(&core, 99, &instruction));
-	g_assert_cmpint(instruction.alu_operation, ==, PMB887X_DSP_TCG_ALU_ADD);
+	g_assert_true(teak_decode(&core, 99, &instruction));
+	g_assert_cmpint(instruction.alu_operation, ==, TEAK_ALU_ADD);
 	g_assert_cmpuint(instruction.address_register, ==, 2);
-	g_assert_cmpint(instruction.step, ==, PMB887X_DSP_TCG_STEP_PLUS_STEP);
+	g_assert_cmpint(instruction.step, ==, TEAK_STEP_PLUS_STEP);
 	g_assert_cmpuint(instruction.accumulator_index, ==, 1);
 
-	g_assert_true(pmb887x_dsp_tcg_decode(&core, 100, &instruction));
-	g_assert_cmpint(instruction.alu_operation, ==, PMB887X_DSP_TCG_ALU_CMP);
+	g_assert_true(teak_decode(&core, 100, &instruction));
+	g_assert_cmpint(instruction.alu_operation, ==, TEAK_ALU_CMP);
 	g_assert_cmpuint(instruction.address_register, ==, 5);
-	g_assert_cmpint(instruction.step, ==, PMB887X_DSP_TCG_STEP_PLUS_STEP);
+	g_assert_cmpint(instruction.step, ==, TEAK_STEP_PLUS_STEP);
 
 	/* sub (nnn 111)+,a1: nnn 111 is undefined (TeakLite 4.41, 4.5.1); dsp-lle-opcode-aliases: r5, no modification. */
-	g_assert_true(pmb887x_dsp_tcg_decode(&core, 101, &instruction));
-	g_assert_cmpint(instruction.alu_operation, ==, PMB887X_DSP_TCG_ALU_SUB);
+	g_assert_true(teak_decode(&core, 101, &instruction));
+	g_assert_cmpint(instruction.alu_operation, ==, TEAK_ALU_SUB);
 	g_assert_cmpuint(instruction.address_register, ==, 5);
-	g_assert_cmpint(instruction.step, ==, PMB887X_DSP_TCG_STEP_ZERO);
+	g_assert_cmpint(instruction.step, ==, TEAK_STEP_ZERO);
 	g_assert_cmpuint(instruction.accumulator_index, ==, 1);
 
-	g_assert_true(pmb887x_dsp_tcg_decode(&core, 102, &instruction));
-	g_assert_cmpint(instruction.opcode, ==, PMB887X_DSP_TCG_OPCODE_LOAD_STEPI);
+	g_assert_true(teak_decode(&core, 102, &instruction));
+	g_assert_cmpint(instruction.opcode, ==, TEAK_OP_LOAD_STEPI);
 	g_assert_cmphex(instruction.immediate, ==, 0x7E);
 
-	g_assert_true(pmb887x_dsp_tcg_decode(&core, 103, &instruction));
-	g_assert_cmpint(instruction.opcode, ==, PMB887X_DSP_TCG_OPCODE_LOAD_STEPJ);
+	g_assert_true(teak_decode(&core, 103, &instruction));
+	g_assert_cmpint(instruction.opcode, ==, TEAK_OP_LOAD_STEPJ);
 	g_assert_cmphex(instruction.immediate, ==, 3);
 
-	g_assert_true(pmb887x_dsp_tcg_decode(&core, 104, &instruction));
-	g_assert_cmpint(instruction.opcode, ==, PMB887X_DSP_TCG_OPCODE_MOV_DATA_RN_STEP_REGISTER);
+	g_assert_true(teak_decode(&core, 104, &instruction));
+	g_assert_cmpint(instruction.opcode, ==, TEAK_OP_MOV_DATA_RN_STEP_REGISTER);
 	g_assert_cmpuint(instruction.register_code, ==, 4);
 	g_assert_cmpuint(instruction.address_register, ==, 0);
-	g_assert_cmpint(instruction.step, ==, PMB887X_DSP_TCG_STEP_INCREASE);
+	g_assert_cmpint(instruction.step, ==, TEAK_STEP_INCREASE);
 
-	g_assert_true(pmb887x_dsp_tcg_decode(&core, 105, &instruction));
+	g_assert_true(teak_decode(&core, 105, &instruction));
 	g_assert_cmpuint(instruction.register_code, ==, 6);
 	g_assert_cmpuint(instruction.address_register, ==, 3);
-	g_assert_cmpint(instruction.step, ==, PMB887X_DSP_TCG_STEP_DECREASE);
+	g_assert_cmpint(instruction.step, ==, TEAK_STEP_DECREASE);
 
-	g_assert_true(pmb887x_dsp_tcg_decode(&core, 106, &instruction));
+	g_assert_true(teak_decode(&core, 106, &instruction));
 	g_assert_cmpuint(instruction.register_code, ==, 7);
 	g_assert_cmpuint(instruction.address_register, ==, 5);
-	g_assert_cmpint(instruction.step, ==, PMB887X_DSP_TCG_STEP_PLUS_STEP);
+	g_assert_cmpint(instruction.step, ==, TEAK_STEP_PLUS_STEP);
 
-	g_assert_true(pmb887x_dsp_tcg_decode(&core, 107, &instruction));
+	g_assert_true(teak_decode(&core, 107, &instruction));
 	g_assert_cmpuint(instruction.register_code, ==, 0);
 	g_assert_cmpuint(instruction.address_register, ==, 0);
-	g_assert_cmpint(instruction.step, ==, PMB887X_DSP_TCG_STEP_ZERO);
+	g_assert_cmpint(instruction.step, ==, TEAK_STEP_ZERO);
 
-	g_assert_true(pmb887x_dsp_tcg_decode(&core, 108, &instruction));
-	g_assert_cmpint(instruction.opcode, ==, PMB887X_DSP_TCG_OPCODE_MOV_REGISTER_DATA_RN_STEP);
+	g_assert_true(teak_decode(&core, 108, &instruction));
+	g_assert_cmpint(instruction.opcode, ==, TEAK_OP_MOV_REGISTER_DATA_RN_STEP);
 	g_assert_cmpuint(instruction.register_code, ==, 2);
 	g_assert_cmpuint(instruction.address_register, ==, 1);
-	g_assert_cmpint(instruction.step, ==, PMB887X_DSP_TCG_STEP_ZERO);
+	g_assert_cmpint(instruction.step, ==, TEAK_STEP_ZERO);
 
-	g_assert_true(pmb887x_dsp_tcg_decode(&core, 109, &instruction));
+	g_assert_true(teak_decode(&core, 109, &instruction));
 	g_assert_cmpuint(instruction.register_code, ==, 5);
 	g_assert_cmpuint(instruction.address_register, ==, 4);
-	g_assert_cmpint(instruction.step, ==, PMB887X_DSP_TCG_STEP_INCREASE);
+	g_assert_cmpint(instruction.step, ==, TEAK_STEP_INCREASE);
 
-	g_assert_true(pmb887x_dsp_tcg_decode(&core, 110, &instruction));
+	g_assert_true(teak_decode(&core, 110, &instruction));
 	g_assert_cmpuint(instruction.register_code, ==, 6);
 	g_assert_cmpuint(instruction.address_register, ==, 0);
-	g_assert_cmpint(instruction.step, ==, PMB887X_DSP_TCG_STEP_DECREASE);
+	g_assert_cmpint(instruction.step, ==, TEAK_STEP_DECREASE);
 
 	/* mov y0,(nnn 110)+s: nnn 110 is undefined (TeakLite 4.41, 4.5.1); dsp-lle-opcode-aliases: r4, no modification. */
-	g_assert_true(pmb887x_dsp_tcg_decode(&core, 111, &instruction));
+	g_assert_true(teak_decode(&core, 111, &instruction));
 	g_assert_cmpuint(instruction.register_code, ==, 7);
 	g_assert_cmpuint(instruction.address_register, ==, 4);
-	g_assert_cmpint(instruction.step, ==, PMB887X_DSP_TCG_STEP_ZERO);
+	g_assert_cmpint(instruction.step, ==, TEAK_STEP_ZERO);
 
 	for (uint32_t address = 112; address <= 121; address++) {
-		g_assert_true(pmb887x_dsp_tcg_decode(&core, address, &instruction));
-		g_assert_cmpint(instruction.opcode, ==, PMB887X_DSP_TCG_OPCODE_MOV_DATA_RN_STEP_REGISTER);
+		g_assert_true(teak_decode(&core, address, &instruction));
+		g_assert_cmpint(instruction.opcode, ==, TEAK_OP_MOV_DATA_RN_STEP_REGISTER);
 	}
 	g_assert_cmpuint(instruction.register_code, ==, 19);
 
-	g_assert_true(pmb887x_dsp_tcg_decode(&core, 122, &instruction));
-	g_assert_cmpint(instruction.opcode, ==, PMB887X_DSP_TCG_OPCODE_MOV_DATA_RN_STEP_B_ACCUMULATOR);
+	g_assert_true(teak_decode(&core, 122, &instruction));
+	g_assert_cmpint(instruction.opcode, ==, TEAK_OP_MOV_DATA_RN_STEP_B_ACCUMULATOR);
 	g_assert_cmpuint(instruction.accumulator_index, ==, 0);
 	g_assert_cmpuint(instruction.address_register, ==, 0);
-	g_assert_cmpint(instruction.step, ==, PMB887X_DSP_TCG_STEP_INCREASE);
+	g_assert_cmpint(instruction.step, ==, TEAK_STEP_INCREASE);
 
-	g_assert_true(pmb887x_dsp_tcg_decode(&core, 123, &instruction));
-	g_assert_cmpint(instruction.opcode, ==, PMB887X_DSP_TCG_OPCODE_MOV_DATA_RN_STEP_B_ACCUMULATOR);
+	g_assert_true(teak_decode(&core, 123, &instruction));
+	g_assert_cmpint(instruction.opcode, ==, TEAK_OP_MOV_DATA_RN_STEP_B_ACCUMULATOR);
 	g_assert_cmpuint(instruction.accumulator_index, ==, 1);
 	g_assert_cmpuint(instruction.address_register, ==, 1);
-	g_assert_cmpint(instruction.step, ==, PMB887X_DSP_TCG_STEP_PLUS_STEP);
+	g_assert_cmpint(instruction.step, ==, TEAK_STEP_PLUS_STEP);
 
 	for (uint32_t address = 124; address <= 127; address++) {
-		g_assert_true(pmb887x_dsp_tcg_decode(&core, address, &instruction));
-		g_assert_cmpint(instruction.opcode, ==, PMB887X_DSP_TCG_OPCODE_MOV_REGISTER_DATA_RN_STEP);
+		g_assert_true(teak_decode(&core, address, &instruction));
+		g_assert_cmpint(instruction.opcode, ==, TEAK_OP_MOV_REGISTER_DATA_RN_STEP);
 	}
 	g_assert_cmpuint(instruction.register_code, ==, 18);
 
 	for (uint32_t address = 128; address <= 131; address++) {
-		g_assert_true(pmb887x_dsp_tcg_decode(&core, address, &instruction));
-		g_assert_cmpint(instruction.opcode, ==, PMB887X_DSP_TCG_OPCODE_TSTB_RN_STEP);
+		g_assert_true(teak_decode(&core, address, &instruction));
+		g_assert_cmpint(instruction.opcode, ==, TEAK_OP_TSTB_RN_STEP);
 	}
 	/* tstb (nnn 110)+s,#15: nnn 110 is undefined (TeakLite 4.41, 4.5.1); dsp-lle-opcode-aliases: r4. */
 	g_assert_cmpuint(instruction.address_register, ==, 4);
 	g_assert_cmpuint(instruction.bit_index, ==, 15);
-	g_assert_cmpint(instruction.step, ==, PMB887X_DSP_TCG_STEP_ZERO);
+	g_assert_cmpint(instruction.step, ==, TEAK_STEP_ZERO);
 
-	g_assert_true(pmb887x_dsp_tcg_decode(&core, 132, &instruction));
-	g_assert_cmpint(instruction.opcode, ==, PMB887X_DSP_TCG_OPCODE_LOAD_MODI);
+	g_assert_true(teak_decode(&core, 132, &instruction));
+	g_assert_cmpint(instruction.opcode, ==, TEAK_OP_LOAD_MODI);
 	g_assert_cmphex(instruction.immediate, ==, 0x1FF);
 
-	g_assert_true(pmb887x_dsp_tcg_decode(&core, 133, &instruction));
-	g_assert_cmpint(instruction.opcode, ==, PMB887X_DSP_TCG_OPCODE_LOAD_MODJ);
+	g_assert_true(teak_decode(&core, 133, &instruction));
+	g_assert_cmpint(instruction.opcode, ==, TEAK_OP_LOAD_MODJ);
 	g_assert_cmphex(instruction.immediate, ==, 0x123);
 
-	g_assert_true(pmb887x_dsp_tcg_decode(&core, 134, &instruction));
-	g_assert_cmpint(instruction.opcode, ==, PMB887X_DSP_TCG_OPCODE_MODIFY_RN);
+	g_assert_true(teak_decode(&core, 134, &instruction));
+	g_assert_cmpint(instruction.opcode, ==, TEAK_OP_MODIFY_RN);
 	g_assert_cmpuint(instruction.address_register, ==, 0);
-	g_assert_cmpint(instruction.step, ==, PMB887X_DSP_TCG_STEP_PLUS_STEP);
+	g_assert_cmpint(instruction.step, ==, TEAK_STEP_PLUS_STEP);
 	g_assert_false(instruction.disable_modulo);
 
-	g_assert_true(pmb887x_dsp_tcg_decode(&core, 135, &instruction));
-	g_assert_cmpint(instruction.opcode, ==, PMB887X_DSP_TCG_OPCODE_MODIFY_RN);
+	g_assert_true(teak_decode(&core, 135, &instruction));
+	g_assert_cmpint(instruction.opcode, ==, TEAK_OP_MODIFY_RN);
 	g_assert_cmpuint(instruction.address_register, ==, 5);
-	g_assert_cmpint(instruction.step, ==, PMB887X_DSP_TCG_STEP_INCREASE);
+	g_assert_cmpint(instruction.step, ==, TEAK_STEP_INCREASE);
 	g_assert_true(instruction.disable_modulo);
 
-	g_assert_true(pmb887x_dsp_tcg_decode(&core, 136, &instruction));
-	g_assert_cmpint(instruction.opcode, ==, PMB887X_DSP_TCG_OPCODE_PUSH_IMMEDIATE);
+	g_assert_true(teak_decode(&core, 136, &instruction));
+	g_assert_cmpint(instruction.opcode, ==, TEAK_OP_PUSH_IMMEDIATE);
 	g_assert_cmphex(instruction.expansion, ==, 0xCAFE);
 	g_assert_cmpuint(instruction.words, ==, 2);
 
-	g_assert_true(pmb887x_dsp_tcg_decode(&core, 138, &instruction));
-	g_assert_cmpint(instruction.opcode, ==, PMB887X_DSP_TCG_OPCODE_PUSH_REGISTER);
+	g_assert_true(teak_decode(&core, 138, &instruction));
+	g_assert_cmpint(instruction.opcode, ==, TEAK_OP_PUSH_REGISTER);
 	g_assert_cmpuint(instruction.register_code, ==, 6);
 
-	g_assert_true(pmb887x_dsp_tcg_decode(&core, 139, &instruction));
-	g_assert_cmpint(instruction.opcode, ==, PMB887X_DSP_TCG_OPCODE_POP_REGISTER);
+	g_assert_true(teak_decode(&core, 139, &instruction));
+	g_assert_cmpint(instruction.opcode, ==, TEAK_OP_POP_REGISTER);
 	g_assert_cmpuint(instruction.register_code, ==, 7);
 
-	g_assert_true(pmb887x_dsp_tcg_decode(&core, 140, &instruction));
-	g_assert_cmpint(instruction.opcode, ==, PMB887X_DSP_TCG_OPCODE_MOV_STACK_REGISTER);
+	g_assert_true(teak_decode(&core, 140, &instruction));
+	g_assert_cmpint(instruction.opcode, ==, TEAK_OP_MOV_STACK_REGISTER);
 	g_assert_cmpuint(instruction.register_code, ==, 5);
 
-	g_assert_true(pmb887x_dsp_tcg_decode(&core, 141, &instruction));
-	g_assert_cmpint(instruction.opcode, ==, PMB887X_DSP_TCG_OPCODE_MOV_REGISTER_REGISTER);
+	g_assert_true(teak_decode(&core, 141, &instruction));
+	g_assert_cmpint(instruction.opcode, ==, TEAK_OP_MOV_REGISTER_REGISTER);
 	g_assert_cmpuint(instruction.register_code, ==, 6);
 	g_assert_cmpuint(instruction.destination_register_code, ==, 7);
 
-	g_assert_true(pmb887x_dsp_tcg_decode(&core, 142, &instruction));
-	g_assert_cmpint(instruction.opcode, ==, PMB887X_DSP_TCG_OPCODE_REPEAT_IMMEDIATE);
+	g_assert_true(teak_decode(&core, 142, &instruction));
+	g_assert_cmpint(instruction.opcode, ==, TEAK_OP_REPEAT_IMMEDIATE);
 	g_assert_cmphex(instruction.immediate, ==, 0x7F);
 
-	g_assert_true(pmb887x_dsp_tcg_decode(&core, 143, &instruction));
-	g_assert_cmpint(instruction.opcode, ==, PMB887X_DSP_TCG_OPCODE_REPEAT_REGISTER);
+	g_assert_true(teak_decode(&core, 143, &instruction));
+	g_assert_cmpint(instruction.opcode, ==, TEAK_OP_REPEAT_REGISTER);
 	g_assert_cmpuint(instruction.register_code, ==, 6);
 
-	g_assert_true(pmb887x_dsp_tcg_decode(&core, 144, &instruction));
-	g_assert_cmpint(instruction.opcode, ==, PMB887X_DSP_TCG_OPCODE_MOV_IMM_REGISTER);
+	g_assert_true(teak_decode(&core, 144, &instruction));
+	g_assert_cmpint(instruction.opcode, ==, TEAK_OP_MOV_IMM_REGISTER);
 	g_assert_cmpuint(instruction.register_code, ==, 7);
 	g_assert_cmphex(instruction.expansion, ==, 0xBEEF);
 
-	g_assert_true(pmb887x_dsp_tcg_decode(&core, 146, &instruction));
-	g_assert_cmpint(instruction.opcode, ==, PMB887X_DSP_TCG_OPCODE_MOV_IMM_REGISTER);
+	g_assert_true(teak_decode(&core, 146, &instruction));
+	g_assert_cmpint(instruction.opcode, ==, TEAK_OP_MOV_IMM_REGISTER);
 	g_assert_cmpuint(instruction.register_code, ==, 13);
 	g_assert_cmphex(instruction.expansion, ==, 0x0101);
 
-	g_assert_true(pmb887x_dsp_tcg_decode(&core, 148, &instruction));
-	g_assert_cmpint(instruction.opcode, ==, PMB887X_DSP_TCG_OPCODE_BLOCK_REPEAT_IMMEDIATE);
+	g_assert_true(teak_decode(&core, 148, &instruction));
+	g_assert_cmpint(instruction.opcode, ==, TEAK_OP_BLOCK_REPEAT_IMMEDIATE);
 	g_assert_cmphex(instruction.immediate, ==, 2);
 	g_assert_cmphex(instruction.branch_target, ==, 0x0123);
 	g_assert_cmpuint(instruction.words, ==, 2);
 
-	g_assert_true(pmb887x_dsp_tcg_decode(&core, 150, &instruction));
-	g_assert_cmpint(instruction.opcode, ==, PMB887X_DSP_TCG_OPCODE_BLOCK_REPEAT_REGISTER);
+	g_assert_true(teak_decode(&core, 150, &instruction));
+	g_assert_cmpint(instruction.opcode, ==, TEAK_OP_BLOCK_REPEAT_REGISTER);
 	g_assert_cmpuint(instruction.register_code, ==, 6);
 	g_assert_cmphex(instruction.branch_target, ==, 0x0123);
 	g_assert_cmpuint(instruction.words, ==, 2);
 
-	g_assert_true(pmb887x_dsp_tcg_decode(&core, 152, &instruction));
-	g_assert_cmpint(instruction.opcode, ==, PMB887X_DSP_TCG_OPCODE_BREAK);
+	g_assert_true(teak_decode(&core, 152, &instruction));
+	g_assert_cmpint(instruction.opcode, ==, TEAK_OP_BREAK);
 	g_assert_cmpuint(instruction.words, ==, 1);
 
-	g_assert_true(pmb887x_dsp_tcg_decode(&core, 153, &instruction));
-	g_assert_cmpint(instruction.opcode, ==, PMB887X_DSP_TCG_OPCODE_DELAYED_RETURN);
+	g_assert_true(teak_decode(&core, 153, &instruction));
+	g_assert_cmpint(instruction.opcode, ==, TEAK_OP_DELAYED_RETURN);
 	g_assert_cmpuint(instruction.words, ==, 1);
 
-	g_assert_true(pmb887x_dsp_tcg_decode(&core, 154, &instruction));
-	g_assert_cmpint(instruction.opcode, ==, PMB887X_DSP_TCG_OPCODE_DELAYED_RETURN_INTERRUPT);
+	g_assert_true(teak_decode(&core, 154, &instruction));
+	g_assert_cmpint(instruction.opcode, ==, TEAK_OP_DELAYED_RETURN_INTERRUPT);
 	g_assert_cmpuint(instruction.words, ==, 1);
 
-	g_assert_true(pmb887x_dsp_tcg_decode(&core, 155, &instruction));
-	g_assert_cmpint(instruction.opcode, ==, PMB887X_DSP_TCG_OPCODE_CONTEXT_STORE);
+	g_assert_true(teak_decode(&core, 155, &instruction));
+	g_assert_cmpint(instruction.opcode, ==, TEAK_OP_CONTEXT_STORE);
 	g_assert_cmpuint(instruction.words, ==, 1);
 
-	g_assert_true(pmb887x_dsp_tcg_decode(&core, 156, &instruction));
-	g_assert_cmpint(instruction.opcode, ==, PMB887X_DSP_TCG_OPCODE_CONTEXT_RESTORE);
+	g_assert_true(teak_decode(&core, 156, &instruction));
+	g_assert_cmpint(instruction.opcode, ==, TEAK_OP_CONTEXT_RESTORE);
 	g_assert_cmpuint(instruction.words, ==, 1);
 
-	g_assert_true(pmb887x_dsp_tcg_decode(&core, 157, &instruction));
-	g_assert_cmpint(instruction.opcode, ==, PMB887X_DSP_TCG_OPCODE_RETURN_INTERRUPT);
-	g_assert_cmpint(instruction.condition, ==, PMB887X_DSP_TCG_CONDITION_GT);
+	g_assert_true(teak_decode(&core, 157, &instruction));
+	g_assert_cmpint(instruction.opcode, ==, TEAK_OP_RETURN_INTERRUPT);
+	g_assert_cmpint(instruction.condition, ==, TEAK_COND_GT);
 	g_assert_true(instruction.context_switch);
 
-	g_assert_true(pmb887x_dsp_tcg_decode(&core, 158, &instruction));
-	g_assert_cmpint(instruction.opcode, ==, PMB887X_DSP_TCG_OPCODE_LOAD_PRODUCT_SHIFT);
+	g_assert_true(teak_decode(&core, 158, &instruction));
+	g_assert_cmpint(instruction.opcode, ==, TEAK_OP_LOAD_PRODUCT_SHIFT);
 	g_assert_cmphex(instruction.immediate, ==, 3);
 	g_assert_cmpuint(instruction.words, ==, 1);
 
-	g_assert_true(pmb887x_dsp_tcg_decode(&core, 159, &instruction));
-	g_assert_cmpint(instruction.opcode, ==, PMB887X_DSP_TCG_OPCODE_MULTIPLY_IMMEDIATE);
+	g_assert_true(teak_decode(&core, 159, &instruction));
+	g_assert_cmpint(instruction.opcode, ==, TEAK_OP_MULTIPLY_IMMEDIATE);
 	g_assert_cmphex(instruction.immediate, ==, 0xFE);
 	g_assert_cmpuint(instruction.words, ==, 1);
 
-	g_assert_true(pmb887x_dsp_tcg_decode(&core, 160, &instruction));
-	g_assert_cmpint(instruction.opcode, ==, PMB887X_DSP_TCG_OPCODE_ALU_REGISTER_ACCUMULATOR);
-	g_assert_cmpint(instruction.alu_operation, ==, PMB887X_DSP_TCG_ALU_ADD);
+	g_assert_true(teak_decode(&core, 160, &instruction));
+	g_assert_cmpint(instruction.opcode, ==, TEAK_OP_ALU_REGISTER_ACCUMULATOR);
+	g_assert_cmpint(instruction.alu_operation, ==, TEAK_ALU_ADD);
 	g_assert_cmpuint(instruction.register_code, ==, 11);
 	g_assert_cmpuint(instruction.accumulator_index, ==, 0);
 
-	g_assert_true(pmb887x_dsp_tcg_decode(&core, 161, &instruction));
-	g_assert_cmpint(instruction.opcode, ==, PMB887X_DSP_TCG_OPCODE_MULTIPLY_REGISTER);
-	g_assert_cmpint(instruction.multiply_operation, ==, PMB887X_DSP_TCG_MULTIPLY_MPY);
+	g_assert_true(teak_decode(&core, 161, &instruction));
+	g_assert_cmpint(instruction.opcode, ==, TEAK_OP_MULTIPLY_REGISTER);
+	g_assert_cmpint(instruction.multiply_operation, ==, TEAK_MULTIPLY_MPY);
 	g_assert_cmpuint(instruction.register_code, ==, 5);
 	g_assert_cmpuint(instruction.accumulator_index, ==, 0);
 
-	g_assert_true(pmb887x_dsp_tcg_decode(&core, 162, &instruction));
-	g_assert_cmpint(instruction.opcode, ==, PMB887X_DSP_TCG_OPCODE_MULTIPLY_REGISTER);
-	g_assert_cmpint(instruction.multiply_operation, ==, PMB887X_DSP_TCG_MULTIPLY_MPYSU);
+	g_assert_true(teak_decode(&core, 162, &instruction));
+	g_assert_cmpint(instruction.opcode, ==, TEAK_OP_MULTIPLY_REGISTER);
+	g_assert_cmpint(instruction.multiply_operation, ==, TEAK_MULTIPLY_MPYSU);
 	g_assert_cmpuint(instruction.register_code, ==, 7);
 	g_assert_cmpuint(instruction.accumulator_index, ==, 1);
 
-	g_assert_true(pmb887x_dsp_tcg_decode(&core, 163, &instruction));
-	g_assert_cmpint(instruction.opcode, ==, PMB887X_DSP_TCG_OPCODE_MULTIPLY_RN_STEP);
-	g_assert_cmpint(instruction.multiply_operation, ==, PMB887X_DSP_TCG_MULTIPLY_MPY);
+	g_assert_true(teak_decode(&core, 163, &instruction));
+	g_assert_cmpint(instruction.opcode, ==, TEAK_OP_MULTIPLY_RN_STEP);
+	g_assert_cmpint(instruction.multiply_operation, ==, TEAK_MULTIPLY_MPY);
 	g_assert_cmpuint(instruction.address_register, ==, 2);
-	g_assert_cmpint(instruction.step, ==, PMB887X_DSP_TCG_STEP_INCREASE);
+	g_assert_cmpint(instruction.step, ==, TEAK_STEP_INCREASE);
 	g_assert_cmpuint(instruction.accumulator_index, ==, 0);
 
-	g_assert_true(pmb887x_dsp_tcg_decode(&core, 164, &instruction));
-	g_assert_cmpint(instruction.opcode, ==, PMB887X_DSP_TCG_OPCODE_MULTIPLY_RN_STEP);
-	g_assert_cmpint(instruction.multiply_operation, ==, PMB887X_DSP_TCG_MULTIPLY_MPYSU);
+	g_assert_true(teak_decode(&core, 164, &instruction));
+	g_assert_cmpint(instruction.opcode, ==, TEAK_OP_MULTIPLY_RN_STEP);
+	g_assert_cmpint(instruction.multiply_operation, ==, TEAK_MULTIPLY_MPYSU);
 	g_assert_cmpuint(instruction.address_register, ==, 5);
-	g_assert_cmpint(instruction.step, ==, PMB887X_DSP_TCG_STEP_PLUS_STEP);
+	g_assert_cmpint(instruction.step, ==, TEAK_STEP_PLUS_STEP);
 	g_assert_cmpuint(instruction.accumulator_index, ==, 1);
 
-	g_assert_true(pmb887x_dsp_tcg_decode(&core, 165, &instruction));
-	g_assert_cmpint(instruction.opcode, ==, PMB887X_DSP_TCG_OPCODE_MULTIPLY_DATA_IMM8);
-	g_assert_cmpint(instruction.multiply_operation, ==, PMB887X_DSP_TCG_MULTIPLY_MPY);
+	g_assert_true(teak_decode(&core, 165, &instruction));
+	g_assert_cmpint(instruction.opcode, ==, TEAK_OP_MULTIPLY_DATA_IMM8);
+	g_assert_cmpint(instruction.multiply_operation, ==, TEAK_MULTIPLY_MPY);
 	g_assert_cmphex(instruction.memory_address, ==, 0x55);
 	g_assert_cmpuint(instruction.accumulator_index, ==, 1);
 
-	g_assert_true(pmb887x_dsp_tcg_decode(&core, 166, &instruction));
-	g_assert_cmpint(instruction.opcode, ==, PMB887X_DSP_TCG_OPCODE_MULTIPLY_RN_IMMEDIATE);
-	g_assert_cmpint(instruction.multiply_operation, ==, PMB887X_DSP_TCG_MULTIPLY_MPY);
+	g_assert_true(teak_decode(&core, 166, &instruction));
+	g_assert_cmpint(instruction.opcode, ==, TEAK_OP_MULTIPLY_RN_IMMEDIATE);
+	g_assert_cmpint(instruction.multiply_operation, ==, TEAK_MULTIPLY_MPY);
 	g_assert_cmpuint(instruction.address_register, ==, 3);
-	g_assert_cmpint(instruction.step, ==, PMB887X_DSP_TCG_STEP_INCREASE);
+	g_assert_cmpint(instruction.step, ==, TEAK_STEP_INCREASE);
 	g_assert_cmphex(instruction.expansion, ==, 0xFFFE);
 	g_assert_cmpuint(instruction.words, ==, 2);
 
-	g_assert_true(pmb887x_dsp_tcg_decode(&core, 168, &instruction));
-	g_assert_cmpint(instruction.opcode, ==, PMB887X_DSP_TCG_OPCODE_MULTIPLY_RN_IMMEDIATE);
-	g_assert_cmpint(instruction.multiply_operation, ==, PMB887X_DSP_TCG_MULTIPLY_MPYSU);
+	g_assert_true(teak_decode(&core, 168, &instruction));
+	g_assert_cmpint(instruction.opcode, ==, TEAK_OP_MULTIPLY_RN_IMMEDIATE);
+	g_assert_cmpint(instruction.multiply_operation, ==, TEAK_MULTIPLY_MPYSU);
 	g_assert_cmpuint(instruction.address_register, ==, 5);
-	g_assert_cmpint(instruction.step, ==, PMB887X_DSP_TCG_STEP_PLUS_STEP);
+	g_assert_cmpint(instruction.step, ==, TEAK_STEP_PLUS_STEP);
 	g_assert_cmphex(instruction.expansion, ==, 0xFFFE);
 	g_assert_cmpuint(instruction.accumulator_index, ==, 1);
 	g_assert_cmpuint(instruction.words, ==, 2);
 
-	g_assert_true(pmb887x_dsp_tcg_decode(&core, 170, &instruction));
-	g_assert_cmpint(instruction.opcode, ==, PMB887X_DSP_TCG_OPCODE_MULTIPLY_DUAL_RN);
-	g_assert_cmpint(instruction.multiply_operation, ==, PMB887X_DSP_TCG_MULTIPLY_MPY);
+	g_assert_true(teak_decode(&core, 170, &instruction));
+	g_assert_cmpint(instruction.opcode, ==, TEAK_OP_MULTIPLY_DUAL_RN);
+	g_assert_cmpint(instruction.multiply_operation, ==, TEAK_MULTIPLY_MPY);
 	g_assert_cmpuint(instruction.y_address_register, ==, 4);
-	g_assert_cmpint(instruction.y_step, ==, PMB887X_DSP_TCG_STEP_ZERO);
+	g_assert_cmpint(instruction.y_step, ==, TEAK_STEP_ZERO);
 	g_assert_cmpuint(instruction.address_register, ==, 0);
-	g_assert_cmpint(instruction.step, ==, PMB887X_DSP_TCG_STEP_ZERO);
+	g_assert_cmpint(instruction.step, ==, TEAK_STEP_ZERO);
 
-	g_assert_true(pmb887x_dsp_tcg_decode(&core, 171, &instruction));
-	g_assert_cmpint(instruction.opcode, ==, PMB887X_DSP_TCG_OPCODE_MULTIPLY_DUAL_RN);
-	g_assert_cmpint(instruction.multiply_operation, ==, PMB887X_DSP_TCG_MULTIPLY_MPYSU);
+	g_assert_true(teak_decode(&core, 171, &instruction));
+	g_assert_cmpint(instruction.opcode, ==, TEAK_OP_MULTIPLY_DUAL_RN);
+	g_assert_cmpint(instruction.multiply_operation, ==, TEAK_MULTIPLY_MPYSU);
 	g_assert_cmpuint(instruction.y_address_register, ==, 5);
-	g_assert_cmpint(instruction.y_step, ==, PMB887X_DSP_TCG_STEP_DECREASE);
+	g_assert_cmpint(instruction.y_step, ==, TEAK_STEP_DECREASE);
 	g_assert_cmpuint(instruction.address_register, ==, 2);
-	g_assert_cmpint(instruction.step, ==, PMB887X_DSP_TCG_STEP_PLUS_STEP);
+	g_assert_cmpint(instruction.step, ==, TEAK_STEP_PLUS_STEP);
 	g_assert_cmpuint(instruction.accumulator_index, ==, 1);
 
 	/* mov r0,mixp with bit 5 set: TeakLite 4.41, 0101111010.rrrrr. */
-	g_assert_true(pmb887x_dsp_tcg_decode(&core, 172, &instruction));
-	g_assert_cmpint(instruction.opcode, ==, PMB887X_DSP_TCG_OPCODE_MOV_REGISTER_MIXP);
+	g_assert_true(teak_decode(&core, 172, &instruction));
+	g_assert_cmpint(instruction.opcode, ==, TEAK_OP_MOV_REGISTER_MIXP);
 	g_assert_cmpuint(instruction.register_code, ==, 0);
 
 	/* mov r3,mixp with bit 5 set: TeakLite 4.41, 0101111010.rrrrr. */
-	g_assert_true(pmb887x_dsp_tcg_decode(&core, 173, &instruction));
-	g_assert_cmpint(instruction.opcode, ==, PMB887X_DSP_TCG_OPCODE_MOV_REGISTER_MIXP);
+	g_assert_true(teak_decode(&core, 173, &instruction));
+	g_assert_cmpint(instruction.opcode, ==, TEAK_OP_MOV_REGISTER_MIXP);
 	g_assert_cmpuint(instruction.register_code, ==, 3);
 
-	g_assert_true(pmb887x_dsp_tcg_decode(&core, 174, &instruction));
-	g_assert_cmpint(instruction.opcode, ==, PMB887X_DSP_TCG_OPCODE_MULTIPLY_REGISTER);
-	g_assert_cmpint(instruction.multiply_operation, ==, PMB887X_DSP_TCG_MULTIPLY_MAC);
+	g_assert_true(teak_decode(&core, 174, &instruction));
+	g_assert_cmpint(instruction.opcode, ==, TEAK_OP_MULTIPLY_REGISTER);
+	g_assert_cmpint(instruction.multiply_operation, ==, TEAK_MULTIPLY_MAC);
 	g_assert_cmpuint(instruction.register_code, ==, 5);
 	g_assert_cmpuint(instruction.accumulator_index, ==, 1);
 
-	g_assert_true(pmb887x_dsp_tcg_decode(&core, 175, &instruction));
-	g_assert_cmpint(instruction.opcode, ==, PMB887X_DSP_TCG_OPCODE_MULTIPLY_DATA_IMM8);
-	g_assert_cmpint(instruction.multiply_operation, ==, PMB887X_DSP_TCG_MULTIPLY_MAC);
+	g_assert_true(teak_decode(&core, 175, &instruction));
+	g_assert_cmpint(instruction.opcode, ==, TEAK_OP_MULTIPLY_DATA_IMM8);
+	g_assert_cmpint(instruction.multiply_operation, ==, TEAK_MULTIPLY_MAC);
 	g_assert_cmphex(instruction.memory_address, ==, 0x55);
 
-	g_assert_true(pmb887x_dsp_tcg_decode(&core, 176, &instruction));
-	g_assert_cmpint(instruction.opcode, ==, PMB887X_DSP_TCG_OPCODE_MULTIPLY_RN_IMMEDIATE);
-	g_assert_cmpint(instruction.multiply_operation, ==, PMB887X_DSP_TCG_MULTIPLY_MAC);
+	g_assert_true(teak_decode(&core, 176, &instruction));
+	g_assert_cmpint(instruction.opcode, ==, TEAK_OP_MULTIPLY_RN_IMMEDIATE);
+	g_assert_cmpint(instruction.multiply_operation, ==, TEAK_MULTIPLY_MAC);
 	g_assert_cmpuint(instruction.address_register, ==, 3);
-	g_assert_cmpint(instruction.step, ==, PMB887X_DSP_TCG_STEP_INCREASE);
+	g_assert_cmpint(instruction.step, ==, TEAK_STEP_INCREASE);
 	g_assert_cmphex(instruction.expansion, ==, 0x1234);
 	g_assert_cmpuint(instruction.words, ==, 2);
 
-	g_assert_true(pmb887x_dsp_tcg_decode(&core, 178, &instruction));
-	g_assert_cmpint(instruction.opcode, ==, PMB887X_DSP_TCG_OPCODE_MULTIPLY_RN_STEP);
-	g_assert_cmpint(instruction.multiply_operation, ==, PMB887X_DSP_TCG_MULTIPLY_MAC);
+	g_assert_true(teak_decode(&core, 178, &instruction));
+	g_assert_cmpint(instruction.opcode, ==, TEAK_OP_MULTIPLY_RN_STEP);
+	g_assert_cmpint(instruction.multiply_operation, ==, TEAK_MULTIPLY_MAC);
 	g_assert_cmpuint(instruction.address_register, ==, 5);
 	g_assert_cmpuint(instruction.accumulator_index, ==, 1);
 
-	g_assert_true(pmb887x_dsp_tcg_decode(&core, 179, &instruction));
-	g_assert_cmpint(instruction.opcode, ==, PMB887X_DSP_TCG_OPCODE_MULTIPLY_DUAL_RN);
-	g_assert_cmpint(instruction.multiply_operation, ==, PMB887X_DSP_TCG_MULTIPLY_MAC);
+	g_assert_true(teak_decode(&core, 179, &instruction));
+	g_assert_cmpint(instruction.opcode, ==, TEAK_OP_MULTIPLY_DUAL_RN);
+	g_assert_cmpint(instruction.multiply_operation, ==, TEAK_MULTIPLY_MAC);
 	g_assert_cmpuint(instruction.y_address_register, ==, 5);
 	g_assert_cmpuint(instruction.address_register, ==, 2);
 	g_assert_cmpuint(instruction.accumulator_index, ==, 1);
 
 	/* mov r5,mixp with bit 5 set: TeakLite 4.41, 0101111010.rrrrr. */
-	g_assert_true(pmb887x_dsp_tcg_decode(&core, 180, &instruction));
-	g_assert_cmpint(instruction.opcode, ==, PMB887X_DSP_TCG_OPCODE_MOV_REGISTER_MIXP);
+	g_assert_true(teak_decode(&core, 180, &instruction));
+	g_assert_cmpint(instruction.opcode, ==, TEAK_OP_MOV_REGISTER_MIXP);
 	g_assert_cmpuint(instruction.register_code, ==, 5);
 
-	g_assert_true(pmb887x_dsp_tcg_decode(&core, 181, &instruction));
-	g_assert_cmpint(instruction.opcode, ==, PMB887X_DSP_TCG_OPCODE_MULTIPLY_DATA_IMM8);
-	g_assert_cmpint(instruction.multiply_operation, ==, PMB887X_DSP_TCG_MULTIPLY_MACSU);
+	g_assert_true(teak_decode(&core, 181, &instruction));
+	g_assert_cmpint(instruction.opcode, ==, TEAK_OP_MULTIPLY_DATA_IMM8);
+	g_assert_cmpint(instruction.multiply_operation, ==, TEAK_MULTIPLY_MACSU);
 
-	g_assert_true(pmb887x_dsp_tcg_decode(&core, 182, &instruction));
-	g_assert_cmpint(instruction.opcode, ==, PMB887X_DSP_TCG_OPCODE_MULTIPLY_RN_IMMEDIATE);
-	g_assert_cmpint(instruction.multiply_operation, ==, PMB887X_DSP_TCG_MULTIPLY_MACSU);
+	g_assert_true(teak_decode(&core, 182, &instruction));
+	g_assert_cmpint(instruction.opcode, ==, TEAK_OP_MULTIPLY_RN_IMMEDIATE);
+	g_assert_cmpint(instruction.multiply_operation, ==, TEAK_MULTIPLY_MACSU);
 	g_assert_cmphex(instruction.expansion, ==, 0x5678);
 
-	g_assert_true(pmb887x_dsp_tcg_decode(&core, 184, &instruction));
-	g_assert_cmpint(instruction.opcode, ==, PMB887X_DSP_TCG_OPCODE_MULTIPLY_RN_STEP);
-	g_assert_cmpint(instruction.multiply_operation, ==, PMB887X_DSP_TCG_MULTIPLY_MACSU);
+	g_assert_true(teak_decode(&core, 184, &instruction));
+	g_assert_cmpint(instruction.opcode, ==, TEAK_OP_MULTIPLY_RN_STEP);
+	g_assert_cmpint(instruction.multiply_operation, ==, TEAK_MULTIPLY_MACSU);
 
-	g_assert_true(pmb887x_dsp_tcg_decode(&core, 185, &instruction));
-	g_assert_cmpint(instruction.opcode, ==, PMB887X_DSP_TCG_OPCODE_MULTIPLY_DUAL_RN);
-	g_assert_cmpint(instruction.multiply_operation, ==, PMB887X_DSP_TCG_MULTIPLY_MACSU);
+	g_assert_true(teak_decode(&core, 185, &instruction));
+	g_assert_cmpint(instruction.opcode, ==, TEAK_OP_MULTIPLY_DUAL_RN);
+	g_assert_cmpint(instruction.multiply_operation, ==, TEAK_MULTIPLY_MACSU);
 
 	/* mov sp,mixp with bit 5 set: TeakLite 4.41, 0101111010.rrrrr. */
-	g_assert_true(pmb887x_dsp_tcg_decode(&core, 186, &instruction));
-	g_assert_cmpint(instruction.opcode, ==, PMB887X_DSP_TCG_OPCODE_MOV_REGISTER_MIXP);
+	g_assert_true(teak_decode(&core, 186, &instruction));
+	g_assert_cmpint(instruction.opcode, ==, TEAK_OP_MOV_REGISTER_MIXP);
 	g_assert_cmpuint(instruction.register_code, ==, 13);
 
-	g_assert_true(pmb887x_dsp_tcg_decode(&core, 187, &instruction));
-	g_assert_cmpint(instruction.opcode, ==, PMB887X_DSP_TCG_OPCODE_MULTIPLY_REGISTER);
-	g_assert_cmpint(instruction.multiply_operation, ==, PMB887X_DSP_TCG_MULTIPLY_MACSU);
+	g_assert_true(teak_decode(&core, 187, &instruction));
+	g_assert_cmpint(instruction.opcode, ==, TEAK_OP_MULTIPLY_REGISTER);
+	g_assert_cmpint(instruction.multiply_operation, ==, TEAK_MULTIPLY_MACSU);
 
-	g_assert_true(pmb887x_dsp_tcg_decode(&core, 188, &instruction));
-	g_assert_cmpint(instruction.opcode, ==, PMB887X_DSP_TCG_OPCODE_MULTIPLY_DATA_IMM8);
-	g_assert_cmpint(instruction.multiply_operation, ==, PMB887X_DSP_TCG_MULTIPLY_MAA);
+	g_assert_true(teak_decode(&core, 188, &instruction));
+	g_assert_cmpint(instruction.opcode, ==, TEAK_OP_MULTIPLY_DATA_IMM8);
+	g_assert_cmpint(instruction.multiply_operation, ==, TEAK_MULTIPLY_MAA);
 
 	/* mov st1,mixp with bit 5 set: TeakLite 4.41, 0101111010.rrrrr. */
-	g_assert_true(pmb887x_dsp_tcg_decode(&core, 189, &instruction));
-	g_assert_cmpint(instruction.opcode, ==, PMB887X_DSP_TCG_OPCODE_MOV_REGISTER_MIXP);
+	g_assert_true(teak_decode(&core, 189, &instruction));
+	g_assert_cmpint(instruction.opcode, ==, TEAK_OP_MOV_REGISTER_MIXP);
 	g_assert_cmpuint(instruction.register_code, ==, 9);
 
-	g_assert_true(pmb887x_dsp_tcg_decode(&core, 190, &instruction));
-	g_assert_cmpint(instruction.opcode, ==, PMB887X_DSP_TCG_OPCODE_MULTIPLY_REGISTER);
-	g_assert_cmpint(instruction.multiply_operation, ==, PMB887X_DSP_TCG_MULTIPLY_MAASU);
+	g_assert_true(teak_decode(&core, 190, &instruction));
+	g_assert_cmpint(instruction.opcode, ==, TEAK_OP_MULTIPLY_REGISTER);
+	g_assert_cmpint(instruction.multiply_operation, ==, TEAK_MULTIPLY_MAASU);
 
-	g_assert_true(pmb887x_dsp_tcg_decode(&core, 191, &instruction));
-	g_assert_cmpint(instruction.opcode, ==, PMB887X_DSP_TCG_OPCODE_MULTIPLY_DUAL_RN);
-	g_assert_cmpint(instruction.multiply_operation, ==, PMB887X_DSP_TCG_MULTIPLY_MAASU);
+	g_assert_true(teak_decode(&core, 191, &instruction));
+	g_assert_cmpint(instruction.opcode, ==, TEAK_OP_MULTIPLY_DUAL_RN);
+	g_assert_cmpint(instruction.multiply_operation, ==, TEAK_MULTIPLY_MAASU);
 
-	g_assert_true(pmb887x_dsp_tcg_decode(&core, 192, &instruction));
-	g_assert_cmpint(instruction.opcode, ==, PMB887X_DSP_TCG_OPCODE_MULTIPLY_REGISTER);
-	g_assert_cmpint(instruction.multiply_operation, ==, PMB887X_DSP_TCG_MULTIPLY_MACUS);
+	g_assert_true(teak_decode(&core, 192, &instruction));
+	g_assert_cmpint(instruction.opcode, ==, TEAK_OP_MULTIPLY_REGISTER);
+	g_assert_cmpint(instruction.multiply_operation, ==, TEAK_MULTIPLY_MACUS);
 	g_assert_cmpuint(instruction.register_code, ==, 5);
 	g_assert_cmpuint(instruction.accumulator_index, ==, 1);
 
-	g_assert_true(pmb887x_dsp_tcg_decode(&core, 193, &instruction));
-	g_assert_cmpint(instruction.opcode, ==, PMB887X_DSP_TCG_OPCODE_MULTIPLY_DUAL_RN);
-	g_assert_cmpint(instruction.multiply_operation, ==, PMB887X_DSP_TCG_MULTIPLY_MACUU);
+	g_assert_true(teak_decode(&core, 193, &instruction));
+	g_assert_cmpint(instruction.opcode, ==, TEAK_OP_MULTIPLY_DUAL_RN);
+	g_assert_cmpint(instruction.multiply_operation, ==, TEAK_MULTIPLY_MACUU);
 	g_assert_cmpuint(instruction.accumulator_index, ==, 1);
 
 	/* mov p,mixp with bit 5 set: TeakLite 4.41, 0101111010.rrrrr. */
-	g_assert_true(pmb887x_dsp_tcg_decode(&core, 194, &instruction));
-	g_assert_cmpint(instruction.opcode, ==, PMB887X_DSP_TCG_OPCODE_MOV_REGISTER_MIXP);
+	g_assert_true(teak_decode(&core, 194, &instruction));
+	g_assert_cmpint(instruction.opcode, ==, TEAK_OP_MOV_REGISTER_MIXP);
 	g_assert_cmpuint(instruction.register_code, ==, 11);
 
-	g_assert_true(pmb887x_dsp_tcg_decode(&core, 195, &instruction));
-	g_assert_cmpint(instruction.opcode, ==, PMB887X_DSP_TCG_OPCODE_ALU_DATA_IMM8_ACCUMULATOR);
-	g_assert_cmpint(instruction.alu_operation, ==, PMB887X_DSP_TCG_ALU_SQR);
+	g_assert_true(teak_decode(&core, 195, &instruction));
+	g_assert_cmpint(instruction.opcode, ==, TEAK_OP_ALU_DATA_IMM8_ACCUMULATOR);
+	g_assert_cmpint(instruction.alu_operation, ==, TEAK_ALU_SQR);
 	g_assert_cmphex(instruction.memory_address, ==, 0x55);
 	g_assert_cmpuint(instruction.accumulator_index, ==, 0);
 
-	g_assert_true(pmb887x_dsp_tcg_decode(&core, 196, &instruction));
-	g_assert_cmpint(instruction.opcode, ==, PMB887X_DSP_TCG_OPCODE_ALU_DATA_IMM8_ACCUMULATOR);
-	g_assert_cmpint(instruction.alu_operation, ==, PMB887X_DSP_TCG_ALU_SQRA);
+	g_assert_true(teak_decode(&core, 196, &instruction));
+	g_assert_cmpint(instruction.opcode, ==, TEAK_OP_ALU_DATA_IMM8_ACCUMULATOR);
+	g_assert_cmpint(instruction.alu_operation, ==, TEAK_ALU_SQRA);
 	g_assert_cmpuint(instruction.accumulator_index, ==, 1);
 
-	g_assert_true(pmb887x_dsp_tcg_decode(&core, 197, &instruction));
-	g_assert_cmpint(instruction.opcode, ==, PMB887X_DSP_TCG_OPCODE_ALU_RN_STEP_ACCUMULATOR);
-	g_assert_cmpint(instruction.alu_operation, ==, PMB887X_DSP_TCG_ALU_SQR);
+	g_assert_true(teak_decode(&core, 197, &instruction));
+	g_assert_cmpint(instruction.opcode, ==, TEAK_OP_ALU_RN_STEP_ACCUMULATOR);
+	g_assert_cmpint(instruction.alu_operation, ==, TEAK_ALU_SQR);
 	g_assert_cmpuint(instruction.address_register, ==, 5);
-	g_assert_cmpint(instruction.step, ==, PMB887X_DSP_TCG_STEP_INCREASE);
+	g_assert_cmpint(instruction.step, ==, TEAK_STEP_INCREASE);
 
-	g_assert_true(pmb887x_dsp_tcg_decode(&core, 198, &instruction));
-	g_assert_cmpint(instruction.opcode, ==, PMB887X_DSP_TCG_OPCODE_ALU_RN_STEP_ACCUMULATOR);
-	g_assert_cmpint(instruction.alu_operation, ==, PMB887X_DSP_TCG_ALU_SQRA);
+	g_assert_true(teak_decode(&core, 198, &instruction));
+	g_assert_cmpint(instruction.opcode, ==, TEAK_OP_ALU_RN_STEP_ACCUMULATOR);
+	g_assert_cmpint(instruction.alu_operation, ==, TEAK_ALU_SQRA);
 	g_assert_cmpuint(instruction.accumulator_index, ==, 1);
-	g_assert_cmpint(instruction.step, ==, PMB887X_DSP_TCG_STEP_PLUS_STEP);
+	g_assert_cmpint(instruction.step, ==, TEAK_STEP_PLUS_STEP);
 
-	g_assert_true(pmb887x_dsp_tcg_decode(&core, 199, &instruction));
-	g_assert_cmpint(instruction.opcode, ==, PMB887X_DSP_TCG_OPCODE_ALU_REGISTER_ACCUMULATOR);
-	g_assert_cmpint(instruction.alu_operation, ==, PMB887X_DSP_TCG_ALU_SQR);
+	g_assert_true(teak_decode(&core, 199, &instruction));
+	g_assert_cmpint(instruction.opcode, ==, TEAK_OP_ALU_REGISTER_ACCUMULATOR);
+	g_assert_cmpint(instruction.alu_operation, ==, TEAK_ALU_SQR);
 	g_assert_cmpuint(instruction.register_code, ==, 7);
 
-	g_assert_true(pmb887x_dsp_tcg_decode(&core, 200, &instruction));
-	g_assert_cmpint(instruction.opcode, ==, PMB887X_DSP_TCG_OPCODE_ALU_REGISTER_ACCUMULATOR);
-	g_assert_cmpint(instruction.alu_operation, ==, PMB887X_DSP_TCG_ALU_SQRA);
+	g_assert_true(teak_decode(&core, 200, &instruction));
+	g_assert_cmpint(instruction.opcode, ==, TEAK_OP_ALU_REGISTER_ACCUMULATOR);
+	g_assert_cmpint(instruction.alu_operation, ==, TEAK_ALU_SQRA);
 	g_assert_cmpuint(instruction.register_code, ==, 5);
 	g_assert_cmpuint(instruction.accumulator_index, ==, 1);
 
-	g_assert_true(pmb887x_dsp_tcg_decode(&core, 201, &instruction));
-	g_assert_cmpint(instruction.opcode, ==, PMB887X_DSP_TCG_OPCODE_ALU_DATA_IMM8_ACCUMULATOR);
-	g_assert_cmpint(instruction.alu_operation, ==, PMB887X_DSP_TCG_ALU_MSU);
+	g_assert_true(teak_decode(&core, 201, &instruction));
+	g_assert_cmpint(instruction.opcode, ==, TEAK_OP_ALU_DATA_IMM8_ACCUMULATOR);
+	g_assert_cmpint(instruction.alu_operation, ==, TEAK_ALU_MSU);
 	g_assert_cmphex(instruction.memory_address, ==, 0x55);
 	g_assert_cmpuint(instruction.accumulator_index, ==, 1);
 
-	g_assert_true(pmb887x_dsp_tcg_decode(&core, 202, &instruction));
-	g_assert_cmpint(instruction.opcode, ==, PMB887X_DSP_TCG_OPCODE_ALU_RN_STEP_ACCUMULATOR);
-	g_assert_cmpint(instruction.alu_operation, ==, PMB887X_DSP_TCG_ALU_MSU);
+	g_assert_true(teak_decode(&core, 202, &instruction));
+	g_assert_cmpint(instruction.opcode, ==, TEAK_OP_ALU_RN_STEP_ACCUMULATOR);
+	g_assert_cmpint(instruction.alu_operation, ==, TEAK_ALU_MSU);
 	g_assert_cmpuint(instruction.address_register, ==, 5);
-	g_assert_cmpint(instruction.step, ==, PMB887X_DSP_TCG_STEP_INCREASE);
+	g_assert_cmpint(instruction.step, ==, TEAK_STEP_INCREASE);
 	g_assert_cmpuint(instruction.accumulator_index, ==, 1);
 
-	g_assert_true(pmb887x_dsp_tcg_decode(&core, 203, &instruction));
-	g_assert_cmpint(instruction.opcode, ==, PMB887X_DSP_TCG_OPCODE_ALU_REGISTER_ACCUMULATOR);
-	g_assert_cmpint(instruction.alu_operation, ==, PMB887X_DSP_TCG_ALU_MSU);
+	g_assert_true(teak_decode(&core, 203, &instruction));
+	g_assert_cmpint(instruction.opcode, ==, TEAK_OP_ALU_REGISTER_ACCUMULATOR);
+	g_assert_cmpint(instruction.alu_operation, ==, TEAK_ALU_MSU);
 	g_assert_cmpuint(instruction.register_code, ==, 5);
 	g_assert_cmpuint(instruction.accumulator_index, ==, 1);
 
-	g_assert_true(pmb887x_dsp_tcg_decode(&core, 204, &instruction));
-	g_assert_cmpint(instruction.opcode, ==, PMB887X_DSP_TCG_OPCODE_MULTIPLY_RN_IMMEDIATE);
-	g_assert_cmpint(instruction.multiply_operation, ==, PMB887X_DSP_TCG_MULTIPLY_MSU);
+	g_assert_true(teak_decode(&core, 204, &instruction));
+	g_assert_cmpint(instruction.opcode, ==, TEAK_OP_MULTIPLY_RN_IMMEDIATE);
+	g_assert_cmpint(instruction.multiply_operation, ==, TEAK_MULTIPLY_MSU);
 	g_assert_cmpuint(instruction.address_register, ==, 5);
-	g_assert_cmpint(instruction.step, ==, PMB887X_DSP_TCG_STEP_PLUS_STEP);
+	g_assert_cmpint(instruction.step, ==, TEAK_STEP_PLUS_STEP);
 	g_assert_cmphex(instruction.expansion, ==, 0xBEEF);
 	g_assert_cmpuint(instruction.accumulator_index, ==, 1);
 
-	g_assert_true(pmb887x_dsp_tcg_decode(&core, 206, &instruction));
-	g_assert_cmpint(instruction.opcode, ==, PMB887X_DSP_TCG_OPCODE_MULTIPLY_DUAL_RN);
-	g_assert_cmpint(instruction.multiply_operation, ==, PMB887X_DSP_TCG_MULTIPLY_MSU);
+	g_assert_true(teak_decode(&core, 206, &instruction));
+	g_assert_cmpint(instruction.opcode, ==, TEAK_OP_MULTIPLY_DUAL_RN);
+	g_assert_cmpint(instruction.multiply_operation, ==, TEAK_MULTIPLY_MSU);
 	g_assert_cmpuint(instruction.accumulator_index, ==, 1);
 
-	const pmb887x_dsp_tcg_alu_operation_t operations[] = {
-		PMB887X_DSP_TCG_ALU_ADDH,
-		PMB887X_DSP_TCG_ALU_ADDL,
-		PMB887X_DSP_TCG_ALU_SUBH,
-		PMB887X_DSP_TCG_ALU_SUBL,
-		PMB887X_DSP_TCG_ALU_CMPU,
+	const teak_alu_operation_t operations[] = {
+		TEAK_ALU_ADDH,
+		TEAK_ALU_ADDL,
+		TEAK_ALU_SUBH,
+		TEAK_ALU_SUBL,
+		TEAK_ALU_CMPU,
 	};
-	const pmb887x_dsp_tcg_opcode_t opcodes[] = {
-		PMB887X_DSP_TCG_OPCODE_ALU_DATA_IMM8_ACCUMULATOR,
-		PMB887X_DSP_TCG_OPCODE_ALU_RN_STEP_ACCUMULATOR,
-		PMB887X_DSP_TCG_OPCODE_ALU_REGISTER_ACCUMULATOR,
+	const teak_opcode_t opcodes[] = {
+		TEAK_OP_ALU_DATA_IMM8_ACCUMULATOR,
+		TEAK_OP_ALU_RN_STEP_ACCUMULATOR,
+		TEAK_OP_ALU_REGISTER_ACCUMULATOR,
 	};
 	for (size_t opcode_index = 0; opcode_index < ARRAY_SIZE(opcodes); opcode_index++) {
 		for (size_t operation_index = 0; operation_index < ARRAY_SIZE(operations); operation_index++) {
 			uint32_t address = 207U + opcode_index * ARRAY_SIZE(operations) + operation_index;
 
-			g_assert_true(pmb887x_dsp_tcg_decode(&core, address, &instruction));
+			g_assert_true(teak_decode(&core, address, &instruction));
 			g_assert_cmpint(instruction.opcode, ==, opcodes[opcode_index]);
 			g_assert_cmpint(instruction.alu_operation, ==, operations[operation_index]);
 		}
@@ -1019,45 +1019,45 @@ static void test_decode(void) {
 	g_assert_cmphex(instruction.register_code, ==, 3);
 	g_assert_cmpuint(instruction.accumulator_index, ==, 1);
 
-	g_assert_true(pmb887x_dsp_tcg_decode(&core, 222, &instruction));
-	g_assert_cmpint(instruction.opcode, ==, PMB887X_DSP_TCG_OPCODE_SHIFT_IMMEDIATE);
+	g_assert_true(teak_decode(&core, 222, &instruction));
+	g_assert_cmpint(instruction.opcode, ==, TEAK_OP_SHIFT_IMMEDIATE);
 	g_assert_cmpuint(instruction.source_accumulator, ==, 0);
 	g_assert_cmpuint(instruction.destination_accumulator, ==, 3);
 	g_assert_cmpint(instruction.shift, ==, -4);
 
-	g_assert_true(pmb887x_dsp_tcg_decode(&core, 223, &instruction));
-	g_assert_cmpint(instruction.opcode, ==, PMB887X_DSP_TCG_OPCODE_SHIFT_IMMEDIATE);
+	g_assert_true(teak_decode(&core, 223, &instruction));
+	g_assert_cmpint(instruction.opcode, ==, TEAK_OP_SHIFT_IMMEDIATE);
 	g_assert_cmpuint(instruction.source_accumulator, ==, 3);
 	g_assert_cmpuint(instruction.destination_accumulator, ==, 1);
 	g_assert_cmpint(instruction.shift, ==, 31);
 
-	g_assert_true(pmb887x_dsp_tcg_decode(&core, 224, &instruction));
-	g_assert_cmpint(instruction.opcode, ==, PMB887X_DSP_TCG_OPCODE_SHIFT_CONDITIONAL);
+	g_assert_true(teak_decode(&core, 224, &instruction));
+	g_assert_cmpint(instruction.opcode, ==, TEAK_OP_SHIFT_CONDITIONAL);
 	g_assert_cmpuint(instruction.source_accumulator, ==, 2);
 	g_assert_cmpuint(instruction.destination_accumulator, ==, 1);
-	g_assert_cmpint(instruction.condition, ==, PMB887X_DSP_TCG_CONDITION_GT);
+	g_assert_cmpint(instruction.condition, ==, TEAK_COND_GT);
 
-	g_assert_true(pmb887x_dsp_tcg_decode(&core, 225, &instruction));
-	g_assert_cmpint(instruction.opcode, ==, PMB887X_DSP_TCG_OPCODE_SHIFT_CONDITIONAL);
+	g_assert_true(teak_decode(&core, 225, &instruction));
+	g_assert_cmpint(instruction.opcode, ==, TEAK_OP_SHIFT_CONDITIONAL);
 	g_assert_cmpuint(instruction.source_accumulator, ==, 1);
 	g_assert_cmpuint(instruction.destination_accumulator, ==, 3);
-	g_assert_cmpint(instruction.condition, ==, PMB887X_DSP_TCG_CONDITION_L);
+	g_assert_cmpint(instruction.condition, ==, TEAK_COND_L);
 
 	for (uint16_t source = 0; source < 4; source++) {
 		for (uint16_t destination = 0; destination < 4; destination++) {
 			for (int16_t shift = -32; shift <= 31; shift++) {
 				program.words[0] = 0x9240U | source << 10 | destination << 7 | ((uint16_t) shift & 0x3FU);
-				g_assert_true(pmb887x_dsp_tcg_decode(&core, 0, &instruction));
-				g_assert_cmpint(instruction.opcode, ==, PMB887X_DSP_TCG_OPCODE_SHIFT_IMMEDIATE);
+				g_assert_true(teak_decode(&core, 0, &instruction));
+				g_assert_cmpint(instruction.opcode, ==, TEAK_OP_SHIFT_IMMEDIATE);
 				g_assert_cmpuint(instruction.source_accumulator, ==, source);
 				g_assert_cmpuint(instruction.destination_accumulator, ==, destination);
 				g_assert_cmpint(instruction.shift, ==, shift);
 			}
 
-			for (uint16_t condition = 0; condition < PMB887X_DSP_TCG_CONDITION_COUNT; condition++) {
+			for (uint16_t condition = 0; condition < TEAK_COND_COUNT; condition++) {
 				program.words[0] = 0xD280U | source << 10 | destination << 5 | condition;
-				g_assert_true(pmb887x_dsp_tcg_decode(&core, 0, &instruction));
-				g_assert_cmpint(instruction.opcode, ==, PMB887X_DSP_TCG_OPCODE_SHIFT_CONDITIONAL);
+				g_assert_true(teak_decode(&core, 0, &instruction));
+				g_assert_cmpint(instruction.opcode, ==, TEAK_OP_SHIFT_CONDITIONAL);
 				g_assert_cmpuint(instruction.source_accumulator, ==, source);
 				g_assert_cmpuint(instruction.destination_accumulator, ==, destination);
 				g_assert_cmpuint(instruction.condition, ==, condition);
@@ -1066,46 +1066,46 @@ static void test_decode(void) {
 	}
 
 	program.words[0] = 0xD480;
-	g_assert_true(pmb887x_dsp_tcg_decode(&core, 0, &instruction));
-	g_assert_cmpint(instruction.opcode, ==, PMB887X_DSP_TCG_OPCODE_CALL_ACCUMULATOR);
+	g_assert_true(teak_decode(&core, 0, &instruction));
+	g_assert_cmpint(instruction.opcode, ==, TEAK_OP_CALL_ACCUMULATOR);
 	g_assert_cmpuint(instruction.accumulator_index, ==, 0);
 	g_assert_cmpuint(instruction.words, ==, 1);
 
 	program.words[0] = 0xD580;
-	g_assert_true(pmb887x_dsp_tcg_decode(&core, 0, &instruction));
-	g_assert_cmpint(instruction.opcode, ==, PMB887X_DSP_TCG_OPCODE_CALL_ACCUMULATOR);
+	g_assert_true(teak_decode(&core, 0, &instruction));
+	g_assert_cmpint(instruction.opcode, ==, TEAK_OP_CALL_ACCUMULATOR);
 	g_assert_cmpuint(instruction.accumulator_index, ==, 1);
 
 	program.words[0] = 0x4F90;
-	g_assert_true(pmb887x_dsp_tcg_decode(&core, 0, &instruction));
-	g_assert_cmpint(instruction.opcode, ==, PMB887X_DSP_TCG_OPCODE_MOV_IMM_ICR);
+	g_assert_true(teak_decode(&core, 0, &instruction));
+	g_assert_cmpint(instruction.opcode, ==, TEAK_OP_MOV_IMM_ICR);
 	g_assert_cmphex(instruction.immediate, ==, 0x10);
 
 	program.words[0] = 0x3101;
-	g_assert_true(pmb887x_dsp_tcg_decode(&core, 0, &instruction));
-	g_assert_cmpint(instruction.opcode, ==, PMB887X_DSP_TCG_OPCODE_MOV_IMM8_ACCUMULATOR_LOW);
+	g_assert_true(teak_decode(&core, 0, &instruction));
+	g_assert_cmpint(instruction.opcode, ==, TEAK_OP_MOV_IMM8_ACCUMULATOR_LOW);
 	g_assert_cmpuint(instruction.accumulator_index, ==, 1);
 	g_assert_cmphex(instruction.immediate, ==, 1);
 
 	program.words[0] = 0xD4B8;
 	program.words[1] = 0x1234;
-	g_assert_true(pmb887x_dsp_tcg_decode(&core, 0, &instruction));
-	g_assert_cmpint(instruction.opcode, ==, PMB887X_DSP_TCG_OPCODE_MOV_DATA_IMM16_ACCUMULATOR);
+	g_assert_true(teak_decode(&core, 0, &instruction));
+	g_assert_cmpint(instruction.opcode, ==, TEAK_OP_MOV_DATA_IMM16_ACCUMULATOR);
 	g_assert_cmpuint(instruction.accumulator_index, ==, 0);
 	g_assert_cmphex(instruction.expansion, ==, 0x1234);
 	g_assert_cmpuint(instruction.words, ==, 2);
 
 	program.words[0] = 0xD5BC;
-	g_assert_true(pmb887x_dsp_tcg_decode(&core, 0, &instruction));
-	g_assert_cmpint(instruction.opcode, ==, PMB887X_DSP_TCG_OPCODE_MOV_ACCUMULATOR_LOW_DATA_IMM16);
+	g_assert_true(teak_decode(&core, 0, &instruction));
+	g_assert_cmpint(instruction.opcode, ==, TEAK_OP_MOV_ACCUMULATOR_LOW_DATA_IMM16);
 	g_assert_cmpuint(instruction.accumulator_index, ==, 1);
 
 	for (size_t i = 0; i < ARRAY_SIZE(moda_operations); i++) {
 		for (uint16_t accumulator = 0; accumulator < 2; accumulator++) {
-			for (uint16_t condition = 0; condition < PMB887X_DSP_TCG_CONDITION_COUNT; condition++) {
+			for (uint16_t condition = 0; condition < TEAK_COND_COUNT; condition++) {
 				program.words[0] = 0x6700U | accumulator << 12 | moda_operations[i] << 4 | condition;
-				g_assert_true(pmb887x_dsp_tcg_decode(&core, 0, &instruction));
-				g_assert_cmpint(instruction.opcode, ==, PMB887X_DSP_TCG_OPCODE_MODA4_ACCUMULATOR);
+				g_assert_true(teak_decode(&core, 0, &instruction));
+				g_assert_cmpint(instruction.opcode, ==, TEAK_OP_MODA4_ACCUMULATOR);
 				g_assert_cmpuint(instruction.accumulator_index, ==, accumulator);
 				g_assert_cmpuint(instruction.moda_operation, ==, moda_operations[i]);
 				g_assert_cmpuint(instruction.condition, ==, condition);
@@ -1115,10 +1115,10 @@ static void test_decode(void) {
 
 	for (size_t i = 0; i < ARRAY_SIZE(modb_operations); i++) {
 		for (uint16_t accumulator = 0; accumulator < 2; accumulator++) {
-			for (uint16_t condition = 0; condition < PMB887X_DSP_TCG_CONDITION_COUNT; condition++) {
+			for (uint16_t condition = 0; condition < TEAK_COND_COUNT; condition++) {
 				program.words[0] = 0x6F00U | accumulator << 12 | modb_operations[i] << 4 | condition;
-				g_assert_true(pmb887x_dsp_tcg_decode(&core, 0, &instruction));
-				g_assert_cmpint(instruction.opcode, ==, PMB887X_DSP_TCG_OPCODE_MODB3_ACCUMULATOR);
+				g_assert_true(teak_decode(&core, 0, &instruction));
+				g_assert_cmpint(instruction.opcode, ==, TEAK_OP_MODB3_ACCUMULATOR);
 				g_assert_cmpuint(instruction.accumulator_index, ==, accumulator);
 				g_assert_cmpuint(instruction.moda_operation, ==, modb_operations[i]);
 				g_assert_cmpuint(instruction.condition, ==, condition);
@@ -1129,8 +1129,8 @@ static void test_decode(void) {
 	for (uint16_t source = 0; source < 2; source++) {
 		for (uint16_t destination = 0; destination < 2; destination++) {
 			program.words[0] = 0x49C0U | source << 5 | destination << 4;
-			g_assert_true(pmb887x_dsp_tcg_decode(&core, 0, &instruction));
-			g_assert_cmpint(instruction.opcode, ==, PMB887X_DSP_TCG_OPCODE_LIMIT_ACCUMULATOR);
+			g_assert_true(teak_decode(&core, 0, &instruction));
+			g_assert_cmpint(instruction.opcode, ==, TEAK_OP_LIMIT_ACCUMULATOR);
 			g_assert_cmpuint(instruction.source_accumulator, ==, source);
 			g_assert_cmpuint(instruction.destination_accumulator, ==, destination);
 		}
@@ -1140,131 +1140,131 @@ static void test_decode(void) {
 		for (uint16_t address_register = 0; address_register < 6; address_register++) {
 			for (uint16_t step = 0; step < 4; step++) {
 				program.words[0] = 0x94C0U | accumulator << 8 | step << 3 | address_register;
-				g_assert_true(pmb887x_dsp_tcg_decode(&core, 0, &instruction));
-				g_assert_cmpint(instruction.opcode, ==, PMB887X_DSP_TCG_OPCODE_NORMALIZE);
+				g_assert_true(teak_decode(&core, 0, &instruction));
+				g_assert_cmpint(instruction.opcode, ==, TEAK_OP_NORMALIZE);
 				g_assert_cmpuint(instruction.accumulator_index, ==, accumulator);
 				g_assert_cmpuint(instruction.address_register, ==, address_register);
 				g_assert_cmpuint(instruction.step, ==, step);
 			}
 		}
 	}
-	for (uint16_t operation = 0; operation < PMB887X_DSP_TCG_SWAP_OPERATION_COUNT; operation++) {
+	for (uint16_t operation = 0; operation < TEAK_SWAP_OPERATION_COUNT; operation++) {
 		program.words[0] = 0x4980U | operation;
-		g_assert_true(pmb887x_dsp_tcg_decode(&core, 0, &instruction));
-		g_assert_cmpint(instruction.opcode, ==, PMB887X_DSP_TCG_OPCODE_SWAP_ACCUMULATORS);
+		g_assert_true(teak_decode(&core, 0, &instruction));
+		g_assert_cmpint(instruction.opcode, ==, TEAK_OP_SWAP_ACCUMULATORS);
 		g_assert_cmpuint(instruction.swap_operation, ==, operation);
 	}
-	for (uint16_t operation = PMB887X_DSP_TCG_SWAP_OPERATION_COUNT; operation < 16; operation++) {
+	for (uint16_t operation = TEAK_SWAP_OPERATION_COUNT; operation < 16; operation++) {
 		program.words[0] = 0x4980U | operation; /* swap reserved options (TeakLite 4.41, swap) execute as nop. */
-		g_assert_true(pmb887x_dsp_tcg_decode(&core, 0, &instruction));
-		g_assert_cmpint(instruction.opcode, ==, PMB887X_DSP_TCG_OPCODE_NOP);
+		g_assert_true(teak_decode(&core, 0, &instruction));
+		g_assert_cmpint(instruction.opcode, ==, TEAK_OP_NOP);
 	}
 	program.words[0] = 0xD7D0; /* undefined; hardware does not complete it (dsp-lle-opcode-map). */
-	g_assert_false(pmb887x_dsp_tcg_decode(&core, 0, &instruction));
-	g_assert_cmpint(instruction.opcode, ==, PMB887X_DSP_TCG_OPCODE_UNDEFINED);
+	g_assert_false(teak_decode(&core, 0, &instruction));
+	g_assert_cmpint(instruction.opcode, ==, TEAK_OP_UNDEFINED);
 	for (uint16_t flags = 0; flags < 64; flags++) {
 		program.words[0] = 0x4B80U | flags;
-		g_assert_true(pmb887x_dsp_tcg_decode(&core, 0, &instruction));
-		g_assert_cmpint(instruction.opcode, ==, PMB887X_DSP_TCG_OPCODE_BANK_EXCHANGE);
+		g_assert_true(teak_decode(&core, 0, &instruction));
+		g_assert_cmpint(instruction.opcode, ==, TEAK_OP_BANK_EXCHANGE);
 		g_assert_cmpuint(instruction.immediate, ==, flags & 0xFU);
 	}
 	program.words[0] = 0x0020;
-	g_assert_true(pmb887x_dsp_tcg_decode(&core, 0, &instruction));
-	g_assert_cmpint(instruction.opcode, ==, PMB887X_DSP_TCG_OPCODE_TRAP);
+	g_assert_true(teak_decode(&core, 0, &instruction));
+	g_assert_cmpint(instruction.opcode, ==, TEAK_OP_TRAP);
 	g_assert_cmpuint(instruction.words, ==, 1);
 	for (uint16_t source = 0; source < 4; source++) {
 		for (uint16_t destination = 0; destination < 4; destination++) {
 			program.words[0] = 0xD290U | source << 10 | destination << 5;
-			g_assert_true(pmb887x_dsp_tcg_decode(&core, 0, &instruction));
-			g_assert_cmpint(instruction.opcode, ==, PMB887X_DSP_TCG_OPCODE_MOV_ACCUMULATOR_ACCUMULATOR);
+			g_assert_true(teak_decode(&core, 0, &instruction));
+			g_assert_cmpint(instruction.opcode, ==, TEAK_OP_MOV_ACCUMULATOR_ACCUMULATOR);
 			g_assert_cmpuint(instruction.source_accumulator, ==, source);
 			g_assert_cmpuint(instruction.destination_accumulator, ==, destination);
 		}
 
 		program.words[0] = 0xD298U | source << 10;
-		g_assert_true(pmb887x_dsp_tcg_decode(&core, 0, &instruction));
-		g_assert_cmpint(instruction.opcode, ==, PMB887X_DSP_TCG_OPCODE_MOV_ACCUMULATOR_LOW_SPECIAL);
+		g_assert_true(teak_decode(&core, 0, &instruction));
+		g_assert_cmpint(instruction.opcode, ==, TEAK_OP_MOV_ACCUMULATOR_LOW_SPECIAL);
 		g_assert_cmpuint(instruction.source_accumulator, ==, source);
-		g_assert_cmpint(instruction.special_register, ==, PMB887X_DSP_TCG_SPECIAL_DVM);
+		g_assert_cmpint(instruction.special_register, ==, TEAK_SPECIAL_DVM);
 
 		program.words[0] = 0xD2D8U | source << 10;
-		g_assert_true(pmb887x_dsp_tcg_decode(&core, 0, &instruction));
-		g_assert_cmpint(instruction.special_register, ==, PMB887X_DSP_TCG_SPECIAL_X0);
+		g_assert_true(teak_decode(&core, 0, &instruction));
+		g_assert_cmpint(instruction.special_register, ==, TEAK_SPECIAL_X0);
 
 		program.words[0] = 0xD394U | source; /* cntx r: TeakLite 4.41, 1101001110.f.... */
-		g_assert_true(pmb887x_dsp_tcg_decode(&core, 0, &instruction));
-		g_assert_cmpint(instruction.opcode, ==, PMB887X_DSP_TCG_OPCODE_CONTEXT_RESTORE);
+		g_assert_true(teak_decode(&core, 0, &instruction));
+		g_assert_cmpint(instruction.opcode, ==, TEAK_OP_CONTEXT_RESTORE);
 
 		program.words[0] = 0xD384U | source;
-		g_assert_true(pmb887x_dsp_tcg_decode(&core, 0, &instruction));
-		g_assert_cmpint(instruction.opcode, ==, PMB887X_DSP_TCG_OPCODE_CONTEXT_STORE);
+		g_assert_true(teak_decode(&core, 0, &instruction));
+		g_assert_cmpint(instruction.opcode, ==, TEAK_OP_CONTEXT_STORE);
 	}
 	for (uint16_t destination = 0; destination < 4; destination++) {
 		for (uint16_t special = 0; special < 4; special++) {
 			program.words[0] = 0xD490U | destination << 5 | special;
-			g_assert_true(pmb887x_dsp_tcg_decode(&core, 0, &instruction));
-			g_assert_cmpint(instruction.opcode, ==, PMB887X_DSP_TCG_OPCODE_MOV_SPECIAL_ACCUMULATOR);
+			g_assert_true(teak_decode(&core, 0, &instruction));
+			g_assert_cmpint(instruction.opcode, ==, TEAK_OP_MOV_SPECIAL_ACCUMULATOR);
 			g_assert_cmpuint(instruction.destination_accumulator, ==, destination);
 			g_assert_cmpint(instruction.special_register, ==, special);
 		}
 
 		program.words[0] = 0x49C1U | destination << 4;
-		g_assert_true(pmb887x_dsp_tcg_decode(&core, 0, &instruction));
-		g_assert_cmpint(instruction.opcode, ==, PMB887X_DSP_TCG_OPCODE_LIMIT_ACCUMULATOR);
+		g_assert_true(teak_decode(&core, 0, &instruction));
+		g_assert_cmpint(instruction.opcode, ==, TEAK_OP_LIMIT_ACCUMULATOR);
 
 		program.words[0] = 0xD299U | destination << 10;
-		g_assert_true(pmb887x_dsp_tcg_decode(&core, 0, &instruction));
-		g_assert_cmpint(instruction.opcode, ==, PMB887X_DSP_TCG_OPCODE_MOV_ACCUMULATOR_LOW_SPECIAL);
+		g_assert_true(teak_decode(&core, 0, &instruction));
+		g_assert_cmpint(instruction.opcode, ==, TEAK_OP_MOV_ACCUMULATOR_LOW_SPECIAL);
 		g_assert_cmpuint(instruction.source_accumulator, ==, destination);
-		g_assert_cmpint(instruction.special_register, ==, PMB887X_DSP_TCG_SPECIAL_DVM);
+		g_assert_cmpint(instruction.special_register, ==, TEAK_SPECIAL_DVM);
 	}
 	for (uint16_t register_code = 0; register_code < 32; register_code++) {
 		program.words[0] = 0x47C0U | register_code;
-		g_assert_true(pmb887x_dsp_tcg_decode(&core, 0, &instruction));
-		g_assert_cmpint(instruction.opcode, ==, PMB887X_DSP_TCG_OPCODE_MOV_MIXP_REGISTER);
+		g_assert_true(teak_decode(&core, 0, &instruction));
+		g_assert_cmpint(instruction.opcode, ==, TEAK_OP_MOV_MIXP_REGISTER);
 		g_assert_cmpuint(instruction.destination_register_code, ==, register_code);
 
 		program.words[0] = 0x5E80U | register_code;
-		g_assert_true(pmb887x_dsp_tcg_decode(&core, 0, &instruction));
-		g_assert_cmpint(instruction.opcode, ==, PMB887X_DSP_TCG_OPCODE_MOV_REGISTER_MIXP);
+		g_assert_true(teak_decode(&core, 0, &instruction));
+		g_assert_cmpint(instruction.opcode, ==, TEAK_OP_MOV_REGISTER_MIXP);
 		g_assert_cmpuint(instruction.register_code, ==, register_code);
 
 		program.words[0] = 0x4FC0U | register_code;
-		g_assert_true(pmb887x_dsp_tcg_decode(&core, 0, &instruction));
-		g_assert_cmpint(instruction.opcode, ==, PMB887X_DSP_TCG_OPCODE_MOV_REGISTER_ICR);
+		g_assert_true(teak_decode(&core, 0, &instruction));
+		g_assert_cmpint(instruction.opcode, ==, TEAK_OP_MOV_REGISTER_ICR);
 		g_assert_cmpuint(instruction.register_code, ==, register_code);
 	}
 	for (uint16_t immediate = 0; immediate <= UINT8_MAX; immediate++) {
 		for (uint16_t destination = 0; destination < 8; destination++) {
 			program.words[0] = 0x2300U | destination << 10 | immediate;
-			g_assert_true(pmb887x_dsp_tcg_decode(&core, 0, &instruction));
-			g_assert_cmpint(instruction.opcode, ==, PMB887X_DSP_TCG_OPCODE_MOV_SHORT_REGISTER);
+			g_assert_true(teak_decode(&core, 0, &instruction));
+			g_assert_cmpint(instruction.opcode, ==, TEAK_OP_MOV_SHORT_REGISTER);
 			g_assert_cmpuint(instruction.register_code, ==, destination);
 			g_assert_cmphex(instruction.immediate, ==, (uint16_t) (int16_t) (int8_t) immediate);
 		}
 		for (uint16_t destination = 0; destination < 2; destination++) {
 			program.words[0] = 0x2500U | destination << 12 | immediate;
-			g_assert_true(pmb887x_dsp_tcg_decode(&core, 0, &instruction));
-			g_assert_cmpint(instruction.opcode, ==, PMB887X_DSP_TCG_OPCODE_MOV_SHORT_REGISTER);
+			g_assert_true(teak_decode(&core, 0, &instruction));
+			g_assert_cmpint(instruction.opcode, ==, TEAK_OP_MOV_SHORT_REGISTER);
 			g_assert_cmpuint(instruction.register_code, ==, destination + 28);
 		}
 		for (uint16_t destination = 0; destination < 4; destination++) {
 			program.words[0] = short_extension_bases[destination] | immediate;
-			g_assert_true(pmb887x_dsp_tcg_decode(&core, 0, &instruction));
-			g_assert_cmpint(instruction.opcode, ==, PMB887X_DSP_TCG_OPCODE_MOV_SHORT_REGISTER);
+			g_assert_true(teak_decode(&core, 0, &instruction));
+			g_assert_cmpint(instruction.opcode, ==, TEAK_OP_MOV_SHORT_REGISTER);
 			g_assert_cmpuint(instruction.register_code, ==, destination + 20);
 		}
 		program.words[0] = 0x0500U | immediate;
-		g_assert_true(pmb887x_dsp_tcg_decode(&core, 0, &instruction));
-		g_assert_cmpint(instruction.opcode, ==, PMB887X_DSP_TCG_OPCODE_MOV_SHORT_REGISTER);
+		g_assert_true(teak_decode(&core, 0, &instruction));
+		g_assert_cmpint(instruction.opcode, ==, TEAK_OP_MOV_SHORT_REGISTER);
 		g_assert_cmpuint(instruction.register_code, ==, 31);
 	}
 
 	for (uint16_t accumulator = 0; accumulator < 2; accumulator++) {
 		for (uint16_t address = 0; address <= UINT8_MAX; address++) {
 			program.words[0] = 0x0E00U | accumulator << 8 | address;
-			g_assert_true(pmb887x_dsp_tcg_decode(&core, 0, &instruction));
-			g_assert_cmpint(instruction.opcode, ==, PMB887X_DSP_TCG_OPCODE_DIVISION_STEP);
+			g_assert_true(teak_decode(&core, 0, &instruction));
+			g_assert_cmpint(instruction.opcode, ==, TEAK_OP_DIVISION_STEP);
 			g_assert_cmpuint(instruction.accumulator_index, ==, accumulator);
 			g_assert_cmpuint(instruction.memory_address, ==, address);
 		}
@@ -1276,8 +1276,8 @@ static void test_decode(void) {
 		for (uint16_t accumulator = 0; accumulator < 2; accumulator++) {
 			for (uint16_t step = 0; step < 4; step++) {
 				program.words[0] = accumulator_base | accumulator << 8 | step << 3;
-				g_assert_true(pmb887x_dsp_tcg_decode(&core, 0, &instruction));
-				g_assert_cmpint(instruction.opcode, ==, PMB887X_DSP_TCG_OPCODE_MINIMUM_MAXIMUM);
+				g_assert_true(teak_decode(&core, 0, &instruction));
+				g_assert_cmpint(instruction.opcode, ==, TEAK_OP_MINIMUM_MAXIMUM);
 				g_assert_cmpuint(instruction.minmax_operation, ==, operation);
 				g_assert_cmpuint(instruction.accumulator_index, ==, accumulator);
 				g_assert_cmpuint(instruction.step, ==, step);
@@ -1294,8 +1294,8 @@ static void test_decode(void) {
 				} else {
 					program.words[0] = 0x47A0U | (operation - 2) << 2 | accumulator << 3 | step;
 				}
-				g_assert_true(pmb887x_dsp_tcg_decode(&core, 0, &instruction));
-				g_assert_cmpint(instruction.opcode, ==, PMB887X_DSP_TCG_OPCODE_MINIMUM_MAXIMUM);
+				g_assert_true(teak_decode(&core, 0, &instruction));
+				g_assert_cmpint(instruction.opcode, ==, TEAK_OP_MINIMUM_MAXIMUM);
 				g_assert_cmpuint(instruction.minmax_operation, ==, operation);
 				g_assert_cmpuint(instruction.accumulator_index, ==, accumulator);
 				g_assert_cmpuint(instruction.step, ==, step);
@@ -1306,17 +1306,17 @@ static void test_decode(void) {
 
 	for (uint16_t source = 0; source < 32; source++) {
 		program.words[0] = 0x9440U | source;
-		g_assert_true(pmb887x_dsp_tcg_decode(&core, 0, &instruction));
-		g_assert_cmpint(instruction.opcode, ==, PMB887X_DSP_TCG_OPCODE_EXPONENT);
-		g_assert_cmpint(instruction.exponent_source, ==, PMB887X_DSP_TCG_EXPONENT_REGISTER);
+		g_assert_true(teak_decode(&core, 0, &instruction));
+		g_assert_cmpint(instruction.opcode, ==, TEAK_OP_EXPONENT);
+		g_assert_cmpint(instruction.exponent_source, ==, TEAK_EXPONENT_REGISTER);
 		g_assert_cmpuint(instruction.register_code, ==, source);
 		g_assert_false(instruction.write_accumulator);
 
 		for (uint16_t destination = 0; destination < 2; destination++) {
 			program.words[0] = 0x9040U | destination << 8 | source;
-			g_assert_true(pmb887x_dsp_tcg_decode(&core, 0, &instruction));
-			g_assert_cmpint(instruction.opcode, ==, PMB887X_DSP_TCG_OPCODE_EXPONENT);
-			g_assert_cmpint(instruction.exponent_source, ==, PMB887X_DSP_TCG_EXPONENT_REGISTER);
+			g_assert_true(teak_decode(&core, 0, &instruction));
+			g_assert_cmpint(instruction.opcode, ==, TEAK_OP_EXPONENT);
+			g_assert_cmpint(instruction.exponent_source, ==, TEAK_EXPONENT_REGISTER);
 			g_assert_cmpuint(instruction.register_code, ==, source);
 			g_assert_true(instruction.write_accumulator);
 			g_assert_cmpuint(instruction.destination_accumulator, ==, destination);
@@ -1325,15 +1325,15 @@ static void test_decode(void) {
 
 	for (uint16_t source = 0; source < 2; source++) {
 		program.words[0] = 0x9460U | source;
-		g_assert_true(pmb887x_dsp_tcg_decode(&core, 0, &instruction));
-		g_assert_cmpint(instruction.exponent_source, ==, PMB887X_DSP_TCG_EXPONENT_B_ACCUMULATOR);
+		g_assert_true(teak_decode(&core, 0, &instruction));
+		g_assert_cmpint(instruction.exponent_source, ==, TEAK_EXPONENT_B_ACCUMULATOR);
 		g_assert_cmpuint(instruction.accumulator_index, ==, source);
 		g_assert_false(instruction.write_accumulator);
 
 		for (uint16_t destination = 0; destination < 2; destination++) {
 			program.words[0] = 0x9060U | destination << 8 | source;
-			g_assert_true(pmb887x_dsp_tcg_decode(&core, 0, &instruction));
-			g_assert_cmpint(instruction.exponent_source, ==, PMB887X_DSP_TCG_EXPONENT_B_ACCUMULATOR);
+			g_assert_true(teak_decode(&core, 0, &instruction));
+			g_assert_cmpint(instruction.exponent_source, ==, TEAK_EXPONENT_B_ACCUMULATOR);
 			g_assert_cmpuint(instruction.accumulator_index, ==, source);
 			g_assert_true(instruction.write_accumulator);
 			g_assert_cmpuint(instruction.destination_accumulator, ==, destination);
@@ -1343,16 +1343,16 @@ static void test_decode(void) {
 	for (uint16_t source = 0; source < 6; source++) {
 		for (uint16_t step = 0; step < 4; step++) {
 			program.words[0] = 0x9C40U | step << 3 | source;
-			g_assert_true(pmb887x_dsp_tcg_decode(&core, 0, &instruction));
-			g_assert_cmpint(instruction.exponent_source, ==, PMB887X_DSP_TCG_EXPONENT_RN_STEP);
+			g_assert_true(teak_decode(&core, 0, &instruction));
+			g_assert_cmpint(instruction.exponent_source, ==, TEAK_EXPONENT_RN_STEP);
 			g_assert_cmpuint(instruction.address_register, ==, source);
 			g_assert_cmpuint(instruction.step, ==, step);
 			g_assert_false(instruction.write_accumulator);
 
 			for (uint16_t destination = 0; destination < 2; destination++) {
 				program.words[0] = 0x9840U | destination << 8 | step << 3 | source;
-				g_assert_true(pmb887x_dsp_tcg_decode(&core, 0, &instruction));
-				g_assert_cmpint(instruction.exponent_source, ==, PMB887X_DSP_TCG_EXPONENT_RN_STEP);
+				g_assert_true(teak_decode(&core, 0, &instruction));
+				g_assert_cmpint(instruction.exponent_source, ==, TEAK_EXPONENT_RN_STEP);
 				g_assert_cmpuint(instruction.address_register, ==, source);
 				g_assert_cmpuint(instruction.step, ==, step);
 				g_assert_true(instruction.write_accumulator);
@@ -1362,22 +1362,22 @@ static void test_decode(void) {
 	}
 
 	program.words[0] = 0xD7C1;
-	g_assert_true(pmb887x_dsp_tcg_decode(&core, 0, &instruction));
-	g_assert_cmpint(instruction.opcode, ==, PMB887X_DSP_TCG_OPCODE_DELAYED_RETURN_INTERRUPT);
+	g_assert_true(teak_decode(&core, 0, &instruction));
+	g_assert_cmpint(instruction.opcode, ==, TEAK_OP_DELAYED_RETURN_INTERRUPT);
 
 	program.words[0] = 0xD382U;
-	g_assert_true(pmb887x_dsp_tcg_decode(&core, 0, &instruction));
-	g_assert_cmpint(instruction.opcode, ==, PMB887X_DSP_TCG_OPCODE_CONTEXT_STORE);
+	g_assert_true(teak_decode(&core, 0, &instruction));
+	g_assert_cmpint(instruction.opcode, ==, TEAK_OP_CONTEXT_STORE);
 
 	program.words[0] = 0xD392U; /* cntx r: TeakLite 4.41, 1101001110.f.... */
-	g_assert_true(pmb887x_dsp_tcg_decode(&core, 0, &instruction));
-	g_assert_cmpint(instruction.opcode, ==, PMB887X_DSP_TCG_OPCODE_CONTEXT_RESTORE);
+	g_assert_true(teak_decode(&core, 0, &instruction));
+	g_assert_cmpint(instruction.opcode, ==, TEAK_OP_CONTEXT_RESTORE);
 
 	for (uint16_t accumulator = 0; accumulator < 2; accumulator++) {
 		for (uint16_t destination = 0; destination < 32; destination++) {
 			program.words[0] = 0x0040U | accumulator << 5 | destination;
-			g_assert_true(pmb887x_dsp_tcg_decode(&core, 0, &instruction));
-			g_assert_cmpint(instruction.opcode, ==, PMB887X_DSP_TCG_OPCODE_MOVP_ACCUMULATOR_LOW_REGISTER);
+			g_assert_true(teak_decode(&core, 0, &instruction));
+			g_assert_cmpint(instruction.opcode, ==, TEAK_OP_MOVP_ACCUMULATOR_LOW_REGISTER);
 			g_assert_cmpuint(instruction.accumulator_index, ==, accumulator);
 			g_assert_cmpuint(instruction.destination_register_code, ==, destination);
 		}
@@ -1389,8 +1389,8 @@ static void test_decode(void) {
 				for (uint16_t destination_step = 0; destination_step < 4; destination_step++) {
 					program.words[0] = 0x0600U | destination_step << 7 | destination << 5 |
 						source_step << 3 | source;
-					g_assert_true(pmb887x_dsp_tcg_decode(&core, 0, &instruction));
-					g_assert_cmpint(instruction.opcode, ==, PMB887X_DSP_TCG_OPCODE_MOVP_RN_RN);
+					g_assert_true(teak_decode(&core, 0, &instruction));
+					g_assert_cmpint(instruction.opcode, ==, TEAK_OP_MOVP_RN_RN);
 					g_assert_cmpuint(instruction.address_register, ==, source);
 					g_assert_cmpuint(instruction.destination_register_code, ==, destination);
 					g_assert_cmpuint(instruction.step, ==, source_step);
@@ -1406,8 +1406,8 @@ static void test_decode(void) {
 				for (uint16_t destination_step = 0; destination_step < 4; destination_step++) {
 					program.words[0] = 0x5F80U | destination_step << 5 | source_step << 3 |
 						destination << 2 | source;
-					g_assert_true(pmb887x_dsp_tcg_decode(&core, 0, &instruction));
-					g_assert_cmpint(instruction.opcode, ==, PMB887X_DSP_TCG_OPCODE_MOVD_RN_RN);
+					g_assert_true(teak_decode(&core, 0, &instruction));
+					g_assert_cmpint(instruction.opcode, ==, TEAK_OP_MOVD_RN_RN);
 					g_assert_cmpuint(instruction.address_register, ==, source);
 					g_assert_cmpuint(instruction.destination_register_code, ==, destination + 4);
 					g_assert_cmpuint(instruction.step, ==, source_step);
@@ -1420,8 +1420,8 @@ static void test_decode(void) {
 	for (uint16_t source = 0; source < 32; source++) {
 		for (uint16_t destination = 0; destination < 4; destination++) {
 			program.words[0] = 0x0100U | destination << 5 | source;
-			g_assert_true(pmb887x_dsp_tcg_decode(&core, 0, &instruction));
-			g_assert_cmpint(instruction.opcode, ==, PMB887X_DSP_TCG_OPCODE_MOVS_REGISTER);
+			g_assert_true(teak_decode(&core, 0, &instruction));
+			g_assert_cmpint(instruction.opcode, ==, TEAK_OP_MOVS_REGISTER);
 			g_assert_cmpuint(instruction.register_code, ==, source);
 			g_assert_cmpuint(instruction.destination_accumulator, ==, destination);
 		}
@@ -1431,8 +1431,8 @@ static void test_decode(void) {
 		for (uint16_t step = 0; step < 4; step++) {
 			for (uint16_t destination = 0; destination < 4; destination++) {
 				program.words[0] = 0x0180U | destination << 5 | step << 3 | source;
-				g_assert_true(pmb887x_dsp_tcg_decode(&core, 0, &instruction));
-				g_assert_cmpint(instruction.opcode, ==, PMB887X_DSP_TCG_OPCODE_MOVS_RN_STEP);
+				g_assert_true(teak_decode(&core, 0, &instruction));
+				g_assert_cmpint(instruction.opcode, ==, TEAK_OP_MOVS_RN_STEP);
 				g_assert_cmpuint(instruction.address_register, ==, source);
 				g_assert_cmpuint(instruction.step, ==, step);
 				g_assert_cmpuint(instruction.destination_accumulator, ==, destination);
@@ -1443,8 +1443,8 @@ static void test_decode(void) {
 	for (uint16_t destination = 0; destination < 4; destination++) {
 		for (uint16_t address = 0; address <= UINT8_MAX; address++) {
 			program.words[0] = 0x6300U | destination << 11 | address;
-			g_assert_true(pmb887x_dsp_tcg_decode(&core, 0, &instruction));
-			g_assert_cmpint(instruction.opcode, ==, PMB887X_DSP_TCG_OPCODE_MOVS_DATA_IMM8);
+			g_assert_true(teak_decode(&core, 0, &instruction));
+			g_assert_cmpint(instruction.opcode, ==, TEAK_OP_MOVS_DATA_IMM8);
 			g_assert_cmpuint(instruction.memory_address, ==, address);
 			g_assert_cmpuint(instruction.destination_accumulator, ==, destination);
 		}
@@ -1452,8 +1452,8 @@ static void test_decode(void) {
 
 	for (uint16_t destination = 0; destination < 2; destination++) {
 		program.words[0] = 0x5F42U | destination;
-		g_assert_true(pmb887x_dsp_tcg_decode(&core, 0, &instruction));
-		g_assert_cmpint(instruction.opcode, ==, PMB887X_DSP_TCG_OPCODE_PUSH_IMMEDIATE);
+		g_assert_true(teak_decode(&core, 0, &instruction));
+		g_assert_cmpint(instruction.opcode, ==, TEAK_OP_PUSH_IMMEDIATE);
 	}
 
 	for (uint16_t source = 0; source < 8; source++) {
@@ -1462,8 +1462,8 @@ static void test_decode(void) {
 				int16_t expected_shift = shift < 16 ? shift : shift - 32;
 
 				program.words[0] = 0x4080U | source << 9 | destination << 5 | shift;
-				g_assert_true(pmb887x_dsp_tcg_decode(&core, 0, &instruction));
-				g_assert_cmpint(instruction.opcode, ==, PMB887X_DSP_TCG_OPCODE_MOVSI_REGISTER);
+				g_assert_true(teak_decode(&core, 0, &instruction));
+				g_assert_cmpint(instruction.opcode, ==, TEAK_OP_MOVSI_REGISTER);
 				g_assert_cmpuint(instruction.register_code, ==, source);
 				g_assert_cmpuint(instruction.destination_accumulator, ==, destination);
 				g_assert_cmpint(instruction.shift, ==, expected_shift);
@@ -1474,8 +1474,8 @@ static void test_decode(void) {
 	for (uint16_t source = 0; source < 32; source++) {
 		for (uint16_t destination = 0; destination < 2; destination++) {
 			program.words[0] = 0x9CC0U | destination << 8 | source;
-			g_assert_true(pmb887x_dsp_tcg_decode(&core, 0, &instruction));
-			g_assert_cmpint(instruction.opcode, ==, PMB887X_DSP_TCG_OPCODE_MOVR_REGISTER);
+			g_assert_true(teak_decode(&core, 0, &instruction));
+			g_assert_cmpint(instruction.opcode, ==, TEAK_OP_MOVR_REGISTER);
 			g_assert_cmpuint(instruction.register_code, ==, source);
 			g_assert_cmpuint(instruction.destination_accumulator, ==, destination + 2);
 		}
@@ -1485,8 +1485,8 @@ static void test_decode(void) {
 		for (uint16_t step = 0; step < 4; step++) {
 			for (uint16_t destination = 0; destination < 2; destination++) {
 				program.words[0] = 0x9CE0U | destination << 8 | step << 3 | source;
-				g_assert_true(pmb887x_dsp_tcg_decode(&core, 0, &instruction));
-				g_assert_cmpint(instruction.opcode, ==, PMB887X_DSP_TCG_OPCODE_MOVR_RN_STEP);
+				g_assert_true(teak_decode(&core, 0, &instruction));
+				g_assert_cmpint(instruction.opcode, ==, TEAK_OP_MOVR_RN_STEP);
 				g_assert_cmpuint(instruction.address_register, ==, source);
 				g_assert_cmpuint(instruction.step, ==, step);
 				g_assert_cmpuint(instruction.destination_accumulator, ==, destination + 2);
@@ -1496,19 +1496,19 @@ static void test_decode(void) {
 
 	{
 		static const uint8_t expected_registers[] = { 0, 4, 2, 5 };
-		static const pmb887x_dsp_tcg_step_t expected_steps[] = {
-			PMB887X_DSP_TCG_STEP_INCREASE,
-			PMB887X_DSP_TCG_STEP_DECREASE,
-			PMB887X_DSP_TCG_STEP_ZERO,
-			PMB887X_DSP_TCG_STEP_PLUS_STEP,
+		static const teak_step_t expected_steps[] = {
+			TEAK_STEP_INCREASE,
+			TEAK_STEP_DECREASE,
+			TEAK_STEP_ZERO,
+			TEAK_STEP_PLUS_STEP,
 		};
 
 		for (uint16_t source = 0; source < 4; source++) {
 			for (uint16_t step = 0; step < 4; step++) {
 				for (uint16_t destination = 0; destination < 4; destination++) {
 					program.words[0] = 0x8864U | destination << 8 | source << 3 | step;
-					g_assert_true(pmb887x_dsp_tcg_decode(&core, 0, &instruction));
-					g_assert_cmpint(instruction.opcode, ==, PMB887X_DSP_TCG_OPCODE_MOVR_RN_HIGH);
+					g_assert_true(teak_decode(&core, 0, &instruction));
+					g_assert_cmpint(instruction.opcode, ==, TEAK_OP_MOVR_RN_HIGH);
 					g_assert_cmpuint(instruction.address_register, ==, expected_registers[source]);
 					g_assert_cmpuint(instruction.step, ==, expected_steps[step]);
 					g_assert_cmpuint(instruction.destination_accumulator, ==, destination);
@@ -1520,8 +1520,8 @@ static void test_decode(void) {
 	for (uint16_t source = 0; source < 2; source++) {
 		for (uint16_t destination = 0; destination < 2; destination++) {
 			program.words[0] = 0x5DF4U | source << 1 | destination;
-			g_assert_true(pmb887x_dsp_tcg_decode(&core, 0, &instruction));
-			g_assert_cmpint(instruction.opcode, ==, PMB887X_DSP_TCG_OPCODE_MOVR_B_ACCUMULATOR);
+			g_assert_true(teak_decode(&core, 0, &instruction));
+			g_assert_cmpint(instruction.opcode, ==, TEAK_OP_MOVR_B_ACCUMULATOR);
 			g_assert_cmpuint(instruction.source_accumulator, ==, source);
 			g_assert_cmpuint(instruction.destination_accumulator, ==, destination + 2);
 		}
@@ -1529,9 +1529,9 @@ static void test_decode(void) {
 
 	for (uint16_t step = 0; step < 2; step++) {
 		program.words[0] = 0x8961U | (step << 3); /* min (r1)+mm,a1 le: TeakLite 4.41, 10001.fA011mm..., tail 001. */
-		g_assert_true(pmb887x_dsp_tcg_decode(&core, 0, &instruction));
-		g_assert_cmpint(instruction.opcode, ==, PMB887X_DSP_TCG_OPCODE_MINIMUM_MAXIMUM);
-		g_assert_cmpint(instruction.minmax_operation, ==, PMB887X_DSP_TCG_MINMAX_MIN_LE);
+		g_assert_true(teak_decode(&core, 0, &instruction));
+		g_assert_cmpint(instruction.opcode, ==, TEAK_OP_MINIMUM_MAXIMUM);
+		g_assert_cmpint(instruction.minmax_operation, ==, TEAK_MINMAX_MIN_LE);
 		g_assert_false(instruction.memory_source);
 		g_assert_cmpuint(instruction.accumulator_index, ==, 1);
 		g_assert_cmpuint(instruction.address_register, ==, 1);
@@ -1541,23 +1541,23 @@ static void test_decode(void) {
 	for (uint16_t operation = 0; operation < 8; operation++) {
 		program.words[0] = 0xE100U | operation << 9 | 0x55U;
 		program.words[1] = 0xA55A;
-		g_assert_true(pmb887x_dsp_tcg_decode(&core, 0, &instruction));
-		g_assert_cmpint(instruction.opcode, ==, PMB887X_DSP_TCG_OPCODE_ALB_DATA_IMM8);
+		g_assert_true(teak_decode(&core, 0, &instruction));
+		g_assert_cmpint(instruction.opcode, ==, TEAK_OP_ALB_DATA_IMM8);
 		g_assert_cmpint(instruction.alb_operation, ==, operation);
 		g_assert_cmphex(instruction.memory_address, ==, 0x55);
 		g_assert_cmphex(instruction.expansion, ==, 0xA55A);
 		g_assert_cmpuint(instruction.words, ==, 2);
 
 		program.words[0] = 0x80E0U | operation << 9 | 3U << 3 | 5U;
-		g_assert_true(pmb887x_dsp_tcg_decode(&core, 0, &instruction));
-		g_assert_cmpint(instruction.opcode, ==, PMB887X_DSP_TCG_OPCODE_ALB_RN_STEP);
+		g_assert_true(teak_decode(&core, 0, &instruction));
+		g_assert_cmpint(instruction.opcode, ==, TEAK_OP_ALB_RN_STEP);
 		g_assert_cmpint(instruction.alb_operation, ==, operation);
 		g_assert_cmpuint(instruction.address_register, ==, 5);
-		g_assert_cmpint(instruction.step, ==, PMB887X_DSP_TCG_STEP_PLUS_STEP);
+		g_assert_cmpint(instruction.step, ==, TEAK_STEP_PLUS_STEP);
 
 		program.words[0] = 0x81E0U | operation << 9 | 26U;
-		g_assert_true(pmb887x_dsp_tcg_decode(&core, 0, &instruction));
-		g_assert_cmpint(instruction.opcode, ==, PMB887X_DSP_TCG_OPCODE_ALB_REGISTER);
+		g_assert_true(teak_decode(&core, 0, &instruction));
+		g_assert_cmpint(instruction.opcode, ==, TEAK_OP_ALB_REGISTER);
 		g_assert_cmpint(instruction.alb_operation, ==, operation);
 		g_assert_cmpuint(instruction.register_code, ==, 26);
 	}
@@ -1565,55 +1565,55 @@ static void test_decode(void) {
 	for (uint16_t address = 0; address < 0x100; address++) {
 		for (uint16_t register_index = 0; register_index < 8; register_index++) {
 			program.words[0] = 0x6000U | register_index << 10 | address;
-			g_assert_true(pmb887x_dsp_tcg_decode(&core, 0, &instruction));
-			g_assert_cmpint(instruction.opcode, ==, PMB887X_DSP_TCG_OPCODE_MOV_DATA_IMM8_REGISTER);
+			g_assert_true(teak_decode(&core, 0, &instruction));
+			g_assert_cmpint(instruction.opcode, ==, TEAK_OP_MOV_DATA_IMM8_REGISTER);
 			g_assert_cmpuint(instruction.register_code, ==, register_index);
 			g_assert_cmphex(instruction.memory_address, ==, address);
 
 			program.words[0] = 0x2000U | register_index << 9 | address;
-			g_assert_true(pmb887x_dsp_tcg_decode(&core, 0, &instruction));
-			g_assert_cmpint(instruction.opcode, ==, PMB887X_DSP_TCG_OPCODE_MOV_REGISTER_DATA_IMM8);
+			g_assert_true(teak_decode(&core, 0, &instruction));
+			g_assert_cmpint(instruction.opcode, ==, TEAK_OP_MOV_REGISTER_DATA_IMM8);
 			g_assert_cmpuint(instruction.register_code, ==, register_index);
 			g_assert_cmphex(instruction.memory_address, ==, address);
 
 			program.words[0] = 0x6200U | register_index << 10 | address;
-			g_assert_true(pmb887x_dsp_tcg_decode(&core, 0, &instruction));
-			g_assert_cmpint(instruction.opcode, ==, PMB887X_DSP_TCG_OPCODE_MOV_DATA_IMM8_REGISTER);
+			g_assert_true(teak_decode(&core, 0, &instruction));
+			g_assert_cmpint(instruction.opcode, ==, TEAK_OP_MOV_DATA_IMM8_REGISTER);
 			g_assert_cmpuint(instruction.register_code, ==, accumulator_half_registers[register_index]);
 			g_assert_cmphex(instruction.memory_address, ==, address);
 
 			program.words[0] = 0x3000U | register_index << 9 | address;
-			g_assert_true(pmb887x_dsp_tcg_decode(&core, 0, &instruction));
-			g_assert_cmpint(instruction.opcode, ==, PMB887X_DSP_TCG_OPCODE_MOV_REGISTER_DATA_IMM8);
+			g_assert_true(teak_decode(&core, 0, &instruction));
+			g_assert_cmpint(instruction.opcode, ==, TEAK_OP_MOV_REGISTER_DATA_IMM8);
 			g_assert_cmpuint(instruction.register_code, ==, accumulator_half_registers[register_index]);
 			g_assert_cmphex(instruction.memory_address, ==, address);
 		}
 
 		for (uint16_t accumulator = 0; accumulator < 4; accumulator++) {
 			program.words[0] = 0x6100U | accumulator << 11 | address;
-			g_assert_true(pmb887x_dsp_tcg_decode(&core, 0, &instruction));
-			g_assert_cmpint(instruction.opcode, ==, PMB887X_DSP_TCG_OPCODE_MOV_DATA_IMM8_ACCUMULATOR);
+			g_assert_true(teak_decode(&core, 0, &instruction));
+			g_assert_cmpint(instruction.opcode, ==, TEAK_OP_MOV_DATA_IMM8_ACCUMULATOR);
 			g_assert_cmpuint(instruction.destination_accumulator, ==, accumulator);
 			g_assert_cmphex(instruction.memory_address, ==, address);
 		}
 
 		for (uint16_t accumulator = 0; accumulator < 2; accumulator++) {
 			program.words[0] = 0x6500U | accumulator << 12 | address;
-			g_assert_true(pmb887x_dsp_tcg_decode(&core, 0, &instruction));
-			g_assert_cmpint(instruction.opcode, ==, PMB887X_DSP_TCG_OPCODE_MOV_DATA_IMM8_ACCUMULATOR_HIGH_EU);
+			g_assert_true(teak_decode(&core, 0, &instruction));
+			g_assert_cmpint(instruction.opcode, ==, TEAK_OP_MOV_DATA_IMM8_ACCUMULATOR_HIGH_EU);
 			g_assert_cmpuint(instruction.accumulator_index, ==, accumulator);
 			g_assert_cmphex(instruction.memory_address, ==, address);
 		}
 
 		program.words[0] = 0x6D00U | address;
-		g_assert_true(pmb887x_dsp_tcg_decode(&core, 0, &instruction));
-		g_assert_cmpint(instruction.opcode, ==, PMB887X_DSP_TCG_OPCODE_MOV_DATA_IMM8_REGISTER);
+		g_assert_true(teak_decode(&core, 0, &instruction));
+		g_assert_cmpint(instruction.opcode, ==, TEAK_OP_MOV_DATA_IMM8_REGISTER);
 		g_assert_cmpuint(instruction.register_code, ==, 31);
 		g_assert_cmphex(instruction.memory_address, ==, address);
 
 		program.words[0] = 0x7D00U | address;
-		g_assert_true(pmb887x_dsp_tcg_decode(&core, 0, &instruction));
-		g_assert_cmpint(instruction.opcode, ==, PMB887X_DSP_TCG_OPCODE_MOV_REGISTER_DATA_IMM8);
+		g_assert_true(teak_decode(&core, 0, &instruction));
+		g_assert_cmpint(instruction.opcode, ==, TEAK_OP_MOV_REGISTER_DATA_IMM8);
 		g_assert_cmpuint(instruction.register_code, ==, 31);
 		g_assert_cmphex(instruction.memory_address, ==, address);
 	}
@@ -1623,15 +1623,15 @@ static void test_decode(void) {
 			uint16_t encoded_offset = (uint16_t) offset & 0x7FU;
 
 			program.words[0] = 0xD880U | accumulator << 8 | encoded_offset;
-			g_assert_true(pmb887x_dsp_tcg_decode(&core, 0, &instruction));
-			g_assert_cmpint(instruction.opcode, ==, PMB887X_DSP_TCG_OPCODE_MOV_DATA_R7_OFFSET7_ACCUMULATOR);
+			g_assert_true(teak_decode(&core, 0, &instruction));
+			g_assert_cmpint(instruction.opcode, ==, TEAK_OP_MOV_DATA_R7_OFFSET7_ACCUMULATOR);
 			g_assert_cmpuint(instruction.accumulator_index, ==, accumulator);
 			g_assert_cmpint(instruction.memory_offset, ==, offset);
 			g_assert_cmpuint(instruction.words, ==, 1);
 
 			program.words[0] = 0xDC80U | accumulator << 8 | encoded_offset;
-			g_assert_true(pmb887x_dsp_tcg_decode(&core, 0, &instruction));
-			g_assert_cmpint(instruction.opcode, ==, PMB887X_DSP_TCG_OPCODE_MOV_ACCUMULATOR_LOW_DATA_R7_OFFSET7);
+			g_assert_true(teak_decode(&core, 0, &instruction));
+			g_assert_cmpint(instruction.opcode, ==, TEAK_OP_MOV_ACCUMULATOR_LOW_DATA_R7_OFFSET7);
 			g_assert_cmpuint(instruction.accumulator_index, ==, accumulator);
 			g_assert_cmpint(instruction.memory_offset, ==, offset);
 			g_assert_cmpuint(instruction.words, ==, 1);
@@ -1642,15 +1642,15 @@ static void test_decode(void) {
 		program.words[1] = offset;
 		for (uint16_t accumulator = 0; accumulator < 2; accumulator++) {
 			program.words[0] = 0xD498U | accumulator << 8;
-			g_assert_true(pmb887x_dsp_tcg_decode(&core, 0, &instruction));
-			g_assert_cmpint(instruction.opcode, ==, PMB887X_DSP_TCG_OPCODE_MOV_DATA_R7_OFFSET16_ACCUMULATOR);
+			g_assert_true(teak_decode(&core, 0, &instruction));
+			g_assert_cmpint(instruction.opcode, ==, TEAK_OP_MOV_DATA_R7_OFFSET16_ACCUMULATOR);
 			g_assert_cmpuint(instruction.accumulator_index, ==, accumulator);
 			g_assert_cmpint(instruction.memory_offset, ==, (int16_t) offset);
 			g_assert_cmpuint(instruction.words, ==, 2);
 
 			program.words[0] = 0xD49CU | accumulator << 8;
-			g_assert_true(pmb887x_dsp_tcg_decode(&core, 0, &instruction));
-			g_assert_cmpint(instruction.opcode, ==, PMB887X_DSP_TCG_OPCODE_MOV_ACCUMULATOR_LOW_DATA_R7_OFFSET16);
+			g_assert_true(teak_decode(&core, 0, &instruction));
+			g_assert_cmpint(instruction.opcode, ==, TEAK_OP_MOV_ACCUMULATOR_LOW_DATA_R7_OFFSET16);
 			g_assert_cmpuint(instruction.accumulator_index, ==, accumulator);
 			g_assert_cmpint(instruction.memory_offset, ==, (int16_t) offset);
 			g_assert_cmpuint(instruction.words, ==, 2);
@@ -1661,8 +1661,8 @@ static void test_decode(void) {
 		program.words[1] = immediate;
 		for (uint16_t accumulator = 0; accumulator < 2; accumulator++) {
 			program.words[0] = 0x5E20U | accumulator << 8;
-			g_assert_true(pmb887x_dsp_tcg_decode(&core, 0, &instruction));
-			g_assert_cmpint(instruction.opcode, ==, PMB887X_DSP_TCG_OPCODE_MOV_IMM_B_ACCUMULATOR);
+			g_assert_true(teak_decode(&core, 0, &instruction));
+			g_assert_cmpint(instruction.opcode, ==, TEAK_OP_MOV_IMM_B_ACCUMULATOR);
 			g_assert_cmpuint(instruction.accumulator_index, ==, accumulator);
 			g_assert_cmphex(instruction.expansion, ==, immediate);
 			g_assert_cmpuint(instruction.words, ==, 2);
@@ -1674,8 +1674,8 @@ static void test_decode(void) {
 			continue;
 		for (uint16_t destination = 0; destination < 32; destination++) {
 			program.words[0] = 0x5800U | destination << 5 | register_code;
-			g_assert_true(pmb887x_dsp_tcg_decode(&core, 0, &instruction));
-			g_assert_cmpint(instruction.opcode, ==, PMB887X_DSP_TCG_OPCODE_MOV_REGISTER_REGISTER);
+			g_assert_true(teak_decode(&core, 0, &instruction));
+			g_assert_cmpint(instruction.opcode, ==, TEAK_OP_MOV_REGISTER_REGISTER);
 			g_assert_cmpuint(instruction.register_code, ==, register_code);
 			g_assert_cmpuint(instruction.destination_register_code, ==, destination);
 			g_assert_cmpuint(instruction.words, ==, 1);
@@ -1685,8 +1685,8 @@ static void test_decode(void) {
 	for (uint16_t register_code = 0; register_code < 32; register_code++) {
 		for (uint16_t accumulator = 0; accumulator < 2; accumulator++) {
 			program.words[0] = 0x5EC0U | accumulator << 5 | register_code;
-			g_assert_true(pmb887x_dsp_tcg_decode(&core, 0, &instruction));
-			g_assert_cmpint(instruction.opcode, ==, PMB887X_DSP_TCG_OPCODE_MOV_REGISTER_B_ACCUMULATOR);
+			g_assert_true(teak_decode(&core, 0, &instruction));
+			g_assert_cmpint(instruction.opcode, ==, TEAK_OP_MOV_REGISTER_B_ACCUMULATOR);
 			g_assert_cmpuint(instruction.register_code, ==, register_code);
 			g_assert_cmpuint(instruction.accumulator_index, ==, accumulator);
 			g_assert_cmpuint(instruction.words, ==, 1);
@@ -1696,8 +1696,8 @@ static void test_decode(void) {
 	for (uint16_t bit = 0; bit < 16; bit++) {
 		for (uint16_t register_code = 0; register_code < 32; register_code++) {
 			program.words[0] = 0x9000U | bit << 8 | register_code;
-			g_assert_true(pmb887x_dsp_tcg_decode(&core, 0, &instruction));
-			g_assert_cmpint(instruction.opcode, ==, PMB887X_DSP_TCG_OPCODE_TSTB_REGISTER);
+			g_assert_true(teak_decode(&core, 0, &instruction));
+			g_assert_cmpint(instruction.opcode, ==, TEAK_OP_TSTB_REGISTER);
 			g_assert_cmpuint(instruction.register_code, ==, register_code);
 			g_assert_cmpuint(instruction.bit_index, ==, bit);
 			g_assert_cmpuint(instruction.words, ==, 1);
