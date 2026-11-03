@@ -902,6 +902,7 @@ static void dif_tx_from_fifo(pmb887x_dif_t *p) {
 		return;
 
 	uint32_t align = dif_get_tx_align(p);
+	uint32_t lanes_per_entry = 4 / align;
 	uint32_t word_bits = dif_get_tx_word_bits(p);
 
 	uint64_t bus_word_ps = dif_get_bus_word_ps(p);
@@ -920,18 +921,20 @@ static void dif_tx_from_fifo(pmb887x_dif_t *p) {
 			dif_send_parallel_words(p, parallel_words, parallel_word_count);
 			parallel_word_count = 0;
 		}
+		bool is_csreg_changed = !p->is_tx_csreg_active || tx_csreg != p->tx_csreg;
 		p->tx_csreg = tx_csreg;
 		p->is_tx_csreg_active = true;
-		dif_update_gpio_state(p);
+		if (is_csreg_changed)
+			dif_update_gpio_state(p);
 		uint32_t bsconf_word_count = dif_get_bsconf_word_count(p);
-		uint32_t words_in_fifo_reg = MIN(4 / align, p->tx_words_remaining);
+		uint32_t words_in_fifo_reg = MIN(lanes_per_entry, p->tx_words_remaining);
 		bool is_direct_write = p->state == DIF_STATE_NONE;
 
 		if (p->state == DIF_STATE_TX)
 			p->is_tx_started = true;
 		p->tx_words_remaining -= words_in_fifo_reg;
 		if (words_in_fifo_reg == 0 && (bsconf_word_count == 0 || is_direct_write))
-			words_in_fifo_reg = 4 / align; // Direct TXD writes do not require TPS_CTRL.
+			words_in_fifo_reg = lanes_per_entry; // Direct TXD writes do not require TPS_CTRL.
 		if (p->state == DIF_STATE_NONE)
 			p->tx_words_preloaded += bsconf_word_count != 0 ? 1 : words_in_fifo_reg;
 		bool is_color_converted = (dif_get_transfer_csreg(p) & DIFv2_CSREG_GRACMD) != 0;
@@ -939,7 +942,7 @@ static void dif_tx_from_fifo(pmb887x_dif_t *p) {
 		if (bsconf_word_count != 0) {
 			bool has_bus_words = false;
 
-			for (uint32_t lane = 0; lane < 4 / align; lane++) {
+			for (uint32_t lane = 0; lane < lanes_per_entry; lane++) {
 				uint32_t lane_value = dif_get_tx_lane(value, align, lane);
 
 				if (is_color_converted)
