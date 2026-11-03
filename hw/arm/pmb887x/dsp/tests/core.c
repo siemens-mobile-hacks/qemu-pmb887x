@@ -39,7 +39,7 @@ static void test_reset(void) {
 	teak_memory_t memory = {
 		.program = test_memory_space(&program),
 		.data = test_memory_space(&data),
-		.y_space_base = 0x20,
+		.y_space_base = TEAK_DATA_PAGE_WORDS,
 	};
 	teak_tcg_core_t core;
 	teak_tcg_init(&core, &memory);
@@ -95,7 +95,7 @@ static void test_memory_spaces(void) {
 	teak_memory_t memory = {
 		.program = test_memory_space(&program),
 		.data = test_memory_space(&data),
-		.y_space_base = 0x20,
+		.y_space_base = TEAK_DATA_PAGE_WORDS,
 	};
 	teak_tcg_core_t core;
 	teak_tcg_init(&core, &memory);
@@ -181,7 +181,7 @@ static void test_decode(void) {
 	teak_memory_t memory = {
 		.program = test_memory_space(&program),
 		.data = test_memory_space(&data),
-		.y_space_base = 0x20,
+		.y_space_base = TEAK_DATA_PAGE_WORDS,
 	};
 	teak_tcg_core_t core;
 	teak_tcg_init(&core, &memory);

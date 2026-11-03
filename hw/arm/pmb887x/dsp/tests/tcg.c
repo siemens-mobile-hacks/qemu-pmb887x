@@ -7,7 +7,8 @@
 #include "hw/arm/pmb887x/dsp/core.h"
 #include "hw/arm/pmb887x/dsp/tcg.h"
 
-#define TEST_MEMORY_WORDS	64
+#define TEST_MEMORY_WORDS	0x200
+#define TEST_Y_SPACE_BASE	0x100
 #define TEST_TCG_CODE_SIZE	(16 * MiB)
 
 typedef struct test_memory_t test_memory_t;
@@ -49,7 +50,7 @@ static teak_tcg_core_t test_core_create(test_memory_t *program, test_memory_t *d
 	teak_memory_t memory = {
 		.program = test_memory_space(program),
 		.data = test_memory_space(data),
-		.y_space_base = 0x20,
+		.y_space_base = TEST_Y_SPACE_BASE,
 	};
 	teak_tcg_core_t core;
 
@@ -502,13 +503,13 @@ static void test_dual_memory_spaces(void) {
 		.words = { 0xD000, 0x4180, 0x0003 },
 	};
 	test_memory_t data = {
-		.words = { [0x10] = 0xFFFF, [0x18] = 0x8001, [0x20] = 0x8001 },
+		.words = { [0x10] = 0xFFFF, [TEST_Y_SPACE_BASE - 8] = 0x8001, [TEST_Y_SPACE_BASE] = 0x8001 },
 	};
 	teak_tcg_core_t core = test_core_create(&program, &data);
 
 	test_core_map_data(&core, &data);
 	core.state.r[0] = 0x10;
-	core.state.r[4] = 0x18;
+	core.state.r[4] = TEST_Y_SPACE_BASE - 8;
 	g_assert_true(teak_tcg_execute_block(&core));
 	g_assert_cmphex(core.state.x[0], ==, 0xFFFF);
 	g_assert_cmphex(core.state.y[0], ==, 0);
@@ -517,7 +518,7 @@ static void test_dual_memory_spaces(void) {
 	core = test_core_create(&program, &data);
 	test_core_map_data(&core, &data);
 	core.state.r[0] = 0x10;
-	core.state.r[4] = 0x20;
+	core.state.r[4] = TEST_Y_SPACE_BASE;
 	g_assert_true(teak_tcg_execute_block(&core));
 	g_assert_cmphex(core.state.x[0], ==, 0xFFFF);
 	g_assert_cmphex(core.state.y[0], ==, 0x8001);
@@ -725,17 +726,17 @@ static void test_direct_data_bank(void) {
 	test_memory_t data = {
 		.words = { [0x10] = 0x1234 },
 	};
-	uint16_t first_bank[TEAK_DATA_PAGE_WORDS] = { 0xA55A };
-	uint16_t second_bank[TEAK_DATA_PAGE_WORDS] = { 0xBEEF };
+	uint16_t first_bank[TEAK_DATA_PAGE_WORDS] = { [0x10] = 0xA55A };
+	uint16_t second_bank[TEAK_DATA_PAGE_WORDS] = { [0x10] = 0xBEEF };
 	teak_tcg_core_t core = test_core_create(&program, &data);
 
 	test_core_map_data(&core, &data);
-	teak_data_map_read(&core, 0x10, ARRAY_SIZE(first_bank), first_bank);
+	teak_data_map_read(&core, 0, ARRAY_SIZE(first_bank), first_bank);
 	core.state.r[1] = 0x10;
 	g_assert_true(teak_tcg_execute_block(&core));
 	g_assert_cmphex(core.state.a[0], ==, 0xA55A);
 
-	teak_data_map_read(&core, 0x10, ARRAY_SIZE(second_bank), second_bank);
+	teak_data_map_read(&core, 0, ARRAY_SIZE(second_bank), second_bank);
 	core.state.pc = 0;
 	g_assert_true(teak_tcg_execute_block(&core));
 	g_assert_cmphex(core.state.a[0], ==, 0xBEEF);
