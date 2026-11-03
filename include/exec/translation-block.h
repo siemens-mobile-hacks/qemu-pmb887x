@@ -225,4 +225,14 @@ static inline void tb_set_page_addr1(TranslationBlock *tb,
 void tb_invalidate_phys_range(CPUState *cpu, tb_page_addr_t start,
                               tb_page_addr_t last);
 
+struct TBLookupLink {
+    uint64_t generation;
+    const void *code;
+    vaddr pc;
+    uint64_t cs_base;
+    uint32_t flags;
+};
+
+extern uint64_t tb_lookup_link_generation;
+
 #endif /* EXEC_TRANSLATION_BLOCK_H */

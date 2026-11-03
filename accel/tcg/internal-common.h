@@ -60,6 +60,7 @@ void tb_htable_init(void);
 void tb_reset_jump(TranslationBlock *tb, int n);
 void tb_record_cross_page_jump(TranslationBlock *tb, int n);
 void tb_unlink_cross_page_jumps(void);
+void translator_lookup_links_reset(void);
 TranslationBlock *tb_link_page(TranslationBlock *tb);
 void cpu_restore_state_from_tb(CPUState *cpu, TranslationBlock *tb,
                                uintptr_t host_pc);

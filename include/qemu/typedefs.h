@@ -118,6 +118,7 @@ typedef struct SSIBus SSIBus;
 typedef struct TCGCPUOps TCGCPUOps;
 typedef struct TCGHelperInfo TCGHelperInfo;
 typedef struct TaskState TaskState;
+typedef struct TBLookupLink TBLookupLink;
 typedef struct TranslationBlock TranslationBlock;
 typedef struct VirtIODevice VirtIODevice;
 typedef struct Visitor Visitor;

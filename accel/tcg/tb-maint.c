@@ -797,6 +797,7 @@ void tb_flush__exclusive_or_serial(void)
         g_array_set_size(tb_cross_page_jumps, 0);
     }
     qemu_spin_unlock(&tb_cross_page_jumps_lock);
+    translator_lookup_links_reset();
 
     qht_reset_size(&tb_ctx.htable, CODE_GEN_HTABLE_SIZE);
     tb_remove_all();
@@ -979,6 +980,8 @@ static inline void tb_jmp_unlink(TranslationBlock *dest)
 static void tb_jmp_cache_inval_tb(TranslationBlock *tb)
 {
     CPUState *cpu;
+
+    qatomic_inc(&tb_lookup_link_generation);
 
     if (tb_cflags(tb) & CF_PCREL) {
         /* A TB may be at any virtual address */

@@ -160,6 +160,7 @@ static void tb_jmp_cache_clear_page(CPUState *cpu, vaddr page_addr)
     for (i = 0; i < TB_JMP_PAGE_SIZE; i++) {
         qatomic_set(&jc->array[i0 + i].tb, NULL);
     }
+    qatomic_inc(&tb_lookup_link_generation);
 }
 
 /**

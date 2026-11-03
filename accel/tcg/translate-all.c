@@ -684,6 +684,8 @@ void cpu_io_recompile(CPUState *cpu, uintptr_t retaddr)
 
 #endif /* CONFIG_USER_ONLY */
 
+uint64_t tb_lookup_link_generation = 1;
+
 /*
  * Called by generic code at e.g. cpu reset after cpu creation,
  * therefore we must be prepared to allocate the jump cache.
@@ -700,4 +702,5 @@ void tcg_flush_jmp_cache(CPUState *cpu)
     for (int i = 0; i < TB_JMP_CACHE_SIZE; i++) {
         qatomic_set(&jc->array[i].tb, NULL);
     }
+    qatomic_inc(&tb_lookup_link_generation);
 }

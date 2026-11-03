@@ -167,6 +167,33 @@ bool translator_use_goto_tb(DisasContextBase *db, vaddr dest)
            !(tb_cflags(db->tb) & (CF_PCREL | CF_MEMORY_TIMING));
 }
 
+static GPtrArray *translator_lookup_links;
+
+TBLookupLink *translator_lookup_link_new(DisasContextBase *db)
+{
+    if (!tcg_cross_page_links) {
+        return NULL;
+    }
+    if (tb_cflags(db->tb) & (CF_PCREL | CF_MEMORY_TIMING | CF_NO_GOTO_TB)) {
+        return NULL;
+    }
+    if (translator_lookup_links == NULL) {
+        translator_lookup_links = g_ptr_array_new_with_free_func(g_free);
+    }
+
+    TBLookupLink *link = g_new0(TBLookupLink, 1);
+    link->cs_base = db->tb->cs_base;
+    g_ptr_array_add(translator_lookup_links, link);
+    return link;
+}
+
+void translator_lookup_links_reset(void)
+{
+    if (translator_lookup_links != NULL) {
+        g_ptr_array_set_size(translator_lookup_links, 0);
+    }
+}
+
 void translator_loop(CPUState *cpu, TranslationBlock *tb, int *max_insns,
                      vaddr pc, void *host_pc, const TranslatorOps *ops,
                      DisasContextBase *db, TCGType addr_type)

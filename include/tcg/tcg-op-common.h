@@ -94,6 +94,19 @@ void tcg_gen_goto_ptr(TCGv_ptr ptr);
  */
 void tcg_gen_lookup_and_goto_ptr(void);
 
+/**
+ * tcg_gen_linked_lookup_and_goto_ptr() - jump through a lookup link
+ * @link: Link of this exit
+ * @pc: Guest address of the target TB
+ * @flags: TB flags of the target TB
+ *
+ * Jump to the TB remembered in @link when it is current and matches @pc and
+ * @flags.  The caller guarantees that the target cs_base is @link->cs_base.
+ * Otherwise behave as tcg_gen_lookup_and_goto_ptr() and update @link.
+ */
+void tcg_gen_linked_lookup_and_goto_ptr(TBLookupLink *link, TCGv_i64 pc,
+                                        TCGv_i32 flags);
+
 void tcg_gen_plugin_cb(unsigned from);
 void tcg_gen_plugin_mem_cb(TCGv_i64 addr, unsigned meminfo);
 

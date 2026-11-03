@@ -2621,6 +2621,45 @@ void tcg_gen_lookup_and_goto_ptr(void)
     tcg_temp_free_ptr(ptr);
 }
 
+void tcg_gen_linked_lookup_and_goto_ptr(TBLookupLink *link, TCGv_i64 pc,
+                                        TCGv_i32 flags)
+{
+    if (tcg_ctx->gen_tb->cflags & CF_NO_GOTO_PTR) {
+        tcg_gen_exit_tb(NULL, 0);
+        return;
+    }
+
+    TCGv_ptr link_ptr = tcg_constant_ptr(link);
+    TCGv_i64 generation = tcg_temp_ebb_new_i64();
+    TCGv_i64 link_generation = tcg_temp_ebb_new_i64();
+    TCGv_i64 link_pc = tcg_temp_ebb_new_i64();
+    TCGv_i32 link_flags = tcg_temp_ebb_new_i32();
+    TCGv_ptr ptr = tcg_temp_ebb_new_ptr();
+    TCGLabel *lookup = gen_new_label();
+
+    plugin_gen_disable_mem_helpers();
+    tcg_gen_ld_i64(generation, tcg_constant_ptr(&tb_lookup_link_generation),
+                   0);
+    tcg_gen_ld_i64(link_generation, link_ptr,
+                   offsetof(TBLookupLink, generation));
+    tcg_gen_brcond_i64(TCG_COND_NE, generation, link_generation, lookup);
+    tcg_gen_ld_i64(link_pc, link_ptr, offsetof(TBLookupLink, pc));
+    tcg_gen_brcond_i64(TCG_COND_NE, pc, link_pc, lookup);
+    tcg_gen_ld_i32(link_flags, link_ptr, offsetof(TBLookupLink, flags));
+    tcg_gen_brcond_i32(TCG_COND_NE, flags, link_flags, lookup);
+    tcg_gen_ld_ptr(ptr, link_ptr, offsetof(TBLookupLink, code));
+    tcg_gen_op1i(INDEX_op_goto_ptr, TCG_TYPE_PTR, tcgv_ptr_arg(ptr));
+
+    gen_set_label(lookup);
+    gen_helper_lookup_tb_ptr_link(ptr, tcg_env, link_ptr);
+    tcg_gen_op1i(INDEX_op_goto_ptr, TCG_TYPE_PTR, tcgv_ptr_arg(ptr));
+    tcg_temp_free_ptr(ptr);
+    tcg_temp_free_i32(link_flags);
+    tcg_temp_free_i64(link_pc);
+    tcg_temp_free_i64(link_generation);
+    tcg_temp_free_i64(generation);
+}
+
 void tcg_gen_goto_ptr(TCGv_ptr ptr)
 {
     if (tcg_ctx->gen_tb->cflags & CF_NO_GOTO_PTR) {
