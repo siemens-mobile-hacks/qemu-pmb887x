@@ -593,6 +593,55 @@ static void test_program_invalidation(void) {
 	g_assert_cmpuint(core.cache_compiles, ==, 2);
 }
 
+static void test_execute_cycles(pmb887x_dsp_tcg_core_t *core, uint32_t cycles) {
+	uint32_t executed = 0;
+
+	while (executed < cycles) {
+		g_assert_true(pmb887x_dsp_tcg_execute_slice(core, cycles - executed));
+		executed += core->last_block_cycles;
+	}
+	g_assert_cmpuint(executed, ==, cycles);
+}
+
+static pmb887x_dsp_tcg_core_t test_two_block_loop_create(test_memory_t *program, test_memory_t *data) {
+	*program = (test_memory_t) {
+		.words = {
+			0x67D0, /* inc a0. */
+			0x4180, 0x0003, /* br 0x0003. */
+			0x67D0, /* inc a0. */
+			0x4180, 0x0000, /* br 0x0000. */
+		},
+	};
+	pmb887x_dsp_tcg_core_t core = test_core_create(program, data);
+
+	test_execute_cycles(&core, 40);
+	core.state.pc = 0;
+	core.state.a[0] = 0;
+	return core;
+}
+
+static void test_linked_chain_invalidation(void) {
+	test_memory_t program;
+	test_memory_t data = {};
+	pmb887x_dsp_tcg_core_t core = test_two_block_loop_create(&program, &data);
+
+	program.words[3] = 0x67E0; /* dec a0. */
+	pmb887x_dsp_tcg_invalidate_program(&core, 3);
+	test_execute_cycles(&core, 40);
+	g_assert_cmphex(core.state.a[0], ==, 0);
+}
+
+static void test_linked_chain_cycle_budget(void) {
+	test_memory_t program;
+	test_memory_t data = {};
+	pmb887x_dsp_tcg_core_t core = test_two_block_loop_create(&program, &data);
+
+	g_assert_true(pmb887x_dsp_tcg_execute_slice(&core, 9));
+	g_assert_cmpuint(core.last_block_cycles, ==, 10);
+	g_assert_cmphex(core.state.a[0], ==, 5);
+	g_assert_cmphex(core.state.pc, ==, 3);
+}
+
 static void test_precompile_bounded_indirect_dispatch(void) {
 	test_memory_t program = {
 		.words = {
@@ -979,6 +1028,8 @@ int main(int argc, char **argv) {
 	g_test_add_func("/pmb887x/dsp/tcg/direct-data-read-write", test_direct_data_read_write);
 	g_test_add_func("/pmb887x/dsp/tcg/program-context-cache", test_program_context_cache);
 	g_test_add_func("/pmb887x/dsp/tcg/program-invalidation", test_program_invalidation);
+	g_test_add_func("/pmb887x/dsp/tcg/linked-chain-invalidation", test_linked_chain_invalidation);
+	g_test_add_func("/pmb887x/dsp/tcg/linked-chain-cycle-budget", test_linked_chain_cycle_budget);
 	g_test_add_func("/pmb887x/dsp/tcg/precompile-bounded-indirect-dispatch", test_precompile_bounded_indirect_dispatch);
 	g_test_add_func("/pmb887x/dsp/tcg/direct-data-bank", test_direct_data_bank);
 	g_test_add_func("/pmb887x/dsp/tcg/mov-data-shift-value", test_mov_data_shift_value);
