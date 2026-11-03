@@ -29,6 +29,7 @@ OBJECT_DECLARE_SIMPLE_TYPE(pmb887x_dif_t, PMB887X_DIF);
 #define DIF_CON_STATUS		(DIFv1_CON_EN | DIFv1_CON_MS)
 #define TX_FIFO_SIZE		32
 #define RX_FIFO_SIZE		4
+#define DIF_OUTPUT_BITS		16
 
 enum DIFIrqType {
 	DIF_IRQ_TX,
@@ -81,6 +82,10 @@ struct pmb887x_dif_t {
 
 	uint32_t mask;
 	uint32_t bits;
+	uint32_t mux_select_mask;
+	uint32_t mux_constant_bits;
+	uint16_t mux_byte_bits[4][256];
+	bool is_mux_identity;
 	uint16_t pbc_word;
 	bool is_pbc_word_valid;
 
@@ -183,29 +188,16 @@ static void dif_update_rx_request(pmb887x_dif_t *p) {
 }
 
 static uint16_t dif_mux(pmb887x_dif_t *p, uint32_t value) {
-	uint16_t output = 0;
-
-	for (uint32_t output_bit = 0; output_bit < p->bits; output_bit++) {
-		uint32_t bmreg_index = output_bit / 6;
-		uint32_t bmreg_shift = (output_bit % 6) * 5;
-		uint32_t bcsel_index = output_bit / 16;
-		uint32_t bcsel_shift = (output_bit % 16) * 2;
-		uint32_t bit = 0;
-
-		if (bmreg_shift >= 15)
-			bmreg_shift++;
-
-		uint32_t mux = ((p->bmreg[bmreg_index] >> bmreg_shift) & 0x1F);
-		uint32_t bcsel = ((p->bcsel[bcsel_index] >> bcsel_shift) & 3);
-		if (bcsel == 0) {
-			bit = ((value >> mux) & 1);
-		} else if (bcsel == 1) {
-			bit = ((p->bcreg >> output_bit) & 1);
-		}
-		output |= (bit << output_bit);
+	uint32_t selected = value;
+	if (!p->is_mux_identity) {
+		selected = (
+			p->mux_byte_bits[0][value & 0xFF] |
+			p->mux_byte_bits[1][(value >> 8) & 0xFF] |
+			p->mux_byte_bits[2][(value >> 16) & 0xFF] |
+			p->mux_byte_bits[3][value >> 24]
+		);
 	}
-
-	return output;
+	return (selected & p->mux_select_mask) | p->mux_constant_bits;
 }
 
 static bool dif_convert_word(pmb887x_dif_t *p, uint16_t value, uint16_t *output) {
@@ -407,6 +399,41 @@ static void dif_dump_bit_mux(pmb887x_dif_t *p) {
 	DPRINTF(" BCSEL: %s\n", bcsel_str->str);
 	DPRINTF("    BC: %s\n", bc_str->str);
 	#endif
+}
+
+static void dif_update_mux(pmb887x_dif_t *p) {
+	uint16_t input_bit_outputs[32] = { 0 };
+
+	p->mux_select_mask = 0;
+	p->mux_constant_bits = 0;
+	p->is_mux_identity = true;
+	for (uint32_t output_bit = 0; output_bit < DIF_OUTPUT_BITS; output_bit++) {
+		uint32_t bmreg_shift = (output_bit % 6) * 5;
+		if (bmreg_shift >= 15)
+			bmreg_shift++;
+		uint32_t mux = (p->bmreg[output_bit / 6] >> bmreg_shift) & 0x1F;
+		uint32_t bcsel = (p->bcsel[output_bit / 16] >> ((output_bit % 16) * 2)) & 3;
+
+		input_bit_outputs[mux] |= 1U << output_bit;
+		if (bcsel == 0) {
+			p->mux_select_mask |= 1U << output_bit;
+			if (mux != output_bit)
+				p->is_mux_identity = false;
+		} else if (bcsel == 1) {
+			p->mux_constant_bits |= p->bcreg & (1U << output_bit);
+		}
+	}
+
+	for (uint32_t lane = 0; lane < 4; lane++) {
+		uint16_t *outputs = p->mux_byte_bits[lane];
+		outputs[0] = 0;
+		for (uint32_t byte = 1; byte < 256; byte++) {
+			uint32_t lowest_bit = ctz32(byte);
+			outputs[byte] = outputs[byte & (byte - 1)] | input_bit_outputs[lane * 8 + lowest_bit];
+		}
+	}
+
+	dif_dump_bit_mux(p);
 }
 
 static uint64_t dif_io_read(void *opaque, hwaddr haddr, unsigned size) {
@@ -635,7 +662,7 @@ static void dif_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned si
 		case DIFv1_BCSEL0:
 		case DIFv1_BCSEL1:
 			p->bcsel[(haddr - DIFv1_BCSEL0) / 4] = value;
-			dif_dump_bit_mux(p);
+			dif_update_mux(p);
 			break;
 
 		case DIFv1_BMREG0:
@@ -645,12 +672,12 @@ static void dif_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned si
 		case DIFv1_BMREG4:
 		case DIFv1_BMREG5:
 			p->bmreg[(haddr - DIFv1_BMREG0) / 4] = value;
-			dif_dump_bit_mux(p);
+			dif_update_mux(p);
 			break;
 
 		case DIFv1_BCREG:
 			p->bcreg = value;
-			dif_dump_bit_mux(p);
+			dif_update_mux(p);
 			break;
 
 		case DIFv1_SYNC_CONFIG:
@@ -790,6 +817,7 @@ static void dif_reset(DeviceState *dev) {
 	p->is_pbc_word_valid = false;
 	p->dmac_tx_clr = 0;
 	p->dmac_rx_clr = 0;
+	dif_update_mux(p);
 
 	qemu_set_irq(p->dmac_tx_breq, 0);
 	qemu_set_irq(p->dmac_rx_breq, 0);
