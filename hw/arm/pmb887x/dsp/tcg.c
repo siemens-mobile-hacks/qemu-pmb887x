@@ -4800,7 +4800,53 @@ static void tcg_emit_branch_if_link_mismatch(TCGv_ptr link, TCGLabel *label) {
 	gen_set_label(block_repeat_checked);
 }
 
+static void tcg_emit_outermost_block_repeat_completion(TCGLabel *slow) {
+	TCGv_i32 end_reached = tcg_temp_new_i32();
+	TCGv_i32 block_repeat_active = tcg_temp_new_i32();
+	TCGv_i32 level = tcg_temp_new_i32();
+	TCGv_i32 end = tcg_temp_new_i32();
+	TCGv_i32 next = tcg_temp_new_i32();
+	TCGv_i32 pc = tcg_temp_new_i32();
+	TCGv_i32 start = tcg_temp_new_i32();
+	TCGv_i32 lc = tcg_temp_new_i32();
+	TCGLabel *loop_back = gen_new_label();
+	TCGLabel *pop = gen_new_label();
+	TCGLabel *completed = gen_new_label();
+
+	tcg_gen_ld8u_i32(end_reached, tcg_env, offsetof(teak_state_t, block_repeat_end_reached));
+	tcg_gen_brcondi_i32(TCG_COND_EQ, end_reached, 0, completed);
+	tcg_gen_ld8u_i32(block_repeat_active, tcg_env, offsetof(teak_state_t, lp));
+	tcg_gen_ld8u_i32(level, tcg_env, offsetof(teak_state_t, bcn));
+	tcg_gen_brcondi_i32(TCG_COND_NE, level, 1, slow);
+	tcg_gen_brcondi_i32(TCG_COND_EQ, block_repeat_active, 0, slow);
+	tcg_gen_st8_i32(tcg_constant_i32(0), tcg_env, offsetof(teak_state_t, block_repeat_end_reached));
+
+	tcg_gen_ld_i32(end, tcg_env, offsetof(teak_state_t, block_repeat_end[0]));
+	tcg_gen_addi_i32(next, end, 1);
+	tcg_gen_andi_i32(next, next, 0xFFFFU);
+	tcg_gen_ld_i32(pc, tcg_env, offsetof(teak_state_t, pc));
+	tcg_gen_brcond_i32(TCG_COND_NE, pc, next, completed);
+
+	tcg_gen_ld_i32(start, tcg_env, offsetof(teak_state_t, block_repeat_start[0]));
+	tcg_gen_ld16u_i32(lc, tcg_env, offsetof(teak_state_t, block_repeat_lc[0]));
+	tcg_gen_brcondi_i32(TCG_COND_EQ, lc, 0, pop);
+	tcg_gen_subi_i32(lc, lc, 1);
+	tcg_gen_st16_i32(lc, tcg_env, offsetof(teak_state_t, block_repeat_lc[0]));
+	tcg_gen_brcond_i32(TCG_COND_NE, start, end, loop_back);
+	tcg_gen_brcondi_i32(TCG_COND_EQ, lc, 0, pop);
+
+	gen_set_label(loop_back);
+	tcg_gen_st_i32(start, tcg_env, offsetof(teak_state_t, pc));
+	tcg_gen_br(completed);
+
+	gen_set_label(pop);
+	tcg_gen_st8_i32(tcg_constant_i32(0), tcg_env, offsetof(teak_state_t, bcn));
+	tcg_gen_st8_i32(tcg_constant_i32(0), tcg_env, offsetof(teak_state_t, lp));
+	gen_set_label(completed);
+}
+
 static void tcg_emit_linked_chain(
+	const teak_tcg_block_t *block,
 	TCGv_ptr link,
 	TCGv_i32 block_cycles,
 	TCGv_i32 block_count,
@@ -4817,7 +4863,11 @@ static void tcg_emit_linked_chain(
 	TCGv_ptr target = tcg_temp_new_ptr();
 
 	tcg_emit_branch_if_nonzero_u32(offsetof(teak_tcg_core_t, wait_cycles), slow);
-	tcg_emit_branch_if_nonzero_u8(offsetof(teak_state_t, block_repeat_end_reached), slow);
+	if (block->ends_block_repeat) {
+		tcg_emit_outermost_block_repeat_completion(slow);
+	} else {
+		tcg_emit_branch_if_nonzero_u8(offsetof(teak_state_t, block_repeat_end_reached), slow);
+	}
 	tcg_emit_branch_if_nonzero_u8(offsetof(teak_state_t, block_repeat_break_pending), slow);
 	tcg_emit_branch_if_nonzero_u32(offsetof(teak_state_t, exit_request), slow);
 	tcg_emit_branch_if_nonzero_u32(offsetof(teak_state_t, interrupt_request), slow);
@@ -4872,8 +4922,7 @@ static void tcg_emit_block_chain(const teak_tcg_block_t *block, bool batched_loo
 	} else {
 		tcg_gen_movi_i32(block_count, 1);
 	}
-	if (!block->ends_block_repeat)
-		tcg_emit_linked_chain(link, block_cycles, block_count, slow);
+	tcg_emit_linked_chain(block, link, block_cycles, block_count, slow);
 
 	gen_set_label(slow);
 	gen_helper_teak_tcg_chain(next, tcg_env, block_cycles, block_count, tcg_constant_i32(block->pc), link);

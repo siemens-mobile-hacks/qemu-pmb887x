@@ -642,6 +642,41 @@ static void test_linked_chain_cycle_budget(void) {
 	g_assert_cmphex(core.state.pc, ==, 3);
 }
 
+static void test_linked_block_repeat(void) {
+	test_memory_t program = {
+		.words = {
+			0x5C14, 0x0003, /* bkrep 0x14, 0x0003. */
+			0x67D0, /* inc a0. */
+			0x67D0, /* inc a0. */
+			0x4180, 0x0004, /* br 0x0004. */
+		},
+	};
+	test_memory_t data = {};
+	pmb887x_dsp_tcg_core_t core = test_core_create(&program, &data);
+
+	test_execute_slices_until(&core, 4, 16);
+	g_assert_cmphex(core.state.a[0], ==, 42);
+	g_assert_cmphex(core.state.lp, ==, 0);
+	g_assert_cmphex(core.state.bcn, ==, 0);
+}
+
+static void test_linked_one_word_block_repeat(void) {
+	test_memory_t program = {
+		.words = {
+			0x5C14, 0x0002, /* bkrep 0x14, 0x0002. */
+			0x67D0, /* inc a0. */
+			0x4180, 0x0003, /* br 0x0003. */
+		},
+	};
+	test_memory_t data = {};
+	pmb887x_dsp_tcg_core_t core = test_core_create(&program, &data);
+
+	test_execute_slices_until(&core, 3, 16);
+	g_assert_cmphex(core.state.a[0], ==, 20);
+	g_assert_cmphex(core.state.lp, ==, 0);
+	g_assert_cmphex(core.state.bcn, ==, 0);
+}
+
 static void test_precompile_bounded_indirect_dispatch(void) {
 	test_memory_t program = {
 		.words = {
@@ -1030,6 +1065,8 @@ int main(int argc, char **argv) {
 	g_test_add_func("/pmb887x/dsp/tcg/program-invalidation", test_program_invalidation);
 	g_test_add_func("/pmb887x/dsp/tcg/linked-chain-invalidation", test_linked_chain_invalidation);
 	g_test_add_func("/pmb887x/dsp/tcg/linked-chain-cycle-budget", test_linked_chain_cycle_budget);
+	g_test_add_func("/pmb887x/dsp/tcg/linked-block-repeat", test_linked_block_repeat);
+	g_test_add_func("/pmb887x/dsp/tcg/linked-one-word-block-repeat", test_linked_one_word_block_repeat);
 	g_test_add_func("/pmb887x/dsp/tcg/precompile-bounded-indirect-dispatch", test_precompile_bounded_indirect_dispatch);
 	g_test_add_func("/pmb887x/dsp/tcg/direct-data-bank", test_direct_data_bank);
 	g_test_add_func("/pmb887x/dsp/tcg/mov-data-shift-value", test_mov_data_shift_value);
