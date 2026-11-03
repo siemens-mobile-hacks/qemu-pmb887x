@@ -8,6 +8,7 @@
 
 typedef struct pmb887x_dma_sink_t pmb887x_dma_sink_t;
 typedef struct pmb887x_dma_sink_class_t pmb887x_dma_sink_class_t;
+typedef struct pmb887x_dma_sink_cache_t pmb887x_dma_sink_cache_t;
 
 #define PMB887X_DMA_SINK(obj) INTERFACE_CHECK(pmb887x_dma_sink_t, (obj), TYPE_PMB887X_DMA_SINK)
 DECLARE_CLASS_CHECKERS(pmb887x_dma_sink_class_t, PMB887X_DMA_SINK, TYPE_PMB887X_DMA_SINK)
@@ -29,8 +30,18 @@ struct pmb887x_dma_sink_class_t {
 	);
 };
 
+struct pmb887x_dma_sink_cache_t {
+	AddressSpace *as;
+	MemoryListener listener;
+	MemoryRegion *mr;
+	pmb887x_dma_sink_t *sink;
+	pmb887x_dma_sink_class_t *klass;
+};
+
+void pmb887x_dma_sink_cache_init(pmb887x_dma_sink_cache_t *cache, AddressSpace *as);
+
 bool pmb887x_dma_sink_write_block(
-	AddressSpace *as,
+	pmb887x_dma_sink_cache_t *cache,
 	hwaddr addr,
 	const uint8_t *data,
 	uint32_t width,
