@@ -30,6 +30,7 @@ OBJECT_DECLARE_SIMPLE_TYPE(pmb887x_dif_t, PMB887X_DIF);
 #define TX_FIFO_SIZE		32
 #define RX_FIFO_SIZE		4
 #define DIF_OUTPUT_BITS		16
+#define DIF_DMA_REQUESTS	(DIFv1_RIS_TX | DIFv1_RIS_RX)
 
 enum DIFIrqType {
 	DIF_IRQ_TX,
@@ -104,6 +105,8 @@ struct pmb887x_dif_t {
 
 	qemu_irq dmac_tx_breq;
 	qemu_irq dmac_rx_breq;
+	uint32_t dma_requests;
+	bool are_dma_requests_driven;
 };
 
 static void dif_reset_fifo(pmb887x_dif_t *p, enum DIFFifoType fifo) {
@@ -136,18 +139,22 @@ static void dif_reset_bit_mapping(pmb887x_dif_t *p) {
 }
 
 static void dif_trigger_dma(pmb887x_dif_t *p) {
-	uint32_t ris = pmb887x_srb_get_ris_dma(&p->srb);
-	if (p->dmac_tx_clr) {
-		qemu_set_irq(p->dmac_tx_breq, 0);
-	} else {
-		qemu_set_irq(p->dmac_tx_breq, (ris & DIFv1_RIS_TX) != 0);
-	}
+	uint32_t requests = pmb887x_srb_get_ris_dma(&p->srb) & DIF_DMA_REQUESTS;
+	if (p->dmac_tx_clr)
+		requests &= ~DIFv1_RIS_TX;
+	if (p->dmac_rx_clr)
+		requests &= ~DIFv1_RIS_RX;
 
-	if (p->dmac_rx_clr) {
-		qemu_set_irq(p->dmac_rx_breq, 0);
-	} else {
-		qemu_set_irq(p->dmac_rx_breq, (ris & DIFv1_RIS_RX) != 0);
-	}
+	uint32_t changed_requests = p->are_dma_requests_driven ? requests ^ p->dma_requests : DIF_DMA_REQUESTS;
+	if (changed_requests == 0)
+		return;
+
+	p->dma_requests = requests;
+	p->are_dma_requests_driven = true;
+	if ((changed_requests & DIFv1_RIS_TX) != 0)
+		qemu_set_irq(p->dmac_tx_breq, (requests & DIFv1_RIS_TX) != 0);
+	if ((changed_requests & DIFv1_RIS_RX) != 0)
+		qemu_set_irq(p->dmac_rx_breq, (requests & DIFv1_RIS_RX) != 0);
 }
 
 static bool dif_is_running(pmb887x_dif_t *p) {
@@ -819,8 +826,8 @@ static void dif_reset(DeviceState *dev) {
 	p->dmac_rx_clr = 0;
 	dif_update_mux(p);
 
-	qemu_set_irq(p->dmac_tx_breq, 0);
-	qemu_set_irq(p->dmac_rx_breq, 0);
+	p->are_dma_requests_driven = false;
+	dif_trigger_dma(p);
 
 	dif_set_fifo(p, DIF_FIFO_RX, false);
 	dif_set_fifo(p, DIF_FIFO_TX, false);
