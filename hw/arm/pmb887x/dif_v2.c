@@ -54,6 +54,7 @@ static void dif_start_tx(pmb887x_dif_t *p);
 static void dif_kernel_reset(pmb887x_dif_t *p, uint32_t new_state);
 static bool dif_is_running(pmb887x_dif_t *p);
 static void dif_tx_from_fifo(pmb887x_dif_t *p);
+static void dif_update_mux(pmb887x_dif_t *p);
 static void dif_work(pmb887x_dif_t *p);
 static uint16_t dif_bus_transfer(pmb887x_dif_t *p, uint16_t value);
 
@@ -110,6 +111,7 @@ struct pmb887x_dif_t {
 	uint32_t mux_constant_bits;
 	uint32_t mux_byte_bits[4][256];
 	bool is_mux_identity;
+	bool is_mux_stale;
 
 	uint32_t con;
 	uint32_t perreg;
@@ -525,6 +527,9 @@ static void dif_reset_rx_fifo(pmb887x_dif_t *p) {
 }
 
 static inline uint32_t dif_mux(pmb887x_dif_t *p, uint32_t value) {
+	if (p->is_mux_stale)
+		dif_update_mux(p);
+
 	bool is_mux_bypassed = p->is_mux_identity || (dif_get_transfer_csreg(p) & DIFv2_CSREG_CD) != 0;
 	uint32_t selected = value;
 	if (!is_mux_bypassed) {
@@ -836,7 +841,8 @@ static bool dif_is_pbc_selection_valid(pmb887x_dif_t *p) {
 	uint32_t word_bits = dif_get_tx_word_bits(p);
 
 	for (uint32_t output_bit = 0; output_bit < word_bits; output_bit++) {
-		if (p->bit_bcsel[output_bit] > 1)
+		uint32_t bcsel = (p->bcsel[output_bit / 16] >> ((output_bit % 16) * 2)) & 3;
+		if (bcsel > 1)
 			return false;
 	}
 
@@ -1051,6 +1057,7 @@ static void dif_tx_bus_wake(void *opaque) {
 }
 
 static void dif_update_mux(pmb887x_dif_t *p) {
+	p->is_mux_stale = false;
 	p->mux_select_mask = 0;
 	p->mux_constant_bits = 0;
 	p->is_mux_identity = true;
@@ -1390,7 +1397,7 @@ static void dif_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned si
 		case DIFv2_BMREG4:
 		case DIFv2_BMREG5:
 			p->bmreg[(haddr - DIFv2_BMREG0) / 4] = value;
-			dif_update_mux(p);
+			p->is_mux_stale = true;
 			break;
 
 		case DIFv2_PBCCON:
@@ -1400,17 +1407,17 @@ static void dif_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned si
 		case DIFv2_BCSEL0:
 		case DIFv2_BCSEL1:
 			p->bcsel[(haddr - DIFv2_BCSEL0) / 4] = value;
-			dif_update_mux(p);
+			p->is_mux_stale = true;
 			break;
 
 		case DIFv2_BCREG:
 			p->bcreg = value;
-			dif_update_mux(p);
+			p->is_mux_stale = true;
 			break;
 
 		case DIFv2_INVERT_BIT:
 			p->invert_bit = value;
-			dif_update_mux(p);
+			p->is_mux_stale = true;
 			break;
 
 		case DIFv2_SYNC_CONFIG:
