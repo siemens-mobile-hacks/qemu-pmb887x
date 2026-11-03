@@ -31,6 +31,7 @@ OBJECT_DECLARE_SIMPLE_TYPE(pmb887x_dif_t, PMB887X_DIF);
 #define RX_FIFO_SIZE		4
 #define DIF_OUTPUT_BITS		16
 #define DIF_DMA_REQUESTS	(DIFv1_RIS_TX | DIFv1_RIS_RX)
+#define PS_PER_S			1000000000000ULL
 
 enum DIFIrqType {
 	DIF_IRQ_TX,
@@ -76,10 +77,10 @@ struct pmb887x_dif_t {
 
 	pmb887x_fifo16_t *rx_fifo;
 	pmb887x_fifo16_t *tx_fifo;
-	QEMUBH *transfer_bh;
 	QEMUTimer *transfer_timer;
 	uint16_t tx_data;
 	bool transfer_pending;
+	int64_t transfer_end_ps;
 
 	uint32_t mask;
 	uint32_t bits;
@@ -267,12 +268,22 @@ static void dif_transfer_word(pmb887x_dif_t *p) {
 	}
 }
 
-static bool dif_transfer_load(pmb887x_dif_t *p) {
+static int64_t dif_get_now_ps(void) {
+	return qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) * 1000;
+}
+
+static uint64_t dif_get_word_ps(pmb887x_dif_t *p) {
+	uint64_t cycles = (uint64_t) p->bits * 2 * ((p->br & DIFv1_BR_BR_VALUE) + 1);
+	return cycles * PS_PER_S / pmb887x_clc_get_hz(&p->clc);
+}
+
+static bool dif_transfer_load(pmb887x_dif_t *p, int64_t start_ps) {
 	if (p->transfer_pending || !dif_is_running(p) || pmb887x_fifo_is_empty(p->tx_fifo))
 		return false;
 
 	p->tx_data = pmb887x_fifo16_pop(p->tx_fifo);
 	p->transfer_pending = true;
+	p->transfer_end_ps = start_ps + dif_get_word_ps(p);
 	p->status |= DIFv1_CON_BSY;
 	dif_update_tx_request(p);
 	return true;
@@ -280,35 +291,29 @@ static bool dif_transfer_load(pmb887x_dif_t *p) {
 
 static void dif_transfer_complete(void *opaque) {
 	pmb887x_dif_t *p = opaque;
+	int64_t now_ps = dif_get_now_ps();
 
-	while (p->transfer_pending) {
+	while (p->transfer_pending && p->transfer_end_ps <= now_ps) {
 		p->transfer_pending = false;
-		if (!dif_is_running(p))
-			break;
-
 		dif_transfer_word(p);
-		if (!dif_transfer_load(p))
-			break;
-		if (pmb887x_srb_get_ris(&p->srb) != 0) {
-			timer_mod(p->transfer_timer, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + 1);
-			break;
-		}
+		dif_transfer_load(p, p->transfer_end_ps);
 	}
-	if (!p->transfer_pending)
+
+	if (p->transfer_pending) {
+		timer_mod(p->transfer_timer, DIV_ROUND_UP(p->transfer_end_ps, 1000));
+	} else {
 		p->status &= ~DIFv1_CON_BSY;
+	}
 }
 
 static void dif_schedule_transfer(pmb887x_dif_t *p) {
-	if (dif_transfer_load(p))
-		qemu_bh_schedule_idle(p->transfer_bh);
+	if (dif_transfer_load(p, dif_get_now_ps()))
+		timer_mod(p->transfer_timer, DIV_ROUND_UP(p->transfer_end_ps, 1000));
 }
 
 static void dif_stop_transfer(pmb887x_dif_t *p) {
-	if (p->transfer_pending) {
-		qemu_bh_cancel(p->transfer_bh);
-		timer_del(p->transfer_timer);
-		p->transfer_pending = false;
-	}
+	timer_del(p->transfer_timer);
+	p->transfer_pending = false;
 	p->status &= ~DIFv1_CON_BSY;
 }
 
@@ -776,7 +781,6 @@ static void dif_realize(DeviceState *dev, Error **errp) {
 
 	pmb887x_fifo16_init(&p->tx_fifo_single, 1);
 	pmb887x_fifo16_init(&p->rx_fifo_single, 1);
-	p->transfer_bh = qemu_bh_new(dif_transfer_complete, p);
 	p->transfer_timer = timer_new_ns(QEMU_CLOCK_VIRTUAL, dif_transfer_complete, p);
 
 	dif_set_fifo(p, DIF_FIFO_RX, false);
@@ -788,7 +792,6 @@ static void dif_realize(DeviceState *dev, Error **errp) {
 static void dif_unrealize(DeviceState *dev) {
 	pmb887x_dif_t *p = PMB887X_DIF(dev);
 
-	qemu_bh_delete(p->transfer_bh);
 	timer_free(p->transfer_timer);
 }
 
