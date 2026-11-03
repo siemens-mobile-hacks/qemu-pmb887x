@@ -1,6 +1,4 @@
 DEF_HELPER_FLAGS_5(teak_tcg_data_read_at, 0, i32, ptr, i32, i32, i32, i32)
-DEF_HELPER_FLAGS_5(teak_tcg_data_read_xz_at, 0, i32, ptr, i32, i32, i32, i32)
-DEF_HELPER_FLAGS_5(teak_tcg_data_read_y_at, 0, i32, ptr, i32, i32, i32, i32)
 DEF_HELPER_FLAGS_6(teak_tcg_data_write_at, 0, void, ptr, i32, i32, i32, i32, i32)
 DEF_HELPER_FLAGS_2(teak_tcg_program_read, 0, i32, ptr, i32)
 DEF_HELPER_FLAGS_3(teak_tcg_program_write, 0, void, ptr, i32, i32)

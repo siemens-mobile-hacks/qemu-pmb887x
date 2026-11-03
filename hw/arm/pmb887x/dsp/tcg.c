@@ -151,113 +151,54 @@ static uint32_t tcg_memory_access;
 
 static const uint16_t teak_interrupt_vectors[] = { 0x0006, 0x000E, 0x0016, 0x0004 };
 
-typedef enum teak_tcg_data_space_t {
-	TEAK_TCG_DATA_SPACE_ALL,
-	TEAK_TCG_DATA_SPACE_XZ,
-	TEAK_TCG_DATA_SPACE_Y,
-} teak_tcg_data_space_t;
+static TCGv_ptr tcg_emit_data_page(TCGv_i32 address, size_t table_offset) {
+	TCGv_i32 entry_offset = tcg_temp_new_i32();
+	TCGv_ptr entry = tcg_temp_new_ptr();
+	TCGv_ptr page = tcg_temp_new_ptr();
 
-static TCGv_ptr tcg_emit_direct_data_pointer(TCGv_i32 address) {
-	TCGv_i32 offset = tcg_temp_new_i32();
-	TCGv_ptr base = tcg_temp_new_ptr();
+	tcg_gen_shri_i32(entry_offset, address, TEAK_DATA_PAGE_SHIFT);
+	tcg_gen_muli_i32(entry_offset, entry_offset, sizeof(const uint16_t *));
+	tcg_gen_ext_i32_ptr(entry, entry_offset);
+	tcg_gen_add_ptr(entry, entry, tcg_env);
+	tcg_gen_ld_ptr(page, entry, table_offset);
+	return page;
+}
+
+static TCGv_ptr tcg_emit_data_word_pointer(TCGv_ptr page, TCGv_i32 address) {
+	TCGv_i32 word_offset = tcg_temp_new_i32();
 	TCGv_ptr pointer = tcg_temp_new_ptr();
 
-	tcg_gen_shli_i32(offset, address, 1);
-	tcg_gen_ext_i32_ptr(pointer, offset);
-	tcg_gen_ld_ptr(base, tcg_env, offsetof(teak_tcg_core_t, memory.direct_data));
-	tcg_gen_add_ptr(pointer, pointer, base);
+	tcg_gen_andi_i32(word_offset, address, TEAK_DATA_PAGE_WORDS - 1);
+	tcg_gen_muli_i32(word_offset, word_offset, sizeof(uint16_t));
+	tcg_gen_ext_i32_ptr(pointer, word_offset);
+	tcg_gen_add_ptr(pointer, pointer, page);
 	return pointer;
 }
 
-static TCGv_ptr tcg_emit_direct_data_bank_pointer(TCGv_i32 offset) {
-	TCGv_i32 byte_offset = tcg_temp_new_i32();
-	TCGv_ptr base = tcg_temp_new_ptr();
-	TCGv_ptr pointer = tcg_temp_new_ptr();
-
-	tcg_gen_shli_i32(byte_offset, offset, 1);
-	tcg_gen_ext_i32_ptr(pointer, byte_offset);
-	tcg_gen_ld_ptr(base, tcg_env, offsetof(teak_tcg_core_t, memory.direct_data_bank));
-	tcg_gen_add_ptr(pointer, pointer, base);
-	return pointer;
-}
-
-static void tcg_emit_data_read(TCGv_i32 result, TCGv_i32 address, teak_tcg_data_space_t space) {
+static void tcg_emit_data_read(TCGv_i32 result, TCGv_i32 address, teak_data_space_t space) {
 	TCGLabel *slow = gen_new_label();
-	TCGLabel *direct = gen_new_label();
-	TCGLabel *high = gen_new_label();
 	TCGLabel *done = gen_new_label();
-	TCGLabel *zero = space == TEAK_TCG_DATA_SPACE_ALL ? NULL : gen_new_label();
-	TCGv_i32 limit = tcg_temp_new_i32();
-	TCGv_i32 high_base = tcg_temp_new_i32();
-	TCGv_i32 high_offset = tcg_temp_new_i32();
-	TCGv_i32 high_size = tcg_temp_new_i32();
-	TCGv_i32 bank_base = tcg_temp_new_i32();
-	TCGv_i32 bank_offset = tcg_temp_new_i32();
-	TCGv_i32 bank_size = tcg_temp_new_i32();
 	uint32_t access = tcg_memory_access++;
+	TCGv_ptr page = tcg_emit_data_page(address, offsetof(teak_tcg_core_t, data_map.read_pages[space]));
 
-	if (space != TEAK_TCG_DATA_SPACE_ALL) {
-		TCGv_i32 y_space_base = tcg_temp_new_i32();
-		TCGCond condition = space == TEAK_TCG_DATA_SPACE_XZ ? TCG_COND_GEU : TCG_COND_LTU;
-
-		tcg_gen_ld16u_i32(y_space_base, tcg_env, offsetof(teak_tcg_core_t, memory.y_space_base));
-		tcg_gen_brcond_i32(condition, address, y_space_base, zero);
-	}
-
-	tcg_gen_ld_i32(limit, tcg_env, offsetof(teak_tcg_core_t, memory.direct_data_read_size));
-	tcg_gen_brcond_i32(TCG_COND_GEU, address, limit, high);
-	tcg_gen_ld_i32(bank_base, tcg_env, offsetof(teak_tcg_core_t, memory.direct_data_bank_base));
-	tcg_gen_sub_i32(bank_offset, address, bank_base);
-	tcg_gen_ld_i32(bank_size, tcg_env, offsetof(teak_tcg_core_t, memory.direct_data_bank_size));
-	tcg_gen_brcond_i32(TCG_COND_GEU, bank_offset, bank_size, direct);
-	tcg_gen_ld16u_i32(result, tcg_emit_direct_data_bank_pointer(bank_offset), 0);
-	tcg_gen_br(done);
-
-	gen_set_label(high);
-	tcg_gen_ld_i32(high_base, tcg_env, offsetof(teak_tcg_core_t, memory.direct_data_high_read_base));
-	tcg_gen_sub_i32(high_offset, address, high_base);
-	tcg_gen_ld_i32(high_size, tcg_env, offsetof(teak_tcg_core_t, memory.direct_data_high_read_size));
-	tcg_gen_brcond_i32(TCG_COND_GEU, high_offset, high_size, slow);
-
-	gen_set_label(direct);
-	tcg_gen_ld16u_i32(result, tcg_emit_direct_data_pointer(address), 0);
+	tcg_gen_brcondi_ptr(TCG_COND_EQ, page, 0, slow);
+	tcg_gen_ld16u_i32(result, tcg_emit_data_word_pointer(page, address), 0);
 	tcg_gen_br(done);
 
 	gen_set_label(slow);
-	switch (space) {
-		case TEAK_TCG_DATA_SPACE_ALL:
-			gen_helper_teak_tcg_data_read_at(result, tcg_env, address, tcg_memory_pc, tcg_memory_cycle,
-				tcg_constant_i32(access));
-			break;
-
-		case TEAK_TCG_DATA_SPACE_XZ:
-			gen_helper_teak_tcg_data_read_xz_at(result, tcg_env, address, tcg_memory_pc, tcg_memory_cycle,
-				tcg_constant_i32(access));
-			break;
-
-		case TEAK_TCG_DATA_SPACE_Y:
-			gen_helper_teak_tcg_data_read_y_at(result, tcg_env, address, tcg_memory_pc, tcg_memory_cycle,
-				tcg_constant_i32(access));
-			break;
-	}
-	tcg_gen_br(done);
-
-	if (zero != NULL) {
-		gen_set_label(zero);
-		tcg_gen_movi_i32(result, 0);
-	}
+	gen_helper_teak_tcg_data_read_at(result, tcg_env, address, tcg_memory_pc, tcg_memory_cycle,
+		tcg_constant_i32(access));
 	gen_set_label(done);
 }
 
 static void tcg_emit_data_write(TCGv_i32 address, TCGv_i32 value) {
 	TCGLabel *slow = gen_new_label();
 	TCGLabel *done = gen_new_label();
-	TCGv_i32 limit = tcg_temp_new_i32();
 	uint32_t access = tcg_memory_access++;
+	TCGv_ptr page = tcg_emit_data_page(address, offsetof(teak_tcg_core_t, data_map.write_pages));
 
-	tcg_gen_ld_i32(limit, tcg_env, offsetof(teak_tcg_core_t, memory.direct_data_write_size));
-	tcg_gen_brcond_i32(TCG_COND_GEU, address, limit, slow);
-	tcg_gen_st16_i32(value, tcg_emit_direct_data_pointer(address), 0);
+	tcg_gen_brcondi_ptr(TCG_COND_EQ, page, 0, slow);
+	tcg_gen_st16_i32(value, tcg_emit_data_word_pointer(page, address), 0);
 	tcg_gen_br(done);
 
 	gen_set_label(slow);
@@ -267,11 +208,11 @@ static void tcg_emit_data_write(TCGv_i32 address, TCGv_i32 value) {
 }
 
 #define gen_helper_teak_tcg_data_read(result, env, address) \
-	tcg_emit_data_read(result, address, TEAK_TCG_DATA_SPACE_ALL)
+	tcg_emit_data_read(result, address, TEAK_DATA_SPACE_ALL)
 #define gen_helper_teak_tcg_data_read_xz(result, env, address) \
-	tcg_emit_data_read(result, address, TEAK_TCG_DATA_SPACE_XZ)
+	tcg_emit_data_read(result, address, TEAK_DATA_SPACE_XZ)
 #define gen_helper_teak_tcg_data_read_y(result, env, address) \
-	tcg_emit_data_read(result, address, TEAK_TCG_DATA_SPACE_Y)
+	tcg_emit_data_read(result, address, TEAK_DATA_SPACE_Y)
 #define gen_helper_teak_tcg_data_write(env, address, value) tcg_emit_data_write(address, value)
 
 static uint16_t tcg_pack_shadow_st0(const teak_state_t *state) {
@@ -819,71 +760,29 @@ static void tcg_add_data_wait_cycles(teak_tcg_core_t *core, uint32_t address) {
 	core->batch_cycles_remaining -= MIN(core->batch_cycles_remaining, core->memory.wait_state_cycles);
 }
 
-static bool tcg_direct_data_read(teak_tcg_core_t *core, uint32_t address, uint16_t *value) {
-	if (core->memory.direct_data == NULL)
-		return false;
-	if (address - core->memory.direct_data_high_read_base < core->memory.direct_data_high_read_size) {
-		*value = qatomic_read(&core->memory.direct_data[address]);
-		return true;
-	}
-	if (address >= core->memory.direct_data_read_size)
-		return false;
-	if (address - core->memory.direct_data_bank_base < core->memory.direct_data_bank_size) {
-		*value = qatomic_read(&core->memory.direct_data_bank[address - core->memory.direct_data_bank_base]);
-		return true;
-	}
+static bool tcg_mapped_data_read(teak_tcg_core_t *core, uint32_t address, uint16_t *value) {
+	const uint16_t *page = core->data_map.read_pages[TEAK_DATA_SPACE_ALL][address / TEAK_DATA_PAGE_WORDS];
 
-	*value = qatomic_read(&core->memory.direct_data[address]);
+	if (page == NULL)
+		return false;
+	*value = qatomic_read(&page[address % TEAK_DATA_PAGE_WORDS]);
 	return true;
 }
 
-static bool tcg_direct_data_write(teak_tcg_core_t *core, uint32_t address, uint16_t value) {
-	if (core->memory.direct_data == NULL || address >= core->memory.direct_data_write_size)
-		return false;
+static bool tcg_mapped_data_write(teak_tcg_core_t *core, uint32_t address, uint16_t value) {
+	uint16_t *page = core->data_map.write_pages[address / TEAK_DATA_PAGE_WORDS];
 
-	qatomic_set(&core->memory.direct_data[address], value);
+	if (page == NULL)
+		return false;
+	qatomic_set(&page[address % TEAK_DATA_PAGE_WORDS], value);
 	return true;
 }
 
 uint32_t HELPER(teak_tcg_data_read_at)(void *opaque, uint32_t address, uint32_t pc, uint32_t cycle_offset, uint32_t access) {
 	teak_state_t *state = opaque;
 	teak_tcg_core_t *core = container_of(state, teak_tcg_core_t, state);
-	uint16_t value;
-
-	if (tcg_direct_data_read(core, address, &value))
-		return value;
 
 	state->trace_pc = pc;
-	tcg_synchronize_data_access(core, address, cycle_offset, access);
-	tcg_add_data_wait_cycles(core, address);
-	return teak_data_read(core, address);
-}
-
-uint32_t HELPER(teak_tcg_data_read_xz_at)(void *opaque, uint32_t address, uint32_t pc, uint32_t cycle_offset, uint32_t access) {
-	teak_state_t *state = opaque;
-	teak_tcg_core_t *core = container_of(state, teak_tcg_core_t, state);
-	uint16_t value;
-
-	state->trace_pc = pc;
-	if (address >= core->memory.y_space_base)
-		return 0;
-	if (tcg_direct_data_read(core, address, &value))
-		return value;
-	tcg_synchronize_data_access(core, address, cycle_offset, access);
-	tcg_add_data_wait_cycles(core, address);
-	return teak_data_read(core, address);
-}
-
-uint32_t HELPER(teak_tcg_data_read_y_at)(void *opaque, uint32_t address, uint32_t pc, uint32_t cycle_offset, uint32_t access) {
-	teak_state_t *state = opaque;
-	teak_tcg_core_t *core = container_of(state, teak_tcg_core_t, state);
-	uint16_t value;
-
-	state->trace_pc = pc;
-	if (address < core->memory.y_space_base)
-		return 0;
-	if (tcg_direct_data_read(core, address, &value))
-		return value;
 	tcg_synchronize_data_access(core, address, cycle_offset, access);
 	tcg_add_data_wait_cycles(core, address);
 	return teak_data_read(core, address);
@@ -894,9 +793,6 @@ void HELPER(teak_tcg_data_write_at)(void *opaque, uint32_t address, uint32_t val
 ) {
 	teak_state_t *state = opaque;
 	teak_tcg_core_t *core = container_of(state, teak_tcg_core_t, state);
-
-	if (tcg_direct_data_write(core, address, (uint16_t) value))
-		return;
 
 	state->trace_pc = pc;
 	tcg_synchronize_data_access(core, address, cycle_offset, access);
@@ -1032,13 +928,13 @@ void HELPER(teak_tcg_alb_memory)(void *opaque, uint32_t address, uint32_t mask, 
 	uint16_t value;
 	uint16_t result;
 
-	if (!tcg_direct_data_read(core, address, &value)) {
+	if (!tcg_mapped_data_read(core, address, &value)) {
 		state->trace_pc = pc;
 		tcg_synchronize_data_access(core, address, cycle_offset, access);
 		value = teak_data_read(core, address);
 	}
 	result = tcg_alb_result(state, alb_operation, value, mask);
-	if (tcg_alb_modifies_operand(alb_operation) && !tcg_direct_data_write(core, address, result))
+	if (tcg_alb_modifies_operand(alb_operation) && !tcg_mapped_data_write(core, address, result))
 		teak_data_write(core, address, result);
 }
 
@@ -5311,7 +5207,7 @@ static void tcg_precompile_data_read(teak_tcg_core_t *core, const teak_tcg_preco
 	for (size_t i = 0; i < count; i++) {
 		uint16_t item;
 
-		if (!tcg_direct_data_read(core, addresses[i], &item)) {
+		if (!tcg_mapped_data_read(core, addresses[i], &item)) {
 			result->kind = TEAK_TCG_PRECOMPILE_UNKNOWN;
 			return;
 		}

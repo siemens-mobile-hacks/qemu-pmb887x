@@ -90,6 +90,21 @@ static void dsp_runtime_map_program_bank(dsp_runtime_t *runtime, size_t bank) {
 	dsp_runtime_update_program_context(runtime);
 }
 
+static const uint16_t *dsp_runtime_data_bank(const dsp_runtime_t *runtime, size_t bank) {
+	const pmb887x_dsp_config_t *config = runtime->config;
+	return runtime->data_banks + bank * (config->shared_base - config->data_bank_base);
+}
+
+static bool dsp_runtime_is_data_bank(const dsp_runtime_t *runtime, uint16_t address) {
+	const pmb887x_dsp_config_t *config = runtime->config;
+	return address >= config->data_bank_base && address < config->shared_base;
+}
+
+static uint16_t dsp_runtime_data_bank_read(const dsp_runtime_t *runtime, uint16_t address) {
+	const uint16_t *bank = dsp_runtime_data_bank(runtime, runtime->active_data_bank);
+	return bank[address - runtime->config->data_bank_base];
+}
+
 static void dsp_runtime_map_data_bank(dsp_runtime_t *runtime, size_t bank) {
 	const pmb887x_dsp_config_t *config = runtime->config;
 	size_t bank_words = config->shared_base - config->data_bank_base;
@@ -102,7 +117,7 @@ static void dsp_runtime_map_data_bank(dsp_runtime_t *runtime, size_t bank) {
 		return;
 	}
 
-	runtime->core.memory.direct_data_bank = runtime->data_banks + bank * bank_words;
+	teak_data_map_read(&runtime->core, config->data_bank_base, bank_words, dsp_runtime_data_bank(runtime, bank));
 	runtime->active_data_bank = bank;
 }
 
@@ -218,8 +233,8 @@ static uint16_t dsp_runtime_data_read(void *opaque, uint32_t address) {
 
 	if (dsp_runtime_is_mmio(runtime, data_address))
 		return dsp_bus_read_at(runtime->bus, data_address, runtime->core.state.trace_pc);
-	if (data_address - runtime->config->data_bank_base < runtime->core.memory.direct_data_bank_size)
-		return runtime->core.memory.direct_data_bank[data_address - runtime->config->data_bank_base];
+	if (dsp_runtime_is_data_bank(runtime, data_address))
+		return dsp_runtime_data_bank_read(runtime, data_address);
 	if (data_address >= runtime->config->shared_base)
 		return qatomic_read(&runtime->data[data_address]);
 	return runtime->data[data_address];
@@ -250,8 +265,8 @@ static void dsp_runtime_data_write(void *opaque, uint32_t address, uint16_t valu
 
 static uint16_t dsp_runtime_bus_data_read(void *opaque, uint16_t address) {
 	dsp_runtime_t *runtime = opaque;
-	if (address - runtime->config->data_bank_base < runtime->core.memory.direct_data_bank_size)
-		return runtime->core.memory.direct_data_bank[address - runtime->config->data_bank_base];
+	if (dsp_runtime_is_data_bank(runtime, address))
+		return dsp_runtime_data_bank_read(runtime, address);
 	return qatomic_read(&runtime->data[address]);
 }
 
@@ -268,6 +283,17 @@ static uint16_t dsp_runtime_external_read(void *opaque, uint32_t index) {
 static void dsp_runtime_external_write(void *opaque, uint32_t index, uint16_t value) {
 	dsp_runtime_t *runtime = opaque;
 	dsp_bus_external_write(runtime->bus, index, value);
+}
+
+static void dsp_runtime_map_data(dsp_runtime_t *runtime) {
+	const pmb887x_dsp_config_t *config = runtime->config;
+	uint32_t high_base = config->mmio_base + config->mmio_size;
+	uint32_t high_words = PMB887X_DSP_ADDRESS_SPACE_WORDS - high_base;
+
+	teak_data_map_read(&runtime->core, 0, config->shared_base, runtime->data);
+	teak_data_map_read(&runtime->core, high_base, high_words, runtime->data + high_base);
+	teak_data_map_write(&runtime->core, 0, config->data_rom_base, runtime->data);
+	teak_data_map_write(&runtime->core, high_base, high_words, runtime->data + high_base);
 }
 
 dsp_runtime_t *dsp_runtime_create(
@@ -344,13 +370,6 @@ dsp_runtime_t *dsp_runtime_create(
 			.read = dsp_runtime_external_read,
 			.write = dsp_runtime_external_write,
 		},
-		.direct_data = runtime->data,
-		.direct_data_read_size = config->shared_base,
-		.direct_data_write_size = config->data_rom_base,
-		.direct_data_bank_base = config->data_bank_base,
-		.direct_data_bank_size = data_bank_words,
-		.direct_data_high_read_base = config->mmio_base + config->mmio_size,
-		.direct_data_high_read_size = PMB887X_DSP_ADDRESS_SPACE_WORDS - (config->mmio_base + config->mmio_size),
 		.cycle_opaque = runtime,
 		.advance_cycles = dsp_runtime_advance_cycles,
 		.cycle_sensitive_base = config->mmio_base,
@@ -362,6 +381,7 @@ dsp_runtime_t *dsp_runtime_create(
 	};
 
 	teak_tcg_init(&runtime->core, &memory);
+	dsp_runtime_map_data(runtime);
 	dsp_runtime_reset(runtime);
 	return runtime;
 }
