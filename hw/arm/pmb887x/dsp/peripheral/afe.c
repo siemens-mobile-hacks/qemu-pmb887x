@@ -25,6 +25,8 @@ static const uint16_t AFE_CONTROL_MASK = TEAK_AFE_BCON_MODE | TEAK_AFE_BCON_RXST
 #define AFE_DAC_RING_OFFSET	0x40U
 
 #define AFE_DEFAULT_RATE_HZ	8000
+#define AFE_RING_POSITIONS	64
+#define AFE_MS_CLOCK_DIVIDER	13
 
 static const uint16_t AFE_POWER_DOWN_SAMPLES[] = {
 	0x85EA, 0x85F3, 0xB12F, 0x8000, 0x9048, 0x8A3B, 0x81C2, 0x8BCF,
@@ -45,9 +47,13 @@ struct afe_state_t {
 	dsp_host_t host;
 	uint16_t ram_base;
 	uint16_t receive_position;
+	uint16_t receive_first_word;
 	uint16_t transmit_position;
 	size_t receive_cycles;
 	size_t transmit_cycles;
+	uint32_t clock_hz;
+	uint32_t ms_clock_hz;
+	uint64_t clock_phase;
 	afe_audio_t *audio;
 };
 
@@ -75,15 +81,19 @@ static void afe_reset(dsp_device_t *device) {
 	dsp_device_t *interrupt = state->interrupt;
 	dsp_host_t host = state->host;
 	uint16_t ram_base = state->ram_base;
+	uint32_t clock_hz = state->clock_hz;
+	uint32_t ms_clock_hz = state->ms_clock_hz;
 	afe_audio_t *audio = state->audio;
 
-	afe_audio_reset(audio);
+	afe_audio_set_active(audio, false);
 	memset(state, 0, sizeof(*state));
 	state->audio = audio;
 	state->interrupt = interrupt;
 	state->host = host;
 	state->ram_base = ram_base;
-	afe_audio_set_rate(audio, AFE_DEFAULT_RATE_HZ);
+	state->clock_hz = clock_hz;
+	state->ms_clock_hz = ms_clock_hz;
+	afe_audio_set_format(audio, AFE_DEFAULT_RATE_HZ, 1);
 }
 
 static bool afe_read(dsp_device_t *device, uint16_t offset, uint32_t pc, uint16_t *value) {
@@ -103,18 +113,28 @@ static bool afe_read(dsp_device_t *device, uint16_t offset, uint32_t pc, uint16_
 	return true;
 }
 
-static size_t afe_receive_sample_cycles(const afe_state_t *state) {
+/* From 31.746 kHz each receive sample is a pair of ring words. */
+static bool afe_receive_is_stereo(const afe_state_t *state) {
+	switch (state->registers[TEAK_AFE_BCON] & TEAK_AFE_BCON_RXRATE) {
+		case TEAK_AFE_BCON_RXRATE_KHZ_8:
+		case TEAK_AFE_BCON_RXRATE_KHZ_16:
+			return false;
+	}
+	return true;
+}
+
+static size_t afe_receive_word_cycles(const afe_state_t *state) {
 	switch (state->registers[TEAK_AFE_BCON] & TEAK_AFE_BCON_RXRATE) {
 		case TEAK_AFE_BCON_RXRATE_KHZ_8:
 			return 1000;
 		case TEAK_AFE_BCON_RXRATE_KHZ_16:
 			return 500;
 		case TEAK_AFE_BCON_RXRATE_KHZ_31_746:
-			return 252;
+			return 126;
 		case TEAK_AFE_BCON_RXRATE_KHZ_44_444:
-			return 180;
+			return 90;
 		case TEAK_AFE_BCON_RXRATE_KHZ_47_619:
-			return 168;
+			return 84;
 	}
 	return 1000;
 }
@@ -153,12 +173,15 @@ static bool afe_write(dsp_device_t *device, uint16_t offset, uint32_t pc, uint16
 			uint16_t previous_control = state->registers[offset];
 
 			state->registers[offset] = value & AFE_CONTROL_MASK;
-			if (((previous_control ^ state->registers[offset]) & TEAK_AFE_BCON_RXRATE) != 0)
-				afe_audio_set_rate(state->audio, afe_receive_sample_rate_hz(state));
+			if (((previous_control ^ state->registers[offset]) & TEAK_AFE_BCON_RXRATE) != 0) {
+				afe_audio_set_format(state->audio, afe_receive_sample_rate_hz(state),
+					afe_receive_is_stereo(state) ? 2 : 1);
+			}
 			if (!afe_receive_active(state)) {
 				state->receive_position = 0;
 				state->receive_cycles = 0;
 			}
+			afe_audio_set_active(state->audio, afe_receive_active(state));
 			if (!afe_transmit_active(state)) {
 				state->transmit_position = 0;
 				state->transmit_cycles = 0;
@@ -195,22 +218,33 @@ dsp_device_t *afe_create(const pmb887x_dsp_peripheral_config_t *config, dsp_devi
 	return dsp_device_create(config, &afe_ops, state);
 }
 
-static bool afe_receive_sample(afe_state_t *state) {
-	uint16_t interrupt_position = state->registers[TEAK_AFE_INTPTR] & TEAK_AFE_INTPTR_RXINTPTR;
+static void afe_receive_publish(afe_state_t *state, uint16_t word) {
+	if (!afe_receive_is_stereo(state)) {
+		afe_audio_produce(state->audio, &word, 1);
+		return;
+	}
+	if ((state->receive_position & 1) == 0) {
+		state->receive_first_word = word;
+		return;
+	}
+	uint16_t frame[] = { state->receive_first_word, word };
+	afe_audio_produce(state->audio, frame, ARRAY_SIZE(frame));
+}
 
-	afe_audio_produce(state->audio, state->host.data_read(state->host.opaque,
-		state->ram_base + AFE_DAC_RING_OFFSET + state->receive_position));
+static void afe_receive_word(afe_state_t *state) {
+	uint16_t interrupt_position = state->registers[TEAK_AFE_INTPTR] & TEAK_AFE_INTPTR_RXINTPTR;
+	uint16_t word = state->host.data_read(state->host.opaque,
+		state->ram_base + AFE_DAC_RING_OFFSET + state->receive_position);
+
+	afe_receive_publish(state, word);
 
 	state->receive_position++;
 	state->receive_position &= TEAK_AFE_RWADDR_RDADDR;
-	if (state->receive_position != interrupt_position)
-		return false;
-
-	dsp_int_set_flags(state->interrupt, AFE_INTERRUPT_GROUP, TEAK_INT_FINTB0_VBRX);
-	return true;
+	if (state->receive_position == interrupt_position)
+		dsp_int_set_flags(state->interrupt, AFE_INTERRUPT_GROUP, TEAK_INT_FINTB0_VBRX);
 }
 
-static bool afe_transmit_sample(afe_state_t *state) {
+static void afe_transmit_sample(afe_state_t *state) {
 	uint16_t interrupt_position = state->registers[TEAK_AFE_INTPTR] >> TEAK_AFE_INTPTR_TXINTPTR_SHIFT;
 	bool power_down = (state->registers[TEAK_AFE_VTXCTRL] & TEAK_AFE_VTXCTRL_TXMODE) ==
 		TEAK_AFE_VTXCTRL_TXMODE_POWER_DOWN;
@@ -224,38 +258,46 @@ static bool afe_transmit_sample(afe_state_t *state) {
 
 	state->transmit_position++;
 	state->transmit_position &= TEAK_AFE_RWADDR_WRADDR >> TEAK_AFE_RWADDR_WRADDR_SHIFT;
-	if (state->transmit_position != interrupt_position)
-		return false;
-
-	dsp_int_set_flags(state->interrupt, AFE_INTERRUPT_GROUP, TEAK_INT_FINTB0_VBTX);
-	return true;
+	if (state->transmit_position == interrupt_position)
+		dsp_int_set_flags(state->interrupt, AFE_INTERRUPT_GROUP, TEAK_INT_FINTB0_VBTX);
 }
 
-size_t afe_advance(dsp_device_t *device, size_t cycles) {
+static uint32_t afe_get_clock_hz(const afe_state_t *state) {
+	return state->ms_clock_hz / AFE_MS_CLOCK_DIVIDER;
+}
+
+static size_t afe_dsp_cycles_to_afe_cycles(afe_state_t *state, size_t dsp_cycles) {
+	if (state->clock_hz == 0)
+		return 0;
+
+	state->clock_phase += (uint64_t) dsp_cycles * afe_get_clock_hz(state);
+	size_t afe_cycles = state->clock_phase / state->clock_hz;
+	state->clock_phase %= state->clock_hz;
+	return afe_cycles;
+}
+
+void afe_advance(dsp_device_t *device, size_t cycles) {
 	afe_state_t *state = device->state;
-	size_t remaining_cycles = cycles;
+	size_t remaining_cycles = afe_dsp_cycles_to_afe_cycles(state, cycles);
 
 	while (remaining_cycles != 0) {
 		bool receive_active = afe_receive_active(state);
 		bool transmit_active = afe_transmit_active(state);
 
 		if (!receive_active && !transmit_active)
-			return cycles;
+			return;
 
-		size_t receive_period = afe_receive_sample_cycles(state);
+		size_t receive_period = afe_receive_word_cycles(state);
 		size_t transmit_period = afe_transmit_sample_cycles(state);
-		bool interrupt = false;
 
 		if (receive_active && state->receive_cycles >= receive_period) {
 			state->receive_cycles -= receive_period;
-			interrupt |= afe_receive_sample(state);
+			afe_receive_word(state);
 		}
 		if (transmit_active && state->transmit_cycles >= transmit_period) {
 			state->transmit_cycles -= transmit_period;
-			interrupt |= afe_transmit_sample(state);
+			afe_transmit_sample(state);
 		}
-		if (interrupt)
-			break;
 
 		size_t receive_step = receive_active ? receive_period - state->receive_cycles : SIZE_MAX;
 		size_t transmit_step = transmit_active ? transmit_period - state->transmit_cycles : SIZE_MAX;
@@ -269,16 +311,54 @@ size_t afe_advance(dsp_device_t *device, size_t cycles) {
 
 		if (receive_active && state->receive_cycles == receive_period) {
 			state->receive_cycles = 0;
-			interrupt |= afe_receive_sample(state);
+			afe_receive_word(state);
 		}
 		if (transmit_active && state->transmit_cycles == transmit_period) {
 			state->transmit_cycles = 0;
-			interrupt |= afe_transmit_sample(state);
+			afe_transmit_sample(state);
 		}
-		if (interrupt)
-			break;
 	}
-	return cycles - remaining_cycles;
+}
+
+static size_t afe_cycles_until_interrupt(size_t cycles, size_t period, uint16_t position, uint16_t interrupt_position) {
+	size_t following_positions = (interrupt_position - position - 1) & (AFE_RING_POSITIONS - 1);
+	return period - MIN(cycles, period) + following_positions * period;
+}
+
+size_t afe_get_cycles_until_event(const dsp_device_t *device) {
+	const afe_state_t *state = device->state;
+	uint32_t afe_clock_hz = afe_get_clock_hz(state);
+	uint16_t interrupt_positions = state->registers[TEAK_AFE_INTPTR];
+	size_t afe_cycles = SIZE_MAX;
+
+	if (state->clock_hz == 0 || afe_clock_hz == 0)
+		return SIZE_MAX;
+	if (afe_receive_active(state)) {
+		afe_cycles = MIN(afe_cycles, afe_cycles_until_interrupt(state->receive_cycles,
+			afe_receive_word_cycles(state), state->receive_position,
+			interrupt_positions & TEAK_AFE_INTPTR_RXINTPTR));
+	}
+	if (afe_transmit_active(state)) {
+		afe_cycles = MIN(afe_cycles, afe_cycles_until_interrupt(state->transmit_cycles,
+			afe_transmit_sample_cycles(state), state->transmit_position,
+			interrupt_positions >> TEAK_AFE_INTPTR_TXINTPTR_SHIFT));
+	}
+	if (afe_cycles == SIZE_MAX)
+		return SIZE_MAX;
+	if (afe_cycles == 0)
+		return 0;
+	return DIV_ROUND_UP((uint64_t) afe_cycles * state->clock_hz - state->clock_phase, afe_clock_hz);
+}
+
+void afe_set_clock_hz(dsp_device_t *device, uint32_t frequency_hz) {
+	afe_state_t *state = device->state;
+	state->clock_hz = frequency_hz;
+	state->clock_phase = 0;
+}
+
+void afe_set_ms_clock_hz(dsp_device_t *device, uint32_t frequency_hz) {
+	afe_state_t *state = device->state;
+	state->ms_clock_hz = frequency_hz;
 }
 
 bool afe_is_active(const dsp_device_t *device) {

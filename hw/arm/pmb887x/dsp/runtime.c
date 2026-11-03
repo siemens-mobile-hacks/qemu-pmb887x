@@ -10,6 +10,9 @@
 #include "hw/arm/pmb887x/trace.h"
 
 #define DSP_SLICE_CYCLES	4096
+#define DSP_RESET_VECTOR_WORDS	2
+#define DSP_BRANCH_ALWAYS_WORD	0x4180U
+#define DSP_PROGRAM_ROM_ENTRY_OFFSET	2
 
 struct dsp_runtime_t {
 	const pmb887x_dsp_config_t *config;
@@ -178,7 +181,11 @@ static void dsp_runtime_program_write(void *opaque, uint32_t address, uint16_t v
 			address, value, runtime->core.state.pc);
 		return;
 	}
-	if (address >= runtime->config->program_rom_base || qatomic_read(&runtime->program[address]) == value)
+	if (address < DSP_RESET_VECTOR_WORDS)
+		return;
+	if (address >= runtime->config->program_rom_base)
+		return;
+	if (qatomic_read(&runtime->program[address]) == value)
 		return;
 
 	if (!qatomic_read(&runtime->program_warming))
@@ -385,12 +392,16 @@ void dsp_runtime_reset(dsp_runtime_t *runtime) {
 	const pmb887x_dsp_config_t *config = runtime->config;
 	size_t program_fixed_words = config->program_bank_base - config->program_rom_base;
 	size_t data_fixed_words = config->data_bank_base - config->data_rom_base;
+	uint16_t rom_entry = config->program_rom_base + DSP_PROGRAM_ROM_ENTRY_OFFSET;
 
 	dsp_runtime_load_words(runtime->program + config->program_rom_base, runtime->program_rom, program_fixed_words);
 	dsp_runtime_load_words(runtime->data + config->data_rom_base, runtime->data_rom, data_fixed_words);
+	/* P:0000 is the reset vector (TeakLite 4.41, 3.6.1); hardware holds a br to the ROM entry and ignores writes. */
+	qatomic_set(&runtime->program[0], DSP_BRANCH_ALWAYS_WORD);
+	qatomic_set(&runtime->program[1], rom_entry);
 
 	dsp_bus_reset(runtime->bus);
-	teak_tcg_reset(&runtime->core, config->program_rom_base + 2);
+	teak_tcg_reset(&runtime->core, rom_entry);
 	runtime->program_generation++;
 	dsp_runtime_update_program_context(runtime);
 
@@ -480,11 +491,11 @@ size_t dsp_runtime_run(dsp_runtime_t *runtime, size_t max_cycles, bool *deferred
 			DPRINTF("native execution stopped: cpu=%s pc=%05X opcode=%04X op=%u decoded=%u error=%u lp=%u bcn=%u\n",
 				runtime->config->name, pc, word, instruction.opcode, decoded, runtime->core.translation_error,
 				runtime->core.state.lp, runtime->core.state.bcn);
-			if (runtime->core.state.bcn != 0) {
-				size_t level = runtime->core.state.bcn - 1;
-				DPRINTF("active block repeat: level=%zu start=%04X end=%04X lc=%04X\n", level,
-					runtime->core.state.block_repeat_start[level], runtime->core.state.block_repeat_end[level],
-					runtime->core.state.block_repeat_lc[level]);
+			if (runtime->core.state.lp) {
+				uint8_t slot = teak_block_repeat_slot(runtime->core.state.bcn);
+				DPRINTF("active block repeat: slot=%u start=%04X end=%04X lc=%04X\n", slot,
+					runtime->core.state.block_repeat_start[slot], runtime->core.state.block_repeat_end[slot],
+					runtime->core.state.block_repeat_lc[slot]);
 			}
 			runtime->halted = true;
 			break;
@@ -525,12 +536,9 @@ size_t dsp_runtime_advance_idle_until_event(dsp_runtime_t *runtime, size_t max_c
 	return cycles;
 }
 
-size_t dsp_runtime_advance_idle(dsp_runtime_t *runtime, size_t cycles, size_t afe_cycles) {
+void dsp_runtime_advance_idle(dsp_runtime_t *runtime, size_t cycles) {
 	if (cycles != 0)
 		dsp_bus_advance_idle(runtime->bus, cycles * runtime->clock_divider);
-	if (afe_cycles != 0)
-		return dsp_bus_advance_afe(runtime->bus, afe_cycles);
-	return 0;
 }
 
 void dsp_runtime_set_clock_divider(dsp_runtime_t *runtime, uint32_t divider) {

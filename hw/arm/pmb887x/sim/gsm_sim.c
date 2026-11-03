@@ -72,7 +72,7 @@ enum gsm_sim_file_id_t {
 	GSM_SIM_FILE_EF_MSISDN = 0x6F40,
 };
 
-static const uint8_t GSM_SIM_ATR[] = { 0x3B, 0x00 };
+static const uint8_t GSM_SIM_ATR[] = { 0x3B, 0x10, 0x95 };
 static const uint8_t GSM_SIM_ELP[] = { 'e', 'n' };
 static const uint8_t GSM_SIM_ICCID[] = { 0x98, 0x88, 0x12, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x20 };
 static const uint8_t GSM_SIM_LP[] = { 0xFF };

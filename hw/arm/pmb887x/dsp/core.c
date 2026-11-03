@@ -15,13 +15,9 @@
 #define TEAK_OPCODE_MOV_REGISTER_B_ACCUMULATOR_MASK	0xFFC0U
 #define TEAK_OPCODE_MOV_ACCUMULATOR_ACCUMULATOR_MASK	0xF398U
 #define TEAK_OPCODE_MOV_ACCUMULATOR_LOW_ALIAS_MASK	0xF3D8U
-#define TEAK_OPCODE_MOV_ACCUMULATOR_LOW_X1_MASK	0xFFFCU
-#define TEAK_OPCODE_MOV_ACCUMULATOR_LOW_Y1_MASK	0xFFFCU
 #define TEAK_OPCODE_MOV_SPECIAL_ACCUMULATOR_MASK	0xFE9BU
-#define TEAK_OPCODE_MOV_X1_ACCUMULATOR_MASK	0xFFCFU
-#define TEAK_OPCODE_MOV_Y1_ACCUMULATOR_MASK	0xF3FFU
 #define TEAK_OPCODE_MOV_MIXP_REGISTER_MASK	0xFFE0U
-#define TEAK_OPCODE_MOV_REGISTER_MIXP_MASK	0xFFE0U
+#define TEAK_OPCODE_MOV_REGISTER_MIXP_MASK	0xFFC0U
 #define TEAK_OPCODE_MOV_REGISTER_ICR_MASK	0xFFC0U
 #define TEAK_OPCODE_MOV_DATA_IMM8_REGISTER_MASK	0xE300U
 #define TEAK_OPCODE_MOV_DATA_IMM8_ACCUMULATOR_MASK	0xE700U
@@ -44,13 +40,11 @@
 #define TEAK_OPCODE_MOVS_REGISTER_MASK	0xFF80U
 #define TEAK_OPCODE_MOVS_RN_STEP_MASK	0xFF80U
 #define TEAK_OPCODE_MOVS_DATA_IMM8_MASK	0xE700U
-#define TEAK_OPCODE_MOVS_R6_MASK	0xFFFEU
 #define TEAK_OPCODE_MOVSI_REGISTER_MASK	0xF180U
 #define TEAK_OPCODE_MOVR_REGISTER_MASK	0xFEE0U
 #define TEAK_OPCODE_MOVR_RN_STEP_MASK	0xFEE0U
 #define TEAK_OPCODE_MOVR_RN_HIGH_MASK	0xFCE4U
 #define TEAK_OPCODE_MOVR_B_ACCUMULATOR_MASK	0xFFFCU
-#define TEAK_OPCODE_MOVR_R6_MASK	0xFFF7U
 #define TEAK_OPCODE_ALB_DATA_IMM8_MASK	0xF100U
 #define TEAK_OPCODE_ALB_RN_STEP_MASK	0xF1E0U
 #define TEAK_OPCODE_ALB_REGISTER_MASK	0xF1E0U
@@ -64,8 +58,8 @@
 #define TEAK_OPCODE_ALU_RN_STEP_ACCUMULATOR_MASK	0xFEE0U
 #define TEAK_OPCODE_ALU_REGISTER_ACCUMULATOR_MASK	0xFEE0U
 #define TEAK_OPCODE_TEST_ACCUMULATOR_DATA_IMM8_MASK	0xFE00U
-#define TEAK_OPCODE_MODIFY_ACCUMULATOR_MASK	0xEFF0U
-#define TEAK_OPCODE_MODB_CLEAR_ACCUMULATOR_MASK	0xEF70U
+#define TEAK_OPCODE_MODIFY_ACCUMULATOR_MASK	0xEF00U
+#define TEAK_OPCODE_MODB_ACCUMULATOR_MASK	0xEF00U
 #define TEAK_OPCODE_LIMIT_ACCUMULATOR_MASK	0xFFC0U
 #define TEAK_OPCODE_EXPONENT_B_SV_MASK	0xFEE0U
 #define TEAK_OPCODE_EXPONENT_B_ACCUMULATOR_MASK	0xFEE0U
@@ -73,9 +67,9 @@
 #define TEAK_OPCODE_EXPONENT_RN_ACCUMULATOR_MASK	0xFEC0U
 #define TEAK_OPCODE_EXPONENT_REGISTER_SV_MASK	0xFEE0U
 #define TEAK_OPCODE_EXPONENT_REGISTER_ACCUMULATOR_MASK	0xFEE0U
-#define TEAK_OPCODE_EXPONENT_R6_ACCUMULATOR_MASK	0xFFEFU
 #define TEAK_OPCODE_NORMALIZE_MASK	0xFEC0U
 #define TEAK_OPCODE_SWAP_ACCUMULATORS_MASK	0xFFC0U
+#define TEAK_OPCODE_SWAP_RESERVED_MASK	0xFFCEU
 #define TEAK_OPCODE_BANK_EXCHANGE_MASK	0xFF80U
 #define TEAK_OPCODE_DIVISION_STEP_MASK	0xFE00U
 #define TEAK_OPCODE_MAXD_MASK	0xFCE0U
@@ -97,7 +91,6 @@
 #define TEAK_OPCODE_MULTIPLY_DATA_IMM8_MASK	0xF700U
 #define TEAK_OPCODE_MULTIPLY_DUAL_RN_MASK	0xF780U
 #define TEAK_OPCODE_MULTIPLY_MASK	0xF7E0U
-#define TEAK_OPCODE_MULTIPLY_R6_MASK	0xFFF0U
 #define TEAK_OPCODE_MSU_DUAL_RN_MASK	0xFE80U
 #define TEAK_OPCODE_MSU_RN_IMMEDIATE_MASK	0xFEC0U
 #define TEAK_OPCODE_MODIFY_RN_MASK	0xFF80U
@@ -108,6 +101,7 @@
 #define TEAK_OPCODE_CALL_RELATIVE_MASK	0xF800U
 #define TEAK_OPCODE_PUSH_IMMEDIATE_MASK	0xFFC0U
 #define TEAK_OPCODE_PUSH_REGISTER_MASK	0xFFE0U
+#define TEAK_OPCODE_RESERVED_PUSH_PC_MASK	0xFFF0U
 #define TEAK_OPCODE_POP_REGISTER_MASK	0xFFE0U
 #define TEAK_OPCODE_REPEAT_IMMEDIATE_MASK	0xFF00U
 #define TEAK_OPCODE_REPEAT_REGISTER_MASK	0xFF00U
@@ -115,19 +109,14 @@
 #define TEAK_OPCODE_RETURN_INTERRUPT_MASK	0xFFC0U
 #define TEAK_OPCODE_RETURN_STACK_MASK	0xFF00U
 #define TEAK_OPCODE_BREAK_MASK	0xFFC0U
+#define TEAK_OPCODE_DELAYED_RETURN_MASK	0xFFC0U
 #define TEAK_OPCODE_DELAYED_RETURN_INTERRUPT_MASK	0xFFD0U
-#define TEAK_OPCODE_CONTEXT_STORE_MASK	0xFFD0U
+#define TEAK_OPCODE_CONTEXT_MASK	0xFFD0U
 #define TEAK_OPCODE_NOP_MASK	0xFFE0U
+#define TEAK_OPCODE_RESERVED_NOP_MASK	0xFFE0U
 #define TEAK_OPCODE_TRAP_MASK	0xFFE0U
 #define TEAK_OPCODE_INTERRUPT_ENABLE_MASK	0xFFC0U
 #define TEAK_OPCODE_INTERRUPT_DISABLE_MASK	0xFFC0U
-
-static const teak_step_t DSP_MINMAX_ALIAS_STEPS[] = {
-	TEAK_STEP_INCREASE,
-	TEAK_STEP_DECREASE,
-	TEAK_STEP_ZERO,
-	TEAK_STEP_PLUS_STEP,
-};
 
 static uint64_t teak_next_cache_id;
 
@@ -207,9 +196,17 @@ static bool teak_is_minmax_word(uint16_t word) {
 	bool maxd = (word & TEAK_OPCODE_MAXD_MASK) == 0x8060U;
 	bool maximum = (word & TEAK_OPCODE_MAX_MASK) == 0x8460U;
 	bool minimum = (word & TEAK_OPCODE_MIN_MASK) == 0x8860U;
-	bool standard_minimum = (word & 7U) == 0;
-	bool minimum_alias = (word & 0x0318U) == 0;
-	return maxd || maximum || (minimum && (standard_minimum || minimum_alias));
+	return maxd || maximum || minimum;
+}
+
+static bool teak_is_reserved_nop_word(uint16_t word) {
+	bool swap_reserved = (word & TEAK_OPCODE_SWAP_RESERVED_MASK) == 0x498EU;
+	bool reserved_nop = (word & TEAK_OPCODE_RESERVED_NOP_MASK) == 0x4780U;
+	return swap_reserved || reserved_nop;
+}
+
+static bool teak_is_reserved_push_pc_word(uint16_t word) {
+	return (word & TEAK_OPCODE_RESERVED_PUSH_PC_MASK) == 0x47B0U;
 }
 
 static teak_opcode_t teak_decode_word(uint16_t word) {
@@ -221,16 +218,11 @@ static teak_opcode_t teak_decode_word(uint16_t word) {
 		(word & TEAK_OPCODE_EXPONENT_RN_ACCUMULATOR_MASK) == 0x9840U;
 	bool exponent_register = (word & TEAK_OPCODE_EXPONENT_REGISTER_SV_MASK) == 0x9440U ||
 		(word & TEAK_OPCODE_EXPONENT_REGISTER_ACCUMULATOR_MASK) == 0x9040U;
-	bool swap_accumulators = (word & TEAK_OPCODE_SWAP_ACCUMULATORS_MASK) == 0x4980U &&
-		(word & 0xFU) < TEAK_SWAP_OPERATION_COUNT;
+	bool swap_accumulators = (word & TEAK_OPCODE_SWAP_ACCUMULATORS_MASK) == 0x4980U;
 	bool data_minmax = (word & TEAK_OPCODE_MINMAX_DATA_MIN_MASK) == 0x47A0U ||
 		(word & TEAK_OPCODE_MINMAX_DATA_MIN_MASK) == 0x47A4U;
 	bool short_register = (word & TEAK_OPCODE_MOV_SHORT_ACCUMULATOR_HIGH_MASK) == 0x2500U ||
 		(word & TEAK_OPCODE_MOV_SHORT_RN_MASK) == 0x2300U;
-	bool special_to_accumulator = (word & TEAK_OPCODE_MOV_X1_ACCUMULATOR_MASK) == 0x49C1U ||
-		(word & TEAK_OPCODE_MOV_Y1_ACCUMULATOR_MASK) == 0xD299U;
-	bool accumulator_to_special = (word & TEAK_OPCODE_MOV_ACCUMULATOR_LOW_X1_MASK) == 0xD394U ||
-		(word & TEAK_OPCODE_MOV_ACCUMULATOR_LOW_Y1_MASK) == 0xD384U;
 	bool special_alias = (word & TEAK_OPCODE_MOV_SPECIAL_ACCUMULATOR_MASK) == 0xD490U ||
 		(word & TEAK_OPCODE_MOV_SPECIAL_ACCUMULATOR_MASK) == 0xD491U ||
 		(word & TEAK_OPCODE_MOV_SPECIAL_ACCUMULATOR_MASK) == 0xD492U ||
@@ -242,8 +234,16 @@ static teak_opcode_t teak_decode_word(uint16_t word) {
 		(word & TEAK_OPCODE_MOV_REGISTER_DATA_IMM8_MASK) == 0x3000U ||
 		(word & TEAK_OPCODE_MOV_DATA_IMM8_SPECIAL_MASK) == 0x7D00U;
 
-	if ((word & TEAK_OPCODE_CONTEXT_STORE_MASK) == 0xD380U)
+	if (teak_is_reserved_nop_word(word))
+		return TEAK_OP_NOP;
+	if (teak_is_reserved_push_pc_word(word))
+		return TEAK_OP_PUSH_REGISTER;
+	if ((word & TEAK_OPCODE_CONTEXT_MASK) == 0xD380U)
 		return TEAK_OP_CONTEXT_STORE;
+	if ((word & TEAK_OPCODE_CONTEXT_MASK) == 0xD390U)
+		return TEAK_OP_CONTEXT_RESTORE;
+	if ((word & TEAK_OPCODE_DELAYED_RETURN_MASK) == 0xD780U)
+		return TEAK_OP_DELAYED_RETURN;
 	if ((word & TEAK_OPCODE_PUSH_IMMEDIATE_MASK) == 0x5F40U)
 		return TEAK_OP_PUSH_IMMEDIATE;
 	if ((word & TEAK_OPCODE_DELAYED_RETURN_INTERRUPT_MASK) == 0xD7C0U)
@@ -252,12 +252,6 @@ static teak_opcode_t teak_decode_word(uint16_t word) {
 		return TEAK_OP_LIMIT_ACCUMULATOR;
 	if (mov_accumulator_low_alias)
 		return TEAK_OP_MOV_ACCUMULATOR_LOW_SPECIAL;
-	if ((word & TEAK_OPCODE_MOV_ACCUMULATOR_LOW_Y1_MASK) == 0xD384U)
-		return TEAK_OP_MOV_ACCUMULATOR_LOW_SPECIAL;
-	if (word == 0xD7C1U || (word & TEAK_OPCODE_EXPONENT_R6_ACCUMULATOR_MASK) == 0xD382U)
-		return TEAK_OP_EXPONENT;
-	if ((word & TEAK_OPCODE_MOVS_R6_MASK) == 0x5F42U)
-		return TEAK_OP_MOVS_R6;
 	if ((word & TEAK_OPCODE_MOVR_RN_HIGH_MASK) == 0x8864U)
 		return TEAK_OP_MOVR_RN_HIGH;
 	if (exponent_b)
@@ -296,10 +290,6 @@ static teak_opcode_t teak_decode_word(uint16_t word) {
 		return TEAK_OP_MOVD_RN_RN;
 	if ((word & TEAK_OPCODE_MOV_ACCUMULATOR_ACCUMULATOR_MASK) == 0xD290U)
 		return TEAK_OP_MOV_ACCUMULATOR_ACCUMULATOR;
-	if (special_to_accumulator)
-		return TEAK_OP_MOV_SPECIAL_ACCUMULATOR;
-	if (accumulator_to_special)
-		return TEAK_OP_MOV_ACCUMULATOR_LOW_SPECIAL;
 	if (special_alias)
 		return TEAK_OP_MOV_SPECIAL_ACCUMULATOR;
 	if ((word & TEAK_OPCODE_MOV_MIXP_REGISTER_MASK) == 0x47C0U)
@@ -330,8 +320,6 @@ static teak_opcode_t teak_decode_word(uint16_t word) {
 		return TEAK_OP_MOVR_RN_STEP;
 	if ((word & TEAK_OPCODE_MOVR_B_ACCUMULATOR_MASK) == 0x5DF4U)
 		return TEAK_OP_MOVR_B_ACCUMULATOR;
-	if ((word & TEAK_OPCODE_MOVR_R6_MASK) == 0x8961U)
-		return TEAK_OP_MOVR_R6;
 	if ((word & TEAK_OPCODE_MOV_DATA_IMM8_ACCUMULATOR_MASK) == 0x6100U)
 		return TEAK_OP_MOV_DATA_IMM8_ACCUMULATOR;
 	if ((word & TEAK_OPCODE_MOV_DATA_IMM8_ACCUMULATOR_HIGH_EU_MASK) == 0x6500U)
@@ -375,6 +363,8 @@ static teak_opcode_t teak_decode_word(uint16_t word) {
 		case 0xC200:
 		case 0xC400:
 		case 0xC600:
+		case 0xC800:
+		case 0xCA00:
 		case 0xCC00:
 		case 0xCE00:
 			return TEAK_OP_ALU_IMMEDIATE_ACCUMULATOR;
@@ -385,6 +375,8 @@ static teak_opcode_t teak_decode_word(uint16_t word) {
 		case 0x82C0:
 		case 0x84C0:
 		case 0x86C0:
+		case 0x88C0:
+		case 0x8AC0:
 		case 0x8CC0:
 		case 0x8EC0:
 			return TEAK_OP_ALU_IMMEDIATE_ACCUMULATOR;
@@ -413,6 +405,8 @@ static teak_opcode_t teak_decode_word(uint16_t word) {
 		case 0xD4F9:
 		case 0xD4FA:
 		case 0xD4FB:
+		case 0xD4FC:
+		case 0xD4FD:
 		case 0xD4FE:
 		case 0xD4FF:
 			return TEAK_OP_ALU_DATA_IMM16_ACCUMULATOR;
@@ -423,6 +417,8 @@ static teak_opcode_t teak_decode_word(uint16_t word) {
 		case 0x4200:
 		case 0x4400:
 		case 0x4600:
+		case 0x4800:
+		case 0x4A00:
 		case 0x4C00:
 		case 0x4E00:
 			return TEAK_OP_ALU_R7_OFFSET7_ACCUMULATOR;
@@ -433,6 +429,8 @@ static teak_opcode_t teak_decode_word(uint16_t word) {
 		case 0xD4D9:
 		case 0xD4DA:
 		case 0xD4DB:
+		case 0xD4DC:
+		case 0xD4DD:
 		case 0xD4DE:
 		case 0xD4DF:
 			return TEAK_OP_ALU_R7_OFFSET16_ACCUMULATOR;
@@ -513,20 +511,6 @@ static teak_opcode_t teak_decode_word(uint16_t word) {
 		case 0xE400:
 		case 0xE600:
 			return TEAK_OP_MULTIPLY_DATA_IMM8;
-	}
-	if ((word & TEAK_OPCODE_MULTIPLY_R6_MASK) == 0x5EA0U) {
-		uint8_t operation = word >> 1 & 7U;
-		switch (operation) {
-			case TEAK_MULTIPLY_MPY:
-			case TEAK_MULTIPLY_MPYSU:
-			case TEAK_MULTIPLY_MAC:
-			case TEAK_MULTIPLY_MACUS:
-			case TEAK_MULTIPLY_MAA:
-			case TEAK_MULTIPLY_MACUU:
-			case TEAK_MULTIPLY_MACSU:
-			case TEAK_MULTIPLY_MAASU:
-				return TEAK_OP_MULTIPLY_R6;
-		}
 	}
 	if ((word & TEAK_OPCODE_MSU_DUAL_RN_MASK) == 0xD080U)
 		return TEAK_OP_MULTIPLY_DUAL_RN;
@@ -615,42 +599,10 @@ static teak_opcode_t teak_decode_word(uint16_t word) {
 	if ((word & TEAK_OPCODE_INTERRUPT_DISABLE_MASK) == 0x43C0U)
 		return TEAK_OP_DINT;
 
-	if ((word & TEAK_OPCODE_MODB_CLEAR_ACCUMULATOR_MASK) == 0x6F60U)
+	if ((word & TEAK_OPCODE_MODB_ACCUMULATOR_MASK) == 0x6F00U)
 		return TEAK_OP_MODB3_ACCUMULATOR;
-
-	switch (word & TEAK_OPCODE_MODIFY_ACCUMULATOR_MASK) {
-		case 0x6700:
-		case 0x6710:
-		case 0x6720:
-		case 0x6730:
-		case 0x6740:
-		case 0x6750:
-		case 0x6760:
-		case 0x6780:
-		case 0x6790:
-		case 0x67A0:
-		case 0x67B0:
-		case 0x67C0:
-		case 0x67D0:
-		case 0x67E0:
-		case 0x67F0:
-			return TEAK_OP_MODA4_ACCUMULATOR;
-
-		case 0x6F00:
-		case 0x6F10:
-		case 0x6F20:
-		case 0x6F30:
-		case 0x6F40:
-		case 0x6F50:
-			return TEAK_OP_MODB3_ACCUMULATOR;
-	}
-
-	switch (word) {
-		case 0xD780:
-			return TEAK_OP_DELAYED_RETURN;
-		case 0xD390:
-			return TEAK_OP_CONTEXT_RESTORE;
-	}
+	if ((word & TEAK_OPCODE_MODIFY_ACCUMULATOR_MASK) == 0x6700U)
+		return TEAK_OP_MODA4_ACCUMULATOR;
 	return TEAK_OP_UNDEFINED;
 }
 
@@ -715,7 +667,12 @@ static uint8_t teak_decode_accumulator_half_register(uint8_t encoded) {
 	return registers[encoded];
 }
 
-bool teak_decode(teak_tcg_core_t *core, uint32_t address, teak_insn_t *instruction) {
+bool teak_decode_with_expansion_address(
+	teak_tcg_core_t *core,
+	uint32_t address,
+	uint16_t expansion_address,
+	teak_insn_t *instruction
+) {
 	memset(instruction, 0, sizeof(*instruction));
 	instruction->address = address;
 	instruction->word = teak_program_read(core, address);
@@ -786,32 +743,15 @@ bool teak_decode(teak_tcg_core_t *core, uint32_t address, teak_insn_t *instructi
 			break;
 
 		case TEAK_OP_MOV_ACCUMULATOR_LOW_SPECIAL:
+			instruction->source_accumulator = (instruction->word >> 10) & 3U;
 			if ((instruction->word & TEAK_OPCODE_MOV_ACCUMULATOR_LOW_ALIAS_MASK) == 0xD298U) {
-				instruction->source_accumulator = instruction->word >> 10 & 3U;
 				instruction->special_register = TEAK_SPECIAL_DVM;
-			} else if ((instruction->word & TEAK_OPCODE_MOV_ACCUMULATOR_LOW_ALIAS_MASK) == 0xD2D8U) {
-				instruction->source_accumulator = instruction->word >> 10 & 3U;
-				instruction->special_register = TEAK_SPECIAL_X0;
-			} else if ((instruction->word & TEAK_OPCODE_MOV_ACCUMULATOR_LOW_X1_MASK) == 0xD394U) {
-				instruction->source_accumulator = instruction->word & 3U;
-				instruction->special_register = TEAK_SPECIAL_X1;
 			} else {
-				instruction->source_accumulator = instruction->word & 3U;
-				instruction->special_register = TEAK_SPECIAL_Y1;
+				instruction->special_register = TEAK_SPECIAL_X0;
 			}
 			break;
 
 		case TEAK_OP_MOV_SPECIAL_ACCUMULATOR:
-			if ((instruction->word & TEAK_OPCODE_MOV_X1_ACCUMULATOR_MASK) == 0x49C1U) {
-				instruction->destination_accumulator = instruction->word >> 4 & 3U;
-				instruction->special_register = TEAK_SPECIAL_X1;
-				break;
-			}
-			if ((instruction->word & TEAK_OPCODE_MOV_Y1_ACCUMULATOR_MASK) == 0xD299U) {
-				instruction->destination_accumulator = instruction->word >> 10 & 3U;
-				instruction->special_register = TEAK_SPECIAL_Y1;
-				break;
-			}
 			instruction->destination_accumulator = instruction->word >> 5 & 3U;
 			switch (instruction->word & 3U) {
 				case 0:
@@ -884,7 +824,7 @@ bool teak_decode(teak_tcg_core_t *core, uint32_t address, teak_insn_t *instructi
 
 		case TEAK_OP_MULTIPLY_RN_IMMEDIATE:
 			instruction->words = 2;
-			instruction->expansion = teak_program_read(core, (uint16_t) (address + 1));
+			instruction->expansion = teak_program_read(core, expansion_address);
 			instruction->address_register = instruction->word & 7U;
 			instruction->step = (teak_step_t) (instruction->word >> 3 & 3U);
 			instruction->accumulator_index = instruction->word >> 11 & 1U;
@@ -894,11 +834,6 @@ bool teak_decode(teak_tcg_core_t *core, uint32_t address, teak_insn_t *instructi
 			} else {
 				instruction->multiply_operation = (teak_multiply_operation_t) (instruction->word >> 8 & 7U);
 			}
-			break;
-
-		case TEAK_OP_MULTIPLY_R6:
-			instruction->accumulator_index = instruction->word & 1U;
-			instruction->multiply_operation = (teak_multiply_operation_t) (instruction->word >> 1 & 7U);
 			break;
 
 		case TEAK_OP_MULTIPLY_REGISTER:
@@ -922,13 +857,13 @@ bool teak_decode(teak_tcg_core_t *core, uint32_t address, teak_insn_t *instructi
 
 		case TEAK_OP_MOV_IMM_REGISTER:
 			instruction->words = 2;
-			instruction->expansion = teak_program_read(core, (uint16_t) (address + 1));
+			instruction->expansion = teak_program_read(core, expansion_address);
 			instruction->register_code = instruction->word & 0x1FU;
 			break;
 
 		case TEAK_OP_MOV_IMM_B_ACCUMULATOR:
 			instruction->words = 2;
-			instruction->expansion = teak_program_read(core, (uint16_t) (address + 1));
+			instruction->expansion = teak_program_read(core, expansion_address);
 			instruction->accumulator_index = instruction->word >> 8 & 1U;
 			break;
 
@@ -944,10 +879,17 @@ bool teak_decode(teak_tcg_core_t *core, uint32_t address, teak_insn_t *instructi
 
 		case TEAK_OP_PUSH_IMMEDIATE:
 			instruction->words = 2;
-			instruction->expansion = teak_program_read(core, (uint16_t) (address + 1));
+			instruction->expansion = teak_program_read(core, expansion_address);
 			break;
 
 		case TEAK_OP_PUSH_REGISTER:
+			if (teak_is_reserved_push_pc_word(instruction->word)) {
+				instruction->register_code = 12;
+			} else {
+				instruction->register_code = instruction->word & 0x1FU;
+			}
+			break;
+
 		case TEAK_OP_POP_REGISTER:
 		case TEAK_OP_MOV_STACK_REGISTER:
 			instruction->register_code = instruction->word & 0x1FU;
@@ -965,7 +907,7 @@ bool teak_decode(teak_tcg_core_t *core, uint32_t address, teak_insn_t *instructi
 		case TEAK_OP_MOV_DATA_IMM16_ACCUMULATOR:
 		case TEAK_OP_MOV_ACCUMULATOR_LOW_DATA_IMM16:
 			instruction->words = 2;
-			instruction->expansion = teak_program_read(core, (uint16_t) (address + 1));
+			instruction->expansion = teak_program_read(core, expansion_address);
 			instruction->accumulator_index = instruction->word >> 8 & 1U;
 			break;
 
@@ -1002,10 +944,6 @@ bool teak_decode(teak_tcg_core_t *core, uint32_t address, teak_insn_t *instructi
 		case TEAK_OP_MOVS_DATA_IMM8:
 			instruction->memory_address = instruction->word & 0xFFU;
 			instruction->destination_accumulator = instruction->word >> 11 & 3U;
-			break;
-
-		case TEAK_OP_MOVS_R6:
-			instruction->destination_accumulator = 2U + (instruction->word & 1U);
 			break;
 
 		case TEAK_OP_MOVSI_REGISTER:
@@ -1047,20 +985,16 @@ bool teak_decode(teak_tcg_core_t *core, uint32_t address, teak_insn_t *instructi
 			instruction->destination_accumulator = 2U + (instruction->word & 1U);
 			break;
 
-		case TEAK_OP_MOVR_R6:
-			instruction->destination_accumulator = 2U + (instruction->word >> 3 & 1U);
-			break;
-
 		case TEAK_OP_ALB_DATA_IMM8:
 			instruction->words = 2;
-			instruction->expansion = teak_program_read(core, (uint16_t) (address + 1));
+			instruction->expansion = teak_program_read(core, expansion_address);
 			instruction->memory_address = instruction->word & 0xFFU;
 			instruction->alb_operation = (teak_alb_operation_t) (instruction->word >> 9 & 7U);
 			break;
 
 		case TEAK_OP_ALB_RN_STEP:
 			instruction->words = 2;
-			instruction->expansion = teak_program_read(core, (uint16_t) (address + 1));
+			instruction->expansion = teak_program_read(core, expansion_address);
 			instruction->address_register = instruction->word & 7U;
 			instruction->step = (teak_step_t) (instruction->word >> 3 & 3U);
 			instruction->alb_operation = (teak_alb_operation_t) (instruction->word >> 9 & 7U);
@@ -1068,7 +1002,7 @@ bool teak_decode(teak_tcg_core_t *core, uint32_t address, teak_insn_t *instructi
 
 		case TEAK_OP_ALB_REGISTER:
 			instruction->words = 2;
-			instruction->expansion = teak_program_read(core, (uint16_t) (address + 1));
+			instruction->expansion = teak_program_read(core, expansion_address);
 			instruction->register_code = instruction->word & 0x1FU;
 			instruction->alb_operation = (teak_alb_operation_t) (instruction->word >> 9 & 7U);
 			break;
@@ -1083,14 +1017,14 @@ bool teak_decode(teak_tcg_core_t *core, uint32_t address, teak_insn_t *instructi
 
 		case TEAK_OP_BLOCK_REPEAT_IMMEDIATE:
 			instruction->words = 2;
-			instruction->expansion = teak_program_read(core, (uint16_t) (address + 1));
+			instruction->expansion = teak_program_read(core, expansion_address);
 			instruction->immediate = instruction->word & 0xFFU;
 			instruction->branch_target = instruction->expansion;
 			break;
 
 		case TEAK_OP_BLOCK_REPEAT_REGISTER:
 			instruction->words = 2;
-			instruction->expansion = teak_program_read(core, (uint16_t) (address + 1));
+			instruction->expansion = teak_program_read(core, expansion_address);
 			instruction->register_code = instruction->word & 0x1FU;
 			instruction->branch_target = instruction->expansion;
 			break;
@@ -1138,7 +1072,7 @@ bool teak_decode(teak_tcg_core_t *core, uint32_t address, teak_insn_t *instructi
 		case TEAK_OP_MOV_DATA_R7_OFFSET16_ACCUMULATOR:
 		case TEAK_OP_MOV_ACCUMULATOR_LOW_DATA_R7_OFFSET16:
 			instruction->words = 2;
-			instruction->expansion = teak_program_read(core, (uint16_t) (address + 1));
+			instruction->expansion = teak_program_read(core, expansion_address);
 			instruction->memory_offset = instruction->expansion;
 			instruction->accumulator_index = instruction->word >> 8 & 1U;
 			break;
@@ -1160,7 +1094,7 @@ bool teak_decode(teak_tcg_core_t *core, uint32_t address, teak_insn_t *instructi
 			bool signed_operand;
 			if ((instruction->word & TEAK_OPCODE_ALU_IMM16_ACCUMULATOR_FAMILY_MASK) == 0x80C0U) {
 				instruction->words = 2;
-				instruction->expansion = teak_program_read(core, (uint16_t) (address + 1));
+				instruction->expansion = teak_program_read(core, expansion_address);
 				instruction->immediate = instruction->expansion;
 			} else {
 				instruction->immediate = instruction->word & 0xFFU;
@@ -1184,7 +1118,7 @@ bool teak_decode(teak_tcg_core_t *core, uint32_t address, teak_insn_t *instructi
 
 		case TEAK_OP_ALU_DATA_IMM16_ACCUMULATOR:
 			instruction->words = 2;
-			instruction->expansion = teak_program_read(core, (uint16_t) (address + 1));
+			instruction->expansion = teak_program_read(core, expansion_address);
 			instruction->accumulator_index = instruction->word >> 8 & 1U;
 			instruction->alu_operation = teak_decode_alu_operation(instruction->word & 7U);
 			break;
@@ -1199,7 +1133,7 @@ bool teak_decode(teak_tcg_core_t *core, uint32_t address, teak_insn_t *instructi
 
 		case TEAK_OP_ALU_R7_OFFSET16_ACCUMULATOR:
 			instruction->words = 2;
-			instruction->expansion = teak_program_read(core, (uint16_t) (address + 1));
+			instruction->expansion = teak_program_read(core, expansion_address);
 			instruction->memory_offset = instruction->expansion;
 			instruction->accumulator_index = instruction->word >> 8 & 1U;
 			instruction->alu_operation = teak_decode_alu_operation(instruction->word & 7U);
@@ -1253,13 +1187,7 @@ bool teak_decode(teak_tcg_core_t *core, uint32_t address, teak_insn_t *instructi
 				(instruction->word & TEAK_OPCODE_EXPONENT_B_ACCUMULATOR_MASK) == 0x9060U;
 			bool exponent_rn = (instruction->word & TEAK_OPCODE_EXPONENT_RN_SV_MASK) == 0x9C40U ||
 				(instruction->word & TEAK_OPCODE_EXPONENT_RN_ACCUMULATOR_MASK) == 0x9840U;
-			if (instruction->word == 0xD7C1U) {
-				instruction->exponent_source = TEAK_EXPONENT_R6;
-			} else if ((instruction->word & TEAK_OPCODE_EXPONENT_R6_ACCUMULATOR_MASK) == 0xD382U) {
-				instruction->exponent_source = TEAK_EXPONENT_R6;
-				instruction->write_accumulator = true;
-				instruction->destination_accumulator = instruction->word >> 4 & 1U;
-			} else if (exponent_b) {
+			if (exponent_b) {
 				instruction->exponent_source = TEAK_EXPONENT_B_ACCUMULATOR;
 				instruction->accumulator_index = instruction->word & 1U;
 				instruction->write_accumulator = (instruction->word & 0x0400U) == 0;
@@ -1310,21 +1238,19 @@ bool teak_decode(teak_tcg_core_t *core, uint32_t address, teak_insn_t *instructi
 			} else {
 				bool memory_source = (instruction->word & 0xFC00U) == 0x8000U;
 				bool alias_memory_source = (instruction->word & 0xFC04U) == 0x8404U;
-				bool alias_step = (instruction->word & 0xFC04U) == 0x8804U;
 				bool minimum = (instruction->word & 0x0800U) != 0;
-				uint16_t operation;
-				if (alias_step) {
-					operation = TEAK_MINMAX_MAX_GE;
-					instruction->step = DSP_MINMAX_ALIAS_STEPS[instruction->word & 3U];
-				} else {
-					operation = minimum ? 2 : 0;
-					operation += instruction->word >> 9 & 1U;
-					instruction->step = (teak_step_t) (instruction->word >> 3 & 3U);
-				}
+				bool pointer_held = (instruction->word & 4U) != 0;
+				teak_minmax_operation_t operation = (minimum ? 2 : 0) + ((instruction->word >> 9) & 1U);
+
+				/*
+				 * max, maxd and min point at r0 (TeakLite 4.41, max, maxd, min). Hardware keeps r0 unmodified when
+				 * bit 2 is set and otherwise uses the low bits as r0-r3 with the step from bits 4-3.
+				 */
+				instruction->address_register = pointer_held ? 0 : (instruction->word & 3U);
+				instruction->step = pointer_held ? TEAK_STEP_ZERO : (teak_step_t) ((instruction->word >> 3) & 3U);
 				instruction->memory_source = memory_source || alias_memory_source;
-				instruction->minmax_b_accumulator = alias_step;
 				instruction->accumulator_index = instruction->word >> 8 & 1U;
-				instruction->minmax_operation = (teak_minmax_operation_t) operation;
+				instruction->minmax_operation = operation;
 			}
 			break;
 		}
@@ -1332,7 +1258,7 @@ bool teak_decode(teak_tcg_core_t *core, uint32_t address, teak_insn_t *instructi
 		case TEAK_OP_BRANCH_ABSOLUTE:
 		case TEAK_OP_CALL_ABSOLUTE:
 			instruction->words = 2;
-			instruction->expansion = teak_program_read(core, (uint16_t) (address + 1));
+			instruction->expansion = teak_program_read(core, expansion_address);
 			instruction->branch_target = instruction->expansion;
 			instruction->condition = (teak_condition_t) (instruction->word & 0xFU);
 			break;
@@ -1380,5 +1306,15 @@ bool teak_decode(teak_tcg_core_t *core, uint32_t address, teak_insn_t *instructi
 			instruction->bit_index = instruction->word >> 8 & 0xFU;
 			break;
 	}
+
+	/* nnn (rN) 110 and 111 are undefined (TeakLite 4.41, 4.5.1); hardware uses r4 and r5 without modification. */
+	if (instruction->address_register >= 6) {
+		instruction->address_register -= 2;
+		instruction->step = TEAK_STEP_ZERO;
+	}
 	return instruction->opcode != TEAK_OP_UNDEFINED;
+}
+
+bool teak_decode(teak_tcg_core_t *core, uint32_t address, teak_insn_t *instruction) {
+	return teak_decode_with_expansion_address(core, address, (uint16_t) (address + 1), instruction);
 }

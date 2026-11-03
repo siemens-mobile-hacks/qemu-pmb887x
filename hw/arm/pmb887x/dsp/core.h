@@ -6,6 +6,7 @@
 #include <stdint.h>
 
 #define TEAK_BLOCK_REPEAT_LEVELS	4
+#define TEAK_BLOCK_REPEAT_COUNTER_MASK	7U
 #define TEAK_PROGRAM_ADDRESS_MASK	UINT16_MAX
 #define TEAK_MODULO_REGISTERS	6
 #define TEAK_MODULO_STEP_MODES	3
@@ -47,9 +48,7 @@ enum teak_exit_t {
 enum teak_translation_error_t {
 	TEAK_TRANSLATION_ERROR_NONE,
 	TEAK_TRANSLATION_ERROR_DECODE,
-	TEAK_TRANSLATION_ERROR_UNSUPPORTED,
 	TEAK_TRANSLATION_ERROR_BLOCK_REPEAT_BODY,
-	TEAK_TRANSLATION_ERROR_BREAK,
 	TEAK_TRANSLATION_ERROR_REPEAT,
 	TEAK_TRANSLATION_ERROR_BLOCK_REPEAT_SETUP,
 	TEAK_TRANSLATION_ERROR_DELAY_SLOT,
@@ -76,7 +75,6 @@ enum teak_opcode_t {
 	TEAK_OP_MULTIPLY_DATA_IMM8,
 	TEAK_OP_MULTIPLY_DUAL_RN,
 	TEAK_OP_MULTIPLY_RN_IMMEDIATE,
-	TEAK_OP_MULTIPLY_R6,
 	TEAK_OP_MULTIPLY_REGISTER,
 	TEAK_OP_MULTIPLY_RN_STEP,
 	TEAK_OP_MODIFY_RN,
@@ -113,13 +111,11 @@ enum teak_opcode_t {
 	TEAK_OP_MOVS_REGISTER,
 	TEAK_OP_MOVS_RN_STEP,
 	TEAK_OP_MOVS_DATA_IMM8,
-	TEAK_OP_MOVS_R6,
 	TEAK_OP_MOVSI_REGISTER,
 	TEAK_OP_MOVR_REGISTER,
 	TEAK_OP_MOVR_RN_STEP,
 	TEAK_OP_MOVR_RN_HIGH,
 	TEAK_OP_MOVR_B_ACCUMULATOR,
-	TEAK_OP_MOVR_R6,
 	TEAK_OP_ALB_DATA_IMM8,
 	TEAK_OP_ALB_RN_STEP,
 	TEAK_OP_ALB_REGISTER,
@@ -217,6 +213,7 @@ enum teak_moda_operation_t {
 	TEAK_MODA_ROR = 0x4,
 	TEAK_MODA_ROL = 0x5,
 	TEAK_MODA_CLR = 0x6,
+	TEAK_MODA_RESERVED = 0x7,
 	TEAK_MODA_NOT = 0x8,
 	TEAK_MODA_NEG = 0x9,
 	TEAK_MODA_RND = 0xA,
@@ -242,7 +239,6 @@ enum teak_exponent_source_t {
 	TEAK_EXPONENT_REGISTER,
 	TEAK_EXPONENT_B_ACCUMULATOR,
 	TEAK_EXPONENT_RN_STEP,
-	TEAK_EXPONENT_R6,
 };
 
 enum teak_minmax_operation_t {
@@ -276,8 +272,6 @@ enum teak_special_register_t {
 	TEAK_SPECIAL_DVM,
 	TEAK_SPECIAL_ICR,
 	TEAK_SPECIAL_X0,
-	TEAK_SPECIAL_X1,
-	TEAK_SPECIAL_Y1,
 	TEAK_SPECIAL_MIXP,
 };
 
@@ -356,7 +350,6 @@ struct teak_insn_t {
 	teak_minmax_operation_t minmax_operation;
 	bool write_accumulator;
 	bool memory_source;
-	bool minmax_b_accumulator;
 	teak_alb_operation_t alb_operation;
 	teak_multiply_operation_t multiply_operation;
 	teak_condition_t condition;
@@ -441,6 +434,10 @@ struct teak_state_t {
 	uint8_t repeat_suspended;
 	uint8_t lp;
 	uint8_t bcn;
+	uint8_t block_repeat_end_reached;
+	uint8_t block_repeat_break_pending;
+	uint8_t fetch_split_pending;
+	uint32_t fetch_split_target;
 	uint8_t iu[2];
 	uint8_t ou[2];
 	uint8_t idle;
@@ -491,6 +488,22 @@ uint16_t teak_program_read(teak_tcg_core_t *core, uint32_t address);
 void teak_program_write(teak_tcg_core_t *core, uint32_t address, uint16_t value);
 uint16_t teak_data_read(teak_tcg_core_t *core, uint32_t address);
 void teak_data_write(teak_tcg_core_t *core, uint32_t address, uint16_t value);
+
 bool teak_decode(teak_tcg_core_t *core, uint32_t address, teak_insn_t *instruction);
+bool teak_decode_with_expansion_address(
+	teak_tcg_core_t *core,
+	uint32_t address,
+	uint16_t expansion_address,
+	teak_insn_t *instruction
+);
+
+/*
+ * BC0-BC2 count bkrep levels modulo 8, but only four levels are stored (TeakLite 4.41, 3.5.1, bkrep <1>). Hardware
+ * keeps the level 4 addresses for BC values 5-7 and the level 1 addresses for a wrapped BC value 0, and replaces
+ * only the lc of that slot.
+ */
+static inline uint8_t teak_block_repeat_slot(uint8_t bcn) {
+	return bcn == 0 ? 0 : MIN(bcn, TEAK_BLOCK_REPEAT_LEVELS) - 1;
+}
 
 #endif

@@ -12,9 +12,10 @@
 #include "hw/arm/pmb887x/trace.h"
 
 #define AFE_AUDIO_DEFAULT_RATE_HZ	8000
-#define AFE_AUDIO_CHANNELS		1
+#define AFE_AUDIO_DEFAULT_CHANNELS	1
+#define AFE_AUDIO_MAX_CHANNELS		2
 #define AFE_AUDIO_MAX_RATE_HZ		48000
-#define AFE_AUDIO_FIFO_BYTES		(AFE_AUDIO_MAX_RATE_HZ * sizeof(int16_t))
+#define AFE_AUDIO_FIFO_BYTES		(AFE_AUDIO_MAX_RATE_HZ * AFE_AUDIO_MAX_CHANNELS * sizeof(int16_t))
 
 struct afe_audio_t {
 	AudioBackend *backend;
@@ -24,6 +25,8 @@ struct afe_audio_t {
 	bool fifo_ready;
 	pmb887x_audio_buffer_t buffer;
 	int rate_hz;
+	int channels;
+	bool active;
 	int64_t stats_deadline;
 	uint64_t stats_total;
 	uint64_t stats_nonzero;
@@ -38,11 +41,14 @@ static void afe_audio_out_callback(void *opaque, int free_bytes) {
 		size_t size;
 		size_t written;
 		const uint8_t *data = pmb887x_audio_buffer_peek(&audio->buffer,
-			&audio->fifo, &audio->lock, (size_t) free_bytes,
-			qemu_clock_get_ns(QEMU_CLOCK_REALTIME), &size);
-
-		if (size == 0)
+			&audio->fifo, &audio->lock, (size_t) free_bytes, &size);
+		if (size == 0) {
+			/* A stopped receive path still plays the samples queued before it stopped. */
+			if (!audio->active)
+				audio_be_set_active_out(audio->backend, audio->voice, false);
 			break;
+		}
+
 		written = audio_be_write(audio->backend, audio->voice, (void *) data, size);
 		if (written == 0)
 			break;
@@ -77,12 +83,14 @@ afe_audio_t *afe_audio_create(void) {
 	afe_audio_t *audio = g_new0(afe_audio_t, 1);
 	struct audsettings settings = {
 		.freq = AFE_AUDIO_DEFAULT_RATE_HZ,
-		.nchannels = AFE_AUDIO_CHANNELS,
+		.nchannels = AFE_AUDIO_DEFAULT_CHANNELS,
 		.fmt = AUDIO_FORMAT_S16,
 		.big_endian = false,
 	};
 
 	audio->rate_hz = AFE_AUDIO_DEFAULT_RATE_HZ;
+	audio->channels = AFE_AUDIO_DEFAULT_CHANNELS;
+	pmb887x_audio_buffer_configure(&audio->buffer, audio->channels * sizeof(int16_t), audio->rate_hz);
 	qemu_mutex_init(&audio->lock);
 	if (!audio_be_check(&audio->backend, NULL)) {
 		DPRINTF("no audio backend configured; RX output disabled\n");
@@ -98,7 +106,6 @@ afe_audio_t *afe_audio_create(void) {
 
 	fifo8_create(&audio->fifo, AFE_AUDIO_FIFO_BYTES);
 	audio->fifo_ready = true;
-	audio_be_set_active_out(audio->backend, audio->voice, true);
 	return audio;
 }
 
@@ -116,7 +123,7 @@ void afe_audio_destroy(afe_audio_t *audio) {
 	g_free(audio);
 }
 
-void afe_audio_reset(afe_audio_t *audio) {
+static void afe_audio_reset(afe_audio_t *audio) {
 	if (!audio->fifo_ready)
 		return;
 
@@ -126,57 +133,76 @@ void afe_audio_reset(afe_audio_t *audio) {
 	pmb887x_audio_buffer_reset(&audio->buffer);
 }
 
-void afe_audio_set_rate(afe_audio_t *audio, unsigned frequency_hz) {
-	struct audsettings settings = {
-		.freq = frequency_hz,
-		.nchannels = AFE_AUDIO_CHANNELS,
-		.fmt = AUDIO_FORMAT_S16,
-		.big_endian = false,
-	};
-
-	if ((int) frequency_hz == audio->rate_hz)
+void afe_audio_set_active(afe_audio_t *audio, bool active) {
+	if (active == audio->active)
 		return;
 
-	DPRINTF("audio out rate %d Hz -> %u Hz\n", audio->rate_hz, frequency_hz);
+	audio->active = active;
+	if (!active)
+		return;
+
 	afe_audio_reset(audio);
-	audio->rate_hz = frequency_hz;
-	if (!audio->voice)
-		return;
-
-	/*
-	 * Reinitialize the voice in place: closing it first would also tear down
-	 * the backend voice (the wav backend then truncates its file).
-	 */
-	audio->voice = audio_be_open_out(audio->backend, audio->voice, "pmb887x-afe",
-		audio, afe_audio_out_callback, &settings);
 	if (audio->voice)
 		audio_be_set_active_out(audio->backend, audio->voice, true);
 }
 
-void afe_audio_produce(afe_audio_t *audio, uint16_t sample_word) {
-	int16_t sample = (int16_t) sample_word;
-	uint8_t bytes[2] = { (uint8_t) sample_word, (uint8_t) (sample_word >> 8) };
+void afe_audio_set_format(afe_audio_t *audio, unsigned frequency_hz, unsigned channels) {
+	struct audsettings settings = {
+		.freq = frequency_hz,
+		.nchannels = channels,
+		.fmt = AUDIO_FORMAT_S16,
+		.big_endian = false,
+	};
 
+	if ((int) frequency_hz == audio->rate_hz && (int) channels == audio->channels)
+		return;
+
+	DPRINTF("audio out %d Hz x%d -> %u Hz x%u\n", audio->rate_hz, audio->channels, frequency_hz, channels);
+	afe_audio_reset(audio);
+	audio->rate_hz = frequency_hz;
+	audio->channels = channels;
+	pmb887x_audio_buffer_configure(&audio->buffer, channels * sizeof(int16_t), frequency_hz);
+	if (!audio->voice)
+		return;
+
+	audio->voice = audio_be_open_out(audio->backend, audio->voice, "pmb887x-afe",
+		audio, afe_audio_out_callback, &settings);
+	if (audio->voice)
+		audio_be_set_active_out(audio->backend, audio->voice, audio->active);
+}
+
+static void afe_audio_count_sample(afe_audio_t *audio, int16_t sample) {
 	audio->stats_total++;
-	if (sample != 0) {
-		audio->stats_nonzero++;
-		if (audio->stats_nonzero == 1) {
-			audio->stats_min = sample;
-			audio->stats_max = sample;
-		} else if (sample < audio->stats_min) {
-			audio->stats_min = sample;
-		} else if (sample > audio->stats_max) {
-			audio->stats_max = sample;
-		}
+	if (sample == 0)
+		return;
+
+	audio->stats_nonzero++;
+	if (audio->stats_nonzero == 1) {
+		audio->stats_min = sample;
+		audio->stats_max = sample;
+	} else if (sample < audio->stats_min) {
+		audio->stats_min = sample;
+	} else if (sample > audio->stats_max) {
+		audio->stats_max = sample;
+	}
+}
+
+void afe_audio_produce(afe_audio_t *audio, const uint16_t *frame, size_t word_count) {
+	uint8_t bytes[AFE_AUDIO_MAX_CHANNELS * sizeof(int16_t)];
+
+	for (size_t i = 0; i < word_count; i++) {
+		afe_audio_count_sample(audio, (int16_t) frame[i]);
+		bytes[i * 2] = (uint8_t) frame[i];
+		bytes[i * 2 + 1] = (uint8_t) (frame[i] >> 8);
 	}
 	afe_audio_report_stats(audio);
 
 	if (!audio->fifo_ready)
 		return;
 
+	size_t size = word_count * sizeof(int16_t);
 	qemu_mutex_lock(&audio->lock);
-	if (fifo8_num_used(&audio->fifo) + sizeof(bytes) <= AFE_AUDIO_FIFO_BYTES)
-		fifo8_push_all(&audio->fifo, bytes, sizeof(bytes));
-	pmb887x_audio_buffer_note_push(&audio->buffer);
+	if (fifo8_num_used(&audio->fifo) + size <= AFE_AUDIO_FIFO_BYTES)
+		fifo8_push_all(&audio->fifo, bytes, size);
 	qemu_mutex_unlock(&audio->lock);
 }

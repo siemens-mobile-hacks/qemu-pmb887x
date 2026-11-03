@@ -75,7 +75,7 @@ bool pmb887x_board_find_keycode(const char *name, QKeyCode *qcode) {
 	return false;
 }
 
-bool pmb887x_board_connect_key_to_gpio(DeviceState *keypad, const char *name, qemu_irq input) {
+static bool keyboard_connect_key_to_gpio(DeviceState *keypad, const char *name, qemu_irq input) {
 	bool found = false;
 
 	for (size_t i = 0; i < ARRAY_SIZE(keyboard_map); i++) {
@@ -98,12 +98,6 @@ void pmb887x_board_keyboard_connect_gpios(DeviceState *keypad) {
 	for (int i = 0; i < table.u.tab.size; i++) {
 		const char *key_name = table.u.tab.key[i];
 		toml_datum_t connections = toml_table_get(table, TOML_ARRAY, key_name, true);
-		QKeyCode qcode;
-
-		if (!pmb887x_board_find_keycode(key_name, &qcode)) {
-			error_report("Unknown key '%s' in keyboard GPIO config", key_name);
-			exit(EXIT_FAILURE);
-		}
 
 		for (int j = 0; j < connections.u.arr.size; j++) {
 			toml_datum_t config = toml_array_get(connections, TOML_TABLE, j, true);
@@ -112,7 +106,10 @@ void pmb887x_board_keyboard_connect_gpios(DeviceState *keypad) {
 
 			if (toml_table_get_bool(config, "inverted", false, false))
 				input = qemu_irq_invert(input);
-			pmb887x_qdev_connect_gpio_out(keypad, "KEY_OUT", qcode, input);
+			if (!keyboard_connect_key_to_gpio(keypad, key_name, input)) {
+				error_report("Unknown key '%s' in keyboard GPIO config", key_name);
+				exit(EXIT_FAILURE);
+			}
 		}
 	}
 }

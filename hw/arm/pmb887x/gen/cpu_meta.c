@@ -6317,42 +6317,283 @@ static const pmb887x_io_field_t usif_clc_fields[] = {
 	{"RMC",		MOD_CLC_RMC,	MOD_CLC_RMC_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t usif_run_fields[] = {
-	{"RUN",		USIF_RUN_RUN,	USIF_RUN_RUN_SHIFT,		NULL,	0},
-	{"BUSY",	USIF_RUN_BUSY,	USIF_RUN_BUSY_SHIFT,	NULL,	0},
+static const pmb887x_io_field_t usif_id_fields[] = {
+	{"REV",		MOD_ID_REV,		MOD_ID_REV_SHIFT,		NULL,	0},
+	{"32B",		MOD_ID_32B,		MOD_ID_32B_SHIFT,		NULL,	0},
+	{"NUMBER",	MOD_ID_NUMBER,	MOD_ID_NUMBER_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t usif_modem_ctrl_fields[] = {
-	{"DTR",	USIF_MODEM_CTRL_DTR,	USIF_MODEM_CTRL_DTR_SHIFT,	NULL,	0},
-	{"RTS",	USIF_MODEM_CTRL_RTS,	USIF_MODEM_CTRL_RTS_SHIFT,	NULL,	0},
+static const pmb887x_io_field_t usif_runctrl_fields[] = {
+	{"RUN",	USIF_RUNCTRL_RUN,	USIF_RUNCTRL_RUN_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t usif_modem_stat_fields[] = {
-	{"CTS",	USIF_MODEM_STAT_CTS,	USIF_MODEM_STAT_CTS_SHIFT,	NULL,	0},
-	{"DSR",	USIF_MODEM_STAT_DSR,	USIF_MODEM_STAT_DSR_SHIFT,	NULL,	0},
+static const pmb887x_io_field_t usif_mss_set_fields[] = {
+	{"FCO",	USIF_MSS_SET_FCO,	USIF_MSS_SET_FCO_SHIFT,	NULL,	0},
+	{"DSR",	USIF_MSS_SET_DSR,	USIF_MSS_SET_DSR_SHIFT,	NULL,	0},
+	{"DCD",	USIF_MSS_SET_DCD,	USIF_MSS_SET_DCD_SHIFT,	NULL,	0},
+	{"RI",	USIF_MSS_SET_RI,	USIF_MSS_SET_RI_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t usif_fifo_stat_fields[] = {
-	{"FILL",	USIF_FIFO_STAT_FILL,	USIF_FIFO_STAT_FILL_SHIFT,	NULL,	0},
-	{"BUSY",	USIF_FIFO_STAT_BUSY,	USIF_FIFO_STAT_BUSY_SHIFT,	NULL,	0},
+static const pmb887x_io_field_t usif_mss_clr_fields[] = {
+	{"FCO",	USIF_MSS_CLR_FCO,	USIF_MSS_CLR_FCO_SHIFT,	NULL,	0},
+	{"DSR",	USIF_MSS_CLR_DSR,	USIF_MSS_CLR_DSR_SHIFT,	NULL,	0},
+	{"DCD",	USIF_MSS_CLR_DCD,	USIF_MSS_CLR_DCD_SHIFT,	NULL,	0},
+	{"RI",	USIF_MSS_CLR_RI,	USIF_MSS_CLR_RI_SHIFT,	NULL,	0},
+};
+
+static const pmb887x_io_field_t usif_mode_cfg_fields[] = {
+	{"SYNC",	USIF_MODE_CFG_SYNC,		USIF_MODE_CFG_SYNC_SHIFT,	NULL,	0},
+	{"MA",		USIF_MODE_CFG_MA,		USIF_MODE_CFG_MA_SHIFT,		NULL,	0},
+	{"RXEN",	USIF_MODE_CFG_RXEN,		USIF_MODE_CFG_RXEN_SHIFT,	NULL,	0},
+	{"LB",		USIF_MODE_CFG_LB,		USIF_MODE_CFG_LB_SHIFT,		NULL,	0},
+	{"ECH",		USIF_MODE_CFG_ECH,		USIF_MODE_CFG_ECH_SHIFT,	NULL,	0},
+	{"TXINV",	USIF_MODE_CFG_TXINV,	USIF_MODE_CFG_TXINV_SHIFT,	NULL,	0},
+	{"RXINV",	USIF_MODE_CFG_RXINV,	USIF_MODE_CFG_RXINV_SHIFT,	NULL,	0},
+	{"SCFRC",	USIF_MODE_CFG_SCFRC,	USIF_MODE_CFG_SCFRC_SHIFT,	NULL,	0},
+	{"SCPOL",	USIF_MODE_CFG_SCPOL,	USIF_MODE_CFG_SCPOL_SHIFT,	NULL,	0},
+	{"SCPH",	USIF_MODE_CFG_SCPH,		USIF_MODE_CFG_SCPH_SHIFT,	NULL,	0},
+	{"TXIDLE",	USIF_MODE_CFG_TXIDLE,	USIF_MODE_CFG_TXIDLE_SHIFT,	NULL,	0},
+	{"ABEN",	USIF_MODE_CFG_ABEN,		USIF_MODE_CFG_ABEN_SHIFT,	NULL,	0},
+	{"EQU",		USIF_MODE_CFG_EQU,		USIF_MODE_CFG_EQU_SHIFT,	NULL,	0},
+};
+
+static const pmb887x_io_field_t usif_prtc_cfg_fields[] = {
+	{"CLEN",	USIF_PRTC_CFG_CLEN,		USIF_PRTC_CFG_CLEN_SHIFT,		NULL,	0},
+	{"HD",		USIF_PRTC_CFG_HD,		USIF_PRTC_CFG_HD_SHIFT,			NULL,	0},
+	{"PAR",		USIF_PRTC_CFG_PAR,		USIF_PRTC_CFG_PAR_SHIFT,		NULL,	0},
+	{"ODD",		USIF_PRTC_CFG_ODD,		USIF_PRTC_CFG_ODD_SHIFT,		NULL,	0},
+	{"ERRFE",	USIF_PRTC_CFG_ERRFE,	USIF_PRTC_CFG_ERRFE_SHIFT,		NULL,	0},
+	{"STP2",	USIF_PRTC_CFG_STP2,		USIF_PRTC_CFG_STP2_SHIFT,		NULL,	0},
+	{"RESWKUP",	USIF_PRTC_CFG_RESWKUP,	USIF_PRTC_CFG_RESWKUP_SHIFT,	NULL,	0},
+	{"FCIEN",	USIF_PRTC_CFG_FCIEN,	USIF_PRTC_CFG_FCIEN_SHIFT,		NULL,	0},
+	{"FCOEN",	USIF_PRTC_CFG_FCOEN,	USIF_PRTC_CFG_FCOEN_SHIFT,		NULL,	0},
+	{"FCIINV",	USIF_PRTC_CFG_FCIINV,	USIF_PRTC_CFG_FCIINV_SHIFT,		NULL,	0},
+	{"FCOTL",	USIF_PRTC_CFG_FCOTL,	USIF_PRTC_CFG_FCOTL_SHIFT,		NULL,	0},
+	{"SLIPEN",	USIF_PRTC_CFG_SLIPEN,	USIF_PRTC_CFG_SLIPEN_SHIFT,		NULL,	0},
+};
+
+static const pmb887x_io_field_t usif_bc_cfg_fields[] = {
+	{"BCRV",	USIF_BC_CFG_BCRV,	USIF_BC_CFG_BCRV_SHIFT,	NULL,	0},
+};
+
+static const pmb887x_io_field_t usif_fdiv_cfg_fields[] = {
+	{"INC",	USIF_FDIV_CFG_INC,	USIF_FDIV_CFG_INC_SHIFT,	NULL,	0},
+	{"DEC",	USIF_FDIV_CFG_DEC,	USIF_FDIV_CFG_DEC_SHIFT,	NULL,	0},
+};
+
+static const pmb887x_io_field_t usif_ictmo_cfg_fields[] = {
+	{"TMO",	USIF_ICTMO_CFG_TMO,	USIF_ICTMO_CFG_TMO_SHIFT,	NULL,	0},
+};
+
+static const pmb887x_io_field_t usif_mss_stat_fields[] = {
+	{"FCO",	USIF_MSS_STAT_FCO,	USIF_MSS_STAT_FCO_SHIFT,	NULL,	0},
+	{"FCI",	USIF_MSS_STAT_FCI,	USIF_MSS_STAT_FCI_SHIFT,	NULL,	0},
+};
+
+static const pmb887x_io_value_t usif_usif_txfifo_cfg_txbs_values[] = {
+	{"1_WORD",	USIF_TXFIFO_CFG_TXBS_1_WORD},
+	{"2_WORD",	USIF_TXFIFO_CFG_TXBS_2_WORD},
+	{"4_WORD",	USIF_TXFIFO_CFG_TXBS_4_WORD},
+};
+
+static const pmb887x_io_value_t usif_usif_txfifo_cfg_txfa_values[] = {
+	{"1",	USIF_TXFIFO_CFG_TXFA_1},
+	{"2",	USIF_TXFIFO_CFG_TXFA_2},
+	{"4",	USIF_TXFIFO_CFG_TXFA_4},
+};
+
+static const pmb887x_io_field_t usif_txfifo_cfg_fields[] = {
+	{"TXBS",	USIF_TXFIFO_CFG_TXBS,	USIF_TXFIFO_CFG_TXBS_SHIFT,	usif_usif_txfifo_cfg_txbs_values,	ARRAY_SIZE(usif_usif_txfifo_cfg_txbs_values)},
+	{"TXFA",	USIF_TXFIFO_CFG_TXFA,	USIF_TXFIFO_CFG_TXFA_SHIFT,	usif_usif_txfifo_cfg_txfa_values,	ARRAY_SIZE(usif_usif_txfifo_cfg_txfa_values)},
+	{"TXFC",	USIF_TXFIFO_CFG_TXFC,	USIF_TXFIFO_CFG_TXFC_SHIFT,	NULL,								0},
+};
+
+static const pmb887x_io_field_t usif_tps_ctrl_fields[] = {
+	{"TPS",	USIF_TPS_CTRL_TPS,	USIF_TPS_CTRL_TPS_SHIFT,	NULL,	0},
+};
+
+static const pmb887x_io_field_t usif_txfifo_stat_fields[] = {
+	{"TXFFS",	USIF_TXFIFO_STAT_TXFFS,		USIF_TXFIFO_STAT_TXFFS_SHIFT,	NULL,	0},
+	{"TXBUSY",	USIF_TXFIFO_STAT_TXBUSY,	USIF_TXFIFO_STAT_TXBUSY_SHIFT,	NULL,	0},
+};
+
+static const pmb887x_io_value_t usif_usif_rxfifo_cfg_rxbs_values[] = {
+	{"1_WORD",	USIF_RXFIFO_CFG_RXBS_1_WORD},
+	{"2_WORD",	USIF_RXFIFO_CFG_RXBS_2_WORD},
+	{"4_WORD",	USIF_RXFIFO_CFG_RXBS_4_WORD},
+};
+
+static const pmb887x_io_value_t usif_usif_rxfifo_cfg_rxfa_values[] = {
+	{"1",	USIF_RXFIFO_CFG_RXFA_1},
+	{"2",	USIF_RXFIFO_CFG_RXFA_2},
+	{"4",	USIF_RXFIFO_CFG_RXFA_4},
+};
+
+static const pmb887x_io_field_t usif_rxfifo_cfg_fields[] = {
+	{"RXBS",	USIF_RXFIFO_CFG_RXBS,	USIF_RXFIFO_CFG_RXBS_SHIFT,	usif_usif_rxfifo_cfg_rxbs_values,	ARRAY_SIZE(usif_usif_rxfifo_cfg_rxbs_values)},
+	{"RXFA",	USIF_RXFIFO_CFG_RXFA,	USIF_RXFIFO_CFG_RXFA_SHIFT,	usif_usif_rxfifo_cfg_rxfa_values,	ARRAY_SIZE(usif_usif_rxfifo_cfg_rxfa_values)},
+	{"RXFC",	USIF_RXFIFO_CFG_RXFC,	USIF_RXFIFO_CFG_RXFC_SHIFT,	NULL,								0},
+};
+
+static const pmb887x_io_field_t usif_mrps_ctrl_fields[] = {
+	{"MRPS",	USIF_MRPS_CTRL_MRPS,	USIF_MRPS_CTRL_MRPS_SHIFT,	NULL,	0},
+};
+
+static const pmb887x_io_field_t usif_rps_stat_fields[] = {
+	{"RPS",	USIF_RPS_STAT_RPS,	USIF_RPS_STAT_RPS_SHIFT,	NULL,	0},
+};
+
+static const pmb887x_io_field_t usif_rxfifo_stat_fields[] = {
+	{"RXFFS",	USIF_RXFIFO_STAT_RXFFS,	USIF_RXFIFO_STAT_RXFFS_SHIFT,	NULL,	0},
+};
+
+static const pmb887x_io_field_t usif_errirqsm_fields[] = {
+	{"RXFUFL",	USIF_ERRIRQSM_RXFUFL,	USIF_ERRIRQSM_RXFUFL_SHIFT,	NULL,	0},
+	{"RXFOFL",	USIF_ERRIRQSM_RXFOFL,	USIF_ERRIRQSM_RXFOFL_SHIFT,	NULL,	0},
+};
+
+static const pmb887x_io_field_t usif_errirqss_fields[] = {
+	{"RXFUFL",	USIF_ERRIRQSS_RXFUFL,	USIF_ERRIRQSS_RXFUFL_SHIFT,	NULL,	0},
+	{"RXFOFL",	USIF_ERRIRQSS_RXFOFL,	USIF_ERRIRQSS_RXFOFL_SHIFT,	NULL,	0},
+};
+
+static const pmb887x_io_field_t usif_errirqsc_fields[] = {
+	{"RXFUFL",	USIF_ERRIRQSC_RXFUFL,	USIF_ERRIRQSC_RXFUFL_SHIFT,	NULL,	0},
+	{"RXFOFL",	USIF_ERRIRQSC_RXFOFL,	USIF_ERRIRQSC_RXFOFL_SHIFT,	NULL,	0},
+};
+
+static const pmb887x_io_field_t usif_pirqsm_fields[] = {
+	{"FCI",		USIF_PIRQSM_FCI,	USIF_PIRQSM_FCI_SHIFT,		NULL,	0},
+	{"TXEND",	USIF_PIRQSM_TXEND,	USIF_PIRQSM_TXEND_SHIFT,	NULL,	0},
+	{"RXEND",	USIF_PIRQSM_RXEND,	USIF_PIRQSM_RXEND_SHIFT,	NULL,	0},
+};
+
+static const pmb887x_io_field_t usif_pirqss_fields[] = {
+	{"FCI",		USIF_PIRQSS_FCI,	USIF_PIRQSS_FCI_SHIFT,		NULL,	0},
+	{"TXEND",	USIF_PIRQSS_TXEND,	USIF_PIRQSS_TXEND_SHIFT,	NULL,	0},
+	{"RXEND",	USIF_PIRQSS_RXEND,	USIF_PIRQSS_RXEND_SHIFT,	NULL,	0},
+};
+
+static const pmb887x_io_field_t usif_pirqsc_fields[] = {
+	{"FCI",		USIF_PIRQSC_FCI,	USIF_PIRQSC_FCI_SHIFT,		NULL,	0},
+	{"TXEND",	USIF_PIRQSC_TXEND,	USIF_PIRQSC_TXEND_SHIFT,	NULL,	0},
+	{"RXEND",	USIF_PIRQSC_RXEND,	USIF_PIRQSC_RXEND_SHIFT,	NULL,	0},
+};
+
+static const pmb887x_io_field_t usif_ris_fields[] = {
+	{"RXLSREQ",	USIF_RIS_RXLSREQ,	USIF_RIS_RXLSREQ_SHIFT,	NULL,	0},
+	{"RXSREQ",	USIF_RIS_RXSREQ,	USIF_RIS_RXSREQ_SHIFT,	NULL,	0},
+	{"RXLBREQ",	USIF_RIS_RXLBREQ,	USIF_RIS_RXLBREQ_SHIFT,	NULL,	0},
+	{"RXBREQ",	USIF_RIS_RXBREQ,	USIF_RIS_RXBREQ_SHIFT,	NULL,	0},
+	{"TXLSREQ",	USIF_RIS_TXLSREQ,	USIF_RIS_TXLSREQ_SHIFT,	NULL,	0},
+	{"TXSREQ",	USIF_RIS_TXSREQ,	USIF_RIS_TXSREQ_SHIFT,	NULL,	0},
+	{"TXLBREQ",	USIF_RIS_TXLBREQ,	USIF_RIS_TXLBREQ_SHIFT,	NULL,	0},
+	{"TXBREQ",	USIF_RIS_TXBREQ,	USIF_RIS_TXBREQ_SHIFT,	NULL,	0},
+	{"AB",		USIF_RIS_AB,		USIF_RIS_AB_SHIFT,		NULL,	0},
+	{"ERR",		USIF_RIS_ERR,		USIF_RIS_ERR_SHIFT,		NULL,	0},
+	{"PIRQ",	USIF_RIS_PIRQ,		USIF_RIS_PIRQ_SHIFT,	NULL,	0},
+};
+
+static const pmb887x_io_field_t usif_imsc_fields[] = {
+	{"RXLSREQ",	USIF_IMSC_RXLSREQ,	USIF_IMSC_RXLSREQ_SHIFT,	NULL,	0},
+	{"RXSREQ",	USIF_IMSC_RXSREQ,	USIF_IMSC_RXSREQ_SHIFT,		NULL,	0},
+	{"RXLBREQ",	USIF_IMSC_RXLBREQ,	USIF_IMSC_RXLBREQ_SHIFT,	NULL,	0},
+	{"RXBREQ",	USIF_IMSC_RXBREQ,	USIF_IMSC_RXBREQ_SHIFT,		NULL,	0},
+	{"TXLSREQ",	USIF_IMSC_TXLSREQ,	USIF_IMSC_TXLSREQ_SHIFT,	NULL,	0},
+	{"TXSREQ",	USIF_IMSC_TXSREQ,	USIF_IMSC_TXSREQ_SHIFT,		NULL,	0},
+	{"TXLBREQ",	USIF_IMSC_TXLBREQ,	USIF_IMSC_TXLBREQ_SHIFT,	NULL,	0},
+	{"TXBREQ",	USIF_IMSC_TXBREQ,	USIF_IMSC_TXBREQ_SHIFT,		NULL,	0},
+	{"AB",		USIF_IMSC_AB,		USIF_IMSC_AB_SHIFT,			NULL,	0},
+	{"ERR",		USIF_IMSC_ERR,		USIF_IMSC_ERR_SHIFT,		NULL,	0},
+	{"PIRQ",	USIF_IMSC_PIRQ,		USIF_IMSC_PIRQ_SHIFT,		NULL,	0},
+};
+
+static const pmb887x_io_field_t usif_mis_fields[] = {
+	{"RXLSREQ",	USIF_MIS_RXLSREQ,	USIF_MIS_RXLSREQ_SHIFT,	NULL,	0},
+	{"RXSREQ",	USIF_MIS_RXSREQ,	USIF_MIS_RXSREQ_SHIFT,	NULL,	0},
+	{"RXLBREQ",	USIF_MIS_RXLBREQ,	USIF_MIS_RXLBREQ_SHIFT,	NULL,	0},
+	{"RXBREQ",	USIF_MIS_RXBREQ,	USIF_MIS_RXBREQ_SHIFT,	NULL,	0},
+	{"TXLSREQ",	USIF_MIS_TXLSREQ,	USIF_MIS_TXLSREQ_SHIFT,	NULL,	0},
+	{"TXSREQ",	USIF_MIS_TXSREQ,	USIF_MIS_TXSREQ_SHIFT,	NULL,	0},
+	{"TXLBREQ",	USIF_MIS_TXLBREQ,	USIF_MIS_TXLBREQ_SHIFT,	NULL,	0},
+	{"TXBREQ",	USIF_MIS_TXBREQ,	USIF_MIS_TXBREQ_SHIFT,	NULL,	0},
+	{"AB",		USIF_MIS_AB,		USIF_MIS_AB_SHIFT,		NULL,	0},
+	{"ERR",		USIF_MIS_ERR,		USIF_MIS_ERR_SHIFT,		NULL,	0},
+	{"PIRQ",	USIF_MIS_PIRQ,		USIF_MIS_PIRQ_SHIFT,	NULL,	0},
+};
+
+static const pmb887x_io_field_t usif_icr_fields[] = {
+	{"RXLSREQ",	USIF_ICR_RXLSREQ,	USIF_ICR_RXLSREQ_SHIFT,	NULL,	0},
+	{"RXSREQ",	USIF_ICR_RXSREQ,	USIF_ICR_RXSREQ_SHIFT,	NULL,	0},
+	{"RXLBREQ",	USIF_ICR_RXLBREQ,	USIF_ICR_RXLBREQ_SHIFT,	NULL,	0},
+	{"RXBREQ",	USIF_ICR_RXBREQ,	USIF_ICR_RXBREQ_SHIFT,	NULL,	0},
+	{"TXLSREQ",	USIF_ICR_TXLSREQ,	USIF_ICR_TXLSREQ_SHIFT,	NULL,	0},
+	{"TXSREQ",	USIF_ICR_TXSREQ,	USIF_ICR_TXSREQ_SHIFT,	NULL,	0},
+	{"TXLBREQ",	USIF_ICR_TXLBREQ,	USIF_ICR_TXLBREQ_SHIFT,	NULL,	0},
+	{"TXBREQ",	USIF_ICR_TXBREQ,	USIF_ICR_TXBREQ_SHIFT,	NULL,	0},
+	{"AB",		USIF_ICR_AB,		USIF_ICR_AB_SHIFT,		NULL,	0},
+	{"ERR",		USIF_ICR_ERR,		USIF_ICR_ERR_SHIFT,		NULL,	0},
+	{"PIRQ",	USIF_ICR_PIRQ,		USIF_ICR_PIRQ_SHIFT,	NULL,	0},
+};
+
+static const pmb887x_io_field_t usif_isr_fields[] = {
+	{"RXLSREQ",	USIF_ISR_RXLSREQ,	USIF_ISR_RXLSREQ_SHIFT,	NULL,	0},
+	{"RXSREQ",	USIF_ISR_RXSREQ,	USIF_ISR_RXSREQ_SHIFT,	NULL,	0},
+	{"RXLBREQ",	USIF_ISR_RXLBREQ,	USIF_ISR_RXLBREQ_SHIFT,	NULL,	0},
+	{"RXBREQ",	USIF_ISR_RXBREQ,	USIF_ISR_RXBREQ_SHIFT,	NULL,	0},
+	{"TXLSREQ",	USIF_ISR_TXLSREQ,	USIF_ISR_TXLSREQ_SHIFT,	NULL,	0},
+	{"TXSREQ",	USIF_ISR_TXSREQ,	USIF_ISR_TXSREQ_SHIFT,	NULL,	0},
+	{"TXLBREQ",	USIF_ISR_TXLBREQ,	USIF_ISR_TXLBREQ_SHIFT,	NULL,	0},
+	{"TXBREQ",	USIF_ISR_TXBREQ,	USIF_ISR_TXBREQ_SHIFT,	NULL,	0},
+	{"AB",		USIF_ISR_AB,		USIF_ISR_AB_SHIFT,		NULL,	0},
+	{"ERR",		USIF_ISR_ERR,		USIF_ISR_ERR_SHIFT,		NULL,	0},
+	{"PIRQ",	USIF_ISR_PIRQ,		USIF_ISR_PIRQ_SHIFT,	NULL,	0},
+};
+
+static const pmb887x_io_field_t usif_dmae_fields[] = {
+	{"RXLSREQ",	USIF_DMAE_RXLSREQ,	USIF_DMAE_RXLSREQ_SHIFT,	NULL,	0},
+	{"RXSREQ",	USIF_DMAE_RXSREQ,	USIF_DMAE_RXSREQ_SHIFT,		NULL,	0},
+	{"RXLBREQ",	USIF_DMAE_RXLBREQ,	USIF_DMAE_RXLBREQ_SHIFT,	NULL,	0},
+	{"RXBREQ",	USIF_DMAE_RXBREQ,	USIF_DMAE_RXBREQ_SHIFT,		NULL,	0},
+	{"TXLSREQ",	USIF_DMAE_TXLSREQ,	USIF_DMAE_TXLSREQ_SHIFT,	NULL,	0},
+	{"TXSREQ",	USIF_DMAE_TXSREQ,	USIF_DMAE_TXSREQ_SHIFT,		NULL,	0},
+	{"TXLBREQ",	USIF_DMAE_TXLBREQ,	USIF_DMAE_TXLBREQ_SHIFT,	NULL,	0},
+	{"TXBREQ",	USIF_DMAE_TXBREQ,	USIF_DMAE_TXBREQ_SHIFT,		NULL,	0},
 };
 
 static const pmb887x_io_reg_t usif_regs[] = {
-	{"CLC",			USIF_CLC,			usif_clc_fields,		ARRAY_SIZE(usif_clc_fields),		0},
-	{"RUN",			USIF_RUN,			usif_run_fields,		ARRAY_SIZE(usif_run_fields),		0},
-	{"MODEM_CTRL",	USIF_MODEM_CTRL,	usif_modem_ctrl_fields,	ARRAY_SIZE(usif_modem_ctrl_fields),	0},
-	{"PROTO",		USIF_PROTO,			NULL,					0,									0},
-	{"MODE",		USIF_MODE,			NULL,					0,									0},
-	{"BAUD",		USIF_BAUD,			NULL,					0,									0},
-	{"FBAUD",		USIF_FBAUD,			NULL,					0,									0},
-	{"RXSMP",		USIF_RXSMP,			NULL,					0,									0},
-	{"MODEM_STAT",	USIF_MODEM_STAT,	usif_modem_stat_fields,	ARRAY_SIZE(usif_modem_stat_fields),	0},
-	{"TPS",			USIF_TPS,			NULL,					0,									0},
-	{"FIFO_STAT",	USIF_FIFO_STAT,		usif_fifo_stat_fields,	ARRAY_SIZE(usif_fifo_stat_fields),	0},
-	{"TX_IMSC",		USIF_TX_IMSC,		NULL,					0,									0},
-	{"RX_IMSC",		USIF_RX_IMSC,		NULL,					0,									0},
-	{"TXD",			USIF_TXD,			NULL,					0,									0},
-	{"RXD",			USIF_RXD,			NULL,					0,									0},
+	{"CLC",			USIF_CLC,			usif_clc_fields,			ARRAY_SIZE(usif_clc_fields),			0},
+	{"ID",			USIF_ID,			usif_id_fields,				ARRAY_SIZE(usif_id_fields),				0},
+	{"RUNCTRL",		USIF_RUNCTRL,		usif_runctrl_fields,		ARRAY_SIZE(usif_runctrl_fields),		0},
+	{"MSS_SET",		USIF_MSS_SET,		usif_mss_set_fields,		ARRAY_SIZE(usif_mss_set_fields),		0},
+	{"MSS_CLR",		USIF_MSS_CLR,		usif_mss_clr_fields,		ARRAY_SIZE(usif_mss_clr_fields),		0},
+	{"MODE_CFG",	USIF_MODE_CFG,		usif_mode_cfg_fields,		ARRAY_SIZE(usif_mode_cfg_fields),		0},
+	{"PRTC_CFG",	USIF_PRTC_CFG,		usif_prtc_cfg_fields,		ARRAY_SIZE(usif_prtc_cfg_fields),		0},
+	{"BC_CFG",		USIF_BC_CFG,		usif_bc_cfg_fields,			ARRAY_SIZE(usif_bc_cfg_fields),			0},
+	{"FDIV_CFG",	USIF_FDIV_CFG,		usif_fdiv_cfg_fields,		ARRAY_SIZE(usif_fdiv_cfg_fields),		0},
+	{"ICTMO_CFG",	USIF_ICTMO_CFG,		usif_ictmo_cfg_fields,		ARRAY_SIZE(usif_ictmo_cfg_fields),		0},
+	{"MSS_STAT",	USIF_MSS_STAT,		usif_mss_stat_fields,		ARRAY_SIZE(usif_mss_stat_fields),		0},
+	{"TXFIFO_CFG",	USIF_TXFIFO_CFG,	usif_txfifo_cfg_fields,		ARRAY_SIZE(usif_txfifo_cfg_fields),		0},
+	{"TPS_CTRL",	USIF_TPS_CTRL,		usif_tps_ctrl_fields,		ARRAY_SIZE(usif_tps_ctrl_fields),		0},
+	{"TXFIFO_STAT",	USIF_TXFIFO_STAT,	usif_txfifo_stat_fields,	ARRAY_SIZE(usif_txfifo_stat_fields),	0},
+	{"RXFIFO_CFG",	USIF_RXFIFO_CFG,	usif_rxfifo_cfg_fields,		ARRAY_SIZE(usif_rxfifo_cfg_fields),		0},
+	{"MRPS_CTRL",	USIF_MRPS_CTRL,		usif_mrps_ctrl_fields,		ARRAY_SIZE(usif_mrps_ctrl_fields),		0},
+	{"RPS_STAT",	USIF_RPS_STAT,		usif_rps_stat_fields,		ARRAY_SIZE(usif_rps_stat_fields),		0},
+	{"RXFIFO_STAT",	USIF_RXFIFO_STAT,	usif_rxfifo_stat_fields,	ARRAY_SIZE(usif_rxfifo_stat_fields),	0},
+	{"ERRIRQSM",	USIF_ERRIRQSM,		usif_errirqsm_fields,		ARRAY_SIZE(usif_errirqsm_fields),		0},
+	{"ERRIRQSS",	USIF_ERRIRQSS,		usif_errirqss_fields,		ARRAY_SIZE(usif_errirqss_fields),		0},
+	{"ERRIRQSC",	USIF_ERRIRQSC,		usif_errirqsc_fields,		ARRAY_SIZE(usif_errirqsc_fields),		0},
+	{"PIRQSM",		USIF_PIRQSM,		usif_pirqsm_fields,			ARRAY_SIZE(usif_pirqsm_fields),			0},
+	{"PIRQSS",		USIF_PIRQSS,		usif_pirqss_fields,			ARRAY_SIZE(usif_pirqss_fields),			0},
+	{"PIRQSC",		USIF_PIRQSC,		usif_pirqsc_fields,			ARRAY_SIZE(usif_pirqsc_fields),			0},
+	{"RIS",			USIF_RIS,			usif_ris_fields,			ARRAY_SIZE(usif_ris_fields),			0},
+	{"IMSC",		USIF_IMSC,			usif_imsc_fields,			ARRAY_SIZE(usif_imsc_fields),			0},
+	{"MIS",			USIF_MIS,			usif_mis_fields,			ARRAY_SIZE(usif_mis_fields),			0},
+	{"ICR",			USIF_ICR,			usif_icr_fields,			ARRAY_SIZE(usif_icr_fields),			0},
+	{"ISR",			USIF_ISR,			usif_isr_fields,			ARRAY_SIZE(usif_isr_fields),			0},
+	{"DMAE",		USIF_DMAE,			usif_dmae_fields,			ARRAY_SIZE(usif_dmae_fields),			0},
+	{"TXD",			USIF_TXD,			NULL,						0,										0},
+	{"RXD",			USIF_RXD,			NULL,						0,										0},
 };
 
 static const pmb887x_io_field_t vic_id_fields[] = {
@@ -10944,6 +11185,12 @@ static const pmb887x_cpu_meta_irq_t pmb8876_irqs[] = {
 	{"TPU_INT1",		PMB8876_TPU_INT1_IRQ,		VIC_CON120},
 	{"GPRSCU_INT0",		PMB8876_GPRSCU_INT0_IRQ,	VIC_CON121},
 	{"GPRSCU_INT1",		PMB8876_GPRSCU_INT1_IRQ,	VIC_CON122},
+	{"USIF_RX_SINGLE",	PMB8876_USIF_RX_SINGLE_IRQ,	VIC_CON128},
+	{"USIF_RX_BURST",	PMB8876_USIF_RX_BURST_IRQ,	VIC_CON129},
+	{"USIF_TX",			PMB8876_USIF_TX_IRQ,		VIC_CON130},
+	{"USIF_AB",			PMB8876_USIF_AB_IRQ,		VIC_CON131},
+	{"USIF_ERR",		PMB8876_USIF_ERR_IRQ,		VIC_CON132},
+	{"USIF_PIRQ",		PMB8876_USIF_PIRQ_IRQ,		VIC_CON133},
 	{"DIF_RX_SINGLE",	PMB8876_DIF_RX_SINGLE_IRQ,	VIC_CON134},
 	{"DIF_RX_BURST",	PMB8876_DIF_RX_BURST_IRQ,	VIC_CON135},
 	{"DIF_TX",			PMB8876_DIF_TX_IRQ,			VIC_CON136},
@@ -11060,15 +11307,15 @@ static const pmb887x_cpu_meta_gpio_t pmb8876_gpios[] = {
 	{"PIN98",	"DIF_RD",			"GPIO_PIN98_DIF_RD",			PMB8876_GPIO_DIF_RD},
 	{"PIN99",	"DIF_HD",			"GPIO_PIN99_DIF_HD",			PMB8876_GPIO_DIF_HD},
 	{"PIN100",	"DIF_VD",			"GPIO_PIN100_DIF_VD",			PMB8876_GPIO_DIF_VD},
-	{"PIN101",	"PIN101",			"GPIO_PIN101",					PMB8876_GPIO_PIN101},
+	{"PIN101",	"DIF_RESET2",		"GPIO_PIN101_DIF_RESET2",		PMB8876_GPIO_DIF_RESET2},
 	{"PIN102",	"I2S2_CLK1",		"GPIO_PIN102_I2S2_CLK1",		PMB8876_GPIO_I2S2_CLK1},
 	{"PIN103",	"I2S2_WA1",			"GPIO_PIN103_I2S2_WA1",			PMB8876_GPIO_I2S2_WA1},
 	{"PIN104",	"MMCI_CMD",			"GPIO_PIN104_MMCI_CMD",			PMB8876_GPIO_MMCI_CMD},
 	{"PIN105",	"MMCI_DAT0",		"GPIO_PIN105_MMCI_DAT0",		PMB8876_GPIO_MMCI_DAT0},
 	{"PIN106",	"MMCI_CLK",			"GPIO_PIN106_MMCI_CLK",			PMB8876_GPIO_MMCI_CLK},
 	{"PIN107",	"USIF_TXD_MTSR",	"GPIO_PIN107_USIF_TXD_MTSR",	PMB8876_GPIO_USIF_TXD_MTSR},
-	{"PIN108",	"PIN108",			"GPIO_PIN108",					PMB8876_GPIO_PIN108},
-	{"PIN109",	"PIN109",			"GPIO_PIN109",					PMB8876_GPIO_PIN109},
+	{"PIN108",	"USIF_RXD_MRST",	"GPIO_PIN108_USIF_RXD_MRST",	PMB8876_GPIO_USIF_RXD_MRST},
+	{"PIN109",	"USIF_SCLK",		"GPIO_PIN109_USIF_SCLK",		PMB8876_GPIO_USIF_SCLK},
 	{"PIN110",	"PIN110",			"GPIO_PIN110",					PMB8876_GPIO_PIN110},
 	{"PIN111",	"PIN111",			"GPIO_PIN111",					PMB8876_GPIO_PIN111},
 	{"PIN112",	"I2S1_CLK1",		"GPIO_PIN112_I2S1_CLK1",		PMB8876_GPIO_I2S1_CLK1},

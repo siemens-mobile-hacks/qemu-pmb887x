@@ -167,6 +167,11 @@ static inline uint32_t pmb887x_fifo32_pop(pmb887x_fifo32_t *fifo) {
 	return value;
 }
 
+static inline uint32_t pmb887x_fifo32_peek(pmb887x_fifo32_t *fifo) {
+	g_assert(fifo->base.count > 0);
+	return fifo->buffer[fifo->base.read];
+}
+
 static inline void pmb887x_fifo32_write(pmb887x_fifo32_t *fifo, const uint32_t *items, uint32_t items_count) {
 	pmb887x_fifo_base_write(&fifo->base, fifo->buffer, items, items_count, sizeof(uint32_t));
 }

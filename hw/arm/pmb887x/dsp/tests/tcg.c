@@ -109,17 +109,17 @@ static void test_mov_a0_b0(uint16_t opcode) {
 }
 
 static void test_mov_full_accumulator(void) {
-	/* EL71 Mask ROM 0801 dsp-instructions hardware case 968. */
+	/* 0xDA90: mov a0,b0; dsp-lle-instructions hardware case. */
 	test_mov_a0_b0(0xDA90);
 }
 
 static void test_mov_full_accumulator_alias(void) {
-	/* PMB8875 MASK ROM 0602 uses this REG-to-b0 encoding at P:5E49. */
+	/* 0x5ED8: mov a0,b0 through the REG-to-bX encoding (TeakLite 4.41, mov REG,bX). */
 	test_mov_a0_b0(0x5ED8);
 }
 
 static void test_mov_immediate_product_high(void) {
-	/* PMB8876 Mask ROM 0801 CCH receiver uses this instruction at P:A056. */
+	/* 0x5E0B 0x0090: mov 0x0090,p (TeakLite 4.41, mov ##long immediate,REG). */
 	test_memory_t program = {
 		.words = { 0x5E0B, 0x0090, 0x4180, 0x0004 },
 	};
@@ -588,6 +588,44 @@ static void test_multiply_status_register(void) {
 	g_assert_cmphex(core.state.p[0], ==, 6);
 }
 
+static void test_product_bit_tests(void) {
+	/* TeakLite 4.41, 4.2.2 e and f: p is read as the shifted p sign-extended to 36 bits. */
+	static const struct {
+		uint16_t opcode;
+		uint32_t product;
+		uint8_t product_extension;
+		uint8_t product_shift;
+		uint16_t a0;
+		bool expected_fz;
+	} cases[] = {
+		{ 0x88AB, 0x00010000, 0, 0, 0x8000, false }, /* tst0 a0l,p. */
+		{ 0x88AB, 0x00000003, 0, 0, 0x8000, true }, /* tst0 a0l,p. */
+		{ 0x88AB, 0x06260060, 0, 1, 0x0040, true }, /* tst0 a0l,p. */
+		{ 0x8AAB, 0xFFFFFFFF, 1, 0, 0xFFFF, true }, /* tst1 a0l,p. */
+		{ 0x8AAB, 0x00010000, 0, 0, 0xFFFF, false }, /* tst1 a0l,p. */
+		{ 0x9F0B, 0xFFFFFFFF, 1, 0, 0x0000, true }, /* tstb p,#15. */
+		{ 0x9F0B, 0x00010000, 0, 0, 0x0000, false }, /* tstb p,#15. */
+		{ 0x960B, 0x06260060, 0, 0, 0x0000, true }, /* tstb p,#6. */
+		{ 0x960B, 0x06260060, 0, 1, 0x0000, false }, /* tstb p,#6. */
+	};
+
+	for (size_t i = 0; i < ARRAY_SIZE(cases); i++) {
+		test_memory_t program = {
+			.words = { cases[i].opcode, 0x4180, 0x0003 }, /* opcode; br 0x0003. */
+		};
+		test_memory_t data = {};
+		pmb887x_dsp_tcg_core_t core = test_core_create(&program, &data);
+
+		core.state.p[0] = cases[i].product;
+		core.state.product_extension[0] = cases[i].product_extension;
+		core.state.product_shift = cases[i].product_shift;
+		core.state.a[0] = cases[i].a0;
+		core.state.fz = !cases[i].expected_fz;
+		g_assert_true(pmb887x_dsp_tcg_execute_block(&core));
+		g_assert_cmphex(core.state.fz, ==, cases[i].expected_fz);
+	}
+}
+
 static void test_alu_status_register(void) {
 	test_memory_t program = {
 		.words = { 0x80A8, 0x4180, 0x0003 },
@@ -989,9 +1027,12 @@ static void test_movr_b_destination(void) {
 }
 
 static void test_delayed_interrupt_return(void) {
-	/* 0xD7C0 0x2102 0xD4BC 0x0010: retid; mov 2, a0l; mov a0l, [0x0010]. */
+	/*
+	 * 0xD7C0 0x2102 0xD4BC 0x0010: retid; mov 2, a0l; mov a0l, [0x0010]. The store starts in the last delay cycle and
+	 * takes its address from P:000A, the return address (dsp-lle-delay-slot-overflow).
+	 */
 	test_memory_t program = {
-		.words = { 0xD7C0, 0x2102, 0xD4BC, 0x0010 },
+		.words = { 0xD7C0, 0x2102, 0xD4BC, 0x0010, [10] = 0x0020 },
 	};
 	test_memory_t data = {
 		.words = { [5] = 10, [0x10] = 0xA55A },
@@ -1001,12 +1042,39 @@ static void test_delayed_interrupt_return(void) {
 	core.state.sp = 5;
 	core.state.maskable_interrupt_active = 1;
 	g_assert_true(pmb887x_dsp_tcg_execute_block(&core));
+	g_assert_true(pmb887x_dsp_tcg_execute_block(&core));
 	g_assert_cmphex(core.state.pc, ==, 11);
 	g_assert_cmphex(core.state.a[0], ==, 2);
 	g_assert_cmphex(core.state.sp, ==, 6);
 	g_assert_cmphex(core.state.ie, ==, 1);
 	g_assert_cmphex(core.state.maskable_interrupt_active, ==, 0);
+	g_assert_cmphex(data.words[0x20], ==, 2);
 	g_assert_cmphex(data.words[0x10], ==, 0xA55A);
+}
+
+static void test_delayed_return_borrowed_word_invalidation(void) {
+	/* 0xD780 0x2102 0xD4BC 0x0010: retd; mov 2, a0l; mov a0l, [P:000A] (the second word comes from P:000A). */
+	test_memory_t program = {
+		.words = { 0xD780, 0x2102, 0xD4BC, 0x0010, [10] = 0x0020 },
+	};
+	test_memory_t data = {
+		.words = { [5] = 10 },
+	};
+	pmb887x_dsp_tcg_core_t core = test_core_create(&program, &data);
+
+	core.state.sp = 5;
+	g_assert_true(pmb887x_dsp_tcg_execute_block(&core));
+	g_assert_true(pmb887x_dsp_tcg_execute_block(&core));
+	g_assert_cmphex(data.words[0x20], ==, 2);
+
+	program.words[10] = 0x0030;
+	pmb887x_dsp_tcg_invalidate_program(&core, 10);
+	core.state.pc = 0;
+	core.state.sp = 5;
+	g_assert_true(pmb887x_dsp_tcg_execute_block(&core));
+	g_assert_true(pmb887x_dsp_tcg_execute_block(&core));
+	g_assert_cmphex(core.state.pc, ==, 11);
+	g_assert_cmphex(data.words[0x30], ==, 2);
 }
 
 static void test_delayed_interrupt_return_exit_request(void) {
@@ -1024,7 +1092,7 @@ static void test_delayed_interrupt_return_exit_request(void) {
 	core.state.sp = 5;
 	core.state.maskable_interrupt_active = 1;
 	g_assert_true(pmb887x_dsp_tcg_execute_block(&core));
-	g_assert_cmphex(core.state.pc, ==, 11);
+	g_assert_cmphex(core.state.pc, ==, 10);
 	g_assert_cmphex(core.state.sp, ==, 6);
 	g_assert_cmphex(core.state.ie, ==, 1);
 	g_assert_cmphex(core.state.maskable_interrupt_active, ==, 0);
@@ -1051,7 +1119,7 @@ static void test_exit_request_counts_executed_cycles(void) {
 }
 
 static void test_delayed_return_break(void) {
-	/* 0xD780 0xD3C0 0x0000: retd; break; nop at EL71 GSM DSP P:0x08D98. */
+	/* 0xD780 0xD3C0 0x0000: retd; break; nop. */
 	test_memory_t program = {
 		.words = { 0xD780, 0xD3C0, 0x0000 },
 	};
@@ -1092,8 +1160,9 @@ static void test_delayed_return_stores(void) {
 }
 
 static void test_nested_nmi_interrupt_return(void) {
+	/* 0xD7C0 0x2102 0xD4BC 0x0010: retid; mov 2, a0l; mov a0l, [0x0010] with the address taken from P:000A. */
 	test_memory_t program = {
-		.words = { 0xD7C0, 0x2102, 0xD4BC, 0x0010 },
+		.words = { 0xD7C0, 0x2102, 0xD4BC, 0x0010, [10] = 0x0020 },
 	};
 	test_memory_t data = {
 		.words = { [5] = 10, [0x10] = 0xA55A },
@@ -1103,6 +1172,7 @@ static void test_nested_nmi_interrupt_return(void) {
 	core.state.sp = 5;
 	core.state.nmi_active = 1;
 	core.state.maskable_interrupt_active = 1;
+	g_assert_true(pmb887x_dsp_tcg_execute_block(&core));
 	g_assert_true(pmb887x_dsp_tcg_execute_block(&core));
 	g_assert_cmphex(core.state.pc, ==, 11);
 	g_assert_cmphex(core.state.sp, ==, 6);
@@ -1136,6 +1206,7 @@ int main(int argc, char **argv) {
 	g_test_add_func("/pmb887x/dsp/tcg/subroutine-block-repeat", test_subroutine_block_repeat);
 	g_test_add_func("/pmb887x/dsp/tcg/status-reserved-read-bits", test_status_reserved_read_bits);
 	g_test_add_func("/pmb887x/dsp/tcg/multiply-status-register", test_multiply_status_register);
+	g_test_add_func("/pmb887x/dsp/tcg/product-bit-tests", test_product_bit_tests);
 	g_test_add_func("/pmb887x/dsp/tcg/alu-status-register", test_alu_status_register);
 	g_test_add_func("/pmb887x/dsp/tcg/dual-memory-spaces", test_dual_memory_spaces);
 	g_test_add_func("/pmb887x/dsp/tcg/direct-data-read-write", test_direct_data_read_write);
@@ -1154,6 +1225,8 @@ int main(int argc, char **argv) {
 	g_test_add_func("/pmb887x/dsp/tcg/external-registers-disconnected", test_external_registers_disconnected);
 	g_test_add_func("/pmb887x/dsp/tcg/movr-b-destination", test_movr_b_destination);
 	g_test_add_func("/pmb887x/dsp/tcg/delayed-interrupt-return", test_delayed_interrupt_return);
+	g_test_add_func("/pmb887x/dsp/tcg/delayed-return-borrowed-word-invalidation",
+		test_delayed_return_borrowed_word_invalidation);
 	g_test_add_func("/pmb887x/dsp/tcg/delayed-interrupt-return-exit-request", test_delayed_interrupt_return_exit_request);
 	g_test_add_func("/pmb887x/dsp/tcg/exit-request-counts-executed-cycles", test_exit_request_counts_executed_cycles);
 	g_test_add_func("/pmb887x/dsp/tcg/delayed-return-break", test_delayed_return_break);

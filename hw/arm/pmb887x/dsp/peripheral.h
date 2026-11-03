@@ -46,7 +46,6 @@ void dsp_bus_set_clock_hz(dsp_bus_t *bus, uint32_t frequency_hz);
 void dsp_bus_set_ms_clock_hz(dsp_bus_t *bus, uint32_t frequency_hz);
 void dsp_bus_update_time(dsp_bus_t *bus);
 void dsp_bus_advance(dsp_bus_t *bus, size_t cycles);
-size_t dsp_bus_advance_afe(dsp_bus_t *bus, size_t cycles);
 void dsp_bus_advance_idle(dsp_bus_t *bus, size_t cycles);
 size_t dsp_bus_get_cycles_until_event(const dsp_bus_t *bus);
 bool dsp_bus_needs_core_catchup(const dsp_bus_t *bus);
