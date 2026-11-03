@@ -37,6 +37,13 @@ OBJECT_DECLARE_SIMPLE_TYPE(pmb887x_sim_card_chardev_t, PMB887X_SIM_CARD_CHARDEV)
 #define SIM_CARD_PPS0_PPS3_PRESENT 0x40
 #define SIM_CARD_PPS0_PROTOCOL_MASK 0x0F
 #define SIM_CARD_PPS_MIN_SIZE 3
+/* Card clocks of a reference GSM SIM, measured by the bsp sim-card-latency test at 3.25 MHz. */
+#define SIM_CARD_ATR_DELAY_CLOCKS 11960
+#define SIM_CARD_SELECT_CLOCKS 10199
+#define SIM_CARD_STATUS_CLOCKS 12253
+#define SIM_CARD_READ_BINARY_CLOCKS 959
+#define SIM_CARD_READ_RECORD_CLOCKS 1017
+#define SIM_CARD_GET_RESPONSE_CLOCKS 296
 
 enum sim_card_state_t {
 	SIM_CARD_STATE_HEADER,
@@ -68,6 +75,7 @@ struct pmb887x_sim_card_t {
 	bool pps_allowed;
 	uint32_t clocks_per_etu;
 	uint32_t pps_clocks_per_etu;
+	uint32_t processing_clocks;
 };
 
 typedef struct sim_card_exchange_t {
@@ -101,8 +109,10 @@ static void sim_card_schedule_output(pmb887x_sim_card_t *card) {
 	if (fifo8_is_empty(&card->output) || clock_hz == 0 || timer_pending(card->tx_timer))
 		return;
 
-	int64_t character_ns = muldiv64(SIM_CARD_CHARACTER_ETU * card->clocks_per_etu, NANOSECONDS_PER_SECOND, clock_hz);
-	timer_mod(card->tx_timer, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + character_ns);
+	uint64_t clocks = SIM_CARD_CHARACTER_ETU * card->clocks_per_etu + card->processing_clocks;
+	card->processing_clocks = 0;
+	int64_t delay_ns = muldiv64(clocks, NANOSECONDS_PER_SECOND, clock_hz);
+	timer_mod(card->tx_timer, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + delay_ns);
 }
 
 static void sim_card_queue_bytes(pmb887x_sim_card_t *card, const uint8_t *data, size_t size) {
@@ -149,12 +159,30 @@ static void sim_card_reset_protocol(pmb887x_sim_card_t *card) {
 	card->expected_command_size = PMB887X_APDU_HEADER_SIZE;
 }
 
+static uint32_t sim_card_processing_clocks(uint8_t instruction) {
+	switch (instruction) {
+		case PMB887X_APDU_INS_SELECT:
+			return SIM_CARD_SELECT_CLOCKS;
+		case PMB887X_APDU_INS_STATUS:
+			return SIM_CARD_STATUS_CLOCKS;
+		case PMB887X_APDU_INS_READ_BINARY:
+			return SIM_CARD_READ_BINARY_CLOCKS;
+		case PMB887X_APDU_INS_READ_RECORD:
+			return SIM_CARD_READ_RECORD_CLOCKS;
+		case PMB887X_APDU_INS_GET_RESPONSE:
+			return SIM_CARD_GET_RESPONSE_CLOCKS;
+		default:
+			return 0;
+	}
+}
+
 static void sim_card_exchange_complete(void *opaque, const pmb887x_apdu_response_t *response) {
 	sim_card_exchange_t *exchange = opaque;
 	pmb887x_sim_card_t *card = exchange->card;
 	if (card->reset && card->state == SIM_CARD_STATE_RESPONSE && exchange->id == card->exchange_id) {
 		sim_card_trace_bytes("APDU response data", response->data, response->size);
 		DPRINTF("APDU status: %02X%02X\n", response->sw1, response->sw2);
+		card->processing_clocks = sim_card_processing_clocks(card->command[PMB887X_APDU_OFFSET_INS]);
 		sim_card_queue_response(card, response);
 		sim_card_reset_protocol(card);
 	}
@@ -285,6 +313,7 @@ static void sim_card_handle_reset(void *opaque, int _id, int level) {
 		card->exchange_id++;
 		timer_del(card->tx_timer);
 		fifo8_reset(&card->output);
+		card->processing_clocks = 0;
 		sim_card_reset_protocol(card);
 		return;
 	}
@@ -304,6 +333,7 @@ static void sim_card_handle_reset(void *opaque, int _id, int level) {
 		card->pps_allowed = true;
 		card->clocks_per_etu = sim_card_fidi_to_clocks_per_etu(SIM_CARD_DEFAULT_FIDI);
 		card->pps_clocks_per_etu = 0;
+		card->processing_clocks = SIM_CARD_ATR_DELAY_CLOCKS;
 		sim_card_trace_bytes("ATR", atr, atr_size);
 		sim_card_queue_bytes(card, atr, atr_size);
 	}
@@ -379,6 +409,7 @@ static void sim_card_reset(DeviceState *dev) {
 		fifo8_reset(&card->output);
 	card->reset = false;
 	card->exchange_id++;
+	card->processing_clocks = 0;
 	sim_card_reset_protocol(card);
 	if (card->apdu)
 		pmb887x_apdu_backend_card_reset(card->apdu);
