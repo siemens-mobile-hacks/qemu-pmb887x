@@ -22,6 +22,7 @@
 #include "hw/arm/pmb887x/mod.h"
 #include "hw/arm/pmb887x/trace.h"
 #include "hw/arm/pmb887x/fifo.h"
+#include "hw/arm/pmb887x/dma_sink.h"
 
 #define TYPE_PMB887X_DIF	"pmb887x-dif-v1"
 OBJECT_DECLARE_SIMPLE_TYPE(pmb887x_dif_t, PMB887X_DIF);
@@ -356,6 +357,36 @@ static void dif_write_fifo(pmb887x_dif_t *p, uint16_t value) {
 	dif_schedule_transfer(p);
 }
 
+static void dif_write_tb(pmb887x_dif_t *p, uint16_t value) {
+	p->tb = value & p->mask;
+	dif_write_fifo(p, value);
+}
+
+static bool dif_dma_write_block(
+	pmb887x_dma_sink_t *sink,
+	MemoryRegion *mr,
+	hwaddr addr,
+	const uint8_t *data,
+	uint32_t width,
+	uint32_t count,
+	bool is_increment
+) {
+	pmb887x_dif_t *p = PMB887X_DIF(sink);
+	if (mr != &p->mmio)
+		return false;
+	if (addr != DIFv1_TB)
+		return false;
+	if (is_increment && count > 1)
+		return false;
+
+	for (uint32_t i = 0; i < count; i++) {
+		uint32_t value = ldn_le_p(data + i * width, width);
+		IO_DUMP_WRITE(addr + p->mmio.addr, width, value);
+		dif_write_tb(p, value);
+	}
+	return true;
+}
+
 static void dif_update_state(pmb887x_dif_t *p) {
 	uint32_t bits = ((p->con & DIFv1_CON_BM) >> DIFv1_CON_BM_SHIFT) + 1;
 	p->bits = bits;
@@ -601,8 +632,7 @@ static void dif_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned si
 			break;
 
 		case DIFv1_TB:
-			p->tb = value & p->mask;
-			dif_write_fifo(p, value);
+			dif_write_tb(p, value);
 			break;
 
 		case DIFv1_RXFCON:
@@ -849,6 +879,9 @@ static void dif_class_init(ObjectClass *klass, const void *data) {
 	device_class_set_legacy_reset(dc, dif_reset);
 	dc->realize = dif_realize;
 	dc->unrealize = dif_unrealize;
+
+	pmb887x_dma_sink_class_t *dma_sink = PMB887X_DMA_SINK_CLASS(klass);
+	dma_sink->write_block = dif_dma_write_block;
 }
 
 static const TypeInfo dif_info = {
@@ -857,6 +890,10 @@ static const TypeInfo dif_info = {
 	.instance_size 	= sizeof(pmb887x_dif_t),
 	.instance_init 	= dif_init,
 	.class_init    	= dif_class_init,
+	.interfaces		= (const InterfaceInfo[]) {
+		{ TYPE_PMB887X_DMA_SINK },
+		{ }
+	},
 };
 
 static void dif_register_types(void) {
