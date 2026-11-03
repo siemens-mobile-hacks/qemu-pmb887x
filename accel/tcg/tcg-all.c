@@ -150,10 +150,8 @@ static int tcg_init_machine(AccelState *as, MachineState *ms)
     }
 
     if (s->vcpu_timers) {
-        if (s->mttcg_enabled != ON_OFF_AUTO_ON || icount_enabled() ||
-            ms->smp.max_cpus > 1) {
-            error_report("vcpu-timers requires thread=multi, one vCPU "
-                         "and no icount");
+        if (icount_enabled() || ms->smp.max_cpus > 1) {
+            error_report("vcpu-timers requires one vCPU and no icount");
             return -EINVAL;
         }
         qemu_virtual_timers_on_vcpu = true;
