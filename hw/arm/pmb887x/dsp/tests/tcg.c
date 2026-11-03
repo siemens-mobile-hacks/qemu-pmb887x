@@ -12,11 +12,14 @@
 #define TEST_TCG_CODE_SIZE	(256 * MiB)
 #define TEST_ACCUMULATOR_BITS	36
 #define TEST_BRANCH_WORDS	2
-#define TEST_FLAG_LIVENESS_INSTRUCTIONS	16
-#define TEST_FLAG_LIVENESS_ITERATIONS	1000
-#define TEST_FLAG_LIVENESS_ADDRESS_REGISTERS	6
-#define TEST_FLAG_LIVENESS_ADDRESS_SPREAD	12
-#define TEST_FLAG_LIVENESS_MAX_BLOCKS	(2 * TEST_FLAG_LIVENESS_INSTRUCTIONS)
+#define TEST_PRODUCT_SHIFTS	4
+#define TEST_MODE_KEYED_CHAIN_BLOCKS	6
+#define TEST_BLOCK_EQUIVALENCE_INSTRUCTIONS	16
+#define TEST_BLOCK_EQUIVALENCE_ITERATIONS	1000
+#define TEST_BLOCK_EQUIVALENCE_ADDRESS_REGISTERS	6
+#define TEST_BLOCK_EQUIVALENCE_ADDRESS_SPREAD	12
+#define TEST_BLOCK_EQUIVALENCE_MODULO_LIMIT	0x20
+#define TEST_BLOCK_EQUIVALENCE_MAX_BLOCKS	(2 * TEST_BLOCK_EQUIVALENCE_INSTRUCTIONS)
 
 typedef struct test_memory_t test_memory_t;
 
@@ -25,16 +28,16 @@ struct test_memory_t {
 	teak_tcg_core_t *exit_core_on_write;
 };
 
-typedef struct test_flag_liveness_trace_t test_flag_liveness_trace_t;
+typedef struct test_block_equivalence_trace_t test_block_equivalence_trace_t;
 
-struct test_flag_liveness_trace_t {
-	teak_state_t states[TEST_FLAG_LIVENESS_INSTRUCTIONS + 1];
-	bool recorded[TEST_FLAG_LIVENESS_INSTRUCTIONS + 1];
+struct test_block_equivalence_trace_t {
+	teak_state_t states[TEST_BLOCK_EQUIVALENCE_INSTRUCTIONS + 1];
+	bool recorded[TEST_BLOCK_EQUIVALENCE_INSTRUCTIONS + 1];
 };
 
 int (*qemu_main)(void);
 
-static const uint16_t test_flag_liveness_pool[] = {
+static const uint16_t test_block_equivalence_pool[] = {
 	0xD022, /* mpy [r4++] [r2] a0 */
 	0xD22A, /* mac [r4++] [r2++] a0 */
 	0xDA22, /* mac [r4++] [r2] a1 */
@@ -69,6 +72,10 @@ static const uint16_t test_flag_liveness_pool[] = {
 	0x9020, /* tstb [r0] 0x0000 */
 	0x5B48, /* mov st0 a0l */
 	0x5900, /* mov r0 st0 */
+	0x4D81, /* load 0x0001 ps */
+	0x4D83, /* load 0x0003 ps */
+	0x5940, /* mov r0 st2 */
+	0x593A, /* mov a0l st1 */
 };
 
 static uint16_t test_memory_read(void *opaque, uint32_t address) {
@@ -650,7 +657,7 @@ static uint64_t test_random_accumulator(void) {
 	return (uint64_t) sextract64(value, 0, TEST_ACCUMULATOR_BITS);
 }
 
-static void test_flag_liveness_randomize(teak_state_t *state) {
+static void test_block_equivalence_randomize(teak_state_t *state) {
 	state->a[0] = test_random_accumulator();
 	state->a[1] = test_random_accumulator();
 	state->b[0] = test_random_accumulator();
@@ -658,9 +665,9 @@ static void test_flag_liveness_randomize(teak_state_t *state) {
 	state->p[0] = g_test_rand_int();
 	state->x[0] = g_test_rand_int();
 	state->y[0] = g_test_rand_int();
-	for (size_t i = 0; i < TEST_FLAG_LIVENESS_ADDRESS_REGISTERS; i++) {
-		state->r[i] = g_test_rand_int_range(TEST_Y_SPACE_BASE - TEST_FLAG_LIVENESS_ADDRESS_SPREAD,
-			TEST_Y_SPACE_BASE + TEST_FLAG_LIVENESS_ADDRESS_SPREAD);
+	for (size_t i = 0; i < TEST_BLOCK_EQUIVALENCE_ADDRESS_REGISTERS; i++) {
+		state->r[i] = g_test_rand_int_range(TEST_Y_SPACE_BASE - TEST_BLOCK_EQUIVALENCE_ADDRESS_SPREAD,
+			TEST_Y_SPACE_BASE + TEST_BLOCK_EQUIVALENCE_ADDRESS_SPREAD);
 	}
 	state->fz = g_test_rand_bit();
 	state->fm = g_test_rand_bit();
@@ -672,9 +679,16 @@ static void test_flag_liveness_randomize(teak_state_t *state) {
 	state->flm = g_test_rand_bit();
 	state->fvl = g_test_rand_bit();
 	state->fr = g_test_rand_bit();
+	state->product_shift = g_test_rand_int_range(0, TEST_PRODUCT_SHIFTS);
+	state->modulo_enable = g_test_rand_int_range(0, BIT(TEAK_MODULO_REGISTERS));
+	state->modi = g_test_rand_int_range(0, TEST_BLOCK_EQUIVALENCE_MODULO_LIMIT);
+	state->modj = g_test_rand_int_range(0, TEST_BLOCK_EQUIVALENCE_MODULO_LIMIT);
+	state->sat = g_test_rand_bit();
+	state->sata = g_test_rand_bit();
+	teak_update_modulo_steps(state);
 }
 
-static void test_flag_liveness_assert_same(const teak_state_t *expected, const teak_state_t *actual) {
+static void test_block_equivalence_assert_same(const teak_state_t *expected, const teak_state_t *actual) {
 	g_assert_cmphex(expected->a[0], ==, actual->a[0]);
 	g_assert_cmphex(expected->a[1], ==, actual->a[1]);
 	g_assert_cmphex(expected->b[0], ==, actual->b[0]);
@@ -695,15 +709,20 @@ static void test_flag_liveness_assert_same(const teak_state_t *expected, const t
 	g_assert_cmpuint(expected->fvl, ==, actual->fvl);
 	g_assert_cmpuint(expected->fr, ==, actual->fr);
 	g_assert_cmpuint(expected->sat, ==, actual->sat);
+	g_assert_cmpuint(expected->sata, ==, actual->sata);
+	g_assert_cmpuint(expected->product_shift, ==, actual->product_shift);
+	g_assert_cmpuint(expected->modulo_enable, ==, actual->modulo_enable);
+	g_assert_cmpuint(expected->page, ==, actual->page);
+	g_assert_cmpuint(expected->s, ==, actual->s);
 	g_assert_cmpuint(expected->ie, ==, actual->ie);
 	g_assert_cmpuint(expected->interrupt_mask, ==, actual->interrupt_mask);
 }
 
-static uint16_t test_flag_liveness_program(const uint16_t *instructions, size_t stride, test_memory_t *program) {
-	uint16_t end = TEST_FLAG_LIVENESS_INSTRUCTIONS * stride;
+static uint16_t test_block_equivalence_program(const uint16_t *instructions, size_t stride, test_memory_t *program) {
+	uint16_t end = TEST_BLOCK_EQUIVALENCE_INSTRUCTIONS * stride;
 
 	*program = (test_memory_t) {};
-	for (size_t i = 0; i < TEST_FLAG_LIVENESS_INSTRUCTIONS; i++) {
+	for (size_t i = 0; i < TEST_BLOCK_EQUIVALENCE_INSTRUCTIONS; i++) {
 		uint16_t address = i * stride;
 
 		program->words[address] = instructions[i];
@@ -717,16 +736,16 @@ static uint16_t test_flag_liveness_program(const uint16_t *instructions, size_t 
 	return end;
 }
 
-static void test_flag_liveness_run(
+static void test_block_equivalence_run(
 	const uint16_t *instructions,
 	size_t stride,
 	const teak_state_t *initial,
 	test_memory_t *data,
 	bool mapped,
-	test_flag_liveness_trace_t *trace
+	test_block_equivalence_trace_t *trace
 ) {
 	test_memory_t program;
-	uint16_t end = test_flag_liveness_program(instructions, stride, &program);
+	uint16_t end = test_block_equivalence_program(instructions, stride, &program);
 	teak_tcg_core_t core = test_core_create(&program, data);
 
 	if (mapped) {
@@ -735,8 +754,8 @@ static void test_flag_liveness_run(
 		data->exit_core_on_write = &core;
 	}
 	core.state = *initial;
-	*trace = (test_flag_liveness_trace_t) {};
-	for (size_t block = 0; block < TEST_FLAG_LIVENESS_MAX_BLOCKS && core.state.pc != end; block++) {
+	*trace = (test_block_equivalence_trace_t) {};
+	for (size_t block = 0; block < TEST_BLOCK_EQUIVALENCE_MAX_BLOCKS && core.state.pc != end; block++) {
 		g_assert_true(teak_tcg_execute_block(&core));
 		g_assert_cmpuint(core.state.pc % stride, <=, 1);
 
@@ -748,36 +767,131 @@ static void test_flag_liveness_run(
 	data->exit_core_on_write = NULL;
 }
 
-static void test_flag_liveness(void) {
-	for (size_t iteration = 0; iteration < TEST_FLAG_LIVENESS_ITERATIONS; iteration++) {
-		uint16_t instructions[TEST_FLAG_LIVENESS_INSTRUCTIONS];
+static void test_block_equivalence(void) {
+	for (size_t iteration = 0; iteration < TEST_BLOCK_EQUIVALENCE_ITERATIONS; iteration++) {
+		uint16_t instructions[TEST_BLOCK_EQUIVALENCE_INSTRUCTIONS];
 		test_memory_t empty_program = {};
 		test_memory_t data = {};
 		bool mapped = iteration % 2 == 0;
 
-		for (size_t i = 0; i < ARRAY_SIZE(instructions); i++)
-			instructions[i] = test_flag_liveness_pool[g_test_rand_int_range(0, ARRAY_SIZE(test_flag_liveness_pool))];
+		for (size_t i = 0; i < ARRAY_SIZE(instructions); i++) {
+			size_t pool_index = g_test_rand_int_range(0, ARRAY_SIZE(test_block_equivalence_pool));
+
+			instructions[i] = test_block_equivalence_pool[pool_index];
+		}
 		for (size_t i = 0; i < ARRAY_SIZE(data.words); i++)
 			data.words[i] = g_test_rand_int();
 		teak_state_t initial = test_core_create(&empty_program, &data).state;
-		test_flag_liveness_randomize(&initial);
+		test_block_equivalence_randomize(&initial);
 
 		test_memory_t reference_data = data;
 		test_memory_t optimized_data = data;
-		test_flag_liveness_trace_t reference;
-		test_flag_liveness_trace_t optimized;
-		test_flag_liveness_run(instructions, 1 + TEST_BRANCH_WORDS, &initial, &reference_data, mapped, &reference);
-		test_flag_liveness_run(instructions, 1, &initial, &optimized_data, mapped, &optimized);
+		test_block_equivalence_trace_t reference;
+		test_block_equivalence_trace_t optimized;
+		test_block_equivalence_run(instructions, 1 + TEST_BRANCH_WORDS, &initial, &reference_data, mapped, &reference);
+		test_block_equivalence_run(instructions, 1, &initial, &optimized_data, mapped, &optimized);
 
-		for (size_t executed = 0; executed <= TEST_FLAG_LIVENESS_INSTRUCTIONS; executed++) {
+		for (size_t executed = 0; executed <= TEST_BLOCK_EQUIVALENCE_INSTRUCTIONS; executed++) {
 			if (!optimized.recorded[executed])
 				continue;
 			g_assert_true(reference.recorded[executed]);
-			test_flag_liveness_assert_same(&reference.states[executed], &optimized.states[executed]);
+			test_block_equivalence_assert_same(&reference.states[executed], &optimized.states[executed]);
 		}
-		g_assert_true(optimized.recorded[TEST_FLAG_LIVENESS_INSTRUCTIONS]);
+		g_assert_true(optimized.recorded[TEST_BLOCK_EQUIVALENCE_INSTRUCTIONS]);
 		g_assert_cmpmem(reference_data.words, sizeof(reference_data.words),
 			optimized_data.words, sizeof(optimized_data.words));
+	}
+}
+
+static void test_mode_keyed_cache(void) {
+	static const uint64_t accumulated_products[TEST_PRODUCT_SHIFTS] = { 0x100, 0x80, 0x200, 0x400 };
+	test_memory_t program = {
+		.words = {
+			0xD22A, /* mac [r4++] [r2++] a0 */
+			0x4180, 0x0003, /* br 0x0003 */
+		},
+	};
+	test_memory_t data = {};
+	teak_tcg_core_t core = test_core_create(&program, &data);
+
+	for (uint8_t product_shift = 0; product_shift < ARRAY_SIZE(accumulated_products); product_shift++) {
+		core.state.pc = 0;
+		core.state.a[0] = 0;
+		core.state.p[0] = 0x100;
+		core.state.product_extension[0] = 0;
+		core.state.product_shift = product_shift;
+		g_assert_true(teak_tcg_execute_block(&core));
+		g_assert_cmphex(core.state.a[0], ==, accumulated_products[product_shift]);
+	}
+	g_assert_cmpuint(core.cache_compiles, ==, TEST_PRODUCT_SHIFTS);
+
+	core.state.pc = 0;
+	core.state.product_shift = 0;
+	g_assert_true(teak_tcg_execute_block(&core));
+	g_assert_cmpuint(core.cache_compiles, ==, TEST_PRODUCT_SHIFTS);
+}
+
+static void test_mode_keyed_chain(void) {
+	static const uint64_t accumulated_products[TEST_PRODUCT_SHIFTS] = { 20, 10, 40, 80 };
+	test_memory_t program = {};
+	test_memory_t data = {};
+	uint16_t end = TEST_MODE_KEYED_CHAIN_BLOCKS * (1 + TEST_BRANCH_WORDS);
+
+	for (uint16_t block = 0; block < TEST_MODE_KEYED_CHAIN_BLOCKS; block++) {
+		uint16_t address = block * (1 + TEST_BRANCH_WORDS);
+
+		program.words[address] = 0xD22A; /* mac [r4++] [r2++] a0 */
+		program.words[address + 1] = 0x4180; /* br address + 3 */
+		program.words[address + 2] = address + 1 + TEST_BRANCH_WORDS;
+	}
+	for (size_t i = 0; i < ARRAY_SIZE(data.words); i++)
+		data.words[i] = 2;
+	teak_tcg_core_t core = test_core_create(&program, &data);
+
+	test_core_map_data(&core, &data);
+	for (uint8_t product_shift = 0; product_shift < TEST_PRODUCT_SHIFTS; product_shift++) {
+		core.state.pc = 0;
+		core.state.a[0] = 0;
+		core.state.p[0] = 0;
+		core.state.r[2] = 0x10;
+		core.state.r[4] = TEST_Y_SPACE_BASE;
+		core.state.product_shift = product_shift;
+		test_execute_slices_until(&core, end, TEST_MODE_KEYED_CHAIN_BLOCKS);
+		g_assert_cmphex(core.state.a[0], ==, accumulated_products[product_shift]);
+	}
+}
+
+static void test_mode_writing_chain(void) {
+	static const uint16_t product_shift_loads[] = {
+		0x4D80, /* load 0x0000 ps */
+		0x4D82, /* load 0x0002 ps */
+	};
+	test_memory_t program = {};
+	test_memory_t data = {};
+	size_t block_words = 2 + TEST_BRANCH_WORDS;
+	uint16_t end = TEST_MODE_KEYED_CHAIN_BLOCKS * block_words;
+
+	for (uint16_t block = 0; block < TEST_MODE_KEYED_CHAIN_BLOCKS; block++) {
+		uint16_t address = block * block_words;
+
+		program.words[address] = product_shift_loads[block % ARRAY_SIZE(product_shift_loads)];
+		program.words[address + 1] = 0xD22A; /* mac [r4++] [r2++] a0 */
+		program.words[address + 2] = 0x4180; /* br address + 4 */
+		program.words[address + 3] = address + block_words;
+	}
+	for (size_t i = 0; i < ARRAY_SIZE(data.words); i++)
+		data.words[i] = 2;
+	teak_tcg_core_t core = test_core_create(&program, &data);
+
+	test_core_map_data(&core, &data);
+	for (size_t run = 0; run < 2; run++) {
+		core.state.pc = 0;
+		core.state.a[0] = 0;
+		core.state.p[0] = 0;
+		core.state.r[2] = 0x10;
+		core.state.r[4] = TEST_Y_SPACE_BASE;
+		test_execute_slices_until(&core, end, TEST_MODE_KEYED_CHAIN_BLOCKS);
+		g_assert_cmphex(core.state.a[0], ==, 32);
 	}
 }
 
@@ -1249,7 +1363,10 @@ int main(int argc, char **argv) {
 	g_test_add_func("/pmb887x/dsp/tcg/direct-data-read-write", test_direct_data_read_write);
 	g_test_add_func("/pmb887x/dsp/tcg/program-context-cache", test_program_context_cache);
 	g_test_add_func("/pmb887x/dsp/tcg/program-invalidation", test_program_invalidation);
-	g_test_add_func("/pmb887x/dsp/tcg/flag-liveness", test_flag_liveness);
+	g_test_add_func("/pmb887x/dsp/tcg/block-equivalence", test_block_equivalence);
+	g_test_add_func("/pmb887x/dsp/tcg/mode-keyed-cache", test_mode_keyed_cache);
+	g_test_add_func("/pmb887x/dsp/tcg/mode-keyed-chain", test_mode_keyed_chain);
+	g_test_add_func("/pmb887x/dsp/tcg/mode-writing-chain", test_mode_writing_chain);
 	g_test_add_func("/pmb887x/dsp/tcg/linked-chain-invalidation", test_linked_chain_invalidation);
 	g_test_add_func("/pmb887x/dsp/tcg/linked-chain-cycle-budget", test_linked_chain_cycle_budget);
 	g_test_add_func("/pmb887x/dsp/tcg/linked-block-repeat", test_linked_block_repeat);

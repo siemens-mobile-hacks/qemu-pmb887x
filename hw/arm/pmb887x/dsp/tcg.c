@@ -33,11 +33,15 @@
 #define TEAK_BANK_R0	BIT(3)
 #define TEAK_INTERRUPT_NMI	3
 #define TEAK_TCG_COMPILE_RETRY	-3
+#define TEAK_TCG_COMPILE_MODE_WRITE	-4
+#define TEAK_TCG_CALL_NO_FLAG_READS	BIT(0)
+#define TEAK_TCG_CALL_NO_MODE_WRITES	BIT(1)
 #define TEAK_TCG_PRECOMPILE_VALUES	128
 
 typedef struct teak_tcg_block_t teak_tcg_block_t;
 typedef struct teak_tcg_block_cache_entry_t teak_tcg_block_cache_entry_t;
 typedef struct teak_tcg_chain_link_t teak_tcg_chain_link_t;
+typedef struct teak_tcg_mode_t teak_tcg_mode_t;
 typedef struct teak_tcg_swap_mapping_t teak_tcg_swap_mapping_t;
 typedef struct teak_tcg_precompile_node_t teak_tcg_precompile_node_t;
 typedef struct teak_tcg_precompile_state_t teak_tcg_precompile_state_t;
@@ -117,6 +121,14 @@ struct teak_tcg_block_t {
 	teak_insn_t instructions[TEAK_TCG_MAX_BLOCK_INSTRUCTIONS];
 };
 
+struct teak_tcg_mode_t {
+	bool specialized;
+	uint8_t product_shift;
+	uint8_t modulo_enable;
+	uint8_t sat;
+	uint8_t sata;
+};
+
 struct teak_tcg_block_cache_entry_t {
 	teak_tcg_block_cache_entry_t *next;
 	uint64_t cache_id;
@@ -125,6 +137,7 @@ struct teak_tcg_block_cache_entry_t {
 	uint8_t block_repeat_level;
 	bool block_repeat_active;
 	bool repeat_resume;
+	teak_tcg_mode_t mode;
 	TranslationBlock *tb;
 	teak_tcg_block_t block;
 };
@@ -137,6 +150,7 @@ struct teak_tcg_chain_link_t {
 	uint32_t instruction_count;
 	uint8_t block_repeat_active;
 	uint8_t block_repeat_level;
+	teak_tcg_mode_t source_mode;
 };
 
 static teak_tcg_block_cache_entry_t *tcg_block_cache[TEAK_TCG_BLOCK_CACHE_ENTRIES];
@@ -148,7 +162,8 @@ static unsigned int tcg_block_cache_flush_count;
 static TCGv_i32 tcg_memory_pc;
 static TCGv_i32 tcg_memory_cycle;
 static uint32_t tcg_memory_access;
-static GHashTable *tcg_flag_independent_calls;
+static GHashTable *tcg_call_effects;
+static teak_tcg_mode_t tcg_block_mode;
 
 static const size_t tcg_flag_offsets[] = {
 	offsetof(teak_state_t, fz),
@@ -163,9 +178,49 @@ static const size_t tcg_flag_offsets[] = {
 	offsetof(teak_state_t, fr),
 };
 
+static const size_t tcg_mode_offsets[] = {
+	offsetof(teak_state_t, product_shift),
+	offsetof(teak_state_t, modulo_enable),
+	offsetof(teak_state_t, sat),
+	offsetof(teak_state_t, sata),
+};
+
 #define TEAK_TCG_ALL_FLAGS	((uint16_t) (BIT(ARRAY_SIZE(tcg_flag_offsets)) - 1))
 
 static const uint16_t teak_interrupt_vectors[] = { 0x0006, 0x000E, 0x0016, 0x0004 };
+
+static void tcg_mark_call(uint32_t effects) {
+	g_hash_table_insert(tcg_call_effects, tcg_last_op(), GUINT_TO_POINTER(effects));
+}
+
+static uint32_t tcg_call_get_effects(const TCGOp *op) {
+	return GPOINTER_TO_UINT(g_hash_table_lookup(tcg_call_effects, op));
+}
+
+static bool tcg_is_status_register(uint8_t register_code) {
+	return register_code >= 8 && register_code <= 10;
+}
+
+static uint32_t tcg_register_write_effects(uint8_t register_code) {
+	return tcg_is_status_register(register_code) ? 0 : TEAK_TCG_CALL_NO_MODE_WRITES;
+}
+
+static teak_tcg_mode_t tcg_mode_from_state(const teak_state_t *state) {
+	return (teak_tcg_mode_t) {
+		.specialized = true,
+		.product_shift = state->product_shift,
+		.modulo_enable = state->modulo_enable,
+		.sat = state->sat,
+		.sata = state->sata,
+	};
+}
+
+static bool tcg_mode_is_compatible(teak_tcg_mode_t block_mode, teak_tcg_mode_t mode) {
+	if (!block_mode.specialized)
+		return true;
+	return block_mode.product_shift == mode.product_shift && block_mode.modulo_enable == mode.modulo_enable &&
+		block_mode.sat == mode.sat && block_mode.sata == mode.sata;
+}
 
 static TCGv_ptr tcg_emit_data_page(TCGv_i32 address, size_t table_offset) {
 	TCGv_i32 entry_offset = tcg_temp_new_i32();
@@ -204,7 +259,7 @@ static void tcg_emit_data_read(TCGv_i32 result, TCGv_i32 address, teak_data_spac
 	gen_set_label(slow);
 	gen_helper_teak_tcg_data_read_at(result, tcg_env, address, tcg_memory_pc, tcg_memory_cycle,
 		tcg_constant_i32(access));
-	g_hash_table_add(tcg_flag_independent_calls, tcg_last_op());
+	tcg_mark_call(TEAK_TCG_CALL_NO_FLAG_READS | TEAK_TCG_CALL_NO_MODE_WRITES);
 	gen_set_label(done);
 }
 
@@ -221,7 +276,7 @@ static void tcg_emit_data_write(TCGv_i32 address, TCGv_i32 value) {
 	gen_set_label(slow);
 	gen_helper_teak_tcg_data_write_at(tcg_env, address, value, tcg_memory_pc, tcg_memory_cycle,
 		tcg_constant_i32(access));
-	g_hash_table_add(tcg_flag_independent_calls, tcg_last_op());
+	tcg_mark_call(TEAK_TCG_CALL_NO_FLAG_READS | TEAK_TCG_CALL_NO_MODE_WRITES);
 	gen_set_label(done);
 }
 
@@ -1041,17 +1096,50 @@ static void tcg_request_tb_flush(void) {
 	queue_tb_flush(first_cpu);
 }
 
-static uint16_t tcg_env_flag_mask(const TCGOp *op, size_t size) {
+static uint16_t tcg_env_field_mask(const TCGOp *op, size_t size, const size_t *field_offsets, size_t field_count) {
 	if (arg_temp(op->args[1]) != tcgv_ptr_temp(tcg_env))
 		return 0;
 
 	size_t offset = op->args[2];
 	uint16_t mask = 0;
-	for (size_t i = 0; i < ARRAY_SIZE(tcg_flag_offsets); i++) {
-		if (tcg_flag_offsets[i] >= offset && tcg_flag_offsets[i] < offset + size)
+	for (size_t i = 0; i < field_count; i++) {
+		if (field_offsets[i] >= offset && field_offsets[i] < offset + size)
 			mask |= BIT(i);
 	}
 	return mask;
+}
+
+static uint16_t tcg_env_flag_mask(const TCGOp *op, size_t size) {
+	return tcg_env_field_mask(op, size, tcg_flag_offsets, ARRAY_SIZE(tcg_flag_offsets));
+}
+
+static size_t tcg_store_size(const TCGOp *op) {
+	switch (op->opc) {
+		case INDEX_op_st8:
+			return 1;
+		case INDEX_op_st16:
+			return 2;
+		case INDEX_op_st32:
+			return 4;
+		case INDEX_op_st:
+			return tcg_type_size(TCGOP_TYPE(op));
+		default:
+			return 0;
+	}
+}
+
+static bool tcg_block_writes_mode(void) {
+	TCGOp *op;
+
+	QTAILQ_FOREACH(op, &tcg_ctx->ops, link) {
+		if (op->opc == INDEX_op_call && (tcg_call_get_effects(op) & TEAK_TCG_CALL_NO_MODE_WRITES) == 0)
+			return true;
+
+		size_t size = tcg_store_size(op);
+		if (size != 0 && tcg_env_field_mask(op, size, tcg_mode_offsets, ARRAY_SIZE(tcg_mode_offsets)) != 0)
+			return true;
+	}
+	return false;
 }
 
 static void tcg_remove_dead_flag_stores(void) {
@@ -1072,7 +1160,7 @@ static void tcg_remove_dead_flag_stores(void) {
 				live_flags = label_live_flags[arg_label(op->args[0])->id];
 				break;
 			case INDEX_op_call:
-				if (!g_hash_table_contains(tcg_flag_independent_calls, op))
+				if ((tcg_call_get_effects(op) & TEAK_TCG_CALL_NO_FLAG_READS) == 0)
 					live_flags = TEAK_TCG_ALL_FLAGS;
 				break;
 			case INDEX_op_ld8u:
@@ -1120,8 +1208,8 @@ static TranslationBlock *tcg_compile_block(uint32_t pc, uint16_t words, uint16_t
 	void *code;
 	int code_size;
 
-	if (tcg_flag_independent_calls == NULL)
-		tcg_flag_independent_calls = g_hash_table_new(NULL, NULL);
+	if (tcg_call_effects == NULL)
+		tcg_call_effects = g_hash_table_new(NULL, NULL);
 
 	*error = -1;
 	qemu_thread_jit_write();
@@ -1141,11 +1229,15 @@ static TranslationBlock *tcg_compile_block(uint32_t pc, uint16_t words, uint16_t
 	code_size = sigsetjmp(tcg_ctx->jmp_trans, 0);
 	if (code_size == 0) {
 		tcg_func_start(tcg_ctx);
-		g_hash_table_remove_all(tcg_flag_independent_calls);
+		g_hash_table_remove_all(tcg_call_effects);
 		emit(opaque);
 		tcg_gen_exit_tb(NULL, 0);
-		tcg_remove_dead_flag_stores();
-		code_size = tcg_gen_code(tcg_ctx, tb, pc);
+		if (tcg_block_mode.specialized && tcg_block_writes_mode()) {
+			code_size = TEAK_TCG_COMPILE_MODE_WRITE;
+		} else {
+			tcg_remove_dead_flag_stores();
+			code_size = tcg_gen_code(tcg_ctx, tb, pc);
+		}
 	}
 	tcg_ctx->gen_tb = NULL;
 	if (code_size == -1) {
@@ -1219,7 +1311,8 @@ static bool tcg_cached_block_is_prefix(const teak_tcg_block_t *cached, const tea
 		cached->instruction_count) == 0;
 }
 
-static TranslationBlock *tcg_find_cached_block(teak_tcg_core_t *core, teak_tcg_block_t *block) {
+static const teak_tcg_block_cache_entry_t *tcg_find_cached_block(teak_tcg_core_t *core, teak_tcg_block_t *block) {
+	teak_tcg_mode_t mode = tcg_mode_from_state(&core->state);
 	teak_tcg_block_cache_entry_t *entry;
 	teak_tcg_block_cache_entry_t *prefix = NULL;
 
@@ -1227,22 +1320,21 @@ static TranslationBlock *tcg_find_cached_block(teak_tcg_core_t *core, teak_tcg_b
 	entry = tcg_block_cache[block->pc];
 	while (entry != NULL) {
 		bool longer_prefix = prefix == NULL || entry->block.instruction_count > prefix->block.instruction_count;
+		bool same_context = entry->cache_id == core->cache_id && entry->program_context == core->program_context;
 
-		if (entry->cache_id != core->cache_id || entry->program_context != core->program_context) {
+		if (!same_context || !tcg_mode_is_compatible(entry->mode, mode)) {
 			entry = entry->next;
 			continue;
 		}
 		if (memcmp(&entry->block, block, sizeof(*block)) == 0)
-			return entry->tb;
+			return entry;
 		if (longer_prefix && tcg_cached_block_is_prefix(&entry->block, block))
 			prefix = entry;
 		entry = entry->next;
 	}
-	if (prefix != NULL) {
+	if (prefix != NULL)
 		*block = prefix->block;
-		return prefix->tb;
-	}
-	return NULL;
+	return prefix;
 }
 
 static uint8_t tcg_active_block_repeat_slots(const teak_state_t *state) {
@@ -1262,6 +1354,7 @@ static inline QEMU_ALWAYS_INLINE teak_tcg_block_cache_entry_t *tcg_find_cached_e
 	teak_tcg_block_cache_entry_t **link = head;
 	uint8_t level = core->state.bcn;
 	uint8_t active_slots = tcg_active_block_repeat_slots(&core->state);
+	teak_tcg_mode_t mode = tcg_mode_from_state(&core->state);
 
 	while (*link != NULL) {
 		teak_tcg_block_cache_entry_t *entry = *link;
@@ -1274,8 +1367,10 @@ static inline QEMU_ALWAYS_INLINE teak_tcg_block_cache_entry_t *tcg_find_cached_e
 			entry->block.block_repeat_start == core->state.block_repeat_start[entry->block.block_repeat_slot];
 		bool same_fetch = entry->block.fetch_split == core->state.fetch_split_pending &&
 			(!entry->block.fetch_split || entry->block.fetch_split_target == core->state.fetch_split_target);
+		bool same_mode = tcg_mode_is_compatible(entry->mode, mode);
+		bool same_ends = tcg_same_block_repeat_ends(entry->block_repeat_end, core->state.block_repeat_end, active_slots);
 		if (same_cache && same_context && same_level && same_active && same_repeat && same_split && same_fetch &&
-			tcg_same_block_repeat_ends(entry->block_repeat_end, core->state.block_repeat_end, active_slots)) {
+			same_mode && same_ends) {
 			if (link != head) {
 				*link = entry->next;
 				entry->next = *head;
@@ -1297,7 +1392,12 @@ static TranslationBlock *tcg_find_cached_block_fast(teak_tcg_core_t *core, teak_
 	return entry->tb;
 }
 
-static void tcg_cache_block(const teak_tcg_core_t *core, const teak_tcg_block_t *block, TranslationBlock *tb) {
+static void tcg_cache_block(
+	const teak_tcg_core_t *core,
+	const teak_tcg_block_t *block,
+	TranslationBlock *tb,
+	teak_tcg_mode_t mode
+) {
 	teak_tcg_block_cache_entry_t *entry = g_new(teak_tcg_block_cache_entry_t, 1);
 	entry->block = *block;
 	entry->tb = tb;
@@ -1307,6 +1407,7 @@ static void tcg_cache_block(const teak_tcg_core_t *core, const teak_tcg_block_t 
 	entry->block_repeat_level = core->state.bcn;
 	entry->block_repeat_active = core->state.lp;
 	entry->repeat_resume = block->repeat_resume;
+	entry->mode = mode;
 	entry->next = tcg_block_cache[block->pc];
 	tcg_block_cache[block->pc] = entry;
 	tcg_block_cache_generation++;
@@ -1757,6 +1858,7 @@ static TCGv_i32 tcg_emit_register_read(const teak_insn_t *instruction, uint8_t r
 		tcg_gen_movi_i32(value, tcg_instruction_end(instruction));
 	} else {
 		gen_helper_teak_tcg_register_read(value, tcg_env, tcg_constant_i32(register_code));
+		tcg_mark_call(TEAK_TCG_CALL_NO_MODE_WRITES);
 	}
 	return value;
 }
@@ -1768,6 +1870,7 @@ static TCGv_i32 tcg_emit_mov_register_read(const teak_insn_t *instruction, uint8
 		tcg_gen_movi_i32(value, tcg_instruction_end(instruction));
 	} else {
 		gen_helper_teak_tcg_mov_register_read(value, tcg_env, tcg_constant_i32(register_code));
+		tcg_mark_call(TEAK_TCG_CALL_NO_MODE_WRITES);
 	}
 	return value;
 }
@@ -1807,8 +1910,10 @@ static void tcg_emit_pop_register(uint8_t register_code) {
 	bool accumulator = (register_code >= 16 && register_code <= 19) || (register_code >= 24 && register_code <= 29);
 	if (accumulator) {
 		gen_helper_teak_tcg_mov_register_write(tcg_env, tcg_constant_i32(register_code), value);
+		tcg_mark_call(tcg_register_write_effects(register_code));
 	} else {
 		gen_helper_teak_tcg_register_write(tcg_env, tcg_constant_i32(register_code), value);
+		tcg_mark_call(tcg_register_write_effects(register_code));
 	}
 }
 
@@ -1823,6 +1928,7 @@ static TCGv_i32 tcg_emit_stack_top_read(void) {
 
 static void tcg_emit_mov_stack_register(uint8_t register_code) {
 	gen_helper_teak_tcg_mov_register_write(tcg_env, tcg_constant_i32(register_code), tcg_emit_stack_top_read());
+	tcg_mark_call(tcg_register_write_effects(register_code));
 }
 
 static void tcg_emit_accumulator_value_flags(TCGv_i64 value);
@@ -1856,6 +1962,7 @@ static void tcg_emit_mov_register_register(const teak_insn_t *instruction) {
 	}
 	gen_helper_teak_tcg_mov_register_write(tcg_env, tcg_constant_i32(destination),
 		tcg_emit_mov_register_read(instruction, source));
+	tcg_mark_call(tcg_register_write_effects(destination));
 	/* mov p,bX: REG p reads a1[15:0] (see tcg_read_register); hardware sets the flags from the shifted p. */
 	if (source == 11 && b_destination)
 		tcg_emit_accumulator_value_flags(tcg_emit_shifted_product());
@@ -2278,6 +2385,7 @@ static void tcg_emit_shift_conditional(const teak_insn_t *instruction) {
 	if (instruction->condition != TEAK_COND_TRUE)
 		skip = tcg_emit_condition_skip(instruction->condition);
 	gen_helper_teak_tcg_shift_accumulator(tcg_env, source, destination);
+	tcg_mark_call(TEAK_TCG_CALL_NO_MODE_WRITES);
 	if (skip != NULL)
 		gen_set_label(skip);
 }
@@ -2315,7 +2423,10 @@ static void tcg_emit_accumulator_value_flags(TCGv_i64 value) {
 	tcg_gen_st8_i32(normalized, tcg_env, offsetof(teak_state_t, fn));
 }
 
-static void tcg_emit_data_bus_saturation(TCGv_i64 value) {
+static void tcg_emit_saturation(TCGv_i64 value, size_t disable_offset, bool block_disable) {
+	if (tcg_block_mode.specialized && block_disable)
+		return;
+
 	TCGv_i64 signed32 = tcg_temp_new_i64();
 	TCGv_i64 saturated = tcg_temp_new_i64();
 	TCGv_i64 condition64 = tcg_temp_new_i64();
@@ -2323,15 +2434,18 @@ static void tcg_emit_data_bus_saturation(TCGv_i64 value) {
 	TCGv_i64 minimum = tcg_constant_i64(INT32_MIN);
 	TCGv_i64 maximum = tcg_constant_i64(INT32_MAX);
 	TCGv_i32 condition = tcg_temp_new_i32();
-	TCGv_i32 saturation_enabled = tcg_temp_new_i32();
 	TCGv_i32 flm = tcg_temp_new_i32();
 
 	tcg_gen_ext32s_i64(signed32, value);
 	tcg_gen_setcond_i64(TCG_COND_NE, condition64, value, signed32);
 	tcg_gen_extrl_i64_i32(condition, condition64);
-	tcg_gen_ld8u_i32(saturation_enabled, tcg_env, offsetof(teak_state_t, sat));
-	tcg_gen_xori_i32(saturation_enabled, saturation_enabled, 1);
-	tcg_gen_and_i32(condition, condition, saturation_enabled);
+	if (!tcg_block_mode.specialized) {
+		TCGv_i32 enabled = tcg_temp_new_i32();
+
+		tcg_gen_ld8u_i32(enabled, tcg_env, disable_offset);
+		tcg_gen_xori_i32(enabled, enabled, 1);
+		tcg_gen_and_i32(condition, condition, enabled);
+	}
 
 	tcg_gen_movcond_i64(TCG_COND_LT, saturated, value, zero, minimum, maximum);
 	tcg_gen_extu_i32_i64(condition64, condition);
@@ -2340,6 +2454,10 @@ static void tcg_emit_data_bus_saturation(TCGv_i64 value) {
 	tcg_gen_ld8u_i32(flm, tcg_env, offsetof(teak_state_t, flm));
 	tcg_gen_or_i32(flm, flm, condition);
 	tcg_gen_st8_i32(flm, tcg_env, offsetof(teak_state_t, flm));
+}
+
+static void tcg_emit_data_bus_saturation(TCGv_i64 value) {
+	tcg_emit_saturation(value, offsetof(teak_state_t, sat), tcg_block_mode.sat);
 }
 
 static void tcg_emit_add_sub_flags(TCGv_i64 left, TCGv_i64 right, TCGv_i64 result, bool subtract) {
@@ -2373,30 +2491,7 @@ static void tcg_emit_add_sub_flags(TCGv_i64 left, TCGv_i64 right, TCGv_i64 resul
 }
 
 static void tcg_emit_accumulator_saturation(TCGv_i64 value) {
-	TCGv_i64 signed32 = tcg_temp_new_i64();
-	TCGv_i64 condition64 = tcg_temp_new_i64();
-	TCGv_i64 saturated = tcg_temp_new_i64();
-	TCGv_i64 zero = tcg_constant_i64(0);
-	TCGv_i64 minimum = tcg_constant_i64((uint64_t) (int64_t) INT32_MIN);
-	TCGv_i64 maximum = tcg_constant_i64(INT32_MAX);
-	TCGv_i32 condition = tcg_temp_new_i32();
-	TCGv_i32 saturation_disabled = tcg_temp_new_i32();
-	TCGv_i32 flm = tcg_temp_new_i32();
-
-	tcg_gen_ext32s_i64(signed32, value);
-	tcg_gen_setcond_i64(TCG_COND_NE, condition64, value, signed32);
-	tcg_gen_extrl_i64_i32(condition, condition64);
-	tcg_gen_ld8u_i32(saturation_disabled, tcg_env, offsetof(teak_state_t, sata));
-	tcg_gen_xori_i32(saturation_disabled, saturation_disabled, 1);
-	tcg_gen_and_i32(condition, condition, saturation_disabled);
-
-	tcg_gen_movcond_i64(TCG_COND_LT, saturated, value, zero, minimum, maximum);
-	tcg_gen_extu_i32_i64(condition64, condition);
-	tcg_gen_movcond_i64(TCG_COND_NE, value, condition64, zero, saturated, value);
-
-	tcg_gen_ld8u_i32(flm, tcg_env, offsetof(teak_state_t, flm));
-	tcg_gen_or_i32(flm, flm, condition);
-	tcg_gen_st8_i32(flm, tcg_env, offsetof(teak_state_t, flm));
+	tcg_emit_saturation(value, offsetof(teak_state_t, sata), tcg_block_mode.sata);
 }
 
 static void tcg_emit_alu_accumulator(const teak_insn_t *instruction, TCGv_i64 operand) {
@@ -2799,6 +2894,7 @@ static void tcg_emit_bank_exchange(const teak_insn_t *instruction) {
 		tcg_emit_swap8(offsetof(teak_state_t, stepi), offsetof(teak_state_t, stepib));
 		tcg_emit_swap16(offsetof(teak_state_t, modi), offsetof(teak_state_t, modib));
 		gen_helper_teak_tcg_update_modulo_steps(tcg_env);
+		tcg_mark_call(TEAK_TCG_CALL_NO_MODE_WRITES);
 	}
 	if ((instruction->immediate & TEAK_BANK_R4) != 0)
 		tcg_emit_swap16(offsetof(teak_state_t, r) + 4 * sizeof(uint16_t),
@@ -2901,16 +2997,30 @@ static bool tcg_alu_shifts_operand(teak_alu_operation_t operation) {
 	return operation == TEAK_ALU_ADDH || operation == TEAK_ALU_SUBH;
 }
 
+static void tcg_emit_product_shift(TCGv_i64 result, TCGv_i64 product, uint8_t shift) {
+	switch (shift) {
+		case 0:
+			tcg_gen_mov_i64(result, product);
+			break;
+		case 1:
+			tcg_gen_sari_i64(result, product, 1);
+			break;
+		case 2:
+			tcg_gen_shli_i64(result, product, 1);
+			break;
+		case 3:
+			tcg_gen_shli_i64(result, product, 2);
+			break;
+		default:
+			g_assert_not_reached();
+	}
+}
+
 static TCGv_i64 tcg_emit_shifted_product(void) {
-	TCGv_i32 shift = tcg_temp_new_i32();
 	TCGv_i32 extension = tcg_temp_new_i32();
 	TCGv_i64 product = tcg_temp_new_i64();
 	TCGv_i64 extension64 = tcg_temp_new_i64();
 	TCGv_i64 result = tcg_temp_new_i64();
-	TCGLabel *shift_right = gen_new_label();
-	TCGLabel *shift_left = gen_new_label();
-	TCGLabel *shift_left_twice = gen_new_label();
-	TCGLabel *done = gen_new_label();
 
 	tcg_gen_ld32u_i64(product, tcg_env, offsetof(teak_state_t, p[0]));
 	tcg_gen_ld8u_i32(extension, tcg_env, offsetof(teak_state_t, product_extension[0]));
@@ -2919,23 +3029,34 @@ static TCGv_i64 tcg_emit_shifted_product(void) {
 	tcg_gen_or_i64(product, product, extension64);
 	tcg_gen_shli_i64(product, product, TEAK_ACCUMULATOR_HOST_SHIFT);
 	tcg_gen_sari_i64(product, product, TEAK_ACCUMULATOR_HOST_SHIFT);
+	if (tcg_block_mode.specialized) {
+		tcg_emit_product_shift(result, product, tcg_block_mode.product_shift);
+		return result;
+	}
+
+	TCGv_i32 shift = tcg_temp_new_i32();
+	TCGLabel *shift_right = gen_new_label();
+	TCGLabel *shift_left = gen_new_label();
+	TCGLabel *shift_left_twice = gen_new_label();
+	TCGLabel *done = gen_new_label();
+
 	tcg_gen_ld8u_i32(shift, tcg_env, offsetof(teak_state_t, product_shift));
 	tcg_gen_brcondi_i32(TCG_COND_EQ, shift, 1, shift_right);
 	tcg_gen_brcondi_i32(TCG_COND_EQ, shift, 2, shift_left);
 	tcg_gen_brcondi_i32(TCG_COND_EQ, shift, 3, shift_left_twice);
-	tcg_gen_mov_i64(result, product);
+	tcg_emit_product_shift(result, product, 0);
 	tcg_gen_br(done);
 
 	gen_set_label(shift_right);
-	tcg_gen_sari_i64(result, product, 1);
+	tcg_emit_product_shift(result, product, 1);
 	tcg_gen_br(done);
 
 	gen_set_label(shift_left);
-	tcg_gen_shli_i64(result, product, 1);
+	tcg_emit_product_shift(result, product, 2);
 	tcg_gen_br(done);
 
 	gen_set_label(shift_left_twice);
-	tcg_gen_shli_i64(result, product, 2);
+	tcg_emit_product_shift(result, product, 3);
 	gen_set_label(done);
 	return result;
 }
@@ -3236,6 +3357,12 @@ static void tcg_emit_modulo_address(TCGv_i32 updated, TCGv_i32 address, TCGv_i32
 	tcg_gen_or_i32(updated, updated, low);
 }
 
+static bool tcg_may_use_modulo(uint8_t address_register) {
+	if (address_register >= TEAK_MODULO_REGISTERS)
+		return false;
+	return !tcg_block_mode.specialized || (tcg_block_mode.modulo_enable & BIT(address_register)) != 0;
+}
+
 static TCGv_i32 tcg_emit_rn_address(uint8_t address_register, teak_step_t step_mode, bool disable_modulo) {
 	size_t register_offset = offsetof(teak_state_t, r) + address_register * sizeof(uint16_t);
 	TCGv_i32 address = tcg_temp_new_i32();
@@ -3273,7 +3400,7 @@ static TCGv_i32 tcg_emit_rn_address(uint8_t address_register, teak_step_t step_m
 			g_assert_not_reached();
 	}
 
-	if (address_register < TEAK_MODULO_REGISTERS && !disable_modulo) {
+	if (!disable_modulo && tcg_may_use_modulo(address_register)) {
 		tcg_emit_modulo_address(updated, address, step, address_register, step_mode);
 	} else {
 		tcg_gen_add_i32(updated, address, step);
@@ -3399,6 +3526,7 @@ static void tcg_emit_mov_data_imm8_register(const teak_insn_t *instruction) {
 
 	gen_helper_teak_tcg_data_read(value, tcg_env, address);
 	gen_helper_teak_tcg_mov_register_write(tcg_env, tcg_constant_i32(instruction->register_code), value);
+	tcg_mark_call(tcg_register_write_effects(instruction->register_code));
 }
 
 static void tcg_emit_mov_data_imm8_accumulator(const teak_insn_t *instruction) {
@@ -3457,6 +3585,7 @@ static void tcg_emit_mov_accumulator_low_data_r7(const teak_insn_t *instruction)
 	TCGv_i32 value = tcg_temp_new_i32();
 
 	gen_helper_teak_tcg_mov_register_read(value, tcg_env, tcg_constant_i32(26 + instruction->accumulator_index));
+	tcg_mark_call(TEAK_TCG_CALL_NO_MODE_WRITES);
 	gen_helper_teak_tcg_data_write(tcg_env, address, value);
 }
 
@@ -3482,6 +3611,7 @@ static void tcg_emit_mov_data_rn_step_register(const teak_insn_t *instruction) {
 	}
 	if (!tcg_is_accumulator_register(instruction->register_code)) {
 		gen_helper_teak_tcg_mov_register_write(tcg_env, tcg_constant_i32(instruction->register_code), value);
+		tcg_mark_call(tcg_register_write_effects(instruction->register_code));
 		return;
 	}
 
@@ -3588,6 +3718,7 @@ static void tcg_emit_mov_imm_st2(uint16_t value) {
 	tcg_gen_st8_i32(tcg_constant_i32(value & 0x3FU), tcg_env,
 		offsetof(teak_state_t, modulo_enable));
 	gen_helper_teak_tcg_update_modulo_steps(tcg_env);
+	tcg_mark_call(TEAK_TCG_CALL_NO_MODE_WRITES);
 	tcg_gen_ld8u_i32(interrupt_mask, tcg_env, offsetof(teak_state_t, interrupt_mask));
 	tcg_gen_andi_i32(interrupt_mask, interrupt_mask, 3);
 	tcg_gen_ori_i32(interrupt_mask, interrupt_mask, value >> 4 & 4U);
@@ -3658,6 +3789,7 @@ static TCGv_i32 tcg_emit_movp_accumulator_low_read(const teak_insn_t *instructio
 	tcg_gen_extrl_i64_i32(address, accumulator);
 	tcg_gen_andi_i32(address, address, 0xFFFFU);
 	gen_helper_teak_tcg_program_read(value, tcg_env, address);
+	tcg_mark_call(TEAK_TCG_CALL_NO_MODE_WRITES);
 	return value;
 }
 
@@ -3669,6 +3801,7 @@ static void tcg_emit_movp_accumulator_low_register(const teak_insn_t *instructio
 	value = tcg_emit_movp_accumulator_low_read(instruction);
 	gen_helper_teak_tcg_mov_register_write(tcg_env,
 		tcg_constant_i32(instruction->destination_register_code), value);
+	tcg_mark_call(tcg_register_write_effects(instruction->destination_register_code));
 }
 
 static void tcg_emit_movp_rn_rn(const teak_insn_t *instruction) {
@@ -3678,6 +3811,7 @@ static void tcg_emit_movp_rn_rn(const teak_insn_t *instruction) {
 	TCGv_i32 value = tcg_temp_new_i32();
 
 	gen_helper_teak_tcg_program_read(value, tcg_env, source_address);
+	tcg_mark_call(TEAK_TCG_CALL_NO_MODE_WRITES);
 	gen_helper_teak_tcg_data_write(tcg_env, destination_address, value);
 }
 
@@ -3689,11 +3823,13 @@ static void tcg_emit_movd_rn_rn(const teak_insn_t *instruction) {
 
 	gen_helper_teak_tcg_data_read(value, tcg_env, source_address);
 	gen_helper_teak_tcg_program_write(tcg_env, destination_address, value);
+	tcg_mark_call(TEAK_TCG_CALL_NO_MODE_WRITES);
 }
 
 static void tcg_emit_movs_result(const teak_insn_t *instruction, TCGv_i32 value, TCGv_i32 shift) {
 	gen_helper_teak_tcg_shift_value(tcg_env, value,
 		tcg_constant_i32(instruction->destination_accumulator), shift);
+	tcg_mark_call(TEAK_TCG_CALL_NO_MODE_WRITES);
 }
 
 static void tcg_emit_movs_register(const teak_insn_t *instruction) {
@@ -3820,6 +3956,7 @@ static void tcg_emit_alb_memory(const teak_insn_t *instruction, TCGv_i32 address
 
 	gen_helper_teak_tcg_alb_memory(tcg_env, address, mask, operation, tcg_memory_pc,
 		tcg_memory_cycle, tcg_constant_i32(tcg_memory_access++));
+	tcg_mark_call(TEAK_TCG_CALL_NO_MODE_WRITES);
 }
 
 static void tcg_emit_alb_data_imm8(const teak_insn_t *instruction) {
@@ -3839,6 +3976,7 @@ static void tcg_emit_alb_pc(const teak_insn_t *instruction) {
 
 	gen_helper_teak_tcg_alb_value(result, tcg_env, tcg_constant_i32(next_pc),
 		tcg_constant_i32(instruction->expansion), tcg_constant_i32(instruction->alb_operation));
+	tcg_mark_call(TEAK_TCG_CALL_NO_MODE_WRITES);
 	if (!tcg_alb_modifies_operand(instruction->alb_operation))
 		return;
 	tcg_gen_st_i32(result, tcg_env, offsetof(teak_state_t, pc));
@@ -3851,6 +3989,7 @@ static void tcg_emit_alb_register(const teak_insn_t *instruction) {
 	TCGv_i32 operation = tcg_constant_i32(instruction->alb_operation);
 
 	gen_helper_teak_tcg_alb_register(tcg_env, register_code, mask, operation);
+	tcg_mark_call(tcg_register_write_effects(instruction->register_code));
 }
 
 static void tcg_emit_mov_imm_register(const teak_insn_t *instruction) {
@@ -3889,6 +4028,7 @@ static void tcg_emit_mov_imm_register(const teak_insn_t *instruction) {
 
 		case 11:
 			gen_helper_teak_tcg_register_write(tcg_env, tcg_constant_i32(instruction->register_code), value);
+			tcg_mark_call(tcg_register_write_effects(instruction->register_code));
 			break;
 
 		case 12:
@@ -3904,6 +4044,7 @@ static void tcg_emit_mov_imm_register(const teak_insn_t *instruction) {
 			tcg_gen_st16_i32(tcg_constant_i32(instruction->expansion >> 7), tcg_env,
 				offsetof(teak_state_t, modi));
 			gen_helper_teak_tcg_update_modulo_steps(tcg_env);
+			tcg_mark_call(TEAK_TCG_CALL_NO_MODE_WRITES);
 			break;
 
 		case 15:
@@ -3912,6 +4053,7 @@ static void tcg_emit_mov_imm_register(const teak_insn_t *instruction) {
 			tcg_gen_st16_i32(tcg_constant_i32(instruction->expansion >> 7), tcg_env,
 				offsetof(teak_state_t, modj));
 			gen_helper_teak_tcg_update_modulo_steps(tcg_env);
+			tcg_mark_call(TEAK_TCG_CALL_NO_MODE_WRITES);
 			break;
 
 		case 16:
@@ -3919,6 +4061,7 @@ static void tcg_emit_mov_imm_register(const teak_insn_t *instruction) {
 		case 18:
 		case 19:
 			gen_helper_teak_tcg_mov_register_write(tcg_env, tcg_constant_i32(instruction->register_code), value);
+			tcg_mark_call(tcg_register_write_effects(instruction->register_code));
 			break;
 
 		case 20:
@@ -3940,6 +4083,7 @@ static void tcg_emit_mov_imm_register(const teak_insn_t *instruction) {
 
 		case 30:
 			gen_helper_teak_tcg_mov_register_write(tcg_env, tcg_constant_i32(instruction->register_code), value);
+			tcg_mark_call(tcg_register_write_effects(instruction->register_code));
 			break;
 
 		case 31:
@@ -3954,6 +4098,7 @@ static void tcg_emit_mov_imm_register(const teak_insn_t *instruction) {
 static void tcg_emit_mov_short_register(const teak_insn_t *instruction) {
 	gen_helper_teak_tcg_mov_register_write(tcg_env, tcg_constant_i32(instruction->register_code),
 		tcg_constant_i32(instruction->immediate));
+	tcg_mark_call(tcg_register_write_effects(instruction->register_code));
 }
 
 static void tcg_emit_mov_accumulator_accumulator(const teak_insn_t *instruction) {
@@ -3970,8 +4115,10 @@ static void tcg_emit_mov_accumulator_low_special(const teak_insn_t *instruction)
 
 	gen_helper_teak_tcg_mov_register_read(value, tcg_env,
 		tcg_constant_i32(accumulator_low_registers[instruction->source_accumulator]));
+	tcg_mark_call(TEAK_TCG_CALL_NO_MODE_WRITES);
 	gen_helper_teak_tcg_special_register_write(tcg_env,
 		tcg_constant_i32(instruction->special_register), value);
+	tcg_mark_call(TEAK_TCG_CALL_NO_MODE_WRITES);
 }
 
 static void tcg_emit_mov_special_accumulator(const teak_insn_t *instruction) {
@@ -3979,6 +4126,7 @@ static void tcg_emit_mov_special_accumulator(const teak_insn_t *instruction) {
 	TCGv_i64 accumulator = tcg_temp_new_i64();
 
 	gen_helper_teak_tcg_special_register_read(value, tcg_env, tcg_constant_i32(instruction->special_register));
+	tcg_mark_call(TEAK_TCG_CALL_NO_MODE_WRITES);
 	tcg_gen_extu_i32_i64(accumulator, value);
 	tcg_gen_ext16s_i64(accumulator, accumulator);
 	tcg_emit_accumulator_value_flags(accumulator);
@@ -3991,8 +4139,10 @@ static void tcg_emit_mov_mixp_register(const teak_insn_t *instruction) {
 	if (instruction->destination_register_code == 12)
 		return;
 	gen_helper_teak_tcg_special_register_read(value, tcg_env, tcg_constant_i32(TEAK_SPECIAL_MIXP));
+	tcg_mark_call(TEAK_TCG_CALL_NO_MODE_WRITES);
 	gen_helper_teak_tcg_mov_register_write(tcg_env,
 		tcg_constant_i32(instruction->destination_register_code), value);
+	tcg_mark_call(tcg_register_write_effects(instruction->destination_register_code));
 }
 
 static void tcg_emit_mov_register_special(const teak_insn_t *instruction) {
@@ -4000,6 +4150,7 @@ static void tcg_emit_mov_register_special(const teak_insn_t *instruction) {
 
 	gen_helper_teak_tcg_special_register_write(tcg_env,
 		tcg_constant_i32(instruction->special_register), value);
+	tcg_mark_call(TEAK_TCG_CALL_NO_MODE_WRITES);
 }
 
 static void tcg_emit_instruction(teak_insn_t *instruction, uint8_t block_repeat_level) {
@@ -4016,6 +4167,7 @@ static void tcg_emit_instruction(teak_insn_t *instruction, uint8_t block_repeat_
 			break;
 		case TEAK_OP_CONTEXT_STORE:
 			gen_helper_teak_tcg_context_switch(tcg_env, tcg_constant_i32(0));
+			tcg_mark_call(TEAK_TCG_CALL_NO_MODE_WRITES);
 			break;
 		case TEAK_OP_CONTEXT_RESTORE:
 			gen_helper_teak_tcg_context_switch(tcg_env, tcg_constant_i32(1));
@@ -4026,18 +4178,22 @@ static void tcg_emit_instruction(teak_insn_t *instruction, uint8_t block_repeat_
 		case TEAK_OP_LOAD_STEPI:
 			tcg_gen_st8_i32(tcg_constant_i32(instruction->immediate), tcg_env, offsetof(teak_state_t, stepi));
 			gen_helper_teak_tcg_update_modulo_steps(tcg_env);
+			tcg_mark_call(TEAK_TCG_CALL_NO_MODE_WRITES);
 			break;
 		case TEAK_OP_LOAD_STEPJ:
 			tcg_gen_st8_i32(tcg_constant_i32(instruction->immediate), tcg_env, offsetof(teak_state_t, stepj));
 			gen_helper_teak_tcg_update_modulo_steps(tcg_env);
+			tcg_mark_call(TEAK_TCG_CALL_NO_MODE_WRITES);
 			break;
 		case TEAK_OP_LOAD_MODI:
 			tcg_gen_st16_i32(tcg_constant_i32(instruction->immediate), tcg_env, offsetof(teak_state_t, modi));
 			gen_helper_teak_tcg_update_modulo_steps(tcg_env);
+			tcg_mark_call(TEAK_TCG_CALL_NO_MODE_WRITES);
 			break;
 		case TEAK_OP_LOAD_MODJ:
 			tcg_gen_st16_i32(tcg_constant_i32(instruction->immediate), tcg_env, offsetof(teak_state_t, modj));
 			gen_helper_teak_tcg_update_modulo_steps(tcg_env);
+			tcg_mark_call(TEAK_TCG_CALL_NO_MODE_WRITES);
 			break;
 		case TEAK_OP_LOAD_PRODUCT_SHIFT:
 			tcg_gen_st8_i32(tcg_constant_i32(instruction->immediate), tcg_env, offsetof(teak_state_t, product_shift));
@@ -4658,6 +4814,7 @@ static TCGv_i32 tcg_emit_delayed_transfer_target(const teak_insn_t *instruction)
 		case TEAK_OP_MOV_MIXP_REGISTER:
 			target = tcg_temp_new_i32();
 			gen_helper_teak_tcg_special_register_read(target, tcg_env, tcg_constant_i32(TEAK_SPECIAL_MIXP));
+			tcg_mark_call(TEAK_TCG_CALL_NO_MODE_WRITES);
 			return target;
 		case TEAK_OP_MOV_DATA_RN_STEP_REGISTER:
 			target = tcg_temp_new_i32();
@@ -4901,10 +5058,12 @@ static void tcg_emit_block_chain(const teak_tcg_block_t *block, bool batched_loo
 	TCGv_i32 block_count = tcg_temp_new_i32();
 	TCGv_i32 block_cycles = tcg_temp_new_i32();
 	TCGv_ptr next = tcg_temp_new_ptr();
-	TCGv_ptr link = tcg_constant_ptr(tcg_chain_link_new());
+	teak_tcg_chain_link_t *chain_link = tcg_chain_link_new();
+	TCGv_ptr link = tcg_constant_ptr(chain_link);
 	TCGLabel *slow = gen_new_label();
 	TCGLabel *done = gen_new_label();
 
+	chain_link->source_mode = tcg_block_mode;
 	tcg_gen_ld_i32(block_cycles, tcg_env, offsetof(teak_tcg_core_t, batch_block_cycles));
 	if (batched_loop) {
 		tcg_gen_ld_i32(block_count, tcg_env, offsetof(teak_tcg_core_t, batch_iterations));
@@ -4916,6 +5075,7 @@ static void tcg_emit_block_chain(const teak_tcg_block_t *block, bool batched_loo
 
 	gen_set_label(slow);
 	gen_helper_teak_tcg_chain(next, tcg_env, block_cycles, block_count, tcg_constant_i32(block->pc), link);
+	tcg_mark_call(TEAK_TCG_CALL_NO_MODE_WRITES);
 	tcg_gen_brcondi_ptr(TCG_COND_EQ, next, 0, done);
 	tcg_gen_goto_ptr(next);
 	gen_set_label(done);
@@ -5129,7 +5289,10 @@ static TranslationBlock *tcg_prepare_block(teak_tcg_core_t *core, teak_tcg_block
 
 	tcg_check_block_cache();
 	tb = tcg_find_cached_block_fast(core, block);
+	if (tb != NULL)
+		return tb;
 
+	tcg_block_mode = tcg_mode_from_state(&core->state);
 	while (tb == NULL) {
 		if (!tcg_decode_block(core, block, max_instructions))
 			return NULL;
@@ -5137,9 +5300,10 @@ static TranslationBlock *tcg_prepare_block(teak_tcg_core_t *core, teak_tcg_block
 		block->breaks_at_block_repeat_end = block->ends_block_repeat &&
 			block->instructions[block->instruction_count - 1].opcode == TEAK_OP_BREAK;
 
-		tb = tcg_find_cached_block(core, block);
-		if (tb != NULL) {
-			tcg_cache_block(core, block, tb);
+		const teak_tcg_block_cache_entry_t *cached = tcg_find_cached_block(core, block);
+		if (cached != NULL) {
+			tb = cached->tb;
+			tcg_cache_block(core, block, tb, cached->mode);
 			core->cache_decoded_hits++;
 			break;
 		}
@@ -5147,11 +5311,15 @@ static TranslationBlock *tcg_prepare_block(teak_tcg_core_t *core, teak_tcg_block
 		tb = tcg_compile_block(block->pc, block->words, block->instruction_count, tcg_emit_block,
 			block, &compile_error);
 		if (tb != NULL) {
-			tcg_cache_block(core, block, tb);
+			tcg_cache_block(core, block, tb, tcg_block_mode);
 			core->cache_compiles++;
 			break;
 		}
 
+		if (compile_error == TEAK_TCG_COMPILE_MODE_WRITE) {
+			tcg_block_mode.specialized = false;
+			continue;
+		}
 		if (compile_error == TEAK_TCG_COMPILE_RETRY) {
 			core->translation_error = TEAK_TRANSLATION_ERROR_RETRY;
 			return NULL;
@@ -5734,6 +5902,11 @@ static void tcg_chain_link_set(
 		return;
 	if (tcg_active_block_repeat_slots(state) > 1)
 		return;
+	if (link->source_mode.specialized) {
+		g_assert(tcg_mode_is_compatible(entry->mode, link->source_mode));
+	} else if (entry->mode.specialized) {
+		return;
+	}
 
 	*link = (teak_tcg_chain_link_t) {
 		.cache_generation = tcg_block_cache_generation,
@@ -5743,6 +5916,7 @@ static void tcg_chain_link_set(
 		.instruction_count = entry->block.instruction_count,
 		.block_repeat_active = state->lp,
 		.block_repeat_level = state->bcn,
+		.source_mode = link->source_mode,
 	};
 }
 
