@@ -148,6 +148,22 @@ static unsigned int tcg_block_cache_flush_count;
 static TCGv_i32 tcg_memory_pc;
 static TCGv_i32 tcg_memory_cycle;
 static uint32_t tcg_memory_access;
+static GHashTable *tcg_flag_independent_calls;
+
+static const size_t tcg_flag_offsets[] = {
+	offsetof(teak_state_t, fz),
+	offsetof(teak_state_t, fm),
+	offsetof(teak_state_t, fn),
+	offsetof(teak_state_t, fv),
+	offsetof(teak_state_t, fe),
+	offsetof(teak_state_t, fc0),
+	offsetof(teak_state_t, fc1),
+	offsetof(teak_state_t, flm),
+	offsetof(teak_state_t, fvl),
+	offsetof(teak_state_t, fr),
+};
+
+#define TEAK_TCG_ALL_FLAGS	((uint16_t) (BIT(ARRAY_SIZE(tcg_flag_offsets)) - 1))
 
 static const uint16_t teak_interrupt_vectors[] = { 0x0006, 0x000E, 0x0016, 0x0004 };
 
@@ -188,6 +204,7 @@ static void tcg_emit_data_read(TCGv_i32 result, TCGv_i32 address, teak_data_spac
 	gen_set_label(slow);
 	gen_helper_teak_tcg_data_read_at(result, tcg_env, address, tcg_memory_pc, tcg_memory_cycle,
 		tcg_constant_i32(access));
+	g_hash_table_add(tcg_flag_independent_calls, tcg_last_op());
 	gen_set_label(done);
 }
 
@@ -204,6 +221,7 @@ static void tcg_emit_data_write(TCGv_i32 address, TCGv_i32 value) {
 	gen_set_label(slow);
 	gen_helper_teak_tcg_data_write_at(tcg_env, address, value, tcg_memory_pc, tcg_memory_cycle,
 		tcg_constant_i32(access));
+	g_hash_table_add(tcg_flag_independent_calls, tcg_last_op());
 	gen_set_label(done);
 }
 
@@ -1023,12 +1041,87 @@ static void tcg_request_tb_flush(void) {
 	queue_tb_flush(first_cpu);
 }
 
+static uint16_t tcg_env_flag_mask(const TCGOp *op, size_t size) {
+	if (arg_temp(op->args[1]) != tcgv_ptr_temp(tcg_env))
+		return 0;
+
+	size_t offset = op->args[2];
+	uint16_t mask = 0;
+	for (size_t i = 0; i < ARRAY_SIZE(tcg_flag_offsets); i++) {
+		if (tcg_flag_offsets[i] >= offset && tcg_flag_offsets[i] < offset + size)
+			mask |= BIT(i);
+	}
+	return mask;
+}
+
+static void tcg_remove_dead_flag_stores(void) {
+	g_autofree uint16_t *label_live_flags = g_new(uint16_t, tcg_ctx->nb_labels);
+	uint16_t live_flags = TEAK_TCG_ALL_FLAGS;
+	TCGOp *op;
+	TCGOp *previous;
+
+	for (int i = 0; i < tcg_ctx->nb_labels; i++)
+		label_live_flags[i] = TEAK_TCG_ALL_FLAGS;
+
+	QTAILQ_FOREACH_REVERSE_SAFE(op, &tcg_ctx->ops, link, previous) {
+		switch (op->opc) {
+			case INDEX_op_set_label:
+				label_live_flags[arg_label(op->args[0])->id] = live_flags;
+				break;
+			case INDEX_op_br:
+				live_flags = label_live_flags[arg_label(op->args[0])->id];
+				break;
+			case INDEX_op_call:
+				if (!g_hash_table_contains(tcg_flag_independent_calls, op))
+					live_flags = TEAK_TCG_ALL_FLAGS;
+				break;
+			case INDEX_op_ld8u:
+			case INDEX_op_ld8s:
+				live_flags |= tcg_env_flag_mask(op, 1);
+				break;
+			case INDEX_op_ld16u:
+			case INDEX_op_ld16s:
+				live_flags |= tcg_env_flag_mask(op, 2);
+				break;
+			case INDEX_op_ld32u:
+			case INDEX_op_ld32s:
+				live_flags |= tcg_env_flag_mask(op, 4);
+				break;
+			case INDEX_op_ld:
+				live_flags |= tcg_env_flag_mask(op, tcg_type_size(TCGOP_TYPE(op)));
+				break;
+			case INDEX_op_st8: {
+				uint16_t stored_flags = tcg_env_flag_mask(op, 1);
+
+				if (stored_flags != 0 && (live_flags & stored_flags) == 0) {
+					tcg_op_remove(tcg_ctx, op);
+					break;
+				}
+				live_flags &= ~stored_flags;
+				break;
+			}
+			default: {
+				const TCGOpDef *def = &tcg_op_defs[op->opc];
+
+				if ((def->flags & TCG_OPF_BB_EXIT) != 0)
+					live_flags = TEAK_TCG_ALL_FLAGS;
+				if ((def->flags & TCG_OPF_COND_BRANCH) != 0)
+					live_flags |= label_live_flags[arg_label(op->args[def->nb_args - 1])->id];
+				break;
+			}
+		}
+	}
+}
+
 static TranslationBlock *tcg_compile_block(uint32_t pc, uint16_t words, uint16_t instruction_count,
 	teak_tcg_emit_fn *emit, void *opaque, int *error
 ) {
 	TranslationBlock *tb;
 	void *code;
 	int code_size;
+
+	if (tcg_flag_independent_calls == NULL)
+		tcg_flag_independent_calls = g_hash_table_new(NULL, NULL);
 
 	*error = -1;
 	qemu_thread_jit_write();
@@ -1048,8 +1141,10 @@ static TranslationBlock *tcg_compile_block(uint32_t pc, uint16_t words, uint16_t
 	code_size = sigsetjmp(tcg_ctx->jmp_trans, 0);
 	if (code_size == 0) {
 		tcg_func_start(tcg_ctx);
+		g_hash_table_remove_all(tcg_flag_independent_calls);
 		emit(opaque);
 		tcg_gen_exit_tb(NULL, 0);
+		tcg_remove_dead_flag_stores();
 		code_size = tcg_gen_code(tcg_ctx, tb, pc);
 	}
 	tcg_ctx->gen_tb = NULL;
@@ -2189,36 +2284,35 @@ static void tcg_emit_shift_conditional(const teak_insn_t *instruction) {
 
 static void tcg_emit_accumulator_value_flags(TCGv_i64 value) {
 	TCGv_i64 flag64 = tcg_temp_new_i64();
-	TCGv_i64 temporary64 = tcg_temp_new_i64();
-	TCGv_i32 flag = tcg_temp_new_i32();
-	TCGv_i32 temporary = tcg_temp_new_i32();
+	TCGv_i64 signed32 = tcg_temp_new_i64();
+	TCGv_i32 zero = tcg_temp_new_i32();
+	TCGv_i32 extension = tcg_temp_new_i32();
+	TCGv_i32 bits = tcg_temp_new_i32();
+	TCGv_i32 normalized = tcg_temp_new_i32();
 
 	tcg_gen_setcondi_i64(TCG_COND_EQ, flag64, value, 0);
-	tcg_gen_extrl_i64_i32(flag, flag64);
-	tcg_gen_st8_i32(flag, tcg_env, offsetof(teak_state_t, fz));
+	tcg_gen_extrl_i64_i32(zero, flag64);
+	tcg_gen_st8_i32(zero, tcg_env, offsetof(teak_state_t, fz));
 
 	tcg_gen_shri_i64(flag64, value, TEAK_ACCUMULATOR_SIGN_BIT);
-	tcg_gen_extrl_i64_i32(temporary, flag64);
-	tcg_gen_andi_i32(temporary, temporary, 1);
-	tcg_gen_st8_i32(temporary, tcg_env, offsetof(teak_state_t, fm));
+	tcg_gen_extrl_i64_i32(bits, flag64);
+	tcg_gen_andi_i32(bits, bits, 1);
+	tcg_gen_st8_i32(bits, tcg_env, offsetof(teak_state_t, fm));
 
-	tcg_gen_ext32s_i64(temporary64, value);
-	tcg_gen_setcond_i64(TCG_COND_NE, flag64, value, temporary64);
-	tcg_gen_extrl_i64_i32(temporary, flag64);
-	tcg_gen_st8_i32(temporary, tcg_env, offsetof(teak_state_t, fe));
+	tcg_gen_ext32s_i64(signed32, value);
+	tcg_gen_setcond_i64(TCG_COND_NE, flag64, value, signed32);
+	tcg_gen_extrl_i64_i32(extension, flag64);
+	tcg_gen_st8_i32(extension, tcg_env, offsetof(teak_state_t, fe));
 
 	tcg_gen_shri_i64(flag64, value, 30);
-	tcg_gen_extrl_i64_i32(temporary, flag64);
-	tcg_gen_andi_i32(temporary, temporary, 3);
-	tcg_gen_shri_i32(flag, temporary, 1);
-	tcg_gen_xor_i32(temporary, temporary, flag);
-	tcg_gen_andi_i32(temporary, temporary, 1);
-	tcg_gen_ld8u_i32(flag, tcg_env, offsetof(teak_state_t, fe));
-	tcg_gen_xori_i32(flag, flag, 1);
-	tcg_gen_and_i32(temporary, temporary, flag);
-	tcg_gen_ld8u_i32(flag, tcg_env, offsetof(teak_state_t, fz));
-	tcg_gen_or_i32(temporary, temporary, flag);
-	tcg_gen_st8_i32(temporary, tcg_env, offsetof(teak_state_t, fn));
+	tcg_gen_extrl_i64_i32(bits, flag64);
+	tcg_gen_andi_i32(bits, bits, 3);
+	tcg_gen_shri_i32(normalized, bits, 1);
+	tcg_gen_xor_i32(normalized, normalized, bits);
+	tcg_gen_andi_i32(normalized, normalized, 1);
+	tcg_gen_andc_i32(normalized, normalized, extension);
+	tcg_gen_or_i32(normalized, normalized, zero);
+	tcg_gen_st8_i32(normalized, tcg_env, offsetof(teak_state_t, fn));
 }
 
 static void tcg_emit_data_bus_saturation(TCGv_i64 value) {

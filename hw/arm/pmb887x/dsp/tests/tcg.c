@@ -9,7 +9,14 @@
 
 #define TEST_MEMORY_WORDS	0x200
 #define TEST_Y_SPACE_BASE	0x100
-#define TEST_TCG_CODE_SIZE	(16 * MiB)
+#define TEST_TCG_CODE_SIZE	(256 * MiB)
+#define TEST_ACCUMULATOR_BITS	36
+#define TEST_BRANCH_WORDS	2
+#define TEST_FLAG_LIVENESS_INSTRUCTIONS	16
+#define TEST_FLAG_LIVENESS_ITERATIONS	1000
+#define TEST_FLAG_LIVENESS_ADDRESS_REGISTERS	6
+#define TEST_FLAG_LIVENESS_ADDRESS_SPREAD	12
+#define TEST_FLAG_LIVENESS_MAX_BLOCKS	(2 * TEST_FLAG_LIVENESS_INSTRUCTIONS)
 
 typedef struct test_memory_t test_memory_t;
 
@@ -18,7 +25,51 @@ struct test_memory_t {
 	teak_tcg_core_t *exit_core_on_write;
 };
 
+typedef struct test_flag_liveness_trace_t test_flag_liveness_trace_t;
+
+struct test_flag_liveness_trace_t {
+	teak_state_t states[TEST_FLAG_LIVENESS_INSTRUCTIONS + 1];
+	bool recorded[TEST_FLAG_LIVENESS_INSTRUCTIONS + 1];
+};
+
 int (*qemu_main)(void);
+
+static const uint16_t test_flag_liveness_pool[] = {
+	0xD022, /* mpy [r4++] [r2] a0 */
+	0xD22A, /* mac [r4++] [r2++] a0 */
+	0xDA22, /* mac [r4++] [r2] a1 */
+	0xDA2A, /* mac [r4++] [r2++] a1 */
+	0x92A0, /* addh r0 a0 */
+	0x82A1, /* and r1 a0 */
+	0x80A4, /* or r4 a0 */
+	0x8CA5, /* cmp r5 a0 */
+	0x8DA0, /* cmp r0 a1 */
+	0x8FB8, /* sub a0 a1 */
+	0x6780, /* not a0 always */
+	0x6760, /* clr a0 always */
+	0x67E0, /* dec a0 always */
+	0x6700, /* shr a0 always */
+	0x67D0, /* inc a0 always */
+	0x6761, /* clr a0 eq */
+	0x7765, /* clr a1 lt */
+	0x67F1, /* copy a0 eq */
+	0x77F8, /* copy a1 c */
+	0x67E4, /* dec a0 ge */
+	0x676A, /* clr a0 e */
+	0x1F08, /* mov [r0++] a0 */
+	0x1F28, /* mov [r0++] a1 */
+	0x1F00, /* mov [r0] a0 */
+	0x1B48, /* mov a0l [r0++] */
+	0x1B60, /* mov a1l [r0] */
+	0x1B4A, /* mov a0l [r2++] */
+	0x0088, /* modr [r0++] */
+	0x0090, /* modr [r0--] */
+	0x008A, /* modr [r2++] */
+	0x911A, /* tstb a0l 0x0001 */
+	0x9020, /* tstb [r0] 0x0000 */
+	0x5B48, /* mov st0 a0l */
+	0x5900, /* mov r0 st0 */
+};
 
 static uint16_t test_memory_read(void *opaque, uint32_t address) {
 	test_memory_t *memory = opaque;
@@ -594,6 +645,142 @@ static void test_program_invalidation(void) {
 	g_assert_cmpuint(core.cache_compiles, ==, 2);
 }
 
+static uint64_t test_random_accumulator(void) {
+	uint64_t value = ((uint64_t) g_test_rand_int() << 32) | (uint32_t) g_test_rand_int();
+	return (uint64_t) sextract64(value, 0, TEST_ACCUMULATOR_BITS);
+}
+
+static void test_flag_liveness_randomize(teak_state_t *state) {
+	state->a[0] = test_random_accumulator();
+	state->a[1] = test_random_accumulator();
+	state->b[0] = test_random_accumulator();
+	state->b[1] = test_random_accumulator();
+	state->p[0] = g_test_rand_int();
+	state->x[0] = g_test_rand_int();
+	state->y[0] = g_test_rand_int();
+	for (size_t i = 0; i < TEST_FLAG_LIVENESS_ADDRESS_REGISTERS; i++) {
+		state->r[i] = g_test_rand_int_range(TEST_Y_SPACE_BASE - TEST_FLAG_LIVENESS_ADDRESS_SPREAD,
+			TEST_Y_SPACE_BASE + TEST_FLAG_LIVENESS_ADDRESS_SPREAD);
+	}
+	state->fz = g_test_rand_bit();
+	state->fm = g_test_rand_bit();
+	state->fn = g_test_rand_bit();
+	state->fv = g_test_rand_bit();
+	state->fe = g_test_rand_bit();
+	state->fc0 = g_test_rand_bit();
+	state->fc1 = g_test_rand_bit();
+	state->flm = g_test_rand_bit();
+	state->fvl = g_test_rand_bit();
+	state->fr = g_test_rand_bit();
+}
+
+static void test_flag_liveness_assert_same(const teak_state_t *expected, const teak_state_t *actual) {
+	g_assert_cmphex(expected->a[0], ==, actual->a[0]);
+	g_assert_cmphex(expected->a[1], ==, actual->a[1]);
+	g_assert_cmphex(expected->b[0], ==, actual->b[0]);
+	g_assert_cmphex(expected->b[1], ==, actual->b[1]);
+	g_assert_cmphex(expected->p[0], ==, actual->p[0]);
+	g_assert_cmphex(expected->product_extension[0], ==, actual->product_extension[0]);
+	g_assert_cmphex(expected->x[0], ==, actual->x[0]);
+	g_assert_cmphex(expected->y[0], ==, actual->y[0]);
+	g_assert_cmpmem(expected->r, sizeof(expected->r), actual->r, sizeof(actual->r));
+	g_assert_cmpuint(expected->fz, ==, actual->fz);
+	g_assert_cmpuint(expected->fm, ==, actual->fm);
+	g_assert_cmpuint(expected->fn, ==, actual->fn);
+	g_assert_cmpuint(expected->fv, ==, actual->fv);
+	g_assert_cmpuint(expected->fe, ==, actual->fe);
+	g_assert_cmpuint(expected->fc0, ==, actual->fc0);
+	g_assert_cmpuint(expected->fc1, ==, actual->fc1);
+	g_assert_cmpuint(expected->flm, ==, actual->flm);
+	g_assert_cmpuint(expected->fvl, ==, actual->fvl);
+	g_assert_cmpuint(expected->fr, ==, actual->fr);
+	g_assert_cmpuint(expected->sat, ==, actual->sat);
+	g_assert_cmpuint(expected->ie, ==, actual->ie);
+	g_assert_cmpuint(expected->interrupt_mask, ==, actual->interrupt_mask);
+}
+
+static uint16_t test_flag_liveness_program(const uint16_t *instructions, size_t stride, test_memory_t *program) {
+	uint16_t end = TEST_FLAG_LIVENESS_INSTRUCTIONS * stride;
+
+	*program = (test_memory_t) {};
+	for (size_t i = 0; i < TEST_FLAG_LIVENESS_INSTRUCTIONS; i++) {
+		uint16_t address = i * stride;
+
+		program->words[address] = instructions[i];
+		if (stride != 1) {
+			program->words[address + 1] = 0x4180; /* br address + stride */
+			program->words[address + TEST_BRANCH_WORDS] = address + stride;
+		}
+	}
+	program->words[end] = 0x4180; /* br end */
+	program->words[end + 1] = end;
+	return end;
+}
+
+static void test_flag_liveness_run(
+	const uint16_t *instructions,
+	size_t stride,
+	const teak_state_t *initial,
+	test_memory_t *data,
+	bool mapped,
+	test_flag_liveness_trace_t *trace
+) {
+	test_memory_t program;
+	uint16_t end = test_flag_liveness_program(instructions, stride, &program);
+	teak_tcg_core_t core = test_core_create(&program, data);
+
+	if (mapped) {
+		test_core_map_data(&core, data);
+	} else {
+		data->exit_core_on_write = &core;
+	}
+	core.state = *initial;
+	*trace = (test_flag_liveness_trace_t) {};
+	for (size_t block = 0; block < TEST_FLAG_LIVENESS_MAX_BLOCKS && core.state.pc != end; block++) {
+		g_assert_true(teak_tcg_execute_block(&core));
+		g_assert_cmpuint(core.state.pc % stride, <=, 1);
+
+		size_t executed = DIV_ROUND_UP(core.state.pc, stride);
+		trace->states[executed] = core.state;
+		trace->recorded[executed] = true;
+	}
+	g_assert_cmphex(core.state.pc, ==, end);
+	data->exit_core_on_write = NULL;
+}
+
+static void test_flag_liveness(void) {
+	for (size_t iteration = 0; iteration < TEST_FLAG_LIVENESS_ITERATIONS; iteration++) {
+		uint16_t instructions[TEST_FLAG_LIVENESS_INSTRUCTIONS];
+		test_memory_t empty_program = {};
+		test_memory_t data = {};
+		bool mapped = iteration % 2 == 0;
+
+		for (size_t i = 0; i < ARRAY_SIZE(instructions); i++)
+			instructions[i] = test_flag_liveness_pool[g_test_rand_int_range(0, ARRAY_SIZE(test_flag_liveness_pool))];
+		for (size_t i = 0; i < ARRAY_SIZE(data.words); i++)
+			data.words[i] = g_test_rand_int();
+		teak_state_t initial = test_core_create(&empty_program, &data).state;
+		test_flag_liveness_randomize(&initial);
+
+		test_memory_t reference_data = data;
+		test_memory_t optimized_data = data;
+		test_flag_liveness_trace_t reference;
+		test_flag_liveness_trace_t optimized;
+		test_flag_liveness_run(instructions, 1 + TEST_BRANCH_WORDS, &initial, &reference_data, mapped, &reference);
+		test_flag_liveness_run(instructions, 1, &initial, &optimized_data, mapped, &optimized);
+
+		for (size_t executed = 0; executed <= TEST_FLAG_LIVENESS_INSTRUCTIONS; executed++) {
+			if (!optimized.recorded[executed])
+				continue;
+			g_assert_true(reference.recorded[executed]);
+			test_flag_liveness_assert_same(&reference.states[executed], &optimized.states[executed]);
+		}
+		g_assert_true(optimized.recorded[TEST_FLAG_LIVENESS_INSTRUCTIONS]);
+		g_assert_cmpmem(reference_data.words, sizeof(reference_data.words),
+			optimized_data.words, sizeof(optimized_data.words));
+	}
+}
+
 static void test_execute_cycles(teak_tcg_core_t *core, uint32_t cycles) {
 	uint32_t executed = 0;
 
@@ -1062,6 +1249,7 @@ int main(int argc, char **argv) {
 	g_test_add_func("/pmb887x/dsp/tcg/direct-data-read-write", test_direct_data_read_write);
 	g_test_add_func("/pmb887x/dsp/tcg/program-context-cache", test_program_context_cache);
 	g_test_add_func("/pmb887x/dsp/tcg/program-invalidation", test_program_invalidation);
+	g_test_add_func("/pmb887x/dsp/tcg/flag-liveness", test_flag_liveness);
 	g_test_add_func("/pmb887x/dsp/tcg/linked-chain-invalidation", test_linked_chain_invalidation);
 	g_test_add_func("/pmb887x/dsp/tcg/linked-chain-cycle-budget", test_linked_chain_cycle_budget);
 	g_test_add_func("/pmb887x/dsp/tcg/linked-block-repeat", test_linked_block_repeat);
