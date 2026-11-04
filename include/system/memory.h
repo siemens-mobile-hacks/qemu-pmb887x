@@ -2017,8 +2017,9 @@ void memory_region_set_nonvolatile(MemoryRegion *mr, bool nonvolatile);
 void memory_region_rom_device_set_romd(MemoryRegion *mr, bool romd_mode);
 
 /**
- * memory_topology_views_recycled: report+clear whether a FlatView variant
- * was recycled (evicted from the romd stash) since the last call.
+ * memory_topology_views_recycled: whether a FlatView variant was recycled
+ * (evicted from the romd stash) during the commit being dispatched; the
+ * flag is cleared once the commit's listeners have run.
  * Readers holding pointers into FlatViews (TLB entries keep their
  * MemoryRegionSection) must flush them when this returns true.
  */

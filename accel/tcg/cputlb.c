@@ -1218,11 +1218,6 @@ void tlb_reset_dirty(CPUState *cpu, ram_addr_t ram_start, uintptr_t start,
         unsigned int n = tlb_n_entries(fast);
         unsigned int i;
 
-        /* Flushed since its last fill: no entry, the victims included. */
-        if (!(cpu->neg.tlb.c.dirty & (1 << mmu_idx))) {
-            continue;
-        }
-
         for (i = 0; i < n; i++) {
             tlb_reset_dirty_range_locked(&desc->fulltlb[i], &fast->table[i],
                                          start, length);
@@ -1312,20 +1307,11 @@ static inline void tlb_set_compare(CPUTLBEntryFull *full, CPUTLBEntry *ent,
 }
 
 /*
- * Add a new TLB entry. At most one entry for a given virtual address
- * is permitted. Only a single TARGET_PAGE_SIZE region is mapped, the
- * supplied size is only used by tlb_flush_page.
- *
- * Called from TCG-generated code, which is under an RCU read-side
- * critical section.
- */
-/*
- * Fill-time MMIO dispatch resolution (device-path slice 1,
- * doc/performance-handoff.md): mirror what
+ * Fill-time MMIO dispatch resolution: mirror what
  * memory_region_dispatch_{read,write} would resolve per access for
  * this section's leaf MemoryRegion, so the access path is one mask
  * test + one indirect call.  Bits that cannot be resolved statically
- * (accepts callbacks, ioeventf d writes, with-attrs ops, sizes outside
+ * (accepts callbacks, ioeventfd writes, with-attrs ops, sizes outside
  * the impl range) keep the mask empty and take the stock path.
  */
 static void tlb_resolve_io_dispatch(CPUTLBEntryFull *full, MemoryRegion *mr)
@@ -1454,6 +1440,14 @@ static void tlb_resolve_io_subpage(CPUTLBEntryFull *full,
                          - (int64_t)leaf->offset_within_address_space;
 }
 
+/*
+ * Add a new TLB entry. At most one entry for a given virtual address
+ * is permitted. Only a single TARGET_PAGE_SIZE region is mapped, the
+ * supplied size is only used by tlb_flush_page.
+ *
+ * Called from TCG-generated code, which is under an RCU read-side
+ * critical section.
+ */
 void tlb_set_page_full(CPUState *cpu, int mmu_idx,
                        vaddr addr, CPUTLBEntryFull *full)
 {
@@ -1613,7 +1607,6 @@ void tlb_set_page_full(CPUState *cpu, int mmu_idx,
     full = &desc->fulltlb[index];
     full->xlat_offset = iotlb - addr_page;
     full->section = section;
-    full->io_rom_device = section->mr->rom_device;
     tlb_resolve_io_dispatch(full, section->mr);
     if (unlikely(section->mr->subpage)) {
         tlb_resolve_io_subpage(full, section, xlat + (addr - addr_page));
@@ -2085,19 +2078,7 @@ tb_page_addr_t get_page_addr_code_hostp(CPUArchState *env, vaddr addr,
         return -1;
     }
 
-    /*
-     * The entry already knows the page's ram_addr_t: xlat_offset is
-     * ram_addr - vaddr for RAM and the offset within the region for a
-     * ROMD device, whose RAM block starts at the region's ram_addr.
-     * qemu_ram_addr_from_host_nofail() would take the RCU read lock
-     * and walk the block list for the same number, on every jump-cache
-     * miss that falls through to the qht.
-     */
-    if (full->io_rom_device) {
-        return memory_region_get_ram_addr(full->section->mr)
-               + addr + full->xlat_offset;
-    }
-    return addr + full->xlat_offset;
+    return qemu_ram_addr_from_host_nofail(p);
 }
 
 /* Load/store with atomicity primitives. */
@@ -2597,35 +2578,6 @@ static uint64_t do_ld_mmio_beN(CPUState *cpu, CPUTLBEntryFull *full,
 
 #ifdef CONFIG_TCG_WASM64
 /*
- * The generated code's inline TLB probe (w64_tlb_setup/w64_tlb_probe),
- * written once in C for the wasm64 interpreter tier, which reaches the
- * guest only through helper_*_mmu.  One compare says the page is present,
- * carries no flag bit, satisfies the alignment and does not cross a page.
- */
-static inline __attribute__((always_inline))
-void *do_ram_1p(CPUState *cpu, vaddr addr, MemOpIdx oi, MMUAccessType type,
-                unsigned size)
-{
-    MemOp memop = get_memop(oi);
-    unsigned atom = memop & MO_ATOM_MASK;
-    unsigned a_mask = (1u << memop_alignment_bits(memop)) - 1;
-    unsigned s_mask = size - 1;
-    vaddr adj = a_mask >= s_mask ? 0 : s_mask - a_mask;
-    vaddr tlb_mask = (uint64_t)(int64_t)(int)TARGET_PAGE_MASK | a_mask;
-    CPUTLBEntry *entry;
-
-    if (unlikely((memop & MO_BSWAP) ||
-                 (atom != MO_ATOM_NONE && atom != MO_ATOM_IFALIGN))) {
-        return NULL;
-    }
-    entry = tlb_entry(cpu, get_mmuidx(oi), addr);
-    if (likely(tlb_read_idx(entry, type) == ((addr + adj) & tlb_mask))) {
-        return (void *)((uintptr_t)addr + entry->addend);
-    }
-    return NULL;
-}
-
-/*
  * A store to a RAM page that holds translated code, when no TB covers the
  * bytes stored.  Such a page keeps TLB_NOTDIRTY for as long as it holds
  * any TB, so every store to it leaves the generated code; the generic
@@ -3102,15 +3054,6 @@ static uint8_t do_ld1_mmu(CPUState *cpu, vaddr addr, MemOpIdx oi,
     uint64_t io;
 
     cpu_req_mo(cpu, TCG_MO_LD_LD | TCG_MO_ST_LD);
-#ifdef CONFIG_TCG_WASM64
-    {
-        void *h = do_ram_1p(cpu, addr, oi, access_type, 1);
-
-        if (likely(h != NULL)) {
-            return ldub_p(h);
-        }
-    }
-#endif
     if (do_ld_mmio_1p(cpu, addr, oi, ra, access_type, &io, 1, false)) {
         return io;
     }
@@ -3130,15 +3073,6 @@ static uint16_t do_ld2_mmu(CPUState *cpu, vaddr addr, MemOpIdx oi,
     uint64_t io;
 
     cpu_req_mo(cpu, TCG_MO_LD_LD | TCG_MO_ST_LD);
-#ifdef CONFIG_TCG_WASM64
-    {
-        void *h = do_ram_1p(cpu, addr, oi, access_type, 2);
-
-        if (likely(h != NULL)) {
-            return lduw_he_p(h);
-        }
-    }
-#endif
     if (do_ld_mmio_1p(cpu, addr, oi, ra, access_type, &io, 2,
                       (get_memop(oi) & MO_BSWAP) == MO_LE)) {
         return io;
@@ -3168,15 +3102,6 @@ static uint32_t do_ld4_mmu(CPUState *cpu, vaddr addr, MemOpIdx oi,
     uint64_t io;
 
     cpu_req_mo(cpu, TCG_MO_LD_LD | TCG_MO_ST_LD);
-#ifdef CONFIG_TCG_WASM64
-    {
-        void *h = do_ram_1p(cpu, addr, oi, access_type, 4);
-
-        if (likely(h != NULL)) {
-            return ldl_he_p(h);
-        }
-    }
-#endif
     if (do_ld_mmio_1p(cpu, addr, oi, ra, access_type, &io, 4,
                       (get_memop(oi) & MO_BSWAP) == MO_LE)) {
         return io;
@@ -3203,15 +3128,6 @@ static uint64_t do_ld8_mmu(CPUState *cpu, vaddr addr, MemOpIdx oi,
     uint64_t io;
 
     cpu_req_mo(cpu, TCG_MO_LD_LD | TCG_MO_ST_LD);
-#ifdef CONFIG_TCG_WASM64
-    {
-        void *h = do_ram_1p(cpu, addr, oi, access_type, 8);
-
-        if (likely(h != NULL)) {
-            return ldq_he_p(h);
-        }
-    }
-#endif
     if (do_ld_mmio_1p(cpu, addr, oi, ra, access_type, &io, 8,
                       (get_memop(oi) & MO_BSWAP) == MO_LE)) {
         return io;
@@ -3671,10 +3587,9 @@ static void do_st1_mmu(CPUState *cpu, vaddr addr, uint8_t val,
     cpu_req_mo(cpu, TCG_MO_LD_ST | TCG_MO_ST_ST);
 #ifdef CONFIG_TCG_WASM64
     {
-        void *h = do_ram_1p(cpu, addr, oi, MMU_DATA_STORE, 1);
+        void *h = do_ram_notdirty_1p(cpu, addr, oi, 1);
 
-        if (likely(h != NULL) ||
-            (h = do_ram_notdirty_1p(cpu, addr, oi, 1)) != NULL) {
+        if (h != NULL) {
             stb_p(h, val);
             return;
         }
@@ -3699,10 +3614,9 @@ static void do_st2_mmu(CPUState *cpu, vaddr addr, uint16_t val,
     cpu_req_mo(cpu, TCG_MO_LD_ST | TCG_MO_ST_ST);
 #ifdef CONFIG_TCG_WASM64
     {
-        void *h = do_ram_1p(cpu, addr, oi, MMU_DATA_STORE, 2);
+        void *h = do_ram_notdirty_1p(cpu, addr, oi, 2);
 
-        if (likely(h != NULL) ||
-            (h = do_ram_notdirty_1p(cpu, addr, oi, 2)) != NULL) {
+        if (h != NULL) {
             stw_he_p(h, val);
             return;
         }
@@ -3736,10 +3650,9 @@ static void do_st4_mmu(CPUState *cpu, vaddr addr, uint32_t val,
     cpu_req_mo(cpu, TCG_MO_LD_ST | TCG_MO_ST_ST);
 #ifdef CONFIG_TCG_WASM64
     {
-        void *h = do_ram_1p(cpu, addr, oi, MMU_DATA_STORE, 4);
+        void *h = do_ram_notdirty_1p(cpu, addr, oi, 4);
 
-        if (likely(h != NULL) ||
-            (h = do_ram_notdirty_1p(cpu, addr, oi, 4)) != NULL) {
+        if (h != NULL) {
             stl_he_p(h, val);
             return;
         }
@@ -3772,10 +3685,9 @@ static void do_st8_mmu(CPUState *cpu, vaddr addr, uint64_t val,
     cpu_req_mo(cpu, TCG_MO_LD_ST | TCG_MO_ST_ST);
 #ifdef CONFIG_TCG_WASM64
     {
-        void *h = do_ram_1p(cpu, addr, oi, MMU_DATA_STORE, 8);
+        void *h = do_ram_notdirty_1p(cpu, addr, oi, 8);
 
-        if (likely(h != NULL) ||
-            (h = do_ram_notdirty_1p(cpu, addr, oi, 8)) != NULL) {
+        if (h != NULL) {
             stq_he_p(h, val);
             return;
         }

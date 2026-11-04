@@ -982,8 +982,6 @@ static void dif_mux_entries(pmb887x_dif_t *p, uint8_t *data, uint32_t count) {
 static bool dif_is_pbc_selection_valid(pmb887x_dif_t *p) {
 	uint32_t word_bits = dif_get_tx_word_bits(p);
 
-	if (p->is_mux_stale)
-		dif_update_mux(p);
 	for (uint32_t output_bit = 0; output_bit < word_bits; output_bit++) {
 		uint32_t bcsel = (p->bcsel[output_bit / 16] >> ((output_bit % 16) * 2)) & 3;
 		if (bcsel > 1)

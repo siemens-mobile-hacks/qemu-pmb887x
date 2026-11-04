@@ -1224,9 +1224,7 @@ static bool w64_inl_cross_stream(TranslationBlock *tb, uintptr_t retaddr,
     }
     return src != dst;
 }
-#endif
 
-#ifdef CONFIG_TCG_WASM64
 /*
  * Batch eviction (tcg/wasm64/wasm64.c) unregisters @dest's entry in the
  * shared chain table, and a linked goto_tb slot names that entry with no

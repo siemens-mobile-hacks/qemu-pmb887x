@@ -159,18 +159,18 @@ bool translator_use_goto_tb(DisasContextBase *db, vaddr dest)
         return false;
     }
 
-    /*
-     * Check for the dest on the same page as the start of the TB, or
-     * (wasm64) on the second page the TB has fetched from.  A TB with a
-     * second page is only chained into when that page is an inlined
-     * callee's (cpu-exec.c), and those chains are dropped at every
-     * TLB-flush site (tb_unlink_inlined), so the guard holds whichever
-     * page the branch comes from.
-     */
+    /* Check for the dest on the same page as the start of the TB.  */
     if (translator_is_same_page(db, dest)) {
         return true;
     }
 #ifdef CONFIG_TCG_WASM64
+    /*
+     * Or on the second page the TB has fetched from.  A TB with a second
+     * page is only chained into when that page is an inlined callee's
+     * (cpu-exec.c), and those chains are dropped at every TLB-flush site
+     * (tb_unlink_inlined), so the guard holds whichever page the branch
+     * comes from.
+     */
     if ((dest & TARGET_PAGE_MASK) == db->w64_page1 &&
         db->host_addr[1] != NULL) {
         return true;

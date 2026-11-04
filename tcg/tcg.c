@@ -358,7 +358,6 @@ static void tcg_out_label(TCGContext *s, TCGLabel *l)
     l->has_value = 1;
     l->u.value_ptr = tcg_splitwx_to_rx(s->code_ptr);
 #ifdef CONFIG_TCG_WASM64
-    /* the wasm64 backend needs to emit its label-region guard here */
     tcg_out_set_label(s, l);
 #endif
 }
@@ -1920,8 +1919,8 @@ void tcg_prologue_init(void)
 #ifndef HAVE_TCG_QEMU_TB_EXEC
     /*
      * Assert that goto_ptr is implemented completely, setting an epilogue.
-     * For tci and wasm64, we use NULL as the signal to return from the
-     * interpreter / dispatcher, so skip this check.
+     * For tci, we use NULL as the signal to return from the interpreter,
+     * so skip this check.
      */
     tcg_debug_assert(tcg_code_gen_epilogue != NULL);
 #endif

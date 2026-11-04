@@ -1953,18 +1953,16 @@ static bool w64_defer_taken(DisasContext *s, int64_t diff)
 }
 
 /*
- * Hand back what the prologue prepaid for instructions not run - unless a
- * device has already seen the prepaid clock.  A mid-TB MMIO access does
- * not rewind the TB on wasm (cputlb.c io_clock_window): it sets can_do_io
- * and lets the device read a clock that counts the whole TB, accepting a
- * clock up to one TB ahead.  A refund after that would move the clock the
- * device saw *backwards*, and a device that keeps "now - last" (the RTC
- * counts ticks from its last sync) then spins on a negative interval.
- * can_do_io is exactly "the clock was observed in this TB": the translator
- * clears it before the first instruction and sets it only before the last
- * one, which no deferred exit is.  When it is set the instructions are
- * left charged - time runs one TB ahead, the deviation the design already
- * allows - and the guest instruction count stays exact.
+ * Hand back what the prologue prepaid for instructions not run - unless
+ * can_do_io says a device may already have read the prepaid clock in this
+ * TB.  A refund after that would move the clock the device saw *backwards*,
+ * and a device that keeps "now - last" (the RTC counts ticks from its last
+ * sync) then spins on a negative interval.  The translator clears can_do_io
+ * before the first instruction and sets it only before the last one, which
+ * no deferred exit is, and a mid-TB MMIO access rewinds the TB
+ * (cpu_io_recompile).  When it is set anyway the instructions are left
+ * charged - time runs one TB ahead - and the guest instruction count stays
+ * exact.
  */
 static void w64_refund(DisasContext *dc, int skipped, int cycles)
 {
@@ -1988,7 +1986,7 @@ static void w64_refund(DisasContext *dc, int skipped, int cycles)
     }
     /*
      * Without icount no device reads a prepaid clock: a mid-TB access
-     * rewinds the TB (cputlb.c io_open_clock_window), and the last
+     * rewinds the TB (cpu_io_recompile), and the last
      * instruction, the only one with can_do_io, is past every deferred
      * exit.  So the cycles go back unconditionally.
      */
