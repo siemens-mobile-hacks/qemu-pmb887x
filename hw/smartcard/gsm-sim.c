@@ -9,6 +9,7 @@
 #include "hw/smartcard/iso7816.h"
 #include "gsm-sim-fs.h"
 #include "gsm-sim-storage.h"
+#include "gsm-sim-toolkit.h"
 #include "gsm-test-algorithm.h"
 
 #define TYPE_GSM_SIM "gsm-sim"
@@ -35,6 +36,11 @@ OBJECT_DECLARE_TYPE(GSMSim, GSMSimClass, GSM_SIM)
 #define GSM_SIM_SMS_STATUS_FREE 0x00
 #define GSM_SIM_MSISDN_NUMBER_LENGTH 7
 #define GSM_SIM_MSISDN_TON_NPI 0x91
+#define GSM_SIM_DIALING_FOOTER_SIZE 14
+#define GSM_SIM_DIALING_NUMBER_EMPTY 0xFF
+#define GSM_SIM_TON_INTERNATIONAL_MASK 0x70
+#define GSM_SIM_TON_INTERNATIONAL 0x10
+#define GSM_SIM_BCD_FILLER 0x0F
 
 #define GSM_SIM_ACCESS_READ_ALWAYS_UPDATE_CHV1 { 0x01, 0xF0, 0x44 }
 #define GSM_SIM_ACCESS_READ_ALWAYS_UPDATE_ADM { 0x04, 0xF0, 0x44 }
@@ -65,6 +71,11 @@ OBJECT_DECLARE_TYPE(GSMSim, GSMSimClass, GSM_SIM)
 #define GSM_SIM_SEEK_CLOCKS 3006
 #define GSM_SIM_INCREASE_CLOCKS 6016
 #define GSM_SIM_RUN_GSM_ALGORITHM_CLOCKS 171649
+#define GSM_SIM_TERMINAL_PROFILE_CLOCKS 8258
+#define GSM_SIM_FETCH_CLOCKS 494
+#define GSM_SIM_FETCH_MILLICLOCKS_PER_BYTE 18330
+#define GSM_SIM_TERMINAL_RESPONSE_CLOCKS 270
+#define GSM_SIM_ENVELOPE_CLOCKS 1586
 
 struct GSMSim {
     ISO7816Card parent_obj;
@@ -81,6 +92,7 @@ struct GSMSim {
 
     uint8_t ki[GSM_TEST_ALGORITHM_KI_SIZE];
     GSMSimFS fs;
+    GSMSimToolkit toolkit;
 };
 
 struct GSMSimClass {
@@ -134,10 +146,10 @@ static const uint8_t GSM_SIM_KC[] = {
 static const uint8_t GSM_SIM_ACMMAX[] = { 0x00, 0x00, 0x00 };
 /*
  * GSM 11.11 services: CHV1 disable, ADN, FDN, SMS, AoC, CCP, PLMNsel,
- * MSISDN, EXT1, EXT2, SMSP, LND, CBMI, GPRS.
+ * MSISDN, EXT1, EXT2, SMSP, LND, CBMI, menu selection, proactive SIM, GPRS.
  */
 static const uint8_t GSM_SIM_SST[] = {
-    0xFF, 0x3F, 0xFF, 0x0F, 0x00, 0x00, 0x00, 0x00, 0x00, 0x0C
+    0xFF, 0x3F, 0xFF, 0x0F, 0x00, 0x00, 0x30, 0x03, 0x00, 0x0C
 };
 static const uint8_t GSM_SIM_ACC[] = { 0x00, 0x00 };
 static const uint8_t GSM_SIM_LOCI[] = {
@@ -147,7 +159,7 @@ static const uint8_t GSM_SIM_LOCIGPRS[] = {
     0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
     0xFF, 0x01
 };
-static const uint8_t GSM_SIM_PHASE[] = { 0x02 };
+static const uint8_t GSM_SIM_PHASE[] = { 0x03 };
 static const uint8_t GSM_SIM_MSISDN[GSM_SIM_DIALING_RECORD_SIZE] = {
     'V', 'i', 'k', 't', 'o', 'r', '8', '9',
     0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
@@ -306,6 +318,7 @@ static void gsm_sim_cold_reset(ISO7816Card *card)
     GSMSimFile *adn = gsm_sim_fs_find(fs, GSM_SIM_EF_ADN, GSM_SIM_DF_TELECOM);
     bool fdn_enabled = adn->invalidated;
 
+    gsm_sim_toolkit_reset(&sim->toolkit);
     gsm_sim_fs_reset(fs);
     fs->chv1.fulfilled = false;
     fs->chv2.fulfilled = false;
@@ -347,6 +360,15 @@ static uint32_t gsm_sim_processing_clocks(ISO7816Card *card,
         return GSM_SIM_INCREASE_CLOCKS;
     case GSM11_INS_RUN_GSM_ALGORITHM:
         return GSM_SIM_RUN_GSM_ALGORITHM_CLOCKS;
+    case GSM11_INS_TERMINAL_PROFILE:
+        return GSM_SIM_TERMINAL_PROFILE_CLOCKS;
+    case GSM11_INS_FETCH:
+        return GSM_SIM_FETCH_CLOCKS + header[ISO7816_OFFSET_P3] *
+               GSM_SIM_FETCH_MILLICLOCKS_PER_BYTE / 1000;
+    case GSM11_INS_TERMINAL_RESPONSE:
+        return GSM_SIM_TERMINAL_RESPONSE_CLOCKS;
+    case GSM11_INS_ENVELOPE:
+        return GSM_SIM_ENVELOPE_CLOCKS;
     default:
         return 0;
     }
@@ -392,6 +414,69 @@ static void gsm_sim_run_gsm_algorithm(GSMSim *sim, const uint8_t *command,
     gsm_test_algorithm_run(sim->ki, command + ISO7816_HEADER_SIZE, sres_kc,
                            sres_kc + GSM_TEST_ALGORITHM_SRES_SIZE);
     gsm_sim_fs_offer_response(&sim->fs, sres_kc, sizeof(sres_kc), response);
+}
+
+static void gsm_sim_append_bcd(GString *text, const uint8_t *data, size_t size)
+{
+    for (size_t i = 0; i < 2 * size; i++) {
+        uint8_t digit = i % 2 ? data[i / 2] >> GSM_SIM_BCD_HIGH_NIBBLE_SHIFT
+                              : data[i / 2] & GSM_SIM_BCD_FILLER;
+
+        if (digit == GSM_SIM_BCD_FILLER) {
+            break;
+        }
+        g_string_append_c(text, '0' + digit);
+    }
+}
+
+static void gsm_sim_append_msisdn(GSMSim *sim, GString *text)
+{
+    GSMSimFile *msisdn = gsm_sim_fs_find(&sim->fs, GSM_SIM_EF_MSISDN,
+                                         GSM_SIM_DF_TELECOM);
+    const uint8_t *footer = msisdn->data + GSM_SIM_DIALING_RECORD_SIZE -
+                            GSM_SIM_DIALING_FOOTER_SIZE;
+    uint8_t length = footer[0];
+    bool international = (footer[1] & GSM_SIM_TON_INTERNATIONAL_MASK) ==
+                         GSM_SIM_TON_INTERNATIONAL;
+
+    if (length == GSM_SIM_DIALING_NUMBER_EMPTY || length < 2) {
+        g_string_append(text, "none");
+        return;
+    }
+    if (international) {
+        g_string_append_c(text, '+');
+    }
+    gsm_sim_append_bcd(text, footer + 2, length - 1);
+}
+
+static char *gsm_sim_describe(GSMSim *sim)
+{
+    GString *text = g_string_new(NULL);
+    GSMSimFile *iccid = gsm_sim_fs_find(&sim->fs, GSM_SIM_EF_ICCID,
+                                        GSM_SIM_FS_MF_ID);
+
+    g_string_append_printf(text, "MCC-MNC: %.*s-%s\nIMSI: %s\nICCID: ",
+                           GSM_SIM_MCC_LENGTH, sim->operator_code,
+                           sim->operator_code + GSM_SIM_MCC_LENGTH, sim->imsi);
+    gsm_sim_append_bcd(text, iccid->data, iccid->size);
+    g_string_append(text, "\nMSISDN: ");
+    gsm_sim_append_msisdn(sim, text);
+    g_string_append_printf(text, "\nPIN1: %s",
+                           sim->fs.chv1_enabled ? "enabled" : "disabled");
+    return g_string_free(text, false);
+}
+
+static void gsm_sim_envelope(GSMSim *sim, const uint8_t *data, uint16_t size,
+                             ISO7816Response *response)
+{
+    g_autofree char *info = NULL;
+
+    if (gsm_sim_toolkit_envelope(data, size, response) !=
+        GSM_SIM_TOOLKIT_INFO_ITEM) {
+        return;
+    }
+    info = gsm_sim_describe(sim);
+    gsm_sim_toolkit_display_text(&sim->toolkit, info);
 }
 
 static void gsm_sim_execute(GSMSim *sim, const uint8_t *command,
@@ -456,6 +541,18 @@ static void gsm_sim_execute(GSMSim *sim, const uint8_t *command,
     case GSM11_INS_UNBLOCK_CHV:
         gsm_sim_fs_unblock_chv(fs, p2, data, size, response);
         break;
+    case GSM11_INS_TERMINAL_PROFILE:
+        gsm_sim_toolkit_terminal_profile(&sim->toolkit, response);
+        break;
+    case GSM11_INS_FETCH:
+        gsm_sim_toolkit_fetch(&sim->toolkit, p3, response);
+        break;
+    case GSM11_INS_TERMINAL_RESPONSE:
+        iso7816_response_set_status(response, GSM11_STATUS_SUCCESS);
+        break;
+    case GSM11_INS_ENVELOPE:
+        gsm_sim_envelope(sim, data, size, response);
+        break;
     default:
         iso7816_response_set_status(response, GSM11_STATUS_INS_NOT_SUPPORTED);
         break;
@@ -518,6 +615,7 @@ static void gsm_sim_exchange(ISO7816Card *card, const uint8_t *command,
     if (sim->storage && gsm_sim_changes_state(command[ISO7816_OFFSET_INS])) {
         gsm_sim_commit_storage(sim);
     }
+    gsm_sim_toolkit_announce(&sim->toolkit, &response);
     iso7816_card_complete(card, exchange_id, &response);
 }
 
