@@ -3757,7 +3757,11 @@ subdir('fpu')
 subdir('plugins')
 subdir('ebpf')
 
-host_unit_tests = {}
+host_unit_tests = {
+  'debug-channel': {
+    'sources': files('tests/unit/test-debug-channel.c'),
+  },
+}
 target_unit_tests = {}
 
 if have_system
