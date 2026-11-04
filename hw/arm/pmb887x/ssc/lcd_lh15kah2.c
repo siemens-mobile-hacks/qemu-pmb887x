@@ -1,8 +1,7 @@
-#define PMB887X_TRACE_ID		LCD
 #define PMB887X_TRACE_PREFIX	"lh15kah2"
-#define PMB887X_TRACE_IO		PMB887X_TRACE_IO_LH15KAH2
 
 #include "qemu/osdep.h"
+#include "hw/arm/pmb887x/gen/cpu_meta.h"
 #include "hw/arm/pmb887x/gen/peripheral/LH15KAH2.h"
 #include "hw/arm/pmb887x/trace.h"
 #include "hw/arm/pmb887x/ssc/lcd_common.h"
@@ -25,7 +24,7 @@ static int lcd_on_cmd(pmb887x_lcd_t *_lcd, uint32_t _cmd) {
 static void lcd_on_cmd_with_params(pmb887x_lcd_t *lcd, uint32_t cmd, const uint32_t *params, uint32_t params_n) {
 	g_assert(params_n == 1);
 
-	IO_DUMP_WRITE(cmd, 1, params[0]);
+	DEBUG_IO_WRITE(&lcd->dbg, cmd, 1, params[0]);
 
 	switch (cmd) {
 		case LH15KAH2_X_START:
@@ -58,6 +57,7 @@ static void lcd_realize(pmb887x_lcd_t *lcd, Error **_errp) {
 static void lcd_class_init(ObjectClass *oc, const void *data) {
 	pmb887x_lcd_class_t *k = PMB887X_LCD_CLASS(oc);
 	k->geometry = &LH15KAH2_GEOMETRY;
+	k->debug_regs = &pmb887x_lh15kah2_regs;
 	k->cmd_width = 1;
 	k->param_width = 1;
 	k->cd_polarity = true;

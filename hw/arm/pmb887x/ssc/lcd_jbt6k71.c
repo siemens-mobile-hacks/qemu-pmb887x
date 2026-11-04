@@ -1,14 +1,13 @@
 /*
  * Toshiba JBT6K71
  * */
-#define PMB887X_TRACE_ID		LCD
 #define PMB887X_TRACE_PREFIX	"jbt6k71"
-#define PMB887X_TRACE_IO		PMB887X_TRACE_IO_JBT6K71
 
 #include "qemu/osdep.h"
 #include "hw/core/qdev-properties.h"
 #include "qapi/error.h"
 #include "qemu/error-report.h"
+#include "hw/arm/pmb887x/gen/cpu_meta.h"
 #include "hw/arm/pmb887x/gen/peripheral/JBT6K71.h"
 #include "hw/arm/pmb887x/trace.h"
 #include "hw/arm/pmb887x/ssc/lcd_common.h"
@@ -57,7 +56,7 @@ static void lcd_update_state(pmb887x_lcd_t *lcd) {
 	bool tri = (entry_mode & JBT6K71_ENTRY_MODE_TRI) != 0;
 	bool ud = (priv->regs[JBT6K71_DISPLAY_CONTROL] & JBT6K71_DISPLAY_CONTROL_UD) != 0;
 	
-	DPRINTF("am=%d, id1=%d, id0=%d, ss=%d, ud=%d\n", am, id1, id0, ss, ud);
+	DEBUG_LOG(&lcd->dbg, "am=%d, id1=%d, id0=%d, ss=%d, ud=%d\n", am, id1, id0, ss, ud);
 
 	/* Validate before touching anything: a partially applied state (new address mode
 	 * with the old pixel format and transform) sticks until the next write to one of
@@ -100,7 +99,7 @@ static void lcd_on_cmd_with_params(pmb887x_lcd_t *lcd, uint32_t cmd, const uint3
 		return;
 	}
 
-	IO_DUMP_WRITE(cmd, 2, params[0]);
+	DEBUG_IO_WRITE(&lcd->dbg, cmd, 2, params[0]);
 	priv->regs[cmd] = params[0];
 	
 	switch (cmd) {
@@ -151,7 +150,7 @@ static uint32_t lcd_on_read(pmb887x_lcd_t *lcd, uint32_t index) {
 		value = priv->regs[lcd->current_cmd];
 	}
 	if (index % JBT6K71_BUS_WIDTH == 0)
-		IO_DUMP_READ(lcd->current_cmd, 2, value);
+		DEBUG_IO_READ(&lcd->dbg, lcd->current_cmd, 2, value);
 	return (value >> shift) & 0xFF;
 }
 
@@ -177,6 +176,7 @@ static void lcd_realize(pmb887x_lcd_t *lcd, Error **errp) {
 
 static void lcd_class_init(ObjectClass *oc, const void *data) {
 	pmb887x_lcd_class_t *k = PMB887X_LCD_CLASS(oc);
+	k->debug_regs = &pmb887x_jbt6k71_regs;
 	k->cmd_width = 2;
 	k->param_width = 2;
 	k->gram_read_dummy_pixels = 1;

@@ -1,14 +1,13 @@
 /*
  * Solomon SSD1286
  * */
-#define PMB887X_TRACE_ID		LCD
 #define PMB887X_TRACE_PREFIX	"ssd1286"
-#define PMB887X_TRACE_IO		PMB887X_TRACE_IO_SSD1286
 
 #include "qemu/osdep.h"
 #include "hw/core/qdev-properties.h"
 #include "qapi/error.h"
 #include "qemu/error-report.h"
+#include "hw/arm/pmb887x/gen/cpu_meta.h"
 #include "hw/arm/pmb887x/gen/peripheral/SSD1286.h"
 #include "hw/arm/pmb887x/trace.h"
 #include "hw/arm/pmb887x/ssc/lcd_common.h"
@@ -51,7 +50,7 @@ static void lcd_update_state(pmb887x_lcd_t *lcd) {
 	bool dfm0 = (dfm & BIT(0)) != 0;
 	bool dfm1 = (dfm & BIT(1)) != 0;
 	
-	DPRINTF("am=%d, id1=%d, id0=%d, ss=%d, sm=%d, dfm0=%d, dfm1=%d, bgr=%d\n", am, id1, id0, ss, sm, dfm0, dfm1, bgr);
+	DEBUG_LOG(&lcd->dbg, "am=%d, id1=%d, id0=%d, ss=%d, sm=%d, dfm0=%d, dfm1=%d, bgr=%d\n", am, id1, id0, ss, sm, dfm0, dfm1, bgr);
 	
 	pmb887x_lcd_set_addr_mode(
 		lcd,
@@ -81,7 +80,7 @@ static void lcd_on_cmd_with_params(pmb887x_lcd_t *lcd, uint32_t cmd, const uint3
 	g_assert(params_n == 1);
 	g_assert(cmd < SSD1286_MAX_REGS);
 
-	IO_DUMP_WRITE(cmd, 2, params[0]);
+	DEBUG_IO_WRITE(&lcd->dbg, cmd, 2, params[0]);
 	priv->regs[cmd] = params[0];
 	
 	switch (cmd) {
@@ -125,6 +124,7 @@ static void lcd_realize(pmb887x_lcd_t *lcd, Error **errp) {
 static void lcd_class_init(ObjectClass *oc, const void *data) {
 	pmb887x_lcd_class_t *k = PMB887X_LCD_CLASS(oc);
 	k->geometry = &SSD1286_GEOMETRY;
+	k->debug_regs = &pmb887x_ssd1286_regs;
 	k->cmd_width = 1;
 	k->param_width = 2;
 	k->on_cmd = lcd_on_cmd;

@@ -1,7 +1,6 @@
 /*
  * NOR FLASH (Intel/ST CFI)
  * */
-#define PMB887X_TRACE_ID		FLASH
 #define PMB887X_TRACE_PREFIX	"pmb887x-flash"
 
 #include "qemu/osdep.h"
@@ -14,6 +13,7 @@
 #include "hw/core/qdev-properties.h"
 #include "hw/block/block.h"
 
+#include "system/debug-channel.h"
 #include "hw/arm/pmb887x/trace.h"
 #include "hw/arm/pmb887x/flash.h"
 #include "hw/arm/pmb887x/flash-blk.h"
@@ -88,6 +88,7 @@ struct pmb887x_flash_part_t {
 
 struct pmb887x_flash_t {
 	SysBusDevice parent_obj;
+	DebugChannel dbg;
 	DeviceState *dev;
 	MemoryRegion mmio;
 	
@@ -1143,6 +1144,7 @@ static void flash_init_part(pmb887x_flash_t *flash, const pmb887x_flash_cfg_part
 
 static void flash_realize(DeviceState *dev, Error **errp) {
 	pmb887x_flash_t *flash = PMB887X_FLASH(dev);
+	debug_channel_init_device(&flash->dbg, dev);
 	flash->dev = dev;
 	flash->otp0_fd = -1;
 	flash->otp1_fd = -1;
@@ -1269,7 +1271,7 @@ static void flash_error_part(pmb887x_flash_part_t *p, const char *format, ...) {
 }
 
 static void flash_trace_part(pmb887x_flash_part_t *p, const char *format, ...) {
-	if (!pmb887x_trace_log_enabled(PMB887X_TRACE_FLASH))
+	if (!debug_channel_is_enabled(&p->flash->dbg, DEBUG_CH_LOG))
 		return;
 	
 	g_autoptr(GString) s = g_string_new("");
@@ -1279,11 +1281,11 @@ static void flash_trace_part(pmb887x_flash_part_t *p, const char *format, ...) {
 	g_string_append_vprintf(s, format, args);
 	va_end(args);
 	
-	qemu_log_mask(LOG_TRACE, "[%s] %s <%d> %s\n", PMB887X_TRACE_PREFIX, p->flash->name, p->n, s->str);
+	debug_channel_log(&p->flash->dbg, "<%d> %s\n", p->n, s->str);
 }
 
 static void flash_trace(pmb887x_flash_t *flash, const char *format, ...) {
-	if (!pmb887x_trace_log_enabled(PMB887X_TRACE_FLASH))
+	if (!debug_channel_is_enabled(&flash->dbg, DEBUG_CH_LOG))
 		return;
 	
 	g_autoptr(GString) s = g_string_new("");
@@ -1293,7 +1295,7 @@ static void flash_trace(pmb887x_flash_t *flash, const char *format, ...) {
 	g_string_append_vprintf(s, format, args);
 	va_end(args);
 	
-	qemu_log_mask(LOG_TRACE, "[%s] %s %s\n", PMB887X_TRACE_PREFIX, flash->name, s->str);
+	debug_channel_log(&flash->dbg, "%s\n", s->str);
 }
 
 static const Property flash_properties[] = {

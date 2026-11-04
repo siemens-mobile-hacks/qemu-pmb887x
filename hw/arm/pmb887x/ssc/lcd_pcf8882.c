@@ -1,13 +1,12 @@
 /*
  * Philips PCF8882 (TFT, 132x176)
  */
-#define PMB887X_TRACE_ID LCD
 #define PMB887X_TRACE_PREFIX "pcf8882"
-#define PMB887X_TRACE_IO PMB887X_TRACE_IO_PCF8882
 
 #include "qemu/osdep.h"
 #include "qapi/error.h"
 
+#include "hw/arm/pmb887x/gen/cpu_meta.h"
 #include "hw/arm/pmb887x/gen/peripheral/PCF8882.h"
 #include "hw/arm/pmb887x/ssc/lcd_common.h"
 #include "hw/arm/pmb887x/trace.h"
@@ -99,7 +98,7 @@ static int pcf8882_on_cmd(pmb887x_lcd_t *lcd, uint32_t command) {
     }
 
     if (params_n == 0 && command != PCF8882_RAMWR)
-        IO_DUMP_WRITE(command, 1, 0);
+        DEBUG_IO_WRITE(&lcd->dbg, command, 1, 0);
     return params_n;
 }
 
@@ -112,7 +111,7 @@ static void pcf8882_on_cmd_with_params(pmb887x_lcd_t *lcd, uint32_t command, con
 
     for (uint32_t i = 0; i < params_n; i++)
         value = value << 8 | params[i];
-    IO_DUMP_WRITE(command, params_n, value);
+    DEBUG_IO_WRITE(&lcd->dbg, command, params_n, value);
 
     for (uint32_t i = 0; i < params_n; i++)
         p->registers[command][i] = params[i];
@@ -156,6 +155,7 @@ static void pcf8882_realize(pmb887x_lcd_t *lcd, Error **errp) {
 static void pcf8882_class_init(ObjectClass *oc, const void *data) {
     pmb887x_lcd_class_t *k = PMB887X_LCD_CLASS(oc);
     k->geometry = &PCF8882_GEOMETRY;
+    k->debug_regs = &pmb887x_pcf8882_regs;
     k->cmd_width = 1;
     k->param_width = 1;
     k->on_cmd = pcf8882_on_cmd;

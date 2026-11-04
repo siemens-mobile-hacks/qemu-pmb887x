@@ -328,8 +328,6 @@ void pmb887x_mod_debug_init(
 	MemoryRegion *mmio,
 	const DebugRegs *regs
 ) {
-	debug_channel_init_device(ch, dev);
-	ch->io_format = &debug_regs_format;
-	ch->io_format_opaque = regs;
+	debug_channel_init_device_regs(ch, dev, regs);
 	debug_channel_attach_mr(ch, mmio, 0);
 }

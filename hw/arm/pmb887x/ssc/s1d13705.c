@@ -1,7 +1,6 @@
 /*
 * Epson S1D13705
  * */
-#define PMB887X_TRACE_ID		GIMMICK
 #define PMB887X_TRACE_PREFIX	"s1d13705"
 
 #include "qemu/osdep.h"
@@ -11,6 +10,7 @@
 #include "qom/object.h"
 #include "hw/core/irq.h"
 #include "hw/core/hw-error.h"
+#include "system/debug-channel.h"
 #include "hw/arm/pmb887x/trace.h"
 
 typedef struct pmb887x_gimmick_t pmb887x_gimmick_t;
@@ -39,6 +39,7 @@ enum GimmickCommands {
 
 struct pmb887x_gimmick_t {
 	SSIPeripheral dev;
+	DebugChannel dbg;
 	SSIBus *bus;
 	bool is_command;
 
@@ -83,12 +84,12 @@ static uint32_t gimmick_read_reg(pmb887x_gimmick_t *p, uint16_t reg) {
 			break;
 	}
 
-	DPRINTF("read reg %04X: %04X\n", reg, value);
+	DEBUG_LOG(&p->dbg, "read reg %04X: %04X\n", reg, value);
 	return value;
 }
 
 static void gimmick_write_reg(pmb887x_gimmick_t *p, uint16_t reg, uint16_t value) {
-	DPRINTF("write reg %04X: %04X\n", reg, value);
+	DEBUG_LOG(&p->dbg, "write reg %04X: %04X\n", reg, value);
 	p->regs[reg] = value;
 }
 
@@ -97,7 +98,7 @@ static uint32_t gimmick_transfer16(SSIPeripheral *dev, uint32_t data) {
 
 	uint32_t value = 0;
 
-	DPRINTF("%04X // cmd=%d\n", data, p->is_command);
+	DEBUG_LOG(&p->dbg, "%04X // cmd=%d\n", data, p->is_command);
 
 	if (p->is_command) {
 		p->lcd_data_bypass = false;
@@ -150,7 +151,7 @@ static uint32_t gimmick_transfer16(SSIPeripheral *dev, uint32_t data) {
 		hw_error("Ignored data: %02X [cmd=%04X]", data, p->cmd);
 	}
 
-	DPRINTF("value=%08X\n", value);
+	DEBUG_LOG(&p->dbg, "value=%08X\n", value);
 
 	return value;
 }
@@ -193,7 +194,7 @@ static void gimmick_handle_sa0(void *opaque, int n, int level) {
 static void gimmick_handle_reset(void *opaque, int n, int level) {
 	pmb887x_gimmick_t *p = PMB887X_GIMMICK(opaque);
 	if (level == 0) {
-		DPRINTF("reset!\n");
+		DEBUG_LOG(&p->dbg, "reset!\n");
 		p->wcycle = 0;
 		p->trx_bits = 0;
 		p->request = 0;
@@ -204,6 +205,7 @@ static void gimmick_handle_reset(void *opaque, int n, int level) {
 
 static void gimmick_realize(SSIPeripheral *d, Error **errp) {
 	pmb887x_gimmick_t *p = PMB887X_GIMMICK(d);
+	debug_channel_init_device(&p->dbg, DEVICE(d));
 	p->bus = ssi_create_bus(DEVICE(d), TYPE_PMB887X_GIMMICK);
 	qdev_init_gpio_in_named(DEVICE(d), gimmick_handle_sa0, "SA0_IN", 1);
 	qdev_init_gpio_in_named(DEVICE(d), gimmick_handle_reset, "RESET_IN", 1);

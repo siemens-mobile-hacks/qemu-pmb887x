@@ -1,7 +1,6 @@
 /*
  * TI/National LM4845 / LM4946 "Boomer" audio power amplifier (I2C control)
  * */
-#define PMB887X_TRACE_ID		I2C
 #define PMB887X_TRACE_PREFIX	"lm4946"
 
 #include "qemu/osdep.h"
@@ -11,6 +10,7 @@
 #include "qemu/main-loop.h"
 #include "hw/core/qdev-properties.h"
 #include "hw/i2c/i2c.h"
+#include "system/debug-channel.h"
 #include "hw/arm/pmb887x/trace.h"
 
 #define TYPE_PMB887X_LM4946	"lm4946"
@@ -20,6 +20,7 @@ typedef struct pmb887x_lm4946_t pmb887x_lm4946_t;
 
 struct pmb887x_lm4946_t {
 	I2CSlave parent_obj;
+	DebugChannel dbg;
 	uint8_t mode;		// Mode Control (OCL, MC2..MC0)
 	uint8_t n3d;		// Programmable 3D (N3D3..N3D0)
 	uint8_t mono_vol;	// MVC4..MVC0
@@ -41,27 +42,29 @@ static int lm4946_send(I2CSlave *s, uint8_t data) {
 
 	if ((data & 0xE0) == 0x80) {
 		p->mono_vol = data & 0x1F;
-		DPRINTF("mono volume %02X\n", p->mono_vol);
+		DEBUG_LOG(&p->dbg, "mono volume %02X\n", p->mono_vol);
 	} else if ((data & 0xE0) == 0xC0) {
 		p->left_vol = data & 0x1F;
-		DPRINTF("left volume %02X\n", p->left_vol);
+		DEBUG_LOG(&p->dbg, "left volume %02X\n", p->left_vol);
 	} else if ((data & 0xE0) == 0xE0) {
 		p->right_vol = data & 0x1F;
-		DPRINTF("right volume %02X\n", p->right_vol);
+		DEBUG_LOG(&p->dbg, "right volume %02X\n", p->right_vol);
 	} else if ((data & 0xF0) == 0x40) {
 		p->n3d = data & 0x0F;
-		DPRINTF("3d %02X\n", p->n3d);
+		DEBUG_LOG(&p->dbg, "3d %02X\n", p->n3d);
 	} else if ((data & 0xF0) == 0x00) {
 		p->mode = data & 0x0F;
-		DPRINTF("mode %02X\n", p->mode);
+		DEBUG_LOG(&p->dbg, "mode %02X\n", p->mode);
 	} else {
-		DPRINTF("unknown command %02X\n", data);
+		DEBUG_LOG(&p->dbg, "unknown command %02X\n", data);
 	}
 
 	return 0;
 }
 
 static void lm4946_realize(DeviceState *dev, Error **errp) {
+	pmb887x_lm4946_t *p = PMB887X_LM4946(dev);
+	debug_channel_init_device(&p->dbg, dev);
 }
 
 static void lm4946_class_init(ObjectClass *klass, const void *data) {

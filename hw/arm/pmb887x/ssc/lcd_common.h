@@ -6,6 +6,7 @@
 #include "hw/ssi/ssi.h"
 #include "ui/console.h"
 #include "qemu/thread.h"
+#include "qemu/debug-regs.h"
 #include "hw/arm/pmb887x/fifo.h"
 #include "hw/arm/pmb887x/ssc/lcd_common_format.h"
 
@@ -54,6 +55,7 @@ struct pmb887x_lcd_geometry_t {
 struct pmb887x_lcd_t {
 	SSIPeripheral parent;
 	pmb887x_lcd_class_t *k;
+	DebugChannel dbg;
 
 	pmb887x_fifo8_t fifo;
 	bool cd;
@@ -129,6 +131,7 @@ struct pmb887x_lcd_t {
 struct pmb887x_lcd_class_t {
 	SSIPeripheralClass parent_class;
 	const pmb887x_lcd_geometry_t *geometry;
+	const DebugRegs *debug_regs;
 	uint16_t cmd_width;
 	uint16_t param_width;
 	uint8_t gram_read_dummy_pixels;

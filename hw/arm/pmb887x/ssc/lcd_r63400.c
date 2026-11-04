@@ -1,7 +1,6 @@
 /*
  * Renesas R63400
  * */
-#define PMB887X_TRACE_ID		LCD
 #define PMB887X_TRACE_PREFIX	"r63400"
 
 #include "qemu/osdep.h"
@@ -53,7 +52,7 @@ static void lcd_update_state(pmb887x_lcd_t *lcd) {
 	bool tri = (priv->regs[R63400_R_ENTRY_MODE] & (1 << 15)) != 0;	/* TRI */
 	bool gs = (priv->regs[R63400_R_GATE_SCAN] & (1 << 15)) != 0;	/* GS */
 
-	DPRINTF("am=%d, id1=%d, id0=%d, ss=%d, gs=%d, bgr=%d, tri=%d, dfm=%d\n", am, id1, id0, ss, gs, bgr, tri, dfm);
+	DEBUG_LOG(&lcd->dbg, "am=%d, id1=%d, id0=%d, ss=%d, gs=%d, bgr=%d, tri=%d, dfm=%d\n", am, id1, id0, ss, gs, bgr, tri, dfm);
 
 	pmb887x_lcd_set_addr_mode(
 		lcd,
@@ -85,12 +84,12 @@ static void lcd_on_cmd_with_params(pmb887x_lcd_t *lcd, uint32_t cmd, const uint3
 	uint16_t value = params[0];
 
 	if (cmd >= R63400_MAX_REGS) {
-		DPRINTF("ignoring out-of-range reg R%X\n", cmd);
+		DEBUG_LOG(&lcd->dbg, "ignoring out-of-range reg R%X\n", cmd);
 		return;
 	}
 	priv->regs[cmd] = value;
 
-	DPRINTF("write R%02X -> 0x%04X\n", cmd, value);
+	DEBUG_LOG(&lcd->dbg, "write R%02X -> 0x%04X\n", cmd, value);
 
 	switch (cmd) {
 		case R63400_R_DRIVER_OUTPUT:

@@ -1,9 +1,7 @@
 /*
  * Dialog d1094xx / d1601xx
  * */
-#define PMB887X_TRACE_ID		PMIC
 #define PMB887X_TRACE_PREFIX	"pasic"
-#define PMB887X_TRACE_IO		p->trace_io
 
 #include "qemu/osdep.h"
 #include "hw/core/irq.h"
@@ -21,6 +19,8 @@
 #include "hw/arm/pmb887x/audio/buffer.h"
 #include "hw/arm/pmb887x/audio/pasic.h"
 #include "hw/arm/pmb887x/gen/peripheral/PASIC.h"
+#include "system/debug-channel.h"
+#include "hw/arm/pmb887x/gen/cpu_meta.h"
 #include "hw/arm/pmb887x/trace.h"
 
 #define TYPE_PMB887X_PMIC	"d1094xx"
@@ -31,10 +31,10 @@ typedef struct pmb887x_pmic_t pmb887x_pmic_t;
 
 struct pmb887x_pmic_t {
 	SysBusDevice parent_obj;
+	DebugChannel dbg;
 	I2CTargetPort i2c_port;
 	I2SSinkPort i2s_rx_port;
 	I2SSourcePort i2s_tx_port;
-	pmb887x_trace_io_t trace_io;
 	uint32_t reg_id;
 	uint8_t wcycle;
 	uint8_t regs[256];
@@ -337,7 +337,7 @@ static int pmic_event(I2CTarget *target, enum i2c_event event) {
 static uint8_t pmic_recv(I2CTarget *target) {
 	pmb887x_pmic_t *p = PMB887X_PMIC(OBJECT(target));
 	uint8_t data = p->regs[p->reg_id];
-	IO_DUMP_READ(p->reg_id, 1, data);
+	DEBUG_IO_READ(&p->dbg, p->reg_id, 1, data);
 	p->reg_id = (p->reg_id + 1) % ARRAY_SIZE(p->regs);
 	return data;
 }
@@ -349,7 +349,7 @@ static int pmic_send(I2CTarget *target, uint8_t data) {
 	} else {
 		bool audio_was_enabled = pasic_audio_output_is_enabled(p);
 
-		IO_DUMP_WRITE(p->reg_id, 1, data);
+		DEBUG_IO_WRITE(&p->dbg, p->reg_id, 1, data);
 		p->regs[p->reg_id] = data;
 		bool audio_is_enabled = pasic_audio_output_is_enabled(p);
 		if (audio_is_enabled != audio_was_enabled)
@@ -375,14 +375,14 @@ static void pmic_reset(DeviceState *dev) {
 
 static void pmic_realize(DeviceState *dev, Error **errp) {
 	pmb887x_pmic_t *p = PMB887X_PMIC(dev);
+	debug_channel_init_device_regs(&p->dbg, dev, &pmb887x_pasic_regs);
 
-	p->trace_io = PMB887X_TRACE_IO_PASIC;
 	qemu_mutex_init(&p->audio_lock);
 	if (audio_be_check(&p->audio_backend, NULL)) {
 		fifo8_create(&p->audio_fifo, PASIC_AUDIO_FIFO_BYTES);
 		p->audio_fifo_ready = true;
 	}
-	DPRINTF("PMIC revision: %02X\n", p->revision);
+	DEBUG_LOG(&p->dbg, "PMIC revision: %02X\n", p->revision);
 	pmic_load_registers(p);
 }
 

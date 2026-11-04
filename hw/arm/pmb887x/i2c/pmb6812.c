@@ -1,9 +1,7 @@
 /*
  * Infineon PMB6812
  */
-#define PMB887X_TRACE_ID		PMIC
 #define PMB887X_TRACE_PREFIX	"pmb6812"
-#define PMB887X_TRACE_IO		PMB887X_TRACE_IO_PMB6812
 
 #include "qemu/osdep.h"
 #include "qemu/log.h"
@@ -14,6 +12,8 @@
 #include "hw/core/qdev-properties.h"
 #include "hw/i2c/i2c.h"
 #include "hw/arm/pmb887x/gen/peripheral/PMB6812.h"
+#include "system/debug-channel.h"
+#include "hw/arm/pmb887x/gen/cpu_meta.h"
 #include "hw/arm/pmb887x/trace.h"
 
 #define TYPE_PMB887X_PMIC	"pmb6812"
@@ -23,6 +23,7 @@ typedef struct pmb887x_pmic_t pmb887x_pmic_t;
 
 struct pmb887x_pmic_t {
 	I2CSlave parent_obj;
+	DebugChannel dbg;
 	uint32_t reg_id;
 	uint8_t wcycle;
 	uint8_t rcycle;
@@ -116,7 +117,7 @@ static uint8_t pmic_recv(I2CSlave *s) {
 		data = p->regs[p->reg_id];
 	}
 
-	IO_DUMP_READ(p->reg_id, 1, data);
+	DEBUG_IO_READ(&p->dbg, p->reg_id, 1, data);
 	if (is_confirmation)
 		p->confirmation_pending = false;
 	if (is_register && p->reg_id == PMB6812_ISF) {
@@ -165,7 +166,7 @@ static int pmic_send(I2CSlave *s, uint8_t data) {
 
 			p->confirmation = data;
 			p->confirmation_pending = true;
-			IO_DUMP_WRITE(p->reg_id, 1, p->wr_val);
+			DEBUG_IO_WRITE(&p->dbg, p->reg_id, 1, p->wr_val);
 			p->regs[p->reg_id] = p->wr_val;
 			if (p->reg_id == PMB6812_INTCTRL2) {
 				if ((p->wr_val & PMB6812_INTCTRL2_EION) == 0)
@@ -199,6 +200,9 @@ static void pmic_reset(DeviceState *dev) {
 }
 
 static void pmic_realize(DeviceState *dev, Error **errp) {
+	pmb887x_pmic_t *p = PMB887X_PMIC(dev);
+	debug_channel_init_device_regs(&p->dbg, dev, &pmb887x_pmb6812_regs);
+
 	pmic_reset(dev);
 }
 

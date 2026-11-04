@@ -1,7 +1,6 @@
 /*
  * Generic serial display
  */
-#define PMB887X_TRACE_ID		LCD
 #define PMB887X_TRACE_PREFIX	"pmb887x-lcd"
 
 #include <math.h>
@@ -13,6 +12,7 @@
 #include "hw/core/qdev-properties.h"
 #include "hw/ssi/ssi.h"
 #include "qemu/atomic.h"
+#include "system/debug-channel.h"
 #include "hw/arm/pmb887x/trace.h"
 #include "hw/arm/pmb887x/ssc/lcd_common.h"
 
@@ -103,7 +103,7 @@ void pmb887x_lcd_set_pixel_format(pmb887x_lcd_t *lcd, enum pmb887x_lcd_pixel_for
 	lcd->encode_pixel = info->encode;
 	lcd->tmp_pixel = 0;
 	lcd->tmp_index = 0;
-	DPRINTF("pixel format: %d, bpp: %d [%dB]\n", format, lcd->bpp, lcd->byte_pp);
+	DEBUG_LOG(&lcd->dbg, "pixel format: %d, bpp: %d [%dB]\n", format, lcd->bpp, lcd->byte_pp);
 }
 
 void pmb887x_lcd_set_output_bgr(pmb887x_lcd_t *lcd, bool enabled) {
@@ -168,7 +168,7 @@ void pmb887x_lcd_set_transform(pmb887x_lcd_t *lcd, bool flip_h_pins, bool flip_v
 	lcd_update_source_surface(lcd);
 	lcd_invalidate_full(lcd);
 
-	DPRINTF("transform: %d deg, flip_h=%d, flip_v=%d\n", lcd->rotation, lcd->flip_horizontal,
+	DEBUG_LOG(&lcd->dbg, "transform: %d deg, flip_h=%d, flip_v=%d\n", lcd->rotation, lcd->flip_horizontal,
 		lcd->flip_vertical);
 }
 
@@ -305,7 +305,7 @@ static void lcd_flush_partial_command(pmb887x_lcd_t *lcd) {
 static void lcd_handle_command(pmb887x_lcd_t *lcd, uint8_t value) {
 	if (lcd->wr_state != LCD_WR_STATE_CMD) {
 		if (lcd->wr_state == LCD_WR_STATE_PARAM)
-			DPRINTF("CMD %04X ignored, too few params.\n", lcd->current_cmd);
+			DEBUG_LOG(&lcd->dbg, "CMD %04X ignored, too few params.\n", lcd->current_cmd);
 		lcd_clear_fifo(lcd);
 		lcd->wr_state = LCD_WR_STATE_CMD;
 	}
@@ -334,7 +334,7 @@ static void lcd_handle_param(pmb887x_lcd_t *lcd, uint8_t value) {
 		lcd->wr_state = LCD_WR_STATE_NONE;
 	} else if (lcd->wr_state == LCD_WR_STATE_NONE) {
 		// Unexpected data
-		DPRINTF("Unexpected PARAM: %02X (command=%02X)\n", value, lcd->current_cmd);
+		DEBUG_LOG(&lcd->dbg, "Unexpected PARAM: %02X (command=%02X)\n", value, lcd->current_cmd);
 	} else if (lcd->wr_state == LCD_WR_STATE_PARAM) {
 		pmb887x_fifo8_push(&lcd->fifo, value);
 
@@ -343,7 +343,7 @@ static void lcd_handle_param(pmb887x_lcd_t *lcd, uint8_t value) {
 			uint32_t tmp_params_n = 0;
 			while (pmb887x_fifo_count(&lcd->fifo) >= lcd->k->param_width) {
 				tmp_params[tmp_params_n++] = lcd_read_from_fifo(lcd, lcd->k->param_width);
-				// DPRINTF("PARAM: %04X\n", tmp_params[tmp_params_n - 1]);
+				// DEBUG_LOG(&lcd->dbg, "PARAM: %04X\n", tmp_params[tmp_params_n - 1]);
 			}
 
 			lcd->k->on_cmd_with_params(lcd, lcd->current_cmd, tmp_params, tmp_params_n);
@@ -367,7 +367,7 @@ static const char *lcd_wr_state_name(enum pmb887x_lcd_wr_state_t state) {
 }
 
 static void lcd_write_control_byte(pmb887x_lcd_t *lcd, uint8_t value) {
-	DPRINTF("WR %02X cd=%d [%s] fifo=%d\n", value, lcd->cd, lcd_wr_state_name(lcd->wr_state),
+	DEBUG_LOG(&lcd->dbg, "WR %02X cd=%d [%s] fifo=%d\n", value, lcd->cd, lcd_wr_state_name(lcd->wr_state),
 		pmb887x_fifo_count(&lcd->fifo));
 
 	if (lcd->k->direct_data_write) {
@@ -399,7 +399,7 @@ static void lcd_clear_fifo(pmb887x_lcd_t *lcd) {
 			uint8_t byte = pmb887x_fifo8_pop(&lcd->fifo);
 			g_string_append_printf(buffer, " %02X", byte);
 		}
-		DPRINTF("Ignored bytes:%s\n", buffer->str);
+		DEBUG_LOG(&lcd->dbg, "Ignored bytes:%s\n", buffer->str);
 	}
 }
 
@@ -505,7 +505,7 @@ static void lcd_invalidate_display(void *opaque) {
 }
 
 void pmb887x_lcd_set_addr_mode(pmb887x_lcd_t *lcd, enum pmb887x_lcd_am_t am, enum pmb887x_lcd_ac_t ac_x, enum pmb887x_lcd_ac_t ac_y) {
-	DPRINTF("[addr] am=%s, ac_x=%s, ac_y=%s [%d x %d]\n",
+	DEBUG_LOG(&lcd->dbg, "[addr] am=%s, ac_x=%s, ac_y=%s [%d x %d]\n",
 		(am == LCD_AM_VERTICAL ? "vert" : "horiz"),
 		(ac_x == LCD_AC_INC ? "inc" : "dec"),
 		(ac_y == LCD_AC_INC ? "inc" : "dec"),
@@ -519,7 +519,7 @@ void pmb887x_lcd_set_addr_mode(pmb887x_lcd_t *lcd, enum pmb887x_lcd_am_t am, enu
 }
 
 void pmb887x_lcd_set_ram_mode(pmb887x_lcd_t *lcd, bool flag) {
-	DPRINTF("write mode: %s\n", flag ? "ram" : "cmd");
+	DEBUG_LOG(&lcd->dbg, "write mode: %s\n", flag ? "ram" : "cmd");
 	lcd->wr_state = flag ? LCD_WR_STATE_RAM : LCD_WR_STATE_NONE;
 	lcd->tmp_pixel = 0;
 	lcd->tmp_index = 0;
@@ -630,7 +630,7 @@ static void lcd_handle_cd(void *opaque, int n, int level) {
 	bool old_cd = lcd->cd;
 	bool new_cd = lcd->k->cd_polarity ? level == 1 : level == 0;
 	if (old_cd != new_cd)
-		DPRINTF("CD %d -> %d [%s] fifo=%d\n", old_cd, new_cd, lcd_wr_state_name(lcd->wr_state),
+		DEBUG_LOG(&lcd->dbg, "CD %d -> %d [%s] fifo=%d\n", old_cd, new_cd, lcd_wr_state_name(lcd->wr_state),
 			pmb887x_fifo_count(&lcd->fifo));
 	pmb887x_lcd_set_cd(lcd, new_cd);
 
@@ -649,7 +649,7 @@ static void lcd_handle_reset(void *opaque, int n, int level) {
 	if (reset_active && !lcd->reset_active)
 		lcd_reset_internal_state(lcd);
 	lcd->reset_active = reset_active;
-	DPRINTF("reset: %s\n", reset_active ? "active" : "released");
+	DEBUG_LOG(&lcd->dbg, "reset: %s\n", reset_active ? "active" : "released");
 }
 
 static void lcd_init(Object *obj) {
@@ -674,6 +674,11 @@ static void lcd_init(Object *obj) {
 static void lcd_realize(SSIPeripheral *d, Error **errp) {
 	pmb887x_lcd_t *lcd = PMB887X_LCD(d);
 	lcd->k = PMB887X_LCD_GET_CLASS(d);
+	if (lcd->k->debug_regs) {
+		debug_channel_init_device_regs(&lcd->dbg, DEVICE(d), lcd->k->debug_regs);
+	} else {
+		debug_channel_init_device(&lcd->dbg, DEVICE(d));
+	}
 	lcd->read_active = false;
 	lcd->reset_active = false;
 

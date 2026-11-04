@@ -1,12 +1,12 @@
 /*
  * NXP TEA5761UK FM radio
  */
-#define PMB887X_TRACE_ID		FM_RADIO
 #define PMB887X_TRACE_PREFIX	"tea5761uk"
-#define PMB887X_TRACE_IO		PMB887X_TRACE_IO_TEA5761UK
 
 #include "qemu/osdep.h"
 #include "hw/i2c/i2c.h"
+#include "system/debug-channel.h"
+#include "hw/arm/pmb887x/gen/cpu_meta.h"
 #include "hw/arm/pmb887x/trace.h"
 
 #define TYPE_PMB887X_TEA5761UK	"tea5761uk"
@@ -24,6 +24,7 @@ typedef struct pmb887x_tea5761uk_t pmb887x_tea5761uk_t;
 
 struct pmb887x_tea5761uk_t {
 	I2CSlave parent_obj;
+	DebugChannel dbg;
 	uint8_t regs[TEA5761UK_READ_SIZE];
 	uint8_t read_index;
 	uint8_t write_index;
@@ -89,7 +90,7 @@ static uint8_t tea5761uk_recv(I2CSlave *s) {
 	uint8_t index = p->read_index;
 	uint8_t data = index < ARRAY_SIZE(p->regs) ? p->regs[index] : 0;
 
-	IO_DUMP_READ(index, 1, data);
+	DEBUG_IO_READ(&p->dbg, index, 1, data);
 	p->read_index++;
 	if (index == 0) {
 		p->regs[0] = 0;
@@ -105,7 +106,7 @@ static int tea5761uk_send(I2CSlave *s, uint8_t data) {
 	uint8_t index = p->write_index;
 
 	if (index < ARRAY_SIZE(write_registers)) {
-		IO_DUMP_WRITE(write_registers[index], 1, data);
+		DEBUG_IO_WRITE(&p->dbg, write_registers[index], 1, data);
 		p->regs[write_registers[index]] = data;
 	}
 	p->write_index++;
@@ -122,10 +123,16 @@ static void tea5761uk_reset(DeviceState *dev) {
 	p->writing = false;
 }
 
+static void tea5761uk_realize(DeviceState *dev, Error **errp) {
+	pmb887x_tea5761uk_t *p = PMB887X_TEA5761UK(dev);
+	debug_channel_init_device_regs(&p->dbg, dev, &pmb887x_tea5761uk_regs);
+}
+
 static void tea5761uk_class_init(ObjectClass *klass, const void *data) {
 	DeviceClass *dc = DEVICE_CLASS(klass);
 	I2CSlaveClass *k = I2C_SLAVE_CLASS(klass);
 	device_class_set_legacy_reset(dc, tea5761uk_reset);
+	dc->realize = tea5761uk_realize;
 	k->event = tea5761uk_event;
 	k->recv = tea5761uk_recv;
 	k->send = tea5761uk_send;

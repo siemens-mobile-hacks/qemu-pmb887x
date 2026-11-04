@@ -1,7 +1,6 @@
 /*
  * R61505/ILI9320-compatible panels
  * */
-#define PMB887X_TRACE_ID		LCD
 #define PMB887X_TRACE_PREFIX	"r61505"
 
 #include "qemu/osdep.h"
@@ -53,7 +52,7 @@ static void lcd_update_state(pmb887x_lcd_t *lcd) {
 	bool tri = (priv->regs[ILI9320_R_ENTRY_MODE] & (1 << 15)) != 0;	/* TRI */
 	bool gs = (priv->regs[ILI9320_R_GATE_SCAN] & (1 << 15)) != 0;	/* GS */
 
-	DPRINTF("am=%d, id1=%d, id0=%d, ss=%d, gs=%d, bgr=%d, tri=%d, dfm=%d\n", am, id1, id0, ss, gs, bgr, tri, dfm);
+	DEBUG_LOG(&lcd->dbg, "am=%d, id1=%d, id0=%d, ss=%d, gs=%d, bgr=%d, tri=%d, dfm=%d\n", am, id1, id0, ss, gs, bgr, tri, dfm);
 
 	pmb887x_lcd_set_addr_mode(
 		lcd,
@@ -70,7 +69,7 @@ static void lcd_update_state(pmb887x_lcd_t *lcd) {
 }
 
 static int lcd_on_cmd(pmb887x_lcd_t *lcd, uint32_t cmd) {
-	DPRINTF("write R%02X\n", cmd);
+	DEBUG_LOG(&lcd->dbg, "write R%02X\n", cmd);
 
 	if (cmd == ILI9320_R_GRAM_WRITE) {
 		pmb887x_lcd_set_ram_mode(lcd, true);
@@ -87,12 +86,12 @@ static void lcd_on_cmd_with_params(pmb887x_lcd_t *lcd, uint32_t cmd, const uint3
 	uint16_t value = params[0];
 
 	if (cmd >= ILI9320_MAX_REGS) {
-		DPRINTF("ignoring out-of-range reg R%X\n", cmd);
+		DEBUG_LOG(&lcd->dbg, "ignoring out-of-range reg R%X\n", cmd);
 		return;
 	}
 	priv->regs[cmd] = value;
 
-	DPRINTF("write R%02X -> 0x%04X\n", cmd, value);
+	DEBUG_LOG(&lcd->dbg, "write R%02X -> 0x%04X\n", cmd, value);
 
 	switch (cmd) {
 		case ILI9320_R_DRIVER_OUTPUT:

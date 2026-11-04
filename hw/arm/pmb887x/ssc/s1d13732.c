@@ -1,7 +1,6 @@
 /*
 * Epson S1D13732
  * */
-#define PMB887X_TRACE_ID		GIMMICK
 #define PMB887X_TRACE_PREFIX	"s1d13732"
 
 #include "qemu/osdep.h"
@@ -10,6 +9,7 @@
 #include "qemu/module.h"
 #include "qom/object.h"
 #include "hw/core/irq.h"
+#include "system/debug-channel.h"
 #include "hw/arm/pmb887x/trace.h"
 
 typedef struct pmb887x_gimmick_t pmb887x_gimmick_t;
@@ -60,6 +60,7 @@ enum S1D13732Registers {
 
 struct pmb887x_gimmick_t {
 	SSIPeripheral dev;
+	DebugChannel dbg;
 	SSIBus *bus;
 	bool is_command;
 
@@ -178,12 +179,12 @@ static uint32_t gimmick_read_reg(pmb887x_gimmick_t *p, uint16_t reg) {
 		value |= BIT(6);
 	}
 
-	DPRINTF("read reg %04X: %04X\n", reg, value);
+	DEBUG_LOG(&p->dbg, "read reg %04X: %04X\n", reg, value);
 	return value;
 }
 
 static void gimmick_write_reg(pmb887x_gimmick_t *p, uint16_t reg, uint16_t value) {
-	DPRINTF("write reg %04X: %04X\n", reg, value);
+	DEBUG_LOG(&p->dbg, "write reg %04X: %04X\n", reg, value);
 
 	if (reg == S1D13732_REG_PRODUCT_CODE) {
 		return;
@@ -219,7 +220,7 @@ static uint32_t gimmick_transfer16(SSIPeripheral *dev, uint32_t data) {
 	pmb887x_gimmick_t *p = PMB887X_GIMMICK(dev);
 	uint32_t value = 0;
 
-	DPRINTF("%04X // cmd=%d\n", data, p->is_command);
+	DEBUG_LOG(&p->dbg, "%04X // cmd=%d\n", data, p->is_command);
 
 	if (p->is_command) {
 		p->lcd_data_bypass = false;
@@ -342,7 +343,7 @@ static void gimmick_handle_reset(void *opaque, int n, int level) {
 	pmb887x_gimmick_t *p = PMB887X_GIMMICK(opaque);
 
 	if (level == 0) {
-		DPRINTF("reset!\n");
+		DEBUG_LOG(&p->dbg, "reset!\n");
 		gimmick_reset(DEVICE(p));
 		p->reset_active = true;
 	} else {
@@ -352,6 +353,7 @@ static void gimmick_handle_reset(void *opaque, int n, int level) {
 
 static void gimmick_realize(SSIPeripheral *d, Error **errp) {
 	pmb887x_gimmick_t *p = PMB887X_GIMMICK(d);
+	debug_channel_init_device(&p->dbg, DEVICE(d));
 	static const char * const fpdat_names[] = {
 		"FPDAT0_OUT", "FPDAT1_OUT", "FPDAT2_OUT", "FPDAT3_OUT",
 		"FPDAT4_OUT", "FPDAT5_OUT", "FPDAT6_OUT", "FPDAT7_OUT",

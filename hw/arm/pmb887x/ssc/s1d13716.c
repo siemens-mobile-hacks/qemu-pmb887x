@@ -1,7 +1,6 @@
 /*
  * Epson S1D13716
  * */
-#define PMB887X_TRACE_ID		GIMMICK
 #define PMB887X_TRACE_PREFIX	"s1d13716"
 
 #include "qemu/osdep.h"
@@ -12,6 +11,7 @@
 #include "qom/object.h"
 #include "hw/core/irq.h"
 #include "hw/core/hw-error.h"
+#include "system/debug-channel.h"
 #include "hw/arm/pmb887x/trace.h"
 
 typedef struct pmb887x_gimmick_t pmb887x_gimmick_t;
@@ -28,6 +28,7 @@ enum GimmickCommands {
 
 struct pmb887x_gimmick_t {
 	SSIPeripheral dev;
+	DebugChannel dbg;
 	SSIBus *bus;
 
 	uint8_t regs[0x10000];
@@ -72,12 +73,12 @@ static uint32_t gimmick_transfer(SSIPeripheral *dev, uint32_t in) {
 
 			case CMD_WRITE_REG:
 				p->regs[p->reg] = in;
-				DPRINTF("write reg %04X = %02X\n", p->reg, in);
+				DEBUG_LOG(&p->dbg, "write reg %04X = %02X\n", p->reg, in);
 				break;
 
 			case CMD_READ_REG:
 				response = p->regs[p->reg];
-				DPRINTF("read reg %04X = %02X\n", p->reg, response);
+				DEBUG_LOG(&p->dbg, "read reg %04X = %02X\n", p->reg, response);
 				break;
 		}
 	}
@@ -105,7 +106,7 @@ static void gimmick_handle_ncs_lcd(void *opaque, int n, int level) {
 static void gimmick_handle_nreset(void *opaque, int n, int level) {
 	pmb887x_gimmick_t *p = PMB887X_GIMMICK(opaque);
 	if (level == 0) {
-		DPRINTF("reset!\n");
+		DEBUG_LOG(&p->dbg, "reset!\n");
 		p->wcycle = 0;
 		p->cmd = 0;
 	}
@@ -113,6 +114,7 @@ static void gimmick_handle_nreset(void *opaque, int n, int level) {
 
 static void gimmick_realize(SSIPeripheral *d, Error **errp) {
 	pmb887x_gimmick_t *p = PMB887X_GIMMICK(d);
+	debug_channel_init_device(&p->dbg, DEVICE(d));
 	p->bus = ssi_create_bus(DEVICE(d), TYPE_PMB887X_GIMMICK);
 	qdev_init_gpio_in_named(DEVICE(d), gimmick_handle_rs, "RS_IN", 1);
 	qdev_init_gpio_in_named(DEVICE(d), gimmick_handle_ncs_app, "NCS_APP_IN", 1);

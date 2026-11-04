@@ -1,7 +1,6 @@
 /*
  * Epson L2F50250 (TFT, 130x130)
  * */
-#define PMB887X_TRACE_ID		LCD
 #define PMB887X_TRACE_PREFIX	"l2f50250"
 
 #include "qemu/osdep.h"
@@ -70,7 +69,7 @@ static void lcd_update_state(pmb887x_lcd_t *lcd) {
 		(my ? LCD_AC_DEC : LCD_AC_INC)
 	);
 
-	DPRINTF("mv=%d, mx=%d, my=%d, invert_xy=%d, bgr=%d\n", mv, mx, my, invert_xy, bgr);
+	DEBUG_LOG(&lcd->dbg, "mv=%d, mx=%d, my=%d, invert_xy=%d, bgr=%d\n", mv, mx, my, invert_xy, bgr);
 	pmb887x_lcd_set_pixel_format(lcd, pixel_format);
 	pmb887x_lcd_set_output_bgr(lcd, bgr);
 	pmb887x_lcd_set_transform(lcd, invert_xy, invert_xy);
@@ -109,10 +108,10 @@ static void lcd_on_cmd_with_params(pmb887x_lcd_t *lcd, uint32_t cmd, const uint3
 
 	g_assert(cmd < L2F50333T_MAX_REGS);
 
-	DPRINTF("write reg 0x%02X:\n", cmd);
+	DEBUG_LOG(&lcd->dbg, "write reg 0x%02X:\n", cmd);
 	for (int i = 0; i < params_n; i++) {
 		priv->regs[cmd][i] = params[i];
-		DPRINTF("  param[%d]: 0x%02X\n", i, params[i]);
+		DEBUG_LOG(&lcd->dbg, "  param[%d]: 0x%02X\n", i, params[i]);
 	}
 
 	switch (cmd) {

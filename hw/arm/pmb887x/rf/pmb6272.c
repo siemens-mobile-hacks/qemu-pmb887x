@@ -1,6 +1,4 @@
-#define PMB887X_TRACE_ID		RF
 #define PMB887X_TRACE_PREFIX	"pmb6272"
-#define PMB887X_TRACE_IO		PMB887X_TRACE_IO_PMB6272
 
 #include "qemu/osdep.h"
 #include "qemu/atomic.h"
@@ -9,6 +7,8 @@
 
 #include "hw/arm/pmb887x/gen/peripheral/PMB6272.h"
 #include "hw/arm/pmb887x/rf.h"
+#include "system/debug-channel.h"
+#include "hw/arm/pmb887x/gen/cpu_meta.h"
 #include "hw/arm/pmb887x/trace.h"
 #include "hw/core/sysbus.h"
 #include "hw/ssi/three-wire-serial.h"
@@ -30,6 +30,7 @@ typedef struct pmb887x_rf_trx_t pmb887x_rf_trx_t;
 
 struct pmb887x_rf_trx_t {
 	SysBusDevice parent_obj;
+	DebugChannel dbg;
 	ThreeWireSerialTargetPort serial_port;
 	pmb887x_iq_source_port_t iq_port;
 	uint32_t registers[PMB6272_REGISTER_COUNT];
@@ -74,13 +75,13 @@ static void rf_trx_write_telegram(pmb887x_rf_trx_t *p, uint32_t telegram, uint8_
 				((uint64_t) 1 << PMB6272_CHANNEL_FRACTION_BITS)) / divisor;
 
 			qatomic_set(&p->frequency, frequency);
-			DPRINTF("tuned to %u Hz: band=%s path=%s\n", frequency, band_names[p->band],
+			DEBUG_LOG(&p->dbg, "tuned to %u Hz: band=%s path=%s\n", frequency, band_names[p->band],
 				p->transmit ? "TX" : "RX");
 			break;
 		}
 	}
 
-	IO_DUMP_WRITE(address, bits >> PMB6272_BITS_TO_BYTES_SHIFT, telegram);
+	DEBUG_IO_WRITE(&p->dbg, address, bits >> PMB6272_BITS_TO_BYTES_SHIFT, telegram);
 }
 
 static void rf_trx_set_strobe(ThreeWireSerialTarget *target, bool asserted) {
@@ -152,6 +153,11 @@ static void rf_trx_init(Object *obj) {
 	pmb887x_iq_source_port_init(&p->iq_port, DEVICE(obj), "IQ_TX", PMB887X_RF_IQ_SOURCE(obj));
 }
 
+static void rf_trx_realize(DeviceState *dev, Error **errp) {
+	pmb887x_rf_trx_t *p = PMB887X_RF_TRX(dev);
+	debug_channel_init_device_regs(&p->dbg, dev, &pmb887x_pmb6272_regs);
+}
+
 static void rf_trx_class_init(ObjectClass *klass, const void *_data) {
 	DeviceClass *device_class = DEVICE_CLASS(klass);
 	ThreeWireSerialTargetClass *serial_class = THREE_WIRE_SERIAL_TARGET_CLASS(klass);
@@ -161,6 +167,7 @@ static void rf_trx_class_init(ObjectClass *klass, const void *_data) {
 	serial_class->write = rf_trx_write;
 	iq_class->read_iq = rf_trx_read_iq;
 	device_class_set_legacy_reset(device_class, rf_trx_reset);
+	device_class->realize = rf_trx_realize;
 }
 
 static const TypeInfo rf_trx_info = {

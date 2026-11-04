@@ -1,7 +1,6 @@
 /*
  * Sharp LR38826 (LS020B8UD06 and others)
  * */
-#define PMB887X_TRACE_ID		LCD
 #define PMB887X_TRACE_PREFIX	"lr38826"
 
 #include "qemu/osdep.h"
@@ -54,7 +53,7 @@ static void lcd_on_cmd_with_params(pmb887x_lcd_t *lcd, uint32_t cmd, const uint3
 
 	priv->regs[cmd] = params[0];
 
-	DPRINTF("write reg 0x%02X -> 0x%02X\n", cmd, params[0]);
+	DEBUG_LOG(&lcd->dbg, "write reg 0x%02X -> 0x%02X\n", cmd, params[0]);
 
 	switch (cmd) {
 		case 0x05:

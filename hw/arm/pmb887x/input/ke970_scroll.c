@@ -8,7 +8,6 @@
  * SCROLL_KEY_A -> DSPOUT0 (GPIO 15, IS=ALT2) -> CAPCOM1 CC6, rising-edge capture
  * SCROLL_KEY_B -> DSPOUT1 (GPIO 62)          -> sampled as a level only
  * */
-#define PMB887X_TRACE_ID		KEYPAD
 #define PMB887X_TRACE_PREFIX	"ke970-scroll"
 
 #include "qemu/osdep.h"
@@ -18,6 +17,7 @@
 #include "qapi/error.h"
 #include "qemu/timer.h"
 
+#include "system/debug-channel.h"
 #include "hw/arm/pmb887x/trace.h"
 
 #define TYPE_PMB887X_KE970_SCROLL	"ke970-scroll"
@@ -27,6 +27,7 @@ typedef struct pmb887x_ke970_scroll_t pmb887x_ke970_scroll_t;
 
 struct pmb887x_ke970_scroll_t {
 	SysBusDevice parent_obj;
+	DebugChannel dbg;
 
 	/* config */
 	uint32_t steps;				// active edges of A per detent
@@ -77,7 +78,7 @@ static void ke970_scroll_start_detent(pmb887x_ke970_scroll_t *p, int dir) {
 	qemu_set_irq(p->b_out, dir > 0);
 	ke970_scroll_set_a(p, false);
 
-	DPRINTF("detent %s, %u pulses\n", dir > 0 ? "CW" : "CCW", p->steps);
+	DEBUG_LOG(&p->dbg, "detent %s, %u pulses\n", dir > 0 ? "CW" : "CCW", p->steps);
 	ke970_scroll_arm(p, p->edge_us);
 }
 
@@ -159,6 +160,7 @@ static void ke970_scroll_init(Object *obj) {
 
 static void ke970_scroll_realize(DeviceState *dev, Error **errp) {
 	pmb887x_ke970_scroll_t *p = PMB887X_KE970_SCROLL(dev);
+	debug_channel_init_device(&p->dbg, dev);
 
 	if (!p->steps) {
 		error_setg(errp, "ke970-scroll: 'steps' must be non-zero");

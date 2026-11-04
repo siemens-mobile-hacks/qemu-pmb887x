@@ -7727,7 +7727,7 @@ const DebugRegs pmb887x_jbt6k71_regs = {
 	.regs = jbt6k71_regs,
 	.count = ARRAY_SIZE(jbt6k71_regs),
 	.reg_size = 1,
-	.addr_digits = 3,
+	.addr_digits = 4,
 };
 
 static const DebugRegField lh15kah2_x_start_fields[] = {

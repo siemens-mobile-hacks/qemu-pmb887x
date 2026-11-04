@@ -1,4 +1,3 @@
-#define PMB887X_TRACE_ID		FLASH
 #define PMB887X_TRACE_PREFIX	"pmb887x-flash-blk"
 
 #include "qemu/osdep.h"
@@ -9,6 +8,7 @@
 #include "system/block-backend.h"
 #include "hw/core/qdev-properties.h"
 #include "hw/core/qdev-properties-system.h"
+#include "system/debug-channel.h"
 #include "hw/arm/pmb887x/trace.h"
 #include "hw/arm/pmb887x/flash-blk.h"
 
@@ -17,6 +17,7 @@
 
 struct pmb887x_flash_blk_t {
 	SysBusDevice parent_obj;
+	DebugChannel dbg;
 	DeviceState *dev;
 	BlockBackend *blk;
 };
@@ -48,13 +49,14 @@ pmb887x_flash_blk_t *pmb887x_flash_blk_self(DeviceState *dev) {
 
 static void flash_blk_realize(DeviceState *dev, Error **errp) {
 	pmb887x_flash_blk_t *flash = PMB887X_FLASH_BLK(dev);
+	debug_channel_init_device(&flash->dbg, dev);
 	
 	if (!flash->blk) {
 		EPRINTF("Property 'drive' is not set");
 		exit(1);
 	}
 	
-	DPRINTF("Drive size: %08"PRIX64"\n", blk_co_getlength(flash->blk));
+	DEBUG_LOG(&flash->dbg, "Drive size: %08"PRIX64"\n", blk_co_getlength(flash->blk));
 	
 	if (pmb887x_flash_blk_is_rw(flash)) {
 		int ret = blk_set_perm(flash->blk, BLK_PERM_CONSISTENT_READ | BLK_PERM_WRITE, BLK_PERM_ALL, errp);
