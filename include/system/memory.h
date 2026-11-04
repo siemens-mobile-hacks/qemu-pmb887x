@@ -1114,6 +1114,28 @@ void memory_region_init_io(MemoryRegion *mr,
                            uint64_t size);
 
 /**
+ * memory_region_set_ops: Replace the callbacks of an I/O memory region.
+ *
+ * Only for a region that no vCPU can access yet, as the two fields are not
+ * replaced atomically.
+ *
+ * @mr: the #MemoryRegion to be updated.
+ * @ops: the new callbacks, or %NULL for unassigned memory.
+ * @opaque: passed to the callbacks of @ops.
+ */
+void memory_region_set_ops(MemoryRegion *mr, const MemoryRegionOps *ops,
+                           void *opaque);
+
+/**
+ * memory_region_to_absolute_addr: Get the address of an offset in a region
+ * from the root of its memory hierarchy.
+ *
+ * @mr: the #MemoryRegion.
+ * @offset: the offset within @mr.
+ */
+hwaddr memory_region_to_absolute_addr(MemoryRegion *mr, hwaddr offset);
+
+/**
  * memory_region_init_ram_flags_nomigrate:  Initialize RAM memory region.
  *                                          Accesses into the region will
  *                                          modify memory directly.

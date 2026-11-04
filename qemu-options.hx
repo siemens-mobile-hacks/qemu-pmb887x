@@ -5139,6 +5139,28 @@ SRST
     items.
 ERST
 
+DEF("debug-channels", HAS_ARG, QEMU_OPTION_debug_channels, \
+    "-debug-channels [log=[+|-]channel[,...]][,io=[+|-]channel[,...]][,time=on|off]\n"
+    "                enable device debug channels: log lines, register\n"
+    "                accesses and a virtual time prefix\n",
+    QEMU_ARCH_ALL)
+SRST
+``-debug-channels [log=[+|-]channel[,...]][,io=[+|-]channel[,...]][,time=on|off]``
+    Enable or disable device debug channels. ``log`` selects the channels
+    that print log lines, ``io`` the channels that print register accesses,
+    and ``time`` prefixes each line with the virtual time in seconds.
+
+    Unlike other options, a comma does not end the value of a key: a token
+    without ``=`` continues the channel list of the preceding ``log`` or
+    ``io``, as in ``log=usart,adc,io=lcd,time=on``.
+
+    A channel name matches a device id, the channel name of a device model,
+    one of its aliases or groups, or ``all``. Names are case insensitive and
+    applied in order; ``-`` turns the channels off. Repeated keys and
+    options add to the list. An unknown name stops QEMU after machine
+    creation.
+ERST
+
 DEF("D", HAS_ARG, QEMU_OPTION_D, \
     "-D logfile      output log to logfile (default stderr)\n",
     QEMU_ARCH_ALL)

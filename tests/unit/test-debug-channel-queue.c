@@ -333,10 +333,10 @@ static void test_time_prefix(void)
     g_autofree char *now = NULL;
 
     setup(&ch);
-    debug_channels_set_time(true);
+    g_assert_true(debug_channels_parse_option("time=on", &error_abort));
     set_clock(1500 * SCALE_MS);
     debug_channel_log(&ch, "t\n");
-    debug_channels_set_time(false);
+    g_assert_true(debug_channels_parse_option("time=off", &error_abort));
     debug_channel_log(&ch, "u\n");
     now = output();
     g_assert_cmpstr(now, ==, "[   1.500000000] [UNIT0]: t\n[UNIT0]: u\n");

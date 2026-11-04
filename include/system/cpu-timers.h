@@ -36,6 +36,9 @@ int64_t cpu_get_ticks(void);
  */
 int64_t cpu_get_clock(void);
 
+/* cpu_get_clock() without moving qemu_virtual_clock_last forward */
+int64_t cpu_peek_clock(void);
+
 /*
  * With TCG "vcpu-timers" the vCPU thread that runs virtual timers owns the
  * virtual clock. While the guest runs, the clock advances by one CPU clock
@@ -62,6 +65,7 @@ void qemu_timer_notify_cb(void *opaque, QEMUClockType type);
 
 /* get/set VIRTUAL clock and VM elapsed ticks via the cpus accel interface */
 int64_t cpus_get_virtual_clock(void);
+int64_t cpus_peek_virtual_clock(void);
 void cpus_set_virtual_clock(int64_t new_time);
 int64_t cpus_get_elapsed_ticks(void);
 

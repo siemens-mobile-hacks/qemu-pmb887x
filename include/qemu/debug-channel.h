@@ -54,6 +54,7 @@ typedef struct DebugChannel {
 void debug_channel_info_register(DebugChannelInfo *info);
 
 bool debug_channels_parse(const char *spec, uint8_t flag, Error **errp);
+bool debug_channels_parse_option(const char *str, Error **errp);
 bool debug_channels_check_unused(Error **errp);
 bool debug_channels_has_enabled(void);
 void debug_channels_reset(void);

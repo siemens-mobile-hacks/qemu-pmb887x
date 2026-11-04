@@ -164,6 +164,40 @@ static void test_unused(void)
     g_assert_true(debug_channels_check_unused(&error_abort));
 }
 
+static void test_option_sections(void)
+{
+    debug_channels_reset();
+    g_assert_true(debug_channels_parse_option(
+        "log=usart,adc,-usart, io = dsp ,usart,,log=MEAS", &error_abort));
+    g_assert_cmpint(flags_of(&usart_info, NULL), ==, DEBUG_CH_IO);
+    g_assert_cmpint(flags_of(&adc_info, NULL), ==, DEBUG_CH_LOG);
+    g_assert_cmpint(flags_of(&dsp_info, NULL), ==, DEBUG_CH_IO);
+
+    debug_channels_reset();
+    g_assert_true(debug_channels_parse_option(",log=,io=", &error_abort));
+    g_assert_true(debug_channels_parse_option("", &error_abort));
+    g_assert_cmpint(flags_of(&usart_info, NULL), ==, 0);
+}
+
+static void option_fails(const char *str, const char *message)
+{
+    Error *err = NULL;
+
+    g_assert_false(debug_channels_parse_option(str, &err));
+    g_assert_nonnull(strstr(error_get_pretty(err), message));
+    error_free(err);
+}
+
+static void test_option_errors(void)
+{
+    debug_channels_reset();
+    option_fails("usart", "Expected log=, io= or time=");
+    option_fails("time=on,usart", "Expected log=, io= or time=");
+    option_fails("trace=usart", "Unknown debug channels key 'trace'");
+    option_fails("time=maybe", "time");
+    option_fails("log=usart,-", "Invalid debug channel name");
+}
+
 static void test_has_enabled(void)
 {
     debug_channels_reset();
@@ -193,5 +227,7 @@ int main(int argc, char **argv)
     g_test_add_func("/debug-channel/lone-sign-fails", test_lone_sign_fails);
     g_test_add_func("/debug-channel/unused", test_unused);
     g_test_add_func("/debug-channel/has-enabled", test_has_enabled);
+    g_test_add_func("/debug-channel/option-sections", test_option_sections);
+    g_test_add_func("/debug-channel/option-errors", test_option_errors);
     return g_test_run();
 }

@@ -232,6 +232,14 @@ int64_t cpus_get_virtual_clock(void)
     return cpu_get_clock();
 }
 
+int64_t cpus_peek_virtual_clock(void)
+{
+    if (cpus_accel && cpus_accel->get_virtual_clock) {
+        return cpus_accel->get_virtual_clock();
+    }
+    return cpu_peek_clock();
+}
+
 /*
  * Signal the new virtual time to the accelerator. This is only needed
  * by accelerators that need to track the changes as we warp time.

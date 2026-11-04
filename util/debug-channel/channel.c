@@ -2,6 +2,7 @@
 
 #include "qemu/osdep.h"
 #include "qapi/error.h"
+#include "qapi/util.h"
 #include "qemu/debug-channel.h"
 
 typedef struct DebugSpecItem {
@@ -99,6 +100,62 @@ bool debug_channels_parse(const char *spec, uint8_t flag, Error **errp)
         debug_spec = g_ptr_array_new_with_free_func(debug_spec_item_free);
     }
     g_ptr_array_extend_and_steal(debug_spec, g_steal_pointer(&items));
+    return true;
+}
+
+static bool debug_option_token(const char *token, uint8_t *flag,
+                               Error **errp)
+{
+    const char *eq = strchr(token, '=');
+
+    if (!eq) {
+        if (*flag) {
+            return debug_channels_parse(token, *flag, errp);
+        }
+        for (const char *c = token; *c; c++) {
+            if (!g_ascii_isspace(*c)) {
+                error_setg(errp, "Expected log=, io= or time= before '%s'",
+                           token);
+                return false;
+            }
+        }
+        return true;
+    }
+
+    g_autofree char *key = g_strstrip(g_strndup(token, eq - token));
+
+    if (!g_ascii_strcasecmp(key, "time")) {
+        g_autofree char *on_off = g_strstrip(g_strdup(eq + 1));
+        bool on;
+
+        *flag = 0;
+        if (!qapi_bool_parse("time", on_off, &on, errp)) {
+            return false;
+        }
+        debug_channels_set_time(on);
+        return true;
+    }
+    if (!g_ascii_strcasecmp(key, "log")) {
+        *flag = DEBUG_CH_LOG;
+    } else if (!g_ascii_strcasecmp(key, "io")) {
+        *flag = DEBUG_CH_IO;
+    } else {
+        error_setg(errp, "Unknown debug channels key '%s'", key);
+        return false;
+    }
+    return debug_channels_parse(eq + 1, *flag, errp);
+}
+
+bool debug_channels_parse_option(const char *str, Error **errp)
+{
+    g_auto(GStrv) tokens = g_strsplit(str, ",", -1);
+    uint8_t flag = 0;
+
+    for (char **token = tokens; *token; token++) {
+        if (!debug_option_token(*token, &flag, errp)) {
+            return false;
+        }
+    }
     return true;
 }
 
