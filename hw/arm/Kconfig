@@ -260,6 +260,7 @@ config PMB887X
     bool
     default y
     depends on TCG && ARM
+    select ISO7816
 
 config VEXPRESS
     bool
