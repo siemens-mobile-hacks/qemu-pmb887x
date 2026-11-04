@@ -43,8 +43,8 @@ static void debug_mr_print(DebugMr *d, hwaddr addr, unsigned size,
     uint64_t lr = 0;
     bool has_context = debug_get_io_context(attrs, &pc, &lr);
 
-    debug_channel_io(d->ch, memory_region_to_absolute_addr(d->mr, addr), size,
-                     value, is_write, has_context, pc, lr);
+    debug_channel_io(d->ch, memory_region_to_absolute_addr(d->mr, addr), addr,
+                     size, value, is_write, has_context, pc, lr);
 }
 
 static MemTxResult debug_mr_read(void *opaque, hwaddr addr, uint64_t *data,

@@ -79,7 +79,7 @@ static void teardown(DebugChannel *ch)
 
 static void write_reg(DebugChannel *ch, uint64_t addr, uint64_t value)
 {
-    debug_channel_io(ch, addr, 4, value, true, false, 0, 0);
+    debug_channel_io(ch, addr, addr, 4, value, true, false, 0, 0);
 }
 
 static void test_print_before_start(void)
@@ -106,7 +106,8 @@ static void test_order(void)
     debug_channels_start(64);
     debug_channel_log(&ch, "a\n");
     write_reg(&ch, 0x10, 1);
-    debug_channel_io(&ch, 0x14, 2, 0xbeef, false, true, 0xa0000010, 0x1234);
+    debug_channel_io(&ch, 0x14, 0x14, 2, 0xbeef, false, true, 0xa0000010,
+                     0x1234);
     debug_channel_log(&ch, "b\n");
     debug_channels_flush();
     now = output();
@@ -371,6 +372,34 @@ static void test_io_format(void)
     teardown(&ch);
 }
 
+static void print_offset(const char *name, const void *_opaque,
+                         const DebugIoAccess *io, GString *out)
+{
+    g_string_append_printf(out, "%s:%" PRIx64 ":%" PRIx64, name, io->addr,
+                           io->offset);
+}
+
+static const DebugIoFormat offset_format = {
+    .print = print_offset,
+};
+
+static void test_io_offset(void)
+{
+    DebugChannel ch;
+    g_autofree char *now = NULL;
+
+    setup(&ch);
+    g_assert_true(debug_channels_parse("unit0", DEBUG_CH_IO, &error_abort));
+    debug_channel_cleanup(&ch);
+    debug_channel_init(&ch, &unit_info, "UNIT0");
+    ch.io_format = &offset_format;
+    DEBUG_IO_ACCESS(&ch, 0xf1000010, 0x10, 4, 1, true, false, 0, 0);
+    DEBUG_IO_READ(&ch, 0x2a, 2, 1);
+    now = output();
+    g_assert_cmpstr(now, ==, "UNIT0:f1000010:10\nUNIT0:2a:2a\n");
+    teardown(&ch);
+}
+
 static void test_macros(void)
 {
     DebugChannel ch;
@@ -432,6 +461,7 @@ int main(int argc, char **argv)
                     test_stop_while_pushing);
     g_test_add_func("/debug-channel-queue/time-prefix", test_time_prefix);
     g_test_add_func("/debug-channel-queue/io-format", test_io_format);
+    g_test_add_func("/debug-channel-queue/io-offset", test_io_offset);
     g_test_add_func("/debug-channel-queue/macros", test_macros);
     return g_test_run();
 }

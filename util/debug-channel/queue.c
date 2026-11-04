@@ -247,7 +247,9 @@ static bool debug_io_is_repeat(const DebugRecord *last,
 {
     return rec->kind == DEBUG_RECORD_IO && last->kind == DEBUG_RECORD_IO &&
            last->ch == rec->ch &&
-           last->io.addr == rec->io.addr && last->io.value == rec->io.value &&
+           last->io.addr == rec->io.addr &&
+           last->io.offset == rec->io.offset &&
+           last->io.value == rec->io.value &&
            last->io.size == rec->io.size &&
            last->io.is_write == rec->io.is_write &&
            last->io.has_context == rec->io.has_context &&
@@ -301,15 +303,16 @@ void debug_channel_log(const DebugChannel *ch, const char *fmt, ...)
     debug_push(&rec);
 }
 
-void debug_channel_io(const DebugChannel *ch, uint64_t addr, uint8_t size,
-                      uint64_t value, bool is_write, bool has_context,
-                      uint64_t pc, uint64_t lr)
+void debug_channel_io(const DebugChannel *ch, uint64_t addr, uint64_t offset,
+                      uint8_t size, uint64_t value, bool is_write,
+                      bool has_context, uint64_t pc, uint64_t lr)
 {
     DebugRecord rec;
 
     debug_record_init(&rec, DEBUG_RECORD_IO, ch);
     rec.io = (DebugIoAccess) {
         .addr = addr,
+        .offset = offset,
         .value = value,
         .pc = pc,
         .lr = lr,

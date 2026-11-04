@@ -19,6 +19,7 @@ typedef struct DebugChannelInfo {
 
 typedef struct DebugIoAccess {
     uint64_t addr;
+    uint64_t offset;
     uint64_t value;
     uint64_t pc;
     uint64_t lr;
@@ -83,8 +84,8 @@ void __attribute__((cold, noinline))
 debug_channel_log(const DebugChannel *ch, const char *fmt, ...)
     G_GNUC_PRINTF(2, 3);
 void __attribute__((cold, noinline))
-debug_channel_io(const DebugChannel *ch, uint64_t addr, uint8_t size,
-                 uint64_t value, bool is_write, bool has_context,
+debug_channel_io(const DebugChannel *ch, uint64_t addr, uint64_t offset,
+                 uint8_t size, uint64_t value, bool is_write, bool has_context,
                  uint64_t pc, uint64_t lr);
 
 #define DEBUG_LOG(ch, fmt, ...) do { \
@@ -105,17 +106,18 @@ debug_channel_io(const DebugChannel *ch, uint64_t addr, uint8_t size,
         } \
     } while (0)
 
-#define DEBUG_IO_ACCESS(ch, addr, size, value, is_write, has_context, pc, lr) \
+#define DEBUG_IO_ACCESS(ch, addr, offset, size, value, is_write, has_context, \
+                        pc, lr) \
     do { \
         if (unlikely(debug_channel_is_enabled(ch, DEBUG_CH_IO))) { \
-            debug_channel_io(ch, addr, size, value, is_write, has_context, \
-                             pc, lr); \
+            debug_channel_io(ch, addr, offset, size, value, is_write, \
+                             has_context, pc, lr); \
         } \
     } while (0)
 
 #define DEBUG_IO_READ(ch, addr, size, value) \
-    DEBUG_IO_ACCESS(ch, addr, size, value, false, false, 0, 0)
+    DEBUG_IO_ACCESS(ch, addr, addr, size, value, false, false, 0, 0)
 #define DEBUG_IO_WRITE(ch, addr, size, value) \
-    DEBUG_IO_ACCESS(ch, addr, size, value, true, false, 0, 0)
+    DEBUG_IO_ACCESS(ch, addr, addr, size, value, true, false, 0, 0)
 
 #endif
