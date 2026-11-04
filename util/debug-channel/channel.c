@@ -159,9 +159,13 @@ bool debug_channels_parse_option(const char *str, Error **errp)
     return true;
 }
 
-static bool debug_spec_item_is_known(const DebugSpecItem *item)
+static bool debug_spec_item_is_known(const DebugSpecItem *item,
+                                     bool (*is_known)(const char *name))
 {
     if (item->used || !g_ascii_strcasecmp(item->name, "all")) {
+        return true;
+    }
+    if (is_known && is_known(item->name)) {
         return true;
     }
     for (guint i = 0; debug_infos && i < debug_infos->len; i++) {
@@ -173,12 +177,13 @@ static bool debug_spec_item_is_known(const DebugSpecItem *item)
     return false;
 }
 
-bool debug_channels_check_unused(Error **errp)
+bool debug_channels_check_unused(bool (*is_known)(const char *name),
+                                 Error **errp)
 {
     for (guint i = 0; debug_spec && i < debug_spec->len; i++) {
         DebugSpecItem *item = g_ptr_array_index(debug_spec, i);
 
-        if (!debug_spec_item_is_known(item)) {
+        if (!debug_spec_item_is_known(item, is_known)) {
             error_setg(errp, "Unknown debug channel name: %s", item->name);
             return false;
         }

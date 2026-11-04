@@ -49,8 +49,6 @@ struct pmb887x_gprscu_t {
 	pmb887x_fifo8_t output_fifo;
 };
 
-DEBUG_CHANNEL_INFO(gprscu_debug, .name = TYPE_PMB887X_GPRSCU)
-
 static void gprscu_process_fifo(pmb887x_gprscu_t *p) {
 	bool control_conversion = (p->con & (GPRSCU_CON_CRC_CTRL | GPRSCU_CON_CIPH_CTRL)) != 0;
 	bool segment_conversion = (p->segment & (GPRSCU_SEGMENT_CRC_CTRL | GPRSCU_SEGMENT_CIPH_CTRL)) != 0;
@@ -257,7 +255,7 @@ static void gprscu_reset(DeviceState *dev) {
 
 static void gprscu_realize(DeviceState *dev, Error **errp) {
 	pmb887x_gprscu_t *p = PMB887X_GPRSCU(dev);
-	pmb887x_mod_debug_init(&p->dbg, &gprscu_debug, dev, &p->mmio, &pmb887x_gprscu_regs);
+	pmb887x_mod_debug_init(&p->dbg, dev, &p->mmio, &pmb887x_gprscu_regs);
 
 	for (size_t index = 0; index < ARRAY_SIZE(p->src); index++)
 		pmb887x_src_init(&p->src[index], p->irq[index]);

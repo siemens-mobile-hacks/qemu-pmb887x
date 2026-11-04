@@ -55,8 +55,6 @@ struct pmb887x_rtc_t {
 	int64_t start;
 };
 
-DEBUG_CHANNEL_INFO(rtc_debug, .name = TYPE_PMB887X_RTC)
-
 static uint32_t rtc_get_freq(pmb887x_rtc_t *p) {
 	uint32_t frtc = clock_get_hz(p->clc.clock);
 	return (p->con & RTC_CON_PRE) ? frtc / 8 : frtc;
@@ -376,7 +374,7 @@ static void rtc_reset(DeviceState *dev) {
 
 static void rtc_realize(DeviceState *dev, Error **errp) {
 	pmb887x_rtc_t *p = PMB887X_RTC(dev);
-	pmb887x_mod_debug_init(&p->dbg, &rtc_debug, dev, &p->mmio, &pmb887x_rtc_regs);
+	pmb887x_mod_debug_init(&p->dbg, dev, &p->mmio, &pmb887x_rtc_regs);
 	
 	if (!p->irq)
 		hw_error("pmb887x-rtc: irq not set");

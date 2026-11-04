@@ -99,8 +99,6 @@ struct dsp_state_t {
 	SSIBus *ssc_bus;
 };
 
-DEBUG_CHANNEL_INFO(dsp_debug, .name = TYPE_PMB887X_DSP)
-
 static void dsp_clock_update(void *opaque);
 
 static bool dsp_mcu_interface_is_enabled(dsp_state_t *p) {
@@ -666,7 +664,7 @@ static void dsp_realize(DeviceState *dev, Error **errp) {
 	const pmb887x_dsp_rom_t *rom;
 	size_t shared_ram_size;
 
-	pmb887x_mod_debug_init(&p->dbg, &dsp_debug, dev, &p->regs, &pmb887x_dsp_regs);
+	pmb887x_mod_debug_init(&p->dbg, dev, &p->regs, &pmb887x_dsp_regs);
 	if (p->config == NULL) {
 		error_setg(errp, "DSP configuration is not set");
 		return;

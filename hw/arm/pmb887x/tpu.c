@@ -167,8 +167,6 @@ struct pmb887x_tpu_t {
 	uint32_t unk;
 };
 
-DEBUG_CHANNEL_INFO(tpu_debug, .name = TYPE_PMB887X_TPU)
-
 static uint64_t tpu_get_counter(pmb887x_tpu_t *p) {
 	uint64_t counter = p->counter;
 
@@ -1057,7 +1055,7 @@ static void tpu_init(Object *obj) {
 
 static void tpu_realize(DeviceState *dev, Error **_errp) {
 	pmb887x_tpu_t *p = PMB887X_TPU(dev);
-	pmb887x_mod_debug_init(&p->dbg, &tpu_debug, dev, &p->mmio, &pmb887x_tpu_regs);
+	pmb887x_mod_debug_init(&p->dbg, dev, &p->mmio, &pmb887x_tpu_regs);
 	
 	pmb887x_clc_set(&p->clc, MOD_CLC_DISR);
 	pmb887x_src_init(&p->rfssc_src, p->rfssc_irq);

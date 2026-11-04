@@ -55,8 +55,6 @@ struct pmb887x_mmicif_t {
     bool host_index_valid;
 };
 
-DEBUG_CHANNEL_INFO(mmicif_debug, .name = TYPE_PMB887X_MMICIF)
-
 static DeviceState *mmicif_bus_get_device(pmb887x_mmicif_bus_t *bus) {
     BusChild *child = QTAILQ_FIRST(&BUS(bus)->children);
     return child ? child->child : NULL;
@@ -396,7 +394,7 @@ static void mmicif_reset(DeviceState *dev) {
 static void mmicif_realize(DeviceState *dev, Error **errp) {
     pmb887x_mmicif_t *p = PMB887X_MMICIF(dev);
 
-    pmb887x_mod_debug_init(&p->dbg, &mmicif_debug, dev, &p->mmio, &pmb887x_mmicif_regs);
+    pmb887x_mod_debug_init(&p->dbg, dev, &p->mmio, &pmb887x_mmicif_regs);
     debug_channel_attach_mr(&p->dbg, &p->mmap, MMICIF_MMAP_BASE);
 }
 

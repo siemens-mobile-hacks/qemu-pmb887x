@@ -74,8 +74,6 @@ struct pmb887x_i2c_t {
 	qemu_irq gpio_sda;
 };
 
-DEBUG_CHANNEL_INFO(i2c_debug, .name = TYPE_PMB887X_I2C)
-
 static bool i2c_is_running(pmb887x_i2c_t *p) {
 	return pmb887x_clc_is_enabled(&p->clc) &&
 		(p->syscon & I2Cv1_SYSCON_MOD) != I2Cv1_SYSCON_MOD_DISABLED;
@@ -644,7 +642,7 @@ static void i2c_init(Object *obj) {
 
 static void i2c_realize(DeviceState *dev, Error **_errp) {
 	pmb887x_i2c_t *p = PMB887X_I2C(dev);
-	pmb887x_mod_debug_init(&p->dbg, &i2c_debug, dev, &p->mmio, &pmb887x_i2cv1_regs);
+	pmb887x_mod_debug_init(&p->dbg, dev, &p->mmio, &pmb887x_i2cv1_regs);
 
 	pmb887x_clc_set(&p->clc, 1U << MOD_CLC_RMC_SHIFT);
 

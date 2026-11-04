@@ -99,8 +99,6 @@ struct pmb887x_dmac_t {
 	pmb887x_dmac_request_t lsreq;
 };
 
-DEBUG_CHANNEL_INFO(dmac_debug, .name = TYPE_PMB887X_DMAC)
-
 static inline uint32_t dmac_get_width(uint32_t s) {
 	if (s > 2)
 		hw_error("pmb887x-dmac: unknown width %d", s);
@@ -1330,7 +1328,7 @@ static int dmac_err_irq_router(void *opaque, int event_id) {
 
 static void dmac_realize(DeviceState *dev, Error **errp) {
 	pmb887x_dmac_t *p = PMB887X_DMAC(dev);
-	pmb887x_mod_debug_init(&p->dbg, &dmac_debug, dev, &p->mmio, &pmb887x_dmac_regs);
+	pmb887x_mod_debug_init(&p->dbg, dev, &p->mmio, &pmb887x_dmac_regs);
 
 	if (!clock_has_source(p->clock)) {
 		error_setg(errp, "DMAC 'clk' input is not connected");

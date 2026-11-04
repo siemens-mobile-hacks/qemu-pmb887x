@@ -113,8 +113,6 @@ struct pmb887x_sim_t {
 	qemu_irq dmac_rx_lbreq;
 };
 
-DEBUG_CHANNEL_INFO(sim_debug, .name = TYPE_PMB887X_SIM)
-
 static bool sim_is_uart_running(pmb887x_sim_t *p) {
 	return pmb887x_clc_is_enabled(&p->clc) && pmb887x_clc_get_rmc(&p->clc) != 0 &&
 		(p->con & (SIM_CON_SIMEN | SIM_CON_UARTON)) == (SIM_CON_SIMEN | SIM_CON_UARTON);
@@ -685,7 +683,7 @@ static void sim_init(Object *obj) {
 
 static void sim_realize(DeviceState *dev, Error **errp) {
 	pmb887x_sim_t *p = PMB887X_SIM(dev);
-	pmb887x_mod_debug_init(&p->dbg, &sim_debug, dev, &p->mmio, &pmb887x_sim_regs);
+	pmb887x_mod_debug_init(&p->dbg, dev, &p->mmio, &pmb887x_sim_regs);
 	pmb887x_clc_set(&p->clc, 1U << MOD_CLC_RMC_SHIFT);
 	pmb887x_srb_init(&p->srb, p->irq, ARRAY_SIZE(p->irq));
 	pmb887x_srb_set_event_handler(&p->srb, p, sim_event_handler);

@@ -106,8 +106,6 @@ struct pmb887x_usif_t {
 	uint8_t host_rx_char;
 };
 
-DEBUG_CHANNEL_INFO(usif_debug, .name = TYPE_PMB887X_USIF)
-
 static void usif_update_requests(pmb887x_usif_t *p);
 
 static bool usif_is_running(pmb887x_usif_t *p) {
@@ -770,7 +768,7 @@ static void usif_init(Object *obj) {
 
 static void usif_realize(DeviceState *dev, Error **errp) {
 	pmb887x_usif_t *p = PMB887X_USIF(dev);
-	pmb887x_mod_debug_init(&p->dbg, &usif_debug, dev, &p->mmio, &pmb887x_usif_regs);
+	pmb887x_mod_debug_init(&p->dbg, dev, &p->mmio, &pmb887x_usif_regs);
 
 	pmb887x_clc_set(&p->clc, 1U << MOD_CLC_RMC_SHIFT);
 	pmb887x_clc_set_callback(&p->clc, usif_clock_changed, p);

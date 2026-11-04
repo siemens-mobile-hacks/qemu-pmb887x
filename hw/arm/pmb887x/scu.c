@@ -83,8 +83,6 @@ struct pmb887x_scu_t {
 	QEMUTimer *wdt_timer;
 };
 
-DEBUG_CHANNEL_INFO(scu_debug, .name = TYPE_PMB887X_SCU)
-
 static uint32_t scu_wdt_get_frequency(pmb887x_scu_t *p) {
 	uint32_t multiplier = (p->wdt_status & SCU_WDT_SR_WDTIS) ? 64 : 1;
 	return clock_get_hz(p->clock) * multiplier;
@@ -681,7 +679,7 @@ static void scu_reset(DeviceState *dev) {
 
 static void scu_realize(DeviceState *dev, Error **errp) {
 	pmb887x_scu_t *p = PMB887X_SCU(dev);
-	pmb887x_mod_debug_init(&p->dbg, &scu_debug, dev, &p->mmio, &pmb887x_scu_regs);
+	pmb887x_mod_debug_init(&p->dbg, dev, &p->mmio, &pmb887x_scu_regs);
 
 	if (!clock_has_source(p->clock)) {
 		error_setg(errp, "pmb887x-scu: clk input is not connected");

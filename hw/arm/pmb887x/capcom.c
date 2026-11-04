@@ -72,8 +72,6 @@ struct pmb887x_capcom_t {
 	uint32_t t01ocr;
 };
 
-DEBUG_CHANNEL_INFO(capcom_debug, .name = TYPE_PMB887X_CAPCOM)
-
 enum pmb887x_capcom_cc_mode_t {
 	CAPCOM_CC_MODE_DISABLED = 0,
 	CAPCOM_CC_MODE_RISING_EDGE,
@@ -738,7 +736,7 @@ static void capcom_reset(DeviceState *dev) {
 
 static void capcom_realize(DeviceState *dev, Error **errp) {
 	pmb887x_capcom_t *p = PMB887X_CAPCOM(dev);
-	pmb887x_mod_debug_init(&p->dbg, &capcom_debug, dev, &p->mmio, &pmb887x_capcom_regs);
+	pmb887x_mod_debug_init(&p->dbg, dev, &p->mmio, &pmb887x_capcom_regs);
 
 	if (!clock_has_source(p->clc.clock)) {
 		error_setg(errp, "CAPCOM 'clk' input is not connected");

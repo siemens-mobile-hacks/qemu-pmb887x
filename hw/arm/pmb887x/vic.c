@@ -69,8 +69,6 @@ struct pmb887x_vic_t {
 	uint32_t irq_names_count;
 };
 
-DEBUG_CHANNEL_INFO(vic_debug, .name = TYPE_PMB887X_VIC)
-
 static uint32_t vic_get_nested_priority(pmb887x_vic_irq_t *line) {
 	if (!line->level)
 		return 0;
@@ -368,7 +366,7 @@ static const char *vic_debug_irq_suffix(const DebugChannel *ch, uint64_t offset)
 
 static void vic_realize(DeviceState *dev, Error **errp) {
 	pmb887x_vic_t *p = PMB887X_VIC(dev);
-	pmb887x_mod_debug_init(&p->dbg, &vic_debug, dev, &p->mmio, &pmb887x_vic_regs);
+	pmb887x_mod_debug_init(&p->dbg, dev, &p->mmio, &pmb887x_vic_regs);
 	p->dbg.get_reg_suffix = vic_debug_irq_suffix;
 	vic_update_state(p);
 }

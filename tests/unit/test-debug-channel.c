@@ -156,12 +156,28 @@ static void test_unused(void)
     debug_channels_reset();
     parse_ok("adc,usart3,all", DEBUG_CH_LOG);
     flags_of(&usart_info, "usart0");
-    g_assert_false(debug_channels_check_unused(&err));
+    g_assert_false(debug_channels_check_unused(NULL, &err));
     g_assert_nonnull(strstr(error_get_pretty(err), "usart3"));
     error_free(err);
 
     flags_of(&usart_info, "usart3");
-    g_assert_true(debug_channels_check_unused(&error_abort));
+    g_assert_true(debug_channels_check_unused(NULL, &error_abort));
+}
+
+static bool is_lcd_type(const char *name)
+{
+    return !strcmp(name, "pmb887x-lcd");
+}
+
+static void test_unused_known(void)
+{
+    Error *err = NULL;
+
+    debug_channels_reset();
+    parse_ok("pmb887x-lcd", DEBUG_CH_LOG);
+    g_assert_true(debug_channels_check_unused(is_lcd_type, &error_abort));
+    g_assert_false(debug_channels_check_unused(NULL, &err));
+    error_free(err);
 }
 
 static void test_option_sections(void)
@@ -235,6 +251,7 @@ int main(int argc, char **argv)
                     test_whitespace_and_empty);
     g_test_add_func("/debug-channel/lone-sign-fails", test_lone_sign_fails);
     g_test_add_func("/debug-channel/unused", test_unused);
+    g_test_add_func("/debug-channel/unused-known", test_unused_known);
     g_test_add_func("/debug-channel/has-enabled", test_has_enabled);
     g_test_add_func("/debug-channel/is-requested", test_is_requested);
     g_test_add_func("/debug-channel/option-sections", test_option_sections);

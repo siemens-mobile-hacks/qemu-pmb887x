@@ -10,7 +10,7 @@
 #include "cpregs.h"
 #include "exec/cputlb.h"
 #include "hw/core/qdev-properties.h"
-#include "qemu/debug-channel.h"
+#include "system/debug-channel.h"
 
 #include "hw/arm/pmb887x/trace.h"
 
@@ -27,8 +27,6 @@ struct pmb887x_tcm_t {
 	CPUState *cpu;
 	DebugChannel dbg;
 };
-
-DEBUG_CHANNEL_INFO(tcm_debug, .name = TYPE_PMB887X_TCM)
 
 /*
  *	TCM
@@ -127,7 +125,7 @@ static void tcm_reset(DeviceState *dev) {
 
 static void tcm_realize(DeviceState *dev, Error **errp) {
 	pmb887x_tcm_t *p = PMB887X_TCM(dev);
-	debug_channel_init(&p->dbg, &tcm_debug, dev->id);
+	debug_channel_init_device(&p->dbg, dev);
 	memory_region_add_subregion(p->cpu->memory, DTCM_PHYS_BASE, &p->memory[0]);
 
 	for (int i = 0; i < ARRAY_SIZE(tcm_cp_reginfo); i++) {

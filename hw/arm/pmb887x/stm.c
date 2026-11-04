@@ -42,8 +42,6 @@ struct pmb887x_stm_t {
 	int64_t counter;
 };
 
-DEBUG_CHANNEL_INFO(stm_debug, .name = TYPE_PMB887X_STM)
-
 static uint64_t stm_ns_to_ticks(uint64_t ns, uint32_t freq) {
 	uint64_t seconds = ns / NANOSECONDS_PER_SECOND;
 	uint64_t remainder_ns = ns % NANOSECONDS_PER_SECOND;
@@ -227,7 +225,7 @@ static void stm_reset(DeviceState *dev) {
 
 static void stm_realize(DeviceState *dev, Error **errp) {
 	struct pmb887x_stm_t *p = PMB887X_STM(dev);
-	pmb887x_mod_debug_init(&p->dbg, &stm_debug, dev, &p->mmio, &pmb887x_stm_regs);
+	pmb887x_mod_debug_init(&p->dbg, dev, &p->mmio, &pmb887x_stm_regs);
 	
 	pmb887x_clc_set(&p->clc, STM_CLC_RESET_VALUE);
 	

@@ -27,8 +27,6 @@ struct pmb887x_afc_t {
 	uint32_t afcval;
 };
 
-DEBUG_CHANNEL_INFO(afc_debug, .name = TYPE_PMB887X_AFC)
-
 static uint64_t afc_io_read(void *opaque, hwaddr haddr, unsigned size) {
 	pmb887x_afc_t *p = opaque;
 	uint64_t value = 0;
@@ -99,7 +97,7 @@ static void afc_reset(DeviceState *dev) {
 
 static void afc_realize(DeviceState *dev, Error **errp) {
 	pmb887x_afc_t *p = PMB887X_AFC(dev);
-	pmb887x_mod_debug_init(&p->dbg, &afc_debug, dev, &p->mmio, &pmb887x_afc_regs);
+	pmb887x_mod_debug_init(&p->dbg, dev, &p->mmio, &pmb887x_afc_regs);
 }
 
 static const Property afc_properties[] = {

@@ -25,6 +25,7 @@ typedef struct DebugMr {
 } DebugMr;
 
 static Notifier debug_exit_notifier;
+static GHashTable *debug_device_infos;
 
 static bool debug_get_io_context(MemTxAttrs attrs, uint64_t *pc, uint64_t *lr)
 {
@@ -125,6 +126,44 @@ void debug_channel_attach_mr(DebugChannel *ch, MemoryRegion *mr,
     memory_region_set_ops(mr, &d->ops, d);
 }
 
+static const DebugChannelInfo *debug_device_info(DeviceState *dev)
+{
+    const char *type = object_get_typename(OBJECT(dev));
+
+    if (!debug_device_infos) {
+        debug_device_infos = g_hash_table_new(g_str_hash, g_str_equal);
+    }
+
+    DebugChannelInfo *info = g_hash_table_lookup(debug_device_infos, type);
+    if (info) {
+        return info;
+    }
+
+    ObjectClass *oc = object_get_class(OBJECT(dev));
+    GPtrArray *groups = g_ptr_array_new();
+    while ((oc = object_class_get_parent(oc))) {
+        g_ptr_array_add(groups, (gpointer) object_class_get_name(oc));
+    }
+    g_ptr_array_add(groups, NULL);
+
+    info = g_new0(DebugChannelInfo, 1);
+    info->name = type;
+    info->groups = (const char *const *) g_ptr_array_free(groups, false);
+    debug_channel_info_register(info);
+    g_hash_table_insert(debug_device_infos, (gpointer) type, info);
+    return info;
+}
+
+void debug_channel_init_device(DebugChannel *ch, DeviceState *dev)
+{
+    debug_channel_init(ch, debug_device_info(dev), dev->id);
+}
+
+static bool debug_is_qom_type(const char *name)
+{
+    return object_class_by_name(name);
+}
+
 static void debug_channels_exit(Notifier *_notifier, void *_data)
 {
     debug_channels_stop();
@@ -140,7 +179,7 @@ static void debug_channels_vm_state(void *_opaque, bool running,
 
 void debug_channels_machine_done(void)
 {
-    debug_channels_check_unused(&error_fatal);
+    debug_channels_check_unused(debug_is_qom_type, &error_fatal);
     if (!debug_channels_has_enabled()) {
         return;
     }

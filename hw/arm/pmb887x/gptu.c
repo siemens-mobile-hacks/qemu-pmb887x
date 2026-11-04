@@ -123,8 +123,6 @@ struct pmb887x_gptu_t {
 	bool syncing_t2;
 };
 
-DEBUG_CHANNEL_INFO(gptu_debug, .name = TYPE_PMB887X_GPTU)
-
 static void gptu_sync_timer(pmb887x_gptu_t *p);
 static void gptu_t2_sync_timer(pmb887x_gptu_t *p);
 static void gptu_t2_update_state(pmb887x_gptu_t *p);
@@ -1213,7 +1211,7 @@ static void gptu_init(Object *obj) {
 
 static void gptu_realize(DeviceState *dev, Error **errp) {
 	pmb887x_gptu_t *p = PMB887X_GPTU(dev);
-	pmb887x_mod_debug_init(&p->dbg, &gptu_debug, dev, &p->mmio, &pmb887x_gptu_regs);
+	pmb887x_mod_debug_init(&p->dbg, dev, &p->mmio, &pmb887x_gptu_regs);
 
 	pmb887x_clc_set(&p->clc, MOD_CLC_DISR);
 

@@ -174,8 +174,6 @@ struct pmb887x_dif_t {
 	bool are_dma_requests_driven;
 };
 
-DEBUG_CHANNEL_INFO(dif_debug, .name = TYPE_PMB887X_DIF)
-
 static inline uint32_t dif_get_transfer_csreg(pmb887x_dif_t *p) {
 	return p->is_tx_csreg_active ? p->tx_csreg : p->csreg;
 }
@@ -1608,7 +1606,7 @@ static void dif_init(Object *obj) {
 
 static void dif_realize(DeviceState *dev, Error **errp) {
 	pmb887x_dif_t *p = PMB887X_DIF(dev);
-	pmb887x_mod_debug_init(&p->dbg, &dif_debug, dev, &p->mmio, &pmb887x_difv2_regs);
+	pmb887x_mod_debug_init(&p->dbg, dev, &p->mmio, &pmb887x_difv2_regs);
 
 	pmb887x_clc_set(&p->clc, 1U << MOD_CLC_RMC_SHIFT);
 	pmb887x_srb_init(&p->srb, p->irq, ARRAY_SIZE(p->irq));

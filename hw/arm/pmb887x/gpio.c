@@ -44,8 +44,6 @@ struct pmb887x_gpio_t {
 	uint32_t pin_names_count;
 };
 
-DEBUG_CHANNEL_INFO(gpio_debug, .name = TYPE_PMB887X_GPIO)
-
 static uint8_t gpio_get_mux_is(pmb887x_gpio_t *p, int pin) {
 	if ((p->pins[pin] & GPIO_IS) != GPIO_IS_NONE)
 		return ((p->pins[pin] & GPIO_IS) >> GPIO_IS_SHIFT);
@@ -273,7 +271,7 @@ static const char *gpio_debug_pin_suffix(const DebugChannel *ch, uint64_t offset
 
 static void gpio_realize(DeviceState *dev, Error **errp) {
 	pmb887x_gpio_t *p = PMB887X_GPIO(dev);
-	pmb887x_mod_debug_init(&p->dbg, &gpio_debug, dev, &p->mmio, &pmb887x_gpio_regs);
+	pmb887x_mod_debug_init(&p->dbg, dev, &p->mmio, &pmb887x_gpio_regs);
 	p->dbg.get_reg_suffix = gpio_debug_pin_suffix;
 	pmb887x_clc_set(&p->clc, 1U << MOD_CLC_RMC_SHIFT);
 	for (int id = 0; id < GPIOS_COUNT; id++) {

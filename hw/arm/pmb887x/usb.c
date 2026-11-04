@@ -35,8 +35,6 @@ struct pmb887x_usb_t {
 	uint8_t registers[USB_IO_SIZE];
 };
 
-DEBUG_CHANNEL_INFO(usb_debug, .name = TYPE_PMB887X_USB)
-
 static uint64_t usb_register_read(pmb887x_usb_t *p, hwaddr haddr, unsigned int size) {
 	uint64_t value = 0;
 
@@ -149,7 +147,7 @@ static void usb_reset(DeviceState *dev) {
 
 static void usb_realize(DeviceState *dev, Error **errp) {
 	pmb887x_usb_t *p = PMB887X_USB(dev);
-	pmb887x_mod_debug_init(&p->dbg, &usb_debug, dev, &p->mmio, &pmb887x_usb_regs);
+	pmb887x_mod_debug_init(&p->dbg, dev, &p->mmio, &pmb887x_usb_regs);
 
 	usb_reset(dev);
 }

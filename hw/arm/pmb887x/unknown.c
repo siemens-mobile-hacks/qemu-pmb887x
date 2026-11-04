@@ -22,8 +22,6 @@ struct pmb887x_unknown_t {
 	DebugChannel dbg;
 };
 
-DEBUG_CHANNEL_INFO(unknown_debug, .name = TYPE_PMB887X_UNKNOWN)
-
 static uint64_t unknown_io_read(void *_opaque, hwaddr haddr, unsigned size) {
 	uint64_t value = 0;
 
@@ -66,7 +64,7 @@ static void unknown_init(Object *obj) {
 static void unknown_realize(DeviceState *dev, Error **errp) {
 	pmb887x_unknown_t *p = PMB887X_UNKNOWN(dev);
 
-	debug_channel_init(&p->dbg, &unknown_debug, dev->id);
+	debug_channel_init_device(&p->dbg, dev);
 	debug_channel_attach_mr(&p->dbg, &p->mmio, 0);
 }
 

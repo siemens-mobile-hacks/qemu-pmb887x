@@ -103,8 +103,6 @@ struct pmb887x_i2c_t {
 	qemu_irq gpio_sda;
 };
 
-DEBUG_CHANNEL_INFO(i2c_debug, .name = TYPE_PMB887X_I2C)
-
 static void i2c_work(pmb887x_i2c_t *p);
 static void i2c_transfer_done(pmb887x_i2c_t *p);
 static void i2c_transfer_error(pmb887x_i2c_t *p);
@@ -945,7 +943,7 @@ static void i2c_init(Object *obj) {
 
 static void i2c_realize(DeviceState *dev, Error **errp) {
 	pmb887x_i2c_t *p = PMB887X_I2C(dev);
-	pmb887x_mod_debug_init(&p->dbg, &i2c_debug, dev, &p->mmio, &pmb887x_i2cv2_regs);
+	pmb887x_mod_debug_init(&p->dbg, dev, &p->mmio, &pmb887x_i2cv2_regs);
 
 	p->bus = i2c_init_bus(dev, TYPE_PMB887X_I2C);
 

@@ -91,8 +91,6 @@ struct pmb887x_ssc_t {
 	qemu_irq dmac_rx_breq;
 };
 
-DEBUG_CHANNEL_INFO(ssc_debug, .name = TYPE_PMB887X_SSC)
-
 static void ssc_reset_fifo(pmb887x_ssc_t *p, enum SSCFifoType fifo) {
 	if (fifo == SSC_FIFO_RX) {
 		pmb887x_fifo_reset(p->rx_fifo);
@@ -496,7 +494,7 @@ static void ssc_init(Object *obj) {
 
 static void ssc_realize(DeviceState *dev, Error **errp) {
 	pmb887x_ssc_t *p = PMB887X_SSC(dev);
-	pmb887x_mod_debug_init(&p->dbg, &ssc_debug, dev, &p->mmio, &pmb887x_ssc_regs);
+	pmb887x_mod_debug_init(&p->dbg, dev, &p->mmio, &pmb887x_ssc_regs);
 	pmb887x_clc_set(&p->clc, 1U << MOD_CLC_RMC_SHIFT);
 	pmb887x_srb_init(&p->srb, p->irq, ARRAY_SIZE(p->irq));
 	pmb887x_srb_set_event_handler(&p->srb, dev, ssc_event_handler);

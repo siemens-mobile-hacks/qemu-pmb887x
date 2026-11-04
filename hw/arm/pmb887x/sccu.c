@@ -65,8 +65,6 @@ struct pmb887x_sccu_t {
 	Clock *clock32;
 };
 
-DEBUG_CHANNEL_INFO(sccu_debug, .name = TYPE_PMB887X_SCCU)
-
 static uint32_t sccu_get_nqtz(pmb887x_sccu_t *p) {
 	uint32_t nqtz = (p->nqtz & SCCU_NQTZ_NQTZ) >> SCCU_NQTZ_NQTZ_SHIFT;
 	return nqtz ? nqtz : 1;
@@ -366,7 +364,7 @@ static void sccu_init(Object *obj) {
 
 static void sccu_realize(DeviceState *dev, Error **errp) {
 	pmb887x_sccu_t *p = PMB887X_SCCU(dev);
-	pmb887x_mod_debug_init(&p->dbg, &sccu_debug, dev, &p->mmio, &pmb887x_sccu_regs);
+	pmb887x_mod_debug_init(&p->dbg, dev, &p->mmio, &pmb887x_sccu_regs);
 
 	if (!clock_has_source(p->clock32)) {
 		error_setg(errp, "pmb887x-sccu: clk32 input is not connected");

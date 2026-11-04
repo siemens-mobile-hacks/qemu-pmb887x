@@ -56,8 +56,6 @@ struct pmb887x_ebu_t {
 	uint32_t sdrmod[2];
 };
 
-DEBUG_CHANNEL_INFO(ebu_debug, .name = TYPE_PMB887X_EBU)
-
 static void ebu_update_state(pmb887x_ebu_t *p) {
 	bool is_ebu_enabled = pmb887x_clc_is_enabled(&p->clc);
 	
@@ -367,7 +365,7 @@ static void ebu_reset(DeviceState *dev) {
 
 static void ebu_realize(DeviceState *dev, Error **errp) {
 	pmb887x_ebu_t *p = PMB887X_EBU(dev);
-	pmb887x_mod_debug_init(&p->dbg, &ebu_debug, dev, &p->mmio, &pmb887x_ebu_regs);
+	pmb887x_mod_debug_init(&p->dbg, dev, &p->mmio, &pmb887x_ebu_regs);
 
 	for (int i = 0; i < 8; i++) {
 		char memory_region_name[32];

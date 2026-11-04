@@ -84,8 +84,6 @@ struct pmb887x_adc_t {
 	pmb887x_adc_input_t inputs[PMB887X_ADC_MAX_INPUTS];
 };
 
-DEBUG_CHANNEL_INFO(adc_debug, .name = TYPE_PMB887X_ADC)
-
 // Known channels with known parameters
 static const pmb887x_adc_ch_cfg_t channels_cfg[0xFF] = {
 	[ADC_CH_M0] = {"+M0", 50, 1, 1, ADC_CH_TYPE_NORMAL, PMB887X_ADC_INPUT_M0, PMB887X_ADC_INPUT_M0},
@@ -357,7 +355,7 @@ static void adc_reset(DeviceState *dev) {
 
 static void adc_realize(DeviceState *dev, Error **errp) {
 	pmb887x_adc_t *p = PMB887X_ADC(dev);
-	pmb887x_mod_debug_init(&p->dbg, &adc_debug, dev, &p->mmio, &pmb887x_adc_regs);
+	pmb887x_mod_debug_init(&p->dbg, dev, &p->mmio, &pmb887x_adc_regs);
 	
 	pmb887x_clc_set(&p->clc, 1U << MOD_CLC_RMC_SHIFT);
 	

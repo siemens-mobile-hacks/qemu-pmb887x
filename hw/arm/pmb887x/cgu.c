@@ -68,8 +68,6 @@ struct pmb887x_cgu_t {
 	bool dsp_active;
 };
 
-DEBUG_CHANNEL_INFO(cgu_debug, .name = TYPE_PMB887X_CGU)
-
 static void cgu_update_state(struct pmb887x_cgu_t *p);
 
 static void cgu_pll_lock_timer_expired(void *opaque) {
@@ -501,7 +499,7 @@ static void cgu_reset(DeviceState *dev) {
 
 static void cgu_realize(DeviceState *dev, Error **errp) {
 	pmb887x_cgu_t *p = PMB887X_CGU(dev);
-	pmb887x_mod_debug_init(&p->dbg, &cgu_debug, dev, &p->mmio, &pmb887x_cgu_regs);
+	pmb887x_mod_debug_init(&p->dbg, dev, &p->mmio, &pmb887x_cgu_regs);
 	
 	if (!p->irq)
 		hw_error("pmb887x-cgu: irq not set");

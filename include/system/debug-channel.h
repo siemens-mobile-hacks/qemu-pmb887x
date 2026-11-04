@@ -13,6 +13,7 @@
 void debug_channel_attach_mr(DebugChannel *ch, MemoryRegion *mr,
                              hwaddr offset);
 
+void debug_channel_init_device(DebugChannel *ch, DeviceState *dev);
 void debug_channels_machine_done(void);
 
 #endif

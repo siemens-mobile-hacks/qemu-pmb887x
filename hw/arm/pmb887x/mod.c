@@ -324,12 +324,11 @@ void pmb887x_srb_ext_set_isr(pmb887x_srb_ext_reg_t *reg, uint32_t value) {
 
 void pmb887x_mod_debug_init(
 	DebugChannel *ch,
-	const DebugChannelInfo *info,
 	DeviceState *dev,
 	MemoryRegion *mmio,
 	const DebugRegs *regs
 ) {
-	debug_channel_init(ch, info, dev->id);
+	debug_channel_init_device(ch, dev);
 	ch->io_format = &debug_regs_format;
 	ch->io_format_opaque = regs;
 	debug_channel_attach_mr(ch, mmio, 0);

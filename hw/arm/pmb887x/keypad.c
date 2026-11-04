@@ -57,8 +57,6 @@ struct pmb887x_keypad_t {
 	bool ready;
 };
 
-DEBUG_CHANNEL_INFO(keypad_debug, .name = TYPE_PMB887X_KEYPAD)
-
 static void keypad_signal_ready(pmb887x_keypad_t *p) {
 	if (p->ready)
 		return;
@@ -219,7 +217,7 @@ static void keypad_init(Object *obj) {
 
 static void keypad_realize(DeviceState *dev, Error **errp) {
 	pmb887x_keypad_t *p = PMB887X_KEYPAD(dev);
-	pmb887x_mod_debug_init(&p->dbg, &keypad_debug, dev, &p->mmio, &pmb887x_keypad_regs);
+	pmb887x_mod_debug_init(&p->dbg, dev, &p->mmio, &pmb887x_keypad_regs);
 	
 	p->con = 0;
 	p->extension = 0;

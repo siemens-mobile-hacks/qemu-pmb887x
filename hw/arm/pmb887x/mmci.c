@@ -31,8 +31,6 @@ struct pmb887x_mmci_t {
 	qemu_irq gpio_clk;
 };
 
-DEBUG_CHANNEL_INFO(mmci_debug, .name = TYPE_PMB887X_MMCI)
-
 static uint64_t mmci_io_read(void *opaque, hwaddr haddr, unsigned size) {
 	pmb887x_mmci_t *p = opaque;
 	uint64_t value = 0;
@@ -102,7 +100,7 @@ static void mmci_reset(DeviceState *dev) {
 
 static void mmci_realize(DeviceState *dev, Error **_errp) {
 	pmb887x_mmci_t *p = PMB887X_MMCI(dev);
-	pmb887x_mod_debug_init(&p->dbg, &mmci_debug, dev, &p->mmio, &pmb887x_mmci_regs);
+	pmb887x_mod_debug_init(&p->dbg, dev, &p->mmio, &pmb887x_mmci_regs);
 
 	pmb887x_clc_set(&p->clc, 1U << MOD_CLC_RMC_SHIFT);
 }

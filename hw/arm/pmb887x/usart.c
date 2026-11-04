@@ -110,8 +110,6 @@ struct pmb887x_usart_t {
 	qemu_irq dmac_rx_breq;
 };
 
-DEBUG_CHANNEL_INFO(usart_debug, .name = TYPE_PMB887X_USART)
-
 static void usart_update_state(pmb887x_usart_t *p);
 static void usart_transmit_fifo(pmb887x_usart_t *p);
 static void usart_schedule_transmit(pmb887x_usart_t *p);
@@ -974,7 +972,7 @@ static void usart_init(Object *obj) {
 
 static void usart_realize(DeviceState *dev, Error **errp) {
 	pmb887x_usart_t *p = PMB887X_USART(dev);
-	pmb887x_mod_debug_init(&p->dbg, &usart_debug, dev, &p->mmio, &pmb887x_usart_regs);
+	pmb887x_mod_debug_init(&p->dbg, dev, &p->mmio, &pmb887x_usart_regs);
 	
 	pmb887x_clc_set(&p->clc, 1U << MOD_CLC_RMC_SHIFT);
 	
