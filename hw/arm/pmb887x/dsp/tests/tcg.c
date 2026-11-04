@@ -895,6 +895,39 @@ static void test_mode_writing_chain(void) {
 	}
 }
 
+static void test_mode_writing_chain_to_specialized(void) {
+	static const uint64_t shifted_products[TEST_PRODUCT_SHIFTS] = { 4, 2, 8, 16 };
+	test_memory_t program = {
+		.words = {
+			0x5920, /* mov r0 st1 */
+			0x4180, 0x0003, /* br 0x0003 */
+			0xD22A, /* mac [r4++] [r2++] a0 */
+			0xD22A, /* mac [r4++] [r2++] a0 */
+			0x4180, 0x0007, /* br 0x0007 */
+		},
+	};
+	test_memory_t data = {};
+	uint16_t end = 7;
+
+	for (size_t i = 0; i < ARRAY_SIZE(data.words); i++)
+		data.words[i] = 2;
+	teak_tcg_core_t core = test_core_create(&program, &data);
+
+	test_core_map_data(&core, &data);
+	for (size_t run = 0; run < 2; run++) {
+		for (uint8_t product_shift = 0; product_shift < TEST_PRODUCT_SHIFTS; product_shift++) {
+			core.state.pc = 0;
+			core.state.a[0] = 0;
+			core.state.p[0] = 0;
+			core.state.r[0] = product_shift << 10;
+			core.state.r[2] = 0x10;
+			core.state.r[4] = TEST_Y_SPACE_BASE;
+			test_execute_slices_until(&core, end, 4);
+			g_assert_cmphex(core.state.a[0], ==, shifted_products[product_shift]);
+		}
+	}
+}
+
 static void test_execute_cycles(teak_tcg_core_t *core, uint32_t cycles) {
 	uint32_t executed = 0;
 
@@ -977,6 +1010,56 @@ static void test_linked_one_word_block_repeat(void) {
 	g_assert_cmphex(core.state.a[0], ==, 20);
 	g_assert_cmphex(core.state.lp, ==, 0);
 	g_assert_cmphex(core.state.bcn, ==, 0);
+}
+
+static void test_linked_interrupt_enable(void) {
+	static const struct {
+		uint16_t words[6];
+		uint16_t return_address;
+	} loops[] = {
+		{
+			.words = {
+				0x67D0, /* inc a0. */
+				0x4380, /* eint. */
+				0x4180, 0x0020, /* br 0x0020. */
+			},
+			.return_address = 0x0022,
+		},
+		{
+			.words = {
+				0x67D0, /* inc a0. */
+				0x4180, 0x0023, /* br 0x0023. */
+				0x4380, /* eint. */
+				0x4180, 0x0020, /* br 0x0020. */
+			},
+			.return_address = 0x0024,
+		},
+	};
+
+	for (size_t i = 0; i < ARRAY_SIZE(loops); i++) {
+		test_memory_t program = {
+			.words = { [6] = 0x4180, [7] = 0x0006 }, /* br 0x0006. */
+		};
+		test_memory_t data = {};
+
+		memcpy(&program.words[0x20], loops[i].words, sizeof(loops[i].words));
+		teak_tcg_core_t core = test_core_create(&program, &data);
+
+		core.state.pc = 0x20;
+		core.state.sp = 0x10;
+		test_execute_cycles(&core, 48);
+
+		core.state.pc = 0x20;
+		core.state.a[0] = 0;
+		core.state.ie = 0;
+		core.state.interrupt_mask = BIT(0);
+		core.state.interrupt_lines = BIT(0);
+		g_assert_true(teak_tcg_execute_slice(&core, 40));
+		g_assert_cmphex(core.state.pc, ==, 0x0006);
+		g_assert_cmphex(core.state.a[0], ==, 1);
+		g_assert_cmphex(core.state.sp, ==, 0x0F);
+		g_assert_cmphex(data.words[0x0F], ==, loops[i].return_address);
+	}
 }
 
 static void test_precompile_bounded_indirect_dispatch(void) {
@@ -1367,10 +1450,12 @@ int main(int argc, char **argv) {
 	g_test_add_func("/pmb887x/dsp/tcg/mode-keyed-cache", test_mode_keyed_cache);
 	g_test_add_func("/pmb887x/dsp/tcg/mode-keyed-chain", test_mode_keyed_chain);
 	g_test_add_func("/pmb887x/dsp/tcg/mode-writing-chain", test_mode_writing_chain);
+	g_test_add_func("/pmb887x/dsp/tcg/mode-writing-chain-to-specialized", test_mode_writing_chain_to_specialized);
 	g_test_add_func("/pmb887x/dsp/tcg/linked-chain-invalidation", test_linked_chain_invalidation);
 	g_test_add_func("/pmb887x/dsp/tcg/linked-chain-cycle-budget", test_linked_chain_cycle_budget);
 	g_test_add_func("/pmb887x/dsp/tcg/linked-block-repeat", test_linked_block_repeat);
 	g_test_add_func("/pmb887x/dsp/tcg/linked-one-word-block-repeat", test_linked_one_word_block_repeat);
+	g_test_add_func("/pmb887x/dsp/tcg/linked-interrupt-enable", test_linked_interrupt_enable);
 	g_test_add_func("/pmb887x/dsp/tcg/precompile-bounded-indirect-dispatch", test_precompile_bounded_indirect_dispatch);
 	g_test_add_func("/pmb887x/dsp/tcg/direct-data-bank", test_direct_data_bank);
 	g_test_add_func("/pmb887x/dsp/tcg/mov-data-shift-value", test_mov_data_shift_value);
