@@ -447,7 +447,6 @@ size_t dsp_runtime_run(dsp_runtime_t *runtime, size_t max_cycles, bool *deferred
 	uint64_t chain_budget_stops = runtime->core.chain_budget_stops;
 	uint64_t chain_cache_stops = runtime->core.chain_cache_stops;
 	size_t slices = 0;
-	size_t blocks = 0;
 	size_t cycles = 0;
 
 	*deferred = false;
@@ -519,7 +518,6 @@ size_t dsp_runtime_run(dsp_runtime_t *runtime, size_t max_cycles, bool *deferred
 		}
 
 		cycles += runtime->core.last_block_cycles;
-		blocks += runtime->core.last_block_count;
 		slices++;
 		if (qatomic_xchg(&runtime->reschedule, false))
 			break;
@@ -529,8 +527,8 @@ size_t dsp_runtime_run(dsp_runtime_t *runtime, size_t max_cycles, bool *deferred
 				runtime->core.state.pc, block_repeat_level, runtime->core.state.bcn, runtime->core.state.lp);
 	}
 
-	if (blocks != 0) {
-		DPRINTF("slices=%zu blocks=%zu jit=%"PRIu64" cycles=%zu run=%u idle=%u pc=%04X\n", slices, blocks,
+	if (slices != 0) {
+		DPRINTF("slices=%zu jit=%"PRIu64" cycles=%zu run=%u idle=%u pc=%04X\n", slices,
 			runtime->core.jit_entries - jit_entries, cycles, !runtime->halted, qatomic_read(&runtime->idle),
 			runtime->core.state.pc);
 		DPRINTF("cache=%"PRIu64"/%"PRIu64" compile=%"PRIu64" chain=%"PRIu64" irq=%"PRIu64
