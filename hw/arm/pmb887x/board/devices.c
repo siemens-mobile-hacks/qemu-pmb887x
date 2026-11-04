@@ -8,8 +8,8 @@
 #include "hw/arm/pmb887x/mmicif.h"
 #include "hw/arm/pmb887x/rf.h"
 #include "hw/arm/pmb887x/sim.h"
-#include "hw/arm/pmb887x/sim/sim_card.h"
 #include "hw/arm/pmb887x/ssc/lcd_common.h"
+#include "hw/arm/pmb887x/trace_common.h"
 #include "hw/arm/pmb887x/utils/regexp.h"
 #include "hw/arm/pmb887x/utils/toml.h"
 
@@ -97,7 +97,7 @@ static pmb887x_dev_t devices_meta[] = {
 		.props = {},
 	},
 	{
-		.name = "sim-card",
+		.name = TYPE_ISO7816_SLOT,
 		.props = {},
 	},
 
@@ -304,39 +304,6 @@ static void device_init_gpios_from_config(DeviceState *dev, toml_datum_t table) 
 	}
 }
 
-static void sim_card_apply_runtime_options(DeviceState *dev) {
-	const char *source = getenv("PMB887X_SIM");
-	if (!source)
-		return;
-
-	if (strcmp(source, "none") == 0) {
-		qdev_prop_set_bit(dev, "inserted", false);
-	} else if (strcmp(source, "virtual") == 0) {
-		const char *imsi = getenv("PMB887X_SIM_IMSI");
-		const char *operator_code = getenv("PMB887X_SIM_OPERATOR");
-		if (imsi)
-			qdev_prop_set_string(dev, "imsi", imsi);
-		if (operator_code)
-			qdev_prop_set_string(dev, "operator_code", operator_code);
-	} else if (strcmp(source, "reader") == 0) {
-		qdev_prop_set_string(dev, "apdu_backend", "cacard");
-		const char *reader_name = getenv("PMB887X_SIM_READER_NAME");
-		if (reader_name && reader_name[0] != '\0')
-			qdev_prop_set_string(dev, "reader", reader_name);
-	} else {
-		hw_error("Unknown SIM source: %s", source);
-	}
-}
-
-static void sim_card_realize_and_attach(DeviceState *card, pmb887x_sim_t *sim) {
-	if (!object_dynamic_cast(OBJECT(card), TYPE_PMB887X_SIM_CARD))
-		hw_error("Device '%s' is not a SIM card", object_get_typename(OBJECT(card)));
-	object_property_add_child(OBJECT(sim), card->id, OBJECT(card));
-	qdev_connect_clock_in(card, "clk", qdev_get_clock_out(DEVICE(sim), "CC_CLK"));
-	qdev_realize(card, NULL, &error_fatal);
-	pmb887x_sim_set_chardev(sim, pmb887x_sim_card_get_chardev(PMB887X_SIM_CARD(card)), &error_fatal);
-}
-
 static DeviceState *device_create_from_config(const char *id, toml_datum_t table) {
 	const char *type = toml_table_get_string(table, "type", NULL, true);
 	const char *bus_id = toml_table_get_string(table, "bus", NULL, false);
@@ -384,10 +351,11 @@ static void device_realize_from_config(GHashTable *devices, const char *id, toml
 			break;
 
 		case DEV_BUS_SIM:
-			sim_card_apply_runtime_options(dev);
-			sim_card_realize_and_attach(dev, PMB887X_SIM(bus));
+			qdev_connect_clock_in(dev, "CLK", qdev_get_clock_out(DEVICE(bus), "CC_CLK"));
+			qdev_prop_set_bit(dev, "trace", pmb887x_trace_log_enabled(PMB887X_TRACE_SIM_CARD));
+			pmb887x_sim_connect_slot(PMB887X_SIM(bus), ISO7816_SLOT(dev));
+			sysbus_realize_and_unref(SYS_BUS_DEVICE(dev), &error_fatal);
 			device_init_gpios_from_config(dev, table);
-			object_unref(OBJECT(dev));
 			break;
 
 		case DEV_BUS_EBU:
