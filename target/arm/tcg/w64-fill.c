@@ -114,20 +114,26 @@ void HELPER(w64_fill)(CPUARMState *env, uint32_t desc, uint32_t charge)
     }
 
     v = ldl_le_p(hs);
-    switch (width) {
-    case 1:
+    if (width == 1) {
         memset(hd, v & 0xff, k);
-        break;
-    case 2:
-        for (int64_t i = 0; i < k; i++) {
-            stw_le_p(hd + 2 * i, v);
+    } else {
+        /* the colour repeats every width bytes, so 8 of them fit any
+         * width-aligned offset: a quarter (or half) of the stores, and of
+         * their Android bounds checks */
+        uint64_t pattern = width == 2 ? (v & 0xffff) * 0x0001000100010001ULL
+                                      : v * 0x0000000100000001ULL;
+        size_t n = k * width, i = 0;
+
+        for (; i + 8 <= n; i += 8) {
+            stq_le_p(hd + i, pattern);
         }
-        break;
-    default:
-        for (int64_t i = 0; i < k; i++) {
-            stl_le_p(hd + 4 * i, v);
+        for (; i < n; i += width) {
+            if (width == 2) {
+                stw_le_p(hd + i, v);
+            } else {
+                stl_le_p(hd + i, v);
+            }
         }
-        break;
     }
 
     env->regs[rv] = v;
