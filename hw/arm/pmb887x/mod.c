@@ -1,7 +1,6 @@
 /*
  * Standart parts for all modules: CLC, SRB, SRC
  * */
-#define PMB887X_TRACE_ID		MOD
 #define PMB887X_TRACE_PREFIX	"pmb887x-mod"
 
 #include "hw/arm/pmb887x/mod.h"
@@ -333,5 +332,5 @@ void pmb887x_mod_debug_init(
 	debug_channel_init(ch, info, dev->id);
 	ch->io_format = &debug_regs_format;
 	ch->io_format_opaque = regs;
-	debug_channel_attach_mr(ch, mmio);
+	debug_channel_attach_mr(ch, mmio, 0);
 }

@@ -1,18 +1,18 @@
 /*
  * Multi Media Controller Interface
  */
-#define PMB887X_TRACE_ID MMICIF
 #define PMB887X_TRACE_PREFIX "pmb887x-mmicif"
 
 #include "qemu/osdep.h"
 #include "hw/core/qdev-properties.h"
 #include "hw/core/sysbus.h"
 #include "system/memory.h"
+#include "system/debug-channel.h"
 
 #include "hw/arm/pmb887x/gen/cpu_regs.h"
 #include "hw/arm/pmb887x/mmicif.h"
 #include "hw/arm/pmb887x/mod.h"
-#include "hw/arm/pmb887x/regs_dump.h"
+#include "hw/arm/pmb887x/gen/cpu_meta.h"
 #include "hw/arm/pmb887x/trace.h"
 
 #define PMB887X_MMICIF(obj) OBJECT_CHECK(pmb887x_mmicif_t, (obj), TYPE_PMB887X_MMICIF)
@@ -32,6 +32,7 @@ struct pmb887x_mmicif_t {
     SysBusDevice parent_obj;
     MemoryRegion mmio;
     MemoryRegion mmap;
+    DebugChannel dbg;
     pmb887x_mmicif_bus_t *bus;
     uint32_t revision;
     pmb887x_clc_reg_t clc;
@@ -53,6 +54,8 @@ struct pmb887x_mmicif_t {
     bool host_read_value_valid;
     bool host_index_valid;
 };
+
+DEBUG_CHANNEL_INFO(mmicif_debug, .name = TYPE_PMB887X_MMICIF)
 
 static DeviceState *mmicif_bus_get_device(pmb887x_mmicif_bus_t *bus) {
     BusChild *child = QTAILQ_FIRST(&BUS(bus)->children);
@@ -194,14 +197,11 @@ static uint64_t mmicif_io_read(void *opaque, hwaddr haddr, unsigned size) {
             break;
     }
 
-    IO_DUMP_READ(haddr + p->mmio.addr, size, value);
     return value;
 }
 
 static void mmicif_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned size) {
     pmb887x_mmicif_t *p = opaque;
-
-    IO_DUMP_WRITE(haddr + p->mmio.addr, size, value);
 
     switch (haddr) {
         case MMICIF_CLC:
@@ -304,15 +304,12 @@ static uint64_t mmicif_mmap_read(void *opaque, hwaddr haddr, unsigned size) {
             p->host_address += sizeof(uint32_t);
     }
 
-    IO_DUMP_READ(haddr + p->mmap.addr, size, value);
     return value;
 }
 
 static void mmicif_mmap_write(void *opaque, hwaddr haddr, uint64_t value, unsigned size) {
     pmb887x_mmicif_t *p = opaque;
     uint32_t mode = p->transfer_config & MMICIF_TRANSFER_CONFIG_MODE;
-
-    IO_DUMP_WRITE(haddr + p->mmap.addr, size, value);
 
     if (haddr == MMICIF_HOST_STATUS_OFFSET) {
         p->host_status = value & ~MMICIF_HOST_STATUS_READ_READY;
@@ -396,6 +393,13 @@ static void mmicif_reset(DeviceState *dev) {
     p->host_index_valid = false;
 }
 
+static void mmicif_realize(DeviceState *dev, Error **errp) {
+    pmb887x_mmicif_t *p = PMB887X_MMICIF(dev);
+
+    pmb887x_mod_debug_init(&p->dbg, &mmicif_debug, dev, &p->mmio, &pmb887x_mmicif_regs);
+    debug_channel_attach_mr(&p->dbg, &p->mmap, MMICIF_MMAP_BASE);
+}
+
 static const Property mmicif_properties[] = {
     DEFINE_PROP_UINT32("revision", pmb887x_mmicif_t, revision, 0),
     DEFINE_PROP_LINK("bus", pmb887x_mmicif_t, bus, TYPE_PMB887X_MMICIF_BUS, pmb887x_mmicif_bus_t *),
@@ -405,6 +409,7 @@ static void mmicif_class_init(ObjectClass *klass, const void *data) {
     DeviceClass *dc = DEVICE_CLASS(klass);
     device_class_set_props(dc, mmicif_properties);
     device_class_set_legacy_reset(dc, mmicif_reset);
+    dc->realize = mmicif_realize;
 }
 
 static const TypeInfo mmicif_info = {

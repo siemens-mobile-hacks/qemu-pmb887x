@@ -31,6 +31,7 @@
 #include "hw/arm/pmb887x/board/startup.h"
 
 #include "hw/arm/pmb887x/gen/brom.h"
+#include "hw/arm/pmb887x/gen/cpu_meta.h"
 #include "hw/arm/pmb887x/gen/cpu_modules.h"
 #include "hw/arm/pmb887x/gen/cpu_regs.h"
 
@@ -99,6 +100,32 @@ static void pmb887x_init_keymap(DeviceState *keypad, const uint32_t *map, int ma
     qdev_prop_set_array(keypad, "map", list);
 }
 
+static void pmb887x_init_gpio_names(DeviceState *gpio) {
+	const pmb887x_board_t *board = pmb887x_board();
+	QList *list = qlist_new();
+	for (uint32_t i = 0; i < board->gpios_count; i++) {
+		const pmb887x_cpu_meta_gpio_t *pin = &board->gpios[i];
+		qlist_append_str(list, strcmp(pin->func_name, pin->name) ? pin->func_name : "");
+	}
+	qdev_prop_set_array(gpio, "pin-names", list);
+}
+
+static void pmb887x_init_irq_names(DeviceState *vic) {
+	const pmb887x_cpu_meta_t *cpu = pmb887x_get_cpu_meta(pmb887x_board()->cpu);
+	uint32_t count = 0;
+	for (int i = 0; i < cpu->irqs_count; i++)
+		count = MAX(count, (cpu->irqs[i].addr - VIC_CON0) / 4 + 1);
+
+	g_autofree const char **names = g_new0(const char *, count);
+	for (int i = 0; i < cpu->irqs_count; i++)
+		names[(cpu->irqs[i].addr - VIC_CON0) / 4] = cpu->irqs[i].name;
+
+	QList *list = qlist_new();
+	for (uint32_t i = 0; i < count; i++)
+		qlist_append_str(list, names[i] ? names[i] : "");
+	qdev_prop_set_array(vic, "irq-names", list);
+}
+
 static void pmb887x_init(MachineState *machine) {
 	machine_used = true;
 
@@ -145,6 +172,7 @@ static void pmb887x_init(MachineState *machine) {
 
 	// 0x00000000-0xFFFFFFFF (Unmapped IO access)
 	DeviceState *unknown_io = qdev_new("pmb887x-unknown");
+	unknown_io->id = g_strdup("UNKNOWN");
 	sysbus_mmio_map(SYS_BUS_DEVICE(unknown_io), 0, 0);
 	sysbus_realize_and_unref(SYS_BUS_DEVICE(unknown_io), &error_fatal);
 
@@ -180,6 +208,7 @@ static void pmb887x_init(MachineState *machine) {
 
 	// VIC
 	DeviceState *vic = pmb887x_new_cpu_module("VIC");
+	pmb887x_init_irq_names(vic);
 	sysbus_connect_irq(SYS_BUS_DEVICE(vic), 0, qdev_get_gpio_in(DEVICE(cpu), ARM_CPU_IRQ));
 	sysbus_connect_irq(SYS_BUS_DEVICE(vic), 1, qdev_get_gpio_in(DEVICE(cpu), ARM_CPU_FIQ));
 	sysbus_realize_and_unref(SYS_BUS_DEVICE(vic), &error_fatal);
@@ -196,6 +225,7 @@ static void pmb887x_init(MachineState *machine) {
 
 	// Port Control Logic
 	DeviceState *gpio = pmb887x_new_cpu_module("GPIO");
+	pmb887x_init_gpio_names(gpio);
 	sysbus_realize_and_unref(SYS_BUS_DEVICE(gpio), &error_fatal);
 
 	// System Timer

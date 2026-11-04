@@ -1,7 +1,6 @@
 /*
  * VIC
  * */
-#define PMB887X_TRACE_ID		VIC
 #define PMB887X_TRACE_PREFIX	"pmb887x-vic"
 
 #include "qemu/osdep.h"
@@ -15,7 +14,8 @@
 
 #include "hw/arm/pmb887x/gen/cpu_regs.h"
 #include "hw/arm/pmb887x/io_bridge.h"
-#include "hw/arm/pmb887x/regs_dump.h"
+#include "hw/arm/pmb887x/gen/cpu_meta.h"
+#include "hw/arm/pmb887x/mod.h"
 #include "hw/arm/pmb887x/trace.h"
 
 #define TYPE_PMB887X_VIC	"pmb887x-vic"
@@ -43,6 +43,7 @@ struct pmb887x_vic_frame_t {
 struct pmb887x_vic_t {
 	SysBusDevice parent_obj;
 	MemoryRegion mmio;
+	DebugChannel dbg;
 	uint32_t revision;
 	
 	pmb887x_vic_irq_t irq_state[IRQS_COUNT];
@@ -63,7 +64,12 @@ struct pmb887x_vic_t {
 	pmb887x_vic_frame_t fiq_frames[VIC_FRAME_DEPTH];
 	uint8_t irq_depth;
 	uint8_t fiq_depth;
+
+	char **irq_names;
+	uint32_t irq_names_count;
 };
+
+DEBUG_CHANNEL_INFO(vic_debug, .name = TYPE_PMB887X_VIC)
 
 static uint32_t vic_get_nested_priority(pmb887x_vic_irq_t *line) {
 	if (!line->level)
@@ -244,15 +250,11 @@ static uint64_t vic_io_read(void *opaque, hwaddr haddr, unsigned size) {
 			break;
 	}
 	
-	IO_DUMP_READ(haddr + p->mmio.addr, size, value);
-	
 	return value;
 }
 
 static void vic_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned size) {
 	pmb887x_vic_t *p = opaque;
-	
-	IO_DUMP_WRITE(haddr + p->mmio.addr, size, value);
 	
 	switch (haddr) {
 		case VIC_IRQ_ACK:
@@ -321,7 +323,7 @@ static void vic_init(Object *obj) {
 	for (int i = 0; i < ARRAY_SIZE(p->irq_state); i++)
 		p->irq_state[i].id = i;
 	
-	DPRINTF("irq count: %d\n", IRQS_COUNT);
+	DEBUG_LOG(&p->dbg, "irq count: %d\n", IRQS_COUNT);
 	
 	qdev_init_gpio_in(DEVICE(obj), vic_irq_handler, IRQS_COUNT);
 	sysbus_init_irq(SYS_BUS_DEVICE(obj), &p->parent_irq);
@@ -353,13 +355,27 @@ static void vic_reset(DeviceState *dev) {
 	vic_update_state(p);
 }
 
+static const char *vic_debug_irq_suffix(const DebugChannel *ch, uint64_t offset) {
+	const pmb887x_vic_t *p = container_of(ch, pmb887x_vic_t, dbg);
+	if (offset < VIC_CON0)
+		return NULL;
+
+	uint64_t irq = (offset - VIC_CON0) / 4;
+	if (irq >= p->irq_names_count || !p->irq_names[irq][0])
+		return NULL;
+	return p->irq_names[irq];
+}
+
 static void vic_realize(DeviceState *dev, Error **errp) {
 	pmb887x_vic_t *p = PMB887X_VIC(dev);
+	pmb887x_mod_debug_init(&p->dbg, &vic_debug, dev, &p->mmio, &pmb887x_vic_regs);
+	p->dbg.get_reg_suffix = vic_debug_irq_suffix;
 	vic_update_state(p);
 }
 
 static const Property vic_properties[] = {
 	DEFINE_PROP_UINT32("revision", pmb887x_vic_t, revision, 0),
+	DEFINE_PROP_ARRAY("irq-names", pmb887x_vic_t, irq_names_count, irq_names, qdev_prop_string, char *),
 };
 
 static void vic_class_init(ObjectClass *klass, const void *data) {

@@ -1,7 +1,6 @@
 /*
  * GPRS Ciphering Unit
  */
-#define PMB887X_TRACE_ID GPRSCU
 #define PMB887X_TRACE_PREFIX "pmb887x-gprscu"
 
 #include "qemu/osdep.h"
@@ -12,7 +11,7 @@
 #include "hw/arm/pmb887x/fifo.h"
 #include "hw/arm/pmb887x/gen/cpu_regs.h"
 #include "hw/arm/pmb887x/mod.h"
-#include "hw/arm/pmb887x/regs_dump.h"
+#include "hw/arm/pmb887x/gen/cpu_meta.h"
 #include "hw/arm/pmb887x/trace.h"
 
 #define TYPE_PMB887X_GPRSCU "pmb887x-gprscu"
@@ -31,6 +30,7 @@ typedef struct pmb887x_gprscu_t pmb887x_gprscu_t;
 struct pmb887x_gprscu_t {
 	SysBusDevice parent_obj;
 	MemoryRegion mmio;
+	DebugChannel dbg;
 	uint32_t revision;
 
 	qemu_irq irq[2];
@@ -48,6 +48,8 @@ struct pmb887x_gprscu_t {
 	pmb887x_fifo8_t input_fifo;
 	pmb887x_fifo8_t output_fifo;
 };
+
+DEBUG_CHANNEL_INFO(gprscu_debug, .name = TYPE_PMB887X_GPRSCU)
 
 static void gprscu_process_fifo(pmb887x_gprscu_t *p) {
 	bool control_conversion = (p->con & (GPRSCU_CON_CRC_CTRL | GPRSCU_CON_CIPH_CTRL)) != 0;
@@ -153,14 +155,11 @@ static uint64_t gprscu_io_read(void *opaque, hwaddr haddr, unsigned int size) {
 			break;
 	}
 
-	IO_DUMP_READ(haddr + p->mmio.addr, size, value);
 	return value;
 }
 
 static void gprscu_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned int size) {
 	pmb887x_gprscu_t *p = opaque;
-
-	IO_DUMP_WRITE(haddr + p->mmio.addr, size, value);
 
 	switch (haddr) {
 		case GPRSCU_CLC:
@@ -258,6 +257,7 @@ static void gprscu_reset(DeviceState *dev) {
 
 static void gprscu_realize(DeviceState *dev, Error **errp) {
 	pmb887x_gprscu_t *p = PMB887X_GPRSCU(dev);
+	pmb887x_mod_debug_init(&p->dbg, &gprscu_debug, dev, &p->mmio, &pmb887x_gprscu_regs);
 
 	for (size_t index = 0; index < ARRAY_SIZE(p->src); index++)
 		pmb887x_src_init(&p->src[index], p->irq[index]);

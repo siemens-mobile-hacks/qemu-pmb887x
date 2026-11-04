@@ -1,7 +1,6 @@
 /*
  * Time Processing Unit
  * */
-#define PMB887X_TRACE_ID		TPU
 #define PMB887X_TRACE_PREFIX	"pmb887x-tpu"
 
 #include "qemu/osdep.h"
@@ -22,7 +21,7 @@
 #include "hw/arm/pmb887x/dsp.h"
 #include "hw/arm/pmb887x/dsp/signals.h"
 #include "hw/arm/pmb887x/gen/cpu_regs.h"
-#include "hw/arm/pmb887x/regs_dump.h"
+#include "hw/arm/pmb887x/gen/cpu_meta.h"
 #include "hw/arm/pmb887x/mod.h"
 #include "hw/arm/pmb887x/tpu.h"
 #include "hw/arm/pmb887x/trace.h"
@@ -97,6 +96,7 @@ typedef struct pmb887x_tpu_t pmb887x_tpu_t;
 struct pmb887x_tpu_t {
 	SysBusDevice parent_obj;
 	MemoryRegion mmio;
+	DebugChannel dbg;
 	uint32_t revision;
 	
 	// regs
@@ -166,6 +166,8 @@ struct pmb887x_tpu_t {
 	
 	uint32_t unk;
 };
+
+DEBUG_CHANNEL_INFO(tpu_debug, .name = TYPE_PMB887X_TPU)
 
 static uint64_t tpu_get_counter(pmb887x_tpu_t *p) {
 	uint64_t counter = p->counter;
@@ -338,7 +340,7 @@ static void tpu_rf_control_trigger(pmb887x_tpu_t *p) {
 			value = (value << 8) | (tpu_ram_word_read(p, word + i + 1) & TPU_RF_TELEGRAM_DATA_MASK);
 
 		uint32_t strobe = ((control & TPU_RF_TELEGRAM_STROBE_MASK) >> TPU_RF_TELEGRAM_STROBE_SHIFT);
-		DPRINTF("RF trigger: counter=%04X trigger=%u slot=%u control=%04X bits=%u strobe=%u value=%08X\n",
+		DEBUG_LOG(&p->dbg, "RF trigger: counter=%04X trigger=%u slot=%u control=%04X bits=%u strobe=%u value=%08X\n",
 			p->counter, trigger, index, control, bits, strobe, value);
 
 		p->rfcon2 = tpu_rf_telegram_control(control, bits);
@@ -382,7 +384,7 @@ static void tpu_set_gsm_signal(
 	} else {
 		p->gsm_signals &= (uint16_t) ~mask;
 	}
-	DPRINTF("GSM signal: counter=%04X time=%" PRId64 " ns signal=%s level=%u\n", p->counter,
+	DEBUG_LOG(&p->dbg, "GSM signal: counter=%04X time=%" PRId64 " ns signal=%s level=%u\n", p->counter,
 		timestamp_ns, SIGNAL_NAMES[signal], level);
 	if (p->dsp != NULL)
 		pmb887x_dsp_set_gsm_signal(p->dsp, signal, level, timestamp_ns);
@@ -484,7 +486,7 @@ static void tpu_execute_event(
 	p->triggers &= TPU_EVENT_TRIGGER_MASK;
 	decoder = (p->triggers >> TPU_EVENT_DECODER_SHIFT) & TPU_EVENT_DECODER_MASK;
 	uint32_t rf_trigger = (p->triggers & TPU_RF_TRIGGER_MASK);
-	DPRINTF("event execute: event=%03X counter=%04X control=%04X action=%04X triggers=%06X->%06X decoder=%u rf=%u\n",
+	DEBUG_LOG(&p->dbg, "event execute: event=%03X counter=%04X control=%04X action=%04X triggers=%06X->%06X decoder=%u rf=%u\n",
 		event, p->counter, control, timer_bits_low, old_triggers, p->triggers, decoder, rf_trigger);
 	tpu_rf_control_trigger(p);
 	tpu_decode_gsm_signal(p, decoder, timestamp_ns);
@@ -664,7 +666,7 @@ static void tpu_update_state(pmb887x_tpu_t *p) {
 		p->freq = new_freq;
 		p->enabled = enabled;
 		clock_update_hz(p->gsm_clock, p->freq);
-		DPRINTF("input=%d, ftpu=%d, fcounter=%d [%s]\n", pmb887x_clc_get_input_hz(&p->clc), ftpu,
+		DEBUG_LOG(&p->dbg, "input=%d, ftpu=%d, fcounter=%d [%s]\n", pmb887x_clc_get_input_hz(&p->clc), ftpu,
 			p->freq, p->enabled ? "ON" : "OFF");
 	}
 
@@ -863,15 +865,11 @@ static uint64_t tpu_io_read(void *opaque, hwaddr haddr, unsigned size) {
 			break;
 	}
 	
-	IO_DUMP_READ(haddr + p->mmio.addr, size, value);
-	
 	return value;
 }
 
 static void tpu_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned size) {
 	pmb887x_tpu_t *p = (struct pmb887x_tpu_t *) opaque;
-	
-	IO_DUMP_WRITE(haddr + p->mmio.addr, size, value);
 	
 	switch (haddr) {
 		case TPU_CLC:
@@ -894,7 +892,7 @@ static void tpu_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned si
 			break;
 
 		case TPU_RFSSCTB:
-			DPRINTF("RF control: %04X\n", (uint16_t) value);
+			DEBUG_LOG(&p->dbg, "RF control: %04X\n", (uint16_t) value);
 			p->rfssc_tb = (uint16_t) value;
 			p->rfssc_buffer_full = true;
 			if (p->rfssc_active && p->rfssc_direct_transfer) {
@@ -1059,6 +1057,7 @@ static void tpu_init(Object *obj) {
 
 static void tpu_realize(DeviceState *dev, Error **_errp) {
 	pmb887x_tpu_t *p = PMB887X_TPU(dev);
+	pmb887x_mod_debug_init(&p->dbg, &tpu_debug, dev, &p->mmio, &pmb887x_tpu_regs);
 	
 	pmb887x_clc_set(&p->clc, MOD_CLC_DISR);
 	pmb887x_src_init(&p->rfssc_src, p->rfssc_irq);

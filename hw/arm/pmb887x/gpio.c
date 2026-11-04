@@ -1,7 +1,6 @@
 /*
  * Port Control Logic
  * */
-#define PMB887X_TRACE_ID		GPIO
 #define PMB887X_TRACE_PREFIX	"pmb887x-gpio"
 
 #include "qemu/osdep.h"
@@ -11,7 +10,7 @@
 #include "qapi/error.h"
 #include "cpu.h"
 
-#include "hw/arm/pmb887x/regs_dump.h"
+#include "hw/arm/pmb887x/gen/cpu_meta.h"
 #include "hw/arm/pmb887x/mod.h"
 #include "hw/arm/pmb887x/trace.h"
 #include "hw/arm/pmb887x/io_bridge.h"
@@ -27,6 +26,7 @@ typedef struct pmb887x_gpio_t pmb887x_gpio_t;
 struct pmb887x_gpio_t {
 	SysBusDevice parent_obj;
 	MemoryRegion mmio;
+	DebugChannel dbg;
 	uint32_t revision;
 	
 	pmb887x_clc_reg_t clc;
@@ -40,9 +40,11 @@ struct pmb887x_gpio_t {
 	qemu_irq mon3_out;
 	qemu_irq mon4_out;
 
-	const char **names;
-	uint32_t names_count;
+	char **pin_names;
+	uint32_t pin_names_count;
 };
+
+DEBUG_CHANNEL_INFO(gpio_debug, .name = TYPE_PMB887X_GPIO)
 
 static uint8_t gpio_get_mux_is(pmb887x_gpio_t *p, int pin) {
 	if ((p->pins[pin] & GPIO_IS) != GPIO_IS_NONE)
@@ -88,7 +90,6 @@ static uint64_t gpio_io_read(void *opaque, hwaddr haddr, unsigned size) {
 
 	#if PMB887X_IO_BRIDGE
 	value = pmb8876_io_bridge_read(haddr + p->mmio.addr, size);
-	IO_DUMP_READ(haddr + p->mmio.addr, size, value);
 	return value;
 	#endif
 	
@@ -123,16 +124,12 @@ static uint64_t gpio_io_read(void *opaque, hwaddr haddr, unsigned size) {
 			break;
 	}
 	
-	IO_DUMP_READ(haddr + p->mmio.addr, size, value);
-	
 	return value;
 }
 
 static void gpio_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned size) {
 	pmb887x_gpio_t *p = opaque;
 	
-	IO_DUMP_WRITE(haddr + p->mmio.addr, size, value);
-
 	#if PMB887X_IO_BRIDGE
 	pmb8876_io_bridge_write(haddr + p->mmio.addr, size, value);
 	return;
@@ -218,7 +215,7 @@ static void gpio_init(Object *obj) {
 	pmb887x_clc_init(&p->clc, dev);
 	memory_region_init_io(&p->mmio, obj, &io_ops, p, "pmb887x-gpio", GPIO_IO_SIZE);
 	sysbus_init_mmio(SYS_BUS_DEVICE(obj), &p->mmio);
-	DPRINTF("gpio count: %d\n", GPIOS_COUNT);
+	DEBUG_LOG(&p->dbg, "gpio count: %d\n", GPIOS_COUNT);
 
 	qdev_init_gpio_in_named(dev, gpio_input_handler, "pin_in", GPIOS_COUNT);
 	qdev_init_gpio_out_named(dev, p->pins_out[0], "pin_out", GPIOS_COUNT);
@@ -263,8 +260,21 @@ static void gpio_reset(DeviceState *dev) {
 
 }
 
+static const char *gpio_debug_pin_suffix(const DebugChannel *ch, uint64_t offset) {
+	const pmb887x_gpio_t *p = container_of(ch, pmb887x_gpio_t, dbg);
+	if (offset < GPIO_PIN0 || offset > GPIO_PIN113)
+		return NULL;
+
+	uint64_t pin = (offset - GPIO_PIN0) / 4;
+	if (pin >= p->pin_names_count || !p->pin_names[pin][0])
+		return NULL;
+	return p->pin_names[pin];
+}
+
 static void gpio_realize(DeviceState *dev, Error **errp) {
 	pmb887x_gpio_t *p = PMB887X_GPIO(dev);
+	pmb887x_mod_debug_init(&p->dbg, &gpio_debug, dev, &p->mmio, &pmb887x_gpio_regs);
+	p->dbg.get_reg_suffix = gpio_debug_pin_suffix;
 	pmb887x_clc_set(&p->clc, 1U << MOD_CLC_RMC_SHIFT);
 	for (int id = 0; id < GPIOS_COUNT; id++) {
 		p->pins[id] = GPIO_PS_MANUAL | GPIO_DIR_IN | GPIO_ENAQ_ON | GPIO_PDPU_PULLDOWN | GPIO_PPEN_PUSHPULL;
@@ -274,6 +284,7 @@ static void gpio_realize(DeviceState *dev, Error **errp) {
 
 static const Property gpio_properties[] = {
 	DEFINE_PROP_UINT32("revision", pmb887x_gpio_t, revision, 0),
+	DEFINE_PROP_ARRAY("pin-names", pmb887x_gpio_t, pin_names_count, pin_names, qdev_prop_string, char *),
 };
 
 static void gpio_class_init(ObjectClass *klass, const void *data) {

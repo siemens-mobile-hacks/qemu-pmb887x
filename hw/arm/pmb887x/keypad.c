@@ -1,7 +1,6 @@
 /*
  * Keypad
  * */
-#define PMB887X_TRACE_ID		KEYPAD
 #define PMB887X_TRACE_PREFIX	"pmb887x-keypad"
 
 #include "qemu/osdep.h"
@@ -12,7 +11,7 @@
 #include "ui/input.h"
 
 #include "hw/arm/pmb887x/gen/cpu_regs.h"
-#include "hw/arm/pmb887x/regs_dump.h"
+#include "hw/arm/pmb887x/gen/cpu_meta.h"
 #include "hw/arm/pmb887x/mod.h"
 #include "hw/arm/pmb887x/trace.h"
 
@@ -35,6 +34,7 @@ typedef struct pmb887x_keypad_t pmb887x_keypad_t;
 struct pmb887x_keypad_t {
 	SysBusDevice parent_obj;
 	MemoryRegion mmio;
+	DebugChannel dbg;
 	uint32_t revision;
 	
 	qemu_irq irq[4];
@@ -56,6 +56,8 @@ struct pmb887x_keypad_t {
 	qemu_irq ready_out;
 	bool ready;
 };
+
+DEBUG_CHANNEL_INFO(keypad_debug, .name = TYPE_PMB887X_KEYPAD)
 
 static void keypad_signal_ready(pmb887x_keypad_t *p) {
 	if (p->ready)
@@ -145,15 +147,11 @@ static uint64_t keypad_io_read(void *opaque, hwaddr haddr, unsigned size) {
 			break;
 	}
 	
-	IO_DUMP_READ(haddr + p->mmio.addr, size, value);
-	
 	return value;
 }
 
 static void keypad_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned size) {
 	pmb887x_keypad_t *p = opaque;
-	
-	IO_DUMP_WRITE(haddr + p->mmio.addr, size, value);
 	
 	switch (haddr) {
 		case KEYPAD_CON:
@@ -221,6 +219,7 @@ static void keypad_init(Object *obj) {
 
 static void keypad_realize(DeviceState *dev, Error **errp) {
 	pmb887x_keypad_t *p = PMB887X_KEYPAD(dev);
+	pmb887x_mod_debug_init(&p->dbg, &keypad_debug, dev, &p->mmio, &pmb887x_keypad_regs);
 	
 	p->con = 0;
 	p->extension = 0;

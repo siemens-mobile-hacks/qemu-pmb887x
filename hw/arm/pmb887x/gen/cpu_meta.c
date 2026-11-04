@@ -2746,9 +2746,15 @@ static const DebugReg dsp_regs[] = {
 	{"COM_STATUS",	DSP_COM_STATUS,	dsp_com_status_fields,	ARRAY_SIZE(dsp_com_status_fields)},
 };
 
+static const DebugRegion dsp_regions[] = {
+	{"RAM",	DSP_RAM_BASE,	0x1800},
+};
+
 const DebugRegs pmb887x_dsp_regs = {
 	.regs = dsp_regs,
 	.count = ARRAY_SIZE(dsp_regs),
+	.regions = dsp_regions,
+	.regions_count = ARRAY_SIZE(dsp_regions),
 	.reg_size = 4,
 	.addr_digits = 8,
 };
@@ -4736,9 +4742,15 @@ static const DebugReg mmicif_regs[] = {
 	{"UNK80",			MMICIF_UNK80,			NULL,							0},
 };
 
+static const DebugRegion mmicif_regions[] = {
+	{"MMAP",	MMICIF_MMAP_BASE,	0x1000000},
+};
+
 const DebugRegs pmb887x_mmicif_regs = {
 	.regs = mmicif_regs,
 	.count = ARRAY_SIZE(mmicif_regs),
+	.regions = mmicif_regions,
+	.regions_count = ARRAY_SIZE(mmicif_regions),
 	.reg_size = 4,
 	.addr_digits = 8,
 };
@@ -6051,9 +6063,15 @@ static const DebugReg tpu_regs[] = {
 	{"SRC1",		TPU_SRC1,		tpu_src_fields,			ARRAY_SIZE(tpu_src_fields)},
 };
 
+static const DebugRegion tpu_regions[] = {
+	{"RAM",	TPU_RAM_BASE,	0x1000},
+};
+
 const DebugRegs pmb887x_tpu_regs = {
 	.regs = tpu_regs,
 	.count = ARRAY_SIZE(tpu_regs),
+	.regions = tpu_regions,
+	.regions_count = ARRAY_SIZE(tpu_regions),
 	.reg_size = 4,
 	.addr_digits = 8,
 };

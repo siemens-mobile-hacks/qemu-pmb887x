@@ -1,15 +1,14 @@
 /*
  * Unknown memory
  * */
-#define PMB887X_TRACE_ID		UNKNOWN
 #define PMB887X_TRACE_PREFIX	"pmb887x-unknown"
 
 #include "qemu/osdep.h"
 #include "hw/core/sysbus.h"
 #include "system/memory.h"
+#include "system/debug-channel.h"
 
 #include "hw/arm/pmb887x/io_bridge.h"
-#include "hw/arm/pmb887x/regs_dump.h"
 #include "hw/arm/pmb887x/trace.h"
 
 #define TYPE_PMB887X_UNKNOWN	"pmb887x-unknown"
@@ -20,16 +19,16 @@ typedef struct pmb887x_unknown_t pmb887x_unknown_t;
 struct pmb887x_unknown_t {
 	SysBusDevice parent_obj;
 	MemoryRegion mmio;
+	DebugChannel dbg;
 };
 
-static uint64_t unknown_io_read(void *opaque, hwaddr haddr, unsigned size) {
-	pmb887x_unknown_t *p = opaque;
+DEBUG_CHANNEL_INFO(unknown_debug, .name = TYPE_PMB887X_UNKNOWN)
 
+static uint64_t unknown_io_read(void *_opaque, hwaddr haddr, unsigned size) {
 	uint64_t value = 0;
 
 	#if PMB887X_IO_BRIDGE
 	value = pmb8876_io_bridge_read(haddr, size);
-	IO_DUMP_READ(haddr + p->mmio.addr, size, value);
 	return value;
 	#endif
 
@@ -39,22 +38,13 @@ static uint64_t unknown_io_read(void *opaque, hwaddr haddr, unsigned size) {
 	if (haddr == 0xF4C00000)
 		value = 0xFFFFFFFF;
 
-	IO_DUMP_READ(haddr + p->mmio.addr, size, value);
-
 	return value;
 }
 
-static void unknown_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned size) {
-	pmb887x_unknown_t *p = opaque;
-
+static void unknown_io_write(void *_opaque, hwaddr haddr, uint64_t value, unsigned size) {
 #if PMB887X_IO_BRIDGE
-	IO_DUMP_WRITE(haddr + p->mmio.addr, size, value);
 	pmb8876_io_bridge_write(haddr, size, value);
-	return;
 #endif
-
-	IO_DUMP_WRITE(haddr + p->mmio.addr, size, value);
-
 }
 
 static const MemoryRegionOps io_ops = {
@@ -73,11 +63,25 @@ static void unknown_init(Object *obj) {
 	sysbus_init_mmio(SYS_BUS_DEVICE(obj), &p->mmio);
 }
 
+static void unknown_realize(DeviceState *dev, Error **errp) {
+	pmb887x_unknown_t *p = PMB887X_UNKNOWN(dev);
+
+	debug_channel_init(&p->dbg, &unknown_debug, dev->id);
+	debug_channel_attach_mr(&p->dbg, &p->mmio, 0);
+}
+
+static void unknown_class_init(ObjectClass *klass, const void *data) {
+	DeviceClass *dc = DEVICE_CLASS(klass);
+
+	dc->realize = unknown_realize;
+}
+
 static const TypeInfo unknown_info = {
 	.name          	= TYPE_PMB887X_UNKNOWN,
 	.parent        	= TYPE_SYS_BUS_DEVICE,
 	.instance_size 	= sizeof(struct pmb887x_unknown_t),
 	.instance_init 	= unknown_init,
+	.class_init    	= unknown_class_init,
 };
 
 static void unknown_register_types(void) {

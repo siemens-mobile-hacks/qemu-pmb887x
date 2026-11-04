@@ -1,7 +1,6 @@
 /*
  * DSP
  */
-#define PMB887X_TRACE_ID		DSP
 #define PMB887X_TRACE_PREFIX	"pmb887x-dsp"
 
 #include "qemu/osdep.h"
@@ -15,6 +14,7 @@
 #include "hw/audio/i2s.h"
 #include "hw/ssi/ssi.h"
 #include "system/runstate.h"
+#include "system/debug-channel.h"
 
 #include "hw/arm/pmb887x/dsp/runtime.h"
 
@@ -24,7 +24,7 @@
 #include "hw/arm/pmb887x/dsp.h"
 #include "hw/arm/pmb887x/dsp/config.h"
 #include "hw/arm/pmb887x/dsp/peripheral/internal.h"
-#include "hw/arm/pmb887x/regs_dump.h"
+#include "hw/arm/pmb887x/gen/cpu_meta.h"
 #include "hw/arm/pmb887x/mod.h"
 #include "hw/arm/pmb887x/rf.h"
 #include "hw/arm/pmb887x/trace.h"
@@ -66,6 +66,7 @@ struct dsp_state_t {
 	MemoryRegion mmio;
 	MemoryRegion regs;
 	MemoryRegion ram;
+	DebugChannel dbg;
 	uint32_t revision;
 	uint32_t rom_version;
 	const pmb887x_dsp_config_t *config;
@@ -97,6 +98,8 @@ struct dsp_state_t {
 	pmb887x_iq_bus_t *iq_rx_bus;
 	SSIBus *ssc_bus;
 };
+
+DEBUG_CHANNEL_INFO(dsp_debug, .name = TYPE_PMB887X_DSP)
 
 static void dsp_clock_update(void *opaque);
 
@@ -317,7 +320,7 @@ static void dsp_notify_activity(void *opaque) {
 
 static void dsp_notify_comm(void *opaque, uint16_t flags, bool set) {
 	dsp_state_t *p = opaque;
-	DPRINTF("comm: flags=%04X set=%u pc=%05X time=%" PRId64 "\n", flags, set,
+	DEBUG_LOG(&p->dbg, "comm: flags=%04X set=%u pc=%05X time=%" PRId64 "\n", flags, set,
 		dsp_runtime_get_pc(p->runtime), dsp_get_time_ns(p));
 
 	if (set) {
@@ -389,7 +392,7 @@ static void dsp_trace_command(dsp_state_t *p, size_t pipe) {
 		if (command != DSP_BOOT_BRANCH)
 			words = dsp_runtime_shared_read(p->runtime, DSP_BOOT_DATA_OFFSET + 2);
 
-		DPRINTF("boot command: %s(%u) address=%04X words=%u\n", dsp_boot_command_name(command), command, address, words);
+		DEBUG_LOG(&p->dbg, "boot command: %s(%u) address=%04X words=%u\n", dsp_boot_command_name(command), command, address, words);
 
 		if (command == DSP_BOOT_BRANCH)
 			p->trace_boot_mode = false;
@@ -398,7 +401,7 @@ static void dsp_trace_command(dsp_state_t *p, size_t pipe) {
 
 	uint16_t offset = DSP_RUNTIME_PIPE_OFFSET + pipe * DSP_RUNTIME_PIPE_STRIDE;
 	uint16_t command = dsp_runtime_shared_read(p->runtime, offset);
-	DPRINTF("runtime command: pipe=%zu command=%u (0x%04X)\n", pipe, command, command);
+	DEBUG_LOG(&p->dbg, "runtime command: pipe=%zu command=%u (0x%04X)\n", pipe, command, command);
 }
 
 static void dsp_interrupt_input(void *opaque, int id, int level) {
@@ -407,7 +410,7 @@ static void dsp_interrupt_input(void *opaque, int id, int level) {
 	if (!level)
 		return;
 
-	if (pmb887x_trace_log_enabled(PMB887X_TRACE_DSP))
+	if (debug_channel_is_enabled(&p->dbg, DEBUG_CH_LOG))
 		dsp_trace_command(p, id);
 
 	dsp_runtime_set_request(p->runtime, id, true);
@@ -483,7 +486,7 @@ static uint64_t dsp_io_read(void *opaque, hwaddr haddr, unsigned size) {
 				dsp_schedule_sync(p);
 			}
 			if (dsp_runtime_take_program_start(p->runtime, &program_start_pc))
-				DPRINTF("cold program start: pc=%05X flags=%04" PRIX64 "\n", program_start_pc, value);
+				DEBUG_LOG(&p->dbg, "cold program start: pc=%05X flags=%04" PRIX64 "\n", program_start_pc, value);
 			break;
 		}
 
@@ -502,7 +505,6 @@ static uint64_t dsp_io_read(void *opaque, hwaddr haddr, unsigned size) {
 			break;
 	}
 
-	IO_DUMP_READ(haddr + p->mmio.addr, size, value);
 	return value;
 }
 
@@ -543,7 +545,6 @@ static void dsp_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned si
 	}
 
 	dsp_schedule_sync(p);
-	IO_DUMP_WRITE(haddr + p->mmio.addr, size, value);
 }
 
 static const MemoryRegionOps io_ops = {
@@ -560,32 +561,24 @@ static uint64_t dsp_ram_read(void *opaque, hwaddr haddr, unsigned size) {
 	dsp_state_t *p = opaque;
 	uint64_t value;
 
-	if (!dsp_mcu_interface_is_enabled(p)) {
-		IO_DUMP_READ(haddr + p->mmio.addr + DSP_RAM0, size, 0);
+	if (!dsp_mcu_interface_is_enabled(p))
 		return 0;
-	}
 	p->comm_transition_pending = false;
 	dsp_sync_access(p);
 	value = dsp_runtime_shared_read_bytes(p->runtime, haddr, size);
-
-	IO_DUMP_READ(haddr + p->mmio.addr + DSP_RAM0, size, value);
 	return value;
 }
 
 static void dsp_ram_write(void *opaque, hwaddr haddr, uint64_t value, unsigned size) {
 	dsp_state_t *p = opaque;
 
-	if (!dsp_mcu_interface_is_enabled(p)) {
-		IO_DUMP_WRITE(haddr + p->mmio.addr + DSP_RAM0, size, value);
+	if (!dsp_mcu_interface_is_enabled(p))
 		return;
-	}
 	p->comm_transition_pending = false;
 	dsp_sync_access(p);
 
 	dsp_runtime_shared_write_bytes(p->runtime, haddr, value, size);
 	dsp_schedule_sync(p);
-
-	IO_DUMP_WRITE(haddr + p->mmio.addr + DSP_RAM0, size, value);
 }
 
 static const MemoryRegionOps ram_io_ops = {
@@ -673,6 +666,7 @@ static void dsp_realize(DeviceState *dev, Error **errp) {
 	const pmb887x_dsp_rom_t *rom;
 	size_t shared_ram_size;
 
+	pmb887x_mod_debug_init(&p->dbg, &dsp_debug, dev, &p->regs, &pmb887x_dsp_regs);
 	if (p->config == NULL) {
 		error_setg(errp, "DSP configuration is not set");
 		return;
@@ -687,6 +681,7 @@ static void dsp_realize(DeviceState *dev, Error **errp) {
 	shared_ram_size = config->shared_size * sizeof(uint16_t);
 	memory_region_init_io(&p->ram, OBJECT(dev), &ram_io_ops, p, "pmb887x-dsp-ram", shared_ram_size);
 	memory_region_add_subregion(&p->mmio, DSP_RAM0, &p->ram);
+	debug_channel_attach_mr(&p->dbg, &p->ram, DSP_RAM_BASE);
 	if (p->rom_version == 0)
 		p->rom_version = config->default_rom_version;
 
@@ -718,7 +713,7 @@ static void dsp_realize(DeviceState *dev, Error **errp) {
 	p->vmstate = qdev_add_vm_change_state_handler(dev, dsp_vm_state_change, NULL, p);
 	pmb887x_clc_set(&p->clc, MOD_CLC_DISR);
 	dsp_reset_internal_state(p);
-	DPRINTF("core initialized: cpu=%s revision=%02X rom_version=%04X\n", config->name, p->revision, p->rom_version);
+	DEBUG_LOG(&p->dbg, "core initialized: cpu=%s revision=%02X rom_version=%04X\n", config->name, p->revision, p->rom_version);
 }
 
 static void dsp_unrealize(DeviceState *dev) {

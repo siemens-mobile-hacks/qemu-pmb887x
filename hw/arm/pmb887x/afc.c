@@ -1,7 +1,6 @@
 /*
  * Automatic Frequency Correction
  * */
-#define PMB887X_TRACE_ID		AFC
 #define PMB887X_TRACE_PREFIX	"pmb887x-afc"
 
 #include "qemu/osdep.h"
@@ -11,7 +10,7 @@
 
 #include "hw/arm/pmb887x/gen/cpu_regs.h"
 #include "hw/arm/pmb887x/mod.h"
-#include "hw/arm/pmb887x/regs_dump.h"
+#include "hw/arm/pmb887x/gen/cpu_meta.h"
 #include "hw/arm/pmb887x/trace.h"
 
 #define TYPE_PMB887X_AFC	"pmb887x-afc"
@@ -22,10 +21,13 @@ typedef struct pmb887x_afc_t pmb887x_afc_t;
 struct pmb887x_afc_t {
 	SysBusDevice parent_obj;
 	MemoryRegion mmio;
+	DebugChannel dbg;
 	pmb887x_clc_reg_t clc;
 	uint32_t revision;
 	uint32_t afcval;
 };
+
+DEBUG_CHANNEL_INFO(afc_debug, .name = TYPE_PMB887X_AFC)
 
 static uint64_t afc_io_read(void *opaque, hwaddr haddr, unsigned size) {
 	pmb887x_afc_t *p = opaque;
@@ -49,14 +51,11 @@ static uint64_t afc_io_read(void *opaque, hwaddr haddr, unsigned size) {
 			break;
 	}
 
-	IO_DUMP_READ(haddr + p->mmio.addr, size, value);
 	return value;
 }
 
 static void afc_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned size) {
 	pmb887x_afc_t *p = opaque;
-
-	IO_DUMP_WRITE(haddr + p->mmio.addr, size, value);
 
 	switch (haddr) {
 		case AFC_CLC:
@@ -98,6 +97,11 @@ static void afc_reset(DeviceState *dev) {
 	p->afcval = 0;
 }
 
+static void afc_realize(DeviceState *dev, Error **errp) {
+	pmb887x_afc_t *p = PMB887X_AFC(dev);
+	pmb887x_mod_debug_init(&p->dbg, &afc_debug, dev, &p->mmio, &pmb887x_afc_regs);
+}
+
 static const Property afc_properties[] = {
 	DEFINE_PROP_UINT32("revision", pmb887x_afc_t, revision, 0),
 };
@@ -107,6 +111,7 @@ static void afc_class_init(ObjectClass *klass, const void *data) {
 
 	device_class_set_props(dc, afc_properties);
 	device_class_set_legacy_reset(dc, afc_reset);
+	dc->realize = afc_realize;
 }
 
 static const TypeInfo afc_info = {
