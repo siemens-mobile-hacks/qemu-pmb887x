@@ -1,6 +1,4 @@
-#define PMB887X_TRACE_ID		DSP_MCS
 #define PMB887X_TRACE_PREFIX	"pmb887x-dsp-mcs"
-#define PMB887X_TRACE_IO		PMB887X_TRACE_IO_DSP
 
 #include "qemu/osdep.h"
 #include "qemu/atomic.h"
@@ -144,7 +142,7 @@ static bool mcs_read(dsp_device_t *device, uint16_t offset, uint32_t pc, uint16_
 			break;
 	}
 
-	IO_DUMP_READ_EX(device->config->base + offset, sizeof(*value), *value, pc, 0);
+	dsp_device_debug_io(device, offset, *value, false, pc);
 	return true;
 }
 
@@ -181,9 +179,10 @@ static bool mcs_write(dsp_device_t *device, uint16_t offset, uint32_t pc, uint16
 			break;
 	}
 
-	IO_DUMP_WRITE_EX(device->config->base + offset, sizeof(value), value, pc, 0);
+	dsp_device_debug_io(device, offset, value, true, pc);
 	return true;
 }
+
 
 static const dsp_device_ops_t mcs_ops = {
 	.destroy = mcs_destroy,
@@ -192,10 +191,14 @@ static const dsp_device_ops_t mcs_ops = {
 	.write = mcs_write,
 };
 
-dsp_device_t *mcs_create(const pmb887x_dsp_peripheral_config_t *config, const dsp_host_t *host) {
+dsp_device_t *mcs_create(
+	const pmb887x_dsp_peripheral_config_t *config,
+	const DebugChannel *parent,
+	const dsp_host_t *host
+) {
 	mcs_state_t *state = g_new0(mcs_state_t, 1);
 	state->host = *host;
-	return dsp_device_create(config, &mcs_ops, state);
+	return dsp_device_create(config, parent, &mcs_ops, state);
 }
 
 uint16_t mcs_get_flags(dsp_device_t *device) {

@@ -1,6 +1,4 @@
-#define PMB887X_TRACE_ID		DSP_AFE
 #define PMB887X_TRACE_PREFIX	"pmb887x-dsp-afe"
-#define PMB887X_TRACE_IO		PMB887X_TRACE_IO_DSP
 
 #include "qemu/osdep.h"
 
@@ -109,7 +107,7 @@ static bool afe_read(dsp_device_t *device, uint16_t offset, uint32_t pc, uint16_
 			break;
 	}
 
-	IO_DUMP_READ_EX(device->config->base + offset, sizeof(*value), *value, pc, 0);
+	dsp_device_debug_io(device, offset, *value, false, pc);
 	return true;
 }
 
@@ -198,9 +196,10 @@ static bool afe_write(dsp_device_t *device, uint16_t offset, uint32_t pc, uint16
 			break;
 	}
 
-	IO_DUMP_WRITE_EX(device->config->base + offset, sizeof(value), value, pc, 0);
+	dsp_device_debug_io(device, offset, value, true, pc);
 	return true;
 }
+
 
 static const dsp_device_ops_t afe_ops = {
 	.destroy = afe_destroy,
@@ -209,13 +208,20 @@ static const dsp_device_ops_t afe_ops = {
 	.write = afe_write,
 };
 
-dsp_device_t *afe_create(const pmb887x_dsp_peripheral_config_t *config, dsp_device_t *interrupt, const dsp_host_t *host) {
+dsp_device_t *afe_create(
+	const pmb887x_dsp_peripheral_config_t *config,
+	const DebugChannel *parent,
+	dsp_device_t *interrupt,
+	const dsp_host_t *host
+) {
 	afe_state_t *state = g_new0(afe_state_t, 1);
 	state->interrupt = interrupt;
 	state->host = *host;
 	state->ram_base = config->ram_base;
-	state->audio = afe_audio_create();
-	return dsp_device_create(config, &afe_ops, state);
+
+	dsp_device_t *device = dsp_device_create(config, parent, &afe_ops, state);
+	state->audio = afe_audio_create(&device->dbg);
+	return device;
 }
 
 static void afe_receive_publish(afe_state_t *state, uint16_t word) {

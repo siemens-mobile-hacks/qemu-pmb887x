@@ -1,6 +1,4 @@
-#define PMB887X_TRACE_ID		DSP_SSC
 #define PMB887X_TRACE_PREFIX	"pmb887x-dsp-ssc"
-#define PMB887X_TRACE_IO		PMB887X_TRACE_IO_DSP
 
 #include "qemu/osdep.h"
 #include "qemu/bitops.h"
@@ -276,7 +274,7 @@ static bool ssc_read(dsp_device_t *device, uint16_t offset, uint32_t pc, uint16_
 			break;
 	}
 
-	IO_DUMP_READ_EX(device->config->base + offset, sizeof(*value), *value, pc, 0);
+	dsp_device_debug_io(device, offset, *value, false, pc);
 	return true;
 }
 
@@ -347,9 +345,10 @@ static bool ssc_write(dsp_device_t *device, uint16_t offset, uint32_t pc, uint16
 			break;
 	}
 
-	IO_DUMP_WRITE_EX(device->config->base + offset, sizeof(value), value, pc, 0);
+	dsp_device_debug_io(device, offset, value, true, pc);
 	return true;
 }
+
 
 static const dsp_device_ops_t ssc_ops = {
 	.destroy = ssc_destroy,
@@ -358,13 +357,18 @@ static const dsp_device_ops_t ssc_ops = {
 	.write = ssc_write,
 };
 
-dsp_device_t *ssc_create(const pmb887x_dsp_peripheral_config_t *config, dsp_device_t *interrupt, const dsp_host_t *host) {
+dsp_device_t *ssc_create(
+	const pmb887x_dsp_peripheral_config_t *config,
+	const DebugChannel *parent,
+	dsp_device_t *interrupt,
+	const dsp_host_t *host
+) {
 	ssc_state_t *state = g_new0(ssc_state_t, 1);
 	state->interrupt = interrupt;
 	state->host = *host;
 	pmb887x_fifo16_init(&state->receive_fifo, SSC_FIFO_SIZE);
 	pmb887x_fifo16_init(&state->transmit_fifo, SSC_FIFO_SIZE);
-	return dsp_device_create(config, &ssc_ops, state);
+	return dsp_device_create(config, parent, &ssc_ops, state);
 }
 
 void ssc_advance(dsp_device_t *device, size_t cycles) {

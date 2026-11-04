@@ -35,6 +35,7 @@ static const pmb887x_dsp_peripheral_config_t pmb8876_dsp_peripherals[] = {
 		.size = 0x0016,
 		.ram_base = 0,
 		.ram_size = 0,
+		.regs = &pmb887x_dsp_interrupt_regs,
 	},
 	{
 		.name = "CIPH",
@@ -43,6 +44,7 @@ static const pmb887x_dsp_peripheral_config_t pmb8876_dsp_peripherals[] = {
 		.size = 0x0010,
 		.ram_base = PMB8876_TEAK_CIPHER_RAM_BASE,
 		.ram_size = PMB8876_TEAK_CIPHER_RAM_SIZE,
+		.regs = &pmb887x_dsp_cipher_regs,
 	},
 	{
 		.name = "TMR1",
@@ -51,6 +53,7 @@ static const pmb887x_dsp_peripheral_config_t pmb8876_dsp_peripherals[] = {
 		.size = 0x0004,
 		.ram_base = 0,
 		.ram_size = 0,
+		.regs = &pmb887x_dsp_timer1_regs,
 	},
 	{
 		.name = "TMR2",
@@ -59,6 +62,7 @@ static const pmb887x_dsp_peripheral_config_t pmb8876_dsp_peripherals[] = {
 		.size = 0x0003,
 		.ram_base = 0,
 		.ram_size = 0,
+		.regs = &pmb887x_dsp_timer2_regs,
 	},
 	{
 		.name = "EQ",
@@ -67,6 +71,7 @@ static const pmb887x_dsp_peripheral_config_t pmb8876_dsp_peripherals[] = {
 		.size = 0x0007,
 		.ram_base = 0,
 		.ram_size = 0,
+		.regs = &pmb887x_dsp_equalizer_regs,
 	},
 	{
 		.name = "CHDEC",
@@ -75,6 +80,7 @@ static const pmb887x_dsp_peripheral_config_t pmb8876_dsp_peripherals[] = {
 		.size = 0x0010,
 		.ram_base = 0,
 		.ram_size = 0,
+		.regs = &pmb887x_dsp_channel_decoder_regs,
 	},
 	{
 		.name = "AFE",
@@ -83,6 +89,7 @@ static const pmb887x_dsp_peripheral_config_t pmb8876_dsp_peripherals[] = {
 		.size = 0x0007,
 		.ram_base = PMB8876_TEAK_AFE_RAM_BASE,
 		.ram_size = PMB8876_TEAK_AFE_RAM_SIZE,
+		.regs = &pmb887x_dsp_afe_regs,
 	},
 	{
 		.name = "BB",
@@ -91,6 +98,7 @@ static const pmb887x_dsp_peripheral_config_t pmb8876_dsp_peripherals[] = {
 		.size = 0x000D,
 		.ram_base = PMB8876_TEAK_DEMODULATOR_RAM_BASE,
 		.ram_size = PMB8876_TEAK_DEMODULATOR_RAM_SIZE,
+		.regs = &pmb887x_dsp_baseband_regs,
 	},
 	{
 		.name = "MCS",
@@ -99,6 +107,7 @@ static const pmb887x_dsp_peripheral_config_t pmb8876_dsp_peripherals[] = {
 		.size = 0x0006,
 		.ram_base = 0,
 		.ram_size = 0,
+		.regs = &pmb887x_dsp_mcs_regs,
 	},
 	{
 		.name = "DSP",
@@ -107,6 +116,7 @@ static const pmb887x_dsp_peripheral_config_t pmb8876_dsp_peripherals[] = {
 		.size = 0x0009,
 		.ram_base = 0,
 		.ram_size = 0,
+		.regs = &pmb887x_dsp_dsp_8876_regs,
 	},
 	{
 		.name = "MOD",
@@ -115,6 +125,7 @@ static const pmb887x_dsp_peripheral_config_t pmb8876_dsp_peripherals[] = {
 		.size = 0x000B,
 		.ram_base = PMB8876_TEAK_MODULATOR_RAM_BASE,
 		.ram_size = PMB8876_TEAK_MODULATOR_RAM_SIZE,
+		.regs = &pmb887x_dsp_modulator_regs,
 	},
 	{
 		.name = "SSC",
@@ -123,6 +134,7 @@ static const pmb887x_dsp_peripheral_config_t pmb8876_dsp_peripherals[] = {
 		.size = 0x0009,
 		.ram_base = 0,
 		.ram_size = 0,
+		.regs = &pmb887x_dsp_ssc_regs,
 	},
 	{
 		.name = "I2S1",
@@ -131,6 +143,7 @@ static const pmb887x_dsp_peripheral_config_t pmb8876_dsp_peripherals[] = {
 		.size = 0x000B,
 		.ram_base = PMB8876_TEAK_I2S1_RAM_BASE,
 		.ram_size = PMB8876_TEAK_I2S1_RAM_SIZE,
+		.regs = &pmb887x_dsp_i2s_regs,
 	},
 	{
 		.name = "I2S2",
@@ -139,6 +152,7 @@ static const pmb887x_dsp_peripheral_config_t pmb8876_dsp_peripherals[] = {
 		.size = 0x000B,
 		.ram_base = PMB8876_TEAK_I2S2_RAM_BASE,
 		.ram_size = PMB8876_TEAK_I2S2_RAM_SIZE,
+		.regs = &pmb887x_dsp_i2s_regs,
 	},
 	{
 		.name = "I2S3",
@@ -147,6 +161,7 @@ static const pmb887x_dsp_peripheral_config_t pmb8876_dsp_peripherals[] = {
 		.size = 0x000B,
 		.ram_base = PMB8876_TEAK_I2S3_RAM_BASE,
 		.ram_size = PMB8876_TEAK_I2S3_RAM_SIZE,
+		.regs = &pmb887x_dsp_i2s_tx_regs,
 	},
 };
 
@@ -571,6 +586,7 @@ static const pmb887x_dsp_peripheral_config_t pmb8875_dsp_peripherals[] = {
 		.size = 0x0016,
 		.ram_base = 0,
 		.ram_size = 0,
+		.regs = &pmb887x_dsp_interrupt_regs,
 	},
 	{
 		.name = "CIPH",
@@ -579,6 +595,7 @@ static const pmb887x_dsp_peripheral_config_t pmb8875_dsp_peripherals[] = {
 		.size = 0x0010,
 		.ram_base = PMB8875_TEAK_CIPHER_RAM_BASE,
 		.ram_size = PMB8875_TEAK_CIPHER_RAM_SIZE,
+		.regs = &pmb887x_dsp_cipher_regs,
 	},
 	{
 		.name = "TMR1",
@@ -587,6 +604,7 @@ static const pmb887x_dsp_peripheral_config_t pmb8875_dsp_peripherals[] = {
 		.size = 0x0004,
 		.ram_base = 0,
 		.ram_size = 0,
+		.regs = &pmb887x_dsp_timer1_regs,
 	},
 	{
 		.name = "TMR2",
@@ -595,6 +613,7 @@ static const pmb887x_dsp_peripheral_config_t pmb8875_dsp_peripherals[] = {
 		.size = 0x0003,
 		.ram_base = 0,
 		.ram_size = 0,
+		.regs = &pmb887x_dsp_timer2_regs,
 	},
 	{
 		.name = "EQ",
@@ -603,6 +622,7 @@ static const pmb887x_dsp_peripheral_config_t pmb8875_dsp_peripherals[] = {
 		.size = 0x0007,
 		.ram_base = 0,
 		.ram_size = 0,
+		.regs = &pmb887x_dsp_equalizer_regs,
 	},
 	{
 		.name = "CHDEC",
@@ -611,6 +631,7 @@ static const pmb887x_dsp_peripheral_config_t pmb8875_dsp_peripherals[] = {
 		.size = 0x0010,
 		.ram_base = 0,
 		.ram_size = 0,
+		.regs = &pmb887x_dsp_channel_decoder_regs,
 	},
 	{
 		.name = "AFE",
@@ -619,6 +640,7 @@ static const pmb887x_dsp_peripheral_config_t pmb8875_dsp_peripherals[] = {
 		.size = 0x0007,
 		.ram_base = PMB8875_TEAK_AFE_RAM_BASE,
 		.ram_size = PMB8875_TEAK_AFE_RAM_SIZE,
+		.regs = &pmb887x_dsp_afe_regs,
 	},
 	{
 		.name = "BB",
@@ -627,6 +649,7 @@ static const pmb887x_dsp_peripheral_config_t pmb8875_dsp_peripherals[] = {
 		.size = 0x000D,
 		.ram_base = PMB8875_TEAK_DEMODULATOR_RAM_BASE,
 		.ram_size = PMB8875_TEAK_DEMODULATOR_RAM_SIZE,
+		.regs = &pmb887x_dsp_baseband_regs,
 	},
 	{
 		.name = "MCS",
@@ -635,6 +658,7 @@ static const pmb887x_dsp_peripheral_config_t pmb8875_dsp_peripherals[] = {
 		.size = 0x0006,
 		.ram_base = 0,
 		.ram_size = 0,
+		.regs = &pmb887x_dsp_mcs_regs,
 	},
 	{
 		.name = "DSP",
@@ -643,6 +667,7 @@ static const pmb887x_dsp_peripheral_config_t pmb8875_dsp_peripherals[] = {
 		.size = 0x0009,
 		.ram_base = 0,
 		.ram_size = 0,
+		.regs = &pmb887x_dsp_dsp_regs,
 	},
 	{
 		.name = "MOD",
@@ -651,6 +676,7 @@ static const pmb887x_dsp_peripheral_config_t pmb8875_dsp_peripherals[] = {
 		.size = 0x000B,
 		.ram_base = PMB8875_TEAK_MODULATOR_RAM_BASE,
 		.ram_size = PMB8875_TEAK_MODULATOR_RAM_SIZE,
+		.regs = &pmb887x_dsp_modulator_regs,
 	},
 	{
 		.name = "SSC",
@@ -659,6 +685,7 @@ static const pmb887x_dsp_peripheral_config_t pmb8875_dsp_peripherals[] = {
 		.size = 0x0009,
 		.ram_base = 0,
 		.ram_size = 0,
+		.regs = &pmb887x_dsp_ssc_regs,
 	},
 	{
 		.name = "I2S1",
@@ -667,6 +694,7 @@ static const pmb887x_dsp_peripheral_config_t pmb8875_dsp_peripherals[] = {
 		.size = 0x000B,
 		.ram_base = PMB8875_TEAK_I2S1_RAM_BASE,
 		.ram_size = PMB8875_TEAK_I2S1_RAM_SIZE,
+		.regs = &pmb887x_dsp_i2s_regs,
 	},
 	{
 		.name = "I2S2",
@@ -675,6 +703,7 @@ static const pmb887x_dsp_peripheral_config_t pmb8875_dsp_peripherals[] = {
 		.size = 0x000B,
 		.ram_base = PMB8875_TEAK_I2S2_RAM_BASE,
 		.ram_size = PMB8875_TEAK_I2S2_RAM_SIZE,
+		.regs = &pmb887x_dsp_i2s_regs,
 	},
 	{
 		.name = "I2S3",
@@ -683,6 +712,7 @@ static const pmb887x_dsp_peripheral_config_t pmb8875_dsp_peripherals[] = {
 		.size = 0x000B,
 		.ram_base = PMB8875_TEAK_I2S3_RAM_BASE,
 		.ram_size = PMB8875_TEAK_I2S3_RAM_SIZE,
+		.regs = &pmb887x_dsp_i2s_tx_regs,
 	},
 };
 

@@ -1,4 +1,3 @@
-#define PMB887X_TRACE_ID		DSP_TCG
 #define PMB887X_TRACE_PREFIX	"pmb887x-dsp-tcg"
 
 #include "qemu/osdep.h"
@@ -16,6 +15,7 @@
 
 struct dsp_runtime_t {
 	const pmb887x_dsp_config_t *config;
+	DebugChannel dbg;
 	const uint8_t *program_rom;
 	const uint8_t *data_rom;
 	void *device_opaque;
@@ -81,7 +81,7 @@ static void dsp_runtime_map_program_bank(dsp_runtime_t *runtime, size_t bank) {
 		return;
 
 	if (bank >= config->program_bank_count) {
-		DPRINTF("unknown program ROM bank: cpu=%s bank=%zu count=%zu\n", config->name, bank, config->program_bank_count);
+		DEBUG_LOG(&runtime->dbg, "unknown program ROM bank: cpu=%s bank=%zu count=%zu\n", config->name, bank, config->program_bank_count);
 		return;
 	}
 
@@ -113,7 +113,7 @@ static void dsp_runtime_map_data_bank(dsp_runtime_t *runtime, size_t bank) {
 		return;
 
 	if (bank >= config->data_bank_count) {
-		DPRINTF("unknown data ROM bank: cpu=%s bank=%zu count=%zu\n", config->name, bank, config->data_bank_count);
+		DEBUG_LOG(&runtime->dbg, "unknown data ROM bank: cpu=%s bank=%zu count=%zu\n", config->name, bank, config->data_bank_count);
 		return;
 	}
 
@@ -128,7 +128,7 @@ static void dsp_runtime_set_page(void *opaque, uint16_t page) {
 	uint16_t page_mask = (program_page_mask | config->page_field_mask);
 
 	if ((page & ~page_mask) != 0)
-		DPRINTF("unknown DSP page bits: cpu=%s value=%04X unknown=%04X\n", config->name, page, (page & ~page_mask));
+		DEBUG_LOG(&runtime->dbg, "unknown DSP page bits: cpu=%s value=%04X unknown=%04X\n", config->name, page, (page & ~page_mask));
 
 	dsp_runtime_map_program_bank(runtime, (page >> config->program_page_shift) & config->page_field_mask);
 	dsp_runtime_map_data_bank(runtime, (page & config->page_field_mask));
@@ -174,7 +174,7 @@ static uint16_t dsp_runtime_program_read(void *opaque, uint32_t address) {
 	const pmb887x_dsp_config_t *config = runtime->config;
 
 	if (address >= PMB887X_DSP_ADDRESS_SPACE_WORDS) {
-		DPRINTF("program read outside address space: address=%05X pc=%05X\n", address, runtime->core.state.pc);
+		DEBUG_LOG(&runtime->dbg, "program read outside address space: address=%05X pc=%05X\n", address, runtime->core.state.pc);
 		return UINT16_MAX;
 	}
 	if (address >= config->program_bank_base) {
@@ -192,7 +192,7 @@ static void dsp_runtime_program_write(void *opaque, uint32_t address, uint16_t v
 	dsp_runtime_t *runtime = opaque;
 
 	if (address >= PMB887X_DSP_ADDRESS_SPACE_WORDS) {
-		DPRINTF("program write outside address space: address=%05X value=%04X pc=%05X\n",
+		DEBUG_LOG(&runtime->dbg, "program write outside address space: address=%05X value=%04X pc=%05X\n",
 			address, value, runtime->core.state.pc);
 		return;
 	}
@@ -254,7 +254,7 @@ static void dsp_runtime_data_write(void *opaque, uint32_t address, uint16_t valu
 	if (data_address >= runtime->config->shared_base) {
 		uint16_t offset = data_address - runtime->config->shared_base;
 		qatomic_set(&runtime->data[data_address], value);
-		DPRINTF("shared write: address=%04X offset=%04X value=%04X pc=%05X\n", data_address,
+		DEBUG_LOG(&runtime->dbg, "shared write: address=%04X offset=%04X value=%04X pc=%05X\n", data_address,
 			offset, value, runtime->core.state.trace_pc);
 		return;
 	}
@@ -305,7 +305,8 @@ dsp_runtime_t *dsp_runtime_create(
 	void (*notify_comm)(void *opaque, uint16_t flags, bool set),
 	int64_t (*get_time_ns)(void *opaque),
 	uint32_t (*ssc_transfer)(void *opaque, uint32_t value),
-	const dsp_ports_t *ports
+	const dsp_ports_t *ports,
+	const DebugChannel *dbg
 ) {
 	dsp_runtime_t *runtime;
 	teak_memory_t memory;
@@ -314,6 +315,7 @@ dsp_runtime_t *dsp_runtime_create(
 	size_t data_bank_words = config->shared_base - config->data_bank_base;
 
 	runtime = g_new0(dsp_runtime_t, 1);
+	debug_channel_init_child(&runtime->dbg, dbg, "TCG");
 	runtime->config = config;
 	runtime->program_rom = program_rom;
 	runtime->data_rom = data_rom;
@@ -351,7 +353,7 @@ dsp_runtime_t *dsp_runtime_create(
 		.data_write = dsp_runtime_bus_data_write,
 		.ssc_transfer = ssc_transfer,
 	};
-	runtime->bus = dsp_bus_create(config, &host, ports);
+	runtime->bus = dsp_bus_create(config, &host, ports, dbg);
 
 	memory = (teak_memory_t) {
 		.program = {
@@ -402,6 +404,7 @@ void dsp_runtime_destroy(dsp_runtime_t *runtime) {
 	g_free(runtime->data_banks);
 	g_free(runtime->data);
 	g_free(runtime->program);
+	debug_channel_cleanup(&runtime->dbg);
 	g_free(runtime);
 }
 
@@ -473,7 +476,7 @@ size_t dsp_runtime_run(dsp_runtime_t *runtime, size_t max_cycles, bool *deferred
 			qatomic_set(&runtime->pram_cache_active, true);
 
 			size_t precompiled = teak_tcg_precompile_entry(&runtime->core, runtime->core.state.pc);
-			DPRINTF("cold program precompile: pc=%05X blocks=%zu\n", runtime->core.state.pc, precompiled);
+			DEBUG_LOG(&runtime->dbg, "cold program precompile: pc=%05X blocks=%zu\n", runtime->core.state.pc, precompiled);
 		}
 
 		if (qatomic_read(&runtime->core_disabled)) {
@@ -504,12 +507,12 @@ size_t dsp_runtime_run(dsp_runtime_t *runtime, size_t max_cycles, bool *deferred
 			uint16_t word = teak_program_read(&runtime->core, pc);
 			bool decoded = teak_decode(&runtime->core, pc, &instruction);
 
-			DPRINTF("native execution stopped: cpu=%s pc=%05X opcode=%04X op=%u decoded=%u error=%u lp=%u bcn=%u\n",
+			DEBUG_LOG(&runtime->dbg, "native execution stopped: cpu=%s pc=%05X opcode=%04X op=%u decoded=%u error=%u lp=%u bcn=%u\n",
 				runtime->config->name, pc, word, instruction.opcode, decoded, runtime->core.translation_error,
 				runtime->core.state.lp, runtime->core.state.bcn);
 			if (runtime->core.state.lp) {
 				uint8_t slot = teak_block_repeat_slot(runtime->core.state.bcn);
-				DPRINTF("active block repeat: slot=%u start=%04X end=%04X lc=%04X\n", slot,
+				DEBUG_LOG(&runtime->dbg, "active block repeat: slot=%u start=%04X end=%04X lc=%04X\n", slot,
 					runtime->core.state.block_repeat_start[slot], runtime->core.state.block_repeat_end[slot],
 					runtime->core.state.block_repeat_lc[slot]);
 			}
@@ -523,15 +526,15 @@ size_t dsp_runtime_run(dsp_runtime_t *runtime, size_t max_cycles, bool *deferred
 			break;
 
 		if (runtime->core.state.bcn != block_repeat_level)
-			DPRINTF("block repeat nesting: pc=%05X next=%05X bcn=%u->%u lp=%u\n", block_pc,
+			DEBUG_LOG(&runtime->dbg, "block repeat nesting: pc=%05X next=%05X bcn=%u->%u lp=%u\n", block_pc,
 				runtime->core.state.pc, block_repeat_level, runtime->core.state.bcn, runtime->core.state.lp);
 	}
 
 	if (slices != 0) {
-		DPRINTF("slices=%zu jit=%"PRIu64" cycles=%zu run=%u idle=%u pc=%04X\n", slices,
+		DEBUG_LOG(&runtime->dbg, "slices=%zu jit=%"PRIu64" cycles=%zu run=%u idle=%u pc=%04X\n", slices,
 			runtime->core.jit_entries - jit_entries, cycles, !runtime->halted, qatomic_read(&runtime->idle),
 			runtime->core.state.pc);
-		DPRINTF("cache=%"PRIu64"/%"PRIu64" compile=%"PRIu64" chain=%"PRIu64" irq=%"PRIu64
+		DEBUG_LOG(&runtime->dbg, "cache=%"PRIu64"/%"PRIu64" compile=%"PRIu64" chain=%"PRIu64" irq=%"PRIu64
 			" stop=%"PRIu64"/%"PRIu64"/%"PRIu64" exit_pc=%04X\n",
 			runtime->core.cache_fast_hits - cache_fast_hits,
 			runtime->core.cache_decoded_hits - cache_decoded_hits,

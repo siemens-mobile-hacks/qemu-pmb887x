@@ -1,6 +1,4 @@
-#define PMB887X_TRACE_ID		DSP_INTERRUPT
 #define PMB887X_TRACE_PREFIX	"pmb887x-dsp-interrupt"
-#define PMB887X_TRACE_IO		PMB887X_TRACE_IO_DSP
 
 #include "qemu/osdep.h"
 #include "qemu/atomic.h"
@@ -96,7 +94,7 @@ static bool dsp_int_read(dsp_device_t *device, uint16_t offset, uint32_t pc, uin
 			}
 			break;
 	}
-	IO_DUMP_READ_EX(device->config->base + offset, sizeof(*value), *value, pc, 0);
+	dsp_device_debug_io(device, offset, *value, false, pc);
 	return true;
 }
 
@@ -131,9 +129,10 @@ static bool dsp_int_write(dsp_device_t *device, uint16_t offset, uint32_t pc, ui
 			break;
 	}
 
-	IO_DUMP_WRITE_EX(device->config->base + offset, sizeof(value), value, pc, 0);
+	dsp_device_debug_io(device, offset, value, true, pc);
 	return true;
 }
+
 
 static const dsp_device_ops_t dsp_int_ops = {
 	.destroy = dsp_int_destroy,
@@ -142,10 +141,14 @@ static const dsp_device_ops_t dsp_int_ops = {
 	.write = dsp_int_write,
 };
 
-dsp_device_t *dsp_int_create(const pmb887x_dsp_peripheral_config_t *config, const dsp_host_t *host) {
+dsp_device_t *dsp_int_create(
+	const pmb887x_dsp_peripheral_config_t *config,
+	const DebugChannel *parent,
+	const dsp_host_t *host
+) {
 	dsp_int_state_t *state = g_new0(dsp_int_state_t, 1);
 	state->host = *host;
-	return dsp_device_create(config, &dsp_int_ops, state);
+	return dsp_device_create(config, parent, &dsp_int_ops, state);
 }
 
 uint8_t dsp_int_get_lines(dsp_device_t *device) {

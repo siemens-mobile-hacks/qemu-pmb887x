@@ -1,6 +1,4 @@
-#define PMB887X_TRACE_ID		DSP_TIMER2
 #define PMB887X_TRACE_PREFIX	"pmb887x-dsp-timer2"
-#define PMB887X_TRACE_IO		PMB887X_TRACE_IO_DSP
 
 #include "qemu/osdep.h"
 #include "hw/arm/pmb887x/dsp/peripheral/internal.h"
@@ -54,7 +52,7 @@ static bool timer2_read(dsp_device_t *device, uint16_t offset, uint32_t pc, uint
 			break;
 	}
 
-	IO_DUMP_READ_EX(device->config->base + offset, sizeof(*value), *value, pc, 0);
+	dsp_device_debug_io(device, offset, *value, false, pc);
 	return true;
 }
 
@@ -78,7 +76,7 @@ static bool timer2_write(dsp_device_t *device, uint16_t offset, uint32_t pc, uin
 			break;
 	}
 
-	IO_DUMP_WRITE_EX(device->config->base + offset, sizeof(value), value, pc, 0);
+	dsp_device_debug_io(device, offset, value, true, pc);
 	return true;
 }
 
@@ -102,6 +100,7 @@ void timer2_advance(dsp_device_t *device, size_t cycles) {
 		dsp_int_set_flags(state->interrupt, TIMER_INTERRUPT_GROUP, TEAK_INT_FINT1_TMR2);
 }
 
+
 static const dsp_device_ops_t timer2_ops = {
 	.destroy = timer2_destroy,
 	.reset = timer2_reset,
@@ -109,10 +108,14 @@ static const dsp_device_ops_t timer2_ops = {
 	.write = timer2_write,
 };
 
-dsp_device_t *timer2_create(const pmb887x_dsp_peripheral_config_t *config, dsp_device_t *interrupt) {
+dsp_device_t *timer2_create(
+	const pmb887x_dsp_peripheral_config_t *config,
+	const DebugChannel *parent,
+	dsp_device_t *interrupt
+) {
 	timer2_state_t *state = g_new0(timer2_state_t, 1);
 	state->interrupt = interrupt;
-	return dsp_device_create(config, &timer2_ops, state);
+	return dsp_device_create(config, parent, &timer2_ops, state);
 }
 
 bool timer2_is_active(const dsp_device_t *device) {

@@ -16,7 +16,8 @@ dsp_runtime_t *dsp_runtime_create(
 	void (*notify_comm)(void *opaque, uint16_t flags, bool set),
 	int64_t (*get_time_ns)(void *opaque),
 	uint32_t (*ssc_transfer)(void *opaque, uint32_t value),
-	const dsp_ports_t *ports
+	const dsp_ports_t *ports,
+	const DebugChannel *dbg
 );
 void dsp_runtime_destroy(dsp_runtime_t *runtime);
 void dsp_runtime_reset(dsp_runtime_t *runtime);

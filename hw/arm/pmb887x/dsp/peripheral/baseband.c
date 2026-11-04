@@ -1,6 +1,4 @@
-#define PMB887X_TRACE_ID		DSP_BASEBAND
 #define PMB887X_TRACE_PREFIX	"pmb887x-dsp-baseband"
-#define PMB887X_TRACE_IO		PMB887X_TRACE_IO_DSP
 
 #include "qemu/osdep.h"
 #include "qemu/atomic.h"
@@ -61,6 +59,7 @@ struct baseband_event_t {
 };
 
 struct baseband_state_t {
+	const DebugChannel *dbg;
 	dsp_device_t *interrupt;
 	dsp_host_t host;
 	uint8_t normal_burst_phases[BASEBAND_NORMAL_BURST_SYMBOLS];
@@ -472,7 +471,7 @@ static bool baseband_read(dsp_device_t *device, uint16_t offset, uint32_t pc, ui
 			break;
 	}
 
-	IO_DUMP_READ_EX(device->config->base + offset, sizeof(*value), *value, pc, 0);
+	dsp_device_debug_io(device, offset, *value, false, pc);
 	return true;
 }
 
@@ -514,9 +513,10 @@ static bool baseband_write(dsp_device_t *device, uint16_t offset, uint32_t pc, u
 			break;
 	}
 
-	IO_DUMP_WRITE_EX(device->config->base + offset, sizeof(value), value, pc, 0);
+	dsp_device_debug_io(device, offset, value, true, pc);
 	return true;
 }
+
 
 static const dsp_device_ops_t baseband_ops = {
 	.destroy = baseband_destroy,
@@ -534,7 +534,7 @@ static void baseband_deliver_full(baseband_state_t *state, int64_t deadline) {
 	qatomic_set(&state->full_time, BASEBAND_NO_DEADLINE);
 	qatomic_set(&state->startup_pointer_reads, 2);
 	uint16_t pointer = baseband_update_pointer(state, deadline);
-	DPRINTF("BB_FULL: time=%" PRId64 " ns signal=%u elapsed=%" PRId64 " ns words=%" PRIu64
+	DEBUG_LOG(state->dbg, "BB_FULL: time=%" PRId64 " ns signal=%u elapsed=%" PRId64 " ns words=%" PRIu64
 		" pointer=%u interrupt_pointer=%u\n",
 		deadline, qatomic_read(&state->job_signal),
 		deadline - qatomic_read(&state->job_start_time), qatomic_read(&state->produced_words), pointer,
@@ -564,7 +564,12 @@ static void baseband_full_timer(void *opaque) {
 		baseband_deliver_full(state, deadline);
 }
 
-dsp_device_t *baseband_create(const pmb887x_dsp_peripheral_config_t *config, dsp_device_t *interrupt, const dsp_host_t *host) {
+dsp_device_t *baseband_create(
+	const pmb887x_dsp_peripheral_config_t *config,
+	const DebugChannel *parent,
+	dsp_device_t *interrupt,
+	const dsp_host_t *host
+) {
 	baseband_state_t *state = g_new0(baseband_state_t, 1);
 	state->interrupt = interrupt;
 	state->host = *host;
@@ -575,7 +580,10 @@ dsp_device_t *baseband_create(const pmb887x_dsp_peripheral_config_t *config, dsp
 	state->full_time = BASEBAND_NO_DEADLINE;
 	state->full_timer = timer_new_ns(QEMU_CLOCK_VIRTUAL, baseband_full_timer, state);
 	QTAILQ_INIT(&state->events);
-	return dsp_device_create(config, &baseband_ops, state);
+
+	dsp_device_t *device = dsp_device_create(config, parent, &baseband_ops, state);
+	state->dbg = &device->dbg;
+	return device;
 }
 
 static uint16_t baseband_status_mask(pmb887x_dsp_gsm_signal_t signal) {

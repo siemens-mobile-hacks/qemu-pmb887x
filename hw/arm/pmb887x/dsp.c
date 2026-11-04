@@ -702,7 +702,7 @@ static void dsp_realize(DeviceState *dev, Error **errp) {
 		},
 	};
 	p->runtime = dsp_runtime_create(config, rom->program_rom, rom->data_rom,
-		p, dsp_notify_activity, dsp_notify_comm, dsp_get_time_ns, dsp_ssc_transfer, &ports);
+		p, dsp_notify_activity, dsp_notify_comm, dsp_get_time_ns, dsp_ssc_transfer, &ports, &p->dbg);
 	dsp_runtime_set_iq_bus(p->runtime, p->iq_rx_bus);
 	dsp_runtime_set_ms_clock_hz(p->runtime, clock_get_hz(p->ms_clock));
 	p->sync_timer = timer_new_ns(QEMU_CLOCK_VIRTUAL, dsp_sync_timer, p);

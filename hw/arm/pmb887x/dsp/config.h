@@ -4,6 +4,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
+#include "qemu/debug-regs.h"
+
 #define PMB887X_DSP_ADDRESS_SPACE_WORDS	0x10000U
 #define PMB887X_DSP_HW_VERSION_E001	0xE001U
 #define PMB887X_DSP_HW_VERSION_E101	0xE101U
@@ -37,6 +39,7 @@ struct pmb887x_dsp_peripheral_config_t {
 	uint16_t size;
 	uint16_t ram_base;
 	uint16_t ram_size;
+	const DebugRegs *regs;
 };
 
 struct pmb887x_dsp_config_t {

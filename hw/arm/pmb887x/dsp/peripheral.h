@@ -39,7 +39,12 @@ struct dsp_host_t {
 	uint32_t (*ssc_transfer)(void *opaque, uint32_t value);
 };
 
-dsp_bus_t *dsp_bus_create(const pmb887x_dsp_config_t *config, const dsp_host_t *host, const dsp_ports_t *ports);
+dsp_bus_t *dsp_bus_create(
+	const pmb887x_dsp_config_t *config,
+	const dsp_host_t *host,
+	const dsp_ports_t *ports,
+	const DebugChannel *dbg
+);
 void dsp_bus_destroy(dsp_bus_t *bus);
 void dsp_bus_reset(dsp_bus_t *bus);
 void dsp_bus_set_clock_hz(dsp_bus_t *bus, uint32_t frequency_hz);

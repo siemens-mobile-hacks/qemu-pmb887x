@@ -1,8 +1,8 @@
-#define PMB887X_TRACE_ID		DSP_AFE
 #define PMB887X_TRACE_PREFIX	"pmb887x-dsp-afe"
 
 #include "qemu/osdep.h"
 #include "qemu/audio.h"
+#include "qemu/debug-channel.h"
 #include "qemu/fifo8.h"
 #include "qemu/thread.h"
 #include "qemu/timer.h"
@@ -18,6 +18,7 @@
 #define AFE_AUDIO_FIFO_BYTES		(AFE_AUDIO_MAX_RATE_HZ * AFE_AUDIO_MAX_CHANNELS * sizeof(int16_t))
 
 struct afe_audio_t {
+	const DebugChannel *dbg;
 	AudioBackend *backend;
 	SWVoiceOut *voice;
 	QemuMutex lock;
@@ -68,7 +69,7 @@ static void afe_audio_report_stats(afe_audio_t *audio) {
 		return;
 
 	if (audio->stats_total != 0) {
-		DPRINTF("audio out: samples=%" PRIu64 " nonzero=%" PRIu64 " min=%d max=%d\n",
+		DEBUG_LOG(audio->dbg, "audio out: samples=%" PRIu64 " nonzero=%" PRIu64 " min=%d max=%d\n",
 			audio->stats_total, audio->stats_nonzero, audio->stats_min, audio->stats_max);
 	}
 
@@ -79,7 +80,7 @@ static void afe_audio_report_stats(afe_audio_t *audio) {
 	audio->stats_max = 0;
 }
 
-afe_audio_t *afe_audio_create(void) {
+afe_audio_t *afe_audio_create(const DebugChannel *dbg) {
 	afe_audio_t *audio = g_new0(afe_audio_t, 1);
 	struct audsettings settings = {
 		.freq = AFE_AUDIO_DEFAULT_RATE_HZ,
@@ -88,12 +89,13 @@ afe_audio_t *afe_audio_create(void) {
 		.big_endian = false,
 	};
 
+	audio->dbg = dbg;
 	audio->rate_hz = AFE_AUDIO_DEFAULT_RATE_HZ;
 	audio->channels = AFE_AUDIO_DEFAULT_CHANNELS;
 	pmb887x_audio_buffer_configure(&audio->buffer, audio->channels * sizeof(int16_t), audio->rate_hz);
 	qemu_mutex_init(&audio->lock);
 	if (!audio_be_check(&audio->backend, NULL)) {
-		DPRINTF("no audio backend configured; RX output disabled\n");
+		DEBUG_LOG(audio->dbg, "no audio backend configured; RX output disabled\n");
 		return audio;
 	}
 
@@ -157,7 +159,7 @@ void afe_audio_set_format(afe_audio_t *audio, unsigned frequency_hz, unsigned ch
 	if ((int) frequency_hz == audio->rate_hz && (int) channels == audio->channels)
 		return;
 
-	DPRINTF("audio out %d Hz x%d -> %u Hz x%u\n", audio->rate_hz, audio->channels, frequency_hz, channels);
+	DEBUG_LOG(audio->dbg, "audio out %d Hz x%d -> %u Hz x%u\n", audio->rate_hz, audio->channels, frequency_hz, channels);
 	afe_audio_reset(audio);
 	audio->rate_hz = frequency_hz;
 	audio->channels = channels;

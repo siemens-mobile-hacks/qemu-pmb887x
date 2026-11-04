@@ -4,8 +4,7 @@
 #include "hw/arm/pmb887x/dsp/peripheral/afe-audio.h"
 #include "hw/arm/pmb887x/dsp/peripheral.h"
 #include "hw/arm/pmb887x/rf.h"
-#include "hw/arm/pmb887x/regs_dump.h"
-#include "hw/arm/pmb887x/trace_common.h"
+#include "qemu/debug-channel.h"
 
 #define TEST_INTERRUPT_BASE	0x1000
 #define TEST_MCS_BASE		0x1020
@@ -20,14 +19,11 @@
 #define TEST_AFE_DAC_RING_OFFSET	0x40
 #define TEST_I2S_RX_RAM_BASE	(TEAK_I2S_RWADDR_RDADDR + 1U)
 
-uint64_t pmb887x_trace_io_mask;
-uint64_t pmb887x_trace_log_mask;
-
 /* The host-unit test replaces external frontends, never DSP model code. */
 static size_t test_audio_sample_count;
 static uint16_t test_audio_sample;
 
-afe_audio_t *afe_audio_create(void) {
+afe_audio_t *afe_audio_create(const DebugChannel *_dbg) {
 	return NULL;
 }
 
@@ -74,35 +70,9 @@ typedef struct test_host_t {
 	size_t i2s_input_position;
 } test_host_t;
 
-typedef struct test_trace_state_t {
-	size_t reads;
-	size_t writes;
-	uint32_t address;
-	uint32_t value;
-	uint32_t pc;
-} test_trace_state_t;
+DEBUG_CHANNEL_INFO(test_dsp_info, .name = "dsp")
 
-static test_trace_state_t trace_state;
-
-void pmb887x_dump_io_read_ex(pmb887x_trace_io_t trace_io, uint32_t addr, uint32_t size, uint32_t value, uint32_t pc, uint32_t lr) {
-	g_assert_cmpint(trace_io, ==, PMB887X_TRACE_IO_DSP);
-	g_assert_cmpuint(size, ==, sizeof(uint16_t));
-	g_assert_cmpuint(lr, ==, 0);
-	trace_state.reads++;
-	trace_state.address = addr;
-	trace_state.value = value;
-	trace_state.pc = pc;
-}
-
-void pmb887x_dump_io_write_ex(pmb887x_trace_io_t trace_io, uint32_t addr, uint32_t size, uint32_t value, uint32_t pc, uint32_t lr) {
-	g_assert_cmpint(trace_io, ==, PMB887X_TRACE_IO_DSP);
-	g_assert_cmpuint(size, ==, sizeof(uint16_t));
-	g_assert_cmpuint(lr, ==, 0);
-	trace_state.writes++;
-	trace_state.address = addr;
-	trace_state.value = value;
-	trace_state.pc = pc;
-}
+static DebugChannel test_dsp_dbg;
 
 static void test_set_page(void *opaque, uint16_t value) {
 	test_host_t *host = opaque;
@@ -211,7 +181,7 @@ static dsp_bus_t *test_bus_create(test_host_t *host) {
 		.data_write = test_data_write,
 	};
 
-	return dsp_bus_create(&config, &peripheral_host, &ports);
+	return dsp_bus_create(&config, &peripheral_host, &ports, &test_dsp_dbg);
 }
 
 static void test_timer_clock(void) {
@@ -590,34 +560,9 @@ static void test_unknown(void) {
 	dsp_bus_destroy(bus);
 }
 
-static void test_trace(void) {
-	test_host_t host = { .pc = 0x12345 };
-	dsp_bus_t *bus = test_bus_create(&host);
-
-	g_assert_cmphex(PMB887X_TRACE_ALL & PMB887X_TRACE_DSP_ALL, ==, 0);
-	memset(&trace_state, 0, sizeof(trace_state));
-	pmb887x_trace_io_mask = PMB887X_TRACE_DSP_ALL & ~PMB887X_TRACE_DSP_MCS;
-	dsp_bus_write(bus, TEST_MCS_BASE + 1, 1);
-	g_assert_cmpuint(trace_state.writes, ==, 0);
-	dsp_bus_read(bus, TEST_DSP_BASE);
-	g_assert_cmpuint(trace_state.reads, ==, 1);
-	g_assert_cmphex(trace_state.address, ==, TEST_DSP_BASE);
-	g_assert_cmphex(trace_state.value, ==, 0xE101);
-	g_assert_cmphex(trace_state.pc, ==, host.pc);
-	dsp_bus_write(bus, TEST_MODULATOR_BASE, 1);
-	g_assert_cmpuint(trace_state.writes, ==, 1);
-	g_assert_cmphex(trace_state.address, ==, TEST_MODULATOR_BASE);
-	dsp_bus_write(bus, TEST_UNKNOWN_BASE, 1);
-	g_assert_cmpuint(trace_state.writes, ==, 2);
-	g_assert_cmphex(trace_state.address, ==, TEST_UNKNOWN_BASE);
-	dsp_bus_write(bus, TEST_UNKNOWN_BASE, 2);
-	g_assert_cmpuint(trace_state.writes, ==, 3);
-	pmb887x_trace_io_mask = 0;
-	dsp_bus_destroy(bus);
-}
-
 int main(int argc, char **argv) {
 	g_test_init(&argc, &argv, NULL);
+	debug_channel_init(&test_dsp_dbg, &test_dsp_info, "DSP");
 	g_test_add_func("/pmb887x/dsp/peripheral/control", test_control);
 	g_test_add_func("/pmb887x/dsp/peripheral/pads", test_pads);
 	g_test_add_func("/pmb887x/dsp/peripheral/mcs", test_mcs);
@@ -628,6 +573,5 @@ int main(int argc, char **argv) {
 	g_test_add_func("/pmb887x/dsp/peripheral/i2s-tx-clock", test_i2s_tx_clock);
 	g_test_add_func("/pmb887x/dsp/peripheral/timer-clock", test_timer_clock);
 	g_test_add_func("/pmb887x/dsp/peripheral/unknown", test_unknown);
-	g_test_add_func("/pmb887x/dsp/peripheral/trace", test_trace);
 	return g_test_run();
 }

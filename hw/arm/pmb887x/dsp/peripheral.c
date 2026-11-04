@@ -4,12 +4,40 @@
 #include "hw/arm/pmb887x/dsp/peripheral/internal.h"
 #include "hw/arm/pmb887x/gen/dsp.h"
 
-dsp_device_t *dsp_device_create(const pmb887x_dsp_peripheral_config_t *config, const dsp_device_ops_t *ops, void *state) {
+static void dsp_device_debug_print(const DebugChannel *ch, const DebugIoAccess *io, GString *out) {
+	if (ch->io_format_opaque) {
+		debug_regs_format.print(ch, io, out);
+	} else {
+		debug_io_print_access(ch->name, io, 4, out);
+	}
+	g_string_append_printf(out, " (PC: %05" PRIX64 ")", io->pc);
+}
+
+static const DebugIoFormat dsp_device_debug_format = {
+	.print = dsp_device_debug_print,
+};
+
+dsp_device_t *dsp_device_create(
+	const pmb887x_dsp_peripheral_config_t *config,
+	const DebugChannel *parent,
+	const dsp_device_ops_t *ops,
+	void *state
+) {
 	dsp_device_t *device = g_new0(dsp_device_t, 1);
 	device->config = config;
 	device->ops = ops;
 	device->state = state;
+
+	debug_channel_init_child(&device->dbg, parent, config->name);
+	device->dbg.io_format = &dsp_device_debug_format;
+	device->dbg.io_format_opaque = config->regs;
 	return device;
+}
+
+static void dsp_device_destroy(dsp_device_t *device) {
+	device->ops->destroy(device);
+	debug_channel_cleanup(&device->dbg);
+	g_free(device);
 }
 
 static dsp_device_t *dsp_bus_create_device(dsp_bus_t *bus, const pmb887x_dsp_peripheral_config_t *config) {
@@ -19,45 +47,45 @@ static dsp_device_t *dsp_bus_create_device(dsp_bus_t *bus, const pmb887x_dsp_per
 		case PMB887X_DSP_PERIPHERAL_AFE:
 			g_assert(bus->interrupt != NULL);
 
-			device = afe_create(config, bus->interrupt, &bus->host);
+			device = afe_create(config, bus->dbg, bus->interrupt, &bus->host);
 			bus->afe = device;
 			return device;
 
 		case PMB887X_DSP_PERIPHERAL_BASEBAND:
 			g_assert(bus->interrupt != NULL);
 
-			device = baseband_create(config, bus->interrupt, &bus->host);
+			device = baseband_create(config, bus->dbg, bus->interrupt, &bus->host);
 			bus->baseband = device;
 			return device;
 
 		case PMB887X_DSP_PERIPHERAL_DSP:
-			device = control_create(config, &bus->host);
+			device = control_create(config, bus->dbg, &bus->host);
 			bus->dsp = device;
 			return device;
 
 		case PMB887X_DSP_PERIPHERAL_CIPHER:
 			g_assert(bus->interrupt != NULL);
 
-			device = cipher_create(config, bus->interrupt, &bus->host);
+			device = cipher_create(config, bus->dbg, bus->interrupt, &bus->host);
 			bus->cipher = device;
 			return device;
 
 		case PMB887X_DSP_PERIPHERAL_CHANNEL_DECODER:
 			g_assert(bus->interrupt != NULL);
 
-			device = chdec_create(config, bus->interrupt);
+			device = chdec_create(config, bus->dbg, bus->interrupt);
 			bus->channel_decoder = device;
 			return device;
 
 		case PMB887X_DSP_PERIPHERAL_EQUALIZER:
 			g_assert(bus->interrupt != NULL);
 
-			device = equalizer_create(config, bus->interrupt);
+			device = equalizer_create(config, bus->dbg, bus->interrupt);
 			bus->equalizer = device;
 			return device;
 
 		case PMB887X_DSP_PERIPHERAL_INTERRUPT:
-			device = dsp_int_create(config, &bus->host);
+			device = dsp_int_create(config, bus->dbg, &bus->host);
 			bus->interrupt = device;
 			return device;
 
@@ -67,57 +95,63 @@ static dsp_device_t *dsp_bus_create_device(dsp_bus_t *bus, const pmb887x_dsp_per
 
 			const dsp_i2s_port_t *i2s_port = &bus->ports.i2s[bus->i2s_count];
 			uint16_t interrupt_flag = (uint16_t) BIT(bus->i2s_count * 2);
-			device = dsp_i2s_create(config, bus->interrupt, &bus->host, i2s_port, interrupt_flag);
+			device = dsp_i2s_create(config, bus->dbg, bus->interrupt, &bus->host, i2s_port, interrupt_flag);
 			bus->i2s[bus->i2s_count++] = device;
 			return device;
 
 		case PMB887X_DSP_PERIPHERAL_I2S_TX:
 			g_assert(bus->interrupt != NULL);
 
-			device = dsp_i2s_tx_create(config, bus->interrupt);
+			device = dsp_i2s_tx_create(config, bus->dbg, bus->interrupt);
 			bus->i2s_tx = device;
 			return device;
 
 		case PMB887X_DSP_PERIPHERAL_MCS:
-			device = mcs_create(config, &bus->host);
+			device = mcs_create(config, bus->dbg, &bus->host);
 			bus->mcs = device;
 			return device;
 
 		case PMB887X_DSP_PERIPHERAL_MODULATOR:
 			g_assert(bus->interrupt != NULL);
 
-			device = modulator_create(config, bus->interrupt);
+			device = modulator_create(config, bus->dbg, bus->interrupt);
 			bus->modulator = device;
 			return device;
 
 		case PMB887X_DSP_PERIPHERAL_SSC:
 			g_assert(bus->interrupt != NULL);
 
-			device = ssc_create(config, bus->interrupt, &bus->host);
+			device = ssc_create(config, bus->dbg, bus->interrupt, &bus->host);
 			bus->ssc = device;
 			return device;
 
 		case PMB887X_DSP_PERIPHERAL_TIMER1:
 			g_assert(bus->interrupt != NULL);
 
-			device = timer1_create(config, bus->interrupt);
+			device = timer1_create(config, bus->dbg, bus->interrupt);
 			bus->timer1 = device;
 			return device;
 
 		case PMB887X_DSP_PERIPHERAL_TIMER2:
 			g_assert(bus->interrupt != NULL);
 
-			device = timer2_create(config, bus->interrupt);
+			device = timer2_create(config, bus->dbg, bus->interrupt);
 			bus->timer2 = device;
 			return device;
 
 		default:
-			return unknown_create(config);
+			return unknown_create(config, bus->dbg);
 	}
 }
 
-dsp_bus_t *dsp_bus_create(const pmb887x_dsp_config_t *config, const dsp_host_t *host, const dsp_ports_t *ports) {
+dsp_bus_t *dsp_bus_create(
+	const pmb887x_dsp_config_t *config,
+	const dsp_host_t *host,
+	const dsp_ports_t *ports,
+	const DebugChannel *dbg
+) {
 	dsp_bus_t *bus = g_new0(dsp_bus_t, 1);
+	bus->dbg = dbg;
 	bus->device_count = config->peripheral_count;
 	bus->host = *host;
 	bus->ports = *ports;
@@ -128,11 +162,11 @@ dsp_bus_t *dsp_bus_create(const pmb887x_dsp_config_t *config, const dsp_host_t *
 	}
 
 	bus->fallback_config = (pmb887x_dsp_peripheral_config_t) {
-		.name = "unknown",
+		.name = "UNKNOWN",
 		.base = config->mmio_base,
 		.size = config->mmio_size,
 	};
-	bus->fallback = unknown_create(&bus->fallback_config);
+	bus->fallback = unknown_create(&bus->fallback_config, dbg);
 
 	bus->routes = g_new(dsp_route_t, config->mmio_size);
 	for (size_t offset = 0; offset < config->mmio_size; offset++) {
@@ -158,13 +192,9 @@ void dsp_bus_destroy(dsp_bus_t *bus) {
 	if (bus == NULL)
 		return;
 
-	bus->fallback->ops->destroy(bus->fallback);
-	g_free(bus->fallback);
-
-	for (size_t i = 0; i < bus->device_count; i++) {
-		bus->devices[i]->ops->destroy(bus->devices[i]);
-		g_free(bus->devices[i]);
-	}
+	dsp_device_destroy(bus->fallback);
+	for (size_t i = 0; i < bus->device_count; i++)
+		dsp_device_destroy(bus->devices[i]);
 
 	g_free(bus->routes);
 	g_free(bus->devices);

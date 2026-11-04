@@ -1,6 +1,4 @@
-#define PMB887X_TRACE_ID		DSP_CONTROL
 #define PMB887X_TRACE_PREFIX	"pmb887x-dsp-control"
-#define PMB887X_TRACE_IO		PMB887X_TRACE_IO_DSP
 
 #include "qemu/osdep.h"
 #include "qemu/atomic.h"
@@ -62,7 +60,7 @@ static bool control_read(dsp_device_t *device, uint16_t offset, uint32_t pc, uin
 			break;
 	}
 
-	IO_DUMP_READ_EX(device->config->base + offset, sizeof(*value), *value, pc, 0);
+	dsp_device_debug_io(device, offset, *value, false, pc);
 	return true;
 }
 
@@ -89,9 +87,10 @@ static bool control_write(dsp_device_t *device, uint16_t offset, uint32_t pc, ui
 			break;
 	}
 
-	IO_DUMP_WRITE_EX(device->config->base + offset, sizeof(value), value, pc, 0);
+	dsp_device_debug_io(device, offset, value, true, pc);
 	return true;
 }
+
 
 static const dsp_device_ops_t control_ops = {
 	.destroy = control_destroy,
@@ -100,10 +99,14 @@ static const dsp_device_ops_t control_ops = {
 	.write = control_write,
 };
 
-dsp_device_t *control_create(const pmb887x_dsp_peripheral_config_t *config, const dsp_host_t *host) {
+dsp_device_t *control_create(
+	const pmb887x_dsp_peripheral_config_t *config,
+	const DebugChannel *parent,
+	const dsp_host_t *host
+) {
 	control_state_t *state = g_new0(control_state_t, 1);
 	state->host = *host;
-	return dsp_device_create(config, &control_ops, state);
+	return dsp_device_create(config, parent, &control_ops, state);
 }
 
 int control_set_input(dsp_device_t *device, size_t index, bool level) {
