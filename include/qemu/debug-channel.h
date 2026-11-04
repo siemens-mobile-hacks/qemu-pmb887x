@@ -12,9 +12,7 @@ enum {
 
 typedef struct DebugChannelInfo {
     const char *name;
-    const char *const *aliases;
     const char *const *groups;
-    bool not_in_all;
 } DebugChannelInfo;
 
 typedef struct DebugIoAccess {
@@ -62,6 +60,7 @@ struct DebugChannel {
 
 void debug_channel_info_register(DebugChannelInfo *info);
 
+bool debug_channels_is_match(const char *pattern, const char *name);
 bool debug_channels_parse(const char *spec, uint8_t flag, Error **errp);
 bool debug_channels_parse_option(const char *str, Error **errp);
 bool debug_channels_check_unused(bool (*is_known)(const char *name),

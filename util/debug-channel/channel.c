@@ -24,24 +24,26 @@ void debug_channel_info_register(DebugChannelInfo *info)
     g_ptr_array_add(debug_infos, info);
 }
 
-static bool debug_is_name_in_list(const char *name, const char *const *list)
+bool debug_channels_is_match(const char *pattern, const char *name)
 {
-    for (; list && *list; list++) {
-        if (!g_ascii_strcasecmp(name, *list)) {
+    g_autofree char *lower_pattern = g_ascii_strdown(pattern, -1);
+    g_autofree char *lower_name = g_ascii_strdown(name, -1);
+
+    return g_pattern_match_simple(lower_pattern, lower_name);
+}
+
+static bool debug_info_is_match(const DebugChannelInfo *info,
+                                const char *pattern)
+{
+    if (debug_channels_is_match(pattern, info->name)) {
+        return true;
+    }
+    for (const char *const *group = info->groups; group && *group; group++) {
+        if (debug_channels_is_match(pattern, *group)) {
             return true;
         }
     }
     return false;
-}
-
-static bool debug_info_has_name(const DebugChannelInfo *info, const char *name)
-{
-    if (!g_ascii_strcasecmp(name, "all")) {
-        return !info->not_in_all;
-    }
-    return !g_ascii_strcasecmp(name, info->name) ||
-           debug_is_name_in_list(name, info->aliases) ||
-           debug_is_name_in_list(name, info->groups);
 }
 
 static void debug_spec_item_free(gpointer data)
@@ -162,19 +164,16 @@ bool debug_channels_parse_option(const char *str, Error **errp)
 static bool debug_spec_item_is_known(const DebugSpecItem *item,
                                      bool (*is_known)(const char *name))
 {
-    if (item->used || !g_ascii_strcasecmp(item->name, "all")) {
-        return true;
-    }
-    if (is_known && is_known(item->name)) {
+    if (item->used) {
         return true;
     }
     for (guint i = 0; debug_infos && i < debug_infos->len; i++) {
-        if (debug_info_has_name(g_ptr_array_index(debug_infos, i),
+        if (debug_info_is_match(g_ptr_array_index(debug_infos, i),
                                 item->name)) {
             return true;
         }
     }
-    return false;
+    return is_known && is_known(item->name);
 }
 
 bool debug_channels_check_unused(bool (*is_known)(const char *name),
@@ -224,9 +223,9 @@ void debug_channel_init(DebugChannel *ch, const DebugChannelInfo *info,
     for (guint i = 0; debug_spec && i < debug_spec->len; i++) {
         DebugSpecItem *item = g_ptr_array_index(debug_spec, i);
         bool is_instance = instance &&
-                           !g_ascii_strcasecmp(item->name, instance);
+                           debug_channels_is_match(item->name, instance);
 
-        if (!is_instance && !debug_info_has_name(info, item->name)) {
+        if (!is_instance && !debug_info_is_match(info, item->name)) {
             continue;
         }
         item->used = true;

@@ -167,9 +167,17 @@ void debug_channel_init_device_regs(DebugChannel *ch, DeviceState *dev,
     ch->io_format_opaque = regs;
 }
 
-static bool debug_is_qom_type(const char *name)
+static bool debug_is_qom_type(const char *pattern)
 {
-    return object_class_by_name(name);
+    g_autoptr(GSList) classes = object_class_get_list(TYPE_OBJECT, true);
+
+    for (GSList *class = classes; class; class = class->next) {
+        if (debug_channels_is_match(pattern,
+                                    object_class_get_name(class->data))) {
+            return true;
+        }
+    }
+    return false;
 }
 
 static void debug_channels_exit(Notifier *_notifier, void *_data)

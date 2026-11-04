@@ -5154,11 +5154,12 @@ SRST
     without ``=`` continues the channel list of the preceding ``log`` or
     ``io``, as in ``log=usart,adc,io=lcd,time=on``.
 
-    A channel name matches a device id, the channel name of a device model,
-    one of its aliases or groups, or ``all``. Names are case insensitive and
-    applied in order; ``-`` turns the channels off. Repeated keys and
-    options add to the list. An unknown name stops QEMU after machine
-    creation.
+    A channel name is a pattern with ``*`` and ``?`` that matches a device
+    id, a channel name (the QOM type for a device) or a parent QOM type of
+    a device, as in ``log=*,-dsp_*`` or ``io=pmb887x-i2c-*,USART*``. Names
+    are case insensitive and applied in order; ``-`` turns the channels
+    off. Repeated keys and options add to the list. A name that matches no
+    channel, device id or QOM type stops QEMU after machine creation.
 ERST
 
 DEF("D", HAS_ARG, QEMU_OPTION_D, \
