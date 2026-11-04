@@ -460,13 +460,12 @@ struct teak_tcg_core_t {
 	uint64_t cache_id;
 	uint32_t program_context;
 	uint32_t last_block_cycles;
-	uint32_t last_block_count;
 	uint32_t translation_error_address;
 	teak_translation_error_t translation_error;
-	uint32_t synchronized_cycles;
-	uint32_t synchronization_offset;
+	uint32_t advanced_cycles;
+	uint32_t synchronization_cycle;
+	uint32_t synchronization_block_start;
 	uint32_t synchronization_access;
-	uint32_t pending_cycles;
 	uint32_t wait_cycles;
 	uint32_t batch_iterations;
 	uint32_t batch_block_cycles;
