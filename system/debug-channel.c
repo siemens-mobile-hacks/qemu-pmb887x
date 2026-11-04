@@ -2,7 +2,6 @@
 
 #include "qemu/osdep.h"
 #include "qapi/error.h"
-#include "qemu/log.h"
 #include "qom/object.h"
 #include "hw/core/qdev.h"
 #include "system/runstate.h"
@@ -140,9 +139,6 @@ void debug_channels_machine_done(void)
     debug_channels_check_unused(&error_fatal);
     if (!debug_channels_has_enabled()) {
         return;
-    }
-    if (!qemu_loglevel_mask(LOG_TRACE)) {
-        qemu_set_log(qemu_loglevel | LOG_TRACE, &error_fatal);
     }
     debug_exit_notifier.notify = debug_channels_exit;
     qemu_add_exit_notifier(&debug_exit_notifier);

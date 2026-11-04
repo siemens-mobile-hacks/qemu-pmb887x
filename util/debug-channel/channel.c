@@ -197,6 +197,18 @@ bool debug_channels_has_enabled(void)
     return debug_has_enabled;
 }
 
+bool debug_channels_is_requested(void)
+{
+    for (guint i = 0; debug_spec && i < debug_spec->len; i++) {
+        DebugSpecItem *item = g_ptr_array_index(debug_spec, i);
+
+        if (item->enable) {
+            return true;
+        }
+    }
+    return false;
+}
+
 void debug_channel_init(DebugChannel *ch, const DebugChannelInfo *info,
                         const char *instance)
 {

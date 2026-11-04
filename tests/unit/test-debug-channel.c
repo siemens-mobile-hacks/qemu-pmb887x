@@ -208,6 +208,15 @@ static void test_has_enabled(void)
     g_assert_true(debug_channels_has_enabled());
 }
 
+static void test_is_requested(void)
+{
+    debug_channels_reset();
+    parse_ok("-adc", DEBUG_CH_IO);
+    g_assert_false(debug_channels_is_requested());
+    parse_ok("adc", DEBUG_CH_IO);
+    g_assert_true(debug_channels_is_requested());
+}
+
 int main(int argc, char **argv)
 {
     g_test_init(&argc, &argv, NULL);
@@ -227,6 +236,7 @@ int main(int argc, char **argv)
     g_test_add_func("/debug-channel/lone-sign-fails", test_lone_sign_fails);
     g_test_add_func("/debug-channel/unused", test_unused);
     g_test_add_func("/debug-channel/has-enabled", test_has_enabled);
+    g_test_add_func("/debug-channel/is-requested", test_is_requested);
     g_test_add_func("/debug-channel/option-sections", test_option_sections);
     g_test_add_func("/debug-channel/option-errors", test_option_errors);
     return g_test_run();

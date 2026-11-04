@@ -2629,6 +2629,9 @@ static void qemu_process_early_options(void)
                 exit(1);
             }
         }
+        if (debug_channels_is_requested()) {
+            mask |= LOG_TRACE;
+        }
         qemu_set_log_filename_flags(log_file, mask, &error_fatal);
     }
 
