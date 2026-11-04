@@ -8,11 +8,9 @@
 #include "qemu/fifo8.h"
 #include "qemu/module.h"
 #include "qemu/timer.h"
-#include "chardev/char-fe.h"
 #include "hw/core/irq.h"
 #include "hw/core/qdev-clock.h"
 #include "hw/core/qdev-properties.h"
-#include "hw/core/qdev-properties-system.h"
 #include "hw/core/sysbus.h"
 #include "qapi/error.h"
 
@@ -20,7 +18,6 @@
 #include "hw/arm/pmb887x/mod.h"
 #include "hw/arm/pmb887x/regs_dump.h"
 #include "hw/arm/pmb887x/sim.h"
-#include "hw/arm/pmb887x/sim/apdu.h"
 #include "hw/arm/pmb887x/trace.h"
 
 #define SIM_IRQ_MASK (SIM_IMSC_ERR | SIM_IMSC_IN | SIM_IMSC_OK)
@@ -70,7 +67,7 @@ struct pmb887x_sim_t {
 
 	pmb887x_clc_reg_t clc;
 	pmb887x_srb_reg_t srb;
-	CharFrontend chr;
+	ISO7816Slot *card_slot;
 	QEMUTimer *tx_timer;
 	QEMUTimer *character_timer;
 	Fifo8 t0_tx_fifo;
@@ -239,7 +236,7 @@ static void sim_t0_receive(pmb887x_sim_t *p, uint8_t value) {
 
 	switch (p->t0_state) {
 		case SIM_T0_STATE_PROCEDURE:
-			if (value == PMB887X_T0_NULL_BYTE) {
+			if (value == ISO7816_T0_NULL_BYTE) {
 				sim_update_character_timer(p);
 				return;
 			}
@@ -274,7 +271,7 @@ static void sim_t0_receive(pmb887x_sim_t *p, uint8_t value) {
 			sim_update_character_timer(p);
 			return;
 		case SIM_T0_STATE_SW1:
-			if (value == PMB887X_T0_NULL_BYTE) {
+			if (value == ISO7816_T0_NULL_BYTE) {
 				sim_update_character_timer(p);
 				return;
 			}
@@ -292,18 +289,18 @@ static void sim_t0_receive(pmb887x_sim_t *p, uint8_t value) {
 	}
 }
 
-static int sim_can_receive(void *opaque) {
+static bool sim_can_receive(void *opaque) {
 	pmb887x_sim_t *p = opaque;
-	return sim_is_uart_running(p) && !p->rx_pending ? 1 : 0;
+	return sim_is_uart_running(p) && !p->rx_pending;
 }
 
-static void sim_receive(void *opaque, const uint8_t *buffer, int size) {
+static void sim_receive(void *opaque, uint8_t value) {
 	pmb887x_sim_t *p = opaque;
 
-	if (!sim_is_uart_running(p) || size == 0)
+	if (!sim_is_uart_running(p))
 		return;
 	if (sim_is_t0_running(p)) {
-		sim_t0_receive(p, buffer[0]);
+		sim_t0_receive(p, value);
 		return;
 	}
 
@@ -312,27 +309,32 @@ static void sim_receive(void *opaque, const uint8_t *buffer, int size) {
 		return;
 	}
 
-	p->rxb = buffer[0];
+	p->rxb = value;
 	p->rx_pending = true;
 	sim_raise_status(p, SIM_STAT_UARTOK);
 }
 
-void pmb887x_sim_set_chardev(pmb887x_sim_t *p, Chardev *chardev, Error **errp) {
-	if (p->chr.chr) {
-		error_setg(errp, "pmb887x-sim already has a chardev");
-		return;
-	}
-	if (!qemu_chr_fe_init(&p->chr, chardev, errp))
-		return;
-	qemu_chr_fe_set_handlers(&p->chr, sim_can_receive, sim_receive, NULL, NULL, p, NULL, true);
+static const ISO7816InterfaceOps sim_card_interface_ops = {
+	.can_receive = sim_can_receive,
+	.receive = sim_receive,
+};
+
+void pmb887x_sim_connect_slot(pmb887x_sim_t *p, ISO7816Slot *slot) {
+	p->card_slot = slot;
+	iso7816_slot_connect(slot, &sim_card_interface_ops, p);
+}
+
+static void sim_transmit(pmb887x_sim_t *p, uint8_t value) {
+	if (p->card_slot)
+		iso7816_slot_transmit(p->card_slot, value);
 }
 
 static void sim_t0_tx_advance(pmb887x_sim_t *p) {
 	if (p->t0_state == SIM_T0_STATE_HEADER) {
 		p->t0_header_size++;
-		if (p->t0_header_size == PMB887X_APDU_HEADER_SIZE) {
+		if (p->t0_header_size == ISO7816_HEADER_SIZE) {
 			p->t0_state = SIM_T0_STATE_PROCEDURE;
-			p->t0_data_size = p->p3 ? p->p3 : PMB887X_APDU_MAX_DATA_SIZE;
+			p->t0_data_size = p->p3 ? p->p3 : ISO7816_MAX_DATA_SIZE;
 			DPRINTF("T=0 header sent: INS=%02X, P3=%u\n", p->ins & SIM_INS_INS, p->t0_data_size);
 		}
 	} else if (p->t0_state == SIM_T0_STATE_TX_DATA) {
@@ -356,8 +358,7 @@ static void sim_tx_complete(void *opaque) {
 	pmb887x_sim_t *p = opaque;
 
 	if (!fifo8_is_empty(&p->t0_tx_fifo)) {
-		uint8_t value = fifo8_pop(&p->t0_tx_fifo);
-		qemu_chr_fe_write_all(&p->chr, &value, 1);
+		sim_transmit(p, fifo8_pop(&p->t0_tx_fifo));
 		sim_t0_tx_advance(p);
 		if (!fifo8_is_empty(&p->t0_tx_fifo)) {
 			sim_schedule_tx(p);
@@ -371,8 +372,7 @@ static void sim_tx_complete(void *opaque) {
 	}
 
 	p->tx_pending = false;
-	uint8_t value = p->txb;
-	qemu_chr_fe_write_all(&p->chr, &value, 1);
+	sim_transmit(p, p->txb);
 	sim_raise_status(p, SIM_STAT_UARTOK);
 }
 
@@ -461,7 +461,8 @@ static uint64_t sim_io_read(void *opaque, hwaddr haddr, unsigned size) {
 			value = p->rxb;
 			p->rx_pending = false;
 			p->rx_last = false;
-			qemu_chr_fe_accept_input(&p->chr);
+			if (p->card_slot)
+				iso7816_slot_accept_input(p->card_slot);
 			sim_update_dma_request(p);
 			break;
 		case SIM_INS:
@@ -688,8 +689,6 @@ static void sim_realize(DeviceState *dev, Error **errp) {
 	pmb887x_clc_set(&p->clc, 1U << MOD_CLC_RMC_SHIFT);
 	pmb887x_srb_init(&p->srb, p->irq, ARRAY_SIZE(p->irq));
 	pmb887x_srb_set_event_handler(&p->srb, p, sim_event_handler);
-	if (p->chr.chr)
-		qemu_chr_fe_set_handlers(&p->chr, sim_can_receive, sim_receive, NULL, NULL, p, NULL, true);
 	p->tx_timer = timer_new_ns(QEMU_CLOCK_VIRTUAL, sim_tx_complete, p);
 	p->character_timer = timer_new_ns(QEMU_CLOCK_VIRTUAL, sim_character_timeout, p);
 	fifo8_create(&p->t0_tx_fifo, SIM_T0_TX_FIFO_SIZE);
@@ -738,12 +737,6 @@ static void sim_reset(DeviceState *dev) {
 	sim_update_outputs(p);
 }
 
-static void sim_unrealize(DeviceState *dev) {
-	pmb887x_sim_t *p = PMB887X_SIM(dev);
-	if (p->chr.chr)
-		qemu_chr_fe_deinit(&p->chr, false);
-}
-
 static void sim_finalize(Object *obj) {
 	pmb887x_sim_t *p = PMB887X_SIM(obj);
 	if (p->tx_timer)
@@ -756,7 +749,6 @@ static void sim_finalize(Object *obj) {
 
 static const Property sim_properties[] = {
 	DEFINE_PROP_UINT32("revision", pmb887x_sim_t, revision, 0),
-	DEFINE_PROP_CHR("chardev", pmb887x_sim_t, chr),
 };
 
 static void sim_class_init(ObjectClass *klass, const void *data) {
@@ -764,7 +756,6 @@ static void sim_class_init(ObjectClass *klass, const void *data) {
 	device_class_set_props(device_class, sim_properties);
 	device_class_set_legacy_reset(device_class, sim_reset);
 	device_class->realize = sim_realize;
-	device_class->unrealize = sim_unrealize;
 }
 
 static const TypeInfo sim_info = {

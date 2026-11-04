@@ -114,11 +114,6 @@ arm_common_ss.add(when: 'CONFIG_PMB887X', if_true: files(
 	'i2c/tea5761uk.c',
 
 	'input/ke970_scroll.c',
-
-	'sim/apdu.c',
-	'sim/gsm_sim.c',
-	'sim/sim_fs.c',
-	'sim/sim_card.c',
 ))
 arm_common_ss.add(when: 'CONFIG_PMB887X', if_true: dsp_core_sources + dsp_peripheral_sources + dsp_audio_sources +
 	files('dsp/tcg.c', 'dsp/runtime.c'))
@@ -150,7 +145,3 @@ target_unit_tests += {
 		},
 	},
 }
-
-if cacard.found()
-	arm_common_ss.add(when: 'CONFIG_PMB887X', if_true: [cacard, files('sim/cacard_apdu.c')])
-endif
