@@ -1,4 +1,3 @@
-#define PMB887X_TRACE_ID		USIF
 #define PMB887X_TRACE_PREFIX	"pmb887x-usif"
 
 #include "qemu/osdep.h"
@@ -12,7 +11,7 @@
 #include "qemu/timer.h"
 
 #include "hw/arm/pmb887x/gen/cpu_regs.h"
-#include "hw/arm/pmb887x/regs_dump.h"
+#include "hw/arm/pmb887x/gen/cpu_meta.h"
 #include "hw/arm/pmb887x/mod.h"
 #include "hw/arm/pmb887x/fifo.h"
 #include "hw/arm/pmb887x/trace.h"
@@ -57,6 +56,7 @@ typedef struct pmb887x_usif_t pmb887x_usif_t;
 struct pmb887x_usif_t {
 	SysBusDevice parent_obj;
 	MemoryRegion mmio;
+	DebugChannel dbg;
 	uint32_t revision;
 	CharFrontend chr;
 
@@ -105,6 +105,8 @@ struct pmb887x_usif_t {
 	uint32_t rx_word_chars;
 	uint8_t host_rx_char;
 };
+
+DEBUG_CHANNEL_INFO(usif_debug, .name = TYPE_PMB887X_USIF)
 
 static void usif_update_requests(pmb887x_usif_t *p);
 
@@ -412,7 +414,7 @@ static void usif_tx_write(pmb887x_usif_t *p, uint32_t value) {
 		return;
 
 	if (pmb887x_fifo_is_full(&p->tx_fifo)) {
-		DPRINTF("TX FIFO overflow\n");
+		DEBUG_LOG(&p->dbg, "TX FIFO overflow\n");
 		return;
 	}
 
@@ -611,14 +613,11 @@ static uint64_t usif_io_read(void *opaque, hwaddr haddr, unsigned size) {
 			break;
 	}
 
-	IO_DUMP_READ(haddr + p->mmio.addr, size, value);
 	return value;
 }
 
 static void usif_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned size) {
 	pmb887x_usif_t *p = opaque;
-
-	IO_DUMP_WRITE(haddr + p->mmio.addr, size, value);
 
 	switch (haddr) {
 		case USIF_CLC:
@@ -771,6 +770,7 @@ static void usif_init(Object *obj) {
 
 static void usif_realize(DeviceState *dev, Error **errp) {
 	pmb887x_usif_t *p = PMB887X_USIF(dev);
+	pmb887x_mod_debug_init(&p->dbg, &usif_debug, dev, &p->mmio, &pmb887x_usif_regs);
 
 	pmb887x_clc_set(&p->clc, 1U << MOD_CLC_RMC_SHIFT);
 	pmb887x_clc_set_callback(&p->clc, usif_clock_changed, p);

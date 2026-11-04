@@ -1,7 +1,6 @@
 /*
  * sci-worx USB Device Controller
  */
-#define PMB887X_TRACE_ID USB
 #define PMB887X_TRACE_PREFIX "pmb887x-usb"
 
 #include "qemu/osdep.h"
@@ -11,7 +10,7 @@
 
 #include "hw/arm/pmb887x/gen/cpu_regs.h"
 #include "hw/arm/pmb887x/mod.h"
-#include "hw/arm/pmb887x/regs_dump.h"
+#include "hw/arm/pmb887x/gen/cpu_meta.h"
 #include "hw/arm/pmb887x/trace.h"
 
 #define TYPE_PMB887X_USB "pmb887x-usb"
@@ -28,12 +27,15 @@ typedef struct pmb887x_usb_t pmb887x_usb_t;
 struct pmb887x_usb_t {
 	SysBusDevice parent_obj;
 	MemoryRegion mmio;
+	DebugChannel dbg;
 	uint32_t revision;
 
 	qemu_irq irq;
 	pmb887x_clc_reg_t clc;
 	uint8_t registers[USB_IO_SIZE];
 };
+
+DEBUG_CHANNEL_INFO(usb_debug, .name = TYPE_PMB887X_USB)
 
 static uint64_t usb_register_read(pmb887x_usb_t *p, hwaddr haddr, unsigned int size) {
 	uint64_t value = 0;
@@ -98,14 +100,12 @@ static uint64_t usb_io_read(void *opaque, hwaddr haddr, unsigned int size) {
 			break;
 	}
 
-	IO_DUMP_READ(haddr + p->mmio.addr, size, value);
 	return value;
 }
 
 static void usb_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned int size) {
 	pmb887x_usb_t *p = opaque;
 
-	IO_DUMP_WRITE(haddr + p->mmio.addr, size, value);
 	if (haddr == USB_CLC) {
 		pmb887x_clc_set(&p->clc, value);
 		return;
@@ -148,6 +148,9 @@ static void usb_reset(DeviceState *dev) {
 }
 
 static void usb_realize(DeviceState *dev, Error **errp) {
+	pmb887x_usb_t *p = PMB887X_USB(dev);
+	pmb887x_mod_debug_init(&p->dbg, &usb_debug, dev, &p->mmio, &pmb887x_usb_regs);
+
 	usb_reset(dev);
 }
 

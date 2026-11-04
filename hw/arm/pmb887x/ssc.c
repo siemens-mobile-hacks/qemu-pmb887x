@@ -1,7 +1,6 @@
 /*
  * SSC (SPI)
  * */
-#define PMB887X_TRACE_ID		SSC
 #define PMB887X_TRACE_PREFIX	"pmb887x-ssc"
 
 #include "qemu/osdep.h"
@@ -16,7 +15,7 @@
 #include "qom/object.h"
 
 #include "hw/arm/pmb887x/gen/cpu_regs.h"
-#include "hw/arm/pmb887x/regs_dump.h"
+#include "hw/arm/pmb887x/gen/cpu_meta.h"
 #include "hw/arm/pmb887x/mod.h"
 #include "hw/arm/pmb887x/trace.h"
 #include "hw/arm/pmb887x/fifo.h"
@@ -41,6 +40,7 @@ enum SSCFifoType {
 struct pmb887x_ssc_t {
 	SysBusDevice parent_obj;
 	MemoryRegion mmio;
+	DebugChannel dbg;
 	uint32_t revision;
 
 	qemu_irq irq[4];
@@ -90,6 +90,8 @@ struct pmb887x_ssc_t {
 	qemu_irq dmac_tx_breq;
 	qemu_irq dmac_rx_breq;
 };
+
+DEBUG_CHANNEL_INFO(ssc_debug, .name = TYPE_PMB887X_SSC)
 
 static void ssc_reset_fifo(pmb887x_ssc_t *p, enum SSCFifoType fifo) {
 	if (fifo == SSC_FIFO_RX) {
@@ -178,7 +180,7 @@ static void ssc_transfer_word(pmb887x_ssc_t *p) {
 
 	if (pmb887x_fifo_is_full(p->rx_fifo)) {
 		if ((p->con & SSC_CON_REN)) {
-			DPRINTF("RX FIFO overflow\n");
+			DEBUG_LOG(&p->dbg, "RX FIFO overflow\n");
 			p->status |= SSC_CON_RE;
 			pmb887x_srb_set_isr(&p->srb, SSC_ISR_ERR);
 		}
@@ -244,7 +246,7 @@ static void ssc_update_transfer(pmb887x_ssc_t *p) {
 static uint16_t ssc_read_fifo(pmb887x_ssc_t *p) {
 	if (pmb887x_fifo_is_empty(p->rx_fifo)) {
 		if ((p->con & SSC_CON_REN)) {
-			DPRINTF("RX FIFO underflow\n");
+			DEBUG_LOG(&p->dbg, "RX FIFO underflow\n");
 			p->status |= SSC_CON_RE;
 			pmb887x_srb_set_isr(&p->srb, SSC_ISR_ERR);
 		}
@@ -258,7 +260,7 @@ static uint16_t ssc_read_fifo(pmb887x_ssc_t *p) {
 static void ssc_write_fifo(pmb887x_ssc_t *p, uint16_t value) {
 	if (pmb887x_fifo_is_full(p->tx_fifo)) {
 		if ((p->con & SSC_CON_TEN)) {
-			DPRINTF("TX FIFO underflow\n");
+			DEBUG_LOG(&p->dbg, "TX FIFO underflow\n");
 			p->status |= SSC_CON_TE;
 			pmb887x_srb_set_isr(&p->srb, SSC_ISR_ERR);
 		}
@@ -352,15 +354,11 @@ static uint64_t ssc_io_read(void *opaque, hwaddr haddr, unsigned size) {
 			break;
 	}
 
-	IO_DUMP_READ(haddr + p->mmio.addr, size, value);
-
 	return value;
 }
 
 static void ssc_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned size) {
 	pmb887x_ssc_t *p = opaque;
-
-	IO_DUMP_WRITE(haddr + p->mmio.addr, size, value);
 
 	switch (haddr) {
 		case SSC_CLC:
@@ -498,6 +496,7 @@ static void ssc_init(Object *obj) {
 
 static void ssc_realize(DeviceState *dev, Error **errp) {
 	pmb887x_ssc_t *p = PMB887X_SSC(dev);
+	pmb887x_mod_debug_init(&p->dbg, &ssc_debug, dev, &p->mmio, &pmb887x_ssc_regs);
 	pmb887x_clc_set(&p->clc, 1U << MOD_CLC_RMC_SHIFT);
 	pmb887x_srb_init(&p->srb, p->irq, ARRAY_SIZE(p->irq));
 	pmb887x_srb_set_event_handler(&p->srb, dev, ssc_event_handler);

@@ -1,7 +1,6 @@
 /*
  * I2C
  * */
-#define PMB887X_TRACE_ID		I2C
 #define PMB887X_TRACE_PREFIX	"pmb887x-i2c"
 
 #include "qemu/osdep.h"
@@ -16,7 +15,7 @@
 #include "hw/i2c/i2c.h"
 
 #include "hw/arm/pmb887x/gen/cpu_regs.h"
-#include "hw/arm/pmb887x/regs_dump.h"
+#include "hw/arm/pmb887x/gen/cpu_meta.h"
 #include "hw/arm/pmb887x/mod.h"
 #include "hw/arm/pmb887x/trace.h"
 #include "hw/arm/pmb887x/fifo.h"
@@ -47,6 +46,7 @@ enum {
 struct pmb887x_i2c_t {
 	SysBusDevice parent_obj;
 	MemoryRegion mmio;
+	DebugChannel dbg;
 	uint32_t revision;
 
 	I2CBus *bus;
@@ -102,6 +102,8 @@ struct pmb887x_i2c_t {
 	qemu_irq gpio_scl;
 	qemu_irq gpio_sda;
 };
+
+DEBUG_CHANNEL_INFO(i2c_debug, .name = TYPE_PMB887X_I2C)
 
 static void i2c_work(pmb887x_i2c_t *p);
 static void i2c_transfer_done(pmb887x_i2c_t *p);
@@ -309,7 +311,7 @@ static void i2c_fifo_write(pmb887x_i2c_t *p, uint64_t value) {
 			return;
 		}
 
-		DPRINTF("TX FIFO overflow!\n");
+		DEBUG_LOG(&p->dbg, "TX FIFO overflow!\n");
 		pmb887x_srb_ext_set_isr(&p->srb_err, I2Cv2_ERRIRQSS_TXF_OFL);
 		return;
 	}
@@ -320,7 +322,7 @@ static void i2c_fifo_write(pmb887x_i2c_t *p, uint64_t value) {
 
 static void i2c_fifo_read(pmb887x_i2c_t *p, uint64_t *value) {
 	if (pmb887x_fifo_is_empty(&p->fifo)) {
-		DPRINTF("RX FIFO underflow!\n");
+		DEBUG_LOG(&p->dbg, "RX FIFO underflow!\n");
 		pmb887x_srb_ext_set_isr(&p->srb_err, I2Cv2_ERRIRQSS_RXF_UFL);
 		if (p->state != I2C_STATE_NONE)
 			i2c_transfer_error(p);
@@ -358,9 +360,9 @@ static bool i2c_tx_from_fifo(pmb887x_i2c_t *p) {
 				p->is_read = (byte & 1) != 0;
 
 				if (p->is_read) {
-					DPRINTF("[START] %02X (read)\n", p->addr);
+					DEBUG_LOG(&p->dbg, "[START] %02X (read)\n", p->addr);
 				} else {
-					DPRINTF("[START] %02X (write)\n", p->addr);
+					DEBUG_LOG(&p->dbg, "[START] %02X (write)\n", p->addr);
 				}
 
 				if (i2c_start_transfer(p->bus, p->addr, p->is_read) != 0)
@@ -372,7 +374,7 @@ static bool i2c_tx_from_fifo(pmb887x_i2c_t *p) {
 				if (p->enddctrl_restart)
 					return true;
 			} else {
-				DPRINTF("TX: %02X\n", byte);
+				DEBUG_LOG(&p->dbg, "TX: %02X\n", byte);
 				if (i2c_send(p->bus, byte) != 0)
 					return false;
 
@@ -410,7 +412,7 @@ static void i2c_rx_to_fifo(pmb887x_i2c_t *p, uint32_t byte_limit) {
 		uint32_t bytes_in_fifo_reg = MIN(4, rx_remaining - bytes_read);
 		for (uint32_t i = 0; i < bytes_in_fifo_reg; i += align) {
 			uint8_t byte = i2c_recv(p->bus);
-			DPRINTF("RX: %02X\n", byte);
+			DEBUG_LOG(&p->dbg, "RX: %02X\n", byte);
 			value |= byte << (8 * i);
 			bytes_read++;
 
@@ -458,7 +460,7 @@ static void i2c_start_tx(pmb887x_i2c_t *p) {
 static void i2c_handle_enddctrl(pmb887x_i2c_t *p, uint32_t value) {
 	if (p->state == I2C_STATE_MASTER_RX && p->rx_packet_done) {
 		if ((value & I2Cv2_ENDDCTRL_SETEND) && p->rx_next_state == I2C_STATE_MASTER_RESTART) {
-			DPRINTF("------ STOP ------\n");
+			DEBUG_LOG(&p->dbg, "------ STOP ------\n");
 			i2c_end_transfer(p->bus);
 			p->rx_next_state = I2C_STATE_NONE;
 		}
@@ -480,7 +482,7 @@ static void i2c_handle_enddctrl(pmb887x_i2c_t *p, uint32_t value) {
 
 static void i2c_transfer_error(pmb887x_i2c_t *p) {
 	pmb887x_srb_ext_set_isr(&p->srb_proto, I2Cv2_PIRQSS_TX_END);
-	DPRINTF("------ STOP ------\n");
+	DEBUG_LOG(&p->dbg, "------ STOP ------\n");
 	i2c_end_transfer(p->bus);
 	i2c_fifo_reset(p);
 	i2c_kernel_reset(p, I2C_STATE_NONE);
@@ -492,14 +494,14 @@ static void i2c_transfer_done(pmb887x_i2c_t *p) {
 	pmb887x_srb_ext_set_isr(&p->srb_proto, I2Cv2_PIRQSS_TX_END);
 
 	if (p->enddctrl_end) {
-		DPRINTF("------ STOP ------\n");
+		DEBUG_LOG(&p->dbg, "------ STOP ------\n");
 		i2c_end_transfer(p->bus);
 		i2c_kernel_reset(p, I2C_STATE_NONE);
 	} else if (p->enddctrl_restart) {
 		i2c_kernel_reset(p, I2C_STATE_MASTER_RESTART);
 	} else {
 		if ((p->addrcfg & I2Cv2_ADDRCFG_SOPE)) {
-			DPRINTF("------ STOP ------\n");
+			DEBUG_LOG(&p->dbg, "------ STOP ------\n");
 			i2c_end_transfer(p->bus);
 			i2c_kernel_reset(p, I2C_STATE_NONE);
 		} else {
@@ -515,13 +517,13 @@ static void i2c_receive_done(pmb887x_i2c_t *p) {
 	i2c_nack(p->bus);
 
 	if (p->enddctrl_end) {
-		DPRINTF("------ STOP ------\n");
+		DEBUG_LOG(&p->dbg, "------ STOP ------\n");
 		i2c_end_transfer(p->bus);
 		p->rx_next_state = I2C_STATE_NONE;
 	} else if (p->enddctrl_restart) {
 		p->rx_next_state = I2C_STATE_MASTER_RESTART;
 	} else if (p->addrcfg & I2Cv2_ADDRCFG_SOPE) {
-		DPRINTF("------ STOP ------\n");
+		DEBUG_LOG(&p->dbg, "------ STOP ------\n");
 		i2c_end_transfer(p->bus);
 		p->rx_next_state = I2C_STATE_NONE;
 	} else {
@@ -543,7 +545,7 @@ static void i2c_work(pmb887x_i2c_t *p) {
 			i2c_start_tx(p);
 	} else if (p->state == I2C_STATE_MASTER_TX) {
 		if (!i2c_tx_from_fifo(p)) {
-			DPRINTF("NACK!\n");
+			DEBUG_LOG(&p->dbg, "NACK!\n");
 			i2c_fifo_reset(p);
 			if ((p->addrcfg & (I2Cv2_ADDRCFG_SONA | I2Cv2_ADDRCFG_SOPE)) != 0) {
 				p->enddctrl_end = true;
@@ -765,15 +767,11 @@ static uint64_t i2c_io_read(void *opaque, hwaddr haddr, unsigned size) {
 			break;
 	}
 
-	IO_DUMP_READ(haddr + p->mmio.addr, size, value);
-
 	return value;
 }
 
 static void i2c_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned size) {
 	pmb887x_i2c_t *p = opaque;
-
-	IO_DUMP_WRITE(haddr + p->mmio.addr, size, value);
 
 	switch (haddr) {
 		case I2Cv2_CLC:
@@ -786,7 +784,7 @@ static void i2c_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned si
 			p->runctrl = value;
 			if (!p->runctrl) {
 				if (p->state == I2C_STATE_MASTER_RX || p->state == I2C_STATE_MASTER_TX || p->state == I2C_STATE_MASTER_RESTART) {
-					DPRINTF("------ STOP ------\n");
+					DEBUG_LOG(&p->dbg, "------ STOP ------\n");
 					i2c_end_transfer(p->bus);
 					i2c_kernel_reset(p, I2C_STATE_NONE);
 					i2c_fifo_reset(p);
@@ -947,6 +945,7 @@ static void i2c_init(Object *obj) {
 
 static void i2c_realize(DeviceState *dev, Error **errp) {
 	pmb887x_i2c_t *p = PMB887X_I2C(dev);
+	pmb887x_mod_debug_init(&p->dbg, &i2c_debug, dev, &p->mmio, &pmb887x_i2cv2_regs);
 
 	p->bus = i2c_init_bus(dev, TYPE_PMB887X_I2C);
 

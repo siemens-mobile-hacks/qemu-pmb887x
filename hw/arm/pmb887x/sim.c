@@ -1,7 +1,6 @@
 /*
  * PMB887x SIM card interface
  */
-#define PMB887X_TRACE_ID SIM
 #define PMB887X_TRACE_PREFIX "pmb887x-sim"
 
 #include "qemu/osdep.h"
@@ -16,7 +15,7 @@
 
 #include "hw/arm/pmb887x/gen/cpu_regs.h"
 #include "hw/arm/pmb887x/mod.h"
-#include "hw/arm/pmb887x/regs_dump.h"
+#include "hw/arm/pmb887x/gen/cpu_meta.h"
 #include "hw/arm/pmb887x/sim.h"
 #include "hw/arm/pmb887x/trace.h"
 
@@ -62,6 +61,7 @@ enum sim_t0_state_t {
 struct pmb887x_sim_t {
 	SysBusDevice parent_obj;
 	MemoryRegion mmio;
+	DebugChannel dbg;
 	uint32_t revision;
 	qemu_irq irq[SIM_IRQ_COUNT];
 
@@ -112,6 +112,8 @@ struct pmb887x_sim_t {
 	qemu_irq dmac_tx_lbreq;
 	qemu_irq dmac_rx_lbreq;
 };
+
+DEBUG_CHANNEL_INFO(sim_debug, .name = TYPE_PMB887X_SIM)
 
 static bool sim_is_uart_running(pmb887x_sim_t *p) {
 	return pmb887x_clc_is_enabled(&p->clc) && pmb887x_clc_get_rmc(&p->clc) != 0 &&
@@ -219,7 +221,7 @@ static void sim_t0_reset(pmb887x_sim_t *p, bool start) {
 }
 
 static void sim_t0_finish(pmb887x_sim_t *p) {
-	DPRINTF("T=0 complete: SW=%02X%02X\n", p->sw1, p->sw2);
+	DEBUG_LOG(&p->dbg, "T=0 complete: SW=%02X%02X\n", p->sw1, p->sw2);
 	timer_del(p->character_timer);
 	p->t0_state = SIM_T0_STATE_HEADER;
 	p->t0_header_size = 0;
@@ -244,7 +246,7 @@ static void sim_t0_receive(pmb887x_sim_t *p, uint8_t value) {
 				uint16_t remaining = p->t0_data_size - p->t0_data_transferred;
 				p->t0_chunk_remaining = value == instruction ? remaining : MIN(remaining, 1);
 				p->t0_state = (p->ins & SIM_INS_INSDIR) ? SIM_T0_STATE_RX_DATA : SIM_T0_STATE_TX_DATA;
-				DPRINTF("T=0 procedure: %02X, %s %u byte(s)\n", value,
+				DEBUG_LOG(&p->dbg, "T=0 procedure: %02X, %s %u byte(s)\n", value,
 					(p->ins & SIM_INS_INSDIR) ? "receive" : "transmit", p->t0_chunk_remaining);
 				if (p->t0_state == SIM_T0_STATE_TX_DATA)
 					p->t0_tx_slot = true;
@@ -335,7 +337,7 @@ static void sim_t0_tx_advance(pmb887x_sim_t *p) {
 		if (p->t0_header_size == ISO7816_HEADER_SIZE) {
 			p->t0_state = SIM_T0_STATE_PROCEDURE;
 			p->t0_data_size = p->p3 ? p->p3 : ISO7816_MAX_DATA_SIZE;
-			DPRINTF("T=0 header sent: INS=%02X, P3=%u\n", p->ins & SIM_INS_INS, p->t0_data_size);
+			DEBUG_LOG(&p->dbg, "T=0 header sent: INS=%02X, P3=%u\n", p->ins & SIM_INS_INS, p->t0_data_size);
 		}
 	} else if (p->t0_state == SIM_T0_STATE_TX_DATA) {
 		p->t0_data_transferred++;
@@ -493,18 +495,15 @@ static uint64_t sim_io_read(void *opaque, hwaddr haddr, unsigned size) {
 			value = pmb887x_srb_get_dmae(&p->srb);
 			break;
 		default:
-			IO_DUMP_READ(haddr + p->mmio.addr, size, 0xFFFFFFFF);
 			EPRINTF("unknown reg access: %02"PRIX64"\n", haddr);
 			return 0;
 	}
 
-	IO_DUMP_READ(haddr + p->mmio.addr, size, value);
 	return value;
 }
 
 static void sim_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned size) {
 	pmb887x_sim_t *p = opaque;
-	IO_DUMP_WRITE(haddr + p->mmio.addr, size, value);
 
 	switch (haddr) {
 		case SIM_CLC:
@@ -686,6 +685,7 @@ static void sim_init(Object *obj) {
 
 static void sim_realize(DeviceState *dev, Error **errp) {
 	pmb887x_sim_t *p = PMB887X_SIM(dev);
+	pmb887x_mod_debug_init(&p->dbg, &sim_debug, dev, &p->mmio, &pmb887x_sim_regs);
 	pmb887x_clc_set(&p->clc, 1U << MOD_CLC_RMC_SHIFT);
 	pmb887x_srb_init(&p->srb, p->irq, ARRAY_SIZE(p->irq));
 	pmb887x_srb_set_event_handler(&p->srb, p, sim_event_handler);

@@ -1,7 +1,6 @@
 /*
  * MMC interface wrapper
  */
-#define PMB887X_TRACE_ID MMCI
 #define PMB887X_TRACE_PREFIX "pmb887x-mmci"
 
 #include "qemu/osdep.h"
@@ -10,7 +9,7 @@
 
 #include "hw/arm/pmb887x/gen/cpu_regs.h"
 #include "hw/arm/pmb887x/mod.h"
-#include "hw/arm/pmb887x/regs_dump.h"
+#include "hw/arm/pmb887x/gen/cpu_meta.h"
 #include "hw/arm/pmb887x/trace.h"
 
 #define TYPE_PMB887X_MMCI "pmb887x-mmci"
@@ -21,6 +20,7 @@ typedef struct pmb887x_mmci_t pmb887x_mmci_t;
 struct pmb887x_mmci_t {
 	SysBusDevice parent_obj;
 	MemoryRegion mmio;
+	DebugChannel dbg;
 	uint32_t revision;
 	pmb887x_clc_reg_t clc;
 	qemu_irq gpio_dat0;
@@ -30,6 +30,8 @@ struct pmb887x_mmci_t {
 	qemu_irq gpio_cmd;
 	qemu_irq gpio_clk;
 };
+
+DEBUG_CHANNEL_INFO(mmci_debug, .name = TYPE_PMB887X_MMCI)
 
 static uint64_t mmci_io_read(void *opaque, hwaddr haddr, unsigned size) {
 	pmb887x_mmci_t *p = opaque;
@@ -44,14 +46,12 @@ static uint64_t mmci_io_read(void *opaque, hwaddr haddr, unsigned size) {
 			break;
 	}
 
-	IO_DUMP_READ(haddr + p->mmio.addr, size, value);
 	return value;
 }
 
 static void mmci_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned size) {
 	pmb887x_mmci_t *p = opaque;
 
-	IO_DUMP_WRITE(haddr + p->mmio.addr, size, value);
 	switch (haddr) {
 		case MMCI_CLC:
 			pmb887x_clc_set(&p->clc, value);
@@ -102,6 +102,7 @@ static void mmci_reset(DeviceState *dev) {
 
 static void mmci_realize(DeviceState *dev, Error **_errp) {
 	pmb887x_mmci_t *p = PMB887X_MMCI(dev);
+	pmb887x_mod_debug_init(&p->dbg, &mmci_debug, dev, &p->mmio, &pmb887x_mmci_regs);
 
 	pmb887x_clc_set(&p->clc, 1U << MOD_CLC_RMC_SHIFT);
 }

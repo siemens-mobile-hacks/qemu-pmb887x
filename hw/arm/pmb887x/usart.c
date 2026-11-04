@@ -1,7 +1,6 @@
 /*
  * USART
  * */
-#define PMB887X_TRACE_ID		USART
 #define PMB887X_TRACE_PREFIX	"pmb887x-usart"
 
 #include "qemu/osdep.h"
@@ -16,7 +15,7 @@
 #include "chardev/char-serial.h"
 
 #include "hw/arm/pmb887x/gen/cpu_regs.h"
-#include "hw/arm/pmb887x/regs_dump.h"
+#include "hw/arm/pmb887x/gen/cpu_meta.h"
 #include "hw/arm/pmb887x/mod.h"
 #include "hw/arm/pmb887x/fifo.h"
 #include "hw/arm/pmb887x/trace.h"
@@ -49,6 +48,7 @@ typedef struct pmb887x_usart_t pmb887x_usart_t;
 struct pmb887x_usart_t {
 	SysBusDevice parent_obj;
 	MemoryRegion mmio;
+	DebugChannel dbg;
 	uint32_t revision;
 	
 	pmb887x_clc_reg_t clc;
@@ -109,6 +109,8 @@ struct pmb887x_usart_t {
 	qemu_irq dmac_tx_breq;
 	qemu_irq dmac_rx_breq;
 };
+
+DEBUG_CHANNEL_INFO(usart_debug, .name = TYPE_PMB887X_USART)
 
 static void usart_update_state(pmb887x_usart_t *p);
 static void usart_transmit_fifo(pmb887x_usart_t *p);
@@ -269,7 +271,7 @@ static void usart_immediate_receive(pmb887x_usart_t *p) {
 	if (!timer_pending(p->rx_timer) || p->ris_read_count <= 10)
 		return;
 	timer_del(p->rx_timer);
-	DPRINTF("immediate receive\n");
+	DEBUG_LOG(&p->dbg, "immediate receive\n");
 	usart_accept_input(p);
 }
 
@@ -756,7 +758,7 @@ static uint64_t usart_io_read(void *opaque, hwaddr haddr, unsigned size) {
 			p->ris_read_count++;
 			usart_immediate_receive(p);
 			if (p->transfer_pending && p->ris_read_count > 10) {
-				DPRINTF("immediate transfer RIS\n");
+				DEBUG_LOG(&p->dbg, "immediate transfer RIS\n");
 				usart_immediate_transfer(p);
 			}
 			break;
@@ -768,7 +770,7 @@ static uint64_t usart_io_read(void *opaque, hwaddr haddr, unsigned size) {
 			p->ris_read_count++;
 			usart_immediate_receive(p);
 			if (p->transfer_pending && p->ris_read_count > 10) {
-				DPRINTF("immediate transfer MIS\n");
+				DEBUG_LOG(&p->dbg, "immediate transfer MIS\n");
 				usart_immediate_transfer(p);
 			}
 			break;
@@ -793,8 +795,6 @@ static uint64_t usart_io_read(void *opaque, hwaddr haddr, unsigned size) {
 			EPRINTF("unknown reg access: %02"PRIX64"\n", haddr);
 			break;
 	}
-
-	IO_DUMP_READ(haddr + p->mmio.addr, size, value);
 
 	return value;
 }
@@ -827,7 +827,7 @@ static void usart_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned 
 			p->con = (value & ~USART_CON_HARDWARE_MODIFIED_MASK) | (p->con & USART_CON_HARDWARE_MODIFIED_MASK);
 			usart_flow_control_update(p);
 			if (baudrate_generator_start)
-				DPRINTF("baudrate=%u\n", usart_get_baud_rate(p));
+				DEBUG_LOG(&p->dbg, "baudrate=%u\n", usart_get_baud_rate(p));
 			break;
 		}
 
@@ -916,8 +916,6 @@ static void usart_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned 
 			EPRINTF("unknown reg access: %02"PRIX64"\n", haddr);
 			break;
 	}
-
-	IO_DUMP_WRITE(haddr + p->mmio.addr, size, value);
 }
 
 static const MemoryRegionOps io_ops = {
@@ -976,6 +974,7 @@ static void usart_init(Object *obj) {
 
 static void usart_realize(DeviceState *dev, Error **errp) {
 	pmb887x_usart_t *p = PMB887X_USART(dev);
+	pmb887x_mod_debug_init(&p->dbg, &usart_debug, dev, &p->mmio, &pmb887x_usart_regs);
 	
 	pmb887x_clc_set(&p->clc, 1U << MOD_CLC_RMC_SHIFT);
 	
