@@ -13,6 +13,7 @@ typedef struct DebugSpecItem {
 } DebugSpecItem;
 
 static GPtrArray *debug_infos;
+static GHashTable *debug_child_infos;
 static GPtrArray *debug_spec;
 static bool debug_has_enabled;
 
@@ -218,6 +219,7 @@ void debug_channel_init(DebugChannel *ch, const DebugChannelInfo *info,
 {
     *ch = (DebugChannel) {
         .name = g_strdup(instance ?: info->name),
+        .info = info,
     };
 
     for (guint i = 0; debug_spec && i < debug_spec->len; i++) {
@@ -236,6 +238,35 @@ void debug_channel_init(DebugChannel *ch, const DebugChannelInfo *info,
         }
     }
     debug_has_enabled |= ch->flags != 0;
+}
+
+static const DebugChannelInfo *debug_child_info(const char *name)
+{
+    if (!debug_child_infos) {
+        debug_child_infos = g_hash_table_new(g_str_hash, g_str_equal);
+    }
+
+    DebugChannelInfo *info = g_hash_table_lookup(debug_child_infos, name);
+    if (info) {
+        return info;
+    }
+
+    info = g_new0(DebugChannelInfo, 1);
+    info->name = g_strdup(name);
+    debug_channel_info_register(info);
+    g_hash_table_insert(debug_child_infos, (gpointer) info->name, info);
+    return info;
+}
+
+void debug_channel_init_child(DebugChannel *ch, const DebugChannel *parent,
+                              const char *name)
+{
+    g_autofree char *lower_name = g_ascii_strdown(name, -1);
+    g_autofree char *info_name = g_strdup_printf("%s.%s", parent->info->name,
+                                                 lower_name);
+    g_autofree char *instance = g_strdup_printf("%s.%s", parent->name, name);
+
+    debug_channel_init(ch, debug_child_info(info_name), instance);
 }
 
 void debug_channel_cleanup(DebugChannel *ch)

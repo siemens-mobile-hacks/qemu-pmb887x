@@ -127,6 +127,33 @@ static void test_instances(void)
     g_assert_cmpint(flags_of(&usart_info, NULL), ==, 0);
 }
 
+static void test_child(void)
+{
+    DebugChannel parent;
+    DebugChannel child;
+
+    debug_channels_reset();
+    parse_ok("pmb887x-lcd", DEBUG_CH_LOG);
+    debug_channel_init(&parent, &jbt6k71_info, "LCD0");
+    debug_channel_init_child(&child, &parent, "OSC");
+    g_assert_cmpstr(child.name, ==, "LCD0.OSC");
+    g_assert_cmpstr(child.info->name, ==, "jbt6k71.osc");
+    g_assert_cmpint(parent.flags, ==, DEBUG_CH_LOG);
+    g_assert_cmpint(child.flags, ==, 0);
+    debug_channel_cleanup(&child);
+    debug_channel_cleanup(&parent);
+
+    debug_channels_reset();
+    parse_ok("DSP.*", DEBUG_CH_LOG);
+    debug_channel_init(&parent, &dsp_info, "DSP");
+    debug_channel_init_child(&child, &parent, "TMR1");
+    g_assert_cmpstr(child.name, ==, "DSP.TMR1");
+    g_assert_cmpint(child.flags, ==, DEBUG_CH_LOG);
+    g_assert_cmpint(parent.flags, ==, 0);
+    debug_channel_cleanup(&child);
+    debug_channel_cleanup(&parent);
+}
+
 static void test_instance_name(void)
 {
     DebugChannel ch;
@@ -262,6 +289,7 @@ int main(int argc, char **argv)
                     test_flags_are_independent);
     g_test_add_func("/debug-channel/instances", test_instances);
     g_test_add_func("/debug-channel/instance-name", test_instance_name);
+    g_test_add_func("/debug-channel/child", test_child);
     g_test_add_func("/debug-channel/whitespace-and-empty",
                     test_whitespace_and_empty);
     g_test_add_func("/debug-channel/lone-sign-fails", test_lone_sign_fails);

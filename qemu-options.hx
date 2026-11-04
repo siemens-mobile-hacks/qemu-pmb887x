@@ -5156,9 +5156,11 @@ SRST
 
     A channel name is a pattern with ``*`` and ``?`` that matches a device
     id, a channel name (the QOM type for a device) or a parent QOM type of
-    a device, as in ``log=*,-dsp_*`` or ``io=pmb887x-i2c-*,USART*``. Names
-    are case insensitive and applied in order; ``-`` turns the channels
-    off. Repeated keys and options add to the list. A name that matches no
+    a device. Parts of a device that are not QOM objects have subchannels
+    named after the device id, such as ``dsp0.timer1``. Examples:
+    ``log=*,-dsp0.*`` or ``io=pl011,*i2c*,uart*``. Names are case
+    insensitive and applied in order; ``-`` turns the channels off.
+    Repeated keys and options add to the list. A name that matches no
     channel, device id or QOM type stops QEMU after machine creation.
 ERST
 

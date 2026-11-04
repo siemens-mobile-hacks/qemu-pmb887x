@@ -46,6 +46,7 @@ void debug_io_print_context(const DebugIoAccess *io, GString *out);
 struct DebugChannel {
     uint8_t flags;
     char *name;
+    const DebugChannelInfo *info;
     const DebugIoFormat *io_format;
     const void *io_format_opaque;
     const char *(*get_reg_suffix)(const DebugChannel *ch, uint64_t offset);
@@ -71,6 +72,8 @@ void debug_channels_reset(void);
 
 void debug_channel_init(DebugChannel *ch, const DebugChannelInfo *info,
                         const char *instance);
+void debug_channel_init_child(DebugChannel *ch, const DebugChannel *parent,
+                              const char *name);
 void debug_channel_cleanup(DebugChannel *ch);
 
 static inline bool debug_channel_is_enabled(const DebugChannel *ch,
