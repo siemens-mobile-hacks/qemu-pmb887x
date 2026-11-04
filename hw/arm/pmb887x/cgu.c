@@ -1,7 +1,6 @@
 /*
  * CGU
  * */
-#define PMB887X_TRACE_ID		CGU
 #define PMB887X_TRACE_PREFIX	"pmb887x-cgu"
 
 #include "qemu/osdep.h"
@@ -14,7 +13,7 @@
 #include "qemu/timer.h"
 
 #include "hw/arm/pmb887x/gen/cpu_regs.h"
-#include "hw/arm/pmb887x/regs_dump.h"
+#include "hw/arm/pmb887x/gen/cpu_meta.h"
 #include "hw/arm/pmb887x/mod.h"
 #include "hw/arm/pmb887x/trace.h"
 
@@ -27,6 +26,7 @@ typedef struct pmb887x_cgu_t pmb887x_cgu_t;
 struct pmb887x_cgu_t {
 	SysBusDevice parent_obj;
 	MemoryRegion mmio;
+	DebugChannel dbg;
 	uint32_t revision;
 	
 	pmb887x_src_reg_t src;
@@ -67,6 +67,8 @@ struct pmb887x_cgu_t {
 	qemu_irq gpio_fpi2_pll_selected;
 	bool dsp_active;
 };
+
+DEBUG_CHANNEL_INFO(cgu_debug, .name = TYPE_PMB887X_CGU)
 
 static void cgu_update_state(struct pmb887x_cgu_t *p);
 
@@ -323,13 +325,13 @@ static void cgu_update_state(struct pmb887x_cgu_t *p) {
 	bool new_fpi2_pll_selected = (p->con1 & CGU_CON1_FPI2_CLKSEL) == CGU_CON1_FPI2_CLKSEL_PLL;
 	
 	if (new_fcpu != p->fcpu)
-		DPRINTF("fCPU: %u -> %u Hz\n", p->fcpu, new_fcpu);
+		DEBUG_LOG(&p->dbg, "fCPU: %u -> %u Hz\n", p->fcpu, new_fcpu);
 	if (new_fahb != p->fahb)
-		DPRINTF("fAHB: %u -> %u Hz\n", p->fahb, new_fahb);
+		DEBUG_LOG(&p->dbg, "fAHB: %u -> %u Hz\n", p->fahb, new_fahb);
 	if (new_fsys != p->fsys)
-		DPRINTF("fSYS: %u -> %u Hz\n", p->fsys, new_fsys);
+		DEBUG_LOG(&p->dbg, "fSYS: %u -> %u Hz\n", p->fsys, new_fsys);
 	if (new_fpi2 != p->fpi2)
-		DPRINTF("fPI2: %u -> %u Hz\n", p->fpi2, new_fpi2);
+		DEBUG_LOG(&p->dbg, "fPI2: %u -> %u Hz\n", p->fpi2, new_fpi2);
 
 	p->fsys = new_fsys;
 	p->fcpu = new_fcpu;
@@ -392,15 +394,11 @@ static uint64_t cgu_io_read(void *opaque, hwaddr haddr, unsigned size) {
 			break;
 	}
 	
-	IO_DUMP_READ(haddr + p->mmio.addr, size, value);
-	
 	return value;
 }
 
 static void cgu_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned size) {
 	pmb887x_cgu_t *p = opaque;
-	
-	IO_DUMP_WRITE(haddr + p->mmio.addr, size, value);
 	
 	switch (haddr) {
 		case CGU_OSC: {
@@ -503,6 +501,7 @@ static void cgu_reset(DeviceState *dev) {
 
 static void cgu_realize(DeviceState *dev, Error **errp) {
 	pmb887x_cgu_t *p = PMB887X_CGU(dev);
+	pmb887x_mod_debug_init(&p->dbg, &cgu_debug, dev, &p->mmio, &pmb887x_cgu_regs);
 	
 	if (!p->irq)
 		hw_error("pmb887x-cgu: irq not set");

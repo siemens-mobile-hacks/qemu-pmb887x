@@ -1,7 +1,6 @@
 /*
  * GPTU (General Purpose Timer Unit)
  * */
-#define PMB887X_TRACE_ID		GPTU
 #define PMB887X_TRACE_PREFIX	"pmb887x-gptu"
 
 #include "qemu/osdep.h"
@@ -15,7 +14,7 @@
 #include "hw/core/qdev-clock.h"
 
 #include "hw/arm/pmb887x/gen/cpu_regs.h"
-#include "hw/arm/pmb887x/regs_dump.h"
+#include "hw/arm/pmb887x/gen/cpu_meta.h"
 #include "hw/arm/pmb887x/mod.h"
 #include "hw/arm/pmb887x/trace.h"
 
@@ -85,6 +84,7 @@ struct pmb887x_gptu_timer_t2_t {
 struct pmb887x_gptu_t {
 	SysBusDevice parent_obj;
 	MemoryRegion mmio;
+	DebugChannel dbg;
 	uint32_t revision;
 
 	qemu_irq irq[8];
@@ -123,6 +123,8 @@ struct pmb887x_gptu_t {
 	bool syncing_t2;
 };
 
+DEBUG_CHANNEL_INFO(gptu_debug, .name = TYPE_PMB887X_GPTU)
+
 static void gptu_sync_timer(pmb887x_gptu_t *p);
 static void gptu_t2_sync_timer(pmb887x_gptu_t *p);
 static void gptu_t2_update_state(pmb887x_gptu_t *p);
@@ -138,7 +140,7 @@ static void gptu_update_freq(pmb887x_gptu_t *p) {
 	p->freq = pmb887x_clc_get_hz(&p->clc);
 	p->enabled = p->freq > 0;
 
-	DPRINTF("fgptu=%d %s\n", p->freq, p->enabled ? "[ON]" : "[OFF]");
+	DEBUG_LOG(&p->dbg, "fgptu=%d %s\n", p->freq, p->enabled ? "[ON]" : "[OFF]");
 }
 
 static void gptu_clock_update(void *opaque) {
@@ -1018,15 +1020,11 @@ static uint64_t gptu_io_read(void *opaque, hwaddr haddr, unsigned size) {
 			break;
 	}
 
-	IO_DUMP_READ(haddr + p->mmio.addr, size, value);
-
 	return value;
 }
 
 static void gptu_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned size) {
 	pmb887x_gptu_t *p = opaque;
-
-	IO_DUMP_WRITE(haddr + p->mmio.addr, size, value);
 
 	switch (haddr) {
 		case GPTU_CLC:
@@ -1215,6 +1213,7 @@ static void gptu_init(Object *obj) {
 
 static void gptu_realize(DeviceState *dev, Error **errp) {
 	pmb887x_gptu_t *p = PMB887X_GPTU(dev);
+	pmb887x_mod_debug_init(&p->dbg, &gptu_debug, dev, &p->mmio, &pmb887x_gptu_regs);
 
 	pmb887x_clc_set(&p->clc, MOD_CLC_DISR);
 

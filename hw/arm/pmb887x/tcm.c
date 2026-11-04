@@ -1,7 +1,6 @@
 /*
  * ARM TCM
  * */
-#define PMB887X_TRACE_ID		TCM
 #define PMB887X_TRACE_PREFIX	"pmb887x-tcm"
 
 #include "qemu/osdep.h"
@@ -11,6 +10,7 @@
 #include "cpregs.h"
 #include "exec/cputlb.h"
 #include "hw/core/qdev-properties.h"
+#include "qemu/debug-channel.h"
 
 #include "hw/arm/pmb887x/trace.h"
 
@@ -25,7 +25,10 @@ struct pmb887x_tcm_t {
 	MemoryRegion memory[2];
 	uint32_t regs[2];
 	CPUState *cpu;
+	DebugChannel dbg;
 };
+
+DEBUG_CHANNEL_INFO(tcm_debug, .name = TYPE_PMB887X_TCM)
 
 /*
  *	TCM
@@ -39,7 +42,7 @@ static void tcm_update_state(pmb887x_tcm_t *p, int i) {
 	if (size > 0)
 		size = (1 << (size - 1)) * 1024;
 
-	DPRINTF("%cTCM %08X (%08X, enabled=%d)\n", tcm_names[i], base, size, enabled);
+	DEBUG_LOG(&p->dbg, "%cTCM %08X (%08X, enabled=%d)\n", tcm_names[i], base, size, enabled);
 
 	if (i == 0) {
 		ARMCPU *cpu = ARM_CPU(p->cpu);
@@ -124,6 +127,7 @@ static void tcm_reset(DeviceState *dev) {
 
 static void tcm_realize(DeviceState *dev, Error **errp) {
 	pmb887x_tcm_t *p = PMB887X_TCM(dev);
+	debug_channel_init(&p->dbg, &tcm_debug, dev->id);
 	memory_region_add_subregion(p->cpu->memory, DTCM_PHYS_BASE, &p->memory[0]);
 
 	for (int i = 0; i < ARRAY_SIZE(tcm_cp_reginfo); i++) {

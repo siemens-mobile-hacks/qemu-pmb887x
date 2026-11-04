@@ -7,10 +7,6 @@
 #include "hw/arm/pmb887x/regs_dump.h"
 #include "hw/arm/pmb887x/trace_common.h"
 
-#ifndef PMB887X_TRACE_ID
-#error "PMB887X_TRACE_ID not defined!"
-#endif
-
 #ifndef PMB887X_TRACE_PREFIX
 #error "PMB887X_TRACE_PREFIX not defined!"
 #endif

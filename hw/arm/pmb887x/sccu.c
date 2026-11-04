@@ -1,7 +1,6 @@
 /*
  * SCCU
  * */
-#define PMB887X_TRACE_ID		SCCU
 #define PMB887X_TRACE_PREFIX	"pmb887x-sccu"
 
 #include "qemu/osdep.h"
@@ -17,6 +16,7 @@
 
 #include "hw/arm/pmb887x/sccu.h"
 #include "hw/arm/pmb887x/gen/cpu_regs.h"
+#include "hw/arm/pmb887x/gen/cpu_meta.h"
 #include "hw/arm/pmb887x/mod.h"
 #include "hw/arm/pmb887x/trace.h"
 
@@ -33,6 +33,7 @@ typedef struct pmb887x_sccu_t pmb887x_sccu_t;
 struct pmb887x_sccu_t {
 	SysBusDevice parent_obj;
 	MemoryRegion mmio;
+	DebugChannel dbg;
 	uint32_t revision;
 
 	qemu_irq irq[2];
@@ -63,6 +64,8 @@ struct pmb887x_sccu_t {
 	QEMUTimer *sc_timer;
 	Clock *clock32;
 };
+
+DEBUG_CHANNEL_INFO(sccu_debug, .name = TYPE_PMB887X_SCCU)
 
 static uint32_t sccu_get_nqtz(pmb887x_sccu_t *p) {
 	uint32_t nqtz = (p->nqtz & SCCU_NQTZ_NQTZ) >> SCCU_NQTZ_NQTZ_SHIFT;
@@ -149,8 +152,8 @@ static void sccu_ptimer_reset(void *opaque) {
 		p->slpctrl &= ~SCCU_SLPCTRL_SLPEN;
 		sccu_set_active_state(p);
 
-		DPRINTF("now %u\n", (uint32_t) (qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) / 1000000));
-		DPRINTF("sleep timer done\n");
+		DEBUG_LOG(&p->dbg, "now %u\n", (uint32_t) (qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) / 1000000));
+		DEBUG_LOG(&p->dbg, "sleep timer done\n");
 	} else {
 		timer_mod(p->timer, p->start + sccu_ticks_to_ns(p, overflow));
 	}
@@ -167,7 +170,7 @@ static void sccu_start_sleep(pmb887x_sccu_t *p) {
 
 	uint32_t first_event = sccu_get_wakeup_count(p);
 	timer_mod(p->timer, p->start + sccu_ticks_to_ns(p, first_event));
-	DPRINTF("sleep timer start %d ms\n", (uint32_t) (sccu_ticks_to_ns(p, p->tdmini + 1) / 1000000));
+	DEBUG_LOG(&p->dbg, "sleep timer start %d ms\n", (uint32_t) (sccu_ticks_to_ns(p, p->tdmini + 1) / 1000000));
 }
 
 uint32_t pmb887x_sccu_clc_get(pmb887x_sccu_t *p) {
@@ -251,15 +254,11 @@ static uint64_t sccu_io_read(void *opaque, hwaddr haddr, unsigned size) {
 			break;
 	}
 
-	IO_DUMP_READ(haddr + p->mmio.addr, size, value);
-
 	return value;
 }
 
 static void sccu_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned size) {
 	pmb887x_sccu_t *p = opaque;
-
-	IO_DUMP_WRITE(haddr + p->mmio.addr, size, value);
 
 	switch (haddr) {
 		case SCCU_SPCR:
@@ -367,6 +366,7 @@ static void sccu_init(Object *obj) {
 
 static void sccu_realize(DeviceState *dev, Error **errp) {
 	pmb887x_sccu_t *p = PMB887X_SCCU(dev);
+	pmb887x_mod_debug_init(&p->dbg, &sccu_debug, dev, &p->mmio, &pmb887x_sccu_regs);
 
 	if (!clock_has_source(p->clock32)) {
 		error_setg(errp, "pmb887x-sccu: clk32 input is not connected");

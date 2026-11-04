@@ -2,6 +2,7 @@
 #include "qemu/osdep.h"
 #include "hw/core/qdev-clock.h"
 #include "hw/core/irq.h"
+#include "qemu/debug-regs.h"
 
 typedef struct pmb887x_clc_reg_t pmb887x_clc_reg_t;
 typedef struct pmb887x_src_reg_t pmb887x_src_reg_t;
@@ -93,3 +94,11 @@ uint32_t pmb887x_srb_ext_get_ris(pmb887x_srb_ext_reg_t *reg);
 void pmb887x_srb_ext_set_imsc(pmb887x_srb_ext_reg_t *reg, uint32_t value);
 void pmb887x_srb_ext_set_icr(pmb887x_srb_ext_reg_t *reg, uint32_t value);
 void pmb887x_srb_ext_set_isr(pmb887x_srb_ext_reg_t *reg, uint32_t value);
+
+void pmb887x_mod_debug_init(
+	DebugChannel *ch,
+	const DebugChannelInfo *info,
+	DeviceState *dev,
+	MemoryRegion *mmio,
+	const DebugRegs *regs
+);

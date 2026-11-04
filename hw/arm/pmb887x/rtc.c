@@ -1,7 +1,6 @@
 /*
  * RTC
  * */
-#define PMB887X_TRACE_ID		RTC
 #define PMB887X_TRACE_PREFIX	"pmb887x-rtc"
 
 #include "qemu/osdep.h"
@@ -18,7 +17,7 @@
 #include "hw/core/qdev-clock.h"
 
 #include "hw/arm/pmb887x/gen/cpu_regs.h"
-#include "hw/arm/pmb887x/regs_dump.h"
+#include "hw/arm/pmb887x/gen/cpu_meta.h"
 #include "hw/arm/pmb887x/mod.h"
 #include "hw/arm/pmb887x/trace.h"
 
@@ -37,6 +36,7 @@ typedef struct pmb887x_rtc_t pmb887x_rtc_t;
 struct pmb887x_rtc_t {
 	SysBusDevice parent_obj;
 	MemoryRegion mmio;
+	DebugChannel dbg;
 	uint32_t revision;
 	char *cnt_format;
 
@@ -54,6 +54,8 @@ struct pmb887x_rtc_t {
 	uint32_t alarm;
 	int64_t start;
 };
+
+DEBUG_CHANNEL_INFO(rtc_debug, .name = TYPE_PMB887X_RTC)
 
 static uint32_t rtc_get_freq(pmb887x_rtc_t *p) {
 	uint32_t frtc = clock_get_hz(p->clc.clock);
@@ -225,16 +227,12 @@ static uint64_t rtc_io_read(void *opaque, hwaddr haddr, unsigned size) {
 			break;
 	}
 	
-	IO_DUMP_READ(haddr + p->mmio.addr, size, value);
-	
 	return value;
 }
 
 static void rtc_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned size) {
 	pmb887x_rtc_t *p = opaque;
 	rtc_sync(p);
-	
-	IO_DUMP_WRITE(haddr + p->mmio.addr, size, value);
 	
 	switch (haddr) {
 		case RTC_CLC:
@@ -378,6 +376,7 @@ static void rtc_reset(DeviceState *dev) {
 
 static void rtc_realize(DeviceState *dev, Error **errp) {
 	pmb887x_rtc_t *p = PMB887X_RTC(dev);
+	pmb887x_mod_debug_init(&p->dbg, &rtc_debug, dev, &p->mmio, &pmb887x_rtc_regs);
 	
 	if (!p->irq)
 		hw_error("pmb887x-rtc: irq not set");

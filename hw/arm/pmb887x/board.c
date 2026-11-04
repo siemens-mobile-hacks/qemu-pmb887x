@@ -139,6 +139,7 @@ static void pmb887x_init(MachineState *machine) {
 
 	// TCM
 	DeviceState *tcm = qdev_new("pmb887x-tcm");
+	tcm->id = g_strdup("TCM");
 	object_property_set_link(OBJECT(tcm), "cpu", OBJECT(cpu), &error_fatal);
 	sysbus_realize_and_unref(SYS_BUS_DEVICE(tcm), &error_fatal);
 

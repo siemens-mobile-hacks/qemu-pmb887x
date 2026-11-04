@@ -1,7 +1,6 @@
 /*
  * System Timer (56 bit)
  * */
-#define PMB887X_TRACE_ID		STM
 #define PMB887X_TRACE_PREFIX	"pmb887x-stm"
 
 #include "qemu/osdep.h"
@@ -16,7 +15,7 @@
 #include "hw/core/qdev-clock.h"
 
 #include "hw/arm/pmb887x/gen/cpu_regs.h"
-#include "hw/arm/pmb887x/regs_dump.h"
+#include "hw/arm/pmb887x/gen/cpu_meta.h"
 #include "hw/arm/pmb887x/mod.h"
 #include "hw/arm/pmb887x/trace.h"
 
@@ -29,6 +28,7 @@ typedef struct pmb887x_stm_t pmb887x_stm_t;
 struct pmb887x_stm_t {
 	SysBusDevice parent_obj;
 	MemoryRegion mmio;
+	DebugChannel dbg;
 	uint32_t revision;
 	
 	pmb887x_clc_reg_t clc;
@@ -41,6 +41,8 @@ struct pmb887x_stm_t {
 	int64_t capture;
 	int64_t counter;
 };
+
+DEBUG_CHANNEL_INFO(stm_debug, .name = TYPE_PMB887X_STM)
 
 static uint64_t stm_ns_to_ticks(uint64_t ns, uint32_t freq) {
 	uint64_t seconds = ns / NANOSECONDS_PER_SECOND;
@@ -97,7 +99,7 @@ static void stm_update_state(pmb887x_stm_t *p) {
 		}
 		seqlock_write_end(&p->seq);
 		
-		DPRINTF("clk=%u, fSTM=%u [%s]\n", clock_get_hz(p->clc.clock), p->freq, p->enabled ? "ON" : "OFF");
+		DEBUG_LOG(&p->dbg, "clk=%u, fSTM=%u [%s]\n", clock_get_hz(p->clc.clock), p->freq, p->enabled ? "ON" : "OFF");
 	}
 }
 
@@ -170,8 +172,6 @@ static uint64_t stm_io_read(void *opaque, hwaddr haddr, unsigned size) {
 			break;
 	}
 	
-	IO_DUMP_READ(haddr + p->mmio.addr, size, value);
-	
 	return value;
 }
 
@@ -179,7 +179,6 @@ static void stm_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned si
 	pmb887x_stm_t *p = opaque;
 	
 	BQL_LOCK_GUARD();
-	IO_DUMP_WRITE(haddr + p->mmio.addr, size, value);
 	
 	switch (haddr) {
 		case STM_CLC:
@@ -228,6 +227,7 @@ static void stm_reset(DeviceState *dev) {
 
 static void stm_realize(DeviceState *dev, Error **errp) {
 	struct pmb887x_stm_t *p = PMB887X_STM(dev);
+	pmb887x_mod_debug_init(&p->dbg, &stm_debug, dev, &p->mmio, &pmb887x_stm_regs);
 	
 	pmb887x_clc_set(&p->clc, STM_CLC_RESET_VALUE);
 	

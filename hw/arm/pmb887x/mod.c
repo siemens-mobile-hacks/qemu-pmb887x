@@ -8,6 +8,7 @@
 #include "hw/arm/pmb887x/gen/cpu_regs.h"
 #include "hw/core/hw-error.h"
 #include "hw/core/qdev.h"
+#include "system/debug-channel.h"
 #include "hw/arm/pmb887x/trace.h"
 
 static uint32_t pmb887x_clc_calculate_hz(pmb887x_clc_reg_t *reg) {
@@ -320,4 +321,17 @@ void pmb887x_srb_ext_set_isr(pmb887x_srb_ext_reg_t *reg, uint32_t value) {
 	
 	if ((reg->ris & reg->imsc))
 		pmb887x_srb_set_isr(reg->parent, reg->events);
+}
+
+void pmb887x_mod_debug_init(
+	DebugChannel *ch,
+	const DebugChannelInfo *info,
+	DeviceState *dev,
+	MemoryRegion *mmio,
+	const DebugRegs *regs
+) {
+	debug_channel_init(ch, info, dev->id);
+	ch->io_format = &debug_regs_format;
+	ch->io_format_opaque = regs;
+	debug_channel_attach_mr(ch, mmio);
 }
