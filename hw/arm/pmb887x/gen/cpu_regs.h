@@ -699,7 +699,7 @@
 #define MOD_ID_REV_SHIFT					0
 #define MOD_ID_32B							(0xFF << 8)
 #define MOD_ID_32B_SHIFT					8
-#define MOD_ID_NUMBER						(0xFFFF << 16)
+#define MOD_ID_NUMBER						(0xFFFFU << 16)
 #define MOD_ID_NUMBER_SHIFT					16
 
 /* Service Routing Control Register */
@@ -763,7 +763,7 @@
 #define ADC_ANA_CTRL_PAOPM1_ENHANCED	0x4000
 #define ADC_ANA_CTRL_PA_CAL1			(0x3F << 16)	 // PAOUT1 Digital Offset Correction
 #define ADC_ANA_CTRL_PA_CAL1_SHIFT		16
-#define ADC_ANA_CTRL_TREF				(0xF << 28)		 // Common Mode Voltage for Baseband TX Path
+#define ADC_ANA_CTRL_TREF				(0xFU << 28)	 // Common Mode Voltage for Baseband TX Path
 #define ADC_ANA_CTRL_TREF_SHIFT			28
 #define ADC_ANA_CTRL_TREF_0_955V		0x0
 #define ADC_ANA_CTRL_TREF_1_010V		0x10000000
@@ -841,7 +841,7 @@
 #define ADC_CTRL_ENTRIG_SHIFT			28
 #define ADC_CTRL_ADCON					(1 << 29)		 // ADC Power Save Control
 #define ADC_CTRL_ADCON_SHIFT			29
-#define ADC_CTRL_START					(1 << 31)		 // Start Conversion
+#define ADC_CTRL_START					(1U << 31)		 // Start Conversion
 #define ADC_CTRL_START_SHIFT			31
 
 /* Measurement Status Register */
@@ -850,7 +850,7 @@
 #define ADC_STAT_WPTR_SHIFT				0
 #define ADC_STAT_BUSY					(1 << 30)		 // ADC Busy Flag
 #define ADC_STAT_BUSY_SHIFT				30
-#define ADC_STAT_READY					(1 << 31)		 // Data Ready Flag
+#define ADC_STAT_READY					(1U << 31)		 // Data Ready Flag
 #define ADC_STAT_READY_SHIFT			31
 
 /* Measurement Data Register */
@@ -1266,7 +1266,7 @@
 #define DMAC_CH_LLI_LM_SHIFT					0
 #define DMAC_CH_LLI_LM_AHB1						0x0
 #define DMAC_CH_LLI_LM_AHB2						0x1
-#define DMAC_CH_LLI_ITEM						(0x3FFFFFFF << 2)	 // Linked list item
+#define DMAC_CH_LLI_ITEM						(0x3FFFFFFFU << 2)	 // Linked list item
 #define DMAC_CH_LLI_ITEM_SHIFT					2
 
 #define DMAC_CH_CONTROL0						0x10C
@@ -1323,7 +1323,7 @@
 #define DMAC_CH_CONTROL_DI_SHIFT				27
 #define DMAC_CH_CONTROL_PROTECTION				(0x7 << 28)			 // Protection.
 #define DMAC_CH_CONTROL_PROTECTION_SHIFT		28
-#define DMAC_CH_CONTROL_I						(1 << 31)			 // Terminal count interrupt enable bit.
+#define DMAC_CH_CONTROL_I						(1U << 31)			 // Terminal count interrupt enable bit.
 #define DMAC_CH_CONTROL_I_SHIFT					31
 
 #define DMAC_CH_CONFIG0							0x110
@@ -1419,7 +1419,7 @@
 
 /* Command argument register */
 #define MCI_ARGUMENT						0x08
-#define MCI_ARGUMENT_CMDARG					(0xFFFFFFFF << 0)	 // Command argument sent to the card
+#define MCI_ARGUMENT_CMDARG					(0xFFFFFFFFU << 0)	 // Command argument sent to the card
 #define MCI_ARGUMENT_CMDARG_SHIFT			0
 
 /* Command control register */
@@ -1444,27 +1444,27 @@
 
 /* Card status bits [31:0] for a short response or [127:96] for a long response */
 #define MCI_RESPONSE0						0x14
-#define MCI_RESPONSE0_STATUS				(0xFFFFFFFF << 0)	 // Card status
+#define MCI_RESPONSE0_STATUS				(0xFFFFFFFFU << 0)	 // Card status
 #define MCI_RESPONSE0_STATUS_SHIFT			0
 
 /* Card status bits [95:64] for a long response */
 #define MCI_RESPONSE1						0x18
-#define MCI_RESPONSE1_STATUS				(0xFFFFFFFF << 0)	 // Card status
+#define MCI_RESPONSE1_STATUS				(0xFFFFFFFFU << 0)	 // Card status
 #define MCI_RESPONSE1_STATUS_SHIFT			0
 
 /* Card status bits [63:32] for a long response */
 #define MCI_RESPONSE2						0x1C
-#define MCI_RESPONSE2_STATUS				(0xFFFFFFFF << 0)	 // Card status
+#define MCI_RESPONSE2_STATUS				(0xFFFFFFFFU << 0)	 // Card status
 #define MCI_RESPONSE2_STATUS_SHIFT			0
 
 /* Card status bits [31:1] for a long response; bit 0 is always zero */
 #define MCI_RESPONSE3						0x20
-#define MCI_RESPONSE3_STATUS				(0xFFFFFFFF << 0)	 // Card status
+#define MCI_RESPONSE3_STATUS				(0xFFFFFFFFU << 0)	 // Card status
 #define MCI_RESPONSE3_STATUS_SHIFT			0
 
 /* Data timeout register */
 #define MCI_DATATIMER						0x24
-#define MCI_DATATIMER_TIMER					(0xFFFFFFFF << 0)	 // Data timeout in card bus clock periods
+#define MCI_DATATIMER_TIMER					(0xFFFFFFFFU << 0)	 // Data timeout in card bus clock periods
 #define MCI_DATATIMER_TIMER_SHIFT			0
 
 /* Data length register */
@@ -1687,7 +1687,7 @@
 #define MCI_FIFO13							0xB4
 #define MCI_FIFO14							0xB8
 #define MCI_FIFO15							0xBC
-#define MCI_FIFO_DATA						(0xFFFFFFFF << 0)	 // FIFO data
+#define MCI_FIFO_DATA						(0xFFFFFFFFU << 0)	 // FIFO data
 #define MCI_FIFO_DATA_SHIFT					0
 
 /* Test control register */
@@ -2089,7 +2089,7 @@
 #define CAPCOM_T0								0x40
 #define CAPCOM_T0_T0							(0xFFFF << 0)
 #define CAPCOM_T0_T0_SHIFT						0
-#define CAPCOM_T0_OVF0							(1 << 31)
+#define CAPCOM_T0_OVF0							(1U << 31)
 #define CAPCOM_T0_OVF0_SHIFT					31
 #define CAPCOM_T0_OVF0_CLEARED					0x0
 #define CAPCOM_T0_OVF0_SET						0x80000000
@@ -2101,7 +2101,7 @@
 #define CAPCOM_T1								0x48
 #define CAPCOM_T1_T1							(0xFFFF << 0)
 #define CAPCOM_T1_T1_SHIFT						0
-#define CAPCOM_T1_OVF1							(1 << 31)
+#define CAPCOM_T1_OVF1							(1U << 31)
 #define CAPCOM_T1_OVF1_SHIFT					31
 #define CAPCOM_T1_OVF1_CLEARED					0x0
 #define CAPCOM_T1_OVF1_SET						0x80000000
@@ -2246,7 +2246,7 @@
 #define CGU_CON0_PHASE3_K2_SHIFT			16
 #define CGU_CON0_PHASE3_K1					(0xF << 19)		 // Phase 3 divider: fPLL * 12 / (K1 * 6 + K2)
 #define CGU_CON0_PHASE3_K1_SHIFT			19
-#define CGU_CON0_PHASE4_CONFIG				(0xFF << 24)	 // Complete K1/K2 configuration byte for phase-shifter output 4
+#define CGU_CON0_PHASE4_CONFIG				(0xFFU << 24)	 // Complete K1/K2 configuration byte for phase-shifter output 4
 #define CGU_CON0_PHASE4_CONFIG_SHIFT		24
 #define CGU_CON0_PHASE4_K2					(0x7 << 24)		 // Phase 4 divider denominator term, valid values 0..5
 #define CGU_CON0_PHASE4_K2_SHIFT			24
@@ -2785,7 +2785,7 @@
 #define DIFv1_BCREG_B29_SHIFT			29
 #define DIFv1_BCREG_B30					(1 << 30)
 #define DIFv1_BCREG_B30_SHIFT			30
-#define DIFv1_BCREG_B31					(1 << 31)
+#define DIFv1_BCREG_B31					(1U << 31)
 #define DIFv1_BCREG_B31_SHIFT			31
 
 /* Bit Control Register 0 */
@@ -2820,7 +2820,7 @@
 #define DIFv1_BCSEL0_B13_SHIFT			26
 #define DIFv1_BCSEL0_B14				(0x3 << 28)
 #define DIFv1_BCSEL0_B14_SHIFT			28
-#define DIFv1_BCSEL0_B15				(0x3 << 30)
+#define DIFv1_BCSEL0_B15				(0x3U << 30)
 #define DIFv1_BCSEL0_B15_SHIFT			30
 
 /* Bit Control Register 1 */
@@ -2855,7 +2855,7 @@
 #define DIFv1_BCSEL1_B29_SHIFT			26
 #define DIFv1_BCSEL1_B30				(0x3 << 28)
 #define DIFv1_BCSEL1_B30_SHIFT			28
-#define DIFv1_BCSEL1_B31				(0x3 << 30)
+#define DIFv1_BCSEL1_B31				(0x3U << 30)
 #define DIFv1_BCSEL1_B31_SHIFT			30
 
 /* Transfer Synchronization Configuration Register */
@@ -2890,7 +2890,7 @@
 #define DIFv1_SYNC_COUNT_HDSTART_SHIFT	0
 #define DIFv1_SYNC_COUNT_NUMBYTES		(0xFFF << 10)
 #define DIFv1_SYNC_COUNT_NUMBYTES_SHIFT	10
-#define DIFv1_SYNC_COUNT_NUMROWS		(0x3FF << 22)
+#define DIFv1_SYNC_COUNT_NUMROWS		(0x3FFU << 22)
 #define DIFv1_SYNC_COUNT_NUMROWS_SHIFT	22
 
 
@@ -3180,7 +3180,7 @@
 #define DIFv2_BCSEL0_B13_SHIFT				26
 #define DIFv2_BCSEL0_B14					(0x3 << 28)
 #define DIFv2_BCSEL0_B14_SHIFT				28
-#define DIFv2_BCSEL0_B15					(0x3 << 30)
+#define DIFv2_BCSEL0_B15					(0x3U << 30)
 #define DIFv2_BCSEL0_B15_SHIFT				30
 
 /* Bit Control Register 1 */
@@ -3215,7 +3215,7 @@
 #define DIFv2_BCSEL1_B29_SHIFT				26
 #define DIFv2_BCSEL1_B30					(0x3 << 28)
 #define DIFv2_BCSEL1_B30_SHIFT				28
-#define DIFv2_BCSEL1_B31					(0x3 << 30)
+#define DIFv2_BCSEL1_B31					(0x3U << 30)
 #define DIFv2_BCSEL1_B31_SHIFT				30
 
 /* Bit Clamp Value Register */
@@ -3282,7 +3282,7 @@
 #define DIFv2_BCREG_B29_SHIFT				29
 #define DIFv2_BCREG_B30						(1 << 30)
 #define DIFv2_BCREG_B30_SHIFT				30
-#define DIFv2_BCREG_B31						(1 << 31)
+#define DIFv2_BCREG_B31						(1U << 31)
 #define DIFv2_BCREG_B31_SHIFT				31
 
 /* Bit Inversion Register */
@@ -3349,7 +3349,7 @@
 #define DIFv2_INVERT_BIT_B29_SHIFT			29
 #define DIFv2_INVERT_BIT_B30				(1 << 30)
 #define DIFv2_INVERT_BIT_B30_SHIFT			30
-#define DIFv2_INVERT_BIT_B31				(1 << 31)
+#define DIFv2_INVERT_BIT_B31				(1U << 31)
 #define DIFv2_INVERT_BIT_B31_SHIFT			31
 
 /* Transfer Synchronization Configuration Register */
@@ -3383,7 +3383,7 @@
 #define DIFv2_SYNC_COUNT_HDSTART_SHIFT		0
 #define DIFv2_SYNC_COUNT_NUMBYTES			(0xFFF << 10)
 #define DIFv2_SYNC_COUNT_NUMBYTES_SHIFT		10
-#define DIFv2_SYNC_COUNT_NUMROWS			(0x3FF << 22)
+#define DIFv2_SYNC_COUNT_NUMROWS			(0x3FFU << 22)
 #define DIFv2_SYNC_COUNT_NUMROWS_SHIFT		22
 
 /* Baud Rate Timer Reload Register */
@@ -3663,7 +3663,7 @@
 #define DIFv2_TXD_BYTE1_SHIFT				8
 #define DIFv2_TXD_BYTE2						(0xFF << 16)
 #define DIFv2_TXD_BYTE2_SHIFT				16
-#define DIFv2_TXD_BYTE3						(0xFF << 24)
+#define DIFv2_TXD_BYTE3						(0xFFU << 24)
 #define DIFv2_TXD_BYTE3_SHIFT				24
 #define DIFv2_TXD_INBAND_GRACMD				(1 << 24)		 // PERREG.INBAND: apply the color matrix to this word
 #define DIFv2_TXD_INBAND_GRACMD_SHIFT		24
@@ -3683,7 +3683,7 @@
 #define DIFv2_TXD_INBAND_CD_SHIFT			29
 #define DIFv2_TXD_INBAND_CS2				(1 << 30)		 // PERREG.INBAND: assert CS2 for this word
 #define DIFv2_TXD_INBAND_CS2_SHIFT			30
-#define DIFv2_TXD_INBAND_CS1				(1 << 31)		 // PERREG.INBAND: assert CS1 for this word
+#define DIFv2_TXD_INBAND_CS1				(1U << 31)		 // PERREG.INBAND: assert CS1 for this word
 #define DIFv2_TXD_INBAND_CS1_SHIFT			31
 
 /* Receive Data Register */
@@ -3694,7 +3694,7 @@
 #define DIFv2_RXD_BYTE1_SHIFT				8
 #define DIFv2_RXD_BYTE2						(0xFF << 16)
 #define DIFv2_RXD_BYTE2_SHIFT				16
-#define DIFv2_RXD_BYTE3						(0xFF << 24)
+#define DIFv2_RXD_BYTE3						(0xFFU << 24)
 #define DIFv2_RXD_BYTE3_SHIFT				24
 
 
@@ -3754,121 +3754,121 @@
 #define EBU_ID								0x08
 
 #define EBU_CON								0x10
-#define EBU_CON_EXTRECON					(1 << 1)		 // External reconfiguration
+#define EBU_CON_EXTRECON					(1 << 1)			 // External reconfiguration
 #define EBU_CON_EXTRECON_SHIFT				1
-#define EBU_CON_EXTSVM						(1 << 2)		 // Perform master in
+#define EBU_CON_EXTSVM						(1 << 2)			 // Perform master in
 #define EBU_CON_EXTSVM_SHIFT				2
-#define EBU_CON_EXTACC						(1 << 3)		 // External access FPI-bus
+#define EBU_CON_EXTACC						(1 << 3)			 // External access FPI-bus
 #define EBU_CON_EXTACC_SHIFT				3
-#define EBU_CON_EXTLOCK						(1 << 4)		 // Lock external bus
+#define EBU_CON_EXTLOCK						(1 << 4)			 // Lock external bus
 #define EBU_CON_EXTLOCK_SHIFT				4
-#define EBU_CON_ARBSYNC						(1 << 5)		 // Arbitration evaluation
+#define EBU_CON_ARBSYNC						(1 << 5)			 // Arbitration evaluation
 #define EBU_CON_ARBSYNC_SHIFT				5
-#define EBU_CON_ARBMODE						(0x3 << 6)		 // Arbitration mode
+#define EBU_CON_ARBMODE						(0x3 << 6)			 // Arbitration mode
 #define EBU_CON_ARBMODE_SHIFT				6
-#define EBU_CON_TOUTC						(0xFF << 8)		 // Time-out control
+#define EBU_CON_TOUTC						(0xFF << 8)			 // Time-out control
 #define EBU_CON_TOUTC_SHIFT					8
-#define EBU_CON_GLOBALCS					(0xFF << 16)	 // Global chip select signal
+#define EBU_CON_GLOBALCS					(0xFF << 16)		 // Global chip select signal
 #define EBU_CON_GLOBALCS_SHIFT				16
-#define EBU_CON_BUSCLK						(0x3 << 24)		 // Clock generation
+#define EBU_CON_BUSCLK						(0x3 << 24)			 // Clock generation
 #define EBU_CON_BUSCLK_SHIFT				24
-#define EBU_CON_SDCMSEL						(1 << 26)		 // SDRAM Clock Mode Select
+#define EBU_CON_SDCMSEL						(1 << 26)			 // SDRAM Clock Mode Select
 #define EBU_CON_SDCMSEL_SHIFT				26
-#define EBU_CON_CS0FAM						(1 << 27)		 // CS0 Fills Address Map
+#define EBU_CON_CS0FAM						(1 << 27)			 // CS0 Fills Address Map
 #define EBU_CON_CS0FAM_SHIFT				27
-#define EBU_CON_EMUFAM						(1 << 28)		 // CSEMU Fills Address Map
+#define EBU_CON_EMUFAM						(1 << 28)			 // CSEMU Fills Address Map
 #define EBU_CON_EMUFAM_SHIFT				28
-#define EBU_CON_BFSSS						(1 << 29)		 // Burst FLASH Single Stage Synchronization
+#define EBU_CON_BFSSS						(1 << 29)			 // Burst FLASH Single Stage Synchronization
 #define EBU_CON_BFSSS_SHIFT					29
 
 #define EBU_BFCON							0x20
-#define EBU_BFCON_FETBLEN0					(0xF << 0)		 // Fetch Burst Length for Burst FLASH Type 0
+#define EBU_BFCON_FETBLEN0					(0xF << 0)			 // Fetch Burst Length for Burst FLASH Type 0
 #define EBU_BFCON_FETBLEN0_SHIFT			0
-#define EBU_BFCON_FBBMSEL0					(1 << 4)		 // FLASH Burst Buffer Mode Select for Burst FLASH Type 0
+#define EBU_BFCON_FBBMSEL0					(1 << 4)			 // FLASH Burst Buffer Mode Select for Burst FLASH Type 0
 #define EBU_BFCON_FBBMSEL0_SHIFT			4
-#define EBU_BFCON_WAITFUNC0					(1 << 5)		 // Function of WAIT Input for Burst FLASH Type 0
+#define EBU_BFCON_WAITFUNC0					(1 << 5)			 // Function of WAIT Input for Burst FLASH Type 0
 #define EBU_BFCON_WAITFUNC0_SHIFT			5
-#define EBU_BFCON_EXTCLOCK					(0x3 << 6)		 // Frequency of external clock
+#define EBU_BFCON_EXTCLOCK					(0x3 << 6)			 // Frequency of external clock
 #define EBU_BFCON_EXTCLOCK_SHIFT			6
-#define EBU_BFCON_BFCMSEL					(1 << 8)		 // Burst FLASH Clock Mode Select
+#define EBU_BFCON_BFCMSEL					(1 << 8)			 // Burst FLASH Clock Mode Select
 #define EBU_BFCON_BFCMSEL_SHIFT				8
-#define EBU_BFCON_EBSE0						(1 << 9)		 // Early Burst Signal Enable for Burst FLASH Type 0
+#define EBU_BFCON_EBSE0						(1 << 9)			 // Early Burst Signal Enable for Burst FLASH Type 0
 #define EBU_BFCON_EBSE0_SHIFT				9
-#define EBU_BFCON_DBA0						(1 << 10)		 // Disable Burst Address Wrapping
+#define EBU_BFCON_DBA0						(1 << 10)			 // Disable Burst Address Wrapping
 #define EBU_BFCON_DBA0_SHIFT				10
-#define EBU_BFCON_FDBKEN					(1 << 11)		 // Burst FLASH Clock Feedback Enable
+#define EBU_BFCON_FDBKEN					(1 << 11)			 // Burst FLASH Clock Feedback Enable
 #define EBU_BFCON_FDBKEN_SHIFT				11
-#define EBU_BFCON_DTALTNCY					(0xF << 12)		 // Latency Cycle Control
+#define EBU_BFCON_DTALTNCY					(0xF << 12)			 // Latency Cycle Control
 #define EBU_BFCON_DTALTNCY_SHIFT			12
-#define EBU_BFCON_FETBLEN1					(0xF << 16)		 // Fetch Burst Length for Burst FLASH Type 1
+#define EBU_BFCON_FETBLEN1					(0xF << 16)			 // Fetch Burst Length for Burst FLASH Type 1
 #define EBU_BFCON_FETBLEN1_SHIFT			16
-#define EBU_BFCON_FBBMSEL1					(1 << 20)		 // FLASH Burst Buffer Mode Select for Burst FLASH Type 1
+#define EBU_BFCON_FBBMSEL1					(1 << 20)			 // FLASH Burst Buffer Mode Select for Burst FLASH Type 1
 #define EBU_BFCON_FBBMSEL1_SHIFT			20
-#define EBU_BFCON_WAITFUNC1					(1 << 21)		 // Function of WAIT Input for Burst FLASH Type 1
+#define EBU_BFCON_WAITFUNC1					(1 << 21)			 // Function of WAIT Input for Burst FLASH Type 1
 #define EBU_BFCON_WAITFUNC1_SHIFT			21
-#define EBU_BFCON_EBSE1						(1 << 25)		 // Early Burst Signal Enable for Burst FLASH Type 1
+#define EBU_BFCON_EBSE1						(1 << 25)			 // Early Burst Signal Enable for Burst FLASH Type 1
 #define EBU_BFCON_EBSE1_SHIFT				25
-#define EBU_BFCON_DBA1						(1 << 26)		 // Disable Burst Address Wrapping for Burst FLASH Type 1
+#define EBU_BFCON_DBA1						(1 << 26)			 // Disable Burst Address Wrapping for Burst FLASH Type 1
 #define EBU_BFCON_DBA1_SHIFT				26
 
 #define EBU_SDRMREF0						0x40
 #define EBU_SDRMREF1						0x48
-#define EBU_SDRMREF_REFRESHC				(0x3F << 0)		 // Refresh counter period
+#define EBU_SDRMREF_REFRESHC				(0x3F << 0)			 // Refresh counter period
 #define EBU_SDRMREF_REFRESHC_SHIFT			0
-#define EBU_SDRMREF_REFRESHR				(0x7 << 6)		 // Number of refresh commands
+#define EBU_SDRMREF_REFRESHR				(0x7 << 6)			 // Number of refresh commands
 #define EBU_SDRMREF_REFRESHR_SHIFT			6
-#define EBU_SDRMREF_SELFREXST				(1 << 9)		 // Self refresh exit status
+#define EBU_SDRMREF_SELFREXST				(1 << 9)			 // Self refresh exit status
 #define EBU_SDRMREF_SELFREXST_SHIFT			9
-#define EBU_SDRMREF_SELFREX					(1 << 10)		 // Self refresh exit
+#define EBU_SDRMREF_SELFREX					(1 << 10)			 // Self refresh exit
 #define EBU_SDRMREF_SELFREX_SHIFT			10
-#define EBU_SDRMREF_SELFRENST				(1 << 11)		 // Self refresh entry status
+#define EBU_SDRMREF_SELFRENST				(1 << 11)			 // Self refresh entry status
 #define EBU_SDRMREF_SELFRENST_SHIFT			11
-#define EBU_SDRMREF_SELFREN					(1 << 12)		 // Self refresh entry
+#define EBU_SDRMREF_SELFREN					(1 << 12)			 // Self refresh entry
 #define EBU_SDRMREF_SELFREN_SHIFT			12
-#define EBU_SDRMREF_AUTOSELFR				(1 << 13)		 // Automatic self refresh
+#define EBU_SDRMREF_AUTOSELFR				(1 << 13)			 // Automatic self refresh
 #define EBU_SDRMREF_AUTOSELFR_SHIFT			13
 
 #define EBU_SDRMCON0						0x50
 #define EBU_SDRMCON1						0x58
-#define EBU_SDRMCON_CRAS					(0xF << 0)		 // Row to precharge delay counter
+#define EBU_SDRMCON_CRAS					(0xF << 0)			 // Row to precharge delay counter
 #define EBU_SDRMCON_CRAS_SHIFT				0
-#define EBU_SDRMCON_CRFSH					(0xF << 4)		 // Refresh commands counter
+#define EBU_SDRMCON_CRFSH					(0xF << 4)			 // Refresh commands counter
 #define EBU_SDRMCON_CRFSH_SHIFT				4
-#define EBU_SDRMCON_CRSC					(0x3 << 8)		 // Mode register setup time
+#define EBU_SDRMCON_CRSC					(0x3 << 8)			 // Mode register setup time
 #define EBU_SDRMCON_CRSC_SHIFT				8
-#define EBU_SDRMCON_CRP						(0x3 << 10)		 // Row precharge time counter
+#define EBU_SDRMCON_CRP						(0x3 << 10)			 // Row precharge time counter
 #define EBU_SDRMCON_CRP_SHIFT				10
-#define EBU_SDRMCON_AWIDTH					(0x3 << 12)		 // Width of column address
+#define EBU_SDRMCON_AWIDTH					(0x3 << 12)			 // Width of column address
 #define EBU_SDRMCON_AWIDTH_SHIFT			12
-#define EBU_SDRMCON_CRCD					(0x3 << 14)		 // Row to column delay counter
+#define EBU_SDRMCON_CRCD					(0x3 << 14)			 // Row to column delay counter
 #define EBU_SDRMCON_CRCD_SHIFT				14
-#define EBU_SDRMCON_CRC						(0x7 << 16)		 // Row cycle time counter
+#define EBU_SDRMCON_CRC						(0x7 << 16)			 // Row cycle time counter
 #define EBU_SDRMCON_CRC_SHIFT				16
-#define EBU_SDRMCON_PAGEM					(0x7 << 19)		 // Mask for page tag
+#define EBU_SDRMCON_PAGEM					(0x7 << 19)			 // Mask for page tag
 #define EBU_SDRMCON_PAGEM_SHIFT				19
-#define EBU_SDRMCON_BANKM					(0x7 << 22)		 // Mask for bank tag
+#define EBU_SDRMCON_BANKM					(0x7 << 22)			 // Mask for bank tag
 #define EBU_SDRMCON_BANKM_SHIFT				22
-#define EBU_SDRMCON_CRCE					(1 << 25)		 // Row cycle time counter extension
+#define EBU_SDRMCON_CRCE					(1 << 25)			 // Row cycle time counter extension
 #define EBU_SDRMCON_CRCE_SHIFT				25
 
 #define EBU_SDRMOD0							0x60
 #define EBU_SDRMOD1							0x68
-#define EBU_SDRMOD_BURSTL					(0x7 << 0)		 // Burst length
+#define EBU_SDRMOD_BURSTL					(0x7 << 0)			 // Burst length
 #define EBU_SDRMOD_BURSTL_SHIFT				0
-#define EBU_SDRMOD_BTYP						(1 << 3)		 // Burst type
+#define EBU_SDRMOD_BTYP						(1 << 3)			 // Burst type
 #define EBU_SDRMOD_BTYP_SHIFT				3
-#define EBU_SDRMOD_CASLAT					(0x7 << 4)		 // CAS latency
+#define EBU_SDRMOD_CASLAT					(0x7 << 4)			 // CAS latency
 #define EBU_SDRMOD_CASLAT_SHIFT				4
-#define EBU_SDRMOD_OPMODE					(0x7F << 7)		 // Operation Mode
+#define EBU_SDRMOD_OPMODE					(0x7F << 7)			 // Operation Mode
 #define EBU_SDRMOD_OPMODE_SHIFT				7
 
 #define EBU_SDRSTAT0						0x70
 #define EBU_SDRSTAT1						0x78
-#define EBU_SDRSTAT_REFERR					(1 << 0)		 // SDRAM Refresh Error
+#define EBU_SDRSTAT_REFERR					(1 << 0)			 // SDRAM Refresh Error
 #define EBU_SDRSTAT_REFERR_SHIFT			0
-#define EBU_SDRSTAT_SDRM_BUSY				(1 << 1)		 // SDRAM Busy
+#define EBU_SDRSTAT_SDRM_BUSY				(1 << 1)			 // SDRAM Busy
 #define EBU_SDRSTAT_SDRM_BUSY_SHIFT			1
-#define EBU_SDRSTAT_UNK8					(1 << 8)		 // Undocumented status bit, reads as one
+#define EBU_SDRSTAT_UNK8					(1 << 8)			 // Undocumented status bit, reads as one
 #define EBU_SDRSTAT_UNK8_SHIFT				8
 
 #define EBU_ADDRSEL0						0x80
@@ -3878,15 +3878,15 @@
 #define EBU_ADDRSEL4						0xA0
 #define EBU_ADDRSEL5						0xA8
 #define EBU_ADDRSEL6						0xB0
-#define EBU_ADDRSEL_REGENAB					(1 << 0)		 // Memory Region
+#define EBU_ADDRSEL_REGENAB					(1 << 0)			 // Memory Region
 #define EBU_ADDRSEL_REGENAB_SHIFT			0
-#define EBU_ADDRSEL_ALTENAB					(1 << 1)		 // Alternate Segment Comparison
+#define EBU_ADDRSEL_ALTENAB					(1 << 1)			 // Alternate Segment Comparison
 #define EBU_ADDRSEL_ALTENAB_SHIFT			1
-#define EBU_ADDRSEL_MASK					(0xF << 4)		 // Address Mask
+#define EBU_ADDRSEL_MASK					(0xF << 4)			 // Address Mask
 #define EBU_ADDRSEL_MASK_SHIFT				4
-#define EBU_ADDRSEL_ALTSEG					(0xF << 8)		 // Alternate Segment
+#define EBU_ADDRSEL_ALTSEG					(0xF << 8)			 // Alternate Segment
 #define EBU_ADDRSEL_ALTSEG_SHIFT			8
-#define EBU_ADDRSEL_BASE					(0xFFFFF << 12)	 // Base Address
+#define EBU_ADDRSEL_BASE					(0xFFFFFU << 12)	 // Base Address
 #define EBU_ADDRSEL_BASE_SHIFT				12
 
 #define EBU_BUSCON0							0xC0
@@ -3896,35 +3896,35 @@
 #define EBU_BUSCON4							0xE0
 #define EBU_BUSCON5							0xE8
 #define EBU_BUSCON6							0xF0
-#define EBU_BUSCON_MULTMAP					(0x7F << 0)		 // Multiplier map
+#define EBU_BUSCON_MULTMAP					(0x7F << 0)			 // Multiplier map
 #define EBU_BUSCON_MULTMAP_SHIFT			0
-#define EBU_BUSCON_UNK7						(1 << 7)		 // Undocumented writable field
+#define EBU_BUSCON_UNK7						(1 << 7)			 // Undocumented writable field
 #define EBU_BUSCON_UNK7_SHIFT				7
-#define EBU_BUSCON_WPRE						(1 << 8)		 // Weak prefetch
+#define EBU_BUSCON_WPRE						(1 << 8)			 // Weak prefetch
 #define EBU_BUSCON_WPRE_SHIFT				8
-#define EBU_BUSCON_AALIGN					(1 << 9)		 // Address alignment
+#define EBU_BUSCON_AALIGN					(1 << 9)			 // Address alignment
 #define EBU_BUSCON_AALIGN_SHIFT				9
-#define EBU_BUSCON_CTYPE					(0x3 << 10)		 // Cycle Type
+#define EBU_BUSCON_CTYPE					(0x3 << 10)			 // Cycle Type
 #define EBU_BUSCON_CTYPE_SHIFT				10
-#define EBU_BUSCON_CMULT					(0x7 << 13)		 // Cycle multiplier
+#define EBU_BUSCON_CMULT					(0x7 << 13)			 // Cycle multiplier
 #define EBU_BUSCON_CMULT_SHIFT				13
-#define EBU_BUSCON_ENDIAN					(1 << 16)		 // Endian mode
+#define EBU_BUSCON_ENDIAN					(1 << 16)			 // Endian mode
 #define EBU_BUSCON_ENDIAN_SHIFT				16
-#define EBU_BUSCON_DLOAD					(1 << 17)		 // Data upload
+#define EBU_BUSCON_DLOAD					(1 << 17)			 // Data upload
 #define EBU_BUSCON_DLOAD_SHIFT				17
-#define EBU_BUSCON_PRE						(1 << 18)		 // Prefetch mechanism
+#define EBU_BUSCON_PRE						(1 << 18)			 // Prefetch mechanism
 #define EBU_BUSCON_PRE_SHIFT				18
-#define EBU_BUSCON_WAITINV					(1 << 19)		 // Reversed polarity at WAIT
+#define EBU_BUSCON_WAITINV					(1 << 19)			 // Reversed polarity at WAIT
 #define EBU_BUSCON_WAITINV_SHIFT			19
-#define EBU_BUSCON_BCGEN					(0x3 << 20)		 // Signal timing mode
+#define EBU_BUSCON_BCGEN					(0x3 << 20)			 // Signal timing mode
 #define EBU_BUSCON_BCGEN_SHIFT				20
-#define EBU_BUSCON_PORTW					(0x3 << 22)		 // Port width
+#define EBU_BUSCON_PORTW					(0x3 << 22)			 // Port width
 #define EBU_BUSCON_PORTW_SHIFT				22
-#define EBU_BUSCON_WAIT						(0x3 << 24)		 // External wait state
+#define EBU_BUSCON_WAIT						(0x3 << 24)			 // External wait state
 #define EBU_BUSCON_WAIT_SHIFT				24
-#define EBU_BUSCON_XCMDDELAY				(0x3 << 26)		 // External command delay
+#define EBU_BUSCON_XCMDDELAY				(0x3 << 26)			 // External command delay
 #define EBU_BUSCON_XCMDDELAY_SHIFT			26
-#define EBU_BUSCON_AGEN						(0x7 << 28)		 // Address generation
+#define EBU_BUSCON_AGEN						(0x7 << 28)			 // Address generation
 #define EBU_BUSCON_AGEN_SHIFT				28
 #define EBU_BUSCON_AGEN_ASYNC_DEMULTIPLEXED	0x0
 #define EBU_BUSCON_AGEN_ASYNC_MULTIPLEXED	0x10000000
@@ -3932,7 +3932,7 @@
 #define EBU_BUSCON_AGEN_SDRAM_0				0x30000000
 #define EBU_BUSCON_AGEN_SDRAM_1				0x40000000
 #define EBU_BUSCON_AGEN_BURST_FLASH_1		0x50000000
-#define EBU_BUSCON_WRITE					(1 << 31)		 // Write protection
+#define EBU_BUSCON_WRITE					(1U << 31)			 // Write protection
 #define EBU_BUSCON_WRITE_SHIFT				31
 
 #define EBU_BUSAP0							0x100
@@ -3942,71 +3942,71 @@
 #define EBU_BUSAP4							0x120
 #define EBU_BUSAP5							0x128
 #define EBU_BUSAP6							0x130
-#define EBU_BUSAP_DTACS						(0xF << 0)		 // Between different regions
+#define EBU_BUSAP_DTACS						(0xF << 0)			 // Between different regions
 #define EBU_BUSAP_DTACS_SHIFT				0
-#define EBU_BUSAP_DTARDWR					(0xF << 4)		 // Between read and write accesses
+#define EBU_BUSAP_DTARDWR					(0xF << 4)			 // Between read and write accesses
 #define EBU_BUSAP_DTARDWR_SHIFT				4
-#define EBU_BUSAP_WRRECOVC					(0x7 << 8)		 // After write accesses
+#define EBU_BUSAP_WRRECOVC					(0x7 << 8)			 // After write accesses
 #define EBU_BUSAP_WRRECOVC_SHIFT			8
-#define EBU_BUSAP_RDRECOVC					(0x7 << 11)		 // After read accesses
+#define EBU_BUSAP_RDRECOVC					(0x7 << 11)			 // After read accesses
 #define EBU_BUSAP_RDRECOVC_SHIFT			11
-#define EBU_BUSAP_DATAC						(0x3 << 14)		 // Write accesses
+#define EBU_BUSAP_DATAC						(0x3 << 14)			 // Write accesses
 #define EBU_BUSAP_DATAC_SHIFT				14
-#define EBU_BUSAP_BURSTC					(0x7 << 16)		 // During burst accesses
+#define EBU_BUSAP_BURSTC					(0x7 << 16)			 // During burst accesses
 #define EBU_BUSAP_BURSTC_SHIFT				16
-#define EBU_BUSAP_WAITWRC					(0x7 << 19)		 // Programmed for wait accesses
+#define EBU_BUSAP_WAITWRC					(0x7 << 19)			 // Programmed for wait accesses
 #define EBU_BUSAP_WAITWRC_SHIFT				19
-#define EBU_BUSAP_WAITRDC					(0x7 << 22)		 // Programmed for read accesses
+#define EBU_BUSAP_WAITRDC					(0x7 << 22)			 // Programmed for read accesses
 #define EBU_BUSAP_WAITRDC_SHIFT				22
-#define EBU_BUSAP_CMDDELAY					(0x7 << 25)		 // Programmed command
+#define EBU_BUSAP_CMDDELAY					(0x7 << 25)			 // Programmed command
 #define EBU_BUSAP_CMDDELAY_SHIFT			25
-#define EBU_BUSAP_AHOLDC					(0x3 << 28)		 // Multiplexed accesses
+#define EBU_BUSAP_AHOLDC					(0x3 << 28)			 // Multiplexed accesses
 #define EBU_BUSAP_AHOLDC_SHIFT				28
-#define EBU_BUSAP_ADDRC						(0x3 << 30)		 // Address Cycles
+#define EBU_BUSAP_ADDRC						(0x3U << 30)		 // Address Cycles
 #define EBU_BUSAP_ADDRC_SHIFT				30
 
 #define EBU_EMUAS							0x160
-#define EBU_EMUAS_REGENAB					(1 << 0)		 // Memory region
+#define EBU_EMUAS_REGENAB					(1 << 0)			 // Memory region
 #define EBU_EMUAS_REGENAB_SHIFT				0
-#define EBU_EMUAS_ALTENAB					(1 << 1)		 // Alternate segment comparison
+#define EBU_EMUAS_ALTENAB					(1 << 1)			 // Alternate segment comparison
 #define EBU_EMUAS_ALTENAB_SHIFT				1
-#define EBU_EMUAS_MASK						(0xF << 4)		 // Address mask
+#define EBU_EMUAS_MASK						(0xF << 4)			 // Address mask
 #define EBU_EMUAS_MASK_SHIFT				4
-#define EBU_EMUAS_ALTSEG					(0xF << 8)		 // Alternate segment
+#define EBU_EMUAS_ALTSEG					(0xF << 8)			 // Alternate segment
 #define EBU_EMUAS_ALTSEG_SHIFT				8
-#define EBU_EMUAS_BASE						(0xFFFFF << 12)	 // Base address
+#define EBU_EMUAS_BASE						(0xFFFFFU << 12)	 // Base address
 #define EBU_EMUAS_BASE_SHIFT				12
 
 #define EBU_EMUBC							0x168
-#define EBU_EMUBC_MULTMAP					(0x7F << 0)		 // Multiplier map
+#define EBU_EMUBC_MULTMAP					(0x7F << 0)			 // Multiplier map
 #define EBU_EMUBC_MULTMAP_SHIFT				0
-#define EBU_EMUBC_UNK7						(1 << 7)		 // Undocumented writable field
+#define EBU_EMUBC_UNK7						(1 << 7)			 // Undocumented writable field
 #define EBU_EMUBC_UNK7_SHIFT				7
-#define EBU_EMUBC_WPRE						(1 << 8)		 // Weak prefetch
+#define EBU_EMUBC_WPRE						(1 << 8)			 // Weak prefetch
 #define EBU_EMUBC_WPRE_SHIFT				8
-#define EBU_EMUBC_AALIGN					(1 << 9)		 // Address alignment
+#define EBU_EMUBC_AALIGN					(1 << 9)			 // Address alignment
 #define EBU_EMUBC_AALIGN_SHIFT				9
-#define EBU_EMUBC_CTYPE						(0x3 << 10)		 // Cycle Type
+#define EBU_EMUBC_CTYPE						(0x3 << 10)			 // Cycle Type
 #define EBU_EMUBC_CTYPE_SHIFT				10
-#define EBU_EMUBC_CMULT						(0x7 << 13)		 // Cycle multiplier
+#define EBU_EMUBC_CMULT						(0x7 << 13)			 // Cycle multiplier
 #define EBU_EMUBC_CMULT_SHIFT				13
-#define EBU_EMUBC_ENDIAN					(1 << 16)		 // Endian mode
+#define EBU_EMUBC_ENDIAN					(1 << 16)			 // Endian mode
 #define EBU_EMUBC_ENDIAN_SHIFT				16
-#define EBU_EMUBC_DLOAD						(1 << 17)		 // Data upload
+#define EBU_EMUBC_DLOAD						(1 << 17)			 // Data upload
 #define EBU_EMUBC_DLOAD_SHIFT				17
-#define EBU_EMUBC_PRE						(1 << 18)		 // Prefetch mechanism
+#define EBU_EMUBC_PRE						(1 << 18)			 // Prefetch mechanism
 #define EBU_EMUBC_PRE_SHIFT					18
-#define EBU_EMUBC_WAITINV					(1 << 19)		 // Reversed polarity at WAIT
+#define EBU_EMUBC_WAITINV					(1 << 19)			 // Reversed polarity at WAIT
 #define EBU_EMUBC_WAITINV_SHIFT				19
-#define EBU_EMUBC_BCGEN						(0x3 << 20)		 // Signal timing mode
+#define EBU_EMUBC_BCGEN						(0x3 << 20)			 // Signal timing mode
 #define EBU_EMUBC_BCGEN_SHIFT				20
-#define EBU_EMUBC_PORTW						(0x3 << 22)		 // Port width
+#define EBU_EMUBC_PORTW						(0x3 << 22)			 // Port width
 #define EBU_EMUBC_PORTW_SHIFT				22
-#define EBU_EMUBC_WAIT						(0x3 << 24)		 // External wait state
+#define EBU_EMUBC_WAIT						(0x3 << 24)			 // External wait state
 #define EBU_EMUBC_WAIT_SHIFT				24
-#define EBU_EMUBC_XCMDDELAY					(0x3 << 26)		 // External command delay
+#define EBU_EMUBC_XCMDDELAY					(0x3 << 26)			 // External command delay
 #define EBU_EMUBC_XCMDDELAY_SHIFT			26
-#define EBU_EMUBC_AGEN						(0x7 << 28)		 // Address generation
+#define EBU_EMUBC_AGEN						(0x7 << 28)			 // Address generation
 #define EBU_EMUBC_AGEN_SHIFT				28
 #define EBU_EMUBC_AGEN_ASYNC_DEMULTIPLEXED	0x0
 #define EBU_EMUBC_AGEN_ASYNC_MULTIPLEXED	0x10000000
@@ -4014,35 +4014,35 @@
 #define EBU_EMUBC_AGEN_SDRAM_0				0x30000000
 #define EBU_EMUBC_AGEN_SDRAM_1				0x40000000
 #define EBU_EMUBC_AGEN_BURST_FLASH_1		0x50000000
-#define EBU_EMUBC_WRITE						(1 << 31)		 // Write protection
+#define EBU_EMUBC_WRITE						(1U << 31)			 // Write protection
 #define EBU_EMUBC_WRITE_SHIFT				31
 
 #define EBU_EMUBAP							0x170
-#define EBU_EMUBAP_DTACS					(0xF << 0)		 // Between different regions
+#define EBU_EMUBAP_DTACS					(0xF << 0)			 // Between different regions
 #define EBU_EMUBAP_DTACS_SHIFT				0
-#define EBU_EMUBAP_DTARDWR					(0xF << 4)		 // Between read and write accesses
+#define EBU_EMUBAP_DTARDWR					(0xF << 4)			 // Between read and write accesses
 #define EBU_EMUBAP_DTARDWR_SHIFT			4
-#define EBU_EMUBAP_WRRECOVC					(0x7 << 8)		 // After write accesses
+#define EBU_EMUBAP_WRRECOVC					(0x7 << 8)			 // After write accesses
 #define EBU_EMUBAP_WRRECOVC_SHIFT			8
-#define EBU_EMUBAP_RDRECOVC					(0x7 << 11)		 // After read accesses
+#define EBU_EMUBAP_RDRECOVC					(0x7 << 11)			 // After read accesses
 #define EBU_EMUBAP_RDRECOVC_SHIFT			11
-#define EBU_EMUBAP_DATAC					(0x3 << 14)		 // Write accesses
+#define EBU_EMUBAP_DATAC					(0x3 << 14)			 // Write accesses
 #define EBU_EMUBAP_DATAC_SHIFT				14
-#define EBU_EMUBAP_BURSTC					(0x7 << 16)		 // During burst accesses
+#define EBU_EMUBAP_BURSTC					(0x7 << 16)			 // During burst accesses
 #define EBU_EMUBAP_BURSTC_SHIFT				16
-#define EBU_EMUBAP_WAITWRC					(0x7 << 19)		 // Programmed for wait accesses
+#define EBU_EMUBAP_WAITWRC					(0x7 << 19)			 // Programmed for wait accesses
 #define EBU_EMUBAP_WAITWRC_SHIFT			19
-#define EBU_EMUBAP_WAITRDC					(0x7 << 22)		 // Programmed for read accesses
+#define EBU_EMUBAP_WAITRDC					(0x7 << 22)			 // Programmed for read accesses
 #define EBU_EMUBAP_WAITRDC_SHIFT			22
-#define EBU_EMUBAP_CMDDELAY					(0x7 << 25)		 // Programmed command
+#define EBU_EMUBAP_CMDDELAY					(0x7 << 25)			 // Programmed command
 #define EBU_EMUBAP_CMDDELAY_SHIFT			25
-#define EBU_EMUBAP_AHOLDC					(0x3 << 28)		 // Multiplexed accesses
+#define EBU_EMUBAP_AHOLDC					(0x3 << 28)			 // Multiplexed accesses
 #define EBU_EMUBAP_AHOLDC_SHIFT				28
-#define EBU_EMUBAP_ADDRC					(0x3 << 30)		 // Address Cycles
+#define EBU_EMUBAP_ADDRC					(0x3U << 30)		 // Address Cycles
 #define EBU_EMUBAP_ADDRC_SHIFT				30
 
 #define EBU_EMUOVL							0x178
-#define EBU_EMUOVL_OVERLAY					(0xFF << 0)		 // Overlay chip select
+#define EBU_EMUOVL_OVERLAY					(0xFF << 0)			 // Overlay chip select
 #define EBU_EMUOVL_OVERLAY_SHIFT			0
 
 #define EBU_USERCON							0x190
@@ -4322,7 +4322,7 @@
 
 /* Input and Output FIFO Data Register */
 #define GPRSCU_DATA							0x14
-#define GPRSCU_DATA_VALUE					(0xFFFFFFFF << 0)
+#define GPRSCU_DATA_VALUE					(0xFFFFFFFFU << 0)
 #define GPRSCU_DATA_VALUE_SHIFT				0
 
 /* FIFO Status Register */
@@ -4346,7 +4346,7 @@
 /* Cipher Input Register */
 #define GPRSCU_INPUT0						0x24
 #define GPRSCU_INPUT1						0x28
-#define GPRSCU_INPUT_VALUE					(0xFFFFFFFF << 0)
+#define GPRSCU_INPUT_VALUE					(0xFFFFFFFFU << 0)
 #define GPRSCU_INPUT_VALUE_SHIFT			0
 
 /* Cipher Key Register */
@@ -4354,17 +4354,17 @@
 #define GPRSCU_KEY1							0x30
 #define GPRSCU_KEY2							0x34
 #define GPRSCU_KEY3							0x38
-#define GPRSCU_KEY_VALUE					(0xFFFFFFFF << 0)
+#define GPRSCU_KEY_VALUE					(0xFFFFFFFFU << 0)
 #define GPRSCU_KEY_VALUE_SHIFT				0
 
 /* Frame Check Sequence Register */
 #define GPRSCU_FCS							0x3C
-#define GPRSCU_FCS_VALUE					(0xFFFFFFFF << 0)
+#define GPRSCU_FCS_VALUE					(0xFFFFFFFFU << 0)
 #define GPRSCU_FCS_VALUE_SHIFT				0
 
 /* CRC Polynomial Register */
 #define GPRSCU_POLYNOM						0x44
-#define GPRSCU_POLYNOM_VALUE				(0xFFFFFFFF << 0)
+#define GPRSCU_POLYNOM_VALUE				(0xFFFFFFFFU << 0)
 #define GPRSCU_POLYNOM_VALUE_SHIFT			0
 
 /* Service Routing Control Register */
@@ -4457,7 +4457,7 @@
 #define GPTU_T01IRS_T01IN0_POS_IN0			0x10000000
 #define GPTU_T01IRS_T01IN0_NEG_IN0			0x20000000
 #define GPTU_T01IRS_T01IN0_BOTH_IN0			0x30000000
-#define GPTU_T01IRS_T01IN1					(0x3 << 30)		 // T0 and T1 Global Input CNT1 Selection
+#define GPTU_T01IRS_T01IN1					(0x3U << 30)	 // T0 and T1 Global Input CNT1 Selection
 #define GPTU_T01IRS_T01IN1_SHIFT			30
 #define GPTU_T01IRS_T01IN1_OUV_T2B			0x0
 #define GPTU_T01IRS_T01IN1_POS_IN1			0x40000000
@@ -4810,7 +4810,7 @@
 #define GPTU_T0DCBA_T0B_SHIFT				8
 #define GPTU_T0DCBA_T0C						(0xFF << 16)
 #define GPTU_T0DCBA_T0C_SHIFT				16
-#define GPTU_T0DCBA_T0D						(0xFF << 24)
+#define GPTU_T0DCBA_T0D						(0xFFU << 24)
 #define GPTU_T0DCBA_T0D_SHIFT				24
 
 /* T0 Count register (24 bit) */
@@ -4830,7 +4830,7 @@
 #define GPTU_T0RDCBA_T0RB_SHIFT				8
 #define GPTU_T0RDCBA_T0RC					(0xFF << 16)
 #define GPTU_T0RDCBA_T0RC_SHIFT				16
-#define GPTU_T0RDCBA_T0RD					(0xFF << 24)
+#define GPTU_T0RDCBA_T0RD					(0xFFU << 24)
 #define GPTU_T0RDCBA_T0RD_SHIFT				24
 
 /* T0 Reload register (24 bit) */
@@ -4850,7 +4850,7 @@
 #define GPTU_T1DCBA_T1B_SHIFT				8
 #define GPTU_T1DCBA_T1C						(0xFF << 16)
 #define GPTU_T1DCBA_T1C_SHIFT				16
-#define GPTU_T1DCBA_T1D						(0xFF << 24)
+#define GPTU_T1DCBA_T1D						(0xFFU << 24)
 #define GPTU_T1DCBA_T1D_SHIFT				24
 
 /* T1 Count register (24 bit) */
@@ -4870,7 +4870,7 @@
 #define GPTU_T1RDCBA_T1RB_SHIFT				8
 #define GPTU_T1RDCBA_T1RC					(0xFF << 16)
 #define GPTU_T1RDCBA_T1RC_SHIFT				16
-#define GPTU_T1RDCBA_T1RD					(0xFF << 24)
+#define GPTU_T1RDCBA_T1RD					(0xFFU << 24)
 #define GPTU_T1RDCBA_T1RD_SHIFT				24
 
 /* T1 Reload register (24 bit) */
@@ -4885,19 +4885,19 @@
 #define GPTU_T2								0x54
 #define GPTU_T2_T2A							(0xFFFF << 0)	 // T2A Contents
 #define GPTU_T2_T2A_SHIFT					0
-#define GPTU_T2_T2B							(0xFFFF << 16)	 // T2B Contents
+#define GPTU_T2_T2B							(0xFFFFU << 16)	 // T2B Contents
 #define GPTU_T2_T2B_SHIFT					16
 
 #define GPTU_T2RC0							0x58
 #define GPTU_T2RC0_T2ARC0					(0xFFFF << 0)	 // T2A Reload/Capture Value
 #define GPTU_T2RC0_T2ARC0_SHIFT				0
-#define GPTU_T2RC0_T2BRC0					(0xFFFF << 16)	 // T2B Reload/Capture Value
+#define GPTU_T2RC0_T2BRC0					(0xFFFFU << 16)	 // T2B Reload/Capture Value
 #define GPTU_T2RC0_T2BRC0_SHIFT				16
 
 #define GPTU_T2RC1							0x5C
 #define GPTU_T2RC1_T2ARC1					(0xFFFF << 0)	 // T2A Reload/Capture Value
 #define GPTU_T2RC1_T2ARC1_SHIFT				0
-#define GPTU_T2RC1_T2BRC1					(0xFFFF << 16)	 // T2B Reload/Capture Value
+#define GPTU_T2RC1_T2BRC1					(0xFFFFU << 16)	 // T2B Reload/Capture Value
 #define GPTU_T2RC1_T2BRC1_SHIFT				16
 
 #define GPTU_T012RUN						0x60
@@ -5058,7 +5058,7 @@
 #define GPTU_SRSEL_SSR1_SR01				0xD000000
 #define GPTU_SRSEL_SSR1_SR10				0xE000000
 #define GPTU_SRSEL_SSR1_SR11				0xF000000
-#define GPTU_SRSEL_SSR0						(0xF << 28)		 // GPTU IRQ 0 Source Selection
+#define GPTU_SRSEL_SSR0						(0xFU << 28)	 // GPTU IRQ 0 Source Selection
 #define GPTU_SRSEL_SSR0_SHIFT				28
 #define GPTU_SRSEL_SSR0_START_A				0x0
 #define GPTU_SRSEL_SSR0_STOP_A				0x10000000
@@ -5152,7 +5152,7 @@
 #define I2Cv1_SYSCON_TRX_SHIFT			23
 #define I2Cv1_SYSCON_IGE				(1 << 24)		 // Ignore IRQE
 #define I2Cv1_SYSCON_IGE_SHIFT			24
-#define I2Cv1_SYSCON_RM					(0xFF << 24)	 // Read Mirror (RMEN=1)
+#define I2Cv1_SYSCON_RM					(0xFFU << 24)	 // Read Mirror (RMEN=1)
 #define I2Cv1_SYSCON_RM_SHIFT			24
 #define I2Cv1_SYSCON_STP				(1 << 25)		 // Stop Master
 #define I2Cv1_SYSCON_STP_SHIFT			25
@@ -5162,7 +5162,7 @@
 #define I2Cv1_SYSCON_CI_2				0x4000000
 #define I2Cv1_SYSCON_CI_3				0x8000000
 #define I2Cv1_SYSCON_CI_4				0xC000000
-#define I2Cv1_SYSCON_WMEN				(1 << 31)		 // Write Mirror Enable
+#define I2Cv1_SYSCON_WMEN				(1U << 31)		 // Write Mirror Enable
 #define I2Cv1_SYSCON_WMEN_SHIFT			31
 
 /* Bus Control Register */
@@ -5184,7 +5184,7 @@
 #define I2Cv1_BUSCON_PREDIV_1			0x0
 #define I2Cv1_BUSCON_PREDIV_8			0x20000000
 #define I2Cv1_BUSCON_PREDIV_64			0x40000000
-#define I2Cv1_BUSCON_BRPMOD				(1 << 31)		 // Baud Rate Prescaler Mode
+#define I2Cv1_BUSCON_BRPMOD				(1U << 31)		 // Baud Rate Prescaler Mode
 #define I2Cv1_BUSCON_BRPMOD_SHIFT		31
 #define I2Cv1_BUSCON_BRPMOD_MODE0		0x0
 #define I2Cv1_BUSCON_BRPMOD_MODE1		0x80000000
@@ -5197,7 +5197,7 @@
 #define I2Cv1_RTB_BYTE1_SHIFT			8
 #define I2Cv1_RTB_BYTE2					(0xFF << 16)
 #define I2Cv1_RTB_BYTE2_SHIFT			16
-#define I2Cv1_RTB_BYTE3					(0xFF << 24)
+#define I2Cv1_RTB_BYTE3					(0xFFU << 24)
 #define I2Cv1_RTB_BYTE3_SHIFT			24
 
 /* Write Hardware Bits Control Register */
@@ -5244,7 +5244,7 @@
 #define I2Cv1_WHBSYSCON_SETSTP_SHIFT	26
 #define I2Cv1_WHBSYSCON_CLRWMEN			(1 << 30)		 // Set Write Mirror Enable Bit
 #define I2Cv1_WHBSYSCON_CLRWMEN_SHIFT	30
-#define I2Cv1_WHBSYSCON_SETWMEN			(1 << 31)		 // Clear Write Mirror Enable Bit
+#define I2Cv1_WHBSYSCON_SETWMEN			(1U << 31)		 // Clear Write Mirror Enable Bit
 #define I2Cv1_WHBSYSCON_SETWMEN_SHIFT	31
 
 /* Service Routing Control Register */
@@ -5381,7 +5381,7 @@
 #define I2Cv2_TIMCFG_FS_SCL_LOW_SHIFT			15
 #define I2Cv2_TIMCFG_HS_SDA_DEL					(0x7 << 16)		 // SDA Delay Stages for Start/Stop bit in Highspeed Mode
 #define I2Cv2_TIMCFG_HS_SDA_DEL_SHIFT			16
-#define I2Cv2_TIMCFG_SCL_LOW_LEN				(0xFF << 24)	 // SCL Low Length in Fast Mode
+#define I2Cv2_TIMCFG_SCL_LOW_LEN				(0xFFU << 24)	 // SCL Low Length in Fast Mode
 #define I2Cv2_TIMCFG_SCL_LOW_LEN_SHIFT			24
 
 /* Error Interrupt Request Source Mask Register */
@@ -5562,7 +5562,7 @@
 #define I2Cv2_TXD_BYTE1_SHIFT					8
 #define I2Cv2_TXD_BYTE2							(0xFF << 16)
 #define I2Cv2_TXD_BYTE2_SHIFT					16
-#define I2Cv2_TXD_BYTE3							(0xFF << 24)
+#define I2Cv2_TXD_BYTE3							(0xFFU << 24)
 #define I2Cv2_TXD_BYTE3_SHIFT					24
 
 /* Reception Data Register */
@@ -5573,7 +5573,7 @@
 #define I2Cv2_RXD_BYTE1_SHIFT					8
 #define I2Cv2_RXD_BYTE2							(0xFF << 16)
 #define I2Cv2_RXD_BYTE2_SHIFT					16
-#define I2Cv2_RXD_BYTE3							(0xFF << 24)
+#define I2Cv2_RXD_BYTE3							(0xFFU << 24)
 #define I2Cv2_RXD_BYTE3_SHIFT					24
 
 
@@ -5595,7 +5595,7 @@
 #define KEYPAD_PORT0						0x18
 #define KEYPAD_PORT1						0x1C
 #define KEYPAD_PORT2						0x20
-#define KEYPAD_PORT_STATE					(0xFFFFFFFF << 0)	 // Four output rows of eight active-low input states
+#define KEYPAD_PORT_STATE					(0xFFFFFFFFU << 0)	 // Four output rows of eight active-low input states
 #define KEYPAD_PORT_STATE_SHIFT				0
 
 /* Keypad Internal Status Register */
@@ -5734,17 +5734,17 @@
 #define RTC_T14						0x18
 #define RTC_T14_REL					(0xFFFF << 0)		 // Timer T14 Reload Value
 #define RTC_T14_REL_SHIFT			0
-#define RTC_T14_CNT					(0xFFFF << 16)		 // Timer T14 Count Value
+#define RTC_T14_CNT					(0xFFFFU << 16)		 // Timer T14 Count Value
 #define RTC_T14_CNT_SHIFT			16
 
 /* RTC Count Register */
 #define RTC_CNT						0x1C
-#define RTC_CNT_CNT					(0xFFFFFFFF << 0)	 // RTC Timer Count Value
+#define RTC_CNT_CNT					(0xFFFFFFFFU << 0)	 // RTC Timer Count Value
 #define RTC_CNT_CNT_SHIFT			0
 
 /* RTC Reload Register */
 #define RTC_REL						0x20
-#define RTC_REL_REL					(0xFFFFFFFF << 0)	 // RTC Timer Reload Value
+#define RTC_REL_REL					(0xFFFFFFFFU << 0)	 // RTC Timer Reload Value
 #define RTC_REL_REL_SHIFT			0
 
 /* Interrupt Sub-Node Control Register */
@@ -5791,7 +5791,7 @@
 
 /* RTC Alarm Register */
 #define RTC_ALARM					0x2C
-#define RTC_ALARM_VALUE				(0xFFFFFFFF << 0)
+#define RTC_ALARM_VALUE				(0xFFFFFFFFU << 0)
 #define RTC_ALARM_VALUE_SHIFT		0
 
 /* Service Routing Control Register */
@@ -5938,7 +5938,7 @@
 #define SCU_RST_SR_SFTRST_SHIFT			29
 #define SCU_RST_SR_WDTRST				(1 << 30)			 // The last reset was a watchdog reset.
 #define SCU_RST_SR_WDTRST_SHIFT			30
-#define SCU_RST_SR_PWDRST				(1 << 31)			 // The last reset was a wake-up from power-down
+#define SCU_RST_SR_PWDRST				(1U << 31)			 // The last reset was a wake-up from power-down
 #define SCU_RST_SR_PWDRST_SHIFT			31
 
 /* Reset Control Register */
@@ -5999,7 +5999,7 @@
 #define SCU_WDTCON0_WDTHPW1_SHIFT		4
 #define SCU_WDTCON0_WDTPW				(0xFF << 8)			 // User-Definable Password Field for Access to WDT_CON0.
 #define SCU_WDTCON0_WDTPW_SHIFT			8
-#define SCU_WDTCON0_WDTREL				(0xFFFF << 16)		 // Reload Value for the Watchdog Timer.
+#define SCU_WDTCON0_WDTREL				(0xFFFFU << 16)		 // Reload Value for the Watchdog Timer.
 #define SCU_WDTCON0_WDTREL_SHIFT		16
 
 #define SCU_WDTCON1						0x28
@@ -6021,7 +6021,7 @@
 #define SCU_WDT_SR_WDTTO_SHIFT			4
 #define SCU_WDT_SR_WDTPR				(1 << 5)			 // Watchdog Prewarning Mode Flag
 #define SCU_WDT_SR_WDTPR_SHIFT			5
-#define SCU_WDT_SR_WDTTIM				(0xFFFF << 16)		 // Watchdog Timer Value
+#define SCU_WDT_SR_WDTTIM				(0xFFFFU << 16)		 // Watchdog Timer Value
 #define SCU_WDT_SR_WDTTIM_SHIFT			16
 
 /* MCU-to-DSP Interrupt Request Register */
@@ -6163,7 +6163,7 @@
 
 /* Emulator identification register */
 #define SCU_EMU_ID						0x4C
-#define SCU_EMU_ID_VALUE				(0xFFFFFFFF << 0)
+#define SCU_EMU_ID_VALUE				(0xFFFFFFFFU << 0)
 #define SCU_EMU_ID_VALUE_SHIFT			0
 #define SCU_EMU_ID_VALUE_QEMU			0x51454D55
 
@@ -7474,7 +7474,7 @@
 #define USIF_FDIV_CFG					0x2C
 #define USIF_FDIV_CFG_INC				(0x1FF << 0)	 // Increment of the fractional divider
 #define USIF_FDIV_CFG_INC_SHIFT			0
-#define USIF_FDIV_CFG_DEC				(0xFFFF << 16)	 // Decrement of the fractional divider
+#define USIF_FDIV_CFG_DEC				(0xFFFFU << 16)	 // Decrement of the fractional divider
 #define USIF_FDIV_CFG_DEC_SHIFT			16
 
 /* RX Inter-Character Timeout Register (writable only while stopped) */
