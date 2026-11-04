@@ -6,35 +6,6 @@
 typedef struct pmb887x_cpu_meta_gpio_t pmb887x_cpu_meta_gpio_t;
 typedef struct pmb887x_cpu_meta_irq_t pmb887x_cpu_meta_irq_t;
 typedef struct pmb887x_cpu_meta_t pmb887x_cpu_meta_t;
-typedef struct pmb887x_cpu_io_t pmb887x_cpu_io_t;
-typedef struct pmb887x_io_meta_t pmb887x_io_meta_t;
-
-typedef enum pmb887x_trace_io_t {
-	PMB887X_TRACE_IO_CPU,
-	PMB887X_TRACE_IO_DSP,
-	PMB887X_TRACE_IO_HD155153NP,
-	PMB887X_TRACE_IO_ILI9320,
-	PMB887X_TRACE_IO_JBT6K71,
-	PMB887X_TRACE_IO_LH15KAH2,
-	PMB887X_TRACE_IO_LM4946,
-	PMB887X_TRACE_IO_PASIC,
-	PMB887X_TRACE_IO_PCF8833,
-	PMB887X_TRACE_IO_PCF8882,
-	PMB887X_TRACE_IO_PMB6272,
-	PMB887X_TRACE_IO_PMB6812,
-	PMB887X_TRACE_IO_R61505U,
-	PMB887X_TRACE_IO_SSD1286,
-	PMB887X_TRACE_IO_TEA5760UK,
-	PMB887X_TRACE_IO_TEA5761UK,
-	PMB887X_TRACE_IO_COUNT,
-} pmb887x_trace_io_t;
-
-struct pmb887x_cpu_io_t {
-	const char *name;
-	uint32_t base;
-	uint32_t size;
-	const DebugRegs *regs;
-};
 
 struct pmb887x_cpu_meta_irq_t {
 	const char *name;
@@ -57,21 +28,9 @@ struct pmb887x_cpu_meta_t {
 
 	const pmb887x_cpu_meta_gpio_t *gpios;
 	int gpios_count;
-
-	const pmb887x_cpu_io_t *modules;
-	int modules_count;
-
-	const pmb887x_cpu_io_t *dsp_modules;
-	int dsp_modules_count;
-};
-
-struct pmb887x_io_meta_t {
-	const char *name;
-	const DebugRegs *regs;
 };
 
 const pmb887x_cpu_meta_t *pmb887x_get_cpu_meta(int cpu);
-const pmb887x_io_meta_t *pmb887x_get_io_meta(pmb887x_trace_io_t id);
 
 extern const DebugRegs pmb887x_adc_regs;
 extern const DebugRegs pmb887x_afc_regs;

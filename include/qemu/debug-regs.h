@@ -42,9 +42,4 @@ typedef struct DebugRegs {
 
 extern const DebugIoFormat debug_regs_format;
 
-const DebugReg *debug_regs_find(const DebugRegs *regs, uint64_t offset,
-                                uint64_t *delta);
-void debug_regs_print_fields(const DebugReg *reg, uint64_t value,
-                             GString *out);
-
 #endif

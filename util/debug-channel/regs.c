@@ -4,8 +4,8 @@
 #include "qemu/host-utils.h"
 #include "qemu/debug-regs.h"
 
-const DebugReg *debug_regs_find(const DebugRegs *regs, uint64_t offset,
-                                uint64_t *delta)
+static const DebugReg *debug_regs_find(const DebugRegs *regs, uint64_t offset,
+                                       uint64_t *delta)
 {
     for (size_t i = 0; i < regs->count; i++) {
         const DebugReg *reg = &regs->regs[i];
@@ -35,8 +35,8 @@ static void debug_regs_separator(bool *is_first, GString *out)
     *is_first = false;
 }
 
-void debug_regs_print_fields(const DebugReg *reg, uint64_t value,
-                             GString *out)
+static void debug_regs_print_fields(const DebugReg *reg, uint64_t value,
+                                    GString *out)
 {
     if (!reg->fields_count) {
         return;

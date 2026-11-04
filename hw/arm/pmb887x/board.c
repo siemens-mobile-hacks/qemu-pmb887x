@@ -36,9 +36,7 @@
 #include "hw/arm/pmb887x/gen/cpu_regs.h"
 
 #include "hw/arm/pmb887x/io_bridge.h"
-#include "hw/arm/pmb887x/regs_dump.h"
 #include "hw/arm/pmb887x/tpu.h"
-#include "hw/arm/pmb887x/trace_common.h"
 
 void qmp_pmemsave(uint64_t addr, uint64_t size, const char *filename, Error **errp);
 
@@ -137,15 +135,12 @@ static void pmb887x_init(MachineState *machine) {
 
 	bool has_memory_timing = pmb887x_has_memory_timing();
 
-	pmb887x_trace_init();
 	pmb887x_board_init(board_config_file);
 
 #if PMB887X_IO_BRIDGE
 	fprintf(stderr, "Waiting for IO bridge...\n");
 	pmb8876_io_bridge_init();
 #endif
-
-	pmb887x_io_dump_init();
 
 	MemoryRegion *sysmem = get_system_memory();
 

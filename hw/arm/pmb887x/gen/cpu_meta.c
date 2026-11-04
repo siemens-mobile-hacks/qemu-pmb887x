@@ -1,5 +1,4 @@
 #include "hw/arm/pmb887x/gen/cpu_meta.h"
-#include "hw/arm/pmb887x/regs_dump.h"
 #include "hw/arm/pmb887x/gen/cpu_regs.h"
 
 static const DebugRegField adc_clc_fields[] = {
@@ -11474,42 +11473,6 @@ static const pmb887x_cpu_meta_irq_t pmb8878_irqs[] = {
 static const pmb887x_cpu_meta_gpio_t pmb8878_gpios[] = {
 };
 
-static const pmb887x_cpu_io_t pmb8878_modules[] = {
-	{"SSC",			PMB8878_SSC_BASE,		SSC_IO_SIZE,	&pmb887x_ssc_regs},
-	{"USB",			PMB8878_USB_BASE,		USB_IO_SIZE,	&pmb887x_usb_regs},
-	{"VIC",			PMB8878_VIC_BASE,		VIC_IO_SIZE,	&pmb887x_vic_regs},
-	{"DMAC",		PMB8878_DMAC_BASE,		DMAC_IO_SIZE,	&pmb887x_dmac_regs},
-	{"SCU",			PMB8878_SCU_BASE,		SCU_IO_SIZE,	&pmb887x_scu_regs},
-	{"CGU",			PMB8878_CGU_BASE,		CGU_IO_SIZE,	&pmb887x_cgu_regs},
-	{"SCCU",		PMB8878_SCCU_BASE,		SCCU_IO_SIZE,	&pmb887x_sccu_regs},
-	{"RTC",			PMB8878_RTC_BASE,		RTC_IO_SIZE,	&pmb887x_rtc_regs},
-	{"ADC",			PMB8878_ADC_BASE,		ADC_IO_SIZE,	&pmb887x_adc_regs},
-	{"DSP_RAM",		0xF6001000,				0x1800,			NULL},
-	{"DSP",			PMB8878_DSP_BASE,		DSP_IO_SIZE,	&pmb887x_dsp_regs},
-	{"TPU_RAM",		0xF6401000,				0x1000,			NULL},
-	{"TPU",			PMB8878_TPU_BASE,		TPU_IO_SIZE,	&pmb887x_tpu_regs},
-	{"MMICIF_MMAP",	0xFA000000,				0x100000,		NULL},
-	{"MMICIF_MMAP",	0xFA100000,				0x100000,		NULL},
-	{"MMICIF_MMAP",	0xFA200000,				0x100000,		NULL},
-	{"MMICIF_MMAP",	0xFA300000,				0x100000,		NULL},
-	{"MMICIF_MMAP",	0xFA400000,				0x100000,		NULL},
-	{"MMICIF_MMAP",	0xFA500000,				0x100000,		NULL},
-	{"MMICIF_MMAP",	0xFA600000,				0x100000,		NULL},
-	{"MMICIF_MMAP",	0xFA700000,				0x100000,		NULL},
-	{"MMICIF_MMAP",	0xFA800000,				0x100000,		NULL},
-	{"MMICIF_MMAP",	0xFA900000,				0x100000,		NULL},
-	{"MMICIF_MMAP",	0xFAA00000,				0x100000,		NULL},
-	{"MMICIF_MMAP",	0xFAB00000,				0x100000,		NULL},
-	{"MMICIF_MMAP",	0xFAC00000,				0x100000,		NULL},
-	{"MMICIF_MMAP",	0xFAD00000,				0x100000,		NULL},
-	{"MMICIF_MMAP",	0xFAE00000,				0x100000,		NULL},
-	{"MMICIF_MMAP",	0xFAF00000,				0x100000,		NULL},
-	{"MMICIF",		PMB8878_MMICIF_BASE,	MMICIF_IO_SIZE,	&pmb887x_mmicif_regs},
-};
-
-static const pmb887x_cpu_io_t pmb8878_dsp_modules[] = {
-};
-
 static const pmb887x_cpu_meta_irq_t pmb8876_irqs[] = {
 	{"USART0_TX",		PMB8876_USART0_TX_IRQ,		VIC_CON4},
 	{"USART0_TBUF",		PMB8876_USART0_TBUF_IRQ,	VIC_CON5},
@@ -11753,76 +11716,6 @@ static const pmb887x_cpu_meta_gpio_t pmb8876_gpios[] = {
 	{"PIN113",	"CIF_PD",			"GPIO_PIN113_CIF_PD",			PMB8876_GPIO_CIF_PD},
 };
 
-static const pmb887x_cpu_io_t pmb8876_modules[] = {
-	{"EBU",			PMB8876_EBU_BASE,		EBU_IO_SIZE,	&pmb887x_ebu_regs},
-	{"USART0",		PMB8876_USART0_BASE,	USART_IO_SIZE,	&pmb887x_usart_regs},
-	{"SSC",			PMB8876_SSC_BASE,		SSC_IO_SIZE,	&pmb887x_ssc_regs},
-	{"SIM",			PMB8876_SIM_BASE,		SIM_IO_SIZE,	&pmb887x_sim_regs},
-	{"USART1",		PMB8876_USART1_BASE,	USART_IO_SIZE,	&pmb887x_usart_regs},
-	{"USB",			PMB8876_USB_BASE,		USB_IO_SIZE,	&pmb887x_usb_regs},
-	{"VIC",			PMB8876_VIC_BASE,		VIC_IO_SIZE,	&pmb887x_vic_regs},
-	{"DMAC",		PMB8876_DMAC_BASE,		DMAC_IO_SIZE,	&pmb887x_dmac_regs},
-	{"CAPCOM0",		PMB8876_CAPCOM0_BASE,	CAPCOM_IO_SIZE,	&pmb887x_capcom_regs},
-	{"CAPCOM1",		PMB8876_CAPCOM1_BASE,	CAPCOM_IO_SIZE,	&pmb887x_capcom_regs},
-	{"GPIO",		PMB8876_GPIO_BASE,		GPIO_IO_SIZE,	&pmb887x_gpio_regs},
-	{"SCU",			PMB8876_SCU_BASE,		SCU_IO_SIZE,	&pmb887x_scu_regs},
-	{"CGU",			PMB8876_CGU_BASE,		CGU_IO_SIZE,	&pmb887x_cgu_regs},
-	{"SCCU",		PMB8876_SCCU_BASE,		SCCU_IO_SIZE,	&pmb887x_sccu_regs},
-	{"RTC",			PMB8876_RTC_BASE,		RTC_IO_SIZE,	&pmb887x_rtc_regs},
-	{"GPTU0",		PMB8876_GPTU0_BASE,		GPTU_IO_SIZE,	&pmb887x_gptu_regs},
-	{"GPTU1",		PMB8876_GPTU1_BASE,		GPTU_IO_SIZE,	&pmb887x_gptu_regs},
-	{"STM",			PMB8876_STM_BASE,		STM_IO_SIZE,	&pmb887x_stm_regs},
-	{"ADC",			PMB8876_ADC_BASE,		ADC_IO_SIZE,	&pmb887x_adc_regs},
-	{"KEYPAD",		PMB8876_KEYPAD_BASE,	KEYPAD_IO_SIZE,	&pmb887x_keypad_regs},
-	{"DSP_RAM",		0xF6001000,				0x1800,			NULL},
-	{"DSP",			PMB8876_DSP_BASE,		DSP_IO_SIZE,	&pmb887x_dsp_regs},
-	{"GPRSCU",		PMB8876_GPRSCU_BASE,	GPRSCU_IO_SIZE,	&pmb887x_gprscu_regs},
-	{"AFC",			PMB8876_AFC_BASE,		AFC_IO_SIZE,	&pmb887x_afc_regs},
-	{"TPU_RAM",		0xF6401000,				0x1000,			NULL},
-	{"TPU",			PMB8876_TPU_BASE,		TPU_IO_SIZE,	&pmb887x_tpu_regs},
-	{"CIF",			PMB8876_CIF_BASE,		CIF_IO_SIZE,	&pmb887x_cif_regs},
-	{"DIF",			PMB8876_DIF_BASE,		DIFv2_IO_SIZE,	&pmb887x_difv2_regs},
-	{"MMCI",		PMB8876_MMCI_BASE,		MMCI_IO_SIZE,	&pmb887x_mmci_regs},
-	{"MCI",			PMB8876_MCI_BASE,		MCI_IO_SIZE,	&pmb887x_mci_regs},
-	{"USIF",		PMB8876_USIF_BASE,		USIF_IO_SIZE,	&pmb887x_usif_regs},
-	{"I2C",			PMB8876_I2C_BASE,		I2Cv2_IO_SIZE,	&pmb887x_i2cv2_regs},
-	{"MMICIF_MMAP",	0xFA000000,				0x100000,		NULL},
-	{"MMICIF_MMAP",	0xFA100000,				0x100000,		NULL},
-	{"MMICIF_MMAP",	0xFA200000,				0x100000,		NULL},
-	{"MMICIF_MMAP",	0xFA300000,				0x100000,		NULL},
-	{"MMICIF_MMAP",	0xFA400000,				0x100000,		NULL},
-	{"MMICIF_MMAP",	0xFA500000,				0x100000,		NULL},
-	{"MMICIF_MMAP",	0xFA600000,				0x100000,		NULL},
-	{"MMICIF_MMAP",	0xFA700000,				0x100000,		NULL},
-	{"MMICIF_MMAP",	0xFA800000,				0x100000,		NULL},
-	{"MMICIF_MMAP",	0xFA900000,				0x100000,		NULL},
-	{"MMICIF_MMAP",	0xFAA00000,				0x100000,		NULL},
-	{"MMICIF_MMAP",	0xFAB00000,				0x100000,		NULL},
-	{"MMICIF_MMAP",	0xFAC00000,				0x100000,		NULL},
-	{"MMICIF_MMAP",	0xFAD00000,				0x100000,		NULL},
-	{"MMICIF_MMAP",	0xFAE00000,				0x100000,		NULL},
-	{"MMICIF_MMAP",	0xFAF00000,				0x100000,		NULL},
-	{"MMICIF",		PMB8876_MMICIF_BASE,	MMICIF_IO_SIZE,	&pmb887x_mmicif_regs},
-};
-
-static const pmb887x_cpu_io_t pmb8876_dsp_modules[] = {
-	{"INT",		0xDE00,	0x16,	&pmb887x_dsp_interrupt_regs},
-	{"CIPH",	0xDE20,	0x10,	&pmb887x_dsp_cipher_regs},
-	{"TMR1",	0xDE30,	0x4,	&pmb887x_dsp_timer1_regs},
-	{"TMR2",	0xDE34,	0x3,	&pmb887x_dsp_timer2_regs},
-	{"EQ",		0xDE40,	0x7,	&pmb887x_dsp_equalizer_regs},
-	{"CHDEC",	0xDE50,	0x10,	&pmb887x_dsp_channel_decoder_regs},
-	{"AFE",		0xDE70,	0x7,	&pmb887x_dsp_afe_regs},
-	{"BB",		0xDE80,	0xD,	&pmb887x_dsp_baseband_regs},
-	{"MCS",		0xDE90,	0x6,	&pmb887x_dsp_mcs_regs},
-	{"DSP",		0xDEA0,	0x9,	&pmb887x_dsp_dsp_8876_regs},
-	{"MOD",		0xDEB0,	0xB,	&pmb887x_dsp_modulator_regs},
-	{"SSC",		0xDEC0,	0x9,	&pmb887x_dsp_ssc_regs},
-	{"I2S1",	0xDED0,	0xB,	&pmb887x_dsp_i2s_regs},
-	{"I2S2",	0xDEE0,	0xB,	&pmb887x_dsp_i2s_regs},
-	{"I2S3",	0xDEF0,	0xB,	&pmb887x_dsp_i2s_tx_regs},
-};
-
 static const pmb887x_cpu_meta_irq_t pmb8875_irqs[] = {
 	{"USART0_TX",		PMB8875_USART0_TX_IRQ,		VIC_CON4},
 	{"USART0_TBUF",		PMB8875_USART0_TBUF_IRQ,	VIC_CON5},
@@ -12018,84 +11911,13 @@ static const pmb887x_cpu_meta_gpio_t pmb8875_gpios[] = {
 	{"PIN76",	"PIN76",		"GPIO_PIN76",				PMB8875_GPIO_PIN76},
 };
 
-static const pmb887x_cpu_io_t pmb8875_modules[] = {
-	{"EBU",		PMB8875_EBU_BASE,		EBU_IO_SIZE,	&pmb887x_ebu_regs},
-	{"USART0",	PMB8875_USART0_BASE,	USART_IO_SIZE,	&pmb887x_usart_regs},
-	{"SSC",		PMB8875_SSC_BASE,		SSC_IO_SIZE,	&pmb887x_ssc_regs},
-	{"SIM",		PMB8875_SIM_BASE,		SIM_IO_SIZE,	&pmb887x_sim_regs},
-	{"USART1",	PMB8875_USART1_BASE,	USART_IO_SIZE,	&pmb887x_usart_regs},
-	{"DIF",		PMB8875_DIF_BASE,		DIFv1_IO_SIZE,	&pmb887x_difv1_regs},
-	{"USB",		PMB8875_USB_BASE,		USB_IO_SIZE,	&pmb887x_usb_regs},
-	{"VIC",		PMB8875_VIC_BASE,		VIC_IO_SIZE,	&pmb887x_vic_regs},
-	{"DMAC",	PMB8875_DMAC_BASE,		DMAC_IO_SIZE,	&pmb887x_dmac_regs},
-	{"CAPCOM0",	PMB8875_CAPCOM0_BASE,	CAPCOM_IO_SIZE,	&pmb887x_capcom_regs},
-	{"CAPCOM1",	PMB8875_CAPCOM1_BASE,	CAPCOM_IO_SIZE,	&pmb887x_capcom_regs},
-	{"GPIO",	PMB8875_GPIO_BASE,		GPIO_IO_SIZE,	&pmb887x_gpio_regs},
-	{"SCU",		PMB8875_SCU_BASE,		SCU_IO_SIZE,	&pmb887x_scu_regs},
-	{"CGU",		PMB8875_CGU_BASE,		CGU_IO_SIZE,	&pmb887x_cgu_regs},
-	{"SCCU",	PMB8875_SCCU_BASE,		SCCU_IO_SIZE,	&pmb887x_sccu_regs},
-	{"RTC",		PMB8875_RTC_BASE,		RTC_IO_SIZE,	&pmb887x_rtc_regs},
-	{"I2C",		PMB8875_I2C_BASE,		I2Cv1_IO_SIZE,	&pmb887x_i2cv1_regs},
-	{"GPTU0",	PMB8875_GPTU0_BASE,		GPTU_IO_SIZE,	&pmb887x_gptu_regs},
-	{"GPTU1",	PMB8875_GPTU1_BASE,		GPTU_IO_SIZE,	&pmb887x_gptu_regs},
-	{"STM",		PMB8875_STM_BASE,		STM_IO_SIZE,	&pmb887x_stm_regs},
-	{"ADC",		PMB8875_ADC_BASE,		ADC_IO_SIZE,	&pmb887x_adc_regs},
-	{"KEYPAD",	PMB8875_KEYPAD_BASE,	KEYPAD_IO_SIZE,	&pmb887x_keypad_regs},
-	{"DSP_RAM",	0xF6001000,				0x1800,			NULL},
-	{"DSP",		PMB8875_DSP_BASE,		DSP_IO_SIZE,	&pmb887x_dsp_regs},
-	{"GPRSCU",	PMB8875_GPRSCU_BASE,	GPRSCU_IO_SIZE,	&pmb887x_gprscu_regs},
-	{"AFC",		PMB8875_AFC_BASE,		AFC_IO_SIZE,	&pmb887x_afc_regs},
-	{"TPU_RAM",	0xF6401000,				0x1000,			NULL},
-	{"TPU",		PMB8875_TPU_BASE,		TPU_IO_SIZE,	&pmb887x_tpu_regs},
-};
-
-static const pmb887x_cpu_io_t pmb8875_dsp_modules[] = {
-	{"INT",		0xE600,	0x16,	&pmb887x_dsp_interrupt_regs},
-	{"CIPH",	0xE620,	0x10,	&pmb887x_dsp_cipher_regs},
-	{"TMR1",	0xE630,	0x4,	&pmb887x_dsp_timer1_regs},
-	{"TMR2",	0xE634,	0x3,	&pmb887x_dsp_timer2_regs},
-	{"EQ",		0xE640,	0x7,	&pmb887x_dsp_equalizer_regs},
-	{"CHDEC",	0xE650,	0x10,	&pmb887x_dsp_channel_decoder_regs},
-	{"AFE",		0xE670,	0x7,	&pmb887x_dsp_afe_regs},
-	{"BB",		0xE680,	0xD,	&pmb887x_dsp_baseband_regs},
-	{"MCS",		0xE690,	0x6,	&pmb887x_dsp_mcs_regs},
-	{"DSP",		0xE6A0,	0x9,	&pmb887x_dsp_dsp_regs},
-	{"MOD",		0xE6B0,	0xB,	&pmb887x_dsp_modulator_regs},
-	{"SSC",		0xE6C0,	0x9,	&pmb887x_dsp_ssc_regs},
-	{"I2S1",	0xE6D0,	0xB,	&pmb887x_dsp_i2s_regs},
-	{"I2S2",	0xE6E0,	0xB,	&pmb887x_dsp_i2s_regs},
-	{"I2S3",	0xE6F0,	0xB,	&pmb887x_dsp_i2s_tx_regs},
-};
-
 static const pmb887x_cpu_meta_t cpus_metadata[] = {
-	{"pmb8878",	pmb8878_irqs,	ARRAY_SIZE(pmb8878_irqs),	pmb8878_gpios,	ARRAY_SIZE(pmb8878_gpios),	pmb8878_modules,	ARRAY_SIZE(pmb8878_modules),	pmb8878_dsp_modules,	ARRAY_SIZE(pmb8878_dsp_modules)},
-	{"pmb8876",	pmb8876_irqs,	ARRAY_SIZE(pmb8876_irqs),	pmb8876_gpios,	ARRAY_SIZE(pmb8876_gpios),	pmb8876_modules,	ARRAY_SIZE(pmb8876_modules),	pmb8876_dsp_modules,	ARRAY_SIZE(pmb8876_dsp_modules)},
-	{"pmb8875",	pmb8875_irqs,	ARRAY_SIZE(pmb8875_irqs),	pmb8875_gpios,	ARRAY_SIZE(pmb8875_gpios),	pmb8875_modules,	ARRAY_SIZE(pmb8875_modules),	pmb8875_dsp_modules,	ARRAY_SIZE(pmb8875_dsp_modules)},
+	{"pmb8878",	pmb8878_irqs,	ARRAY_SIZE(pmb8878_irqs),	pmb8878_gpios,	ARRAY_SIZE(pmb8878_gpios)},
+	{"pmb8876",	pmb8876_irqs,	ARRAY_SIZE(pmb8876_irqs),	pmb8876_gpios,	ARRAY_SIZE(pmb8876_gpios)},
+	{"pmb8875",	pmb8875_irqs,	ARRAY_SIZE(pmb8875_irqs),	pmb8875_gpios,	ARRAY_SIZE(pmb8875_gpios)},
 };
 
-static const pmb887x_io_meta_t io_metadata[PMB887X_TRACE_IO_COUNT] = {
-	[PMB887X_TRACE_IO_HD155153NP] = { "hd155153np",	&pmb887x_hd155153np_regs },
-	[PMB887X_TRACE_IO_ILI9320] = { "ili9320",		&pmb887x_ili9320_regs },
-	[PMB887X_TRACE_IO_JBT6K71] = { "jbt6k71",		&pmb887x_jbt6k71_regs },
-	[PMB887X_TRACE_IO_LH15KAH2] = { "lh15kah2",		&pmb887x_lh15kah2_regs },
-	[PMB887X_TRACE_IO_LM4946] = { "lm4946",			&pmb887x_lm4946_regs },
-	[PMB887X_TRACE_IO_PASIC] = { "pasic",			&pmb887x_pasic_regs },
-	[PMB887X_TRACE_IO_PCF8833] = { "pcf8833",		&pmb887x_pcf8833_regs },
-	[PMB887X_TRACE_IO_PCF8882] = { "pcf8882",		&pmb887x_pcf8882_regs },
-	[PMB887X_TRACE_IO_PMB6272] = { "pmb6272",		&pmb887x_pmb6272_regs },
-	[PMB887X_TRACE_IO_PMB6812] = { "pmb6812",		&pmb887x_pmb6812_regs },
-	[PMB887X_TRACE_IO_R61505U] = { "r61505u",		&pmb887x_r61505u_regs },
-	[PMB887X_TRACE_IO_SSD1286] = { "ssd1286",		&pmb887x_ssd1286_regs },
-	[PMB887X_TRACE_IO_TEA5760UK] = { "tea5760uk",	&pmb887x_tea5760uk_regs },
-	[PMB887X_TRACE_IO_TEA5761UK] = { "tea5761uk",	&pmb887x_tea5761uk_regs },
-};
 
 const pmb887x_cpu_meta_t *pmb887x_get_cpu_meta(int cpu) {
 	return &cpus_metadata[cpu];
-}
-
-const pmb887x_io_meta_t *pmb887x_get_io_meta(pmb887x_trace_io_t id) {
-	if (id <= PMB887X_TRACE_IO_DSP || id >= PMB887X_TRACE_IO_COUNT)
-		return NULL;
-	return &io_metadata[id];
 }
