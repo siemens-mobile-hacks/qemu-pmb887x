@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0-or-later */
 #include "qemu/osdep.h"
+#include "qemu/main-loop.h"
 #include "qemu/module.h"
 #include "qemu/thread.h"
 #include "hw/core/qdev-properties.h"
@@ -32,6 +33,18 @@ struct ISO7816HostCard {
     bool powered;
     uint8_t atr[ISO7816_MAX_ATR_SIZE];
     size_t atr_size;
+
+    QemuThread transfer_thread;
+    QemuCond transfer_requested;
+    QEMUBH *transfer_done_bh;
+    bool transfer_thread_started;
+    bool transfer_stopping;
+    bool command_pending;
+    uint8_t command[ISO7816_MAX_COMMAND_SIZE];
+    size_t command_size;
+    uint32_t command_exchange_id;
+    ISO7816Response result;
+    uint32_t result_exchange_id;
 };
 
 struct ISO7816HostCardClass {
@@ -204,20 +217,71 @@ static void iso7816_host_card_exchange(ISO7816Card *iso_card,
                                        uint32_t exchange_id)
 {
     ISO7816HostCard *card = ISO7816_HOST_CARD(iso_card);
-    ISO7816Response response = { 0 };
-    bool transmitted;
 
     qemu_mutex_lock(&card->reader_mutex);
-    transmitted = iso7816_host_card_transmit_locked(card, command, size,
-                                                    &response);
+    memcpy(card->command, command, size);
+    card->command_size = size;
+    card->command_exchange_id = exchange_id;
+    card->command_pending = true;
+    qemu_cond_signal(&card->transfer_requested);
     qemu_mutex_unlock(&card->reader_mutex);
+}
 
-    if (!transmitted) {
-        response.size = 0;
-        iso7816_response_set_status(&response,
-                                    GSM11_STATUS_TECHNICAL_PROBLEM);
+static void *iso7816_host_card_transfer_thread(void *opaque)
+{
+    ISO7816HostCard *card = opaque;
+
+    qemu_mutex_lock(&card->reader_mutex);
+    while (true) {
+        ISO7816Response response = { 0 };
+        uint32_t exchange_id;
+
+        while (!card->command_pending && !card->transfer_stopping) {
+            qemu_cond_wait(&card->transfer_requested, &card->reader_mutex);
+        }
+        if (card->transfer_stopping) {
+            break;
+        }
+        card->command_pending = false;
+        exchange_id = card->command_exchange_id;
+        if (!iso7816_host_card_transmit_locked(card, card->command,
+                                               card->command_size,
+                                               &response)) {
+            iso7816_response_set_status(&response,
+                                        GSM11_STATUS_TECHNICAL_PROBLEM);
+        }
+        card->result = response;
+        card->result_exchange_id = exchange_id;
+        qemu_bh_schedule(card->transfer_done_bh);
     }
-    iso7816_card_complete(iso_card, exchange_id, &response);
+    qemu_mutex_unlock(&card->reader_mutex);
+    return NULL;
+}
+
+static void iso7816_host_card_transfer_done(void *opaque)
+{
+    ISO7816HostCard *card = opaque;
+    ISO7816Response response;
+    uint32_t exchange_id;
+
+    qemu_mutex_lock(&card->reader_mutex);
+    response = card->result;
+    exchange_id = card->result_exchange_id;
+    qemu_mutex_unlock(&card->reader_mutex);
+    iso7816_card_complete(ISO7816_CARD(card), exchange_id, &response);
+}
+
+static void iso7816_host_card_stop_transfer_thread(ISO7816HostCard *card)
+{
+    if (!card->transfer_thread_started) {
+        return;
+    }
+    qemu_mutex_lock(&card->reader_mutex);
+    card->transfer_stopping = true;
+    qemu_cond_signal(&card->transfer_requested);
+    qemu_mutex_unlock(&card->reader_mutex);
+    qemu_thread_join(&card->transfer_thread);
+    card->transfer_thread_started = false;
 }
 
 static void iso7816_host_card_stop_event_thread(ISO7816HostCard *card)
@@ -232,6 +296,7 @@ static void iso7816_host_card_stop_event_thread(ISO7816HostCard *card)
 
 static void iso7816_host_card_release(ISO7816HostCard *card)
 {
+    iso7816_host_card_stop_transfer_thread(card);
     iso7816_host_card_stop_event_thread(card);
     qemu_mutex_lock(&card->reader_mutex);
     if (card->reader) {
@@ -306,6 +371,11 @@ static void iso7816_host_card_realize(DeviceState *dev, Error **errp)
         return;
     }
 
+    qemu_thread_create(&card->transfer_thread, "iso7816/host-transfer",
+                       iso7816_host_card_transfer_thread, card,
+                       QEMU_THREAD_JOINABLE);
+    card->transfer_thread_started = true;
+
     ISO7816_HOST_CARD_GET_CLASS(dev)->parent_realize(dev, errp);
     if (*errp) {
         iso7816_host_card_release(card);
@@ -324,12 +394,17 @@ static void iso7816_host_card_init(Object *obj)
 
     qemu_mutex_init(&card->reader_mutex);
     qemu_cond_init(&card->card_inserted);
+    qemu_cond_init(&card->transfer_requested);
+    card->transfer_done_bh = qemu_bh_new(iso7816_host_card_transfer_done,
+                                         card);
 }
 
 static void iso7816_host_card_finalize(Object *obj)
 {
     ISO7816HostCard *card = ISO7816_HOST_CARD(obj);
 
+    qemu_bh_delete(card->transfer_done_bh);
+    qemu_cond_destroy(&card->transfer_requested);
     qemu_cond_destroy(&card->card_inserted);
     qemu_mutex_destroy(&card->reader_mutex);
 }
