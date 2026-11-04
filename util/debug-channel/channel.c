@@ -167,6 +167,8 @@ void debug_channel_init(DebugChannel *ch, const DebugChannelInfo *info,
 
 void debug_channel_cleanup(DebugChannel *ch)
 {
+    /* Queued records, guest errors included, still point at the name */
+    debug_channels_flush();
     g_clear_pointer(&ch->name, g_free);
     ch->flags = 0;
 }

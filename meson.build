@@ -3761,6 +3761,9 @@ host_unit_tests = {
   'debug-channel': {
     'sources': files('tests/unit/test-debug-channel.c'),
   },
+  'debug-channel-queue': {
+    'sources': files('tests/unit/test-debug-channel-queue.c'),
+  },
 }
 target_unit_tests = {}
 
