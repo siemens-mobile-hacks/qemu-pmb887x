@@ -119,6 +119,9 @@
 #define TEAK_OPCODE_INTERRUPT_DISABLE_MASK	0xFFC0U
 
 static uint64_t teak_next_cache_id;
+static const uint16_t teak_zero_data_page[TEAK_DATA_PAGE_WORDS];
+
+QEMU_BUILD_BUG_ON(offsetof(teak_tcg_core_t, data_map) + sizeof(teak_data_map_t) != sizeof(teak_tcg_core_t));
 
 static teak_modulo_step_t teak_modulo_step(uint16_t modulo, int16_t step, bool enabled) {
 	if (!enabled)
@@ -146,6 +149,16 @@ void teak_update_modulo_steps(teak_state_t *state) {
 	}
 }
 
+static void teak_data_map_init(teak_data_map_t *map, uint16_t y_space_base) {
+	uint32_t y_space_page = y_space_base / TEAK_DATA_PAGE_WORDS;
+
+	g_assert(y_space_base % TEAK_DATA_PAGE_WORDS == 0);
+	for (uint32_t page = 0; page < y_space_page; page++)
+		map->read_pages[TEAK_DATA_SPACE_Y][page] = teak_zero_data_page;
+	for (uint32_t page = y_space_page; page < TEAK_DATA_PAGE_COUNT; page++)
+		map->read_pages[TEAK_DATA_SPACE_XZ][page] = teak_zero_data_page;
+}
+
 void teak_tcg_init(teak_tcg_core_t *core, const teak_memory_t *memory) {
 	g_assert(memory->program.read != NULL);
 	g_assert(memory->program.write != NULL);
@@ -159,6 +172,7 @@ void teak_tcg_init(teak_tcg_core_t *core, const teak_memory_t *memory) {
 	core->state.sata = 1;
 	core->state.cpc = 1;
 	teak_update_modulo_steps(&core->state);
+	teak_data_map_init(&core->data_map, memory->y_space_base);
 }
 
 void teak_tcg_reset(teak_tcg_core_t *core, uint32_t pc) {
@@ -166,7 +180,7 @@ void teak_tcg_reset(teak_tcg_core_t *core, uint32_t pc) {
 	uint64_t cache_id = core->cache_id;
 	uint32_t program_context = core->program_context;
 
-	memset(core, 0, sizeof(*core));
+	memset(core, 0, offsetof(teak_tcg_core_t, data_map));
 	core->memory = memory;
 	core->cache_id = cache_id;
 	core->program_context = program_context;
@@ -174,6 +188,32 @@ void teak_tcg_reset(teak_tcg_core_t *core, uint32_t pc) {
 	core->state.sata = 1;
 	core->state.cpc = 1;
 	teak_update_modulo_steps(&core->state);
+}
+
+static void teak_data_map_check_range(uint32_t address, uint32_t words) {
+	g_assert(address % TEAK_DATA_PAGE_WORDS == 0);
+	g_assert(words % TEAK_DATA_PAGE_WORDS == 0);
+	g_assert(address + words <= TEAK_DATA_ADDRESS_SPACE_WORDS);
+}
+
+void teak_data_map_read(teak_tcg_core_t *core, uint32_t address, uint32_t words, const uint16_t *host) {
+	teak_data_map_t *map = &core->data_map;
+
+	teak_data_map_check_range(address, words);
+	for (uint32_t offset = 0; offset < words; offset += TEAK_DATA_PAGE_WORDS) {
+		uint32_t page = (address + offset) / TEAK_DATA_PAGE_WORDS;
+		bool y_space = address + offset >= core->memory.y_space_base;
+		teak_data_space_t space = y_space ? TEAK_DATA_SPACE_Y : TEAK_DATA_SPACE_XZ;
+
+		map->read_pages[TEAK_DATA_SPACE_ALL][page] = host + offset;
+		map->read_pages[space][page] = host + offset;
+	}
+}
+
+void teak_data_map_write(teak_tcg_core_t *core, uint32_t address, uint32_t words, uint16_t *host) {
+	teak_data_map_check_range(address, words);
+	for (uint32_t offset = 0; offset < words; offset += TEAK_DATA_PAGE_WORDS)
+		core->data_map.write_pages[(address + offset) / TEAK_DATA_PAGE_WORDS] = host + offset;
 }
 
 uint16_t teak_program_read(teak_tcg_core_t *core, uint32_t address) {

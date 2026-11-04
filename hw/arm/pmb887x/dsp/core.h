@@ -10,8 +10,14 @@
 #define TEAK_PROGRAM_ADDRESS_MASK	UINT16_MAX
 #define TEAK_MODULO_REGISTERS	6
 #define TEAK_MODULO_STEP_MODES	3
+#define TEAK_DATA_ADDRESS_SPACE_WORDS	0x10000U
+#define TEAK_DATA_PAGE_SHIFT	8
+#define TEAK_DATA_PAGE_WORDS	(1U << TEAK_DATA_PAGE_SHIFT)
+#define TEAK_DATA_PAGE_COUNT	(TEAK_DATA_ADDRESS_SPACE_WORDS / TEAK_DATA_PAGE_WORDS)
+#define TEAK_DATA_SPACES	3
 
 typedef struct teak_tcg_core_t teak_tcg_core_t;
+typedef struct teak_data_map_t teak_data_map_t;
 typedef struct teak_insn_t teak_insn_t;
 typedef struct teak_memory_t teak_memory_t;
 typedef struct teak_memory_space_t teak_memory_space_t;
@@ -22,6 +28,7 @@ typedef enum teak_accumulator_test_t teak_accumulator_test_t;
 typedef enum teak_alb_operation_t teak_alb_operation_t;
 typedef enum teak_alu_operation_t teak_alu_operation_t;
 typedef enum teak_condition_t teak_condition_t;
+typedef enum teak_data_space_t teak_data_space_t;
 typedef enum teak_exit_t teak_exit_t;
 typedef enum teak_exponent_source_t teak_exponent_source_t;
 typedef enum teak_minmax_operation_t teak_minmax_operation_t;
@@ -43,6 +50,12 @@ enum teak_exit_t {
 	TEAK_EXIT_BRANCH,
 	TEAK_EXIT_INTERRUPT,
 	TEAK_EXIT_HALT,
+};
+
+enum teak_data_space_t {
+	TEAK_DATA_SPACE_ALL,
+	TEAK_DATA_SPACE_XZ,
+	TEAK_DATA_SPACE_Y,
 };
 
 enum teak_translation_error_t {
@@ -304,16 +317,6 @@ struct teak_memory_t {
 	teak_memory_space_t program;
 	teak_memory_space_t data;
 	teak_memory_space_t external;
-	uint16_t *direct_data;
-	uint16_t *direct_data_bank;
-	uint32_t direct_data_read_size;
-	uint32_t direct_data_write_size;
-	uint32_t direct_data_bank_base;
-	uint32_t direct_data_bank_size;
-	uint32_t direct_data_high_read_base;
-	uint32_t direct_data_high_read_size;
-	uint32_t direct_data_high_write_base;
-	uint32_t direct_data_high_write_size;
 	void *cycle_opaque;
 	teak_advance_cycles_fn *advance_cycles;
 	uint32_t cycle_sensitive_base;
@@ -446,6 +449,11 @@ struct teak_state_t {
 	uint8_t nmi_active;
 };
 
+struct teak_data_map_t {
+	const uint16_t *read_pages[TEAK_DATA_SPACES][TEAK_DATA_PAGE_COUNT];
+	uint16_t *write_pages[TEAK_DATA_PAGE_COUNT];
+};
+
 struct teak_tcg_core_t {
 	teak_state_t state;
 	teak_memory_t memory;
@@ -479,6 +487,7 @@ struct teak_tcg_core_t {
 	uint64_t chain_cache_stops;
 	uint64_t fast_runs;
 	bool synchronization_valid;
+	teak_data_map_t data_map;
 };
 
 void teak_tcg_init(teak_tcg_core_t *core, const teak_memory_t *memory);
@@ -488,6 +497,8 @@ uint16_t teak_program_read(teak_tcg_core_t *core, uint32_t address);
 void teak_program_write(teak_tcg_core_t *core, uint32_t address, uint16_t value);
 uint16_t teak_data_read(teak_tcg_core_t *core, uint32_t address);
 void teak_data_write(teak_tcg_core_t *core, uint32_t address, uint16_t value);
+void teak_data_map_read(teak_tcg_core_t *core, uint32_t address, uint32_t words, const uint16_t *host);
+void teak_data_map_write(teak_tcg_core_t *core, uint32_t address, uint32_t words, uint16_t *host);
 
 bool teak_decode(teak_tcg_core_t *core, uint32_t address, teak_insn_t *instruction);
 bool teak_decode_with_expansion_address(

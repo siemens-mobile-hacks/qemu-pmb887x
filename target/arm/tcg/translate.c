@@ -1641,6 +1641,45 @@ static void gen_goto_ptr(DisasContext *s, uint32_t condexec)
     tcg_gen_lookup_and_goto_ptr();
 }
 
+/*
+ * The TB flags are constant within a TB, so an indirect jump that does not
+ * change them reaches a TB whose flags differ only in the Thumb bit.
+ */
+static void gen_linked_goto_ptr(DisasContext *s, uint32_t condexec)
+{
+    TBLookupLink *link = NULL;
+
+#ifndef CONFIG_TCG_WASM64
+    /* on wasm, the per-TB slot of gen_goto_ptr does the link's job */
+    bool keeps_tb_flags = !s->jump_changes_tb_flags && !s->condexec_mask;
+
+    if (keeps_tb_flags && !arm_dc_feature(s, ARM_FEATURE_M)) {
+        link = translator_lookup_link_new(&s->base);
+    }
+#endif
+    if (link == NULL) {
+        gen_goto_ptr(s, condexec);
+        return;
+    }
+
+    CPUARMTBFlags arm_flags = { .flags = s->base.tb->flags };
+    DP_TBFLAG_AM32(arm_flags, CONDEXEC, 0);
+    CPUARMTBFlags thumb_flags = arm_flags;
+    DP_TBFLAG_AM32(arm_flags, THUMB, 0);
+    DP_TBFLAG_AM32(thumb_flags, THUMB, 1);
+
+    TCGv_i64 pc = tcg_temp_new_i64();
+    TCGv_i32 thumb = tcg_temp_new_i32();
+    TCGv_i32 flags = tcg_temp_new_i32();
+
+    tcg_gen_extu_i32_i64(pc, cpu_R[15]);
+    tcg_gen_ld8u_i32(thumb, tcg_env, offsetof(CPUARMState, thumb));
+    tcg_gen_movcond_i32(TCG_COND_NE, flags, thumb, tcg_constant_i32(0),
+                        tcg_constant_i32(thumb_flags.flags),
+                        tcg_constant_i32(arm_flags.flags));
+    tcg_gen_linked_lookup_and_goto_ptr(link, pc, flags);
+}
+
 /* This will end the TB but doesn't guarantee we'll return to
  * cpu_loop_exec. Any live exit_requests will be processed as we
  * enter the next TB.
@@ -2765,6 +2804,7 @@ static void gen_lookup_tb_after_cpsr_write(DisasContext *s)
     tcg_gen_exit_tb(NULL, 0);
     gen_set_label(no_interrupt);
     s->base.is_jmp = DISAS_JUMP;
+    s->jump_changes_tb_flags = true;
 }
 
 #endif
@@ -8587,6 +8627,10 @@ static void arm_tr_tb_stop(DisasContextBase *dcbase, CPUState *cpu)
             - Hardware watchpoints.
            Hardware breakpoints have already been handled and skip this code.
          */
+        /* memory holds what gen_set_condexec stored above, else 0 */
+        uint32_t condexec = dc->condexec_mask ?
+                            (dc->condexec_cond << 4) | (dc->condexec_mask >> 1) : 0;
+
         switch (dc->base.is_jmp) {
         case DISAS_NEXT:
         case DISAS_TOO_MANY:
@@ -8594,12 +8638,10 @@ static void arm_tr_tb_stop(DisasContextBase *dcbase, CPUState *cpu)
             break;
         case DISAS_UPDATE_NOCHAIN:
             gen_update_pc(dc, curr_insn_len(dc));
-            /* fall through */
+            gen_goto_ptr(dc, condexec);
+            break;
         case DISAS_JUMP:
-            /* memory holds what gen_set_condexec stored above, else 0 */
-            gen_goto_ptr(dc, dc->condexec_mask ?
-                         (dc->condexec_cond << 4) | (dc->condexec_mask >> 1)
-                         : 0);
+            gen_linked_goto_ptr(dc, condexec);
             break;
         case DISAS_UPDATE_EXIT:
             gen_update_pc(dc, curr_insn_len(dc));

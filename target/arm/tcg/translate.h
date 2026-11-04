@@ -245,6 +245,8 @@ typedef struct DisasContext {
      */
     bool ss_active;
     bool pstate_ss;
+    /* True if the final indirect jump also changes the TB flags. */
+    bool jump_changes_tb_flags;
     /* True if the insn just emitted was a load-exclusive instruction
      * (necessary for syndrome information for single step exceptions),
      * ie A64 LDX*, LDAX*, A32/T32 LDREX*, LDAEX*.

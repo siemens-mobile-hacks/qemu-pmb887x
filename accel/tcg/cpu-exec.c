@@ -501,9 +501,8 @@ static inline void w64_pcc_put(CPUState *cpu, TCGTBCPUState s, uint32_t gen,
  * If found, return the code pointer.  If not found, return
  * the tcg epilogue so that we return into cpu_tb_exec.
  */
-const void *HELPER(lookup_tb_ptr)(CPUArchState *env)
+static TranslationBlock *lookup_tb_for_ptr(CPUState *cpu, TCGTBCPUState *s)
 {
-    CPUState *cpu = env_cpu(env);
     TranslationBlock *tb;
 
     /*
@@ -515,40 +514,87 @@ const void *HELPER(lookup_tb_ptr)(CPUArchState *env)
      */
     cpu->neg.can_do_io = true;
 
-#ifdef CONFIG_TCG_WASM64
-    uint32_t pcc_gen = qatomic_read(&cpu->neg.tb_key_gen);
-#endif
+    *s = cpu->cc->tcg_ops->get_tb_cpu_state(cpu);
+    s->cflags = curr_cflags(cpu);
 
-    TCGTBCPUState s = cpu->cc->tcg_ops->get_tb_cpu_state(cpu);
-    s.cflags = curr_cflags(cpu);
-
-    if (check_for_breakpoints(cpu, s.pc, &s.cflags)) {
+    if (check_for_breakpoints(cpu, s->pc, &s->cflags)) {
         cpu_loop_exit(cpu);
     }
 
-    tb = tb_lookup(cpu, &s);
+    tb = tb_lookup(cpu, s);
     if (tb == NULL) {
-        return tcg_code_gen_epilogue;
+        return NULL;
     }
     if (tb_cflags(tb) & CF_MEMORY_TIMING) {
         tcg_memory_timing_fetch(cpu, tb);
     }
 
     if (qemu_loglevel_mask(CPU_LOG_TB_CPU | CPU_LOG_EXEC)) {
-        log_cpu_exec(s.pc, cpu, tb);
+        log_cpu_exec(s->pc, cpu, tb);
+    }
+    return tb;
+}
+
+const void *HELPER(lookup_tb_ptr)(CPUArchState *env)
+{
+    TCGTBCPUState s;
+#ifdef CONFIG_TCG_WASM64
+    CPUState *cpu = env_cpu(env);
+    uint32_t gen = qatomic_read(&cpu->neg.tb_key_gen);
+    TranslationBlock *tb = lookup_tb_for_ptr(cpu, &s);
+    const void *target;
+
+    if (tb == NULL) {
+        return tcg_code_gen_epilogue;
+    }
+    if (qemu_loglevel_mask(CPU_LOG_TB_CPU | CPU_LOG_EXEC)) {
         return tb->tc.ptr;
     }
-
-#ifdef CONFIG_TCG_WASM64
-    {
-        const void *target = w64_dispatch_target(tb);
-
-        w64_pcc_put(cpu, s, pcc_gen, target);
-        return target;
-    }
+    target = w64_dispatch_target(tb);
+    w64_pcc_put(cpu, s, gen, target);
+    return target;
 #else
-    return tb->tc.ptr;
+    TranslationBlock *tb = lookup_tb_for_ptr(env_cpu(env), &s);
+
+    return tb ? tb->tc.ptr : tcg_code_gen_epilogue;
 #endif
+}
+
+static bool tb_lookup_link_can_reuse(CPUState *cpu,
+                                     const TranslationBlock *tb,
+                                     const TCGTBCPUState *s,
+                                     const TBLookupLink *link)
+{
+    if (!QTAILQ_EMPTY(&cpu->breakpoints)) {
+        return false;
+    }
+    if (qemu_loglevel_mask(CPU_LOG_TB_CPU | CPU_LOG_EXEC)) {
+        return false;
+    }
+    if (tb_cflags(tb) & CF_MEMORY_TIMING) {
+        return false;
+    }
+    return s->cs_base == link->cs_base;
+}
+
+const void *HELPER(lookup_tb_ptr_link)(CPUArchState *env, void *opaque)
+{
+    CPUState *cpu = env_cpu(env);
+    TBLookupLink *link = opaque;
+    uint64_t generation = qatomic_read(&tb_lookup_link_generation);
+    TCGTBCPUState s;
+    TranslationBlock *tb = lookup_tb_for_ptr(cpu, &s);
+
+    if (tb == NULL) {
+        return tcg_code_gen_epilogue;
+    }
+    if (tb_lookup_link_can_reuse(cpu, tb, &s, link)) {
+        link->generation = generation;
+        link->code = tb->tc.ptr;
+        link->pc = s.pc;
+        link->flags = s.flags;
+    }
+    return tb->tc.ptr;
 }
 
 #ifdef CONFIG_TCG_WASM64
@@ -594,27 +640,16 @@ const void *HELPER(lookup_tb_ptr_lc)(CPUArchState *env, void *slot)
 {
     CPUState *cpu = env_cpu(env);
     struct W64LookupCache *lc = slot;
-    TranslationBlock *tb;
     const void *target;
     uint32_t gen = qatomic_read(&cpu->neg.tb_key_gen);
     uint32_t cur[3];
+    TCGTBCPUState s;
+    TranslationBlock *tb = lookup_tb_for_ptr(cpu, &s);
 
-    cpu->neg.can_do_io = true;
-
-    TCGTBCPUState s = cpu->cc->tcg_ops->get_tb_cpu_state(cpu);
-    s.cflags = curr_cflags(cpu);
-
-    if (check_for_breakpoints(cpu, s.pc, &s.cflags)) {
-        cpu_loop_exit(cpu);
-    }
-
-    tb = tb_lookup(cpu, &s);
     if (tb == NULL) {
         return tcg_code_gen_epilogue;
     }
-
     if (qemu_loglevel_mask(CPU_LOG_TB_CPU | CPU_LOG_EXEC)) {
-        log_cpu_exec(s.pc, cpu, tb);
         return tb->tc.ptr;         /* keep every lookup visible in the log */
     }
 

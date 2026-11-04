@@ -60,8 +60,8 @@ static void dif_start_tx(pmb887x_dif_t *p);
 static void dif_kernel_reset(pmb887x_dif_t *p, uint32_t new_state);
 static bool dif_is_running(pmb887x_dif_t *p);
 static void dif_tx_from_fifo(pmb887x_dif_t *p);
-static void dif_work(pmb887x_dif_t *p);
 static void dif_update_mux(pmb887x_dif_t *p);
+static void dif_work(pmb887x_dif_t *p);
 static uint16_t dif_bus_transfer(pmb887x_dif_t *p, uint16_t value);
 
 enum DIFIrqType {
@@ -124,7 +124,7 @@ struct pmb887x_dif_t {
 	uint8_t mux_lshift[2], mux_rshift[2];
 	uint32_t mux_lmask[2], mux_rmask[2];
 	bool is_mux_identity;
-	bool is_mux_dirty;
+	bool is_mux_stale;
 
 	uint32_t con;
 	uint32_t perreg;
@@ -634,14 +634,10 @@ static void dif_reset_rx_fifo(pmb887x_dif_t *p) {
 	p->rx_buffer_word_count = 0;
 }
 
-/* Firmware rewrites the mux registers one by one; rebuild once they are used. */
-static void dif_sync_mux(pmb887x_dif_t *p) {
-	if (unlikely(p->is_mux_dirty))
-		dif_update_mux(p);
-}
-
 static inline uint32_t dif_mux(pmb887x_dif_t *p, uint32_t value) {
-	dif_sync_mux(p);
+	if (p->is_mux_stale)
+		dif_update_mux(p);
+
 	bool is_mux_bypassed = p->is_mux_identity || (dif_get_transfer_csreg(p) & DIFv2_CSREG_CD) != 0;
 	uint32_t selected = value;
 	if (!is_mux_bypassed) {
@@ -951,7 +947,8 @@ static bool dif_convert_word(pmb887x_dif_t *p, uint16_t value, uint32_t *output)
 
 /* dif_mux() of @count 32-bit entries in place */
 static void dif_mux_entries(pmb887x_dif_t *p, uint8_t *data, uint32_t count) {
-	dif_sync_mux(p);
+	if (p->is_mux_stale)
+		dif_update_mux(p);
 	uint32_t select = p->mux_select_mask;
 	uint32_t constant = p->mux_constant_bits;
 	uint32_t invert = p->invert_bit;
@@ -985,9 +982,11 @@ static void dif_mux_entries(pmb887x_dif_t *p, uint8_t *data, uint32_t count) {
 static bool dif_is_pbc_selection_valid(pmb887x_dif_t *p) {
 	uint32_t word_bits = dif_get_tx_word_bits(p);
 
-	dif_sync_mux(p);
+	if (p->is_mux_stale)
+		dif_update_mux(p);
 	for (uint32_t output_bit = 0; output_bit < word_bits; output_bit++) {
-		if (p->bit_bcsel[output_bit] > 1)
+		uint32_t bcsel = (p->bcsel[output_bit / 16] >> ((output_bit % 16) * 2)) & 3;
+		if (bcsel > 1)
 			return false;
 	}
 
@@ -1047,6 +1046,7 @@ static void dif_tx_from_fifo(pmb887x_dif_t *p) {
 		return;
 
 	uint32_t align = dif_get_tx_align(p);
+	uint32_t lanes_per_entry = 4 / align;
 	uint32_t word_bits = dif_get_tx_word_bits(p);
 
 	uint64_t bus_word_ps = dif_get_bus_word_ps(p);
@@ -1066,18 +1066,20 @@ static void dif_tx_from_fifo(pmb887x_dif_t *p) {
 			dif_send_parallel_words(p, parallel_words, parallel_word_count);
 			parallel_word_count = 0;
 		}
+		bool is_csreg_changed = !p->is_tx_csreg_active || tx_csreg != p->tx_csreg;
 		p->tx_csreg = tx_csreg;
 		p->is_tx_csreg_active = true;
-		dif_update_gpio_state(p);
+		if (is_csreg_changed)
+			dif_update_gpio_state(p);
 		uint32_t bsconf_word_count = dif_get_bsconf_word_count(p);
-		uint32_t words_in_fifo_reg = MIN(4 / align, p->tx_words_remaining);
+		uint32_t words_in_fifo_reg = MIN(lanes_per_entry, p->tx_words_remaining);
 		bool is_direct_write = p->state == DIF_STATE_NONE;
 
 		if (p->state == DIF_STATE_TX)
 			p->is_tx_started = true;
 		p->tx_words_remaining -= words_in_fifo_reg;
 		if (words_in_fifo_reg == 0 && (bsconf_word_count == 0 || is_direct_write))
-			words_in_fifo_reg = 4 / align; // Direct TXD writes do not require TPS_CTRL.
+			words_in_fifo_reg = lanes_per_entry; // Direct TXD writes do not require TPS_CTRL.
 		if (p->state == DIF_STATE_NONE)
 			p->tx_words_preloaded += bsconf_word_count != 0 ? 1 : words_in_fifo_reg;
 		bool is_color_converted = (dif_get_transfer_csreg(p) & DIFv2_CSREG_GRACMD) != 0;
@@ -1085,7 +1087,7 @@ static void dif_tx_from_fifo(pmb887x_dif_t *p) {
 		if (bsconf_word_count != 0) {
 			bool has_bus_words = false;
 
-			for (uint32_t lane = 0; lane < 4 / align; lane++) {
+			for (uint32_t lane = 0; lane < lanes_per_entry; lane++) {
 				uint32_t lane_value = dif_get_tx_lane(value, align, lane);
 
 				if (is_color_converted)
@@ -1602,7 +1604,7 @@ static void dif_tx_bus_wake(void *opaque) {
 }
 
 static void dif_update_mux(pmb887x_dif_t *p) {
-	p->is_mux_dirty = false;
+	p->is_mux_stale = false;
 	p->mux_select_mask = 0;
 	p->mux_constant_bits = 0;
 	p->is_mux_identity = true;
@@ -1973,7 +1975,7 @@ static void dif_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned si
 		case DIFv2_BMREG4:
 		case DIFv2_BMREG5:
 			p->bmreg[(haddr - DIFv2_BMREG0) / 4] = value;
-			p->is_mux_dirty = true;
+			p->is_mux_stale = true;
 			break;
 
 		case DIFv2_PBCCON:
@@ -1983,17 +1985,17 @@ static void dif_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned si
 		case DIFv2_BCSEL0:
 		case DIFv2_BCSEL1:
 			p->bcsel[(haddr - DIFv2_BCSEL0) / 4] = value;
-			p->is_mux_dirty = true;
+			p->is_mux_stale = true;
 			break;
 
 		case DIFv2_BCREG:
 			p->bcreg = value;
-			p->is_mux_dirty = true;
+			p->is_mux_stale = true;
 			break;
 
 		case DIFv2_INVERT_BIT:
 			p->invert_bit = value;
-			p->is_mux_dirty = true;
+			p->is_mux_stale = true;
 			break;
 
 		case DIFv2_SYNC_CONFIG:

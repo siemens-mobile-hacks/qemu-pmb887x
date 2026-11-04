@@ -177,6 +177,15 @@ void translator_loop(CPUState *cpu, TranslationBlock *tb, int *max_insns,
 bool translator_use_goto_tb(DisasContextBase *db, vaddr dest);
 
 /**
+ * translator_lookup_link_new
+ * @db: Disassembly context
+ *
+ * Return a lookup link for an indirect exit of the current TB whose target
+ * has the cs_base of the current TB, or NULL if such links are not used.
+ */
+TBLookupLink *translator_lookup_link_new(DisasContextBase *db);
+
+/**
  * translator_count_cycles:
  * @db: disassembly context
  * @cycles: CPU cycles beyond the one every instruction takes

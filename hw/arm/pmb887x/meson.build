@@ -123,7 +123,6 @@ arm_common_ss.add(when: 'CONFIG_PMB887X', if_true: files(
 arm_common_ss.add(when: 'CONFIG_PMB887X', if_true: dsp_core_sources + dsp_peripheral_sources + dsp_audio_sources +
 	files('dsp/tcg.c', 'dsp/runtime.c'))
 
-dsp_test_c_args = ['-include', meson.current_source_dir() / 'dsp/tests/compat.h']
 host_unit_tests += {
 	'pmb887x-audio-buffer': {
 		'sources': files('tests/audio/buffer.c', 'audio/buffer.c'),
@@ -135,12 +134,10 @@ host_unit_tests += {
 	},
 	'pmb887x-dsp-core': {
 		'sources': files('dsp/tests/core.c') + dsp_core_sources,
-		'c_args': dsp_test_c_args,
 		'dependencies': [glib],
 	},
 	'pmb887x-dsp-peripheral': {
 		'sources': files('dsp/tests/peripheral.c') + dsp_peripheral_sources,
-		'c_args': dsp_test_c_args,
 		'dependencies': [glib],
 	},
 }
@@ -149,7 +146,6 @@ target_unit_tests += {
 	'arm-softmmu': {
 		'pmb887x-dsp-tcg': {
 			'sources': files('dsp/tests/tcg.c'),
-			'c_args': dsp_test_c_args,
 			'config': 'CONFIG_PMB887X',
 		},
 	},
