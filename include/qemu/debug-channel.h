@@ -29,25 +29,29 @@ typedef struct DebugIoAccess {
     bool has_context;
 } DebugIoAccess;
 
+typedef struct DebugChannel DebugChannel;
+
 /*
- * Runs on the output thread while a vCPU may hold the BQL and wait for queue
- * space: it must not take the BQL or print to a debug channel.
+ * print and DebugChannel::get_reg_suffix run on the output thread while a vCPU
+ * may hold the BQL and wait for queue space: they must not take the BQL or
+ * print to a debug channel.
  */
 typedef struct DebugIoFormat {
-    void (*print)(const char *name, const void *opaque,
-                  const DebugIoAccess *io, GString *out);
+    void (*print)(const DebugChannel *ch, const DebugIoAccess *io,
+                  GString *out);
 } DebugIoFormat;
 
 void debug_io_print_access(const char *name, const DebugIoAccess *io,
                            int addr_digits, GString *out);
 void debug_io_print_context(const DebugIoAccess *io, GString *out);
 
-typedef struct DebugChannel {
+struct DebugChannel {
     uint8_t flags;
     char *name;
     const DebugIoFormat *io_format;
     const void *io_format_opaque;
-} DebugChannel;
+    const char *(*get_reg_suffix)(const DebugChannel *ch, uint64_t offset);
+};
 
 #define DEBUG_CHANNEL_INFO(var, ...) \
     static DebugChannelInfo var = { __VA_ARGS__ }; \

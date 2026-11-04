@@ -344,10 +344,11 @@ static void test_time_prefix(void)
     teardown(&ch);
 }
 
-static void print_custom(const char *name, const void *opaque,
-                         const DebugIoAccess *io, GString *out)
+static void print_custom(const DebugChannel *ch, const DebugIoAccess *io,
+                         GString *out)
 {
-    g_string_append_printf(out, "%s:%s:%" PRIx64, (const char *) opaque, name,
+    g_string_append_printf(out, "%s:%s:%" PRIx64,
+                           (const char *) ch->io_format_opaque, ch->name,
                            io->value);
 }
 
@@ -372,10 +373,10 @@ static void test_io_format(void)
     teardown(&ch);
 }
 
-static void print_offset(const char *name, const void *_opaque,
-                         const DebugIoAccess *io, GString *out)
+static void print_offset(const DebugChannel *ch, const DebugIoAccess *io,
+                         GString *out)
 {
-    g_string_append_printf(out, "%s:%" PRIx64 ":%" PRIx64, name, io->addr,
+    g_string_append_printf(out, "%s:%" PRIx64 ":%" PRIx64, ch->name, io->addr,
                            io->offset);
 }
 

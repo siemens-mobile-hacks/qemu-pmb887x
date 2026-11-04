@@ -38,6 +38,10 @@ static void debug_regs_separator(bool *is_first, GString *out)
 void debug_regs_print_fields(const DebugReg *reg, uint64_t value,
                              GString *out)
 {
+    if (!reg->fields_count) {
+        return;
+    }
+
     bool is_first = true;
     uint64_t known = 0;
 
@@ -68,24 +72,58 @@ void debug_regs_print_fields(const DebugReg *reg, uint64_t value,
     }
 }
 
-static void debug_regs_print(const char *name, const void *opaque,
-                             const DebugIoAccess *io, GString *out)
+static const DebugRegion *debug_regs_find_region(const DebugRegs *regs,
+                                                 uint64_t offset)
 {
-    const DebugRegs *regs = opaque;
+    for (size_t i = 0; i < regs->regions_count; i++) {
+        const DebugRegion *region = &regs->regions[i];
+
+        if (offset >= region->offset && offset - region->offset < region->size) {
+            return region;
+        }
+    }
+    return NULL;
+}
+
+static void debug_regs_print_region(const char *name, const DebugRegs *regs,
+                                    uint64_t offset, GString *out)
+{
+    const DebugRegion *region = debug_regs_find_region(regs, offset);
+
+    if (!region) {
+        g_string_append_printf(out, " (%s_*)", name);
+    } else if (offset != region->offset) {
+        g_string_append_printf(out, " (%s_%s+0x%" PRIX64 ")", name,
+                               region->name, offset - region->offset);
+    } else {
+        g_string_append_printf(out, " (%s_%s)", name, region->name);
+    }
+}
+
+static void debug_regs_print(const DebugChannel *ch, const DebugIoAccess *io,
+                             GString *out)
+{
+    const DebugRegs *regs = ch->io_format_opaque;
     uint64_t delta;
     const DebugReg *reg = debug_regs_find(regs, io->offset, &delta);
 
-    debug_io_print_access(name, io, regs->addr_digits, out);
+    debug_io_print_access(ch->name, io, regs->addr_digits, out);
     if (!reg) {
-        g_string_append_printf(out, " (%s_*)", name);
+        debug_regs_print_region(ch->name, regs, io->offset, out);
     } else if (delta) {
-        g_string_append_printf(out, " (%s_%s+0x%" PRIX64 ")", name, reg->name,
-                               delta);
+        g_string_append_printf(out, " (%s_%s+0x%" PRIX64 ")", ch->name,
+                               reg->name, delta);
     } else {
-        g_string_append_printf(out, " (%s_%s)", name, reg->name);
-        if (reg->fields_count) {
-            debug_regs_print_fields(reg, io->value, out);
+        const char *suffix = ch->get_reg_suffix ?
+                             ch->get_reg_suffix(ch, io->offset) : NULL;
+
+        if (suffix) {
+            g_string_append_printf(out, " (%s_%s_%s)", ch->name, reg->name,
+                                   suffix);
+        } else {
+            g_string_append_printf(out, " (%s_%s)", ch->name, reg->name);
         }
+        debug_regs_print_fields(reg, io->value, out);
     }
     debug_io_print_context(io, out);
 }

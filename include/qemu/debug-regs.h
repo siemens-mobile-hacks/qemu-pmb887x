@@ -25,9 +25,17 @@ typedef struct DebugReg {
     size_t fields_count;
 } DebugReg;
 
+typedef struct DebugRegion {
+    const char *name;
+    uint64_t offset;
+    uint64_t size;
+} DebugRegion;
+
 typedef struct DebugRegs {
     const DebugReg *regs;
     size_t count;
+    const DebugRegion *regions;
+    size_t regions_count;
     uint8_t reg_size;
     uint8_t addr_digits;
 } DebugRegs;

@@ -115,7 +115,7 @@ static void debug_format(const DebugRecord *rec, GString *out)
         return;
     }
     if (ch->io_format) {
-        ch->io_format->print(ch->name, ch->io_format_opaque, &rec->io, out);
+        ch->io_format->print(ch, &rec->io, out);
     } else {
         debug_io_print_access(ch->name, &rec->io, 8, out);
         debug_io_print_context(&rec->io, out);

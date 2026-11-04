@@ -21,6 +21,7 @@ typedef struct DebugMr {
     void *orig_opaque;
     DebugChannel *ch;
     MemoryRegion *mr;
+    hwaddr offset;
 } DebugMr;
 
 static Notifier debug_exit_notifier;
@@ -42,8 +43,9 @@ static void debug_mr_print(DebugMr *d, hwaddr addr, unsigned size,
     uint64_t lr = 0;
     bool has_context = debug_get_io_context(attrs, &pc, &lr);
 
-    debug_channel_io(d->ch, memory_region_to_absolute_addr(d->mr, addr), addr,
-                     size, value, is_write, has_context, pc, lr);
+    debug_channel_io(d->ch, memory_region_to_absolute_addr(d->mr, addr),
+                     d->offset + addr, size, value, is_write, has_context, pc,
+                     lr);
 }
 
 static MemTxResult debug_mr_read(void *opaque, hwaddr addr, uint64_t *data,
@@ -92,7 +94,8 @@ static void debug_mr_release(Object *_obj, const char *_name, void *opaque)
     g_free(opaque);
 }
 
-void debug_channel_attach_mr(DebugChannel *ch, MemoryRegion *mr)
+void debug_channel_attach_mr(DebugChannel *ch, MemoryRegion *mr,
+                             hwaddr offset)
 {
     Object *owner = memory_region_owner(mr);
 
@@ -116,6 +119,7 @@ void debug_channel_attach_mr(DebugChannel *ch, MemoryRegion *mr)
     d->orig_opaque = mr->opaque;
     d->ch = ch;
     d->mr = mr;
+    d->offset = offset;
     object_property_add(owner, "debug-channel-mr[*]", "DebugMr", NULL, NULL,
                         debug_mr_release, d);
     memory_region_set_ops(mr, &d->ops, d);
