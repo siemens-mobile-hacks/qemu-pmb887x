@@ -7,6 +7,7 @@
 #include "hw/smartcard/gsm11.h"
 #include "hw/smartcard/iso7816.h"
 #include "gsm-sim-fs.h"
+#include "gsm-test-algorithm.h"
 
 #define TYPE_GSM_SIM "gsm-sim"
 OBJECT_DECLARE_TYPE(GSMSim, GSMSimClass, GSM_SIM)
@@ -45,6 +46,7 @@ OBJECT_DECLARE_TYPE(GSMSim, GSMSimClass, GSM_SIM)
 
 #define GSM_SIM_DEFAULT_OPERATOR "00101"
 #define GSM_SIM_DEFAULT_SUBSCRIBER "0123456789"
+#define GSM_SIM_DEFAULT_KI "000102030405060708090A0B0C0D0E0F"
 #define GSM_SIM_DEFAULT_PIN "0000"
 #define GSM_SIM_DEFAULT_PUK "12345678"
 #define GSM_SIM_PIN_MIN_LENGTH 4
@@ -60,18 +62,21 @@ OBJECT_DECLARE_TYPE(GSMSim, GSMSimClass, GSM_SIM)
 #define GSM_SIM_UPDATE_RECORD_CLOCKS 10462
 #define GSM_SIM_SEEK_CLOCKS 3006
 #define GSM_SIM_INCREASE_CLOCKS 6016
+#define GSM_SIM_RUN_GSM_ALGORITHM_CLOCKS 171649
 
 struct GSMSim {
     ISO7816Card parent_obj;
 
     char *imsi;
     char *operator_code;
+    char *ki_text;
     char *pin1;
     char *pin2;
     char *puk1;
     char *puk2;
     bool pin1_enabled;
 
+    uint8_t ki[GSM_TEST_ALGORITHM_KI_SIZE];
     GSMSimFS fs;
 };
 
@@ -336,6 +341,8 @@ static uint32_t gsm_sim_processing_clocks(ISO7816Card *card,
         return GSM_SIM_SEEK_CLOCKS;
     case GSM11_INS_INCREASE:
         return GSM_SIM_INCREASE_CLOCKS;
+    case GSM11_INS_RUN_GSM_ALGORITHM:
+        return GSM_SIM_RUN_GSM_ALGORITHM_CLOCKS;
     default:
         return 0;
     }
@@ -356,6 +363,31 @@ static void gsm_sim_select(GSMSim *sim, const uint8_t *command,
         return;
     }
     gsm_sim_fs_select(&sim->fs, (data[0] << 8) | data[1], response);
+}
+
+static void gsm_sim_run_gsm_algorithm(GSMSim *sim, const uint8_t *command,
+                                      ISO7816Response *response)
+{
+    uint8_t sres_kc[GSM_TEST_ALGORITHM_SRES_SIZE + GSM_TEST_ALGORITHM_KC_SIZE];
+
+    if (command[ISO7816_OFFSET_P3] != GSM_TEST_ALGORITHM_RAND_SIZE) {
+        iso7816_response_set_status(response,
+                                    GSM11_STATUS_WRONG_LENGTH |
+                                    GSM_TEST_ALGORITHM_RAND_SIZE);
+        return;
+    }
+    if (sim->fs.current_directory->definition->id != GSM_SIM_DF_GSM) {
+        iso7816_response_set_status(response, GSM11_STATUS_FILE_INCONSISTENT);
+        return;
+    }
+    if (!gsm_sim_fs_is_chv1_granted(&sim->fs)) {
+        iso7816_response_set_status(response, GSM11_STATUS_ACCESS_DENIED);
+        return;
+    }
+
+    gsm_test_algorithm_run(sim->ki, command + ISO7816_HEADER_SIZE, sres_kc,
+                           sres_kc + GSM_TEST_ALGORITHM_SRES_SIZE);
+    gsm_sim_fs_offer_response(&sim->fs, sres_kc, sizeof(sres_kc), response);
 }
 
 static void gsm_sim_execute(GSMSim *sim, const uint8_t *command,
@@ -401,6 +433,9 @@ static void gsm_sim_execute(GSMSim *sim, const uint8_t *command,
         break;
     case GSM11_INS_REHABILITATE:
         gsm_sim_fs_rehabilitate(fs, response);
+        break;
+    case GSM11_INS_RUN_GSM_ALGORITHM:
+        gsm_sim_run_gsm_algorithm(sim, command, response);
         break;
     case GSM11_INS_VERIFY_CHV:
         gsm_sim_fs_verify_chv(fs, p2, data, size, response);
@@ -480,6 +515,23 @@ static bool gsm_sim_validate_imsi(const char *imsi, const char *operator_code,
     if (strncmp(imsi, operator_code, strlen(operator_code)) != 0) {
         error_setg(errp, "gsm-sim: imsi must start with the operator");
         return false;
+    }
+    return true;
+}
+
+static bool gsm_sim_parse_ki(GSMSim *sim, Error **errp)
+{
+    const char *text = sim->ki_text ? sim->ki_text : GSM_SIM_DEFAULT_KI;
+    size_t digits = 2 * GSM_TEST_ALGORITHM_KI_SIZE;
+
+    if (strlen(text) != digits ||
+        strspn(text, "0123456789abcdefABCDEF") != digits) {
+        error_setg(errp, "gsm-sim: ki must contain exactly 32 hex digits");
+        return false;
+    }
+    for (size_t i = 0; i < GSM_TEST_ALGORITHM_KI_SIZE; i++) {
+        sim->ki[i] = (g_ascii_xdigit_value(text[2 * i]) << 4) |
+                     g_ascii_xdigit_value(text[2 * i + 1]);
     }
     return true;
 }
@@ -567,6 +619,9 @@ static void gsm_sim_realize(DeviceState *dev, Error **errp)
     if (!gsm_sim_validate_imsi(sim->imsi, sim->operator_code, errp)) {
         return;
     }
+    if (!gsm_sim_parse_ki(sim, errp)) {
+        return;
+    }
     if (!gsm_sim_configure_chv(&sim->fs.chv1, "pin1", sim->pin1, "puk1",
                                sim->puk1, errp)) {
         return;
@@ -596,6 +651,7 @@ static void gsm_sim_unrealize(DeviceState *dev)
 static const Property gsm_sim_properties[] = {
     DEFINE_PROP_STRING("imsi", GSMSim, imsi),
     DEFINE_PROP_STRING("operator", GSMSim, operator_code),
+    DEFINE_PROP_STRING("ki", GSMSim, ki_text),
     DEFINE_PROP_STRING("pin1", GSMSim, pin1),
     DEFINE_PROP_STRING("pin2", GSMSim, pin2),
     DEFINE_PROP_STRING("puk1", GSMSim, puk1),

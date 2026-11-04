@@ -107,5 +107,7 @@ void gsm_sim_fs_enable_chv(GSMSimFS *fs, uint8_t chv_number,
 void gsm_sim_fs_unblock_chv(GSMSimFS *fs, uint8_t chv_number,
                             const uint8_t *data, uint16_t length,
                             ISO7816Response *response);
+void gsm_sim_fs_offer_response(GSMSimFS *fs, const uint8_t *data, uint8_t size,
+                               ISO7816Response *response);
 
 #endif

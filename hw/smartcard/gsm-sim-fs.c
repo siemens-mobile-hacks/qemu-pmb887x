@@ -298,11 +298,18 @@ static void gsm_sim_fs_copy_response(const uint8_t *data, uint8_t size,
     iso7816_response_set_status(response, GSM11_STATUS_SUCCESS);
 }
 
-static void gsm_sim_fs_offer_response(GSMSimFS *fs, uint8_t size,
-                                      ISO7816Response *response)
+static void gsm_sim_fs_publish_response(GSMSimFS *fs, uint8_t size,
+                                        ISO7816Response *response)
 {
     fs->response_size = size;
     gsm_sim_fs_set_status(response, GSM11_STATUS_RESPONSE_AVAILABLE | size);
+}
+
+void gsm_sim_fs_offer_response(GSMSimFS *fs, const uint8_t *data, uint8_t size,
+                               ISO7816Response *response)
+{
+    memcpy(fs->response, data, size);
+    gsm_sim_fs_publish_response(fs, size, response);
 }
 
 void gsm_sim_fs_init(GSMSimFS *fs, const GSMSimFileDefinition *definitions,
@@ -397,7 +404,7 @@ void gsm_sim_fs_select(GSMSimFS *fs, uint16_t id, ISO7816Response *response)
     fs->selected_file = file;
     fs->record_selected = false;
     size = gsm_sim_fs_encode_file(fs, file, fs->response);
-    gsm_sim_fs_offer_response(fs, size, response);
+    gsm_sim_fs_publish_response(fs, size, response);
 }
 
 void gsm_sim_fs_get_response(GSMSimFS *fs, uint8_t length,
@@ -687,8 +694,8 @@ void gsm_sim_fs_seek(GSMSimFS *fs, uint8_t type_mode, const uint8_t *pattern,
     }
 
     fs->response[0] = fs->current_record + 1;
-    gsm_sim_fs_offer_response(fs, GSM_SIM_FS_SEEK_RECORD_NUMBER_SIZE,
-                              response);
+    gsm_sim_fs_publish_response(fs, GSM_SIM_FS_SEEK_RECORD_NUMBER_SIZE,
+                                response);
 }
 
 static uint16_t gsm_sim_fs_validate_increase(GSMSimFS *fs, uint16_t length)
@@ -744,7 +751,7 @@ void gsm_sim_fs_increase(GSMSimFS *fs, const uint8_t *value, uint16_t length,
     memcpy(fs->response, encoded, GSM_SIM_FS_INCREASE_SIZE);
     memcpy(fs->response + GSM_SIM_FS_INCREASE_SIZE, value,
            GSM_SIM_FS_INCREASE_SIZE);
-    gsm_sim_fs_offer_response(fs, 2 * GSM_SIM_FS_INCREASE_SIZE, response);
+    gsm_sim_fs_publish_response(fs, 2 * GSM_SIM_FS_INCREASE_SIZE, response);
 }
 
 static void gsm_sim_fs_set_invalidated(GSMSimFS *fs,
