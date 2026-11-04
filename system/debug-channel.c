@@ -8,6 +8,11 @@
 #include "system/runstate.h"
 #include "system/system.h"
 #include "system/debug-channel.h"
+#include "system/tcg.h"
+#include "hw/core/cpu.h"
+#ifdef CONFIG_TCG
+#include "accel/tcg/cpu-loop.h"
+#endif
 
 #define DEBUG_QUEUE_CAPACITY    (64 * 1024)
 
@@ -21,11 +26,25 @@ typedef struct DebugMr {
 
 static Notifier debug_exit_notifier;
 
-static void debug_mr_print(DebugMr *d, hwaddr addr, unsigned size,
-                           uint64_t value, bool is_write)
+static bool debug_get_io_context(MemTxAttrs attrs, uint64_t *pc, uint64_t *lr)
 {
+#ifdef CONFIG_TCG
+    if (tcg_enabled() && current_cpu && !attrs.unspecified) {
+        return cpu_get_io_context(current_cpu, pc, lr);
+    }
+#endif
+    return false;
+}
+
+static void debug_mr_print(DebugMr *d, hwaddr addr, unsigned size,
+                           uint64_t value, bool is_write, MemTxAttrs attrs)
+{
+    uint64_t pc = 0;
+    uint64_t lr = 0;
+    bool has_context = debug_get_io_context(attrs, &pc, &lr);
+
     debug_channel_io(d->ch, memory_region_to_absolute_addr(d->mr, addr), size,
-                     value, is_write, false, 0, 0);
+                     value, is_write, has_context, pc, lr);
 }
 
 static MemTxResult debug_mr_read(void *opaque, hwaddr addr, uint64_t *data,
@@ -40,7 +59,7 @@ static MemTxResult debug_mr_read(void *opaque, hwaddr addr, uint64_t *data,
         r = d->orig_ops->read_with_attrs(d->orig_opaque, addr, data, size,
                                          attrs);
     }
-    debug_mr_print(d, addr, size, *data, false);
+    debug_mr_print(d, addr, size, *data, false, attrs);
     return r;
 }
 
@@ -50,7 +69,7 @@ static MemTxResult debug_mr_write(void *opaque, hwaddr addr, uint64_t data,
     DebugMr *d = opaque;
     MemTxResult r = MEMTX_OK;
 
-    debug_mr_print(d, addr, size, data, true);
+    debug_mr_print(d, addr, size, data, true, attrs);
     if (d->orig_ops->write) {
         d->orig_ops->write(d->orig_opaque, addr, data, size);
     } else {

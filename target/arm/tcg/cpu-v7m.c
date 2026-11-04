@@ -248,6 +248,7 @@ static const TCGCPUOps arm_v7m_tcg_ops = {
     .synchronize_from_tb = arm_cpu_synchronize_from_tb,
     .debug_excp_handler = arm_debug_excp_handler,
     .restore_state_to_opc = arm_restore_state_to_opc,
+    .get_io_context = arm_get_io_context,
     .mmu_index = arm_cpu_mmu_index,
 
 #ifdef CONFIG_USER_ONLY

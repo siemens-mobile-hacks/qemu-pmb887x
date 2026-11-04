@@ -282,6 +282,37 @@ bool cpu_unwind_state_data(CPUState *cpu, uintptr_t host_pc, uint64_t *data)
     return false;
 }
 
+typedef struct IOContextCache {
+    uintptr_t host_pc;
+    unsigned tb_flush_count;
+    bool found;
+    uint64_t data[INSN_START_WORDS];
+} IOContextCache;
+
+static __thread IOContextCache io_context_cache;
+
+bool cpu_get_io_context(CPUState *cpu, uint64_t *pc, uint64_t *lr)
+{
+    IOContextCache *cache = &io_context_cache;
+    unsigned tb_flush_count = qatomic_read(&tb_ctx.tb_flush_count);
+
+    if (!cpu->cc->tcg_ops->get_io_context) {
+        return false;
+    }
+    if (cache->host_pc != cpu->mem_io_pc ||
+        cache->tb_flush_count != tb_flush_count) {
+        cache->host_pc = cpu->mem_io_pc;
+        cache->tb_flush_count = tb_flush_count;
+        cache->found = cpu_unwind_state_data(cpu, cache->host_pc,
+                                             cache->data);
+    }
+    if (!cache->found) {
+        return false;
+    }
+    cpu->cc->tcg_ops->get_io_context(cpu, cache->data, pc, lr);
+    return true;
+}
+
 void page_init(void)
 {
     page_table_config_init();
