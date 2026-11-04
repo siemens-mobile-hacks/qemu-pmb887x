@@ -29,6 +29,7 @@
 #include "system/replay.h"
 #include "exec/icount.h"
 #include "qemu/main-loop.h"
+#include "qemu/timer.h"
 #include "qemu/notify.h"
 #include "qemu/guest-random.h"
 #include "exec/cpu-common.h"
@@ -109,6 +110,11 @@ static void rr_stop_kick_timer(void)
 static void rr_wait_io_event(void)
 {
     CPUState *cpu;
+
+    if (qemu_virtual_timers_on_vcpu) {
+        tcg_vcpu_timers_wait_io_event(first_cpu);
+        return;
+    }
 
     while (all_cpu_threads_idle()) {
         rr_stop_kick_timer();
@@ -209,6 +215,9 @@ static void *rr_cpu_thread_fn(void *arg)
         }
     }
 
+    if (qemu_virtual_timers_on_vcpu) {
+        tcg_vcpu_timers_start(first_cpu);
+    }
     rr_start_kick_timer();
 
     cpu = first_cpu;
@@ -280,6 +289,10 @@ static void *rr_cpu_thread_fn(void *arg)
             if (cpu_can_run(cpu)) {
                 int r;
 
+                if (qemu_virtual_timers_on_vcpu &&
+                    !tcg_vcpu_timers_prepare_exec(cpu)) {
+                    break;
+                }
                 bql_unlock();
                 if (icount_enabled()) {
                     icount_prepare_for_run(cpu, cpu_budget);

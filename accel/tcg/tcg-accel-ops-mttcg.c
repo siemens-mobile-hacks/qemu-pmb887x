@@ -27,17 +27,13 @@
 #include "exec/cpu-common.h"
 #include "system/tcg.h"
 #include "system/replay.h"
-#include "system/cpu-timers.h"
-#include "system/cpus.h"
 #include "exec/icount.h"
 #include "qemu/main-loop.h"
-#include "exec/translation-block.h"
 #include "qemu/timer.h"
 #include "qemu/notify.h"
 #include "qemu/guest-random.h"
 #include "hw/core/boards.h"
 #include "accel/tcg/cpu-loop.h"
-#include "accel/tcg/memory-timing.h"
 #include "tcg/startup.h"
 #include "tcg-accel-ops.h"
 #include "tcg-accel-ops-mttcg.h"
@@ -49,61 +45,6 @@ typedef struct MttcgForceRcuNotifier {
 
 static void do_nothing(CPUState *cpu, run_on_cpu_data d)
 {
-}
-
-static int64_t mttcg_idle_virtual_timers(CPUState *cpu)
-{
-    cpu_clock_owner_progress(false);
-    qemu_clock_run_timers(QEMU_CLOCK_VIRTUAL);
-    if (!cpu_thread_is_idle(cpu)) {
-        return 0;
-    }
-    /* Interrupts are raised under the BQL, held until the thread sleeps. */
-    return cpu_clock_owner_idle(qemu_clock_expire_time_ns(QEMU_CLOCK_VIRTUAL));
-}
-
-static bool mttcg_wait_for_clock(CPUState *cpu, int64_t *realp)
-{
-    int64_t position, real, until;
-
-    cpu_clock_owner_progress(false);
-    real = *realp = cpu_clock_owner_limit_lag();
-    position = cpu_clock_owner_position();
-    if (position - real < CPU_CLOCK_OWNER_LEAD_NS) {
-        return false;
-    }
-    until = position - CPU_CLOCK_OWNER_LEAD_NS / 2;
-    if (cpu_get_real_clock() < until) {
-        qemu_cpu_sleep_ns(cpu, MAX(until - real, CPU_CLOCK_OWNER_LEAD_NS / 2));
-    }
-    return true;
-}
-
-/*
- * cpu_exec() found the vcpu-timers cycle budget spent and nothing else to
- * do: run the virtual timers that are due and start the next budget
- * without leaving it, as the loop below would.  A display refill spends a
- * budget on every DMA burst, and leaving cpu_exec() for each costs more
- * than the burst.  False when the loop has to act first: queued work, a
- * stop request, or a clock that must wait for real time.
- */
-bool mttcg_cpu_next_budget(CPUState *cpu)
-{
-    int64_t real;
-    bool next = false;
-
-    bql_lock();
-    qemu_clock_run_timers(QEMU_CLOCK_VIRTUAL);
-    if (!qatomic_read(&cpu->exit_request) && cpu_can_run(cpu)) {
-        cpu_clock_owner_progress(false);
-        real = cpu_clock_owner_limit_lag();
-        if (cpu_clock_owner_position() - real < CPU_CLOCK_OWNER_LEAD_NS) {
-            cpu_clock_owner_start_budget(real);
-            next = true;
-        }
-    }
-    bql_unlock();
-    return next;
 }
 
 static void mttcg_force_rcu(Notifier *notify, void *data)
@@ -148,27 +89,21 @@ static void *mttcg_cpu_thread_fn(void *arg)
     qemu_guest_random_seed_thread_part2(cpu->random_seed);
 
     if (qemu_virtual_timers_on_vcpu) {
-        tcg_cflags_set(cpu, CF_COUNT_CYCLES | tcg_memory_timing_cflags());
-        cpu_clock_set_owner(&cpu->neg.cycle_count, &cpu->neg.cycle_limit);
+        tcg_vcpu_timers_start(cpu);
     }
 
     do {
         if (qemu_virtual_timers_on_vcpu) {
-            qemu_process_cpu_events_timed(cpu, mttcg_idle_virtual_timers);
+            tcg_vcpu_timers_wait_io_event(cpu);
         } else {
             qemu_process_cpu_events(cpu);
         }
 
         if (cpu_can_run(cpu)) {
             int r;
-            if (qemu_virtual_timers_on_vcpu) {
-                int64_t real;
-
-                qemu_clock_run_timers(QEMU_CLOCK_VIRTUAL);
-                if (mttcg_wait_for_clock(cpu, &real)) {
-                    continue;
-                }
-                cpu_clock_owner_start_budget(real);
+            if (qemu_virtual_timers_on_vcpu &&
+                !tcg_vcpu_timers_prepare_exec(cpu)) {
+                continue;
             }
             bql_unlock();
             r = tcg_cpu_exec(cpu);

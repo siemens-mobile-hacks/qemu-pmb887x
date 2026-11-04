@@ -1076,7 +1076,7 @@ static inline bool cpu_cycle_budget_exit(CPUState *cpu)
     return false;
 #else
     return cpu_cycle_budget_expired(cpu) &&
-           (cpu->exception_index != -1 || !mttcg_cpu_next_budget(cpu));
+           (cpu->exception_index != -1 || !tcg_vcpu_timers_next_budget(cpu));
 #endif
 }
 
