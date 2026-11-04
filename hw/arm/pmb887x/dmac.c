@@ -1,7 +1,6 @@
 /*
  * DMA Controller (PL080)
  * */
-#define PMB887X_TRACE_ID		DMAC
 #define PMB887X_TRACE_PREFIX	"pmb887x-dmac"
 
 #include "qemu/osdep.h"
@@ -16,7 +15,7 @@
 #include "hw/core/qdev-clock.h"
 
 #include "hw/arm/pmb887x/gen/cpu_regs.h"
-#include "hw/arm/pmb887x/regs_dump.h"
+#include "hw/arm/pmb887x/gen/cpu_meta.h"
 #include "hw/arm/pmb887x/mod.h"
 #include "hw/arm/pmb887x/dmac.h"
 #include "hw/arm/pmb887x/dma_sink.h"
@@ -66,6 +65,7 @@ struct pmb887x_dmac_pending_request_t {
 struct pmb887x_dmac_t {
 	SysBusDevice parent_obj;
 	MemoryRegion mmio;
+	DebugChannel dbg;
 	uint32_t revision;
 	uint32_t peripheral_id;
 
@@ -98,6 +98,8 @@ struct pmb887x_dmac_t {
 	pmb887x_dmac_request_t lbreq;
 	pmb887x_dmac_request_t lsreq;
 };
+
+DEBUG_CHANNEL_INFO(dmac_debug, .name = TYPE_PMB887X_DMAC)
 
 static inline uint32_t dmac_get_width(uint32_t s) {
 	if (s > 2)
@@ -277,9 +279,9 @@ static void dmac_transfer_finish(pmb887x_dmac_t *p, pmb887x_dmac_ch_t *ch) {
 		ch->lli = lli[2];
 		ch->control = lli[3];
 
-		DPRINTF("CH%d LLI=%08X [%08X, %08X, %08X, %08X]\n", ch->id, lli_addr, lli[0], lli[1], lli[2], lli[3]);
+		DEBUG_LOG(&p->dbg, "CH%d LLI=%08X [%08X, %08X, %08X, %08X]\n", ch->id, lli_addr, lli[0], lli[1], lli[2], lli[3]);
 	} else {
-		DPRINTF("CH%d: transfer done\n", ch->id);
+		DEBUG_LOG(&p->dbg, "CH%d: transfer done\n", ch->id);
 		dmac_update_final_addresses(ch);
 		ch->config &= ~DMAC_CH_CONFIG_ENABLE;
 		if ((ch->control & DMAC_CH_CONTROL_I))
@@ -347,7 +349,7 @@ static void dmac_transfer_memory(pmb887x_dmac_t *p, pmb887x_dmac_ch_t *ch, uint3
 	ch->src_addr &= ~(src_width - 1);
 	ch->dst_addr &= ~(dst_width - 1);
 
-	DPRINTF("CH%d: %08X [%dx%d] -> %08X [%dx%d] [%d]\n",
+	DEBUG_LOG(&p->dbg, "CH%d: %08X [%dx%d] -> %08X [%dx%d] [%d]\n",
 		ch->id, ch->src_addr, src_width, burst_size, ch->dst_addr, dst_width, burst_size, tx_size);
 
 	if (is_simple_memcpy) {
@@ -912,7 +914,7 @@ static void dmac_handle_signal(pmb887x_dmac_t *p, pmb887x_dmac_request_t *reques
 	if (request->level[sel][id] == level)
 		return;
 
-	DPRINTF("%s request=%d, level=%d\n", dmac_request_name(p, request), id, level);
+	DEBUG_LOG(&p->dbg, "%s request=%d, level=%d\n", dmac_request_name(p, request), id, level);
 	request->level[sel][id] = level;
 
 	if (level == 0) {
@@ -935,10 +937,8 @@ static uint64_t dmac_io_read(void *opaque, hwaddr haddr, unsigned size) {
 
 	uint64_t value = 0;
 
-	if (!clock_is_enabled(p->clock)) {
-		IO_DUMP_READ(haddr + p->mmio.addr, size, value);
+	if (!clock_is_enabled(p->clock))
 		return value;
-	}
 
 	switch (haddr) {
 		case DMAC_CONFIG:
@@ -1075,15 +1075,12 @@ static uint64_t dmac_io_read(void *opaque, hwaddr haddr, unsigned size) {
 			break;
 	}
 
-	IO_DUMP_READ(haddr + p->mmio.addr, size, value);
-
 	return value;
 }
 
 static void dmac_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned size) {
 	pmb887x_dmac_t *p = opaque;
 
-	IO_DUMP_WRITE(haddr + p->mmio.addr, size, value);
 	if (!clock_is_enabled(p->clock))
 		return;
 
@@ -1333,6 +1330,7 @@ static int dmac_err_irq_router(void *opaque, int event_id) {
 
 static void dmac_realize(DeviceState *dev, Error **errp) {
 	pmb887x_dmac_t *p = PMB887X_DMAC(dev);
+	pmb887x_mod_debug_init(&p->dbg, &dmac_debug, dev, &p->mmio, &pmb887x_dmac_regs);
 
 	if (!clock_has_source(p->clock)) {
 		error_setg(errp, "DMAC 'clk' input is not connected");

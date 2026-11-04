@@ -1,7 +1,6 @@
 /*
  * Display Interface (modified SSC)
  * */
-#define PMB887X_TRACE_ID		DIF
 #define PMB887X_TRACE_PREFIX	"pmb887x-dif"
 
 #define PMB887X_DIF_DUMP_BIT_MUX	0 // print bit mux config
@@ -18,7 +17,7 @@
 #include "qom/object.h"
 
 #include "hw/arm/pmb887x/gen/cpu_regs.h"
-#include "hw/arm/pmb887x/regs_dump.h"
+#include "hw/arm/pmb887x/gen/cpu_meta.h"
 #include "hw/arm/pmb887x/mod.h"
 #include "hw/arm/pmb887x/trace.h"
 #include "hw/arm/pmb887x/fifo.h"
@@ -48,6 +47,7 @@ enum DIFFifoType {
 struct pmb887x_dif_t {
 	SysBusDevice parent_obj;
 	MemoryRegion mmio;
+	DebugChannel dbg;
 	uint32_t revision;
 
 	qemu_irq irq[4];
@@ -110,6 +110,8 @@ struct pmb887x_dif_t {
 	uint32_t dma_requests;
 	bool are_dma_requests_driven;
 };
+
+DEBUG_CHANNEL_INFO(dif_debug, .name = TYPE_PMB887X_DIF)
 
 static void dif_reset_fifo(pmb887x_dif_t *p, enum DIFFifoType fifo) {
 	if (fifo == DIF_FIFO_RX) {
@@ -257,7 +259,7 @@ static void dif_transfer_word(pmb887x_dif_t *p) {
 
 		if (pmb887x_fifo_is_full(p->rx_fifo)) {
 			if ((p->con & DIFv1_CON_REN)) {
-				DPRINTF("RX FIFO overflow\n");
+				DEBUG_LOG(&p->dbg, "RX FIFO overflow\n");
 				p->status |= DIFv1_CON_RE;
 				pmb887x_srb_set_isr(&p->srb, DIFv1_ISR_ERR);
 			}
@@ -329,7 +331,7 @@ static void dif_update_transfer(pmb887x_dif_t *p) {
 static uint16_t dif_read_fifo(pmb887x_dif_t *p) {
 	if (pmb887x_fifo_is_empty(p->rx_fifo)) {
 		if ((p->con & DIFv1_CON_REN)) {
-			DPRINTF("RX FIFO underflow\n");
+			DEBUG_LOG(&p->dbg, "RX FIFO underflow\n");
 			p->status |= DIFv1_CON_RE;
 			pmb887x_srb_set_isr(&p->srb, DIFv1_ISR_ERR);
 		}
@@ -346,7 +348,7 @@ static void dif_write_fifo(pmb887x_dif_t *p, uint16_t value) {
 
 	if (pmb887x_fifo_is_full(p->tx_fifo)) {
 		if ((p->con & DIFv1_CON_TEN)) {
-			DPRINTF("TX FIFO underflow\n");
+			DEBUG_LOG(&p->dbg, "TX FIFO underflow\n");
 			p->status |= DIFv1_CON_TE;
 			pmb887x_srb_set_isr(&p->srb, DIFv1_ISR_ERR);
 		}
@@ -381,7 +383,7 @@ static bool dif_dma_write_block(
 
 	for (uint32_t i = 0; i < count; i++) {
 		uint32_t value = ldn_le_p(data + i * width, width);
-		IO_DUMP_WRITE(addr + p->mmio.addr, width, value);
+		DEBUG_IO_ACCESS(&p->dbg, memory_region_to_absolute_addr(mr, addr), addr, width, value, true, false, 0, 0);
 		dif_write_tb(p, value);
 	}
 	return true;
@@ -429,18 +431,18 @@ static void dif_dump_bit_mux(pmb887x_dif_t *p) {
 		g_string_append_printf(bc_str, " %3d", p->bcreg & (1 << i) ? 1 : 0);
 	}
 
-	DPRINTF(
+	DEBUG_LOG(&p->dbg,
 		"BMREGx = { %08X, %08X, %08X, %08X, %08X, %08X }\n",
 		 p->bmreg[0], p->bmreg[1], p->bmreg[2],
 		 p->bmreg[3],p->bmreg[4], p->bmreg[5]
 	);
-	DPRINTF(
+	DEBUG_LOG(&p->dbg,
 		"BCSELx = { %08X, %08X }, BCREG = %08X\n",
 		 p->bcsel[0], p->bcsel[1], p->bcreg
 	);
-	DPRINTF("   MUX: %s\n", mux_str->str);
-	DPRINTF(" BCSEL: %s\n", bcsel_str->str);
-	DPRINTF("    BC: %s\n", bc_str->str);
+	DEBUG_LOG(&p->dbg, "   MUX: %s\n", mux_str->str);
+	DEBUG_LOG(&p->dbg, " BCSEL: %s\n", bcsel_str->str);
+	DEBUG_LOG(&p->dbg, "    BC: %s\n", bc_str->str);
 	#endif
 }
 
@@ -602,15 +604,11 @@ static uint64_t dif_io_read(void *opaque, hwaddr haddr, unsigned size) {
 			break;
 	}
 
-	IO_DUMP_READ(haddr + p->mmio.addr, size, value);
-
 	return value;
 }
 
 static void dif_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned size) {
 	pmb887x_dif_t *p = opaque;
-
-	IO_DUMP_WRITE(haddr + p->mmio.addr, size, value);
 
 	switch (haddr) {
 		case DIFv1_CLC:
@@ -802,6 +800,7 @@ static void dif_init(Object *obj) {
 
 static void dif_realize(DeviceState *dev, Error **errp) {
 	pmb887x_dif_t *p = PMB887X_DIF(dev);
+	pmb887x_mod_debug_init(&p->dbg, &dif_debug, dev, &p->mmio, &pmb887x_difv1_regs);
 	pmb887x_clc_set(&p->clc, 1U << MOD_CLC_RMC_SHIFT);
 	pmb887x_srb_init(&p->srb, p->irq, ARRAY_SIZE(p->irq));
 	pmb887x_srb_set_event_handler(&p->srb, dev, dif_event_handler);
