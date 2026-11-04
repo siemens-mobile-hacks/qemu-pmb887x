@@ -2,7 +2,7 @@
 #include "hw/arm/pmb887x/regs_dump.h"
 #include "hw/arm/pmb887x/gen/cpu_regs.h"
 
-static const pmb887x_io_field_t adc_clc_fields[] = {
+static const DebugRegField adc_clc_fields[] = {
 	{"DISR",	MOD_CLC_DISR,	MOD_CLC_DISR_SHIFT,	NULL,	0},
 	{"DISS",	MOD_CLC_DISS,	MOD_CLC_DISS_SHIFT,	NULL,	0},
 	{"SPEN",	MOD_CLC_SPEN,	MOD_CLC_SPEN_SHIFT,	NULL,	0},
@@ -12,23 +12,23 @@ static const pmb887x_io_field_t adc_clc_fields[] = {
 	{"RMC",		MOD_CLC_RMC,	MOD_CLC_RMC_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t adc_id_fields[] = {
+static const DebugRegField adc_id_fields[] = {
 	{"REV",		MOD_ID_REV,		MOD_ID_REV_SHIFT,		NULL,	0},
 	{"32B",		MOD_ID_32B,		MOD_ID_32B_SHIFT,		NULL,	0},
 	{"NUMBER",	MOD_ID_NUMBER,	MOD_ID_NUMBER_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_value_t adc_adc_ana_ctrl_pa_off1_values[] = {
+static const DebugRegValue adc_adc_ana_ctrl_pa_off1_values[] = {
 	{"NONE",		ADC_ANA_CTRL_PA_OFF1_NONE},
 	{"MINUS_50MV",	ADC_ANA_CTRL_PA_OFF1_MINUS_50MV},
 };
 
-static const pmb887x_io_value_t adc_adc_ana_ctrl_paopm1_values[] = {
+static const DebugRegValue adc_adc_ana_ctrl_paopm1_values[] = {
 	{"STANDARD",	ADC_ANA_CTRL_PAOPM1_STANDARD},
 	{"ENHANCED",	ADC_ANA_CTRL_PAOPM1_ENHANCED},
 };
 
-static const pmb887x_io_value_t adc_adc_ana_ctrl_tref_values[] = {
+static const DebugRegValue adc_adc_ana_ctrl_tref_values[] = {
 	{"0_955V",	ADC_ANA_CTRL_TREF_0_955V},
 	{"1_010V",	ADC_ANA_CTRL_TREF_1_010V},
 	{"1_065V",	ADC_ANA_CTRL_TREF_1_065V},
@@ -40,7 +40,7 @@ static const pmb887x_io_value_t adc_adc_ana_ctrl_tref_values[] = {
 	{"0_900V",	ADC_ANA_CTRL_TREF_0_900V},
 };
 
-static const pmb887x_io_field_t adc_ana_ctrl_fields[] = {
+static const DebugRegField adc_ana_ctrl_fields[] = {
 	{"RXREF_PU",	ADC_ANA_CTRL_RXREF_PU,	ADC_ANA_CTRL_RXREF_PU_SHIFT,	NULL,								0},
 	{"BG_PWUP",		ADC_ANA_CTRL_BG_PWUP,	ADC_ANA_CTRL_BG_PWUP_SHIFT,		NULL,								0},
 	{"PA_OFF1",		ADC_ANA_CTRL_PA_OFF1,	ADC_ANA_CTRL_PA_OFF1_SHIFT,		adc_adc_ana_ctrl_pa_off1_values,	ARRAY_SIZE(adc_adc_ana_ctrl_pa_off1_values)},
@@ -51,7 +51,7 @@ static const pmb887x_io_field_t adc_ana_ctrl_fields[] = {
 	{"TREF",		ADC_ANA_CTRL_TREF,		ADC_ANA_CTRL_TREF_SHIFT,		adc_adc_ana_ctrl_tref_values,		ARRAY_SIZE(adc_adc_ana_ctrl_tref_values)},
 };
 
-static const pmb887x_io_value_t adc_adc_ctrl_mx_values[] = {
+static const DebugRegValue adc_adc_ctrl_mx_values[] = {
 	{"OFF",		ADC_CTRL_MX_OFF},
 	{"M0",		ADC_CTRL_MX_M0},
 	{"M1",		ADC_CTRL_MX_M1},
@@ -64,7 +64,7 @@ static const pmb887x_io_value_t adc_adc_ctrl_mx_values[] = {
 	{"M0_M9_B",	ADC_CTRL_MX_M0_M9_B},
 };
 
-static const pmb887x_io_value_t adc_adc_ctrl_tc_values[] = {
+static const DebugRegValue adc_adc_ctrl_tc_values[] = {
 	{"OFF",		ADC_CTRL_TC_OFF},
 	{"I_30",	ADC_CTRL_TC_I_30},
 	{"I_60",	ADC_CTRL_TC_I_60},
@@ -75,7 +75,7 @@ static const pmb887x_io_value_t adc_adc_ctrl_tc_values[] = {
 	{"I_210",	ADC_CTRL_TC_I_210},
 };
 
-static const pmb887x_io_value_t adc_adc_ctrl_freq_values[] = {
+static const DebugRegValue adc_adc_ctrl_freq_values[] = {
 	{"SINGLE_SHOT",	ADC_CTRL_FREQ_SINGLE_SHOT},
 	{"DIV_640",		ADC_CTRL_FREQ_DIV_640},
 	{"DIV_320",		ADC_CTRL_FREQ_DIV_320},
@@ -86,7 +86,7 @@ static const pmb887x_io_value_t adc_adc_ctrl_freq_values[] = {
 	{"DIV_15",		ADC_CTRL_FREQ_DIV_15},
 };
 
-static const pmb887x_io_value_t adc_adc_ctrl_bufsize_values[] = {
+static const DebugRegValue adc_adc_ctrl_bufsize_values[] = {
 	{"1",	ADC_CTRL_BUFSIZE_1},
 	{"2",	ADC_CTRL_BUFSIZE_2},
 	{"3",	ADC_CTRL_BUFSIZE_3},
@@ -97,7 +97,7 @@ static const pmb887x_io_value_t adc_adc_ctrl_bufsize_values[] = {
 	{"8",	ADC_CTRL_BUFSIZE_8},
 };
 
-static const pmb887x_io_value_t adc_adc_ctrl_mxref_values[] = {
+static const DebugRegValue adc_adc_ctrl_mxref_values[] = {
 	{"OFF",		ADC_CTRL_MXREF_OFF},
 	{"M0",		ADC_CTRL_MXREF_M0},
 	{"M1",		ADC_CTRL_MXREF_M1},
@@ -110,7 +110,7 @@ static const pmb887x_io_value_t adc_adc_ctrl_mxref_values[] = {
 	{"M0_M9_B",	ADC_CTRL_MXREF_M0_M9_B},
 };
 
-static const pmb887x_io_field_t adc_ctrl_fields[] = {
+static const DebugRegField adc_ctrl_fields[] = {
 	{"MX",		ADC_CTRL_MX,		ADC_CTRL_MX_SHIFT,		adc_adc_ctrl_mx_values,			ARRAY_SIZE(adc_adc_ctrl_mx_values)},
 	{"INV",		ADC_CTRL_INV,		ADC_CTRL_INV_SHIFT,		NULL,							0},
 	{"CSEL",	ADC_CTRL_CSEL,		ADC_CTRL_CSEL_SHIFT,	NULL,							0},
@@ -124,18 +124,18 @@ static const pmb887x_io_field_t adc_ctrl_fields[] = {
 	{"START",	ADC_CTRL_START,		ADC_CTRL_START_SHIFT,	NULL,							0},
 };
 
-static const pmb887x_io_field_t adc_stat_fields[] = {
+static const DebugRegField adc_stat_fields[] = {
 	{"WPTR",	ADC_STAT_WPTR,	ADC_STAT_WPTR_SHIFT,	NULL,	0},
 	{"BUSY",	ADC_STAT_BUSY,	ADC_STAT_BUSY_SHIFT,	NULL,	0},
 	{"READY",	ADC_STAT_READY,	ADC_STAT_READY_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t adc_clk_fields[] = {
+static const DebugRegField adc_clk_fields[] = {
 	{"K",	ADC_CLK_K,	ADC_CLK_K_SHIFT,	NULL,	0},
 	{"L",	ADC_CLK_L,	ADC_CLK_L_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t adc_src_fields[] = {
+static const DebugRegField adc_src_fields[] = {
 	{"SRPN",	MOD_SRC_SRPN,	MOD_SRC_SRPN_SHIFT,	NULL,	0},
 	{"TOS",		MOD_SRC_TOS,	MOD_SRC_TOS_SHIFT,	NULL,	0},
 	{"SRE",		MOD_SRC_SRE,	MOD_SRC_SRE_SHIFT,	NULL,	0},
@@ -144,26 +144,33 @@ static const pmb887x_io_field_t adc_src_fields[] = {
 	{"SETR",	MOD_SRC_SETR,	MOD_SRC_SETR_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_reg_t adc_regs[] = {
-	{"CLC",			ADC_CLC,		adc_clc_fields,			ARRAY_SIZE(adc_clc_fields),			0},
-	{"ID",			ADC_ID,			adc_id_fields,			ARRAY_SIZE(adc_id_fields),			0},
-	{"ANA_CTRL",	ADC_ANA_CTRL,	adc_ana_ctrl_fields,	ARRAY_SIZE(adc_ana_ctrl_fields),	0},
-	{"CTRL",		ADC_CTRL,		adc_ctrl_fields,		ARRAY_SIZE(adc_ctrl_fields),		0},
-	{"STAT",		ADC_STAT,		adc_stat_fields,		ARRAY_SIZE(adc_stat_fields),		0},
-	{"DATA0",		ADC_DATA0,		NULL,					0,									0},
-	{"DATA1",		ADC_DATA1,		NULL,					0,									0},
-	{"DATA2",		ADC_DATA2,		NULL,					0,									0},
-	{"DATA3",		ADC_DATA3,		NULL,					0,									0},
-	{"DATA4",		ADC_DATA4,		NULL,					0,									0},
-	{"DATA5",		ADC_DATA5,		NULL,					0,									0},
-	{"DATA6",		ADC_DATA6,		NULL,					0,									0},
-	{"DATA7",		ADC_DATA7,		NULL,					0,									0},
-	{"CLK",			ADC_CLK,		adc_clk_fields,			ARRAY_SIZE(adc_clk_fields),			0},
-	{"SRC0",		ADC_SRC0,		adc_src_fields,			ARRAY_SIZE(adc_src_fields),			0},
-	{"SRC1",		ADC_SRC1,		adc_src_fields,			ARRAY_SIZE(adc_src_fields),			0},
+static const DebugReg adc_regs[] = {
+	{"CLC",			ADC_CLC,		adc_clc_fields,			ARRAY_SIZE(adc_clc_fields)},
+	{"ID",			ADC_ID,			adc_id_fields,			ARRAY_SIZE(adc_id_fields)},
+	{"ANA_CTRL",	ADC_ANA_CTRL,	adc_ana_ctrl_fields,	ARRAY_SIZE(adc_ana_ctrl_fields)},
+	{"CTRL",		ADC_CTRL,		adc_ctrl_fields,		ARRAY_SIZE(adc_ctrl_fields)},
+	{"STAT",		ADC_STAT,		adc_stat_fields,		ARRAY_SIZE(adc_stat_fields)},
+	{"DATA0",		ADC_DATA0,		NULL,					0},
+	{"DATA1",		ADC_DATA1,		NULL,					0},
+	{"DATA2",		ADC_DATA2,		NULL,					0},
+	{"DATA3",		ADC_DATA3,		NULL,					0},
+	{"DATA4",		ADC_DATA4,		NULL,					0},
+	{"DATA5",		ADC_DATA5,		NULL,					0},
+	{"DATA6",		ADC_DATA6,		NULL,					0},
+	{"DATA7",		ADC_DATA7,		NULL,					0},
+	{"CLK",			ADC_CLK,		adc_clk_fields,			ARRAY_SIZE(adc_clk_fields)},
+	{"SRC0",		ADC_SRC0,		adc_src_fields,			ARRAY_SIZE(adc_src_fields)},
+	{"SRC1",		ADC_SRC1,		adc_src_fields,			ARRAY_SIZE(adc_src_fields)},
 };
 
-static const pmb887x_io_field_t afc_clc_fields[] = {
+const DebugRegs pmb887x_adc_regs = {
+	.regs = adc_regs,
+	.count = ARRAY_SIZE(adc_regs),
+	.reg_size = 4,
+	.addr_digits = 8,
+};
+
+static const DebugRegField afc_clc_fields[] = {
 	{"DISR",	MOD_CLC_DISR,	MOD_CLC_DISR_SHIFT,	NULL,	0},
 	{"DISS",	MOD_CLC_DISS,	MOD_CLC_DISS_SHIFT,	NULL,	0},
 	{"SPEN",	MOD_CLC_SPEN,	MOD_CLC_SPEN_SHIFT,	NULL,	0},
@@ -173,24 +180,31 @@ static const pmb887x_io_field_t afc_clc_fields[] = {
 	{"RMC",		MOD_CLC_RMC,	MOD_CLC_RMC_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t afc_id_fields[] = {
+static const DebugRegField afc_id_fields[] = {
 	{"REV",		MOD_ID_REV,		MOD_ID_REV_SHIFT,		NULL,	0},
 	{"32B",		MOD_ID_32B,		MOD_ID_32B_SHIFT,		NULL,	0},
 	{"NUMBER",	MOD_ID_NUMBER,	MOD_ID_NUMBER_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t afc_afcval_fields[] = {
+static const DebugRegField afc_afcval_fields[] = {
 	{"AFC",		AFC_AFCVAL_AFC,		AFC_AFCVAL_AFC_SHIFT,	NULL,	0},
 	{"ENAFC",	AFC_AFCVAL_ENAFC,	AFC_AFCVAL_ENAFC_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_reg_t afc_regs[] = {
-	{"CLC",		AFC_CLC,	afc_clc_fields,		ARRAY_SIZE(afc_clc_fields),		0},
-	{"ID",		AFC_ID,		afc_id_fields,		ARRAY_SIZE(afc_id_fields),		0},
-	{"AFCVAL",	AFC_AFCVAL,	afc_afcval_fields,	ARRAY_SIZE(afc_afcval_fields),	0},
+static const DebugReg afc_regs[] = {
+	{"CLC",		AFC_CLC,	afc_clc_fields,		ARRAY_SIZE(afc_clc_fields)},
+	{"ID",		AFC_ID,		afc_id_fields,		ARRAY_SIZE(afc_id_fields)},
+	{"AFCVAL",	AFC_AFCVAL,	afc_afcval_fields,	ARRAY_SIZE(afc_afcval_fields)},
 };
 
-static const pmb887x_io_field_t dmac_int_status_fields[] = {
+const DebugRegs pmb887x_afc_regs = {
+	.regs = afc_regs,
+	.count = ARRAY_SIZE(afc_regs),
+	.reg_size = 4,
+	.addr_digits = 8,
+};
+
+static const DebugRegField dmac_int_status_fields[] = {
 	{"CH0",	DMAC_INT_STATUS_CH0,	DMAC_INT_STATUS_CH0_SHIFT,	NULL,	0},
 	{"CH1",	DMAC_INT_STATUS_CH1,	DMAC_INT_STATUS_CH1_SHIFT,	NULL,	0},
 	{"CH2",	DMAC_INT_STATUS_CH2,	DMAC_INT_STATUS_CH2_SHIFT,	NULL,	0},
@@ -201,7 +215,7 @@ static const pmb887x_io_field_t dmac_int_status_fields[] = {
 	{"CH7",	DMAC_INT_STATUS_CH7,	DMAC_INT_STATUS_CH7_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t dmac_tc_status_fields[] = {
+static const DebugRegField dmac_tc_status_fields[] = {
 	{"CH0",	DMAC_TC_STATUS_CH0,	DMAC_TC_STATUS_CH0_SHIFT,	NULL,	0},
 	{"CH1",	DMAC_TC_STATUS_CH1,	DMAC_TC_STATUS_CH1_SHIFT,	NULL,	0},
 	{"CH2",	DMAC_TC_STATUS_CH2,	DMAC_TC_STATUS_CH2_SHIFT,	NULL,	0},
@@ -212,7 +226,7 @@ static const pmb887x_io_field_t dmac_tc_status_fields[] = {
 	{"CH7",	DMAC_TC_STATUS_CH7,	DMAC_TC_STATUS_CH7_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t dmac_tc_clear_fields[] = {
+static const DebugRegField dmac_tc_clear_fields[] = {
 	{"CH0",	DMAC_TC_CLEAR_CH0,	DMAC_TC_CLEAR_CH0_SHIFT,	NULL,	0},
 	{"CH1",	DMAC_TC_CLEAR_CH1,	DMAC_TC_CLEAR_CH1_SHIFT,	NULL,	0},
 	{"CH2",	DMAC_TC_CLEAR_CH2,	DMAC_TC_CLEAR_CH2_SHIFT,	NULL,	0},
@@ -223,7 +237,7 @@ static const pmb887x_io_field_t dmac_tc_clear_fields[] = {
 	{"CH7",	DMAC_TC_CLEAR_CH7,	DMAC_TC_CLEAR_CH7_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t dmac_err_status_fields[] = {
+static const DebugRegField dmac_err_status_fields[] = {
 	{"CH0",	DMAC_ERR_STATUS_CH0,	DMAC_ERR_STATUS_CH0_SHIFT,	NULL,	0},
 	{"CH1",	DMAC_ERR_STATUS_CH1,	DMAC_ERR_STATUS_CH1_SHIFT,	NULL,	0},
 	{"CH2",	DMAC_ERR_STATUS_CH2,	DMAC_ERR_STATUS_CH2_SHIFT,	NULL,	0},
@@ -234,7 +248,7 @@ static const pmb887x_io_field_t dmac_err_status_fields[] = {
 	{"CH7",	DMAC_ERR_STATUS_CH7,	DMAC_ERR_STATUS_CH7_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t dmac_err_clear_fields[] = {
+static const DebugRegField dmac_err_clear_fields[] = {
 	{"CH0",	DMAC_ERR_CLEAR_CH0,	DMAC_ERR_CLEAR_CH0_SHIFT,	NULL,	0},
 	{"CH1",	DMAC_ERR_CLEAR_CH1,	DMAC_ERR_CLEAR_CH1_SHIFT,	NULL,	0},
 	{"CH2",	DMAC_ERR_CLEAR_CH2,	DMAC_ERR_CLEAR_CH2_SHIFT,	NULL,	0},
@@ -245,7 +259,7 @@ static const pmb887x_io_field_t dmac_err_clear_fields[] = {
 	{"CH7",	DMAC_ERR_CLEAR_CH7,	DMAC_ERR_CLEAR_CH7_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t dmac_raw_tc_status_fields[] = {
+static const DebugRegField dmac_raw_tc_status_fields[] = {
 	{"CH0",	DMAC_RAW_TC_STATUS_CH0,	DMAC_RAW_TC_STATUS_CH0_SHIFT,	NULL,	0},
 	{"CH1",	DMAC_RAW_TC_STATUS_CH1,	DMAC_RAW_TC_STATUS_CH1_SHIFT,	NULL,	0},
 	{"CH2",	DMAC_RAW_TC_STATUS_CH2,	DMAC_RAW_TC_STATUS_CH2_SHIFT,	NULL,	0},
@@ -256,7 +270,7 @@ static const pmb887x_io_field_t dmac_raw_tc_status_fields[] = {
 	{"CH7",	DMAC_RAW_TC_STATUS_CH7,	DMAC_RAW_TC_STATUS_CH7_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t dmac_raw_err_status_fields[] = {
+static const DebugRegField dmac_raw_err_status_fields[] = {
 	{"CH0",	DMAC_RAW_ERR_STATUS_CH0,	DMAC_RAW_ERR_STATUS_CH0_SHIFT,	NULL,	0},
 	{"CH1",	DMAC_RAW_ERR_STATUS_CH1,	DMAC_RAW_ERR_STATUS_CH1_SHIFT,	NULL,	0},
 	{"CH2",	DMAC_RAW_ERR_STATUS_CH2,	DMAC_RAW_ERR_STATUS_CH2_SHIFT,	NULL,	0},
@@ -267,7 +281,7 @@ static const pmb887x_io_field_t dmac_raw_err_status_fields[] = {
 	{"CH7",	DMAC_RAW_ERR_STATUS_CH7,	DMAC_RAW_ERR_STATUS_CH7_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t dmac_en_chan_fields[] = {
+static const DebugRegField dmac_en_chan_fields[] = {
 	{"CH0",	DMAC_EN_CHAN_CH0,	DMAC_EN_CHAN_CH0_SHIFT,	NULL,	0},
 	{"CH1",	DMAC_EN_CHAN_CH1,	DMAC_EN_CHAN_CH1_SHIFT,	NULL,	0},
 	{"CH2",	DMAC_EN_CHAN_CH2,	DMAC_EN_CHAN_CH2_SHIFT,	NULL,	0},
@@ -278,7 +292,7 @@ static const pmb887x_io_field_t dmac_en_chan_fields[] = {
 	{"CH7",	DMAC_EN_CHAN_CH7,	DMAC_EN_CHAN_CH7_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t dmac_soft_breq_fields[] = {
+static const DebugRegField dmac_soft_breq_fields[] = {
 	{"CH0_0",	DMAC_SOFT_BREQ_CH0_0,	DMAC_SOFT_BREQ_CH0_0_SHIFT,	NULL,	0},
 	{"CH0_1",	DMAC_SOFT_BREQ_CH0_1,	DMAC_SOFT_BREQ_CH0_1_SHIFT,	NULL,	0},
 	{"CH1_0",	DMAC_SOFT_BREQ_CH1_0,	DMAC_SOFT_BREQ_CH1_0_SHIFT,	NULL,	0},
@@ -297,7 +311,7 @@ static const pmb887x_io_field_t dmac_soft_breq_fields[] = {
 	{"CH7_1",	DMAC_SOFT_BREQ_CH7_1,	DMAC_SOFT_BREQ_CH7_1_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t dmac_soft_sreq_fields[] = {
+static const DebugRegField dmac_soft_sreq_fields[] = {
 	{"CH0_0",	DMAC_SOFT_SREQ_CH0_0,	DMAC_SOFT_SREQ_CH0_0_SHIFT,	NULL,	0},
 	{"CH0_1",	DMAC_SOFT_SREQ_CH0_1,	DMAC_SOFT_SREQ_CH0_1_SHIFT,	NULL,	0},
 	{"CH1_0",	DMAC_SOFT_SREQ_CH1_0,	DMAC_SOFT_SREQ_CH1_0_SHIFT,	NULL,	0},
@@ -316,7 +330,7 @@ static const pmb887x_io_field_t dmac_soft_sreq_fields[] = {
 	{"CH7_1",	DMAC_SOFT_SREQ_CH7_1,	DMAC_SOFT_SREQ_CH7_1_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t dmac_soft_lbreq_fields[] = {
+static const DebugRegField dmac_soft_lbreq_fields[] = {
 	{"CH0_0",	DMAC_SOFT_LBREQ_CH0_0,	DMAC_SOFT_LBREQ_CH0_0_SHIFT,	NULL,	0},
 	{"CH0_1",	DMAC_SOFT_LBREQ_CH0_1,	DMAC_SOFT_LBREQ_CH0_1_SHIFT,	NULL,	0},
 	{"CH1_0",	DMAC_SOFT_LBREQ_CH1_0,	DMAC_SOFT_LBREQ_CH1_0_SHIFT,	NULL,	0},
@@ -335,7 +349,7 @@ static const pmb887x_io_field_t dmac_soft_lbreq_fields[] = {
 	{"CH7_1",	DMAC_SOFT_LBREQ_CH7_1,	DMAC_SOFT_LBREQ_CH7_1_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t dmac_soft_lsreq_fields[] = {
+static const DebugRegField dmac_soft_lsreq_fields[] = {
 	{"CH0_0",	DMAC_SOFT_LSREQ_CH0_0,	DMAC_SOFT_LSREQ_CH0_0_SHIFT,	NULL,	0},
 	{"CH0_1",	DMAC_SOFT_LSREQ_CH0_1,	DMAC_SOFT_LSREQ_CH0_1_SHIFT,	NULL,	0},
 	{"CH1_0",	DMAC_SOFT_LSREQ_CH1_0,	DMAC_SOFT_LSREQ_CH1_0_SHIFT,	NULL,	0},
@@ -354,23 +368,23 @@ static const pmb887x_io_field_t dmac_soft_lsreq_fields[] = {
 	{"CH7_1",	DMAC_SOFT_LSREQ_CH7_1,	DMAC_SOFT_LSREQ_CH7_1_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_value_t dmac_dmac_config_m1_values[] = {
+static const DebugRegValue dmac_dmac_config_m1_values[] = {
 	{"LE",	DMAC_CONFIG_M1_LE},
 	{"BE",	DMAC_CONFIG_M1_BE},
 };
 
-static const pmb887x_io_value_t dmac_dmac_config_m2_values[] = {
+static const DebugRegValue dmac_dmac_config_m2_values[] = {
 	{"LE",	DMAC_CONFIG_M2_LE},
 	{"BE",	DMAC_CONFIG_M2_BE},
 };
 
-static const pmb887x_io_field_t dmac_config_fields[] = {
+static const DebugRegField dmac_config_fields[] = {
 	{"ENABLE",	DMAC_CONFIG_ENABLE,	DMAC_CONFIG_ENABLE_SHIFT,	NULL,						0},
 	{"M1",		DMAC_CONFIG_M1,		DMAC_CONFIG_M1_SHIFT,		dmac_dmac_config_m1_values,	ARRAY_SIZE(dmac_dmac_config_m1_values)},
 	{"M2",		DMAC_CONFIG_M2,		DMAC_CONFIG_M2_SHIFT,		dmac_dmac_config_m2_values,	ARRAY_SIZE(dmac_dmac_config_m2_values)},
 };
 
-static const pmb887x_io_field_t dmac_sync_fields[] = {
+static const DebugRegField dmac_sync_fields[] = {
 	{"CH0_0",	DMAC_SYNC_CH0_0,	DMAC_SYNC_CH0_0_SHIFT,	NULL,	0},
 	{"CH0_1",	DMAC_SYNC_CH0_1,	DMAC_SYNC_CH0_1_SHIFT,	NULL,	0},
 	{"CH1_0",	DMAC_SYNC_CH1_0,	DMAC_SYNC_CH1_0_SHIFT,	NULL,	0},
@@ -389,17 +403,17 @@ static const pmb887x_io_field_t dmac_sync_fields[] = {
 	{"CH7_1",	DMAC_SYNC_CH7_1,	DMAC_SYNC_CH7_1_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_value_t dmac_dmac_ch_lli_lm_values[] = {
+static const DebugRegValue dmac_dmac_ch_lli_lm_values[] = {
 	{"AHB1",	DMAC_CH_LLI_LM_AHB1},
 	{"AHB2",	DMAC_CH_LLI_LM_AHB2},
 };
 
-static const pmb887x_io_field_t dmac_ch_lli_fields[] = {
+static const DebugRegField dmac_ch_lli_fields[] = {
 	{"LM",		DMAC_CH_LLI_LM,		DMAC_CH_LLI_LM_SHIFT,	dmac_dmac_ch_lli_lm_values,	ARRAY_SIZE(dmac_dmac_ch_lli_lm_values)},
 	{"ITEM",	DMAC_CH_LLI_ITEM,	DMAC_CH_LLI_ITEM_SHIFT,	NULL,						0},
 };
 
-static const pmb887x_io_value_t dmac_dmac_ch_control_sb_size_values[] = {
+static const DebugRegValue dmac_dmac_ch_control_sb_size_values[] = {
 	{"SZ_1",	DMAC_CH_CONTROL_SB_SIZE_SZ_1},
 	{"SZ_4",	DMAC_CH_CONTROL_SB_SIZE_SZ_4},
 	{"SZ_8",	DMAC_CH_CONTROL_SB_SIZE_SZ_8},
@@ -410,7 +424,7 @@ static const pmb887x_io_value_t dmac_dmac_ch_control_sb_size_values[] = {
 	{"SZ_256",	DMAC_CH_CONTROL_SB_SIZE_SZ_256},
 };
 
-static const pmb887x_io_value_t dmac_dmac_ch_control_db_size_values[] = {
+static const DebugRegValue dmac_dmac_ch_control_db_size_values[] = {
 	{"SZ_1",	DMAC_CH_CONTROL_DB_SIZE_SZ_1},
 	{"SZ_4",	DMAC_CH_CONTROL_DB_SIZE_SZ_4},
 	{"SZ_8",	DMAC_CH_CONTROL_DB_SIZE_SZ_8},
@@ -421,29 +435,29 @@ static const pmb887x_io_value_t dmac_dmac_ch_control_db_size_values[] = {
 	{"SZ_256",	DMAC_CH_CONTROL_DB_SIZE_SZ_256},
 };
 
-static const pmb887x_io_value_t dmac_dmac_ch_control_s_width_values[] = {
+static const DebugRegValue dmac_dmac_ch_control_s_width_values[] = {
 	{"BYTE",	DMAC_CH_CONTROL_S_WIDTH_BYTE},
 	{"WORD",	DMAC_CH_CONTROL_S_WIDTH_WORD},
 	{"DWORD",	DMAC_CH_CONTROL_S_WIDTH_DWORD},
 };
 
-static const pmb887x_io_value_t dmac_dmac_ch_control_d_width_values[] = {
+static const DebugRegValue dmac_dmac_ch_control_d_width_values[] = {
 	{"BYTE",	DMAC_CH_CONTROL_D_WIDTH_BYTE},
 	{"WORD",	DMAC_CH_CONTROL_D_WIDTH_WORD},
 	{"DWORD",	DMAC_CH_CONTROL_D_WIDTH_DWORD},
 };
 
-static const pmb887x_io_value_t dmac_dmac_ch_control_s_values[] = {
+static const DebugRegValue dmac_dmac_ch_control_s_values[] = {
 	{"AHB1",	DMAC_CH_CONTROL_S_AHB1},
 	{"AHB2",	DMAC_CH_CONTROL_S_AHB2},
 };
 
-static const pmb887x_io_value_t dmac_dmac_ch_control_d_values[] = {
+static const DebugRegValue dmac_dmac_ch_control_d_values[] = {
 	{"AHB1",	DMAC_CH_CONTROL_D_AHB1},
 	{"AHB2",	DMAC_CH_CONTROL_D_AHB2},
 };
 
-static const pmb887x_io_field_t dmac_ch_control_fields[] = {
+static const DebugRegField dmac_ch_control_fields[] = {
 	{"TRANSFER_SIZE",	DMAC_CH_CONTROL_TRANSFER_SIZE,	DMAC_CH_CONTROL_TRANSFER_SIZE_SHIFT,	NULL,									0},
 	{"SB_SIZE",			DMAC_CH_CONTROL_SB_SIZE,		DMAC_CH_CONTROL_SB_SIZE_SHIFT,			dmac_dmac_ch_control_sb_size_values,	ARRAY_SIZE(dmac_dmac_ch_control_sb_size_values)},
 	{"DB_SIZE",			DMAC_CH_CONTROL_DB_SIZE,		DMAC_CH_CONTROL_DB_SIZE_SHIFT,			dmac_dmac_ch_control_db_size_values,	ARRAY_SIZE(dmac_dmac_ch_control_db_size_values)},
@@ -457,7 +471,7 @@ static const pmb887x_io_field_t dmac_ch_control_fields[] = {
 	{"I",				DMAC_CH_CONTROL_I,				DMAC_CH_CONTROL_I_SHIFT,				NULL,									0},
 };
 
-static const pmb887x_io_value_t dmac_dmac_ch_config_flow_ctrl_values[] = {
+static const DebugRegValue dmac_dmac_ch_config_flow_ctrl_values[] = {
 	{"MEM2MEM",		DMAC_CH_CONFIG_FLOW_CTRL_MEM2MEM},
 	{"MEM2PER",		DMAC_CH_CONFIG_FLOW_CTRL_MEM2PER},
 	{"PER2MEM",		DMAC_CH_CONFIG_FLOW_CTRL_PER2MEM},
@@ -468,7 +482,7 @@ static const pmb887x_io_value_t dmac_dmac_ch_config_flow_ctrl_values[] = {
 	{"PER2PER_SRC",	DMAC_CH_CONFIG_FLOW_CTRL_PER2PER_SRC},
 };
 
-static const pmb887x_io_field_t dmac_ch_config_fields[] = {
+static const DebugRegField dmac_ch_config_fields[] = {
 	{"ENABLE",			DMAC_CH_CONFIG_ENABLE,			DMAC_CH_CONFIG_ENABLE_SHIFT,		NULL,									0},
 	{"SRC_PERIPH",		DMAC_CH_CONFIG_SRC_PERIPH,		DMAC_CH_CONFIG_SRC_PERIPH_SHIFT,	NULL,									0},
 	{"DST_PERIPH",		DMAC_CH_CONFIG_DST_PERIPH,		DMAC_CH_CONFIG_DST_PERIPH_SHIFT,	NULL,									0},
@@ -480,104 +494,111 @@ static const pmb887x_io_field_t dmac_ch_config_fields[] = {
 	{"HALT",			DMAC_CH_CONFIG_HALT,			DMAC_CH_CONFIG_HALT_SHIFT,			NULL,									0},
 };
 
-static const pmb887x_io_field_t dmac_periph_id0_fields[] = {
+static const DebugRegField dmac_periph_id0_fields[] = {
 	{"PARTNUMBER0",	AMBA_PERIPH_ID0_PARTNUMBER0,	AMBA_PERIPH_ID0_PARTNUMBER0_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t dmac_periph_id1_fields[] = {
+static const DebugRegField dmac_periph_id1_fields[] = {
 	{"PARTNUMBER1",	AMBA_PERIPH_ID1_PARTNUMBER1,	AMBA_PERIPH_ID1_PARTNUMBER1_SHIFT,	NULL,	0},
 	{"DESIGNER0",	AMBA_PERIPH_ID1_DESIGNER0,		AMBA_PERIPH_ID1_DESIGNER0_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t dmac_periph_id2_fields[] = {
+static const DebugRegField dmac_periph_id2_fields[] = {
 	{"DESIGNER1",	AMBA_PERIPH_ID2_DESIGNER1,	AMBA_PERIPH_ID2_DESIGNER1_SHIFT,	NULL,	0},
 	{"REVISION",	AMBA_PERIPH_ID2_REVISION,	AMBA_PERIPH_ID2_REVISION_SHIFT,		NULL,	0},
 };
 
-static const pmb887x_io_field_t dmac_periph_id3_fields[] = {
+static const DebugRegField dmac_periph_id3_fields[] = {
 	{"CONFIGURATION",	AMBA_PERIPH_ID3_CONFIGURATION,	AMBA_PERIPH_ID3_CONFIGURATION_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_reg_t dmac_regs[] = {
-	{"INT_STATUS",		DMAC_INT_STATUS,		dmac_int_status_fields,		ARRAY_SIZE(dmac_int_status_fields),		0},
-	{"TC_STATUS",		DMAC_TC_STATUS,			dmac_tc_status_fields,		ARRAY_SIZE(dmac_tc_status_fields),		0},
-	{"TC_CLEAR",		DMAC_TC_CLEAR,			dmac_tc_clear_fields,		ARRAY_SIZE(dmac_tc_clear_fields),		0},
-	{"ERR_STATUS",		DMAC_ERR_STATUS,		dmac_err_status_fields,		ARRAY_SIZE(dmac_err_status_fields),		0},
-	{"ERR_CLEAR",		DMAC_ERR_CLEAR,			dmac_err_clear_fields,		ARRAY_SIZE(dmac_err_clear_fields),		0},
-	{"RAW_TC_STATUS",	DMAC_RAW_TC_STATUS,		dmac_raw_tc_status_fields,	ARRAY_SIZE(dmac_raw_tc_status_fields),	0},
-	{"RAW_ERR_STATUS",	DMAC_RAW_ERR_STATUS,	dmac_raw_err_status_fields,	ARRAY_SIZE(dmac_raw_err_status_fields),	0},
-	{"EN_CHAN",			DMAC_EN_CHAN,			dmac_en_chan_fields,		ARRAY_SIZE(dmac_en_chan_fields),		0},
-	{"SOFT_BREQ",		DMAC_SOFT_BREQ,			dmac_soft_breq_fields,		ARRAY_SIZE(dmac_soft_breq_fields),		0},
-	{"SOFT_SREQ",		DMAC_SOFT_SREQ,			dmac_soft_sreq_fields,		ARRAY_SIZE(dmac_soft_sreq_fields),		0},
-	{"SOFT_LBREQ",		DMAC_SOFT_LBREQ,		dmac_soft_lbreq_fields,		ARRAY_SIZE(dmac_soft_lbreq_fields),		0},
-	{"SOFT_LSREQ",		DMAC_SOFT_LSREQ,		dmac_soft_lsreq_fields,		ARRAY_SIZE(dmac_soft_lsreq_fields),		0},
-	{"CONFIG",			DMAC_CONFIG,			dmac_config_fields,			ARRAY_SIZE(dmac_config_fields),			0},
-	{"SYNC",			DMAC_SYNC,				dmac_sync_fields,			ARRAY_SIZE(dmac_sync_fields),			0},
-	{"CH_SRC_ADDR0",	DMAC_CH_SRC_ADDR0,		NULL,						0,										0},
-	{"CH_SRC_ADDR1",	DMAC_CH_SRC_ADDR1,		NULL,						0,										0},
-	{"CH_SRC_ADDR2",	DMAC_CH_SRC_ADDR2,		NULL,						0,										0},
-	{"CH_SRC_ADDR3",	DMAC_CH_SRC_ADDR3,		NULL,						0,										0},
-	{"CH_SRC_ADDR4",	DMAC_CH_SRC_ADDR4,		NULL,						0,										0},
-	{"CH_SRC_ADDR5",	DMAC_CH_SRC_ADDR5,		NULL,						0,										0},
-	{"CH_SRC_ADDR6",	DMAC_CH_SRC_ADDR6,		NULL,						0,										0},
-	{"CH_SRC_ADDR7",	DMAC_CH_SRC_ADDR7,		NULL,						0,										0},
-	{"CH_DST_ADDR0",	DMAC_CH_DST_ADDR0,		NULL,						0,										0},
-	{"CH_DST_ADDR1",	DMAC_CH_DST_ADDR1,		NULL,						0,										0},
-	{"CH_DST_ADDR2",	DMAC_CH_DST_ADDR2,		NULL,						0,										0},
-	{"CH_DST_ADDR3",	DMAC_CH_DST_ADDR3,		NULL,						0,										0},
-	{"CH_DST_ADDR4",	DMAC_CH_DST_ADDR4,		NULL,						0,										0},
-	{"CH_DST_ADDR5",	DMAC_CH_DST_ADDR5,		NULL,						0,										0},
-	{"CH_DST_ADDR6",	DMAC_CH_DST_ADDR6,		NULL,						0,										0},
-	{"CH_DST_ADDR7",	DMAC_CH_DST_ADDR7,		NULL,						0,										0},
-	{"CH_LLI0",			DMAC_CH_LLI0,			dmac_ch_lli_fields,			ARRAY_SIZE(dmac_ch_lli_fields),			0},
-	{"CH_LLI1",			DMAC_CH_LLI1,			dmac_ch_lli_fields,			ARRAY_SIZE(dmac_ch_lli_fields),			0},
-	{"CH_LLI2",			DMAC_CH_LLI2,			dmac_ch_lli_fields,			ARRAY_SIZE(dmac_ch_lli_fields),			0},
-	{"CH_LLI3",			DMAC_CH_LLI3,			dmac_ch_lli_fields,			ARRAY_SIZE(dmac_ch_lli_fields),			0},
-	{"CH_LLI4",			DMAC_CH_LLI4,			dmac_ch_lli_fields,			ARRAY_SIZE(dmac_ch_lli_fields),			0},
-	{"CH_LLI5",			DMAC_CH_LLI5,			dmac_ch_lli_fields,			ARRAY_SIZE(dmac_ch_lli_fields),			0},
-	{"CH_LLI6",			DMAC_CH_LLI6,			dmac_ch_lli_fields,			ARRAY_SIZE(dmac_ch_lli_fields),			0},
-	{"CH_LLI7",			DMAC_CH_LLI7,			dmac_ch_lli_fields,			ARRAY_SIZE(dmac_ch_lli_fields),			0},
-	{"CH_CONTROL0",		DMAC_CH_CONTROL0,		dmac_ch_control_fields,		ARRAY_SIZE(dmac_ch_control_fields),		0},
-	{"CH_CONTROL1",		DMAC_CH_CONTROL1,		dmac_ch_control_fields,		ARRAY_SIZE(dmac_ch_control_fields),		0},
-	{"CH_CONTROL2",		DMAC_CH_CONTROL2,		dmac_ch_control_fields,		ARRAY_SIZE(dmac_ch_control_fields),		0},
-	{"CH_CONTROL3",		DMAC_CH_CONTROL3,		dmac_ch_control_fields,		ARRAY_SIZE(dmac_ch_control_fields),		0},
-	{"CH_CONTROL4",		DMAC_CH_CONTROL4,		dmac_ch_control_fields,		ARRAY_SIZE(dmac_ch_control_fields),		0},
-	{"CH_CONTROL5",		DMAC_CH_CONTROL5,		dmac_ch_control_fields,		ARRAY_SIZE(dmac_ch_control_fields),		0},
-	{"CH_CONTROL6",		DMAC_CH_CONTROL6,		dmac_ch_control_fields,		ARRAY_SIZE(dmac_ch_control_fields),		0},
-	{"CH_CONTROL7",		DMAC_CH_CONTROL7,		dmac_ch_control_fields,		ARRAY_SIZE(dmac_ch_control_fields),		0},
-	{"CH_CONFIG0",		DMAC_CH_CONFIG0,		dmac_ch_config_fields,		ARRAY_SIZE(dmac_ch_config_fields),		0},
-	{"CH_CONFIG1",		DMAC_CH_CONFIG1,		dmac_ch_config_fields,		ARRAY_SIZE(dmac_ch_config_fields),		0},
-	{"CH_CONFIG2",		DMAC_CH_CONFIG2,		dmac_ch_config_fields,		ARRAY_SIZE(dmac_ch_config_fields),		0},
-	{"CH_CONFIG3",		DMAC_CH_CONFIG3,		dmac_ch_config_fields,		ARRAY_SIZE(dmac_ch_config_fields),		0},
-	{"CH_CONFIG4",		DMAC_CH_CONFIG4,		dmac_ch_config_fields,		ARRAY_SIZE(dmac_ch_config_fields),		0},
-	{"CH_CONFIG5",		DMAC_CH_CONFIG5,		dmac_ch_config_fields,		ARRAY_SIZE(dmac_ch_config_fields),		0},
-	{"CH_CONFIG6",		DMAC_CH_CONFIG6,		dmac_ch_config_fields,		ARRAY_SIZE(dmac_ch_config_fields),		0},
-	{"CH_CONFIG7",		DMAC_CH_CONFIG7,		dmac_ch_config_fields,		ARRAY_SIZE(dmac_ch_config_fields),		0},
-	{"PERIPH_ID0",		DMAC_PERIPH_ID0,		dmac_periph_id0_fields,		ARRAY_SIZE(dmac_periph_id0_fields),		0},
-	{"PERIPH_ID1",		DMAC_PERIPH_ID1,		dmac_periph_id1_fields,		ARRAY_SIZE(dmac_periph_id1_fields),		0},
-	{"PERIPH_ID2",		DMAC_PERIPH_ID2,		dmac_periph_id2_fields,		ARRAY_SIZE(dmac_periph_id2_fields),		0},
-	{"PERIPH_ID3",		DMAC_PERIPH_ID3,		dmac_periph_id3_fields,		ARRAY_SIZE(dmac_periph_id3_fields),		0},
-	{"PCELL_ID0",		DMAC_PCELL_ID0,			NULL,						0,										0},
-	{"PCELL_ID1",		DMAC_PCELL_ID1,			NULL,						0,										0},
-	{"PCELL_ID2",		DMAC_PCELL_ID2,			NULL,						0,										0},
-	{"PCELL_ID3",		DMAC_PCELL_ID3,			NULL,						0,										0},
+static const DebugReg dmac_regs[] = {
+	{"INT_STATUS",		DMAC_INT_STATUS,		dmac_int_status_fields,		ARRAY_SIZE(dmac_int_status_fields)},
+	{"TC_STATUS",		DMAC_TC_STATUS,			dmac_tc_status_fields,		ARRAY_SIZE(dmac_tc_status_fields)},
+	{"TC_CLEAR",		DMAC_TC_CLEAR,			dmac_tc_clear_fields,		ARRAY_SIZE(dmac_tc_clear_fields)},
+	{"ERR_STATUS",		DMAC_ERR_STATUS,		dmac_err_status_fields,		ARRAY_SIZE(dmac_err_status_fields)},
+	{"ERR_CLEAR",		DMAC_ERR_CLEAR,			dmac_err_clear_fields,		ARRAY_SIZE(dmac_err_clear_fields)},
+	{"RAW_TC_STATUS",	DMAC_RAW_TC_STATUS,		dmac_raw_tc_status_fields,	ARRAY_SIZE(dmac_raw_tc_status_fields)},
+	{"RAW_ERR_STATUS",	DMAC_RAW_ERR_STATUS,	dmac_raw_err_status_fields,	ARRAY_SIZE(dmac_raw_err_status_fields)},
+	{"EN_CHAN",			DMAC_EN_CHAN,			dmac_en_chan_fields,		ARRAY_SIZE(dmac_en_chan_fields)},
+	{"SOFT_BREQ",		DMAC_SOFT_BREQ,			dmac_soft_breq_fields,		ARRAY_SIZE(dmac_soft_breq_fields)},
+	{"SOFT_SREQ",		DMAC_SOFT_SREQ,			dmac_soft_sreq_fields,		ARRAY_SIZE(dmac_soft_sreq_fields)},
+	{"SOFT_LBREQ",		DMAC_SOFT_LBREQ,		dmac_soft_lbreq_fields,		ARRAY_SIZE(dmac_soft_lbreq_fields)},
+	{"SOFT_LSREQ",		DMAC_SOFT_LSREQ,		dmac_soft_lsreq_fields,		ARRAY_SIZE(dmac_soft_lsreq_fields)},
+	{"CONFIG",			DMAC_CONFIG,			dmac_config_fields,			ARRAY_SIZE(dmac_config_fields)},
+	{"SYNC",			DMAC_SYNC,				dmac_sync_fields,			ARRAY_SIZE(dmac_sync_fields)},
+	{"CH_SRC_ADDR0",	DMAC_CH_SRC_ADDR0,		NULL,						0},
+	{"CH_SRC_ADDR1",	DMAC_CH_SRC_ADDR1,		NULL,						0},
+	{"CH_SRC_ADDR2",	DMAC_CH_SRC_ADDR2,		NULL,						0},
+	{"CH_SRC_ADDR3",	DMAC_CH_SRC_ADDR3,		NULL,						0},
+	{"CH_SRC_ADDR4",	DMAC_CH_SRC_ADDR4,		NULL,						0},
+	{"CH_SRC_ADDR5",	DMAC_CH_SRC_ADDR5,		NULL,						0},
+	{"CH_SRC_ADDR6",	DMAC_CH_SRC_ADDR6,		NULL,						0},
+	{"CH_SRC_ADDR7",	DMAC_CH_SRC_ADDR7,		NULL,						0},
+	{"CH_DST_ADDR0",	DMAC_CH_DST_ADDR0,		NULL,						0},
+	{"CH_DST_ADDR1",	DMAC_CH_DST_ADDR1,		NULL,						0},
+	{"CH_DST_ADDR2",	DMAC_CH_DST_ADDR2,		NULL,						0},
+	{"CH_DST_ADDR3",	DMAC_CH_DST_ADDR3,		NULL,						0},
+	{"CH_DST_ADDR4",	DMAC_CH_DST_ADDR4,		NULL,						0},
+	{"CH_DST_ADDR5",	DMAC_CH_DST_ADDR5,		NULL,						0},
+	{"CH_DST_ADDR6",	DMAC_CH_DST_ADDR6,		NULL,						0},
+	{"CH_DST_ADDR7",	DMAC_CH_DST_ADDR7,		NULL,						0},
+	{"CH_LLI0",			DMAC_CH_LLI0,			dmac_ch_lli_fields,			ARRAY_SIZE(dmac_ch_lli_fields)},
+	{"CH_LLI1",			DMAC_CH_LLI1,			dmac_ch_lli_fields,			ARRAY_SIZE(dmac_ch_lli_fields)},
+	{"CH_LLI2",			DMAC_CH_LLI2,			dmac_ch_lli_fields,			ARRAY_SIZE(dmac_ch_lli_fields)},
+	{"CH_LLI3",			DMAC_CH_LLI3,			dmac_ch_lli_fields,			ARRAY_SIZE(dmac_ch_lli_fields)},
+	{"CH_LLI4",			DMAC_CH_LLI4,			dmac_ch_lli_fields,			ARRAY_SIZE(dmac_ch_lli_fields)},
+	{"CH_LLI5",			DMAC_CH_LLI5,			dmac_ch_lli_fields,			ARRAY_SIZE(dmac_ch_lli_fields)},
+	{"CH_LLI6",			DMAC_CH_LLI6,			dmac_ch_lli_fields,			ARRAY_SIZE(dmac_ch_lli_fields)},
+	{"CH_LLI7",			DMAC_CH_LLI7,			dmac_ch_lli_fields,			ARRAY_SIZE(dmac_ch_lli_fields)},
+	{"CH_CONTROL0",		DMAC_CH_CONTROL0,		dmac_ch_control_fields,		ARRAY_SIZE(dmac_ch_control_fields)},
+	{"CH_CONTROL1",		DMAC_CH_CONTROL1,		dmac_ch_control_fields,		ARRAY_SIZE(dmac_ch_control_fields)},
+	{"CH_CONTROL2",		DMAC_CH_CONTROL2,		dmac_ch_control_fields,		ARRAY_SIZE(dmac_ch_control_fields)},
+	{"CH_CONTROL3",		DMAC_CH_CONTROL3,		dmac_ch_control_fields,		ARRAY_SIZE(dmac_ch_control_fields)},
+	{"CH_CONTROL4",		DMAC_CH_CONTROL4,		dmac_ch_control_fields,		ARRAY_SIZE(dmac_ch_control_fields)},
+	{"CH_CONTROL5",		DMAC_CH_CONTROL5,		dmac_ch_control_fields,		ARRAY_SIZE(dmac_ch_control_fields)},
+	{"CH_CONTROL6",		DMAC_CH_CONTROL6,		dmac_ch_control_fields,		ARRAY_SIZE(dmac_ch_control_fields)},
+	{"CH_CONTROL7",		DMAC_CH_CONTROL7,		dmac_ch_control_fields,		ARRAY_SIZE(dmac_ch_control_fields)},
+	{"CH_CONFIG0",		DMAC_CH_CONFIG0,		dmac_ch_config_fields,		ARRAY_SIZE(dmac_ch_config_fields)},
+	{"CH_CONFIG1",		DMAC_CH_CONFIG1,		dmac_ch_config_fields,		ARRAY_SIZE(dmac_ch_config_fields)},
+	{"CH_CONFIG2",		DMAC_CH_CONFIG2,		dmac_ch_config_fields,		ARRAY_SIZE(dmac_ch_config_fields)},
+	{"CH_CONFIG3",		DMAC_CH_CONFIG3,		dmac_ch_config_fields,		ARRAY_SIZE(dmac_ch_config_fields)},
+	{"CH_CONFIG4",		DMAC_CH_CONFIG4,		dmac_ch_config_fields,		ARRAY_SIZE(dmac_ch_config_fields)},
+	{"CH_CONFIG5",		DMAC_CH_CONFIG5,		dmac_ch_config_fields,		ARRAY_SIZE(dmac_ch_config_fields)},
+	{"CH_CONFIG6",		DMAC_CH_CONFIG6,		dmac_ch_config_fields,		ARRAY_SIZE(dmac_ch_config_fields)},
+	{"CH_CONFIG7",		DMAC_CH_CONFIG7,		dmac_ch_config_fields,		ARRAY_SIZE(dmac_ch_config_fields)},
+	{"PERIPH_ID0",		DMAC_PERIPH_ID0,		dmac_periph_id0_fields,		ARRAY_SIZE(dmac_periph_id0_fields)},
+	{"PERIPH_ID1",		DMAC_PERIPH_ID1,		dmac_periph_id1_fields,		ARRAY_SIZE(dmac_periph_id1_fields)},
+	{"PERIPH_ID2",		DMAC_PERIPH_ID2,		dmac_periph_id2_fields,		ARRAY_SIZE(dmac_periph_id2_fields)},
+	{"PERIPH_ID3",		DMAC_PERIPH_ID3,		dmac_periph_id3_fields,		ARRAY_SIZE(dmac_periph_id3_fields)},
+	{"PCELL_ID0",		DMAC_PCELL_ID0,			NULL,						0},
+	{"PCELL_ID1",		DMAC_PCELL_ID1,			NULL,						0},
+	{"PCELL_ID2",		DMAC_PCELL_ID2,			NULL,						0},
+	{"PCELL_ID3",		DMAC_PCELL_ID3,			NULL,						0},
 };
 
-static const pmb887x_io_value_t mci_mci_power_ctrl_values[] = {
+const DebugRegs pmb887x_dmac_regs = {
+	.regs = dmac_regs,
+	.count = ARRAY_SIZE(dmac_regs),
+	.reg_size = 4,
+	.addr_digits = 8,
+};
+
+static const DebugRegValue mci_mci_power_ctrl_values[] = {
 	{"POWER_OFF",	MCI_POWER_CTRL_POWER_OFF},
 	{"RESERVED",	MCI_POWER_CTRL_RESERVED},
 	{"POWER_UP",	MCI_POWER_CTRL_POWER_UP},
 	{"POWER_ON",	MCI_POWER_CTRL_POWER_ON},
 };
 
-static const pmb887x_io_field_t mci_power_fields[] = {
+static const DebugRegField mci_power_fields[] = {
 	{"CTRL",		MCI_POWER_CTRL,			MCI_POWER_CTRL_SHIFT,		mci_mci_power_ctrl_values,	ARRAY_SIZE(mci_mci_power_ctrl_values)},
 	{"VOLTAGE",		MCI_POWER_VOLTAGE,		MCI_POWER_VOLTAGE_SHIFT,	NULL,						0},
 	{"OPENDRAIN",	MCI_POWER_OPENDRAIN,	MCI_POWER_OPENDRAIN_SHIFT,	NULL,						0},
 	{"ROD",			MCI_POWER_ROD,			MCI_POWER_ROD_SHIFT,		NULL,						0},
 };
 
-static const pmb887x_io_field_t mci_clock_fields[] = {
+static const DebugRegField mci_clock_fields[] = {
 	{"CLKDIV",	MCI_CLOCK_CLKDIV,	MCI_CLOCK_CLKDIV_SHIFT,		NULL,	0},
 	{"ENABLE",	MCI_CLOCK_ENABLE,	MCI_CLOCK_ENABLE_SHIFT,		NULL,	0},
 	{"PWRSAVE",	MCI_CLOCK_PWRSAVE,	MCI_CLOCK_PWRSAVE_SHIFT,	NULL,	0},
@@ -585,11 +606,11 @@ static const pmb887x_io_field_t mci_clock_fields[] = {
 	{"WIDEBUS",	MCI_CLOCK_WIDEBUS,	MCI_CLOCK_WIDEBUS_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t mci_argument_fields[] = {
+static const DebugRegField mci_argument_fields[] = {
 	{"CMDARG",	MCI_ARGUMENT_CMDARG,	MCI_ARGUMENT_CMDARG_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t mci_command_fields[] = {
+static const DebugRegField mci_command_fields[] = {
 	{"CMDINDEX",	MCI_COMMAND_CMDINDEX,	MCI_COMMAND_CMDINDEX_SHIFT,		NULL,	0},
 	{"RESPONSE",	MCI_COMMAND_RESPONSE,	MCI_COMMAND_RESPONSE_SHIFT,		NULL,	0},
 	{"LONGRSP",		MCI_COMMAND_LONGRSP,	MCI_COMMAND_LONGRSP_SHIFT,		NULL,	0},
@@ -598,45 +619,45 @@ static const pmb887x_io_field_t mci_command_fields[] = {
 	{"ENABLE",		MCI_COMMAND_ENABLE,		MCI_COMMAND_ENABLE_SHIFT,		NULL,	0},
 };
 
-static const pmb887x_io_field_t mci_respcmd_fields[] = {
+static const DebugRegField mci_respcmd_fields[] = {
 	{"CMDINDEX",	MCI_RESPCMD_CMDINDEX,	MCI_RESPCMD_CMDINDEX_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t mci_response0_fields[] = {
+static const DebugRegField mci_response0_fields[] = {
 	{"STATUS",	MCI_RESPONSE0_STATUS,	MCI_RESPONSE0_STATUS_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t mci_response1_fields[] = {
+static const DebugRegField mci_response1_fields[] = {
 	{"STATUS",	MCI_RESPONSE1_STATUS,	MCI_RESPONSE1_STATUS_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t mci_response2_fields[] = {
+static const DebugRegField mci_response2_fields[] = {
 	{"STATUS",	MCI_RESPONSE2_STATUS,	MCI_RESPONSE2_STATUS_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t mci_response3_fields[] = {
+static const DebugRegField mci_response3_fields[] = {
 	{"STATUS",	MCI_RESPONSE3_STATUS,	MCI_RESPONSE3_STATUS_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t mci_datatimer_fields[] = {
+static const DebugRegField mci_datatimer_fields[] = {
 	{"TIMER",	MCI_DATATIMER_TIMER,	MCI_DATATIMER_TIMER_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t mci_datalength_fields[] = {
+static const DebugRegField mci_datalength_fields[] = {
 	{"LENGTH",	MCI_DATALENGTH_LENGTH,	MCI_DATALENGTH_LENGTH_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_value_t mci_mci_datactrl_direction_values[] = {
+static const DebugRegValue mci_mci_datactrl_direction_values[] = {
 	{"WRITE",	MCI_DATACTRL_DIRECTION_WRITE},
 	{"READ",	MCI_DATACTRL_DIRECTION_READ},
 };
 
-static const pmb887x_io_value_t mci_mci_datactrl_mode_values[] = {
+static const DebugRegValue mci_mci_datactrl_mode_values[] = {
 	{"BLOCK",	MCI_DATACTRL_MODE_BLOCK},
 	{"STREAM",	MCI_DATACTRL_MODE_STREAM},
 };
 
-static const pmb887x_io_field_t mci_datactrl_fields[] = {
+static const DebugRegField mci_datactrl_fields[] = {
 	{"ENABLE",		MCI_DATACTRL_ENABLE,	MCI_DATACTRL_ENABLE_SHIFT,		NULL,								0},
 	{"DIRECTION",	MCI_DATACTRL_DIRECTION,	MCI_DATACTRL_DIRECTION_SHIFT,	mci_mci_datactrl_direction_values,	ARRAY_SIZE(mci_mci_datactrl_direction_values)},
 	{"MODE",		MCI_DATACTRL_MODE,		MCI_DATACTRL_MODE_SHIFT,		mci_mci_datactrl_mode_values,		ARRAY_SIZE(mci_mci_datactrl_mode_values)},
@@ -644,11 +665,11 @@ static const pmb887x_io_field_t mci_datactrl_fields[] = {
 	{"BLOCKSIZE",	MCI_DATACTRL_BLOCKSIZE,	MCI_DATACTRL_BLOCKSIZE_SHIFT,	NULL,								0},
 };
 
-static const pmb887x_io_field_t mci_datacnt_fields[] = {
+static const DebugRegField mci_datacnt_fields[] = {
 	{"COUNT",	MCI_DATACNT_COUNT,	MCI_DATACNT_COUNT_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t mci_status_fields[] = {
+static const DebugRegField mci_status_fields[] = {
 	{"CMDCRCFAIL",		MCI_STATUS_CMDCRCFAIL,		MCI_STATUS_CMDCRCFAIL_SHIFT,		NULL,	0},
 	{"DATACRCFAIL",		MCI_STATUS_DATACRCFAIL,		MCI_STATUS_DATACRCFAIL_SHIFT,		NULL,	0},
 	{"CMDTIMEOUT",		MCI_STATUS_CMDTIMEOUT,		MCI_STATUS_CMDTIMEOUT_SHIFT,		NULL,	0},
@@ -673,7 +694,7 @@ static const pmb887x_io_field_t mci_status_fields[] = {
 	{"RXDATAAVLBL",		MCI_STATUS_RXDATAAVLBL,		MCI_STATUS_RXDATAAVLBL_SHIFT,		NULL,	0},
 };
 
-static const pmb887x_io_field_t mci_clear_fields[] = {
+static const DebugRegField mci_clear_fields[] = {
 	{"CMDCRCFAILCLR",	MCI_CLEAR_CMDCRCFAILCLR,	MCI_CLEAR_CMDCRCFAILCLR_SHIFT,		NULL,	0},
 	{"DATACRCFAILCLR",	MCI_CLEAR_DATACRCFAILCLR,	MCI_CLEAR_DATACRCFAILCLR_SHIFT,		NULL,	0},
 	{"CMDTIMEOUTCLR",	MCI_CLEAR_CMDTIMEOUTCLR,	MCI_CLEAR_CMDTIMEOUTCLR_SHIFT,		NULL,	0},
@@ -687,7 +708,7 @@ static const pmb887x_io_field_t mci_clear_fields[] = {
 	{"DATABLOCKENDCLR",	MCI_CLEAR_DATABLOCKENDCLR,	MCI_CLEAR_DATABLOCKENDCLR_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t mci_mask0_fields[] = {
+static const DebugRegField mci_mask0_fields[] = {
 	{"CMDCRCFAIL",		MCI_MASK0_CMDCRCFAIL,		MCI_MASK0_CMDCRCFAIL_SHIFT,			NULL,	0},
 	{"DATACRCFAIL",		MCI_MASK0_DATACRCFAIL,		MCI_MASK0_DATACRCFAIL_SHIFT,		NULL,	0},
 	{"CMDTIMEOUT",		MCI_MASK0_CMDTIMEOUT,		MCI_MASK0_CMDTIMEOUT_SHIFT,			NULL,	0},
@@ -712,7 +733,7 @@ static const pmb887x_io_field_t mci_mask0_fields[] = {
 	{"RXDATAAVLBL",		MCI_MASK0_RXDATAAVLBL,		MCI_MASK0_RXDATAAVLBL_SHIFT,		NULL,	0},
 };
 
-static const pmb887x_io_field_t mci_mask1_fields[] = {
+static const DebugRegField mci_mask1_fields[] = {
 	{"CMDCRCFAIL",		MCI_MASK1_CMDCRCFAIL,		MCI_MASK1_CMDCRCFAIL_SHIFT,			NULL,	0},
 	{"DATACRCFAIL",		MCI_MASK1_DATACRCFAIL,		MCI_MASK1_DATACRCFAIL_SHIFT,		NULL,	0},
 	{"CMDTIMEOUT",		MCI_MASK1_CMDTIMEOUT,		MCI_MASK1_CMDTIMEOUT_SHIFT,			NULL,	0},
@@ -737,38 +758,38 @@ static const pmb887x_io_field_t mci_mask1_fields[] = {
 	{"RXDATAAVLBL",		MCI_MASK1_RXDATAAVLBL,		MCI_MASK1_RXDATAAVLBL_SHIFT,		NULL,	0},
 };
 
-static const pmb887x_io_field_t mci_select_fields[] = {
+static const DebugRegField mci_select_fields[] = {
 	{"SDCARD",	MCI_SELECT_SDCARD,	MCI_SELECT_SDCARD_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t mci_fifocnt_fields[] = {
+static const DebugRegField mci_fifocnt_fields[] = {
 	{"COUNT",	MCI_FIFOCNT_COUNT,	MCI_FIFOCNT_COUNT_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t mci_fifo_fields[] = {
+static const DebugRegField mci_fifo_fields[] = {
 	{"DATA",	MCI_FIFO_DATA,	MCI_FIFO_DATA_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_value_t mci_mci_tcr_fifotest_values[] = {
+static const DebugRegValue mci_mci_tcr_fifotest_values[] = {
 	{"NORMAL",		MCI_TCR_FIFOTEST_NORMAL},
 	{"DIRECT",		MCI_TCR_FIFOTEST_DIRECT},
 	{"RESERVED",	MCI_TCR_FIFOTEST_RESERVED},
 	{"LOOPBACK",	MCI_TCR_FIFOTEST_LOOPBACK},
 };
 
-static const pmb887x_io_field_t mci_tcr_fields[] = {
+static const DebugRegField mci_tcr_fields[] = {
 	{"ITEN",		MCI_TCR_ITEN,		MCI_TCR_ITEN_SHIFT,		NULL,							0},
 	{"FIFOTEST",	MCI_TCR_FIFOTEST,	MCI_TCR_FIFOTEST_SHIFT,	mci_mci_tcr_fifotest_values,	ARRAY_SIZE(mci_mci_tcr_fifotest_values)},
 	{"REGTEST",		MCI_TCR_REGTEST,	MCI_TCR_REGTEST_SHIFT,	NULL,							0},
 };
 
-static const pmb887x_io_field_t mci_itip_fields[] = {
+static const DebugRegField mci_itip_fields[] = {
 	{"DMACLR",	MCI_ITIP_DMACLR,	MCI_ITIP_DMACLR_SHIFT,	NULL,	0},
 	{"DATIN",	MCI_ITIP_DATIN,		MCI_ITIP_DATIN_SHIFT,	NULL,	0},
 	{"CMDIN",	MCI_ITIP_CMDIN,		MCI_ITIP_CMDIN_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t mci_itop_fields[] = {
+static const DebugRegField mci_itop_fields[] = {
 	{"INTR0",		MCI_ITOP_INTR0,		MCI_ITOP_INTR0_SHIFT,		NULL,	0},
 	{"INTR1",		MCI_ITOP_INTR1,		MCI_ITOP_INTR1_SHIFT,		NULL,	0},
 	{"DMASREQ",		MCI_ITOP_DMASREQ,	MCI_ITOP_DMASREQ_SHIFT,		NULL,	0},
@@ -780,74 +801,81 @@ static const pmb887x_io_field_t mci_itop_fields[] = {
 	{"POWER",		MCI_ITOP_POWER,		MCI_ITOP_POWER_SHIFT,		NULL,	0},
 };
 
-static const pmb887x_io_field_t mci_periph_id0_fields[] = {
+static const DebugRegField mci_periph_id0_fields[] = {
 	{"PARTNUMBER0",	AMBA_PERIPH_ID0_PARTNUMBER0,	AMBA_PERIPH_ID0_PARTNUMBER0_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t mci_periph_id1_fields[] = {
+static const DebugRegField mci_periph_id1_fields[] = {
 	{"PARTNUMBER1",	AMBA_PERIPH_ID1_PARTNUMBER1,	AMBA_PERIPH_ID1_PARTNUMBER1_SHIFT,	NULL,	0},
 	{"DESIGNER0",	AMBA_PERIPH_ID1_DESIGNER0,		AMBA_PERIPH_ID1_DESIGNER0_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t mci_periph_id2_fields[] = {
+static const DebugRegField mci_periph_id2_fields[] = {
 	{"DESIGNER1",	AMBA_PERIPH_ID2_DESIGNER1,	AMBA_PERIPH_ID2_DESIGNER1_SHIFT,	NULL,	0},
 	{"REVISION",	AMBA_PERIPH_ID2_REVISION,	AMBA_PERIPH_ID2_REVISION_SHIFT,		NULL,	0},
 };
 
-static const pmb887x_io_field_t mci_periph_id3_fields[] = {
+static const DebugRegField mci_periph_id3_fields[] = {
 	{"CONFIGURATION",	AMBA_PERIPH_ID3_CONFIGURATION,	AMBA_PERIPH_ID3_CONFIGURATION_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_reg_t mci_regs[] = {
-	{"POWER",		MCI_POWER,		mci_power_fields,		ARRAY_SIZE(mci_power_fields),		0},
-	{"CLOCK",		MCI_CLOCK,		mci_clock_fields,		ARRAY_SIZE(mci_clock_fields),		0},
-	{"ARGUMENT",	MCI_ARGUMENT,	mci_argument_fields,	ARRAY_SIZE(mci_argument_fields),	0},
-	{"COMMAND",		MCI_COMMAND,	mci_command_fields,		ARRAY_SIZE(mci_command_fields),		0},
-	{"RESPCMD",		MCI_RESPCMD,	mci_respcmd_fields,		ARRAY_SIZE(mci_respcmd_fields),		0},
-	{"RESPONSE0",	MCI_RESPONSE0,	mci_response0_fields,	ARRAY_SIZE(mci_response0_fields),	0},
-	{"RESPONSE1",	MCI_RESPONSE1,	mci_response1_fields,	ARRAY_SIZE(mci_response1_fields),	0},
-	{"RESPONSE2",	MCI_RESPONSE2,	mci_response2_fields,	ARRAY_SIZE(mci_response2_fields),	0},
-	{"RESPONSE3",	MCI_RESPONSE3,	mci_response3_fields,	ARRAY_SIZE(mci_response3_fields),	0},
-	{"DATATIMER",	MCI_DATATIMER,	mci_datatimer_fields,	ARRAY_SIZE(mci_datatimer_fields),	0},
-	{"DATALENGTH",	MCI_DATALENGTH,	mci_datalength_fields,	ARRAY_SIZE(mci_datalength_fields),	0},
-	{"DATACTRL",	MCI_DATACTRL,	mci_datactrl_fields,	ARRAY_SIZE(mci_datactrl_fields),	0},
-	{"DATACNT",		MCI_DATACNT,	mci_datacnt_fields,		ARRAY_SIZE(mci_datacnt_fields),		0},
-	{"STATUS",		MCI_STATUS,		mci_status_fields,		ARRAY_SIZE(mci_status_fields),		0},
-	{"CLEAR",		MCI_CLEAR,		mci_clear_fields,		ARRAY_SIZE(mci_clear_fields),		0},
-	{"MASK0",		MCI_MASK0,		mci_mask0_fields,		ARRAY_SIZE(mci_mask0_fields),		0},
-	{"MASK1",		MCI_MASK1,		mci_mask1_fields,		ARRAY_SIZE(mci_mask1_fields),		0},
-	{"SELECT",		MCI_SELECT,		mci_select_fields,		ARRAY_SIZE(mci_select_fields),		0},
-	{"FIFOCNT",		MCI_FIFOCNT,	mci_fifocnt_fields,		ARRAY_SIZE(mci_fifocnt_fields),		0},
-	{"FIFO0",		MCI_FIFO0,		mci_fifo_fields,		ARRAY_SIZE(mci_fifo_fields),		0},
-	{"FIFO1",		MCI_FIFO1,		mci_fifo_fields,		ARRAY_SIZE(mci_fifo_fields),		0},
-	{"FIFO2",		MCI_FIFO2,		mci_fifo_fields,		ARRAY_SIZE(mci_fifo_fields),		0},
-	{"FIFO3",		MCI_FIFO3,		mci_fifo_fields,		ARRAY_SIZE(mci_fifo_fields),		0},
-	{"FIFO4",		MCI_FIFO4,		mci_fifo_fields,		ARRAY_SIZE(mci_fifo_fields),		0},
-	{"FIFO5",		MCI_FIFO5,		mci_fifo_fields,		ARRAY_SIZE(mci_fifo_fields),		0},
-	{"FIFO6",		MCI_FIFO6,		mci_fifo_fields,		ARRAY_SIZE(mci_fifo_fields),		0},
-	{"FIFO7",		MCI_FIFO7,		mci_fifo_fields,		ARRAY_SIZE(mci_fifo_fields),		0},
-	{"FIFO8",		MCI_FIFO8,		mci_fifo_fields,		ARRAY_SIZE(mci_fifo_fields),		0},
-	{"FIFO9",		MCI_FIFO9,		mci_fifo_fields,		ARRAY_SIZE(mci_fifo_fields),		0},
-	{"FIFO10",		MCI_FIFO10,		mci_fifo_fields,		ARRAY_SIZE(mci_fifo_fields),		0},
-	{"FIFO11",		MCI_FIFO11,		mci_fifo_fields,		ARRAY_SIZE(mci_fifo_fields),		0},
-	{"FIFO12",		MCI_FIFO12,		mci_fifo_fields,		ARRAY_SIZE(mci_fifo_fields),		0},
-	{"FIFO13",		MCI_FIFO13,		mci_fifo_fields,		ARRAY_SIZE(mci_fifo_fields),		0},
-	{"FIFO14",		MCI_FIFO14,		mci_fifo_fields,		ARRAY_SIZE(mci_fifo_fields),		0},
-	{"FIFO15",		MCI_FIFO15,		mci_fifo_fields,		ARRAY_SIZE(mci_fifo_fields),		0},
-	{"TCR",			MCI_TCR,		mci_tcr_fields,			ARRAY_SIZE(mci_tcr_fields),			0},
-	{"ITIP",		MCI_ITIP,		mci_itip_fields,		ARRAY_SIZE(mci_itip_fields),		0},
-	{"ITOP",		MCI_ITOP,		mci_itop_fields,		ARRAY_SIZE(mci_itop_fields),		0},
-	{"PERIPH_ID0",	MCI_PERIPH_ID0,	mci_periph_id0_fields,	ARRAY_SIZE(mci_periph_id0_fields),	0},
-	{"PERIPH_ID1",	MCI_PERIPH_ID1,	mci_periph_id1_fields,	ARRAY_SIZE(mci_periph_id1_fields),	0},
-	{"PERIPH_ID2",	MCI_PERIPH_ID2,	mci_periph_id2_fields,	ARRAY_SIZE(mci_periph_id2_fields),	0},
-	{"PERIPH_ID3",	MCI_PERIPH_ID3,	mci_periph_id3_fields,	ARRAY_SIZE(mci_periph_id3_fields),	0},
-	{"PCELL_ID0",	MCI_PCELL_ID0,	NULL,					0,									0},
-	{"PCELL_ID1",	MCI_PCELL_ID1,	NULL,					0,									0},
-	{"PCELL_ID2",	MCI_PCELL_ID2,	NULL,					0,									0},
-	{"PCELL_ID3",	MCI_PCELL_ID3,	NULL,					0,									0},
+static const DebugReg mci_regs[] = {
+	{"POWER",		MCI_POWER,		mci_power_fields,		ARRAY_SIZE(mci_power_fields)},
+	{"CLOCK",		MCI_CLOCK,		mci_clock_fields,		ARRAY_SIZE(mci_clock_fields)},
+	{"ARGUMENT",	MCI_ARGUMENT,	mci_argument_fields,	ARRAY_SIZE(mci_argument_fields)},
+	{"COMMAND",		MCI_COMMAND,	mci_command_fields,		ARRAY_SIZE(mci_command_fields)},
+	{"RESPCMD",		MCI_RESPCMD,	mci_respcmd_fields,		ARRAY_SIZE(mci_respcmd_fields)},
+	{"RESPONSE0",	MCI_RESPONSE0,	mci_response0_fields,	ARRAY_SIZE(mci_response0_fields)},
+	{"RESPONSE1",	MCI_RESPONSE1,	mci_response1_fields,	ARRAY_SIZE(mci_response1_fields)},
+	{"RESPONSE2",	MCI_RESPONSE2,	mci_response2_fields,	ARRAY_SIZE(mci_response2_fields)},
+	{"RESPONSE3",	MCI_RESPONSE3,	mci_response3_fields,	ARRAY_SIZE(mci_response3_fields)},
+	{"DATATIMER",	MCI_DATATIMER,	mci_datatimer_fields,	ARRAY_SIZE(mci_datatimer_fields)},
+	{"DATALENGTH",	MCI_DATALENGTH,	mci_datalength_fields,	ARRAY_SIZE(mci_datalength_fields)},
+	{"DATACTRL",	MCI_DATACTRL,	mci_datactrl_fields,	ARRAY_SIZE(mci_datactrl_fields)},
+	{"DATACNT",		MCI_DATACNT,	mci_datacnt_fields,		ARRAY_SIZE(mci_datacnt_fields)},
+	{"STATUS",		MCI_STATUS,		mci_status_fields,		ARRAY_SIZE(mci_status_fields)},
+	{"CLEAR",		MCI_CLEAR,		mci_clear_fields,		ARRAY_SIZE(mci_clear_fields)},
+	{"MASK0",		MCI_MASK0,		mci_mask0_fields,		ARRAY_SIZE(mci_mask0_fields)},
+	{"MASK1",		MCI_MASK1,		mci_mask1_fields,		ARRAY_SIZE(mci_mask1_fields)},
+	{"SELECT",		MCI_SELECT,		mci_select_fields,		ARRAY_SIZE(mci_select_fields)},
+	{"FIFOCNT",		MCI_FIFOCNT,	mci_fifocnt_fields,		ARRAY_SIZE(mci_fifocnt_fields)},
+	{"FIFO0",		MCI_FIFO0,		mci_fifo_fields,		ARRAY_SIZE(mci_fifo_fields)},
+	{"FIFO1",		MCI_FIFO1,		mci_fifo_fields,		ARRAY_SIZE(mci_fifo_fields)},
+	{"FIFO2",		MCI_FIFO2,		mci_fifo_fields,		ARRAY_SIZE(mci_fifo_fields)},
+	{"FIFO3",		MCI_FIFO3,		mci_fifo_fields,		ARRAY_SIZE(mci_fifo_fields)},
+	{"FIFO4",		MCI_FIFO4,		mci_fifo_fields,		ARRAY_SIZE(mci_fifo_fields)},
+	{"FIFO5",		MCI_FIFO5,		mci_fifo_fields,		ARRAY_SIZE(mci_fifo_fields)},
+	{"FIFO6",		MCI_FIFO6,		mci_fifo_fields,		ARRAY_SIZE(mci_fifo_fields)},
+	{"FIFO7",		MCI_FIFO7,		mci_fifo_fields,		ARRAY_SIZE(mci_fifo_fields)},
+	{"FIFO8",		MCI_FIFO8,		mci_fifo_fields,		ARRAY_SIZE(mci_fifo_fields)},
+	{"FIFO9",		MCI_FIFO9,		mci_fifo_fields,		ARRAY_SIZE(mci_fifo_fields)},
+	{"FIFO10",		MCI_FIFO10,		mci_fifo_fields,		ARRAY_SIZE(mci_fifo_fields)},
+	{"FIFO11",		MCI_FIFO11,		mci_fifo_fields,		ARRAY_SIZE(mci_fifo_fields)},
+	{"FIFO12",		MCI_FIFO12,		mci_fifo_fields,		ARRAY_SIZE(mci_fifo_fields)},
+	{"FIFO13",		MCI_FIFO13,		mci_fifo_fields,		ARRAY_SIZE(mci_fifo_fields)},
+	{"FIFO14",		MCI_FIFO14,		mci_fifo_fields,		ARRAY_SIZE(mci_fifo_fields)},
+	{"FIFO15",		MCI_FIFO15,		mci_fifo_fields,		ARRAY_SIZE(mci_fifo_fields)},
+	{"TCR",			MCI_TCR,		mci_tcr_fields,			ARRAY_SIZE(mci_tcr_fields)},
+	{"ITIP",		MCI_ITIP,		mci_itip_fields,		ARRAY_SIZE(mci_itip_fields)},
+	{"ITOP",		MCI_ITOP,		mci_itop_fields,		ARRAY_SIZE(mci_itop_fields)},
+	{"PERIPH_ID0",	MCI_PERIPH_ID0,	mci_periph_id0_fields,	ARRAY_SIZE(mci_periph_id0_fields)},
+	{"PERIPH_ID1",	MCI_PERIPH_ID1,	mci_periph_id1_fields,	ARRAY_SIZE(mci_periph_id1_fields)},
+	{"PERIPH_ID2",	MCI_PERIPH_ID2,	mci_periph_id2_fields,	ARRAY_SIZE(mci_periph_id2_fields)},
+	{"PERIPH_ID3",	MCI_PERIPH_ID3,	mci_periph_id3_fields,	ARRAY_SIZE(mci_periph_id3_fields)},
+	{"PCELL_ID0",	MCI_PCELL_ID0,	NULL,					0},
+	{"PCELL_ID1",	MCI_PCELL_ID1,	NULL,					0},
+	{"PCELL_ID2",	MCI_PCELL_ID2,	NULL,					0},
+	{"PCELL_ID3",	MCI_PCELL_ID3,	NULL,					0},
 };
 
-static const pmb887x_io_field_t capcom_clc_fields[] = {
+const DebugRegs pmb887x_mci_regs = {
+	.regs = mci_regs,
+	.count = ARRAY_SIZE(mci_regs),
+	.reg_size = 4,
+	.addr_digits = 8,
+};
+
+static const DebugRegField capcom_clc_fields[] = {
 	{"DISR",	MOD_CLC_DISR,	MOD_CLC_DISR_SHIFT,	NULL,	0},
 	{"DISS",	MOD_CLC_DISS,	MOD_CLC_DISS_SHIFT,	NULL,	0},
 	{"SPEN",	MOD_CLC_SPEN,	MOD_CLC_SPEN_SHIFT,	NULL,	0},
@@ -857,7 +885,7 @@ static const pmb887x_io_field_t capcom_clc_fields[] = {
 	{"RMC",		MOD_CLC_RMC,	MOD_CLC_RMC_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t capcom_pisel_fields[] = {
+static const DebugRegField capcom_pisel_fields[] = {
 	{"C1C0IS",	CAPCOM_PISEL_C1C0IS,	CAPCOM_PISEL_C1C0IS_SHIFT,	NULL,	0},
 	{"C3C2IS",	CAPCOM_PISEL_C3C2IS,	CAPCOM_PISEL_C3C2IS_SHIFT,	NULL,	0},
 	{"C5C4IS",	CAPCOM_PISEL_C5C4IS,	CAPCOM_PISEL_C5C4IS_SHIFT,	NULL,	0},
@@ -866,47 +894,47 @@ static const pmb887x_io_field_t capcom_pisel_fields[] = {
 	{"T1INIS",	CAPCOM_PISEL_T1INIS,	CAPCOM_PISEL_T1INIS_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t capcom_id_fields[] = {
+static const DebugRegField capcom_id_fields[] = {
 	{"REV",		MOD_ID_REV,		MOD_ID_REV_SHIFT,		NULL,	0},
 	{"32B",		MOD_ID_32B,		MOD_ID_32B_SHIFT,		NULL,	0},
 	{"NUMBER",	MOD_ID_NUMBER,	MOD_ID_NUMBER_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_value_t capcom_capcom_t01con_t0i_values[] = {
+static const DebugRegValue capcom_capcom_t01con_t0i_values[] = {
 	{"OVERFLOW_UNDERFLOW",	CAPCOM_T01CON_T0I_OVERFLOW_UNDERFLOW},
 	{"RISING_EDGE",			CAPCOM_T01CON_T0I_RISING_EDGE},
 	{"FALLING_EDGE",		CAPCOM_T01CON_T0I_FALLING_EDGE},
 	{"BOTH_EDGES",			CAPCOM_T01CON_T0I_BOTH_EDGES},
 };
 
-static const pmb887x_io_value_t capcom_capcom_t01con_t0m_values[] = {
+static const DebugRegValue capcom_capcom_t01con_t0m_values[] = {
 	{"TIMER",	CAPCOM_T01CON_T0M_TIMER},
 	{"COUNTER",	CAPCOM_T01CON_T0M_COUNTER},
 };
 
-static const pmb887x_io_value_t capcom_capcom_t01con_t0r_values[] = {
+static const DebugRegValue capcom_capcom_t01con_t0r_values[] = {
 	{"DISABLED",	CAPCOM_T01CON_T0R_DISABLED},
 	{"ENABLED",		CAPCOM_T01CON_T0R_ENABLED},
 };
 
-static const pmb887x_io_value_t capcom_capcom_t01con_t1i_values[] = {
+static const DebugRegValue capcom_capcom_t01con_t1i_values[] = {
 	{"OVERFLOW_UNDERFLOW",	CAPCOM_T01CON_T1I_OVERFLOW_UNDERFLOW},
 	{"RISING_EDGE",			CAPCOM_T01CON_T1I_RISING_EDGE},
 	{"FALLING_EDGE",		CAPCOM_T01CON_T1I_FALLING_EDGE},
 	{"BOTH_EDGES",			CAPCOM_T01CON_T1I_BOTH_EDGES},
 };
 
-static const pmb887x_io_value_t capcom_capcom_t01con_t1m_values[] = {
+static const DebugRegValue capcom_capcom_t01con_t1m_values[] = {
 	{"TIMER",	CAPCOM_T01CON_T1M_TIMER},
 	{"COUNTER",	CAPCOM_T01CON_T1M_COUNTER},
 };
 
-static const pmb887x_io_value_t capcom_capcom_t01con_t1r_values[] = {
+static const DebugRegValue capcom_capcom_t01con_t1r_values[] = {
 	{"DISABLED",	CAPCOM_T01CON_T1R_DISABLED},
 	{"ENABLED",		CAPCOM_T01CON_T1R_ENABLED},
 };
 
-static const pmb887x_io_field_t capcom_t01con_fields[] = {
+static const DebugRegField capcom_t01con_fields[] = {
 	{"T0I",	CAPCOM_T01CON_T0I,	CAPCOM_T01CON_T0I_SHIFT,	capcom_capcom_t01con_t0i_values,	ARRAY_SIZE(capcom_capcom_t01con_t0i_values)},
 	{"T0M",	CAPCOM_T01CON_T0M,	CAPCOM_T01CON_T0M_SHIFT,	capcom_capcom_t01con_t0m_values,	ARRAY_SIZE(capcom_capcom_t01con_t0m_values)},
 	{"T0R",	CAPCOM_T01CON_T0R,	CAPCOM_T01CON_T0R_SHIFT,	capcom_capcom_t01con_t0r_values,	ARRAY_SIZE(capcom_capcom_t01con_t0r_values)},
@@ -915,7 +943,7 @@ static const pmb887x_io_field_t capcom_t01con_fields[] = {
 	{"T1R",	CAPCOM_T01CON_T1R,	CAPCOM_T01CON_T1R_SHIFT,	capcom_capcom_t01con_t1r_values,	ARRAY_SIZE(capcom_capcom_t01con_t1r_values)},
 };
 
-static const pmb887x_io_value_t capcom_capcom_ccm0_mod0_values[] = {
+static const DebugRegValue capcom_capcom_ccm0_mod0_values[] = {
 	{"DISABLE",			CAPCOM_CCM0_MOD0_DISABLE},
 	{"RISING_EDGE",		CAPCOM_CCM0_MOD0_RISING_EDGE},
 	{"FALLING_EDGE",	CAPCOM_CCM0_MOD0_FALLING_EDGE},
@@ -926,12 +954,12 @@ static const pmb887x_io_value_t capcom_capcom_ccm0_mod0_values[] = {
 	{"MODE3",			CAPCOM_CCM0_MOD0_MODE3},
 };
 
-static const pmb887x_io_value_t capcom_capcom_ccm0_acc0_values[] = {
+static const DebugRegValue capcom_capcom_ccm0_acc0_values[] = {
 	{"T0",	CAPCOM_CCM0_ACC0_T0},
 	{"T1",	CAPCOM_CCM0_ACC0_T1},
 };
 
-static const pmb887x_io_value_t capcom_capcom_ccm0_mod1_values[] = {
+static const DebugRegValue capcom_capcom_ccm0_mod1_values[] = {
 	{"DISABLE",			CAPCOM_CCM0_MOD1_DISABLE},
 	{"RISING_EDGE",		CAPCOM_CCM0_MOD1_RISING_EDGE},
 	{"FALLING_EDGE",	CAPCOM_CCM0_MOD1_FALLING_EDGE},
@@ -942,12 +970,12 @@ static const pmb887x_io_value_t capcom_capcom_ccm0_mod1_values[] = {
 	{"MODE3",			CAPCOM_CCM0_MOD1_MODE3},
 };
 
-static const pmb887x_io_value_t capcom_capcom_ccm0_acc1_values[] = {
+static const DebugRegValue capcom_capcom_ccm0_acc1_values[] = {
 	{"T0",	CAPCOM_CCM0_ACC1_T0},
 	{"T1",	CAPCOM_CCM0_ACC1_T1},
 };
 
-static const pmb887x_io_value_t capcom_capcom_ccm0_mod2_values[] = {
+static const DebugRegValue capcom_capcom_ccm0_mod2_values[] = {
 	{"DISABLE",			CAPCOM_CCM0_MOD2_DISABLE},
 	{"RISING_EDGE",		CAPCOM_CCM0_MOD2_RISING_EDGE},
 	{"FALLING_EDGE",	CAPCOM_CCM0_MOD2_FALLING_EDGE},
@@ -958,12 +986,12 @@ static const pmb887x_io_value_t capcom_capcom_ccm0_mod2_values[] = {
 	{"MODE3",			CAPCOM_CCM0_MOD2_MODE3},
 };
 
-static const pmb887x_io_value_t capcom_capcom_ccm0_acc2_values[] = {
+static const DebugRegValue capcom_capcom_ccm0_acc2_values[] = {
 	{"T0",	CAPCOM_CCM0_ACC2_T0},
 	{"T1",	CAPCOM_CCM0_ACC2_T1},
 };
 
-static const pmb887x_io_value_t capcom_capcom_ccm0_mod3_values[] = {
+static const DebugRegValue capcom_capcom_ccm0_mod3_values[] = {
 	{"DISABLE",			CAPCOM_CCM0_MOD3_DISABLE},
 	{"RISING_EDGE",		CAPCOM_CCM0_MOD3_RISING_EDGE},
 	{"FALLING_EDGE",	CAPCOM_CCM0_MOD3_FALLING_EDGE},
@@ -974,12 +1002,12 @@ static const pmb887x_io_value_t capcom_capcom_ccm0_mod3_values[] = {
 	{"MODE3",			CAPCOM_CCM0_MOD3_MODE3},
 };
 
-static const pmb887x_io_value_t capcom_capcom_ccm0_acc3_values[] = {
+static const DebugRegValue capcom_capcom_ccm0_acc3_values[] = {
 	{"T0",	CAPCOM_CCM0_ACC3_T0},
 	{"T1",	CAPCOM_CCM0_ACC3_T1},
 };
 
-static const pmb887x_io_field_t capcom_ccm0_fields[] = {
+static const DebugRegField capcom_ccm0_fields[] = {
 	{"MOD0",	CAPCOM_CCM0_MOD0,	CAPCOM_CCM0_MOD0_SHIFT,	capcom_capcom_ccm0_mod0_values,	ARRAY_SIZE(capcom_capcom_ccm0_mod0_values)},
 	{"ACC0",	CAPCOM_CCM0_ACC0,	CAPCOM_CCM0_ACC0_SHIFT,	capcom_capcom_ccm0_acc0_values,	ARRAY_SIZE(capcom_capcom_ccm0_acc0_values)},
 	{"MOD1",	CAPCOM_CCM0_MOD1,	CAPCOM_CCM0_MOD1_SHIFT,	capcom_capcom_ccm0_mod1_values,	ARRAY_SIZE(capcom_capcom_ccm0_mod1_values)},
@@ -990,7 +1018,7 @@ static const pmb887x_io_field_t capcom_ccm0_fields[] = {
 	{"ACC3",	CAPCOM_CCM0_ACC3,	CAPCOM_CCM0_ACC3_SHIFT,	capcom_capcom_ccm0_acc3_values,	ARRAY_SIZE(capcom_capcom_ccm0_acc3_values)},
 };
 
-static const pmb887x_io_value_t capcom_capcom_ccm1_mod4_values[] = {
+static const DebugRegValue capcom_capcom_ccm1_mod4_values[] = {
 	{"DISABLE",			CAPCOM_CCM1_MOD4_DISABLE},
 	{"RISING_EDGE",		CAPCOM_CCM1_MOD4_RISING_EDGE},
 	{"FALLING_EDGE",	CAPCOM_CCM1_MOD4_FALLING_EDGE},
@@ -1001,12 +1029,12 @@ static const pmb887x_io_value_t capcom_capcom_ccm1_mod4_values[] = {
 	{"MODE3",			CAPCOM_CCM1_MOD4_MODE3},
 };
 
-static const pmb887x_io_value_t capcom_capcom_ccm1_acc4_values[] = {
+static const DebugRegValue capcom_capcom_ccm1_acc4_values[] = {
 	{"T0",	CAPCOM_CCM1_ACC4_T0},
 	{"T1",	CAPCOM_CCM1_ACC4_T1},
 };
 
-static const pmb887x_io_value_t capcom_capcom_ccm1_mod5_values[] = {
+static const DebugRegValue capcom_capcom_ccm1_mod5_values[] = {
 	{"DISABLE",			CAPCOM_CCM1_MOD5_DISABLE},
 	{"RISING_EDGE",		CAPCOM_CCM1_MOD5_RISING_EDGE},
 	{"FALLING_EDGE",	CAPCOM_CCM1_MOD5_FALLING_EDGE},
@@ -1017,12 +1045,12 @@ static const pmb887x_io_value_t capcom_capcom_ccm1_mod5_values[] = {
 	{"MODE3",			CAPCOM_CCM1_MOD5_MODE3},
 };
 
-static const pmb887x_io_value_t capcom_capcom_ccm1_acc5_values[] = {
+static const DebugRegValue capcom_capcom_ccm1_acc5_values[] = {
 	{"T0",	CAPCOM_CCM1_ACC5_T0},
 	{"T1",	CAPCOM_CCM1_ACC5_T1},
 };
 
-static const pmb887x_io_value_t capcom_capcom_ccm1_mod6_values[] = {
+static const DebugRegValue capcom_capcom_ccm1_mod6_values[] = {
 	{"DISABLE",			CAPCOM_CCM1_MOD6_DISABLE},
 	{"RISING_EDGE",		CAPCOM_CCM1_MOD6_RISING_EDGE},
 	{"FALLING_EDGE",	CAPCOM_CCM1_MOD6_FALLING_EDGE},
@@ -1033,12 +1061,12 @@ static const pmb887x_io_value_t capcom_capcom_ccm1_mod6_values[] = {
 	{"MODE3",			CAPCOM_CCM1_MOD6_MODE3},
 };
 
-static const pmb887x_io_value_t capcom_capcom_ccm1_acc6_values[] = {
+static const DebugRegValue capcom_capcom_ccm1_acc6_values[] = {
 	{"T0",	CAPCOM_CCM1_ACC6_T0},
 	{"T1",	CAPCOM_CCM1_ACC6_T1},
 };
 
-static const pmb887x_io_value_t capcom_capcom_ccm1_mod7_values[] = {
+static const DebugRegValue capcom_capcom_ccm1_mod7_values[] = {
 	{"DISABLE",			CAPCOM_CCM1_MOD7_DISABLE},
 	{"RISING_EDGE",		CAPCOM_CCM1_MOD7_RISING_EDGE},
 	{"FALLING_EDGE",	CAPCOM_CCM1_MOD7_FALLING_EDGE},
@@ -1049,12 +1077,12 @@ static const pmb887x_io_value_t capcom_capcom_ccm1_mod7_values[] = {
 	{"MODE3",			CAPCOM_CCM1_MOD7_MODE3},
 };
 
-static const pmb887x_io_value_t capcom_capcom_ccm1_acc7_values[] = {
+static const DebugRegValue capcom_capcom_ccm1_acc7_values[] = {
 	{"T0",	CAPCOM_CCM1_ACC7_T0},
 	{"T1",	CAPCOM_CCM1_ACC7_T1},
 };
 
-static const pmb887x_io_field_t capcom_ccm1_fields[] = {
+static const DebugRegField capcom_ccm1_fields[] = {
 	{"MOD4",	CAPCOM_CCM1_MOD4,	CAPCOM_CCM1_MOD4_SHIFT,	capcom_capcom_ccm1_mod4_values,	ARRAY_SIZE(capcom_capcom_ccm1_mod4_values)},
 	{"ACC4",	CAPCOM_CCM1_ACC4,	CAPCOM_CCM1_ACC4_SHIFT,	capcom_capcom_ccm1_acc4_values,	ARRAY_SIZE(capcom_capcom_ccm1_acc4_values)},
 	{"MOD5",	CAPCOM_CCM1_MOD5,	CAPCOM_CCM1_MOD5_SHIFT,	capcom_capcom_ccm1_mod5_values,	ARRAY_SIZE(capcom_capcom_ccm1_mod5_values)},
@@ -1065,7 +1093,7 @@ static const pmb887x_io_field_t capcom_ccm1_fields[] = {
 	{"ACC7",	CAPCOM_CCM1_ACC7,	CAPCOM_CCM1_ACC7_SHIFT,	capcom_capcom_ccm1_acc7_values,	ARRAY_SIZE(capcom_capcom_ccm1_acc7_values)},
 };
 
-static const pmb887x_io_field_t capcom_out_fields[] = {
+static const DebugRegField capcom_out_fields[] = {
 	{"O0",	CAPCOM_OUT_O0,	CAPCOM_OUT_O0_SHIFT,	NULL,	0},
 	{"O1",	CAPCOM_OUT_O1,	CAPCOM_OUT_O1_SHIFT,	NULL,	0},
 	{"O2",	CAPCOM_OUT_O2,	CAPCOM_OUT_O2_SHIFT,	NULL,	0},
@@ -1076,18 +1104,18 @@ static const pmb887x_io_field_t capcom_out_fields[] = {
 	{"O7",	CAPCOM_OUT_O7,	CAPCOM_OUT_O7_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_value_t capcom_capcom_ioc_pds_values[] = {
+static const DebugRegValue capcom_capcom_ioc_pds_values[] = {
 	{"OUT",	CAPCOM_IOC_PDS_OUT},
 	{"IN",	CAPCOM_IOC_PDS_IN},
 };
 
-static const pmb887x_io_field_t capcom_ioc_fields[] = {
+static const DebugRegField capcom_ioc_fields[] = {
 	{"PL",		CAPCOM_IOC_PL,		CAPCOM_IOC_PL_SHIFT,	NULL,							0},
 	{"STAG",	CAPCOM_IOC_STAG,	CAPCOM_IOC_STAG_SHIFT,	NULL,							0},
 	{"PDS",		CAPCOM_IOC_PDS,		CAPCOM_IOC_PDS_SHIFT,	capcom_capcom_ioc_pds_values,	ARRAY_SIZE(capcom_capcom_ioc_pds_values)},
 };
 
-static const pmb887x_io_field_t capcom_sem_fields[] = {
+static const DebugRegField capcom_sem_fields[] = {
 	{"SEM0",	CAPCOM_SEM_SEM0,	CAPCOM_SEM_SEM0_SHIFT,	NULL,	0},
 	{"SEM1",	CAPCOM_SEM_SEM1,	CAPCOM_SEM_SEM1_SHIFT,	NULL,	0},
 	{"SEM2",	CAPCOM_SEM_SEM2,	CAPCOM_SEM_SEM2_SHIFT,	NULL,	0},
@@ -1098,7 +1126,7 @@ static const pmb887x_io_field_t capcom_sem_fields[] = {
 	{"SEM7",	CAPCOM_SEM_SEM7,	CAPCOM_SEM_SEM7_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t capcom_see_fields[] = {
+static const DebugRegField capcom_see_fields[] = {
 	{"SEE0",	CAPCOM_SEE_SEE0,	CAPCOM_SEE_SEE0_SHIFT,	NULL,	0},
 	{"SEE1",	CAPCOM_SEE_SEE1,	CAPCOM_SEE_SEE1_SHIFT,	NULL,	0},
 	{"SEE2",	CAPCOM_SEE_SEE2,	CAPCOM_SEE_SEE2_SHIFT,	NULL,	0},
@@ -1109,82 +1137,82 @@ static const pmb887x_io_field_t capcom_see_fields[] = {
 	{"SEE7",	CAPCOM_SEE_SEE7,	CAPCOM_SEE_SEE7_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_value_t capcom_capcom_drm_dr0m_values[] = {
+static const DebugRegValue capcom_capcom_drm_dr0m_values[] = {
 	{"CON",	CAPCOM_DRM_DR0M_CON},
 	{"DIS",	CAPCOM_DRM_DR0M_DIS},
 	{"EN",	CAPCOM_DRM_DR0M_EN},
 	{"RES",	CAPCOM_DRM_DR0M_RES},
 };
 
-static const pmb887x_io_value_t capcom_capcom_drm_dr1m_values[] = {
+static const DebugRegValue capcom_capcom_drm_dr1m_values[] = {
 	{"CON",	CAPCOM_DRM_DR1M_CON},
 	{"DIS",	CAPCOM_DRM_DR1M_DIS},
 	{"EN",	CAPCOM_DRM_DR1M_EN},
 	{"RES",	CAPCOM_DRM_DR1M_RES},
 };
 
-static const pmb887x_io_value_t capcom_capcom_drm_dr2m_values[] = {
+static const DebugRegValue capcom_capcom_drm_dr2m_values[] = {
 	{"CON",	CAPCOM_DRM_DR2M_CON},
 	{"DIS",	CAPCOM_DRM_DR2M_DIS},
 	{"EN",	CAPCOM_DRM_DR2M_EN},
 	{"RES",	CAPCOM_DRM_DR2M_RES},
 };
 
-static const pmb887x_io_value_t capcom_capcom_drm_dr3m_values[] = {
+static const DebugRegValue capcom_capcom_drm_dr3m_values[] = {
 	{"CON",	CAPCOM_DRM_DR3M_CON},
 	{"DIS",	CAPCOM_DRM_DR3M_DIS},
 	{"EN",	CAPCOM_DRM_DR3M_EN},
 	{"RES",	CAPCOM_DRM_DR3M_RES},
 };
 
-static const pmb887x_io_field_t capcom_drm_fields[] = {
+static const DebugRegField capcom_drm_fields[] = {
 	{"DR0M",	CAPCOM_DRM_DR0M,	CAPCOM_DRM_DR0M_SHIFT,	capcom_capcom_drm_dr0m_values,	ARRAY_SIZE(capcom_capcom_drm_dr0m_values)},
 	{"DR1M",	CAPCOM_DRM_DR1M,	CAPCOM_DRM_DR1M_SHIFT,	capcom_capcom_drm_dr1m_values,	ARRAY_SIZE(capcom_capcom_drm_dr1m_values)},
 	{"DR2M",	CAPCOM_DRM_DR2M,	CAPCOM_DRM_DR2M_SHIFT,	capcom_capcom_drm_dr2m_values,	ARRAY_SIZE(capcom_capcom_drm_dr2m_values)},
 	{"DR3M",	CAPCOM_DRM_DR3M,	CAPCOM_DRM_DR3M_SHIFT,	capcom_capcom_drm_dr3m_values,	ARRAY_SIZE(capcom_capcom_drm_dr3m_values)},
 };
 
-static const pmb887x_io_value_t capcom_capcom_whbssee_setsee0_values[] = {
+static const DebugRegValue capcom_capcom_whbssee_setsee0_values[] = {
 	{"NOE",	CAPCOM_WHBSSEE_SETSEE0_NOE},
 	{"SET",	CAPCOM_WHBSSEE_SETSEE0_SET},
 };
 
-static const pmb887x_io_value_t capcom_capcom_whbssee_setsee1_values[] = {
+static const DebugRegValue capcom_capcom_whbssee_setsee1_values[] = {
 	{"NOE",	CAPCOM_WHBSSEE_SETSEE1_NOE},
 	{"SET",	CAPCOM_WHBSSEE_SETSEE1_SET},
 };
 
-static const pmb887x_io_value_t capcom_capcom_whbssee_setsee2_values[] = {
+static const DebugRegValue capcom_capcom_whbssee_setsee2_values[] = {
 	{"NOE",	CAPCOM_WHBSSEE_SETSEE2_NOE},
 	{"SET",	CAPCOM_WHBSSEE_SETSEE2_SET},
 };
 
-static const pmb887x_io_value_t capcom_capcom_whbssee_setsee3_values[] = {
+static const DebugRegValue capcom_capcom_whbssee_setsee3_values[] = {
 	{"NOE",	CAPCOM_WHBSSEE_SETSEE3_NOE},
 	{"SET",	CAPCOM_WHBSSEE_SETSEE3_SET},
 };
 
-static const pmb887x_io_value_t capcom_capcom_whbssee_setsee4_values[] = {
+static const DebugRegValue capcom_capcom_whbssee_setsee4_values[] = {
 	{"NOE",	CAPCOM_WHBSSEE_SETSEE4_NOE},
 	{"SET",	CAPCOM_WHBSSEE_SETSEE4_SET},
 };
 
-static const pmb887x_io_value_t capcom_capcom_whbssee_setsee5_values[] = {
+static const DebugRegValue capcom_capcom_whbssee_setsee5_values[] = {
 	{"NOE",	CAPCOM_WHBSSEE_SETSEE5_NOE},
 	{"SET",	CAPCOM_WHBSSEE_SETSEE5_SET},
 };
 
-static const pmb887x_io_value_t capcom_capcom_whbssee_setsee6_values[] = {
+static const DebugRegValue capcom_capcom_whbssee_setsee6_values[] = {
 	{"NOE",	CAPCOM_WHBSSEE_SETSEE6_NOE},
 	{"SET",	CAPCOM_WHBSSEE_SETSEE6_SET},
 };
 
-static const pmb887x_io_value_t capcom_capcom_whbssee_setsee7_values[] = {
+static const DebugRegValue capcom_capcom_whbssee_setsee7_values[] = {
 	{"NOE",	CAPCOM_WHBSSEE_SETSEE7_NOE},
 	{"SET",	CAPCOM_WHBSSEE_SETSEE7_SET},
 };
 
-static const pmb887x_io_field_t capcom_whbssee_fields[] = {
+static const DebugRegField capcom_whbssee_fields[] = {
 	{"SETSEE0",	CAPCOM_WHBSSEE_SETSEE0,	CAPCOM_WHBSSEE_SETSEE0_SHIFT,	capcom_capcom_whbssee_setsee0_values,	ARRAY_SIZE(capcom_capcom_whbssee_setsee0_values)},
 	{"SETSEE1",	CAPCOM_WHBSSEE_SETSEE1,	CAPCOM_WHBSSEE_SETSEE1_SHIFT,	capcom_capcom_whbssee_setsee1_values,	ARRAY_SIZE(capcom_capcom_whbssee_setsee1_values)},
 	{"SETSEE2",	CAPCOM_WHBSSEE_SETSEE2,	CAPCOM_WHBSSEE_SETSEE2_SHIFT,	capcom_capcom_whbssee_setsee2_values,	ARRAY_SIZE(capcom_capcom_whbssee_setsee2_values)},
@@ -1195,47 +1223,47 @@ static const pmb887x_io_field_t capcom_whbssee_fields[] = {
 	{"SETSEE7",	CAPCOM_WHBSSEE_SETSEE7,	CAPCOM_WHBSSEE_SETSEE7_SHIFT,	capcom_capcom_whbssee_setsee7_values,	ARRAY_SIZE(capcom_capcom_whbssee_setsee7_values)},
 };
 
-static const pmb887x_io_value_t capcom_capcom_whbcsee_clrsee0_values[] = {
+static const DebugRegValue capcom_capcom_whbcsee_clrsee0_values[] = {
 	{"NOE",	CAPCOM_WHBCSEE_CLRSEE0_NOE},
 	{"CLR",	CAPCOM_WHBCSEE_CLRSEE0_CLR},
 };
 
-static const pmb887x_io_value_t capcom_capcom_whbcsee_clrsee1_values[] = {
+static const DebugRegValue capcom_capcom_whbcsee_clrsee1_values[] = {
 	{"NOE",	CAPCOM_WHBCSEE_CLRSEE1_NOE},
 	{"CLR",	CAPCOM_WHBCSEE_CLRSEE1_CLR},
 };
 
-static const pmb887x_io_value_t capcom_capcom_whbcsee_clrsee2_values[] = {
+static const DebugRegValue capcom_capcom_whbcsee_clrsee2_values[] = {
 	{"NOE",	CAPCOM_WHBCSEE_CLRSEE2_NOE},
 	{"CLR",	CAPCOM_WHBCSEE_CLRSEE2_CLR},
 };
 
-static const pmb887x_io_value_t capcom_capcom_whbcsee_clrsee3_values[] = {
+static const DebugRegValue capcom_capcom_whbcsee_clrsee3_values[] = {
 	{"NOE",	CAPCOM_WHBCSEE_CLRSEE3_NOE},
 	{"CLR",	CAPCOM_WHBCSEE_CLRSEE3_CLR},
 };
 
-static const pmb887x_io_value_t capcom_capcom_whbcsee_clrsee4_values[] = {
+static const DebugRegValue capcom_capcom_whbcsee_clrsee4_values[] = {
 	{"NOE",	CAPCOM_WHBCSEE_CLRSEE4_NOE},
 	{"CLR",	CAPCOM_WHBCSEE_CLRSEE4_CLR},
 };
 
-static const pmb887x_io_value_t capcom_capcom_whbcsee_clrsee5_values[] = {
+static const DebugRegValue capcom_capcom_whbcsee_clrsee5_values[] = {
 	{"NOE",	CAPCOM_WHBCSEE_CLRSEE5_NOE},
 	{"CLR",	CAPCOM_WHBCSEE_CLRSEE5_CLR},
 };
 
-static const pmb887x_io_value_t capcom_capcom_whbcsee_clrsee6_values[] = {
+static const DebugRegValue capcom_capcom_whbcsee_clrsee6_values[] = {
 	{"NOE",	CAPCOM_WHBCSEE_CLRSEE6_NOE},
 	{"CLR",	CAPCOM_WHBCSEE_CLRSEE6_CLR},
 };
 
-static const pmb887x_io_value_t capcom_capcom_whbcsee_clrsee7_values[] = {
+static const DebugRegValue capcom_capcom_whbcsee_clrsee7_values[] = {
 	{"NOE",	CAPCOM_WHBCSEE_CLRSEE7_NOE},
 	{"CLR",	CAPCOM_WHBCSEE_CLRSEE7_CLR},
 };
 
-static const pmb887x_io_field_t capcom_whbcsee_fields[] = {
+static const DebugRegField capcom_whbcsee_fields[] = {
 	{"CLRSEE0",	CAPCOM_WHBCSEE_CLRSEE0,	CAPCOM_WHBCSEE_CLRSEE0_SHIFT,	capcom_capcom_whbcsee_clrsee0_values,	ARRAY_SIZE(capcom_capcom_whbcsee_clrsee0_values)},
 	{"CLRSEE1",	CAPCOM_WHBCSEE_CLRSEE1,	CAPCOM_WHBCSEE_CLRSEE1_SHIFT,	capcom_capcom_whbcsee_clrsee1_values,	ARRAY_SIZE(capcom_capcom_whbcsee_clrsee1_values)},
 	{"CLRSEE2",	CAPCOM_WHBCSEE_CLRSEE2,	CAPCOM_WHBCSEE_CLRSEE2_SHIFT,	capcom_capcom_whbcsee_clrsee2_values,	ARRAY_SIZE(capcom_capcom_whbcsee_clrsee2_values)},
@@ -1246,50 +1274,50 @@ static const pmb887x_io_field_t capcom_whbcsee_fields[] = {
 	{"CLRSEE7",	CAPCOM_WHBCSEE_CLRSEE7,	CAPCOM_WHBCSEE_CLRSEE7_SHIFT,	capcom_capcom_whbcsee_clrsee7_values,	ARRAY_SIZE(capcom_capcom_whbcsee_clrsee7_values)},
 };
 
-static const pmb887x_io_value_t capcom_capcom_t0_ovf0_values[] = {
+static const DebugRegValue capcom_capcom_t0_ovf0_values[] = {
 	{"CLEARED",	CAPCOM_T0_OVF0_CLEARED},
 	{"SET",		CAPCOM_T0_OVF0_SET},
 };
 
-static const pmb887x_io_field_t capcom_t0_fields[] = {
+static const DebugRegField capcom_t0_fields[] = {
 	{"T0",		CAPCOM_T0_T0,	CAPCOM_T0_T0_SHIFT,		NULL,							0},
 	{"OVF0",	CAPCOM_T0_OVF0,	CAPCOM_T0_OVF0_SHIFT,	capcom_capcom_t0_ovf0_values,	ARRAY_SIZE(capcom_capcom_t0_ovf0_values)},
 };
 
-static const pmb887x_io_field_t capcom_t0rel_fields[] = {
+static const DebugRegField capcom_t0rel_fields[] = {
 	{"T0REL",	CAPCOM_T0REL_T0REL,	CAPCOM_T0REL_T0REL_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_value_t capcom_capcom_t1_ovf1_values[] = {
+static const DebugRegValue capcom_capcom_t1_ovf1_values[] = {
 	{"CLEARED",	CAPCOM_T1_OVF1_CLEARED},
 	{"SET",		CAPCOM_T1_OVF1_SET},
 };
 
-static const pmb887x_io_field_t capcom_t1_fields[] = {
+static const DebugRegField capcom_t1_fields[] = {
 	{"T1",		CAPCOM_T1_T1,	CAPCOM_T1_T1_SHIFT,		NULL,							0},
 	{"OVF1",	CAPCOM_T1_OVF1,	CAPCOM_T1_OVF1_SHIFT,	capcom_capcom_t1_ovf1_values,	ARRAY_SIZE(capcom_capcom_t1_ovf1_values)},
 };
 
-static const pmb887x_io_field_t capcom_t1rel_fields[] = {
+static const DebugRegField capcom_t1rel_fields[] = {
 	{"T1REL",	CAPCOM_T1REL_T1REL,	CAPCOM_T1REL_T1REL_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_value_t capcom_capcom_t01ocr_ct0_values[] = {
+static const DebugRegValue capcom_capcom_t01ocr_ct0_values[] = {
 	{"NOC",	CAPCOM_T01OCR_CT0_NOC},
 	{"CSR",	CAPCOM_T01OCR_CT0_CSR},
 };
 
-static const pmb887x_io_value_t capcom_capcom_t01ocr_ct1_values[] = {
+static const DebugRegValue capcom_capcom_t01ocr_ct1_values[] = {
 	{"NOC",	CAPCOM_T01OCR_CT1_NOC},
 	{"CSR",	CAPCOM_T01OCR_CT1_CSR},
 };
 
-static const pmb887x_io_field_t capcom_t01ocr_fields[] = {
+static const DebugRegField capcom_t01ocr_fields[] = {
 	{"CT0",	CAPCOM_T01OCR_CT0,	CAPCOM_T01OCR_CT0_SHIFT,	capcom_capcom_t01ocr_ct0_values,	ARRAY_SIZE(capcom_capcom_t01ocr_ct0_values)},
 	{"CT1",	CAPCOM_T01OCR_CT1,	CAPCOM_T01OCR_CT1_SHIFT,	capcom_capcom_t01ocr_ct1_values,	ARRAY_SIZE(capcom_capcom_t01ocr_ct1_values)},
 };
 
-static const pmb887x_io_field_t capcom_whbsout_fields[] = {
+static const DebugRegField capcom_whbsout_fields[] = {
 	{"SET0O",	CAPCOM_WHBSOUT_SET0O,	CAPCOM_WHBSOUT_SET0O_SHIFT,	NULL,	0},
 	{"SET1O",	CAPCOM_WHBSOUT_SET1O,	CAPCOM_WHBSOUT_SET1O_SHIFT,	NULL,	0},
 	{"SET2O",	CAPCOM_WHBSOUT_SET2O,	CAPCOM_WHBSOUT_SET2O_SHIFT,	NULL,	0},
@@ -1300,7 +1328,7 @@ static const pmb887x_io_field_t capcom_whbsout_fields[] = {
 	{"SET7O",	CAPCOM_WHBSOUT_SET7O,	CAPCOM_WHBSOUT_SET7O_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t capcom_whbcout_fields[] = {
+static const DebugRegField capcom_whbcout_fields[] = {
 	{"CLR0O",	CAPCOM_WHBCOUT_CLR0O,	CAPCOM_WHBCOUT_CLR0O_SHIFT,	NULL,	0},
 	{"CLR1O",	CAPCOM_WHBCOUT_CLR1O,	CAPCOM_WHBCOUT_CLR1O_SHIFT,	NULL,	0},
 	{"CLR2O",	CAPCOM_WHBCOUT_CLR2O,	CAPCOM_WHBCOUT_CLR2O_SHIFT,	NULL,	0},
@@ -1311,7 +1339,7 @@ static const pmb887x_io_field_t capcom_whbcout_fields[] = {
 	{"CLR7O",	CAPCOM_WHBCOUT_CLR7O,	CAPCOM_WHBCOUT_CLR7O_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t capcom_cc7_src_fields[] = {
+static const DebugRegField capcom_cc7_src_fields[] = {
 	{"SRPN",	MOD_SRC_SRPN,	MOD_SRC_SRPN_SHIFT,	NULL,	0},
 	{"TOS",		MOD_SRC_TOS,	MOD_SRC_TOS_SHIFT,	NULL,	0},
 	{"SRE",		MOD_SRC_SRE,	MOD_SRC_SRE_SHIFT,	NULL,	0},
@@ -1320,7 +1348,7 @@ static const pmb887x_io_field_t capcom_cc7_src_fields[] = {
 	{"SETR",	MOD_SRC_SETR,	MOD_SRC_SETR_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t capcom_cc6_src_fields[] = {
+static const DebugRegField capcom_cc6_src_fields[] = {
 	{"SRPN",	MOD_SRC_SRPN,	MOD_SRC_SRPN_SHIFT,	NULL,	0},
 	{"TOS",		MOD_SRC_TOS,	MOD_SRC_TOS_SHIFT,	NULL,	0},
 	{"SRE",		MOD_SRC_SRE,	MOD_SRC_SRE_SHIFT,	NULL,	0},
@@ -1329,7 +1357,7 @@ static const pmb887x_io_field_t capcom_cc6_src_fields[] = {
 	{"SETR",	MOD_SRC_SETR,	MOD_SRC_SETR_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t capcom_cc5_src_fields[] = {
+static const DebugRegField capcom_cc5_src_fields[] = {
 	{"SRPN",	MOD_SRC_SRPN,	MOD_SRC_SRPN_SHIFT,	NULL,	0},
 	{"TOS",		MOD_SRC_TOS,	MOD_SRC_TOS_SHIFT,	NULL,	0},
 	{"SRE",		MOD_SRC_SRE,	MOD_SRC_SRE_SHIFT,	NULL,	0},
@@ -1338,7 +1366,7 @@ static const pmb887x_io_field_t capcom_cc5_src_fields[] = {
 	{"SETR",	MOD_SRC_SETR,	MOD_SRC_SETR_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t capcom_cc4_src_fields[] = {
+static const DebugRegField capcom_cc4_src_fields[] = {
 	{"SRPN",	MOD_SRC_SRPN,	MOD_SRC_SRPN_SHIFT,	NULL,	0},
 	{"TOS",		MOD_SRC_TOS,	MOD_SRC_TOS_SHIFT,	NULL,	0},
 	{"SRE",		MOD_SRC_SRE,	MOD_SRC_SRE_SHIFT,	NULL,	0},
@@ -1347,7 +1375,7 @@ static const pmb887x_io_field_t capcom_cc4_src_fields[] = {
 	{"SETR",	MOD_SRC_SETR,	MOD_SRC_SETR_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t capcom_cc3_src_fields[] = {
+static const DebugRegField capcom_cc3_src_fields[] = {
 	{"SRPN",	MOD_SRC_SRPN,	MOD_SRC_SRPN_SHIFT,	NULL,	0},
 	{"TOS",		MOD_SRC_TOS,	MOD_SRC_TOS_SHIFT,	NULL,	0},
 	{"SRE",		MOD_SRC_SRE,	MOD_SRC_SRE_SHIFT,	NULL,	0},
@@ -1356,7 +1384,7 @@ static const pmb887x_io_field_t capcom_cc3_src_fields[] = {
 	{"SETR",	MOD_SRC_SETR,	MOD_SRC_SETR_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t capcom_cc2_src_fields[] = {
+static const DebugRegField capcom_cc2_src_fields[] = {
 	{"SRPN",	MOD_SRC_SRPN,	MOD_SRC_SRPN_SHIFT,	NULL,	0},
 	{"TOS",		MOD_SRC_TOS,	MOD_SRC_TOS_SHIFT,	NULL,	0},
 	{"SRE",		MOD_SRC_SRE,	MOD_SRC_SRE_SHIFT,	NULL,	0},
@@ -1365,7 +1393,7 @@ static const pmb887x_io_field_t capcom_cc2_src_fields[] = {
 	{"SETR",	MOD_SRC_SETR,	MOD_SRC_SETR_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t capcom_cc1_src_fields[] = {
+static const DebugRegField capcom_cc1_src_fields[] = {
 	{"SRPN",	MOD_SRC_SRPN,	MOD_SRC_SRPN_SHIFT,	NULL,	0},
 	{"TOS",		MOD_SRC_TOS,	MOD_SRC_TOS_SHIFT,	NULL,	0},
 	{"SRE",		MOD_SRC_SRE,	MOD_SRC_SRE_SHIFT,	NULL,	0},
@@ -1374,7 +1402,7 @@ static const pmb887x_io_field_t capcom_cc1_src_fields[] = {
 	{"SETR",	MOD_SRC_SETR,	MOD_SRC_SETR_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t capcom_cc0_src_fields[] = {
+static const DebugRegField capcom_cc0_src_fields[] = {
 	{"SRPN",	MOD_SRC_SRPN,	MOD_SRC_SRPN_SHIFT,	NULL,	0},
 	{"TOS",		MOD_SRC_TOS,	MOD_SRC_TOS_SHIFT,	NULL,	0},
 	{"SRE",		MOD_SRC_SRE,	MOD_SRC_SRE_SHIFT,	NULL,	0},
@@ -1383,7 +1411,7 @@ static const pmb887x_io_field_t capcom_cc0_src_fields[] = {
 	{"SETR",	MOD_SRC_SETR,	MOD_SRC_SETR_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t capcom_t1_src_fields[] = {
+static const DebugRegField capcom_t1_src_fields[] = {
 	{"SRPN",	MOD_SRC_SRPN,	MOD_SRC_SRPN_SHIFT,	NULL,	0},
 	{"TOS",		MOD_SRC_TOS,	MOD_SRC_TOS_SHIFT,	NULL,	0},
 	{"SRE",		MOD_SRC_SRE,	MOD_SRC_SRE_SHIFT,	NULL,	0},
@@ -1392,7 +1420,7 @@ static const pmb887x_io_field_t capcom_t1_src_fields[] = {
 	{"SETR",	MOD_SRC_SETR,	MOD_SRC_SETR_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t capcom_t0_src_fields[] = {
+static const DebugRegField capcom_t0_src_fields[] = {
 	{"SRPN",	MOD_SRC_SRPN,	MOD_SRC_SRPN_SHIFT,	NULL,	0},
 	{"TOS",		MOD_SRC_TOS,	MOD_SRC_TOS_SHIFT,	NULL,	0},
 	{"SRE",		MOD_SRC_SRE,	MOD_SRC_SRE_SHIFT,	NULL,	0},
@@ -1401,48 +1429,55 @@ static const pmb887x_io_field_t capcom_t0_src_fields[] = {
 	{"SETR",	MOD_SRC_SETR,	MOD_SRC_SETR_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_reg_t capcom_regs[] = {
-	{"CLC",		CAPCOM_CLC,		capcom_clc_fields,		ARRAY_SIZE(capcom_clc_fields),		0},
-	{"PISEL",	CAPCOM_PISEL,	capcom_pisel_fields,	ARRAY_SIZE(capcom_pisel_fields),	0},
-	{"ID",		CAPCOM_ID,		capcom_id_fields,		ARRAY_SIZE(capcom_id_fields),		0},
-	{"T01CON",	CAPCOM_T01CON,	capcom_t01con_fields,	ARRAY_SIZE(capcom_t01con_fields),	0},
-	{"CCM0",	CAPCOM_CCM0,	capcom_ccm0_fields,		ARRAY_SIZE(capcom_ccm0_fields),		0},
-	{"CCM1",	CAPCOM_CCM1,	capcom_ccm1_fields,		ARRAY_SIZE(capcom_ccm1_fields),		0},
-	{"OUT",		CAPCOM_OUT,		capcom_out_fields,		ARRAY_SIZE(capcom_out_fields),		0},
-	{"IOC",		CAPCOM_IOC,		capcom_ioc_fields,		ARRAY_SIZE(capcom_ioc_fields),		0},
-	{"SEM",		CAPCOM_SEM,		capcom_sem_fields,		ARRAY_SIZE(capcom_sem_fields),		0},
-	{"SEE",		CAPCOM_SEE,		capcom_see_fields,		ARRAY_SIZE(capcom_see_fields),		0},
-	{"DRM",		CAPCOM_DRM,		capcom_drm_fields,		ARRAY_SIZE(capcom_drm_fields),		0},
-	{"WHBSSEE",	CAPCOM_WHBSSEE,	capcom_whbssee_fields,	ARRAY_SIZE(capcom_whbssee_fields),	0},
-	{"WHBCSEE",	CAPCOM_WHBCSEE,	capcom_whbcsee_fields,	ARRAY_SIZE(capcom_whbcsee_fields),	0},
-	{"T0",		CAPCOM_T0,		capcom_t0_fields,		ARRAY_SIZE(capcom_t0_fields),		0},
-	{"T0REL",	CAPCOM_T0REL,	capcom_t0rel_fields,	ARRAY_SIZE(capcom_t0rel_fields),	0},
-	{"T1",		CAPCOM_T1,		capcom_t1_fields,		ARRAY_SIZE(capcom_t1_fields),		0},
-	{"T1REL",	CAPCOM_T1REL,	capcom_t1rel_fields,	ARRAY_SIZE(capcom_t1rel_fields),	0},
-	{"CC0",		CAPCOM_CC0,		NULL,					0,									0},
-	{"CC1",		CAPCOM_CC1,		NULL,					0,									0},
-	{"CC2",		CAPCOM_CC2,		NULL,					0,									0},
-	{"CC3",		CAPCOM_CC3,		NULL,					0,									0},
-	{"CC4",		CAPCOM_CC4,		NULL,					0,									0},
-	{"CC5",		CAPCOM_CC5,		NULL,					0,									0},
-	{"CC6",		CAPCOM_CC6,		NULL,					0,									0},
-	{"CC7",		CAPCOM_CC7,		NULL,					0,									0},
-	{"T01OCR",	CAPCOM_T01OCR,	capcom_t01ocr_fields,	ARRAY_SIZE(capcom_t01ocr_fields),	0},
-	{"WHBSOUT",	CAPCOM_WHBSOUT,	capcom_whbsout_fields,	ARRAY_SIZE(capcom_whbsout_fields),	0},
-	{"WHBCOUT",	CAPCOM_WHBCOUT,	capcom_whbcout_fields,	ARRAY_SIZE(capcom_whbcout_fields),	0},
-	{"CC7_SRC",	CAPCOM_CC7_SRC,	capcom_cc7_src_fields,	ARRAY_SIZE(capcom_cc7_src_fields),	0},
-	{"CC6_SRC",	CAPCOM_CC6_SRC,	capcom_cc6_src_fields,	ARRAY_SIZE(capcom_cc6_src_fields),	0},
-	{"CC5_SRC",	CAPCOM_CC5_SRC,	capcom_cc5_src_fields,	ARRAY_SIZE(capcom_cc5_src_fields),	0},
-	{"CC4_SRC",	CAPCOM_CC4_SRC,	capcom_cc4_src_fields,	ARRAY_SIZE(capcom_cc4_src_fields),	0},
-	{"CC3_SRC",	CAPCOM_CC3_SRC,	capcom_cc3_src_fields,	ARRAY_SIZE(capcom_cc3_src_fields),	0},
-	{"CC2_SRC",	CAPCOM_CC2_SRC,	capcom_cc2_src_fields,	ARRAY_SIZE(capcom_cc2_src_fields),	0},
-	{"CC1_SRC",	CAPCOM_CC1_SRC,	capcom_cc1_src_fields,	ARRAY_SIZE(capcom_cc1_src_fields),	0},
-	{"CC0_SRC",	CAPCOM_CC0_SRC,	capcom_cc0_src_fields,	ARRAY_SIZE(capcom_cc0_src_fields),	0},
-	{"T1_SRC",	CAPCOM_T1_SRC,	capcom_t1_src_fields,	ARRAY_SIZE(capcom_t1_src_fields),	0},
-	{"T0_SRC",	CAPCOM_T0_SRC,	capcom_t0_src_fields,	ARRAY_SIZE(capcom_t0_src_fields),	0},
+static const DebugReg capcom_regs[] = {
+	{"CLC",		CAPCOM_CLC,		capcom_clc_fields,		ARRAY_SIZE(capcom_clc_fields)},
+	{"PISEL",	CAPCOM_PISEL,	capcom_pisel_fields,	ARRAY_SIZE(capcom_pisel_fields)},
+	{"ID",		CAPCOM_ID,		capcom_id_fields,		ARRAY_SIZE(capcom_id_fields)},
+	{"T01CON",	CAPCOM_T01CON,	capcom_t01con_fields,	ARRAY_SIZE(capcom_t01con_fields)},
+	{"CCM0",	CAPCOM_CCM0,	capcom_ccm0_fields,		ARRAY_SIZE(capcom_ccm0_fields)},
+	{"CCM1",	CAPCOM_CCM1,	capcom_ccm1_fields,		ARRAY_SIZE(capcom_ccm1_fields)},
+	{"OUT",		CAPCOM_OUT,		capcom_out_fields,		ARRAY_SIZE(capcom_out_fields)},
+	{"IOC",		CAPCOM_IOC,		capcom_ioc_fields,		ARRAY_SIZE(capcom_ioc_fields)},
+	{"SEM",		CAPCOM_SEM,		capcom_sem_fields,		ARRAY_SIZE(capcom_sem_fields)},
+	{"SEE",		CAPCOM_SEE,		capcom_see_fields,		ARRAY_SIZE(capcom_see_fields)},
+	{"DRM",		CAPCOM_DRM,		capcom_drm_fields,		ARRAY_SIZE(capcom_drm_fields)},
+	{"WHBSSEE",	CAPCOM_WHBSSEE,	capcom_whbssee_fields,	ARRAY_SIZE(capcom_whbssee_fields)},
+	{"WHBCSEE",	CAPCOM_WHBCSEE,	capcom_whbcsee_fields,	ARRAY_SIZE(capcom_whbcsee_fields)},
+	{"T0",		CAPCOM_T0,		capcom_t0_fields,		ARRAY_SIZE(capcom_t0_fields)},
+	{"T0REL",	CAPCOM_T0REL,	capcom_t0rel_fields,	ARRAY_SIZE(capcom_t0rel_fields)},
+	{"T1",		CAPCOM_T1,		capcom_t1_fields,		ARRAY_SIZE(capcom_t1_fields)},
+	{"T1REL",	CAPCOM_T1REL,	capcom_t1rel_fields,	ARRAY_SIZE(capcom_t1rel_fields)},
+	{"CC0",		CAPCOM_CC0,		NULL,					0},
+	{"CC1",		CAPCOM_CC1,		NULL,					0},
+	{"CC2",		CAPCOM_CC2,		NULL,					0},
+	{"CC3",		CAPCOM_CC3,		NULL,					0},
+	{"CC4",		CAPCOM_CC4,		NULL,					0},
+	{"CC5",		CAPCOM_CC5,		NULL,					0},
+	{"CC6",		CAPCOM_CC6,		NULL,					0},
+	{"CC7",		CAPCOM_CC7,		NULL,					0},
+	{"T01OCR",	CAPCOM_T01OCR,	capcom_t01ocr_fields,	ARRAY_SIZE(capcom_t01ocr_fields)},
+	{"WHBSOUT",	CAPCOM_WHBSOUT,	capcom_whbsout_fields,	ARRAY_SIZE(capcom_whbsout_fields)},
+	{"WHBCOUT",	CAPCOM_WHBCOUT,	capcom_whbcout_fields,	ARRAY_SIZE(capcom_whbcout_fields)},
+	{"CC7_SRC",	CAPCOM_CC7_SRC,	capcom_cc7_src_fields,	ARRAY_SIZE(capcom_cc7_src_fields)},
+	{"CC6_SRC",	CAPCOM_CC6_SRC,	capcom_cc6_src_fields,	ARRAY_SIZE(capcom_cc6_src_fields)},
+	{"CC5_SRC",	CAPCOM_CC5_SRC,	capcom_cc5_src_fields,	ARRAY_SIZE(capcom_cc5_src_fields)},
+	{"CC4_SRC",	CAPCOM_CC4_SRC,	capcom_cc4_src_fields,	ARRAY_SIZE(capcom_cc4_src_fields)},
+	{"CC3_SRC",	CAPCOM_CC3_SRC,	capcom_cc3_src_fields,	ARRAY_SIZE(capcom_cc3_src_fields)},
+	{"CC2_SRC",	CAPCOM_CC2_SRC,	capcom_cc2_src_fields,	ARRAY_SIZE(capcom_cc2_src_fields)},
+	{"CC1_SRC",	CAPCOM_CC1_SRC,	capcom_cc1_src_fields,	ARRAY_SIZE(capcom_cc1_src_fields)},
+	{"CC0_SRC",	CAPCOM_CC0_SRC,	capcom_cc0_src_fields,	ARRAY_SIZE(capcom_cc0_src_fields)},
+	{"T1_SRC",	CAPCOM_T1_SRC,	capcom_t1_src_fields,	ARRAY_SIZE(capcom_t1_src_fields)},
+	{"T0_SRC",	CAPCOM_T0_SRC,	capcom_t0_src_fields,	ARRAY_SIZE(capcom_t0_src_fields)},
 };
 
-static const pmb887x_io_field_t cgu_osc_fields[] = {
+const DebugRegs pmb887x_capcom_regs = {
+	.regs = capcom_regs,
+	.count = ARRAY_SIZE(capcom_regs),
+	.reg_size = 4,
+	.addr_digits = 8,
+};
+
+static const DebugRegField cgu_osc_fields[] = {
 	{"PLL_POWER_UP",	CGU_OSC_PLL_POWER_UP,		CGU_OSC_PLL_POWER_UP_SHIFT,		NULL,	0},
 	{"PHASE1_POWER_UP",	CGU_OSC_PHASE1_POWER_UP,	CGU_OSC_PHASE1_POWER_UP_SHIFT,	NULL,	0},
 	{"PHASE2_POWER_UP",	CGU_OSC_PHASE2_POWER_UP,	CGU_OSC_PHASE2_POWER_UP_SHIFT,	NULL,	0},
@@ -1457,7 +1492,7 @@ static const pmb887x_io_field_t cgu_osc_fields[] = {
 	{"MDIV",			CGU_OSC_MDIV,				CGU_OSC_MDIV_SHIFT,				NULL,	0},
 };
 
-static const pmb887x_io_field_t cgu_con0_fields[] = {
+static const DebugRegField cgu_con0_fields[] = {
 	{"PHASE1_CONFIG",	CGU_CON0_PHASE1_CONFIG,	CGU_CON0_PHASE1_CONFIG_SHIFT,	NULL,	0},
 	{"PHASE1_K2",		CGU_CON0_PHASE1_K2,		CGU_CON0_PHASE1_K2_SHIFT,		NULL,	0},
 	{"PHASE1_K1",		CGU_CON0_PHASE1_K1,		CGU_CON0_PHASE1_K1_SHIFT,		NULL,	0},
@@ -1472,27 +1507,27 @@ static const pmb887x_io_field_t cgu_con0_fields[] = {
 	{"PHASE4_K1",		CGU_CON0_PHASE4_K1,		CGU_CON0_PHASE4_K1_SHIFT,		NULL,	0},
 };
 
-static const pmb887x_io_value_t cgu_cgu_con1_fpi1_clksel_values[] = {
+static const DebugRegValue cgu_cgu_con1_fpi1_clksel_values[] = {
 	{"OSC",			CGU_CON1_FPI1_CLKSEL_OSC},
 	{"CLK32K",		CGU_CON1_FPI1_CLKSEL_CLK32K},
 	{"PLL_DIV_2",	CGU_CON1_FPI1_CLKSEL_PLL_DIV_2},
 	{"DISABLE",		CGU_CON1_FPI1_CLKSEL_DISABLE},
 };
 
-static const pmb887x_io_value_t cgu_cgu_con1_fpi1_clkdiv_values[] = {
+static const DebugRegValue cgu_cgu_con1_fpi1_clkdiv_values[] = {
 	{"DIV1",	CGU_CON1_FPI1_CLKDIV_DIV1},
 	{"DIV2",	CGU_CON1_FPI1_CLKDIV_DIV2},
 	{"DIV4",	CGU_CON1_FPI1_CLKDIV_DIV4},
 	{"DIV8",	CGU_CON1_FPI1_CLKDIV_DIV8},
 };
 
-static const pmb887x_io_value_t cgu_cgu_con1_fsys_clksel_values[] = {
+static const DebugRegValue cgu_cgu_con1_fsys_clksel_values[] = {
 	{"BYPASS",	CGU_CON1_FSYS_CLKSEL_BYPASS},
 	{"PLL",		CGU_CON1_FSYS_CLKSEL_PLL},
 	{"DISABLE",	CGU_CON1_FSYS_CLKSEL_DISABLE},
 };
 
-static const pmb887x_io_value_t cgu_cgu_con1_ahb_clksel_values[] = {
+static const DebugRegValue cgu_cgu_con1_ahb_clksel_values[] = {
 	{"BYPASS",	CGU_CON1_AHB_CLKSEL_BYPASS},
 	{"DISABLE",	CGU_CON1_AHB_CLKSEL_DISABLE},
 	{"PLL",		CGU_CON1_AHB_CLKSEL_PLL},
@@ -1502,19 +1537,19 @@ static const pmb887x_io_value_t cgu_cgu_con1_ahb_clksel_values[] = {
 	{"PHASE4",	CGU_CON1_AHB_CLKSEL_PHASE4},
 };
 
-static const pmb887x_io_value_t cgu_cgu_con1_fpi2_clksel_values[] = {
+static const DebugRegValue cgu_cgu_con1_fpi2_clksel_values[] = {
 	{"OSC",	CGU_CON1_FPI2_CLKSEL_OSC},
 	{"PLL",	CGU_CON1_FPI2_CLKSEL_PLL},
 };
 
-static const pmb887x_io_value_t cgu_cgu_con1_fpi2_clkdiv_values[] = {
+static const DebugRegValue cgu_cgu_con1_fpi2_clkdiv_values[] = {
 	{"DIV1",	CGU_CON1_FPI2_CLKDIV_DIV1},
 	{"DIV2",	CGU_CON1_FPI2_CLKDIV_DIV2},
 	{"DIV4",	CGU_CON1_FPI2_CLKDIV_DIV4},
 	{"DIV8",	CGU_CON1_FPI2_CLKDIV_DIV8},
 };
 
-static const pmb887x_io_field_t cgu_con1_fields[] = {
+static const DebugRegField cgu_con1_fields[] = {
 	{"FPI1_CLKSEL",			CGU_CON1_FPI1_CLKSEL,		CGU_CON1_FPI1_CLKSEL_SHIFT,			cgu_cgu_con1_fpi1_clksel_values,	ARRAY_SIZE(cgu_cgu_con1_fpi1_clksel_values)},
 	{"FPI1_CLKDIV",			CGU_CON1_FPI1_CLKDIV,		CGU_CON1_FPI1_CLKDIV_SHIFT,			cgu_cgu_con1_fpi1_clkdiv_values,	ARRAY_SIZE(cgu_cgu_con1_fpi1_clkdiv_values)},
 	{"FSYS_CLKSEL",			CGU_CON1_FSYS_CLKSEL,		CGU_CON1_FSYS_CLKSEL_SHIFT,			cgu_cgu_con1_fsys_clksel_values,	ARRAY_SIZE(cgu_cgu_con1_fsys_clksel_values)},
@@ -1524,14 +1559,14 @@ static const pmb887x_io_field_t cgu_con1_fields[] = {
 	{"FPI2_CLKDIV",			CGU_CON1_FPI2_CLKDIV,		CGU_CON1_FPI2_CLKDIV_SHIFT,			cgu_cgu_con1_fpi2_clkdiv_values,	ARRAY_SIZE(cgu_cgu_con1_fpi2_clkdiv_values)},
 };
 
-static const pmb887x_io_value_t cgu_cgu_con2_dsp_clksel_values[] = {
+static const DebugRegValue cgu_cgu_con2_dsp_clksel_values[] = {
 	{"OSC",		CGU_CON2_DSP_CLKSEL_OSC},
 	{"PLL",		CGU_CON2_DSP_CLKSEL_PLL},
 	{"PHASE1",	CGU_CON2_DSP_CLKSEL_PHASE1},
 	{"DISABLE",	CGU_CON2_DSP_CLKSEL_DISABLE},
 };
 
-static const pmb887x_io_value_t cgu_cgu_con2_ebu_clksel_values[] = {
+static const DebugRegValue cgu_cgu_con2_ebu_clksel_values[] = {
 	{"OSC",		CGU_CON2_EBU_CLKSEL_OSC},
 	{"DISABLE",	CGU_CON2_EBU_CLKSEL_DISABLE},
 	{"PLL",		CGU_CON2_EBU_CLKSEL_PLL},
@@ -1542,34 +1577,34 @@ static const pmb887x_io_value_t cgu_cgu_con2_ebu_clksel_values[] = {
 	{"AHB",		CGU_CON2_EBU_CLKSEL_AHB},
 };
 
-static const pmb887x_io_value_t cgu_cgu_con2_clk48m_clksel_values[] = {
+static const DebugRegValue cgu_cgu_con2_clk48m_clksel_values[] = {
 	{"OSC",		CGU_CON2_CLK48M_CLKSEL_OSC},
 	{"PHASE4",	CGU_CON2_CLK48M_CLKSEL_PHASE4},
 	{"DISABLE",	CGU_CON2_CLK48M_CLKSEL_DISABLE},
 };
 
-static const pmb887x_io_value_t cgu_cgu_con2_clkout0_clkdiv_values[] = {
+static const DebugRegValue cgu_cgu_con2_clkout0_clkdiv_values[] = {
 	{"DIV1",	CGU_CON2_CLKOUT0_CLKDIV_DIV1},
 	{"DIV2",	CGU_CON2_CLKOUT0_CLKDIV_DIV2},
 	{"DIV4",	CGU_CON2_CLKOUT0_CLKDIV_DIV4},
 	{"DIV8",	CGU_CON2_CLKOUT0_CLKDIV_DIV8},
 };
 
-static const pmb887x_io_value_t cgu_cgu_con2_clkout1_clkdiv_values[] = {
+static const DebugRegValue cgu_cgu_con2_clkout1_clkdiv_values[] = {
 	{"DIV1",	CGU_CON2_CLKOUT1_CLKDIV_DIV1},
 	{"DIV2",	CGU_CON2_CLKOUT1_CLKDIV_DIV2},
 	{"DIV4",	CGU_CON2_CLKOUT1_CLKDIV_DIV4},
 	{"DIV8",	CGU_CON2_CLKOUT1_CLKDIV_DIV8},
 };
 
-static const pmb887x_io_value_t cgu_cgu_con2_ms_clksel_values[] = {
+static const DebugRegValue cgu_cgu_con2_ms_clksel_values[] = {
 	{"CLK_IN",		CGU_CON2_MS_CLKSEL_CLK_IN},
 	{"DISABLE_01",	CGU_CON2_MS_CLKSEL_DISABLE_01},
 	{"PLL",			CGU_CON2_MS_CLKSEL_PLL},
 	{"DISABLE_11",	CGU_CON2_MS_CLKSEL_DISABLE_11},
 };
 
-static const pmb887x_io_field_t cgu_con2_fields[] = {
+static const DebugRegField cgu_con2_fields[] = {
 	{"DSP_CLKSEL",		CGU_CON2_DSP_CLKSEL,		CGU_CON2_DSP_CLKSEL_SHIFT,		cgu_cgu_con2_dsp_clksel_values,		ARRAY_SIZE(cgu_cgu_con2_dsp_clksel_values)},
 	{"EBU_CLKSEL",		CGU_CON2_EBU_CLKSEL,		CGU_CON2_EBU_CLKSEL_SHIFT,		cgu_cgu_con2_ebu_clksel_values,		ARRAY_SIZE(cgu_cgu_con2_ebu_clksel_values)},
 	{"CPU_DIV",			CGU_CON2_CPU_DIV,			CGU_CON2_CPU_DIV_SHIFT,			NULL,								0},
@@ -1584,54 +1619,54 @@ static const pmb887x_io_field_t cgu_con2_fields[] = {
 	{"MS_CLKSEL",		CGU_CON2_MS_CLKSEL,			CGU_CON2_MS_CLKSEL_SHIFT,		cgu_cgu_con2_ms_clksel_values,		ARRAY_SIZE(cgu_cgu_con2_ms_clksel_values)},
 };
 
-static const pmb887x_io_field_t cgu_stat_fields[] = {
+static const DebugRegField cgu_stat_fields[] = {
 	{"DSP_CLK",	CGU_STAT_DSP_CLK,	CGU_STAT_DSP_CLK_SHIFT,	NULL,	0},
 	{"LOCK",	CGU_STAT_LOCK,		CGU_STAT_LOCK_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_value_t cgu_cgu_con3_ahb_per_clksel_values[] = {
+static const DebugRegValue cgu_cgu_con3_ahb_per_clksel_values[] = {
 	{"OSC",			CGU_CON3_AHB_PER_CLKSEL_OSC},
 	{"CLK32K",		CGU_CON3_AHB_PER_CLKSEL_CLK32K},
 	{"PLL_DIV_2",	CGU_CON3_AHB_PER_CLKSEL_PLL_DIV_2},
 	{"DISABLE",		CGU_CON3_AHB_PER_CLKSEL_DISABLE},
 };
 
-static const pmb887x_io_value_t cgu_cgu_con3_ahb_per_clkdiv_values[] = {
+static const DebugRegValue cgu_cgu_con3_ahb_per_clkdiv_values[] = {
 	{"DIV1",	CGU_CON3_AHB_PER_CLKDIV_DIV1},
 	{"DIV2",	CGU_CON3_AHB_PER_CLKDIV_DIV2},
 	{"DIV4",	CGU_CON3_AHB_PER_CLKDIV_DIV4},
 	{"DIV8",	CGU_CON3_AHB_PER_CLKDIV_DIV8},
 };
 
-static const pmb887x_io_value_t cgu_cgu_con3_mmci_clksel_values[] = {
+static const DebugRegValue cgu_cgu_con3_mmci_clksel_values[] = {
 	{"OSC",		CGU_CON3_MMCI_CLKSEL_OSC},
 	{"CLK32K",	CGU_CON3_MMCI_CLKSEL_CLK32K},
 	{"PHASE4",	CGU_CON3_MMCI_CLKSEL_PHASE4},
 	{"DISABLE",	CGU_CON3_MMCI_CLKSEL_DISABLE},
 };
 
-static const pmb887x_io_value_t cgu_cgu_con3_mmci_clkdiv_values[] = {
+static const DebugRegValue cgu_cgu_con3_mmci_clkdiv_values[] = {
 	{"DIV1",	CGU_CON3_MMCI_CLKDIV_DIV1},
 	{"DIV2",	CGU_CON3_MMCI_CLKDIV_DIV2},
 	{"DIV4",	CGU_CON3_MMCI_CLKDIV_DIV4},
 	{"DIV8",	CGU_CON3_MMCI_CLKDIV_DIV8},
 };
 
-static const pmb887x_io_value_t cgu_cgu_con3_clkout2_clkdiv_values[] = {
+static const DebugRegValue cgu_cgu_con3_clkout2_clkdiv_values[] = {
 	{"DIV1",	CGU_CON3_CLKOUT2_CLKDIV_DIV1},
 	{"DIV2",	CGU_CON3_CLKOUT2_CLKDIV_DIV2},
 	{"DIV4",	CGU_CON3_CLKOUT2_CLKDIV_DIV4},
 	{"DIV8",	CGU_CON3_CLKOUT2_CLKDIV_DIV8},
 };
 
-static const pmb887x_io_value_t cgu_cgu_con3_clk48m_clkdiv_values[] = {
+static const DebugRegValue cgu_cgu_con3_clk48m_clkdiv_values[] = {
 	{"DIV1",	CGU_CON3_CLK48M_CLKDIV_DIV1},
 	{"DIV2",	CGU_CON3_CLK48M_CLKDIV_DIV2},
 	{"DIV4",	CGU_CON3_CLK48M_CLKDIV_DIV4},
 	{"DIV8",	CGU_CON3_CLK48M_CLKDIV_DIV8},
 };
 
-static const pmb887x_io_field_t cgu_con3_fields[] = {
+static const DebugRegField cgu_con3_fields[] = {
 	{"AHB_PER_CLKSEL",	CGU_CON3_AHB_PER_CLKSEL,	CGU_CON3_AHB_PER_CLKSEL_SHIFT,	cgu_cgu_con3_ahb_per_clksel_values,	ARRAY_SIZE(cgu_cgu_con3_ahb_per_clksel_values)},
 	{"AHB_PER_CLKDIV",	CGU_CON3_AHB_PER_CLKDIV,	CGU_CON3_AHB_PER_CLKDIV_SHIFT,	cgu_cgu_con3_ahb_per_clkdiv_values,	ARRAY_SIZE(cgu_cgu_con3_ahb_per_clkdiv_values)},
 	{"MMCI_CLKSEL",		CGU_CON3_MMCI_CLKSEL,		CGU_CON3_MMCI_CLKSEL_SHIFT,		cgu_cgu_con3_mmci_clksel_values,	ARRAY_SIZE(cgu_cgu_con3_mmci_clksel_values)},
@@ -1642,7 +1677,7 @@ static const pmb887x_io_field_t cgu_con3_fields[] = {
 	{"DMA_CLK_DISABLE",	CGU_CON3_DMA_CLK_DISABLE,	CGU_CON3_DMA_CLK_DISABLE_SHIFT,	NULL,								0},
 };
 
-static const pmb887x_io_field_t cgu_src_fields[] = {
+static const DebugRegField cgu_src_fields[] = {
 	{"SRPN",	MOD_SRC_SRPN,	MOD_SRC_SRPN_SHIFT,	NULL,	0},
 	{"TOS",		MOD_SRC_TOS,	MOD_SRC_TOS_SHIFT,	NULL,	0},
 	{"SRE",		MOD_SRC_SRE,	MOD_SRC_SRE_SHIFT,	NULL,	0},
@@ -1651,17 +1686,24 @@ static const pmb887x_io_field_t cgu_src_fields[] = {
 	{"SETR",	MOD_SRC_SETR,	MOD_SRC_SETR_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_reg_t cgu_regs[] = {
-	{"OSC",		CGU_OSC,	cgu_osc_fields,		ARRAY_SIZE(cgu_osc_fields),		0},
-	{"CON0",	CGU_CON0,	cgu_con0_fields,	ARRAY_SIZE(cgu_con0_fields),	0},
-	{"CON1",	CGU_CON1,	cgu_con1_fields,	ARRAY_SIZE(cgu_con1_fields),	0},
-	{"CON2",	CGU_CON2,	cgu_con2_fields,	ARRAY_SIZE(cgu_con2_fields),	0},
-	{"STAT",	CGU_STAT,	cgu_stat_fields,	ARRAY_SIZE(cgu_stat_fields),	0},
-	{"CON3",	CGU_CON3,	cgu_con3_fields,	ARRAY_SIZE(cgu_con3_fields),	0},
-	{"SRC",		CGU_SRC,	cgu_src_fields,		ARRAY_SIZE(cgu_src_fields),		0},
+static const DebugReg cgu_regs[] = {
+	{"OSC",		CGU_OSC,	cgu_osc_fields,		ARRAY_SIZE(cgu_osc_fields)},
+	{"CON0",	CGU_CON0,	cgu_con0_fields,	ARRAY_SIZE(cgu_con0_fields)},
+	{"CON1",	CGU_CON1,	cgu_con1_fields,	ARRAY_SIZE(cgu_con1_fields)},
+	{"CON2",	CGU_CON2,	cgu_con2_fields,	ARRAY_SIZE(cgu_con2_fields)},
+	{"STAT",	CGU_STAT,	cgu_stat_fields,	ARRAY_SIZE(cgu_stat_fields)},
+	{"CON3",	CGU_CON3,	cgu_con3_fields,	ARRAY_SIZE(cgu_con3_fields)},
+	{"SRC",		CGU_SRC,	cgu_src_fields,		ARRAY_SIZE(cgu_src_fields)},
 };
 
-static const pmb887x_io_field_t cif_clc_fields[] = {
+const DebugRegs pmb887x_cgu_regs = {
+	.regs = cgu_regs,
+	.count = ARRAY_SIZE(cgu_regs),
+	.reg_size = 4,
+	.addr_digits = 8,
+};
+
+static const DebugRegField cif_clc_fields[] = {
 	{"DISR",	MOD_CLC_DISR,	MOD_CLC_DISR_SHIFT,	NULL,	0},
 	{"DISS",	MOD_CLC_DISS,	MOD_CLC_DISS_SHIFT,	NULL,	0},
 	{"SPEN",	MOD_CLC_SPEN,	MOD_CLC_SPEN_SHIFT,	NULL,	0},
@@ -1671,26 +1713,33 @@ static const pmb887x_io_field_t cif_clc_fields[] = {
 	{"RMC",		MOD_CLC_RMC,	MOD_CLC_RMC_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t cif_id_fields[] = {
+static const DebugRegField cif_id_fields[] = {
 	{"REV",		MOD_ID_REV,		MOD_ID_REV_SHIFT,		NULL,	0},
 	{"32B",		MOD_ID_32B,		MOD_ID_32B_SHIFT,		NULL,	0},
 	{"NUMBER",	MOD_ID_NUMBER,	MOD_ID_NUMBER_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_reg_t cif_regs[] = {
-	{"CLC",		CIF_CLC,	cif_clc_fields,	ARRAY_SIZE(cif_clc_fields),	0},
-	{"UNK0",	CIF_UNK0,	NULL,			0,							0},
-	{"ID",		CIF_ID,		cif_id_fields,	ARRAY_SIZE(cif_id_fields),	0},
-	{"UNK1",	CIF_UNK1,	NULL,			0,							0},
-	{"UNK2",	CIF_UNK2,	NULL,			0,							0},
-	{"UNK3",	CIF_UNK3,	NULL,			0,							0},
-	{"UNK4",	CIF_UNK4,	NULL,			0,							0},
-	{"UNK5",	CIF_UNK5,	NULL,			0,							0},
-	{"UNK6",	CIF_UNK6,	NULL,			0,							0},
-	{"UNK7",	CIF_UNK7,	NULL,			0,							0},
+static const DebugReg cif_regs[] = {
+	{"CLC",		CIF_CLC,	cif_clc_fields,	ARRAY_SIZE(cif_clc_fields)},
+	{"UNK0",	CIF_UNK0,	NULL,			0},
+	{"ID",		CIF_ID,		cif_id_fields,	ARRAY_SIZE(cif_id_fields)},
+	{"UNK1",	CIF_UNK1,	NULL,			0},
+	{"UNK2",	CIF_UNK2,	NULL,			0},
+	{"UNK3",	CIF_UNK3,	NULL,			0},
+	{"UNK4",	CIF_UNK4,	NULL,			0},
+	{"UNK5",	CIF_UNK5,	NULL,			0},
+	{"UNK6",	CIF_UNK6,	NULL,			0},
+	{"UNK7",	CIF_UNK7,	NULL,			0},
 };
 
-static const pmb887x_io_field_t difv1_clc_fields[] = {
+const DebugRegs pmb887x_cif_regs = {
+	.regs = cif_regs,
+	.count = ARRAY_SIZE(cif_regs),
+	.reg_size = 4,
+	.addr_digits = 8,
+};
+
+static const DebugRegField difv1_clc_fields[] = {
 	{"DISR",	MOD_CLC_DISR,	MOD_CLC_DISR_SHIFT,	NULL,	0},
 	{"DISS",	MOD_CLC_DISS,	MOD_CLC_DISS_SHIFT,	NULL,	0},
 	{"SPEN",	MOD_CLC_SPEN,	MOD_CLC_SPEN_SHIFT,	NULL,	0},
@@ -1700,7 +1749,7 @@ static const pmb887x_io_field_t difv1_clc_fields[] = {
 	{"RMC",		MOD_CLC_RMC,	MOD_CLC_RMC_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t difv1_pisel_fields[] = {
+static const DebugRegField difv1_pisel_fields[] = {
 	{"MRIS",	DIFv1_PISEL_MRIS,	DIFv1_PISEL_MRIS_SHIFT,		NULL,	0},
 	{"SRIS",	DIFv1_PISEL_SRIS,	DIFv1_PISEL_SRIS_SHIFT,		NULL,	0},
 	{"SCIS",	DIFv1_PISEL_SCIS,	DIFv1_PISEL_SCIS_SHIFT,		NULL,	0},
@@ -1708,33 +1757,33 @@ static const pmb887x_io_field_t difv1_pisel_fields[] = {
 	{"STIP",	DIFv1_PISEL_STIP,	DIFv1_PISEL_STIP_SHIFT,		NULL,	0},
 };
 
-static const pmb887x_io_field_t difv1_id_fields[] = {
+static const DebugRegField difv1_id_fields[] = {
 	{"REV",		MOD_ID_REV,		MOD_ID_REV_SHIFT,		NULL,	0},
 	{"32B",		MOD_ID_32B,		MOD_ID_32B_SHIFT,		NULL,	0},
 	{"NUMBER",	MOD_ID_NUMBER,	MOD_ID_NUMBER_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_value_t difv1_difv1_con_hb_values[] = {
+static const DebugRegValue difv1_difv1_con_hb_values[] = {
 	{"LSB",	DIFv1_CON_HB_LSB},
 	{"MSB",	DIFv1_CON_HB_MSB},
 };
 
-static const pmb887x_io_value_t difv1_difv1_con_ph_values[] = {
+static const DebugRegValue difv1_difv1_con_ph_values[] = {
 	{"0",	DIFv1_CON_PH_0},
 	{"1",	DIFv1_CON_PH_1},
 };
 
-static const pmb887x_io_value_t difv1_difv1_con_po_values[] = {
+static const DebugRegValue difv1_difv1_con_po_values[] = {
 	{"0",	DIFv1_CON_PO_0},
 	{"1",	DIFv1_CON_PO_1},
 };
 
-static const pmb887x_io_value_t difv1_difv1_con_ms_values[] = {
+static const DebugRegValue difv1_difv1_con_ms_values[] = {
 	{"SLAVE",	DIFv1_CON_MS_SLAVE},
 	{"MASTER",	DIFv1_CON_MS_MASTER},
 };
 
-static const pmb887x_io_value_t difv1_difv1_con_bm_values[] = {
+static const DebugRegValue difv1_difv1_con_bm_values[] = {
 	{"1",	DIFv1_CON_BM_1},
 	{"2",	DIFv1_CON_BM_2},
 	{"3",	DIFv1_CON_BM_3},
@@ -1753,7 +1802,7 @@ static const pmb887x_io_value_t difv1_difv1_con_bm_values[] = {
 	{"16",	DIFv1_CON_BM_16},
 };
 
-static const pmb887x_io_field_t difv1_con_fields[] = {
+static const DebugRegField difv1_con_fields[] = {
 	{"HB",		DIFv1_CON_HB,	DIFv1_CON_HB_SHIFT,		difv1_difv1_con_hb_values,	ARRAY_SIZE(difv1_difv1_con_hb_values)},
 	{"PH",		DIFv1_CON_PH,	DIFv1_CON_PH_SHIFT,		difv1_difv1_con_ph_values,	ARRAY_SIZE(difv1_difv1_con_ph_values)},
 	{"PO",		DIFv1_CON_PO,	DIFv1_CON_PO_SHIFT,		difv1_difv1_con_po_values,	ARRAY_SIZE(difv1_difv1_con_po_values)},
@@ -1775,92 +1824,92 @@ static const pmb887x_io_field_t difv1_con_fields[] = {
 	{"BM",		DIFv1_CON_BM,	DIFv1_CON_BM_SHIFT,		difv1_difv1_con_bm_values,	ARRAY_SIZE(difv1_difv1_con_bm_values)},
 };
 
-static const pmb887x_io_field_t difv1_br_fields[] = {
+static const DebugRegField difv1_br_fields[] = {
 	{"BR_VALUE",	DIFv1_BR_BR_VALUE,	DIFv1_BR_BR_VALUE_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t difv1_tb_fields[] = {
+static const DebugRegField difv1_tb_fields[] = {
 	{"TB_VALUE",	DIFv1_TB_TB_VALUE,	DIFv1_TB_TB_VALUE_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t difv1_rb_fields[] = {
+static const DebugRegField difv1_rb_fields[] = {
 	{"RB_VALUE",	DIFv1_RB_RB_VALUE,	DIFv1_RB_RB_VALUE_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t difv1_rxfcon_fields[] = {
+static const DebugRegField difv1_rxfcon_fields[] = {
 	{"RXFEN",	DIFv1_RXFCON_RXFEN,		DIFv1_RXFCON_RXFEN_SHIFT,	NULL,	0},
 	{"RXFLU",	DIFv1_RXFCON_RXFLU,		DIFv1_RXFCON_RXFLU_SHIFT,	NULL,	0},
 	{"RXTMEN",	DIFv1_RXFCON_RXTMEN,	DIFv1_RXFCON_RXTMEN_SHIFT,	NULL,	0},
 	{"RXFITL",	DIFv1_RXFCON_RXFITL,	DIFv1_RXFCON_RXFITL_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t difv1_txfcon_fields[] = {
+static const DebugRegField difv1_txfcon_fields[] = {
 	{"TXFEN",	DIFv1_TXFCON_TXFEN,		DIFv1_TXFCON_TXFEN_SHIFT,	NULL,	0},
 	{"TXFLU",	DIFv1_TXFCON_TXFLU,		DIFv1_TXFCON_TXFLU_SHIFT,	NULL,	0},
 	{"TXTMEN",	DIFv1_TXFCON_TXTMEN,	DIFv1_TXFCON_TXTMEN_SHIFT,	NULL,	0},
 	{"TXFITL",	DIFv1_TXFCON_TXFITL,	DIFv1_TXFCON_TXFITL_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t difv1_fstat_fields[] = {
+static const DebugRegField difv1_fstat_fields[] = {
 	{"RXFFL",	DIFv1_FSTAT_RXFFL,	DIFv1_FSTAT_RXFFL_SHIFT,	NULL,	0},
 	{"TXFFL",	DIFv1_FSTAT_TXFFL,	DIFv1_FSTAT_TXFFL_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t difv1_imsc_fields[] = {
+static const DebugRegField difv1_imsc_fields[] = {
 	{"TX",	DIFv1_IMSC_TX,	DIFv1_IMSC_TX_SHIFT,	NULL,	0},
 	{"RX",	DIFv1_IMSC_RX,	DIFv1_IMSC_RX_SHIFT,	NULL,	0},
 	{"ERR",	DIFv1_IMSC_ERR,	DIFv1_IMSC_ERR_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t difv1_ris_fields[] = {
+static const DebugRegField difv1_ris_fields[] = {
 	{"TX",	DIFv1_RIS_TX,	DIFv1_RIS_TX_SHIFT,		NULL,	0},
 	{"RX",	DIFv1_RIS_RX,	DIFv1_RIS_RX_SHIFT,		NULL,	0},
 	{"ERR",	DIFv1_RIS_ERR,	DIFv1_RIS_ERR_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t difv1_mis_fields[] = {
+static const DebugRegField difv1_mis_fields[] = {
 	{"TX",	DIFv1_MIS_TX,	DIFv1_MIS_TX_SHIFT,		NULL,	0},
 	{"RX",	DIFv1_MIS_RX,	DIFv1_MIS_RX_SHIFT,		NULL,	0},
 	{"ERR",	DIFv1_MIS_ERR,	DIFv1_MIS_ERR_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t difv1_icr_fields[] = {
+static const DebugRegField difv1_icr_fields[] = {
 	{"TX",	DIFv1_ICR_TX,	DIFv1_ICR_TX_SHIFT,		NULL,	0},
 	{"RX",	DIFv1_ICR_RX,	DIFv1_ICR_RX_SHIFT,		NULL,	0},
 	{"ERR",	DIFv1_ICR_ERR,	DIFv1_ICR_ERR_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t difv1_isr_fields[] = {
+static const DebugRegField difv1_isr_fields[] = {
 	{"TX",	DIFv1_ISR_TX,	DIFv1_ISR_TX_SHIFT,		NULL,	0},
 	{"RX",	DIFv1_ISR_RX,	DIFv1_ISR_RX_SHIFT,		NULL,	0},
 	{"ERR",	DIFv1_ISR_ERR,	DIFv1_ISR_ERR_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t difv1_dmae_fields[] = {
+static const DebugRegField difv1_dmae_fields[] = {
 	{"TX",	DIFv1_DMAE_TX,	DIFv1_DMAE_TX_SHIFT,	NULL,	0},
 	{"RX",	DIFv1_DMAE_RX,	DIFv1_DMAE_RX_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t difv1_lcd_unk64_fields[] = {
+static const DebugRegField difv1_lcd_unk64_fields[] = {
 	{"VALUE0",	DIFv1_LCD_UNK64_VALUE0,	DIFv1_LCD_UNK64_VALUE0_SHIFT,	NULL,	0},
 	{"VALUE1",	DIFv1_LCD_UNK64_VALUE1,	DIFv1_LCD_UNK64_VALUE1_SHIFT,	NULL,	0},
 	{"VALUE2",	DIFv1_LCD_UNK64_VALUE2,	DIFv1_LCD_UNK64_VALUE2_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t difv1_lcd_unk68_fields[] = {
+static const DebugRegField difv1_lcd_unk68_fields[] = {
 	{"VALUE0",	DIFv1_LCD_UNK68_VALUE0,	DIFv1_LCD_UNK68_VALUE0_SHIFT,	NULL,	0},
 	{"VALUE1",	DIFv1_LCD_UNK68_VALUE1,	DIFv1_LCD_UNK68_VALUE1_SHIFT,	NULL,	0},
 	{"VALUE2",	DIFv1_LCD_UNK68_VALUE2,	DIFv1_LCD_UNK68_VALUE2_SHIFT,	NULL,	0},
 	{"VALUE3",	DIFv1_LCD_UNK68_VALUE3,	DIFv1_LCD_UNK68_VALUE3_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t difv1_pbccon_fields[] = {
+static const DebugRegField difv1_pbccon_fields[] = {
 	{"PBBCONV_MODE",	DIFv1_PBCCON_PBBCONV_MODE,	DIFv1_PBCCON_PBBCONV_MODE_SHIFT,	NULL,	0},
 	{"UNK8",			DIFv1_PBCCON_UNK8,			DIFv1_PBCCON_UNK8_SHIFT,			NULL,	0},
 	{"UNK9",			DIFv1_PBCCON_UNK9,			DIFv1_PBCCON_UNK9_SHIFT,			NULL,	0},
 };
 
-static const pmb887x_io_field_t difv1_bmreg0_fields[] = {
+static const DebugRegField difv1_bmreg0_fields[] = {
 	{"MUX0",	DIFv1_BMREG0_MUX0,	DIFv1_BMREG0_MUX0_SHIFT,	NULL,	0},
 	{"MUX1",	DIFv1_BMREG0_MUX1,	DIFv1_BMREG0_MUX1_SHIFT,	NULL,	0},
 	{"MUX2",	DIFv1_BMREG0_MUX2,	DIFv1_BMREG0_MUX2_SHIFT,	NULL,	0},
@@ -1869,7 +1918,7 @@ static const pmb887x_io_field_t difv1_bmreg0_fields[] = {
 	{"MUX5",	DIFv1_BMREG0_MUX5,	DIFv1_BMREG0_MUX5_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t difv1_bmreg1_fields[] = {
+static const DebugRegField difv1_bmreg1_fields[] = {
 	{"MUX6",	DIFv1_BMREG1_MUX6,	DIFv1_BMREG1_MUX6_SHIFT,	NULL,	0},
 	{"MUX7",	DIFv1_BMREG1_MUX7,	DIFv1_BMREG1_MUX7_SHIFT,	NULL,	0},
 	{"MUX8",	DIFv1_BMREG1_MUX8,	DIFv1_BMREG1_MUX8_SHIFT,	NULL,	0},
@@ -1878,7 +1927,7 @@ static const pmb887x_io_field_t difv1_bmreg1_fields[] = {
 	{"MUX11",	DIFv1_BMREG1_MUX11,	DIFv1_BMREG1_MUX11_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t difv1_bmreg2_fields[] = {
+static const DebugRegField difv1_bmreg2_fields[] = {
 	{"MUX12",	DIFv1_BMREG2_MUX12,	DIFv1_BMREG2_MUX12_SHIFT,	NULL,	0},
 	{"MUX13",	DIFv1_BMREG2_MUX13,	DIFv1_BMREG2_MUX13_SHIFT,	NULL,	0},
 	{"MUX14",	DIFv1_BMREG2_MUX14,	DIFv1_BMREG2_MUX14_SHIFT,	NULL,	0},
@@ -1887,7 +1936,7 @@ static const pmb887x_io_field_t difv1_bmreg2_fields[] = {
 	{"MUX17",	DIFv1_BMREG2_MUX17,	DIFv1_BMREG2_MUX17_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t difv1_bmreg3_fields[] = {
+static const DebugRegField difv1_bmreg3_fields[] = {
 	{"MUX18",	DIFv1_BMREG3_MUX18,	DIFv1_BMREG3_MUX18_SHIFT,	NULL,	0},
 	{"MUX19",	DIFv1_BMREG3_MUX19,	DIFv1_BMREG3_MUX19_SHIFT,	NULL,	0},
 	{"MUX20",	DIFv1_BMREG3_MUX20,	DIFv1_BMREG3_MUX20_SHIFT,	NULL,	0},
@@ -1896,7 +1945,7 @@ static const pmb887x_io_field_t difv1_bmreg3_fields[] = {
 	{"MUX23",	DIFv1_BMREG3_MUX23,	DIFv1_BMREG3_MUX23_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t difv1_bmreg4_fields[] = {
+static const DebugRegField difv1_bmreg4_fields[] = {
 	{"MUX24",	DIFv1_BMREG4_MUX24,	DIFv1_BMREG4_MUX24_SHIFT,	NULL,	0},
 	{"MUX25",	DIFv1_BMREG4_MUX25,	DIFv1_BMREG4_MUX25_SHIFT,	NULL,	0},
 	{"MUX26",	DIFv1_BMREG4_MUX26,	DIFv1_BMREG4_MUX26_SHIFT,	NULL,	0},
@@ -1905,12 +1954,12 @@ static const pmb887x_io_field_t difv1_bmreg4_fields[] = {
 	{"MUX29",	DIFv1_BMREG4_MUX29,	DIFv1_BMREG4_MUX29_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t difv1_bmreg5_fields[] = {
+static const DebugRegField difv1_bmreg5_fields[] = {
 	{"MUX30",	DIFv1_BMREG5_MUX30,	DIFv1_BMREG5_MUX30_SHIFT,	NULL,	0},
 	{"MUX31",	DIFv1_BMREG5_MUX31,	DIFv1_BMREG5_MUX31_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t difv1_bcreg_fields[] = {
+static const DebugRegField difv1_bcreg_fields[] = {
 	{"B0",	DIFv1_BCREG_B0,		DIFv1_BCREG_B0_SHIFT,	NULL,	0},
 	{"B1",	DIFv1_BCREG_B1,		DIFv1_BCREG_B1_SHIFT,	NULL,	0},
 	{"B2",	DIFv1_BCREG_B2,		DIFv1_BCREG_B2_SHIFT,	NULL,	0},
@@ -1945,7 +1994,7 @@ static const pmb887x_io_field_t difv1_bcreg_fields[] = {
 	{"B31",	DIFv1_BCREG_B31,	DIFv1_BCREG_B31_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t difv1_bcsel0_fields[] = {
+static const DebugRegField difv1_bcsel0_fields[] = {
 	{"B0",	DIFv1_BCSEL0_B0,	DIFv1_BCSEL0_B0_SHIFT,	NULL,	0},
 	{"B1",	DIFv1_BCSEL0_B1,	DIFv1_BCSEL0_B1_SHIFT,	NULL,	0},
 	{"B2",	DIFv1_BCSEL0_B2,	DIFv1_BCSEL0_B2_SHIFT,	NULL,	0},
@@ -1964,7 +2013,7 @@ static const pmb887x_io_field_t difv1_bcsel0_fields[] = {
 	{"B15",	DIFv1_BCSEL0_B15,	DIFv1_BCSEL0_B15_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t difv1_bcsel1_fields[] = {
+static const DebugRegField difv1_bcsel1_fields[] = {
 	{"B16",	DIFv1_BCSEL1_B16,	DIFv1_BCSEL1_B16_SHIFT,	NULL,	0},
 	{"B17",	DIFv1_BCSEL1_B17,	DIFv1_BCSEL1_B17_SHIFT,	NULL,	0},
 	{"B18",	DIFv1_BCSEL1_B18,	DIFv1_BCSEL1_B18_SHIFT,	NULL,	0},
@@ -1983,7 +2032,7 @@ static const pmb887x_io_field_t difv1_bcsel1_fields[] = {
 	{"B31",	DIFv1_BCSEL1_B31,	DIFv1_BCSEL1_B31_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t difv1_sync_config_fields[] = {
+static const DebugRegField difv1_sync_config_fields[] = {
 	{"SYNCEN",	DIFv1_SYNC_CONFIG_SYNCEN,	DIFv1_SYNC_CONFIG_SYNCEN_SHIFT,		NULL,	0},
 	{"HDPOL",	DIFv1_SYNC_CONFIG_HDPOL,	DIFv1_SYNC_CONFIG_HDPOL_SHIFT,		NULL,	0},
 	{"VDPOL",	DIFv1_SYNC_CONFIG_VDPOL,	DIFv1_SYNC_CONFIG_VDPOL_SHIFT,		NULL,	0},
@@ -1993,56 +2042,63 @@ static const pmb887x_io_field_t difv1_sync_config_fields[] = {
 	{"SYNCCS3",	DIFv1_SYNC_CONFIG_SYNCCS3,	DIFv1_SYNC_CONFIG_SYNCCS3_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t difv1_lcd_unk9c_fields[] = {
+static const DebugRegField difv1_lcd_unk9c_fields[] = {
 	{"BIT0",	DIFv1_LCD_UNK9C_BIT0,	DIFv1_LCD_UNK9C_BIT0_SHIFT,	NULL,	0},
 	{"BIT1",	DIFv1_LCD_UNK9C_BIT1,	DIFv1_LCD_UNK9C_BIT1_SHIFT,	NULL,	0},
 	{"BIT2",	DIFv1_LCD_UNK9C_BIT2,	DIFv1_LCD_UNK9C_BIT2_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t difv1_sync_count_fields[] = {
+static const DebugRegField difv1_sync_count_fields[] = {
 	{"HDSTART",		DIFv1_SYNC_COUNT_HDSTART,	DIFv1_SYNC_COUNT_HDSTART_SHIFT,		NULL,	0},
 	{"NUMBYTES",	DIFv1_SYNC_COUNT_NUMBYTES,	DIFv1_SYNC_COUNT_NUMBYTES_SHIFT,	NULL,	0},
 	{"NUMROWS",		DIFv1_SYNC_COUNT_NUMROWS,	DIFv1_SYNC_COUNT_NUMROWS_SHIFT,		NULL,	0},
 };
 
-static const pmb887x_io_reg_t difv1_regs[] = {
-	{"CLC",			DIFv1_CLC,			difv1_clc_fields,			ARRAY_SIZE(difv1_clc_fields),			0},
-	{"PISEL",		DIFv1_PISEL,		difv1_pisel_fields,			ARRAY_SIZE(difv1_pisel_fields),			0},
-	{"ID",			DIFv1_ID,			difv1_id_fields,			ARRAY_SIZE(difv1_id_fields),			0},
-	{"CON",			DIFv1_CON,			difv1_con_fields,			ARRAY_SIZE(difv1_con_fields),			0},
-	{"BR",			DIFv1_BR,			difv1_br_fields,			ARRAY_SIZE(difv1_br_fields),			0},
-	{"TB",			DIFv1_TB,			difv1_tb_fields,			ARRAY_SIZE(difv1_tb_fields),			0},
-	{"RB",			DIFv1_RB,			difv1_rb_fields,			ARRAY_SIZE(difv1_rb_fields),			0},
-	{"RXFCON",		DIFv1_RXFCON,		difv1_rxfcon_fields,		ARRAY_SIZE(difv1_rxfcon_fields),		0},
-	{"TXFCON",		DIFv1_TXFCON,		difv1_txfcon_fields,		ARRAY_SIZE(difv1_txfcon_fields),		0},
-	{"FSTAT",		DIFv1_FSTAT,		difv1_fstat_fields,			ARRAY_SIZE(difv1_fstat_fields),			0},
-	{"UNK0",		DIFv1_UNK0,			NULL,						0,										0},
-	{"UNK1",		DIFv1_UNK1,			NULL,						0,										0},
-	{"IMSC",		DIFv1_IMSC,			difv1_imsc_fields,			ARRAY_SIZE(difv1_imsc_fields),			0},
-	{"RIS",			DIFv1_RIS,			difv1_ris_fields,			ARRAY_SIZE(difv1_ris_fields),			0},
-	{"MIS",			DIFv1_MIS,			difv1_mis_fields,			ARRAY_SIZE(difv1_mis_fields),			0},
-	{"ICR",			DIFv1_ICR,			difv1_icr_fields,			ARRAY_SIZE(difv1_icr_fields),			0},
-	{"ISR",			DIFv1_ISR,			difv1_isr_fields,			ARRAY_SIZE(difv1_isr_fields),			0},
-	{"DMAE",		DIFv1_DMAE,			difv1_dmae_fields,			ARRAY_SIZE(difv1_dmae_fields),			0},
-	{"UNK2",		DIFv1_UNK2,			NULL,						0,										0},
-	{"LCD_UNK64",	DIFv1_LCD_UNK64,	difv1_lcd_unk64_fields,		ARRAY_SIZE(difv1_lcd_unk64_fields),		0},
-	{"LCD_UNK68",	DIFv1_LCD_UNK68,	difv1_lcd_unk68_fields,		ARRAY_SIZE(difv1_lcd_unk68_fields),		0},
-	{"PBCCON",		DIFv1_PBCCON,		difv1_pbccon_fields,		ARRAY_SIZE(difv1_pbccon_fields),		0},
-	{"BMREG0",		DIFv1_BMREG0,		difv1_bmreg0_fields,		ARRAY_SIZE(difv1_bmreg0_fields),		0},
-	{"BMREG1",		DIFv1_BMREG1,		difv1_bmreg1_fields,		ARRAY_SIZE(difv1_bmreg1_fields),		0},
-	{"BMREG2",		DIFv1_BMREG2,		difv1_bmreg2_fields,		ARRAY_SIZE(difv1_bmreg2_fields),		0},
-	{"BMREG3",		DIFv1_BMREG3,		difv1_bmreg3_fields,		ARRAY_SIZE(difv1_bmreg3_fields),		0},
-	{"BMREG4",		DIFv1_BMREG4,		difv1_bmreg4_fields,		ARRAY_SIZE(difv1_bmreg4_fields),		0},
-	{"BMREG5",		DIFv1_BMREG5,		difv1_bmreg5_fields,		ARRAY_SIZE(difv1_bmreg5_fields),		0},
-	{"BCREG",		DIFv1_BCREG,		difv1_bcreg_fields,			ARRAY_SIZE(difv1_bcreg_fields),			0},
-	{"BCSEL0",		DIFv1_BCSEL0,		difv1_bcsel0_fields,		ARRAY_SIZE(difv1_bcsel0_fields),		0},
-	{"BCSEL1",		DIFv1_BCSEL1,		difv1_bcsel1_fields,		ARRAY_SIZE(difv1_bcsel1_fields),		0},
-	{"SYNC_CONFIG",	DIFv1_SYNC_CONFIG,	difv1_sync_config_fields,	ARRAY_SIZE(difv1_sync_config_fields),	0},
-	{"LCD_UNK9C",	DIFv1_LCD_UNK9C,	difv1_lcd_unk9c_fields,		ARRAY_SIZE(difv1_lcd_unk9c_fields),		0},
-	{"SYNC_COUNT",	DIFv1_SYNC_COUNT,	difv1_sync_count_fields,	ARRAY_SIZE(difv1_sync_count_fields),	0},
+static const DebugReg difv1_regs[] = {
+	{"CLC",			DIFv1_CLC,			difv1_clc_fields,			ARRAY_SIZE(difv1_clc_fields)},
+	{"PISEL",		DIFv1_PISEL,		difv1_pisel_fields,			ARRAY_SIZE(difv1_pisel_fields)},
+	{"ID",			DIFv1_ID,			difv1_id_fields,			ARRAY_SIZE(difv1_id_fields)},
+	{"CON",			DIFv1_CON,			difv1_con_fields,			ARRAY_SIZE(difv1_con_fields)},
+	{"BR",			DIFv1_BR,			difv1_br_fields,			ARRAY_SIZE(difv1_br_fields)},
+	{"TB",			DIFv1_TB,			difv1_tb_fields,			ARRAY_SIZE(difv1_tb_fields)},
+	{"RB",			DIFv1_RB,			difv1_rb_fields,			ARRAY_SIZE(difv1_rb_fields)},
+	{"RXFCON",		DIFv1_RXFCON,		difv1_rxfcon_fields,		ARRAY_SIZE(difv1_rxfcon_fields)},
+	{"TXFCON",		DIFv1_TXFCON,		difv1_txfcon_fields,		ARRAY_SIZE(difv1_txfcon_fields)},
+	{"FSTAT",		DIFv1_FSTAT,		difv1_fstat_fields,			ARRAY_SIZE(difv1_fstat_fields)},
+	{"UNK0",		DIFv1_UNK0,			NULL,						0},
+	{"UNK1",		DIFv1_UNK1,			NULL,						0},
+	{"IMSC",		DIFv1_IMSC,			difv1_imsc_fields,			ARRAY_SIZE(difv1_imsc_fields)},
+	{"RIS",			DIFv1_RIS,			difv1_ris_fields,			ARRAY_SIZE(difv1_ris_fields)},
+	{"MIS",			DIFv1_MIS,			difv1_mis_fields,			ARRAY_SIZE(difv1_mis_fields)},
+	{"ICR",			DIFv1_ICR,			difv1_icr_fields,			ARRAY_SIZE(difv1_icr_fields)},
+	{"ISR",			DIFv1_ISR,			difv1_isr_fields,			ARRAY_SIZE(difv1_isr_fields)},
+	{"DMAE",		DIFv1_DMAE,			difv1_dmae_fields,			ARRAY_SIZE(difv1_dmae_fields)},
+	{"UNK2",		DIFv1_UNK2,			NULL,						0},
+	{"LCD_UNK64",	DIFv1_LCD_UNK64,	difv1_lcd_unk64_fields,		ARRAY_SIZE(difv1_lcd_unk64_fields)},
+	{"LCD_UNK68",	DIFv1_LCD_UNK68,	difv1_lcd_unk68_fields,		ARRAY_SIZE(difv1_lcd_unk68_fields)},
+	{"PBCCON",		DIFv1_PBCCON,		difv1_pbccon_fields,		ARRAY_SIZE(difv1_pbccon_fields)},
+	{"BMREG0",		DIFv1_BMREG0,		difv1_bmreg0_fields,		ARRAY_SIZE(difv1_bmreg0_fields)},
+	{"BMREG1",		DIFv1_BMREG1,		difv1_bmreg1_fields,		ARRAY_SIZE(difv1_bmreg1_fields)},
+	{"BMREG2",		DIFv1_BMREG2,		difv1_bmreg2_fields,		ARRAY_SIZE(difv1_bmreg2_fields)},
+	{"BMREG3",		DIFv1_BMREG3,		difv1_bmreg3_fields,		ARRAY_SIZE(difv1_bmreg3_fields)},
+	{"BMREG4",		DIFv1_BMREG4,		difv1_bmreg4_fields,		ARRAY_SIZE(difv1_bmreg4_fields)},
+	{"BMREG5",		DIFv1_BMREG5,		difv1_bmreg5_fields,		ARRAY_SIZE(difv1_bmreg5_fields)},
+	{"BCREG",		DIFv1_BCREG,		difv1_bcreg_fields,			ARRAY_SIZE(difv1_bcreg_fields)},
+	{"BCSEL0",		DIFv1_BCSEL0,		difv1_bcsel0_fields,		ARRAY_SIZE(difv1_bcsel0_fields)},
+	{"BCSEL1",		DIFv1_BCSEL1,		difv1_bcsel1_fields,		ARRAY_SIZE(difv1_bcsel1_fields)},
+	{"SYNC_CONFIG",	DIFv1_SYNC_CONFIG,	difv1_sync_config_fields,	ARRAY_SIZE(difv1_sync_config_fields)},
+	{"LCD_UNK9C",	DIFv1_LCD_UNK9C,	difv1_lcd_unk9c_fields,		ARRAY_SIZE(difv1_lcd_unk9c_fields)},
+	{"SYNC_COUNT",	DIFv1_SYNC_COUNT,	difv1_sync_count_fields,	ARRAY_SIZE(difv1_sync_count_fields)},
 };
 
-static const pmb887x_io_field_t difv2_clc_fields[] = {
+const DebugRegs pmb887x_difv1_regs = {
+	.regs = difv1_regs,
+	.count = ARRAY_SIZE(difv1_regs),
+	.reg_size = 4,
+	.addr_digits = 8,
+};
+
+static const DebugRegField difv2_clc_fields[] = {
 	{"DISR",	MOD_CLC_DISR,	MOD_CLC_DISR_SHIFT,	NULL,	0},
 	{"DISS",	MOD_CLC_DISS,	MOD_CLC_DISS_SHIFT,	NULL,	0},
 	{"SPEN",	MOD_CLC_SPEN,	MOD_CLC_SPEN_SHIFT,	NULL,	0},
@@ -2052,32 +2108,32 @@ static const pmb887x_io_field_t difv2_clc_fields[] = {
 	{"RMC",		MOD_CLC_RMC,	MOD_CLC_RMC_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t difv2_id_fields[] = {
+static const DebugRegField difv2_id_fields[] = {
 	{"REV",		MOD_ID_REV,		MOD_ID_REV_SHIFT,		NULL,	0},
 	{"32B",		MOD_ID_32B,		MOD_ID_32B_SHIFT,		NULL,	0},
 	{"NUMBER",	MOD_ID_NUMBER,	MOD_ID_NUMBER_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t difv2_runctrl_fields[] = {
+static const DebugRegField difv2_runctrl_fields[] = {
 	{"RUN",	DIFv2_RUNCTRL_RUN,	DIFv2_RUNCTRL_RUN_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_value_t difv2_difv2_con_hb_values[] = {
+static const DebugRegValue difv2_difv2_con_hb_values[] = {
 	{"LSB",	DIFv2_CON_HB_LSB},
 	{"MSB",	DIFv2_CON_HB_MSB},
 };
 
-static const pmb887x_io_value_t difv2_difv2_con_ph_values[] = {
+static const DebugRegValue difv2_difv2_con_ph_values[] = {
 	{"0",	DIFv2_CON_PH_0},
 	{"1",	DIFv2_CON_PH_1},
 };
 
-static const pmb887x_io_value_t difv2_difv2_con_po_values[] = {
+static const DebugRegValue difv2_difv2_con_po_values[] = {
 	{"0",	DIFv2_CON_PO_0},
 	{"1",	DIFv2_CON_PO_1},
 };
 
-static const pmb887x_io_value_t difv2_difv2_con_bm_values[] = {
+static const DebugRegValue difv2_difv2_con_bm_values[] = {
 	{"1",	DIFv2_CON_BM_1},
 	{"2",	DIFv2_CON_BM_2},
 	{"3",	DIFv2_CON_BM_3},
@@ -2096,7 +2152,7 @@ static const pmb887x_io_value_t difv2_difv2_con_bm_values[] = {
 	{"16",	DIFv2_CON_BM_16},
 };
 
-static const pmb887x_io_field_t difv2_con_fields[] = {
+static const DebugRegField difv2_con_fields[] = {
 	{"TRI",	DIFv2_CON_TRI,	DIFv2_CON_TRI_SHIFT,	NULL,						0},
 	{"HB",	DIFv2_CON_HB,	DIFv2_CON_HB_SHIFT,		difv2_difv2_con_hb_values,	ARRAY_SIZE(difv2_difv2_con_hb_values)},
 	{"PH",	DIFv2_CON_PH,	DIFv2_CON_PH_SHIFT,		difv2_difv2_con_ph_values,	ARRAY_SIZE(difv2_difv2_con_ph_values)},
@@ -2105,12 +2161,12 @@ static const pmb887x_io_field_t difv2_con_fields[] = {
 	{"BM",	DIFv2_CON_BM,	DIFv2_CON_BM_SHIFT,		difv2_difv2_con_bm_values,	ARRAY_SIZE(difv2_difv2_con_bm_values)},
 };
 
-static const pmb887x_io_value_t difv2_difv2_perreg_difpermode_values[] = {
+static const DebugRegValue difv2_difv2_perreg_difpermode_values[] = {
 	{"SERIAL",		DIFv2_PERREG_DIFPERMODE_SERIAL},
 	{"PARALLEL",	DIFv2_PERREG_DIFPERMODE_PARALLEL},
 };
 
-static const pmb887x_io_field_t difv2_perreg_fields[] = {
+static const DebugRegField difv2_perreg_fields[] = {
 	{"DIFPERMODE",	DIFv2_PERREG_DIFPERMODE,	DIFv2_PERREG_DIFPERMODE_SHIFT,	difv2_difv2_perreg_difpermode_values,	ARRAY_SIZE(difv2_difv2_perreg_difpermode_values)},
 	{"INBAND",		DIFv2_PERREG_INBAND,		DIFv2_PERREG_INBAND_SHIFT,		NULL,									0},
 	{"CS1POL",		DIFv2_PERREG_CS1POL,		DIFv2_PERREG_CS1POL_SHIFT,		NULL,									0},
@@ -2121,7 +2177,7 @@ static const pmb887x_io_field_t difv2_perreg_fields[] = {
 	{"CS3POL",		DIFv2_PERREG_CS3POL,		DIFv2_PERREG_CS3POL_SHIFT,		NULL,									0},
 };
 
-static const pmb887x_io_value_t difv2_difv2_csreg_bsconf_values[] = {
+static const DebugRegValue difv2_difv2_csreg_bsconf_values[] = {
 	{"OFF",		DIFv2_CSREG_BSCONF_OFF},
 	{"1x8BIT",	DIFv2_CSREG_BSCONF_1x8BIT},
 	{"1x9BIT",	DIFv2_CSREG_BSCONF_1x9BIT},
@@ -2132,7 +2188,7 @@ static const pmb887x_io_value_t difv2_difv2_csreg_bsconf_values[] = {
 	{"4x8BIT",	DIFv2_CSREG_BSCONF_4x8BIT},
 };
 
-static const pmb887x_io_field_t difv2_csreg_fields[] = {
+static const DebugRegField difv2_csreg_fields[] = {
 	{"CD",		DIFv2_CSREG_CD,		DIFv2_CSREG_CD_SHIFT,		NULL,								0},
 	{"CS1",		DIFv2_CSREG_CS1,	DIFv2_CSREG_CS1_SHIFT,		NULL,								0},
 	{"CS2",		DIFv2_CSREG_CS2,	DIFv2_CSREG_CS2_SHIFT,		NULL,								0},
@@ -2141,25 +2197,25 @@ static const pmb887x_io_field_t difv2_csreg_fields[] = {
 	{"GRACMD",	DIFv2_CSREG_GRACMD,	DIFv2_CSREG_GRACMD_SHIFT,	NULL,								0},
 };
 
-static const pmb887x_io_field_t difv2_lcdtim1_fields[] = {
+static const DebugRegField difv2_lcdtim1_fields[] = {
 	{"ADDRDELAY",	DIFv2_LCDTIM1_ADDRDELAY,	DIFv2_LCDTIM1_ADDRDELAY_SHIFT,		NULL,	0},
 	{"ACCESSCYCLE",	DIFv2_LCDTIM1_ACCESSCYCLE,	DIFv2_LCDTIM1_ACCESSCYCLE_SHIFT,	NULL,	0},
 	{"DATADELAY",	DIFv2_LCDTIM1_DATADELAY,	DIFv2_LCDTIM1_DATADELAY_SHIFT,		NULL,	0},
 };
 
-static const pmb887x_io_field_t difv2_lcdtim2_fields[] = {
+static const DebugRegField difv2_lcdtim2_fields[] = {
 	{"CSACT",		DIFv2_LCDTIM2_CSACT,		DIFv2_LCDTIM2_CSACT_SHIFT,		NULL,	0},
 	{"CSDEACT",		DIFv2_LCDTIM2_CSDEACT,		DIFv2_LCDTIM2_CSDEACT_SHIFT,	NULL,	0},
 	{"WRRDACT",		DIFv2_LCDTIM2_WRRDACT,		DIFv2_LCDTIM2_WRRDACT_SHIFT,	NULL,	0},
 	{"WRRDDEACT",	DIFv2_LCDTIM2_WRRDDEACT,	DIFv2_LCDTIM2_WRRDDEACT_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t difv2_startlcdrd_fields[] = {
+static const DebugRegField difv2_startlcdrd_fields[] = {
 	{"STARTREAD",	DIFv2_STARTLCDRD_STARTREAD,	DIFv2_STARTLCDRD_STARTREAD_SHIFT,	NULL,	0},
 	{"READBYTES",	DIFv2_STARTLCDRD_READBYTES,	DIFv2_STARTLCDRD_READBYTES_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t difv2_stat_fields[] = {
+static const DebugRegField difv2_stat_fields[] = {
 	{"BSY",		DIFv2_STAT_BSY,		DIFv2_STAT_BSY_SHIFT,		NULL,	0},
 	{"GRABSY",	DIFv2_STAT_GRABSY,	DIFv2_STAT_GRABSY_SHIFT,	NULL,	0},
 	{"DSIFULL",	DIFv2_STAT_DSIFULL,	DIFv2_STAT_DSIFULL_SHIFT,	NULL,	0},
@@ -2167,35 +2223,35 @@ static const pmb887x_io_field_t difv2_stat_fields[] = {
 	{"DSILOCK",	DIFv2_STAT_DSILOCK,	DIFv2_STAT_DSILOCK_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t difv2_coeff_reg1_fields[] = {
+static const DebugRegField difv2_coeff_reg1_fields[] = {
 	{"COEFF0",	DIFv2_COEFF_REG1_COEFF0,	DIFv2_COEFF_REG1_COEFF0_SHIFT,	NULL,	0},
 	{"COEFF1",	DIFv2_COEFF_REG1_COEFF1,	DIFv2_COEFF_REG1_COEFF1_SHIFT,	NULL,	0},
 	{"COEFF2",	DIFv2_COEFF_REG1_COEFF2,	DIFv2_COEFF_REG1_COEFF2_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t difv2_coeff_reg2_fields[] = {
+static const DebugRegField difv2_coeff_reg2_fields[] = {
 	{"COEFF3",	DIFv2_COEFF_REG2_COEFF3,	DIFv2_COEFF_REG2_COEFF3_SHIFT,	NULL,	0},
 	{"COEFF4",	DIFv2_COEFF_REG2_COEFF4,	DIFv2_COEFF_REG2_COEFF4_SHIFT,	NULL,	0},
 	{"COEFF5",	DIFv2_COEFF_REG2_COEFF5,	DIFv2_COEFF_REG2_COEFF5_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t difv2_coeff_reg3_fields[] = {
+static const DebugRegField difv2_coeff_reg3_fields[] = {
 	{"COEFF6",	DIFv2_COEFF_REG3_COEFF6,	DIFv2_COEFF_REG3_COEFF6_SHIFT,	NULL,	0},
 	{"COEFF7",	DIFv2_COEFF_REG3_COEFF7,	DIFv2_COEFF_REG3_COEFF7_SHIFT,	NULL,	0},
 	{"COEFF8",	DIFv2_COEFF_REG3_COEFF8,	DIFv2_COEFF_REG3_COEFF8_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t difv2_offset_fields[] = {
+static const DebugRegField difv2_offset_fields[] = {
 	{"OFF0",	DIFv2_OFFSET_OFF0,	DIFv2_OFFSET_OFF0_SHIFT,	NULL,	0},
 	{"OFF1",	DIFv2_OFFSET_OFF1,	DIFv2_OFFSET_OFF1_SHIFT,	NULL,	0},
 	{"OFF2",	DIFv2_OFFSET_OFF2,	DIFv2_OFFSET_OFF2_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t difv2_pbccon_fields[] = {
+static const DebugRegField difv2_pbccon_fields[] = {
 	{"PBBCONV_MODE",	DIFv2_PBCCON_PBBCONV_MODE,	DIFv2_PBCCON_PBBCONV_MODE_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t difv2_bmreg0_fields[] = {
+static const DebugRegField difv2_bmreg0_fields[] = {
 	{"MUX0",	DIFv2_BMREG0_MUX0,	DIFv2_BMREG0_MUX0_SHIFT,	NULL,	0},
 	{"MUX1",	DIFv2_BMREG0_MUX1,	DIFv2_BMREG0_MUX1_SHIFT,	NULL,	0},
 	{"MUX2",	DIFv2_BMREG0_MUX2,	DIFv2_BMREG0_MUX2_SHIFT,	NULL,	0},
@@ -2204,7 +2260,7 @@ static const pmb887x_io_field_t difv2_bmreg0_fields[] = {
 	{"MUX5",	DIFv2_BMREG0_MUX5,	DIFv2_BMREG0_MUX5_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t difv2_bmreg1_fields[] = {
+static const DebugRegField difv2_bmreg1_fields[] = {
 	{"MUX6",	DIFv2_BMREG1_MUX6,	DIFv2_BMREG1_MUX6_SHIFT,	NULL,	0},
 	{"MUX7",	DIFv2_BMREG1_MUX7,	DIFv2_BMREG1_MUX7_SHIFT,	NULL,	0},
 	{"MUX8",	DIFv2_BMREG1_MUX8,	DIFv2_BMREG1_MUX8_SHIFT,	NULL,	0},
@@ -2213,7 +2269,7 @@ static const pmb887x_io_field_t difv2_bmreg1_fields[] = {
 	{"MUX11",	DIFv2_BMREG1_MUX11,	DIFv2_BMREG1_MUX11_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t difv2_bmreg2_fields[] = {
+static const DebugRegField difv2_bmreg2_fields[] = {
 	{"MUX12",	DIFv2_BMREG2_MUX12,	DIFv2_BMREG2_MUX12_SHIFT,	NULL,	0},
 	{"MUX13",	DIFv2_BMREG2_MUX13,	DIFv2_BMREG2_MUX13_SHIFT,	NULL,	0},
 	{"MUX14",	DIFv2_BMREG2_MUX14,	DIFv2_BMREG2_MUX14_SHIFT,	NULL,	0},
@@ -2222,7 +2278,7 @@ static const pmb887x_io_field_t difv2_bmreg2_fields[] = {
 	{"MUX17",	DIFv2_BMREG2_MUX17,	DIFv2_BMREG2_MUX17_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t difv2_bmreg3_fields[] = {
+static const DebugRegField difv2_bmreg3_fields[] = {
 	{"MUX18",	DIFv2_BMREG3_MUX18,	DIFv2_BMREG3_MUX18_SHIFT,	NULL,	0},
 	{"MUX19",	DIFv2_BMREG3_MUX19,	DIFv2_BMREG3_MUX19_SHIFT,	NULL,	0},
 	{"MUX20",	DIFv2_BMREG3_MUX20,	DIFv2_BMREG3_MUX20_SHIFT,	NULL,	0},
@@ -2231,7 +2287,7 @@ static const pmb887x_io_field_t difv2_bmreg3_fields[] = {
 	{"MUX23",	DIFv2_BMREG3_MUX23,	DIFv2_BMREG3_MUX23_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t difv2_bmreg4_fields[] = {
+static const DebugRegField difv2_bmreg4_fields[] = {
 	{"MUX24",	DIFv2_BMREG4_MUX24,	DIFv2_BMREG4_MUX24_SHIFT,	NULL,	0},
 	{"MUX25",	DIFv2_BMREG4_MUX25,	DIFv2_BMREG4_MUX25_SHIFT,	NULL,	0},
 	{"MUX26",	DIFv2_BMREG4_MUX26,	DIFv2_BMREG4_MUX26_SHIFT,	NULL,	0},
@@ -2240,12 +2296,12 @@ static const pmb887x_io_field_t difv2_bmreg4_fields[] = {
 	{"MUX29",	DIFv2_BMREG4_MUX29,	DIFv2_BMREG4_MUX29_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t difv2_bmreg5_fields[] = {
+static const DebugRegField difv2_bmreg5_fields[] = {
 	{"MUX30",	DIFv2_BMREG5_MUX30,	DIFv2_BMREG5_MUX30_SHIFT,	NULL,	0},
 	{"MUX31",	DIFv2_BMREG5_MUX31,	DIFv2_BMREG5_MUX31_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t difv2_bcsel0_fields[] = {
+static const DebugRegField difv2_bcsel0_fields[] = {
 	{"B0",	DIFv2_BCSEL0_B0,	DIFv2_BCSEL0_B0_SHIFT,	NULL,	0},
 	{"B1",	DIFv2_BCSEL0_B1,	DIFv2_BCSEL0_B1_SHIFT,	NULL,	0},
 	{"B2",	DIFv2_BCSEL0_B2,	DIFv2_BCSEL0_B2_SHIFT,	NULL,	0},
@@ -2264,7 +2320,7 @@ static const pmb887x_io_field_t difv2_bcsel0_fields[] = {
 	{"B15",	DIFv2_BCSEL0_B15,	DIFv2_BCSEL0_B15_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t difv2_bcsel1_fields[] = {
+static const DebugRegField difv2_bcsel1_fields[] = {
 	{"B16",	DIFv2_BCSEL1_B16,	DIFv2_BCSEL1_B16_SHIFT,	NULL,	0},
 	{"B17",	DIFv2_BCSEL1_B17,	DIFv2_BCSEL1_B17_SHIFT,	NULL,	0},
 	{"B18",	DIFv2_BCSEL1_B18,	DIFv2_BCSEL1_B18_SHIFT,	NULL,	0},
@@ -2283,7 +2339,7 @@ static const pmb887x_io_field_t difv2_bcsel1_fields[] = {
 	{"B31",	DIFv2_BCSEL1_B31,	DIFv2_BCSEL1_B31_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t difv2_bcreg_fields[] = {
+static const DebugRegField difv2_bcreg_fields[] = {
 	{"B0",	DIFv2_BCREG_B0,		DIFv2_BCREG_B0_SHIFT,	NULL,	0},
 	{"B1",	DIFv2_BCREG_B1,		DIFv2_BCREG_B1_SHIFT,	NULL,	0},
 	{"B2",	DIFv2_BCREG_B2,		DIFv2_BCREG_B2_SHIFT,	NULL,	0},
@@ -2318,7 +2374,7 @@ static const pmb887x_io_field_t difv2_bcreg_fields[] = {
 	{"B31",	DIFv2_BCREG_B31,	DIFv2_BCREG_B31_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t difv2_invert_bit_fields[] = {
+static const DebugRegField difv2_invert_bit_fields[] = {
 	{"B0",	DIFv2_INVERT_BIT_B0,	DIFv2_INVERT_BIT_B0_SHIFT,	NULL,	0},
 	{"B1",	DIFv2_INVERT_BIT_B1,	DIFv2_INVERT_BIT_B1_SHIFT,	NULL,	0},
 	{"B2",	DIFv2_INVERT_BIT_B2,	DIFv2_INVERT_BIT_B2_SHIFT,	NULL,	0},
@@ -2353,7 +2409,7 @@ static const pmb887x_io_field_t difv2_invert_bit_fields[] = {
 	{"B31",	DIFv2_INVERT_BIT_B31,	DIFv2_INVERT_BIT_B31_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t difv2_sync_config_fields[] = {
+static const DebugRegField difv2_sync_config_fields[] = {
 	{"SYNCEN",		DIFv2_SYNC_CONFIG_SYNCEN,	DIFv2_SYNC_CONFIG_SYNCEN_SHIFT,		NULL,	0},
 	{"HDPOL",		DIFv2_SYNC_CONFIG_HDPOL,	DIFv2_SYNC_CONFIG_HDPOL_SHIFT,		NULL,	0},
 	{"VDPOL",		DIFv2_SYNC_CONFIG_VDPOL,	DIFv2_SYNC_CONFIG_VDPOL_SHIFT,		NULL,	0},
@@ -2367,21 +2423,21 @@ static const pmb887x_io_field_t difv2_sync_config_fields[] = {
 	{"COMP",		DIFv2_SYNC_CONFIG_COMP,		DIFv2_SYNC_CONFIG_COMP_SHIFT,		NULL,	0},
 };
 
-static const pmb887x_io_field_t difv2_sync_count_fields[] = {
+static const DebugRegField difv2_sync_count_fields[] = {
 	{"HDSTART",		DIFv2_SYNC_COUNT_HDSTART,	DIFv2_SYNC_COUNT_HDSTART_SHIFT,		NULL,	0},
 	{"NUMBYTES",	DIFv2_SYNC_COUNT_NUMBYTES,	DIFv2_SYNC_COUNT_NUMBYTES_SHIFT,	NULL,	0},
 	{"NUMROWS",		DIFv2_SYNC_COUNT_NUMROWS,	DIFv2_SYNC_COUNT_NUMROWS_SHIFT,		NULL,	0},
 };
 
-static const pmb887x_io_field_t difv2_br_fields[] = {
+static const DebugRegField difv2_br_fields[] = {
 	{"VALUE",	DIFv2_BR_VALUE,	DIFv2_BR_VALUE_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t difv2_fdiv_fields[] = {
+static const DebugRegField difv2_fdiv_fields[] = {
 	{"VALUE",	DIFv2_FDIV_VALUE,	DIFv2_FDIV_VALUE_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_value_t difv2_difv2_rxfifo_cfg_rxbs_values[] = {
+static const DebugRegValue difv2_difv2_rxfifo_cfg_rxbs_values[] = {
 	{"1_WORD",		DIFv2_RXFIFO_CFG_RXBS_1_WORD},
 	{"2_WORD",		DIFv2_RXFIFO_CFG_RXBS_2_WORD},
 	{"4_WORD",		DIFv2_RXFIFO_CFG_RXBS_4_WORD},
@@ -2392,27 +2448,27 @@ static const pmb887x_io_value_t difv2_difv2_rxfifo_cfg_rxbs_values[] = {
 	{"128_WORD",	DIFv2_RXFIFO_CFG_RXBS_128_WORD},
 };
 
-static const pmb887x_io_value_t difv2_difv2_rxfifo_cfg_rxfa_values[] = {
+static const DebugRegValue difv2_difv2_rxfifo_cfg_rxfa_values[] = {
 	{"1",	DIFv2_RXFIFO_CFG_RXFA_1},
 	{"2",	DIFv2_RXFIFO_CFG_RXFA_2},
 	{"4",	DIFv2_RXFIFO_CFG_RXFA_4},
 };
 
-static const pmb887x_io_field_t difv2_rxfifo_cfg_fields[] = {
+static const DebugRegField difv2_rxfifo_cfg_fields[] = {
 	{"RXBS",	DIFv2_RXFIFO_CFG_RXBS,	DIFv2_RXFIFO_CFG_RXBS_SHIFT,	difv2_difv2_rxfifo_cfg_rxbs_values,	ARRAY_SIZE(difv2_difv2_rxfifo_cfg_rxbs_values)},
 	{"RXFA",	DIFv2_RXFIFO_CFG_RXFA,	DIFv2_RXFIFO_CFG_RXFA_SHIFT,	difv2_difv2_rxfifo_cfg_rxfa_values,	ARRAY_SIZE(difv2_difv2_rxfifo_cfg_rxfa_values)},
 	{"RXFC",	DIFv2_RXFIFO_CFG_RXFC,	DIFv2_RXFIFO_CFG_RXFC_SHIFT,	NULL,								0},
 };
 
-static const pmb887x_io_field_t difv2_mrps_ctrl_fields[] = {
+static const DebugRegField difv2_mrps_ctrl_fields[] = {
 	{"MRPS",	DIFv2_MRPS_CTRL_MRPS,	DIFv2_MRPS_CTRL_MRPS_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t difv2_rps_stat_fields[] = {
+static const DebugRegField difv2_rps_stat_fields[] = {
 	{"RPS",	DIFv2_RPS_STAT_RPS,	DIFv2_RPS_STAT_RPS_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_value_t difv2_difv2_txfifo_cfg_txbs_values[] = {
+static const DebugRegValue difv2_difv2_txfifo_cfg_txbs_values[] = {
 	{"1_WORD",		DIFv2_TXFIFO_CFG_TXBS_1_WORD},
 	{"2_WORD",		DIFv2_TXFIFO_CFG_TXBS_2_WORD},
 	{"4_WORD",		DIFv2_TXFIFO_CFG_TXBS_4_WORD},
@@ -2423,23 +2479,23 @@ static const pmb887x_io_value_t difv2_difv2_txfifo_cfg_txbs_values[] = {
 	{"128_WORD",	DIFv2_TXFIFO_CFG_TXBS_128_WORD},
 };
 
-static const pmb887x_io_value_t difv2_difv2_txfifo_cfg_txfa_values[] = {
+static const DebugRegValue difv2_difv2_txfifo_cfg_txfa_values[] = {
 	{"1",	DIFv2_TXFIFO_CFG_TXFA_1},
 	{"2",	DIFv2_TXFIFO_CFG_TXFA_2},
 	{"4",	DIFv2_TXFIFO_CFG_TXFA_4},
 };
 
-static const pmb887x_io_field_t difv2_txfifo_cfg_fields[] = {
+static const DebugRegField difv2_txfifo_cfg_fields[] = {
 	{"TXBS",	DIFv2_TXFIFO_CFG_TXBS,	DIFv2_TXFIFO_CFG_TXBS_SHIFT,	difv2_difv2_txfifo_cfg_txbs_values,	ARRAY_SIZE(difv2_difv2_txfifo_cfg_txbs_values)},
 	{"TXFA",	DIFv2_TXFIFO_CFG_TXFA,	DIFv2_TXFIFO_CFG_TXFA_SHIFT,	difv2_difv2_txfifo_cfg_txfa_values,	ARRAY_SIZE(difv2_difv2_txfifo_cfg_txfa_values)},
 	{"TXFC",	DIFv2_TXFIFO_CFG_TXFC,	DIFv2_TXFIFO_CFG_TXFC_SHIFT,	NULL,								0},
 };
 
-static const pmb887x_io_field_t difv2_tps_ctrl_fields[] = {
+static const DebugRegField difv2_tps_ctrl_fields[] = {
 	{"TPS",	DIFv2_TPS_CTRL_TPS,	DIFv2_TPS_CTRL_TPS_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t difv2_errirqsm_fields[] = {
+static const DebugRegField difv2_errirqsm_fields[] = {
 	{"RXFUFL",	DIFv2_ERRIRQSM_RXFUFL,	DIFv2_ERRIRQSM_RXFUFL_SHIFT,	NULL,	0},
 	{"RXFOFL",	DIFv2_ERRIRQSM_RXFOFL,	DIFv2_ERRIRQSM_RXFOFL_SHIFT,	NULL,	0},
 	{"TXFOFL",	DIFv2_ERRIRQSM_TXFOFL,	DIFv2_ERRIRQSM_TXFOFL_SHIFT,	NULL,	0},
@@ -2451,7 +2507,7 @@ static const pmb887x_io_field_t difv2_errirqsm_fields[] = {
 	{"IDLE",	DIFv2_ERRIRQSM_IDLE,	DIFv2_ERRIRQSM_IDLE_SHIFT,		NULL,	0},
 };
 
-static const pmb887x_io_field_t difv2_errirqss_fields[] = {
+static const DebugRegField difv2_errirqss_fields[] = {
 	{"RXFUFL",	DIFv2_ERRIRQSS_RXFUFL,	DIFv2_ERRIRQSS_RXFUFL_SHIFT,	NULL,	0},
 	{"RXFOFL",	DIFv2_ERRIRQSS_RXFOFL,	DIFv2_ERRIRQSS_RXFOFL_SHIFT,	NULL,	0},
 	{"TXFOFL",	DIFv2_ERRIRQSS_TXFOFL,	DIFv2_ERRIRQSS_TXFOFL_SHIFT,	NULL,	0},
@@ -2463,7 +2519,7 @@ static const pmb887x_io_field_t difv2_errirqss_fields[] = {
 	{"IDLE",	DIFv2_ERRIRQSS_IDLE,	DIFv2_ERRIRQSS_IDLE_SHIFT,		NULL,	0},
 };
 
-static const pmb887x_io_field_t difv2_errirqsc_fields[] = {
+static const DebugRegField difv2_errirqsc_fields[] = {
 	{"RXFUFL",	DIFv2_ERRIRQSC_RXFUFL,	DIFv2_ERRIRQSC_RXFUFL_SHIFT,	NULL,	0},
 	{"RXFOFL",	DIFv2_ERRIRQSC_RXFOFL,	DIFv2_ERRIRQSC_RXFOFL_SHIFT,	NULL,	0},
 	{"TXFOFL",	DIFv2_ERRIRQSC_TXFOFL,	DIFv2_ERRIRQSC_TXFOFL_SHIFT,	NULL,	0},
@@ -2475,7 +2531,7 @@ static const pmb887x_io_field_t difv2_errirqsc_fields[] = {
 	{"IDLE",	DIFv2_ERRIRQSC_IDLE,	DIFv2_ERRIRQSC_IDLE_SHIFT,		NULL,	0},
 };
 
-static const pmb887x_io_field_t difv2_ris_fields[] = {
+static const DebugRegField difv2_ris_fields[] = {
 	{"RXLSREQ",	DIFv2_RIS_RXLSREQ,	DIFv2_RIS_RXLSREQ_SHIFT,	NULL,	0},
 	{"RXSREQ",	DIFv2_RIS_RXSREQ,	DIFv2_RIS_RXSREQ_SHIFT,		NULL,	0},
 	{"RXLBREQ",	DIFv2_RIS_RXLBREQ,	DIFv2_RIS_RXLBREQ_SHIFT,	NULL,	0},
@@ -2489,7 +2545,7 @@ static const pmb887x_io_field_t difv2_ris_fields[] = {
 	{"FRAME",	DIFv2_RIS_FRAME,	DIFv2_RIS_FRAME_SHIFT,		NULL,	0},
 };
 
-static const pmb887x_io_field_t difv2_imsc_fields[] = {
+static const DebugRegField difv2_imsc_fields[] = {
 	{"RXLSREQ",	DIFv2_IMSC_RXLSREQ,	DIFv2_IMSC_RXLSREQ_SHIFT,	NULL,	0},
 	{"RXSREQ",	DIFv2_IMSC_RXSREQ,	DIFv2_IMSC_RXSREQ_SHIFT,	NULL,	0},
 	{"RXLBREQ",	DIFv2_IMSC_RXLBREQ,	DIFv2_IMSC_RXLBREQ_SHIFT,	NULL,	0},
@@ -2503,7 +2559,7 @@ static const pmb887x_io_field_t difv2_imsc_fields[] = {
 	{"FRAME",	DIFv2_IMSC_FRAME,	DIFv2_IMSC_FRAME_SHIFT,		NULL,	0},
 };
 
-static const pmb887x_io_field_t difv2_mis_fields[] = {
+static const DebugRegField difv2_mis_fields[] = {
 	{"RXLSREQ",	DIFv2_MIS_RXLSREQ,	DIFv2_MIS_RXLSREQ_SHIFT,	NULL,	0},
 	{"RXSREQ",	DIFv2_MIS_RXSREQ,	DIFv2_MIS_RXSREQ_SHIFT,		NULL,	0},
 	{"RXLBREQ",	DIFv2_MIS_RXLBREQ,	DIFv2_MIS_RXLBREQ_SHIFT,	NULL,	0},
@@ -2515,7 +2571,7 @@ static const pmb887x_io_field_t difv2_mis_fields[] = {
 	{"ERR",		DIFv2_MIS_ERR,		DIFv2_MIS_ERR_SHIFT,		NULL,	0},
 };
 
-static const pmb887x_io_field_t difv2_icr_fields[] = {
+static const DebugRegField difv2_icr_fields[] = {
 	{"RXLSREQ",	DIFv2_ICR_RXLSREQ,	DIFv2_ICR_RXLSREQ_SHIFT,	NULL,	0},
 	{"RXSREQ",	DIFv2_ICR_RXSREQ,	DIFv2_ICR_RXSREQ_SHIFT,		NULL,	0},
 	{"RXLBREQ",	DIFv2_ICR_RXLBREQ,	DIFv2_ICR_RXLBREQ_SHIFT,	NULL,	0},
@@ -2527,7 +2583,7 @@ static const pmb887x_io_field_t difv2_icr_fields[] = {
 	{"ERR",		DIFv2_ICR_ERR,		DIFv2_ICR_ERR_SHIFT,		NULL,	0},
 };
 
-static const pmb887x_io_field_t difv2_isr_fields[] = {
+static const DebugRegField difv2_isr_fields[] = {
 	{"RXLSREQ",	DIFv2_ISR_RXLSREQ,	DIFv2_ISR_RXLSREQ_SHIFT,	NULL,	0},
 	{"RXSREQ",	DIFv2_ISR_RXSREQ,	DIFv2_ISR_RXSREQ_SHIFT,		NULL,	0},
 	{"RXLBREQ",	DIFv2_ISR_RXLBREQ,	DIFv2_ISR_RXLBREQ_SHIFT,	NULL,	0},
@@ -2539,7 +2595,7 @@ static const pmb887x_io_field_t difv2_isr_fields[] = {
 	{"ERR",		DIFv2_ISR_ERR,		DIFv2_ISR_ERR_SHIFT,		NULL,	0},
 };
 
-static const pmb887x_io_field_t difv2_dmae_fields[] = {
+static const DebugRegField difv2_dmae_fields[] = {
 	{"RXLSREQ",	DIFv2_DMAE_RXLSREQ,	DIFv2_DMAE_RXLSREQ_SHIFT,	NULL,	0},
 	{"RXSREQ",	DIFv2_DMAE_RXSREQ,	DIFv2_DMAE_RXSREQ_SHIFT,	NULL,	0},
 	{"RXLBREQ",	DIFv2_DMAE_RXLBREQ,	DIFv2_DMAE_RXLBREQ_SHIFT,	NULL,	0},
@@ -2550,7 +2606,7 @@ static const pmb887x_io_field_t difv2_dmae_fields[] = {
 	{"TXBREQ",	DIFv2_DMAE_TXBREQ,	DIFv2_DMAE_TXBREQ_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_value_t difv2_difv2_txd_inband_format_values[] = {
+static const DebugRegValue difv2_difv2_txd_inband_format_values[] = {
 	{"OFF",		DIFv2_TXD_INBAND_FORMAT_OFF},
 	{"1x9BIT",	DIFv2_TXD_INBAND_FORMAT_1x9BIT},
 	{"2x9BIT",	DIFv2_TXD_INBAND_FORMAT_2x9BIT},
@@ -2561,7 +2617,7 @@ static const pmb887x_io_value_t difv2_difv2_txd_inband_format_values[] = {
 	{"4x8BIT",	DIFv2_TXD_INBAND_FORMAT_4x8BIT},
 };
 
-static const pmb887x_io_field_t difv2_txd_fields[] = {
+static const DebugRegField difv2_txd_fields[] = {
 	{"BYTE0",			DIFv2_TXD_BYTE0,			DIFv2_TXD_BYTE0_SHIFT,			NULL,									0},
 	{"BYTE1",			DIFv2_TXD_BYTE1,			DIFv2_TXD_BYTE1_SHIFT,			NULL,									0},
 	{"BYTE2",			DIFv2_TXD_BYTE2,			DIFv2_TXD_BYTE2_SHIFT,			NULL,									0},
@@ -2574,65 +2630,72 @@ static const pmb887x_io_field_t difv2_txd_fields[] = {
 	{"INBAND_CS1",		DIFv2_TXD_INBAND_CS1,		DIFv2_TXD_INBAND_CS1_SHIFT,		NULL,									0},
 };
 
-static const pmb887x_io_field_t difv2_rxd_fields[] = {
+static const DebugRegField difv2_rxd_fields[] = {
 	{"BYTE0",	DIFv2_RXD_BYTE0,	DIFv2_RXD_BYTE0_SHIFT,	NULL,	0},
 	{"BYTE1",	DIFv2_RXD_BYTE1,	DIFv2_RXD_BYTE1_SHIFT,	NULL,	0},
 	{"BYTE2",	DIFv2_RXD_BYTE2,	DIFv2_RXD_BYTE2_SHIFT,	NULL,	0},
 	{"BYTE3",	DIFv2_RXD_BYTE3,	DIFv2_RXD_BYTE3_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_reg_t difv2_regs[] = {
-	{"CLC",			DIFv2_CLC,			difv2_clc_fields,			ARRAY_SIZE(difv2_clc_fields),			0},
-	{"ID",			DIFv2_ID,			difv2_id_fields,			ARRAY_SIZE(difv2_id_fields),			0},
-	{"RUNCTRL",		DIFv2_RUNCTRL,		difv2_runctrl_fields,		ARRAY_SIZE(difv2_runctrl_fields),		0},
-	{"CON",			DIFv2_CON,			difv2_con_fields,			ARRAY_SIZE(difv2_con_fields),			0},
-	{"PERREG",		DIFv2_PERREG,		difv2_perreg_fields,		ARRAY_SIZE(difv2_perreg_fields),		0},
-	{"CSREG",		DIFv2_CSREG,		difv2_csreg_fields,			ARRAY_SIZE(difv2_csreg_fields),			0},
-	{"LCDTIM1",		DIFv2_LCDTIM1,		difv2_lcdtim1_fields,		ARRAY_SIZE(difv2_lcdtim1_fields),		0},
-	{"LCDTIM2",		DIFv2_LCDTIM2,		difv2_lcdtim2_fields,		ARRAY_SIZE(difv2_lcdtim2_fields),		0},
-	{"STARTLCDRD",	DIFv2_STARTLCDRD,	difv2_startlcdrd_fields,	ARRAY_SIZE(difv2_startlcdrd_fields),	0},
-	{"STAT",		DIFv2_STAT,			difv2_stat_fields,			ARRAY_SIZE(difv2_stat_fields),			0},
-	{"COEFF_REG1",	DIFv2_COEFF_REG1,	difv2_coeff_reg1_fields,	ARRAY_SIZE(difv2_coeff_reg1_fields),	0},
-	{"COEFF_REG2",	DIFv2_COEFF_REG2,	difv2_coeff_reg2_fields,	ARRAY_SIZE(difv2_coeff_reg2_fields),	0},
-	{"COEFF_REG3",	DIFv2_COEFF_REG3,	difv2_coeff_reg3_fields,	ARRAY_SIZE(difv2_coeff_reg3_fields),	0},
-	{"OFFSET",		DIFv2_OFFSET,		difv2_offset_fields,		ARRAY_SIZE(difv2_offset_fields),		0},
-	{"PBCCON",		DIFv2_PBCCON,		difv2_pbccon_fields,		ARRAY_SIZE(difv2_pbccon_fields),		0},
-	{"BMREG0",		DIFv2_BMREG0,		difv2_bmreg0_fields,		ARRAY_SIZE(difv2_bmreg0_fields),		0},
-	{"BMREG1",		DIFv2_BMREG1,		difv2_bmreg1_fields,		ARRAY_SIZE(difv2_bmreg1_fields),		0},
-	{"BMREG2",		DIFv2_BMREG2,		difv2_bmreg2_fields,		ARRAY_SIZE(difv2_bmreg2_fields),		0},
-	{"BMREG3",		DIFv2_BMREG3,		difv2_bmreg3_fields,		ARRAY_SIZE(difv2_bmreg3_fields),		0},
-	{"BMREG4",		DIFv2_BMREG4,		difv2_bmreg4_fields,		ARRAY_SIZE(difv2_bmreg4_fields),		0},
-	{"BMREG5",		DIFv2_BMREG5,		difv2_bmreg5_fields,		ARRAY_SIZE(difv2_bmreg5_fields),		0},
-	{"BCSEL0",		DIFv2_BCSEL0,		difv2_bcsel0_fields,		ARRAY_SIZE(difv2_bcsel0_fields),		0},
-	{"BCSEL1",		DIFv2_BCSEL1,		difv2_bcsel1_fields,		ARRAY_SIZE(difv2_bcsel1_fields),		0},
-	{"BCREG",		DIFv2_BCREG,		difv2_bcreg_fields,			ARRAY_SIZE(difv2_bcreg_fields),			0},
-	{"INVERT_BIT",	DIFv2_INVERT_BIT,	difv2_invert_bit_fields,	ARRAY_SIZE(difv2_invert_bit_fields),	0},
-	{"SYNC_CONFIG",	DIFv2_SYNC_CONFIG,	difv2_sync_config_fields,	ARRAY_SIZE(difv2_sync_config_fields),	0},
-	{"SYNC_COUNT",	DIFv2_SYNC_COUNT,	difv2_sync_count_fields,	ARRAY_SIZE(difv2_sync_count_fields),	0},
-	{"BR",			DIFv2_BR,			difv2_br_fields,			ARRAY_SIZE(difv2_br_fields),			0},
-	{"FDIV",		DIFv2_FDIV,			difv2_fdiv_fields,			ARRAY_SIZE(difv2_fdiv_fields),			0},
-	{"DEBUG",		DIFv2_DEBUG,		NULL,						0,										0},
-	{"RXFIFO_CFG",	DIFv2_RXFIFO_CFG,	difv2_rxfifo_cfg_fields,	ARRAY_SIZE(difv2_rxfifo_cfg_fields),	0},
-	{"MRPS_CTRL",	DIFv2_MRPS_CTRL,	difv2_mrps_ctrl_fields,		ARRAY_SIZE(difv2_mrps_ctrl_fields),		0},
-	{"RPS_STAT",	DIFv2_RPS_STAT,		difv2_rps_stat_fields,		ARRAY_SIZE(difv2_rps_stat_fields),		0},
-	{"RXFFS_STAT",	DIFv2_RXFFS_STAT,	NULL,						0,										0},
-	{"TXFIFO_CFG",	DIFv2_TXFIFO_CFG,	difv2_txfifo_cfg_fields,	ARRAY_SIZE(difv2_txfifo_cfg_fields),	0},
-	{"TPS_CTRL",	DIFv2_TPS_CTRL,		difv2_tps_ctrl_fields,		ARRAY_SIZE(difv2_tps_ctrl_fields),		0},
-	{"TXFFS_STAT",	DIFv2_TXFFS_STAT,	NULL,						0,										0},
-	{"ERRIRQSM",	DIFv2_ERRIRQSM,		difv2_errirqsm_fields,		ARRAY_SIZE(difv2_errirqsm_fields),		0},
-	{"ERRIRQSS",	DIFv2_ERRIRQSS,		difv2_errirqss_fields,		ARRAY_SIZE(difv2_errirqss_fields),		0},
-	{"ERRIRQSC",	DIFv2_ERRIRQSC,		difv2_errirqsc_fields,		ARRAY_SIZE(difv2_errirqsc_fields),		0},
-	{"RIS",			DIFv2_RIS,			difv2_ris_fields,			ARRAY_SIZE(difv2_ris_fields),			0},
-	{"IMSC",		DIFv2_IMSC,			difv2_imsc_fields,			ARRAY_SIZE(difv2_imsc_fields),			0},
-	{"MIS",			DIFv2_MIS,			difv2_mis_fields,			ARRAY_SIZE(difv2_mis_fields),			0},
-	{"ICR",			DIFv2_ICR,			difv2_icr_fields,			ARRAY_SIZE(difv2_icr_fields),			0},
-	{"ISR",			DIFv2_ISR,			difv2_isr_fields,			ARRAY_SIZE(difv2_isr_fields),			0},
-	{"DMAE",		DIFv2_DMAE,			difv2_dmae_fields,			ARRAY_SIZE(difv2_dmae_fields),			0},
-	{"TXD",			DIFv2_TXD,			difv2_txd_fields,			ARRAY_SIZE(difv2_txd_fields),			0},
-	{"RXD",			DIFv2_RXD,			difv2_rxd_fields,			ARRAY_SIZE(difv2_rxd_fields),			0},
+static const DebugReg difv2_regs[] = {
+	{"CLC",			DIFv2_CLC,			difv2_clc_fields,			ARRAY_SIZE(difv2_clc_fields)},
+	{"ID",			DIFv2_ID,			difv2_id_fields,			ARRAY_SIZE(difv2_id_fields)},
+	{"RUNCTRL",		DIFv2_RUNCTRL,		difv2_runctrl_fields,		ARRAY_SIZE(difv2_runctrl_fields)},
+	{"CON",			DIFv2_CON,			difv2_con_fields,			ARRAY_SIZE(difv2_con_fields)},
+	{"PERREG",		DIFv2_PERREG,		difv2_perreg_fields,		ARRAY_SIZE(difv2_perreg_fields)},
+	{"CSREG",		DIFv2_CSREG,		difv2_csreg_fields,			ARRAY_SIZE(difv2_csreg_fields)},
+	{"LCDTIM1",		DIFv2_LCDTIM1,		difv2_lcdtim1_fields,		ARRAY_SIZE(difv2_lcdtim1_fields)},
+	{"LCDTIM2",		DIFv2_LCDTIM2,		difv2_lcdtim2_fields,		ARRAY_SIZE(difv2_lcdtim2_fields)},
+	{"STARTLCDRD",	DIFv2_STARTLCDRD,	difv2_startlcdrd_fields,	ARRAY_SIZE(difv2_startlcdrd_fields)},
+	{"STAT",		DIFv2_STAT,			difv2_stat_fields,			ARRAY_SIZE(difv2_stat_fields)},
+	{"COEFF_REG1",	DIFv2_COEFF_REG1,	difv2_coeff_reg1_fields,	ARRAY_SIZE(difv2_coeff_reg1_fields)},
+	{"COEFF_REG2",	DIFv2_COEFF_REG2,	difv2_coeff_reg2_fields,	ARRAY_SIZE(difv2_coeff_reg2_fields)},
+	{"COEFF_REG3",	DIFv2_COEFF_REG3,	difv2_coeff_reg3_fields,	ARRAY_SIZE(difv2_coeff_reg3_fields)},
+	{"OFFSET",		DIFv2_OFFSET,		difv2_offset_fields,		ARRAY_SIZE(difv2_offset_fields)},
+	{"PBCCON",		DIFv2_PBCCON,		difv2_pbccon_fields,		ARRAY_SIZE(difv2_pbccon_fields)},
+	{"BMREG0",		DIFv2_BMREG0,		difv2_bmreg0_fields,		ARRAY_SIZE(difv2_bmreg0_fields)},
+	{"BMREG1",		DIFv2_BMREG1,		difv2_bmreg1_fields,		ARRAY_SIZE(difv2_bmreg1_fields)},
+	{"BMREG2",		DIFv2_BMREG2,		difv2_bmreg2_fields,		ARRAY_SIZE(difv2_bmreg2_fields)},
+	{"BMREG3",		DIFv2_BMREG3,		difv2_bmreg3_fields,		ARRAY_SIZE(difv2_bmreg3_fields)},
+	{"BMREG4",		DIFv2_BMREG4,		difv2_bmreg4_fields,		ARRAY_SIZE(difv2_bmreg4_fields)},
+	{"BMREG5",		DIFv2_BMREG5,		difv2_bmreg5_fields,		ARRAY_SIZE(difv2_bmreg5_fields)},
+	{"BCSEL0",		DIFv2_BCSEL0,		difv2_bcsel0_fields,		ARRAY_SIZE(difv2_bcsel0_fields)},
+	{"BCSEL1",		DIFv2_BCSEL1,		difv2_bcsel1_fields,		ARRAY_SIZE(difv2_bcsel1_fields)},
+	{"BCREG",		DIFv2_BCREG,		difv2_bcreg_fields,			ARRAY_SIZE(difv2_bcreg_fields)},
+	{"INVERT_BIT",	DIFv2_INVERT_BIT,	difv2_invert_bit_fields,	ARRAY_SIZE(difv2_invert_bit_fields)},
+	{"SYNC_CONFIG",	DIFv2_SYNC_CONFIG,	difv2_sync_config_fields,	ARRAY_SIZE(difv2_sync_config_fields)},
+	{"SYNC_COUNT",	DIFv2_SYNC_COUNT,	difv2_sync_count_fields,	ARRAY_SIZE(difv2_sync_count_fields)},
+	{"BR",			DIFv2_BR,			difv2_br_fields,			ARRAY_SIZE(difv2_br_fields)},
+	{"FDIV",		DIFv2_FDIV,			difv2_fdiv_fields,			ARRAY_SIZE(difv2_fdiv_fields)},
+	{"DEBUG",		DIFv2_DEBUG,		NULL,						0},
+	{"RXFIFO_CFG",	DIFv2_RXFIFO_CFG,	difv2_rxfifo_cfg_fields,	ARRAY_SIZE(difv2_rxfifo_cfg_fields)},
+	{"MRPS_CTRL",	DIFv2_MRPS_CTRL,	difv2_mrps_ctrl_fields,		ARRAY_SIZE(difv2_mrps_ctrl_fields)},
+	{"RPS_STAT",	DIFv2_RPS_STAT,		difv2_rps_stat_fields,		ARRAY_SIZE(difv2_rps_stat_fields)},
+	{"RXFFS_STAT",	DIFv2_RXFFS_STAT,	NULL,						0},
+	{"TXFIFO_CFG",	DIFv2_TXFIFO_CFG,	difv2_txfifo_cfg_fields,	ARRAY_SIZE(difv2_txfifo_cfg_fields)},
+	{"TPS_CTRL",	DIFv2_TPS_CTRL,		difv2_tps_ctrl_fields,		ARRAY_SIZE(difv2_tps_ctrl_fields)},
+	{"TXFFS_STAT",	DIFv2_TXFFS_STAT,	NULL,						0},
+	{"ERRIRQSM",	DIFv2_ERRIRQSM,		difv2_errirqsm_fields,		ARRAY_SIZE(difv2_errirqsm_fields)},
+	{"ERRIRQSS",	DIFv2_ERRIRQSS,		difv2_errirqss_fields,		ARRAY_SIZE(difv2_errirqss_fields)},
+	{"ERRIRQSC",	DIFv2_ERRIRQSC,		difv2_errirqsc_fields,		ARRAY_SIZE(difv2_errirqsc_fields)},
+	{"RIS",			DIFv2_RIS,			difv2_ris_fields,			ARRAY_SIZE(difv2_ris_fields)},
+	{"IMSC",		DIFv2_IMSC,			difv2_imsc_fields,			ARRAY_SIZE(difv2_imsc_fields)},
+	{"MIS",			DIFv2_MIS,			difv2_mis_fields,			ARRAY_SIZE(difv2_mis_fields)},
+	{"ICR",			DIFv2_ICR,			difv2_icr_fields,			ARRAY_SIZE(difv2_icr_fields)},
+	{"ISR",			DIFv2_ISR,			difv2_isr_fields,			ARRAY_SIZE(difv2_isr_fields)},
+	{"DMAE",		DIFv2_DMAE,			difv2_dmae_fields,			ARRAY_SIZE(difv2_dmae_fields)},
+	{"TXD",			DIFv2_TXD,			difv2_txd_fields,			ARRAY_SIZE(difv2_txd_fields)},
+	{"RXD",			DIFv2_RXD,			difv2_rxd_fields,			ARRAY_SIZE(difv2_rxd_fields)},
 };
 
-static const pmb887x_io_field_t dsp_clc_fields[] = {
+const DebugRegs pmb887x_difv2_regs = {
+	.regs = difv2_regs,
+	.count = ARRAY_SIZE(difv2_regs),
+	.reg_size = 4,
+	.addr_digits = 8,
+};
+
+static const DebugRegField dsp_clc_fields[] = {
 	{"DISR",	MOD_CLC_DISR,	MOD_CLC_DISR_SHIFT,	NULL,	0},
 	{"DISS",	MOD_CLC_DISS,	MOD_CLC_DISS_SHIFT,	NULL,	0},
 	{"SPEN",	MOD_CLC_SPEN,	MOD_CLC_SPEN_SHIFT,	NULL,	0},
@@ -2642,48 +2705,55 @@ static const pmb887x_io_field_t dsp_clc_fields[] = {
 	{"RMC",		MOD_CLC_RMC,	MOD_CLC_RMC_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t dsp_id_fields[] = {
+static const DebugRegField dsp_id_fields[] = {
 	{"REV",		MOD_ID_REV,		MOD_ID_REV_SHIFT,		NULL,	0},
 	{"32B",		MOD_ID_32B,		MOD_ID_32B_SHIFT,		NULL,	0},
 	{"NUMBER",	MOD_ID_NUMBER,	MOD_ID_NUMBER_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t dsp_sem_set_fields[] = {
+static const DebugRegField dsp_sem_set_fields[] = {
 	{"FLAGS",	DSP_SEM_SET_FLAGS,	DSP_SEM_SET_FLAGS_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t dsp_sem_clear_fields[] = {
+static const DebugRegField dsp_sem_clear_fields[] = {
 	{"FLAGS",	DSP_SEM_CLEAR_FLAGS,	DSP_SEM_CLEAR_FLAGS_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t dsp_sem_status_fields[] = {
+static const DebugRegField dsp_sem_status_fields[] = {
 	{"FLAGS",	DSP_SEM_STATUS_FLAGS,	DSP_SEM_STATUS_FLAGS_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t dsp_com_set_fields[] = {
+static const DebugRegField dsp_com_set_fields[] = {
 	{"FLAGS",	DSP_COM_SET_FLAGS,	DSP_COM_SET_FLAGS_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t dsp_com_clear_fields[] = {
+static const DebugRegField dsp_com_clear_fields[] = {
 	{"FLAGS",	DSP_COM_CLEAR_FLAGS,	DSP_COM_CLEAR_FLAGS_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t dsp_com_status_fields[] = {
+static const DebugRegField dsp_com_status_fields[] = {
 	{"FLAGS",	DSP_COM_STATUS_FLAGS,	DSP_COM_STATUS_FLAGS_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_reg_t dsp_regs[] = {
-	{"CLC",			DSP_CLC,		dsp_clc_fields,			ARRAY_SIZE(dsp_clc_fields),			0},
-	{"ID",			DSP_ID,			dsp_id_fields,			ARRAY_SIZE(dsp_id_fields),			0},
-	{"SEM_SET",		DSP_SEM_SET,	dsp_sem_set_fields,		ARRAY_SIZE(dsp_sem_set_fields),		0},
-	{"SEM_CLEAR",	DSP_SEM_CLEAR,	dsp_sem_clear_fields,	ARRAY_SIZE(dsp_sem_clear_fields),	0},
-	{"SEM_STATUS",	DSP_SEM_STATUS,	dsp_sem_status_fields,	ARRAY_SIZE(dsp_sem_status_fields),	0},
-	{"COM_SET",		DSP_COM_SET,	dsp_com_set_fields,		ARRAY_SIZE(dsp_com_set_fields),		0},
-	{"COM_CLEAR",	DSP_COM_CLEAR,	dsp_com_clear_fields,	ARRAY_SIZE(dsp_com_clear_fields),	0},
-	{"COM_STATUS",	DSP_COM_STATUS,	dsp_com_status_fields,	ARRAY_SIZE(dsp_com_status_fields),	0},
+static const DebugReg dsp_regs[] = {
+	{"CLC",			DSP_CLC,		dsp_clc_fields,			ARRAY_SIZE(dsp_clc_fields)},
+	{"ID",			DSP_ID,			dsp_id_fields,			ARRAY_SIZE(dsp_id_fields)},
+	{"SEM_SET",		DSP_SEM_SET,	dsp_sem_set_fields,		ARRAY_SIZE(dsp_sem_set_fields)},
+	{"SEM_CLEAR",	DSP_SEM_CLEAR,	dsp_sem_clear_fields,	ARRAY_SIZE(dsp_sem_clear_fields)},
+	{"SEM_STATUS",	DSP_SEM_STATUS,	dsp_sem_status_fields,	ARRAY_SIZE(dsp_sem_status_fields)},
+	{"COM_SET",		DSP_COM_SET,	dsp_com_set_fields,		ARRAY_SIZE(dsp_com_set_fields)},
+	{"COM_CLEAR",	DSP_COM_CLEAR,	dsp_com_clear_fields,	ARRAY_SIZE(dsp_com_clear_fields)},
+	{"COM_STATUS",	DSP_COM_STATUS,	dsp_com_status_fields,	ARRAY_SIZE(dsp_com_status_fields)},
 };
 
-static const pmb887x_io_field_t ebu_clc_fields[] = {
+const DebugRegs pmb887x_dsp_regs = {
+	.regs = dsp_regs,
+	.count = ARRAY_SIZE(dsp_regs),
+	.reg_size = 4,
+	.addr_digits = 8,
+};
+
+static const DebugRegField ebu_clc_fields[] = {
 	{"DISR",	MOD_CLC_DISR,	MOD_CLC_DISR_SHIFT,	NULL,	0},
 	{"DISS",	MOD_CLC_DISS,	MOD_CLC_DISS_SHIFT,	NULL,	0},
 	{"SPEN",	MOD_CLC_SPEN,	MOD_CLC_SPEN_SHIFT,	NULL,	0},
@@ -2693,13 +2763,13 @@ static const pmb887x_io_field_t ebu_clc_fields[] = {
 	{"RMC",		MOD_CLC_RMC,	MOD_CLC_RMC_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t ebu_id_fields[] = {
+static const DebugRegField ebu_id_fields[] = {
 	{"REV",		MOD_ID_REV,		MOD_ID_REV_SHIFT,		NULL,	0},
 	{"32B",		MOD_ID_32B,		MOD_ID_32B_SHIFT,		NULL,	0},
 	{"NUMBER",	MOD_ID_NUMBER,	MOD_ID_NUMBER_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t ebu_con_fields[] = {
+static const DebugRegField ebu_con_fields[] = {
 	{"EXTRECON",	EBU_CON_EXTRECON,	EBU_CON_EXTRECON_SHIFT,	NULL,	0},
 	{"EXTSVM",		EBU_CON_EXTSVM,		EBU_CON_EXTSVM_SHIFT,	NULL,	0},
 	{"EXTACC",		EBU_CON_EXTACC,		EBU_CON_EXTACC_SHIFT,	NULL,	0},
@@ -2715,7 +2785,7 @@ static const pmb887x_io_field_t ebu_con_fields[] = {
 	{"BFSSS",		EBU_CON_BFSSS,		EBU_CON_BFSSS_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t ebu_bfcon_fields[] = {
+static const DebugRegField ebu_bfcon_fields[] = {
 	{"FETBLEN0",	EBU_BFCON_FETBLEN0,		EBU_BFCON_FETBLEN0_SHIFT,	NULL,	0},
 	{"FBBMSEL0",	EBU_BFCON_FBBMSEL0,		EBU_BFCON_FBBMSEL0_SHIFT,	NULL,	0},
 	{"WAITFUNC0",	EBU_BFCON_WAITFUNC0,	EBU_BFCON_WAITFUNC0_SHIFT,	NULL,	0},
@@ -2732,7 +2802,7 @@ static const pmb887x_io_field_t ebu_bfcon_fields[] = {
 	{"DBA1",		EBU_BFCON_DBA1,			EBU_BFCON_DBA1_SHIFT,		NULL,	0},
 };
 
-static const pmb887x_io_field_t ebu_sdrmref_fields[] = {
+static const DebugRegField ebu_sdrmref_fields[] = {
 	{"REFRESHC",	EBU_SDRMREF_REFRESHC,	EBU_SDRMREF_REFRESHC_SHIFT,		NULL,	0},
 	{"REFRESHR",	EBU_SDRMREF_REFRESHR,	EBU_SDRMREF_REFRESHR_SHIFT,		NULL,	0},
 	{"SELFREXST",	EBU_SDRMREF_SELFREXST,	EBU_SDRMREF_SELFREXST_SHIFT,	NULL,	0},
@@ -2742,7 +2812,7 @@ static const pmb887x_io_field_t ebu_sdrmref_fields[] = {
 	{"AUTOSELFR",	EBU_SDRMREF_AUTOSELFR,	EBU_SDRMREF_AUTOSELFR_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t ebu_sdrmcon_fields[] = {
+static const DebugRegField ebu_sdrmcon_fields[] = {
 	{"CRAS",	EBU_SDRMCON_CRAS,	EBU_SDRMCON_CRAS_SHIFT,		NULL,	0},
 	{"CRFSH",	EBU_SDRMCON_CRFSH,	EBU_SDRMCON_CRFSH_SHIFT,	NULL,	0},
 	{"CRSC",	EBU_SDRMCON_CRSC,	EBU_SDRMCON_CRSC_SHIFT,		NULL,	0},
@@ -2755,20 +2825,20 @@ static const pmb887x_io_field_t ebu_sdrmcon_fields[] = {
 	{"CRCE",	EBU_SDRMCON_CRCE,	EBU_SDRMCON_CRCE_SHIFT,		NULL,	0},
 };
 
-static const pmb887x_io_field_t ebu_sdrmod_fields[] = {
+static const DebugRegField ebu_sdrmod_fields[] = {
 	{"BURSTL",	EBU_SDRMOD_BURSTL,	EBU_SDRMOD_BURSTL_SHIFT,	NULL,	0},
 	{"BTYP",	EBU_SDRMOD_BTYP,	EBU_SDRMOD_BTYP_SHIFT,		NULL,	0},
 	{"CASLAT",	EBU_SDRMOD_CASLAT,	EBU_SDRMOD_CASLAT_SHIFT,	NULL,	0},
 	{"OPMODE",	EBU_SDRMOD_OPMODE,	EBU_SDRMOD_OPMODE_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t ebu_sdrstat_fields[] = {
+static const DebugRegField ebu_sdrstat_fields[] = {
 	{"REFERR",		EBU_SDRSTAT_REFERR,		EBU_SDRSTAT_REFERR_SHIFT,		NULL,	0},
 	{"SDRM_BUSY",	EBU_SDRSTAT_SDRM_BUSY,	EBU_SDRSTAT_SDRM_BUSY_SHIFT,	NULL,	0},
 	{"UNK8",		EBU_SDRSTAT_UNK8,		EBU_SDRSTAT_UNK8_SHIFT,			NULL,	0},
 };
 
-static const pmb887x_io_field_t ebu_addrsel_fields[] = {
+static const DebugRegField ebu_addrsel_fields[] = {
 	{"REGENAB",	EBU_ADDRSEL_REGENAB,	EBU_ADDRSEL_REGENAB_SHIFT,	NULL,	0},
 	{"ALTENAB",	EBU_ADDRSEL_ALTENAB,	EBU_ADDRSEL_ALTENAB_SHIFT,	NULL,	0},
 	{"MASK",	EBU_ADDRSEL_MASK,		EBU_ADDRSEL_MASK_SHIFT,		NULL,	0},
@@ -2776,7 +2846,7 @@ static const pmb887x_io_field_t ebu_addrsel_fields[] = {
 	{"BASE",	EBU_ADDRSEL_BASE,		EBU_ADDRSEL_BASE_SHIFT,		NULL,	0},
 };
 
-static const pmb887x_io_value_t ebu_ebu_buscon_agen_values[] = {
+static const DebugRegValue ebu_ebu_buscon_agen_values[] = {
 	{"ASYNC_DEMULTIPLEXED",	EBU_BUSCON_AGEN_ASYNC_DEMULTIPLEXED},
 	{"ASYNC_MULTIPLEXED",	EBU_BUSCON_AGEN_ASYNC_MULTIPLEXED},
 	{"BURST_FLASH_0",		EBU_BUSCON_AGEN_BURST_FLASH_0},
@@ -2785,7 +2855,7 @@ static const pmb887x_io_value_t ebu_ebu_buscon_agen_values[] = {
 	{"BURST_FLASH_1",		EBU_BUSCON_AGEN_BURST_FLASH_1},
 };
 
-static const pmb887x_io_field_t ebu_buscon_fields[] = {
+static const DebugRegField ebu_buscon_fields[] = {
 	{"MULTMAP",		EBU_BUSCON_MULTMAP,		EBU_BUSCON_MULTMAP_SHIFT,	NULL,						0},
 	{"UNK7",		EBU_BUSCON_UNK7,		EBU_BUSCON_UNK7_SHIFT,		NULL,						0},
 	{"WPRE",		EBU_BUSCON_WPRE,		EBU_BUSCON_WPRE_SHIFT,		NULL,						0},
@@ -2804,7 +2874,7 @@ static const pmb887x_io_field_t ebu_buscon_fields[] = {
 	{"WRITE",		EBU_BUSCON_WRITE,		EBU_BUSCON_WRITE_SHIFT,		NULL,						0},
 };
 
-static const pmb887x_io_field_t ebu_busap_fields[] = {
+static const DebugRegField ebu_busap_fields[] = {
 	{"DTACS",		EBU_BUSAP_DTACS,	EBU_BUSAP_DTACS_SHIFT,		NULL,	0},
 	{"DTARDWR",		EBU_BUSAP_DTARDWR,	EBU_BUSAP_DTARDWR_SHIFT,	NULL,	0},
 	{"WRRECOVC",	EBU_BUSAP_WRRECOVC,	EBU_BUSAP_WRRECOVC_SHIFT,	NULL,	0},
@@ -2818,7 +2888,7 @@ static const pmb887x_io_field_t ebu_busap_fields[] = {
 	{"ADDRC",		EBU_BUSAP_ADDRC,	EBU_BUSAP_ADDRC_SHIFT,		NULL,	0},
 };
 
-static const pmb887x_io_field_t ebu_emuas_fields[] = {
+static const DebugRegField ebu_emuas_fields[] = {
 	{"REGENAB",	EBU_EMUAS_REGENAB,	EBU_EMUAS_REGENAB_SHIFT,	NULL,	0},
 	{"ALTENAB",	EBU_EMUAS_ALTENAB,	EBU_EMUAS_ALTENAB_SHIFT,	NULL,	0},
 	{"MASK",	EBU_EMUAS_MASK,		EBU_EMUAS_MASK_SHIFT,		NULL,	0},
@@ -2826,7 +2896,7 @@ static const pmb887x_io_field_t ebu_emuas_fields[] = {
 	{"BASE",	EBU_EMUAS_BASE,		EBU_EMUAS_BASE_SHIFT,		NULL,	0},
 };
 
-static const pmb887x_io_value_t ebu_ebu_emubc_agen_values[] = {
+static const DebugRegValue ebu_ebu_emubc_agen_values[] = {
 	{"ASYNC_DEMULTIPLEXED",	EBU_EMUBC_AGEN_ASYNC_DEMULTIPLEXED},
 	{"ASYNC_MULTIPLEXED",	EBU_EMUBC_AGEN_ASYNC_MULTIPLEXED},
 	{"BURST_FLASH_0",		EBU_EMUBC_AGEN_BURST_FLASH_0},
@@ -2835,7 +2905,7 @@ static const pmb887x_io_value_t ebu_ebu_emubc_agen_values[] = {
 	{"BURST_FLASH_1",		EBU_EMUBC_AGEN_BURST_FLASH_1},
 };
 
-static const pmb887x_io_field_t ebu_emubc_fields[] = {
+static const DebugRegField ebu_emubc_fields[] = {
 	{"MULTMAP",		EBU_EMUBC_MULTMAP,		EBU_EMUBC_MULTMAP_SHIFT,	NULL,						0},
 	{"UNK7",		EBU_EMUBC_UNK7,			EBU_EMUBC_UNK7_SHIFT,		NULL,						0},
 	{"WPRE",		EBU_EMUBC_WPRE,			EBU_EMUBC_WPRE_SHIFT,		NULL,						0},
@@ -2854,7 +2924,7 @@ static const pmb887x_io_field_t ebu_emubc_fields[] = {
 	{"WRITE",		EBU_EMUBC_WRITE,		EBU_EMUBC_WRITE_SHIFT,		NULL,						0},
 };
 
-static const pmb887x_io_field_t ebu_emubap_fields[] = {
+static const DebugRegField ebu_emubap_fields[] = {
 	{"DTACS",		EBU_EMUBAP_DTACS,		EBU_EMUBAP_DTACS_SHIFT,		NULL,	0},
 	{"DTARDWR",		EBU_EMUBAP_DTARDWR,		EBU_EMUBAP_DTARDWR_SHIFT,	NULL,	0},
 	{"WRRECOVC",	EBU_EMUBAP_WRRECOVC,	EBU_EMUBAP_WRRECOVC_SHIFT,	NULL,	0},
@@ -2868,52 +2938,59 @@ static const pmb887x_io_field_t ebu_emubap_fields[] = {
 	{"ADDRC",		EBU_EMUBAP_ADDRC,		EBU_EMUBAP_ADDRC_SHIFT,		NULL,	0},
 };
 
-static const pmb887x_io_field_t ebu_emuovl_fields[] = {
+static const DebugRegField ebu_emuovl_fields[] = {
 	{"OVERLAY",	EBU_EMUOVL_OVERLAY,	EBU_EMUOVL_OVERLAY_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_reg_t ebu_regs[] = {
-	{"CLC",			EBU_CLC,		ebu_clc_fields,		ARRAY_SIZE(ebu_clc_fields),		0},
-	{"ID",			EBU_ID,			ebu_id_fields,		ARRAY_SIZE(ebu_id_fields),		0},
-	{"CON",			EBU_CON,		ebu_con_fields,		ARRAY_SIZE(ebu_con_fields),		0},
-	{"BFCON",		EBU_BFCON,		ebu_bfcon_fields,	ARRAY_SIZE(ebu_bfcon_fields),	0},
-	{"SDRMREF0",	EBU_SDRMREF0,	ebu_sdrmref_fields,	ARRAY_SIZE(ebu_sdrmref_fields),	0},
-	{"SDRMREF1",	EBU_SDRMREF1,	ebu_sdrmref_fields,	ARRAY_SIZE(ebu_sdrmref_fields),	0},
-	{"SDRMCON0",	EBU_SDRMCON0,	ebu_sdrmcon_fields,	ARRAY_SIZE(ebu_sdrmcon_fields),	0},
-	{"SDRMCON1",	EBU_SDRMCON1,	ebu_sdrmcon_fields,	ARRAY_SIZE(ebu_sdrmcon_fields),	0},
-	{"SDRMOD0",		EBU_SDRMOD0,	ebu_sdrmod_fields,	ARRAY_SIZE(ebu_sdrmod_fields),	0},
-	{"SDRMOD1",		EBU_SDRMOD1,	ebu_sdrmod_fields,	ARRAY_SIZE(ebu_sdrmod_fields),	0},
-	{"SDRSTAT0",	EBU_SDRSTAT0,	ebu_sdrstat_fields,	ARRAY_SIZE(ebu_sdrstat_fields),	0},
-	{"SDRSTAT1",	EBU_SDRSTAT1,	ebu_sdrstat_fields,	ARRAY_SIZE(ebu_sdrstat_fields),	0},
-	{"ADDRSEL0",	EBU_ADDRSEL0,	ebu_addrsel_fields,	ARRAY_SIZE(ebu_addrsel_fields),	0},
-	{"ADDRSEL1",	EBU_ADDRSEL1,	ebu_addrsel_fields,	ARRAY_SIZE(ebu_addrsel_fields),	0},
-	{"ADDRSEL2",	EBU_ADDRSEL2,	ebu_addrsel_fields,	ARRAY_SIZE(ebu_addrsel_fields),	0},
-	{"ADDRSEL3",	EBU_ADDRSEL3,	ebu_addrsel_fields,	ARRAY_SIZE(ebu_addrsel_fields),	0},
-	{"ADDRSEL4",	EBU_ADDRSEL4,	ebu_addrsel_fields,	ARRAY_SIZE(ebu_addrsel_fields),	0},
-	{"ADDRSEL5",	EBU_ADDRSEL5,	ebu_addrsel_fields,	ARRAY_SIZE(ebu_addrsel_fields),	0},
-	{"ADDRSEL6",	EBU_ADDRSEL6,	ebu_addrsel_fields,	ARRAY_SIZE(ebu_addrsel_fields),	0},
-	{"BUSCON0",		EBU_BUSCON0,	ebu_buscon_fields,	ARRAY_SIZE(ebu_buscon_fields),	0},
-	{"BUSCON1",		EBU_BUSCON1,	ebu_buscon_fields,	ARRAY_SIZE(ebu_buscon_fields),	0},
-	{"BUSCON2",		EBU_BUSCON2,	ebu_buscon_fields,	ARRAY_SIZE(ebu_buscon_fields),	0},
-	{"BUSCON3",		EBU_BUSCON3,	ebu_buscon_fields,	ARRAY_SIZE(ebu_buscon_fields),	0},
-	{"BUSCON4",		EBU_BUSCON4,	ebu_buscon_fields,	ARRAY_SIZE(ebu_buscon_fields),	0},
-	{"BUSCON5",		EBU_BUSCON5,	ebu_buscon_fields,	ARRAY_SIZE(ebu_buscon_fields),	0},
-	{"BUSCON6",		EBU_BUSCON6,	ebu_buscon_fields,	ARRAY_SIZE(ebu_buscon_fields),	0},
-	{"BUSAP0",		EBU_BUSAP0,		ebu_busap_fields,	ARRAY_SIZE(ebu_busap_fields),	0},
-	{"BUSAP1",		EBU_BUSAP1,		ebu_busap_fields,	ARRAY_SIZE(ebu_busap_fields),	0},
-	{"BUSAP2",		EBU_BUSAP2,		ebu_busap_fields,	ARRAY_SIZE(ebu_busap_fields),	0},
-	{"BUSAP3",		EBU_BUSAP3,		ebu_busap_fields,	ARRAY_SIZE(ebu_busap_fields),	0},
-	{"BUSAP4",		EBU_BUSAP4,		ebu_busap_fields,	ARRAY_SIZE(ebu_busap_fields),	0},
-	{"BUSAP5",		EBU_BUSAP5,		ebu_busap_fields,	ARRAY_SIZE(ebu_busap_fields),	0},
-	{"BUSAP6",		EBU_BUSAP6,		ebu_busap_fields,	ARRAY_SIZE(ebu_busap_fields),	0},
-	{"EMUAS",		EBU_EMUAS,		ebu_emuas_fields,	ARRAY_SIZE(ebu_emuas_fields),	0},
-	{"EMUBC",		EBU_EMUBC,		ebu_emubc_fields,	ARRAY_SIZE(ebu_emubc_fields),	0},
-	{"EMUBAP",		EBU_EMUBAP,		ebu_emubap_fields,	ARRAY_SIZE(ebu_emubap_fields),	0},
-	{"EMUOVL",		EBU_EMUOVL,		ebu_emuovl_fields,	ARRAY_SIZE(ebu_emuovl_fields),	0},
-	{"USERCON",		EBU_USERCON,	NULL,				0,								0},
+static const DebugReg ebu_regs[] = {
+	{"CLC",			EBU_CLC,		ebu_clc_fields,		ARRAY_SIZE(ebu_clc_fields)},
+	{"ID",			EBU_ID,			ebu_id_fields,		ARRAY_SIZE(ebu_id_fields)},
+	{"CON",			EBU_CON,		ebu_con_fields,		ARRAY_SIZE(ebu_con_fields)},
+	{"BFCON",		EBU_BFCON,		ebu_bfcon_fields,	ARRAY_SIZE(ebu_bfcon_fields)},
+	{"SDRMREF0",	EBU_SDRMREF0,	ebu_sdrmref_fields,	ARRAY_SIZE(ebu_sdrmref_fields)},
+	{"SDRMREF1",	EBU_SDRMREF1,	ebu_sdrmref_fields,	ARRAY_SIZE(ebu_sdrmref_fields)},
+	{"SDRMCON0",	EBU_SDRMCON0,	ebu_sdrmcon_fields,	ARRAY_SIZE(ebu_sdrmcon_fields)},
+	{"SDRMCON1",	EBU_SDRMCON1,	ebu_sdrmcon_fields,	ARRAY_SIZE(ebu_sdrmcon_fields)},
+	{"SDRMOD0",		EBU_SDRMOD0,	ebu_sdrmod_fields,	ARRAY_SIZE(ebu_sdrmod_fields)},
+	{"SDRMOD1",		EBU_SDRMOD1,	ebu_sdrmod_fields,	ARRAY_SIZE(ebu_sdrmod_fields)},
+	{"SDRSTAT0",	EBU_SDRSTAT0,	ebu_sdrstat_fields,	ARRAY_SIZE(ebu_sdrstat_fields)},
+	{"SDRSTAT1",	EBU_SDRSTAT1,	ebu_sdrstat_fields,	ARRAY_SIZE(ebu_sdrstat_fields)},
+	{"ADDRSEL0",	EBU_ADDRSEL0,	ebu_addrsel_fields,	ARRAY_SIZE(ebu_addrsel_fields)},
+	{"ADDRSEL1",	EBU_ADDRSEL1,	ebu_addrsel_fields,	ARRAY_SIZE(ebu_addrsel_fields)},
+	{"ADDRSEL2",	EBU_ADDRSEL2,	ebu_addrsel_fields,	ARRAY_SIZE(ebu_addrsel_fields)},
+	{"ADDRSEL3",	EBU_ADDRSEL3,	ebu_addrsel_fields,	ARRAY_SIZE(ebu_addrsel_fields)},
+	{"ADDRSEL4",	EBU_ADDRSEL4,	ebu_addrsel_fields,	ARRAY_SIZE(ebu_addrsel_fields)},
+	{"ADDRSEL5",	EBU_ADDRSEL5,	ebu_addrsel_fields,	ARRAY_SIZE(ebu_addrsel_fields)},
+	{"ADDRSEL6",	EBU_ADDRSEL6,	ebu_addrsel_fields,	ARRAY_SIZE(ebu_addrsel_fields)},
+	{"BUSCON0",		EBU_BUSCON0,	ebu_buscon_fields,	ARRAY_SIZE(ebu_buscon_fields)},
+	{"BUSCON1",		EBU_BUSCON1,	ebu_buscon_fields,	ARRAY_SIZE(ebu_buscon_fields)},
+	{"BUSCON2",		EBU_BUSCON2,	ebu_buscon_fields,	ARRAY_SIZE(ebu_buscon_fields)},
+	{"BUSCON3",		EBU_BUSCON3,	ebu_buscon_fields,	ARRAY_SIZE(ebu_buscon_fields)},
+	{"BUSCON4",		EBU_BUSCON4,	ebu_buscon_fields,	ARRAY_SIZE(ebu_buscon_fields)},
+	{"BUSCON5",		EBU_BUSCON5,	ebu_buscon_fields,	ARRAY_SIZE(ebu_buscon_fields)},
+	{"BUSCON6",		EBU_BUSCON6,	ebu_buscon_fields,	ARRAY_SIZE(ebu_buscon_fields)},
+	{"BUSAP0",		EBU_BUSAP0,		ebu_busap_fields,	ARRAY_SIZE(ebu_busap_fields)},
+	{"BUSAP1",		EBU_BUSAP1,		ebu_busap_fields,	ARRAY_SIZE(ebu_busap_fields)},
+	{"BUSAP2",		EBU_BUSAP2,		ebu_busap_fields,	ARRAY_SIZE(ebu_busap_fields)},
+	{"BUSAP3",		EBU_BUSAP3,		ebu_busap_fields,	ARRAY_SIZE(ebu_busap_fields)},
+	{"BUSAP4",		EBU_BUSAP4,		ebu_busap_fields,	ARRAY_SIZE(ebu_busap_fields)},
+	{"BUSAP5",		EBU_BUSAP5,		ebu_busap_fields,	ARRAY_SIZE(ebu_busap_fields)},
+	{"BUSAP6",		EBU_BUSAP6,		ebu_busap_fields,	ARRAY_SIZE(ebu_busap_fields)},
+	{"EMUAS",		EBU_EMUAS,		ebu_emuas_fields,	ARRAY_SIZE(ebu_emuas_fields)},
+	{"EMUBC",		EBU_EMUBC,		ebu_emubc_fields,	ARRAY_SIZE(ebu_emubc_fields)},
+	{"EMUBAP",		EBU_EMUBAP,		ebu_emubap_fields,	ARRAY_SIZE(ebu_emubap_fields)},
+	{"EMUOVL",		EBU_EMUOVL,		ebu_emuovl_fields,	ARRAY_SIZE(ebu_emuovl_fields)},
+	{"USERCON",		EBU_USERCON,	NULL,				0},
 };
 
-static const pmb887x_io_field_t gpio_clc_fields[] = {
+const DebugRegs pmb887x_ebu_regs = {
+	.regs = ebu_regs,
+	.count = ARRAY_SIZE(ebu_regs),
+	.reg_size = 4,
+	.addr_digits = 8,
+};
+
+static const DebugRegField gpio_clc_fields[] = {
 	{"DISR",	MOD_CLC_DISR,	MOD_CLC_DISR_SHIFT,	NULL,	0},
 	{"DISS",	MOD_CLC_DISS,	MOD_CLC_DISS_SHIFT,	NULL,	0},
 	{"SPEN",	MOD_CLC_SPEN,	MOD_CLC_SPEN_SHIFT,	NULL,	0},
@@ -2923,85 +3000,85 @@ static const pmb887x_io_field_t gpio_clc_fields[] = {
 	{"RMC",		MOD_CLC_RMC,	MOD_CLC_RMC_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t gpio_id_fields[] = {
+static const DebugRegField gpio_id_fields[] = {
 	{"REV",		MOD_ID_REV,		MOD_ID_REV_SHIFT,		NULL,	0},
 	{"32B",		MOD_ID_32B,		MOD_ID_32B_SHIFT,		NULL,	0},
 	{"NUMBER",	MOD_ID_NUMBER,	MOD_ID_NUMBER_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_value_t gpio_gpio_mon_cr1_pdpu_values[] = {
+static const DebugRegValue gpio_gpio_mon_cr1_pdpu_values[] = {
 	{"NONE",		GPIO_MON_CR1_PDPU_NONE},
 	{"PULLUP",		GPIO_MON_CR1_PDPU_PULLUP},
 	{"PULLDOWN",	GPIO_MON_CR1_PDPU_PULLDOWN},
 };
 
-static const pmb887x_io_value_t gpio_gpio_mon_cr1_enaq_values[] = {
+static const DebugRegValue gpio_gpio_mon_cr1_enaq_values[] = {
 	{"OUTPUT_ENABLED",	GPIO_MON_CR1_ENAQ_OUTPUT_ENABLED},
 	{"TRISTATE",		GPIO_MON_CR1_ENAQ_TRISTATE},
 };
 
-static const pmb887x_io_field_t gpio_mon_cr1_fields[] = {
+static const DebugRegField gpio_mon_cr1_fields[] = {
 	{"SIGNAL_SELECT",	GPIO_MON_CR1_SIGNAL_SELECT,	GPIO_MON_CR1_SIGNAL_SELECT_SHIFT,	NULL,							0},
 	{"BLOCK_SELECT",	GPIO_MON_CR1_BLOCK_SELECT,	GPIO_MON_CR1_BLOCK_SELECT_SHIFT,	NULL,							0},
 	{"PDPU",			GPIO_MON_CR1_PDPU,			GPIO_MON_CR1_PDPU_SHIFT,			gpio_gpio_mon_cr1_pdpu_values,	ARRAY_SIZE(gpio_gpio_mon_cr1_pdpu_values)},
 	{"ENAQ",			GPIO_MON_CR1_ENAQ,			GPIO_MON_CR1_ENAQ_SHIFT,			gpio_gpio_mon_cr1_enaq_values,	ARRAY_SIZE(gpio_gpio_mon_cr1_enaq_values)},
 };
 
-static const pmb887x_io_value_t gpio_gpio_mon_cr2_pdpu_values[] = {
+static const DebugRegValue gpio_gpio_mon_cr2_pdpu_values[] = {
 	{"NONE",		GPIO_MON_CR2_PDPU_NONE},
 	{"PULLUP",		GPIO_MON_CR2_PDPU_PULLUP},
 	{"PULLDOWN",	GPIO_MON_CR2_PDPU_PULLDOWN},
 };
 
-static const pmb887x_io_value_t gpio_gpio_mon_cr2_enaq_values[] = {
+static const DebugRegValue gpio_gpio_mon_cr2_enaq_values[] = {
 	{"OUTPUT_ENABLED",	GPIO_MON_CR2_ENAQ_OUTPUT_ENABLED},
 	{"TRISTATE",		GPIO_MON_CR2_ENAQ_TRISTATE},
 };
 
-static const pmb887x_io_field_t gpio_mon_cr2_fields[] = {
+static const DebugRegField gpio_mon_cr2_fields[] = {
 	{"SIGNAL_SELECT",	GPIO_MON_CR2_SIGNAL_SELECT,	GPIO_MON_CR2_SIGNAL_SELECT_SHIFT,	NULL,							0},
 	{"BLOCK_SELECT",	GPIO_MON_CR2_BLOCK_SELECT,	GPIO_MON_CR2_BLOCK_SELECT_SHIFT,	NULL,							0},
 	{"PDPU",			GPIO_MON_CR2_PDPU,			GPIO_MON_CR2_PDPU_SHIFT,			gpio_gpio_mon_cr2_pdpu_values,	ARRAY_SIZE(gpio_gpio_mon_cr2_pdpu_values)},
 	{"ENAQ",			GPIO_MON_CR2_ENAQ,			GPIO_MON_CR2_ENAQ_SHIFT,			gpio_gpio_mon_cr2_enaq_values,	ARRAY_SIZE(gpio_gpio_mon_cr2_enaq_values)},
 };
 
-static const pmb887x_io_value_t gpio_gpio_mon_cr3_pdpu_values[] = {
+static const DebugRegValue gpio_gpio_mon_cr3_pdpu_values[] = {
 	{"NONE",		GPIO_MON_CR3_PDPU_NONE},
 	{"PULLUP",		GPIO_MON_CR3_PDPU_PULLUP},
 	{"PULLDOWN",	GPIO_MON_CR3_PDPU_PULLDOWN},
 };
 
-static const pmb887x_io_value_t gpio_gpio_mon_cr3_enaq_values[] = {
+static const DebugRegValue gpio_gpio_mon_cr3_enaq_values[] = {
 	{"OUTPUT_ENABLED",	GPIO_MON_CR3_ENAQ_OUTPUT_ENABLED},
 	{"TRISTATE",		GPIO_MON_CR3_ENAQ_TRISTATE},
 };
 
-static const pmb887x_io_field_t gpio_mon_cr3_fields[] = {
+static const DebugRegField gpio_mon_cr3_fields[] = {
 	{"SIGNAL_SELECT",	GPIO_MON_CR3_SIGNAL_SELECT,	GPIO_MON_CR3_SIGNAL_SELECT_SHIFT,	NULL,							0},
 	{"BLOCK_SELECT",	GPIO_MON_CR3_BLOCK_SELECT,	GPIO_MON_CR3_BLOCK_SELECT_SHIFT,	NULL,							0},
 	{"PDPU",			GPIO_MON_CR3_PDPU,			GPIO_MON_CR3_PDPU_SHIFT,			gpio_gpio_mon_cr3_pdpu_values,	ARRAY_SIZE(gpio_gpio_mon_cr3_pdpu_values)},
 	{"ENAQ",			GPIO_MON_CR3_ENAQ,			GPIO_MON_CR3_ENAQ_SHIFT,			gpio_gpio_mon_cr3_enaq_values,	ARRAY_SIZE(gpio_gpio_mon_cr3_enaq_values)},
 };
 
-static const pmb887x_io_value_t gpio_gpio_mon_cr4_pdpu_values[] = {
+static const DebugRegValue gpio_gpio_mon_cr4_pdpu_values[] = {
 	{"NONE",		GPIO_MON_CR4_PDPU_NONE},
 	{"PULLUP",		GPIO_MON_CR4_PDPU_PULLUP},
 	{"PULLDOWN",	GPIO_MON_CR4_PDPU_PULLDOWN},
 };
 
-static const pmb887x_io_value_t gpio_gpio_mon_cr4_enaq_values[] = {
+static const DebugRegValue gpio_gpio_mon_cr4_enaq_values[] = {
 	{"OUTPUT_ENABLED",	GPIO_MON_CR4_ENAQ_OUTPUT_ENABLED},
 	{"TRISTATE",		GPIO_MON_CR4_ENAQ_TRISTATE},
 };
 
-static const pmb887x_io_field_t gpio_mon_cr4_fields[] = {
+static const DebugRegField gpio_mon_cr4_fields[] = {
 	{"SIGNAL_SELECT",	GPIO_MON_CR4_SIGNAL_SELECT,	GPIO_MON_CR4_SIGNAL_SELECT_SHIFT,	NULL,							0},
 	{"BLOCK_SELECT",	GPIO_MON_CR4_BLOCK_SELECT,	GPIO_MON_CR4_BLOCK_SELECT_SHIFT,	NULL,							0},
 	{"PDPU",			GPIO_MON_CR4_PDPU,			GPIO_MON_CR4_PDPU_SHIFT,			gpio_gpio_mon_cr4_pdpu_values,	ARRAY_SIZE(gpio_gpio_mon_cr4_pdpu_values)},
 	{"ENAQ",			GPIO_MON_CR4_ENAQ,			GPIO_MON_CR4_ENAQ_SHIFT,			gpio_gpio_mon_cr4_enaq_values,	ARRAY_SIZE(gpio_gpio_mon_cr4_enaq_values)},
 };
 
-static const pmb887x_io_value_t gpio_gpio_is_values[] = {
+static const DebugRegValue gpio_gpio_is_values[] = {
 	{"NONE",	GPIO_IS_NONE},
 	{"ALT0",	GPIO_IS_ALT0},
 	{"ALT1",	GPIO_IS_ALT1},
@@ -3012,7 +3089,7 @@ static const pmb887x_io_value_t gpio_gpio_is_values[] = {
 	{"ALT6",	GPIO_IS_ALT6},
 };
 
-static const pmb887x_io_value_t gpio_gpio_os_values[] = {
+static const DebugRegValue gpio_gpio_os_values[] = {
 	{"NONE",	GPIO_OS_NONE},
 	{"ALT0",	GPIO_OS_ALT0},
 	{"ALT1",	GPIO_OS_ALT1},
@@ -3023,40 +3100,40 @@ static const pmb887x_io_value_t gpio_gpio_os_values[] = {
 	{"ALT6",	GPIO_OS_ALT6},
 };
 
-static const pmb887x_io_value_t gpio_gpio_ps_values[] = {
+static const DebugRegValue gpio_gpio_ps_values[] = {
 	{"ALT",		GPIO_PS_ALT},
 	{"MANUAL",	GPIO_PS_MANUAL},
 };
 
-static const pmb887x_io_value_t gpio_gpio_data_values[] = {
+static const DebugRegValue gpio_gpio_data_values[] = {
 	{"LOW",		GPIO_DATA_LOW},
 	{"HIGH",	GPIO_DATA_HIGH},
 };
 
-static const pmb887x_io_value_t gpio_gpio_dir_values[] = {
+static const DebugRegValue gpio_gpio_dir_values[] = {
 	{"IN",	GPIO_DIR_IN},
 	{"OUT",	GPIO_DIR_OUT},
 };
 
-static const pmb887x_io_value_t gpio_gpio_ppen_values[] = {
+static const DebugRegValue gpio_gpio_ppen_values[] = {
 	{"PUSHPULL",	GPIO_PPEN_PUSHPULL},
 	{"OPENDRAIN",	GPIO_PPEN_OPENDRAIN},
 };
 
-static const pmb887x_io_value_t gpio_gpio_pdpu_values[] = {
+static const DebugRegValue gpio_gpio_pdpu_values[] = {
 	{"NONE",		GPIO_PDPU_NONE},
 	{"PULLUP",		GPIO_PDPU_PULLUP},
 	{"PULLDOWN",	GPIO_PDPU_PULLDOWN},
 };
 
-static const pmb887x_io_value_t gpio_gpio_enaq_values[] = {
+static const DebugRegValue gpio_gpio_enaq_values[] = {
 	{"OFF",				GPIO_ENAQ_OFF},
 	{"OUTPUT_ENABLED",	GPIO_ENAQ_OUTPUT_ENABLED},
 	{"ON",				GPIO_ENAQ_ON},
 	{"TRISTATE",		GPIO_ENAQ_TRISTATE},
 };
 
-static const pmb887x_io_field_t gpio_pin_fields[] = {
+static const DebugRegField gpio_pin_fields[] = {
 	{"IS",		GPIO_IS,	GPIO_IS_SHIFT,		gpio_gpio_is_values,	ARRAY_SIZE(gpio_gpio_is_values)},
 	{"OS",		GPIO_OS,	GPIO_OS_SHIFT,		gpio_gpio_os_values,	ARRAY_SIZE(gpio_gpio_os_values)},
 	{"PS",		GPIO_PS,	GPIO_PS_SHIFT,		gpio_gpio_ps_values,	ARRAY_SIZE(gpio_gpio_ps_values)},
@@ -3067,130 +3144,137 @@ static const pmb887x_io_field_t gpio_pin_fields[] = {
 	{"ENAQ",	GPIO_ENAQ,	GPIO_ENAQ_SHIFT,	gpio_gpio_enaq_values,	ARRAY_SIZE(gpio_gpio_enaq_values)},
 };
 
-static const pmb887x_io_reg_t gpio_regs[] = {
-	{"CLC",		GPIO_CLC,		gpio_clc_fields,		ARRAY_SIZE(gpio_clc_fields),		0},
-	{"ID",		GPIO_ID,		gpio_id_fields,			ARRAY_SIZE(gpio_id_fields),			0},
-	{"MON_CR1",	GPIO_MON_CR1,	gpio_mon_cr1_fields,	ARRAY_SIZE(gpio_mon_cr1_fields),	0},
-	{"MON_CR2",	GPIO_MON_CR2,	gpio_mon_cr2_fields,	ARRAY_SIZE(gpio_mon_cr2_fields),	0},
-	{"MON_CR3",	GPIO_MON_CR3,	gpio_mon_cr3_fields,	ARRAY_SIZE(gpio_mon_cr3_fields),	0},
-	{"MON_CR4",	GPIO_MON_CR4,	gpio_mon_cr4_fields,	ARRAY_SIZE(gpio_mon_cr4_fields),	0},
-	{"PIN0",	GPIO_PIN0,		gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields),		PMB887X_REG_IS_GPIO_PIN},
-	{"PIN1",	GPIO_PIN1,		gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields),		PMB887X_REG_IS_GPIO_PIN},
-	{"PIN2",	GPIO_PIN2,		gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields),		PMB887X_REG_IS_GPIO_PIN},
-	{"PIN3",	GPIO_PIN3,		gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields),		PMB887X_REG_IS_GPIO_PIN},
-	{"PIN4",	GPIO_PIN4,		gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields),		PMB887X_REG_IS_GPIO_PIN},
-	{"PIN5",	GPIO_PIN5,		gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields),		PMB887X_REG_IS_GPIO_PIN},
-	{"PIN6",	GPIO_PIN6,		gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields),		PMB887X_REG_IS_GPIO_PIN},
-	{"PIN7",	GPIO_PIN7,		gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields),		PMB887X_REG_IS_GPIO_PIN},
-	{"PIN8",	GPIO_PIN8,		gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields),		PMB887X_REG_IS_GPIO_PIN},
-	{"PIN9",	GPIO_PIN9,		gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields),		PMB887X_REG_IS_GPIO_PIN},
-	{"PIN10",	GPIO_PIN10,		gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields),		PMB887X_REG_IS_GPIO_PIN},
-	{"PIN11",	GPIO_PIN11,		gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields),		PMB887X_REG_IS_GPIO_PIN},
-	{"PIN12",	GPIO_PIN12,		gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields),		PMB887X_REG_IS_GPIO_PIN},
-	{"PIN13",	GPIO_PIN13,		gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields),		PMB887X_REG_IS_GPIO_PIN},
-	{"PIN14",	GPIO_PIN14,		gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields),		PMB887X_REG_IS_GPIO_PIN},
-	{"PIN15",	GPIO_PIN15,		gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields),		PMB887X_REG_IS_GPIO_PIN},
-	{"PIN16",	GPIO_PIN16,		gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields),		PMB887X_REG_IS_GPIO_PIN},
-	{"PIN17",	GPIO_PIN17,		gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields),		PMB887X_REG_IS_GPIO_PIN},
-	{"PIN18",	GPIO_PIN18,		gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields),		PMB887X_REG_IS_GPIO_PIN},
-	{"PIN19",	GPIO_PIN19,		gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields),		PMB887X_REG_IS_GPIO_PIN},
-	{"PIN20",	GPIO_PIN20,		gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields),		PMB887X_REG_IS_GPIO_PIN},
-	{"PIN21",	GPIO_PIN21,		gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields),		PMB887X_REG_IS_GPIO_PIN},
-	{"PIN22",	GPIO_PIN22,		gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields),		PMB887X_REG_IS_GPIO_PIN},
-	{"PIN23",	GPIO_PIN23,		gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields),		PMB887X_REG_IS_GPIO_PIN},
-	{"PIN24",	GPIO_PIN24,		gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields),		PMB887X_REG_IS_GPIO_PIN},
-	{"PIN25",	GPIO_PIN25,		gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields),		PMB887X_REG_IS_GPIO_PIN},
-	{"PIN26",	GPIO_PIN26,		gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields),		PMB887X_REG_IS_GPIO_PIN},
-	{"PIN27",	GPIO_PIN27,		gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields),		PMB887X_REG_IS_GPIO_PIN},
-	{"PIN28",	GPIO_PIN28,		gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields),		PMB887X_REG_IS_GPIO_PIN},
-	{"PIN29",	GPIO_PIN29,		gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields),		PMB887X_REG_IS_GPIO_PIN},
-	{"PIN30",	GPIO_PIN30,		gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields),		PMB887X_REG_IS_GPIO_PIN},
-	{"PIN31",	GPIO_PIN31,		gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields),		PMB887X_REG_IS_GPIO_PIN},
-	{"PIN32",	GPIO_PIN32,		gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields),		PMB887X_REG_IS_GPIO_PIN},
-	{"PIN33",	GPIO_PIN33,		gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields),		PMB887X_REG_IS_GPIO_PIN},
-	{"PIN34",	GPIO_PIN34,		gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields),		PMB887X_REG_IS_GPIO_PIN},
-	{"PIN35",	GPIO_PIN35,		gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields),		PMB887X_REG_IS_GPIO_PIN},
-	{"PIN36",	GPIO_PIN36,		gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields),		PMB887X_REG_IS_GPIO_PIN},
-	{"PIN37",	GPIO_PIN37,		gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields),		PMB887X_REG_IS_GPIO_PIN},
-	{"PIN38",	GPIO_PIN38,		gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields),		PMB887X_REG_IS_GPIO_PIN},
-	{"PIN39",	GPIO_PIN39,		gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields),		PMB887X_REG_IS_GPIO_PIN},
-	{"PIN40",	GPIO_PIN40,		gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields),		PMB887X_REG_IS_GPIO_PIN},
-	{"PIN41",	GPIO_PIN41,		gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields),		PMB887X_REG_IS_GPIO_PIN},
-	{"PIN42",	GPIO_PIN42,		gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields),		PMB887X_REG_IS_GPIO_PIN},
-	{"PIN43",	GPIO_PIN43,		gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields),		PMB887X_REG_IS_GPIO_PIN},
-	{"PIN44",	GPIO_PIN44,		gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields),		PMB887X_REG_IS_GPIO_PIN},
-	{"PIN45",	GPIO_PIN45,		gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields),		PMB887X_REG_IS_GPIO_PIN},
-	{"PIN46",	GPIO_PIN46,		gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields),		PMB887X_REG_IS_GPIO_PIN},
-	{"PIN47",	GPIO_PIN47,		gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields),		PMB887X_REG_IS_GPIO_PIN},
-	{"PIN48",	GPIO_PIN48,		gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields),		PMB887X_REG_IS_GPIO_PIN},
-	{"PIN49",	GPIO_PIN49,		gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields),		PMB887X_REG_IS_GPIO_PIN},
-	{"PIN50",	GPIO_PIN50,		gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields),		PMB887X_REG_IS_GPIO_PIN},
-	{"PIN51",	GPIO_PIN51,		gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields),		PMB887X_REG_IS_GPIO_PIN},
-	{"PIN52",	GPIO_PIN52,		gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields),		PMB887X_REG_IS_GPIO_PIN},
-	{"PIN53",	GPIO_PIN53,		gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields),		PMB887X_REG_IS_GPIO_PIN},
-	{"PIN54",	GPIO_PIN54,		gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields),		PMB887X_REG_IS_GPIO_PIN},
-	{"PIN55",	GPIO_PIN55,		gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields),		PMB887X_REG_IS_GPIO_PIN},
-	{"PIN56",	GPIO_PIN56,		gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields),		PMB887X_REG_IS_GPIO_PIN},
-	{"PIN57",	GPIO_PIN57,		gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields),		PMB887X_REG_IS_GPIO_PIN},
-	{"PIN58",	GPIO_PIN58,		gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields),		PMB887X_REG_IS_GPIO_PIN},
-	{"PIN59",	GPIO_PIN59,		gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields),		PMB887X_REG_IS_GPIO_PIN},
-	{"PIN60",	GPIO_PIN60,		gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields),		PMB887X_REG_IS_GPIO_PIN},
-	{"PIN61",	GPIO_PIN61,		gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields),		PMB887X_REG_IS_GPIO_PIN},
-	{"PIN62",	GPIO_PIN62,		gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields),		PMB887X_REG_IS_GPIO_PIN},
-	{"PIN63",	GPIO_PIN63,		gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields),		PMB887X_REG_IS_GPIO_PIN},
-	{"PIN64",	GPIO_PIN64,		gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields),		PMB887X_REG_IS_GPIO_PIN},
-	{"PIN65",	GPIO_PIN65,		gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields),		PMB887X_REG_IS_GPIO_PIN},
-	{"PIN66",	GPIO_PIN66,		gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields),		PMB887X_REG_IS_GPIO_PIN},
-	{"PIN67",	GPIO_PIN67,		gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields),		PMB887X_REG_IS_GPIO_PIN},
-	{"PIN68",	GPIO_PIN68,		gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields),		PMB887X_REG_IS_GPIO_PIN},
-	{"PIN69",	GPIO_PIN69,		gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields),		PMB887X_REG_IS_GPIO_PIN},
-	{"PIN70",	GPIO_PIN70,		gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields),		PMB887X_REG_IS_GPIO_PIN},
-	{"PIN71",	GPIO_PIN71,		gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields),		PMB887X_REG_IS_GPIO_PIN},
-	{"PIN72",	GPIO_PIN72,		gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields),		PMB887X_REG_IS_GPIO_PIN},
-	{"PIN73",	GPIO_PIN73,		gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields),		PMB887X_REG_IS_GPIO_PIN},
-	{"PIN74",	GPIO_PIN74,		gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields),		PMB887X_REG_IS_GPIO_PIN},
-	{"PIN75",	GPIO_PIN75,		gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields),		PMB887X_REG_IS_GPIO_PIN},
-	{"PIN76",	GPIO_PIN76,		gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields),		PMB887X_REG_IS_GPIO_PIN},
-	{"PIN77",	GPIO_PIN77,		gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields),		PMB887X_REG_IS_GPIO_PIN},
-	{"PIN78",	GPIO_PIN78,		gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields),		PMB887X_REG_IS_GPIO_PIN},
-	{"PIN79",	GPIO_PIN79,		gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields),		PMB887X_REG_IS_GPIO_PIN},
-	{"PIN80",	GPIO_PIN80,		gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields),		PMB887X_REG_IS_GPIO_PIN},
-	{"PIN81",	GPIO_PIN81,		gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields),		PMB887X_REG_IS_GPIO_PIN},
-	{"PIN82",	GPIO_PIN82,		gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields),		PMB887X_REG_IS_GPIO_PIN},
-	{"PIN83",	GPIO_PIN83,		gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields),		PMB887X_REG_IS_GPIO_PIN},
-	{"PIN84",	GPIO_PIN84,		gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields),		PMB887X_REG_IS_GPIO_PIN},
-	{"PIN85",	GPIO_PIN85,		gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields),		PMB887X_REG_IS_GPIO_PIN},
-	{"PIN86",	GPIO_PIN86,		gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields),		PMB887X_REG_IS_GPIO_PIN},
-	{"PIN87",	GPIO_PIN87,		gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields),		PMB887X_REG_IS_GPIO_PIN},
-	{"PIN88",	GPIO_PIN88,		gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields),		PMB887X_REG_IS_GPIO_PIN},
-	{"PIN89",	GPIO_PIN89,		gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields),		PMB887X_REG_IS_GPIO_PIN},
-	{"PIN90",	GPIO_PIN90,		gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields),		PMB887X_REG_IS_GPIO_PIN},
-	{"PIN91",	GPIO_PIN91,		gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields),		PMB887X_REG_IS_GPIO_PIN},
-	{"PIN92",	GPIO_PIN92,		gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields),		PMB887X_REG_IS_GPIO_PIN},
-	{"PIN93",	GPIO_PIN93,		gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields),		PMB887X_REG_IS_GPIO_PIN},
-	{"PIN94",	GPIO_PIN94,		gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields),		PMB887X_REG_IS_GPIO_PIN},
-	{"PIN95",	GPIO_PIN95,		gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields),		PMB887X_REG_IS_GPIO_PIN},
-	{"PIN96",	GPIO_PIN96,		gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields),		PMB887X_REG_IS_GPIO_PIN},
-	{"PIN97",	GPIO_PIN97,		gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields),		PMB887X_REG_IS_GPIO_PIN},
-	{"PIN98",	GPIO_PIN98,		gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields),		PMB887X_REG_IS_GPIO_PIN},
-	{"PIN99",	GPIO_PIN99,		gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields),		PMB887X_REG_IS_GPIO_PIN},
-	{"PIN100",	GPIO_PIN100,	gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields),		PMB887X_REG_IS_GPIO_PIN},
-	{"PIN101",	GPIO_PIN101,	gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields),		PMB887X_REG_IS_GPIO_PIN},
-	{"PIN102",	GPIO_PIN102,	gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields),		PMB887X_REG_IS_GPIO_PIN},
-	{"PIN103",	GPIO_PIN103,	gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields),		PMB887X_REG_IS_GPIO_PIN},
-	{"PIN104",	GPIO_PIN104,	gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields),		PMB887X_REG_IS_GPIO_PIN},
-	{"PIN105",	GPIO_PIN105,	gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields),		PMB887X_REG_IS_GPIO_PIN},
-	{"PIN106",	GPIO_PIN106,	gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields),		PMB887X_REG_IS_GPIO_PIN},
-	{"PIN107",	GPIO_PIN107,	gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields),		PMB887X_REG_IS_GPIO_PIN},
-	{"PIN108",	GPIO_PIN108,	gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields),		PMB887X_REG_IS_GPIO_PIN},
-	{"PIN109",	GPIO_PIN109,	gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields),		PMB887X_REG_IS_GPIO_PIN},
-	{"PIN110",	GPIO_PIN110,	gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields),		PMB887X_REG_IS_GPIO_PIN},
-	{"PIN111",	GPIO_PIN111,	gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields),		PMB887X_REG_IS_GPIO_PIN},
-	{"PIN112",	GPIO_PIN112,	gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields),		PMB887X_REG_IS_GPIO_PIN},
-	{"PIN113",	GPIO_PIN113,	gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields),		PMB887X_REG_IS_GPIO_PIN},
+static const DebugReg gpio_regs[] = {
+	{"CLC",		GPIO_CLC,		gpio_clc_fields,		ARRAY_SIZE(gpio_clc_fields)},
+	{"ID",		GPIO_ID,		gpio_id_fields,			ARRAY_SIZE(gpio_id_fields)},
+	{"MON_CR1",	GPIO_MON_CR1,	gpio_mon_cr1_fields,	ARRAY_SIZE(gpio_mon_cr1_fields)},
+	{"MON_CR2",	GPIO_MON_CR2,	gpio_mon_cr2_fields,	ARRAY_SIZE(gpio_mon_cr2_fields)},
+	{"MON_CR3",	GPIO_MON_CR3,	gpio_mon_cr3_fields,	ARRAY_SIZE(gpio_mon_cr3_fields)},
+	{"MON_CR4",	GPIO_MON_CR4,	gpio_mon_cr4_fields,	ARRAY_SIZE(gpio_mon_cr4_fields)},
+	{"PIN0",	GPIO_PIN0,		gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields)},
+	{"PIN1",	GPIO_PIN1,		gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields)},
+	{"PIN2",	GPIO_PIN2,		gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields)},
+	{"PIN3",	GPIO_PIN3,		gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields)},
+	{"PIN4",	GPIO_PIN4,		gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields)},
+	{"PIN5",	GPIO_PIN5,		gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields)},
+	{"PIN6",	GPIO_PIN6,		gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields)},
+	{"PIN7",	GPIO_PIN7,		gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields)},
+	{"PIN8",	GPIO_PIN8,		gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields)},
+	{"PIN9",	GPIO_PIN9,		gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields)},
+	{"PIN10",	GPIO_PIN10,		gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields)},
+	{"PIN11",	GPIO_PIN11,		gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields)},
+	{"PIN12",	GPIO_PIN12,		gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields)},
+	{"PIN13",	GPIO_PIN13,		gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields)},
+	{"PIN14",	GPIO_PIN14,		gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields)},
+	{"PIN15",	GPIO_PIN15,		gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields)},
+	{"PIN16",	GPIO_PIN16,		gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields)},
+	{"PIN17",	GPIO_PIN17,		gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields)},
+	{"PIN18",	GPIO_PIN18,		gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields)},
+	{"PIN19",	GPIO_PIN19,		gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields)},
+	{"PIN20",	GPIO_PIN20,		gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields)},
+	{"PIN21",	GPIO_PIN21,		gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields)},
+	{"PIN22",	GPIO_PIN22,		gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields)},
+	{"PIN23",	GPIO_PIN23,		gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields)},
+	{"PIN24",	GPIO_PIN24,		gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields)},
+	{"PIN25",	GPIO_PIN25,		gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields)},
+	{"PIN26",	GPIO_PIN26,		gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields)},
+	{"PIN27",	GPIO_PIN27,		gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields)},
+	{"PIN28",	GPIO_PIN28,		gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields)},
+	{"PIN29",	GPIO_PIN29,		gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields)},
+	{"PIN30",	GPIO_PIN30,		gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields)},
+	{"PIN31",	GPIO_PIN31,		gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields)},
+	{"PIN32",	GPIO_PIN32,		gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields)},
+	{"PIN33",	GPIO_PIN33,		gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields)},
+	{"PIN34",	GPIO_PIN34,		gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields)},
+	{"PIN35",	GPIO_PIN35,		gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields)},
+	{"PIN36",	GPIO_PIN36,		gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields)},
+	{"PIN37",	GPIO_PIN37,		gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields)},
+	{"PIN38",	GPIO_PIN38,		gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields)},
+	{"PIN39",	GPIO_PIN39,		gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields)},
+	{"PIN40",	GPIO_PIN40,		gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields)},
+	{"PIN41",	GPIO_PIN41,		gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields)},
+	{"PIN42",	GPIO_PIN42,		gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields)},
+	{"PIN43",	GPIO_PIN43,		gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields)},
+	{"PIN44",	GPIO_PIN44,		gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields)},
+	{"PIN45",	GPIO_PIN45,		gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields)},
+	{"PIN46",	GPIO_PIN46,		gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields)},
+	{"PIN47",	GPIO_PIN47,		gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields)},
+	{"PIN48",	GPIO_PIN48,		gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields)},
+	{"PIN49",	GPIO_PIN49,		gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields)},
+	{"PIN50",	GPIO_PIN50,		gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields)},
+	{"PIN51",	GPIO_PIN51,		gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields)},
+	{"PIN52",	GPIO_PIN52,		gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields)},
+	{"PIN53",	GPIO_PIN53,		gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields)},
+	{"PIN54",	GPIO_PIN54,		gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields)},
+	{"PIN55",	GPIO_PIN55,		gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields)},
+	{"PIN56",	GPIO_PIN56,		gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields)},
+	{"PIN57",	GPIO_PIN57,		gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields)},
+	{"PIN58",	GPIO_PIN58,		gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields)},
+	{"PIN59",	GPIO_PIN59,		gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields)},
+	{"PIN60",	GPIO_PIN60,		gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields)},
+	{"PIN61",	GPIO_PIN61,		gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields)},
+	{"PIN62",	GPIO_PIN62,		gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields)},
+	{"PIN63",	GPIO_PIN63,		gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields)},
+	{"PIN64",	GPIO_PIN64,		gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields)},
+	{"PIN65",	GPIO_PIN65,		gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields)},
+	{"PIN66",	GPIO_PIN66,		gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields)},
+	{"PIN67",	GPIO_PIN67,		gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields)},
+	{"PIN68",	GPIO_PIN68,		gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields)},
+	{"PIN69",	GPIO_PIN69,		gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields)},
+	{"PIN70",	GPIO_PIN70,		gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields)},
+	{"PIN71",	GPIO_PIN71,		gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields)},
+	{"PIN72",	GPIO_PIN72,		gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields)},
+	{"PIN73",	GPIO_PIN73,		gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields)},
+	{"PIN74",	GPIO_PIN74,		gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields)},
+	{"PIN75",	GPIO_PIN75,		gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields)},
+	{"PIN76",	GPIO_PIN76,		gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields)},
+	{"PIN77",	GPIO_PIN77,		gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields)},
+	{"PIN78",	GPIO_PIN78,		gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields)},
+	{"PIN79",	GPIO_PIN79,		gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields)},
+	{"PIN80",	GPIO_PIN80,		gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields)},
+	{"PIN81",	GPIO_PIN81,		gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields)},
+	{"PIN82",	GPIO_PIN82,		gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields)},
+	{"PIN83",	GPIO_PIN83,		gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields)},
+	{"PIN84",	GPIO_PIN84,		gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields)},
+	{"PIN85",	GPIO_PIN85,		gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields)},
+	{"PIN86",	GPIO_PIN86,		gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields)},
+	{"PIN87",	GPIO_PIN87,		gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields)},
+	{"PIN88",	GPIO_PIN88,		gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields)},
+	{"PIN89",	GPIO_PIN89,		gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields)},
+	{"PIN90",	GPIO_PIN90,		gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields)},
+	{"PIN91",	GPIO_PIN91,		gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields)},
+	{"PIN92",	GPIO_PIN92,		gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields)},
+	{"PIN93",	GPIO_PIN93,		gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields)},
+	{"PIN94",	GPIO_PIN94,		gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields)},
+	{"PIN95",	GPIO_PIN95,		gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields)},
+	{"PIN96",	GPIO_PIN96,		gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields)},
+	{"PIN97",	GPIO_PIN97,		gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields)},
+	{"PIN98",	GPIO_PIN98,		gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields)},
+	{"PIN99",	GPIO_PIN99,		gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields)},
+	{"PIN100",	GPIO_PIN100,	gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields)},
+	{"PIN101",	GPIO_PIN101,	gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields)},
+	{"PIN102",	GPIO_PIN102,	gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields)},
+	{"PIN103",	GPIO_PIN103,	gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields)},
+	{"PIN104",	GPIO_PIN104,	gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields)},
+	{"PIN105",	GPIO_PIN105,	gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields)},
+	{"PIN106",	GPIO_PIN106,	gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields)},
+	{"PIN107",	GPIO_PIN107,	gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields)},
+	{"PIN108",	GPIO_PIN108,	gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields)},
+	{"PIN109",	GPIO_PIN109,	gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields)},
+	{"PIN110",	GPIO_PIN110,	gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields)},
+	{"PIN111",	GPIO_PIN111,	gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields)},
+	{"PIN112",	GPIO_PIN112,	gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields)},
+	{"PIN113",	GPIO_PIN113,	gpio_pin_fields,		ARRAY_SIZE(gpio_pin_fields)},
 };
 
-static const pmb887x_io_field_t gprscu_clc_fields[] = {
+const DebugRegs pmb887x_gpio_regs = {
+	.regs = gpio_regs,
+	.count = ARRAY_SIZE(gpio_regs),
+	.reg_size = 4,
+	.addr_digits = 8,
+};
+
+static const DebugRegField gprscu_clc_fields[] = {
 	{"DISR",	MOD_CLC_DISR,	MOD_CLC_DISR_SHIFT,	NULL,	0},
 	{"DISS",	MOD_CLC_DISS,	MOD_CLC_DISS_SHIFT,	NULL,	0},
 	{"SPEN",	MOD_CLC_SPEN,	MOD_CLC_SPEN_SHIFT,	NULL,	0},
@@ -3200,28 +3284,28 @@ static const pmb887x_io_field_t gprscu_clc_fields[] = {
 	{"RMC",		MOD_CLC_RMC,	MOD_CLC_RMC_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t gprscu_id_fields[] = {
+static const DebugRegField gprscu_id_fields[] = {
 	{"REV",		MOD_ID_REV,		MOD_ID_REV_SHIFT,		NULL,	0},
 	{"32B",		MOD_ID_32B,		MOD_ID_32B_SHIFT,		NULL,	0},
 	{"NUMBER",	MOD_ID_NUMBER,	MOD_ID_NUMBER_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_value_t gprscu_gprscu_con_direction_values[] = {
+static const DebugRegValue gprscu_gprscu_con_direction_values[] = {
 	{"UPLINK",		GPRSCU_CON_DIRECTION_UPLINK},
 	{"DOWNLINK",	GPRSCU_CON_DIRECTION_DOWNLINK},
 };
 
-static const pmb887x_io_value_t gprscu_gprscu_con_crc_ctrl_values[] = {
+static const DebugRegValue gprscu_gprscu_con_crc_ctrl_values[] = {
 	{"OFF",	GPRSCU_CON_CRC_CTRL_OFF},
 	{"ON",	GPRSCU_CON_CRC_CTRL_ON},
 };
 
-static const pmb887x_io_value_t gprscu_gprscu_con_ciph_ctrl_values[] = {
+static const DebugRegValue gprscu_gprscu_con_ciph_ctrl_values[] = {
 	{"OFF",	GPRSCU_CON_CIPH_CTRL_OFF},
 	{"ON",	GPRSCU_CON_CIPH_CTRL_ON},
 };
 
-static const pmb887x_io_field_t gprscu_con_fields[] = {
+static const DebugRegField gprscu_con_fields[] = {
 	{"INIT",			GPRSCU_CON_INIT,			GPRSCU_CON_INIT_SHIFT,			NULL,								0},
 	{"DIRECTION",		GPRSCU_CON_DIRECTION,		GPRSCU_CON_DIRECTION_SHIFT,		gprscu_gprscu_con_direction_values,	ARRAY_SIZE(gprscu_gprscu_con_direction_values)},
 	{"CRC_CTRL",		GPRSCU_CON_CRC_CTRL,		GPRSCU_CON_CRC_CTRL_SHIFT,		gprscu_gprscu_con_crc_ctrl_values,	ARRAY_SIZE(gprscu_gprscu_con_crc_ctrl_values)},
@@ -3234,39 +3318,39 @@ static const pmb887x_io_field_t gprscu_con_fields[] = {
 	{"GEA3",			GPRSCU_CON_GEA3,			GPRSCU_CON_GEA3_SHIFT,			NULL,								0},
 };
 
-static const pmb887x_io_field_t gprscu_data_fields[] = {
+static const DebugRegField gprscu_data_fields[] = {
 	{"VALUE",	GPRSCU_DATA_VALUE,	GPRSCU_DATA_VALUE_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t gprscu_stat_fields[] = {
+static const DebugRegField gprscu_stat_fields[] = {
 	{"OUTPUT_COUNT",	GPRSCU_STAT_OUTPUT_COUNT,		GPRSCU_STAT_OUTPUT_COUNT_SHIFT,		NULL,	0},
 	{"INPUT_FREE",		GPRSCU_STAT_INPUT_FREE,			GPRSCU_STAT_INPUT_FREE_SHIFT,		NULL,	0},
 	{"OUTPUT_UNDERRUN",	GPRSCU_STAT_OUTPUT_UNDERRUN,	GPRSCU_STAT_OUTPUT_UNDERRUN_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t gprscu_segment_fields[] = {
+static const DebugRegField gprscu_segment_fields[] = {
 	{"LENGTH",		GPRSCU_SEGMENT_LENGTH,		GPRSCU_SEGMENT_LENGTH_SHIFT,	NULL,	0},
 	{"CRC_CTRL",	GPRSCU_SEGMENT_CRC_CTRL,	GPRSCU_SEGMENT_CRC_CTRL_SHIFT,	NULL,	0},
 	{"CIPH_CTRL",	GPRSCU_SEGMENT_CIPH_CTRL,	GPRSCU_SEGMENT_CIPH_CTRL_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t gprscu_input_fields[] = {
+static const DebugRegField gprscu_input_fields[] = {
 	{"VALUE",	GPRSCU_INPUT_VALUE,	GPRSCU_INPUT_VALUE_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t gprscu_key_fields[] = {
+static const DebugRegField gprscu_key_fields[] = {
 	{"VALUE",	GPRSCU_KEY_VALUE,	GPRSCU_KEY_VALUE_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t gprscu_fcs_fields[] = {
+static const DebugRegField gprscu_fcs_fields[] = {
 	{"VALUE",	GPRSCU_FCS_VALUE,	GPRSCU_FCS_VALUE_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t gprscu_polynom_fields[] = {
+static const DebugRegField gprscu_polynom_fields[] = {
 	{"VALUE",	GPRSCU_POLYNOM_VALUE,	GPRSCU_POLYNOM_VALUE_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t gprscu_src_fields[] = {
+static const DebugRegField gprscu_src_fields[] = {
 	{"SRPN",	MOD_SRC_SRPN,	MOD_SRC_SRPN_SHIFT,	NULL,	0},
 	{"TOS",		MOD_SRC_TOS,	MOD_SRC_TOS_SHIFT,	NULL,	0},
 	{"SRE",		MOD_SRC_SRE,	MOD_SRC_SRE_SHIFT,	NULL,	0},
@@ -3275,26 +3359,33 @@ static const pmb887x_io_field_t gprscu_src_fields[] = {
 	{"SETR",	MOD_SRC_SETR,	MOD_SRC_SETR_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_reg_t gprscu_regs[] = {
-	{"CLC",		GPRSCU_CLC,		gprscu_clc_fields,		ARRAY_SIZE(gprscu_clc_fields),		0},
-	{"ID",		GPRSCU_ID,		gprscu_id_fields,		ARRAY_SIZE(gprscu_id_fields),		0},
-	{"CON",		GPRSCU_CON,		gprscu_con_fields,		ARRAY_SIZE(gprscu_con_fields),		0},
-	{"DATA",	GPRSCU_DATA,	gprscu_data_fields,		ARRAY_SIZE(gprscu_data_fields),		0},
-	{"STAT",	GPRSCU_STAT,	gprscu_stat_fields,		ARRAY_SIZE(gprscu_stat_fields),		0},
-	{"SEGMENT",	GPRSCU_SEGMENT,	gprscu_segment_fields,	ARRAY_SIZE(gprscu_segment_fields),	0},
-	{"INPUT0",	GPRSCU_INPUT0,	gprscu_input_fields,	ARRAY_SIZE(gprscu_input_fields),	0},
-	{"INPUT1",	GPRSCU_INPUT1,	gprscu_input_fields,	ARRAY_SIZE(gprscu_input_fields),	0},
-	{"KEY0",	GPRSCU_KEY0,	gprscu_key_fields,		ARRAY_SIZE(gprscu_key_fields),		0},
-	{"KEY1",	GPRSCU_KEY1,	gprscu_key_fields,		ARRAY_SIZE(gprscu_key_fields),		0},
-	{"KEY2",	GPRSCU_KEY2,	gprscu_key_fields,		ARRAY_SIZE(gprscu_key_fields),		0},
-	{"KEY3",	GPRSCU_KEY3,	gprscu_key_fields,		ARRAY_SIZE(gprscu_key_fields),		0},
-	{"FCS",		GPRSCU_FCS,		gprscu_fcs_fields,		ARRAY_SIZE(gprscu_fcs_fields),		0},
-	{"POLYNOM",	GPRSCU_POLYNOM,	gprscu_polynom_fields,	ARRAY_SIZE(gprscu_polynom_fields),	0},
-	{"SRC0",	GPRSCU_SRC0,	gprscu_src_fields,		ARRAY_SIZE(gprscu_src_fields),		0},
-	{"SRC1",	GPRSCU_SRC1,	gprscu_src_fields,		ARRAY_SIZE(gprscu_src_fields),		0},
+static const DebugReg gprscu_regs[] = {
+	{"CLC",		GPRSCU_CLC,		gprscu_clc_fields,		ARRAY_SIZE(gprscu_clc_fields)},
+	{"ID",		GPRSCU_ID,		gprscu_id_fields,		ARRAY_SIZE(gprscu_id_fields)},
+	{"CON",		GPRSCU_CON,		gprscu_con_fields,		ARRAY_SIZE(gprscu_con_fields)},
+	{"DATA",	GPRSCU_DATA,	gprscu_data_fields,		ARRAY_SIZE(gprscu_data_fields)},
+	{"STAT",	GPRSCU_STAT,	gprscu_stat_fields,		ARRAY_SIZE(gprscu_stat_fields)},
+	{"SEGMENT",	GPRSCU_SEGMENT,	gprscu_segment_fields,	ARRAY_SIZE(gprscu_segment_fields)},
+	{"INPUT0",	GPRSCU_INPUT0,	gprscu_input_fields,	ARRAY_SIZE(gprscu_input_fields)},
+	{"INPUT1",	GPRSCU_INPUT1,	gprscu_input_fields,	ARRAY_SIZE(gprscu_input_fields)},
+	{"KEY0",	GPRSCU_KEY0,	gprscu_key_fields,		ARRAY_SIZE(gprscu_key_fields)},
+	{"KEY1",	GPRSCU_KEY1,	gprscu_key_fields,		ARRAY_SIZE(gprscu_key_fields)},
+	{"KEY2",	GPRSCU_KEY2,	gprscu_key_fields,		ARRAY_SIZE(gprscu_key_fields)},
+	{"KEY3",	GPRSCU_KEY3,	gprscu_key_fields,		ARRAY_SIZE(gprscu_key_fields)},
+	{"FCS",		GPRSCU_FCS,		gprscu_fcs_fields,		ARRAY_SIZE(gprscu_fcs_fields)},
+	{"POLYNOM",	GPRSCU_POLYNOM,	gprscu_polynom_fields,	ARRAY_SIZE(gprscu_polynom_fields)},
+	{"SRC0",	GPRSCU_SRC0,	gprscu_src_fields,		ARRAY_SIZE(gprscu_src_fields)},
+	{"SRC1",	GPRSCU_SRC1,	gprscu_src_fields,		ARRAY_SIZE(gprscu_src_fields)},
 };
 
-static const pmb887x_io_field_t gptu_clc_fields[] = {
+const DebugRegs pmb887x_gprscu_regs = {
+	.regs = gprscu_regs,
+	.count = ARRAY_SIZE(gprscu_regs),
+	.reg_size = 4,
+	.addr_digits = 8,
+};
+
+static const DebugRegField gptu_clc_fields[] = {
 	{"DISR",	MOD_CLC_DISR,	MOD_CLC_DISR_SHIFT,	NULL,	0},
 	{"DISS",	MOD_CLC_DISS,	MOD_CLC_DISS_SHIFT,	NULL,	0},
 	{"SPEN",	MOD_CLC_SPEN,	MOD_CLC_SPEN_SHIFT,	NULL,	0},
@@ -3304,83 +3395,83 @@ static const pmb887x_io_field_t gptu_clc_fields[] = {
 	{"RMC",		MOD_CLC_RMC,	MOD_CLC_RMC_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t gptu_id_fields[] = {
+static const DebugRegField gptu_id_fields[] = {
 	{"REV",		MOD_ID_REV,		MOD_ID_REV_SHIFT,		NULL,	0},
 	{"32B",		MOD_ID_32B,		MOD_ID_32B_SHIFT,		NULL,	0},
 	{"NUMBER",	MOD_ID_NUMBER,	MOD_ID_NUMBER_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_value_t gptu_gptu_t01irs_t0ains_values[] = {
+static const DebugRegValue gptu_gptu_t01irs_t0ains_values[] = {
 	{"BYPASS",	GPTU_T01IRS_T0AINS_BYPASS},
 	{"CNT0",	GPTU_T01IRS_T0AINS_CNT0},
 	{"CNT1",	GPTU_T01IRS_T0AINS_CNT1},
 	{"CONCAT",	GPTU_T01IRS_T0AINS_CONCAT},
 };
 
-static const pmb887x_io_value_t gptu_gptu_t01irs_t0bins_values[] = {
+static const DebugRegValue gptu_gptu_t01irs_t0bins_values[] = {
 	{"BYPASS",	GPTU_T01IRS_T0BINS_BYPASS},
 	{"CNT0",	GPTU_T01IRS_T0BINS_CNT0},
 	{"CNT1",	GPTU_T01IRS_T0BINS_CNT1},
 	{"CONCAT",	GPTU_T01IRS_T0BINS_CONCAT},
 };
 
-static const pmb887x_io_value_t gptu_gptu_t01irs_t0cins_values[] = {
+static const DebugRegValue gptu_gptu_t01irs_t0cins_values[] = {
 	{"BYPASS",	GPTU_T01IRS_T0CINS_BYPASS},
 	{"CNT0",	GPTU_T01IRS_T0CINS_CNT0},
 	{"CNT1",	GPTU_T01IRS_T0CINS_CNT1},
 	{"CONCAT",	GPTU_T01IRS_T0CINS_CONCAT},
 };
 
-static const pmb887x_io_value_t gptu_gptu_t01irs_t0dins_values[] = {
+static const DebugRegValue gptu_gptu_t01irs_t0dins_values[] = {
 	{"BYPASS",	GPTU_T01IRS_T0DINS_BYPASS},
 	{"CNT0",	GPTU_T01IRS_T0DINS_CNT0},
 	{"CNT1",	GPTU_T01IRS_T0DINS_CNT1},
 	{"CONCAT",	GPTU_T01IRS_T0DINS_CONCAT},
 };
 
-static const pmb887x_io_value_t gptu_gptu_t01irs_t1ains_values[] = {
+static const DebugRegValue gptu_gptu_t01irs_t1ains_values[] = {
 	{"BYPASS",	GPTU_T01IRS_T1AINS_BYPASS},
 	{"CNT0",	GPTU_T01IRS_T1AINS_CNT0},
 	{"CNT1",	GPTU_T01IRS_T1AINS_CNT1},
 	{"CONCAT",	GPTU_T01IRS_T1AINS_CONCAT},
 };
 
-static const pmb887x_io_value_t gptu_gptu_t01irs_t1bins_values[] = {
+static const DebugRegValue gptu_gptu_t01irs_t1bins_values[] = {
 	{"BYPASS",	GPTU_T01IRS_T1BINS_BYPASS},
 	{"CNT0",	GPTU_T01IRS_T1BINS_CNT0},
 	{"CNT1",	GPTU_T01IRS_T1BINS_CNT1},
 	{"CONCAT",	GPTU_T01IRS_T1BINS_CONCAT},
 };
 
-static const pmb887x_io_value_t gptu_gptu_t01irs_t1cins_values[] = {
+static const DebugRegValue gptu_gptu_t01irs_t1cins_values[] = {
 	{"BYPASS",	GPTU_T01IRS_T1CINS_BYPASS},
 	{"CNT0",	GPTU_T01IRS_T1CINS_CNT0},
 	{"CNT1",	GPTU_T01IRS_T1CINS_CNT1},
 	{"CONCAT",	GPTU_T01IRS_T1CINS_CONCAT},
 };
 
-static const pmb887x_io_value_t gptu_gptu_t01irs_t1dins_values[] = {
+static const DebugRegValue gptu_gptu_t01irs_t1dins_values[] = {
 	{"BYPASS",	GPTU_T01IRS_T1DINS_BYPASS},
 	{"CNT0",	GPTU_T01IRS_T1DINS_CNT0},
 	{"CNT1",	GPTU_T01IRS_T1DINS_CNT1},
 	{"CONCAT",	GPTU_T01IRS_T1DINS_CONCAT},
 };
 
-static const pmb887x_io_value_t gptu_gptu_t01irs_t01in0_values[] = {
+static const DebugRegValue gptu_gptu_t01irs_t01in0_values[] = {
 	{"OUV_T2A",		GPTU_T01IRS_T01IN0_OUV_T2A},
 	{"POS_IN0",		GPTU_T01IRS_T01IN0_POS_IN0},
 	{"NEG_IN0",		GPTU_T01IRS_T01IN0_NEG_IN0},
 	{"BOTH_IN0",	GPTU_T01IRS_T01IN0_BOTH_IN0},
 };
 
-static const pmb887x_io_value_t gptu_gptu_t01irs_t01in1_values[] = {
+static const DebugRegValue gptu_gptu_t01irs_t01in1_values[] = {
 	{"OUV_T2B",		GPTU_T01IRS_T01IN1_OUV_T2B},
 	{"POS_IN1",		GPTU_T01IRS_T01IN1_POS_IN1},
 	{"NEG_IN1",		GPTU_T01IRS_T01IN1_NEG_IN1},
 	{"BOTH_IN1",	GPTU_T01IRS_T01IN1_BOTH_IN1},
 };
 
-static const pmb887x_io_field_t gptu_t01irs_fields[] = {
+static const DebugRegField gptu_t01irs_fields[] = {
 	{"T0AINS",	GPTU_T01IRS_T0AINS,	GPTU_T01IRS_T0AINS_SHIFT,	gptu_gptu_t01irs_t0ains_values,	ARRAY_SIZE(gptu_gptu_t01irs_t0ains_values)},
 	{"T0BINS",	GPTU_T01IRS_T0BINS,	GPTU_T01IRS_T0BINS_SHIFT,	gptu_gptu_t01irs_t0bins_values,	ARRAY_SIZE(gptu_gptu_t01irs_t0bins_values)},
 	{"T0CINS",	GPTU_T01IRS_T0CINS,	GPTU_T01IRS_T0CINS_SHIFT,	gptu_gptu_t01irs_t0cins_values,	ARRAY_SIZE(gptu_gptu_t01irs_t0cins_values)},
@@ -3403,91 +3494,91 @@ static const pmb887x_io_field_t gptu_t01irs_fields[] = {
 	{"T01IN1",	GPTU_T01IRS_T01IN1,	GPTU_T01IRS_T01IN1_SHIFT,	gptu_gptu_t01irs_t01in1_values,	ARRAY_SIZE(gptu_gptu_t01irs_t01in1_values)},
 };
 
-static const pmb887x_io_value_t gptu_gptu_t01ots_sout00_values[] = {
+static const DebugRegValue gptu_gptu_t01ots_sout00_values[] = {
 	{"A",	GPTU_T01OTS_SOUT00_A},
 	{"B",	GPTU_T01OTS_SOUT00_B},
 	{"C",	GPTU_T01OTS_SOUT00_C},
 	{"D",	GPTU_T01OTS_SOUT00_D},
 };
 
-static const pmb887x_io_value_t gptu_gptu_t01ots_sout01_values[] = {
+static const DebugRegValue gptu_gptu_t01ots_sout01_values[] = {
 	{"A",	GPTU_T01OTS_SOUT01_A},
 	{"B",	GPTU_T01OTS_SOUT01_B},
 	{"C",	GPTU_T01OTS_SOUT01_C},
 	{"D",	GPTU_T01OTS_SOUT01_D},
 };
 
-static const pmb887x_io_value_t gptu_gptu_t01ots_strg00_values[] = {
+static const DebugRegValue gptu_gptu_t01ots_strg00_values[] = {
 	{"A",	GPTU_T01OTS_STRG00_A},
 	{"B",	GPTU_T01OTS_STRG00_B},
 	{"C",	GPTU_T01OTS_STRG00_C},
 	{"D",	GPTU_T01OTS_STRG00_D},
 };
 
-static const pmb887x_io_value_t gptu_gptu_t01ots_strg01_values[] = {
+static const DebugRegValue gptu_gptu_t01ots_strg01_values[] = {
 	{"A",	GPTU_T01OTS_STRG01_A},
 	{"B",	GPTU_T01OTS_STRG01_B},
 	{"C",	GPTU_T01OTS_STRG01_C},
 	{"D",	GPTU_T01OTS_STRG01_D},
 };
 
-static const pmb887x_io_value_t gptu_gptu_t01ots_ssr00_values[] = {
+static const DebugRegValue gptu_gptu_t01ots_ssr00_values[] = {
 	{"A",	GPTU_T01OTS_SSR00_A},
 	{"B",	GPTU_T01OTS_SSR00_B},
 	{"C",	GPTU_T01OTS_SSR00_C},
 	{"D",	GPTU_T01OTS_SSR00_D},
 };
 
-static const pmb887x_io_value_t gptu_gptu_t01ots_ssr01_values[] = {
+static const DebugRegValue gptu_gptu_t01ots_ssr01_values[] = {
 	{"A",	GPTU_T01OTS_SSR01_A},
 	{"B",	GPTU_T01OTS_SSR01_B},
 	{"C",	GPTU_T01OTS_SSR01_C},
 	{"D",	GPTU_T01OTS_SSR01_D},
 };
 
-static const pmb887x_io_value_t gptu_gptu_t01ots_sout10_values[] = {
+static const DebugRegValue gptu_gptu_t01ots_sout10_values[] = {
 	{"A",	GPTU_T01OTS_SOUT10_A},
 	{"B",	GPTU_T01OTS_SOUT10_B},
 	{"C",	GPTU_T01OTS_SOUT10_C},
 	{"D",	GPTU_T01OTS_SOUT10_D},
 };
 
-static const pmb887x_io_value_t gptu_gptu_t01ots_sout11_values[] = {
+static const DebugRegValue gptu_gptu_t01ots_sout11_values[] = {
 	{"A",	GPTU_T01OTS_SOUT11_A},
 	{"B",	GPTU_T01OTS_SOUT11_B},
 	{"C",	GPTU_T01OTS_SOUT11_C},
 	{"D",	GPTU_T01OTS_SOUT11_D},
 };
 
-static const pmb887x_io_value_t gptu_gptu_t01ots_strg10_values[] = {
+static const DebugRegValue gptu_gptu_t01ots_strg10_values[] = {
 	{"A",	GPTU_T01OTS_STRG10_A},
 	{"B",	GPTU_T01OTS_STRG10_B},
 	{"C",	GPTU_T01OTS_STRG10_C},
 	{"D",	GPTU_T01OTS_STRG10_D},
 };
 
-static const pmb887x_io_value_t gptu_gptu_t01ots_strg11_values[] = {
+static const DebugRegValue gptu_gptu_t01ots_strg11_values[] = {
 	{"A",	GPTU_T01OTS_STRG11_A},
 	{"B",	GPTU_T01OTS_STRG11_B},
 	{"C",	GPTU_T01OTS_STRG11_C},
 	{"D",	GPTU_T01OTS_STRG11_D},
 };
 
-static const pmb887x_io_value_t gptu_gptu_t01ots_ssr10_values[] = {
+static const DebugRegValue gptu_gptu_t01ots_ssr10_values[] = {
 	{"A",	GPTU_T01OTS_SSR10_A},
 	{"B",	GPTU_T01OTS_SSR10_B},
 	{"C",	GPTU_T01OTS_SSR10_C},
 	{"D",	GPTU_T01OTS_SSR10_D},
 };
 
-static const pmb887x_io_value_t gptu_gptu_t01ots_ssr11_values[] = {
+static const DebugRegValue gptu_gptu_t01ots_ssr11_values[] = {
 	{"A",	GPTU_T01OTS_SSR11_A},
 	{"B",	GPTU_T01OTS_SSR11_B},
 	{"C",	GPTU_T01OTS_SSR11_C},
 	{"D",	GPTU_T01OTS_SSR11_D},
 };
 
-static const pmb887x_io_field_t gptu_t01ots_fields[] = {
+static const DebugRegField gptu_t01ots_fields[] = {
 	{"SOUT00",	GPTU_T01OTS_SOUT00,	GPTU_T01OTS_SOUT00_SHIFT,	gptu_gptu_t01ots_sout00_values,	ARRAY_SIZE(gptu_gptu_t01ots_sout00_values)},
 	{"SOUT01",	GPTU_T01OTS_SOUT01,	GPTU_T01OTS_SOUT01_SHIFT,	gptu_gptu_t01ots_sout01_values,	ARRAY_SIZE(gptu_gptu_t01ots_sout01_values)},
 	{"STRG00",	GPTU_T01OTS_STRG00,	GPTU_T01OTS_STRG00_SHIFT,	gptu_gptu_t01ots_strg00_values,	ARRAY_SIZE(gptu_gptu_t01ots_strg00_values)},
@@ -3502,69 +3593,69 @@ static const pmb887x_io_field_t gptu_t01ots_fields[] = {
 	{"SSR11",	GPTU_T01OTS_SSR11,	GPTU_T01OTS_SSR11_SHIFT,	gptu_gptu_t01ots_ssr11_values,	ARRAY_SIZE(gptu_gptu_t01ots_ssr11_values)},
 };
 
-static const pmb887x_io_value_t gptu_gptu_t2con_t2acsrc_values[] = {
+static const DebugRegValue gptu_gptu_t2con_t2acsrc_values[] = {
 	{"BYPASS",		GPTU_T2CON_T2ACSRC_BYPASS},
 	{"EXT_COUNT",	GPTU_T2CON_T2ACSRC_EXT_COUNT},
 	{"QUADRATURE",	GPTU_T2CON_T2ACSRC_QUADRATURE},
 };
 
-static const pmb887x_io_value_t gptu_gptu_t2con_t2acdir_values[] = {
+static const DebugRegValue gptu_gptu_t2con_t2acdir_values[] = {
 	{"COUNT_UP",		GPTU_T2CON_T2ACDIR_COUNT_UP},
 	{"COUNT_DOWN",		GPTU_T2CON_T2ACDIR_COUNT_DOWN},
 	{"EXT_CONT_UP",		GPTU_T2CON_T2ACDIR_EXT_CONT_UP},
 	{"EXT_COUNT_DOWN",	GPTU_T2CON_T2ACDIR_EXT_COUNT_DOWN},
 };
 
-static const pmb887x_io_value_t gptu_gptu_t2con_t2acclr_values[] = {
+static const DebugRegValue gptu_gptu_t2con_t2acclr_values[] = {
 	{"EXT",		GPTU_T2CON_T2ACCLR_EXT},
 	{"CP0_T2",	GPTU_T2CON_T2ACCLR_CP0_T2},
 	{"CP1_T2",	GPTU_T2CON_T2ACCLR_CP1_T2},
 };
 
-static const pmb887x_io_value_t gptu_gptu_t2con_t2acov_values[] = {
+static const DebugRegValue gptu_gptu_t2con_t2acov_values[] = {
 	{"MODE0",	GPTU_T2CON_T2ACOV_MODE0},
 	{"MODE1",	GPTU_T2CON_T2ACOV_MODE1},
 	{"MODE2",	GPTU_T2CON_T2ACOV_MODE2},
 	{"MODE3",	GPTU_T2CON_T2ACOV_MODE3},
 };
 
-static const pmb887x_io_value_t gptu_gptu_t2con_t2adir_values[] = {
+static const DebugRegValue gptu_gptu_t2con_t2adir_values[] = {
 	{"COUNT_UP",	GPTU_T2CON_T2ADIR_COUNT_UP},
 	{"COUNT_DOWN",	GPTU_T2CON_T2ADIR_COUNT_DOWN},
 };
 
-static const pmb887x_io_value_t gptu_gptu_t2con_t2bcsrc_values[] = {
+static const DebugRegValue gptu_gptu_t2con_t2bcsrc_values[] = {
 	{"BYPASS",		GPTU_T2CON_T2BCSRC_BYPASS},
 	{"EXT_COUNT",	GPTU_T2CON_T2BCSRC_EXT_COUNT},
 	{"QUADRATURE",	GPTU_T2CON_T2BCSRC_QUADRATURE},
 };
 
-static const pmb887x_io_value_t gptu_gptu_t2con_t2bcdir_values[] = {
+static const DebugRegValue gptu_gptu_t2con_t2bcdir_values[] = {
 	{"COUNT_UP",		GPTU_T2CON_T2BCDIR_COUNT_UP},
 	{"COUNT_DOWN",		GPTU_T2CON_T2BCDIR_COUNT_DOWN},
 	{"EXT_CONT_UP",		GPTU_T2CON_T2BCDIR_EXT_CONT_UP},
 	{"EXT_COUNT_DOWN",	GPTU_T2CON_T2BCDIR_EXT_COUNT_DOWN},
 };
 
-static const pmb887x_io_value_t gptu_gptu_t2con_t2bcclr_values[] = {
+static const DebugRegValue gptu_gptu_t2con_t2bcclr_values[] = {
 	{"EXT",		GPTU_T2CON_T2BCCLR_EXT},
 	{"CP0_T2",	GPTU_T2CON_T2BCCLR_CP0_T2},
 	{"CP1_T2",	GPTU_T2CON_T2BCCLR_CP1_T2},
 };
 
-static const pmb887x_io_value_t gptu_gptu_t2con_t2bcov_values[] = {
+static const DebugRegValue gptu_gptu_t2con_t2bcov_values[] = {
 	{"MODE0",	GPTU_T2CON_T2BCOV_MODE0},
 	{"MODE1",	GPTU_T2CON_T2BCOV_MODE1},
 	{"MODE2",	GPTU_T2CON_T2BCOV_MODE2},
 	{"MODE3",	GPTU_T2CON_T2BCOV_MODE3},
 };
 
-static const pmb887x_io_value_t gptu_gptu_t2con_t2bdir_values[] = {
+static const DebugRegValue gptu_gptu_t2con_t2bdir_values[] = {
 	{"COUNT_UP",	GPTU_T2CON_T2BDIR_COUNT_UP},
 	{"COUNT_DOWN",	GPTU_T2CON_T2BDIR_COUNT_DOWN},
 };
 
-static const pmb887x_io_field_t gptu_t2con_fields[] = {
+static const DebugRegField gptu_t2con_fields[] = {
 	{"T2ACSRC",	GPTU_T2CON_T2ACSRC,	GPTU_T2CON_T2ACSRC_SHIFT,	gptu_gptu_t2con_t2acsrc_values,	ARRAY_SIZE(gptu_gptu_t2con_t2acsrc_values)},
 	{"T2ACDIR",	GPTU_T2CON_T2ACDIR,	GPTU_T2CON_T2ACDIR_SHIFT,	gptu_gptu_t2con_t2acdir_values,	ARRAY_SIZE(gptu_gptu_t2con_t2acdir_values)},
 	{"T2ACCLR",	GPTU_T2CON_T2ACCLR,	GPTU_T2CON_T2ACCLR_SHIFT,	gptu_gptu_t2con_t2acclr_values,	ARRAY_SIZE(gptu_gptu_t2con_t2acclr_values)},
@@ -3580,14 +3671,14 @@ static const pmb887x_io_field_t gptu_t2con_fields[] = {
 	{"T2BDIR",	GPTU_T2CON_T2BDIR,	GPTU_T2CON_T2BDIR_SHIFT,	gptu_gptu_t2con_t2bdir_values,	ARRAY_SIZE(gptu_gptu_t2con_t2bdir_values)},
 };
 
-static const pmb887x_io_field_t gptu_t2rccon_fields[] = {
+static const DebugRegField gptu_t2rccon_fields[] = {
 	{"T2AMRC0",	GPTU_T2RCCON_T2AMRC0,	GPTU_T2RCCON_T2AMRC0_SHIFT,	NULL,	0},
 	{"T2AMRC1",	GPTU_T2RCCON_T2AMRC1,	GPTU_T2RCCON_T2AMRC1_SHIFT,	NULL,	0},
 	{"T2BMRC0",	GPTU_T2RCCON_T2BMRC0,	GPTU_T2RCCON_T2BMRC0_SHIFT,	NULL,	0},
 	{"T2BMRC1",	GPTU_T2RCCON_T2BMRC1,	GPTU_T2RCCON_T2BMRC1_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t gptu_t2ais_fields[] = {
+static const DebugRegField gptu_t2ais_fields[] = {
 	{"T2AICNT",	GPTU_T2AIS_T2AICNT,	GPTU_T2AIS_T2AICNT_SHIFT,	NULL,	0},
 	{"T2AISTR",	GPTU_T2AIS_T2AISTR,	GPTU_T2AIS_T2AISTR_SHIFT,	NULL,	0},
 	{"T2AISTP",	GPTU_T2AIS_T2AISTP,	GPTU_T2AIS_T2AISTP_SHIFT,	NULL,	0},
@@ -3597,7 +3688,7 @@ static const pmb887x_io_field_t gptu_t2ais_fields[] = {
 	{"T2AIRC1",	GPTU_T2AIS_T2AIRC1,	GPTU_T2AIS_T2AIRC1_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t gptu_t2bis_fields[] = {
+static const DebugRegField gptu_t2bis_fields[] = {
 	{"T2BICNT",	GPTU_T2BIS_T2BICNT,	GPTU_T2BIS_T2BICNT_SHIFT,	NULL,	0},
 	{"T2BISTR",	GPTU_T2BIS_T2BISTR,	GPTU_T2BIS_T2BISTR_SHIFT,	NULL,	0},
 	{"T2BISTP",	GPTU_T2BIS_T2BISTP,	GPTU_T2BIS_T2BISTP_SHIFT,	NULL,	0},
@@ -3607,7 +3698,7 @@ static const pmb887x_io_field_t gptu_t2bis_fields[] = {
 	{"T2BIRC1",	GPTU_T2BIS_T2BIRC1,	GPTU_T2BIS_T2BIRC1_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t gptu_t2es_fields[] = {
+static const DebugRegField gptu_t2es_fields[] = {
 	{"T2AECNT",	GPTU_T2ES_T2AECNT,	GPTU_T2ES_T2AECNT_SHIFT,	NULL,	0},
 	{"T2AESTR",	GPTU_T2ES_T2AESTR,	GPTU_T2ES_T2AESTR_SHIFT,	NULL,	0},
 	{"T2AESTP",	GPTU_T2ES_T2AESTP,	GPTU_T2ES_T2AESTP_SHIFT,	NULL,	0},
@@ -3624,7 +3715,7 @@ static const pmb887x_io_field_t gptu_t2es_fields[] = {
 	{"T2BERC1",	GPTU_T2ES_T2BERC1,	GPTU_T2ES_T2BERC1_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_value_t gptu_gptu_osel_so0_values[] = {
+static const DebugRegValue gptu_gptu_osel_so0_values[] = {
 	{"OUT00",	GPTU_OSEL_SO0_OUT00},
 	{"OUT01",	GPTU_OSEL_SO0_OUT01},
 	{"OUT10",	GPTU_OSEL_SO0_OUT10},
@@ -3635,7 +3726,7 @@ static const pmb887x_io_value_t gptu_gptu_osel_so0_values[] = {
 	{"UNK1",	GPTU_OSEL_SO0_UNK1},
 };
 
-static const pmb887x_io_value_t gptu_gptu_osel_so1_values[] = {
+static const DebugRegValue gptu_gptu_osel_so1_values[] = {
 	{"OUT00",	GPTU_OSEL_SO1_OUT00},
 	{"OUT01",	GPTU_OSEL_SO1_OUT01},
 	{"OUT10",	GPTU_OSEL_SO1_OUT10},
@@ -3646,7 +3737,7 @@ static const pmb887x_io_value_t gptu_gptu_osel_so1_values[] = {
 	{"UNK1",	GPTU_OSEL_SO1_UNK1},
 };
 
-static const pmb887x_io_value_t gptu_gptu_osel_so2_values[] = {
+static const DebugRegValue gptu_gptu_osel_so2_values[] = {
 	{"OUT00",	GPTU_OSEL_SO2_OUT00},
 	{"OUT01",	GPTU_OSEL_SO2_OUT01},
 	{"OUT10",	GPTU_OSEL_SO2_OUT10},
@@ -3657,7 +3748,7 @@ static const pmb887x_io_value_t gptu_gptu_osel_so2_values[] = {
 	{"UNK1",	GPTU_OSEL_SO2_UNK1},
 };
 
-static const pmb887x_io_value_t gptu_gptu_osel_so3_values[] = {
+static const DebugRegValue gptu_gptu_osel_so3_values[] = {
 	{"OUT00",	GPTU_OSEL_SO3_OUT00},
 	{"OUT01",	GPTU_OSEL_SO3_OUT01},
 	{"OUT10",	GPTU_OSEL_SO3_OUT10},
@@ -3668,7 +3759,7 @@ static const pmb887x_io_value_t gptu_gptu_osel_so3_values[] = {
 	{"UNK1",	GPTU_OSEL_SO3_UNK1},
 };
 
-static const pmb887x_io_value_t gptu_gptu_osel_so4_values[] = {
+static const DebugRegValue gptu_gptu_osel_so4_values[] = {
 	{"OUT00",	GPTU_OSEL_SO4_OUT00},
 	{"OUT01",	GPTU_OSEL_SO4_OUT01},
 	{"OUT10",	GPTU_OSEL_SO4_OUT10},
@@ -3679,7 +3770,7 @@ static const pmb887x_io_value_t gptu_gptu_osel_so4_values[] = {
 	{"UNK1",	GPTU_OSEL_SO4_UNK1},
 };
 
-static const pmb887x_io_value_t gptu_gptu_osel_so5_values[] = {
+static const DebugRegValue gptu_gptu_osel_so5_values[] = {
 	{"OUT00",	GPTU_OSEL_SO5_OUT00},
 	{"OUT01",	GPTU_OSEL_SO5_OUT01},
 	{"OUT10",	GPTU_OSEL_SO5_OUT10},
@@ -3690,7 +3781,7 @@ static const pmb887x_io_value_t gptu_gptu_osel_so5_values[] = {
 	{"UNK1",	GPTU_OSEL_SO5_UNK1},
 };
 
-static const pmb887x_io_value_t gptu_gptu_osel_so6_values[] = {
+static const DebugRegValue gptu_gptu_osel_so6_values[] = {
 	{"OUT00",	GPTU_OSEL_SO6_OUT00},
 	{"OUT01",	GPTU_OSEL_SO6_OUT01},
 	{"OUT10",	GPTU_OSEL_SO6_OUT10},
@@ -3701,7 +3792,7 @@ static const pmb887x_io_value_t gptu_gptu_osel_so6_values[] = {
 	{"UNK1",	GPTU_OSEL_SO6_UNK1},
 };
 
-static const pmb887x_io_value_t gptu_gptu_osel_so7_values[] = {
+static const DebugRegValue gptu_gptu_osel_so7_values[] = {
 	{"OUT00",	GPTU_OSEL_SO7_OUT00},
 	{"OUT01",	GPTU_OSEL_SO7_OUT01},
 	{"OUT10",	GPTU_OSEL_SO7_OUT10},
@@ -3712,7 +3803,7 @@ static const pmb887x_io_value_t gptu_gptu_osel_so7_values[] = {
 	{"UNK1",	GPTU_OSEL_SO7_UNK1},
 };
 
-static const pmb887x_io_field_t gptu_osel_fields[] = {
+static const DebugRegField gptu_osel_fields[] = {
 	{"SO0",	GPTU_OSEL_SO0,	GPTU_OSEL_SO0_SHIFT,	gptu_gptu_osel_so0_values,	ARRAY_SIZE(gptu_gptu_osel_so0_values)},
 	{"SO1",	GPTU_OSEL_SO1,	GPTU_OSEL_SO1_SHIFT,	gptu_gptu_osel_so1_values,	ARRAY_SIZE(gptu_gptu_osel_so1_values)},
 	{"SO2",	GPTU_OSEL_SO2,	GPTU_OSEL_SO2_SHIFT,	gptu_gptu_osel_so2_values,	ARRAY_SIZE(gptu_gptu_osel_so2_values)},
@@ -3723,7 +3814,7 @@ static const pmb887x_io_field_t gptu_osel_fields[] = {
 	{"SO7",	GPTU_OSEL_SO7,	GPTU_OSEL_SO7_SHIFT,	gptu_gptu_osel_so7_values,	ARRAY_SIZE(gptu_gptu_osel_so7_values)},
 };
 
-static const pmb887x_io_field_t gptu_out_fields[] = {
+static const DebugRegField gptu_out_fields[] = {
 	{"OUT0",	GPTU_OUT_OUT0,	GPTU_OUT_OUT0_SHIFT,	NULL,	0},
 	{"OUT1",	GPTU_OUT_OUT1,	GPTU_OUT_OUT1_SHIFT,	NULL,	0},
 	{"OUT2",	GPTU_OUT_OUT2,	GPTU_OUT_OUT2_SHIFT,	NULL,	0},
@@ -3750,74 +3841,74 @@ static const pmb887x_io_field_t gptu_out_fields[] = {
 	{"SETO7",	GPTU_OUT_SETO7,	GPTU_OUT_SETO7_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t gptu_t0dcba_fields[] = {
+static const DebugRegField gptu_t0dcba_fields[] = {
 	{"T0A",	GPTU_T0DCBA_T0A,	GPTU_T0DCBA_T0A_SHIFT,	NULL,	0},
 	{"T0B",	GPTU_T0DCBA_T0B,	GPTU_T0DCBA_T0B_SHIFT,	NULL,	0},
 	{"T0C",	GPTU_T0DCBA_T0C,	GPTU_T0DCBA_T0C_SHIFT,	NULL,	0},
 	{"T0D",	GPTU_T0DCBA_T0D,	GPTU_T0DCBA_T0D_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t gptu_t0cba_fields[] = {
+static const DebugRegField gptu_t0cba_fields[] = {
 	{"T0A",	GPTU_T0CBA_T0A,	GPTU_T0CBA_T0A_SHIFT,	NULL,	0},
 	{"T0B",	GPTU_T0CBA_T0B,	GPTU_T0CBA_T0B_SHIFT,	NULL,	0},
 	{"T0C",	GPTU_T0CBA_T0C,	GPTU_T0CBA_T0C_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t gptu_t0rdcba_fields[] = {
+static const DebugRegField gptu_t0rdcba_fields[] = {
 	{"T0RA",	GPTU_T0RDCBA_T0RA,	GPTU_T0RDCBA_T0RA_SHIFT,	NULL,	0},
 	{"T0RB",	GPTU_T0RDCBA_T0RB,	GPTU_T0RDCBA_T0RB_SHIFT,	NULL,	0},
 	{"T0RC",	GPTU_T0RDCBA_T0RC,	GPTU_T0RDCBA_T0RC_SHIFT,	NULL,	0},
 	{"T0RD",	GPTU_T0RDCBA_T0RD,	GPTU_T0RDCBA_T0RD_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t gptu_t0rcba_fields[] = {
+static const DebugRegField gptu_t0rcba_fields[] = {
 	{"T0RA",	GPTU_T0RCBA_T0RA,	GPTU_T0RCBA_T0RA_SHIFT,	NULL,	0},
 	{"T0RB",	GPTU_T0RCBA_T0RB,	GPTU_T0RCBA_T0RB_SHIFT,	NULL,	0},
 	{"T0RC",	GPTU_T0RCBA_T0RC,	GPTU_T0RCBA_T0RC_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t gptu_t1dcba_fields[] = {
+static const DebugRegField gptu_t1dcba_fields[] = {
 	{"T1A",	GPTU_T1DCBA_T1A,	GPTU_T1DCBA_T1A_SHIFT,	NULL,	0},
 	{"T1B",	GPTU_T1DCBA_T1B,	GPTU_T1DCBA_T1B_SHIFT,	NULL,	0},
 	{"T1C",	GPTU_T1DCBA_T1C,	GPTU_T1DCBA_T1C_SHIFT,	NULL,	0},
 	{"T1D",	GPTU_T1DCBA_T1D,	GPTU_T1DCBA_T1D_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t gptu_t1cba_fields[] = {
+static const DebugRegField gptu_t1cba_fields[] = {
 	{"T1A",	GPTU_T1CBA_T1A,	GPTU_T1CBA_T1A_SHIFT,	NULL,	0},
 	{"T1B",	GPTU_T1CBA_T1B,	GPTU_T1CBA_T1B_SHIFT,	NULL,	0},
 	{"T1C",	GPTU_T1CBA_T1C,	GPTU_T1CBA_T1C_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t gptu_t1rdcba_fields[] = {
+static const DebugRegField gptu_t1rdcba_fields[] = {
 	{"T1RA",	GPTU_T1RDCBA_T1RA,	GPTU_T1RDCBA_T1RA_SHIFT,	NULL,	0},
 	{"T1RB",	GPTU_T1RDCBA_T1RB,	GPTU_T1RDCBA_T1RB_SHIFT,	NULL,	0},
 	{"T1RC",	GPTU_T1RDCBA_T1RC,	GPTU_T1RDCBA_T1RC_SHIFT,	NULL,	0},
 	{"T1RD",	GPTU_T1RDCBA_T1RD,	GPTU_T1RDCBA_T1RD_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t gptu_t1rcba_fields[] = {
+static const DebugRegField gptu_t1rcba_fields[] = {
 	{"T1RA",	GPTU_T1RCBA_T1RA,	GPTU_T1RCBA_T1RA_SHIFT,	NULL,	0},
 	{"T1RB",	GPTU_T1RCBA_T1RB,	GPTU_T1RCBA_T1RB_SHIFT,	NULL,	0},
 	{"T1RC",	GPTU_T1RCBA_T1RC,	GPTU_T1RCBA_T1RC_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t gptu_t2_fields[] = {
+static const DebugRegField gptu_t2_fields[] = {
 	{"T2A",	GPTU_T2_T2A,	GPTU_T2_T2A_SHIFT,	NULL,	0},
 	{"T2B",	GPTU_T2_T2B,	GPTU_T2_T2B_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t gptu_t2rc0_fields[] = {
+static const DebugRegField gptu_t2rc0_fields[] = {
 	{"T2ARC0",	GPTU_T2RC0_T2ARC0,	GPTU_T2RC0_T2ARC0_SHIFT,	NULL,	0},
 	{"T2BRC0",	GPTU_T2RC0_T2BRC0,	GPTU_T2RC0_T2BRC0_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t gptu_t2rc1_fields[] = {
+static const DebugRegField gptu_t2rc1_fields[] = {
 	{"T2ARC1",	GPTU_T2RC1_T2ARC1,	GPTU_T2RC1_T2ARC1_SHIFT,	NULL,	0},
 	{"T2BRC1",	GPTU_T2RC1_T2BRC1,	GPTU_T2RC1_T2BRC1_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t gptu_t012run_fields[] = {
+static const DebugRegField gptu_t012run_fields[] = {
 	{"T0ARUN",	GPTU_T012RUN_T0ARUN,	GPTU_T012RUN_T0ARUN_SHIFT,	NULL,	0},
 	{"T0BRUN",	GPTU_T012RUN_T0BRUN,	GPTU_T012RUN_T0BRUN_SHIFT,	NULL,	0},
 	{"T0CRUN",	GPTU_T012RUN_T0CRUN,	GPTU_T012RUN_T0CRUN_SHIFT,	NULL,	0},
@@ -3834,7 +3925,7 @@ static const pmb887x_io_field_t gptu_t012run_fields[] = {
 	{"T2BCLRR",	GPTU_T012RUN_T2BCLRR,	GPTU_T012RUN_T2BCLRR_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_value_t gptu_gptu_srsel_ssr7_values[] = {
+static const DebugRegValue gptu_gptu_srsel_ssr7_values[] = {
 	{"START_A",		GPTU_SRSEL_SSR7_START_A},
 	{"STOP_A",		GPTU_SRSEL_SSR7_STOP_A},
 	{"UPDOWN_A",	GPTU_SRSEL_SSR7_UPDOWN_A},
@@ -3853,7 +3944,7 @@ static const pmb887x_io_value_t gptu_gptu_srsel_ssr7_values[] = {
 	{"SR11",		GPTU_SRSEL_SSR7_SR11},
 };
 
-static const pmb887x_io_value_t gptu_gptu_srsel_ssr6_values[] = {
+static const DebugRegValue gptu_gptu_srsel_ssr6_values[] = {
 	{"START_A",		GPTU_SRSEL_SSR6_START_A},
 	{"STOP_A",		GPTU_SRSEL_SSR6_STOP_A},
 	{"UPDOWN_A",	GPTU_SRSEL_SSR6_UPDOWN_A},
@@ -3872,7 +3963,7 @@ static const pmb887x_io_value_t gptu_gptu_srsel_ssr6_values[] = {
 	{"SR11",		GPTU_SRSEL_SSR6_SR11},
 };
 
-static const pmb887x_io_value_t gptu_gptu_srsel_ssr5_values[] = {
+static const DebugRegValue gptu_gptu_srsel_ssr5_values[] = {
 	{"START_A",		GPTU_SRSEL_SSR5_START_A},
 	{"STOP_A",		GPTU_SRSEL_SSR5_STOP_A},
 	{"UPDOWN_A",	GPTU_SRSEL_SSR5_UPDOWN_A},
@@ -3891,7 +3982,7 @@ static const pmb887x_io_value_t gptu_gptu_srsel_ssr5_values[] = {
 	{"SR11",		GPTU_SRSEL_SSR5_SR11},
 };
 
-static const pmb887x_io_value_t gptu_gptu_srsel_ssr4_values[] = {
+static const DebugRegValue gptu_gptu_srsel_ssr4_values[] = {
 	{"START_A",		GPTU_SRSEL_SSR4_START_A},
 	{"STOP_A",		GPTU_SRSEL_SSR4_STOP_A},
 	{"UPDOWN_A",	GPTU_SRSEL_SSR4_UPDOWN_A},
@@ -3910,7 +4001,7 @@ static const pmb887x_io_value_t gptu_gptu_srsel_ssr4_values[] = {
 	{"SR11",		GPTU_SRSEL_SSR4_SR11},
 };
 
-static const pmb887x_io_value_t gptu_gptu_srsel_ssr3_values[] = {
+static const DebugRegValue gptu_gptu_srsel_ssr3_values[] = {
 	{"START_A",		GPTU_SRSEL_SSR3_START_A},
 	{"STOP_A",		GPTU_SRSEL_SSR3_STOP_A},
 	{"UPDOWN_A",	GPTU_SRSEL_SSR3_UPDOWN_A},
@@ -3929,7 +4020,7 @@ static const pmb887x_io_value_t gptu_gptu_srsel_ssr3_values[] = {
 	{"SR11",		GPTU_SRSEL_SSR3_SR11},
 };
 
-static const pmb887x_io_value_t gptu_gptu_srsel_ssr2_values[] = {
+static const DebugRegValue gptu_gptu_srsel_ssr2_values[] = {
 	{"START_A",		GPTU_SRSEL_SSR2_START_A},
 	{"STOP_A",		GPTU_SRSEL_SSR2_STOP_A},
 	{"UPDOWN_A",	GPTU_SRSEL_SSR2_UPDOWN_A},
@@ -3948,7 +4039,7 @@ static const pmb887x_io_value_t gptu_gptu_srsel_ssr2_values[] = {
 	{"SR11",		GPTU_SRSEL_SSR2_SR11},
 };
 
-static const pmb887x_io_value_t gptu_gptu_srsel_ssr1_values[] = {
+static const DebugRegValue gptu_gptu_srsel_ssr1_values[] = {
 	{"START_A",		GPTU_SRSEL_SSR1_START_A},
 	{"STOP_A",		GPTU_SRSEL_SSR1_STOP_A},
 	{"UPDOWN_A",	GPTU_SRSEL_SSR1_UPDOWN_A},
@@ -3967,7 +4058,7 @@ static const pmb887x_io_value_t gptu_gptu_srsel_ssr1_values[] = {
 	{"SR11",		GPTU_SRSEL_SSR1_SR11},
 };
 
-static const pmb887x_io_value_t gptu_gptu_srsel_ssr0_values[] = {
+static const DebugRegValue gptu_gptu_srsel_ssr0_values[] = {
 	{"START_A",		GPTU_SRSEL_SSR0_START_A},
 	{"STOP_A",		GPTU_SRSEL_SSR0_STOP_A},
 	{"UPDOWN_A",	GPTU_SRSEL_SSR0_UPDOWN_A},
@@ -3986,7 +4077,7 @@ static const pmb887x_io_value_t gptu_gptu_srsel_ssr0_values[] = {
 	{"SR11",		GPTU_SRSEL_SSR0_SR11},
 };
 
-static const pmb887x_io_field_t gptu_srsel_fields[] = {
+static const DebugRegField gptu_srsel_fields[] = {
 	{"SSR7",	GPTU_SRSEL_SSR7,	GPTU_SRSEL_SSR7_SHIFT,	gptu_gptu_srsel_ssr7_values,	ARRAY_SIZE(gptu_gptu_srsel_ssr7_values)},
 	{"SSR6",	GPTU_SRSEL_SSR6,	GPTU_SRSEL_SSR6_SHIFT,	gptu_gptu_srsel_ssr6_values,	ARRAY_SIZE(gptu_gptu_srsel_ssr6_values)},
 	{"SSR5",	GPTU_SRSEL_SSR5,	GPTU_SRSEL_SSR5_SHIFT,	gptu_gptu_srsel_ssr5_values,	ARRAY_SIZE(gptu_gptu_srsel_ssr5_values)},
@@ -3997,7 +4088,7 @@ static const pmb887x_io_field_t gptu_srsel_fields[] = {
 	{"SSR0",	GPTU_SRSEL_SSR0,	GPTU_SRSEL_SSR0_SHIFT,	gptu_gptu_srsel_ssr0_values,	ARRAY_SIZE(gptu_gptu_srsel_ssr0_values)},
 };
 
-static const pmb887x_io_field_t gptu_src_fields[] = {
+static const DebugRegField gptu_src_fields[] = {
 	{"SRPN",	MOD_SRC_SRPN,	MOD_SRC_SRPN_SHIFT,	NULL,	0},
 	{"TOS",		MOD_SRC_TOS,	MOD_SRC_TOS_SHIFT,	NULL,	0},
 	{"SRE",		MOD_SRC_SRE,	MOD_SRC_SRE_SHIFT,	NULL,	0},
@@ -4006,42 +4097,49 @@ static const pmb887x_io_field_t gptu_src_fields[] = {
 	{"SETR",	MOD_SRC_SETR,	MOD_SRC_SETR_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_reg_t gptu_regs[] = {
-	{"CLC",		GPTU_CLC,		gptu_clc_fields,		ARRAY_SIZE(gptu_clc_fields),		0},
-	{"ID",		GPTU_ID,		gptu_id_fields,			ARRAY_SIZE(gptu_id_fields),			0},
-	{"T01IRS",	GPTU_T01IRS,	gptu_t01irs_fields,		ARRAY_SIZE(gptu_t01irs_fields),		0},
-	{"T01OTS",	GPTU_T01OTS,	gptu_t01ots_fields,		ARRAY_SIZE(gptu_t01ots_fields),		0},
-	{"T2CON",	GPTU_T2CON,		gptu_t2con_fields,		ARRAY_SIZE(gptu_t2con_fields),		0},
-	{"T2RCCON",	GPTU_T2RCCON,	gptu_t2rccon_fields,	ARRAY_SIZE(gptu_t2rccon_fields),	0},
-	{"T2AIS",	GPTU_T2AIS,		gptu_t2ais_fields,		ARRAY_SIZE(gptu_t2ais_fields),		0},
-	{"T2BIS",	GPTU_T2BIS,		gptu_t2bis_fields,		ARRAY_SIZE(gptu_t2bis_fields),		0},
-	{"T2ES",	GPTU_T2ES,		gptu_t2es_fields,		ARRAY_SIZE(gptu_t2es_fields),		0},
-	{"OSEL",	GPTU_OSEL,		gptu_osel_fields,		ARRAY_SIZE(gptu_osel_fields),		0},
-	{"OUT",		GPTU_OUT,		gptu_out_fields,		ARRAY_SIZE(gptu_out_fields),		0},
-	{"T0DCBA",	GPTU_T0DCBA,	gptu_t0dcba_fields,		ARRAY_SIZE(gptu_t0dcba_fields),		0},
-	{"T0CBA",	GPTU_T0CBA,		gptu_t0cba_fields,		ARRAY_SIZE(gptu_t0cba_fields),		0},
-	{"T0RDCBA",	GPTU_T0RDCBA,	gptu_t0rdcba_fields,	ARRAY_SIZE(gptu_t0rdcba_fields),	0},
-	{"T0RCBA",	GPTU_T0RCBA,	gptu_t0rcba_fields,		ARRAY_SIZE(gptu_t0rcba_fields),		0},
-	{"T1DCBA",	GPTU_T1DCBA,	gptu_t1dcba_fields,		ARRAY_SIZE(gptu_t1dcba_fields),		0},
-	{"T1CBA",	GPTU_T1CBA,		gptu_t1cba_fields,		ARRAY_SIZE(gptu_t1cba_fields),		0},
-	{"T1RDCBA",	GPTU_T1RDCBA,	gptu_t1rdcba_fields,	ARRAY_SIZE(gptu_t1rdcba_fields),	0},
-	{"T1RCBA",	GPTU_T1RCBA,	gptu_t1rcba_fields,		ARRAY_SIZE(gptu_t1rcba_fields),		0},
-	{"T2",		GPTU_T2,		gptu_t2_fields,			ARRAY_SIZE(gptu_t2_fields),			0},
-	{"T2RC0",	GPTU_T2RC0,		gptu_t2rc0_fields,		ARRAY_SIZE(gptu_t2rc0_fields),		0},
-	{"T2RC1",	GPTU_T2RC1,		gptu_t2rc1_fields,		ARRAY_SIZE(gptu_t2rc1_fields),		0},
-	{"T012RUN",	GPTU_T012RUN,	gptu_t012run_fields,	ARRAY_SIZE(gptu_t012run_fields),	0},
-	{"SRSEL",	GPTU_SRSEL,		gptu_srsel_fields,		ARRAY_SIZE(gptu_srsel_fields),		0},
-	{"SRC0",	GPTU_SRC0,		gptu_src_fields,		ARRAY_SIZE(gptu_src_fields),		0},
-	{"SRC1",	GPTU_SRC1,		gptu_src_fields,		ARRAY_SIZE(gptu_src_fields),		0},
-	{"SRC2",	GPTU_SRC2,		gptu_src_fields,		ARRAY_SIZE(gptu_src_fields),		0},
-	{"SRC3",	GPTU_SRC3,		gptu_src_fields,		ARRAY_SIZE(gptu_src_fields),		0},
-	{"SRC4",	GPTU_SRC4,		gptu_src_fields,		ARRAY_SIZE(gptu_src_fields),		0},
-	{"SRC5",	GPTU_SRC5,		gptu_src_fields,		ARRAY_SIZE(gptu_src_fields),		0},
-	{"SRC6",	GPTU_SRC6,		gptu_src_fields,		ARRAY_SIZE(gptu_src_fields),		0},
-	{"SRC7",	GPTU_SRC7,		gptu_src_fields,		ARRAY_SIZE(gptu_src_fields),		0},
+static const DebugReg gptu_regs[] = {
+	{"CLC",		GPTU_CLC,		gptu_clc_fields,		ARRAY_SIZE(gptu_clc_fields)},
+	{"ID",		GPTU_ID,		gptu_id_fields,			ARRAY_SIZE(gptu_id_fields)},
+	{"T01IRS",	GPTU_T01IRS,	gptu_t01irs_fields,		ARRAY_SIZE(gptu_t01irs_fields)},
+	{"T01OTS",	GPTU_T01OTS,	gptu_t01ots_fields,		ARRAY_SIZE(gptu_t01ots_fields)},
+	{"T2CON",	GPTU_T2CON,		gptu_t2con_fields,		ARRAY_SIZE(gptu_t2con_fields)},
+	{"T2RCCON",	GPTU_T2RCCON,	gptu_t2rccon_fields,	ARRAY_SIZE(gptu_t2rccon_fields)},
+	{"T2AIS",	GPTU_T2AIS,		gptu_t2ais_fields,		ARRAY_SIZE(gptu_t2ais_fields)},
+	{"T2BIS",	GPTU_T2BIS,		gptu_t2bis_fields,		ARRAY_SIZE(gptu_t2bis_fields)},
+	{"T2ES",	GPTU_T2ES,		gptu_t2es_fields,		ARRAY_SIZE(gptu_t2es_fields)},
+	{"OSEL",	GPTU_OSEL,		gptu_osel_fields,		ARRAY_SIZE(gptu_osel_fields)},
+	{"OUT",		GPTU_OUT,		gptu_out_fields,		ARRAY_SIZE(gptu_out_fields)},
+	{"T0DCBA",	GPTU_T0DCBA,	gptu_t0dcba_fields,		ARRAY_SIZE(gptu_t0dcba_fields)},
+	{"T0CBA",	GPTU_T0CBA,		gptu_t0cba_fields,		ARRAY_SIZE(gptu_t0cba_fields)},
+	{"T0RDCBA",	GPTU_T0RDCBA,	gptu_t0rdcba_fields,	ARRAY_SIZE(gptu_t0rdcba_fields)},
+	{"T0RCBA",	GPTU_T0RCBA,	gptu_t0rcba_fields,		ARRAY_SIZE(gptu_t0rcba_fields)},
+	{"T1DCBA",	GPTU_T1DCBA,	gptu_t1dcba_fields,		ARRAY_SIZE(gptu_t1dcba_fields)},
+	{"T1CBA",	GPTU_T1CBA,		gptu_t1cba_fields,		ARRAY_SIZE(gptu_t1cba_fields)},
+	{"T1RDCBA",	GPTU_T1RDCBA,	gptu_t1rdcba_fields,	ARRAY_SIZE(gptu_t1rdcba_fields)},
+	{"T1RCBA",	GPTU_T1RCBA,	gptu_t1rcba_fields,		ARRAY_SIZE(gptu_t1rcba_fields)},
+	{"T2",		GPTU_T2,		gptu_t2_fields,			ARRAY_SIZE(gptu_t2_fields)},
+	{"T2RC0",	GPTU_T2RC0,		gptu_t2rc0_fields,		ARRAY_SIZE(gptu_t2rc0_fields)},
+	{"T2RC1",	GPTU_T2RC1,		gptu_t2rc1_fields,		ARRAY_SIZE(gptu_t2rc1_fields)},
+	{"T012RUN",	GPTU_T012RUN,	gptu_t012run_fields,	ARRAY_SIZE(gptu_t012run_fields)},
+	{"SRSEL",	GPTU_SRSEL,		gptu_srsel_fields,		ARRAY_SIZE(gptu_srsel_fields)},
+	{"SRC0",	GPTU_SRC0,		gptu_src_fields,		ARRAY_SIZE(gptu_src_fields)},
+	{"SRC1",	GPTU_SRC1,		gptu_src_fields,		ARRAY_SIZE(gptu_src_fields)},
+	{"SRC2",	GPTU_SRC2,		gptu_src_fields,		ARRAY_SIZE(gptu_src_fields)},
+	{"SRC3",	GPTU_SRC3,		gptu_src_fields,		ARRAY_SIZE(gptu_src_fields)},
+	{"SRC4",	GPTU_SRC4,		gptu_src_fields,		ARRAY_SIZE(gptu_src_fields)},
+	{"SRC5",	GPTU_SRC5,		gptu_src_fields,		ARRAY_SIZE(gptu_src_fields)},
+	{"SRC6",	GPTU_SRC6,		gptu_src_fields,		ARRAY_SIZE(gptu_src_fields)},
+	{"SRC7",	GPTU_SRC7,		gptu_src_fields,		ARRAY_SIZE(gptu_src_fields)},
 };
 
-static const pmb887x_io_field_t i2cv1_clc_fields[] = {
+const DebugRegs pmb887x_gptu_regs = {
+	.regs = gptu_regs,
+	.count = ARRAY_SIZE(gptu_regs),
+	.reg_size = 4,
+	.addr_digits = 8,
+};
+
+static const DebugRegField i2cv1_clc_fields[] = {
 	{"DISR",	MOD_CLC_DISR,	MOD_CLC_DISR_SHIFT,	NULL,	0},
 	{"DISS",	MOD_CLC_DISS,	MOD_CLC_DISS_SHIFT,	NULL,	0},
 	{"SPEN",	MOD_CLC_SPEN,	MOD_CLC_SPEN_SHIFT,	NULL,	0},
@@ -4051,34 +4149,34 @@ static const pmb887x_io_field_t i2cv1_clc_fields[] = {
 	{"RMC",		MOD_CLC_RMC,	MOD_CLC_RMC_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t i2cv1_pisel_fields[] = {
+static const DebugRegField i2cv1_pisel_fields[] = {
 	{"SCL_IS0",	I2Cv1_PISEL_SCL_IS0,	I2Cv1_PISEL_SCL_IS0_SHIFT,	NULL,	0},
 	{"SCL_IS1",	I2Cv1_PISEL_SCL_IS1,	I2Cv1_PISEL_SCL_IS1_SHIFT,	NULL,	0},
 	{"SDA_IS0",	I2Cv1_PISEL_SDA_IS0,	I2Cv1_PISEL_SDA_IS0_SHIFT,	NULL,	0},
 	{"SDA_IS1",	I2Cv1_PISEL_SDA_IS1,	I2Cv1_PISEL_SDA_IS1_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t i2cv1_id_fields[] = {
+static const DebugRegField i2cv1_id_fields[] = {
 	{"REV",		MOD_ID_REV,		MOD_ID_REV_SHIFT,		NULL,	0},
 	{"32B",		MOD_ID_32B,		MOD_ID_32B_SHIFT,		NULL,	0},
 	{"NUMBER",	MOD_ID_NUMBER,	MOD_ID_NUMBER_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_value_t i2cv1_i2cv1_syscon_mod_values[] = {
+static const DebugRegValue i2cv1_i2cv1_syscon_mod_values[] = {
 	{"DISABLED",		I2Cv1_SYSCON_MOD_DISABLED},
 	{"SLAVE",			I2Cv1_SYSCON_MOD_SLAVE},
 	{"MASTER",			I2Cv1_SYSCON_MOD_MASTER},
 	{"MULTI_MASTER",	I2Cv1_SYSCON_MOD_MULTI_MASTER},
 };
 
-static const pmb887x_io_value_t i2cv1_i2cv1_syscon_ci_values[] = {
+static const DebugRegValue i2cv1_i2cv1_syscon_ci_values[] = {
 	{"1",	I2Cv1_SYSCON_CI_1},
 	{"2",	I2Cv1_SYSCON_CI_2},
 	{"3",	I2Cv1_SYSCON_CI_3},
 	{"4",	I2Cv1_SYSCON_CI_4},
 };
 
-static const pmb887x_io_field_t i2cv1_syscon_fields[] = {
+static const DebugRegField i2cv1_syscon_fields[] = {
 	{"ADR",		I2Cv1_SYSCON_ADR,		I2Cv1_SYSCON_ADR_SHIFT,		NULL,							0},
 	{"AL",		I2Cv1_SYSCON_AL,		I2Cv1_SYSCON_AL_SHIFT,		NULL,							0},
 	{"SLA",		I2Cv1_SYSCON_SLA,		I2Cv1_SYSCON_SLA_SHIFT,		NULL,							0},
@@ -4104,18 +4202,18 @@ static const pmb887x_io_field_t i2cv1_syscon_fields[] = {
 	{"WMEN",	I2Cv1_SYSCON_WMEN,		I2Cv1_SYSCON_WMEN_SHIFT,	NULL,							0},
 };
 
-static const pmb887x_io_value_t i2cv1_i2cv1_buscon_prediv_values[] = {
+static const DebugRegValue i2cv1_i2cv1_buscon_prediv_values[] = {
 	{"1",	I2Cv1_BUSCON_PREDIV_1},
 	{"8",	I2Cv1_BUSCON_PREDIV_8},
 	{"64",	I2Cv1_BUSCON_PREDIV_64},
 };
 
-static const pmb887x_io_value_t i2cv1_i2cv1_buscon_brpmod_values[] = {
+static const DebugRegValue i2cv1_i2cv1_buscon_brpmod_values[] = {
 	{"MODE0",	I2Cv1_BUSCON_BRPMOD_MODE0},
 	{"MODE1",	I2Cv1_BUSCON_BRPMOD_MODE1},
 };
 
-static const pmb887x_io_field_t i2cv1_buscon_fields[] = {
+static const DebugRegField i2cv1_buscon_fields[] = {
 	{"SDAEN0",	I2Cv1_BUSCON_SDAEN0,	I2Cv1_BUSCON_SDAEN0_SHIFT,	NULL,								0},
 	{"SDAEN1",	I2Cv1_BUSCON_SDAEN1,	I2Cv1_BUSCON_SDAEN1_SHIFT,	NULL,								0},
 	{"SCLEN0",	I2Cv1_BUSCON_SCLEN0,	I2Cv1_BUSCON_SCLEN0_SHIFT,	NULL,								0},
@@ -4126,14 +4224,14 @@ static const pmb887x_io_field_t i2cv1_buscon_fields[] = {
 	{"BRPMOD",	I2Cv1_BUSCON_BRPMOD,	I2Cv1_BUSCON_BRPMOD_SHIFT,	i2cv1_i2cv1_buscon_brpmod_values,	ARRAY_SIZE(i2cv1_i2cv1_buscon_brpmod_values)},
 };
 
-static const pmb887x_io_field_t i2cv1_rtb_fields[] = {
+static const DebugRegField i2cv1_rtb_fields[] = {
 	{"BYTE0",	I2Cv1_RTB_BYTE0,	I2Cv1_RTB_BYTE0_SHIFT,	NULL,	0},
 	{"BYTE1",	I2Cv1_RTB_BYTE1,	I2Cv1_RTB_BYTE1_SHIFT,	NULL,	0},
 	{"BYTE2",	I2Cv1_RTB_BYTE2,	I2Cv1_RTB_BYTE2_SHIFT,	NULL,	0},
 	{"BYTE3",	I2Cv1_RTB_BYTE3,	I2Cv1_RTB_BYTE3_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t i2cv1_whbsyscon_fields[] = {
+static const DebugRegField i2cv1_whbsyscon_fields[] = {
 	{"CLRAL",		I2Cv1_WHBSYSCON_CLRAL,		I2Cv1_WHBSYSCON_CLRAL_SHIFT,		NULL,	0},
 	{"SETAL",		I2Cv1_WHBSYSCON_SETAL,		I2Cv1_WHBSYSCON_SETAL_SHIFT,		NULL,	0},
 	{"CLRIRQD",		I2Cv1_WHBSYSCON_CLRIRQD,	I2Cv1_WHBSYSCON_CLRIRQD_SHIFT,		NULL,	0},
@@ -4158,7 +4256,7 @@ static const pmb887x_io_field_t i2cv1_whbsyscon_fields[] = {
 	{"SETWMEN",		I2Cv1_WHBSYSCON_SETWMEN,	I2Cv1_WHBSYSCON_SETWMEN_SHIFT,		NULL,	0},
 };
 
-static const pmb887x_io_field_t i2cv1_end_src_fields[] = {
+static const DebugRegField i2cv1_end_src_fields[] = {
 	{"SRPN",	MOD_SRC_SRPN,	MOD_SRC_SRPN_SHIFT,	NULL,	0},
 	{"TOS",		MOD_SRC_TOS,	MOD_SRC_TOS_SHIFT,	NULL,	0},
 	{"SRE",		MOD_SRC_SRE,	MOD_SRC_SRE_SHIFT,	NULL,	0},
@@ -4167,7 +4265,7 @@ static const pmb887x_io_field_t i2cv1_end_src_fields[] = {
 	{"SETR",	MOD_SRC_SETR,	MOD_SRC_SETR_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t i2cv1_proto_src_fields[] = {
+static const DebugRegField i2cv1_proto_src_fields[] = {
 	{"SRPN",	MOD_SRC_SRPN,	MOD_SRC_SRPN_SHIFT,	NULL,	0},
 	{"TOS",		MOD_SRC_TOS,	MOD_SRC_TOS_SHIFT,	NULL,	0},
 	{"SRE",		MOD_SRC_SRE,	MOD_SRC_SRE_SHIFT,	NULL,	0},
@@ -4176,7 +4274,7 @@ static const pmb887x_io_field_t i2cv1_proto_src_fields[] = {
 	{"SETR",	MOD_SRC_SETR,	MOD_SRC_SETR_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t i2cv1_data_src_fields[] = {
+static const DebugRegField i2cv1_data_src_fields[] = {
 	{"SRPN",	MOD_SRC_SRPN,	MOD_SRC_SRPN_SHIFT,	NULL,	0},
 	{"TOS",		MOD_SRC_TOS,	MOD_SRC_TOS_SHIFT,	NULL,	0},
 	{"SRE",		MOD_SRC_SRE,	MOD_SRC_SRE_SHIFT,	NULL,	0},
@@ -4185,20 +4283,27 @@ static const pmb887x_io_field_t i2cv1_data_src_fields[] = {
 	{"SETR",	MOD_SRC_SETR,	MOD_SRC_SETR_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_reg_t i2cv1_regs[] = {
-	{"CLC",			I2Cv1_CLC,			i2cv1_clc_fields,		ARRAY_SIZE(i2cv1_clc_fields),		0},
-	{"PISEL",		I2Cv1_PISEL,		i2cv1_pisel_fields,		ARRAY_SIZE(i2cv1_pisel_fields),		0},
-	{"ID",			I2Cv1_ID,			i2cv1_id_fields,		ARRAY_SIZE(i2cv1_id_fields),		0},
-	{"SYSCON",		I2Cv1_SYSCON,		i2cv1_syscon_fields,	ARRAY_SIZE(i2cv1_syscon_fields),	0},
-	{"BUSCON",		I2Cv1_BUSCON,		i2cv1_buscon_fields,	ARRAY_SIZE(i2cv1_buscon_fields),	0},
-	{"RTB",			I2Cv1_RTB,			i2cv1_rtb_fields,		ARRAY_SIZE(i2cv1_rtb_fields),		0},
-	{"WHBSYSCON",	I2Cv1_WHBSYSCON,	i2cv1_whbsyscon_fields,	ARRAY_SIZE(i2cv1_whbsyscon_fields),	0},
-	{"END_SRC",		I2Cv1_END_SRC,		i2cv1_end_src_fields,	ARRAY_SIZE(i2cv1_end_src_fields),	0},
-	{"PROTO_SRC",	I2Cv1_PROTO_SRC,	i2cv1_proto_src_fields,	ARRAY_SIZE(i2cv1_proto_src_fields),	0},
-	{"DATA_SRC",	I2Cv1_DATA_SRC,		i2cv1_data_src_fields,	ARRAY_SIZE(i2cv1_data_src_fields),	0},
+static const DebugReg i2cv1_regs[] = {
+	{"CLC",			I2Cv1_CLC,			i2cv1_clc_fields,		ARRAY_SIZE(i2cv1_clc_fields)},
+	{"PISEL",		I2Cv1_PISEL,		i2cv1_pisel_fields,		ARRAY_SIZE(i2cv1_pisel_fields)},
+	{"ID",			I2Cv1_ID,			i2cv1_id_fields,		ARRAY_SIZE(i2cv1_id_fields)},
+	{"SYSCON",		I2Cv1_SYSCON,		i2cv1_syscon_fields,	ARRAY_SIZE(i2cv1_syscon_fields)},
+	{"BUSCON",		I2Cv1_BUSCON,		i2cv1_buscon_fields,	ARRAY_SIZE(i2cv1_buscon_fields)},
+	{"RTB",			I2Cv1_RTB,			i2cv1_rtb_fields,		ARRAY_SIZE(i2cv1_rtb_fields)},
+	{"WHBSYSCON",	I2Cv1_WHBSYSCON,	i2cv1_whbsyscon_fields,	ARRAY_SIZE(i2cv1_whbsyscon_fields)},
+	{"END_SRC",		I2Cv1_END_SRC,		i2cv1_end_src_fields,	ARRAY_SIZE(i2cv1_end_src_fields)},
+	{"PROTO_SRC",	I2Cv1_PROTO_SRC,	i2cv1_proto_src_fields,	ARRAY_SIZE(i2cv1_proto_src_fields)},
+	{"DATA_SRC",	I2Cv1_DATA_SRC,		i2cv1_data_src_fields,	ARRAY_SIZE(i2cv1_data_src_fields)},
 };
 
-static const pmb887x_io_field_t i2cv2_clc_fields[] = {
+const DebugRegs pmb887x_i2cv1_regs = {
+	.regs = i2cv1_regs,
+	.count = ARRAY_SIZE(i2cv1_regs),
+	.reg_size = 4,
+	.addr_digits = 8,
+};
+
+static const DebugRegField i2cv2_clc_fields[] = {
 	{"DISR",	MOD_CLC_DISR,	MOD_CLC_DISR_SHIFT,	NULL,	0},
 	{"DISS",	MOD_CLC_DISS,	MOD_CLC_DISS_SHIFT,	NULL,	0},
 	{"SPEN",	MOD_CLC_SPEN,	MOD_CLC_SPEN_SHIFT,	NULL,	0},
@@ -4208,32 +4313,32 @@ static const pmb887x_io_field_t i2cv2_clc_fields[] = {
 	{"RMC",		MOD_CLC_RMC,	MOD_CLC_RMC_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t i2cv2_id_fields[] = {
+static const DebugRegField i2cv2_id_fields[] = {
 	{"REV",		MOD_ID_REV,		MOD_ID_REV_SHIFT,		NULL,	0},
 	{"32B",		MOD_ID_32B,		MOD_ID_32B_SHIFT,		NULL,	0},
 	{"NUMBER",	MOD_ID_NUMBER,	MOD_ID_NUMBER_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t i2cv2_runctrl_fields[] = {
+static const DebugRegField i2cv2_runctrl_fields[] = {
 	{"RUN",	I2Cv2_RUNCTRL_RUN,	I2Cv2_RUNCTRL_RUN_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t i2cv2_enddctrl_fields[] = {
+static const DebugRegField i2cv2_enddctrl_fields[] = {
 	{"SETRSC",	I2Cv2_ENDDCTRL_SETRSC,	I2Cv2_ENDDCTRL_SETRSC_SHIFT,	NULL,	0},
 	{"SETEND",	I2Cv2_ENDDCTRL_SETEND,	I2Cv2_ENDDCTRL_SETEND_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t i2cv2_fdivcfg_fields[] = {
+static const DebugRegField i2cv2_fdivcfg_fields[] = {
 	{"DEC",	I2Cv2_FDIVCFG_DEC,	I2Cv2_FDIVCFG_DEC_SHIFT,	NULL,	0},
 	{"INC",	I2Cv2_FDIVCFG_INC,	I2Cv2_FDIVCFG_INC_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t i2cv2_fdivhighcfg_fields[] = {
+static const DebugRegField i2cv2_fdivhighcfg_fields[] = {
 	{"DEC",	I2Cv2_FDIVHIGHCFG_DEC,	I2Cv2_FDIVHIGHCFG_DEC_SHIFT,	NULL,	0},
 	{"INC",	I2Cv2_FDIVHIGHCFG_INC,	I2Cv2_FDIVHIGHCFG_INC_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t i2cv2_addrcfg_fields[] = {
+static const DebugRegField i2cv2_addrcfg_fields[] = {
 	{"ADR",		I2Cv2_ADDRCFG_ADR,	I2Cv2_ADDRCFG_ADR_SHIFT,	NULL,	0},
 	{"TBAM",	I2Cv2_ADDRCFG_TBAM,	I2Cv2_ADDRCFG_TBAM_SHIFT,	NULL,	0},
 	{"GCE",		I2Cv2_ADDRCFG_GCE,	I2Cv2_ADDRCFG_GCE_SHIFT,	NULL,	0},
@@ -4243,43 +4348,43 @@ static const pmb887x_io_field_t i2cv2_addrcfg_fields[] = {
 	{"SOPE",	I2Cv2_ADDRCFG_SOPE,	I2Cv2_ADDRCFG_SOPE_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_value_t i2cv2_i2cv2_busstat_bs_values[] = {
+static const DebugRegValue i2cv2_i2cv2_busstat_bs_values[] = {
 	{"FREE",				I2Cv2_BUSSTAT_BS_FREE},
 	{"BUSY_OTHER_MASTER",	I2Cv2_BUSSTAT_BS_BUSY_OTHER_MASTER},
 	{"BUSY_MASTER",			I2Cv2_BUSSTAT_BS_BUSY_MASTER},
 	{"BUSY_SLAVE",			I2Cv2_BUSSTAT_BS_BUSY_SLAVE},
 };
 
-static const pmb887x_io_field_t i2cv2_busstat_fields[] = {
+static const DebugRegField i2cv2_busstat_fields[] = {
 	{"BS",	I2Cv2_BUSSTAT_BS,	I2Cv2_BUSSTAT_BS_SHIFT,		i2cv2_i2cv2_busstat_bs_values,	ARRAY_SIZE(i2cv2_i2cv2_busstat_bs_values)},
 	{"RnW",	I2Cv2_BUSSTAT_RnW,	I2Cv2_BUSSTAT_RnW_SHIFT,	NULL,							0},
 };
 
-static const pmb887x_io_value_t i2cv2_i2cv2_fifocfg_rxbs_values[] = {
+static const DebugRegValue i2cv2_i2cv2_fifocfg_rxbs_values[] = {
 	{"1_WORD",	I2Cv2_FIFOCFG_RXBS_1_WORD},
 	{"2_WORD",	I2Cv2_FIFOCFG_RXBS_2_WORD},
 	{"4_WORD",	I2Cv2_FIFOCFG_RXBS_4_WORD},
 };
 
-static const pmb887x_io_value_t i2cv2_i2cv2_fifocfg_txbs_values[] = {
+static const DebugRegValue i2cv2_i2cv2_fifocfg_txbs_values[] = {
 	{"1_WORD",	I2Cv2_FIFOCFG_TXBS_1_WORD},
 	{"2_WORD",	I2Cv2_FIFOCFG_TXBS_2_WORD},
 	{"4_WORD",	I2Cv2_FIFOCFG_TXBS_4_WORD},
 };
 
-static const pmb887x_io_value_t i2cv2_i2cv2_fifocfg_rxfa_values[] = {
+static const DebugRegValue i2cv2_i2cv2_fifocfg_rxfa_values[] = {
 	{"1",	I2Cv2_FIFOCFG_RXFA_1},
 	{"2",	I2Cv2_FIFOCFG_RXFA_2},
 	{"4",	I2Cv2_FIFOCFG_RXFA_4},
 };
 
-static const pmb887x_io_value_t i2cv2_i2cv2_fifocfg_txfa_values[] = {
+static const DebugRegValue i2cv2_i2cv2_fifocfg_txfa_values[] = {
 	{"1",	I2Cv2_FIFOCFG_TXFA_1},
 	{"2",	I2Cv2_FIFOCFG_TXFA_2},
 	{"4",	I2Cv2_FIFOCFG_TXFA_4},
 };
 
-static const pmb887x_io_field_t i2cv2_fifocfg_fields[] = {
+static const DebugRegField i2cv2_fifocfg_fields[] = {
 	{"RXBS",	I2Cv2_FIFOCFG_RXBS,	I2Cv2_FIFOCFG_RXBS_SHIFT,	i2cv2_i2cv2_fifocfg_rxbs_values,	ARRAY_SIZE(i2cv2_i2cv2_fifocfg_rxbs_values)},
 	{"TXBS",	I2Cv2_FIFOCFG_TXBS,	I2Cv2_FIFOCFG_TXBS_SHIFT,	i2cv2_i2cv2_fifocfg_txbs_values,	ARRAY_SIZE(i2cv2_i2cv2_fifocfg_txbs_values)},
 	{"RXFA",	I2Cv2_FIFOCFG_RXFA,	I2Cv2_FIFOCFG_RXFA_SHIFT,	i2cv2_i2cv2_fifocfg_rxfa_values,	ARRAY_SIZE(i2cv2_i2cv2_fifocfg_rxfa_values)},
@@ -4288,23 +4393,23 @@ static const pmb887x_io_field_t i2cv2_fifocfg_fields[] = {
 	{"TXFC",	I2Cv2_FIFOCFG_TXFC,	I2Cv2_FIFOCFG_TXFC_SHIFT,	NULL,								0},
 };
 
-static const pmb887x_io_field_t i2cv2_mrpsctrl_fields[] = {
+static const DebugRegField i2cv2_mrpsctrl_fields[] = {
 	{"MRPS",	I2Cv2_MRPSCTRL_MRPS,	I2Cv2_MRPSCTRL_MRPS_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t i2cv2_rpsstat_fields[] = {
+static const DebugRegField i2cv2_rpsstat_fields[] = {
 	{"RPS",	I2Cv2_RPSSTAT_RPS,	I2Cv2_RPSSTAT_RPS_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t i2cv2_tpsctrl_fields[] = {
+static const DebugRegField i2cv2_tpsctrl_fields[] = {
 	{"TPS",	I2Cv2_TPSCTRL_TPS,	I2Cv2_TPSCTRL_TPS_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t i2cv2_ffsstat_fields[] = {
+static const DebugRegField i2cv2_ffsstat_fields[] = {
 	{"FFS",	I2Cv2_FFSSTAT_FFS,	I2Cv2_FFSSTAT_FFS_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t i2cv2_timcfg_fields[] = {
+static const DebugRegField i2cv2_timcfg_fields[] = {
 	{"SDA_DEL_HD_DAT",		I2Cv2_TIMCFG_SDA_DEL_HD_DAT,	I2Cv2_TIMCFG_SDA_DEL_HD_DAT_SHIFT,		NULL,	0},
 	{"HS_SDA_DEL_HD_DAT",	I2Cv2_TIMCFG_HS_SDA_DEL_HD_DAT,	I2Cv2_TIMCFG_HS_SDA_DEL_HD_DAT_SHIFT,	NULL,	0},
 	{"SCL_DEL_HD_STA",		I2Cv2_TIMCFG_SCL_DEL_HD_STA,	I2Cv2_TIMCFG_SCL_DEL_HD_STA_SHIFT,		NULL,	0},
@@ -4314,28 +4419,28 @@ static const pmb887x_io_field_t i2cv2_timcfg_fields[] = {
 	{"SCL_LOW_LEN",			I2Cv2_TIMCFG_SCL_LOW_LEN,		I2Cv2_TIMCFG_SCL_LOW_LEN_SHIFT,			NULL,	0},
 };
 
-static const pmb887x_io_field_t i2cv2_errirqsm_fields[] = {
+static const DebugRegField i2cv2_errirqsm_fields[] = {
 	{"RXF_UFL",	I2Cv2_ERRIRQSM_RXF_UFL,	I2Cv2_ERRIRQSM_RXF_UFL_SHIFT,	NULL,	0},
 	{"RXF_OFL",	I2Cv2_ERRIRQSM_RXF_OFL,	I2Cv2_ERRIRQSM_RXF_OFL_SHIFT,	NULL,	0},
 	{"TXF_UFL",	I2Cv2_ERRIRQSM_TXF_UFL,	I2Cv2_ERRIRQSM_TXF_UFL_SHIFT,	NULL,	0},
 	{"TXF_OFL",	I2Cv2_ERRIRQSM_TXF_OFL,	I2Cv2_ERRIRQSM_TXF_OFL_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t i2cv2_errirqss_fields[] = {
+static const DebugRegField i2cv2_errirqss_fields[] = {
 	{"RXF_UFL",	I2Cv2_ERRIRQSS_RXF_UFL,	I2Cv2_ERRIRQSS_RXF_UFL_SHIFT,	NULL,	0},
 	{"RXF_OFL",	I2Cv2_ERRIRQSS_RXF_OFL,	I2Cv2_ERRIRQSS_RXF_OFL_SHIFT,	NULL,	0},
 	{"TXF_UFL",	I2Cv2_ERRIRQSS_TXF_UFL,	I2Cv2_ERRIRQSS_TXF_UFL_SHIFT,	NULL,	0},
 	{"TXF_OFL",	I2Cv2_ERRIRQSS_TXF_OFL,	I2Cv2_ERRIRQSS_TXF_OFL_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t i2cv2_errirqsc_fields[] = {
+static const DebugRegField i2cv2_errirqsc_fields[] = {
 	{"RXF_UFL",	I2Cv2_ERRIRQSC_RXF_UFL,	I2Cv2_ERRIRQSC_RXF_UFL_SHIFT,	NULL,	0},
 	{"RXF_OFL",	I2Cv2_ERRIRQSC_RXF_OFL,	I2Cv2_ERRIRQSC_RXF_OFL_SHIFT,	NULL,	0},
 	{"TXF_UFL",	I2Cv2_ERRIRQSC_TXF_UFL,	I2Cv2_ERRIRQSC_TXF_UFL_SHIFT,	NULL,	0},
 	{"TXF_OFL",	I2Cv2_ERRIRQSC_TXF_OFL,	I2Cv2_ERRIRQSC_TXF_OFL_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t i2cv2_pirqsm_fields[] = {
+static const DebugRegField i2cv2_pirqsm_fields[] = {
 	{"AM",		I2Cv2_PIRQSM_AM,		I2Cv2_PIRQSM_AM_SHIFT,		NULL,	0},
 	{"GC",		I2Cv2_PIRQSM_GC,		I2Cv2_PIRQSM_GC_SHIFT,		NULL,	0},
 	{"MC",		I2Cv2_PIRQSM_MC,		I2Cv2_PIRQSM_MC_SHIFT,		NULL,	0},
@@ -4345,7 +4450,7 @@ static const pmb887x_io_field_t i2cv2_pirqsm_fields[] = {
 	{"RX",		I2Cv2_PIRQSM_RX,		I2Cv2_PIRQSM_RX_SHIFT,		NULL,	0},
 };
 
-static const pmb887x_io_field_t i2cv2_pirqss_fields[] = {
+static const DebugRegField i2cv2_pirqss_fields[] = {
 	{"AM",		I2Cv2_PIRQSS_AM,		I2Cv2_PIRQSS_AM_SHIFT,		NULL,	0},
 	{"GC",		I2Cv2_PIRQSS_GC,		I2Cv2_PIRQSS_GC_SHIFT,		NULL,	0},
 	{"MC",		I2Cv2_PIRQSS_MC,		I2Cv2_PIRQSS_MC_SHIFT,		NULL,	0},
@@ -4355,7 +4460,7 @@ static const pmb887x_io_field_t i2cv2_pirqss_fields[] = {
 	{"RX",		I2Cv2_PIRQSS_RX,		I2Cv2_PIRQSS_RX_SHIFT,		NULL,	0},
 };
 
-static const pmb887x_io_field_t i2cv2_pirqsc_fields[] = {
+static const DebugRegField i2cv2_pirqsc_fields[] = {
 	{"AM",		I2Cv2_PIRQSC_AM,		I2Cv2_PIRQSC_AM_SHIFT,		NULL,	0},
 	{"GC",		I2Cv2_PIRQSC_GC,		I2Cv2_PIRQSC_GC_SHIFT,		NULL,	0},
 	{"MC",		I2Cv2_PIRQSC_MC,		I2Cv2_PIRQSC_MC_SHIFT,		NULL,	0},
@@ -4365,7 +4470,7 @@ static const pmb887x_io_field_t i2cv2_pirqsc_fields[] = {
 	{"RX",		I2Cv2_PIRQSC_RX,		I2Cv2_PIRQSC_RX_SHIFT,		NULL,	0},
 };
 
-static const pmb887x_io_field_t i2cv2_ris_fields[] = {
+static const DebugRegField i2cv2_ris_fields[] = {
 	{"LSREQ_INT",	I2Cv2_RIS_LSREQ_INT,	I2Cv2_RIS_LSREQ_INT_SHIFT,		NULL,	0},
 	{"SREQ_INT",	I2Cv2_RIS_SREQ_INT,		I2Cv2_RIS_SREQ_INT_SHIFT,		NULL,	0},
 	{"LBREQ_INT",	I2Cv2_RIS_LBREQ_INT,	I2Cv2_RIS_LBREQ_INT_SHIFT,		NULL,	0},
@@ -4374,7 +4479,7 @@ static const pmb887x_io_field_t i2cv2_ris_fields[] = {
 	{"I2C_P_INT",	I2Cv2_RIS_I2C_P_INT,	I2Cv2_RIS_I2C_P_INT_SHIFT,		NULL,	0},
 };
 
-static const pmb887x_io_field_t i2cv2_imsc_fields[] = {
+static const DebugRegField i2cv2_imsc_fields[] = {
 	{"LSREQ_INT",	I2Cv2_IMSC_LSREQ_INT,	I2Cv2_IMSC_LSREQ_INT_SHIFT,		NULL,	0},
 	{"SREQ_INT",	I2Cv2_IMSC_SREQ_INT,	I2Cv2_IMSC_SREQ_INT_SHIFT,		NULL,	0},
 	{"LBREQ_INT",	I2Cv2_IMSC_LBREQ_INT,	I2Cv2_IMSC_LBREQ_INT_SHIFT,		NULL,	0},
@@ -4383,7 +4488,7 @@ static const pmb887x_io_field_t i2cv2_imsc_fields[] = {
 	{"I2C_P_INT",	I2Cv2_IMSC_I2C_P_INT,	I2Cv2_IMSC_I2C_P_INT_SHIFT,		NULL,	0},
 };
 
-static const pmb887x_io_field_t i2cv2_mis_fields[] = {
+static const DebugRegField i2cv2_mis_fields[] = {
 	{"LSREQ_INT",	I2Cv2_MIS_LSREQ_INT,	I2Cv2_MIS_LSREQ_INT_SHIFT,		NULL,	0},
 	{"SREQ_INT",	I2Cv2_MIS_SREQ_INT,		I2Cv2_MIS_SREQ_INT_SHIFT,		NULL,	0},
 	{"LBREQ_INT",	I2Cv2_MIS_LBREQ_INT,	I2Cv2_MIS_LBREQ_INT_SHIFT,		NULL,	0},
@@ -4392,7 +4497,7 @@ static const pmb887x_io_field_t i2cv2_mis_fields[] = {
 	{"I2C_P_INT",	I2Cv2_MIS_I2C_P_INT,	I2Cv2_MIS_I2C_P_INT_SHIFT,		NULL,	0},
 };
 
-static const pmb887x_io_field_t i2cv2_icr_fields[] = {
+static const DebugRegField i2cv2_icr_fields[] = {
 	{"LSREQ_INT",	I2Cv2_ICR_LSREQ_INT,	I2Cv2_ICR_LSREQ_INT_SHIFT,		NULL,	0},
 	{"SREQ_INT",	I2Cv2_ICR_SREQ_INT,		I2Cv2_ICR_SREQ_INT_SHIFT,		NULL,	0},
 	{"LBREQ_INT",	I2Cv2_ICR_LBREQ_INT,	I2Cv2_ICR_LBREQ_INT_SHIFT,		NULL,	0},
@@ -4401,7 +4506,7 @@ static const pmb887x_io_field_t i2cv2_icr_fields[] = {
 	{"I2C_P_INT",	I2Cv2_ICR_I2C_P_INT,	I2Cv2_ICR_I2C_P_INT_SHIFT,		NULL,	0},
 };
 
-static const pmb887x_io_field_t i2cv2_isr_fields[] = {
+static const DebugRegField i2cv2_isr_fields[] = {
 	{"LSREQ_INT",	I2Cv2_ISR_LSREQ_INT,	I2Cv2_ISR_LSREQ_INT_SHIFT,		NULL,	0},
 	{"SREQ_INT",	I2Cv2_ISR_SREQ_INT,		I2Cv2_ISR_SREQ_INT_SHIFT,		NULL,	0},
 	{"LBREQ_INT",	I2Cv2_ISR_LBREQ_INT,	I2Cv2_ISR_LBREQ_INT_SHIFT,		NULL,	0},
@@ -4410,74 +4515,81 @@ static const pmb887x_io_field_t i2cv2_isr_fields[] = {
 	{"I2C_P_INT",	I2Cv2_ISR_I2C_P_INT,	I2Cv2_ISR_I2C_P_INT_SHIFT,		NULL,	0},
 };
 
-static const pmb887x_io_field_t i2cv2_dmae_fields[] = {
+static const DebugRegField i2cv2_dmae_fields[] = {
 	{"LSREQ_INT",	I2Cv2_DMAE_LSREQ_INT,	I2Cv2_DMAE_LSREQ_INT_SHIFT,	NULL,	0},
 	{"SREQ_INT",	I2Cv2_DMAE_SREQ_INT,	I2Cv2_DMAE_SREQ_INT_SHIFT,	NULL,	0},
 	{"LBREQ_INT",	I2Cv2_DMAE_LBREQ_INT,	I2Cv2_DMAE_LBREQ_INT_SHIFT,	NULL,	0},
 	{"BREQ_INT",	I2Cv2_DMAE_BREQ_INT,	I2Cv2_DMAE_BREQ_INT_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t i2cv2_txd_fields[] = {
+static const DebugRegField i2cv2_txd_fields[] = {
 	{"BYTE0",	I2Cv2_TXD_BYTE0,	I2Cv2_TXD_BYTE0_SHIFT,	NULL,	0},
 	{"BYTE1",	I2Cv2_TXD_BYTE1,	I2Cv2_TXD_BYTE1_SHIFT,	NULL,	0},
 	{"BYTE2",	I2Cv2_TXD_BYTE2,	I2Cv2_TXD_BYTE2_SHIFT,	NULL,	0},
 	{"BYTE3",	I2Cv2_TXD_BYTE3,	I2Cv2_TXD_BYTE3_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t i2cv2_rxd_fields[] = {
+static const DebugRegField i2cv2_rxd_fields[] = {
 	{"BYTE0",	I2Cv2_RXD_BYTE0,	I2Cv2_RXD_BYTE0_SHIFT,	NULL,	0},
 	{"BYTE1",	I2Cv2_RXD_BYTE1,	I2Cv2_RXD_BYTE1_SHIFT,	NULL,	0},
 	{"BYTE2",	I2Cv2_RXD_BYTE2,	I2Cv2_RXD_BYTE2_SHIFT,	NULL,	0},
 	{"BYTE3",	I2Cv2_RXD_BYTE3,	I2Cv2_RXD_BYTE3_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_reg_t i2cv2_regs[] = {
-	{"CLC",			I2Cv2_CLC,			i2cv2_clc_fields,			ARRAY_SIZE(i2cv2_clc_fields),			0},
-	{"ID",			I2Cv2_ID,			i2cv2_id_fields,			ARRAY_SIZE(i2cv2_id_fields),			0},
-	{"RUNCTRL",		I2Cv2_RUNCTRL,		i2cv2_runctrl_fields,		ARRAY_SIZE(i2cv2_runctrl_fields),		0},
-	{"ENDDCTRL",	I2Cv2_ENDDCTRL,		i2cv2_enddctrl_fields,		ARRAY_SIZE(i2cv2_enddctrl_fields),		0},
-	{"FDIVCFG",		I2Cv2_FDIVCFG,		i2cv2_fdivcfg_fields,		ARRAY_SIZE(i2cv2_fdivcfg_fields),		0},
-	{"FDIVHIGHCFG",	I2Cv2_FDIVHIGHCFG,	i2cv2_fdivhighcfg_fields,	ARRAY_SIZE(i2cv2_fdivhighcfg_fields),	0},
-	{"ADDRCFG",		I2Cv2_ADDRCFG,		i2cv2_addrcfg_fields,		ARRAY_SIZE(i2cv2_addrcfg_fields),		0},
-	{"BUSSTAT",		I2Cv2_BUSSTAT,		i2cv2_busstat_fields,		ARRAY_SIZE(i2cv2_busstat_fields),		0},
-	{"FIFOCFG",		I2Cv2_FIFOCFG,		i2cv2_fifocfg_fields,		ARRAY_SIZE(i2cv2_fifocfg_fields),		0},
-	{"MRPSCTRL",	I2Cv2_MRPSCTRL,		i2cv2_mrpsctrl_fields,		ARRAY_SIZE(i2cv2_mrpsctrl_fields),		0},
-	{"RPSSTAT",		I2Cv2_RPSSTAT,		i2cv2_rpsstat_fields,		ARRAY_SIZE(i2cv2_rpsstat_fields),		0},
-	{"TPSCTRL",		I2Cv2_TPSCTRL,		i2cv2_tpsctrl_fields,		ARRAY_SIZE(i2cv2_tpsctrl_fields),		0},
-	{"FFSSTAT",		I2Cv2_FFSSTAT,		i2cv2_ffsstat_fields,		ARRAY_SIZE(i2cv2_ffsstat_fields),		0},
-	{"TIMCFG",		I2Cv2_TIMCFG,		i2cv2_timcfg_fields,		ARRAY_SIZE(i2cv2_timcfg_fields),		0},
-	{"ERRIRQSM",	I2Cv2_ERRIRQSM,		i2cv2_errirqsm_fields,		ARRAY_SIZE(i2cv2_errirqsm_fields),		0},
-	{"ERRIRQSS",	I2Cv2_ERRIRQSS,		i2cv2_errirqss_fields,		ARRAY_SIZE(i2cv2_errirqss_fields),		0},
-	{"ERRIRQSC",	I2Cv2_ERRIRQSC,		i2cv2_errirqsc_fields,		ARRAY_SIZE(i2cv2_errirqsc_fields),		0},
-	{"PIRQSM",		I2Cv2_PIRQSM,		i2cv2_pirqsm_fields,		ARRAY_SIZE(i2cv2_pirqsm_fields),		0},
-	{"PIRQSS",		I2Cv2_PIRQSS,		i2cv2_pirqss_fields,		ARRAY_SIZE(i2cv2_pirqss_fields),		0},
-	{"PIRQSC",		I2Cv2_PIRQSC,		i2cv2_pirqsc_fields,		ARRAY_SIZE(i2cv2_pirqsc_fields),		0},
-	{"RIS",			I2Cv2_RIS,			i2cv2_ris_fields,			ARRAY_SIZE(i2cv2_ris_fields),			0},
-	{"IMSC",		I2Cv2_IMSC,			i2cv2_imsc_fields,			ARRAY_SIZE(i2cv2_imsc_fields),			0},
-	{"MIS",			I2Cv2_MIS,			i2cv2_mis_fields,			ARRAY_SIZE(i2cv2_mis_fields),			0},
-	{"ICR",			I2Cv2_ICR,			i2cv2_icr_fields,			ARRAY_SIZE(i2cv2_icr_fields),			0},
-	{"ISR",			I2Cv2_ISR,			i2cv2_isr_fields,			ARRAY_SIZE(i2cv2_isr_fields),			0},
-	{"DMAE",		I2Cv2_DMAE,			i2cv2_dmae_fields,			ARRAY_SIZE(i2cv2_dmae_fields),			0},
-	{"TXD",			I2Cv2_TXD,			i2cv2_txd_fields,			ARRAY_SIZE(i2cv2_txd_fields),			0},
-	{"RXD",			I2Cv2_RXD,			i2cv2_rxd_fields,			ARRAY_SIZE(i2cv2_rxd_fields),			0},
+static const DebugReg i2cv2_regs[] = {
+	{"CLC",			I2Cv2_CLC,			i2cv2_clc_fields,			ARRAY_SIZE(i2cv2_clc_fields)},
+	{"ID",			I2Cv2_ID,			i2cv2_id_fields,			ARRAY_SIZE(i2cv2_id_fields)},
+	{"RUNCTRL",		I2Cv2_RUNCTRL,		i2cv2_runctrl_fields,		ARRAY_SIZE(i2cv2_runctrl_fields)},
+	{"ENDDCTRL",	I2Cv2_ENDDCTRL,		i2cv2_enddctrl_fields,		ARRAY_SIZE(i2cv2_enddctrl_fields)},
+	{"FDIVCFG",		I2Cv2_FDIVCFG,		i2cv2_fdivcfg_fields,		ARRAY_SIZE(i2cv2_fdivcfg_fields)},
+	{"FDIVHIGHCFG",	I2Cv2_FDIVHIGHCFG,	i2cv2_fdivhighcfg_fields,	ARRAY_SIZE(i2cv2_fdivhighcfg_fields)},
+	{"ADDRCFG",		I2Cv2_ADDRCFG,		i2cv2_addrcfg_fields,		ARRAY_SIZE(i2cv2_addrcfg_fields)},
+	{"BUSSTAT",		I2Cv2_BUSSTAT,		i2cv2_busstat_fields,		ARRAY_SIZE(i2cv2_busstat_fields)},
+	{"FIFOCFG",		I2Cv2_FIFOCFG,		i2cv2_fifocfg_fields,		ARRAY_SIZE(i2cv2_fifocfg_fields)},
+	{"MRPSCTRL",	I2Cv2_MRPSCTRL,		i2cv2_mrpsctrl_fields,		ARRAY_SIZE(i2cv2_mrpsctrl_fields)},
+	{"RPSSTAT",		I2Cv2_RPSSTAT,		i2cv2_rpsstat_fields,		ARRAY_SIZE(i2cv2_rpsstat_fields)},
+	{"TPSCTRL",		I2Cv2_TPSCTRL,		i2cv2_tpsctrl_fields,		ARRAY_SIZE(i2cv2_tpsctrl_fields)},
+	{"FFSSTAT",		I2Cv2_FFSSTAT,		i2cv2_ffsstat_fields,		ARRAY_SIZE(i2cv2_ffsstat_fields)},
+	{"TIMCFG",		I2Cv2_TIMCFG,		i2cv2_timcfg_fields,		ARRAY_SIZE(i2cv2_timcfg_fields)},
+	{"ERRIRQSM",	I2Cv2_ERRIRQSM,		i2cv2_errirqsm_fields,		ARRAY_SIZE(i2cv2_errirqsm_fields)},
+	{"ERRIRQSS",	I2Cv2_ERRIRQSS,		i2cv2_errirqss_fields,		ARRAY_SIZE(i2cv2_errirqss_fields)},
+	{"ERRIRQSC",	I2Cv2_ERRIRQSC,		i2cv2_errirqsc_fields,		ARRAY_SIZE(i2cv2_errirqsc_fields)},
+	{"PIRQSM",		I2Cv2_PIRQSM,		i2cv2_pirqsm_fields,		ARRAY_SIZE(i2cv2_pirqsm_fields)},
+	{"PIRQSS",		I2Cv2_PIRQSS,		i2cv2_pirqss_fields,		ARRAY_SIZE(i2cv2_pirqss_fields)},
+	{"PIRQSC",		I2Cv2_PIRQSC,		i2cv2_pirqsc_fields,		ARRAY_SIZE(i2cv2_pirqsc_fields)},
+	{"RIS",			I2Cv2_RIS,			i2cv2_ris_fields,			ARRAY_SIZE(i2cv2_ris_fields)},
+	{"IMSC",		I2Cv2_IMSC,			i2cv2_imsc_fields,			ARRAY_SIZE(i2cv2_imsc_fields)},
+	{"MIS",			I2Cv2_MIS,			i2cv2_mis_fields,			ARRAY_SIZE(i2cv2_mis_fields)},
+	{"ICR",			I2Cv2_ICR,			i2cv2_icr_fields,			ARRAY_SIZE(i2cv2_icr_fields)},
+	{"ISR",			I2Cv2_ISR,			i2cv2_isr_fields,			ARRAY_SIZE(i2cv2_isr_fields)},
+	{"DMAE",		I2Cv2_DMAE,			i2cv2_dmae_fields,			ARRAY_SIZE(i2cv2_dmae_fields)},
+	{"TXD",			I2Cv2_TXD,			i2cv2_txd_fields,			ARRAY_SIZE(i2cv2_txd_fields)},
+	{"RXD",			I2Cv2_RXD,			i2cv2_rxd_fields,			ARRAY_SIZE(i2cv2_rxd_fields)},
 };
 
-static const pmb887x_io_field_t keypad_id_fields[] = {
+const DebugRegs pmb887x_i2cv2_regs = {
+	.regs = i2cv2_regs,
+	.count = ARRAY_SIZE(i2cv2_regs),
+	.reg_size = 4,
+	.addr_digits = 8,
+};
+
+static const DebugRegField keypad_id_fields[] = {
 	{"REV",		MOD_ID_REV,		MOD_ID_REV_SHIFT,		NULL,	0},
 	{"32B",		MOD_ID_32B,		MOD_ID_32B_SHIFT,		NULL,	0},
 	{"NUMBER",	MOD_ID_NUMBER,	MOD_ID_NUMBER_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t keypad_con_fields[] = {
+static const DebugRegField keypad_con_fields[] = {
 	{"NEXT_REPEAT_DELAY",	KEYPAD_CON_NEXT_REPEAT_DELAY,	KEYPAD_CON_NEXT_REPEAT_DELAY_SHIFT,		NULL,	0},
 	{"FIRST_REPEAT_DELAY",	KEYPAD_CON_FIRST_REPEAT_DELAY,	KEYPAD_CON_FIRST_REPEAT_DELAY_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t keypad_port_fields[] = {
+static const DebugRegField keypad_port_fields[] = {
 	{"STATE",	KEYPAD_PORT_STATE,	KEYPAD_PORT_STATE_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t keypad_isr_fields[] = {
+static const DebugRegField keypad_isr_fields[] = {
 	{"FSM_STATE0",	KEYPAD_ISR_FSM_STATE0,	KEYPAD_ISR_FSM_STATE0_SHIFT,	NULL,	0},
 	{"FSM_STATE1",	KEYPAD_ISR_FSM_STATE1,	KEYPAD_ISR_FSM_STATE1_SHIFT,	NULL,	0},
 	{"INT0",		KEYPAD_ISR_INT0,		KEYPAD_ISR_INT0_SHIFT,			NULL,	0},
@@ -4487,7 +4599,7 @@ static const pmb887x_io_field_t keypad_isr_fields[] = {
 	{"KEY_PRESSED",	KEYPAD_ISR_KEY_PRESSED,	KEYPAD_ISR_KEY_PRESSED_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t keypad_int0_src_fields[] = {
+static const DebugRegField keypad_int0_src_fields[] = {
 	{"SRPN",	MOD_SRC_SRPN,	MOD_SRC_SRPN_SHIFT,	NULL,	0},
 	{"TOS",		MOD_SRC_TOS,	MOD_SRC_TOS_SHIFT,	NULL,	0},
 	{"SRE",		MOD_SRC_SRE,	MOD_SRC_SRE_SHIFT,	NULL,	0},
@@ -4496,7 +4608,7 @@ static const pmb887x_io_field_t keypad_int0_src_fields[] = {
 	{"SETR",	MOD_SRC_SETR,	MOD_SRC_SETR_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t keypad_int1_src_fields[] = {
+static const DebugRegField keypad_int1_src_fields[] = {
 	{"SRPN",	MOD_SRC_SRPN,	MOD_SRC_SRPN_SHIFT,	NULL,	0},
 	{"TOS",		MOD_SRC_TOS,	MOD_SRC_TOS_SHIFT,	NULL,	0},
 	{"SRE",		MOD_SRC_SRE,	MOD_SRC_SRE_SHIFT,	NULL,	0},
@@ -4505,7 +4617,7 @@ static const pmb887x_io_field_t keypad_int1_src_fields[] = {
 	{"SETR",	MOD_SRC_SETR,	MOD_SRC_SETR_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t keypad_int2_src_fields[] = {
+static const DebugRegField keypad_int2_src_fields[] = {
 	{"SRPN",	MOD_SRC_SRPN,	MOD_SRC_SRPN_SHIFT,	NULL,	0},
 	{"TOS",		MOD_SRC_TOS,	MOD_SRC_TOS_SHIFT,	NULL,	0},
 	{"SRE",		MOD_SRC_SRE,	MOD_SRC_SRE_SHIFT,	NULL,	0},
@@ -4514,7 +4626,7 @@ static const pmb887x_io_field_t keypad_int2_src_fields[] = {
 	{"SETR",	MOD_SRC_SETR,	MOD_SRC_SETR_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t keypad_int3_src_fields[] = {
+static const DebugRegField keypad_int3_src_fields[] = {
 	{"SRPN",	MOD_SRC_SRPN,	MOD_SRC_SRPN_SHIFT,	NULL,	0},
 	{"TOS",		MOD_SRC_TOS,	MOD_SRC_TOS_SHIFT,	NULL,	0},
 	{"SRE",		MOD_SRC_SRE,	MOD_SRC_SRE_SHIFT,	NULL,	0},
@@ -4523,20 +4635,27 @@ static const pmb887x_io_field_t keypad_int3_src_fields[] = {
 	{"SETR",	MOD_SRC_SETR,	MOD_SRC_SETR_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_reg_t keypad_regs[] = {
-	{"ID",			KEYPAD_ID,			keypad_id_fields,		ARRAY_SIZE(keypad_id_fields),		0},
-	{"CON",			KEYPAD_CON,			keypad_con_fields,		ARRAY_SIZE(keypad_con_fields),		0},
-	{"PORT0",		KEYPAD_PORT0,		keypad_port_fields,		ARRAY_SIZE(keypad_port_fields),		0},
-	{"PORT1",		KEYPAD_PORT1,		keypad_port_fields,		ARRAY_SIZE(keypad_port_fields),		0},
-	{"PORT2",		KEYPAD_PORT2,		keypad_port_fields,		ARRAY_SIZE(keypad_port_fields),		0},
-	{"ISR",			KEYPAD_ISR,			keypad_isr_fields,		ARRAY_SIZE(keypad_isr_fields),		0},
-	{"INT0_SRC",	KEYPAD_INT0_SRC,	keypad_int0_src_fields,	ARRAY_SIZE(keypad_int0_src_fields),	0},
-	{"INT1_SRC",	KEYPAD_INT1_SRC,	keypad_int1_src_fields,	ARRAY_SIZE(keypad_int1_src_fields),	0},
-	{"INT2_SRC",	KEYPAD_INT2_SRC,	keypad_int2_src_fields,	ARRAY_SIZE(keypad_int2_src_fields),	0},
-	{"INT3_SRC",	KEYPAD_INT3_SRC,	keypad_int3_src_fields,	ARRAY_SIZE(keypad_int3_src_fields),	0},
+static const DebugReg keypad_regs[] = {
+	{"ID",			KEYPAD_ID,			keypad_id_fields,		ARRAY_SIZE(keypad_id_fields)},
+	{"CON",			KEYPAD_CON,			keypad_con_fields,		ARRAY_SIZE(keypad_con_fields)},
+	{"PORT0",		KEYPAD_PORT0,		keypad_port_fields,		ARRAY_SIZE(keypad_port_fields)},
+	{"PORT1",		KEYPAD_PORT1,		keypad_port_fields,		ARRAY_SIZE(keypad_port_fields)},
+	{"PORT2",		KEYPAD_PORT2,		keypad_port_fields,		ARRAY_SIZE(keypad_port_fields)},
+	{"ISR",			KEYPAD_ISR,			keypad_isr_fields,		ARRAY_SIZE(keypad_isr_fields)},
+	{"INT0_SRC",	KEYPAD_INT0_SRC,	keypad_int0_src_fields,	ARRAY_SIZE(keypad_int0_src_fields)},
+	{"INT1_SRC",	KEYPAD_INT1_SRC,	keypad_int1_src_fields,	ARRAY_SIZE(keypad_int1_src_fields)},
+	{"INT2_SRC",	KEYPAD_INT2_SRC,	keypad_int2_src_fields,	ARRAY_SIZE(keypad_int2_src_fields)},
+	{"INT3_SRC",	KEYPAD_INT3_SRC,	keypad_int3_src_fields,	ARRAY_SIZE(keypad_int3_src_fields)},
 };
 
-static const pmb887x_io_field_t mmci_clc_fields[] = {
+const DebugRegs pmb887x_keypad_regs = {
+	.regs = keypad_regs,
+	.count = ARRAY_SIZE(keypad_regs),
+	.reg_size = 4,
+	.addr_digits = 8,
+};
+
+static const DebugRegField mmci_clc_fields[] = {
 	{"DISR",	MOD_CLC_DISR,	MOD_CLC_DISR_SHIFT,	NULL,	0},
 	{"DISS",	MOD_CLC_DISS,	MOD_CLC_DISS_SHIFT,	NULL,	0},
 	{"SPEN",	MOD_CLC_SPEN,	MOD_CLC_SPEN_SHIFT,	NULL,	0},
@@ -4546,18 +4665,25 @@ static const pmb887x_io_field_t mmci_clc_fields[] = {
 	{"RMC",		MOD_CLC_RMC,	MOD_CLC_RMC_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t mmci_id_fields[] = {
+static const DebugRegField mmci_id_fields[] = {
 	{"REV",		MOD_ID_REV,		MOD_ID_REV_SHIFT,		NULL,	0},
 	{"32B",		MOD_ID_32B,		MOD_ID_32B_SHIFT,		NULL,	0},
 	{"NUMBER",	MOD_ID_NUMBER,	MOD_ID_NUMBER_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_reg_t mmci_regs[] = {
-	{"CLC",	MMCI_CLC,	mmci_clc_fields,	ARRAY_SIZE(mmci_clc_fields),	0},
-	{"ID",	MMCI_ID,	mmci_id_fields,		ARRAY_SIZE(mmci_id_fields),		0},
+static const DebugReg mmci_regs[] = {
+	{"CLC",	MMCI_CLC,	mmci_clc_fields,	ARRAY_SIZE(mmci_clc_fields)},
+	{"ID",	MMCI_ID,	mmci_id_fields,		ARRAY_SIZE(mmci_id_fields)},
 };
 
-static const pmb887x_io_field_t mmicif_clc_fields[] = {
+const DebugRegs pmb887x_mmci_regs = {
+	.regs = mmci_regs,
+	.count = ARRAY_SIZE(mmci_regs),
+	.reg_size = 4,
+	.addr_digits = 8,
+};
+
+static const DebugRegField mmicif_clc_fields[] = {
 	{"DISR",	MOD_CLC_DISR,	MOD_CLC_DISR_SHIFT,	NULL,	0},
 	{"DISS",	MOD_CLC_DISS,	MOD_CLC_DISS_SHIFT,	NULL,	0},
 	{"SPEN",	MOD_CLC_SPEN,	MOD_CLC_SPEN_SHIFT,	NULL,	0},
@@ -4567,50 +4693,57 @@ static const pmb887x_io_field_t mmicif_clc_fields[] = {
 	{"RMC",		MOD_CLC_RMC,	MOD_CLC_RMC_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t mmicif_id_fields[] = {
+static const DebugRegField mmicif_id_fields[] = {
 	{"REV",		MOD_ID_REV,		MOD_ID_REV_SHIFT,		NULL,	0},
 	{"32B",		MOD_ID_32B,		MOD_ID_32B_SHIFT,		NULL,	0},
 	{"NUMBER",	MOD_ID_NUMBER,	MOD_ID_NUMBER_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_value_t mmicif_mmicif_transfer_config_mode_values[] = {
+static const DebugRegValue mmicif_mmicif_transfer_config_mode_values[] = {
 	{"WRITE",	MMICIF_TRANSFER_CONFIG_MODE_WRITE},
 	{"READ",	MMICIF_TRANSFER_CONFIG_MODE_READ},
 };
 
-static const pmb887x_io_field_t mmicif_transfer_config_fields[] = {
+static const DebugRegField mmicif_transfer_config_fields[] = {
 	{"MODE",	MMICIF_TRANSFER_CONFIG_MODE,	MMICIF_TRANSFER_CONFIG_MODE_SHIFT,	mmicif_mmicif_transfer_config_mode_values,	ARRAY_SIZE(mmicif_mmicif_transfer_config_mode_values)},
 };
 
-static const pmb887x_io_field_t mmicif_irqsm_fields[] = {
+static const DebugRegField mmicif_irqsm_fields[] = {
 	{"EVENT0",	MMICIF_IRQSM_EVENT0,	MMICIF_IRQSM_EVENT0_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t mmicif_irqss_fields[] = {
+static const DebugRegField mmicif_irqss_fields[] = {
 	{"EVENT0",	MMICIF_IRQSS_EVENT0,	MMICIF_IRQSS_EVENT0_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t mmicif_irqsc_fields[] = {
+static const DebugRegField mmicif_irqsc_fields[] = {
 	{"EVENT0",	MMICIF_IRQSC_EVENT0,	MMICIF_IRQSC_EVENT0_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_reg_t mmicif_regs[] = {
-	{"CLC",				MMICIF_CLC,				mmicif_clc_fields,				ARRAY_SIZE(mmicif_clc_fields),				0},
-	{"ID",				MMICIF_ID,				mmicif_id_fields,				ARRAY_SIZE(mmicif_id_fields),				0},
-	{"CONFIG",			MMICIF_CONFIG,			NULL,							0,											0},
-	{"UNK2C",			MMICIF_UNK2C,			NULL,							0,											0},
-	{"UNK44",			MMICIF_UNK44,			NULL,							0,											0},
-	{"TRANSFER_CONFIG",	MMICIF_TRANSFER_CONFIG,	mmicif_transfer_config_fields,	ARRAY_SIZE(mmicif_transfer_config_fields),	0},
-	{"UNK4C",			MMICIF_UNK4C,			NULL,							0,											0},
-	{"UNK50",			MMICIF_UNK50,			NULL,							0,											0},
-	{"UNK54",			MMICIF_UNK54,			NULL,							0,											0},
-	{"IRQSM",			MMICIF_IRQSM,			mmicif_irqsm_fields,			ARRAY_SIZE(mmicif_irqsm_fields),			0},
-	{"IRQSS",			MMICIF_IRQSS,			mmicif_irqss_fields,			ARRAY_SIZE(mmicif_irqss_fields),			0},
-	{"IRQSC",			MMICIF_IRQSC,			mmicif_irqsc_fields,			ARRAY_SIZE(mmicif_irqsc_fields),			0},
-	{"UNK80",			MMICIF_UNK80,			NULL,							0,											0},
+static const DebugReg mmicif_regs[] = {
+	{"CLC",				MMICIF_CLC,				mmicif_clc_fields,				ARRAY_SIZE(mmicif_clc_fields)},
+	{"ID",				MMICIF_ID,				mmicif_id_fields,				ARRAY_SIZE(mmicif_id_fields)},
+	{"CONFIG",			MMICIF_CONFIG,			NULL,							0},
+	{"UNK2C",			MMICIF_UNK2C,			NULL,							0},
+	{"UNK44",			MMICIF_UNK44,			NULL,							0},
+	{"TRANSFER_CONFIG",	MMICIF_TRANSFER_CONFIG,	mmicif_transfer_config_fields,	ARRAY_SIZE(mmicif_transfer_config_fields)},
+	{"UNK4C",			MMICIF_UNK4C,			NULL,							0},
+	{"UNK50",			MMICIF_UNK50,			NULL,							0},
+	{"UNK54",			MMICIF_UNK54,			NULL,							0},
+	{"IRQSM",			MMICIF_IRQSM,			mmicif_irqsm_fields,			ARRAY_SIZE(mmicif_irqsm_fields)},
+	{"IRQSS",			MMICIF_IRQSS,			mmicif_irqss_fields,			ARRAY_SIZE(mmicif_irqss_fields)},
+	{"IRQSC",			MMICIF_IRQSC,			mmicif_irqsc_fields,			ARRAY_SIZE(mmicif_irqsc_fields)},
+	{"UNK80",			MMICIF_UNK80,			NULL,							0},
 };
 
-static const pmb887x_io_field_t rtc_clc_fields[] = {
+const DebugRegs pmb887x_mmicif_regs = {
+	.regs = mmicif_regs,
+	.count = ARRAY_SIZE(mmicif_regs),
+	.reg_size = 4,
+	.addr_digits = 8,
+};
+
+static const DebugRegField rtc_clc_fields[] = {
 	{"DISR",	MOD_CLC_DISR,	MOD_CLC_DISR_SHIFT,	NULL,	0},
 	{"DISS",	MOD_CLC_DISS,	MOD_CLC_DISS_SHIFT,	NULL,	0},
 	{"SPEN",	MOD_CLC_SPEN,	MOD_CLC_SPEN_SHIFT,	NULL,	0},
@@ -4620,13 +4753,13 @@ static const pmb887x_io_field_t rtc_clc_fields[] = {
 	{"RMC",		MOD_CLC_RMC,	MOD_CLC_RMC_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t rtc_id_fields[] = {
+static const DebugRegField rtc_id_fields[] = {
 	{"REV",		MOD_ID_REV,		MOD_ID_REV_SHIFT,		NULL,	0},
 	{"32B",		MOD_ID_32B,		MOD_ID_32B_SHIFT,		NULL,	0},
 	{"NUMBER",	MOD_ID_NUMBER,	MOD_ID_NUMBER_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t rtc_ctrl_fields[] = {
+static const DebugRegField rtc_ctrl_fields[] = {
 	{"RTCOUTEN",	RTC_CTRL_RTCOUTEN,		RTC_CTRL_RTCOUTEN_SHIFT,	NULL,	0},
 	{"RTCINT",		RTC_CTRL_RTCINT,		RTC_CTRL_RTCINT_SHIFT,		NULL,	0},
 	{"CLK32KEN",	RTC_CTRL_CLK32KEN,		RTC_CTRL_CLK32KEN_SHIFT,	NULL,	0},
@@ -4637,7 +4770,7 @@ static const pmb887x_io_field_t rtc_ctrl_fields[] = {
 	{"CLR_RTCBAD",	RTC_CTRL_CLR_RTCBAD,	RTC_CTRL_CLR_RTCBAD_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t rtc_con_fields[] = {
+static const DebugRegField rtc_con_fields[] = {
 	{"RUN",		RTC_CON_RUN,	RTC_CON_RUN_SHIFT,		NULL,	0},
 	{"PRE",		RTC_CON_PRE,	RTC_CON_PRE_SHIFT,		NULL,	0},
 	{"T14DEC",	RTC_CON_T14DEC,	RTC_CON_T14DEC_SHIFT,	NULL,	0},
@@ -4645,20 +4778,20 @@ static const pmb887x_io_field_t rtc_con_fields[] = {
 	{"ACCPOS",	RTC_CON_ACCPOS,	RTC_CON_ACCPOS_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t rtc_t14_fields[] = {
+static const DebugRegField rtc_t14_fields[] = {
 	{"REL",	RTC_T14_REL,	RTC_T14_REL_SHIFT,	NULL,	0},
 	{"CNT",	RTC_T14_CNT,	RTC_T14_CNT_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t rtc_cnt_fields[] = {
+static const DebugRegField rtc_cnt_fields[] = {
 	{"CNT",	RTC_CNT_CNT,	RTC_CNT_CNT_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t rtc_rel_fields[] = {
+static const DebugRegField rtc_rel_fields[] = {
 	{"REL",	RTC_REL_REL,	RTC_REL_REL_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t rtc_isnc_fields[] = {
+static const DebugRegField rtc_isnc_fields[] = {
 	{"T14IE",	RTC_ISNC_T14IE,		RTC_ISNC_T14IE_SHIFT,	NULL,	0},
 	{"T14IR",	RTC_ISNC_T14IR,		RTC_ISNC_T14IR_SHIFT,	NULL,	0},
 	{"RTC0IE",	RTC_ISNC_RTC0IE,	RTC_ISNC_RTC0IE_SHIFT,	NULL,	0},
@@ -4673,7 +4806,7 @@ static const pmb887x_io_field_t rtc_isnc_fields[] = {
 	{"ALARMIR",	RTC_ISNC_ALARMIR,	RTC_ISNC_ALARMIR_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t rtc_isnrc_fields[] = {
+static const DebugRegField rtc_isnrc_fields[] = {
 	{"T14",		RTC_ISNRC_T14,		RTC_ISNRC_T14_SHIFT,	NULL,	0},
 	{"RTC0",	RTC_ISNRC_RTC0,		RTC_ISNRC_RTC0_SHIFT,	NULL,	0},
 	{"RTC1",	RTC_ISNRC_RTC1,		RTC_ISNRC_RTC1_SHIFT,	NULL,	0},
@@ -4682,11 +4815,11 @@ static const pmb887x_io_field_t rtc_isnrc_fields[] = {
 	{"ALARM",	RTC_ISNRC_ALARM,	RTC_ISNRC_ALARM_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t rtc_alarm_fields[] = {
+static const DebugRegField rtc_alarm_fields[] = {
 	{"VALUE",	RTC_ALARM_VALUE,	RTC_ALARM_VALUE_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t rtc_src_fields[] = {
+static const DebugRegField rtc_src_fields[] = {
 	{"SRPN",	MOD_SRC_SRPN,	MOD_SRC_SRPN_SHIFT,	NULL,	0},
 	{"TOS",		MOD_SRC_TOS,	MOD_SRC_TOS_SHIFT,	NULL,	0},
 	{"SRE",		MOD_SRC_SRE,	MOD_SRC_SRE_SHIFT,	NULL,	0},
@@ -4695,36 +4828,43 @@ static const pmb887x_io_field_t rtc_src_fields[] = {
 	{"SETR",	MOD_SRC_SETR,	MOD_SRC_SETR_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_reg_t rtc_regs[] = {
-	{"CLC",		RTC_CLC,	rtc_clc_fields,		ARRAY_SIZE(rtc_clc_fields),		0},
-	{"ID",		RTC_ID,		rtc_id_fields,		ARRAY_SIZE(rtc_id_fields),		0},
-	{"CTRL",	RTC_CTRL,	rtc_ctrl_fields,	ARRAY_SIZE(rtc_ctrl_fields),	0},
-	{"CON",		RTC_CON,	rtc_con_fields,		ARRAY_SIZE(rtc_con_fields),		0},
-	{"T14",		RTC_T14,	rtc_t14_fields,		ARRAY_SIZE(rtc_t14_fields),		0},
-	{"CNT",		RTC_CNT,	rtc_cnt_fields,		ARRAY_SIZE(rtc_cnt_fields),		0},
-	{"REL",		RTC_REL,	rtc_rel_fields,		ARRAY_SIZE(rtc_rel_fields),		0},
-	{"ISNC",	RTC_ISNC,	rtc_isnc_fields,	ARRAY_SIZE(rtc_isnc_fields),	0},
-	{"ISNRC",	RTC_ISNRC,	rtc_isnrc_fields,	ARRAY_SIZE(rtc_isnrc_fields),	0},
-	{"ALARM",	RTC_ALARM,	rtc_alarm_fields,	ARRAY_SIZE(rtc_alarm_fields),	0},
-	{"SRC",		RTC_SRC,	rtc_src_fields,		ARRAY_SIZE(rtc_src_fields),		0},
+static const DebugReg rtc_regs[] = {
+	{"CLC",		RTC_CLC,	rtc_clc_fields,		ARRAY_SIZE(rtc_clc_fields)},
+	{"ID",		RTC_ID,		rtc_id_fields,		ARRAY_SIZE(rtc_id_fields)},
+	{"CTRL",	RTC_CTRL,	rtc_ctrl_fields,	ARRAY_SIZE(rtc_ctrl_fields)},
+	{"CON",		RTC_CON,	rtc_con_fields,		ARRAY_SIZE(rtc_con_fields)},
+	{"T14",		RTC_T14,	rtc_t14_fields,		ARRAY_SIZE(rtc_t14_fields)},
+	{"CNT",		RTC_CNT,	rtc_cnt_fields,		ARRAY_SIZE(rtc_cnt_fields)},
+	{"REL",		RTC_REL,	rtc_rel_fields,		ARRAY_SIZE(rtc_rel_fields)},
+	{"ISNC",	RTC_ISNC,	rtc_isnc_fields,	ARRAY_SIZE(rtc_isnc_fields)},
+	{"ISNRC",	RTC_ISNRC,	rtc_isnrc_fields,	ARRAY_SIZE(rtc_isnrc_fields)},
+	{"ALARM",	RTC_ALARM,	rtc_alarm_fields,	ARRAY_SIZE(rtc_alarm_fields)},
+	{"SRC",		RTC_SRC,	rtc_src_fields,		ARRAY_SIZE(rtc_src_fields)},
 };
 
-static const pmb887x_io_field_t sccu_spcr_fields[] = {
+const DebugRegs pmb887x_rtc_regs = {
+	.regs = rtc_regs,
+	.count = ARRAY_SIZE(rtc_regs),
+	.reg_size = 4,
+	.addr_digits = 8,
+};
+
+static const DebugRegField sccu_spcr_fields[] = {
 	{"DPDN",	SCCU_SPCR_DPDN,		SCCU_SPCR_DPDN_SHIFT,	NULL,	0},
 	{"APDN",	SCCU_SPCR_APDN,		SCCU_SPCR_APDN_SHIFT,	NULL,	0},
 	{"DROFF",	SCCU_SPCR_DROFF,	SCCU_SPCR_DROFF_SHIFT,	NULL,	0},
 	{"DREN",	SCCU_SPCR_DREN,		SCCU_SPCR_DREN_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t sccu_tdmini_fields[] = {
+static const DebugRegField sccu_tdmini_fields[] = {
 	{"TDMAIN",	SCCU_TDMINI_TDMAIN,	SCCU_TDMINI_TDMAIN_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t sccu_tdmout_fields[] = {
+static const DebugRegField sccu_tdmout_fields[] = {
 	{"TDMAOUT",	SCCU_TDMOUT_TDMAOUT,	SCCU_TDMOUT_TDMAOUT_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t sccu_slpctrl_fields[] = {
+static const DebugRegField sccu_slpctrl_fields[] = {
 	{"REFEN",	SCCU_SLPCTRL_REFEN,		SCCU_SLPCTRL_REFEN_SHIFT,	NULL,	0},
 	{"SLPEN",	SCCU_SLPCTRL_SLPEN,		SCCU_SLPCTRL_SLPEN_SHIFT,	NULL,	0},
 	{"SLPRST",	SCCU_SLPCTRL_SLPRST,	SCCU_SLPCTRL_SLPRST_SHIFT,	NULL,	0},
@@ -4733,43 +4873,43 @@ static const pmb887x_io_field_t sccu_slpctrl_fields[] = {
 	{"HWACTDI",	SCCU_SLPCTRL_HWACTDI,	SCCU_SLPCTRL_HWACTDI_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t sccu_refin_fields[] = {
+static const DebugRegField sccu_refin_fields[] = {
 	{"REFIN",	SCCU_REFIN_REFIN,	SCCU_REFIN_REFIN_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t sccu_ref_fields[] = {
+static const DebugRegField sccu_ref_fields[] = {
 	{"REFOUT",	SCCU_REF_REFOUT,	SCCU_REF_REFOUT_SHIFT,	NULL,	0},
 	{"REFPOS",	SCCU_REF_REFPOS,	SCCU_REF_REFPOS_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t sccu_nqtz_fields[] = {
+static const DebugRegField sccu_nqtz_fields[] = {
 	{"NQTZ",	SCCU_NQTZ_NQTZ,	SCCU_NQTZ_NQTZ_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t sccu_scctrl_fields[] = {
+static const DebugRegField sccu_scctrl_fields[] = {
 	{"UCSLP",	SCCU_SCCTRL_UCSLP,	SCCU_SCCTRL_UCSLP_SHIFT,	NULL,	0},
 	{"UCWUP",	SCCU_SCCTRL_UCWUP,	SCCU_SCCTRL_UCWUP_SHIFT,	NULL,	0},
 	{"SSCRST",	SCCU_SCCTRL_SSCRST,	SCCU_SCCTRL_SSCRST_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t sccu_wait_fields[] = {
+static const DebugRegField sccu_wait_fields[] = {
 	{"WAIT",	SCCU_WAIT_WAIT,		SCCU_WAIT_WAIT_SHIFT,	NULL,	0},
 	{"PREWUP",	SCCU_WAIT_PREWUP,	SCCU_WAIT_PREWUP_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t sccu_hwwakeup_fields[] = {
+static const DebugRegField sccu_hwwakeup_fields[] = {
 	{"RTC_EN",	SCCU_HWWAKEUP_RTC_EN,	SCCU_HWWAKEUP_RTC_EN_SHIFT,	NULL,	0},
 	{"KPD_EN",	SCCU_HWWAKEUP_KPD_EN,	SCCU_HWWAKEUP_KPD_EN_SHIFT,	NULL,	0},
 	{"SIM_EN",	SCCU_HWWAKEUP_SIM_EN,	SCCU_HWWAKEUP_SIM_EN_SHIFT,	NULL,	0},
 	{"EXT_EN",	SCCU_HWWAKEUP_EXT_EN,	SCCU_HWWAKEUP_EXT_EN_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t sccu_sccuclksta_fields[] = {
+static const DebugRegField sccu_sccuclksta_fields[] = {
 	{"CPUCLK",	SCCU_SCCUCLKSTA_CPUCLK,	SCCU_SCCUCLKSTA_CPUCLK_SHIFT,	NULL,	0},
 	{"GSMCLK",	SCCU_SCCUCLKSTA_GSMCLK,	SCCU_SCCUCLKSTA_GSMCLK_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t sccu_sccumsta_fields[] = {
+static const DebugRegField sccu_sccumsta_fields[] = {
 	{"UC_ON",		SCCU_SCCUMSTA_UC_ON,	SCCU_SCCUMSTA_UC_ON_SHIFT,		NULL,	0},
 	{"UC_OFF",		SCCU_SCCUMSTA_UC_OFF,	SCCU_SCCUMSTA_UC_OFF_SHIFT,		NULL,	0},
 	{"TCXO_OFF",	SCCU_SCCUMSTA_TCXO_OFF,	SCCU_SCCUMSTA_TCXO_OFF_SHIFT,	NULL,	0},
@@ -4777,7 +4917,7 @@ static const pmb887x_io_field_t sccu_sccumsta_fields[] = {
 	{"SHAP_ON",		SCCU_SCCUMSTA_SHAP_ON,	SCCU_SCCUMSTA_SHAP_ON_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t sccu_wake_src_fields[] = {
+static const DebugRegField sccu_wake_src_fields[] = {
 	{"SRPN",	MOD_SRC_SRPN,	MOD_SRC_SRPN_SHIFT,	NULL,	0},
 	{"TOS",		MOD_SRC_TOS,	MOD_SRC_TOS_SHIFT,	NULL,	0},
 	{"SRE",		MOD_SRC_SRE,	MOD_SRC_SRE_SHIFT,	NULL,	0},
@@ -4786,7 +4926,7 @@ static const pmb887x_io_field_t sccu_wake_src_fields[] = {
 	{"SETR",	MOD_SRC_SETR,	MOD_SRC_SETR_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t sccu_unk_src_fields[] = {
+static const DebugRegField sccu_unk_src_fields[] = {
 	{"SRPN",	MOD_SRC_SRPN,	MOD_SRC_SRPN_SHIFT,	NULL,	0},
 	{"TOS",		MOD_SRC_TOS,	MOD_SRC_TOS_SHIFT,	NULL,	0},
 	{"SRE",		MOD_SRC_SRE,	MOD_SRC_SRE_SHIFT,	NULL,	0},
@@ -4795,24 +4935,31 @@ static const pmb887x_io_field_t sccu_unk_src_fields[] = {
 	{"SETR",	MOD_SRC_SETR,	MOD_SRC_SETR_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_reg_t sccu_regs[] = {
-	{"SPCR",		SCCU_SPCR,			sccu_spcr_fields,		ARRAY_SIZE(sccu_spcr_fields),		0},
-	{"TDMINI",		SCCU_TDMINI,		sccu_tdmini_fields,		ARRAY_SIZE(sccu_tdmini_fields),		0},
-	{"TDMOUT",		SCCU_TDMOUT,		sccu_tdmout_fields,		ARRAY_SIZE(sccu_tdmout_fields),		0},
-	{"SLPCTRL",		SCCU_SLPCTRL,		sccu_slpctrl_fields,	ARRAY_SIZE(sccu_slpctrl_fields),	0},
-	{"REFIN",		SCCU_REFIN,			sccu_refin_fields,		ARRAY_SIZE(sccu_refin_fields),		0},
-	{"REF",			SCCU_REF,			sccu_ref_fields,		ARRAY_SIZE(sccu_ref_fields),		0},
-	{"NQTZ",		SCCU_NQTZ,			sccu_nqtz_fields,		ARRAY_SIZE(sccu_nqtz_fields),		0},
-	{"SCCTRL",		SCCU_SCCTRL,		sccu_scctrl_fields,		ARRAY_SIZE(sccu_scctrl_fields),		0},
-	{"WAIT",		SCCU_WAIT,			sccu_wait_fields,		ARRAY_SIZE(sccu_wait_fields),		0},
-	{"HWWAKEUP",	SCCU_HWWAKEUP,		sccu_hwwakeup_fields,	ARRAY_SIZE(sccu_hwwakeup_fields),	0},
-	{"SCCUCLKSTA",	SCCU_SCCUCLKSTA,	sccu_sccuclksta_fields,	ARRAY_SIZE(sccu_sccuclksta_fields),	0},
-	{"SCCUMSTA",	SCCU_SCCUMSTA,		sccu_sccumsta_fields,	ARRAY_SIZE(sccu_sccumsta_fields),	0},
-	{"WAKE_SRC",	SCCU_WAKE_SRC,		sccu_wake_src_fields,	ARRAY_SIZE(sccu_wake_src_fields),	0},
-	{"UNK_SRC",		SCCU_UNK_SRC,		sccu_unk_src_fields,	ARRAY_SIZE(sccu_unk_src_fields),	0},
+static const DebugReg sccu_regs[] = {
+	{"SPCR",		SCCU_SPCR,			sccu_spcr_fields,		ARRAY_SIZE(sccu_spcr_fields)},
+	{"TDMINI",		SCCU_TDMINI,		sccu_tdmini_fields,		ARRAY_SIZE(sccu_tdmini_fields)},
+	{"TDMOUT",		SCCU_TDMOUT,		sccu_tdmout_fields,		ARRAY_SIZE(sccu_tdmout_fields)},
+	{"SLPCTRL",		SCCU_SLPCTRL,		sccu_slpctrl_fields,	ARRAY_SIZE(sccu_slpctrl_fields)},
+	{"REFIN",		SCCU_REFIN,			sccu_refin_fields,		ARRAY_SIZE(sccu_refin_fields)},
+	{"REF",			SCCU_REF,			sccu_ref_fields,		ARRAY_SIZE(sccu_ref_fields)},
+	{"NQTZ",		SCCU_NQTZ,			sccu_nqtz_fields,		ARRAY_SIZE(sccu_nqtz_fields)},
+	{"SCCTRL",		SCCU_SCCTRL,		sccu_scctrl_fields,		ARRAY_SIZE(sccu_scctrl_fields)},
+	{"WAIT",		SCCU_WAIT,			sccu_wait_fields,		ARRAY_SIZE(sccu_wait_fields)},
+	{"HWWAKEUP",	SCCU_HWWAKEUP,		sccu_hwwakeup_fields,	ARRAY_SIZE(sccu_hwwakeup_fields)},
+	{"SCCUCLKSTA",	SCCU_SCCUCLKSTA,	sccu_sccuclksta_fields,	ARRAY_SIZE(sccu_sccuclksta_fields)},
+	{"SCCUMSTA",	SCCU_SCCUMSTA,		sccu_sccumsta_fields,	ARRAY_SIZE(sccu_sccumsta_fields)},
+	{"WAKE_SRC",	SCCU_WAKE_SRC,		sccu_wake_src_fields,	ARRAY_SIZE(sccu_wake_src_fields)},
+	{"UNK_SRC",		SCCU_UNK_SRC,		sccu_unk_src_fields,	ARRAY_SIZE(sccu_unk_src_fields)},
 };
 
-static const pmb887x_io_field_t scu_clc_fields[] = {
+const DebugRegs pmb887x_sccu_regs = {
+	.regs = sccu_regs,
+	.count = ARRAY_SIZE(sccu_regs),
+	.reg_size = 4,
+	.addr_digits = 8,
+};
+
+static const DebugRegField scu_clc_fields[] = {
 	{"DISR",	MOD_CLC_DISR,	MOD_CLC_DISR_SHIFT,	NULL,	0},
 	{"DISS",	MOD_CLC_DISS,	MOD_CLC_DISS_SHIFT,	NULL,	0},
 	{"SPEN",	MOD_CLC_SPEN,	MOD_CLC_SPEN_SHIFT,	NULL,	0},
@@ -4822,13 +4969,13 @@ static const pmb887x_io_field_t scu_clc_fields[] = {
 	{"RMC",		MOD_CLC_RMC,	MOD_CLC_RMC_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t scu_id_fields[] = {
+static const DebugRegField scu_id_fields[] = {
 	{"REV",		MOD_ID_REV,		MOD_ID_REV_SHIFT,		NULL,	0},
 	{"32B",		MOD_ID_32B,		MOD_ID_32B_SHIFT,		NULL,	0},
 	{"NUMBER",	MOD_ID_NUMBER,	MOD_ID_NUMBER_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t scu_rst_sr_fields[] = {
+static const DebugRegField scu_rst_sr_fields[] = {
 	{"RSSTM",	SCU_RST_SR_RSSTM,	SCU_RST_SR_RSSTM_SHIFT,		NULL,	0},
 	{"RSEXT",	SCU_RST_SR_RSEXT,	SCU_RST_SR_RSEXT_SHIFT,		NULL,	0},
 	{"HWCFG",	SCU_RST_SR_HWCFG,	SCU_RST_SR_HWCFG_SHIFT,		NULL,	0},
@@ -4841,13 +4988,13 @@ static const pmb887x_io_field_t scu_rst_sr_fields[] = {
 	{"PWDRST",	SCU_RST_SR_PWDRST,	SCU_RST_SR_PWDRST_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t scu_rst_con_fields[] = {
+static const DebugRegField scu_rst_con_fields[] = {
 	{"SWCFG",	SCU_RST_CON_SWCFG,		SCU_RST_CON_SWCFG_SHIFT,	NULL,	0},
 	{"SWBRKIN",	SCU_RST_CON_SWBRKIN,	SCU_RST_CON_SWBRKIN_SHIFT,	NULL,	0},
 	{"SWBOOT",	SCU_RST_CON_SWBOOT,		SCU_RST_CON_SWBOOT_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t scu_rst_req_fields[] = {
+static const DebugRegField scu_rst_req_fields[] = {
 	{"DSP",		SCU_RST_REQ_DSP,	SCU_RST_REQ_DSP_SHIFT,		NULL,	0},
 	{"RTC",		SCU_RST_REQ_RTC,	SCU_RST_REQ_RTC_SHIFT,		NULL,	0},
 	{"USART0",	SCU_RST_REQ_USART0,	SCU_RST_REQ_USART0_SHIFT,	NULL,	0},
@@ -4865,11 +5012,11 @@ static const pmb887x_io_field_t scu_rst_req_fields[] = {
 	{"I2C",		SCU_RST_REQ_I2C,	SCU_RST_REQ_I2C_SHIFT,		NULL,	0},
 };
 
-static const pmb887x_io_field_t scu_sleep_req_fields[] = {
+static const DebugRegField scu_sleep_req_fields[] = {
 	{"REQ",	SCU_SLEEP_REQ_REQ,	SCU_SLEEP_REQ_REQ_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t scu_wdtcon0_fields[] = {
+static const DebugRegField scu_wdtcon0_fields[] = {
 	{"ENDINIT",	SCU_WDTCON0_ENDINIT,	SCU_WDTCON0_ENDINIT_SHIFT,	NULL,	0},
 	{"WDTLCK",	SCU_WDTCON0_WDTLCK,		SCU_WDTCON0_WDTLCK_SHIFT,	NULL,	0},
 	{"WDTHPW0",	SCU_WDTCON0_WDTHPW0,	SCU_WDTCON0_WDTHPW0_SHIFT,	NULL,	0},
@@ -4878,12 +5025,12 @@ static const pmb887x_io_field_t scu_wdtcon0_fields[] = {
 	{"WDTREL",	SCU_WDTCON0_WDTREL,		SCU_WDTCON0_WDTREL_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t scu_wdtcon1_fields[] = {
+static const DebugRegField scu_wdtcon1_fields[] = {
 	{"WDTIR",	SCU_WDTCON1_WDTIR,	SCU_WDTCON1_WDTIR_SHIFT,	NULL,	0},
 	{"WDTDR",	SCU_WDTCON1_WDTDR,	SCU_WDTCON1_WDTDR_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t scu_wdt_sr_fields[] = {
+static const DebugRegField scu_wdt_sr_fields[] = {
 	{"WDTAE",	SCU_WDT_SR_WDTAE,	SCU_WDT_SR_WDTAE_SHIFT,		NULL,	0},
 	{"WDTOE",	SCU_WDT_SR_WDTOE,	SCU_WDT_SR_WDTOE_SHIFT,		NULL,	0},
 	{"WDTIS",	SCU_WDT_SR_WDTIS,	SCU_WDT_SR_WDTIS_SHIFT,		NULL,	0},
@@ -4893,74 +5040,74 @@ static const pmb887x_io_field_t scu_wdt_sr_fields[] = {
 	{"WDTTIM",	SCU_WDT_SR_WDTTIM,	SCU_WDT_SR_WDTTIM_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t scu_dsp_int_fields[] = {
+static const DebugRegField scu_dsp_int_fields[] = {
 	{"REQ",	SCU_DSP_INT_REQ,	SCU_DSP_INT_REQ_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_value_t scu_scu_exti_filter_ext0_values[] = {
+static const DebugRegValue scu_scu_exti_filter_ext0_values[] = {
 	{"OFF",		SCU_EXTI_FILTER_EXT0_OFF},
 	{"CLOCK_1",	SCU_EXTI_FILTER_EXT0_CLOCK_1},
 	{"CLOCK_2",	SCU_EXTI_FILTER_EXT0_CLOCK_2},
 	{"CLOCK_3",	SCU_EXTI_FILTER_EXT0_CLOCK_3},
 };
 
-static const pmb887x_io_value_t scu_scu_exti_filter_ext1_values[] = {
+static const DebugRegValue scu_scu_exti_filter_ext1_values[] = {
 	{"OFF",		SCU_EXTI_FILTER_EXT1_OFF},
 	{"CLOCK_1",	SCU_EXTI_FILTER_EXT1_CLOCK_1},
 	{"CLOCK_2",	SCU_EXTI_FILTER_EXT1_CLOCK_2},
 	{"CLOCK_3",	SCU_EXTI_FILTER_EXT1_CLOCK_3},
 };
 
-static const pmb887x_io_value_t scu_scu_exti_filter_ext2_values[] = {
+static const DebugRegValue scu_scu_exti_filter_ext2_values[] = {
 	{"OFF",		SCU_EXTI_FILTER_EXT2_OFF},
 	{"CLOCK_1",	SCU_EXTI_FILTER_EXT2_CLOCK_1},
 	{"CLOCK_2",	SCU_EXTI_FILTER_EXT2_CLOCK_2},
 	{"CLOCK_3",	SCU_EXTI_FILTER_EXT2_CLOCK_3},
 };
 
-static const pmb887x_io_value_t scu_scu_exti_filter_ext3_values[] = {
+static const DebugRegValue scu_scu_exti_filter_ext3_values[] = {
 	{"OFF",		SCU_EXTI_FILTER_EXT3_OFF},
 	{"CLOCK_1",	SCU_EXTI_FILTER_EXT3_CLOCK_1},
 	{"CLOCK_2",	SCU_EXTI_FILTER_EXT3_CLOCK_2},
 	{"CLOCK_3",	SCU_EXTI_FILTER_EXT3_CLOCK_3},
 };
 
-static const pmb887x_io_value_t scu_scu_exti_filter_ext4_values[] = {
+static const DebugRegValue scu_scu_exti_filter_ext4_values[] = {
 	{"OFF",		SCU_EXTI_FILTER_EXT4_OFF},
 	{"CLOCK_1",	SCU_EXTI_FILTER_EXT4_CLOCK_1},
 	{"CLOCK_2",	SCU_EXTI_FILTER_EXT4_CLOCK_2},
 	{"CLOCK_3",	SCU_EXTI_FILTER_EXT4_CLOCK_3},
 };
 
-static const pmb887x_io_value_t scu_scu_exti_filter_ext5_values[] = {
+static const DebugRegValue scu_scu_exti_filter_ext5_values[] = {
 	{"OFF",		SCU_EXTI_FILTER_EXT5_OFF},
 	{"CLOCK_1",	SCU_EXTI_FILTER_EXT5_CLOCK_1},
 	{"CLOCK_2",	SCU_EXTI_FILTER_EXT5_CLOCK_2},
 	{"CLOCK_3",	SCU_EXTI_FILTER_EXT5_CLOCK_3},
 };
 
-static const pmb887x_io_value_t scu_scu_exti_filter_ext6_values[] = {
+static const DebugRegValue scu_scu_exti_filter_ext6_values[] = {
 	{"OFF",		SCU_EXTI_FILTER_EXT6_OFF},
 	{"CLOCK_1",	SCU_EXTI_FILTER_EXT6_CLOCK_1},
 	{"CLOCK_2",	SCU_EXTI_FILTER_EXT6_CLOCK_2},
 	{"CLOCK_3",	SCU_EXTI_FILTER_EXT6_CLOCK_3},
 };
 
-static const pmb887x_io_value_t scu_scu_exti_filter_ext7_values[] = {
+static const DebugRegValue scu_scu_exti_filter_ext7_values[] = {
 	{"OFF",		SCU_EXTI_FILTER_EXT7_OFF},
 	{"CLOCK_1",	SCU_EXTI_FILTER_EXT7_CLOCK_1},
 	{"CLOCK_2",	SCU_EXTI_FILTER_EXT7_CLOCK_2},
 	{"CLOCK_3",	SCU_EXTI_FILTER_EXT7_CLOCK_3},
 };
 
-static const pmb887x_io_value_t scu_scu_exti_filter_pm_int_values[] = {
+static const DebugRegValue scu_scu_exti_filter_pm_int_values[] = {
 	{"OFF",		SCU_EXTI_FILTER_PM_INT_OFF},
 	{"CLOCK_1",	SCU_EXTI_FILTER_PM_INT_CLOCK_1},
 	{"CLOCK_2",	SCU_EXTI_FILTER_PM_INT_CLOCK_2},
 	{"CLOCK_3",	SCU_EXTI_FILTER_PM_INT_CLOCK_3},
 };
 
-static const pmb887x_io_field_t scu_exti_filter_fields[] = {
+static const DebugRegField scu_exti_filter_fields[] = {
 	{"EXT0",	SCU_EXTI_FILTER_EXT0,	SCU_EXTI_FILTER_EXT0_SHIFT,		scu_scu_exti_filter_ext0_values,	ARRAY_SIZE(scu_scu_exti_filter_ext0_values)},
 	{"EXT1",	SCU_EXTI_FILTER_EXT1,	SCU_EXTI_FILTER_EXT1_SHIFT,		scu_scu_exti_filter_ext1_values,	ARRAY_SIZE(scu_scu_exti_filter_ext1_values)},
 	{"EXT2",	SCU_EXTI_FILTER_EXT2,	SCU_EXTI_FILTER_EXT2_SHIFT,		scu_scu_exti_filter_ext2_values,	ARRAY_SIZE(scu_scu_exti_filter_ext2_values)},
@@ -4972,70 +5119,70 @@ static const pmb887x_io_field_t scu_exti_filter_fields[] = {
 	{"PM_INT",	SCU_EXTI_FILTER_PM_INT,	SCU_EXTI_FILTER_PM_INT_SHIFT,	scu_scu_exti_filter_pm_int_values,	ARRAY_SIZE(scu_scu_exti_filter_pm_int_values)},
 };
 
-static const pmb887x_io_value_t scu_scu_exti_edge_ext0_values[] = {
+static const DebugRegValue scu_scu_exti_edge_ext0_values[] = {
 	{"OFF",		SCU_EXTI_EDGE_EXT0_OFF},
 	{"RISING",	SCU_EXTI_EDGE_EXT0_RISING},
 	{"FALLING",	SCU_EXTI_EDGE_EXT0_FALLING},
 	{"ANY",		SCU_EXTI_EDGE_EXT0_ANY},
 };
 
-static const pmb887x_io_value_t scu_scu_exti_edge_ext1_values[] = {
+static const DebugRegValue scu_scu_exti_edge_ext1_values[] = {
 	{"OFF",		SCU_EXTI_EDGE_EXT1_OFF},
 	{"RISING",	SCU_EXTI_EDGE_EXT1_RISING},
 	{"FALLING",	SCU_EXTI_EDGE_EXT1_FALLING},
 	{"ANY",		SCU_EXTI_EDGE_EXT1_ANY},
 };
 
-static const pmb887x_io_value_t scu_scu_exti_edge_ext2_values[] = {
+static const DebugRegValue scu_scu_exti_edge_ext2_values[] = {
 	{"OFF",		SCU_EXTI_EDGE_EXT2_OFF},
 	{"RISING",	SCU_EXTI_EDGE_EXT2_RISING},
 	{"FALLING",	SCU_EXTI_EDGE_EXT2_FALLING},
 	{"ANY",		SCU_EXTI_EDGE_EXT2_ANY},
 };
 
-static const pmb887x_io_value_t scu_scu_exti_edge_ext3_values[] = {
+static const DebugRegValue scu_scu_exti_edge_ext3_values[] = {
 	{"OFF",		SCU_EXTI_EDGE_EXT3_OFF},
 	{"RISING",	SCU_EXTI_EDGE_EXT3_RISING},
 	{"FALLING",	SCU_EXTI_EDGE_EXT3_FALLING},
 	{"ANY",		SCU_EXTI_EDGE_EXT3_ANY},
 };
 
-static const pmb887x_io_value_t scu_scu_exti_edge_ext4_values[] = {
+static const DebugRegValue scu_scu_exti_edge_ext4_values[] = {
 	{"OFF",		SCU_EXTI_EDGE_EXT4_OFF},
 	{"RISING",	SCU_EXTI_EDGE_EXT4_RISING},
 	{"FALLING",	SCU_EXTI_EDGE_EXT4_FALLING},
 	{"ANY",		SCU_EXTI_EDGE_EXT4_ANY},
 };
 
-static const pmb887x_io_value_t scu_scu_exti_edge_ext5_values[] = {
+static const DebugRegValue scu_scu_exti_edge_ext5_values[] = {
 	{"OFF",		SCU_EXTI_EDGE_EXT5_OFF},
 	{"RISING",	SCU_EXTI_EDGE_EXT5_RISING},
 	{"FALLING",	SCU_EXTI_EDGE_EXT5_FALLING},
 	{"ANY",		SCU_EXTI_EDGE_EXT5_ANY},
 };
 
-static const pmb887x_io_value_t scu_scu_exti_edge_ext6_values[] = {
+static const DebugRegValue scu_scu_exti_edge_ext6_values[] = {
 	{"OFF",		SCU_EXTI_EDGE_EXT6_OFF},
 	{"RISING",	SCU_EXTI_EDGE_EXT6_RISING},
 	{"FALLING",	SCU_EXTI_EDGE_EXT6_FALLING},
 	{"ANY",		SCU_EXTI_EDGE_EXT6_ANY},
 };
 
-static const pmb887x_io_value_t scu_scu_exti_edge_ext7_values[] = {
+static const DebugRegValue scu_scu_exti_edge_ext7_values[] = {
 	{"OFF",		SCU_EXTI_EDGE_EXT7_OFF},
 	{"RISING",	SCU_EXTI_EDGE_EXT7_RISING},
 	{"FALLING",	SCU_EXTI_EDGE_EXT7_FALLING},
 	{"ANY",		SCU_EXTI_EDGE_EXT7_ANY},
 };
 
-static const pmb887x_io_value_t scu_scu_exti_edge_pm_int_values[] = {
+static const DebugRegValue scu_scu_exti_edge_pm_int_values[] = {
 	{"OFF",		SCU_EXTI_EDGE_PM_INT_OFF},
 	{"RISING",	SCU_EXTI_EDGE_PM_INT_RISING},
 	{"FALLING",	SCU_EXTI_EDGE_PM_INT_FALLING},
 	{"ANY",		SCU_EXTI_EDGE_PM_INT_ANY},
 };
 
-static const pmb887x_io_field_t scu_exti_edge_fields[] = {
+static const DebugRegField scu_exti_edge_fields[] = {
 	{"EXT0",	SCU_EXTI_EDGE_EXT0,		SCU_EXTI_EDGE_EXT0_SHIFT,	scu_scu_exti_edge_ext0_values,		ARRAY_SIZE(scu_scu_exti_edge_ext0_values)},
 	{"EXT1",	SCU_EXTI_EDGE_EXT1,		SCU_EXTI_EDGE_EXT1_SHIFT,	scu_scu_exti_edge_ext1_values,		ARRAY_SIZE(scu_scu_exti_edge_ext1_values)},
 	{"EXT2",	SCU_EXTI_EDGE_EXT2,		SCU_EXTI_EDGE_EXT2_SHIFT,	scu_scu_exti_edge_ext2_values,		ARRAY_SIZE(scu_scu_exti_edge_ext2_values)},
@@ -5047,74 +5194,74 @@ static const pmb887x_io_field_t scu_exti_edge_fields[] = {
 	{"PM_INT",	SCU_EXTI_EDGE_PM_INT,	SCU_EXTI_EDGE_PM_INT_SHIFT,	scu_scu_exti_edge_pm_int_values,	ARRAY_SIZE(scu_scu_exti_edge_pm_int_values)},
 };
 
-static const pmb887x_io_field_t scu_ebuclc1_fields[] = {
+static const DebugRegField scu_ebuclc1_fields[] = {
 	{"FLAG1",	SCU_EBUCLC1_FLAG1,	SCU_EBUCLC1_FLAG1_SHIFT,	NULL,	0},
 	{"READY",	SCU_EBUCLC1_READY,	SCU_EBUCLC1_READY_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t scu_ebuclc2_fields[] = {
+static const DebugRegField scu_ebuclc2_fields[] = {
 	{"FLAG1",	SCU_EBUCLC2_FLAG1,	SCU_EBUCLC2_FLAG1_SHIFT,	NULL,	0},
 	{"READY",	SCU_EBUCLC2_READY,	SCU_EBUCLC2_READY_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t scu_ebuclc_fields[] = {
+static const DebugRegField scu_ebuclc_fields[] = {
 	{"LOCK",	SCU_EBUCLC_LOCK,	SCU_EBUCLC_LOCK_SHIFT,		NULL,	0},
 	{"VCOBYP",	SCU_EBUCLC_VCOBYP,	SCU_EBUCLC_VCOBYP_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_value_t scu_scu_emu_id_value_values[] = {
+static const DebugRegValue scu_scu_emu_id_value_values[] = {
 	{"QEMU",	SCU_EMU_ID_VALUE_QEMU},
 };
 
-static const pmb887x_io_field_t scu_emu_id_fields[] = {
+static const DebugRegField scu_emu_id_fields[] = {
 	{"VALUE",	SCU_EMU_ID_VALUE,	SCU_EMU_ID_VALUE_SHIFT,	scu_scu_emu_id_value_values,	ARRAY_SIZE(scu_scu_emu_id_value_values)},
 };
 
-static const pmb887x_io_field_t scu_manid_fields[] = {
+static const DebugRegField scu_manid_fields[] = {
 	{"DEPT",	SCU_MANID_DEPT,		SCU_MANID_DEPT_SHIFT,	NULL,	0},
 	{"MANUF",	SCU_MANID_MANUF,	SCU_MANID_MANUF_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t scu_chipid_fields[] = {
+static const DebugRegField scu_chipid_fields[] = {
 	{"CHREV",	SCU_CHIPID_CHREV,	SCU_CHIPID_CHREV_SHIFT,	NULL,	0},
 	{"CHIPD",	SCU_CHIPID_CHIPD,	SCU_CHIPID_CHIPD_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t scu_rtcif_fields[] = {
+static const DebugRegField scu_rtcif_fields[] = {
 	{"RTCIFEN",	SCU_RTCIF_RTCIFEN,	SCU_RTCIF_RTCIFEN_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_value_t scu_scu_uid1_platform_values[] = {
+static const DebugRegValue scu_scu_uid1_platform_values[] = {
 	{"800",	SCU_UID1_PLATFORM_800},
 	{"801",	SCU_UID1_PLATFORM_801},
 	{"802",	SCU_UID1_PLATFORM_802},
 	{"803",	SCU_UID1_PLATFORM_803},
 };
 
-static const pmb887x_io_field_t scu_uid1_fields[] = {
+static const DebugRegField scu_uid1_fields[] = {
 	{"SECBOOT",		SCU_UID1_SECBOOT,	SCU_UID1_SECBOOT_SHIFT,		NULL,							0},
 	{"PLATFORM",	SCU_UID1_PLATFORM,	SCU_UID1_PLATFORM_SHIFT,	scu_scu_uid1_platform_values,	ARRAY_SIZE(scu_scu_uid1_platform_values)},
 };
 
-static const pmb887x_io_field_t scu_uid2_fields[] = {
+static const DebugRegField scu_uid2_fields[] = {
 	{"BOOT_USART1",	SCU_UID2_BOOT_USART1,	SCU_UID2_BOOT_USART1_SHIFT,	NULL,	0},
 	{"BOOT_BSL",	SCU_UID2_BOOT_BSL,		SCU_UID2_BOOT_BSL_SHIFT,	NULL,	0},
 	{"BOOT_USB",	SCU_UID2_BOOT_USB,		SCU_UID2_BOOT_USB_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t scu_boot_flag_fields[] = {
+static const DebugRegField scu_boot_flag_fields[] = {
 	{"BOOT_OK",	SCU_BOOT_FLAG_BOOT_OK,	SCU_BOOT_FLAG_BOOT_OK_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t scu_romamcr_fields[] = {
+static const DebugRegField scu_romamcr_fields[] = {
 	{"MOUNT_BROM",	SCU_ROMAMCR_MOUNT_BROM,	SCU_ROMAMCR_MOUNT_BROM_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t scu_rtid_fields[] = {
+static const DebugRegField scu_rtid_fields[] = {
 	{"RT",	SCU_RTID_RT,	SCU_RTID_RT_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t scu_dmars_fields[] = {
+static const DebugRegField scu_dmars_fields[] = {
 	{"SEL0",	SCU_DMARS_SEL0,		SCU_DMARS_SEL0_SHIFT,	NULL,	0},
 	{"SEL1",	SCU_DMARS_SEL1,		SCU_DMARS_SEL1_SHIFT,	NULL,	0},
 	{"SEL2",	SCU_DMARS_SEL2,		SCU_DMARS_SEL2_SHIFT,	NULL,	0},
@@ -5133,7 +5280,7 @@ static const pmb887x_io_field_t scu_dmars_fields[] = {
 	{"SEL15",	SCU_DMARS_SEL15,	SCU_DMARS_SEL15_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t scu_exti0_src_fields[] = {
+static const DebugRegField scu_exti0_src_fields[] = {
 	{"SRPN",	MOD_SRC_SRPN,	MOD_SRC_SRPN_SHIFT,	NULL,	0},
 	{"TOS",		MOD_SRC_TOS,	MOD_SRC_TOS_SHIFT,	NULL,	0},
 	{"SRE",		MOD_SRC_SRE,	MOD_SRC_SRE_SHIFT,	NULL,	0},
@@ -5142,7 +5289,7 @@ static const pmb887x_io_field_t scu_exti0_src_fields[] = {
 	{"SETR",	MOD_SRC_SETR,	MOD_SRC_SETR_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t scu_exti1_src_fields[] = {
+static const DebugRegField scu_exti1_src_fields[] = {
 	{"SRPN",	MOD_SRC_SRPN,	MOD_SRC_SRPN_SHIFT,	NULL,	0},
 	{"TOS",		MOD_SRC_TOS,	MOD_SRC_TOS_SHIFT,	NULL,	0},
 	{"SRE",		MOD_SRC_SRE,	MOD_SRC_SRE_SHIFT,	NULL,	0},
@@ -5151,7 +5298,7 @@ static const pmb887x_io_field_t scu_exti1_src_fields[] = {
 	{"SETR",	MOD_SRC_SETR,	MOD_SRC_SETR_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t scu_exti2_src_fields[] = {
+static const DebugRegField scu_exti2_src_fields[] = {
 	{"SRPN",	MOD_SRC_SRPN,	MOD_SRC_SRPN_SHIFT,	NULL,	0},
 	{"TOS",		MOD_SRC_TOS,	MOD_SRC_TOS_SHIFT,	NULL,	0},
 	{"SRE",		MOD_SRC_SRE,	MOD_SRC_SRE_SHIFT,	NULL,	0},
@@ -5160,7 +5307,7 @@ static const pmb887x_io_field_t scu_exti2_src_fields[] = {
 	{"SETR",	MOD_SRC_SETR,	MOD_SRC_SETR_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t scu_exti3_src_fields[] = {
+static const DebugRegField scu_exti3_src_fields[] = {
 	{"SRPN",	MOD_SRC_SRPN,	MOD_SRC_SRPN_SHIFT,	NULL,	0},
 	{"TOS",		MOD_SRC_TOS,	MOD_SRC_TOS_SHIFT,	NULL,	0},
 	{"SRE",		MOD_SRC_SRE,	MOD_SRC_SRE_SHIFT,	NULL,	0},
@@ -5169,7 +5316,7 @@ static const pmb887x_io_field_t scu_exti3_src_fields[] = {
 	{"SETR",	MOD_SRC_SETR,	MOD_SRC_SETR_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t scu_exti4_src_fields[] = {
+static const DebugRegField scu_exti4_src_fields[] = {
 	{"SRPN",	MOD_SRC_SRPN,	MOD_SRC_SRPN_SHIFT,	NULL,	0},
 	{"TOS",		MOD_SRC_TOS,	MOD_SRC_TOS_SHIFT,	NULL,	0},
 	{"SRE",		MOD_SRC_SRE,	MOD_SRC_SRE_SHIFT,	NULL,	0},
@@ -5178,7 +5325,7 @@ static const pmb887x_io_field_t scu_exti4_src_fields[] = {
 	{"SETR",	MOD_SRC_SETR,	MOD_SRC_SETR_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t scu_pm_int_src_fields[] = {
+static const DebugRegField scu_pm_int_src_fields[] = {
 	{"SRPN",	MOD_SRC_SRPN,	MOD_SRC_SRPN_SHIFT,	NULL,	0},
 	{"TOS",		MOD_SRC_TOS,	MOD_SRC_TOS_SHIFT,	NULL,	0},
 	{"SRE",		MOD_SRC_SRE,	MOD_SRC_SRE_SHIFT,	NULL,	0},
@@ -5187,7 +5334,7 @@ static const pmb887x_io_field_t scu_pm_int_src_fields[] = {
 	{"SETR",	MOD_SRC_SETR,	MOD_SRC_SETR_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t scu_dsp_src_fields[] = {
+static const DebugRegField scu_dsp_src_fields[] = {
 	{"SRPN",	MOD_SRC_SRPN,	MOD_SRC_SRPN_SHIFT,	NULL,	0},
 	{"TOS",		MOD_SRC_TOS,	MOD_SRC_TOS_SHIFT,	NULL,	0},
 	{"SRE",		MOD_SRC_SRE,	MOD_SRC_SRE_SHIFT,	NULL,	0},
@@ -5196,7 +5343,7 @@ static const pmb887x_io_field_t scu_dsp_src_fields[] = {
 	{"SETR",	MOD_SRC_SETR,	MOD_SRC_SETR_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t scu_unk0_src_fields[] = {
+static const DebugRegField scu_unk0_src_fields[] = {
 	{"SRPN",	MOD_SRC_SRPN,	MOD_SRC_SRPN_SHIFT,	NULL,	0},
 	{"TOS",		MOD_SRC_TOS,	MOD_SRC_TOS_SHIFT,	NULL,	0},
 	{"SRE",		MOD_SRC_SRE,	MOD_SRC_SRE_SHIFT,	NULL,	0},
@@ -5205,7 +5352,7 @@ static const pmb887x_io_field_t scu_unk0_src_fields[] = {
 	{"SETR",	MOD_SRC_SETR,	MOD_SRC_SETR_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t scu_unk1_src_fields[] = {
+static const DebugRegField scu_unk1_src_fields[] = {
 	{"SRPN",	MOD_SRC_SRPN,	MOD_SRC_SRPN_SHIFT,	NULL,	0},
 	{"TOS",		MOD_SRC_TOS,	MOD_SRC_TOS_SHIFT,	NULL,	0},
 	{"SRE",		MOD_SRC_SRE,	MOD_SRC_SRE_SHIFT,	NULL,	0},
@@ -5214,7 +5361,7 @@ static const pmb887x_io_field_t scu_unk1_src_fields[] = {
 	{"SETR",	MOD_SRC_SETR,	MOD_SRC_SETR_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t scu_unk2_src_fields[] = {
+static const DebugRegField scu_unk2_src_fields[] = {
 	{"SRPN",	MOD_SRC_SRPN,	MOD_SRC_SRPN_SHIFT,	NULL,	0},
 	{"TOS",		MOD_SRC_TOS,	MOD_SRC_TOS_SHIFT,	NULL,	0},
 	{"SRE",		MOD_SRC_SRE,	MOD_SRC_SRE_SHIFT,	NULL,	0},
@@ -5223,7 +5370,7 @@ static const pmb887x_io_field_t scu_unk2_src_fields[] = {
 	{"SETR",	MOD_SRC_SETR,	MOD_SRC_SETR_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t scu_exti5_src_fields[] = {
+static const DebugRegField scu_exti5_src_fields[] = {
 	{"SRPN",	MOD_SRC_SRPN,	MOD_SRC_SRPN_SHIFT,	NULL,	0},
 	{"TOS",		MOD_SRC_TOS,	MOD_SRC_TOS_SHIFT,	NULL,	0},
 	{"SRE",		MOD_SRC_SRE,	MOD_SRC_SRE_SHIFT,	NULL,	0},
@@ -5232,7 +5379,7 @@ static const pmb887x_io_field_t scu_exti5_src_fields[] = {
 	{"SETR",	MOD_SRC_SETR,	MOD_SRC_SETR_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t scu_exti6_src_fields[] = {
+static const DebugRegField scu_exti6_src_fields[] = {
 	{"SRPN",	MOD_SRC_SRPN,	MOD_SRC_SRPN_SHIFT,	NULL,	0},
 	{"TOS",		MOD_SRC_TOS,	MOD_SRC_TOS_SHIFT,	NULL,	0},
 	{"SRE",		MOD_SRC_SRE,	MOD_SRC_SRE_SHIFT,	NULL,	0},
@@ -5241,7 +5388,7 @@ static const pmb887x_io_field_t scu_exti6_src_fields[] = {
 	{"SETR",	MOD_SRC_SETR,	MOD_SRC_SETR_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t scu_exti7_src_fields[] = {
+static const DebugRegField scu_exti7_src_fields[] = {
 	{"SRPN",	MOD_SRC_SRPN,	MOD_SRC_SRPN_SHIFT,	NULL,	0},
 	{"TOS",		MOD_SRC_TOS,	MOD_SRC_TOS_SHIFT,	NULL,	0},
 	{"SRE",		MOD_SRC_SRE,	MOD_SRC_SRE_SHIFT,	NULL,	0},
@@ -5250,52 +5397,59 @@ static const pmb887x_io_field_t scu_exti7_src_fields[] = {
 	{"SETR",	MOD_SRC_SETR,	MOD_SRC_SETR_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_reg_t scu_regs[] = {
-	{"CLC",			SCU_CLC,			scu_clc_fields,			ARRAY_SIZE(scu_clc_fields),			0},
-	{"ID",			SCU_ID,				scu_id_fields,			ARRAY_SIZE(scu_id_fields),			0},
-	{"RST_SR",		SCU_RST_SR,			scu_rst_sr_fields,		ARRAY_SIZE(scu_rst_sr_fields),		0},
-	{"RST_CON",		SCU_RST_CON,		scu_rst_con_fields,		ARRAY_SIZE(scu_rst_con_fields),		0},
-	{"RST_REQ",		SCU_RST_REQ,		scu_rst_req_fields,		ARRAY_SIZE(scu_rst_req_fields),		0},
-	{"SLEEP_REQ",	SCU_SLEEP_REQ,		scu_sleep_req_fields,	ARRAY_SIZE(scu_sleep_req_fields),	0},
-	{"WDTCON0",		SCU_WDTCON0,		scu_wdtcon0_fields,		ARRAY_SIZE(scu_wdtcon0_fields),		0},
-	{"WDTCON1",		SCU_WDTCON1,		scu_wdtcon1_fields,		ARRAY_SIZE(scu_wdtcon1_fields),		0},
-	{"WDT_SR",		SCU_WDT_SR,			scu_wdt_sr_fields,		ARRAY_SIZE(scu_wdt_sr_fields),		0},
-	{"DSP_INT",		SCU_DSP_INT,		scu_dsp_int_fields,		ARRAY_SIZE(scu_dsp_int_fields),		0},
-	{"EXTI_FILTER",	SCU_EXTI_FILTER,	scu_exti_filter_fields,	ARRAY_SIZE(scu_exti_filter_fields),	0},
-	{"EXTI_EDGE",	SCU_EXTI_EDGE,		scu_exti_edge_fields,	ARRAY_SIZE(scu_exti_edge_fields),	0},
-	{"EBUCLC1",		SCU_EBUCLC1,		scu_ebuclc1_fields,		ARRAY_SIZE(scu_ebuclc1_fields),		0},
-	{"EBUCLC2",		SCU_EBUCLC2,		scu_ebuclc2_fields,		ARRAY_SIZE(scu_ebuclc2_fields),		0},
-	{"EBUCLC",		SCU_EBUCLC,			scu_ebuclc_fields,		ARRAY_SIZE(scu_ebuclc_fields),		0},
-	{"EMU_ID",		SCU_EMU_ID,			scu_emu_id_fields,		ARRAY_SIZE(scu_emu_id_fields),		0},
-	{"MANID",		SCU_MANID,			scu_manid_fields,		ARRAY_SIZE(scu_manid_fields),		0},
-	{"CHIPID",		SCU_CHIPID,			scu_chipid_fields,		ARRAY_SIZE(scu_chipid_fields),		0},
-	{"RTCIF",		SCU_RTCIF,			scu_rtcif_fields,		ARRAY_SIZE(scu_rtcif_fields),		0},
-	{"UID0",		SCU_UID0,			NULL,					0,									0},
-	{"UID1",		SCU_UID1,			scu_uid1_fields,		ARRAY_SIZE(scu_uid1_fields),		0},
-	{"UID2",		SCU_UID2,			scu_uid2_fields,		ARRAY_SIZE(scu_uid2_fields),		0},
-	{"BOOT_FLAG",	SCU_BOOT_FLAG,		scu_boot_flag_fields,	ARRAY_SIZE(scu_boot_flag_fields),	0},
-	{"ROMAMCR",		SCU_ROMAMCR,		scu_romamcr_fields,		ARRAY_SIZE(scu_romamcr_fields),		0},
-	{"RTID",		SCU_RTID,			scu_rtid_fields,		ARRAY_SIZE(scu_rtid_fields),		0},
-	{"DMARS",		SCU_DMARS,			scu_dmars_fields,		ARRAY_SIZE(scu_dmars_fields),		0},
-	{"EXTI0_SRC",	SCU_EXTI0_SRC,		scu_exti0_src_fields,	ARRAY_SIZE(scu_exti0_src_fields),	0},
-	{"EXTI1_SRC",	SCU_EXTI1_SRC,		scu_exti1_src_fields,	ARRAY_SIZE(scu_exti1_src_fields),	0},
-	{"EXTI2_SRC",	SCU_EXTI2_SRC,		scu_exti2_src_fields,	ARRAY_SIZE(scu_exti2_src_fields),	0},
-	{"EXTI3_SRC",	SCU_EXTI3_SRC,		scu_exti3_src_fields,	ARRAY_SIZE(scu_exti3_src_fields),	0},
-	{"EXTI4_SRC",	SCU_EXTI4_SRC,		scu_exti4_src_fields,	ARRAY_SIZE(scu_exti4_src_fields),	0},
-	{"PM_INT_SRC",	SCU_PM_INT_SRC,		scu_pm_int_src_fields,	ARRAY_SIZE(scu_pm_int_src_fields),	0},
-	{"DSP_SRC0",	SCU_DSP_SRC0,		scu_dsp_src_fields,		ARRAY_SIZE(scu_dsp_src_fields),		0},
-	{"DSP_SRC1",	SCU_DSP_SRC1,		scu_dsp_src_fields,		ARRAY_SIZE(scu_dsp_src_fields),		0},
-	{"DSP_SRC2",	SCU_DSP_SRC2,		scu_dsp_src_fields,		ARRAY_SIZE(scu_dsp_src_fields),		0},
-	{"DSP_SRC3",	SCU_DSP_SRC3,		scu_dsp_src_fields,		ARRAY_SIZE(scu_dsp_src_fields),		0},
-	{"UNK0_SRC",	SCU_UNK0_SRC,		scu_unk0_src_fields,	ARRAY_SIZE(scu_unk0_src_fields),	0},
-	{"UNK1_SRC",	SCU_UNK1_SRC,		scu_unk1_src_fields,	ARRAY_SIZE(scu_unk1_src_fields),	0},
-	{"UNK2_SRC",	SCU_UNK2_SRC,		scu_unk2_src_fields,	ARRAY_SIZE(scu_unk2_src_fields),	0},
-	{"EXTI5_SRC",	SCU_EXTI5_SRC,		scu_exti5_src_fields,	ARRAY_SIZE(scu_exti5_src_fields),	0},
-	{"EXTI6_SRC",	SCU_EXTI6_SRC,		scu_exti6_src_fields,	ARRAY_SIZE(scu_exti6_src_fields),	0},
-	{"EXTI7_SRC",	SCU_EXTI7_SRC,		scu_exti7_src_fields,	ARRAY_SIZE(scu_exti7_src_fields),	0},
+static const DebugReg scu_regs[] = {
+	{"CLC",			SCU_CLC,			scu_clc_fields,			ARRAY_SIZE(scu_clc_fields)},
+	{"ID",			SCU_ID,				scu_id_fields,			ARRAY_SIZE(scu_id_fields)},
+	{"RST_SR",		SCU_RST_SR,			scu_rst_sr_fields,		ARRAY_SIZE(scu_rst_sr_fields)},
+	{"RST_CON",		SCU_RST_CON,		scu_rst_con_fields,		ARRAY_SIZE(scu_rst_con_fields)},
+	{"RST_REQ",		SCU_RST_REQ,		scu_rst_req_fields,		ARRAY_SIZE(scu_rst_req_fields)},
+	{"SLEEP_REQ",	SCU_SLEEP_REQ,		scu_sleep_req_fields,	ARRAY_SIZE(scu_sleep_req_fields)},
+	{"WDTCON0",		SCU_WDTCON0,		scu_wdtcon0_fields,		ARRAY_SIZE(scu_wdtcon0_fields)},
+	{"WDTCON1",		SCU_WDTCON1,		scu_wdtcon1_fields,		ARRAY_SIZE(scu_wdtcon1_fields)},
+	{"WDT_SR",		SCU_WDT_SR,			scu_wdt_sr_fields,		ARRAY_SIZE(scu_wdt_sr_fields)},
+	{"DSP_INT",		SCU_DSP_INT,		scu_dsp_int_fields,		ARRAY_SIZE(scu_dsp_int_fields)},
+	{"EXTI_FILTER",	SCU_EXTI_FILTER,	scu_exti_filter_fields,	ARRAY_SIZE(scu_exti_filter_fields)},
+	{"EXTI_EDGE",	SCU_EXTI_EDGE,		scu_exti_edge_fields,	ARRAY_SIZE(scu_exti_edge_fields)},
+	{"EBUCLC1",		SCU_EBUCLC1,		scu_ebuclc1_fields,		ARRAY_SIZE(scu_ebuclc1_fields)},
+	{"EBUCLC2",		SCU_EBUCLC2,		scu_ebuclc2_fields,		ARRAY_SIZE(scu_ebuclc2_fields)},
+	{"EBUCLC",		SCU_EBUCLC,			scu_ebuclc_fields,		ARRAY_SIZE(scu_ebuclc_fields)},
+	{"EMU_ID",		SCU_EMU_ID,			scu_emu_id_fields,		ARRAY_SIZE(scu_emu_id_fields)},
+	{"MANID",		SCU_MANID,			scu_manid_fields,		ARRAY_SIZE(scu_manid_fields)},
+	{"CHIPID",		SCU_CHIPID,			scu_chipid_fields,		ARRAY_SIZE(scu_chipid_fields)},
+	{"RTCIF",		SCU_RTCIF,			scu_rtcif_fields,		ARRAY_SIZE(scu_rtcif_fields)},
+	{"UID0",		SCU_UID0,			NULL,					0},
+	{"UID1",		SCU_UID1,			scu_uid1_fields,		ARRAY_SIZE(scu_uid1_fields)},
+	{"UID2",		SCU_UID2,			scu_uid2_fields,		ARRAY_SIZE(scu_uid2_fields)},
+	{"BOOT_FLAG",	SCU_BOOT_FLAG,		scu_boot_flag_fields,	ARRAY_SIZE(scu_boot_flag_fields)},
+	{"ROMAMCR",		SCU_ROMAMCR,		scu_romamcr_fields,		ARRAY_SIZE(scu_romamcr_fields)},
+	{"RTID",		SCU_RTID,			scu_rtid_fields,		ARRAY_SIZE(scu_rtid_fields)},
+	{"DMARS",		SCU_DMARS,			scu_dmars_fields,		ARRAY_SIZE(scu_dmars_fields)},
+	{"EXTI0_SRC",	SCU_EXTI0_SRC,		scu_exti0_src_fields,	ARRAY_SIZE(scu_exti0_src_fields)},
+	{"EXTI1_SRC",	SCU_EXTI1_SRC,		scu_exti1_src_fields,	ARRAY_SIZE(scu_exti1_src_fields)},
+	{"EXTI2_SRC",	SCU_EXTI2_SRC,		scu_exti2_src_fields,	ARRAY_SIZE(scu_exti2_src_fields)},
+	{"EXTI3_SRC",	SCU_EXTI3_SRC,		scu_exti3_src_fields,	ARRAY_SIZE(scu_exti3_src_fields)},
+	{"EXTI4_SRC",	SCU_EXTI4_SRC,		scu_exti4_src_fields,	ARRAY_SIZE(scu_exti4_src_fields)},
+	{"PM_INT_SRC",	SCU_PM_INT_SRC,		scu_pm_int_src_fields,	ARRAY_SIZE(scu_pm_int_src_fields)},
+	{"DSP_SRC0",	SCU_DSP_SRC0,		scu_dsp_src_fields,		ARRAY_SIZE(scu_dsp_src_fields)},
+	{"DSP_SRC1",	SCU_DSP_SRC1,		scu_dsp_src_fields,		ARRAY_SIZE(scu_dsp_src_fields)},
+	{"DSP_SRC2",	SCU_DSP_SRC2,		scu_dsp_src_fields,		ARRAY_SIZE(scu_dsp_src_fields)},
+	{"DSP_SRC3",	SCU_DSP_SRC3,		scu_dsp_src_fields,		ARRAY_SIZE(scu_dsp_src_fields)},
+	{"UNK0_SRC",	SCU_UNK0_SRC,		scu_unk0_src_fields,	ARRAY_SIZE(scu_unk0_src_fields)},
+	{"UNK1_SRC",	SCU_UNK1_SRC,		scu_unk1_src_fields,	ARRAY_SIZE(scu_unk1_src_fields)},
+	{"UNK2_SRC",	SCU_UNK2_SRC,		scu_unk2_src_fields,	ARRAY_SIZE(scu_unk2_src_fields)},
+	{"EXTI5_SRC",	SCU_EXTI5_SRC,		scu_exti5_src_fields,	ARRAY_SIZE(scu_exti5_src_fields)},
+	{"EXTI6_SRC",	SCU_EXTI6_SRC,		scu_exti6_src_fields,	ARRAY_SIZE(scu_exti6_src_fields)},
+	{"EXTI7_SRC",	SCU_EXTI7_SRC,		scu_exti7_src_fields,	ARRAY_SIZE(scu_exti7_src_fields)},
 };
 
-static const pmb887x_io_field_t sim_clc_fields[] = {
+const DebugRegs pmb887x_scu_regs = {
+	.regs = scu_regs,
+	.count = ARRAY_SIZE(scu_regs),
+	.reg_size = 4,
+	.addr_digits = 8,
+};
+
+static const DebugRegField sim_clc_fields[] = {
 	{"DISR",	MOD_CLC_DISR,	MOD_CLC_DISR_SHIFT,	NULL,	0},
 	{"DISS",	MOD_CLC_DISS,	MOD_CLC_DISS_SHIFT,	NULL,	0},
 	{"SPEN",	MOD_CLC_SPEN,	MOD_CLC_SPEN_SHIFT,	NULL,	0},
@@ -5305,13 +5459,13 @@ static const pmb887x_io_field_t sim_clc_fields[] = {
 	{"RMC",		MOD_CLC_RMC,	MOD_CLC_RMC_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t sim_id_fields[] = {
+static const DebugRegField sim_id_fields[] = {
 	{"REV",		MOD_ID_REV,		MOD_ID_REV_SHIFT,		NULL,	0},
 	{"32B",		MOD_ID_32B,		MOD_ID_32B_SHIFT,		NULL,	0},
 	{"NUMBER",	MOD_ID_NUMBER,	MOD_ID_NUMBER_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t sim_con_fields[] = {
+static const DebugRegField sim_con_fields[] = {
 	{"INCON",		SIM_CON_INCON,		SIM_CON_INCON_SHIFT,	NULL,	0},
 	{"SIMT0",		SIM_CON_SIMT0,		SIM_CON_SIMT0_SHIFT,	NULL,	0},
 	{"SIMIOL",		SIM_CON_SIMIOL,		SIM_CON_SIMIOL_SHIFT,	NULL,	0},
@@ -5330,11 +5484,11 @@ static const pmb887x_io_field_t sim_con_fields[] = {
 	{"SIMT1",		SIM_CON_SIMT1,		SIM_CON_SIMT1_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t sim_brf_fields[] = {
+static const DebugRegField sim_brf_fields[] = {
 	{"BRF",	SIM_BRF_BRF,	SIM_BRF_BRF_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t sim_stat_fields[] = {
+static const DebugRegField sim_stat_fields[] = {
 	{"UARTOK",		SIM_STAT_UARTOK,	SIM_STAT_UARTOK_SHIFT,		NULL,	0},
 	{"PARINT",		SIM_STAT_PARINT,	SIM_STAT_PARINT_SHIFT,		NULL,	0},
 	{"OVRRUN",		SIM_STAT_OVRRUN,	SIM_STAT_OVRRUN_SHIFT,		NULL,	0},
@@ -5346,7 +5500,7 @@ static const pmb887x_io_field_t sim_stat_fields[] = {
 	{"UNK8",		SIM_STAT_UNK8,		SIM_STAT_UNK8_SHIFT,		NULL,	0},
 };
 
-static const pmb887x_io_field_t sim_irqen_fields[] = {
+static const DebugRegField sim_irqen_fields[] = {
 	{"ENOKINT",		SIM_IRQEN_ENOKINT,		SIM_IRQEN_ENOKINT_SHIFT,	NULL,	0},
 	{"ENPAR",		SIM_IRQEN_ENPAR,		SIM_IRQEN_ENPAR_SHIFT,		NULL,	0},
 	{"ENOVR",		SIM_IRQEN_ENOVR,		SIM_IRQEN_ENOVR_SHIFT,		NULL,	0},
@@ -5356,117 +5510,124 @@ static const pmb887x_io_field_t sim_irqen_fields[] = {
 	{"UNK6",		SIM_IRQEN_UNK6,			SIM_IRQEN_UNK6_SHIFT,		NULL,	0},
 };
 
-static const pmb887x_io_field_t sim_rxspc_fields[] = {
+static const DebugRegField sim_rxspc_fields[] = {
 	{"RXSPC",	SIM_RXSPC_RXSPC,	SIM_RXSPC_RXSPC_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t sim_txspc_fields[] = {
+static const DebugRegField sim_txspc_fields[] = {
 	{"TXSPC",	SIM_TXSPC_TXSPC,	SIM_TXSPC_TXSPC_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t sim_chtimer_fields[] = {
+static const DebugRegField sim_chtimer_fields[] = {
 	{"CHTIMER",	SIM_CHTIMER_CHTIMER,	SIM_CHTIMER_CHTIMER_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t sim_unk3c_fields[] = {
+static const DebugRegField sim_unk3c_fields[] = {
 	{"VALUE",	SIM_UNK3C_VALUE,	SIM_UNK3C_VALUE_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t sim_unk40_fields[] = {
+static const DebugRegField sim_unk40_fields[] = {
 	{"VALUE",	SIM_UNK40_VALUE,	SIM_UNK40_VALUE_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t sim_bwt_fields[] = {
+static const DebugRegField sim_bwt_fields[] = {
 	{"BWT",	SIM_BWT_BWT,	SIM_BWT_BWT_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t sim_txb_fields[] = {
+static const DebugRegField sim_txb_fields[] = {
 	{"VALUE",	SIM_TXB_VALUE,	SIM_TXB_VALUE_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t sim_rxb_fields[] = {
+static const DebugRegField sim_rxb_fields[] = {
 	{"VALUE",	SIM_RXB_VALUE,	SIM_RXB_VALUE_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t sim_ins_fields[] = {
+static const DebugRegField sim_ins_fields[] = {
 	{"INS",		SIM_INS_INS,	SIM_INS_INS_SHIFT,		NULL,	0},
 	{"INSDIR",	SIM_INS_INSDIR,	SIM_INS_INSDIR_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t sim_p3_fields[] = {
+static const DebugRegField sim_p3_fields[] = {
 	{"P3",	SIM_P3_P3,	SIM_P3_P3_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t sim_sw1_fields[] = {
+static const DebugRegField sim_sw1_fields[] = {
 	{"SW1",	SIM_SW1_SW1,	SIM_SW1_SW1_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t sim_sw2_fields[] = {
+static const DebugRegField sim_sw2_fields[] = {
 	{"SW2",	SIM_SW2_SW2,	SIM_SW2_SW2_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t sim_imsc_fields[] = {
+static const DebugRegField sim_imsc_fields[] = {
 	{"ERR",	SIM_IMSC_ERR,	SIM_IMSC_ERR_SHIFT,	NULL,	0},
 	{"IN",	SIM_IMSC_IN,	SIM_IMSC_IN_SHIFT,	NULL,	0},
 	{"OK",	SIM_IMSC_OK,	SIM_IMSC_OK_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t sim_ris_fields[] = {
+static const DebugRegField sim_ris_fields[] = {
 	{"ERR",	SIM_RIS_ERR,	SIM_RIS_ERR_SHIFT,	NULL,	0},
 	{"IN",	SIM_RIS_IN,		SIM_RIS_IN_SHIFT,	NULL,	0},
 	{"OK",	SIM_RIS_OK,		SIM_RIS_OK_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t sim_mis_fields[] = {
+static const DebugRegField sim_mis_fields[] = {
 	{"ERR",	SIM_MIS_ERR,	SIM_MIS_ERR_SHIFT,	NULL,	0},
 	{"IN",	SIM_MIS_IN,		SIM_MIS_IN_SHIFT,	NULL,	0},
 	{"OK",	SIM_MIS_OK,		SIM_MIS_OK_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t sim_icr_fields[] = {
+static const DebugRegField sim_icr_fields[] = {
 	{"ERR",	SIM_ICR_ERR,	SIM_ICR_ERR_SHIFT,	NULL,	0},
 	{"IN",	SIM_ICR_IN,		SIM_ICR_IN_SHIFT,	NULL,	0},
 	{"OK",	SIM_ICR_OK,		SIM_ICR_OK_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t sim_isr_fields[] = {
+static const DebugRegField sim_isr_fields[] = {
 	{"ERR",	SIM_ISR_ERR,	SIM_ISR_ERR_SHIFT,	NULL,	0},
 	{"IN",	SIM_ISR_IN,		SIM_ISR_IN_SHIFT,	NULL,	0},
 	{"OK",	SIM_ISR_OK,		SIM_ISR_OK_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t sim_dmae_fields[] = {
+static const DebugRegField sim_dmae_fields[] = {
 	{"OK",	SIM_DMAE_OK,	SIM_DMAE_OK_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_reg_t sim_regs[] = {
-	{"CLC",		SIM_CLC,		sim_clc_fields,		ARRAY_SIZE(sim_clc_fields),		0},
-	{"ID",		SIM_ID,			sim_id_fields,		ARRAY_SIZE(sim_id_fields),		0},
-	{"CON",		SIM_CON,		sim_con_fields,		ARRAY_SIZE(sim_con_fields),		0},
-	{"BRF",		SIM_BRF,		sim_brf_fields,		ARRAY_SIZE(sim_brf_fields),		0},
-	{"STAT",	SIM_STAT,		sim_stat_fields,	ARRAY_SIZE(sim_stat_fields),	0},
-	{"IRQEN",	SIM_IRQEN,		sim_irqen_fields,	ARRAY_SIZE(sim_irqen_fields),	0},
-	{"RXSPC",	SIM_RXSPC,		sim_rxspc_fields,	ARRAY_SIZE(sim_rxspc_fields),	0},
-	{"TXSPC",	SIM_TXSPC,		sim_txspc_fields,	ARRAY_SIZE(sim_txspc_fields),	0},
-	{"CHTIMER",	SIM_CHTIMER,	sim_chtimer_fields,	ARRAY_SIZE(sim_chtimer_fields),	0},
-	{"UNK3C",	SIM_UNK3C,		sim_unk3c_fields,	ARRAY_SIZE(sim_unk3c_fields),	0},
-	{"UNK40",	SIM_UNK40,		sim_unk40_fields,	ARRAY_SIZE(sim_unk40_fields),	0},
-	{"BWT",		SIM_BWT,		sim_bwt_fields,		ARRAY_SIZE(sim_bwt_fields),		0},
-	{"TXB",		SIM_TXB,		sim_txb_fields,		ARRAY_SIZE(sim_txb_fields),		0},
-	{"RXB",		SIM_RXB,		sim_rxb_fields,		ARRAY_SIZE(sim_rxb_fields),		0},
-	{"INS",		SIM_INS,		sim_ins_fields,		ARRAY_SIZE(sim_ins_fields),		0},
-	{"P3",		SIM_P3,			sim_p3_fields,		ARRAY_SIZE(sim_p3_fields),		0},
-	{"SW1",		SIM_SW1,		sim_sw1_fields,		ARRAY_SIZE(sim_sw1_fields),		0},
-	{"SW2",		SIM_SW2,		sim_sw2_fields,		ARRAY_SIZE(sim_sw2_fields),		0},
-	{"IMSC",	SIM_IMSC,		sim_imsc_fields,	ARRAY_SIZE(sim_imsc_fields),	0},
-	{"RIS",		SIM_RIS,		sim_ris_fields,		ARRAY_SIZE(sim_ris_fields),		0},
-	{"MIS",		SIM_MIS,		sim_mis_fields,		ARRAY_SIZE(sim_mis_fields),		0},
-	{"ICR",		SIM_ICR,		sim_icr_fields,		ARRAY_SIZE(sim_icr_fields),		0},
-	{"ISR",		SIM_ISR,		sim_isr_fields,		ARRAY_SIZE(sim_isr_fields),		0},
-	{"DMAE",	SIM_DMAE,		sim_dmae_fields,	ARRAY_SIZE(sim_dmae_fields),	0},
+static const DebugReg sim_regs[] = {
+	{"CLC",		SIM_CLC,		sim_clc_fields,		ARRAY_SIZE(sim_clc_fields)},
+	{"ID",		SIM_ID,			sim_id_fields,		ARRAY_SIZE(sim_id_fields)},
+	{"CON",		SIM_CON,		sim_con_fields,		ARRAY_SIZE(sim_con_fields)},
+	{"BRF",		SIM_BRF,		sim_brf_fields,		ARRAY_SIZE(sim_brf_fields)},
+	{"STAT",	SIM_STAT,		sim_stat_fields,	ARRAY_SIZE(sim_stat_fields)},
+	{"IRQEN",	SIM_IRQEN,		sim_irqen_fields,	ARRAY_SIZE(sim_irqen_fields)},
+	{"RXSPC",	SIM_RXSPC,		sim_rxspc_fields,	ARRAY_SIZE(sim_rxspc_fields)},
+	{"TXSPC",	SIM_TXSPC,		sim_txspc_fields,	ARRAY_SIZE(sim_txspc_fields)},
+	{"CHTIMER",	SIM_CHTIMER,	sim_chtimer_fields,	ARRAY_SIZE(sim_chtimer_fields)},
+	{"UNK3C",	SIM_UNK3C,		sim_unk3c_fields,	ARRAY_SIZE(sim_unk3c_fields)},
+	{"UNK40",	SIM_UNK40,		sim_unk40_fields,	ARRAY_SIZE(sim_unk40_fields)},
+	{"BWT",		SIM_BWT,		sim_bwt_fields,		ARRAY_SIZE(sim_bwt_fields)},
+	{"TXB",		SIM_TXB,		sim_txb_fields,		ARRAY_SIZE(sim_txb_fields)},
+	{"RXB",		SIM_RXB,		sim_rxb_fields,		ARRAY_SIZE(sim_rxb_fields)},
+	{"INS",		SIM_INS,		sim_ins_fields,		ARRAY_SIZE(sim_ins_fields)},
+	{"P3",		SIM_P3,			sim_p3_fields,		ARRAY_SIZE(sim_p3_fields)},
+	{"SW1",		SIM_SW1,		sim_sw1_fields,		ARRAY_SIZE(sim_sw1_fields)},
+	{"SW2",		SIM_SW2,		sim_sw2_fields,		ARRAY_SIZE(sim_sw2_fields)},
+	{"IMSC",	SIM_IMSC,		sim_imsc_fields,	ARRAY_SIZE(sim_imsc_fields)},
+	{"RIS",		SIM_RIS,		sim_ris_fields,		ARRAY_SIZE(sim_ris_fields)},
+	{"MIS",		SIM_MIS,		sim_mis_fields,		ARRAY_SIZE(sim_mis_fields)},
+	{"ICR",		SIM_ICR,		sim_icr_fields,		ARRAY_SIZE(sim_icr_fields)},
+	{"ISR",		SIM_ISR,		sim_isr_fields,		ARRAY_SIZE(sim_isr_fields)},
+	{"DMAE",	SIM_DMAE,		sim_dmae_fields,	ARRAY_SIZE(sim_dmae_fields)},
 };
 
-static const pmb887x_io_field_t ssc_clc_fields[] = {
+const DebugRegs pmb887x_sim_regs = {
+	.regs = sim_regs,
+	.count = ARRAY_SIZE(sim_regs),
+	.reg_size = 4,
+	.addr_digits = 8,
+};
+
+static const DebugRegField ssc_clc_fields[] = {
 	{"DISR",	MOD_CLC_DISR,	MOD_CLC_DISR_SHIFT,	NULL,	0},
 	{"DISS",	MOD_CLC_DISS,	MOD_CLC_DISS_SHIFT,	NULL,	0},
 	{"SPEN",	MOD_CLC_SPEN,	MOD_CLC_SPEN_SHIFT,	NULL,	0},
@@ -5476,7 +5637,7 @@ static const pmb887x_io_field_t ssc_clc_fields[] = {
 	{"RMC",		MOD_CLC_RMC,	MOD_CLC_RMC_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t ssc_pisel_fields[] = {
+static const DebugRegField ssc_pisel_fields[] = {
 	{"MRIS",	SSC_PISEL_MRIS,		SSC_PISEL_MRIS_SHIFT,	NULL,	0},
 	{"SRIS",	SSC_PISEL_SRIS,		SSC_PISEL_SRIS_SHIFT,	NULL,	0},
 	{"SCIS",	SSC_PISEL_SCIS,		SSC_PISEL_SCIS_SHIFT,	NULL,	0},
@@ -5484,13 +5645,13 @@ static const pmb887x_io_field_t ssc_pisel_fields[] = {
 	{"STIP",	SSC_PISEL_STIP,		SSC_PISEL_STIP_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t ssc_id_fields[] = {
+static const DebugRegField ssc_id_fields[] = {
 	{"REV",		MOD_ID_REV,		MOD_ID_REV_SHIFT,		NULL,	0},
 	{"32B",		MOD_ID_32B,		MOD_ID_32B_SHIFT,		NULL,	0},
 	{"NUMBER",	MOD_ID_NUMBER,	MOD_ID_NUMBER_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_value_t ssc_ssc_con_bm_values[] = {
+static const DebugRegValue ssc_ssc_con_bm_values[] = {
 	{"1",	SSC_CON_BM_1},
 	{"2",	SSC_CON_BM_2},
 	{"3",	SSC_CON_BM_3},
@@ -5509,27 +5670,27 @@ static const pmb887x_io_value_t ssc_ssc_con_bm_values[] = {
 	{"16",	SSC_CON_BM_16},
 };
 
-static const pmb887x_io_value_t ssc_ssc_con_hb_values[] = {
+static const DebugRegValue ssc_ssc_con_hb_values[] = {
 	{"LSB",	SSC_CON_HB_LSB},
 	{"MSB",	SSC_CON_HB_MSB},
 };
 
-static const pmb887x_io_value_t ssc_ssc_con_ph_values[] = {
+static const DebugRegValue ssc_ssc_con_ph_values[] = {
 	{"0",	SSC_CON_PH_0},
 	{"1",	SSC_CON_PH_1},
 };
 
-static const pmb887x_io_value_t ssc_ssc_con_po_values[] = {
+static const DebugRegValue ssc_ssc_con_po_values[] = {
 	{"0",	SSC_CON_PO_0},
 	{"1",	SSC_CON_PO_1},
 };
 
-static const pmb887x_io_value_t ssc_ssc_con_ms_values[] = {
+static const DebugRegValue ssc_ssc_con_ms_values[] = {
 	{"SLAVE",	SSC_CON_MS_SLAVE},
 	{"MASTER",	SSC_CON_MS_MASTER},
 };
 
-static const pmb887x_io_field_t ssc_con_fields[] = {
+static const DebugRegField ssc_con_fields[] = {
 	{"BC",		SSC_CON_BC,		SSC_CON_BC_SHIFT,	NULL,					0},
 	{"BM",		SSC_CON_BM,		SSC_CON_BM_SHIFT,	ssc_ssc_con_bm_values,	ARRAY_SIZE(ssc_ssc_con_bm_values)},
 	{"HB",		SSC_CON_HB,		SSC_CON_HB_SHIFT,	ssc_ssc_con_hb_values,	ARRAY_SIZE(ssc_ssc_con_hb_values)},
@@ -5551,95 +5712,102 @@ static const pmb887x_io_field_t ssc_con_fields[] = {
 	{"EN",		SSC_CON_EN,		SSC_CON_EN_SHIFT,	NULL,					0},
 };
 
-static const pmb887x_io_field_t ssc_br_fields[] = {
+static const DebugRegField ssc_br_fields[] = {
 	{"BR_VALUE",	SSC_BR_BR_VALUE,	SSC_BR_BR_VALUE_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t ssc_tb_fields[] = {
+static const DebugRegField ssc_tb_fields[] = {
 	{"TB_VALUE",	SSC_TB_TB_VALUE,	SSC_TB_TB_VALUE_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t ssc_rb_fields[] = {
+static const DebugRegField ssc_rb_fields[] = {
 	{"RB_VALUE",	SSC_RB_RB_VALUE,	SSC_RB_RB_VALUE_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t ssc_rxfcon_fields[] = {
+static const DebugRegField ssc_rxfcon_fields[] = {
 	{"RXFEN",	SSC_RXFCON_RXFEN,	SSC_RXFCON_RXFEN_SHIFT,		NULL,	0},
 	{"RXFLU",	SSC_RXFCON_RXFLU,	SSC_RXFCON_RXFLU_SHIFT,		NULL,	0},
 	{"RXTMEN",	SSC_RXFCON_RXTMEN,	SSC_RXFCON_RXTMEN_SHIFT,	NULL,	0},
 	{"RXFITL",	SSC_RXFCON_RXFITL,	SSC_RXFCON_RXFITL_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t ssc_txfcon_fields[] = {
+static const DebugRegField ssc_txfcon_fields[] = {
 	{"TXFEN",	SSC_TXFCON_TXFEN,	SSC_TXFCON_TXFEN_SHIFT,		NULL,	0},
 	{"TXFLU",	SSC_TXFCON_TXFLU,	SSC_TXFCON_TXFLU_SHIFT,		NULL,	0},
 	{"TXTMEN",	SSC_TXFCON_TXTMEN,	SSC_TXFCON_TXTMEN_SHIFT,	NULL,	0},
 	{"TXFITL",	SSC_TXFCON_TXFITL,	SSC_TXFCON_TXFITL_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t ssc_fstat_fields[] = {
+static const DebugRegField ssc_fstat_fields[] = {
 	{"RXFFL",	SSC_FSTAT_RXFFL,	SSC_FSTAT_RXFFL_SHIFT,	NULL,	0},
 	{"TXFFL",	SSC_FSTAT_TXFFL,	SSC_FSTAT_TXFFL_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t ssc_imsc_fields[] = {
+static const DebugRegField ssc_imsc_fields[] = {
 	{"TX",	SSC_IMSC_TX,	SSC_IMSC_TX_SHIFT,	NULL,	0},
 	{"RX",	SSC_IMSC_RX,	SSC_IMSC_RX_SHIFT,	NULL,	0},
 	{"ERR",	SSC_IMSC_ERR,	SSC_IMSC_ERR_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t ssc_ris_fields[] = {
+static const DebugRegField ssc_ris_fields[] = {
 	{"TX",	SSC_RIS_TX,		SSC_RIS_TX_SHIFT,	NULL,	0},
 	{"RX",	SSC_RIS_RX,		SSC_RIS_RX_SHIFT,	NULL,	0},
 	{"ERR",	SSC_RIS_ERR,	SSC_RIS_ERR_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t ssc_mis_fields[] = {
+static const DebugRegField ssc_mis_fields[] = {
 	{"TX",	SSC_MIS_TX,		SSC_MIS_TX_SHIFT,	NULL,	0},
 	{"RX",	SSC_MIS_RX,		SSC_MIS_RX_SHIFT,	NULL,	0},
 	{"ERR",	SSC_MIS_ERR,	SSC_MIS_ERR_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t ssc_icr_fields[] = {
+static const DebugRegField ssc_icr_fields[] = {
 	{"TX",	SSC_ICR_TX,		SSC_ICR_TX_SHIFT,	NULL,	0},
 	{"RX",	SSC_ICR_RX,		SSC_ICR_RX_SHIFT,	NULL,	0},
 	{"ERR",	SSC_ICR_ERR,	SSC_ICR_ERR_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t ssc_isr_fields[] = {
+static const DebugRegField ssc_isr_fields[] = {
 	{"TX",	SSC_ISR_TX,		SSC_ISR_TX_SHIFT,	NULL,	0},
 	{"RX",	SSC_ISR_RX,		SSC_ISR_RX_SHIFT,	NULL,	0},
 	{"ERR",	SSC_ISR_ERR,	SSC_ISR_ERR_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t ssc_dmae_fields[] = {
+static const DebugRegField ssc_dmae_fields[] = {
 	{"TX",	SSC_DMAE_TX,	SSC_DMAE_TX_SHIFT,	NULL,	0},
 	{"RX",	SSC_DMAE_RX,	SSC_DMAE_RX_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_reg_t ssc_regs[] = {
-	{"CLC",		SSC_CLC,	ssc_clc_fields,		ARRAY_SIZE(ssc_clc_fields),		0},
-	{"PISEL",	SSC_PISEL,	ssc_pisel_fields,	ARRAY_SIZE(ssc_pisel_fields),	0},
-	{"ID",		SSC_ID,		ssc_id_fields,		ARRAY_SIZE(ssc_id_fields),		0},
-	{"CON",		SSC_CON,	ssc_con_fields,		ARRAY_SIZE(ssc_con_fields),		0},
-	{"BR",		SSC_BR,		ssc_br_fields,		ARRAY_SIZE(ssc_br_fields),		0},
-	{"TB",		SSC_TB,		ssc_tb_fields,		ARRAY_SIZE(ssc_tb_fields),		0},
-	{"RB",		SSC_RB,		ssc_rb_fields,		ARRAY_SIZE(ssc_rb_fields),		0},
-	{"RXFCON",	SSC_RXFCON,	ssc_rxfcon_fields,	ARRAY_SIZE(ssc_rxfcon_fields),	0},
-	{"TXFCON",	SSC_TXFCON,	ssc_txfcon_fields,	ARRAY_SIZE(ssc_txfcon_fields),	0},
-	{"FSTAT",	SSC_FSTAT,	ssc_fstat_fields,	ARRAY_SIZE(ssc_fstat_fields),	0},
-	{"UNK0",	SSC_UNK0,	NULL,				0,								0},
-	{"UNK1",	SSC_UNK1,	NULL,				0,								0},
-	{"IMSC",	SSC_IMSC,	ssc_imsc_fields,	ARRAY_SIZE(ssc_imsc_fields),	0},
-	{"RIS",		SSC_RIS,	ssc_ris_fields,		ARRAY_SIZE(ssc_ris_fields),		0},
-	{"MIS",		SSC_MIS,	ssc_mis_fields,		ARRAY_SIZE(ssc_mis_fields),		0},
-	{"ICR",		SSC_ICR,	ssc_icr_fields,		ARRAY_SIZE(ssc_icr_fields),		0},
-	{"ISR",		SSC_ISR,	ssc_isr_fields,		ARRAY_SIZE(ssc_isr_fields),		0},
-	{"DMAE",	SSC_DMAE,	ssc_dmae_fields,	ARRAY_SIZE(ssc_dmae_fields),	0},
-	{"UNK2",	SSC_UNK2,	NULL,				0,								0},
+static const DebugReg ssc_regs[] = {
+	{"CLC",		SSC_CLC,	ssc_clc_fields,		ARRAY_SIZE(ssc_clc_fields)},
+	{"PISEL",	SSC_PISEL,	ssc_pisel_fields,	ARRAY_SIZE(ssc_pisel_fields)},
+	{"ID",		SSC_ID,		ssc_id_fields,		ARRAY_SIZE(ssc_id_fields)},
+	{"CON",		SSC_CON,	ssc_con_fields,		ARRAY_SIZE(ssc_con_fields)},
+	{"BR",		SSC_BR,		ssc_br_fields,		ARRAY_SIZE(ssc_br_fields)},
+	{"TB",		SSC_TB,		ssc_tb_fields,		ARRAY_SIZE(ssc_tb_fields)},
+	{"RB",		SSC_RB,		ssc_rb_fields,		ARRAY_SIZE(ssc_rb_fields)},
+	{"RXFCON",	SSC_RXFCON,	ssc_rxfcon_fields,	ARRAY_SIZE(ssc_rxfcon_fields)},
+	{"TXFCON",	SSC_TXFCON,	ssc_txfcon_fields,	ARRAY_SIZE(ssc_txfcon_fields)},
+	{"FSTAT",	SSC_FSTAT,	ssc_fstat_fields,	ARRAY_SIZE(ssc_fstat_fields)},
+	{"UNK0",	SSC_UNK0,	NULL,				0},
+	{"UNK1",	SSC_UNK1,	NULL,				0},
+	{"IMSC",	SSC_IMSC,	ssc_imsc_fields,	ARRAY_SIZE(ssc_imsc_fields)},
+	{"RIS",		SSC_RIS,	ssc_ris_fields,		ARRAY_SIZE(ssc_ris_fields)},
+	{"MIS",		SSC_MIS,	ssc_mis_fields,		ARRAY_SIZE(ssc_mis_fields)},
+	{"ICR",		SSC_ICR,	ssc_icr_fields,		ARRAY_SIZE(ssc_icr_fields)},
+	{"ISR",		SSC_ISR,	ssc_isr_fields,		ARRAY_SIZE(ssc_isr_fields)},
+	{"DMAE",	SSC_DMAE,	ssc_dmae_fields,	ARRAY_SIZE(ssc_dmae_fields)},
+	{"UNK2",	SSC_UNK2,	NULL,				0},
 };
 
-static const pmb887x_io_field_t stm_clc_fields[] = {
+const DebugRegs pmb887x_ssc_regs = {
+	.regs = ssc_regs,
+	.count = ARRAY_SIZE(ssc_regs),
+	.reg_size = 4,
+	.addr_digits = 8,
+};
+
+static const DebugRegField stm_clc_fields[] = {
 	{"DISR",	MOD_CLC_DISR,	MOD_CLC_DISR_SHIFT,	NULL,	0},
 	{"DISS",	MOD_CLC_DISS,	MOD_CLC_DISS_SHIFT,	NULL,	0},
 	{"SPEN",	MOD_CLC_SPEN,	MOD_CLC_SPEN_SHIFT,	NULL,	0},
@@ -5650,26 +5818,33 @@ static const pmb887x_io_field_t stm_clc_fields[] = {
 	{"RMC2",	STM_CLC_RMC2,	STM_CLC_RMC2_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t stm_id_fields[] = {
+static const DebugRegField stm_id_fields[] = {
 	{"REV",		MOD_ID_REV,		MOD_ID_REV_SHIFT,		NULL,	0},
 	{"32B",		MOD_ID_32B,		MOD_ID_32B_SHIFT,		NULL,	0},
 	{"NUMBER",	MOD_ID_NUMBER,	MOD_ID_NUMBER_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_reg_t stm_regs[] = {
-	{"CLC",		STM_CLC,	stm_clc_fields,	ARRAY_SIZE(stm_clc_fields),	0},
-	{"ID",		STM_ID,		stm_id_fields,	ARRAY_SIZE(stm_id_fields),	0},
-	{"TIM0",	STM_TIM0,	NULL,			0,							0},
-	{"TIM1",	STM_TIM1,	NULL,			0,							0},
-	{"TIM2",	STM_TIM2,	NULL,			0,							0},
-	{"TIM3",	STM_TIM3,	NULL,			0,							0},
-	{"TIM4",	STM_TIM4,	NULL,			0,							0},
-	{"TIM5",	STM_TIM5,	NULL,			0,							0},
-	{"TIM6",	STM_TIM6,	NULL,			0,							0},
-	{"CAP",		STM_CAP,	NULL,			0,							0},
+static const DebugReg stm_regs[] = {
+	{"CLC",		STM_CLC,	stm_clc_fields,	ARRAY_SIZE(stm_clc_fields)},
+	{"ID",		STM_ID,		stm_id_fields,	ARRAY_SIZE(stm_id_fields)},
+	{"TIM0",	STM_TIM0,	NULL,			0},
+	{"TIM1",	STM_TIM1,	NULL,			0},
+	{"TIM2",	STM_TIM2,	NULL,			0},
+	{"TIM3",	STM_TIM3,	NULL,			0},
+	{"TIM4",	STM_TIM4,	NULL,			0},
+	{"TIM5",	STM_TIM5,	NULL,			0},
+	{"TIM6",	STM_TIM6,	NULL,			0},
+	{"CAP",		STM_CAP,	NULL,			0},
 };
 
-static const pmb887x_io_field_t tpu_clc_fields[] = {
+const DebugRegs pmb887x_stm_regs = {
+	.regs = stm_regs,
+	.count = ARRAY_SIZE(stm_regs),
+	.reg_size = 4,
+	.addr_digits = 8,
+};
+
+static const DebugRegField tpu_clc_fields[] = {
 	{"DISR",	MOD_CLC_DISR,	MOD_CLC_DISR_SHIFT,	NULL,	0},
 	{"DISS",	MOD_CLC_DISS,	MOD_CLC_DISS_SHIFT,	NULL,	0},
 	{"SPEN",	MOD_CLC_SPEN,	MOD_CLC_SPEN_SHIFT,	NULL,	0},
@@ -5679,34 +5854,34 @@ static const pmb887x_io_field_t tpu_clc_fields[] = {
 	{"RMC",		MOD_CLC_RMC,	MOD_CLC_RMC_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t tpu_id_fields[] = {
+static const DebugRegField tpu_id_fields[] = {
 	{"REV",		MOD_ID_REV,		MOD_ID_REV_SHIFT,		NULL,	0},
 	{"32B",		MOD_ID_32B,		MOD_ID_32B_SHIFT,		NULL,	0},
 	{"NUMBER",	MOD_ID_NUMBER,	MOD_ID_NUMBER_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_value_t tpu_tpu_rfcon1_stbsel_values[] = {
+static const DebugRegValue tpu_tpu_rfcon1_stbsel_values[] = {
 	{"ACTIVE_LOW",	TPU_RFCON1_STBSEL_ACTIVE_LOW},
 	{"ACTIVE_HIGH",	TPU_RFCON1_STBSEL_ACTIVE_HIGH},
 };
 
-static const pmb887x_io_value_t tpu_tpu_rfcon1_rfisscp_values[] = {
+static const DebugRegValue tpu_tpu_rfcon1_rfisscp_values[] = {
 	{"IDLE_LOW_LEADING_RISE",	TPU_RFCON1_RFISSCP_IDLE_LOW_LEADING_RISE},
 	{"IDLE_HIGH_LEADING_FALL",	TPU_RFCON1_RFISSCP_IDLE_HIGH_LEADING_FALL},
 };
 
-static const pmb887x_io_value_t tpu_tpu_rfcon1_ramtype_values[] = {
+static const DebugRegValue tpu_tpu_rfcon1_ramtype_values[] = {
 	{"1",	TPU_RFCON1_RAMTYPE_1},
 	{"2",	TPU_RFCON1_RAMTYPE_2},
 };
 
-static const pmb887x_io_field_t tpu_rfcon1_fields[] = {
+static const DebugRegField tpu_rfcon1_fields[] = {
 	{"STBSEL",	TPU_RFCON1_STBSEL,	TPU_RFCON1_STBSEL_SHIFT,	tpu_tpu_rfcon1_stbsel_values,	ARRAY_SIZE(tpu_tpu_rfcon1_stbsel_values)},
 	{"RFISSCP",	TPU_RFCON1_RFISSCP,	TPU_RFCON1_RFISSCP_SHIFT,	tpu_tpu_rfcon1_rfisscp_values,	ARRAY_SIZE(tpu_tpu_rfcon1_rfisscp_values)},
 	{"RAMTYPE",	TPU_RFCON1_RAMTYPE,	TPU_RFCON1_RAMTYPE_SHIFT,	tpu_tpu_rfcon1_ramtype_values,	ARRAY_SIZE(tpu_tpu_rfcon1_ramtype_values)},
 };
 
-static const pmb887x_io_value_t tpu_tpu_rfcon2_sscbm_values[] = {
+static const DebugRegValue tpu_tpu_rfcon2_sscbm_values[] = {
 	{"2",	TPU_RFCON2_SSCBM_2},
 	{"3",	TPU_RFCON2_SSCBM_3},
 	{"4",	TPU_RFCON2_SSCBM_4},
@@ -5724,29 +5899,29 @@ static const pmb887x_io_value_t tpu_tpu_rfcon2_sscbm_values[] = {
 	{"16",	TPU_RFCON2_SSCBM_16},
 };
 
-static const pmb887x_io_value_t tpu_tpu_rfcon2_sschb_values[] = {
+static const DebugRegValue tpu_tpu_rfcon2_sschb_values[] = {
 	{"LSB",	TPU_RFCON2_SSCHB_LSB},
 	{"MSB",	TPU_RFCON2_SSCHB_MSB},
 };
 
-static const pmb887x_io_value_t tpu_tpu_rfcon2_sscpb_values[] = {
+static const DebugRegValue tpu_tpu_rfcon2_sscpb_values[] = {
 	{"LEADING_EDGE",	TPU_RFCON2_SSCPB_LEADING_EDGE},
 	{"TRAILING_EDGE",	TPU_RFCON2_SSCPB_TRAILING_EDGE},
 };
 
-static const pmb887x_io_value_t tpu_tpu_rfcon2_sscsb_values[] = {
+static const DebugRegValue tpu_tpu_rfcon2_sscsb_values[] = {
 	{"RFSTR0",	TPU_RFCON2_SSCSB_RFSTR0},
 	{"RFSTR1",	TPU_RFCON2_SSCSB_RFSTR1},
 	{"RFSTR2",	TPU_RFCON2_SSCSB_RFSTR2},
 	{"RFSTR3",	TPU_RFCON2_SSCSB_RFSTR3},
 };
 
-static const pmb887x_io_value_t tpu_tpu_rfcon2_sscfb_values[] = {
+static const DebugRegValue tpu_tpu_rfcon2_sscfb_values[] = {
 	{"6_50MHZ",	TPU_RFCON2_SSCFB_6_50MHZ},
 	{"3_25MHZ",	TPU_RFCON2_SSCFB_3_25MHZ},
 };
 
-static const pmb887x_io_field_t tpu_rfcon2_fields[] = {
+static const DebugRegField tpu_rfcon2_fields[] = {
 	{"SSCBM",	TPU_RFCON2_SSCBM,	TPU_RFCON2_SSCBM_SHIFT,	tpu_tpu_rfcon2_sscbm_values,	ARRAY_SIZE(tpu_tpu_rfcon2_sscbm_values)},
 	{"SSCHB",	TPU_RFCON2_SSCHB,	TPU_RFCON2_SSCHB_SHIFT,	tpu_tpu_rfcon2_sschb_values,	ARRAY_SIZE(tpu_tpu_rfcon2_sschb_values)},
 	{"SSCPB",	TPU_RFCON2_SSCPB,	TPU_RFCON2_SSCPB_SHIFT,	tpu_tpu_rfcon2_sscpb_values,	ARRAY_SIZE(tpu_tpu_rfcon2_sscpb_values)},
@@ -5755,68 +5930,68 @@ static const pmb887x_io_field_t tpu_rfcon2_fields[] = {
 	{"SSCEN",	TPU_RFCON2_SSCEN,	TPU_RFCON2_SSCEN_SHIFT,	NULL,							0},
 };
 
-static const pmb887x_io_field_t tpu_rfssctb_fields[] = {
+static const DebugRegField tpu_rfssctb_fields[] = {
 	{"VALUE",	TPU_RFSSCTB_VALUE,	TPU_RFSSCTB_VALUE_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t tpu_correction_fields[] = {
+static const DebugRegField tpu_correction_fields[] = {
 	{"VALUE",	TPU_CORRECTION_VALUE,	TPU_CORRECTION_VALUE_SHIFT,	NULL,	0},
 	{"CTRL",	TPU_CORRECTION_CTRL,	TPU_CORRECTION_CTRL_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t tpu_overflow_fields[] = {
+static const DebugRegField tpu_overflow_fields[] = {
 	{"VALUE",	TPU_OVERFLOW_VALUE,	TPU_OVERFLOW_VALUE_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t tpu_int_fields[] = {
+static const DebugRegField tpu_int_fields[] = {
 	{"VALUE",	TPU_INT_VALUE,	TPU_INT_VALUE_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t tpu_offset_fields[] = {
+static const DebugRegField tpu_offset_fields[] = {
 	{"VALUE",	TPU_OFFSET_VALUE,	TPU_OFFSET_VALUE_SHIFT,	NULL,	0},
 	{"CTRL",	TPU_OFFSET_CTRL,	TPU_OFFSET_CTRL_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t tpu_skip_fields[] = {
+static const DebugRegField tpu_skip_fields[] = {
 	{"SKIPN",	TPU_SKIP_SKIPN,	TPU_SKIP_SKIPN_SHIFT,	NULL,	0},
 	{"SKIPC",	TPU_SKIP_SKIPC,	TPU_SKIP_SKIPC_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t tpu_counter_fields[] = {
+static const DebugRegField tpu_counter_fields[] = {
 	{"VALUE",	TPU_COUNTER_VALUE,	TPU_COUNTER_VALUE_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t tpu_ceap_fields[] = {
+static const DebugRegField tpu_ceap_fields[] = {
 	{"VALUE",	TPU_CEAP_VALUE,	TPU_CEAP_VALUE_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t tpu_eapt_fields[] = {
+static const DebugRegField tpu_eapt_fields[] = {
 	{"VALUE",	TPU_EAPT_VALUE,	TPU_EAPT_VALUE_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t tpu_eapb_fields[] = {
+static const DebugRegField tpu_eapb_fields[] = {
 	{"VALUE",	TPU_EAPB_VALUE,	TPU_EAPB_VALUE_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t tpu_param_fields[] = {
+static const DebugRegField tpu_param_fields[] = {
 	{"TINI",	TPU_PARAM_TINI,	TPU_PARAM_TINI_SHIFT,	NULL,	0},
 	{"FDIS",	TPU_PARAM_FDIS,	TPU_PARAM_FDIS_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t tpu_gsmclk1_fields[] = {
+static const DebugRegField tpu_gsmclk1_fields[] = {
 	{"K",	TPU_GSMCLK1_K,	TPU_GSMCLK1_K_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t tpu_gsmclk2_fields[] = {
+static const DebugRegField tpu_gsmclk2_fields[] = {
 	{"L",	TPU_GSMCLK2_L,	TPU_GSMCLK2_L_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t tpu_gsmclk3_fields[] = {
+static const DebugRegField tpu_gsmclk3_fields[] = {
 	{"LOAD",	TPU_GSMCLK3_LOAD,	TPU_GSMCLK3_LOAD_SHIFT,	NULL,	0},
 	{"INIT",	TPU_GSMCLK3_INIT,	TPU_GSMCLK3_INIT_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t tpu_rfssc_src_fields[] = {
+static const DebugRegField tpu_rfssc_src_fields[] = {
 	{"SRPN",	MOD_SRC_SRPN,	MOD_SRC_SRPN_SHIFT,	NULL,	0},
 	{"TOS",		MOD_SRC_TOS,	MOD_SRC_TOS_SHIFT,	NULL,	0},
 	{"SRE",		MOD_SRC_SRE,	MOD_SRC_SRE_SHIFT,	NULL,	0},
@@ -5825,7 +6000,7 @@ static const pmb887x_io_field_t tpu_rfssc_src_fields[] = {
 	{"SETR",	MOD_SRC_SETR,	MOD_SRC_SETR_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t tpu_gp_src_fields[] = {
+static const DebugRegField tpu_gp_src_fields[] = {
 	{"SRPN",	MOD_SRC_SRPN,	MOD_SRC_SRPN_SHIFT,	NULL,	0},
 	{"TOS",		MOD_SRC_TOS,	MOD_SRC_TOS_SHIFT,	NULL,	0},
 	{"SRE",		MOD_SRC_SRE,	MOD_SRC_SRE_SHIFT,	NULL,	0},
@@ -5834,7 +6009,7 @@ static const pmb887x_io_field_t tpu_gp_src_fields[] = {
 	{"SETR",	MOD_SRC_SETR,	MOD_SRC_SETR_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t tpu_src_fields[] = {
+static const DebugRegField tpu_src_fields[] = {
 	{"SRPN",	MOD_SRC_SRPN,	MOD_SRC_SRPN_SHIFT,	NULL,	0},
 	{"TOS",		MOD_SRC_TOS,	MOD_SRC_TOS_SHIFT,	NULL,	0},
 	{"SRE",		MOD_SRC_SRE,	MOD_SRC_SRE_SHIFT,	NULL,	0},
@@ -5843,40 +6018,47 @@ static const pmb887x_io_field_t tpu_src_fields[] = {
 	{"SETR",	MOD_SRC_SETR,	MOD_SRC_SETR_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_reg_t tpu_regs[] = {
-	{"CLC",			TPU_CLC,		tpu_clc_fields,			ARRAY_SIZE(tpu_clc_fields),			0},
-	{"ID",			TPU_ID,			tpu_id_fields,			ARRAY_SIZE(tpu_id_fields),			0},
-	{"RFCON1",		TPU_RFCON1,		tpu_rfcon1_fields,		ARRAY_SIZE(tpu_rfcon1_fields),		0},
-	{"RFCON2",		TPU_RFCON2,		tpu_rfcon2_fields,		ARRAY_SIZE(tpu_rfcon2_fields),		0},
-	{"RFSSCTB",		TPU_RFSSCTB,	tpu_rfssctb_fields,		ARRAY_SIZE(tpu_rfssctb_fields),		0},
-	{"CORRECTION",	TPU_CORRECTION,	tpu_correction_fields,	ARRAY_SIZE(tpu_correction_fields),	0},
-	{"OVERFLOW",	TPU_OVERFLOW,	tpu_overflow_fields,	ARRAY_SIZE(tpu_overflow_fields),	0},
-	{"INT0",		TPU_INT0,		tpu_int_fields,			ARRAY_SIZE(tpu_int_fields),			0},
-	{"INT1",		TPU_INT1,		tpu_int_fields,			ARRAY_SIZE(tpu_int_fields),			0},
-	{"OFFSET",		TPU_OFFSET,		tpu_offset_fields,		ARRAY_SIZE(tpu_offset_fields),		0},
-	{"SKIP",		TPU_SKIP,		tpu_skip_fields,		ARRAY_SIZE(tpu_skip_fields),		0},
-	{"COUNTER",		TPU_COUNTER,	tpu_counter_fields,		ARRAY_SIZE(tpu_counter_fields),		0},
-	{"CEAP",		TPU_CEAP,		tpu_ceap_fields,		ARRAY_SIZE(tpu_ceap_fields),		0},
-	{"EAPT",		TPU_EAPT,		tpu_eapt_fields,		ARRAY_SIZE(tpu_eapt_fields),		0},
-	{"EAPB",		TPU_EAPB,		tpu_eapb_fields,		ARRAY_SIZE(tpu_eapb_fields),		0},
-	{"TGER",		TPU_TGER,		NULL,					0,									0},
-	{"PARAM",		TPU_PARAM,		tpu_param_fields,		ARRAY_SIZE(tpu_param_fields),		0},
-	{"FADE",		TPU_FADE,		NULL,					0,									0},
-	{"GSMCLK1",		TPU_GSMCLK1,	tpu_gsmclk1_fields,		ARRAY_SIZE(tpu_gsmclk1_fields),		0},
-	{"GSMCLK2",		TPU_GSMCLK2,	tpu_gsmclk2_fields,		ARRAY_SIZE(tpu_gsmclk2_fields),		0},
-	{"GSMCLK3",		TPU_GSMCLK3,	tpu_gsmclk3_fields,		ARRAY_SIZE(tpu_gsmclk3_fields),		0},
-	{"UNK",			TPU_UNK,		NULL,					0,									0},
-	{"RFSSC_SRC",	TPU_RFSSC_SRC,	tpu_rfssc_src_fields,	ARRAY_SIZE(tpu_rfssc_src_fields),	0},
-	{"GP_SRC0",		TPU_GP_SRC0,	tpu_gp_src_fields,		ARRAY_SIZE(tpu_gp_src_fields),		0},
-	{"GP_SRC1",		TPU_GP_SRC1,	tpu_gp_src_fields,		ARRAY_SIZE(tpu_gp_src_fields),		0},
-	{"GP_SRC2",		TPU_GP_SRC2,	tpu_gp_src_fields,		ARRAY_SIZE(tpu_gp_src_fields),		0},
-	{"GP_SRC3",		TPU_GP_SRC3,	tpu_gp_src_fields,		ARRAY_SIZE(tpu_gp_src_fields),		0},
-	{"GP_SRC4",		TPU_GP_SRC4,	tpu_gp_src_fields,		ARRAY_SIZE(tpu_gp_src_fields),		0},
-	{"SRC0",		TPU_SRC0,		tpu_src_fields,			ARRAY_SIZE(tpu_src_fields),			0},
-	{"SRC1",		TPU_SRC1,		tpu_src_fields,			ARRAY_SIZE(tpu_src_fields),			0},
+static const DebugReg tpu_regs[] = {
+	{"CLC",			TPU_CLC,		tpu_clc_fields,			ARRAY_SIZE(tpu_clc_fields)},
+	{"ID",			TPU_ID,			tpu_id_fields,			ARRAY_SIZE(tpu_id_fields)},
+	{"RFCON1",		TPU_RFCON1,		tpu_rfcon1_fields,		ARRAY_SIZE(tpu_rfcon1_fields)},
+	{"RFCON2",		TPU_RFCON2,		tpu_rfcon2_fields,		ARRAY_SIZE(tpu_rfcon2_fields)},
+	{"RFSSCTB",		TPU_RFSSCTB,	tpu_rfssctb_fields,		ARRAY_SIZE(tpu_rfssctb_fields)},
+	{"CORRECTION",	TPU_CORRECTION,	tpu_correction_fields,	ARRAY_SIZE(tpu_correction_fields)},
+	{"OVERFLOW",	TPU_OVERFLOW,	tpu_overflow_fields,	ARRAY_SIZE(tpu_overflow_fields)},
+	{"INT0",		TPU_INT0,		tpu_int_fields,			ARRAY_SIZE(tpu_int_fields)},
+	{"INT1",		TPU_INT1,		tpu_int_fields,			ARRAY_SIZE(tpu_int_fields)},
+	{"OFFSET",		TPU_OFFSET,		tpu_offset_fields,		ARRAY_SIZE(tpu_offset_fields)},
+	{"SKIP",		TPU_SKIP,		tpu_skip_fields,		ARRAY_SIZE(tpu_skip_fields)},
+	{"COUNTER",		TPU_COUNTER,	tpu_counter_fields,		ARRAY_SIZE(tpu_counter_fields)},
+	{"CEAP",		TPU_CEAP,		tpu_ceap_fields,		ARRAY_SIZE(tpu_ceap_fields)},
+	{"EAPT",		TPU_EAPT,		tpu_eapt_fields,		ARRAY_SIZE(tpu_eapt_fields)},
+	{"EAPB",		TPU_EAPB,		tpu_eapb_fields,		ARRAY_SIZE(tpu_eapb_fields)},
+	{"TGER",		TPU_TGER,		NULL,					0},
+	{"PARAM",		TPU_PARAM,		tpu_param_fields,		ARRAY_SIZE(tpu_param_fields)},
+	{"FADE",		TPU_FADE,		NULL,					0},
+	{"GSMCLK1",		TPU_GSMCLK1,	tpu_gsmclk1_fields,		ARRAY_SIZE(tpu_gsmclk1_fields)},
+	{"GSMCLK2",		TPU_GSMCLK2,	tpu_gsmclk2_fields,		ARRAY_SIZE(tpu_gsmclk2_fields)},
+	{"GSMCLK3",		TPU_GSMCLK3,	tpu_gsmclk3_fields,		ARRAY_SIZE(tpu_gsmclk3_fields)},
+	{"UNK",			TPU_UNK,		NULL,					0},
+	{"RFSSC_SRC",	TPU_RFSSC_SRC,	tpu_rfssc_src_fields,	ARRAY_SIZE(tpu_rfssc_src_fields)},
+	{"GP_SRC0",		TPU_GP_SRC0,	tpu_gp_src_fields,		ARRAY_SIZE(tpu_gp_src_fields)},
+	{"GP_SRC1",		TPU_GP_SRC1,	tpu_gp_src_fields,		ARRAY_SIZE(tpu_gp_src_fields)},
+	{"GP_SRC2",		TPU_GP_SRC2,	tpu_gp_src_fields,		ARRAY_SIZE(tpu_gp_src_fields)},
+	{"GP_SRC3",		TPU_GP_SRC3,	tpu_gp_src_fields,		ARRAY_SIZE(tpu_gp_src_fields)},
+	{"GP_SRC4",		TPU_GP_SRC4,	tpu_gp_src_fields,		ARRAY_SIZE(tpu_gp_src_fields)},
+	{"SRC0",		TPU_SRC0,		tpu_src_fields,			ARRAY_SIZE(tpu_src_fields)},
+	{"SRC1",		TPU_SRC1,		tpu_src_fields,			ARRAY_SIZE(tpu_src_fields)},
 };
 
-static const pmb887x_io_field_t usart_clc_fields[] = {
+const DebugRegs pmb887x_tpu_regs = {
+	.regs = tpu_regs,
+	.count = ARRAY_SIZE(tpu_regs),
+	.reg_size = 4,
+	.addr_digits = 8,
+};
+
+static const DebugRegField usart_clc_fields[] = {
 	{"DISR",	MOD_CLC_DISR,	MOD_CLC_DISR_SHIFT,	NULL,	0},
 	{"DISS",	MOD_CLC_DISS,	MOD_CLC_DISS_SHIFT,	NULL,	0},
 	{"SPEN",	MOD_CLC_SPEN,	MOD_CLC_SPEN_SHIFT,	NULL,	0},
@@ -5886,13 +6068,13 @@ static const pmb887x_io_field_t usart_clc_fields[] = {
 	{"RMC",		MOD_CLC_RMC,	MOD_CLC_RMC_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t usart_id_fields[] = {
+static const DebugRegField usart_id_fields[] = {
 	{"REV",		MOD_ID_REV,		MOD_ID_REV_SHIFT,		NULL,	0},
 	{"32B",		MOD_ID_32B,		MOD_ID_32B_SHIFT,		NULL,	0},
 	{"NUMBER",	MOD_ID_NUMBER,	MOD_ID_NUMBER_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_value_t usart_usart_con_m_values[] = {
+static const DebugRegValue usart_usart_con_m_values[] = {
 	{"SYNC_8BIT",			USART_CON_M_SYNC_8BIT},
 	{"ASYNC_8BIT",			USART_CON_M_ASYNC_8BIT},
 	{"ASYNC_IRDA_8BIT",		USART_CON_M_ASYNC_IRDA_8BIT},
@@ -5902,12 +6084,12 @@ static const pmb887x_io_value_t usart_usart_con_m_values[] = {
 	{"ASYNC_PARITY_8BIT",	USART_CON_M_ASYNC_PARITY_8BIT},
 };
 
-static const pmb887x_io_value_t usart_usart_con_stp_values[] = {
+static const DebugRegValue usart_usart_con_stp_values[] = {
 	{"ONE",	USART_CON_STP_ONE},
 	{"TWO",	USART_CON_STP_TWO},
 };
 
-static const pmb887x_io_field_t usart_con_fields[] = {
+static const DebugRegField usart_con_fields[] = {
 	{"M",		USART_CON_M,		USART_CON_M_SHIFT,		usart_usart_con_m_values,	ARRAY_SIZE(usart_usart_con_m_values)},
 	{"STP",		USART_CON_STP,		USART_CON_STP_SHIFT,	usart_usart_con_stp_values,	ARRAY_SIZE(usart_usart_con_stp_values)},
 	{"REN",		USART_CON_REN,		USART_CON_REN_SHIFT,	NULL,						0},
@@ -5924,12 +6106,12 @@ static const pmb887x_io_field_t usart_con_fields[] = {
 	{"CON_R",	USART_CON_CON_R,	USART_CON_CON_R_SHIFT,	NULL,						0},
 };
 
-static const pmb887x_io_field_t usart_pmw_fields[] = {
+static const DebugRegField usart_pmw_fields[] = {
 	{"PW_VALUE",	USART_PMW_PW_VALUE,	USART_PMW_PW_VALUE_SHIFT,	NULL,	0},
 	{"IRPW",		USART_PMW_IRPW,		USART_PMW_IRPW_SHIFT,		NULL,	0},
 };
 
-static const pmb887x_io_field_t usart_abcon_fields[] = {
+static const DebugRegField usart_abcon_fields[] = {
 	{"ABEN",				USART_ABCON_ABEN,				USART_ABCON_ABEN_SHIFT,				NULL,	0},
 	{"AUREN",				USART_ABCON_AUREN,				USART_ABCON_AUREN_SHIFT,			NULL,	0},
 	{"ABSTEN",				USART_ABCON_ABSTEN,				USART_ABCON_ABSTEN_SHIFT,			NULL,	0},
@@ -5941,7 +6123,7 @@ static const pmb887x_io_field_t usart_abcon_fields[] = {
 	{"RXINV",				USART_ABCON_RXINV,				USART_ABCON_RXINV_SHIFT,			NULL,	0},
 };
 
-static const pmb887x_io_field_t usart_abstat_fields[] = {
+static const DebugRegField usart_abstat_fields[] = {
 	{"FCSDET",	USART_ABSTAT_FCSDET,	USART_ABSTAT_FCSDET_SHIFT,	NULL,	0},
 	{"FCCDET",	USART_ABSTAT_FCCDET,	USART_ABSTAT_FCCDET_SHIFT,	NULL,	0},
 	{"SCSDET",	USART_ABSTAT_SCSDET,	USART_ABSTAT_SCSDET_SHIFT,	NULL,	0},
@@ -5949,26 +6131,26 @@ static const pmb887x_io_field_t usart_abstat_fields[] = {
 	{"DETWAIT",	USART_ABSTAT_DETWAIT,	USART_ABSTAT_DETWAIT_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t usart_rxfcon_fields[] = {
+static const DebugRegField usart_rxfcon_fields[] = {
 	{"RXFEN",	USART_RXFCON_RXFEN,		USART_RXFCON_RXFEN_SHIFT,	NULL,	0},
 	{"RXFFLU",	USART_RXFCON_RXFFLU,	USART_RXFCON_RXFFLU_SHIFT,	NULL,	0},
 	{"RXTMEN",	USART_RXFCON_RXTMEN,	USART_RXFCON_RXTMEN_SHIFT,	NULL,	0},
 	{"RXFITL",	USART_RXFCON_RXFITL,	USART_RXFCON_RXFITL_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t usart_txfcon_fields[] = {
+static const DebugRegField usart_txfcon_fields[] = {
 	{"TXFEN",	USART_TXFCON_TXFEN,		USART_TXFCON_TXFEN_SHIFT,	NULL,	0},
 	{"TXFFLU",	USART_TXFCON_TXFFLU,	USART_TXFCON_TXFFLU_SHIFT,	NULL,	0},
 	{"TXTMEN",	USART_TXFCON_TXTMEN,	USART_TXFCON_TXTMEN_SHIFT,	NULL,	0},
 	{"TXFITL",	USART_TXFCON_TXFITL,	USART_TXFCON_TXFITL_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t usart_fstat_fields[] = {
+static const DebugRegField usart_fstat_fields[] = {
 	{"RXFFL",	USART_FSTAT_RXFFL,	USART_FSTAT_RXFFL_SHIFT,	NULL,	0},
 	{"TXFFL",	USART_FSTAT_TXFFL,	USART_FSTAT_TXFFL_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t usart_whbcon_fields[] = {
+static const DebugRegField usart_whbcon_fields[] = {
 	{"CLRREN",	USART_WHBCON_CLRREN,	USART_WHBCON_CLRREN_SHIFT,	NULL,	0},
 	{"SETREN",	USART_WHBCON_SETREN,	USART_WHBCON_SETREN_SHIFT,	NULL,	0},
 	{"CLRPE",	USART_WHBCON_CLRPE,		USART_WHBCON_CLRPE_SHIFT,	NULL,	0},
@@ -5979,12 +6161,12 @@ static const pmb887x_io_field_t usart_whbcon_fields[] = {
 	{"SETOE",	USART_WHBCON_SETOE,		USART_WHBCON_SETOE_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t usart_whbabcon_fields[] = {
+static const DebugRegField usart_whbabcon_fields[] = {
 	{"CLRABEN",	USART_WHBABCON_CLRABEN,	USART_WHBABCON_CLRABEN_SHIFT,	NULL,	0},
 	{"SETABEN",	USART_WHBABCON_SETABEN,	USART_WHBABCON_SETABEN_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t usart_whbabstat_fields[] = {
+static const DebugRegField usart_whbabstat_fields[] = {
 	{"CLRFCSDET",	USART_WHBABSTAT_CLRFCSDET,	USART_WHBABSTAT_CLRFCSDET_SHIFT,	NULL,	0},
 	{"CLRFCCDET",	USART_WHBABSTAT_CLRFCCDET,	USART_WHBABSTAT_CLRFCCDET_SHIFT,	NULL,	0},
 	{"CLRSCSDET",	USART_WHBABSTAT_CLRSCSDET,	USART_WHBABSTAT_CLRSCSDET_SHIFT,	NULL,	0},
@@ -5997,18 +6179,18 @@ static const pmb887x_io_field_t usart_whbabstat_fields[] = {
 	{"SETDETWAIT",	USART_WHBABSTAT_SETDETWAIT,	USART_WHBABSTAT_SETDETWAIT_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t usart_fccon_fields[] = {
+static const DebugRegField usart_fccon_fields[] = {
 	{"RTSEN",		USART_FCCON_RTSEN,			USART_FCCON_RTSEN_SHIFT,		NULL,	0},
 	{"CTSEN",		USART_FCCON_CTSEN,			USART_FCCON_CTSEN_SHIFT,		NULL,	0},
 	{"RTS",			USART_FCCON_RTS,			USART_FCCON_RTS_SHIFT,			NULL,	0},
 	{"RTS_TRIGGER",	USART_FCCON_RTS_TRIGGER,	USART_FCCON_RTS_TRIGGER_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t usart_fcstat_fields[] = {
+static const DebugRegField usart_fcstat_fields[] = {
 	{"CTS",	USART_FCSTAT_CTS,	USART_FCSTAT_CTS_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t usart_imsc_fields[] = {
+static const DebugRegField usart_imsc_fields[] = {
 	{"TX",		USART_IMSC_TX,		USART_IMSC_TX_SHIFT,		NULL,	0},
 	{"TB",		USART_IMSC_TB,		USART_IMSC_TB_SHIFT,		NULL,	0},
 	{"RX",		USART_IMSC_RX,		USART_IMSC_RX_SHIFT,		NULL,	0},
@@ -6019,7 +6201,7 @@ static const pmb887x_io_field_t usart_imsc_fields[] = {
 	{"TMO",		USART_IMSC_TMO,		USART_IMSC_TMO_SHIFT,		NULL,	0},
 };
 
-static const pmb887x_io_field_t usart_ris_fields[] = {
+static const DebugRegField usart_ris_fields[] = {
 	{"TX",		USART_RIS_TX,		USART_RIS_TX_SHIFT,			NULL,	0},
 	{"TB",		USART_RIS_TB,		USART_RIS_TB_SHIFT,			NULL,	0},
 	{"RX",		USART_RIS_RX,		USART_RIS_RX_SHIFT,			NULL,	0},
@@ -6030,7 +6212,7 @@ static const pmb887x_io_field_t usart_ris_fields[] = {
 	{"TMO",		USART_RIS_TMO,		USART_RIS_TMO_SHIFT,		NULL,	0},
 };
 
-static const pmb887x_io_field_t usart_mis_fields[] = {
+static const DebugRegField usart_mis_fields[] = {
 	{"TX",		USART_MIS_TX,		USART_MIS_TX_SHIFT,			NULL,	0},
 	{"TB",		USART_MIS_TB,		USART_MIS_TB_SHIFT,			NULL,	0},
 	{"RX",		USART_MIS_RX,		USART_MIS_RX_SHIFT,			NULL,	0},
@@ -6041,7 +6223,7 @@ static const pmb887x_io_field_t usart_mis_fields[] = {
 	{"TMO",		USART_MIS_TMO,		USART_MIS_TMO_SHIFT,		NULL,	0},
 };
 
-static const pmb887x_io_field_t usart_icr_fields[] = {
+static const DebugRegField usart_icr_fields[] = {
 	{"TX",		USART_ICR_TX,		USART_ICR_TX_SHIFT,			NULL,	0},
 	{"TB",		USART_ICR_TB,		USART_ICR_TB_SHIFT,			NULL,	0},
 	{"RX",		USART_ICR_RX,		USART_ICR_RX_SHIFT,			NULL,	0},
@@ -6052,7 +6234,7 @@ static const pmb887x_io_field_t usart_icr_fields[] = {
 	{"TMO",		USART_ICR_TMO,		USART_ICR_TMO_SHIFT,		NULL,	0},
 };
 
-static const pmb887x_io_field_t usart_isr_fields[] = {
+static const DebugRegField usart_isr_fields[] = {
 	{"TX",		USART_ISR_TX,		USART_ISR_TX_SHIFT,			NULL,	0},
 	{"TB",		USART_ISR_TB,		USART_ISR_TB_SHIFT,			NULL,	0},
 	{"RX",		USART_ISR_RX,		USART_ISR_RX_SHIFT,			NULL,	0},
@@ -6063,142 +6245,149 @@ static const pmb887x_io_field_t usart_isr_fields[] = {
 	{"TMO",		USART_ISR_TMO,		USART_ISR_TMO_SHIFT,		NULL,	0},
 };
 
-static const pmb887x_io_field_t usart_dmae_fields[] = {
+static const DebugRegField usart_dmae_fields[] = {
 	{"TX",	USART_DMAE_TX,	USART_DMAE_TX_SHIFT,	NULL,	0},
 	{"RX",	USART_DMAE_RX,	USART_DMAE_RX_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_reg_t usart_regs[] = {
-	{"CLC",			USART_CLC,			usart_clc_fields,		ARRAY_SIZE(usart_clc_fields),		0},
-	{"PISEL",		USART_PISEL,		NULL,					0,									0},
-	{"ID",			USART_ID,			usart_id_fields,		ARRAY_SIZE(usart_id_fields),		0},
-	{"CON",			USART_CON,			usart_con_fields,		ARRAY_SIZE(usart_con_fields),		0},
-	{"BG",			USART_BG,			NULL,					0,									0},
-	{"FDV",			USART_FDV,			NULL,					0,									0},
-	{"PMW",			USART_PMW,			usart_pmw_fields,		ARRAY_SIZE(usart_pmw_fields),		0},
-	{"TXB",			USART_TXB,			NULL,					0,									0},
-	{"RXB",			USART_RXB,			NULL,					0,									0},
-	{"ABCON",		USART_ABCON,		usart_abcon_fields,		ARRAY_SIZE(usart_abcon_fields),		0},
-	{"ABSTAT",		USART_ABSTAT,		usart_abstat_fields,	ARRAY_SIZE(usart_abstat_fields),	0},
-	{"RXFCON",		USART_RXFCON,		usart_rxfcon_fields,	ARRAY_SIZE(usart_rxfcon_fields),	0},
-	{"TXFCON",		USART_TXFCON,		usart_txfcon_fields,	ARRAY_SIZE(usart_txfcon_fields),	0},
-	{"FSTAT",		USART_FSTAT,		usart_fstat_fields,		ARRAY_SIZE(usart_fstat_fields),		0},
-	{"WHBCON",		USART_WHBCON,		usart_whbcon_fields,	ARRAY_SIZE(usart_whbcon_fields),	0},
-	{"WHBABCON",	USART_WHBABCON,		usart_whbabcon_fields,	ARRAY_SIZE(usart_whbabcon_fields),	0},
-	{"WHBABSTAT",	USART_WHBABSTAT,	usart_whbabstat_fields,	ARRAY_SIZE(usart_whbabstat_fields),	0},
-	{"FCCON",		USART_FCCON,		usart_fccon_fields,		ARRAY_SIZE(usart_fccon_fields),		0},
-	{"FCSTAT",		USART_FCSTAT,		usart_fcstat_fields,	ARRAY_SIZE(usart_fcstat_fields),	0},
-	{"IMSC",		USART_IMSC,			usart_imsc_fields,		ARRAY_SIZE(usart_imsc_fields),		0},
-	{"RIS",			USART_RIS,			usart_ris_fields,		ARRAY_SIZE(usart_ris_fields),		0},
-	{"MIS",			USART_MIS,			usart_mis_fields,		ARRAY_SIZE(usart_mis_fields),		0},
-	{"ICR",			USART_ICR,			usart_icr_fields,		ARRAY_SIZE(usart_icr_fields),		0},
-	{"ISR",			USART_ISR,			usart_isr_fields,		ARRAY_SIZE(usart_isr_fields),		0},
-	{"DMAE",		USART_DMAE,			usart_dmae_fields,		ARRAY_SIZE(usart_dmae_fields),		0},
-	{"TMO",			USART_TMO,			NULL,					0,									0},
+static const DebugReg usart_regs[] = {
+	{"CLC",			USART_CLC,			usart_clc_fields,		ARRAY_SIZE(usart_clc_fields)},
+	{"PISEL",		USART_PISEL,		NULL,					0},
+	{"ID",			USART_ID,			usart_id_fields,		ARRAY_SIZE(usart_id_fields)},
+	{"CON",			USART_CON,			usart_con_fields,		ARRAY_SIZE(usart_con_fields)},
+	{"BG",			USART_BG,			NULL,					0},
+	{"FDV",			USART_FDV,			NULL,					0},
+	{"PMW",			USART_PMW,			usart_pmw_fields,		ARRAY_SIZE(usart_pmw_fields)},
+	{"TXB",			USART_TXB,			NULL,					0},
+	{"RXB",			USART_RXB,			NULL,					0},
+	{"ABCON",		USART_ABCON,		usart_abcon_fields,		ARRAY_SIZE(usart_abcon_fields)},
+	{"ABSTAT",		USART_ABSTAT,		usart_abstat_fields,	ARRAY_SIZE(usart_abstat_fields)},
+	{"RXFCON",		USART_RXFCON,		usart_rxfcon_fields,	ARRAY_SIZE(usart_rxfcon_fields)},
+	{"TXFCON",		USART_TXFCON,		usart_txfcon_fields,	ARRAY_SIZE(usart_txfcon_fields)},
+	{"FSTAT",		USART_FSTAT,		usart_fstat_fields,		ARRAY_SIZE(usart_fstat_fields)},
+	{"WHBCON",		USART_WHBCON,		usart_whbcon_fields,	ARRAY_SIZE(usart_whbcon_fields)},
+	{"WHBABCON",	USART_WHBABCON,		usart_whbabcon_fields,	ARRAY_SIZE(usart_whbabcon_fields)},
+	{"WHBABSTAT",	USART_WHBABSTAT,	usart_whbabstat_fields,	ARRAY_SIZE(usart_whbabstat_fields)},
+	{"FCCON",		USART_FCCON,		usart_fccon_fields,		ARRAY_SIZE(usart_fccon_fields)},
+	{"FCSTAT",		USART_FCSTAT,		usart_fcstat_fields,	ARRAY_SIZE(usart_fcstat_fields)},
+	{"IMSC",		USART_IMSC,			usart_imsc_fields,		ARRAY_SIZE(usart_imsc_fields)},
+	{"RIS",			USART_RIS,			usart_ris_fields,		ARRAY_SIZE(usart_ris_fields)},
+	{"MIS",			USART_MIS,			usart_mis_fields,		ARRAY_SIZE(usart_mis_fields)},
+	{"ICR",			USART_ICR,			usart_icr_fields,		ARRAY_SIZE(usart_icr_fields)},
+	{"ISR",			USART_ISR,			usart_isr_fields,		ARRAY_SIZE(usart_isr_fields)},
+	{"DMAE",		USART_DMAE,			usart_dmae_fields,		ARRAY_SIZE(usart_dmae_fields)},
+	{"TMO",			USART_TMO,			NULL,					0},
 };
 
-static const pmb887x_io_field_t usb_ep_enable_low_fields[] = {
+const DebugRegs pmb887x_usart_regs = {
+	.regs = usart_regs,
+	.count = ARRAY_SIZE(usart_regs),
+	.reg_size = 4,
+	.addr_digits = 8,
+};
+
+static const DebugRegField usb_ep_enable_low_fields[] = {
 	{"ENDPOINTS",	USB_EP_ENABLE_LOW_ENDPOINTS,	USB_EP_ENABLE_LOW_ENDPOINTS_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t usb_ep_enable_high_fields[] = {
+static const DebugRegField usb_ep_enable_high_fields[] = {
 	{"ENDPOINTS",	USB_EP_ENABLE_HIGH_ENDPOINTS,	USB_EP_ENABLE_HIGH_ENDPOINTS_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t usb_device_address_fields[] = {
+static const DebugRegField usb_device_address_fields[] = {
 	{"ADDRESS",	USB_DEVICE_ADDRESS_ADDRESS,	USB_DEVICE_ADDRESS_ADDRESS_SHIFT,	NULL,	0},
 	{"ENABLE",	USB_DEVICE_ADDRESS_ENABLE,	USB_DEVICE_ADDRESS_ENABLE_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t usb_frame_number_low_fields[] = {
+static const DebugRegField usb_frame_number_low_fields[] = {
 	{"VALUE",	USB_FRAME_NUMBER_LOW_VALUE,	USB_FRAME_NUMBER_LOW_VALUE_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t usb_frame_number_high_fields[] = {
+static const DebugRegField usb_frame_number_high_fields[] = {
 	{"VALUE",	USB_FRAME_NUMBER_HIGH_VALUE,	USB_FRAME_NUMBER_HIGH_VALUE_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t usb_control_fields[] = {
+static const DebugRegField usb_control_fields[] = {
 	{"ENABLE",	USB_CONTROL_ENABLE,	USB_CONTROL_ENABLE_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t usb_setup_packet_fields[] = {
+static const DebugRegField usb_setup_packet_fields[] = {
 	{"DATA",	USB_SETUP_PACKET_DATA,	USB_SETUP_PACKET_DATA_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t usb_global_int_status_fields[] = {
+static const DebugRegField usb_global_int_status_fields[] = {
 	{"SOURCES",	USB_GLOBAL_INT_STATUS_SOURCES,	USB_GLOBAL_INT_STATUS_SOURCES_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t usb_global_int_enable_fields[] = {
+static const DebugRegField usb_global_int_enable_fields[] = {
 	{"SOURCES",	USB_GLOBAL_INT_ENABLE_SOURCES,	USB_GLOBAL_INT_ENABLE_SOURCES_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t usb_dma0_int_status_fields[] = {
+static const DebugRegField usb_dma0_int_status_fields[] = {
 	{"SOURCES",	USB_DMA0_INT_STATUS_SOURCES,	USB_DMA0_INT_STATUS_SOURCES_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t usb_dma0_int_enable_fields[] = {
+static const DebugRegField usb_dma0_int_enable_fields[] = {
 	{"SOURCES",	USB_DMA0_INT_ENABLE_SOURCES,	USB_DMA0_INT_ENABLE_SOURCES_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t usb_dma1_int_status_fields[] = {
+static const DebugRegField usb_dma1_int_status_fields[] = {
 	{"SOURCES",	USB_DMA1_INT_STATUS_SOURCES,	USB_DMA1_INT_STATUS_SOURCES_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t usb_dma1_int_enable_fields[] = {
+static const DebugRegField usb_dma1_int_enable_fields[] = {
 	{"SOURCES",	USB_DMA1_INT_ENABLE_SOURCES,	USB_DMA1_INT_ENABLE_SOURCES_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t usb_event_int_status_fields[] = {
+static const DebugRegField usb_event_int_status_fields[] = {
 	{"EVENTS",	USB_EVENT_INT_STATUS_EVENTS,	USB_EVENT_INT_STATUS_EVENTS_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t usb_event_int_enable_fields[] = {
+static const DebugRegField usb_event_int_enable_fields[] = {
 	{"EVENTS",	USB_EVENT_INT_ENABLE_EVENTS,	USB_EVENT_INT_ENABLE_EVENTS_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t usb_ep_a_int_status_low_fields[] = {
+static const DebugRegField usb_ep_a_int_status_low_fields[] = {
 	{"ENDPOINTS",	USB_EP_A_INT_STATUS_LOW_ENDPOINTS,	USB_EP_A_INT_STATUS_LOW_ENDPOINTS_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t usb_ep_a_int_enable_low_fields[] = {
+static const DebugRegField usb_ep_a_int_enable_low_fields[] = {
 	{"ENDPOINTS",	USB_EP_A_INT_ENABLE_LOW_ENDPOINTS,	USB_EP_A_INT_ENABLE_LOW_ENDPOINTS_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t usb_ep_a_int_status_high_fields[] = {
+static const DebugRegField usb_ep_a_int_status_high_fields[] = {
 	{"ENDPOINTS",	USB_EP_A_INT_STATUS_HIGH_ENDPOINTS,	USB_EP_A_INT_STATUS_HIGH_ENDPOINTS_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t usb_ep_a_int_enable_high_fields[] = {
+static const DebugRegField usb_ep_a_int_enable_high_fields[] = {
 	{"ENDPOINTS",	USB_EP_A_INT_ENABLE_HIGH_ENDPOINTS,	USB_EP_A_INT_ENABLE_HIGH_ENDPOINTS_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t usb_ep_b_int_status_low_fields[] = {
+static const DebugRegField usb_ep_b_int_status_low_fields[] = {
 	{"ENDPOINTS",	USB_EP_B_INT_STATUS_LOW_ENDPOINTS,	USB_EP_B_INT_STATUS_LOW_ENDPOINTS_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t usb_ep_b_int_enable_low_fields[] = {
+static const DebugRegField usb_ep_b_int_enable_low_fields[] = {
 	{"ENDPOINTS",	USB_EP_B_INT_ENABLE_LOW_ENDPOINTS,	USB_EP_B_INT_ENABLE_LOW_ENDPOINTS_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t usb_ep_b_int_status_high_fields[] = {
+static const DebugRegField usb_ep_b_int_status_high_fields[] = {
 	{"ENDPOINTS",	USB_EP_B_INT_STATUS_HIGH_ENDPOINTS,	USB_EP_B_INT_STATUS_HIGH_ENDPOINTS_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t usb_ep_b_int_enable_high_fields[] = {
+static const DebugRegField usb_ep_b_int_enable_high_fields[] = {
 	{"ENDPOINTS",	USB_EP_B_INT_ENABLE_HIGH_ENDPOINTS,	USB_EP_B_INT_ENABLE_HIGH_ENDPOINTS_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t usb_ep_count_low_fields[] = {
+static const DebugRegField usb_ep_count_low_fields[] = {
 	{"VALUE",	USB_EP_COUNT_LOW_VALUE,	USB_EP_COUNT_LOW_VALUE_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t usb_ep_count_high_fields[] = {
+static const DebugRegField usb_ep_count_high_fields[] = {
 	{"VALUE",	USB_EP_COUNT_HIGH_VALUE,	USB_EP_COUNT_HIGH_VALUE_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t usb_clc_fields[] = {
+static const DebugRegField usb_clc_fields[] = {
 	{"DISR",	MOD_CLC_DISR,	MOD_CLC_DISR_SHIFT,	NULL,	0},
 	{"DISS",	MOD_CLC_DISS,	MOD_CLC_DISS_SHIFT,	NULL,	0},
 	{"SPEN",	MOD_CLC_SPEN,	MOD_CLC_SPEN_SHIFT,	NULL,	0},
@@ -6208,106 +6397,113 @@ static const pmb887x_io_field_t usb_clc_fields[] = {
 	{"RMC",		MOD_CLC_RMC,	MOD_CLC_RMC_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t usb_id_fields[] = {
+static const DebugRegField usb_id_fields[] = {
 	{"REV",		MOD_ID_REV,		MOD_ID_REV_SHIFT,		NULL,	0},
 	{"32B",		MOD_ID_32B,		MOD_ID_32B_SHIFT,		NULL,	0},
 	{"NUMBER",	MOD_ID_NUMBER,	MOD_ID_NUMBER_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_reg_t usb_regs[] = {
-	{"EP_ENABLE_LOW",			USB_EP_ENABLE_LOW,			usb_ep_enable_low_fields,			ARRAY_SIZE(usb_ep_enable_low_fields),			0},
-	{"EP_ENABLE_HIGH",			USB_EP_ENABLE_HIGH,			usb_ep_enable_high_fields,			ARRAY_SIZE(usb_ep_enable_high_fields),			0},
-	{"DEVICE_ADDRESS",			USB_DEVICE_ADDRESS,			usb_device_address_fields,			ARRAY_SIZE(usb_device_address_fields),			0},
-	{"FRAME_NUMBER_LOW",		USB_FRAME_NUMBER_LOW,		usb_frame_number_low_fields,		ARRAY_SIZE(usb_frame_number_low_fields),		0},
-	{"FRAME_NUMBER_HIGH",		USB_FRAME_NUMBER_HIGH,		usb_frame_number_high_fields,		ARRAY_SIZE(usb_frame_number_high_fields),		0},
-	{"CONTROL",					USB_CONTROL,				usb_control_fields,					ARRAY_SIZE(usb_control_fields),					0},
-	{"SETUP_PACKET0",			USB_SETUP_PACKET0,			usb_setup_packet_fields,			ARRAY_SIZE(usb_setup_packet_fields),			0},
-	{"SETUP_PACKET1",			USB_SETUP_PACKET1,			usb_setup_packet_fields,			ARRAY_SIZE(usb_setup_packet_fields),			0},
-	{"SETUP_PACKET2",			USB_SETUP_PACKET2,			usb_setup_packet_fields,			ARRAY_SIZE(usb_setup_packet_fields),			0},
-	{"SETUP_PACKET3",			USB_SETUP_PACKET3,			usb_setup_packet_fields,			ARRAY_SIZE(usb_setup_packet_fields),			0},
-	{"SETUP_PACKET4",			USB_SETUP_PACKET4,			usb_setup_packet_fields,			ARRAY_SIZE(usb_setup_packet_fields),			0},
-	{"SETUP_PACKET5",			USB_SETUP_PACKET5,			usb_setup_packet_fields,			ARRAY_SIZE(usb_setup_packet_fields),			0},
-	{"SETUP_PACKET6",			USB_SETUP_PACKET6,			usb_setup_packet_fields,			ARRAY_SIZE(usb_setup_packet_fields),			0},
-	{"SETUP_PACKET7",			USB_SETUP_PACKET7,			usb_setup_packet_fields,			ARRAY_SIZE(usb_setup_packet_fields),			0},
-	{"EP0_STATUS",				USB_EP0_STATUS,				NULL,								0,												0},
-	{"EP_CONFIG0",				USB_EP_CONFIG0,				NULL,								0,												0},
-	{"EP_CONFIG1",				USB_EP_CONFIG1,				NULL,								0,												0},
-	{"EP_CONFIG2",				USB_EP_CONFIG2,				NULL,								0,												0},
-	{"EP_CONFIG3",				USB_EP_CONFIG3,				NULL,								0,												0},
-	{"EP_CONFIG4",				USB_EP_CONFIG4,				NULL,								0,												0},
-	{"EP_CONFIG5",				USB_EP_CONFIG5,				NULL,								0,												0},
-	{"EP_CONFIG6",				USB_EP_CONFIG6,				NULL,								0,												0},
-	{"EP_CONFIG7",				USB_EP_CONFIG7,				NULL,								0,												0},
-	{"EP_CONFIG8",				USB_EP_CONFIG8,				NULL,								0,												0},
-	{"EP_CONFIG9",				USB_EP_CONFIG9,				NULL,								0,												0},
-	{"EP_CONFIG10",				USB_EP_CONFIG10,			NULL,								0,												0},
-	{"GLOBAL_INT_STATUS",		USB_GLOBAL_INT_STATUS,		usb_global_int_status_fields,		ARRAY_SIZE(usb_global_int_status_fields),		0},
-	{"GLOBAL_INT_ENABLE",		USB_GLOBAL_INT_ENABLE,		usb_global_int_enable_fields,		ARRAY_SIZE(usb_global_int_enable_fields),		0},
-	{"DMA0_INT_STATUS",			USB_DMA0_INT_STATUS,		usb_dma0_int_status_fields,			ARRAY_SIZE(usb_dma0_int_status_fields),			0},
-	{"DMA0_INT_ENABLE",			USB_DMA0_INT_ENABLE,		usb_dma0_int_enable_fields,			ARRAY_SIZE(usb_dma0_int_enable_fields),			0},
-	{"DMA1_INT_STATUS",			USB_DMA1_INT_STATUS,		usb_dma1_int_status_fields,			ARRAY_SIZE(usb_dma1_int_status_fields),			0},
-	{"DMA1_INT_ENABLE",			USB_DMA1_INT_ENABLE,		usb_dma1_int_enable_fields,			ARRAY_SIZE(usb_dma1_int_enable_fields),			0},
-	{"EVENT_INT_STATUS",		USB_EVENT_INT_STATUS,		usb_event_int_status_fields,		ARRAY_SIZE(usb_event_int_status_fields),		0},
-	{"EVENT_INT_ENABLE",		USB_EVENT_INT_ENABLE,		usb_event_int_enable_fields,		ARRAY_SIZE(usb_event_int_enable_fields),		0},
-	{"EP_A_INT_STATUS_LOW",		USB_EP_A_INT_STATUS_LOW,	usb_ep_a_int_status_low_fields,		ARRAY_SIZE(usb_ep_a_int_status_low_fields),		0},
-	{"EP_A_INT_ENABLE_LOW",		USB_EP_A_INT_ENABLE_LOW,	usb_ep_a_int_enable_low_fields,		ARRAY_SIZE(usb_ep_a_int_enable_low_fields),		0},
-	{"EP_A_INT_STATUS_HIGH",	USB_EP_A_INT_STATUS_HIGH,	usb_ep_a_int_status_high_fields,	ARRAY_SIZE(usb_ep_a_int_status_high_fields),	0},
-	{"EP_A_INT_ENABLE_HIGH",	USB_EP_A_INT_ENABLE_HIGH,	usb_ep_a_int_enable_high_fields,	ARRAY_SIZE(usb_ep_a_int_enable_high_fields),	0},
-	{"EP_B_INT_STATUS_LOW",		USB_EP_B_INT_STATUS_LOW,	usb_ep_b_int_status_low_fields,		ARRAY_SIZE(usb_ep_b_int_status_low_fields),		0},
-	{"EP_B_INT_ENABLE_LOW",		USB_EP_B_INT_ENABLE_LOW,	usb_ep_b_int_enable_low_fields,		ARRAY_SIZE(usb_ep_b_int_enable_low_fields),		0},
-	{"EP_B_INT_STATUS_HIGH",	USB_EP_B_INT_STATUS_HIGH,	usb_ep_b_int_status_high_fields,	ARRAY_SIZE(usb_ep_b_int_status_high_fields),	0},
-	{"EP_B_INT_ENABLE_HIGH",	USB_EP_B_INT_ENABLE_HIGH,	usb_ep_b_int_enable_high_fields,	ARRAY_SIZE(usb_ep_b_int_enable_high_fields),	0},
-	{"EP_DATA0",				USB_EP_DATA0,				NULL,								0,												0},
-	{"EP_DATA1",				USB_EP_DATA1,				NULL,								0,												0},
-	{"EP_DATA2",				USB_EP_DATA2,				NULL,								0,												0},
-	{"EP_DATA3",				USB_EP_DATA3,				NULL,								0,												0},
-	{"EP_DATA4",				USB_EP_DATA4,				NULL,								0,												0},
-	{"EP_DATA5",				USB_EP_DATA5,				NULL,								0,												0},
-	{"EP_DATA6",				USB_EP_DATA6,				NULL,								0,												0},
-	{"EP_DATA7",				USB_EP_DATA7,				NULL,								0,												0},
-	{"EP_DATA8",				USB_EP_DATA8,				NULL,								0,												0},
-	{"EP_DATA9",				USB_EP_DATA9,				NULL,								0,												0},
-	{"EP_DATA10",				USB_EP_DATA10,				NULL,								0,												0},
-	{"EP_CONTROL0",				USB_EP_CONTROL0,			NULL,								0,												0},
-	{"EP_CONTROL1",				USB_EP_CONTROL1,			NULL,								0,												0},
-	{"EP_CONTROL2",				USB_EP_CONTROL2,			NULL,								0,												0},
-	{"EP_CONTROL3",				USB_EP_CONTROL3,			NULL,								0,												0},
-	{"EP_CONTROL4",				USB_EP_CONTROL4,			NULL,								0,												0},
-	{"EP_CONTROL5",				USB_EP_CONTROL5,			NULL,								0,												0},
-	{"EP_CONTROL6",				USB_EP_CONTROL6,			NULL,								0,												0},
-	{"EP_CONTROL7",				USB_EP_CONTROL7,			NULL,								0,												0},
-	{"EP_CONTROL8",				USB_EP_CONTROL8,			NULL,								0,												0},
-	{"EP_CONTROL9",				USB_EP_CONTROL9,			NULL,								0,												0},
-	{"EP_CONTROL10",			USB_EP_CONTROL10,			NULL,								0,												0},
-	{"EP_COUNT_LOW0",			USB_EP_COUNT_LOW0,			usb_ep_count_low_fields,			ARRAY_SIZE(usb_ep_count_low_fields),			0},
-	{"EP_COUNT_LOW1",			USB_EP_COUNT_LOW1,			usb_ep_count_low_fields,			ARRAY_SIZE(usb_ep_count_low_fields),			0},
-	{"EP_COUNT_LOW2",			USB_EP_COUNT_LOW2,			usb_ep_count_low_fields,			ARRAY_SIZE(usb_ep_count_low_fields),			0},
-	{"EP_COUNT_LOW3",			USB_EP_COUNT_LOW3,			usb_ep_count_low_fields,			ARRAY_SIZE(usb_ep_count_low_fields),			0},
-	{"EP_COUNT_LOW4",			USB_EP_COUNT_LOW4,			usb_ep_count_low_fields,			ARRAY_SIZE(usb_ep_count_low_fields),			0},
-	{"EP_COUNT_LOW5",			USB_EP_COUNT_LOW5,			usb_ep_count_low_fields,			ARRAY_SIZE(usb_ep_count_low_fields),			0},
-	{"EP_COUNT_LOW6",			USB_EP_COUNT_LOW6,			usb_ep_count_low_fields,			ARRAY_SIZE(usb_ep_count_low_fields),			0},
-	{"EP_COUNT_LOW7",			USB_EP_COUNT_LOW7,			usb_ep_count_low_fields,			ARRAY_SIZE(usb_ep_count_low_fields),			0},
-	{"EP_COUNT_LOW8",			USB_EP_COUNT_LOW8,			usb_ep_count_low_fields,			ARRAY_SIZE(usb_ep_count_low_fields),			0},
-	{"EP_COUNT_LOW9",			USB_EP_COUNT_LOW9,			usb_ep_count_low_fields,			ARRAY_SIZE(usb_ep_count_low_fields),			0},
-	{"EP_COUNT_LOW10",			USB_EP_COUNT_LOW10,			usb_ep_count_low_fields,			ARRAY_SIZE(usb_ep_count_low_fields),			0},
-	{"EP_COUNT_HIGH0",			USB_EP_COUNT_HIGH0,			usb_ep_count_high_fields,			ARRAY_SIZE(usb_ep_count_high_fields),			0},
-	{"EP_COUNT_HIGH1",			USB_EP_COUNT_HIGH1,			usb_ep_count_high_fields,			ARRAY_SIZE(usb_ep_count_high_fields),			0},
-	{"EP_COUNT_HIGH2",			USB_EP_COUNT_HIGH2,			usb_ep_count_high_fields,			ARRAY_SIZE(usb_ep_count_high_fields),			0},
-	{"EP_COUNT_HIGH3",			USB_EP_COUNT_HIGH3,			usb_ep_count_high_fields,			ARRAY_SIZE(usb_ep_count_high_fields),			0},
-	{"EP_COUNT_HIGH4",			USB_EP_COUNT_HIGH4,			usb_ep_count_high_fields,			ARRAY_SIZE(usb_ep_count_high_fields),			0},
-	{"EP_COUNT_HIGH5",			USB_EP_COUNT_HIGH5,			usb_ep_count_high_fields,			ARRAY_SIZE(usb_ep_count_high_fields),			0},
-	{"EP_COUNT_HIGH6",			USB_EP_COUNT_HIGH6,			usb_ep_count_high_fields,			ARRAY_SIZE(usb_ep_count_high_fields),			0},
-	{"EP_COUNT_HIGH7",			USB_EP_COUNT_HIGH7,			usb_ep_count_high_fields,			ARRAY_SIZE(usb_ep_count_high_fields),			0},
-	{"EP_COUNT_HIGH8",			USB_EP_COUNT_HIGH8,			usb_ep_count_high_fields,			ARRAY_SIZE(usb_ep_count_high_fields),			0},
-	{"EP_COUNT_HIGH9",			USB_EP_COUNT_HIGH9,			usb_ep_count_high_fields,			ARRAY_SIZE(usb_ep_count_high_fields),			0},
-	{"EP_COUNT_HIGH10",			USB_EP_COUNT_HIGH10,		usb_ep_count_high_fields,			ARRAY_SIZE(usb_ep_count_high_fields),			0},
-	{"PHY_CONTROL",				USB_PHY_CONTROL,			NULL,								0,												0},
-	{"CLC",						USB_CLC,					usb_clc_fields,						ARRAY_SIZE(usb_clc_fields),						0},
-	{"CFG",						USB_CFG,					NULL,								0,												0},
-	{"ID",						USB_ID,						usb_id_fields,						ARRAY_SIZE(usb_id_fields),						0},
+static const DebugReg usb_regs[] = {
+	{"EP_ENABLE_LOW",			USB_EP_ENABLE_LOW,			usb_ep_enable_low_fields,			ARRAY_SIZE(usb_ep_enable_low_fields)},
+	{"EP_ENABLE_HIGH",			USB_EP_ENABLE_HIGH,			usb_ep_enable_high_fields,			ARRAY_SIZE(usb_ep_enable_high_fields)},
+	{"DEVICE_ADDRESS",			USB_DEVICE_ADDRESS,			usb_device_address_fields,			ARRAY_SIZE(usb_device_address_fields)},
+	{"FRAME_NUMBER_LOW",		USB_FRAME_NUMBER_LOW,		usb_frame_number_low_fields,		ARRAY_SIZE(usb_frame_number_low_fields)},
+	{"FRAME_NUMBER_HIGH",		USB_FRAME_NUMBER_HIGH,		usb_frame_number_high_fields,		ARRAY_SIZE(usb_frame_number_high_fields)},
+	{"CONTROL",					USB_CONTROL,				usb_control_fields,					ARRAY_SIZE(usb_control_fields)},
+	{"SETUP_PACKET0",			USB_SETUP_PACKET0,			usb_setup_packet_fields,			ARRAY_SIZE(usb_setup_packet_fields)},
+	{"SETUP_PACKET1",			USB_SETUP_PACKET1,			usb_setup_packet_fields,			ARRAY_SIZE(usb_setup_packet_fields)},
+	{"SETUP_PACKET2",			USB_SETUP_PACKET2,			usb_setup_packet_fields,			ARRAY_SIZE(usb_setup_packet_fields)},
+	{"SETUP_PACKET3",			USB_SETUP_PACKET3,			usb_setup_packet_fields,			ARRAY_SIZE(usb_setup_packet_fields)},
+	{"SETUP_PACKET4",			USB_SETUP_PACKET4,			usb_setup_packet_fields,			ARRAY_SIZE(usb_setup_packet_fields)},
+	{"SETUP_PACKET5",			USB_SETUP_PACKET5,			usb_setup_packet_fields,			ARRAY_SIZE(usb_setup_packet_fields)},
+	{"SETUP_PACKET6",			USB_SETUP_PACKET6,			usb_setup_packet_fields,			ARRAY_SIZE(usb_setup_packet_fields)},
+	{"SETUP_PACKET7",			USB_SETUP_PACKET7,			usb_setup_packet_fields,			ARRAY_SIZE(usb_setup_packet_fields)},
+	{"EP0_STATUS",				USB_EP0_STATUS,				NULL,								0},
+	{"EP_CONFIG0",				USB_EP_CONFIG0,				NULL,								0},
+	{"EP_CONFIG1",				USB_EP_CONFIG1,				NULL,								0},
+	{"EP_CONFIG2",				USB_EP_CONFIG2,				NULL,								0},
+	{"EP_CONFIG3",				USB_EP_CONFIG3,				NULL,								0},
+	{"EP_CONFIG4",				USB_EP_CONFIG4,				NULL,								0},
+	{"EP_CONFIG5",				USB_EP_CONFIG5,				NULL,								0},
+	{"EP_CONFIG6",				USB_EP_CONFIG6,				NULL,								0},
+	{"EP_CONFIG7",				USB_EP_CONFIG7,				NULL,								0},
+	{"EP_CONFIG8",				USB_EP_CONFIG8,				NULL,								0},
+	{"EP_CONFIG9",				USB_EP_CONFIG9,				NULL,								0},
+	{"EP_CONFIG10",				USB_EP_CONFIG10,			NULL,								0},
+	{"GLOBAL_INT_STATUS",		USB_GLOBAL_INT_STATUS,		usb_global_int_status_fields,		ARRAY_SIZE(usb_global_int_status_fields)},
+	{"GLOBAL_INT_ENABLE",		USB_GLOBAL_INT_ENABLE,		usb_global_int_enable_fields,		ARRAY_SIZE(usb_global_int_enable_fields)},
+	{"DMA0_INT_STATUS",			USB_DMA0_INT_STATUS,		usb_dma0_int_status_fields,			ARRAY_SIZE(usb_dma0_int_status_fields)},
+	{"DMA0_INT_ENABLE",			USB_DMA0_INT_ENABLE,		usb_dma0_int_enable_fields,			ARRAY_SIZE(usb_dma0_int_enable_fields)},
+	{"DMA1_INT_STATUS",			USB_DMA1_INT_STATUS,		usb_dma1_int_status_fields,			ARRAY_SIZE(usb_dma1_int_status_fields)},
+	{"DMA1_INT_ENABLE",			USB_DMA1_INT_ENABLE,		usb_dma1_int_enable_fields,			ARRAY_SIZE(usb_dma1_int_enable_fields)},
+	{"EVENT_INT_STATUS",		USB_EVENT_INT_STATUS,		usb_event_int_status_fields,		ARRAY_SIZE(usb_event_int_status_fields)},
+	{"EVENT_INT_ENABLE",		USB_EVENT_INT_ENABLE,		usb_event_int_enable_fields,		ARRAY_SIZE(usb_event_int_enable_fields)},
+	{"EP_A_INT_STATUS_LOW",		USB_EP_A_INT_STATUS_LOW,	usb_ep_a_int_status_low_fields,		ARRAY_SIZE(usb_ep_a_int_status_low_fields)},
+	{"EP_A_INT_ENABLE_LOW",		USB_EP_A_INT_ENABLE_LOW,	usb_ep_a_int_enable_low_fields,		ARRAY_SIZE(usb_ep_a_int_enable_low_fields)},
+	{"EP_A_INT_STATUS_HIGH",	USB_EP_A_INT_STATUS_HIGH,	usb_ep_a_int_status_high_fields,	ARRAY_SIZE(usb_ep_a_int_status_high_fields)},
+	{"EP_A_INT_ENABLE_HIGH",	USB_EP_A_INT_ENABLE_HIGH,	usb_ep_a_int_enable_high_fields,	ARRAY_SIZE(usb_ep_a_int_enable_high_fields)},
+	{"EP_B_INT_STATUS_LOW",		USB_EP_B_INT_STATUS_LOW,	usb_ep_b_int_status_low_fields,		ARRAY_SIZE(usb_ep_b_int_status_low_fields)},
+	{"EP_B_INT_ENABLE_LOW",		USB_EP_B_INT_ENABLE_LOW,	usb_ep_b_int_enable_low_fields,		ARRAY_SIZE(usb_ep_b_int_enable_low_fields)},
+	{"EP_B_INT_STATUS_HIGH",	USB_EP_B_INT_STATUS_HIGH,	usb_ep_b_int_status_high_fields,	ARRAY_SIZE(usb_ep_b_int_status_high_fields)},
+	{"EP_B_INT_ENABLE_HIGH",	USB_EP_B_INT_ENABLE_HIGH,	usb_ep_b_int_enable_high_fields,	ARRAY_SIZE(usb_ep_b_int_enable_high_fields)},
+	{"EP_DATA0",				USB_EP_DATA0,				NULL,								0},
+	{"EP_DATA1",				USB_EP_DATA1,				NULL,								0},
+	{"EP_DATA2",				USB_EP_DATA2,				NULL,								0},
+	{"EP_DATA3",				USB_EP_DATA3,				NULL,								0},
+	{"EP_DATA4",				USB_EP_DATA4,				NULL,								0},
+	{"EP_DATA5",				USB_EP_DATA5,				NULL,								0},
+	{"EP_DATA6",				USB_EP_DATA6,				NULL,								0},
+	{"EP_DATA7",				USB_EP_DATA7,				NULL,								0},
+	{"EP_DATA8",				USB_EP_DATA8,				NULL,								0},
+	{"EP_DATA9",				USB_EP_DATA9,				NULL,								0},
+	{"EP_DATA10",				USB_EP_DATA10,				NULL,								0},
+	{"EP_CONTROL0",				USB_EP_CONTROL0,			NULL,								0},
+	{"EP_CONTROL1",				USB_EP_CONTROL1,			NULL,								0},
+	{"EP_CONTROL2",				USB_EP_CONTROL2,			NULL,								0},
+	{"EP_CONTROL3",				USB_EP_CONTROL3,			NULL,								0},
+	{"EP_CONTROL4",				USB_EP_CONTROL4,			NULL,								0},
+	{"EP_CONTROL5",				USB_EP_CONTROL5,			NULL,								0},
+	{"EP_CONTROL6",				USB_EP_CONTROL6,			NULL,								0},
+	{"EP_CONTROL7",				USB_EP_CONTROL7,			NULL,								0},
+	{"EP_CONTROL8",				USB_EP_CONTROL8,			NULL,								0},
+	{"EP_CONTROL9",				USB_EP_CONTROL9,			NULL,								0},
+	{"EP_CONTROL10",			USB_EP_CONTROL10,			NULL,								0},
+	{"EP_COUNT_LOW0",			USB_EP_COUNT_LOW0,			usb_ep_count_low_fields,			ARRAY_SIZE(usb_ep_count_low_fields)},
+	{"EP_COUNT_LOW1",			USB_EP_COUNT_LOW1,			usb_ep_count_low_fields,			ARRAY_SIZE(usb_ep_count_low_fields)},
+	{"EP_COUNT_LOW2",			USB_EP_COUNT_LOW2,			usb_ep_count_low_fields,			ARRAY_SIZE(usb_ep_count_low_fields)},
+	{"EP_COUNT_LOW3",			USB_EP_COUNT_LOW3,			usb_ep_count_low_fields,			ARRAY_SIZE(usb_ep_count_low_fields)},
+	{"EP_COUNT_LOW4",			USB_EP_COUNT_LOW4,			usb_ep_count_low_fields,			ARRAY_SIZE(usb_ep_count_low_fields)},
+	{"EP_COUNT_LOW5",			USB_EP_COUNT_LOW5,			usb_ep_count_low_fields,			ARRAY_SIZE(usb_ep_count_low_fields)},
+	{"EP_COUNT_LOW6",			USB_EP_COUNT_LOW6,			usb_ep_count_low_fields,			ARRAY_SIZE(usb_ep_count_low_fields)},
+	{"EP_COUNT_LOW7",			USB_EP_COUNT_LOW7,			usb_ep_count_low_fields,			ARRAY_SIZE(usb_ep_count_low_fields)},
+	{"EP_COUNT_LOW8",			USB_EP_COUNT_LOW8,			usb_ep_count_low_fields,			ARRAY_SIZE(usb_ep_count_low_fields)},
+	{"EP_COUNT_LOW9",			USB_EP_COUNT_LOW9,			usb_ep_count_low_fields,			ARRAY_SIZE(usb_ep_count_low_fields)},
+	{"EP_COUNT_LOW10",			USB_EP_COUNT_LOW10,			usb_ep_count_low_fields,			ARRAY_SIZE(usb_ep_count_low_fields)},
+	{"EP_COUNT_HIGH0",			USB_EP_COUNT_HIGH0,			usb_ep_count_high_fields,			ARRAY_SIZE(usb_ep_count_high_fields)},
+	{"EP_COUNT_HIGH1",			USB_EP_COUNT_HIGH1,			usb_ep_count_high_fields,			ARRAY_SIZE(usb_ep_count_high_fields)},
+	{"EP_COUNT_HIGH2",			USB_EP_COUNT_HIGH2,			usb_ep_count_high_fields,			ARRAY_SIZE(usb_ep_count_high_fields)},
+	{"EP_COUNT_HIGH3",			USB_EP_COUNT_HIGH3,			usb_ep_count_high_fields,			ARRAY_SIZE(usb_ep_count_high_fields)},
+	{"EP_COUNT_HIGH4",			USB_EP_COUNT_HIGH4,			usb_ep_count_high_fields,			ARRAY_SIZE(usb_ep_count_high_fields)},
+	{"EP_COUNT_HIGH5",			USB_EP_COUNT_HIGH5,			usb_ep_count_high_fields,			ARRAY_SIZE(usb_ep_count_high_fields)},
+	{"EP_COUNT_HIGH6",			USB_EP_COUNT_HIGH6,			usb_ep_count_high_fields,			ARRAY_SIZE(usb_ep_count_high_fields)},
+	{"EP_COUNT_HIGH7",			USB_EP_COUNT_HIGH7,			usb_ep_count_high_fields,			ARRAY_SIZE(usb_ep_count_high_fields)},
+	{"EP_COUNT_HIGH8",			USB_EP_COUNT_HIGH8,			usb_ep_count_high_fields,			ARRAY_SIZE(usb_ep_count_high_fields)},
+	{"EP_COUNT_HIGH9",			USB_EP_COUNT_HIGH9,			usb_ep_count_high_fields,			ARRAY_SIZE(usb_ep_count_high_fields)},
+	{"EP_COUNT_HIGH10",			USB_EP_COUNT_HIGH10,		usb_ep_count_high_fields,			ARRAY_SIZE(usb_ep_count_high_fields)},
+	{"PHY_CONTROL",				USB_PHY_CONTROL,			NULL,								0},
+	{"CLC",						USB_CLC,					usb_clc_fields,						ARRAY_SIZE(usb_clc_fields)},
+	{"CFG",						USB_CFG,					NULL,								0},
+	{"ID",						USB_ID,						usb_id_fields,						ARRAY_SIZE(usb_id_fields)},
 };
 
-static const pmb887x_io_field_t usif_clc_fields[] = {
+const DebugRegs pmb887x_usb_regs = {
+	.regs = usb_regs,
+	.count = ARRAY_SIZE(usb_regs),
+	.reg_size = 4,
+	.addr_digits = 8,
+};
+
+static const DebugRegField usif_clc_fields[] = {
 	{"DISR",	MOD_CLC_DISR,	MOD_CLC_DISR_SHIFT,	NULL,	0},
 	{"DISS",	MOD_CLC_DISS,	MOD_CLC_DISS_SHIFT,	NULL,	0},
 	{"SPEN",	MOD_CLC_SPEN,	MOD_CLC_SPEN_SHIFT,	NULL,	0},
@@ -6317,31 +6513,31 @@ static const pmb887x_io_field_t usif_clc_fields[] = {
 	{"RMC",		MOD_CLC_RMC,	MOD_CLC_RMC_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t usif_id_fields[] = {
+static const DebugRegField usif_id_fields[] = {
 	{"REV",		MOD_ID_REV,		MOD_ID_REV_SHIFT,		NULL,	0},
 	{"32B",		MOD_ID_32B,		MOD_ID_32B_SHIFT,		NULL,	0},
 	{"NUMBER",	MOD_ID_NUMBER,	MOD_ID_NUMBER_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t usif_runctrl_fields[] = {
+static const DebugRegField usif_runctrl_fields[] = {
 	{"RUN",	USIF_RUNCTRL_RUN,	USIF_RUNCTRL_RUN_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t usif_mss_set_fields[] = {
+static const DebugRegField usif_mss_set_fields[] = {
 	{"FCO",	USIF_MSS_SET_FCO,	USIF_MSS_SET_FCO_SHIFT,	NULL,	0},
 	{"DSR",	USIF_MSS_SET_DSR,	USIF_MSS_SET_DSR_SHIFT,	NULL,	0},
 	{"DCD",	USIF_MSS_SET_DCD,	USIF_MSS_SET_DCD_SHIFT,	NULL,	0},
 	{"RI",	USIF_MSS_SET_RI,	USIF_MSS_SET_RI_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t usif_mss_clr_fields[] = {
+static const DebugRegField usif_mss_clr_fields[] = {
 	{"FCO",	USIF_MSS_CLR_FCO,	USIF_MSS_CLR_FCO_SHIFT,	NULL,	0},
 	{"DSR",	USIF_MSS_CLR_DSR,	USIF_MSS_CLR_DSR_SHIFT,	NULL,	0},
 	{"DCD",	USIF_MSS_CLR_DCD,	USIF_MSS_CLR_DCD_SHIFT,	NULL,	0},
 	{"RI",	USIF_MSS_CLR_RI,	USIF_MSS_CLR_RI_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t usif_mode_cfg_fields[] = {
+static const DebugRegField usif_mode_cfg_fields[] = {
 	{"SYNC",	USIF_MODE_CFG_SYNC,		USIF_MODE_CFG_SYNC_SHIFT,	NULL,	0},
 	{"MA",		USIF_MODE_CFG_MA,		USIF_MODE_CFG_MA_SHIFT,		NULL,	0},
 	{"RXEN",	USIF_MODE_CFG_RXEN,		USIF_MODE_CFG_RXEN_SHIFT,	NULL,	0},
@@ -6357,7 +6553,7 @@ static const pmb887x_io_field_t usif_mode_cfg_fields[] = {
 	{"EQU",		USIF_MODE_CFG_EQU,		USIF_MODE_CFG_EQU_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t usif_prtc_cfg_fields[] = {
+static const DebugRegField usif_prtc_cfg_fields[] = {
 	{"CLEN",	USIF_PRTC_CFG_CLEN,		USIF_PRTC_CFG_CLEN_SHIFT,		NULL,	0},
 	{"HD",		USIF_PRTC_CFG_HD,		USIF_PRTC_CFG_HD_SHIFT,			NULL,	0},
 	{"PAR",		USIF_PRTC_CFG_PAR,		USIF_PRTC_CFG_PAR_SHIFT,		NULL,	0},
@@ -6372,115 +6568,115 @@ static const pmb887x_io_field_t usif_prtc_cfg_fields[] = {
 	{"SLIPEN",	USIF_PRTC_CFG_SLIPEN,	USIF_PRTC_CFG_SLIPEN_SHIFT,		NULL,	0},
 };
 
-static const pmb887x_io_field_t usif_bc_cfg_fields[] = {
+static const DebugRegField usif_bc_cfg_fields[] = {
 	{"BCRV",	USIF_BC_CFG_BCRV,	USIF_BC_CFG_BCRV_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t usif_fdiv_cfg_fields[] = {
+static const DebugRegField usif_fdiv_cfg_fields[] = {
 	{"INC",	USIF_FDIV_CFG_INC,	USIF_FDIV_CFG_INC_SHIFT,	NULL,	0},
 	{"DEC",	USIF_FDIV_CFG_DEC,	USIF_FDIV_CFG_DEC_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t usif_ictmo_cfg_fields[] = {
+static const DebugRegField usif_ictmo_cfg_fields[] = {
 	{"TMO",	USIF_ICTMO_CFG_TMO,	USIF_ICTMO_CFG_TMO_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t usif_mss_stat_fields[] = {
+static const DebugRegField usif_mss_stat_fields[] = {
 	{"FCO",	USIF_MSS_STAT_FCO,	USIF_MSS_STAT_FCO_SHIFT,	NULL,	0},
 	{"FCI",	USIF_MSS_STAT_FCI,	USIF_MSS_STAT_FCI_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_value_t usif_usif_txfifo_cfg_txbs_values[] = {
+static const DebugRegValue usif_usif_txfifo_cfg_txbs_values[] = {
 	{"1_WORD",	USIF_TXFIFO_CFG_TXBS_1_WORD},
 	{"2_WORD",	USIF_TXFIFO_CFG_TXBS_2_WORD},
 	{"4_WORD",	USIF_TXFIFO_CFG_TXBS_4_WORD},
 };
 
-static const pmb887x_io_value_t usif_usif_txfifo_cfg_txfa_values[] = {
+static const DebugRegValue usif_usif_txfifo_cfg_txfa_values[] = {
 	{"1",	USIF_TXFIFO_CFG_TXFA_1},
 	{"2",	USIF_TXFIFO_CFG_TXFA_2},
 	{"4",	USIF_TXFIFO_CFG_TXFA_4},
 };
 
-static const pmb887x_io_field_t usif_txfifo_cfg_fields[] = {
+static const DebugRegField usif_txfifo_cfg_fields[] = {
 	{"TXBS",	USIF_TXFIFO_CFG_TXBS,	USIF_TXFIFO_CFG_TXBS_SHIFT,	usif_usif_txfifo_cfg_txbs_values,	ARRAY_SIZE(usif_usif_txfifo_cfg_txbs_values)},
 	{"TXFA",	USIF_TXFIFO_CFG_TXFA,	USIF_TXFIFO_CFG_TXFA_SHIFT,	usif_usif_txfifo_cfg_txfa_values,	ARRAY_SIZE(usif_usif_txfifo_cfg_txfa_values)},
 	{"TXFC",	USIF_TXFIFO_CFG_TXFC,	USIF_TXFIFO_CFG_TXFC_SHIFT,	NULL,								0},
 };
 
-static const pmb887x_io_field_t usif_tps_ctrl_fields[] = {
+static const DebugRegField usif_tps_ctrl_fields[] = {
 	{"TPS",	USIF_TPS_CTRL_TPS,	USIF_TPS_CTRL_TPS_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t usif_txfifo_stat_fields[] = {
+static const DebugRegField usif_txfifo_stat_fields[] = {
 	{"TXFFS",	USIF_TXFIFO_STAT_TXFFS,		USIF_TXFIFO_STAT_TXFFS_SHIFT,	NULL,	0},
 	{"TXBUSY",	USIF_TXFIFO_STAT_TXBUSY,	USIF_TXFIFO_STAT_TXBUSY_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_value_t usif_usif_rxfifo_cfg_rxbs_values[] = {
+static const DebugRegValue usif_usif_rxfifo_cfg_rxbs_values[] = {
 	{"1_WORD",	USIF_RXFIFO_CFG_RXBS_1_WORD},
 	{"2_WORD",	USIF_RXFIFO_CFG_RXBS_2_WORD},
 	{"4_WORD",	USIF_RXFIFO_CFG_RXBS_4_WORD},
 };
 
-static const pmb887x_io_value_t usif_usif_rxfifo_cfg_rxfa_values[] = {
+static const DebugRegValue usif_usif_rxfifo_cfg_rxfa_values[] = {
 	{"1",	USIF_RXFIFO_CFG_RXFA_1},
 	{"2",	USIF_RXFIFO_CFG_RXFA_2},
 	{"4",	USIF_RXFIFO_CFG_RXFA_4},
 };
 
-static const pmb887x_io_field_t usif_rxfifo_cfg_fields[] = {
+static const DebugRegField usif_rxfifo_cfg_fields[] = {
 	{"RXBS",	USIF_RXFIFO_CFG_RXBS,	USIF_RXFIFO_CFG_RXBS_SHIFT,	usif_usif_rxfifo_cfg_rxbs_values,	ARRAY_SIZE(usif_usif_rxfifo_cfg_rxbs_values)},
 	{"RXFA",	USIF_RXFIFO_CFG_RXFA,	USIF_RXFIFO_CFG_RXFA_SHIFT,	usif_usif_rxfifo_cfg_rxfa_values,	ARRAY_SIZE(usif_usif_rxfifo_cfg_rxfa_values)},
 	{"RXFC",	USIF_RXFIFO_CFG_RXFC,	USIF_RXFIFO_CFG_RXFC_SHIFT,	NULL,								0},
 };
 
-static const pmb887x_io_field_t usif_mrps_ctrl_fields[] = {
+static const DebugRegField usif_mrps_ctrl_fields[] = {
 	{"MRPS",	USIF_MRPS_CTRL_MRPS,	USIF_MRPS_CTRL_MRPS_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t usif_rps_stat_fields[] = {
+static const DebugRegField usif_rps_stat_fields[] = {
 	{"RPS",	USIF_RPS_STAT_RPS,	USIF_RPS_STAT_RPS_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t usif_rxfifo_stat_fields[] = {
+static const DebugRegField usif_rxfifo_stat_fields[] = {
 	{"RXFFS",	USIF_RXFIFO_STAT_RXFFS,	USIF_RXFIFO_STAT_RXFFS_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t usif_errirqsm_fields[] = {
+static const DebugRegField usif_errirqsm_fields[] = {
 	{"RXFUFL",	USIF_ERRIRQSM_RXFUFL,	USIF_ERRIRQSM_RXFUFL_SHIFT,	NULL,	0},
 	{"RXFOFL",	USIF_ERRIRQSM_RXFOFL,	USIF_ERRIRQSM_RXFOFL_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t usif_errirqss_fields[] = {
+static const DebugRegField usif_errirqss_fields[] = {
 	{"RXFUFL",	USIF_ERRIRQSS_RXFUFL,	USIF_ERRIRQSS_RXFUFL_SHIFT,	NULL,	0},
 	{"RXFOFL",	USIF_ERRIRQSS_RXFOFL,	USIF_ERRIRQSS_RXFOFL_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t usif_errirqsc_fields[] = {
+static const DebugRegField usif_errirqsc_fields[] = {
 	{"RXFUFL",	USIF_ERRIRQSC_RXFUFL,	USIF_ERRIRQSC_RXFUFL_SHIFT,	NULL,	0},
 	{"RXFOFL",	USIF_ERRIRQSC_RXFOFL,	USIF_ERRIRQSC_RXFOFL_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t usif_pirqsm_fields[] = {
+static const DebugRegField usif_pirqsm_fields[] = {
 	{"FCI",		USIF_PIRQSM_FCI,	USIF_PIRQSM_FCI_SHIFT,		NULL,	0},
 	{"TXEND",	USIF_PIRQSM_TXEND,	USIF_PIRQSM_TXEND_SHIFT,	NULL,	0},
 	{"RXEND",	USIF_PIRQSM_RXEND,	USIF_PIRQSM_RXEND_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t usif_pirqss_fields[] = {
+static const DebugRegField usif_pirqss_fields[] = {
 	{"FCI",		USIF_PIRQSS_FCI,	USIF_PIRQSS_FCI_SHIFT,		NULL,	0},
 	{"TXEND",	USIF_PIRQSS_TXEND,	USIF_PIRQSS_TXEND_SHIFT,	NULL,	0},
 	{"RXEND",	USIF_PIRQSS_RXEND,	USIF_PIRQSS_RXEND_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t usif_pirqsc_fields[] = {
+static const DebugRegField usif_pirqsc_fields[] = {
 	{"FCI",		USIF_PIRQSC_FCI,	USIF_PIRQSC_FCI_SHIFT,		NULL,	0},
 	{"TXEND",	USIF_PIRQSC_TXEND,	USIF_PIRQSC_TXEND_SHIFT,	NULL,	0},
 	{"RXEND",	USIF_PIRQSC_RXEND,	USIF_PIRQSC_RXEND_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t usif_ris_fields[] = {
+static const DebugRegField usif_ris_fields[] = {
 	{"RXLSREQ",	USIF_RIS_RXLSREQ,	USIF_RIS_RXLSREQ_SHIFT,	NULL,	0},
 	{"RXSREQ",	USIF_RIS_RXSREQ,	USIF_RIS_RXSREQ_SHIFT,	NULL,	0},
 	{"RXLBREQ",	USIF_RIS_RXLBREQ,	USIF_RIS_RXLBREQ_SHIFT,	NULL,	0},
@@ -6494,7 +6690,7 @@ static const pmb887x_io_field_t usif_ris_fields[] = {
 	{"PIRQ",	USIF_RIS_PIRQ,		USIF_RIS_PIRQ_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t usif_imsc_fields[] = {
+static const DebugRegField usif_imsc_fields[] = {
 	{"RXLSREQ",	USIF_IMSC_RXLSREQ,	USIF_IMSC_RXLSREQ_SHIFT,	NULL,	0},
 	{"RXSREQ",	USIF_IMSC_RXSREQ,	USIF_IMSC_RXSREQ_SHIFT,		NULL,	0},
 	{"RXLBREQ",	USIF_IMSC_RXLBREQ,	USIF_IMSC_RXLBREQ_SHIFT,	NULL,	0},
@@ -6508,7 +6704,7 @@ static const pmb887x_io_field_t usif_imsc_fields[] = {
 	{"PIRQ",	USIF_IMSC_PIRQ,		USIF_IMSC_PIRQ_SHIFT,		NULL,	0},
 };
 
-static const pmb887x_io_field_t usif_mis_fields[] = {
+static const DebugRegField usif_mis_fields[] = {
 	{"RXLSREQ",	USIF_MIS_RXLSREQ,	USIF_MIS_RXLSREQ_SHIFT,	NULL,	0},
 	{"RXSREQ",	USIF_MIS_RXSREQ,	USIF_MIS_RXSREQ_SHIFT,	NULL,	0},
 	{"RXLBREQ",	USIF_MIS_RXLBREQ,	USIF_MIS_RXLBREQ_SHIFT,	NULL,	0},
@@ -6522,7 +6718,7 @@ static const pmb887x_io_field_t usif_mis_fields[] = {
 	{"PIRQ",	USIF_MIS_PIRQ,		USIF_MIS_PIRQ_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t usif_icr_fields[] = {
+static const DebugRegField usif_icr_fields[] = {
 	{"RXLSREQ",	USIF_ICR_RXLSREQ,	USIF_ICR_RXLSREQ_SHIFT,	NULL,	0},
 	{"RXSREQ",	USIF_ICR_RXSREQ,	USIF_ICR_RXSREQ_SHIFT,	NULL,	0},
 	{"RXLBREQ",	USIF_ICR_RXLBREQ,	USIF_ICR_RXLBREQ_SHIFT,	NULL,	0},
@@ -6536,7 +6732,7 @@ static const pmb887x_io_field_t usif_icr_fields[] = {
 	{"PIRQ",	USIF_ICR_PIRQ,		USIF_ICR_PIRQ_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t usif_isr_fields[] = {
+static const DebugRegField usif_isr_fields[] = {
 	{"RXLSREQ",	USIF_ISR_RXLSREQ,	USIF_ISR_RXLSREQ_SHIFT,	NULL,	0},
 	{"RXSREQ",	USIF_ISR_RXSREQ,	USIF_ISR_RXSREQ_SHIFT,	NULL,	0},
 	{"RXLBREQ",	USIF_ISR_RXLBREQ,	USIF_ISR_RXLBREQ_SHIFT,	NULL,	0},
@@ -6550,7 +6746,7 @@ static const pmb887x_io_field_t usif_isr_fields[] = {
 	{"PIRQ",	USIF_ISR_PIRQ,		USIF_ISR_PIRQ_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t usif_dmae_fields[] = {
+static const DebugRegField usif_dmae_fields[] = {
 	{"RXLSREQ",	USIF_DMAE_RXLSREQ,	USIF_DMAE_RXLSREQ_SHIFT,	NULL,	0},
 	{"RXSREQ",	USIF_DMAE_RXSREQ,	USIF_DMAE_RXSREQ_SHIFT,		NULL,	0},
 	{"RXLBREQ",	USIF_DMAE_RXLBREQ,	USIF_DMAE_RXLBREQ_SHIFT,	NULL,	0},
@@ -6561,304 +6757,325 @@ static const pmb887x_io_field_t usif_dmae_fields[] = {
 	{"TXBREQ",	USIF_DMAE_TXBREQ,	USIF_DMAE_TXBREQ_SHIFT,		NULL,	0},
 };
 
-static const pmb887x_io_reg_t usif_regs[] = {
-	{"CLC",			USIF_CLC,			usif_clc_fields,			ARRAY_SIZE(usif_clc_fields),			0},
-	{"ID",			USIF_ID,			usif_id_fields,				ARRAY_SIZE(usif_id_fields),				0},
-	{"RUNCTRL",		USIF_RUNCTRL,		usif_runctrl_fields,		ARRAY_SIZE(usif_runctrl_fields),		0},
-	{"MSS_SET",		USIF_MSS_SET,		usif_mss_set_fields,		ARRAY_SIZE(usif_mss_set_fields),		0},
-	{"MSS_CLR",		USIF_MSS_CLR,		usif_mss_clr_fields,		ARRAY_SIZE(usif_mss_clr_fields),		0},
-	{"MODE_CFG",	USIF_MODE_CFG,		usif_mode_cfg_fields,		ARRAY_SIZE(usif_mode_cfg_fields),		0},
-	{"PRTC_CFG",	USIF_PRTC_CFG,		usif_prtc_cfg_fields,		ARRAY_SIZE(usif_prtc_cfg_fields),		0},
-	{"BC_CFG",		USIF_BC_CFG,		usif_bc_cfg_fields,			ARRAY_SIZE(usif_bc_cfg_fields),			0},
-	{"FDIV_CFG",	USIF_FDIV_CFG,		usif_fdiv_cfg_fields,		ARRAY_SIZE(usif_fdiv_cfg_fields),		0},
-	{"ICTMO_CFG",	USIF_ICTMO_CFG,		usif_ictmo_cfg_fields,		ARRAY_SIZE(usif_ictmo_cfg_fields),		0},
-	{"MSS_STAT",	USIF_MSS_STAT,		usif_mss_stat_fields,		ARRAY_SIZE(usif_mss_stat_fields),		0},
-	{"TXFIFO_CFG",	USIF_TXFIFO_CFG,	usif_txfifo_cfg_fields,		ARRAY_SIZE(usif_txfifo_cfg_fields),		0},
-	{"TPS_CTRL",	USIF_TPS_CTRL,		usif_tps_ctrl_fields,		ARRAY_SIZE(usif_tps_ctrl_fields),		0},
-	{"TXFIFO_STAT",	USIF_TXFIFO_STAT,	usif_txfifo_stat_fields,	ARRAY_SIZE(usif_txfifo_stat_fields),	0},
-	{"RXFIFO_CFG",	USIF_RXFIFO_CFG,	usif_rxfifo_cfg_fields,		ARRAY_SIZE(usif_rxfifo_cfg_fields),		0},
-	{"MRPS_CTRL",	USIF_MRPS_CTRL,		usif_mrps_ctrl_fields,		ARRAY_SIZE(usif_mrps_ctrl_fields),		0},
-	{"RPS_STAT",	USIF_RPS_STAT,		usif_rps_stat_fields,		ARRAY_SIZE(usif_rps_stat_fields),		0},
-	{"RXFIFO_STAT",	USIF_RXFIFO_STAT,	usif_rxfifo_stat_fields,	ARRAY_SIZE(usif_rxfifo_stat_fields),	0},
-	{"ERRIRQSM",	USIF_ERRIRQSM,		usif_errirqsm_fields,		ARRAY_SIZE(usif_errirqsm_fields),		0},
-	{"ERRIRQSS",	USIF_ERRIRQSS,		usif_errirqss_fields,		ARRAY_SIZE(usif_errirqss_fields),		0},
-	{"ERRIRQSC",	USIF_ERRIRQSC,		usif_errirqsc_fields,		ARRAY_SIZE(usif_errirqsc_fields),		0},
-	{"PIRQSM",		USIF_PIRQSM,		usif_pirqsm_fields,			ARRAY_SIZE(usif_pirqsm_fields),			0},
-	{"PIRQSS",		USIF_PIRQSS,		usif_pirqss_fields,			ARRAY_SIZE(usif_pirqss_fields),			0},
-	{"PIRQSC",		USIF_PIRQSC,		usif_pirqsc_fields,			ARRAY_SIZE(usif_pirqsc_fields),			0},
-	{"RIS",			USIF_RIS,			usif_ris_fields,			ARRAY_SIZE(usif_ris_fields),			0},
-	{"IMSC",		USIF_IMSC,			usif_imsc_fields,			ARRAY_SIZE(usif_imsc_fields),			0},
-	{"MIS",			USIF_MIS,			usif_mis_fields,			ARRAY_SIZE(usif_mis_fields),			0},
-	{"ICR",			USIF_ICR,			usif_icr_fields,			ARRAY_SIZE(usif_icr_fields),			0},
-	{"ISR",			USIF_ISR,			usif_isr_fields,			ARRAY_SIZE(usif_isr_fields),			0},
-	{"DMAE",		USIF_DMAE,			usif_dmae_fields,			ARRAY_SIZE(usif_dmae_fields),			0},
-	{"TXD",			USIF_TXD,			NULL,						0,										0},
-	{"RXD",			USIF_RXD,			NULL,						0,										0},
+static const DebugReg usif_regs[] = {
+	{"CLC",			USIF_CLC,			usif_clc_fields,			ARRAY_SIZE(usif_clc_fields)},
+	{"ID",			USIF_ID,			usif_id_fields,				ARRAY_SIZE(usif_id_fields)},
+	{"RUNCTRL",		USIF_RUNCTRL,		usif_runctrl_fields,		ARRAY_SIZE(usif_runctrl_fields)},
+	{"MSS_SET",		USIF_MSS_SET,		usif_mss_set_fields,		ARRAY_SIZE(usif_mss_set_fields)},
+	{"MSS_CLR",		USIF_MSS_CLR,		usif_mss_clr_fields,		ARRAY_SIZE(usif_mss_clr_fields)},
+	{"MODE_CFG",	USIF_MODE_CFG,		usif_mode_cfg_fields,		ARRAY_SIZE(usif_mode_cfg_fields)},
+	{"PRTC_CFG",	USIF_PRTC_CFG,		usif_prtc_cfg_fields,		ARRAY_SIZE(usif_prtc_cfg_fields)},
+	{"BC_CFG",		USIF_BC_CFG,		usif_bc_cfg_fields,			ARRAY_SIZE(usif_bc_cfg_fields)},
+	{"FDIV_CFG",	USIF_FDIV_CFG,		usif_fdiv_cfg_fields,		ARRAY_SIZE(usif_fdiv_cfg_fields)},
+	{"ICTMO_CFG",	USIF_ICTMO_CFG,		usif_ictmo_cfg_fields,		ARRAY_SIZE(usif_ictmo_cfg_fields)},
+	{"MSS_STAT",	USIF_MSS_STAT,		usif_mss_stat_fields,		ARRAY_SIZE(usif_mss_stat_fields)},
+	{"TXFIFO_CFG",	USIF_TXFIFO_CFG,	usif_txfifo_cfg_fields,		ARRAY_SIZE(usif_txfifo_cfg_fields)},
+	{"TPS_CTRL",	USIF_TPS_CTRL,		usif_tps_ctrl_fields,		ARRAY_SIZE(usif_tps_ctrl_fields)},
+	{"TXFIFO_STAT",	USIF_TXFIFO_STAT,	usif_txfifo_stat_fields,	ARRAY_SIZE(usif_txfifo_stat_fields)},
+	{"RXFIFO_CFG",	USIF_RXFIFO_CFG,	usif_rxfifo_cfg_fields,		ARRAY_SIZE(usif_rxfifo_cfg_fields)},
+	{"MRPS_CTRL",	USIF_MRPS_CTRL,		usif_mrps_ctrl_fields,		ARRAY_SIZE(usif_mrps_ctrl_fields)},
+	{"RPS_STAT",	USIF_RPS_STAT,		usif_rps_stat_fields,		ARRAY_SIZE(usif_rps_stat_fields)},
+	{"RXFIFO_STAT",	USIF_RXFIFO_STAT,	usif_rxfifo_stat_fields,	ARRAY_SIZE(usif_rxfifo_stat_fields)},
+	{"ERRIRQSM",	USIF_ERRIRQSM,		usif_errirqsm_fields,		ARRAY_SIZE(usif_errirqsm_fields)},
+	{"ERRIRQSS",	USIF_ERRIRQSS,		usif_errirqss_fields,		ARRAY_SIZE(usif_errirqss_fields)},
+	{"ERRIRQSC",	USIF_ERRIRQSC,		usif_errirqsc_fields,		ARRAY_SIZE(usif_errirqsc_fields)},
+	{"PIRQSM",		USIF_PIRQSM,		usif_pirqsm_fields,			ARRAY_SIZE(usif_pirqsm_fields)},
+	{"PIRQSS",		USIF_PIRQSS,		usif_pirqss_fields,			ARRAY_SIZE(usif_pirqss_fields)},
+	{"PIRQSC",		USIF_PIRQSC,		usif_pirqsc_fields,			ARRAY_SIZE(usif_pirqsc_fields)},
+	{"RIS",			USIF_RIS,			usif_ris_fields,			ARRAY_SIZE(usif_ris_fields)},
+	{"IMSC",		USIF_IMSC,			usif_imsc_fields,			ARRAY_SIZE(usif_imsc_fields)},
+	{"MIS",			USIF_MIS,			usif_mis_fields,			ARRAY_SIZE(usif_mis_fields)},
+	{"ICR",			USIF_ICR,			usif_icr_fields,			ARRAY_SIZE(usif_icr_fields)},
+	{"ISR",			USIF_ISR,			usif_isr_fields,			ARRAY_SIZE(usif_isr_fields)},
+	{"DMAE",		USIF_DMAE,			usif_dmae_fields,			ARRAY_SIZE(usif_dmae_fields)},
+	{"TXD",			USIF_TXD,			NULL,						0},
+	{"RXD",			USIF_RXD,			NULL,						0},
 };
 
-static const pmb887x_io_field_t vic_id_fields[] = {
+const DebugRegs pmb887x_usif_regs = {
+	.regs = usif_regs,
+	.count = ARRAY_SIZE(usif_regs),
+	.reg_size = 4,
+	.addr_digits = 8,
+};
+
+static const DebugRegField vic_id_fields[] = {
 	{"REV",		MOD_ID_REV,		MOD_ID_REV_SHIFT,		NULL,	0},
 	{"32B",		MOD_ID_32B,		MOD_ID_32B_SHIFT,		NULL,	0},
 	{"NUMBER",	MOD_ID_NUMBER,	MOD_ID_NUMBER_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t vic_fiq_con_fields[] = {
+static const DebugRegField vic_fiq_con_fields[] = {
 	{"NUM",				VIC_FIQ_CON_NUM,			VIC_FIQ_CON_NUM_SHIFT,				NULL,	0},
 	{"PRIORITY",		VIC_FIQ_CON_PRIORITY,		VIC_FIQ_CON_PRIORITY_SHIFT,			NULL,	0},
 	{"MASK_PRIORITY",	VIC_FIQ_CON_MASK_PRIORITY,	VIC_FIQ_CON_MASK_PRIORITY_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t vic_irq_con_fields[] = {
+static const DebugRegField vic_irq_con_fields[] = {
 	{"NUM",				VIC_IRQ_CON_NUM,			VIC_IRQ_CON_NUM_SHIFT,				NULL,	0},
 	{"PRIORITY",		VIC_IRQ_CON_PRIORITY,		VIC_IRQ_CON_PRIORITY_SHIFT,			NULL,	0},
 	{"MASK_PRIORITY",	VIC_IRQ_CON_MASK_PRIORITY,	VIC_IRQ_CON_MASK_PRIORITY_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t vic_fiq_current_fields[] = {
+static const DebugRegField vic_fiq_current_fields[] = {
 	{"NUM",	VIC_FIQ_CURRENT_NUM,	VIC_FIQ_CURRENT_NUM_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t vic_irq_current_fields[] = {
+static const DebugRegField vic_irq_current_fields[] = {
 	{"NUM",	VIC_IRQ_CURRENT_NUM,	VIC_IRQ_CURRENT_NUM_SHIFT,	NULL,	0},
 };
 
-static const pmb887x_io_field_t vic_con_fields[] = {
+static const DebugRegField vic_con_fields[] = {
 	{"PRIORITY",	VIC_CON_PRIORITY,	VIC_CON_PRIORITY_SHIFT,	NULL,	0},
 	{"FIQ",			VIC_CON_FIQ,		VIC_CON_FIQ_SHIFT,		NULL,	0},
 };
 
-static const pmb887x_io_reg_t vic_regs[] = {
-	{"ID",			VIC_ID,				vic_id_fields,			ARRAY_SIZE(vic_id_fields),			0},
-	{"FIQ_CON",		VIC_FIQ_CON,		vic_fiq_con_fields,		ARRAY_SIZE(vic_fiq_con_fields),		0},
-	{"IRQ_CON",		VIC_IRQ_CON,		vic_irq_con_fields,		ARRAY_SIZE(vic_irq_con_fields),		0},
-	{"FIQ_ACK",		VIC_FIQ_ACK,		NULL,					0,									0},
-	{"IRQ_ACK",		VIC_IRQ_ACK,		NULL,					0,									0},
-	{"FIQ_CURRENT",	VIC_FIQ_CURRENT,	vic_fiq_current_fields,	ARRAY_SIZE(vic_fiq_current_fields),	0},
-	{"IRQ_CURRENT",	VIC_IRQ_CURRENT,	vic_irq_current_fields,	ARRAY_SIZE(vic_irq_current_fields),	0},
-	{"CON0",		VIC_CON0,			vic_con_fields,			ARRAY_SIZE(vic_con_fields),			PMB887X_REG_IS_IRQ_CON},
-	{"CON1",		VIC_CON1,			vic_con_fields,			ARRAY_SIZE(vic_con_fields),			PMB887X_REG_IS_IRQ_CON},
-	{"CON2",		VIC_CON2,			vic_con_fields,			ARRAY_SIZE(vic_con_fields),			PMB887X_REG_IS_IRQ_CON},
-	{"CON3",		VIC_CON3,			vic_con_fields,			ARRAY_SIZE(vic_con_fields),			PMB887X_REG_IS_IRQ_CON},
-	{"CON4",		VIC_CON4,			vic_con_fields,			ARRAY_SIZE(vic_con_fields),			PMB887X_REG_IS_IRQ_CON},
-	{"CON5",		VIC_CON5,			vic_con_fields,			ARRAY_SIZE(vic_con_fields),			PMB887X_REG_IS_IRQ_CON},
-	{"CON6",		VIC_CON6,			vic_con_fields,			ARRAY_SIZE(vic_con_fields),			PMB887X_REG_IS_IRQ_CON},
-	{"CON7",		VIC_CON7,			vic_con_fields,			ARRAY_SIZE(vic_con_fields),			PMB887X_REG_IS_IRQ_CON},
-	{"CON8",		VIC_CON8,			vic_con_fields,			ARRAY_SIZE(vic_con_fields),			PMB887X_REG_IS_IRQ_CON},
-	{"CON9",		VIC_CON9,			vic_con_fields,			ARRAY_SIZE(vic_con_fields),			PMB887X_REG_IS_IRQ_CON},
-	{"CON10",		VIC_CON10,			vic_con_fields,			ARRAY_SIZE(vic_con_fields),			PMB887X_REG_IS_IRQ_CON},
-	{"CON11",		VIC_CON11,			vic_con_fields,			ARRAY_SIZE(vic_con_fields),			PMB887X_REG_IS_IRQ_CON},
-	{"CON12",		VIC_CON12,			vic_con_fields,			ARRAY_SIZE(vic_con_fields),			PMB887X_REG_IS_IRQ_CON},
-	{"CON13",		VIC_CON13,			vic_con_fields,			ARRAY_SIZE(vic_con_fields),			PMB887X_REG_IS_IRQ_CON},
-	{"CON14",		VIC_CON14,			vic_con_fields,			ARRAY_SIZE(vic_con_fields),			PMB887X_REG_IS_IRQ_CON},
-	{"CON15",		VIC_CON15,			vic_con_fields,			ARRAY_SIZE(vic_con_fields),			PMB887X_REG_IS_IRQ_CON},
-	{"CON16",		VIC_CON16,			vic_con_fields,			ARRAY_SIZE(vic_con_fields),			PMB887X_REG_IS_IRQ_CON},
-	{"CON17",		VIC_CON17,			vic_con_fields,			ARRAY_SIZE(vic_con_fields),			PMB887X_REG_IS_IRQ_CON},
-	{"CON18",		VIC_CON18,			vic_con_fields,			ARRAY_SIZE(vic_con_fields),			PMB887X_REG_IS_IRQ_CON},
-	{"CON19",		VIC_CON19,			vic_con_fields,			ARRAY_SIZE(vic_con_fields),			PMB887X_REG_IS_IRQ_CON},
-	{"CON20",		VIC_CON20,			vic_con_fields,			ARRAY_SIZE(vic_con_fields),			PMB887X_REG_IS_IRQ_CON},
-	{"CON21",		VIC_CON21,			vic_con_fields,			ARRAY_SIZE(vic_con_fields),			PMB887X_REG_IS_IRQ_CON},
-	{"CON22",		VIC_CON22,			vic_con_fields,			ARRAY_SIZE(vic_con_fields),			PMB887X_REG_IS_IRQ_CON},
-	{"CON23",		VIC_CON23,			vic_con_fields,			ARRAY_SIZE(vic_con_fields),			PMB887X_REG_IS_IRQ_CON},
-	{"CON24",		VIC_CON24,			vic_con_fields,			ARRAY_SIZE(vic_con_fields),			PMB887X_REG_IS_IRQ_CON},
-	{"CON25",		VIC_CON25,			vic_con_fields,			ARRAY_SIZE(vic_con_fields),			PMB887X_REG_IS_IRQ_CON},
-	{"CON26",		VIC_CON26,			vic_con_fields,			ARRAY_SIZE(vic_con_fields),			PMB887X_REG_IS_IRQ_CON},
-	{"CON27",		VIC_CON27,			vic_con_fields,			ARRAY_SIZE(vic_con_fields),			PMB887X_REG_IS_IRQ_CON},
-	{"CON28",		VIC_CON28,			vic_con_fields,			ARRAY_SIZE(vic_con_fields),			PMB887X_REG_IS_IRQ_CON},
-	{"CON29",		VIC_CON29,			vic_con_fields,			ARRAY_SIZE(vic_con_fields),			PMB887X_REG_IS_IRQ_CON},
-	{"CON30",		VIC_CON30,			vic_con_fields,			ARRAY_SIZE(vic_con_fields),			PMB887X_REG_IS_IRQ_CON},
-	{"CON31",		VIC_CON31,			vic_con_fields,			ARRAY_SIZE(vic_con_fields),			PMB887X_REG_IS_IRQ_CON},
-	{"CON32",		VIC_CON32,			vic_con_fields,			ARRAY_SIZE(vic_con_fields),			PMB887X_REG_IS_IRQ_CON},
-	{"CON33",		VIC_CON33,			vic_con_fields,			ARRAY_SIZE(vic_con_fields),			PMB887X_REG_IS_IRQ_CON},
-	{"CON34",		VIC_CON34,			vic_con_fields,			ARRAY_SIZE(vic_con_fields),			PMB887X_REG_IS_IRQ_CON},
-	{"CON35",		VIC_CON35,			vic_con_fields,			ARRAY_SIZE(vic_con_fields),			PMB887X_REG_IS_IRQ_CON},
-	{"CON36",		VIC_CON36,			vic_con_fields,			ARRAY_SIZE(vic_con_fields),			PMB887X_REG_IS_IRQ_CON},
-	{"CON37",		VIC_CON37,			vic_con_fields,			ARRAY_SIZE(vic_con_fields),			PMB887X_REG_IS_IRQ_CON},
-	{"CON38",		VIC_CON38,			vic_con_fields,			ARRAY_SIZE(vic_con_fields),			PMB887X_REG_IS_IRQ_CON},
-	{"CON39",		VIC_CON39,			vic_con_fields,			ARRAY_SIZE(vic_con_fields),			PMB887X_REG_IS_IRQ_CON},
-	{"CON40",		VIC_CON40,			vic_con_fields,			ARRAY_SIZE(vic_con_fields),			PMB887X_REG_IS_IRQ_CON},
-	{"CON41",		VIC_CON41,			vic_con_fields,			ARRAY_SIZE(vic_con_fields),			PMB887X_REG_IS_IRQ_CON},
-	{"CON42",		VIC_CON42,			vic_con_fields,			ARRAY_SIZE(vic_con_fields),			PMB887X_REG_IS_IRQ_CON},
-	{"CON43",		VIC_CON43,			vic_con_fields,			ARRAY_SIZE(vic_con_fields),			PMB887X_REG_IS_IRQ_CON},
-	{"CON44",		VIC_CON44,			vic_con_fields,			ARRAY_SIZE(vic_con_fields),			PMB887X_REG_IS_IRQ_CON},
-	{"CON45",		VIC_CON45,			vic_con_fields,			ARRAY_SIZE(vic_con_fields),			PMB887X_REG_IS_IRQ_CON},
-	{"CON46",		VIC_CON46,			vic_con_fields,			ARRAY_SIZE(vic_con_fields),			PMB887X_REG_IS_IRQ_CON},
-	{"CON47",		VIC_CON47,			vic_con_fields,			ARRAY_SIZE(vic_con_fields),			PMB887X_REG_IS_IRQ_CON},
-	{"CON48",		VIC_CON48,			vic_con_fields,			ARRAY_SIZE(vic_con_fields),			PMB887X_REG_IS_IRQ_CON},
-	{"CON49",		VIC_CON49,			vic_con_fields,			ARRAY_SIZE(vic_con_fields),			PMB887X_REG_IS_IRQ_CON},
-	{"CON50",		VIC_CON50,			vic_con_fields,			ARRAY_SIZE(vic_con_fields),			PMB887X_REG_IS_IRQ_CON},
-	{"CON51",		VIC_CON51,			vic_con_fields,			ARRAY_SIZE(vic_con_fields),			PMB887X_REG_IS_IRQ_CON},
-	{"CON52",		VIC_CON52,			vic_con_fields,			ARRAY_SIZE(vic_con_fields),			PMB887X_REG_IS_IRQ_CON},
-	{"CON53",		VIC_CON53,			vic_con_fields,			ARRAY_SIZE(vic_con_fields),			PMB887X_REG_IS_IRQ_CON},
-	{"CON54",		VIC_CON54,			vic_con_fields,			ARRAY_SIZE(vic_con_fields),			PMB887X_REG_IS_IRQ_CON},
-	{"CON55",		VIC_CON55,			vic_con_fields,			ARRAY_SIZE(vic_con_fields),			PMB887X_REG_IS_IRQ_CON},
-	{"CON56",		VIC_CON56,			vic_con_fields,			ARRAY_SIZE(vic_con_fields),			PMB887X_REG_IS_IRQ_CON},
-	{"CON57",		VIC_CON57,			vic_con_fields,			ARRAY_SIZE(vic_con_fields),			PMB887X_REG_IS_IRQ_CON},
-	{"CON58",		VIC_CON58,			vic_con_fields,			ARRAY_SIZE(vic_con_fields),			PMB887X_REG_IS_IRQ_CON},
-	{"CON59",		VIC_CON59,			vic_con_fields,			ARRAY_SIZE(vic_con_fields),			PMB887X_REG_IS_IRQ_CON},
-	{"CON60",		VIC_CON60,			vic_con_fields,			ARRAY_SIZE(vic_con_fields),			PMB887X_REG_IS_IRQ_CON},
-	{"CON61",		VIC_CON61,			vic_con_fields,			ARRAY_SIZE(vic_con_fields),			PMB887X_REG_IS_IRQ_CON},
-	{"CON62",		VIC_CON62,			vic_con_fields,			ARRAY_SIZE(vic_con_fields),			PMB887X_REG_IS_IRQ_CON},
-	{"CON63",		VIC_CON63,			vic_con_fields,			ARRAY_SIZE(vic_con_fields),			PMB887X_REG_IS_IRQ_CON},
-	{"CON64",		VIC_CON64,			vic_con_fields,			ARRAY_SIZE(vic_con_fields),			PMB887X_REG_IS_IRQ_CON},
-	{"CON65",		VIC_CON65,			vic_con_fields,			ARRAY_SIZE(vic_con_fields),			PMB887X_REG_IS_IRQ_CON},
-	{"CON66",		VIC_CON66,			vic_con_fields,			ARRAY_SIZE(vic_con_fields),			PMB887X_REG_IS_IRQ_CON},
-	{"CON67",		VIC_CON67,			vic_con_fields,			ARRAY_SIZE(vic_con_fields),			PMB887X_REG_IS_IRQ_CON},
-	{"CON68",		VIC_CON68,			vic_con_fields,			ARRAY_SIZE(vic_con_fields),			PMB887X_REG_IS_IRQ_CON},
-	{"CON69",		VIC_CON69,			vic_con_fields,			ARRAY_SIZE(vic_con_fields),			PMB887X_REG_IS_IRQ_CON},
-	{"CON70",		VIC_CON70,			vic_con_fields,			ARRAY_SIZE(vic_con_fields),			PMB887X_REG_IS_IRQ_CON},
-	{"CON71",		VIC_CON71,			vic_con_fields,			ARRAY_SIZE(vic_con_fields),			PMB887X_REG_IS_IRQ_CON},
-	{"CON72",		VIC_CON72,			vic_con_fields,			ARRAY_SIZE(vic_con_fields),			PMB887X_REG_IS_IRQ_CON},
-	{"CON73",		VIC_CON73,			vic_con_fields,			ARRAY_SIZE(vic_con_fields),			PMB887X_REG_IS_IRQ_CON},
-	{"CON74",		VIC_CON74,			vic_con_fields,			ARRAY_SIZE(vic_con_fields),			PMB887X_REG_IS_IRQ_CON},
-	{"CON75",		VIC_CON75,			vic_con_fields,			ARRAY_SIZE(vic_con_fields),			PMB887X_REG_IS_IRQ_CON},
-	{"CON76",		VIC_CON76,			vic_con_fields,			ARRAY_SIZE(vic_con_fields),			PMB887X_REG_IS_IRQ_CON},
-	{"CON77",		VIC_CON77,			vic_con_fields,			ARRAY_SIZE(vic_con_fields),			PMB887X_REG_IS_IRQ_CON},
-	{"CON78",		VIC_CON78,			vic_con_fields,			ARRAY_SIZE(vic_con_fields),			PMB887X_REG_IS_IRQ_CON},
-	{"CON79",		VIC_CON79,			vic_con_fields,			ARRAY_SIZE(vic_con_fields),			PMB887X_REG_IS_IRQ_CON},
-	{"CON80",		VIC_CON80,			vic_con_fields,			ARRAY_SIZE(vic_con_fields),			PMB887X_REG_IS_IRQ_CON},
-	{"CON81",		VIC_CON81,			vic_con_fields,			ARRAY_SIZE(vic_con_fields),			PMB887X_REG_IS_IRQ_CON},
-	{"CON82",		VIC_CON82,			vic_con_fields,			ARRAY_SIZE(vic_con_fields),			PMB887X_REG_IS_IRQ_CON},
-	{"CON83",		VIC_CON83,			vic_con_fields,			ARRAY_SIZE(vic_con_fields),			PMB887X_REG_IS_IRQ_CON},
-	{"CON84",		VIC_CON84,			vic_con_fields,			ARRAY_SIZE(vic_con_fields),			PMB887X_REG_IS_IRQ_CON},
-	{"CON85",		VIC_CON85,			vic_con_fields,			ARRAY_SIZE(vic_con_fields),			PMB887X_REG_IS_IRQ_CON},
-	{"CON86",		VIC_CON86,			vic_con_fields,			ARRAY_SIZE(vic_con_fields),			PMB887X_REG_IS_IRQ_CON},
-	{"CON87",		VIC_CON87,			vic_con_fields,			ARRAY_SIZE(vic_con_fields),			PMB887X_REG_IS_IRQ_CON},
-	{"CON88",		VIC_CON88,			vic_con_fields,			ARRAY_SIZE(vic_con_fields),			PMB887X_REG_IS_IRQ_CON},
-	{"CON89",		VIC_CON89,			vic_con_fields,			ARRAY_SIZE(vic_con_fields),			PMB887X_REG_IS_IRQ_CON},
-	{"CON90",		VIC_CON90,			vic_con_fields,			ARRAY_SIZE(vic_con_fields),			PMB887X_REG_IS_IRQ_CON},
-	{"CON91",		VIC_CON91,			vic_con_fields,			ARRAY_SIZE(vic_con_fields),			PMB887X_REG_IS_IRQ_CON},
-	{"CON92",		VIC_CON92,			vic_con_fields,			ARRAY_SIZE(vic_con_fields),			PMB887X_REG_IS_IRQ_CON},
-	{"CON93",		VIC_CON93,			vic_con_fields,			ARRAY_SIZE(vic_con_fields),			PMB887X_REG_IS_IRQ_CON},
-	{"CON94",		VIC_CON94,			vic_con_fields,			ARRAY_SIZE(vic_con_fields),			PMB887X_REG_IS_IRQ_CON},
-	{"CON95",		VIC_CON95,			vic_con_fields,			ARRAY_SIZE(vic_con_fields),			PMB887X_REG_IS_IRQ_CON},
-	{"CON96",		VIC_CON96,			vic_con_fields,			ARRAY_SIZE(vic_con_fields),			PMB887X_REG_IS_IRQ_CON},
-	{"CON97",		VIC_CON97,			vic_con_fields,			ARRAY_SIZE(vic_con_fields),			PMB887X_REG_IS_IRQ_CON},
-	{"CON98",		VIC_CON98,			vic_con_fields,			ARRAY_SIZE(vic_con_fields),			PMB887X_REG_IS_IRQ_CON},
-	{"CON99",		VIC_CON99,			vic_con_fields,			ARRAY_SIZE(vic_con_fields),			PMB887X_REG_IS_IRQ_CON},
-	{"CON100",		VIC_CON100,			vic_con_fields,			ARRAY_SIZE(vic_con_fields),			PMB887X_REG_IS_IRQ_CON},
-	{"CON101",		VIC_CON101,			vic_con_fields,			ARRAY_SIZE(vic_con_fields),			PMB887X_REG_IS_IRQ_CON},
-	{"CON102",		VIC_CON102,			vic_con_fields,			ARRAY_SIZE(vic_con_fields),			PMB887X_REG_IS_IRQ_CON},
-	{"CON103",		VIC_CON103,			vic_con_fields,			ARRAY_SIZE(vic_con_fields),			PMB887X_REG_IS_IRQ_CON},
-	{"CON104",		VIC_CON104,			vic_con_fields,			ARRAY_SIZE(vic_con_fields),			PMB887X_REG_IS_IRQ_CON},
-	{"CON105",		VIC_CON105,			vic_con_fields,			ARRAY_SIZE(vic_con_fields),			PMB887X_REG_IS_IRQ_CON},
-	{"CON106",		VIC_CON106,			vic_con_fields,			ARRAY_SIZE(vic_con_fields),			PMB887X_REG_IS_IRQ_CON},
-	{"CON107",		VIC_CON107,			vic_con_fields,			ARRAY_SIZE(vic_con_fields),			PMB887X_REG_IS_IRQ_CON},
-	{"CON108",		VIC_CON108,			vic_con_fields,			ARRAY_SIZE(vic_con_fields),			PMB887X_REG_IS_IRQ_CON},
-	{"CON109",		VIC_CON109,			vic_con_fields,			ARRAY_SIZE(vic_con_fields),			PMB887X_REG_IS_IRQ_CON},
-	{"CON110",		VIC_CON110,			vic_con_fields,			ARRAY_SIZE(vic_con_fields),			PMB887X_REG_IS_IRQ_CON},
-	{"CON111",		VIC_CON111,			vic_con_fields,			ARRAY_SIZE(vic_con_fields),			PMB887X_REG_IS_IRQ_CON},
-	{"CON112",		VIC_CON112,			vic_con_fields,			ARRAY_SIZE(vic_con_fields),			PMB887X_REG_IS_IRQ_CON},
-	{"CON113",		VIC_CON113,			vic_con_fields,			ARRAY_SIZE(vic_con_fields),			PMB887X_REG_IS_IRQ_CON},
-	{"CON114",		VIC_CON114,			vic_con_fields,			ARRAY_SIZE(vic_con_fields),			PMB887X_REG_IS_IRQ_CON},
-	{"CON115",		VIC_CON115,			vic_con_fields,			ARRAY_SIZE(vic_con_fields),			PMB887X_REG_IS_IRQ_CON},
-	{"CON116",		VIC_CON116,			vic_con_fields,			ARRAY_SIZE(vic_con_fields),			PMB887X_REG_IS_IRQ_CON},
-	{"CON117",		VIC_CON117,			vic_con_fields,			ARRAY_SIZE(vic_con_fields),			PMB887X_REG_IS_IRQ_CON},
-	{"CON118",		VIC_CON118,			vic_con_fields,			ARRAY_SIZE(vic_con_fields),			PMB887X_REG_IS_IRQ_CON},
-	{"CON119",		VIC_CON119,			vic_con_fields,			ARRAY_SIZE(vic_con_fields),			PMB887X_REG_IS_IRQ_CON},
-	{"CON120",		VIC_CON120,			vic_con_fields,			ARRAY_SIZE(vic_con_fields),			PMB887X_REG_IS_IRQ_CON},
-	{"CON121",		VIC_CON121,			vic_con_fields,			ARRAY_SIZE(vic_con_fields),			PMB887X_REG_IS_IRQ_CON},
-	{"CON122",		VIC_CON122,			vic_con_fields,			ARRAY_SIZE(vic_con_fields),			PMB887X_REG_IS_IRQ_CON},
-	{"CON123",		VIC_CON123,			vic_con_fields,			ARRAY_SIZE(vic_con_fields),			PMB887X_REG_IS_IRQ_CON},
-	{"CON124",		VIC_CON124,			vic_con_fields,			ARRAY_SIZE(vic_con_fields),			PMB887X_REG_IS_IRQ_CON},
-	{"CON125",		VIC_CON125,			vic_con_fields,			ARRAY_SIZE(vic_con_fields),			PMB887X_REG_IS_IRQ_CON},
-	{"CON126",		VIC_CON126,			vic_con_fields,			ARRAY_SIZE(vic_con_fields),			PMB887X_REG_IS_IRQ_CON},
-	{"CON127",		VIC_CON127,			vic_con_fields,			ARRAY_SIZE(vic_con_fields),			PMB887X_REG_IS_IRQ_CON},
-	{"CON128",		VIC_CON128,			vic_con_fields,			ARRAY_SIZE(vic_con_fields),			PMB887X_REG_IS_IRQ_CON},
-	{"CON129",		VIC_CON129,			vic_con_fields,			ARRAY_SIZE(vic_con_fields),			PMB887X_REG_IS_IRQ_CON},
-	{"CON130",		VIC_CON130,			vic_con_fields,			ARRAY_SIZE(vic_con_fields),			PMB887X_REG_IS_IRQ_CON},
-	{"CON131",		VIC_CON131,			vic_con_fields,			ARRAY_SIZE(vic_con_fields),			PMB887X_REG_IS_IRQ_CON},
-	{"CON132",		VIC_CON132,			vic_con_fields,			ARRAY_SIZE(vic_con_fields),			PMB887X_REG_IS_IRQ_CON},
-	{"CON133",		VIC_CON133,			vic_con_fields,			ARRAY_SIZE(vic_con_fields),			PMB887X_REG_IS_IRQ_CON},
-	{"CON134",		VIC_CON134,			vic_con_fields,			ARRAY_SIZE(vic_con_fields),			PMB887X_REG_IS_IRQ_CON},
-	{"CON135",		VIC_CON135,			vic_con_fields,			ARRAY_SIZE(vic_con_fields),			PMB887X_REG_IS_IRQ_CON},
-	{"CON136",		VIC_CON136,			vic_con_fields,			ARRAY_SIZE(vic_con_fields),			PMB887X_REG_IS_IRQ_CON},
-	{"CON137",		VIC_CON137,			vic_con_fields,			ARRAY_SIZE(vic_con_fields),			PMB887X_REG_IS_IRQ_CON},
-	{"CON138",		VIC_CON138,			vic_con_fields,			ARRAY_SIZE(vic_con_fields),			PMB887X_REG_IS_IRQ_CON},
-	{"CON139",		VIC_CON139,			vic_con_fields,			ARRAY_SIZE(vic_con_fields),			PMB887X_REG_IS_IRQ_CON},
-	{"CON140",		VIC_CON140,			vic_con_fields,			ARRAY_SIZE(vic_con_fields),			PMB887X_REG_IS_IRQ_CON},
-	{"CON141",		VIC_CON141,			vic_con_fields,			ARRAY_SIZE(vic_con_fields),			PMB887X_REG_IS_IRQ_CON},
-	{"CON142",		VIC_CON142,			vic_con_fields,			ARRAY_SIZE(vic_con_fields),			PMB887X_REG_IS_IRQ_CON},
-	{"CON143",		VIC_CON143,			vic_con_fields,			ARRAY_SIZE(vic_con_fields),			PMB887X_REG_IS_IRQ_CON},
-	{"CON144",		VIC_CON144,			vic_con_fields,			ARRAY_SIZE(vic_con_fields),			PMB887X_REG_IS_IRQ_CON},
-	{"CON145",		VIC_CON145,			vic_con_fields,			ARRAY_SIZE(vic_con_fields),			PMB887X_REG_IS_IRQ_CON},
-	{"CON146",		VIC_CON146,			vic_con_fields,			ARRAY_SIZE(vic_con_fields),			PMB887X_REG_IS_IRQ_CON},
-	{"CON147",		VIC_CON147,			vic_con_fields,			ARRAY_SIZE(vic_con_fields),			PMB887X_REG_IS_IRQ_CON},
-	{"CON148",		VIC_CON148,			vic_con_fields,			ARRAY_SIZE(vic_con_fields),			PMB887X_REG_IS_IRQ_CON},
-	{"CON149",		VIC_CON149,			vic_con_fields,			ARRAY_SIZE(vic_con_fields),			PMB887X_REG_IS_IRQ_CON},
-	{"CON150",		VIC_CON150,			vic_con_fields,			ARRAY_SIZE(vic_con_fields),			PMB887X_REG_IS_IRQ_CON},
-	{"CON151",		VIC_CON151,			vic_con_fields,			ARRAY_SIZE(vic_con_fields),			PMB887X_REG_IS_IRQ_CON},
-	{"CON152",		VIC_CON152,			vic_con_fields,			ARRAY_SIZE(vic_con_fields),			PMB887X_REG_IS_IRQ_CON},
-	{"CON153",		VIC_CON153,			vic_con_fields,			ARRAY_SIZE(vic_con_fields),			PMB887X_REG_IS_IRQ_CON},
-	{"CON154",		VIC_CON154,			vic_con_fields,			ARRAY_SIZE(vic_con_fields),			PMB887X_REG_IS_IRQ_CON},
-	{"CON155",		VIC_CON155,			vic_con_fields,			ARRAY_SIZE(vic_con_fields),			PMB887X_REG_IS_IRQ_CON},
-	{"CON156",		VIC_CON156,			vic_con_fields,			ARRAY_SIZE(vic_con_fields),			PMB887X_REG_IS_IRQ_CON},
-	{"CON157",		VIC_CON157,			vic_con_fields,			ARRAY_SIZE(vic_con_fields),			PMB887X_REG_IS_IRQ_CON},
-	{"CON158",		VIC_CON158,			vic_con_fields,			ARRAY_SIZE(vic_con_fields),			PMB887X_REG_IS_IRQ_CON},
-	{"CON159",		VIC_CON159,			vic_con_fields,			ARRAY_SIZE(vic_con_fields),			PMB887X_REG_IS_IRQ_CON},
-	{"CON160",		VIC_CON160,			vic_con_fields,			ARRAY_SIZE(vic_con_fields),			PMB887X_REG_IS_IRQ_CON},
-	{"CON161",		VIC_CON161,			vic_con_fields,			ARRAY_SIZE(vic_con_fields),			PMB887X_REG_IS_IRQ_CON},
-	{"CON162",		VIC_CON162,			vic_con_fields,			ARRAY_SIZE(vic_con_fields),			PMB887X_REG_IS_IRQ_CON},
-	{"CON163",		VIC_CON163,			vic_con_fields,			ARRAY_SIZE(vic_con_fields),			PMB887X_REG_IS_IRQ_CON},
-	{"CON164",		VIC_CON164,			vic_con_fields,			ARRAY_SIZE(vic_con_fields),			PMB887X_REG_IS_IRQ_CON},
-	{"CON165",		VIC_CON165,			vic_con_fields,			ARRAY_SIZE(vic_con_fields),			PMB887X_REG_IS_IRQ_CON},
-	{"CON166",		VIC_CON166,			vic_con_fields,			ARRAY_SIZE(vic_con_fields),			PMB887X_REG_IS_IRQ_CON},
-	{"CON167",		VIC_CON167,			vic_con_fields,			ARRAY_SIZE(vic_con_fields),			PMB887X_REG_IS_IRQ_CON},
-	{"CON168",		VIC_CON168,			vic_con_fields,			ARRAY_SIZE(vic_con_fields),			PMB887X_REG_IS_IRQ_CON},
-	{"CON169",		VIC_CON169,			vic_con_fields,			ARRAY_SIZE(vic_con_fields),			PMB887X_REG_IS_IRQ_CON},
+static const DebugReg vic_regs[] = {
+	{"ID",			VIC_ID,				vic_id_fields,			ARRAY_SIZE(vic_id_fields)},
+	{"FIQ_CON",		VIC_FIQ_CON,		vic_fiq_con_fields,		ARRAY_SIZE(vic_fiq_con_fields)},
+	{"IRQ_CON",		VIC_IRQ_CON,		vic_irq_con_fields,		ARRAY_SIZE(vic_irq_con_fields)},
+	{"FIQ_ACK",		VIC_FIQ_ACK,		NULL,					0},
+	{"IRQ_ACK",		VIC_IRQ_ACK,		NULL,					0},
+	{"FIQ_CURRENT",	VIC_FIQ_CURRENT,	vic_fiq_current_fields,	ARRAY_SIZE(vic_fiq_current_fields)},
+	{"IRQ_CURRENT",	VIC_IRQ_CURRENT,	vic_irq_current_fields,	ARRAY_SIZE(vic_irq_current_fields)},
+	{"CON0",		VIC_CON0,			vic_con_fields,			ARRAY_SIZE(vic_con_fields)},
+	{"CON1",		VIC_CON1,			vic_con_fields,			ARRAY_SIZE(vic_con_fields)},
+	{"CON2",		VIC_CON2,			vic_con_fields,			ARRAY_SIZE(vic_con_fields)},
+	{"CON3",		VIC_CON3,			vic_con_fields,			ARRAY_SIZE(vic_con_fields)},
+	{"CON4",		VIC_CON4,			vic_con_fields,			ARRAY_SIZE(vic_con_fields)},
+	{"CON5",		VIC_CON5,			vic_con_fields,			ARRAY_SIZE(vic_con_fields)},
+	{"CON6",		VIC_CON6,			vic_con_fields,			ARRAY_SIZE(vic_con_fields)},
+	{"CON7",		VIC_CON7,			vic_con_fields,			ARRAY_SIZE(vic_con_fields)},
+	{"CON8",		VIC_CON8,			vic_con_fields,			ARRAY_SIZE(vic_con_fields)},
+	{"CON9",		VIC_CON9,			vic_con_fields,			ARRAY_SIZE(vic_con_fields)},
+	{"CON10",		VIC_CON10,			vic_con_fields,			ARRAY_SIZE(vic_con_fields)},
+	{"CON11",		VIC_CON11,			vic_con_fields,			ARRAY_SIZE(vic_con_fields)},
+	{"CON12",		VIC_CON12,			vic_con_fields,			ARRAY_SIZE(vic_con_fields)},
+	{"CON13",		VIC_CON13,			vic_con_fields,			ARRAY_SIZE(vic_con_fields)},
+	{"CON14",		VIC_CON14,			vic_con_fields,			ARRAY_SIZE(vic_con_fields)},
+	{"CON15",		VIC_CON15,			vic_con_fields,			ARRAY_SIZE(vic_con_fields)},
+	{"CON16",		VIC_CON16,			vic_con_fields,			ARRAY_SIZE(vic_con_fields)},
+	{"CON17",		VIC_CON17,			vic_con_fields,			ARRAY_SIZE(vic_con_fields)},
+	{"CON18",		VIC_CON18,			vic_con_fields,			ARRAY_SIZE(vic_con_fields)},
+	{"CON19",		VIC_CON19,			vic_con_fields,			ARRAY_SIZE(vic_con_fields)},
+	{"CON20",		VIC_CON20,			vic_con_fields,			ARRAY_SIZE(vic_con_fields)},
+	{"CON21",		VIC_CON21,			vic_con_fields,			ARRAY_SIZE(vic_con_fields)},
+	{"CON22",		VIC_CON22,			vic_con_fields,			ARRAY_SIZE(vic_con_fields)},
+	{"CON23",		VIC_CON23,			vic_con_fields,			ARRAY_SIZE(vic_con_fields)},
+	{"CON24",		VIC_CON24,			vic_con_fields,			ARRAY_SIZE(vic_con_fields)},
+	{"CON25",		VIC_CON25,			vic_con_fields,			ARRAY_SIZE(vic_con_fields)},
+	{"CON26",		VIC_CON26,			vic_con_fields,			ARRAY_SIZE(vic_con_fields)},
+	{"CON27",		VIC_CON27,			vic_con_fields,			ARRAY_SIZE(vic_con_fields)},
+	{"CON28",		VIC_CON28,			vic_con_fields,			ARRAY_SIZE(vic_con_fields)},
+	{"CON29",		VIC_CON29,			vic_con_fields,			ARRAY_SIZE(vic_con_fields)},
+	{"CON30",		VIC_CON30,			vic_con_fields,			ARRAY_SIZE(vic_con_fields)},
+	{"CON31",		VIC_CON31,			vic_con_fields,			ARRAY_SIZE(vic_con_fields)},
+	{"CON32",		VIC_CON32,			vic_con_fields,			ARRAY_SIZE(vic_con_fields)},
+	{"CON33",		VIC_CON33,			vic_con_fields,			ARRAY_SIZE(vic_con_fields)},
+	{"CON34",		VIC_CON34,			vic_con_fields,			ARRAY_SIZE(vic_con_fields)},
+	{"CON35",		VIC_CON35,			vic_con_fields,			ARRAY_SIZE(vic_con_fields)},
+	{"CON36",		VIC_CON36,			vic_con_fields,			ARRAY_SIZE(vic_con_fields)},
+	{"CON37",		VIC_CON37,			vic_con_fields,			ARRAY_SIZE(vic_con_fields)},
+	{"CON38",		VIC_CON38,			vic_con_fields,			ARRAY_SIZE(vic_con_fields)},
+	{"CON39",		VIC_CON39,			vic_con_fields,			ARRAY_SIZE(vic_con_fields)},
+	{"CON40",		VIC_CON40,			vic_con_fields,			ARRAY_SIZE(vic_con_fields)},
+	{"CON41",		VIC_CON41,			vic_con_fields,			ARRAY_SIZE(vic_con_fields)},
+	{"CON42",		VIC_CON42,			vic_con_fields,			ARRAY_SIZE(vic_con_fields)},
+	{"CON43",		VIC_CON43,			vic_con_fields,			ARRAY_SIZE(vic_con_fields)},
+	{"CON44",		VIC_CON44,			vic_con_fields,			ARRAY_SIZE(vic_con_fields)},
+	{"CON45",		VIC_CON45,			vic_con_fields,			ARRAY_SIZE(vic_con_fields)},
+	{"CON46",		VIC_CON46,			vic_con_fields,			ARRAY_SIZE(vic_con_fields)},
+	{"CON47",		VIC_CON47,			vic_con_fields,			ARRAY_SIZE(vic_con_fields)},
+	{"CON48",		VIC_CON48,			vic_con_fields,			ARRAY_SIZE(vic_con_fields)},
+	{"CON49",		VIC_CON49,			vic_con_fields,			ARRAY_SIZE(vic_con_fields)},
+	{"CON50",		VIC_CON50,			vic_con_fields,			ARRAY_SIZE(vic_con_fields)},
+	{"CON51",		VIC_CON51,			vic_con_fields,			ARRAY_SIZE(vic_con_fields)},
+	{"CON52",		VIC_CON52,			vic_con_fields,			ARRAY_SIZE(vic_con_fields)},
+	{"CON53",		VIC_CON53,			vic_con_fields,			ARRAY_SIZE(vic_con_fields)},
+	{"CON54",		VIC_CON54,			vic_con_fields,			ARRAY_SIZE(vic_con_fields)},
+	{"CON55",		VIC_CON55,			vic_con_fields,			ARRAY_SIZE(vic_con_fields)},
+	{"CON56",		VIC_CON56,			vic_con_fields,			ARRAY_SIZE(vic_con_fields)},
+	{"CON57",		VIC_CON57,			vic_con_fields,			ARRAY_SIZE(vic_con_fields)},
+	{"CON58",		VIC_CON58,			vic_con_fields,			ARRAY_SIZE(vic_con_fields)},
+	{"CON59",		VIC_CON59,			vic_con_fields,			ARRAY_SIZE(vic_con_fields)},
+	{"CON60",		VIC_CON60,			vic_con_fields,			ARRAY_SIZE(vic_con_fields)},
+	{"CON61",		VIC_CON61,			vic_con_fields,			ARRAY_SIZE(vic_con_fields)},
+	{"CON62",		VIC_CON62,			vic_con_fields,			ARRAY_SIZE(vic_con_fields)},
+	{"CON63",		VIC_CON63,			vic_con_fields,			ARRAY_SIZE(vic_con_fields)},
+	{"CON64",		VIC_CON64,			vic_con_fields,			ARRAY_SIZE(vic_con_fields)},
+	{"CON65",		VIC_CON65,			vic_con_fields,			ARRAY_SIZE(vic_con_fields)},
+	{"CON66",		VIC_CON66,			vic_con_fields,			ARRAY_SIZE(vic_con_fields)},
+	{"CON67",		VIC_CON67,			vic_con_fields,			ARRAY_SIZE(vic_con_fields)},
+	{"CON68",		VIC_CON68,			vic_con_fields,			ARRAY_SIZE(vic_con_fields)},
+	{"CON69",		VIC_CON69,			vic_con_fields,			ARRAY_SIZE(vic_con_fields)},
+	{"CON70",		VIC_CON70,			vic_con_fields,			ARRAY_SIZE(vic_con_fields)},
+	{"CON71",		VIC_CON71,			vic_con_fields,			ARRAY_SIZE(vic_con_fields)},
+	{"CON72",		VIC_CON72,			vic_con_fields,			ARRAY_SIZE(vic_con_fields)},
+	{"CON73",		VIC_CON73,			vic_con_fields,			ARRAY_SIZE(vic_con_fields)},
+	{"CON74",		VIC_CON74,			vic_con_fields,			ARRAY_SIZE(vic_con_fields)},
+	{"CON75",		VIC_CON75,			vic_con_fields,			ARRAY_SIZE(vic_con_fields)},
+	{"CON76",		VIC_CON76,			vic_con_fields,			ARRAY_SIZE(vic_con_fields)},
+	{"CON77",		VIC_CON77,			vic_con_fields,			ARRAY_SIZE(vic_con_fields)},
+	{"CON78",		VIC_CON78,			vic_con_fields,			ARRAY_SIZE(vic_con_fields)},
+	{"CON79",		VIC_CON79,			vic_con_fields,			ARRAY_SIZE(vic_con_fields)},
+	{"CON80",		VIC_CON80,			vic_con_fields,			ARRAY_SIZE(vic_con_fields)},
+	{"CON81",		VIC_CON81,			vic_con_fields,			ARRAY_SIZE(vic_con_fields)},
+	{"CON82",		VIC_CON82,			vic_con_fields,			ARRAY_SIZE(vic_con_fields)},
+	{"CON83",		VIC_CON83,			vic_con_fields,			ARRAY_SIZE(vic_con_fields)},
+	{"CON84",		VIC_CON84,			vic_con_fields,			ARRAY_SIZE(vic_con_fields)},
+	{"CON85",		VIC_CON85,			vic_con_fields,			ARRAY_SIZE(vic_con_fields)},
+	{"CON86",		VIC_CON86,			vic_con_fields,			ARRAY_SIZE(vic_con_fields)},
+	{"CON87",		VIC_CON87,			vic_con_fields,			ARRAY_SIZE(vic_con_fields)},
+	{"CON88",		VIC_CON88,			vic_con_fields,			ARRAY_SIZE(vic_con_fields)},
+	{"CON89",		VIC_CON89,			vic_con_fields,			ARRAY_SIZE(vic_con_fields)},
+	{"CON90",		VIC_CON90,			vic_con_fields,			ARRAY_SIZE(vic_con_fields)},
+	{"CON91",		VIC_CON91,			vic_con_fields,			ARRAY_SIZE(vic_con_fields)},
+	{"CON92",		VIC_CON92,			vic_con_fields,			ARRAY_SIZE(vic_con_fields)},
+	{"CON93",		VIC_CON93,			vic_con_fields,			ARRAY_SIZE(vic_con_fields)},
+	{"CON94",		VIC_CON94,			vic_con_fields,			ARRAY_SIZE(vic_con_fields)},
+	{"CON95",		VIC_CON95,			vic_con_fields,			ARRAY_SIZE(vic_con_fields)},
+	{"CON96",		VIC_CON96,			vic_con_fields,			ARRAY_SIZE(vic_con_fields)},
+	{"CON97",		VIC_CON97,			vic_con_fields,			ARRAY_SIZE(vic_con_fields)},
+	{"CON98",		VIC_CON98,			vic_con_fields,			ARRAY_SIZE(vic_con_fields)},
+	{"CON99",		VIC_CON99,			vic_con_fields,			ARRAY_SIZE(vic_con_fields)},
+	{"CON100",		VIC_CON100,			vic_con_fields,			ARRAY_SIZE(vic_con_fields)},
+	{"CON101",		VIC_CON101,			vic_con_fields,			ARRAY_SIZE(vic_con_fields)},
+	{"CON102",		VIC_CON102,			vic_con_fields,			ARRAY_SIZE(vic_con_fields)},
+	{"CON103",		VIC_CON103,			vic_con_fields,			ARRAY_SIZE(vic_con_fields)},
+	{"CON104",		VIC_CON104,			vic_con_fields,			ARRAY_SIZE(vic_con_fields)},
+	{"CON105",		VIC_CON105,			vic_con_fields,			ARRAY_SIZE(vic_con_fields)},
+	{"CON106",		VIC_CON106,			vic_con_fields,			ARRAY_SIZE(vic_con_fields)},
+	{"CON107",		VIC_CON107,			vic_con_fields,			ARRAY_SIZE(vic_con_fields)},
+	{"CON108",		VIC_CON108,			vic_con_fields,			ARRAY_SIZE(vic_con_fields)},
+	{"CON109",		VIC_CON109,			vic_con_fields,			ARRAY_SIZE(vic_con_fields)},
+	{"CON110",		VIC_CON110,			vic_con_fields,			ARRAY_SIZE(vic_con_fields)},
+	{"CON111",		VIC_CON111,			vic_con_fields,			ARRAY_SIZE(vic_con_fields)},
+	{"CON112",		VIC_CON112,			vic_con_fields,			ARRAY_SIZE(vic_con_fields)},
+	{"CON113",		VIC_CON113,			vic_con_fields,			ARRAY_SIZE(vic_con_fields)},
+	{"CON114",		VIC_CON114,			vic_con_fields,			ARRAY_SIZE(vic_con_fields)},
+	{"CON115",		VIC_CON115,			vic_con_fields,			ARRAY_SIZE(vic_con_fields)},
+	{"CON116",		VIC_CON116,			vic_con_fields,			ARRAY_SIZE(vic_con_fields)},
+	{"CON117",		VIC_CON117,			vic_con_fields,			ARRAY_SIZE(vic_con_fields)},
+	{"CON118",		VIC_CON118,			vic_con_fields,			ARRAY_SIZE(vic_con_fields)},
+	{"CON119",		VIC_CON119,			vic_con_fields,			ARRAY_SIZE(vic_con_fields)},
+	{"CON120",		VIC_CON120,			vic_con_fields,			ARRAY_SIZE(vic_con_fields)},
+	{"CON121",		VIC_CON121,			vic_con_fields,			ARRAY_SIZE(vic_con_fields)},
+	{"CON122",		VIC_CON122,			vic_con_fields,			ARRAY_SIZE(vic_con_fields)},
+	{"CON123",		VIC_CON123,			vic_con_fields,			ARRAY_SIZE(vic_con_fields)},
+	{"CON124",		VIC_CON124,			vic_con_fields,			ARRAY_SIZE(vic_con_fields)},
+	{"CON125",		VIC_CON125,			vic_con_fields,			ARRAY_SIZE(vic_con_fields)},
+	{"CON126",		VIC_CON126,			vic_con_fields,			ARRAY_SIZE(vic_con_fields)},
+	{"CON127",		VIC_CON127,			vic_con_fields,			ARRAY_SIZE(vic_con_fields)},
+	{"CON128",		VIC_CON128,			vic_con_fields,			ARRAY_SIZE(vic_con_fields)},
+	{"CON129",		VIC_CON129,			vic_con_fields,			ARRAY_SIZE(vic_con_fields)},
+	{"CON130",		VIC_CON130,			vic_con_fields,			ARRAY_SIZE(vic_con_fields)},
+	{"CON131",		VIC_CON131,			vic_con_fields,			ARRAY_SIZE(vic_con_fields)},
+	{"CON132",		VIC_CON132,			vic_con_fields,			ARRAY_SIZE(vic_con_fields)},
+	{"CON133",		VIC_CON133,			vic_con_fields,			ARRAY_SIZE(vic_con_fields)},
+	{"CON134",		VIC_CON134,			vic_con_fields,			ARRAY_SIZE(vic_con_fields)},
+	{"CON135",		VIC_CON135,			vic_con_fields,			ARRAY_SIZE(vic_con_fields)},
+	{"CON136",		VIC_CON136,			vic_con_fields,			ARRAY_SIZE(vic_con_fields)},
+	{"CON137",		VIC_CON137,			vic_con_fields,			ARRAY_SIZE(vic_con_fields)},
+	{"CON138",		VIC_CON138,			vic_con_fields,			ARRAY_SIZE(vic_con_fields)},
+	{"CON139",		VIC_CON139,			vic_con_fields,			ARRAY_SIZE(vic_con_fields)},
+	{"CON140",		VIC_CON140,			vic_con_fields,			ARRAY_SIZE(vic_con_fields)},
+	{"CON141",		VIC_CON141,			vic_con_fields,			ARRAY_SIZE(vic_con_fields)},
+	{"CON142",		VIC_CON142,			vic_con_fields,			ARRAY_SIZE(vic_con_fields)},
+	{"CON143",		VIC_CON143,			vic_con_fields,			ARRAY_SIZE(vic_con_fields)},
+	{"CON144",		VIC_CON144,			vic_con_fields,			ARRAY_SIZE(vic_con_fields)},
+	{"CON145",		VIC_CON145,			vic_con_fields,			ARRAY_SIZE(vic_con_fields)},
+	{"CON146",		VIC_CON146,			vic_con_fields,			ARRAY_SIZE(vic_con_fields)},
+	{"CON147",		VIC_CON147,			vic_con_fields,			ARRAY_SIZE(vic_con_fields)},
+	{"CON148",		VIC_CON148,			vic_con_fields,			ARRAY_SIZE(vic_con_fields)},
+	{"CON149",		VIC_CON149,			vic_con_fields,			ARRAY_SIZE(vic_con_fields)},
+	{"CON150",		VIC_CON150,			vic_con_fields,			ARRAY_SIZE(vic_con_fields)},
+	{"CON151",		VIC_CON151,			vic_con_fields,			ARRAY_SIZE(vic_con_fields)},
+	{"CON152",		VIC_CON152,			vic_con_fields,			ARRAY_SIZE(vic_con_fields)},
+	{"CON153",		VIC_CON153,			vic_con_fields,			ARRAY_SIZE(vic_con_fields)},
+	{"CON154",		VIC_CON154,			vic_con_fields,			ARRAY_SIZE(vic_con_fields)},
+	{"CON155",		VIC_CON155,			vic_con_fields,			ARRAY_SIZE(vic_con_fields)},
+	{"CON156",		VIC_CON156,			vic_con_fields,			ARRAY_SIZE(vic_con_fields)},
+	{"CON157",		VIC_CON157,			vic_con_fields,			ARRAY_SIZE(vic_con_fields)},
+	{"CON158",		VIC_CON158,			vic_con_fields,			ARRAY_SIZE(vic_con_fields)},
+	{"CON159",		VIC_CON159,			vic_con_fields,			ARRAY_SIZE(vic_con_fields)},
+	{"CON160",		VIC_CON160,			vic_con_fields,			ARRAY_SIZE(vic_con_fields)},
+	{"CON161",		VIC_CON161,			vic_con_fields,			ARRAY_SIZE(vic_con_fields)},
+	{"CON162",		VIC_CON162,			vic_con_fields,			ARRAY_SIZE(vic_con_fields)},
+	{"CON163",		VIC_CON163,			vic_con_fields,			ARRAY_SIZE(vic_con_fields)},
+	{"CON164",		VIC_CON164,			vic_con_fields,			ARRAY_SIZE(vic_con_fields)},
+	{"CON165",		VIC_CON165,			vic_con_fields,			ARRAY_SIZE(vic_con_fields)},
+	{"CON166",		VIC_CON166,			vic_con_fields,			ARRAY_SIZE(vic_con_fields)},
+	{"CON167",		VIC_CON167,			vic_con_fields,			ARRAY_SIZE(vic_con_fields)},
+	{"CON168",		VIC_CON168,			vic_con_fields,			ARRAY_SIZE(vic_con_fields)},
+	{"CON169",		VIC_CON169,			vic_con_fields,			ARRAY_SIZE(vic_con_fields)},
 };
 
-static const pmb887x_io_field_t hd155153np_channel_pll_fields[] = {
+const DebugRegs pmb887x_vic_regs = {
+	.regs = vic_regs,
+	.count = ARRAY_SIZE(vic_regs),
+	.reg_size = 4,
+	.addr_digits = 8,
+};
+
+static const DebugRegField hd155153np_channel_pll_fields[] = {
 	{ "SYNTHESIZER",	0x0007FFFF,	0,	NULL,	0 },
 	{ "MODE",			0x00180000,	19,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t hd155153np_gain_control_fields[] = {
+static const DebugRegField hd155153np_gain_control_fields[] = {
 	{ "PGA_GAIN",			0x0000003F,	0,	NULL,	0 },
 	{ "MIXER2_LOW_GAIN",	0x00000040,	6,	NULL,	0 },
 	{ "MIXER1_LOW_GAIN",	0x00000080,	7,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t hd155153np_control_r4_fields[] = {
+static const DebugRegField hd155153np_control_r4_fields[] = {
 	{ "DATA",	0x0000001F,	0,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t hd155153np_config_r5_fields[] = {
+static const DebugRegField hd155153np_config_r5_fields[] = {
 	{ "DATA",	0x001FFFFF,	0,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t hd155153np_calibration_r6_fields[] = {
+static const DebugRegField hd155153np_calibration_r6_fields[] = {
 	{ "SLOT",	0x00000007,	0,	NULL,	0 },
 	{ "DATA",	0x001FFFF8,	3,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t hd155153np_control_r7_fields[] = {
+static const DebugRegField hd155153np_control_r7_fields[] = {
 	{ "DATA",	0x0000001F,	0,	NULL,	0 },
 };
 
-static const pmb887x_io_reg_t hd155153np_regs[] = {
-	{ "CHANNEL_PLL",	0x1,	hd155153np_channel_pll_fields,		ARRAY_SIZE(hd155153np_channel_pll_fields),		0 },
-	{ "GAIN_CONTROL",	0x2,	hd155153np_gain_control_fields,		ARRAY_SIZE(hd155153np_gain_control_fields),		0 },
-	{ "CONTROL_R4",		0x4,	hd155153np_control_r4_fields,		ARRAY_SIZE(hd155153np_control_r4_fields),		0 },
-	{ "CONFIG_R5",		0x5,	hd155153np_config_r5_fields,		ARRAY_SIZE(hd155153np_config_r5_fields),		0 },
-	{ "CALIBRATION_R6",	0x6,	hd155153np_calibration_r6_fields,	ARRAY_SIZE(hd155153np_calibration_r6_fields),	0 },
-	{ "CONTROL_R7",		0x7,	hd155153np_control_r7_fields,		ARRAY_SIZE(hd155153np_control_r7_fields),		0 },
+static const DebugReg hd155153np_regs[] = {
+	{ "CHANNEL_PLL",	0x1,	hd155153np_channel_pll_fields,		ARRAY_SIZE(hd155153np_channel_pll_fields) },
+	{ "GAIN_CONTROL",	0x2,	hd155153np_gain_control_fields,		ARRAY_SIZE(hd155153np_gain_control_fields) },
+	{ "CONTROL_R4",		0x4,	hd155153np_control_r4_fields,		ARRAY_SIZE(hd155153np_control_r4_fields) },
+	{ "CONFIG_R5",		0x5,	hd155153np_config_r5_fields,		ARRAY_SIZE(hd155153np_config_r5_fields) },
+	{ "CALIBRATION_R6",	0x6,	hd155153np_calibration_r6_fields,	ARRAY_SIZE(hd155153np_calibration_r6_fields) },
+	{ "CONTROL_R7",		0x7,	hd155153np_control_r7_fields,		ARRAY_SIZE(hd155153np_control_r7_fields) },
 };
 
-static const pmb887x_io_field_t ili9320_oscillation_fields[] = {
+const DebugRegs pmb887x_hd155153np_regs = {
+	.regs = hd155153np_regs,
+	.count = ARRAY_SIZE(hd155153np_regs),
+	.reg_size = 1,
+	.addr_digits = 2,
+};
+
+static const DebugRegField ili9320_oscillation_fields[] = {
 	{ "OSC",	0x00000001,	0,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t ili9320_driver_output_control_fields[] = {
+static const DebugRegField ili9320_driver_output_control_fields[] = {
 	{ "SS",	0x00000100,	8,	NULL,	0 },
 	{ "SM",	0x00000400,	10,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t ili9320_lcd_driving_control_fields[] = {
+static const DebugRegField ili9320_lcd_driving_control_fields[] = {
 	{ "EOR",	0x00000100,	8,	NULL,	0 },
 	{ "B_C",	0x00000200,	9,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t ili9320_entry_mode_fields[] = {
+static const DebugRegField ili9320_entry_mode_fields[] = {
 	{ "AM",		0x00000008,	3,	NULL,	0 },
 	{ "ID",		0x00000030,	4,	NULL,	0 },
 	{ "ORG",	0x00000080,	7,	NULL,	0 },
@@ -6868,13 +7085,13 @@ static const pmb887x_io_field_t ili9320_entry_mode_fields[] = {
 	{ "TRI",	0x00008000,	15,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t ili9320_resize_control_fields[] = {
+static const DebugRegField ili9320_resize_control_fields[] = {
 	{ "RSZ",	0x00000003,	0,	NULL,	0 },
 	{ "RCH",	0x00000030,	4,	NULL,	0 },
 	{ "RCV",	0x00000300,	8,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t ili9320_display_control_1_fields[] = {
+static const DebugRegField ili9320_display_control_1_fields[] = {
 	{ "D",		0x00000003,	0,	NULL,	0 },
 	{ "CL",		0x00000008,	3,	NULL,	0 },
 	{ "DTE",	0x00000010,	4,	NULL,	0 },
@@ -6883,41 +7100,41 @@ static const pmb887x_io_field_t ili9320_display_control_1_fields[] = {
 	{ "PTDE",	0x00003000,	12,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t ili9320_display_control_2_fields[] = {
+static const DebugRegField ili9320_display_control_2_fields[] = {
 	{ "BP",	0x0000000F,	0,	NULL,	0 },
 	{ "FP",	0x00000F00,	8,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t ili9320_display_control_3_fields[] = {
+static const DebugRegField ili9320_display_control_3_fields[] = {
 	{ "ISC",	0x0000000F,	0,	NULL,	0 },
 	{ "PTG",	0x00000030,	4,	NULL,	0 },
 	{ "PTS",	0x00000700,	8,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t ili9320_display_control_4_fields[] = {
+static const DebugRegField ili9320_display_control_4_fields[] = {
 	{ "FMI",		0x00000007,	0,	NULL,	0 },
 	{ "FMARKOE",	0x00000008,	3,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t ili9320_rgb_interface_control_1_fields[] = {
+static const DebugRegField ili9320_rgb_interface_control_1_fields[] = {
 	{ "RIM",	0x00000003,	0,	NULL,	0 },
 	{ "DM",		0x00000030,	4,	NULL,	0 },
 	{ "RM",		0x00000100,	8,	NULL,	0 },
 	{ "ENC",	0x0000E000,	13,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t ili9320_frame_marker_fields[] = {
+static const DebugRegField ili9320_frame_marker_fields[] = {
 	{ "FMP",	0x000001FF,	0,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t ili9320_rgb_interface_control_2_fields[] = {
+static const DebugRegField ili9320_rgb_interface_control_2_fields[] = {
 	{ "DPL",	0x00000001,	0,	NULL,	0 },
 	{ "EPL",	0x00000002,	1,	NULL,	0 },
 	{ "HSPL",	0x00000008,	3,	NULL,	0 },
 	{ "VSPL",	0x00000010,	4,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t ili9320_power_control_1_fields[] = {
+static const DebugRegField ili9320_power_control_1_fields[] = {
 	{ "SLP",	0x00000002,	1,	NULL,	0 },
 	{ "DSTB",	0x00000004,	2,	NULL,	0 },
 	{ "AP",		0x00000070,	4,	NULL,	0 },
@@ -6926,232 +7143,239 @@ static const pmb887x_io_field_t ili9320_power_control_1_fields[] = {
 	{ "SAP",	0x00001000,	12,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t ili9320_power_control_2_fields[] = {
+static const DebugRegField ili9320_power_control_2_fields[] = {
 	{ "VC",		0x00000007,	0,	NULL,	0 },
 	{ "DC0",	0x00000070,	4,	NULL,	0 },
 	{ "DC1",	0x00000700,	8,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t ili9320_power_control_3_fields[] = {
+static const DebugRegField ili9320_power_control_3_fields[] = {
 	{ "VRH",	0x0000000F,	0,	NULL,	0 },
 	{ "PON",	0x00000010,	4,	NULL,	0 },
 	{ "VCMR",	0x00000100,	8,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t ili9320_power_control_4_fields[] = {
+static const DebugRegField ili9320_power_control_4_fields[] = {
 	{ "VDV",	0x00001F00,	8,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t ili9320_gram_x_fields[] = {
+static const DebugRegField ili9320_gram_x_fields[] = {
 	{ "AD",	0x000000FF,	0,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t ili9320_gram_y_fields[] = {
+static const DebugRegField ili9320_gram_y_fields[] = {
 	{ "AD",	0x000001FF,	0,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t ili9320_gram_data_fields[] = {
+static const DebugRegField ili9320_gram_data_fields[] = {
 	{ "DATA",	0x0003FFFF,	0,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t ili9320_power_control_7_fields[] = {
+static const DebugRegField ili9320_power_control_7_fields[] = {
 	{ "VCM",	0x0000001F,	0,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t ili9320_frame_rate_control_fields[] = {
+static const DebugRegField ili9320_frame_rate_control_fields[] = {
 	{ "FR_SEL",	0x00000030,	4,	NULL,	0 },
 	{ "EXT_R",	0x00000080,	7,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t ili9320_gamma_30_fields[] = {
+static const DebugRegField ili9320_gamma_30_fields[] = {
 	{ "VALUE",	0x0000FFFF,	0,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t ili9320_gamma_31_fields[] = {
+static const DebugRegField ili9320_gamma_31_fields[] = {
 	{ "VALUE",	0x0000FFFF,	0,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t ili9320_gamma_32_fields[] = {
+static const DebugRegField ili9320_gamma_32_fields[] = {
 	{ "VALUE",	0x0000FFFF,	0,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t ili9320_gamma_35_fields[] = {
+static const DebugRegField ili9320_gamma_35_fields[] = {
 	{ "VALUE",	0x0000FFFF,	0,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t ili9320_gamma_36_fields[] = {
+static const DebugRegField ili9320_gamma_36_fields[] = {
 	{ "VALUE",	0x0000FFFF,	0,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t ili9320_gamma_37_fields[] = {
+static const DebugRegField ili9320_gamma_37_fields[] = {
 	{ "VALUE",	0x0000FFFF,	0,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t ili9320_gamma_38_fields[] = {
+static const DebugRegField ili9320_gamma_38_fields[] = {
 	{ "VALUE",	0x0000FFFF,	0,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t ili9320_gamma_39_fields[] = {
+static const DebugRegField ili9320_gamma_39_fields[] = {
 	{ "VALUE",	0x0000FFFF,	0,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t ili9320_gamma_3c_fields[] = {
+static const DebugRegField ili9320_gamma_3c_fields[] = {
 	{ "VALUE",	0x0000FFFF,	0,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t ili9320_gamma_3d_fields[] = {
+static const DebugRegField ili9320_gamma_3d_fields[] = {
 	{ "VALUE",	0x0000FFFF,	0,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t ili9320_window_x_start_fields[] = {
+static const DebugRegField ili9320_window_x_start_fields[] = {
 	{ "HSA",	0x000000FF,	0,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t ili9320_window_x_end_fields[] = {
+static const DebugRegField ili9320_window_x_end_fields[] = {
 	{ "HEA",	0x000000FF,	0,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t ili9320_window_y_start_fields[] = {
+static const DebugRegField ili9320_window_y_start_fields[] = {
 	{ "VSA",	0x000001FF,	0,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t ili9320_window_y_end_fields[] = {
+static const DebugRegField ili9320_window_y_end_fields[] = {
 	{ "VEA",	0x000001FF,	0,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t ili9320_gate_scan_fields[] = {
+static const DebugRegField ili9320_gate_scan_fields[] = {
 	{ "SCN",	0x0000003F,	0,	NULL,	0 },
 	{ "NL",		0x00003F00,	8,	NULL,	0 },
 	{ "GS",		0x00008000,	15,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t ili9320_base_image_fields[] = {
+static const DebugRegField ili9320_base_image_fields[] = {
 	{ "REV",	0x00000001,	0,	NULL,	0 },
 	{ "VLE",	0x00000002,	1,	NULL,	0 },
 	{ "NDL",	0x00000004,	2,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t ili9320_vertical_scroll_fields[] = {
+static const DebugRegField ili9320_vertical_scroll_fields[] = {
 	{ "VL",	0x000001FF,	0,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t ili9320_partial_1_position_fields[] = {
+static const DebugRegField ili9320_partial_1_position_fields[] = {
 	{ "PTDP",	0x000001FF,	0,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t ili9320_partial_1_start_fields[] = {
+static const DebugRegField ili9320_partial_1_start_fields[] = {
 	{ "PTSA",	0x000001FF,	0,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t ili9320_partial_1_end_fields[] = {
+static const DebugRegField ili9320_partial_1_end_fields[] = {
 	{ "PTEA",	0x000001FF,	0,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t ili9320_partial_2_position_fields[] = {
+static const DebugRegField ili9320_partial_2_position_fields[] = {
 	{ "PTDP",	0x000001FF,	0,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t ili9320_partial_2_start_fields[] = {
+static const DebugRegField ili9320_partial_2_start_fields[] = {
 	{ "PTSA",	0x000001FF,	0,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t ili9320_partial_2_end_fields[] = {
+static const DebugRegField ili9320_partial_2_end_fields[] = {
 	{ "PTEA",	0x000001FF,	0,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t ili9320_panel_interface_1_fields[] = {
+static const DebugRegField ili9320_panel_interface_1_fields[] = {
 	{ "RTNI",	0x0000001F,	0,	NULL,	0 },
 	{ "DIVI",	0x00000300,	8,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t ili9320_panel_interface_2_fields[] = {
+static const DebugRegField ili9320_panel_interface_2_fields[] = {
 	{ "NOWI",	0x00000700,	8,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t ili9320_panel_interface_3_fields[] = {
+static const DebugRegField ili9320_panel_interface_3_fields[] = {
 	{ "MCPI",	0x00000007,	0,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t ili9320_panel_interface_4_fields[] = {
+static const DebugRegField ili9320_panel_interface_4_fields[] = {
 	{ "RTNE",	0x0000003F,	0,	NULL,	0 },
 	{ "DIVE",	0x00000300,	8,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t ili9320_panel_interface_5_fields[] = {
+static const DebugRegField ili9320_panel_interface_5_fields[] = {
 	{ "NOWE",	0x00000F00,	8,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t ili9320_panel_interface_6_fields[] = {
+static const DebugRegField ili9320_panel_interface_6_fields[] = {
 	{ "MCPE",	0x00000007,	0,	NULL,	0 },
 };
 
-static const pmb887x_io_reg_t ili9320_regs[] = {
-	{ "OSCILLATION",				0x0,	ili9320_oscillation_fields,				ARRAY_SIZE(ili9320_oscillation_fields),				0 },
-	{ "DRIVER_OUTPUT_CONTROL",		0x1,	ili9320_driver_output_control_fields,	ARRAY_SIZE(ili9320_driver_output_control_fields),	0 },
-	{ "LCD_DRIVING_CONTROL",		0x2,	ili9320_lcd_driving_control_fields,		ARRAY_SIZE(ili9320_lcd_driving_control_fields),		0 },
-	{ "ENTRY_MODE",					0x3,	ili9320_entry_mode_fields,				ARRAY_SIZE(ili9320_entry_mode_fields),				0 },
-	{ "RESIZE_CONTROL",				0x4,	ili9320_resize_control_fields,			ARRAY_SIZE(ili9320_resize_control_fields),			0 },
-	{ "DISPLAY_CONTROL_1",			0x7,	ili9320_display_control_1_fields,		ARRAY_SIZE(ili9320_display_control_1_fields),		0 },
-	{ "DISPLAY_CONTROL_2",			0x8,	ili9320_display_control_2_fields,		ARRAY_SIZE(ili9320_display_control_2_fields),		0 },
-	{ "DISPLAY_CONTROL_3",			0x9,	ili9320_display_control_3_fields,		ARRAY_SIZE(ili9320_display_control_3_fields),		0 },
-	{ "DISPLAY_CONTROL_4",			0xA,	ili9320_display_control_4_fields,		ARRAY_SIZE(ili9320_display_control_4_fields),		0 },
-	{ "RGB_INTERFACE_CONTROL_1",	0xC,	ili9320_rgb_interface_control_1_fields,	ARRAY_SIZE(ili9320_rgb_interface_control_1_fields),	0 },
-	{ "FRAME_MARKER",				0xD,	ili9320_frame_marker_fields,			ARRAY_SIZE(ili9320_frame_marker_fields),			0 },
-	{ "RGB_INTERFACE_CONTROL_2",	0xF,	ili9320_rgb_interface_control_2_fields,	ARRAY_SIZE(ili9320_rgb_interface_control_2_fields),	0 },
-	{ "POWER_CONTROL_1",			0x10,	ili9320_power_control_1_fields,			ARRAY_SIZE(ili9320_power_control_1_fields),			0 },
-	{ "POWER_CONTROL_2",			0x11,	ili9320_power_control_2_fields,			ARRAY_SIZE(ili9320_power_control_2_fields),			0 },
-	{ "POWER_CONTROL_3",			0x12,	ili9320_power_control_3_fields,			ARRAY_SIZE(ili9320_power_control_3_fields),			0 },
-	{ "POWER_CONTROL_4",			0x13,	ili9320_power_control_4_fields,			ARRAY_SIZE(ili9320_power_control_4_fields),			0 },
-	{ "GRAM_X",						0x20,	ili9320_gram_x_fields,					ARRAY_SIZE(ili9320_gram_x_fields),					0 },
-	{ "GRAM_Y",						0x21,	ili9320_gram_y_fields,					ARRAY_SIZE(ili9320_gram_y_fields),					0 },
-	{ "GRAM_DATA",					0x22,	ili9320_gram_data_fields,				ARRAY_SIZE(ili9320_gram_data_fields),				0 },
-	{ "POWER_CONTROL_7",			0x29,	ili9320_power_control_7_fields,			ARRAY_SIZE(ili9320_power_control_7_fields),			0 },
-	{ "FRAME_RATE_CONTROL",			0x2B,	ili9320_frame_rate_control_fields,		ARRAY_SIZE(ili9320_frame_rate_control_fields),		0 },
-	{ "GAMMA_30",					0x30,	ili9320_gamma_30_fields,				ARRAY_SIZE(ili9320_gamma_30_fields),				0 },
-	{ "GAMMA_31",					0x31,	ili9320_gamma_31_fields,				ARRAY_SIZE(ili9320_gamma_31_fields),				0 },
-	{ "GAMMA_32",					0x32,	ili9320_gamma_32_fields,				ARRAY_SIZE(ili9320_gamma_32_fields),				0 },
-	{ "GAMMA_35",					0x35,	ili9320_gamma_35_fields,				ARRAY_SIZE(ili9320_gamma_35_fields),				0 },
-	{ "GAMMA_36",					0x36,	ili9320_gamma_36_fields,				ARRAY_SIZE(ili9320_gamma_36_fields),				0 },
-	{ "GAMMA_37",					0x37,	ili9320_gamma_37_fields,				ARRAY_SIZE(ili9320_gamma_37_fields),				0 },
-	{ "GAMMA_38",					0x38,	ili9320_gamma_38_fields,				ARRAY_SIZE(ili9320_gamma_38_fields),				0 },
-	{ "GAMMA_39",					0x39,	ili9320_gamma_39_fields,				ARRAY_SIZE(ili9320_gamma_39_fields),				0 },
-	{ "GAMMA_3C",					0x3C,	ili9320_gamma_3c_fields,				ARRAY_SIZE(ili9320_gamma_3c_fields),				0 },
-	{ "GAMMA_3D",					0x3D,	ili9320_gamma_3d_fields,				ARRAY_SIZE(ili9320_gamma_3d_fields),				0 },
-	{ "WINDOW_X_START",				0x50,	ili9320_window_x_start_fields,			ARRAY_SIZE(ili9320_window_x_start_fields),			0 },
-	{ "WINDOW_X_END",				0x51,	ili9320_window_x_end_fields,			ARRAY_SIZE(ili9320_window_x_end_fields),			0 },
-	{ "WINDOW_Y_START",				0x52,	ili9320_window_y_start_fields,			ARRAY_SIZE(ili9320_window_y_start_fields),			0 },
-	{ "WINDOW_Y_END",				0x53,	ili9320_window_y_end_fields,			ARRAY_SIZE(ili9320_window_y_end_fields),			0 },
-	{ "GATE_SCAN",					0x60,	ili9320_gate_scan_fields,				ARRAY_SIZE(ili9320_gate_scan_fields),				0 },
-	{ "BASE_IMAGE",					0x61,	ili9320_base_image_fields,				ARRAY_SIZE(ili9320_base_image_fields),				0 },
-	{ "VERTICAL_SCROLL",			0x6A,	ili9320_vertical_scroll_fields,			ARRAY_SIZE(ili9320_vertical_scroll_fields),			0 },
-	{ "PARTIAL_1_POSITION",			0x80,	ili9320_partial_1_position_fields,		ARRAY_SIZE(ili9320_partial_1_position_fields),		0 },
-	{ "PARTIAL_1_START",			0x81,	ili9320_partial_1_start_fields,			ARRAY_SIZE(ili9320_partial_1_start_fields),			0 },
-	{ "PARTIAL_1_END",				0x82,	ili9320_partial_1_end_fields,			ARRAY_SIZE(ili9320_partial_1_end_fields),			0 },
-	{ "PARTIAL_2_POSITION",			0x83,	ili9320_partial_2_position_fields,		ARRAY_SIZE(ili9320_partial_2_position_fields),		0 },
-	{ "PARTIAL_2_START",			0x84,	ili9320_partial_2_start_fields,			ARRAY_SIZE(ili9320_partial_2_start_fields),			0 },
-	{ "PARTIAL_2_END",				0x85,	ili9320_partial_2_end_fields,			ARRAY_SIZE(ili9320_partial_2_end_fields),			0 },
-	{ "PANEL_INTERFACE_1",			0x90,	ili9320_panel_interface_1_fields,		ARRAY_SIZE(ili9320_panel_interface_1_fields),		0 },
-	{ "PANEL_INTERFACE_2",			0x92,	ili9320_panel_interface_2_fields,		ARRAY_SIZE(ili9320_panel_interface_2_fields),		0 },
-	{ "PANEL_INTERFACE_3",			0x93,	ili9320_panel_interface_3_fields,		ARRAY_SIZE(ili9320_panel_interface_3_fields),		0 },
-	{ "PANEL_INTERFACE_4",			0x95,	ili9320_panel_interface_4_fields,		ARRAY_SIZE(ili9320_panel_interface_4_fields),		0 },
-	{ "PANEL_INTERFACE_5",			0x97,	ili9320_panel_interface_5_fields,		ARRAY_SIZE(ili9320_panel_interface_5_fields),		0 },
-	{ "PANEL_INTERFACE_6",			0x98,	ili9320_panel_interface_6_fields,		ARRAY_SIZE(ili9320_panel_interface_6_fields),		0 },
+static const DebugReg ili9320_regs[] = {
+	{ "OSCILLATION",				0x0,	ili9320_oscillation_fields,				ARRAY_SIZE(ili9320_oscillation_fields) },
+	{ "DRIVER_OUTPUT_CONTROL",		0x1,	ili9320_driver_output_control_fields,	ARRAY_SIZE(ili9320_driver_output_control_fields) },
+	{ "LCD_DRIVING_CONTROL",		0x2,	ili9320_lcd_driving_control_fields,		ARRAY_SIZE(ili9320_lcd_driving_control_fields) },
+	{ "ENTRY_MODE",					0x3,	ili9320_entry_mode_fields,				ARRAY_SIZE(ili9320_entry_mode_fields) },
+	{ "RESIZE_CONTROL",				0x4,	ili9320_resize_control_fields,			ARRAY_SIZE(ili9320_resize_control_fields) },
+	{ "DISPLAY_CONTROL_1",			0x7,	ili9320_display_control_1_fields,		ARRAY_SIZE(ili9320_display_control_1_fields) },
+	{ "DISPLAY_CONTROL_2",			0x8,	ili9320_display_control_2_fields,		ARRAY_SIZE(ili9320_display_control_2_fields) },
+	{ "DISPLAY_CONTROL_3",			0x9,	ili9320_display_control_3_fields,		ARRAY_SIZE(ili9320_display_control_3_fields) },
+	{ "DISPLAY_CONTROL_4",			0xA,	ili9320_display_control_4_fields,		ARRAY_SIZE(ili9320_display_control_4_fields) },
+	{ "RGB_INTERFACE_CONTROL_1",	0xC,	ili9320_rgb_interface_control_1_fields,	ARRAY_SIZE(ili9320_rgb_interface_control_1_fields) },
+	{ "FRAME_MARKER",				0xD,	ili9320_frame_marker_fields,			ARRAY_SIZE(ili9320_frame_marker_fields) },
+	{ "RGB_INTERFACE_CONTROL_2",	0xF,	ili9320_rgb_interface_control_2_fields,	ARRAY_SIZE(ili9320_rgb_interface_control_2_fields) },
+	{ "POWER_CONTROL_1",			0x10,	ili9320_power_control_1_fields,			ARRAY_SIZE(ili9320_power_control_1_fields) },
+	{ "POWER_CONTROL_2",			0x11,	ili9320_power_control_2_fields,			ARRAY_SIZE(ili9320_power_control_2_fields) },
+	{ "POWER_CONTROL_3",			0x12,	ili9320_power_control_3_fields,			ARRAY_SIZE(ili9320_power_control_3_fields) },
+	{ "POWER_CONTROL_4",			0x13,	ili9320_power_control_4_fields,			ARRAY_SIZE(ili9320_power_control_4_fields) },
+	{ "GRAM_X",						0x20,	ili9320_gram_x_fields,					ARRAY_SIZE(ili9320_gram_x_fields) },
+	{ "GRAM_Y",						0x21,	ili9320_gram_y_fields,					ARRAY_SIZE(ili9320_gram_y_fields) },
+	{ "GRAM_DATA",					0x22,	ili9320_gram_data_fields,				ARRAY_SIZE(ili9320_gram_data_fields) },
+	{ "POWER_CONTROL_7",			0x29,	ili9320_power_control_7_fields,			ARRAY_SIZE(ili9320_power_control_7_fields) },
+	{ "FRAME_RATE_CONTROL",			0x2B,	ili9320_frame_rate_control_fields,		ARRAY_SIZE(ili9320_frame_rate_control_fields) },
+	{ "GAMMA_30",					0x30,	ili9320_gamma_30_fields,				ARRAY_SIZE(ili9320_gamma_30_fields) },
+	{ "GAMMA_31",					0x31,	ili9320_gamma_31_fields,				ARRAY_SIZE(ili9320_gamma_31_fields) },
+	{ "GAMMA_32",					0x32,	ili9320_gamma_32_fields,				ARRAY_SIZE(ili9320_gamma_32_fields) },
+	{ "GAMMA_35",					0x35,	ili9320_gamma_35_fields,				ARRAY_SIZE(ili9320_gamma_35_fields) },
+	{ "GAMMA_36",					0x36,	ili9320_gamma_36_fields,				ARRAY_SIZE(ili9320_gamma_36_fields) },
+	{ "GAMMA_37",					0x37,	ili9320_gamma_37_fields,				ARRAY_SIZE(ili9320_gamma_37_fields) },
+	{ "GAMMA_38",					0x38,	ili9320_gamma_38_fields,				ARRAY_SIZE(ili9320_gamma_38_fields) },
+	{ "GAMMA_39",					0x39,	ili9320_gamma_39_fields,				ARRAY_SIZE(ili9320_gamma_39_fields) },
+	{ "GAMMA_3C",					0x3C,	ili9320_gamma_3c_fields,				ARRAY_SIZE(ili9320_gamma_3c_fields) },
+	{ "GAMMA_3D",					0x3D,	ili9320_gamma_3d_fields,				ARRAY_SIZE(ili9320_gamma_3d_fields) },
+	{ "WINDOW_X_START",				0x50,	ili9320_window_x_start_fields,			ARRAY_SIZE(ili9320_window_x_start_fields) },
+	{ "WINDOW_X_END",				0x51,	ili9320_window_x_end_fields,			ARRAY_SIZE(ili9320_window_x_end_fields) },
+	{ "WINDOW_Y_START",				0x52,	ili9320_window_y_start_fields,			ARRAY_SIZE(ili9320_window_y_start_fields) },
+	{ "WINDOW_Y_END",				0x53,	ili9320_window_y_end_fields,			ARRAY_SIZE(ili9320_window_y_end_fields) },
+	{ "GATE_SCAN",					0x60,	ili9320_gate_scan_fields,				ARRAY_SIZE(ili9320_gate_scan_fields) },
+	{ "BASE_IMAGE",					0x61,	ili9320_base_image_fields,				ARRAY_SIZE(ili9320_base_image_fields) },
+	{ "VERTICAL_SCROLL",			0x6A,	ili9320_vertical_scroll_fields,			ARRAY_SIZE(ili9320_vertical_scroll_fields) },
+	{ "PARTIAL_1_POSITION",			0x80,	ili9320_partial_1_position_fields,		ARRAY_SIZE(ili9320_partial_1_position_fields) },
+	{ "PARTIAL_1_START",			0x81,	ili9320_partial_1_start_fields,			ARRAY_SIZE(ili9320_partial_1_start_fields) },
+	{ "PARTIAL_1_END",				0x82,	ili9320_partial_1_end_fields,			ARRAY_SIZE(ili9320_partial_1_end_fields) },
+	{ "PARTIAL_2_POSITION",			0x83,	ili9320_partial_2_position_fields,		ARRAY_SIZE(ili9320_partial_2_position_fields) },
+	{ "PARTIAL_2_START",			0x84,	ili9320_partial_2_start_fields,			ARRAY_SIZE(ili9320_partial_2_start_fields) },
+	{ "PARTIAL_2_END",				0x85,	ili9320_partial_2_end_fields,			ARRAY_SIZE(ili9320_partial_2_end_fields) },
+	{ "PANEL_INTERFACE_1",			0x90,	ili9320_panel_interface_1_fields,		ARRAY_SIZE(ili9320_panel_interface_1_fields) },
+	{ "PANEL_INTERFACE_2",			0x92,	ili9320_panel_interface_2_fields,		ARRAY_SIZE(ili9320_panel_interface_2_fields) },
+	{ "PANEL_INTERFACE_3",			0x93,	ili9320_panel_interface_3_fields,		ARRAY_SIZE(ili9320_panel_interface_3_fields) },
+	{ "PANEL_INTERFACE_4",			0x95,	ili9320_panel_interface_4_fields,		ARRAY_SIZE(ili9320_panel_interface_4_fields) },
+	{ "PANEL_INTERFACE_5",			0x97,	ili9320_panel_interface_5_fields,		ARRAY_SIZE(ili9320_panel_interface_5_fields) },
+	{ "PANEL_INTERFACE_6",			0x98,	ili9320_panel_interface_6_fields,		ARRAY_SIZE(ili9320_panel_interface_6_fields) },
 };
 
-static const pmb887x_io_field_t jbt6k71_oscillation_fields[] = {
+const DebugRegs pmb887x_ili9320_regs = {
+	.regs = ili9320_regs,
+	.count = ARRAY_SIZE(ili9320_regs),
+	.reg_size = 1,
+	.addr_digits = 2,
+};
+
+static const DebugRegField jbt6k71_oscillation_fields[] = {
 	{ "OSC",	0x00000001,	0,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t jbt6k71_driver_output_control_fields[] = {
+static const DebugRegField jbt6k71_driver_output_control_fields[] = {
 	{ "NL",	0x0000003F,	0,	NULL,	0 },
 	{ "SS",	0x00000100,	8,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t jbt6k71_lcd_driving_signal_fields[] = {
+static const DebugRegField jbt6k71_lcd_driving_signal_fields[] = {
 	{ "B_C",	0x00000200,	9,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t jbt6k71_entry_mode_fields[] = {
+static const DebugRegField jbt6k71_entry_mode_fields[] = {
 	{ "AM",		0x00000008,	3,	NULL,	0 },
 	{ "ID",		0x00000030,	4,	NULL,	0 },
 	{ "HWM",	0x00000100,	8,	NULL,	0 },
@@ -7161,12 +7385,12 @@ static const pmb887x_io_field_t jbt6k71_entry_mode_fields[] = {
 	{ "TRI",	0x00008000,	15,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t jbt6k71_horizontal_valid_width_fields[] = {
+static const DebugRegField jbt6k71_horizontal_valid_width_fields[] = {
 	{ "HBP",	0x0000001F,	0,	NULL,	0 },
 	{ "HWS",	0x0000FF00,	8,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t jbt6k71_display_mode_1_fields[] = {
+static const DebugRegField jbt6k71_display_mode_1_fields[] = {
 	{ "REV",	0x00000004,	2,	NULL,	0 },
 	{ "NBW",	0x00000010,	4,	NULL,	0 },
 	{ "PT",		0x000000C0,	6,	NULL,	0 },
@@ -7175,41 +7399,41 @@ static const pmb887x_io_field_t jbt6k71_display_mode_1_fields[] = {
 	{ "COL",	0x0000C000,	14,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t jbt6k71_display_mode_2_fields[] = {
+static const DebugRegField jbt6k71_display_mode_2_fields[] = {
 	{ "BP",	0x0000000F,	0,	NULL,	0 },
 	{ "FP",	0x0000FF00,	8,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t jbt6k71_display_mode_3_fields[] = {
+static const DebugRegField jbt6k71_display_mode_3_fields[] = {
 	{ "RSH",	0x0000000F,	0,	NULL,	0 },
 	{ "RSB",	0x00000030,	4,	NULL,	0 },
 	{ "RSE",	0x00000080,	7,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t jbt6k71_display_mode_4_fields[] = {
+static const DebugRegField jbt6k71_display_mode_4_fields[] = {
 	{ "SIP",	0x00000001,	0,	NULL,	0 },
 	{ "Y2",		0x00000020,	5,	NULL,	0 },
 	{ "X2",		0x00000040,	6,	NULL,	0 },
 	{ "XYON",	0x00000080,	7,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t jbt6k71_external_display_1_fields[] = {
+static const DebugRegField jbt6k71_external_display_1_fields[] = {
 	{ "RIM",	0x00000003,	0,	NULL,	0 },
 	{ "DM",		0x00000030,	4,	NULL,	0 },
 	{ "RM",		0x00000100,	8,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t jbt6k71_fr_frequency_adjustment_fields[] = {
+static const DebugRegField jbt6k71_fr_frequency_adjustment_fields[] = {
 	{ "RTNI",	0x0000001F,	0,	NULL,	0 },
 	{ "DIVI",	0x00000300,	8,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t jbt6k71_external_display_2_fields[] = {
+static const DebugRegField jbt6k71_external_display_2_fields[] = {
 	{ "RTNE",	0x000000FF,	0,	NULL,	0 },
 	{ "DIVE",	0x00000300,	8,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t jbt6k71_external_display_3_fields[] = {
+static const DebugRegField jbt6k71_external_display_3_fields[] = {
 	{ "DPL",	0x00000001,	0,	NULL,	0 },
 	{ "EPL",	0x00000002,	1,	NULL,	0 },
 	{ "VPL",	0x00000004,	2,	NULL,	0 },
@@ -7217,58 +7441,58 @@ static const pmb887x_io_field_t jbt6k71_external_display_3_fields[] = {
 	{ "VSPL",	0x00000010,	4,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t jbt6k71_ltps_control_1_fields[] = {
+static const DebugRegField jbt6k71_ltps_control_1_fields[] = {
 	{ "CLTI",	0x00000003,	0,	NULL,	0 },
 	{ "CLWI",	0x00000F00,	8,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t jbt6k71_ltps_control_2_fields[] = {
+static const DebugRegField jbt6k71_ltps_control_2_fields[] = {
 	{ "OEVFI",	0x00000003,	0,	NULL,	0 },
 	{ "OEVBI",	0x00000300,	8,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t jbt6k71_ltps_control_3_fields[] = {
+static const DebugRegField jbt6k71_ltps_control_3_fields[] = {
 	{ "SHI",	0x00000003,	0,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t jbt6k71_ltps_control_4_fields[] = {
+static const DebugRegField jbt6k71_ltps_control_4_fields[] = {
 	{ "CKFI",	0x00000300,	8,	NULL,	0 },
 	{ "CKBI",	0x00003000,	12,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t jbt6k71_ltps_control_5_fields[] = {
+static const DebugRegField jbt6k71_ltps_control_5_fields[] = {
 	{ "CLTE",	0x0000000F,	0,	NULL,	0 },
 	{ "CLWE",	0x00003F00,	8,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t jbt6k71_ltps_control_6_fields[] = {
+static const DebugRegField jbt6k71_ltps_control_6_fields[] = {
 	{ "OEVFE",	0x0000000F,	0,	NULL,	0 },
 	{ "OEVBE",	0x00000F00,	8,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t jbt6k71_ltps_control_7_fields[] = {
+static const DebugRegField jbt6k71_ltps_control_7_fields[] = {
 	{ "SHE",	0x0000000F,	0,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t jbt6k71_ltps_control_8_fields[] = {
+static const DebugRegField jbt6k71_ltps_control_8_fields[] = {
 	{ "CKFE",	0x00000F00,	8,	NULL,	0 },
 	{ "CKBE",	0x0000F000,	12,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t jbt6k71_amplifier_capability_fields[] = {
+static const DebugRegField jbt6k71_amplifier_capability_fields[] = {
 	{ "ABSW",	0x00000003,	0,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t jbt6k71_mode_fields[] = {
+static const DebugRegField jbt6k71_mode_fields[] = {
 	{ "STB",	0x00000001,	0,	NULL,	0 },
 	{ "DSTB",	0x00000004,	2,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t jbt6k71_power_off_line_count_fields[] = {
+static const DebugRegField jbt6k71_power_off_line_count_fields[] = {
 	{ "POFH",	0x0000000F,	0,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t jbt6k71_display_control_fields[] = {
+static const DebugRegField jbt6k71_display_control_fields[] = {
 	{ "DCG",	0x00000001,	0,	NULL,	0 },
 	{ "VGAM",	0x00000002,	1,	NULL,	0 },
 	{ "FDON",	0x00000004,	2,	NULL,	0 },
@@ -7285,226 +7509,240 @@ static const pmb887x_io_field_t jbt6k71_display_control_fields[] = {
 	{ "PO",		0x00008000,	15,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t jbt6k71_auto_management_control_fields[] = {
+static const DebugRegField jbt6k71_auto_management_control_fields[] = {
 	{ "AUTO",	0x00000001,	0,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t jbt6k71_power_supply_control_1_fields[] = {
+static const DebugRegField jbt6k71_power_supply_control_1_fields[] = {
 	{ "VGM",	0x0000000F,	0,	NULL,	0 },
 	{ "VCS",	0x000000F0,	4,	NULL,	0 },
 	{ "VCD",	0x00000F00,	8,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t jbt6k71_power_supply_control_2_fields[] = {
+static const DebugRegField jbt6k71_power_supply_control_2_fields[] = {
 	{ "XVD",	0x00000007,	0,	NULL,	0 },
 	{ "WSEL1",	0x00001000,	12,	NULL,	0 },
 	{ "WSEL2",	0x00002000,	13,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t jbt6k71_power_supply_control_3_fields[] = {
+static const DebugRegField jbt6k71_power_supply_control_3_fields[] = {
 	{ "BAV",	0x00000001,	0,	NULL,	0 },
 	{ "BXV",	0x00000002,	1,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t jbt6k71_power_supply_control_4_fields[] = {
+static const DebugRegField jbt6k71_power_supply_control_4_fields[] = {
 	{ "CK1",	0x00000003,	0,	NULL,	0 },
 	{ "CK2",	0x0000000C,	2,	NULL,	0 },
 	{ "CK3",	0x00000030,	4,	NULL,	0 },
 	{ "DCW",	0x00000300,	8,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t jbt6k71_external_polarity_fields[] = {
+static const DebugRegField jbt6k71_external_polarity_fields[] = {
 	{ "EXTC1",	0x00000001,	0,	NULL,	0 },
 	{ "EXTC2",	0x00000002,	1,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t jbt6k71_ram_address_low_fields[] = {
+static const DebugRegField jbt6k71_ram_address_low_fields[] = {
 	{ "AD_07_00",	0x000000FF,	0,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t jbt6k71_ram_address_high_fields[] = {
+static const DebugRegField jbt6k71_ram_address_high_fields[] = {
 	{ "AD_16_08",	0x000001FF,	0,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t jbt6k71_gram_data_fields[] = {
+static const DebugRegField jbt6k71_gram_data_fields[] = {
 	{ "DATA",	0x0003FFFF,	0,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t jbt6k71_graphic_operation_1_fields[] = {
+static const DebugRegField jbt6k71_graphic_operation_1_fields[] = {
 	{ "WM_05_00",	0x0000003F,	0,	NULL,	0 },
 	{ "WM_11_06",	0x00003F00,	8,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t jbt6k71_graphic_operation_2_fields[] = {
+static const DebugRegField jbt6k71_graphic_operation_2_fields[] = {
 	{ "WM_17_12",	0x0000003F,	0,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t jbt6k71_gray_scale_1_fields[] = {
+static const DebugRegField jbt6k71_gray_scale_1_fields[] = {
 	{ "PK0",	0x00000007,	0,	NULL,	0 },
 	{ "PK1",	0x00000700,	8,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t jbt6k71_gray_scale_2_fields[] = {
+static const DebugRegField jbt6k71_gray_scale_2_fields[] = {
 	{ "PK2",	0x00000007,	0,	NULL,	0 },
 	{ "PK3",	0x00000700,	8,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t jbt6k71_gray_scale_3_fields[] = {
+static const DebugRegField jbt6k71_gray_scale_3_fields[] = {
 	{ "PK4",	0x00000007,	0,	NULL,	0 },
 	{ "PK5",	0x00000700,	8,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t jbt6k71_gray_scale_4_fields[] = {
+static const DebugRegField jbt6k71_gray_scale_4_fields[] = {
 	{ "PR0",	0x00000007,	0,	NULL,	0 },
 	{ "PR1",	0x00000700,	8,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t jbt6k71_gray_scale_5_fields[] = {
+static const DebugRegField jbt6k71_gray_scale_5_fields[] = {
 	{ "VR0",	0x00000007,	0,	NULL,	0 },
 	{ "VR1",	0x00000700,	8,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t jbt6k71_blue_offset_fields[] = {
+static const DebugRegField jbt6k71_blue_offset_fields[] = {
 	{ "BOFS",	0x00000007,	0,	NULL,	0 },
 	{ "BUP",	0x00000070,	4,	NULL,	0 },
 	{ "BLON",	0x00000100,	8,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t jbt6k71_vertical_scroll_1_fields[] = {
+static const DebugRegField jbt6k71_vertical_scroll_1_fields[] = {
 	{ "VL1",	0x000001FF,	0,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t jbt6k71_vertical_scroll_2_fields[] = {
+static const DebugRegField jbt6k71_vertical_scroll_2_fields[] = {
 	{ "VL2",	0x000001FF,	0,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t jbt6k71_screen1_drive_start_fields[] = {
+static const DebugRegField jbt6k71_screen1_drive_start_fields[] = {
 	{ "SS1",	0x000001FF,	0,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t jbt6k71_screen1_drive_end_fields[] = {
+static const DebugRegField jbt6k71_screen1_drive_end_fields[] = {
 	{ "SE1",	0x000001FF,	0,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t jbt6k71_screen2_drive_start_fields[] = {
+static const DebugRegField jbt6k71_screen2_drive_start_fields[] = {
 	{ "SS2",	0x000001FF,	0,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t jbt6k71_screen2_drive_end_fields[] = {
+static const DebugRegField jbt6k71_screen2_drive_end_fields[] = {
 	{ "SE2",	0x000001FF,	0,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t jbt6k71_horizontal_ram_start_fields[] = {
+static const DebugRegField jbt6k71_horizontal_ram_start_fields[] = {
 	{ "HSA",	0x000000FF,	0,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t jbt6k71_horizontal_ram_end_fields[] = {
+static const DebugRegField jbt6k71_horizontal_ram_end_fields[] = {
 	{ "HEA",	0x000000FF,	0,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t jbt6k71_vertical_ram_start_fields[] = {
+static const DebugRegField jbt6k71_vertical_ram_start_fields[] = {
 	{ "VSA",	0x000001FF,	0,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t jbt6k71_vertical_ram_end_fields[] = {
+static const DebugRegField jbt6k71_vertical_ram_end_fields[] = {
 	{ "VEA",	0x000001FF,	0,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t jbt6k71_osd_control_fields[] = {
+static const DebugRegField jbt6k71_osd_control_fields[] = {
 	{ "OSDON",	0x00000001,	0,	NULL,	0 },
 	{ "OSDW",	0x00000100,	8,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t jbt6k71_osd_screen1_start_fields[] = {
+static const DebugRegField jbt6k71_osd_screen1_start_fields[] = {
 	{ "ST1",	0x000001FF,	0,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t jbt6k71_osd_screen2_start_fields[] = {
+static const DebugRegField jbt6k71_osd_screen2_start_fields[] = {
 	{ "ST2",	0x000001FF,	0,	NULL,	0 },
 };
 
-static const pmb887x_io_reg_t jbt6k71_regs[] = {
-	{ "OSCILLATION",				0x0,	jbt6k71_oscillation_fields,				ARRAY_SIZE(jbt6k71_oscillation_fields),				0 },
-	{ "DRIVER_OUTPUT_CONTROL",		0x1,	jbt6k71_driver_output_control_fields,	ARRAY_SIZE(jbt6k71_driver_output_control_fields),	0 },
-	{ "LCD_DRIVING_SIGNAL",			0x2,	jbt6k71_lcd_driving_signal_fields,		ARRAY_SIZE(jbt6k71_lcd_driving_signal_fields),		0 },
-	{ "ENTRY_MODE",					0x3,	jbt6k71_entry_mode_fields,				ARRAY_SIZE(jbt6k71_entry_mode_fields),				0 },
-	{ "HORIZONTAL_VALID_WIDTH",		0x6,	jbt6k71_horizontal_valid_width_fields,	ARRAY_SIZE(jbt6k71_horizontal_valid_width_fields),	0 },
-	{ "DISPLAY_MODE_1",				0x7,	jbt6k71_display_mode_1_fields,			ARRAY_SIZE(jbt6k71_display_mode_1_fields),			0 },
-	{ "DISPLAY_MODE_2",				0x8,	jbt6k71_display_mode_2_fields,			ARRAY_SIZE(jbt6k71_display_mode_2_fields),			0 },
-	{ "DISPLAY_MODE_3",				0x9,	jbt6k71_display_mode_3_fields,			ARRAY_SIZE(jbt6k71_display_mode_3_fields),			0 },
-	{ "DISPLAY_MODE_4",				0xB,	jbt6k71_display_mode_4_fields,			ARRAY_SIZE(jbt6k71_display_mode_4_fields),			0 },
-	{ "EXTERNAL_DISPLAY_1",			0xC,	jbt6k71_external_display_1_fields,		ARRAY_SIZE(jbt6k71_external_display_1_fields),		0 },
-	{ "FR_FREQUENCY_ADJUSTMENT",	0xD,	jbt6k71_fr_frequency_adjustment_fields,	ARRAY_SIZE(jbt6k71_fr_frequency_adjustment_fields),	0 },
-	{ "EXTERNAL_DISPLAY_2",			0xE,	jbt6k71_external_display_2_fields,		ARRAY_SIZE(jbt6k71_external_display_2_fields),		0 },
-	{ "EXTERNAL_DISPLAY_3",			0xF,	jbt6k71_external_display_3_fields,		ARRAY_SIZE(jbt6k71_external_display_3_fields),		0 },
-	{ "LTPS_CONTROL_1",				0x12,	jbt6k71_ltps_control_1_fields,			ARRAY_SIZE(jbt6k71_ltps_control_1_fields),			0 },
-	{ "LTPS_CONTROL_2",				0x13,	jbt6k71_ltps_control_2_fields,			ARRAY_SIZE(jbt6k71_ltps_control_2_fields),			0 },
-	{ "LTPS_CONTROL_3",				0x14,	jbt6k71_ltps_control_3_fields,			ARRAY_SIZE(jbt6k71_ltps_control_3_fields),			0 },
-	{ "LTPS_CONTROL_4",				0x15,	jbt6k71_ltps_control_4_fields,			ARRAY_SIZE(jbt6k71_ltps_control_4_fields),			0 },
-	{ "LTPS_CONTROL_5",				0x18,	jbt6k71_ltps_control_5_fields,			ARRAY_SIZE(jbt6k71_ltps_control_5_fields),			0 },
-	{ "LTPS_CONTROL_6",				0x19,	jbt6k71_ltps_control_6_fields,			ARRAY_SIZE(jbt6k71_ltps_control_6_fields),			0 },
-	{ "LTPS_CONTROL_7",				0x1A,	jbt6k71_ltps_control_7_fields,			ARRAY_SIZE(jbt6k71_ltps_control_7_fields),			0 },
-	{ "LTPS_CONTROL_8",				0x1B,	jbt6k71_ltps_control_8_fields,			ARRAY_SIZE(jbt6k71_ltps_control_8_fields),			0 },
-	{ "AMPLIFIER_CAPABILITY",		0x1C,	jbt6k71_amplifier_capability_fields,	ARRAY_SIZE(jbt6k71_amplifier_capability_fields),	0 },
-	{ "MODE",						0x1D,	jbt6k71_mode_fields,					ARRAY_SIZE(jbt6k71_mode_fields),					0 },
-	{ "POWER_OFF_LINE_COUNT",		0x1E,	jbt6k71_power_off_line_count_fields,	ARRAY_SIZE(jbt6k71_power_off_line_count_fields),	0 },
-	{ "DISPLAY_CONTROL",			0x100,	jbt6k71_display_control_fields,			ARRAY_SIZE(jbt6k71_display_control_fields),			0 },
-	{ "AUTO_MANAGEMENT_CONTROL",	0x101,	jbt6k71_auto_management_control_fields,	ARRAY_SIZE(jbt6k71_auto_management_control_fields),	0 },
-	{ "POWER_SUPPLY_CONTROL_1",		0x102,	jbt6k71_power_supply_control_1_fields,	ARRAY_SIZE(jbt6k71_power_supply_control_1_fields),	0 },
-	{ "POWER_SUPPLY_CONTROL_2",		0x103,	jbt6k71_power_supply_control_2_fields,	ARRAY_SIZE(jbt6k71_power_supply_control_2_fields),	0 },
-	{ "POWER_SUPPLY_CONTROL_3",		0x104,	jbt6k71_power_supply_control_3_fields,	ARRAY_SIZE(jbt6k71_power_supply_control_3_fields),	0 },
-	{ "POWER_SUPPLY_CONTROL_4",		0x105,	jbt6k71_power_supply_control_4_fields,	ARRAY_SIZE(jbt6k71_power_supply_control_4_fields),	0 },
-	{ "EXTERNAL_POLARITY",			0x108,	jbt6k71_external_polarity_fields,		ARRAY_SIZE(jbt6k71_external_polarity_fields),		0 },
-	{ "RAM_ADDRESS_LOW",			0x200,	jbt6k71_ram_address_low_fields,			ARRAY_SIZE(jbt6k71_ram_address_low_fields),			0 },
-	{ "RAM_ADDRESS_HIGH",			0x201,	jbt6k71_ram_address_high_fields,		ARRAY_SIZE(jbt6k71_ram_address_high_fields),		0 },
-	{ "GRAM_DATA",					0x202,	jbt6k71_gram_data_fields,				ARRAY_SIZE(jbt6k71_gram_data_fields),				0 },
-	{ "GRAPHIC_OPERATION_1",		0x203,	jbt6k71_graphic_operation_1_fields,		ARRAY_SIZE(jbt6k71_graphic_operation_1_fields),		0 },
-	{ "GRAPHIC_OPERATION_2",		0x204,	jbt6k71_graphic_operation_2_fields,		ARRAY_SIZE(jbt6k71_graphic_operation_2_fields),		0 },
-	{ "GRAY_SCALE_1",				0x300,	jbt6k71_gray_scale_1_fields,			ARRAY_SIZE(jbt6k71_gray_scale_1_fields),			0 },
-	{ "GRAY_SCALE_2",				0x301,	jbt6k71_gray_scale_2_fields,			ARRAY_SIZE(jbt6k71_gray_scale_2_fields),			0 },
-	{ "GRAY_SCALE_3",				0x302,	jbt6k71_gray_scale_3_fields,			ARRAY_SIZE(jbt6k71_gray_scale_3_fields),			0 },
-	{ "GRAY_SCALE_4",				0x303,	jbt6k71_gray_scale_4_fields,			ARRAY_SIZE(jbt6k71_gray_scale_4_fields),			0 },
-	{ "GRAY_SCALE_5",				0x304,	jbt6k71_gray_scale_5_fields,			ARRAY_SIZE(jbt6k71_gray_scale_5_fields),			0 },
-	{ "BLUE_OFFSET",				0x305,	jbt6k71_blue_offset_fields,				ARRAY_SIZE(jbt6k71_blue_offset_fields),				0 },
-	{ "VERTICAL_SCROLL_1",			0x400,	jbt6k71_vertical_scroll_1_fields,		ARRAY_SIZE(jbt6k71_vertical_scroll_1_fields),		0 },
-	{ "VERTICAL_SCROLL_2",			0x401,	jbt6k71_vertical_scroll_2_fields,		ARRAY_SIZE(jbt6k71_vertical_scroll_2_fields),		0 },
-	{ "SCREEN1_DRIVE_START",		0x402,	jbt6k71_screen1_drive_start_fields,		ARRAY_SIZE(jbt6k71_screen1_drive_start_fields),		0 },
-	{ "SCREEN1_DRIVE_END",			0x403,	jbt6k71_screen1_drive_end_fields,		ARRAY_SIZE(jbt6k71_screen1_drive_end_fields),		0 },
-	{ "SCREEN2_DRIVE_START",		0x404,	jbt6k71_screen2_drive_start_fields,		ARRAY_SIZE(jbt6k71_screen2_drive_start_fields),		0 },
-	{ "SCREEN2_DRIVE_END",			0x405,	jbt6k71_screen2_drive_end_fields,		ARRAY_SIZE(jbt6k71_screen2_drive_end_fields),		0 },
-	{ "HORIZONTAL_RAM_START",		0x406,	jbt6k71_horizontal_ram_start_fields,	ARRAY_SIZE(jbt6k71_horizontal_ram_start_fields),	0 },
-	{ "HORIZONTAL_RAM_END",			0x407,	jbt6k71_horizontal_ram_end_fields,		ARRAY_SIZE(jbt6k71_horizontal_ram_end_fields),		0 },
-	{ "VERTICAL_RAM_START",			0x408,	jbt6k71_vertical_ram_start_fields,		ARRAY_SIZE(jbt6k71_vertical_ram_start_fields),		0 },
-	{ "VERTICAL_RAM_END",			0x409,	jbt6k71_vertical_ram_end_fields,		ARRAY_SIZE(jbt6k71_vertical_ram_end_fields),		0 },
-	{ "OSD_CONTROL",				0x500,	jbt6k71_osd_control_fields,				ARRAY_SIZE(jbt6k71_osd_control_fields),				0 },
-	{ "OSD_SCREEN1_START",			0x504,	jbt6k71_osd_screen1_start_fields,		ARRAY_SIZE(jbt6k71_osd_screen1_start_fields),		0 },
-	{ "OSD_SCREEN2_START",			0x505,	jbt6k71_osd_screen2_start_fields,		ARRAY_SIZE(jbt6k71_osd_screen2_start_fields),		0 },
+static const DebugReg jbt6k71_regs[] = {
+	{ "OSCILLATION",				0x0,	jbt6k71_oscillation_fields,				ARRAY_SIZE(jbt6k71_oscillation_fields) },
+	{ "DRIVER_OUTPUT_CONTROL",		0x1,	jbt6k71_driver_output_control_fields,	ARRAY_SIZE(jbt6k71_driver_output_control_fields) },
+	{ "LCD_DRIVING_SIGNAL",			0x2,	jbt6k71_lcd_driving_signal_fields,		ARRAY_SIZE(jbt6k71_lcd_driving_signal_fields) },
+	{ "ENTRY_MODE",					0x3,	jbt6k71_entry_mode_fields,				ARRAY_SIZE(jbt6k71_entry_mode_fields) },
+	{ "HORIZONTAL_VALID_WIDTH",		0x6,	jbt6k71_horizontal_valid_width_fields,	ARRAY_SIZE(jbt6k71_horizontal_valid_width_fields) },
+	{ "DISPLAY_MODE_1",				0x7,	jbt6k71_display_mode_1_fields,			ARRAY_SIZE(jbt6k71_display_mode_1_fields) },
+	{ "DISPLAY_MODE_2",				0x8,	jbt6k71_display_mode_2_fields,			ARRAY_SIZE(jbt6k71_display_mode_2_fields) },
+	{ "DISPLAY_MODE_3",				0x9,	jbt6k71_display_mode_3_fields,			ARRAY_SIZE(jbt6k71_display_mode_3_fields) },
+	{ "DISPLAY_MODE_4",				0xB,	jbt6k71_display_mode_4_fields,			ARRAY_SIZE(jbt6k71_display_mode_4_fields) },
+	{ "EXTERNAL_DISPLAY_1",			0xC,	jbt6k71_external_display_1_fields,		ARRAY_SIZE(jbt6k71_external_display_1_fields) },
+	{ "FR_FREQUENCY_ADJUSTMENT",	0xD,	jbt6k71_fr_frequency_adjustment_fields,	ARRAY_SIZE(jbt6k71_fr_frequency_adjustment_fields) },
+	{ "EXTERNAL_DISPLAY_2",			0xE,	jbt6k71_external_display_2_fields,		ARRAY_SIZE(jbt6k71_external_display_2_fields) },
+	{ "EXTERNAL_DISPLAY_3",			0xF,	jbt6k71_external_display_3_fields,		ARRAY_SIZE(jbt6k71_external_display_3_fields) },
+	{ "LTPS_CONTROL_1",				0x12,	jbt6k71_ltps_control_1_fields,			ARRAY_SIZE(jbt6k71_ltps_control_1_fields) },
+	{ "LTPS_CONTROL_2",				0x13,	jbt6k71_ltps_control_2_fields,			ARRAY_SIZE(jbt6k71_ltps_control_2_fields) },
+	{ "LTPS_CONTROL_3",				0x14,	jbt6k71_ltps_control_3_fields,			ARRAY_SIZE(jbt6k71_ltps_control_3_fields) },
+	{ "LTPS_CONTROL_4",				0x15,	jbt6k71_ltps_control_4_fields,			ARRAY_SIZE(jbt6k71_ltps_control_4_fields) },
+	{ "LTPS_CONTROL_5",				0x18,	jbt6k71_ltps_control_5_fields,			ARRAY_SIZE(jbt6k71_ltps_control_5_fields) },
+	{ "LTPS_CONTROL_6",				0x19,	jbt6k71_ltps_control_6_fields,			ARRAY_SIZE(jbt6k71_ltps_control_6_fields) },
+	{ "LTPS_CONTROL_7",				0x1A,	jbt6k71_ltps_control_7_fields,			ARRAY_SIZE(jbt6k71_ltps_control_7_fields) },
+	{ "LTPS_CONTROL_8",				0x1B,	jbt6k71_ltps_control_8_fields,			ARRAY_SIZE(jbt6k71_ltps_control_8_fields) },
+	{ "AMPLIFIER_CAPABILITY",		0x1C,	jbt6k71_amplifier_capability_fields,	ARRAY_SIZE(jbt6k71_amplifier_capability_fields) },
+	{ "MODE",						0x1D,	jbt6k71_mode_fields,					ARRAY_SIZE(jbt6k71_mode_fields) },
+	{ "POWER_OFF_LINE_COUNT",		0x1E,	jbt6k71_power_off_line_count_fields,	ARRAY_SIZE(jbt6k71_power_off_line_count_fields) },
+	{ "DISPLAY_CONTROL",			0x100,	jbt6k71_display_control_fields,			ARRAY_SIZE(jbt6k71_display_control_fields) },
+	{ "AUTO_MANAGEMENT_CONTROL",	0x101,	jbt6k71_auto_management_control_fields,	ARRAY_SIZE(jbt6k71_auto_management_control_fields) },
+	{ "POWER_SUPPLY_CONTROL_1",		0x102,	jbt6k71_power_supply_control_1_fields,	ARRAY_SIZE(jbt6k71_power_supply_control_1_fields) },
+	{ "POWER_SUPPLY_CONTROL_2",		0x103,	jbt6k71_power_supply_control_2_fields,	ARRAY_SIZE(jbt6k71_power_supply_control_2_fields) },
+	{ "POWER_SUPPLY_CONTROL_3",		0x104,	jbt6k71_power_supply_control_3_fields,	ARRAY_SIZE(jbt6k71_power_supply_control_3_fields) },
+	{ "POWER_SUPPLY_CONTROL_4",		0x105,	jbt6k71_power_supply_control_4_fields,	ARRAY_SIZE(jbt6k71_power_supply_control_4_fields) },
+	{ "EXTERNAL_POLARITY",			0x108,	jbt6k71_external_polarity_fields,		ARRAY_SIZE(jbt6k71_external_polarity_fields) },
+	{ "RAM_ADDRESS_LOW",			0x200,	jbt6k71_ram_address_low_fields,			ARRAY_SIZE(jbt6k71_ram_address_low_fields) },
+	{ "RAM_ADDRESS_HIGH",			0x201,	jbt6k71_ram_address_high_fields,		ARRAY_SIZE(jbt6k71_ram_address_high_fields) },
+	{ "GRAM_DATA",					0x202,	jbt6k71_gram_data_fields,				ARRAY_SIZE(jbt6k71_gram_data_fields) },
+	{ "GRAPHIC_OPERATION_1",		0x203,	jbt6k71_graphic_operation_1_fields,		ARRAY_SIZE(jbt6k71_graphic_operation_1_fields) },
+	{ "GRAPHIC_OPERATION_2",		0x204,	jbt6k71_graphic_operation_2_fields,		ARRAY_SIZE(jbt6k71_graphic_operation_2_fields) },
+	{ "GRAY_SCALE_1",				0x300,	jbt6k71_gray_scale_1_fields,			ARRAY_SIZE(jbt6k71_gray_scale_1_fields) },
+	{ "GRAY_SCALE_2",				0x301,	jbt6k71_gray_scale_2_fields,			ARRAY_SIZE(jbt6k71_gray_scale_2_fields) },
+	{ "GRAY_SCALE_3",				0x302,	jbt6k71_gray_scale_3_fields,			ARRAY_SIZE(jbt6k71_gray_scale_3_fields) },
+	{ "GRAY_SCALE_4",				0x303,	jbt6k71_gray_scale_4_fields,			ARRAY_SIZE(jbt6k71_gray_scale_4_fields) },
+	{ "GRAY_SCALE_5",				0x304,	jbt6k71_gray_scale_5_fields,			ARRAY_SIZE(jbt6k71_gray_scale_5_fields) },
+	{ "BLUE_OFFSET",				0x305,	jbt6k71_blue_offset_fields,				ARRAY_SIZE(jbt6k71_blue_offset_fields) },
+	{ "VERTICAL_SCROLL_1",			0x400,	jbt6k71_vertical_scroll_1_fields,		ARRAY_SIZE(jbt6k71_vertical_scroll_1_fields) },
+	{ "VERTICAL_SCROLL_2",			0x401,	jbt6k71_vertical_scroll_2_fields,		ARRAY_SIZE(jbt6k71_vertical_scroll_2_fields) },
+	{ "SCREEN1_DRIVE_START",		0x402,	jbt6k71_screen1_drive_start_fields,		ARRAY_SIZE(jbt6k71_screen1_drive_start_fields) },
+	{ "SCREEN1_DRIVE_END",			0x403,	jbt6k71_screen1_drive_end_fields,		ARRAY_SIZE(jbt6k71_screen1_drive_end_fields) },
+	{ "SCREEN2_DRIVE_START",		0x404,	jbt6k71_screen2_drive_start_fields,		ARRAY_SIZE(jbt6k71_screen2_drive_start_fields) },
+	{ "SCREEN2_DRIVE_END",			0x405,	jbt6k71_screen2_drive_end_fields,		ARRAY_SIZE(jbt6k71_screen2_drive_end_fields) },
+	{ "HORIZONTAL_RAM_START",		0x406,	jbt6k71_horizontal_ram_start_fields,	ARRAY_SIZE(jbt6k71_horizontal_ram_start_fields) },
+	{ "HORIZONTAL_RAM_END",			0x407,	jbt6k71_horizontal_ram_end_fields,		ARRAY_SIZE(jbt6k71_horizontal_ram_end_fields) },
+	{ "VERTICAL_RAM_START",			0x408,	jbt6k71_vertical_ram_start_fields,		ARRAY_SIZE(jbt6k71_vertical_ram_start_fields) },
+	{ "VERTICAL_RAM_END",			0x409,	jbt6k71_vertical_ram_end_fields,		ARRAY_SIZE(jbt6k71_vertical_ram_end_fields) },
+	{ "OSD_CONTROL",				0x500,	jbt6k71_osd_control_fields,				ARRAY_SIZE(jbt6k71_osd_control_fields) },
+	{ "OSD_SCREEN1_START",			0x504,	jbt6k71_osd_screen1_start_fields,		ARRAY_SIZE(jbt6k71_osd_screen1_start_fields) },
+	{ "OSD_SCREEN2_START",			0x505,	jbt6k71_osd_screen2_start_fields,		ARRAY_SIZE(jbt6k71_osd_screen2_start_fields) },
 };
 
-static const pmb887x_io_field_t lh15kah2_x_start_fields[] = {
+const DebugRegs pmb887x_jbt6k71_regs = {
+	.regs = jbt6k71_regs,
+	.count = ARRAY_SIZE(jbt6k71_regs),
+	.reg_size = 1,
+	.addr_digits = 3,
+};
+
+static const DebugRegField lh15kah2_x_start_fields[] = {
 	{ "ADDR",	0x000000FF,	0,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t lh15kah2_y_start_fields[] = {
+static const DebugRegField lh15kah2_y_start_fields[] = {
 	{ "ADDR",	0x000000FF,	0,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t lh15kah2_x_end_fields[] = {
+static const DebugRegField lh15kah2_x_end_fields[] = {
 	{ "ADDR",	0x000000FF,	0,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t lh15kah2_y_end_fields[] = {
+static const DebugRegField lh15kah2_y_end_fields[] = {
 	{ "ADDR",	0x000000FF,	0,	NULL,	0 },
 };
 
-static const pmb887x_io_reg_t lh15kah2_regs[] = {
-	{ "X_START",	0x4,	lh15kah2_x_start_fields,	ARRAY_SIZE(lh15kah2_x_start_fields),	0 },
-	{ "Y_START",	0x5,	lh15kah2_y_start_fields,	ARRAY_SIZE(lh15kah2_y_start_fields),	0 },
-	{ "X_END",		0x6,	lh15kah2_x_end_fields,		ARRAY_SIZE(lh15kah2_x_end_fields),		0 },
-	{ "Y_END",		0x7,	lh15kah2_y_end_fields,		ARRAY_SIZE(lh15kah2_y_end_fields),		0 },
+static const DebugReg lh15kah2_regs[] = {
+	{ "X_START",	0x4,	lh15kah2_x_start_fields,	ARRAY_SIZE(lh15kah2_x_start_fields) },
+	{ "Y_START",	0x5,	lh15kah2_y_start_fields,	ARRAY_SIZE(lh15kah2_y_start_fields) },
+	{ "X_END",		0x6,	lh15kah2_x_end_fields,		ARRAY_SIZE(lh15kah2_x_end_fields) },
+	{ "Y_END",		0x7,	lh15kah2_y_end_fields,		ARRAY_SIZE(lh15kah2_y_end_fields) },
 };
 
-static const pmb887x_io_value_t lm4946_mode_fields_mc_values[] = {
+const DebugRegs pmb887x_lh15kah2_regs = {
+	.regs = lh15kah2_regs,
+	.count = ARRAY_SIZE(lh15kah2_regs),
+	.reg_size = 1,
+	.addr_digits = 2,
+};
+
+static const DebugRegValue lm4946_mode_fields_mc_values[] = {
 	{ "ALL_SHUTDOWN",		0x00000000 },
 	{ "MONO_IN_TO_SPK",		0x00000001 },
 	{ "MONO_IN_TO_HP",		0x00000002 },
@@ -7515,82 +7753,89 @@ static const pmb887x_io_value_t lm4946_mode_fields_mc_values[] = {
 	{ "LINE_IN_TO_SPK_HP",	0x00000007 },
 };
 
-static const pmb887x_io_field_t lm4946_mode_fields[] = {
+static const DebugRegField lm4946_mode_fields[] = {
 	{ "MC",		0x00000007,	0,	lm4946_mode_fields_mc_values,	ARRAY_SIZE(lm4946_mode_fields_mc_values) },
 	{ "OCL",	0x00000008,	3,	NULL,							0 },
 };
 
-static const pmb887x_io_value_t lm4946_n3d_fields_narrow_values[] = {
+static const DebugRegValue lm4946_n3d_fields_narrow_values[] = {
 	{ "WIDE",	0x00000000 },
 	{ "NARROW",	0x00000002 },
 };
 
-static const pmb887x_io_value_t lm4946_n3d_fields_level_values[] = {
+static const DebugRegValue lm4946_n3d_fields_level_values[] = {
 	{ "LOW",	0x00000000 },
 	{ "MEDIUM",	0x00000004 },
 	{ "HIGH",	0x00000008 },
 	{ "MAX",	0x0000000C },
 };
 
-static const pmb887x_io_field_t lm4946_n3d_fields[] = {
+static const DebugRegField lm4946_n3d_fields[] = {
 	{ "EN",		0x00000001,	0,	NULL,								0 },
 	{ "NARROW",	0x00000002,	1,	lm4946_n3d_fields_narrow_values,	ARRAY_SIZE(lm4946_n3d_fields_narrow_values) },
 	{ "LEVEL",	0x0000000C,	2,	lm4946_n3d_fields_level_values,		ARRAY_SIZE(lm4946_n3d_fields_level_values) },
 };
 
-static const pmb887x_io_field_t lm4946_mono_vol_fields[] = {
+static const DebugRegField lm4946_mono_vol_fields[] = {
 	{ "VOL",	0x0000001F,	0,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t lm4946_left_vol_fields[] = {
+static const DebugRegField lm4946_left_vol_fields[] = {
 	{ "VOL",	0x0000001F,	0,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t lm4946_right_vol_fields[] = {
+static const DebugRegField lm4946_right_vol_fields[] = {
 	{ "VOL",	0x0000001F,	0,	NULL,	0 },
 };
 
-static const pmb887x_io_reg_t lm4946_regs[] = {
-	{ "MODE",		0x0,	lm4946_mode_fields,			ARRAY_SIZE(lm4946_mode_fields),			0 },
-	{ "N3D",		0x40,	lm4946_n3d_fields,			ARRAY_SIZE(lm4946_n3d_fields),			0 },
-	{ "MONO_VOL",	0x80,	lm4946_mono_vol_fields,		ARRAY_SIZE(lm4946_mono_vol_fields),		0 },
-	{ "LEFT_VOL",	0xC0,	lm4946_left_vol_fields,		ARRAY_SIZE(lm4946_left_vol_fields),		0 },
-	{ "RIGHT_VOL",	0xE0,	lm4946_right_vol_fields,	ARRAY_SIZE(lm4946_right_vol_fields),	0 },
+static const DebugReg lm4946_regs[] = {
+	{ "MODE",		0x0,	lm4946_mode_fields,			ARRAY_SIZE(lm4946_mode_fields) },
+	{ "N3D",		0x40,	lm4946_n3d_fields,			ARRAY_SIZE(lm4946_n3d_fields) },
+	{ "MONO_VOL",	0x80,	lm4946_mono_vol_fields,		ARRAY_SIZE(lm4946_mono_vol_fields) },
+	{ "LEFT_VOL",	0xC0,	lm4946_left_vol_fields,		ARRAY_SIZE(lm4946_left_vol_fields) },
+	{ "RIGHT_VOL",	0xE0,	lm4946_right_vol_fields,	ARRAY_SIZE(lm4946_right_vol_fields) },
 };
 
-static const pmb887x_io_value_t pasic_identification_fields_vendor_values[] = {
+const DebugRegs pmb887x_lm4946_regs = {
+	.regs = lm4946_regs,
+	.count = ARRAY_SIZE(lm4946_regs),
+	.reg_size = 1,
+	.addr_digits = 2,
+};
+
+static const DebugRegValue pasic_identification_fields_vendor_values[] = {
 	{ "ST",		0x00000000 },
 	{ "DIALOG",	0x00000080 },
 };
 
-static const pmb887x_io_field_t pasic_identification_fields[] = {
+static const DebugRegField pasic_identification_fields[] = {
 	{ "MODEL",		0x00000007,	0,	NULL,										0 },
 	{ "REVISION",	0x00000078,	3,	NULL,										0 },
 	{ "VENDOR",		0x00000080,	7,	pasic_identification_fields_vendor_values,	ARRAY_SIZE(pasic_identification_fields_vendor_values) },
 };
 
-static const pmb887x_io_field_t pasic_irq_status_1_fields[] = {
+static const DebugRegField pasic_irq_status_1_fields[] = {
 	{ "OVER_TEMP",		0x00000004,	2,	NULL,	0 },
 	{ "CHARGER_EVENT",	0x00000008,	3,	NULL,	0 },
 	{ "UV_AUDIO_REGA",	0x00000020,	5,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t pasic_irq_status_2_fields[] = {
+static const DebugRegField pasic_irq_status_2_fields[] = {
 	{ "UV_SIM_REGA",	0x00000001,	0,	NULL,	0 },
 	{ "SUPPLY_SHORT",	0x00000002,	1,	NULL,	0 },
 	{ "UNEXP_CHARGE",	0x00000004,	2,	NULL,	0 },
 	{ "VBATT_OV",		0x00000020,	5,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t pasic_irq_mask_1_fields[] = {
+static const DebugRegField pasic_irq_mask_1_fields[] = {
 	{ "VALUE",	0x000000FF,	0,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t pasic_irq_mask_2_fields[] = {
+static const DebugRegField pasic_irq_mask_2_fields[] = {
 	{ "VALUE",	0x000000FF,	0,	NULL,	0 },
 };
 
-static const pmb887x_io_value_t pasic_turnoff_reason_fields_value_values[] = {
+static const DebugRegValue pasic_turnoff_reason_fields_value_values[] = {
 	{ "UNDEFINED",				0x00000000 },
 	{ "NO_REASON_STORED",		0x00000001 },
 	{ "UNDERVOLTAGE_VBATT",		0x00000002 },
@@ -7603,11 +7848,11 @@ static const pmb887x_io_value_t pasic_turnoff_reason_fields_value_values[] = {
 	{ "OVERVOLTAGE_VBATT",		0x00000009 },
 };
 
-static const pmb887x_io_field_t pasic_turnoff_reason_fields[] = {
+static const DebugRegField pasic_turnoff_reason_fields[] = {
 	{ "VALUE",	0x000000FF,	0,	pasic_turnoff_reason_fields_value_values,	ARRAY_SIZE(pasic_turnoff_reason_fields_value_values) },
 };
 
-static const pmb887x_io_field_t pasic_supply_enable_1_fields[] = {
+static const DebugRegField pasic_supply_enable_1_fields[] = {
 	{ "VREG1_EN",		0x00000001,	0,	NULL,	0 },
 	{ "VREG2B_EN",		0x00000002,	1,	NULL,	0 },
 	{ "VSIMREGA_EN",	0x00000004,	2,	NULL,	0 },
@@ -7618,90 +7863,90 @@ static const pmb887x_io_field_t pasic_supply_enable_1_fields[] = {
 	{ "VREGMEM2_EN",	0x00000080,	7,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t pasic_supply_enable_2_fields[] = {
+static const DebugRegField pasic_supply_enable_2_fields[] = {
 	{ "VIBRA_EN",	0x00000001,	0,	NULL,	0 },
 	{ "VREGUSB_EN",	0x00000002,	1,	NULL,	0 },
 	{ "VBOOST_EN",	0x00000004,	2,	NULL,	0 },
 	{ "VLPREG_EN",	0x00000010,	4,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t pasic_rf_enable_fields[] = {
+static const DebugRegField pasic_rf_enable_fields[] = {
 	{ "VRF1_EN",	0x00000001,	0,	NULL,	0 },
 	{ "VRF2_EN",	0x00000002,	1,	NULL,	0 },
 	{ "VRF3_EN",	0x00000004,	2,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t pasic_supply_control_1_fields[] = {
+static const DebugRegField pasic_supply_control_1_fields[] = {
 	{ "VREG1_MODE",		0x00000001,	0,	NULL,	0 },
 	{ "VREG2_LEVEL",	0x0000000E,	1,	NULL,	0 },
 	{ "VREG3_LEVEL",	0x00000070,	4,	NULL,	0 },
 	{ "STEPDOWN_MODE",	0x00000080,	7,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t pasic_supply_mode_fields[] = {
+static const DebugRegField pasic_supply_mode_fields[] = {
 	{ "VSIMREGA_MODE",	0x00000001,	0,	NULL,	0 },
 	{ "VAUDREGA_MODE",	0x00000002,	1,	NULL,	0 },
 	{ "VAUDREGB_MODE",	0x00000004,	2,	NULL,	0 },
 };
 
-static const pmb887x_io_value_t pasic_rf_voltage_fields_vrf1_level_values[] = {
+static const DebugRegValue pasic_rf_voltage_fields_vrf1_level_values[] = {
 	{ "2850MV",	0x00000002 },
 };
 
-static const pmb887x_io_value_t pasic_rf_voltage_fields_vrf2_level_values[] = {
+static const DebugRegValue pasic_rf_voltage_fields_vrf2_level_values[] = {
 	{ "2850MV",	0x00000008 },
 };
 
-static const pmb887x_io_field_t pasic_rf_voltage_fields[] = {
+static const DebugRegField pasic_rf_voltage_fields[] = {
 	{ "VRF1_LEVEL",	0x00000003,	0,	pasic_rf_voltage_fields_vrf1_level_values,	ARRAY_SIZE(pasic_rf_voltage_fields_vrf1_level_values) },
 	{ "VRF2_LEVEL",	0x0000000C,	2,	pasic_rf_voltage_fields_vrf2_level_values,	ARRAY_SIZE(pasic_rf_voltage_fields_vrf2_level_values) },
 	{ "VRF3_LEVEL",	0x00000030,	4,	NULL,										0 },
 };
 
-static const pmb887x_io_field_t pasic_light_enable_fields[] = {
+static const DebugRegField pasic_light_enable_fields[] = {
 	{ "LED1_EN",	0x00000001,	0,	NULL,	0 },
 	{ "LED2_EN",	0x00000002,	1,	NULL,	0 },
 	{ "LED3_EN",	0x00000004,	2,	NULL,	0 },
 };
 
-static const pmb887x_io_value_t pasic_power_fields_wdt_time_values[] = {
+static const DebugRegValue pasic_power_fields_wdt_time_values[] = {
 	{ "3S",		0x00000000 },
 	{ "6S",		0x00000001 },
 	{ "12S",	0x00000002 },
 	{ "24S",	0x00000003 },
 };
 
-static const pmb887x_io_field_t pasic_power_fields[] = {
+static const DebugRegField pasic_power_fields[] = {
 	{ "WDT_TIME",	0x00000003,	0,	pasic_power_fields_wdt_time_values,	ARRAY_SIZE(pasic_power_fields_wdt_time_values) },
 	{ "POWEROFF",	0x00000004,	2,	NULL,								0 },
 };
 
-static const pmb887x_io_value_t pasic_charge_control_fields_current_values[] = {
+static const DebugRegValue pasic_charge_control_fields_current_values[] = {
 	{ "75MA",	0x00000000 },
 	{ "150MA",	0x00000001 },
 	{ "300MA",	0x00000002 },
 	{ "400MA",	0x00000003 },
 };
 
-static const pmb887x_io_field_t pasic_charge_control_fields[] = {
+static const DebugRegField pasic_charge_control_fields[] = {
 	{ "CURRENT",	0x00000003,	0,	pasic_charge_control_fields_current_values,	ARRAY_SIZE(pasic_charge_control_fields_current_values) },
 	{ "CHARGE_EN",	0x00000008,	3,	NULL,										0 },
 	{ "CURRENT_EN",	0x00000080,	7,	NULL,										0 },
 };
 
-static const pmb887x_io_field_t pasic_charge_status_fields[] = {
+static const DebugRegField pasic_charge_status_fields[] = {
 	{ "CURRENT",	0x000000FF,	0,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t pasic_light_pwm1_fields[] = {
+static const DebugRegField pasic_light_pwm1_fields[] = {
 	{ "LEVEL",	0x0000007F,	0,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t pasic_light_pwm2_fields[] = {
+static const DebugRegField pasic_light_pwm2_fields[] = {
 	{ "LEVEL",	0x0000007F,	0,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t pasic_light_control_fields[] = {
+static const DebugRegField pasic_light_control_fields[] = {
 	{ "LED1_EN",	0x00000002,	1,	NULL,	0 },
 	{ "LED2_EN",	0x00000004,	2,	NULL,	0 },
 	{ "PWM1_EN",	0x00000008,	3,	NULL,	0 },
@@ -7709,234 +7954,241 @@ static const pmb887x_io_field_t pasic_light_control_fields[] = {
 	{ "MASTER_EN",	0x00000020,	5,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t pasic_led_pattern_1_fields[] = {
+static const DebugRegField pasic_led_pattern_1_fields[] = {
 	{ "VALUE",	0x000000FF,	0,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t pasic_led_pattern_2_fields[] = {
+static const DebugRegField pasic_led_pattern_2_fields[] = {
 	{ "VALUE",	0x000000FF,	0,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t pasic_led_pattern_3_fields[] = {
+static const DebugRegField pasic_led_pattern_3_fields[] = {
 	{ "VALUE",	0x000000FF,	0,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t pasic_led_pattern_4_fields[] = {
+static const DebugRegField pasic_led_pattern_4_fields[] = {
 	{ "VALUE",	0x000000FF,	0,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t pasic_led_pattern_5_fields[] = {
+static const DebugRegField pasic_led_pattern_5_fields[] = {
 	{ "VALUE",	0x000000FF,	0,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t pasic_ddps_control_fields[] = {
+static const DebugRegField pasic_ddps_control_fields[] = {
 	{ "VALUE",	0x000000FF,	0,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t pasic_amplifier_gain_0_fields[] = {
+static const DebugRegField pasic_amplifier_gain_0_fields[] = {
 	{ "LEVEL",	0x000000FF,	0,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t pasic_amplifier_gain_1_fields[] = {
+static const DebugRegField pasic_amplifier_gain_1_fields[] = {
 	{ "LEVEL",	0x000000FF,	0,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t pasic_mono_control_fields[] = {
+static const DebugRegField pasic_mono_control_fields[] = {
 	{ "KEY_CLICK_EN",	0x00000008,	3,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t pasic_stereo_control_fields[] = {
+static const DebugRegField pasic_stereo_control_fields[] = {
 	{ "VALUE",	0x000000FF,	0,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t pasic_amplifier_gain_2_fields[] = {
+static const DebugRegField pasic_amplifier_gain_2_fields[] = {
 	{ "GAIN",		0x0000003F,	0,	NULL,	0 },
 	{ "TONE_LEVEL",	0x000000C0,	6,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t pasic_amplifier_gain_3_fields[] = {
+static const DebugRegField pasic_amplifier_gain_3_fields[] = {
 	{ "LEVEL",	0x000000FF,	0,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t pasic_tone_control_fields[] = {
+static const DebugRegField pasic_tone_control_fields[] = {
 	{ "DURATION",	0x0000001F,	0,	NULL,	0 },
 	{ "MODULATION",	0x00000060,	5,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t pasic_vibra_fields[] = {
+static const DebugRegField pasic_vibra_fields[] = {
 	{ "LEVEL",	0x000000FF,	0,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t pasic_pp_amplifier_1_fields[] = {
+static const DebugRegField pasic_pp_amplifier_1_fields[] = {
 	{ "PATH_1_SOURCE",	0x00000007,	0,	NULL,	0 },
 	{ "PATH_1_EN",		0x00000008,	3,	NULL,	0 },
 	{ "PATH_2_SOURCE",	0x00000070,	4,	NULL,	0 },
 	{ "PATH_2_EN",		0x00000080,	7,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t pasic_switch_mux_1_fields[] = {
+static const DebugRegField pasic_switch_mux_1_fields[] = {
 	{ "VALUE",	0x000000FF,	0,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t pasic_pp_route_1_fields[] = {
+static const DebugRegField pasic_pp_route_1_fields[] = {
 	{ "VALUE",	0x0000000F,	0,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t pasic_adc_control_fields[] = {
+static const DebugRegField pasic_adc_control_fields[] = {
 	{ "VALUE",	0x000000FF,	0,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t pasic_pp_amplifier_2_fields[] = {
+static const DebugRegField pasic_pp_amplifier_2_fields[] = {
 	{ "PATH_1_SOURCE",	0x00000007,	0,	NULL,	0 },
 	{ "PATH_1_EN",		0x00000008,	3,	NULL,	0 },
 	{ "PATH_2_SOURCE",	0x00000070,	4,	NULL,	0 },
 	{ "PATH_2_EN",		0x00000080,	7,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t pasic_switch_mux_2_fields[] = {
+static const DebugRegField pasic_switch_mux_2_fields[] = {
 	{ "VALUE",		0x0000003F,	0,	NULL,	0 },
 	{ "VLPREG_EN",	0x00000040,	6,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t pasic_pp_route_2_fields[] = {
+static const DebugRegField pasic_pp_route_2_fields[] = {
 	{ "VALUE",	0x0000000F,	0,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t pasic_switch_mux_4_fields[] = {
+static const DebugRegField pasic_switch_mux_4_fields[] = {
 	{ "VALUE",	0x000000FF,	0,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t pasic_amplifier_gain_4_5_fields[] = {
+static const DebugRegField pasic_amplifier_gain_4_5_fields[] = {
 	{ "GAIN",			0x0000007F,	0,	NULL,	0 },
 	{ "PATH_4_SELECT",	0x00000080,	7,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t pasic_amplifier_gain_6_fields[] = {
+static const DebugRegField pasic_amplifier_gain_6_fields[] = {
 	{ "LEVEL",	0x000000FF,	0,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t pasic_dac_control_fields[] = {
+static const DebugRegField pasic_dac_control_fields[] = {
 	{ "VALUE",	0x000000FF,	0,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t pasic_amplifier_gain_7_8_fields[] = {
+static const DebugRegField pasic_amplifier_gain_7_8_fields[] = {
 	{ "GAIN",			0x0000007F,	0,	NULL,	0 },
 	{ "PATH_7_SELECT",	0x00000080,	7,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t pasic_amplifier_gain_9_fields[] = {
+static const DebugRegField pasic_amplifier_gain_9_fields[] = {
 	{ "GAIN",	0x0000007F,	0,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t pasic_switch_mux_5_fields[] = {
+static const DebugRegField pasic_switch_mux_5_fields[] = {
 	{ "VALUE",	0x000000FF,	0,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t pasic_mux_input_fields[] = {
+static const DebugRegField pasic_mux_input_fields[] = {
 	{ "VALUE",	0x000000FF,	0,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t pasic_switch_mux_3_fields[] = {
+static const DebugRegField pasic_switch_mux_3_fields[] = {
 	{ "VALUE",	0x000000FF,	0,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t pasic_outport_control_fields[] = {
+static const DebugRegField pasic_outport_control_fields[] = {
 	{ "MODE",	0x00000003,	0,	NULL,	0 },
 	{ "LEVEL",	0x00000004,	2,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t pasic_sample_rate_fields[] = {
+static const DebugRegField pasic_sample_rate_fields[] = {
 	{ "ADC",	0x0000000F,	0,	NULL,	0 },
 	{ "DAC",	0x000000F0,	4,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t pasic_stereo_mode_fields[] = {
+static const DebugRegField pasic_stereo_mode_fields[] = {
 	{ "VALUE",	0x000000FF,	0,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t pasic_i2s_rx_control_fields[] = {
+static const DebugRegField pasic_i2s_rx_control_fields[] = {
 	{ "VALUE",	0x000000FF,	0,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t pasic_i2s_tx_control_fields[] = {
+static const DebugRegField pasic_i2s_tx_control_fields[] = {
 	{ "VALUE",	0x000000FF,	0,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t pasic_audio_control_2_fields[] = {
+static const DebugRegField pasic_audio_control_2_fields[] = {
 	{ "VALUE",	0x000000FF,	0,	NULL,	0 },
 };
 
-static const pmb887x_io_reg_t pasic_regs[] = {
-	{ "IDENTIFICATION",		0x0,	pasic_identification_fields,		ARRAY_SIZE(pasic_identification_fields),		0 },
-	{ "IRQ_STATUS_1",		0x1,	pasic_irq_status_1_fields,			ARRAY_SIZE(pasic_irq_status_1_fields),			0 },
-	{ "IRQ_STATUS_2",		0x2,	pasic_irq_status_2_fields,			ARRAY_SIZE(pasic_irq_status_2_fields),			0 },
-	{ "IRQ_MASK_1",			0x3,	pasic_irq_mask_1_fields,			ARRAY_SIZE(pasic_irq_mask_1_fields),			0 },
-	{ "IRQ_MASK_2",			0x4,	pasic_irq_mask_2_fields,			ARRAY_SIZE(pasic_irq_mask_2_fields),			0 },
-	{ "TURNOFF_REASON",		0x5,	pasic_turnoff_reason_fields,		ARRAY_SIZE(pasic_turnoff_reason_fields),		0 },
-	{ "SUPPLY_ENABLE_1",	0x6,	pasic_supply_enable_1_fields,		ARRAY_SIZE(pasic_supply_enable_1_fields),		0 },
-	{ "SUPPLY_ENABLE_2",	0x7,	pasic_supply_enable_2_fields,		ARRAY_SIZE(pasic_supply_enable_2_fields),		0 },
-	{ "RF_ENABLE",			0x8,	pasic_rf_enable_fields,				ARRAY_SIZE(pasic_rf_enable_fields),				0 },
-	{ "SUPPLY_CONTROL_1",	0x9,	pasic_supply_control_1_fields,		ARRAY_SIZE(pasic_supply_control_1_fields),		0 },
-	{ "SUPPLY_MODE",		0xA,	pasic_supply_mode_fields,			ARRAY_SIZE(pasic_supply_mode_fields),			0 },
-	{ "RF_VOLTAGE",			0xB,	pasic_rf_voltage_fields,			ARRAY_SIZE(pasic_rf_voltage_fields),			0 },
-	{ "LIGHT_ENABLE",		0xC,	pasic_light_enable_fields,			ARRAY_SIZE(pasic_light_enable_fields),			0 },
-	{ "POWER",				0xE,	pasic_power_fields,					ARRAY_SIZE(pasic_power_fields),					0 },
-	{ "CHARGE_CONTROL",		0x10,	pasic_charge_control_fields,		ARRAY_SIZE(pasic_charge_control_fields),		0 },
-	{ "CHARGE_STATUS",		0x11,	pasic_charge_status_fields,			ARRAY_SIZE(pasic_charge_status_fields),			0 },
-	{ "LIGHT_PWM1",			0x12,	pasic_light_pwm1_fields,			ARRAY_SIZE(pasic_light_pwm1_fields),			0 },
-	{ "LIGHT_PWM2",			0x13,	pasic_light_pwm2_fields,			ARRAY_SIZE(pasic_light_pwm2_fields),			0 },
-	{ "LIGHT_CONTROL",		0x14,	pasic_light_control_fields,			ARRAY_SIZE(pasic_light_control_fields),			0 },
-	{ "LED_PATTERN_1",		0x15,	pasic_led_pattern_1_fields,			ARRAY_SIZE(pasic_led_pattern_1_fields),			0 },
-	{ "LED_PATTERN_2",		0x16,	pasic_led_pattern_2_fields,			ARRAY_SIZE(pasic_led_pattern_2_fields),			0 },
-	{ "LED_PATTERN_3",		0x17,	pasic_led_pattern_3_fields,			ARRAY_SIZE(pasic_led_pattern_3_fields),			0 },
-	{ "LED_PATTERN_4",		0x18,	pasic_led_pattern_4_fields,			ARRAY_SIZE(pasic_led_pattern_4_fields),			0 },
-	{ "LED_PATTERN_5",		0x19,	pasic_led_pattern_5_fields,			ARRAY_SIZE(pasic_led_pattern_5_fields),			0 },
-	{ "DDPS_CONTROL",		0x20,	pasic_ddps_control_fields,			ARRAY_SIZE(pasic_ddps_control_fields),			0 },
-	{ "AMPLIFIER_GAIN_0",	0x40,	pasic_amplifier_gain_0_fields,		ARRAY_SIZE(pasic_amplifier_gain_0_fields),		0 },
-	{ "AMPLIFIER_GAIN_1",	0x41,	pasic_amplifier_gain_1_fields,		ARRAY_SIZE(pasic_amplifier_gain_1_fields),		0 },
-	{ "MONO_CONTROL",		0x42,	pasic_mono_control_fields,			ARRAY_SIZE(pasic_mono_control_fields),			0 },
-	{ "STEREO_CONTROL",		0x43,	pasic_stereo_control_fields,		ARRAY_SIZE(pasic_stereo_control_fields),		0 },
-	{ "AMPLIFIER_GAIN_2",	0x44,	pasic_amplifier_gain_2_fields,		ARRAY_SIZE(pasic_amplifier_gain_2_fields),		0 },
-	{ "AMPLIFIER_GAIN_3",	0x45,	pasic_amplifier_gain_3_fields,		ARRAY_SIZE(pasic_amplifier_gain_3_fields),		0 },
-	{ "TONE_CONTROL",		0x46,	pasic_tone_control_fields,			ARRAY_SIZE(pasic_tone_control_fields),			0 },
-	{ "VIBRA",				0x47,	pasic_vibra_fields,					ARRAY_SIZE(pasic_vibra_fields),					0 },
-	{ "PP_AMPLIFIER_1",		0x48,	pasic_pp_amplifier_1_fields,		ARRAY_SIZE(pasic_pp_amplifier_1_fields),		0 },
-	{ "SWITCH_MUX_1",		0x49,	pasic_switch_mux_1_fields,			ARRAY_SIZE(pasic_switch_mux_1_fields),			0 },
-	{ "PP_ROUTE_1",			0x4A,	pasic_pp_route_1_fields,			ARRAY_SIZE(pasic_pp_route_1_fields),			0 },
-	{ "ADC_CONTROL",		0x4B,	pasic_adc_control_fields,			ARRAY_SIZE(pasic_adc_control_fields),			0 },
-	{ "PP_AMPLIFIER_2",		0x4C,	pasic_pp_amplifier_2_fields,		ARRAY_SIZE(pasic_pp_amplifier_2_fields),		0 },
-	{ "SWITCH_MUX_2",		0x4D,	pasic_switch_mux_2_fields,			ARRAY_SIZE(pasic_switch_mux_2_fields),			0 },
-	{ "PP_ROUTE_2",			0x4E,	pasic_pp_route_2_fields,			ARRAY_SIZE(pasic_pp_route_2_fields),			0 },
-	{ "SWITCH_MUX_4",		0x4F,	pasic_switch_mux_4_fields,			ARRAY_SIZE(pasic_switch_mux_4_fields),			0 },
-	{ "AMPLIFIER_GAIN_4_5",	0x50,	pasic_amplifier_gain_4_5_fields,	ARRAY_SIZE(pasic_amplifier_gain_4_5_fields),	0 },
-	{ "AMPLIFIER_GAIN_6",	0x51,	pasic_amplifier_gain_6_fields,		ARRAY_SIZE(pasic_amplifier_gain_6_fields),		0 },
-	{ "DAC_CONTROL",		0x52,	pasic_dac_control_fields,			ARRAY_SIZE(pasic_dac_control_fields),			0 },
-	{ "AMPLIFIER_GAIN_7_8",	0x53,	pasic_amplifier_gain_7_8_fields,	ARRAY_SIZE(pasic_amplifier_gain_7_8_fields),	0 },
-	{ "AMPLIFIER_GAIN_9",	0x54,	pasic_amplifier_gain_9_fields,		ARRAY_SIZE(pasic_amplifier_gain_9_fields),		0 },
-	{ "SWITCH_MUX_5",		0x55,	pasic_switch_mux_5_fields,			ARRAY_SIZE(pasic_switch_mux_5_fields),			0 },
-	{ "MUX_INPUT",			0x56,	pasic_mux_input_fields,				ARRAY_SIZE(pasic_mux_input_fields),				0 },
-	{ "SWITCH_MUX_3",		0x57,	pasic_switch_mux_3_fields,			ARRAY_SIZE(pasic_switch_mux_3_fields),			0 },
-	{ "OUTPORT_CONTROL",	0x58,	pasic_outport_control_fields,		ARRAY_SIZE(pasic_outport_control_fields),		0 },
-	{ "SAMPLE_RATE",		0x59,	pasic_sample_rate_fields,			ARRAY_SIZE(pasic_sample_rate_fields),			0 },
-	{ "STEREO_MODE",		0x5A,	pasic_stereo_mode_fields,			ARRAY_SIZE(pasic_stereo_mode_fields),			0 },
-	{ "I2S_RX_CONTROL",		0x5B,	pasic_i2s_rx_control_fields,		ARRAY_SIZE(pasic_i2s_rx_control_fields),		0 },
-	{ "I2S_TX_CONTROL",		0x5C,	pasic_i2s_tx_control_fields,		ARRAY_SIZE(pasic_i2s_tx_control_fields),		0 },
-	{ "AUDIO_CONTROL_2",	0x5D,	pasic_audio_control_2_fields,		ARRAY_SIZE(pasic_audio_control_2_fields),		0 },
+static const DebugReg pasic_regs[] = {
+	{ "IDENTIFICATION",		0x0,	pasic_identification_fields,		ARRAY_SIZE(pasic_identification_fields) },
+	{ "IRQ_STATUS_1",		0x1,	pasic_irq_status_1_fields,			ARRAY_SIZE(pasic_irq_status_1_fields) },
+	{ "IRQ_STATUS_2",		0x2,	pasic_irq_status_2_fields,			ARRAY_SIZE(pasic_irq_status_2_fields) },
+	{ "IRQ_MASK_1",			0x3,	pasic_irq_mask_1_fields,			ARRAY_SIZE(pasic_irq_mask_1_fields) },
+	{ "IRQ_MASK_2",			0x4,	pasic_irq_mask_2_fields,			ARRAY_SIZE(pasic_irq_mask_2_fields) },
+	{ "TURNOFF_REASON",		0x5,	pasic_turnoff_reason_fields,		ARRAY_SIZE(pasic_turnoff_reason_fields) },
+	{ "SUPPLY_ENABLE_1",	0x6,	pasic_supply_enable_1_fields,		ARRAY_SIZE(pasic_supply_enable_1_fields) },
+	{ "SUPPLY_ENABLE_2",	0x7,	pasic_supply_enable_2_fields,		ARRAY_SIZE(pasic_supply_enable_2_fields) },
+	{ "RF_ENABLE",			0x8,	pasic_rf_enable_fields,				ARRAY_SIZE(pasic_rf_enable_fields) },
+	{ "SUPPLY_CONTROL_1",	0x9,	pasic_supply_control_1_fields,		ARRAY_SIZE(pasic_supply_control_1_fields) },
+	{ "SUPPLY_MODE",		0xA,	pasic_supply_mode_fields,			ARRAY_SIZE(pasic_supply_mode_fields) },
+	{ "RF_VOLTAGE",			0xB,	pasic_rf_voltage_fields,			ARRAY_SIZE(pasic_rf_voltage_fields) },
+	{ "LIGHT_ENABLE",		0xC,	pasic_light_enable_fields,			ARRAY_SIZE(pasic_light_enable_fields) },
+	{ "POWER",				0xE,	pasic_power_fields,					ARRAY_SIZE(pasic_power_fields) },
+	{ "CHARGE_CONTROL",		0x10,	pasic_charge_control_fields,		ARRAY_SIZE(pasic_charge_control_fields) },
+	{ "CHARGE_STATUS",		0x11,	pasic_charge_status_fields,			ARRAY_SIZE(pasic_charge_status_fields) },
+	{ "LIGHT_PWM1",			0x12,	pasic_light_pwm1_fields,			ARRAY_SIZE(pasic_light_pwm1_fields) },
+	{ "LIGHT_PWM2",			0x13,	pasic_light_pwm2_fields,			ARRAY_SIZE(pasic_light_pwm2_fields) },
+	{ "LIGHT_CONTROL",		0x14,	pasic_light_control_fields,			ARRAY_SIZE(pasic_light_control_fields) },
+	{ "LED_PATTERN_1",		0x15,	pasic_led_pattern_1_fields,			ARRAY_SIZE(pasic_led_pattern_1_fields) },
+	{ "LED_PATTERN_2",		0x16,	pasic_led_pattern_2_fields,			ARRAY_SIZE(pasic_led_pattern_2_fields) },
+	{ "LED_PATTERN_3",		0x17,	pasic_led_pattern_3_fields,			ARRAY_SIZE(pasic_led_pattern_3_fields) },
+	{ "LED_PATTERN_4",		0x18,	pasic_led_pattern_4_fields,			ARRAY_SIZE(pasic_led_pattern_4_fields) },
+	{ "LED_PATTERN_5",		0x19,	pasic_led_pattern_5_fields,			ARRAY_SIZE(pasic_led_pattern_5_fields) },
+	{ "DDPS_CONTROL",		0x20,	pasic_ddps_control_fields,			ARRAY_SIZE(pasic_ddps_control_fields) },
+	{ "AMPLIFIER_GAIN_0",	0x40,	pasic_amplifier_gain_0_fields,		ARRAY_SIZE(pasic_amplifier_gain_0_fields) },
+	{ "AMPLIFIER_GAIN_1",	0x41,	pasic_amplifier_gain_1_fields,		ARRAY_SIZE(pasic_amplifier_gain_1_fields) },
+	{ "MONO_CONTROL",		0x42,	pasic_mono_control_fields,			ARRAY_SIZE(pasic_mono_control_fields) },
+	{ "STEREO_CONTROL",		0x43,	pasic_stereo_control_fields,		ARRAY_SIZE(pasic_stereo_control_fields) },
+	{ "AMPLIFIER_GAIN_2",	0x44,	pasic_amplifier_gain_2_fields,		ARRAY_SIZE(pasic_amplifier_gain_2_fields) },
+	{ "AMPLIFIER_GAIN_3",	0x45,	pasic_amplifier_gain_3_fields,		ARRAY_SIZE(pasic_amplifier_gain_3_fields) },
+	{ "TONE_CONTROL",		0x46,	pasic_tone_control_fields,			ARRAY_SIZE(pasic_tone_control_fields) },
+	{ "VIBRA",				0x47,	pasic_vibra_fields,					ARRAY_SIZE(pasic_vibra_fields) },
+	{ "PP_AMPLIFIER_1",		0x48,	pasic_pp_amplifier_1_fields,		ARRAY_SIZE(pasic_pp_amplifier_1_fields) },
+	{ "SWITCH_MUX_1",		0x49,	pasic_switch_mux_1_fields,			ARRAY_SIZE(pasic_switch_mux_1_fields) },
+	{ "PP_ROUTE_1",			0x4A,	pasic_pp_route_1_fields,			ARRAY_SIZE(pasic_pp_route_1_fields) },
+	{ "ADC_CONTROL",		0x4B,	pasic_adc_control_fields,			ARRAY_SIZE(pasic_adc_control_fields) },
+	{ "PP_AMPLIFIER_2",		0x4C,	pasic_pp_amplifier_2_fields,		ARRAY_SIZE(pasic_pp_amplifier_2_fields) },
+	{ "SWITCH_MUX_2",		0x4D,	pasic_switch_mux_2_fields,			ARRAY_SIZE(pasic_switch_mux_2_fields) },
+	{ "PP_ROUTE_2",			0x4E,	pasic_pp_route_2_fields,			ARRAY_SIZE(pasic_pp_route_2_fields) },
+	{ "SWITCH_MUX_4",		0x4F,	pasic_switch_mux_4_fields,			ARRAY_SIZE(pasic_switch_mux_4_fields) },
+	{ "AMPLIFIER_GAIN_4_5",	0x50,	pasic_amplifier_gain_4_5_fields,	ARRAY_SIZE(pasic_amplifier_gain_4_5_fields) },
+	{ "AMPLIFIER_GAIN_6",	0x51,	pasic_amplifier_gain_6_fields,		ARRAY_SIZE(pasic_amplifier_gain_6_fields) },
+	{ "DAC_CONTROL",		0x52,	pasic_dac_control_fields,			ARRAY_SIZE(pasic_dac_control_fields) },
+	{ "AMPLIFIER_GAIN_7_8",	0x53,	pasic_amplifier_gain_7_8_fields,	ARRAY_SIZE(pasic_amplifier_gain_7_8_fields) },
+	{ "AMPLIFIER_GAIN_9",	0x54,	pasic_amplifier_gain_9_fields,		ARRAY_SIZE(pasic_amplifier_gain_9_fields) },
+	{ "SWITCH_MUX_5",		0x55,	pasic_switch_mux_5_fields,			ARRAY_SIZE(pasic_switch_mux_5_fields) },
+	{ "MUX_INPUT",			0x56,	pasic_mux_input_fields,				ARRAY_SIZE(pasic_mux_input_fields) },
+	{ "SWITCH_MUX_3",		0x57,	pasic_switch_mux_3_fields,			ARRAY_SIZE(pasic_switch_mux_3_fields) },
+	{ "OUTPORT_CONTROL",	0x58,	pasic_outport_control_fields,		ARRAY_SIZE(pasic_outport_control_fields) },
+	{ "SAMPLE_RATE",		0x59,	pasic_sample_rate_fields,			ARRAY_SIZE(pasic_sample_rate_fields) },
+	{ "STEREO_MODE",		0x5A,	pasic_stereo_mode_fields,			ARRAY_SIZE(pasic_stereo_mode_fields) },
+	{ "I2S_RX_CONTROL",		0x5B,	pasic_i2s_rx_control_fields,		ARRAY_SIZE(pasic_i2s_rx_control_fields) },
+	{ "I2S_TX_CONTROL",		0x5C,	pasic_i2s_tx_control_fields,		ARRAY_SIZE(pasic_i2s_tx_control_fields) },
+	{ "AUDIO_CONTROL_2",	0x5D,	pasic_audio_control_2_fields,		ARRAY_SIZE(pasic_audio_control_2_fields) },
 };
 
-static const pmb887x_io_value_t pcf8833_rddidif_fields_module_type_values[] = {
+const DebugRegs pmb887x_pasic_regs = {
+	.regs = pasic_regs,
+	.count = ARRAY_SIZE(pasic_regs),
+	.reg_size = 1,
+	.addr_digits = 2,
+};
+
+static const DebugRegValue pcf8833_rddidif_fields_module_type_values[] = {
 	{ "MONOCHROME",	0x00000000 },
 	{ "COLOR",		0x00008000 },
 };
 
-static const pmb887x_io_field_t pcf8833_rddidif_fields[] = {
+static const DebugRegField pcf8833_rddidif_fields[] = {
 	{ "MODULE_CODE",	0x000000FF,	0,	NULL,										0 },
 	{ "VERSION",		0x00007F00,	8,	NULL,										0 },
 	{ "MODULE_TYPE",	0x00008000,	15,	pcf8833_rddidif_fields_module_type_values,	ARRAY_SIZE(pcf8833_rddidif_fields_module_type_values) },
 	{ "MANID",			0x00FF0000,	16,	NULL,										0 },
 };
 
-static const pmb887x_io_field_t pcf8833_rddst_fields[] = {
+static const DebugRegField pcf8833_rddst_fields[] = {
 	{ "TEARING",		0x00000200,	9,	NULL,	0 },
 	{ "DISPLAY_ON",		0x00000400,	10,	NULL,	0 },
 	{ "ALL_OFF",		0x00000800,	11,	NULL,	0 },
@@ -7956,57 +8208,57 @@ static const pmb887x_io_field_t pcf8833_rddst_fields[] = {
 	{ "BOOSTER_READY",	0x80000000,	31,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t pcf8833_setcon_fields[] = {
+static const DebugRegField pcf8833_setcon_fields[] = {
 	{ "VCON",	0x0000007F,	0,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t pcf8833_caset_fields[] = {
+static const DebugRegField pcf8833_caset_fields[] = {
 	{ "XE",	0x000000FF,	0,	NULL,	0 },
 	{ "XS",	0x0000FF00,	8,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t pcf8833_paset_fields[] = {
+static const DebugRegField pcf8833_paset_fields[] = {
 	{ "YE",	0x000000FF,	0,	NULL,	0 },
 	{ "YS",	0x0000FF00,	8,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t pcf8833_ptlar_fields[] = {
+static const DebugRegField pcf8833_ptlar_fields[] = {
 	{ "AREA_END",	0x000000FF,	0,	NULL,	0 },
 	{ "AREA_START",	0x0000FF00,	8,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t pcf8833_vscrdef_fields[] = {
+static const DebugRegField pcf8833_vscrdef_fields[] = {
 	{ "BOTTOM_FIXED",	0x000000FF,	0,	NULL,	0 },
 	{ "SCROLL_AREA",	0x0000FF00,	8,	NULL,	0 },
 	{ "TOP_FIXED",		0x00FF0000,	16,	NULL,	0 },
 };
 
-static const pmb887x_io_value_t pcf8833_madctl_fields_rgb_values[] = {
+static const DebugRegValue pcf8833_madctl_fields_rgb_values[] = {
 	{ "RGB_ORDER",	0x00000000 },
 	{ "BGR_ORDER",	0x00000008 },
 };
 
-static const pmb887x_io_value_t pcf8833_madctl_fields_lao_values[] = {
+static const DebugRegValue pcf8833_madctl_fields_lao_values[] = {
 	{ "TOP_TO_BOTTOM",	0x00000000 },
 	{ "BOTTOM_TO_TOP",	0x00000010 },
 };
 
-static const pmb887x_io_value_t pcf8833_madctl_fields_v_values[] = {
+static const DebugRegValue pcf8833_madctl_fields_v_values[] = {
 	{ "WRITE_X",	0x00000000 },
 	{ "WRITE_Y",	0x00000020 },
 };
 
-static const pmb887x_io_value_t pcf8833_madctl_fields_mx_values[] = {
+static const DebugRegValue pcf8833_madctl_fields_mx_values[] = {
 	{ "NORMAL",		0x00000000 },
 	{ "MIRRORED",	0x00000040 },
 };
 
-static const pmb887x_io_value_t pcf8833_madctl_fields_my_values[] = {
+static const DebugRegValue pcf8833_madctl_fields_my_values[] = {
 	{ "NORMAL",		0x00000000 },
 	{ "MIRRORED",	0x00000080 },
 };
 
-static const pmb887x_io_field_t pcf8833_madctl_fields[] = {
+static const DebugRegField pcf8833_madctl_fields[] = {
 	{ "RGB",	0x00000008,	3,	pcf8833_madctl_fields_rgb_values,	ARRAY_SIZE(pcf8833_madctl_fields_rgb_values) },
 	{ "LAO",	0x00000010,	4,	pcf8833_madctl_fields_lao_values,	ARRAY_SIZE(pcf8833_madctl_fields_lao_values) },
 	{ "V",		0x00000020,	5,	pcf8833_madctl_fields_v_values,		ARRAY_SIZE(pcf8833_madctl_fields_v_values) },
@@ -8014,167 +8266,174 @@ static const pmb887x_io_field_t pcf8833_madctl_fields[] = {
 	{ "MY",		0x00000080,	7,	pcf8833_madctl_fields_my_values,	ARRAY_SIZE(pcf8833_madctl_fields_my_values) },
 };
 
-static const pmb887x_io_field_t pcf8833_sep_fields[] = {
+static const DebugRegField pcf8833_sep_fields[] = {
 	{ "VALUE",	0x000000FF,	0,	NULL,	0 },
 };
 
-static const pmb887x_io_value_t pcf8833_colmod_fields_p_values[] = {
+static const DebugRegValue pcf8833_colmod_fields_p_values[] = {
 	{ "PIXEL_8_BIT",	0x00000002 },
 	{ "PIXEL_12_BIT",	0x00000003 },
 	{ "PIXEL_16_BIT",	0x00000005 },
 };
 
-static const pmb887x_io_field_t pcf8833_colmod_fields[] = {
+static const DebugRegField pcf8833_colmod_fields[] = {
 	{ "P",	0x00000007,	0,	pcf8833_colmod_fields_p_values,	ARRAY_SIZE(pcf8833_colmod_fields_p_values) },
 };
 
-static const pmb887x_io_field_t pcf8833_setvop_fields[] = {
+static const DebugRegField pcf8833_setvop_fields[] = {
 	{ "VPR_04_00",	0x0000001F,	0,	NULL,	0 },
 	{ "VPR_08_05",	0x00000F00,	8,	NULL,	0 },
 };
 
-static const pmb887x_io_value_t pcf8833_setmul_fields_s_values[] = {
+static const DebugRegValue pcf8833_setmul_fields_s_values[] = {
 	{ "FACTOR_2",	0x00000000 },
 	{ "FACTOR_3",	0x00000001 },
 	{ "FACTOR_4",	0x00000002 },
 	{ "FACTOR_5",	0x00000003 },
 };
 
-static const pmb887x_io_field_t pcf8833_setmul_fields[] = {
+static const DebugRegField pcf8833_setmul_fields[] = {
 	{ "S",	0x00000003,	0,	pcf8833_setmul_fields_s_values,	ARRAY_SIZE(pcf8833_setmul_fields_s_values) },
 };
 
-static const pmb887x_io_field_t pcf8833_tcvopab_fields[] = {
+static const DebugRegField pcf8833_tcvopab_fields[] = {
 	{ "SLA",	0x00000007,	0,	NULL,	0 },
 	{ "SLB",	0x00000070,	4,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t pcf8833_tcvopcd_fields[] = {
+static const DebugRegField pcf8833_tcvopcd_fields[] = {
 	{ "SLC",	0x00000007,	0,	NULL,	0 },
 	{ "SLD",	0x00000070,	4,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t pcf8833_tcdf_fields[] = {
+static const DebugRegField pcf8833_tcdf_fields[] = {
 	{ "DFD",	0x0000007F,	0,	NULL,	0 },
 	{ "DFC",	0x00007F00,	8,	NULL,	0 },
 	{ "DFB",	0x007F0000,	16,	NULL,	0 },
 	{ "DFA",	0x7F000000,	24,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t pcf8833_df8color_fields[] = {
+static const DebugRegField pcf8833_df8color_fields[] = {
 	{ "DF8",	0x0000007F,	0,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t pcf8833_setbs_fields[] = {
+static const DebugRegField pcf8833_setbs_fields[] = {
 	{ "VB",	0x0000000F,	0,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t pcf8833_rdtemp_fields[] = {
+static const DebugRegField pcf8833_rdtemp_fields[] = {
 	{ "TD",	0x000000FF,	0,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t pcf8833_nli_fields[] = {
+static const DebugRegField pcf8833_nli_fields[] = {
 	{ "NLI",	0x000000FF,	0,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t pcf8833_rdid1_fields[] = {
+static const DebugRegField pcf8833_rdid1_fields[] = {
 	{ "MANID",	0x000000FF,	0,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t pcf8833_rdid2_fields[] = {
+static const DebugRegField pcf8833_rdid2_fields[] = {
 	{ "VERSION",	0x000000FF,	0,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t pcf8833_rdid3_fields[] = {
+static const DebugRegField pcf8833_rdid3_fields[] = {
 	{ "MODULE_ID",	0x000000FF,	0,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t pcf8833_calmode_fields[] = {
+static const DebugRegField pcf8833_calmode_fields[] = {
 	{ "CALMM",	0x00000001,	0,	NULL,	0 },
 	{ "OPE",	0x00000002,	1,	NULL,	0 },
 	{ "ORA",	0x00000038,	3,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t pcf8833_otpshtin_fields[] = {
+static const DebugRegField pcf8833_otpshtin_fields[] = {
 	{ "DATA",	0x000000FF,	0,	NULL,	0 },
 };
 
-static const pmb887x_io_reg_t pcf8833_regs[] = {
-	{ "NOP",			0x0,	NULL,						0,										0 },
-	{ "SWRESET",		0x1,	NULL,						0,										0 },
-	{ "BSTROFF",		0x2,	NULL,						0,										0 },
-	{ "BSTRON",			0x3,	NULL,						0,										0 },
-	{ "RDDIDIF",		0x4,	pcf8833_rddidif_fields,		ARRAY_SIZE(pcf8833_rddidif_fields),		0 },
-	{ "RDDST",			0x9,	pcf8833_rddst_fields,		ARRAY_SIZE(pcf8833_rddst_fields),		0 },
-	{ "SLPIN",			0x10,	NULL,						0,										0 },
-	{ "SLPOUT",			0x11,	NULL,						0,										0 },
-	{ "PTLON",			0x12,	NULL,						0,										0 },
-	{ "NORON",			0x13,	NULL,						0,										0 },
-	{ "INVOFF",			0x20,	NULL,						0,										0 },
-	{ "INVON",			0x21,	NULL,						0,										0 },
-	{ "DALO",			0x22,	NULL,						0,										0 },
-	{ "DAL",			0x23,	NULL,						0,										0 },
-	{ "SETCON",			0x25,	pcf8833_setcon_fields,		ARRAY_SIZE(pcf8833_setcon_fields),		0 },
-	{ "DISPOFF",		0x28,	NULL,						0,										0 },
-	{ "DISPON",			0x29,	NULL,						0,										0 },
-	{ "CASET",			0x2A,	pcf8833_caset_fields,		ARRAY_SIZE(pcf8833_caset_fields),		0 },
-	{ "PASET",			0x2B,	pcf8833_paset_fields,		ARRAY_SIZE(pcf8833_paset_fields),		0 },
-	{ "RAMWR",			0x2C,	NULL,						0,										0 },
-	{ "RGBSET",			0x2D,	NULL,						0,										0 },
-	{ "PTLAR",			0x30,	pcf8833_ptlar_fields,		ARRAY_SIZE(pcf8833_ptlar_fields),		0 },
-	{ "VSCRDEF",		0x33,	pcf8833_vscrdef_fields,		ARRAY_SIZE(pcf8833_vscrdef_fields),		0 },
-	{ "TEOFF",			0x34,	NULL,						0,										0 },
-	{ "TEON",			0x35,	NULL,						0,										0 },
-	{ "MADCTL",			0x36,	pcf8833_madctl_fields,		ARRAY_SIZE(pcf8833_madctl_fields),		0 },
-	{ "SEP",			0x37,	pcf8833_sep_fields,			ARRAY_SIZE(pcf8833_sep_fields),			0 },
-	{ "IDMOFF",			0x38,	NULL,						0,										0 },
-	{ "IDMON",			0x39,	NULL,						0,										0 },
-	{ "COLMOD",			0x3A,	pcf8833_colmod_fields,		ARRAY_SIZE(pcf8833_colmod_fields),		0 },
-	{ "SETVOP",			0xB0,	pcf8833_setvop_fields,		ARRAY_SIZE(pcf8833_setvop_fields),		0 },
-	{ "BRS_NORMAL",		0xB4,	NULL,						0,										0 },
-	{ "BRS_MIRRORED",	0xB5,	NULL,						0,										0 },
-	{ "TRS_NORMAL",		0xB6,	NULL,						0,										0 },
-	{ "TRS_MIRRORED",	0xB7,	NULL,						0,										0 },
-	{ "FINV_OFF",		0xB8,	NULL,						0,										0 },
-	{ "FINV_ON",		0xB9,	NULL,						0,										0 },
-	{ "DOR_NORMAL",		0xBA,	NULL,						0,										0 },
-	{ "DOR_SWAPPED",	0xBB,	NULL,						0,										0 },
-	{ "TCDFE_OFF",		0xBC,	NULL,						0,										0 },
-	{ "TCDFE_ON",		0xBD,	NULL,						0,										0 },
-	{ "TCVOPE_OFF",		0xBE,	NULL,						0,										0 },
-	{ "TCVOPE_ON",		0xBF,	NULL,						0,										0 },
-	{ "EC_INTERNAL",	0xC0,	NULL,						0,										0 },
-	{ "EC_EXTERNAL",	0xC1,	NULL,						0,										0 },
-	{ "SETMUL",			0xC2,	pcf8833_setmul_fields,		ARRAY_SIZE(pcf8833_setmul_fields),		0 },
-	{ "TCVOPAB",		0xC3,	pcf8833_tcvopab_fields,		ARRAY_SIZE(pcf8833_tcvopab_fields),		0 },
-	{ "TCVOPCD",		0xC4,	pcf8833_tcvopcd_fields,		ARRAY_SIZE(pcf8833_tcvopcd_fields),		0 },
-	{ "TCDF",			0xC5,	pcf8833_tcdf_fields,		ARRAY_SIZE(pcf8833_tcdf_fields),		0 },
-	{ "DF8COLOR",		0xC6,	pcf8833_df8color_fields,	ARRAY_SIZE(pcf8833_df8color_fields),	0 },
-	{ "SETBS",			0xC7,	pcf8833_setbs_fields,		ARRAY_SIZE(pcf8833_setbs_fields),		0 },
-	{ "RDTEMP",			0xC8,	pcf8833_rdtemp_fields,		ARRAY_SIZE(pcf8833_rdtemp_fields),		0 },
-	{ "NLI",			0xC9,	pcf8833_nli_fields,			ARRAY_SIZE(pcf8833_nli_fields),			0 },
-	{ "RDID1",			0xDA,	pcf8833_rdid1_fields,		ARRAY_SIZE(pcf8833_rdid1_fields),		0 },
-	{ "RDID2",			0xDB,	pcf8833_rdid2_fields,		ARRAY_SIZE(pcf8833_rdid2_fields),		0 },
-	{ "RDID3",			0xDC,	pcf8833_rdid3_fields,		ARRAY_SIZE(pcf8833_rdid3_fields),		0 },
-	{ "SFD_INTERFACE",	0xEE,	NULL,						0,										0 },
-	{ "SFD_OTP",		0xEF,	NULL,						0,										0 },
-	{ "CALMODE",		0xF0,	pcf8833_calmode_fields,		ARRAY_SIZE(pcf8833_calmode_fields),		0 },
-	{ "OTPSHTIN",		0xF1,	pcf8833_otpshtin_fields,	ARRAY_SIZE(pcf8833_otpshtin_fields),	0 },
+static const DebugReg pcf8833_regs[] = {
+	{ "NOP",			0x0,	NULL,						0 },
+	{ "SWRESET",		0x1,	NULL,						0 },
+	{ "BSTROFF",		0x2,	NULL,						0 },
+	{ "BSTRON",			0x3,	NULL,						0 },
+	{ "RDDIDIF",		0x4,	pcf8833_rddidif_fields,		ARRAY_SIZE(pcf8833_rddidif_fields) },
+	{ "RDDST",			0x9,	pcf8833_rddst_fields,		ARRAY_SIZE(pcf8833_rddst_fields) },
+	{ "SLPIN",			0x10,	NULL,						0 },
+	{ "SLPOUT",			0x11,	NULL,						0 },
+	{ "PTLON",			0x12,	NULL,						0 },
+	{ "NORON",			0x13,	NULL,						0 },
+	{ "INVOFF",			0x20,	NULL,						0 },
+	{ "INVON",			0x21,	NULL,						0 },
+	{ "DALO",			0x22,	NULL,						0 },
+	{ "DAL",			0x23,	NULL,						0 },
+	{ "SETCON",			0x25,	pcf8833_setcon_fields,		ARRAY_SIZE(pcf8833_setcon_fields) },
+	{ "DISPOFF",		0x28,	NULL,						0 },
+	{ "DISPON",			0x29,	NULL,						0 },
+	{ "CASET",			0x2A,	pcf8833_caset_fields,		ARRAY_SIZE(pcf8833_caset_fields) },
+	{ "PASET",			0x2B,	pcf8833_paset_fields,		ARRAY_SIZE(pcf8833_paset_fields) },
+	{ "RAMWR",			0x2C,	NULL,						0 },
+	{ "RGBSET",			0x2D,	NULL,						0 },
+	{ "PTLAR",			0x30,	pcf8833_ptlar_fields,		ARRAY_SIZE(pcf8833_ptlar_fields) },
+	{ "VSCRDEF",		0x33,	pcf8833_vscrdef_fields,		ARRAY_SIZE(pcf8833_vscrdef_fields) },
+	{ "TEOFF",			0x34,	NULL,						0 },
+	{ "TEON",			0x35,	NULL,						0 },
+	{ "MADCTL",			0x36,	pcf8833_madctl_fields,		ARRAY_SIZE(pcf8833_madctl_fields) },
+	{ "SEP",			0x37,	pcf8833_sep_fields,			ARRAY_SIZE(pcf8833_sep_fields) },
+	{ "IDMOFF",			0x38,	NULL,						0 },
+	{ "IDMON",			0x39,	NULL,						0 },
+	{ "COLMOD",			0x3A,	pcf8833_colmod_fields,		ARRAY_SIZE(pcf8833_colmod_fields) },
+	{ "SETVOP",			0xB0,	pcf8833_setvop_fields,		ARRAY_SIZE(pcf8833_setvop_fields) },
+	{ "BRS_NORMAL",		0xB4,	NULL,						0 },
+	{ "BRS_MIRRORED",	0xB5,	NULL,						0 },
+	{ "TRS_NORMAL",		0xB6,	NULL,						0 },
+	{ "TRS_MIRRORED",	0xB7,	NULL,						0 },
+	{ "FINV_OFF",		0xB8,	NULL,						0 },
+	{ "FINV_ON",		0xB9,	NULL,						0 },
+	{ "DOR_NORMAL",		0xBA,	NULL,						0 },
+	{ "DOR_SWAPPED",	0xBB,	NULL,						0 },
+	{ "TCDFE_OFF",		0xBC,	NULL,						0 },
+	{ "TCDFE_ON",		0xBD,	NULL,						0 },
+	{ "TCVOPE_OFF",		0xBE,	NULL,						0 },
+	{ "TCVOPE_ON",		0xBF,	NULL,						0 },
+	{ "EC_INTERNAL",	0xC0,	NULL,						0 },
+	{ "EC_EXTERNAL",	0xC1,	NULL,						0 },
+	{ "SETMUL",			0xC2,	pcf8833_setmul_fields,		ARRAY_SIZE(pcf8833_setmul_fields) },
+	{ "TCVOPAB",		0xC3,	pcf8833_tcvopab_fields,		ARRAY_SIZE(pcf8833_tcvopab_fields) },
+	{ "TCVOPCD",		0xC4,	pcf8833_tcvopcd_fields,		ARRAY_SIZE(pcf8833_tcvopcd_fields) },
+	{ "TCDF",			0xC5,	pcf8833_tcdf_fields,		ARRAY_SIZE(pcf8833_tcdf_fields) },
+	{ "DF8COLOR",		0xC6,	pcf8833_df8color_fields,	ARRAY_SIZE(pcf8833_df8color_fields) },
+	{ "SETBS",			0xC7,	pcf8833_setbs_fields,		ARRAY_SIZE(pcf8833_setbs_fields) },
+	{ "RDTEMP",			0xC8,	pcf8833_rdtemp_fields,		ARRAY_SIZE(pcf8833_rdtemp_fields) },
+	{ "NLI",			0xC9,	pcf8833_nli_fields,			ARRAY_SIZE(pcf8833_nli_fields) },
+	{ "RDID1",			0xDA,	pcf8833_rdid1_fields,		ARRAY_SIZE(pcf8833_rdid1_fields) },
+	{ "RDID2",			0xDB,	pcf8833_rdid2_fields,		ARRAY_SIZE(pcf8833_rdid2_fields) },
+	{ "RDID3",			0xDC,	pcf8833_rdid3_fields,		ARRAY_SIZE(pcf8833_rdid3_fields) },
+	{ "SFD_INTERFACE",	0xEE,	NULL,						0 },
+	{ "SFD_OTP",		0xEF,	NULL,						0 },
+	{ "CALMODE",		0xF0,	pcf8833_calmode_fields,		ARRAY_SIZE(pcf8833_calmode_fields) },
+	{ "OTPSHTIN",		0xF1,	pcf8833_otpshtin_fields,	ARRAY_SIZE(pcf8833_otpshtin_fields) },
 };
 
-static const pmb887x_io_value_t pcf8882_rddidif_fields_module_type_values[] = {
+const DebugRegs pmb887x_pcf8833_regs = {
+	.regs = pcf8833_regs,
+	.count = ARRAY_SIZE(pcf8833_regs),
+	.reg_size = 1,
+	.addr_digits = 2,
+};
+
+static const DebugRegValue pcf8882_rddidif_fields_module_type_values[] = {
 	{ "MONOCHROME",	0x00000000 },
 	{ "COLOR",		0x00008000 },
 };
 
-static const pmb887x_io_field_t pcf8882_rddidif_fields[] = {
+static const DebugRegField pcf8882_rddidif_fields[] = {
 	{ "MODULE_CODE",	0x000000FF,	0,	NULL,										0 },
 	{ "VERSION",		0x00007F00,	8,	NULL,										0 },
 	{ "MODULE_TYPE",	0x00008000,	15,	pcf8882_rddidif_fields_module_type_values,	ARRAY_SIZE(pcf8882_rddidif_fields_module_type_values) },
 	{ "MANID",			0x00FF0000,	16,	NULL,										0 },
 };
 
-static const pmb887x_io_field_t pcf8882_rddst_fields[] = {
+static const DebugRegField pcf8882_rddst_fields[] = {
 	{ "TEARING",		0x00000200,	9,	NULL,	0 },
 	{ "DISPLAY_ON",		0x00000400,	10,	NULL,	0 },
 	{ "ALL_OFF",		0x00000800,	11,	NULL,	0 },
@@ -8193,53 +8452,53 @@ static const pmb887x_io_field_t pcf8882_rddst_fields[] = {
 	{ "MY",				0x40000000,	30,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t pcf8882_caset_fields[] = {
+static const DebugRegField pcf8882_caset_fields[] = {
 	{ "XE",	0x000000FF,	0,	NULL,	0 },
 	{ "XS",	0x0000FF00,	8,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t pcf8882_paset_fields[] = {
+static const DebugRegField pcf8882_paset_fields[] = {
 	{ "YE",	0x000000FF,	0,	NULL,	0 },
 	{ "YS",	0x0000FF00,	8,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t pcf8882_ptlar_fields[] = {
+static const DebugRegField pcf8882_ptlar_fields[] = {
 	{ "AREA_END",	0x000000FF,	0,	NULL,	0 },
 	{ "AREA_START",	0x0000FF00,	8,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t pcf8882_vscrdef_fields[] = {
+static const DebugRegField pcf8882_vscrdef_fields[] = {
 	{ "BOTTOM_FIXED",	0x000000FF,	0,	NULL,	0 },
 	{ "SCROLL_AREA",	0x0000FF00,	8,	NULL,	0 },
 	{ "TOP_FIXED",		0x00FF0000,	16,	NULL,	0 },
 };
 
-static const pmb887x_io_value_t pcf8882_madctl_fields_rgb_values[] = {
+static const DebugRegValue pcf8882_madctl_fields_rgb_values[] = {
 	{ "RGB_ORDER",	0x00000000 },
 	{ "BGR_ORDER",	0x00000008 },
 };
 
-static const pmb887x_io_value_t pcf8882_madctl_fields_lao_values[] = {
+static const DebugRegValue pcf8882_madctl_fields_lao_values[] = {
 	{ "TOP_TO_BOTTOM",	0x00000000 },
 	{ "BOTTOM_TO_TOP",	0x00000010 },
 };
 
-static const pmb887x_io_value_t pcf8882_madctl_fields_v_values[] = {
+static const DebugRegValue pcf8882_madctl_fields_v_values[] = {
 	{ "WRITE_X",	0x00000000 },
 	{ "WRITE_Y",	0x00000020 },
 };
 
-static const pmb887x_io_value_t pcf8882_madctl_fields_mx_values[] = {
+static const DebugRegValue pcf8882_madctl_fields_mx_values[] = {
 	{ "NORMAL",		0x00000000 },
 	{ "MIRRORED",	0x00000040 },
 };
 
-static const pmb887x_io_value_t pcf8882_madctl_fields_my_values[] = {
+static const DebugRegValue pcf8882_madctl_fields_my_values[] = {
 	{ "NORMAL",		0x00000000 },
 	{ "MIRRORED",	0x00000080 },
 };
 
-static const pmb887x_io_field_t pcf8882_madctl_fields[] = {
+static const DebugRegField pcf8882_madctl_fields[] = {
 	{ "RGB",	0x00000008,	3,	pcf8882_madctl_fields_rgb_values,	ARRAY_SIZE(pcf8882_madctl_fields_rgb_values) },
 	{ "LAO",	0x00000010,	4,	pcf8882_madctl_fields_lao_values,	ARRAY_SIZE(pcf8882_madctl_fields_lao_values) },
 	{ "V",		0x00000020,	5,	pcf8882_madctl_fields_v_values,		ARRAY_SIZE(pcf8882_madctl_fields_v_values) },
@@ -8247,91 +8506,98 @@ static const pmb887x_io_field_t pcf8882_madctl_fields[] = {
 	{ "MY",		0x00000080,	7,	pcf8882_madctl_fields_my_values,	ARRAY_SIZE(pcf8882_madctl_fields_my_values) },
 };
 
-static const pmb887x_io_field_t pcf8882_sep_fields[] = {
+static const DebugRegField pcf8882_sep_fields[] = {
 	{ "VALUE",	0x000000FF,	0,	NULL,	0 },
 };
 
-static const pmb887x_io_value_t pcf8882_colmod_fields_p_values[] = {
+static const DebugRegValue pcf8882_colmod_fields_p_values[] = {
 	{ "PIXEL_8_BIT",	0x00000002 },
 	{ "PIXEL_12_BIT",	0x00000003 },
 	{ "PIXEL_16_BIT",	0x00000005 },
 	{ "PIXEL_18_BIT",	0x00000007 },
 };
 
-static const pmb887x_io_field_t pcf8882_colmod_fields[] = {
+static const DebugRegField pcf8882_colmod_fields[] = {
 	{ "P",	0x00000007,	0,	pcf8882_colmod_fields_p_values,	ARRAY_SIZE(pcf8882_colmod_fields_p_values) },
 };
 
-static const pmb887x_io_field_t pcf8882_rdid1_fields[] = {
+static const DebugRegField pcf8882_rdid1_fields[] = {
 	{ "MANID",	0x000000FF,	0,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t pcf8882_rdid2_fields[] = {
+static const DebugRegField pcf8882_rdid2_fields[] = {
 	{ "VERSION",	0x000000FF,	0,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t pcf8882_rdid3_fields[] = {
+static const DebugRegField pcf8882_rdid3_fields[] = {
 	{ "MODULE_ID",	0x000000FF,	0,	NULL,	0 },
 };
 
-static const pmb887x_io_reg_t pcf8882_regs[] = {
-	{ "NOP",		0x0,	NULL,					0,									0 },
-	{ "SWRESET",	0x1,	NULL,					0,									0 },
-	{ "RDDIDIF",	0x4,	pcf8882_rddidif_fields,	ARRAY_SIZE(pcf8882_rddidif_fields),	0 },
-	{ "RDDST",		0x9,	pcf8882_rddst_fields,	ARRAY_SIZE(pcf8882_rddst_fields),	0 },
-	{ "SLPIN",		0x10,	NULL,					0,									0 },
-	{ "SLPOUT",		0x11,	NULL,					0,									0 },
-	{ "PTLON",		0x12,	NULL,					0,									0 },
-	{ "NORON",		0x13,	NULL,					0,									0 },
-	{ "INVOFF",		0x20,	NULL,					0,									0 },
-	{ "INVON",		0x21,	NULL,					0,									0 },
-	{ "DALO",		0x22,	NULL,					0,									0 },
-	{ "DAL",		0x23,	NULL,					0,									0 },
-	{ "GAMSET",		0x26,	NULL,					0,									0 },
-	{ "DISPOFF",	0x28,	NULL,					0,									0 },
-	{ "DISPON",		0x29,	NULL,					0,									0 },
-	{ "CASET",		0x2A,	pcf8882_caset_fields,	ARRAY_SIZE(pcf8882_caset_fields),	0 },
-	{ "PASET",		0x2B,	pcf8882_paset_fields,	ARRAY_SIZE(pcf8882_paset_fields),	0 },
-	{ "RAMWR",		0x2C,	NULL,					0,									0 },
-	{ "RGBSET",		0x2D,	NULL,					0,									0 },
-	{ "PTLAR",		0x30,	pcf8882_ptlar_fields,	ARRAY_SIZE(pcf8882_ptlar_fields),	0 },
-	{ "VSCRDEF",	0x33,	pcf8882_vscrdef_fields,	ARRAY_SIZE(pcf8882_vscrdef_fields),	0 },
-	{ "TEOFF",		0x34,	NULL,					0,									0 },
-	{ "TEON",		0x35,	NULL,					0,									0 },
-	{ "MADCTL",		0x36,	pcf8882_madctl_fields,	ARRAY_SIZE(pcf8882_madctl_fields),	0 },
-	{ "SEP",		0x37,	pcf8882_sep_fields,		ARRAY_SIZE(pcf8882_sep_fields),		0 },
-	{ "IDMOFF",		0x38,	NULL,					0,									0 },
-	{ "IDMON",		0x39,	NULL,					0,									0 },
-	{ "COLMOD",		0x3A,	pcf8882_colmod_fields,	ARRAY_SIZE(pcf8882_colmod_fields),	0 },
-	{ "RDID1",		0xDA,	pcf8882_rdid1_fields,	ARRAY_SIZE(pcf8882_rdid1_fields),	0 },
-	{ "RDID2",		0xDB,	pcf8882_rdid2_fields,	ARRAY_SIZE(pcf8882_rdid2_fields),	0 },
-	{ "RDID3",		0xDC,	pcf8882_rdid3_fields,	ARRAY_SIZE(pcf8882_rdid3_fields),	0 },
+static const DebugReg pcf8882_regs[] = {
+	{ "NOP",		0x0,	NULL,					0 },
+	{ "SWRESET",	0x1,	NULL,					0 },
+	{ "RDDIDIF",	0x4,	pcf8882_rddidif_fields,	ARRAY_SIZE(pcf8882_rddidif_fields) },
+	{ "RDDST",		0x9,	pcf8882_rddst_fields,	ARRAY_SIZE(pcf8882_rddst_fields) },
+	{ "SLPIN",		0x10,	NULL,					0 },
+	{ "SLPOUT",		0x11,	NULL,					0 },
+	{ "PTLON",		0x12,	NULL,					0 },
+	{ "NORON",		0x13,	NULL,					0 },
+	{ "INVOFF",		0x20,	NULL,					0 },
+	{ "INVON",		0x21,	NULL,					0 },
+	{ "DALO",		0x22,	NULL,					0 },
+	{ "DAL",		0x23,	NULL,					0 },
+	{ "GAMSET",		0x26,	NULL,					0 },
+	{ "DISPOFF",	0x28,	NULL,					0 },
+	{ "DISPON",		0x29,	NULL,					0 },
+	{ "CASET",		0x2A,	pcf8882_caset_fields,	ARRAY_SIZE(pcf8882_caset_fields) },
+	{ "PASET",		0x2B,	pcf8882_paset_fields,	ARRAY_SIZE(pcf8882_paset_fields) },
+	{ "RAMWR",		0x2C,	NULL,					0 },
+	{ "RGBSET",		0x2D,	NULL,					0 },
+	{ "PTLAR",		0x30,	pcf8882_ptlar_fields,	ARRAY_SIZE(pcf8882_ptlar_fields) },
+	{ "VSCRDEF",	0x33,	pcf8882_vscrdef_fields,	ARRAY_SIZE(pcf8882_vscrdef_fields) },
+	{ "TEOFF",		0x34,	NULL,					0 },
+	{ "TEON",		0x35,	NULL,					0 },
+	{ "MADCTL",		0x36,	pcf8882_madctl_fields,	ARRAY_SIZE(pcf8882_madctl_fields) },
+	{ "SEP",		0x37,	pcf8882_sep_fields,		ARRAY_SIZE(pcf8882_sep_fields) },
+	{ "IDMOFF",		0x38,	NULL,					0 },
+	{ "IDMON",		0x39,	NULL,					0 },
+	{ "COLMOD",		0x3A,	pcf8882_colmod_fields,	ARRAY_SIZE(pcf8882_colmod_fields) },
+	{ "RDID1",		0xDA,	pcf8882_rdid1_fields,	ARRAY_SIZE(pcf8882_rdid1_fields) },
+	{ "RDID2",		0xDB,	pcf8882_rdid2_fields,	ARRAY_SIZE(pcf8882_rdid2_fields) },
+	{ "RDID3",		0xDC,	pcf8882_rdid3_fields,	ARRAY_SIZE(pcf8882_rdid3_fields) },
 };
 
-static const pmb887x_io_field_t pmb6272_channel1_fields[] = {
+const DebugRegs pmb887x_pcf8882_regs = {
+	.regs = pcf8882_regs,
+	.count = ARRAY_SIZE(pcf8882_regs),
+	.reg_size = 1,
+	.addr_digits = 2,
+};
+
+static const DebugRegField pmb6272_channel1_fields[] = {
 	{ "FRACTION",	0x00FFFFF0,	4,	NULL,	0 },
 };
 
-static const pmb887x_io_value_t pmb6272_channel2_fields_power_mode_values[] = {
+static const DebugRegValue pmb6272_channel2_fields_power_mode_values[] = {
 	{ "ALL_OFF",	0x00000000 },
 	{ "UNUSED",		0x00008000 },
 	{ "PLL_TEST",	0x00010000 },
 	{ "ALL_ON",		0x00018000 },
 };
 
-static const pmb887x_io_value_t pmb6272_channel2_fields_trx_values[] = {
+static const DebugRegValue pmb6272_channel2_fields_trx_values[] = {
 	{ "RX",	0x00000000 },
 	{ "TX",	0x00040000 },
 };
 
-static const pmb887x_io_value_t pmb6272_channel2_fields_band_values[] = {
+static const DebugRegValue pmb6272_channel2_fields_band_values[] = {
 	{ "GSM850",		0x00000000 },
 	{ "GSM900",		0x00080000 },
 	{ "DCS1800",	0x00100000 },
 	{ "PCS1900",	0x00180000 },
 };
 
-static const pmb887x_io_field_t pmb6272_channel2_fields[] = {
+static const DebugRegField pmb6272_channel2_fields[] = {
 	{ "FRACTION",	0x00000070,	4,	NULL,										0 },
 	{ "INTEGER",	0x00007F80,	7,	NULL,										0 },
 	{ "POWER_MODE",	0x00018000,	15,	pmb6272_channel2_fields_power_mode_values,	ARRAY_SIZE(pmb6272_channel2_fields_power_mode_values) },
@@ -8339,14 +8605,14 @@ static const pmb887x_io_field_t pmb6272_channel2_fields[] = {
 	{ "BAND",		0x00180000,	19,	pmb6272_channel2_fields_band_values,		ARRAY_SIZE(pmb6272_channel2_fields_band_values) },
 };
 
-static const pmb887x_io_value_t pmb6272_rxtx_fields_rxgain_values[] = {
+static const DebugRegValue pmb6272_rxtx_fields_rxgain_values[] = {
 	{ "LOW",			0x00000000 },
 	{ "MEDIUM",			0x00000010 },
 	{ "UNSUPPORTED",	0x00000020 },
 	{ "HIGH",			0x00000030 },
 };
 
-static const pmb887x_io_field_t pmb6272_rxtx_fields[] = {
+static const DebugRegField pmb6272_rxtx_fields[] = {
 	{ "RXGAIN",	0x00000030,	4,	pmb6272_rxtx_fields_rxgain_values,	ARRAY_SIZE(pmb6272_rxtx_fields_rxgain_values) },
 	{ "RXCORR",	0x000003C0,	6,	NULL,								0 },
 	{ "RXCM",	0x00001800,	11,	NULL,								0 },
@@ -8357,12 +8623,12 @@ static const pmb887x_io_field_t pmb6272_rxtx_fields[] = {
 	{ "OFC",	0x00020000,	17,	NULL,								0 },
 };
 
-static const pmb887x_io_value_t pmb6272_xo_init1_fields_crystal_size_values[] = {
+static const DebugRegValue pmb6272_xo_init1_fields_crystal_size_values[] = {
 	{ "10PF",	0x00000000 },
 	{ "8PF",	0x00800000 },
 };
 
-static const pmb887x_io_field_t pmb6272_xo_init1_fields[] = {
+static const DebugRegField pmb6272_xo_init1_fields[] = {
 	{ "XOMODE0",		0x00000010,	4,	NULL,											0 },
 	{ "XOMODE1",		0x00000020,	5,	NULL,											0 },
 	{ "XOMODE3",		0x00000080,	7,	NULL,											0 },
@@ -8371,80 +8637,87 @@ static const pmb887x_io_field_t pmb6272_xo_init1_fields[] = {
 	{ "CRYSTAL_SIZE",	0x00800000,	23,	pmb6272_xo_init1_fields_crystal_size_values,	ARRAY_SIZE(pmb6272_xo_init1_fields_crystal_size_values) },
 };
 
-static const pmb887x_io_field_t pmb6272_xo_init3_fields[] = {
+static const DebugRegField pmb6272_xo_init3_fields[] = {
 	{ "VALUE",	0x00FFFFF0,	4,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t pmb6272_xo_init2_fields[] = {
+static const DebugRegField pmb6272_xo_init2_fields[] = {
 	{ "ALPHA",	0x00003FF0,	4,	NULL,	0 },
 	{ "GAMMA",	0x00FFC000,	14,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t pmb6272_xo_tune_fields[] = {
+static const DebugRegField pmb6272_xo_tune_fields[] = {
 	{ "AFC",	0x001FFFF0,	4,	NULL,	0 },
 };
 
-static const pmb887x_io_reg_t pmb6272_regs[] = {
-	{ "CHANNEL1",	0x0,	pmb6272_channel1_fields,	ARRAY_SIZE(pmb6272_channel1_fields),	0 },
-	{ "CHANNEL2",	0x2,	pmb6272_channel2_fields,	ARRAY_SIZE(pmb6272_channel2_fields),	0 },
-	{ "RXTX",		0x4,	pmb6272_rxtx_fields,		ARRAY_SIZE(pmb6272_rxtx_fields),		0 },
-	{ "XO_INIT1",	0x6,	pmb6272_xo_init1_fields,	ARRAY_SIZE(pmb6272_xo_init1_fields),	0 },
-	{ "XO_INIT3",	0x8,	pmb6272_xo_init3_fields,	ARRAY_SIZE(pmb6272_xo_init3_fields),	0 },
-	{ "XO_INIT2",	0xA,	pmb6272_xo_init2_fields,	ARRAY_SIZE(pmb6272_xo_init2_fields),	0 },
-	{ "XO_TUNE",	0xC,	pmb6272_xo_tune_fields,		ARRAY_SIZE(pmb6272_xo_tune_fields),		0 },
+static const DebugReg pmb6272_regs[] = {
+	{ "CHANNEL1",	0x0,	pmb6272_channel1_fields,	ARRAY_SIZE(pmb6272_channel1_fields) },
+	{ "CHANNEL2",	0x2,	pmb6272_channel2_fields,	ARRAY_SIZE(pmb6272_channel2_fields) },
+	{ "RXTX",		0x4,	pmb6272_rxtx_fields,		ARRAY_SIZE(pmb6272_rxtx_fields) },
+	{ "XO_INIT1",	0x6,	pmb6272_xo_init1_fields,	ARRAY_SIZE(pmb6272_xo_init1_fields) },
+	{ "XO_INIT3",	0x8,	pmb6272_xo_init3_fields,	ARRAY_SIZE(pmb6272_xo_init3_fields) },
+	{ "XO_INIT2",	0xA,	pmb6272_xo_init2_fields,	ARRAY_SIZE(pmb6272_xo_init2_fields) },
+	{ "XO_TUNE",	0xC,	pmb6272_xo_tune_fields,		ARRAY_SIZE(pmb6272_xo_tune_fields) },
 };
 
-static const pmb887x_io_field_t pmb6812_resctrl_fields[] = {
+const DebugRegs pmb887x_pmb6272_regs = {
+	.regs = pmb6272_regs,
+	.count = ARRAY_SIZE(pmb6272_regs),
+	.reg_size = 1,
+	.addr_digits = 2,
+};
+
+static const DebugRegField pmb6812_resctrl_fields[] = {
 	{ "RES",	0x00000001,	0,	NULL,	0 },
 	{ "UNLOCK",	0x00000002,	1,	NULL,	0 },
 	{ "ALLOFF",	0x00000040,	6,	NULL,	0 },
 	{ "RESDN",	0x00000080,	7,	NULL,	0 },
 };
 
-static const pmb887x_io_value_t pmb6812_pwctrl1_fields_lbbmd_values[] = {
+static const DebugRegValue pmb6812_pwctrl1_fields_lbbmd_values[] = {
 	{ "OFF",				0x00000000 },
 	{ "LBB1_VCXO_LBB2_ON",	0x00000002 },
 	{ "LBB1_OFF_LBB2_ON",	0x00000004 },
 	{ "ON",					0x00000006 },
 };
 
-static const pmb887x_io_value_t pmb6812_pwctrl1_fields_lbbv_values[] = {
+static const DebugRegValue pmb6812_pwctrl1_fields_lbbv_values[] = {
 	{ "1V5",	0x00000000 },
 	{ "1V65",	0x00000008 },
 };
 
-static const pmb887x_io_value_t pmb6812_pwctrl1_fields_lintmd_values[] = {
+static const DebugRegValue pmb6812_pwctrl1_fields_lintmd_values[] = {
 	{ "STANDBY",	0x00000000 },
 	{ "ON",			0x00000010 },
 };
 
-static const pmb887x_io_field_t pmb6812_pwctrl1_fields[] = {
+static const DebugRegField pmb6812_pwctrl1_fields[] = {
 	{ "LANAMD",	0x00000001,	0,	NULL,									0 },
 	{ "LBBMD",	0x00000006,	1,	pmb6812_pwctrl1_fields_lbbmd_values,	ARRAY_SIZE(pmb6812_pwctrl1_fields_lbbmd_values) },
 	{ "LBBV",	0x00000008,	3,	pmb6812_pwctrl1_fields_lbbv_values,		ARRAY_SIZE(pmb6812_pwctrl1_fields_lbbv_values) },
 	{ "LINTMD",	0x00000010,	4,	pmb6812_pwctrl1_fields_lintmd_values,	ARRAY_SIZE(pmb6812_pwctrl1_fields_lintmd_values) },
 };
 
-static const pmb887x_io_value_t pmb6812_pwctrl2_fields_vsel_values[] = {
+static const DebugRegValue pmb6812_pwctrl2_fields_vsel_values[] = {
 	{ "1V5",	0x00000000 },
 	{ "1V8",	0x00000001 },
 	{ "1V86",	0x00000002 },
 	{ "1V92",	0x00000003 },
 };
 
-static const pmb887x_io_value_t pmb6812_pwctrl2_fields_imaxsd_values[] = {
+static const DebugRegValue pmb6812_pwctrl2_fields_imaxsd_values[] = {
 	{ "650MA",	0x00000000 },
 	{ "850MA",	0x00000004 },
 };
 
-static const pmb887x_io_value_t pmb6812_pwctrl2_fields_sdbbmd_values[] = {
+static const DebugRegValue pmb6812_pwctrl2_fields_sdbbmd_values[] = {
 	{ "FORCED_PWM",	0x00000000 },
 	{ "AUTO_PFM",	0x00000040 },
 	{ "TEST",		0x00000080 },
 	{ "FORCED_PFM",	0x000000C0 },
 };
 
-static const pmb887x_io_field_t pmb6812_pwctrl2_fields[] = {
+static const DebugRegField pmb6812_pwctrl2_fields[] = {
 	{ "VSEL",	0x00000003,	0,	pmb6812_pwctrl2_fields_vsel_values,		ARRAY_SIZE(pmb6812_pwctrl2_fields_vsel_values) },
 	{ "IMAXSD",	0x00000004,	2,	pmb6812_pwctrl2_fields_imaxsd_values,	ARRAY_SIZE(pmb6812_pwctrl2_fields_imaxsd_values) },
 	{ "LPEN",	0x00000010,	4,	NULL,									0 },
@@ -8452,7 +8725,7 @@ static const pmb887x_io_field_t pmb6812_pwctrl2_fields[] = {
 	{ "SDBBMD",	0x000000C0,	6,	pmb6812_pwctrl2_fields_sdbbmd_values,	ARRAY_SIZE(pmb6812_pwctrl2_fields_sdbbmd_values) },
 };
 
-static const pmb887x_io_value_t pmb6812_chctrl1_fields_pl_values[] = {
+static const DebugRegValue pmb6812_chctrl1_fields_pl_values[] = {
 	{ "2MS",	0x00000000 },
 	{ "4MS",	0x00000001 },
 	{ "8MS",	0x00000002 },
@@ -8463,24 +8736,24 @@ static const pmb887x_io_value_t pmb6812_chctrl1_fields_pl_values[] = {
 	{ "262MS",	0x00000007 },
 };
 
-static const pmb887x_io_value_t pmb6812_chctrl1_fields_vl_values[] = {
+static const DebugRegValue pmb6812_chctrl1_fields_vl_values[] = {
 	{ "SHUTDOWN",		0x00000000 },
 	{ "VOLTAGE_LIMIT",	0x00000008 },
 };
 
-static const pmb887x_io_value_t pmb6812_chctrl1_fields_vmax_values[] = {
+static const DebugRegValue pmb6812_chctrl1_fields_vmax_values[] = {
 	{ "VCHMAX1",	0x00000000 },
 	{ "VCHMAX2",	0x00000010 },
 	{ "RESERVED",	0x00000020 },
 	{ "VCHMAX3",	0x00000030 },
 };
 
-static const pmb887x_io_value_t pmb6812_chctrl1_fields_pch_values[] = {
+static const DebugRegValue pmb6812_chctrl1_fields_pch_values[] = {
 	{ "CONTINUOUS",	0x00000000 },
 	{ "PULSE",		0x00000040 },
 };
 
-static const pmb887x_io_field_t pmb6812_chctrl1_fields[] = {
+static const DebugRegField pmb6812_chctrl1_fields[] = {
 	{ "PL",		0x00000007,	0,	pmb6812_chctrl1_fields_pl_values,	ARRAY_SIZE(pmb6812_chctrl1_fields_pl_values) },
 	{ "VL",		0x00000008,	3,	pmb6812_chctrl1_fields_vl_values,	ARRAY_SIZE(pmb6812_chctrl1_fields_vl_values) },
 	{ "VMAX",	0x00000030,	4,	pmb6812_chctrl1_fields_vmax_values,	ARRAY_SIZE(pmb6812_chctrl1_fields_vmax_values) },
@@ -8488,12 +8761,12 @@ static const pmb887x_io_field_t pmb6812_chctrl1_fields[] = {
 	{ "ON",		0x00000080,	7,	NULL,								0 },
 };
 
-static const pmb887x_io_value_t pmb6812_intctrl1_fields_intmd_values[] = {
+static const DebugRegValue pmb6812_intctrl1_fields_intmd_values[] = {
 	{ "FALLING",	0x00000000 },
 	{ "RISING",		0x00000001 },
 };
 
-static const pmb887x_io_field_t pmb6812_intctrl1_fields[] = {
+static const DebugRegField pmb6812_intctrl1_fields[] = {
 	{ "INTMD",		0x00000001,	0,	pmb6812_intctrl1_fields_intmd_values,	ARRAY_SIZE(pmb6812_intctrl1_fields_intmd_values) },
 	{ "EIORLSIM",	0x00000002,	1,	NULL,									0 },
 	{ "EIORLMMC",	0x00000004,	2,	NULL,									0 },
@@ -8503,12 +8776,12 @@ static const pmb887x_io_field_t pmb6812_intctrl1_fields[] = {
 	{ "EICHV",		0x00000080,	7,	NULL,									0 },
 };
 
-static const pmb887x_io_value_t pmb6812_intctrl2_fields_debug_values[] = {
+static const DebugRegValue pmb6812_intctrl2_fields_debug_values[] = {
 	{ "CURRENT",	0x00000000 },
 	{ "LATCHED",	0x00000001 },
 };
 
-static const pmb887x_io_field_t pmb6812_intctrl2_fields[] = {
+static const DebugRegField pmb6812_intctrl2_fields[] = {
 	{ "DEBUG",		0x00000001,	0,	pmb6812_intctrl2_fields_debug_values,	ARRAY_SIZE(pmb6812_intctrl2_fields_debug_values) },
 	{ "EION",		0x00000002,	1,	NULL,									0 },
 	{ "EIVBH",		0x00000004,	2,	NULL,									0 },
@@ -8518,38 +8791,38 @@ static const pmb887x_io_field_t pmb6812_intctrl2_fields[] = {
 	{ "EIOTW",		0x00000080,	7,	NULL,									0 },
 };
 
-static const pmb887x_io_value_t pmb6812_pwctrl3_fields_lrf2md_values[] = {
+static const DebugRegValue pmb6812_pwctrl3_fields_lrf2md_values[] = {
 	{ "OFF",		0x00000000 },
 	{ "VCXO",		0x00000001 },
 	{ "FORCED_OFF",	0x00000002 },
 	{ "ON",			0x00000003 },
 };
 
-static const pmb887x_io_value_t pmb6812_pwctrl3_fields_lrf2v_values[] = {
+static const DebugRegValue pmb6812_pwctrl3_fields_lrf2v_values[] = {
 	{ "2V5",	0x00000000 },
 	{ "2V7",	0x00000004 },
 };
 
-static const pmb887x_io_value_t pmb6812_pwctrl3_fields_lrf3md_values[] = {
+static const DebugRegValue pmb6812_pwctrl3_fields_lrf3md_values[] = {
 	{ "OFF",	0x00000000 },
 	{ "VCXO",	0x00000008 },
 	{ "VRF3",	0x00000010 },
 	{ "ON",		0x00000018 },
 };
 
-static const pmb887x_io_value_t pmb6812_pwctrl3_fields_lrf3v_values[] = {
+static const DebugRegValue pmb6812_pwctrl3_fields_lrf3v_values[] = {
 	{ "2V65",	0x00000000 },
 	{ "1V8",	0x00000020 },
 };
 
-static const pmb887x_io_field_t pmb6812_pwctrl3_fields[] = {
+static const DebugRegField pmb6812_pwctrl3_fields[] = {
 	{ "LRF2MD",	0x00000003,	0,	pmb6812_pwctrl3_fields_lrf2md_values,	ARRAY_SIZE(pmb6812_pwctrl3_fields_lrf2md_values) },
 	{ "LRF2V",	0x00000004,	2,	pmb6812_pwctrl3_fields_lrf2v_values,	ARRAY_SIZE(pmb6812_pwctrl3_fields_lrf2v_values) },
 	{ "LRF3MD",	0x00000018,	3,	pmb6812_pwctrl3_fields_lrf3md_values,	ARRAY_SIZE(pmb6812_pwctrl3_fields_lrf3md_values) },
 	{ "LRF3V",	0x00000020,	5,	pmb6812_pwctrl3_fields_lrf3v_values,	ARRAY_SIZE(pmb6812_pwctrl3_fields_lrf3v_values) },
 };
 
-static const pmb887x_io_value_t pmb6812_chctrl2_fields_chclim_values[] = {
+static const DebugRegValue pmb6812_chctrl2_fields_chclim_values[] = {
 	{ "400MA",	0x00000000 },
 	{ "500MA",	0x00000001 },
 	{ "600MA",	0x00000002 },
@@ -8560,7 +8833,7 @@ static const pmb887x_io_value_t pmb6812_chctrl2_fields_chclim_values[] = {
 	{ "1100MA",	0x00000007 },
 };
 
-static const pmb887x_io_value_t pmb6812_chctrl2_fields_rvm_values[] = {
+static const DebugRegValue pmb6812_chctrl2_fields_rvm_values[] = {
 	{ "X1",	0x00000000 },
 	{ "X2",	0x00000020 },
 	{ "X3",	0x00000040 },
@@ -8571,48 +8844,48 @@ static const pmb887x_io_value_t pmb6812_chctrl2_fields_rvm_values[] = {
 	{ "X8",	0x000000E0 },
 };
 
-static const pmb887x_io_field_t pmb6812_chctrl2_fields[] = {
+static const DebugRegField pmb6812_chctrl2_fields[] = {
 	{ "CHCLIM",	0x00000007,	0,	pmb6812_chctrl2_fields_chclim_values,	ARRAY_SIZE(pmb6812_chctrl2_fields_chclim_values) },
 	{ "PREOFF",	0x00000010,	4,	NULL,									0 },
 	{ "RVM",	0x000000E0,	5,	pmb6812_chctrl2_fields_rvm_values,		ARRAY_SIZE(pmb6812_chctrl2_fields_rvm_values) },
 };
 
-static const pmb887x_io_field_t pmb6812_test1_fields[] = {
+static const DebugRegField pmb6812_test1_fields[] = {
 	{ "BGTVAL",	0x0000000F,	0,	NULL,	0 },
 	{ "BGTRIM",	0x00000020,	5,	NULL,	0 },
 	{ "OTWSEN",	0x00000040,	6,	NULL,	0 },
 	{ "OTSSEN",	0x00000080,	7,	NULL,	0 },
 };
 
-static const pmb887x_io_value_t pmb6812_ledctrl1_fields_pwmfreq_values[] = {
+static const DebugRegValue pmb6812_ledctrl1_fields_pwmfreq_values[] = {
 	{ "60HZ",	0x00000000 },
 	{ "16KHZ",	0x00000080 },
 };
 
-static const pmb887x_io_field_t pmb6812_ledctrl1_fields[] = {
+static const DebugRegField pmb6812_ledctrl1_fields[] = {
 	{ "LEDON",		0x00000001,	0,	NULL,									0 },
 	{ "LEDPWM",		0x0000007E,	1,	NULL,									0 },
 	{ "PWMFREQ",	0x00000080,	7,	pmb6812_ledctrl1_fields_pwmfreq_values,	ARRAY_SIZE(pmb6812_ledctrl1_fields_pwmfreq_values) },
 };
 
-static const pmb887x_io_field_t pmb6812_drvctrl_fields[] = {
+static const DebugRegField pmb6812_drvctrl_fields[] = {
 	{ "VVIB",	0x0000000F,	0,	NULL,	0 },
 };
 
-static const pmb887x_io_value_t pmb6812_usbctrl_fields_lusbmd_values[] = {
+static const DebugRegValue pmb6812_usbctrl_fields_lusbmd_values[] = {
 	{ "OFF",			0x00000000 },
 	{ "STANDBY_VCXO",	0x00000002 },
 	{ "STANDBY",		0x00000004 },
 	{ "ON",				0x00000006 },
 };
 
-static const pmb887x_io_value_t pmb6812_usbctrl_fields_pullup_values[] = {
+static const DebugRegValue pmb6812_usbctrl_fields_pullup_values[] = {
 	{ "NC",			0x00000000 },
 	{ "PULLUP",		0x00000008 },
 	{ "PULLDOWN",	0x00000010 },
 };
 
-static const pmb887x_io_field_t pmb6812_usbctrl_fields[] = {
+static const DebugRegField pmb6812_usbctrl_fields[] = {
 	{ "VBUS",	0x00000001,	0,	NULL,									0 },
 	{ "LUSBMD",	0x00000006,	1,	pmb6812_usbctrl_fields_lusbmd_values,	ARRAY_SIZE(pmb6812_usbctrl_fields_lusbmd_values) },
 	{ "PULLUP",	0x00000018,	3,	pmb6812_usbctrl_fields_pullup_values,	ARRAY_SIZE(pmb6812_usbctrl_fields_pullup_values) },
@@ -8621,21 +8894,21 @@ static const pmb887x_io_field_t pmb6812_usbctrl_fields[] = {
 	{ "DISCH",	0x00000080,	7,	NULL,									0 },
 };
 
-static const pmb887x_io_value_t pmb6812_audctrl_fields_audgain_values[] = {
+static const DebugRegValue pmb6812_audctrl_fields_audgain_values[] = {
 	{ "MINUS_6DB",		0x00000000 },
 	{ "MINUS_1_2DB",	0x00000004 },
 	{ "PLUS_2_7DB",		0x00000008 },
 	{ "PLUS_6DB",		0x0000000C },
 };
 
-static const pmb887x_io_value_t pmb6812_audctrl_fields_audcm_values[] = {
+static const DebugRegValue pmb6812_audctrl_fields_audcm_values[] = {
 	{ "1550MV",	0x00000000 },
 	{ "1650MV",	0x00000040 },
 	{ "1800MV",	0x00000080 },
 	{ "1950MV",	0x000000C0 },
 };
 
-static const pmb887x_io_field_t pmb6812_audctrl_fields[] = {
+static const DebugRegField pmb6812_audctrl_fields[] = {
 	{ "AUDON",		0x00000001,	0,	NULL,									0 },
 	{ "MUTE",		0x00000002,	1,	NULL,									0 },
 	{ "AUDGAIN",	0x0000000C,	2,	pmb6812_audctrl_fields_audgain_values,	ARRAY_SIZE(pmb6812_audctrl_fields_audgain_values) },
@@ -8644,44 +8917,44 @@ static const pmb887x_io_field_t pmb6812_audctrl_fields[] = {
 	{ "AUDCM",		0x000000C0,	6,	pmb6812_audctrl_fields_audcm_values,	ARRAY_SIZE(pmb6812_audctrl_fields_audcm_values) },
 };
 
-static const pmb887x_io_value_t pmb6812_pwctrl4_fields_lrf1md_values[] = {
+static const DebugRegValue pmb6812_pwctrl4_fields_lrf1md_values[] = {
 	{ "OFF",	0x00000000 },
 	{ "VCXO",	0x00000004 },
 	{ "VRF3",	0x00000008 },
 	{ "ON",		0x0000000C },
 };
 
-static const pmb887x_io_value_t pmb6812_pwctrl4_fields_lrf1v_values[] = {
+static const DebugRegValue pmb6812_pwctrl4_fields_lrf1v_values[] = {
 	{ "2V85",		0x00000000 },
 	{ "2V7",		0x00000010 },
 	{ "2V5",		0x00000020 },
 	{ "RESERVED",	0x00000030 },
 };
 
-static const pmb887x_io_value_t pmb6812_pwctrl4_fields_lrfcmd_values[] = {
+static const DebugRegValue pmb6812_pwctrl4_fields_lrfcmd_values[] = {
 	{ "OFF",	0x00000000 },
 	{ "VCXO",	0x00000040 },
 	{ "VRF3",	0x00000080 },
 	{ "ON",		0x000000C0 },
 };
 
-static const pmb887x_io_field_t pmb6812_pwctrl4_fields[] = {
+static const DebugRegField pmb6812_pwctrl4_fields[] = {
 	{ "LRF1MD",	0x0000000C,	2,	pmb6812_pwctrl4_fields_lrf1md_values,	ARRAY_SIZE(pmb6812_pwctrl4_fields_lrf1md_values) },
 	{ "LRF1V",	0x00000030,	4,	pmb6812_pwctrl4_fields_lrf1v_values,	ARRAY_SIZE(pmb6812_pwctrl4_fields_lrf1v_values) },
 	{ "LRFCMD",	0x000000C0,	6,	pmb6812_pwctrl4_fields_lrfcmd_values,	ARRAY_SIZE(pmb6812_pwctrl4_fields_lrfcmd_values) },
 };
 
-static const pmb887x_io_value_t pmb6812_test2_fields_rds_on_sel_values[] = {
+static const DebugRegValue pmb6812_test2_fields_rds_on_sel_values[] = {
 	{ "PMOS",	0x00000000 },
 	{ "NMOS",	0x00000004 },
 };
 
-static const pmb887x_io_value_t pmb6812_test2_fields_bandgap_values[] = {
+static const DebugRegValue pmb6812_test2_fields_bandgap_values[] = {
 	{ "R70K",	0x00000000 },
 	{ "R7K",	0x00000020 },
 };
 
-static const pmb887x_io_field_t pmb6812_test2_fields[] = {
+static const DebugRegField pmb6812_test2_fields[] = {
 	{ "DISCAD",		0x00000001,	0,	NULL,									0 },
 	{ "RDS_ON_EN",	0x00000002,	1,	NULL,									0 },
 	{ "RDS_ON_SEL",	0x00000004,	2,	pmb6812_test2_fields_rds_on_sel_values,	ARRAY_SIZE(pmb6812_test2_fields_rds_on_sel_values) },
@@ -8692,26 +8965,26 @@ static const pmb887x_io_field_t pmb6812_test2_fields[] = {
 	{ "USBPROT",	0x00000080,	7,	NULL,									0 },
 };
 
-static const pmb887x_io_field_t pmb6812_test3_fields[] = {
+static const DebugRegField pmb6812_test3_fields[] = {
 	{ "LDDIS",		0x00000001,	0,	NULL,	0 },
 	{ "VCHMAXCAL",	0x0000003E,	1,	NULL,	0 },
 	{ "CHALEN",		0x00000040,	6,	NULL,	0 },
 	{ "OSCOFF",		0x00000080,	7,	NULL,	0 },
 };
 
-static const pmb887x_io_value_t pmb6812_pwctrl5_fields_lsimmd_values[] = {
+static const DebugRegValue pmb6812_pwctrl5_fields_lsimmd_values[] = {
 	{ "OFF",			0x00000000 },
 	{ "VCXO_STANDBY",	0x00000001 },
 	{ "STANDBY",		0x00000002 },
 	{ "ON",				0x00000003 },
 };
 
-static const pmb887x_io_value_t pmb6812_pwctrl5_fields_lsimv_values[] = {
+static const DebugRegValue pmb6812_pwctrl5_fields_lsimv_values[] = {
 	{ "2V85",	0x00000000 },
 	{ "1V8",	0x00000004 },
 };
 
-static const pmb887x_io_value_t pmb6812_pwctrl5_fields_lsim2md_values[] = {
+static const DebugRegValue pmb6812_pwctrl5_fields_lsim2md_values[] = {
 	{ "OFF",				0x00000000 },
 	{ "VCXO_STANDBY",		0x00000008 },
 	{ "ON",					0x00000010 },
@@ -8722,36 +8995,36 @@ static const pmb887x_io_value_t pmb6812_pwctrl5_fields_lsim2md_values[] = {
 	{ "ON_ALT2",			0x00000038 },
 };
 
-static const pmb887x_io_value_t pmb6812_pwctrl5_fields_lsim2v_values[] = {
+static const DebugRegValue pmb6812_pwctrl5_fields_lsim2v_values[] = {
 	{ "2V85",	0x00000000 },
 	{ "1V8",	0x00000040 },
 };
 
-static const pmb887x_io_field_t pmb6812_pwctrl5_fields[] = {
+static const DebugRegField pmb6812_pwctrl5_fields[] = {
 	{ "LSIMMD",		0x00000003,	0,	pmb6812_pwctrl5_fields_lsimmd_values,	ARRAY_SIZE(pmb6812_pwctrl5_fields_lsimmd_values) },
 	{ "LSIMV",		0x00000004,	2,	pmb6812_pwctrl5_fields_lsimv_values,	ARRAY_SIZE(pmb6812_pwctrl5_fields_lsimv_values) },
 	{ "LSIM2MD",	0x00000038,	3,	pmb6812_pwctrl5_fields_lsim2md_values,	ARRAY_SIZE(pmb6812_pwctrl5_fields_lsim2md_values) },
 	{ "LSIM2V",		0x00000040,	6,	pmb6812_pwctrl5_fields_lsim2v_values,	ARRAY_SIZE(pmb6812_pwctrl5_fields_lsim2v_values) },
 };
 
-static const pmb887x_io_value_t pmb6812_pwctrl6_fields_lmmcmd_values[] = {
+static const DebugRegValue pmb6812_pwctrl6_fields_lmmcmd_values[] = {
 	{ "OFF",			0x00000000 },
 	{ "VCXO_STANDBY",	0x00000001 },
 	{ "STANDBY",		0x00000002 },
 	{ "ON",				0x00000003 },
 };
 
-static const pmb887x_io_value_t pmb6812_pwctrl6_fields_lmmcv_values[] = {
+static const DebugRegValue pmb6812_pwctrl6_fields_lmmcv_values[] = {
 	{ "1V8",	0x00000000 },
 	{ "2V85",	0x00000004 },
 };
 
-static const pmb887x_io_field_t pmb6812_pwctrl6_fields[] = {
+static const DebugRegField pmb6812_pwctrl6_fields[] = {
 	{ "LMMCMD",	0x00000003,	0,	pmb6812_pwctrl6_fields_lmmcmd_values,	ARRAY_SIZE(pmb6812_pwctrl6_fields_lmmcmd_values) },
 	{ "LMMCV",	0x0000000C,	2,	pmb6812_pwctrl6_fields_lmmcv_values,	ARRAY_SIZE(pmb6812_pwctrl6_fields_lmmcv_values) },
 };
 
-static const pmb887x_io_value_t pmb6812_ledctrl2_fields_ledcur_values[] = {
+static const DebugRegValue pmb6812_ledctrl2_fields_ledcur_values[] = {
 	{ "POWER_DOWN",	0x00000000 },
 	{ "20MA",		0x00000008 },
 	{ "40MA",		0x00000010 },
@@ -8762,17 +9035,17 @@ static const pmb887x_io_value_t pmb6812_ledctrl2_fields_ledcur_values[] = {
 	{ "140MA",		0x00000038 },
 };
 
-static const pmb887x_io_field_t pmb6812_ledctrl2_fields[] = {
+static const DebugRegField pmb6812_ledctrl2_fields[] = {
 	{ "LEDCUR",		0x00000038,	3,	pmb6812_ledctrl2_fields_ledcur_values,	ARRAY_SIZE(pmb6812_ledctrl2_fields_ledcur_values) },
 	{ "SLED1ON",	0x00000040,	6,	NULL,									0 },
 	{ "SLED2ON",	0x00000080,	7,	NULL,									0 },
 };
 
-static const pmb887x_io_field_t pmb6812_test4_fields[] = {
+static const DebugRegField pmb6812_test4_fields[] = {
 	{ "PROGV",	0x0000000F,	0,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t pmb6812_gef1_fields[] = {
+static const DebugRegField pmb6812_gef1_fields[] = {
 	{ "LINT",	0x00000001,	0,	NULL,	0 },
 	{ "LANA",	0x00000002,	1,	NULL,	0 },
 	{ "LRF2",	0x00000004,	2,	NULL,	0 },
@@ -8782,7 +9055,7 @@ static const pmb887x_io_field_t pmb6812_gef1_fields[] = {
 	{ "LUSB",	0x00000040,	6,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t pmb6812_isf_fields[] = {
+static const DebugRegField pmb6812_isf_fields[] = {
 	{ "LON",	0x00000001,	0,	NULL,	0 },
 	{ "OTS",	0x00000002,	1,	NULL,	0 },
 	{ "SPWM",	0x00000004,	2,	NULL,	0 },
@@ -8793,19 +9066,19 @@ static const pmb887x_io_field_t pmb6812_isf_fields[] = {
 	{ "OTW",	0x00000080,	7,	NULL,	0 },
 };
 
-static const pmb887x_io_value_t pmb6812_chst_fields_pmuid_values[] = {
+static const DebugRegValue pmb6812_chst_fields_pmuid_values[] = {
 	{ "SM_POWER",		0x00000000 },
 	{ "E_POWERLITE",	0x00000001 },
 };
 
-static const pmb887x_io_field_t pmb6812_chst_fields[] = {
+static const DebugRegField pmb6812_chst_fields[] = {
 	{ "PMUID",	0x00000001,	0,	pmb6812_chst_fields_pmuid_values,	ARRAY_SIZE(pmb6812_chst_fields_pmuid_values) },
 	{ "CCAL",	0x00000020,	5,	NULL,								0 },
 	{ "CHMD",	0x00000040,	6,	NULL,								0 },
 	{ "CHV",	0x00000080,	7,	NULL,								0 },
 };
 
-static const pmb887x_io_field_t pmb6812_gef2_fields[] = {
+static const DebugRegField pmb6812_gef2_fields[] = {
 	{ "SDBB",	0x00000001,	0,	NULL,	0 },
 	{ "LBB1",	0x00000002,	1,	NULL,	0 },
 	{ "LBB2",	0x00000004,	2,	NULL,	0 },
@@ -8813,81 +9086,95 @@ static const pmb887x_io_field_t pmb6812_gef2_fields[] = {
 	{ "OTWD",	0x00000080,	7,	NULL,	0 },
 };
 
-static const pmb887x_io_reg_t pmb6812_regs[] = {
-	{ "RESCTRL",	0x1,	pmb6812_resctrl_fields,		ARRAY_SIZE(pmb6812_resctrl_fields),		0 },
-	{ "PWCTRL1",	0x2,	pmb6812_pwctrl1_fields,		ARRAY_SIZE(pmb6812_pwctrl1_fields),		0 },
-	{ "PWCTRL2",	0x3,	pmb6812_pwctrl2_fields,		ARRAY_SIZE(pmb6812_pwctrl2_fields),		0 },
-	{ "CHCTRL1",	0x4,	pmb6812_chctrl1_fields,		ARRAY_SIZE(pmb6812_chctrl1_fields),		0 },
-	{ "INTCTRL1",	0x5,	pmb6812_intctrl1_fields,	ARRAY_SIZE(pmb6812_intctrl1_fields),	0 },
-	{ "INTCTRL2",	0x6,	pmb6812_intctrl2_fields,	ARRAY_SIZE(pmb6812_intctrl2_fields),	0 },
-	{ "PWCTRL3",	0x7,	pmb6812_pwctrl3_fields,		ARRAY_SIZE(pmb6812_pwctrl3_fields),		0 },
-	{ "CHCTRL2",	0x8,	pmb6812_chctrl2_fields,		ARRAY_SIZE(pmb6812_chctrl2_fields),		0 },
-	{ "TEST1",		0x9,	pmb6812_test1_fields,		ARRAY_SIZE(pmb6812_test1_fields),		0 },
-	{ "LEDCTRL1",	0xA,	pmb6812_ledctrl1_fields,	ARRAY_SIZE(pmb6812_ledctrl1_fields),	0 },
-	{ "DRVCTRL",	0xB,	pmb6812_drvctrl_fields,		ARRAY_SIZE(pmb6812_drvctrl_fields),		0 },
-	{ "USBCTRL",	0xC,	pmb6812_usbctrl_fields,		ARRAY_SIZE(pmb6812_usbctrl_fields),		0 },
-	{ "AUDCTRL",	0xD,	pmb6812_audctrl_fields,		ARRAY_SIZE(pmb6812_audctrl_fields),		0 },
-	{ "PWCTRL4",	0xE,	pmb6812_pwctrl4_fields,		ARRAY_SIZE(pmb6812_pwctrl4_fields),		0 },
-	{ "TEST2",		0xF,	pmb6812_test2_fields,		ARRAY_SIZE(pmb6812_test2_fields),		0 },
-	{ "TEST3",		0x10,	pmb6812_test3_fields,		ARRAY_SIZE(pmb6812_test3_fields),		0 },
-	{ "PWCTRL5",	0x11,	pmb6812_pwctrl5_fields,		ARRAY_SIZE(pmb6812_pwctrl5_fields),		0 },
-	{ "PWCTRL6",	0x12,	pmb6812_pwctrl6_fields,		ARRAY_SIZE(pmb6812_pwctrl6_fields),		0 },
-	{ "LEDCTRL2",	0x13,	pmb6812_ledctrl2_fields,	ARRAY_SIZE(pmb6812_ledctrl2_fields),	0 },
-	{ "TEST4",		0x14,	pmb6812_test4_fields,		ARRAY_SIZE(pmb6812_test4_fields),		0 },
-	{ "GEF1",		0x80,	pmb6812_gef1_fields,		ARRAY_SIZE(pmb6812_gef1_fields),		0 },
-	{ "ISF",		0x81,	pmb6812_isf_fields,			ARRAY_SIZE(pmb6812_isf_fields),			0 },
-	{ "CHST",		0x82,	pmb6812_chst_fields,		ARRAY_SIZE(pmb6812_chst_fields),		0 },
-	{ "GEF2",		0x83,	pmb6812_gef2_fields,		ARRAY_SIZE(pmb6812_gef2_fields),		0 },
+static const DebugReg pmb6812_regs[] = {
+	{ "RESCTRL",	0x1,	pmb6812_resctrl_fields,		ARRAY_SIZE(pmb6812_resctrl_fields) },
+	{ "PWCTRL1",	0x2,	pmb6812_pwctrl1_fields,		ARRAY_SIZE(pmb6812_pwctrl1_fields) },
+	{ "PWCTRL2",	0x3,	pmb6812_pwctrl2_fields,		ARRAY_SIZE(pmb6812_pwctrl2_fields) },
+	{ "CHCTRL1",	0x4,	pmb6812_chctrl1_fields,		ARRAY_SIZE(pmb6812_chctrl1_fields) },
+	{ "INTCTRL1",	0x5,	pmb6812_intctrl1_fields,	ARRAY_SIZE(pmb6812_intctrl1_fields) },
+	{ "INTCTRL2",	0x6,	pmb6812_intctrl2_fields,	ARRAY_SIZE(pmb6812_intctrl2_fields) },
+	{ "PWCTRL3",	0x7,	pmb6812_pwctrl3_fields,		ARRAY_SIZE(pmb6812_pwctrl3_fields) },
+	{ "CHCTRL2",	0x8,	pmb6812_chctrl2_fields,		ARRAY_SIZE(pmb6812_chctrl2_fields) },
+	{ "TEST1",		0x9,	pmb6812_test1_fields,		ARRAY_SIZE(pmb6812_test1_fields) },
+	{ "LEDCTRL1",	0xA,	pmb6812_ledctrl1_fields,	ARRAY_SIZE(pmb6812_ledctrl1_fields) },
+	{ "DRVCTRL",	0xB,	pmb6812_drvctrl_fields,		ARRAY_SIZE(pmb6812_drvctrl_fields) },
+	{ "USBCTRL",	0xC,	pmb6812_usbctrl_fields,		ARRAY_SIZE(pmb6812_usbctrl_fields) },
+	{ "AUDCTRL",	0xD,	pmb6812_audctrl_fields,		ARRAY_SIZE(pmb6812_audctrl_fields) },
+	{ "PWCTRL4",	0xE,	pmb6812_pwctrl4_fields,		ARRAY_SIZE(pmb6812_pwctrl4_fields) },
+	{ "TEST2",		0xF,	pmb6812_test2_fields,		ARRAY_SIZE(pmb6812_test2_fields) },
+	{ "TEST3",		0x10,	pmb6812_test3_fields,		ARRAY_SIZE(pmb6812_test3_fields) },
+	{ "PWCTRL5",	0x11,	pmb6812_pwctrl5_fields,		ARRAY_SIZE(pmb6812_pwctrl5_fields) },
+	{ "PWCTRL6",	0x12,	pmb6812_pwctrl6_fields,		ARRAY_SIZE(pmb6812_pwctrl6_fields) },
+	{ "LEDCTRL2",	0x13,	pmb6812_ledctrl2_fields,	ARRAY_SIZE(pmb6812_ledctrl2_fields) },
+	{ "TEST4",		0x14,	pmb6812_test4_fields,		ARRAY_SIZE(pmb6812_test4_fields) },
+	{ "GEF1",		0x80,	pmb6812_gef1_fields,		ARRAY_SIZE(pmb6812_gef1_fields) },
+	{ "ISF",		0x81,	pmb6812_isf_fields,			ARRAY_SIZE(pmb6812_isf_fields) },
+	{ "CHST",		0x82,	pmb6812_chst_fields,		ARRAY_SIZE(pmb6812_chst_fields) },
+	{ "GEF2",		0x83,	pmb6812_gef2_fields,		ARRAY_SIZE(pmb6812_gef2_fields) },
 };
 
-static const pmb887x_io_field_t r61505u_display_control_1_fields[] = {
+const DebugRegs pmb887x_pmb6812_regs = {
+	.regs = pmb6812_regs,
+	.count = ARRAY_SIZE(pmb6812_regs),
+	.reg_size = 1,
+	.addr_digits = 2,
+};
+
+static const DebugRegField r61505u_display_control_1_fields[] = {
 	{ "VON",	0x00000040,	6,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t r61505u_power_control_3_fields[] = {
+static const DebugRegField r61505u_power_control_3_fields[] = {
 	{ "PSON",	0x00000020,	5,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t r61505u_power_control_5_fields[] = {
+static const DebugRegField r61505u_power_control_5_fields[] = {
 	{ "PSE",	0x00000001,	0,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t r61505u_gamma_33_fields[] = {
+static const DebugRegField r61505u_gamma_33_fields[] = {
 	{ "VALUE",	0x0000FFFF,	0,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t r61505u_gamma_34_fields[] = {
+static const DebugRegField r61505u_gamma_34_fields[] = {
 	{ "VALUE",	0x0000FFFF,	0,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t r61505u_gamma_3a_fields[] = {
+static const DebugRegField r61505u_gamma_3a_fields[] = {
 	{ "VALUE",	0x0000FFFF,	0,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t r61505u_gamma_3b_fields[] = {
+static const DebugRegField r61505u_gamma_3b_fields[] = {
 	{ "VALUE",	0x0000FFFF,	0,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t r61505u_calibration_control_fields[] = {
+static const DebugRegField r61505u_calibration_control_fields[] = {
 	{ "CALB",	0x00000001,	0,	NULL,	0 },
 };
 
-static const pmb887x_io_reg_t r61505u_regs[] = {
-	{ "DISPLAY_CONTROL_1",		0x7,	r61505u_display_control_1_fields,	ARRAY_SIZE(r61505u_display_control_1_fields),	0 },
-	{ "POWER_CONTROL_3",		0x12,	r61505u_power_control_3_fields,		ARRAY_SIZE(r61505u_power_control_3_fields),		0 },
-	{ "POWER_CONTROL_5",		0x17,	r61505u_power_control_5_fields,		ARRAY_SIZE(r61505u_power_control_5_fields),		0 },
-	{ "GAMMA_33",				0x33,	r61505u_gamma_33_fields,			ARRAY_SIZE(r61505u_gamma_33_fields),			0 },
-	{ "GAMMA_34",				0x34,	r61505u_gamma_34_fields,			ARRAY_SIZE(r61505u_gamma_34_fields),			0 },
-	{ "GAMMA_3A",				0x3A,	r61505u_gamma_3a_fields,			ARRAY_SIZE(r61505u_gamma_3a_fields),			0 },
-	{ "GAMMA_3B",				0x3B,	r61505u_gamma_3b_fields,			ARRAY_SIZE(r61505u_gamma_3b_fields),			0 },
-	{ "CALIBRATION_CONTROL",	0xA4,	r61505u_calibration_control_fields,	ARRAY_SIZE(r61505u_calibration_control_fields),	0 },
+static const DebugReg r61505u_regs[] = {
+	{ "DISPLAY_CONTROL_1",		0x7,	r61505u_display_control_1_fields,	ARRAY_SIZE(r61505u_display_control_1_fields) },
+	{ "POWER_CONTROL_3",		0x12,	r61505u_power_control_3_fields,		ARRAY_SIZE(r61505u_power_control_3_fields) },
+	{ "POWER_CONTROL_5",		0x17,	r61505u_power_control_5_fields,		ARRAY_SIZE(r61505u_power_control_5_fields) },
+	{ "GAMMA_33",				0x33,	r61505u_gamma_33_fields,			ARRAY_SIZE(r61505u_gamma_33_fields) },
+	{ "GAMMA_34",				0x34,	r61505u_gamma_34_fields,			ARRAY_SIZE(r61505u_gamma_34_fields) },
+	{ "GAMMA_3A",				0x3A,	r61505u_gamma_3a_fields,			ARRAY_SIZE(r61505u_gamma_3a_fields) },
+	{ "GAMMA_3B",				0x3B,	r61505u_gamma_3b_fields,			ARRAY_SIZE(r61505u_gamma_3b_fields) },
+	{ "CALIBRATION_CONTROL",	0xA4,	r61505u_calibration_control_fields,	ARRAY_SIZE(r61505u_calibration_control_fields) },
 };
 
-static const pmb887x_io_field_t ssd1286_oscillation_fields[] = {
+const DebugRegs pmb887x_r61505u_regs = {
+	.regs = r61505u_regs,
+	.count = ARRAY_SIZE(r61505u_regs),
+	.reg_size = 1,
+	.addr_digits = 2,
+};
+
+static const DebugRegField ssd1286_oscillation_fields[] = {
 	{ "OSCEN",	0x00000001,	0,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t ssd1286_driver_output_control_fields[] = {
+static const DebugRegField ssd1286_driver_output_control_fields[] = {
 	{ "MUX",	0x000000FF,	0,	NULL,	0 },
 	{ "RL",		0x00000100,	8,	NULL,	0 },
 	{ "TB",		0x00000200,	9,	NULL,	0 },
@@ -8897,7 +9184,7 @@ static const pmb887x_io_field_t ssd1286_driver_output_control_fields[] = {
 	{ "REV",	0x00002000,	13,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t ssd1286_lcd_drive_ac_control_fields[] = {
+static const DebugRegField ssd1286_lcd_drive_ac_control_fields[] = {
 	{ "NW",		0x0000007F,	0,	NULL,	0 },
 	{ "WSMD",	0x00000080,	7,	NULL,	0 },
 	{ "EOR",	0x00000100,	8,	NULL,	0 },
@@ -8906,7 +9193,7 @@ static const pmb887x_io_field_t ssd1286_lcd_drive_ac_control_fields[] = {
 	{ "FLD",	0x00000800,	11,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t ssd1286_entry_mode_fields[] = {
+static const DebugRegField ssd1286_entry_mode_fields[] = {
 	{ "LG",		0x00000007,	0,	NULL,	0 },
 	{ "AM",		0x00000008,	3,	NULL,	0 },
 	{ "ID",		0x00000030,	4,	NULL,	0 },
@@ -8919,16 +9206,16 @@ static const pmb887x_io_field_t ssd1286_entry_mode_fields[] = {
 	{ "VSMODE",	0x00008000,	15,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t ssd1286_compare_1_fields[] = {
+static const DebugRegField ssd1286_compare_1_fields[] = {
 	{ "CPG",	0x000000FC,	2,	NULL,	0 },
 	{ "CPR",	0x0000FC00,	10,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t ssd1286_compare_2_fields[] = {
+static const DebugRegField ssd1286_compare_2_fields[] = {
 	{ "CPB",	0x000000FC,	2,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t ssd1286_display_control_fields[] = {
+static const DebugRegField ssd1286_display_control_fields[] = {
 	{ "D",		0x00000003,	0,	NULL,	0 },
 	{ "CM",		0x00000008,	3,	NULL,	0 },
 	{ "DTE",	0x00000010,	4,	NULL,	0 },
@@ -8938,7 +9225,7 @@ static const pmb887x_io_field_t ssd1286_display_control_fields[] = {
 	{ "PT",		0x00001800,	11,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t ssd1286_frame_cycle_control_fields[] = {
+static const DebugRegField ssd1286_frame_cycle_control_fields[] = {
 	{ "RTN",	0x0000000F,	0,	NULL,	0 },
 	{ "SRTN",	0x00000010,	4,	NULL,	0 },
 	{ "SDIV",	0x00000020,	5,	NULL,	0 },
@@ -8948,7 +9235,7 @@ static const pmb887x_io_field_t ssd1286_frame_cycle_control_fields[] = {
 	{ "NO",		0x0000C000,	14,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t ssd1286_power_control_1_fields[] = {
+static const DebugRegField ssd1286_power_control_1_fields[] = {
 	{ "SLP",	0x00000001,	0,	NULL,	0 },
 	{ "AP",		0x0000000E,	1,	NULL,	0 },
 	{ "DC",		0x00000030,	4,	NULL,	0 },
@@ -8957,227 +9244,234 @@ static const pmb887x_io_field_t ssd1286_power_control_1_fields[] = {
 	{ "DCY",	0x00007000,	12,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t ssd1286_power_control_2_fields[] = {
+static const DebugRegField ssd1286_power_control_2_fields[] = {
 	{ "VRC",	0x00000007,	0,	NULL,	0 },
 	{ "PU",		0x00000018,	3,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t ssd1286_power_control_3_fields[] = {
+static const DebugRegField ssd1286_power_control_3_fields[] = {
 	{ "VRH",	0x0000000F,	0,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t ssd1286_power_control_4_fields[] = {
+static const DebugRegField ssd1286_power_control_4_fields[] = {
 	{ "VDV",	0x00001F00,	8,	NULL,	0 },
 	{ "VCOMG",	0x00002000,	13,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t ssd1286_horizontal_porch_fields[] = {
+static const DebugRegField ssd1286_horizontal_porch_fields[] = {
 	{ "HBP",	0x0000003F,	0,	NULL,	0 },
 	{ "XL",		0x0000FF00,	8,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t ssd1286_vertical_porch_fields[] = {
+static const DebugRegField ssd1286_vertical_porch_fields[] = {
 	{ "VBP",	0x0000007F,	0,	NULL,	0 },
 	{ "VFP",	0x00007F00,	8,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t ssd1286_power_control_5_fields[] = {
+static const DebugRegField ssd1286_power_control_5_fields[] = {
 	{ "VCM",	0x0000003F,	0,	NULL,	0 },
 	{ "NOTP",	0x00000080,	7,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t ssd1286_ram_address_fields[] = {
+static const DebugRegField ssd1286_ram_address_fields[] = {
 	{ "AD",	0x0000FFFF,	0,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t ssd1286_gram_data_fields[] = {
+static const DebugRegField ssd1286_gram_data_fields[] = {
 	{ "DATA",	0x0003FFFF,	0,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t ssd1286_ram_write_mask_1_fields[] = {
+static const DebugRegField ssd1286_ram_write_mask_1_fields[] = {
 	{ "WMG",	0x000000FC,	2,	NULL,	0 },
 	{ "WMR",	0x0000FC00,	10,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t ssd1286_ram_write_mask_2_fields[] = {
+static const DebugRegField ssd1286_ram_write_mask_2_fields[] = {
 	{ "WMB",	0x000000FC,	2,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t ssd1286_vcom_otp_1_fields[] = {
+static const DebugRegField ssd1286_vcom_otp_1_fields[] = {
 	{ "VALUE",	0x0000FFFF,	0,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t ssd1286_vcom_otp_2_fields[] = {
+static const DebugRegField ssd1286_vcom_otp_2_fields[] = {
 	{ "VALUE",	0x0000FFFF,	0,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t ssd1286_gamma_1_fields[] = {
+static const DebugRegField ssd1286_gamma_1_fields[] = {
 	{ "PKP0",	0x00000007,	0,	NULL,	0 },
 	{ "PKP1",	0x00000700,	8,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t ssd1286_gamma_2_fields[] = {
+static const DebugRegField ssd1286_gamma_2_fields[] = {
 	{ "PKP2",	0x00000007,	0,	NULL,	0 },
 	{ "PKP3",	0x00000700,	8,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t ssd1286_gamma_3_fields[] = {
+static const DebugRegField ssd1286_gamma_3_fields[] = {
 	{ "PKP4",	0x00000007,	0,	NULL,	0 },
 	{ "PKP5",	0x00000700,	8,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t ssd1286_gamma_4_fields[] = {
+static const DebugRegField ssd1286_gamma_4_fields[] = {
 	{ "PRP0",	0x00000007,	0,	NULL,	0 },
 	{ "PRP1",	0x00000700,	8,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t ssd1286_gamma_5_fields[] = {
+static const DebugRegField ssd1286_gamma_5_fields[] = {
 	{ "PKN0",	0x00000007,	0,	NULL,	0 },
 	{ "PKN1",	0x00000700,	8,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t ssd1286_gamma_6_fields[] = {
+static const DebugRegField ssd1286_gamma_6_fields[] = {
 	{ "PKN2",	0x00000007,	0,	NULL,	0 },
 	{ "PKN3",	0x00000700,	8,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t ssd1286_gamma_7_fields[] = {
+static const DebugRegField ssd1286_gamma_7_fields[] = {
 	{ "PKN4",	0x00000007,	0,	NULL,	0 },
 	{ "PKN5",	0x00000700,	8,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t ssd1286_gamma_8_fields[] = {
+static const DebugRegField ssd1286_gamma_8_fields[] = {
 	{ "PRN0",	0x00000007,	0,	NULL,	0 },
 	{ "PRN1",	0x00000700,	8,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t ssd1286_gamma_9_fields[] = {
+static const DebugRegField ssd1286_gamma_9_fields[] = {
 	{ "VRP_03_00",	0x0000000F,	0,	NULL,	0 },
 	{ "VRP_14_10",	0x00001F00,	8,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t ssd1286_gamma_10_fields[] = {
+static const DebugRegField ssd1286_gamma_10_fields[] = {
 	{ "VRN_03_00",	0x0000000F,	0,	NULL,	0 },
 	{ "VRN_14_10",	0x00001F00,	8,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t ssd1286_gate_scan_start_fields[] = {
+static const DebugRegField ssd1286_gate_scan_start_fields[] = {
 	{ "SCN",	0x000000FF,	0,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t ssd1286_vertical_scroll_fields[] = {
+static const DebugRegField ssd1286_vertical_scroll_fields[] = {
 	{ "VL1",	0x000000FF,	0,	NULL,	0 },
 	{ "VL2",	0x0000FF00,	8,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t ssd1286_first_display_drive_fields[] = {
+static const DebugRegField ssd1286_first_display_drive_fields[] = {
 	{ "SS1",	0x000000FF,	0,	NULL,	0 },
 	{ "SE1",	0x0000FF00,	8,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t ssd1286_second_display_drive_fields[] = {
+static const DebugRegField ssd1286_second_display_drive_fields[] = {
 	{ "SS2",	0x000000FF,	0,	NULL,	0 },
 	{ "SE2",	0x0000FF00,	8,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t ssd1286_horizontal_ram_address_fields[] = {
+static const DebugRegField ssd1286_horizontal_ram_address_fields[] = {
 	{ "HSA",	0x000000FF,	0,	NULL,	0 },
 	{ "HEA",	0x0000FF00,	8,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t ssd1286_vertical_ram_address_fields[] = {
+static const DebugRegField ssd1286_vertical_ram_address_fields[] = {
 	{ "VSA",	0x000000FF,	0,	NULL,	0 },
 	{ "VEA",	0x0000FF00,	8,	NULL,	0 },
 };
 
-static const pmb887x_io_reg_t ssd1286_regs[] = {
-	{ "OSCILLATION",			0x0,	ssd1286_oscillation_fields,				ARRAY_SIZE(ssd1286_oscillation_fields),				0 },
-	{ "DRIVER_OUTPUT_CONTROL",	0x1,	ssd1286_driver_output_control_fields,	ARRAY_SIZE(ssd1286_driver_output_control_fields),	0 },
-	{ "LCD_DRIVE_AC_CONTROL",	0x2,	ssd1286_lcd_drive_ac_control_fields,	ARRAY_SIZE(ssd1286_lcd_drive_ac_control_fields),	0 },
-	{ "ENTRY_MODE",				0x3,	ssd1286_entry_mode_fields,				ARRAY_SIZE(ssd1286_entry_mode_fields),				0 },
-	{ "COMPARE_1",				0x4,	ssd1286_compare_1_fields,				ARRAY_SIZE(ssd1286_compare_1_fields),				0 },
-	{ "COMPARE_2",				0x5,	ssd1286_compare_2_fields,				ARRAY_SIZE(ssd1286_compare_2_fields),				0 },
-	{ "DISPLAY_CONTROL",		0x7,	ssd1286_display_control_fields,			ARRAY_SIZE(ssd1286_display_control_fields),			0 },
-	{ "FRAME_CYCLE_CONTROL",	0xB,	ssd1286_frame_cycle_control_fields,		ARRAY_SIZE(ssd1286_frame_cycle_control_fields),		0 },
-	{ "POWER_CONTROL_1",		0x10,	ssd1286_power_control_1_fields,			ARRAY_SIZE(ssd1286_power_control_1_fields),			0 },
-	{ "POWER_CONTROL_2",		0x11,	ssd1286_power_control_2_fields,			ARRAY_SIZE(ssd1286_power_control_2_fields),			0 },
-	{ "POWER_CONTROL_3",		0x12,	ssd1286_power_control_3_fields,			ARRAY_SIZE(ssd1286_power_control_3_fields),			0 },
-	{ "POWER_CONTROL_4",		0x13,	ssd1286_power_control_4_fields,			ARRAY_SIZE(ssd1286_power_control_4_fields),			0 },
-	{ "HORIZONTAL_PORCH",		0x16,	ssd1286_horizontal_porch_fields,		ARRAY_SIZE(ssd1286_horizontal_porch_fields),		0 },
-	{ "VERTICAL_PORCH",			0x17,	ssd1286_vertical_porch_fields,			ARRAY_SIZE(ssd1286_vertical_porch_fields),			0 },
-	{ "POWER_CONTROL_5",		0x1E,	ssd1286_power_control_5_fields,			ARRAY_SIZE(ssd1286_power_control_5_fields),			0 },
-	{ "RAM_ADDRESS",			0x21,	ssd1286_ram_address_fields,				ARRAY_SIZE(ssd1286_ram_address_fields),				0 },
-	{ "GRAM_DATA",				0x22,	ssd1286_gram_data_fields,				ARRAY_SIZE(ssd1286_gram_data_fields),				0 },
-	{ "RAM_WRITE_MASK_1",		0x23,	ssd1286_ram_write_mask_1_fields,		ARRAY_SIZE(ssd1286_ram_write_mask_1_fields),		0 },
-	{ "RAM_WRITE_MASK_2",		0x24,	ssd1286_ram_write_mask_2_fields,		ARRAY_SIZE(ssd1286_ram_write_mask_2_fields),		0 },
-	{ "VCOM_OTP_1",				0x28,	ssd1286_vcom_otp_1_fields,				ARRAY_SIZE(ssd1286_vcom_otp_1_fields),				0 },
-	{ "VCOM_OTP_2",				0x29,	ssd1286_vcom_otp_2_fields,				ARRAY_SIZE(ssd1286_vcom_otp_2_fields),				0 },
-	{ "GAMMA_1",				0x30,	ssd1286_gamma_1_fields,					ARRAY_SIZE(ssd1286_gamma_1_fields),					0 },
-	{ "GAMMA_2",				0x31,	ssd1286_gamma_2_fields,					ARRAY_SIZE(ssd1286_gamma_2_fields),					0 },
-	{ "GAMMA_3",				0x32,	ssd1286_gamma_3_fields,					ARRAY_SIZE(ssd1286_gamma_3_fields),					0 },
-	{ "GAMMA_4",				0x33,	ssd1286_gamma_4_fields,					ARRAY_SIZE(ssd1286_gamma_4_fields),					0 },
-	{ "GAMMA_5",				0x34,	ssd1286_gamma_5_fields,					ARRAY_SIZE(ssd1286_gamma_5_fields),					0 },
-	{ "GAMMA_6",				0x35,	ssd1286_gamma_6_fields,					ARRAY_SIZE(ssd1286_gamma_6_fields),					0 },
-	{ "GAMMA_7",				0x36,	ssd1286_gamma_7_fields,					ARRAY_SIZE(ssd1286_gamma_7_fields),					0 },
-	{ "GAMMA_8",				0x37,	ssd1286_gamma_8_fields,					ARRAY_SIZE(ssd1286_gamma_8_fields),					0 },
-	{ "GAMMA_9",				0x3A,	ssd1286_gamma_9_fields,					ARRAY_SIZE(ssd1286_gamma_9_fields),					0 },
-	{ "GAMMA_10",				0x3B,	ssd1286_gamma_10_fields,				ARRAY_SIZE(ssd1286_gamma_10_fields),				0 },
-	{ "GATE_SCAN_START",		0x40,	ssd1286_gate_scan_start_fields,			ARRAY_SIZE(ssd1286_gate_scan_start_fields),			0 },
-	{ "VERTICAL_SCROLL",		0x41,	ssd1286_vertical_scroll_fields,			ARRAY_SIZE(ssd1286_vertical_scroll_fields),			0 },
-	{ "FIRST_DISPLAY_DRIVE",	0x42,	ssd1286_first_display_drive_fields,		ARRAY_SIZE(ssd1286_first_display_drive_fields),		0 },
-	{ "SECOND_DISPLAY_DRIVE",	0x43,	ssd1286_second_display_drive_fields,	ARRAY_SIZE(ssd1286_second_display_drive_fields),	0 },
-	{ "HORIZONTAL_RAM_ADDRESS",	0x44,	ssd1286_horizontal_ram_address_fields,	ARRAY_SIZE(ssd1286_horizontal_ram_address_fields),	0 },
-	{ "VERTICAL_RAM_ADDRESS",	0x45,	ssd1286_vertical_ram_address_fields,	ARRAY_SIZE(ssd1286_vertical_ram_address_fields),	0 },
+static const DebugReg ssd1286_regs[] = {
+	{ "OSCILLATION",			0x0,	ssd1286_oscillation_fields,				ARRAY_SIZE(ssd1286_oscillation_fields) },
+	{ "DRIVER_OUTPUT_CONTROL",	0x1,	ssd1286_driver_output_control_fields,	ARRAY_SIZE(ssd1286_driver_output_control_fields) },
+	{ "LCD_DRIVE_AC_CONTROL",	0x2,	ssd1286_lcd_drive_ac_control_fields,	ARRAY_SIZE(ssd1286_lcd_drive_ac_control_fields) },
+	{ "ENTRY_MODE",				0x3,	ssd1286_entry_mode_fields,				ARRAY_SIZE(ssd1286_entry_mode_fields) },
+	{ "COMPARE_1",				0x4,	ssd1286_compare_1_fields,				ARRAY_SIZE(ssd1286_compare_1_fields) },
+	{ "COMPARE_2",				0x5,	ssd1286_compare_2_fields,				ARRAY_SIZE(ssd1286_compare_2_fields) },
+	{ "DISPLAY_CONTROL",		0x7,	ssd1286_display_control_fields,			ARRAY_SIZE(ssd1286_display_control_fields) },
+	{ "FRAME_CYCLE_CONTROL",	0xB,	ssd1286_frame_cycle_control_fields,		ARRAY_SIZE(ssd1286_frame_cycle_control_fields) },
+	{ "POWER_CONTROL_1",		0x10,	ssd1286_power_control_1_fields,			ARRAY_SIZE(ssd1286_power_control_1_fields) },
+	{ "POWER_CONTROL_2",		0x11,	ssd1286_power_control_2_fields,			ARRAY_SIZE(ssd1286_power_control_2_fields) },
+	{ "POWER_CONTROL_3",		0x12,	ssd1286_power_control_3_fields,			ARRAY_SIZE(ssd1286_power_control_3_fields) },
+	{ "POWER_CONTROL_4",		0x13,	ssd1286_power_control_4_fields,			ARRAY_SIZE(ssd1286_power_control_4_fields) },
+	{ "HORIZONTAL_PORCH",		0x16,	ssd1286_horizontal_porch_fields,		ARRAY_SIZE(ssd1286_horizontal_porch_fields) },
+	{ "VERTICAL_PORCH",			0x17,	ssd1286_vertical_porch_fields,			ARRAY_SIZE(ssd1286_vertical_porch_fields) },
+	{ "POWER_CONTROL_5",		0x1E,	ssd1286_power_control_5_fields,			ARRAY_SIZE(ssd1286_power_control_5_fields) },
+	{ "RAM_ADDRESS",			0x21,	ssd1286_ram_address_fields,				ARRAY_SIZE(ssd1286_ram_address_fields) },
+	{ "GRAM_DATA",				0x22,	ssd1286_gram_data_fields,				ARRAY_SIZE(ssd1286_gram_data_fields) },
+	{ "RAM_WRITE_MASK_1",		0x23,	ssd1286_ram_write_mask_1_fields,		ARRAY_SIZE(ssd1286_ram_write_mask_1_fields) },
+	{ "RAM_WRITE_MASK_2",		0x24,	ssd1286_ram_write_mask_2_fields,		ARRAY_SIZE(ssd1286_ram_write_mask_2_fields) },
+	{ "VCOM_OTP_1",				0x28,	ssd1286_vcom_otp_1_fields,				ARRAY_SIZE(ssd1286_vcom_otp_1_fields) },
+	{ "VCOM_OTP_2",				0x29,	ssd1286_vcom_otp_2_fields,				ARRAY_SIZE(ssd1286_vcom_otp_2_fields) },
+	{ "GAMMA_1",				0x30,	ssd1286_gamma_1_fields,					ARRAY_SIZE(ssd1286_gamma_1_fields) },
+	{ "GAMMA_2",				0x31,	ssd1286_gamma_2_fields,					ARRAY_SIZE(ssd1286_gamma_2_fields) },
+	{ "GAMMA_3",				0x32,	ssd1286_gamma_3_fields,					ARRAY_SIZE(ssd1286_gamma_3_fields) },
+	{ "GAMMA_4",				0x33,	ssd1286_gamma_4_fields,					ARRAY_SIZE(ssd1286_gamma_4_fields) },
+	{ "GAMMA_5",				0x34,	ssd1286_gamma_5_fields,					ARRAY_SIZE(ssd1286_gamma_5_fields) },
+	{ "GAMMA_6",				0x35,	ssd1286_gamma_6_fields,					ARRAY_SIZE(ssd1286_gamma_6_fields) },
+	{ "GAMMA_7",				0x36,	ssd1286_gamma_7_fields,					ARRAY_SIZE(ssd1286_gamma_7_fields) },
+	{ "GAMMA_8",				0x37,	ssd1286_gamma_8_fields,					ARRAY_SIZE(ssd1286_gamma_8_fields) },
+	{ "GAMMA_9",				0x3A,	ssd1286_gamma_9_fields,					ARRAY_SIZE(ssd1286_gamma_9_fields) },
+	{ "GAMMA_10",				0x3B,	ssd1286_gamma_10_fields,				ARRAY_SIZE(ssd1286_gamma_10_fields) },
+	{ "GATE_SCAN_START",		0x40,	ssd1286_gate_scan_start_fields,			ARRAY_SIZE(ssd1286_gate_scan_start_fields) },
+	{ "VERTICAL_SCROLL",		0x41,	ssd1286_vertical_scroll_fields,			ARRAY_SIZE(ssd1286_vertical_scroll_fields) },
+	{ "FIRST_DISPLAY_DRIVE",	0x42,	ssd1286_first_display_drive_fields,		ARRAY_SIZE(ssd1286_first_display_drive_fields) },
+	{ "SECOND_DISPLAY_DRIVE",	0x43,	ssd1286_second_display_drive_fields,	ARRAY_SIZE(ssd1286_second_display_drive_fields) },
+	{ "HORIZONTAL_RAM_ADDRESS",	0x44,	ssd1286_horizontal_ram_address_fields,	ARRAY_SIZE(ssd1286_horizontal_ram_address_fields) },
+	{ "VERTICAL_RAM_ADDRESS",	0x45,	ssd1286_vertical_ram_address_fields,	ARRAY_SIZE(ssd1286_vertical_ram_address_fields) },
 };
 
-static const pmb887x_io_value_t tea5760uk_intreg_status_fields_blflag_values[] = {
+const DebugRegs pmb887x_ssd1286_regs = {
+	.regs = ssd1286_regs,
+	.count = ARRAY_SIZE(ssd1286_regs),
+	.reg_size = 1,
+	.addr_digits = 2,
+};
+
+static const DebugRegValue tea5760uk_intreg_status_fields_blflag_values[] = {
 	{ "BAND_LIMIT_NOT_REACHED",			0x00000000 },
 	{ "BAND_LIMIT_REACHED_OR_TIMEOUT",	0x00000001 },
 };
 
-static const pmb887x_io_value_t tea5760uk_intreg_status_fields_frrflag_values[] = {
+static const DebugRegValue tea5760uk_intreg_status_fields_frrflag_values[] = {
 	{ "TUNER_NOT_READY",	0x00000000 },
 	{ "TUNER_READY",		0x00000002 },
 };
 
-static const pmb887x_io_value_t tea5760uk_intreg_status_fields_levflag_values[] = {
+static const DebugRegValue tea5760uk_intreg_status_fields_levflag_values[] = {
 	{ "LEVEL_ABOVE_THRESHOLD",	0x00000000 },
 	{ "LEVEL_BELOW_THRESHOLD",	0x00000008 },
 };
 
-static const pmb887x_io_value_t tea5760uk_intreg_status_fields_ifflag_values[] = {
+static const DebugRegValue tea5760uk_intreg_status_fields_ifflag_values[] = {
 	{ "IF_COUNT_CORRECT",	0x00000000 },
 	{ "IF_COUNT_INCORRECT",	0x00000010 },
 };
 
-static const pmb887x_io_field_t tea5760uk_intreg_status_fields[] = {
+static const DebugRegField tea5760uk_intreg_status_fields[] = {
 	{ "BLFLAG",		0x00000001,	0,	tea5760uk_intreg_status_fields_blflag_values,	ARRAY_SIZE(tea5760uk_intreg_status_fields_blflag_values) },
 	{ "FRRFLAG",	0x00000002,	1,	tea5760uk_intreg_status_fields_frrflag_values,	ARRAY_SIZE(tea5760uk_intreg_status_fields_frrflag_values) },
 	{ "LEVFLAG",	0x00000008,	3,	tea5760uk_intreg_status_fields_levflag_values,	ARRAY_SIZE(tea5760uk_intreg_status_fields_levflag_values) },
 	{ "IFFLAG",		0x00000010,	4,	tea5760uk_intreg_status_fields_ifflag_values,	ARRAY_SIZE(tea5760uk_intreg_status_fields_ifflag_values) },
 };
 
-static const pmb887x_io_value_t tea5760uk_intreg_mask_fields_blmsk_values[] = {
+static const DebugRegValue tea5760uk_intreg_mask_fields_blmsk_values[] = {
 	{ "DISABLED",	0x00000000 },
 	{ "ENABLED",	0x00000001 },
 };
 
-static const pmb887x_io_value_t tea5760uk_intreg_mask_fields_frrmsk_values[] = {
+static const DebugRegValue tea5760uk_intreg_mask_fields_frrmsk_values[] = {
 	{ "DISABLED",	0x00000000 },
 	{ "ENABLED",	0x00000002 },
 };
 
-static const pmb887x_io_value_t tea5760uk_intreg_mask_fields_levmsk_values[] = {
+static const DebugRegValue tea5760uk_intreg_mask_fields_levmsk_values[] = {
 	{ "DISABLED",	0x00000000 },
 	{ "ENABLED",	0x00000008 },
 };
 
-static const pmb887x_io_value_t tea5760uk_intreg_mask_fields_ifmsk_values[] = {
+static const DebugRegValue tea5760uk_intreg_mask_fields_ifmsk_values[] = {
 	{ "DISABLED",	0x00000000 },
 	{ "ENABLED",	0x00000010 },
 };
 
-static const pmb887x_io_field_t tea5760uk_intreg_mask_fields[] = {
+static const DebugRegField tea5760uk_intreg_mask_fields[] = {
 	{ "BLMSK",			0x00000001,	0,	tea5760uk_intreg_mask_fields_blmsk_values,	ARRAY_SIZE(tea5760uk_intreg_mask_fields_blmsk_values) },
 	{ "FRRMSK",			0x00000002,	1,	tea5760uk_intreg_mask_fields_frrmsk_values,	ARRAY_SIZE(tea5760uk_intreg_mask_fields_frrmsk_values) },
 	{ "RDS_RESTRICTED",	0x00000004,	2,	NULL,										0 },
@@ -9185,62 +9479,62 @@ static const pmb887x_io_field_t tea5760uk_intreg_mask_fields[] = {
 	{ "IFMSK",			0x00000010,	4,	tea5760uk_intreg_mask_fields_ifmsk_values,	ARRAY_SIZE(tea5760uk_intreg_mask_fields_ifmsk_values) },
 };
 
-static const pmb887x_io_value_t tea5760uk_frqset_high_fields_sm_values[] = {
+static const DebugRegValue tea5760uk_frqset_high_fields_sm_values[] = {
 	{ "PRESET",	0x00000000 },
 	{ "SEARCH",	0x00000040 },
 };
 
-static const pmb887x_io_value_t tea5760uk_frqset_high_fields_sud_values[] = {
+static const DebugRegValue tea5760uk_frqset_high_fields_sud_values[] = {
 	{ "SEARCH_DOWN",	0x00000000 },
 	{ "SEARCH_UP",		0x00000080 },
 };
 
-static const pmb887x_io_field_t tea5760uk_frqset_high_fields[] = {
+static const DebugRegField tea5760uk_frqset_high_fields[] = {
 	{ "FR_13_08",	0x0000003F,	0,	NULL,										0 },
 	{ "SM",			0x00000040,	6,	tea5760uk_frqset_high_fields_sm_values,		ARRAY_SIZE(tea5760uk_frqset_high_fields_sm_values) },
 	{ "SUD",		0x00000080,	7,	tea5760uk_frqset_high_fields_sud_values,	ARRAY_SIZE(tea5760uk_frqset_high_fields_sud_values) },
 };
 
-static const pmb887x_io_field_t tea5760uk_frqset_low_fields[] = {
+static const DebugRegField tea5760uk_frqset_low_fields[] = {
 	{ "FR_07_00",	0x000000FF,	0,	NULL,	0 },
 };
 
-static const pmb887x_io_value_t tea5760uk_tnctrl_control_fields_snc_values[] = {
+static const DebugRegValue tea5760uk_tnctrl_control_fields_snc_values[] = {
 	{ "OFF",	0x00000000 },
 	{ "ON",		0x00000001 },
 };
 
-static const pmb887x_io_value_t tea5760uk_tnctrl_control_fields_smute_values[] = {
+static const DebugRegValue tea5760uk_tnctrl_control_fields_smute_values[] = {
 	{ "OFF",	0x00000000 },
 	{ "ON",		0x00000002 },
 };
 
-static const pmb887x_io_value_t tea5760uk_tnctrl_control_fields_afm_values[] = {
+static const DebugRegValue tea5760uk_tnctrl_control_fields_afm_values[] = {
 	{ "AUDIO_ACTIVE",	0x00000000 },
 	{ "AUDIO_MUTED",	0x00000004 },
 };
 
-static const pmb887x_io_value_t tea5760uk_tnctrl_control_fields_ifctc_values[] = {
+static const DebugRegValue tea5760uk_tnctrl_control_fields_ifctc_values[] = {
 	{ "COUNT_1_953_MS",		0x00000000 },
 	{ "COUNT_15_625_MS",	0x00000008 },
 };
 
-static const pmb887x_io_value_t tea5760uk_tnctrl_control_fields_swpm_values[] = {
+static const DebugRegValue tea5760uk_tnctrl_control_fields_swpm_values[] = {
 	{ "SWP_OUTPUT",		0x00000000 },
 	{ "FRRFLAG_OUTPUT",	0x00000010 },
 };
 
-static const pmb887x_io_value_t tea5760uk_tnctrl_control_fields_blim_values[] = {
+static const DebugRegValue tea5760uk_tnctrl_control_fields_blim_values[] = {
 	{ "US_EUROPE",	0x00000000 },
 	{ "JAPAN",		0x00000020 },
 };
 
-static const pmb887x_io_value_t tea5760uk_tnctrl_control_fields_pupd_values[] = {
+static const DebugRegValue tea5760uk_tnctrl_control_fields_pupd_values[] = {
 	{ "FM_OFF",	0x00000000 },
 	{ "FM_ON",	0x00000040 },
 };
 
-static const pmb887x_io_field_t tea5760uk_tnctrl_control_fields[] = {
+static const DebugRegField tea5760uk_tnctrl_control_fields[] = {
 	{ "SNC",	0x00000001,	0,	tea5760uk_tnctrl_control_fields_snc_values,		ARRAY_SIZE(tea5760uk_tnctrl_control_fields_snc_values) },
 	{ "SMUTE",	0x00000002,	1,	tea5760uk_tnctrl_control_fields_smute_values,	ARRAY_SIZE(tea5760uk_tnctrl_control_fields_smute_values) },
 	{ "AFM",	0x00000004,	2,	tea5760uk_tnctrl_control_fields_afm_values,		ARRAY_SIZE(tea5760uk_tnctrl_control_fields_afm_values) },
@@ -9250,44 +9544,44 @@ static const pmb887x_io_field_t tea5760uk_tnctrl_control_fields[] = {
 	{ "PUPD",	0x00000040,	6,	tea5760uk_tnctrl_control_fields_pupd_values,	ARRAY_SIZE(tea5760uk_tnctrl_control_fields_pupd_values) },
 };
 
-static const pmb887x_io_value_t tea5760uk_tnctrl_audio_fields_ahlsi_values[] = {
+static const DebugRegValue tea5760uk_tnctrl_audio_fields_ahlsi_values[] = {
 	{ "CONTINUOUS_SEARCH",			0x00000000 },
 	{ "STOP_ON_FAILED_IF_COUNT",	0x00000001 },
 };
 
-static const pmb887x_io_value_t tea5760uk_tnctrl_audio_fields_dtc_values[] = {
+static const DebugRegValue tea5760uk_tnctrl_audio_fields_dtc_values[] = {
 	{ "DEEMPHASIS_75_US",	0x00000000 },
 	{ "DEEMPHASIS_50_US",	0x00000002 },
 };
 
-static const pmb887x_io_value_t tea5760uk_tnctrl_audio_fields_swp_values[] = {
+static const DebugRegValue tea5760uk_tnctrl_audio_fields_swp_values[] = {
 	{ "LOW",	0x00000000 },
 	{ "HIGH",	0x00000004 },
 };
 
-static const pmb887x_io_value_t tea5760uk_tnctrl_audio_fields_mst_values[] = {
+static const DebugRegValue tea5760uk_tnctrl_audio_fields_mst_values[] = {
 	{ "STEREO",			0x00000000 },
 	{ "FORCED_MONO",	0x00000008 },
 };
 
-static const pmb887x_io_value_t tea5760uk_tnctrl_audio_fields_hlsi_values[] = {
+static const DebugRegValue tea5760uk_tnctrl_audio_fields_hlsi_values[] = {
 	{ "LOW_SIDE",	0x00000000 },
 	{ "HIGH_SIDE",	0x00000010 },
 };
 
-static const pmb887x_io_value_t tea5760uk_tnctrl_audio_fields_ssl_values[] = {
+static const DebugRegValue tea5760uk_tnctrl_audio_fields_ssl_values[] = {
 	{ "ADC3",	0x00000000 },
 	{ "ADC5",	0x00000020 },
 	{ "ADC7",	0x00000040 },
 	{ "ADC10",	0x00000060 },
 };
 
-static const pmb887x_io_value_t tea5760uk_tnctrl_audio_fields_mu_values[] = {
+static const DebugRegValue tea5760uk_tnctrl_audio_fields_mu_values[] = {
 	{ "NOT_MUTED",	0x00000000 },
 	{ "HARD_MUTED",	0x00000080 },
 };
 
-static const pmb887x_io_field_t tea5760uk_tnctrl_audio_fields[] = {
+static const DebugRegField tea5760uk_tnctrl_audio_fields[] = {
 	{ "AHLSI",	0x00000001,	0,	tea5760uk_tnctrl_audio_fields_ahlsi_values,	ARRAY_SIZE(tea5760uk_tnctrl_audio_fields_ahlsi_values) },
 	{ "DTC",	0x00000002,	1,	tea5760uk_tnctrl_audio_fields_dtc_values,	ARRAY_SIZE(tea5760uk_tnctrl_audio_fields_dtc_values) },
 	{ "SWP",	0x00000004,	2,	tea5760uk_tnctrl_audio_fields_swp_values,	ARRAY_SIZE(tea5760uk_tnctrl_audio_fields_swp_values) },
@@ -9297,66 +9591,66 @@ static const pmb887x_io_field_t tea5760uk_tnctrl_audio_fields[] = {
 	{ "MU",		0x00000080,	7,	tea5760uk_tnctrl_audio_fields_mu_values,	ARRAY_SIZE(tea5760uk_tnctrl_audio_fields_mu_values) },
 };
 
-static const pmb887x_io_field_t tea5760uk_frqchk_high_fields[] = {
+static const DebugRegField tea5760uk_frqchk_high_fields[] = {
 	{ "PLL_13_08",	0x0000003F,	0,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t tea5760uk_frqchk_low_fields[] = {
+static const DebugRegField tea5760uk_frqchk_low_fields[] = {
 	{ "PLL_07_00",	0x000000FF,	0,	NULL,	0 },
 };
 
-static const pmb887x_io_value_t tea5760uk_tunchk_if_fields_tunto_values[] = {
+static const DebugRegValue tea5760uk_tunchk_if_fields_tunto_values[] = {
 	{ "PLL_SETTLED",	0x00000000 },
 	{ "TUNING_TIMEOUT",	0x00000001 },
 };
 
-static const pmb887x_io_field_t tea5760uk_tunchk_if_fields[] = {
+static const DebugRegField tea5760uk_tunchk_if_fields[] = {
 	{ "TUNTO",	0x00000001,	0,	tea5760uk_tunchk_if_fields_tunto_values,	ARRAY_SIZE(tea5760uk_tunchk_if_fields_tunto_values) },
 	{ "IF_6_0",	0x000000FE,	1,	NULL,										0 },
 };
 
-static const pmb887x_io_value_t tea5760uk_tunchk_status_fields_stereo_values[] = {
+static const DebugRegValue tea5760uk_tunchk_status_fields_stereo_values[] = {
 	{ "MONO",	0x00000000 },
 	{ "STEREO",	0x00000004 },
 };
 
-static const pmb887x_io_value_t tea5760uk_tunchk_status_fields_ld_values[] = {
+static const DebugRegValue tea5760uk_tunchk_status_fields_ld_values[] = {
 	{ "PLL_NOT_LOCKED",	0x00000000 },
 	{ "PLL_LOCKED",		0x00000008 },
 };
 
-static const pmb887x_io_field_t tea5760uk_tunchk_status_fields[] = {
+static const DebugRegField tea5760uk_tunchk_status_fields[] = {
 	{ "STEREO",		0x00000004,	2,	tea5760uk_tunchk_status_fields_stereo_values,	ARRAY_SIZE(tea5760uk_tunchk_status_fields_stereo_values) },
 	{ "LD",			0x00000008,	3,	tea5760uk_tunchk_status_fields_ld_values,		ARRAY_SIZE(tea5760uk_tunchk_status_fields_ld_values) },
 	{ "LEV_3_0",	0x000000F0,	4,	NULL,											0 },
 };
 
-static const pmb887x_io_value_t tea5760uk_testreg_control_fields_intctrl_values[] = {
+static const DebugRegValue tea5760uk_testreg_control_fields_intctrl_values[] = {
 	{ "NO_INTERRUPT",		0x00000000 },
 	{ "GENERATE_INTERRUPT",	0x00000001 },
 };
 
-static const pmb887x_io_value_t tea5760uk_testreg_control_fields_rfagc_values[] = {
+static const DebugRegValue tea5760uk_testreg_control_fields_rfagc_values[] = {
 	{ "ON",		0x00000000 },
 	{ "OFF",	0x00000002 },
 };
 
-static const pmb887x_io_value_t tea5760uk_testreg_control_fields_tun_values[] = {
+static const DebugRegValue tea5760uk_testreg_control_fields_tun_values[] = {
 	{ "NO_PROGRAMMING_ERROR",	0x00000000 },
 	{ "PROGRAMMING_ERROR",		0x00000004 },
 };
 
-static const pmb887x_io_value_t tea5760uk_testreg_control_fields_rhm_values[] = {
+static const DebugRegValue tea5760uk_testreg_control_fields_rhm_values[] = {
 	{ "NOT_MUTED",	0x00000000 },
 	{ "HARD_MUTED",	0x00000040 },
 };
 
-static const pmb887x_io_value_t tea5760uk_testreg_control_fields_lhm_values[] = {
+static const DebugRegValue tea5760uk_testreg_control_fields_lhm_values[] = {
 	{ "NOT_MUTED",	0x00000000 },
 	{ "HARD_MUTED",	0x00000080 },
 };
 
-static const pmb887x_io_field_t tea5760uk_testreg_control_fields[] = {
+static const DebugRegField tea5760uk_testreg_control_fields[] = {
 	{ "INTCTRL",	0x00000001,	0,	tea5760uk_testreg_control_fields_intctrl_values,	ARRAY_SIZE(tea5760uk_testreg_control_fields_intctrl_values) },
 	{ "RFAGC",		0x00000002,	1,	tea5760uk_testreg_control_fields_rfagc_values,		ARRAY_SIZE(tea5760uk_testreg_control_fields_rfagc_values) },
 	{ "TUN",		0x00000004,	2,	tea5760uk_testreg_control_fields_tun_values,		ARRAY_SIZE(tea5760uk_testreg_control_fields_tun_values) },
@@ -9364,174 +9658,181 @@ static const pmb887x_io_field_t tea5760uk_testreg_control_fields[] = {
 	{ "LHM",		0x00000080,	7,	tea5760uk_testreg_control_fields_lhm_values,		ARRAY_SIZE(tea5760uk_testreg_control_fields_lhm_values) },
 };
 
-static const pmb887x_io_value_t tea5760uk_testreg_config_fields_tm_values[] = {
+static const DebugRegValue tea5760uk_testreg_config_fields_tm_values[] = {
 	{ "NORMAL",		0x00000000 },
 	{ "TEST_MODE",	0x00000010 },
 };
 
-static const pmb887x_io_value_t tea5760uk_testreg_config_fields_snclev_values[] = {
+static const DebugRegValue tea5760uk_testreg_config_fields_snclev_values[] = {
 	{ "LEVEL_30_UV",	0x00000000 },
 	{ "LEVEL_15_UV",	0x00000020 },
 };
 
-static const pmb887x_io_field_t tea5760uk_testreg_config_fields[] = {
+static const DebugRegField tea5760uk_testreg_config_fields[] = {
 	{ "TB_3_0",	0x0000000F,	0,	NULL,											0 },
 	{ "TM",		0x00000010,	4,	tea5760uk_testreg_config_fields_tm_values,		ARRAY_SIZE(tea5760uk_testreg_config_fields_tm_values) },
 	{ "SNCLEV",	0x00000020,	5,	tea5760uk_testreg_config_fields_snclev_values,	ARRAY_SIZE(tea5760uk_testreg_config_fields_snclev_values) },
 };
 
-static const pmb887x_io_field_t tea5760uk_manid_high_fields[] = {
+static const DebugRegField tea5760uk_manid_high_fields[] = {
 	{ "MAN_ID_10_07",	0x0000000F,	0,	NULL,	0 },
 	{ "VERSION",		0x000000F0,	4,	NULL,	0 },
 };
 
-static const pmb887x_io_value_t tea5760uk_manid_low_fields_idav_values[] = {
+static const DebugRegValue tea5760uk_manid_low_fields_idav_values[] = {
 	{ "NOT_AVAILABLE",	0x00000000 },
 	{ "AVAILABLE",		0x00000001 },
 };
 
-static const pmb887x_io_field_t tea5760uk_manid_low_fields[] = {
+static const DebugRegField tea5760uk_manid_low_fields[] = {
 	{ "IDAV",			0x00000001,	0,	tea5760uk_manid_low_fields_idav_values,	ARRAY_SIZE(tea5760uk_manid_low_fields_idav_values) },
 	{ "MAN_ID_06_00",	0x000000FE,	1,	NULL,									0 },
 };
 
-static const pmb887x_io_field_t tea5760uk_chipid_high_fields[] = {
+static const DebugRegField tea5760uk_chipid_high_fields[] = {
 	{ "CHIP_ID_15_08",	0x000000FF,	0,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t tea5760uk_chipid_low_fields[] = {
+static const DebugRegField tea5760uk_chipid_low_fields[] = {
 	{ "CHIP_ID_07_00",	0x000000FF,	0,	NULL,	0 },
 };
 
-static const pmb887x_io_reg_t tea5760uk_regs[] = {
-	{ "INTREG_STATUS",		0x0,	tea5760uk_intreg_status_fields,		ARRAY_SIZE(tea5760uk_intreg_status_fields),		0 },
-	{ "INTREG_MASK",		0x1,	tea5760uk_intreg_mask_fields,		ARRAY_SIZE(tea5760uk_intreg_mask_fields),		0 },
-	{ "FRQSET_HIGH",		0x2,	tea5760uk_frqset_high_fields,		ARRAY_SIZE(tea5760uk_frqset_high_fields),		0 },
-	{ "FRQSET_LOW",			0x3,	tea5760uk_frqset_low_fields,		ARRAY_SIZE(tea5760uk_frqset_low_fields),		0 },
-	{ "TNCTRL_CONTROL",		0x4,	tea5760uk_tnctrl_control_fields,	ARRAY_SIZE(tea5760uk_tnctrl_control_fields),	0 },
-	{ "TNCTRL_AUDIO",		0x5,	tea5760uk_tnctrl_audio_fields,		ARRAY_SIZE(tea5760uk_tnctrl_audio_fields),		0 },
-	{ "FRQCHK_HIGH",		0x6,	tea5760uk_frqchk_high_fields,		ARRAY_SIZE(tea5760uk_frqchk_high_fields),		0 },
-	{ "FRQCHK_LOW",			0x7,	tea5760uk_frqchk_low_fields,		ARRAY_SIZE(tea5760uk_frqchk_low_fields),		0 },
-	{ "TUNCHK_IF",			0x8,	tea5760uk_tunchk_if_fields,			ARRAY_SIZE(tea5760uk_tunchk_if_fields),			0 },
-	{ "TUNCHK_STATUS",		0x9,	tea5760uk_tunchk_status_fields,		ARRAY_SIZE(tea5760uk_tunchk_status_fields),		0 },
-	{ "TESTREG_CONTROL",	0xA,	tea5760uk_testreg_control_fields,	ARRAY_SIZE(tea5760uk_testreg_control_fields),	0 },
-	{ "TESTREG_CONFIG",		0xB,	tea5760uk_testreg_config_fields,	ARRAY_SIZE(tea5760uk_testreg_config_fields),	0 },
-	{ "MANID_HIGH",			0xC,	tea5760uk_manid_high_fields,		ARRAY_SIZE(tea5760uk_manid_high_fields),		0 },
-	{ "MANID_LOW",			0xD,	tea5760uk_manid_low_fields,			ARRAY_SIZE(tea5760uk_manid_low_fields),			0 },
-	{ "CHIPID_HIGH",		0xE,	tea5760uk_chipid_high_fields,		ARRAY_SIZE(tea5760uk_chipid_high_fields),		0 },
-	{ "CHIPID_LOW",			0xF,	tea5760uk_chipid_low_fields,		ARRAY_SIZE(tea5760uk_chipid_low_fields),		0 },
+static const DebugReg tea5760uk_regs[] = {
+	{ "INTREG_STATUS",		0x0,	tea5760uk_intreg_status_fields,		ARRAY_SIZE(tea5760uk_intreg_status_fields) },
+	{ "INTREG_MASK",		0x1,	tea5760uk_intreg_mask_fields,		ARRAY_SIZE(tea5760uk_intreg_mask_fields) },
+	{ "FRQSET_HIGH",		0x2,	tea5760uk_frqset_high_fields,		ARRAY_SIZE(tea5760uk_frqset_high_fields) },
+	{ "FRQSET_LOW",			0x3,	tea5760uk_frqset_low_fields,		ARRAY_SIZE(tea5760uk_frqset_low_fields) },
+	{ "TNCTRL_CONTROL",		0x4,	tea5760uk_tnctrl_control_fields,	ARRAY_SIZE(tea5760uk_tnctrl_control_fields) },
+	{ "TNCTRL_AUDIO",		0x5,	tea5760uk_tnctrl_audio_fields,		ARRAY_SIZE(tea5760uk_tnctrl_audio_fields) },
+	{ "FRQCHK_HIGH",		0x6,	tea5760uk_frqchk_high_fields,		ARRAY_SIZE(tea5760uk_frqchk_high_fields) },
+	{ "FRQCHK_LOW",			0x7,	tea5760uk_frqchk_low_fields,		ARRAY_SIZE(tea5760uk_frqchk_low_fields) },
+	{ "TUNCHK_IF",			0x8,	tea5760uk_tunchk_if_fields,			ARRAY_SIZE(tea5760uk_tunchk_if_fields) },
+	{ "TUNCHK_STATUS",		0x9,	tea5760uk_tunchk_status_fields,		ARRAY_SIZE(tea5760uk_tunchk_status_fields) },
+	{ "TESTREG_CONTROL",	0xA,	tea5760uk_testreg_control_fields,	ARRAY_SIZE(tea5760uk_testreg_control_fields) },
+	{ "TESTREG_CONFIG",		0xB,	tea5760uk_testreg_config_fields,	ARRAY_SIZE(tea5760uk_testreg_config_fields) },
+	{ "MANID_HIGH",			0xC,	tea5760uk_manid_high_fields,		ARRAY_SIZE(tea5760uk_manid_high_fields) },
+	{ "MANID_LOW",			0xD,	tea5760uk_manid_low_fields,			ARRAY_SIZE(tea5760uk_manid_low_fields) },
+	{ "CHIPID_HIGH",		0xE,	tea5760uk_chipid_high_fields,		ARRAY_SIZE(tea5760uk_chipid_high_fields) },
+	{ "CHIPID_LOW",			0xF,	tea5760uk_chipid_low_fields,		ARRAY_SIZE(tea5760uk_chipid_low_fields) },
 };
 
-static const pmb887x_io_value_t tea5761uk_intreg_status_fields_blflag_values[] = {
+const DebugRegs pmb887x_tea5760uk_regs = {
+	.regs = tea5760uk_regs,
+	.count = ARRAY_SIZE(tea5760uk_regs),
+	.reg_size = 1,
+	.addr_digits = 2,
+};
+
+static const DebugRegValue tea5761uk_intreg_status_fields_blflag_values[] = {
 	{ "BAND_LIMIT_NOT_REACHED",			0x00000000 },
 	{ "BAND_LIMIT_REACHED_OR_TIMEOUT",	0x00000001 },
 };
 
-static const pmb887x_io_value_t tea5761uk_intreg_status_fields_frrflag_values[] = {
+static const DebugRegValue tea5761uk_intreg_status_fields_frrflag_values[] = {
 	{ "TUNER_NOT_READY",	0x00000000 },
 	{ "TUNER_READY",		0x00000002 },
 };
 
-static const pmb887x_io_value_t tea5761uk_intreg_status_fields_levflag_values[] = {
+static const DebugRegValue tea5761uk_intreg_status_fields_levflag_values[] = {
 	{ "LEVEL_ABOVE_THRESHOLD",	0x00000000 },
 	{ "LEVEL_BELOW_THRESHOLD",	0x00000008 },
 };
 
-static const pmb887x_io_value_t tea5761uk_intreg_status_fields_ifflag_values[] = {
+static const DebugRegValue tea5761uk_intreg_status_fields_ifflag_values[] = {
 	{ "IF_COUNT_CORRECT",	0x00000000 },
 	{ "IF_COUNT_INCORRECT",	0x00000010 },
 };
 
-static const pmb887x_io_field_t tea5761uk_intreg_status_fields[] = {
+static const DebugRegField tea5761uk_intreg_status_fields[] = {
 	{ "BLFLAG",		0x00000001,	0,	tea5761uk_intreg_status_fields_blflag_values,	ARRAY_SIZE(tea5761uk_intreg_status_fields_blflag_values) },
 	{ "FRRFLAG",	0x00000002,	1,	tea5761uk_intreg_status_fields_frrflag_values,	ARRAY_SIZE(tea5761uk_intreg_status_fields_frrflag_values) },
 	{ "LEVFLAG",	0x00000008,	3,	tea5761uk_intreg_status_fields_levflag_values,	ARRAY_SIZE(tea5761uk_intreg_status_fields_levflag_values) },
 	{ "IFFLAG",		0x00000010,	4,	tea5761uk_intreg_status_fields_ifflag_values,	ARRAY_SIZE(tea5761uk_intreg_status_fields_ifflag_values) },
 };
 
-static const pmb887x_io_value_t tea5761uk_intreg_mask_fields_blmsk_values[] = {
+static const DebugRegValue tea5761uk_intreg_mask_fields_blmsk_values[] = {
 	{ "DISABLED",	0x00000000 },
 	{ "ENABLED",	0x00000001 },
 };
 
-static const pmb887x_io_value_t tea5761uk_intreg_mask_fields_frrmsk_values[] = {
+static const DebugRegValue tea5761uk_intreg_mask_fields_frrmsk_values[] = {
 	{ "DISABLED",	0x00000000 },
 	{ "ENABLED",	0x00000002 },
 };
 
-static const pmb887x_io_value_t tea5761uk_intreg_mask_fields_levmsk_values[] = {
+static const DebugRegValue tea5761uk_intreg_mask_fields_levmsk_values[] = {
 	{ "DISABLED",	0x00000000 },
 	{ "ENABLED",	0x00000008 },
 };
 
-static const pmb887x_io_value_t tea5761uk_intreg_mask_fields_ifmsk_values[] = {
+static const DebugRegValue tea5761uk_intreg_mask_fields_ifmsk_values[] = {
 	{ "DISABLED",	0x00000000 },
 	{ "ENABLED",	0x00000010 },
 };
 
-static const pmb887x_io_field_t tea5761uk_intreg_mask_fields[] = {
+static const DebugRegField tea5761uk_intreg_mask_fields[] = {
 	{ "BLMSK",	0x00000001,	0,	tea5761uk_intreg_mask_fields_blmsk_values,	ARRAY_SIZE(tea5761uk_intreg_mask_fields_blmsk_values) },
 	{ "FRRMSK",	0x00000002,	1,	tea5761uk_intreg_mask_fields_frrmsk_values,	ARRAY_SIZE(tea5761uk_intreg_mask_fields_frrmsk_values) },
 	{ "LEVMSK",	0x00000008,	3,	tea5761uk_intreg_mask_fields_levmsk_values,	ARRAY_SIZE(tea5761uk_intreg_mask_fields_levmsk_values) },
 	{ "IFMSK",	0x00000010,	4,	tea5761uk_intreg_mask_fields_ifmsk_values,	ARRAY_SIZE(tea5761uk_intreg_mask_fields_ifmsk_values) },
 };
 
-static const pmb887x_io_value_t tea5761uk_frqset_high_fields_sm_values[] = {
+static const DebugRegValue tea5761uk_frqset_high_fields_sm_values[] = {
 	{ "PRESET",	0x00000000 },
 	{ "SEARCH",	0x00000040 },
 };
 
-static const pmb887x_io_value_t tea5761uk_frqset_high_fields_sud_values[] = {
+static const DebugRegValue tea5761uk_frqset_high_fields_sud_values[] = {
 	{ "SEARCH_DOWN",	0x00000000 },
 	{ "SEARCH_UP",		0x00000080 },
 };
 
-static const pmb887x_io_field_t tea5761uk_frqset_high_fields[] = {
+static const DebugRegField tea5761uk_frqset_high_fields[] = {
 	{ "FR_13_08",	0x0000003F,	0,	NULL,										0 },
 	{ "SM",			0x00000040,	6,	tea5761uk_frqset_high_fields_sm_values,		ARRAY_SIZE(tea5761uk_frqset_high_fields_sm_values) },
 	{ "SUD",		0x00000080,	7,	tea5761uk_frqset_high_fields_sud_values,	ARRAY_SIZE(tea5761uk_frqset_high_fields_sud_values) },
 };
 
-static const pmb887x_io_field_t tea5761uk_frqset_low_fields[] = {
+static const DebugRegField tea5761uk_frqset_low_fields[] = {
 	{ "FR_07_00",	0x000000FF,	0,	NULL,	0 },
 };
 
-static const pmb887x_io_value_t tea5761uk_tnctrl_control_fields_snc_values[] = {
+static const DebugRegValue tea5761uk_tnctrl_control_fields_snc_values[] = {
 	{ "OFF",	0x00000000 },
 	{ "ON",		0x00000001 },
 };
 
-static const pmb887x_io_value_t tea5761uk_tnctrl_control_fields_smute_values[] = {
+static const DebugRegValue tea5761uk_tnctrl_control_fields_smute_values[] = {
 	{ "OFF",	0x00000000 },
 	{ "ON",		0x00000002 },
 };
 
-static const pmb887x_io_value_t tea5761uk_tnctrl_control_fields_afm_values[] = {
+static const DebugRegValue tea5761uk_tnctrl_control_fields_afm_values[] = {
 	{ "AUDIO_ACTIVE",	0x00000000 },
 	{ "AUDIO_MUTED",	0x00000004 },
 };
 
-static const pmb887x_io_value_t tea5761uk_tnctrl_control_fields_ifctc_values[] = {
+static const DebugRegValue tea5761uk_tnctrl_control_fields_ifctc_values[] = {
 	{ "COUNT_1_953_MS",		0x00000000 },
 	{ "COUNT_15_625_MS",	0x00000008 },
 };
 
-static const pmb887x_io_value_t tea5761uk_tnctrl_control_fields_swpm_values[] = {
+static const DebugRegValue tea5761uk_tnctrl_control_fields_swpm_values[] = {
 	{ "SWP_OUTPUT",		0x00000000 },
 	{ "FRRFLAG_OUTPUT",	0x00000010 },
 };
 
-static const pmb887x_io_value_t tea5761uk_tnctrl_control_fields_blim_values[] = {
+static const DebugRegValue tea5761uk_tnctrl_control_fields_blim_values[] = {
 	{ "US_EUROPE",	0x00000000 },
 	{ "JAPAN",		0x00000020 },
 };
 
-static const pmb887x_io_value_t tea5761uk_tnctrl_control_fields_pupd_values[] = {
+static const DebugRegValue tea5761uk_tnctrl_control_fields_pupd_values[] = {
 	{ "FM_OFF",	0x00000000 },
 	{ "FM_ON",	0x00000040 },
 };
 
-static const pmb887x_io_field_t tea5761uk_tnctrl_control_fields[] = {
+static const DebugRegField tea5761uk_tnctrl_control_fields[] = {
 	{ "SNC",	0x00000001,	0,	tea5761uk_tnctrl_control_fields_snc_values,		ARRAY_SIZE(tea5761uk_tnctrl_control_fields_snc_values) },
 	{ "SMUTE",	0x00000002,	1,	tea5761uk_tnctrl_control_fields_smute_values,	ARRAY_SIZE(tea5761uk_tnctrl_control_fields_smute_values) },
 	{ "AFM",	0x00000004,	2,	tea5761uk_tnctrl_control_fields_afm_values,		ARRAY_SIZE(tea5761uk_tnctrl_control_fields_afm_values) },
@@ -9541,44 +9842,44 @@ static const pmb887x_io_field_t tea5761uk_tnctrl_control_fields[] = {
 	{ "PUPD",	0x00000040,	6,	tea5761uk_tnctrl_control_fields_pupd_values,	ARRAY_SIZE(tea5761uk_tnctrl_control_fields_pupd_values) },
 };
 
-static const pmb887x_io_value_t tea5761uk_tnctrl_audio_fields_ahlsi_values[] = {
+static const DebugRegValue tea5761uk_tnctrl_audio_fields_ahlsi_values[] = {
 	{ "CONTINUOUS_SEARCH",			0x00000000 },
 	{ "STOP_ON_FAILED_IF_COUNT",	0x00000001 },
 };
 
-static const pmb887x_io_value_t tea5761uk_tnctrl_audio_fields_dtc_values[] = {
+static const DebugRegValue tea5761uk_tnctrl_audio_fields_dtc_values[] = {
 	{ "DEEMPHASIS_75_US",	0x00000000 },
 	{ "DEEMPHASIS_50_US",	0x00000002 },
 };
 
-static const pmb887x_io_value_t tea5761uk_tnctrl_audio_fields_swp_values[] = {
+static const DebugRegValue tea5761uk_tnctrl_audio_fields_swp_values[] = {
 	{ "LOW",	0x00000000 },
 	{ "HIGH",	0x00000004 },
 };
 
-static const pmb887x_io_value_t tea5761uk_tnctrl_audio_fields_mst_values[] = {
+static const DebugRegValue tea5761uk_tnctrl_audio_fields_mst_values[] = {
 	{ "STEREO",			0x00000000 },
 	{ "FORCED_MONO",	0x00000008 },
 };
 
-static const pmb887x_io_value_t tea5761uk_tnctrl_audio_fields_hlsi_values[] = {
+static const DebugRegValue tea5761uk_tnctrl_audio_fields_hlsi_values[] = {
 	{ "LOW_SIDE",	0x00000000 },
 	{ "HIGH_SIDE",	0x00000010 },
 };
 
-static const pmb887x_io_value_t tea5761uk_tnctrl_audio_fields_ssl_values[] = {
+static const DebugRegValue tea5761uk_tnctrl_audio_fields_ssl_values[] = {
 	{ "ADC3",	0x00000000 },
 	{ "ADC5",	0x00000020 },
 	{ "ADC7",	0x00000040 },
 	{ "ADC10",	0x00000060 },
 };
 
-static const pmb887x_io_value_t tea5761uk_tnctrl_audio_fields_mu_values[] = {
+static const DebugRegValue tea5761uk_tnctrl_audio_fields_mu_values[] = {
 	{ "NOT_MUTED",	0x00000000 },
 	{ "HARD_MUTED",	0x00000080 },
 };
 
-static const pmb887x_io_field_t tea5761uk_tnctrl_audio_fields[] = {
+static const DebugRegField tea5761uk_tnctrl_audio_fields[] = {
 	{ "AHLSI",	0x00000001,	0,	tea5761uk_tnctrl_audio_fields_ahlsi_values,	ARRAY_SIZE(tea5761uk_tnctrl_audio_fields_ahlsi_values) },
 	{ "DTC",	0x00000002,	1,	tea5761uk_tnctrl_audio_fields_dtc_values,	ARRAY_SIZE(tea5761uk_tnctrl_audio_fields_dtc_values) },
 	{ "SWP",	0x00000004,	2,	tea5761uk_tnctrl_audio_fields_swp_values,	ARRAY_SIZE(tea5761uk_tnctrl_audio_fields_swp_values) },
@@ -9588,76 +9889,76 @@ static const pmb887x_io_field_t tea5761uk_tnctrl_audio_fields[] = {
 	{ "MU",		0x00000080,	7,	tea5761uk_tnctrl_audio_fields_mu_values,	ARRAY_SIZE(tea5761uk_tnctrl_audio_fields_mu_values) },
 };
 
-static const pmb887x_io_field_t tea5761uk_frqchk_high_fields[] = {
+static const DebugRegField tea5761uk_frqchk_high_fields[] = {
 	{ "PLL_13_08",	0x0000003F,	0,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t tea5761uk_frqchk_low_fields[] = {
+static const DebugRegField tea5761uk_frqchk_low_fields[] = {
 	{ "PLL_07_00",	0x000000FF,	0,	NULL,	0 },
 };
 
-static const pmb887x_io_value_t tea5761uk_tunchk_if_fields_tunto_values[] = {
+static const DebugRegValue tea5761uk_tunchk_if_fields_tunto_values[] = {
 	{ "PLL_SETTLED",	0x00000000 },
 	{ "TUNING_TIMEOUT",	0x00000001 },
 };
 
-static const pmb887x_io_field_t tea5761uk_tunchk_if_fields[] = {
+static const DebugRegField tea5761uk_tunchk_if_fields[] = {
 	{ "TUNTO",	0x00000001,	0,	tea5761uk_tunchk_if_fields_tunto_values,	ARRAY_SIZE(tea5761uk_tunchk_if_fields_tunto_values) },
 	{ "IF_6_0",	0x000000FE,	1,	NULL,										0 },
 };
 
-static const pmb887x_io_value_t tea5761uk_tunchk_status_fields_stereo_values[] = {
+static const DebugRegValue tea5761uk_tunchk_status_fields_stereo_values[] = {
 	{ "NO_PILOT",		0x00000000 },
 	{ "PILOT_DETECTED",	0x00000004 },
 };
 
-static const pmb887x_io_value_t tea5761uk_tunchk_status_fields_ld_values[] = {
+static const DebugRegValue tea5761uk_tunchk_status_fields_ld_values[] = {
 	{ "PLL_NOT_LOCKED",	0x00000000 },
 	{ "PLL_LOCKED",		0x00000008 },
 };
 
-static const pmb887x_io_field_t tea5761uk_tunchk_status_fields[] = {
+static const DebugRegField tea5761uk_tunchk_status_fields[] = {
 	{ "STEREO",		0x00000004,	2,	tea5761uk_tunchk_status_fields_stereo_values,	ARRAY_SIZE(tea5761uk_tunchk_status_fields_stereo_values) },
 	{ "LD",			0x00000008,	3,	tea5761uk_tunchk_status_fields_ld_values,		ARRAY_SIZE(tea5761uk_tunchk_status_fields_ld_values) },
 	{ "LEV_3_0",	0x000000F0,	4,	NULL,											0 },
 };
 
-static const pmb887x_io_value_t tea5761uk_testreg_control_fields_intctrl_values[] = {
+static const DebugRegValue tea5761uk_testreg_control_fields_intctrl_values[] = {
 	{ "DISABLED",	0x00000000 },
 	{ "ENABLED",	0x00000001 },
 };
 
-static const pmb887x_io_value_t tea5761uk_testreg_control_fields_rfagc_values[] = {
+static const DebugRegValue tea5761uk_testreg_control_fields_rfagc_values[] = {
 	{ "ON",		0x00000000 },
 	{ "OFF",	0x00000002 },
 };
 
-static const pmb887x_io_value_t tea5761uk_testreg_control_fields_ldx_values[] = {
+static const DebugRegValue tea5761uk_testreg_control_fields_ldx_values[] = {
 	{ "NORMAL_GAIN",		0x00000000 },
 	{ "REDUCED_GAIN_6_DB",	0x00000004 },
 };
 
-static const pmb887x_io_value_t tea5761uk_testreg_control_fields_trigfr_values[] = {
+static const DebugRegValue tea5761uk_testreg_control_fields_trigfr_values[] = {
 	{ "XTAL",	0x00000000 },
 	{ "FREQIN",	0x00000008 },
 };
 
-static const pmb887x_io_value_t tea5761uk_testreg_control_fields_lhsw_values[] = {
+static const DebugRegValue tea5761uk_testreg_control_fields_lhsw_values[] = {
 	{ "SMALL",	0x00000000 },
 	{ "LARGE",	0x00000010 },
 };
 
-static const pmb887x_io_value_t tea5761uk_testreg_control_fields_rhm_values[] = {
+static const DebugRegValue tea5761uk_testreg_control_fields_rhm_values[] = {
 	{ "NOT_MUTED",	0x00000000 },
 	{ "HARD_MUTED",	0x00000040 },
 };
 
-static const pmb887x_io_value_t tea5761uk_testreg_control_fields_lhm_values[] = {
+static const DebugRegValue tea5761uk_testreg_control_fields_lhm_values[] = {
 	{ "NOT_MUTED",	0x00000000 },
 	{ "HARD_MUTED",	0x00000080 },
 };
 
-static const pmb887x_io_field_t tea5761uk_testreg_control_fields[] = {
+static const DebugRegField tea5761uk_testreg_control_fields[] = {
 	{ "INTCTRL",	0x00000001,	0,	tea5761uk_testreg_control_fields_intctrl_values,	ARRAY_SIZE(tea5761uk_testreg_control_fields_intctrl_values) },
 	{ "RFAGC",		0x00000002,	1,	tea5761uk_testreg_control_fields_rfagc_values,		ARRAY_SIZE(tea5761uk_testreg_control_fields_rfagc_values) },
 	{ "LDX",		0x00000004,	2,	tea5761uk_testreg_control_fields_ldx_values,		ARRAY_SIZE(tea5761uk_testreg_control_fields_ldx_values) },
@@ -9667,75 +9968,82 @@ static const pmb887x_io_field_t tea5761uk_testreg_control_fields[] = {
 	{ "LHM",		0x00000080,	7,	tea5761uk_testreg_control_fields_lhm_values,		ARRAY_SIZE(tea5761uk_testreg_control_fields_lhm_values) },
 };
 
-static const pmb887x_io_value_t tea5761uk_testreg_config_fields_tm_values[] = {
+static const DebugRegValue tea5761uk_testreg_config_fields_tm_values[] = {
 	{ "NORMAL",		0x00000000 },
 	{ "TEST_MODE",	0x00000010 },
 };
 
-static const pmb887x_io_value_t tea5761uk_testreg_config_fields_dett_values[] = {
+static const DebugRegValue tea5761uk_testreg_config_fields_dett_values[] = {
 	{ "SLOW_8_MS",	0x00000000 },
 	{ "FAST_4_MS",	0x00000080 },
 };
 
-static const pmb887x_io_field_t tea5761uk_testreg_config_fields[] = {
+static const DebugRegField tea5761uk_testreg_config_fields[] = {
 	{ "TB_3_0",	0x0000000F,	0,	NULL,											0 },
 	{ "TM",		0x00000010,	4,	tea5761uk_testreg_config_fields_tm_values,		ARRAY_SIZE(tea5761uk_testreg_config_fields_tm_values) },
 	{ "DETT",	0x00000080,	7,	tea5761uk_testreg_config_fields_dett_values,	ARRAY_SIZE(tea5761uk_testreg_config_fields_dett_values) },
 };
 
-static const pmb887x_io_field_t tea5761uk_manid_high_fields[] = {
+static const DebugRegField tea5761uk_manid_high_fields[] = {
 	{ "MAN_ID_10_07",	0x0000000F,	0,	NULL,	0 },
 	{ "VERSION",		0x000000F0,	4,	NULL,	0 },
 };
 
-static const pmb887x_io_value_t tea5761uk_manid_low_fields_idav_values[] = {
+static const DebugRegValue tea5761uk_manid_low_fields_idav_values[] = {
 	{ "NOT_AVAILABLE",	0x00000000 },
 	{ "AVAILABLE",		0x00000001 },
 };
 
-static const pmb887x_io_field_t tea5761uk_manid_low_fields[] = {
+static const DebugRegField tea5761uk_manid_low_fields[] = {
 	{ "IDAV",			0x00000001,	0,	tea5761uk_manid_low_fields_idav_values,	ARRAY_SIZE(tea5761uk_manid_low_fields_idav_values) },
 	{ "MAN_ID_06_00",	0x000000FE,	1,	NULL,									0 },
 };
 
-static const pmb887x_io_field_t tea5761uk_chipid_high_fields[] = {
+static const DebugRegField tea5761uk_chipid_high_fields[] = {
 	{ "CHIP_ID_15_08",	0x000000FF,	0,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t tea5761uk_chipid_low_fields[] = {
+static const DebugRegField tea5761uk_chipid_low_fields[] = {
 	{ "CHIP_ID_07_00",	0x000000FF,	0,	NULL,	0 },
 };
 
-static const pmb887x_io_reg_t tea5761uk_regs[] = {
-	{ "INTREG_STATUS",		0x0,	tea5761uk_intreg_status_fields,		ARRAY_SIZE(tea5761uk_intreg_status_fields),		0 },
-	{ "INTREG_MASK",		0x1,	tea5761uk_intreg_mask_fields,		ARRAY_SIZE(tea5761uk_intreg_mask_fields),		0 },
-	{ "FRQSET_HIGH",		0x2,	tea5761uk_frqset_high_fields,		ARRAY_SIZE(tea5761uk_frqset_high_fields),		0 },
-	{ "FRQSET_LOW",			0x3,	tea5761uk_frqset_low_fields,		ARRAY_SIZE(tea5761uk_frqset_low_fields),		0 },
-	{ "TNCTRL_CONTROL",		0x4,	tea5761uk_tnctrl_control_fields,	ARRAY_SIZE(tea5761uk_tnctrl_control_fields),	0 },
-	{ "TNCTRL_AUDIO",		0x5,	tea5761uk_tnctrl_audio_fields,		ARRAY_SIZE(tea5761uk_tnctrl_audio_fields),		0 },
-	{ "FRQCHK_HIGH",		0x6,	tea5761uk_frqchk_high_fields,		ARRAY_SIZE(tea5761uk_frqchk_high_fields),		0 },
-	{ "FRQCHK_LOW",			0x7,	tea5761uk_frqchk_low_fields,		ARRAY_SIZE(tea5761uk_frqchk_low_fields),		0 },
-	{ "TUNCHK_IF",			0x8,	tea5761uk_tunchk_if_fields,			ARRAY_SIZE(tea5761uk_tunchk_if_fields),			0 },
-	{ "TUNCHK_STATUS",		0x9,	tea5761uk_tunchk_status_fields,		ARRAY_SIZE(tea5761uk_tunchk_status_fields),		0 },
-	{ "TESTREG_CONTROL",	0xA,	tea5761uk_testreg_control_fields,	ARRAY_SIZE(tea5761uk_testreg_control_fields),	0 },
-	{ "TESTREG_CONFIG",		0xB,	tea5761uk_testreg_config_fields,	ARRAY_SIZE(tea5761uk_testreg_config_fields),	0 },
-	{ "MANID_HIGH",			0xC,	tea5761uk_manid_high_fields,		ARRAY_SIZE(tea5761uk_manid_high_fields),		0 },
-	{ "MANID_LOW",			0xD,	tea5761uk_manid_low_fields,			ARRAY_SIZE(tea5761uk_manid_low_fields),			0 },
-	{ "CHIPID_HIGH",		0xE,	tea5761uk_chipid_high_fields,		ARRAY_SIZE(tea5761uk_chipid_high_fields),		0 },
-	{ "CHIPID_LOW",			0xF,	tea5761uk_chipid_low_fields,		ARRAY_SIZE(tea5761uk_chipid_low_fields),		0 },
+static const DebugReg tea5761uk_regs[] = {
+	{ "INTREG_STATUS",		0x0,	tea5761uk_intreg_status_fields,		ARRAY_SIZE(tea5761uk_intreg_status_fields) },
+	{ "INTREG_MASK",		0x1,	tea5761uk_intreg_mask_fields,		ARRAY_SIZE(tea5761uk_intreg_mask_fields) },
+	{ "FRQSET_HIGH",		0x2,	tea5761uk_frqset_high_fields,		ARRAY_SIZE(tea5761uk_frqset_high_fields) },
+	{ "FRQSET_LOW",			0x3,	tea5761uk_frqset_low_fields,		ARRAY_SIZE(tea5761uk_frqset_low_fields) },
+	{ "TNCTRL_CONTROL",		0x4,	tea5761uk_tnctrl_control_fields,	ARRAY_SIZE(tea5761uk_tnctrl_control_fields) },
+	{ "TNCTRL_AUDIO",		0x5,	tea5761uk_tnctrl_audio_fields,		ARRAY_SIZE(tea5761uk_tnctrl_audio_fields) },
+	{ "FRQCHK_HIGH",		0x6,	tea5761uk_frqchk_high_fields,		ARRAY_SIZE(tea5761uk_frqchk_high_fields) },
+	{ "FRQCHK_LOW",			0x7,	tea5761uk_frqchk_low_fields,		ARRAY_SIZE(tea5761uk_frqchk_low_fields) },
+	{ "TUNCHK_IF",			0x8,	tea5761uk_tunchk_if_fields,			ARRAY_SIZE(tea5761uk_tunchk_if_fields) },
+	{ "TUNCHK_STATUS",		0x9,	tea5761uk_tunchk_status_fields,		ARRAY_SIZE(tea5761uk_tunchk_status_fields) },
+	{ "TESTREG_CONTROL",	0xA,	tea5761uk_testreg_control_fields,	ARRAY_SIZE(tea5761uk_testreg_control_fields) },
+	{ "TESTREG_CONFIG",		0xB,	tea5761uk_testreg_config_fields,	ARRAY_SIZE(tea5761uk_testreg_config_fields) },
+	{ "MANID_HIGH",			0xC,	tea5761uk_manid_high_fields,		ARRAY_SIZE(tea5761uk_manid_high_fields) },
+	{ "MANID_LOW",			0xD,	tea5761uk_manid_low_fields,			ARRAY_SIZE(tea5761uk_manid_low_fields) },
+	{ "CHIPID_HIGH",		0xE,	tea5761uk_chipid_high_fields,		ARRAY_SIZE(tea5761uk_chipid_high_fields) },
+	{ "CHIPID_LOW",			0xF,	tea5761uk_chipid_low_fields,		ARRAY_SIZE(tea5761uk_chipid_low_fields) },
 };
 
-static const pmb887x_io_field_t dsp_afe_intptr_fields[] = {
+const DebugRegs pmb887x_tea5761uk_regs = {
+	.regs = tea5761uk_regs,
+	.count = ARRAY_SIZE(tea5761uk_regs),
+	.reg_size = 1,
+	.addr_digits = 2,
+};
+
+static const DebugRegField dsp_afe_intptr_fields[] = {
 	{ "RXINTPTR",	0x0000003F,	0,	NULL,	0 },
 	{ "TXINTPTR",	0x00003F00,	8,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t dsp_afe_rwaddr_fields[] = {
+static const DebugRegField dsp_afe_rwaddr_fields[] = {
 	{ "RDADDR",	0x0000003F,	0,	NULL,	0 },
 	{ "WRADDR",	0x00003F00,	8,	NULL,	0 },
 };
 
-static const pmb887x_io_value_t dsp_afe_bcon_fields_rxrate_values[] = {
+static const DebugRegValue dsp_afe_bcon_fields_rxrate_values[] = {
 	{ "KHZ_8",		0x00000000 },
 	{ "KHZ_16",		0x00000004 },
 	{ "KHZ_31_746",	0x00000008 },
@@ -9743,12 +10051,12 @@ static const pmb887x_io_value_t dsp_afe_bcon_fields_rxrate_values[] = {
 	{ "KHZ_47_619",	0x00000010 },
 };
 
-static const pmb887x_io_value_t dsp_afe_bcon_fields_txrate_values[] = {
+static const DebugRegValue dsp_afe_bcon_fields_txrate_values[] = {
 	{ "KHZ_8",	0x00000000 },
 	{ "KHZ_16",	0x00000040 },
 };
 
-static const pmb887x_io_field_t dsp_afe_bcon_fields[] = {
+static const DebugRegField dsp_afe_bcon_fields[] = {
 	{ "MODE",		0x00000001,	0,	NULL,								0 },
 	{ "RXSTART",	0x00000002,	1,	NULL,								0 },
 	{ "RXRATE",		0x0000001C,	2,	dsp_afe_bcon_fields_rxrate_values,	ARRAY_SIZE(dsp_afe_bcon_fields_rxrate_values) },
@@ -9756,7 +10064,7 @@ static const pmb887x_io_field_t dsp_afe_bcon_fields[] = {
 	{ "TXRATE",		0x00000040,	6,	dsp_afe_bcon_fields_txrate_values,	ARRAY_SIZE(dsp_afe_bcon_fields_txrate_values) },
 };
 
-static const pmb887x_io_field_t dsp_afe_vrxctrl1_fields[] = {
+static const DebugRegField dsp_afe_vrxctrl1_fields[] = {
 	{ "EPSAV",		0x00000004,	2,	NULL,	0 },
 	{ "VCMEPB",		0x00000070,	4,	NULL,	0 },
 	{ "RXGAINSP",	0x00000380,	7,	NULL,	0 },
@@ -9764,7 +10072,7 @@ static const pmb887x_io_field_t dsp_afe_vrxctrl1_fields[] = {
 	{ "RXDITH",		0x0000C000,	14,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t dsp_afe_vrxctrl2_fields[] = {
+static const DebugRegField dsp_afe_vrxctrl2_fields[] = {
 	{ "RXDAC",		0x00000001,	0,	NULL,	0 },
 	{ "RINGSELSP",	0x00000004,	2,	NULL,	0 },
 	{ "RINGSELPA",	0x00000008,	3,	NULL,	0 },
@@ -9774,24 +10082,24 @@ static const pmb887x_io_field_t dsp_afe_vrxctrl2_fields[] = {
 	{ "MODE",		0x00004000,	14,	NULL,	0 },
 };
 
-static const pmb887x_io_value_t dsp_afe_vtxctrl_fields_txmode_values[] = {
+static const DebugRegValue dsp_afe_vtxctrl_fields_txmode_values[] = {
 	{ "POWER_DOWN",	0x00000000 },
 	{ "TALK",		0x00000020 },
 };
 
-static const pmb887x_io_value_t dsp_afe_vtxctrl_fields_txinsel_values[] = {
+static const DebugRegValue dsp_afe_vtxctrl_fields_txinsel_values[] = {
 	{ "MIC2",	0x00000200 },
 	{ "MIC1",	0x00000400 },
 };
 
-static const pmb887x_io_value_t dsp_afe_vtxctrl_fields_vmic_values[] = {
+static const DebugRegValue dsp_afe_vtxctrl_fields_vmic_values[] = {
 	{ "POWER_DOWN",	0x00000000 },
 	{ "VOLT_1_8",	0x00000800 },
 	{ "VOLT_2_0",	0x00001000 },
 	{ "VOLT_2_2",	0x00001800 },
 };
 
-static const pmb887x_io_field_t dsp_afe_vtxctrl_fields[] = {
+static const DebugRegField dsp_afe_vtxctrl_fields[] = {
 	{ "TXDITH",		0x00000001,	0,	NULL,									0 },
 	{ "TXGAIN0",	0x00000002,	1,	NULL,									0 },
 	{ "TXGAIN1",	0x00000004,	2,	NULL,									0 },
@@ -9802,28 +10110,35 @@ static const pmb887x_io_field_t dsp_afe_vtxctrl_fields[] = {
 	{ "VMIC",		0x00001800,	11,	dsp_afe_vtxctrl_fields_vmic_values,		ARRAY_SIZE(dsp_afe_vtxctrl_fields_vmic_values) },
 };
 
-static const pmb887x_io_value_t dsp_afe_ringctrl_fields_rins_values[] = {
+static const DebugRegValue dsp_afe_ringctrl_fields_rins_values[] = {
 	{ "CAPCOM0",		0x00000000 },
 	{ "CAPCOM1",		0x00000002 },
 	{ "ALTERNATIVE",	0x00000004 },
 };
 
-static const pmb887x_io_field_t dsp_afe_ringctrl_fields[] = {
+static const DebugRegField dsp_afe_ringctrl_fields[] = {
 	{ "ALTRIN",	0x00000001,	0,	NULL,									0 },
 	{ "RINS",	0x00000006,	1,	dsp_afe_ringctrl_fields_rins_values,	ARRAY_SIZE(dsp_afe_ringctrl_fields_rins_values) },
 };
 
-static const pmb887x_io_reg_t dsp_afe_regs[] = {
-	{ "INTPTR",		0x0,	dsp_afe_intptr_fields,		ARRAY_SIZE(dsp_afe_intptr_fields),		0 },
-	{ "RWADDR",		0x1,	dsp_afe_rwaddr_fields,		ARRAY_SIZE(dsp_afe_rwaddr_fields),		0 },
-	{ "BCON",		0x2,	dsp_afe_bcon_fields,		ARRAY_SIZE(dsp_afe_bcon_fields),		0 },
-	{ "VRXCTRL1",	0x3,	dsp_afe_vrxctrl1_fields,	ARRAY_SIZE(dsp_afe_vrxctrl1_fields),	0 },
-	{ "VRXCTRL2",	0x4,	dsp_afe_vrxctrl2_fields,	ARRAY_SIZE(dsp_afe_vrxctrl2_fields),	0 },
-	{ "VTXCTRL",	0x5,	dsp_afe_vtxctrl_fields,		ARRAY_SIZE(dsp_afe_vtxctrl_fields),		0 },
-	{ "RINGCTRL",	0x6,	dsp_afe_ringctrl_fields,	ARRAY_SIZE(dsp_afe_ringctrl_fields),	0 },
+static const DebugReg dsp_afe_regs[] = {
+	{ "INTPTR",		0x0,	dsp_afe_intptr_fields,		ARRAY_SIZE(dsp_afe_intptr_fields) },
+	{ "RWADDR",		0x1,	dsp_afe_rwaddr_fields,		ARRAY_SIZE(dsp_afe_rwaddr_fields) },
+	{ "BCON",		0x2,	dsp_afe_bcon_fields,		ARRAY_SIZE(dsp_afe_bcon_fields) },
+	{ "VRXCTRL1",	0x3,	dsp_afe_vrxctrl1_fields,	ARRAY_SIZE(dsp_afe_vrxctrl1_fields) },
+	{ "VRXCTRL2",	0x4,	dsp_afe_vrxctrl2_fields,	ARRAY_SIZE(dsp_afe_vrxctrl2_fields) },
+	{ "VTXCTRL",	0x5,	dsp_afe_vtxctrl_fields,		ARRAY_SIZE(dsp_afe_vtxctrl_fields) },
+	{ "RINGCTRL",	0x6,	dsp_afe_ringctrl_fields,	ARRAY_SIZE(dsp_afe_ringctrl_fields) },
 };
 
-static const pmb887x_io_field_t dsp_baseband_ctrl_fields[] = {
+const DebugRegs pmb887x_dsp_afe_regs = {
+	.regs = dsp_afe_regs,
+	.count = ARRAY_SIZE(dsp_afe_regs),
+	.reg_size = 1,
+	.addr_digits = 4,
+};
+
+static const DebugRegField dsp_baseband_ctrl_fields[] = {
 	{ "BB_STOP",	0x00000001,	0,	NULL,	0 },
 	{ "CORDICON",	0x00000002,	1,	NULL,	0 },
 	{ "BB_ON",		0x00000004,	2,	NULL,	0 },
@@ -9831,15 +10146,15 @@ static const pmb887x_io_field_t dsp_baseband_ctrl_fields[] = {
 	{ "BBADAP_EN",	0x00000010,	4,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t dsp_baseband_int_pointer_fields[] = {
+static const DebugRegField dsp_baseband_int_pointer_fields[] = {
 	{ "VALUE",	0x000003FF,	0,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t dsp_baseband_wr_pointer_fields[] = {
+static const DebugRegField dsp_baseband_wr_pointer_fields[] = {
 	{ "VALUE",	0x000003FF,	0,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t dsp_baseband_status_fields[] = {
+static const DebugRegField dsp_baseband_status_fields[] = {
 	{ "EQON",	0x00000001,	0,	NULL,	0 },
 	{ "FCON",	0x00000002,	1,	NULL,	0 },
 	{ "MONON",	0x00000004,	2,	NULL,	0 },
@@ -9847,57 +10162,64 @@ static const pmb887x_io_field_t dsp_baseband_status_fields[] = {
 	{ "RXON",	0x00000010,	4,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t dsp_baseband_dcoffset_i_fields[] = {
+static const DebugRegField dsp_baseband_dcoffset_i_fields[] = {
 	{ "VALUE",	0x0000FFFF,	0,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t dsp_baseband_dcoffset_q_fields[] = {
+static const DebugRegField dsp_baseband_dcoffset_q_fields[] = {
 	{ "VALUE",	0x0000FFFF,	0,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t dsp_baseband_fshift_fields[] = {
+static const DebugRegField dsp_baseband_fshift_fields[] = {
 	{ "VALUE",	0x0000FFFF,	0,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t dsp_baseband_brfilter_ctrl_fields[] = {
+static const DebugRegField dsp_baseband_brfilter_ctrl_fields[] = {
 	{ "LENGTH",		0x000000FF,	0,	NULL,	0 },
 	{ "SCALING",	0x00000F00,	8,	NULL,	0 },
 	{ "DECIMATION",	0x00001000,	12,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t dsp_baseband_pbase_msb_fields[] = {
+static const DebugRegField dsp_baseband_pbase_msb_fields[] = {
 	{ "VALUE",	0x000000FF,	0,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t dsp_baseband_pbase_lsb_fields[] = {
+static const DebugRegField dsp_baseband_pbase_lsb_fields[] = {
 	{ "VALUE",	0x0000FFFF,	0,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t dsp_baseband_padj_msb_fields[] = {
+static const DebugRegField dsp_baseband_padj_msb_fields[] = {
 	{ "VALUE",	0x000000FF,	0,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t dsp_baseband_padj_lsb_fields[] = {
+static const DebugRegField dsp_baseband_padj_lsb_fields[] = {
 	{ "VALUE",	0x0000FFFF,	0,	NULL,	0 },
 };
 
-static const pmb887x_io_reg_t dsp_baseband_regs[] = {
-	{ "CTRL",			0x0,	dsp_baseband_ctrl_fields,			ARRAY_SIZE(dsp_baseband_ctrl_fields),			0 },
-	{ "INT_POINTER",	0x1,	dsp_baseband_int_pointer_fields,	ARRAY_SIZE(dsp_baseband_int_pointer_fields),	0 },
-	{ "WR_POINTER",		0x2,	dsp_baseband_wr_pointer_fields,		ARRAY_SIZE(dsp_baseband_wr_pointer_fields),		0 },
-	{ "STATUS",			0x3,	dsp_baseband_status_fields,			ARRAY_SIZE(dsp_baseband_status_fields),			0 },
-	{ "DCOFFSET_I",		0x4,	dsp_baseband_dcoffset_i_fields,		ARRAY_SIZE(dsp_baseband_dcoffset_i_fields),		0 },
-	{ "DCOFFSET_Q",		0x5,	dsp_baseband_dcoffset_q_fields,		ARRAY_SIZE(dsp_baseband_dcoffset_q_fields),		0 },
-	{ "FSHIFT",			0x6,	dsp_baseband_fshift_fields,			ARRAY_SIZE(dsp_baseband_fshift_fields),			0 },
-	{ "BRFILTER_CTRL",	0x7,	dsp_baseband_brfilter_ctrl_fields,	ARRAY_SIZE(dsp_baseband_brfilter_ctrl_fields),	0 },
-	{ "PBASE_MSB",		0x8,	dsp_baseband_pbase_msb_fields,		ARRAY_SIZE(dsp_baseband_pbase_msb_fields),		0 },
-	{ "PBASE_LSB",		0x9,	dsp_baseband_pbase_lsb_fields,		ARRAY_SIZE(dsp_baseband_pbase_lsb_fields),		0 },
-	{ "PADJ_MSB",		0xA,	dsp_baseband_padj_msb_fields,		ARRAY_SIZE(dsp_baseband_padj_msb_fields),		0 },
-	{ "PADJ_LSB",		0xB,	dsp_baseband_padj_lsb_fields,		ARRAY_SIZE(dsp_baseband_padj_lsb_fields),		0 },
-	{ "IQ_IMBALANCE",	0xC,	NULL,								0,												0 },
+static const DebugReg dsp_baseband_regs[] = {
+	{ "CTRL",			0x0,	dsp_baseband_ctrl_fields,			ARRAY_SIZE(dsp_baseband_ctrl_fields) },
+	{ "INT_POINTER",	0x1,	dsp_baseband_int_pointer_fields,	ARRAY_SIZE(dsp_baseband_int_pointer_fields) },
+	{ "WR_POINTER",		0x2,	dsp_baseband_wr_pointer_fields,		ARRAY_SIZE(dsp_baseband_wr_pointer_fields) },
+	{ "STATUS",			0x3,	dsp_baseband_status_fields,			ARRAY_SIZE(dsp_baseband_status_fields) },
+	{ "DCOFFSET_I",		0x4,	dsp_baseband_dcoffset_i_fields,		ARRAY_SIZE(dsp_baseband_dcoffset_i_fields) },
+	{ "DCOFFSET_Q",		0x5,	dsp_baseband_dcoffset_q_fields,		ARRAY_SIZE(dsp_baseband_dcoffset_q_fields) },
+	{ "FSHIFT",			0x6,	dsp_baseband_fshift_fields,			ARRAY_SIZE(dsp_baseband_fshift_fields) },
+	{ "BRFILTER_CTRL",	0x7,	dsp_baseband_brfilter_ctrl_fields,	ARRAY_SIZE(dsp_baseband_brfilter_ctrl_fields) },
+	{ "PBASE_MSB",		0x8,	dsp_baseband_pbase_msb_fields,		ARRAY_SIZE(dsp_baseband_pbase_msb_fields) },
+	{ "PBASE_LSB",		0x9,	dsp_baseband_pbase_lsb_fields,		ARRAY_SIZE(dsp_baseband_pbase_lsb_fields) },
+	{ "PADJ_MSB",		0xA,	dsp_baseband_padj_msb_fields,		ARRAY_SIZE(dsp_baseband_padj_msb_fields) },
+	{ "PADJ_LSB",		0xB,	dsp_baseband_padj_lsb_fields,		ARRAY_SIZE(dsp_baseband_padj_lsb_fields) },
+	{ "IQ_IMBALANCE",	0xC,	NULL,								0 },
 };
 
-static const pmb887x_io_field_t dsp_channel_decoder_conf1_fields[] = {
+const DebugRegs pmb887x_dsp_baseband_regs = {
+	.regs = dsp_baseband_regs,
+	.count = ARRAY_SIZE(dsp_baseband_regs),
+	.reg_size = 1,
+	.addr_digits = 4,
+};
+
+static const DebugRegField dsp_channel_decoder_conf1_fields[] = {
 	{ "RES_RW1_RW2",	0x00000001,	0,	NULL,	0 },
 	{ "RES_SIN01_BASE",	0x00000002,	1,	NULL,	0 },
 	{ "RES_SIN2_BASE",	0x00000004,	2,	NULL,	0 },
@@ -9905,7 +10227,7 @@ static const pmb887x_io_field_t dsp_channel_decoder_conf1_fields[] = {
 	{ "RES_DM_BASE",	0x00000080,	7,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t dsp_channel_decoder_conf2_fields[] = {
+static const DebugRegField dsp_channel_decoder_conf2_fields[] = {
 	{ "HW_ENA_DEC",		0x00000001,	0,	NULL,	0 },
 	{ "RES_DEC",		0x00000002,	1,	NULL,	0 },
 	{ "DEC_ON",			0x00000004,	2,	NULL,	0 },
@@ -9917,91 +10239,98 @@ static const pmb887x_io_field_t dsp_channel_decoder_conf2_fields[] = {
 	{ "DEC_64",			0x00008000,	15,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t dsp_channel_decoder_status_fields[] = {
+static const DebugRegField dsp_channel_decoder_status_fields[] = {
 	{ "DEC_BUSY",	0x00004000,	14,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t dsp_channel_decoder_conf_cnt_fields[] = {
+static const DebugRegField dsp_channel_decoder_conf_cnt_fields[] = {
 	{ "C_DEC",	0x000000FF,	0,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t dsp_channel_decoder_stat_cnt_fields[] = {
+static const DebugRegField dsp_channel_decoder_stat_cnt_fields[] = {
 	{ "S_DEC",	0x000000FF,	0,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t dsp_channel_decoder_ref_br_bfly0_fields[] = {
+static const DebugRegField dsp_channel_decoder_ref_br_bfly0_fields[] = {
 	{ "REF1",	0x0000000F,	0,	NULL,	0 },
 	{ "REF2",	0x000000F0,	4,	NULL,	0 },
 	{ "REF3",	0x00000F00,	8,	NULL,	0 },
 	{ "REF4",	0x0000F000,	12,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t dsp_channel_decoder_ref_br_bfly1_fields[] = {
+static const DebugRegField dsp_channel_decoder_ref_br_bfly1_fields[] = {
 	{ "REF1",	0x0000000F,	0,	NULL,	0 },
 	{ "REF2",	0x000000F0,	4,	NULL,	0 },
 	{ "REF3",	0x00000F00,	8,	NULL,	0 },
 	{ "REF4",	0x0000F000,	12,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t dsp_channel_decoder_ref_br_bfly2_fields[] = {
+static const DebugRegField dsp_channel_decoder_ref_br_bfly2_fields[] = {
 	{ "REF1",	0x0000000F,	0,	NULL,	0 },
 	{ "REF2",	0x000000F0,	4,	NULL,	0 },
 	{ "REF3",	0x00000F00,	8,	NULL,	0 },
 	{ "REF4",	0x0000F000,	12,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t dsp_channel_decoder_ref_br_bfly3_fields[] = {
+static const DebugRegField dsp_channel_decoder_ref_br_bfly3_fields[] = {
 	{ "REF1",	0x0000000F,	0,	NULL,	0 },
 	{ "REF2",	0x000000F0,	4,	NULL,	0 },
 	{ "REF3",	0x00000F00,	8,	NULL,	0 },
 	{ "REF4",	0x0000F000,	12,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t dsp_channel_decoder_ref_br_bfly4_fields[] = {
+static const DebugRegField dsp_channel_decoder_ref_br_bfly4_fields[] = {
 	{ "REF1",	0x0000000F,	0,	NULL,	0 },
 	{ "REF2",	0x000000F0,	4,	NULL,	0 },
 	{ "REF3",	0x00000F00,	8,	NULL,	0 },
 	{ "REF4",	0x0000F000,	12,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t dsp_channel_decoder_ref_br_bfly5_fields[] = {
+static const DebugRegField dsp_channel_decoder_ref_br_bfly5_fields[] = {
 	{ "REF1",	0x0000000F,	0,	NULL,	0 },
 	{ "REF2",	0x000000F0,	4,	NULL,	0 },
 	{ "REF3",	0x00000F00,	8,	NULL,	0 },
 	{ "REF4",	0x0000F000,	12,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t dsp_channel_decoder_ref_br_bfly6_fields[] = {
+static const DebugRegField dsp_channel_decoder_ref_br_bfly6_fields[] = {
 	{ "REF1",	0x0000000F,	0,	NULL,	0 },
 	{ "REF2",	0x000000F0,	4,	NULL,	0 },
 	{ "REF3",	0x00000F00,	8,	NULL,	0 },
 	{ "REF4",	0x0000F000,	12,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t dsp_channel_decoder_ref_br_bfly7_fields[] = {
+static const DebugRegField dsp_channel_decoder_ref_br_bfly7_fields[] = {
 	{ "REF1",	0x0000000F,	0,	NULL,	0 },
 	{ "REF2",	0x000000F0,	4,	NULL,	0 },
 	{ "REF3",	0x00000F00,	8,	NULL,	0 },
 	{ "REF4",	0x0000F000,	12,	NULL,	0 },
 };
 
-static const pmb887x_io_reg_t dsp_channel_decoder_regs[] = {
-	{ "CONF1",			0x0,	dsp_channel_decoder_conf1_fields,			ARRAY_SIZE(dsp_channel_decoder_conf1_fields),			0 },
-	{ "CONF2",			0x1,	dsp_channel_decoder_conf2_fields,			ARRAY_SIZE(dsp_channel_decoder_conf2_fields),			0 },
-	{ "STATUS",			0x2,	dsp_channel_decoder_status_fields,			ARRAY_SIZE(dsp_channel_decoder_status_fields),			0 },
-	{ "CONF_CNT",		0x3,	dsp_channel_decoder_conf_cnt_fields,		ARRAY_SIZE(dsp_channel_decoder_conf_cnt_fields),		0 },
-	{ "STAT_CNT",		0x4,	dsp_channel_decoder_stat_cnt_fields,		ARRAY_SIZE(dsp_channel_decoder_stat_cnt_fields),		0 },
-	{ "REF_BR_BFLY0",	0x5,	dsp_channel_decoder_ref_br_bfly0_fields,	ARRAY_SIZE(dsp_channel_decoder_ref_br_bfly0_fields),	0 },
-	{ "REF_BR_BFLY1",	0x6,	dsp_channel_decoder_ref_br_bfly1_fields,	ARRAY_SIZE(dsp_channel_decoder_ref_br_bfly1_fields),	0 },
-	{ "REF_BR_BFLY2",	0x7,	dsp_channel_decoder_ref_br_bfly2_fields,	ARRAY_SIZE(dsp_channel_decoder_ref_br_bfly2_fields),	0 },
-	{ "REF_BR_BFLY3",	0x8,	dsp_channel_decoder_ref_br_bfly3_fields,	ARRAY_SIZE(dsp_channel_decoder_ref_br_bfly3_fields),	0 },
-	{ "REF_BR_BFLY4",	0x9,	dsp_channel_decoder_ref_br_bfly4_fields,	ARRAY_SIZE(dsp_channel_decoder_ref_br_bfly4_fields),	0 },
-	{ "REF_BR_BFLY5",	0xA,	dsp_channel_decoder_ref_br_bfly5_fields,	ARRAY_SIZE(dsp_channel_decoder_ref_br_bfly5_fields),	0 },
-	{ "REF_BR_BFLY6",	0xB,	dsp_channel_decoder_ref_br_bfly6_fields,	ARRAY_SIZE(dsp_channel_decoder_ref_br_bfly6_fields),	0 },
-	{ "REF_BR_BFLY7",	0xC,	dsp_channel_decoder_ref_br_bfly7_fields,	ARRAY_SIZE(dsp_channel_decoder_ref_br_bfly7_fields),	0 },
+static const DebugReg dsp_channel_decoder_regs[] = {
+	{ "CONF1",			0x0,	dsp_channel_decoder_conf1_fields,			ARRAY_SIZE(dsp_channel_decoder_conf1_fields) },
+	{ "CONF2",			0x1,	dsp_channel_decoder_conf2_fields,			ARRAY_SIZE(dsp_channel_decoder_conf2_fields) },
+	{ "STATUS",			0x2,	dsp_channel_decoder_status_fields,			ARRAY_SIZE(dsp_channel_decoder_status_fields) },
+	{ "CONF_CNT",		0x3,	dsp_channel_decoder_conf_cnt_fields,		ARRAY_SIZE(dsp_channel_decoder_conf_cnt_fields) },
+	{ "STAT_CNT",		0x4,	dsp_channel_decoder_stat_cnt_fields,		ARRAY_SIZE(dsp_channel_decoder_stat_cnt_fields) },
+	{ "REF_BR_BFLY0",	0x5,	dsp_channel_decoder_ref_br_bfly0_fields,	ARRAY_SIZE(dsp_channel_decoder_ref_br_bfly0_fields) },
+	{ "REF_BR_BFLY1",	0x6,	dsp_channel_decoder_ref_br_bfly1_fields,	ARRAY_SIZE(dsp_channel_decoder_ref_br_bfly1_fields) },
+	{ "REF_BR_BFLY2",	0x7,	dsp_channel_decoder_ref_br_bfly2_fields,	ARRAY_SIZE(dsp_channel_decoder_ref_br_bfly2_fields) },
+	{ "REF_BR_BFLY3",	0x8,	dsp_channel_decoder_ref_br_bfly3_fields,	ARRAY_SIZE(dsp_channel_decoder_ref_br_bfly3_fields) },
+	{ "REF_BR_BFLY4",	0x9,	dsp_channel_decoder_ref_br_bfly4_fields,	ARRAY_SIZE(dsp_channel_decoder_ref_br_bfly4_fields) },
+	{ "REF_BR_BFLY5",	0xA,	dsp_channel_decoder_ref_br_bfly5_fields,	ARRAY_SIZE(dsp_channel_decoder_ref_br_bfly5_fields) },
+	{ "REF_BR_BFLY6",	0xB,	dsp_channel_decoder_ref_br_bfly6_fields,	ARRAY_SIZE(dsp_channel_decoder_ref_br_bfly6_fields) },
+	{ "REF_BR_BFLY7",	0xC,	dsp_channel_decoder_ref_br_bfly7_fields,	ARRAY_SIZE(dsp_channel_decoder_ref_br_bfly7_fields) },
 };
 
-static const pmb887x_io_field_t dsp_cipher_cstat_fields[] = {
+const DebugRegs pmb887x_dsp_channel_decoder_regs = {
+	.regs = dsp_channel_decoder_regs,
+	.count = ARRAY_SIZE(dsp_channel_decoder_regs),
+	.reg_size = 1,
+	.addr_digits = 4,
+};
+
+static const DebugRegField dsp_cipher_cstat_fields[] = {
 	{ "CACT",	0x00000001,	0,	NULL,	0 },
 	{ "A52",	0x00000002,	1,	NULL,	0 },
 	{ "EDGE",	0x00000004,	2,	NULL,	0 },
@@ -10009,107 +10338,114 @@ static const pmb887x_io_field_t dsp_cipher_cstat_fields[] = {
 	{ "A53",	0x00000010,	4,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t dsp_cipher_key0_fields[] = {
+static const DebugRegField dsp_cipher_key0_fields[] = {
 	{ "VALUE",	0x0000FFFF,	0,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t dsp_cipher_key1_fields[] = {
+static const DebugRegField dsp_cipher_key1_fields[] = {
 	{ "VALUE",	0x0000FFFF,	0,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t dsp_cipher_key2_fields[] = {
+static const DebugRegField dsp_cipher_key2_fields[] = {
 	{ "VALUE",	0x0000FFFF,	0,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t dsp_cipher_key3_fields[] = {
+static const DebugRegField dsp_cipher_key3_fields[] = {
 	{ "VALUE",	0x0000FFFF,	0,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t dsp_cipher_tmod26_fields[] = {
+static const DebugRegField dsp_cipher_tmod26_fields[] = {
 	{ "T26N",	0x0000001F,	0,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t dsp_cipher_tmod51_fields[] = {
+static const DebugRegField dsp_cipher_tmod51_fields[] = {
 	{ "T51N",	0x0000003F,	0,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t dsp_cipher_sfnum_fields[] = {
+static const DebugRegField dsp_cipher_sfnum_fields[] = {
 	{ "SFN",	0x000007FF,	0,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t dsp_cipher_key4_fields[] = {
+static const DebugRegField dsp_cipher_key4_fields[] = {
 	{ "VALUE",	0x0000FFFF,	0,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t dsp_cipher_key5_fields[] = {
+static const DebugRegField dsp_cipher_key5_fields[] = {
 	{ "VALUE",	0x0000FFFF,	0,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t dsp_cipher_key6_fields[] = {
+static const DebugRegField dsp_cipher_key6_fields[] = {
 	{ "VALUE",	0x0000FFFF,	0,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t dsp_cipher_key7_fields[] = {
+static const DebugRegField dsp_cipher_key7_fields[] = {
 	{ "VALUE",	0x0000FFFF,	0,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t dsp_cipher_kdata1_fields[] = {
+static const DebugRegField dsp_cipher_kdata1_fields[] = {
 	{ "CE",	0x0000FFFF,	0,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t dsp_cipher_kdata2_fields[] = {
+static const DebugRegField dsp_cipher_kdata2_fields[] = {
 	{ "CA",	0x000000FF,	0,	NULL,	0 },
 	{ "CD",	0x00000400,	10,	NULL,	0 },
 	{ "CB",	0x0000F800,	11,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t dsp_cipher_kdata3_fields[] = {
+static const DebugRegField dsp_cipher_kdata3_fields[] = {
 	{ "T26N",	0x0000001F,	0,	NULL,	0 },
 	{ "T51N",	0x000007E0,	5,	NULL,	0 },
 	{ "SFN",	0x0000F800,	11,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t dsp_cipher_kdata4_fields[] = {
+static const DebugRegField dsp_cipher_kdata4_fields[] = {
 	{ "SFN",	0x0000003F,	0,	NULL,	0 },
 };
 
-static const pmb887x_io_reg_t dsp_cipher_regs[] = {
-	{ "CSTAT",	0x0,	dsp_cipher_cstat_fields,	ARRAY_SIZE(dsp_cipher_cstat_fields),	0 },
-	{ "KEY0",	0x1,	dsp_cipher_key0_fields,		ARRAY_SIZE(dsp_cipher_key0_fields),		0 },
-	{ "KEY1",	0x2,	dsp_cipher_key1_fields,		ARRAY_SIZE(dsp_cipher_key1_fields),		0 },
-	{ "KEY2",	0x3,	dsp_cipher_key2_fields,		ARRAY_SIZE(dsp_cipher_key2_fields),		0 },
-	{ "KEY3",	0x4,	dsp_cipher_key3_fields,		ARRAY_SIZE(dsp_cipher_key3_fields),		0 },
-	{ "TMOD26",	0x5,	dsp_cipher_tmod26_fields,	ARRAY_SIZE(dsp_cipher_tmod26_fields),	0 },
-	{ "TMOD51",	0x6,	dsp_cipher_tmod51_fields,	ARRAY_SIZE(dsp_cipher_tmod51_fields),	0 },
-	{ "SFNUM",	0x7,	dsp_cipher_sfnum_fields,	ARRAY_SIZE(dsp_cipher_sfnum_fields),	0 },
-	{ "KEY4",	0x8,	dsp_cipher_key4_fields,		ARRAY_SIZE(dsp_cipher_key4_fields),		0 },
-	{ "KEY5",	0x9,	dsp_cipher_key5_fields,		ARRAY_SIZE(dsp_cipher_key5_fields),		0 },
-	{ "KEY6",	0xA,	dsp_cipher_key6_fields,		ARRAY_SIZE(dsp_cipher_key6_fields),		0 },
-	{ "KEY7",	0xB,	dsp_cipher_key7_fields,		ARRAY_SIZE(dsp_cipher_key7_fields),		0 },
-	{ "KDATA1",	0xC,	dsp_cipher_kdata1_fields,	ARRAY_SIZE(dsp_cipher_kdata1_fields),	0 },
-	{ "KDATA2",	0xD,	dsp_cipher_kdata2_fields,	ARRAY_SIZE(dsp_cipher_kdata2_fields),	0 },
-	{ "KDATA3",	0xE,	dsp_cipher_kdata3_fields,	ARRAY_SIZE(dsp_cipher_kdata3_fields),	0 },
-	{ "KDATA4",	0xF,	dsp_cipher_kdata4_fields,	ARRAY_SIZE(dsp_cipher_kdata4_fields),	0 },
+static const DebugReg dsp_cipher_regs[] = {
+	{ "CSTAT",	0x0,	dsp_cipher_cstat_fields,	ARRAY_SIZE(dsp_cipher_cstat_fields) },
+	{ "KEY0",	0x1,	dsp_cipher_key0_fields,		ARRAY_SIZE(dsp_cipher_key0_fields) },
+	{ "KEY1",	0x2,	dsp_cipher_key1_fields,		ARRAY_SIZE(dsp_cipher_key1_fields) },
+	{ "KEY2",	0x3,	dsp_cipher_key2_fields,		ARRAY_SIZE(dsp_cipher_key2_fields) },
+	{ "KEY3",	0x4,	dsp_cipher_key3_fields,		ARRAY_SIZE(dsp_cipher_key3_fields) },
+	{ "TMOD26",	0x5,	dsp_cipher_tmod26_fields,	ARRAY_SIZE(dsp_cipher_tmod26_fields) },
+	{ "TMOD51",	0x6,	dsp_cipher_tmod51_fields,	ARRAY_SIZE(dsp_cipher_tmod51_fields) },
+	{ "SFNUM",	0x7,	dsp_cipher_sfnum_fields,	ARRAY_SIZE(dsp_cipher_sfnum_fields) },
+	{ "KEY4",	0x8,	dsp_cipher_key4_fields,		ARRAY_SIZE(dsp_cipher_key4_fields) },
+	{ "KEY5",	0x9,	dsp_cipher_key5_fields,		ARRAY_SIZE(dsp_cipher_key5_fields) },
+	{ "KEY6",	0xA,	dsp_cipher_key6_fields,		ARRAY_SIZE(dsp_cipher_key6_fields) },
+	{ "KEY7",	0xB,	dsp_cipher_key7_fields,		ARRAY_SIZE(dsp_cipher_key7_fields) },
+	{ "KDATA1",	0xC,	dsp_cipher_kdata1_fields,	ARRAY_SIZE(dsp_cipher_kdata1_fields) },
+	{ "KDATA2",	0xD,	dsp_cipher_kdata2_fields,	ARRAY_SIZE(dsp_cipher_kdata2_fields) },
+	{ "KDATA3",	0xE,	dsp_cipher_kdata3_fields,	ARRAY_SIZE(dsp_cipher_kdata3_fields) },
+	{ "KDATA4",	0xF,	dsp_cipher_kdata4_fields,	ARRAY_SIZE(dsp_cipher_kdata4_fields) },
 };
 
-static const pmb887x_io_field_t dsp_dsp_id_fields[] = {
+const DebugRegs pmb887x_dsp_cipher_regs = {
+	.regs = dsp_cipher_regs,
+	.count = ARRAY_SIZE(dsp_cipher_regs),
+	.reg_size = 1,
+	.addr_digits = 4,
+};
+
+static const DebugRegField dsp_dsp_id_fields[] = {
 	{ "DSPID",	0x0000FFFF,	0,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t dsp_dsp_ctrl_fields[] = {
+static const DebugRegField dsp_dsp_ctrl_fields[] = {
 	{ "DSPDIS",	0x00000001,	0,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t dsp_dsp_debug_fields[] = {
+static const DebugRegField dsp_dsp_debug_fields[] = {
 	{ "OCEM",	0x00000002,	1,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t dsp_dsp_page_fields[] = {
+static const DebugRegField dsp_dsp_page_fields[] = {
 	{ "DATA_PAGE",	0x00000001,	0,	NULL,	0 },
 	{ "PROG_PAGE",	0x00000002,	1,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t dsp_dsp_dspout_fields[] = {
+static const DebugRegField dsp_dsp_dspout_fields[] = {
 	{ "DSPOUT0",	0x00000001,	0,	NULL,	0 },
 	{ "DSPOUT1",	0x00000002,	1,	NULL,	0 },
 	{ "DSPOUT2",	0x00000004,	2,	NULL,	0 },
@@ -10121,33 +10457,40 @@ static const pmb887x_io_field_t dsp_dsp_dspout_fields[] = {
 	{ "MONIN4",		0x00000100,	8,	NULL,	0 },
 };
 
-static const pmb887x_io_reg_t dsp_dsp_regs[] = {
-	{ "ID",		0x0,	dsp_dsp_id_fields,		ARRAY_SIZE(dsp_dsp_id_fields),		0 },
-	{ "CTRL",	0x1,	dsp_dsp_ctrl_fields,	ARRAY_SIZE(dsp_dsp_ctrl_fields),	0 },
-	{ "DEBUG",	0x2,	dsp_dsp_debug_fields,	ARRAY_SIZE(dsp_dsp_debug_fields),	0 },
-	{ "PAGE",	0x3,	dsp_dsp_page_fields,	ARRAY_SIZE(dsp_dsp_page_fields),	0 },
-	{ "UNK6",	0x6,	NULL,					0,									0 },
-	{ "DSPOUT",	0x8,	dsp_dsp_dspout_fields,	ARRAY_SIZE(dsp_dsp_dspout_fields),	0 },
+static const DebugReg dsp_dsp_regs[] = {
+	{ "ID",		0x0,	dsp_dsp_id_fields,		ARRAY_SIZE(dsp_dsp_id_fields) },
+	{ "CTRL",	0x1,	dsp_dsp_ctrl_fields,	ARRAY_SIZE(dsp_dsp_ctrl_fields) },
+	{ "DEBUG",	0x2,	dsp_dsp_debug_fields,	ARRAY_SIZE(dsp_dsp_debug_fields) },
+	{ "PAGE",	0x3,	dsp_dsp_page_fields,	ARRAY_SIZE(dsp_dsp_page_fields) },
+	{ "UNK6",	0x6,	NULL,					0 },
+	{ "DSPOUT",	0x8,	dsp_dsp_dspout_fields,	ARRAY_SIZE(dsp_dsp_dspout_fields) },
 };
 
-static const pmb887x_io_field_t dsp_dsp_8876_id_fields[] = {
+const DebugRegs pmb887x_dsp_dsp_regs = {
+	.regs = dsp_dsp_regs,
+	.count = ARRAY_SIZE(dsp_dsp_regs),
+	.reg_size = 1,
+	.addr_digits = 4,
+};
+
+static const DebugRegField dsp_dsp_8876_id_fields[] = {
 	{ "DSPID",	0x0000FFFF,	0,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t dsp_dsp_8876_ctrl_fields[] = {
+static const DebugRegField dsp_dsp_8876_ctrl_fields[] = {
 	{ "DSPDIS",	0x00000001,	0,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t dsp_dsp_8876_debug_fields[] = {
+static const DebugRegField dsp_dsp_8876_debug_fields[] = {
 	{ "OCEM",	0x00000002,	1,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t dsp_dsp_8876_page_fields[] = {
+static const DebugRegField dsp_dsp_8876_page_fields[] = {
 	{ "DATA_PAGE",	0x00000003,	0,	NULL,	0 },
 	{ "PROG_PAGE",	0x0000000C,	2,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t dsp_dsp_8876_dspout_fields[] = {
+static const DebugRegField dsp_dsp_8876_dspout_fields[] = {
 	{ "DSPOUT0",	0x00000001,	0,	NULL,	0 },
 	{ "DSPOUT1",	0x00000002,	1,	NULL,	0 },
 	{ "DSPOUT2",	0x00000004,	2,	NULL,	0 },
@@ -10159,16 +10502,23 @@ static const pmb887x_io_field_t dsp_dsp_8876_dspout_fields[] = {
 	{ "MONIN4",		0x00000100,	8,	NULL,	0 },
 };
 
-static const pmb887x_io_reg_t dsp_dsp_8876_regs[] = {
-	{ "ID",		0x0,	dsp_dsp_8876_id_fields,		ARRAY_SIZE(dsp_dsp_8876_id_fields),		0 },
-	{ "CTRL",	0x1,	dsp_dsp_8876_ctrl_fields,	ARRAY_SIZE(dsp_dsp_8876_ctrl_fields),	0 },
-	{ "DEBUG",	0x2,	dsp_dsp_8876_debug_fields,	ARRAY_SIZE(dsp_dsp_8876_debug_fields),	0 },
-	{ "PAGE",	0x3,	dsp_dsp_8876_page_fields,	ARRAY_SIZE(dsp_dsp_8876_page_fields),	0 },
-	{ "UNK6",	0x6,	NULL,						0,										0 },
-	{ "DSPOUT",	0x8,	dsp_dsp_8876_dspout_fields,	ARRAY_SIZE(dsp_dsp_8876_dspout_fields),	0 },
+static const DebugReg dsp_dsp_8876_regs[] = {
+	{ "ID",		0x0,	dsp_dsp_8876_id_fields,		ARRAY_SIZE(dsp_dsp_8876_id_fields) },
+	{ "CTRL",	0x1,	dsp_dsp_8876_ctrl_fields,	ARRAY_SIZE(dsp_dsp_8876_ctrl_fields) },
+	{ "DEBUG",	0x2,	dsp_dsp_8876_debug_fields,	ARRAY_SIZE(dsp_dsp_8876_debug_fields) },
+	{ "PAGE",	0x3,	dsp_dsp_8876_page_fields,	ARRAY_SIZE(dsp_dsp_8876_page_fields) },
+	{ "UNK6",	0x6,	NULL,						0 },
+	{ "DSPOUT",	0x8,	dsp_dsp_8876_dspout_fields,	ARRAY_SIZE(dsp_dsp_8876_dspout_fields) },
 };
 
-static const pmb887x_io_field_t dsp_equalizer_conf1_fields[] = {
+const DebugRegs pmb887x_dsp_dsp_8876_regs = {
+	.regs = dsp_dsp_8876_regs,
+	.count = ARRAY_SIZE(dsp_dsp_8876_regs),
+	.reg_size = 1,
+	.addr_digits = 4,
+};
+
+static const DebugRegField dsp_equalizer_conf1_fields[] = {
 	{ "RES_RW1_RW2",	0x00000001,	0,	NULL,	0 },
 	{ "RES_RX_BASE",	0x00000004,	2,	NULL,	0 },
 	{ "RES_BPAR_BASE",	0x00000008,	3,	NULL,	0 },
@@ -10182,7 +10532,7 @@ static const pmb887x_io_field_t dsp_equalizer_conf1_fields[] = {
 	{ "RES_EB_BASE",	0x00008000,	15,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t dsp_equalizer_conf2_fields[] = {
+static const DebugRegField dsp_equalizer_conf2_fields[] = {
 	{ "HW_ENA_EQ",	0x00000001,	0,	NULL,	0 },
 	{ "RES_EQ",		0x00000002,	1,	NULL,	0 },
 	{ "EQ_ON",		0x00000004,	2,	NULL,	0 },
@@ -10196,19 +10546,19 @@ static const pmb887x_io_field_t dsp_equalizer_conf2_fields[] = {
 	{ "EQ_EDGE",	0x00008000,	15,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t dsp_equalizer_status_fields[] = {
+static const DebugRegField dsp_equalizer_status_fields[] = {
 	{ "EQ_BUSY",	0x00008000,	15,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t dsp_equalizer_conf_cnt_fields[] = {
+static const DebugRegField dsp_equalizer_conf_cnt_fields[] = {
 	{ "C_EQ",	0x0000003F,	0,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t dsp_equalizer_stat_cnt_fields[] = {
+static const DebugRegField dsp_equalizer_stat_cnt_fields[] = {
 	{ "S_EQ",	0x0000003F,	0,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t dsp_equalizer_sc_sout_fields[] = {
+static const DebugRegField dsp_equalizer_sc_sout_fields[] = {
 	{ "SC7_0",	0x000000FF,	0,	NULL,	0 },
 	{ "SC8",	0x00000100,	8,	NULL,	0 },
 	{ "SC12_9",	0x00001E00,	9,	NULL,	0 },
@@ -10217,21 +10567,28 @@ static const pmb887x_io_field_t dsp_equalizer_sc_sout_fields[] = {
 	{ "SC15",	0x00008000,	15,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t dsp_equalizer_squal_fields[] = {
+static const DebugRegField dsp_equalizer_squal_fields[] = {
 	{ "SQ",	0x0000FFFF,	0,	NULL,	0 },
 };
 
-static const pmb887x_io_reg_t dsp_equalizer_regs[] = {
-	{ "CONF1",		0x0,	dsp_equalizer_conf1_fields,		ARRAY_SIZE(dsp_equalizer_conf1_fields),		0 },
-	{ "CONF2",		0x1,	dsp_equalizer_conf2_fields,		ARRAY_SIZE(dsp_equalizer_conf2_fields),		0 },
-	{ "STATUS",		0x2,	dsp_equalizer_status_fields,	ARRAY_SIZE(dsp_equalizer_status_fields),	0 },
-	{ "CONF_CNT",	0x3,	dsp_equalizer_conf_cnt_fields,	ARRAY_SIZE(dsp_equalizer_conf_cnt_fields),	0 },
-	{ "STAT_CNT",	0x4,	dsp_equalizer_stat_cnt_fields,	ARRAY_SIZE(dsp_equalizer_stat_cnt_fields),	0 },
-	{ "SC_SOUT",	0x5,	dsp_equalizer_sc_sout_fields,	ARRAY_SIZE(dsp_equalizer_sc_sout_fields),	0 },
-	{ "SQUAL",		0x6,	dsp_equalizer_squal_fields,		ARRAY_SIZE(dsp_equalizer_squal_fields),		0 },
+static const DebugReg dsp_equalizer_regs[] = {
+	{ "CONF1",		0x0,	dsp_equalizer_conf1_fields,		ARRAY_SIZE(dsp_equalizer_conf1_fields) },
+	{ "CONF2",		0x1,	dsp_equalizer_conf2_fields,		ARRAY_SIZE(dsp_equalizer_conf2_fields) },
+	{ "STATUS",		0x2,	dsp_equalizer_status_fields,	ARRAY_SIZE(dsp_equalizer_status_fields) },
+	{ "CONF_CNT",	0x3,	dsp_equalizer_conf_cnt_fields,	ARRAY_SIZE(dsp_equalizer_conf_cnt_fields) },
+	{ "STAT_CNT",	0x4,	dsp_equalizer_stat_cnt_fields,	ARRAY_SIZE(dsp_equalizer_stat_cnt_fields) },
+	{ "SC_SOUT",	0x5,	dsp_equalizer_sc_sout_fields,	ARRAY_SIZE(dsp_equalizer_sc_sout_fields) },
+	{ "SQUAL",		0x6,	dsp_equalizer_squal_fields,		ARRAY_SIZE(dsp_equalizer_squal_fields) },
 };
 
-static const pmb887x_io_field_t dsp_i2s_ctrl_fields[] = {
+const DebugRegs pmb887x_dsp_equalizer_regs = {
+	.regs = dsp_equalizer_regs,
+	.count = ARRAY_SIZE(dsp_equalizer_regs),
+	.reg_size = 1,
+	.addr_digits = 4,
+};
+
+static const DebugRegField dsp_i2s_ctrl_fields[] = {
 	{ "I2SON",		0x00000001,	0,	NULL,	0 },
 	{ "I2STXSTART",	0x00000002,	1,	NULL,	0 },
 	{ "I2SRXSTART",	0x00000004,	2,	NULL,	0 },
@@ -10240,53 +10597,53 @@ static const pmb887x_io_field_t dsp_i2s_ctrl_fields[] = {
 	{ "DAI_EN",		0x00000080,	7,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t dsp_i2s_csel_fields[] = {
+static const DebugRegField dsp_i2s_csel_fields[] = {
 	{ "TXCLKSEL",	0x00000003,	0,	NULL,	0 },
 	{ "CLK0SEL",	0x0000000C,	2,	NULL,	0 },
 	{ "RXCLKSEL",	0x00000030,	4,	NULL,	0 },
 	{ "CLK1SEL",	0x000000C0,	6,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t dsp_i2s_rwaddr_fields[] = {
+static const DebugRegField dsp_i2s_rwaddr_fields[] = {
 	{ "RDADDR",	0x0000003F,	0,	NULL,	0 },
 	{ "WRADDR",	0x00003F00,	8,	NULL,	0 },
 };
 
-static const pmb887x_io_value_t dsp_i2s_num0_fields_fref_values[] = {
+static const DebugRegValue dsp_i2s_num0_fields_fref_values[] = {
 	{ "MODULE_CLOCK",	0x00000000 },
 	{ "CLOCK_104MHZ",	0x00001000 },
 };
 
-static const pmb887x_io_field_t dsp_i2s_num0_fields[] = {
+static const DebugRegField dsp_i2s_num0_fields[] = {
 	{ "NUMERATOR",	0x000007FF,	0,	NULL,								0 },
 	{ "FREF",		0x00003000,	12,	dsp_i2s_num0_fields_fref_values,	ARRAY_SIZE(dsp_i2s_num0_fields_fref_values) },
 };
 
-static const pmb887x_io_field_t dsp_i2s_den0_fields[] = {
+static const DebugRegField dsp_i2s_den0_fields[] = {
 	{ "DENOMINATOR",	0x0000FFFF,	0,	NULL,	0 },
 };
 
-static const pmb887x_io_value_t dsp_i2s_num1_fields_fref_values[] = {
+static const DebugRegValue dsp_i2s_num1_fields_fref_values[] = {
 	{ "MODULE_CLOCK",	0x00000000 },
 	{ "CLOCK_104MHZ",	0x00001000 },
 };
 
-static const pmb887x_io_field_t dsp_i2s_num1_fields[] = {
+static const DebugRegField dsp_i2s_num1_fields[] = {
 	{ "NUMERATOR",	0x000007FF,	0,	NULL,								0 },
 	{ "FREF",		0x00003000,	12,	dsp_i2s_num1_fields_fref_values,	ARRAY_SIZE(dsp_i2s_num1_fields_fref_values) },
 };
 
-static const pmb887x_io_field_t dsp_i2s_den1_fields[] = {
+static const DebugRegField dsp_i2s_den1_fields[] = {
 	{ "DENOMINATOR",	0x0000FFFF,	0,	NULL,	0 },
 };
 
-static const pmb887x_io_value_t dsp_i2s_rxconf_fields_period_values[] = {
+static const DebugRegValue dsp_i2s_rxconf_fields_period_values[] = {
 	{ "CLOCKS_64",	0x00000000 },
 	{ "CLOCKS_48",	0x00000008 },
 	{ "CLOCKS_32",	0x00000010 },
 };
 
-static const pmb887x_io_value_t dsp_i2s_rxconf_fields_width_values[] = {
+static const DebugRegValue dsp_i2s_rxconf_fields_width_values[] = {
 	{ "BITS_16",	0x00000000 },
 	{ "BITS_18",	0x00000080 },
 	{ "BITS_20",	0x000000A0 },
@@ -10294,7 +10651,7 @@ static const pmb887x_io_value_t dsp_i2s_rxconf_fields_width_values[] = {
 	{ "BITS_32",	0x000000E0 },
 };
 
-static const pmb887x_io_field_t dsp_i2s_rxconf_fields[] = {
+static const DebugRegField dsp_i2s_rxconf_fields[] = {
 	{ "EDGE",		0x00000001,	0,	NULL,									0 },
 	{ "DEL",		0x00000002,	1,	NULL,									0 },
 	{ "POL",		0x00000004,	2,	NULL,									0 },
@@ -10306,17 +10663,17 @@ static const pmb887x_io_field_t dsp_i2s_rxconf_fields[] = {
 	{ "WA1_LEN",	0x00008000,	15,	NULL,									0 },
 };
 
-static const pmb887x_io_field_t dsp_i2s_rxintaddr_fields[] = {
+static const DebugRegField dsp_i2s_rxintaddr_fields[] = {
 	{ "RXINTPTR",	0x0000003F,	0,	NULL,	0 },
 };
 
-static const pmb887x_io_value_t dsp_i2s_txconf_fields_period_values[] = {
+static const DebugRegValue dsp_i2s_txconf_fields_period_values[] = {
 	{ "CLOCKS_64",	0x00000000 },
 	{ "CLOCKS_48",	0x00000008 },
 	{ "CLOCKS_32",	0x00000010 },
 };
 
-static const pmb887x_io_value_t dsp_i2s_txconf_fields_width_values[] = {
+static const DebugRegValue dsp_i2s_txconf_fields_width_values[] = {
 	{ "BITS_16",	0x00000000 },
 	{ "BITS_18",	0x00000080 },
 	{ "BITS_20",	0x000000A0 },
@@ -10324,13 +10681,13 @@ static const pmb887x_io_value_t dsp_i2s_txconf_fields_width_values[] = {
 	{ "BITS_32",	0x000000E0 },
 };
 
-static const pmb887x_io_value_t dsp_i2s_txconf_fields_mono_values[] = {
+static const DebugRegValue dsp_i2s_txconf_fields_mono_values[] = {
 	{ "STEREO",	0x00000000 },
 	{ "RIGHT",	0x00000400 },
 	{ "LEFT",	0x00000600 },
 };
 
-static const pmb887x_io_field_t dsp_i2s_txconf_fields[] = {
+static const DebugRegField dsp_i2s_txconf_fields[] = {
 	{ "EDGE",		0x00000001,	0,	NULL,									0 },
 	{ "DEL",		0x00000002,	1,	NULL,									0 },
 	{ "POL",		0x00000004,	2,	NULL,									0 },
@@ -10345,60 +10702,67 @@ static const pmb887x_io_field_t dsp_i2s_txconf_fields[] = {
 	{ "WA0_LEN",	0x00008000,	15,	NULL,									0 },
 };
 
-static const pmb887x_io_field_t dsp_i2s_txintaddr_fields[] = {
+static const DebugRegField dsp_i2s_txintaddr_fields[] = {
 	{ "TXINTPTR",	0x0000003F,	0,	NULL,	0 },
 };
 
-static const pmb887x_io_reg_t dsp_i2s_regs[] = {
-	{ "CTRL",		0x0,	dsp_i2s_ctrl_fields,		ARRAY_SIZE(dsp_i2s_ctrl_fields),		0 },
-	{ "CSEL",		0x1,	dsp_i2s_csel_fields,		ARRAY_SIZE(dsp_i2s_csel_fields),		0 },
-	{ "RWADDR",		0x2,	dsp_i2s_rwaddr_fields,		ARRAY_SIZE(dsp_i2s_rwaddr_fields),		0 },
-	{ "NUM0",		0x3,	dsp_i2s_num0_fields,		ARRAY_SIZE(dsp_i2s_num0_fields),		0 },
-	{ "DEN0",		0x4,	dsp_i2s_den0_fields,		ARRAY_SIZE(dsp_i2s_den0_fields),		0 },
-	{ "NUM1",		0x5,	dsp_i2s_num1_fields,		ARRAY_SIZE(dsp_i2s_num1_fields),		0 },
-	{ "DEN1",		0x6,	dsp_i2s_den1_fields,		ARRAY_SIZE(dsp_i2s_den1_fields),		0 },
-	{ "RXCONF",		0x7,	dsp_i2s_rxconf_fields,		ARRAY_SIZE(dsp_i2s_rxconf_fields),		0 },
-	{ "RXINTADDR",	0x8,	dsp_i2s_rxintaddr_fields,	ARRAY_SIZE(dsp_i2s_rxintaddr_fields),	0 },
-	{ "TXCONF",		0x9,	dsp_i2s_txconf_fields,		ARRAY_SIZE(dsp_i2s_txconf_fields),		0 },
-	{ "TXINTADDR",	0xA,	dsp_i2s_txintaddr_fields,	ARRAY_SIZE(dsp_i2s_txintaddr_fields),	0 },
+static const DebugReg dsp_i2s_regs[] = {
+	{ "CTRL",		0x0,	dsp_i2s_ctrl_fields,		ARRAY_SIZE(dsp_i2s_ctrl_fields) },
+	{ "CSEL",		0x1,	dsp_i2s_csel_fields,		ARRAY_SIZE(dsp_i2s_csel_fields) },
+	{ "RWADDR",		0x2,	dsp_i2s_rwaddr_fields,		ARRAY_SIZE(dsp_i2s_rwaddr_fields) },
+	{ "NUM0",		0x3,	dsp_i2s_num0_fields,		ARRAY_SIZE(dsp_i2s_num0_fields) },
+	{ "DEN0",		0x4,	dsp_i2s_den0_fields,		ARRAY_SIZE(dsp_i2s_den0_fields) },
+	{ "NUM1",		0x5,	dsp_i2s_num1_fields,		ARRAY_SIZE(dsp_i2s_num1_fields) },
+	{ "DEN1",		0x6,	dsp_i2s_den1_fields,		ARRAY_SIZE(dsp_i2s_den1_fields) },
+	{ "RXCONF",		0x7,	dsp_i2s_rxconf_fields,		ARRAY_SIZE(dsp_i2s_rxconf_fields) },
+	{ "RXINTADDR",	0x8,	dsp_i2s_rxintaddr_fields,	ARRAY_SIZE(dsp_i2s_rxintaddr_fields) },
+	{ "TXCONF",		0x9,	dsp_i2s_txconf_fields,		ARRAY_SIZE(dsp_i2s_txconf_fields) },
+	{ "TXINTADDR",	0xA,	dsp_i2s_txintaddr_fields,	ARRAY_SIZE(dsp_i2s_txintaddr_fields) },
 };
 
-static const pmb887x_io_field_t dsp_i2s_tx_ctrl_fields[] = {
+const DebugRegs pmb887x_dsp_i2s_regs = {
+	.regs = dsp_i2s_regs,
+	.count = ARRAY_SIZE(dsp_i2s_regs),
+	.reg_size = 1,
+	.addr_digits = 4,
+};
+
+static const DebugRegField dsp_i2s_tx_ctrl_fields[] = {
 	{ "I2SON",		0x00000001,	0,	NULL,	0 },
 	{ "I2STXSTART",	0x00000002,	1,	NULL,	0 },
 	{ "TXPCM",		0x00000020,	5,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t dsp_i2s_tx_csel_fields[] = {
+static const DebugRegField dsp_i2s_tx_csel_fields[] = {
 	{ "TXCLKSEL",	0x00000002,	1,	NULL,	0 },
 	{ "CLKSEL",		0x00000008,	3,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t dsp_i2s_tx_raddr_fields[] = {
+static const DebugRegField dsp_i2s_tx_raddr_fields[] = {
 	{ "RDADDR",	0x0000003F,	0,	NULL,	0 },
 };
 
-static const pmb887x_io_value_t dsp_i2s_tx_num_fields_fref_values[] = {
+static const DebugRegValue dsp_i2s_tx_num_fields_fref_values[] = {
 	{ "MODULE_CLOCK",	0x00000000 },
 	{ "CLOCK_104MHZ",	0x00001000 },
 };
 
-static const pmb887x_io_field_t dsp_i2s_tx_num_fields[] = {
+static const DebugRegField dsp_i2s_tx_num_fields[] = {
 	{ "NUMERATOR",	0x000007FF,	0,	NULL,								0 },
 	{ "FREF",		0x00003000,	12,	dsp_i2s_tx_num_fields_fref_values,	ARRAY_SIZE(dsp_i2s_tx_num_fields_fref_values) },
 };
 
-static const pmb887x_io_field_t dsp_i2s_tx_den_fields[] = {
+static const DebugRegField dsp_i2s_tx_den_fields[] = {
 	{ "DENOMINATOR",	0x0000FFFF,	0,	NULL,	0 },
 };
 
-static const pmb887x_io_value_t dsp_i2s_tx_txconf_fields_period_values[] = {
+static const DebugRegValue dsp_i2s_tx_txconf_fields_period_values[] = {
 	{ "CLOCKS_64",	0x00000000 },
 	{ "CLOCKS_48",	0x00000008 },
 	{ "CLOCKS_32",	0x00000010 },
 };
 
-static const pmb887x_io_value_t dsp_i2s_tx_txconf_fields_width_values[] = {
+static const DebugRegValue dsp_i2s_tx_txconf_fields_width_values[] = {
 	{ "BITS_16",	0x00000000 },
 	{ "BITS_18",	0x00000080 },
 	{ "BITS_20",	0x000000A0 },
@@ -10406,13 +10770,13 @@ static const pmb887x_io_value_t dsp_i2s_tx_txconf_fields_width_values[] = {
 	{ "BITS_32",	0x000000E0 },
 };
 
-static const pmb887x_io_value_t dsp_i2s_tx_txconf_fields_mono_values[] = {
+static const DebugRegValue dsp_i2s_tx_txconf_fields_mono_values[] = {
 	{ "STEREO",	0x00000000 },
 	{ "RIGHT",	0x00000400 },
 	{ "LEFT",	0x00000600 },
 };
 
-static const pmb887x_io_field_t dsp_i2s_tx_txconf_fields[] = {
+static const DebugRegField dsp_i2s_tx_txconf_fields[] = {
 	{ "EDGE",		0x00000001,	0,	NULL,									0 },
 	{ "DEL",		0x00000002,	1,	NULL,									0 },
 	{ "POL",		0x00000004,	2,	NULL,									0 },
@@ -10427,21 +10791,28 @@ static const pmb887x_io_field_t dsp_i2s_tx_txconf_fields[] = {
 	{ "WA_LEN",		0x00008000,	15,	NULL,									0 },
 };
 
-static const pmb887x_io_field_t dsp_i2s_tx_txintaddr_fields[] = {
+static const DebugRegField dsp_i2s_tx_txintaddr_fields[] = {
 	{ "TXINTPTR",	0x0000003F,	0,	NULL,	0 },
 };
 
-static const pmb887x_io_reg_t dsp_i2s_tx_regs[] = {
-	{ "CTRL",		0x0,	dsp_i2s_tx_ctrl_fields,			ARRAY_SIZE(dsp_i2s_tx_ctrl_fields),			0 },
-	{ "CSEL",		0x1,	dsp_i2s_tx_csel_fields,			ARRAY_SIZE(dsp_i2s_tx_csel_fields),			0 },
-	{ "RADDR",		0x2,	dsp_i2s_tx_raddr_fields,		ARRAY_SIZE(dsp_i2s_tx_raddr_fields),		0 },
-	{ "NUM",		0x3,	dsp_i2s_tx_num_fields,			ARRAY_SIZE(dsp_i2s_tx_num_fields),			0 },
-	{ "DEN",		0x4,	dsp_i2s_tx_den_fields,			ARRAY_SIZE(dsp_i2s_tx_den_fields),			0 },
-	{ "TXCONF",		0x9,	dsp_i2s_tx_txconf_fields,		ARRAY_SIZE(dsp_i2s_tx_txconf_fields),		0 },
-	{ "TXINTADDR",	0xA,	dsp_i2s_tx_txintaddr_fields,	ARRAY_SIZE(dsp_i2s_tx_txintaddr_fields),	0 },
+static const DebugReg dsp_i2s_tx_regs[] = {
+	{ "CTRL",		0x0,	dsp_i2s_tx_ctrl_fields,			ARRAY_SIZE(dsp_i2s_tx_ctrl_fields) },
+	{ "CSEL",		0x1,	dsp_i2s_tx_csel_fields,			ARRAY_SIZE(dsp_i2s_tx_csel_fields) },
+	{ "RADDR",		0x2,	dsp_i2s_tx_raddr_fields,		ARRAY_SIZE(dsp_i2s_tx_raddr_fields) },
+	{ "NUM",		0x3,	dsp_i2s_tx_num_fields,			ARRAY_SIZE(dsp_i2s_tx_num_fields) },
+	{ "DEN",		0x4,	dsp_i2s_tx_den_fields,			ARRAY_SIZE(dsp_i2s_tx_den_fields) },
+	{ "TXCONF",		0x9,	dsp_i2s_tx_txconf_fields,		ARRAY_SIZE(dsp_i2s_tx_txconf_fields) },
+	{ "TXINTADDR",	0xA,	dsp_i2s_tx_txintaddr_fields,	ARRAY_SIZE(dsp_i2s_tx_txintaddr_fields) },
 };
 
-static const pmb887x_io_field_t dsp_interrupt_finta0_fields[] = {
+const DebugRegs pmb887x_dsp_i2s_tx_regs = {
+	.regs = dsp_i2s_tx_regs,
+	.count = ARRAY_SIZE(dsp_i2s_tx_regs),
+	.reg_size = 1,
+	.addr_digits = 4,
+};
+
+static const DebugRegField dsp_interrupt_finta0_fields[] = {
 	{ "MCU0",		0x00000001,	0,	NULL,	0 },
 	{ "MCU1",		0x00000002,	1,	NULL,	0 },
 	{ "MCU2",		0x00000004,	2,	NULL,	0 },
@@ -10457,7 +10828,7 @@ static const pmb887x_io_field_t dsp_interrupt_finta0_fields[] = {
 	{ "BB_FULL",	0x00001000,	12,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t dsp_interrupt_einta0_fields[] = {
+static const DebugRegField dsp_interrupt_einta0_fields[] = {
 	{ "MCU0",		0x00000001,	0,	NULL,	0 },
 	{ "MCU1",		0x00000002,	1,	NULL,	0 },
 	{ "MCU2",		0x00000004,	2,	NULL,	0 },
@@ -10473,7 +10844,7 @@ static const pmb887x_io_field_t dsp_interrupt_einta0_fields[] = {
 	{ "BB_FULL",	0x00001000,	12,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t dsp_interrupt_rinta0_fields[] = {
+static const DebugRegField dsp_interrupt_rinta0_fields[] = {
 	{ "MCU0",		0x00000001,	0,	NULL,	0 },
 	{ "MCU1",		0x00000002,	1,	NULL,	0 },
 	{ "MCU2",		0x00000004,	2,	NULL,	0 },
@@ -10489,7 +10860,7 @@ static const pmb887x_io_field_t dsp_interrupt_rinta0_fields[] = {
 	{ "BB_FULL",	0x00001000,	12,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t dsp_interrupt_sinta0_fields[] = {
+static const DebugRegField dsp_interrupt_sinta0_fields[] = {
 	{ "MCU0",		0x00000001,	0,	NULL,	0 },
 	{ "MCU1",		0x00000002,	1,	NULL,	0 },
 	{ "MCU2",		0x00000004,	2,	NULL,	0 },
@@ -10505,7 +10876,7 @@ static const pmb887x_io_field_t dsp_interrupt_sinta0_fields[] = {
 	{ "BB_FULL",	0x00001000,	12,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t dsp_interrupt_fintb0_fields[] = {
+static const DebugRegField dsp_interrupt_fintb0_fields[] = {
 	{ "I2S1TX",		0x00000001,	0,	NULL,	0 },
 	{ "I2S1RX",		0x00000002,	1,	NULL,	0 },
 	{ "I2S2TX",		0x00000004,	2,	NULL,	0 },
@@ -10519,7 +10890,7 @@ static const pmb887x_io_field_t dsp_interrupt_fintb0_fields[] = {
 	{ "I2S3TX",		0x00000800,	11,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t dsp_interrupt_eintb0_fields[] = {
+static const DebugRegField dsp_interrupt_eintb0_fields[] = {
 	{ "I2S1TX",		0x00000001,	0,	NULL,	0 },
 	{ "I2S1RX",		0x00000002,	1,	NULL,	0 },
 	{ "I2S2TX",		0x00000004,	2,	NULL,	0 },
@@ -10533,7 +10904,7 @@ static const pmb887x_io_field_t dsp_interrupt_eintb0_fields[] = {
 	{ "I2S3TX",		0x00000800,	11,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t dsp_interrupt_rintb0_fields[] = {
+static const DebugRegField dsp_interrupt_rintb0_fields[] = {
 	{ "I2S1TX",		0x00000001,	0,	NULL,	0 },
 	{ "I2S1RX",		0x00000002,	1,	NULL,	0 },
 	{ "I2S2TX",		0x00000004,	2,	NULL,	0 },
@@ -10547,7 +10918,7 @@ static const pmb887x_io_field_t dsp_interrupt_rintb0_fields[] = {
 	{ "I2S3TX",		0x00000800,	11,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t dsp_interrupt_sintb0_fields[] = {
+static const DebugRegField dsp_interrupt_sintb0_fields[] = {
 	{ "I2S1TX",		0x00000001,	0,	NULL,	0 },
 	{ "I2S1RX",		0x00000002,	1,	NULL,	0 },
 	{ "I2S2TX",		0x00000004,	2,	NULL,	0 },
@@ -10561,7 +10932,7 @@ static const pmb887x_io_field_t dsp_interrupt_sintb0_fields[] = {
 	{ "I2S3TX",		0x00000800,	11,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t dsp_interrupt_fint1_fields[] = {
+static const DebugRegField dsp_interrupt_fint1_fields[] = {
 	{ "CIPH",		0x00000001,	0,	NULL,	0 },
 	{ "TMR10",		0x00000002,	1,	NULL,	0 },
 	{ "TMR11",		0x00000004,	2,	NULL,	0 },
@@ -10580,7 +10951,7 @@ static const pmb887x_io_field_t dsp_interrupt_fint1_fields[] = {
 	{ "MONIN4LO",	0x00008000,	15,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t dsp_interrupt_eint1_fields[] = {
+static const DebugRegField dsp_interrupt_eint1_fields[] = {
 	{ "CIPH",		0x00000001,	0,	NULL,	0 },
 	{ "TMR10",		0x00000002,	1,	NULL,	0 },
 	{ "TMR11",		0x00000004,	2,	NULL,	0 },
@@ -10599,7 +10970,7 @@ static const pmb887x_io_field_t dsp_interrupt_eint1_fields[] = {
 	{ "MONIN4LO",	0x00008000,	15,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t dsp_interrupt_rint1_fields[] = {
+static const DebugRegField dsp_interrupt_rint1_fields[] = {
 	{ "CIPH",		0x00000001,	0,	NULL,	0 },
 	{ "TMR10",		0x00000002,	1,	NULL,	0 },
 	{ "TMR11",		0x00000004,	2,	NULL,	0 },
@@ -10618,7 +10989,7 @@ static const pmb887x_io_field_t dsp_interrupt_rint1_fields[] = {
 	{ "MONIN4LO",	0x00008000,	15,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t dsp_interrupt_sint1_fields[] = {
+static const DebugRegField dsp_interrupt_sint1_fields[] = {
 	{ "CIPH",		0x00000001,	0,	NULL,	0 },
 	{ "TMR10",		0x00000002,	1,	NULL,	0 },
 	{ "TMR11",		0x00000004,	2,	NULL,	0 },
@@ -10637,7 +11008,7 @@ static const pmb887x_io_field_t dsp_interrupt_sint1_fields[] = {
 	{ "MONIN4LO",	0x00008000,	15,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t dsp_interrupt_fint2_fields[] = {
+static const DebugRegField dsp_interrupt_fint2_fields[] = {
 	{ "FW0",	0x00000001,	0,	NULL,	0 },
 	{ "FW1",	0x00000002,	1,	NULL,	0 },
 	{ "FW2",	0x00000004,	2,	NULL,	0 },
@@ -10656,7 +11027,7 @@ static const pmb887x_io_field_t dsp_interrupt_fint2_fields[] = {
 	{ "FW15",	0x00008000,	15,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t dsp_interrupt_eint2_fields[] = {
+static const DebugRegField dsp_interrupt_eint2_fields[] = {
 	{ "EFW0",	0x00000001,	0,	NULL,	0 },
 	{ "EFW1",	0x00000002,	1,	NULL,	0 },
 	{ "EFW2",	0x00000004,	2,	NULL,	0 },
@@ -10675,7 +11046,7 @@ static const pmb887x_io_field_t dsp_interrupt_eint2_fields[] = {
 	{ "EFW15",	0x00008000,	15,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t dsp_interrupt_rint2_fields[] = {
+static const DebugRegField dsp_interrupt_rint2_fields[] = {
 	{ "RFW0",	0x00000001,	0,	NULL,	0 },
 	{ "RFW1",	0x00000002,	1,	NULL,	0 },
 	{ "RFW2",	0x00000004,	2,	NULL,	0 },
@@ -10694,7 +11065,7 @@ static const pmb887x_io_field_t dsp_interrupt_rint2_fields[] = {
 	{ "RFW15",	0x00008000,	15,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t dsp_interrupt_sint2_fields[] = {
+static const DebugRegField dsp_interrupt_sint2_fields[] = {
 	{ "SFW0",	0x00000001,	0,	NULL,	0 },
 	{ "SFW1",	0x00000002,	1,	NULL,	0 },
 	{ "SFW2",	0x00000004,	2,	NULL,	0 },
@@ -10713,39 +11084,46 @@ static const pmb887x_io_field_t dsp_interrupt_sint2_fields[] = {
 	{ "SFW15",	0x00008000,	15,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t dsp_interrupt_tomcu_fields[] = {
+static const DebugRegField dsp_interrupt_tomcu_fields[] = {
 	{ "TOMCU0",	0x00000001,	0,	NULL,	0 },
 	{ "TOMCU1",	0x00000002,	1,	NULL,	0 },
 	{ "TOMCU2",	0x00000004,	2,	NULL,	0 },
 	{ "TOMCU3",	0x00000008,	3,	NULL,	0 },
 };
 
-static const pmb887x_io_reg_t dsp_interrupt_regs[] = {
-	{ "FINTA0",	0x0,	dsp_interrupt_finta0_fields,	ARRAY_SIZE(dsp_interrupt_finta0_fields),	0 },
-	{ "EINTA0",	0x1,	dsp_interrupt_einta0_fields,	ARRAY_SIZE(dsp_interrupt_einta0_fields),	0 },
-	{ "RINTA0",	0x2,	dsp_interrupt_rinta0_fields,	ARRAY_SIZE(dsp_interrupt_rinta0_fields),	0 },
-	{ "SINTA0",	0x3,	dsp_interrupt_sinta0_fields,	ARRAY_SIZE(dsp_interrupt_sinta0_fields),	0 },
-	{ "FINTB0",	0x4,	dsp_interrupt_fintb0_fields,	ARRAY_SIZE(dsp_interrupt_fintb0_fields),	0 },
-	{ "EINTB0",	0x5,	dsp_interrupt_eintb0_fields,	ARRAY_SIZE(dsp_interrupt_eintb0_fields),	0 },
-	{ "RINTB0",	0x6,	dsp_interrupt_rintb0_fields,	ARRAY_SIZE(dsp_interrupt_rintb0_fields),	0 },
-	{ "SINTB0",	0x7,	dsp_interrupt_sintb0_fields,	ARRAY_SIZE(dsp_interrupt_sintb0_fields),	0 },
-	{ "FINT1",	0x8,	dsp_interrupt_fint1_fields,		ARRAY_SIZE(dsp_interrupt_fint1_fields),		0 },
-	{ "EINT1",	0x9,	dsp_interrupt_eint1_fields,		ARRAY_SIZE(dsp_interrupt_eint1_fields),		0 },
-	{ "RINT1",	0xA,	dsp_interrupt_rint1_fields,		ARRAY_SIZE(dsp_interrupt_rint1_fields),		0 },
-	{ "SINT1",	0xB,	dsp_interrupt_sint1_fields,		ARRAY_SIZE(dsp_interrupt_sint1_fields),		0 },
-	{ "FINT2",	0xC,	dsp_interrupt_fint2_fields,		ARRAY_SIZE(dsp_interrupt_fint2_fields),		0 },
-	{ "EINT2",	0xD,	dsp_interrupt_eint2_fields,		ARRAY_SIZE(dsp_interrupt_eint2_fields),		0 },
-	{ "RINT2",	0xE,	dsp_interrupt_rint2_fields,		ARRAY_SIZE(dsp_interrupt_rint2_fields),		0 },
-	{ "SINT2",	0xF,	dsp_interrupt_sint2_fields,		ARRAY_SIZE(dsp_interrupt_sint2_fields),		0 },
-	{ "TOMCU",	0x10,	dsp_interrupt_tomcu_fields,		ARRAY_SIZE(dsp_interrupt_tomcu_fields),		0 },
-	{ "UNK11",	0x11,	NULL,							0,											0 },
-	{ "UNK12",	0x12,	NULL,							0,											0 },
-	{ "UNK13",	0x13,	NULL,							0,											0 },
-	{ "UNK14",	0x14,	NULL,							0,											0 },
-	{ "UNK15",	0x15,	NULL,							0,											0 },
+static const DebugReg dsp_interrupt_regs[] = {
+	{ "FINTA0",	0x0,	dsp_interrupt_finta0_fields,	ARRAY_SIZE(dsp_interrupt_finta0_fields) },
+	{ "EINTA0",	0x1,	dsp_interrupt_einta0_fields,	ARRAY_SIZE(dsp_interrupt_einta0_fields) },
+	{ "RINTA0",	0x2,	dsp_interrupt_rinta0_fields,	ARRAY_SIZE(dsp_interrupt_rinta0_fields) },
+	{ "SINTA0",	0x3,	dsp_interrupt_sinta0_fields,	ARRAY_SIZE(dsp_interrupt_sinta0_fields) },
+	{ "FINTB0",	0x4,	dsp_interrupt_fintb0_fields,	ARRAY_SIZE(dsp_interrupt_fintb0_fields) },
+	{ "EINTB0",	0x5,	dsp_interrupt_eintb0_fields,	ARRAY_SIZE(dsp_interrupt_eintb0_fields) },
+	{ "RINTB0",	0x6,	dsp_interrupt_rintb0_fields,	ARRAY_SIZE(dsp_interrupt_rintb0_fields) },
+	{ "SINTB0",	0x7,	dsp_interrupt_sintb0_fields,	ARRAY_SIZE(dsp_interrupt_sintb0_fields) },
+	{ "FINT1",	0x8,	dsp_interrupt_fint1_fields,		ARRAY_SIZE(dsp_interrupt_fint1_fields) },
+	{ "EINT1",	0x9,	dsp_interrupt_eint1_fields,		ARRAY_SIZE(dsp_interrupt_eint1_fields) },
+	{ "RINT1",	0xA,	dsp_interrupt_rint1_fields,		ARRAY_SIZE(dsp_interrupt_rint1_fields) },
+	{ "SINT1",	0xB,	dsp_interrupt_sint1_fields,		ARRAY_SIZE(dsp_interrupt_sint1_fields) },
+	{ "FINT2",	0xC,	dsp_interrupt_fint2_fields,		ARRAY_SIZE(dsp_interrupt_fint2_fields) },
+	{ "EINT2",	0xD,	dsp_interrupt_eint2_fields,		ARRAY_SIZE(dsp_interrupt_eint2_fields) },
+	{ "RINT2",	0xE,	dsp_interrupt_rint2_fields,		ARRAY_SIZE(dsp_interrupt_rint2_fields) },
+	{ "SINT2",	0xF,	dsp_interrupt_sint2_fields,		ARRAY_SIZE(dsp_interrupt_sint2_fields) },
+	{ "TOMCU",	0x10,	dsp_interrupt_tomcu_fields,		ARRAY_SIZE(dsp_interrupt_tomcu_fields) },
+	{ "UNK11",	0x11,	NULL,							0 },
+	{ "UNK12",	0x12,	NULL,							0 },
+	{ "UNK13",	0x13,	NULL,							0 },
+	{ "UNK14",	0x14,	NULL,							0 },
+	{ "UNK15",	0x15,	NULL,							0 },
 };
 
-static const pmb887x_io_field_t dsp_mcs_cfsta_fields[] = {
+const DebugRegs pmb887x_dsp_interrupt_regs = {
+	.regs = dsp_interrupt_regs,
+	.count = ARRAY_SIZE(dsp_interrupt_regs),
+	.reg_size = 1,
+	.addr_digits = 4,
+};
+
+static const DebugRegField dsp_mcs_cfsta_fields[] = {
 	{ "CF0",	0x00000001,	0,	NULL,	0 },
 	{ "CF1",	0x00000002,	1,	NULL,	0 },
 	{ "CF2",	0x00000004,	2,	NULL,	0 },
@@ -10764,7 +11142,7 @@ static const pmb887x_io_field_t dsp_mcs_cfsta_fields[] = {
 	{ "CF15",	0x00008000,	15,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t dsp_mcs_cfset_fields[] = {
+static const DebugRegField dsp_mcs_cfset_fields[] = {
 	{ "CF0",	0x00000001,	0,	NULL,	0 },
 	{ "CF1",	0x00000002,	1,	NULL,	0 },
 	{ "CF2",	0x00000004,	2,	NULL,	0 },
@@ -10783,7 +11161,7 @@ static const pmb887x_io_field_t dsp_mcs_cfset_fields[] = {
 	{ "CF15",	0x00008000,	15,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t dsp_mcs_cfr_fields[] = {
+static const DebugRegField dsp_mcs_cfr_fields[] = {
 	{ "CF0",	0x00000001,	0,	NULL,	0 },
 	{ "CF1",	0x00000002,	1,	NULL,	0 },
 	{ "CF2",	0x00000004,	2,	NULL,	0 },
@@ -10802,7 +11180,7 @@ static const pmb887x_io_field_t dsp_mcs_cfr_fields[] = {
 	{ "CF15",	0x00008000,	15,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t dsp_mcs_mcu_sem_fields[] = {
+static const DebugRegField dsp_mcs_mcu_sem_fields[] = {
 	{ "SEM0",	0x00000001,	0,	NULL,	0 },
 	{ "SEM1",	0x00000002,	1,	NULL,	0 },
 	{ "SEM2",	0x00000004,	2,	NULL,	0 },
@@ -10821,7 +11199,7 @@ static const pmb887x_io_field_t dsp_mcs_mcu_sem_fields[] = {
 	{ "SEM15",	0x00008000,	15,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t dsp_mcs_mcu_sems_fields[] = {
+static const DebugRegField dsp_mcs_mcu_sems_fields[] = {
 	{ "SEM0",	0x00000001,	0,	NULL,	0 },
 	{ "SEM1",	0x00000002,	1,	NULL,	0 },
 	{ "SEM2",	0x00000004,	2,	NULL,	0 },
@@ -10840,7 +11218,7 @@ static const pmb887x_io_field_t dsp_mcs_mcu_sems_fields[] = {
 	{ "SEM15",	0x00008000,	15,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t dsp_mcs_mcu_semr_fields[] = {
+static const DebugRegField dsp_mcs_mcu_semr_fields[] = {
 	{ "SEM0",	0x00000001,	0,	NULL,	0 },
 	{ "SEM1",	0x00000002,	1,	NULL,	0 },
 	{ "SEM2",	0x00000004,	2,	NULL,	0 },
@@ -10859,62 +11237,76 @@ static const pmb887x_io_field_t dsp_mcs_mcu_semr_fields[] = {
 	{ "SEM15",	0x00008000,	15,	NULL,	0 },
 };
 
-static const pmb887x_io_reg_t dsp_mcs_regs[] = {
-	{ "CFSTA",		0x0,	dsp_mcs_cfsta_fields,		ARRAY_SIZE(dsp_mcs_cfsta_fields),		0 },
-	{ "CFSET",		0x1,	dsp_mcs_cfset_fields,		ARRAY_SIZE(dsp_mcs_cfset_fields),		0 },
-	{ "CFR",		0x2,	dsp_mcs_cfr_fields,			ARRAY_SIZE(dsp_mcs_cfr_fields),			0 },
-	{ "MCU_SEM",	0x3,	dsp_mcs_mcu_sem_fields,		ARRAY_SIZE(dsp_mcs_mcu_sem_fields),		0 },
-	{ "MCU_SEMS",	0x4,	dsp_mcs_mcu_sems_fields,	ARRAY_SIZE(dsp_mcs_mcu_sems_fields),	0 },
-	{ "MCU_SEMR",	0x5,	dsp_mcs_mcu_semr_fields,	ARRAY_SIZE(dsp_mcs_mcu_semr_fields),	0 },
+static const DebugReg dsp_mcs_regs[] = {
+	{ "CFSTA",		0x0,	dsp_mcs_cfsta_fields,		ARRAY_SIZE(dsp_mcs_cfsta_fields) },
+	{ "CFSET",		0x1,	dsp_mcs_cfset_fields,		ARRAY_SIZE(dsp_mcs_cfset_fields) },
+	{ "CFR",		0x2,	dsp_mcs_cfr_fields,			ARRAY_SIZE(dsp_mcs_cfr_fields) },
+	{ "MCU_SEM",	0x3,	dsp_mcs_mcu_sem_fields,		ARRAY_SIZE(dsp_mcs_mcu_sem_fields) },
+	{ "MCU_SEMS",	0x4,	dsp_mcs_mcu_sems_fields,	ARRAY_SIZE(dsp_mcs_mcu_sems_fields) },
+	{ "MCU_SEMR",	0x5,	dsp_mcs_mcu_semr_fields,	ARRAY_SIZE(dsp_mcs_mcu_semr_fields) },
 };
 
-static const pmb887x_io_field_t dsp_modulator_ctrl_fields[] = {
+const DebugRegs pmb887x_dsp_mcs_regs = {
+	.regs = dsp_mcs_regs,
+	.count = ARRAY_SIZE(dsp_mcs_regs),
+	.reg_size = 1,
+	.addr_digits = 4,
+};
+
+static const DebugRegField dsp_modulator_ctrl_fields[] = {
 	{ "IQSWAP",	0x00000001,	0,	NULL,	0 },
 	{ "MSWACT",	0x00000100,	8,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t dsp_modulator_stat_fields[] = {
+static const DebugRegField dsp_modulator_stat_fields[] = {
 	{ "MSTAT",	0x00000001,	0,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t dsp_modulator_int_addr_fields[] = {
+static const DebugRegField dsp_modulator_int_addr_fields[] = {
 	{ "MINT_ADDR",	0x000001FF,	0,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t dsp_modulator_oci_fields[] = {
+static const DebugRegField dsp_modulator_oci_fields[] = {
 	{ "VALUE",	0x00000FFF,	0,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t dsp_modulator_ocq_fields[] = {
+static const DebugRegField dsp_modulator_ocq_fields[] = {
 	{ "VALUE",	0x00000FFF,	0,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t dsp_modulator_aci_fields[] = {
+static const DebugRegField dsp_modulator_aci_fields[] = {
 	{ "VALUE",	0x000000FF,	0,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t dsp_modulator_acq_fields[] = {
+static const DebugRegField dsp_modulator_acq_fields[] = {
 	{ "VALUE",	0x000000FF,	0,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t dsp_modulator_fc_fields[] = {
+static const DebugRegField dsp_modulator_fc_fields[] = {
 	{ "VALUE",	0x00000FFF,	0,	NULL,	0 },
 };
 
-static const pmb887x_io_reg_t dsp_modulator_regs[] = {
-	{ "CTRL",		0x0,	dsp_modulator_ctrl_fields,		ARRAY_SIZE(dsp_modulator_ctrl_fields),		0 },
-	{ "STAT",		0x1,	dsp_modulator_stat_fields,		ARRAY_SIZE(dsp_modulator_stat_fields),		0 },
-	{ "INT_ADDR",	0x3,	dsp_modulator_int_addr_fields,	ARRAY_SIZE(dsp_modulator_int_addr_fields),	0 },
-	{ "OCI",		0x4,	dsp_modulator_oci_fields,		ARRAY_SIZE(dsp_modulator_oci_fields),		0 },
-	{ "OCQ",		0x5,	dsp_modulator_ocq_fields,		ARRAY_SIZE(dsp_modulator_ocq_fields),		0 },
-	{ "ACI",		0x6,	dsp_modulator_aci_fields,		ARRAY_SIZE(dsp_modulator_aci_fields),		0 },
-	{ "ACQ",		0x7,	dsp_modulator_acq_fields,		ARRAY_SIZE(dsp_modulator_acq_fields),		0 },
-	{ "FC",			0x8,	dsp_modulator_fc_fields,		ARRAY_SIZE(dsp_modulator_fc_fields),		0 },
-	{ "UNK9",		0x9,	NULL,							0,											0 },
-	{ "UNKA",		0xA,	NULL,							0,											0 },
+static const DebugReg dsp_modulator_regs[] = {
+	{ "CTRL",		0x0,	dsp_modulator_ctrl_fields,		ARRAY_SIZE(dsp_modulator_ctrl_fields) },
+	{ "STAT",		0x1,	dsp_modulator_stat_fields,		ARRAY_SIZE(dsp_modulator_stat_fields) },
+	{ "INT_ADDR",	0x3,	dsp_modulator_int_addr_fields,	ARRAY_SIZE(dsp_modulator_int_addr_fields) },
+	{ "OCI",		0x4,	dsp_modulator_oci_fields,		ARRAY_SIZE(dsp_modulator_oci_fields) },
+	{ "OCQ",		0x5,	dsp_modulator_ocq_fields,		ARRAY_SIZE(dsp_modulator_ocq_fields) },
+	{ "ACI",		0x6,	dsp_modulator_aci_fields,		ARRAY_SIZE(dsp_modulator_aci_fields) },
+	{ "ACQ",		0x7,	dsp_modulator_acq_fields,		ARRAY_SIZE(dsp_modulator_acq_fields) },
+	{ "FC",			0x8,	dsp_modulator_fc_fields,		ARRAY_SIZE(dsp_modulator_fc_fields) },
+	{ "UNK9",		0x9,	NULL,							0 },
+	{ "UNKA",		0xA,	NULL,							0 },
 };
 
-static const pmb887x_io_field_t dsp_ssc_con_fields[] = {
+const DebugRegs pmb887x_dsp_modulator_regs = {
+	.regs = dsp_modulator_regs,
+	.count = ARRAY_SIZE(dsp_modulator_regs),
+	.reg_size = 1,
+	.addr_digits = 4,
+};
+
+static const DebugRegField dsp_ssc_con_fields[] = {
 	{ "BC",		0x0000000F,	0,	NULL,	0 },
 	{ "BM",		0x0000000F,	0,	NULL,	0 },
 	{ "HB",		0x00000010,	4,	NULL,	0 },
@@ -10936,7 +11328,7 @@ static const pmb887x_io_field_t dsp_ssc_con_fields[] = {
 	{ "EN",		0x00008000,	15,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t dsp_ssc_whbcon_fields[] = {
+static const DebugRegField dsp_ssc_whbcon_fields[] = {
 	{ "CLRTE",	0x00000100,	8,	NULL,	0 },
 	{ "CLRRE",	0x00000200,	9,	NULL,	0 },
 	{ "CLRPE",	0x00000400,	10,	NULL,	0 },
@@ -10947,94 +11339,115 @@ static const pmb887x_io_field_t dsp_ssc_whbcon_fields[] = {
 	{ "SETBE",	0x00008000,	15,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t dsp_ssc_txb_fields[] = {
+static const DebugRegField dsp_ssc_txb_fields[] = {
 	{ "VALUE",	0x0000FFFF,	0,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t dsp_ssc_rxb_fields[] = {
+static const DebugRegField dsp_ssc_rxb_fields[] = {
 	{ "VALUE",	0x0000FFFF,	0,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t dsp_ssc_rxfcon_fields[] = {
+static const DebugRegField dsp_ssc_rxfcon_fields[] = {
 	{ "EN",		0x00000001,	0,	NULL,	0 },
 	{ "FLU",	0x00000002,	1,	NULL,	0 },
 	{ "TMEN",	0x00000004,	2,	NULL,	0 },
 	{ "ITL",	0x00003F00,	8,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t dsp_ssc_txfcon_fields[] = {
+static const DebugRegField dsp_ssc_txfcon_fields[] = {
 	{ "EN",		0x00000001,	0,	NULL,	0 },
 	{ "FLU",	0x00000002,	1,	NULL,	0 },
 	{ "TMEN",	0x00000004,	2,	NULL,	0 },
 	{ "ITL",	0x00003F00,	8,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t dsp_ssc_fstat_fields[] = {
+static const DebugRegField dsp_ssc_fstat_fields[] = {
 	{ "RXFFL",	0x0000003F,	0,	NULL,	0 },
 	{ "TXFFL",	0x00003F00,	8,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t dsp_ssc_br_fields[] = {
+static const DebugRegField dsp_ssc_br_fields[] = {
 	{ "VALUE",	0x0000FFFF,	0,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t dsp_ssc_fdv_fields[] = {
+static const DebugRegField dsp_ssc_fdv_fields[] = {
 	{ "VALUE",	0x000001FF,	0,	NULL,	0 },
 };
 
-static const pmb887x_io_reg_t dsp_ssc_regs[] = {
-	{ "CON",	0x0,	dsp_ssc_con_fields,		ARRAY_SIZE(dsp_ssc_con_fields),		0 },
-	{ "WHBCON",	0x1,	dsp_ssc_whbcon_fields,	ARRAY_SIZE(dsp_ssc_whbcon_fields),	0 },
-	{ "TXB",	0x2,	dsp_ssc_txb_fields,		ARRAY_SIZE(dsp_ssc_txb_fields),		0 },
-	{ "RXB",	0x3,	dsp_ssc_rxb_fields,		ARRAY_SIZE(dsp_ssc_rxb_fields),		0 },
-	{ "RXFCON",	0x4,	dsp_ssc_rxfcon_fields,	ARRAY_SIZE(dsp_ssc_rxfcon_fields),	0 },
-	{ "TXFCON",	0x5,	dsp_ssc_txfcon_fields,	ARRAY_SIZE(dsp_ssc_txfcon_fields),	0 },
-	{ "FSTAT",	0x6,	dsp_ssc_fstat_fields,	ARRAY_SIZE(dsp_ssc_fstat_fields),	0 },
-	{ "BR",		0x7,	dsp_ssc_br_fields,		ARRAY_SIZE(dsp_ssc_br_fields),		0 },
-	{ "FDV",	0x8,	dsp_ssc_fdv_fields,		ARRAY_SIZE(dsp_ssc_fdv_fields),		0 },
+static const DebugReg dsp_ssc_regs[] = {
+	{ "CON",	0x0,	dsp_ssc_con_fields,		ARRAY_SIZE(dsp_ssc_con_fields) },
+	{ "WHBCON",	0x1,	dsp_ssc_whbcon_fields,	ARRAY_SIZE(dsp_ssc_whbcon_fields) },
+	{ "TXB",	0x2,	dsp_ssc_txb_fields,		ARRAY_SIZE(dsp_ssc_txb_fields) },
+	{ "RXB",	0x3,	dsp_ssc_rxb_fields,		ARRAY_SIZE(dsp_ssc_rxb_fields) },
+	{ "RXFCON",	0x4,	dsp_ssc_rxfcon_fields,	ARRAY_SIZE(dsp_ssc_rxfcon_fields) },
+	{ "TXFCON",	0x5,	dsp_ssc_txfcon_fields,	ARRAY_SIZE(dsp_ssc_txfcon_fields) },
+	{ "FSTAT",	0x6,	dsp_ssc_fstat_fields,	ARRAY_SIZE(dsp_ssc_fstat_fields) },
+	{ "BR",		0x7,	dsp_ssc_br_fields,		ARRAY_SIZE(dsp_ssc_br_fields) },
+	{ "FDV",	0x8,	dsp_ssc_fdv_fields,		ARRAY_SIZE(dsp_ssc_fdv_fields) },
 };
 
-static const pmb887x_io_field_t dsp_timer1_ctrl_fields[] = {
+const DebugRegs pmb887x_dsp_ssc_regs = {
+	.regs = dsp_ssc_regs,
+	.count = ARRAY_SIZE(dsp_ssc_regs),
+	.reg_size = 1,
+	.addr_digits = 4,
+};
+
+static const DebugRegField dsp_timer1_ctrl_fields[] = {
 	{ "DT1ENA",		0x00000001,	0,	NULL,	0 },
 	{ "RESTART",	0x00000002,	1,	NULL,	0 },
 	{ "DT1ACT",		0x00000004,	2,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t dsp_timer1_cnt_fields[] = {
+static const DebugRegField dsp_timer1_cnt_fields[] = {
 	{ "T1CNT",	0x00000FFF,	0,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t dsp_timer1_int0_fields[] = {
+static const DebugRegField dsp_timer1_int0_fields[] = {
 	{ "T1INT0",	0x00000FFF,	0,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t dsp_timer1_int1_fields[] = {
+static const DebugRegField dsp_timer1_int1_fields[] = {
 	{ "T1INT1",	0x00000FFF,	0,	NULL,	0 },
 };
 
-static const pmb887x_io_reg_t dsp_timer1_regs[] = {
-	{ "CTRL",	0x0,	dsp_timer1_ctrl_fields,	ARRAY_SIZE(dsp_timer1_ctrl_fields),	0 },
-	{ "CNT",	0x1,	dsp_timer1_cnt_fields,	ARRAY_SIZE(dsp_timer1_cnt_fields),	0 },
-	{ "INT0",	0x2,	dsp_timer1_int0_fields,	ARRAY_SIZE(dsp_timer1_int0_fields),	0 },
-	{ "INT1",	0x3,	dsp_timer1_int1_fields,	ARRAY_SIZE(dsp_timer1_int1_fields),	0 },
+static const DebugReg dsp_timer1_regs[] = {
+	{ "CTRL",	0x0,	dsp_timer1_ctrl_fields,	ARRAY_SIZE(dsp_timer1_ctrl_fields) },
+	{ "CNT",	0x1,	dsp_timer1_cnt_fields,	ARRAY_SIZE(dsp_timer1_cnt_fields) },
+	{ "INT0",	0x2,	dsp_timer1_int0_fields,	ARRAY_SIZE(dsp_timer1_int0_fields) },
+	{ "INT1",	0x3,	dsp_timer1_int1_fields,	ARRAY_SIZE(dsp_timer1_int1_fields) },
 };
 
-static const pmb887x_io_field_t dsp_timer2_ctrl_fields[] = {
+const DebugRegs pmb887x_dsp_timer1_regs = {
+	.regs = dsp_timer1_regs,
+	.count = ARRAY_SIZE(dsp_timer1_regs),
+	.reg_size = 1,
+	.addr_digits = 4,
+};
+
+static const DebugRegField dsp_timer2_ctrl_fields[] = {
 	{ "DT2ACT",	0x00000001,	0,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t dsp_timer2_cnt_fields[] = {
+static const DebugRegField dsp_timer2_cnt_fields[] = {
 	{ "T2CNT",	0x0000FFFF,	0,	NULL,	0 },
 };
 
-static const pmb887x_io_field_t dsp_timer2_max_fields[] = {
+static const DebugRegField dsp_timer2_max_fields[] = {
 	{ "T2MAX",	0x0000FFFF,	0,	NULL,	0 },
 };
 
-static const pmb887x_io_reg_t dsp_timer2_regs[] = {
-	{ "CTRL",	0x0,	dsp_timer2_ctrl_fields,	ARRAY_SIZE(dsp_timer2_ctrl_fields),	0 },
-	{ "CNT",	0x1,	dsp_timer2_cnt_fields,	ARRAY_SIZE(dsp_timer2_cnt_fields),	0 },
-	{ "MAX",	0x2,	dsp_timer2_max_fields,	ARRAY_SIZE(dsp_timer2_max_fields),	0 },
+static const DebugReg dsp_timer2_regs[] = {
+	{ "CTRL",	0x0,	dsp_timer2_ctrl_fields,	ARRAY_SIZE(dsp_timer2_ctrl_fields) },
+	{ "CNT",	0x1,	dsp_timer2_cnt_fields,	ARRAY_SIZE(dsp_timer2_cnt_fields) },
+	{ "MAX",	0x2,	dsp_timer2_max_fields,	ARRAY_SIZE(dsp_timer2_max_fields) },
+};
+
+const DebugRegs pmb887x_dsp_timer2_regs = {
+	.regs = dsp_timer2_regs,
+	.count = ARRAY_SIZE(dsp_timer2_regs),
+	.reg_size = 1,
+	.addr_digits = 4,
 };
 
 static const pmb887x_cpu_meta_irq_t pmb8878_irqs[] = {
@@ -11044,36 +11457,36 @@ static const pmb887x_cpu_meta_gpio_t pmb8878_gpios[] = {
 };
 
 static const pmb887x_cpu_io_t pmb8878_modules[] = {
-	{"SSC",			PMB8878_SSC_BASE,		SSC_IO_SIZE,	ssc_regs,		ARRAY_SIZE(ssc_regs)},
-	{"USB",			PMB8878_USB_BASE,		USB_IO_SIZE,	usb_regs,		ARRAY_SIZE(usb_regs)},
-	{"VIC",			PMB8878_VIC_BASE,		VIC_IO_SIZE,	vic_regs,		ARRAY_SIZE(vic_regs)},
-	{"DMAC",		PMB8878_DMAC_BASE,		DMAC_IO_SIZE,	dmac_regs,		ARRAY_SIZE(dmac_regs)},
-	{"SCU",			PMB8878_SCU_BASE,		SCU_IO_SIZE,	scu_regs,		ARRAY_SIZE(scu_regs)},
-	{"CGU",			PMB8878_CGU_BASE,		CGU_IO_SIZE,	cgu_regs,		ARRAY_SIZE(cgu_regs)},
-	{"SCCU",		PMB8878_SCCU_BASE,		SCCU_IO_SIZE,	sccu_regs,		ARRAY_SIZE(sccu_regs)},
-	{"RTC",			PMB8878_RTC_BASE,		RTC_IO_SIZE,	rtc_regs,		ARRAY_SIZE(rtc_regs)},
-	{"ADC",			PMB8878_ADC_BASE,		ADC_IO_SIZE,	adc_regs,		ARRAY_SIZE(adc_regs)},
-	{"DSP_RAM",		0xF6001000,				0x1800,			NULL,			0},
-	{"DSP",			PMB8878_DSP_BASE,		DSP_IO_SIZE,	dsp_regs,		ARRAY_SIZE(dsp_regs)},
-	{"TPU_RAM",		0xF6401000,				0x1000,			NULL,			0},
-	{"TPU",			PMB8878_TPU_BASE,		TPU_IO_SIZE,	tpu_regs,		ARRAY_SIZE(tpu_regs)},
-	{"MMICIF_MMAP",	0xFA000000,				0x100000,		NULL,			0},
-	{"MMICIF_MMAP",	0xFA100000,				0x100000,		NULL,			0},
-	{"MMICIF_MMAP",	0xFA200000,				0x100000,		NULL,			0},
-	{"MMICIF_MMAP",	0xFA300000,				0x100000,		NULL,			0},
-	{"MMICIF_MMAP",	0xFA400000,				0x100000,		NULL,			0},
-	{"MMICIF_MMAP",	0xFA500000,				0x100000,		NULL,			0},
-	{"MMICIF_MMAP",	0xFA600000,				0x100000,		NULL,			0},
-	{"MMICIF_MMAP",	0xFA700000,				0x100000,		NULL,			0},
-	{"MMICIF_MMAP",	0xFA800000,				0x100000,		NULL,			0},
-	{"MMICIF_MMAP",	0xFA900000,				0x100000,		NULL,			0},
-	{"MMICIF_MMAP",	0xFAA00000,				0x100000,		NULL,			0},
-	{"MMICIF_MMAP",	0xFAB00000,				0x100000,		NULL,			0},
-	{"MMICIF_MMAP",	0xFAC00000,				0x100000,		NULL,			0},
-	{"MMICIF_MMAP",	0xFAD00000,				0x100000,		NULL,			0},
-	{"MMICIF_MMAP",	0xFAE00000,				0x100000,		NULL,			0},
-	{"MMICIF_MMAP",	0xFAF00000,				0x100000,		NULL,			0},
-	{"MMICIF",		PMB8878_MMICIF_BASE,	MMICIF_IO_SIZE,	mmicif_regs,	ARRAY_SIZE(mmicif_regs)},
+	{"SSC",			PMB8878_SSC_BASE,		SSC_IO_SIZE,	&pmb887x_ssc_regs},
+	{"USB",			PMB8878_USB_BASE,		USB_IO_SIZE,	&pmb887x_usb_regs},
+	{"VIC",			PMB8878_VIC_BASE,		VIC_IO_SIZE,	&pmb887x_vic_regs},
+	{"DMAC",		PMB8878_DMAC_BASE,		DMAC_IO_SIZE,	&pmb887x_dmac_regs},
+	{"SCU",			PMB8878_SCU_BASE,		SCU_IO_SIZE,	&pmb887x_scu_regs},
+	{"CGU",			PMB8878_CGU_BASE,		CGU_IO_SIZE,	&pmb887x_cgu_regs},
+	{"SCCU",		PMB8878_SCCU_BASE,		SCCU_IO_SIZE,	&pmb887x_sccu_regs},
+	{"RTC",			PMB8878_RTC_BASE,		RTC_IO_SIZE,	&pmb887x_rtc_regs},
+	{"ADC",			PMB8878_ADC_BASE,		ADC_IO_SIZE,	&pmb887x_adc_regs},
+	{"DSP_RAM",		0xF6001000,				0x1800,			NULL},
+	{"DSP",			PMB8878_DSP_BASE,		DSP_IO_SIZE,	&pmb887x_dsp_regs},
+	{"TPU_RAM",		0xF6401000,				0x1000,			NULL},
+	{"TPU",			PMB8878_TPU_BASE,		TPU_IO_SIZE,	&pmb887x_tpu_regs},
+	{"MMICIF_MMAP",	0xFA000000,				0x100000,		NULL},
+	{"MMICIF_MMAP",	0xFA100000,				0x100000,		NULL},
+	{"MMICIF_MMAP",	0xFA200000,				0x100000,		NULL},
+	{"MMICIF_MMAP",	0xFA300000,				0x100000,		NULL},
+	{"MMICIF_MMAP",	0xFA400000,				0x100000,		NULL},
+	{"MMICIF_MMAP",	0xFA500000,				0x100000,		NULL},
+	{"MMICIF_MMAP",	0xFA600000,				0x100000,		NULL},
+	{"MMICIF_MMAP",	0xFA700000,				0x100000,		NULL},
+	{"MMICIF_MMAP",	0xFA800000,				0x100000,		NULL},
+	{"MMICIF_MMAP",	0xFA900000,				0x100000,		NULL},
+	{"MMICIF_MMAP",	0xFAA00000,				0x100000,		NULL},
+	{"MMICIF_MMAP",	0xFAB00000,				0x100000,		NULL},
+	{"MMICIF_MMAP",	0xFAC00000,				0x100000,		NULL},
+	{"MMICIF_MMAP",	0xFAD00000,				0x100000,		NULL},
+	{"MMICIF_MMAP",	0xFAE00000,				0x100000,		NULL},
+	{"MMICIF_MMAP",	0xFAF00000,				0x100000,		NULL},
+	{"MMICIF",		PMB8878_MMICIF_BASE,	MMICIF_IO_SIZE,	&pmb887x_mmicif_regs},
 };
 
 static const pmb887x_cpu_io_t pmb8878_dsp_modules[] = {
@@ -11323,73 +11736,73 @@ static const pmb887x_cpu_meta_gpio_t pmb8876_gpios[] = {
 };
 
 static const pmb887x_cpu_io_t pmb8876_modules[] = {
-	{"EBU",			PMB8876_EBU_BASE,		EBU_IO_SIZE,	ebu_regs,		ARRAY_SIZE(ebu_regs)},
-	{"USART0",		PMB8876_USART0_BASE,	USART_IO_SIZE,	usart_regs,		ARRAY_SIZE(usart_regs)},
-	{"SSC",			PMB8876_SSC_BASE,		SSC_IO_SIZE,	ssc_regs,		ARRAY_SIZE(ssc_regs)},
-	{"SIM",			PMB8876_SIM_BASE,		SIM_IO_SIZE,	sim_regs,		ARRAY_SIZE(sim_regs)},
-	{"USART1",		PMB8876_USART1_BASE,	USART_IO_SIZE,	usart_regs,		ARRAY_SIZE(usart_regs)},
-	{"USB",			PMB8876_USB_BASE,		USB_IO_SIZE,	usb_regs,		ARRAY_SIZE(usb_regs)},
-	{"VIC",			PMB8876_VIC_BASE,		VIC_IO_SIZE,	vic_regs,		ARRAY_SIZE(vic_regs)},
-	{"DMAC",		PMB8876_DMAC_BASE,		DMAC_IO_SIZE,	dmac_regs,		ARRAY_SIZE(dmac_regs)},
-	{"CAPCOM0",		PMB8876_CAPCOM0_BASE,	CAPCOM_IO_SIZE,	capcom_regs,	ARRAY_SIZE(capcom_regs)},
-	{"CAPCOM1",		PMB8876_CAPCOM1_BASE,	CAPCOM_IO_SIZE,	capcom_regs,	ARRAY_SIZE(capcom_regs)},
-	{"GPIO",		PMB8876_GPIO_BASE,		GPIO_IO_SIZE,	gpio_regs,		ARRAY_SIZE(gpio_regs)},
-	{"SCU",			PMB8876_SCU_BASE,		SCU_IO_SIZE,	scu_regs,		ARRAY_SIZE(scu_regs)},
-	{"CGU",			PMB8876_CGU_BASE,		CGU_IO_SIZE,	cgu_regs,		ARRAY_SIZE(cgu_regs)},
-	{"SCCU",		PMB8876_SCCU_BASE,		SCCU_IO_SIZE,	sccu_regs,		ARRAY_SIZE(sccu_regs)},
-	{"RTC",			PMB8876_RTC_BASE,		RTC_IO_SIZE,	rtc_regs,		ARRAY_SIZE(rtc_regs)},
-	{"GPTU0",		PMB8876_GPTU0_BASE,		GPTU_IO_SIZE,	gptu_regs,		ARRAY_SIZE(gptu_regs)},
-	{"GPTU1",		PMB8876_GPTU1_BASE,		GPTU_IO_SIZE,	gptu_regs,		ARRAY_SIZE(gptu_regs)},
-	{"STM",			PMB8876_STM_BASE,		STM_IO_SIZE,	stm_regs,		ARRAY_SIZE(stm_regs)},
-	{"ADC",			PMB8876_ADC_BASE,		ADC_IO_SIZE,	adc_regs,		ARRAY_SIZE(adc_regs)},
-	{"KEYPAD",		PMB8876_KEYPAD_BASE,	KEYPAD_IO_SIZE,	keypad_regs,	ARRAY_SIZE(keypad_regs)},
-	{"DSP_RAM",		0xF6001000,				0x1800,			NULL,			0},
-	{"DSP",			PMB8876_DSP_BASE,		DSP_IO_SIZE,	dsp_regs,		ARRAY_SIZE(dsp_regs)},
-	{"GPRSCU",		PMB8876_GPRSCU_BASE,	GPRSCU_IO_SIZE,	gprscu_regs,	ARRAY_SIZE(gprscu_regs)},
-	{"AFC",			PMB8876_AFC_BASE,		AFC_IO_SIZE,	afc_regs,		ARRAY_SIZE(afc_regs)},
-	{"TPU_RAM",		0xF6401000,				0x1000,			NULL,			0},
-	{"TPU",			PMB8876_TPU_BASE,		TPU_IO_SIZE,	tpu_regs,		ARRAY_SIZE(tpu_regs)},
-	{"CIF",			PMB8876_CIF_BASE,		CIF_IO_SIZE,	cif_regs,		ARRAY_SIZE(cif_regs)},
-	{"DIF",			PMB8876_DIF_BASE,		DIFv2_IO_SIZE,	difv2_regs,		ARRAY_SIZE(difv2_regs)},
-	{"MMCI",		PMB8876_MMCI_BASE,		MMCI_IO_SIZE,	mmci_regs,		ARRAY_SIZE(mmci_regs)},
-	{"MCI",			PMB8876_MCI_BASE,		MCI_IO_SIZE,	mci_regs,		ARRAY_SIZE(mci_regs)},
-	{"USIF",		PMB8876_USIF_BASE,		USIF_IO_SIZE,	usif_regs,		ARRAY_SIZE(usif_regs)},
-	{"I2C",			PMB8876_I2C_BASE,		I2Cv2_IO_SIZE,	i2cv2_regs,		ARRAY_SIZE(i2cv2_regs)},
-	{"MMICIF_MMAP",	0xFA000000,				0x100000,		NULL,			0},
-	{"MMICIF_MMAP",	0xFA100000,				0x100000,		NULL,			0},
-	{"MMICIF_MMAP",	0xFA200000,				0x100000,		NULL,			0},
-	{"MMICIF_MMAP",	0xFA300000,				0x100000,		NULL,			0},
-	{"MMICIF_MMAP",	0xFA400000,				0x100000,		NULL,			0},
-	{"MMICIF_MMAP",	0xFA500000,				0x100000,		NULL,			0},
-	{"MMICIF_MMAP",	0xFA600000,				0x100000,		NULL,			0},
-	{"MMICIF_MMAP",	0xFA700000,				0x100000,		NULL,			0},
-	{"MMICIF_MMAP",	0xFA800000,				0x100000,		NULL,			0},
-	{"MMICIF_MMAP",	0xFA900000,				0x100000,		NULL,			0},
-	{"MMICIF_MMAP",	0xFAA00000,				0x100000,		NULL,			0},
-	{"MMICIF_MMAP",	0xFAB00000,				0x100000,		NULL,			0},
-	{"MMICIF_MMAP",	0xFAC00000,				0x100000,		NULL,			0},
-	{"MMICIF_MMAP",	0xFAD00000,				0x100000,		NULL,			0},
-	{"MMICIF_MMAP",	0xFAE00000,				0x100000,		NULL,			0},
-	{"MMICIF_MMAP",	0xFAF00000,				0x100000,		NULL,			0},
-	{"MMICIF",		PMB8876_MMICIF_BASE,	MMICIF_IO_SIZE,	mmicif_regs,	ARRAY_SIZE(mmicif_regs)},
+	{"EBU",			PMB8876_EBU_BASE,		EBU_IO_SIZE,	&pmb887x_ebu_regs},
+	{"USART0",		PMB8876_USART0_BASE,	USART_IO_SIZE,	&pmb887x_usart_regs},
+	{"SSC",			PMB8876_SSC_BASE,		SSC_IO_SIZE,	&pmb887x_ssc_regs},
+	{"SIM",			PMB8876_SIM_BASE,		SIM_IO_SIZE,	&pmb887x_sim_regs},
+	{"USART1",		PMB8876_USART1_BASE,	USART_IO_SIZE,	&pmb887x_usart_regs},
+	{"USB",			PMB8876_USB_BASE,		USB_IO_SIZE,	&pmb887x_usb_regs},
+	{"VIC",			PMB8876_VIC_BASE,		VIC_IO_SIZE,	&pmb887x_vic_regs},
+	{"DMAC",		PMB8876_DMAC_BASE,		DMAC_IO_SIZE,	&pmb887x_dmac_regs},
+	{"CAPCOM0",		PMB8876_CAPCOM0_BASE,	CAPCOM_IO_SIZE,	&pmb887x_capcom_regs},
+	{"CAPCOM1",		PMB8876_CAPCOM1_BASE,	CAPCOM_IO_SIZE,	&pmb887x_capcom_regs},
+	{"GPIO",		PMB8876_GPIO_BASE,		GPIO_IO_SIZE,	&pmb887x_gpio_regs},
+	{"SCU",			PMB8876_SCU_BASE,		SCU_IO_SIZE,	&pmb887x_scu_regs},
+	{"CGU",			PMB8876_CGU_BASE,		CGU_IO_SIZE,	&pmb887x_cgu_regs},
+	{"SCCU",		PMB8876_SCCU_BASE,		SCCU_IO_SIZE,	&pmb887x_sccu_regs},
+	{"RTC",			PMB8876_RTC_BASE,		RTC_IO_SIZE,	&pmb887x_rtc_regs},
+	{"GPTU0",		PMB8876_GPTU0_BASE,		GPTU_IO_SIZE,	&pmb887x_gptu_regs},
+	{"GPTU1",		PMB8876_GPTU1_BASE,		GPTU_IO_SIZE,	&pmb887x_gptu_regs},
+	{"STM",			PMB8876_STM_BASE,		STM_IO_SIZE,	&pmb887x_stm_regs},
+	{"ADC",			PMB8876_ADC_BASE,		ADC_IO_SIZE,	&pmb887x_adc_regs},
+	{"KEYPAD",		PMB8876_KEYPAD_BASE,	KEYPAD_IO_SIZE,	&pmb887x_keypad_regs},
+	{"DSP_RAM",		0xF6001000,				0x1800,			NULL},
+	{"DSP",			PMB8876_DSP_BASE,		DSP_IO_SIZE,	&pmb887x_dsp_regs},
+	{"GPRSCU",		PMB8876_GPRSCU_BASE,	GPRSCU_IO_SIZE,	&pmb887x_gprscu_regs},
+	{"AFC",			PMB8876_AFC_BASE,		AFC_IO_SIZE,	&pmb887x_afc_regs},
+	{"TPU_RAM",		0xF6401000,				0x1000,			NULL},
+	{"TPU",			PMB8876_TPU_BASE,		TPU_IO_SIZE,	&pmb887x_tpu_regs},
+	{"CIF",			PMB8876_CIF_BASE,		CIF_IO_SIZE,	&pmb887x_cif_regs},
+	{"DIF",			PMB8876_DIF_BASE,		DIFv2_IO_SIZE,	&pmb887x_difv2_regs},
+	{"MMCI",		PMB8876_MMCI_BASE,		MMCI_IO_SIZE,	&pmb887x_mmci_regs},
+	{"MCI",			PMB8876_MCI_BASE,		MCI_IO_SIZE,	&pmb887x_mci_regs},
+	{"USIF",		PMB8876_USIF_BASE,		USIF_IO_SIZE,	&pmb887x_usif_regs},
+	{"I2C",			PMB8876_I2C_BASE,		I2Cv2_IO_SIZE,	&pmb887x_i2cv2_regs},
+	{"MMICIF_MMAP",	0xFA000000,				0x100000,		NULL},
+	{"MMICIF_MMAP",	0xFA100000,				0x100000,		NULL},
+	{"MMICIF_MMAP",	0xFA200000,				0x100000,		NULL},
+	{"MMICIF_MMAP",	0xFA300000,				0x100000,		NULL},
+	{"MMICIF_MMAP",	0xFA400000,				0x100000,		NULL},
+	{"MMICIF_MMAP",	0xFA500000,				0x100000,		NULL},
+	{"MMICIF_MMAP",	0xFA600000,				0x100000,		NULL},
+	{"MMICIF_MMAP",	0xFA700000,				0x100000,		NULL},
+	{"MMICIF_MMAP",	0xFA800000,				0x100000,		NULL},
+	{"MMICIF_MMAP",	0xFA900000,				0x100000,		NULL},
+	{"MMICIF_MMAP",	0xFAA00000,				0x100000,		NULL},
+	{"MMICIF_MMAP",	0xFAB00000,				0x100000,		NULL},
+	{"MMICIF_MMAP",	0xFAC00000,				0x100000,		NULL},
+	{"MMICIF_MMAP",	0xFAD00000,				0x100000,		NULL},
+	{"MMICIF_MMAP",	0xFAE00000,				0x100000,		NULL},
+	{"MMICIF_MMAP",	0xFAF00000,				0x100000,		NULL},
+	{"MMICIF",		PMB8876_MMICIF_BASE,	MMICIF_IO_SIZE,	&pmb887x_mmicif_regs},
 };
 
 static const pmb887x_cpu_io_t pmb8876_dsp_modules[] = {
-	{"INT",		0xDE00,	0x16,	dsp_interrupt_regs,			ARRAY_SIZE(dsp_interrupt_regs)},
-	{"CIPH",	0xDE20,	0x10,	dsp_cipher_regs,			ARRAY_SIZE(dsp_cipher_regs)},
-	{"TMR1",	0xDE30,	0x4,	dsp_timer1_regs,			ARRAY_SIZE(dsp_timer1_regs)},
-	{"TMR2",	0xDE34,	0x3,	dsp_timer2_regs,			ARRAY_SIZE(dsp_timer2_regs)},
-	{"EQ",		0xDE40,	0x7,	dsp_equalizer_regs,			ARRAY_SIZE(dsp_equalizer_regs)},
-	{"CHDEC",	0xDE50,	0x10,	dsp_channel_decoder_regs,	ARRAY_SIZE(dsp_channel_decoder_regs)},
-	{"AFE",		0xDE70,	0x7,	dsp_afe_regs,				ARRAY_SIZE(dsp_afe_regs)},
-	{"BB",		0xDE80,	0xD,	dsp_baseband_regs,			ARRAY_SIZE(dsp_baseband_regs)},
-	{"MCS",		0xDE90,	0x6,	dsp_mcs_regs,				ARRAY_SIZE(dsp_mcs_regs)},
-	{"DSP",		0xDEA0,	0x9,	dsp_dsp_8876_regs,			ARRAY_SIZE(dsp_dsp_8876_regs)},
-	{"MOD",		0xDEB0,	0xB,	dsp_modulator_regs,			ARRAY_SIZE(dsp_modulator_regs)},
-	{"SSC",		0xDEC0,	0x9,	dsp_ssc_regs,				ARRAY_SIZE(dsp_ssc_regs)},
-	{"I2S1",	0xDED0,	0xB,	dsp_i2s_regs,				ARRAY_SIZE(dsp_i2s_regs)},
-	{"I2S2",	0xDEE0,	0xB,	dsp_i2s_regs,				ARRAY_SIZE(dsp_i2s_regs)},
-	{"I2S3",	0xDEF0,	0xB,	dsp_i2s_tx_regs,			ARRAY_SIZE(dsp_i2s_tx_regs)},
+	{"INT",		0xDE00,	0x16,	&pmb887x_dsp_interrupt_regs},
+	{"CIPH",	0xDE20,	0x10,	&pmb887x_dsp_cipher_regs},
+	{"TMR1",	0xDE30,	0x4,	&pmb887x_dsp_timer1_regs},
+	{"TMR2",	0xDE34,	0x3,	&pmb887x_dsp_timer2_regs},
+	{"EQ",		0xDE40,	0x7,	&pmb887x_dsp_equalizer_regs},
+	{"CHDEC",	0xDE50,	0x10,	&pmb887x_dsp_channel_decoder_regs},
+	{"AFE",		0xDE70,	0x7,	&pmb887x_dsp_afe_regs},
+	{"BB",		0xDE80,	0xD,	&pmb887x_dsp_baseband_regs},
+	{"MCS",		0xDE90,	0x6,	&pmb887x_dsp_mcs_regs},
+	{"DSP",		0xDEA0,	0x9,	&pmb887x_dsp_dsp_8876_regs},
+	{"MOD",		0xDEB0,	0xB,	&pmb887x_dsp_modulator_regs},
+	{"SSC",		0xDEC0,	0x9,	&pmb887x_dsp_ssc_regs},
+	{"I2S1",	0xDED0,	0xB,	&pmb887x_dsp_i2s_regs},
+	{"I2S2",	0xDEE0,	0xB,	&pmb887x_dsp_i2s_regs},
+	{"I2S3",	0xDEF0,	0xB,	&pmb887x_dsp_i2s_tx_regs},
 };
 
 static const pmb887x_cpu_meta_irq_t pmb8875_irqs[] = {
@@ -11588,52 +12001,52 @@ static const pmb887x_cpu_meta_gpio_t pmb8875_gpios[] = {
 };
 
 static const pmb887x_cpu_io_t pmb8875_modules[] = {
-	{"EBU",		PMB8875_EBU_BASE,		EBU_IO_SIZE,	ebu_regs,		ARRAY_SIZE(ebu_regs)},
-	{"USART0",	PMB8875_USART0_BASE,	USART_IO_SIZE,	usart_regs,		ARRAY_SIZE(usart_regs)},
-	{"SSC",		PMB8875_SSC_BASE,		SSC_IO_SIZE,	ssc_regs,		ARRAY_SIZE(ssc_regs)},
-	{"SIM",		PMB8875_SIM_BASE,		SIM_IO_SIZE,	sim_regs,		ARRAY_SIZE(sim_regs)},
-	{"USART1",	PMB8875_USART1_BASE,	USART_IO_SIZE,	usart_regs,		ARRAY_SIZE(usart_regs)},
-	{"DIF",		PMB8875_DIF_BASE,		DIFv1_IO_SIZE,	difv1_regs,		ARRAY_SIZE(difv1_regs)},
-	{"USB",		PMB8875_USB_BASE,		USB_IO_SIZE,	usb_regs,		ARRAY_SIZE(usb_regs)},
-	{"VIC",		PMB8875_VIC_BASE,		VIC_IO_SIZE,	vic_regs,		ARRAY_SIZE(vic_regs)},
-	{"DMAC",	PMB8875_DMAC_BASE,		DMAC_IO_SIZE,	dmac_regs,		ARRAY_SIZE(dmac_regs)},
-	{"CAPCOM0",	PMB8875_CAPCOM0_BASE,	CAPCOM_IO_SIZE,	capcom_regs,	ARRAY_SIZE(capcom_regs)},
-	{"CAPCOM1",	PMB8875_CAPCOM1_BASE,	CAPCOM_IO_SIZE,	capcom_regs,	ARRAY_SIZE(capcom_regs)},
-	{"GPIO",	PMB8875_GPIO_BASE,		GPIO_IO_SIZE,	gpio_regs,		ARRAY_SIZE(gpio_regs)},
-	{"SCU",		PMB8875_SCU_BASE,		SCU_IO_SIZE,	scu_regs,		ARRAY_SIZE(scu_regs)},
-	{"CGU",		PMB8875_CGU_BASE,		CGU_IO_SIZE,	cgu_regs,		ARRAY_SIZE(cgu_regs)},
-	{"SCCU",	PMB8875_SCCU_BASE,		SCCU_IO_SIZE,	sccu_regs,		ARRAY_SIZE(sccu_regs)},
-	{"RTC",		PMB8875_RTC_BASE,		RTC_IO_SIZE,	rtc_regs,		ARRAY_SIZE(rtc_regs)},
-	{"I2C",		PMB8875_I2C_BASE,		I2Cv1_IO_SIZE,	i2cv1_regs,		ARRAY_SIZE(i2cv1_regs)},
-	{"GPTU0",	PMB8875_GPTU0_BASE,		GPTU_IO_SIZE,	gptu_regs,		ARRAY_SIZE(gptu_regs)},
-	{"GPTU1",	PMB8875_GPTU1_BASE,		GPTU_IO_SIZE,	gptu_regs,		ARRAY_SIZE(gptu_regs)},
-	{"STM",		PMB8875_STM_BASE,		STM_IO_SIZE,	stm_regs,		ARRAY_SIZE(stm_regs)},
-	{"ADC",		PMB8875_ADC_BASE,		ADC_IO_SIZE,	adc_regs,		ARRAY_SIZE(adc_regs)},
-	{"KEYPAD",	PMB8875_KEYPAD_BASE,	KEYPAD_IO_SIZE,	keypad_regs,	ARRAY_SIZE(keypad_regs)},
-	{"DSP_RAM",	0xF6001000,				0x1800,			NULL,			0},
-	{"DSP",		PMB8875_DSP_BASE,		DSP_IO_SIZE,	dsp_regs,		ARRAY_SIZE(dsp_regs)},
-	{"GPRSCU",	PMB8875_GPRSCU_BASE,	GPRSCU_IO_SIZE,	gprscu_regs,	ARRAY_SIZE(gprscu_regs)},
-	{"AFC",		PMB8875_AFC_BASE,		AFC_IO_SIZE,	afc_regs,		ARRAY_SIZE(afc_regs)},
-	{"TPU_RAM",	0xF6401000,				0x1000,			NULL,			0},
-	{"TPU",		PMB8875_TPU_BASE,		TPU_IO_SIZE,	tpu_regs,		ARRAY_SIZE(tpu_regs)},
+	{"EBU",		PMB8875_EBU_BASE,		EBU_IO_SIZE,	&pmb887x_ebu_regs},
+	{"USART0",	PMB8875_USART0_BASE,	USART_IO_SIZE,	&pmb887x_usart_regs},
+	{"SSC",		PMB8875_SSC_BASE,		SSC_IO_SIZE,	&pmb887x_ssc_regs},
+	{"SIM",		PMB8875_SIM_BASE,		SIM_IO_SIZE,	&pmb887x_sim_regs},
+	{"USART1",	PMB8875_USART1_BASE,	USART_IO_SIZE,	&pmb887x_usart_regs},
+	{"DIF",		PMB8875_DIF_BASE,		DIFv1_IO_SIZE,	&pmb887x_difv1_regs},
+	{"USB",		PMB8875_USB_BASE,		USB_IO_SIZE,	&pmb887x_usb_regs},
+	{"VIC",		PMB8875_VIC_BASE,		VIC_IO_SIZE,	&pmb887x_vic_regs},
+	{"DMAC",	PMB8875_DMAC_BASE,		DMAC_IO_SIZE,	&pmb887x_dmac_regs},
+	{"CAPCOM0",	PMB8875_CAPCOM0_BASE,	CAPCOM_IO_SIZE,	&pmb887x_capcom_regs},
+	{"CAPCOM1",	PMB8875_CAPCOM1_BASE,	CAPCOM_IO_SIZE,	&pmb887x_capcom_regs},
+	{"GPIO",	PMB8875_GPIO_BASE,		GPIO_IO_SIZE,	&pmb887x_gpio_regs},
+	{"SCU",		PMB8875_SCU_BASE,		SCU_IO_SIZE,	&pmb887x_scu_regs},
+	{"CGU",		PMB8875_CGU_BASE,		CGU_IO_SIZE,	&pmb887x_cgu_regs},
+	{"SCCU",	PMB8875_SCCU_BASE,		SCCU_IO_SIZE,	&pmb887x_sccu_regs},
+	{"RTC",		PMB8875_RTC_BASE,		RTC_IO_SIZE,	&pmb887x_rtc_regs},
+	{"I2C",		PMB8875_I2C_BASE,		I2Cv1_IO_SIZE,	&pmb887x_i2cv1_regs},
+	{"GPTU0",	PMB8875_GPTU0_BASE,		GPTU_IO_SIZE,	&pmb887x_gptu_regs},
+	{"GPTU1",	PMB8875_GPTU1_BASE,		GPTU_IO_SIZE,	&pmb887x_gptu_regs},
+	{"STM",		PMB8875_STM_BASE,		STM_IO_SIZE,	&pmb887x_stm_regs},
+	{"ADC",		PMB8875_ADC_BASE,		ADC_IO_SIZE,	&pmb887x_adc_regs},
+	{"KEYPAD",	PMB8875_KEYPAD_BASE,	KEYPAD_IO_SIZE,	&pmb887x_keypad_regs},
+	{"DSP_RAM",	0xF6001000,				0x1800,			NULL},
+	{"DSP",		PMB8875_DSP_BASE,		DSP_IO_SIZE,	&pmb887x_dsp_regs},
+	{"GPRSCU",	PMB8875_GPRSCU_BASE,	GPRSCU_IO_SIZE,	&pmb887x_gprscu_regs},
+	{"AFC",		PMB8875_AFC_BASE,		AFC_IO_SIZE,	&pmb887x_afc_regs},
+	{"TPU_RAM",	0xF6401000,				0x1000,			NULL},
+	{"TPU",		PMB8875_TPU_BASE,		TPU_IO_SIZE,	&pmb887x_tpu_regs},
 };
 
 static const pmb887x_cpu_io_t pmb8875_dsp_modules[] = {
-	{"INT",		0xE600,	0x16,	dsp_interrupt_regs,			ARRAY_SIZE(dsp_interrupt_regs)},
-	{"CIPH",	0xE620,	0x10,	dsp_cipher_regs,			ARRAY_SIZE(dsp_cipher_regs)},
-	{"TMR1",	0xE630,	0x4,	dsp_timer1_regs,			ARRAY_SIZE(dsp_timer1_regs)},
-	{"TMR2",	0xE634,	0x3,	dsp_timer2_regs,			ARRAY_SIZE(dsp_timer2_regs)},
-	{"EQ",		0xE640,	0x7,	dsp_equalizer_regs,			ARRAY_SIZE(dsp_equalizer_regs)},
-	{"CHDEC",	0xE650,	0x10,	dsp_channel_decoder_regs,	ARRAY_SIZE(dsp_channel_decoder_regs)},
-	{"AFE",		0xE670,	0x7,	dsp_afe_regs,				ARRAY_SIZE(dsp_afe_regs)},
-	{"BB",		0xE680,	0xD,	dsp_baseband_regs,			ARRAY_SIZE(dsp_baseband_regs)},
-	{"MCS",		0xE690,	0x6,	dsp_mcs_regs,				ARRAY_SIZE(dsp_mcs_regs)},
-	{"DSP",		0xE6A0,	0x9,	dsp_dsp_regs,				ARRAY_SIZE(dsp_dsp_regs)},
-	{"MOD",		0xE6B0,	0xB,	dsp_modulator_regs,			ARRAY_SIZE(dsp_modulator_regs)},
-	{"SSC",		0xE6C0,	0x9,	dsp_ssc_regs,				ARRAY_SIZE(dsp_ssc_regs)},
-	{"I2S1",	0xE6D0,	0xB,	dsp_i2s_regs,				ARRAY_SIZE(dsp_i2s_regs)},
-	{"I2S2",	0xE6E0,	0xB,	dsp_i2s_regs,				ARRAY_SIZE(dsp_i2s_regs)},
-	{"I2S3",	0xE6F0,	0xB,	dsp_i2s_tx_regs,			ARRAY_SIZE(dsp_i2s_tx_regs)},
+	{"INT",		0xE600,	0x16,	&pmb887x_dsp_interrupt_regs},
+	{"CIPH",	0xE620,	0x10,	&pmb887x_dsp_cipher_regs},
+	{"TMR1",	0xE630,	0x4,	&pmb887x_dsp_timer1_regs},
+	{"TMR2",	0xE634,	0x3,	&pmb887x_dsp_timer2_regs},
+	{"EQ",		0xE640,	0x7,	&pmb887x_dsp_equalizer_regs},
+	{"CHDEC",	0xE650,	0x10,	&pmb887x_dsp_channel_decoder_regs},
+	{"AFE",		0xE670,	0x7,	&pmb887x_dsp_afe_regs},
+	{"BB",		0xE680,	0xD,	&pmb887x_dsp_baseband_regs},
+	{"MCS",		0xE690,	0x6,	&pmb887x_dsp_mcs_regs},
+	{"DSP",		0xE6A0,	0x9,	&pmb887x_dsp_dsp_regs},
+	{"MOD",		0xE6B0,	0xB,	&pmb887x_dsp_modulator_regs},
+	{"SSC",		0xE6C0,	0x9,	&pmb887x_dsp_ssc_regs},
+	{"I2S1",	0xE6D0,	0xB,	&pmb887x_dsp_i2s_regs},
+	{"I2S2",	0xE6E0,	0xB,	&pmb887x_dsp_i2s_regs},
+	{"I2S3",	0xE6F0,	0xB,	&pmb887x_dsp_i2s_tx_regs},
 };
 
 static const pmb887x_cpu_meta_t cpus_metadata[] = {
@@ -11643,20 +12056,20 @@ static const pmb887x_cpu_meta_t cpus_metadata[] = {
 };
 
 static const pmb887x_io_meta_t io_metadata[PMB887X_TRACE_IO_COUNT] = {
-	[PMB887X_TRACE_IO_HD155153NP] = { "hd155153np",	hd155153np_regs,	ARRAY_SIZE(hd155153np_regs) },
-	[PMB887X_TRACE_IO_ILI9320] = { "ili9320",		ili9320_regs,		ARRAY_SIZE(ili9320_regs) },
-	[PMB887X_TRACE_IO_JBT6K71] = { "jbt6k71",		jbt6k71_regs,		ARRAY_SIZE(jbt6k71_regs) },
-	[PMB887X_TRACE_IO_LH15KAH2] = { "lh15kah2",		lh15kah2_regs,		ARRAY_SIZE(lh15kah2_regs) },
-	[PMB887X_TRACE_IO_LM4946] = { "lm4946",			lm4946_regs,		ARRAY_SIZE(lm4946_regs) },
-	[PMB887X_TRACE_IO_PASIC] = { "pasic",			pasic_regs,			ARRAY_SIZE(pasic_regs) },
-	[PMB887X_TRACE_IO_PCF8833] = { "pcf8833",		pcf8833_regs,		ARRAY_SIZE(pcf8833_regs) },
-	[PMB887X_TRACE_IO_PCF8882] = { "pcf8882",		pcf8882_regs,		ARRAY_SIZE(pcf8882_regs) },
-	[PMB887X_TRACE_IO_PMB6272] = { "pmb6272",		pmb6272_regs,		ARRAY_SIZE(pmb6272_regs) },
-	[PMB887X_TRACE_IO_PMB6812] = { "pmb6812",		pmb6812_regs,		ARRAY_SIZE(pmb6812_regs) },
-	[PMB887X_TRACE_IO_R61505U] = { "r61505u",		r61505u_regs,		ARRAY_SIZE(r61505u_regs) },
-	[PMB887X_TRACE_IO_SSD1286] = { "ssd1286",		ssd1286_regs,		ARRAY_SIZE(ssd1286_regs) },
-	[PMB887X_TRACE_IO_TEA5760UK] = { "tea5760uk",	tea5760uk_regs,		ARRAY_SIZE(tea5760uk_regs) },
-	[PMB887X_TRACE_IO_TEA5761UK] = { "tea5761uk",	tea5761uk_regs,		ARRAY_SIZE(tea5761uk_regs) },
+	[PMB887X_TRACE_IO_HD155153NP] = { "hd155153np",	&pmb887x_hd155153np_regs },
+	[PMB887X_TRACE_IO_ILI9320] = { "ili9320",		&pmb887x_ili9320_regs },
+	[PMB887X_TRACE_IO_JBT6K71] = { "jbt6k71",		&pmb887x_jbt6k71_regs },
+	[PMB887X_TRACE_IO_LH15KAH2] = { "lh15kah2",		&pmb887x_lh15kah2_regs },
+	[PMB887X_TRACE_IO_LM4946] = { "lm4946",			&pmb887x_lm4946_regs },
+	[PMB887X_TRACE_IO_PASIC] = { "pasic",			&pmb887x_pasic_regs },
+	[PMB887X_TRACE_IO_PCF8833] = { "pcf8833",		&pmb887x_pcf8833_regs },
+	[PMB887X_TRACE_IO_PCF8882] = { "pcf8882",		&pmb887x_pcf8882_regs },
+	[PMB887X_TRACE_IO_PMB6272] = { "pmb6272",		&pmb887x_pmb6272_regs },
+	[PMB887X_TRACE_IO_PMB6812] = { "pmb6812",		&pmb887x_pmb6812_regs },
+	[PMB887X_TRACE_IO_R61505U] = { "r61505u",		&pmb887x_r61505u_regs },
+	[PMB887X_TRACE_IO_SSD1286] = { "ssd1286",		&pmb887x_ssd1286_regs },
+	[PMB887X_TRACE_IO_TEA5760UK] = { "tea5760uk",	&pmb887x_tea5760uk_regs },
+	[PMB887X_TRACE_IO_TEA5761UK] = { "tea5761uk",	&pmb887x_tea5761uk_regs },
 };
 
 const pmb887x_cpu_meta_t *pmb887x_get_cpu_meta(int cpu) {

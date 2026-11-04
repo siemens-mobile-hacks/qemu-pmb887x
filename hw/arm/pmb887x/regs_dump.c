@@ -87,44 +87,10 @@ static const pmb887x_cpu_io_t *regs_dump_find_cpu_module(uint32_t addr) {
 	return NULL;
 }
 
-static const pmb887x_io_reg_t *regs_dump_find_module_reg(const pmb887x_cpu_io_t *module, uint32_t addr,
-	uint32_t register_size, uint32_t *reg_offset
-) {
-	for (int i = 0; i < module->regs_count; i++) {
-		const pmb887x_io_reg_t *reg = &module->regs[i];
-		uint32_t reg_addr = module->base + reg->addr;
-		if (addr >= reg_addr && addr < reg_addr + register_size) {
-			*reg_offset = addr - reg_addr;
-			return reg;
-		}
-	}
-	return NULL;
-}
-
-static const pmb887x_io_reg_t *regs_dump_find_io_reg(const pmb887x_io_meta_t *meta, uint32_t addr) {
-	for (int i = 0; i < meta->regs_count; i++) {
-		if (meta->regs[i].addr == addr)
-			return &meta->regs[i];
-	}
-	return NULL;
-}
-
-static const char *regs_dump_find_io_field_enum(const pmb887x_io_field_t *field, uint32_t field_value) {
-	for (int i = 0; i < field->values_count; i++) {
-		const pmb887x_io_value_t *v = &field->values[i];
-		if (field_value == v->value)
-			return v->name;
-	}
-	return NULL;
-}
-
-static const char *regs_dump_find_cpu_irq_num_name(const pmb887x_cpu_meta_t *cpu, uint32_t field_value) {
-	for (int i = 0; i < cpu->irqs_count; i++) {
-		const pmb887x_cpu_meta_irq_t *v = &cpu->irqs[i];
-		if (field_value == v->id)
-			return v->name;
-	}
-	return NULL;
+static const DebugReg *regs_dump_find_module_reg(const pmb887x_cpu_io_t *module, uint32_t addr, uint64_t *reg_offset) {
+	if (!module->regs)
+		return NULL;
+	return debug_regs_find(module->regs, addr - module->base, reg_offset);
 }
 
 static const char *regs_dump_find_cpu_irq_name(const pmb887x_cpu_meta_t *cpu, uint32_t field_value) {
@@ -286,50 +252,11 @@ void pmb887x_dump_io_write_ex(pmb887x_trace_io_t trace_io, uint32_t addr, uint32
 	regs_dump_io(trace_io, addr, size, value, true, pc, lr);
 }
 
-static void regs_dump_print_fields(pmb887x_io_dump_buffer_t *buffer, const pmb887x_io_reg_t *reg, uint32_t value) {
-	bool first = true;
-	uint32_t known_bits = 0;
+static void regs_dump_print_fields(pmb887x_io_dump_buffer_t *buffer, const DebugReg *reg, uint32_t value) {
+	g_autoptr(GString) fields = g_string_new(NULL);
 
-	for (int i = 0; i < reg->fields_count; i++) {
-		const pmb887x_io_field_t *field = &reg->fields[i];
-		uint32_t field_value = (value & field->mask) >> field->shift;
-		const char *enum_name = regs_dump_find_io_field_enum(field, value & field->mask);
-		uint32_t field_mask = field->mask >> field->shift;
-		known_bits |= field->mask;
-
-		if (field_mask == 1 && field_value == 0 && !enum_name)
-			continue;
-
-		if (first) {
-			regs_dump_buffer_append(buffer, ": ");
-			first = false;
-		} else {
-			regs_dump_buffer_append(buffer, " | ");
-		}
-
-		if (enum_name) {
-			regs_dump_buffer_append(buffer, "%s(%s)", field->name, enum_name);
-		} else if (field_mask == 1) {
-			regs_dump_buffer_append(buffer, "%s", field->name);
-		} else {
-			regs_dump_buffer_append(buffer, "%s(0x%02X)", field->name, field_value);
-		}
-	}
-
-	uint32_t unknown_bits = value & ~known_bits;
-	if (unknown_bits) {
-		for (int i = 0; i < 32; i++) {
-			if ((unknown_bits & (1U << i))) {
-				if (first) {
-					regs_dump_buffer_append(buffer, ": ");
-					first = false;
-				} else {
-					regs_dump_buffer_append(buffer, " | ");
-				}
-				regs_dump_buffer_append(buffer, "UNK_%d", i);
-			}
-		}
-	}
+	debug_regs_print_fields(reg, value, fields);
+	regs_dump_buffer_append(buffer, "%s", fields->str);
 }
 
 static void regs_dump_print_cpu_io(pmb887x_io_dump_buffer_t *buffer, uint32_t addr, uint32_t value) {
@@ -339,19 +266,21 @@ static void regs_dump_print_cpu_io(pmb887x_io_dump_buffer_t *buffer, uint32_t ad
 	if (!module)
 		return;
 
-	uint32_t reg_offset;
-	const pmb887x_io_reg_t *reg = regs_dump_find_module_reg(module, addr, sizeof(uint32_t), &reg_offset);
+	uint64_t reg_offset;
+	const DebugReg *reg = regs_dump_find_module_reg(module, addr, &reg_offset);
 	if (!reg) {
 		regs_dump_buffer_append(buffer, " (%s_*)", module->name);
 		return;
 	}
 
+	bool is_gpio_pin = !strcmp(module->name, "GPIO") && g_str_has_prefix(reg->name, "PIN");
+	bool is_irq_con = !strcmp(module->name, "VIC") && g_str_has_prefix(reg->name, "CON");
 	if (reg_offset) {
-		regs_dump_buffer_append(buffer, " (%s_%s+0x%X)", module->name, reg->name, reg_offset);
-	} else if (reg->special == PMB887X_REG_IS_GPIO_PIN) {
+		regs_dump_buffer_append(buffer, " (%s_%s+0x%" PRIX64 ")", module->name, reg->name, reg_offset);
+	} else if (is_gpio_pin) {
 		uint32_t gpio_id = (addr - (gpio_base + GPIO_PIN0)) / 4;
 		regs_dump_buffer_append(buffer, " (%s)", board->gpios[gpio_id].full_name);
-	} else if (reg->special == PMB887X_REG_IS_IRQ_CON) {
+	} else if (is_irq_con) {
 		const char *irq_name = regs_dump_find_cpu_irq_name(cpu_info, addr - module->base);
 		if (irq_name) {
 			regs_dump_buffer_append(buffer, " (%s_%s_%s)", module->name, reg->name, irq_name);
@@ -362,14 +291,7 @@ static void regs_dump_print_cpu_io(pmb887x_io_dump_buffer_t *buffer, uint32_t ad
 		regs_dump_buffer_append(buffer, " (%s_%s)", module->name, reg->name);
 	}
 
-	if (!reg_offset && reg->special == PMB887X_REG_IS_IRQ_NUM) {
-		const char *irq_name = regs_dump_find_cpu_irq_num_name(cpu_info, value);
-		if (irq_name) {
-			regs_dump_buffer_append(buffer, ": NUM(0x%02X)=%s", value, irq_name);
-		} else {
-			regs_dump_buffer_append(buffer, ": NUM(0x%02X)", value);
-		}
-	} else if (!reg_offset && reg->fields_count) {
+	if (!reg_offset && reg->fields_count) {
 		regs_dump_print_fields(buffer, reg, value);
 	}
 }
@@ -377,12 +299,12 @@ static void regs_dump_print_cpu_io(pmb887x_io_dump_buffer_t *buffer, uint32_t ad
 static void regs_dump_print_dsp_io(pmb887x_io_dump_buffer_t *buffer, uint32_t addr, uint32_t value) {
 	const pmb887x_cpu_meta_t *cpu = pmb887x_get_cpu_meta(pmb887x_board()->cpu);
 	const pmb887x_cpu_io_t *module = regs_dump_find_module(cpu->dsp_modules, cpu->dsp_modules_count, addr);
-	const pmb887x_io_reg_t *reg;
-	uint32_t reg_offset;
+	const DebugReg *reg;
+	uint64_t reg_offset;
 
 	if (module == NULL)
 		return;
-	reg = regs_dump_find_module_reg(module, addr, 1, &reg_offset);
+	reg = regs_dump_find_module_reg(module, addr, &reg_offset);
 	if (reg == NULL) {
 		regs_dump_buffer_append(buffer, " (%s_*)", module->name);
 		return;
@@ -399,7 +321,8 @@ static void regs_dump_print_peripheral_io(pmb887x_io_dump_buffer_t *buffer, cons
 	if (!meta)
 		return;
 
-	const pmb887x_io_reg_t *reg = regs_dump_find_io_reg(meta, addr);
+	uint64_t reg_offset;
+	const DebugReg *reg = debug_regs_find(meta->regs, addr, &reg_offset);
 	if (!reg)
 		return;
 
