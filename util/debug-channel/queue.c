@@ -83,12 +83,16 @@ static void debug_write(const GString *out)
     qemu_log_unlock(f);
 }
 
-static void debug_print_io_default(const char *name, const DebugIoAccess *io,
-                                   GString *out)
+void debug_io_print_access(const char *name, const DebugIoAccess *io,
+                           int addr_digits, GString *out)
 {
-    g_string_append_printf(out, "[%s] %s[%u] %08" PRIX64 ": %0*" PRIX64,
+    g_string_append_printf(out, "[%s] %s[%u] %0*" PRIX64 ": %0*" PRIX64,
                            name, io->is_write ? "WRITE" : " READ", io->size,
-                           io->addr, io->size * 2, io->value);
+                           addr_digits, io->addr, io->size * 2, io->value);
+}
+
+void debug_io_print_context(const DebugIoAccess *io, GString *out)
+{
     if (io->has_context) {
         g_string_append_printf(out, " (PC: %08" PRIX64 ", LR: %08" PRIX64 ")",
                                io->pc, io->lr);
@@ -113,7 +117,8 @@ static void debug_format(const DebugRecord *rec, GString *out)
     if (ch->io_format) {
         ch->io_format->print(ch->name, ch->io_format_opaque, &rec->io, out);
     } else {
-        debug_print_io_default(ch->name, &rec->io, out);
+        debug_io_print_access(ch->name, &rec->io, 8, out);
+        debug_io_print_context(&rec->io, out);
     }
     if (rec->io.count > 1) {
         g_string_append_printf(out, " [x%" PRIu64 "]", rec->io.count);

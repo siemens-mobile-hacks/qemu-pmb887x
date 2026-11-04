@@ -38,6 +38,10 @@ typedef struct DebugIoFormat {
                   const DebugIoAccess *io, GString *out);
 } DebugIoFormat;
 
+void debug_io_print_access(const char *name, const DebugIoAccess *io,
+                           int addr_digits, GString *out);
+void debug_io_print_context(const DebugIoAccess *io, GString *out);
+
 typedef struct DebugChannel {
     uint8_t flags;
     char *name;
