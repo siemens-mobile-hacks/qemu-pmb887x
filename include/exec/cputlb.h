@@ -28,8 +28,28 @@
 #ifndef CONFIG_USER_ONLY
 #include "system/ram_addr.h"
 
-void tlb_reset_dirty(CPUState *cpu, uintptr_t start, uintptr_t length);
+void tlb_reset_dirty(CPUState *cpu, ram_addr_t ram_start, uintptr_t start,
+                     uintptr_t length);
 void tlb_reset_dirty_range_all(ram_addr_t start, ram_addr_t length);
+
+/*
+ * Each vCPU logs the TLB entries that make [@start, @start + @length)
+ * writable without TLB_NOTDIRTY, so that tlb_reset_dirty_range_all() within
+ * the range revisits those instead of walking the whole TLB.  One range at a
+ * time, called with the BQL held; a new one is unknown until a reset of all
+ * of it.
+ */
+void tlb_watch_ram_dirty(ram_addr_t start, ram_addr_t length);
+
+/*
+ * Until cleared (@length 0), a CPU store into [@start, @start + @length) that
+ * reaches notdirty_write() first calls @fn with the BQL held.  Stores reach it
+ * only on pages whose DIRTY_MEMORY_VGA bit the caller has cleared, and only
+ * until the first such store sets it again.  For a device that reads RAM
+ * behind the clock.
+ */
+void tlb_set_ram_write_guard(ram_addr_t start, ram_addr_t length,
+                             void (*fn)(void *opaque), void *opaque);
 #endif
 
 /**
@@ -125,6 +145,19 @@ void tlb_flush_page_all_cpus_synced(CPUState *src, vaddr addr);
  * use one of the other functions for efficiency.
  */
 void tlb_flush(CPUState *cpu);
+
+/**
+ * tlb_flush_phys_ranges:
+ * @cpu: CPU whose TLB should be flushed
+ * @lo/@hi/@n: n changed physical ranges [lo[i], hi[i])
+ *
+ * Selective tlb_flush() for memory topology commits: drop only entries
+ * that translate into a changed physical range (see tcg_commit and
+ * system/memory.c's romd-mode FlatView variants).
+ */
+void tlb_flush_phys_ranges(CPUState *cpu,
+                           const hwaddr *lo, const hwaddr *hi,
+                           unsigned n);
 
 /**
  * tlb_flush_all_cpus_synced:
@@ -234,6 +267,11 @@ static inline void tlb_flush_page_all_cpus_synced(CPUState *src, vaddr addr)
 {
 }
 static inline void tlb_flush(CPUState *cpu)
+{
+}
+static inline void tlb_flush_phys_ranges(CPUState *cpu,
+                                         const hwaddr *lo, const hwaddr *hi,
+                                         unsigned n)
 {
 }
 static inline void tlb_flush_all_cpus_synced(CPUState *src_cpu)

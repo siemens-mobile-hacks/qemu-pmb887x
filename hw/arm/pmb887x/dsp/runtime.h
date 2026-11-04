@@ -50,6 +50,8 @@ void dsp_runtime_set_gsm_signal(
 );
 uint16_t dsp_runtime_get_outputs(dsp_runtime_t *runtime);
 uint32_t dsp_runtime_get_pc(const dsp_runtime_t *runtime);
+/* The pc of the instruction making the current data access. */
+uint32_t dsp_runtime_get_trace_pc(const dsp_runtime_t *runtime);
 uint64_t dsp_runtime_get_cache_compiles(const dsp_runtime_t *runtime);
 uint16_t dsp_runtime_take_output_events(dsp_runtime_t *runtime);
 uint16_t dsp_runtime_get_comm(dsp_runtime_t *runtime);

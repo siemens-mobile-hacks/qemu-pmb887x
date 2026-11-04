@@ -344,16 +344,61 @@ static uint16_t baseband_signal_word(baseband_state_t *state, uint64_t word) {
 	return (uint16_t) sample;
 }
 
+/* baseband_signal_word() for words [first, last), with the ring offset and symbol stepped. */
+static void baseband_publish_range(baseband_state_t *state, uint64_t first, uint64_t last) {
+	pmb887x_iq_bus_t *iq_bus = qatomic_read(&state->iq_bus);
+	uint16_t offset = first % BASEBAND_RING_WORDS;
+
+	if (pmb887x_iq_bus_has_source(iq_bus) && state->rx_active) {
+		for (uint64_t i = first; i < last; i++) {
+			uint16_t sample = baseband_signal_word(state, i);
+			state->host.data_write(state->host.opaque, state->ram_base + offset, sample);
+			if (++offset == BASEBAND_RING_WORDS)
+				offset = 0;
+		}
+	} else if (pmb887x_iq_bus_has_source(iq_bus)) {
+		/* Without RX every sample filters to zero; a leading Q word still belongs to the previous one. */
+		uint64_t i = first;
+
+		if (i % BASEBAND_WORDS_PER_SAMPLE) {
+			state->host.data_write(state->host.opaque, state->ram_base + offset, (uint16_t) state->filter_sample.q);
+			if (++offset == BASEBAND_RING_WORDS)
+				offset = 0;
+			i++;
+		}
+		if (i < last)
+			state->filter_sample = (pmb887x_iq_sample_t) { 0, 0 };
+		for (; i < last; i++) {
+			state->host.data_write(state->host.opaque, state->ram_base + offset, 0);
+			if (++offset == BASEBAND_RING_WORDS)
+				offset = 0;
+		}
+	} else {
+		bool fcch = qatomic_read(&state->job_signal) == PMB887X_DSP_GSM_SIGNAL_FCON;
+		const uint8_t *phases = fcch ? state->fcch_phases : state->normal_burst_phases;
+		size_t symbol = first / BASEBAND_WORDS_PER_SAMPLE % BASEBAND_NORMAL_BURST_SYMBOLS;
+
+		for (uint64_t i = first; i < last; i++) {
+			bool q = i % BASEBAND_WORDS_PER_SAMPLE;
+			uint8_t phase = phases[symbol];
+			int16_t sample = q ? BASEBAND_PHASE_Q[phase] : BASEBAND_PHASE_I[phase];
+
+			state->host.data_write(state->host.opaque, state->ram_base + offset, (uint16_t) sample);
+			if (++offset == BASEBAND_RING_WORDS)
+				offset = 0;
+			if (q && ++symbol == BASEBAND_NORMAL_BURST_SYMBOLS)
+				symbol = 0;
+		}
+	}
+}
+
 static uint16_t baseband_publish_words(baseband_state_t *state, uint64_t words) {
 	uint64_t produced = qatomic_read(&state->produced_words);
 	if (!qatomic_read(&state->job_active))
 		return produced % BASEBAND_RING_WORDS;
 
-	for (uint64_t i = produced; i < words; i++) {
-		uint16_t sample = baseband_signal_word(state, i);
-		state->host.data_write(state->host.opaque, state->ram_base + i % BASEBAND_RING_WORDS, sample);
-	}
 	if (words > produced) {
+		baseband_publish_range(state, produced, words);
 		smp_wmb();
 		qatomic_set(&state->produced_words, words);
 		produced = words;

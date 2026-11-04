@@ -16,6 +16,9 @@
 #ifdef CONFIG_TCG_INTERPRETER
 extern __thread uintptr_t tci_tb_ptr;
 # define GETPC() tci_tb_ptr
+#elif defined(CONFIG_TCG_WASM64)
+extern __thread uintptr_t w64_tb_ptr;
+# define GETPC() w64_tb_ptr
 #else
 # define GETPC() \
     ((uintptr_t)__builtin_extract_return_addr(__builtin_return_address(0)))

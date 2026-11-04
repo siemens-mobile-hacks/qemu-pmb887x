@@ -113,6 +113,21 @@ int event_notifier_set(EventNotifier *e)
         return -1;
     }
 
+#ifdef __EMSCRIPTEN__
+    /*
+     * wasm: an eventfd/pipe write() from a pthread is a synchronous
+     * proxied syscall to the browser main thread (~1 ms round trip
+     * through emscripten's whole-ms condvar), and the poll() side never
+     * reports the fd readable anyway (util/main-loop.c: the main loop
+     * is woken through a futex by aio_notify/qemu_notify_event).  The
+     * vCPU hit this on every icount deadline (qemu_clock_notify ->
+     * event_notifier_set): ~12k times in the S75 boot's display-DMA
+     * stretch, one ms each.  Keep the notification as an atomic flag.
+     */
+    qatomic_set(&e->wasm_pending, 1);
+    return 0;
+#endif
+
     do {
         ret = write(e->wfd, &value, sizeof(value));
     } while (ret < 0 && errno == EINTR);
@@ -126,6 +141,12 @@ int event_notifier_set(EventNotifier *e)
 
 int event_notifier_test_and_clear(EventNotifier *e)
 {
+#ifdef __EMSCRIPTEN__
+    if (!e->initialized) {
+        return 0;
+    }
+    return qatomic_xchg(&e->wasm_pending, 0);
+#endif
     int value;
     ssize_t len;
     char buffer[512];

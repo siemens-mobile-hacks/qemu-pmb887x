@@ -466,6 +466,10 @@ void qemu_process_cpu_events(CPUState *cpu)
     qemu_process_cpu_events_timed(cpu, NULL);
 }
 
+#ifdef __EMSCRIPTEN__
+uint64_t wasm_vcpu_idle_count;
+#endif
+
 void qemu_process_cpu_events_timed(CPUState *cpu,
                                    int64_t (*run_timers)(CPUState *cpu))
 {
@@ -481,6 +485,9 @@ void qemu_process_cpu_events_timed(CPUState *cpu,
         if (!slept) {
             slept = true;
             qemu_plugin_vcpu_idle_cb(cpu);
+#ifdef __EMSCRIPTEN__
+            qatomic_set(&wasm_vcpu_idle_count, wasm_vcpu_idle_count + 1);
+#endif
         }
         if (timeout_ns < 0) {
             qemu_cond_wait(cpu->halt_cond, &bql);
@@ -573,6 +580,92 @@ bool bql_locked(void)
     return get_bql_locked();
 }
 
+/*
+ * BQL for the MMIO dispatch path (accel/tcg/cputlb.c).
+ *
+ * A guest that polls a device register takes and drops the BQL about
+ * four million times a second (the S75's driven menu), and the generic
+ * BQL_LOCK_GUARD() pair is ~22 calls that no compiler may inline:
+ * bql_locked() and its coroutine-TLS accessor are deliberately
+ * noinline, three g_asserts call them again, bql_lock_impl() reaches
+ * pthread_mutex through the lock-profiling function pointer, and
+ * qemu_mutex_post_lock()/pre_unlock() call mutex_is_bql() and
+ * bql_update_status() - which calls the accessor twice more.  On wasm
+ * that measures ~41 ns per pair, a quarter of what a device register
+ * read costs in total.
+ *
+ * This pair reads the thread-local flag once, takes the mutex, and
+ * writes the flag once.  What it gives up on this one path: the
+ * qemu_mutex_lock/locked/unlock trace points, the -enable-sync-profile
+ * lock-profiling hook, and CONFIG_DEBUG_MUTEX's file/line bookkeeping.
+ *
+ * Returns true if this call took the lock, in which case the caller
+ * must call bql_unlock_mmio(); false if this thread already held it,
+ * in which case the caller must not (an outer holder may have called
+ * bql_block_unlock(), and it owns the unlock either way).
+ */
+/*
+ * Deferred release (see bql_release_lazy in main-loop.h).  @bql_mmio_lazy
+ * says "this thread holds the BQL and the only reason is that
+ * bql_unlock_mmio() did not give it back"; @bql_wanted counts the threads
+ * blocked, or about to block, in bql_lock_impl().
+ *
+ * Plain __thread rather than the coroutine-safe TLS the bql_locked flag
+ * uses: the flag is read and written only by the thread that owns the
+ * lock, on the vCPU's device-access path, which is not coroutine code.
+ */
+static __thread bool bql_mmio_lazy;
+static int bql_wanted;
+
+bool bql_wanted_by_other(void)
+{
+    return qatomic_read(&bql_wanted) != 0;
+}
+
+void bql_release_lazy(void)
+{
+    if (unlikely(bql_mmio_lazy)) {
+        bql_mmio_lazy = false;
+        set_bql_locked(false);
+        pthread_mutex_unlock(&bql.lock);
+    }
+}
+
+bool bql_lock_mmio(void)
+{
+    if (get_bql_locked()) {
+        /*
+         * Already held - either by an outer holder, or by this thread's
+         * own deferred unlock.  In the second case hand it over if
+         * somebody is waiting: bql_unlock_mmio() below then really
+         * unlocks, because bql_wanted is still set.
+         */
+        if (unlikely(bql_mmio_lazy && bql_wanted_by_other())) {
+            bql_release_lazy();
+        } else {
+            return false;
+        }
+    }
+    pthread_mutex_lock(&bql.lock);
+    set_bql_locked(true);
+    return true;
+}
+
+void bql_unlock_mmio(void)
+{
+    /*
+     * Keep it, unless somebody wants it, or this is not a vCPU thread -
+     * only a vCPU reliably comes back through cpu_exec_loop(), which is
+     * what bounds the deferral.
+     */
+    if (likely(current_cpu && !bql_wanted_by_other())) {
+        bql_mmio_lazy = true;
+        return;
+    }
+    set_bql_locked(false);
+    pthread_mutex_unlock(&bql.lock);
+}
+
 bool qemu_in_main_thread(void)
 {
     return bql_locked();
@@ -590,16 +683,30 @@ void rust_bql_mock_lock(void)
  */
 void bql_lock_impl(const char *file, int line)
 {
-    QemuMutexLockFunc bql_lock_fn = qatomic_read(&bql_mutex_lock_func);
+    QemuMutexLockFunc bql_lock_fn;
 
+    if (unlikely(bql_mmio_lazy)) {
+        /* We are holding it already: adopt the deferred hold as this one. */
+        bql_mmio_lazy = false;
+        return;
+    }
+
+    bql_lock_fn = qatomic_read(&bql_mutex_lock_func);
     g_assert(!bql_locked());
+    /*
+     * Tell a vCPU that is sitting on a deferred bql_unlock_mmio() to let
+     * go.  Counted, not a flag: two waiters must not cancel each other.
+     */
+    qatomic_inc(&bql_wanted);
     bql_lock_fn(&bql, file, line);
+    qatomic_dec(&bql_wanted);
 }
 
 void bql_unlock(void)
 {
     g_assert(bql_locked());
     g_assert(!bql_unlock_blocked);
+    bql_mmio_lazy = false;
     qemu_mutex_unlock(&bql);
 }
 

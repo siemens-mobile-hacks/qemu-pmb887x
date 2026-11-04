@@ -478,10 +478,13 @@ struct teak_tcg_core_t {
 	uint64_t cache_compiles;
 	uint64_t jit_entries;
 	uint64_t chain_links;
+	/* the block cache entry the last chain link went to, or NULL */
+	void *chain_prev;
 	uint64_t chain_interrupts;
 	uint64_t chain_exit_stops;
 	uint64_t chain_budget_stops;
 	uint64_t chain_cache_stops;
+	uint64_t fast_runs;
 	bool synchronization_valid;
 	teak_data_map_t data_map;
 };

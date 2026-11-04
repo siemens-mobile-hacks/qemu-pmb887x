@@ -163,6 +163,19 @@ bool translator_use_goto_tb(DisasContextBase *db, vaddr dest)
     if (translator_is_same_page(db, dest)) {
         return true;
     }
+#ifdef CONFIG_TCG_WASM64
+    /*
+     * Or on the second page the TB has fetched from.  A TB with a second
+     * page is only chained into when that page is an inlined callee's
+     * (cpu-exec.c), and those chains are dropped at every TLB-flush site
+     * (tb_unlink_inlined), so the guard holds whichever page the branch
+     * comes from.
+     */
+    if ((dest & TARGET_PAGE_MASK) == db->w64_page1 &&
+        db->host_addr[1] != NULL) {
+        return true;
+    }
+#endif
     return tcg_cross_page_links &&
            !(tb_cflags(db->tb) & (CF_PCREL | CF_MEMORY_TIMING));
 }
@@ -223,6 +236,10 @@ void translator_loop(CPUState *cpu, TranslationBlock *tb, int *max_insns,
     db->record_start = 0;
     db->record_len = 0;
     db->code_mmuidx = cpu_mmu_index(cpu, true);
+#ifdef CONFIG_TCG_WASM64
+    db->w64_page1 = (pc & TARGET_PAGE_MASK) + TARGET_PAGE_SIZE;
+    db->w64_lin_end = 0;
+#endif
 
     ops->init_disas_context(db, cpu);
     tcg_debug_assert(db->is_jmp == DISAS_NEXT);  /* no early exit */
@@ -236,6 +253,24 @@ void translator_loop(CPUState *cpu, TranslationBlock *tb, int *max_insns,
     db->plugin_enabled = plugin_enabled;
 
     while (true) {
+#ifdef __EMSCRIPTEN__
+        /*
+         * Keep an io-barrier insn out of the middle of a TB: stop before
+         * it so it starts a single-insn TB of its own (can_do_io is true
+         * there; see cpu_io_recompile in translate-all.c).  This has to
+         * happen before num_insns is bumped and insn_start emitted, or
+         * the TB carries a phantom instruction it never translates:
+         * tb->icount one too high (an extra insn charged to the icount
+         * budget per split TB) and a duplicate entry in the unwind
+         * search data.
+         */
+        bool io_barrier = wasm_is_io_barrier(db->pc_next);
+        if (unlikely(io_barrier) && db->num_insns > 0) {
+            db->is_jmp = DISAS_TOO_MANY;
+            break;
+        }
+#endif
+
         *max_insns = ++db->num_insns;
         if (cflags & CF_COUNT_CYCLES) {
             tcg_ctx->gen_insn_cycles[db->num_insns - 1] =
@@ -259,6 +294,13 @@ void translator_loop(CPUState *cpu, TranslationBlock *tb, int *max_insns,
          * the next instruction.
          */
         ops->translate_insn(db, cpu);
+
+#ifdef __EMSCRIPTEN__
+        if (unlikely(io_barrier) && db->is_jmp == DISAS_NEXT) {
+            /* Barrier is the first insn of this TB: make it single-insn. */
+            db->is_jmp = DISAS_TOO_MANY;
+        }
+#endif
 
         /*
          * We can't instrument after instructions that change control
@@ -318,6 +360,11 @@ void translator_loop(CPUState *cpu, TranslationBlock *tb, int *max_insns,
 
     /* May be used by disas_log or plugin callbacks. */
     tb->size = db->pc_next - db->pc_first;
+#ifdef CONFIG_TCG_WASM64
+    if (unlikely(db->w64_lin_end)) {
+        tb->size = db->w64_lin_end - db->pc_first;
+    }
+#endif
     tb->icount = db->num_insns;
 
     if (plugin_enabled) {
@@ -370,6 +417,17 @@ static bool translator_ld(CPUArchState *env, DisasContextBase *db,
          * The unaligned read is never atomic.
          */
         size_t len0 = -(pc | TARGET_PAGE_MASK);
+#ifdef CONFIG_TCG_WASM64
+        /*
+         * A straddling read concludes on the *linear* next page, so it is
+         * translatable only while page 1 is still that page; an inlined
+         * callee may have taken it.
+         */
+        if (unlikely(db->w64_page1 !=
+                     (base & TARGET_PAGE_MASK) + TARGET_PAGE_SIZE)) {
+            return false;
+        }
+#endif
         memcpy(dest, host + (pc - base), len0);
         pc += len0;
         dest += len0;
@@ -386,7 +444,14 @@ static bool translator_ld(CPUArchState *env, DisasContextBase *db,
      * we would need to know the current width of the address space.
      * In the meantime, assert.
      */
+#ifdef CONFIG_TCG_WASM64
+    if (unlikely((pc & TARGET_PAGE_MASK) != db->w64_page1)) {
+        return false;
+    }
+    base = db->w64_page1;
+#else
     base = (base & TARGET_PAGE_MASK) + TARGET_PAGE_SIZE;
+#endif
     assert(((base ^ pc) & TARGET_PAGE_MASK) == 0);
     assert(((base ^ last) & TARGET_PAGE_MASK) == 0);
     host = db->host_addr[1];

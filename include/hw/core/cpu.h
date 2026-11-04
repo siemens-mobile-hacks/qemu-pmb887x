@@ -205,6 +205,18 @@ typedef uint32_t MMUIdxMap;
 
 /* Use a fully associative victim tlb of 8 entries. */
 #define CPU_VTLB_SIZE 8
+#define TLB_RAM_WATCH_LOG 128
+
+/*
+ * Granularity of the per-TLB physical-address summary (see phys_group in
+ * CPUTLBDesc): one 64-bit mask per group of 64 table entries, one bit per
+ * 16 MB (1 << TLB_PHYS_BUCKET_BITS) of physical address space.  Tables
+ * larger than
+ * TLB_PHYS_GROUPS << TLB_PHYS_GROUP_BITS entries fall back to a full walk.
+ */
+#define TLB_PHYS_GROUP_BITS 6
+#define TLB_PHYS_GROUPS 256
+#define TLB_PHYS_BUCKET_BITS 24
 
 /*
  * The full TLB entry, which is not accessed by generated TCG code,
@@ -249,6 +261,40 @@ struct CPUTLBEntryFull {
     uint8_t slow_flags[MMU_ACCESS_COUNT];
 
     /*
+     * Fill-time resolved MMIO dispatch: when the entry's section is a
+     * leaf I/O region whose ops allow a direct call for a given exact size,
+     * tlb_set_page_full resolves the callback + opaque + allowed-size
+     * mask + endianness swap here, so the access path is one mask
+     * test + one indirect call instead of the generic
+     * memory_region_dispatch_{read,write} resolution.  An empty mask
+     * disables the fast path (RAM, aliases, accept callbacks,
+     * ioeventfd writes, with-attrs ops, out-of-range sizes all fall
+     * back to the stock path with no added per-access conditions).
+     */
+    void *io_opaque;
+    uint64_t (*io_read_fn)(void *opaque, hwaddr addr, unsigned size);
+    void (*io_write_fn)(void *opaque, hwaddr addr, uint64_t val,
+                        unsigned size);
+    uint16_t io_rmask;         /* exact sizes dispatchable directly */
+    uint16_t io_wmask;
+    uint8_t io_swap;           /* bit0: swap reads, bit1: swap writes */
+    uint8_t io_check_align;    /* misaligned: rejected or split by stock */
+    bool *io_guard;            /* re-entrancy guard flag, or NULL */
+    /*
+     * When @section is a subpage container (a target page shared by
+     * several regions), the three fields above describe its *leaf*, and
+     * the fast path is only equivalent for the part of the page that
+     * leaf backs: offsets in [io_lo, io_lo + io_len) are dispatched with
+     * io_off_delta added, anything else falls back to the container's
+     * own ops.  A leaf section (the common case) sets io_lo = 0,
+     * io_len = UINT32_MAX and io_off_delta = 0, so the range test is a
+     * subtract and a compare that always passes.
+     */
+    uint32_t io_lo;
+    uint32_t io_len;
+    int64_t io_off_delta;
+
+    /*
      * Allow target-specific additions to this structure.
      * This may be used to cache items from the guest cpu
      * page tables for later use by the implementation.
@@ -288,8 +334,23 @@ typedef struct CPUTLBDesc {
     /* maximum number of entries observed in the window */
     size_t window_max_entries;
     size_t n_used_entries;
+    /* fills since the last flush/resize (tlb_set_page_full grows the
+     * table when this exceeds twice its size — a guest that never flushes
+     * its TLB never reached the flush-time resize policy) */
+    size_t n_fills;
     /* The next index to use in the tlb victim table.  */
     size_t vindex;
+    /*
+     * Physical-address summary, so a memory-topology commit does not have
+     * to walk every entry (tlb_flush_phys_ranges).  phys_group[g] is a
+     * bitmap of the 16 MB physical buckets the entries of the 64-entry
+     * group g translate into; phys_any is the OR over the groups and the
+     * victim table.  Both are conservative - bits are added on fill and
+     * never removed on eviction - and a commit that walks a group rewrites
+     * that group's mask exactly, so staleness cannot accumulate.
+     */
+    uint64_t phys_any;
+    uint64_t phys_group[TLB_PHYS_GROUPS];
     /* The tlb victim table, in two parts.  */
     CPUTLBEntry vtable[CPU_VTLB_SIZE];
     CPUTLBEntryFull vfulltlb[CPU_VTLB_SIZE];
@@ -308,6 +369,19 @@ typedef struct CPUTLBCommon {
      * Protected by tlb_c.lock.
      */
     MMUIdxMap dirty;
+    /*
+     * The pages that entries have made writable without TLB_NOTDIRTY within
+     * the range of tlb_watch_ram_dirty() since the last reset of all of it,
+     * mmu_idx -1 for every mode; ram_watch_n > TLB_RAM_WATCH_LOG: unknown.
+     * Protected by tlb_c.lock.
+     */
+    uint64_t ram_watch_start;
+    uint64_t ram_watch_length;
+    unsigned ram_watch_n;
+    struct {
+        vaddr page;
+        int mmu_idx;
+    } ram_watch_log[TLB_RAM_WATCH_LOG];
     /*
      * Statistics.  These are not lock protected, but are read and
      * written atomically.  This allows the monitor to print a snapshot
@@ -381,6 +455,19 @@ typedef struct CPUNegativeOffsetState {
     uint32_t cycle_count;
     uint32_t cycle_limit;
     bool can_do_io;
+#ifdef CONFIG_TCG_WASM64
+    /*
+     * Generation of the per-TB inline lookup caches (TranslationBlock
+     * w64_lc): every event that invalidates a jump-cache entry (a TB
+     * invalidation, a jump-cache flush or page clear) and every change
+     * of a target TB-key input the slots neither stamp nor compare (ARM:
+     * hflags.flags2, FPSCR.Len/Stride, FPEXC.EN) bumps it, so a slot
+     * stamped with the current generation is exactly as valid as a
+     * jump-cache hit would be.  Never 0 (a fresh TB's slot holds 0 and
+     * must never match).
+     */
+    uint32_t tb_key_gen;
+#endif
 } CPUNegativeOffsetState;
 
 struct KVMState;
@@ -601,6 +688,12 @@ struct CPUState {
 /* Validate placement of CPUNegativeOffsetState. */
 QEMU_BUILD_BUG_ON(offsetof(CPUState, neg) !=
                   sizeof(CPUState) - sizeof(CPUNegativeOffsetState));
+
+#ifdef CONFIG_TCG_WASM64
+void cpu_tb_key_gen_bump(CPUState *cpu);
+#else
+static inline void cpu_tb_key_gen_bump(CPUState *cpu) { }
+#endif
 
 static inline CPUArchState *cpu_env(CPUState *cpu)
 {

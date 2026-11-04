@@ -145,6 +145,13 @@ static int cpu_unwind_data_from_tb(TranslationBlock *tb, uintptr_t host_pc,
     const uint8_t *p = tb->tc.ptr + tb->tc.size;
     int i, j, num_insns = tb->icount;
 
+#ifdef CONFIG_TCG_WASM64
+    /* descriptor + offset (exec/translation-block.h): the offsets below
+     * are relative to the descriptor too */
+    if (w64_ra_encoded(host_pc)) {
+        host_pc = iter_pc + w64_ra_off(host_pc);
+    }
+#endif
     host_pc -= GETPC_ADJ;
 
     if (host_pc < iter_pc) {
@@ -173,6 +180,31 @@ static int cpu_unwind_data_from_tb(TranslationBlock *tb, uintptr_t host_pc,
         }
     }
     return -1;
+}
+
+#ifdef CONFIG_TCG_WASM64
+__thread struct W64InlRec w64_inl_pending[W64_INL_REC];
+__thread unsigned w64_inl_pending_n;
+
+int w64_tb_insn_index(TranslationBlock *tb, uintptr_t host_pc)
+{
+    uint64_t data[INSN_START_WORDS];
+    uint32_t cycles = 0;
+    int left = cpu_unwind_data_from_tb(tb, host_pc, data, &cycles);
+
+    return left < 0 ? -1 : tb->icount - left;
+}
+#endif
+
+/* Does @host_pc name a TB at all?  (See cpu_restore_state.) */
+static bool host_pc_in_code_gen_buffer(uintptr_t host_pc)
+{
+#ifdef CONFIG_TCG_WASM64
+    if (w64_ra_encoded(host_pc)) {
+        host_pc = w64_ra_desc(host_pc);
+    }
+#endif
+    return in_code_gen_buffer((const void *)(host_pc - tcg_splitwx_diff));
 }
 
 /*
@@ -258,7 +290,7 @@ bool cpu_restore_state(CPUState *cpu, uintptr_t host_pc)
      *
      * Either way we need return early as we can't resolve it here.
      */
-    if (in_code_gen_buffer((const void *)(host_pc - tcg_splitwx_diff))) {
+    if (host_pc_in_code_gen_buffer(host_pc)) {
         TranslationBlock *tb = tcg_tb_lookup(host_pc);
         if (tb) {
             cpu_restore_state_from_tb(cpu, tb, host_pc);
@@ -270,7 +302,7 @@ bool cpu_restore_state(CPUState *cpu, uintptr_t host_pc)
 
 bool cpu_unwind_state_data(CPUState *cpu, uintptr_t host_pc, uint64_t *data)
 {
-    if (in_code_gen_buffer((const void *)(host_pc - tcg_splitwx_diff))) {
+    if (host_pc_in_code_gen_buffer(host_pc)) {
         TranslationBlock *tb = tcg_tb_lookup(host_pc);
         if (tb) {
             uint32_t cycles_left = 0;
@@ -310,7 +342,19 @@ static int setjmp_gen_code(CPUArchState *env, TranslationBlock *tb,
     tcg_ctx->cpu = NULL;
     *max_insns = tb->icount;
 
+#ifdef CONFIG_TCG_WASM64
+    {
+        int r;
+
+        /* TBs are shared between CPUs: only a lone CPU fixes the env */
+        w64_tb_env = CPU_NEXT(first_cpu) ? 0 : (uintptr_t)env;
+        r = tcg_gen_code(tcg_ctx, tb, pc);
+        w64_tb_env = 0;
+        return r;
+    }
+#else
     return tcg_gen_code(tcg_ctx, tb, pc);
+#endif
 }
 
 /* Called with mmap_lock held for user mode emulation.  */
@@ -345,7 +389,12 @@ TranslationBlock *tb_gen_code(CPUState *cpu, TCGTBCPUState s)
 
  buffer_overflow:
     assert_no_pages_locked();
+#ifdef CONFIG_TCG_WASM64
+    /* the chain table is recycled by the same flush (wasm64.c) */
+    tb = w64_tidx_left() ? tcg_tb_alloc(tcg_ctx) : NULL;
+#else
     tb = tcg_tb_alloc(tcg_ctx);
+#endif
     if (unlikely(!tb)) {
         /* flush must be done */
         if (cpu_in_serial_context(cpu)) {
@@ -368,6 +417,11 @@ TranslationBlock *tb_gen_code(CPUState *cpu, TCGTBCPUState s)
     tb->cs_base = s.cs_base;
     tb->flags = s.flags;
     tb->cflags = s.cflags;
+#ifdef CONFIG_TCG_WASM64
+    tb->w64_lc.gen = 0;
+    tb->w64_inl = 0;
+    tb->w64_inl_vpage1 = 0;
+#endif
     tb_set_page_addr0(tb, phys_pc);
     tb_set_page_addr1(tb, -1);
     if (phys_pc != -1) {
@@ -379,6 +433,12 @@ TranslationBlock *tb_gen_code(CPUState *cpu, TCGTBCPUState s)
 
  restart_translate:
     trace_translate_block(tb, s.pc, tb->tc.ptr);
+#ifdef CONFIG_TCG_WASM64
+    /* a retry re-decides every inline; the -2 case dropped page 1 too */
+    tb->w64_inl = 0;
+    tb->w64_inl_vpage1 = 0;
+    w64_inl_pending_n = 0;
+#endif
 
     gen_code_size = setjmp_gen_code(env, tb, s.pc, host_pc, &max_insns, &ti);
     if (unlikely(gen_code_size < 0)) {
@@ -451,6 +511,17 @@ TranslationBlock *tb_gen_code(CPUState *cpu, TCGTBCPUState s)
     if (unlikely(search_size < 0)) {
         trace_tb_gen_code_buffer_overflow("encode_search");
         tb_unlock_pages(tb);
+#ifdef CONFIG_TCG_WASM64
+        /*
+         * This TB is abandoned with code_gen_ptr still pointing at its
+         * bytes, so the tcg_tb_alloc() below will carve a
+         * TranslationBlock out of them.  The wasm64 backend already
+         * staged the module body in the open batch during
+         * tcg_gen_code(); withdraw it, or the batch assembles from
+         * overwritten memory (SOURCE-CORRUPT).
+         */
+        w64_batch_unstage((uintptr_t)gen_code_buf);
+#endif
         goto buffer_overflow;
     }
     tb->tc.size = gen_code_size;
@@ -534,6 +605,22 @@ TranslationBlock *tb_gen_code(CPUState *cpu, TCGTBCPUState s)
         }
     }
 
+#ifdef CONFIG_TCG_WASM64
+    /* the inline records ride behind the unwind data; they fit in the
+     * TCG_HIGHWATER slack encode_search has already stayed under */
+    tb->w64_inl_rec = NULL;
+    tb->w64_inl_nrec = 0;
+    if (tb->w64_inl && w64_inl_pending_n) {
+        size_t rec_size = w64_inl_pending_n * sizeof(struct W64InlRec);
+        void *p = (void *)gen_code_buf + gen_code_size + search_size;
+
+        memcpy(p, w64_inl_pending, rec_size);
+        tb->w64_inl_rec = p;
+        tb->w64_inl_nrec = w64_inl_pending_n;
+        search_size += rec_size;
+    }
+#endif
+
     qatomic_set(&tcg_ctx->code_gen_ptr, (void *)
         ROUND_UP((uintptr_t)gen_code_buf + gen_code_size + search_size,
                  CODE_GEN_ALIGN));
@@ -593,6 +680,10 @@ TranslationBlock *tb_gen_code(CPUState *cpu, TCGTBCPUState s)
 
         orig_aligned -= ROUND_UP(sizeof(*tb), qemu_icache_linesize);
         qatomic_set(&tcg_ctx->code_gen_ptr, (void *)orig_aligned);
+#ifdef CONFIG_TCG_WASM64
+        /* its descriptor is reused too, like the abandoned TB's above */
+        w64_batch_unstage((uintptr_t)gen_code_buf);
+#endif
         tcg_tb_remove(tb);
         return existing_tb;
     }
@@ -625,6 +716,52 @@ void tb_check_watchpoint(CPUState *cpu, uintptr_t retaddr)
 }
 
 #ifndef CONFIG_USER_ONLY
+#ifdef __EMSCRIPTEN__
+/*
+ * wasm io barriers (see cpu_io_recompile): guest insns whose memory access
+ * turned out to be MMIO in the middle of a TB.  The translator keeps them
+ * in single-insn TBs, where can_do_io is set, so the recompile and its
+ * JS-exception unwind happen once per insn rather than on every pass.
+ * Indexed by pc >> 1 (Thumb insns are 2 bytes apart), two ways per slot
+ * so that two hot insns sharing a slot do not evict each other forever.
+ */
+#define WASM_IO_BARRIER_SLOTS 4096
+#define WASM_IO_BARRIER_WAYS  2
+static vaddr wasm_io_barriers[WASM_IO_BARRIER_SLOTS][WASM_IO_BARRIER_WAYS];
+
+static uint32_t wasm_io_barrier_slot(vaddr pc)
+{
+    return (uint32_t)(pc >> 1) & (WASM_IO_BARRIER_SLOTS - 1);
+}
+
+void wasm_add_io_barrier(vaddr pc)
+{
+    vaddr *ways = wasm_io_barriers[wasm_io_barrier_slot(pc)];
+
+    for (int i = 0; i < WASM_IO_BARRIER_WAYS; i++) {
+        if (ways[i] == pc) {
+            return;
+        }
+    }
+    for (int i = WASM_IO_BARRIER_WAYS - 1; i > 0; i--) {
+        ways[i] = ways[i - 1];
+    }
+    ways[0] = pc;
+}
+
+bool wasm_is_io_barrier(vaddr pc)
+{
+    const vaddr *ways = wasm_io_barriers[wasm_io_barrier_slot(pc)];
+
+    for (int i = 0; i < WASM_IO_BARRIER_WAYS; i++) {
+        if (ways[i] == pc) {
+            return pc != 0;   /* an empty way is 0, not a barrier at 0 */
+        }
+    }
+    return false;
+}
+#endif /* __EMSCRIPTEN__ */
+
 /*
  * In deterministic execution mode, instructions doing device I/Os
  * must be at the end of the TB.
@@ -649,6 +786,21 @@ void cpu_io_recompile(CPUState *cpu, uintptr_t retaddr)
         tb_io_limit_insns(tb, tb->icount - insns_left + 1);
         tb_phys_invalidate(tb, -1);
     }
+
+#ifdef __EMSCRIPTEN__
+    /*
+     * wasm: the JS-exception unwind in cpu_loop_exit_noexc costs ~15 us,
+     * and this TB stays cached with the MMIO in its middle - a polling
+     * loop re-pays the rewind on every iteration forever.  Remember the
+     * faulting insn as an io barrier and drop the TB: the next translation
+     * of this code splits the TB around the barrier (see translator.c),
+     * the MMIO insn executes as a single-insn TB with can_do_io set, and
+     * the rewind (and its clock semantics: the callback sees the clock
+     * of exactly that insn) is reproduced without any further unwinding.
+     */
+    wasm_add_io_barrier(cpu->cc->get_pc(cpu));
+    tb_phys_invalidate(tb, -1);
+#endif
 
     /*
      * Some guests must re-execute the branch when re-executing a delay
@@ -684,6 +836,36 @@ void cpu_io_recompile(CPUState *cpu, uintptr_t retaddr)
 
 #endif /* CONFIG_USER_ONLY */
 
+#ifdef CONFIG_TCG_WASM64
+/*
+ * Retire every per-TB inline lookup cache (TranslationBlock w64_lc) by
+ * moving the generation they are stamped with.  Called wherever a jump
+ * cache entry is dropped and wherever the target's TB key changes for a
+ * reason other than the PC.
+ */
+void cpu_tb_key_gen_bump(CPUState *cpu)
+{
+    uint32_t g = qatomic_read(&cpu->neg.tb_key_gen) + 1;
+
+    qatomic_set(&cpu->neg.tb_key_gen, g ? g : 1);
+}
+
+/*
+ * The dispatcher was handed a TB whose batch module has been evicted
+ * (tcg/wasm64/wasm64.c).  The module cannot be rebuilt, so the TB goes the
+ * way cpu_io_recompile's does: no guest state has changed since the TB was
+ * entered, the loop just translates the address again.
+ */
+void tb_w64_retire(CPUState *cpu, TranslationBlock *tb)
+{
+    /* the loop may have asked for exactly these cflags (cpu_loop_exec_tb,
+     * cpu_io_recompile): the retranslation gets the same request */
+    cpu->cflags_next_tb = tb_cflags(tb);
+    tb_phys_invalidate(tb, -1);
+    cpu_loop_exit_noexc(cpu);
+}
+#endif
+
 uint64_t tb_lookup_link_generation = 1;
 
 /*
@@ -694,11 +876,29 @@ void tcg_flush_jmp_cache(CPUState *cpu)
 {
     CPUJumpCache *jc = cpu->tb_jmp_cache;
 
+    cpu_tb_key_gen_bump(cpu);
+#ifdef CONFIG_TCG_WASM64
+    /*
+     * A mapping may have changed: drop the chains into TBs whose second
+     * page is an inlined callee's (tb-maint.c tb_unlink_inlined).  Not in
+     * cpu_tb_key_gen_bump() itself, which every TB invalidation calls.
+     */
+    tb_unlink_inlined();
+#endif
+
     /* During early initialization, the cache may not yet be allocated. */
     if (unlikely(jc == NULL)) {
         return;
     }
 
+#ifdef CONFIG_TCG_WASM64
+    /* a new generation retires every entry at once (tb-jmp-cache.h);
+     * the array is only cleared when the counter wraps */
+    if (likely(++jc->gen != 0)) {
+        return;
+    }
+    jc->gen = 1;
+#endif
     for (int i = 0; i < TB_JMP_CACHE_SIZE; i++) {
         qatomic_set(&jc->array[i].tb, NULL);
     }
