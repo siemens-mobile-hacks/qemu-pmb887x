@@ -10,11 +10,15 @@
  * nothing to copy on the main thread.
  *
  * The ring is static: its address never changes, so the page can map it once
- * before qemu has opened a voice.  Writes are paced on the host clock: a
- * device pads silence while the guest is quiet, and unpaced that padding
- * would keep the ring full, which is the ring's whole length of latency.  A
- * short write stops audio_generic_run_buffer_out(), the mixeng buffer fills,
- * and the device's callback stops being asked for samples.
+ * before qemu has opened a voice.  Writes are paced on the host clock: a guest
+ * that renders faster than real time would otherwise bank its lead in the
+ * ring as latency.  A short write stops audio_generic_run_buffer_out(), the
+ * mixeng buffer fills, and the device's callback stops being asked for
+ * samples.
+ *
+ * Devices write nothing while the guest is quiet, so the page cannot tell a
+ * stream that ended from one that renders slowly by the write cursor alone:
+ * @streaming drops once the last frame of a stream is in the ring.
  */
 
 #include "qemu/osdep.h"
@@ -44,11 +48,11 @@ struct AudioWasm {
 
 /*
  * Header fields are int32 so the page can view them as one Int32Array and use
- * Atomics on the two cursors.  @read, @underruns and the playback stats
- * after it (read by tools, never by qemu) are written only by the
- * consumer, @write only by the producer, @active only by the page.  Both
- * cursors are free-running frame counters; they wrap together, so the
- * difference stays correct as two's complement.
+ * Atomics on the two cursors.  @read, @underruns and the playback stats (read
+ * by tools, never by qemu) are written only by the consumer, @write and
+ * @streaming only by the producer, @active only by the page.  Both cursors
+ * are free-running frame counters; they wrap together, so the difference
+ * stays correct as two's complement.
  */
 typedef struct WasmAudioRing {
     int32_t magic;
@@ -63,7 +67,10 @@ typedef struct WasmAudioRing {
     int32_t gap_frames;                 /* output frames silenced by dropouts */
     int32_t prime_ms;                   /* current cushion */
     int32_t rate_milli;                 /* producer speed, 1000 = real time */
-    int32_t reserved[4];
+    int32_t streaming;                  /* a stream has frames still to come */
+    int32_t drained_frames;             /* skipped by playing faster */
+    int32_t cut_frames;                 /* skipped by the delay cap */
+    int32_t reserved[1];
     int16_t data[WASM_AUDIO_RING_FRAMES * WASM_AUDIO_MAX_CHANNELS];
 } WasmAudioRing;
 
@@ -196,9 +203,14 @@ static void wasm_fini_out(HWVoiceOut *hw)
     WasmAudioRing *ring = &wasm_audio_ring;
 
     ring->freq = 0;
+    qatomic_set(&ring->streaming, 0);
     qatomic_store_release(&ring->generation, ring->generation + 1);
 }
 
+/*
+ * The mixeng disables the voice only after the last device stopped and its
+ * mixed frames were written, so a disable is the end of every stream.
+ */
 static void wasm_enable_out(HWVoiceOut *hw, bool enable)
 {
     WasmVoiceOut *w = (WasmVoiceOut *) hw;
@@ -207,6 +219,7 @@ static void wasm_enable_out(HWVoiceOut *hw, bool enable)
         audio_rate_start(&w->rate);
         wasm_pace_start(w);
     }
+    qatomic_store_release(&wasm_audio_ring.streaming, enable);
 }
 
 static void audio_wasm_class_init(ObjectClass *klass, const void *data)
