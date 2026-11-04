@@ -2,6 +2,7 @@
 #ifndef HW_SMARTCARD_ISO7816_H
 #define HW_SMARTCARD_ISO7816_H
 
+#include "qemu/debug-channel.h"
 #include "qemu/fifo8.h"
 #include "hw/core/clock.h"
 #include "hw/core/qdev.h"
@@ -48,8 +49,7 @@ OBJECT_DECLARE_SIMPLE_TYPE(ISO7816Slot, ISO7816_SLOT)
 struct ISO7816Slot {
     SysBusDevice parent_obj;
 
-    bool trace;
-
+    DebugChannel dbg;
     BusState *bus;
     Clock *clock;
     const ISO7816InterfaceOps *interface;

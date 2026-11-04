@@ -9,7 +9,6 @@
 #include "hw/arm/pmb887x/rf.h"
 #include "hw/arm/pmb887x/sim.h"
 #include "hw/arm/pmb887x/ssc/lcd_common.h"
-#include "hw/arm/pmb887x/trace_common.h"
 #include "hw/arm/pmb887x/utils/regexp.h"
 #include "hw/arm/pmb887x/utils/toml.h"
 
@@ -352,7 +351,6 @@ static void device_realize_from_config(GHashTable *devices, const char *id, toml
 
 		case DEV_BUS_SIM:
 			qdev_connect_clock_in(dev, "CLK", qdev_get_clock_out(DEVICE(bus), "CC_CLK"));
-			qdev_prop_set_bit(dev, "trace", pmb887x_trace_log_enabled(PMB887X_TRACE_SIM_CARD));
 			pmb887x_sim_connect_slot(PMB887X_SIM(bus), ISO7816_SLOT(dev));
 			sysbus_realize_and_unref(SYS_BUS_DEVICE(dev), &error_fatal);
 			device_init_gpios_from_config(dev, table);
