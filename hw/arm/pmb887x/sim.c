@@ -493,7 +493,7 @@ static uint64_t sim_io_read(void *opaque, hwaddr haddr, unsigned size) {
 			value = pmb887x_srb_get_dmae(&p->srb);
 			break;
 		default:
-			EPRINTF("unknown reg access: %02"PRIX64"\n", haddr);
+			DEBUG_GUEST_ERROR(&p->dbg, "unknown reg read: %02"PRIX64"\n", haddr);
 			return 0;
 	}
 
@@ -597,7 +597,7 @@ static void sim_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned si
 		case SIM_MIS:
 			break;
 		default:
-			EPRINTF("unknown reg access: %02"PRIX64"\n", haddr);
+			DEBUG_GUEST_ERROR(&p->dbg, "unknown reg write: %02"PRIX64" = %08"PRIX64"\n", haddr, value);
 			break;
 	}
 }

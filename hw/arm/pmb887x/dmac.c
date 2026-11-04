@@ -1069,7 +1069,7 @@ static uint64_t dmac_io_read(void *opaque, hwaddr haddr, unsigned size) {
 			break;
 
 		default:
-			EPRINTF("unknown reg access: %02"PRIX64"\n", haddr);
+			DEBUG_GUEST_ERROR(&p->dbg, "unknown reg read: %02"PRIX64"\n", haddr);
 			break;
 	}
 
@@ -1186,7 +1186,7 @@ static void dmac_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned s
 			break;
 
 		default:
-			EPRINTF("unknown reg access: %02"PRIX64"\n", haddr);
+			DEBUG_GUEST_ERROR(&p->dbg, "unknown reg write: %02"PRIX64" = %08"PRIX64"\n", haddr, value);
 			break;
 	}
 

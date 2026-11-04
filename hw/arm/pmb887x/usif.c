@@ -607,7 +607,7 @@ static uint64_t usif_io_read(void *opaque, hwaddr haddr, unsigned size) {
 		case USIF_TXD:
 			break;
 		default:
-			EPRINTF("unknown reg read: %02"PRIX64"\n", haddr);
+			DEBUG_GUEST_ERROR(&p->dbg, "unknown reg read: %02"PRIX64"\n", haddr);
 			break;
 	}
 
@@ -689,7 +689,7 @@ static void usif_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned s
 			usif_tx_write(p, value);
 			break;
 		default:
-			EPRINTF("unknown reg write: %02"PRIX64" = %08"PRIX64"\n", haddr, value);
+			DEBUG_GUEST_ERROR(&p->dbg, "unknown reg write: %02"PRIX64" = %08"PRIX64"\n", haddr, value);
 			break;
 	}
 }

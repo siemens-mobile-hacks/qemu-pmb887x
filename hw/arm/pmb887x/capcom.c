@@ -487,7 +487,7 @@ static uint32_t capcom_register_read(pmb887x_capcom_t *p, hwaddr offset) {
 		case CAPCOM_T0_SRC:
 			return pmb887x_src_get(&p->timer_src[0]);
 		default:
-			EPRINTF("unknown reg read: %02" PRIX64 "\n", offset);
+			DEBUG_GUEST_ERROR(&p->dbg, "unknown reg read: %02" PRIX64 "\n", offset);
 			return 0;
 	}
 }
@@ -602,7 +602,7 @@ static void capcom_register_write(pmb887x_capcom_t *p, hwaddr offset, uint32_t v
 			pmb887x_src_set(&p->timer_src[0], value);
 			break;
 		default:
-			EPRINTF("unknown reg write: %02" PRIX64 " = %08" PRIX32 "\n", offset, value);
+			DEBUG_GUEST_ERROR(&p->dbg, "unknown reg write: %02" PRIX64 " = %08" PRIX32 "\n", offset, value);
 			break;
 	}
 }
