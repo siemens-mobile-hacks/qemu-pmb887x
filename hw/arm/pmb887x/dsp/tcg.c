@@ -153,9 +153,9 @@ struct teak_tcg_block_cache_entry_t {
 	uintptr_t target;
 	uint32_t evict_epoch;
 #endif
-	/* list heads chained to from this entry, as of succ_generation */
+	/* list heads chained to from this entry, as of succ_epoch */
 	teak_tcg_block_cache_entry_t *succ[2];
-	uint64_t succ_generation;
+	uint32_t succ_epoch;
 	teak_tcg_mode_t mode;
 	TranslationBlock *tb;
 	teak_tcg_block_t block;
@@ -164,6 +164,7 @@ struct teak_tcg_block_cache_entry_t {
 struct teak_tcg_chain_link_t {
 	uint64_t cache_generation;
 	const void *code;
+	uint32_t program_context;
 	uint32_t pc;
 	uint32_t block_repeat_end;
 	uint32_t instruction_count;
@@ -178,6 +179,11 @@ struct teak_tcg_chain_link_t {
 
 static teak_tcg_block_cache_entry_t *tcg_block_cache[TEAK_TCG_BLOCK_CACHE_ENTRIES];
 static uint64_t tcg_block_cache_generation = 1;
+/*
+ * Bumped whenever an entry is added or freed; never 0. Unlike the generation,
+ * it survives program context switches (tens of thousands a second on S75).
+ */
+static uint32_t tcg_block_cache_epoch = 1;
 static GPtrArray *tcg_chain_links;
 static uint8_t tcg_borrowed_word_addresses[TEAK_TCG_BLOCK_CACHE_ENTRIES / 8];
 static TCGContext *tcg_block_cache_context;
@@ -1759,6 +1765,7 @@ static void tcg_clear_block_cache(void) {
 	if (tcg_chain_links != NULL)
 		g_ptr_array_set_size(tcg_chain_links, 0);
 	tcg_block_cache_generation++;
+	tcg_block_cache_epoch++;
 }
 
 static void tcg_remove_cached_entry(teak_tcg_block_cache_entry_t **link) {
@@ -1767,6 +1774,7 @@ static void tcg_remove_cached_entry(teak_tcg_block_cache_entry_t **link) {
 	*link = entry->next;
 	g_free(entry);
 	tcg_block_cache_generation++;
+	tcg_block_cache_epoch++;
 }
 
 static bool tcg_is_block_repeat(const teak_insn_t *instruction);
@@ -1902,7 +1910,7 @@ static inline QEMU_ALWAYS_INLINE teak_tcg_block_cache_entry_t *tcg_find_chained_
 	teak_tcg_block_cache_entry_t *entry;
 	uint32_t pc = core->state.pc;
 
-	if (prev != NULL && prev->succ_generation == tcg_block_cache_generation) {
+	if (prev != NULL && prev->succ_epoch == tcg_block_cache_epoch) {
 		for (size_t i = 0; i < ARRAY_SIZE(prev->succ); i++) {
 			entry = prev->succ[i];
 			if (entry != NULL && entry->block.pc == pc && tcg_cached_entry_matches(core, entry)) {
@@ -1913,10 +1921,10 @@ static inline QEMU_ALWAYS_INLINE teak_tcg_block_cache_entry_t *tcg_find_chained_
 	}
 	entry = tcg_find_cached_entry_fast(core);
 	if (prev != NULL && entry != NULL && tcg_block_cache[pc] == entry) {
-		if (prev->succ_generation != tcg_block_cache_generation) {
+		if (prev->succ_epoch != tcg_block_cache_epoch) {
 			prev->succ[0] = NULL;
 			prev->succ[1] = NULL;
-			prev->succ_generation = tcg_block_cache_generation;
+			prev->succ_epoch = tcg_block_cache_epoch;
 		}
 		prev->succ[1] = prev->succ[0];
 		prev->succ[0] = entry;
@@ -1970,11 +1978,12 @@ static void tcg_cache_block(
 		if (tcg_is_block_repeat(instruction) || instruction->opcode == TEAK_OP_BREAK)
 			entry->level_free = false;
 	}
-	entry->succ_generation = 0;
+	entry->succ_epoch = 0;
 	entry->mode = mode;
 	entry->next = tcg_block_cache[block->pc];
 	tcg_block_cache[block->pc] = entry;
 	tcg_block_cache_generation++;
+	tcg_block_cache_epoch++;
 }
 
 static bool tcg_block_contains_address(const teak_tcg_block_t *block, uint16_t address) {
@@ -2088,8 +2097,8 @@ void teak_tcg_invalidate_all(teak_tcg_core_t *core) {
 }
 
 void teak_tcg_set_program_context(teak_tcg_core_t *core, uint32_t context) {
+	/* links compare the context, so they survive bank switches */
 	core->program_context = context;
-	tcg_block_cache_generation++;
 }
 
 static bool tcg_alu_uses_multiply(teak_alu_operation_t operation) {
@@ -5709,6 +5718,8 @@ static void tcg_emit_branch_if_link_mismatch(TCGv_ptr link, TCGLabel *label) {
 	tcg_gen_ld_i32(link_evict_epoch, link, offsetof(teak_tcg_chain_link_t, evict_epoch));
 	tcg_gen_brcond_i32(TCG_COND_NE, evict_epoch, link_evict_epoch, label);
 #endif
+	tcg_emit_branch_if_link_field_differs_u32(link, offsetof(teak_tcg_chain_link_t, program_context),
+		offsetof(teak_tcg_core_t, program_context), label);
 	tcg_emit_branch_if_link_field_differs_u32(link, offsetof(teak_tcg_chain_link_t, pc),
 		offsetof(teak_state_t, pc), label);
 	tcg_emit_branch_if_link_field_differs_u8(link, offsetof(teak_tcg_chain_link_t, block_repeat_level),
@@ -6713,6 +6724,7 @@ static void tcg_chain_link_set(
 	*link = (teak_tcg_chain_link_t) {
 		.cache_generation = tcg_block_cache_generation,
 		.code = code,
+		.program_context = entry->program_context,
 #ifdef CONFIG_TCG_WASM64
 		.evict_epoch = w64_evict_epoch,
 #endif
