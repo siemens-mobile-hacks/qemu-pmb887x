@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0-or-later */
 #include "qemu/osdep.h"
+#include "qemu/error-report.h"
 #include "qemu/module.h"
 #include "hw/core/qdev-properties.h"
 #include "qapi/error.h"
@@ -7,6 +8,7 @@
 #include "hw/smartcard/gsm11.h"
 #include "hw/smartcard/iso7816.h"
 #include "gsm-sim-fs.h"
+#include "gsm-sim-storage.h"
 #include "gsm-test-algorithm.h"
 
 #define TYPE_GSM_SIM "gsm-sim"
@@ -75,6 +77,7 @@ struct GSMSim {
     char *puk1;
     char *puk2;
     bool pin1_enabled;
+    char *storage;
 
     uint8_t ki[GSM_TEST_ALGORITHM_KI_SIZE];
     GSMSimFS fs;
@@ -171,7 +174,8 @@ static const GSMSimFileDefinition GSM_SIM_FILES[] = {
     { .id = GSM_SIM_EF_IMSI, .parent_id = GSM_SIM_DF_GSM,
       .structure = GSM_SIM_FILE_TRANSPARENT,
       .size = GSM_SIM_IMSI_SIZE, .fill = 0xFF,
-      .access = GSM_SIM_ACCESS_READ_CHV1_UPDATE_ADM_REHABILITATE_CHV1 },
+      .access = GSM_SIM_ACCESS_READ_CHV1_UPDATE_ADM_REHABILITATE_CHV1,
+      .generated = true },
     { .id = GSM_SIM_EF_KC, .parent_id = GSM_SIM_DF_GSM,
       .structure = GSM_SIM_FILE_TRANSPARENT,
       .size = sizeof(GSM_SIM_KC), .content = GSM_SIM_KC,
@@ -232,7 +236,7 @@ static const GSMSimFileDefinition GSM_SIM_FILES[] = {
     { .id = GSM_SIM_EF_AD, .parent_id = GSM_SIM_DF_GSM,
       .structure = GSM_SIM_FILE_TRANSPARENT,
       .size = GSM_SIM_AD_SIZE,
-      .access = GSM_SIM_ACCESS_READ_ALWAYS_UPDATE_ADM },
+      .access = GSM_SIM_ACCESS_READ_ALWAYS_UPDATE_ADM, .generated = true },
     { .id = GSM_SIM_EF_PHASE, .parent_id = GSM_SIM_DF_GSM,
       .structure = GSM_SIM_FILE_TRANSPARENT,
       .size = sizeof(GSM_SIM_PHASE), .content = GSM_SIM_PHASE,
@@ -458,16 +462,61 @@ static void gsm_sim_execute(GSMSim *sim, const uint8_t *command,
     }
 }
 
+static bool gsm_sim_changes_state(uint8_t instruction)
+{
+    switch (instruction) {
+    case GSM11_INS_UPDATE_BINARY:
+    case GSM11_INS_UPDATE_RECORD:
+    case GSM11_INS_INCREASE:
+    case GSM11_INS_INVALIDATE:
+    case GSM11_INS_REHABILITATE:
+    case GSM11_INS_VERIFY_CHV:
+    case GSM11_INS_CHANGE_CHV:
+    case GSM11_INS_DISABLE_CHV:
+    case GSM11_INS_ENABLE_CHV:
+    case GSM11_INS_UNBLOCK_CHV:
+        return true;
+    default:
+        return false;
+    }
+}
+
+static bool gsm_sim_write_storage(GSMSim *sim, Error **errp)
+{
+    g_autoptr(GString) json = gsm_sim_storage_save(&sim->fs);
+    g_autoptr(GError) error = NULL;
+
+    if (!g_file_set_contents(sim->storage, json->str, json->len, &error)) {
+        error_setg(errp, "gsm-sim: cannot write storage %s: %s", sim->storage,
+                   error->message);
+        return false;
+    }
+    return true;
+}
+
+static void gsm_sim_commit_storage(GSMSim *sim)
+{
+    Error *err = NULL;
+
+    if (!gsm_sim_write_storage(sim, &err)) {
+        error_report_err(err);
+    }
+}
+
 static void gsm_sim_exchange(ISO7816Card *card, const uint8_t *command,
                              size_t size, uint32_t exchange_id)
 {
+    GSMSim *sim = GSM_SIM(card);
     ISO7816Response response = { 0 };
 
     if (command[ISO7816_OFFSET_CLA] != GSM11_CLASS) {
         iso7816_response_set_status(&response,
                                     GSM11_STATUS_CLASS_NOT_SUPPORTED);
     } else {
-        gsm_sim_execute(GSM_SIM(card), command, &response);
+        gsm_sim_execute(sim, command, &response);
+    }
+    if (sim->storage && gsm_sim_changes_state(command[ISO7816_OFFSET_INS])) {
+        gsm_sim_commit_storage(sim);
     }
     iso7816_card_complete(card, exchange_id, &response);
 }
@@ -596,6 +645,22 @@ static void gsm_sim_free_sms_records(GSMSim *sim)
     }
 }
 
+static bool gsm_sim_open_storage(GSMSim *sim, Error **errp)
+{
+    g_autofree char *json = NULL;
+    g_autoptr(GError) error = NULL;
+
+    if (!g_file_test(sim->storage, G_FILE_TEST_EXISTS)) {
+        return gsm_sim_write_storage(sim, errp);
+    }
+    if (!g_file_get_contents(sim->storage, &json, NULL, &error)) {
+        error_setg(errp, "gsm-sim: cannot read storage %s: %s", sim->storage,
+                   error->message);
+        return false;
+    }
+    return gsm_sim_storage_load(&sim->fs, json, errp);
+}
+
 static void gsm_sim_realize(DeviceState *dev, Error **errp)
 {
     ERRP_GUARD();
@@ -640,6 +705,10 @@ static void gsm_sim_realize(DeviceState *dev, Error **errp)
     gsm_sim_fs_init(&sim->fs, GSM_SIM_FILES, ARRAY_SIZE(GSM_SIM_FILES));
     gsm_sim_write_identity(sim);
     gsm_sim_free_sms_records(sim);
+    if (sim->storage && !gsm_sim_open_storage(sim, errp)) {
+        GSM_SIM_GET_CLASS(dev)->parent_unrealize(dev);
+        gsm_sim_fs_destroy(&sim->fs);
+    }
 }
 
 static void gsm_sim_unrealize(DeviceState *dev)
@@ -657,6 +726,7 @@ static const Property gsm_sim_properties[] = {
     DEFINE_PROP_STRING("puk1", GSMSim, puk1),
     DEFINE_PROP_STRING("puk2", GSMSim, puk2),
     DEFINE_PROP_BOOL("pin1-enabled", GSMSim, pin1_enabled, false),
+    DEFINE_PROP_STRING("storage", GSMSim, storage),
 };
 
 static void gsm_sim_class_init(ObjectClass *klass, const void *data)

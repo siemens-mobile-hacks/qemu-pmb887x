@@ -34,6 +34,7 @@ typedef struct GSMSimFileDefinition {
     uint8_t fill;
     const uint8_t *content;
     uint8_t access[GSM_SIM_FS_ACCESS_SIZE];
+    bool generated;
 } GSMSimFileDefinition;
 
 typedef struct GSMSimFile {
