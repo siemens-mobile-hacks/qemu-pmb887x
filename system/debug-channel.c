@@ -159,6 +159,14 @@ void debug_channel_init_device(DebugChannel *ch, DeviceState *dev)
     debug_channel_init(ch, debug_device_info(dev), dev->id);
 }
 
+void debug_channel_init_device_regs(DebugChannel *ch, DeviceState *dev,
+                                    const DebugRegs *regs)
+{
+    debug_channel_init_device(ch, dev);
+    ch->io_format = &debug_regs_format;
+    ch->io_format_opaque = regs;
+}
+
 static bool debug_is_qom_type(const char *name)
 {
     return object_class_by_name(name);
