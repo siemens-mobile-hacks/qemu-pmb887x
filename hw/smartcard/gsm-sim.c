@@ -39,9 +39,16 @@ OBJECT_DECLARE_TYPE(GSMSim, GSMSimClass, GSM_SIM)
 #define GSM_SIM_ACCESS_READ_CHV1_UPDATE_CHV2 { 0x12, 0xF0, 0x44 }
 #define GSM_SIM_ACCESS_READ_CHV1_UPDATE_ADM { 0x14, 0xF0, 0x44 }
 #define GSM_SIM_ACCESS_READ_CHV1_UPDATE_CHV2_INCREASE_CHV1 { 0x12, 0x10, 0x44 }
+#define GSM_SIM_ACCESS_READ_CHV1_UPDATE_CHV1_INVALIDATE_CHV2 { 0x11, 0xF0, 0x22 }
+#define GSM_SIM_ACCESS_READ_CHV1_UPDATE_CHV1_REHABILITATE_CHV1 { 0x11, 0xF0, 0x14 }
+#define GSM_SIM_ACCESS_READ_CHV1_UPDATE_ADM_REHABILITATE_CHV1 { 0x14, 0xF0, 0x14 }
 
 #define GSM_SIM_DEFAULT_OPERATOR "00101"
 #define GSM_SIM_DEFAULT_SUBSCRIBER "0123456789"
+#define GSM_SIM_DEFAULT_PIN "0000"
+#define GSM_SIM_DEFAULT_PUK "12345678"
+#define GSM_SIM_PIN_MIN_LENGTH 4
+#define GSM_SIM_CHV_PADDING 0xFF
 
 #define GSM_SIM_ATR_DELAY_CLOCKS 11960
 #define GSM_SIM_SELECT_CLOCKS 10199
@@ -49,12 +56,21 @@ OBJECT_DECLARE_TYPE(GSMSim, GSMSimClass, GSM_SIM)
 #define GSM_SIM_READ_BINARY_CLOCKS 959
 #define GSM_SIM_READ_RECORD_CLOCKS 1017
 #define GSM_SIM_GET_RESPONSE_CLOCKS 296
+#define GSM_SIM_UPDATE_BINARY_CLOCKS 3019
+#define GSM_SIM_UPDATE_RECORD_CLOCKS 10462
+#define GSM_SIM_SEEK_CLOCKS 3006
+#define GSM_SIM_INCREASE_CLOCKS 6016
 
 struct GSMSim {
     ISO7816Card parent_obj;
 
     char *imsi;
     char *operator_code;
+    char *pin1;
+    char *pin2;
+    char *puk1;
+    char *puk2;
+    bool pin1_enabled;
 
     GSMSimFS fs;
 };
@@ -150,7 +166,7 @@ static const GSMSimFileDefinition GSM_SIM_FILES[] = {
     { .id = GSM_SIM_EF_IMSI, .parent_id = GSM_SIM_DF_GSM,
       .structure = GSM_SIM_FILE_TRANSPARENT,
       .size = GSM_SIM_IMSI_SIZE, .fill = 0xFF,
-      .access = GSM_SIM_ACCESS_READ_CHV1_UPDATE_ADM },
+      .access = GSM_SIM_ACCESS_READ_CHV1_UPDATE_ADM_REHABILITATE_CHV1 },
     { .id = GSM_SIM_EF_KC, .parent_id = GSM_SIM_DF_GSM,
       .structure = GSM_SIM_FILE_TRANSPARENT,
       .size = sizeof(GSM_SIM_KC), .content = GSM_SIM_KC,
@@ -207,7 +223,7 @@ static const GSMSimFileDefinition GSM_SIM_FILES[] = {
     { .id = GSM_SIM_EF_LOCI, .parent_id = GSM_SIM_DF_GSM,
       .structure = GSM_SIM_FILE_TRANSPARENT,
       .size = sizeof(GSM_SIM_LOCI), .content = GSM_SIM_LOCI,
-      .access = GSM_SIM_ACCESS_READ_CHV1_UPDATE_CHV1 },
+      .access = GSM_SIM_ACCESS_READ_CHV1_UPDATE_CHV1_REHABILITATE_CHV1 },
     { .id = GSM_SIM_EF_AD, .parent_id = GSM_SIM_DF_GSM,
       .structure = GSM_SIM_FILE_TRANSPARENT,
       .size = GSM_SIM_AD_SIZE,
@@ -221,7 +237,7 @@ static const GSMSimFileDefinition GSM_SIM_FILES[] = {
       .structure = GSM_SIM_FILE_LINEAR_FIXED,
       .size = 250 * GSM_SIM_DIALING_RECORD_SIZE,
       .record_size = GSM_SIM_DIALING_RECORD_SIZE, .fill = 0xFF,
-      .access = GSM_SIM_ACCESS_READ_CHV1_UPDATE_CHV1 },
+      .access = GSM_SIM_ACCESS_READ_CHV1_UPDATE_CHV1_INVALIDATE_CHV2 },
     { .id = GSM_SIM_EF_FDN, .parent_id = GSM_SIM_DF_TELECOM,
       .structure = GSM_SIM_FILE_LINEAR_FIXED,
       .size = 10 * GSM_SIM_DIALING_RECORD_SIZE,
@@ -276,11 +292,21 @@ static const uint8_t *gsm_sim_get_atr(ISO7816Card *card, size_t *size)
 
 static void gsm_sim_cold_reset(ISO7816Card *card)
 {
-    GSMSimFS *fs = &GSM_SIM(card)->fs;
+    GSMSim *sim = GSM_SIM(card);
+    GSMSimFS *fs = &sim->fs;
+    GSMSimFile *adn = gsm_sim_fs_find(fs, GSM_SIM_EF_ADN, GSM_SIM_DF_TELECOM);
+    bool fdn_enabled = adn->invalidated;
 
     gsm_sim_fs_reset(fs);
-    fs->chv1_fulfilled = true;
-    fs->chv2_fulfilled = false;
+    fs->chv1.fulfilled = false;
+    fs->chv2.fulfilled = false;
+    if (fdn_enabled) {
+        GSMSimFile *imsi = gsm_sim_fs_find(fs, GSM_SIM_EF_IMSI, GSM_SIM_DF_GSM);
+        GSMSimFile *loci = gsm_sim_fs_find(fs, GSM_SIM_EF_LOCI, GSM_SIM_DF_GSM);
+
+        imsi->invalidated = true;
+        loci->invalidated = true;
+    }
 }
 
 static bool gsm_sim_command_has_data(ISO7816Card *card, const uint8_t *header)
@@ -302,6 +328,14 @@ static uint32_t gsm_sim_processing_clocks(ISO7816Card *card,
         return GSM_SIM_READ_RECORD_CLOCKS;
     case GSM11_INS_GET_RESPONSE:
         return GSM_SIM_GET_RESPONSE_CLOCKS;
+    case GSM11_INS_UPDATE_BINARY:
+        return GSM_SIM_UPDATE_BINARY_CLOCKS;
+    case GSM11_INS_UPDATE_RECORD:
+        return GSM_SIM_UPDATE_RECORD_CLOCKS;
+    case GSM11_INS_SEEK:
+        return GSM_SIM_SEEK_CLOCKS;
+    case GSM11_INS_INCREASE:
+        return GSM_SIM_INCREASE_CLOCKS;
     default:
         return 0;
     }
@@ -361,6 +395,27 @@ static void gsm_sim_execute(GSMSim *sim, const uint8_t *command,
         break;
     case GSM11_INS_INCREASE:
         gsm_sim_fs_increase(fs, data, size, response);
+        break;
+    case GSM11_INS_INVALIDATE:
+        gsm_sim_fs_invalidate(fs, response);
+        break;
+    case GSM11_INS_REHABILITATE:
+        gsm_sim_fs_rehabilitate(fs, response);
+        break;
+    case GSM11_INS_VERIFY_CHV:
+        gsm_sim_fs_verify_chv(fs, p2, data, size, response);
+        break;
+    case GSM11_INS_CHANGE_CHV:
+        gsm_sim_fs_change_chv(fs, p2, data, size, response);
+        break;
+    case GSM11_INS_DISABLE_CHV:
+        gsm_sim_fs_disable_chv(fs, p2, data, size, response);
+        break;
+    case GSM11_INS_ENABLE_CHV:
+        gsm_sim_fs_enable_chv(fs, p2, data, size, response);
+        break;
+    case GSM11_INS_UNBLOCK_CHV:
+        gsm_sim_fs_unblock_chv(fs, p2, data, size, response);
         break;
     default:
         iso7816_response_set_status(response, GSM11_STATUS_INS_NOT_SUPPORTED);
@@ -429,6 +484,40 @@ static bool gsm_sim_validate_imsi(const char *imsi, const char *operator_code,
     return true;
 }
 
+static bool gsm_sim_encode_chv(const char *name, const char *text,
+                               size_t min_length, uint8_t *encoded,
+                               Error **errp)
+{
+    size_t length = strlen(text);
+
+    if (length < min_length || length > GSM_SIM_FS_CHV_SIZE ||
+        !gsm_sim_is_decimal(text, length)) {
+        error_setg(errp, "gsm-sim: %s must contain %zu to %d decimal digits",
+                   name, min_length, GSM_SIM_FS_CHV_SIZE);
+        return false;
+    }
+    memset(encoded, GSM_SIM_CHV_PADDING, GSM_SIM_FS_CHV_SIZE);
+    memcpy(encoded, text, length);
+    return true;
+}
+
+static bool gsm_sim_configure_chv(GSMSimCHV *chv, const char *pin_name,
+                                  const char *pin, const char *puk_name,
+                                  const char *puk, Error **errp)
+{
+    if (!gsm_sim_encode_chv(pin_name, pin ? pin : GSM_SIM_DEFAULT_PIN,
+                            GSM_SIM_PIN_MIN_LENGTH, chv->value, errp)) {
+        return false;
+    }
+    if (!gsm_sim_encode_chv(puk_name, puk ? puk : GSM_SIM_DEFAULT_PUK,
+                            GSM_SIM_FS_CHV_SIZE, chv->unblock_value, errp)) {
+        return false;
+    }
+    chv->attempts = GSM_SIM_FS_CHV_ATTEMPTS;
+    chv->unblock_attempts = GSM_SIM_FS_UNBLOCK_CHV_ATTEMPTS;
+    return true;
+}
+
 static void gsm_sim_write_identity(GSMSim *sim)
 {
     GSMSimFile *imsi = gsm_sim_fs_find(&sim->fs, GSM_SIM_EF_IMSI,
@@ -478,6 +567,15 @@ static void gsm_sim_realize(DeviceState *dev, Error **errp)
     if (!gsm_sim_validate_imsi(sim->imsi, sim->operator_code, errp)) {
         return;
     }
+    if (!gsm_sim_configure_chv(&sim->fs.chv1, "pin1", sim->pin1, "puk1",
+                               sim->puk1, errp)) {
+        return;
+    }
+    if (!gsm_sim_configure_chv(&sim->fs.chv2, "pin2", sim->pin2, "puk2",
+                               sim->puk2, errp)) {
+        return;
+    }
+    sim->fs.chv1_enabled = sim->pin1_enabled;
 
     GSM_SIM_GET_CLASS(dev)->parent_realize(dev, errp);
     if (*errp) {
@@ -498,6 +596,11 @@ static void gsm_sim_unrealize(DeviceState *dev)
 static const Property gsm_sim_properties[] = {
     DEFINE_PROP_STRING("imsi", GSMSim, imsi),
     DEFINE_PROP_STRING("operator", GSMSim, operator_code),
+    DEFINE_PROP_STRING("pin1", GSMSim, pin1),
+    DEFINE_PROP_STRING("pin2", GSMSim, pin2),
+    DEFINE_PROP_STRING("puk1", GSMSim, puk1),
+    DEFINE_PROP_STRING("puk2", GSMSim, puk2),
+    DEFINE_PROP_BOOL("pin1-enabled", GSMSim, pin1_enabled, false),
 };
 
 static void gsm_sim_class_init(ObjectClass *klass, const void *data)

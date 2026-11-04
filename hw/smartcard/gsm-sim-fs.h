@@ -7,6 +7,9 @@
 #define GSM_SIM_FS_MF_ID 0x3F00
 #define GSM_SIM_FS_ACCESS_SIZE 3
 #define GSM_SIM_FS_RESPONSE_MAX_SIZE 23
+#define GSM_SIM_FS_CHV_SIZE 8
+#define GSM_SIM_FS_CHV_ATTEMPTS 3
+#define GSM_SIM_FS_UNBLOCK_CHV_ATTEMPTS 10
 
 typedef enum GSMSimFileStructure {
     GSM_SIM_FILE_MF,
@@ -37,7 +40,16 @@ typedef struct GSMSimFile {
     const GSMSimFileDefinition *definition;
     uint16_t size;
     uint8_t *data;
+    bool invalidated;
 } GSMSimFile;
+
+typedef struct GSMSimCHV {
+    uint8_t value[GSM_SIM_FS_CHV_SIZE];
+    uint8_t unblock_value[GSM_SIM_FS_CHV_SIZE];
+    uint8_t attempts;
+    uint8_t unblock_attempts;
+    bool fulfilled;
+} GSMSimCHV;
 
 typedef struct GSMSimFS {
     GSMSimFile *files;
@@ -48,8 +60,9 @@ typedef struct GSMSimFS {
     uint16_t current_record;
     uint8_t response[GSM_SIM_FS_RESPONSE_MAX_SIZE];
     uint8_t response_size;
-    bool chv1_fulfilled;
-    bool chv2_fulfilled;
+    GSMSimCHV chv1;
+    GSMSimCHV chv2;
+    bool chv1_enabled;
 } GSMSimFS;
 
 void gsm_sim_fs_init(GSMSimFS *fs, const GSMSimFileDefinition *definitions,
@@ -76,5 +89,23 @@ void gsm_sim_fs_seek(GSMSimFS *fs, uint8_t type_mode, const uint8_t *pattern,
                      uint16_t length, ISO7816Response *response);
 void gsm_sim_fs_increase(GSMSimFS *fs, const uint8_t *value, uint16_t length,
                          ISO7816Response *response);
+void gsm_sim_fs_invalidate(GSMSimFS *fs, ISO7816Response *response);
+void gsm_sim_fs_rehabilitate(GSMSimFS *fs, ISO7816Response *response);
+bool gsm_sim_fs_is_chv1_granted(GSMSimFS *fs);
+void gsm_sim_fs_verify_chv(GSMSimFS *fs, uint8_t chv_number,
+                           const uint8_t *data, uint16_t length,
+                           ISO7816Response *response);
+void gsm_sim_fs_change_chv(GSMSimFS *fs, uint8_t chv_number,
+                           const uint8_t *data, uint16_t length,
+                           ISO7816Response *response);
+void gsm_sim_fs_disable_chv(GSMSimFS *fs, uint8_t chv_number,
+                            const uint8_t *data, uint16_t length,
+                            ISO7816Response *response);
+void gsm_sim_fs_enable_chv(GSMSimFS *fs, uint8_t chv_number,
+                           const uint8_t *data, uint16_t length,
+                           ISO7816Response *response);
+void gsm_sim_fs_unblock_chv(GSMSimFS *fs, uint8_t chv_number,
+                            const uint8_t *data, uint16_t length,
+                            ISO7816Response *response);
 
 #endif
