@@ -261,6 +261,7 @@ config PMB887X
     default y
     depends on TCG && ARM
     select ISO7816
+    select GSM_SIM
 
 config VEXPRESS
     bool

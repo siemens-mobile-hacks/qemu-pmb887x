@@ -1,2 +1,6 @@
 config ISO7816
     bool
+
+config GSM_SIM
+    bool
+    depends on ISO7816
