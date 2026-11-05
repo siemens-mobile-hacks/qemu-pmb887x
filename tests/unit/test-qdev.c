@@ -1,6 +1,7 @@
 #include "qemu/osdep.h"
 #include "hw/core/irq.h"
 #include "hw/core/qdev-properties.h"
+#include "hw/core/split-irq.h"
 #include "qom/object.h"
 #include "qapi/error.h"
 #include "qapi/visitor.h"
@@ -20,6 +21,7 @@ struct MyDev {
     uint32_t prop_array_u32_nb;
     qemu_irq sda_out;
     int sda_in_level;
+    int sda_in_order;
 };
 
 static const Property my_dev_props[] = {
@@ -29,11 +31,14 @@ static const Property my_dev_props[] = {
                      qdev_prop_uint32, uint32_t),
 };
 
+static int sda_in_sequence;
+
 static void my_dev_sda_in(void *opaque, int _n, int level)
 {
     MyDev *mt = opaque;
 
     mt->sda_in_level = level;
+    mt->sda_in_order = ++sda_in_sequence;
 }
 
 static void my_dev_init(Object *obj)
@@ -169,6 +174,30 @@ static void test_qdev_gpio_pass_shared_name(void)
     test_free_dev(peer);
 }
 
+static void test_split_irq_connect_gpio_out(void)
+{
+    MyDev *mt = test_new_dev();
+    MyDev *peers[] = { test_new_dev(), test_new_dev(), test_new_dev() };
+
+    for (size_t i = 0; i < ARRAY_SIZE(peers); i++) {
+        split_irq_connect_gpio_out(DEVICE(mt), "sda", 0,
+                                   qdev_get_gpio_in_named(DEVICE(peers[i]),
+                                                          "sda", 0));
+    }
+    sda_in_sequence = 0;
+    qemu_set_irq(mt->sda_out, 1);
+
+    for (size_t i = 0; i < ARRAY_SIZE(peers); i++) {
+        g_assert_cmpint(peers[i]->sda_in_level, ==, 1);
+        g_assert_cmpint(peers[i]->sda_in_order, ==, i + 1);
+    }
+
+    test_free_dev(mt);
+    for (size_t i = 0; i < ARRAY_SIZE(peers); i++) {
+        test_free_dev(peers[i]);
+    }
+}
+
 int main(int argc, char **argv)
 {
     g_test_init(&argc, &argv, NULL);
@@ -183,6 +212,8 @@ int main(int argc, char **argv)
     g_test_add_func("/qdev/gpio-shared-name", test_qdev_gpio_shared_name);
     g_test_add_func("/qdev/gpio-pass-shared-name",
                     test_qdev_gpio_pass_shared_name);
+    g_test_add_func("/qdev/split-irq-connect-gpio-out",
+                    test_split_irq_connect_gpio_out);
 
     g_test_run();
 

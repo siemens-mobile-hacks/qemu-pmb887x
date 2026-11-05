@@ -4109,7 +4109,7 @@ common_ss.add(hwcore)
 if have_system
   host_unit_tests += {
     'qdev': {
-      'sources': files('tests/unit/test-qdev.c'),
+      'sources': files('tests/unit/test-qdev.c', 'hw/core/split-irq.c'),
       'dependencies': [qom, hwcore],
     },
   }

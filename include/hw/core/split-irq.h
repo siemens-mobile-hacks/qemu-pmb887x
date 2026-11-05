@@ -52,4 +52,19 @@ struct SplitIRQ {
     uint16_t num_lines;
 };
 
+/**
+ * split_irq_connect_gpio_out: Connect one more input to a GPIO output
+ * @dev: Device whose output GPIO to connect
+ * @name: Name of the output GPIO array, or NULL for anonymous lines
+ * @n: Number of the output GPIO line within that array
+ * @input: qemu_irq to connect; it must already be in the QOM tree
+ *
+ * The first input is connected directly. When the output is already
+ * connected, a splitter child of @dev takes over the existing input and
+ * forwards the line to every input in connection order, so @dev must be
+ * in the QOM tree from the second input on.
+ */
+void split_irq_connect_gpio_out(DeviceState *dev, const char *name, int n,
+                                qemu_irq input);
+
 #endif

@@ -40,6 +40,47 @@ static void split_irq_handler(void *opaque, int n, int level)
     }
 }
 
+static void split_irq_connect_line(DeviceState *dev, const char *name, int n,
+                                  qemu_irq input)
+{
+    qdev_connect_gpio_out_named(dev, name, n, input);
+    assert(qdev_get_gpio_out_connector(dev, name, n) == input);
+}
+
+static void split_irq_add_output(SplitIRQ *s, qemu_irq input)
+{
+    assert(s->num_lines < MAX_SPLIT_LINES);
+    qdev_init_gpio_out(DEVICE(s), &s->out_irq[s->num_lines], 1);
+    split_irq_connect_line(DEVICE(s), NULL, s->num_lines, input);
+    s->num_lines++;
+}
+
+void split_irq_connect_gpio_out(DeviceState *dev, const char *name, int n,
+                                qemu_irq input)
+{
+    g_autofree char *split_name =
+        g_strdup_printf("%s-split[%d]", name ? name : "unnamed-gpio-out", n);
+    Object *split = object_resolve_path_component(OBJECT(dev), split_name);
+
+    if (split) {
+        split_irq_add_output(SPLIT_IRQ(split), input);
+        return;
+    }
+
+    qemu_irq connected = qdev_get_gpio_out_connector(dev, name, n);
+    if (!connected) {
+        split_irq_connect_line(dev, name, n, input);
+        return;
+    }
+
+    DeviceState *split_dev = qdev_new(TYPE_SPLIT_IRQ);
+    object_property_add_child(OBJECT(dev), split_name, OBJECT(split_dev));
+    qdev_realize_and_unref(split_dev, NULL, &error_abort);
+    split_irq_connect_line(split_dev, NULL, 0, connected);
+    split_irq_add_output(SPLIT_IRQ(split_dev), input);
+    split_irq_connect_line(dev, name, n, qdev_get_gpio_in(split_dev, 0));
+}
+
 static void split_irq_init(Object *obj)
 {
     qdev_init_gpio_in(DEVICE(obj), split_irq_handler, 1);
