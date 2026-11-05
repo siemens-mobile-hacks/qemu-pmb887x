@@ -3813,18 +3813,6 @@ qemuutil = declare_dependency(link_with: libqemuutil,
                               sources: genh + version_res,
                               dependencies: [event_loop_base])
 
-foreach test_name, test_config : host_unit_tests
-  test_exe = executable(
-    'test-' + test_name,
-    test_config['sources'],
-    genh,
-    c_args: test_config.get('c_args', []),
-    dependencies: [qemuutil] + test_config.get('dependencies', []),
-    build_by_default: false,
-  )
-  test(test_name, test_exe, suite: ['unit'])
-endforeach
-
 if have_system or have_user
   decodetree = generator(find_program('scripts/decodetree.py'),
                          output: 'decode-@BASENAME@.c.inc',
@@ -4117,6 +4105,27 @@ libhwcore = static_library('hwcore', sources: hwcore_ss.sources() + genh,
                            build_by_default: false)
 hwcore = declare_dependency(objects: libhwcore.extract_all_objects(recursive: false))
 common_ss.add(hwcore)
+
+if have_system
+  host_unit_tests += {
+    'qdev': {
+      'sources': files('tests/unit/test-qdev.c'),
+      'dependencies': [qom, hwcore],
+    },
+  }
+endif
+
+foreach test_name, test_config : host_unit_tests
+  test_exe = executable(
+    'test-' + test_name,
+    test_config['sources'],
+    genh,
+    c_args: test_config.get('c_args', []),
+    dependencies: [qemuutil] + test_config.get('dependencies', []),
+    build_by_default: false,
+  )
+  test(test_name, test_exe, suite: ['unit'])
+endforeach
 
 audio_ss = audio_ss.apply({})
 libaudio = static_library('qemuaudio', audio_ss.sources() + genh,

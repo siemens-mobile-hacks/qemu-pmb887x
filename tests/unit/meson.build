@@ -171,7 +171,6 @@ if have_system
       meson.project_source_root() / 'hw/i2c/core.c',
       meson.project_source_root() / 'hw/ssi/three-wire-serial.c',
     ],
-    'test-qdev': [qom, hwcore],
   }
 endif
 

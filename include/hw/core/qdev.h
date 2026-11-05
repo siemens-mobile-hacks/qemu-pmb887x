@@ -820,7 +820,8 @@ void qdev_init_gpio_out_named(DeviceState *dev, qemu_irq *pins,
  * @dev: Device to create input GPIOs for
  * @handler: Function to call when GPIO line value is set
  * @opaque: Opaque data pointer to pass to @handler
- * @name: Name of the GPIO input (must be unique for this device)
+ * @name: Name of the GPIO input (must be unique among the inputs of this
+ *        device; an output may use the same name)
  * @n: Number of GPIO lines in this input set
  */
 void qdev_init_gpio_in_named_with_opaque(DeviceState *dev,
@@ -832,7 +833,8 @@ void qdev_init_gpio_in_named_with_opaque(DeviceState *dev,
  * qdev_init_gpio_in_named() - create an array of input GPIO lines
  * @dev: device to add array to
  * @handler: a &typedef qemu_irq_handler function to call when GPIO is set
- * @name: Name of the GPIO input (must be unique for this device)
+ * @name: Name of the GPIO input (must be unique among the inputs of this
+ *        device; an output may use the same name)
  * @n: Number of GPIO lines in this input set
  *
  * Like qdev_init_gpio_in_named_with_opaque(), but the opaque pointer
