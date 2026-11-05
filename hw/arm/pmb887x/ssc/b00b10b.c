@@ -5,7 +5,6 @@
 
 #include "qemu/osdep.h"
 #include "hw/core/qdev-properties.h"
-#include "hw/core/hw-error.h"
 #include "hw/ssi/ssi.h"
 #include "hw/core/irq.h"
 #include "qemu/module.h"
@@ -147,7 +146,7 @@ static void acodec_handle_message(pmb887x_acodec_t *p) {
 			acodec_answer(p, ISC_PMAN_STANDBY_ENTRY_RESP, 2);
 			break;
 		default:
-			hw_error("UNKNOWN MESSAGE: id=%04X, len=%d\n", p->msg_id, p->msg_len);
+			DEBUG_UNIMP(&p->dbg, "unknown message: id=%04X, len=%u\n", p->msg_id, p->msg_len);
 			break;
 	}
 }
@@ -167,7 +166,7 @@ static uint32_t acodec_transfer(SSIPeripheral *dev, uint32_t in) {
 				p->wcycle = 0;
 			}
 		} else {
-			hw_error("received %02X, but only padding (00) or message start (AA) allowed!\n", in);
+			DEBUG_GUEST_ERROR(&p->dbg, "received %02X, but only padding (00) or message start (AA) allowed\n", in);
 		}
 	} else if (p->state == STATE_ISC_MESSAGE_HEADER) {
 		if (p->wcycle == 0) {
@@ -181,18 +180,17 @@ static uint32_t acodec_transfer(SSIPeripheral *dev, uint32_t in) {
 			p->wcycle++;
 		} else if (p->wcycle == 3) {
 			p->msg_id |= in;
+			p->wcycle = 0;
 
 			if (p->msg_len == 4) {
 				acodec_handle_message(p);
 				p->state = STATE_NONE;
-				p->wcycle = 0;
+			} else if (p->msg_len == 0 || p->msg_len > sizeof(p->msg_payload)) {
+				DEBUG_GUEST_ERROR(&p->dbg, "invalid ISC message len (%u)\n", p->msg_len);
+				p->state = STATE_NONE;
 			} else {
 				p->state = STATE_ISC_MESSAGE_BODY;
-				p->wcycle = 0;
 			}
-
-			if (p->msg_len > sizeof(p->msg_payload))
-				hw_error("invalid ISC message len (%d)\n", p->msg_len);
 		}
 	} else if (p->state == STATE_ISC_MESSAGE_BODY) {
 		p->msg_payload[p->wcycle++] = in;

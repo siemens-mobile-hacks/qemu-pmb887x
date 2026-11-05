@@ -9,7 +9,6 @@
 #include "qemu/module.h"
 #include "qom/object.h"
 #include "hw/core/irq.h"
-#include "hw/core/hw-error.h"
 #include "system/debug-channel.h"
 #include "hw/arm/pmb887x/trace.h"
 
@@ -132,7 +131,8 @@ static uint32_t gimmick_transfer16(SSIPeripheral *dev, uint32_t data) {
 				gimmick_write_reg(p, p->arg0, data);
 				p->wcycle = 0;
 			} else {
-				hw_error("Invalid CMD_WRITE_REG wcycle!");
+				DEBUG_GUEST_ERROR(&p->dbg, "invalid CMD_WRITE_REG wcycle: %u\n", p->wcycle);
+				p->wcycle = 0;
 			}
 		} else if (p->cmd == CMD_READ_REG) {
 			if (p->wcycle == 1) {
@@ -144,11 +144,11 @@ static uint32_t gimmick_transfer16(SSIPeripheral *dev, uint32_t data) {
 				p->arg0 += 2;
 			}
 		} else {
-			EPRINTF("invalid wcycle for cmd %04X\n", p->cmd);
-			exit(1);
+			DEBUG_GUEST_ERROR(&p->dbg, "invalid wcycle for cmd %04X\n", p->cmd);
+			p->wcycle = 0;
 		}
 	} else {
-		hw_error("Ignored data: %02X [cmd=%04X]", data, p->cmd);
+		DEBUG_GUEST_ERROR(&p->dbg, "ignored data: %04X [cmd=%04X]\n", data, p->cmd);
 	}
 
 	DEBUG_LOG(&p->dbg, "value=%08X\n", value);
