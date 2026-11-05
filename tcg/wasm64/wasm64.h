@@ -4,8 +4,9 @@
  * Each translated TB is a descriptor followed by one wasm function body
  * in the code generation buffer:
  *
- *   tb_ptr +  0  u32  fidx    addFunction() index of the owning batch's
- *                              "run" thunk, 0 = not compiled (or evicted)
+ *   tb_ptr +  0  u32  fidx    addFunction() index of the run thunk (one
+ *                              for every batch), 0 = not compiled (or
+ *                              evicted)
  *   tb_ptr +  4  u32  batch   W64_BATCH_TAG | batch id once the batch
  *                              module landed, else 0
  *   tb_ptr +  8  u32  icount  guest insns (prologue accounting)
@@ -14,11 +15,12 @@
  *
  * The TB joins its thread's open batch at finalize.  A batch becomes one
  * module - union type and import tables, one function per member, one
- * `run(env, sp, tp, tidx)` thunk, one active element segment per member
- * registering it in the shared chain table at its tidx - when it fills,
- * when a union table is nearly full, or when one of its members is
- * executed as compiled code for the first time (until then the
- * interpreter tier runs it, w64-interp.c).
+ * active element segment per member registering it in the shared chain
+ * table at its tidx - when it fills, when a union table is nearly full,
+ * or when one of its members is executed as compiled code for the first
+ * time (until then the interpreter tier runs it, w64-interp.c).  The
+ * dispatcher enters any member through one `run(env, sp, tp, tidx)`
+ * thunk that tail-calls the chain table (wasm64.c).
  *
  * goto_tb chaining: the chain slot is tb->jmp_target_addr[n] itself,
  * linked or reset by qemu core TCI-style; emitted code reads it at

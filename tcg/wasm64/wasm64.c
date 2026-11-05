@@ -412,8 +412,7 @@ struct w64_bsrc {
  * modules (64 KB of executable address space each). */
 struct w64_landed {
     struct w64_bsrc src;
-    uint32_t thunk;         /* run-thunk fidx; 0 = evicted */
-    uint32_t *tidx;         /* member chain-table indices (eviction) */
+    uint32_t *tidx;        /* member chain-table indices (eviction) */
     struct w64_landed *next; /* live FIFO */
 };
 static struct w64_landed **w64_landed_by_id;
@@ -593,10 +592,6 @@ static void mb_sec(struct w64_mb *mod, uint8_t id, struct w64_mb *sec)
     mb_put(mod, sec->b, sec->n);
 }
 
-EM_JS(void, w64_remove, (int fidx), {
-    removeFunction(fidx);
-});
-
 EM_JS(void, w64_tab_unset, (uintptr_t arr, uint32_t n), {
     const TAB = globalThis.__w64tab;
     const dv = new DataView(HEAPU8.buffer);
@@ -619,9 +614,15 @@ EM_JS(void, w64_tab_clear, (void), {
  * (Firefox, https://bugzilla.mozilla.org/show_bug.cgi?id=1965217);
  * `ipp` points at the union import table (u32 C function pointers,
  * resolved through the main module's table).  The instance's active
- * element segments register every member into TAB at its tidx before
- * addFunction returns.  TAB is the shared chain table every module
- * imports as "e"/"t"; index 0 is never assigned. */
+ * element segments register every member into TAB at its tidx, which is
+ * all that keeps the instance alive.  TAB is the shared chain table every
+ * module imports as "e"/"t"; index 0 is never assigned.
+ *
+ * Returns the run thunk, (i64 env, i64 sp, i64 tp, i32 tidx) -> i32,
+ * which tail-calls TAB[tidx] with (env, sp, tp).  It is one function for
+ * every batch, made with the first: a thunk per module cost an
+ * addFunction/removeFunction pair and a lazy compile per module, and the
+ * dispatcher's indirect call met a different target for every batch. */
 EM_JS(int, w64_batch_instantiate,
       (uintptr_t modp, uint32_t modlen, uintptr_t ipp, uint32_t nimp,
        uint32_t maxtidx), {
@@ -670,7 +671,28 @@ EM_JS(int, w64_batch_instantiate,
         const junk = new ArrayBuffer(32 << 20);
         new Uint8Array(junk)[0] = 1;
     }
-    return addFunction(inst.exports.run, 'jjjii');
+    if (globalThis.__w64run === undefined) {
+        const run = new Uint8Array([
+            0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00,
+            /* types: 0 the TB signature, 1 the thunk's */
+            0x01, 0x10, 0x02,
+            0x60, 0x03, 0x7e, 0x7e, 0x7e, 0x01, 0x7f,
+            0x60, 0x04, 0x7e, 0x7e, 0x7e, 0x7f, 0x01, 0x7f,
+            /* import e.t: funcref table, min 1 */
+            0x02, 0x09, 0x01, 0x01, 0x65, 0x01, 0x74, 0x01, 0x70, 0x00, 0x01,
+            /* one function of type 1, exported as "run" */
+            0x03, 0x02, 0x01, 0x01,
+            0x07, 0x07, 0x01, 0x03, 0x72, 0x75, 0x6e, 0x00, 0x00,
+            /* local.get 0..3; return_call_indirect type 0, table 0 */
+            0x0a, 0x0f, 0x01, 0x0d, 0x00,
+            0x20, 0x00, 0x20, 0x01, 0x20, 0x02, 0x20, 0x03,
+            0x13, 0x00, 0x00, 0x0b,
+        ]);
+        globalThis.__w64run = addFunction(new WebAssembly.Instance(
+            new WebAssembly.Module(run), { e: { t: TAB } }).exports.run,
+            'jjjii');
+    }
+    return globalThis.__w64run;
 });
 
 /*
@@ -887,17 +909,10 @@ static void w64_bsrc_of_open(void)
 }
 
 /* Assemble the batch module from @src and instantiate it; returns the
- * run-thunk fidx. */
+ * run thunk's fidx. */
 static uint32_t w64_assemble_instantiate(const struct w64_bsrc *src)
 {
     static const uint8_t magic[8] = { 0, 'a', 's', 'm', 1, 0, 0, 0 };
-    /* thunk body: return_call_indirect TAB[tidx] with (env, sp, tp) */
-    static const uint8_t thunk_body[14] = {
-        13, 0,                                    /* size, no locals */
-        0x20, 0, 0x20, 1, 0x20, 2, 0x20, 3,       /* local.get 0..3 */
-        0x13, 0, 0,            /* return_call_indirect type 0, table 0 */
-        0x0b,                                     /* end */
-    };
     struct w64_mb mod = { 0 }, sec = { 0 }, probe = { 0 };
     struct w64_hint ph[W64_PB_HINTS];
     uint8_t name[8];
@@ -905,7 +920,7 @@ static uint32_t w64_assemble_instantiate(const struct w64_bsrc *src)
     uint32_t *ip;
     uint32_t thunk;
     unsigned m, i, nph = 0;
-    unsigned nfn = src->n_member + 1;   /* members, the thunk, the probe */
+    unsigned nfn = src->n_member;       /* members, the probe */
     int miss = -1;
 
     /* the pc-cache probe, when a member calls it: the last function */
@@ -932,7 +947,7 @@ static uint32_t w64_assemble_instantiate(const struct w64_bsrc *src)
             if (src->hint[i].pcc_call) {
                 uint8_t *p = src->member[m].body + src->hint[i].pos -
                              W64_BODY_OFF;
-                uint32_t v = src->n_uimp + src->n_member + 1;
+                uint32_t v = src->n_uimp + src->n_member;
                 int b;
 
                 for (b = 0; b < 4; b++) {
@@ -945,8 +960,8 @@ static uint32_t w64_assemble_instantiate(const struct w64_bsrc *src)
     }
     mb_put(&mod, magic, sizeof(magic));
 
-    /* type section: union types + the thunk signature */
-    mb_uleb(&sec, src->n_utypes + 1);
+    /* type section: union types */
+    mb_uleb(&sec, src->n_utypes);
     for (i = 0; i < src->n_utypes; i++) {
         unsigned j;
         mb_u8(&sec, 0x60);
@@ -961,15 +976,6 @@ static uint32_t w64_assemble_instantiate(const struct w64_bsrc *src)
             mb_u8(&sec, src->utype[i].ret ? 0x7e : 0x7f);
         }
     }
-    /* thunk: (i64 env, i64 sp, i64 tp, i32 tidx) -> i32 */
-    mb_u8(&sec, 0x60);
-    mb_uleb(&sec, 4);
-    mb_u8(&sec, 0x7e);
-    mb_u8(&sec, 0x7e);
-    mb_u8(&sec, 0x7e);
-    mb_u8(&sec, 0x7f);
-    mb_uleb(&sec, 1);
-    mb_u8(&sec, 0x7f);
     mb_sec(&mod, 1, &sec);
 
     /* import section: memory + shared chain table + union helpers */
@@ -1003,20 +1009,10 @@ static uint32_t w64_assemble_instantiate(const struct w64_bsrc *src)
     for (i = 0; i < src->n_member; i++) {
         mb_uleb(&sec, 0);
     }
-    mb_uleb(&sec, src->n_utypes);            /* the thunk's type index */
     if (miss >= 0) {
         mb_uleb(&sec, src->uimp[miss].type); /* the probe: the helper's */
     }
     mb_sec(&mod, 3, &sec);
-
-    /* export section: "run" -> the thunk, which follows the members
-     * (indices count only the helper imports) */
-    sec.n = 0;
-    mb_uleb(&sec, 1);
-    mb_u8(&sec, 3); mb_u8(&sec, 'r'); mb_u8(&sec, 'u'); mb_u8(&sec, 'n');
-    mb_u8(&sec, 0x00);
-    mb_uleb(&sec, src->n_uimp + src->n_member);
-    mb_sec(&mod, 7, &sec);
 
     /* element section: one active segment per member, TAB[tidx] = m */
     sec.n = 0;
@@ -1079,7 +1075,7 @@ static uint32_t w64_assemble_instantiate(const struct w64_bsrc *src)
             }
         }
         if (nph) {
-            mb_uleb(&sec, src->n_uimp + src->n_member + 1);
+            mb_uleb(&sec, src->n_uimp + src->n_member);
             mb_uleb(&sec, nph);
             for (i = 0; i < nph; i++) {
                 mb_uleb(&sec, ph[i].pos);
@@ -1092,11 +1088,11 @@ static uint32_t w64_assemble_instantiate(const struct w64_bsrc *src)
         }
     }
 
-    /* code section: the staged bodies, the thunk and the probe; the total
-     * size is a padded 5-byte LEB so it never shifts when the body sum
-     * crosses a LEB width boundary */
+    /* code section: the staged bodies and the probe; the total size is a
+     * padded 5-byte LEB so it never shifts when the body sum crosses a LEB
+     * width boundary */
     {
-        uint64_t total = (nfn < 128 ? 1 : 2) + sizeof(thunk_body);
+        uint64_t total = nfn < 128 ? 1 : 2;
 
         for (m = 0; m < src->n_member; m++) {
             total += src->member[m].body_len;
@@ -1110,7 +1106,6 @@ static uint32_t w64_assemble_instantiate(const struct w64_bsrc *src)
         for (m = 0; m < src->n_member; m++) {
             mb_put(&mod, src->member[m].body, src->member[m].body_len);
         }
-        mb_put(&mod, thunk_body, sizeof(thunk_body));
         if (miss >= 0) {
             mb_uleb_p5(&mod, probe.n);
             mb_put(&mod, probe.b, probe.n);
@@ -1208,8 +1203,6 @@ static void w64_batch_evict_oldest(void)
         }
     }
     w64_tab_unset((uintptr_t)l->tidx, l->src.n_member);
-    w64_remove((int)l->thunk);
-    l->thunk = 0;
 
     /*
      * A goto_ptr inline-cache slot holds a table index too, and has no
@@ -1305,10 +1298,9 @@ static void w64_batch_close(void)
     l->src.member = g_memdup2(B.member, B.n_member * sizeof(*B.member));
     l->src.n_member = B.n_member;
     l->src.id = B.id;
-    l->thunk = thunk;
     l->tidx = g_new(uint32_t, B.n_member);
 
-    /* land: point every member at the batch thunk */
+    /* land: point every member at the run thunk */
     for (m = 0; m < B.n_member; m++) {
         uint32_t *desc = (uint32_t *)(uintptr_t)B.member[m].tcptr;
         desc[W64_DESC_FIDX / 4] = thunk;
@@ -1396,19 +1388,14 @@ static void w64_batch_close_pending(uintptr_t tcptr)
     abort();
 }
 
-/* tb_flush teardown: drop every landed batch thunk and the open batch's
- * staged bodies, clear the chain table and recycle the tidx space (the
- * code buffer — the descriptors — is freed by the caller). */
+/* tb_flush teardown: drop every landed batch and the open batch's staged
+ * bodies, clear the chain table and recycle the tidx space (the code
+ * buffer — the descriptors — is freed by the caller). */
 void w64_batch_flush(void)
 {
-    struct w64_landed *l;
     unsigned m;
 
     w64_irec_flush();
-    for (l = w64_live_head; l; l = l->next) {
-        w64_remove((int)l->thunk);
-        l->thunk = 0;
-    }
     w64_landed_free_all();
     w64_tab_clear();
     w64_next_tidx = 1;
@@ -1449,7 +1436,7 @@ static uintptr_t QEMU_DISABLE_CFI w64_exec(CPUArchState *env, uintptr_t tb,
             tcg_debug_assert(fidx != 0);
         }
 
-        /* the batch's run thunk tail-calls TAB[tidx] with (env, sp, tp) */
+        /* the run thunk tail-calls TAB[tidx] with (env, sp, tp) */
         res = ((w64_run_fn *)(uintptr_t)fidx)(
             (uintptr_t)env, (uintptr_t)(frame + 16),
             (uintptr_t)&w64_tb_ptr, desc[W64_DESC_TIDX / 4]);
