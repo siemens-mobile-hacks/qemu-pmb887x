@@ -262,6 +262,7 @@ config PMB887X
     depends on TCG && ARM
     select ISO7816
     select GSM_SIM
+    select DMA_SINK
 
 config VEXPRESS
     bool

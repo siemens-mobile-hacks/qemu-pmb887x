@@ -16,7 +16,7 @@
 #include "hw/arm/pmb887x/gen/cpu_meta.h"
 #include "hw/arm/pmb887x/mod.h"
 #include "hw/arm/pmb887x/dmac.h"
-#include "hw/arm/pmb887x/dma_sink.h"
+#include "hw/dma/dma-sink.h"
 
 #define DMAC_MULTIPLEXOR	2
 #define DMAC_CHANNELS		8
@@ -70,7 +70,7 @@ struct pmb887x_dmac_t {
 	QEMUTimer *timer;
 	MemoryRegion *downstream;
 	AddressSpace downstream_as;
-	pmb887x_dma_sink_cache_t downstream_sink;
+	DMASinkCache downstream_sink;
 
 	qemu_irq irq_err;
 	qemu_irq irq_tc[DMAC_CHANNELS];
@@ -468,7 +468,7 @@ static void dmac_fifo_drain(pmb887x_dmac_t *p, pmb887x_dmac_ch_t *ch, uint32_t b
 	bool is_increment = (ch->control & DMAC_CH_CONTROL_DI) != 0;
 	bool has_whole_transfers = (bytes % dst_width) == 0;
 	bool is_block_written = has_whole_transfers &&
-		pmb887x_dma_sink_write_block(&p->downstream_sink, ch->dst_addr, buffer, dst_width, count, is_increment);
+		dma_sink_write_block(&p->downstream_sink, ch->dst_addr, buffer, dst_width, count, is_increment);
 	if (!is_block_written) {
 		for (uint32_t i = 0; i < count; i++) {
 			hwaddr addr = is_increment ? ch->dst_addr + i * dst_width : ch->dst_addr;
@@ -1342,7 +1342,7 @@ static void dmac_realize(DeviceState *dev, Error **errp) {
 	}
 
 	address_space_init(&p->downstream_as, p->downstream, "pl080-downstream");
-	pmb887x_dma_sink_cache_init(&p->downstream_sink, &p->downstream_as);
+	dma_sink_cache_init(&p->downstream_sink, &p->downstream_as);
 
 	for (int i = 0; i < DMAC_CHANNELS; i++)
 		p->ch[i].id = i;

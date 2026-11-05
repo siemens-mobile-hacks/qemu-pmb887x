@@ -18,7 +18,7 @@
 #include "hw/arm/pmb887x/gen/cpu_meta.h"
 #include "hw/arm/pmb887x/mod.h"
 #include "qemu/fifo32.h"
-#include "hw/arm/pmb887x/dma_sink.h"
+#include "hw/dma/dma-sink.h"
 
 #define TYPE_PMB887X_DIF	"pmb887x-dif-v1"
 OBJECT_DECLARE_SIMPLE_TYPE(pmb887x_dif_t, PMB887X_DIF);
@@ -360,7 +360,7 @@ static void dif_write_tb(pmb887x_dif_t *p, uint16_t value) {
 }
 
 static bool dif_dma_write_block(
-	pmb887x_dma_sink_t *sink,
+	DMASink *sink,
 	MemoryRegion *mr,
 	hwaddr addr,
 	const uint8_t *data,
@@ -874,7 +874,7 @@ static void dif_class_init(ObjectClass *klass, const void *data) {
 	dc->realize = dif_realize;
 	dc->unrealize = dif_unrealize;
 
-	pmb887x_dma_sink_class_t *dma_sink = PMB887X_DMA_SINK_CLASS(klass);
+	DMASinkClass *dma_sink = DMA_SINK_CLASS(klass);
 	dma_sink->write_block = dif_dma_write_block;
 }
 
@@ -885,7 +885,7 @@ static const TypeInfo dif_info = {
 	.instance_init 	= dif_init,
 	.class_init    	= dif_class_init,
 	.interfaces		= (const InterfaceInfo[]) {
-		{ TYPE_PMB887X_DMA_SINK },
+		{ TYPE_DMA_SINK },
 		{ }
 	},
 };
