@@ -1400,35 +1400,6 @@ void write_neon_element64(TCGv_i64 src, int reg, int ele, MemOp memop)
 }
 
 #ifdef CONFIG_TCG_WASM64
-static void gen_pcc_key_cmp(TCGv_ptr ep, TCGv_i32 a32, TCGv_i32 t32,
-                            const uint32_t key[3], uint8_t mask,
-                            TCGLabel *miss)
-{
-    tcg_gen_ld_i32(a32, ep, offsetof(struct W64PccEnt, key32[0]));
-    if (mask & W64_LC_DYN_FLAGS) {
-        tcg_gen_ld_i32(t32, tcg_env, offsetof(CPUARMState, hflags.flags));
-        tcg_gen_brcond_i32(TCG_COND_NE, a32, t32, miss);
-    } else {
-        tcg_gen_brcondi_i32(TCG_COND_NE, a32, key[0], miss);
-    }
-
-    tcg_gen_ld_i32(a32, ep, offsetof(struct W64PccEnt, key32[1]));
-    if (mask & W64_LC_DYN_THUMB) {
-        tcg_gen_ld8u_i32(t32, tcg_env, offsetof(CPUARMState, thumb));
-        tcg_gen_brcond_i32(TCG_COND_NE, a32, t32, miss);
-    } else {
-        tcg_gen_brcondi_i32(TCG_COND_NE, a32, key[1], miss);
-    }
-
-    tcg_gen_ld_i32(a32, ep, offsetof(struct W64PccEnt, key32[2]));
-    if (mask & W64_LC_DYN_CONDEXEC) {
-        tcg_gen_ld_i32(t32, tcg_env, offsetof(CPUARMState, condexec_bits));
-        tcg_gen_brcond_i32(TCG_COND_NE, a32, t32, miss);
-    } else {
-        tcg_gen_brcondi_i32(TCG_COND_NE, a32, key[2], miss);
-    }
-}
-
 /*
  * The base and bias that address the host object @p: env when this lone
  * CPU's env is the one the TB will run with (see w64_tb_env), so the TCG
@@ -1443,92 +1414,6 @@ static TCGv_ptr w64_abs_base(DisasContext *s, const void *p, intptr_t *bias)
     }
     *bias = 0;
     return tcg_constant_ptr(p);
-}
-
-/*
- * The global pc-keyed cache (accel/tcg/cpu-exec.c w64_pcc), compared in
- * emitted code instead of behind a helper call.
- *
- * The per-TB slot in gen_goto_ptr below holds one target, which is right
- * for a `bx lr` that keeps returning to the same caller and wrong for a
- * bytecode interpreter's `ldr pc, [table, op, lsl #2]`: on a J2ME game
- * 19.6 % of goto_ptr exits miss it, and **92 % of those** are then
- * answered by w64_pcc — the same six-word compare, reached by a 28.5 ns
- * call.  Emitting it leaves the call for the 8 % that really need a
- * lookup.
- *
- * On a hit it refills the per-TB slot exactly as the helper would.
- * Without that, way one stops being refilled and its 80 % falls through
- * to this way, which is five times longer — the mechanism would pay for
- * itself and then lose.
- *
- * Soundness is the helper's, word for word: an entry names its owning
- * CPU (the generation is per-CPU; with one CPU, as w64_abs_base assumes,
- * every entry is its own) and carries the generation that
- * retires it, and the three key words are compared against the same CPU
- * state the helper reads — as constants wherever this exit's key is
- * static, which is the argument gen_goto_ptr makes for way one.
- * arm_w64_lc_key refuses A64, M-profile and single-step; the first two
- * never reach here and SS_ACTIVE is a bit of hflags.flags, so a
- * single-stepping CPU cannot match an entry filled by a normal one.
- */
-static void gen_goto_ptr_pcc(DisasContext *s, TCGv_ptr tc,
-                             struct W64LookupCache *lc,
-                             const uint32_t key[3], uint8_t mask)
-{
-    const struct W64PccShape *sh = w64_pcc_shape();
-    TCGLabel *miss = gen_new_label();
-    TCGv_i32 h = tcg_temp_new_i32();
-    TCGv_i32 a32 = tcg_temp_new_i32();
-    TCGv_i32 t32 = tcg_temp_new_i32();
-    TCGv_i32 gen32 = tcg_temp_new_i32();
-    TCGv_ptr ep = tcg_temp_new_ptr();
-
-    /* w64_pcc_hash(r15) << 5, the entry's offset */
-    QEMU_BUILD_BUG_ON(sizeof(struct W64PccEnt) != 1 << 5);
-    tcg_gen_muli_i32(h, cpu_R[15], sh->mul);
-    tcg_gen_shri_i32(h, h, 32 - sh->bits - 5);
-    tcg_gen_andi_i32(h, h, ((1u << sh->bits) - 1) << 5);
-    tcg_gen_ext_i32_ptr(ep, h);
-    tcg_gen_addi_ptr(ep, ep, (intptr_t)(uintptr_t)sh->tab);
-
-    tcg_gen_ld_i32(a32, ep, offsetof(struct W64PccEnt, pc));
-    tcg_gen_brcond_i32(TCG_COND_NE, a32, cpu_R[15], miss);
-
-    tcg_gen_ld_i32(gen32, tcg_env,
-                   offsetof(ARMCPU, parent_obj.neg.tb_key_gen) -
-                   offsetof(ARMCPU, env));
-    tcg_gen_ld_i32(a32, ep, offsetof(struct W64PccEnt, gen));
-    tcg_gen_brcond_i32(TCG_COND_NE, a32, gen32, miss);
-
-    if (CPU_NEXT(first_cpu)) {
-        tcg_gen_ld_i32(a32, ep, offsetof(struct W64PccEnt, cpu_index));
-        tcg_gen_ld_i32(t32, tcg_env,
-                       offsetof(ARMCPU, parent_obj.cpu_index) -
-                       offsetof(ARMCPU, env));
-        tcg_gen_brcond_i32(TCG_COND_NE, a32, t32, miss);
-    }
-
-    gen_pcc_key_cmp(ep, a32, t32, key, mask, miss);
-
-    tcg_gen_ld_ptr(tc, ep, offsetof(struct W64PccEnt, tc));
-    if (lc) {
-        intptr_t lco;
-        TCGv_ptr lcb = w64_abs_base(s, lc, &lco);
-
-        for (int i = 0; i < 3; i++) {
-            if (mask & (1 << i)) {
-                tcg_gen_ld_i32(a32, ep, offsetof(struct W64PccEnt, key32[i]));
-                tcg_gen_st_i32(a32, lcb,
-                               lco + offsetof(struct W64LookupCache, key32[i]));
-            }
-        }
-        tcg_gen_st_i32(cpu_R[15], lcb, lco + offsetof(struct W64LookupCache, pc));
-        tcg_gen_st_ptr(tc, lcb, lco + offsetof(struct W64LookupCache, tc));
-        tcg_gen_st_i32(gen32, lcb, lco + offsetof(struct W64LookupCache, gen));
-    }
-    tcg_gen_goto_ptr(tc);
-    gen_set_label(miss);
 }
 #endif
 
@@ -1578,12 +1463,7 @@ static void gen_goto_ptr(DisasContext *s, uint32_t condexec)
              * the global cache is not the slot's and still covers it */
             TCGv_ptr tc = tcg_temp_new_ptr();
 
-            if (w64_pcc_wanted(tb_page_addr0(s->base.tb))) {
-                gen_goto_ptr_pcc(s, tc, NULL, key, mask);
-                tcg_gen_lookup_and_goto_ptr();
-                return;
-            }
-            gen_helper_lookup_tb_ptr_cnt(tc, tcg_env, tcg_constant_ptr(lc));
+            gen_helper_lookup_tb_ptr_lc(tc, tcg_env, tcg_constant_ptr(NULL));
             tcg_gen_goto_ptr(tc);
             return;
         }
@@ -1627,9 +1507,6 @@ static void gen_goto_ptr(DisasContext *s, uint32_t condexec)
         tcg_gen_ld_ptr(tc, lcb, lco + offsetof(struct W64LookupCache, tc));
         tcg_gen_goto_ptr(tc);
         gen_set_label(slow);
-        }
-        if (w64_pcc_wanted(tb_page_addr0(s->base.tb))) {
-            gen_goto_ptr_pcc(s, tc, lc, key, mask);
         }
         gen_helper_lookup_tb_ptr_lc(tc, tcg_env, tcg_constant_ptr(lc));
         tcg_gen_goto_ptr(tc);

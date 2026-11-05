@@ -153,7 +153,6 @@ struct TranslationBlock {
         uint32_t gen;
         uint32_t key32[3];  /* ARM: hflags.flags, thumb, condexec_bits */
         uint8_t dynmask;    /* W64_LC_DYN_* bits: key32[i] is dynamic */
-        uint16_t pcc_hits;  /* goto_ptr misses the pc cache answered in C */
         const void *tc;
     } w64_lc;
 #define W64_LC_DYN_FLAGS     1
@@ -293,10 +292,11 @@ extern uintptr_t w64_tb_env;
 
 /*
  * The global pc-keyed next-TB cache (accel/tcg/cpu-exec.c) as the
- * generated code sees it.  The lookup helpers probe it, and the
- * translator emits the same six-word compare at the goto_ptr exits whose
- * slot kept missing (w64_pcc_wanted), so the entry layout and the hash's
- * constants have to leave cpu-exec.c.
+ * generated code sees it.  The lookup helpers probe it, and so does a
+ * function every batch module carries (tcg/wasm64 w64_pcc_probe), which
+ * the goto_ptr exits call in place of @helper.  So the entry layout, the
+ * hash's constants and where the key lives in the CPU state have to
+ * leave cpu-exec.c.
  */
 struct W64PccEnt {
     uint32_t pc;
@@ -310,11 +310,15 @@ struct W64PccShape {
     struct W64PccEnt *tab;
     uint32_t mul;           /* the entry is (pc * mul) >> (32 - bits) */
     unsigned bits;
+    const void *helper;     /* helper_lookup_tb_ptr_lc */
+    /* env-relative offsets of the u32 PC, generation, cpu_index and key
+     * words the helper reads (ARM: arm_w64_lc_key_pc) */
+    int32_t env_pc, env_gen, env_cpu_index;
+    int32_t env_key[3];
+    uint8_t key_size[3];    /* 4, or 1 for a bool */
 };
 
 const struct W64PccShape *w64_pcc_shape(void);
-/* the TB starting at @phys had its goto_ptr exit promoted to the inline probe */
-bool w64_pcc_wanted(tb_page_addr_t phys);
 /* withdraw the staged module body of a TB that was abandoned */
 void w64_batch_unstage(uintptr_t tcptr);
 #endif

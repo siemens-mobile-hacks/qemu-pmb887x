@@ -673,6 +673,203 @@ EM_JS(int, w64_batch_instantiate,
     return addFunction(inst.exports.run, 'jjjii');
 });
 
+/*
+ * The batch's pc-cache probe: helper_lookup_tb_ptr_lc's hit path
+ * (accel/tcg/cpu-exec.c w64_pcc_get, w64_lc_fill) as a function of the
+ * module, which the members' goto_ptr exits call in the helper's place
+ * (tcg-target.c.inc w64_pcc_call).  V8 inlines a callee of the same
+ * module, never an import, so TurboFan code pays no call for a hit, while
+ * a member's body grows by three bytes, not by the probe: emitted at
+ * every exit, that cost the EL71 boot ~8-10 % in translation and Liftoff
+ * compile time.  It reads the key where the helper does (W64PccShape),
+ * at constant addresses when the CPU is alone (see w64_tb_env), and on a
+ * miss calls the helper, union import @miss.
+ *
+ *   (func (param $env i64) (param $lc i64) (result i64))
+ */
+enum {
+    PB_ENV, PB_LC,                                          /* params */
+    PB_ENVW, PB_PC, PB_E, PB_GEN, PB_K0, PB_LCW = PB_K0 + 3, /* i32 */
+    PB_TC,                                                   /* i64 */
+};
+#define W64_PB_HINTS 8
+
+static void pb_local(struct w64_mb *b, uint8_t op, unsigned l)
+{
+    mb_u8(b, op);
+    mb_uleb(b, l);
+}
+
+static void pb_i32(struct w64_mb *b, int32_t v)
+{
+    mb_u8(b, 0x41);
+    mb_sleb32(b, v);
+}
+
+static void pb_mem(struct w64_mb *b, uint8_t op, unsigned align, uint32_t off)
+{
+    mb_u8(b, op);
+    mb_uleb(b, align);
+    mb_uleb(b, off);
+}
+
+/* push the u32, or the zero-extended u8, at env-relative @off */
+static void pb_env_load(struct w64_mb *b, uintptr_t env, int32_t off,
+                        unsigned size)
+{
+    uint32_t moff = 0;
+
+    if (env) {
+        pb_i32(b, (int32_t)(uint32_t)(env + off));
+    } else if (off < 0) {
+        pb_local(b, 0x20, PB_ENVW);
+        pb_i32(b, off);
+        mb_u8(b, 0x6a);                         /* i32.add */
+    } else {
+        pb_local(b, 0x20, PB_ENVW);
+        moff = off;
+    }
+    if (size == 1) {
+        pb_mem(b, 0x2d, 0, moff);               /* i32.load8_u */
+    } else {
+        pb_mem(b, 0x28, 2, moff);               /* i32.load */
+    }
+}
+
+static void pb_hint(struct w64_mb *b, struct w64_hint *h, unsigned *nh,
+                    bool likely)
+{
+    tcg_debug_assert(*nh < W64_PB_HINTS);
+    h[*nh].pos = b->n;
+    h[*nh].likely = likely;
+    (*nh)++;
+}
+
+/* the entry's u32 at @off, against the top of the stack: a miss if not equal */
+static void pb_ent_cmp(struct w64_mb *b, uint32_t off, struct w64_hint *h,
+                       unsigned *nh)
+{
+    pb_local(b, 0x20, PB_E);
+    pb_mem(b, 0x28, 2, off);                    /* i32.load */
+    mb_u8(b, 0x47);                             /* i32.ne */
+    pb_hint(b, h, nh, false);
+    mb_u8(b, 0x0d);                             /* br_if: the miss */
+    mb_uleb(b, 0);
+}
+
+/* the probe's [locals][expr] into @b; @h gets its hints, as offsets in @b */
+static void w64_pcc_probe(struct w64_mb *b, uint32_t miss,
+                          struct w64_hint *h, unsigned *nh)
+{
+    const struct W64PccShape *sh = w64_pcc_shape();
+    uintptr_t env = CPU_NEXT(first_cpu) ? 0 : (uintptr_t)cpu_env(first_cpu);
+    int i;
+
+    *nh = 0;
+    mb_u8(b, 2);                                /* local runs */
+    mb_uleb(b, PB_TC - PB_ENVW);
+    mb_u8(b, 0x7f);
+    mb_uleb(b, 1);
+    mb_u8(b, 0x7e);
+
+    if (!env) {
+        pb_local(b, 0x20, PB_ENV);
+        mb_u8(b, 0xa7);                         /* i32.wrap_i64 */
+        pb_local(b, 0x21, PB_ENVW);
+    }
+
+    /* the entry: tab + (w64_pcc_hash(pc) << 5) */
+    QEMU_BUILD_BUG_ON(sizeof(struct W64PccEnt) != 1 << 5);
+    pb_env_load(b, env, sh->env_pc, 4);
+    pb_local(b, 0x22, PB_PC);
+    pb_i32(b, (int32_t)sh->mul);
+    mb_u8(b, 0x6c);                             /* i32.mul */
+    pb_i32(b, 32 - sh->bits - 5);
+    mb_u8(b, 0x76);                             /* i32.shr_u */
+    pb_i32(b, ((1u << sh->bits) - 1) << 5);
+    mb_u8(b, 0x71);                             /* i32.and */
+    pb_i32(b, (int32_t)(uintptr_t)sh->tab);
+    mb_u8(b, 0x6a);                             /* i32.add */
+    pb_local(b, 0x21, PB_E);
+
+    mb_u8(b, 0x02);                             /* block: the miss */
+    mb_u8(b, 0x40);
+    pb_local(b, 0x20, PB_PC);
+    pb_ent_cmp(b, offsetof(struct W64PccEnt, pc), h, nh);
+    pb_env_load(b, env, sh->env_gen, 4);
+    pb_local(b, 0x22, PB_GEN);
+    pb_ent_cmp(b, offsetof(struct W64PccEnt, gen), h, nh);
+    pb_env_load(b, env, sh->env_cpu_index, 4);
+    pb_ent_cmp(b, offsetof(struct W64PccEnt, cpu_index), h, nh);
+    for (i = 0; i < 3; i++) {
+        pb_env_load(b, env, sh->env_key[i], sh->key_size[i]);
+        pb_local(b, 0x22, PB_K0 + i);
+        pb_ent_cmp(b, offsetof(struct W64PccEnt, key32[i]), h, nh);
+    }
+    pb_local(b, 0x20, PB_E);
+    pb_mem(b, 0x29, 3, offsetof(struct W64PccEnt, tc));  /* i64.load */
+    pb_local(b, 0x21, PB_TC);
+
+    /*
+     * w64_lc_fill: a slot is filled when every key word it does not
+     * hold dynamically is the CPU's.  Writing those back is a no-op, so
+     * all three are stored.
+     */
+    pb_local(b, 0x20, PB_LC);
+    mb_u8(b, 0x50);                             /* i64.eqz */
+    mb_u8(b, 0x45);                             /* i32.eqz */
+    mb_u8(b, 0x04);                             /* if: a slot */
+    mb_u8(b, 0x40);
+    pb_local(b, 0x20, PB_LC);
+    mb_u8(b, 0xa7);                             /* i32.wrap_i64 */
+    pb_local(b, 0x21, PB_LCW);
+    for (i = 0; i < 3; i++) {
+        pb_local(b, 0x20, PB_LCW);
+        pb_mem(b, 0x28, 2, offsetof(struct W64LookupCache, key32[i]));
+        pb_local(b, 0x20, PB_K0 + i);
+        mb_u8(b, 0x47);                         /* i32.ne */
+        if (i) {
+            pb_i32(b, i);
+            mb_u8(b, 0x74);                     /* i32.shl */
+            mb_u8(b, 0x72);                     /* i32.or */
+        }
+    }
+    pb_local(b, 0x20, PB_LCW);
+    pb_mem(b, 0x2d, 0, offsetof(struct W64LookupCache, dynmask));
+    pb_i32(b, -1);
+    mb_u8(b, 0x73);                             /* i32.xor */
+    mb_u8(b, 0x71);                             /* i32.and */
+    mb_u8(b, 0x45);                             /* i32.eqz */
+    pb_hint(b, h, nh, true);
+    mb_u8(b, 0x04);                             /* if: fill */
+    mb_u8(b, 0x40);
+    pb_local(b, 0x20, PB_LCW);
+    pb_local(b, 0x20, PB_PC);
+    pb_mem(b, 0x36, 2, offsetof(struct W64LookupCache, pc));  /* i32.store */
+    for (i = 0; i < 3; i++) {
+        pb_local(b, 0x20, PB_LCW);
+        pb_local(b, 0x20, PB_K0 + i);
+        pb_mem(b, 0x36, 2, offsetof(struct W64LookupCache, key32[i]));
+    }
+    pb_local(b, 0x20, PB_LCW);
+    pb_local(b, 0x20, PB_TC);
+    pb_mem(b, 0x37, 3, offsetof(struct W64LookupCache, tc));  /* i64.store */
+    pb_local(b, 0x20, PB_LCW);
+    pb_local(b, 0x20, PB_GEN);
+    pb_mem(b, 0x36, 2, offsetof(struct W64LookupCache, gen));
+    mb_u8(b, 0x0b);                             /* end: fill */
+    mb_u8(b, 0x0b);                             /* end: a slot */
+    pb_local(b, 0x20, PB_TC);
+    mb_u8(b, 0x0f);                             /* return */
+    mb_u8(b, 0x0b);                             /* end: the miss */
+
+    pb_local(b, 0x20, PB_ENV);
+    pb_local(b, 0x20, PB_LC);
+    mb_u8(b, 0x10);                             /* call: the helper */
+    mb_uleb(b, miss);
+    mb_u8(b, 0x0b);                             /* end */
+}
+
 /* the open batch, viewed as a source (B's arrays are inline) */
 static struct w64_bsrc B_src;
 
@@ -701,13 +898,51 @@ static uint32_t w64_assemble_instantiate(const struct w64_bsrc *src)
         0x13, 0, 0,            /* return_call_indirect type 0, table 0 */
         0x0b,                                     /* end */
     };
-    struct w64_mb mod = { 0 }, sec = { 0 };
+    struct w64_mb mod = { 0 }, sec = { 0 }, probe = { 0 };
+    struct w64_hint ph[W64_PB_HINTS];
     uint8_t name[8];
     uint32_t maxtidx = 0;
     uint32_t *ip;
     uint32_t thunk;
-    unsigned m, i;
-    unsigned nfn = src->n_member + 1;   /* members, then the thunk */
+    unsigned m, i, nph = 0;
+    unsigned nfn = src->n_member + 1;   /* members, the thunk, the probe */
+    int miss = -1;
+
+    /* the pc-cache probe, when a member calls it: the last function */
+    for (i = 0; i < src->n_hint; i++) {
+        if (src->hint[i].pcc_call) {
+            uint32_t helper = (uint32_t)(uintptr_t)w64_pcc_shape()->helper;
+
+            for (m = 0; m < src->n_uimp; m++) {
+                if (src->uimp[m].fptr == helper) {
+                    miss = m;
+                    break;
+                }
+            }
+            tcg_debug_assert(miss >= 0);
+            w64_pcc_probe(&probe, miss, ph, &nph);
+            nfn++;
+            break;
+        }
+    }
+    for (m = 0; miss >= 0 && m < src->n_member; m++) {
+        uint32_t hs = m ? src->member[m - 1].hint_end : 0;
+
+        for (i = hs; i < src->member[m].hint_end; i++) {
+            if (src->hint[i].pcc_call) {
+                uint8_t *p = src->member[m].body + src->hint[i].pos -
+                             W64_BODY_OFF;
+                uint32_t v = src->n_uimp + src->n_member + 1;
+                int b;
+
+                for (b = 0; b < 4; b++) {
+                    p[b] = (v & 0x7f) | 0x80;
+                    v >>= 7;
+                }
+                p[4] = v & 0x7f;
+            }
+        }
+    }
     mb_put(&mod, magic, sizeof(magic));
 
     /* type section: union types + the thunk signature */
@@ -765,19 +1000,22 @@ static uint32_t w64_assemble_instantiate(const struct w64_bsrc *src)
     /* function section: every member has type 0, the TB signature */
     sec.n = 0;
     mb_uleb(&sec, nfn);
-    for (i = 0; i + 1 < nfn; i++) {
+    for (i = 0; i < src->n_member; i++) {
         mb_uleb(&sec, 0);
     }
     mb_uleb(&sec, src->n_utypes);            /* the thunk's type index */
+    if (miss >= 0) {
+        mb_uleb(&sec, src->uimp[miss].type); /* the probe: the helper's */
+    }
     mb_sec(&mod, 3, &sec);
 
-    /* export section: "run" -> the thunk, which is always the last
-     * defined function (indices count only the helper imports) */
+    /* export section: "run" -> the thunk, which follows the members
+     * (indices count only the helper imports) */
     sec.n = 0;
     mb_uleb(&sec, 1);
     mb_u8(&sec, 3); mb_u8(&sec, 'r'); mb_u8(&sec, 'u'); mb_u8(&sec, 'n');
     mb_u8(&sec, 0x00);
-    mb_uleb(&sec, src->n_uimp + nfn - 1);
+    mb_uleb(&sec, src->n_uimp + src->n_member);
     mb_sec(&mod, 7, &sec);
 
     /* element section: one active segment per member, TAB[tidx] = m */
@@ -803,28 +1041,50 @@ static uint32_t w64_assemble_instantiate(const struct w64_bsrc *src)
      */
     {
         static const char hname[] = "metadata.code.branch_hint";
-        unsigned nf = 0;
+        unsigned nf = nph > 0, nh;
 
         sec.n = 0;
         mb_uleb(&sec, sizeof(hname) - 1);
         mb_put(&sec, hname, sizeof(hname) - 1);
         for (m = 0; m < src->n_member; m++) {
             uint32_t hs = m ? src->member[m - 1].hint_end : 0;
-            nf += src->member[m].hint_end > hs;
+
+            for (i = hs; i < src->member[m].hint_end; i++) {
+                if (!src->hint[i].pcc_call) {
+                    nf++;
+                    break;
+                }
+            }
         }
         mb_uleb(&sec, nf);
         for (m = 0; nf && m < src->n_member; m++) {
             uint32_t hs = m ? src->member[m - 1].hint_end : 0;
 
-            if (src->member[m].hint_end == hs) {
+            nh = 0;
+            for (i = hs; i < src->member[m].hint_end; i++) {
+                nh += !src->hint[i].pcc_call;
+            }
+            if (nh == 0) {
                 continue;
             }
             mb_uleb(&sec, src->n_uimp + m);
-            mb_uleb(&sec, src->member[m].hint_end - hs);
+            mb_uleb(&sec, nh);
             for (i = hs; i < src->member[m].hint_end; i++) {
+                if (src->hint[i].pcc_call) {
+                    continue;
+                }
                 mb_uleb(&sec, src->hint[i].pos - W64_BODY_OFF - 5);
                 mb_u8(&sec, 1);
                 mb_u8(&sec, src->hint[i].likely);
+            }
+        }
+        if (nph) {
+            mb_uleb(&sec, src->n_uimp + src->n_member + 1);
+            mb_uleb(&sec, nph);
+            for (i = 0; i < nph; i++) {
+                mb_uleb(&sec, ph[i].pos);
+                mb_u8(&sec, 1);
+                mb_u8(&sec, ph[i].likely);
             }
         }
         if (nf) {
@@ -832,14 +1092,17 @@ static uint32_t w64_assemble_instantiate(const struct w64_bsrc *src)
         }
     }
 
-    /* code section: the staged bodies + the thunk; the total size is a
-     * padded 5-byte LEB so it never shifts when the body sum crosses a
-     * LEB width boundary */
+    /* code section: the staged bodies, the thunk and the probe; the total
+     * size is a padded 5-byte LEB so it never shifts when the body sum
+     * crosses a LEB width boundary */
     {
         uint64_t total = (nfn < 128 ? 1 : 2) + sizeof(thunk_body);
 
         for (m = 0; m < src->n_member; m++) {
             total += src->member[m].body_len;
+        }
+        if (miss >= 0) {
+            total += 5 + probe.n;
         }
         mb_u8(&mod, 10);
         mb_uleb_p5(&mod, (uint32_t)total);
@@ -848,6 +1111,10 @@ static uint32_t w64_assemble_instantiate(const struct w64_bsrc *src)
             mb_put(&mod, src->member[m].body, src->member[m].body_len);
         }
         mb_put(&mod, thunk_body, sizeof(thunk_body));
+        if (miss >= 0) {
+            mb_uleb_p5(&mod, probe.n);
+            mb_put(&mod, probe.b, probe.n);
+        }
     }
 
 #ifdef W64_NAME_TBS
@@ -891,6 +1158,7 @@ static uint32_t w64_assemble_instantiate(const struct w64_bsrc *src)
     tcg_debug_assert(thunk != 0);
     g_free(mod.b);
     g_free(sec.b);
+    g_free(probe.b);
     g_free(ip);
     return thunk;
 }

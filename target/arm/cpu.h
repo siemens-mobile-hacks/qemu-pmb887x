@@ -2684,6 +2684,9 @@ void arm_rebuild_hflags(CPUARMState *env);
 bool arm_w64_lc_key(CPUState *cs, uint32_t key32[3]);
 /* ... and the PC the key belongs to, for the PC-keyed variant */
 bool arm_w64_lc_key_pc(CPUState *cs, uint32_t key32[3], uint32_t *pc);
+struct W64PccShape;
+/* where arm_w64_lc_key_pc reads them, as env-relative offsets */
+void arm_w64_lc_key_layout(struct W64PccShape *sh);
 #endif
 
 /**

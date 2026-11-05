@@ -740,6 +740,34 @@ bool arm_w64_lc_key_pc(CPUState *cs, uint32_t key32[3], uint32_t *pc)
     *pc = env->regs[15];
     return true;
 }
+
+/*
+ * The probe the wasm64 batch modules carry reads the key where the
+ * functions above do.  It does not repeat their refusals: A64 and
+ * M-profile never reach a goto_ptr exit that calls it, and SS_ACTIVE is
+ * a bit of hflags.flags, so a single-stepping CPU never matches an entry
+ * filled by a normal one.
+ */
+void arm_w64_lc_key_layout(struct W64PccShape *sh)
+{
+    QEMU_BUILD_BUG_ON(sizeof_field(CPUARMState, hflags.flags) != 4);
+    QEMU_BUILD_BUG_ON(sizeof_field(CPUARMState, thumb) != 1);
+    QEMU_BUILD_BUG_ON(sizeof_field(CPUARMState, condexec_bits) != 4);
+    QEMU_BUILD_BUG_ON(sizeof_field(CPUState, neg.tb_key_gen) != 4);
+    QEMU_BUILD_BUG_ON(sizeof_field(CPUState, cpu_index) != 4);
+
+    sh->env_pc = offsetof(CPUARMState, regs[15]);
+    sh->env_gen = (intptr_t)offsetof(ARMCPU, parent_obj.neg.tb_key_gen) -
+                  (intptr_t)offsetof(ARMCPU, env);
+    sh->env_cpu_index = (intptr_t)offsetof(ARMCPU, parent_obj.cpu_index) -
+                        (intptr_t)offsetof(ARMCPU, env);
+    sh->env_key[0] = offsetof(CPUARMState, hflags.flags);
+    sh->key_size[0] = 4;
+    sh->env_key[1] = offsetof(CPUARMState, thumb);
+    sh->key_size[1] = 1;
+    sh->env_key[2] = offsetof(CPUARMState, condexec_bits);
+    sh->key_size[2] = 4;
+}
 #endif
 
 void arm_rebuild_hflags(CPUARMState *env)

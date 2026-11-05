@@ -158,8 +158,7 @@ static void w64_sleb64(TCGContext *s, int64_t v)
 static __thread struct w64_hint *HINT;
 static __thread uint32_t n_hint, cap_hint;
 
-/* the `if` / `br_if` emitted next is almost always (not) taken */
-static void w64_hint(TCGContext *s, bool likely)
+static void w64_hint_rec(TCGContext *s, bool likely, bool pcc_call)
 {
     if (n_hint == cap_hint) {
         cap_hint = cap_hint ? cap_hint * 2 : 32;
@@ -167,7 +166,14 @@ static void w64_hint(TCGContext *s, bool likely)
     }
     HINT[n_hint].pos = s->code_ptr - s->code_buf;
     HINT[n_hint].likely = likely;
+    HINT[n_hint].pcc_call = pcc_call;
     n_hint++;
+}
+
+/* the `if` / `br_if` emitted next is almost always (not) taken */
+static void w64_hint(TCGContext *s, bool likely)
+{
+    w64_hint_rec(s, likely, false);
 }
 
 /* `call <import>`: @uimp indexes the batch's union import table */
@@ -176,6 +182,19 @@ static void w64_call(TCGContext *s, uint8_t uimp)
     W.tlbc = -1;                            /* a helper may resize the TLB */
     w64_u8(s, 0x10);
     w64_uleb(s, uimp);
+}
+
+/*
+ * `call` the batch module's pc-cache probe (wasm64.c w64_pcc_probe) in
+ * place of helper_lookup_tb_ptr_lc, which it calls on a miss.  Its
+ * function index is known only when the batch is assembled.
+ */
+static void w64_pcc_call(TCGContext *s)
+{
+    W.tlbc = -1;
+    w64_u8(s, 0x10);
+    w64_hint_rec(s, false, true);
+    w64_uleb32_p5(s, 0);
 }
 
 /* ------------------------------------------------------------------ */
@@ -1654,7 +1673,11 @@ static void tcg_out_call(TCGContext *s, const tcg_insn_unit *target,
 
     uimp = w64_union_import((uint32_t)(uintptr_t)target,
                             w64_union_type(np, p, ret));
-    w64_call(s, uimp);
+    if ((const void *)target == w64_pcc_shape()->helper) {
+        w64_pcc_call(s);
+    } else {
+        w64_call(s, uimp);
+    }
 
     /* result -> oarg register (ret: 0 = i32, 1 = i64, 0xff = void) */
     if (ret == 1) {

@@ -96,10 +96,15 @@ struct w64_import {
  * section tells the engine which way it goes.  TurboFan then compiles
  * the other arm as deferred code, which is where its register allocator
  * puts the spills and reloads a call forces.
+ *
+ * A record with @pcc_call is no hint: @pos is the 5-byte callee index of
+ * a `call` to the batch's pc-cache probe, which the assembler patches
+ * once it knows the index (tcg-target.c.inc w64_pcc_call).
  */
 struct w64_hint {
     uint32_t pos;
     bool likely;
+    bool pcc_call;
 };
 
 /* shared chain table capacity: tidx is below this */

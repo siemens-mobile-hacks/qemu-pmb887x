@@ -424,6 +424,7 @@ static inline const void *w64_dispatch_target(const TranslationBlock *tb)
  */
 bool arm_w64_lc_key(CPUState *cs, uint32_t key32[3]);
 bool arm_w64_lc_key_pc(CPUState *cs, uint32_t key32[3], uint32_t *pc);
+void arm_w64_lc_key_layout(struct W64PccShape *sh);
 #define W64_LC_KEY(cpu, k32)  arm_w64_lc_key(cpu, k32)
 #define W64_LC_KEY_PC(cpu, k32, pcp)  arm_w64_lc_key_pc(cpu, k32, pcp)
 
@@ -437,11 +438,14 @@ bool arm_w64_lc_key_pc(CPUState *cs, uint32_t key32[3], uint32_t *pc);
  * own: three ops for the emitted probe, where the jump cache's page-wise
  * one takes ten.
  *
- * The lookup helpers probe it first.  The generated code probes it too,
- * but only at the exits promoted below: emitted at every goto_ptr exit,
- * the probe cost the EL71 boot burst ~8-10 % in translation and Liftoff
- * compile time against ~3.6 % its hits saved, while behind the helper
- * call a hit costs video ~4 % and towerblox ~1.5 % in steady state.
+ * The lookup helpers probe it first.  So does a function every batch
+ * module carries (tcg/wasm64 w64_pcc_probe), which the goto_ptr exits
+ * call instead of helper_lookup_tb_ptr_lc and which calls it on a miss:
+ * emitted at every exit, the probe cost the EL71 boot burst ~8-10 % in
+ * translation and Liftoff compile time against ~3.6 % its hits saved,
+ * while behind the C helper a hit costs video ~4 % and towerblox ~1.5 %
+ * in steady state.  TurboFan inlines the module's function into the hot
+ * TBs.
  *
  * Soundness is the per-TB slot's: the generation retires the whole table
  * wherever a jump-cache entry is dropped, wherever a key input the test
@@ -466,12 +470,15 @@ static inline uint32_t w64_pcc_hash(uint32_t pc)
 
 const struct W64PccShape *w64_pcc_shape(void)
 {
-    static const struct W64PccShape shape = {
-        .tab = w64_pcc,
-        .mul = W64_PCC_MUL,
-        .bits = W64_PCC_BITS,
-    };
+    static struct W64PccShape shape;
 
+    if (!shape.tab) {
+        shape.mul = W64_PCC_MUL;
+        shape.bits = W64_PCC_BITS;
+        shape.helper = (const void *)HELPER(lookup_tb_ptr_lc);
+        arm_w64_lc_key_layout(&shape);
+        shape.tab = w64_pcc;
+    }
     return &shape;
 }
 
@@ -494,44 +501,6 @@ static inline const void *w64_pcc_get(CPUState *cpu, uint32_t gen,
         return e->tc;
     }
     return NULL;
-}
-
-/*
- * A goto_ptr exit whose slot misses and whose target the pc cache then
- * has, W64_PCC_PROMOTE times in C, is retranslated with the emitted
- * probe: the TB is invalidated and its physical start marked, one bit
- * per hash, which gen_goto_ptr reads.  A collision only emits a probe
- * that was not needed.  The exit that promotes still returns its target:
- * the TB's code stays valid until a tb_flush, only unreachable.
- */
-#define W64_PCC_PROMOTE 65535
-#define W64_PCC_WANT_BITS 16
-static uint32_t w64_pcc_want[(1 << W64_PCC_WANT_BITS) / 32];
-
-static inline uint32_t w64_pcc_want_bit(tb_page_addr_t phys)
-{
-    return ((uint32_t)phys * W64_PCC_MUL) >> (32 - W64_PCC_WANT_BITS);
-}
-
-bool w64_pcc_wanted(tb_page_addr_t phys)
-{
-    uint32_t b = w64_pcc_want_bit(phys);
-
-    return w64_pcc_want[b / 32] & (1u << (b % 32));
-}
-
-static void w64_pcc_promote(struct W64LookupCache *lc)
-{
-    TranslationBlock *tb = container_of(lc, TranslationBlock, w64_lc);
-    tb_page_addr_t phys = tb_page_addr0(tb);
-    uint32_t b;
-
-    if (phys == -1) {
-        return;
-    }
-    b = w64_pcc_want_bit(phys);
-    w64_pcc_want[b / 32] |= 1u << (b % 32);
-    tb_phys_invalidate(tb, -1);
 }
 
 /*
@@ -711,7 +680,8 @@ static void w64_lc_fill(struct W64LookupCache *lc, const uint32_t cur[3],
  * carries an inline next-TB cache (@slot = &tb->w64_lc of the calling
  * TB, see target/arm gen_goto_ptr).  The emitted code takes the cached
  * target when (pc, cpu->neg.tb_key_gen, dyn) all match and calls here
- * otherwise, which refills the slot.
+ * otherwise, which refills the slot.  A NULL @slot is an exit keyed
+ * differently from the one its TB's slot serves: nothing to fill.
  *
  * Soundness: a slot stamped with generation G is valid for as long as
  * the jump-cache entry it was filled from would be — every event that
@@ -736,9 +706,8 @@ const void *HELPER(lookup_tb_ptr_lc)(CPUArchState *env, void *slot)
     target = w64_pcc_get(cpu, gen, cur, &pc);
     if (likely(target != NULL)) {
         /* the slot missed; without a refill it keeps missing */
-        w64_lc_fill(lc, cur, pc, target, gen);
-        if (unlikely(++lc->pcc_hits == W64_PCC_PROMOTE)) {
-            w64_pcc_promote(lc);
+        if (lc) {
+            w64_lc_fill(lc, cur, pc, target, gen);
         }
         return target;
     }
@@ -758,36 +727,12 @@ const void *HELPER(lookup_tb_ptr_lc)(CPUArchState *env, void *slot)
      * would pin this slot to the dispatcher handoff for good, because a
      * hit never calls back here to refill it.
      */
-    if (likely(s.cflags == cpu->tcg_cflags) &&
+    if (lc && likely(s.cflags == cpu->tcg_cflags) &&
         ((uintptr_t)target & W64_TIDX_TAG) &&
         W64_LC_KEY(cpu, cur)) {
         w64_lc_fill(lc, cur, s.pc, target, gen);
     }
     return target;
-}
-
-/*
- * helper_lookup_tb_ptr for a TB's second goto_ptr exit, keyed differently
- * from the one its slot serves (target/arm gen_goto_ptr): nothing to fill,
- * but its pc-cache hits count towards the TB's promotion.
- */
-const void *HELPER(lookup_tb_ptr_cnt)(CPUArchState *env, void *slot)
-{
-    CPUState *cpu = env_cpu(env);
-    struct W64LookupCache *lc = slot;
-    uint32_t gen = qatomic_read(&cpu->neg.tb_key_gen);
-    uint32_t key[3], pc;
-    const void *target;
-
-    cpu->neg.can_do_io = true;
-    target = w64_pcc_get(cpu, gen, key, &pc);
-    if (likely(target != NULL)) {
-        if (unlikely(++lc->pcc_hits == W64_PCC_PROMOTE)) {
-            w64_pcc_promote(lc);
-        }
-        return target;
-    }
-    return w64_lookup_tb_ptr_miss(cpu, gen);
 }
 
 void HELPER(tb_key_gen_bump)(CPUArchState *env)
