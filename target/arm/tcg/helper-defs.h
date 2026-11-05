@@ -68,7 +68,7 @@ DEF_HELPER_2(cpsr_write_eret, void, env, i32)
 #ifdef CONFIG_TCG_WASM64
 DEF_HELPER_2(svc_inline, void, env, i32)
 /* WASM PORT FAST PATH (removable): w64-fill.c */
-DEF_HELPER_3(w64_fill, void, env, i32, i32)
+DEF_HELPER_4(w64_fill, void, env, cptr, i32, i32)
 #endif
 DEF_HELPER_1(cpsr_read, i32, env)
 

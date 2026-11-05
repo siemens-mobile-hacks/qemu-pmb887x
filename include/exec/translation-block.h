@@ -187,6 +187,22 @@ struct TranslationBlock {
      */
     const struct W64InlRec *w64_inl_rec;
     uint8_t w64_inl_nrec;
+    /*
+     * WASM PORT FAST PATH (removable): a Thumb fill rectangle's row runs
+     * through two TBs, each leaving for the other by one deferred exit
+     * (target/arm/tcg/w64-fill.c).  What that exit and the prologue
+     * charge, as emitted; @kind 0 for every other TB.
+     */
+    struct W64FillRect {
+        uint32_t dest;          /* the exit's target pc */
+        uint32_t regs;          /* the pattern's registers, by @kind */
+        uint16_t cycles;        /* the prologue's cycle charge */
+        uint16_t refund_cycles; /* handed back by the exit */
+        uint8_t refund_insns;
+        uint8_t slot;           /* the exit's goto_tb slot */
+        uint8_t taken;          /* the exit branch's run-time cycles */
+        uint8_t kind;
+    } w64_rect;
 
 /*
  * What a goto_ptr operand means to the wasm64 backend.
@@ -338,6 +354,13 @@ uint64_t *w64_tb_acct_insns(void);
 
 /* The lockstep fold's count (the prologue adds tb->icount), when armed. */
 int64_t *w64_ls_count(void);
+
+/*
+ * WASM PORT FAST PATH (removable): tcg/wasm64/w64-interp.c, for
+ * target/arm/tcg/w64-fill.c.  A TB on this thread runs in the interpreter
+ * tier, whose goto_tb never chains -- so a helper it calls can tell.
+ */
+bool w64_interp_running(void);
 #endif
 
 /* Hide the qatomic_read to make code a little easier on the eyes */

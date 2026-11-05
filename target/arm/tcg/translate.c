@@ -1855,8 +1855,119 @@ static void w64_fill_match(DisasContext *s)
     /* trans_B_cond_thumb charges a taken branch's cycles at run time */
     taken = s->arm9e_cycles ? 2 : 0;
     charge = s->base.num_insns | taken << 8 | w64_cycles(s) << 16;
-    gen_helper_w64_fill(tcg_env, tcg_constant_i32(desc),
-                        tcg_constant_i32(charge));
+    s->w64_fill_desc = desc;
+    gen_helper_w64_fill(tcg_env, tcg_constant_ptr(s->base.tb),
+                        tcg_constant_i32(desc), tcg_constant_i32(charge));
+}
+
+/* the target of the Thumb b<cond> (T1) @insn at @pc */
+static vaddr w64_bcond_dest(vaddr pc, uint16_t insn)
+{
+    return pc + 4 + (int8_t)insn * 2;
+}
+
+/*
+ * WASM PORT FAST PATH (removable): the two TBs of a fill rectangle's row
+ * (w64-fill.c), each found by the deferred exit it leaves for the other.
+ * The loop's TB carries on after the loop into the row tail,
+ *
+ *         adds  Rd, Rpitch, Rd    @ to the next row
+ *         adds  Rrow, #1
+ *         ldr   Rlim, [sp, #imm]
+ *         cmp   Rrow, Rlim
+ *         blt   head
+ *
+ * and the head's TB is
+ *
+ *   head: movs  Rc, #0
+ *         b     test
+ *   test: cmp   Rc, Rn
+ *         blt   loop
+ *
+ * Called from tb_stop before the deferred exits are emitted; the exit's
+ * refund and slot are filled in as it is (w64_emit_deferred_taken).
+ */
+static void w64_rect_match(DisasContext *s)
+{
+    const uint16_t *w = s->w64_fill_words;
+    uint32_t desc = s->w64_fill_desc;
+    struct W64FillRect *r = &s->w64_rect;
+    unsigned want, rd, rc, rn, pitch, row, lim, moving, fixed;
+    vaddr dest;
+    int i;
+
+    memset(r, 0, sizeof(*r));
+    if (!s->thumb || (tb_cflags(s->base.tb) & (CF_USE_ICOUNT | CF_PCREL))) {
+        return;
+    }
+    if (desc) {
+        if (s->base.num_insns < 11 || (w[6] & 0xfe00) != 0x1800) {
+            return;
+        }
+        rd = (desc >> 8) & 7;
+        /* the loop's Rv, Rd, Rc change every pass; Rp, Rn do not */
+        moving = 1u << (desc & 7) | 1u << rd | 1u << ((desc >> 12) & 7);
+        fixed = 1u << ((desc >> 4) & 7) | 1u << ((desc >> 16) & 7);
+        if ((w[6] & 7) != rd) {
+            return;
+        }
+        if (((w[6] >> 6) & 7) == rd) {
+            pitch = (w[6] >> 3) & 7;
+        } else if (((w[6] >> 3) & 7) == rd) {
+            pitch = (w[6] >> 6) & 7;
+        } else {
+            return;
+        }
+        row = (w[7] >> 8) & 7;
+        lim = (w[8] >> 8) & 7;
+        if (w[7] != (0x3000 | row << 8 | 1) || (w[8] & 0xf800) != 0x9800 ||
+            w[9] != (0x4280 | lim << 3 | row) || (w[10] & 0xff00) != 0xdb00) {
+            return;
+        }
+        /*
+         * Rpitch and Rrow hold through the row; Rlim may be one the loop
+         * rewrites anyway, but not one it reads unchanged.
+         */
+        if (((moving | 1u << row | 1u << lim) & 1u << pitch) ||
+            ((moving | fixed | 1u << lim) & 1u << row) ||
+            ((fixed | 1u << rd) & 1u << lim)) {
+            return;
+        }
+        /* the loop and the tail are one linear run of 16-bit insns */
+        dest = w64_bcond_dest(s->base.pc_first + 20, w[10]);
+        want = 11;
+        r->kind = W64_RECT_ROW;
+        r->regs = pitch | row << 4 | lim << 8 | (w[8] & 0xff) << 16;
+    } else {
+        if (s->base.num_insns < 4) {
+            return;
+        }
+        rc = (w[0] >> 8) & 7;
+        rn = (w[2] >> 3) & 7;
+        if (w[0] != (0x2000 | rc << 8) || (w[1] & 0xf800) != 0xe000 ||
+            w[2] != (0x4280 | rn << 3 | rc) || rn == rc ||
+            (w[3] & 0xff00) != 0xdb00) {
+            return;
+        }
+        /* the b was absorbed: the test is at its target */
+        dest = s->base.pc_first + 2 + 4 + sextract32(w[1], 0, 11) * 2;
+        dest = w64_bcond_dest(dest + 2, w[3]);
+        want = 4;
+        r->kind = W64_RECT_HEAD;
+        r->regs = rc | rn << 4;
+    }
+    for (i = 0; i < s->w64_ft_n; i++) {
+        if (s->w64_ft[i].insns == want && s->w64_ft[i].dest == dest) {
+            break;
+        }
+    }
+    if (i == s->w64_ft_n) {
+        r->kind = 0;
+        return;
+    }
+    r->dest = dest;
+    r->taken = s->arm9e_cycles ? 2 : 0;
+    s->w64_rect_ft = i;
 }
 
 static bool w64_back_edge(DisasContext *s, int64_t diff)
@@ -2490,12 +2601,23 @@ static void w64_emit_deferred_taken(DisasContext *dc)
     }
     for (unsigned i = 0; i < dc->w64_ft_n; i++) {
         int skipped = dc->base.num_insns - dc->w64_ft[i].insns;
+        int cycles = w64_cycles(dc) - dc->w64_ft[i].cycles;
         int64_t diff;
 
         set_disas_label(dc, dc->w64_ft[i].label);
-        w64_refund(dc, skipped, w64_cycles(dc) - dc->w64_ft[i].cycles);
+        w64_refund(dc, skipped, cycles);
         diff = dc->w64_ft[i].dest - dc->pc_curr;
         if (~dc->w64_slots & 3) {
+            if (i == dc->w64_rect_ft && skipped <= UINT8_MAX &&
+                cycles <= UINT16_MAX) {
+                /* WASM PORT FAST PATH (removable): what w64_refund did */
+                dc->w64_rect.refund_insns = MAX(skipped, 0);
+                dc->w64_rect.refund_cycles =
+                    (tb_cflags(dc->base.tb) & CF_COUNT_CYCLES) ?
+                    MAX(cycles, 0) : 0;
+                dc->w64_rect.slot = ctz32(~dc->w64_slots);
+                dc->w64_rect_ft = -2;   /* emitted as a goto_tb */
+            }
             gen_goto_tb(dc, ctz32(~dc->w64_slots), diff);
         } else {
             gen_update_pc(dc, diff);
@@ -7836,6 +7958,9 @@ static void arm_tr_init_disas_context(DisasContextBase *dcbase, CPUState *cs)
     dc->w64_ft_n = 0;
     dc->w64_slots = 0;
     dc->w64_loop_insns = 0;
+    /* WASM PORT FAST PATH (removable): w64-fill.c */
+    dc->w64_fill_desc = 0;
+    dc->w64_rect_ft = -1;
     dc->w64_inl_depth = 0;
     dc->w64_inl_page = 0;
     dc->w64_inl_tracked = false;
@@ -8221,7 +8346,8 @@ static void thumb_tr_translate_insn(DisasContextBase *dcbase, CPUState *cpu)
     dc->base.pc_next = pc;
     dc->insn = insn;
 #ifdef CONFIG_TCG_WASM64
-    if (dc->base.num_insns <= 6) {  /* WASM PORT FAST PATH (removable) */
+    /* WASM PORT FAST PATH (removable) */
+    if (dc->base.num_insns <= ARRAY_SIZE(dc->w64_fill_words)) {
         dc->w64_fill_words[dc->base.num_insns - 1] = is_16bit ? insn : 0xffff;
     }
 #endif
@@ -8714,12 +8840,25 @@ static void arm_tr_tb_stop(DisasContextBase *dcbase, CPUState *cpu)
     }
 
 #ifdef CONFIG_TCG_WASM64
+    w64_rect_match(dc);     /* WASM PORT FAST PATH (removable) */
     w64_emit_deferred_taken(dc);
     w64_emit_inline_misses(dc);
     w64_emit_psr_misses(dc);
 #endif
 
     emit_delayed_exceptions(dc);
+
+#ifdef CONFIG_TCG_WASM64
+    /* WASM PORT FAST PATH (removable): what gen_tb_end patches in */
+    if (dc->w64_rect_ft == -2 &&
+        dc->base.num_insns + dc->base.num_extra_cycles <= UINT16_MAX) {
+        dc->w64_rect.cycles = (tb_cflags(dc->base.tb) & CF_COUNT_CYCLES) ?
+                              dc->base.num_insns + dc->base.num_extra_cycles : 0;
+        dc->base.tb->w64_rect = dc->w64_rect;
+    } else {
+        dc->base.tb->w64_rect.kind = 0;
+    }
+#endif
 }
 
 static const TranslatorOps arm_translator_ops = {

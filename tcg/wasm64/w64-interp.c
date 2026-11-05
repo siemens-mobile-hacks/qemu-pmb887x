@@ -76,6 +76,12 @@ void w64_interp_unwound(void)
     w64_irec_free_deferred();
 }
 
+/* WASM PORT FAST PATH (removable): for target/arm/tcg/w64-fill.c */
+bool w64_interp_running(void)
+{
+    return w64_interp_active != 0;
+}
+
 void w64_irec_put(uint32_t tidx, uint32_t *code, uint32_t n)
 {
     struct w64_irec *r;

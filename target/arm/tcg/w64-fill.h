@@ -13,4 +13,13 @@
 #define W64_FILL_ICOUNT (1u << 24)
 #define W64_FILL_CYCLES (1u << 25)
 
+/*
+ * TranslationBlock w64_rect kinds.  ROW is the fill loop's TB, whose exit
+ * is the row tail's blt to the head; its regs are Rpitch | Rrow << 4 |
+ * Rlim << 8 | the tail's sp offset in words << 16.  HEAD is the head's TB,
+ * whose exit is the test's blt into the loop; its regs are Rc | Rn << 4.
+ */
+#define W64_RECT_ROW  1
+#define W64_RECT_HEAD 2
+
 #endif
