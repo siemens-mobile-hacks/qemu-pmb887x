@@ -1,8 +1,6 @@
 /*
  * VIC
  * */
-#define PMB887X_TRACE_PREFIX	"pmb887x-vic"
-
 #include "qemu/osdep.h"
 #include "hw/core/sysbus.h"
 #include "system/memory.h"
@@ -16,7 +14,6 @@
 #include "hw/arm/pmb887x/io_bridge.h"
 #include "hw/arm/pmb887x/gen/cpu_meta.h"
 #include "hw/arm/pmb887x/mod.h"
-#include "hw/arm/pmb887x/trace.h"
 
 #define TYPE_PMB887X_VIC	"pmb887x-vic"
 #define PMB887X_VIC(obj)	OBJECT_CHECK(pmb887x_vic_t, (obj), TYPE_PMB887X_VIC)

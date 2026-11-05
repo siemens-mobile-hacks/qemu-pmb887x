@@ -1,12 +1,9 @@
-#define PMB887X_TRACE_PREFIX	"pmb887x-dsp-ssc"
-
 #include "qemu/osdep.h"
 #include "qemu/bitops.h"
 
 #include "hw/arm/pmb887x/dsp/peripheral/internal.h"
 #include "hw/arm/pmb887x/fifo.h"
 #include "hw/arm/pmb887x/gen/dsp.h"
-#include "hw/arm/pmb887x/trace.h"
 
 #define SSC_FIFO_SIZE		32
 #define SSC_INTERRUPT_GROUP	1

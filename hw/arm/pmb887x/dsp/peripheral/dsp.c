@@ -1,12 +1,9 @@
-#define PMB887X_TRACE_PREFIX	"pmb887x-dsp-control"
-
 #include "qemu/osdep.h"
 #include "qemu/atomic.h"
 #include "qemu/bitops.h"
 
 #include "hw/arm/pmb887x/dsp/peripheral/internal.h"
 #include "hw/arm/pmb887x/gen/dsp.h"
-#include "hw/arm/pmb887x/trace.h"
 
 #define DSP_OUTPUT_MASK	(TEAK_DSP_DSPOUT_DSPOUT0 | TEAK_DSP_DSPOUT_DSPOUT1 | TEAK_DSP_DSPOUT_DSPOUT2)
 #define DSP_INPUT_COUNT	2

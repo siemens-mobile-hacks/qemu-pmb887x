@@ -1,11 +1,8 @@
-#define PMB887X_TRACE_PREFIX	"pmb887x-dsp-equalizer"
-
 #include "qemu/osdep.h"
 #include "qemu/bitops.h"
 
 #include "hw/arm/pmb887x/dsp/peripheral/internal.h"
 #include "hw/arm/pmb887x/gen/dsp.h"
-#include "hw/arm/pmb887x/trace.h"
 
 #define EQUALIZER_EDGE_STATES		8U
 #define EQUALIZER_GMSK_STATES		16U

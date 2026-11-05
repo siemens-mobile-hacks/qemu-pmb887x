@@ -1,8 +1,6 @@
 /*
 * Epson S1D13732
  * */
-#define PMB887X_TRACE_PREFIX	"s1d13732"
-
 #include "qemu/osdep.h"
 #include "hw/core/qdev-properties.h"
 #include "hw/ssi/ssi.h"
@@ -10,7 +8,6 @@
 #include "qom/object.h"
 #include "hw/core/irq.h"
 #include "system/debug-channel.h"
-#include "hw/arm/pmb887x/trace.h"
 
 typedef struct pmb887x_gimmick_t pmb887x_gimmick_t;
 

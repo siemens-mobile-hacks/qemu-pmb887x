@@ -1,8 +1,6 @@
 /*
  * DMA Controller (PL080)
  * */
-#define PMB887X_TRACE_PREFIX	"pmb887x-dmac"
-
 #include "qemu/osdep.h"
 #include "hw/core/sysbus.h"
 #include "hw/core/hw-error.h"
@@ -19,7 +17,6 @@
 #include "hw/arm/pmb887x/mod.h"
 #include "hw/arm/pmb887x/dmac.h"
 #include "hw/arm/pmb887x/dma_sink.h"
-#include "hw/arm/pmb887x/trace.h"
 
 #define DMAC_MULTIPLEXOR	2
 #define DMAC_CHANNELS		8

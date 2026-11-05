@@ -8,8 +8,6 @@
  * SCROLL_KEY_A -> DSPOUT0 (GPIO 15, IS=ALT2) -> CAPCOM1 CC6, rising-edge capture
  * SCROLL_KEY_B -> DSPOUT1 (GPIO 62)          -> sampled as a level only
  * */
-#define PMB887X_TRACE_PREFIX	"ke970-scroll"
-
 #include "qemu/osdep.h"
 #include "hw/core/sysbus.h"
 #include "hw/core/irq.h"
@@ -18,7 +16,6 @@
 #include "qemu/timer.h"
 
 #include "system/debug-channel.h"
-#include "hw/arm/pmb887x/trace.h"
 
 #define TYPE_PMB887X_KE970_SCROLL	"ke970-scroll"
 #define PMB887X_KE970_SCROLL(obj)	OBJECT_CHECK(pmb887x_ke970_scroll_t, (obj), TYPE_PMB887X_KE970_SCROLL)

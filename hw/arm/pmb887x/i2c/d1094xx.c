@@ -1,12 +1,10 @@
 /*
  * Dialog d1094xx / d1601xx
  * */
-#define PMB887X_TRACE_PREFIX	"pasic"
-
 #include "qemu/osdep.h"
+#include "qapi/error.h"
 #include "hw/core/irq.h"
 #include "hw/core/sysbus.h"
-#include "hw/core/hw-error.h"
 #include "system/memory.h"
 #include "qemu/main-loop.h"
 #include "qemu/audio.h"
@@ -21,7 +19,6 @@
 #include "hw/arm/pmb887x/gen/peripheral/PASIC.h"
 #include "system/debug-channel.h"
 #include "hw/arm/pmb887x/gen/cpu_meta.h"
-#include "hw/arm/pmb887x/trace.h"
 
 #define TYPE_PMB887X_PMIC	"d1094xx"
 #define PMB887X_PMIC(obj)	OBJECT_CHECK(pmb887x_pmic_t, (obj), TYPE_PMB887X_PMIC)
@@ -266,34 +263,26 @@ static const uint8_t regs_D1094BB[256] = { // Siemens CX65/C65 (proto)
 	0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
 };
 
-static void pmic_load_registers(pmb887x_pmic_t *p) {
-	const uint8_t *registers;
-
-	switch (p->revision) {
+static const uint8_t *pmic_revision_registers(uint32_t revision) {
+	switch (revision) {
 		case 0xEC:
-			registers = regs_D1094EC;
-			break;
-
+			return regs_D1094EC;
 		case 0xED:
-			registers = regs_D1094ED;
-			break;
-
+			return regs_D1094ED;
 		case 0xDB:
-			registers = regs_D1094DB;
-			break;
-
+			return regs_D1094DB;
 		case 0xBB:
-			registers = regs_D1094BB;
-			break;
-
+			return regs_D1094BB;
 		case 0xAA:
-			registers = regs_D1601AA;
-			break;
-
+			return regs_D1601AA;
 		default:
-			hw_error("pmb887x-pmic: unknown revision %02X", p->revision);
+			return NULL;
 	}
+}
 
+static void pmic_load_registers(pmb887x_pmic_t *p) {
+	const uint8_t *registers = pmic_revision_registers(p->revision);
+	g_assert(registers);
 	memcpy(p->regs, registers, sizeof(p->regs));
 }
 
@@ -376,6 +365,11 @@ static void pmic_reset(DeviceState *dev) {
 static void pmic_realize(DeviceState *dev, Error **errp) {
 	pmb887x_pmic_t *p = PMB887X_PMIC(dev);
 	debug_channel_init_device_regs(&p->dbg, dev, &pmb887x_pasic_regs);
+
+	if (!pmic_revision_registers(p->revision)) {
+		error_setg(errp, "Unknown PMIC revision %02X", p->revision);
+		return;
+	}
 
 	qemu_mutex_init(&p->audio_lock);
 	if (audio_be_check(&p->audio_backend, NULL)) {

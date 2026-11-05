@@ -1,9 +1,8 @@
 /*
  * GPTU (General Purpose Timer Unit)
  * */
-#define PMB887X_TRACE_PREFIX	"pmb887x-gptu"
-
 #include "qemu/osdep.h"
+#include "qapi/error.h"
 #include "hw/core/sysbus.h"
 #include "hw/core/hw-error.h"
 #include "system/memory.h"
@@ -16,7 +15,6 @@
 #include "hw/arm/pmb887x/gen/cpu_regs.h"
 #include "hw/arm/pmb887x/gen/cpu_meta.h"
 #include "hw/arm/pmb887x/mod.h"
-#include "hw/arm/pmb887x/trace.h"
 
 #define TYPE_PMB887X_GPTU	"pmb887x-gptu"
 #define PMB887X_GPTU(obj)	OBJECT_CHECK(pmb887x_gptu_t, (obj), TYPE_PMB887X_GPTU)
@@ -1216,8 +1214,10 @@ static void gptu_realize(DeviceState *dev, Error **errp) {
 	pmb887x_clc_set(&p->clc, MOD_CLC_DISR);
 
 	for (int i = 0; i < ARRAY_SIZE(p->src); i++) {
-		if (!p->irq[i])
-			hw_error("pmb887x-gptu: irq %d not set", i);
+		if (!p->irq[i]) {
+			error_setg(errp, "%s: IRQ %d is not connected", object_get_typename(OBJECT(dev)), i);
+			return;
+		}
 		pmb887x_src_init(&p->src[i], p->irq[i]);
 	}
 

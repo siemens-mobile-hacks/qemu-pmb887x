@@ -1,8 +1,6 @@
 /*
  * Generic serial display
  */
-#define PMB887X_TRACE_PREFIX	"pmb887x-lcd"
-
 #include <math.h>
 #include "qemu/osdep.h"
 #include "qapi/error.h"
@@ -13,7 +11,6 @@
 #include "hw/ssi/ssi.h"
 #include "qemu/atomic.h"
 #include "system/debug-channel.h"
-#include "hw/arm/pmb887x/trace.h"
 #include "hw/arm/pmb887x/ssc/lcd_common.h"
 
 #define LCD_CMD_MAX_PARAMS 256
@@ -686,9 +683,11 @@ static void lcd_realize(SSIPeripheral *d, Error **errp) {
 		lcd->gram_width = lcd->width;
 	if (lcd->gram_height == 0)
 		lcd->gram_height = lcd->height;
-	if (lcd->gram_x + lcd->width > lcd->gram_width || lcd->gram_y + lcd->height > lcd->gram_height)
-		hw_error("LCD matrix %ux%u at %u,%u does not fit %ux%u GRAM", lcd->width, lcd->height,
+	if (lcd->gram_x + lcd->width > lcd->gram_width || lcd->gram_y + lcd->height > lcd->gram_height) {
+		error_setg(errp, "LCD matrix %ux%u at %u,%u does not fit %ux%u GRAM", lcd->width, lcd->height,
 			lcd->gram_x, lcd->gram_y, lcd->gram_width, lcd->gram_height);
+		return;
+	}
 
 	pmb887x_fifo8_init(&lcd->fifo, LCD_CMD_MAX_PARAMS);
 
@@ -704,8 +703,10 @@ static void lcd_realize(SSIPeripheral *d, Error **errp) {
 	lcd->flip_horizontal = lcd->default_flip_horizontal;
 	lcd->flip_vertical = lcd->default_flip_vertical;
 
-	if (lcd->rotation != 0 && lcd->rotation != 90 && lcd->rotation != 180 && lcd->rotation != 270)
-		hw_error("Invalid rotation: %d", lcd->rotation);
+	if (lcd->rotation != 0 && lcd->rotation != 90 && lcd->rotation != 180 && lcd->rotation != 270) {
+		error_setg(errp, "Invalid LCD rotation: %d", lcd->rotation);
+		return;
+	}
 
 	lcd->dirty.x1 = lcd->width - 1;
 	lcd->dirty.y1 = lcd->height - 1;

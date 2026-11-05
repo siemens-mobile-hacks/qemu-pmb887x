@@ -1,15 +1,12 @@
 /*
  * Unknown memory
  * */
-#define PMB887X_TRACE_PREFIX	"pmb887x-unknown"
-
 #include "qemu/osdep.h"
 #include "hw/core/sysbus.h"
 #include "system/memory.h"
 #include "system/debug-channel.h"
 
 #include "hw/arm/pmb887x/io_bridge.h"
-#include "hw/arm/pmb887x/trace.h"
 
 #define TYPE_PMB887X_UNKNOWN	"pmb887x-unknown"
 #define PMB887X_UNKNOWN(obj)	OBJECT_CHECK(pmb887x_unknown_t, (obj), TYPE_PMB887X_UNKNOWN)

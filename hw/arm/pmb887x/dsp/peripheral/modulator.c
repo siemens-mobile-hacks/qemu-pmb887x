@@ -1,12 +1,9 @@
-#define PMB887X_TRACE_PREFIX	"pmb887x-dsp-modulator"
-
 #include "qemu/osdep.h"
 #include "qemu/atomic.h"
 #include "qemu/bitops.h"
 
 #include "hw/arm/pmb887x/dsp/peripheral/internal.h"
 #include "hw/arm/pmb887x/gen/dsp.h"
-#include "hw/arm/pmb887x/trace.h"
 
 #define MODULATOR_REGISTER_COUNT	(TEAK_MOD_UNKA + 1)
 #define MODULATOR_RESERVED	0x02

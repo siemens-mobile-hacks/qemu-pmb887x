@@ -1,8 +1,6 @@
 /*
  * TI/National LM4845 / LM4946 "Boomer" audio power amplifier (I2C control)
  * */
-#define PMB887X_TRACE_PREFIX	"lm4946"
-
 #include "qemu/osdep.h"
 #include "hw/core/sysbus.h"
 #include "system/memory.h"
@@ -11,7 +9,6 @@
 #include "hw/core/qdev-properties.h"
 #include "hw/i2c/i2c.h"
 #include "system/debug-channel.h"
-#include "hw/arm/pmb887x/trace.h"
 
 #define TYPE_PMB887X_LM4946	"lm4946"
 #define PMB887X_LM4946(obj)	OBJECT_CHECK(pmb887x_lm4946_t, (obj), TYPE_PMB887X_LM4946)

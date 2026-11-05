@@ -1,9 +1,8 @@
 /*
  * ARM TCM
  * */
-#define PMB887X_TRACE_PREFIX	"pmb887x-tcm"
-
 #include "qemu/osdep.h"
+#include "qapi/error.h"
 #include "hw/core/sysbus.h"
 #include "system/memory.h"
 #include "cpu.h"
@@ -12,7 +11,6 @@
 #include "hw/core/qdev-properties.h"
 #include "system/debug-channel.h"
 
-#include "hw/arm/pmb887x/trace.h"
 
 #define TYPE_PMB887X_TCM	"pmb887x-tcm"
 #define PMB887X_TCM(obj)	OBJECT_CHECK(pmb887x_tcm_t, (obj), TYPE_PMB887X_TCM)

@@ -1,8 +1,6 @@
 /*
  * I2C
  * */
-#define PMB887X_TRACE_PREFIX	"pmb887x-i2c"
-
 #include "qemu/osdep.h"
 #include "hw/core/sysbus.h"
 #include "hw/core/hw-error.h"
@@ -17,7 +15,6 @@
 #include "hw/arm/pmb887x/gen/cpu_regs.h"
 #include "hw/arm/pmb887x/gen/cpu_meta.h"
 #include "hw/arm/pmb887x/mod.h"
-#include "hw/arm/pmb887x/trace.h"
 #include "hw/arm/pmb887x/fifo.h"
 
 #define TYPE_PMB887X_I2C	"pmb887x-i2c-v2"

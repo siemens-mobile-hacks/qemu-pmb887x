@@ -1,9 +1,6 @@
-#define PMB887X_TRACE_PREFIX	"pmb887x-dsp-timer2"
-
 #include "qemu/osdep.h"
 #include "hw/arm/pmb887x/dsp/peripheral/internal.h"
 #include "hw/arm/pmb887x/gen/dsp.h"
-#include "hw/arm/pmb887x/trace.h"
 
 #define TIMER2_DIVIDER		96U
 #define TIMER_INTERRUPT_GROUP	2

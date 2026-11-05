@@ -1,11 +1,8 @@
-#define PMB887X_TRACE_PREFIX	"pmb887x-dsp-afe"
-
 #include "qemu/osdep.h"
 
 #include "hw/arm/pmb887x/dsp/peripheral/afe-audio.h"
 #include "hw/arm/pmb887x/dsp/peripheral/internal.h"
 #include "hw/arm/pmb887x/gen/dsp.h"
-#include "hw/arm/pmb887x/trace.h"
 
 #define AFE_REGISTER_COUNT	(TEAK_AFE_RINGCTRL + 1)
 #define AFE_INTERRUPT_GROUP	1

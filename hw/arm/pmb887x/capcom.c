@@ -1,10 +1,7 @@
 /*
  * Capture/Compare
  */
-#define PMB887X_TRACE_PREFIX	"pmb887x-capcom"
-
 #include "qemu/osdep.h"
-#include "hw/core/hw-error.h"
 #include "hw/core/qdev-properties.h"
 #include "hw/core/sysbus.h"
 #include "qapi/error.h"
@@ -14,7 +11,6 @@
 #include "hw/arm/pmb887x/gen/cpu_regs.h"
 #include "hw/arm/pmb887x/mod.h"
 #include "hw/arm/pmb887x/gen/cpu_meta.h"
-#include "hw/arm/pmb887x/trace.h"
 
 #define TYPE_PMB887X_CAPCOM	"pmb887x-capcom"
 #define PMB887X_CAPCOM(obj)	OBJECT_CHECK(pmb887x_capcom_t, (obj), TYPE_PMB887X_CAPCOM)
@@ -744,13 +740,17 @@ static void capcom_realize(DeviceState *dev, Error **errp) {
 	}
 
 	for (unsigned index = 0; index < CAPCOM_TIMER_COUNT; index++) {
-		if (!p->timer_irq[index])
-			hw_error("pmb887x-capcom: timer IRQ %u is not connected", index);
+		if (!p->timer_irq[index]) {
+			error_setg(errp, "CAPCOM timer IRQ %u is not connected", index);
+			return;
+		}
 		pmb887x_src_init(&p->timer_src[index], p->timer_irq[index]);
 	}
 	for (unsigned index = 0; index < CAPCOM_CHANNEL_COUNT; index++) {
-		if (!p->channel_irq[index])
-			hw_error("pmb887x-capcom: channel IRQ %u is not connected", index);
+		if (!p->channel_irq[index]) {
+			error_setg(errp, "CAPCOM channel IRQ %u is not connected", index);
+			return;
+		}
 		pmb887x_src_init(&p->channel_src[index], p->channel_irq[index]);
 	}
 }

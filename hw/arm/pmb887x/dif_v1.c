@@ -1,8 +1,6 @@
 /*
  * Display Interface (modified SSC)
  * */
-#define PMB887X_TRACE_PREFIX	"pmb887x-dif"
-
 #define PMB887X_DIF_DUMP_BIT_MUX	0 // print bit mux config
 
 #include "qemu/osdep.h"
@@ -19,7 +17,6 @@
 #include "hw/arm/pmb887x/gen/cpu_regs.h"
 #include "hw/arm/pmb887x/gen/cpu_meta.h"
 #include "hw/arm/pmb887x/mod.h"
-#include "hw/arm/pmb887x/trace.h"
 #include "hw/arm/pmb887x/fifo.h"
 #include "hw/arm/pmb887x/dma_sink.h"
 

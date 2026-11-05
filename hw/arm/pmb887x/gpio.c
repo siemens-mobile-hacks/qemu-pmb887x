@@ -1,8 +1,6 @@
 /*
  * Port Control Logic
  * */
-#define PMB887X_TRACE_PREFIX	"pmb887x-gpio"
-
 #include "qemu/osdep.h"
 #include "hw/core/sysbus.h"
 #include "system/memory.h"
@@ -12,7 +10,6 @@
 
 #include "hw/arm/pmb887x/gen/cpu_meta.h"
 #include "hw/arm/pmb887x/mod.h"
-#include "hw/arm/pmb887x/trace.h"
 #include "hw/arm/pmb887x/io_bridge.h"
 #include "hw/arm/pmb887x/gen/cpu_regs.h"
 

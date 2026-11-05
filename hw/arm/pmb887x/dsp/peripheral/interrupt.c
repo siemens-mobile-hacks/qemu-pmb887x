@@ -1,12 +1,9 @@
-#define PMB887X_TRACE_PREFIX	"pmb887x-dsp-interrupt"
-
 #include "qemu/osdep.h"
 #include "qemu/atomic.h"
 #include "qemu/bitops.h"
 
 #include "hw/arm/pmb887x/dsp/peripheral/internal.h"
 #include "hw/arm/pmb887x/gen/dsp.h"
-#include "hw/arm/pmb887x/trace.h"
 
 #define INTERRUPT_GROUP_STRIDE		(TEAK_INT_FINTB0 - TEAK_INT_FINTA0)
 #define INTERRUPT_GROUP_COUNT		(TEAK_INT_TOMCU / INTERRUPT_GROUP_STRIDE)

@@ -1,9 +1,8 @@
 /*
  * NOR FLASH (Intel/ST CFI)
  * */
-#define PMB887X_TRACE_PREFIX	"pmb887x-flash"
-
 #include "qemu/osdep.h"
+#include "qapi/error.h"
 #include "hw/core/sysbus.h"
 #include "system/memory.h"
 #include "cpu.h"
@@ -14,7 +13,6 @@
 #include "hw/block/block.h"
 
 #include "system/debug-channel.h"
-#include "hw/arm/pmb887x/trace.h"
 #include "hw/arm/pmb887x/flash.h"
 #include "hw/arm/pmb887x/flash-blk.h"
 
@@ -1272,7 +1270,7 @@ static void flash_error(pmb887x_flash_t *flash, const char *format, ...) {
 	g_string_append_vprintf(s, format, args);
 	va_end(args);
 	
-	error_report("[%s] %s %s", PMB887X_TRACE_PREFIX, flash->name, s->str);
+	error_report("%s: %s", flash->name, s->str);
 }
 
 static void flash_error_part(pmb887x_flash_part_t *p, const char *format, ...) {
@@ -1283,7 +1281,7 @@ static void flash_error_part(pmb887x_flash_part_t *p, const char *format, ...) {
 	g_string_append_vprintf(s, format, args);
 	va_end(args);
 	
-	error_report("[%s] %s <%d> %s", PMB887X_TRACE_PREFIX, p->flash->name, p->n, s->str);
+	error_report("%s <%d>: %s", p->flash->name, p->n, s->str);
 }
 
 static const Property flash_properties[] = {

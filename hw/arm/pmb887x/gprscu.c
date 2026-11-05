@@ -1,8 +1,6 @@
 /*
  * GPRS Ciphering Unit
  */
-#define PMB887X_TRACE_PREFIX "pmb887x-gprscu"
-
 #include "qemu/osdep.h"
 #include "hw/core/qdev-properties.h"
 #include "hw/core/sysbus.h"
@@ -12,7 +10,6 @@
 #include "hw/arm/pmb887x/gen/cpu_regs.h"
 #include "hw/arm/pmb887x/mod.h"
 #include "hw/arm/pmb887x/gen/cpu_meta.h"
-#include "hw/arm/pmb887x/trace.h"
 
 #define TYPE_PMB887X_GPRSCU "pmb887x-gprscu"
 #define PMB887X_GPRSCU(obj) OBJECT_CHECK(pmb887x_gprscu_t, (obj), TYPE_PMB887X_GPRSCU)

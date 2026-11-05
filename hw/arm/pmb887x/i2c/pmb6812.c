@@ -1,8 +1,6 @@
 /*
  * Infineon PMB6812
  */
-#define PMB887X_TRACE_PREFIX	"pmb6812"
-
 #include "qemu/osdep.h"
 #include "qemu/log.h"
 #include "hw/core/sysbus.h"
@@ -14,7 +12,6 @@
 #include "hw/arm/pmb887x/gen/peripheral/PMB6812.h"
 #include "system/debug-channel.h"
 #include "hw/arm/pmb887x/gen/cpu_meta.h"
-#include "hw/arm/pmb887x/trace.h"
 
 #define TYPE_PMB887X_PMIC	"pmb6812"
 #define PMB887X_PMIC(obj)	OBJECT_CHECK(pmb887x_pmic_t, (obj), TYPE_PMB887X_PMIC)

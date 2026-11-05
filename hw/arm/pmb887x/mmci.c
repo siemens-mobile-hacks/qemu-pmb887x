@@ -1,8 +1,6 @@
 /*
  * MMC interface wrapper
  */
-#define PMB887X_TRACE_PREFIX "pmb887x-mmci"
-
 #include "qemu/osdep.h"
 #include "hw/core/qdev-properties.h"
 #include "hw/core/sysbus.h"
@@ -10,7 +8,6 @@
 #include "hw/arm/pmb887x/gen/cpu_regs.h"
 #include "hw/arm/pmb887x/mod.h"
 #include "hw/arm/pmb887x/gen/cpu_meta.h"
-#include "hw/arm/pmb887x/trace.h"
 
 #define TYPE_PMB887X_MMCI "pmb887x-mmci"
 #define PMB887X_MMCI(obj) OBJECT_CHECK(pmb887x_mmci_t, (obj), TYPE_PMB887X_MMCI)

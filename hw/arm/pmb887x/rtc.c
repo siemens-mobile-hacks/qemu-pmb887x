@@ -1,11 +1,8 @@
 /*
  * RTC
  * */
-#define PMB887X_TRACE_PREFIX	"pmb887x-rtc"
-
 #include "qemu/osdep.h"
 #include "hw/core/sysbus.h"
-#include "hw/core/hw-error.h"
 #include "system/memory.h"
 #include "system/rtc.h"
 #include "cpu.h"
@@ -19,7 +16,6 @@
 #include "hw/arm/pmb887x/gen/cpu_regs.h"
 #include "hw/arm/pmb887x/gen/cpu_meta.h"
 #include "hw/arm/pmb887x/mod.h"
-#include "hw/arm/pmb887x/trace.h"
 
 #define TYPE_PMB887X_RTC	"pmb887x-rtc"
 #define PMB887X_RTC(obj)	OBJECT_CHECK(pmb887x_rtc_t, (obj), TYPE_PMB887X_RTC)
@@ -376,8 +372,10 @@ static void rtc_realize(DeviceState *dev, Error **errp) {
 	pmb887x_rtc_t *p = PMB887X_RTC(dev);
 	pmb887x_mod_debug_init(&p->dbg, dev, &p->mmio, &pmb887x_rtc_regs);
 	
-	if (!p->irq)
-		hw_error("pmb887x-rtc: irq not set");
+	if (!p->irq) {
+		error_setg(errp, "%s: IRQ is not connected", object_get_typename(OBJECT(dev)));
+		return;
+	}
 	if (p->cnt_format && strcmp(p->cnt_format, "unix") && strcmp(p->cnt_format, "calendar")) {
 		error_setg(errp, "pmb887x-rtc: unknown cnt-format '%s' (unix|calendar)", p->cnt_format);
 		return;

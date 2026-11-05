@@ -1,5 +1,3 @@
-#define PMB887X_TRACE_PREFIX	"pmb887x-dsp-afe"
-
 #include "qemu/osdep.h"
 #include "qemu/audio.h"
 #include "qemu/debug-channel.h"
@@ -9,7 +7,6 @@
 
 #include "hw/arm/pmb887x/audio/buffer.h"
 #include "hw/arm/pmb887x/dsp/peripheral/afe-audio.h"
-#include "hw/arm/pmb887x/trace.h"
 
 #define AFE_AUDIO_DEFAULT_RATE_HZ	8000
 #define AFE_AUDIO_DEFAULT_CHANNELS	1
@@ -102,7 +99,7 @@ afe_audio_t *afe_audio_create(const DebugChannel *dbg) {
 	audio->voice = audio_be_open_out(audio->backend, NULL, "pmb887x-afe",
 		audio, afe_audio_out_callback, &settings);
 	if (!audio->voice) {
-		EPRINTF("could not open audio out voice\n");
+		DEBUG_LOG(audio->dbg, "could not open audio out voice; RX output disabled\n");
 		return audio;
 	}
 

@@ -1,14 +1,11 @@
 /*
  * Standart parts for all modules: CLC, SRB, SRC
  * */
-#define PMB887X_TRACE_PREFIX	"pmb887x-mod"
-
 #include "hw/arm/pmb887x/mod.h"
 #include "hw/arm/pmb887x/gen/cpu_regs.h"
 #include "hw/core/hw-error.h"
 #include "hw/core/qdev.h"
 #include "system/debug-channel.h"
-#include "hw/arm/pmb887x/trace.h"
 
 static uint32_t pmb887x_clc_calculate_hz(pmb887x_clc_reg_t *reg) {
 	if (!reg->clock || !clock_has_source(reg->clock))

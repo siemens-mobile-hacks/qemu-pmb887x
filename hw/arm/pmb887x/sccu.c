@@ -1,11 +1,8 @@
 /*
  * SCCU
  * */
-#define PMB887X_TRACE_PREFIX	"pmb887x-sccu"
-
 #include "qemu/osdep.h"
 #include "hw/core/sysbus.h"
-#include "hw/core/hw-error.h"
 #include "system/memory.h"
 #include "cpu.h"
 #include "qapi/error.h"
@@ -18,7 +15,6 @@
 #include "hw/arm/pmb887x/gen/cpu_regs.h"
 #include "hw/arm/pmb887x/gen/cpu_meta.h"
 #include "hw/arm/pmb887x/mod.h"
-#include "hw/arm/pmb887x/trace.h"
 
 #define TYPE_PMB887X_SCCU	"pmb887x-sccu"
 #define PMB887X_SCCU(obj)	OBJECT_CHECK(pmb887x_sccu_t, (obj), TYPE_PMB887X_SCCU)
@@ -374,8 +370,10 @@ static void sccu_realize(DeviceState *dev, Error **errp) {
 	pmb887x_clc_set(&p->clc, 1U << MOD_CLC_RMC_SHIFT);
 
 	for (int i = 0; i < ARRAY_SIZE(p->src); i++) {
-		if (!p->irq[i])
-			hw_error("pmb887x-tpu: irq %d not set", i);
+		if (!p->irq[i]) {
+			error_setg(errp, "%s: IRQ %d is not connected", object_get_typename(OBJECT(dev)), i);
+			return;
+		}
 
 		pmb887x_src_init(&p->src[i], p->irq[i]);
 	}

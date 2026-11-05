@@ -1,13 +1,10 @@
 /*
  * NXP TEA5761UK FM radio
  */
-#define PMB887X_TRACE_PREFIX	"tea5761uk"
-
 #include "qemu/osdep.h"
 #include "hw/i2c/i2c.h"
 #include "system/debug-channel.h"
 #include "hw/arm/pmb887x/gen/cpu_meta.h"
-#include "hw/arm/pmb887x/trace.h"
 
 #define TYPE_PMB887X_TEA5761UK	"tea5761uk"
 #define PMB887X_TEA5761UK(obj)	OBJECT_CHECK(pmb887x_tea5761uk_t, (obj), TYPE_PMB887X_TEA5761UK)

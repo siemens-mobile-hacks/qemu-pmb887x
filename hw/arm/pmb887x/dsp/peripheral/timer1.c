@@ -1,10 +1,7 @@
-#define PMB887X_TRACE_PREFIX	"pmb887x-dsp-timer1"
-
 #include "qemu/osdep.h"
 
 #include "hw/arm/pmb887x/dsp/peripheral/internal.h"
 #include "hw/arm/pmb887x/gen/dsp.h"
-#include "hw/arm/pmb887x/trace.h"
 
 #define TIMER1_DIVIDER		384U
 #define TIMER1_RESTART_CYCLES	3U

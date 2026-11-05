@@ -1,8 +1,6 @@
 /*
  * SSC (SPI)
  * */
-#define PMB887X_TRACE_PREFIX	"pmb887x-ssc"
-
 #include "qemu/osdep.h"
 #include "hw/core/irq.h"
 #include "hw/core/hw-error.h"
@@ -17,7 +15,6 @@
 #include "hw/arm/pmb887x/gen/cpu_regs.h"
 #include "hw/arm/pmb887x/gen/cpu_meta.h"
 #include "hw/arm/pmb887x/mod.h"
-#include "hw/arm/pmb887x/trace.h"
 #include "hw/arm/pmb887x/fifo.h"
 
 #define TYPE_PMB887X_SSC	"pmb887x-ssc"

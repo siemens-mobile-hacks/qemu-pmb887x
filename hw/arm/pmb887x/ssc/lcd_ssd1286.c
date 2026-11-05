@@ -1,15 +1,12 @@
 /*
  * Solomon SSD1286
  * */
-#define PMB887X_TRACE_PREFIX	"ssd1286"
-
 #include "qemu/osdep.h"
 #include "hw/core/qdev-properties.h"
 #include "qapi/error.h"
 #include "qemu/error-report.h"
 #include "hw/arm/pmb887x/gen/cpu_meta.h"
 #include "hw/arm/pmb887x/gen/peripheral/SSD1286.h"
-#include "hw/arm/pmb887x/trace.h"
 #include "hw/arm/pmb887x/ssc/lcd_common.h"
 
 #define TYPE_PMB887X_LCD_PANEL	"ssd1286"

@@ -1,11 +1,8 @@
-#define PMB887X_TRACE_PREFIX	"pmb887x-dsp-channel-decoder"
-
 #include "qemu/osdep.h"
 #include "qemu/bitops.h"
 
 #include "hw/arm/pmb887x/dsp/peripheral/internal.h"
 #include "hw/arm/pmb887x/gen/dsp.h"
-#include "hw/arm/pmb887x/trace.h"
 
 #define CHANNEL_DECODER_CONF2_MODE_MASK	(TEAK_CHDEC_CONF2_HW_ENA_DEC | TEAK_CHDEC_CONF2_DEC_FLAG_RD | \
 	TEAK_CHDEC_CONF2_PC_DEC_0 | TEAK_CHDEC_CONF2_PC_DEC_1 | TEAK_CHDEC_CONF2_OFLOW_PROT | \

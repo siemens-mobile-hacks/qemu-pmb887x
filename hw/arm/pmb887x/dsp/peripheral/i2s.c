@@ -1,10 +1,7 @@
-#define PMB887X_TRACE_PREFIX	"pmb887x-dsp-i2s"
-
 #include "qemu/osdep.h"
 
 #include "hw/arm/pmb887x/dsp/peripheral/internal.h"
 #include "hw/arm/pmb887x/gen/dsp.h"
-#include "hw/arm/pmb887x/trace.h"
 
 #define I2S_REGISTER_COUNT	(TEAK_I2S_TXINTADDR + 1)
 #define I2S_FRACTIONAL_DIVIDER_FACTOR	4U

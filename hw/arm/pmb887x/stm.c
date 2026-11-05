@@ -1,8 +1,6 @@
 /*
  * System Timer (56 bit)
  * */
-#define PMB887X_TRACE_PREFIX	"pmb887x-stm"
-
 #include "qemu/osdep.h"
 #include "hw/core/sysbus.h"
 #include "system/memory.h"
@@ -17,7 +15,6 @@
 #include "hw/arm/pmb887x/gen/cpu_regs.h"
 #include "hw/arm/pmb887x/gen/cpu_meta.h"
 #include "hw/arm/pmb887x/mod.h"
-#include "hw/arm/pmb887x/trace.h"
 
 #define TYPE_PMB887X_STM	"pmb887x-stm"
 #define PMB887X_STM(obj)	OBJECT_CHECK(pmb887x_stm_t, (obj), TYPE_PMB887X_STM)

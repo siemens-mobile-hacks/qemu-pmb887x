@@ -1,12 +1,9 @@
-#define PMB887X_TRACE_PREFIX	"pmb887x-dsp-tcg"
-
 #include "qemu/osdep.h"
 #include "qemu/atomic.h"
 #include "qemu/bitops.h"
 #include "hw/arm/pmb887x/dsp/peripheral/internal.h"
 #include "hw/arm/pmb887x/dsp/tcg.h"
 #include "hw/arm/pmb887x/dsp/runtime.h"
-#include "hw/arm/pmb887x/trace.h"
 
 #define DSP_SLICE_CYCLES	4096
 #define DSP_RESET_VECTOR_WORDS	2

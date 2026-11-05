@@ -1,8 +1,6 @@
 /*
 * Epson B00B10B (Serial Audio Codec)
  * */
-#define PMB887X_TRACE_PREFIX	"b00b10b"
-
 #include "qemu/osdep.h"
 #include "hw/core/qdev-properties.h"
 #include "hw/ssi/ssi.h"
@@ -11,7 +9,6 @@
 #include "ui/console.h"
 #include "qom/object.h"
 #include "system/debug-channel.h"
-#include "hw/arm/pmb887x/trace.h"
 
 enum SACCState {
 	STATE_NONE,

@@ -1,8 +1,6 @@
 /*
  * External Bus Unit
  * */
-#define PMB887X_TRACE_PREFIX	"pmb887x-ebu"
-
 #include "qemu/osdep.h"
 #include "hw/core/sysbus.h"
 #include "hw/core/hw-error.h"
@@ -15,7 +13,6 @@
 #include "hw/arm/pmb887x/io_bridge.h"
 #include "hw/arm/pmb887x/gen/cpu_meta.h"
 #include "hw/arm/pmb887x/mod.h"
-#include "hw/arm/pmb887x/trace.h"
 
 #define TYPE_PMB887X_EBU	"pmb887x-ebu"
 #define PMB887X_EBU(obj)	OBJECT_CHECK(struct pmb887x_ebu_t, (obj), TYPE_PMB887X_EBU)

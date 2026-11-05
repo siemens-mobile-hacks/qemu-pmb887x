@@ -1,9 +1,8 @@
 /*
  * Multi Media Controller Interface
  */
-#define PMB887X_TRACE_PREFIX "pmb887x-mmicif"
-
 #include "qemu/osdep.h"
+#include "qapi/error.h"
 #include "hw/core/qdev-properties.h"
 #include "hw/core/sysbus.h"
 #include "system/memory.h"
@@ -13,7 +12,6 @@
 #include "hw/arm/pmb887x/mmicif.h"
 #include "hw/arm/pmb887x/mod.h"
 #include "hw/arm/pmb887x/gen/cpu_meta.h"
-#include "hw/arm/pmb887x/trace.h"
 
 #define PMB887X_MMICIF(obj) OBJECT_CHECK(pmb887x_mmicif_t, (obj), TYPE_PMB887X_MMICIF)
 

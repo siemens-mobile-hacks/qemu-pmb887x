@@ -1,8 +1,6 @@
 /*
  * ADC
  * */
-#define PMB887X_TRACE_PREFIX	"pmb887x-adc"
-
 #include "qemu/osdep.h"
 #include "hw/core/sysbus.h"
 #include "system/memory.h"
@@ -14,7 +12,6 @@
 #include "hw/arm/pmb887x/gen/cpu_regs.h"
 #include "hw/arm/pmb887x/gen/cpu_meta.h"
 #include "hw/arm/pmb887x/mod.h"
-#include "hw/arm/pmb887x/trace.h"
 
 #define TYPE_PMB887X_ADC	"pmb887x-adc"
 #define PMB887X_ADC(obj)	OBJECT_CHECK(pmb887x_adc_t, (obj), TYPE_PMB887X_ADC)

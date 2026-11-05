@@ -1,8 +1,6 @@
 /*
  * sci-worx USB Device Controller
  */
-#define PMB887X_TRACE_PREFIX "pmb887x-usb"
-
 #include "qemu/osdep.h"
 #include "hw/core/qdev-properties.h"
 #include "hw/core/sysbus.h"
@@ -11,7 +9,6 @@
 #include "hw/arm/pmb887x/gen/cpu_regs.h"
 #include "hw/arm/pmb887x/mod.h"
 #include "hw/arm/pmb887x/gen/cpu_meta.h"
-#include "hw/arm/pmb887x/trace.h"
 
 #define TYPE_PMB887X_USB "pmb887x-usb"
 #define PMB887X_USB(obj) OBJECT_CHECK(pmb887x_usb_t, (obj), TYPE_PMB887X_USB)

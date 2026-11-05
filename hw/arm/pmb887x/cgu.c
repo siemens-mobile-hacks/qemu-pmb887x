@@ -1,11 +1,9 @@
 /*
  * CGU
  * */
-#define PMB887X_TRACE_PREFIX	"pmb887x-cgu"
-
 #include "qemu/osdep.h"
+#include "qapi/error.h"
 #include "hw/core/sysbus.h"
-#include "hw/core/hw-error.h"
 #include "system/memory.h"
 #include "hw/core/qdev-properties.h"
 #include "hw/core/qdev-clock.h"
@@ -15,7 +13,6 @@
 #include "hw/arm/pmb887x/gen/cpu_regs.h"
 #include "hw/arm/pmb887x/gen/cpu_meta.h"
 #include "hw/arm/pmb887x/mod.h"
-#include "hw/arm/pmb887x/trace.h"
 
 #define TYPE_PMB887X_CGU	"pmb887x-cgu"
 #define PMB887X_CGU(obj)	OBJECT_CHECK(pmb887x_cgu_t, (obj), TYPE_PMB887X_CGU)
@@ -501,8 +498,10 @@ static void cgu_realize(DeviceState *dev, Error **errp) {
 	pmb887x_cgu_t *p = PMB887X_CGU(dev);
 	pmb887x_mod_debug_init(&p->dbg, dev, &p->mmio, &pmb887x_cgu_regs);
 	
-	if (!p->irq)
-		hw_error("pmb887x-cgu: irq not set");
+	if (!p->irq) {
+		error_setg(errp, "%s: IRQ is not connected", object_get_typename(OBJECT(dev)));
+		return;
+	}
 	
 	pmb887x_src_init(&p->src, p->irq);
 	

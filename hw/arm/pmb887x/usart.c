@@ -1,11 +1,9 @@
 /*
  * USART
  * */
-#define PMB887X_TRACE_PREFIX	"pmb887x-usart"
-
 #include "qemu/osdep.h"
+#include "qapi/error.h"
 #include "hw/core/sysbus.h"
-#include "hw/core/hw-error.h"
 #include "system/memory.h"
 #include "cpu.h"
 #include "qemu/main-loop.h"
@@ -18,7 +16,6 @@
 #include "hw/arm/pmb887x/gen/cpu_meta.h"
 #include "hw/arm/pmb887x/mod.h"
 #include "hw/arm/pmb887x/fifo.h"
-#include "hw/arm/pmb887x/trace.h"
 
 #define TYPE_PMB887X_USART	"pmb887x-usart"
 #define PMB887X_USART(obj)	OBJECT_CHECK(pmb887x_usart_t, (obj), TYPE_PMB887X_USART)
@@ -977,8 +974,10 @@ static void usart_realize(DeviceState *dev, Error **errp) {
 	pmb887x_clc_set(&p->clc, 1U << MOD_CLC_RMC_SHIFT);
 	
 	for (int i = 0; i < ARRAY_SIZE(p->irq); i++) {
-		if (!p->irq[i])
-			hw_error("pmb887x-usart: irq %d not set", i);
+		if (!p->irq[i]) {
+			error_setg(errp, "%s: IRQ %d is not connected", object_get_typename(OBJECT(dev)), i);
+			return;
+		}
 	}
 	
 	pmb887x_fifo16_init(&p->tx_fifo_buffered, USART_FIFO_SIZE);

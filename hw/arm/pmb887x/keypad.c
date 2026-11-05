@@ -1,11 +1,8 @@
 /*
  * Keypad
  * */
-#define PMB887X_TRACE_PREFIX	"pmb887x-keypad"
-
 #include "qemu/osdep.h"
 #include "hw/core/sysbus.h"
-#include "hw/core/hw-error.h"
 #include "hw/core/qdev-properties.h"
 #include "qapi/error.h"
 #include "ui/input.h"
@@ -13,7 +10,6 @@
 #include "hw/arm/pmb887x/gen/cpu_regs.h"
 #include "hw/arm/pmb887x/gen/cpu_meta.h"
 #include "hw/arm/pmb887x/mod.h"
-#include "hw/arm/pmb887x/trace.h"
 
 #define TYPE_PMB887X_KEYPAD	"pmb887x-keypad"
 #define PMB887X_KEYPAD(obj)	OBJECT_CHECK(pmb887x_keypad_t, (obj), TYPE_PMB887X_KEYPAD)
@@ -234,8 +230,10 @@ static void keypad_realize(DeviceState *dev, Error **errp) {
 		p->port[i] = 0xFFFFFFFF;
 	
 	for (int i = 0; i < ARRAY_SIZE(p->src); i++) {
-		if (!p->irq[i])
-			hw_error("pmb887x-keypad: irq %d not set", i);
+		if (!p->irq[i]) {
+			error_setg(errp, "%s: IRQ %d is not connected", object_get_typename(OBJECT(dev)), i);
+			return;
+		}
 		pmb887x_src_init(&p->src[i], p->irq[i]);
 	}
 	

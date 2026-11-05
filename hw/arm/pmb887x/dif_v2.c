@@ -2,8 +2,6 @@
  * Display Interface
  * */
 #include "hw/arm/pmb887x/fifo.h"
-#define PMB887X_TRACE_PREFIX	"pmb887x-dif"
-
 #define PMB887X_DIF_DUMP_BIT_MUX	0 // print bit mux config
 
 #include "qemu/osdep.h"
@@ -21,7 +19,6 @@
 #include "hw/arm/pmb887x/gen/cpu_meta.h"
 #include "hw/arm/pmb887x/mod.h"
 #include "hw/arm/pmb887x/dma_sink.h"
-#include "hw/arm/pmb887x/trace.h"
 
 #define TYPE_PMB887X_DIF	"pmb887x-dif-v2"
 #define PMB887X_DIF(obj)	OBJECT_CHECK(pmb887x_dif_t, (obj), TYPE_PMB887X_DIF)

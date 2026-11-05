@@ -1,11 +1,8 @@
 /*
  * Time Processing Unit
  * */
-#define PMB887X_TRACE_PREFIX	"pmb887x-tpu"
-
 #include "qemu/osdep.h"
 #include "hw/core/sysbus.h"
-#include "hw/core/hw-error.h"
 #include "system/memory.h"
 #include "cpu.h"
 #include "qapi/error.h"
@@ -24,7 +21,6 @@
 #include "hw/arm/pmb887x/gen/cpu_meta.h"
 #include "hw/arm/pmb887x/mod.h"
 #include "hw/arm/pmb887x/tpu.h"
-#include "hw/arm/pmb887x/trace.h"
 
 #define TYPE_PMB887X_TPU	"pmb887x-tpu"
 #define PMB887X_TPU(obj)	OBJECT_CHECK(pmb887x_tpu_t, (obj), TYPE_PMB887X_TPU)
@@ -1053,7 +1049,7 @@ static void tpu_init(Object *obj) {
 	p->gsm_clock = qdev_init_clock_out(DEVICE(obj), "GSM_CLOCK");
 }
 
-static void tpu_realize(DeviceState *dev, Error **_errp) {
+static void tpu_realize(DeviceState *dev, Error **errp) {
 	pmb887x_tpu_t *p = PMB887X_TPU(dev);
 	pmb887x_mod_debug_init(&p->dbg, dev, &p->mmio, &pmb887x_tpu_regs);
 	
@@ -1061,14 +1057,18 @@ static void tpu_realize(DeviceState *dev, Error **_errp) {
 	pmb887x_src_init(&p->rfssc_src, p->rfssc_irq);
 
 	for (int i = 0; i < ARRAY_SIZE(p->src); i++) {
-		if (!p->irq[i])
-			hw_error("pmb887x-tpu: irq %d (INT%d) not set", i, i);
+		if (!p->irq[i]) {
+			error_setg(errp, "%s: INT%d IRQ is not connected", object_get_typename(OBJECT(dev)), i);
+			return;
+		}
 		pmb887x_src_init(&p->src[i], p->irq[i]);
 	}
 	
 	for (int i = 0; i < ARRAY_SIZE(p->gp_src); i++) {
-		if (!p->gp_irq[i])
-			hw_error("pmb887x-tpu: irq %d (INT_GP%d) not set", i, i);
+		if (!p->gp_irq[i]) {
+			error_setg(errp, "%s: INT_GP%d IRQ is not connected", object_get_typename(OBJECT(dev)), i);
+			return;
+		}
 		pmb887x_src_init(&p->gp_src[i], p->gp_irq[i]);
 	}
 	

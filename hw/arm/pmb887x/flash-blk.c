@@ -1,5 +1,3 @@
-#define PMB887X_TRACE_PREFIX	"pmb887x-flash-blk"
-
 #include "qemu/osdep.h"
 #include "qapi/error.h"
 #include "qemu/error-report.h"
@@ -9,7 +7,6 @@
 #include "hw/core/qdev-properties.h"
 #include "hw/core/qdev-properties-system.h"
 #include "system/debug-channel.h"
-#include "hw/arm/pmb887x/trace.h"
 #include "hw/arm/pmb887x/flash-blk.h"
 
 #define TYPE_PMB887X_FLASH_BLK	"pmb887x-flash-blk"
@@ -52,24 +49,16 @@ static void flash_blk_realize(DeviceState *dev, Error **errp) {
 	debug_channel_init_device(&flash->dbg, dev);
 	
 	if (!flash->blk) {
-		EPRINTF("Property 'drive' is not set");
-		exit(1);
+		error_setg(errp, "Flash property 'drive' is not set");
+		return;
 	}
 	
 	DEBUG_LOG(&flash->dbg, "Drive size: %08"PRIX64"\n", blk_co_getlength(flash->blk));
 	
 	if (pmb887x_flash_blk_is_rw(flash)) {
-		int ret = blk_set_perm(flash->blk, BLK_PERM_CONSISTENT_READ | BLK_PERM_WRITE, BLK_PERM_ALL, errp);
-		if (ret < 0) {
-			EPRINTF("Failed to set block dev permissions");
-			exit(1);
-		}
+		blk_set_perm(flash->blk, BLK_PERM_CONSISTENT_READ | BLK_PERM_WRITE, BLK_PERM_ALL, errp);
 	} else {
-		int ret = blk_set_perm(flash->blk, BLK_PERM_CONSISTENT_READ, BLK_PERM_ALL, errp);
-		if (ret < 0) {
-			EPRINTF("Failed to set block dev permissions");
-			exit(1);
-		}
+		blk_set_perm(flash->blk, BLK_PERM_CONSISTENT_READ, BLK_PERM_ALL, errp);
 	}
 }
 

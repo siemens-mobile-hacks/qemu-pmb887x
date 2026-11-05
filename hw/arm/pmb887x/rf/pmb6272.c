@@ -1,5 +1,3 @@
-#define PMB887X_TRACE_PREFIX	"pmb6272"
-
 #include "qemu/osdep.h"
 #include "qemu/atomic.h"
 #include "qemu/bitops.h"
@@ -9,7 +7,6 @@
 #include "hw/arm/pmb887x/rf.h"
 #include "system/debug-channel.h"
 #include "hw/arm/pmb887x/gen/cpu_meta.h"
-#include "hw/arm/pmb887x/trace.h"
 #include "hw/core/sysbus.h"
 #include "hw/ssi/three-wire-serial.h"
 

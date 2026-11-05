@@ -1,5 +1,3 @@
-#define PMB887X_TRACE_PREFIX	"pmb887x-usif"
-
 #include "qemu/osdep.h"
 #include "hw/core/irq.h"
 #include "hw/core/hw-error.h"
@@ -14,7 +12,6 @@
 #include "hw/arm/pmb887x/gen/cpu_meta.h"
 #include "hw/arm/pmb887x/mod.h"
 #include "hw/arm/pmb887x/fifo.h"
-#include "hw/arm/pmb887x/trace.h"
 
 #define TYPE_PMB887X_USIF	"pmb887x-usif"
 #define PMB887X_USIF(obj)	OBJECT_CHECK(pmb887x_usif_t, (obj), TYPE_PMB887X_USIF)

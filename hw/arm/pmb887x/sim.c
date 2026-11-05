@@ -1,8 +1,6 @@
 /*
  * PMB887x SIM card interface
  */
-#define PMB887X_TRACE_PREFIX "pmb887x-sim"
-
 #include "qemu/osdep.h"
 #include "qemu/fifo8.h"
 #include "qemu/module.h"
@@ -17,7 +15,6 @@
 #include "hw/arm/pmb887x/mod.h"
 #include "hw/arm/pmb887x/gen/cpu_meta.h"
 #include "hw/arm/pmb887x/sim.h"
-#include "hw/arm/pmb887x/trace.h"
 
 #define SIM_IRQ_MASK (SIM_IMSC_ERR | SIM_IMSC_IN | SIM_IMSC_OK)
 #define SIM_EVENT_ENABLE_MASK ( \

@@ -1,8 +1,6 @@
 /*
  * Automatic Frequency Correction
  * */
-#define PMB887X_TRACE_PREFIX	"pmb887x-afc"
-
 #include "qemu/osdep.h"
 #include "hw/core/sysbus.h"
 #include "system/memory.h"
@@ -11,7 +9,6 @@
 #include "hw/arm/pmb887x/gen/cpu_regs.h"
 #include "hw/arm/pmb887x/mod.h"
 #include "hw/arm/pmb887x/gen/cpu_meta.h"
-#include "hw/arm/pmb887x/trace.h"
 
 #define TYPE_PMB887X_AFC	"pmb887x-afc"
 #define PMB887X_AFC(obj)	OBJECT_CHECK(pmb887x_afc_t, (obj), TYPE_PMB887X_AFC)

@@ -1,12 +1,9 @@
-#define PMB887X_TRACE_PREFIX	"pmb887x-dsp-cipher"
-
 #include "qemu/osdep.h"
 #include "qemu/bitops.h"
 #include "qemu/timer.h"
 #include "hw/arm/pmb887x/dsp/peripheral/cipher-kasumi.h"
 #include "hw/arm/pmb887x/dsp/peripheral/internal.h"
 #include "hw/arm/pmb887x/gen/dsp.h"
-#include "hw/arm/pmb887x/trace.h"
 
 #define CIPHER_REGISTER_COUNT	(TEAK_CIPH_KDATA4 + 1)
 #define CIPHER_STREAM_OFFSET	0x0020

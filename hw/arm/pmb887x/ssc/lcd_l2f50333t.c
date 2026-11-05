@@ -1,13 +1,10 @@
 /*
  * Epson L2F50333T (OLED, 132x176)
  * */
-#define PMB887X_TRACE_PREFIX	"l2f50333t"
-
 #include "qemu/osdep.h"
 #include "hw/core/qdev-properties.h"
 #include "qapi/error.h"
 #include "qemu/error-report.h"
-#include "hw/arm/pmb887x/trace.h"
 #include "hw/arm/pmb887x/ssc/lcd_common.h"
 
 #define TYPE_PMB887X_LCD_PANEL	"l2f50333t"

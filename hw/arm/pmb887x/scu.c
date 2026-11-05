@@ -1,8 +1,6 @@
 /*
  * System Control Unit
  * */
-#define PMB887X_TRACE_PREFIX	"pmb887x-scu"
-
 #include "qemu/osdep.h"
 #include "hw/core/sysbus.h"
 #include "hw/arm/pmb887x/gen/cpu_regs.h"
@@ -20,7 +18,6 @@
 #include "hw/arm/pmb887x/dsp.h"
 #include "hw/arm/pmb887x/dmac.h"
 #include "hw/arm/pmb887x/sccu.h"
-#include "hw/arm/pmb887x/trace.h"
 
 #define TYPE_PMB887X_SCU	"pmb887x-scu"
 #define PMB887X_SCU(obj)	OBJECT_CHECK(pmb887x_scu_t, (obj), TYPE_PMB887X_SCU)
