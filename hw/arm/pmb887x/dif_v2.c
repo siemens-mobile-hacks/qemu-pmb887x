@@ -219,8 +219,7 @@ static inline uint32_t dif_get_bsconf_word_count(pmb887x_dif_t *p) {
 		case DIFv2_CSREG_BSCONF_3x9BIT:
 			return dif_is_serial(p) ? 0 : 1;
 	}
-	hw_error("Invalid bsconf value: %08X", (csreg & DIFv2_CSREG_BSCONF) >> DIFv2_CSREG_BSCONF_SHIFT);
-	return 0;
+	g_assert_not_reached();
 }
 
 static inline uint32_t dif_get_word_bits(pmb887x_dif_t *p) {
@@ -1244,7 +1243,6 @@ static uint64_t dif_io_read(void *opaque, hwaddr haddr, unsigned size) {
 
 		case DIFv2_MRPS_CTRL:
 			value = p->mrps_ctrl;
-			hw_error("DIFv2_MRPS_CTRL not supported!");
 			break;
 
 		case DIFv2_RPS_STAT:

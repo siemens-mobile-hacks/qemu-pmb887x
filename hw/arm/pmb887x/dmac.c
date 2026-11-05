@@ -100,17 +100,18 @@ struct pmb887x_dmac_t {
 };
 
 static inline uint32_t dmac_get_width(uint32_t s) {
-	if (s > 2)
-		hw_error("pmb887x-dmac: unknown width %d", s);
+	g_assert(s <= 2);
 	return 1 << s;
 }
 
+static bool dmac_has_valid_widths(uint32_t control) {
+	uint32_t src_width = (control & DMAC_CH_CONTROL_S_WIDTH) >> DMAC_CH_CONTROL_S_WIDTH_SHIFT;
+	uint32_t dst_width = (control & DMAC_CH_CONTROL_D_WIDTH) >> DMAC_CH_CONTROL_D_WIDTH_SHIFT;
+	return src_width <= 2 && dst_width <= 2;
+}
+
 static inline uint32_t dmac_get_burst_size(uint32_t s) {
-	if (s == 0)
-		return 1;
-	if (s > 7)
-		hw_error("pmb887x-dmac: unknown burst size %d", s);
-	return 1 << (s + 1);
+	return s ? (1 << (s + 1)) : 1;
 }
 
 static uint32_t dmac_destination_count_to_source_count(pmb887x_dmac_ch_t *ch, uint32_t destination_count) {
@@ -779,6 +780,10 @@ static void dmac_run_per2per_source(
 static void dmac_channel_run(pmb887x_dmac_t *p, pmb887x_dmac_ch_t *ch) {
 	if (!(ch->config & DMAC_CH_CONFIG_ENABLE) || !(p->config & DMAC_CONFIG_ENABLE))
 		return;
+	if (!dmac_has_valid_widths(ch->control)) {
+		DEBUG_GUEST_ERROR(&p->dbg, "CH%d: reserved transfer width in control %08X\n", ch->id, ch->control);
+		return;
+	}
 	if (!dmac_has_second_master(p) &&
 		(ch->config & DMAC_CH_CONFIG_FLOW_CTRL) == DMAC_CH_CONFIG_FLOW_CTRL_MEM2MEM &&
 		(ch->control & (DMAC_CH_CONTROL_S_AHB2 | DMAC_CH_CONTROL_D_AHB2)) ==
@@ -870,7 +875,7 @@ static void dmac_channel_run(pmb887x_dmac_t *p, pmb887x_dmac_ch_t *ch) {
 			break;
 
 		default:
-			hw_error("pmb887x-dmac: unsupported flow type %08X", (ch->config & DMAC_CH_CONFIG_FLOW_CTRL));
+			g_assert_not_reached();
 	}
 }
 

@@ -5,7 +5,6 @@
 
 #include "qemu/osdep.h"
 #include "hw/core/sysbus.h"
-#include "hw/core/hw-error.h"
 #include "system/memory.h"
 #include "cpu.h"
 #include "qemu/error-report.h"
@@ -76,7 +75,7 @@ struct pmb887x_i2c_t {
 
 static bool i2c_is_running(pmb887x_i2c_t *p) {
 	return pmb887x_clc_is_enabled(&p->clc) &&
-		(p->syscon & I2Cv1_SYSCON_MOD) != I2Cv1_SYSCON_MOD_DISABLED;
+		(p->syscon & I2Cv1_SYSCON_MOD) == I2Cv1_SYSCON_MOD_MASTER;
 }
 
 static void i2c_update_syscon(pmb887x_i2c_t *p, uint32_t value) {
@@ -120,21 +119,19 @@ static void i2c_update_syscon(pmb887x_i2c_t *p, uint32_t value) {
 	if (!(p->syscon & I2Cv1_SYSCON_IRQE) && (value & I2Cv1_SYSCON_IRQE))
 		pmb887x_src_update(&p->end_src, 0, MOD_SRC_SETR);
 
-	if ((value & I2Cv1_SYSCON_MOD) != I2Cv1_SYSCON_MOD_DISABLED && (value & I2Cv1_SYSCON_MOD) != I2Cv1_SYSCON_MOD_MASTER)
-		hw_error("Only master/disabled modes is supported.\n");
-
+	uint32_t mode = value & I2Cv1_SYSCON_MOD;
+	if (mode != I2Cv1_SYSCON_MOD_DISABLED && mode != I2Cv1_SYSCON_MOD_MASTER)
+		DEBUG_UNIMP(&p->dbg, "mode %u is not supported\n", (mode >> I2Cv1_SYSCON_MOD_SHIFT));
 	if ((value & (I2Cv1_SYSCON_WMEN | I2Cv1_SYSCON_RMEN)))
-		hw_error("Read/write mirrors is not supported.\n");
-
+		DEBUG_UNIMP(&p->dbg, "read/write mirrors are not supported\n");
 	if ((value & I2Cv1_SYSCON_SLA))
-		hw_error("Slave is not supported.\n");
-
+		DEBUG_UNIMP(&p->dbg, "slave selection is not supported\n");
 	if ((value & I2Cv1_SYSCON_M10))
-		hw_error("10-bit is not supported.\n");
+		DEBUG_UNIMP(&p->dbg, "10-bit addressing is not supported\n");
 
 	p->syscon = value;
 
-	if ((p->syscon & I2Cv1_SYSCON_MOD) == I2Cv1_SYSCON_MOD_DISABLED) {
+	if ((p->syscon & I2Cv1_SYSCON_MOD) != I2Cv1_SYSCON_MOD_MASTER) {
 		timer_del(p->timer);
 		p->state = I2C_STATE_NONE;
 		p->nack_received = false;
