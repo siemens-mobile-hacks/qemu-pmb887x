@@ -264,6 +264,7 @@ config PMB887X
     select GSM_SIM
     select DMA_SINK
     select PCM_OUT
+    select SPLIT_IRQ
 
 config VEXPRESS
     bool
