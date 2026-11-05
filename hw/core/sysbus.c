@@ -82,13 +82,7 @@ static void system_bus_class_init(ObjectClass *klass, const void *data)
 /* Check whether an IRQ source exists */
 bool sysbus_has_irq(const SysBusDevice *dev, int n)
 {
-    char *prop = g_strdup_printf("%s[%d]", SYSBUS_DEVICE_GPIO_IRQ, n);
-    ObjectProperty *r;
-
-    r = object_property_find(OBJECT(dev), prop);
-    g_free(prop);
-
-    return (r != NULL);
+    return qdev_has_gpio_out_named(DEVICE(dev), SYSBUS_DEVICE_GPIO_IRQ, n);
 }
 
 bool sysbus_is_irq_connected(const SysBusDevice *dev, int n)

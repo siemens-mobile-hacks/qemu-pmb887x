@@ -627,6 +627,26 @@ qemu_irq qdev_get_gpio_in(DeviceState *dev, int n);
 qemu_irq qdev_get_gpio_in_named(DeviceState *dev, const char *name, int n);
 
 /**
+ * qdev_has_gpio_in_named: Check whether a named input GPIO line exists
+ * @dev: Device to check
+ * @name: Name of the input GPIO array, or NULL for anonymous lines
+ * @n: Number of the GPIO line in that array
+ *
+ * Return: true if @dev has input line @n in the array @name
+ */
+bool qdev_has_gpio_in_named(const DeviceState *dev, const char *name, int n);
+
+/**
+ * qdev_has_gpio_out_named: Check whether a named output GPIO line exists
+ * @dev: Device to check
+ * @name: Name of the output GPIO array, or NULL for anonymous lines
+ * @n: Number of the GPIO line in that array
+ *
+ * Return: true if @dev has output line @n in the array @name
+ */
+bool qdev_has_gpio_out_named(const DeviceState *dev, const char *name, int n);
+
+/**
  * qdev_connect_gpio_out: Connect one of a device's anonymous output GPIO lines
  * @dev: Device whose GPIO to connect
  * @n: Number of the anonymous output GPIO line (which must be in range)

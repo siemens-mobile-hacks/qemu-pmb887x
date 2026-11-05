@@ -22,8 +22,8 @@
 #include "hw/core/irq.h"
 #include "qapi/error.h"
 
-static NamedGPIOList *qdev_get_named_gpio_list(DeviceState *dev,
-                                               const char *name)
+static NamedGPIOList *qdev_find_named_gpio_list(const DeviceState *dev,
+                                                const char *name)
 {
     NamedGPIOList *ngl;
 
@@ -32,6 +32,17 @@ static NamedGPIOList *qdev_get_named_gpio_list(DeviceState *dev,
         if (g_strcmp0(name, ngl->name) == 0) {
             return ngl;
         }
+    }
+    return NULL;
+}
+
+static NamedGPIOList *qdev_get_named_gpio_list(DeviceState *dev,
+                                               const char *name)
+{
+    NamedGPIOList *ngl = qdev_find_named_gpio_list(dev, name);
+
+    if (ngl) {
+        return ngl;
     }
 
     ngl = g_malloc0(sizeof(*ngl));
@@ -99,6 +110,20 @@ void qdev_init_gpio_out_named(DeviceState *dev, qemu_irq *pins,
 void qdev_init_gpio_out(DeviceState *dev, qemu_irq *pins, int n)
 {
     qdev_init_gpio_out_named(dev, pins, NULL, n);
+}
+
+bool qdev_has_gpio_in_named(const DeviceState *dev, const char *name, int n)
+{
+    NamedGPIOList *ngl = qdev_find_named_gpio_list(dev, name);
+
+    return ngl && n >= 0 && n < ngl->num_in;
+}
+
+bool qdev_has_gpio_out_named(const DeviceState *dev, const char *name, int n)
+{
+    NamedGPIOList *ngl = qdev_find_named_gpio_list(dev, name);
+
+    return ngl && n >= 0 && n < ngl->num_out;
 }
 
 qemu_irq qdev_get_gpio_in_named(DeviceState *dev, const char *name, int n)
