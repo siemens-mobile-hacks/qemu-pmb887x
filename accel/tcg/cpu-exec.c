@@ -429,9 +429,11 @@ bool arm_w64_lc_key(CPUState *cs, uint32_t key32[3]);
  * The global next-TB cache, keyed on the target PC: the per-TB slot is
  * monomorphic, and an interpreter's `ldr pc, [table, op, lsl #2]` goes
  * somewhere different almost every time.  It asks the jump cache's own
- * question (same hash, same size) against the key the per-TB slot uses
- * (pc, hflags.flags, thumb, condexec_bits, plus the generation for
- * everything else), without arm_get_tb_cpu_state or curr_cflags.
+ * question (same size) against the key the per-TB slot uses (pc,
+ * hflags.flags, thumb, condexec_bits, plus the generation for everything
+ * else), without arm_get_tb_cpu_state or curr_cflags.  Its hash is its
+ * own: three ops for the emitted probe, where the jump cache's page-wise
+ * one takes ten.
  *
  * Soundness is the per-TB slot's: the generation retires the whole table
  * wherever a jump-cache entry is dropped, wherever a key input the test
@@ -444,23 +446,24 @@ bool arm_w64_lc_key(CPUState *cs, uint32_t key32[3]);
  * code reads it too.  @cpu_index names the owner of a per-CPU generation
  * in a global table, and pads the entry to 32 bytes.
  */
-#define W64_PCC_SLOTS TB_JMP_CACHE_SIZE
-static struct W64PccEnt w64_pcc[W64_PCC_SLOTS];
+#define W64_PCC_BITS TB_JMP_CACHE_BITS
+#define W64_PCC_MUL 0x9e3779b1u
+static struct W64PccEnt w64_pcc[1 << W64_PCC_BITS];
 QEMU_BUILD_BUG_ON(sizeof(struct W64PccEnt) != 32);
+
+static inline uint32_t w64_pcc_hash(uint32_t pc)
+{
+    return (pc * W64_PCC_MUL) >> (32 - W64_PCC_BITS);
+}
 
 const struct W64PccShape *w64_pcc_shape(void)
 {
-    static struct W64PccShape shape;
+    static const struct W64PccShape shape = {
+        .tab = w64_pcc,
+        .mul = W64_PCC_MUL,
+        .bits = W64_PCC_BITS,
+    };
 
-    if (!shape.tab) {
-        assert(TARGET_PAGE_BITS <= TB_JMP_HASH_PAGE_SHIFT);
-        shape.page_shift = TB_JMP_HASH_PAGE_SHIFT;
-        shape.mul = TB_JMP_HASH_MUL;
-        shape.mul_shift = TB_JMP_HASH_MUL_SHIFT;
-        shape.page_bits = TB_JMP_PAGE_BITS;
-        shape.flags_shift = TB_JMP_HASH_FLAGS_SHIFT;
-        shape.tab = w64_pcc;
-    }
     return &shape;
 }
 
@@ -481,7 +484,7 @@ static inline void w64_pcc_put(CPUState *cpu, TCGTBCPUState s, uint32_t gen,
         !W64_LC_KEY(cpu, key)) {
         return;
     }
-    e = &w64_pcc[tb_jmp_cache_hash_func((uint32_t)s.pc, key[0])];
+    e = &w64_pcc[w64_pcc_hash((uint32_t)s.pc)];
     e->pc = (uint32_t)s.pc;
     e->key32[0] = key[0];
     e->key32[1] = key[1];

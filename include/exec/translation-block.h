@@ -307,11 +307,8 @@ struct W64PccEnt {
 
 struct W64PccShape {
     struct W64PccEnt *tab;
-    unsigned page_shift;    /* TB_JMP_HASH_PAGE_SHIFT */
-    uint32_t mul;           /* TB_JMP_HASH_MUL */
-    unsigned mul_shift;     /* TB_JMP_HASH_MUL_SHIFT */
-    unsigned page_bits;     /* TB_JMP_PAGE_BITS */
-    unsigned flags_shift;   /* TB_JMP_HASH_FLAGS_SHIFT */
+    uint32_t mul;           /* the entry is (pc * mul) >> (32 - bits) */
+    unsigned bits;
 };
 
 const struct W64PccShape *w64_pcc_shape(void);

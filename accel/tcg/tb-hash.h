@@ -35,8 +35,7 @@
  * each other.  Here every halfword of a page has its own entry, and a
  * multiplicative hash of the page number above 4 KiB picks one of
  * 32 blocks.  A page's entries stay one block for
- * tb_jmp_cache_clear_page (a superset for 1 KiB pages).  The
- * translator emits this hash too (W64PccShape).
+ * tb_jmp_cache_clear_page (a superset for 1 KiB pages).
  */
 #define TB_JMP_PAGE_BITS 11
 #define TB_JMP_PAGE_SIZE (1 << TB_JMP_PAGE_BITS)

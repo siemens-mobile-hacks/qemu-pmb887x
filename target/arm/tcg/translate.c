@@ -1463,7 +1463,8 @@ static TCGv_ptr w64_abs_base(DisasContext *s, const void *p, intptr_t *bias)
  * itself and then lose.
  *
  * Soundness is the helper's, word for word: an entry names its owning
- * CPU (the generation is per-CPU) and carries the generation that
+ * CPU (the generation is per-CPU; with one CPU, as w64_abs_base assumes,
+ * every entry is its own) and carries the generation that
  * retires it, and the three key words are compared against the same CPU
  * state the helper reads — as constants wherever this exit's key is
  * static, which is the argument gen_goto_ptr makes for way one.
@@ -1483,25 +1484,11 @@ static void gen_goto_ptr_pcc(DisasContext *s, TCGv_ptr tc,
     TCGv_i32 gen32 = tcg_temp_new_i32();
     TCGv_ptr ep = tcg_temp_new_ptr();
 
-    /* tb_jmp_cache_hash_func(r15) << 5, the entry's offset */
+    /* w64_pcc_hash(r15) << 5, the entry's offset */
     QEMU_BUILD_BUG_ON(sizeof(struct W64PccEnt) != 1 << 5);
-    tcg_gen_shri_i32(h, cpu_R[15], sh->page_shift);
-    tcg_gen_muli_i32(h, h, sh->mul);
-    tcg_gen_shri_i32(h, h, sh->mul_shift);
-    tcg_gen_shli_i32(h, h, sh->page_bits + 5);
-    tcg_gen_shli_i32(t32, cpu_R[15], 5 - 1);
-    assert(sh->flags_shift == R_TBFLAG_ANY_MMUIDX_SHIFT);
-    if (mask & W64_LC_DYN_FLAGS) {
-        tcg_gen_ld_i32(a32, tcg_env, offsetof(CPUARMState, hflags.flags));
-        tcg_gen_shli_i32(a32, a32, sh->page_bits - 2 + 5 - sh->flags_shift);
-        tcg_gen_andi_i32(a32, a32, 3u << (sh->page_bits - 2 + 5));
-        tcg_gen_xor_i32(t32, t32, a32);
-    } else {
-        tcg_gen_xori_i32(t32, t32,
-                         ((key[0] >> sh->flags_shift) & 3) << (sh->page_bits - 2 + 5));
-    }
-    tcg_gen_andi_i32(t32, t32, ((1u << sh->page_bits) - 1) << 5);
-    tcg_gen_or_i32(h, h, t32);
+    tcg_gen_muli_i32(h, cpu_R[15], sh->mul);
+    tcg_gen_shri_i32(h, h, 32 - sh->bits - 5);
+    tcg_gen_andi_i32(h, h, ((1u << sh->bits) - 1) << 5);
     tcg_gen_ext_i32_ptr(ep, h);
     tcg_gen_addi_ptr(ep, ep, (intptr_t)(uintptr_t)sh->tab);
 
@@ -1514,11 +1501,13 @@ static void gen_goto_ptr_pcc(DisasContext *s, TCGv_ptr tc,
     tcg_gen_ld_i32(a32, ep, offsetof(struct W64PccEnt, gen));
     tcg_gen_brcond_i32(TCG_COND_NE, a32, gen32, miss);
 
-    tcg_gen_ld_i32(a32, ep, offsetof(struct W64PccEnt, cpu_index));
-    tcg_gen_ld_i32(t32, tcg_env,
-                   offsetof(ARMCPU, parent_obj.cpu_index) -
-                   offsetof(ARMCPU, env));
-    tcg_gen_brcond_i32(TCG_COND_NE, a32, t32, miss);
+    if (CPU_NEXT(first_cpu)) {
+        tcg_gen_ld_i32(a32, ep, offsetof(struct W64PccEnt, cpu_index));
+        tcg_gen_ld_i32(t32, tcg_env,
+                       offsetof(ARMCPU, parent_obj.cpu_index) -
+                       offsetof(ARMCPU, env));
+        tcg_gen_brcond_i32(TCG_COND_NE, a32, t32, miss);
+    }
 
     gen_pcc_key_cmp(ep, a32, t32, key, mask, miss);
 
