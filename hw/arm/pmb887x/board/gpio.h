@@ -10,6 +10,3 @@ void pmb887x_qdev_connect_gpio_out(DeviceState *dev, const char *name, int n, qe
 void pmb887x_qdev_connect_gpio_outputs(void);
 qemu_irq pmb887x_gpio_get_input(const char *name);
 int pmb887x_get_gpio_id_by_name(const char *name);
-
-bool pmb887x_qdev_is_gpio_in_exists(DeviceState *dev, const char *name, int n);
-bool pmb887x_qdev_is_gpio_out_exists(DeviceState *dev, const char *name, int n);

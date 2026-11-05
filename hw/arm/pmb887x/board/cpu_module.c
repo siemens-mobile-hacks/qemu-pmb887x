@@ -69,10 +69,10 @@ static void pmb887x_cpu_module_post_init(DeviceState *dev, const pmb887x_cpu_mod
 				char gpio_in_name[64];
 				sprintf(gpio_in_name, "pin_alt%d_in", gpio_link->alt);
 
-				if (!pmb887x_qdev_is_gpio_in_exists(gpio, gpio_in_name, gpio_link->pin))
+				if (!qdev_has_gpio_in_named(gpio, gpio_in_name, gpio_link->pin))
 					hw_error("GPIO_IN '%s[%d]' not found in '%s'", gpio_in_name, gpio_link->pin, object_get_typename(OBJECT(gpio)));
 
-				if (!pmb887x_qdev_is_gpio_out_exists(dev, gpio_link->name, 0))
+				if (!qdev_has_gpio_out_named(dev, gpio_link->name, 0))
 					hw_error("GPIO_OUT '%s[%d]' not found in '%s'", gpio_link->name, 0, object_get_typename(OBJECT(dev)));
 
 				qemu_irq gpio_in = qdev_get_gpio_in_named(gpio, gpio_in_name, gpio_link->pin);
@@ -86,10 +86,10 @@ static void pmb887x_cpu_module_post_init(DeviceState *dev, const pmb887x_cpu_mod
 				char gpio_out_name[64];
 				sprintf(gpio_out_name, "pin_alt%d_out", gpio_link->alt);
 
-				if (!pmb887x_qdev_is_gpio_in_exists(dev, gpio_link->name, 0))
+				if (!qdev_has_gpio_in_named(dev, gpio_link->name, 0))
 					hw_error("GPIO_IN '%s[%d]' not found in '%s'", gpio_link->name, 0, object_get_typename(OBJECT(dev)));
 
-				if (!pmb887x_qdev_is_gpio_out_exists(gpio, gpio_out_name, gpio_link->pin))
+				if (!qdev_has_gpio_out_named(gpio, gpio_out_name, gpio_link->pin))
 					hw_error("GPIO_OUT '%s[%d]' not found in '%s'", gpio_out_name, gpio_link->pin, object_get_typename(OBJECT(gpio)));
 
 				qemu_irq gpio_in = qdev_get_gpio_in_named(dev, gpio_link->name, 0);
@@ -115,7 +115,7 @@ static void pmb887x_cpu_module_post_init(DeviceState *dev, const pmb887x_cpu_mod
 				char module_signal_out[128];
 				sprintf(module_signal_out, "DMAC_%s_%s", dma_channel->channel, module_signals[j]);
 
-				if (!pmb887x_qdev_is_gpio_out_exists(dev, module_signal_out, 0))
+				if (!qdev_has_gpio_out_named(dev, module_signal_out, 0))
 					continue;
 
 				char dmac_signal_in[128];
@@ -129,7 +129,7 @@ static void pmb887x_cpu_module_post_init(DeviceState *dev, const pmb887x_cpu_mod
 				char module_signal_in[128];
 				sprintf(module_signal_in, "DMAC_%s_%s", dma_channel->channel, dmac_signals[j]);
 
-				if (!pmb887x_qdev_is_gpio_in_exists(dev, module_signal_in, 0))
+				if (!qdev_has_gpio_in_named(dev, module_signal_in, 0))
 					continue;
 
 				char dmac_signal_out[128];

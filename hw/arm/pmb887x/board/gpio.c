@@ -32,23 +32,6 @@ static void pmb887x_gpio_output_free(gpointer data) {
 	g_free(output);
 }
 
-bool pmb887x_qdev_is_gpio_in_exists(DeviceState *dev, const char *name, int n) {
-	if (n < 0)
-		return false;
-	NamedGPIOList *ngl;
-	QLIST_FOREACH(ngl, &dev->gpios, node) {
-		if (g_strcmp0(name, ngl->name) == 0)
-			return n < ngl->num_in;
-	}
-	return false;
-}
-
-bool pmb887x_qdev_is_gpio_out_exists(DeviceState *dev, const char *name, int n) {
-	char prop_name[64];
-	sprintf(prop_name, "%s[%d]", name ? name : "unnamed-gpio-out", n);
-	return object_property_find(OBJECT(dev), prop_name) != NULL;
-}
-
 typedef struct pmb887x_qdev_search_result_t pmb887x_qdev_search_result_t;
 
 struct pmb887x_qdev_search_result_t {
@@ -105,10 +88,10 @@ static char *find_internal_gpio(bool is_out, const char *name, DeviceState **dev
 		}
 
 		if (is_out) {
-			if (!pmb887x_qdev_is_gpio_out_exists(*dev, internal_name, *id))
+			if (!qdev_has_gpio_out_named(*dev, internal_name, *id))
 				hw_error("GPIO_OUT '%s' not found in '%s'", internal_name, dev_name);
 		} else {
-			if (!pmb887x_qdev_is_gpio_in_exists(*dev, internal_name, *id))
+			if (!qdev_has_gpio_in_named(*dev, internal_name, *id))
 				hw_error("GPIO_IN '%s' not found in '%s'", internal_name, dev_name);
 		}
 	}
