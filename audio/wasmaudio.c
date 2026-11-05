@@ -70,7 +70,7 @@ typedef struct WasmAudioRing {
     int32_t streaming;                  /* a stream has frames still to come */
     int32_t drained_frames;             /* skipped by playing faster */
     int32_t cut_frames;                 /* skipped by the delay cap */
-    int32_t reserved[1];
+    int32_t stretched_frames;           /* replayed by playing slower */
     int16_t data[WASM_AUDIO_RING_FRAMES * WASM_AUDIO_MAX_CHANNELS];
 } WasmAudioRing;
 
