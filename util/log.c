@@ -510,6 +510,8 @@ const QEMULogItem qemu_log_items[] = {
       "x86 only: show protected mode far calls/returns/exceptions" },
     { CPU_LOG_RESET, "cpu_reset",
       "show CPU state before CPU resets" },
+    { CPU_LOG_EXIT, "cpu_exit",
+      "show CPU state when QEMU exits" },
     { LOG_UNIMP, "unimp",
       "log unimplemented functionality" },
     { LOG_GUEST_ERROR, "guest_errors",
