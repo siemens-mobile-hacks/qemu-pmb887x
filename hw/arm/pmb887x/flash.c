@@ -158,6 +158,13 @@ static void flash_romd_unmap(pmb887x_flash_part_t *p) {
 	memory_region_rom_device_set_romd(&p->mem, false);
 }
 
+static void flash_sequence_error(pmb887x_flash_part_t *p) {
+	flash_buffer_clear(p);
+	p->cmd = 0x70;
+	p->wcycle = 0;
+	p->status |= FLASH_STATUS_READY | FLASH_STATUS_SEQUENCE_ERROR;
+}
+
 static void flash_unmap_inactive_read_array(pmb887x_flash_part_t *p) {
 	if (p->cmd == 0)
 		return;
@@ -180,8 +187,7 @@ static pmb887x_flash_block_t *flash_part_find_block(pmb887x_flash_part_t *p, uin
 		if (offset >= blk->offset && offset < blk->offset + blk->size)
 			return blk;
 	}
-	flash_error_part(p, "[data] Unknown addr %08X", p->flash->offset + p->offset + offset);
-	exit(1);
+	g_assert_not_reached();
 }
 
 static pmb887x_flash_block_t *flash_find_efa_block(pmb887x_flash_part_t *p, uint32_t offset) {
@@ -191,8 +197,7 @@ static pmb887x_flash_block_t *flash_find_efa_block(pmb887x_flash_part_t *p, uint
 		if (offset >= blk->offset && offset < blk->offset + blk->size)
 			return blk;
 	}
-	flash_error_part(p, "[EFA] Unknown addr %08X", p->flash->offset + p->offset + offset);
-	exit(1);
+	return NULL;
 }
 
 static uint32_t flash_find_sector_size(pmb887x_flash_part_t *p, uint32_t offset) {
@@ -204,18 +209,13 @@ static uint32_t flash_find_sector_size(pmb887x_flash_part_t *p, uint32_t offset)
 			return region->sector;
 	}
 	
-	flash_error_part(p, "[data] Unknown sector size for addr %08X", p->flash->offset + p->offset + offset);
-	exit(1);
+	g_assert_not_reached();
 }
 
 static void flash_data_write(pmb887x_flash_part_t *p, uint32_t offset, uint32_t value, uint32_t size) {
 	uint8_t *data = p->storage;
 	
-	if (offset < p->offset || (offset + size) > p->offset + p->size) {
-		flash_error_part(p, "[data] Unknown write addr %08X [part %08X-%08X]", offset, p->offset, p->offset + p->size - 1);
-		exit(1);
-	}
-	
+	g_assert(offset >= p->offset && offset + size <= p->offset + p->size);
 	offset -= p->offset;
 	
 	switch (size) {
@@ -236,8 +236,7 @@ static void flash_data_write(pmb887x_flash_part_t *p, uint32_t offset, uint32_t 
 			break;
 		
 		default:
-			flash_error_part(p, "[data] Unknown write size %d", size);
-			exit(1);
+			g_assert_not_reached();
 	}
 	
 	if (p->flash->blk && pmb887x_flash_blk_is_rw(p->flash->blk)) {
@@ -252,8 +251,8 @@ static void flash_data_write(pmb887x_flash_part_t *p, uint32_t offset, uint32_t 
 static uint32_t flash_efa_read(pmb887x_flash_part_t *p, uint32_t offset, uint32_t size) {
 	uint32_t efa_offset = offset - p->offset;
 	if (efa_offset + size > p->flash->efa_size) {
-		flash_error_part(p, "[EFA] Unknown read addr %08X", p->flash->offset + offset);
-		exit(1);
+		DEBUG_GUEST_ERROR(&p->flash->dbg, "<%d> EFA read outside EFA: %08X\n", p->n, p->flash->offset + offset);
+		return 0;
 	}
 	return lduw_le_p(p->flash->efa_storage + efa_offset);
 }
@@ -331,6 +330,11 @@ static uint32_t flash_query_read(pmb887x_flash_part_t *p, uint32_t offset) {
 
 static bool flash_efa_lock(pmb887x_flash_part_t *p, uint32_t offset, uint64_t value) {
 	pmb887x_flash_block_t *blk = flash_find_efa_block(p, offset);
+	if (!blk) {
+		DEBUG_GUEST_ERROR(&p->flash->dbg, "<%d> EFA lock outside EFA: %08X\n", p->n, p->flash->offset + offset);
+		flash_sequence_error(p);
+		return true;
+	}
 	if (value == 0x01) {
 		DEBUG_LOG(&p->flash->dbg, "<%d> lock EFA block %08X\n", p->n, p->flash->offset + offset);
 		blk->locked = true;
@@ -352,6 +356,11 @@ static bool flash_efa_lock(pmb887x_flash_part_t *p, uint32_t offset, uint64_t va
 
 static void flash_efa_erase(pmb887x_flash_part_t *p, uint32_t offset) {
 	pmb887x_flash_block_t *blk = flash_find_efa_block(p, offset);
+	if (!blk) {
+		DEBUG_GUEST_ERROR(&p->flash->dbg, "<%d> EFA erase outside EFA: %08X\n", p->n, p->flash->offset + offset);
+		flash_sequence_error(p);
+		return;
+	}
 	DEBUG_LOG(&p->flash->dbg, "<%d> erase EFA block %08X...%08X\n", p->n, p->flash->offset + p->offset + blk->offset,
 		p->flash->offset + p->offset + blk->offset + blk->size - 1);
 	if (blk->locked) {
@@ -378,9 +387,10 @@ static void flash_efa_program(pmb887x_flash_part_t *p, uint32_t offset, uint64_t
 	pmb887x_flash_block_t *blk = flash_find_efa_block(p, offset);
 	DEBUG_LOG(&p->flash->dbg, "<%d> program EFA word [%d]: %08"PRIX64" to %08X\n",
 		p->n, size, value, p->flash->offset + offset);
-	if (efa_offset + size > p->flash->efa_size) {
-		flash_error_part(p, "[EFA] Unknown write addr %08X", p->flash->offset + offset);
-		exit(1);
+	if (!blk || efa_offset + size > p->flash->efa_size) {
+		DEBUG_GUEST_ERROR(&p->flash->dbg, "<%d> EFA program outside EFA: %08X\n", p->n, p->flash->offset + offset);
+		flash_sequence_error(p);
+		return;
 	}
 	if (blk->locked) {
 		p->status |= FLASH_STATUS_BLOCK_LOCKED;
@@ -513,8 +523,10 @@ static void flash_block_erase(pmb887x_flash_part_t *p, uint32_t offset) {
 	DEBUG_LOG(&p->flash->dbg, "<%d> confirm erase block %08X...%08X (sector: %08X)\n", p->n, p->flash->offset + base,
 		p->flash->offset + base + sector_size - 1, sector_size);
 	if ((offset & mask) != (p->cmd_addr & mask)) {
-		flash_error_part(p, "erase sector mismatch: %08X != %08X", p->flash->offset + offset, p->flash->offset + p->cmd_addr);
-		exit(1);
+		DEBUG_GUEST_ERROR(&p->flash->dbg, "<%d> erase confirm at %08X, setup at %08X\n", p->n,
+			p->flash->offset + offset, p->flash->offset + p->cmd_addr);
+		flash_sequence_error(p);
+		return;
 	}
 	if (blk->locked) {
 		p->status |= FLASH_STATUS_BLOCK_LOCKED;
@@ -554,10 +566,7 @@ static bool flash_buffer_address_in_block(pmb887x_flash_part_t *p, uint32_t offs
 static void flash_buffer_abort(pmb887x_flash_part_t *p, uint32_t offset) {
 	DEBUG_LOG(&p->flash->dbg, "<%d> abort buffered program at %08X (setup at %08X)\n", p->n, p->flash->offset + offset,
 		p->flash->offset + p->cmd_addr);
-	flash_buffer_clear(p);
-	p->cmd = 0x70;
-	p->wcycle = 0;
-	p->status |= FLASH_STATUS_READY | FLASH_STATUS_SEQUENCE_ERROR;
+	flash_sequence_error(p);
 }
 
 static void flash_buffer_add(pmb887x_flash_part_t *p, uint32_t offset, uint64_t value, uint32_t size) {
@@ -656,8 +665,9 @@ static uint64_t flash_io_read(void *opaque, hwaddr part_offset, uint32_t size) {
 			break;
 
 		default:
-			flash_error_part(p, "not implemented read for command %02X [addr: %08"PRIX64"]", p->cmd, offset);
-			exit(1);
+			DEBUG_UNIMP(&p->flash->dbg, "<%d> read in command %02X mode at %08"PRIX64"\n", p->n, p->cmd,
+				p->flash->offset + offset);
+			break;
 	}
 	
 	return value;
@@ -797,11 +807,9 @@ static void flash_io_write(void *opaque, hwaddr part_offset, uint64_t value, uin
 				break;
 
 			default:
-				DEBUG_LOG(&p->flash->dbg, "<%d> cmd unknown (%02"PRIX64") at %08"PRIX64"\n",
+				DEBUG_UNIMP(&p->flash->dbg, "<%d> command %02"PRIX64" at %08"PRIX64"\n",
 					p->n, value, p->flash->offset + offset);
 				flash_reset(p);
-				// flash_error_part(p, "cmd unknown (%02"PRIX64") at %08"PRIX64"", value, p->flash->offset + offset);
-				// exit(1);
 				break;
 		}
 	} else if (p->wcycle == 1) {
@@ -909,8 +917,9 @@ static void flash_io_write(void *opaque, hwaddr part_offset, uint64_t value, uin
 	}
 	
 	if (!valid_command) {
-		flash_error_part(p, "not implemented %d cycle for command %02X [addr: %08"PRIX64", value: %08"PRIX64"]", p->wcycle, p->cmd, p->flash->offset + offset, value);
-		exit(1);
+		DEBUG_UNIMP(&p->flash->dbg, "<%d> command %02X cycle %d: %08"PRIX64" at %08"PRIX64"\n", p->n, p->cmd,
+			p->wcycle, value, p->flash->offset + offset);
+		flash_sequence_error(p);
 	}
 
 	flash_unmap_inactive_read_array(p);
