@@ -15,7 +15,7 @@
 #include "hw/arm/pmb887x/gen/cpu_regs.h"
 #include "hw/arm/pmb887x/gen/cpu_meta.h"
 #include "hw/arm/pmb887x/mod.h"
-#include "hw/arm/pmb887x/fifo.h"
+#include "qemu/fifo32.h"
 
 #define TYPE_PMB887X_USART	"pmb887x-usart"
 #define PMB887X_USART(obj)	OBJECT_CHECK(pmb887x_usart_t, (obj), TYPE_PMB887X_USART)
@@ -63,19 +63,19 @@ struct pmb887x_usart_t {
 	guint watch_tag;
 
 	// FIFO enabled
-	pmb887x_fifo16_t tx_fifo_buffered;
-	pmb887x_fifo16_t rx_fifo_buffered;
+	Fifo32 tx_fifo_buffered;
+	Fifo32 rx_fifo_buffered;
 
 	// FIFO disabled
-	pmb887x_fifo16_t tx_fifo_single;
-	pmb887x_fifo16_t rx_fifo_single;
+	Fifo32 tx_fifo_single;
+	Fifo32 rx_fifo_single;
 
 	// Pending frame to transmit
-	pmb887x_fifo16_t tx_buffer;
+	Fifo32 tx_buffer;
 
 	// Pointer to current FIFO
-	pmb887x_fifo16_t *rx_fifo;
-	pmb887x_fifo16_t *tx_fifo;
+	Fifo32 *rx_fifo;
+	Fifo32 *tx_fifo;
 
 	int ris_read_count;
 
@@ -173,11 +173,11 @@ static void usart_rx_fifo_config(pmb887x_usart_t *p, uint32_t value) {
 	bool new_fifo_enabled = (value & USART_RXFCON_RXFEN) != 0;
 	if (old_fifo_enabled != new_fifo_enabled) {
 		p->rx_fifo = new_fifo_enabled ? &p->rx_fifo_buffered : &p->rx_fifo_single;
-		pmb887x_fifo_reset(p->rx_fifo);
+		fifo32_reset(p->rx_fifo);
 	}
 	p->rxfcon = value;
 	usart_update_state(p);
-	if (pmb887x_clc_is_enabled(&p->clc) && !pmb887x_fifo_is_full(p->rx_fifo))
+	if (pmb887x_clc_is_enabled(&p->clc) && !fifo32_is_full(p->rx_fifo))
 		usart_schedule_accept_input(p);
 }
 
@@ -186,7 +186,7 @@ static void usart_tx_fifo_config(pmb887x_usart_t *p, uint32_t value) {
 	bool new_fifo_enabled = (value & USART_TXFCON_TXFEN) != 0;
 	if (old_fifo_enabled != new_fifo_enabled) {
 		p->tx_fifo = new_fifo_enabled ? &p->tx_fifo_buffered : &p->tx_fifo_single;
-		pmb887x_fifo_reset(p->tx_fifo);
+		fifo32_reset(p->tx_fifo);
 	}
 
 	bool old_transparent_mode = (p->txfcon & USART_TXFCON_TXTMEN) != 0 && old_fifo_enabled;
@@ -201,12 +201,12 @@ static void usart_tx_fifo_config(pmb887x_usart_t *p, uint32_t value) {
 static bool usart_tb_irq(pmb887x_usart_t *p) {
 	if (usart_is_tx_fifo_enabled(p)) {
 		if ((p->txfcon & USART_TXFCON_TXTMEN))
-			return !pmb887x_fifo_is_full(p->tx_fifo);
+			return !fifo32_is_full(p->tx_fifo);
 		uint32_t tx_level = (p->txfcon & USART_TXFCON_TXFITL) >> USART_TXFCON_TXFITL_SHIFT;
 		tx_level = MAX(1, MIN(USART_FIFO_SIZE, tx_level));
-		return pmb887x_fifo_count(p->tx_fifo) <= tx_level;
+		return fifo32_num_used(p->tx_fifo) <= tx_level;
 	}
-	return pmb887x_fifo_is_empty(p->tx_fifo);
+	return fifo32_is_empty(p->tx_fifo);
 }
 
 static bool usart_tx_irq(pmb887x_usart_t *p) {
@@ -215,24 +215,24 @@ static bool usart_tx_irq(pmb887x_usart_t *p) {
 			return true;
 		uint32_t tx_level = (p->txfcon & USART_TXFCON_TXFITL) >> USART_TXFCON_TXFITL_SHIFT;
 		tx_level = MAX(1, MIN(USART_FIFO_SIZE, tx_level));
-		return pmb887x_fifo_count(p->tx_fifo) <= tx_level;
+		return fifo32_num_used(p->tx_fifo) <= tx_level;
 	}
-	return pmb887x_fifo_is_empty(p->tx_fifo);
+	return fifo32_is_empty(p->tx_fifo);
 }
 
 static bool usart_rx_irq(pmb887x_usart_t *p) {
 	if (usart_is_rx_fifo_enabled(p)) {
 		if ((p->rxfcon & USART_RXFCON_RXTMEN))
-			return !pmb887x_fifo_is_empty(p->rx_fifo);
+			return !fifo32_is_empty(p->rx_fifo);
 		uint32_t rx_level = (p->rxfcon & USART_RXFCON_RXFITL) >> USART_RXFCON_RXFITL_SHIFT;
 		rx_level = MAX(1, MIN(USART_FIFO_SIZE, rx_level));
-		return pmb887x_fifo_count(p->rx_fifo) >= rx_level;
+		return fifo32_num_used(p->rx_fifo) >= rx_level;
 	}
-	return !pmb887x_fifo_is_empty(p->rx_fifo);
+	return !fifo32_is_empty(p->rx_fifo);
 }
 
 static void usart_handle_dma(pmb887x_usart_t *p) {
-	bool tx_request = !p->dmac_tx_clr && (p->dma_control & USART_DMAE_TX) && pmb887x_fifo_is_empty(p->tx_fifo);
+	bool tx_request = !p->dmac_tx_clr && (p->dma_control & USART_DMAE_TX) && fifo32_is_empty(p->tx_fifo);
 	bool rx_request = !p->dmac_rx_clr && (p->dma_control & USART_DMAE_RX) && usart_rx_irq(p);
 
 	qemu_set_irq(p->dmac_tx_breq, tx_request);
@@ -281,10 +281,10 @@ static bool usart_rts_is_active(pmb887x_usart_t *p) {
 	if ((p->fccon & USART_FCCON_RTSEN) == 0)
 		return (p->fccon & USART_FCCON_RTS) != 0;
 	if (!usart_is_rx_fifo_enabled(p))
-		return pmb887x_fifo_is_empty(p->rx_fifo);
+		return fifo32_is_empty(p->rx_fifo);
 
 	uint32_t trigger = (p->fccon & USART_FCCON_RTS_TRIGGER) >> USART_FCCON_RTS_TRIGGER_SHIFT;
-	return pmb887x_fifo_count(p->rx_fifo) < trigger;
+	return fifo32_num_used(p->rx_fifo) < trigger;
 }
 
 static bool usart_cts_is_active(pmb887x_usart_t *p) {
@@ -316,30 +316,30 @@ static void usart_flow_control_update(pmb887x_usart_t *p) {
 		pmb887x_srb_set_isr(&p->srb, USART_ISR_CTS);
 
 	bool can_start = pmb887x_clc_is_enabled(&p->clc) && usart_cts_allows_transmit(p);
-	if (can_start && !p->transfer_pending && !pmb887x_fifo_is_empty(p->tx_fifo))
+	if (can_start && !p->transfer_pending && !fifo32_is_empty(p->tx_fifo))
 		usart_schedule_transmit(p);
 }
 
 static void usart_update_state(pmb887x_usart_t *p) {
 	if (usart_is_rx_fifo_enabled(p)) {
 		if ((p->rxfcon & USART_RXFCON_RXFFLU)) {
-			pmb887x_fifo_reset(p->rx_fifo);
+			fifo32_reset(p->rx_fifo);
 			p->rxfcon &= ~USART_RXFCON_RXFFLU;
 		}
 	}
 
 	if (usart_is_tx_fifo_enabled(p)) {
 		if ((p->txfcon & USART_TXFCON_TXFFLU)) {
-			pmb887x_fifo_reset(p->tx_fifo);
+			fifo32_reset(p->tx_fifo);
 			p->txfcon &= ~USART_TXFCON_TXFFLU;
 			pmb887x_srb_set_isr(&p->srb, USART_ISR_TB);
 		}
 	}
 
 	if (!pmb887x_clc_is_enabled(&p->clc)) {
-		pmb887x_fifo_reset(&p->tx_buffer);
-		pmb887x_fifo_reset(p->tx_fifo);
-		pmb887x_fifo_reset(p->rx_fifo);
+		fifo32_reset(&p->tx_buffer);
+		fifo32_reset(p->tx_fifo);
+		fifo32_reset(p->rx_fifo);
 		timer_del(p->tmo_timer);
 
 		if (p->transfer_pending) {
@@ -399,7 +399,7 @@ static int usart_can_receive(void *opaque) {
 		return 1;
 	if (timer_pending(p->rx_timer))
 		return 0;
-	return MIN(1, pmb887x_fifo_free_count(p->rx_fifo));
+	return MIN(1, fifo32_num_free(p->rx_fifo));
 }
 
 static bool usart_autobaud_receive(pmb887x_usart_t *p, uint8_t value) {
@@ -449,12 +449,12 @@ static bool usart_autobaud_receive(pmb887x_usart_t *p, uint8_t value) {
 }
 
 static void usart_receive_word(pmb887x_usart_t *p, uint16_t value) {
-	if (pmb887x_fifo_is_full(p->rx_fifo)) {
-		pmb887x_fifo16_replace_last(p->rx_fifo, value);
+	if (fifo32_is_full(p->rx_fifo)) {
+		fifo32_replace_last(p->rx_fifo, value);
 		p->con |= USART_CON_OE;
 		pmb887x_srb_set_isr(&p->srb, USART_ISR_RX | USART_ISR_ERR);
 	} else {
-		pmb887x_fifo16_push(p->rx_fifo, value);
+		fifo32_push(p->rx_fifo, value);
 	}
 }
 
@@ -500,8 +500,8 @@ static void usart_schedule_transmit(pmb887x_usart_t *p) {
 	if (!usart_cts_allows_transmit(p))
 		return;
 
-	uint16_t word = pmb887x_fifo16_pop(p->tx_fifo);
-	pmb887x_fifo16_push(&p->tx_buffer, word);
+	uint16_t word = fifo32_pop(p->tx_fifo);
+	fifo32_push(&p->tx_buffer, word);
 	p->ris_read_count = 0;
 	p->transfer_pending = true;
 	int64_t frame_time_ns = usart_baud_ticks_to_ns(p, usart_frame_bits(p));
@@ -549,21 +549,20 @@ static void usart_transmit_fifo(pmb887x_usart_t *p) {
 	p->transfer_pending = false;
 	p->ris_read_count = 0;
 
-	uint16_t buffer[USART_FIFO_SIZE * 2] = { };
+	uint32_t buffer[USART_FIFO_SIZE * 2] = { };
 	int buffer_size = 0;
 
 	// Next frame to transmit
-	if (!pmb887x_fifo_is_empty(&p->tx_buffer)) {
-		buffer[0] = pmb887x_fifo16_pop(&p->tx_buffer);
+	if (!fifo32_is_empty(&p->tx_buffer)) {
+		buffer[0] = fifo32_pop(&p->tx_buffer);
 		buffer_size++;
 	}
 
 #ifdef USART_SEND_FULL_FIFO
 	// Also, we can send more data from FIFO
-	if ((p->con & USART_CON_LB) == 0 && !pmb887x_fifo_is_empty(p->tx_fifo)) {
-		int size = pmb887x_fifo_count(p->tx_fifo);
-		pmb887x_fifo16_read(p->tx_fifo, buffer + buffer_size, size);
-		buffer_size += size;
+	if ((p->con & USART_CON_LB) == 0) {
+		while (!fifo32_is_empty(p->tx_fifo))
+			buffer[buffer_size++] = fifo32_pop(p->tx_fifo);
 	}
 #endif
 
@@ -593,14 +592,14 @@ static void usart_transmit_fifo(pmb887x_usart_t *p) {
 	if (transmitted < buffer_size) {
 		p->watch_tag = qemu_chr_fe_add_watch(&p->chr, G_IO_OUT | G_IO_HUP, usart_transmit_fifo_delayed, p);
 		if (p->watch_tag) {
-			pmb887x_fifo16_push(&p->tx_buffer, buffer[transmitted]);
+			fifo32_push(&p->tx_buffer, buffer[transmitted]);
 			if (transmitted + 1 < buffer_size)
-				pmb887x_fifo16_write(p->tx_fifo, buffer + transmitted + 1, buffer_size - transmitted - 1);
+				fifo32_push_all(p->tx_fifo, buffer + transmitted + 1, buffer_size - transmitted - 1);
 			p->transfer_pending = true;
 			p->ris_read_count = 0;
 		} else {
 			// QEMU char backend is not connected, data is lost
-			pmb887x_fifo_reset(p->tx_fifo);
+			fifo32_reset(p->tx_fifo);
 			transmitted = buffer_size;
 		}
 	}
@@ -615,15 +614,15 @@ static void usart_transmit_fifo(pmb887x_usart_t *p) {
 	}
 
 	// If some data is still in the buffer, schedule transmission
-	if (!p->transfer_pending && !pmb887x_fifo_is_empty(p->tx_fifo))
+	if (!p->transfer_pending && !fifo32_is_empty(p->tx_fifo))
 		usart_schedule_transmit(p);
 }
 
 static void usart_write_txb(pmb887x_usart_t *p, uint16_t value) {
 	p->txb = (value & 0x1FF);
 
-	if (pmb887x_fifo_is_full(p->tx_fifo)) {
-		pmb887x_fifo16_replace_last(p->tx_fifo, p->txb);
+	if (fifo32_is_full(p->tx_fifo)) {
+		fifo32_replace_last(p->tx_fifo, p->txb);
 		if (usart_is_tx_fifo_enabled(p)) {
 			p->con |= USART_CON_OE;
 			pmb887x_srb_set_isr(&p->srb, USART_ISR_ERR);
@@ -631,7 +630,7 @@ static void usart_write_txb(pmb887x_usart_t *p, uint16_t value) {
 		return;
 	}
 
-	pmb887x_fifo16_push(p->tx_fifo, p->txb);
+	fifo32_push(p->tx_fifo, p->txb);
 
 	if (p->transfer_pending) {
 		if (usart_tb_irq(p))
@@ -685,13 +684,13 @@ static uint64_t usart_io_read(void *opaque, hwaddr haddr, unsigned size) {
 			break;
 
 		case USART_RXB:
-			if (!pmb887x_fifo_is_empty(p->rx_fifo)) {
-				bool is_full = pmb887x_fifo_is_full(p->rx_fifo);
-				value = pmb887x_fifo16_pop(p->rx_fifo);
+			if (!fifo32_is_empty(p->rx_fifo)) {
+				bool is_full = fifo32_is_full(p->rx_fifo);
+				value = fifo32_pop(p->rx_fifo);
 				usart_flow_control_update(p);
 				if (is_full)
 					usart_schedule_accept_input(p);
-				if ((p->rxfcon & USART_RXFCON_RXTMEN) && !pmb887x_fifo_is_empty(p->rx_fifo))
+				if ((p->rxfcon & USART_RXFCON_RXTMEN) && !fifo32_is_empty(p->rx_fifo))
 					pmb887x_srb_set_isr(&p->srb, USART_ISR_RX);
 			} else {
 				pmb887x_srb_set_isr(&p->srb, USART_ISR_ERR);
@@ -716,10 +715,10 @@ static uint64_t usart_io_read(void *opaque, hwaddr haddr, unsigned size) {
 
 		case USART_FSTAT:
 			if (usart_is_tx_fifo_enabled(p))
-				value |= pmb887x_fifo_count(p->tx_fifo) << USART_FSTAT_TXFFL_SHIFT;
+				value |= fifo32_num_used(p->tx_fifo) << USART_FSTAT_TXFFL_SHIFT;
 
 			if (usart_is_rx_fifo_enabled(p))
-				value |= pmb887x_fifo_count(p->rx_fifo) << USART_FSTAT_RXFFL_SHIFT;
+				value |= fifo32_num_used(p->rx_fifo) << USART_FSTAT_RXFFL_SHIFT;
 			break;
 
 		case USART_WHBCON:
@@ -980,13 +979,13 @@ static void usart_realize(DeviceState *dev, Error **errp) {
 		}
 	}
 	
-	pmb887x_fifo16_init(&p->tx_fifo_buffered, USART_FIFO_SIZE);
-	pmb887x_fifo16_init(&p->rx_fifo_buffered, USART_FIFO_SIZE);
+	fifo32_create(&p->tx_fifo_buffered, USART_FIFO_SIZE);
+	fifo32_create(&p->rx_fifo_buffered, USART_FIFO_SIZE);
 	
-	pmb887x_fifo16_init(&p->tx_fifo_single, 1);
-	pmb887x_fifo16_init(&p->rx_fifo_single, 1);
+	fifo32_create(&p->tx_fifo_single, 1);
+	fifo32_create(&p->rx_fifo_single, 1);
 
-	pmb887x_fifo16_init(&p->tx_buffer, 1);
+	fifo32_create(&p->tx_buffer, 1);
 
 	pmb887x_srb_init(&p->srb, p->irq, ARRAY_SIZE(p->irq));
 
@@ -1016,11 +1015,11 @@ static void usart_reset(DeviceState *dev) {
 	pmb887x_clc_set(&p->clc, MOD_CLC_DISR);
 	pmb887x_srb_reset(&p->srb);
 
-	pmb887x_fifo_reset(&p->tx_fifo_buffered);
-	pmb887x_fifo_reset(&p->rx_fifo_buffered);
-	pmb887x_fifo_reset(&p->tx_fifo_single);
-	pmb887x_fifo_reset(&p->rx_fifo_single);
-	pmb887x_fifo_reset(&p->tx_buffer);
+	fifo32_reset(&p->tx_fifo_buffered);
+	fifo32_reset(&p->rx_fifo_buffered);
+	fifo32_reset(&p->tx_fifo_single);
+	fifo32_reset(&p->rx_fifo_single);
+	fifo32_reset(&p->tx_buffer);
 
 	p->transfer_pending = false;
 	p->autobaud_pending = false;

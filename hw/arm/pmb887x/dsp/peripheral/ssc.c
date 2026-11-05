@@ -2,7 +2,7 @@
 #include "qemu/bitops.h"
 
 #include "hw/arm/pmb887x/dsp/peripheral/internal.h"
-#include "hw/arm/pmb887x/fifo.h"
+#include "qemu/fifo32.h"
 #include "hw/arm/pmb887x/gen/dsp.h"
 
 #define SSC_FIFO_SIZE		32
@@ -35,8 +35,8 @@ struct ssc_state_t {
 	size_t transfer_cycles_total;
 	size_t start_cycles;
 	bool transfer_active;
-	pmb887x_fifo16_t receive_fifo;
-	pmb887x_fifo16_t transmit_fifo;
+	Fifo32 receive_fifo;
+	Fifo32 transmit_fifo;
 	dsp_device_t *interrupt;
 	dsp_host_t host;
 };
@@ -66,7 +66,7 @@ static void ssc_update_receive_request(ssc_state_t *state) {
 	if (level == 0)
 		level = 1;
 
-	if (pmb887x_fifo_count(&state->receive_fifo) >= level)
+	if (fifo32_num_used(&state->receive_fifo) >= level)
 		ssc_set_interrupts(state, TEAK_INT_FINTB0_SSC1RX);
 }
 
@@ -79,31 +79,31 @@ static void ssc_update_transmit_request(ssc_state_t *state) {
 		level = (state->transmit_fifo_control & TEAK_SSC_TXFCON_ITL) >> TEAK_SSC_TXFCON_ITL_SHIFT;
 
 	transparent = (state->transmit_fifo_control & TEAK_SSC_TXFCON_TMEN) != 0;
-	below_threshold = pmb887x_fifo_count(&state->transmit_fifo) <= level;
+	below_threshold = fifo32_num_used(&state->transmit_fifo) <= level;
 	if (transparent || below_threshold)
 		ssc_set_interrupts(state, TEAK_INT_FINTB0_SSC1TX);
 }
 
 static void ssc_reset_fifo(ssc_state_t *state, ssc_fifo_t fifo) {
 	if (fifo == SSC_FIFO_RX) {
-		pmb887x_fifo_reset(&state->receive_fifo);
+		fifo32_reset(&state->receive_fifo);
 	} else {
-		pmb887x_fifo_reset(&state->transmit_fifo);
+		fifo32_reset(&state->transmit_fifo);
 	}
 }
 
 static void ssc_push_receive(ssc_state_t *state, uint16_t value) {
 	size_t limit = ssc_fifo_limit(state, SSC_FIFO_RX);
 
-	if (pmb887x_fifo_count(&state->receive_fifo) >= limit) {
+	if (fifo32_num_used(&state->receive_fifo) >= limit) {
 		if ((state->control & TEAK_SSC_CON_REN) != 0) {
 			state->status |= TEAK_SSC_CON_RE;
 			ssc_set_interrupts(state, TEAK_INT_FINTB0_SSC1ERR);
 		}
-		pmb887x_fifo16_pop(&state->receive_fifo);
+		fifo32_pop(&state->receive_fifo);
 	}
 
-	pmb887x_fifo16_push(&state->receive_fifo, value & state->mask);
+	fifo32_push(&state->receive_fifo, value & state->mask);
 	ssc_update_receive_request(state);
 }
 
@@ -132,10 +132,10 @@ static uint16_t ssc_transfer(ssc_state_t *state, uint16_t transmitted) {
 static void ssc_start_transfer(ssc_state_t *state) {
 	if (state->transfer_active || !ssc_running(state))
 		return;
-	if (pmb887x_fifo_is_empty(&state->transmit_fifo))
+	if (fifo32_is_empty(&state->transmit_fifo))
 		return;
 
-	state->transfer_data = pmb887x_fifo16_pop(&state->transmit_fifo);
+	state->transfer_data = fifo32_pop(&state->transmit_fifo);
 	state->transfer_cycles_total = state->bits * 2U * ((size_t) state->baud_rate + 1U);
 	state->transfer_cycles = state->transfer_cycles_total;
 	state->bit_count = 0;
@@ -159,7 +159,7 @@ static void ssc_complete_transfer(ssc_state_t *state) {
 static uint16_t ssc_read_receive(ssc_state_t *state) {
 	uint16_t value;
 
-	if (pmb887x_fifo_is_empty(&state->receive_fifo)) {
+	if (fifo32_is_empty(&state->receive_fifo)) {
 		if ((state->control & TEAK_SSC_CON_REN) != 0) {
 			state->status |= TEAK_SSC_CON_RE;
 			ssc_set_interrupts(state, TEAK_INT_FINTB0_SSC1ERR);
@@ -167,26 +167,26 @@ static uint16_t ssc_read_receive(ssc_state_t *state) {
 		return 0;
 	}
 
-	value = pmb887x_fifo16_pop(&state->receive_fifo);
+	value = fifo32_pop(&state->receive_fifo);
 	ssc_update_receive_request(state);
 	return value;
 }
 
 static void ssc_write_transmit(ssc_state_t *state, uint16_t value) {
 	size_t limit = ssc_fifo_limit(state, SSC_FIFO_TX);
-	bool idle = !state->transfer_active && pmb887x_fifo_is_empty(&state->transmit_fifo);
+	bool idle = !state->transfer_active && fifo32_is_empty(&state->transmit_fifo);
 
 	state->transmit_data = value & state->mask;
 
-	if (pmb887x_fifo_count(&state->transmit_fifo) >= limit) {
+	if (fifo32_num_used(&state->transmit_fifo) >= limit) {
 		if ((state->control & TEAK_SSC_CON_TEN) != 0) {
 			state->status |= TEAK_SSC_CON_TE;
 			ssc_set_interrupts(state, TEAK_INT_FINTB0_SSC1ERR);
 		}
-		pmb887x_fifo16_pop(&state->transmit_fifo);
+		fifo32_pop(&state->transmit_fifo);
 	}
 
-	pmb887x_fifo16_push(&state->transmit_fifo, state->transmit_data);
+	fifo32_push(&state->transmit_fifo, state->transmit_data);
 
 	if (idle)
 		state->start_cycles = 2U * ((size_t) state->baud_rate + 1U);
@@ -194,8 +194,8 @@ static void ssc_write_transmit(ssc_state_t *state, uint16_t value) {
 
 static void ssc_destroy(dsp_device_t *device) {
 	ssc_state_t *state = device->state;
-	pmb887x_fifo16_free(&state->receive_fifo);
-	pmb887x_fifo16_free(&state->transmit_fifo);
+	fifo32_destroy(&state->receive_fifo);
+	fifo32_destroy(&state->transmit_fifo);
 	g_free(state);
 }
 
@@ -203,8 +203,8 @@ static void ssc_reset(dsp_device_t *device) {
 	ssc_state_t *state = device->state;
 	dsp_device_t *interrupt = state->interrupt;
 	dsp_host_t host = state->host;
-	pmb887x_fifo16_t receive_fifo = state->receive_fifo;
-	pmb887x_fifo16_t transmit_fifo = state->transmit_fifo;
+	Fifo32 receive_fifo = state->receive_fifo;
+	Fifo32 transmit_fifo = state->transmit_fifo;
 
 	memset(state, 0, sizeof(*state));
 	state->interrupt = interrupt;
@@ -213,8 +213,8 @@ static void ssc_reset(dsp_device_t *device) {
 	state->transmit_fifo = transmit_fifo;
 	state->receive_fifo_control = 0x0100;
 	state->transmit_fifo_control = 0x0100;
-	pmb887x_fifo_reset(&state->receive_fifo);
-	pmb887x_fifo_reset(&state->transmit_fifo);
+	fifo32_reset(&state->receive_fifo);
+	fifo32_reset(&state->transmit_fifo);
 }
 
 static bool ssc_read(dsp_device_t *device, uint16_t offset, uint32_t pc, uint16_t *value) {
@@ -253,9 +253,9 @@ static bool ssc_read(dsp_device_t *device, uint16_t offset, uint32_t pc, uint16_
 		case TEAK_SSC_FSTAT:
 			*value = 0;
 			if ((state->receive_fifo_control & TEAK_SSC_RXFCON_EN) != 0)
-				*value |= pmb887x_fifo_count(&state->receive_fifo) << TEAK_SSC_FSTAT_RXFFL_SHIFT;
+				*value |= fifo32_num_used(&state->receive_fifo) << TEAK_SSC_FSTAT_RXFFL_SHIFT;
 			if ((state->transmit_fifo_control & TEAK_SSC_TXFCON_EN) != 0)
-				*value |= pmb887x_fifo_count(&state->transmit_fifo) << TEAK_SSC_FSTAT_TXFFL_SHIFT;
+				*value |= fifo32_num_used(&state->transmit_fifo) << TEAK_SSC_FSTAT_TXFFL_SHIFT;
 			break;
 
 		case TEAK_SSC_BR:
@@ -363,8 +363,8 @@ dsp_device_t *ssc_create(
 	ssc_state_t *state = g_new0(ssc_state_t, 1);
 	state->interrupt = interrupt;
 	state->host = *host;
-	pmb887x_fifo16_init(&state->receive_fifo, SSC_FIFO_SIZE);
-	pmb887x_fifo16_init(&state->transmit_fifo, SSC_FIFO_SIZE);
+	fifo32_create(&state->receive_fifo, SSC_FIFO_SIZE);
+	fifo32_create(&state->transmit_fifo, SSC_FIFO_SIZE);
 	return dsp_device_create(config, parent, &ssc_ops, state);
 }
 
@@ -400,5 +400,5 @@ void ssc_advance(dsp_device_t *device, size_t cycles) {
 
 bool ssc_is_active(const dsp_device_t *device) {
 	const ssc_state_t *state = device->state;
-	return ssc_running(state) && (state->transfer_active || state->transmit_fifo.base.count != 0);
+	return ssc_running(state) && (state->transfer_active || !fifo32_is_empty(&state->transmit_fifo));
 }

@@ -307,9 +307,9 @@ static void lcd_handle_command(pmb887x_lcd_t *lcd, uint8_t value) {
 		lcd->wr_state = LCD_WR_STATE_CMD;
 	}
 
-	pmb887x_fifo8_push(&lcd->fifo, value);
+	fifo8_push(&lcd->fifo, value);
 
-	if (pmb887x_fifo_count(&lcd->fifo) >= lcd->k->cmd_width) {
+	if (fifo8_num_used(&lcd->fifo) >= lcd->k->cmd_width) {
 		uint32_t cmd = lcd_read_from_fifo(lcd, lcd->k->cmd_width);
 		lcd->wr_state = LCD_WR_STATE_PARAM;
 		lcd->current_cmd = cmd;
@@ -333,12 +333,12 @@ static void lcd_handle_param(pmb887x_lcd_t *lcd, uint8_t value) {
 		// Unexpected data
 		DEBUG_LOG(&lcd->dbg, "Unexpected PARAM: %02X (command=%02X)\n", value, lcd->current_cmd);
 	} else if (lcd->wr_state == LCD_WR_STATE_PARAM) {
-		pmb887x_fifo8_push(&lcd->fifo, value);
+		fifo8_push(&lcd->fifo, value);
 
-		if (pmb887x_fifo_count(&lcd->fifo) >= (lcd->k->param_width * lcd->current_cmd_params)) {
+		if (fifo8_num_used(&lcd->fifo) >= (lcd->k->param_width * lcd->current_cmd_params)) {
 			uint32_t tmp_params[LCD_CMD_MAX_PARAMS];
 			uint32_t tmp_params_n = 0;
-			while (pmb887x_fifo_count(&lcd->fifo) >= lcd->k->param_width) {
+			while (fifo8_num_used(&lcd->fifo) >= lcd->k->param_width) {
 				tmp_params[tmp_params_n++] = lcd_read_from_fifo(lcd, lcd->k->param_width);
 				// DEBUG_LOG(&lcd->dbg, "PARAM: %04X\n", tmp_params[tmp_params_n - 1]);
 			}
@@ -365,7 +365,7 @@ static const char *lcd_wr_state_name(enum pmb887x_lcd_wr_state_t state) {
 
 static void lcd_write_control_byte(pmb887x_lcd_t *lcd, uint8_t value) {
 	DEBUG_LOG(&lcd->dbg, "WR %02X cd=%d [%s] fifo=%d\n", value, lcd->cd, lcd_wr_state_name(lcd->wr_state),
-		pmb887x_fifo_count(&lcd->fifo));
+		fifo8_num_used(&lcd->fifo));
 
 	if (lcd->k->direct_data_write) {
 		if (lcd->wr_state == LCD_WR_STATE_NONE || lcd->wr_state == LCD_WR_STATE_CMD) {
@@ -385,15 +385,15 @@ static void lcd_write_control_byte(pmb887x_lcd_t *lcd, uint8_t value) {
 static uint32_t lcd_read_from_fifo(pmb887x_lcd_t *lcd, uint32_t width) {
 	uint32_t value = 0;
 	for (int i = 0; i < width; i++)
-		value |= pmb887x_fifo8_pop(&lcd->fifo) << ((width - i - 1) * 8);
+		value |= fifo8_pop(&lcd->fifo) << ((width - i - 1) * 8);
 	return value;
 }
 
 static void lcd_clear_fifo(pmb887x_lcd_t *lcd) {
-	if (pmb887x_fifo_count(&lcd->fifo) > 0) {
+	if (fifo8_num_used(&lcd->fifo) > 0) {
 		g_autoptr(GString) buffer = g_string_new("");
-		while (pmb887x_fifo_count(&lcd->fifo) > 0) {
-			uint8_t byte = pmb887x_fifo8_pop(&lcd->fifo);
+		while (fifo8_num_used(&lcd->fifo) > 0) {
+			uint8_t byte = fifo8_pop(&lcd->fifo);
 			g_string_append_printf(buffer, " %02X", byte);
 		}
 		DEBUG_LOG(&lcd->dbg, "Ignored bytes:%s\n", buffer->str);
@@ -401,7 +401,7 @@ static void lcd_clear_fifo(pmb887x_lcd_t *lcd) {
 }
 
 static void lcd_reset_internal_state(pmb887x_lcd_t *lcd) {
-	pmb887x_fifo_reset(&lcd->fifo);
+	fifo8_reset(&lcd->fifo);
 	lcd->tmp_pixel = 0;
 	lcd->tmp_index = 0;
 	lcd->gram_read_dummy_bytes = 0;
@@ -628,7 +628,7 @@ static void lcd_handle_cd(void *opaque, int n, int level) {
 	bool new_cd = lcd->k->cd_polarity ? level == 1 : level == 0;
 	if (old_cd != new_cd)
 		DEBUG_LOG(&lcd->dbg, "CD %d -> %d [%s] fifo=%d\n", old_cd, new_cd, lcd_wr_state_name(lcd->wr_state),
-			pmb887x_fifo_count(&lcd->fifo));
+			fifo8_num_used(&lcd->fifo));
 	pmb887x_lcd_set_cd(lcd, new_cd);
 
 	if (lcd->reset_active)
@@ -689,7 +689,7 @@ static void lcd_realize(SSIPeripheral *d, Error **errp) {
 		return;
 	}
 
-	pmb887x_fifo8_init(&lcd->fifo, LCD_CMD_MAX_PARAMS);
+	fifo8_create(&lcd->fifo, LCD_CMD_MAX_PARAMS);
 
 	lcd->ram_queue = g_new(uint8_t, LCD_RAM_QUEUE_SIZE);
 	qemu_mutex_init(&lcd->ram_queue_lock);

@@ -1,10 +1,10 @@
 /*
  * Display Interface
  * */
-#include "hw/arm/pmb887x/fifo.h"
 #define PMB887X_DIF_DUMP_BIT_MUX	0 // print bit mux config
 
 #include "qemu/osdep.h"
+#include "qemu/fifo32.h"
 #include "hw/core/irq.h"
 #include "hw/core/hw-error.h"
 #include "hw/ssi/ssi.h"
@@ -136,8 +136,8 @@ struct pmb887x_dif_t {
 	pmb887x_srb_reg_t srb;
 	pmb887x_srb_ext_reg_t srb_err;
 
-	pmb887x_fifo32_t tx_fifo;
-	pmb887x_fifo32_t tx_csreg_fifo;
+	Fifo32 tx_fifo;
+	Fifo32 tx_csreg_fifo;
 	/* Stages already sent to the device but still on the parallel bus, oldest first. */
 	int64_t tx_bus_end_ps[FIFO_SIZE];
 	uint32_t tx_bus_first;
@@ -145,7 +145,7 @@ struct pmb887x_dif_t {
 	uint32_t tx_bus_words;
 	int64_t tx_bus_free_ps;
 	QEMUTimer *tx_bus_timer;
-	pmb887x_fifo32_t rx_fifo;
+	Fifo32 rx_fifo;
 	uint32_t tx_csreg;
 	bool is_tx_csreg_active;
 
@@ -271,7 +271,7 @@ static void dif_reset_tx_bus(pmb887x_dif_t *p) {
 }
 
 static uint32_t dif_get_tx_fifo_level(pmb887x_dif_t *p) {
-	return pmb887x_fifo_count(&p->tx_fifo) + p->tx_bus_count;
+	return fifo32_num_used(&p->tx_fifo) + p->tx_bus_count;
 }
 
 static bool dif_has_tx_fifo_free(pmb887x_dif_t *p, uint32_t stages) {
@@ -422,7 +422,7 @@ static void dif_tx_fifo_req(pmb887x_dif_t *p) {
 		return;
 
 	uint32_t tx_words_remaining = p->tx_words_remaining - MIN(p->tx_words_remaining,
-		pmb887x_fifo_count(&p->tx_fifo) * single_req_size);
+		fifo32_num_used(&p->tx_fifo) * single_req_size);
 	uint32_t pending_req_count = DIV_ROUND_UP(tx_words_remaining, single_req_size);
 
 	if (tx_words_remaining == 0)
@@ -516,7 +516,7 @@ static void dif_kernel_reset(pmb887x_dif_t *p, uint32_t new_state) {
 }
 
 static void dif_reset_rx_fifo(pmb887x_dif_t *p) {
-	pmb887x_fifo_reset(&p->rx_fifo);
+	fifo32_reset(&p->rx_fifo);
 	p->rx_words_in_fifo = 0;
 	p->rx_buffer = 0;
 	p->rx_buffer_word_count = 0;
@@ -571,8 +571,8 @@ static uint32_t dif_convert_color(pmb887x_dif_t *p, uint32_t value) {
 static void dif_rx_from_bus(pmb887x_dif_t *p);
 
 static void dif_tx_fifo_push(pmb887x_dif_t *p, uint32_t value) {
-	pmb887x_fifo32_push(&p->tx_fifo, value);
-	pmb887x_fifo32_push(&p->tx_csreg_fifo, p->csreg);
+	fifo32_push(&p->tx_fifo, value);
+	fifo32_push(&p->tx_csreg_fifo, p->csreg);
 }
 
 static void dif_fifo_write(pmb887x_dif_t *p, uint32_t value) {
@@ -584,7 +584,7 @@ static void dif_fifo_write(pmb887x_dif_t *p, uint32_t value) {
 	}
 
 	DEBUG_LOG(&p->dbg, "TXD %08X csreg=%02X run=%d state=%d fifo=%d\n", value, p->csreg, dif_is_running(p),
-		p->state, pmb887x_fifo_count(&p->tx_fifo));
+		p->state, fifo32_num_used(&p->tx_fifo));
 
 	dif_tx_fifo_push(p, value);
 	dif_schedule(p);
@@ -605,7 +605,7 @@ static bool dif_can_write_tx_block(pmb887x_dif_t *p, uint32_t count) {
 		return false;
 
 	uint32_t words_per_entry = 4 / dif_get_tx_align(p);
-	uint32_t queued_words = pmb887x_fifo_count(&p->tx_fifo) * words_per_entry;
+	uint32_t queued_words = fifo32_num_used(&p->tx_fifo) * words_per_entry;
 	return p->tx_words_remaining > queued_words + (count - 1) * words_per_entry;
 }
 
@@ -641,14 +641,14 @@ static bool dif_dma_write_block(
 }
 
 static void dif_fifo_read(pmb887x_dif_t *p, uint64_t *value) {
-	if (pmb887x_fifo_is_empty(&p->rx_fifo)) {
+	if (fifo32_is_empty(&p->rx_fifo)) {
 		DEBUG_LOG(&p->dbg, "RX FIFO underflow!\n");
 		pmb887x_srb_ext_set_isr(&p->srb_err, DIFv2_ERRIRQSS_RXFUFL);
 		dif_kernel_reset(p, DIF_STATE_NONE);
 		return;
 	}
 
-	*value = pmb887x_fifo32_pop(&p->rx_fifo);
+	*value = fifo32_pop(&p->rx_fifo);
 	p->rx_words_in_fifo -= MIN(p->rx_words_in_fifo, 4 / dif_get_rx_align(p));
 
 	if (p->rx_words_remaining != 0 || p->rx_words_in_fifo == 0)
@@ -718,7 +718,7 @@ static bool dif_push_rx_word(pmb887x_dif_t *p, uint16_t value) {
 	if (p->rx_buffer_word_count == 4 / align) {
 		uint32_t received_words = p->rx_buffer_word_count;
 
-		if (pmb887x_fifo_is_full(&p->rx_fifo)) {
+		if (fifo32_is_full(&p->rx_fifo)) {
 			DEBUG_LOG(&p->dbg, "RX FIFO overflow!\n");
 			pmb887x_srb_ext_set_isr(&p->srb_err, DIFv2_ERRIRQSS_RXFOFL);
 			dif_kernel_reset(p, DIF_STATE_NONE);
@@ -731,7 +731,7 @@ static bool dif_push_rx_word(pmb887x_dif_t *p, uint16_t value) {
 			p->rx_packet_words += received_words;
 		}
 		p->rx_words_in_fifo += received_words;
-		pmb887x_fifo32_push(&p->rx_fifo, p->rx_buffer);
+		fifo32_push(&p->rx_fifo, p->rx_buffer);
 		p->rx_buffer = 0;
 		p->rx_buffer_word_count = 0;
 	}
@@ -743,7 +743,7 @@ static bool dif_flush_rx_buffer(pmb887x_dif_t *p) {
 	if (p->rx_buffer_word_count != 0) {
 		uint32_t received_words = p->rx_buffer_word_count;
 
-		if (pmb887x_fifo_is_full(&p->rx_fifo)) {
+		if (fifo32_is_full(&p->rx_fifo)) {
 			DEBUG_LOG(&p->dbg, "RX FIFO overflow!\n");
 			pmb887x_srb_ext_set_isr(&p->srb_err, DIFv2_ERRIRQSS_RXFOFL);
 			dif_kernel_reset(p, DIF_STATE_NONE);
@@ -756,7 +756,7 @@ static bool dif_flush_rx_buffer(pmb887x_dif_t *p) {
 			p->rx_packet_words += received_words;
 		}
 		p->rx_words_in_fifo += received_words;
-		pmb887x_fifo32_push(&p->rx_fifo, p->rx_buffer);
+		fifo32_push(&p->rx_fifo, p->rx_buffer);
 		p->rx_buffer = 0;
 		p->rx_buffer_word_count = 0;
 	}
@@ -770,7 +770,7 @@ static void dif_rx_from_bus(pmb887x_dif_t *p) {
 
 	uint32_t words_per_stage = 4 / dif_get_rx_align(p);
 	uint32_t words_to_receive = MIN(p->rx_words_remaining, dif_get_rx_burst_size(p));
-	while (words_to_receive != 0 && !pmb887x_fifo_is_full(&p->rx_fifo)) {
+	while (words_to_receive != 0 && !fifo32_is_full(&p->rx_fifo)) {
 		uint32_t word_count = MIN(words_per_stage, p->rx_words_remaining);
 		word_count = MIN(word_count, words_to_receive);
 
@@ -904,9 +904,9 @@ static void dif_tx_from_fifo(pmb887x_dif_t *p) {
 	uint64_t bus_word_ps = dif_get_bus_word_ps(p);
 	uint32_t parallel_words[FIFO_SIZE * 4 * 4];
 	uint32_t parallel_word_count = 0;
-	while (pmb887x_fifo_count(&p->tx_fifo) > 0) {
-		uint32_t value = pmb887x_fifo32_pop(&p->tx_fifo);
-		uint32_t tx_csreg = pmb887x_fifo32_pop(&p->tx_csreg_fifo);
+	while (fifo32_num_used(&p->tx_fifo) > 0) {
+		uint32_t value = fifo32_pop(&p->tx_fifo);
+		uint32_t tx_csreg = fifo32_pop(&p->tx_csreg_fifo);
 		if ((p->perreg & DIFv2_PERREG_INBAND) != 0) {
 			uint32_t inband_csreg = dif_txd_control_to_csreg(value);
 
@@ -1009,7 +1009,7 @@ static void dif_work(pmb887x_dif_t *p) {
 		} else if (p->mrps_ctrl > 0) {
 			dif_start_rx(p);
 		} else if (dif_is_running(p) && !dif_is_serial(p)) {
-			if (!pmb887x_fifo_is_empty(&p->tx_fifo))
+			if (!fifo32_is_empty(&p->tx_fifo))
 				dif_tx_from_fifo(p);
 			dif_tx_fifo_req(p);
 		}
@@ -1247,7 +1247,7 @@ static uint64_t dif_io_read(void *opaque, hwaddr haddr, unsigned size) {
 			break;
 
 		case DIFv2_RXFFS_STAT:
-			value = pmb887x_fifo_count(&p->rx_fifo);
+			value = fifo32_num_used(&p->rx_fifo);
 			break;
 
 		case DIFv2_TXFIFO_CFG:
@@ -1332,8 +1332,8 @@ static void dif_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned si
 			}
 			if (!p->runctrl && (p->state == DIF_STATE_RX || p->state == DIF_STATE_TX)) {
 				dif_kernel_reset(p, DIF_STATE_NONE);
-				pmb887x_fifo_reset(&p->tx_fifo);
-				pmb887x_fifo_reset(&p->tx_csreg_fifo);
+				fifo32_reset(&p->tx_fifo);
+				fifo32_reset(&p->tx_csreg_fifo);
 				dif_reset_tx_bus(p);
 				dif_reset_rx_fifo(p);
 			}
@@ -1611,9 +1611,9 @@ static void dif_realize(DeviceState *dev, Error **errp) {
 
 	dif_update_gpio_state(p);
 
-	pmb887x_fifo32_init(&p->tx_fifo, FIFO_SIZE);
-	pmb887x_fifo32_init(&p->tx_csreg_fifo, FIFO_SIZE);
-	pmb887x_fifo32_init(&p->rx_fifo, FIFO_SIZE);
+	fifo32_create(&p->tx_fifo, FIFO_SIZE);
+	fifo32_create(&p->tx_csreg_fifo, FIFO_SIZE);
+	fifo32_create(&p->rx_fifo, FIFO_SIZE);
 	for (uint32_t i = 0; i < ARRAY_SIZE(p->bit_mux); i++) {
 		uint32_t reg_index = i / 6;
 		uint32_t shift = (i % 6) * 5;
@@ -1644,9 +1644,9 @@ static void dif_reset(DeviceState *dev) {
 	pmb887x_srb_ext_reset(&p->srb_err);
 	pmb887x_srb_ext_set_imsc(&p->srb_err, DIFv2_ERRIRQSM_RXFUFL | DIFv2_ERRIRQSM_RXFOFL |
 		DIFv2_ERRIRQSM_TXFOFL | DIFv2_ERRIRQSM_PHASE);
-	pmb887x_fifo_reset(&p->tx_fifo);
-	pmb887x_fifo_reset(&p->tx_csreg_fifo);
-	pmb887x_fifo_reset(&p->rx_fifo);
+	fifo32_reset(&p->tx_fifo);
+	fifo32_reset(&p->tx_csreg_fifo);
+	fifo32_reset(&p->rx_fifo);
 	dif_reset_tx_bus(p);
 
 	p->in_schedule = false;

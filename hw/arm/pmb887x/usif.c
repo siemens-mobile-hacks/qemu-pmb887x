@@ -11,7 +11,7 @@
 #include "hw/arm/pmb887x/gen/cpu_regs.h"
 #include "hw/arm/pmb887x/gen/cpu_meta.h"
 #include "hw/arm/pmb887x/mod.h"
-#include "hw/arm/pmb887x/fifo.h"
+#include "qemu/fifo32.h"
 
 #define TYPE_PMB887X_USIF	"pmb887x-usif"
 #define PMB887X_USIF(obj)	OBJECT_CHECK(pmb887x_usif_t, (obj), TYPE_PMB887X_USIF)
@@ -85,7 +85,7 @@ struct pmb887x_usif_t {
 	uint32_t rps_stat;
 	bool fco;
 
-	pmb887x_fifo32_t tx_fifo;
+	Fifo32 tx_fifo;
 	bool is_tx_busy;
 	bool is_tx_requested;
 	int64_t tx_char_end_ns;
@@ -93,7 +93,7 @@ struct pmb887x_usif_t {
 	uint32_t tx_packet_chars;
 	uint32_t tx_unwritten_chars;
 
-	pmb887x_fifo32_t rx_fifo;
+	Fifo32 rx_fifo;
 	bool is_rx_requested;
 	bool is_rx_packet_open;
 	uint32_t rx_mrps;
@@ -187,7 +187,7 @@ static void usif_tx_request(pmb887x_usif_t *p) {
 		return;
 
 	uint32_t burst_words = usif_tx_burst_words(p);
-	uint32_t free_words = pmb887x_fifo_free_count(&p->tx_fifo);
+	uint32_t free_words = fifo32_num_free(&p->tx_fifo);
 	uint32_t request;
 
 	if ((p->txfifo_cfg & USIF_TXFIFO_CFG_TXFC) == 0) {
@@ -214,7 +214,7 @@ static void usif_tx_request(pmb887x_usif_t *p) {
 }
 
 static uint32_t usif_rx_complete_words(pmb887x_usif_t *p) {
-	uint32_t words = pmb887x_fifo_count(&p->rx_fifo);
+	uint32_t words = fifo32_num_used(&p->rx_fifo);
 	bool is_word_open = p->is_rx_packet_open && p->rx_word_chars < usif_rx_chars_per_word(p);
 	return words - (is_word_open && words > 0 ? 1 : 0);
 }
@@ -236,7 +236,7 @@ static void usif_rx_request(pmb887x_usif_t *p) {
 			return;
 		request = USIF_RIS_RXBREQ;
 	} else {
-		uint32_t words = pmb887x_fifo_count(&p->rx_fifo);
+		uint32_t words = fifo32_num_used(&p->rx_fifo);
 		if (words == 0)
 			return;
 		if (words >= burst_words) {
@@ -275,20 +275,20 @@ static void usif_rx_end_packet(pmb887x_usif_t *p, bool is_timeout) {
 
 static void usif_rx_store_char(pmb887x_usif_t *p, uint32_t value) {
 	uint32_t chars_per_word = usif_rx_chars_per_word(p);
-	bool is_word_full = p->rx_word_chars >= chars_per_word || pmb887x_fifo_is_empty(&p->rx_fifo);
+	bool is_word_full = p->rx_word_chars >= chars_per_word || fifo32_is_empty(&p->rx_fifo);
 
 	if (is_word_full) {
-		if (pmb887x_fifo_is_full(&p->rx_fifo)) {
+		if (fifo32_is_full(&p->rx_fifo)) {
 			pmb887x_srb_ext_set_isr(&p->srb_err, USIF_ERRIRQSS_RXFOFL);
 			return;
 		}
 		p->rx_word = value;
 		p->rx_word_chars = 1;
-		pmb887x_fifo32_push(&p->rx_fifo, p->rx_word);
+		fifo32_push(&p->rx_fifo, p->rx_word);
 	} else {
 		p->rx_word |= value << (p->rx_word_chars * (32 / chars_per_word));
 		p->rx_word_chars++;
-		pmb887x_fifo32_replace_last(&p->rx_fifo, p->rx_word);
+		fifo32_replace_last(&p->rx_fifo, p->rx_word);
 	}
 	p->rx_packet_chars++;
 }
@@ -316,12 +316,12 @@ static uint32_t usif_rx_read(pmb887x_usif_t *p) {
 	if (!usif_is_running(p))
 		return 0;
 
-	if (pmb887x_fifo_is_empty(&p->rx_fifo)) {
+	if (fifo32_is_empty(&p->rx_fifo)) {
 		pmb887x_srb_ext_set_isr(&p->srb_err, USIF_ERRIRQSS_RXFUFL);
 		return 0;
 	}
 
-	uint32_t value = pmb887x_fifo32_pop(&p->rx_fifo);
+	uint32_t value = fifo32_pop(&p->rx_fifo);
 	usif_update_requests(p);
 	return value;
 }
@@ -336,7 +336,7 @@ static void usif_tx_load_packet(pmb887x_usif_t *p) {
 }
 
 static bool usif_tx_can_shift(pmb887x_usif_t *p) {
-	if (!usif_is_running(p) || pmb887x_fifo_is_empty(&p->tx_fifo))
+	if (!usif_is_running(p) || fifo32_is_empty(&p->tx_fifo))
 		return false;
 	if ((p->prtc_cfg & USIF_PRTC_CFG_FCIEN) != 0 && !usif_is_cts_active(p))
 		return false;
@@ -365,7 +365,7 @@ static void usif_tx_output_char(pmb887x_usif_t *p, uint32_t value) {
 static void usif_tx_shift_char(pmb887x_usif_t *p) {
 	uint32_t chars_per_word = usif_tx_chars_per_word(p);
 	uint32_t char_bits = 32 / chars_per_word;
-	uint32_t word = pmb887x_fifo32_peek(&p->tx_fifo);
+	uint32_t word = fifo32_peek(&p->tx_fifo);
 	uint32_t value = (word >> (p->tx_word_char * char_bits)) & (uint32_t) MAKE_64BIT_MASK(0, char_bits);
 	bool is_packet_char = p->tx_packet_chars != 0;
 
@@ -375,7 +375,7 @@ static void usif_tx_shift_char(pmb887x_usif_t *p) {
 
 	bool is_packet_end = is_packet_char && p->tx_packet_chars == 0;
 	if (p->tx_word_char >= chars_per_word || is_packet_end) {
-		pmb887x_fifo32_pop(&p->tx_fifo);
+		fifo32_pop(&p->tx_fifo);
 		p->tx_word_char = 0;
 	}
 
@@ -408,12 +408,12 @@ static void usif_tx_write(pmb887x_usif_t *p, uint32_t value) {
 	if (!usif_is_running(p))
 		return;
 
-	if (pmb887x_fifo_is_full(&p->tx_fifo)) {
+	if (fifo32_is_full(&p->tx_fifo)) {
 		DEBUG_LOG(&p->dbg, "TX FIFO overflow\n");
 		return;
 	}
 
-	pmb887x_fifo32_push(&p->tx_fifo, value);
+	fifo32_push(&p->tx_fifo, value);
 	p->tx_unwritten_chars -= MIN(p->tx_unwritten_chars, usif_tx_chars_per_word(p));
 	usif_tx_start(p);
 	usif_update_requests(p);
@@ -430,8 +430,8 @@ static void usif_rx_timeout(void *opaque) {
 static void usif_stop(pmb887x_usif_t *p) {
 	timer_del(p->tx_timer);
 	timer_del(p->rx_timeout_timer);
-	pmb887x_fifo_reset(&p->tx_fifo);
-	pmb887x_fifo_reset(&p->rx_fifo);
+	fifo32_reset(&p->tx_fifo);
+	fifo32_reset(&p->rx_fifo);
 	p->is_tx_busy = false;
 	p->is_tx_requested = false;
 	p->tx_word_char = 0;
@@ -554,7 +554,7 @@ static uint64_t usif_io_read(void *opaque, hwaddr haddr, unsigned size) {
 			value = p->tps_ctrl;
 			break;
 		case USIF_TXFIFO_STAT:
-			value = pmb887x_fifo_count(&p->tx_fifo) | (p->is_tx_busy ? USIF_TXFIFO_STAT_TXBUSY : 0);
+			value = fifo32_num_used(&p->tx_fifo) | (p->is_tx_busy ? USIF_TXFIFO_STAT_TXBUSY : 0);
 			break;
 		case USIF_RXFIFO_CFG:
 			value = p->rxfifo_cfg;
@@ -566,7 +566,7 @@ static uint64_t usif_io_read(void *opaque, hwaddr haddr, unsigned size) {
 			value = p->rps_stat;
 			break;
 		case USIF_RXFIFO_STAT:
-			value = pmb887x_fifo_count(&p->rx_fifo);
+			value = fifo32_num_used(&p->rx_fifo);
 			break;
 		case USIF_ERRIRQSM:
 			value = pmb887x_srb_ext_get_imsc(&p->srb_err);
@@ -774,8 +774,8 @@ static void usif_realize(DeviceState *dev, Error **errp) {
 	pmb887x_srb_set_event_handler(&p->srb, p, usif_event_handler);
 	pmb887x_srb_ext_init(&p->srb_err, &p->srb, USIF_RIS_ERR);
 	pmb887x_srb_ext_init(&p->srb_pirq, &p->srb, USIF_RIS_PIRQ);
-	pmb887x_fifo32_init(&p->tx_fifo, USIF_FIFO_STAGES);
-	pmb887x_fifo32_init(&p->rx_fifo, USIF_FIFO_STAGES);
+	fifo32_create(&p->tx_fifo, USIF_FIFO_STAGES);
+	fifo32_create(&p->rx_fifo, USIF_FIFO_STAGES);
 
 	p->tx_timer = timer_new_ns(QEMU_CLOCK_VIRTUAL, usif_tx_timer, p);
 	p->rx_timeout_timer = timer_new_ns(QEMU_CLOCK_VIRTUAL, usif_rx_timeout, p);

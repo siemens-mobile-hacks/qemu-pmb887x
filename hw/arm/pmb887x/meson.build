@@ -23,7 +23,6 @@ dsp_audio_sources = files('dsp/peripheral/afe-audio.c')
 arm_common_ss.add(when: 'CONFIG_PMB887X', if_true: files(
 	'board.c',
 	'audio/buffer.c',
-	'fifo.c',
 	'flash.c',
 	'flash-blk.c',
 	'afc.c',
@@ -119,10 +118,6 @@ arm_common_ss.add(when: 'CONFIG_PMB887X', if_true: dsp_core_sources + dsp_periph
 host_unit_tests += {
 	'pmb887x-audio-buffer': {
 		'sources': files('tests/audio/buffer.c', 'audio/buffer.c'),
-		'dependencies': [glib],
-	},
-	'pmb887x-fifo': {
-		'sources': files('tests/fifo.c', 'fifo.c'),
 		'dependencies': [glib],
 	},
 	'pmb887x-dsp-core': {

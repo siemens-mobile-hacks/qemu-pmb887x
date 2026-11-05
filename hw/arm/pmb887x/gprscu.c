@@ -6,7 +6,7 @@
 #include "hw/core/sysbus.h"
 #include "system/memory.h"
 
-#include "hw/arm/pmb887x/fifo.h"
+#include "qemu/fifo8.h"
 #include "hw/arm/pmb887x/gen/cpu_regs.h"
 #include "hw/arm/pmb887x/mod.h"
 #include "hw/arm/pmb887x/gen/cpu_meta.h"
@@ -42,8 +42,8 @@ struct pmb887x_gprscu_t {
 	uint32_t polynom;
 	bool output_underrun;
 
-	pmb887x_fifo8_t input_fifo;
-	pmb887x_fifo8_t output_fifo;
+	Fifo8 input_fifo;
+	Fifo8 output_fifo;
 };
 
 static void gprscu_process_fifo(pmb887x_gprscu_t *p) {
@@ -52,13 +52,13 @@ static void gprscu_process_fifo(pmb887x_gprscu_t *p) {
 	if (control_conversion || segment_conversion)
 		return;
 
-	while (!pmb887x_fifo_is_empty(&p->input_fifo) && !pmb887x_fifo_is_full(&p->output_fifo))
-		pmb887x_fifo8_push(&p->output_fifo, pmb887x_fifo8_pop(&p->input_fifo));
+	while (!fifo8_is_empty(&p->input_fifo) && !fifo8_is_full(&p->output_fifo))
+		fifo8_push(&p->output_fifo, fifo8_pop(&p->input_fifo));
 }
 
 static uint32_t gprscu_status(pmb887x_gprscu_t *p) {
-	uint32_t value = pmb887x_fifo_count(&p->output_fifo) << GPRSCU_STAT_OUTPUT_COUNT_SHIFT;
-	value |= pmb887x_fifo_free_count(&p->input_fifo) << GPRSCU_STAT_INPUT_FREE_SHIFT;
+	uint32_t value = fifo8_num_used(&p->output_fifo) << GPRSCU_STAT_OUTPUT_COUNT_SHIFT;
+	value |= fifo8_num_free(&p->input_fifo) << GPRSCU_STAT_INPUT_FREE_SHIFT;
 	if (p->output_underrun)
 		value |= GPRSCU_STAT_OUTPUT_UNDERRUN;
 	return value;
@@ -68,11 +68,11 @@ static uint64_t gprscu_read_data(pmb887x_gprscu_t *p, unsigned int size) {
 	uint64_t value = 0;
 
 	for (uint32_t index = 0; index < size; index++) {
-		if (pmb887x_fifo_is_empty(&p->output_fifo)) {
+		if (fifo8_is_empty(&p->output_fifo)) {
 			p->output_underrun = true;
 			break;
 		}
-		value |= (uint64_t) pmb887x_fifo8_pop(&p->output_fifo) << (index * 8);
+		value |= (uint64_t) fifo8_pop(&p->output_fifo) << (index * 8);
 	}
 
 	gprscu_process_fifo(p);
@@ -81,17 +81,17 @@ static uint64_t gprscu_read_data(pmb887x_gprscu_t *p, unsigned int size) {
 
 static void gprscu_write_data(pmb887x_gprscu_t *p, uint64_t value, unsigned int size) {
 	for (uint32_t index = 0; index < size; index++) {
-		if (pmb887x_fifo_is_full(&p->input_fifo))
+		if (fifo8_is_full(&p->input_fifo))
 			break;
-		pmb887x_fifo8_push(&p->input_fifo, (uint8_t) (value >> (index * 8)));
+		fifo8_push(&p->input_fifo, (uint8_t) (value >> (index * 8)));
 	}
 
 	gprscu_process_fifo(p);
 }
 
 static void gprscu_initialize(pmb887x_gprscu_t *p) {
-	pmb887x_fifo_reset(&p->input_fifo);
-	pmb887x_fifo_reset(&p->output_fifo);
+	fifo8_reset(&p->input_fifo);
+	fifo8_reset(&p->output_fifo);
 	p->output_underrun = false;
 	p->con &= ~(GPRSCU_CON_INIT | GPRSCU_CON_BUSY);
 }
@@ -246,8 +246,8 @@ static void gprscu_reset(DeviceState *dev) {
 	p->fcs = 0;
 	p->polynom = 0;
 	p->output_underrun = false;
-	pmb887x_fifo_reset(&p->input_fifo);
-	pmb887x_fifo_reset(&p->output_fifo);
+	fifo8_reset(&p->input_fifo);
+	fifo8_reset(&p->output_fifo);
 }
 
 static void gprscu_realize(DeviceState *dev, Error **errp) {
@@ -256,16 +256,16 @@ static void gprscu_realize(DeviceState *dev, Error **errp) {
 
 	for (size_t index = 0; index < ARRAY_SIZE(p->src); index++)
 		pmb887x_src_init(&p->src[index], p->irq[index]);
-	pmb887x_fifo8_init(&p->input_fifo, GPRSCU_FIFO_SIZE);
-	pmb887x_fifo8_init(&p->output_fifo, GPRSCU_FIFO_SIZE);
+	fifo8_create(&p->input_fifo, GPRSCU_FIFO_SIZE);
+	fifo8_create(&p->output_fifo, GPRSCU_FIFO_SIZE);
 	gprscu_reset(dev);
 }
 
 static void gprscu_finalize(Object *obj) {
 	pmb887x_gprscu_t *p = PMB887X_GPRSCU(obj);
 
-	pmb887x_fifo8_free(&p->input_fifo);
-	pmb887x_fifo8_free(&p->output_fifo);
+	fifo8_destroy(&p->input_fifo);
+	fifo8_destroy(&p->output_fifo);
 }
 
 static const Property gprscu_properties[] = {

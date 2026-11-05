@@ -7,7 +7,7 @@
 #include "ui/console.h"
 #include "qemu/thread.h"
 #include "qemu/debug-regs.h"
-#include "hw/arm/pmb887x/fifo.h"
+#include "qemu/fifo8.h"
 #include "hw/arm/pmb887x/ssc/lcd_common_format.h"
 
 #define TYPE_PMB887X_LCD	"pmb887x-lcd"
@@ -57,7 +57,7 @@ struct pmb887x_lcd_t {
 	pmb887x_lcd_class_t *k;
 	DebugChannel dbg;
 
-	pmb887x_fifo8_t fifo;
+	Fifo8 fifo;
 	bool cd;
 	bool read_active;
 	bool reset_active;

@@ -15,7 +15,7 @@
 #include "hw/arm/pmb887x/gen/cpu_regs.h"
 #include "hw/arm/pmb887x/gen/cpu_meta.h"
 #include "hw/arm/pmb887x/mod.h"
-#include "hw/arm/pmb887x/fifo.h"
+#include "qemu/fifo32.h"
 
 #define TYPE_PMB887X_I2C	"pmb887x-i2c-v2"
 OBJECT_DECLARE_SIMPLE_TYPE(pmb887x_i2c_t, PMB887X_I2C);
@@ -56,7 +56,7 @@ struct pmb887x_i2c_t {
 	pmb887x_srb_ext_reg_t srb_err;
 
 	pmb887x_i2c_state_t state;
-	pmb887x_fifo32_t fifo;
+	Fifo32 fifo;
 	uint32_t tx_staging;
 	bool tx_staging_valid;
 
@@ -161,12 +161,12 @@ static void i2c_fifo_req(pmb887x_i2c_t *p) {
 		uint32_t single_req_size = 4 / i2c_get_tx_align(p);
 		uint32_t burst_req_count = burst_req_size / single_req_size;
 
-		uint32_t tx_remaining = p->tx_remaining - MIN(p->tx_remaining, pmb887x_fifo_count(&p->fifo) * single_req_size);
+		uint32_t tx_remaining = p->tx_remaining - MIN(p->tx_remaining, fifo32_num_used(&p->fifo) * single_req_size);
 		if (!tx_remaining)
 			return;
-		if (tx_remaining >= burst_req_size && pmb887x_fifo_free_count(&p->fifo) < burst_req_count)
+		if (tx_remaining >= burst_req_size && fifo32_num_free(&p->fifo) < burst_req_count)
 			return;
-		if (tx_remaining < burst_req_size && pmb887x_fifo_free_count(&p->fifo) < 1)
+		if (tx_remaining < burst_req_size && fifo32_num_free(&p->fifo) < 1)
 			return;
 
 		bool is_fc = (p->fifocfg & I2Cv2_FIFOCFG_TXFC) != 0;
@@ -182,7 +182,7 @@ static void i2c_fifo_req(pmb887x_i2c_t *p) {
 			}
 			p->fifo_req = true;
 		} else {
-			if (pmb887x_fifo_free_count(&p->fifo) >= burst_req_count) {
+			if (fifo32_num_free(&p->fifo) >= burst_req_count) {
 				pmb887x_srb_set_isr(&p->srb, I2Cv2_ISR_BREQ_INT);
 				p->fifo_req = true;
 			}
@@ -227,12 +227,12 @@ static void i2c_fifo_clr_req(pmb887x_i2c_t *p) {
 }
 
 static void i2c_rx_discard(pmb887x_i2c_t *p) {
-	pmb887x_fifo_reset(&p->fifo);
+	fifo32_reset(&p->fifo);
 	p->rx_bytes_in_fifo = 0;
 }
 
 static void i2c_fifo_reset(pmb887x_i2c_t *p) {
-	pmb887x_fifo_reset(&p->fifo);
+	fifo32_reset(&p->fifo);
 	p->tx_staging_valid = false;
 }
 
@@ -298,7 +298,7 @@ static void i2c_fifo_write(pmb887x_i2c_t *p, uint64_t value) {
 	// if (p->state == I2C_STATE_MASTER_RX)
 	// 	hw_error("Wriring to FIFO in MASTER_RX is not allowed!");
 
-	if (!pmb887x_fifo_free_count(&p->fifo)) {
+	if (!fifo32_num_free(&p->fifo)) {
 		if (!p->tx_staging_valid) {
 			p->tx_staging = value;
 			p->tx_staging_valid = true;
@@ -311,12 +311,12 @@ static void i2c_fifo_write(pmb887x_i2c_t *p, uint64_t value) {
 		return;
 	}
 
-	pmb887x_fifo32_push(&p->fifo, value);
+	fifo32_push(&p->fifo, value);
 	i2c_timer_schedule(p);
 }
 
 static void i2c_fifo_read(pmb887x_i2c_t *p, uint64_t *value) {
-	if (pmb887x_fifo_is_empty(&p->fifo)) {
+	if (fifo32_is_empty(&p->fifo)) {
 		DEBUG_LOG(&p->dbg, "RX FIFO underflow!\n");
 		pmb887x_srb_ext_set_isr(&p->srb_err, I2Cv2_ERRIRQSS_RXF_UFL);
 		if (p->state != I2C_STATE_NONE)
@@ -324,7 +324,7 @@ static void i2c_fifo_read(pmb887x_i2c_t *p, uint64_t *value) {
 		return;
 	}
 
-	*value = pmb887x_fifo32_pop(&p->fifo);
+	*value = fifo32_pop(&p->fifo);
 	p->rx_bytes_in_fifo -= MIN(p->rx_bytes_in_fifo, 4 / i2c_get_rx_align(p));
 
 	if (!p->rx_bytes_in_fifo)
@@ -333,10 +333,10 @@ static void i2c_fifo_read(pmb887x_i2c_t *p, uint64_t *value) {
 
 static bool i2c_tx_from_fifo(pmb887x_i2c_t *p) {
 	uint32_t align = i2c_get_tx_align(p);
-	while (pmb887x_fifo_count(&p->fifo) > 0) {
-		uint32_t value = pmb887x_fifo32_pop(&p->fifo);
+	while (fifo32_num_used(&p->fifo) > 0) {
+		uint32_t value = fifo32_pop(&p->fifo);
 		if (p->tx_staging_valid) {
-			pmb887x_fifo32_push(&p->fifo, p->tx_staging);
+			fifo32_push(&p->fifo, p->tx_staging);
 			p->tx_staging_valid = false;
 		}
 
@@ -389,7 +389,7 @@ static void i2c_rx_to_fifo(pmb887x_i2c_t *p, uint32_t byte_limit) {
 	uint32_t rx_remaining = p->rx_unbounded ? 4 / align : MIN(p->rx_remaining, i2c_get_rx_burst_size(p));
 	rx_remaining = MIN(rx_remaining, byte_limit);
 
-	if (pmb887x_fifo_is_full(&p->fifo)) {
+	if (fifo32_is_full(&p->fifo)) {
 		pmb887x_srb_ext_set_isr(&p->srb_err, I2Cv2_ERRIRQSS_RXF_OFL);
 		uint32_t request = pmb887x_srb_get_ris(&p->srb) & FIFO_ICR_MASK;
 		pmb887x_srb_set_icr(&p->srb, request);
@@ -402,7 +402,7 @@ static void i2c_rx_to_fifo(pmb887x_i2c_t *p, uint32_t byte_limit) {
 	}
 
 	uint32_t bytes_read = 0;
-	while (bytes_read < rx_remaining && !pmb887x_fifo_is_full(&p->fifo)) {
+	while (bytes_read < rx_remaining && !fifo32_is_full(&p->fifo)) {
 		uint32_t value = 0;
 		uint32_t bytes_in_fifo_reg = MIN(4, rx_remaining - bytes_read);
 		for (uint32_t i = 0; i < bytes_in_fifo_reg; i += align) {
@@ -414,7 +414,7 @@ static void i2c_rx_to_fifo(pmb887x_i2c_t *p, uint32_t byte_limit) {
 			if (p->enddctrl_end)
 				break;
 		}
-		pmb887x_fifo32_push(&p->fifo, value);
+		fifo32_push(&p->fifo, value);
 
 		if (p->enddctrl_end)
 			break;
@@ -431,7 +431,7 @@ static void i2c_start_tx(pmb887x_i2c_t *p) {
 		return;
 
 	if (p->state == I2C_STATE_MASTER_RX && p->rx_packet_done) {
-		if (!pmb887x_fifo_is_empty(&p->fifo) || p->fifo_req)
+		if (!fifo32_is_empty(&p->fifo) || p->fifo_req)
 			return;
 
 		pmb887x_i2c_state_t next_state = p->rx_next_state;
@@ -697,7 +697,7 @@ static uint64_t i2c_io_read(void *opaque, hwaddr haddr, unsigned size) {
 			break;
 
 		case I2Cv2_FFSSTAT:
-			value = pmb887x_fifo_count(&p->fifo);
+			value = fifo32_num_used(&p->fifo);
 			break;
 
 		case I2Cv2_TIMCFG:
@@ -953,7 +953,7 @@ static void i2c_realize(DeviceState *dev, Error **errp) {
 	pmb887x_srb_ext_init(&p->srb_err, &p->srb, I2Cv2_ISR_I2C_ERR_INT);
 	pmb887x_srb_ext_init(&p->srb_proto, &p->srb, I2Cv2_ISR_I2C_P_INT);
 
-	pmb887x_fifo32_init(&p->fifo, FIFO_SIZE);
+	fifo32_create(&p->fifo, FIFO_SIZE);
 
 	p->timer = timer_new_ns(QEMU_CLOCK_VIRTUAL, i2c_timer_reset, p);
 }
