@@ -3770,6 +3770,9 @@ host_unit_tests = {
   'fifo': {
     'sources': files('tests/unit/test-fifo.c'),
   },
+  'pcm-out': {
+    'sources': files('tests/unit/test-pcm-out.c', 'hw/audio/pcm-out.c'),
+  },
 }
 target_unit_tests = {}
 
