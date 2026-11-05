@@ -492,7 +492,18 @@ case "$cpu" in
     if test "$wasm64_memory64" != 2; then
       error_exit "wasm64 needs --wasm64-32bit-address-limit"
     fi
-    CPU_CFLAGS="-m64 -sMEMORY64=$wasm64_memory64"
+    # setjmp/longjmp as wasm exception handling: emscripten's default JS
+    # mode routes every call made by a function that calls setjmp through
+    # an invoke_* JS trampoline (cpu_exec, and three per translated TB)
+    # and turns every longjmp into a JS throw.  Every object and the link
+    # must agree, which CPU_CFLAGS, the compiler's own argv, guarantees.
+    # It composes with ASYNCIFY only because the onlylist
+    # (configs/meson/asyncify-only.txt) instruments no function that
+    # calls setjmp.  The standard (exnref) instructions, not the legacy
+    # `try` that Firefox deprecates; emcc 4.0.10 tells LLVM so only for
+    # C++ exceptions, hence the -mllvm.
+    CPU_CFLAGS="-m64 -sMEMORY64=$wasm64_memory64 -sSUPPORT_LONGJMP=wasm"
+    CPU_CFLAGS="$CPU_CFLAGS -sWASM_LEGACY_EXCEPTIONS=0 -mllvm -wasm-use-legacy-eh=0"
     ;;
 esac
 
