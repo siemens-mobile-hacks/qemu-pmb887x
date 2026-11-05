@@ -651,7 +651,7 @@ static uint64_t usart_io_read(void *opaque, hwaddr haddr, unsigned size) {
 
 	if (haddr != USART_ID && haddr != USART_CLC) {
 		if (!pmb887x_clc_is_enabled(&p->clc))
-			EPRINTF("usart clock not enabled\n");
+			DEBUG_GUEST_ERROR(&p->dbg, "clock not enabled\n");
 	}
 
 	switch (haddr) {
@@ -802,7 +802,7 @@ static void usart_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned 
 
 	if (haddr != USART_ID && haddr != USART_CLC) {
 		if (!pmb887x_clc_is_enabled(&p->clc))
-			EPRINTF("usart clock not enabled\n");
+			DEBUG_GUEST_ERROR(&p->dbg, "clock not enabled\n");
 	}
 
 	switch (haddr) {

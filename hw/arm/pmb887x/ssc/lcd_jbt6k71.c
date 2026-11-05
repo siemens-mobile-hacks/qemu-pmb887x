@@ -63,7 +63,7 @@ static void lcd_update_state(pmb887x_lcd_t *lcd) {
 	 * these registers. */
 	enum pmb887x_lcd_pixel_format_t pixel_format = JBT6K71_PIXEL_FORMATS[tri][dfm1][dfm0];
 	if (pixel_format == LCD_PIXEL_FORMAT_NONE) {
-		EPRINTF("invalid config: dfm0=%d, dfm1=%d, tri=%d", dfm0, dfm1, tri);
+		DEBUG_GUEST_ERROR(&lcd->dbg, "invalid config: dfm0=%d, dfm1=%d, tri=%d\n", dfm0, dfm1, tri);
 		return;
 	}
 
@@ -95,7 +95,7 @@ static void lcd_on_cmd_with_params(pmb887x_lcd_t *lcd, uint32_t cmd, const uint3
 	/* cmd comes straight off the bus, so an out of range index is a firmware or bus
 	 * desync, not an emulator invariant. Drop it like lcd_on_read() does. */
 	if (cmd >= JBT6K71_MAX_REGS) {
-		EPRINTF("write to unknown reg %04X = %04X\n", cmd, params[0]);
+		DEBUG_GUEST_ERROR(&lcd->dbg, "write to unknown reg %04X = %04X\n", cmd, params[0]);
 		return;
 	}
 

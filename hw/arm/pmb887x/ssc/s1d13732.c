@@ -256,7 +256,7 @@ static uint32_t gimmick_transfer16(SSIPeripheral *dev, uint32_t data) {
 					p->wcycle = 0;
 				}
 			} else {
-				EPRINTF("invalid CMD_WRITE_REG wcycle: %u\n", p->wcycle);
+				DEBUG_GUEST_ERROR(&p->dbg, "invalid CMD_WRITE_REG wcycle: %u\n", p->wcycle);
 				p->wcycle = 0;
 			}
 		} else if (p->cmd == CMD_READ_REG) {
@@ -271,11 +271,11 @@ static uint32_t gimmick_transfer16(SSIPeripheral *dev, uint32_t data) {
 				}
 			}
 		} else {
-			EPRINTF("invalid wcycle for cmd %04X\n", p->cmd);
+			DEBUG_GUEST_ERROR(&p->dbg, "invalid wcycle for cmd %04X\n", p->cmd);
 			p->wcycle = 0;
 		}
 	} else {
-		EPRINTF("ignored data: %04X [cmd=%04X]\n", data, p->cmd);
+		DEBUG_GUEST_ERROR(&p->dbg, "ignored data: %04X [cmd=%04X]\n", data, p->cmd);
 	}
 
 	return value;

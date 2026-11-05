@@ -117,8 +117,7 @@ static int32_t adc_get_input_voltage(pmb887x_adc_t *p, uint8_t input_n, uint8_t 
 			break;
 
 		default:
-			EPRINTF("Unknown adc input type: %d\n", input->type);
-			break;
+			g_assert_not_reached();
 	}
 
 	return current > 0 ? CPU_VCC_VOLTAGE : 0;

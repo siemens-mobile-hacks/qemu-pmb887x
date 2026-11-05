@@ -48,7 +48,7 @@ static void lcd_update_state(pmb887x_lcd_t *lcd) {
 			pixel_format = LCD_PIXEL_FORMAT_RGB666_6_6_6;
 			break;
 		default:
-			EPRINTF("Invalid color mode: 0x%02X, fallback to 565", colmod);
+			DEBUG_GUEST_ERROR(&lcd->dbg, "invalid color mode: 0x%02X, fallback to 565\n", colmod);
 			pixel_format = LCD_PIXEL_FORMAT_RGB565;
 			break;
 	}

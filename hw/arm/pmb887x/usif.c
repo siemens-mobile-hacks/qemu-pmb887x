@@ -472,7 +472,7 @@ static void usif_mrps_write(pmb887x_usif_t *p, uint32_t value) {
 
 static void usif_config_write(pmb887x_usif_t *p, uint32_t *reg, uint32_t value, uint32_t mask) {
 	if (usif_is_running(p)) {
-		EPRINTF("configuration write while running\n");
+		DEBUG_GUEST_ERROR(&p->dbg, "configuration write while running\n");
 		return;
 	}
 	*reg = value & mask;
