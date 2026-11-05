@@ -9,6 +9,8 @@
 
 /*
  * The region must not call its own callbacks through mr->ops or mr->opaque.
+ * After machine creation it must not be mapped yet, as for a hotplugged
+ * device in realize.
  * @offset is the position of the region in the device's register map.
  */
 void debug_channel_attach_mr(DebugChannel *ch, MemoryRegion *mr,

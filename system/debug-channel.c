@@ -103,7 +103,7 @@ void debug_channel_attach_mr(DebugChannel *ch, MemoryRegion *mr,
     if (!debug_channel_is_enabled(ch, DEBUG_CH_IO)) {
         return;
     }
-    g_assert(!phase_check(PHASE_MACHINE_READY));
+    g_assert(!phase_check(PHASE_MACHINE_READY) || !mr->container);
     g_assert(owner && mr->terminates && !mr->ram && !mr->alias);
     g_assert(mr->ops->read_with_attrs != debug_mr_read);
 
