@@ -197,6 +197,22 @@ static void test_last_held_until_window_ends(void)
     teardown(&ch);
 }
 
+static void test_no_clock(void)
+{
+    DebugChannel ch;
+
+    setup(&ch);
+    debug_channels_set_clock(NULL);
+    debug_channels_start(64);
+    write_reg(&ch, 0x10, 1);
+    g_assert_true(wait_output("[UNIT0] WRITE[4] 00000010: 00000001\n"));
+    write_reg(&ch, 0x10, 1);
+    g_assert_true(wait_output("[UNIT0] WRITE[4] 00000010: 00000001\n"
+                              "[UNIT0] WRITE[4] 00000010: 00000001\n"));
+    teardown(&ch);
+    debug_channels_set_clock(fake_clock);
+}
+
 static void test_stop_prints_last(void)
 {
     DebugChannel ch;
@@ -452,6 +468,7 @@ int main(int argc, char **argv)
                     test_merge_only_last);
     g_test_add_func("/debug-channel-queue/last-held-until-window-ends",
                     test_last_held_until_window_ends);
+    g_test_add_func("/debug-channel-queue/no-clock", test_no_clock);
     g_test_add_func("/debug-channel-queue/stop-prints-last",
                     test_stop_prints_last);
     g_test_add_func("/debug-channel-queue/full-queue-waits",

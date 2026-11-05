@@ -144,7 +144,7 @@ static bool debug_head_is_held(void)
 {
     const DebugRecord *rec = debug_ring_at(0);
 
-    if (dq.count > 1 || dq.flushing || dq.stopping) {
+    if (!dq.clock || dq.count > 1 || dq.flushing || dq.stopping) {
         return false;
     }
     return rec->kind == DEBUG_RECORD_IO &&
@@ -250,7 +250,8 @@ void debug_channels_stop(void)
 static bool debug_io_is_repeat(const DebugRecord *last,
                                const DebugRecord *rec)
 {
-    return rec->kind == DEBUG_RECORD_IO && last->kind == DEBUG_RECORD_IO &&
+    return dq.clock &&
+           rec->kind == DEBUG_RECORD_IO && last->kind == DEBUG_RECORD_IO &&
            last->ch == rec->ch &&
            last->io.addr == rec->io.addr &&
            last->io.offset == rec->io.offset &&
