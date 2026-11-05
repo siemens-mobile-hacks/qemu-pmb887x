@@ -9,7 +9,6 @@
 #include "qemu/main-loop.h"
 #include "qemu/audio.h"
 #include "qemu/fifo8.h"
-#include "qemu/log.h"
 #include "qemu/thread.h"
 #include "hw/core/qdev-properties.h"
 #include "hw/audio/i2s.h"
@@ -162,7 +161,7 @@ static void pasic_i2s_write(I2SSink *sink, const int16_t *samples, size_t frame_
 static size_t pasic_i2s_read(I2SSource *source, int16_t *_samples, size_t _frame_capacity) {
 	pmb887x_pmic_t *p = PMB887X_PMIC(OBJECT(source));
 	if (!p->i2s_capture_unimplemented_reported) {
-		qemu_log_mask(LOG_UNIMP, "PASIC I2S capture is not implemented\n");
+		DEBUG_UNIMP(&p->dbg, "I2S capture\n");
 		p->i2s_capture_unimplemented_reported = true;
 	}
 	return 0;

@@ -2,7 +2,6 @@
  * Infineon PMB6812
  */
 #include "qemu/osdep.h"
-#include "qemu/log.h"
 #include "hw/core/sysbus.h"
 #include "system/memory.h"
 #include "qapi/error.h"
@@ -154,8 +153,7 @@ static int pmic_send(I2CSlave *s, uint8_t data) {
 			if (data != expect) {
 				p->confirmation = ~data;
 				p->confirmation_pending = true;
-				qemu_log_mask(LOG_GUEST_ERROR, "pmb6812: bad CRC on write reg=0x%02X val=0x%02X: "
-					"got 0x%02X expected 0x%02X\n",
+				DEBUG_GUEST_ERROR(&p->dbg, "bad CRC on write reg=0x%02X val=0x%02X: got 0x%02X expected 0x%02X\n",
 					p->reg_id, p->wr_val, data, expect);
 				p->wcycle++;
 				return 1;
