@@ -212,32 +212,32 @@ static void gpio_init(Object *obj) {
 	sysbus_init_mmio(SYS_BUS_DEVICE(obj), &p->mmio);
 	DEBUG_LOG(&p->dbg, "gpio count: %d\n", GPIOS_COUNT);
 
-	qdev_init_gpio_in_named(dev, gpio_input_handler, "pin_in", GPIOS_COUNT);
-	qdev_init_gpio_out_named(dev, p->pins_out[0], "pin_out", GPIOS_COUNT);
+	qdev_init_gpio_in_named(dev, gpio_input_handler, "pin", GPIOS_COUNT);
+	qdev_init_gpio_out_named(dev, p->pins_out[0], "pin", GPIOS_COUNT);
 
-	qdev_init_gpio_in_named(dev, gpio_input_alt0_handler, "pin_alt0_in", GPIOS_COUNT);
-	qdev_init_gpio_out_named(dev, p->pins_out[1], "pin_alt0_out", GPIOS_COUNT);
+	qdev_init_gpio_in_named(dev, gpio_input_alt0_handler, "pin_alt0", GPIOS_COUNT);
+	qdev_init_gpio_out_named(dev, p->pins_out[1], "pin_alt0", GPIOS_COUNT);
 
-	qdev_init_gpio_in_named(dev, gpio_input_alt1_handler, "pin_alt1_in", GPIOS_COUNT);
-	qdev_init_gpio_out_named(dev, p->pins_out[2], "pin_alt1_out", GPIOS_COUNT);
+	qdev_init_gpio_in_named(dev, gpio_input_alt1_handler, "pin_alt1", GPIOS_COUNT);
+	qdev_init_gpio_out_named(dev, p->pins_out[2], "pin_alt1", GPIOS_COUNT);
 
-	qdev_init_gpio_in_named(dev, gpio_input_alt2_handler, "pin_alt2_in", GPIOS_COUNT);
-	qdev_init_gpio_out_named(dev, p->pins_out[3], "pin_alt2_out", GPIOS_COUNT);
+	qdev_init_gpio_in_named(dev, gpio_input_alt2_handler, "pin_alt2", GPIOS_COUNT);
+	qdev_init_gpio_out_named(dev, p->pins_out[3], "pin_alt2", GPIOS_COUNT);
 
-	qdev_init_gpio_in_named(dev, gpio_input_alt3_handler, "pin_alt3_in", GPIOS_COUNT);
-	qdev_init_gpio_out_named(dev, p->pins_out[4], "pin_alt3_out", GPIOS_COUNT);
+	qdev_init_gpio_in_named(dev, gpio_input_alt3_handler, "pin_alt3", GPIOS_COUNT);
+	qdev_init_gpio_out_named(dev, p->pins_out[4], "pin_alt3", GPIOS_COUNT);
 
-	qdev_init_gpio_in_named(dev, gpio_input_alt4_handler, "pin_alt4_in", GPIOS_COUNT);
-	qdev_init_gpio_out_named(dev, p->pins_out[5], "pin_alt4_out", GPIOS_COUNT);
+	qdev_init_gpio_in_named(dev, gpio_input_alt4_handler, "pin_alt4", GPIOS_COUNT);
+	qdev_init_gpio_out_named(dev, p->pins_out[5], "pin_alt4", GPIOS_COUNT);
 
-	qdev_init_gpio_in_named(dev, gpio_input_alt5_handler, "pin_alt5_in", GPIOS_COUNT);
-	qdev_init_gpio_out_named(dev, p->pins_out[6], "pin_alt5_out", GPIOS_COUNT);
+	qdev_init_gpio_in_named(dev, gpio_input_alt5_handler, "pin_alt5", GPIOS_COUNT);
+	qdev_init_gpio_out_named(dev, p->pins_out[6], "pin_alt5", GPIOS_COUNT);
 
-	qdev_init_gpio_in_named(dev, gpio_input_alt6_handler, "pin_alt6_in", GPIOS_COUNT);
-	qdev_init_gpio_out_named(dev, p->pins_out[7], "pin_alt6_out", GPIOS_COUNT);
+	qdev_init_gpio_in_named(dev, gpio_input_alt6_handler, "pin_alt6", GPIOS_COUNT);
+	qdev_init_gpio_out_named(dev, p->pins_out[7], "pin_alt6", GPIOS_COUNT);
 
-	qdev_init_gpio_out_named(dev, &p->mon3_out, "MON3_OUT", 1);
-	qdev_init_gpio_out_named(dev, &p->mon4_out, "MON4_OUT", 1);
+	qdev_init_gpio_out_named(dev, &p->mon3_out, "MON3", 1);
+	qdev_init_gpio_out_named(dev, &p->mon4_out, "MON4", 1);
 }
 
 static void gpio_reset(DeviceState *dev) {

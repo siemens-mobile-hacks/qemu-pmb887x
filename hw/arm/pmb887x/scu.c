@@ -600,22 +600,22 @@ static void scu_init(Object *obj) {
 	sysbus_init_irq(SYS_BUS_DEVICE(obj), &p->unk_irq[1]);
 	sysbus_init_irq(SYS_BUS_DEVICE(obj), &p->unk_irq[2]);
 
-	qdev_init_gpio_in_named(dev, scu_input_exti0_handler, "EXTI0_IN", 1);
-	qdev_init_gpio_in_named(dev, scu_input_exti1_handler, "EXTI1_IN", 1);
-	qdev_init_gpio_in_named(dev, scu_input_exti2_handler, "EXTI2_IN", 1);
-	qdev_init_gpio_in_named(dev, scu_input_exti3_handler, "EXTI3_IN", 1);
-	qdev_init_gpio_in_named(dev, scu_input_exti4_handler, "EXTI4_IN", 1);
-	qdev_init_gpio_in_named(dev, scu_input_exti5_handler, "EXTI5_IN", 1);
-	qdev_init_gpio_in_named(dev, scu_input_exti6_handler, "EXTI6_IN", 1);
-	qdev_init_gpio_in_named(dev, scu_input_exti7_handler, "EXTI7_IN", 1);
-	qdev_init_gpio_in_named(dev, scu_input_dsp_handler, "DSP_INT_IN", PMB887X_DSP_MCU_INT_COUNT);
-	qdev_init_gpio_out_named(dev, &p->dsp_reset, "DSP_RESET_OUT", 1);
-	qdev_init_gpio_out_named(dev, &p->usb_reset, "USB_RESET_OUT", 1);
-	qdev_init_gpio_out_named(dev, &p->dmac_reset, "DMAC_RESET_OUT", 1);
-	qdev_init_gpio_out_named(dev, &p->i2c_reset, "I2C_RESET_OUT", 1);
-	qdev_init_gpio_out_named(dev, &p->rtc_reset, "RTC_RESET_OUT", 1);
-	qdev_init_gpio_out_named(dev, &p->ebu_sync, "EBU_SYNC_OUT", 1);
-	qdev_init_gpio_out_named(dev, p->dsp_request, "DSP_INT_OUT", ARRAY_SIZE(p->dsp_request));
+	qdev_init_gpio_in_named(dev, scu_input_exti0_handler, "EXTI0", 1);
+	qdev_init_gpio_in_named(dev, scu_input_exti1_handler, "EXTI1", 1);
+	qdev_init_gpio_in_named(dev, scu_input_exti2_handler, "EXTI2", 1);
+	qdev_init_gpio_in_named(dev, scu_input_exti3_handler, "EXTI3", 1);
+	qdev_init_gpio_in_named(dev, scu_input_exti4_handler, "EXTI4", 1);
+	qdev_init_gpio_in_named(dev, scu_input_exti5_handler, "EXTI5", 1);
+	qdev_init_gpio_in_named(dev, scu_input_exti6_handler, "EXTI6", 1);
+	qdev_init_gpio_in_named(dev, scu_input_exti7_handler, "EXTI7", 1);
+	qdev_init_gpio_in_named(dev, scu_input_dsp_handler, "DSP_INT", PMB887X_DSP_MCU_INT_COUNT);
+	qdev_init_gpio_out_named(dev, &p->dsp_reset, "DSP_RESET", 1);
+	qdev_init_gpio_out_named(dev, &p->usb_reset, "USB_RESET", 1);
+	qdev_init_gpio_out_named(dev, &p->dmac_reset, "DMAC_RESET", 1);
+	qdev_init_gpio_out_named(dev, &p->i2c_reset, "I2C_RESET", 1);
+	qdev_init_gpio_out_named(dev, &p->rtc_reset, "RTC_RESET", 1);
+	qdev_init_gpio_out_named(dev, &p->ebu_sync, "EBU_SYNC", 1);
+	qdev_init_gpio_out_named(dev, p->dsp_request, "DSP_INT", ARRAY_SIZE(p->dsp_request));
 }
 
 static void scu_reset(DeviceState *dev) {

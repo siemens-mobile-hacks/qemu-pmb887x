@@ -665,9 +665,9 @@ static void sim_init(Object *obj) {
 	for (size_t i = 0; i < ARRAY_SIZE(p->irq); i++)
 		sysbus_init_irq(SYS_BUS_DEVICE(obj), &p->irq[i]);
 
-	qdev_init_gpio_in_named(dev, sim_handle_cc_io, "CC_IO_IN", 1);
-	qdev_init_gpio_out_named(dev, &p->cc_io, "CC_IO_OUT", 1);
-	qdev_init_gpio_out_named(dev, &p->cc_rst, "CC_RST_OUT", 1);
+	qdev_init_gpio_in_named(dev, sim_handle_cc_io, "CC_IO", 1);
+	qdev_init_gpio_out_named(dev, &p->cc_io, "CC_IO", 1);
+	qdev_init_gpio_out_named(dev, &p->cc_rst, "CC_RST", 1);
 	p->cc_clk = qdev_init_clock_out(dev, "CC_CLK");
 
 	qdev_init_gpio_in_named(dev, sim_handle_dmac_tx_clr, "DMAC_TX_CLR", 1);

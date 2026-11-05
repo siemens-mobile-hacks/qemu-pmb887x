@@ -75,18 +75,18 @@ static void mmci_init(Object *obj) {
 	memory_region_init_io(&p->mmio, obj, &mmci_io_ops, p, "pmb887x-mmci", MMCI_IO_SIZE);
 	sysbus_init_mmio(SYS_BUS_DEVICE(obj), &p->mmio);
 
-	qdev_init_gpio_in_named(dev, mmci_gpio_input, "DAT0_IN", 1);
-	qdev_init_gpio_in_named(dev, mmci_gpio_input, "DAT1_IN", 1);
-	qdev_init_gpio_in_named(dev, mmci_gpio_input, "DAT2_IN", 1);
-	qdev_init_gpio_in_named(dev, mmci_gpio_input, "DAT3_IN", 1);
-	qdev_init_gpio_in_named(dev, mmci_gpio_input, "CMD_IN", 1);
-	qdev_init_gpio_in_named(dev, mmci_gpio_input, "CLK_IN", 1);
-	qdev_init_gpio_out_named(dev, &p->gpio_dat0, "DAT0_OUT", 1);
-	qdev_init_gpio_out_named(dev, &p->gpio_dat1, "DAT1_OUT", 1);
-	qdev_init_gpio_out_named(dev, &p->gpio_dat2, "DAT2_OUT", 1);
-	qdev_init_gpio_out_named(dev, &p->gpio_dat3, "DAT3_OUT", 1);
-	qdev_init_gpio_out_named(dev, &p->gpio_cmd, "CMD_OUT", 1);
-	qdev_init_gpio_out_named(dev, &p->gpio_clk, "CLK_OUT", 1);
+	qdev_init_gpio_in_named(dev, mmci_gpio_input, "DAT0", 1);
+	qdev_init_gpio_in_named(dev, mmci_gpio_input, "DAT1", 1);
+	qdev_init_gpio_in_named(dev, mmci_gpio_input, "DAT2", 1);
+	qdev_init_gpio_in_named(dev, mmci_gpio_input, "DAT3", 1);
+	qdev_init_gpio_in_named(dev, mmci_gpio_input, "CMD", 1);
+	qdev_init_gpio_in_named(dev, mmci_gpio_input, "CLK", 1);
+	qdev_init_gpio_out_named(dev, &p->gpio_dat0, "DAT0", 1);
+	qdev_init_gpio_out_named(dev, &p->gpio_dat1, "DAT1", 1);
+	qdev_init_gpio_out_named(dev, &p->gpio_dat2, "DAT2", 1);
+	qdev_init_gpio_out_named(dev, &p->gpio_dat3, "DAT3", 1);
+	qdev_init_gpio_out_named(dev, &p->gpio_cmd, "CMD", 1);
+	qdev_init_gpio_out_named(dev, &p->gpio_clk, "CLK", 1);
 }
 
 static void mmci_reset(DeviceState *dev) {

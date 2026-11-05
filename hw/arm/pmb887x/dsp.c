@@ -607,24 +607,24 @@ static void dsp_init(Object *obj) {
 	memory_region_init_io(&p->regs, obj, &io_ops, p, "pmb887x-dsp-regs", DSP_RAM0);
 	memory_region_add_subregion(&p->mmio, 0, &p->regs);
 	sysbus_init_mmio(SYS_BUS_DEVICE(obj), &p->mmio);
-	qdev_init_gpio_in_named(DEVICE(obj), dsp_reset_input, "RESET_IN", 1);
-	qdev_init_gpio_in_named(DEVICE(obj), dsp_interrupt_input, "INT_IN", PMB887X_DSP_INT_COUNT);
-	qdev_init_gpio_out_named(DEVICE(obj), p->mcu_interrupts, "INT_OUT", ARRAY_SIZE(p->mcu_interrupts));
-	qdev_init_gpio_in_named(DEVICE(obj), dsp_input0, "DSPIN0_IN", 1);
-	qdev_init_gpio_in_named(DEVICE(obj), dsp_input1, "DSPIN1_IN", 1);
-	qdev_init_gpio_in_named(DEVICE(obj), dsp_gsm_input, "GSM_IN", PMB887X_DSP_GSM_SIGNAL_COUNT);
-	qdev_init_gpio_in_named(DEVICE(obj), dsp_i2s2_input, "I2S2_RX_IN", 1);
+	qdev_init_gpio_in_named(DEVICE(obj), dsp_reset_input, "RESET", 1);
+	qdev_init_gpio_in_named(DEVICE(obj), dsp_interrupt_input, "INT", PMB887X_DSP_INT_COUNT);
+	qdev_init_gpio_out_named(DEVICE(obj), p->mcu_interrupts, "INT", ARRAY_SIZE(p->mcu_interrupts));
+	qdev_init_gpio_in_named(DEVICE(obj), dsp_input0, "DSPIN0", 1);
+	qdev_init_gpio_in_named(DEVICE(obj), dsp_input1, "DSPIN1", 1);
+	qdev_init_gpio_in_named(DEVICE(obj), dsp_gsm_input, "GSM", PMB887X_DSP_GSM_SIGNAL_COUNT);
+	qdev_init_gpio_in_named(DEVICE(obj), dsp_i2s2_input, "I2S2_RX", 1);
 	p->gsm_clock = qdev_init_clock_in(DEVICE(obj), "GSM_CLOCK", NULL, p, 0);
 	p->ms_clock = qdev_init_clock_in(DEVICE(obj), "MS_CLOCK", dsp_ms_clock_update, p, ClockUpdate);
-	qdev_init_gpio_out_named(DEVICE(obj), &p->outputs[0], "DSPOUT0_OUT", 1);
-	qdev_init_gpio_out_named(DEVICE(obj), &p->outputs[1], "DSPOUT1_OUT", 1);
-	qdev_init_gpio_out_named(DEVICE(obj), &p->outputs[2], "DSPOUT2_OUT", 1);
-	qdev_init_gpio_out_named(DEVICE(obj), &p->i2s2_outputs[PMB887X_DSP_I2S_OUTPUT_CLK0], "I2S2_CLK0_OUT", 1);
-	qdev_init_gpio_out_named(DEVICE(obj), &p->i2s2_outputs[PMB887X_DSP_I2S_OUTPUT_TX], "I2S2_TX_OUT", 1);
-	qdev_init_gpio_out_named(DEVICE(obj), &p->i2s2_outputs[PMB887X_DSP_I2S_OUTPUT_WA0], "I2S2_WA0_OUT", 1);
-	qdev_init_gpio_out_named(DEVICE(obj), &p->i2s2_outputs[PMB887X_DSP_I2S_OUTPUT_CLK1], "I2S2_CLK1_OUT", 1);
-	qdev_init_gpio_out_named(DEVICE(obj), &p->i2s2_outputs[PMB887X_DSP_I2S_OUTPUT_WA1], "I2S2_WA1_OUT", 1);
-	qdev_init_gpio_out_named(DEVICE(obj), &p->active_output, "ACTIVE_OUT", 1);
+	qdev_init_gpio_out_named(DEVICE(obj), &p->outputs[0], "DSPOUT0", 1);
+	qdev_init_gpio_out_named(DEVICE(obj), &p->outputs[1], "DSPOUT1", 1);
+	qdev_init_gpio_out_named(DEVICE(obj), &p->outputs[2], "DSPOUT2", 1);
+	qdev_init_gpio_out_named(DEVICE(obj), &p->i2s2_outputs[PMB887X_DSP_I2S_OUTPUT_CLK0], "I2S2_CLK0", 1);
+	qdev_init_gpio_out_named(DEVICE(obj), &p->i2s2_outputs[PMB887X_DSP_I2S_OUTPUT_TX], "I2S2_TX", 1);
+	qdev_init_gpio_out_named(DEVICE(obj), &p->i2s2_outputs[PMB887X_DSP_I2S_OUTPUT_WA0], "I2S2_WA0", 1);
+	qdev_init_gpio_out_named(DEVICE(obj), &p->i2s2_outputs[PMB887X_DSP_I2S_OUTPUT_CLK1], "I2S2_CLK1", 1);
+	qdev_init_gpio_out_named(DEVICE(obj), &p->i2s2_outputs[PMB887X_DSP_I2S_OUTPUT_WA1], "I2S2_WA1", 1);
+	qdev_init_gpio_out_named(DEVICE(obj), &p->active_output, "ACTIVE", 1);
 }
 
 static void dsp_reset(DeviceState *dev) {

@@ -785,12 +785,12 @@ static void dif_init(Object *obj) {
 	qdev_init_gpio_in_named(dev, dif_handle_dmac_rx_clr, "DMAC_RX_CLR", 1);
 	qdev_init_gpio_out_named(dev, &p->dmac_rx_breq, "DMAC_RX_BREQ", 1);
 
-	qdev_init_gpio_in_named(dev, dif_handle_gpio_input, "MRST_IN", 1);
-	qdev_init_gpio_out_named(dev, &p->gpio_sclk, "SCLK_OUT", 1);
-	qdev_init_gpio_out_named(dev, &p->gpio_mtsr, "MTSR_OUT", 1);
-	qdev_init_gpio_out_named(dev, &p->gpio_rs, "RS_OUT", 1);
-	qdev_init_gpio_out_named(dev, &p->gpio_cs, "CS_OUT", 1);
-	qdev_init_gpio_out_named(dev, &p->gpio_reset, "RESET_OUT", 1);
+	qdev_init_gpio_in_named(dev, dif_handle_gpio_input, "MRST", 1);
+	qdev_init_gpio_out_named(dev, &p->gpio_sclk, "SCLK", 1);
+	qdev_init_gpio_out_named(dev, &p->gpio_mtsr, "MTSR", 1);
+	qdev_init_gpio_out_named(dev, &p->gpio_rs, "RS", 1);
+	qdev_init_gpio_out_named(dev, &p->gpio_cs, "CS", 1);
+	qdev_init_gpio_out_named(dev, &p->gpio_reset, "RESET", 1);
 }
 
 static void dif_realize(DeviceState *dev, Error **errp) {

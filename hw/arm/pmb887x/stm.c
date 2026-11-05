@@ -200,7 +200,7 @@ static void stm_init(Object *obj) {
 	struct pmb887x_stm_t *p = PMB887X_STM(obj);
 	pmb887x_clc_init(&p->clc, DEVICE(obj));
 	pmb887x_clc_set_callback(&p->clc, stm_clock_update, p);
-	qdev_init_gpio_in_named(DEVICE(obj), stm_handle_rmc2_enable, "RMC2_ENABLE_IN", 1);
+	qdev_init_gpio_in_named(DEVICE(obj), stm_handle_rmc2_enable, "RMC2_ENABLE", 1);
 	seqlock_init(&p->seq);
 	memory_region_init_io(&p->mmio, obj, &io_ops, p, "pmb887x-stm", STM_IO_SIZE);
 	memory_region_enable_lockless_io(&p->mmio);

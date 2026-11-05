@@ -75,10 +75,11 @@ static void pmb887x_init_keymap(DeviceState *keypad, const uint32_t *map, int ma
 
 static void pmb887x_init_gpio_names(DeviceState *gpio) {
 	const pmb887x_board_t *board = pmb887x_board();
+	const pmb887x_cpu_meta_t *cpu_info = pmb887x_get_cpu_meta(board->cpu);
 	QList *list = qlist_new();
-	for (uint32_t i = 0; i < board->gpios_count; i++) {
-		const pmb887x_cpu_meta_gpio_t *pin = &board->gpios[i];
-		qlist_append_str(list, strcmp(pin->func_name, pin->name) ? pin->func_name : "");
+	for (int i = 0; i < cpu_info->gpios_count; i++) {
+		const char *name = board->gpio_names[i];
+		qlist_append_str(list, strcmp(name, cpu_info->gpios[i].name) ? name : "");
 	}
 	qdev_prop_set_array(gpio, "pin-names", list);
 }
@@ -199,7 +200,7 @@ static void pmb887x_init(MachineState *machine) {
 	// System Timer
 	DeviceState *stm = pmb887x_new_cpu_module("STM");
 	pmb887x_qdev_connect_gpio_out(cgu, "FPI2_PLL_SELECTED", 0,
-		qdev_get_gpio_in_named(stm, "RMC2_ENABLE_IN", 0));
+		qdev_get_gpio_in_named(stm, "RMC2_ENABLE", 0));
 	sysbus_realize_and_unref(SYS_BUS_DEVICE(stm), &error_fatal);
 
 	// Time Processing Unit
@@ -222,8 +223,8 @@ static void pmb887x_init(MachineState *machine) {
 	pmb887x_dsp_set_config(dsp, pmb887x_cpu_get(pmb887x_board()->cpu)->dsp_config);
 	pmb887x_board_init_dsp(dsp);
 	qdev_connect_clock_in(dsp, "GSM_CLOCK", qdev_get_clock_out(tpu, "GSM_CLOCK"));
-	qdev_connect_gpio_out_named(dsp, "ACTIVE_OUT", 0,
-		qdev_get_gpio_in_named(cgu, "DSP_ACTIVE_IN", 0));
+	qdev_connect_gpio_out_named(dsp, "ACTIVE", 0,
+		qdev_get_gpio_in_named(cgu, "DSP_ACTIVE", 0));
 	sysbus_realize_and_unref(SYS_BUS_DEVICE(dsp), &error_fatal);
 	pmb887x_tpu_set_dsp(tpu, dsp);
 
@@ -301,15 +302,15 @@ static void pmb887x_init(MachineState *machine) {
 	object_property_set_uint(OBJECT(scu), "cpu_uid0", pmb887x_board()->cpu_uid[0], &error_fatal);
 	object_property_set_uint(OBJECT(scu), "cpu_uid1", pmb887x_board()->cpu_uid[1], &error_fatal);
 	object_property_set_uint(OBJECT(scu), "cpu_uid2", pmb887x_board()->cpu_uid[2], &error_fatal);
-	qdev_connect_gpio_out_named(scu, "DSP_RESET_OUT", 0, qdev_get_gpio_in_named(dsp, "RESET_IN", 0));
-	qdev_connect_gpio_out_named(scu, "USB_RESET_OUT", 0, qdev_get_gpio_in_named(usb, "RESET_IN", 0));
-	qdev_connect_gpio_out_named(scu, "DMAC_RESET_OUT", 0, qdev_get_gpio_in_named(dmac, "RESET_IN", 0));
-	qdev_connect_gpio_out_named(scu, "I2C_RESET_OUT", 0, qdev_get_gpio_in_named(i2c, "RESET_IN", 0));
+	qdev_connect_gpio_out_named(scu, "DSP_RESET", 0, qdev_get_gpio_in_named(dsp, "RESET", 0));
+	qdev_connect_gpio_out_named(scu, "USB_RESET", 0, qdev_get_gpio_in_named(usb, "RESET", 0));
+	qdev_connect_gpio_out_named(scu, "DMAC_RESET", 0, qdev_get_gpio_in_named(dmac, "RESET", 0));
+	qdev_connect_gpio_out_named(scu, "I2C_RESET", 0, qdev_get_gpio_in_named(i2c, "RESET", 0));
 	for (int i = 0; i < PMB887X_DSP_INT_COUNT; i++)
-		qdev_connect_gpio_out_named(scu, "DSP_INT_OUT", i, qdev_get_gpio_in_named(dsp, "INT_IN", i));
+		qdev_connect_gpio_out_named(scu, "DSP_INT", i, qdev_get_gpio_in_named(dsp, "INT", i));
 	sysbus_realize_and_unref(SYS_BUS_DEVICE(scu), &error_fatal);
 	for (int i = 0; i < PMB887X_DSP_MCU_INT_COUNT; i++)
-		qdev_connect_gpio_out_named(dsp, "INT_OUT", i, qdev_get_gpio_in_named(scu, "DSP_INT_IN", i));
+		qdev_connect_gpio_out_named(dsp, "INT", i, qdev_get_gpio_in_named(scu, "DSP_INT", i));
 
 	// CAPCOM0
 	DeviceState *capcom0 = pmb887x_new_cpu_module("CAPCOM0");
@@ -326,7 +327,7 @@ static void pmb887x_init(MachineState *machine) {
 	qdev_prop_set_string(rtc, "cnt-format",
 		toml_table_get_string(pmb887x_board()->config, "rtc.format", "unix", false));
 	sysbus_realize_and_unref(SYS_BUS_DEVICE(rtc), &error_fatal);
-	qdev_connect_gpio_out_named(scu, "RTC_RESET_OUT", 0, qdev_get_gpio_in_named(rtc, "RESET_IN", 0));
+	qdev_connect_gpio_out_named(scu, "RTC_RESET", 0, qdev_get_gpio_in_named(rtc, "RESET", 0));
 
 	// GPTU0
 	DeviceState *gptu0 = pmb887x_new_cpu_module("GPTU0");
@@ -360,7 +361,6 @@ static void pmb887x_init(MachineState *machine) {
 	pmb887x_cpu_modules_post_init();
 	pmb887x_board_init_analog();
 	pmb887x_board_gpio_init_fixed_inputs();
-	pmb887x_board_gpio_init_fixed_connections();
 	pmb887x_board_init_devices(ebuc);
 	sysbus_realize_and_unref(SYS_BUS_DEVICE(ebuc), &error_fatal);
 	pmb887x_board_keyboard_connect_gpios(keypad);

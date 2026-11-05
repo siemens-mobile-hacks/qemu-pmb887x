@@ -454,9 +454,9 @@ static void cgu_init(Object *obj) {
 	memory_region_init_io(&p->mmio, obj, &io_ops, p, "pmb887x-cgu", CGU_IO_SIZE);
 	sysbus_init_mmio(SYS_BUS_DEVICE(obj), &p->mmio);
 	sysbus_init_irq(SYS_BUS_DEVICE(obj), &p->irq);
-	qdev_init_gpio_out_named(dev, &p->gpio_clk32, "CLK32_OUT", 1);
+	qdev_init_gpio_out_named(dev, &p->gpio_clk32, "CLK32", 1);
 	qdev_init_gpio_out_named(dev, &p->gpio_fpi2_pll_selected, "FPI2_PLL_SELECTED", 1);
-	qdev_init_gpio_in_named(dev, cgu_dsp_active_input, "DSP_ACTIVE_IN", 1);
+	qdev_init_gpio_in_named(dev, cgu_dsp_active_input, "DSP_ACTIVE", 1);
 	p->osc_clock = qdev_init_clock_out(dev, "OSC");
 	p->rtc_clock = qdev_init_clock_out(dev, "RTC");
 	p->sys_clock = qdev_init_clock_out(dev, "FSYS");

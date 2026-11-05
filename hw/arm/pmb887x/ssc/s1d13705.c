@@ -204,9 +204,9 @@ static void gimmick_realize(SSIPeripheral *d, Error **errp) {
 	pmb887x_gimmick_t *p = PMB887X_GIMMICK(d);
 	debug_channel_init_device(&p->dbg, DEVICE(d));
 	p->bus = ssi_create_bus(DEVICE(d), TYPE_PMB887X_GIMMICK);
-	qdev_init_gpio_in_named(DEVICE(d), gimmick_handle_sa0, "SA0_IN", 1);
-	qdev_init_gpio_in_named(DEVICE(d), gimmick_handle_reset, "RESET_IN", 1);
-	qdev_init_gpio_out_named(DEVICE(d), &p->fpline, "FPLINE_OUT", 1);
+	qdev_init_gpio_in_named(DEVICE(d), gimmick_handle_sa0, "SA0", 1);
+	qdev_init_gpio_in_named(DEVICE(d), gimmick_handle_reset, "RESET", 1);
+	qdev_init_gpio_out_named(DEVICE(d), &p->fpline, "FPLINE", 1);
 }
 
 static const Property gimmick_properties[] = {

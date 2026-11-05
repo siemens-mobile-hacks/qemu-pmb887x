@@ -60,42 +60,19 @@ static void pmb887x_cpu_module_post_init(DeviceState *dev, const pmb887x_cpu_mod
 		DeviceState *gpio = qdev_find_recursive(sysbus_get_default(), "GPIO");
 		g_assert(gpio != NULL);
 
-		// GPIO
 		for (int i = 0; i < mod->gpios_count; i++) {
 			const pmb887x_cpu_module_gpio_t *gpio_link = &mod->gpios[i];
+			char alt_name[16];
+			sprintf(alt_name, "pin_alt%d", gpio_link->alt);
 
-			// PERIPHERAL -> GPIO_OUT
-			if (g_str_has_suffix(gpio_link->name, "_OUT")) {
-				char gpio_in_name[64];
-				sprintf(gpio_in_name, "pin_alt%d_in", gpio_link->alt);
-
-				if (!qdev_has_gpio_in_named(gpio, gpio_in_name, gpio_link->pin))
-					hw_error("GPIO_IN '%s[%d]' not found in '%s'", gpio_in_name, gpio_link->pin, object_get_typename(OBJECT(gpio)));
-
-				if (!qdev_has_gpio_out_named(dev, gpio_link->name, 0))
-					hw_error("GPIO_OUT '%s[%d]' not found in '%s'", gpio_link->name, 0, object_get_typename(OBJECT(dev)));
-
-				qemu_irq gpio_in = qdev_get_gpio_in_named(gpio, gpio_in_name, gpio_link->pin);
-				if (!object_get_canonical_path(OBJECT(gpio_in)))
-					hw_error("GPIO_IN '%s[%d]' is not attached to dev!", gpio_in_name, gpio_link->pin);
+			if (gpio_link->directions & PMB887X_GPIO_DIR_OUT) {
+				qemu_irq gpio_in = pmb887x_qdev_get_gpio_in(gpio, alt_name, gpio_link->pin);
 				pmb887x_qdev_connect_gpio_out(dev, gpio_link->name, 0, gpio_in);
 			}
 
-			// GPIO_IN -> PERIPHERAL
-			if (g_str_has_suffix(gpio_link->name, "_IN")) {
-				char gpio_out_name[64];
-				sprintf(gpio_out_name, "pin_alt%d_out", gpio_link->alt);
-
-				if (!qdev_has_gpio_in_named(dev, gpio_link->name, 0))
-					hw_error("GPIO_IN '%s[%d]' not found in '%s'", gpio_link->name, 0, object_get_typename(OBJECT(dev)));
-
-				if (!qdev_has_gpio_out_named(gpio, gpio_out_name, gpio_link->pin))
-					hw_error("GPIO_OUT '%s[%d]' not found in '%s'", gpio_out_name, gpio_link->pin, object_get_typename(OBJECT(gpio)));
-
-				qemu_irq gpio_in = qdev_get_gpio_in_named(dev, gpio_link->name, 0);
-				if (!object_get_canonical_path(OBJECT(gpio_in)))
-					hw_error("GPIO_IN '%s:%s[0]' is not attached to dev!", dev->id, gpio_link->name);
-				pmb887x_qdev_connect_gpio_out(gpio, gpio_out_name, gpio_link->pin, gpio_in);
+			if (gpio_link->directions & PMB887X_GPIO_DIR_IN) {
+				qemu_irq dev_in = pmb887x_qdev_get_gpio_in(dev, gpio_link->name, 0);
+				pmb887x_qdev_connect_gpio_out(gpio, alt_name, gpio_link->pin, dev_in);
 			}
 		}
 	}

@@ -662,10 +662,10 @@ static void lcd_init(Object *obj) {
 	}
 
 	DeviceState *dev = DEVICE(obj);
-	qdev_init_gpio_in_named(DEVICE(dev), lcd_handle_rd, "RD_IN", 1);
-	qdev_init_gpio_in_named(DEVICE(dev), lcd_handle_wr, "WR_IN", 1);
-	qdev_init_gpio_in_named(DEVICE(dev), lcd_handle_cd, "CD_IN", 1);
-	qdev_init_gpio_in_named(DEVICE(dev), lcd_handle_reset, "RESET_IN", 1);
+	qdev_init_gpio_in_named(DEVICE(dev), lcd_handle_rd, "RD", 1);
+	qdev_init_gpio_in_named(DEVICE(dev), lcd_handle_wr, "WR", 1);
+	qdev_init_gpio_in_named(DEVICE(dev), lcd_handle_cd, "CD", 1);
+	qdev_init_gpio_in_named(DEVICE(dev), lcd_handle_reset, "RESET", 1);
 }
 
 static void lcd_realize(SSIPeripheral *d, Error **errp) {

@@ -226,8 +226,8 @@ static void acodec_handle_reset(void *opaque, int n, int level) {
 static void acodec_realize(SSIPeripheral *d, Error **errp) {
 	pmb887x_acodec_t *p = PMB887X_ACODEC(d);
 	debug_channel_init_device(&p->dbg, DEVICE(d));
-	qdev_init_gpio_in_named(DEVICE(d), acodec_handle_reset, "RESET_IN", 1);
-	qdev_init_gpio_out_named(DEVICE(d), &p->gpio_int, "INT_OUT", 1);
+	qdev_init_gpio_in_named(DEVICE(d), acodec_handle_reset, "RESET", 1);
+	qdev_init_gpio_out_named(DEVICE(d), &p->gpio_int, "INT", 1);
 	p->response_payload = &p->response[6];
 }
 

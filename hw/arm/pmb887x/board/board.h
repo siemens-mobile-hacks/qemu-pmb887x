@@ -21,8 +21,7 @@ struct pmb887x_board_t {
 
 	uint32_t keymap[Q_KEY_CODE__MAX];
 
-	pmb887x_cpu_meta_gpio_t *gpios;
-	uint32_t gpios_count;
+	const char **gpio_names;
 
 	uint32_t flash_offset;
 };

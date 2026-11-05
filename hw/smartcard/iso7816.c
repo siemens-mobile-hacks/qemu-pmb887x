@@ -359,7 +359,7 @@ static void iso7816_slot_init(Object *obj)
     ISO7816Slot *slot = ISO7816_SLOT(obj);
     DeviceState *dev = DEVICE(obj);
 
-    qdev_init_gpio_in_named(dev, iso7816_slot_set_reset, "RST_IN", 1);
+    qdev_init_gpio_in_named(dev, iso7816_slot_set_reset, "RST", 1);
     slot->clock = qdev_init_clock_in(dev, "CLK", NULL, NULL, 0);
     slot->bus = qbus_new(TYPE_ISO7816_BUS, dev, NULL);
 }

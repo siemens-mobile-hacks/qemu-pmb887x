@@ -1045,7 +1045,7 @@ static void tpu_init(Object *obj) {
 		sysbus_init_irq(SYS_BUS_DEVICE(obj), &p->gp_irq[i]);
 	for (size_t i = 0; i < ARRAY_SIZE(p->irq); i++)
 		sysbus_init_irq(SYS_BUS_DEVICE(obj), &p->irq[i]);
-	qdev_init_gpio_out_named(DEVICE(obj), p->gsm_outputs, "GSM_OUT", PMB887X_DSP_GSM_SIGNAL_COUNT);
+	qdev_init_gpio_out_named(DEVICE(obj), p->gsm_outputs, "GSM", PMB887X_DSP_GSM_SIGNAL_COUNT);
 	p->gsm_clock = qdev_init_clock_out(DEVICE(obj), "GSM_CLOCK");
 }
 

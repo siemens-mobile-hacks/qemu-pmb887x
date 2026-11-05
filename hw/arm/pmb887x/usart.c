@@ -960,10 +960,10 @@ static void usart_init(Object *obj) {
 	qdev_init_gpio_in_named(dev, usart_handle_dmac_rx_clr, "DMAC_RX_CLR", 1);
 	qdev_init_gpio_out_named(dev, &p->dmac_rx_breq, "DMAC_RX_BREQ", 1);
 
-	qdev_init_gpio_in_named(dev, usart_handle_rx_input, "RXD_IN", 1);
-	qdev_init_gpio_in_named(dev, usart_handle_cts_input, "CTS_IN", 1);
-	qdev_init_gpio_out_named(dev, &p->gpio_txd, "TXD_OUT", 1);
-	qdev_init_gpio_out_named(dev, &p->gpio_rts, "RTS_OUT", 1);
+	qdev_init_gpio_in_named(dev, usart_handle_rx_input, "RXD", 1);
+	qdev_init_gpio_in_named(dev, usart_handle_cts_input, "CTS", 1);
+	qdev_init_gpio_out_named(dev, &p->gpio_txd, "TXD", 1);
+	qdev_init_gpio_out_named(dev, &p->gpio_rts, "RTS", 1);
 }
 
 static void usart_realize(DeviceState *dev, Error **errp) {

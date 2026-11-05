@@ -352,14 +352,14 @@ static void gimmick_realize(SSIPeripheral *d, Error **errp) {
 	pmb887x_gimmick_t *p = PMB887X_GIMMICK(d);
 	debug_channel_init_device(&p->dbg, DEVICE(d));
 	static const char * const fpdat_names[] = {
-		"FPDAT0_OUT", "FPDAT1_OUT", "FPDAT2_OUT", "FPDAT3_OUT",
-		"FPDAT4_OUT", "FPDAT5_OUT", "FPDAT6_OUT", "FPDAT7_OUT",
+		"FPDAT0", "FPDAT1", "FPDAT2", "FPDAT3",
+		"FPDAT4", "FPDAT5", "FPDAT6", "FPDAT7",
 	};
 	p->bus = ssi_create_bus(DEVICE(d), TYPE_PMB887X_GIMMICK);
 	qdev_init_gpio_in_named(DEVICE(d), gimmick_handle_cs, SSI_GPIO_CS, 1);
-	qdev_init_gpio_in_named(DEVICE(d), gimmick_handle_sa0, "SA0_IN", 1);
-	qdev_init_gpio_in_named(DEVICE(d), gimmick_handle_reset, "RESET_IN", 1);
-	qdev_init_gpio_out_named(DEVICE(d), &p->fpline, "FPLINE_OUT", 1);
+	qdev_init_gpio_in_named(DEVICE(d), gimmick_handle_sa0, "SA0", 1);
+	qdev_init_gpio_in_named(DEVICE(d), gimmick_handle_reset, "RESET", 1);
+	qdev_init_gpio_out_named(DEVICE(d), &p->fpline, "FPLINE", 1);
 	for (uint32_t i = 0; i < ARRAY_SIZE(p->fpdat); i++) {
 		qdev_init_gpio_out_named(DEVICE(d), &p->fpdat[i], fpdat_names[i], 1);
 	}

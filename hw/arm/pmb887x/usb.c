@@ -133,7 +133,7 @@ static void usb_init(Object *obj) {
 	memory_region_init_io(&p->mmio, obj, &usb_io_ops, p, TYPE_PMB887X_USB, USB_IO_SIZE);
 	sysbus_init_mmio(SYS_BUS_DEVICE(obj), &p->mmio);
 	sysbus_init_irq(SYS_BUS_DEVICE(obj), &p->irq);
-	qdev_init_gpio_in_named(dev, usb_reset_input, "RESET_IN", 1);
+	qdev_init_gpio_in_named(dev, usb_reset_input, "RESET", 1);
 }
 
 static void usb_reset(DeviceState *dev) {

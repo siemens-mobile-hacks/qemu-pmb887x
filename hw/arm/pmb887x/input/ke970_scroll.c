@@ -149,10 +149,10 @@ static void ke970_scroll_init(Object *obj) {
 	DeviceState *dev = DEVICE(obj);
 	pmb887x_ke970_scroll_t *p = PMB887X_KE970_SCROLL(obj);
 
-	qdev_init_gpio_out_named(dev, &p->a_out, "A_OUT", 1);
-	qdev_init_gpio_out_named(dev, &p->b_out, "B_OUT", 1);
-	qdev_init_gpio_in_named(dev, ke970_scroll_cw_handler, "CW_IN", 1);
-	qdev_init_gpio_in_named(dev, ke970_scroll_ccw_handler, "CCW_IN", 1);
+	qdev_init_gpio_out_named(dev, &p->a_out, "A", 1);
+	qdev_init_gpio_out_named(dev, &p->b_out, "B", 1);
+	qdev_init_gpio_in_named(dev, ke970_scroll_cw_handler, "CW", 1);
+	qdev_init_gpio_in_named(dev, ke970_scroll_ccw_handler, "CCW", 1);
 }
 
 static void ke970_scroll_realize(DeviceState *dev, Error **errp) {

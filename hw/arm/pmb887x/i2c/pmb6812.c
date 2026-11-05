@@ -202,7 +202,7 @@ static void pmic_realize(DeviceState *dev, Error **errp) {
 }
 
 static void pmic_init(Object *obj) {
-	qdev_init_gpio_in_named(DEVICE(obj), pmic_handle_on_input, "ON_IN", 1);
+	qdev_init_gpio_in_named(DEVICE(obj), pmic_handle_on_input, "ON", 1);
 }
 
 static void pmic_class_init(ObjectClass *klass, const void *data) {

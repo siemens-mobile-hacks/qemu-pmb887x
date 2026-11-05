@@ -113,13 +113,13 @@ static void gimmick_realize(SSIPeripheral *d, Error **errp) {
 	pmb887x_gimmick_t *p = PMB887X_GIMMICK(d);
 	debug_channel_init_device(&p->dbg, DEVICE(d));
 	p->bus = ssi_create_bus(DEVICE(d), TYPE_PMB887X_GIMMICK);
-	qdev_init_gpio_in_named(DEVICE(d), gimmick_handle_rs, "RS_IN", 1);
-	qdev_init_gpio_in_named(DEVICE(d), gimmick_handle_ncs_app, "NCS_APP_IN", 1);
-	qdev_init_gpio_in_named(DEVICE(d), gimmick_handle_ncs_lcd, "NCS_LCD_IN", 1);
-	qdev_init_gpio_in_named(DEVICE(d), gimmick_handle_nreset, "NRESET_IN", 1);
-	qdev_init_gpio_out_named(DEVICE(d), &p->int_out, "INT_OUT", 1);
-	qdev_init_gpio_out_named(DEVICE(d), &p->nscs_out, "NSCS_OUT", 1);
-	qdev_init_gpio_out_named(DEVICE(d), &p->srs_out, "SRS_OUT", 1);
+	qdev_init_gpio_in_named(DEVICE(d), gimmick_handle_rs, "RS", 1);
+	qdev_init_gpio_in_named(DEVICE(d), gimmick_handle_ncs_app, "NCS_APP", 1);
+	qdev_init_gpio_in_named(DEVICE(d), gimmick_handle_ncs_lcd, "NCS_LCD", 1);
+	qdev_init_gpio_in_named(DEVICE(d), gimmick_handle_nreset, "NRESET", 1);
+	qdev_init_gpio_out_named(DEVICE(d), &p->int_out, "INT", 1);
+	qdev_init_gpio_out_named(DEVICE(d), &p->nscs_out, "NSCS", 1);
+	qdev_init_gpio_out_named(DEVICE(d), &p->srs_out, "SRS", 1);
 }
 
 static const Property gimmick_properties[] = {

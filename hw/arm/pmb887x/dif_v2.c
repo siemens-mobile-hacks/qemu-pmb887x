@@ -1574,29 +1574,29 @@ static void dif_init(Object *obj) {
 	qdev_init_gpio_out_named(dev, &p->dmac_rx_lsreq, "DMAC_RX_LSREQ", 1);
 	qdev_init_gpio_out_named(dev, &p->dmac_rx_lbreq, "DMAC_RX_LBREQ", 1);
 
-	qdev_init_gpio_in_named(dev, dif_handle_gpio_data_input, "D0_IN", 1);
-	qdev_init_gpio_in_named(dev, dif_handle_gpio_data_input, "D1_IN", 1);
-	qdev_init_gpio_in_named(dev, dif_handle_gpio_data_input, "D2_IN", 1);
-	qdev_init_gpio_in_named(dev, dif_handle_gpio_data_input, "D3_IN", 1);
-	qdev_init_gpio_in_named(dev, dif_handle_gpio_data_input, "D4_IN", 1);
-	qdev_init_gpio_in_named(dev, dif_handle_gpio_data_input, "D5_IN", 1);
-	qdev_init_gpio_in_named(dev, dif_handle_gpio_data_input, "D6_IN", 1);
-	qdev_init_gpio_in_named(dev, dif_handle_gpio_data_input, "D7_IN", 1);
+	qdev_init_gpio_in_named(dev, dif_handle_gpio_data_input, "D0", 1);
+	qdev_init_gpio_in_named(dev, dif_handle_gpio_data_input, "D1", 1);
+	qdev_init_gpio_in_named(dev, dif_handle_gpio_data_input, "D2", 1);
+	qdev_init_gpio_in_named(dev, dif_handle_gpio_data_input, "D3", 1);
+	qdev_init_gpio_in_named(dev, dif_handle_gpio_data_input, "D4", 1);
+	qdev_init_gpio_in_named(dev, dif_handle_gpio_data_input, "D5", 1);
+	qdev_init_gpio_in_named(dev, dif_handle_gpio_data_input, "D6", 1);
+	qdev_init_gpio_in_named(dev, dif_handle_gpio_data_input, "D7", 1);
 
-	qdev_init_gpio_out_named(dev, &p->gpio_data[0], "D0_OUT", 1);
-	qdev_init_gpio_out_named(dev, &p->gpio_data[1], "D1_OUT", 1);
-	qdev_init_gpio_out_named(dev, &p->gpio_data[2], "D2_OUT", 1);
-	qdev_init_gpio_out_named(dev, &p->gpio_data[3], "D3_OUT", 1);
-	qdev_init_gpio_out_named(dev, &p->gpio_data[4], "D4_OUT", 1);
-	qdev_init_gpio_out_named(dev, &p->gpio_data[5], "D5_OUT", 1);
-	qdev_init_gpio_out_named(dev, &p->gpio_data[6], "D6_OUT", 1);
-	qdev_init_gpio_out_named(dev, &p->gpio_data[7], "D7_OUT", 1);
-	qdev_init_gpio_out_named(dev, &p->gpio_cd, "CD_OUT", 1);
-	qdev_init_gpio_out_named(dev, &p->gpio_wr, "WR_OUT", 1);
-	qdev_init_gpio_out_named(dev, &p->gpio_rd, "RD_OUT", 1);
-	qdev_init_gpio_out_named(dev, &p->gpio_cs[0], "CS1_OUT", 1);
-	qdev_init_gpio_out_named(dev, &p->gpio_cs[1], "CS2_OUT", 1);
-	qdev_init_gpio_out_named(dev, &p->gpio_cs[2], "CS3_OUT", 1);
+	qdev_init_gpio_out_named(dev, &p->gpio_data[0], "D0", 1);
+	qdev_init_gpio_out_named(dev, &p->gpio_data[1], "D1", 1);
+	qdev_init_gpio_out_named(dev, &p->gpio_data[2], "D2", 1);
+	qdev_init_gpio_out_named(dev, &p->gpio_data[3], "D3", 1);
+	qdev_init_gpio_out_named(dev, &p->gpio_data[4], "D4", 1);
+	qdev_init_gpio_out_named(dev, &p->gpio_data[5], "D5", 1);
+	qdev_init_gpio_out_named(dev, &p->gpio_data[6], "D6", 1);
+	qdev_init_gpio_out_named(dev, &p->gpio_data[7], "D7", 1);
+	qdev_init_gpio_out_named(dev, &p->gpio_cd, "CD", 1);
+	qdev_init_gpio_out_named(dev, &p->gpio_wr, "WR", 1);
+	qdev_init_gpio_out_named(dev, &p->gpio_rd, "RD", 1);
+	qdev_init_gpio_out_named(dev, &p->gpio_cs[0], "CS1", 1);
+	qdev_init_gpio_out_named(dev, &p->gpio_cs[1], "CS2", 1);
+	qdev_init_gpio_out_named(dev, &p->gpio_cs[2], "CS3", 1);
 }
 
 static void dif_realize(DeviceState *dev, Error **errp) {

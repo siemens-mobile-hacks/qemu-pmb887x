@@ -196,19 +196,19 @@ static void keypad_init(Object *obj) {
 	for (int i = 0; i < ARRAY_SIZE(p->src); i++)
 		sysbus_init_irq(SYS_BUS_DEVICE(obj), &p->irq[i]);
 
-	qdev_init_gpio_in_named(dev, keypad_handle_gpio_input, "IN0_IN", 1);
-	qdev_init_gpio_in_named(dev, keypad_handle_gpio_input, "IN1_IN", 1);
-	qdev_init_gpio_in_named(dev, keypad_handle_gpio_input, "IN2_IN", 1);
-	qdev_init_gpio_in_named(dev, keypad_handle_gpio_input, "IN3_IN", 1);
-	qdev_init_gpio_in_named(dev, keypad_handle_gpio_input, "IN4_IN", 1);
-	qdev_init_gpio_in_named(dev, keypad_handle_gpio_input, "IN5_IN", 1);
-	qdev_init_gpio_in_named(dev, keypad_handle_gpio_input, "IN6_IN", 1);
+	qdev_init_gpio_in_named(dev, keypad_handle_gpio_input, "IN0", 1);
+	qdev_init_gpio_in_named(dev, keypad_handle_gpio_input, "IN1", 1);
+	qdev_init_gpio_in_named(dev, keypad_handle_gpio_input, "IN2", 1);
+	qdev_init_gpio_in_named(dev, keypad_handle_gpio_input, "IN3", 1);
+	qdev_init_gpio_in_named(dev, keypad_handle_gpio_input, "IN4", 1);
+	qdev_init_gpio_in_named(dev, keypad_handle_gpio_input, "IN5", 1);
+	qdev_init_gpio_in_named(dev, keypad_handle_gpio_input, "IN6", 1);
 
-	qdev_init_gpio_out_named(dev, &p->gpio_out[0], "OUT0_OUT", 1);
-	qdev_init_gpio_out_named(dev, &p->gpio_out[1], "OUT1_OUT", 1);
-	qdev_init_gpio_out_named(dev, &p->gpio_out[2], "OUT2_OUT", 1);
-	qdev_init_gpio_out_named(dev, &p->gpio_out[3], "OUT3_OUT", 1);
-	qdev_init_gpio_out_named(dev, &p->ready_out, "KEYPAD_READY_OUT", 1);
+	qdev_init_gpio_out_named(dev, &p->gpio_out[0], "OUT0", 1);
+	qdev_init_gpio_out_named(dev, &p->gpio_out[1], "OUT1", 1);
+	qdev_init_gpio_out_named(dev, &p->gpio_out[2], "OUT2", 1);
+	qdev_init_gpio_out_named(dev, &p->gpio_out[3], "OUT3", 1);
+	qdev_init_gpio_out_named(dev, &p->ready_out, "KEYPAD_READY", 1);
 }
 
 static void keypad_realize(DeviceState *dev, Error **errp) {
@@ -219,7 +219,7 @@ static void keypad_realize(DeviceState *dev, Error **errp) {
 	p->extension = 0;
 	p->pressed = g_new0(bool, p->map_size);
 	p->key_out = g_new0(qemu_irq, p->map_size);
-	qdev_init_gpio_out_named(dev, p->key_out, "KEY_OUT", p->map_size);
+	qdev_init_gpio_out_named(dev, p->key_out, "KEY", p->map_size);
 	
 	for (int i = 0; i < KEYPAD_MAX_OUT; i++) {
 		for (int j = 0; j < KEYPAD_MAX_IN; j++)

@@ -692,14 +692,14 @@ static void capcom_init(Object *obj) {
 	for (unsigned index = 0; index < CAPCOM_CHANNEL_COUNT; index++)
 		sysbus_init_irq(SYS_BUS_DEVICE(obj), &p->channel_irq[index]);
 
-	qdev_init_gpio_in_named(dev, capcom_input_cc0_handler, "CC0_IN", 1);
-	qdev_init_gpio_in_named(dev, capcom_input_cc1_handler, "CC1_IN", 1);
-	qdev_init_gpio_in_named(dev, capcom_input_cc2_handler, "CC2_IN", 1);
-	qdev_init_gpio_in_named(dev, capcom_input_cc3_handler, "CC3_IN", 1);
-	qdev_init_gpio_in_named(dev, capcom_input_cc4_handler, "CC4_IN", 1);
-	qdev_init_gpio_in_named(dev, capcom_input_cc5_handler, "CC5_IN", 1);
-	qdev_init_gpio_in_named(dev, capcom_input_cc6_handler, "CC6_IN", 1);
-	qdev_init_gpio_in_named(dev, capcom_input_cc7_handler, "CC7_IN", 1);
+	qdev_init_gpio_in_named(dev, capcom_input_cc0_handler, "CC0", 1);
+	qdev_init_gpio_in_named(dev, capcom_input_cc1_handler, "CC1", 1);
+	qdev_init_gpio_in_named(dev, capcom_input_cc2_handler, "CC2", 1);
+	qdev_init_gpio_in_named(dev, capcom_input_cc3_handler, "CC3", 1);
+	qdev_init_gpio_in_named(dev, capcom_input_cc4_handler, "CC4", 1);
+	qdev_init_gpio_in_named(dev, capcom_input_cc5_handler, "CC5", 1);
+	qdev_init_gpio_in_named(dev, capcom_input_cc6_handler, "CC6", 1);
+	qdev_init_gpio_in_named(dev, capcom_input_cc7_handler, "CC7", 1);
 }
 
 static void capcom_reset(DeviceState *dev) {

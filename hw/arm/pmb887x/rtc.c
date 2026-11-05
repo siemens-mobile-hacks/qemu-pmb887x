@@ -305,7 +305,7 @@ static void rtc_init(Object *obj) {
 	memory_region_init_io(&p->mmio, obj, &io_ops, p, "pmb887x-rtc", RTC_IO_SIZE);
 	sysbus_init_mmio(SYS_BUS_DEVICE(obj), &p->mmio);
 	sysbus_init_irq(SYS_BUS_DEVICE(obj), &p->irq);
-	qdev_init_gpio_in_named(DEVICE(obj), rtc_handle_reset, "RESET_IN", 1);
+	qdev_init_gpio_in_named(DEVICE(obj), rtc_handle_reset, "RESET", 1);
 }
 
 static uint32_t rtc_pack_cnt(uint32_t day_rel, uint32_t yday, uint32_t hour, uint32_t min, uint32_t sec) {

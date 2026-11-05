@@ -931,11 +931,11 @@ static void i2c_init(Object *obj) {
 	qdev_init_gpio_out_named(dev, &p->dmac_lsreq, "DMAC_TX_LSREQ", 1);
 	qdev_init_gpio_out_named(dev, &p->dmac_lbreq, "DMAC_TX_LBREQ", 1);
 
-	qdev_init_gpio_in_named(dev, i2c_handle_gpio_input, "SCL_IN", 1);
-	qdev_init_gpio_out_named(dev, &p->gpio_scl, "SCL_OUT", 1);
-	qdev_init_gpio_in_named(dev, i2c_handle_gpio_input, "SDA_IN", 1);
-	qdev_init_gpio_out_named(dev, &p->gpio_sda, "SDA_OUT", 1);
-	qdev_init_gpio_in_named(dev, i2c_handle_reset, "RESET_IN", 1);
+	qdev_init_gpio_in_named(dev, i2c_handle_gpio_input, "SCL", 1);
+	qdev_init_gpio_out_named(dev, &p->gpio_scl, "SCL", 1);
+	qdev_init_gpio_in_named(dev, i2c_handle_gpio_input, "SDA", 1);
+	qdev_init_gpio_out_named(dev, &p->gpio_sda, "SDA", 1);
+	qdev_init_gpio_in_named(dev, i2c_handle_reset, "RESET", 1);
 }
 
 static void i2c_realize(DeviceState *dev, Error **errp) {
