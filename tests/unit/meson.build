@@ -48,7 +48,6 @@ tests = {
   'test-logging': [],
   'test-qapi-util': [],
   'test-interval-tree': [],
-  'test-fifo': [],
   'test-envlist': [],
 }
 

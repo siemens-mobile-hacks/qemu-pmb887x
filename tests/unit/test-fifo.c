@@ -1,5 +1,5 @@
 /*
- * Fifo8 tests
+ * Fifo8 and Fifo32 tests
  *
  * Copyright 2024 Mark Cave-Ayland
  *
@@ -13,6 +13,7 @@
 #include "qemu/osdep.h"
 #include "migration/vmstate.h"
 #include "qemu/fifo8.h"
+#include "qemu/fifo32.h"
 
 const VMStateInfo vmstate_info_uint32;
 const VMStateInfo vmstate_info_buffer;
@@ -432,10 +433,95 @@ static void test_fifo8_pushpop(void)
     fifo8_destroy(&fifo);
 }
 
+static void test_fifo8_pushpop_wrap(void)
+{
+    Fifo8 fifo;
+
+    fifo8_create(&fifo, 4);
+    for (uint8_t i = 0; i < 3; i++) {
+        fifo8_push(&fifo, i);
+        g_assert_cmpuint(fifo8_pop(&fifo), ==, i);
+    }
+    for (uint8_t i = 0; i < 4; i++) {
+        fifo8_push(&fifo, 0x10 + i);
+    }
+    g_assert_true(fifo8_is_full(&fifo));
+    g_assert_cmpuint(fifo8_peek(&fifo), ==, 0x10);
+    for (uint8_t i = 0; i < 4; i++) {
+        g_assert_cmpuint(fifo8_pop(&fifo), ==, 0x10 + i);
+    }
+    g_assert_true(fifo8_is_empty(&fifo));
+    fifo8_destroy(&fifo);
+}
+
+static void test_fifo32_full_wrapped(void)
+{
+    static const uint32_t first[] = { 1, 2, 3 };
+    static const uint32_t second[] = {
+        0x10000004, 5, 6, 7, 8, 9, 10, 0xffffffff
+    };
+    Fifo32 fifo;
+
+    fifo32_create(&fifo, 8);
+    fifo32_push_all(&fifo, first, ARRAY_SIZE(first));
+    for (int i = 0; i < ARRAY_SIZE(first); i++) {
+        g_assert_cmphex(fifo32_pop(&fifo), ==, first[i]);
+    }
+    fifo32_push_all(&fifo, second, ARRAY_SIZE(second));
+    g_assert_true(fifo32_is_full(&fifo));
+    g_assert_cmpuint(fifo32_num_used(&fifo), ==, 8);
+    g_assert_cmpuint(fifo32_num_free(&fifo), ==, 0);
+
+    for (int i = 0; i < ARRAY_SIZE(second); i++) {
+        g_assert_cmphex(fifo32_pop(&fifo), ==, second[i]);
+    }
+    g_assert_true(fifo32_is_empty(&fifo));
+    g_assert_cmpuint(fifo32_num_free(&fifo), ==, 8);
+    fifo32_destroy(&fifo);
+}
+
+static void test_fifo32_peek(void)
+{
+    Fifo32 fifo;
+
+    fifo32_create(&fifo, 2);
+    fifo32_push(&fifo, 0x11111111);
+    fifo32_push(&fifo, 0x22222222);
+    g_assert_cmphex(fifo32_peek(&fifo), ==, 0x11111111);
+    g_assert_cmpuint(fifo32_num_used(&fifo), ==, 2);
+    g_assert_cmphex(fifo32_pop(&fifo), ==, 0x11111111);
+    g_assert_cmphex(fifo32_peek(&fifo), ==, 0x22222222);
+    fifo32_destroy(&fifo);
+}
+
+static void test_fifo32_replace_last(void)
+{
+    Fifo32 fifo;
+
+    fifo32_create(&fifo, 3);
+    fifo32_push(&fifo, 1);
+    fifo32_push(&fifo, 2);
+    fifo32_pop(&fifo);
+    fifo32_pop(&fifo);
+    /* head and tail are at the last slot, the next push wraps */
+    fifo32_push(&fifo, 3);
+    fifo32_push(&fifo, 4);
+    fifo32_replace_last(&fifo, 5);
+    g_assert_cmpuint(fifo32_num_used(&fifo), ==, 2);
+    g_assert_cmphex(fifo32_pop(&fifo), ==, 3);
+    fifo32_replace_last(&fifo, 6);
+    g_assert_cmphex(fifo32_pop(&fifo), ==, 6);
+    fifo32_push(&fifo, 7);
+    fifo32_replace_last(&fifo, 8);
+    g_assert_cmphex(fifo32_pop(&fifo), ==, 8);
+    fifo32_destroy(&fifo);
+}
+
 int main(int argc, char *argv[])
 {
     g_test_init(&argc, &argv, NULL);
     g_test_add_func("/fifo8/pushpop", test_fifo8_pushpop);
+    g_test_add_func("/fifo8/pushpop_wrap", test_fifo8_pushpop_wrap);
     g_test_add_func("/fifo8/peek", test_fifo8_peek);
     g_test_add_func("/fifo8/peek_buf", test_fifo8_peek_buf);
     g_test_add_func("/fifo8/peek_buf_wrap", test_fifo8_peek_buf_wrap);
@@ -445,5 +531,8 @@ int main(int argc, char *argv[])
     g_test_add_func("/fifo8/peek_bufptr_wrap", test_fifo8_peek_bufptr_wrap);
     g_test_add_func("/fifo8/pop_bufptr", test_fifo8_pop_bufptr);
     g_test_add_func("/fifo8/pop_bufptr_wrap", test_fifo8_pop_bufptr_wrap);
+    g_test_add_func("/fifo32/full_wrapped", test_fifo32_full_wrapped);
+    g_test_add_func("/fifo32/peek", test_fifo32_peek);
+    g_test_add_func("/fifo32/replace_last", test_fifo32_replace_last);
     return g_test_run();
 }

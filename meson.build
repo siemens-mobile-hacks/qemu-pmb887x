@@ -3767,6 +3767,9 @@ host_unit_tests = {
   'debug-regs': {
     'sources': files('tests/unit/test-debug-regs.c'),
   },
+  'fifo': {
+    'sources': files('tests/unit/test-fifo.c'),
+  },
 }
 target_unit_tests = {}
 

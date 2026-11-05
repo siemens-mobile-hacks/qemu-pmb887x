@@ -34,13 +34,6 @@ void fifo8_destroy(Fifo8 *fifo)
     g_free(fifo->data);
 }
 
-void fifo8_push(Fifo8 *fifo, uint8_t data)
-{
-    assert(fifo->num < fifo->capacity);
-    fifo->data[(fifo->head + fifo->num) % fifo->capacity] = data;
-    fifo->num++;
-}
-
 void fifo8_push_all(Fifo8 *fifo, const uint8_t *data, uint32_t num)
 {
     uint32_t start, avail;
@@ -58,23 +51,6 @@ void fifo8_push_all(Fifo8 *fifo, const uint8_t *data, uint32_t num)
     }
 
     fifo->num += num;
-}
-
-uint8_t fifo8_pop(Fifo8 *fifo)
-{
-    uint8_t ret;
-
-    assert(fifo->num > 0);
-    ret = fifo->data[fifo->head++];
-    fifo->head %= fifo->capacity;
-    fifo->num--;
-    return ret;
-}
-
-uint8_t fifo8_peek(const Fifo8 *fifo)
-{
-    assert(fifo->num > 0);
-    return fifo->data[fifo->head];
 }
 
 static const uint8_t *fifo8_peekpop_bufptr(Fifo8 *fifo, uint32_t max,
@@ -155,26 +131,6 @@ void fifo8_drop(Fifo8 *fifo, uint32_t len)
 {
     len -= fifo8_pop_buf(fifo, NULL, len);
     assert(len == 0);
-}
-
-bool fifo8_is_empty(const Fifo8 *fifo)
-{
-    return (fifo->num == 0);
-}
-
-bool fifo8_is_full(const Fifo8 *fifo)
-{
-    return (fifo->num == fifo->capacity);
-}
-
-uint32_t fifo8_num_free(const Fifo8 *fifo)
-{
-    return fifo->capacity - fifo->num;
-}
-
-uint32_t fifo8_num_used(const Fifo8 *fifo)
-{
-    return fifo->num;
 }
 
 const VMStateDescription vmstate_fifo8 = {
