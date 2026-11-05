@@ -18,11 +18,9 @@ dsp_peripheral_sources = files(
 	'dsp/peripheral/timer2.c',
 	'dsp/peripheral/unknown.c',
 )
-dsp_audio_sources = files('dsp/peripheral/afe-audio.c')
 
 arm_common_ss.add(when: 'CONFIG_PMB887X', if_true: files(
 	'board.c',
-	'audio/buffer.c',
 	'flash.c',
 	'flash-blk.c',
 	'afc.c',
@@ -111,14 +109,10 @@ arm_common_ss.add(when: 'CONFIG_PMB887X', if_true: files(
 
 	'input/ke970_scroll.c',
 ))
-arm_common_ss.add(when: 'CONFIG_PMB887X', if_true: dsp_core_sources + dsp_peripheral_sources + dsp_audio_sources +
+arm_common_ss.add(when: 'CONFIG_PMB887X', if_true: dsp_core_sources + dsp_peripheral_sources +
 	files('dsp/tcg.c', 'dsp/runtime.c'))
 
 host_unit_tests += {
-	'pmb887x-audio-buffer': {
-		'sources': files('tests/audio/buffer.c', 'audio/buffer.c'),
-		'dependencies': [glib],
-	},
 	'pmb887x-dsp-core': {
 		'sources': files('dsp/tests/core.c') + dsp_core_sources,
 		'dependencies': [glib],

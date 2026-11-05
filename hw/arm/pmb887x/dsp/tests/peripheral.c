@@ -1,7 +1,7 @@
 #include "qemu/osdep.h"
 
 #include "hw/arm/pmb887x/gen/dsp.h"
-#include "hw/arm/pmb887x/dsp/peripheral/afe-audio.h"
+#include "hw/audio/pcm-out.h"
 #include "hw/arm/pmb887x/dsp/peripheral.h"
 #include "hw/arm/pmb887x/rf.h"
 #include "qemu/debug-channel.h"
@@ -23,22 +23,23 @@
 static size_t test_audio_sample_count;
 static uint16_t test_audio_sample;
 
-afe_audio_t *afe_audio_create(const DebugChannel *_dbg) {
-	return NULL;
+void pcm_out_init(PCMOut *out, AudioBackend *_be, const char *_name, uint32_t _prefill_ms, const DebugChannel *_dbg) {
+	*out = (PCMOut) { };
 }
 
-void afe_audio_destroy(afe_audio_t *_audio) {
+void pcm_out_cleanup(PCMOut *_out) {
 }
 
-void afe_audio_set_active(afe_audio_t *_audio, bool _active) {
+void pcm_out_set_active(PCMOut *_out, bool _active) {
 }
 
-void afe_audio_set_format(afe_audio_t *_audio, unsigned _frequency_hz, unsigned _channels) {
+void pcm_out_set_format(PCMOut *out, uint32_t _rate_hz, uint32_t channels) {
+	out->channels = channels;
 }
 
-void afe_audio_produce(afe_audio_t *_audio, const uint16_t *frame, size_t word_count) {
+void pcm_out_write(PCMOut *out, const int16_t *frames, size_t frame_count) {
 	test_audio_sample_count++;
-	test_audio_sample = frame[word_count - 1];
+	test_audio_sample = frames[frame_count * out->channels - 1];
 }
 
 bool pmb887x_iq_bus_has_source(const pmb887x_iq_bus_t *bus) {

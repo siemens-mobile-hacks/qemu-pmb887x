@@ -7,13 +7,10 @@
 #include "hw/core/sysbus.h"
 #include "system/memory.h"
 #include "qemu/main-loop.h"
-#include "qemu/audio.h"
-#include "qemu/fifo8.h"
-#include "qemu/thread.h"
 #include "hw/core/qdev-properties.h"
 #include "hw/audio/i2s.h"
+#include "hw/audio/pcm-out.h"
 #include "hw/i2c/i2c.h"
-#include "hw/arm/pmb887x/audio/buffer.h"
 #include "hw/arm/pmb887x/audio/pasic.h"
 #include "hw/arm/pmb887x/gen/peripheral/PASIC.h"
 #include "system/debug-channel.h"
@@ -21,7 +18,8 @@
 
 #define TYPE_PMB887X_PMIC	"d1094xx"
 #define PMB887X_PMIC(obj)	OBJECT_CHECK(pmb887x_pmic_t, (obj), TYPE_PMB887X_PMIC)
-#define PASIC_AUDIO_FIFO_BYTES	(48000 * 2 * sizeof(int16_t))
+/* Covers DSP I2S output that arrives in bursts of about 20 ms plus the 10 ms audio mixer period. */
+#define PASIC_AUDIO_PREFILL_MS	60
 
 typedef struct pmb887x_pmic_t pmb887x_pmic_t;
 
@@ -36,14 +34,7 @@ struct pmb887x_pmic_t {
 	uint8_t regs[256];
 	uint32_t revision;
 	uint32_t i2c_address;
-	AudioBackend *audio_backend;
-	SWVoiceOut *audio_voice;
-	QemuMutex audio_lock;
-	Fifo8 audio_fifo;
-	bool audio_fifo_ready;
-	pmb887x_audio_buffer_t audio_buffer;
-	uint32_t audio_sample_rate_hz;
-	uint32_t audio_channels;
+	PCMOut audio;
 	bool i2s_capture_unimplemented_reported;
 	bool on_pressed;
 	qemu_irq on_off_out;
@@ -54,23 +45,6 @@ static bool pasic_audio_output_is_enabled(const pmb887x_pmic_t *p) {
 		p->regs[PASIC_STEREO_CONTROL], p->regs[PASIC_AMPLIFIER_GAIN_4_5]);
 }
 
-static bool pasic_audio_is_configured(const pmb887x_pmic_t *p) {
-	return p->audio_voice != NULL && p->audio_channels != 0;
-}
-
-static void pasic_audio_output_set_active(pmb887x_pmic_t *p, bool active) {
-	if (!pasic_audio_is_configured(p))
-		return;
-	if (!active)
-		return;
-
-	qemu_mutex_lock(&p->audio_lock);
-	fifo8_reset(&p->audio_fifo);
-	qemu_mutex_unlock(&p->audio_lock);
-	pmb887x_audio_buffer_reset(&p->audio_buffer);
-	audio_be_set_active_out(p->audio_backend, p->audio_voice, true);
-}
-
 static void pmic_handle_on_off_input(void *opaque, int _line, int level) {
 	pmb887x_pmic_t *p = opaque;
 
@@ -78,84 +52,19 @@ static void pmic_handle_on_off_input(void *opaque, int _line, int level) {
 	qemu_set_irq(p->on_off_out, !p->on_pressed);
 }
 
-static void pasic_audio_callback(void *opaque, int free_bytes) {
-	pmb887x_pmic_t *p = opaque;
-
-	while (free_bytes > 0) {
-		size_t size;
-		size_t bytes;
-		const uint8_t *data = pmb887x_audio_buffer_peek(&p->audio_buffer,
-			&p->audio_fifo, &p->audio_lock, (size_t) free_bytes, &size);
-		if (size == 0) {
-			/* A disabled output still plays the samples queued before it was disabled. */
-			if (!pasic_audio_output_is_enabled(p))
-				audio_be_set_active_out(p->audio_backend, p->audio_voice, false);
-			return;
-		}
-
-		bytes = audio_be_write(p->audio_backend, p->audio_voice, (void *) data, size);
-		if (bytes == 0)
-			return;
-		pmb887x_audio_buffer_consume(&p->audio_buffer, bytes);
-		free_bytes -= bytes;
-	}
-}
-
-static void pasic_audio_stop(pmb887x_pmic_t *p);
-
-static bool pasic_audio_configure(pmb887x_pmic_t *p, uint32_t sample_rate_hz, uint32_t channels) {
-	struct audsettings settings = {
-		.freq = sample_rate_hz,
-		.nchannels = channels,
-		.fmt = AUDIO_FORMAT_S16,
-		.big_endian = false,
-	};
-
-	if (p->audio_voice != NULL && p->audio_sample_rate_hz == sample_rate_hz && p->audio_channels == channels)
-		return true;
-	p->audio_sample_rate_hz = sample_rate_hz;
-	p->audio_channels = channels;
-	qemu_mutex_lock(&p->audio_lock);
-	fifo8_reset(&p->audio_fifo);
-	qemu_mutex_unlock(&p->audio_lock);
-	pmb887x_audio_buffer_configure(&p->audio_buffer, channels * sizeof(int16_t), sample_rate_hz);
-
-	p->audio_voice = audio_be_open_out(p->audio_backend, p->audio_voice, "pmb887x-pasic",
-		p, pasic_audio_callback, &settings);
-	if (p->audio_voice == NULL)
-		return false;
-	audio_be_set_active_out(p->audio_backend, p->audio_voice, pasic_audio_output_is_enabled(p));
-	return true;
-}
-
 static void pasic_i2s_configure(I2SSink *sink, const I2SFormat *format) {
 	pmb887x_pmic_t *p = PMB887X_PMIC(OBJECT(sink));
-	if (!p->audio_fifo_ready)
-		return;
 	if (format->sample_rate_hz == 0 || (format->channels != 1 && format->channels != 2)) {
-		pasic_audio_stop(p);
+		pcm_out_stop(&p->audio);
 		return;
 	}
-	pasic_audio_configure(p, format->sample_rate_hz, format->channels);
+	pcm_out_set_format(&p->audio, format->sample_rate_hz, format->channels);
 }
 
 static void pasic_i2s_write(I2SSink *sink, const int16_t *samples, size_t frame_count) {
 	pmb887x_pmic_t *p = PMB887X_PMIC(OBJECT(sink));
-	size_t sample_count = frame_count * p->audio_channels;
-	if (!p->audio_fifo_ready || !pasic_audio_is_configured(p))
-		return;
-	if (!pasic_audio_output_is_enabled(p))
-		return;
-
-	qemu_mutex_lock(&p->audio_lock);
-	if (fifo8_num_free(&p->audio_fifo) >= sample_count * sizeof(uint16_t)) {
-		for (size_t i = 0; i < sample_count; i++) {
-			uint16_t sample = samples[i];
-			fifo8_push(&p->audio_fifo, sample);
-			fifo8_push(&p->audio_fifo, sample >> 8);
-		}
-	}
-	qemu_mutex_unlock(&p->audio_lock);
+	if (pasic_audio_output_is_enabled(p))
+		pcm_out_write(&p->audio, samples, frame_count);
 }
 
 static size_t pasic_i2s_read(I2SSource *source, int16_t *_samples, size_t _frame_capacity) {
@@ -285,19 +194,6 @@ static void pmic_load_registers(pmb887x_pmic_t *p) {
 	memcpy(p->regs, registers, sizeof(p->regs));
 }
 
-static void pasic_audio_stop(pmb887x_pmic_t *p) {
-	if (p->audio_voice != NULL)
-		audio_be_set_active_out(p->audio_backend, p->audio_voice, false);
-	p->audio_sample_rate_hz = 0;
-	p->audio_channels = 0;
-	if (p->audio_fifo_ready) {
-		qemu_mutex_lock(&p->audio_lock);
-		fifo8_reset(&p->audio_fifo);
-		qemu_mutex_unlock(&p->audio_lock);
-	}
-	pmb887x_audio_buffer_reset(&p->audio_buffer);
-}
-
 static int pmic_event(I2CTarget *target, enum i2c_event event) {
 	pmb887x_pmic_t *p = PMB887X_PMIC(OBJECT(target));
 
@@ -335,13 +231,9 @@ static int pmic_send(I2CTarget *target, uint8_t data) {
 	if (p->wcycle == 0) {
 		p->reg_id = data % ARRAY_SIZE(p->regs);
 	} else {
-		bool audio_was_enabled = pasic_audio_output_is_enabled(p);
-
 		DEBUG_IO_WRITE(&p->dbg, p->reg_id, 1, data);
 		p->regs[p->reg_id] = data;
-		bool audio_is_enabled = pasic_audio_output_is_enabled(p);
-		if (audio_is_enabled != audio_was_enabled)
-			pasic_audio_output_set_active(p, audio_is_enabled);
+		pcm_out_set_active(&p->audio, pasic_audio_output_is_enabled(p));
 		p->reg_id = (p->reg_id + 1) % ARRAY_SIZE(p->regs);
 	}
 
@@ -357,8 +249,9 @@ static void pmic_reset(DeviceState *dev) {
 	p->reg_id = 0;
 	p->wcycle = 0;
 	p->i2s_capture_unimplemented_reported = false;
-	pasic_audio_stop(p);
+	pcm_out_stop(&p->audio);
 	pmic_load_registers(p);
+	pcm_out_set_active(&p->audio, pasic_audio_output_is_enabled(p));
 }
 
 static void pmic_realize(DeviceState *dev, Error **errp) {
@@ -370,28 +263,14 @@ static void pmic_realize(DeviceState *dev, Error **errp) {
 		return;
 	}
 
-	qemu_mutex_init(&p->audio_lock);
-	if (audio_be_check(&p->audio_backend, NULL)) {
-		fifo8_create(&p->audio_fifo, PASIC_AUDIO_FIFO_BYTES);
-		p->audio_fifo_ready = true;
-	}
+	pcm_out_init(&p->audio, NULL, "pmb887x-pasic", PASIC_AUDIO_PREFILL_MS, &p->dbg);
 	DEBUG_LOG(&p->dbg, "PMIC revision: %02X\n", p->revision);
 	pmic_load_registers(p);
 }
 
 static void pmic_unrealize(DeviceState *dev) {
 	pmb887x_pmic_t *p = PMB887X_PMIC(dev);
-
-	pasic_audio_stop(p);
-	if (p->audio_voice != NULL) {
-		audio_be_close_out(p->audio_backend, p->audio_voice);
-		p->audio_voice = NULL;
-	}
-	if (p->audio_fifo_ready) {
-		fifo8_destroy(&p->audio_fifo);
-		p->audio_fifo_ready = false;
-	}
-	qemu_mutex_destroy(&p->audio_lock);
+	pcm_out_cleanup(&p->audio);
 }
 
 static const Property pmic_properties[] = {

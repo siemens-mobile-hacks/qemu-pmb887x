@@ -1,6 +1,6 @@
 #include "qemu/osdep.h"
 
-#include "hw/arm/pmb887x/dsp/peripheral/afe-audio.h"
+#include "hw/audio/pcm-out.h"
 #include "hw/arm/pmb887x/dsp/peripheral/internal.h"
 #include "hw/arm/pmb887x/gen/dsp.h"
 
@@ -20,6 +20,8 @@ static const uint16_t AFE_CONTROL_MASK = TEAK_AFE_BCON_MODE | TEAK_AFE_BCON_RXST
 #define AFE_DAC_RING_OFFSET	0x40U
 
 #define AFE_DEFAULT_RATE_HZ	8000
+/* Covers DSP output that arrives in bursts of about 20 ms plus the 10 ms audio mixer period. */
+#define AFE_AUDIO_PREFILL_MS	60
 #define AFE_RING_POSITIONS	64
 #define AFE_MS_CLOCK_DIVIDER	13
 
@@ -49,7 +51,7 @@ struct afe_state_t {
 	uint32_t clock_hz;
 	uint32_t ms_clock_hz;
 	uint64_t clock_phase;
-	afe_audio_t *audio;
+	PCMOut *audio;
 };
 
 static bool afe_receive_active(const afe_state_t *state) {
@@ -67,7 +69,8 @@ static bool afe_transmit_active(const afe_state_t *state) {
 static void afe_destroy(dsp_device_t *device) {
 	afe_state_t *state = device->state;
 
-	afe_audio_destroy(state->audio);
+	pcm_out_cleanup(state->audio);
+	g_free(state->audio);
 	g_free(device->state);
 }
 
@@ -78,9 +81,9 @@ static void afe_reset(dsp_device_t *device) {
 	uint16_t ram_base = state->ram_base;
 	uint32_t clock_hz = state->clock_hz;
 	uint32_t ms_clock_hz = state->ms_clock_hz;
-	afe_audio_t *audio = state->audio;
+	PCMOut *audio = state->audio;
 
-	afe_audio_set_active(audio, false);
+	pcm_out_set_active(audio, false);
 	memset(state, 0, sizeof(*state));
 	state->audio = audio;
 	state->interrupt = interrupt;
@@ -88,7 +91,7 @@ static void afe_reset(dsp_device_t *device) {
 	state->ram_base = ram_base;
 	state->clock_hz = clock_hz;
 	state->ms_clock_hz = ms_clock_hz;
-	afe_audio_set_format(audio, AFE_DEFAULT_RATE_HZ, 1);
+	pcm_out_set_format(audio, AFE_DEFAULT_RATE_HZ, 1);
 }
 
 static bool afe_read(dsp_device_t *device, uint16_t offset, uint32_t pc, uint16_t *value) {
@@ -169,14 +172,14 @@ static bool afe_write(dsp_device_t *device, uint16_t offset, uint32_t pc, uint16
 
 			state->registers[offset] = value & AFE_CONTROL_MASK;
 			if (((previous_control ^ state->registers[offset]) & TEAK_AFE_BCON_RXRATE) != 0) {
-				afe_audio_set_format(state->audio, afe_receive_sample_rate_hz(state),
+				pcm_out_set_format(state->audio, afe_receive_sample_rate_hz(state),
 					afe_receive_is_stereo(state) ? 2 : 1);
 			}
 			if (!afe_receive_active(state)) {
 				state->receive_position = 0;
 				state->receive_cycles = 0;
 			}
-			afe_audio_set_active(state->audio, afe_receive_active(state));
+			pcm_out_set_active(state->audio, afe_receive_active(state));
 			if (!afe_transmit_active(state)) {
 				state->transmit_position = 0;
 				state->transmit_cycles = 0;
@@ -217,13 +220,14 @@ dsp_device_t *afe_create(
 	state->ram_base = config->ram_base;
 
 	dsp_device_t *device = dsp_device_create(config, parent, &afe_ops, state);
-	state->audio = afe_audio_create(&device->dbg);
+	state->audio = g_new(PCMOut, 1);
+	pcm_out_init(state->audio, NULL, "pmb887x-afe", AFE_AUDIO_PREFILL_MS, &device->dbg);
 	return device;
 }
 
 static void afe_receive_publish(afe_state_t *state, uint16_t word) {
 	if (!afe_receive_is_stereo(state)) {
-		afe_audio_produce(state->audio, &word, 1);
+		pcm_out_write(state->audio, (const int16_t *) &word, 1);
 		return;
 	}
 	if ((state->receive_position & 1) == 0) {
@@ -231,7 +235,7 @@ static void afe_receive_publish(afe_state_t *state, uint16_t word) {
 		return;
 	}
 	uint16_t frame[] = { state->receive_first_word, word };
-	afe_audio_produce(state->audio, frame, ARRAY_SIZE(frame));
+	pcm_out_write(state->audio, (const int16_t *) frame, 1);
 }
 
 static void afe_receive_word(afe_state_t *state) {
