@@ -79,8 +79,6 @@ arm_common_ss.add(when: 'CONFIG_PMB887X', if_true: files(
 	'board/timings/memory.c',
 	'audio/pasic.c',
 
-	'utils/regexp.c',
-	'utils/strings.c',
 	'utils/toml.c',
 	'utils/tomlc17.c',
 

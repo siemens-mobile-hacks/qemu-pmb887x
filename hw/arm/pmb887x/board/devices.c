@@ -9,7 +9,6 @@
 #include "hw/arm/pmb887x/rf.h"
 #include "hw/arm/pmb887x/sim.h"
 #include "hw/arm/pmb887x/ssc/lcd_common.h"
-#include "hw/arm/pmb887x/utils/regexp.h"
 #include "hw/arm/pmb887x/utils/toml.h"
 
 #include "hw/arm/pmb887x/utils/tomlc17.h"

@@ -6,7 +6,6 @@
 #include "hw/arm/pmb887x/gen/cpu_modules.h"
 #include "hw/arm/pmb887x/gen/cpu_regs.h"
 
-#include "hw/arm/pmb887x/utils/strings.h"
 #include "hw/core/hw-error.h"
 #include "hw/core/irq.h"
 #include "hw/core/qdev-clock.h"
@@ -66,7 +65,7 @@ static void pmb887x_cpu_module_post_init(DeviceState *dev, const pmb887x_cpu_mod
 			const pmb887x_cpu_module_gpio_t *gpio_link = &mod->gpios[i];
 
 			// PERIPHERAL -> GPIO_OUT
-			if (str_ends_with(gpio_link->name, "_OUT")) {
+			if (g_str_has_suffix(gpio_link->name, "_OUT")) {
 				char gpio_in_name[64];
 				sprintf(gpio_in_name, "pin_alt%d_in", gpio_link->alt);
 
@@ -83,7 +82,7 @@ static void pmb887x_cpu_module_post_init(DeviceState *dev, const pmb887x_cpu_mod
 			}
 
 			// GPIO_IN -> PERIPHERAL
-			if (str_ends_with(gpio_link->name, "_IN")) {
+			if (g_str_has_suffix(gpio_link->name, "_IN")) {
 				char gpio_out_name[64];
 				sprintf(gpio_out_name, "pin_alt%d_out", gpio_link->alt);
 
