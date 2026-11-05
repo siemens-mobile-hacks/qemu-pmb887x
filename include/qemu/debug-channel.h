@@ -108,13 +108,13 @@ debug_channel_io(const DebugChannel *ch, uint64_t addr, uint64_t offset,
 
 #define DEBUG_UNIMP(ch, fmt, ...) do { \
         if (unlikely(qemu_loglevel_mask(LOG_UNIMP))) { \
-            debug_channel_log(ch, fmt, ## __VA_ARGS__); \
+            debug_channel_log(ch, "unimp: " fmt, ## __VA_ARGS__); \
         } \
     } while (0)
 
 #define DEBUG_GUEST_ERROR(ch, fmt, ...) do { \
         if (unlikely(qemu_loglevel_mask(LOG_GUEST_ERROR))) { \
-            debug_channel_log(ch, fmt, ## __VA_ARGS__); \
+            debug_channel_log(ch, "guest error: " fmt, ## __VA_ARGS__); \
         } \
     } while (0)
 

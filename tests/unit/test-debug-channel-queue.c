@@ -438,13 +438,16 @@ static void test_macros(void)
     qemu_loglevel = LOG_UNIMP;
     DEBUG_UNIMP(&ch, "unimp\n");
     DEBUG_GUEST_ERROR(&ch, "off\n");
+    qemu_loglevel = LOG_GUEST_ERROR;
+    DEBUG_GUEST_ERROR(&ch, "guest\n");
     qemu_loglevel = saved_loglevel;
 
     now = output();
     g_assert_cmpstr(now, ==,
                     "[UNIT0]: log\n"
                     "[UNIT0] WRITE[4] 00000010: 00000001\n"
-                    "[UNIT0]: unimp\n");
+                    "[UNIT0]: unimp: unimp\n"
+                    "[UNIT0]: guest error: guest\n");
     teardown(&ch);
 }
 
