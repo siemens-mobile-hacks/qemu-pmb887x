@@ -38,9 +38,6 @@
 #include "hw/arm/pmb887x/io_bridge.h"
 #include "hw/arm/pmb887x/tpu.h"
 
-void qmp_pmemsave(uint64_t addr, uint64_t size, const char *filename, Error **errp);
-
-static bool machine_used = false;
 static bool initial_cpu_reset = true;
 
 static uint32_t pmb887x_get_initial_pc(void) {
@@ -63,28 +60,6 @@ static void pmb887x_cpu_reset(void *opaque) {
 	cpu_reset(cpu);
 	cpu_set_pc(cpu, initial_cpu_reset ? pmb887x_get_initial_pc() : 0x00000000);
 	initial_cpu_reset = false;
-}
-
-__attribute__((destructor))
-static void memory_dump_at_exit(void) {
-	if (!machine_used)
-		return;
-
-	CPUState *cpu = qemu_get_cpu(0);
-	if (!cpu)
-		return;
-
-	fprintf(stderr, "sorry died at %08X LR %08X\n", ARM_CPU(cpu)->env.regs[15], ARM_CPU(cpu)->env.regs[14]);
-
-
-//	qmp_pmemsave(0xB0000000, 32 * 1024 * 1024, "/tmp/ram.bin", NULL);
-//	qmp_pmemsave(0xFFFF0000, 0x4000, "/tmp/tcm.bin", NULL);
-//	qmp_pmemsave(0x00000000, 96 * 1024, "/tmp/sram.bin", NULL);
-//	qmp_pmemsave(0x00020000, 96 * 1024, "/tmp/sram2.bin", NULL);
-
-//	qmp_pmemsave(0xA8000000, 8 * 1024 * 1024, "/tmp/ram.bin", NULL);
-//	qmp_pmemsave(0x00000000, 0x4000, "/tmp/tcm.bin", NULL);
-//	qmp_pmemsave(0x00080000, 96 * 1024, "/tmp/sram.bin", NULL);
 }
 
 static void pmb887x_cpu_clock_update(void *opaque, ClockEvent _event) {
@@ -125,8 +100,6 @@ static void pmb887x_init_irq_names(DeviceState *vic) {
 }
 
 static void pmb887x_init(MachineState *machine) {
-	machine_used = true;
-
 	const char *board_config_file = getenv("PMB887X_BOARD");
 	if (!board_config_file) {
 		error_report("Please, set board config with env PMB887X_BOARD=path/to/board.cfg");
