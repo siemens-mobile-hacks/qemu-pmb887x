@@ -153,6 +153,7 @@ struct TranslationBlock {
         uint32_t gen;
         uint32_t key32[3];  /* ARM: hflags.flags, thumb, condexec_bits */
         uint8_t dynmask;    /* W64_LC_DYN_* bits: key32[i] is dynamic */
+        uint16_t pcc_hits;  /* goto_ptr misses the pc cache answered in C */
         const void *tc;
     } w64_lc;
 #define W64_LC_DYN_FLAGS     1
@@ -292,10 +293,10 @@ extern uintptr_t w64_tb_env;
 
 /*
  * The global pc-keyed next-TB cache (accel/tcg/cpu-exec.c) as the
- * generated code sees it.  A goto_ptr whose per-TB slot misses used to
- * call the helper for this table's six-word compare; the translator emits
- * that compare instead, so the entry layout and the hash's own constants
- * have to leave cpu-exec.c.
+ * generated code sees it.  The lookup helpers probe it, and the
+ * translator emits the same six-word compare at the goto_ptr exits whose
+ * slot kept missing (w64_pcc_wanted), so the entry layout and the hash's
+ * constants have to leave cpu-exec.c.
  */
 struct W64PccEnt {
     uint32_t pc;
@@ -312,6 +313,8 @@ struct W64PccShape {
 };
 
 const struct W64PccShape *w64_pcc_shape(void);
+/* the TB starting at @phys had its goto_ptr exit promoted to the inline probe */
+bool w64_pcc_wanted(tb_page_addr_t phys);
 /* withdraw the staged module body of a TB that was abandoned */
 void w64_batch_unstage(uintptr_t tcptr);
 #endif

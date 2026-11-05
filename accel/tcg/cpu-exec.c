@@ -423,7 +423,9 @@ static inline const void *w64_dispatch_target(const TranslationBlock *tb)
  * fail to link on these symbols rather than silently fall back.
  */
 bool arm_w64_lc_key(CPUState *cs, uint32_t key32[3]);
+bool arm_w64_lc_key_pc(CPUState *cs, uint32_t key32[3], uint32_t *pc);
 #define W64_LC_KEY(cpu, k32)  arm_w64_lc_key(cpu, k32)
+#define W64_LC_KEY_PC(cpu, k32, pcp)  arm_w64_lc_key_pc(cpu, k32, pcp)
 
 /*
  * The global next-TB cache, keyed on the target PC: the per-TB slot is
@@ -434,6 +436,12 @@ bool arm_w64_lc_key(CPUState *cs, uint32_t key32[3]);
  * else), without arm_get_tb_cpu_state or curr_cflags.  Its hash is its
  * own: three ops for the emitted probe, where the jump cache's page-wise
  * one takes ten.
+ *
+ * The lookup helpers probe it first.  The generated code probes it too,
+ * but only at the exits promoted below: emitted at every goto_ptr exit,
+ * the probe cost the EL71 boot burst ~8-10 % in translation and Liftoff
+ * compile time against ~3.6 % its hits saved, while behind the helper
+ * call a hit costs video ~4 % and towerblox ~1.5 % in steady state.
  *
  * Soundness is the per-TB slot's: the generation retires the whole table
  * wherever a jump-cache entry is dropped, wherever a key input the test
@@ -465,6 +473,65 @@ const struct W64PccShape *w64_pcc_shape(void)
     };
 
     return &shape;
+}
+
+static inline const void *w64_pcc_get(CPUState *cpu, uint32_t gen,
+                                      uint32_t key[3], uint32_t *pc_out)
+{
+    uint32_t pc;
+    const struct W64PccEnt *e;
+
+    if (!W64_LC_KEY_PC(cpu, key, &pc)) {
+        return NULL;
+    }
+    e = &w64_pcc[w64_pcc_hash(pc)];
+    if (likely(e->pc == pc && e->gen == gen &&
+               e->cpu_index == (uint32_t)cpu->cpu_index &&
+               e->key32[0] == key[0] &&
+               e->key32[1] == key[1] &&
+               e->key32[2] == key[2])) {
+        *pc_out = pc;
+        return e->tc;
+    }
+    return NULL;
+}
+
+/*
+ * A goto_ptr exit whose slot misses and whose target the pc cache then
+ * has, W64_PCC_PROMOTE times in C, is retranslated with the emitted
+ * probe: the TB is invalidated and its physical start marked, one bit
+ * per hash, which gen_goto_ptr reads.  A collision only emits a probe
+ * that was not needed.  The exit that promotes still returns its target:
+ * the TB's code stays valid until a tb_flush, only unreachable.
+ */
+#define W64_PCC_PROMOTE 65535
+#define W64_PCC_WANT_BITS 16
+static uint32_t w64_pcc_want[(1 << W64_PCC_WANT_BITS) / 32];
+
+static inline uint32_t w64_pcc_want_bit(tb_page_addr_t phys)
+{
+    return ((uint32_t)phys * W64_PCC_MUL) >> (32 - W64_PCC_WANT_BITS);
+}
+
+bool w64_pcc_wanted(tb_page_addr_t phys)
+{
+    uint32_t b = w64_pcc_want_bit(phys);
+
+    return w64_pcc_want[b / 32] & (1u << (b % 32));
+}
+
+static void w64_pcc_promote(struct W64LookupCache *lc)
+{
+    TranslationBlock *tb = container_of(lc, TranslationBlock, w64_lc);
+    tb_page_addr_t phys = tb_page_addr0(tb);
+    uint32_t b;
+
+    if (phys == -1) {
+        return;
+    }
+    b = w64_pcc_want_bit(phys);
+    w64_pcc_want[b / 32] |= 1u << (b % 32);
+    tb_phys_invalidate(tb, -1);
 }
 
 /*
@@ -538,12 +605,10 @@ static TranslationBlock *lookup_tb_for_ptr(CPUState *cpu, TCGTBCPUState *s)
     return tb;
 }
 
-const void *HELPER(lookup_tb_ptr)(CPUArchState *env)
+#ifdef CONFIG_TCG_WASM64
+static const void *w64_lookup_tb_ptr_miss(CPUState *cpu, uint32_t gen)
 {
     TCGTBCPUState s;
-#ifdef CONFIG_TCG_WASM64
-    CPUState *cpu = env_cpu(env);
-    uint32_t gen = qatomic_read(&cpu->neg.tb_key_gen);
     TranslationBlock *tb = lookup_tb_for_ptr(cpu, &s);
     const void *target;
 
@@ -556,7 +621,25 @@ const void *HELPER(lookup_tb_ptr)(CPUArchState *env)
     target = w64_dispatch_target(tb);
     w64_pcc_put(cpu, s, gen, target);
     return target;
+}
+#endif
+
+const void *HELPER(lookup_tb_ptr)(CPUArchState *env)
+{
+#ifdef CONFIG_TCG_WASM64
+    CPUState *cpu = env_cpu(env);
+    uint32_t gen = qatomic_read(&cpu->neg.tb_key_gen);
+    uint32_t key[3], pc;
+    const void *target;
+
+    cpu->neg.can_do_io = true;
+    target = w64_pcc_get(cpu, gen, key, &pc);
+    if (likely(target != NULL)) {
+        return target;
+    }
+    return w64_lookup_tb_ptr_miss(cpu, gen);
 #else
+    TCGTBCPUState s;
     TranslationBlock *tb = lookup_tb_for_ptr(env_cpu(env), &s);
 
     return tb ? tb->tc.ptr : tcg_code_gen_epilogue;
@@ -645,10 +728,21 @@ const void *HELPER(lookup_tb_ptr_lc)(CPUArchState *env, void *slot)
     struct W64LookupCache *lc = slot;
     const void *target;
     uint32_t gen = qatomic_read(&cpu->neg.tb_key_gen);
-    uint32_t cur[3];
+    uint32_t cur[3], pc;
     TCGTBCPUState s;
-    TranslationBlock *tb = lookup_tb_for_ptr(cpu, &s);
+    TranslationBlock *tb;
 
+    cpu->neg.can_do_io = true;
+    target = w64_pcc_get(cpu, gen, cur, &pc);
+    if (likely(target != NULL)) {
+        /* the slot missed; without a refill it keeps missing */
+        w64_lc_fill(lc, cur, pc, target, gen);
+        if (unlikely(++lc->pcc_hits == W64_PCC_PROMOTE)) {
+            w64_pcc_promote(lc);
+        }
+        return target;
+    }
+    tb = lookup_tb_for_ptr(cpu, &s);
     if (tb == NULL) {
         return tcg_code_gen_epilogue;
     }
@@ -670,6 +764,30 @@ const void *HELPER(lookup_tb_ptr_lc)(CPUArchState *env, void *slot)
         w64_lc_fill(lc, cur, s.pc, target, gen);
     }
     return target;
+}
+
+/*
+ * helper_lookup_tb_ptr for a TB's second goto_ptr exit, keyed differently
+ * from the one its slot serves (target/arm gen_goto_ptr): nothing to fill,
+ * but its pc-cache hits count towards the TB's promotion.
+ */
+const void *HELPER(lookup_tb_ptr_cnt)(CPUArchState *env, void *slot)
+{
+    CPUState *cpu = env_cpu(env);
+    struct W64LookupCache *lc = slot;
+    uint32_t gen = qatomic_read(&cpu->neg.tb_key_gen);
+    uint32_t key[3], pc;
+    const void *target;
+
+    cpu->neg.can_do_io = true;
+    target = w64_pcc_get(cpu, gen, key, &pc);
+    if (likely(target != NULL)) {
+        if (unlikely(++lc->pcc_hits == W64_PCC_PROMOTE)) {
+            w64_pcc_promote(lc);
+        }
+        return target;
+    }
+    return w64_lookup_tb_ptr_miss(cpu, gen);
 }
 
 void HELPER(tb_key_gen_bump)(CPUArchState *env)

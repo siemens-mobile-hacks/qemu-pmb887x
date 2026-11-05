@@ -419,6 +419,7 @@ TranslationBlock *tb_gen_code(CPUState *cpu, TCGTBCPUState s)
     tb->cflags = s.cflags;
 #ifdef CONFIG_TCG_WASM64
     tb->w64_lc.gen = 0;
+    tb->w64_lc.pcc_hits = 0;
     tb->w64_inl = 0;
     tb->w64_inl_vpage1 = 0;
 #endif

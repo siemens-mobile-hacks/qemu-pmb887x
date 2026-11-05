@@ -1576,8 +1576,15 @@ static void gen_goto_ptr(DisasContext *s, uint32_t condexec)
                    memcmp(lc->key32, key, sizeof(key)) != 0) {
             /* a second exit keyed differently: it stays off the slot, but
              * the global cache is not the slot's and still covers it */
-            gen_goto_ptr_pcc(s, tcg_temp_new_ptr(), NULL, key, mask);
-            tcg_gen_lookup_and_goto_ptr();
+            TCGv_ptr tc = tcg_temp_new_ptr();
+
+            if (w64_pcc_wanted(tb_page_addr0(s->base.tb))) {
+                gen_goto_ptr_pcc(s, tc, NULL, key, mask);
+                tcg_gen_lookup_and_goto_ptr();
+                return;
+            }
+            gen_helper_lookup_tb_ptr_cnt(tc, tcg_env, tcg_constant_ptr(lc));
+            tcg_gen_goto_ptr(tc);
             return;
         }
 
@@ -1621,7 +1628,9 @@ static void gen_goto_ptr(DisasContext *s, uint32_t condexec)
         tcg_gen_goto_ptr(tc);
         gen_set_label(slow);
         }
-        gen_goto_ptr_pcc(s, tc, lc, key, mask);
+        if (w64_pcc_wanted(tb_page_addr0(s->base.tb))) {
+            gen_goto_ptr_pcc(s, tc, lc, key, mask);
+        }
         gen_helper_lookup_tb_ptr_lc(tc, tcg_env, tcg_constant_ptr(lc));
         tcg_gen_goto_ptr(tc);
         return;
