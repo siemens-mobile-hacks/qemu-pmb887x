@@ -3803,6 +3803,14 @@ static void la_cross_call(TCGContext *s, int nt)
     }
 }
 
+/* WASM PORT FAST PATH (removable): the la_w64_* hooks below */
+#ifdef CONFIG_TCG_WASM64
+#define LA_W64 1
+#else
+#define LA_W64 0
+#endif
+#include "la-touched.c.inc"
+
 /*
  * Liveness analysis: Verify the lifetime of TEMP_TB, and reduce
  * to TEMP_EBB, if possible.
@@ -3900,7 +3908,11 @@ liveness_pass_1(TCGContext *s)
     }
 
     /* ??? Should be redundant with the exit_tb that ends the TB.  */
-    la_func_end(s, nb_globals, nb_temps);
+    if (LA_W64) {  /* WASM PORT FAST PATH (removable) */
+        la_w64_start(s, nb_globals, nb_temps);
+    } else {
+        la_func_end(s, nb_globals, nb_temps);
+    }
 
     s->carry_live = false;
     QTAILQ_FOREACH_REVERSE_SAFE(op, &s->ops, link, op_prev) {
@@ -3966,7 +3978,11 @@ liveness_pass_1(TCGContext *s)
                 }
 
                 /* For all live registers, remove call-clobbered prefs.  */
-                la_cross_call(s, nb_temps);
+                if (LA_W64) {  /* WASM PORT FAST PATH (removable) */
+                    la_w64_cross_call(s);
+                } else {
+                    la_cross_call(s, nb_temps);
+                }
 
                 /*
                  * Input arguments are live for preceding opcodes.
@@ -3998,6 +4014,8 @@ liveness_pass_1(TCGContext *s)
                             break;
                         }
                         ts->state &= ~TS_DEAD;
+                        /* WASM PORT FAST PATH (removable) */
+                        la_w64_touch(s, ts);
                     }
                 }
 
@@ -4191,18 +4209,34 @@ liveness_pass_1(TCGContext *s)
             /* If end of basic block, update.  */
             if (def->flags & TCG_OPF_BB_EXIT) {
                 assert_carry_dead(s);
-                la_func_end(s, nb_globals, nb_temps);
+                if (LA_W64) {  /* WASM PORT FAST PATH (removable) */
+                    la_w64_func_end(s, nb_globals);
+                } else {
+                    la_func_end(s, nb_globals, nb_temps);
+                }
             } else if (def->flags & TCG_OPF_COND_BRANCH) {
                 assert_carry_dead(s);
-                la_bb_sync(s, nb_globals, nb_temps);
+                if (LA_W64) {  /* WASM PORT FAST PATH (removable) */
+                    la_w64_bb_sync(s, nb_globals);
+                } else {
+                    la_bb_sync(s, nb_globals, nb_temps);
+                }
             } else if (def->flags & TCG_OPF_BB_END) {
                 assert_carry_dead(s);
-                la_bb_end(s, nb_globals, nb_temps);
+                if (LA_W64) {  /* WASM PORT FAST PATH (removable) */
+                    la_w64_bb_end(s, nb_globals);
+                } else {
+                    la_bb_end(s, nb_globals, nb_temps);
+                }
             } else if (def->flags & TCG_OPF_SIDE_EFFECTS) {
                 assert_carry_dead(s);
                 la_global_sync(s, nb_globals);
                 if (def->flags & TCG_OPF_CALL_CLOBBER) {
-                    la_cross_call(s, nb_temps);
+                    if (LA_W64) {  /* WASM PORT FAST PATH (removable) */
+                        la_w64_cross_call(s);
+                    } else {
+                        la_cross_call(s, nb_temps);
+                    }
                 }
             }
 
@@ -4225,6 +4259,7 @@ liveness_pass_1(TCGContext *s)
                        all regs for the type.  */
                     *la_temp_pref(ts) = tcg_target_available_regs[ts->type];
                     ts->state &= ~TS_DEAD;
+                    la_w64_touch(s, ts);  /* WASM PORT FAST PATH (removable) */
                 }
             }
             if (def->flags & TCG_OPF_CARRY_IN) {
@@ -4240,6 +4275,8 @@ liveness_pass_1(TCGContext *s)
                 if (IS_DEAD_ARG(1)) {
                     *la_temp_pref(arg_temp(op->args[0]))
                         = *la_temp_pref(arg_temp(op->args[1]));
+                    /* WASM PORT FAST PATH (removable) */
+                    la_w64_touch(s, arg_temp(op->args[0]));
                 }
                 break;
 
@@ -4850,6 +4887,11 @@ static void sync_globals(TCGContext *s, TCGRegSet allocated_regs)
 static void tcg_reg_alloc_bb_end(TCGContext *s, TCGRegSet allocated_regs)
 {
     assert_carry_dead(s);
+    if (LA_W64_RA) {  /* WASM PORT FAST PATH (removable) */
+        la_w64_ra_bb_end(s, allocated_regs);
+        save_globals(s, allocated_regs);
+        return;
+    }
     for (int i = s->nb_globals; i < s->nb_temps; i++) {
         TCGTemp *ts = &s->temps[i];
 
@@ -4883,6 +4925,9 @@ static void tcg_reg_alloc_cbranch(TCGContext *s, TCGRegSet allocated_regs)
 {
     assert_carry_dead(s);
     sync_globals(s, allocated_regs);
+    if (LA_W64_RA) {  /* WASM PORT FAST PATH (removable) */
+        return;     /* the loop below only asserts */
+    }
 
     for (int i = s->nb_globals; i < s->nb_temps; i++) {
         TCGTemp *ts = &s->temps[i];
