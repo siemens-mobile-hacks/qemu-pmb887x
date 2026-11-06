@@ -1707,12 +1707,14 @@ static TranslationBlock *tcg_compile_block(uint32_t pc, uint16_t words, uint16_t
 	TranslationBlock *tb;
 	void *code;
 	int code_size;
+	bool next_region = false;
 
 	if (tcg_call_effects == NULL)
 		tcg_call_effects = g_hash_table_new(NULL, NULL);
 
 	*error = -1;
 	qemu_thread_jit_write();
+retry:
 	tb = tcg_tb_alloc(tcg_ctx);
 	if (tb == NULL) {
 		tcg_request_tb_flush();
@@ -1742,6 +1744,16 @@ static TranslationBlock *tcg_compile_block(uint32_t pc, uint16_t words, uint16_t
 		}
 	}
 	tcg_ctx->gen_tb = NULL;
+	if (code_size == -1 && !next_region) {
+		/*
+		 * Past the highwater of the current region, not of the whole buffer:
+		 * give up the rest of it, and tcg_tb_alloc moves on to the next one,
+		 * failing above (with the flush) only when every region is used.
+		 */
+		next_region = true;
+		qatomic_set(&tcg_ctx->code_gen_ptr, tcg_ctx->code_gen_highwater);
+		goto retry;
+	}
 	if (code_size == -1) {
 		tcg_request_tb_flush();
 		*error = TEAK_TCG_COMPILE_RETRY;

@@ -127,6 +127,7 @@ void w64_irec_flush(void)
         g_free(w64_irecs[i].code);
         w64_irecs[i].code = NULL;
         w64_irecs[i].n = 0;
+        w64_irecs[i].hits = 0;          /* the indices are recycled */
     }
 }
 
