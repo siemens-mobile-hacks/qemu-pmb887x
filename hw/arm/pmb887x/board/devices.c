@@ -311,6 +311,7 @@ static DeviceState *device_create_from_config(const char *id, toml_datum_t table
 
 	DeviceState *dev = qdev_new(type);
 	dev->id = g_strdup(id);
+	object_property_add_child(machine_get_container("peripheral"), id, OBJECT(dev));
 	device_init_props_from_config(dev, meta, table);
 	return dev;
 }
