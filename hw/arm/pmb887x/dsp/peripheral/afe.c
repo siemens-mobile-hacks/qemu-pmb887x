@@ -49,6 +49,8 @@ struct afe_output_t {
 	uint16_t ringer_mode;
 };
 
+static const uint16_t AFE_DAC_ENABLE = TEAK_AFE_VRXCTRL2_RXDAC | TEAK_AFE_VRXCTRL2_RXDAC2;
+
 static const afe_output_t AFE_OUTPUTS[AFE_OUTPUT_COUNT] = {
 	[AFE_OUTPUT_LINE_OUT] = { TEAK_AFE_VRXCTRL2_VEPSP, TEAK_AFE_VRXCTRL2_RINGSELSP },
 	[AFE_OUTPUT_POWER_AUDIO] = { TEAK_AFE_VRXCTRL2_VEPPA, TEAK_AFE_VRXCTRL2_RINGSELPA },
@@ -148,11 +150,14 @@ static unsigned afe_receive_sample_rate_hz(const afe_state_t *state) {
 
 static bool afe_output_is_active(const afe_state_t *state, const afe_output_t *output) {
 	uint16_t control = state->registers[TEAK_AFE_VRXCTRL2];
-	uint16_t enabled = TEAK_AFE_VRXCTRL2_RXDAC | output->enable;
 
 	if (!afe_receive_active(state))
 		return false;
-	return (control & enabled) == enabled && (control & output->ringer_mode) == 0;
+	if ((control & AFE_DAC_ENABLE) == 0)
+		return false;
+	if ((control & output->enable) == 0)
+		return false;
+	return (control & output->ringer_mode) == 0;
 }
 
 static void afe_outputs_update(afe_state_t *state) {

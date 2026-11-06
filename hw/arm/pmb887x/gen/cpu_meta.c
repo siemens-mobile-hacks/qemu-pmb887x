@@ -10085,16 +10085,17 @@ static const DebugRegField dsp_afe_bcon_fields[] = {
 static const DebugRegField dsp_afe_vrxctrl1_fields[] = {
 	{ "EPSAV",		0x00000004,	2,	NULL,	0 },
 	{ "VCMEPB",		0x00000070,	4,	NULL,	0 },
-	{ "RXGAINSP",	0x00000380,	7,	NULL,	0 },
-	{ "RXGAINPA",	0x00001C00,	10,	NULL,	0 },
+	{ "RXGAINSP",	0x00000180,	7,	NULL,	0 },
+	{ "RXGAINPA",	0x00000600,	9,	NULL,	0 },
 	{ "RXDITH",		0x0000C000,	14,	NULL,	0 },
 };
 
 static const DebugRegField dsp_afe_vrxctrl2_fields[] = {
 	{ "RXDAC",		0x00000001,	0,	NULL,	0 },
+	{ "RXDAC2",		0x00000002,	1,	NULL,	0 },
 	{ "RINGSELSP",	0x00000004,	2,	NULL,	0 },
 	{ "RINGSELPA",	0x00000008,	3,	NULL,	0 },
-	{ "VEPPA",		0x00000010,	4,	NULL,	0 },
+	{ "VEPPA",		0x00000030,	4,	NULL,	0 },
 	{ "VEPSP",		0x00000040,	6,	NULL,	0 },
 	{ "ZERODETECT",	0x00000080,	7,	NULL,	0 },
 	{ "MODE",		0x00004000,	14,	NULL,	0 },
