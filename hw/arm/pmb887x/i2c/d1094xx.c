@@ -20,6 +20,8 @@
 #define PASIC_MONO_BUS_NAME	"pmb887x-pasic-mono"
 #define PASIC_STEREO_BUS_NAME	"pmb887x-pasic-stereo"
 #define PASIC_GAIN_MUTE		0x39
+#define PASIC_GAIN_MAX_DB	12
+#define PASIC_GAIN_STEP_DB	1
 
 typedef enum pasic_source_t pasic_source_t;
 typedef enum pasic_output_t pasic_output_t;
@@ -105,6 +107,7 @@ struct pmb887x_pmic_t {
 	uint8_t dac_stereo_outputs;
 	uint8_t output_gains[PASIC_OUTPUT_COUNT];
 	AudioLineFormat source_formats[PASIC_SOURCE_COUNT];
+	int source_gains_db[PASIC_SOURCE_COUNT];
 	bool routes[PASIC_OUTPUT_COUNT][PASIC_SOURCE_COUNT];
 	bool i2s_capture_unimplemented_reported;
 	bool on_pressed;
@@ -130,19 +133,26 @@ static uint8_t pasic_source_get_outputs(const pmb887x_pmic_t *p, pasic_source_t 
 	}
 }
 
+static int pasic_output_get_gain_db(const pmb887x_pmic_t *p, pasic_output_t output) {
+	return PASIC_GAIN_MAX_DB - PASIC_GAIN_STEP_DB * p->output_gains[output];
+}
+
 static void pasic_routes_update(pmb887x_pmic_t *p) {
 	for (pasic_output_t output = 0; output < PASIC_OUTPUT_COUNT; output++) {
 		bool output_enabled = pasic_output_is_enabled(p, output);
+		int output_gain_db = pasic_output_get_gain_db(p, output);
 
 		for (pasic_source_t source = 0; source < PASIC_SOURCE_COUNT; source++) {
 			const AudioLineFormat *format = &p->source_formats[source];
 			bool source_routed = (pasic_source_get_outputs(p, source) & BIT(output)) != 0;
 			bool routed = output_enabled && source_routed && format->channels != 0;
 
-			if (routed)
+			if (routed) {
+				audio_line_set_gain(p->output_buses[output], source, p->source_gains_db[source] + output_gain_db);
 				audio_line_start(p->output_buses[output], source, format);
-			else if (p->routes[output][source])
+			} else if (p->routes[output][source]) {
 				audio_line_stop(p->output_buses[output], source);
+			}
 			if (routed != p->routes[output][source])
 				DEBUG_LOG(&p->dbg, "audio route %u -> %u: %s\n", source, output, routed ? "on" : "off");
 			p->routes[output][source] = routed;
@@ -262,6 +272,17 @@ static void pasic_line_start(AudioLineSink *sink, unsigned stream, const AudioLi
 static void pasic_line_stop(AudioLineSink *sink, unsigned stream) {
 	if (stream == 0)
 		pasic_source_configure(PMB887X_PMIC(OBJECT(sink)), PASIC_SOURCE_LINE, &(AudioLineFormat) { });
+}
+
+static void pasic_line_set_gain(AudioLineSink *sink, unsigned stream, int gain_db) {
+	pmb887x_pmic_t *p = PMB887X_PMIC(OBJECT(sink));
+
+	if (stream != 0)
+		return;
+	if (p->source_gains_db[PASIC_SOURCE_LINE] == gain_db)
+		return;
+	p->source_gains_db[PASIC_SOURCE_LINE] = gain_db;
+	pasic_routes_update(p);
 }
 
 static void pasic_line_write(AudioLineSink *sink, unsigned stream, const int16_t *frames, size_t frame_count) {
@@ -452,6 +473,7 @@ static void pmic_reset(DeviceState *dev) {
 	p->wcycle = 0;
 	p->i2s_capture_unimplemented_reported = false;
 	memset(p->source_formats, 0, sizeof(p->source_formats));
+	memset(p->source_gains_db, 0, sizeof(p->source_gains_db));
 	pasic_routes_update(p);
 
 	pmic_load_registers(p);
@@ -512,6 +534,7 @@ static void pmic_class_init(ObjectClass *klass, const void *data) {
 	source_class->read = pasic_i2s_read;
 	line_class->start = pasic_line_start;
 	line_class->stop = pasic_line_stop;
+	line_class->set_gain = pasic_line_set_gain;
 	line_class->write = pasic_line_write;
 }
 

@@ -21,6 +21,7 @@
 
 typedef struct test_audio_line_t {
 	AudioLineFormat format;
+	int gain_db;
 	size_t frame_count;
 	int16_t last_sample;
 } test_audio_line_t;
@@ -32,6 +33,11 @@ static test_audio_line_t test_afe_eppa_line;
 void audio_line_start(AudioLineBus *bus, unsigned stream, const AudioLineFormat *format) {
 	g_assert_cmpuint(stream, ==, 0);
 	((test_audio_line_t *) bus)->format = *format;
+}
+
+void audio_line_set_gain(AudioLineBus *bus, unsigned stream, int gain_db) {
+	g_assert_cmpuint(stream, ==, 0);
+	((test_audio_line_t *) bus)->gain_db = gain_db;
 }
 
 void audio_line_stop(AudioLineBus *bus, unsigned stream) {
@@ -444,6 +450,35 @@ static void test_afe_outputs(void) {
 	dsp_bus_destroy(bus);
 }
 
+static void test_afe_gain(void) {
+	static const struct {
+		uint16_t gain_code;
+		int gain_db;
+	} cases[] = {
+		{ 0, 0 },
+		{ 1, -3 },
+		{ 2, -6 },
+		{ 3, -9 },
+	};
+	test_host_t host = {};
+	dsp_bus_t *bus = test_bus_create(&host);
+	uint16_t receive_control = TEAK_AFE_VRXCTRL2_RXDAC | TEAK_AFE_VRXCTRL2_VEPSP | TEAK_AFE_VRXCTRL2_VEPPA;
+
+	dsp_bus_reset(bus);
+	dsp_bus_write(bus, TEST_AFE_BASE + TEAK_AFE_VRXCTRL2, receive_control);
+	dsp_bus_write(bus, TEST_AFE_BASE + TEAK_AFE_BCON, TEAK_AFE_BCON_MODE | TEAK_AFE_BCON_RXSTART);
+	for (size_t i = 0; i < ARRAY_SIZE(cases); i++) {
+		uint16_t line_out_gain = cases[i].gain_code << TEAK_AFE_VRXCTRL1_RXGAINSP_SHIFT;
+		uint16_t power_audio_gain = (3 - cases[i].gain_code) << TEAK_AFE_VRXCTRL1_RXGAINPA_SHIFT;
+
+		dsp_bus_write(bus, TEST_AFE_BASE + TEAK_AFE_VRXCTRL1, line_out_gain | power_audio_gain);
+		g_assert_cmpint(test_afe_ep_line.gain_db, ==, cases[i].gain_db);
+		g_assert_cmpint(test_afe_eppa_line.gain_db, ==, -9 - cases[i].gain_db);
+	}
+
+	dsp_bus_destroy(bus);
+}
+
 static void test_i2s_clock(void) {
 	test_host_t host = { .data = { 0x8000, 0 } };
 	dsp_bus_t *bus = test_bus_create(&host);
@@ -624,6 +659,7 @@ int main(int argc, char **argv) {
 	g_test_add_func("/pmb887x/dsp/peripheral/modulator", test_modulator);
 	g_test_add_func("/pmb887x/dsp/peripheral/afe-clock", test_afe_clock);
 	g_test_add_func("/pmb887x/dsp/peripheral/afe-outputs", test_afe_outputs);
+	g_test_add_func("/pmb887x/dsp/peripheral/afe-gain", test_afe_gain);
 	g_test_add_func("/pmb887x/dsp/peripheral/i2s-clock", test_i2s_clock);
 	g_test_add_func("/pmb887x/dsp/peripheral/i2s-tx-clock", test_i2s_tx_clock);
 	g_test_add_func("/pmb887x/dsp/peripheral/timer-clock", test_timer_clock);

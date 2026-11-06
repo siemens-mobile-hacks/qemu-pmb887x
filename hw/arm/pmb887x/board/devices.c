@@ -154,7 +154,9 @@ static pmb887x_dev_t devices_meta[] = {
 	// Audio output
 	{
 		.name = "speaker",
-		.props = {},
+		.props = {
+			{ "gain_db", DEV_PROP_INT, false },
+		},
 	},
 
 	// NOR FLASH

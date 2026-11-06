@@ -20,6 +20,7 @@ static const uint16_t AFE_CONTROL_MASK = TEAK_AFE_BCON_MODE | TEAK_AFE_BCON_RXST
 #define AFE_DAC_RING_OFFSET	0x40U
 
 #define AFE_DEFAULT_RATE_HZ	8000
+#define AFE_GAIN_STEP_DB	3
 #define AFE_RING_POSITIONS	64
 #define AFE_MS_CLOCK_DIVIDER	13
 
@@ -47,13 +48,21 @@ enum afe_output_id_t {
 struct afe_output_t {
 	uint16_t enable;
 	uint16_t ringer_mode;
+	uint16_t gain;
+	uint16_t gain_shift;
 };
 
 static const uint16_t AFE_DAC_ENABLE = TEAK_AFE_VRXCTRL2_RXDAC | TEAK_AFE_VRXCTRL2_RXDAC2;
 
 static const afe_output_t AFE_OUTPUTS[AFE_OUTPUT_COUNT] = {
-	[AFE_OUTPUT_LINE_OUT] = { TEAK_AFE_VRXCTRL2_VEPSP, TEAK_AFE_VRXCTRL2_RINGSELSP },
-	[AFE_OUTPUT_POWER_AUDIO] = { TEAK_AFE_VRXCTRL2_VEPPA, TEAK_AFE_VRXCTRL2_RINGSELPA },
+	[AFE_OUTPUT_LINE_OUT] = {
+		TEAK_AFE_VRXCTRL2_VEPSP, TEAK_AFE_VRXCTRL2_RINGSELSP,
+		TEAK_AFE_VRXCTRL1_RXGAINSP, TEAK_AFE_VRXCTRL1_RXGAINSP_SHIFT,
+	},
+	[AFE_OUTPUT_POWER_AUDIO] = {
+		TEAK_AFE_VRXCTRL2_VEPPA, TEAK_AFE_VRXCTRL2_RINGSELPA,
+		TEAK_AFE_VRXCTRL1_RXGAINPA, TEAK_AFE_VRXCTRL1_RXGAINPA_SHIFT,
+	},
 };
 
 struct afe_state_t {
@@ -160,6 +169,11 @@ static bool afe_output_is_active(const afe_state_t *state, const afe_output_t *o
 	return (control & output->ringer_mode) == 0;
 }
 
+static int afe_output_get_gain_db(const afe_state_t *state, const afe_output_t *output) {
+	uint16_t code = (state->registers[TEAK_AFE_VRXCTRL1] & output->gain) >> output->gain_shift;
+	return -AFE_GAIN_STEP_DB * code;
+}
+
 static void afe_outputs_update(afe_state_t *state) {
 	AudioLineFormat format = {
 		.sample_rate_hz = afe_receive_sample_rate_hz(state),
@@ -167,12 +181,15 @@ static void afe_outputs_update(afe_state_t *state) {
 	};
 
 	for (size_t i = 0; i < AFE_OUTPUT_COUNT; i++) {
-		bool active = afe_output_is_active(state, &AFE_OUTPUTS[i]);
+		const afe_output_t *output = &AFE_OUTPUTS[i];
+		bool active = afe_output_is_active(state, output);
 
-		if (active)
+		if (active) {
+			audio_line_set_gain(state->output_buses[i], 0, afe_output_get_gain_db(state, output));
 			audio_line_start(state->output_buses[i], 0, &format);
-		else if (state->output_active[i])
+		} else if (state->output_active[i]) {
 			audio_line_stop(state->output_buses[i], 0);
+		}
 		state->output_active[i] = active;
 	}
 }
@@ -226,6 +243,7 @@ static bool afe_write(dsp_device_t *device, uint16_t offset, uint32_t pc, uint16
 			afe_outputs_update(state);
 			break;
 
+		case TEAK_AFE_VRXCTRL1:
 		case TEAK_AFE_VRXCTRL2:
 			state->registers[offset] = value;
 			afe_outputs_update(state);
