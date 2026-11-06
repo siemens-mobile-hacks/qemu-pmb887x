@@ -8,20 +8,82 @@
 #include "system/memory.h"
 #include "qemu/main-loop.h"
 #include "hw/core/qdev-properties.h"
+#include "hw/audio/audio-line.h"
 #include "hw/audio/i2s.h"
-#include "hw/audio/pcm-out.h"
 #include "hw/i2c/i2c.h"
-#include "hw/arm/pmb887x/audio/pasic.h"
 #include "hw/arm/pmb887x/gen/peripheral/PASIC.h"
 #include "system/debug-channel.h"
 #include "hw/arm/pmb887x/gen/cpu_meta.h"
 
 #define TYPE_PMB887X_PMIC	"d1094xx"
 #define PMB887X_PMIC(obj)	OBJECT_CHECK(pmb887x_pmic_t, (obj), TYPE_PMB887X_PMIC)
-/* Covers DSP I2S output that arrives in bursts of about 20 ms plus the 10 ms audio mixer period. */
-#define PASIC_AUDIO_PREFILL_MS	60
+#define PASIC_MONO_BUS_NAME	"pmb887x-pasic-mono"
+#define PASIC_STEREO_BUS_NAME	"pmb887x-pasic-stereo"
+#define PASIC_GAIN_MUTE		0x39
 
+typedef enum pasic_source_t pasic_source_t;
+typedef enum pasic_output_t pasic_output_t;
+typedef struct pasic_route_value_t pasic_route_value_t;
 typedef struct pmb887x_pmic_t pmb887x_pmic_t;
+
+enum pasic_source_t {
+	PASIC_SOURCE_DAC,
+	PASIC_SOURCE_LINE,
+	PASIC_SOURCE_COUNT,
+};
+
+enum pasic_output_t {
+	PASIC_OUTPUT_MONO,
+	PASIC_OUTPUT_STEREO,
+	PASIC_OUTPUT_COUNT,
+};
+
+#define PASIC_ROUTE_MONO	BIT(PASIC_OUTPUT_MONO)
+#define PASIC_ROUTE_STEREO	BIT(PASIC_OUTPUT_STEREO)
+
+struct pasic_route_value_t {
+	uint8_t value;
+	uint8_t outputs;
+};
+
+/* No datasheet: only register values written by firmware route scripts are known, not their bits. */
+static const pasic_route_value_t PASIC_MONO_CONTROL_VALUES[] = {
+	{ 0x00, 0 },
+	{ 0x01, PASIC_ROUTE_MONO },
+	{ 0x02, PASIC_ROUTE_MONO },
+};
+
+static const pasic_route_value_t PASIC_STEREO_CONTROL_VALUES[] = {
+	{ 0x00, 0 },
+	{ 0x01, PASIC_ROUTE_STEREO },
+	{ 0x02, PASIC_ROUTE_STEREO },
+	{ 0x21, PASIC_ROUTE_STEREO },
+	{ 0x22, PASIC_ROUTE_STEREO },
+};
+
+static const pasic_route_value_t PASIC_LINE_ROUTE_VALUES[] = {
+	{ 0x00, 0 },
+	{ 0x03, PASIC_ROUTE_MONO },
+	{ 0x05, PASIC_ROUTE_MONO },
+	{ 0x18, PASIC_ROUTE_STEREO },
+	{ 0x1B, PASIC_ROUTE_MONO | PASIC_ROUTE_STEREO },
+};
+
+static const pasic_route_value_t PASIC_DAC_MONO_ROUTE_VALUES[] = {
+	{ 0x00, 0 },
+	{ 0x03, PASIC_ROUTE_MONO },
+};
+
+static const pasic_route_value_t PASIC_DAC_STEREO_ROUTE_VALUES[] = {
+	{ 0x00, 0 },
+	{ 0x03, PASIC_ROUTE_STEREO },
+	{ 0x05, PASIC_ROUTE_STEREO },
+	{ 0x0A, PASIC_ROUTE_STEREO },
+	{ 0x0C, PASIC_ROUTE_STEREO },
+	{ 0x11, PASIC_ROUTE_STEREO },
+	{ 0x18, PASIC_ROUTE_STEREO },
+	{ 0x21, PASIC_ROUTE_STEREO },
+};
 
 struct pmb887x_pmic_t {
 	SysBusDevice parent_obj;
@@ -29,20 +91,142 @@ struct pmb887x_pmic_t {
 	I2CTargetPort i2c_port;
 	I2SSinkPort i2s_rx_port;
 	I2SSourcePort i2s_tx_port;
+	AudioLineSinkPort line_port;
+	AudioLineBus *output_buses[PASIC_OUTPUT_COUNT];
 	uint32_t reg_id;
 	uint8_t wcycle;
 	uint8_t regs[256];
 	uint32_t revision;
 	uint32_t i2c_address;
-	PCMOut audio;
+	uint8_t mono_control_outputs;
+	uint8_t stereo_control_outputs;
+	uint8_t line_outputs;
+	uint8_t dac_mono_outputs;
+	uint8_t dac_stereo_outputs;
+	uint8_t output_gains[PASIC_OUTPUT_COUNT];
+	AudioLineFormat source_formats[PASIC_SOURCE_COUNT];
+	bool routes[PASIC_OUTPUT_COUNT][PASIC_SOURCE_COUNT];
 	bool i2s_capture_unimplemented_reported;
 	bool on_pressed;
 	qemu_irq on_off_out;
 };
 
-static bool pasic_audio_output_is_enabled(const pmb887x_pmic_t *p) {
-	return pmb887x_pasic_audio_output_is_enabled(p->regs[PASIC_MONO_CONTROL],
-		p->regs[PASIC_STEREO_CONTROL], p->regs[PASIC_AMPLIFIER_GAIN_4_5]);
+static bool pasic_output_is_enabled(const pmb887x_pmic_t *p, pasic_output_t output) {
+	uint8_t enabled_outputs = p->mono_control_outputs | p->stereo_control_outputs;
+
+	if ((enabled_outputs & BIT(output)) == 0)
+		return false;
+	return p->output_gains[output] != PASIC_GAIN_MUTE;
+}
+
+static uint8_t pasic_source_get_outputs(const pmb887x_pmic_t *p, pasic_source_t source) {
+	switch (source) {
+		case PASIC_SOURCE_DAC:
+			return p->dac_mono_outputs | p->dac_stereo_outputs;
+		case PASIC_SOURCE_LINE:
+			return p->line_outputs;
+		default:
+			g_assert_not_reached();
+	}
+}
+
+static void pasic_routes_update(pmb887x_pmic_t *p) {
+	for (pasic_output_t output = 0; output < PASIC_OUTPUT_COUNT; output++) {
+		bool output_enabled = pasic_output_is_enabled(p, output);
+
+		for (pasic_source_t source = 0; source < PASIC_SOURCE_COUNT; source++) {
+			const AudioLineFormat *format = &p->source_formats[source];
+			bool source_routed = (pasic_source_get_outputs(p, source) & BIT(output)) != 0;
+			bool routed = output_enabled && source_routed && format->channels != 0;
+
+			if (routed)
+				audio_line_start(p->output_buses[output], source, format);
+			else if (p->routes[output][source])
+				audio_line_stop(p->output_buses[output], source);
+			if (routed != p->routes[output][source])
+				DEBUG_LOG(&p->dbg, "audio route %u -> %u: %s\n", source, output, routed ? "on" : "off");
+			p->routes[output][source] = routed;
+		}
+	}
+}
+
+static void pasic_source_write(pmb887x_pmic_t *p, pasic_source_t source, const int16_t *frames, size_t frame_count) {
+	for (pasic_output_t output = 0; output < PASIC_OUTPUT_COUNT; output++) {
+		if (p->routes[output][source])
+			audio_line_write(p->output_buses[output], source, frames, frame_count);
+	}
+}
+
+static void pasic_source_configure(pmb887x_pmic_t *p, pasic_source_t source, const AudioLineFormat *format) {
+	const AudioLineFormat *current = &p->source_formats[source];
+
+	if (current->sample_rate_hz == format->sample_rate_hz && current->channels == format->channels)
+		return;
+
+	DEBUG_LOG(&p->dbg, "audio source %u: %u Hz x%u\n", source, format->sample_rate_hz, format->channels);
+	p->source_formats[source] = *format;
+	pasic_routes_update(p);
+}
+
+static uint8_t pasic_route_decode(
+	pmb887x_pmic_t *p,
+	uint8_t reg,
+	uint8_t value,
+	const pasic_route_value_t *values,
+	size_t value_count
+) {
+	for (size_t i = 0; i < value_count; i++) {
+		if (values[i].value == value)
+			return values[i].outputs;
+	}
+	DEBUG_UNIMP(&p->dbg, "audio register %02X value %02X\n", reg, value);
+	return 0;
+}
+
+static void pasic_audio_register_write(pmb887x_pmic_t *p, uint8_t reg, uint8_t value) {
+	switch (reg) {
+		case PASIC_MONO_CONTROL:
+			p->mono_control_outputs = pasic_route_decode(p, reg,
+				value & ~(PASIC_MONO_CONTROL_RINGIN | PASIC_MONO_CONTROL_KEY_CLICK_EN),
+				PASIC_MONO_CONTROL_VALUES, ARRAY_SIZE(PASIC_MONO_CONTROL_VALUES));
+			break;
+
+		case PASIC_STEREO_CONTROL:
+			p->stereo_control_outputs = pasic_route_decode(p, reg, value & ~PASIC_STEREO_CONTROL_RINGIN,
+				PASIC_STEREO_CONTROL_VALUES, ARRAY_SIZE(PASIC_STEREO_CONTROL_VALUES));
+			break;
+
+		case PASIC_SWITCH_MUX_3:
+			p->line_outputs = pasic_route_decode(p, reg, value,
+				PASIC_LINE_ROUTE_VALUES, ARRAY_SIZE(PASIC_LINE_ROUTE_VALUES));
+			break;
+
+		case PASIC_SWITCH_MUX_4:
+			p->dac_mono_outputs = pasic_route_decode(p, reg, value,
+				PASIC_DAC_MONO_ROUTE_VALUES, ARRAY_SIZE(PASIC_DAC_MONO_ROUTE_VALUES));
+			break;
+
+		case PASIC_SWITCH_MUX_5:
+			p->dac_stereo_outputs = pasic_route_decode(p, reg, value,
+				PASIC_DAC_STEREO_ROUTE_VALUES, ARRAY_SIZE(PASIC_DAC_STEREO_ROUTE_VALUES));
+			break;
+
+		case PASIC_AMPLIFIER_GAIN_4_5:
+			if ((value & PASIC_AMPLIFIER_GAIN_4_5_PATH_4_SELECT) == 0)
+				return;
+			p->output_gains[PASIC_OUTPUT_MONO] = value & PASIC_AMPLIFIER_GAIN_4_5_GAIN;
+			break;
+
+		case PASIC_AMPLIFIER_GAIN_7_8:
+			if ((value & PASIC_AMPLIFIER_GAIN_7_8_PATH_7_SELECT) == 0)
+				return;
+			p->output_gains[PASIC_OUTPUT_STEREO] = value & PASIC_AMPLIFIER_GAIN_7_8_GAIN;
+			break;
+
+		default:
+			return;
+	}
+	pasic_routes_update(p);
 }
 
 static void pmic_handle_on_off_input(void *opaque, int _line, int level) {
@@ -54,17 +238,35 @@ static void pmic_handle_on_off_input(void *opaque, int _line, int level) {
 
 static void pasic_i2s_configure(I2SSink *sink, const I2SFormat *format) {
 	pmb887x_pmic_t *p = PMB887X_PMIC(OBJECT(sink));
-	if (format->sample_rate_hz == 0 || (format->channels != 1 && format->channels != 2)) {
-		pcm_out_stop(&p->audio);
-		return;
-	}
-	pcm_out_set_format(&p->audio, format->sample_rate_hz, format->channels);
+	AudioLineFormat dac_format = { };
+
+	if (format->sample_rate_hz != 0 && (format->channels == 1 || format->channels == 2))
+		dac_format = (AudioLineFormat) { format->sample_rate_hz, format->channels };
+	pasic_source_configure(p, PASIC_SOURCE_DAC, &dac_format);
 }
 
 static void pasic_i2s_write(I2SSink *sink, const int16_t *samples, size_t frame_count) {
+	pasic_source_write(PMB887X_PMIC(OBJECT(sink)), PASIC_SOURCE_DAC, samples, frame_count);
+}
+
+static void pasic_line_start(AudioLineSink *sink, unsigned stream, const AudioLineFormat *format) {
 	pmb887x_pmic_t *p = PMB887X_PMIC(OBJECT(sink));
-	if (pasic_audio_output_is_enabled(p))
-		pcm_out_write(&p->audio, samples, frame_count);
+
+	if (stream != 0) {
+		DEBUG_UNIMP(&p->dbg, "LINE input stream %u\n", stream);
+		return;
+	}
+	pasic_source_configure(p, PASIC_SOURCE_LINE, format);
+}
+
+static void pasic_line_stop(AudioLineSink *sink, unsigned stream) {
+	if (stream == 0)
+		pasic_source_configure(PMB887X_PMIC(OBJECT(sink)), PASIC_SOURCE_LINE, &(AudioLineFormat) { });
+}
+
+static void pasic_line_write(AudioLineSink *sink, unsigned stream, const int16_t *frames, size_t frame_count) {
+	if (stream == 0)
+		pasic_source_write(PMB887X_PMIC(OBJECT(sink)), PASIC_SOURCE_LINE, frames, frame_count);
 }
 
 static size_t pasic_i2s_read(I2SSource *source, int16_t *_samples, size_t _frame_capacity) {
@@ -233,7 +435,7 @@ static int pmic_send(I2CTarget *target, uint8_t data) {
 	} else {
 		DEBUG_IO_WRITE(&p->dbg, p->reg_id, 1, data);
 		p->regs[p->reg_id] = data;
-		pcm_out_set_active(&p->audio, pasic_audio_output_is_enabled(p));
+		pasic_audio_register_write(p, p->reg_id, data);
 		p->reg_id = (p->reg_id + 1) % ARRAY_SIZE(p->regs);
 	}
 
@@ -249,9 +451,14 @@ static void pmic_reset(DeviceState *dev) {
 	p->reg_id = 0;
 	p->wcycle = 0;
 	p->i2s_capture_unimplemented_reported = false;
-	pcm_out_stop(&p->audio);
+	memset(p->source_formats, 0, sizeof(p->source_formats));
+	pasic_routes_update(p);
+
 	pmic_load_registers(p);
-	pcm_out_set_active(&p->audio, pasic_audio_output_is_enabled(p));
+	p->output_gains[PASIC_OUTPUT_MONO] = PASIC_GAIN_MUTE;
+	p->output_gains[PASIC_OUTPUT_STEREO] = PASIC_GAIN_MUTE;
+	for (size_t reg = 0; reg < ARRAY_SIZE(p->regs); reg++)
+		pasic_audio_register_write(p, reg, p->regs[reg]);
 }
 
 static void pmic_realize(DeviceState *dev, Error **errp) {
@@ -263,19 +470,15 @@ static void pmic_realize(DeviceState *dev, Error **errp) {
 		return;
 	}
 
-	pcm_out_init(&p->audio, NULL, "pmb887x-pasic", PASIC_AUDIO_PREFILL_MS, &p->dbg);
 	DEBUG_LOG(&p->dbg, "PMIC revision: %02X\n", p->revision);
 	pmic_load_registers(p);
-}
-
-static void pmic_unrealize(DeviceState *dev) {
-	pmb887x_pmic_t *p = PMB887X_PMIC(dev);
-	pcm_out_cleanup(&p->audio);
 }
 
 static const Property pmic_properties[] = {
 	DEFINE_PROP_UINT32("addr", pmb887x_pmic_t, i2c_address, 0x31),
 	DEFINE_PROP_UINT32("revision", pmb887x_pmic_t, revision, 0xAA),
+	DEFINE_PROP_LINK("bus_mono", pmb887x_pmic_t, output_buses[PASIC_OUTPUT_MONO], TYPE_AUDIO_LINE_BUS, AudioLineBus *),
+	DEFINE_PROP_LINK("bus_stereo", pmb887x_pmic_t, output_buses[PASIC_OUTPUT_STEREO], TYPE_AUDIO_LINE_BUS, AudioLineBus *),
 };
 
 static void pmic_init(Object *obj) {
@@ -286,6 +489,9 @@ static void pmic_init(Object *obj) {
 	i2c_target_port_init(&p->i2c_port, DEVICE(obj), "I2C", I2C_TARGET(obj), &p->i2c_address);
 	i2s_sink_port_init(&p->i2s_rx_port, DEVICE(obj), "I2S_RX", I2S_SINK(obj));
 	i2s_source_port_init(&p->i2s_tx_port, DEVICE(obj), "I2S_TX", I2S_SOURCE(obj));
+	audio_line_sink_port_init(&p->line_port, DEVICE(obj), "LINE", AUDIO_LINE_SINK(obj));
+	p->output_buses[PASIC_OUTPUT_MONO] = audio_line_bus_init(DEVICE(obj), PASIC_MONO_BUS_NAME);
+	p->output_buses[PASIC_OUTPUT_STEREO] = audio_line_bus_init(DEVICE(obj), PASIC_STEREO_BUS_NAME);
 }
 
 static void pmic_class_init(ObjectClass *klass, const void *data) {
@@ -293,10 +499,10 @@ static void pmic_class_init(ObjectClass *klass, const void *data) {
 	I2CTargetClass *target_class = I2C_TARGET_CLASS(klass);
 	I2SSinkClass *sink_class = I2S_SINK_CLASS(klass);
 	I2SSourceClass *source_class = I2S_SOURCE_CLASS(klass);
+	AudioLineSinkClass *line_class = AUDIO_LINE_SINK_CLASS(klass);
 
 	device_class_set_props(dc, pmic_properties);
 	dc->realize = pmic_realize;
-	dc->unrealize = pmic_unrealize;
 	device_class_set_legacy_reset(dc, pmic_reset);
 	target_class->event = pmic_event;
 	target_class->recv = pmic_recv;
@@ -304,6 +510,9 @@ static void pmic_class_init(ObjectClass *klass, const void *data) {
 	sink_class->configure = pasic_i2s_configure;
 	sink_class->write = pasic_i2s_write;
 	source_class->read = pasic_i2s_read;
+	line_class->start = pasic_line_start;
+	line_class->stop = pasic_line_stop;
+	line_class->write = pasic_line_write;
 }
 
 static const TypeInfo pmic_info = {
@@ -316,6 +525,7 @@ static const TypeInfo pmic_info = {
 		{ TYPE_I2C_TARGET },
 		{ TYPE_I2S_SINK },
 		{ TYPE_I2S_SOURCE },
+		{ TYPE_AUDIO_LINE_SINK },
 		{ NULL },
 	},
 };

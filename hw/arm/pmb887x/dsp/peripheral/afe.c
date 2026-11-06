@@ -1,6 +1,6 @@
 #include "qemu/osdep.h"
 
-#include "hw/audio/pcm-out.h"
+#include "hw/audio/audio-line.h"
 #include "hw/arm/pmb887x/dsp/peripheral/internal.h"
 #include "hw/arm/pmb887x/gen/dsp.h"
 
@@ -14,14 +14,12 @@ static const uint16_t AFE_CONTROL_MASK = TEAK_AFE_BCON_MODE | TEAK_AFE_BCON_RXST
  * The 0x80-word AFE RAM is split into two 0x40-word rings addressed by the
  * 6-bit RD/WR pointers. The DSP transmits its decoded playback samples to the
  * DAC through the upper ring (ram_base + 0x40), paced by the RX sample clock and
- * RXINTPTR; the lower ring (ram_base + 0) is the mic-ADC capture buffer. Host
- * audio-out must therefore read the upper (DAC) ring, not the lower one.
+ * RXINTPTR; the lower ring (ram_base + 0) is the mic-ADC capture buffer. The
+ * receive outputs must therefore read the upper (DAC) ring, not the lower one.
  */
 #define AFE_DAC_RING_OFFSET	0x40U
 
 #define AFE_DEFAULT_RATE_HZ	8000
-/* Covers DSP output that arrives in bursts of about 20 ms plus the 10 ms audio mixer period. */
-#define AFE_AUDIO_PREFILL_MS	60
 #define AFE_RING_POSITIONS	64
 #define AFE_MS_CLOCK_DIVIDER	13
 
@@ -36,7 +34,25 @@ static const uint16_t AFE_POWER_DOWN_SAMPLES[] = {
 	0x85FB, 0x85E1, 0x85FA, 0x85E4, 0x85F5, 0x85EA, 0x85EF, 0x85F0,
 };
 
+typedef enum afe_output_id_t afe_output_id_t;
+typedef struct afe_output_t afe_output_t;
 typedef struct afe_state_t afe_state_t;
+
+enum afe_output_id_t {
+	AFE_OUTPUT_LINE_OUT,
+	AFE_OUTPUT_POWER_AUDIO,
+	AFE_OUTPUT_COUNT,
+};
+
+struct afe_output_t {
+	uint16_t enable;
+	uint16_t ringer_mode;
+};
+
+static const afe_output_t AFE_OUTPUTS[AFE_OUTPUT_COUNT] = {
+	[AFE_OUTPUT_LINE_OUT] = { TEAK_AFE_VRXCTRL2_VEPSP, TEAK_AFE_VRXCTRL2_RINGSELSP },
+	[AFE_OUTPUT_POWER_AUDIO] = { TEAK_AFE_VRXCTRL2_VEPPA, TEAK_AFE_VRXCTRL2_RINGSELPA },
+};
 
 struct afe_state_t {
 	uint16_t registers[AFE_REGISTER_COUNT];
@@ -51,7 +67,8 @@ struct afe_state_t {
 	uint32_t clock_hz;
 	uint32_t ms_clock_hz;
 	uint64_t clock_phase;
-	PCMOut *audio;
+	AudioLineBus *output_buses[AFE_OUTPUT_COUNT];
+	bool output_active[AFE_OUTPUT_COUNT];
 };
 
 static bool afe_receive_active(const afe_state_t *state) {
@@ -67,31 +84,7 @@ static bool afe_transmit_active(const afe_state_t *state) {
 }
 
 static void afe_destroy(dsp_device_t *device) {
-	afe_state_t *state = device->state;
-
-	pcm_out_cleanup(state->audio);
-	g_free(state->audio);
 	g_free(device->state);
-}
-
-static void afe_reset(dsp_device_t *device) {
-	afe_state_t *state = device->state;
-	dsp_device_t *interrupt = state->interrupt;
-	dsp_host_t host = state->host;
-	uint16_t ram_base = state->ram_base;
-	uint32_t clock_hz = state->clock_hz;
-	uint32_t ms_clock_hz = state->ms_clock_hz;
-	PCMOut *audio = state->audio;
-
-	pcm_out_set_active(audio, false);
-	memset(state, 0, sizeof(*state));
-	state->audio = audio;
-	state->interrupt = interrupt;
-	state->host = host;
-	state->ram_base = ram_base;
-	state->clock_hz = clock_hz;
-	state->ms_clock_hz = ms_clock_hz;
-	pcm_out_set_format(audio, AFE_DEFAULT_RATE_HZ, 1);
 }
 
 static bool afe_read(dsp_device_t *device, uint16_t offset, uint32_t pc, uint16_t *value) {
@@ -153,6 +146,54 @@ static unsigned afe_receive_sample_rate_hz(const afe_state_t *state) {
 	return AFE_DEFAULT_RATE_HZ;
 }
 
+static bool afe_output_is_active(const afe_state_t *state, const afe_output_t *output) {
+	uint16_t control = state->registers[TEAK_AFE_VRXCTRL2];
+	uint16_t enabled = TEAK_AFE_VRXCTRL2_RXDAC | output->enable;
+
+	if (!afe_receive_active(state))
+		return false;
+	return (control & enabled) == enabled && (control & output->ringer_mode) == 0;
+}
+
+static void afe_outputs_update(afe_state_t *state) {
+	AudioLineFormat format = {
+		.sample_rate_hz = afe_receive_sample_rate_hz(state),
+		.channels = afe_receive_is_stereo(state) ? 2 : 1,
+	};
+
+	for (size_t i = 0; i < AFE_OUTPUT_COUNT; i++) {
+		bool active = afe_output_is_active(state, &AFE_OUTPUTS[i]);
+
+		if (active)
+			audio_line_start(state->output_buses[i], 0, &format);
+		else if (state->output_active[i])
+			audio_line_stop(state->output_buses[i], 0);
+		state->output_active[i] = active;
+	}
+}
+
+static void afe_reset(dsp_device_t *device) {
+	afe_state_t *state = device->state;
+	dsp_device_t *interrupt = state->interrupt;
+	dsp_host_t host = state->host;
+	uint16_t ram_base = state->ram_base;
+	uint32_t clock_hz = state->clock_hz;
+	uint32_t ms_clock_hz = state->ms_clock_hz;
+	AudioLineBus *output_buses[AFE_OUTPUT_COUNT];
+
+	state->registers[TEAK_AFE_BCON] = 0;
+	afe_outputs_update(state);
+	memcpy(output_buses, state->output_buses, sizeof(output_buses));
+
+	memset(state, 0, sizeof(*state));
+	state->interrupt = interrupt;
+	state->host = host;
+	state->ram_base = ram_base;
+	state->clock_hz = clock_hz;
+	state->ms_clock_hz = ms_clock_hz;
+	memcpy(state->output_buses, output_buses, sizeof(output_buses));
+}
+
 static size_t afe_transmit_sample_cycles(const afe_state_t *state) {
 	bool rate_16_khz = (state->registers[TEAK_AFE_BCON] & TEAK_AFE_BCON_TXRATE) ==
 		TEAK_AFE_BCON_TXRATE_KHZ_16;
@@ -167,25 +208,23 @@ static bool afe_write(dsp_device_t *device, uint16_t offset, uint32_t pc, uint16
 			state->registers[offset] = value & (TEAK_AFE_INTPTR_RXINTPTR | TEAK_AFE_INTPTR_TXINTPTR);
 			break;
 
-		case TEAK_AFE_BCON: {
-			uint16_t previous_control = state->registers[offset];
-
+		case TEAK_AFE_BCON:
 			state->registers[offset] = value & AFE_CONTROL_MASK;
-			if (((previous_control ^ state->registers[offset]) & TEAK_AFE_BCON_RXRATE) != 0) {
-				pcm_out_set_format(state->audio, afe_receive_sample_rate_hz(state),
-					afe_receive_is_stereo(state) ? 2 : 1);
-			}
 			if (!afe_receive_active(state)) {
 				state->receive_position = 0;
 				state->receive_cycles = 0;
 			}
-			pcm_out_set_active(state->audio, afe_receive_active(state));
 			if (!afe_transmit_active(state)) {
 				state->transmit_position = 0;
 				state->transmit_cycles = 0;
 			}
+			afe_outputs_update(state);
 			break;
-		}
+
+		case TEAK_AFE_VRXCTRL2:
+			state->registers[offset] = value;
+			afe_outputs_update(state);
+			break;
 
 		case TEAK_AFE_RWADDR:
 			break;
@@ -212,22 +251,29 @@ dsp_device_t *afe_create(
 	const pmb887x_dsp_peripheral_config_t *config,
 	const DebugChannel *parent,
 	dsp_device_t *interrupt,
-	const dsp_host_t *host
+	const dsp_host_t *host,
+	AudioLineBus *ep_bus,
+	AudioLineBus *eppa_bus
 ) {
 	afe_state_t *state = g_new0(afe_state_t, 1);
 	state->interrupt = interrupt;
 	state->host = *host;
 	state->ram_base = config->ram_base;
+	state->output_buses[AFE_OUTPUT_LINE_OUT] = ep_bus;
+	state->output_buses[AFE_OUTPUT_POWER_AUDIO] = eppa_bus;
+	return dsp_device_create(config, parent, &afe_ops, state);
+}
 
-	dsp_device_t *device = dsp_device_create(config, parent, &afe_ops, state);
-	state->audio = g_new(PCMOut, 1);
-	pcm_out_init(state->audio, NULL, "pmb887x-afe", AFE_AUDIO_PREFILL_MS, &device->dbg);
-	return device;
+static void afe_receive_write(afe_state_t *state, const uint16_t *frame) {
+	for (size_t i = 0; i < AFE_OUTPUT_COUNT; i++) {
+		if (state->output_active[i])
+			audio_line_write(state->output_buses[i], 0, (const int16_t *) frame, 1);
+	}
 }
 
 static void afe_receive_publish(afe_state_t *state, uint16_t word) {
 	if (!afe_receive_is_stereo(state)) {
-		pcm_out_write(state->audio, (const int16_t *) &word, 1);
+		afe_receive_write(state, &word);
 		return;
 	}
 	if ((state->receive_position & 1) == 0) {
@@ -235,7 +281,7 @@ static void afe_receive_publish(afe_state_t *state, uint16_t word) {
 		return;
 	}
 	uint16_t frame[] = { state->receive_first_word, word };
-	pcm_out_write(state->audio, (const int16_t *) frame, 1);
+	afe_receive_write(state, frame);
 }
 
 static void afe_receive_word(afe_state_t *state) {

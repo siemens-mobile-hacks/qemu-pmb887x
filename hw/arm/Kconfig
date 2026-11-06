@@ -263,7 +263,7 @@ config PMB887X
     select ISO7816
     select GSM_SIM
     select DMA_SINK
-    select PCM_OUT
+    select SPEAKER
     select SPLIT_IRQ
 
 config VEXPRESS

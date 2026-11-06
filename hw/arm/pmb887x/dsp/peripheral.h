@@ -3,6 +3,7 @@
 
 #include <stdbool.h>
 
+#include "hw/audio/audio-line.h"
 #include "hw/audio/i2s.h"
 #include "hw/arm/pmb887x/dsp/config.h"
 #include "hw/arm/pmb887x/dsp/signals.h"
@@ -22,6 +23,8 @@ struct dsp_i2s_port_t {
 
 struct dsp_ports_t {
 	dsp_i2s_port_t i2s[DSP_I2S_COUNT];
+	AudioLineBus *afe_ep;
+	AudioLineBus *afe_eppa;
 };
 
 struct dsp_host_t {

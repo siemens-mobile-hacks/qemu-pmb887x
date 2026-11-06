@@ -8004,11 +8004,12 @@ static const DebugRegField pasic_amplifier_gain_1_fields[] = {
 };
 
 static const DebugRegField pasic_mono_control_fields[] = {
+	{ "RINGIN",			0x00000004,	2,	NULL,	0 },
 	{ "KEY_CLICK_EN",	0x00000008,	3,	NULL,	0 },
 };
 
 static const DebugRegField pasic_stereo_control_fields[] = {
-	{ "VALUE",	0x000000FF,	0,	NULL,	0 },
+	{ "RINGIN",	0x00000004,	2,	NULL,	0 },
 };
 
 static const DebugRegField pasic_amplifier_gain_2_fields[] = {

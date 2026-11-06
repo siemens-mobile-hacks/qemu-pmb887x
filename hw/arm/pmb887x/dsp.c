@@ -9,6 +9,7 @@
 #include "qemu/timer.h"
 #include "hw/core/qdev-properties.h"
 #include "hw/core/qdev-clock.h"
+#include "hw/audio/audio-line.h"
 #include "hw/audio/i2s.h"
 #include "hw/ssi/ssi.h"
 #include "system/runstate.h"
@@ -39,6 +40,8 @@
 #define DSP_I2S2_TX_BUS_NAME	"pmb887x-dsp-i2s2-tx"
 #define DSP_I2S2_RX_BUS_NAME	"pmb887x-dsp-i2s2-rx"
 #define DSP_IQ_RX_BUS_NAME	"pmb887x-dsp-iq-rx"
+#define DSP_AFE_EP_BUS_NAME	"pmb887x-dsp-afe-ep"
+#define DSP_AFE_EPPA_BUS_NAME	"pmb887x-dsp-afe-eppa"
 #define PMB887X_DSP(obj)	OBJECT_CHECK(dsp_state_t, (obj), TYPE_PMB887X_DSP)
 
 enum {
@@ -93,6 +96,8 @@ struct dsp_state_t {
 	dsp_i2s_port_t i2s1;
 	dsp_i2s_port_t i2s2;
 	pmb887x_iq_bus_t *iq_rx_bus;
+	AudioLineBus *afe_ep_bus;
+	AudioLineBus *afe_eppa_bus;
 	SSIBus *ssc_bus;
 };
 
@@ -603,6 +608,8 @@ static void dsp_init(Object *obj) {
 	p->i2s2.tx_bus = i2s_tx_bus_init(DEVICE(obj), DSP_I2S2_TX_BUS_NAME);
 	p->i2s2.rx_bus = i2s_rx_bus_init(DEVICE(obj), DSP_I2S2_RX_BUS_NAME);
 	p->iq_rx_bus = pmb887x_iq_bus_create(DEVICE(obj), DSP_IQ_RX_BUS_NAME);
+	p->afe_ep_bus = audio_line_bus_init(DEVICE(obj), DSP_AFE_EP_BUS_NAME);
+	p->afe_eppa_bus = audio_line_bus_init(DEVICE(obj), DSP_AFE_EPPA_BUS_NAME);
 	memory_region_init(&p->mmio, obj, "pmb887x-dsp", DSP_IO_SIZE);
 	memory_region_init_io(&p->regs, obj, &io_ops, p, "pmb887x-dsp-regs", DSP_RAM0);
 	memory_region_add_subregion(&p->mmio, 0, &p->regs);
@@ -653,6 +660,8 @@ static const Property dsp_properties[] = {
 	DEFINE_PROP_LINK("bus_i2s2_tx", dsp_state_t, i2s2.tx_bus, TYPE_I2S_TX_BUS, I2STxBus *),
 	DEFINE_PROP_LINK("bus_i2s2_rx", dsp_state_t, i2s2.rx_bus, TYPE_I2S_RX_BUS, I2SRxBus *),
 	DEFINE_PROP_LINK("bus_iq_rx", dsp_state_t, iq_rx_bus, TYPE_PMB887X_IQ_BUS, pmb887x_iq_bus_t *),
+	DEFINE_PROP_LINK("bus_afe_ep", dsp_state_t, afe_ep_bus, TYPE_AUDIO_LINE_BUS, AudioLineBus *),
+	DEFINE_PROP_LINK("bus_afe_eppa", dsp_state_t, afe_eppa_bus, TYPE_AUDIO_LINE_BUS, AudioLineBus *),
 };
 
 static void dsp_realize(DeviceState *dev, Error **errp) {
@@ -697,6 +706,8 @@ static void dsp_realize(DeviceState *dev, Error **errp) {
 				.rx_bus = p->i2s2.rx_bus,
 			},
 		},
+		.afe_ep = p->afe_ep_bus,
+		.afe_eppa = p->afe_eppa_bus,
 	};
 	p->runtime = dsp_runtime_create(config, rom->program_rom, rom->data_rom,
 		p, dsp_notify_activity, dsp_notify_comm, dsp_get_time_ns, dsp_ssc_transfer, &ports, &p->dbg);

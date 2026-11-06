@@ -93,7 +93,9 @@ dsp_device_t *afe_create(
 	const pmb887x_dsp_peripheral_config_t *config,
 	const DebugChannel *parent,
 	dsp_device_t *interrupt,
-	const dsp_host_t *host
+	const dsp_host_t *host,
+	AudioLineBus *ep_bus,
+	AudioLineBus *eppa_bus
 );
 void afe_advance(dsp_device_t *device, size_t cycles);
 bool afe_is_active(const dsp_device_t *device);

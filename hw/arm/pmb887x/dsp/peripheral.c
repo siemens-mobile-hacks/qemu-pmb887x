@@ -47,7 +47,7 @@ static dsp_device_t *dsp_bus_create_device(dsp_bus_t *bus, const pmb887x_dsp_per
 		case PMB887X_DSP_PERIPHERAL_AFE:
 			g_assert(bus->interrupt != NULL);
 
-			device = afe_create(config, bus->dbg, bus->interrupt, &bus->host);
+			device = afe_create(config, bus->dbg, bus->interrupt, &bus->host, bus->ports.afe_ep, bus->ports.afe_eppa);
 			bus->afe = device;
 			return device;
 

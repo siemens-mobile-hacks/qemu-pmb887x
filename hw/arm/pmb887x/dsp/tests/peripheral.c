@@ -1,7 +1,7 @@
 #include "qemu/osdep.h"
 
 #include "hw/arm/pmb887x/gen/dsp.h"
-#include "hw/audio/pcm-out.h"
+#include "hw/audio/audio-line.h"
 #include "hw/arm/pmb887x/dsp/peripheral.h"
 #include "hw/arm/pmb887x/rf.h"
 #include "qemu/debug-channel.h"
@@ -19,27 +19,33 @@
 #define TEST_AFE_DAC_RING_OFFSET	0x40
 #define TEST_I2S_RX_RAM_BASE	(TEAK_I2S_RWADDR_RDADDR + 1U)
 
+typedef struct test_audio_line_t {
+	AudioLineFormat format;
+	size_t frame_count;
+	int16_t last_sample;
+} test_audio_line_t;
+
 /* The host-unit test replaces external frontends, never DSP model code. */
-static size_t test_audio_sample_count;
-static uint16_t test_audio_sample;
+static test_audio_line_t test_afe_ep_line;
+static test_audio_line_t test_afe_eppa_line;
 
-void pcm_out_init(PCMOut *out, AudioBackend *_be, const char *_name, uint32_t _prefill_ms, const DebugChannel *_dbg) {
-	*out = (PCMOut) { };
+void audio_line_start(AudioLineBus *bus, unsigned stream, const AudioLineFormat *format) {
+	g_assert_cmpuint(stream, ==, 0);
+	((test_audio_line_t *) bus)->format = *format;
 }
 
-void pcm_out_cleanup(PCMOut *_out) {
+void audio_line_stop(AudioLineBus *bus, unsigned stream) {
+	g_assert_cmpuint(stream, ==, 0);
+	((test_audio_line_t *) bus)->format = (AudioLineFormat) { };
 }
 
-void pcm_out_set_active(PCMOut *_out, bool _active) {
-}
+void audio_line_write(AudioLineBus *bus, unsigned stream, const int16_t *frames, size_t frame_count) {
+	test_audio_line_t *line = (test_audio_line_t *) bus;
 
-void pcm_out_set_format(PCMOut *out, uint32_t _rate_hz, uint32_t channels) {
-	out->channels = channels;
-}
-
-void pcm_out_write(PCMOut *out, const int16_t *frames, size_t frame_count) {
-	test_audio_sample_count++;
-	test_audio_sample = frames[frame_count * out->channels - 1];
+	g_assert_cmpuint(stream, ==, 0);
+	g_assert_cmpuint(line->format.channels, !=, 0);
+	line->frame_count += frame_count;
+	line->last_sample = frames[frame_count * line->format.channels - 1];
 }
 
 bool pmb887x_iq_bus_has_source(const pmb887x_iq_bus_t *bus) {
@@ -171,6 +177,8 @@ static dsp_bus_t *test_bus_create(test_host_t *host) {
 				.rx_bus = (I2SRxBus *) host,
 			},
 		},
+		.afe_ep = (AudioLineBus *) &test_afe_ep_line,
+		.afe_eppa = (AudioLineBus *) &test_afe_eppa_line,
 	};
 	dsp_host_t peripheral_host = {
 		.opaque = host,
@@ -327,16 +335,19 @@ static void test_afe_clock(void) {
 	dsp_bus_set_clock_hz(bus, 8000000);
 	dsp_bus_set_ms_clock_hz(bus, 104000000);
 	host.data[TEST_AFE_DAC_RING_OFFSET] = 0x1234;
-	test_audio_sample_count = 0;
+	test_afe_ep_line = (test_audio_line_t) { };
 	dsp_bus_reset(bus);
+	dsp_bus_write(bus, TEST_AFE_BASE + TEAK_AFE_VRXCTRL2, TEAK_AFE_VRXCTRL2_RXDAC | TEAK_AFE_VRXCTRL2_VEPSP);
 	dsp_bus_write(bus, TEST_AFE_BASE + TEAK_AFE_INTPTR, 0x3F3F);
 	dsp_bus_write(bus, TEST_AFE_BASE + TEAK_AFE_BCON,
 		TEAK_AFE_BCON_MODE | TEAK_AFE_BCON_RXSTART | TEAK_AFE_BCON_RXRATE_KHZ_8);
 	dsp_bus_advance_idle(bus, 1000);
 	g_assert_cmpuint(host.data_read_count, ==, 1);
 	g_assert_cmphex(host.data_read_address, ==, TEST_AFE_DAC_RING_OFFSET);
-	g_assert_cmpuint(test_audio_sample_count, ==, 1);
-	g_assert_cmphex(test_audio_sample, ==, 0x1234);
+	g_assert_cmpuint(test_afe_ep_line.format.sample_rate_hz, ==, 8000);
+	g_assert_cmpuint(test_afe_ep_line.format.channels, ==, 1);
+	g_assert_cmpuint(test_afe_ep_line.frame_count, ==, 1);
+	g_assert_cmphex((uint16_t) test_afe_ep_line.last_sample, ==, 0x1234);
 
 	for (size_t i = 0; i < ARRAY_SIZE(receive_rates); i++) {
 		dsp_bus_reset(bus);
@@ -388,6 +399,45 @@ static void test_afe_clock(void) {
 		g_assert_cmphex(dsp_bus_read(bus, TEST_AFE_BASE + TEAK_AFE_RWADDR), ==, 0x0100);
 		g_assert_cmphex(dsp_bus_get_irq_flags(bus, 1), ==, TEAK_INT_FINTB0_VBTX);
 	}
+	dsp_bus_destroy(bus);
+}
+
+static void test_afe_outputs(void) {
+	static const struct {
+		uint16_t receive_control;
+		bool line_out;
+		bool power_audio;
+	} cases[] = {
+		{ TEAK_AFE_VRXCTRL2_RXDAC | TEAK_AFE_VRXCTRL2_VEPSP, true, false },
+		{ TEAK_AFE_VRXCTRL2_RXDAC | TEAK_AFE_VRXCTRL2_VEPPA, false, true },
+		{ TEAK_AFE_VRXCTRL2_RXDAC | TEAK_AFE_VRXCTRL2_VEPSP | TEAK_AFE_VRXCTRL2_VEPPA, true, true },
+		{ TEAK_AFE_VRXCTRL2_VEPSP | TEAK_AFE_VRXCTRL2_VEPPA, false, false },
+		{ TEAK_AFE_VRXCTRL2_RXDAC | TEAK_AFE_VRXCTRL2_VEPSP | TEAK_AFE_VRXCTRL2_RINGSELSP, false, false },
+		{ TEAK_AFE_VRXCTRL2_RXDAC | TEAK_AFE_VRXCTRL2_VEPPA | TEAK_AFE_VRXCTRL2_RINGSELPA, false, false },
+	};
+	test_host_t host = {};
+	dsp_bus_t *bus = test_bus_create(&host);
+
+	dsp_bus_set_clock_hz(bus, 8000000);
+	dsp_bus_set_ms_clock_hz(bus, 104000000);
+	host.data[TEST_AFE_DAC_RING_OFFSET] = 0x1234;
+	for (size_t i = 0; i < ARRAY_SIZE(cases); i++) {
+		test_afe_ep_line = (test_audio_line_t) { };
+		test_afe_eppa_line = (test_audio_line_t) { };
+		dsp_bus_reset(bus);
+		dsp_bus_write(bus, TEST_AFE_BASE + TEAK_AFE_VRXCTRL2, cases[i].receive_control);
+		dsp_bus_write(bus, TEST_AFE_BASE + TEAK_AFE_INTPTR, 0x3F3F);
+		dsp_bus_write(bus, TEST_AFE_BASE + TEAK_AFE_BCON,
+			TEAK_AFE_BCON_MODE | TEAK_AFE_BCON_RXSTART | TEAK_AFE_BCON_RXRATE_KHZ_8);
+		dsp_bus_advance_idle(bus, 1000);
+		g_assert_cmpuint(test_afe_ep_line.frame_count, ==, cases[i].line_out);
+		g_assert_cmpuint(test_afe_eppa_line.frame_count, ==, cases[i].power_audio);
+
+		dsp_bus_write(bus, TEST_AFE_BASE + TEAK_AFE_BCON, TEAK_AFE_BCON_MODE);
+		g_assert_cmpuint(test_afe_ep_line.format.channels, ==, 0);
+		g_assert_cmpuint(test_afe_eppa_line.format.channels, ==, 0);
+	}
+
 	dsp_bus_destroy(bus);
 }
 
@@ -570,6 +620,7 @@ int main(int argc, char **argv) {
 	g_test_add_func("/pmb887x/dsp/peripheral/interrupt", test_interrupt);
 	g_test_add_func("/pmb887x/dsp/peripheral/modulator", test_modulator);
 	g_test_add_func("/pmb887x/dsp/peripheral/afe-clock", test_afe_clock);
+	g_test_add_func("/pmb887x/dsp/peripheral/afe-outputs", test_afe_outputs);
 	g_test_add_func("/pmb887x/dsp/peripheral/i2s-clock", test_i2s_clock);
 	g_test_add_func("/pmb887x/dsp/peripheral/i2s-tx-clock", test_i2s_tx_clock);
 	g_test_add_func("/pmb887x/dsp/peripheral/timer-clock", test_timer_clock);

@@ -151,6 +151,12 @@ static pmb887x_dev_t devices_meta[] = {
 		.props = {},
 	},
 
+	// Audio output
+	{
+		.name = "speaker",
+		.props = {},
+	},
+
 	// NOR FLASH
 	{
 		.name = "cfi-flash",
