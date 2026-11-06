@@ -255,7 +255,7 @@ static void device_init_prop_from_config(DeviceState *dev, const pmb887x_dev_pro
 	switch (prop->type) {
 		case DEV_PROP_INT: {
 			int value = toml_table_get_int32(table, prop->name, -1, true);
-			qdev_prop_set_uint32(dev, prop->name, value);
+			qdev_prop_set_int32(dev, prop->name, value);
 			break;
 		}
 		case DEV_PROP_UINT: {
