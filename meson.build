@@ -4112,6 +4112,16 @@ if have_system
       'sources': files('tests/unit/test-qdev.c', 'hw/core/split-irq.c'),
       'dependencies': [qom, hwcore],
     },
+    'bus-port': {
+      'sources': files(
+        'tests/unit/test-bus-port.c',
+        'hw/audio/audio-line.c',
+        'hw/audio/i2s.c',
+        'hw/i2c/core.c',
+        'hw/ssi/three-wire-serial.c',
+      ),
+      'dependencies': [qom, hwcore],
+    },
   }
 endif
 
