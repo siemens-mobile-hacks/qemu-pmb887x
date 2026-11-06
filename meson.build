@@ -4112,6 +4112,14 @@ if have_system
       'sources': files('tests/unit/test-qdev.c', 'hw/core/split-irq.c'),
       'dependencies': [qom, hwcore],
     },
+    'speaker': {
+      'sources': files(
+        'tests/unit/test-speaker.c',
+        'hw/audio/audio-line.c',
+        'hw/audio/speaker.c',
+      ),
+      'dependencies': [qom, hwcore, libm],
+    },
     'bus-port': {
       'sources': files(
         'tests/unit/test-bus-port.c',

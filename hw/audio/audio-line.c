@@ -66,6 +66,15 @@ void audio_line_stop(AudioLineBus *bus, unsigned stream)
     }
 }
 
+void audio_line_set_gain(AudioLineBus *bus, unsigned stream, int gain_db)
+{
+    AudioLineSink *sink = audio_line_get_sink(bus);
+
+    if (sink) {
+        AUDIO_LINE_SINK_GET_CLASS(sink)->set_gain(sink, stream, gain_db);
+    }
+}
+
 void audio_line_write(AudioLineBus *bus, unsigned stream,
                       const int16_t *frames, size_t frame_count)
 {
