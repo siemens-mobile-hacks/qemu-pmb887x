@@ -1928,6 +1928,14 @@ void tcg_prologue_init(void)
     tcg_region_prologue_set(s);
 }
 
+/* WASM PORT FAST PATH (removable): w64c_reset and w64c_constant below */
+#ifdef CONFIG_TCG_WASM64
+#define W64_CONSTS 1
+#else
+#define W64_CONSTS 0
+#endif
+#include "const-table.c.inc"
+
 void tcg_func_start(TCGContext *s)
 {
     tcg_pool_reset(s);
@@ -1937,9 +1945,13 @@ void tcg_func_start(TCGContext *s)
     tcg_temp_ebb_reset_freed(s);
 
     /* No constant temps have been previously allocated. */
-    for (int i = 0; i < TCG_TYPE_COUNT; ++i) {
-        if (s->const_table[i]) {
-            g_hash_table_remove_all(s->const_table[i]);
+    if (W64_CONSTS) {  /* WASM PORT FAST PATH (removable) */
+        w64c_reset(s);
+    } else {
+        for (int i = 0; i < TCG_TYPE_COUNT; ++i) {
+            if (s->const_table[i]) {
+                g_hash_table_remove_all(s->const_table[i]);
+            }
         }
     }
 
@@ -2243,6 +2255,9 @@ TCGTemp *tcg_constant_internal(TCGType type, int64_t val)
     GHashTable *h = s->const_table[type];
     TCGTemp *ts;
 
+    if (W64_CONSTS) {  /* WASM PORT FAST PATH (removable) */
+        return w64c_constant(s, type, val);
+    }
     if (h == NULL) {
         h = g_hash_table_new(g_int64_hash, g_int64_equal);
         s->const_table[type] = h;
