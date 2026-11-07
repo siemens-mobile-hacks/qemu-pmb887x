@@ -20,7 +20,7 @@ static const uint16_t AFE_CONTROL_MASK = TEAK_AFE_BCON_MODE | TEAK_AFE_BCON_RXST
 #define AFE_DAC_RING_OFFSET	0x40U
 
 #define AFE_DEFAULT_RATE_HZ	8000
-#define AFE_GAIN_STEP_DB	3
+#define AFE_GAIN_STEP_MB	300
 #define AFE_RING_POSITIONS	64
 #define AFE_MS_CLOCK_DIVIDER	13
 
@@ -169,9 +169,9 @@ static bool afe_output_is_active(const afe_state_t *state, const afe_output_t *o
 	return (control & output->ringer_mode) == 0;
 }
 
-static int afe_output_get_gain_db(const afe_state_t *state, const afe_output_t *output) {
+static int afe_output_get_gain_mb(const afe_state_t *state, const afe_output_t *output) {
 	uint16_t code = (state->registers[TEAK_AFE_VRXCTRL1] & output->gain) >> output->gain_shift;
-	return -AFE_GAIN_STEP_DB * code;
+	return -AFE_GAIN_STEP_MB * code;
 }
 
 static void afe_outputs_update(afe_state_t *state) {
@@ -185,7 +185,7 @@ static void afe_outputs_update(afe_state_t *state) {
 		bool active = afe_output_is_active(state, output);
 
 		if (active) {
-			audio_line_set_gain(state->output_buses[i], 0, afe_output_get_gain_db(state, output));
+			audio_line_set_gain(state->output_buses[i], 0, afe_output_get_gain_mb(state, output));
 			audio_line_start(state->output_buses[i], 0, &format);
 		} else if (state->output_active[i]) {
 			audio_line_stop(state->output_buses[i], 0);

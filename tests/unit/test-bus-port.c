@@ -52,7 +52,7 @@ struct ProtocolTestDevice {
     size_t serial_write_count;
     unsigned line_stream;
     AudioLineFormat line_format;
-    int line_gain_db;
+    int line_gain_mb;
     int16_t line_samples[2];
     size_t line_frames;
 };
@@ -240,12 +240,12 @@ static void protocol_line_stop(AudioLineSink *sink, unsigned stream)
 }
 
 static void protocol_line_set_gain(AudioLineSink *sink, unsigned stream,
-                                   int gain_db)
+                                   int gain_mb)
 {
     ProtocolTestDevice *dev = PROTOCOL_TEST_DEVICE(OBJECT(sink));
 
     dev->line_stream = stream;
-    dev->line_gain_db = gain_db;
+    dev->line_gain_mb = gain_mb;
 }
 
 static void protocol_line_write(AudioLineSink *sink, unsigned stream,
@@ -555,16 +555,16 @@ static void test_audio_line_adapter(void)
     g_assert_cmpmem(dev->line_samples, sizeof(dev->line_samples), FRAME,
                     sizeof(FRAME));
 
-    audio_line_set_gain(line, 4, -12);
+    audio_line_set_gain(line, 4, -1200);
     g_assert_cmpuint(dev->line_stream, ==, 4);
-    g_assert_cmpint(dev->line_gain_db, ==, -12);
+    g_assert_cmpint(dev->line_gain_mb, ==, -1200);
 
     audio_line_stop(line, 1);
     g_assert_cmpuint(dev->line_stream, ==, 1);
     g_assert_cmpuint(dev->line_format.channels, ==, 0);
 
     audio_line_start(unconnected, 0, &FORMAT);
-    audio_line_set_gain(unconnected, 0, -12);
+    audio_line_set_gain(unconnected, 0, -1200);
     audio_line_write(unconnected, 0, FRAME, 1);
     audio_line_stop(unconnected, 0);
 

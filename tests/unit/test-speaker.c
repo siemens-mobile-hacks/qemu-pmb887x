@@ -63,7 +63,7 @@ typedef struct TestSpeaker {
     AudioLineBus *line;
 } TestSpeaker;
 
-static TestSpeaker test_speaker_create(int32_t gain_db)
+static TestSpeaker test_speaker_create(int32_t gain_mb)
 {
     TestSpeaker t = {
         .owner = qdev_new(TEST_BUS_OWNER),
@@ -72,7 +72,7 @@ static TestSpeaker test_speaker_create(int32_t gain_db)
 
     qdev_realize(t.owner, NULL, &error_fatal);
     t.line = audio_line_bus_init(t.owner, "line");
-    qdev_prop_set_int32(t.speaker, "gain_db", gain_db);
+    qdev_prop_set_int32(t.speaker, "gain", gain_mb);
     object_property_set_link(OBJECT(t.speaker), "port.IN", OBJECT(t.line),
                              &error_fatal);
     qdev_realize(t.speaker, NULL, &error_fatal);
@@ -91,22 +91,22 @@ static void test_gain(void)
 {
     static const AudioLineFormat FORMAT = { 8000, 2 };
     static const struct {
-        int32_t speaker_gain_db;
-        int line_gain_db;
+        int32_t speaker_gain_mb;
+        int line_gain_mb;
         int16_t input[2];
         int16_t output[2];
     } cases[] = {
         { 0, 0, { 10000, -10000 }, { 10000, -10000 } },
         /* round(65536 * 10^(-6/20)) = 32846, round(10000 * 32846 / 65536) = 5012 */
-        { 0, -6, { 10000, -10000 }, { 5012, -5012 } },
-        { 17, -17, { 1234, -1234 }, { 1234, -1234 } },
-        { 0, 20, { 32767, -32768 }, { 32767, -32768 } },
+        { 0, -600, { 10000, -10000 }, { 5012, -5012 } },
+        { 2250, -2250, { 1234, -1234 }, { 1234, -1234 } },
+        { 0, 2000, { 32767, -32768 }, { 32767, -32768 } },
     };
 
     for (size_t i = 0; i < ARRAY_SIZE(cases); i++) {
-        TestSpeaker t = test_speaker_create(cases[i].speaker_gain_db);
+        TestSpeaker t = test_speaker_create(cases[i].speaker_gain_mb);
 
-        audio_line_set_gain(t.line, 3, cases[i].line_gain_db);
+        audio_line_set_gain(t.line, 3, cases[i].line_gain_mb);
         audio_line_start(t.line, 3, &FORMAT);
         audio_line_write(t.line, 3, cases[i].input, 1);
         g_assert_cmpuint(written_frames, ==, 1);
@@ -123,7 +123,7 @@ static void test_write_before_start(void)
 
     written_frames = 0;
     audio_line_write(t.line, 1, FRAME, 1);
-    audio_line_set_gain(t.line, 1, -6);
+    audio_line_set_gain(t.line, 1, -600);
     audio_line_write(t.line, 1, FRAME, 1);
     g_assert_cmpuint(written_frames, ==, 0);
     test_speaker_destroy(&t);

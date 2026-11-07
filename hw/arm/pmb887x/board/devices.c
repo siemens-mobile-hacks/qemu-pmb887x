@@ -155,7 +155,7 @@ static pmb887x_dev_t devices_meta[] = {
 	{
 		.name = "speaker",
 		.props = {
-			{ "gain_db", DEV_PROP_INT, false },
+			{ "gain", DEV_PROP_INT, false },
 		},
 	},
 

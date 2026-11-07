@@ -21,7 +21,7 @@
 
 typedef struct test_audio_line_t {
 	AudioLineFormat format;
-	int gain_db;
+	int gain_mb;
 	size_t frame_count;
 	int16_t last_sample;
 } test_audio_line_t;
@@ -35,9 +35,9 @@ void audio_line_start(AudioLineBus *bus, unsigned stream, const AudioLineFormat 
 	((test_audio_line_t *) bus)->format = *format;
 }
 
-void audio_line_set_gain(AudioLineBus *bus, unsigned stream, int gain_db) {
+void audio_line_set_gain(AudioLineBus *bus, unsigned stream, int gain_mb) {
 	g_assert_cmpuint(stream, ==, 0);
-	((test_audio_line_t *) bus)->gain_db = gain_db;
+	((test_audio_line_t *) bus)->gain_mb = gain_mb;
 }
 
 void audio_line_stop(AudioLineBus *bus, unsigned stream) {
@@ -453,12 +453,12 @@ static void test_afe_outputs(void) {
 static void test_afe_gain(void) {
 	static const struct {
 		uint16_t gain_code;
-		int gain_db;
+		int gain_mb;
 	} cases[] = {
 		{ 0, 0 },
-		{ 1, -3 },
-		{ 2, -6 },
-		{ 3, -9 },
+		{ 1, -300 },
+		{ 2, -600 },
+		{ 3, -900 },
 	};
 	test_host_t host = {};
 	dsp_bus_t *bus = test_bus_create(&host);
@@ -472,8 +472,8 @@ static void test_afe_gain(void) {
 		uint16_t power_audio_gain = (3 - cases[i].gain_code) << TEAK_AFE_VRXCTRL1_RXGAINPA_SHIFT;
 
 		dsp_bus_write(bus, TEST_AFE_BASE + TEAK_AFE_VRXCTRL1, line_out_gain | power_audio_gain);
-		g_assert_cmpint(test_afe_ep_line.gain_db, ==, cases[i].gain_db);
-		g_assert_cmpint(test_afe_eppa_line.gain_db, ==, -9 - cases[i].gain_db);
+		g_assert_cmpint(test_afe_ep_line.gain_mb, ==, cases[i].gain_mb);
+		g_assert_cmpint(test_afe_eppa_line.gain_mb, ==, -900 - cases[i].gain_mb);
 	}
 
 	dsp_bus_destroy(bus);

@@ -21,7 +21,7 @@ typedef struct SpeakerStream {
     PCMOut out;
     char *name;
     uint32_t channels;
-    int line_gain_db;
+    int line_gain_mb;
     uint32_t gain_q16;
 } SpeakerStream;
 
@@ -30,12 +30,12 @@ struct Speaker {
     DebugChannel dbg;
     AudioLineSinkPort input;
     GPtrArray *streams;
-    int32_t gain_db;
+    int32_t gain_mb;
 };
 
-static uint32_t speaker_db_to_q16(int gain_db)
+static uint32_t speaker_mb_to_q16(int gain_mb)
 {
-    return lround(SPEAKER_UNITY_GAIN_Q16 * pow(10.0, gain_db / 20.0));
+    return lround(SPEAKER_UNITY_GAIN_Q16 * pow(10.0, gain_mb / 2000.0));
 }
 
 static SpeakerStream *speaker_find_stream(Speaker *s, unsigned stream)
@@ -49,7 +49,7 @@ static SpeakerStream *speaker_add_stream(Speaker *s, unsigned stream)
     const char *name = DEVICE(s)->id ? DEVICE(s)->id : TYPE_SPEAKER;
 
     entry->name = g_strdup_printf("%s.%u", name, stream);
-    entry->gain_q16 = speaker_db_to_q16(s->gain_db);
+    entry->gain_q16 = speaker_mb_to_q16(s->gain_mb);
     pcm_out_init(&entry->out, NULL, entry->name, SPEAKER_PREFILL_MS, &s->dbg);
     if (stream >= s->streams->len) {
         g_ptr_array_set_size(s->streams, stream + 1);
@@ -96,16 +96,16 @@ static void speaker_stop(AudioLineSink *sink, unsigned stream)
     }
 }
 
-static void speaker_set_gain(AudioLineSink *sink, unsigned stream, int gain_db)
+static void speaker_set_gain(AudioLineSink *sink, unsigned stream, int gain_mb)
 {
     Speaker *s = SPEAKER(sink);
     SpeakerStream *entry = speaker_get_stream(s, stream);
 
-    if (entry->line_gain_db == gain_db) {
+    if (entry->line_gain_mb == gain_mb) {
         return;
     }
-    entry->line_gain_db = gain_db;
-    entry->gain_q16 = speaker_db_to_q16(s->gain_db + gain_db);
+    entry->line_gain_mb = gain_mb;
+    entry->gain_q16 = speaker_mb_to_q16(s->gain_mb + gain_mb);
 }
 
 static void speaker_write_scaled(SpeakerStream *entry, const int16_t *frames,
@@ -177,7 +177,7 @@ static void speaker_unrealize(DeviceState *dev)
 }
 
 static const Property speaker_properties[] = {
-    DEFINE_PROP_INT32("gain_db", Speaker, gain_db, 0),
+    DEFINE_PROP_INT32("gain", Speaker, gain_mb, 0),
 };
 
 static void speaker_init(Object *obj)

@@ -33,7 +33,7 @@ struct AudioLineSinkClass {
     void (*start)(AudioLineSink *sink, unsigned stream,
                   const AudioLineFormat *format);
     void (*stop)(AudioLineSink *sink, unsigned stream);
-    void (*set_gain)(AudioLineSink *sink, unsigned stream, int gain_db);
+    void (*set_gain)(AudioLineSink *sink, unsigned stream, int gain_mb);
     void (*write)(AudioLineSink *sink, unsigned stream,
                   const int16_t *frames, size_t frame_count);
 };
@@ -49,7 +49,7 @@ void audio_line_sink_port_init(AudioLineSinkPort *port, DeviceState *dev,
 void audio_line_start(AudioLineBus *bus, unsigned stream,
                       const AudioLineFormat *format);
 void audio_line_stop(AudioLineBus *bus, unsigned stream);
-void audio_line_set_gain(AudioLineBus *bus, unsigned stream, int gain_db);
+void audio_line_set_gain(AudioLineBus *bus, unsigned stream, int gain_mb);
 void audio_line_write(AudioLineBus *bus, unsigned stream,
                       const int16_t *frames, size_t frame_count);
 
