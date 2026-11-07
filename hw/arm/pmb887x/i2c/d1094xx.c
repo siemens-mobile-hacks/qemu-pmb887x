@@ -20,8 +20,8 @@
 #define PASIC_MONO_BUS_NAME	"pmb887x-pasic-mono"
 #define PASIC_STEREO_BUS_NAME	"pmb887x-pasic-stereo"
 #define PASIC_GAIN_MUTE		0x39
-#define PASIC_GAIN_MAX_MB	1200
-#define PASIC_GAIN_STEP_MB	100
+#define PASIC_GAIN_MAX_MB	1300
+#define PASIC_GAIN_STEP_MB	150
 
 typedef enum pasic_input_t pasic_input_t;
 typedef enum pasic_output_t pasic_output_t;
