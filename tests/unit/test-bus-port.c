@@ -222,36 +222,41 @@ static void protocol_serial_write(ThreeWireSerialTarget *target,
     dev->serial_bits[index] = bits;
 }
 
-static void protocol_line_start(AudioLineSink *sink, unsigned stream,
+static ProtocolTestDevice *protocol_line_get_device(AudioLineSinkPort *port)
+{
+    return container_of(port, ProtocolTestDevice, line_port);
+}
+
+static void protocol_line_start(AudioLineSinkPort *port, unsigned stream,
                                 const AudioLineFormat *format)
 {
-    ProtocolTestDevice *dev = PROTOCOL_TEST_DEVICE(OBJECT(sink));
+    ProtocolTestDevice *dev = protocol_line_get_device(port);
 
     dev->line_stream = stream;
     dev->line_format = *format;
 }
 
-static void protocol_line_stop(AudioLineSink *sink, unsigned stream)
+static void protocol_line_stop(AudioLineSinkPort *port, unsigned stream)
 {
-    ProtocolTestDevice *dev = PROTOCOL_TEST_DEVICE(OBJECT(sink));
+    ProtocolTestDevice *dev = protocol_line_get_device(port);
 
     dev->line_stream = stream;
     dev->line_format = (AudioLineFormat) { };
 }
 
-static void protocol_line_set_gain(AudioLineSink *sink, unsigned stream,
+static void protocol_line_set_gain(AudioLineSinkPort *port, unsigned stream,
                                    int gain_mb)
 {
-    ProtocolTestDevice *dev = PROTOCOL_TEST_DEVICE(OBJECT(sink));
+    ProtocolTestDevice *dev = protocol_line_get_device(port);
 
     dev->line_stream = stream;
     dev->line_gain_mb = gain_mb;
 }
 
-static void protocol_line_write(AudioLineSink *sink, unsigned stream,
+static void protocol_line_write(AudioLineSinkPort *port, unsigned stream,
                                 const int16_t *frames, size_t frame_count)
 {
-    ProtocolTestDevice *dev = PROTOCOL_TEST_DEVICE(OBJECT(sink));
+    ProtocolTestDevice *dev = protocol_line_get_device(port);
 
     dev->line_stream = stream;
     dev->line_frames = frame_count;
@@ -540,11 +545,13 @@ static void test_audio_line_adapter(void)
     AudioLineBus *unconnected = audio_line_bus_init(bus_owner, "unconnected");
     ProtocolTestDevice *dev = PROTOCOL_TEST_DEVICE(object_new(TYPE_PROTOCOL_TEST_DEVICE));
     ProtocolTestDevice *second = PROTOCOL_TEST_DEVICE(object_new(TYPE_PROTOCOL_TEST_DEVICE));
-    Error *err = NULL;
 
     object_property_set_link(OBJECT(dev), "port.LINE", OBJECT(line),
                              &error_fatal);
     qdev_realize(DEVICE(dev), NULL, &error_fatal);
+    object_property_set_link(OBJECT(second), "port.LINE", OBJECT(line),
+                             &error_fatal);
+    qdev_realize(DEVICE(second), NULL, &error_fatal);
 
     audio_line_start(line, 2, &FORMAT);
     audio_line_write(line, 2, FRAME, 1);
@@ -554,10 +561,14 @@ static void test_audio_line_adapter(void)
     g_assert_cmpuint(dev->line_frames, ==, 1);
     g_assert_cmpmem(dev->line_samples, sizeof(dev->line_samples), FRAME,
                     sizeof(FRAME));
+    g_assert_cmpuint(second->line_frames, ==, 1);
+    g_assert_cmpmem(second->line_samples, sizeof(second->line_samples), FRAME,
+                    sizeof(FRAME));
 
     audio_line_set_gain(line, 4, -1200);
     g_assert_cmpuint(dev->line_stream, ==, 4);
     g_assert_cmpint(dev->line_gain_mb, ==, -1200);
+    g_assert_cmpint(second->line_gain_mb, ==, -1200);
 
     audio_line_stop(line, 1);
     g_assert_cmpuint(dev->line_stream, ==, 1);
@@ -567,13 +578,6 @@ static void test_audio_line_adapter(void)
     audio_line_set_gain(unconnected, 0, -1200);
     audio_line_write(unconnected, 0, FRAME, 1);
     audio_line_stop(unconnected, 0);
-
-    object_property_set_link(OBJECT(second), "port.LINE", OBJECT(line),
-                             &error_fatal);
-    g_assert_false(qdev_realize(DEVICE(second), NULL, &err));
-    g_assert_nonnull(err);
-    error_free(err);
-    g_assert_cmpint(BUS(line)->num_children, ==, 1);
 
     object_destroy(OBJECT(second));
     object_destroy(OBJECT(dev));

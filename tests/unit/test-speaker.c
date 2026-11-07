@@ -73,7 +73,7 @@ static TestSpeaker test_speaker_create(int32_t gain_mb)
     qdev_realize(t.owner, NULL, &error_fatal);
     t.line = audio_line_bus_init(t.owner, "line");
     qdev_prop_set_int32(t.speaker, "gain", gain_mb);
-    object_property_set_link(OBJECT(t.speaker), "port.IN", OBJECT(t.line),
+    object_property_set_link(OBJECT(t.speaker), "port.in", OBJECT(t.line),
                              &error_fatal);
     qdev_realize(t.speaker, NULL, &error_fatal);
     return t;

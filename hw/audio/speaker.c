@@ -38,6 +38,11 @@ static uint32_t speaker_mb_to_q16(int gain_mb)
     return lround(SPEAKER_UNITY_GAIN_Q16 * pow(10.0, gain_mb / 2000.0));
 }
 
+static Speaker *speaker_port_get_speaker(AudioLineSinkPort *port)
+{
+    return container_of(port, Speaker, input);
+}
+
 static SpeakerStream *speaker_find_stream(Speaker *s, unsigned stream)
 {
     return stream < s->streams->len ? g_ptr_array_index(s->streams, stream) : NULL;
@@ -77,28 +82,31 @@ static SpeakerStream *speaker_get_stream(Speaker *s, unsigned stream)
     return entry ? entry : speaker_add_stream(s, stream);
 }
 
-static void speaker_start(AudioLineSink *sink, unsigned stream,
+static void speaker_start(AudioLineSinkPort *port, unsigned stream,
                           const AudioLineFormat *format)
 {
-    SpeakerStream *entry = speaker_get_stream(SPEAKER(sink), stream);
+    SpeakerStream *entry = speaker_get_stream(speaker_port_get_speaker(port),
+                                              stream);
 
     entry->channels = format->channels;
     pcm_out_set_format(&entry->out, format->sample_rate_hz, format->channels);
     pcm_out_set_active(&entry->out, true);
 }
 
-static void speaker_stop(AudioLineSink *sink, unsigned stream)
+static void speaker_stop(AudioLineSinkPort *port, unsigned stream)
 {
-    SpeakerStream *entry = speaker_find_stream(SPEAKER(sink), stream);
+    SpeakerStream *entry = speaker_find_stream(speaker_port_get_speaker(port),
+                                               stream);
 
     if (entry) {
         pcm_out_set_active(&entry->out, false);
     }
 }
 
-static void speaker_set_gain(AudioLineSink *sink, unsigned stream, int gain_mb)
+static void speaker_set_gain(AudioLineSinkPort *port, unsigned stream,
+                             int gain_mb)
 {
-    Speaker *s = SPEAKER(sink);
+    Speaker *s = speaker_port_get_speaker(port);
     SpeakerStream *entry = speaker_get_stream(s, stream);
 
     if (entry->line_gain_mb == gain_mb) {
@@ -130,10 +138,11 @@ static void speaker_write_scaled(SpeakerStream *entry, const int16_t *frames,
     }
 }
 
-static void speaker_write(AudioLineSink *sink, unsigned stream,
+static void speaker_write(AudioLineSinkPort *port, unsigned stream,
                           const int16_t *frames, size_t frame_count)
 {
-    SpeakerStream *entry = speaker_find_stream(SPEAKER(sink), stream);
+    SpeakerStream *entry = speaker_find_stream(speaker_port_get_speaker(port),
+                                               stream);
 
     if (!entry || entry->channels == 0) {
         return;
@@ -184,7 +193,7 @@ static void speaker_init(Object *obj)
 {
     Speaker *s = SPEAKER(obj);
 
-    audio_line_sink_port_init(&s->input, DEVICE(obj), "IN",
+    audio_line_sink_port_init(&s->input, DEVICE(obj), "in",
                               AUDIO_LINE_SINK(obj));
 }
 

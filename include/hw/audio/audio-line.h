@@ -6,8 +6,9 @@
 #include "qom/object.h"
 
 /*
- * A line connects one audio output to one input. Sources routed to the
- * same output stay separate streams; the host audio backend mixes them.
+ * A line connects one audio output to the inputs attached to it. Sources
+ * routed to the same output stay separate streams; the host audio backend
+ * mixes them.
  */
 #define TYPE_AUDIO_LINE_BUS "audio-line-bus"
 OBJECT_DECLARE_SIMPLE_TYPE(AudioLineBus, AUDIO_LINE_BUS)
@@ -30,11 +31,11 @@ struct AudioLineFormat {
 
 struct AudioLineSinkClass {
     InterfaceClass parent_class;
-    void (*start)(AudioLineSink *sink, unsigned stream,
+    void (*start)(AudioLineSinkPort *port, unsigned stream,
                   const AudioLineFormat *format);
-    void (*stop)(AudioLineSink *sink, unsigned stream);
-    void (*set_gain)(AudioLineSink *sink, unsigned stream, int gain_mb);
-    void (*write)(AudioLineSink *sink, unsigned stream,
+    void (*stop)(AudioLineSinkPort *port, unsigned stream);
+    void (*set_gain)(AudioLineSinkPort *port, unsigned stream, int gain_mb);
+    void (*write)(AudioLineSinkPort *port, unsigned stream,
                   const int16_t *frames, size_t frame_count);
 };
 

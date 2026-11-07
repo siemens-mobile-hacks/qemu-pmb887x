@@ -2,7 +2,6 @@
 #include "qemu/osdep.h"
 
 #include "hw/audio/audio-line.h"
-#include "qapi/error.h"
 
 #define TYPE_AUDIO_LINE_SINK_ENDPOINT "audio-line-sink-endpoint"
 OBJECT_DECLARE_SIMPLE_TYPE(AudioLineSinkEndpoint, AUDIO_LINE_SINK_ENDPOINT)
@@ -13,7 +12,7 @@ struct AudioLineBus {
 
 struct AudioLineSinkEndpoint {
     DeviceState parent_obj;
-    AudioLineSink *sink;
+    AudioLineSinkPort *port;
 };
 
 AudioLineBus *audio_line_bus_init(DeviceState *parent, const char *name)
@@ -27,7 +26,7 @@ static DeviceState *audio_line_sink_port_create_endpoint(QDevBusPort *base,
     AudioLineSinkPort *port = container_of(base, AudioLineSinkPort, parent);
     DeviceState *dev = qdev_new(TYPE_AUDIO_LINE_SINK_ENDPOINT);
 
-    AUDIO_LINE_SINK_ENDPOINT(dev)->sink = port->sink;
+    AUDIO_LINE_SINK_ENDPOINT(dev)->port = port;
     return dev;
 }
 
@@ -39,66 +38,57 @@ void audio_line_sink_port_init(AudioLineSinkPort *port, DeviceState *dev,
                        audio_line_sink_port_create_endpoint);
 }
 
-static AudioLineSink *audio_line_get_sink(AudioLineBus *bus)
+static AudioLineSinkPort *audio_line_child_get_port(BusChild *kid)
 {
-    BusChild *child = QTAILQ_FIRST(&BUS(bus)->children);
-
-    return child ? AUDIO_LINE_SINK_ENDPOINT(child->child)->sink : NULL;
+    return AUDIO_LINE_SINK_ENDPOINT(kid->child)->port;
 }
 
 void audio_line_start(AudioLineBus *bus, unsigned stream,
                       const AudioLineFormat *format)
 {
-    AudioLineSink *sink = audio_line_get_sink(bus);
+    BusChild *kid;
 
     assert(format->sample_rate_hz != 0 && format->channels != 0);
-    if (sink) {
-        AUDIO_LINE_SINK_GET_CLASS(sink)->start(sink, stream, format);
+    QTAILQ_FOREACH(kid, &BUS(bus)->children, sibling) {
+        AudioLineSinkPort *port = audio_line_child_get_port(kid);
+
+        AUDIO_LINE_SINK_GET_CLASS(port->sink)->start(port, stream, format);
     }
 }
 
 void audio_line_stop(AudioLineBus *bus, unsigned stream)
 {
-    AudioLineSink *sink = audio_line_get_sink(bus);
+    BusChild *kid;
 
-    if (sink) {
-        AUDIO_LINE_SINK_GET_CLASS(sink)->stop(sink, stream);
+    QTAILQ_FOREACH(kid, &BUS(bus)->children, sibling) {
+        AudioLineSinkPort *port = audio_line_child_get_port(kid);
+
+        AUDIO_LINE_SINK_GET_CLASS(port->sink)->stop(port, stream);
     }
 }
 
 void audio_line_set_gain(AudioLineBus *bus, unsigned stream, int gain_mb)
 {
-    AudioLineSink *sink = audio_line_get_sink(bus);
+    BusChild *kid;
 
-    if (sink) {
-        AUDIO_LINE_SINK_GET_CLASS(sink)->set_gain(sink, stream, gain_mb);
+    QTAILQ_FOREACH(kid, &BUS(bus)->children, sibling) {
+        AudioLineSinkPort *port = audio_line_child_get_port(kid);
+
+        AUDIO_LINE_SINK_GET_CLASS(port->sink)->set_gain(port, stream, gain_mb);
     }
 }
 
 void audio_line_write(AudioLineBus *bus, unsigned stream,
                       const int16_t *frames, size_t frame_count)
 {
-    AudioLineSink *sink = audio_line_get_sink(bus);
+    BusChild *kid;
 
-    if (sink) {
-        AUDIO_LINE_SINK_GET_CLASS(sink)->write(sink, stream, frames,
-                                               frame_count);
+    QTAILQ_FOREACH(kid, &BUS(bus)->children, sibling) {
+        AudioLineSinkPort *port = audio_line_child_get_port(kid);
+
+        AUDIO_LINE_SINK_GET_CLASS(port->sink)->write(port, stream, frames,
+                                                     frame_count);
     }
-}
-
-static bool audio_line_bus_check_address(BusState *bus, DeviceState *_dev,
-                                         Error **errp)
-{
-    if (!QTAILQ_EMPTY(&bus->children)) {
-        error_setg(errp, "audio line already has an input");
-        return false;
-    }
-    return true;
-}
-
-static void audio_line_bus_class_init(ObjectClass *klass, const void *_data)
-{
-    BUS_CLASS(klass)->check_address = audio_line_bus_check_address;
 }
 
 static void audio_line_sink_endpoint_class_init(ObjectClass *klass,
@@ -112,7 +102,6 @@ static const TypeInfo audio_line_types[] = {
         .name = TYPE_AUDIO_LINE_BUS,
         .parent = TYPE_BUS,
         .instance_size = sizeof(AudioLineBus),
-        .class_init = audio_line_bus_class_init,
     },
     {
         .name = TYPE_AUDIO_LINE_SINK_ENDPOINT,
