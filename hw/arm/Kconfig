@@ -264,6 +264,7 @@ config PMB887X
     select GSM_SIM
     select DMA_SINK
     select SPEAKER
+    select AUDIO_ROUTER
     select SPLIT_IRQ
 
 config VEXPRESS
