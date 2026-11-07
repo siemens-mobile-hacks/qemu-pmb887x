@@ -158,6 +158,14 @@ static pmb887x_dev_t devices_meta[] = {
 			{ "gain", DEV_PROP_INT, false },
 		},
 	},
+	{
+		.name = "audio-switch",
+		.props = {},
+	},
+	{
+		.name = "audio-junction",
+		.props = {},
+	},
 
 	// NOR FLASH
 	{
@@ -203,9 +211,13 @@ static Object *bus_find_by_id(GHashTable *devices, const char *name) {
 	if (bus_name != NULL) {
 		normalized_bus_name = g_ascii_strdown(bus_name, -1);
 		bus_property_name = g_strdup_printf("bus_%s", normalized_bus_name);
-		if (!object_property_find(OBJECT(dev), bus_property_name))
+		if (object_property_find(OBJECT(dev), bus_property_name))
+			return object_property_get_link(OBJECT(dev), bus_property_name, &error_fatal);
+
+		BusState *child_bus = qdev_get_child_bus(dev, normalized_bus_name);
+		if (!child_bus)
 			hw_error("Bus not found: %s", name);
-		return object_property_get_link(OBJECT(dev), bus_property_name, &error_fatal);
+		return OBJECT(child_bus);
 	}
 
 	if (object_property_find(OBJECT(dev), "bus")) {
