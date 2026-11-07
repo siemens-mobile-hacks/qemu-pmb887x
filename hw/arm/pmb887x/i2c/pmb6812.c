@@ -7,6 +7,7 @@
 #include "qapi/error.h"
 #include "qemu/main-loop.h"
 #include "hw/core/qdev-properties.h"
+#include "hw/audio/audio-router.h"
 #include "hw/i2c/i2c.h"
 #include "hw/arm/pmb887x/gen/peripheral/PMB6812.h"
 #include "system/debug-channel.h"
@@ -14,12 +15,23 @@
 
 #define TYPE_PMB887X_PMIC	"pmb6812"
 #define PMB887X_PMIC(obj)	OBJECT_CHECK(pmb887x_pmic_t, (obj), TYPE_PMB887X_PMIC)
+#define PMB6812_AUDIO_BUS_NAME	"pmb887x-pmb6812-audio"
 
 typedef struct pmb887x_pmic_t pmb887x_pmic_t;
+
+static const int16_t PMB6812_AUDIO_GAIN_MB[] = {
+	[PMB6812_AUDCTRL_AUDGAIN_MINUS_6DB >> PMB6812_AUDCTRL_AUDGAIN_SHIFT] = -600,
+	[PMB6812_AUDCTRL_AUDGAIN_MINUS_1_2DB >> PMB6812_AUDCTRL_AUDGAIN_SHIFT] = -120,
+	[PMB6812_AUDCTRL_AUDGAIN_PLUS_2_7DB >> PMB6812_AUDCTRL_AUDGAIN_SHIFT] = 270,
+	[PMB6812_AUDCTRL_AUDGAIN_PLUS_6DB >> PMB6812_AUDCTRL_AUDGAIN_SHIFT] = 600,
+};
 
 struct pmb887x_pmic_t {
 	I2CSlave parent_obj;
 	DebugChannel dbg;
+	AudioRouterInput audio_input;
+	AudioLineBus *audio_output;
+	AudioRouter router;
 	uint32_t reg_id;
 	uint8_t wcycle;
 	uint8_t rcycle;
@@ -49,6 +61,15 @@ static const uint8_t regs_PMB6812[256] = {
 	0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
 	0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
 };
+
+static void pmic_audio_update(pmb887x_pmic_t *p) {
+	uint8_t control = p->regs[PMB6812_AUDCTRL];
+	bool enabled = (control & (PMB6812_AUDCTRL_AUDON | PMB6812_AUDCTRL_MUTE)) == PMB6812_AUDCTRL_AUDON;
+	uint8_t gain = (control & PMB6812_AUDCTRL_AUDGAIN) >> PMB6812_AUDCTRL_AUDGAIN_SHIFT;
+
+	audio_router_set_route(&p->router, 0, 0, enabled, PMB6812_AUDIO_GAIN_MB[gain]);
+	audio_router_update(&p->router);
+}
 
 static void pmic_update_on_level(pmb887x_pmic_t *p) {
 	if (p->on_level) {
@@ -169,6 +190,8 @@ static int pmic_send(I2CSlave *s, uint8_t data) {
 				if (!p->lon_frozen)
 					pmic_update_on_level(p);
 			}
+			if (p->reg_id == PMB6812_AUDCTRL)
+				pmic_audio_update(p);
 			break;
 		}
 		default:
@@ -192,6 +215,8 @@ static void pmic_reset(DeviceState *dev) {
 	p->lon_frozen = false;
 	memcpy(p->regs, regs_PMB6812, sizeof(regs_PMB6812));
 	pmic_update_on_level(p);
+	audio_router_reset(&p->router);
+	pmic_audio_update(p);
 }
 
 static void pmic_realize(DeviceState *dev, Error **errp) {
@@ -202,7 +227,17 @@ static void pmic_realize(DeviceState *dev, Error **errp) {
 }
 
 static void pmic_init(Object *obj) {
+	pmb887x_pmic_t *p = PMB887X_PMIC(obj);
+
 	qdev_init_gpio_in_named(DEVICE(obj), pmic_handle_on_input, "ON", 1);
+	p->audio_output = audio_line_bus_init(DEVICE(obj), PMB6812_AUDIO_BUS_NAME);
+	object_property_add_const_link(obj, "bus_out", OBJECT(p->audio_output));
+	audio_router_init(&p->router, &p->audio_output, 1, 1, &p->dbg);
+	audio_router_input_init(&p->audio_input, DEVICE(obj), "IN", &p->router, 0);
+}
+
+static void pmic_finalize(Object *obj) {
+	audio_router_cleanup(&PMB887X_PMIC(obj)->router);
 }
 
 static void pmic_class_init(ObjectClass *klass, const void *data) {
@@ -213,6 +248,7 @@ static void pmic_class_init(ObjectClass *klass, const void *data) {
 	k->event = &pmic_event;
 	k->recv = &pmic_recv;
 	k->send = &pmic_send;
+	audio_router_sink_class_init(AUDIO_LINE_SINK_CLASS(klass));
 }
 
 static const TypeInfo pmic_info = {
@@ -220,7 +256,12 @@ static const TypeInfo pmic_info = {
 	.parent = TYPE_I2C_SLAVE,
 	.instance_size = sizeof(pmb887x_pmic_t),
 	.instance_init = pmic_init,
+	.instance_finalize = pmic_finalize,
 	.class_init = pmic_class_init,
+	.interfaces = (const InterfaceInfo[]) {
+		{ TYPE_AUDIO_LINE_SINK },
+		{ NULL },
+	},
 };
 
 static void pmic_register_types(void) {
