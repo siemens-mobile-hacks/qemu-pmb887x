@@ -62,3 +62,6 @@ config PCM_OUT
 config SPEAKER
     bool
     select PCM_OUT
+
+config AUDIO_ROUTER
+    bool

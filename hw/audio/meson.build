@@ -19,3 +19,4 @@ system_ss.add(when: ['CONFIG_VIRTIO_SND', 'CONFIG_VIRTIO'], if_true: files('virt
 system_ss.add(when: ['CONFIG_VIRTIO_SND', 'CONFIG_VIRTIO', 'CONFIG_VIRTIO_PCI'], if_true: files('virtio-snd-pci.c'))
 system_ss.add(when: 'CONFIG_PCM_OUT', if_true: files('pcm-out.c'))
 system_ss.add(when: 'CONFIG_SPEAKER', if_true: files('speaker.c'))
+system_ss.add(when: 'CONFIG_AUDIO_ROUTER', if_true: files('audio-router.c', 'audio-junction.c', 'audio-switch.c'))

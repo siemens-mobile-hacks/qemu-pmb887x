@@ -4120,6 +4120,16 @@ if have_system
       ),
       'dependencies': [qom, hwcore, libm],
     },
+    'audio-router': {
+      'sources': files(
+        'tests/unit/test-audio-router.c',
+        'hw/audio/audio-junction.c',
+        'hw/audio/audio-line.c',
+        'hw/audio/audio-router.c',
+        'hw/audio/audio-switch.c',
+      ),
+      'dependencies': [qom, hwcore],
+    },
     'bus-port': {
       'sources': files(
         'tests/unit/test-bus-port.c',
