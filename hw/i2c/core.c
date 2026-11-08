@@ -321,6 +321,10 @@ int i2c_send(I2CBus *bus, uint8_t data)
     I2CNode *node;
     int ret = 0;
 
+    if (QLIST_EMPTY(&bus->current_devs)) {
+        return -1;
+    }
+
     QLIST_FOREACH(node, &bus->current_devs, next) {
         s = node->elt;
         sc = I2C_SLAVE_GET_CLASS(s);

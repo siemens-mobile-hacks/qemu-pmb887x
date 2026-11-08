@@ -781,6 +781,10 @@ static void test_i2c_adapter(void)
     g_assert_cmpint(dev->i2c_event, ==, I2C_NACK);
     i2c_end_transfer(bus);
 
+    g_assert_cmpint(i2c_start_send(bus, 0x40), !=, 0);
+    g_assert_cmpint(i2c_send(bus, 0x11), !=, 0);
+    i2c_end_transfer(bus);
+
     bus->saved_address = 0x31;
     g_assert_cmpint(qdev_get_vmsd(endpoint)->post_load(endpoint, 1), ==, 0);
     g_assert_false(QLIST_EMPTY(&bus->current_devs));
