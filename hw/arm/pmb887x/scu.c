@@ -51,6 +51,7 @@ struct pmb887x_scu_t {
 	
 	uint32_t exti_edge;
 	uint32_t exti_filter;
+	bool exti_level[8];
 	uint32_t wdtcon0;
 	uint32_t wdtcon1;
 	uint32_t wdt_status;
@@ -521,8 +522,18 @@ static void scu_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned si
 	scu_update_state(p);
 }
 
-static void scu_handle_exti_change(pmb887x_scu_t *p, int id, int level) {
-	DEBUG_LOG(&p->dbg, "EXTI%d level changed %d\n", id, level);
+static void scu_handle_exti_change(pmb887x_scu_t *p, unsigned id, int level) {
+	bool input_level = level != 0;
+	bool previous_level = p->exti_level[id];
+	p->exti_level[id] = input_level;
+	if (input_level == previous_level)
+		return;
+
+	uint32_t edge_mode = (p->exti_edge >> (id * 2)) & SCU_EXTI_EDGE_EXT0;
+	uint32_t edge = input_level ? SCU_EXTI_EDGE_EXT0_RISING : SCU_EXTI_EDGE_EXT0_FALLING;
+	DEBUG_LOG(&p->dbg, "EXTI%u %s edge\n", id, input_level ? "rising" : "falling");
+	if (edge_mode & edge)
+		pmb887x_src_update(&p->exti_src[id], 0, MOD_SRC_SETR);
 }
 
 static void scu_input_exti0_handler(void *opaque, int id, int level) {
