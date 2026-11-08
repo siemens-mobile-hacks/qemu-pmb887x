@@ -86,8 +86,6 @@ struct pmb887x_usart_t {
 	Fifo32 *rx_fifo;
 	Fifo32 *tx_fifo;
 
-	int ris_read_count;
-
 	uint32_t pisel;
 	uint32_t con;
 	uint32_t bg;
@@ -253,13 +251,6 @@ static void usart_tmo_timer_reset(void *opaque) {
 
 static void usart_timer_reset(void *opaque) {
 	pmb887x_usart_t *p = opaque;
-	usart_transmit_fifo(p);
-}
-
-static void usart_immediate_transfer(pmb887x_usart_t *p) {
-	if (p->watch_tag || !p->transfer_pending)
-		return;
-	timer_del(p->timer);
 	usart_transmit_fifo(p);
 }
 
@@ -513,7 +504,6 @@ static void usart_schedule_transmit(pmb887x_usart_t *p) {
 
 	uint16_t word = fifo32_pop(p->tx_fifo);
 	fifo32_push(&p->tx_buffer, word);
-	p->ris_read_count = 0;
 	p->transfer_pending = true;
 	int64_t frame_time_ns = usart_baud_ticks_to_ns(p, usart_frame_bits(p));
 	int64_t virtual = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
@@ -558,7 +548,6 @@ static void usart_transmit_fifo(pmb887x_usart_t *p) {
 		return;
 
 	p->transfer_pending = false;
-	p->ris_read_count = 0;
 
 	uint32_t buffer[USART_FIFO_SIZE * 2] = { };
 	int buffer_size = 0;
@@ -607,7 +596,6 @@ static void usart_transmit_fifo(pmb887x_usart_t *p) {
 			if (transmitted + 1 < buffer_size)
 				fifo32_push_all(p->tx_fifo, buffer + transmitted + 1, buffer_size - transmitted - 1);
 			p->transfer_pending = true;
-			p->ris_read_count = 0;
 		} else {
 			// QEMU char backend is not connected, data is lost
 			fifo32_reset(p->tx_fifo);
@@ -758,24 +746,10 @@ static uint64_t usart_io_read(void *opaque, hwaddr haddr, unsigned size) {
 
 		case USART_RIS:
 			value = pmb887x_srb_get_ris(&p->srb);
-
-			// Hack for speed-up emulation
-			p->ris_read_count++;
-			if (p->transfer_pending && p->ris_read_count > 10) {
-				DEBUG_LOG(&p->dbg, "immediate transfer RIS\n");
-				usart_immediate_transfer(p);
-			}
 			break;
 
 		case USART_MIS:
 			value = pmb887x_srb_get_mis(&p->srb);
-
-			// Hack for speed-up emulation
-			p->ris_read_count++;
-			if (p->transfer_pending && p->ris_read_count > 10) {
-				DEBUG_LOG(&p->dbg, "immediate transfer MIS\n");
-				usart_immediate_transfer(p);
-			}
 			break;
 
 		case USART_ICR:
@@ -1066,7 +1040,6 @@ static void usart_reset(DeviceState *dev) {
 	p->transfer_pending = false;
 	p->autobaud_pending = false;
 	p->cts_input_active = false;
-	p->ris_read_count = 0;
 
 	p->pisel = 0;
 	p->con = 0;
