@@ -15,6 +15,7 @@
 #include "hw/arm/pmb887x/gen/cpu_regs.h"
 #include "hw/arm/pmb887x/gen/cpu_meta.h"
 #include "hw/arm/pmb887x/mod.h"
+#include "qemu/fifo8.h"
 #include "qemu/fifo32.h"
 
 #define TYPE_PMB887X_USART	"pmb887x-usart"
@@ -23,6 +24,9 @@
 #define USART_SEND_FULL_FIFO	1
 #define USART_FIFO_SIZE			8
 #define USART_AUTOBAUD_RATE	115200
+#define USART_AUTOBAUD_FRAME_BITS	10
+#define USART_RX_LINE_SIZE		4096
+#define USART_RX_LINE_REFILL_SIZE	(USART_RX_LINE_SIZE / 2)
 #define USART_FDV_SCALE			512
 #define USART_ABSTAT_MASK		(USART_ABSTAT_FCSDET | USART_ABSTAT_FCCDET | USART_ABSTAT_SCSDET | \
 	USART_ABSTAT_SCCDET | USART_ABSTAT_DETWAIT)
@@ -63,6 +67,9 @@ struct pmb887x_usart_t {
 
 	CharFrontend chr;
 	guint watch_tag;
+
+	Fifo8 rx_line;
+	int64_t rx_frame_end_ns;
 
 	// FIFO enabled
 	Fifo32 tx_fifo_buffered;
@@ -112,7 +119,7 @@ struct pmb887x_usart_t {
 static void usart_update_state(pmb887x_usart_t *p);
 static void usart_transmit_fifo(pmb887x_usart_t *p);
 static void usart_schedule_transmit(pmb887x_usart_t *p);
-static void usart_schedule_accept_input(pmb887x_usart_t *p);
+static void usart_rx_line_start(pmb887x_usart_t *p);
 
 static uint32_t usart_get_baud_rate(pmb887x_usart_t *p) {
 	uint64_t frequency = pmb887x_clc_get_hz(&p->clc);
@@ -179,8 +186,6 @@ static void usart_rx_fifo_config(pmb887x_usart_t *p, uint32_t value) {
 	}
 	p->rxfcon = value;
 	usart_update_state(p);
-	if (pmb887x_clc_is_enabled(&p->clc) && !fifo32_is_full(p->rx_fifo))
-		usart_schedule_accept_input(p);
 }
 
 static void usart_tx_fifo_config(pmb887x_usart_t *p, uint32_t value) {
@@ -249,27 +254,6 @@ static void usart_tmo_timer_reset(void *opaque) {
 static void usart_timer_reset(void *opaque) {
 	pmb887x_usart_t *p = opaque;
 	usart_transmit_fifo(p);
-}
-
-static void usart_accept_input(void *opaque) {
-	pmb887x_usart_t *p = opaque;
-	p->autobaud_pending = false;
-	qemu_chr_fe_accept_input(&p->chr);
-}
-
-static void usart_schedule_accept_input(pmb887x_usart_t *p) {
-	int64_t delay_ns = usart_baud_ticks_to_ns(p, usart_frame_bits(p));
-	int64_t virtual = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
-	p->ris_read_count = 0;
-	timer_mod_ns(p->rx_timer, virtual + MAX(1, delay_ns));
-}
-
-static void usart_immediate_receive(pmb887x_usart_t *p) {
-	if (!timer_pending(p->rx_timer) || p->ris_read_count <= 10)
-		return;
-	timer_del(p->rx_timer);
-	DEBUG_LOG(&p->dbg, "immediate receive\n");
-	usart_accept_input(p);
 }
 
 static void usart_immediate_transfer(pmb887x_usart_t *p) {
@@ -343,6 +327,7 @@ static void usart_update_state(pmb887x_usart_t *p) {
 		fifo32_reset(p->tx_fifo);
 		fifo32_reset(p->rx_fifo);
 		timer_del(p->tmo_timer);
+		timer_del(p->rx_timer);
 
 		if (p->transfer_pending) {
 			timer_del(p->timer);
@@ -384,24 +369,7 @@ static void usart_update_state(pmb887x_usart_t *p) {
 	}
 
 	usart_flow_control_update(p);
-}
-
-static int usart_can_receive(void *opaque) {
-	pmb887x_usart_t *p = opaque;
-	if (!pmb887x_clc_is_enabled(&p->clc))
-		return 0;
-	if (p->autobaud_pending)
-		return 0;
-	if (p->abcon & USART_ABCON_ABEN) {
-		if (p->abcon & USART_ABCON_FCDETEN)
-			return 1;
-		return 2;
-	}
-	if ((p->con & USART_CON_REN) == 0)
-		return 1;
-	if (timer_pending(p->rx_timer))
-		return 0;
-	return MIN(1, fifo32_num_free(p->rx_fifo));
+	usart_rx_line_start(p);
 }
 
 static bool usart_autobaud_receive(pmb887x_usart_t *p, uint8_t value) {
@@ -439,12 +407,9 @@ static bool usart_autobaud_receive(pmb887x_usart_t *p, uint8_t value) {
 		p->con |= USART_CON_REN;
 
 	p->abcon &= ~USART_ABCON_ABEN;
-	p->autobaud_pending = true;
-
 	if (p->abcon & USART_ABCON_ABDETEN) {
+		p->autobaud_pending = true;
 		pmb887x_srb_set_isr(&p->srb, USART_ISR_ABDET);
-	} else {
-		usart_schedule_accept_input(p);
 	}
 
 	return true;
@@ -460,13 +425,11 @@ static void usart_receive_word(pmb887x_usart_t *p, uint16_t value) {
 	}
 }
 
-static void usart_receive_complete(pmb887x_usart_t *p) {
+static void usart_receive_complete(pmb887x_usart_t *p, int64_t frame_end_ns) {
 	if (p->tmo > 0) {
 		int64_t timeout_ns = usart_baud_ticks_to_ns(p, p->tmo);
-		if (timeout_ns > 0) {
-			int64_t virtual = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
-			timer_mod_ns(p->tmo_timer, virtual + timeout_ns);
-		}
+		if (timeout_ns > 0)
+			timer_mod_ns(p->tmo_timer, frame_end_ns + timeout_ns);
 	}
 
 	usart_flow_control_update(p);
@@ -477,25 +440,71 @@ static void usart_receive_complete(pmb887x_usart_t *p) {
 	usart_handle_dma(p);
 }
 
+static bool usart_receive_frame(pmb887x_usart_t *p, uint8_t value) {
+	if (usart_autobaud_receive(p, value))
+		return true;
+	if ((p->con & USART_CON_REN) == 0)
+		return false;
+	usart_receive_word(p, value);
+	return true;
+}
+
+static int64_t usart_rx_frame_ns(pmb887x_usart_t *p) {
+	if (p->abcon & USART_ABCON_ABEN)
+		return muldiv64(USART_AUTOBAUD_FRAME_BITS, NANOSECONDS_PER_SECOND, USART_AUTOBAUD_RATE);
+	return MAX(1, usart_baud_ticks_to_ns(p, usart_frame_bits(p)));
+}
+
+static bool usart_rx_line_is_paused(pmb887x_usart_t *p) {
+	if (!pmb887x_clc_is_enabled(&p->clc) || p->autobaud_pending)
+		return true;
+	if (p->abcon & USART_ABCON_ABEN)
+		return false;
+	return (p->con & USART_CON_REN) != 0 && fifo32_is_full(p->rx_fifo);
+}
+
+static void usart_rx_line_start(pmb887x_usart_t *p) {
+	if (timer_pending(p->rx_timer) || fifo8_is_empty(&p->rx_line) || usart_rx_line_is_paused(p))
+		return;
+
+	int64_t now = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
+	p->rx_frame_end_ns = MAX(now, p->rx_frame_end_ns) + usart_rx_frame_ns(p);
+	timer_mod_ns(p->rx_timer, p->rx_frame_end_ns);
+}
+
+static void usart_rx_line_expire(void *opaque) {
+	pmb887x_usart_t *p = opaque;
+	int64_t now = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
+	bool host_blocked = fifo8_num_free(&p->rx_line) < USART_RX_LINE_REFILL_SIZE;
+	bool input_handled = false;
+	int64_t last_frame_end_ns;
+
+	do {
+		last_frame_end_ns = p->rx_frame_end_ns;
+		input_handled |= usart_receive_frame(p, fifo8_pop(&p->rx_line));
+		if (fifo8_is_empty(&p->rx_line) || usart_rx_line_is_paused(p))
+			break;
+		p->rx_frame_end_ns += usart_rx_frame_ns(p);
+	} while (p->rx_frame_end_ns <= now);
+
+	if (p->rx_frame_end_ns > now)
+		timer_mod_ns(p->rx_timer, p->rx_frame_end_ns);
+	if (input_handled)
+		usart_receive_complete(p, last_frame_end_ns);
+	if (host_blocked && fifo8_num_free(&p->rx_line) >= USART_RX_LINE_REFILL_SIZE)
+		qemu_chr_fe_accept_input(&p->chr);
+}
+
+static int usart_can_receive(void *opaque) {
+	pmb887x_usart_t *p = opaque;
+	uint32_t free_size = fifo8_num_free(&p->rx_line);
+	return free_size >= USART_RX_LINE_REFILL_SIZE ? free_size : 0;
+}
+
 static void usart_receive(void *opaque, const uint8_t *buf, int size) {
 	pmb887x_usart_t *p = opaque;
-	bool input_handled = false;
-
-	for (int i = 0; i < size; i++) {
-		if (usart_autobaud_receive(p, buf[i])) {
-			input_handled = true;
-			continue;
-		}
-		if ((p->con & USART_CON_REN) == 0)
-			continue;
-		usart_receive_word(p, buf[i]);
-		input_handled = true;
-	}
-
-	if (input_handled)
-		usart_receive_complete(p);
-	if (!p->autobaud_pending && (input_handled || (p->abcon & USART_ABCON_ABEN)))
-		usart_schedule_accept_input(p);
+	fifo8_push_all(&p->rx_line, buf, size);
+	usart_rx_line_start(p);
 }
 
 static void usart_schedule_transmit(pmb887x_usart_t *p) {
@@ -585,7 +594,7 @@ static void usart_transmit_fifo(pmb887x_usart_t *p) {
 			}
 		}
 		if (is_received)
-			usart_receive_complete(p);
+			usart_receive_complete(p, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL));
 		ret = buffer_size;
 	}
 
@@ -691,7 +700,7 @@ static uint64_t usart_io_read(void *opaque, hwaddr haddr, unsigned size) {
 				value = fifo32_pop(p->rx_fifo);
 				usart_flow_control_update(p);
 				if (is_full)
-					usart_schedule_accept_input(p);
+					usart_rx_line_start(p);
 				if ((p->rxfcon & USART_RXFCON_RXTMEN) && !fifo32_is_empty(p->rx_fifo))
 					pmb887x_srb_set_isr(&p->srb, USART_ISR_RX);
 			} else {
@@ -752,7 +761,6 @@ static uint64_t usart_io_read(void *opaque, hwaddr haddr, unsigned size) {
 
 			// Hack for speed-up emulation
 			p->ris_read_count++;
-			usart_immediate_receive(p);
 			if (p->transfer_pending && p->ris_read_count > 10) {
 				DEBUG_LOG(&p->dbg, "immediate transfer RIS\n");
 				usart_immediate_transfer(p);
@@ -764,7 +772,6 @@ static uint64_t usart_io_read(void *opaque, hwaddr haddr, unsigned size) {
 
 			// Hack for speed-up emulation
 			p->ris_read_count++;
-			usart_immediate_receive(p);
 			if (p->transfer_pending && p->ris_read_count > 10) {
 				DEBUG_LOG(&p->dbg, "immediate transfer MIS\n");
 				usart_immediate_transfer(p);
@@ -807,8 +814,6 @@ static void usart_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned 
 		case USART_CLC:
 			pmb887x_clc_set(&p->clc, value);
 			usart_update_state(p);
-			if (pmb887x_clc_is_enabled(&p->clc))
-				usart_schedule_accept_input(p);
 			break;
 
 		case USART_PISEL:
@@ -867,7 +872,7 @@ static void usart_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned 
 				p->autobaud_pending = false;
 				if (p->abcon & USART_ABCON_AUREN)
 					p->con &= ~USART_CON_REN;
-				usart_schedule_accept_input(p);
+				usart_rx_line_start(p);
 			}
 			if (value & USART_WHBABCON_CLRABEN)
 				p->abcon &= ~USART_ABCON_ABEN;
@@ -889,8 +894,10 @@ static void usart_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned 
 
 		case USART_ICR:
 			pmb887x_srb_set_icr(&p->srb, value);
-			if (value & USART_ICR_ABDET)
-				usart_schedule_accept_input(p);
+			if (value & USART_ICR_ABDET) {
+				p->autobaud_pending = false;
+				usart_rx_line_start(p);
+			}
 			break;
 
 		case USART_ISR:
@@ -936,7 +943,7 @@ static void usart_break_timer_expire(void *opaque) {
 		p->con |= USART_CON_FE;
 		pmb887x_srb_set_isr(&p->srb, USART_ISR_ERR);
 	}
-	usart_receive_complete(p);
+	usart_receive_complete(p, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL));
 }
 
 static void usart_handle_rx_input(void *opaque, int _id, int level) {
@@ -1016,12 +1023,13 @@ static void usart_realize(DeviceState *dev, Error **errp) {
 	fifo32_create(&p->rx_fifo_single, 1);
 
 	fifo32_create(&p->tx_buffer, 1);
+	fifo8_create(&p->rx_line, USART_RX_LINE_SIZE);
 
 	pmb887x_srb_init(&p->srb, p->irq, ARRAY_SIZE(p->irq));
 
 	p->timer = timer_new_ns(QEMU_CLOCK_VIRTUAL, usart_timer_reset, p);
 	p->tmo_timer = timer_new_ns(QEMU_CLOCK_VIRTUAL, usart_tmo_timer_reset, p);
-	p->rx_timer = timer_new_ns(QEMU_CLOCK_VIRTUAL, usart_accept_input, p);
+	p->rx_timer = timer_new_ns(QEMU_CLOCK_VIRTUAL, usart_rx_line_expire, p);
 	p->break_timer = timer_new_ns(QEMU_CLOCK_VIRTUAL, usart_break_timer_expire, p);
 	p->tx_fifo = &p->tx_fifo_single;
 	p->rx_fifo = &p->rx_fifo_single;
@@ -1052,6 +1060,8 @@ static void usart_reset(DeviceState *dev) {
 	fifo32_reset(&p->tx_fifo_single);
 	fifo32_reset(&p->rx_fifo_single);
 	fifo32_reset(&p->tx_buffer);
+	fifo8_reset(&p->rx_line);
+	p->rx_frame_end_ns = 0;
 
 	p->transfer_pending = false;
 	p->autobaud_pending = false;
