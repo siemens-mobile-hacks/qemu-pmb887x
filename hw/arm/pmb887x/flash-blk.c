@@ -19,12 +19,37 @@ struct pmb887x_flash_blk_t {
 	BlockBackend *blk;
 };
 
+typedef struct pmb887x_flash_blk_write_t pmb887x_flash_blk_write_t;
+
+struct pmb887x_flash_blk_write_t {
+	QEMUIOVector qiov;
+	BlockCompletionFunc *cb;
+	void *opaque;
+};
+
 int pmb887x_flash_blk_pread(pmb887x_flash_blk_t *flash, int64_t offset, int64_t size, void *storage) {
 	return blk_pread(flash->blk, offset, size, storage, 0);
 }
 
-int pmb887x_flash_blk_pwrite(pmb887x_flash_blk_t *flash, int64_t offset, int64_t size, void *value) {
-	return blk_pwrite(flash->blk, offset, size, value, 0);
+static void flash_blk_aio_pwrite_done(void *opaque, int ret) {
+	pmb887x_flash_blk_write_t *write = opaque;
+	write->cb(write->opaque, ret);
+	g_free(write);
+}
+
+void pmb887x_flash_blk_aio_pwrite(
+	pmb887x_flash_blk_t *flash,
+	int64_t offset,
+	int64_t size,
+	void *data,
+	BlockCompletionFunc *cb,
+	void *opaque
+) {
+	pmb887x_flash_blk_write_t *write = g_new(pmb887x_flash_blk_write_t, 1);
+	write->cb = cb;
+	write->opaque = opaque;
+	qemu_iovec_init_buf(&write->qiov, data, size);
+	blk_aio_pwritev(flash->blk, offset, &write->qiov, 0, flash_blk_aio_pwrite_done, write);
 }
 
 bool pmb887x_flash_blk_is_rw(pmb887x_flash_blk_t *flash) {

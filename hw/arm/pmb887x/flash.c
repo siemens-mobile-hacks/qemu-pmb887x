@@ -9,6 +9,9 @@
 #include "qemu/error-report.h"
 #include "qemu/timer.h"
 #include "qemu/main-loop.h"
+#include "qemu/bitmap.h"
+#include "qemu/aio-wait.h"
+#include "system/runstate.h"
 #include "hw/core/qdev-properties.h"
 #include "hw/block/block.h"
 
@@ -26,6 +29,9 @@
 #define FLASH_ROMD_THRESHOLD_MAX		(64 * 1024)
 #define FLASH_ROMD_SHORT_PERIOD_NS		(1 * SCALE_MS)
 
+#define FLASH_WRITEBACK_PAGE_SIZE		4096
+#define FLASH_WRITEBACK_DELAY_MS		1000
+
 #define FLASH_STATUS_BLOCK_LOCKED		BIT(1)
 #define FLASH_STATUS_PROGRAM_ERROR		BIT(4)
 #define FLASH_STATUS_BLOCK_ERASE_ERROR	BIT(5)
@@ -42,6 +48,7 @@ typedef struct pmb887x_flash_t pmb887x_flash_t;
 typedef struct pmb887x_flash_part_t pmb887x_flash_part_t;
 typedef struct pmb887x_flash_buffer_t pmb887x_flash_buffer_t;
 typedef struct pmb887x_flash_block_t pmb887x_flash_block_t;
+typedef struct pmb887x_flash_dirty_range_t pmb887x_flash_dirty_range_t;
 
 struct pmb887x_flash_buffer_t {
 	uint32_t offset;
@@ -54,6 +61,11 @@ struct pmb887x_flash_block_t {
 	uint32_t size;
 	bool locked;
 	bool locked_down;
+};
+
+struct pmb887x_flash_dirty_range_t {
+	uint32_t start;
+	uint32_t end;
 };
 
 struct pmb887x_flash_part_t {
@@ -70,6 +82,7 @@ struct pmb887x_flash_part_t {
 	int64_t romd_since_ns;
 	
 	uint8_t *storage;
+	unsigned long *dirty_pages;
 	
 	uint32_t buffer_size;
 	uint32_t buffer_index;
@@ -100,6 +113,13 @@ struct pmb887x_flash_t {
 	int otp0_fd;
 	int otp1_fd;
 	int efa_fd;
+	pmb887x_flash_dirty_range_t otp0_dirty;
+	pmb887x_flash_dirty_range_t otp1_dirty;
+	pmb887x_flash_dirty_range_t efa_dirty;
+
+	bool writable;
+	QEMUTimer *writeback_timer;
+	uint32_t writeback_in_flight;
 	
 	uint16_t vid;
 	uint16_t pid;
@@ -126,8 +146,6 @@ struct pmb887x_flash_t {
 };
 
 static void flash_error(pmb887x_flash_t *flash, const char *format, ...) G_GNUC_PRINTF(2, 3);
-
-static void flash_error_part(pmb887x_flash_part_t *p, const char *format, ...) G_GNUC_PRINTF(2, 3);
 
 static void flash_load_file(pmb887x_flash_t *flash, const char *path, void *data, size_t size, const char *region);
 static void flash_save_file(pmb887x_flash_t *flash, int *fd, const char *path, const void *data, size_t total_size,
@@ -210,6 +228,116 @@ static uint32_t flash_find_sector_size(pmb887x_flash_part_t *p, uint32_t offset)
 	g_assert_not_reached();
 }
 
+static void flash_writeback_schedule(pmb887x_flash_t *flash) {
+	if (!timer_pending(flash->writeback_timer))
+		timer_mod(flash->writeback_timer, qemu_clock_get_ms(QEMU_CLOCK_REALTIME) + FLASH_WRITEBACK_DELAY_MS);
+}
+
+static void flash_part_mark_dirty(pmb887x_flash_part_t *p, uint32_t storage_offset, uint32_t size) {
+	if (!p->flash->writable)
+		return;
+
+	uint32_t first_page = storage_offset / FLASH_WRITEBACK_PAGE_SIZE;
+	uint32_t end_page = DIV_ROUND_UP(storage_offset + size, FLASH_WRITEBACK_PAGE_SIZE);
+	bitmap_set(p->dirty_pages, first_page, end_page - first_page);
+	flash_writeback_schedule(p->flash);
+}
+
+static void flash_side_file_mark_dirty(
+	pmb887x_flash_t *flash,
+	pmb887x_flash_dirty_range_t *range,
+	uint32_t offset,
+	uint32_t size
+) {
+	if (!flash->writable)
+		return;
+
+	if (range->start == range->end) {
+		range->start = offset;
+		range->end = offset + size;
+	} else {
+		range->start = MIN(range->start, offset);
+		range->end = MAX(range->end, offset + size);
+	}
+	flash_writeback_schedule(flash);
+}
+
+static void flash_side_file_save(
+	pmb887x_flash_t *flash,
+	pmb887x_flash_dirty_range_t *range,
+	int *fd,
+	const char *path,
+	const void *data,
+	size_t total_size,
+	const char *region
+) {
+	if (range->start == range->end)
+		return;
+	flash_save_file(flash, fd, path, data, total_size, range->start, range->end - range->start, region);
+	*range = (pmb887x_flash_dirty_range_t) { };
+}
+
+static void flash_writeback_done(void *opaque, int ret) {
+	pmb887x_flash_t *flash = opaque;
+	flash->writeback_in_flight--;
+	aio_wait_kick();
+	if (ret < 0) {
+		flash_error(flash, "Can't write to flash file: %d, %s", ret, strerror(-ret));
+		exit(1);
+	}
+}
+
+static void flash_part_writeback_start(pmb887x_flash_part_t *p) {
+	uint32_t pages_n = DIV_ROUND_UP(p->size, FLASH_WRITEBACK_PAGE_SIZE);
+	uint32_t page = find_first_bit(p->dirty_pages, pages_n);
+	while (page < pages_n) {
+		uint32_t end_page = find_next_zero_bit(p->dirty_pages, pages_n, page);
+		bitmap_clear(p->dirty_pages, page, end_page - page);
+
+		uint32_t storage_offset = page * FLASH_WRITEBACK_PAGE_SIZE;
+		uint32_t size = MIN(end_page * FLASH_WRITEBACK_PAGE_SIZE, p->size) - storage_offset;
+		p->flash->writeback_in_flight++;
+		pmb887x_flash_blk_aio_pwrite(p->flash->blk, p->flash->offset + p->offset + storage_offset, size,
+			p->storage + storage_offset, flash_writeback_done, p->flash);
+
+		page = find_next_bit(p->dirty_pages, pages_n, end_page);
+	}
+}
+
+static void flash_writeback_start(pmb887x_flash_t *flash) {
+	const pmb887x_flash_cfg_t *cfg = flash->cfg;
+
+	for (uint32_t i = 0; i < flash->parts_n; i++)
+		flash_part_writeback_start(flash->parts[i]);
+
+	flash_side_file_save(flash, &flash->otp0_dirty, &flash->otp0_fd, flash->otp0_file, flash->otp0_data,
+		cfg->otp0_size, "OTP0");
+	flash_side_file_save(flash, &flash->otp1_dirty, &flash->otp1_fd, flash->otp1_file, flash->otp1_data,
+		cfg->otp1_size, "OTP1");
+	flash_side_file_save(flash, &flash->efa_dirty, &flash->efa_fd, flash->efa_file, flash->efa_storage,
+		flash->efa_size, "EFA");
+}
+
+static void flash_writeback_expire(void *opaque) {
+	pmb887x_flash_t *flash = opaque;
+	if (flash->writeback_in_flight > 0) {
+		flash_writeback_schedule(flash);
+		return;
+	}
+	flash_writeback_start(flash);
+}
+
+static void flash_vm_state_change(void *opaque, bool running, RunState _state) {
+	pmb887x_flash_t *flash = opaque;
+	if (running)
+		return;
+
+	timer_del(flash->writeback_timer);
+	AIO_WAIT_WHILE(NULL, flash->writeback_in_flight > 0);
+	flash_writeback_start(flash);
+	AIO_WAIT_WHILE(NULL, flash->writeback_in_flight > 0);
+}
+
 static void flash_data_write(pmb887x_flash_part_t *p, uint32_t offset, uint32_t value, uint32_t size) {
 	uint8_t *data = p->storage;
 	
@@ -237,13 +365,7 @@ static void flash_data_write(pmb887x_flash_part_t *p, uint32_t offset, uint32_t 
 			g_assert_not_reached();
 	}
 	
-	if (p->flash->blk && pmb887x_flash_blk_is_rw(p->flash->blk)) {
-		int ret = pmb887x_flash_blk_pwrite(p->flash->blk, p->flash->offset + p->offset + offset, size, p->storage + offset);
-		if (ret < 0) {
-			flash_error_part(p, "Can't write to flash file: %d, %s", ret, strerror(ret));
-			exit(1);
-		}
-	}
+	flash_part_mark_dirty(p, offset, size);
 }
 
 static uint32_t flash_efa_read(pmb887x_flash_part_t *p, uint32_t offset, uint32_t size) {
@@ -374,10 +496,8 @@ static void flash_efa_erase(pmb887x_flash_part_t *p, uint32_t offset) {
 		}
 	}
 	memset(p->flash->efa_storage + blk->offset, 0xFF, blk->size);
-	if (changed) {
-		flash_save_file(p->flash, &p->flash->efa_fd, p->flash->efa_file, p->flash->efa_storage,
-			p->flash->efa_size, blk->offset, blk->size, "EFA");
-	}
+	if (changed)
+		flash_side_file_mark_dirty(p->flash, &p->flash->efa_dirty, blk->offset, blk->size);
 }
 
 static void flash_efa_program(pmb887x_flash_part_t *p, uint32_t offset, uint64_t value, uint32_t size) {
@@ -404,10 +524,8 @@ static void flash_efa_program(pmb887x_flash_part_t *p, uint32_t offset, uint64_t
 		if (old_value != new_value)
 			changed = true;
 	}
-	if (changed) {
-		flash_save_file(p->flash, &p->flash->efa_fd, p->flash->efa_file, p->flash->efa_storage,
-			p->flash->efa_size, efa_offset, size, "EFA");
-	}
+	if (changed)
+		flash_side_file_mark_dirty(p->flash, &p->flash->efa_dirty, efa_offset, size);
 }
 
 static void flash_otp_program(pmb887x_flash_part_t *p, uint32_t offset, uint64_t value, uint32_t size) {
@@ -448,11 +566,9 @@ static void flash_otp_program(pmb887x_flash_part_t *p, uint32_t offset, uint64_t
 		return;
 	uint32_t data_offset = data_index * sizeof(otp_data[0]);
 	if (otp_data == p->flash->otp0_data) {
-		flash_save_file(p->flash, &p->flash->otp0_fd, p->flash->otp0_file, p->flash->otp0_data,
-			cfg->otp0_size, data_offset, sizeof(otp_data[0]), "OTP0");
+		flash_side_file_mark_dirty(p->flash, &p->flash->otp0_dirty, data_offset, sizeof(otp_data[0]));
 	} else {
-		flash_save_file(p->flash, &p->flash->otp1_fd, p->flash->otp1_file, p->flash->otp1_data,
-			cfg->otp1_size, data_offset, sizeof(otp_data[0]), "OTP1");
+		flash_side_file_mark_dirty(p->flash, &p->flash->otp1_dirty, data_offset, sizeof(otp_data[0]));
 	}
 }
 
@@ -533,14 +649,7 @@ static void flash_block_erase(pmb887x_flash_part_t *p, uint32_t offset) {
 
 	uint32_t erase_offset = base - p->offset;
 	memset(p->storage + erase_offset, 0xFF, sector_size);
-	if (p->flash->blk && pmb887x_flash_blk_is_rw(p->flash->blk)) {
-		int ret = pmb887x_flash_blk_pwrite(p->flash->blk, p->flash->offset + p->offset + erase_offset, sector_size,
-			p->storage + erase_offset);
-		if (ret < 0) {
-			flash_error_part(p, "Can't write to flash file: %d, %s", ret, strerror(ret));
-			exit(1);
-		}
-	}
+	flash_part_mark_dirty(p, erase_offset, sector_size);
 }
 
 static void flash_word_program(pmb887x_flash_part_t *p, uint32_t offset, uint64_t value, uint32_t size) {
@@ -1014,7 +1123,7 @@ static void flash_load_file(pmb887x_flash_t *flash, const char *path, void *data
 static void flash_save_file(pmb887x_flash_t *flash, int *fd, const char *path, const void *data, size_t total_size,
 	size_t offset, size_t size, const char *region)
 {
-	if (!path || !path[0] || !flash->blk || !pmb887x_flash_blk_is_rw(flash->blk))
+	if (!path || !path[0] || !flash->writable)
 		return;
 
 	if (*fd < 0) {
@@ -1119,6 +1228,7 @@ static void flash_init_part(pmb887x_flash_t *flash, const pmb887x_flash_cfg_part
 	g_free(name);
 	
 	p->storage = memory_region_get_ram_ptr(&p->mem);
+	p->dirty_pages = bitmap_new(DIV_ROUND_UP(p->size, FLASH_WRITEBACK_PAGE_SIZE));
 	
 	DEBUG_LOG(&p->flash->dbg, "<%d> hw partition 0x%08X ... 0x%08X\n",
 		p->n, p->flash->offset + p->offset, p->flash->offset + p->offset + p->size - 1);
@@ -1190,6 +1300,11 @@ static void flash_realize(DeviceState *dev, Error **errp) {
 		exit(1);
 	}
 	flash_init_file_paths(flash);
+	flash->writable = flash->blk && pmb887x_flash_blk_is_rw(flash->blk);
+	if (flash->writable) {
+		flash->writeback_timer = timer_new_ms(QEMU_CLOCK_REALTIME, flash_writeback_expire, flash);
+		qemu_add_vm_change_state_handler(flash_vm_state_change, flash);
+	}
 	
 	DEBUG_LOG(&flash->dbg, "FLASH %04X:%04X, 0x%08X ... 0x%08X\n",
 		flash->vid, flash->pid, flash->offset, flash->offset + flash->size - 1);
@@ -1271,17 +1386,6 @@ static void flash_error(pmb887x_flash_t *flash, const char *format, ...) {
 	va_end(args);
 	
 	error_report("%s: %s", flash->name, s->str);
-}
-
-static void flash_error_part(pmb887x_flash_part_t *p, const char *format, ...) {
-	g_autoptr(GString) s = g_string_new("");
-	
-	va_list args;
-	va_start(args, format);
-	g_string_append_vprintf(s, format, args);
-	va_end(args);
-	
-	error_report("%s <%d>: %s", p->flash->name, p->n, s->str);
 }
 
 static const Property flash_properties[] = {
