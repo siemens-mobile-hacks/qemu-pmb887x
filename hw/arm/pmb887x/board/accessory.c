@@ -10,8 +10,6 @@
 #include "hw/misc/phone/accessory-connector.h"
 #include "qapi/error.h"
 
-#define ACCESSORY_DEFAULT "data-cable"
-
 typedef struct accessory_config_t accessory_config_t;
 
 struct accessory_config_t {
@@ -145,8 +143,10 @@ void pmb887x_board_accessory_configure(GHashTable *devices, DeviceState *dev, to
 	}
 
 	g_autofree char *requested = object_property_get_str(OBJECT(dev), "accessory", &error_fatal);
-	if (!requested[0])
-		object_property_set_str(OBJECT(dev), "accessory", ACCESSORY_DEFAULT, &error_fatal);
+	if (!requested[0]) {
+		const char *default_accessory = toml_table_get_string(table, "default", NULL, true);
+		object_property_set_str(OBJECT(dev), "accessory", default_accessory, &error_fatal);
+	}
 
 	accessory_config_free(&config);
 }
