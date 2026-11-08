@@ -559,6 +559,14 @@ static void test_bind_errors(void)
                              &error_fatal);
     qdev_realize(DEVICE(dev), NULL, &error_fatal);
 
+    g_assert_false(qdev_bus_port_check(DEVICE(dev), "MISSING", NULL, &err));
+    error_free(g_steal_pointer(&err));
+    g_assert_false(qdev_bus_port_check(DEVICE(dev), "TEST", BUS(line), &err));
+    error_free(g_steal_pointer(&err));
+    g_assert_true(qdev_bus_port_check(DEVICE(dev), "TEST", busy_bus,
+                                      &error_fatal));
+    g_assert_true(dev->port.bus == bus);
+
     g_assert_false(qdev_bus_port_bind(DEVICE(dev), "MISSING", bus, &err));
     error_free(g_steal_pointer(&err));
 

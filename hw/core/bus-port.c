@@ -127,19 +127,37 @@ static void bus_port_set_bus(QDevBusPort *port, BusState *bus)
     }
 }
 
-bool qdev_bus_port_bind(DeviceState *dev, const char *name, BusState *bus,
-                        Error **errp)
+static QDevBusPort *bus_port_find_compatible(DeviceState *dev,
+                                             const char *name, BusState *bus,
+                                             Error **errp)
 {
     QDevBusPort *port = bus_port_find(dev, name);
 
     if (!port) {
         error_setg(errp, "Device '%s' has no bus port '%s'",
                    object_get_typename(OBJECT(dev)), name);
-        return false;
+        return NULL;
     }
     if (bus && !object_dynamic_cast(OBJECT(bus), port->bus_type)) {
         error_setg(errp, "Bus port '%s' needs a '%s' bus, got '%s'",
                    name, port->bus_type, object_get_typename(OBJECT(bus)));
+        return NULL;
+    }
+    return port;
+}
+
+bool qdev_bus_port_check(DeviceState *dev, const char *name, BusState *bus,
+                         Error **errp)
+{
+    return bus_port_find_compatible(dev, name, bus, errp) != NULL;
+}
+
+bool qdev_bus_port_bind(DeviceState *dev, const char *name, BusState *bus,
+                        Error **errp)
+{
+    QDevBusPort *port = bus_port_find_compatible(dev, name, bus, errp);
+
+    if (!port) {
         return false;
     }
     if (port->bus == bus) {

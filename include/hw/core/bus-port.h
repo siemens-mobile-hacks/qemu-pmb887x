@@ -44,4 +44,12 @@ void qdev_finalize_bus_ports(DeviceState *dev);
 bool qdev_bus_port_bind(DeviceState *dev, const char *name, BusState *bus,
                         Error **errp);
 
+/*
+ * Check that @dev has the bus port @name and that it accepts @bus (any bus
+ * when NULL), without changing the binding. Whether @bus still has room for
+ * another endpoint is only known when binding.
+ */
+bool qdev_bus_port_check(DeviceState *dev, const char *name, BusState *bus,
+                         Error **errp);
+
 #endif
