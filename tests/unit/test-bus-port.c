@@ -794,6 +794,35 @@ static void test_i2c_adapter(void)
     object_destroy(OBJECT(bus_owner));
 }
 
+static void test_i2c_unbind_during_transfer(void)
+{
+    DeviceState *bus_owner = test_bus_owner_create();
+    I2CBus *bus = i2c_init_bus(bus_owner, "i2c");
+    ProtocolTestDevice *dev = PROTOCOL_TEST_DEVICE(object_new(TYPE_PROTOCOL_TEST_DEVICE));
+
+    object_property_set_link(OBJECT(dev), "port.I2C", OBJECT(bus),
+                             &error_fatal);
+    qdev_realize(DEVICE(dev), NULL, &error_fatal);
+    g_assert_cmpint(i2c_start_send(bus, 0x31), ==, 0);
+    g_assert_false(QLIST_EMPTY(&bus->current_devs));
+
+    qdev_bus_port_bind(DEVICE(dev), "I2C", NULL, &error_fatal);
+    g_assert_true(QLIST_EMPTY(&bus->current_devs));
+    g_assert_cmpint(dev->i2c_event, ==, I2C_FINISH);
+    g_assert_cmpint(i2c_send(bus, 0xa5), !=, 0);
+    g_assert_cmphex(dev->i2c_sent, ==, 0);
+    i2c_end_transfer(bus);
+
+    qdev_bus_port_bind(DEVICE(dev), "I2C", BUS(bus), &error_fatal);
+    g_assert_cmpint(i2c_start_send(bus, 0x31), ==, 0);
+    g_assert_cmpint(i2c_send(bus, 0x5a), ==, 0);
+    g_assert_cmphex(dev->i2c_sent, ==, 0x5a);
+    i2c_end_transfer(bus);
+
+    object_destroy(OBJECT(dev));
+    object_destroy(OBJECT(bus_owner));
+}
+
 static void test_three_wire_serial_adapter(void)
 {
     DeviceState *bus_owner = test_bus_owner_create();
@@ -940,6 +969,8 @@ int main(int argc, char **argv)
     g_test_add_func("/qdev/bus-port/audio-line-late-endpoint",
                     test_audio_line_late_endpoint);
     g_test_add_func("/qdev/bus-port/i2c-adapter", test_i2c_adapter);
+    g_test_add_func("/qdev/bus-port/i2c-unbind-during-transfer",
+                    test_i2c_unbind_during_transfer);
     g_test_add_func("/qdev/bus-port/three-wire-serial-adapter",
                     test_three_wire_serial_adapter);
     g_test_add_func("/qdev/bus-port/i2c-defaults-and-address",
