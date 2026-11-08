@@ -4,7 +4,7 @@
 #include "hw/arm/pmb887x/gen/cpu_meta.h"
 
 #include "hw/arm/pmb887x/utils/toml.h"
-#include "hw/arm/pmb887x/utils/tomlc17.h"
+#include "tomlc17.h"
 #include "hw/core/hw-error.h"
 #include "hw/core/irq.h"
 #include "hw/core/split-irq.h"

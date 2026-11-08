@@ -11,7 +11,7 @@
 #include "hw/arm/pmb887x/ssc/lcd_common.h"
 #include "hw/arm/pmb887x/utils/toml.h"
 
-#include "hw/arm/pmb887x/utils/tomlc17.h"
+#include "tomlc17.h"
 #include "hw/core/hw-error.h"
 #include "hw/core/qdev-clock.h"
 #include "hw/core/sysbus.h"

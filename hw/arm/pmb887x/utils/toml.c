@@ -1,6 +1,6 @@
 #include "hw/arm/pmb887x/utils/toml.h"
 #include "glib.h"
-#include "hw/arm/pmb887x/utils/tomlc17.h"
+#include "tomlc17.h"
 
 static const char *toml_get_type_name(toml_type_t type) {
 	switch (type) {
@@ -30,23 +30,34 @@ static const char *toml_get_type_name(toml_type_t type) {
 	return "TOML_UNKNOWN";
 }
 
+void toml_fail(toml_datum_t where, const char *format, ...) {
+	g_autofree char *message = NULL;
+	va_list args;
+
+	va_start(args, format);
+	message = g_strdup_vprintf(format, args);
+	va_end(args);
+
+	const char *source = where.source ? where.source : "board config";
+	if (where.lineno > 0)
+		error_report("%s:%d:%d: %s", source, where.lineno, where.colno, message);
+	else
+		error_report("%s: %s", source, message);
+	exit(EXIT_FAILURE);
+}
+
 /**
  * Table helpers
  */
 toml_datum_t toml_table_get(toml_datum_t table, toml_type_t type, const char *multipart_key, bool required) {
 	toml_datum_t value = toml_seek(table, multipart_key);
 	if (value.type == TOML_UNKNOWN) {
-		if (required) {
-			const char *sep = table.loc.key.len ? "." : "";
-			error_report("%s: %s%s%s is required!", table.loc.file, table.loc.key.ptr ?: "", sep, multipart_key);
-			exit(EXIT_FAILURE);
-		}
+		if (required)
+			toml_fail(table, "'%s' is required", multipart_key);
 		return value;
 	}
-	if (value.type != type) {
-		error_report("%s: %s is not %s!", table.loc.file, value.loc.key.ptr, toml_get_type_name(type));
-		exit(EXIT_FAILURE);
-	}
+	if (value.type != type)
+		toml_fail(value, "'%s' is not %s", multipart_key, toml_get_type_name(type));
 	return value;
 }
 
@@ -85,26 +96,20 @@ toml_datum_t toml_array_get(toml_datum_t arr, toml_type_t type, uint32_t index, 
 	assert(arr.type == TOML_ARRAY);
 	assert(index < arr.u.arr.size);
 
-	if (arr.type != TOML_ARRAY) {
-		error_report("%s: %s is not TOML_ARRAY!", arr.loc.file, arr.loc.key.ptr);
-		exit(EXIT_FAILURE);
-	}
+	if (arr.type != TOML_ARRAY)
+		toml_fail(arr, "value is not TOML_ARRAY");
 
 	if (index >= arr.u.arr.size) {
-		if (required) {
-			error_report("%s: %s.[%d] is out of range (array size %d)!", arr.loc.file, arr.loc.key.ptr, index, arr.u.arr.size);
-			exit(EXIT_FAILURE);
-		}
+		if (required)
+			toml_fail(arr, "element [%u] is out of range (array size %d)", index, arr.u.arr.size);
 		toml_datum_t unknown = {};
 		unknown.type = TOML_UNKNOWN;
 		return unknown;
 	}
 
 	toml_datum_t value = arr.u.arr.elem[index];
-	if (value.type != type) {
-		error_report("%s: %s is not %s!", value.loc.file, value.loc.key.ptr, toml_get_type_name(type));
-		exit(EXIT_FAILURE);
-	}
+	if (value.type != type)
+		toml_fail(value, "element [%u] is not %s", index, toml_get_type_name(type));
 
 	return value;
 }

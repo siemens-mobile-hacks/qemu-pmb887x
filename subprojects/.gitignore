@@ -6,6 +6,7 @@
 /keycodemapdb
 /libvfio-user
 /slirp
+/tomlc17
 /anyhow-*
 /arbitrary-int-*
 /attrs-*

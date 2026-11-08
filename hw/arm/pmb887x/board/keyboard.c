@@ -3,7 +3,7 @@
 #include "hw/arm/pmb887x/board/gpio.h"
 
 #include "hw/arm/pmb887x/utils/toml.h"
-#include "hw/arm/pmb887x/utils/tomlc17.h"
+#include "tomlc17.h"
 #include "hw/core/irq.h"
 #include "qapi/qapi-types-ui.h"
 #include "qemu/error-report.h"

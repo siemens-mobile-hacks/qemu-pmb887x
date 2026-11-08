@@ -2062,6 +2062,11 @@ if fdt_opt == 'internal'
   fdt = libfdt_proj.get_variable('libfdt_dep')
 endif
 
+tomlc17 = not_found
+if have_system
+  tomlc17 = subproject('tomlc17').get_variable('tomlc17_dep')
+endif
+
 rdma = not_found
 if not get_option('rdma').auto() or have_system
   rdma_libs = [cc.find_library('rdmacm', has_headers: ['rdma/rdma_cma.h'],

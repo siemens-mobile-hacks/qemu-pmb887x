@@ -4,7 +4,7 @@
 #include "hw/arm/pmb887x/board/keyboard.h"
 #include "hw/arm/pmb887x/gen/cpu_regs.h"
 #include "hw/arm/pmb887x/utils/toml.h"
-#include "hw/arm/pmb887x/utils/tomlc17.h"
+#include "tomlc17.h"
 #include "hw/core/hw-error.h"
 #include "qemu/error-report.h"
 
@@ -28,7 +28,6 @@ static toml_result_t load_board_config(const char *config_file) {
 		error_report("Invalid board config %s: %s", config_file, board_config.errmsg);
 		exit(EXIT_FAILURE);
 	}
-	toml_init_datum_location_info(&board_config, config_file);
 
 	const char *base_config_name = toml_table_get_string(board_config.toptab, "board.extends", NULL, false);
 	if (base_config_name) {
@@ -42,7 +41,6 @@ static toml_result_t load_board_config(const char *config_file) {
 			error_report("Invalid board config %s: %s", base_config_file, base_config.errmsg);
 			exit(EXIT_FAILURE);
 		}
-		toml_init_datum_location_info(&base_config, base_config_file);
 
 		toml_result_t merged_config = toml_merge(&base_config, &board_config);
 		toml_free(base_config);

@@ -6,7 +6,7 @@
 #include "hw/arm/pmb887x/adc.h"
 #include "hw/arm/pmb887x/board/board.h"
 #include "hw/arm/pmb887x/utils/toml.h"
-#include "hw/arm/pmb887x/utils/tomlc17.h"
+#include "tomlc17.h"
 
 static const int channels[] = {
 	PMB887X_ADC_INPUT_M0,

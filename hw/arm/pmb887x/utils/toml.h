@@ -2,7 +2,9 @@
 #include "qemu/osdep.h"
 #include "qapi/qapi-types-ui.h"
 #include "qemu/error-report.h"
-#include "hw/arm/pmb887x/utils/tomlc17.h"
+#include "tomlc17.h"
+
+G_NORETURN void toml_fail(toml_datum_t where, const char *format, ...) G_GNUC_PRINTF(2, 3);
 
 toml_datum_t toml_table_get(toml_datum_t table, toml_type_t type, const char *multipart_key, bool required);
 bool toml_table_get_bool(toml_datum_t table, const char *multipart_key, bool def, bool required);

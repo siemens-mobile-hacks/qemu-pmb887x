@@ -1,6 +1,6 @@
 #pragma once
 
-#include "hw/arm/pmb887x/utils/tomlc17.h"
+#include "tomlc17.h"
 #include "qemu/osdep.h"
 #include "qapi/qapi-types-ui.h"
 

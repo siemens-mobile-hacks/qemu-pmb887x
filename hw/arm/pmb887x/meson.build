@@ -79,7 +79,6 @@ arm_common_ss.add(when: 'CONFIG_PMB887X', if_true: files(
 	'board/timings/memory.c',
 
 	'utils/toml.c',
-	'utils/tomlc17.c',
 
 	'ssc/s1d13716.c',
 	'ssc/s1d13705.c',
@@ -108,6 +107,7 @@ arm_common_ss.add(when: 'CONFIG_PMB887X', if_true: files(
 ))
 arm_common_ss.add(when: 'CONFIG_PMB887X', if_true: dsp_core_sources + dsp_peripheral_sources +
 	files('dsp/tcg.c', 'dsp/runtime.c'))
+arm_common_ss.add(when: 'CONFIG_PMB887X', if_true: tomlc17)
 
 host_unit_tests += {
 	'pmb887x-dsp-core': {
