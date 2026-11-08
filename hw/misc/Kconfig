@@ -183,6 +183,9 @@ config AUX
     bool
     select I2C
 
+config ACCESSORY_CONNECTOR
+    bool
+
 config UNIMP
     bool
 

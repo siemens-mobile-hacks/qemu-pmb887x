@@ -4130,6 +4130,15 @@ if have_system
       ),
       'dependencies': [qom, hwcore],
     },
+    'accessory-connector': {
+      'sources': files(
+        'tests/unit/test-accessory-connector.c',
+        'hw/audio/audio-line.c',
+        'hw/audio/i2s.c',
+        'hw/misc/phone/accessory-connector.c',
+      ),
+      'dependencies': [qom, hwcore],
+    },
     'bus-port': {
       'sources': files(
         'tests/unit/test-bus-port.c',
