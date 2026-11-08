@@ -1,6 +1,7 @@
 #include "hw/arm/pmb887x/board/devices.h"
 
 #include "hw/arm/pmb887x/flash-blk.h"
+#include "hw/arm/pmb887x/board/accessory.h"
 #include "hw/arm/pmb887x/board/board.h"
 #include "hw/arm/pmb887x/board/gpio.h"
 #include "hw/arm/pmb887x/board/memory.h"
@@ -19,6 +20,7 @@
 #include "qom/object.h"
 #include "hw/core/qdev-properties.h"
 #include "hw/i2c/i2c.h"
+#include "hw/misc/phone/accessory-connector.h"
 #include "qapi/error.h"
 
 typedef enum pmb887x_dev_prop_type_t pmb887x_dev_prop_type_t;
@@ -167,6 +169,15 @@ static pmb887x_dev_t devices_meta[] = {
 		.props = {},
 	},
 
+	// System connector
+	{
+		.name = TYPE_ACCESSORY_CONNECTOR,
+		.props = {
+			{ "unplugged", DEV_PROP_STRING, false },
+			{ "replug-delay-ms", DEV_PROP_UINT, false },
+		},
+	},
+
 	// NOR FLASH
 	{
 		.name = "cfi-flash",
@@ -194,7 +205,7 @@ static DeviceState *device_find_by_id(GHashTable *devices, const char *name) {
 	return dev != NULL ? dev : qdev_find_recursive(sysbus_get_default(), name);
 }
 
-static Object *bus_find_by_id(GHashTable *devices, const char *name) {
+Object *pmb887x_board_find_bus(GHashTable *devices, const char *name) {
 	g_autofree char *device_name = g_strdup(name);
 	g_autofree char *normalized_bus_name = NULL;
 	g_autofree char *bus_property_name = NULL;
@@ -254,7 +265,7 @@ static void device_init_ports_from_config(GHashTable *devices, DeviceState *dev,
 		const char *name = ports.u.tab.key[i];
 		const char *bus_name = toml_table_get_string(ports, name, NULL, true);
 		g_autofree char *property_name = g_strdup_printf("port.%s", name);
-		Object *bus = bus_find_by_id(devices, bus_name);
+		Object *bus = pmb887x_board_find_bus(devices, bus_name);
 
 		if (!object_property_find(OBJECT(dev), property_name))
 			hw_error("Device '%s' has no bus port '%s'", dev->id, name);
@@ -351,7 +362,7 @@ static void device_realize_from_config(GHashTable *devices, const char *id, toml
 		return;
 	}
 
-	Object *bus = bus_find_by_id(devices, bus_id);
+	Object *bus = pmb887x_board_find_bus(devices, bus_id);
 	pmb887x_dev_bus_type_t bus_type = bus_get_type(bus);
 
 	switch (bus_type) {
@@ -429,8 +440,11 @@ void pmb887x_board_init_devices(DeviceState *ebuc) {
 		const char *id = value.u.tab.key[i];
 		toml_datum_t table = toml_table_get(value, TOML_TABLE, id, true);
 		DeviceState *dev = g_hash_table_lookup(devices, id);
-		if (dev != NULL)
-			device_init_ports_from_config(devices, dev, table);
+		if (dev == NULL)
+			continue;
+		device_init_ports_from_config(devices, dev, table);
+		if (object_dynamic_cast(OBJECT(dev), TYPE_ACCESSORY_CONNECTOR))
+			pmb887x_board_accessory_configure(devices, dev, table);
 	}
 
 	for (int i = 0; i < value.u.tab.size; i++) {

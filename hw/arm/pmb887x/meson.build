@@ -66,6 +66,7 @@ arm_common_ss.add(when: 'CONFIG_PMB887X', if_true: files(
 	'gen/dsp_rom.c',
 	'gen/flash-info.c',
 
+	'board/accessory.c',
 	'board/dsp.c',
 	'board/analog.c',
 	'board/board.c',

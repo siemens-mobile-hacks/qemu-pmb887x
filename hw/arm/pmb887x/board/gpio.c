@@ -98,12 +98,15 @@ qemu_irq pmb887x_gpio_get_input(const char *spec) {
 	return pmb887x_qdev_get_gpio_in(dev, name, n);
 }
 
-void pmb887x_gpio_connect(const char *output_spec, const char *input_spec) {
-	qemu_irq gpio_in = pmb887x_gpio_get_input(input_spec);
+void pmb887x_gpio_connect_output(const char *output_spec, qemu_irq gpio_in) {
 	const char *name;
 	int n;
 	DeviceState *dev = find_gpio_line(output_spec, &name, &n);
 	pmb887x_qdev_connect_gpio_out(dev, name, n, gpio_in);
+}
+
+void pmb887x_gpio_connect(const char *output_spec, const char *input_spec) {
+	pmb887x_gpio_connect_output(output_spec, pmb887x_gpio_get_input(input_spec));
 }
 
 void pmb887x_board_gpio_init_fixed_inputs(void) {
