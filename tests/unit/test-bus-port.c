@@ -682,6 +682,40 @@ static void test_audio_line_adapter(void)
     object_destroy(OBJECT(bus_owner));
 }
 
+static void test_audio_line_late_endpoint(void)
+{
+    static const int16_t FRAME[] = { 0x1234, -0x1234 };
+    static const AudioLineFormat FORMAT = { 48000, 2 };
+    DeviceState *bus_owner = test_bus_owner_create();
+    AudioLineBus *line = audio_line_bus_init(bus_owner, "line");
+    ProtocolTestDevice *dev = PROTOCOL_TEST_DEVICE(object_new(TYPE_PROTOCOL_TEST_DEVICE));
+
+    qdev_realize(DEVICE(dev), NULL, &error_fatal);
+    audio_line_set_gain(line, 1, -600);
+    audio_line_start(line, 1, &FORMAT);
+    audio_line_start(line, 3, &FORMAT);
+    audio_line_stop(line, 3);
+
+    qdev_bus_port_bind(DEVICE(dev), "LINE", BUS(line), &error_fatal);
+    g_assert_cmpuint(dev->line_stream, ==, 1);
+    g_assert_cmpuint(dev->line_format.sample_rate_hz, ==, 48000);
+    g_assert_cmpuint(dev->line_format.channels, ==, 2);
+    g_assert_cmpint(dev->line_gain_mb, ==, -600);
+
+    audio_line_write(line, 1, FRAME, 1);
+    g_assert_cmpuint(dev->line_frames, ==, 1);
+    g_assert_cmpmem(dev->line_samples, sizeof(dev->line_samples), FRAME,
+                    sizeof(FRAME));
+
+    qdev_bus_port_bind(DEVICE(dev), "LINE", NULL, &error_fatal);
+    g_assert_cmpuint(dev->line_stream, ==, 1);
+    g_assert_cmpuint(dev->line_format.channels, ==, 0);
+    g_assert_cmpint(dev->line_gain_mb, ==, 0);
+
+    object_destroy(OBJECT(dev));
+    object_destroy(OBJECT(bus_owner));
+}
+
 static void test_i2c_adapter(void)
 {
     DeviceState *bus_owner = test_bus_owner_create();
@@ -800,6 +834,36 @@ static void register_test_types(void)
     type_register_static(&empty_i2c_target_info);
 }
 
+static void test_bind_hotplugged(void)
+{
+    static const AudioLineFormat FORMAT = { 48000, 2 };
+    DeviceState *bus_owner;
+    AudioLineBus *line;
+    ProtocolTestDevice *dev;
+
+    phase_advance(PHASE_MACHINE_CREATED);
+    phase_advance(PHASE_ACCEL_CREATED);
+    phase_advance(PHASE_LATE_BACKENDS_CREATED);
+    phase_advance(PHASE_MACHINE_INITIALIZED);
+    phase_advance(PHASE_MACHINE_READY);
+
+    bus_owner = test_bus_owner_create();
+    line = audio_line_bus_init(bus_owner, "line");
+    dev = PROTOCOL_TEST_DEVICE(object_new(TYPE_PROTOCOL_TEST_DEVICE));
+    qdev_realize(DEVICE(dev), NULL, &error_fatal);
+    audio_line_start(line, 0, &FORMAT);
+
+    qdev_bus_port_bind(DEVICE(dev), "LINE", BUS(line), &error_fatal);
+    g_assert_true(dev->line_port.parent.endpoint->hotplugged);
+    g_assert_cmpuint(dev->line_format.sample_rate_hz, ==, 48000);
+
+    qdev_bus_port_bind(DEVICE(dev), "LINE", NULL, &error_fatal);
+    g_assert_cmpuint(dev->line_format.channels, ==, 0);
+
+    object_destroy(OBJECT(dev));
+    object_destroy(OBJECT(bus_owner));
+}
+
 static void test_machine_init(void)
 {
     Object *machine = object_property_add_new_container(
@@ -829,10 +893,14 @@ int main(int argc, char **argv)
     g_test_add_func("/qdev/bus-port/i2s-adapter", test_i2s_adapter);
     g_test_add_func("/qdev/bus-port/audio-line-adapter",
                     test_audio_line_adapter);
+    g_test_add_func("/qdev/bus-port/audio-line-late-endpoint",
+                    test_audio_line_late_endpoint);
     g_test_add_func("/qdev/bus-port/i2c-adapter", test_i2c_adapter);
     g_test_add_func("/qdev/bus-port/three-wire-serial-adapter",
                     test_three_wire_serial_adapter);
     g_test_add_func("/qdev/bus-port/i2c-defaults-and-address",
                     test_i2c_adapter_defaults_and_address);
+    /* Machine phases only advance; this test must stay last. */
+    g_test_add_func("/qdev/bus-port/bind-hotplugged", test_bind_hotplugged);
     return g_test_run();
 }
