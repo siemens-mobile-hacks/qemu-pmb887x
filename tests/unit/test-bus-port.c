@@ -484,6 +484,99 @@ static void test_bus_owner_destroyed_first(void)
     object_destroy(OBJECT(dev));
 }
 
+static void test_bind_realized(void)
+{
+    DeviceState *bus_owner = test_bus_owner_create();
+    BusState *first_bus = qbus_new(TYPE_BUS_PORT_TEST_BUS, bus_owner, "first");
+    BusState *second_bus = qbus_new(TYPE_BUS_PORT_TEST_BUS, bus_owner, "second");
+    BusPortTestDevice *dev = BUS_PORT_TEST_DEVICE(object_new(TYPE_BUS_PORT_TEST_DEVICE));
+    DeviceState *endpoint;
+
+    object_property_set_link(OBJECT(dev), "port.TEST", OBJECT(first_bus),
+                             &error_fatal);
+    qdev_realize(DEVICE(dev), NULL, &error_fatal);
+    endpoint = dev->port.endpoint;
+
+    g_assert_true(qdev_bus_port_bind(DEVICE(dev), "TEST", first_bus,
+                                     &error_fatal));
+    g_assert_true(dev->port.endpoint == endpoint);
+
+    test_sequence = 0;
+    endpoint_unrealize_sequence = 0;
+    g_assert_true(qdev_bus_port_bind(DEVICE(dev), "TEST", second_bus,
+                                     &error_fatal));
+    g_assert_cmpuint(endpoint_unrealize_sequence, ==, 1);
+    g_assert_true(dev->port.bus == second_bus);
+    g_assert_cmpint(first_bus->num_children, ==, 0);
+    g_assert_cmpint(second_bus->num_children, ==, 1);
+    g_assert_true(dev->port.endpoint->parent_bus == second_bus);
+
+    g_assert_true(qdev_bus_port_bind(DEVICE(dev), "TEST", NULL, &error_fatal));
+    g_assert_null(dev->port.bus);
+    g_assert_null(dev->port.endpoint);
+    g_assert_cmpint(second_bus->num_children, ==, 0);
+
+    object_destroy(OBJECT(dev));
+    object_destroy(OBJECT(bus_owner));
+}
+
+static void test_bind_before_realize(void)
+{
+    DeviceState *bus_owner = test_bus_owner_create();
+    BusState *bus = qbus_new(TYPE_BUS_PORT_TEST_BUS, bus_owner, "bus");
+    BusPortTestDevice *dev = BUS_PORT_TEST_DEVICE(object_new(TYPE_BUS_PORT_TEST_DEVICE));
+
+    g_assert_true(qdev_bus_port_bind(DEVICE(dev), "TEST", bus, &error_fatal));
+    g_assert_true(dev->port.bus == bus);
+    g_assert_null(dev->port.endpoint);
+
+    qdev_realize(DEVICE(dev), NULL, &error_fatal);
+    g_assert_cmpint(bus->num_children, ==, 1);
+
+    object_destroy(OBJECT(dev));
+    object_destroy(OBJECT(bus_owner));
+}
+
+static void test_bind_errors(void)
+{
+    DeviceState *bus_owner = test_bus_owner_create();
+    BusState *bus = qbus_new(TYPE_BUS_PORT_TEST_BUS, bus_owner, "bus");
+    BusState *busy_bus = qbus_new(TYPE_BUS_PORT_TEST_BUS, bus_owner, "busy");
+    AudioLineBus *line = audio_line_bus_init(bus_owner, "line");
+    BusPortTestDevice *occupant = BUS_PORT_TEST_DEVICE(object_new(TYPE_BUS_PORT_TEST_DEVICE));
+    BusPortTestDevice *dev = BUS_PORT_TEST_DEVICE(object_new(TYPE_BUS_PORT_TEST_DEVICE));
+    Error *err = NULL;
+
+    object_property_set_link(OBJECT(occupant), "port.TEST", OBJECT(busy_bus),
+                             &error_fatal);
+    qdev_realize(DEVICE(occupant), NULL, &error_fatal);
+    object_property_set_link(OBJECT(dev), "port.TEST", OBJECT(bus),
+                             &error_fatal);
+    qdev_realize(DEVICE(dev), NULL, &error_fatal);
+
+    g_assert_false(qdev_bus_port_bind(DEVICE(dev), "MISSING", bus, &err));
+    error_free(g_steal_pointer(&err));
+
+    g_assert_false(qdev_bus_port_bind(DEVICE(dev), "TEST", BUS(line), &err));
+    error_free(g_steal_pointer(&err));
+    g_assert_true(dev->port.bus == bus);
+    g_assert_cmpint(bus->num_children, ==, 1);
+
+    g_assert_false(qdev_bus_port_bind(DEVICE(dev), "TEST", busy_bus, &err));
+    error_free(g_steal_pointer(&err));
+    g_assert_null(dev->port.bus);
+    g_assert_null(dev->port.endpoint);
+    g_assert_cmpint(bus->num_children, ==, 0);
+    g_assert_cmpint(busy_bus->num_children, ==, 1);
+
+    g_assert_true(qdev_bus_port_bind(DEVICE(dev), "TEST", bus, &error_fatal));
+    g_assert_cmpint(bus->num_children, ==, 1);
+
+    object_destroy(OBJECT(dev));
+    object_destroy(OBJECT(occupant));
+    object_destroy(OBJECT(bus_owner));
+}
+
 static void test_i2s_adapter(void)
 {
     static const int16_t OUTPUT[] = { 0x1234, -0x1234 };
@@ -724,6 +817,10 @@ int main(int argc, char **argv)
                     test_endpoint_realize_failure);
     g_test_add_func("/qdev/bus-port/bus-owner-destroyed-first",
                     test_bus_owner_destroyed_first);
+    g_test_add_func("/qdev/bus-port/bind-realized", test_bind_realized);
+    g_test_add_func("/qdev/bus-port/bind-before-realize",
+                    test_bind_before_realize);
+    g_test_add_func("/qdev/bus-port/bind-errors", test_bind_errors);
     g_test_add_func("/qdev/bus-port/i2s-adapter", test_i2s_adapter);
     g_test_add_func("/qdev/bus-port/audio-line-adapter",
                     test_audio_line_adapter);
