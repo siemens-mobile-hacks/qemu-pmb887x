@@ -169,11 +169,67 @@ static void i2s_bus_class_init(ObjectClass *klass, const void *data)
     bus_class->check_address = i2s_bus_check_address;
 }
 
+static void i2s_sink_endpoint_configure(DeviceState *dev,
+                                        const I2SFormat *format)
+{
+    I2SSink *sink = I2S_SINK_ENDPOINT(dev)->sink;
+    I2SSinkClass *klass = I2S_SINK_GET_CLASS(sink);
+
+    if (klass->configure != NULL) {
+        klass->configure(sink, format);
+    }
+}
+
+static void i2s_sink_endpoint_realize(DeviceState *dev, Error **_errp)
+{
+    I2STxBus *bus = I2S_TX_BUS(qdev_get_parent_bus(dev));
+
+    if (bus->configured) {
+        i2s_sink_endpoint_configure(dev, &bus->format);
+    }
+}
+
+static void i2s_sink_endpoint_unrealize(DeviceState *dev)
+{
+    if (I2S_TX_BUS(qdev_get_parent_bus(dev))->configured) {
+        i2s_sink_endpoint_configure(dev, &(I2SFormat) { });
+    }
+}
+
+static void i2s_source_endpoint_configure(DeviceState *dev,
+                                          const I2SFormat *format)
+{
+    I2SSource *source = I2S_SOURCE_ENDPOINT(dev)->source;
+    I2SSourceClass *klass = I2S_SOURCE_GET_CLASS(source);
+
+    if (klass->configure != NULL) {
+        klass->configure(source, format);
+    }
+}
+
+static void i2s_source_endpoint_realize(DeviceState *dev, Error **_errp)
+{
+    I2SRxBus *bus = I2S_RX_BUS(qdev_get_parent_bus(dev));
+
+    if (bus->configured) {
+        i2s_source_endpoint_configure(dev, &bus->format);
+    }
+}
+
+static void i2s_source_endpoint_unrealize(DeviceState *dev)
+{
+    if (I2S_RX_BUS(qdev_get_parent_bus(dev))->configured) {
+        i2s_source_endpoint_configure(dev, &(I2SFormat) { });
+    }
+}
+
 static void i2s_sink_endpoint_class_init(ObjectClass *klass, const void *data)
 {
     DeviceClass *device_class = DEVICE_CLASS(klass);
 
     device_class->bus_type = TYPE_I2S_TX_BUS;
+    device_class->realize = i2s_sink_endpoint_realize;
+    device_class->unrealize = i2s_sink_endpoint_unrealize;
 }
 
 static void i2s_source_endpoint_class_init(ObjectClass *klass,
@@ -182,6 +238,8 @@ static void i2s_source_endpoint_class_init(ObjectClass *klass,
     DeviceClass *device_class = DEVICE_CLASS(klass);
 
     device_class->bus_type = TYPE_I2S_RX_BUS;
+    device_class->realize = i2s_source_endpoint_realize;
+    device_class->unrealize = i2s_source_endpoint_unrealize;
 }
 
 static const TypeInfo i2s_tx_bus_info = {

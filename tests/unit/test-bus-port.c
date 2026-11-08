@@ -682,6 +682,44 @@ static void test_audio_line_adapter(void)
     object_destroy(OBJECT(bus_owner));
 }
 
+static void test_i2s_late_endpoint(void)
+{
+    static const I2SFormat TX_FORMAT = { 48000, 2 };
+    static const I2SFormat RX_FORMAT = { 44100, 1 };
+    DeviceState *bus_owner = test_bus_owner_create();
+    I2STxBus *tx_bus = i2s_tx_bus_init(bus_owner, "tx");
+    I2SRxBus *rx_bus = i2s_rx_bus_init(bus_owner, "rx");
+    ProtocolTestDevice *sink = PROTOCOL_TEST_DEVICE(object_new(TYPE_PROTOCOL_TEST_DEVICE));
+    ProtocolTestDevice *source = PROTOCOL_TEST_DEVICE(object_new(TYPE_PROTOCOL_TEST_DEVICE));
+
+    qdev_realize(DEVICE(sink), NULL, &error_fatal);
+    qdev_realize(DEVICE(source), NULL, &error_fatal);
+    i2s_tx_configure(tx_bus, &TX_FORMAT);
+    i2s_rx_configure(rx_bus, &RX_FORMAT);
+
+    qdev_bus_port_bind(DEVICE(sink), "I2S_RX", BUS(tx_bus), &error_fatal);
+    g_assert_cmpuint(sink->i2s_configure_count, ==, 1);
+    g_assert_cmpuint(sink->i2s_sample_rate_hz, ==, 48000);
+    g_assert_cmpuint(sink->i2s_channels, ==, 2);
+
+    qdev_bus_port_bind(DEVICE(source), "I2S_TX", BUS(rx_bus), &error_fatal);
+    g_assert_cmpuint(source->i2s_configure_count, ==, 1);
+    g_assert_cmpuint(source->i2s_sample_rate_hz, ==, 44100);
+    g_assert_cmpuint(source->i2s_channels, ==, 1);
+
+    qdev_bus_port_bind(DEVICE(sink), "I2S_RX", NULL, &error_fatal);
+    g_assert_cmpuint(sink->i2s_configure_count, ==, 2);
+    g_assert_cmpuint(sink->i2s_sample_rate_hz, ==, 0);
+
+    qdev_bus_port_bind(DEVICE(source), "I2S_TX", NULL, &error_fatal);
+    g_assert_cmpuint(source->i2s_configure_count, ==, 2);
+    g_assert_cmpuint(source->i2s_sample_rate_hz, ==, 0);
+
+    object_destroy(OBJECT(source));
+    object_destroy(OBJECT(sink));
+    object_destroy(OBJECT(bus_owner));
+}
+
 static void test_audio_line_late_endpoint(void)
 {
     static const int16_t FRAME[] = { 0x1234, -0x1234 };
@@ -893,6 +931,8 @@ int main(int argc, char **argv)
     g_test_add_func("/qdev/bus-port/i2s-adapter", test_i2s_adapter);
     g_test_add_func("/qdev/bus-port/audio-line-adapter",
                     test_audio_line_adapter);
+    g_test_add_func("/qdev/bus-port/i2s-late-endpoint",
+                    test_i2s_late_endpoint);
     g_test_add_func("/qdev/bus-port/audio-line-late-endpoint",
                     test_audio_line_late_endpoint);
     g_test_add_func("/qdev/bus-port/i2c-adapter", test_i2c_adapter);
