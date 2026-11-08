@@ -510,11 +510,16 @@ static void test_bind_realized(void)
     g_assert_cmpint(first_bus->num_children, ==, 0);
     g_assert_cmpint(second_bus->num_children, ==, 1);
     g_assert_true(dev->port.endpoint->parent_bus == second_bus);
+    g_assert_true(object_resolve_path_component(OBJECT(dev),
+                                                "port.TEST.endpoint") ==
+                  OBJECT(dev->port.endpoint));
 
     g_assert_true(qdev_bus_port_bind(DEVICE(dev), "TEST", NULL, &error_fatal));
     g_assert_null(dev->port.bus);
     g_assert_null(dev->port.endpoint);
     g_assert_cmpint(second_bus->num_children, ==, 0);
+    g_assert_null(object_resolve_path_component(OBJECT(dev),
+                                                "port.TEST.endpoint"));
 
     object_destroy(OBJECT(dev));
     object_destroy(OBJECT(bus_owner));

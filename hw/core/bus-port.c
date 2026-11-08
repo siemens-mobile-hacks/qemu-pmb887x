@@ -13,6 +13,7 @@ void qdev_init_bus_port(DeviceState *dev, QDevBusPort *port,
     g_autofree char *property_name = g_strdup_printf("port.%s", name);
 
     assert(create_endpoint);
+    port->dev = dev;
     port->name = g_strdup(name);
     port->bus_type = bus_type;
     port->create_endpoint = create_endpoint;
@@ -26,6 +27,8 @@ void qdev_init_bus_port(DeviceState *dev, QDevBusPort *port,
 
 static bool bus_port_connect(QDevBusPort *port, Error **errp)
 {
+    g_autofree char *child_name = g_strdup_printf("port.%s.endpoint",
+                                                  port->name);
     DeviceState *endpoint;
 
     ERRP_GUARD();
@@ -38,10 +41,9 @@ static bool bus_port_connect(QDevBusPort *port, Error **errp)
         return false;
     }
     assert(endpoint);
+    object_property_add_child(OBJECT(port->dev), child_name, OBJECT(endpoint));
     if (!qdev_realize(endpoint, port->bus, errp)) {
-        if (endpoint->parent_bus) {
-            object_unparent(OBJECT(endpoint));
-        }
+        object_unparent(OBJECT(endpoint));
         object_unref(OBJECT(endpoint));
         return false;
     }

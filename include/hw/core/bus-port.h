@@ -9,7 +9,8 @@
  * A named bus port connects one logical device to a bus through a
  * protocol-specific proxy device created by its endpoint callback. The
  * callback returns a new, unrealized device. The port owns the endpoint
- * while connected, and its link property keeps the selected bus alive.
+ * while connected as its child "port.<name>.endpoint", and its link
+ * property keeps the selected bus alive.
  * The link property can only be set before realize; qdev_bus_port_bind()
  * also rebinds the port of a realized device.
  */
@@ -17,6 +18,7 @@ typedef DeviceState *QDevBusPortCreateEndpoint(QDevBusPort *port,
                                                Error **errp);
 
 struct QDevBusPort {
+    DeviceState *dev;
     char *name;
     const char *bus_type;
     BusState *bus;
