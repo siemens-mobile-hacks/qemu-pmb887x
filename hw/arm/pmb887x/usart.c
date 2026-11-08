@@ -55,9 +55,11 @@ struct pmb887x_usart_t {
 	QEMUTimer *timer;
 	QEMUTimer *tmo_timer;
 	QEMUTimer *rx_timer;
+	QEMUTimer *break_timer;
 	bool transfer_pending;
 	bool autobaud_pending;
 	bool cts_input_active;
+	bool rxd_level;
 
 	CharFrontend chr;
 	guint watch_tag;
@@ -922,7 +924,35 @@ static const MemoryRegionOps io_ops = {
 	}
 };
 
-static void usart_handle_rx_input(void *_opaque, int _id, int _level) {
+static void usart_break_timer_expire(void *opaque) {
+	pmb887x_usart_t *p = opaque;
+	bool is_async = (p->con & USART_CON_M) != USART_CON_M_SYNC_8BIT;
+	if (!pmb887x_clc_is_enabled(&p->clc) || !is_async || (p->con & USART_CON_REN) == 0)
+		return;
+
+	DEBUG_LOG(&p->dbg, "break received\n");
+	usart_receive_word(p, 0);
+	if (p->con & USART_CON_FEN) {
+		p->con |= USART_CON_FE;
+		pmb887x_srb_set_isr(&p->srb, USART_ISR_ERR);
+	}
+	usart_receive_complete(p);
+}
+
+static void usart_handle_rx_input(void *opaque, int _id, int level) {
+	pmb887x_usart_t *p = opaque;
+	bool rxd_level = level != 0;
+	if (rxd_level == p->rxd_level)
+		return;
+
+	p->rxd_level = rxd_level;
+	if (rxd_level) {
+		timer_del(p->break_timer);
+		return;
+	}
+
+	int64_t frame_time_ns = usart_baud_ticks_to_ns(p, usart_frame_bits(p));
+	timer_mod_ns(p->break_timer, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + MAX(1, frame_time_ns));
 }
 
 static void usart_handle_cts_input(void *opaque, int _id, int level) {
@@ -992,6 +1022,7 @@ static void usart_realize(DeviceState *dev, Error **errp) {
 	p->timer = timer_new_ns(QEMU_CLOCK_VIRTUAL, usart_timer_reset, p);
 	p->tmo_timer = timer_new_ns(QEMU_CLOCK_VIRTUAL, usart_tmo_timer_reset, p);
 	p->rx_timer = timer_new_ns(QEMU_CLOCK_VIRTUAL, usart_accept_input, p);
+	p->break_timer = timer_new_ns(QEMU_CLOCK_VIRTUAL, usart_break_timer_expire, p);
 	p->tx_fifo = &p->tx_fifo_single;
 	p->rx_fifo = &p->rx_fifo_single;
 	usart_tx_fifo_config(p, 0);
@@ -1007,6 +1038,7 @@ static void usart_reset(DeviceState *dev) {
 	timer_del(p->timer);
 	timer_del(p->tmo_timer);
 	timer_del(p->rx_timer);
+	timer_del(p->break_timer);
 	if (p->watch_tag) {
 		g_source_remove(p->watch_tag);
 		p->watch_tag = 0;
