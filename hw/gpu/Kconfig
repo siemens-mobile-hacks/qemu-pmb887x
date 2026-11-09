@@ -1,0 +1,11 @@
+config S1D13705
+    bool
+    depends on SSI
+
+config S1D13716
+    bool
+    depends on SSI
+
+config S1D13732
+    bool
+    depends on SSI

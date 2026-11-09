@@ -81,9 +81,6 @@ arm_common_ss.add(when: 'CONFIG_PMB887X', if_true: files(
 
 	'utils/toml.c',
 
-	'ssc/s1d13716.c',
-	'ssc/s1d13705.c',
-	'ssc/s1d13732.c',
 	'ssc/b00b10b.c',
 	'ssc/lcd_common.c',
 	'ssc/lcd_common_format.c',

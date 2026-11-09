@@ -269,10 +269,14 @@ config PMB887X
     select ACCESSORY_CONNECTOR
     select ROTARY_ENCODER
     select I2C
+    select SSI
     select LM4946
     select TEA5761UK
     select PMB6812
     select D1094XX
+    select S1D13705
+    select S1D13716
+    select S1D13732
 
 config VEXPRESS
     bool

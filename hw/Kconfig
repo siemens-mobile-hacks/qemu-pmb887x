@@ -10,6 +10,7 @@ source display/Kconfig
 source dma/Kconfig
 source fsi/Kconfig
 source gpio/Kconfig
+source gpu/Kconfig
 source hyperv/Kconfig
 source i2c/Kconfig
 source i3c/Kconfig
