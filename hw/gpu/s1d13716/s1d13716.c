@@ -1,149 +1,148 @@
-/*
- * Epson S1D13716
- * */
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 #include "qemu/osdep.h"
-#include "hw/core/qdev-properties.h"
-#include "hw/ssi/ssi.h"
-#include "qemu/module.h"
-#include "ui/console.h"
-#include "qom/object.h"
 #include "hw/core/irq.h"
-#include "hw/core/hw-error.h"
+#include "hw/ssi/ssi.h"
 #include "system/debug-channel.h"
 
-typedef struct pmb887x_gimmick_t pmb887x_gimmick_t;
+#define TYPE_S1D13716 "s1d13716"
+OBJECT_DECLARE_SIMPLE_TYPE(S1D13716State, S1D13716)
 
-// 0x40 <REG_L> <REG_H> - select reg
-// 0xC0 - read reg value
-// 0x80 <VALUE> - write reg value
+#define S1D13716_REG_COUNT (UINT16_MAX + 1)
 
-enum GimmickCommands {
-	CMD_SELECT_REG		= 0x40,
-	CMD_WRITE_REG		= 0x80,
-	CMD_READ_REG		= 0xC0,
+/*
+ * 0x40 <REG_L> <REG_H>  select reg
+ * 0xC0                  read reg value
+ * 0x80 <VALUE>          write reg value
+ */
+enum {
+    S1D13716_CMD_SELECT_REG = 0x40,
+    S1D13716_CMD_WRITE_REG = 0x80,
+    S1D13716_CMD_READ_REG = 0xC0,
 };
 
-struct pmb887x_gimmick_t {
-	SSIPeripheral dev;
-	DebugChannel dbg;
-	SSIBus *bus;
+struct S1D13716State {
+    SSIPeripheral parent_obj;
+    DebugChannel dbg;
+    SSIBus *bus;
 
-	uint8_t regs[0x10000];
+    uint8_t regs[S1D13716_REG_COUNT];
 
-	uint32_t wcycle;
-	uint8_t cmd;
-	uint16_t reg;
+    uint32_t wcycle;
+    uint8_t cmd;
+    uint16_t reg;
 
-	bool cs_app;
-	bool cs_lcd;
-	bool is_command;
+    bool cs_app;
+    bool cs_lcd;
+    bool is_command;
 
-	qemu_irq int_out;
-	qemu_irq nscs_out;
-	qemu_irq srs_out;
+    qemu_irq int_out;
+    qemu_irq nscs_out;
+    qemu_irq srs_out;
 };
 
-#define TYPE_PMB887X_GIMMICK "s1d13716"
-#define PMB887X_GIMMICK(obj)	OBJECT_CHECK(pmb887x_gimmick_t, (obj), TYPE_PMB887X_GIMMICK)
+static uint32_t s1d13716_transfer(SSIPeripheral *dev, uint32_t in) {
+    S1D13716State *s = S1D13716(dev);
+    uint32_t response = 0;
 
-static uint32_t gimmick_transfer(SSIPeripheral *dev, uint32_t in) {
-	pmb887x_gimmick_t *p = PMB887X_GIMMICK(dev);
+    if (!s->cs_app && s->cs_lcd)
+        return ssi_transfer(s->bus, in);
 
-	if (!p->cs_app && p->cs_lcd)
-		return ssi_transfer(p->bus, in);
+    if (s->is_command) {
+        s->cmd = in;
+        s->wcycle = 0;
+        return 0;
+    }
 
-	uint32_t response = 0;
-	if (p->is_command) {
-		p->cmd = in;
-		p->wcycle = 0;
-	} else {
-		switch (p->cmd) {
-			case CMD_SELECT_REG:
-				if (p->wcycle == 0) {
-					p->reg |= (in & 0xFF);
-					p->wcycle++;
-				} else if (p->wcycle == 1) {
-					p->reg |= (in & 0xFF) << 8;
-					p->wcycle = 0;
-				}
-				break;
+    switch (s->cmd) {
+        case S1D13716_CMD_SELECT_REG:
+            if (s->wcycle == 0) {
+                s->reg |= in & 0xFF;
+                s->wcycle++;
+            } else if (s->wcycle == 1) {
+                s->reg |= (in & 0xFF) << BITS_PER_BYTE;
+                s->wcycle = 0;
+            }
+            break;
 
-			case CMD_WRITE_REG:
-				p->regs[p->reg] = in;
-				DEBUG_LOG(&p->dbg, "write reg %04X = %02X\n", p->reg, in);
-				break;
+        case S1D13716_CMD_WRITE_REG:
+            s->regs[s->reg] = in;
+            DEBUG_LOG(&s->dbg, "write reg %04X = %02X\n", s->reg, in);
+            break;
 
-			case CMD_READ_REG:
-				response = p->regs[p->reg];
-				DEBUG_LOG(&p->dbg, "read reg %04X = %02X\n", p->reg, response);
-				break;
-		}
-	}
+        case S1D13716_CMD_READ_REG:
+            response = s->regs[s->reg];
+            DEBUG_LOG(&s->dbg, "read reg %04X = %02X\n", s->reg, response);
+            break;
+    }
 
-	return response;
+    return response;
 }
 
-static void gimmick_handle_rs(void *opaque, int n, int level) {
-	pmb887x_gimmick_t *p = PMB887X_GIMMICK(opaque);
-	p->is_command = level == 0;
-	qemu_set_irq(p->srs_out, level);
+static void s1d13716_rs_handler(void *opaque, int _n, int level) {
+    S1D13716State *s = S1D13716(opaque);
+
+    s->is_command = level == 0;
+    qemu_set_irq(s->srs_out, level);
 }
 
-static void gimmick_handle_ncs_app(void *opaque, int n, int level) {
-	pmb887x_gimmick_t *p = PMB887X_GIMMICK(opaque);
-	p->cs_app = level == 0;
+static void s1d13716_ncs_app_handler(void *opaque, int _n, int level) {
+    S1D13716(opaque)->cs_app = level == 0;
 }
 
-static void gimmick_handle_ncs_lcd(void *opaque, int n, int level) {
-	pmb887x_gimmick_t *p = PMB887X_GIMMICK(opaque);
-	p->cs_lcd = level == 0;
-	qemu_set_irq(p->nscs_out, level);
+static void s1d13716_ncs_lcd_handler(void *opaque, int _n, int level) {
+    S1D13716State *s = S1D13716(opaque);
+
+    s->cs_lcd = level == 0;
+    qemu_set_irq(s->nscs_out, level);
 }
 
-static void gimmick_handle_nreset(void *opaque, int n, int level) {
-	pmb887x_gimmick_t *p = PMB887X_GIMMICK(opaque);
-	if (level == 0) {
-		DEBUG_LOG(&p->dbg, "reset!\n");
-		p->wcycle = 0;
-		p->cmd = 0;
-	}
+static void s1d13716_nreset_handler(void *opaque, int _n, int level) {
+    S1D13716State *s = S1D13716(opaque);
+
+    if (level != 0)
+        return;
+
+    DEBUG_LOG(&s->dbg, "reset!\n");
+    s->wcycle = 0;
+    s->cmd = 0;
 }
 
-static void gimmick_realize(SSIPeripheral *d, Error **errp) {
-	pmb887x_gimmick_t *p = PMB887X_GIMMICK(d);
-	debug_channel_init_device(&p->dbg, DEVICE(d));
-	p->bus = ssi_create_bus(DEVICE(d), TYPE_PMB887X_GIMMICK);
-	qdev_init_gpio_in_named(DEVICE(d), gimmick_handle_rs, "RS", 1);
-	qdev_init_gpio_in_named(DEVICE(d), gimmick_handle_ncs_app, "NCS_APP", 1);
-	qdev_init_gpio_in_named(DEVICE(d), gimmick_handle_ncs_lcd, "NCS_LCD", 1);
-	qdev_init_gpio_in_named(DEVICE(d), gimmick_handle_nreset, "NRESET", 1);
-	qdev_init_gpio_out_named(DEVICE(d), &p->int_out, "INT", 1);
-	qdev_init_gpio_out_named(DEVICE(d), &p->nscs_out, "NSCS", 1);
-	qdev_init_gpio_out_named(DEVICE(d), &p->srs_out, "SRS", 1);
+static void s1d13716_realize(SSIPeripheral *ssi, Error **_errp) {
+    DeviceState *dev = DEVICE(ssi);
+    S1D13716State *s = S1D13716(ssi);
+
+    debug_channel_init_device(&s->dbg, dev);
+    s->bus = ssi_create_bus(dev, "LCD");
+    qdev_init_gpio_in_named(dev, s1d13716_rs_handler, "RS", 1);
+    qdev_init_gpio_in_named(dev, s1d13716_ncs_app_handler, "NCS_APP", 1);
+    qdev_init_gpio_in_named(dev, s1d13716_ncs_lcd_handler, "NCS_LCD", 1);
+    qdev_init_gpio_in_named(dev, s1d13716_nreset_handler, "NRESET", 1);
+    qdev_init_gpio_out_named(dev, &s->int_out, "INT", 1);
+    qdev_init_gpio_out_named(dev, &s->nscs_out, "NSCS", 1);
+    qdev_init_gpio_out_named(dev, &s->srs_out, "SRS", 1);
 }
 
-static const Property gimmick_properties[] = {
-	DEFINE_PROP_LINK("bus", pmb887x_gimmick_t, bus, TYPE_PMB887X_GIMMICK, SSIBus *)
+static void s1d13716_unrealize(DeviceState *dev) {
+    debug_channel_cleanup(&S1D13716(dev)->dbg);
+}
+
+static void s1d13716_class_init(ObjectClass *klass, const void *_data) {
+    SSIPeripheralClass *k = SSI_PERIPHERAL_CLASS(klass);
+
+    DEVICE_CLASS(klass)->unrealize = s1d13716_unrealize;
+    k->realize = s1d13716_realize;
+    k->transfer = s1d13716_transfer;
+    k->cs_polarity = SSI_CS_LOW;
+}
+
+static const TypeInfo s1d13716_info = {
+    .name = TYPE_S1D13716,
+    .parent = TYPE_SSI_PERIPHERAL,
+    .instance_size = sizeof(S1D13716State),
+    .class_init = s1d13716_class_init,
 };
 
-static void gimmick_class_init(ObjectClass *klass, const void *data) {
-	SSIPeripheralClass *k = SSI_PERIPHERAL_CLASS(klass);
-	DeviceClass *dc = DEVICE_CLASS(klass);
-	device_class_set_props(dc, gimmick_properties);
-	k->realize = gimmick_realize;
-	k->transfer = gimmick_transfer;
-	k->cs_polarity = SSI_CS_LOW;
+static void s1d13716_register_types(void) {
+    type_register_static(&s1d13716_info);
 }
-
-static const TypeInfo gimmick_info = {
-	.name          = TYPE_PMB887X_GIMMICK,
-	.parent        = TYPE_SSI_PERIPHERAL,
-	.instance_size = sizeof(pmb887x_gimmick_t),
-	.class_init    = gimmick_class_init,
-};
-
-static void gimmick_register_types(void) {
-	type_register_static(&gimmick_info);
-}
-
-type_init(gimmick_register_types)
+type_init(s1d13716_register_types)
