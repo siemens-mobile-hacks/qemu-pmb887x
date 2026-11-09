@@ -1,0 +1,15 @@
+config GSM_IQ_BUS
+    bool
+
+config GSM_BTS_SIGNAL
+    bool
+
+config HD155153NP
+    bool
+    select GSM_IQ_BUS
+    select GSM_BTS_SIGNAL
+
+config PMB6272
+    bool
+    select GSM_IQ_BUS
+    select GSM_BTS_SIGNAL

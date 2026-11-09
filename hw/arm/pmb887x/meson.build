@@ -53,10 +53,6 @@ arm_common_ss.add(when: 'CONFIG_PMB887X', if_true: files(
 	'tcm.c',
 	'unknown.c',
 	'io_bridge.c',
-	'rf.c',
-	'rf/gsm.c',
-	'rf/hd155153np.c',
-	'rf/pmb6272.c',
 
 	'gen/brom.c',
 	'gen/cpu_meta.c',

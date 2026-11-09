@@ -3,7 +3,7 @@
 #include "hw/arm/pmb887x/gen/dsp.h"
 #include "hw/audio/audio-line.h"
 #include "hw/arm/pmb887x/dsp/peripheral.h"
-#include "hw/arm/pmb887x/rf.h"
+#include "hw/gsm/iq-bus.h"
 #include "qemu/debug-channel.h"
 
 #define TEST_INTERRUPT_BASE	0x1000

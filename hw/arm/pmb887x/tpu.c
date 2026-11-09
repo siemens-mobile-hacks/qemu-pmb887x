@@ -14,7 +14,7 @@
 #include "hw/core/qdev-clock.h"
 #include "hw/ssi/three-wire-serial.h"
 
-#include "hw/arm/pmb887x/rf.h"
+#include "hw/gsm/iq-bus.h"
 #include "hw/arm/pmb887x/dsp.h"
 #include "hw/arm/pmb887x/dsp/signals.h"
 #include "hw/arm/pmb887x/gen/cpu_regs.h"

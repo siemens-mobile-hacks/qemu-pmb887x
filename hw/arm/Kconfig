@@ -288,6 +288,9 @@ config PMB887X
     select LR38826
     select R61505
     select R63400
+    select GSM_IQ_BUS
+    select HD155153NP
+    select PMB6272
 
 config VEXPRESS
     bool

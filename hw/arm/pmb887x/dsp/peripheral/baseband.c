@@ -5,7 +5,7 @@
 
 #include "hw/arm/pmb887x/dsp/peripheral/internal.h"
 #include "hw/arm/pmb887x/gen/dsp.h"
-#include "hw/arm/pmb887x/rf.h"
+#include "hw/gsm/iq-bus.h"
 
 #define BASEBAND_CTRL_UNDOCUMENTED	0x0100U
 #define BASEBAND_CTRL_MASK		(TEAK_BB_CTRL_BB_STOP | TEAK_BB_CTRL_CORDICON | TEAK_BB_CTRL_BB_ON | \

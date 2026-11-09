@@ -6,7 +6,7 @@
 #include "qemu/module.h"
 
 #include "hw/arm/pmb887x/gen/peripheral/HD155153NP.h"
-#include "hw/arm/pmb887x/rf.h"
+#include "hw/gsm/iq-bus.h"
 #include "system/debug-channel.h"
 #include "hw/arm/pmb887x/gen/cpu_meta.h"
 #include "hw/core/sysbus.h"

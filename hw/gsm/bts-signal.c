@@ -1,7 +1,7 @@
 #include "qemu/osdep.h"
 #include <math.h>
 
-#include "hw/arm/pmb887x/rf.h"
+#include "hw/gsm/iq-bus.h"
 
 #define GSM_BTS_FREQUENCY 936000000U
 #define GSM_HYPERFRAME_FRAMES 2715648U

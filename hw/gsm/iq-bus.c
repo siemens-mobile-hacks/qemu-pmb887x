@@ -1,5 +1,5 @@
 #include "qemu/osdep.h"
-#include "hw/arm/pmb887x/rf.h"
+#include "hw/gsm/iq-bus.h"
 #include "qapi/error.h"
 
 struct pmb887x_iq_bus_t {

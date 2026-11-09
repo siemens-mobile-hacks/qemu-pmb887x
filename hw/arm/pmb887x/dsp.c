@@ -25,7 +25,7 @@
 #include "hw/arm/pmb887x/dsp/peripheral/internal.h"
 #include "hw/arm/pmb887x/gen/cpu_meta.h"
 #include "hw/arm/pmb887x/mod.h"
-#include "hw/arm/pmb887x/rf.h"
+#include "hw/gsm/iq-bus.h"
 
 #define DSP_BOOT_DATA_OFFSET	2
 #define DSP_RUNTIME_PIPE_OFFSET	5
