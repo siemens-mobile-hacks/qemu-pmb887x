@@ -7,7 +7,7 @@
 #include "hw/core/qdev-properties.h"
 #include "hw/core/qdev-properties-system.h"
 #include "system/debug-channel.h"
-#include "hw/arm/pmb887x/flash-blk.h"
+#include "hw/block/cfi-flash.h"
 
 #define TYPE_PMB887X_FLASH_BLK	"pmb887x-flash-blk"
 #define PMB887X_FLASH_BLK(obj)	OBJECT_CHECK(struct pmb887x_flash_blk_t, (obj), TYPE_PMB887X_FLASH_BLK)

@@ -228,6 +228,7 @@ config STRONGARM
     bool
     select PXA2XX_TIMER
     select SSI
+    select CFI_FLASH
 
 config COLLIE
     bool

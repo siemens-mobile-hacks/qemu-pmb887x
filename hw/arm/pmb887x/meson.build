@@ -21,8 +21,6 @@ dsp_peripheral_sources = files(
 
 arm_common_ss.add(when: 'CONFIG_PMB887X', if_true: files(
 	'board.c',
-	'flash.c',
-	'flash-blk.c',
 	'afc.c',
 	'adc.c',
 	'ebu.c',
@@ -64,7 +62,6 @@ arm_common_ss.add(when: 'CONFIG_PMB887X', if_true: files(
 	'gen/cpu_meta.c',
 	'gen/cpu_modules.c',
 	'gen/dsp_rom.c',
-	'gen/flash-info.c',
 
 	'board/accessory.c',
 	'board/dsp.c',

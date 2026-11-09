@@ -1,6 +1,6 @@
 #include "hw/arm/pmb887x/board/devices.h"
 
-#include "hw/arm/pmb887x/flash-blk.h"
+#include "hw/block/cfi-flash.h"
 #include "hw/arm/pmb887x/board/accessory.h"
 #include "hw/arm/pmb887x/board/board.h"
 #include "hw/arm/pmb887x/board/gpio.h"

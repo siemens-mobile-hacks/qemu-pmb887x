@@ -5,7 +5,6 @@
 #include "qapi/error.h"
 #include "hw/core/sysbus.h"
 #include "system/memory.h"
-#include "cpu.h"
 #include "qemu/error-report.h"
 #include "qemu/timer.h"
 #include "qemu/main-loop.h"
@@ -16,8 +15,8 @@
 #include "hw/block/block.h"
 
 #include "system/debug-channel.h"
-#include "hw/arm/pmb887x/flash.h"
-#include "hw/arm/pmb887x/flash-blk.h"
+#include "parts.h"
+#include "hw/block/cfi-flash.h"
 
 #define TYPE_PMB887X_FLASH	"pmb887x-flash"
 #define PMB887X_FLASH(obj)	OBJECT_CHECK(pmb887x_flash_t, (obj), TYPE_PMB887X_FLASH)
