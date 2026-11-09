@@ -267,6 +267,7 @@ config PMB887X
     select AUDIO_ROUTER
     select SPLIT_IRQ
     select ACCESSORY_CONNECTOR
+    select ROTARY_ENCODER
 
 config VEXPRESS
     bool
