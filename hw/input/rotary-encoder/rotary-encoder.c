@@ -23,12 +23,14 @@ struct RotaryEncoder {
     qemu_irq b_out;
 
     QEMUTimer *timer;
+    int64_t quarter_ns;
     bool cw_held;
     bool ccw_held;
     int dir;
     bool repeating;
-    uint32_t toggles_left;
+    uint32_t quarters_left;
     bool a_level;
+    bool b_level;
 };
 
 static void rotary_encoder_set_a(RotaryEncoder *s, bool level) {
@@ -36,15 +38,21 @@ static void rotary_encoder_set_a(RotaryEncoder *s, bool level) {
     qemu_set_irq(s->a_out, level);
 }
 
+static void rotary_encoder_set_b(RotaryEncoder *s, bool level) {
+    s->b_level = level;
+    qemu_set_irq(s->b_out, level);
+}
+
 static void rotary_encoder_stop(RotaryEncoder *s) {
     timer_del(s->timer);
     s->dir = 0;
-    s->toggles_left = 0;
+    s->quarters_left = 0;
     rotary_encoder_set_a(s, false);
+    rotary_encoder_set_b(s, false);
 }
 
-static void rotary_encoder_arm(RotaryEncoder *s, uint32_t delay_us) {
-    timer_mod_ns(s->timer, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + (int64_t) delay_us * SCALE_US);
+static void rotary_encoder_arm(RotaryEncoder *s, int64_t delay_ns) {
+    timer_mod_ns(s->timer, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + delay_ns);
 }
 
 static int rotary_encoder_held_dir(RotaryEncoder *s) {
@@ -53,24 +61,27 @@ static int rotary_encoder_held_dir(RotaryEncoder *s) {
 
 static void rotary_encoder_start_detent(RotaryEncoder *s, int dir) {
     s->dir = dir;
-    s->toggles_left = s->steps * 2;
-
-    qemu_set_irq(s->b_out, dir > 0);
-    rotary_encoder_set_a(s, false);
+    s->quarters_left = s->steps * 4;
 
     DEBUG_LOG(&s->dbg, "detent %s, %u pulses\n", dir > 0 ? "CW" : "CCW", s->steps);
-    rotary_encoder_arm(s, s->edge_us);
+    rotary_encoder_arm(s, s->quarter_ns);
 }
 
 static void rotary_encoder_timer_cb(void *opaque) {
     RotaryEncoder *s = opaque;
 
-    if (s->toggles_left > 0) {
-        rotary_encoder_set_a(s, !s->a_level);
-        s->toggles_left--;
+    if (s->quarters_left > 0) {
+        bool b_leads = s->dir > 0;
+        bool toggle_b = (s->quarters_left % 2 == 0) == b_leads;
+        if (toggle_b) {
+            rotary_encoder_set_b(s, !s->b_level);
+        } else {
+            rotary_encoder_set_a(s, !s->a_level);
+        }
+        s->quarters_left--;
 
-        if (s->toggles_left > 0) {
-            rotary_encoder_arm(s, s->edge_us);
+        if (s->quarters_left > 0) {
+            rotary_encoder_arm(s, s->quarter_ns);
             return;
         }
 
@@ -80,7 +91,8 @@ static void rotary_encoder_timer_cb(void *opaque) {
             return;
         }
 
-        rotary_encoder_arm(s, s->repeating ? s->detent_us : s->repeat_delay_us);
+        uint32_t delay_us = s->repeating ? s->detent_us : s->repeat_delay_us;
+        rotary_encoder_arm(s, (int64_t) delay_us * SCALE_US);
         s->repeating = true;
         return;
     }
@@ -142,6 +154,7 @@ static void rotary_encoder_realize(DeviceState *dev, Error **errp) {
         return;
     }
 
+    s->quarter_ns = (int64_t) s->edge_us * SCALE_US / 2;
     debug_channel_init_device(&s->dbg, dev);
     s->timer = timer_new_ns(QEMU_CLOCK_VIRTUAL, rotary_encoder_timer_cb, s);
 }
@@ -159,9 +172,7 @@ static void rotary_encoder_reset(DeviceState *dev) {
     s->cw_held = false;
     s->ccw_held = false;
     s->repeating = false;
-    if (s->timer)
-        rotary_encoder_stop(s);
-    qemu_set_irq(s->b_out, 0);
+    rotary_encoder_stop(s);
 }
 
 static const Property rotary_encoder_properties[] = {
