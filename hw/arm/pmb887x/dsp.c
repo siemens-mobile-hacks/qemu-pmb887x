@@ -401,7 +401,11 @@ static void dsp_trace_command(dsp_state_t *p, size_t pipe) {
 
 	uint16_t offset = DSP_RUNTIME_PIPE_OFFSET + pipe * DSP_RUNTIME_PIPE_STRIDE;
 	uint16_t command = dsp_runtime_shared_read(p->runtime, offset);
-	DEBUG_LOG(&p->dbg, "runtime command: pipe=%zu command=%u (0x%04X)\n", pipe, command, command);
+	g_autoptr(GString) args = g_string_new("");
+	for (uint16_t i = 1; i < DSP_RUNTIME_PIPE_STRIDE; i++)
+		g_string_append_printf(args, " %04X", dsp_runtime_shared_read(p->runtime, offset + i));
+
+	DEBUG_LOG(&p->dbg, "runtime command: pipe=%zu command=%u (0x%04X) args:%s\n", pipe, command, command, args->str);
 }
 
 static void dsp_interrupt_input(void *opaque, int id, int level) {
