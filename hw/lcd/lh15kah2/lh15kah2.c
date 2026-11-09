@@ -1,7 +1,7 @@
 #include "qemu/osdep.h"
 #include "hw/arm/pmb887x/gen/cpu_meta.h"
 #include "hw/arm/pmb887x/gen/peripheral/LH15KAH2.h"
-#include "hw/arm/pmb887x/ssc/lcd_common.h"
+#include "hw/lcd/lcd.h"
 
 #define TYPE_PMB887X_LCD_PANEL	"lh15kah2"
 

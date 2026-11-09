@@ -1,0 +1,43 @@
+config LCD
+    bool
+    depends on SSI
+
+config JBT6K71
+    bool
+    select LCD
+
+config SSD1286
+    bool
+    select LCD
+
+config PCF8882
+    bool
+    select LCD
+
+config LH15KAH2
+    bool
+    select LCD
+
+config L2F50333T
+    bool
+    select LCD
+
+config L2F50126T
+    bool
+    select LCD
+
+config L2F50250
+    bool
+    select LCD
+
+config LR38826
+    bool
+    select LCD
+
+config R61505
+    bool
+    select LCD
+
+config R63400
+    bool
+    select LCD

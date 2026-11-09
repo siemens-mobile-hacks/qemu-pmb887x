@@ -11,7 +11,7 @@
 #include "hw/ssi/ssi.h"
 #include "qemu/atomic.h"
 #include "system/debug-channel.h"
-#include "hw/arm/pmb887x/ssc/lcd_common.h"
+#include "hw/lcd/lcd.h"
 
 #define LCD_CMD_MAX_PARAMS 256
 #define LCD_RAM_QUEUE_SIZE (64 * 1024)

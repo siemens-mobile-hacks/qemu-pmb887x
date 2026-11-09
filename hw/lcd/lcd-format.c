@@ -1,5 +1,5 @@
 #include "qemu/osdep.h"
-#include "hw/arm/pmb887x/ssc/lcd_common_format.h"
+#include "hw/lcd/lcd-format.h"
 
 static uint32_t lcd_format_rgb565_decode(uint32_t value) {
 	uint32_t red = (value >> 11) & 0x1F;

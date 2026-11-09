@@ -9,7 +9,7 @@
 #include "hw/arm/pmb887x/mmicif.h"
 #include "hw/arm/pmb887x/rf.h"
 #include "hw/arm/pmb887x/sim.h"
-#include "hw/arm/pmb887x/ssc/lcd_common.h"
+#include "hw/lcd/lcd.h"
 #include "hw/arm/pmb887x/utils/toml.h"
 
 #include "tomlc17.h"

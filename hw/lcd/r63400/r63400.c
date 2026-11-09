@@ -5,7 +5,7 @@
 #include "hw/core/qdev-properties.h"
 #include "qapi/error.h"
 #include "qemu/error-report.h"
-#include "hw/arm/pmb887x/ssc/lcd_common.h"
+#include "hw/lcd/lcd.h"
 
 #define TYPE_PMB887X_LCD_PANEL	"r63400"
 #define PMB887X_LCD_PANEL(obj)	OBJECT_CHECK(pmb887x_lcd_panel_t, (obj), TYPE_PMB887X_LCD_PANEL)

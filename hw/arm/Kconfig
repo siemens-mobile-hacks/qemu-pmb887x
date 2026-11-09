@@ -277,6 +277,16 @@ config PMB887X
     select S1D13705
     select S1D13716
     select S1D13732
+    select JBT6K71
+    select SSD1286
+    select PCF8882
+    select LH15KAH2
+    select L2F50333T
+    select L2F50126T
+    select L2F50250
+    select LR38826
+    select R61505
+    select R63400
 
 config VEXPRESS
     bool

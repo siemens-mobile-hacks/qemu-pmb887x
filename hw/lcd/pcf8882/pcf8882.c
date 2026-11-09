@@ -6,7 +6,7 @@
 
 #include "hw/arm/pmb887x/gen/cpu_meta.h"
 #include "hw/arm/pmb887x/gen/peripheral/PCF8882.h"
-#include "hw/arm/pmb887x/ssc/lcd_common.h"
+#include "hw/lcd/lcd.h"
 
 #define TYPE_PMB887X_LCD_PCF8882 "pcf8882"
 #define PMB887X_LCD_PCF8882(obj) OBJECT_CHECK(pmb887x_lcd_pcf8882_t, (obj), TYPE_PMB887X_LCD_PCF8882)

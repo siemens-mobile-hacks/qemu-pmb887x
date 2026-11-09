@@ -82,18 +82,6 @@ arm_common_ss.add(when: 'CONFIG_PMB887X', if_true: files(
 	'utils/toml.c',
 
 	'ssc/b00b10b.c',
-	'ssc/lcd_common.c',
-	'ssc/lcd_common_format.c',
-	'ssc/lcd_jbt6k71.c',
-	'ssc/lcd_ssd1286.c',
-	'ssc/lcd_pcf8882.c',
-	'ssc/lcd_l2f50333t.c',
-	'ssc/lcd_l2f50126t.c',
-	'ssc/lcd_l2f50250.c',
-	'ssc/lcd_lh15kah2.c',
-	'ssc/lcd_lr38826.c',
-	'ssc/lcd_r61505.c',
-	'ssc/lcd_r63400.c',
 
 ))
 arm_common_ss.add(when: 'CONFIG_PMB887X', if_true: dsp_core_sources + dsp_peripheral_sources +

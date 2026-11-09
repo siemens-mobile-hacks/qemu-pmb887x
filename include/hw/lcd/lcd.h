@@ -8,7 +8,7 @@
 #include "qemu/thread.h"
 #include "qemu/debug-regs.h"
 #include "qemu/fifo8.h"
-#include "hw/arm/pmb887x/ssc/lcd_common_format.h"
+#include "hw/lcd/lcd-format.h"
 
 #define TYPE_PMB887X_LCD	"pmb887x-lcd"
 OBJECT_DECLARE_TYPE(pmb887x_lcd_t, pmb887x_lcd_class_t, PMB887X_LCD);
