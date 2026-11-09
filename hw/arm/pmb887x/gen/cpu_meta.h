@@ -74,7 +74,6 @@ extern const DebugRegs pmb887x_pmb6812_regs;
 extern const DebugRegs pmb887x_r61505u_regs;
 extern const DebugRegs pmb887x_ssd1286_regs;
 extern const DebugRegs pmb887x_tea5760uk_regs;
-extern const DebugRegs pmb887x_tea5761uk_regs;
 extern const DebugRegs pmb887x_dsp_afe_regs;
 extern const DebugRegs pmb887x_dsp_baseband_regs;
 extern const DebugRegs pmb887x_dsp_channel_decoder_regs;
