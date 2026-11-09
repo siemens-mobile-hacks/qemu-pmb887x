@@ -65,3 +65,8 @@ config SPEAKER
 
 config AUDIO_ROUTER
     bool
+
+config LM4946
+    bool
+    depends on I2C
+    select AUDIO_ROUTER
