@@ -270,6 +270,7 @@ config PMB887X
     select ROTARY_ENCODER
     select I2C
     select LM4946
+    select TEA5761UK
 
 config VEXPRESS
     bool

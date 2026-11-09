@@ -70,3 +70,7 @@ config LM4946
     bool
     depends on I2C
     select AUDIO_ROUTER
+
+config TEA5761UK
+    bool
+    depends on I2C

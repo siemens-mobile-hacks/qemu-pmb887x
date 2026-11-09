@@ -100,7 +100,6 @@ arm_common_ss.add(when: 'CONFIG_PMB887X', if_true: files(
 
 	'i2c/d1094xx.c',
 	'i2c/pmb6812.c',
-	'i2c/tea5761uk.c',
 ))
 arm_common_ss.add(when: 'CONFIG_PMB887X', if_true: dsp_core_sources + dsp_peripheral_sources +
 	files('dsp/tcg.c', 'dsp/runtime.c'))
