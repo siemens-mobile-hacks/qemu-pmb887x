@@ -271,6 +271,7 @@ config PMB887X
     select I2C
     select LM4946
     select TEA5761UK
+    select PMB6812
 
 config VEXPRESS
     bool
