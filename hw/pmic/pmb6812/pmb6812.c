@@ -1,268 +1,265 @@
-/*
- * Infineon PMB6812
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 #include "qemu/osdep.h"
-#include "hw/core/sysbus.h"
-#include "system/memory.h"
-#include "qapi/error.h"
-#include "qemu/main-loop.h"
-#include "hw/core/qdev-properties.h"
 #include "hw/audio/audio-router.h"
 #include "hw/i2c/i2c.h"
-#include "hw/arm/pmb887x/gen/peripheral/PMB6812.h"
 #include "system/debug-channel.h"
-#include "hw/arm/pmb887x/gen/cpu_meta.h"
+#include "regs.h"
 
-#define TYPE_PMB887X_PMIC	"pmb6812"
-#define PMB887X_PMIC(obj)	OBJECT_CHECK(pmb887x_pmic_t, (obj), TYPE_PMB887X_PMIC)
+#define TYPE_PMB6812 "pmb6812"
+OBJECT_DECLARE_SIMPLE_TYPE(PMB6812State, PMB6812)
 
-typedef struct pmb887x_pmic_t pmb887x_pmic_t;
+#define PMB6812_REG_COUNT (UINT8_MAX + 1)
+#define PMB6812_IDLE_BYTE 0xFF
+#define PMB6812_PEC_POLYNOMIAL 0x07
+
+enum {
+    PMB6812_WRITE_REG,
+    PMB6812_WRITE_VALUE,
+    PMB6812_WRITE_PEC,
+};
 
 static const int16_t PMB6812_AUDIO_GAIN_MB[] = {
-	[PMB6812_AUDCTRL_AUDGAIN_MINUS_6DB >> PMB6812_AUDCTRL_AUDGAIN_SHIFT] = -600,
-	[PMB6812_AUDCTRL_AUDGAIN_MINUS_1_2DB >> PMB6812_AUDCTRL_AUDGAIN_SHIFT] = -120,
-	[PMB6812_AUDCTRL_AUDGAIN_PLUS_2_7DB >> PMB6812_AUDCTRL_AUDGAIN_SHIFT] = 270,
-	[PMB6812_AUDCTRL_AUDGAIN_PLUS_6DB >> PMB6812_AUDCTRL_AUDGAIN_SHIFT] = 600,
+    [PMB6812_AUDCTRL_AUDGAIN_MINUS_6DB >> PMB6812_AUDCTRL_AUDGAIN_SHIFT] = -600,
+    [PMB6812_AUDCTRL_AUDGAIN_MINUS_1_2DB >> PMB6812_AUDCTRL_AUDGAIN_SHIFT] = -120,
+    [PMB6812_AUDCTRL_AUDGAIN_PLUS_2_7DB >> PMB6812_AUDCTRL_AUDGAIN_SHIFT] = 270,
+    [PMB6812_AUDCTRL_AUDGAIN_PLUS_6DB >> PMB6812_AUDCTRL_AUDGAIN_SHIFT] = 600,
 };
 
-struct pmb887x_pmic_t {
-	I2CSlave parent_obj;
-	DebugChannel dbg;
-	AudioRouterInput audio_input;
-	AudioLineBus *audio_output;
-	AudioRouter router;
-	uint32_t reg_id;
-	uint8_t wcycle;
-	uint8_t rcycle;
-	uint8_t wr_val;
-	uint8_t confirmation;
-	uint8_t regs[256];
-	bool confirmation_pending;
-	bool on_level;
-	bool lon_frozen;
+static const uint8_t PMB6812_RESET_REGS[PMB6812_REG_COUNT] = {
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x38, 0x00, 0x42, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
 };
 
-static const uint8_t regs_PMB6812[256] = {
-	0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-	0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-	0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-	0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-	0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-	0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-	0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-	0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-	0x38, 0x00, 0x42, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-	0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-	0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-	0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-	0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-	0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-	0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-	0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+struct PMB6812State {
+    I2CSlave parent_obj;
+    DebugChannel dbg;
+    AudioRouterInput audio_input;
+    AudioLineBus *audio_output;
+    AudioRouter router;
+    uint8_t reg;
+    uint8_t wcycle;
+    uint8_t rcycle;
+    uint8_t wr_val;
+    uint8_t confirmation;
+    uint8_t regs[PMB6812_REG_COUNT];
+    bool confirmation_pending;
+    bool on_level;
+    bool lon_frozen;
 };
 
-static void pmic_audio_update(pmb887x_pmic_t *p) {
-	uint8_t control = p->regs[PMB6812_AUDCTRL];
-	bool enabled = (control & (PMB6812_AUDCTRL_AUDON | PMB6812_AUDCTRL_MUTE)) == PMB6812_AUDCTRL_AUDON;
-	uint8_t gain = (control & PMB6812_AUDCTRL_AUDGAIN) >> PMB6812_AUDCTRL_AUDGAIN_SHIFT;
+static void pmb6812_audio_update(PMB6812State *s) {
+    uint8_t control = s->regs[PMB6812_AUDCTRL];
+    bool enabled = (control & (PMB6812_AUDCTRL_AUDON | PMB6812_AUDCTRL_MUTE)) == PMB6812_AUDCTRL_AUDON;
+    uint8_t gain = (control & PMB6812_AUDCTRL_AUDGAIN) >> PMB6812_AUDCTRL_AUDGAIN_SHIFT;
 
-	audio_router_set_route(&p->router, 0, 0, enabled, PMB6812_AUDIO_GAIN_MB[gain]);
-	audio_router_update(&p->router);
+    audio_router_set_route(&s->router, 0, 0, enabled, PMB6812_AUDIO_GAIN_MB[gain]);
+    audio_router_update(&s->router);
 }
 
-static void pmic_update_on_level(pmb887x_pmic_t *p) {
-	if (p->on_level) {
-		p->regs[PMB6812_ISF] |= PMB6812_ISF_LON;
-	} else {
-		p->regs[PMB6812_ISF] &= ~PMB6812_ISF_LON;
-	}
+static void pmb6812_update_on_level(PMB6812State *s) {
+    if (s->on_level) {
+        s->regs[PMB6812_ISF] |= PMB6812_ISF_LON;
+    } else {
+        s->regs[PMB6812_ISF] &= ~PMB6812_ISF_LON;
+    }
 }
 
-static void pmic_handle_on_input(void *opaque, int line, int level) {
-	pmb887x_pmic_t *p = opaque;
-	bool on_level = level != 0;
+static void pmb6812_on_handler(void *opaque, int _n, int level) {
+    PMB6812State *s = opaque;
+    bool on_level = level != 0;
 
-	if (p->on_level == on_level)
-		return;
+    if (s->on_level == on_level)
+        return;
 
-	p->on_level = on_level;
-	if (!p->lon_frozen)
-		pmic_update_on_level(p);
-	if ((p->regs[PMB6812_INTCTRL2] & PMB6812_INTCTRL2_EION) != 0)
-		p->lon_frozen = true;
+    s->on_level = on_level;
+    if (!s->lon_frozen)
+        pmb6812_update_on_level(s);
+    if ((s->regs[PMB6812_INTCTRL2] & PMB6812_INTCTRL2_EION) != 0)
+        s->lon_frozen = true;
 }
 
-static int pmic_event(I2CSlave *s, enum i2c_event event) {
-	pmb887x_pmic_t *p = PMB887X_PMIC(s);
+static int pmb6812_event(I2CSlave *i2c, enum i2c_event event) {
+    PMB6812State *s = PMB6812(i2c);
 
-	switch (event) {
-		case I2C_START_SEND:
-			p->wcycle = 0;
-			p->confirmation_pending = false;
-			break;
-		case I2C_START_SEND_ASYNC:
-			p->wcycle = 0;
-			p->confirmation_pending = false;
-			break;
-		case I2C_START_RECV:
-			p->wcycle = 0;
-			p->rcycle = 0;
-			break;
-		case I2C_NACK:
-			p->wcycle = 0;
-			break;
-		case I2C_FINISH:
-			p->wcycle = 0;
-			break;
-	}
+    switch (event) {
+        case I2C_START_SEND:
+        case I2C_START_SEND_ASYNC:
+            s->wcycle = 0;
+            s->confirmation_pending = false;
+            break;
+        case I2C_START_RECV:
+            s->wcycle = 0;
+            s->rcycle = 0;
+            break;
+        case I2C_NACK:
+        case I2C_FINISH:
+            s->wcycle = 0;
+            break;
+    }
 
-	return 0;
+    return 0;
 }
 
-static uint8_t pmic_recv(I2CSlave *s) {
-	pmb887x_pmic_t *p = PMB887X_PMIC(s);
+static uint8_t pmb6812_recv(I2CSlave *i2c) {
+    PMB6812State *s = PMB6812(i2c);
+    bool is_confirmation = s->rcycle == 0 && s->confirmation_pending;
+    bool is_register = !is_confirmation && s->rcycle == 0 && s->reg >= PMB6812_GEF1 && s->reg <= PMB6812_GEF2;
+    uint8_t data = PMB6812_IDLE_BYTE;
 
-	bool is_confirmation = p->rcycle == 0 && p->confirmation_pending;
-	bool is_register = !is_confirmation && p->rcycle == 0 &&
-		p->reg_id >= PMB6812_GEF1 && p->reg_id <= PMB6812_GEF2;
-	uint8_t data = 0xFF;
+    if (is_confirmation) {
+        data = s->confirmation;
+    } else if (is_register) {
+        data = s->regs[s->reg];
+    }
 
-	if (is_confirmation) {
-		data = p->confirmation;
-	} else if (is_register) {
-		data = p->regs[p->reg_id];
-	}
+    DEBUG_IO_READ(&s->dbg, s->reg, 1, data);
+    if (is_confirmation)
+        s->confirmation_pending = false;
+    if (is_register && s->reg == PMB6812_ISF) {
+        s->lon_frozen = false;
+        pmb6812_update_on_level(s);
+    }
+    s->rcycle++;
 
-	DEBUG_IO_READ(&p->dbg, p->reg_id, 1, data);
-	if (is_confirmation)
-		p->confirmation_pending = false;
-	if (is_register && p->reg_id == PMB6812_ISF) {
-		p->lon_frozen = false;
-		pmic_update_on_level(p);
-	}
-	p->rcycle++;
-
-	return data;
+    return data;
 }
 
-static uint8_t pmic_pec(uint8_t addr_w, uint8_t reg, uint8_t val) {
-	const uint8_t bytes[3] = { addr_w, reg, val };
-	uint8_t crc = 0;
+static uint8_t pmb6812_pec(uint8_t address_write, uint8_t reg, uint8_t value) {
+    const uint8_t bytes[] = { address_write, reg, value };
+    uint8_t crc = 0;
 
-	for (int i = 0; i < 3; i++) {
-		crc ^= bytes[i];
-		for (int j = 0; j < 8; j++)
-			crc = (crc & 0x80) ? (crc << 1) ^ 0x07 : (crc << 1);
-	}
+    for (size_t i = 0; i < ARRAY_SIZE(bytes); i++) {
+        crc ^= bytes[i];
+        for (int bit = 0; bit < BITS_PER_BYTE; bit++)
+            crc = (crc & BIT(7)) ? (crc << 1) ^ PMB6812_PEC_POLYNOMIAL : (crc << 1);
+    }
 
-	return crc;
+    return crc;
 }
 
-static int pmic_send(I2CSlave *s, uint8_t data) {
-	pmb887x_pmic_t *p = PMB887X_PMIC(s);
+static void pmb6812_write_reg(PMB6812State *s) {
+    DEBUG_IO_WRITE(&s->dbg, s->reg, 1, s->wr_val);
+    s->regs[s->reg] = s->wr_val;
 
-	switch (p->wcycle) {
-		case 0:
-			p->reg_id = data % ARRAY_SIZE(p->regs);
-			break;
-		case 1:
-			p->wr_val = data;
-			break;
-		case 2: {
-			uint8_t expect = pmic_pec((s->address << 1), p->reg_id, p->wr_val);
-			if (data != expect) {
-				p->confirmation = ~data;
-				p->confirmation_pending = true;
-				DEBUG_GUEST_ERROR(&p->dbg, "bad CRC on write reg=0x%02X val=0x%02X: got 0x%02X expected 0x%02X\n",
-					p->reg_id, p->wr_val, data, expect);
-				p->wcycle++;
-				return 1;
-			}
-
-			p->confirmation = data;
-			p->confirmation_pending = true;
-			DEBUG_IO_WRITE(&p->dbg, p->reg_id, 1, p->wr_val);
-			p->regs[p->reg_id] = p->wr_val;
-			if (p->reg_id == PMB6812_INTCTRL2) {
-				if ((p->wr_val & PMB6812_INTCTRL2_EION) == 0)
-					p->lon_frozen = false;
-				if (!p->lon_frozen)
-					pmic_update_on_level(p);
-			}
-			if (p->reg_id == PMB6812_AUDCTRL)
-				pmic_audio_update(p);
-			break;
-		}
-		default:
-			/* the device does not support continued writes */
-			p->wcycle++;
-			return 1;
-	}
-
-	p->wcycle++;
-
-	return 0;
+    if (s->reg == PMB6812_INTCTRL2) {
+        if ((s->wr_val & PMB6812_INTCTRL2_EION) == 0)
+            s->lon_frozen = false;
+        if (!s->lon_frozen)
+            pmb6812_update_on_level(s);
+    }
+    if (s->reg == PMB6812_AUDCTRL)
+        pmb6812_audio_update(s);
 }
 
-static void pmic_reset(DeviceState *dev) {
-	pmb887x_pmic_t *p = PMB887X_PMIC(dev);
-	p->reg_id = 0;
-	p->wcycle = 0;
-	p->rcycle = 0;
-	p->confirmation = 0;
-	p->confirmation_pending = false;
-	p->lon_frozen = false;
-	memcpy(p->regs, regs_PMB6812, sizeof(regs_PMB6812));
-	pmic_update_on_level(p);
-	audio_router_reset(&p->router);
-	pmic_audio_update(p);
+static int pmb6812_send(I2CSlave *i2c, uint8_t data) {
+    PMB6812State *s = PMB6812(i2c);
+
+    switch (s->wcycle++) {
+        case PMB6812_WRITE_REG:
+            s->reg = data;
+            return 0;
+        case PMB6812_WRITE_VALUE:
+            s->wr_val = data;
+            return 0;
+        case PMB6812_WRITE_PEC: {
+            uint8_t expect = pmb6812_pec(i2c->address << 1, s->reg, s->wr_val);
+            s->confirmation_pending = true;
+            if (data != expect) {
+                s->confirmation = ~data;
+                DEBUG_GUEST_ERROR(&s->dbg, "bad CRC on write reg=0x%02X val=0x%02X: got 0x%02X expected 0x%02X\n",
+                    s->reg, s->wr_val, data, expect);
+                return 1;
+            }
+
+            s->confirmation = data;
+            pmb6812_write_reg(s);
+            return 0;
+        }
+        default:
+            /* The device does not support continued writes. */
+            return 1;
+    }
 }
 
-static void pmic_realize(DeviceState *dev, Error **errp) {
-	pmb887x_pmic_t *p = PMB887X_PMIC(dev);
-	debug_channel_init_device_regs(&p->dbg, dev, &pmb887x_pmb6812_regs);
+static void pmb6812_reset(DeviceState *dev) {
+    PMB6812State *s = PMB6812(dev);
 
-	pmic_reset(dev);
+    s->reg = 0;
+    s->wcycle = 0;
+    s->rcycle = 0;
+    s->confirmation = 0;
+    s->confirmation_pending = false;
+    s->lon_frozen = false;
+    memcpy(s->regs, PMB6812_RESET_REGS, sizeof(PMB6812_RESET_REGS));
+    pmb6812_update_on_level(s);
+    audio_router_reset(&s->router);
+    pmb6812_audio_update(s);
 }
 
-static void pmic_init(Object *obj) {
-	pmb887x_pmic_t *p = PMB887X_PMIC(obj);
-
-	qdev_init_gpio_in_named(DEVICE(obj), pmic_handle_on_input, "ON", 1);
-	p->audio_output = audio_line_bus_init(DEVICE(obj), "OUT");
-	audio_router_init(&p->router, &p->audio_output, 1, 1, &p->dbg);
-	audio_router_input_init(&p->audio_input, DEVICE(obj), "IN", &p->router, 0);
+static void pmb6812_realize(DeviceState *dev, Error **_errp) {
+    debug_channel_init_device_regs(&PMB6812(dev)->dbg, dev, &pmb6812_debug_regs);
+    pmb6812_reset(dev);
 }
 
-static void pmic_finalize(Object *obj) {
-	audio_router_cleanup(&PMB887X_PMIC(obj)->router);
+static void pmb6812_unrealize(DeviceState *dev) {
+    debug_channel_cleanup(&PMB6812(dev)->dbg);
 }
 
-static void pmic_class_init(ObjectClass *klass, const void *data) {
-	DeviceClass *dc = DEVICE_CLASS(klass);
-	I2CSlaveClass *k = I2C_SLAVE_CLASS(klass);
-	device_class_set_legacy_reset(dc, pmic_reset);
-	dc->realize = pmic_realize;
-	k->event = &pmic_event;
-	k->recv = &pmic_recv;
-	k->send = &pmic_send;
-	audio_router_sink_class_init(AUDIO_LINE_SINK_CLASS(klass));
+static void pmb6812_init(Object *obj) {
+    DeviceState *dev = DEVICE(obj);
+    PMB6812State *s = PMB6812(obj);
+
+    qdev_init_gpio_in_named(dev, pmb6812_on_handler, "ON", 1);
+    s->audio_output = audio_line_bus_init(dev, "OUT");
+    audio_router_init(&s->router, &s->audio_output, 1, 1, &s->dbg);
+    audio_router_input_init(&s->audio_input, dev, "IN", &s->router, 0);
 }
 
-static const TypeInfo pmic_info = {
-	.name = TYPE_PMB887X_PMIC,
-	.parent = TYPE_I2C_SLAVE,
-	.instance_size = sizeof(pmb887x_pmic_t),
-	.instance_init = pmic_init,
-	.instance_finalize = pmic_finalize,
-	.class_init = pmic_class_init,
-	.interfaces = (const InterfaceInfo[]) {
-		{ TYPE_AUDIO_LINE_SINK },
-		{ NULL },
-	},
+static void pmb6812_finalize(Object *obj) {
+    audio_router_cleanup(&PMB6812(obj)->router);
+}
+
+static void pmb6812_class_init(ObjectClass *klass, const void *_data) {
+    DeviceClass *dc = DEVICE_CLASS(klass);
+    I2CSlaveClass *k = I2C_SLAVE_CLASS(klass);
+
+    device_class_set_legacy_reset(dc, pmb6812_reset);
+    dc->realize = pmb6812_realize;
+    dc->unrealize = pmb6812_unrealize;
+    k->event = pmb6812_event;
+    k->recv = pmb6812_recv;
+    k->send = pmb6812_send;
+    audio_router_sink_class_init(AUDIO_LINE_SINK_CLASS(klass));
+}
+
+static const TypeInfo pmb6812_info = {
+    .name = TYPE_PMB6812,
+    .parent = TYPE_I2C_SLAVE,
+    .instance_size = sizeof(PMB6812State),
+    .instance_init = pmb6812_init,
+    .instance_finalize = pmb6812_finalize,
+    .class_init = pmb6812_class_init,
+    .interfaces = (const InterfaceInfo[]) {
+        { TYPE_AUDIO_LINE_SINK },
+        { NULL },
+    },
 };
 
-static void pmic_register_types(void) {
-	type_register_static(&pmic_info);
+static void pmb6812_register_types(void) {
+    type_register_static(&pmb6812_info);
 }
-type_init(pmic_register_types)
+type_init(pmb6812_register_types)

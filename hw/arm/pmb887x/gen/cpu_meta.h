@@ -70,7 +70,6 @@ extern const DebugRegs pmb887x_pasic_regs;
 extern const DebugRegs pmb887x_pcf8833_regs;
 extern const DebugRegs pmb887x_pcf8882_regs;
 extern const DebugRegs pmb887x_pmb6272_regs;
-extern const DebugRegs pmb887x_pmb6812_regs;
 extern const DebugRegs pmb887x_r61505u_regs;
 extern const DebugRegs pmb887x_ssd1286_regs;
 extern const DebugRegs pmb887x_tea5760uk_regs;
