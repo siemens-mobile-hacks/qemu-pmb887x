@@ -107,9 +107,18 @@ static void rotary_encoder_timer_cb(void *opaque) {
 }
 
 static void rotary_encoder_update(RotaryEncoder *s) {
-    int dir = rotary_encoder_held_dir(s);
+    if (s->quarters_left > 0)
+        return;
 
-    if (dir && s->dir == 0) {
+    int dir = rotary_encoder_held_dir(s);
+    if (!dir) {
+        timer_del(s->timer);
+        s->dir = 0;
+        s->repeating = false;
+        return;
+    }
+
+    if (dir != s->dir) {
         s->repeating = false;
         rotary_encoder_start_detent(s, dir);
     }
