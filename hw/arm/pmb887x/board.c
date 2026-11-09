@@ -29,6 +29,7 @@
 #include "hw/arm/pmb887x/board/keyboard.h"
 #include "hw/arm/pmb887x/board/cpu_module.h"
 #include "hw/arm/pmb887x/board/startup.h"
+#include "hw/block/cfi-flash.h"
 
 #include "hw/arm/pmb887x/gen/brom.h"
 #include "hw/arm/pmb887x/gen/cpu_meta.h"
@@ -352,7 +353,7 @@ static void pmb887x_init(MachineState *machine) {
 	// Flash
 	DriveInfo *flash_dinfo = drive_get(IF_PFLASH, 0, 0);
 	if (flash_dinfo) {
-		DeviceState *flash_blk = qdev_new("pmb887x-flash-blk");
+		DeviceState *flash_blk = qdev_new(TYPE_CFI_FLASH_STORAGE);
 		flash_blk->id = strdup("FULLFLASH");
 		qdev_prop_set_drive(flash_blk, "drive", blk_by_legacy_dinfo(flash_dinfo));
 		sysbus_realize_and_unref(SYS_BUS_DEVICE(flash_blk), &error_fatal);

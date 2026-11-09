@@ -450,7 +450,7 @@ void pmb887x_board_init_devices(DeviceState *ebuc) {
 
 	DeviceState *flash_blk = qdev_find_recursive(sysbus_get_default(), "FULLFLASH");
 	if (flash_blk) {
-		int64_t total_flash_size = pmb887x_flash_blk_size(pmb887x_flash_blk_self(flash_blk));
+		int64_t total_flash_size = cfi_flash_storage_size(cfi_flash_storage_self(flash_blk));
 		if (board->flash_offset != total_flash_size)
 			hw_error("Invalid fullflash size=0x%08"PRIX64". Please, specify fullflash with size=0x%08X", total_flash_size, board->flash_offset);
 	}

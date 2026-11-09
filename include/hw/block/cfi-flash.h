@@ -1,21 +1,23 @@
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 #pragma once
 
-#include "qemu/osdep.h"
 #include "qemu/aiocb.h"
 
-struct pmb887x_flash_blk_t;
-typedef struct pmb887x_flash_blk_t pmb887x_flash_blk_t;
+#define TYPE_CFI_FLASH "cfi-flash"
+#define TYPE_CFI_FLASH_STORAGE "cfi-flash-storage"
 
-int pmb887x_flash_blk_pread(pmb887x_flash_blk_t *flash, int64_t offset, int64_t size, void *storage);
-void pmb887x_flash_blk_aio_pwrite(
-	pmb887x_flash_blk_t *flash,
-	int64_t offset,
-	int64_t size,
-	void *data,
-	BlockCompletionFunc *cb,
-	void *opaque
+typedef struct CFIFlashStorage CFIFlashStorage;
+
+int cfi_flash_storage_pread(CFIFlashStorage *flash, int64_t offset, int64_t size, void *storage);
+void cfi_flash_storage_aio_pwrite(
+    CFIFlashStorage *flash,
+    int64_t offset,
+    int64_t size,
+    void *data,
+    BlockCompletionFunc *cb,
+    void *opaque
 );
-bool pmb887x_flash_blk_is_rw(pmb887x_flash_blk_t *flash);
-int64_t pmb887x_flash_blk_size(pmb887x_flash_blk_t *flash);
-const char *pmb887x_flash_blk_filename(pmb887x_flash_blk_t *flash);
-pmb887x_flash_blk_t *pmb887x_flash_blk_self(DeviceState *dev);
+bool cfi_flash_storage_is_rw(CFIFlashStorage *flash);
+int64_t cfi_flash_storage_size(CFIFlashStorage *flash);
+const char *cfi_flash_storage_filename(CFIFlashStorage *flash);
+CFIFlashStorage *cfi_flash_storage_self(DeviceState *dev);

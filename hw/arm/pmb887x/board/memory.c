@@ -4,6 +4,7 @@
 #include "hw/core/qdev.h"
 #include "hw/core/qdev-properties.h"
 #include "qapi/error.h"
+#include "hw/block/cfi-flash.h"
 
 void pmb887x_board_ebu_connect(DeviceState *ebuc, int cs, MemoryRegion *region) {
 	char cs_name[64];
@@ -32,7 +33,7 @@ MemoryRegion *pmb887x_board_create_nor_flash(const char *id, uint32_t vid, uint3
 	g_autofree char *otp0_file_env = g_strdup_printf("PMB887X_%s_OTP0_FILE", id);
 	g_autofree char *otp1_file_env = g_strdup_printf("PMB887X_%s_OTP1_FILE", id);
 	g_autofree char *efa_file_env = g_strdup_printf("PMB887X_%s_EFA_FILE", id);
-	DeviceState *flash = qdev_new("pmb887x-flash");
+	DeviceState *flash = qdev_new(TYPE_CFI_FLASH);
 	flash->id = g_strdup(id);
 	qdev_prop_set_string(flash, "name", id);
 	qdev_prop_set_string(flash, "otp0-data", g_getenv(otp0_env) ?: ""); // ESN
