@@ -19,7 +19,6 @@
 #define TEA5761UK_INTREG_FRRFLAG		BIT(1)
 #define TEA5761UK_FRQSET_MSB_MASK	0x3F
 #define TEA5761UK_TUNCHK_LD		BIT(3)
-#define TEA5761UK_AUDIO_BUS_NAME	"pmb887x-tea5761uk-audio"
 #define TEA5761UK_AUDIO_RATE_HZ		48000
 #define TEA5761UK_AUDIO_CHANNELS	2
 #define TEA5761UK_AUDIO_PERIOD_NS	(10 * SCALE_MS)
@@ -198,8 +197,7 @@ static void tea5761uk_unrealize(DeviceState *dev) {
 static void tea5761uk_init(Object *obj) {
 	pmb887x_tea5761uk_t *p = PMB887X_TEA5761UK(obj);
 
-	p->audio_output = audio_line_bus_init(DEVICE(obj), TEA5761UK_AUDIO_BUS_NAME);
-	object_property_add_const_link(obj, "bus_out", OBJECT(p->audio_output));
+	p->audio_output = audio_line_bus_init(DEVICE(obj), "OUT");
 }
 
 static void tea5761uk_class_init(ObjectClass *klass, const void *data) {

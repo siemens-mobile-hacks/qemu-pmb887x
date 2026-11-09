@@ -15,7 +15,6 @@
 
 #define TYPE_PMB887X_PMIC	"pmb6812"
 #define PMB887X_PMIC(obj)	OBJECT_CHECK(pmb887x_pmic_t, (obj), TYPE_PMB887X_PMIC)
-#define PMB6812_AUDIO_BUS_NAME	"pmb887x-pmb6812-audio"
 
 typedef struct pmb887x_pmic_t pmb887x_pmic_t;
 
@@ -230,8 +229,7 @@ static void pmic_init(Object *obj) {
 	pmb887x_pmic_t *p = PMB887X_PMIC(obj);
 
 	qdev_init_gpio_in_named(DEVICE(obj), pmic_handle_on_input, "ON", 1);
-	p->audio_output = audio_line_bus_init(DEVICE(obj), PMB6812_AUDIO_BUS_NAME);
-	object_property_add_const_link(obj, "bus_out", OBJECT(p->audio_output));
+	p->audio_output = audio_line_bus_init(DEVICE(obj), "OUT");
 	audio_router_init(&p->router, &p->audio_output, 1, 1, &p->dbg);
 	audio_router_input_init(&p->audio_input, DEVICE(obj), "IN", &p->router, 0);
 }

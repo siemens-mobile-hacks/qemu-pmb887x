@@ -1158,14 +1158,6 @@ static void tpu_reset(DeviceState *dev) {
 
 static const Property tpu_properties[] = {
 	DEFINE_PROP_UINT32("revision", pmb887x_tpu_t, revision, 0),
-	DEFINE_PROP_LINK("bus_rfssc0", pmb887x_tpu_t, rfssc_bus[0],
-		TYPE_THREE_WIRE_SERIAL_BUS, ThreeWireSerialBus *),
-	DEFINE_PROP_LINK("bus_rfssc1", pmb887x_tpu_t, rfssc_bus[1],
-		TYPE_THREE_WIRE_SERIAL_BUS, ThreeWireSerialBus *),
-	DEFINE_PROP_LINK("bus_rfssc2", pmb887x_tpu_t, rfssc_bus[2],
-		TYPE_THREE_WIRE_SERIAL_BUS, ThreeWireSerialBus *),
-	DEFINE_PROP_LINK("bus_rfssc3", pmb887x_tpu_t, rfssc_bus[3],
-		TYPE_THREE_WIRE_SERIAL_BUS, ThreeWireSerialBus *),
 };
 
 static void tpu_class_init(ObjectClass *klass, const void *_data) {

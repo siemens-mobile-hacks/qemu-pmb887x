@@ -207,8 +207,6 @@ static DeviceState *device_find_by_id(GHashTable *devices, const char *name) {
 
 Object *pmb887x_board_find_bus(GHashTable *devices, const char *name) {
 	g_autofree char *device_name = g_strdup(name);
-	g_autofree char *normalized_bus_name = NULL;
-	g_autofree char *bus_property_name = NULL;
 	char *bus_name = strchr(device_name, ':');
 	DeviceState *dev;
 
@@ -220,12 +218,7 @@ Object *pmb887x_board_find_bus(GHashTable *devices, const char *name) {
 	if (!dev)
 		hw_error("Bus device not found: %s", device_name);
 	if (bus_name != NULL) {
-		normalized_bus_name = g_ascii_strdown(bus_name, -1);
-		bus_property_name = g_strdup_printf("bus_%s", normalized_bus_name);
-		if (object_property_find(OBJECT(dev), bus_property_name))
-			return object_property_get_link(OBJECT(dev), bus_property_name, &error_fatal);
-
-		BusState *child_bus = qdev_get_child_bus(dev, normalized_bus_name);
+		BusState *child_bus = qdev_get_child_bus(dev, bus_name);
 		if (!child_bus)
 			hw_error("Bus not found: %s", name);
 		return OBJECT(child_bus);

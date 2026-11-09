@@ -17,8 +17,6 @@
 
 #define TYPE_PMB887X_PMIC	"d1094xx"
 #define PMB887X_PMIC(obj)	OBJECT_CHECK(pmb887x_pmic_t, (obj), TYPE_PMB887X_PMIC)
-#define PASIC_MONO_BUS_NAME	"pmb887x-pasic-mono"
-#define PASIC_STEREO_BUS_NAME	"pmb887x-pasic-stereo"
 #define PASIC_GAIN_MUTE		0x39
 #define PASIC_GAIN_MAX_MB	1300
 #define PASIC_GAIN_STEP_MB	150
@@ -448,10 +446,8 @@ static void pmic_init(Object *obj) {
 	i2c_target_port_init(&p->i2c_port, DEVICE(obj), "I2C", I2C_TARGET(obj), &p->i2c_address);
 	i2s_sink_port_init(&p->i2s_rx_port, DEVICE(obj), "I2S_RX", I2S_SINK(obj));
 	i2s_source_port_init(&p->i2s_tx_port, DEVICE(obj), "I2S_TX", I2S_SOURCE(obj));
-	p->output_buses[PASIC_OUTPUT_MONO] = audio_line_bus_init(DEVICE(obj), PASIC_MONO_BUS_NAME);
-	p->output_buses[PASIC_OUTPUT_STEREO] = audio_line_bus_init(DEVICE(obj), PASIC_STEREO_BUS_NAME);
-	object_property_add_const_link(obj, "bus_mono", OBJECT(p->output_buses[PASIC_OUTPUT_MONO]));
-	object_property_add_const_link(obj, "bus_stereo", OBJECT(p->output_buses[PASIC_OUTPUT_STEREO]));
+	p->output_buses[PASIC_OUTPUT_MONO] = audio_line_bus_init(DEVICE(obj), "MONO");
+	p->output_buses[PASIC_OUTPUT_STEREO] = audio_line_bus_init(DEVICE(obj), "STEREO");
 	audio_router_init(&p->router, p->output_buses, PASIC_OUTPUT_COUNT, PASIC_INPUT_COUNT, &p->dbg);
 	audio_router_input_init(&p->line_input, DEVICE(obj), "LINE", &p->router, PASIC_INPUT_LINE);
 }

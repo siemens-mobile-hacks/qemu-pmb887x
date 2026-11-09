@@ -34,14 +34,6 @@
 #define DSP_SYNC_PERIOD_NS	(100 * SCALE_US)
 #define DSP_RESET_START_CYCLES	512
 #define DSP_RUN_CYCLES		16384
-#define DSP_SSC_BUS_NAME	"pmb887x-dsp-ssc"
-#define DSP_I2S1_TX_BUS_NAME	"pmb887x-dsp-i2s1-tx"
-#define DSP_I2S1_RX_BUS_NAME	"pmb887x-dsp-i2s1-rx"
-#define DSP_I2S2_TX_BUS_NAME	"pmb887x-dsp-i2s2-tx"
-#define DSP_I2S2_RX_BUS_NAME	"pmb887x-dsp-i2s2-rx"
-#define DSP_IQ_RX_BUS_NAME	"pmb887x-dsp-iq-rx"
-#define DSP_AFE_EP_BUS_NAME	"pmb887x-dsp-afe-ep"
-#define DSP_AFE_EPPA_BUS_NAME	"pmb887x-dsp-afe-eppa"
 #define PMB887X_DSP(obj)	OBJECT_CHECK(dsp_state_t, (obj), TYPE_PMB887X_DSP)
 
 enum {
@@ -606,14 +598,14 @@ static void dsp_init(Object *obj) {
 
 	pmb887x_clc_init(&p->clc, DEVICE(obj));
 	pmb887x_clc_set_callback(&p->clc, dsp_clock_update, p);
-	p->ssc_bus = ssi_create_bus(DEVICE(obj), DSP_SSC_BUS_NAME);
-	p->i2s1.tx_bus = i2s_tx_bus_init(DEVICE(obj), DSP_I2S1_TX_BUS_NAME);
-	p->i2s1.rx_bus = i2s_rx_bus_init(DEVICE(obj), DSP_I2S1_RX_BUS_NAME);
-	p->i2s2.tx_bus = i2s_tx_bus_init(DEVICE(obj), DSP_I2S2_TX_BUS_NAME);
-	p->i2s2.rx_bus = i2s_rx_bus_init(DEVICE(obj), DSP_I2S2_RX_BUS_NAME);
-	p->iq_rx_bus = pmb887x_iq_bus_create(DEVICE(obj), DSP_IQ_RX_BUS_NAME);
-	p->afe_ep_bus = audio_line_bus_init(DEVICE(obj), DSP_AFE_EP_BUS_NAME);
-	p->afe_eppa_bus = audio_line_bus_init(DEVICE(obj), DSP_AFE_EPPA_BUS_NAME);
+	p->ssc_bus = ssi_create_bus(DEVICE(obj), "SSC");
+	p->i2s1.tx_bus = i2s_tx_bus_init(DEVICE(obj), "I2S1_TX");
+	p->i2s1.rx_bus = i2s_rx_bus_init(DEVICE(obj), "I2S1_RX");
+	p->i2s2.tx_bus = i2s_tx_bus_init(DEVICE(obj), "I2S2_TX");
+	p->i2s2.rx_bus = i2s_rx_bus_init(DEVICE(obj), "I2S2_RX");
+	p->iq_rx_bus = pmb887x_iq_bus_create(DEVICE(obj), "IQ_RX");
+	p->afe_ep_bus = audio_line_bus_init(DEVICE(obj), "AFE_EP");
+	p->afe_eppa_bus = audio_line_bus_init(DEVICE(obj), "AFE_EPPA");
 	memory_region_init(&p->mmio, obj, "pmb887x-dsp", DSP_IO_SIZE);
 	memory_region_init_io(&p->regs, obj, &io_ops, p, "pmb887x-dsp-regs", DSP_RAM0);
 	memory_region_add_subregion(&p->mmio, 0, &p->regs);
@@ -658,14 +650,6 @@ static const Property dsp_properties[] = {
 	DEFINE_PROP_UINT32("revision", dsp_state_t, revision, 0),
 	DEFINE_PROP_UINT32("rom_version", dsp_state_t, rom_version, 0),
 	DEFINE_PROP_LINK("cpu", dsp_state_t, cpu, TYPE_CPU, CPUState *),
-	DEFINE_PROP_LINK("bus_ssc", dsp_state_t, ssc_bus, "SSI", SSIBus *),
-	DEFINE_PROP_LINK("bus_i2s1_tx", dsp_state_t, i2s1.tx_bus, TYPE_I2S_TX_BUS, I2STxBus *),
-	DEFINE_PROP_LINK("bus_i2s1_rx", dsp_state_t, i2s1.rx_bus, TYPE_I2S_RX_BUS, I2SRxBus *),
-	DEFINE_PROP_LINK("bus_i2s2_tx", dsp_state_t, i2s2.tx_bus, TYPE_I2S_TX_BUS, I2STxBus *),
-	DEFINE_PROP_LINK("bus_i2s2_rx", dsp_state_t, i2s2.rx_bus, TYPE_I2S_RX_BUS, I2SRxBus *),
-	DEFINE_PROP_LINK("bus_iq_rx", dsp_state_t, iq_rx_bus, TYPE_PMB887X_IQ_BUS, pmb887x_iq_bus_t *),
-	DEFINE_PROP_LINK("bus_afe_ep", dsp_state_t, afe_ep_bus, TYPE_AUDIO_LINE_BUS, AudioLineBus *),
-	DEFINE_PROP_LINK("bus_afe_eppa", dsp_state_t, afe_eppa_bus, TYPE_AUDIO_LINE_BUS, AudioLineBus *),
 };
 
 static void dsp_realize(DeviceState *dev, Error **errp) {
