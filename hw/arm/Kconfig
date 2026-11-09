@@ -272,6 +272,7 @@ config PMB887X
     select LM4946
     select TEA5761UK
     select PMB6812
+    select D1094XX
 
 config VEXPRESS
     bool
