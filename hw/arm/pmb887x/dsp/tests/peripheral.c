@@ -54,14 +54,14 @@ void audio_line_write(AudioLineBus *bus, unsigned stream, const int16_t *frames,
 	line->last_sample = frames[frame_count * line->format.channels - 1];
 }
 
-bool pmb887x_iq_bus_has_source(const pmb887x_iq_bus_t *bus) {
+bool iq_bus_has_source(const IQBus *bus) {
 	g_assert_null(bus);
 	return false;
 }
 
-pmb887x_iq_sample_t pmb887x_iq_bus_read(pmb887x_iq_bus_t *bus, int64_t _timestamp, uint64_t _sample_index) {
+IQSample iq_bus_read(IQBus *bus, int64_t _timestamp, uint64_t _sample_index) {
 	g_assert_null(bus);
-	return (pmb887x_iq_sample_t) { 0, 0 };
+	return (IQSample) { 0, 0 };
 }
 
 typedef struct test_host_t {

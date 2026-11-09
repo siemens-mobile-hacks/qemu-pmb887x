@@ -12,7 +12,7 @@ typedef struct dsp_bus_t dsp_bus_t;
 typedef struct dsp_host_t dsp_host_t;
 typedef struct dsp_i2s_port_t dsp_i2s_port_t;
 typedef struct dsp_ports_t dsp_ports_t;
-typedef struct pmb887x_iq_bus_t pmb887x_iq_bus_t;
+typedef struct IQBus IQBus;
 
 #define DSP_I2S_COUNT	2
 
@@ -66,7 +66,7 @@ uint16_t dsp_bus_get_irq_flags(dsp_bus_t *bus, size_t group);
 uint16_t dsp_bus_get_irq_pending_flags(dsp_bus_t *bus, size_t group);
 void dsp_bus_set_request(dsp_bus_t *bus, size_t index, bool level);
 void dsp_bus_set_input(dsp_bus_t *bus, size_t index, bool level);
-void dsp_bus_set_iq_bus(dsp_bus_t *bus, pmb887x_iq_bus_t *iq_bus);
+void dsp_bus_set_iq_bus(dsp_bus_t *bus, IQBus *iq_bus);
 void dsp_bus_set_gsm_signal(
 	dsp_bus_t *bus,
 	pmb887x_dsp_gsm_signal_t signal,

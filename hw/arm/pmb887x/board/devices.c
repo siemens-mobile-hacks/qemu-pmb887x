@@ -7,7 +7,6 @@
 #include "hw/arm/pmb887x/board/memory.h"
 #include "hw/arm/pmb887x/dsp.h"
 #include "hw/arm/pmb887x/mmicif.h"
-#include "hw/gsm/iq-bus.h"
 #include "hw/arm/pmb887x/sim.h"
 #include "hw/lcd/lcd.h"
 #include "hw/arm/pmb887x/utils/toml.h"

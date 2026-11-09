@@ -115,7 +115,7 @@ void baseband_set_signal(
 	bool level,
 	int64_t timestamp_ns
 );
-void baseband_set_iq_bus(dsp_device_t *device, pmb887x_iq_bus_t *iq_bus);
+void baseband_set_iq_bus(dsp_device_t *device, IQBus *iq_bus);
 void baseband_advance(dsp_device_t *device);
 bool baseband_is_active(const dsp_device_t *device);
 

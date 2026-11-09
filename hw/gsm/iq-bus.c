@@ -1,97 +1,91 @@
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 #include "qemu/osdep.h"
-#include "hw/gsm/iq-bus.h"
 #include "qapi/error.h"
+#include "hw/gsm/iq-bus.h"
 
-struct pmb887x_iq_bus_t {
-	BusState parent_obj;
+#define TYPE_IQ_SOURCE_ENDPOINT "iq-source-endpoint"
+
+OBJECT_DECLARE_SIMPLE_TYPE(IQSourceEndpoint, IQ_SOURCE_ENDPOINT)
+
+struct IQBus {
+    BusState parent_obj;
 };
 
-#define TYPE_PMB887X_IQ_ENDPOINT "pmb887x-iq-source-endpoint"
-#define PMB887X_IQ_ENDPOINT(obj) OBJECT_CHECK(pmb887x_iq_endpoint_t, (obj), TYPE_PMB887X_IQ_ENDPOINT)
-typedef struct pmb887x_iq_endpoint_t {
-	DeviceState parent_obj;
-	pmb887x_rf_iq_source_t *source;
-	pmb887x_rf_iq_source_class_t *source_class;
-} pmb887x_iq_endpoint_t;
-
-pmb887x_iq_bus_t *pmb887x_iq_bus_create(DeviceState *parent, const char *name) {
-	return PMB887X_IQ_BUS(qbus_new(TYPE_PMB887X_IQ_BUS, parent, name));
-}
+struct IQSourceEndpoint {
+    DeviceState parent_obj;
+    IQSource *source;
+    IQSourceClass *source_class;
+};
 
 static DeviceState *iq_source_port_create_endpoint(QDevBusPort *base, Error **_errp) {
-	pmb887x_iq_source_port_t *port = container_of(base, pmb887x_iq_source_port_t, parent);
-	DeviceState *dev = qdev_new(TYPE_PMB887X_IQ_ENDPOINT);
-	pmb887x_iq_endpoint_t *endpoint = PMB887X_IQ_ENDPOINT(dev);
-	endpoint->source = port->source;
-	endpoint->source_class = PMB887X_RF_IQ_SOURCE_GET_CLASS(port->source);
-	return dev;
+    IQSourcePort *port = container_of(base, IQSourcePort, parent);
+    DeviceState *dev = qdev_new(TYPE_IQ_SOURCE_ENDPOINT);
+    IQSourceEndpoint *endpoint = IQ_SOURCE_ENDPOINT(dev);
+    endpoint->source = port->source;
+    endpoint->source_class = IQ_SOURCE_GET_CLASS(port->source);
+    return dev;
 }
 
-void pmb887x_iq_source_port_init(
-	pmb887x_iq_source_port_t *port,
-	DeviceState *dev,
-	const char *name,
-	pmb887x_rf_iq_source_t *source
-) {
-	port->source = source;
-	qdev_init_bus_port(dev, &port->parent, name, TYPE_PMB887X_IQ_BUS, iq_source_port_create_endpoint);
+void iq_source_port_init(IQSourcePort *port, DeviceState *dev, const char *name, IQSource *source) {
+    port->source = source;
+    qdev_init_bus_port(dev, &port->parent, name, TYPE_IQ_BUS, iq_source_port_create_endpoint);
 }
 
-bool pmb887x_iq_bus_has_source(const pmb887x_iq_bus_t *bus) {
-	return bus != NULL && !QTAILQ_EMPTY(&bus->parent_obj.children);
+bool iq_bus_has_source(const IQBus *bus) {
+    return bus != NULL && !QTAILQ_EMPTY(&bus->parent_obj.children);
 }
 
-pmb887x_iq_sample_t pmb887x_iq_bus_read(pmb887x_iq_bus_t *bus, int64_t timestamp, uint64_t sample_index) {
-	if (!pmb887x_iq_bus_has_source(bus))
-		return (pmb887x_iq_sample_t) { 0, 0 };
+IQSample iq_bus_read(IQBus *bus, int64_t timestamp, uint64_t sample_index) {
+    if (!iq_bus_has_source(bus))
+        return (IQSample) { 0, 0 };
 
-	BusChild *child = QTAILQ_FIRST(&bus->parent_obj.children);
-	pmb887x_iq_endpoint_t *endpoint = container_of(child->child, pmb887x_iq_endpoint_t, parent_obj);
-	return endpoint->source_class->read_iq(endpoint->source, timestamp, sample_index);
+    BusChild *child = QTAILQ_FIRST(&bus->parent_obj.children);
+    IQSourceEndpoint *endpoint = container_of(child->child, IQSourceEndpoint, parent_obj);
+    return endpoint->source_class->read(endpoint->source, timestamp, sample_index);
 }
 
 static bool iq_bus_check_address(BusState *bus, DeviceState *_dev, Error **errp) {
-	if (!QTAILQ_EMPTY(&bus->children)) {
-		error_setg(errp, "I/Q bus already has a source");
-		return false;
-	}
-	return true;
+    if (!QTAILQ_EMPTY(&bus->children)) {
+        error_setg(errp, "I/Q bus already has a source");
+        return false;
+    }
+    return true;
 }
 
 static void iq_bus_class_init(ObjectClass *klass, const void *_data) {
-	BusClass *bus_class = BUS_CLASS(klass);
-	bus_class->check_address = iq_bus_check_address;
+    BusClass *bus_class = BUS_CLASS(klass);
+    bus_class->check_address = iq_bus_check_address;
 }
 
 static void iq_source_endpoint_class_init(ObjectClass *klass, const void *_data) {
-	DeviceClass *device_class = DEVICE_CLASS(klass);
-	device_class->bus_type = TYPE_PMB887X_IQ_BUS;
+    DeviceClass *device_class = DEVICE_CLASS(klass);
+    device_class->bus_type = TYPE_IQ_BUS;
 }
 
-static const TypeInfo rf_iq_source_info = {
-	.name = TYPE_PMB887X_RF_IQ_SOURCE,
-	.parent = TYPE_INTERFACE,
-	.class_size = sizeof(pmb887x_rf_iq_source_class_t),
+static const TypeInfo iq_source_info = {
+    .name           = TYPE_IQ_SOURCE,
+    .parent         = TYPE_INTERFACE,
+    .class_size     = sizeof(IQSourceClass),
 };
 
 static const TypeInfo iq_bus_info = {
-	.name = TYPE_PMB887X_IQ_BUS,
-	.parent = TYPE_BUS,
-	.instance_size = sizeof(pmb887x_iq_bus_t),
-	.class_init = iq_bus_class_init,
+    .name           = TYPE_IQ_BUS,
+    .parent         = TYPE_BUS,
+    .instance_size  = sizeof(IQBus),
+    .class_init     = iq_bus_class_init,
 };
 
 static const TypeInfo iq_source_endpoint_info = {
-	.name = TYPE_PMB887X_IQ_ENDPOINT,
-	.parent = TYPE_DEVICE,
-	.instance_size = sizeof(pmb887x_iq_endpoint_t),
-	.class_init = iq_source_endpoint_class_init,
+    .name           = TYPE_IQ_SOURCE_ENDPOINT,
+    .parent         = TYPE_DEVICE,
+    .instance_size  = sizeof(IQSourceEndpoint),
+    .class_init     = iq_source_endpoint_class_init,
 };
 
-static void rf_register_types(void) {
-	type_register_static(&rf_iq_source_info);
-	type_register_static(&iq_bus_info);
-	type_register_static(&iq_source_endpoint_info);
+static void iq_bus_register_types(void) {
+    type_register_static(&iq_source_info);
+    type_register_static(&iq_bus_info);
+    type_register_static(&iq_source_endpoint_info);
 }
 
-type_init(rf_register_types)
+type_init(iq_bus_register_types)

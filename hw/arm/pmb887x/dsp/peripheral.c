@@ -355,7 +355,7 @@ void dsp_bus_set_input(dsp_bus_t *bus, size_t index, bool level) {
 	dsp_int_set_flags(bus->interrupt, 2, flag);
 }
 
-void dsp_bus_set_iq_bus(dsp_bus_t *bus, pmb887x_iq_bus_t *iq_bus) {
+void dsp_bus_set_iq_bus(dsp_bus_t *bus, IQBus *iq_bus) {
 	if (bus->baseband != NULL)
 		baseband_set_iq_bus(bus->baseband, iq_bus);
 }

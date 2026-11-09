@@ -87,7 +87,7 @@ struct dsp_state_t {
 	qemu_irq active_output;
 	dsp_i2s_port_t i2s1;
 	dsp_i2s_port_t i2s2;
-	pmb887x_iq_bus_t *iq_rx_bus;
+	IQBus *iq_rx_bus;
 	AudioLineBus *afe_ep_bus;
 	AudioLineBus *afe_eppa_bus;
 	SSIBus *ssc_bus;
@@ -603,7 +603,7 @@ static void dsp_init(Object *obj) {
 	p->i2s1.rx_bus = i2s_rx_bus_init(DEVICE(obj), "I2S1_RX");
 	p->i2s2.tx_bus = i2s_tx_bus_init(DEVICE(obj), "I2S2_TX");
 	p->i2s2.rx_bus = i2s_rx_bus_init(DEVICE(obj), "I2S2_RX");
-	p->iq_rx_bus = pmb887x_iq_bus_create(DEVICE(obj), "IQ_RX");
+	p->iq_rx_bus = IQ_BUS(qbus_new(TYPE_IQ_BUS, DEVICE(obj), "IQ_RX"));
 	p->afe_ep_bus = audio_line_bus_init(DEVICE(obj), "AFE_EP");
 	p->afe_eppa_bus = audio_line_bus_init(DEVICE(obj), "AFE_EPPA");
 	memory_region_init(&p->mmio, obj, "pmb887x-dsp", DSP_IO_SIZE);

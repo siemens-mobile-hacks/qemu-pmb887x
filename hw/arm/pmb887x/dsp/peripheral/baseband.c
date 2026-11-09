@@ -61,7 +61,7 @@ struct baseband_state_t {
 	dsp_host_t host;
 	uint8_t normal_burst_phases[BASEBAND_NORMAL_BURST_SYMBOLS];
 	uint8_t fcch_phases[BASEBAND_NORMAL_BURST_SYMBOLS];
-	pmb887x_iq_bus_t *iq_bus;
+	IQBus *iq_bus;
 	QEMUTimer *full_timer;
 	uint16_t ram_base;
 	uint16_t ram_size;
@@ -86,7 +86,7 @@ struct baseband_state_t {
 	bool job_active;
 	bool rx_active;
 	uint8_t startup_pointer_reads;
-	pmb887x_iq_sample_t filter_sample;
+	IQSample filter_sample;
 	int16_t filter_history_i[BASEBAND_FILTER_HISTORY_SIZE];
 	int16_t filter_history_q[BASEBAND_FILTER_HISTORY_SIZE];
 	uint64_t filter_next_input_sample;
@@ -138,7 +138,7 @@ static void baseband_reset(dsp_device_t *device) {
 	qatomic_set(&state->job_active, false);
 	state->rx_active = false;
 	qatomic_set(&state->startup_pointer_reads, 0);
-	state->filter_sample = (pmb887x_iq_sample_t) { 0, 0 };
+	state->filter_sample = (IQSample) { 0, 0 };
 	memset(state->filter_history_i, 0, sizeof(state->filter_history_i));
 	memset(state->filter_history_q, 0, sizeof(state->filter_history_q));
 	state->filter_next_input_sample = 0;
@@ -207,7 +207,7 @@ static size_t baseband_filter_get_half_length(const baseband_state_t *state) {
 	return MIN(half_length, maximum);
 }
 
-static void baseband_filter_push(baseband_state_t *state, pmb887x_iq_sample_t sample) {
+static void baseband_filter_push(baseband_state_t *state, IQSample sample) {
 	size_t mirror_position = state->filter_position + BASEBAND_FILTER_MAX_TAPS;
 
 	state->filter_history_i[state->filter_position] = sample.i;
@@ -217,7 +217,7 @@ static void baseband_filter_push(baseband_state_t *state, pmb887x_iq_sample_t sa
 	state->filter_position = (state->filter_position + 1U) % BASEBAND_FILTER_MAX_TAPS;
 }
 
-static pmb887x_iq_sample_t baseband_filter_output(baseband_state_t *state, size_t half_length) {
+static IQSample baseband_filter_output(baseband_state_t *state, size_t half_length) {
 	size_t taps = half_length * 2U + 1U;
 	size_t window_start = state->filter_position + BASEBAND_FILTER_MAX_TAPS - taps;
 	const int16_t *window_i = &state->filter_history_i[window_start];
@@ -245,7 +245,7 @@ static pmb887x_iq_sample_t baseband_filter_output(baseband_state_t *state, size_
 	uint32_t shift = BASEBAND_FILTER_SCALING_BIAS + scaling;
 	int64_t output_i = (accumulator_i >> shift);
 	int64_t output_q = (accumulator_q >> shift);
-	pmb887x_iq_sample_t sample = {
+	IQSample sample = {
 		.i = output_i < INT16_MIN ? INT16_MIN : MIN(output_i, INT16_MAX),
 		.q = output_q < INT16_MIN ? INT16_MIN : MIN(output_q, INT16_MAX),
 	};
@@ -255,7 +255,7 @@ static pmb887x_iq_sample_t baseband_filter_output(baseband_state_t *state, size_
 static void baseband_filter_start(baseband_state_t *state, int64_t now) {
 	state->rx_start_time = now;
 	state->job_first_input_sample = 0;
-	state->filter_sample = (pmb887x_iq_sample_t) { 0, 0 };
+	state->filter_sample = (IQSample) { 0, 0 };
 	memset(state->filter_history_i, 0, sizeof(state->filter_history_i));
 	memset(state->filter_history_q, 0, sizeof(state->filter_history_q));
 	state->filter_next_input_sample = 0;
@@ -268,7 +268,7 @@ static void baseband_filter_stop(baseband_state_t *state) {
 }
 
 static void baseband_filter_advance(baseband_state_t *state, uint64_t target_input_sample) {
-	pmb887x_iq_bus_t *iq_bus = qatomic_read(&state->iq_bus);
+	IQBus *iq_bus = qatomic_read(&state->iq_bus);
 	uint64_t history_samples = BASEBAND_FILTER_MAX_TAPS - 1U;
 	uint64_t first_needed = target_input_sample > history_samples ? target_input_sample - history_samples : 0;
 
@@ -285,16 +285,16 @@ static void baseband_filter_advance(baseband_state_t *state, uint64_t target_inp
 			input_sample * BASEBAND_NARROW_SAMPLE_CLOCK_DIVISOR, NANOSECONDS_PER_SECOND,
 			BASEBAND_SAMPLE_CLOCK_HZ);
 
-		baseband_filter_push(state, pmb887x_iq_bus_read(iq_bus, timestamp, input_sample));
+		baseband_filter_push(state, iq_bus_read(iq_bus, timestamp, input_sample));
 		state->filter_next_input_sample++;
 	}
 }
 
-static pmb887x_iq_sample_t baseband_filter_sample(baseband_state_t *state, uint64_t output_sample) {
-	pmb887x_iq_bus_t *iq_bus = qatomic_read(&state->iq_bus);
+static IQSample baseband_filter_sample(baseband_state_t *state, uint64_t output_sample) {
+	IQBus *iq_bus = qatomic_read(&state->iq_bus);
 
-	if (!state->rx_active || !pmb887x_iq_bus_has_source(iq_bus))
-		return (pmb887x_iq_sample_t) { 0, 0 };
+	if (!state->rx_active || !iq_bus_has_source(iq_bus))
+		return (IQSample) { 0, 0 };
 
 	size_t half_length = baseband_filter_get_half_length(state);
 	uint16_t input_stride = baseband_get_input_stride(state);
@@ -320,10 +320,10 @@ static void baseband_init_symbol_phases(uint8_t phases[BASEBAND_NORMAL_BURST_SYM
 }
 
 static uint16_t baseband_signal_word(baseband_state_t *state, uint64_t word) {
-	pmb887x_iq_bus_t *iq_bus = qatomic_read(&state->iq_bus);
+	IQBus *iq_bus = qatomic_read(&state->iq_bus);
 	bool fcch = qatomic_read(&state->job_signal) == PMB887X_DSP_GSM_SIGNAL_FCON;
 
-	if (pmb887x_iq_bus_has_source(iq_bus)) {
+	if (iq_bus_has_source(iq_bus)) {
 		uint64_t sample_index = word / BASEBAND_WORDS_PER_SAMPLE;
 
 		if ((word % BASEBAND_WORDS_PER_SAMPLE) == 0)
@@ -729,7 +729,7 @@ bool baseband_is_active(const dsp_device_t *device) {
 		(deadline != BASEBAND_NO_DEADLINE && deadline <= qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL));
 }
 
-void baseband_set_iq_bus(dsp_device_t *device, pmb887x_iq_bus_t *iq_bus) {
+void baseband_set_iq_bus(dsp_device_t *device, IQBus *iq_bus) {
 	baseband_state_t *state = device->state;
 
 	qatomic_set(&state->iq_bus, iq_bus);

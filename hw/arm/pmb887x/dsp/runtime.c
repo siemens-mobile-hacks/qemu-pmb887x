@@ -668,7 +668,7 @@ void dsp_runtime_set_input(dsp_runtime_t *runtime, size_t index, bool level) {
 	dsp_bus_set_input(runtime->bus, index, level);
 }
 
-void dsp_runtime_set_iq_bus(dsp_runtime_t *runtime, pmb887x_iq_bus_t *iq_bus) {
+void dsp_runtime_set_iq_bus(dsp_runtime_t *runtime, IQBus *iq_bus) {
 	dsp_bus_set_iq_bus(runtime->bus, iq_bus);
 }
 
