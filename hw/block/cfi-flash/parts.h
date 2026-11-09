@@ -15,7 +15,7 @@ struct CFIFlashChipPart {
     uint32_t offset;
     uint32_t size;
     const CFIFlashEraseRegion *erase_regions;
-    uint32_t erase_regions_cnt;
+    uint32_t erase_regions_count;
 };
 
 struct CFIFlashChip {

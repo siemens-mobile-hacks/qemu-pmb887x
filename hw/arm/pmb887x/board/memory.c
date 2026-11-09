@@ -46,7 +46,7 @@ MemoryRegion *pmb887x_board_create_nor_flash(const char *id, uint32_t vid, uint3
 	qdev_prop_set_uint32(flash, "offset", offset);
 	qdev_prop_set_uint32(flash, "size", *size);
 	if (flash_blk)
-		object_property_set_link(OBJECT(flash), "blk", OBJECT(flash_blk), &error_fatal);
+		object_property_set_link(OBJECT(flash), "storage", OBJECT(flash_blk), &error_fatal);
 	sysbus_realize_and_unref(SYS_BUS_DEVICE(flash), &error_fatal);
 
 	*size = object_property_get_uint(OBJECT(flash), "size", &error_fatal);

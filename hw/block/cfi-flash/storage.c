@@ -10,12 +10,9 @@
 #include "system/debug-channel.h"
 #include "hw/block/cfi-flash.h"
 
-OBJECT_DECLARE_SIMPLE_TYPE(CFIFlashStorage, CFI_FLASH_STORAGE)
-
 struct CFIFlashStorage {
     SysBusDevice parent_obj;
     DebugChannel dbg;
-    DeviceState *dev;
     BlockBackend *blk;
 };
 
@@ -63,10 +60,6 @@ int64_t cfi_flash_storage_size(CFIFlashStorage *flash) {
 const char *cfi_flash_storage_filename(CFIFlashStorage *flash) {
     BlockDriverState *bs = blk_bs(flash->blk);
     return bs->exact_filename[0] ? bs->exact_filename : bs->filename;
-}
-
-CFIFlashStorage *cfi_flash_storage_self(DeviceState *dev) {
-    return CFI_FLASH_STORAGE(dev);
 }
 
 static void cfi_flash_storage_realize(DeviceState *dev, Error **errp) {

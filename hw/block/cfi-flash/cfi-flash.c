@@ -1,26 +1,16 @@
 /* SPDX-License-Identifier: GPL-2.0-or-later */
-/* NOR FLASH (Intel/ST CFI) */
 #include "qemu/osdep.h"
 #include "qapi/error.h"
-#include "hw/core/sysbus.h"
-#include "system/memory.h"
 #include "qemu/error-report.h"
-#include "qemu/timer.h"
 #include "qemu/main-loop.h"
 #include "qemu/bitmap.h"
 #include "qemu/aio-wait.h"
 #include "system/runstate.h"
 #include "hw/core/qdev-properties.h"
 #include "hw/block/block.h"
+#include "cfi-flash.h"
 
-#include "system/debug-channel.h"
-#include "parts.h"
-#include "hw/block/cfi-flash.h"
-
-OBJECT_DECLARE_SIMPLE_TYPE(CFIFlashState, CFI_FLASH)
-
-#define CFI_ADDR    0x10
-#define CFI_INDEX_MASK  0xFFF
+#define CFI_PRIMARY_ALGORITHM 0x13
 
 #define CFI_FLASH_ROMD_THRESHOLD_MIN        42
 #define CFI_FLASH_ROMD_THRESHOLD_MAX        (64 * 1024)
@@ -29,130 +19,18 @@ OBJECT_DECLARE_SIMPLE_TYPE(CFIFlashState, CFI_FLASH)
 #define CFI_FLASH_WRITEBACK_PAGE_SIZE       4096
 #define CFI_FLASH_WRITEBACK_DELAY_MS        1000
 
-#define CFI_FLASH_STATUS_BLOCK_LOCKED       BIT(1)
-#define CFI_FLASH_STATUS_PROGRAM_ERROR      BIT(4)
-#define CFI_FLASH_STATUS_BLOCK_ERASE_ERROR  BIT(5)
-#define CFI_FLASH_STATUS_READY              BIT(7)
-#define CFI_FLASH_STATUS_ERRORS             (BIT(1) | BIT(3) | BIT(4) | BIT(5) | BIT(8) | BIT(9))
-#define CFI_FLASH_STATUS_SEQUENCE_ERROR     (CFI_FLASH_STATUS_PROGRAM_ERROR | CFI_FLASH_STATUS_BLOCK_ERASE_ERROR)
-
-#define CFI_FLASH_LOCK_STATUS_LOCKED        BIT(0)
-#define CFI_FLASH_LOCK_STATUS_LOCKED_DOWN   BIT(1)
-#define CFI_FLASH_EFA_LOCK_STATUS_LOCKED        BIT(4)
-#define CFI_FLASH_EFA_LOCK_STATUS_LOCKED_DOWN   BIT(5)
-
-typedef struct CFIFlashPart CFIFlashPart;
-typedef struct CFIFlashBuffer CFIFlashBuffer;
-typedef struct CFIFlashBlock CFIFlashBlock;
-typedef struct CFIFlashDirtyRange CFIFlashDirtyRange;
-
-struct CFIFlashBuffer {
-    uint32_t offset;
-    uint32_t value;
-    uint8_t size;
-};
-
-struct CFIFlashBlock {
-    uint32_t offset;
-    uint32_t size;
-    bool locked;
-    bool locked_down;
-};
-
-struct CFIFlashDirtyRange {
-    uint32_t start;
-    uint32_t end;
-};
-
-struct CFIFlashPart {
-    uint16_t n;
-    uint32_t size;
-    uint32_t offset;
-
-    uint8_t wcycle;
-    uint8_t cmd;
-    uint32_t cmd_addr;
-    uint16_t status;
-    uint32_t mmio_array_reads;
-    uint32_t romd_threshold;
-    int64_t romd_since_ns;
-
-    uint8_t *storage;
-    unsigned long *dirty_pages;
-
-    uint32_t buffer_size;
-    uint32_t buffer_index;
-    uint32_t buffer_end;
-    CFIFlashBuffer *buffer;
-    const CFIFlashChipPart *cfg;
-
-    uint32_t blocks_n;
-    CFIFlashBlock *blocks;
-
-    MemoryRegion mem;
-    CFIFlashState *flash;
-};
-
-struct CFIFlashState {
-    SysBusDevice parent_obj;
-    DebugChannel dbg;
-    DeviceState *dev;
-    MemoryRegion mmio;
-
-    CFIFlashStorage *blk;
-    const CFIFlashChip *cfg;
-
-    char *name;
-    char *otp0_file;
-    char *otp1_file;
-    char *efa_file;
-    int otp0_fd;
-    int otp1_fd;
-    int efa_fd;
-    CFIFlashDirtyRange otp0_dirty;
-    CFIFlashDirtyRange otp1_dirty;
-    CFIFlashDirtyRange efa_dirty;
-
-    bool writable;
-    QEMUTimer *writeback_timer;
-    uint32_t writeback_in_flight;
-
-    uint16_t vid;
-    uint16_t pid;
-
-    char *hex_otp0_data;
-    char *hex_otp1_data;
-
-    uint32_t size;
-    uint32_t offset;
-
-    /* Refuse program/buffer opcodes the part's CFI command set does not
-     * document (see flash_command_is_documented). Off by default. */
-    bool strict_opcodes;
-
-    uint16_t *otp0_data;
-    uint16_t *otp1_data;
-    uint8_t *efa_storage;
-    uint32_t efa_size;
-    uint32_t efa_blocks_n;
-    CFIFlashBlock *efa_blocks;
-
-    uint32_t parts_n;
-    CFIFlashPart **parts;
-};
-
 static void cfi_flash_error(CFIFlashState *flash, const char *format, ...) G_GNUC_PRINTF(2, 3);
 
-static void cfi_flash_load_file(CFIFlashState *flash, const char *path, void *data, size_t size, const char *region);
-static void cfi_flash_save_file(CFIFlashState *flash, int *fd, const char *path, const void *data, size_t total_size,
-    size_t offset, size_t size, const char *region);
-
-static void cfi_flash_buffer_clear(CFIFlashPart *p) {
-    g_clear_pointer(&p->buffer, g_free);
-    p->buffer_size = 0;
-    p->buffer_index = 0;
-    p->buffer_end = 0;
-}
+static void cfi_flash_save_file(
+    CFIFlashState *flash,
+    int *fd,
+    const char *path,
+    const void *data,
+    size_t total_size,
+    size_t offset,
+    size_t size,
+    const char *region
+);
 
 static void cfi_flash_romd_map(CFIFlashPart *p) {
     p->romd_since_ns = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
@@ -170,29 +48,15 @@ static void cfi_flash_romd_unmap(CFIFlashPart *p) {
     memory_region_rom_device_set_romd(&p->mem, false);
 }
 
-static void cfi_flash_sequence_error(CFIFlashPart *p) {
-    cfi_flash_buffer_clear(p);
-    p->cmd = 0x70;
-    p->wcycle = 0;
-    p->status |= CFI_FLASH_STATUS_READY | CFI_FLASH_STATUS_SEQUENCE_ERROR;
-}
-
 static void cfi_flash_unmap_inactive_read_array(CFIFlashPart *p) {
-    if (p->cmd == 0)
+    if (p->read_array)
         return;
     if (memory_region_is_romd(&p->mem))
         cfi_flash_romd_unmap(p);
     p->mmio_array_reads = 0;
 }
 
-static void cfi_flash_reset(CFIFlashPart *p) {
-    DEBUG_LOG(&p->flash->dbg, "<%d> back to read array mode\n", p->n);
-    cfi_flash_buffer_clear(p);
-    p->cmd = 0;
-    p->wcycle = 0;
-}
-
-static CFIFlashBlock *cfi_flash_part_find_block(CFIFlashPart *p, uint32_t offset) {
+CFIFlashBlock *cfi_flash_part_find_block(CFIFlashPart *p, uint32_t offset) {
     offset -= p->offset;
     for (uint32_t i = 0; i < p->blocks_n; i++) {
         CFIFlashBlock *blk = &p->blocks[i];
@@ -202,21 +66,20 @@ static CFIFlashBlock *cfi_flash_part_find_block(CFIFlashPart *p, uint32_t offset
     g_assert_not_reached();
 }
 
-static CFIFlashBlock *cfi_flash_find_efa_block(CFIFlashPart *p, uint32_t offset) {
-    offset -= p->offset;
-    for (uint32_t i = 0; i < p->flash->efa_blocks_n; i++) {
-        CFIFlashBlock *blk = &p->flash->efa_blocks[i];
-        if (offset >= blk->offset && offset < blk->offset + blk->size)
+CFIFlashBlock *cfi_flash_efa_find_block(CFIFlashState *flash, uint32_t efa_offset) {
+    for (uint32_t i = 0; i < flash->efa_blocks_n; i++) {
+        CFIFlashBlock *blk = &flash->efa_blocks[i];
+        if (efa_offset >= blk->offset && efa_offset < blk->offset + blk->size)
             return blk;
     }
     return NULL;
 }
 
-static uint32_t cfi_flash_find_sector_size(CFIFlashPart *p, uint32_t offset) {
+uint32_t cfi_flash_find_sector_size(CFIFlashPart *p, uint32_t offset) {
     offset -= p->offset;
 
-    for (uint32_t i = 0; i < p->cfg->erase_regions_cnt; i++) {
-        const CFIFlashEraseRegion *region = &p->cfg->erase_regions[i];
+    for (uint32_t i = 0; i < p->info->erase_regions_count; i++) {
+        const CFIFlashEraseRegion *region = &p->info->erase_regions[i];
         if (offset >= region->offset && offset < region->offset + region->size)
             return region->sector;
     }
@@ -293,7 +156,7 @@ static void cfi_flash_part_writeback_start(CFIFlashPart *p) {
         uint32_t storage_offset = page * CFI_FLASH_WRITEBACK_PAGE_SIZE;
         uint32_t size = MIN(end_page * CFI_FLASH_WRITEBACK_PAGE_SIZE, p->size) - storage_offset;
         p->flash->writeback_in_flight++;
-        cfi_flash_storage_aio_pwrite(p->flash->blk, p->flash->offset + p->offset + storage_offset, size,
+        cfi_flash_storage_aio_pwrite(p->flash->storage, p->flash->offset + p->offset + storage_offset, size,
             p->storage + storage_offset, cfi_flash_writeback_done, p->flash);
 
         page = find_next_bit(p->dirty_pages, pages_n, end_page);
@@ -301,15 +164,15 @@ static void cfi_flash_part_writeback_start(CFIFlashPart *p) {
 }
 
 static void cfi_flash_writeback_start(CFIFlashState *flash) {
-    const CFIFlashChip *cfg = flash->cfg;
+    const CFIFlashChip *chip = flash->chip;
 
     for (uint32_t i = 0; i < flash->parts_n; i++)
         cfi_flash_part_writeback_start(flash->parts[i]);
 
     cfi_flash_side_file_save(flash, &flash->otp0_dirty, &flash->otp0_fd, flash->otp0_file, flash->otp0_data,
-        cfg->otp0_size, "OTP0");
+        chip->otp0_size, "OTP0");
     cfi_flash_side_file_save(flash, &flash->otp1_dirty, &flash->otp1_fd, flash->otp1_file, flash->otp1_data,
-        cfg->otp1_size, "OTP1");
+        chip->otp1_size, "OTP1");
     cfi_flash_side_file_save(flash, &flash->efa_dirty, &flash->efa_fd, flash->efa_file, flash->efa_storage,
         flash->efa_size, "EFA");
 }
@@ -364,15 +227,6 @@ static void cfi_flash_data_write(CFIFlashPart *p, uint32_t offset, uint32_t valu
     cfi_flash_part_mark_dirty(p, offset, size);
 }
 
-static uint32_t cfi_flash_efa_read(CFIFlashPart *p, uint32_t offset, uint32_t size) {
-    uint32_t efa_offset = offset - p->offset;
-    if (efa_offset + size > p->flash->efa_size) {
-        DEBUG_GUEST_ERROR(&p->flash->dbg, "<%d> EFA read outside EFA: %08X\n", p->n, p->flash->offset + offset);
-        return 0;
-    }
-    return lduw_le_p(p->flash->efa_storage + efa_offset);
-}
-
 static uint32_t cfi_flash_array_read(CFIFlashPart *p, uint32_t offset, uint32_t size) {
     uint32_t value = 0;
     offset -= p->offset;
@@ -381,654 +235,124 @@ static uint32_t cfi_flash_array_read(CFIFlashPart *p, uint32_t offset, uint32_t 
     return value;
 }
 
-static uint32_t cfi_flash_query_read(CFIFlashPart *p, uint32_t offset) {
-    const CFIFlashChip *cfg = p->flash->cfg;
-    uint16_t index = offset >> 1 & CFI_INDEX_MASK;
-    uint32_t value;
-
-    if (index >= CFI_ADDR && index < CFI_ADDR + cfg->cfi_size) {
-        value = cfg->cfi[index - CFI_ADDR];
-        DEBUG_LOG(&p->flash->dbg, "<%d> CFI %02X: %02X\n", p->n, index, value);
-    } else if (index >= cfg->pri_addr && index < cfg->pri_addr + cfg->pri_size) {
-        value = cfg->pri[index - cfg->pri_addr];
-        DEBUG_LOG(&p->flash->dbg, "<%d> PRI %02X: %02X\n", p->n, index - cfg->pri_addr, value);
-    } else if (index >= cfg->otp0_addr && index < cfg->otp0_addr + cfg->otp0_size / 2) {
-        value = p->flash->otp0_data[index - cfg->otp0_addr];
-        DEBUG_LOG(&p->flash->dbg, "<%d> OTP0 %02X: %04X\n", p->n, index - cfg->otp0_addr, value);
-    } else if (index >= cfg->otp1_addr && index < cfg->otp1_addr + cfg->otp1_size / 2) {
-        value = p->flash->otp1_data[index - cfg->otp1_addr];
-        DEBUG_LOG(&p->flash->dbg, "<%d> OTP1 %02X: %04X\n", p->n, index - cfg->otp1_addr, value);
-    } else {
-        switch (index) {
-            case 0x00:
-                value = p->flash->vid;
-                DEBUG_LOG(&p->flash->dbg, "<%d> vendor id: %04X\n", p->n, value);
-                break;
-
-            case 0x01:
-                value = p->flash->pid;
-                DEBUG_LOG(&p->flash->dbg, "<%d> device id: %04X\n", p->n, value);
-                break;
-
-            case 0x02: {
-                CFIFlashBlock *blk = cfi_flash_part_find_block(p, offset);
-                uint32_t efa_offset = offset - p->offset;
-                value = (blk->locked ? CFI_FLASH_LOCK_STATUS_LOCKED : 0) |
-                    (blk->locked_down ? CFI_FLASH_LOCK_STATUS_LOCKED_DOWN : 0);
-                if (efa_offset < p->flash->efa_size) {
-                    CFIFlashBlock *efa_blk = cfi_flash_find_efa_block(p, offset);
-                    value |= (efa_blk->locked ? CFI_FLASH_EFA_LOCK_STATUS_LOCKED : 0) |
-                        (efa_blk->locked_down ? CFI_FLASH_EFA_LOCK_STATUS_LOCKED_DOWN : 0);
-                }
-                DEBUG_LOG(&p->flash->dbg, "<%d> lock status: %02X\n", p->n, value);
-                break;
-            }
-
-            case 0x05:
-                value = cfg->cr;
-                DEBUG_LOG(&p->flash->dbg, "<%d> configuration register: %02X\n", p->n, value);
-                break;
-
-            case 0x06:
-                value = cfg->ehcr;
-                DEBUG_LOG(&p->flash->dbg, "<%d> enhanced configuration register: %02X\n", p->n, value);
-                break;
-
-            default:
-                value = 0xFFFF;
-                DEBUG_LOG(&p->flash->dbg, "<%d> %08X: read unknown cfi index 0x%02X\n", p->n, offset, index);
-                break;
-        }
-    }
-
-    return value;
+CFIFlashResult cfi_flash_program(CFIFlashPart *p, CFIFlashBlock *blk, uint32_t offset, uint32_t value, uint32_t size) {
+    if (blk->protected)
+        return CFI_FLASH_PROTECTED;
+    cfi_flash_data_write(p, offset, value, size);
+    return CFI_FLASH_OK;
 }
 
-static bool cfi_flash_efa_lock(CFIFlashPart *p, uint32_t offset, uint64_t value) {
-    CFIFlashBlock *blk = cfi_flash_find_efa_block(p, offset);
-    if (!blk) {
-        DEBUG_GUEST_ERROR(&p->flash->dbg, "<%d> EFA lock outside EFA: %08X\n", p->n, p->flash->offset + offset);
-        cfi_flash_sequence_error(p);
-        return true;
-    }
-    if (value == 0x01) {
-        DEBUG_LOG(&p->flash->dbg, "<%d> lock EFA block %08X\n", p->n, p->flash->offset + offset);
-        blk->locked = true;
-    } else if (value == 0xD0) {
-        DEBUG_LOG(&p->flash->dbg, "<%d> unlock EFA block %08X\n", p->n, p->flash->offset + offset);
-        blk->locked = false;
-    } else if (value == 0x2F) {
-        DEBUG_LOG(&p->flash->dbg, "<%d> lock-down EFA block %08X\n", p->n, p->flash->offset + offset);
-        blk->locked = true;
-        blk->locked_down = true;
-    } else {
-        return false;
-    }
+CFIFlashResult cfi_flash_erase_block(CFIFlashPart *p, CFIFlashBlock *blk) {
+    if (blk->protected)
+        return CFI_FLASH_PROTECTED;
+    memset(p->storage + blk->offset, 0xFF, blk->size);
+    cfi_flash_part_mark_dirty(p, blk->offset, blk->size);
+    return CFI_FLASH_OK;
+}
 
-    p->wcycle = 0;
-    p->status |= CFI_FLASH_STATUS_READY;
+bool cfi_flash_block_is_blank(CFIFlashPart *p, CFIFlashBlock *blk) {
+    const uint8_t *data = p->storage + blk->offset;
+
+    for (uint32_t i = 0; i < blk->size; i++) {
+        if (data[i] != 0xFF)
+            return false;
+    }
     return true;
 }
 
-static void cfi_flash_efa_erase(CFIFlashPart *p, uint32_t offset) {
-    CFIFlashBlock *blk = cfi_flash_find_efa_block(p, offset);
-    if (!blk) {
-        DEBUG_GUEST_ERROR(&p->flash->dbg, "<%d> EFA erase outside EFA: %08X\n", p->n, p->flash->offset + offset);
-        cfi_flash_sequence_error(p);
-        return;
-    }
-    DEBUG_LOG(&p->flash->dbg, "<%d> erase EFA block %08X...%08X\n", p->n, p->flash->offset + p->offset + blk->offset,
-        p->flash->offset + p->offset + blk->offset + blk->size - 1);
-    if (blk->locked) {
-        p->status |= CFI_FLASH_STATUS_BLOCK_LOCKED;
-        return;
-    }
+bool cfi_flash_query_read(CFIFlashPart *p, uint16_t index, uint32_t *value) {
+    const CFIFlashChip *chip = p->flash->chip;
 
-    bool changed = false;
-    for (uint32_t i = 0; i < blk->size; i++) {
-        if (p->flash->efa_storage[blk->offset + i] != 0xFF) {
-            changed = true;
-            break;
-        }
+    if (index >= CFI_ADDR && index < CFI_ADDR + chip->cfi_size) {
+        *value = chip->cfi[index - CFI_ADDR];
+        DEBUG_LOG(&p->flash->dbg, "<%d> CFI %02X: %02X\n", p->n, index, *value);
+        return true;
     }
-    memset(p->flash->efa_storage + blk->offset, 0xFF, blk->size);
-    if (changed)
-        cfi_flash_side_file_mark_dirty(p->flash, &p->flash->efa_dirty, blk->offset, blk->size);
+    if (index >= chip->pri_addr && index < chip->pri_addr + chip->pri_size) {
+        *value = chip->pri[index - chip->pri_addr];
+        DEBUG_LOG(&p->flash->dbg, "<%d> PRI %02X: %02X\n", p->n, index - chip->pri_addr, *value);
+        return true;
+    }
+    return false;
 }
 
-static void cfi_flash_efa_program(CFIFlashPart *p, uint32_t offset, uint64_t value, uint32_t size) {
-    uint32_t efa_offset = offset - p->offset;
-    CFIFlashBlock *blk = cfi_flash_find_efa_block(p, offset);
-    DEBUG_LOG(&p->flash->dbg, "<%d> program EFA word [%d]: %08"PRIX64" to %08X\n",
-        p->n, size, value, p->flash->offset + offset);
-    if (!blk || efa_offset + size > p->flash->efa_size) {
-        DEBUG_GUEST_ERROR(&p->flash->dbg, "<%d> EFA program outside EFA: %08X\n", p->n, p->flash->offset + offset);
-        cfi_flash_sequence_error(p);
-        return;
-    }
-    if (blk->locked) {
-        p->status |= CFI_FLASH_STATUS_BLOCK_LOCKED;
-        return;
-    }
+CFIFlashResult cfi_flash_efa_read(CFIFlashState *flash, uint32_t efa_offset, uint32_t size, uint32_t *value) {
+    if (efa_offset + size > flash->efa_size)
+        return CFI_FLASH_OUT_OF_RANGE;
+    *value = lduw_le_p(flash->efa_storage + efa_offset);
+    return CFI_FLASH_OK;
+}
+
+CFIFlashResult cfi_flash_efa_program(CFIFlashState *flash, uint32_t efa_offset, uint64_t value, uint32_t size) {
+    CFIFlashBlock *blk = cfi_flash_efa_find_block(flash, efa_offset);
+
+    if (!blk || efa_offset + size > flash->efa_size)
+        return CFI_FLASH_OUT_OF_RANGE;
+    if (blk->protected)
+        return CFI_FLASH_PROTECTED;
 
     bool changed = false;
     for (uint32_t i = 0; i < size; i++) {
-        uint8_t old_value = p->flash->efa_storage[efa_offset + i];
-        uint8_t programmed_value = value >> i * 8;
+        uint8_t old_value = flash->efa_storage[efa_offset + i];
+        uint8_t programmed_value = value >> (i * 8);
         uint8_t new_value = old_value & programmed_value;
-        p->flash->efa_storage[efa_offset + i] = new_value;
+        flash->efa_storage[efa_offset + i] = new_value;
         if (old_value != new_value)
             changed = true;
     }
     if (changed)
-        cfi_flash_side_file_mark_dirty(p->flash, &p->flash->efa_dirty, efa_offset, size);
+        cfi_flash_side_file_mark_dirty(flash, &flash->efa_dirty, efa_offset, size);
+    return CFI_FLASH_OK;
 }
 
-static void cfi_flash_otp_program(CFIFlashPart *p, uint32_t offset, uint64_t value, uint32_t size) {
-    const CFIFlashChip *cfg = p->flash->cfg;
-    uint16_t index = offset >> 1 & CFI_INDEX_MASK;
-    uint16_t *otp_data = NULL;
-    uint32_t data_index = 0;
-    uint16_t lock_mask = 0;
+CFIFlashResult cfi_flash_efa_erase_block(CFIFlashState *flash, CFIFlashBlock *blk) {
+    if (blk->protected)
+        return CFI_FLASH_PROTECTED;
 
-    if (index >= cfg->otp0_addr && index < cfg->otp0_addr + cfg->otp0_size / 2) {
-        data_index = index - cfg->otp0_addr;
-        otp_data = p->flash->otp0_data;
-        if (data_index) {
-            uint32_t data_offset = (data_index - 1) * sizeof(uint16_t);
-            lock_mask = data_offset < cfg->otp0_factory_size ? BIT(0) : BIT(1);
-        }
-    } else if (index >= cfg->otp1_addr && index < cfg->otp1_addr + cfg->otp1_size / 2) {
-        data_index = index - cfg->otp1_addr;
-        otp_data = p->flash->otp1_data;
-        if (data_index) {
-            uint32_t lock_bits = sizeof(otp_data[0]) * CHAR_BIT;
-            uint32_t group_size = (cfg->otp1_size - sizeof(uint16_t)) / lock_bits;
-            uint32_t group = (data_index - 1) * sizeof(uint16_t) / group_size;
-            lock_mask = BIT(group);
+    bool changed = false;
+    for (uint32_t i = 0; i < blk->size; i++) {
+        if (flash->efa_storage[blk->offset + i] != 0xFF) {
+            changed = true;
+            break;
         }
     }
+    memset(flash->efa_storage + blk->offset, 0xFF, blk->size);
+    if (changed)
+        cfi_flash_side_file_mark_dirty(flash, &flash->efa_dirty, blk->offset, blk->size);
+    return CFI_FLASH_OK;
+}
 
-    DEBUG_LOG(&p->flash->dbg, "<%d> program protection word [%d]: %08"PRIX64" to %08X\n",
-        p->n, size, value, p->flash->offset + offset);
-    if (!otp_data || size != sizeof(uint16_t) || (data_index && ((otp_data[0] & lock_mask) == 0))) {
-        p->status |= CFI_FLASH_STATUS_PROGRAM_ERROR;
-        return;
-    }
-
+void cfi_flash_otp_program(CFIFlashState *flash, uint16_t *otp_data, uint32_t data_index, uint16_t value) {
     uint16_t old_value = otp_data[data_index];
-    otp_data[data_index] &= (uint16_t) value;
+
+    otp_data[data_index] &= value;
     if (otp_data[data_index] == old_value)
         return;
     uint32_t data_offset = data_index * sizeof(otp_data[0]);
-    if (otp_data == p->flash->otp0_data) {
-        cfi_flash_side_file_mark_dirty(p->flash, &p->flash->otp0_dirty, data_offset, sizeof(otp_data[0]));
+    if (otp_data == flash->otp0_data) {
+        cfi_flash_side_file_mark_dirty(flash, &flash->otp0_dirty, data_offset, sizeof(otp_data[0]));
     } else {
-        cfi_flash_side_file_mark_dirty(p->flash, &p->flash->otp1_dirty, data_offset, sizeof(otp_data[0]));
+        cfi_flash_side_file_mark_dirty(flash, &flash->otp1_dirty, data_offset, sizeof(otp_data[0]));
     }
-}
-
-static bool cfi_flash_lock_command(CFIFlashPart *p, uint32_t offset, uint64_t value) {
-    if (value == 0xFF) {
-        cfi_flash_reset(p);
-        return true;
-    }
-    if (value == 0x03) {
-        DEBUG_LOG(&p->flash->dbg, "<%d> program read configuration register at %08X\n",
-            p->n, p->flash->offset + offset);
-        cfi_flash_reset(p);
-        return true;
-    }
-    if (value == 0x04) {
-        DEBUG_LOG(&p->flash->dbg, "<%d> program enhanced configuration register at %08X\n",
-            p->n, p->flash->offset + offset);
-        cfi_flash_reset(p);
-        return true;
-    }
-    if (value != 0x01 && value != 0xD0 && value != 0x2F)
-        return false;
-
-    CFIFlashBlock *blk = cfi_flash_part_find_block(p, offset);
-    if (value == 0x01) {
-        DEBUG_LOG(&p->flash->dbg, "<%d> lock block %08X\n", p->n, p->flash->offset + offset);
-        blk->locked = true;
-    } else if (value == 0xD0) {
-        DEBUG_LOG(&p->flash->dbg, "<%d> unlock block %08X\n", p->n, p->flash->offset + offset);
-        blk->locked = false;
-    } else if (value == 0x2F) {
-        DEBUG_LOG(&p->flash->dbg, "<%d> lock-down block %08X\n", p->n, p->flash->offset + offset);
-        blk->locked = true;
-        blk->locked_down = true;
-    }
-
-    p->wcycle = 0;
-    p->status |= CFI_FLASH_STATUS_READY;
-    return true;
-}
-
-static void cfi_flash_blank_check(CFIFlashPart *p, uint32_t offset) {
-    CFIFlashBlock *blk = cfi_flash_part_find_block(p, offset);
-    const uint8_t *data = p->storage + blk->offset;
-    bool blank = true;
-    for (uint32_t i = 0; i < blk->size; i++) {
-        if (data[i] != 0xFF) {
-            blank = false;
-            break;
-        }
-    }
-
-    DEBUG_LOG(&p->flash->dbg, "<%d> blank check block %08X...%08X: %s\n", p->n,
-        p->flash->offset + p->offset + blk->offset,
-        p->flash->offset + p->offset + blk->offset + blk->size - 1,
-        blank ? "blank" : "not blank");
-    p->status &= ~CFI_FLASH_STATUS_BLOCK_ERASE_ERROR;
-    if (!blank)
-        p->status |= CFI_FLASH_STATUS_BLOCK_ERASE_ERROR;
-    p->status |= CFI_FLASH_STATUS_READY;
-    p->cmd = 0x70;
-    p->wcycle = 0;
-}
-
-static void cfi_flash_block_erase(CFIFlashPart *p, uint32_t offset) {
-    CFIFlashBlock *blk = cfi_flash_part_find_block(p, offset);
-    uint32_t sector_size = cfi_flash_find_sector_size(p, offset);
-    uint32_t mask = ~(sector_size - 1);
-    uint32_t base = p->cmd_addr & mask;
-    DEBUG_LOG(&p->flash->dbg, "<%d> confirm erase block %08X...%08X (sector: %08X)\n", p->n, p->flash->offset + base,
-        p->flash->offset + base + sector_size - 1, sector_size);
-    if ((offset & mask) != (p->cmd_addr & mask)) {
-        DEBUG_GUEST_ERROR(&p->flash->dbg, "<%d> erase confirm at %08X, setup at %08X\n", p->n,
-            p->flash->offset + offset, p->flash->offset + p->cmd_addr);
-        cfi_flash_sequence_error(p);
-        return;
-    }
-    if (blk->locked) {
-        p->status |= CFI_FLASH_STATUS_BLOCK_LOCKED;
-        return;
-    }
-
-    uint32_t erase_offset = base - p->offset;
-    memset(p->storage + erase_offset, 0xFF, sector_size);
-    cfi_flash_part_mark_dirty(p, erase_offset, sector_size);
-}
-
-static void cfi_flash_word_program(CFIFlashPart *p, uint32_t offset, uint64_t value, uint32_t size) {
-    DEBUG_LOG(&p->flash->dbg, "<%d> program single word [%d]: %08"PRIX64" to %08X\n",
-        p->n, size, value, p->flash->offset + offset);
-    if (cfi_flash_part_find_block(p, offset)->locked) {
-        p->status |= CFI_FLASH_STATUS_BLOCK_LOCKED;
-    } else {
-        cfi_flash_data_write(p, offset, value, size);
-    }
-}
-
-static bool cfi_flash_buffer_address_in_block(CFIFlashPart *p, uint32_t offset, uint32_t size) {
-    CFIFlashBlock *command_block = cfi_flash_part_find_block(p, p->cmd_addr);
-    uint32_t block_start = p->offset + command_block->offset;
-    uint32_t block_end = block_start + command_block->size;
-
-    return offset >= block_start && offset < block_end && size <= block_end - offset;
-}
-
-static void cfi_flash_buffer_abort(CFIFlashPart *p, uint32_t offset) {
-    DEBUG_LOG(&p->flash->dbg, "<%d> abort buffered program at %08X (setup at %08X)\n", p->n, p->flash->offset + offset,
-        p->flash->offset + p->cmd_addr);
-    cfi_flash_sequence_error(p);
-}
-
-static void cfi_flash_buffer_add(CFIFlashPart *p, uint32_t offset, uint64_t value, uint32_t size) {
-    DEBUG_LOG(&p->flash->dbg, "<%d> program word [%d]: %08"PRIX64" to %08X\n",
-        p->n, size, value, p->flash->offset + offset);
-    if (size != 2 && size != 4) {
-        cfi_flash_buffer_abort(p, offset);
-        return;
-    }
-    if (!cfi_flash_buffer_address_in_block(p, offset, size)) {
-        cfi_flash_buffer_abort(p, offset);
-        return;
-    }
-
-    for (uint32_t i = 0; i < size; i += 2) {
-        CFIFlashBuffer *buffer_entry = NULL;
-        if (offset + i < p->buffer_end) {
-            for (uint32_t j = 0; j < p->buffer_index; j++) {
-                if (p->buffer[j].offset == offset + i && p->buffer[j].size == 2) {
-                    buffer_entry = &p->buffer[j];
-                    break;
-                }
-            }
-        }
-
-        if (!buffer_entry) {
-            buffer_entry = &p->buffer[p->buffer_index];
-            buffer_entry->offset = offset + i;
-            buffer_entry->size = 2;
-            p->buffer_index++;
-            p->buffer_end = MAX(p->buffer_end, offset + i + 2);
-        }
-        buffer_entry->value = value >> i * 8 & 0xFFFF;
-
-        if (p->buffer_index == p->buffer_size)
-            break;
-    }
-
-    if (p->buffer_index == p->buffer_size) {
-        DEBUG_LOG(&p->flash->dbg, "<%d> buffered program finished\n", p->n);
-        p->wcycle++;
-    }
-}
-
-static void cfi_flash_buffer_commit(CFIFlashPart *p) {
-    if (cfi_flash_part_find_block(p, p->cmd_addr)->locked) {
-        p->status |= CFI_FLASH_STATUS_BLOCK_LOCKED;
-    } else {
-        for (uint32_t i = 0; i < p->buffer_size; i++)
-            cfi_flash_data_write(p, p->buffer[i].offset, p->buffer[i].value, p->buffer[i].size);
-    }
-
-    cfi_flash_buffer_clear(p);
-    DEBUG_LOG(&p->flash->dbg, "<%d> confirm buffered program\n", p->n);
-    p->wcycle = 0;
-    p->status |= CFI_FLASH_STATUS_READY;
 }
 
 static uint64_t cfi_flash_io_read(void *opaque, hwaddr part_offset, uint32_t size) {
     CFIFlashPart *p = opaque;
+    uint32_t offset = p->offset + part_offset;
 
-    hwaddr offset = p->offset + part_offset;
+    if (!p->read_array)
+        return p->flash->cmdset->read(p, offset, size);
 
-    uint32_t value = 0;
-
-    switch (p->cmd) {
-        case 0x00:
-            value = cfi_flash_array_read(p, offset, size);
-            if (++p->mmio_array_reads > p->romd_threshold)
-                cfi_flash_romd_map(p);
-            break;
-
-        case 0x94:
-            value = cfi_flash_efa_read(p, offset, size);
-            break;
-
-        case 0x90:
-        case 0x98:
-            value = cfi_flash_query_read(p, offset);
-            break;
-
-        case 0x20:  // Erase
-        case 0x24:  // EFA erase
-        case 0x44:  // EFA program word
-        case 0x60:  // Lock or configuration
-        case 0x64:  // EFA lock
-        case 0x70:  // Status
-        case 0xC0:  // Protection register program
-        case 0xE8:  // buffered program
-        case 0xE9:  // buffered program
-        case 0x41:  // program word
-        case 0x40:  // program word
-        case 0x10:  // program word
-            value = p->status;
-            // DEBUG_LOG(&p->flash->dbg, "<%d> %08"PRIX64": status 0x%02X\n", p->n, offset, value);
-            break;
-
-        default:
-            DEBUG_UNIMP(&p->flash->dbg, "<%d> read in command %02X mode at %08"PRIX64"\n", p->n, p->cmd,
-                p->flash->offset + offset);
-            break;
-    }
-
+    uint32_t value = cfi_flash_array_read(p, offset, size);
+    if (++p->mmio_array_reads > p->romd_threshold)
+        cfi_flash_romd_map(p);
     return value;
 }
 
 static void cfi_flash_io_write(void *opaque, hwaddr part_offset, uint64_t value, uint32_t size) {
     CFIFlashPart *p = opaque;
 
-    hwaddr offset = p->offset + part_offset;
-
-    bool valid_command = false;
-
-    if (p->wcycle == 0) {
-        valid_command = true;
-        p->cmd_addr = offset;
-
-        switch (value) {
-            case 0xFF:
-                cfi_flash_reset(p);
-                break;
-
-            case 0x00:
-            case 0xAA:
-            case 0x55:
-            case 0xF0:
-                DEBUG_LOG(&p->flash->dbg, "<%d> cmd AMD probe (%02"PRIX64")\n", p->n, value);
-                cfi_flash_reset(p);
-                break;
-
-            case 0x70:
-                DEBUG_LOG(&p->flash->dbg, "<%d> cmd read status (%02"PRIX64")\n", p->n, value);
-                p->cmd = value;
-                break;
-
-            case 0x90:
-                DEBUG_LOG(&p->flash->dbg, "<%d> cmd read devid (%02"PRIX64")\n", p->n, value);
-                p->cmd = value;
-                break;
-
-            case 0x94:
-                DEBUG_LOG(&p->flash->dbg, "<%d> cmd read EFA (%02"PRIX64")\n", p->n, value);
-                p->cmd = value;
-                break;
-
-            case 0x98:
-                DEBUG_LOG(&p->flash->dbg, "<%d> cmd read cfi (%02"PRIX64")\n", p->n, value);
-                p->cmd = value;
-                break;
-
-            case 0x50:
-                DEBUG_LOG(&p->flash->dbg, "<%d> cmd clear status (%02"PRIX64")\n", p->n, value);
-                p->status &= ~CFI_FLASH_STATUS_ERRORS;
-                break;
-
-            case 0x10:
-                if (p->flash->strict_opcodes) {
-                    DEBUG_LOG(&p->flash->dbg, "<%d> cmd program word (%02"PRIX64") is not documented for command set 0200 -> ignored\n",
-                        p->n, value);
-                    cfi_flash_reset(p);
-                    break;
-                }
-                QEMU_FALLTHROUGH;
-            case 0x41:
-            case 0x40:
-                DEBUG_LOG(&p->flash->dbg, "<%d> cmd program word (%02"PRIX64")\n", p->n, value);
-                p->cmd = value;
-                p->wcycle++;
-                break;
-
-            case 0x44:
-                DEBUG_LOG(&p->flash->dbg, "<%d> cmd program EFA word (%02"PRIX64")\n", p->n, value);
-                p->cmd = value;
-                p->wcycle++;
-                break;
-
-            case 0xE8:
-                if (p->flash->strict_opcodes) {
-                    DEBUG_LOG(&p->flash->dbg, "<%d> cmd buffered program (%02"PRIX64") is not documented for command set 0200 -> ignored\n",
-                        p->n, value);
-                    cfi_flash_reset(p);
-                    break;
-                }
-                QEMU_FALLTHROUGH;
-            case 0xE9:
-                DEBUG_LOG(&p->flash->dbg, "<%d> cmd buffered program (%02"PRIX64")\n", p->n, value);
-                p->cmd = value;
-                p->wcycle++;
-                p->status |= CFI_FLASH_STATUS_READY;
-                break;
-
-            case 0x80:
-                DEBUG_LOG(&p->flash->dbg, "<%d> cmd buffered EFP (%02"PRIX64")\n", p->n, value);
-                p->cmd = value;
-                p->wcycle++;
-                break;
-
-            case 0x20:
-                DEBUG_LOG(&p->flash->dbg, "<%d> cmd block erase (%02"PRIX64")\n", p->n, value);
-                p->cmd = value;
-                p->wcycle++;
-                p->status |= CFI_FLASH_STATUS_READY;
-                break;
-
-            case 0x24:
-                DEBUG_LOG(&p->flash->dbg, "<%d> cmd EFA block erase (%02"PRIX64")\n", p->n, value);
-                p->cmd = value;
-                p->wcycle++;
-                p->status |= CFI_FLASH_STATUS_READY;
-                break;
-
-            case 0xBC:
-                DEBUG_LOG(&p->flash->dbg, "<%d> cmd blank check (%02"PRIX64")\n", p->n, value);
-                p->cmd = value;
-                p->wcycle++;
-                break;
-
-            case 0xB0:
-                DEBUG_LOG(&p->flash->dbg, "<%d> cmd suspend (%02"PRIX64")\n", p->n, value);
-                break;
-
-            case 0x60:
-                DEBUG_LOG(&p->flash->dbg, "<%d> cmd block lock or read configuration (%02"PRIX64")\n", p->n, value);
-                p->cmd = value;
-                p->wcycle++;
-                break;
-
-            case 0x64:
-                DEBUG_LOG(&p->flash->dbg, "<%d> cmd EFA block lock (%02"PRIX64")\n", p->n, value);
-                p->cmd = value;
-                p->wcycle++;
-                break;
-
-            case 0xC0:
-                DEBUG_LOG(&p->flash->dbg, "<%d> cmd protection program (%02"PRIX64")\n", p->n, value);
-                p->cmd = value;
-                p->wcycle++;
-                break;
-
-            default:
-                DEBUG_UNIMP(&p->flash->dbg, "<%d> command %02"PRIX64" at %08"PRIX64"\n",
-                    p->n, value, p->flash->offset + offset);
-                cfi_flash_reset(p);
-                break;
-        }
-    } else if (p->wcycle == 1) {
-        switch (p->cmd) {
-            case 0x70:  // read status
-            case 0x90:  // read devid
-            case 0x98:  // read cfi
-                if (value == 0xFF) {
-                    valid_command = true;
-                    cfi_flash_reset(p);
-                }
-                break;
-
-            case 0x60:  // lock or configuration
-                valid_command = cfi_flash_lock_command(p, offset, value);
-                break;
-
-            case 0x64:
-                valid_command = cfi_flash_efa_lock(p, offset, value);
-                break;
-
-            case 0xBC:
-                if (value == 0xD0) {
-                    cfi_flash_blank_check(p, offset);
-                    valid_command = true;
-                }
-                break;
-
-            case 0x20:  // erase
-                if (value == 0xD0) {
-                    cfi_flash_block_erase(p, offset);
-                    valid_command = true;
-                    p->wcycle = 0;
-                    p->status |= CFI_FLASH_STATUS_READY;
-                }
-                break;
-
-            case 0x24: // EFA erase
-                if (value == 0xD0) {
-                    cfi_flash_efa_erase(p, offset);
-                    valid_command = true;
-                    p->wcycle = 0;
-                    p->status |= CFI_FLASH_STATUS_READY;
-                }
-                break;
-
-            case 0xE9:  // buffered program
-            case 0xE8:  // buffered program
-                valid_command = true;
-                if (!cfi_flash_buffer_address_in_block(p, offset, size)) {
-                    cfi_flash_buffer_abort(p, offset);
-                } else {
-                    p->buffer_size = (value & 0xFFFF) + 1;
-                    p->buffer_index = 0;
-                    p->buffer_end = 0;
-                    p->buffer = g_new0(CFIFlashBuffer, p->buffer_size);
-                    DEBUG_LOG(&p->flash->dbg, "<%d> buffered program %d words\n", p->n, p->buffer_size);
-                    p->wcycle++;
-                }
-                break;
-
-            case 0x10:  // program word
-            case 0x40:  // program word
-            case 0x41:  // program word
-                valid_command = true;
-                cfi_flash_word_program(p, offset, value, size);
-                p->wcycle = 0;
-                p->status |= CFI_FLASH_STATUS_READY;
-                break;
-
-            case 0x44: // EFA program word
-                valid_command = true;
-                cfi_flash_efa_program(p, offset, value, size);
-                p->wcycle = 0;
-                p->status |= CFI_FLASH_STATUS_READY;
-                break;
-
-            case 0xC0: // Protection register program
-                cfi_flash_otp_program(p, offset, value, size);
-                valid_command = true;
-                p->wcycle = 0;
-                p->status |= CFI_FLASH_STATUS_READY;
-                break;
-        }
-    } else if (p->wcycle == 2) {
-        switch (p->cmd) {
-            case 0xE9:  // buffered program
-            case 0xE8:  // buffered program
-                valid_command = true;
-                cfi_flash_buffer_add(p, offset, value, size);
-                break;
-        }
-    } else if (p->wcycle == 3) {
-        switch (p->cmd) {
-            case 0xE9:  // buffered program
-            case 0xE8:  // buffered program
-                valid_command = true;
-                if (value != 0xD0 || !cfi_flash_buffer_address_in_block(p, offset, size)) {
-                    cfi_flash_buffer_abort(p, offset);
-                } else {
-                    cfi_flash_buffer_commit(p);
-                }
-                break;
-        }
-    }
-
-    if (!valid_command) {
-        DEBUG_UNIMP(&p->flash->dbg, "<%d> command %02X cycle %d: %08"PRIX64" at %08"PRIX64"\n", p->n, p->cmd,
-            p->wcycle, value, p->flash->offset + offset);
-        cfi_flash_sequence_error(p);
-    }
-
+    p->flash->cmdset->write(p, p->offset + part_offset, value, size);
     cfi_flash_unmap_inactive_read_array(p);
 }
 
@@ -1121,9 +445,16 @@ static void cfi_flash_load_file(CFIFlashState *flash, const char *path, void *da
     DEBUG_LOG(&flash->dbg, "loaded %s from %s\n", region, path);
 }
 
-static void cfi_flash_save_file(CFIFlashState *flash, int *fd, const char *path, const void *data, size_t total_size,
-    size_t offset, size_t size, const char *region)
-{
+static void cfi_flash_save_file(
+    CFIFlashState *flash,
+    int *fd,
+    const char *path,
+    const void *data,
+    size_t total_size,
+    size_t offset,
+    size_t size,
+    const char *region
+) {
     if (!path || !path[0] || !flash->writable)
         return;
 
@@ -1141,8 +472,7 @@ static void cfi_flash_save_file(CFIFlashState *flash, int *fd, const char *path,
     }
 
     if (lseek(*fd, offset, SEEK_SET) == (off_t) -1 ||
-        qemu_write_full(*fd, (const uint8_t *) data + offset, size) != (ssize_t) size)
-    {
+        qemu_write_full(*fd, (const uint8_t *) data + offset, size) != (ssize_t) size) {
         cfi_flash_error(flash, "Can't write %s file %s: %s", region, path, strerror(errno));
         exit(1);
     }
@@ -1150,40 +480,40 @@ static void cfi_flash_save_file(CFIFlashState *flash, int *fd, const char *path,
 }
 
 static void cfi_flash_init_file_paths(CFIFlashState *flash) {
-    const CFIFlashChip *cfg = flash->cfg;
-    if (flash->blk && strcmp(flash->name, "FLASH0") == 0) {
-        const char *fullflash_file = cfi_flash_storage_filename(flash->blk);
-        if ((!flash->otp0_file || !flash->otp0_file[0]) && cfg->otp0_size) {
+    const CFIFlashChip *chip = flash->chip;
+    if (flash->storage && strcmp(flash->name, "FLASH0") == 0) {
+        const char *fullflash_file = cfi_flash_storage_filename(flash->storage);
+        if ((!flash->otp0_file || !flash->otp0_file[0]) && chip->otp0_size) {
             g_free(flash->otp0_file);
             flash->otp0_file = g_strdup_printf("%s.cfi-otp0", fullflash_file);
         }
-        if ((!flash->otp1_file || !flash->otp1_file[0]) && cfg->otp1_size) {
+        if ((!flash->otp1_file || !flash->otp1_file[0]) && chip->otp1_size) {
             g_free(flash->otp1_file);
             flash->otp1_file = g_strdup_printf("%s.cfi-otp1", fullflash_file);
         }
-        if ((!flash->efa_file || !flash->efa_file[0]) && cfg->efa_erase_regions_count) {
+        if ((!flash->efa_file || !flash->efa_file[0]) && chip->efa_erase_regions_count) {
             g_free(flash->efa_file);
             flash->efa_file = g_strdup_printf("%s.cfi-efa", fullflash_file);
         }
     }
 
-    if (!cfg->otp0_size && flash->otp0_file && flash->otp0_file[0]) {
+    if (!chip->otp0_size && flash->otp0_file && flash->otp0_file[0]) {
         cfi_flash_error(flash, "OTP0 file was provided, but this flash has no OTP0 region");
         exit(1);
     }
-    if (!cfg->otp1_size && flash->otp1_file && flash->otp1_file[0]) {
+    if (!chip->otp1_size && flash->otp1_file && flash->otp1_file[0]) {
         cfi_flash_error(flash, "OTP1 file was provided, but this flash has no OTP1 region");
         exit(1);
     }
-    if (!cfg->efa_erase_regions_count && flash->efa_file && flash->efa_file[0]) {
+    if (!chip->efa_erase_regions_count && flash->efa_file && flash->efa_file[0]) {
         cfi_flash_error(flash, "EFA file was provided, but this flash has no EFA region");
         exit(1);
     }
 }
 
 static void cfi_flash_init_efa(CFIFlashState *flash) {
-    for (uint32_t i = 0; i < flash->cfg->efa_erase_regions_count; i++) {
-        const CFIFlashEraseRegion *region = &flash->cfg->efa_erase_regions[i];
+    for (uint32_t i = 0; i < flash->chip->efa_erase_regions_count; i++) {
+        const CFIFlashEraseRegion *region = &flash->chip->efa_erase_regions[i];
         flash->efa_size += region->size;
         flash->efa_blocks_n += region->size / region->sector;
     }
@@ -1196,30 +526,29 @@ static void cfi_flash_init_efa(CFIFlashState *flash) {
     flash->efa_blocks = g_new0(CFIFlashBlock, flash->efa_blocks_n);
 
     uint32_t block_id = 0;
-    for (uint32_t i = 0; i < flash->cfg->efa_erase_regions_count; i++) {
-        const CFIFlashEraseRegion *region = &flash->cfg->efa_erase_regions[i];
+    for (uint32_t i = 0; i < flash->chip->efa_erase_regions_count; i++) {
+        const CFIFlashEraseRegion *region = &flash->chip->efa_erase_regions[i];
         uint32_t blocks = region->size / region->sector;
         for (uint32_t j = 0; j < blocks; j++) {
             CFIFlashBlock *blk = &flash->efa_blocks[block_id++];
             blk->offset = region->offset + j * region->sector;
             blk->size = region->sector;
-            blk->locked = true;
         }
     }
 
     DEBUG_LOG(&flash->dbg, "EFA 0x00000000 ... 0x%08X\n", flash->efa_size - 1);
 }
 
-static void cfi_flash_init_part(CFIFlashState *flash, const CFIFlashChipPart *part_cfg) {
-    CFIFlashPart *p = g_new0(CFIFlashPart, 1);
+static void cfi_flash_init_part(CFIFlashState *flash, const CFIFlashChipPart *part_info) {
+    CFIFlashPart *p = g_malloc0(flash->cmdset->part_size);
     p->n = flash->parts_n;
     flash->parts = g_renew(CFIFlashPart *, flash->parts, flash->parts_n + 1);
     flash->parts[flash->parts_n++] = p;
     p->flash = flash;
-    p->offset = part_cfg->offset;
-    p->size = part_cfg->size;
-    p->cfg = part_cfg;
-    p->status = CFI_FLASH_STATUS_READY;
+    p->offset = part_info->offset;
+    p->size = part_info->size;
+    p->info = part_info;
+    p->read_array = true;
     p->romd_threshold = CFI_FLASH_ROMD_THRESHOLD_MIN;
 
     char *name = g_strdup_printf("cfi-flash[%s][%d]", p->flash->name, p->n);
@@ -1234,8 +563,8 @@ static void cfi_flash_init_part(CFIFlashState *flash, const CFIFlashChipPart *pa
     DEBUG_LOG(&p->flash->dbg, "<%d> hw partition 0x%08X ... 0x%08X\n",
         p->n, p->flash->offset + p->offset, p->flash->offset + p->offset + p->size - 1);
 
-    if (flash->blk) {
-        int ret = cfi_flash_storage_pread(flash->blk, flash->offset + p->offset, p->size, p->storage);
+    if (flash->storage) {
+        int ret = cfi_flash_storage_pread(flash->storage, flash->offset + p->offset, p->size, p->storage);
         if (ret < 0) {
             cfi_flash_error(flash, "failed to read the initial flash content [offset=%08X, size=%08X]",
                 flash->offset + p->offset, p->size);
@@ -1246,24 +575,34 @@ static void cfi_flash_init_part(CFIFlashState *flash, const CFIFlashChipPart *pa
     }
 
     p->blocks_n = 0;
-    for (uint32_t i = 0; i < p->cfg->erase_regions_cnt; i++)
-        p->blocks_n += p->cfg->erase_regions[i].size / p->cfg->erase_regions[i].sector;
+    for (uint32_t i = 0; i < p->info->erase_regions_count; i++)
+        p->blocks_n += p->info->erase_regions[i].size / p->info->erase_regions[i].sector;
 
     p->blocks = g_new0(CFIFlashBlock, p->blocks_n);
 
     uint32_t block_id = 0;
     uint32_t block_offset = 0;
 
-    for (uint32_t i = 0; i < p->cfg->erase_regions_cnt; i++) {
-        const CFIFlashEraseRegion *region = &p->cfg->erase_regions[i];
+    for (uint32_t i = 0; i < p->info->erase_regions_count; i++) {
+        const CFIFlashEraseRegion *region = &p->info->erase_regions[i];
         uint32_t sectors = region->size / region->sector;
         for (uint32_t j = 0; j < sectors; j++) {
             p->blocks[block_id].offset = block_offset;
             p->blocks[block_id].size = region->sector;
-            p->blocks[block_id].locked = true;
             block_offset += region->sector;
             block_id++;
         }
+    }
+}
+
+static const CFIFlashCommandSet *cfi_flash_get_cmdset(const CFIFlashChip *chip) {
+    switch (lduw_le_p(&chip->cfi[CFI_PRIMARY_ALGORITHM - CFI_ADDR])) {
+        case 0x0001:
+        case 0x0003:
+        case 0x0200:
+            return &cfi_flash_intel_cmdset;
+        default:
+            return NULL;
     }
 }
 
@@ -1275,23 +614,29 @@ static void cfi_flash_realize(DeviceState *dev, Error **errp) {
     flash->otp1_fd = -1;
     flash->efa_fd = -1;
 
-    const CFIFlashChip *cfg = cfi_flash_find_chip(flash->vid, flash->pid);
-    if (!cfg) {
+    const CFIFlashChip *chip = cfi_flash_find_chip(flash->vid, flash->pid);
+    if (!chip) {
         cfi_flash_error(flash, "unimplemented %04X:%04X", flash->vid, flash->pid);
         exit(1);
     }
 
-    flash->cfg = cfg;
+    flash->chip = chip;
+    flash->cmdset = cfi_flash_get_cmdset(chip);
+    if (!flash->cmdset) {
+        cfi_flash_error(flash, "unsupported CFI command set %04X",
+            lduw_le_p(&chip->cfi[CFI_PRIMARY_ALGORITHM - CFI_ADDR]));
+        exit(1);
+    }
     if (!flash->size)
-        flash->size = cfg->size;
-    if (flash->size > cfg->size) {
-        cfi_flash_error(flash, "invalid size 0x%08X, maximum is 0x%08X", flash->size, cfg->size);
+        flash->size = chip->size;
+    if (flash->size > chip->size) {
+        cfi_flash_error(flash, "invalid size 0x%08X, maximum is 0x%08X", flash->size, chip->size);
         exit(1);
     }
 
     bool complete_partition = false;
-    for (size_t i = 0; i < cfg->parts_count; i++) {
-        const CFIFlashChipPart *part = &cfg->parts[i];
+    for (size_t i = 0; i < chip->parts_count; i++) {
+        const CFIFlashChipPart *part = &chip->parts[i];
         if (part->offset + part->size == flash->size) {
             complete_partition = true;
             break;
@@ -1302,7 +647,7 @@ static void cfi_flash_realize(DeviceState *dev, Error **errp) {
         exit(1);
     }
     cfi_flash_init_file_paths(flash);
-    flash->writable = flash->blk && cfi_flash_storage_is_rw(flash->blk);
+    flash->writable = flash->storage && cfi_flash_storage_is_rw(flash->storage);
     if (flash->writable) {
         flash->writeback_timer = timer_new_ms(QEMU_CLOCK_REALTIME, cfi_flash_writeback_expire, flash);
         qemu_add_vm_change_state_handler(cfi_flash_vm_state_change, flash);
@@ -1316,41 +661,42 @@ static void cfi_flash_realize(DeviceState *dev, Error **errp) {
     g_free(mmio_name);
 
     // OTP0
-    if (cfg->otp0_size > 0) {
-        flash->otp0_data = g_new(uint16_t, cfg->otp0_size / 2);
-        memset(flash->otp0_data, 0xFF, cfg->otp0_size);
+    if (chip->otp0_size > 0) {
+        flash->otp0_data = g_new(uint16_t, chip->otp0_size / 2);
+        memset(flash->otp0_data, 0xFF, chip->otp0_size);
         flash->otp0_data[0] = 0x0002;
 
-        if (!fill_data_from_hex((uint8_t *) flash->otp0_data, cfg->otp0_size, flash->hex_otp0_data)) {
+        if (!fill_data_from_hex((uint8_t *) flash->otp0_data, chip->otp0_size, flash->hex_otp0_data)) {
             cfi_flash_error(flash, "Invalid OTP0 hex data: %s [max_size=%d, len=%zu]",
-                flash->hex_otp0_data, cfg->otp0_size, strlen(flash->hex_otp0_data) / 2);
+                flash->hex_otp0_data, chip->otp0_size, strlen(flash->hex_otp0_data) / 2);
             exit(1);
         }
     }
 
     // OTP1
-    if (cfg->otp1_size > 0) {
-        flash->otp1_data = g_new(uint16_t, cfg->otp1_size / 2);
-        memset(flash->otp1_data, 0xFF, cfg->otp1_size);
+    if (chip->otp1_size > 0) {
+        flash->otp1_data = g_new(uint16_t, chip->otp1_size / 2);
+        memset(flash->otp1_data, 0xFF, chip->otp1_size);
 
-        if (!fill_data_from_hex((uint8_t *) flash->otp1_data, cfg->otp1_size, flash->hex_otp1_data)) {
+        if (!fill_data_from_hex((uint8_t *) flash->otp1_data, chip->otp1_size, flash->hex_otp1_data)) {
             cfi_flash_error(flash, "Invalid OTP1 hex data: %s [max_size=%d, len=%zu]",
-                flash->hex_otp1_data, cfg->otp1_size, strlen(flash->hex_otp1_data) / 2);
+                flash->hex_otp1_data, chip->otp1_size, strlen(flash->hex_otp1_data) / 2);
             exit(1);
         }
     }
 
-    if (cfg->otp0_size)
-        cfi_flash_load_file(flash, flash->otp0_file, flash->otp0_data, cfg->otp0_size, "OTP0");
-    if (cfg->otp1_size)
-        cfi_flash_load_file(flash, flash->otp1_file, flash->otp1_data, cfg->otp1_size, "OTP1");
+    if (chip->otp0_size)
+        cfi_flash_load_file(flash, flash->otp0_file, flash->otp0_data, chip->otp0_size, "OTP0");
+    if (chip->otp1_size)
+        cfi_flash_load_file(flash, flash->otp1_file, flash->otp1_data, chip->otp1_size, "OTP1");
 
     // Init hw partitions
     cfi_flash_init_efa(flash);
     if (flash->efa_size)
         cfi_flash_load_file(flash, flash->efa_file, flash->efa_storage, flash->efa_size, "EFA");
-    for (size_t i = 0; i < cfg->parts_count && cfg->parts[i].offset < flash->size; i++)
-        cfi_flash_init_part(flash, &cfg->parts[i]);
+    for (size_t i = 0; i < chip->parts_count && chip->parts[i].offset < flash->size; i++)
+        cfi_flash_init_part(flash, &chip->parts[i]);
+    flash->cmdset->init(flash);
 
     sysbus_init_mmio(SYS_BUS_DEVICE(flash->dev), &flash->mmio);
 }
@@ -1358,26 +704,12 @@ static void cfi_flash_realize(DeviceState *dev, Error **errp) {
 static void cfi_flash_device_reset(DeviceState *dev) {
     CFIFlashState *flash = CFI_FLASH(dev);
 
+    flash->cmdset->reset(flash);
     for (uint32_t i = 0; i < flash->parts_n; i++) {
         CFIFlashPart *p = flash->parts[i];
-        p->status = CFI_FLASH_STATUS_READY;
-        for (uint32_t j = 0; j < p->blocks_n; j++) {
-            if (p->blocks[j].locked_down) {
-                p->blocks[j].locked = true;
-                p->blocks[j].locked_down = false;
-            }
-        }
-        cfi_flash_reset(p);
         p->mmio_array_reads = 0;
         p->romd_threshold = CFI_FLASH_ROMD_THRESHOLD_MIN;
         cfi_flash_romd_map(p);
-    }
-
-    for (uint32_t i = 0; i < flash->efa_blocks_n; i++) {
-        if (flash->efa_blocks[i].locked_down) {
-            flash->efa_blocks[i].locked = true;
-            flash->efa_blocks[i].locked_down = false;
-        }
     }
 }
 
@@ -1393,15 +725,14 @@ static void cfi_flash_error(CFIFlashState *flash, const char *format, ...) {
 }
 
 static const Property cfi_flash_properties[] = {
-    DEFINE_PROP_LINK("blk", CFIFlashState, blk, TYPE_CFI_FLASH_STORAGE, CFIFlashStorage *),
+    DEFINE_PROP_LINK("storage", CFIFlashState, storage, TYPE_CFI_FLASH_STORAGE, CFIFlashStorage *),
 
     DEFINE_PROP_STRING("name", CFIFlashState, name),
     DEFINE_PROP_UINT16("vid", CFIFlashState, vid, 0),
     DEFINE_PROP_UINT16("pid", CFIFlashState, pid, 0),
     DEFINE_PROP_UINT32("offset", CFIFlashState, offset, 0),
     DEFINE_PROP_UINT32("size", CFIFlashState, size, 0),
-    /* Refuse program/buffer opcodes the part's CFI command set does not
-     * document; see flash_command_is_documented(). */
+    /* Refuse program opcodes 0x10 and 0xE8, which command set 0200 does not document. */
     DEFINE_PROP_BOOL("strict-opcodes", CFIFlashState, strict_opcodes, false),
     DEFINE_PROP_STRING("otp0-file", CFIFlashState, otp0_file),
     DEFINE_PROP_STRING("otp1-file", CFIFlashState, otp1_file),

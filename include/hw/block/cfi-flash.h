@@ -2,11 +2,12 @@
 #pragma once
 
 #include "qemu/aiocb.h"
+#include "qom/object.h"
 
 #define TYPE_CFI_FLASH "cfi-flash"
 #define TYPE_CFI_FLASH_STORAGE "cfi-flash-storage"
 
-typedef struct CFIFlashStorage CFIFlashStorage;
+OBJECT_DECLARE_SIMPLE_TYPE(CFIFlashStorage, CFI_FLASH_STORAGE)
 
 int cfi_flash_storage_pread(CFIFlashStorage *flash, int64_t offset, int64_t size, void *storage);
 void cfi_flash_storage_aio_pwrite(
@@ -20,4 +21,3 @@ void cfi_flash_storage_aio_pwrite(
 bool cfi_flash_storage_is_rw(CFIFlashStorage *flash);
 int64_t cfi_flash_storage_size(CFIFlashStorage *flash);
 const char *cfi_flash_storage_filename(CFIFlashStorage *flash);
-CFIFlashStorage *cfi_flash_storage_self(DeviceState *dev);
