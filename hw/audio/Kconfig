@@ -66,6 +66,10 @@ config SPEAKER
 config AUDIO_ROUTER
     bool
 
+config B00B10B
+    bool
+    depends on SSI
+
 config LM4946
     bool
     depends on I2C

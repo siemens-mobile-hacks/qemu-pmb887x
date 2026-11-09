@@ -271,6 +271,7 @@ config PMB887X
     select ROTARY_ENCODER
     select I2C
     select SSI
+    select B00B10B
     select LM4946
     select TEA5761UK
     select PMB6812
