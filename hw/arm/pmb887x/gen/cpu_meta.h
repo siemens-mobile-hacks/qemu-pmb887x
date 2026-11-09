@@ -66,7 +66,6 @@ extern const DebugRegs pmb887x_hd155153np_regs;
 extern const DebugRegs pmb887x_ili9320_regs;
 extern const DebugRegs pmb887x_jbt6k71_regs;
 extern const DebugRegs pmb887x_lh15kah2_regs;
-extern const DebugRegs pmb887x_lm4946_regs;
 extern const DebugRegs pmb887x_pasic_regs;
 extern const DebugRegs pmb887x_pcf8833_regs;
 extern const DebugRegs pmb887x_pcf8882_regs;

@@ -7759,67 +7759,6 @@ const DebugRegs pmb887x_lh15kah2_regs = {
 	.addr_digits = 2,
 };
 
-static const DebugRegValue lm4946_mode_fields_mc_values[] = {
-	{ "ALL_SHUTDOWN",		0x00000000 },
-	{ "MONO_IN_TO_SPK",		0x00000001 },
-	{ "MONO_IN_TO_HP",		0x00000002 },
-	{ "LINE_IN_TO_SPK",		0x00000003 },
-	{ "LINE_IN_TO_HP",		0x00000004 },
-	{ "LINE_MONO_TO_SPK",	0x00000005 },
-	{ "LINE_MONO_TO_HP",	0x00000006 },
-	{ "LINE_IN_TO_SPK_HP",	0x00000007 },
-};
-
-static const DebugRegField lm4946_mode_fields[] = {
-	{ "MC",		0x00000007,	0,	lm4946_mode_fields_mc_values,	ARRAY_SIZE(lm4946_mode_fields_mc_values) },
-	{ "OCL",	0x00000008,	3,	NULL,							0 },
-};
-
-static const DebugRegValue lm4946_n3d_fields_narrow_values[] = {
-	{ "WIDE",	0x00000000 },
-	{ "NARROW",	0x00000002 },
-};
-
-static const DebugRegValue lm4946_n3d_fields_level_values[] = {
-	{ "LOW",	0x00000000 },
-	{ "MEDIUM",	0x00000004 },
-	{ "HIGH",	0x00000008 },
-	{ "MAX",	0x0000000C },
-};
-
-static const DebugRegField lm4946_n3d_fields[] = {
-	{ "EN",		0x00000001,	0,	NULL,								0 },
-	{ "NARROW",	0x00000002,	1,	lm4946_n3d_fields_narrow_values,	ARRAY_SIZE(lm4946_n3d_fields_narrow_values) },
-	{ "LEVEL",	0x0000000C,	2,	lm4946_n3d_fields_level_values,		ARRAY_SIZE(lm4946_n3d_fields_level_values) },
-};
-
-static const DebugRegField lm4946_mono_vol_fields[] = {
-	{ "VOL",	0x0000001F,	0,	NULL,	0 },
-};
-
-static const DebugRegField lm4946_left_vol_fields[] = {
-	{ "VOL",	0x0000001F,	0,	NULL,	0 },
-};
-
-static const DebugRegField lm4946_right_vol_fields[] = {
-	{ "VOL",	0x0000001F,	0,	NULL,	0 },
-};
-
-static const DebugReg lm4946_regs[] = {
-	{ "MODE",		0x0,	lm4946_mode_fields,			ARRAY_SIZE(lm4946_mode_fields) },
-	{ "N3D",		0x40,	lm4946_n3d_fields,			ARRAY_SIZE(lm4946_n3d_fields) },
-	{ "MONO_VOL",	0x80,	lm4946_mono_vol_fields,		ARRAY_SIZE(lm4946_mono_vol_fields) },
-	{ "LEFT_VOL",	0xC0,	lm4946_left_vol_fields,		ARRAY_SIZE(lm4946_left_vol_fields) },
-	{ "RIGHT_VOL",	0xE0,	lm4946_right_vol_fields,	ARRAY_SIZE(lm4946_right_vol_fields) },
-};
-
-const DebugRegs pmb887x_lm4946_regs = {
-	.regs = lm4946_regs,
-	.count = ARRAY_SIZE(lm4946_regs),
-	.reg_size = 1,
-	.addr_digits = 2,
-};
-
 static const DebugRegValue pasic_identification_fields_vendor_values[] = {
 	{ "ST",		0x00000000 },
 	{ "DIALOG",	0x00000080 },

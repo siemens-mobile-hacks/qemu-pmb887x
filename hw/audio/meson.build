@@ -20,4 +20,4 @@ system_ss.add(when: ['CONFIG_VIRTIO_SND', 'CONFIG_VIRTIO', 'CONFIG_VIRTIO_PCI'],
 system_ss.add(when: 'CONFIG_PCM_OUT', if_true: files('pcm-out.c'))
 system_ss.add(when: 'CONFIG_SPEAKER', if_true: files('speaker.c'))
 system_ss.add(when: 'CONFIG_AUDIO_ROUTER', if_true: files('audio-router.c', 'audio-junction.c', 'audio-switch.c'))
-system_ss.add(when: 'CONFIG_LM4946', if_true: files('lm4946/lm4946.c'))
+system_ss.add(when: 'CONFIG_LM4946', if_true: files('lm4946/lm4946.c', 'lm4946/regs.c'))
