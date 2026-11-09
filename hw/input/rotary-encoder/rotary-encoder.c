@@ -1,218 +1,193 @@
-/*
- * LG KE970 scroll wheel.
- *
- * A discrete board circuit: two EM-0611 Hall switches (U601 / U602 on the LCD FPCB, both fed 
- * from V_SCROLL_2.8) sit under a magnetised dial, their outputs are 90 degrees out of phase 
- * - a 2-phase quadrature encoder.
- *
- * SCROLL_KEY_A -> DSPOUT0 (GPIO 15, IS=ALT2) -> CAPCOM1 CC6, rising-edge capture
- * SCROLL_KEY_B -> DSPOUT1 (GPIO 62)          -> sampled as a level only
- * */
+/* SPDX-License-Identifier: GPL-2.0-or-later */
 #include "qemu/osdep.h"
 #include "hw/core/sysbus.h"
 #include "hw/core/irq.h"
 #include "hw/core/qdev-properties.h"
 #include "qapi/error.h"
 #include "qemu/timer.h"
-
 #include "system/debug-channel.h"
 
-#define TYPE_PMB887X_KE970_SCROLL	"ke970-scroll"
-#define PMB887X_KE970_SCROLL(obj)	OBJECT_CHECK(pmb887x_ke970_scroll_t, (obj), TYPE_PMB887X_KE970_SCROLL)
+#define TYPE_ROTARY_ENCODER "rotary-encoder"
+OBJECT_DECLARE_SIMPLE_TYPE(RotaryEncoder, ROTARY_ENCODER)
 
-typedef struct pmb887x_ke970_scroll_t pmb887x_ke970_scroll_t;
+struct RotaryEncoder {
+    SysBusDevice parent_obj;
+    DebugChannel dbg;
 
-struct pmb887x_ke970_scroll_t {
-	SysBusDevice parent_obj;
-	DebugChannel dbg;
+    uint32_t steps;
+    uint32_t edge_us;
+    uint32_t repeat_delay_us;
+    uint32_t detent_us;
 
-	/* config */
-	uint32_t steps;				// active edges of A per detent
-	uint32_t edge_us;			// half period of A
-	uint32_t repeat_delay_us;	// hold time before auto-repeat starts
-	uint32_t detent_us;			// gap between detents once repeating
+    qemu_irq a_out;
+    qemu_irq b_out;
 
-	/* wiring */
-	qemu_irq a_out;
-	qemu_irq b_out;
-
-	/* runtime */
-	QEMUTimer *timer;
-	bool cw_held;
-	bool ccw_held;
-	int dir;				// +1 = CW, -1 = CCW, 0 = idle
-	bool repeating;			// past the initial repeat delay
-	uint32_t toggles_left;	// remaining A transitions in the current detent
-	bool a_level;
+    QEMUTimer *timer;
+    bool cw_held;
+    bool ccw_held;
+    int dir;
+    bool repeating;
+    uint32_t toggles_left;
+    bool a_level;
 };
 
-static void ke970_scroll_set_a(pmb887x_ke970_scroll_t *p, bool level) {
-	p->a_level = level;
-	qemu_set_irq(p->a_out, level);
+static void rotary_encoder_set_a(RotaryEncoder *s, bool level) {
+    s->a_level = level;
+    qemu_set_irq(s->a_out, level);
 }
 
-static void ke970_scroll_stop(pmb887x_ke970_scroll_t *p) {
-	timer_del(p->timer);
-	p->dir = 0;
-	p->toggles_left = 0;
-	ke970_scroll_set_a(p, false);
+static void rotary_encoder_stop(RotaryEncoder *s) {
+    timer_del(s->timer);
+    s->dir = 0;
+    s->toggles_left = 0;
+    rotary_encoder_set_a(s, false);
 }
 
-static void ke970_scroll_arm(pmb887x_ke970_scroll_t *p, uint32_t delay_us) {
-	timer_mod_ns(p->timer, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + (int64_t) delay_us * 1000);
+static void rotary_encoder_arm(RotaryEncoder *s, uint32_t delay_us) {
+    timer_mod_ns(s->timer, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + (int64_t) delay_us * SCALE_US);
 }
 
-static int ke970_scroll_held_dir(pmb887x_ke970_scroll_t *p) {
-	return p->cw_held ? 1 : (p->ccw_held ? -1 : 0);
+static int rotary_encoder_held_dir(RotaryEncoder *s) {
+    return s->cw_held ? 1 : (s->ccw_held ? -1 : 0);
 }
 
-/* Begin one detent: park B for the direction, then pulse A `steps` times. */
-static void ke970_scroll_start_detent(pmb887x_ke970_scroll_t *p, int dir) {
-	p->dir = dir;
-	p->toggles_left = p->steps * 2;
+static void rotary_encoder_start_detent(RotaryEncoder *s, int dir) {
+    s->dir = dir;
+    s->toggles_left = s->steps * 2;
 
-	/* B must be settled before the first active edge of A. */
-	qemu_set_irq(p->b_out, dir > 0);
-	ke970_scroll_set_a(p, false);
+    qemu_set_irq(s->b_out, dir > 0);
+    rotary_encoder_set_a(s, false);
 
-	DEBUG_LOG(&p->dbg, "detent %s, %u pulses\n", dir > 0 ? "CW" : "CCW", p->steps);
-	ke970_scroll_arm(p, p->edge_us);
+    DEBUG_LOG(&s->dbg, "detent %s, %u pulses\n", dir > 0 ? "CW" : "CCW", s->steps);
+    rotary_encoder_arm(s, s->edge_us);
 }
 
-static void ke970_scroll_timer_cb(void *opaque) {
-	pmb887x_ke970_scroll_t *p = opaque;
+static void rotary_encoder_timer_cb(void *opaque) {
+    RotaryEncoder *s = opaque;
 
-	if (p->toggles_left > 0) {
-		ke970_scroll_set_a(p, !p->a_level);
-		p->toggles_left--;
+    if (s->toggles_left > 0) {
+        rotary_encoder_set_a(s, !s->a_level);
+        s->toggles_left--;
 
-		if (p->toggles_left > 0) {
-			ke970_scroll_arm(p, p->edge_us);
-			return;
-		}
+        if (s->toggles_left > 0) {
+            rotary_encoder_arm(s, s->edge_us);
+            return;
+        }
 
-		/*
-		 * Burst done. If the key is still held, auto-repeat: a long delay after
-		 * the first detent, then a steady slower rate, like keyboard typematic.
-		 */
-		p->dir = ke970_scroll_held_dir(p);
-		if (!p->dir) {
-			p->repeating = false;
-			return;
-		}
+        s->dir = rotary_encoder_held_dir(s);
+        if (!s->dir) {
+            s->repeating = false;
+            return;
+        }
 
-		ke970_scroll_arm(p, p->repeating ? p->detent_us : p->repeat_delay_us);
-		p->repeating = true;
-		return;
-	}
+        rotary_encoder_arm(s, s->repeating ? s->detent_us : s->repeat_delay_us);
+        s->repeating = true;
+        return;
+    }
 
-	/* Repeat delay elapsed. */
-	int dir = ke970_scroll_held_dir(p);
-	if (!dir) {
-		p->dir = 0;
-		p->repeating = false;
-		return;
-	}
-	ke970_scroll_start_detent(p, dir);
+    int dir = rotary_encoder_held_dir(s);
+    if (!dir) {
+        s->dir = 0;
+        s->repeating = false;
+        return;
+    }
+    rotary_encoder_start_detent(s, dir);
 }
 
-static void ke970_scroll_update(pmb887x_ke970_scroll_t *p) {
-	int dir = ke970_scroll_held_dir(p);
+static void rotary_encoder_update(RotaryEncoder *s) {
+    int dir = rotary_encoder_held_dir(s);
 
-	/*
-	 * A burst in flight always runs to completion so the firmware only ever
-	 * sees whole detents; the timer callback picks up the new state at the end.
-	 */
-	if (dir && p->dir == 0) {
-		p->repeating = false;
-		ke970_scroll_start_detent(p, dir);
-	}
+    if (dir && s->dir == 0) {
+        s->repeating = false;
+        rotary_encoder_start_detent(s, dir);
+    }
 }
 
-static void ke970_scroll_cw_handler(void *opaque, int id, int level) {
-	pmb887x_ke970_scroll_t *p = opaque;
-	if (p->cw_held == !!level)
-		return;
-	p->cw_held = !!level;
-	ke970_scroll_update(p);
+static void rotary_encoder_cw_handler(void *opaque, int _n, int level) {
+    RotaryEncoder *s = opaque;
+    if (s->cw_held == !!level)
+        return;
+    s->cw_held = !!level;
+    rotary_encoder_update(s);
 }
 
-static void ke970_scroll_ccw_handler(void *opaque, int id, int level) {
-	pmb887x_ke970_scroll_t *p = opaque;
-	if (p->ccw_held == !!level)
-		return;
-	p->ccw_held = !!level;
-	ke970_scroll_update(p);
+static void rotary_encoder_ccw_handler(void *opaque, int _n, int level) {
+    RotaryEncoder *s = opaque;
+    if (s->ccw_held == !!level)
+        return;
+    s->ccw_held = !!level;
+    rotary_encoder_update(s);
 }
 
-static void ke970_scroll_init(Object *obj) {
-	DeviceState *dev = DEVICE(obj);
-	pmb887x_ke970_scroll_t *p = PMB887X_KE970_SCROLL(obj);
+static void rotary_encoder_init(Object *obj) {
+    DeviceState *dev = DEVICE(obj);
+    RotaryEncoder *s = ROTARY_ENCODER(obj);
 
-	qdev_init_gpio_out_named(dev, &p->a_out, "A", 1);
-	qdev_init_gpio_out_named(dev, &p->b_out, "B", 1);
-	qdev_init_gpio_in_named(dev, ke970_scroll_cw_handler, "CW", 1);
-	qdev_init_gpio_in_named(dev, ke970_scroll_ccw_handler, "CCW", 1);
+    qdev_init_gpio_out_named(dev, &s->a_out, "A", 1);
+    qdev_init_gpio_out_named(dev, &s->b_out, "B", 1);
+    qdev_init_gpio_in_named(dev, rotary_encoder_cw_handler, "CW", 1);
+    qdev_init_gpio_in_named(dev, rotary_encoder_ccw_handler, "CCW", 1);
 }
 
-static void ke970_scroll_realize(DeviceState *dev, Error **errp) {
-	pmb887x_ke970_scroll_t *p = PMB887X_KE970_SCROLL(dev);
-	debug_channel_init_device(&p->dbg, dev);
+static void rotary_encoder_realize(DeviceState *dev, Error **errp) {
+    RotaryEncoder *s = ROTARY_ENCODER(dev);
 
-	if (!p->steps) {
-		error_setg(errp, "ke970-scroll: 'steps' must be non-zero");
-		return;
-	}
+    if (!s->steps) {
+        error_setg(errp, "rotary-encoder: 'steps' must be non-zero");
+        return;
+    }
 
-	if (!p->edge_us || !p->detent_us || !p->repeat_delay_us) {
-		error_setg(errp, "ke970-scroll: 'edge_us', 'detent_us' and 'repeat_delay_us' must be non-zero");
-		return;
-	}
+    if (!s->edge_us || !s->detent_us || !s->repeat_delay_us) {
+        error_setg(errp, "rotary-encoder: 'edge_us', 'detent_us' and 'repeat_delay_us' must be non-zero");
+        return;
+    }
 
-	p->timer = timer_new_ns(QEMU_CLOCK_VIRTUAL, ke970_scroll_timer_cb, p);
+    debug_channel_init_device(&s->dbg, dev);
+    s->timer = timer_new_ns(QEMU_CLOCK_VIRTUAL, rotary_encoder_timer_cb, s);
 }
 
-static void ke970_scroll_unrealize(DeviceState *dev) {
-	pmb887x_ke970_scroll_t *p = PMB887X_KE970_SCROLL(dev);
-	timer_free(p->timer);
-	p->timer = NULL;
+static void rotary_encoder_unrealize(DeviceState *dev) {
+    RotaryEncoder *s = ROTARY_ENCODER(dev);
+    timer_free(s->timer);
+    s->timer = NULL;
+    debug_channel_cleanup(&s->dbg);
 }
 
-static void ke970_scroll_reset(DeviceState *dev) {
-	pmb887x_ke970_scroll_t *p = PMB887X_KE970_SCROLL(dev);
+static void rotary_encoder_reset(DeviceState *dev) {
+    RotaryEncoder *s = ROTARY_ENCODER(dev);
 
-	p->cw_held = false;
-	p->ccw_held = false;
-	p->repeating = false;
-	if (p->timer)
-		ke970_scroll_stop(p);
-	qemu_set_irq(p->b_out, 0);
+    s->cw_held = false;
+    s->ccw_held = false;
+    s->repeating = false;
+    if (s->timer)
+        rotary_encoder_stop(s);
+    qemu_set_irq(s->b_out, 0);
 }
 
-static const Property ke970_scroll_properties[] = {
-	DEFINE_PROP_UINT32("steps", pmb887x_ke970_scroll_t, steps, 2),
-	DEFINE_PROP_UINT32("edge_us", pmb887x_ke970_scroll_t, edge_us, 2000),
-	DEFINE_PROP_UINT32("repeat_delay_us", pmb887x_ke970_scroll_t, repeat_delay_us, 400000),
-	DEFINE_PROP_UINT32("detent_us", pmb887x_ke970_scroll_t, detent_us, 200000),
+static const Property rotary_encoder_properties[] = {
+    DEFINE_PROP_UINT32("steps", RotaryEncoder, steps, 2),
+    DEFINE_PROP_UINT32("edge_us", RotaryEncoder, edge_us, 2000),
+    DEFINE_PROP_UINT32("repeat_delay_us", RotaryEncoder, repeat_delay_us, 400000),
+    DEFINE_PROP_UINT32("detent_us", RotaryEncoder, detent_us, 200000),
 };
 
-static void ke970_scroll_class_init(ObjectClass *klass, const void *data) {
-	DeviceClass *dc = DEVICE_CLASS(klass);
-	device_class_set_props(dc, ke970_scroll_properties);
-	device_class_set_legacy_reset(dc, ke970_scroll_reset);
-	dc->realize = ke970_scroll_realize;
-	dc->unrealize = ke970_scroll_unrealize;
+static void rotary_encoder_class_init(ObjectClass *klass, const void *_data) {
+    DeviceClass *dc = DEVICE_CLASS(klass);
+    device_class_set_props(dc, rotary_encoder_properties);
+    device_class_set_legacy_reset(dc, rotary_encoder_reset);
+    dc->realize = rotary_encoder_realize;
+    dc->unrealize = rotary_encoder_unrealize;
 }
 
-static const TypeInfo ke970_scroll_info = {
-	.name			= TYPE_PMB887X_KE970_SCROLL,
-	.parent			= TYPE_SYS_BUS_DEVICE,
-	.instance_size	= sizeof(pmb887x_ke970_scroll_t),
-	.instance_init	= ke970_scroll_init,
-	.class_init		= ke970_scroll_class_init,
+static const TypeInfo rotary_encoder_info = {
+    .name = TYPE_ROTARY_ENCODER,
+    .parent = TYPE_SYS_BUS_DEVICE,
+    .instance_size = sizeof(RotaryEncoder),
+    .instance_init = rotary_encoder_init,
+    .class_init = rotary_encoder_class_init,
 };
 
-static void ke970_scroll_register_types(void) {
-	type_register_static(&ke970_scroll_info);
+static void rotary_encoder_register_types(void) {
+    type_register_static(&rotary_encoder_info);
 }
-type_init(ke970_scroll_register_types)
+type_init(rotary_encoder_register_types)

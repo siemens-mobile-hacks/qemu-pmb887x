@@ -109,7 +109,7 @@ static pmb887x_dev_t devices_meta[] = {
 
 	// Input
 	{
-		.name = "ke970-scroll",
+		.name = "rotary-encoder",
 		.props = {
 			{ "steps", DEV_PROP_UINT, false },
 			{ "edge_us", DEV_PROP_UINT, false },
