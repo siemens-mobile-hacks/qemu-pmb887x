@@ -295,7 +295,7 @@ static void device_init_prop_from_config(DeviceState *dev, const pmb887x_dev_pro
 }
 
 static void device_init_props_from_config(DeviceState *dev, const pmb887x_dev_t *meta, toml_datum_t table) {
-	if (object_dynamic_cast(OBJECT(dev), TYPE_PMB887X_LCD)) {
+	if (object_dynamic_cast(OBJECT(dev), TYPE_LCD)) {
 		for (int i = 0; i < ARRAY_SIZE(LCD_PROPS); i++)
 			device_init_prop_from_config(dev, &LCD_PROPS[i], table);
 	}

@@ -1,161 +1,158 @@
-/*
- * Epson L2F50250 (TFT, 130x130)
- * */
+/* SPDX-License-Identifier: GPL-2.0-or-later */
+/* Epson L2F50250 (TFT, 130x130) */
 #include "qemu/osdep.h"
 #include "hw/core/qdev-properties.h"
 #include "qapi/error.h"
 #include "qemu/error-report.h"
 #include "hw/lcd/lcd.h"
 
-#define TYPE_PMB887X_LCD_PANEL	"l2f50250"
-#define PMB887X_LCD_PANEL(obj)	OBJECT_CHECK(pmb887x_lcd_panel_t, (obj), TYPE_PMB887X_LCD_PANEL)
+#define TYPE_L2F50250 "l2f50250"
+OBJECT_DECLARE_SIMPLE_TYPE(L2F50250State, L2F50250)
 
-#define L2F50333T_MAX_BPP		18
-#define L2F50333T_MAX_REGS		256
+#define L2F50333T_MAX_BPP       18
+#define L2F50333T_MAX_REGS      256
 
-static const pmb887x_lcd_geometry_t L2F50250_GEOMETRY = {
-	.width = 130,
-	.height = 130,
-	.gram_width = 132,
-	.gram_height = 132,
-	.gram_x = 1,
-	.gram_y = 1,
+static const LCDGeometry L2F50250_GEOMETRY = {
+    .width = 130,
+    .height = 130,
+    .gram_width = 132,
+    .gram_height = 132,
+    .gram_x = 1,
+    .gram_y = 1,
 };
 
 static const uint16_t DEFAULT_REGS[][128] = {
-	[0x36] = { 0x00 }, // MADCTL
-	[0x3A] = { 0x05 }, // COLMOD
+    [0x36] = { 0x00 }, // MADCTL
+    [0x3A] = { 0x05 }, // COLMOD
 };
 
-typedef struct pmb887x_lcd_panel_t pmb887x_lcd_panel_t;
-
-struct pmb887x_lcd_panel_t {
-	pmb887x_lcd_t parent;
-	uint16_t regs[L2F50333T_MAX_REGS][128];
+struct L2F50250State {
+    LCDState parent;
+    uint16_t regs[L2F50333T_MAX_REGS][128];
 };
 
-static void lcd_update_state(pmb887x_lcd_t *lcd) {
-	pmb887x_lcd_panel_t *priv = PMB887X_LCD_PANEL(lcd);
+static void l2f50250_update_state(LCDState *lcd) {
+    L2F50250State *priv = L2F50250(lcd);
 
-	bool invert_xy = (priv->regs[0x36][0] & (1 << 0)) != 0;
-	bool bgr = (priv->regs[0x36][0] & (1 << 3)) != 0;
-	bool mv = (priv->regs[0x36][0] & (1 << 5)) != 0;
-	bool mx = (priv->regs[0x36][0] & (1 << 6)) != 0; /* 1 - decrement, 0 - increment */
-	bool my = (priv->regs[0x36][0] & (1 << 7)) != 0; /* 1 - decrement, 0 - increment */
+    bool invert_xy = (priv->regs[0x36][0] & (1 << 0)) != 0;
+    bool bgr = (priv->regs[0x36][0] & (1 << 3)) != 0;
+    bool mv = (priv->regs[0x36][0] & (1 << 5)) != 0;
+    bool mx = (priv->regs[0x36][0] & (1 << 6)) != 0; /* 1 - decrement, 0 - increment */
+    bool my = (priv->regs[0x36][0] & (1 << 7)) != 0; /* 1 - decrement, 0 - increment */
 
-	uint8_t colmod = (priv->regs[0x3A][0] & 7);
+    uint8_t colmod = (priv->regs[0x3A][0] & 7);
 
-	enum pmb887x_lcd_pixel_format_t pixel_format;
-	switch (colmod) {
-		case 0x05:
-			pixel_format = LCD_PIXEL_FORMAT_RGB565;
-			break;
-		case 0x06:
-			pixel_format = LCD_PIXEL_FORMAT_RGB666_6_6_6;
-			break;
-		default:
-			DEBUG_GUEST_ERROR(&lcd->dbg, "invalid color mode: 0x%02X, fallback to 565\n", colmod);
-			pixel_format = LCD_PIXEL_FORMAT_RGB565;
-			break;
-	}
+    LCDPixelFormat pixel_format;
+    switch (colmod) {
+        case 0x05:
+            pixel_format = LCD_PIXEL_FORMAT_RGB565;
+            break;
+        case 0x06:
+            pixel_format = LCD_PIXEL_FORMAT_RGB666_6_6_6;
+            break;
+        default:
+            DEBUG_GUEST_ERROR(&lcd->dbg, "invalid color mode: 0x%02X, fallback to 565\n", colmod);
+            pixel_format = LCD_PIXEL_FORMAT_RGB565;
+            break;
+    }
 
-	pmb887x_lcd_set_addr_mode(
-		lcd,
-		(mv ? LCD_AM_VERTICAL : LCD_AM_HORIZONTAL),
-		(mx ? LCD_AC_DEC : LCD_AC_INC),
-		(my ? LCD_AC_DEC : LCD_AC_INC)
-	);
+    lcd_set_addr_mode(
+        lcd,
+        (mv ? LCD_AM_VERTICAL : LCD_AM_HORIZONTAL),
+        (mx ? LCD_AC_DEC : LCD_AC_INC),
+        (my ? LCD_AC_DEC : LCD_AC_INC)
+    );
 
-	DEBUG_LOG(&lcd->dbg, "mv=%d, mx=%d, my=%d, invert_xy=%d, bgr=%d\n", mv, mx, my, invert_xy, bgr);
-	pmb887x_lcd_set_pixel_format(lcd, pixel_format);
-	pmb887x_lcd_set_output_bgr(lcd, bgr);
-	pmb887x_lcd_set_transform(lcd, invert_xy, invert_xy);
+    DEBUG_LOG(&lcd->dbg, "mv=%d, mx=%d, my=%d, invert_xy=%d, bgr=%d\n", mv, mx, my, invert_xy, bgr);
+    lcd_set_pixel_format(lcd, pixel_format);
+    lcd_set_output_bgr(lcd, bgr);
+    lcd_set_transform(lcd, invert_xy, invert_xy);
 }
 
-static int lcd_on_cmd(pmb887x_lcd_t *lcd, uint32_t cmd) {
-	if (cmd == 0x2C) {
-		pmb887x_lcd_set_ram_mode(lcd, true);
-		return 0;
-	}
+static int l2f50250_on_cmd(LCDState *lcd, uint32_t cmd) {
+    if (cmd == 0x2C) {
+        lcd_set_ram_mode(lcd, true);
+        return 0;
+    }
 
-	switch (cmd) {
-		case 0x2D: // RGBSET
-			return 48;
-		case 0x36: // MADCTL
-		case 0x3A: // COLMOD
-			return 1;
-		case 0x2A: // CASET
-		case 0x2B: // PASET
-			return 2;
-		case 0xB4:
-			return 4;
-		case 0xB5:
-			return 4;
-		case 0xBA:
-			return 2;
-		case 0x25:
-			return 1;
-	}
+    switch (cmd) {
+        case 0x2D: // RGBSET
+            return 48;
+        case 0x36: // MADCTL
+        case 0x3A: // COLMOD
+            return 1;
+        case 0x2A: // CASET
+        case 0x2B: // PASET
+            return 2;
+        case 0xB4:
+            return 4;
+        case 0xB5:
+            return 4;
+        case 0xBA:
+            return 2;
+        case 0x25:
+            return 1;
+    }
 
-	return 0;
+    return 0;
 }
 
-static void lcd_on_cmd_with_params(pmb887x_lcd_t *lcd, uint32_t cmd, const uint32_t *params, uint32_t params_n) {
-	pmb887x_lcd_panel_t *priv = PMB887X_LCD_PANEL(lcd);
+static void l2f50250_on_cmd_with_params(LCDState *lcd, uint32_t cmd, const uint32_t *params, uint32_t params_n) {
+    L2F50250State *priv = L2F50250(lcd);
 
-	g_assert(cmd < L2F50333T_MAX_REGS);
+    g_assert(cmd < L2F50333T_MAX_REGS);
 
-	DEBUG_LOG(&lcd->dbg, "write reg 0x%02X:\n", cmd);
-	for (int i = 0; i < params_n; i++) {
-		priv->regs[cmd][i] = params[i];
-		DEBUG_LOG(&lcd->dbg, "  param[%d]: 0x%02X\n", i, params[i]);
-	}
+    DEBUG_LOG(&lcd->dbg, "write reg 0x%02X:\n", cmd);
+    for (int i = 0; i < params_n; i++) {
+        priv->regs[cmd][i] = params[i];
+        DEBUG_LOG(&lcd->dbg, "  param[%d]: 0x%02X\n", i, params[i]);
+    }
 
-	switch (cmd) {
-		case 0x36:
-		case 0x3A:
-			lcd_update_state(lcd);
-			break;
+    switch (cmd) {
+        case 0x36:
+        case 0x3A:
+            l2f50250_update_state(lcd);
+            break;
 
-		case 0x2A:
-			pmb887x_lcd_set_x(lcd, params[0]);
-			pmb887x_lcd_set_window_x1(lcd, params[0]);
-			pmb887x_lcd_set_window_x2(lcd, params[1]);
-			break;
+        case 0x2A:
+            lcd_set_x(lcd, params[0]);
+            lcd_set_window_x1(lcd, params[0]);
+            lcd_set_window_x2(lcd, params[1]);
+            break;
 
-		case 0x2B:
-			pmb887x_lcd_set_y(lcd, params[0]);
-			pmb887x_lcd_set_window_y1(lcd, params[0]);
-			pmb887x_lcd_set_window_y2(lcd, params[1]);
-			break;
-	}
+        case 0x2B:
+            lcd_set_y(lcd, params[0]);
+            lcd_set_window_y1(lcd, params[0]);
+            lcd_set_window_y2(lcd, params[1]);
+            break;
+    }
 }
 
-static void lcd_realize(pmb887x_lcd_t *lcd, Error **errp) {
-	pmb887x_lcd_panel_t *priv = PMB887X_LCD_PANEL(lcd);
-	memset(priv->regs, 0, sizeof(priv->regs));
-	memcpy(priv->regs, DEFAULT_REGS, sizeof(DEFAULT_REGS));
-	lcd_update_state(lcd);
+static void l2f50250_realize(LCDState *lcd, Error **_errp) {
+    L2F50250State *priv = L2F50250(lcd);
+    memset(priv->regs, 0, sizeof(priv->regs));
+    memcpy(priv->regs, DEFAULT_REGS, sizeof(DEFAULT_REGS));
+    l2f50250_update_state(lcd);
 }
 
-static void lcd_class_init(ObjectClass *oc, const void *data) {
-	pmb887x_lcd_class_t *k = PMB887X_LCD_CLASS(oc);
-	k->geometry = &L2F50250_GEOMETRY;
-	k->cmd_width = 1;
-	k->param_width = 1;
-	k->on_cmd = lcd_on_cmd;
-	k->on_cmd_with_params = lcd_on_cmd_with_params;
-	k->realize = lcd_realize;
+static void l2f50250_class_init(ObjectClass *oc, const void *_data) {
+    LCDClass *k = LCD_CLASS(oc);
+    k->geometry = &L2F50250_GEOMETRY;
+    k->cmd_width = 1;
+    k->param_width = 1;
+    k->on_cmd = l2f50250_on_cmd;
+    k->on_cmd_with_params = l2f50250_on_cmd_with_params;
+    k->realize = l2f50250_realize;
 }
 
-static const TypeInfo lcd_info = {
-	.name			= TYPE_PMB887X_LCD_PANEL,
-	.parent			= TYPE_PMB887X_LCD,
-	.instance_size	= sizeof(pmb887x_lcd_panel_t),
-	.class_init		= lcd_class_init,
+static const TypeInfo l2f50250_info = {
+    .name           = TYPE_L2F50250,
+    .parent         = TYPE_LCD,
+    .instance_size  = sizeof(L2F50250State),
+    .class_init     = l2f50250_class_init,
 };
 
-static void lcd_register_types(void) {
-	type_register_static(&lcd_info);
+static void l2f50250_register_types(void) {
+    type_register_static(&l2f50250_info);
 }
-type_init(lcd_register_types)
+type_init(l2f50250_register_types)

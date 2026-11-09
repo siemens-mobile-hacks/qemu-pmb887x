@@ -1,6 +1,5 @@
-/*
- * Generic serial display
- */
+/* SPDX-License-Identifier: GPL-2.0-or-later */
+/* Generic serial display */
 #include <math.h>
 #include "qemu/osdep.h"
 #include "qapi/error.h"
@@ -17,740 +16,740 @@
 #define LCD_RAM_QUEUE_SIZE (64 * 1024)
 #define LCD_RAM_QUEUE_WAKE_BYTES (4 * 1024)
 
-static void lcd_incr_px(pmb887x_lcd_t *lcd);
+static void lcd_incr_px(LCDState *lcd);
 
-static void lcd_write_control_byte(pmb887x_lcd_t *lcd, uint8_t value);
+static void lcd_write_control_byte(LCDState *lcd, uint8_t value);
 
-static uint32_t lcd_read_from_fifo(pmb887x_lcd_t *lcd, uint32_t width);
-static void lcd_clear_fifo(pmb887x_lcd_t *lcd);
+static uint32_t lcd_read_from_fifo(LCDState *lcd, uint32_t width);
+static void lcd_clear_fifo(LCDState *lcd);
 
-static void lcd_invalidate_full(pmb887x_lcd_t *lcd) {
-	lcd->dirty.x1 = 0;
-	lcd->dirty.y1 = 0;
-	lcd->dirty.x2 = lcd->width - 1;
-	lcd->dirty.y2 = lcd->height - 1;
+static void lcd_invalidate_full(LCDState *lcd) {
+    lcd->dirty.x1 = 0;
+    lcd->dirty.y1 = 0;
+    lcd->dirty.x2 = lcd->width - 1;
+    lcd->dirty.y2 = lcd->height - 1;
 }
 
-static void lcd_update_source_surface(pmb887x_lcd_t *lcd) {
-	/* Reinterpreting 0x00RRGGBB as ABGR swaps red and blue without changing GRAM. */
-	pixman_format_code_t format = lcd->output_bgr != lcd->bgr_filter ? PIXMAN_x8b8g8r8 : PIXMAN_x8r8g8b8;
-	uint32_t *matrix = lcd->gram + lcd->gram_y * lcd->gram_width + lcd->gram_x;
-	qemu_free_displaysurface(lcd->surface);
-	lcd->surface = qemu_create_displaysurface_from(lcd->width, lcd->height, format,
-		lcd->gram_width * 4, (uint8_t *) matrix);
+static void lcd_update_source_surface(LCDState *lcd) {
+    /* Reinterpreting 0x00RRGGBB as ABGR swaps red and blue without changing GRAM. */
+    pixman_format_code_t format = lcd->output_bgr != lcd->bgr_filter ? PIXMAN_x8b8g8r8 : PIXMAN_x8r8g8b8;
+    uint32_t *matrix = lcd->gram + lcd->gram_y * lcd->gram_width + lcd->gram_x;
+    qemu_free_displaysurface(lcd->surface);
+    lcd->surface = qemu_create_displaysurface_from(lcd->width, lcd->height, format,
+        lcd->gram_width * 4, (uint8_t *) matrix);
 
-	pixman_transform_t transform;
-	pixman_transform_init_identity(&transform);
-	pixman_fixed_t fw = pixman_int_to_fixed(surface_width(lcd->surface));
-	pixman_fixed_t fh = pixman_int_to_fixed(surface_height(lcd->surface));
+    pixman_transform_t transform;
+    pixman_transform_init_identity(&transform);
+    pixman_fixed_t fw = pixman_int_to_fixed(surface_width(lcd->surface));
+    pixman_fixed_t fh = pixman_int_to_fixed(surface_height(lcd->surface));
 
-	if (lcd->flip_horizontal || lcd->flip_vertical) {
-		if (lcd->rotation == 90 || lcd->rotation == 270) {
-			const pixman_fixed_t sx = pixman_int_to_fixed(lcd->flip_vertical ? -1 : 1);
-			const pixman_fixed_t sy = pixman_int_to_fixed(lcd->flip_horizontal ? -1 : 1);
-			pixman_transform_scale(&transform, NULL, sx, sy);
-			pixman_transform_translate(
-				&transform,
-				NULL,
-				lcd->flip_vertical ? fh : 0,
-				lcd->flip_horizontal ? fw : 0
-			);
-		} else {
-			const pixman_fixed_t sx = pixman_int_to_fixed(lcd->flip_horizontal ? -1 : 1);
-			const pixman_fixed_t sy = pixman_int_to_fixed(lcd->flip_vertical ? -1 : 1);
-			pixman_transform_scale(&transform, NULL, sx, sy);
-			pixman_transform_translate(
-				&transform,
-				NULL,
-				lcd->flip_horizontal ? fw : 0,
-				lcd->flip_vertical ? fh : 0
-			);
-		}
-	}
+    if (lcd->flip_horizontal || lcd->flip_vertical) {
+        if (lcd->rotation == 90 || lcd->rotation == 270) {
+            const pixman_fixed_t sx = pixman_int_to_fixed(lcd->flip_vertical ? -1 : 1);
+            const pixman_fixed_t sy = pixman_int_to_fixed(lcd->flip_horizontal ? -1 : 1);
+            pixman_transform_scale(&transform, NULL, sx, sy);
+            pixman_transform_translate(
+                &transform,
+                NULL,
+                lcd->flip_vertical ? fh : 0,
+                lcd->flip_horizontal ? fw : 0
+            );
+        } else {
+            const pixman_fixed_t sx = pixman_int_to_fixed(lcd->flip_horizontal ? -1 : 1);
+            const pixman_fixed_t sy = pixman_int_to_fixed(lcd->flip_vertical ? -1 : 1);
+            pixman_transform_scale(&transform, NULL, sx, sy);
+            pixman_transform_translate(
+                &transform,
+                NULL,
+                lcd->flip_horizontal ? fw : 0,
+                lcd->flip_vertical ? fh : 0
+            );
+        }
+    }
 
-	switch (lcd->rotation) {
-		case 90:
-			pixman_transform_rotate(&transform, NULL, 0, -pixman_fixed_1);
-			pixman_transform_translate(&transform, NULL, 0, fh);
-			break;
-		case 180:
-			pixman_transform_rotate(&transform, NULL, -pixman_fixed_1, 0);
-			pixman_transform_translate(&transform, NULL, fw, fh);
-			break;
-		case 270:
-			pixman_transform_rotate(&transform, NULL, 0, pixman_fixed_1);
-			pixman_transform_translate(&transform, NULL, fw, 0);
-			break;
-	}
-	pixman_image_set_transform(lcd->surface->image, &transform);
-	pixman_image_set_filter(lcd->surface->image, PIXMAN_FILTER_NEAREST, NULL, 0);
+    switch (lcd->rotation) {
+        case 90:
+            pixman_transform_rotate(&transform, NULL, 0, -pixman_fixed_1);
+            pixman_transform_translate(&transform, NULL, 0, fh);
+            break;
+        case 180:
+            pixman_transform_rotate(&transform, NULL, -pixman_fixed_1, 0);
+            pixman_transform_translate(&transform, NULL, fw, fh);
+            break;
+        case 270:
+            pixman_transform_rotate(&transform, NULL, 0, pixman_fixed_1);
+            pixman_transform_translate(&transform, NULL, fw, 0);
+            break;
+    }
+    pixman_image_set_transform(lcd->surface->image, &transform);
+    pixman_image_set_filter(lcd->surface->image, PIXMAN_FILTER_NEAREST, NULL, 0);
 }
 
-void pmb887x_lcd_set_pixel_format(pmb887x_lcd_t *lcd, enum pmb887x_lcd_pixel_format_t format) {
-	const pmb887x_lcd_format_t *info = pmb887x_lcd_format_get(format);
-	if (!info)
-		hw_error("Invalid LCD pixel format: %d\n", format);
-	if (lcd->pixel_format == format)
-		return;
+void lcd_set_pixel_format(LCDState *lcd, LCDPixelFormat format) {
+    const LCDFormat *info = lcd_format_get(format);
+    if (!info)
+        hw_error("Invalid LCD pixel format: %d\n", format);
+    if (lcd->pixel_format == format)
+        return;
 
-	lcd->pixel_format = format;
-	lcd->bpp = info->bits_per_pixel;
-	lcd->byte_pp = info->bytes_per_pixel;
-	lcd->decode_pixel = info->decode;
-	lcd->encode_pixel = info->encode;
-	lcd->tmp_pixel = 0;
-	lcd->tmp_index = 0;
-	DEBUG_LOG(&lcd->dbg, "pixel format: %d, bpp: %d [%dB]\n", format, lcd->bpp, lcd->byte_pp);
+    lcd->pixel_format = format;
+    lcd->bpp = info->bits_per_pixel;
+    lcd->byte_pp = info->bytes_per_pixel;
+    lcd->decode_pixel = info->decode;
+    lcd->encode_pixel = info->encode;
+    lcd->tmp_pixel = 0;
+    lcd->tmp_index = 0;
+    DEBUG_LOG(&lcd->dbg, "pixel format: %d, bpp: %d [%dB]\n", format, lcd->bpp, lcd->byte_pp);
 }
 
-void pmb887x_lcd_set_output_bgr(pmb887x_lcd_t *lcd, bool enabled) {
-	if (lcd->output_bgr == enabled)
-		return;
+void lcd_set_output_bgr(LCDState *lcd, bool enabled) {
+    if (lcd->output_bgr == enabled)
+        return;
 
-	lcd->output_bgr = enabled;
-	if (lcd->gram) {
-		lcd_update_source_surface(lcd);
-		lcd_invalidate_full(lcd);
-	}
+    lcd->output_bgr = enabled;
+    if (lcd->gram) {
+        lcd_update_source_surface(lcd);
+        lcd_invalidate_full(lcd);
+    }
 }
 
-void pmb887x_lcd_set_transform(pmb887x_lcd_t *lcd, bool flip_h_pins, bool flip_v_pins) {
-	uint32_t new_rotation = lcd->default_rotation;
-	bool new_flip_horizontal = lcd->default_flip_horizontal;
-	bool new_flip_vertical = lcd->default_flip_vertical;
+void lcd_set_transform(LCDState *lcd, bool flip_h_pins, bool flip_v_pins) {
+    uint32_t new_rotation = lcd->default_rotation;
+    bool new_flip_horizontal = lcd->default_flip_horizontal;
+    bool new_flip_vertical = lcd->default_flip_vertical;
 
-	// Apply HW ping remapping
-	if (flip_h_pins)
-		new_flip_horizontal = !new_flip_horizontal;
-	if (flip_v_pins)
-		new_flip_vertical = !new_flip_vertical;
+    // Apply HW ping remapping
+    if (flip_h_pins)
+        new_flip_horizontal = !new_flip_horizontal;
+    if (flip_v_pins)
+        new_flip_vertical = !new_flip_vertical;
 
-	// 180deg + flip_v + flip_h == 0deg
-	if (new_rotation == 180 && new_flip_horizontal && new_flip_vertical) {
-		new_rotation = 0;
-		new_flip_horizontal = false;
-		new_flip_vertical = false;
-	}
+    // 180deg + flip_v + flip_h == 0deg
+    if (new_rotation == 180 && new_flip_horizontal && new_flip_vertical) {
+        new_rotation = 0;
+        new_flip_horizontal = false;
+        new_flip_vertical = false;
+    }
 
-	bool is_changed = (
-		lcd->gram == NULL ||
-		lcd->rotation != new_rotation ||
-		lcd->flip_horizontal != new_flip_horizontal ||
-		lcd->flip_vertical != new_flip_vertical
-	);
+    bool is_changed = (
+        lcd->gram == NULL ||
+        lcd->rotation != new_rotation ||
+        lcd->flip_horizontal != new_flip_horizontal ||
+        lcd->flip_vertical != new_flip_vertical
+    );
 
-	if (!is_changed)
-		return;
+    if (!is_changed)
+        return;
 
-	lcd->rotation = new_rotation;
-	lcd->flip_horizontal = new_flip_horizontal;
-	lcd->flip_vertical = new_flip_vertical;
+    lcd->rotation = new_rotation;
+    lcd->flip_horizontal = new_flip_horizontal;
+    lcd->flip_vertical = new_flip_vertical;
 
-	if (!lcd->gram)
-		lcd->gram = g_new0(uint32_t, lcd->gram_width * lcd->gram_height);
+    if (!lcd->gram)
+        lcd->gram = g_new0(uint32_t, lcd->gram_width * lcd->gram_height);
 
-	uint32_t output_width = lcd->rotation == 90 || lcd->rotation == 270 ? lcd->height : lcd->width;
-	uint32_t output_height = lcd->rotation == 90 || lcd->rotation == 270 ? lcd->width : lcd->height;
-	bool replace_output = !lcd->shadow_surface || surface_width(lcd->shadow_surface) != output_width ||
-		surface_height(lcd->shadow_surface) != output_height;
-	if (replace_output) {
-		uint8_t *old_shadow_buffer = lcd->shadow_buffer;
-		lcd->shadow_buffer = g_new0(uint8_t, output_width * output_height * 4);
-		lcd->shadow_surface = qemu_create_displaysurface_from(output_width, output_height, PIXMAN_x8r8g8b8,
-			output_width * 4, lcd->shadow_buffer);
-		qemu_console_set_surface(lcd->console, lcd->shadow_surface);
-		g_free(old_shadow_buffer);
-	}
+    uint32_t output_width = lcd->rotation == 90 || lcd->rotation == 270 ? lcd->height : lcd->width;
+    uint32_t output_height = lcd->rotation == 90 || lcd->rotation == 270 ? lcd->width : lcd->height;
+    bool replace_output = !lcd->shadow_surface || surface_width(lcd->shadow_surface) != output_width ||
+        surface_height(lcd->shadow_surface) != output_height;
+    if (replace_output) {
+        uint8_t *old_shadow_buffer = lcd->shadow_buffer;
+        lcd->shadow_buffer = g_new0(uint8_t, output_width * output_height * 4);
+        lcd->shadow_surface = qemu_create_displaysurface_from(output_width, output_height, PIXMAN_x8r8g8b8,
+            output_width * 4, lcd->shadow_buffer);
+        qemu_console_set_surface(lcd->console, lcd->shadow_surface);
+        g_free(old_shadow_buffer);
+    }
 
-	lcd_update_source_surface(lcd);
-	lcd_invalidate_full(lcd);
+    lcd_update_source_surface(lcd);
+    lcd_invalidate_full(lcd);
 
-	DEBUG_LOG(&lcd->dbg, "transform: %d deg, flip_h=%d, flip_v=%d\n", lcd->rotation, lcd->flip_horizontal,
-		lcd->flip_vertical);
+    DEBUG_LOG(&lcd->dbg, "transform: %d deg, flip_h=%d, flip_v=%d\n", lcd->rotation, lcd->flip_horizontal,
+        lcd->flip_vertical);
 }
 
-static void lcd_mark_dirty(pmb887x_lcd_t *lcd, uint32_t column, uint32_t row) {
-	if (column < lcd->gram_x || row < lcd->gram_y)
-		return;
+static void lcd_mark_dirty(LCDState *lcd, uint32_t column, uint32_t row) {
+    if (column < lcd->gram_x || row < lcd->gram_y)
+        return;
 
-	uint32_t x = column - lcd->gram_x;
-	uint32_t y = row - lcd->gram_y;
-	if (x >= lcd->width || y >= lcd->height)
-		return;
+    uint32_t x = column - lcd->gram_x;
+    uint32_t y = row - lcd->gram_y;
+    if (x >= lcd->width || y >= lcd->height)
+        return;
 
-	lcd->dirty.x1 = MIN(lcd->dirty.x1, x);
-	lcd->dirty.y1 = MIN(lcd->dirty.y1, y);
-	lcd->dirty.x2 = MAX(lcd->dirty.x2, x);
-	lcd->dirty.y2 = MAX(lcd->dirty.y2, y);
+    lcd->dirty.x1 = MIN(lcd->dirty.x1, x);
+    lcd->dirty.y1 = MIN(lcd->dirty.y1, y);
+    lcd->dirty.x2 = MAX(lcd->dirty.x2, x);
+    lcd->dirty.y2 = MAX(lcd->dirty.y2, y);
 }
 
-static inline bool lcd_incr_ac_x(pmb887x_lcd_t *lcd) {
-	if (lcd->ac_x == LCD_AC_INC) {
-		lcd->buffer_x++;
-		if (lcd->buffer_x > lcd->window.x2) {
-			lcd->buffer_x = lcd->window.x1;
-			return true;
-		}
-	} else {
-		lcd->buffer_x--;
-		if (lcd->buffer_x < lcd->window.x1) {
-			lcd->buffer_x = lcd->window.x2;
-			return true;
-		}
-	}
-	return false;
+static inline bool lcd_incr_ac_x(LCDState *lcd) {
+    if (lcd->ac_x == LCD_AC_INC) {
+        lcd->buffer_x++;
+        if (lcd->buffer_x > lcd->window.x2) {
+            lcd->buffer_x = lcd->window.x1;
+            return true;
+        }
+    } else {
+        lcd->buffer_x--;
+        if (lcd->buffer_x < lcd->window.x1) {
+            lcd->buffer_x = lcd->window.x2;
+            return true;
+        }
+    }
+    return false;
 }
 
-static inline bool lcd_incr_ac_y(pmb887x_lcd_t *lcd) {
-	if (lcd->ac_y == LCD_AC_INC) {
-		lcd->buffer_y++;
-		if (lcd->buffer_y > lcd->window.y2) {
-			lcd->buffer_y = lcd->window.y1;
-			return true;
-		}
-	} else {
-		lcd->buffer_y--;
-		if (lcd->buffer_y < lcd->window.y1) {
-			lcd->buffer_y = lcd->window.y2;
-			return true;
-		}
-	}
-	return false;
+static inline bool lcd_incr_ac_y(LCDState *lcd) {
+    if (lcd->ac_y == LCD_AC_INC) {
+        lcd->buffer_y++;
+        if (lcd->buffer_y > lcd->window.y2) {
+            lcd->buffer_y = lcd->window.y1;
+            return true;
+        }
+    } else {
+        lcd->buffer_y--;
+        if (lcd->buffer_y < lcd->window.y1) {
+            lcd->buffer_y = lcd->window.y2;
+            return true;
+        }
+    }
+    return false;
 }
 
-static inline void lcd_incr_px(pmb887x_lcd_t *lcd) {
-	if (lcd->am == LCD_AM_VERTICAL) {
-		if (lcd_incr_ac_y(lcd))
-			lcd_incr_ac_x(lcd);
-	} else {
-		if (lcd_incr_ac_x(lcd))
-			lcd_incr_ac_y(lcd);
-	}
+static inline void lcd_incr_px(LCDState *lcd) {
+    if (lcd->am == LCD_AM_VERTICAL) {
+        if (lcd_incr_ac_y(lcd))
+            lcd_incr_ac_x(lcd);
+    } else {
+        if (lcd_incr_ac_x(lcd))
+            lcd_incr_ac_y(lcd);
+    }
 }
 
-static void lcd_write_ram_byte(pmb887x_lcd_t *lcd, uint8_t value) {
-	lcd->tmp_pixel = lcd->tmp_pixel << 8 | value;
-	lcd->tmp_index++;
+static void lcd_write_ram_byte(LCDState *lcd, uint8_t value) {
+    lcd->tmp_pixel = lcd->tmp_pixel << 8 | value;
+    lcd->tmp_index++;
 
-	if (lcd->tmp_index == lcd->byte_pp) {
-		uint32_t index = lcd->buffer_y * lcd->gram_width + lcd->buffer_x;
-		lcd->gram[index] = lcd->decode_pixel(lcd->tmp_pixel);
-		lcd_mark_dirty(lcd, lcd->buffer_x, lcd->buffer_y);
-		lcd->tmp_pixel = 0;
-		lcd->tmp_index = 0;
-		lcd_incr_px(lcd);
-	}
+    if (lcd->tmp_index == lcd->byte_pp) {
+        uint32_t index = lcd->buffer_y * lcd->gram_width + lcd->buffer_x;
+        lcd->gram[index] = lcd->decode_pixel(lcd->tmp_pixel);
+        lcd_mark_dirty(lcd, lcd->buffer_x, lcd->buffer_y);
+        lcd->tmp_pixel = 0;
+        lcd->tmp_index = 0;
+        lcd_incr_px(lcd);
+    }
 }
 
 static void *lcd_ram_writer_run(void *opaque) {
-	pmb887x_lcd_t *lcd = opaque;
-	uint32_t tail = 0;
+    LCDState *lcd = opaque;
+    uint32_t tail = 0;
 
-	while (true) {
-		qemu_event_wait(&lcd->ram_queue_ready);
-		qemu_event_reset(&lcd->ram_queue_ready);
-		uint32_t head = qatomic_load_acquire(&lcd->ram_queue_head);
-		if (tail == head)
-			continue;
+    while (true) {
+        qemu_event_wait(&lcd->ram_queue_ready);
+        qemu_event_reset(&lcd->ram_queue_ready);
+        uint32_t head = qatomic_load_acquire(&lcd->ram_queue_head);
+        if (tail == head)
+            continue;
 
-		for (; tail != head; tail++)
-			lcd_write_ram_byte(lcd, lcd->ram_queue[tail % LCD_RAM_QUEUE_SIZE]);
+        for (; tail != head; tail++)
+            lcd_write_ram_byte(lcd, lcd->ram_queue[tail % LCD_RAM_QUEUE_SIZE]);
 
-		qemu_mutex_lock(&lcd->ram_queue_lock);
-		qatomic_store_release(&lcd->ram_queue_tail, tail);
-		qemu_cond_broadcast(&lcd->ram_queue_drained);
-		qemu_mutex_unlock(&lcd->ram_queue_lock);
-	}
-	return NULL;
+        qemu_mutex_lock(&lcd->ram_queue_lock);
+        qatomic_store_release(&lcd->ram_queue_tail, tail);
+        qemu_cond_broadcast(&lcd->ram_queue_drained);
+        qemu_mutex_unlock(&lcd->ram_queue_lock);
+    }
+    return NULL;
 }
 
-static void lcd_drain_ram_queue(pmb887x_lcd_t *lcd) {
-	uint32_t head = lcd->ram_queue_head;
-	if (qatomic_load_acquire(&lcd->ram_queue_tail) == head)
-		return;
+static void lcd_drain_ram_queue(LCDState *lcd) {
+    uint32_t head = lcd->ram_queue_head;
+    if (qatomic_load_acquire(&lcd->ram_queue_tail) == head)
+        return;
 
-	qemu_event_set(&lcd->ram_queue_ready);
-	qemu_mutex_lock(&lcd->ram_queue_lock);
-	while (qatomic_read(&lcd->ram_queue_tail) != head)
-		qemu_cond_wait(&lcd->ram_queue_drained, &lcd->ram_queue_lock);
-	qemu_mutex_unlock(&lcd->ram_queue_lock);
+    qemu_event_set(&lcd->ram_queue_ready);
+    qemu_mutex_lock(&lcd->ram_queue_lock);
+    while (qatomic_read(&lcd->ram_queue_tail) != head)
+        qemu_cond_wait(&lcd->ram_queue_drained, &lcd->ram_queue_lock);
+    qemu_mutex_unlock(&lcd->ram_queue_lock);
 }
 
-static bool lcd_is_writing_ram(pmb887x_lcd_t *lcd) {
-	return !lcd->reset_active && !lcd->read_active && lcd->wr_state == LCD_WR_STATE_RAM && !lcd->cd && lcd->gram;
+static bool lcd_is_writing_ram(LCDState *lcd) {
+    return !lcd->reset_active && !lcd->read_active && lcd->wr_state == LCD_WR_STATE_RAM && !lcd->cd && lcd->gram;
 }
 
-static void lcd_queue_ram_bytes(pmb887x_lcd_t *lcd, const uint32_t *values, size_t count) {
-	uint32_t head = lcd->ram_queue_head;
-	if (head - qatomic_load_acquire(&lcd->ram_queue_tail) > LCD_RAM_QUEUE_SIZE - count)
-		lcd_drain_ram_queue(lcd);
+static void lcd_queue_ram_bytes(LCDState *lcd, const uint32_t *values, size_t count) {
+    uint32_t head = lcd->ram_queue_head;
+    if (head - qatomic_load_acquire(&lcd->ram_queue_tail) > LCD_RAM_QUEUE_SIZE - count)
+        lcd_drain_ram_queue(lcd);
 
-	for (size_t i = 0; i < count; i++)
-		lcd->ram_queue[(head + i) % LCD_RAM_QUEUE_SIZE] = values[i];
-	qatomic_store_release(&lcd->ram_queue_head, head + count);
-	if ((head + count) / LCD_RAM_QUEUE_WAKE_BYTES != head / LCD_RAM_QUEUE_WAKE_BYTES)
-		qemu_event_set(&lcd->ram_queue_ready);
+    for (size_t i = 0; i < count; i++)
+        lcd->ram_queue[(head + i) % LCD_RAM_QUEUE_SIZE] = values[i];
+    qatomic_store_release(&lcd->ram_queue_head, head + count);
+    if ((head + count) / LCD_RAM_QUEUE_WAKE_BYTES != head / LCD_RAM_QUEUE_WAKE_BYTES)
+        qemu_event_set(&lcd->ram_queue_ready);
 }
 
-static void lcd_flush_partial_command(pmb887x_lcd_t *lcd) {
-	if (lcd->wr_state != LCD_WR_STATE_CMD)
-		return;
-	lcd_clear_fifo(lcd);
-	lcd->wr_state = LCD_WR_STATE_NONE;
+static void lcd_flush_partial_command(LCDState *lcd) {
+    if (lcd->wr_state != LCD_WR_STATE_CMD)
+        return;
+    lcd_clear_fifo(lcd);
+    lcd->wr_state = LCD_WR_STATE_NONE;
 }
 
-static void lcd_handle_command(pmb887x_lcd_t *lcd, uint8_t value) {
-	if (lcd->wr_state != LCD_WR_STATE_CMD) {
-		if (lcd->wr_state == LCD_WR_STATE_PARAM)
-			DEBUG_LOG(&lcd->dbg, "CMD %04X ignored, too few params.\n", lcd->current_cmd);
-		lcd_clear_fifo(lcd);
-		lcd->wr_state = LCD_WR_STATE_CMD;
-	}
+static void lcd_handle_command(LCDState *lcd, uint8_t value) {
+    if (lcd->wr_state != LCD_WR_STATE_CMD) {
+        if (lcd->wr_state == LCD_WR_STATE_PARAM)
+            DEBUG_LOG(&lcd->dbg, "CMD %04X ignored, too few params.\n", lcd->current_cmd);
+        lcd_clear_fifo(lcd);
+        lcd->wr_state = LCD_WR_STATE_CMD;
+    }
 
-	fifo8_push(&lcd->fifo, value);
+    fifo8_push(&lcd->fifo, value);
 
-	if (fifo8_num_used(&lcd->fifo) >= lcd->k->cmd_width) {
-		uint32_t cmd = lcd_read_from_fifo(lcd, lcd->k->cmd_width);
-		lcd->wr_state = LCD_WR_STATE_PARAM;
-		lcd->current_cmd = cmd;
-		lcd->current_cmd_params = lcd->k->on_cmd(lcd, cmd);
+    if (fifo8_num_used(&lcd->fifo) >= lcd->k->cmd_width) {
+        uint32_t cmd = lcd_read_from_fifo(lcd, lcd->k->cmd_width);
+        lcd->wr_state = LCD_WR_STATE_PARAM;
+        lcd->current_cmd = cmd;
+        lcd->current_cmd_params = lcd->k->on_cmd(lcd, cmd);
 
-		if (lcd->current_cmd_params < 0) {
-			lcd->wr_state = LCD_WR_STATE_IGNORE;
-		} else {
-			g_assert(lcd->current_cmd_params <= LCD_CMD_MAX_PARAMS);
-			if (lcd->current_cmd_params == 0 && lcd->wr_state == LCD_WR_STATE_PARAM)
-				lcd->wr_state = LCD_WR_STATE_NONE;
-		}
-	}
+        if (lcd->current_cmd_params < 0) {
+            lcd->wr_state = LCD_WR_STATE_IGNORE;
+        } else {
+            g_assert(lcd->current_cmd_params <= LCD_CMD_MAX_PARAMS);
+            if (lcd->current_cmd_params == 0 && lcd->wr_state == LCD_WR_STATE_PARAM)
+                lcd->wr_state = LCD_WR_STATE_NONE;
+        }
+    }
 }
 
-static void lcd_handle_param(pmb887x_lcd_t *lcd, uint8_t value) {
-	if (lcd->wr_state == LCD_WR_STATE_CMD) {
-		lcd_clear_fifo(lcd);
-		lcd->wr_state = LCD_WR_STATE_NONE;
-	} else if (lcd->wr_state == LCD_WR_STATE_NONE) {
-		// Unexpected data
-		DEBUG_LOG(&lcd->dbg, "Unexpected PARAM: %02X (command=%02X)\n", value, lcd->current_cmd);
-	} else if (lcd->wr_state == LCD_WR_STATE_PARAM) {
-		fifo8_push(&lcd->fifo, value);
+static void lcd_handle_param(LCDState *lcd, uint8_t value) {
+    if (lcd->wr_state == LCD_WR_STATE_CMD) {
+        lcd_clear_fifo(lcd);
+        lcd->wr_state = LCD_WR_STATE_NONE;
+    } else if (lcd->wr_state == LCD_WR_STATE_NONE) {
+        // Unexpected data
+        DEBUG_LOG(&lcd->dbg, "Unexpected PARAM: %02X (command=%02X)\n", value, lcd->current_cmd);
+    } else if (lcd->wr_state == LCD_WR_STATE_PARAM) {
+        fifo8_push(&lcd->fifo, value);
 
-		if (fifo8_num_used(&lcd->fifo) >= (lcd->k->param_width * lcd->current_cmd_params)) {
-			uint32_t tmp_params[LCD_CMD_MAX_PARAMS];
-			uint32_t tmp_params_n = 0;
-			while (fifo8_num_used(&lcd->fifo) >= lcd->k->param_width) {
-				tmp_params[tmp_params_n++] = lcd_read_from_fifo(lcd, lcd->k->param_width);
-				// DEBUG_LOG(&lcd->dbg, "PARAM: %04X\n", tmp_params[tmp_params_n - 1]);
-			}
+        if (fifo8_num_used(&lcd->fifo) >= (lcd->k->param_width * lcd->current_cmd_params)) {
+            uint32_t tmp_params[LCD_CMD_MAX_PARAMS];
+            uint32_t tmp_params_n = 0;
+            while (fifo8_num_used(&lcd->fifo) >= lcd->k->param_width) {
+                tmp_params[tmp_params_n++] = lcd_read_from_fifo(lcd, lcd->k->param_width);
+                // DEBUG_LOG(&lcd->dbg, "PARAM: %04X\n", tmp_params[tmp_params_n - 1]);
+            }
 
-			lcd->k->on_cmd_with_params(lcd, lcd->current_cmd, tmp_params, tmp_params_n);
+            lcd->k->on_cmd_with_params(lcd, lcd->current_cmd, tmp_params, tmp_params_n);
 
-			lcd->current_cmd = 0;
-			lcd->current_cmd_params = 0;
-			lcd->wr_state = LCD_WR_STATE_NONE;
-		}
-	}
+            lcd->current_cmd = 0;
+            lcd->current_cmd_params = 0;
+            lcd->wr_state = LCD_WR_STATE_NONE;
+        }
+    }
 }
 
-static const char *lcd_wr_state_name(enum pmb887x_lcd_wr_state_t state) {
-	switch (state) {
-		case LCD_WR_STATE_NONE:		return "NONE";
-		case LCD_WR_STATE_CMD:		return "CMD";
-		case LCD_WR_STATE_PARAM:	return "PARAM";
-		case LCD_WR_STATE_RAM:		return "RAM";
-		case LCD_WR_STATE_IGNORE:	return "IGNORE";
-	}
-	return "?";
+static const char *lcd_wr_state_name(LCDWriteState state) {
+    switch (state) {
+        case LCD_WR_STATE_NONE:     return "NONE";
+        case LCD_WR_STATE_CMD:      return "CMD";
+        case LCD_WR_STATE_PARAM:    return "PARAM";
+        case LCD_WR_STATE_RAM:      return "RAM";
+        case LCD_WR_STATE_IGNORE:   return "IGNORE";
+    }
+    return "?";
 }
 
-static void lcd_write_control_byte(pmb887x_lcd_t *lcd, uint8_t value) {
-	DEBUG_LOG(&lcd->dbg, "WR %02X cd=%d [%s] fifo=%d\n", value, lcd->cd, lcd_wr_state_name(lcd->wr_state),
-		fifo8_num_used(&lcd->fifo));
+static void lcd_write_control_byte(LCDState *lcd, uint8_t value) {
+    DEBUG_LOG(&lcd->dbg, "WR %02X cd=%d [%s] fifo=%d\n", value, lcd->cd, lcd_wr_state_name(lcd->wr_state),
+        fifo8_num_used(&lcd->fifo));
 
-	if (lcd->k->direct_data_write) {
-		if (lcd->wr_state == LCD_WR_STATE_NONE || lcd->wr_state == LCD_WR_STATE_CMD) {
-			lcd_handle_command(lcd, value);
-		} else if (lcd->wr_state == LCD_WR_STATE_PARAM) {
-			lcd_handle_param(lcd, value);
-		}
-	} else {
-		if (lcd->cd) {
-			lcd_handle_command(lcd, value);
-		} else {
-			lcd_handle_param(lcd, value);
-		}
-	}
+    if (lcd->k->direct_data_write) {
+        if (lcd->wr_state == LCD_WR_STATE_NONE || lcd->wr_state == LCD_WR_STATE_CMD) {
+            lcd_handle_command(lcd, value);
+        } else if (lcd->wr_state == LCD_WR_STATE_PARAM) {
+            lcd_handle_param(lcd, value);
+        }
+    } else {
+        if (lcd->cd) {
+            lcd_handle_command(lcd, value);
+        } else {
+            lcd_handle_param(lcd, value);
+        }
+    }
 }
 
-static uint32_t lcd_read_from_fifo(pmb887x_lcd_t *lcd, uint32_t width) {
-	uint32_t value = 0;
-	for (int i = 0; i < width; i++)
-		value |= fifo8_pop(&lcd->fifo) << ((width - i - 1) * 8);
-	return value;
+static uint32_t lcd_read_from_fifo(LCDState *lcd, uint32_t width) {
+    uint32_t value = 0;
+    for (int i = 0; i < width; i++)
+        value |= fifo8_pop(&lcd->fifo) << ((width - i - 1) * 8);
+    return value;
 }
 
-static void lcd_clear_fifo(pmb887x_lcd_t *lcd) {
-	if (fifo8_num_used(&lcd->fifo) > 0) {
-		g_autoptr(GString) buffer = g_string_new("");
-		while (fifo8_num_used(&lcd->fifo) > 0) {
-			uint8_t byte = fifo8_pop(&lcd->fifo);
-			g_string_append_printf(buffer, " %02X", byte);
-		}
-		DEBUG_LOG(&lcd->dbg, "Ignored bytes:%s\n", buffer->str);
-	}
+static void lcd_clear_fifo(LCDState *lcd) {
+    if (fifo8_num_used(&lcd->fifo) > 0) {
+        g_autoptr(GString) buffer = g_string_new("");
+        while (fifo8_num_used(&lcd->fifo) > 0) {
+            uint8_t byte = fifo8_pop(&lcd->fifo);
+            g_string_append_printf(buffer, " %02X", byte);
+        }
+        DEBUG_LOG(&lcd->dbg, "Ignored bytes:%s\n", buffer->str);
+    }
 }
 
-static void lcd_reset_internal_state(pmb887x_lcd_t *lcd) {
-	fifo8_reset(&lcd->fifo);
-	lcd->tmp_pixel = 0;
-	lcd->tmp_index = 0;
-	lcd->gram_read_dummy_bytes = 0;
-	lcd->wr_state = LCD_WR_STATE_NONE;
-	lcd->current_cmd = 0;
-	lcd->current_cmd_params = 0;
+static void lcd_reset_internal_state(LCDState *lcd) {
+    fifo8_reset(&lcd->fifo);
+    lcd->tmp_pixel = 0;
+    lcd->tmp_index = 0;
+    lcd->gram_read_dummy_bytes = 0;
+    lcd->wr_state = LCD_WR_STATE_NONE;
+    lcd->current_cmd = 0;
+    lcd->current_cmd_params = 0;
 
-	if (lcd->k->reset)
-		lcd->k->reset(lcd);
+    if (lcd->k->reset)
+        lcd->k->reset(lcd);
 }
 
-static inline void lcd_transform_rect(pmb887x_lcd_t *lcd, pmb887x_lcd_rect_t *r) {
-	uint32_t rect_w = r->x2 - r->x1 + 1;
-	uint32_t rect_h = r->y2 - r->y1 + 1;
-	uint32_t x = r->x1;
-	uint32_t y = r->y1;
+static inline void lcd_transform_rect(LCDState *lcd, LCDRect *r) {
+    uint32_t rect_w = r->x2 - r->x1 + 1;
+    uint32_t rect_h = r->y2 - r->y1 + 1;
+    uint32_t x = r->x1;
+    uint32_t y = r->y1;
 
-	if (lcd->flip_horizontal)
-		x = lcd->width - x - rect_w;
-	if (lcd->flip_vertical)
-		y = lcd->height - y - rect_h;
+    if (lcd->flip_horizontal)
+        x = lcd->width - x - rect_w;
+    if (lcd->flip_vertical)
+        y = lcd->height - y - rect_h;
 
-	uint32_t out_x = x, out_y = y, out_w = rect_w, out_h = rect_h;
-	switch (lcd->rotation) {
-		case 0:
-			out_x = x;
-			out_y = y;
-			break;
-		case 90:
-			out_x = lcd->height - y - rect_h;
-			out_y = x;
-			out_w = rect_h;
-			out_h = rect_w;
-			break;
-		case 180:
-			out_x = lcd->width - x - rect_w;
-			out_y = lcd->height - y - rect_h;
-			break;
-		case 270:
-			out_x = y;
-			out_y = lcd->width - x - rect_w;
-			out_w = rect_h;
-			out_h = rect_w;
-			break;
-	}
+    uint32_t out_x = x, out_y = y, out_w = rect_w, out_h = rect_h;
+    switch (lcd->rotation) {
+        case 0:
+            out_x = x;
+            out_y = y;
+            break;
+        case 90:
+            out_x = lcd->height - y - rect_h;
+            out_y = x;
+            out_w = rect_h;
+            out_h = rect_w;
+            break;
+        case 180:
+            out_x = lcd->width - x - rect_w;
+            out_y = lcd->height - y - rect_h;
+            break;
+        case 270:
+            out_x = y;
+            out_y = lcd->width - x - rect_w;
+            out_w = rect_h;
+            out_h = rect_w;
+            break;
+    }
 
-	r->x1 = out_x;
-	r->y1 = out_y;
-	r->x2 = out_x + out_w - 1;
-	r->y2 = out_y + out_h - 1;
+    r->x1 = out_x;
+    r->y1 = out_y;
+    r->x2 = out_x + out_w - 1;
+    r->y2 = out_y + out_h - 1;
 }
 
-static inline pmb887x_lcd_rect_t lcd_get_dirty_region(pmb887x_lcd_t *lcd) {
-	pmb887x_lcd_rect_t dirty_reset = {
-		.x1 = lcd->width  - 1,
-		.y1 = lcd->height - 1,
-		.x2 = 0,
-		.y2 = 0
-	};
-	pmb887x_lcd_rect_t dirty = lcd->dirty;
-	lcd->dirty = dirty_reset;
-	return dirty;
+static inline LCDRect lcd_get_dirty_region(LCDState *lcd) {
+    LCDRect dirty_reset = {
+        .x1 = lcd->width  - 1,
+        .y1 = lcd->height - 1,
+        .x2 = 0,
+        .y2 = 0
+    };
+    LCDRect dirty = lcd->dirty;
+    lcd->dirty = dirty_reset;
+    return dirty;
 }
 
 static bool lcd_update_display(void *opaque) {
-	pmb887x_lcd_t *lcd = opaque;
-	lcd_drain_ram_queue(lcd);
-	
-	if (!lcd->surface)
-		return true;
-	
-	pmb887x_lcd_rect_t dirty = lcd_get_dirty_region(lcd);
-	if (dirty.x1 > dirty.x2 || dirty.y1 > dirty.y2)
-		return true;
+    LCDState *lcd = opaque;
+    lcd_drain_ram_queue(lcd);
 
-	if (lcd->shadow_surface) {
-		lcd_transform_rect(lcd, &dirty);
-		pixman_image_composite32(
-			PIXMAN_OP_SRC,
-			lcd->surface->image, /* src */
-			NULL /* mask */,
-			lcd->shadow_surface->image, /* dest */
-			dirty.x1, dirty.y1, /* src_x, src_y */
-			0, 0, /* mask_x, mask_y */
-			dirty.x1, dirty.y1, /* dest_x, dest_y */
-			dirty.x2 - dirty.x1 + 1, /* width */
-			dirty.y2 - dirty.y1 + 1 /* height */
-		);
-	}
+    if (!lcd->surface)
+        return true;
 
-	qemu_console_update(lcd->console, dirty.x1, dirty.y1, dirty.x2 - dirty.x1 + 1, dirty.y2 - dirty.y1 + 1);
-	return true;
+    LCDRect dirty = lcd_get_dirty_region(lcd);
+    if (dirty.x1 > dirty.x2 || dirty.y1 > dirty.y2)
+        return true;
+
+    if (lcd->shadow_surface) {
+        lcd_transform_rect(lcd, &dirty);
+        pixman_image_composite32(
+            PIXMAN_OP_SRC,
+            lcd->surface->image, /* src */
+            NULL /* mask */,
+            lcd->shadow_surface->image, /* dest */
+            dirty.x1, dirty.y1, /* src_x, src_y */
+            0, 0, /* mask_x, mask_y */
+            dirty.x1, dirty.y1, /* dest_x, dest_y */
+            dirty.x2 - dirty.x1 + 1, /* width */
+            dirty.y2 - dirty.y1 + 1 /* height */
+        );
+    }
+
+    qemu_console_update(lcd->console, dirty.x1, dirty.y1, dirty.x2 - dirty.x1 + 1, dirty.y2 - dirty.y1 + 1);
+    return true;
 }
 
 static void lcd_invalidate_display(void *opaque) {
-	lcd_drain_ram_queue(opaque);
-	lcd_invalidate_full(opaque);
+    lcd_drain_ram_queue(opaque);
+    lcd_invalidate_full(opaque);
 }
 
-void pmb887x_lcd_set_addr_mode(pmb887x_lcd_t *lcd, enum pmb887x_lcd_am_t am, enum pmb887x_lcd_ac_t ac_x, enum pmb887x_lcd_ac_t ac_y) {
-	DEBUG_LOG(&lcd->dbg, "[addr] am=%s, ac_x=%s, ac_y=%s [%d x %d]\n",
-		(am == LCD_AM_VERTICAL ? "vert" : "horiz"),
-		(ac_x == LCD_AC_INC ? "inc" : "dec"),
-		(ac_y == LCD_AC_INC ? "inc" : "dec"),
-		lcd->width,
-		lcd->height
-	);
-	
-	lcd->am = am;
-	lcd->ac_x = ac_x;
-	lcd->ac_y = ac_y;
+void lcd_set_addr_mode(LCDState *lcd, LCDAddressMode am, LCDCounterDirection ac_x, LCDCounterDirection ac_y) {
+    DEBUG_LOG(&lcd->dbg, "[addr] am=%s, ac_x=%s, ac_y=%s [%d x %d]\n",
+        (am == LCD_AM_VERTICAL ? "vert" : "horiz"),
+        (ac_x == LCD_AC_INC ? "inc" : "dec"),
+        (ac_y == LCD_AC_INC ? "inc" : "dec"),
+        lcd->width,
+        lcd->height
+    );
+
+    lcd->am = am;
+    lcd->ac_x = ac_x;
+    lcd->ac_y = ac_y;
 }
 
-void pmb887x_lcd_set_ram_mode(pmb887x_lcd_t *lcd, bool flag) {
-	DEBUG_LOG(&lcd->dbg, "write mode: %s\n", flag ? "ram" : "cmd");
-	lcd->wr_state = flag ? LCD_WR_STATE_RAM : LCD_WR_STATE_NONE;
-	lcd->tmp_pixel = 0;
-	lcd->tmp_index = 0;
-	lcd->gram_read_dummy_bytes = flag ? lcd->k->gram_read_dummy_pixels * lcd->byte_pp : 0;
-	lcd_clear_fifo(lcd);
+void lcd_set_ram_mode(LCDState *lcd, bool flag) {
+    DEBUG_LOG(&lcd->dbg, "write mode: %s\n", flag ? "ram" : "cmd");
+    lcd->wr_state = flag ? LCD_WR_STATE_RAM : LCD_WR_STATE_NONE;
+    lcd->tmp_pixel = 0;
+    lcd->tmp_index = 0;
+    lcd->gram_read_dummy_bytes = flag ? lcd->k->gram_read_dummy_pixels * lcd->byte_pp : 0;
+    lcd_clear_fifo(lcd);
 }
 
 static uint32_t lcd_transfer(SSIPeripheral *dev, uint32_t data) {
-	pmb887x_lcd_t *lcd = PMB887X_LCD(dev);
-	if (lcd_is_writing_ram(lcd)) {
-		lcd_queue_ram_bytes(lcd, &data, 1);
-		return 0;
-	}
+    LCDState *lcd = LCD(dev);
+    if (lcd_is_writing_ram(lcd)) {
+        lcd_queue_ram_bytes(lcd, &data, 1);
+        return 0;
+    }
 
-	lcd_drain_ram_queue(lcd);
-	if (lcd->reset_active)
-		return 0;
+    lcd_drain_ram_queue(lcd);
+    if (lcd->reset_active)
+        return 0;
 
-	if (lcd->read_active) {
-		if (lcd->wr_state == LCD_WR_STATE_RAM && !lcd->cd) {
-			if (lcd->gram_read_dummy_bytes != 0) {
-				lcd->gram_read_dummy_bytes--;
-				return 0;
-			}
-			if (!lcd->gram)
-				return 0;
+    if (lcd->read_active) {
+        if (lcd->wr_state == LCD_WR_STATE_RAM && !lcd->cd) {
+            if (lcd->gram_read_dummy_bytes != 0) {
+                lcd->gram_read_dummy_bytes--;
+                return 0;
+            }
+            if (!lcd->gram)
+                return 0;
 
-			uint32_t index = lcd->buffer_y * lcd->gram_width + lcd->buffer_x;
-			if (lcd->tmp_index == 0)
-				lcd->tmp_pixel = lcd->encode_pixel(lcd->gram[index]);
-			uint32_t shift = (lcd->byte_pp - lcd->tmp_index - 1) * 8;
-			uint32_t value = (lcd->tmp_pixel >> shift) & 0xFF;
+            uint32_t index = lcd->buffer_y * lcd->gram_width + lcd->buffer_x;
+            if (lcd->tmp_index == 0)
+                lcd->tmp_pixel = lcd->encode_pixel(lcd->gram[index]);
+            uint32_t shift = (lcd->byte_pp - lcd->tmp_index - 1) * 8;
+            uint32_t value = (lcd->tmp_pixel >> shift) & 0xFF;
 
-			lcd->tmp_index++;
-			if (lcd->tmp_index == lcd->byte_pp) {
-				lcd->tmp_pixel = 0;
-				lcd->tmp_index = 0;
-				lcd_incr_px(lcd);
-			}
-			return value;
-		}
-		if (lcd->k->on_read)
-			return lcd->k->on_read(lcd, lcd->tmp_index++);
-		return 0;
-	}
+            lcd->tmp_index++;
+            if (lcd->tmp_index == lcd->byte_pp) {
+                lcd->tmp_pixel = 0;
+                lcd->tmp_index = 0;
+                lcd_incr_px(lcd);
+            }
+            return value;
+        }
+        if (lcd->k->on_read)
+            return lcd->k->on_read(lcd, lcd->tmp_index++);
+        return 0;
+    }
 
-	if (lcd->wr_state == LCD_WR_STATE_RAM && lcd->cd)
-		pmb887x_lcd_set_ram_mode(lcd, false);
-	if (lcd->wr_state != LCD_WR_STATE_RAM)
-		lcd_write_control_byte(lcd, data);
+    if (lcd->wr_state == LCD_WR_STATE_RAM && lcd->cd)
+        lcd_set_ram_mode(lcd, false);
+    if (lcd->wr_state != LCD_WR_STATE_RAM)
+        lcd_write_control_byte(lcd, data);
 
-	return 0;
+    return 0;
 }
 
 static void lcd_transfer_block(SSIPeripheral *dev, const uint32_t *tx, uint32_t *rx, size_t count) {
-	pmb887x_lcd_t *lcd = PMB887X_LCD(dev);
-	if (lcd_is_writing_ram(lcd) && count <= LCD_RAM_QUEUE_SIZE) {
-		lcd_queue_ram_bytes(lcd, tx, count);
-		if (rx)
-			memset(rx, 0, count * sizeof(*rx));
-		return;
-	}
+    LCDState *lcd = LCD(dev);
+    if (lcd_is_writing_ram(lcd) && count <= LCD_RAM_QUEUE_SIZE) {
+        lcd_queue_ram_bytes(lcd, tx, count);
+        if (rx)
+            memset(rx, 0, count * sizeof(*rx));
+        return;
+    }
 
-	for (size_t i = 0; i < count; i++) {
-		uint32_t reply = lcd_transfer(dev, tx[i]);
-		if (rx)
-			rx[i] = reply;
-	}
+    for (size_t i = 0; i < count; i++) {
+        uint32_t reply = lcd_transfer(dev, tx[i]);
+        if (rx)
+            rx[i] = reply;
+    }
 }
 
-static const GraphicHwOps pmb887x_lcd_gfx_ops = {
-	.invalidate = lcd_invalidate_display,
-	.gfx_update = lcd_update_display
+static const GraphicHwOps lcd_gfx_ops = {
+    .invalidate = lcd_invalidate_display,
+    .gfx_update = lcd_update_display
 };
 
 static const Property lcd_props[] = {
-	DEFINE_PROP_UINT32("width", pmb887x_lcd_t, width, 240),
-	DEFINE_PROP_UINT32("height", pmb887x_lcd_t, height, 320),
-	DEFINE_PROP_UINT32("gram_width", pmb887x_lcd_t, gram_width, 0),
-	DEFINE_PROP_UINT32("gram_height", pmb887x_lcd_t, gram_height, 0),
-	DEFINE_PROP_UINT32("gram_x", pmb887x_lcd_t, gram_x, 0),
-	DEFINE_PROP_UINT32("gram_y", pmb887x_lcd_t, gram_y, 0),
-	DEFINE_PROP_UINT32("rotation", pmb887x_lcd_t, default_rotation, 0),
-	DEFINE_PROP_BOOL("flip_horizontal", pmb887x_lcd_t, default_flip_horizontal, false),
-	DEFINE_PROP_BOOL("flip_vertical", pmb887x_lcd_t, default_flip_vertical, false),
-	DEFINE_PROP_BOOL("bgr_filter", pmb887x_lcd_t, bgr_filter, false),
+    DEFINE_PROP_UINT32("width", LCDState, width, 240),
+    DEFINE_PROP_UINT32("height", LCDState, height, 320),
+    DEFINE_PROP_UINT32("gram_width", LCDState, gram_width, 0),
+    DEFINE_PROP_UINT32("gram_height", LCDState, gram_height, 0),
+    DEFINE_PROP_UINT32("gram_x", LCDState, gram_x, 0),
+    DEFINE_PROP_UINT32("gram_y", LCDState, gram_y, 0),
+    DEFINE_PROP_UINT32("rotation", LCDState, default_rotation, 0),
+    DEFINE_PROP_BOOL("flip_horizontal", LCDState, default_flip_horizontal, false),
+    DEFINE_PROP_BOOL("flip_vertical", LCDState, default_flip_vertical, false),
+    DEFINE_PROP_BOOL("bgr_filter", LCDState, bgr_filter, false),
 };
 
 static void lcd_handle_rd(void *opaque, int n, int level) {
-	pmb887x_lcd_t *lcd = PMB887X_LCD(opaque);
-	bool read_active = level == 0;
-	lcd_drain_ram_queue(lcd);
+    LCDState *lcd = LCD(opaque);
+    bool read_active = level == 0;
+    lcd_drain_ram_queue(lcd);
 
-	if (read_active && !lcd->read_active) {
-		lcd->tmp_pixel = 0;
-		lcd->tmp_index = 0;
-	}
-	lcd->read_active = read_active;
+    if (read_active && !lcd->read_active) {
+        lcd->tmp_pixel = 0;
+        lcd->tmp_index = 0;
+    }
+    lcd->read_active = read_active;
 }
 
 static void lcd_handle_wr(void *opaque, int n, int level) {
-	// nothing
+    // nothing
 }
 
 static void lcd_handle_cd(void *opaque, int n, int level) {
-	pmb887x_lcd_t *lcd = PMB887X_LCD(opaque);
-	lcd_drain_ram_queue(lcd);
-	bool old_cd = lcd->cd;
-	bool new_cd = lcd->k->cd_polarity ? level == 1 : level == 0;
-	if (old_cd != new_cd)
-		DEBUG_LOG(&lcd->dbg, "CD %d -> %d [%s] fifo=%d\n", old_cd, new_cd, lcd_wr_state_name(lcd->wr_state),
-			fifo8_num_used(&lcd->fifo));
-	pmb887x_lcd_set_cd(lcd, new_cd);
+    LCDState *lcd = LCD(opaque);
+    lcd_drain_ram_queue(lcd);
+    bool old_cd = lcd->cd;
+    bool new_cd = lcd->k->cd_polarity ? level == 1 : level == 0;
+    if (old_cd != new_cd)
+        DEBUG_LOG(&lcd->dbg, "CD %d -> %d [%s] fifo=%d\n", old_cd, new_cd, lcd_wr_state_name(lcd->wr_state),
+            fifo8_num_used(&lcd->fifo));
+    lcd_set_cd(lcd, new_cd);
 
-	if (lcd->reset_active)
-		return;
+    if (lcd->reset_active)
+        return;
 
-	if (lcd->k->direct_data_write)
-		pmb887x_lcd_set_ram_mode(lcd, !lcd->cd);
+    if (lcd->k->direct_data_write)
+        lcd_set_ram_mode(lcd, !lcd->cd);
 }
 
 static void lcd_handle_reset(void *opaque, int n, int level) {
-	pmb887x_lcd_t *lcd = PMB887X_LCD(opaque);
-	bool reset_active = level == 0;
-	lcd_drain_ram_queue(lcd);
+    LCDState *lcd = LCD(opaque);
+    bool reset_active = level == 0;
+    lcd_drain_ram_queue(lcd);
 
-	if (reset_active && !lcd->reset_active)
-		lcd_reset_internal_state(lcd);
-	lcd->reset_active = reset_active;
-	DEBUG_LOG(&lcd->dbg, "reset: %s\n", reset_active ? "active" : "released");
+    if (reset_active && !lcd->reset_active)
+        lcd_reset_internal_state(lcd);
+    lcd->reset_active = reset_active;
+    DEBUG_LOG(&lcd->dbg, "reset: %s\n", reset_active ? "active" : "released");
 }
 
 static void lcd_init(Object *obj) {
-	pmb887x_lcd_t *lcd = PMB887X_LCD(obj);
-	const pmb887x_lcd_geometry_t *geometry = PMB887X_LCD_GET_CLASS(obj)->geometry;
-	if (geometry) {
-		lcd->width = geometry->width;
-		lcd->height = geometry->height;
-		lcd->gram_width = geometry->gram_width;
-		lcd->gram_height = geometry->gram_height;
-		lcd->gram_x = geometry->gram_x;
-		lcd->gram_y = geometry->gram_y;
-	}
+    LCDState *lcd = LCD(obj);
+    const LCDGeometry *geometry = LCD_GET_CLASS(obj)->geometry;
+    if (geometry) {
+        lcd->width = geometry->width;
+        lcd->height = geometry->height;
+        lcd->gram_width = geometry->gram_width;
+        lcd->gram_height = geometry->gram_height;
+        lcd->gram_x = geometry->gram_x;
+        lcd->gram_y = geometry->gram_y;
+    }
 
-	DeviceState *dev = DEVICE(obj);
-	qdev_init_gpio_in_named(DEVICE(dev), lcd_handle_rd, "RD", 1);
-	qdev_init_gpio_in_named(DEVICE(dev), lcd_handle_wr, "WR", 1);
-	qdev_init_gpio_in_named(DEVICE(dev), lcd_handle_cd, "CD", 1);
-	qdev_init_gpio_in_named(DEVICE(dev), lcd_handle_reset, "RESET", 1);
+    DeviceState *dev = DEVICE(obj);
+    qdev_init_gpio_in_named(DEVICE(dev), lcd_handle_rd, "RD", 1);
+    qdev_init_gpio_in_named(DEVICE(dev), lcd_handle_wr, "WR", 1);
+    qdev_init_gpio_in_named(DEVICE(dev), lcd_handle_cd, "CD", 1);
+    qdev_init_gpio_in_named(DEVICE(dev), lcd_handle_reset, "RESET", 1);
 }
 
 static void lcd_realize(SSIPeripheral *d, Error **errp) {
-	pmb887x_lcd_t *lcd = PMB887X_LCD(d);
-	lcd->k = PMB887X_LCD_GET_CLASS(d);
-	if (lcd->k->debug_regs) {
-		debug_channel_init_device_regs(&lcd->dbg, DEVICE(d), lcd->k->debug_regs);
-	} else {
-		debug_channel_init_device(&lcd->dbg, DEVICE(d));
-	}
-	lcd->read_active = false;
-	lcd->reset_active = false;
+    LCDState *lcd = LCD(d);
+    lcd->k = LCD_GET_CLASS(d);
+    if (lcd->k->debug_regs) {
+        debug_channel_init_device_regs(&lcd->dbg, DEVICE(d), lcd->k->debug_regs);
+    } else {
+        debug_channel_init_device(&lcd->dbg, DEVICE(d));
+    }
+    lcd->read_active = false;
+    lcd->reset_active = false;
 
-	if (lcd->gram_width == 0)
-		lcd->gram_width = lcd->width;
-	if (lcd->gram_height == 0)
-		lcd->gram_height = lcd->height;
-	if (lcd->gram_x + lcd->width > lcd->gram_width || lcd->gram_y + lcd->height > lcd->gram_height) {
-		error_setg(errp, "LCD matrix %ux%u at %u,%u does not fit %ux%u GRAM", lcd->width, lcd->height,
-			lcd->gram_x, lcd->gram_y, lcd->gram_width, lcd->gram_height);
-		return;
-	}
+    if (lcd->gram_width == 0)
+        lcd->gram_width = lcd->width;
+    if (lcd->gram_height == 0)
+        lcd->gram_height = lcd->height;
+    if (lcd->gram_x + lcd->width > lcd->gram_width || lcd->gram_y + lcd->height > lcd->gram_height) {
+        error_setg(errp, "LCD matrix %ux%u at %u,%u does not fit %ux%u GRAM", lcd->width, lcd->height,
+            lcd->gram_x, lcd->gram_y, lcd->gram_width, lcd->gram_height);
+        return;
+    }
 
-	fifo8_create(&lcd->fifo, LCD_CMD_MAX_PARAMS);
+    fifo8_create(&lcd->fifo, LCD_CMD_MAX_PARAMS);
 
-	lcd->ram_queue = g_new(uint8_t, LCD_RAM_QUEUE_SIZE);
-	qemu_mutex_init(&lcd->ram_queue_lock);
-	qemu_cond_init(&lcd->ram_queue_drained);
-	qemu_event_init(&lcd->ram_queue_ready, false);
-	qemu_thread_create(&lcd->ram_writer, "lcd-ram-writer", lcd_ram_writer_run, lcd, QEMU_THREAD_DETACHED);
+    lcd->ram_queue = g_new(uint8_t, LCD_RAM_QUEUE_SIZE);
+    qemu_mutex_init(&lcd->ram_queue_lock);
+    qemu_cond_init(&lcd->ram_queue_drained);
+    qemu_event_init(&lcd->ram_queue_ready, false);
+    qemu_thread_create(&lcd->ram_writer, "lcd-ram-writer", lcd_ram_writer_run, lcd, QEMU_THREAD_DETACHED);
 
-	lcd->console = qemu_graphic_console_create(DEVICE(d), 0, &pmb887x_lcd_gfx_ops, lcd);
+    lcd->console = qemu_graphic_console_create(DEVICE(d), 0, &lcd_gfx_ops, lcd);
 
-	lcd->rotation = lcd->default_rotation;
-	lcd->flip_horizontal = lcd->default_flip_horizontal;
-	lcd->flip_vertical = lcd->default_flip_vertical;
+    lcd->rotation = lcd->default_rotation;
+    lcd->flip_horizontal = lcd->default_flip_horizontal;
+    lcd->flip_vertical = lcd->default_flip_vertical;
 
-	if (lcd->rotation != 0 && lcd->rotation != 90 && lcd->rotation != 180 && lcd->rotation != 270) {
-		error_setg(errp, "Invalid LCD rotation: %d", lcd->rotation);
-		return;
-	}
+    if (lcd->rotation != 0 && lcd->rotation != 90 && lcd->rotation != 180 && lcd->rotation != 270) {
+        error_setg(errp, "Invalid LCD rotation: %d", lcd->rotation);
+        return;
+    }
 
-	lcd->dirty.x1 = lcd->width - 1;
-	lcd->dirty.y1 = lcd->height - 1;
-	lcd->dirty.x2 = 0;
-	lcd->dirty.y2 = 0;
+    lcd->dirty.x1 = lcd->width - 1;
+    lcd->dirty.y1 = lcd->height - 1;
+    lcd->dirty.x2 = 0;
+    lcd->dirty.y2 = 0;
 
-	pmb887x_lcd_set_window_x1(lcd, 0);
-	pmb887x_lcd_set_window_y1(lcd, 0);
-	pmb887x_lcd_set_window_x2(lcd, lcd->gram_width - 1);
-	pmb887x_lcd_set_window_y2(lcd, lcd->gram_height - 1);
+    lcd_set_window_x1(lcd, 0);
+    lcd_set_window_y1(lcd, 0);
+    lcd_set_window_x2(lcd, lcd->gram_width - 1);
+    lcd_set_window_y2(lcd, lcd->gram_height - 1);
 
-	if (lcd->k->realize)
-		lcd->k->realize(lcd, errp);
+    if (lcd->k->realize)
+        lcd->k->realize(lcd, errp);
 }
 
 static void lcd_reset(DeviceState *dev) {
-	pmb887x_lcd_t *lcd = PMB887X_LCD(dev);
-	lcd_drain_ram_queue(lcd);
-	lcd_reset_internal_state(lcd);
+    LCDState *lcd = LCD(dev);
+    lcd_drain_ram_queue(lcd);
+    lcd_reset_internal_state(lcd);
 }
 
 static void lcd_class_init(ObjectClass *klass, const void *data) {
-	SSIPeripheralClass *k = SSI_PERIPHERAL_CLASS(klass);
-	DeviceClass *dc = DEVICE_CLASS(klass);
-	device_class_set_props(dc, lcd_props);
-	device_class_set_legacy_reset(dc, lcd_reset);
-	k->realize = lcd_realize;
-	k->transfer = lcd_transfer;
-	k->transfer_block = lcd_transfer_block;
-	k->cs_polarity = SSI_CS_LOW;
+    SSIPeripheralClass *k = SSI_PERIPHERAL_CLASS(klass);
+    DeviceClass *dc = DEVICE_CLASS(klass);
+    device_class_set_props(dc, lcd_props);
+    device_class_set_legacy_reset(dc, lcd_reset);
+    k->realize = lcd_realize;
+    k->transfer = lcd_transfer;
+    k->transfer_block = lcd_transfer_block;
+    k->cs_polarity = SSI_CS_LOW;
 }
 
 static const TypeInfo lcd_type_info = {
-	.name			= TYPE_PMB887X_LCD,
-	.parent			= TYPE_SSI_PERIPHERAL,
-	.instance_init	= lcd_init,
-	.instance_size 	= sizeof(pmb887x_lcd_t),
-	.abstract		= true,
-	.class_size		= sizeof(pmb887x_lcd_class_t),
-	.class_init		= lcd_class_init,
+    .name           = TYPE_LCD,
+    .parent         = TYPE_SSI_PERIPHERAL,
+    .instance_init  = lcd_init,
+    .instance_size  = sizeof(LCDState),
+    .abstract       = true,
+    .class_size     = sizeof(LCDClass),
+    .class_init     = lcd_class_init,
 };
 
 static void lcd_register_types(void) {
-	type_register_static(&lcd_type_info);
+    type_register_static(&lcd_type_info);
 }
 
 type_init(lcd_register_types)
