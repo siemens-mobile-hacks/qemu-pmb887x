@@ -27,7 +27,6 @@
 #define EQUALIZER_HOUT_WORDS		64U
 #define EQUALIZER_HARD_HISTORY_WORDS	(EQUALIZER_SYMBOLS + EQUALIZER_TRAINING_SYMBOLS + 1U)
 #define EQUALIZER_COMBINED_WORDS		96U
-#define EQUALIZER_GMSK_SOFT_BYTES	64U
 #define EQUALIZER_BRANCH_WORD_BASE	32U
 #define EQUALIZER_INTERRUPT_GROUP	0U
 
@@ -62,6 +61,7 @@ struct equalizer_combiner_t {
 	uint8_t hard[EQUALIZER_COMBINER_HARD_DELAY];
 	size_t soft_count;
 	size_t hard_count;
+	uint8_t last_output;
 };
 
 typedef struct equalizer_state_t equalizer_state_t;
@@ -129,6 +129,8 @@ static void equalizer_reset_operation(equalizer_state_t *state) {
 	memset(state->side_processed_count, 0, sizeof(state->side_processed_count));
 	memset(state->side_history_count, 0, sizeof(state->side_history_count));
 	memset(state->context_valid, 0, sizeof(state->context_valid));
+	memset(state->signal_quality, 0, sizeof(state->signal_quality));
+	state->signal_quality_pointer = ARRAY_SIZE(state->signal_quality) - 1;
 	state->processed_count = 0;
 	state->elapsed_cycles = 0;
 	state->external_high = false;
@@ -381,8 +383,7 @@ static bool equalizer_read(dsp_device_t *device, uint16_t offset, uint32_t pc, u
 
 		case TEAK_EQ_SQUAL:
 			*value = state->signal_quality[state->signal_quality_pointer];
-			if (state->signal_quality_pointer != 0)
-				state->signal_quality_pointer--;
+			state->signal_quality_pointer = (state->signal_quality_pointer - 1) % ARRAY_SIZE(state->signal_quality);
 			break;
 
 		default:
@@ -499,20 +500,10 @@ static uint8_t equalizer_apply_hard_sign(int8_t soft, bool negative) {
 }
 
 static uint8_t equalizer_combine_soft(const equalizer_state_t *state, size_t source) {
-	uint16_t config = state->operation_config != 0 ? state->operation_config : state->config2;
-	bool edge = (config & TEAK_EQ_CONF2_EQ_EDGE) != 0;
-	size_t soft_source = edge ? source : source % EQUALIZER_GMSK_SOFT_BYTES;
-	int8_t soft = (state->ram2[soft_source / 2] >> ((soft_source & 1) * 8));
-	size_t hard_delay = edge ? EQUALIZER_HARD_DELAY - EQUALIZER_SOFT_DELAY :
-		EQUALIZER_TRAINING_SYMBOLS + EQUALIZER_SOFT_DELAY;
-	size_t hard_index = hard_delay + source / 2;
+	int8_t soft = (state->ram2[source / 2] >> ((source & 1) * 8));
+	size_t hard_index = EQUALIZER_HARD_DELAY - EQUALIZER_SOFT_DELAY + source / 2;
 	size_t bit = (source & 3);
-	bool negative = false;
-
-	if (hard_index < ARRAY_SIZE(state->combined_hard)) {
-		negative = edge ? (state->combined_hard[hard_index] & BIT(bit)) != 0 :
-			state->combined_hard[hard_index] != 0;
-	}
+	bool negative = hard_index < ARRAY_SIZE(state->combined_hard) && (state->combined_hard[hard_index] & BIT(bit)) != 0;
 
 	return equalizer_apply_hard_sign(soft, negative);
 }
@@ -588,15 +579,24 @@ static uint8_t equalizer_gmsk_combine_next(equalizer_state_t *state, size_t side
 	combiner->hard[0] = combiner->hard[1];
 	combiner->hard[1] = equalizer_gmsk_hard_bit(state, side, hard_symbol);
 	combiner->hard_count = MIN(combiner->hard_count + 1, EQUALIZER_COMBINER_HARD_DELAY);
+	combiner->last_output = output;
 	return output;
 }
 
-static uint16_t equalizer_gmsk_combined_read(equalizer_state_t *state, size_t word, bool right) {
-	if ((word & 1) == 0)
-		return 0;
+static uint16_t equalizer_gmsk_combined_read(equalizer_state_t *state, size_t word, bool right, bool segment) {
+	bool pair_word = segment ? word == 1 || (word >= 4 && (word & 1) == 0) : (word & 1) != 0;
+	uint8_t first;
+	uint8_t second;
 
-	uint8_t first = equalizer_gmsk_combine_next(state, right, word - 1);
-	uint8_t second = equalizer_gmsk_combine_next(state, right, word);
+	if (segment && word == 2) {
+		first = state->combiner[right].last_output;
+		second = equalizer_gmsk_combine_next(state, right, word);
+	} else if (pair_word) {
+		first = equalizer_gmsk_combine_next(state, right, word - 1);
+		second = equalizer_gmsk_combine_next(state, right, word);
+	} else {
+		return 0;
+	}
 
 	return right ? ((uint16_t) second << 8) | first : ((uint16_t) first << 8) | second;
 }
@@ -611,8 +611,8 @@ static uint16_t equalizer_combined_read(dsp_device_t *device, size_t word) {
 		return 0;
 	if (device->dsp_config->hardware_version == PMB887X_DSP_HW_VERSION_E001 && edge)
 		return equalizer_e001_combined_read(state, word, segment);
-	if (!segment && !edge)
-		return equalizer_gmsk_combined_read(state, word, right);
+	if (!edge)
+		return equalizer_gmsk_combined_read(state, word, right, (state->config2 & TEAK_EQ_CONF2_S_SEG) != 0);
 
 	if (!segment) {
 		size_t source_base = (state->side_processed_count[right] - state->configured_count) * 2;
@@ -1010,6 +1010,7 @@ static void equalizer_gmsk_step(equalizer_state_t *state, size_t timestamp) {
 	size_t symbol = state->side_processed_count[side] + timestamp;
 
 	state->ram2[timestamp] = (soft & UINT8_MAX);
+	state->signal_quality[MIN(abs(soft), (int) ARRAY_SIZE(state->signal_quality) - 1)]++;
 	if (symbol < EQUALIZER_GMSK_SIDE_SYMBOLS)
 		state->gmsk_survivors[side][symbol] = odd_survivors;
 
@@ -1025,7 +1026,6 @@ static void equalizer_gmsk_step(equalizer_state_t *state, size_t timestamp) {
 	}
 
 	state->working_source_bank[side] = destination_bank;
-	state->signal_quality[ARRAY_SIZE(state->signal_quality) - 1] = 3;
 }
 
 static void equalizer_gmsk_trace_back(equalizer_state_t *state, size_t side) {
