@@ -114,7 +114,7 @@ static dsp_device_t *dsp_bus_create_device(dsp_bus_t *bus, const pmb887x_dsp_per
 		case PMB887X_DSP_PERIPHERAL_MODULATOR:
 			g_assert(bus->interrupt != NULL);
 
-			device = modulator_create(config, bus->dbg, bus->interrupt);
+			device = modulator_create(config, bus->dbg, bus->interrupt, &bus->host);
 			bus->modulator = device;
 			return device;
 
@@ -364,6 +364,8 @@ void dsp_bus_set_input(dsp_bus_t *bus, size_t index, bool level) {
 void dsp_bus_set_iq_bus(dsp_bus_t *bus, IQBus *iq_bus) {
 	if (bus->baseband != NULL)
 		baseband_set_iq_bus(bus->baseband, iq_bus);
+	if (bus->modulator != NULL)
+		modulator_set_iq_bus(bus->modulator, iq_bus);
 }
 
 void dsp_bus_set_gsm_signal(
@@ -395,7 +397,7 @@ void dsp_bus_set_gsm_signal(
 
 	if (signal == PMB887X_DSP_GSM_SIGNAL_CODON) {
 		if (bus->modulator != NULL)
-			modulator_set_codon(bus->modulator, level);
+			modulator_set_codon(bus->modulator, level, timestamp_ns);
 
 		uint16_t flag = level ? TEAK_INT_FINTA0_CODONHI : TEAK_INT_FINTA0_CODONLO;
 		dsp_int_set_flags(bus->interrupt, 0, flag);
