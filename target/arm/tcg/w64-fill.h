@@ -6,6 +6,11 @@
  * The charge argument is, per pass, insns | taken << 8 | cycles << 16:
  * the taken blt's own cycles, added before the back-edge's budget check,
  * and the cycles the back-edge prepays after it.
+ *
+ * HELPER(w64_blit) descriptor: the movs immediate | the step's sp offset
+ * in words << 8, plus the same budget bits; the charge argument is the
+ * same.  Its refund argument is the cycles the three joins hand back: the
+ * #imm path's | the literal path's << 8 | the transparent path's << 16.
  */
 #ifndef TARGET_ARM_W64_FILL_H
 #define TARGET_ARM_W64_FILL_H

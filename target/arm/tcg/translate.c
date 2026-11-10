@@ -1735,6 +1735,77 @@ static void w64_fill_match(DisasContext *s)
                         tcg_constant_i32(desc), tcg_constant_i32(charge));
 }
 
+/*
+ * WASM PORT FAST PATH (removable): a TB that starts with the colour-keyed
+ * blit loop w64-fill.c describes hands the passes after the one just
+ * charged to HELPER(w64_blit).  The loop's three forward branches have to
+ * be joins, whose refunds the helper repeats.
+ */
+static void w64_blit_match(DisasContext *s)
+{
+    static const uint16_t pat[17][2] = {
+        { 0x8819, 0xffff },     /* ldrh  r1, [r3] */
+        { 0x4281, 0xffff },     /* cmp   r1, r0 */
+        { 0xd007, 0xffff },     /* beq   skip */
+        { 0x4c00, 0xff00 },     /* ldr   r4, =colour */
+        { 0x42b9, 0xffff },     /* cmp   r1, r7 */
+        { 0xd003, 0xffff },     /* beq   store */
+        { 0x2400, 0xff00 },     /* movs  r4, #imm */
+        { 0x2901, 0xffff },     /* cmp   r1, #1 */
+        { 0xd000, 0xffff },     /* beq   store */
+        { 0x1c0c, 0xffff },     /* adds  r4, r1, #0 */
+        { 0x8014, 0xffff },     /* strh  r4, [r2] */
+        { 0x9900, 0xff00 },     /* ldr   r1, [sp, #imm] */
+        { 0x4463, 0xffff },     /* add   r3, ip */
+        { 0x188a, 0xffff },     /* adds  r2, r1, r2 */
+        { 0x3d01, 0xffff },     /* subs  r5, #1 */
+        { 0x2d00, 0xffff },     /* cmp   r5, #0 */
+        { 0xd1ee, 0xffff },     /* bne   loop */
+    };
+    const uint16_t *w = s->w64_fill_words;
+    bool cyc = tb_cflags(s->base.tb) & CF_COUNT_CYCLES;
+    uint32_t desc, charge, refund = 0, taken, lit;
+    unsigned seen = 0;
+
+    if (!s->thumb || s->base.num_insns != 17 ||
+        s->pc_curr != s->base.pc_first + 32 ||
+        s->w64_ft_n || s->w64_join_n != 3) {
+        return;
+    }
+    for (int i = 0; i < 17; i++) {
+        if ((w[i] & pat[i][1]) != pat[i][0]) {
+            return;
+        }
+    }
+    /* the joins skipped 8 (transparent), 4 (the literal) and 1 (#imm) */
+    for (int i = 0; i < 3; i++) {
+        unsigned path = ctz32(s->w64_join[i].insns);
+
+        if (s->w64_join[i].insns != 1u << path || path == 1 || path > 3) {
+            return;
+        }
+        path = path ? path - 1 : 0;
+        seen |= 1u << path;
+        refund |= (cyc ? s->w64_join[i].cycles : 0) << (path * 8);
+    }
+    if (seen != 7) {
+        return;
+    }
+    desc = (w[6] & 0xff) | (w[11] & 0xff) << 8;
+    if (tb_cflags(s->base.tb) & CF_USE_ICOUNT) {
+        desc |= W64_FILL_ICOUNT;
+    }
+    if (cyc) {
+        desc |= W64_FILL_CYCLES;
+    }
+    lit = ((s->base.pc_first + 6 + 4) & ~3u) + (w[3] & 0xff) * 4;
+    taken = s->arm9e_cycles ? 2 : 0;
+    charge = s->base.num_insns | taken << 8 | w64_cycles(s) << 16;
+    gen_helper_w64_blit(tcg_env, tcg_constant_i32(lit),
+                        tcg_constant_i32(desc), tcg_constant_i32(refund),
+                        tcg_constant_i32(charge));
+}
+
 /* the target of the Thumb b<cond> (T1) @insn at @pc */
 static vaddr w64_bcond_dest(vaddr pc, uint16_t insn)
 {
@@ -1897,6 +1968,7 @@ static bool w64_back_edge(DisasContext *s, int64_t diff)
     w64_charge_cycles(s, exit);
     if (conditional) {
         w64_fill_match(s);  /* WASM PORT FAST PATH (removable) */
+        w64_blit_match(s);  /* WASM PORT FAST PATH (removable) */
     }
     tcg_gen_br(s->w64_loop.label);
 
@@ -2427,6 +2499,12 @@ static void w64_try_join(DisasContext *s, vaddr pc)
         if (s->pc_save != l.pc_save) {
             gen_update_pc(s, l.pc_save - s->pc_curr);
         }
+        /* WASM PORT FAST PATH (removable): for w64_blit_match() */
+        if (s->w64_join_n < ARRAY_SIZE(s->w64_join)) {
+            s->w64_join[s->w64_join_n].insns = MAX(skipped, 0);
+            s->w64_join[s->w64_join_n].cycles = MAX(cycles, 0);
+        }
+        s->w64_join_n = MIN(s->w64_join_n + 1, UINT8_MAX);
         if (skipped > 0 || cycles > 0) {
             TCGLabel *cont = gen_new_label();
 
@@ -7836,6 +7914,7 @@ static void arm_tr_init_disas_context(DisasContextBase *dcbase, CPUState *cs)
     /* WASM PORT FAST PATH (removable): w64-fill.c */
     dc->w64_fill_desc = 0;
     dc->w64_rect_ft = -1;
+    dc->w64_join_n = 0;
     dc->w64_inl_depth = 0;
     dc->w64_inl_page = 0;
     dc->w64_inl_tracked = false;

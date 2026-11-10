@@ -47,9 +47,10 @@
  * It always leaves at least an already-charged pass to the generated code,
  * so the loop exit, its flags and any fault happen there as before.
  *
- * Removing this file, its meson line, the helper-defs.h entry and the
- * w64_fill and w64_rect hooks in translate.c / translate.h /
- * translation-block.h restores the plain loop.
+ * Removing this file, its meson line, the helper-defs.h entries and the
+ * w64_fill, w64_rect and w64_blit hooks in translate.c / translate.h /
+ * translation-block.h restores the plain loops.  The blit loop is
+ * described further down.
  */
 
 #include "qemu/osdep.h"
@@ -443,6 +444,176 @@ void HELPER(w64_fill)(CPUARMState *env, const void *tbp, uint32_t desc,
     if (head) {
         w64_fill_rect(env, &f, row, head, cap);
     }
+}
+
+/*
+ * The same firmware draws a colour-keyed 16-bit image a pixel at a time
+ * (S75 at a0a05540, EL71 at a0a16890; 7 % of the stopwatch's vCPU):
+ *
+ *     loop:  ldrh  r1, [r3]
+ *            cmp   r1, r0          @ the transparent colour
+ *            beq   skip
+ *            ldr   r4, =colour
+ *            cmp   r1, r7          @ r7 is 0xe000
+ *            beq   store
+ *            movs  r4, #imm
+ *            cmp   r1, #1
+ *            beq   store
+ *            adds  r4, r1, #0
+ *     store: strh  r4, [r2]
+ *     skip:  ldr   r1, [sp, #imm]  @ the destination step
+ *            add   r3, ip
+ *            adds  r2, r1, r2
+ *            subs  r5, #1
+ *            cmp   r5, #0
+ *            bne   loop
+ *
+ * w64_blit_match() in translate.c recognises it at the start of a TB with
+ * the three forward branches joined, and calls HELPER(w64_blit) at the
+ * back-edge like w64_fill.  A pass's charge depends on its pixel: a taken
+ * branch costs its cycles and its join hands back the instructions it
+ * skipped.  The helper only runs passes that no budget check could stop
+ * whatever their pixels are, a page of the source and of the destination
+ * at a time, in guest order, so the two may overlap.
+ */
+
+#define W64_BLIT_SKIP_IMM     1
+#define W64_BLIT_SKIP_LITERAL 4
+#define W64_BLIT_SKIP_KEY     8
+
+/* how many accesses from @addr on, @step apart, stay on its page */
+static uint32_t w64_blit_room(uint32_t addr, int32_t step)
+{
+    uint32_t off = addr & ~TARGET_PAGE_MASK;
+
+    if (step > 0) {
+        return (TARGET_PAGE_SIZE - 2 - off) / step + 1;
+    } else if (step < 0) {
+        return off / -(int64_t)step + 1;
+    }
+    return UINT32_MAX;
+}
+
+void HELPER(w64_blit)(CPUARMState *env, uint32_t lit, uint32_t desc,
+                      uint32_t refund, uint32_t charge)
+{
+    CPUState *cs = env_cpu(env);
+    int mmu_idx = arm_env_mmu_index(env);
+    unsigned insns = charge & 0xff, taken = (charge >> 8) & 0xff;
+    unsigned cycles = charge >> 16;
+    /* what a pass adds to the cycles on top of @cycles + @taken */
+    int32_t cyc_imm = taken - (refund & 0xff);
+    int32_t cyc_lit = taken - ((refund >> 8) & 0xff);
+    int32_t cyc_key = taken - ((refund >> 16) & 0xff);
+    uint32_t src = env->regs[3], dst = env->regs[2], r4 = env->regs[4];
+    uint32_t key = env->regs[0], alt = env->regs[7], imm = desc & 0xff;
+    uint32_t sstep = env->regs[12], dstep, colour;
+    uint32_t slot = env->regs[13] + ((desc >> 8) & 0xff) * 4;
+    int32_t budget = (int32_t)qatomic_read(&cs->neg.icount_decr.u32);
+    /* passes whose bne is still taken */
+    uint32_t k = env->regs[5] - 1, done = 0;
+    uint32_t n_imm = 0, n_lit = 0, n_key = 0;
+    const uint8_t *hslot, *hlit;
+    uint64_t skipped;
+
+    if (k == 0 || budget < 0 || arm_cpu_data_is_big_endian(env) ||
+        ((src | dst | sstep) & 1) || (slot & 3)) {
+        return;
+    }
+    k = MIN(k, W64_FILL_MAX_PASSES);
+    if (desc & W64_FILL_ICOUNT) {
+        /* w64_refund() hands nothing back once a device saw the clock */
+        if (cs->neg.can_do_io) {
+            return;
+        }
+        k = MIN(k, budget / insns);
+    }
+    if (desc & W64_FILL_CYCLES) {
+        /* each pass: count += its branches; exit unless limit - count > 0;
+         * prepay -- with the dearest pixel every time */
+        int32_t most = MAX(MAX(cyc_imm, cyc_lit), MAX(cyc_key, 0));
+        int32_t left = (int32_t)(cs->neg.cycle_limit - cs->neg.cycle_count) -
+                       (int32_t)taken - most;
+
+        if (left <= 0) {
+            return;
+        }
+        k = MIN(k, (left - 1) / (cycles + taken + most) + 1);
+    }
+    hslot = w64_fill_host(env, slot, MMU_DATA_LOAD, mmu_idx);
+    hlit = w64_fill_host(env, lit, MMU_DATA_LOAD, mmu_idx);
+    if (hslot == NULL || hlit == NULL) {
+        return;
+    }
+    dstep = ldl_le_p(hslot);
+    colour = ldl_le_p(hlit);
+    if (dstep & 1) {
+        return;
+    }
+
+    while (k) {
+        uint32_t n = MIN(k, MIN(w64_blit_room(src, sstep),
+                                w64_blit_room(dst, dstep)));
+        const uint8_t *hs = w64_fill_host(env, src, MMU_DATA_LOAD, mmu_idx);
+        uint8_t *hd = w64_fill_host(env, dst, MMU_DATA_STORE, mmu_idx);
+        const uint8_t *page;
+
+        if (hs == NULL || hd == NULL) {
+            break;
+        }
+        /* no store may reach the step or the literal */
+        page = hd - (dst & ~TARGET_PAGE_MASK);
+        if (w64_fill_overlap(page, TARGET_PAGE_SIZE, hslot, 4) ||
+            w64_fill_overlap(page, TARGET_PAGE_SIZE, hlit, 4)) {
+            break;
+        }
+        for (uint32_t i = 0; i < n; i++) {
+            uint32_t p = lduw_le_p(hs);
+
+            if (p == key) {
+                n_key++;
+            } else {
+                if (p == alt) {
+                    r4 = colour;
+                    n_lit++;
+                } else if (p == 1) {
+                    r4 = imm;
+                    n_imm++;
+                } else {
+                    r4 = p;
+                }
+                stw_le_p(hd, r4);
+            }
+            hs += (int32_t)sstep;
+            hd += (int32_t)dstep;
+        }
+        src += n * sstep;
+        dst += n * dstep;
+        done += n;
+        k -= n;
+    }
+    if (done == 0) {
+        return;
+    }
+
+    env->regs[1] = dstep;
+    env->regs[2] = dst;
+    env->regs[3] = src;
+    env->regs[4] = r4;
+    env->regs[5] -= done;
+    w64_fill_cmp(env, env->regs[5], 0);
+
+    skipped = (uint64_t)n_imm * W64_BLIT_SKIP_IMM +
+              (uint64_t)n_lit * W64_BLIT_SKIP_LITERAL +
+              (uint64_t)n_key * W64_BLIT_SKIP_KEY;
+    if (desc & W64_FILL_ICOUNT) {
+        cs->neg.icount_decr.u16.low = budget - done * insns + skipped;
+    }
+    if (desc & W64_FILL_CYCLES) {
+        cs->neg.cycle_count += done * (cycles + taken) + n_imm * cyc_imm +
+                               n_lit * cyc_lit + n_key * cyc_key;
+    }
+    w64_fill_count((uint64_t)done * insns - skipped);
 }
 
 #endif
