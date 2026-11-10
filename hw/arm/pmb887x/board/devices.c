@@ -410,7 +410,7 @@ static void device_realize_from_config(GHashTable *devices, const char *id, toml
 	}
 }
 
-void pmb887x_board_init_devices(DeviceState *ebuc) {
+void pmb887x_board_init_devices(DeviceState *ebuc, Object *gsm_network) {
 	pmb887x_board_t *board = pmb887x_board();
 
 	toml_datum_t value = toml_table_get(board->config, TOML_TABLE, "peripheral", false);
@@ -435,6 +435,8 @@ void pmb887x_board_init_devices(DeviceState *ebuc) {
 		if (dev == NULL)
 			continue;
 		device_init_ports_from_config(devices, dev, table);
+		if (object_property_find(OBJECT(dev), "gsm-network"))
+			object_property_set_link(OBJECT(dev), "gsm-network", gsm_network, &error_fatal);
 		if (object_dynamic_cast(OBJECT(dev), TYPE_ACCESSORY_CONNECTOR))
 			pmb887x_board_accessory_configure(devices, dev, table);
 	}

@@ -1,15 +1,22 @@
 config GSM_IQ_BUS
     bool
 
-config GSM_BTS_SIGNAL
+config GSM_NETWORK
     bool
+
+config GSM_AIR
+    bool
+    select GSM_IQ_BUS
+    select GSM_NETWORK
+
+config GSM_BTS
+    bool
+    select GSM_NETWORK
 
 config HD155153NP
     bool
-    select GSM_IQ_BUS
-    select GSM_BTS_SIGNAL
+    select GSM_AIR
 
 config PMB6272
     bool
-    select GSM_IQ_BUS
-    select GSM_BTS_SIGNAL
+    select GSM_AIR

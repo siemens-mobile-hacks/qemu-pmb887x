@@ -7,9 +7,10 @@
 #include "qemu/module.h"
 
 #include "system/debug-channel.h"
+#include "hw/core/qdev-properties.h"
 #include "hw/core/sysbus.h"
 #include "hw/ssi/three-wire-serial.h"
-#include "hw/gsm/bts-signal.h"
+#include "hw/gsm/gsm-air.h"
 #include "regs.h"
 
 #define TYPE_HD155153NP "hd155153np"
@@ -45,6 +46,7 @@ struct HD155153NPState {
     DebugChannel dbg;
     ThreeWireSerialTargetPort serial_port;
     IQSourcePort iq_port;
+    GSMAir air;
     uint32_t telegram;
     uint32_t frequency;
     int32_t amplitude;
@@ -169,7 +171,7 @@ static IQSample hd155153np_read_iq(IQSource *source, int64_t timestamp, uint64_t
     uint32_t frequency = qatomic_read(&p->frequency);
     int32_t amplitude = qatomic_read(&p->amplitude);
 
-    return bts_signal_read_iq(frequency, timestamp, amplitude);
+    return gsm_air_read_iq(&p->air, frequency, timestamp, amplitude);
 }
 
 static void hd155153np_reset(DeviceState *device) {
@@ -197,6 +199,10 @@ static void hd155153np_realize(DeviceState *dev, Error **_errp) {
     debug_channel_init_device_regs(&p->dbg, dev, &hd155153np_debug_regs);
 }
 
+static const Property hd155153np_properties[] = {
+    DEFINE_PROP_LINK("gsm-network", HD155153NPState, air.network, TYPE_GSM_NETWORK, GSMNetwork *),
+};
+
 static void hd155153np_class_init(ObjectClass *klass, const void *_data) {
     DeviceClass *device_class = DEVICE_CLASS(klass);
     ThreeWireSerialTargetClass *serial_class = THREE_WIRE_SERIAL_TARGET_CLASS(klass);
@@ -207,6 +213,7 @@ static void hd155153np_class_init(ObjectClass *klass, const void *_data) {
     iq_class->read = hd155153np_read_iq;
     device_class_set_legacy_reset(device_class, hd155153np_reset);
     device_class->realize = hd155153np_realize;
+    device_class_set_props(device_class, hd155153np_properties);
 }
 
 static const TypeInfo hd155153np_info = {

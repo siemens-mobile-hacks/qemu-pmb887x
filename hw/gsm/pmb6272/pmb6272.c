@@ -5,9 +5,10 @@
 #include "qemu/module.h"
 
 #include "system/debug-channel.h"
+#include "hw/core/qdev-properties.h"
 #include "hw/core/sysbus.h"
 #include "hw/ssi/three-wire-serial.h"
-#include "hw/gsm/bts-signal.h"
+#include "hw/gsm/gsm-air.h"
 #include "regs.h"
 
 #define TYPE_PMB6272 "pmb6272"
@@ -29,6 +30,7 @@ struct PMB6272State {
     DebugChannel dbg;
     ThreeWireSerialTargetPort serial_port;
     IQSourcePort iq_port;
+    GSMAir air;
     uint32_t registers[PMB6272_REGISTER_COUNT];
     uint32_t telegram;
     uint32_t channel_fraction;
@@ -61,7 +63,7 @@ static void pmb6272_write_telegram(PMB6272State *p, uint32_t telegram, uint8_t b
             p->channel_fraction = deposit32(p->channel_fraction, 20, 3,
                 (telegram & PMB6272_CHANNEL2_FRACTION) >> PMB6272_CHANNEL2_FRACTION_SHIFT);
             p->channel_integer = (telegram & PMB6272_CHANNEL2_INTEGER) >> PMB6272_CHANNEL2_INTEGER_SHIFT;
-            p->transmit = (telegram & PMB6272_CHANNEL2_TRX) != 0;
+            qatomic_set(&p->transmit, (telegram & PMB6272_CHANNEL2_TRX) != 0);
             p->band = (telegram & PMB6272_CHANNEL2_BAND) >> PMB6272_CHANNEL2_BAND_SHIFT;
 
             uint64_t synthesizer = ((uint64_t) p->channel_integer << PMB6272_CHANNEL_FRACTION_BITS) |
@@ -115,9 +117,9 @@ static void pmb6272_write(ThreeWireSerialTarget *target, uint32_t value, unsigne
 
 static IQSample pmb6272_read_iq(IQSource *source, int64_t timestamp, uint64_t _sample_index) {
     PMB6272State *p = PMB6272(source);
-    uint32_t frequency = p->transmit ? 0 : qatomic_read(&p->frequency);
+    uint32_t frequency = qatomic_read(&p->transmit) ? 0 : qatomic_read(&p->frequency);
 
-    return bts_signal_read_iq(frequency, timestamp, PMB6272_SIGNAL_AMPLITUDE);
+    return gsm_air_read_iq(&p->air, frequency, timestamp, PMB6272_SIGNAL_AMPLITUDE);
 }
 
 static void pmb6272_reset(DeviceState *device) {
@@ -132,7 +134,7 @@ static void pmb6272_reset(DeviceState *device) {
     p->shift_bits = 0;
     p->channel_integer = 0;
     p->band = 0;
-    p->transmit = false;
+    qatomic_set(&p->transmit, false);
     p->strobe_asserted = false;
     p->shift_overflow = false;
 }
@@ -149,6 +151,10 @@ static void pmb6272_realize(DeviceState *dev, Error **_errp) {
     debug_channel_init_device_regs(&p->dbg, dev, &pmb6272_debug_regs);
 }
 
+static const Property pmb6272_properties[] = {
+    DEFINE_PROP_LINK("gsm-network", PMB6272State, air.network, TYPE_GSM_NETWORK, GSMNetwork *),
+};
+
 static void pmb6272_class_init(ObjectClass *klass, const void *_data) {
     DeviceClass *device_class = DEVICE_CLASS(klass);
     ThreeWireSerialTargetClass *serial_class = THREE_WIRE_SERIAL_TARGET_CLASS(klass);
@@ -159,6 +165,7 @@ static void pmb6272_class_init(ObjectClass *klass, const void *_data) {
     iq_class->read = pmb6272_read_iq;
     device_class_set_legacy_reset(device_class, pmb6272_reset);
     device_class->realize = pmb6272_realize;
+    device_class_set_props(device_class, pmb6272_properties);
 }
 
 static const TypeInfo pmb6272_info = {

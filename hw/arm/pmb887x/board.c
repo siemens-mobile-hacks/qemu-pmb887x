@@ -30,6 +30,8 @@
 #include "hw/arm/pmb887x/board/cpu_module.h"
 #include "hw/arm/pmb887x/board/startup.h"
 #include "hw/block/cfi-flash.h"
+#include "hw/gsm/gsm-bts.h"
+#include "hw/gsm/gsm-network.h"
 
 #include "hw/arm/pmb887x/gen/brom.h"
 #include "hw/arm/pmb887x/gen/cpu_meta.h"
@@ -38,6 +40,15 @@
 
 #include "hw/arm/pmb887x/io_bridge.h"
 #include "hw/arm/pmb887x/tpu.h"
+
+#define TYPE_PMB887X_MACHINE MACHINE_TYPE_NAME("pmb887x")
+
+typedef struct pmb887x_machine_t pmb887x_machine_t;
+
+struct pmb887x_machine_t {
+	MachineState parent_obj;
+	Object *gsm_network;
+};
 
 static bool initial_cpu_reset = true;
 
@@ -99,6 +110,18 @@ static void pmb887x_init_irq_names(DeviceState *vic) {
 	for (uint32_t i = 0; i < count; i++)
 		qlist_append_str(list, names[i] ? names[i] : "");
 	qdev_prop_set_array(vic, "irq-names", list);
+}
+
+static Object *pmb887x_init_gsm_network(MachineState *machine) {
+	pmb887x_machine_t *pmb887x_machine = OBJECT_CHECK(pmb887x_machine_t, machine, TYPE_PMB887X_MACHINE);
+
+	if (pmb887x_machine->gsm_network == NULL) {
+		Object *bts = object_new(TYPE_GSM_BTS);
+		object_property_add_child(OBJECT(machine), "gsm-bts", bts);
+		object_property_set_link(OBJECT(machine), "gsm-network", bts, &error_fatal);
+		object_unref(bts);
+	}
+	return pmb887x_machine->gsm_network;
 }
 
 static void pmb887x_init(MachineState *machine) {
@@ -362,7 +385,7 @@ static void pmb887x_init(MachineState *machine) {
 	pmb887x_cpu_modules_post_init();
 	pmb887x_board_init_analog();
 	pmb887x_board_gpio_init_fixed_inputs();
-	pmb887x_board_init_devices(ebuc);
+	pmb887x_board_init_devices(ebuc, pmb887x_init_gsm_network(machine));
 	sysbus_realize_and_unref(SYS_BUS_DEVICE(ebuc), &error_fatal);
 	pmb887x_board_keyboard_connect_gpios(keypad);
 	pmb887x_board_startup_init(keypad);
@@ -399,11 +422,14 @@ static void pmb887x_class_init(ObjectClass *oc, const void *data) {
 	mc->default_cpu_type = ARM_CPU_TYPE_NAME("arm926");
 	mc->default_ram_size = 16 * 1024 * 1024;
 	mc->tcg_auxiliary_threads = 1;
+	object_class_property_add_link(oc, "gsm-network", TYPE_GSM_NETWORK, offsetof(pmb887x_machine_t, gsm_network),
+		object_property_allow_set_link, OBJ_PROP_LINK_STRONG);
 }
 
 static const TypeInfo pmb887x_type = {
-	.name = MACHINE_TYPE_NAME("pmb887x"),
+	.name = TYPE_PMB887X_MACHINE,
 	.parent = TYPE_MACHINE,
+	.instance_size = sizeof(pmb887x_machine_t),
 	.class_init = pmb887x_class_init,
 	.interfaces = arm_machine_interfaces,
 };
