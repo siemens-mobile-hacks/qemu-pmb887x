@@ -246,6 +246,26 @@ static void tb_io_limit_insns(TranslationBlock *tb, int max_insns)
     }
 }
 
+#ifdef CONFIG_TCG_WASM64
+/*
+ * The wasm64 prologue counts a TB's instructions on entry
+ * (wasm_guest_insns, the lockstep fold): hand back the ones an unwind
+ * leaves unrun, as icount_decr gets them back below.
+ */
+static void w64_acct_unwind(int insns)
+{
+    uint64_t *acct = w64_tb_acct_insns();
+    int64_t *ls = w64_ls_count();
+
+    if (acct) {
+        *acct -= insns;
+    }
+    if (ls) {
+        *ls -= insns;
+    }
+}
+#endif
+
 static int tb_restore_state(CPUState *cpu, TranslationBlock *tb,
                             uintptr_t host_pc)
 {
@@ -267,6 +287,9 @@ static int tb_restore_state(CPUState *cpu, TranslationBlock *tb,
     }
     /* The insns left are counted again when they run. */
     cpu->neg.cycle_count -= cycles_left;
+#ifdef CONFIG_TCG_WASM64
+    w64_acct_unwind(insns_left);
+#endif
 
     cpu->cc->tcg_ops->restore_state_to_opc(cpu, tb, data);
     return insns_left;
@@ -294,6 +317,10 @@ bool cpu_restore_state(CPUState *cpu, uintptr_t host_pc)
         TranslationBlock *tb = tcg_tb_lookup(host_pc);
         if (tb) {
             cpu_restore_state_from_tb(cpu, tb, host_pc);
+#ifdef CONFIG_TCG_WASM64
+            /* a faulting instruction did start, and counts as run */
+            w64_acct_unwind(-1);
+#endif
             return true;
         }
     }
