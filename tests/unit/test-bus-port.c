@@ -2,6 +2,7 @@
 #include "qemu/osdep.h"
 
 #include "migration/vmstate.h"
+#include "hw/audio/audio-line.h"
 #include "hw/audio/i2s.h"
 #include "hw/core/bus-port.h"
 #include "hw/i2c/i2c.h"
@@ -34,6 +35,7 @@ struct ProtocolTestDevice {
     I2SSinkPort i2s_sink_port;
     I2SSourcePort i2s_source_port;
     ThreeWireSerialTargetPort serial_port;
+    AudioLineSinkPort line_port;
     uint32_t i2c_address;
     enum i2c_event i2c_event;
     uint8_t i2c_sent;
@@ -48,6 +50,11 @@ struct ProtocolTestDevice {
     uint32_t serial_value[2];
     unsigned int serial_bits[2];
     size_t serial_write_count;
+    unsigned line_stream;
+    AudioLineFormat line_format;
+    int line_gain_mb;
+    int16_t line_samples[2];
+    size_t line_frames;
 };
 
 struct EmptyI2CTarget {
@@ -215,6 +222,48 @@ static void protocol_serial_write(ThreeWireSerialTarget *target,
     dev->serial_bits[index] = bits;
 }
 
+static ProtocolTestDevice *protocol_line_get_device(AudioLineSinkPort *port)
+{
+    return container_of(port, ProtocolTestDevice, line_port);
+}
+
+static void protocol_line_start(AudioLineSinkPort *port, unsigned stream,
+                                const AudioLineFormat *format)
+{
+    ProtocolTestDevice *dev = protocol_line_get_device(port);
+
+    dev->line_stream = stream;
+    dev->line_format = *format;
+}
+
+static void protocol_line_stop(AudioLineSinkPort *port, unsigned stream)
+{
+    ProtocolTestDevice *dev = protocol_line_get_device(port);
+
+    dev->line_stream = stream;
+    dev->line_format = (AudioLineFormat) { };
+}
+
+static void protocol_line_set_gain(AudioLineSinkPort *port, unsigned stream,
+                                   int gain_mb)
+{
+    ProtocolTestDevice *dev = protocol_line_get_device(port);
+
+    dev->line_stream = stream;
+    dev->line_gain_mb = gain_mb;
+}
+
+static void protocol_line_write(AudioLineSinkPort *port, unsigned stream,
+                                const int16_t *frames, size_t frame_count)
+{
+    ProtocolTestDevice *dev = protocol_line_get_device(port);
+
+    dev->line_stream = stream;
+    dev->line_frames = frame_count;
+    memcpy(dev->line_samples, frames,
+           dev->line_format.channels * sizeof(*frames));
+}
+
 static void protocol_test_device_init(Object *obj)
 {
     ProtocolTestDevice *dev = PROTOCOL_TEST_DEVICE(obj);
@@ -228,6 +277,8 @@ static void protocol_test_device_init(Object *obj)
                          I2S_SOURCE(dev));
     three_wire_serial_target_port_init(&dev->serial_port, DEVICE(dev),
                                        "SERIAL", THREE_WIRE_SERIAL_TARGET(dev));
+    audio_line_sink_port_init(&dev->line_port, DEVICE(dev), "LINE",
+                              AUDIO_LINE_SINK(dev));
 }
 
 static void protocol_test_device_class_init(ObjectClass *oc, const void *_data)
@@ -237,6 +288,7 @@ static void protocol_test_device_class_init(ObjectClass *oc, const void *_data)
     I2SSourceClass *source_class = I2S_SOURCE_CLASS(oc);
     ThreeWireSerialTargetClass *serial_class =
         THREE_WIRE_SERIAL_TARGET_CLASS(oc);
+    AudioLineSinkClass *line_class = AUDIO_LINE_SINK_CLASS(oc);
 
     tc->event = protocol_i2c_event;
     tc->send = protocol_i2c_send;
@@ -247,6 +299,10 @@ static void protocol_test_device_class_init(ObjectClass *oc, const void *_data)
     source_class->read = protocol_i2s_read;
     serial_class->set_strobe = protocol_serial_set_strobe;
     serial_class->write = protocol_serial_write;
+    line_class->start = protocol_line_start;
+    line_class->stop = protocol_line_stop;
+    line_class->set_gain = protocol_line_set_gain;
+    line_class->write = protocol_line_write;
 }
 
 static void empty_i2c_target_init(Object *obj)
@@ -297,6 +353,7 @@ static const TypeInfo protocol_test_device_info = {
         { TYPE_I2S_SINK },
         { TYPE_I2S_SOURCE },
         { TYPE_THREE_WIRE_SERIAL_TARGET },
+        { TYPE_AUDIO_LINE_SINK },
         { NULL },
     },
 };
@@ -427,6 +484,112 @@ static void test_bus_owner_destroyed_first(void)
     object_destroy(OBJECT(dev));
 }
 
+static void test_bind_realized(void)
+{
+    DeviceState *bus_owner = test_bus_owner_create();
+    BusState *first_bus = qbus_new(TYPE_BUS_PORT_TEST_BUS, bus_owner, "first");
+    BusState *second_bus = qbus_new(TYPE_BUS_PORT_TEST_BUS, bus_owner, "second");
+    BusPortTestDevice *dev = BUS_PORT_TEST_DEVICE(object_new(TYPE_BUS_PORT_TEST_DEVICE));
+    DeviceState *endpoint;
+
+    object_property_set_link(OBJECT(dev), "port.TEST", OBJECT(first_bus),
+                             &error_fatal);
+    qdev_realize(DEVICE(dev), NULL, &error_fatal);
+    endpoint = dev->port.endpoint;
+
+    g_assert_true(qdev_bus_port_bind(DEVICE(dev), "TEST", first_bus,
+                                     &error_fatal));
+    g_assert_true(dev->port.endpoint == endpoint);
+
+    test_sequence = 0;
+    endpoint_unrealize_sequence = 0;
+    g_assert_true(qdev_bus_port_bind(DEVICE(dev), "TEST", second_bus,
+                                     &error_fatal));
+    g_assert_cmpuint(endpoint_unrealize_sequence, ==, 1);
+    g_assert_true(dev->port.bus == second_bus);
+    g_assert_cmpint(first_bus->num_children, ==, 0);
+    g_assert_cmpint(second_bus->num_children, ==, 1);
+    g_assert_true(dev->port.endpoint->parent_bus == second_bus);
+    g_assert_true(object_resolve_path_component(OBJECT(dev),
+                                                "port.TEST.endpoint") ==
+                  OBJECT(dev->port.endpoint));
+
+    g_assert_true(qdev_bus_port_bind(DEVICE(dev), "TEST", NULL, &error_fatal));
+    g_assert_null(dev->port.bus);
+    g_assert_null(dev->port.endpoint);
+    g_assert_cmpint(second_bus->num_children, ==, 0);
+    g_assert_null(object_resolve_path_component(OBJECT(dev),
+                                                "port.TEST.endpoint"));
+
+    object_destroy(OBJECT(dev));
+    object_destroy(OBJECT(bus_owner));
+}
+
+static void test_bind_before_realize(void)
+{
+    DeviceState *bus_owner = test_bus_owner_create();
+    BusState *bus = qbus_new(TYPE_BUS_PORT_TEST_BUS, bus_owner, "bus");
+    BusPortTestDevice *dev = BUS_PORT_TEST_DEVICE(object_new(TYPE_BUS_PORT_TEST_DEVICE));
+
+    g_assert_true(qdev_bus_port_bind(DEVICE(dev), "TEST", bus, &error_fatal));
+    g_assert_true(dev->port.bus == bus);
+    g_assert_null(dev->port.endpoint);
+
+    qdev_realize(DEVICE(dev), NULL, &error_fatal);
+    g_assert_cmpint(bus->num_children, ==, 1);
+
+    object_destroy(OBJECT(dev));
+    object_destroy(OBJECT(bus_owner));
+}
+
+static void test_bind_errors(void)
+{
+    DeviceState *bus_owner = test_bus_owner_create();
+    BusState *bus = qbus_new(TYPE_BUS_PORT_TEST_BUS, bus_owner, "bus");
+    BusState *busy_bus = qbus_new(TYPE_BUS_PORT_TEST_BUS, bus_owner, "busy");
+    AudioLineBus *line = audio_line_bus_init(bus_owner, "line");
+    BusPortTestDevice *occupant = BUS_PORT_TEST_DEVICE(object_new(TYPE_BUS_PORT_TEST_DEVICE));
+    BusPortTestDevice *dev = BUS_PORT_TEST_DEVICE(object_new(TYPE_BUS_PORT_TEST_DEVICE));
+    Error *err = NULL;
+
+    object_property_set_link(OBJECT(occupant), "port.TEST", OBJECT(busy_bus),
+                             &error_fatal);
+    qdev_realize(DEVICE(occupant), NULL, &error_fatal);
+    object_property_set_link(OBJECT(dev), "port.TEST", OBJECT(bus),
+                             &error_fatal);
+    qdev_realize(DEVICE(dev), NULL, &error_fatal);
+
+    g_assert_false(qdev_bus_port_check(DEVICE(dev), "MISSING", NULL, &err));
+    error_free(g_steal_pointer(&err));
+    g_assert_false(qdev_bus_port_check(DEVICE(dev), "TEST", BUS(line), &err));
+    error_free(g_steal_pointer(&err));
+    g_assert_true(qdev_bus_port_check(DEVICE(dev), "TEST", busy_bus,
+                                      &error_fatal));
+    g_assert_true(dev->port.bus == bus);
+
+    g_assert_false(qdev_bus_port_bind(DEVICE(dev), "MISSING", bus, &err));
+    error_free(g_steal_pointer(&err));
+
+    g_assert_false(qdev_bus_port_bind(DEVICE(dev), "TEST", BUS(line), &err));
+    error_free(g_steal_pointer(&err));
+    g_assert_true(dev->port.bus == bus);
+    g_assert_cmpint(bus->num_children, ==, 1);
+
+    g_assert_false(qdev_bus_port_bind(DEVICE(dev), "TEST", busy_bus, &err));
+    error_free(g_steal_pointer(&err));
+    g_assert_null(dev->port.bus);
+    g_assert_null(dev->port.endpoint);
+    g_assert_cmpint(bus->num_children, ==, 0);
+    g_assert_cmpint(busy_bus->num_children, ==, 1);
+
+    g_assert_true(qdev_bus_port_bind(DEVICE(dev), "TEST", bus, &error_fatal));
+    g_assert_cmpint(bus->num_children, ==, 1);
+
+    object_destroy(OBJECT(dev));
+    object_destroy(OBJECT(occupant));
+    object_destroy(OBJECT(bus_owner));
+}
+
 static void test_i2s_adapter(void)
 {
     static const int16_t OUTPUT[] = { 0x1234, -0x1234 };
@@ -479,6 +642,126 @@ static void test_i2s_adapter(void)
     object_destroy(OBJECT(bus_owner));
 }
 
+static void test_audio_line_adapter(void)
+{
+    static const int16_t FRAME[] = { 0x1234, -0x1234 };
+    static const AudioLineFormat FORMAT = { 48000, 2 };
+    DeviceState *bus_owner = test_bus_owner_create();
+    AudioLineBus *line = audio_line_bus_init(bus_owner, "line");
+    AudioLineBus *unconnected = audio_line_bus_init(bus_owner, "unconnected");
+    ProtocolTestDevice *dev = PROTOCOL_TEST_DEVICE(object_new(TYPE_PROTOCOL_TEST_DEVICE));
+    ProtocolTestDevice *second = PROTOCOL_TEST_DEVICE(object_new(TYPE_PROTOCOL_TEST_DEVICE));
+
+    object_property_set_link(OBJECT(dev), "port.LINE", OBJECT(line),
+                             &error_fatal);
+    qdev_realize(DEVICE(dev), NULL, &error_fatal);
+    object_property_set_link(OBJECT(second), "port.LINE", OBJECT(line),
+                             &error_fatal);
+    qdev_realize(DEVICE(second), NULL, &error_fatal);
+
+    audio_line_start(line, 2, &FORMAT);
+    audio_line_write(line, 2, FRAME, 1);
+    g_assert_cmpuint(dev->line_stream, ==, 2);
+    g_assert_cmpuint(dev->line_format.sample_rate_hz, ==, 48000);
+    g_assert_cmpuint(dev->line_format.channels, ==, 2);
+    g_assert_cmpuint(dev->line_frames, ==, 1);
+    g_assert_cmpmem(dev->line_samples, sizeof(dev->line_samples), FRAME,
+                    sizeof(FRAME));
+    g_assert_cmpuint(second->line_frames, ==, 1);
+    g_assert_cmpmem(second->line_samples, sizeof(second->line_samples), FRAME,
+                    sizeof(FRAME));
+
+    audio_line_set_gain(line, 4, -1200);
+    g_assert_cmpuint(dev->line_stream, ==, 4);
+    g_assert_cmpint(dev->line_gain_mb, ==, -1200);
+    g_assert_cmpint(second->line_gain_mb, ==, -1200);
+
+    audio_line_stop(line, 1);
+    g_assert_cmpuint(dev->line_stream, ==, 1);
+    g_assert_cmpuint(dev->line_format.channels, ==, 0);
+
+    audio_line_start(unconnected, 0, &FORMAT);
+    audio_line_set_gain(unconnected, 0, -1200);
+    audio_line_write(unconnected, 0, FRAME, 1);
+    audio_line_stop(unconnected, 0);
+
+    object_destroy(OBJECT(second));
+    object_destroy(OBJECT(dev));
+    object_destroy(OBJECT(bus_owner));
+}
+
+static void test_i2s_late_endpoint(void)
+{
+    static const I2SFormat TX_FORMAT = { 48000, 2 };
+    static const I2SFormat RX_FORMAT = { 44100, 1 };
+    DeviceState *bus_owner = test_bus_owner_create();
+    I2STxBus *tx_bus = i2s_tx_bus_init(bus_owner, "tx");
+    I2SRxBus *rx_bus = i2s_rx_bus_init(bus_owner, "rx");
+    ProtocolTestDevice *sink = PROTOCOL_TEST_DEVICE(object_new(TYPE_PROTOCOL_TEST_DEVICE));
+    ProtocolTestDevice *source = PROTOCOL_TEST_DEVICE(object_new(TYPE_PROTOCOL_TEST_DEVICE));
+
+    qdev_realize(DEVICE(sink), NULL, &error_fatal);
+    qdev_realize(DEVICE(source), NULL, &error_fatal);
+    i2s_tx_configure(tx_bus, &TX_FORMAT);
+    i2s_rx_configure(rx_bus, &RX_FORMAT);
+
+    qdev_bus_port_bind(DEVICE(sink), "I2S_RX", BUS(tx_bus), &error_fatal);
+    g_assert_cmpuint(sink->i2s_configure_count, ==, 1);
+    g_assert_cmpuint(sink->i2s_sample_rate_hz, ==, 48000);
+    g_assert_cmpuint(sink->i2s_channels, ==, 2);
+
+    qdev_bus_port_bind(DEVICE(source), "I2S_TX", BUS(rx_bus), &error_fatal);
+    g_assert_cmpuint(source->i2s_configure_count, ==, 1);
+    g_assert_cmpuint(source->i2s_sample_rate_hz, ==, 44100);
+    g_assert_cmpuint(source->i2s_channels, ==, 1);
+
+    qdev_bus_port_bind(DEVICE(sink), "I2S_RX", NULL, &error_fatal);
+    g_assert_cmpuint(sink->i2s_configure_count, ==, 2);
+    g_assert_cmpuint(sink->i2s_sample_rate_hz, ==, 0);
+
+    qdev_bus_port_bind(DEVICE(source), "I2S_TX", NULL, &error_fatal);
+    g_assert_cmpuint(source->i2s_configure_count, ==, 2);
+    g_assert_cmpuint(source->i2s_sample_rate_hz, ==, 0);
+
+    object_destroy(OBJECT(source));
+    object_destroy(OBJECT(sink));
+    object_destroy(OBJECT(bus_owner));
+}
+
+static void test_audio_line_late_endpoint(void)
+{
+    static const int16_t FRAME[] = { 0x1234, -0x1234 };
+    static const AudioLineFormat FORMAT = { 48000, 2 };
+    DeviceState *bus_owner = test_bus_owner_create();
+    AudioLineBus *line = audio_line_bus_init(bus_owner, "line");
+    ProtocolTestDevice *dev = PROTOCOL_TEST_DEVICE(object_new(TYPE_PROTOCOL_TEST_DEVICE));
+
+    qdev_realize(DEVICE(dev), NULL, &error_fatal);
+    audio_line_set_gain(line, 1, -600);
+    audio_line_start(line, 1, &FORMAT);
+    audio_line_start(line, 3, &FORMAT);
+    audio_line_stop(line, 3);
+
+    qdev_bus_port_bind(DEVICE(dev), "LINE", BUS(line), &error_fatal);
+    g_assert_cmpuint(dev->line_stream, ==, 1);
+    g_assert_cmpuint(dev->line_format.sample_rate_hz, ==, 48000);
+    g_assert_cmpuint(dev->line_format.channels, ==, 2);
+    g_assert_cmpint(dev->line_gain_mb, ==, -600);
+
+    audio_line_write(line, 1, FRAME, 1);
+    g_assert_cmpuint(dev->line_frames, ==, 1);
+    g_assert_cmpmem(dev->line_samples, sizeof(dev->line_samples), FRAME,
+                    sizeof(FRAME));
+
+    qdev_bus_port_bind(DEVICE(dev), "LINE", NULL, &error_fatal);
+    g_assert_cmpuint(dev->line_stream, ==, 1);
+    g_assert_cmpuint(dev->line_format.channels, ==, 0);
+    g_assert_cmpint(dev->line_gain_mb, ==, 0);
+
+    object_destroy(OBJECT(dev));
+    object_destroy(OBJECT(bus_owner));
+}
+
 static void test_i2c_adapter(void)
 {
     DeviceState *bus_owner = test_bus_owner_create();
@@ -506,9 +789,42 @@ static void test_i2c_adapter(void)
     g_assert_cmpint(dev->i2c_event, ==, I2C_NACK);
     i2c_end_transfer(bus);
 
+    g_assert_cmpint(i2c_start_send(bus, 0x40), !=, 0);
+    g_assert_cmpint(i2c_send(bus, 0x11), !=, 0);
+    i2c_end_transfer(bus);
+
     bus->saved_address = 0x31;
     g_assert_cmpint(qdev_get_vmsd(endpoint)->post_load(endpoint, 1), ==, 0);
     g_assert_false(QLIST_EMPTY(&bus->current_devs));
+    i2c_end_transfer(bus);
+
+    object_destroy(OBJECT(dev));
+    object_destroy(OBJECT(bus_owner));
+}
+
+static void test_i2c_unbind_during_transfer(void)
+{
+    DeviceState *bus_owner = test_bus_owner_create();
+    I2CBus *bus = i2c_init_bus(bus_owner, "i2c");
+    ProtocolTestDevice *dev = PROTOCOL_TEST_DEVICE(object_new(TYPE_PROTOCOL_TEST_DEVICE));
+
+    object_property_set_link(OBJECT(dev), "port.I2C", OBJECT(bus),
+                             &error_fatal);
+    qdev_realize(DEVICE(dev), NULL, &error_fatal);
+    g_assert_cmpint(i2c_start_send(bus, 0x31), ==, 0);
+    g_assert_false(QLIST_EMPTY(&bus->current_devs));
+
+    qdev_bus_port_bind(DEVICE(dev), "I2C", NULL, &error_fatal);
+    g_assert_true(QLIST_EMPTY(&bus->current_devs));
+    g_assert_cmpint(dev->i2c_event, ==, I2C_FINISH);
+    g_assert_cmpint(i2c_send(bus, 0xa5), !=, 0);
+    g_assert_cmphex(dev->i2c_sent, ==, 0);
+    i2c_end_transfer(bus);
+
+    qdev_bus_port_bind(DEVICE(dev), "I2C", BUS(bus), &error_fatal);
+    g_assert_cmpint(i2c_start_send(bus, 0x31), ==, 0);
+    g_assert_cmpint(i2c_send(bus, 0x5a), ==, 0);
+    g_assert_cmphex(dev->i2c_sent, ==, 0x5a);
     i2c_end_transfer(bus);
 
     object_destroy(OBJECT(dev));
@@ -597,6 +913,36 @@ static void register_test_types(void)
     type_register_static(&empty_i2c_target_info);
 }
 
+static void test_bind_hotplugged(void)
+{
+    static const AudioLineFormat FORMAT = { 48000, 2 };
+    DeviceState *bus_owner;
+    AudioLineBus *line;
+    ProtocolTestDevice *dev;
+
+    phase_advance(PHASE_MACHINE_CREATED);
+    phase_advance(PHASE_ACCEL_CREATED);
+    phase_advance(PHASE_LATE_BACKENDS_CREATED);
+    phase_advance(PHASE_MACHINE_INITIALIZED);
+    phase_advance(PHASE_MACHINE_READY);
+
+    bus_owner = test_bus_owner_create();
+    line = audio_line_bus_init(bus_owner, "line");
+    dev = PROTOCOL_TEST_DEVICE(object_new(TYPE_PROTOCOL_TEST_DEVICE));
+    qdev_realize(DEVICE(dev), NULL, &error_fatal);
+    audio_line_start(line, 0, &FORMAT);
+
+    qdev_bus_port_bind(DEVICE(dev), "LINE", BUS(line), &error_fatal);
+    g_assert_true(dev->line_port.parent.endpoint->hotplugged);
+    g_assert_cmpuint(dev->line_format.sample_rate_hz, ==, 48000);
+
+    qdev_bus_port_bind(DEVICE(dev), "LINE", NULL, &error_fatal);
+    g_assert_cmpuint(dev->line_format.channels, ==, 0);
+
+    object_destroy(OBJECT(dev));
+    object_destroy(OBJECT(bus_owner));
+}
+
 static void test_machine_init(void)
 {
     Object *machine = object_property_add_new_container(
@@ -619,11 +965,25 @@ int main(int argc, char **argv)
                     test_endpoint_realize_failure);
     g_test_add_func("/qdev/bus-port/bus-owner-destroyed-first",
                     test_bus_owner_destroyed_first);
+    g_test_add_func("/qdev/bus-port/bind-realized", test_bind_realized);
+    g_test_add_func("/qdev/bus-port/bind-before-realize",
+                    test_bind_before_realize);
+    g_test_add_func("/qdev/bus-port/bind-errors", test_bind_errors);
     g_test_add_func("/qdev/bus-port/i2s-adapter", test_i2s_adapter);
+    g_test_add_func("/qdev/bus-port/audio-line-adapter",
+                    test_audio_line_adapter);
+    g_test_add_func("/qdev/bus-port/i2s-late-endpoint",
+                    test_i2s_late_endpoint);
+    g_test_add_func("/qdev/bus-port/audio-line-late-endpoint",
+                    test_audio_line_late_endpoint);
     g_test_add_func("/qdev/bus-port/i2c-adapter", test_i2c_adapter);
+    g_test_add_func("/qdev/bus-port/i2c-unbind-during-transfer",
+                    test_i2c_unbind_during_transfer);
     g_test_add_func("/qdev/bus-port/three-wire-serial-adapter",
                     test_three_wire_serial_adapter);
     g_test_add_func("/qdev/bus-port/i2c-defaults-and-address",
                     test_i2c_adapter_defaults_and_address);
+    /* Machine phases only advance; this test must stay last. */
+    g_test_add_func("/qdev/bus-port/bind-hotplugged", test_bind_hotplugged);
     return g_test_run();
 }

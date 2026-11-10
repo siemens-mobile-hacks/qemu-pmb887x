@@ -8,6 +8,7 @@ system_ss.add(files(
   'bootdevice.c',
   'cpus.c',
   'cpu-timers.c',
+  'debug-channel.c',
   'dirtylimit.c',
   'dma-helpers.c',
   'exit-with-parent.c',

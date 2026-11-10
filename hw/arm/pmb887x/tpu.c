@@ -1,12 +1,8 @@
 /*
  * Time Processing Unit
  * */
-#define PMB887X_TRACE_ID		TPU
-#define PMB887X_TRACE_PREFIX	"pmb887x-tpu"
-
 #include "qemu/osdep.h"
 #include "hw/core/sysbus.h"
-#include "hw/core/hw-error.h"
 #include "system/memory.h"
 #include "cpu.h"
 #include "qapi/error.h"
@@ -18,14 +14,12 @@
 #include "hw/core/qdev-clock.h"
 #include "hw/ssi/three-wire-serial.h"
 
-#include "hw/arm/pmb887x/rf.h"
 #include "hw/arm/pmb887x/dsp.h"
 #include "hw/arm/pmb887x/dsp/signals.h"
 #include "hw/arm/pmb887x/gen/cpu_regs.h"
-#include "hw/arm/pmb887x/regs_dump.h"
+#include "hw/arm/pmb887x/gen/cpu_meta.h"
 #include "hw/arm/pmb887x/mod.h"
 #include "hw/arm/pmb887x/tpu.h"
-#include "hw/arm/pmb887x/trace.h"
 
 #define TYPE_PMB887X_TPU	"pmb887x-tpu"
 #define PMB887X_TPU(obj)	OBJECT_CHECK(pmb887x_tpu_t, (obj), TYPE_PMB887X_TPU)
@@ -97,6 +91,7 @@ typedef struct pmb887x_tpu_t pmb887x_tpu_t;
 struct pmb887x_tpu_t {
 	SysBusDevice parent_obj;
 	MemoryRegion mmio;
+	DebugChannel dbg;
 	uint32_t revision;
 	
 	// regs
@@ -339,7 +334,7 @@ static void tpu_rf_control_trigger(pmb887x_tpu_t *p) {
 			value = (value << 8) | (tpu_ram_word_read(p, word + i + 1) & TPU_RF_TELEGRAM_DATA_MASK);
 
 		uint32_t strobe = ((control & TPU_RF_TELEGRAM_STROBE_MASK) >> TPU_RF_TELEGRAM_STROBE_SHIFT);
-		DPRINTF("RF trigger: counter=%04X trigger=%u slot=%u control=%04X bits=%u strobe=%u value=%08X\n",
+		DEBUG_LOG(&p->dbg, "RF trigger: counter=%04X trigger=%u slot=%u control=%04X bits=%u strobe=%u value=%08X\n",
 			p->counter, trigger, index, control, bits, strobe, value);
 
 		p->rfcon2 = tpu_rf_telegram_control(control, bits);
@@ -383,7 +378,7 @@ static void tpu_set_gsm_signal(
 	} else {
 		p->gsm_signals &= (uint16_t) ~mask;
 	}
-	DPRINTF("GSM signal: counter=%04X time=%" PRId64 " ns signal=%s level=%u\n", p->counter,
+	DEBUG_LOG(&p->dbg, "GSM signal: counter=%04X time=%" PRId64 " ns signal=%s level=%u\n", p->counter,
 		timestamp_ns, SIGNAL_NAMES[signal], level);
 	if (p->dsp != NULL)
 		pmb887x_dsp_set_gsm_signal(p->dsp, signal, level, timestamp_ns);
@@ -485,7 +480,7 @@ static void tpu_execute_event(
 	p->triggers &= TPU_EVENT_TRIGGER_MASK;
 	decoder = (p->triggers >> TPU_EVENT_DECODER_SHIFT) & TPU_EVENT_DECODER_MASK;
 	uint32_t rf_trigger = (p->triggers & TPU_RF_TRIGGER_MASK);
-	DPRINTF("event execute: event=%03X counter=%04X control=%04X action=%04X triggers=%06X->%06X decoder=%u rf=%u\n",
+	DEBUG_LOG(&p->dbg, "event execute: event=%03X counter=%04X control=%04X action=%04X triggers=%06X->%06X decoder=%u rf=%u\n",
 		event, p->counter, control, timer_bits_low, old_triggers, p->triggers, decoder, rf_trigger);
 	tpu_rf_control_trigger(p);
 	tpu_decode_gsm_signal(p, decoder, timestamp_ns);
@@ -703,7 +698,7 @@ static void tpu_update_state(pmb887x_tpu_t *p) {
 		p->freq = new_freq;
 		p->enabled = new_enabled;
 		clock_update_hz(p->gsm_clock, p->freq);
-		DPRINTF("input=%d, ftpu=%d, fcounter=%d [%s]\n", pmb887x_clc_get_input_hz(&p->clc), ftpu,
+		DEBUG_LOG(&p->dbg, "input=%d, ftpu=%d, fcounter=%d [%s]\n", pmb887x_clc_get_input_hz(&p->clc), ftpu,
 			p->freq, p->enabled ? "ON" : "OFF");
 	}
 
@@ -898,11 +893,9 @@ static uint64_t tpu_io_read(void *opaque, hwaddr haddr, unsigned size) {
 			break;
 
 		default:
-			EPRINTF("unknown reg access: %02"PRIX64"\n", haddr);
+			DEBUG_GUEST_ERROR(&p->dbg, "unknown reg read: %02"PRIX64"\n", haddr);
 			break;
 	}
-	
-	IO_DUMP_READ(haddr + p->mmio.addr, size, value);
 	
 	return value;
 }
@@ -939,8 +932,6 @@ static bool tpu_ram_write_moves_deadline(pmb887x_tpu_t *p, uint32_t offset) {
 static void tpu_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned size) {
 	pmb887x_tpu_t *p = (struct pmb887x_tpu_t *) opaque;
 	
-	IO_DUMP_WRITE(haddr + p->mmio.addr, size, value);
-	
 	switch (haddr) {
 		case TPU_CLC:
 			pmb887x_clc_set(&p->clc, value);
@@ -962,7 +953,7 @@ static void tpu_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned si
 			break;
 
 		case TPU_RFSSCTB:
-			DPRINTF("RF control: %04X\n", (uint16_t) value);
+			DEBUG_LOG(&p->dbg, "RF control: %04X\n", (uint16_t) value);
 			p->rfssc_tb = (uint16_t) value;
 			p->rfssc_buffer_full = true;
 			if (p->rfssc_active && p->rfssc_direct_transfer) {
@@ -1090,7 +1081,7 @@ static void tpu_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned si
 			break;
 		
 		default:
-			EPRINTF("unknown reg access: %02"PRIX64"\n", haddr);
+			DEBUG_GUEST_ERROR(&p->dbg, "unknown reg write: %02"PRIX64" = %08"PRIX64"\n", haddr, value);
 			break;
 	}
 	
@@ -1123,25 +1114,30 @@ static void tpu_init(Object *obj) {
 		sysbus_init_irq(SYS_BUS_DEVICE(obj), &p->gp_irq[i]);
 	for (size_t i = 0; i < ARRAY_SIZE(p->irq); i++)
 		sysbus_init_irq(SYS_BUS_DEVICE(obj), &p->irq[i]);
-	qdev_init_gpio_out_named(DEVICE(obj), p->gsm_outputs, "GSM_OUT", PMB887X_DSP_GSM_SIGNAL_COUNT);
+	qdev_init_gpio_out_named(DEVICE(obj), p->gsm_outputs, "GSM", PMB887X_DSP_GSM_SIGNAL_COUNT);
 	p->gsm_clock = qdev_init_clock_out(DEVICE(obj), "GSM_CLOCK");
 }
 
-static void tpu_realize(DeviceState *dev, Error **_errp) {
+static void tpu_realize(DeviceState *dev, Error **errp) {
 	pmb887x_tpu_t *p = PMB887X_TPU(dev);
+	pmb887x_mod_debug_init(&p->dbg, dev, &p->mmio, &pmb887x_tpu_regs);
 	
 	pmb887x_clc_set(&p->clc, MOD_CLC_DISR);
 	pmb887x_src_init(&p->rfssc_src, p->rfssc_irq);
 
 	for (int i = 0; i < ARRAY_SIZE(p->src); i++) {
-		if (!p->irq[i])
-			hw_error("pmb887x-tpu: irq %d (INT%d) not set", i, i);
+		if (!p->irq[i]) {
+			error_setg(errp, "%s: INT%d IRQ is not connected", object_get_typename(OBJECT(dev)), i);
+			return;
+		}
 		pmb887x_src_init(&p->src[i], p->irq[i]);
 	}
 	
 	for (int i = 0; i < ARRAY_SIZE(p->gp_src); i++) {
-		if (!p->gp_irq[i])
-			hw_error("pmb887x-tpu: irq %d (INT_GP%d) not set", i, i);
+		if (!p->gp_irq[i]) {
+			error_setg(errp, "%s: INT_GP%d IRQ is not connected", object_get_typename(OBJECT(dev)), i);
+			return;
+		}
 		pmb887x_src_init(&p->gp_src[i], p->gp_irq[i]);
 	}
 	
@@ -1231,14 +1227,6 @@ static void tpu_reset(DeviceState *dev) {
 
 static const Property tpu_properties[] = {
 	DEFINE_PROP_UINT32("revision", pmb887x_tpu_t, revision, 0),
-	DEFINE_PROP_LINK("bus_rfssc0", pmb887x_tpu_t, rfssc_bus[0],
-		TYPE_THREE_WIRE_SERIAL_BUS, ThreeWireSerialBus *),
-	DEFINE_PROP_LINK("bus_rfssc1", pmb887x_tpu_t, rfssc_bus[1],
-		TYPE_THREE_WIRE_SERIAL_BUS, ThreeWireSerialBus *),
-	DEFINE_PROP_LINK("bus_rfssc2", pmb887x_tpu_t, rfssc_bus[2],
-		TYPE_THREE_WIRE_SERIAL_BUS, ThreeWireSerialBus *),
-	DEFINE_PROP_LINK("bus_rfssc3", pmb887x_tpu_t, rfssc_bus[3],
-		TYPE_THREE_WIRE_SERIAL_BUS, ThreeWireSerialBus *),
 };
 
 static void tpu_class_init(ObjectClass *klass, const void *_data) {

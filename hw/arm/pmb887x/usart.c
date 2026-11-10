@@ -1,12 +1,9 @@
 /*
  * USART
  * */
-#define PMB887X_TRACE_ID		USART
-#define PMB887X_TRACE_PREFIX	"pmb887x-usart"
-
 #include "qemu/osdep.h"
+#include "qapi/error.h"
 #include "hw/core/sysbus.h"
-#include "hw/core/hw-error.h"
 #include "system/memory.h"
 #include "cpu.h"
 #include "qemu/main-loop.h"
@@ -16,10 +13,10 @@
 #include "chardev/char-serial.h"
 
 #include "hw/arm/pmb887x/gen/cpu_regs.h"
-#include "hw/arm/pmb887x/regs_dump.h"
+#include "hw/arm/pmb887x/gen/cpu_meta.h"
 #include "hw/arm/pmb887x/mod.h"
-#include "hw/arm/pmb887x/fifo.h"
-#include "hw/arm/pmb887x/trace.h"
+#include "qemu/fifo8.h"
+#include "qemu/fifo32.h"
 
 #define TYPE_PMB887X_USART	"pmb887x-usart"
 #define PMB887X_USART(obj)	OBJECT_CHECK(pmb887x_usart_t, (obj), TYPE_PMB887X_USART)
@@ -27,6 +24,9 @@
 #define USART_SEND_FULL_FIFO	1
 #define USART_FIFO_SIZE			8
 #define USART_AUTOBAUD_RATE	115200
+#define USART_AUTOBAUD_FRAME_BITS	10
+#define USART_RX_LINE_SIZE		4096
+#define USART_RX_LINE_REFILL_SIZE	(USART_RX_LINE_SIZE / 2)
 #define USART_FDV_SCALE			512
 #define USART_ABSTAT_MASK		(USART_ABSTAT_FCSDET | USART_ABSTAT_FCCDET | USART_ABSTAT_SCSDET | \
 	USART_ABSTAT_SCCDET | USART_ABSTAT_DETWAIT)
@@ -49,6 +49,7 @@ typedef struct pmb887x_usart_t pmb887x_usart_t;
 struct pmb887x_usart_t {
 	SysBusDevice parent_obj;
 	MemoryRegion mmio;
+	DebugChannel dbg;
 	uint32_t revision;
 	
 	pmb887x_clc_reg_t clc;
@@ -58,29 +59,32 @@ struct pmb887x_usart_t {
 	QEMUTimer *timer;
 	QEMUTimer *tmo_timer;
 	QEMUTimer *rx_timer;
+	QEMUTimer *break_timer;
 	bool transfer_pending;
 	bool autobaud_pending;
 	bool cts_input_active;
+	bool rxd_level;
 
 	CharFrontend chr;
 	guint watch_tag;
 
+	Fifo8 rx_line;
+	int64_t rx_frame_end_ns;
+
 	// FIFO enabled
-	pmb887x_fifo16_t tx_fifo_buffered;
-	pmb887x_fifo16_t rx_fifo_buffered;
+	Fifo32 tx_fifo_buffered;
+	Fifo32 rx_fifo_buffered;
 
 	// FIFO disabled
-	pmb887x_fifo16_t tx_fifo_single;
-	pmb887x_fifo16_t rx_fifo_single;
+	Fifo32 tx_fifo_single;
+	Fifo32 rx_fifo_single;
 
 	// Pending frame to transmit
-	pmb887x_fifo16_t tx_buffer;
+	Fifo32 tx_buffer;
 
 	// Pointer to current FIFO
-	pmb887x_fifo16_t *rx_fifo;
-	pmb887x_fifo16_t *tx_fifo;
-
-	int ris_read_count;
+	Fifo32 *rx_fifo;
+	Fifo32 *tx_fifo;
 
 	uint32_t pisel;
 	uint32_t con;
@@ -113,7 +117,7 @@ struct pmb887x_usart_t {
 static void usart_update_state(pmb887x_usart_t *p);
 static void usart_transmit_fifo(pmb887x_usart_t *p);
 static void usart_schedule_transmit(pmb887x_usart_t *p);
-static void usart_schedule_accept_input(pmb887x_usart_t *p);
+static void usart_rx_line_start(pmb887x_usart_t *p);
 
 static uint32_t usart_get_baud_rate(pmb887x_usart_t *p) {
 	uint64_t frequency = pmb887x_clc_get_hz(&p->clc);
@@ -176,12 +180,10 @@ static void usart_rx_fifo_config(pmb887x_usart_t *p, uint32_t value) {
 	bool new_fifo_enabled = (value & USART_RXFCON_RXFEN) != 0;
 	if (old_fifo_enabled != new_fifo_enabled) {
 		p->rx_fifo = new_fifo_enabled ? &p->rx_fifo_buffered : &p->rx_fifo_single;
-		pmb887x_fifo_reset(p->rx_fifo);
+		fifo32_reset(p->rx_fifo);
 	}
 	p->rxfcon = value;
 	usart_update_state(p);
-	if (pmb887x_clc_is_enabled(&p->clc) && !pmb887x_fifo_is_full(p->rx_fifo))
-		usart_schedule_accept_input(p);
 }
 
 static void usart_tx_fifo_config(pmb887x_usart_t *p, uint32_t value) {
@@ -189,7 +191,7 @@ static void usart_tx_fifo_config(pmb887x_usart_t *p, uint32_t value) {
 	bool new_fifo_enabled = (value & USART_TXFCON_TXFEN) != 0;
 	if (old_fifo_enabled != new_fifo_enabled) {
 		p->tx_fifo = new_fifo_enabled ? &p->tx_fifo_buffered : &p->tx_fifo_single;
-		pmb887x_fifo_reset(p->tx_fifo);
+		fifo32_reset(p->tx_fifo);
 	}
 
 	bool old_transparent_mode = (p->txfcon & USART_TXFCON_TXTMEN) != 0 && old_fifo_enabled;
@@ -204,12 +206,12 @@ static void usart_tx_fifo_config(pmb887x_usart_t *p, uint32_t value) {
 static bool usart_tb_irq(pmb887x_usart_t *p) {
 	if (usart_is_tx_fifo_enabled(p)) {
 		if ((p->txfcon & USART_TXFCON_TXTMEN))
-			return !pmb887x_fifo_is_full(p->tx_fifo);
+			return !fifo32_is_full(p->tx_fifo);
 		uint32_t tx_level = (p->txfcon & USART_TXFCON_TXFITL) >> USART_TXFCON_TXFITL_SHIFT;
 		tx_level = MAX(1, MIN(USART_FIFO_SIZE, tx_level));
-		return pmb887x_fifo_count(p->tx_fifo) <= tx_level;
+		return fifo32_num_used(p->tx_fifo) <= tx_level;
 	}
-	return pmb887x_fifo_is_empty(p->tx_fifo);
+	return fifo32_is_empty(p->tx_fifo);
 }
 
 static bool usart_tx_irq(pmb887x_usart_t *p) {
@@ -218,24 +220,24 @@ static bool usart_tx_irq(pmb887x_usart_t *p) {
 			return true;
 		uint32_t tx_level = (p->txfcon & USART_TXFCON_TXFITL) >> USART_TXFCON_TXFITL_SHIFT;
 		tx_level = MAX(1, MIN(USART_FIFO_SIZE, tx_level));
-		return pmb887x_fifo_count(p->tx_fifo) <= tx_level;
+		return fifo32_num_used(p->tx_fifo) <= tx_level;
 	}
-	return pmb887x_fifo_is_empty(p->tx_fifo);
+	return fifo32_is_empty(p->tx_fifo);
 }
 
 static bool usart_rx_irq(pmb887x_usart_t *p) {
 	if (usart_is_rx_fifo_enabled(p)) {
 		if ((p->rxfcon & USART_RXFCON_RXTMEN))
-			return !pmb887x_fifo_is_empty(p->rx_fifo);
+			return !fifo32_is_empty(p->rx_fifo);
 		uint32_t rx_level = (p->rxfcon & USART_RXFCON_RXFITL) >> USART_RXFCON_RXFITL_SHIFT;
 		rx_level = MAX(1, MIN(USART_FIFO_SIZE, rx_level));
-		return pmb887x_fifo_count(p->rx_fifo) >= rx_level;
+		return fifo32_num_used(p->rx_fifo) >= rx_level;
 	}
-	return !pmb887x_fifo_is_empty(p->rx_fifo);
+	return !fifo32_is_empty(p->rx_fifo);
 }
 
 static void usart_handle_dma(pmb887x_usart_t *p) {
-	bool tx_request = !p->dmac_tx_clr && (p->dma_control & USART_DMAE_TX) && pmb887x_fifo_is_empty(p->tx_fifo);
+	bool tx_request = !p->dmac_tx_clr && (p->dma_control & USART_DMAE_TX) && fifo32_is_empty(p->tx_fifo);
 	bool rx_request = !p->dmac_rx_clr && (p->dma_control & USART_DMAE_RX) && usart_rx_irq(p);
 
 	qemu_set_irq(p->dmac_tx_breq, tx_request);
@@ -252,42 +254,14 @@ static void usart_timer_reset(void *opaque) {
 	usart_transmit_fifo(p);
 }
 
-static void usart_accept_input(void *opaque) {
-	pmb887x_usart_t *p = opaque;
-	p->autobaud_pending = false;
-	qemu_chr_fe_accept_input(&p->chr);
-}
-
-static void usart_schedule_accept_input(pmb887x_usart_t *p) {
-	int64_t delay_ns = usart_baud_ticks_to_ns(p, usart_frame_bits(p));
-	int64_t virtual = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
-	p->ris_read_count = 0;
-	timer_mod_ns(p->rx_timer, virtual + MAX(1, delay_ns));
-}
-
-static void usart_immediate_receive(pmb887x_usart_t *p) {
-	if (!timer_pending(p->rx_timer) || p->ris_read_count <= 10)
-		return;
-	timer_del(p->rx_timer);
-	DPRINTF("immediate receive\n");
-	usart_accept_input(p);
-}
-
-static void usart_immediate_transfer(pmb887x_usart_t *p) {
-	if (p->watch_tag || !p->transfer_pending)
-		return;
-	timer_del(p->timer);
-	usart_transmit_fifo(p);
-}
-
 static bool usart_rts_is_active(pmb887x_usart_t *p) {
 	if ((p->fccon & USART_FCCON_RTSEN) == 0)
 		return (p->fccon & USART_FCCON_RTS) != 0;
 	if (!usart_is_rx_fifo_enabled(p))
-		return pmb887x_fifo_is_empty(p->rx_fifo);
+		return fifo32_is_empty(p->rx_fifo);
 
 	uint32_t trigger = (p->fccon & USART_FCCON_RTS_TRIGGER) >> USART_FCCON_RTS_TRIGGER_SHIFT;
-	return pmb887x_fifo_count(p->rx_fifo) < trigger;
+	return fifo32_num_used(p->rx_fifo) < trigger;
 }
 
 static bool usart_cts_is_active(pmb887x_usart_t *p) {
@@ -319,31 +293,32 @@ static void usart_flow_control_update(pmb887x_usart_t *p) {
 		pmb887x_srb_set_isr(&p->srb, USART_ISR_CTS);
 
 	bool can_start = pmb887x_clc_is_enabled(&p->clc) && usart_cts_allows_transmit(p);
-	if (can_start && !p->transfer_pending && !pmb887x_fifo_is_empty(p->tx_fifo))
+	if (can_start && !p->transfer_pending && !fifo32_is_empty(p->tx_fifo))
 		usart_schedule_transmit(p);
 }
 
 static void usart_update_state(pmb887x_usart_t *p) {
 	if (usart_is_rx_fifo_enabled(p)) {
 		if ((p->rxfcon & USART_RXFCON_RXFFLU)) {
-			pmb887x_fifo_reset(p->rx_fifo);
+			fifo32_reset(p->rx_fifo);
 			p->rxfcon &= ~USART_RXFCON_RXFFLU;
 		}
 	}
 
 	if (usart_is_tx_fifo_enabled(p)) {
 		if ((p->txfcon & USART_TXFCON_TXFFLU)) {
-			pmb887x_fifo_reset(p->tx_fifo);
+			fifo32_reset(p->tx_fifo);
 			p->txfcon &= ~USART_TXFCON_TXFFLU;
 			pmb887x_srb_set_isr(&p->srb, USART_ISR_TB);
 		}
 	}
 
 	if (!pmb887x_clc_is_enabled(&p->clc)) {
-		pmb887x_fifo_reset(&p->tx_buffer);
-		pmb887x_fifo_reset(p->tx_fifo);
-		pmb887x_fifo_reset(p->rx_fifo);
+		fifo32_reset(&p->tx_buffer);
+		fifo32_reset(p->tx_fifo);
+		fifo32_reset(p->rx_fifo);
 		timer_del(p->tmo_timer);
+		timer_del(p->rx_timer);
 
 		if (p->transfer_pending) {
 			timer_del(p->timer);
@@ -385,24 +360,7 @@ static void usart_update_state(pmb887x_usart_t *p) {
 	}
 
 	usart_flow_control_update(p);
-}
-
-static int usart_can_receive(void *opaque) {
-	pmb887x_usart_t *p = opaque;
-	if (!pmb887x_clc_is_enabled(&p->clc))
-		return 0;
-	if (p->autobaud_pending)
-		return 0;
-	if (p->abcon & USART_ABCON_ABEN) {
-		if (p->abcon & USART_ABCON_FCDETEN)
-			return 1;
-		return 2;
-	}
-	if ((p->con & USART_CON_REN) == 0)
-		return 1;
-	if (timer_pending(p->rx_timer))
-		return 0;
-	return MIN(1, pmb887x_fifo_free_count(p->rx_fifo));
+	usart_rx_line_start(p);
 }
 
 static bool usart_autobaud_receive(pmb887x_usart_t *p, uint8_t value) {
@@ -440,34 +398,29 @@ static bool usart_autobaud_receive(pmb887x_usart_t *p, uint8_t value) {
 		p->con |= USART_CON_REN;
 
 	p->abcon &= ~USART_ABCON_ABEN;
-	p->autobaud_pending = true;
-
 	if (p->abcon & USART_ABCON_ABDETEN) {
+		p->autobaud_pending = true;
 		pmb887x_srb_set_isr(&p->srb, USART_ISR_ABDET);
-	} else {
-		usart_schedule_accept_input(p);
 	}
 
 	return true;
 }
 
 static void usart_receive_word(pmb887x_usart_t *p, uint16_t value) {
-	if (pmb887x_fifo_is_full(p->rx_fifo)) {
-		pmb887x_fifo16_replace_last(p->rx_fifo, value);
+	if (fifo32_is_full(p->rx_fifo)) {
+		fifo32_replace_last(p->rx_fifo, value);
 		p->con |= USART_CON_OE;
 		pmb887x_srb_set_isr(&p->srb, USART_ISR_RX | USART_ISR_ERR);
 	} else {
-		pmb887x_fifo16_push(p->rx_fifo, value);
+		fifo32_push(p->rx_fifo, value);
 	}
 }
 
-static void usart_receive_complete(pmb887x_usart_t *p) {
+static void usart_receive_complete(pmb887x_usart_t *p, int64_t frame_end_ns) {
 	if (p->tmo > 0) {
 		int64_t timeout_ns = usart_baud_ticks_to_ns(p, p->tmo);
-		if (timeout_ns > 0) {
-			int64_t virtual = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
-			timer_mod_ns(p->tmo_timer, virtual + timeout_ns);
-		}
+		if (timeout_ns > 0)
+			timer_mod_ns(p->tmo_timer, frame_end_ns + timeout_ns);
 	}
 
 	usart_flow_control_update(p);
@@ -478,34 +431,79 @@ static void usart_receive_complete(pmb887x_usart_t *p) {
 	usart_handle_dma(p);
 }
 
+static bool usart_receive_frame(pmb887x_usart_t *p, uint8_t value) {
+	if (usart_autobaud_receive(p, value))
+		return true;
+	if ((p->con & USART_CON_REN) == 0)
+		return false;
+	usart_receive_word(p, value);
+	return true;
+}
+
+static int64_t usart_rx_frame_ns(pmb887x_usart_t *p) {
+	if (p->abcon & USART_ABCON_ABEN)
+		return muldiv64(USART_AUTOBAUD_FRAME_BITS, NANOSECONDS_PER_SECOND, USART_AUTOBAUD_RATE);
+	return MAX(1, usart_baud_ticks_to_ns(p, usart_frame_bits(p)));
+}
+
+static bool usart_rx_line_is_paused(pmb887x_usart_t *p) {
+	if (!pmb887x_clc_is_enabled(&p->clc) || p->autobaud_pending)
+		return true;
+	if (p->abcon & USART_ABCON_ABEN)
+		return false;
+	return (p->con & USART_CON_REN) != 0 && fifo32_is_full(p->rx_fifo);
+}
+
+static void usart_rx_line_start(pmb887x_usart_t *p) {
+	if (timer_pending(p->rx_timer) || fifo8_is_empty(&p->rx_line) || usart_rx_line_is_paused(p))
+		return;
+
+	int64_t now = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
+	p->rx_frame_end_ns = MAX(now, p->rx_frame_end_ns) + usart_rx_frame_ns(p);
+	timer_mod_ns(p->rx_timer, p->rx_frame_end_ns);
+}
+
+static void usart_rx_line_expire(void *opaque) {
+	pmb887x_usart_t *p = opaque;
+	int64_t now = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
+	bool host_blocked = fifo8_num_free(&p->rx_line) < USART_RX_LINE_REFILL_SIZE;
+	bool input_handled = false;
+	int64_t last_frame_end_ns;
+
+	do {
+		last_frame_end_ns = p->rx_frame_end_ns;
+		input_handled |= usart_receive_frame(p, fifo8_pop(&p->rx_line));
+		if (fifo8_is_empty(&p->rx_line) || usart_rx_line_is_paused(p))
+			break;
+		p->rx_frame_end_ns += usart_rx_frame_ns(p);
+	} while (p->rx_frame_end_ns <= now);
+
+	if (p->rx_frame_end_ns > now)
+		timer_mod_ns(p->rx_timer, p->rx_frame_end_ns);
+	if (input_handled)
+		usart_receive_complete(p, last_frame_end_ns);
+	if (host_blocked && fifo8_num_free(&p->rx_line) >= USART_RX_LINE_REFILL_SIZE)
+		qemu_chr_fe_accept_input(&p->chr);
+}
+
+static int usart_can_receive(void *opaque) {
+	pmb887x_usart_t *p = opaque;
+	uint32_t free_size = fifo8_num_free(&p->rx_line);
+	return free_size >= USART_RX_LINE_REFILL_SIZE ? free_size : 0;
+}
+
 static void usart_receive(void *opaque, const uint8_t *buf, int size) {
 	pmb887x_usart_t *p = opaque;
-	bool input_handled = false;
-
-	for (int i = 0; i < size; i++) {
-		if (usart_autobaud_receive(p, buf[i])) {
-			input_handled = true;
-			continue;
-		}
-		if ((p->con & USART_CON_REN) == 0)
-			continue;
-		usart_receive_word(p, buf[i]);
-		input_handled = true;
-	}
-
-	if (input_handled)
-		usart_receive_complete(p);
-	if (!p->autobaud_pending && (input_handled || (p->abcon & USART_ABCON_ABEN)))
-		usart_schedule_accept_input(p);
+	fifo8_push_all(&p->rx_line, buf, size);
+	usart_rx_line_start(p);
 }
 
 static void usart_schedule_transmit(pmb887x_usart_t *p) {
 	if (!usart_cts_allows_transmit(p))
 		return;
 
-	uint16_t word = pmb887x_fifo16_pop(p->tx_fifo);
-	pmb887x_fifo16_push(&p->tx_buffer, word);
-	p->ris_read_count = 0;
+	uint16_t word = fifo32_pop(p->tx_fifo);
+	fifo32_push(&p->tx_buffer, word);
 	p->transfer_pending = true;
 	int64_t frame_time_ns = usart_baud_ticks_to_ns(p, usart_frame_bits(p));
 	int64_t virtual = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
@@ -550,23 +548,21 @@ static void usart_transmit_fifo(pmb887x_usart_t *p) {
 		return;
 
 	p->transfer_pending = false;
-	p->ris_read_count = 0;
 
-	uint16_t buffer[USART_FIFO_SIZE * 2] = { };
+	uint32_t buffer[USART_FIFO_SIZE * 2] = { };
 	int buffer_size = 0;
 
 	// Next frame to transmit
-	if (!pmb887x_fifo_is_empty(&p->tx_buffer)) {
-		buffer[0] = pmb887x_fifo16_pop(&p->tx_buffer);
+	if (!fifo32_is_empty(&p->tx_buffer)) {
+		buffer[0] = fifo32_pop(&p->tx_buffer);
 		buffer_size++;
 	}
 
 #ifdef USART_SEND_FULL_FIFO
 	// Also, we can send more data from FIFO
-	if ((p->con & USART_CON_LB) == 0 && !pmb887x_fifo_is_empty(p->tx_fifo)) {
-		int size = pmb887x_fifo_count(p->tx_fifo);
-		pmb887x_fifo16_read(p->tx_fifo, buffer + buffer_size, size);
-		buffer_size += size;
+	if ((p->con & USART_CON_LB) == 0) {
+		while (!fifo32_is_empty(p->tx_fifo))
+			buffer[buffer_size++] = fifo32_pop(p->tx_fifo);
 	}
 #endif
 
@@ -587,7 +583,7 @@ static void usart_transmit_fifo(pmb887x_usart_t *p) {
 			}
 		}
 		if (is_received)
-			usart_receive_complete(p);
+			usart_receive_complete(p, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL));
 		ret = buffer_size;
 	}
 
@@ -596,14 +592,13 @@ static void usart_transmit_fifo(pmb887x_usart_t *p) {
 	if (transmitted < buffer_size) {
 		p->watch_tag = qemu_chr_fe_add_watch(&p->chr, G_IO_OUT | G_IO_HUP, usart_transmit_fifo_delayed, p);
 		if (p->watch_tag) {
-			pmb887x_fifo16_push(&p->tx_buffer, buffer[transmitted]);
+			fifo32_push(&p->tx_buffer, buffer[transmitted]);
 			if (transmitted + 1 < buffer_size)
-				pmb887x_fifo16_write(p->tx_fifo, buffer + transmitted + 1, buffer_size - transmitted - 1);
+				fifo32_push_all(p->tx_fifo, buffer + transmitted + 1, buffer_size - transmitted - 1);
 			p->transfer_pending = true;
-			p->ris_read_count = 0;
 		} else {
 			// QEMU char backend is not connected, data is lost
-			pmb887x_fifo_reset(p->tx_fifo);
+			fifo32_reset(p->tx_fifo);
 			transmitted = buffer_size;
 		}
 	}
@@ -618,15 +613,15 @@ static void usart_transmit_fifo(pmb887x_usart_t *p) {
 	}
 
 	// If some data is still in the buffer, schedule transmission
-	if (!p->transfer_pending && !pmb887x_fifo_is_empty(p->tx_fifo))
+	if (!p->transfer_pending && !fifo32_is_empty(p->tx_fifo))
 		usart_schedule_transmit(p);
 }
 
 static void usart_write_txb(pmb887x_usart_t *p, uint16_t value) {
 	p->txb = (value & 0x1FF);
 
-	if (pmb887x_fifo_is_full(p->tx_fifo)) {
-		pmb887x_fifo16_replace_last(p->tx_fifo, p->txb);
+	if (fifo32_is_full(p->tx_fifo)) {
+		fifo32_replace_last(p->tx_fifo, p->txb);
 		if (usart_is_tx_fifo_enabled(p)) {
 			p->con |= USART_CON_OE;
 			pmb887x_srb_set_isr(&p->srb, USART_ISR_ERR);
@@ -634,7 +629,7 @@ static void usart_write_txb(pmb887x_usart_t *p, uint16_t value) {
 		return;
 	}
 
-	pmb887x_fifo16_push(p->tx_fifo, p->txb);
+	fifo32_push(p->tx_fifo, p->txb);
 
 	if (p->transfer_pending) {
 		if (usart_tb_irq(p))
@@ -651,7 +646,7 @@ static uint64_t usart_io_read(void *opaque, hwaddr haddr, unsigned size) {
 
 	if (haddr != USART_ID && haddr != USART_CLC) {
 		if (!pmb887x_clc_is_enabled(&p->clc))
-			EPRINTF("usart clock not enabled\n");
+			DEBUG_GUEST_ERROR(&p->dbg, "clock not enabled\n");
 	}
 
 	switch (haddr) {
@@ -688,13 +683,13 @@ static uint64_t usart_io_read(void *opaque, hwaddr haddr, unsigned size) {
 			break;
 
 		case USART_RXB:
-			if (!pmb887x_fifo_is_empty(p->rx_fifo)) {
-				bool is_full = pmb887x_fifo_is_full(p->rx_fifo);
-				value = pmb887x_fifo16_pop(p->rx_fifo);
+			if (!fifo32_is_empty(p->rx_fifo)) {
+				bool is_full = fifo32_is_full(p->rx_fifo);
+				value = fifo32_pop(p->rx_fifo);
 				usart_flow_control_update(p);
 				if (is_full)
-					usart_schedule_accept_input(p);
-				if ((p->rxfcon & USART_RXFCON_RXTMEN) && !pmb887x_fifo_is_empty(p->rx_fifo))
+					usart_rx_line_start(p);
+				if ((p->rxfcon & USART_RXFCON_RXTMEN) && !fifo32_is_empty(p->rx_fifo))
 					pmb887x_srb_set_isr(&p->srb, USART_ISR_RX);
 			} else {
 				pmb887x_srb_set_isr(&p->srb, USART_ISR_ERR);
@@ -719,10 +714,10 @@ static uint64_t usart_io_read(void *opaque, hwaddr haddr, unsigned size) {
 
 		case USART_FSTAT:
 			if (usart_is_tx_fifo_enabled(p))
-				value |= pmb887x_fifo_count(p->tx_fifo) << USART_FSTAT_TXFFL_SHIFT;
+				value |= fifo32_num_used(p->tx_fifo) << USART_FSTAT_TXFFL_SHIFT;
 
 			if (usart_is_rx_fifo_enabled(p))
-				value |= pmb887x_fifo_count(p->rx_fifo) << USART_FSTAT_RXFFL_SHIFT;
+				value |= fifo32_num_used(p->rx_fifo) << USART_FSTAT_RXFFL_SHIFT;
 			break;
 
 		case USART_WHBCON:
@@ -751,26 +746,10 @@ static uint64_t usart_io_read(void *opaque, hwaddr haddr, unsigned size) {
 
 		case USART_RIS:
 			value = pmb887x_srb_get_ris(&p->srb);
-
-			// Hack for speed-up emulation
-			p->ris_read_count++;
-			usart_immediate_receive(p);
-			if (p->transfer_pending && p->ris_read_count > 10) {
-				DPRINTF("immediate transfer RIS\n");
-				usart_immediate_transfer(p);
-			}
 			break;
 
 		case USART_MIS:
 			value = pmb887x_srb_get_mis(&p->srb);
-
-			// Hack for speed-up emulation
-			p->ris_read_count++;
-			usart_immediate_receive(p);
-			if (p->transfer_pending && p->ris_read_count > 10) {
-				DPRINTF("immediate transfer MIS\n");
-				usart_immediate_transfer(p);
-			}
 			break;
 
 		case USART_ICR:
@@ -790,11 +769,9 @@ static uint64_t usart_io_read(void *opaque, hwaddr haddr, unsigned size) {
 			break;
 
 		default:
-			EPRINTF("unknown reg access: %02"PRIX64"\n", haddr);
+			DEBUG_GUEST_ERROR(&p->dbg, "unknown reg read: %02"PRIX64"\n", haddr);
 			break;
 	}
-
-	IO_DUMP_READ(haddr + p->mmio.addr, size, value);
 
 	return value;
 }
@@ -804,15 +781,13 @@ static void usart_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned 
 
 	if (haddr != USART_ID && haddr != USART_CLC) {
 		if (!pmb887x_clc_is_enabled(&p->clc))
-			EPRINTF("usart clock not enabled\n");
+			DEBUG_GUEST_ERROR(&p->dbg, "clock not enabled\n");
 	}
 
 	switch (haddr) {
 		case USART_CLC:
 			pmb887x_clc_set(&p->clc, value);
 			usart_update_state(p);
-			if (pmb887x_clc_is_enabled(&p->clc))
-				usart_schedule_accept_input(p);
 			break;
 
 		case USART_PISEL:
@@ -827,7 +802,7 @@ static void usart_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned 
 			p->con = (value & ~USART_CON_HARDWARE_MODIFIED_MASK) | (p->con & USART_CON_HARDWARE_MODIFIED_MASK);
 			usart_flow_control_update(p);
 			if (baudrate_generator_start)
-				DPRINTF("baudrate=%u\n", usart_get_baud_rate(p));
+				DEBUG_LOG(&p->dbg, "baudrate=%u\n", usart_get_baud_rate(p));
 			break;
 		}
 
@@ -871,7 +846,7 @@ static void usart_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned 
 				p->autobaud_pending = false;
 				if (p->abcon & USART_ABCON_AUREN)
 					p->con &= ~USART_CON_REN;
-				usart_schedule_accept_input(p);
+				usart_rx_line_start(p);
 			}
 			if (value & USART_WHBABCON_CLRABEN)
 				p->abcon &= ~USART_ABCON_ABEN;
@@ -893,8 +868,10 @@ static void usart_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned 
 
 		case USART_ICR:
 			pmb887x_srb_set_icr(&p->srb, value);
-			if (value & USART_ICR_ABDET)
-				usart_schedule_accept_input(p);
+			if (value & USART_ICR_ABDET) {
+				p->autobaud_pending = false;
+				usart_rx_line_start(p);
+			}
 			break;
 
 		case USART_ISR:
@@ -913,11 +890,9 @@ static void usart_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned 
 			break;
 
 		default:
-			EPRINTF("unknown reg access: %02"PRIX64"\n", haddr);
+			DEBUG_GUEST_ERROR(&p->dbg, "unknown reg write: %02"PRIX64" = %08"PRIX64"\n", haddr, value);
 			break;
 	}
-
-	IO_DUMP_WRITE(haddr + p->mmio.addr, size, value);
 }
 
 static const MemoryRegionOps io_ops = {
@@ -930,7 +905,35 @@ static const MemoryRegionOps io_ops = {
 	}
 };
 
-static void usart_handle_rx_input(void *_opaque, int _id, int _level) {
+static void usart_break_timer_expire(void *opaque) {
+	pmb887x_usart_t *p = opaque;
+	bool is_async = (p->con & USART_CON_M) != USART_CON_M_SYNC_8BIT;
+	if (!pmb887x_clc_is_enabled(&p->clc) || !is_async || (p->con & USART_CON_REN) == 0)
+		return;
+
+	DEBUG_LOG(&p->dbg, "break received\n");
+	usart_receive_word(p, 0);
+	if (p->con & USART_CON_FEN) {
+		p->con |= USART_CON_FE;
+		pmb887x_srb_set_isr(&p->srb, USART_ISR_ERR);
+	}
+	usart_receive_complete(p, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL));
+}
+
+static void usart_handle_rx_input(void *opaque, int _id, int level) {
+	pmb887x_usart_t *p = opaque;
+	bool rxd_level = level != 0;
+	if (rxd_level == p->rxd_level)
+		return;
+
+	p->rxd_level = rxd_level;
+	if (rxd_level) {
+		timer_del(p->break_timer);
+		return;
+	}
+
+	int64_t frame_time_ns = usart_baud_ticks_to_ns(p, usart_frame_bits(p));
+	timer_mod_ns(p->break_timer, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + MAX(1, frame_time_ns));
 }
 
 static void usart_handle_cts_input(void *opaque, int _id, int level) {
@@ -968,35 +971,40 @@ static void usart_init(Object *obj) {
 	qdev_init_gpio_in_named(dev, usart_handle_dmac_rx_clr, "DMAC_RX_CLR", 1);
 	qdev_init_gpio_out_named(dev, &p->dmac_rx_breq, "DMAC_RX_BREQ", 1);
 
-	qdev_init_gpio_in_named(dev, usart_handle_rx_input, "RXD_IN", 1);
-	qdev_init_gpio_in_named(dev, usart_handle_cts_input, "CTS_IN", 1);
-	qdev_init_gpio_out_named(dev, &p->gpio_txd, "TXD_OUT", 1);
-	qdev_init_gpio_out_named(dev, &p->gpio_rts, "RTS_OUT", 1);
+	qdev_init_gpio_in_named(dev, usart_handle_rx_input, "RXD", 1);
+	qdev_init_gpio_in_named(dev, usart_handle_cts_input, "CTS", 1);
+	qdev_init_gpio_out_named(dev, &p->gpio_txd, "TXD", 1);
+	qdev_init_gpio_out_named(dev, &p->gpio_rts, "RTS", 1);
 }
 
 static void usart_realize(DeviceState *dev, Error **errp) {
 	pmb887x_usart_t *p = PMB887X_USART(dev);
+	pmb887x_mod_debug_init(&p->dbg, dev, &p->mmio, &pmb887x_usart_regs);
 	
 	pmb887x_clc_set(&p->clc, 1U << MOD_CLC_RMC_SHIFT);
 	
 	for (int i = 0; i < ARRAY_SIZE(p->irq); i++) {
-		if (!p->irq[i])
-			hw_error("pmb887x-usart: irq %d not set", i);
+		if (!p->irq[i]) {
+			error_setg(errp, "%s: IRQ %d is not connected", object_get_typename(OBJECT(dev)), i);
+			return;
+		}
 	}
 	
-	pmb887x_fifo16_init(&p->tx_fifo_buffered, USART_FIFO_SIZE);
-	pmb887x_fifo16_init(&p->rx_fifo_buffered, USART_FIFO_SIZE);
+	fifo32_create(&p->tx_fifo_buffered, USART_FIFO_SIZE);
+	fifo32_create(&p->rx_fifo_buffered, USART_FIFO_SIZE);
 	
-	pmb887x_fifo16_init(&p->tx_fifo_single, 1);
-	pmb887x_fifo16_init(&p->rx_fifo_single, 1);
+	fifo32_create(&p->tx_fifo_single, 1);
+	fifo32_create(&p->rx_fifo_single, 1);
 
-	pmb887x_fifo16_init(&p->tx_buffer, 1);
+	fifo32_create(&p->tx_buffer, 1);
+	fifo8_create(&p->rx_line, USART_RX_LINE_SIZE);
 
 	pmb887x_srb_init(&p->srb, p->irq, ARRAY_SIZE(p->irq));
 
 	p->timer = timer_new_ns(QEMU_CLOCK_VIRTUAL, usart_timer_reset, p);
 	p->tmo_timer = timer_new_ns(QEMU_CLOCK_VIRTUAL, usart_tmo_timer_reset, p);
-	p->rx_timer = timer_new_ns(QEMU_CLOCK_VIRTUAL, usart_accept_input, p);
+	p->rx_timer = timer_new_ns(QEMU_CLOCK_VIRTUAL, usart_rx_line_expire, p);
+	p->break_timer = timer_new_ns(QEMU_CLOCK_VIRTUAL, usart_break_timer_expire, p);
 	p->tx_fifo = &p->tx_fifo_single;
 	p->rx_fifo = &p->rx_fifo_single;
 	usart_tx_fifo_config(p, 0);
@@ -1012,6 +1020,7 @@ static void usart_reset(DeviceState *dev) {
 	timer_del(p->timer);
 	timer_del(p->tmo_timer);
 	timer_del(p->rx_timer);
+	timer_del(p->break_timer);
 	if (p->watch_tag) {
 		g_source_remove(p->watch_tag);
 		p->watch_tag = 0;
@@ -1020,16 +1029,17 @@ static void usart_reset(DeviceState *dev) {
 	pmb887x_clc_set(&p->clc, MOD_CLC_DISR);
 	pmb887x_srb_reset(&p->srb);
 
-	pmb887x_fifo_reset(&p->tx_fifo_buffered);
-	pmb887x_fifo_reset(&p->rx_fifo_buffered);
-	pmb887x_fifo_reset(&p->tx_fifo_single);
-	pmb887x_fifo_reset(&p->rx_fifo_single);
-	pmb887x_fifo_reset(&p->tx_buffer);
+	fifo32_reset(&p->tx_fifo_buffered);
+	fifo32_reset(&p->rx_fifo_buffered);
+	fifo32_reset(&p->tx_fifo_single);
+	fifo32_reset(&p->rx_fifo_single);
+	fifo32_reset(&p->tx_buffer);
+	fifo8_reset(&p->rx_line);
+	p->rx_frame_end_ns = 0;
 
 	p->transfer_pending = false;
 	p->autobaud_pending = false;
 	p->cts_input_active = false;
-	p->ris_read_count = 0;
 
 	p->pisel = 0;
 	p->con = 0;

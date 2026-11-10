@@ -179,20 +179,32 @@ int64_t cpu_get_real_clock(void)
     return MIN(ti, qatomic_read(&qemu_virtual_clock_cap));
 }
 
+static int64_t cpu_clock_position(void)
+{
+    if (cpu_clock_owner) {
+        int64_t position = cpu_clock_owner_position();
+
+        if (position != INT64_MAX) {
+            return position;
+        }
+    }
+    return cpu_get_real_clock();
+}
+
 int64_t cpu_get_clock(void)
 {
-    int64_t position;
-
     if (!qemu_virtual_timers_on_vcpu) {
         return cpu_get_raw_clock();
     }
-    if (cpu_clock_owner) {
-        position = cpu_clock_owner_position();
-        if (position != INT64_MAX) {
-            return cpu_clock_monotonic(position);
-        }
+    return cpu_clock_monotonic(cpu_clock_position());
+}
+
+int64_t cpu_peek_clock(void)
+{
+    if (!qemu_virtual_timers_on_vcpu) {
+        return cpu_get_raw_clock();
     }
-    return cpu_clock_monotonic(cpu_get_real_clock());
+    return MAX(cpu_clock_position(), qatomic_read(&qemu_virtual_clock_last));
 }
 
 static void cpu_clock_owner_write(int64_t anchor, uint32_t cycles,

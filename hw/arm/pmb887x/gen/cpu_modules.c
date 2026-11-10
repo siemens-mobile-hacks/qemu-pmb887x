@@ -35,6 +35,7 @@ static const pmb887x_dsp_peripheral_config_t pmb8876_dsp_peripherals[] = {
 		.size = 0x0016,
 		.ram_base = 0,
 		.ram_size = 0,
+		.regs = &pmb887x_dsp_interrupt_regs,
 	},
 	{
 		.name = "CIPH",
@@ -43,6 +44,7 @@ static const pmb887x_dsp_peripheral_config_t pmb8876_dsp_peripherals[] = {
 		.size = 0x0010,
 		.ram_base = PMB8876_TEAK_CIPHER_RAM_BASE,
 		.ram_size = PMB8876_TEAK_CIPHER_RAM_SIZE,
+		.regs = &pmb887x_dsp_cipher_regs,
 	},
 	{
 		.name = "TMR1",
@@ -51,6 +53,7 @@ static const pmb887x_dsp_peripheral_config_t pmb8876_dsp_peripherals[] = {
 		.size = 0x0004,
 		.ram_base = 0,
 		.ram_size = 0,
+		.regs = &pmb887x_dsp_timer1_regs,
 	},
 	{
 		.name = "TMR2",
@@ -59,6 +62,7 @@ static const pmb887x_dsp_peripheral_config_t pmb8876_dsp_peripherals[] = {
 		.size = 0x0003,
 		.ram_base = 0,
 		.ram_size = 0,
+		.regs = &pmb887x_dsp_timer2_regs,
 	},
 	{
 		.name = "EQ",
@@ -67,6 +71,7 @@ static const pmb887x_dsp_peripheral_config_t pmb8876_dsp_peripherals[] = {
 		.size = 0x0007,
 		.ram_base = 0,
 		.ram_size = 0,
+		.regs = &pmb887x_dsp_equalizer_regs,
 	},
 	{
 		.name = "CHDEC",
@@ -75,6 +80,7 @@ static const pmb887x_dsp_peripheral_config_t pmb8876_dsp_peripherals[] = {
 		.size = 0x0010,
 		.ram_base = 0,
 		.ram_size = 0,
+		.regs = &pmb887x_dsp_channel_decoder_regs,
 	},
 	{
 		.name = "AFE",
@@ -83,6 +89,7 @@ static const pmb887x_dsp_peripheral_config_t pmb8876_dsp_peripherals[] = {
 		.size = 0x0007,
 		.ram_base = PMB8876_TEAK_AFE_RAM_BASE,
 		.ram_size = PMB8876_TEAK_AFE_RAM_SIZE,
+		.regs = &pmb887x_dsp_afe_regs,
 	},
 	{
 		.name = "BB",
@@ -91,6 +98,7 @@ static const pmb887x_dsp_peripheral_config_t pmb8876_dsp_peripherals[] = {
 		.size = 0x000D,
 		.ram_base = PMB8876_TEAK_DEMODULATOR_RAM_BASE,
 		.ram_size = PMB8876_TEAK_DEMODULATOR_RAM_SIZE,
+		.regs = &pmb887x_dsp_baseband_regs,
 	},
 	{
 		.name = "MCS",
@@ -99,6 +107,7 @@ static const pmb887x_dsp_peripheral_config_t pmb8876_dsp_peripherals[] = {
 		.size = 0x0006,
 		.ram_base = 0,
 		.ram_size = 0,
+		.regs = &pmb887x_dsp_mcs_regs,
 	},
 	{
 		.name = "DSP",
@@ -107,6 +116,7 @@ static const pmb887x_dsp_peripheral_config_t pmb8876_dsp_peripherals[] = {
 		.size = 0x0009,
 		.ram_base = 0,
 		.ram_size = 0,
+		.regs = &pmb887x_dsp_dsp_8876_regs,
 	},
 	{
 		.name = "MOD",
@@ -115,6 +125,7 @@ static const pmb887x_dsp_peripheral_config_t pmb8876_dsp_peripherals[] = {
 		.size = 0x000B,
 		.ram_base = PMB8876_TEAK_MODULATOR_RAM_BASE,
 		.ram_size = PMB8876_TEAK_MODULATOR_RAM_SIZE,
+		.regs = &pmb887x_dsp_modulator_regs,
 	},
 	{
 		.name = "SSC",
@@ -123,6 +134,7 @@ static const pmb887x_dsp_peripheral_config_t pmb8876_dsp_peripherals[] = {
 		.size = 0x0009,
 		.ram_base = 0,
 		.ram_size = 0,
+		.regs = &pmb887x_dsp_ssc_regs,
 	},
 	{
 		.name = "I2S1",
@@ -131,6 +143,7 @@ static const pmb887x_dsp_peripheral_config_t pmb8876_dsp_peripherals[] = {
 		.size = 0x000B,
 		.ram_base = PMB8876_TEAK_I2S1_RAM_BASE,
 		.ram_size = PMB8876_TEAK_I2S1_RAM_SIZE,
+		.regs = &pmb887x_dsp_i2s_regs,
 	},
 	{
 		.name = "I2S2",
@@ -139,6 +152,7 @@ static const pmb887x_dsp_peripheral_config_t pmb8876_dsp_peripherals[] = {
 		.size = 0x000B,
 		.ram_base = PMB8876_TEAK_I2S2_RAM_BASE,
 		.ram_size = PMB8876_TEAK_I2S2_RAM_SIZE,
+		.regs = &pmb887x_dsp_i2s_regs,
 	},
 	{
 		.name = "I2S3",
@@ -147,6 +161,7 @@ static const pmb887x_dsp_peripheral_config_t pmb8876_dsp_peripherals[] = {
 		.size = 0x000B,
 		.ram_base = PMB8876_TEAK_I2S3_RAM_BASE,
 		.ram_size = PMB8876_TEAK_I2S3_RAM_SIZE,
+		.regs = &pmb887x_dsp_i2s_tx_regs,
 	},
 };
 
@@ -183,10 +198,10 @@ static const int pmb8876_usart0_irqs[] = {
 };
 
 static const pmb887x_cpu_module_gpio_t pmb8876_usart0_gpios[] = {
-	{"RXD_IN",	PMB8876_GPIO_USART0_RXD,	0},
-	{"TXD_OUT",	PMB8876_GPIO_USART0_TXD,	0},
-	{"RTS_OUT",	PMB8876_GPIO_USART0_RTS,	0},
-	{"CTS_IN",	PMB8876_GPIO_USART0_CTS,	0},
+	{"RXD",	PMB8876_GPIO_USART0_RXD,	0,	PMB887X_GPIO_DIR_IN},
+	{"TXD",	PMB8876_GPIO_USART0_TXD,	0,	PMB887X_GPIO_DIR_OUT},
+	{"RTS",	PMB8876_GPIO_USART0_RTS,	0,	PMB887X_GPIO_DIR_OUT},
+	{"CTS",	PMB8876_GPIO_USART0_CTS,	0,	PMB887X_GPIO_DIR_IN},
 };
 
 static const pmb887x_cpu_module_dma_t pmb8876_usart0_dma[] = {
@@ -229,10 +244,11 @@ static const int pmb8876_usart1_irqs[] = {
 };
 
 static const pmb887x_cpu_module_gpio_t pmb8876_usart1_gpios[] = {
-	{"RXD_IN",	PMB8876_GPIO_USART1_RXD,	0},
-	{"TXD_OUT",	PMB8876_GPIO_USART1_TXD,	0},
-	{"RTS_OUT",	PMB8876_GPIO_USART1_RTS,	0},
-	{"CTS_IN",	PMB8876_GPIO_USART1_CTS,	0},
+	{"RXD",	PMB8876_GPIO_USART1_RXD,	0,	PMB887X_GPIO_DIR_IN},
+	{"TXD",	PMB8876_GPIO_USART1_TXD,	0,	PMB887X_GPIO_DIR_OUT},
+	{"RTS",	PMB8876_GPIO_USART1_RTS,	0,	PMB887X_GPIO_DIR_OUT},
+	{"CTS",	PMB8876_GPIO_USART1_CTS,	0,	PMB887X_GPIO_DIR_IN},
+	{"TXD",	PMB8876_GPIO_IRDA_TX,		2,	PMB887X_GPIO_DIR_OUT},
 };
 
 static const pmb887x_cpu_module_dma_t pmb8876_usart1_dma[] = {
@@ -270,8 +286,9 @@ static const int pmb8876_capcom0_irqs[] = {
 };
 
 static const pmb887x_cpu_module_gpio_t pmb8876_capcom0_gpios[] = {
-	{"CC5_IN",	PMB8876_GPIO_CLKOUT0,	2},
-	{"CC4_IN",	PMB8876_GPIO_DSPIN1,	2},
+	{"CC6",	PMB8876_GPIO_USART0_RTS,	2,	PMB887X_GPIO_DIR_IN},
+	{"CC5",	PMB8876_GPIO_CLKOUT0,		2,	PMB887X_GPIO_DIR_IN},
+	{"CC4",	PMB8876_GPIO_DSPIN1,		2,	PMB887X_GPIO_DIR_IN},
 };
 
 static const int pmb8876_capcom1_irqs[] = {
@@ -288,24 +305,25 @@ static const int pmb8876_capcom1_irqs[] = {
 };
 
 static const pmb887x_cpu_module_gpio_t pmb8876_capcom1_gpios[] = {
-	{"CC6_IN",	PMB8876_GPIO_DSPOUT0,	2},
-	{"CC3_IN",	PMB8876_GPIO_CIF_RESET,	1},
+	{"CC2",	PMB8876_GPIO_USART0_CTS,	2,	PMB887X_GPIO_DIR_IN},
+	{"CC6",	PMB8876_GPIO_DSPOUT0,		2,	PMB887X_GPIO_DIR_IN},
+	{"CC3",	PMB8876_GPIO_CIF_RESET,		1,	PMB887X_GPIO_DIR_IN},
 };
 
 static const pmb887x_cpu_module_gpio_t pmb8876_gpio_gpios[] = {
-	{"MON3_OUT",	PMB8876_GPIO_KP_IN3,		1},
-	{"MON4_OUT",	PMB8876_GPIO_KP_OUT0,		1},
-	{"MON3_OUT",	PMB8876_GPIO_USART0_RTS,	3},
-	{"MON3_OUT",	PMB8876_GPIO_USB_DPLUS,		1},
-	{"MON4_OUT",	PMB8876_GPIO_SSC1_MRST,		1},
-	{"MON3_OUT",	PMB8876_GPIO_I2S1_WA0,		1},
-	{"MON3_OUT",	PMB8876_GPIO_MMCI_DAT2,		2},
-	{"MON4_OUT",	PMB8876_GPIO_MMCI_DAT3,		2},
-	{"MON4_OUT",	PMB8876_GPIO_T_OUT10,		3},
-	{"MON3_OUT",	PMB8876_GPIO_T_OUT11,		2},
-	{"MON4_OUT",	PMB8876_GPIO_T_OUT12,		2},
-	{"MON3_OUT",	PMB8876_GPIO_CIF_D0,		1},
-	{"MON4_OUT",	PMB8876_GPIO_CIF_D1,		1},
+	{"MON3",	PMB8876_GPIO_KP_IN3,		1,	PMB887X_GPIO_DIR_OUT},
+	{"MON4",	PMB8876_GPIO_KP_OUT0,		1,	PMB887X_GPIO_DIR_OUT},
+	{"MON3",	PMB8876_GPIO_USART0_RTS,	3,	PMB887X_GPIO_DIR_OUT},
+	{"MON3",	PMB8876_GPIO_SSC1_SCLK,		1,	PMB887X_GPIO_DIR_OUT},
+	{"MON4",	PMB8876_GPIO_SSC1_MRST,		1,	PMB887X_GPIO_DIR_OUT},
+	{"MON3",	PMB8876_GPIO_I2S1_WA0,		1,	PMB887X_GPIO_DIR_OUT},
+	{"MON3",	PMB8876_GPIO_MMCI_DAT2,		2,	PMB887X_GPIO_DIR_OUT},
+	{"MON4",	PMB8876_GPIO_MMCI_DAT3,		2,	PMB887X_GPIO_DIR_OUT},
+	{"MON4",	PMB8876_GPIO_T_OUT10,		3,	PMB887X_GPIO_DIR_OUT},
+	{"MON3",	PMB8876_GPIO_T_OUT11,		2,	PMB887X_GPIO_DIR_OUT},
+	{"MON4",	PMB8876_GPIO_T_OUT12,		2,	PMB887X_GPIO_DIR_OUT},
+	{"MON3",	PMB8876_GPIO_CIF_D0,		1,	PMB887X_GPIO_DIR_OUT},
+	{"MON4",	PMB8876_GPIO_CIF_D1,		1,	PMB887X_GPIO_DIR_OUT},
 };
 
 static const int pmb8876_scu_irqs[] = {
@@ -328,23 +346,24 @@ static const int pmb8876_scu_irqs[] = {
 };
 
 static const pmb887x_cpu_module_gpio_t pmb8876_scu_gpios[] = {
-	{"EXTI0_IN",	PMB8876_GPIO_KP_IN0,		2},
-	{"EXTI1_IN",	PMB8876_GPIO_KP_OUT0,		2},
-	{"EXTI3_IN",	PMB8876_GPIO_USART1_RXD,	3},
-	{"EXTI0_IN",	PMB8876_GPIO_USART1_RTS,	3},
-	{"EXTI6_IN",	PMB8876_GPIO_I2C_SCL,		2},
-	{"EXTI2_IN",	PMB8876_GPIO_I2C_SDA,		2},
-	{"EXTI3_IN",	PMB8876_GPIO_I2S2_CLK0,		3},
-	{"EXTI1_IN",	PMB8876_GPIO_MMCI_DAT1,		2},
-	{"EXTI5_IN",	PMB8876_GPIO_T_OUT1,		4},
-	{"EXTI6_IN",	PMB8876_GPIO_T_OUT4,		4},
-	{"EXTI5_IN",	PMB8876_GPIO_T_OUT7,		4},
-	{"EXTI7_IN",	PMB8876_GPIO_T_OUT8,		4},
-	{"EXTI4_IN",	PMB8876_GPIO_RF_STR0,		1},
-	{"EXTI4_IN",	PMB8876_GPIO_CLKOUT0,		3},
-	{"EXTI4_IN",	PMB8876_GPIO_DIF_RD,		1},
-	{"EXTI6_IN",	PMB8876_GPIO_DIF_RESET2,	2},
-	{"EXTI5_IN",	PMB8876_GPIO_USIF_RXD_MRST,	1},
+	{"EXTI0",	PMB8876_GPIO_KP_IN0,		2,	PMB887X_GPIO_DIR_IN},
+	{"EXTI1",	PMB8876_GPIO_KP_OUT0,		2,	PMB887X_GPIO_DIR_IN},
+	{"EXTI2",	PMB8876_GPIO_USART0_RXD,	3,	PMB887X_GPIO_DIR_IN},
+	{"EXTI3",	PMB8876_GPIO_USART1_RXD,	3,	PMB887X_GPIO_DIR_IN},
+	{"EXTI0",	PMB8876_GPIO_USART1_RTS,	3,	PMB887X_GPIO_DIR_IN},
+	{"EXTI6",	PMB8876_GPIO_I2C_SCL,		2,	PMB887X_GPIO_DIR_IN},
+	{"EXTI2",	PMB8876_GPIO_I2C_SDA,		2,	PMB887X_GPIO_DIR_IN},
+	{"EXTI3",	PMB8876_GPIO_I2S2_CLK0,		3,	PMB887X_GPIO_DIR_IN},
+	{"EXTI1",	PMB8876_GPIO_MMCI_DAT1,		2,	PMB887X_GPIO_DIR_IN},
+	{"EXTI5",	PMB8876_GPIO_T_OUT1,		4,	PMB887X_GPIO_DIR_IN},
+	{"EXTI6",	PMB8876_GPIO_T_OUT4,		4,	PMB887X_GPIO_DIR_IN},
+	{"EXTI5",	PMB8876_GPIO_T_OUT7,		4,	PMB887X_GPIO_DIR_IN},
+	{"EXTI7",	PMB8876_GPIO_T_OUT8,		4,	PMB887X_GPIO_DIR_IN},
+	{"EXTI4",	PMB8876_GPIO_RF_STR0,		1,	PMB887X_GPIO_DIR_IN},
+	{"EXTI4",	PMB8876_GPIO_CLKOUT0,		3,	PMB887X_GPIO_DIR_IN},
+	{"EXTI4",	PMB8876_GPIO_DIF_RD,		1,	PMB887X_GPIO_DIR_IN},
+	{"EXTI6",	PMB8876_GPIO_DIF_RESET2,	2,	PMB887X_GPIO_DIR_IN},
+	{"EXTI5",	PMB8876_GPIO_USIF_RXD_MRST,	1,	PMB887X_GPIO_DIR_IN},
 };
 
 static const int pmb8876_cgu_irqs[] = {
@@ -352,7 +371,7 @@ static const int pmb8876_cgu_irqs[] = {
 };
 
 static const pmb887x_cpu_module_gpio_t pmb8876_cgu_gpios[] = {
-	{"CLK32_OUT",	PMB8876_GPIO_DSPIN0,	1},
+	{"CLK32",	PMB8876_GPIO_DSPIN0,	1,	PMB887X_GPIO_DIR_OUT},
 };
 
 static const int pmb8876_sccu_irqs[] = {
@@ -399,30 +418,30 @@ static const int pmb8876_keypad_irqs[] = {
 };
 
 static const pmb887x_cpu_module_gpio_t pmb8876_keypad_gpios[] = {
-	{"IN0_IN",		PMB8876_GPIO_KP_IN0,	0},
-	{"IN1_IN",		PMB8876_GPIO_KP_IN1,	0},
-	{"IN2_IN",		PMB8876_GPIO_KP_IN2,	0},
-	{"IN3_IN",		PMB8876_GPIO_KP_IN3,	0},
-	{"IN4_IN",		PMB8876_GPIO_KP_IN4,	0},
-	{"IN5_IN",		PMB8876_GPIO_KP_IN5,	0},
-	{"IN6_IN",		PMB8876_GPIO_KP_IN6,	0},
-	{"OUT0_OUT",	PMB8876_GPIO_KP_OUT0,	0},
-	{"OUT1_OUT",	PMB8876_GPIO_KP_OUT1,	0},
-	{"OUT2_OUT",	PMB8876_GPIO_KP_OUT2,	0},
-	{"OUT3_OUT",	PMB8876_GPIO_KP_OUT3,	0},
+	{"IN0",		PMB8876_GPIO_KP_IN0,	0,	PMB887X_GPIO_DIR_IN},
+	{"IN1",		PMB8876_GPIO_KP_IN1,	0,	PMB887X_GPIO_DIR_IN},
+	{"IN2",		PMB8876_GPIO_KP_IN2,	0,	PMB887X_GPIO_DIR_IN},
+	{"IN3",		PMB8876_GPIO_KP_IN3,	0,	PMB887X_GPIO_DIR_IN},
+	{"IN4",		PMB8876_GPIO_KP_IN4,	0,	PMB887X_GPIO_DIR_IN},
+	{"IN5",		PMB8876_GPIO_KP_IN5,	0,	PMB887X_GPIO_DIR_IN},
+	{"IN6",		PMB8876_GPIO_KP_IN6,	0,	PMB887X_GPIO_DIR_IN},
+	{"OUT0",	PMB8876_GPIO_KP_OUT0,	0,	PMB887X_GPIO_DIR_OUT},
+	{"OUT1",	PMB8876_GPIO_KP_OUT1,	0,	PMB887X_GPIO_DIR_OUT},
+	{"OUT2",	PMB8876_GPIO_KP_OUT2,	0,	PMB887X_GPIO_DIR_OUT},
+	{"OUT3",	PMB8876_GPIO_KP_OUT3,	0,	PMB887X_GPIO_DIR_OUT},
 };
 
 static const pmb887x_cpu_module_gpio_t pmb8876_dsp_gpios[] = {
-	{"DSPOUT0_OUT",		PMB8876_GPIO_DSPOUT0,	0},
-	{"I2S2_CLK0_OUT",	PMB8876_GPIO_I2S2_CLK0,	0},
-	{"I2S2_RX_IN",		PMB8876_GPIO_I2S2_RX,	0},
-	{"I2S2_TX_OUT",		PMB8876_GPIO_I2S2_TX,	0},
-	{"I2S2_WA0_OUT",	PMB8876_GPIO_I2S2_WA0,	0},
-	{"DSPIN0_IN",		PMB8876_GPIO_DSPIN0,	0},
-	{"DSPOUT1_OUT",		PMB8876_GPIO_DSPOUT1,	0},
-	{"DSPIN1_IN",		PMB8876_GPIO_DSPIN1,	0},
-	{"I2S2_CLK1_OUT",	PMB8876_GPIO_I2S2_CLK1,	0},
-	{"I2S2_WA1_OUT",	PMB8876_GPIO_I2S2_WA1,	0},
+	{"DSPOUT0",		PMB8876_GPIO_DSPOUT0,	0,	PMB887X_GPIO_DIR_OUT},
+	{"I2S2_CLK0",	PMB8876_GPIO_I2S2_CLK0,	0,	PMB887X_GPIO_DIR_OUT},
+	{"I2S2_RX",		PMB8876_GPIO_I2S2_RX,	0,	PMB887X_GPIO_DIR_IN},
+	{"I2S2_TX",		PMB8876_GPIO_I2S2_TX,	0,	PMB887X_GPIO_DIR_OUT},
+	{"I2S2_WA0",	PMB8876_GPIO_I2S2_WA0,	0,	PMB887X_GPIO_DIR_OUT},
+	{"DSPIN0",		PMB8876_GPIO_DSPIN0,	0,	PMB887X_GPIO_DIR_IN},
+	{"DSPOUT1",		PMB8876_GPIO_DSPOUT1,	0,	PMB887X_GPIO_DIR_OUT},
+	{"DSPIN1",		PMB8876_GPIO_DSPIN1,	0,	PMB887X_GPIO_DIR_IN},
+	{"I2S2_CLK1",	PMB8876_GPIO_I2S2_CLK1,	0,	PMB887X_GPIO_DIR_OUT},
+	{"I2S2_WA1",	PMB8876_GPIO_I2S2_WA1,	0,	PMB887X_GPIO_DIR_OUT},
 };
 
 static const int pmb8876_gprscu_irqs[] = {
@@ -449,27 +468,19 @@ static const int pmb8876_dif_irqs[] = {
 };
 
 static const pmb887x_cpu_module_gpio_t pmb8876_dif_gpios[] = {
-	{"D2_IN",	PMB8876_GPIO_DIF_D2,	0},
-	{"D2_OUT",	PMB8876_GPIO_DIF_D2,	0},
-	{"D0_IN",	PMB8876_GPIO_DIF_D0,	0},
-	{"D0_OUT",	PMB8876_GPIO_DIF_D0,	0},
-	{"CD_OUT",	PMB8876_GPIO_DIF_CD,	0},
-	{"CS1_OUT",	PMB8876_GPIO_DIF_CS1,	0},
-	{"D1_IN",	PMB8876_GPIO_DIF_D1,	0},
-	{"D1_OUT",	PMB8876_GPIO_DIF_D1,	0},
-	{"D3_IN",	PMB8876_GPIO_DIF_D3,	0},
-	{"D3_OUT",	PMB8876_GPIO_DIF_D3,	0},
-	{"D4_IN",	PMB8876_GPIO_DIF_D4,	0},
-	{"D4_OUT",	PMB8876_GPIO_DIF_D4,	0},
-	{"D5_IN",	PMB8876_GPIO_DIF_D5,	0},
-	{"D5_OUT",	PMB8876_GPIO_DIF_D5,	0},
-	{"D6_IN",	PMB8876_GPIO_DIF_D6,	0},
-	{"D6_OUT",	PMB8876_GPIO_DIF_D6,	0},
-	{"D7_IN",	PMB8876_GPIO_DIF_D7,	0},
-	{"D7_OUT",	PMB8876_GPIO_DIF_D7,	0},
-	{"CS2_OUT",	PMB8876_GPIO_DIF_CS2,	0},
-	{"WR_OUT",	PMB8876_GPIO_DIF_WR,	0},
-	{"RD_OUT",	PMB8876_GPIO_DIF_RD,	0},
+	{"D2",	PMB8876_GPIO_DIF_D2,	0,	PMB887X_GPIO_DIR_IN | PMB887X_GPIO_DIR_OUT},
+	{"D0",	PMB8876_GPIO_DIF_D0,	0,	PMB887X_GPIO_DIR_IN | PMB887X_GPIO_DIR_OUT},
+	{"CD",	PMB8876_GPIO_DIF_CD,	0,	PMB887X_GPIO_DIR_OUT},
+	{"CS1",	PMB8876_GPIO_DIF_CS1,	0,	PMB887X_GPIO_DIR_OUT},
+	{"D1",	PMB8876_GPIO_DIF_D1,	0,	PMB887X_GPIO_DIR_IN | PMB887X_GPIO_DIR_OUT},
+	{"D3",	PMB8876_GPIO_DIF_D3,	0,	PMB887X_GPIO_DIR_IN | PMB887X_GPIO_DIR_OUT},
+	{"D4",	PMB8876_GPIO_DIF_D4,	0,	PMB887X_GPIO_DIR_IN | PMB887X_GPIO_DIR_OUT},
+	{"D5",	PMB8876_GPIO_DIF_D5,	0,	PMB887X_GPIO_DIR_IN | PMB887X_GPIO_DIR_OUT},
+	{"D6",	PMB8876_GPIO_DIF_D6,	0,	PMB887X_GPIO_DIR_IN | PMB887X_GPIO_DIR_OUT},
+	{"D7",	PMB8876_GPIO_DIF_D7,	0,	PMB887X_GPIO_DIR_IN | PMB887X_GPIO_DIR_OUT},
+	{"CS2",	PMB8876_GPIO_DIF_CS2,	0,	PMB887X_GPIO_DIR_OUT},
+	{"WR",	PMB8876_GPIO_DIF_WR,	0,	PMB887X_GPIO_DIR_OUT},
+	{"RD",	PMB8876_GPIO_DIF_RD,	0,	PMB887X_GPIO_DIR_OUT},
 };
 
 static const pmb887x_cpu_module_dma_t pmb8876_dif_dma[] = {
@@ -478,18 +489,12 @@ static const pmb887x_cpu_module_dma_t pmb8876_dif_dma[] = {
 };
 
 static const pmb887x_cpu_module_gpio_t pmb8876_mmci_gpios[] = {
-	{"DAT1_IN",		PMB8876_GPIO_MMCI_DAT1,	0},
-	{"DAT1_OUT",	PMB8876_GPIO_MMCI_DAT1,	0},
-	{"DAT2_IN",		PMB8876_GPIO_MMCI_DAT2,	0},
-	{"DAT2_OUT",	PMB8876_GPIO_MMCI_DAT2,	0},
-	{"DAT3_IN",		PMB8876_GPIO_MMCI_DAT3,	0},
-	{"DAT3_OUT",	PMB8876_GPIO_MMCI_DAT3,	0},
-	{"CMD_IN",		PMB8876_GPIO_MMCI_CMD,	0},
-	{"CMD_OUT",		PMB8876_GPIO_MMCI_CMD,	0},
-	{"DAT0_IN",		PMB8876_GPIO_MMCI_DAT0,	0},
-	{"DAT0_OUT",	PMB8876_GPIO_MMCI_DAT0,	0},
-	{"CLK_IN",		PMB8876_GPIO_MMCI_CLK,	0},
-	{"CLK_OUT",		PMB8876_GPIO_MMCI_CLK,	0},
+	{"DAT1",	PMB8876_GPIO_MMCI_DAT1,	0,	PMB887X_GPIO_DIR_IN | PMB887X_GPIO_DIR_OUT},
+	{"DAT2",	PMB8876_GPIO_MMCI_DAT2,	0,	PMB887X_GPIO_DIR_IN | PMB887X_GPIO_DIR_OUT},
+	{"DAT3",	PMB8876_GPIO_MMCI_DAT3,	0,	PMB887X_GPIO_DIR_IN | PMB887X_GPIO_DIR_OUT},
+	{"CMD",		PMB8876_GPIO_MMCI_CMD,	0,	PMB887X_GPIO_DIR_IN | PMB887X_GPIO_DIR_OUT},
+	{"DAT0",	PMB8876_GPIO_MMCI_DAT0,	0,	PMB887X_GPIO_DIR_IN | PMB887X_GPIO_DIR_OUT},
+	{"CLK",		PMB8876_GPIO_MMCI_CLK,	0,	PMB887X_GPIO_DIR_IN | PMB887X_GPIO_DIR_OUT},
 };
 
 static const int pmb8876_usif_irqs[] = {
@@ -514,10 +519,8 @@ static const int pmb8876_i2c_irqs[] = {
 };
 
 static const pmb887x_cpu_module_gpio_t pmb8876_i2c_gpios[] = {
-	{"SCL_IN",	PMB8876_GPIO_I2C_SCL,	0},
-	{"SCL_OUT",	PMB8876_GPIO_I2C_SCL,	0},
-	{"SDA_IN",	PMB8876_GPIO_I2C_SDA,	0},
-	{"SDA_OUT",	PMB8876_GPIO_I2C_SDA,	0},
+	{"SCL",	PMB8876_GPIO_I2C_SCL,	0,	PMB887X_GPIO_DIR_IN | PMB887X_GPIO_DIR_OUT},
+	{"SDA",	PMB8876_GPIO_I2C_SDA,	0,	PMB887X_GPIO_DIR_IN | PMB887X_GPIO_DIR_OUT},
 };
 
 static const pmb887x_cpu_module_dma_t pmb8876_i2c_dma[] = {
@@ -571,6 +574,7 @@ static const pmb887x_dsp_peripheral_config_t pmb8875_dsp_peripherals[] = {
 		.size = 0x0016,
 		.ram_base = 0,
 		.ram_size = 0,
+		.regs = &pmb887x_dsp_interrupt_regs,
 	},
 	{
 		.name = "CIPH",
@@ -579,6 +583,7 @@ static const pmb887x_dsp_peripheral_config_t pmb8875_dsp_peripherals[] = {
 		.size = 0x0010,
 		.ram_base = PMB8875_TEAK_CIPHER_RAM_BASE,
 		.ram_size = PMB8875_TEAK_CIPHER_RAM_SIZE,
+		.regs = &pmb887x_dsp_cipher_regs,
 	},
 	{
 		.name = "TMR1",
@@ -587,6 +592,7 @@ static const pmb887x_dsp_peripheral_config_t pmb8875_dsp_peripherals[] = {
 		.size = 0x0004,
 		.ram_base = 0,
 		.ram_size = 0,
+		.regs = &pmb887x_dsp_timer1_regs,
 	},
 	{
 		.name = "TMR2",
@@ -595,6 +601,7 @@ static const pmb887x_dsp_peripheral_config_t pmb8875_dsp_peripherals[] = {
 		.size = 0x0003,
 		.ram_base = 0,
 		.ram_size = 0,
+		.regs = &pmb887x_dsp_timer2_regs,
 	},
 	{
 		.name = "EQ",
@@ -603,6 +610,7 @@ static const pmb887x_dsp_peripheral_config_t pmb8875_dsp_peripherals[] = {
 		.size = 0x0007,
 		.ram_base = 0,
 		.ram_size = 0,
+		.regs = &pmb887x_dsp_equalizer_regs,
 	},
 	{
 		.name = "CHDEC",
@@ -611,6 +619,7 @@ static const pmb887x_dsp_peripheral_config_t pmb8875_dsp_peripherals[] = {
 		.size = 0x0010,
 		.ram_base = 0,
 		.ram_size = 0,
+		.regs = &pmb887x_dsp_channel_decoder_regs,
 	},
 	{
 		.name = "AFE",
@@ -619,6 +628,7 @@ static const pmb887x_dsp_peripheral_config_t pmb8875_dsp_peripherals[] = {
 		.size = 0x0007,
 		.ram_base = PMB8875_TEAK_AFE_RAM_BASE,
 		.ram_size = PMB8875_TEAK_AFE_RAM_SIZE,
+		.regs = &pmb887x_dsp_afe_regs,
 	},
 	{
 		.name = "BB",
@@ -627,6 +637,7 @@ static const pmb887x_dsp_peripheral_config_t pmb8875_dsp_peripherals[] = {
 		.size = 0x000D,
 		.ram_base = PMB8875_TEAK_DEMODULATOR_RAM_BASE,
 		.ram_size = PMB8875_TEAK_DEMODULATOR_RAM_SIZE,
+		.regs = &pmb887x_dsp_baseband_regs,
 	},
 	{
 		.name = "MCS",
@@ -635,6 +646,7 @@ static const pmb887x_dsp_peripheral_config_t pmb8875_dsp_peripherals[] = {
 		.size = 0x0006,
 		.ram_base = 0,
 		.ram_size = 0,
+		.regs = &pmb887x_dsp_mcs_regs,
 	},
 	{
 		.name = "DSP",
@@ -643,6 +655,7 @@ static const pmb887x_dsp_peripheral_config_t pmb8875_dsp_peripherals[] = {
 		.size = 0x0009,
 		.ram_base = 0,
 		.ram_size = 0,
+		.regs = &pmb887x_dsp_dsp_regs,
 	},
 	{
 		.name = "MOD",
@@ -651,6 +664,7 @@ static const pmb887x_dsp_peripheral_config_t pmb8875_dsp_peripherals[] = {
 		.size = 0x000B,
 		.ram_base = PMB8875_TEAK_MODULATOR_RAM_BASE,
 		.ram_size = PMB8875_TEAK_MODULATOR_RAM_SIZE,
+		.regs = &pmb887x_dsp_modulator_regs,
 	},
 	{
 		.name = "SSC",
@@ -659,6 +673,7 @@ static const pmb887x_dsp_peripheral_config_t pmb8875_dsp_peripherals[] = {
 		.size = 0x0009,
 		.ram_base = 0,
 		.ram_size = 0,
+		.regs = &pmb887x_dsp_ssc_regs,
 	},
 	{
 		.name = "I2S1",
@@ -667,6 +682,7 @@ static const pmb887x_dsp_peripheral_config_t pmb8875_dsp_peripherals[] = {
 		.size = 0x000B,
 		.ram_base = PMB8875_TEAK_I2S1_RAM_BASE,
 		.ram_size = PMB8875_TEAK_I2S1_RAM_SIZE,
+		.regs = &pmb887x_dsp_i2s_regs,
 	},
 	{
 		.name = "I2S2",
@@ -675,6 +691,7 @@ static const pmb887x_dsp_peripheral_config_t pmb8875_dsp_peripherals[] = {
 		.size = 0x000B,
 		.ram_base = PMB8875_TEAK_I2S2_RAM_BASE,
 		.ram_size = PMB8875_TEAK_I2S2_RAM_SIZE,
+		.regs = &pmb887x_dsp_i2s_regs,
 	},
 	{
 		.name = "I2S3",
@@ -683,6 +700,7 @@ static const pmb887x_dsp_peripheral_config_t pmb8875_dsp_peripherals[] = {
 		.size = 0x000B,
 		.ram_base = PMB8875_TEAK_I2S3_RAM_BASE,
 		.ram_size = PMB8875_TEAK_I2S3_RAM_SIZE,
+		.regs = &pmb887x_dsp_i2s_tx_regs,
 	},
 };
 
@@ -719,10 +737,10 @@ static const int pmb8875_usart0_irqs[] = {
 };
 
 static const pmb887x_cpu_module_gpio_t pmb8875_usart0_gpios[] = {
-	{"RXD_IN",	PMB8875_GPIO_USART0_RXD,	0},
-	{"TXD_OUT",	PMB8875_GPIO_USART0_TXD,	0},
-	{"RTS_OUT",	PMB8875_GPIO_USART0_RTS,	0},
-	{"CTS_IN",	PMB8875_GPIO_USART0_CTS,	0},
+	{"RXD",	PMB8875_GPIO_USART0_RXD,	0,	PMB887X_GPIO_DIR_IN},
+	{"TXD",	PMB8875_GPIO_USART0_TXD,	0,	PMB887X_GPIO_DIR_OUT},
+	{"RTS",	PMB8875_GPIO_USART0_RTS,	0,	PMB887X_GPIO_DIR_OUT},
+	{"CTS",	PMB8875_GPIO_USART0_CTS,	0,	PMB887X_GPIO_DIR_IN},
 };
 
 static const int pmb8875_ssc_irqs[] = {
@@ -733,9 +751,9 @@ static const int pmb8875_ssc_irqs[] = {
 };
 
 static const pmb887x_cpu_module_gpio_t pmb8875_ssc_gpios[] = {
-	{"SCLK_OUT",	PMB8875_GPIO_SSC2_SCLK,	0},
-	{"MTSR_OUT",	PMB8875_GPIO_SSC2_MTSR,	0},
-	{"MRST_IN",		PMB8875_GPIO_SSC2_MRST,	0},
+	{"SCLK",	PMB8875_GPIO_SSC2_SCLK,	0,	PMB887X_GPIO_DIR_OUT},
+	{"MTSR",	PMB8875_GPIO_SSC2_MTSR,	0,	PMB887X_GPIO_DIR_OUT},
+	{"MRST",	PMB8875_GPIO_SSC2_MRST,	0,	PMB887X_GPIO_DIR_IN},
 };
 
 static const pmb887x_cpu_module_dma_t pmb8875_ssc_dma[] = {
@@ -766,10 +784,10 @@ static const int pmb8875_usart1_irqs[] = {
 };
 
 static const pmb887x_cpu_module_gpio_t pmb8875_usart1_gpios[] = {
-	{"RXD_IN",	PMB8875_GPIO_USART1_RXD,	0},
-	{"TXD_OUT",	PMB8875_GPIO_USART1_TXD,	0},
-	{"RTS_OUT",	PMB8875_GPIO_USART1_RTS,	0},
-	{"CTS_IN",	PMB8875_GPIO_USART1_CTS,	0},
+	{"RXD",	PMB8875_GPIO_USART1_RXD,	0,	PMB887X_GPIO_DIR_IN},
+	{"TXD",	PMB8875_GPIO_USART1_TXD,	0,	PMB887X_GPIO_DIR_OUT},
+	{"RTS",	PMB8875_GPIO_USART1_RTS,	0,	PMB887X_GPIO_DIR_OUT},
+	{"CTS",	PMB8875_GPIO_USART1_CTS,	0,	PMB887X_GPIO_DIR_IN},
 };
 
 static const pmb887x_cpu_module_dma_t pmb8875_usart1_dma[] = {
@@ -785,12 +803,12 @@ static const int pmb8875_dif_irqs[] = {
 };
 
 static const pmb887x_cpu_module_gpio_t pmb8875_dif_gpios[] = {
-	{"SCLK_OUT",	PMB8875_GPIO_DIF_CLK,	0},
-	{"MTSR_OUT",	PMB8875_GPIO_DIF_DAT,	0},
-	{"RS_OUT",		PMB8875_GPIO_DIF_RS,	0},
-	{"CS_OUT",		PMB8875_GPIO_DIF_CS,	0},
-	{"RESET_OUT",	PMB8875_GPIO_DIF_RESET,	0},
-	{"MRST_IN",		PMB8875_GPIO_DSPIN1,	3},
+	{"SCLK",	PMB8875_GPIO_DIF_CLK,	0,	PMB887X_GPIO_DIR_OUT},
+	{"MTSR",	PMB8875_GPIO_DIF_DAT,	0,	PMB887X_GPIO_DIR_OUT},
+	{"RS",		PMB8875_GPIO_DIF_RS,	0,	PMB887X_GPIO_DIR_OUT},
+	{"CS",		PMB8875_GPIO_DIF_CS,	0,	PMB887X_GPIO_DIR_OUT},
+	{"RESET",	PMB8875_GPIO_DIF_RESET,	0,	PMB887X_GPIO_DIR_OUT},
+	{"MRST",	PMB8875_GPIO_DSPIN1,	3,	PMB887X_GPIO_DIR_IN},
 };
 
 static const pmb887x_cpu_module_dma_t pmb8875_dif_dma[] = {
@@ -828,7 +846,7 @@ static const int pmb8875_capcom0_irqs[] = {
 };
 
 static const pmb887x_cpu_module_gpio_t pmb8875_capcom0_gpios[] = {
-	{"CC6_IN",	PMB8875_GPIO_USART0_RTS,	2},
+	{"CC6",	PMB8875_GPIO_USART0_RTS,	2,	PMB887X_GPIO_DIR_IN},
 };
 
 static const int pmb8875_capcom1_irqs[] = {
@@ -845,14 +863,14 @@ static const int pmb8875_capcom1_irqs[] = {
 };
 
 static const pmb887x_cpu_module_gpio_t pmb8875_capcom1_gpios[] = {
-	{"CC0_IN",	PMB8875_GPIO_KP_IN5,		2},
-	{"CC2_IN",	PMB8875_GPIO_USART0_CTS,	2},
-	{"CC6_IN",	PMB8875_GPIO_DSPOUT0,		2},
-	{"CC7_IN",	PMB8875_GPIO_SSC2_MRST,		2},
+	{"CC0",	PMB8875_GPIO_KP_IN5,		2,	PMB887X_GPIO_DIR_IN},
+	{"CC2",	PMB8875_GPIO_USART0_CTS,	2,	PMB887X_GPIO_DIR_IN},
+	{"CC6",	PMB8875_GPIO_DSPOUT0,		2,	PMB887X_GPIO_DIR_IN},
+	{"CC7",	PMB8875_GPIO_SSC2_MRST,		2,	PMB887X_GPIO_DIR_IN},
 };
 
 static const pmb887x_cpu_module_gpio_t pmb8875_gpio_gpios[] = {
-	{"MON4_OUT",	PMB8875_GPIO_KP_OUT0,	1},
+	{"MON4",	PMB8875_GPIO_KP_OUT0,	1,	PMB887X_GPIO_DIR_OUT},
 };
 
 static const int pmb8875_scu_irqs[] = {
@@ -875,16 +893,17 @@ static const int pmb8875_scu_irqs[] = {
 };
 
 static const pmb887x_cpu_module_gpio_t pmb8875_scu_gpios[] = {
-	{"EXTI0_IN",	PMB8875_GPIO_KP_IN0,		2},
-	{"EXTI0_IN",	PMB8875_GPIO_KP_IN0,		6},
-	{"EXTI1_IN",	PMB8875_GPIO_KP_OUT0,		2},
-	{"EXTI1_IN",	PMB8875_GPIO_KP_OUT0,		6},
-	{"EXTI3_IN",	PMB8875_GPIO_USART1_RXD,	3},
-	{"EXTI2_IN",	PMB8875_GPIO_I2C_SDA,		2},
-	{"EXTI2_IN",	PMB8875_GPIO_I2C_SDA,		6},
-	{"EXTI4_IN",	PMB8875_GPIO_RF_STR0,		1},
-	{"EXTI4_IN",	PMB8875_GPIO_RF_STR0,		5},
-	{"EXTI4_IN",	PMB8875_GPIO_CLKOUT0,		3},
+	{"EXTI0",	PMB8875_GPIO_KP_IN0,		2,	PMB887X_GPIO_DIR_IN},
+	{"EXTI0",	PMB8875_GPIO_KP_IN0,		6,	PMB887X_GPIO_DIR_IN},
+	{"EXTI1",	PMB8875_GPIO_KP_OUT0,		2,	PMB887X_GPIO_DIR_IN},
+	{"EXTI1",	PMB8875_GPIO_KP_OUT0,		6,	PMB887X_GPIO_DIR_IN},
+	{"EXTI2",	PMB8875_GPIO_USART0_RXD,	3,	PMB887X_GPIO_DIR_IN},
+	{"EXTI3",	PMB8875_GPIO_USART1_RXD,	3,	PMB887X_GPIO_DIR_IN},
+	{"EXTI2",	PMB8875_GPIO_I2C_SDA,		2,	PMB887X_GPIO_DIR_IN},
+	{"EXTI2",	PMB8875_GPIO_I2C_SDA,		6,	PMB887X_GPIO_DIR_IN},
+	{"EXTI4",	PMB8875_GPIO_RF_STR0,		1,	PMB887X_GPIO_DIR_IN},
+	{"EXTI4",	PMB8875_GPIO_RF_STR0,		5,	PMB887X_GPIO_DIR_IN},
+	{"EXTI4",	PMB8875_GPIO_CLKOUT0,		3,	PMB887X_GPIO_DIR_IN},
 };
 
 static const int pmb8875_cgu_irqs[] = {
@@ -892,8 +911,8 @@ static const int pmb8875_cgu_irqs[] = {
 };
 
 static const pmb887x_cpu_module_gpio_t pmb8875_cgu_gpios[] = {
-	{"CLK32_OUT",	PMB8875_GPIO_SSC2_MTSR,	3},
-	{"CLK32_OUT",	PMB8875_GPIO_DSPIN0,	1},
+	{"CLK32",	PMB8875_GPIO_SSC2_MTSR,	3,	PMB887X_GPIO_DIR_OUT},
+	{"CLK32",	PMB8875_GPIO_DSPIN0,	1,	PMB887X_GPIO_DIR_OUT},
 };
 
 static const int pmb8875_sccu_irqs[] = {
@@ -912,10 +931,8 @@ static const int pmb8875_i2c_irqs[] = {
 };
 
 static const pmb887x_cpu_module_gpio_t pmb8875_i2c_gpios[] = {
-	{"SCL_IN",	PMB8875_GPIO_I2C_SCL,	0},
-	{"SCL_OUT",	PMB8875_GPIO_I2C_SCL,	0},
-	{"SDA_IN",	PMB8875_GPIO_I2C_SDA,	0},
-	{"SDA_OUT",	PMB8875_GPIO_I2C_SDA,	0},
+	{"SCL",	PMB8875_GPIO_I2C_SCL,	0,	PMB887X_GPIO_DIR_IN | PMB887X_GPIO_DIR_OUT},
+	{"SDA",	PMB8875_GPIO_I2C_SDA,	0,	PMB887X_GPIO_DIR_IN | PMB887X_GPIO_DIR_OUT},
 };
 
 static const int pmb8875_gptu0_irqs[] = {
@@ -953,28 +970,28 @@ static const int pmb8875_keypad_irqs[] = {
 };
 
 static const pmb887x_cpu_module_gpio_t pmb8875_keypad_gpios[] = {
-	{"IN0_IN",		PMB8875_GPIO_KP_IN0,	0},
-	{"IN1_IN",		PMB8875_GPIO_KP_IN1,	0},
-	{"IN2_IN",		PMB8875_GPIO_KP_IN2,	0},
-	{"IN3_IN",		PMB8875_GPIO_KP_IN3,	0},
-	{"IN4_IN",		PMB8875_GPIO_KP_IN4,	0},
-	{"IN5_IN",		PMB8875_GPIO_KP_IN5,	0},
-	{"IN6_IN",		PMB8875_GPIO_KP_IN6,	0},
-	{"OUT0_OUT",	PMB8875_GPIO_KP_OUT0,	0},
-	{"OUT1_OUT",	PMB8875_GPIO_KP_OUT1,	0},
-	{"OUT2_OUT",	PMB8875_GPIO_KP_OUT2,	0},
-	{"OUT3_OUT",	PMB8875_GPIO_KP_OUT3,	0},
+	{"IN0",		PMB8875_GPIO_KP_IN0,	0,	PMB887X_GPIO_DIR_IN},
+	{"IN1",		PMB8875_GPIO_KP_IN1,	0,	PMB887X_GPIO_DIR_IN},
+	{"IN2",		PMB8875_GPIO_KP_IN2,	0,	PMB887X_GPIO_DIR_IN},
+	{"IN3",		PMB8875_GPIO_KP_IN3,	0,	PMB887X_GPIO_DIR_IN},
+	{"IN4",		PMB8875_GPIO_KP_IN4,	0,	PMB887X_GPIO_DIR_IN},
+	{"IN5",		PMB8875_GPIO_KP_IN5,	0,	PMB887X_GPIO_DIR_IN},
+	{"IN6",		PMB8875_GPIO_KP_IN6,	0,	PMB887X_GPIO_DIR_IN},
+	{"OUT0",	PMB8875_GPIO_KP_OUT0,	0,	PMB887X_GPIO_DIR_OUT},
+	{"OUT1",	PMB8875_GPIO_KP_OUT1,	0,	PMB887X_GPIO_DIR_OUT},
+	{"OUT2",	PMB8875_GPIO_KP_OUT2,	0,	PMB887X_GPIO_DIR_OUT},
+	{"OUT3",	PMB8875_GPIO_KP_OUT3,	0,	PMB887X_GPIO_DIR_OUT},
 };
 
 static const pmb887x_cpu_module_gpio_t pmb8875_dsp_gpios[] = {
-	{"DSPOUT0_OUT",		PMB8875_GPIO_DSPOUT0,	0},
-	{"I2S2_CLK0_OUT",	PMB8875_GPIO_I2S2_CLK0,	0},
-	{"I2S2_RX_IN",		PMB8875_GPIO_I2S2_RX,	0},
-	{"I2S2_TX_OUT",		PMB8875_GPIO_I2S2_TX,	0},
-	{"I2S2_WA0_OUT",	PMB8875_GPIO_I2S2_WA0,	0},
-	{"DSPIN0_IN",		PMB8875_GPIO_DSPIN0,	0},
-	{"DSPOUT1_OUT",		PMB8875_GPIO_DSPOUT1,	0},
-	{"DSPIN1_IN",		PMB8875_GPIO_DSPIN1,	0},
+	{"DSPOUT0",		PMB8875_GPIO_DSPOUT0,	0,	PMB887X_GPIO_DIR_OUT},
+	{"I2S2_CLK0",	PMB8875_GPIO_I2S2_CLK0,	0,	PMB887X_GPIO_DIR_OUT},
+	{"I2S2_RX",		PMB8875_GPIO_I2S2_RX,	0,	PMB887X_GPIO_DIR_IN},
+	{"I2S2_TX",		PMB8875_GPIO_I2S2_TX,	0,	PMB887X_GPIO_DIR_OUT},
+	{"I2S2_WA0",	PMB8875_GPIO_I2S2_WA0,	0,	PMB887X_GPIO_DIR_OUT},
+	{"DSPIN0",		PMB8875_GPIO_DSPIN0,	0,	PMB887X_GPIO_DIR_IN},
+	{"DSPOUT1",		PMB8875_GPIO_DSPOUT1,	0,	PMB887X_GPIO_DIR_OUT},
+	{"DSPIN1",		PMB8875_GPIO_DSPIN1,	0,	PMB887X_GPIO_DIR_IN},
 };
 
 static const int pmb8875_gprscu_irqs[] = {

@@ -1,9 +1,6 @@
 /*
  * System Control Unit
  * */
-#define PMB887X_TRACE_ID		SCU
-#define PMB887X_TRACE_PREFIX	"pmb887x-scu"
-
 #include "qemu/osdep.h"
 #include "hw/core/sysbus.h"
 #include "hw/arm/pmb887x/gen/cpu_regs.h"
@@ -16,12 +13,11 @@
 #include "hw/core/qdev-properties.h"
 #include "hw/core/qdev-clock.h"
 
-#include "hw/arm/pmb887x/regs_dump.h"
+#include "hw/arm/pmb887x/gen/cpu_meta.h"
 #include "hw/arm/pmb887x/mod.h"
 #include "hw/arm/pmb887x/dsp.h"
 #include "hw/arm/pmb887x/dmac.h"
 #include "hw/arm/pmb887x/sccu.h"
-#include "hw/arm/pmb887x/trace.h"
 
 #define TYPE_PMB887X_SCU	"pmb887x-scu"
 #define PMB887X_SCU(obj)	OBJECT_CHECK(pmb887x_scu_t, (obj), TYPE_PMB887X_SCU)
@@ -31,6 +27,7 @@ typedef struct pmb887x_scu_t pmb887x_scu_t;
 struct pmb887x_scu_t {
 	SysBusDevice parent_obj;
 	MemoryRegion mmio;
+	DebugChannel dbg;
 	uint32_t revision;
 	
 	pmb887x_src_reg_t service_src[5];
@@ -54,6 +51,7 @@ struct pmb887x_scu_t {
 	
 	uint32_t exti_edge;
 	uint32_t exti_filter;
+	bool exti_level[8];
 	uint32_t wdtcon0;
 	uint32_t wdtcon1;
 	uint32_t wdt_status;
@@ -107,7 +105,7 @@ static void scu_wdt_schedule(pmb887x_scu_t *p) {
 
 	p->wdt_start = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
 	timer_mod(p->wdt_timer, p->wdt_start + duration);
-	DPRINTF("watchdog scheduled counter=%04X frequency=%u duration=%"PRId64" ns start=%"PRId64"\n",
+	DEBUG_LOG(&p->dbg, "watchdog scheduled counter=%04X frequency=%u duration=%"PRId64" ns start=%"PRId64"\n",
 		p->wdt_counter, p->wdt_frequency, duration, p->wdt_start);
 }
 
@@ -137,7 +135,7 @@ static void scu_wdt_enter_requested_mode(pmb887x_scu_t *p) {
 		p->wdt_counter = (p->wdtcon0 & SCU_WDTCON0_WDTREL) >> SCU_WDTCON0_WDTREL_SHIFT;
 	}
 	p->wdt_frequency = scu_wdt_get_frequency(p);
-	DPRINTF("watchdog %s counter=%04X frequency=%u\n",
+	DEBUG_LOG(&p->dbg, "watchdog %s counter=%04X frequency=%u\n",
 		(p->wdt_status & SCU_WDT_SR_WDTDS) ? "disabled" : "enabled",
 		p->wdt_counter, p->wdt_frequency);
 	scu_wdt_schedule(p);
@@ -152,11 +150,11 @@ static void scu_wdt_enter_prewarning(pmb887x_scu_t *p, uint32_t error) {
 
 static void scu_wdt_timer_reset(void *opaque) {
 	pmb887x_scu_t *p = opaque;
-	DPRINTF("watchdog timer fired elapsed=%"PRId64" ns\n",
+	DEBUG_LOG(&p->dbg, "watchdog timer fired elapsed=%"PRId64" ns\n",
 		qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) - p->wdt_start);
 
 	if ((p->wdt_status & SCU_WDT_SR_WDTPR)) {
-		DPRINTF("watchdog reset\n");
+		DEBUG_LOG(&p->dbg, "watchdog reset\n");
 		p->pending_reset_cause = SCU_RST_SR_WDTRST;
 		if (p->stop_on_watchdog) {
 			qemu_system_shutdown_request(SHUTDOWN_CAUSE_GUEST_SHUTDOWN);
@@ -164,7 +162,7 @@ static void scu_wdt_timer_reset(void *opaque) {
 		}
 		qemu_system_reset_request(SHUTDOWN_CAUSE_GUEST_RESET);
 	} else {
-		DPRINTF("watchdog overflow\n");
+		DEBUG_LOG(&p->dbg, "watchdog overflow\n");
 		scu_wdt_enter_prewarning(p, SCU_WDT_SR_WDTOE);
 	}
 }
@@ -378,19 +376,15 @@ static uint64_t scu_io_read(void *opaque, hwaddr haddr, unsigned size) {
 			break;
 
 		default:
-			EPRINTF("unknown reg access: %02"PRIX64"\n", haddr);
+			DEBUG_GUEST_ERROR(&p->dbg, "unknown reg read: %02"PRIX64"\n", haddr);
 			break;
 	}
-	
-	IO_DUMP_READ(haddr + p->mmio.addr, size, value);
 	
 	return value;
 }
 
 static void scu_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned size) {
 	pmb887x_scu_t *p = opaque;
-	
-	IO_DUMP_WRITE(haddr + p->mmio.addr, size, value);
 	
 	switch (haddr) {
 		case SCU_CLC:
@@ -470,17 +464,17 @@ static void scu_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned si
 				SCU_EXTI_EDGE_EXT3 | SCU_EXTI_EDGE_EXT4 | SCU_EXTI_EDGE_EXT5 |
 				SCU_EXTI_EDGE_EXT6 | SCU_EXTI_EDGE_EXT7 | SCU_EXTI_EDGE_PM_INT
 			);
-			DPRINTF("EXTI_EDGE=%08X\n", p->exti_edge);
+			DEBUG_LOG(&p->dbg, "EXTI_EDGE=%08X\n", p->exti_edge);
 			for (uint32_t i = 0; i < ARRAY_SIZE(p->exti_irq); i++) {
 				uint32_t rising = p->exti_edge & (1 << (i * 2)) ? 1 : 0;
 				uint32_t falling = p->exti_edge & (1 << (i * 2 + 1)) ? 1 : 0;
 
 				if (falling && rising) {
-					DPRINTF("EXTI_%d: FALLING | RISING\n", i);
+					DEBUG_LOG(&p->dbg, "EXTI_%d: FALLING | RISING\n", i);
 				} else if (falling) {
-					DPRINTF("EXTI_%d: FALLING\n", i);
+					DEBUG_LOG(&p->dbg, "EXTI_%d: FALLING\n", i);
 				} else if (rising) {
-					DPRINTF("EXTI_%d: RISING\n", i);
+					DEBUG_LOG(&p->dbg, "EXTI_%d: RISING\n", i);
 				}
 			}
 			break;
@@ -521,15 +515,25 @@ static void scu_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned si
 			p->sleep_req = value & SCU_SLEEP_REQ_REQ;
 			break;
 		default:
-			EPRINTF("unknown reg access: %02"PRIX64"\n", haddr);
+			DEBUG_GUEST_ERROR(&p->dbg, "unknown reg write: %02"PRIX64" = %08"PRIX64"\n", haddr, value);
 			break;
 	}
 	
 	scu_update_state(p);
 }
 
-static void scu_handle_exti_change(pmb887x_scu_t *p, int id, int level) {
-	DPRINTF("EXTI%d level changed %d\n", id, level);
+static void scu_handle_exti_change(pmb887x_scu_t *p, unsigned id, int level) {
+	bool input_level = level != 0;
+	bool previous_level = p->exti_level[id];
+	p->exti_level[id] = input_level;
+	if (input_level == previous_level)
+		return;
+
+	uint32_t edge_mode = (p->exti_edge >> (id * 2)) & SCU_EXTI_EDGE_EXT0;
+	uint32_t edge = input_level ? SCU_EXTI_EDGE_EXT0_RISING : SCU_EXTI_EDGE_EXT0_FALLING;
+	DEBUG_LOG(&p->dbg, "EXTI%u %s edge\n", id, input_level ? "rising" : "falling");
+	if (edge_mode & edge)
+		pmb887x_src_update(&p->exti_src[id], 0, MOD_SRC_SETR);
 }
 
 static void scu_input_exti0_handler(void *opaque, int id, int level) {
@@ -607,22 +611,22 @@ static void scu_init(Object *obj) {
 	sysbus_init_irq(SYS_BUS_DEVICE(obj), &p->unk_irq[1]);
 	sysbus_init_irq(SYS_BUS_DEVICE(obj), &p->unk_irq[2]);
 
-	qdev_init_gpio_in_named(dev, scu_input_exti0_handler, "EXTI0_IN", 1);
-	qdev_init_gpio_in_named(dev, scu_input_exti1_handler, "EXTI1_IN", 1);
-	qdev_init_gpio_in_named(dev, scu_input_exti2_handler, "EXTI2_IN", 1);
-	qdev_init_gpio_in_named(dev, scu_input_exti3_handler, "EXTI3_IN", 1);
-	qdev_init_gpio_in_named(dev, scu_input_exti4_handler, "EXTI4_IN", 1);
-	qdev_init_gpio_in_named(dev, scu_input_exti5_handler, "EXTI5_IN", 1);
-	qdev_init_gpio_in_named(dev, scu_input_exti6_handler, "EXTI6_IN", 1);
-	qdev_init_gpio_in_named(dev, scu_input_exti7_handler, "EXTI7_IN", 1);
-	qdev_init_gpio_in_named(dev, scu_input_dsp_handler, "DSP_INT_IN", PMB887X_DSP_MCU_INT_COUNT);
-	qdev_init_gpio_out_named(dev, &p->dsp_reset, "DSP_RESET_OUT", 1);
-	qdev_init_gpio_out_named(dev, &p->usb_reset, "USB_RESET_OUT", 1);
-	qdev_init_gpio_out_named(dev, &p->dmac_reset, "DMAC_RESET_OUT", 1);
-	qdev_init_gpio_out_named(dev, &p->i2c_reset, "I2C_RESET_OUT", 1);
-	qdev_init_gpio_out_named(dev, &p->rtc_reset, "RTC_RESET_OUT", 1);
-	qdev_init_gpio_out_named(dev, &p->ebu_sync, "EBU_SYNC_OUT", 1);
-	qdev_init_gpio_out_named(dev, p->dsp_request, "DSP_INT_OUT", ARRAY_SIZE(p->dsp_request));
+	qdev_init_gpio_in_named(dev, scu_input_exti0_handler, "EXTI0", 1);
+	qdev_init_gpio_in_named(dev, scu_input_exti1_handler, "EXTI1", 1);
+	qdev_init_gpio_in_named(dev, scu_input_exti2_handler, "EXTI2", 1);
+	qdev_init_gpio_in_named(dev, scu_input_exti3_handler, "EXTI3", 1);
+	qdev_init_gpio_in_named(dev, scu_input_exti4_handler, "EXTI4", 1);
+	qdev_init_gpio_in_named(dev, scu_input_exti5_handler, "EXTI5", 1);
+	qdev_init_gpio_in_named(dev, scu_input_exti6_handler, "EXTI6", 1);
+	qdev_init_gpio_in_named(dev, scu_input_exti7_handler, "EXTI7", 1);
+	qdev_init_gpio_in_named(dev, scu_input_dsp_handler, "DSP_INT", PMB887X_DSP_MCU_INT_COUNT);
+	qdev_init_gpio_out_named(dev, &p->dsp_reset, "DSP_RESET", 1);
+	qdev_init_gpio_out_named(dev, &p->usb_reset, "USB_RESET", 1);
+	qdev_init_gpio_out_named(dev, &p->dmac_reset, "DMAC_RESET", 1);
+	qdev_init_gpio_out_named(dev, &p->i2c_reset, "I2C_RESET", 1);
+	qdev_init_gpio_out_named(dev, &p->rtc_reset, "RTC_RESET", 1);
+	qdev_init_gpio_out_named(dev, &p->ebu_sync, "EBU_SYNC", 1);
+	qdev_init_gpio_out_named(dev, p->dsp_request, "DSP_INT", ARRAY_SIZE(p->dsp_request));
 }
 
 static void scu_reset(DeviceState *dev) {
@@ -675,7 +679,7 @@ static void scu_reset(DeviceState *dev) {
 	p->sleep_req = 0;
 	p->pending_reset_cause = 0;
 
-	DPRINTF("watchdog disabled (reset)\n");
+	DEBUG_LOG(&p->dbg, "watchdog disabled (reset)\n");
 	p->romamcr = SCU_ROMAMCR_MOUNT_BROM;
 
 	scu_update_state(p);
@@ -683,6 +687,7 @@ static void scu_reset(DeviceState *dev) {
 
 static void scu_realize(DeviceState *dev, Error **errp) {
 	pmb887x_scu_t *p = PMB887X_SCU(dev);
+	pmb887x_mod_debug_init(&p->dbg, dev, &p->mmio, &pmb887x_scu_regs);
 
 	if (!clock_has_source(p->clock)) {
 		error_setg(errp, "pmb887x-scu: clk input is not connected");

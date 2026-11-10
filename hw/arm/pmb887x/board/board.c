@@ -4,11 +4,13 @@
 #include "hw/arm/pmb887x/board/keyboard.h"
 #include "hw/arm/pmb887x/gen/cpu_regs.h"
 #include "hw/arm/pmb887x/utils/toml.h"
-#include "hw/arm/pmb887x/utils/tomlc17.h"
+#include "tomlc17.h"
 #include "hw/core/hw-error.h"
 #include "qemu/error-report.h"
 
 static pmb887x_board_t *board = NULL;
+
+#define BOARD_CONFIG_MAX_EXTENDS 8
 
 static int find_cpu_by_name(const char *cpu_name);
 
@@ -22,41 +24,39 @@ static struct {
 	[CPU_PMB8876] = { 0x10, 0x006025DB, 0x180121A5, 0x00071303 },
 };
 
-static toml_result_t load_board_config(const char *config_file) {
+static toml_result_t load_board_config(const char *config_file, unsigned depth) {
+	if (depth > BOARD_CONFIG_MAX_EXTENDS) {
+		error_report("Board config %s: too many nested extends", config_file);
+		exit(EXIT_FAILURE);
+	}
+
 	toml_result_t board_config = toml_parse_file_ex(config_file);
 	if (!board_config.ok) {
 		error_report("Invalid board config %s: %s", config_file, board_config.errmsg);
 		exit(EXIT_FAILURE);
 	}
-	toml_init_datum_location_info(&board_config, config_file);
 
 	const char *base_config_name = toml_table_get_string(board_config.toptab, "board.extends", NULL, false);
-	if (base_config_name) {
-		char base_config_file[4096];
+	if (!base_config_name)
+		return board_config;
 
-		const char *config_dir = g_path_get_dirname(config_file);
-		snprintf(base_config_file, sizeof(base_config_file) - 1, "%s/%s", config_dir, base_config_name);
-
-		toml_result_t base_config = toml_parse_file_ex(base_config_file);
-		if (!base_config.ok) {
-			error_report("Invalid board config %s: %s", base_config_file, base_config.errmsg);
-			exit(EXIT_FAILURE);
-		}
-		toml_init_datum_location_info(&base_config, base_config_file);
-
-		toml_result_t merged_config = toml_merge(&base_config, &board_config);
-		toml_free(base_config);
-		toml_free(board_config);
-		return merged_config;
+	g_autofree char *config_dir = g_path_get_dirname(config_file);
+	g_autofree char *base_config_file = g_build_filename(config_dir, base_config_name, NULL);
+	toml_result_t base_config = load_board_config(base_config_file, depth + 1);
+	toml_result_t merged_config = toml_merge(&base_config, &board_config);
+	if (!merged_config.ok) {
+		error_report("Invalid board config %s: %s", config_file, merged_config.errmsg);
+		exit(EXIT_FAILURE);
 	}
-
-	return board_config;
+	toml_free(base_config);
+	toml_free(board_config);
+	return merged_config;
 }
 
 void pmb887x_board_init(const char *config_file) {
 	board = g_new0(pmb887x_board_t, 1);
 
-	board->config_result = load_board_config(config_file);
+	board->config_result = load_board_config(config_file, 0);
 	board->config = board->config_result.toptab;
 
 	board->vendor = toml_table_get_string(board->config, "board.vendor", NULL, true);

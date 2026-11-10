@@ -1,9 +1,6 @@
 /*
  * External Bus Unit
  * */
-#define PMB887X_TRACE_ID		EBU
-#define PMB887X_TRACE_PREFIX	"pmb887x-ebu"
-
 #include "qemu/osdep.h"
 #include "hw/core/sysbus.h"
 #include "hw/core/hw-error.h"
@@ -14,9 +11,8 @@
 
 #include "hw/arm/pmb887x/gen/cpu_regs.h"
 #include "hw/arm/pmb887x/io_bridge.h"
-#include "hw/arm/pmb887x/regs_dump.h"
+#include "hw/arm/pmb887x/gen/cpu_meta.h"
 #include "hw/arm/pmb887x/mod.h"
-#include "hw/arm/pmb887x/trace.h"
 
 #define TYPE_PMB887X_EBU	"pmb887x-ebu"
 #define PMB887X_EBU(obj)	OBJECT_CHECK(struct pmb887x_ebu_t, (obj), TYPE_PMB887X_EBU)
@@ -38,6 +34,7 @@ struct pmb887x_ebu_user_data_t {
 struct pmb887x_ebu_t {
 	SysBusDevice parent_obj;
 	MemoryRegion mmio;
+	DebugChannel dbg;
 	uint32_t revision;
 	MemoryRegion *cs[8];
 	MemoryRegion regions[8];
@@ -77,11 +74,11 @@ static void ebu_update_state(pmb887x_ebu_t *p) {
 		
 		if (state_changed) {
 			if (is_enabled && !region->enabled) {
-				DPRINTF("CS%d enable region %08X-%08X%s [%dM]\n", i, addr, addr + size - 1, is_ro ? " [RO]" : " [RW]", size / 1024 / 1024);
+				DEBUG_LOG(&p->dbg, "CS%d enable region %08X-%08X%s [%dM]\n", i, addr, addr + size - 1, is_ro ? " [RO]" : " [RW]", size / 1024 / 1024);
 			} else if (!is_enabled && region->enabled) {
-				DPRINTF("CS%d disable region %08X-%08X [%dM]\n", i, addr, addr + size - 1, size / 1024 / 1024);
+				DEBUG_LOG(&p->dbg, "CS%d disable region %08X-%08X [%dM]\n", i, addr, addr + size - 1, size / 1024 / 1024);
 			} else if (is_enabled) {
-				DPRINTF("CS%d update region %08X-%08X%s [%dM]\n", i, addr, addr + size - 1, is_ro ? " [RO]" : " [RW]", size / 1024 / 1024);
+				DEBUG_LOG(&p->dbg, "CS%d update region %08X-%08X%s [%dM]\n", i, addr, addr + size - 1, is_ro ? " [RO]" : " [RW]", size / 1024 / 1024);
 			}
 			
 			if (region->addr != addr && memory_region_is_mapped(region)) {
@@ -194,11 +191,9 @@ static uint64_t ebu_io_read(void *opaque, hwaddr haddr, unsigned size) {
 			break;
 
 		default:
-			EPRINTF("unknown reg access: %02"PRIX64"\n", haddr);
+			DEBUG_GUEST_ERROR(&p->dbg, "unknown reg read: %02"PRIX64"\n", haddr);
 			break;
 	}
-	
-	IO_DUMP_READ(haddr + p->mmio.addr, size, value);
 	
 	#if PMB887X_IO_BRIDGE
 	pmb8876_io_bridge_write(haddr + p->mmio.addr, size, value);
@@ -209,8 +204,6 @@ static uint64_t ebu_io_read(void *opaque, hwaddr haddr, unsigned size) {
 
 static void ebu_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned size) {
 	pmb887x_ebu_t *p = opaque;
-	
-	IO_DUMP_WRITE(haddr + p->mmio.addr, size, value);
 	
 	switch (haddr) {
 		case EBU_CLC:
@@ -291,7 +284,7 @@ static void ebu_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned si
 			break;
 
 		default:
-			EPRINTF("unknown reg access: %02"PRIX64"\n", haddr);
+			DEBUG_GUEST_ERROR(&p->dbg, "unknown reg write: %02"PRIX64" = %08"PRIX64"\n", haddr, value);
 			break;
 	}
 	
@@ -315,7 +308,7 @@ static const MemoryRegionOps io_ops = {
 static uint64_t ebu_unmapped_io_read(void *opaque, hwaddr haddr, unsigned size) {
 	pmb887x_ebu_user_data_t *user_data = opaque;
 	
-	DPRINTF("read[%d] undefined memory at %08"PRIX64" [CS%d]\n", size, user_data->p->regions[user_data->cs].addr + haddr, user_data->cs);
+	DEBUG_LOG(&user_data->p->dbg, "read[%d] undefined memory at %08"PRIX64" [CS%d]\n", size, user_data->p->regions[user_data->cs].addr + haddr, user_data->cs);
 	
 	switch (size) {
 		case 1:		return 0xFF;
@@ -328,7 +321,7 @@ static uint64_t ebu_unmapped_io_read(void *opaque, hwaddr haddr, unsigned size) 
 
 static void ebu_unmapped_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned size) {
 	pmb887x_ebu_user_data_t *user_data = opaque;
-	DPRINTF("write[%d] undefined memory at %08"PRIX64" [CS%d]\n", size, user_data->p->regions[user_data->cs].addr + haddr, user_data->cs);
+	DEBUG_LOG(&user_data->p->dbg, "write[%d] undefined memory at %08"PRIX64" [CS%d]\n", size, user_data->p->regions[user_data->cs].addr + haddr, user_data->cs);
 }
 
 static const MemoryRegionOps unmapped_io_ops = {
@@ -369,6 +362,7 @@ static void ebu_reset(DeviceState *dev) {
 
 static void ebu_realize(DeviceState *dev, Error **errp) {
 	pmb887x_ebu_t *p = PMB887X_EBU(dev);
+	pmb887x_mod_debug_init(&p->dbg, dev, &p->mmio, &pmb887x_ebu_regs);
 
 	for (int i = 0; i < 8; i++) {
 		char memory_region_name[32];

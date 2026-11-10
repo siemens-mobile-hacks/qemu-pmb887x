@@ -37,7 +37,17 @@ void fifo8_destroy(Fifo8 *fifo);
  * Push a data byte to the FIFO. Behaviour is undefined if the FIFO is full.
  * Clients are responsible for checking for fullness using fifo8_is_full().
  */
-void fifo8_push(Fifo8 *fifo, uint8_t data);
+static inline void fifo8_push(Fifo8 *fifo, uint8_t data)
+{
+    uint32_t tail = fifo->head + fifo->num;
+
+    assert(fifo->num < fifo->capacity);
+    if (tail >= fifo->capacity) {
+        tail -= fifo->capacity;
+    }
+    fifo->data[tail] = data;
+    fifo->num++;
+}
 
 /**
  * fifo8_push_all:
@@ -60,7 +70,18 @@ void fifo8_push_all(Fifo8 *fifo, const uint8_t *data, uint32_t num);
  *
  * Returns: The popped data byte.
  */
-uint8_t fifo8_pop(Fifo8 *fifo);
+static inline uint8_t fifo8_pop(Fifo8 *fifo)
+{
+    uint8_t ret;
+
+    assert(fifo->num > 0);
+    ret = fifo->data[fifo->head++];
+    if (fifo->head == fifo->capacity) {
+        fifo->head = 0;
+    }
+    fifo->num--;
+    return ret;
+}
 
 /**
  * fifo8_peek:
@@ -71,7 +92,11 @@ uint8_t fifo8_pop(Fifo8 *fifo);
  *
  * Returns: The peeked data byte.
  */
-uint8_t fifo8_peek(const Fifo8 *fifo);
+static inline uint8_t fifo8_peek(const Fifo8 *fifo)
+{
+    assert(fifo->num > 0);
+    return fifo->data[fifo->head];
+}
 
 /**
  * fifo8_pop_buf:
@@ -181,7 +206,10 @@ void fifo8_reset(Fifo8 *fifo);
  *
  * Returns: True if the fifo is empty, false otherwise.
  */
-bool fifo8_is_empty(const Fifo8 *fifo);
+static inline bool fifo8_is_empty(const Fifo8 *fifo)
+{
+    return fifo->num == 0;
+}
 
 /**
  * fifo8_is_full:
@@ -191,7 +219,10 @@ bool fifo8_is_empty(const Fifo8 *fifo);
  *
  * Returns: True if the fifo is full, false otherwise.
  */
-bool fifo8_is_full(const Fifo8 *fifo);
+static inline bool fifo8_is_full(const Fifo8 *fifo)
+{
+    return fifo->num == fifo->capacity;
+}
 
 /**
  * fifo8_num_free:
@@ -201,7 +232,10 @@ bool fifo8_is_full(const Fifo8 *fifo);
  *
  * Returns: Number of free bytes.
  */
-uint32_t fifo8_num_free(const Fifo8 *fifo);
+static inline uint32_t fifo8_num_free(const Fifo8 *fifo)
+{
+    return fifo->capacity - fifo->num;
+}
 
 /**
  * fifo8_num_used:
@@ -211,7 +245,10 @@ uint32_t fifo8_num_free(const Fifo8 *fifo);
  *
  * Returns: Number of used bytes.
  */
-uint32_t fifo8_num_used(const Fifo8 *fifo);
+static inline uint32_t fifo8_num_used(const Fifo8 *fifo)
+{
+    return fifo->num;
+}
 
 extern const VMStateDescription vmstate_fifo8;
 

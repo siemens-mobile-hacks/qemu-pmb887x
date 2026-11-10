@@ -427,6 +427,8 @@ void aarch64_cpu_register_gdb_regs_for_features(ARMCPU *cpu);
 void arm_restore_state_to_opc(CPUState *cs,
                               const TranslationBlock *tb,
                               const uint64_t *data);
+void arm_get_io_context(CPUState *cs, const uint64_t *data, uint64_t *pc,
+                        uint64_t *lr);
 
 #ifdef CONFIG_TCG
 TCGTBCPUState arm_get_tb_cpu_state(CPUState *cs);

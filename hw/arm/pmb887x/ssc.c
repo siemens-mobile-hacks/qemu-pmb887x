@@ -1,9 +1,6 @@
 /*
  * SSC (SPI)
  * */
-#define PMB887X_TRACE_ID		SSC
-#define PMB887X_TRACE_PREFIX	"pmb887x-ssc"
-
 #include "qemu/osdep.h"
 #include "hw/core/irq.h"
 #include "hw/core/hw-error.h"
@@ -16,10 +13,9 @@
 #include "qom/object.h"
 
 #include "hw/arm/pmb887x/gen/cpu_regs.h"
-#include "hw/arm/pmb887x/regs_dump.h"
+#include "hw/arm/pmb887x/gen/cpu_meta.h"
 #include "hw/arm/pmb887x/mod.h"
-#include "hw/arm/pmb887x/trace.h"
-#include "hw/arm/pmb887x/fifo.h"
+#include "qemu/fifo32.h"
 
 #define TYPE_PMB887X_SSC	"pmb887x-ssc"
 OBJECT_DECLARE_SIMPLE_TYPE(pmb887x_ssc_t, PMB887X_SSC);
@@ -41,6 +37,7 @@ enum SSCFifoType {
 struct pmb887x_ssc_t {
 	SysBusDevice parent_obj;
 	MemoryRegion mmio;
+	DebugChannel dbg;
 	uint32_t revision;
 
 	qemu_irq irq[4];
@@ -58,14 +55,14 @@ struct pmb887x_ssc_t {
 	uint32_t bcreg;
 	uint32_t bcsel[2];
 
-	pmb887x_fifo16_t tx_fifo_buffered;
-	pmb887x_fifo16_t rx_fifo_buffered;
+	Fifo32 tx_fifo_buffered;
+	Fifo32 rx_fifo_buffered;
 
-	pmb887x_fifo16_t tx_fifo_single;
-	pmb887x_fifo16_t rx_fifo_single;
+	Fifo32 tx_fifo_single;
+	Fifo32 rx_fifo_single;
 
-	pmb887x_fifo16_t *rx_fifo;
-	pmb887x_fifo16_t *tx_fifo;
+	Fifo32 *rx_fifo;
+	Fifo32 *tx_fifo;
 	QEMUBH *transfer_bh;
 	QEMUTimer *transfer_timer;
 	uint16_t tx_data;
@@ -93,9 +90,9 @@ struct pmb887x_ssc_t {
 
 static void ssc_reset_fifo(pmb887x_ssc_t *p, enum SSCFifoType fifo) {
 	if (fifo == SSC_FIFO_RX) {
-		pmb887x_fifo_reset(p->rx_fifo);
+		fifo32_reset(p->rx_fifo);
 	} else {
-		pmb887x_fifo_reset(p->tx_fifo);
+		fifo32_reset(p->tx_fifo);
 	}
 }
 
@@ -138,7 +135,7 @@ static void ssc_update_tx_request(pmb887x_ssc_t *p) {
 	uint32_t tx_level = (p->txfcon & SSC_TXFCON_TXFEN) ?
 		(p->txfcon & SSC_TXFCON_TXFITL) >> SSC_TXFCON_TXFITL_SHIFT :
 		1;
-	if (pmb887x_fifo_count(p->tx_fifo) <= tx_level) {
+	if (fifo32_num_used(p->tx_fifo) <= tx_level) {
 		pmb887x_srb_set_isr(&p->srb, SSC_ISR_TX);
 	} else {
 		pmb887x_srb_set_icr(&p->srb, SSC_ICR_TX);
@@ -150,8 +147,8 @@ static void ssc_update_rx_request(pmb887x_ssc_t *p) {
 		(p->rxfcon & SSC_RXFCON_RXFITL) >> SSC_RXFCON_RXFITL_SHIFT :
 		1;
 	bool request = (p->rxfcon & SSC_RXFCON_RXTMEN) ?
-		!pmb887x_fifo_is_empty(p->rx_fifo) :
-		pmb887x_fifo_count(p->rx_fifo) >= rx_level;
+		!fifo32_is_empty(p->rx_fifo) :
+		fifo32_num_used(p->rx_fifo) >= rx_level;
 
 	if (request) {
 		pmb887x_srb_set_isr(&p->srb, SSC_ISR_RX);
@@ -176,23 +173,23 @@ static void ssc_transfer_word(pmb887x_ssc_t *p) {
 		}
 	}
 
-	if (pmb887x_fifo_is_full(p->rx_fifo)) {
+	if (fifo32_is_full(p->rx_fifo)) {
 		if ((p->con & SSC_CON_REN)) {
-			DPRINTF("RX FIFO overflow\n");
+			DEBUG_LOG(&p->dbg, "RX FIFO overflow\n");
 			p->status |= SSC_CON_RE;
 			pmb887x_srb_set_isr(&p->srb, SSC_ISR_ERR);
 		}
-		pmb887x_fifo16_pop(p->rx_fifo); // overwrite last fifo stage
+		fifo32_pop(p->rx_fifo); // overwrite last fifo stage
 	}
-	pmb887x_fifo16_push(p->rx_fifo, received & p->mask);
+	fifo32_push(p->rx_fifo, received & p->mask);
 	ssc_update_rx_request(p);
 }
 
 static bool ssc_transfer_load(pmb887x_ssc_t *p) {
-	if (p->transfer_pending || !ssc_is_running(p) || pmb887x_fifo_is_empty(p->tx_fifo))
+	if (p->transfer_pending || !ssc_is_running(p) || fifo32_is_empty(p->tx_fifo))
 		return false;
 
-	p->tx_data = pmb887x_fifo16_pop(p->tx_fifo);
+	p->tx_data = fifo32_pop(p->tx_fifo);
 	p->transfer_pending = true;
 	p->status |= SSC_CON_BSY;
 	ssc_update_tx_request(p);
@@ -242,29 +239,29 @@ static void ssc_update_transfer(pmb887x_ssc_t *p) {
 }
 
 static uint16_t ssc_read_fifo(pmb887x_ssc_t *p) {
-	if (pmb887x_fifo_is_empty(p->rx_fifo)) {
+	if (fifo32_is_empty(p->rx_fifo)) {
 		if ((p->con & SSC_CON_REN)) {
-			DPRINTF("RX FIFO underflow\n");
+			DEBUG_LOG(&p->dbg, "RX FIFO underflow\n");
 			p->status |= SSC_CON_RE;
 			pmb887x_srb_set_isr(&p->srb, SSC_ISR_ERR);
 		}
 		return 0;
 	}
-	uint16_t value = pmb887x_fifo16_pop(p->rx_fifo);
+	uint16_t value = fifo32_pop(p->rx_fifo);
 	ssc_update_rx_request(p);
 	return value;
 }
 
 static void ssc_write_fifo(pmb887x_ssc_t *p, uint16_t value) {
-	if (pmb887x_fifo_is_full(p->tx_fifo)) {
+	if (fifo32_is_full(p->tx_fifo)) {
 		if ((p->con & SSC_CON_TEN)) {
-			DPRINTF("TX FIFO underflow\n");
+			DEBUG_LOG(&p->dbg, "TX FIFO underflow\n");
 			p->status |= SSC_CON_TE;
 			pmb887x_srb_set_isr(&p->srb, SSC_ISR_ERR);
 		}
-		pmb887x_fifo16_pop(p->tx_fifo); // overwrite last fifo stage
+		fifo32_pop(p->tx_fifo); // overwrite last fifo stage
 	}
-	pmb887x_fifo16_push(p->tx_fifo, p->tb & p->mask);
+	fifo32_push(p->tx_fifo, p->tb & p->mask);
 	ssc_update_tx_request(p);
 	ssc_schedule_transfer(p);
 }
@@ -321,9 +318,9 @@ static uint64_t ssc_io_read(void *opaque, hwaddr haddr, unsigned size) {
 
 		case SSC_FSTAT:
 			if ((p->txfcon & SSC_TXFCON_TXFEN))
-				value |= pmb887x_fifo_count(p->tx_fifo) << SSC_FSTAT_TXFFL_SHIFT;
+				value |= fifo32_num_used(p->tx_fifo) << SSC_FSTAT_TXFFL_SHIFT;
 			if ((p->rxfcon & SSC_RXFCON_RXFEN))
-				value |= pmb887x_fifo_count(p->rx_fifo) << SSC_FSTAT_RXFFL_SHIFT;
+				value |= fifo32_num_used(p->rx_fifo) << SSC_FSTAT_RXFFL_SHIFT;
 			break;
 
 		case SSC_IMSC:
@@ -348,19 +345,15 @@ static uint64_t ssc_io_read(void *opaque, hwaddr haddr, unsigned size) {
 			break;
 
 		default:
-			EPRINTF("unknown reg access: %02"PRIX64"\n", haddr);
+			DEBUG_GUEST_ERROR(&p->dbg, "unknown reg read: %02"PRIX64"\n", haddr);
 			break;
 	}
-
-	IO_DUMP_READ(haddr + p->mmio.addr, size, value);
 
 	return value;
 }
 
 static void ssc_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned size) {
 	pmb887x_ssc_t *p = opaque;
-
-	IO_DUMP_WRITE(haddr + p->mmio.addr, size, value);
 
 	switch (haddr) {
 		case SSC_CLC:
@@ -433,7 +426,7 @@ static void ssc_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned si
 			break;
 
 		default:
-			EPRINTF("unknown reg access: %02"PRIX64"\n", haddr);
+			DEBUG_GUEST_ERROR(&p->dbg, "unknown reg write: %02"PRIX64" = %08"PRIX64"\n", haddr, value);
 			break;
 	}
 }
@@ -488,25 +481,26 @@ static void ssc_init(Object *obj) {
 	qdev_init_gpio_in_named(dev, ssc_handle_dmac_rx_clr, "DMAC_RX_CLR", 1);
 	qdev_init_gpio_out_named(dev, &p->dmac_rx_breq, "DMAC_RX_BREQ", 1);
 
-	qdev_init_gpio_in_named(dev, ssc_handle_gpio_input, "MRST_IN", 1);
-	qdev_init_gpio_out_named(dev, &p->gpio_sclk, "SCLK_OUT", 1);
-	qdev_init_gpio_out_named(dev, &p->gpio_mtsr, "MTSR_OUT", 1);
-	qdev_init_gpio_out_named(dev, &p->gpio_rs, "RS_OUT", 1);
-	qdev_init_gpio_out_named(dev, &p->gpio_cs, "CS_OUT", 1);
-	qdev_init_gpio_out_named(dev, &p->gpio_reset, "RESET_OUT", 1);
+	qdev_init_gpio_in_named(dev, ssc_handle_gpio_input, "MRST", 1);
+	qdev_init_gpio_out_named(dev, &p->gpio_sclk, "SCLK", 1);
+	qdev_init_gpio_out_named(dev, &p->gpio_mtsr, "MTSR", 1);
+	qdev_init_gpio_out_named(dev, &p->gpio_rs, "RS", 1);
+	qdev_init_gpio_out_named(dev, &p->gpio_cs, "CS", 1);
+	qdev_init_gpio_out_named(dev, &p->gpio_reset, "RESET", 1);
 }
 
 static void ssc_realize(DeviceState *dev, Error **errp) {
 	pmb887x_ssc_t *p = PMB887X_SSC(dev);
+	pmb887x_mod_debug_init(&p->dbg, dev, &p->mmio, &pmb887x_ssc_regs);
 	pmb887x_clc_set(&p->clc, 1U << MOD_CLC_RMC_SHIFT);
 	pmb887x_srb_init(&p->srb, p->irq, ARRAY_SIZE(p->irq));
 	pmb887x_srb_set_event_handler(&p->srb, dev, ssc_event_handler);
 
-	pmb887x_fifo16_init(&p->tx_fifo_buffered, FIFO_SIZE);
-	pmb887x_fifo16_init(&p->rx_fifo_buffered, FIFO_SIZE);
+	fifo32_create(&p->tx_fifo_buffered, FIFO_SIZE);
+	fifo32_create(&p->rx_fifo_buffered, FIFO_SIZE);
 
-	pmb887x_fifo16_init(&p->tx_fifo_single, 1);
-	pmb887x_fifo16_init(&p->rx_fifo_single, 1);
+	fifo32_create(&p->tx_fifo_single, 1);
+	fifo32_create(&p->rx_fifo_single, 1);
 	p->transfer_bh = qemu_bh_new(ssc_transfer_complete, p);
 	p->transfer_timer = timer_new_ns(QEMU_CLOCK_VIRTUAL, ssc_transfer_complete, p);
 

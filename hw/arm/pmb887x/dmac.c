@@ -1,9 +1,6 @@
 /*
  * DMA Controller (PL080)
  * */
-#define PMB887X_TRACE_ID		DMAC
-#define PMB887X_TRACE_PREFIX	"pmb887x-dmac"
-
 #include "qemu/osdep.h"
 #include "hw/core/sysbus.h"
 #include "hw/core/irq.h"
@@ -17,11 +14,10 @@
 #include "hw/core/qdev-clock.h"
 
 #include "hw/arm/pmb887x/gen/cpu_regs.h"
-#include "hw/arm/pmb887x/regs_dump.h"
+#include "hw/arm/pmb887x/gen/cpu_meta.h"
 #include "hw/arm/pmb887x/mod.h"
 #include "hw/arm/pmb887x/dmac.h"
-#include "hw/arm/pmb887x/dma_sink.h"
-#include "hw/arm/pmb887x/trace.h"
+#include "hw/dma/dma-sink.h"
 
 #define DMAC_MULTIPLEXOR	2
 #define DMAC_CHANNELS		8
@@ -76,6 +72,7 @@ struct pmb887x_dmac_pending_request_t {
 struct pmb887x_dmac_t {
 	SysBusDevice parent_obj;
 	MemoryRegion mmio;
+	DebugChannel dbg;
 	uint32_t revision;
 	uint32_t peripheral_id;
 
@@ -86,6 +83,7 @@ struct pmb887x_dmac_t {
 	MemoryListener downstream_listener;
 	pmb887x_dmac_translation_t read_translation;
 	pmb887x_dmac_translation_t sink_translation;
+	DMASinkCache downstream_sink;
 
 	qemu_irq irq_err;
 	qemu_irq irq_tc[DMAC_CHANNELS];
@@ -115,17 +113,18 @@ struct pmb887x_dmac_t {
 };
 
 static inline uint32_t dmac_get_width(uint32_t s) {
-	if (s > 2)
-		hw_error("pmb887x-dmac: unknown width %d", s);
+	g_assert(s <= 2);
 	return 1 << s;
 }
 
+static bool dmac_has_valid_widths(uint32_t control) {
+	uint32_t src_width = (control & DMAC_CH_CONTROL_S_WIDTH) >> DMAC_CH_CONTROL_S_WIDTH_SHIFT;
+	uint32_t dst_width = (control & DMAC_CH_CONTROL_D_WIDTH) >> DMAC_CH_CONTROL_D_WIDTH_SHIFT;
+	return src_width <= 2 && dst_width <= 2;
+}
+
 static inline uint32_t dmac_get_burst_size(uint32_t s) {
-	if (s == 0)
-		return 1;
-	if (s > 7)
-		hw_error("pmb887x-dmac: unknown burst size %d", s);
-	return 1 << (s + 1);
+	return s ? (1 << (s + 1)) : 1;
 }
 
 static uint32_t dmac_destination_count_to_source_count(pmb887x_dmac_ch_t *ch, uint32_t destination_count) {
@@ -337,9 +336,9 @@ static void dmac_transfer_finish(pmb887x_dmac_t *p, pmb887x_dmac_ch_t *ch) {
 		ch->lli = lli[2];
 		ch->control = lli[3];
 
-		DPRINTF("CH%d LLI=%08X [%08X, %08X, %08X, %08X]\n", ch->id, lli_addr, lli[0], lli[1], lli[2], lli[3]);
+		DEBUG_LOG(&p->dbg, "CH%d LLI=%08X [%08X, %08X, %08X, %08X]\n", ch->id, lli_addr, lli[0], lli[1], lli[2], lli[3]);
 	} else {
-		DPRINTF("CH%d: transfer done\n", ch->id);
+		DEBUG_LOG(&p->dbg, "CH%d: transfer done\n", ch->id);
 		dmac_update_final_addresses(ch);
 		ch->config &= ~DMAC_CH_CONFIG_ENABLE;
 		if ((ch->control & DMAC_CH_CONTROL_I))
@@ -407,7 +406,7 @@ static void dmac_transfer_memory(pmb887x_dmac_t *p, pmb887x_dmac_ch_t *ch, uint3
 	ch->src_addr &= ~(src_width - 1);
 	ch->dst_addr &= ~(dst_width - 1);
 
-	DPRINTF("CH%d: %08X [%dx%d] -> %08X [%dx%d] [%d]\n",
+	DEBUG_LOG(&p->dbg, "CH%d: %08X [%dx%d] -> %08X [%dx%d] [%d]\n",
 		ch->id, ch->src_addr, src_width, burst_size, ch->dst_addr, dst_width, burst_size, tx_size);
 
 	if (is_simple_memcpy) {
@@ -537,8 +536,8 @@ static void dmac_fifo_drain(pmb887x_dmac_t *p, pmb887x_dmac_ch_t *ch, uint32_t b
 			dmac_write(p, ch->dst_addr, buffer, dst_width * count);
 			is_block_written = true;
 		} else {
-			is_block_written = pmb887x_dma_sink_write_block(sink->mr, sink->xlat + (ch->dst_addr - sink->start),
-				buffer, dst_width, count, is_increment);
+			is_block_written = dma_sink_write_block_mr(&p->downstream_sink, sink->mr,
+				sink->xlat + (ch->dst_addr - sink->start), buffer, dst_width, count, is_increment);
 		}
 	}
 	if (!is_block_written) {
@@ -849,6 +848,10 @@ static void dmac_run_per2per_source(
 static void dmac_channel_run(pmb887x_dmac_t *p, pmb887x_dmac_ch_t *ch) {
 	if (!(ch->config & DMAC_CH_CONFIG_ENABLE) || !(p->config & DMAC_CONFIG_ENABLE))
 		return;
+	if (!dmac_has_valid_widths(ch->control)) {
+		DEBUG_GUEST_ERROR(&p->dbg, "CH%d: reserved transfer width in control %08X\n", ch->id, ch->control);
+		return;
+	}
 	if (!dmac_has_second_master(p) &&
 		(ch->config & DMAC_CH_CONFIG_FLOW_CTRL) == DMAC_CH_CONFIG_FLOW_CTRL_MEM2MEM &&
 		(ch->control & (DMAC_CH_CONTROL_S_AHB2 | DMAC_CH_CONTROL_D_AHB2)) ==
@@ -940,7 +943,7 @@ static void dmac_channel_run(pmb887x_dmac_t *p, pmb887x_dmac_ch_t *ch) {
 			break;
 
 		default:
-			hw_error("pmb887x-dmac: unsupported flow type %08X", (ch->config & DMAC_CH_CONFIG_FLOW_CTRL));
+			g_assert_not_reached();
 	}
 }
 
@@ -988,7 +991,7 @@ static void dmac_handle_signal(pmb887x_dmac_t *p, pmb887x_dmac_request_t *reques
 		return;
 
 	dmac_catch_up(p);
-	DPRINTF("%s request=%d, level=%d\n", dmac_request_name(p, request), id, level);
+	DEBUG_LOG(&p->dbg, "%s request=%d, level=%d\n", dmac_request_name(p, request), id, level);
 	p->raised_levels += (level != 0) - (request->level[sel][id] != 0);
 	request->level[sel][id] = level;
 
@@ -1013,10 +1016,8 @@ static uint64_t dmac_io_read(void *opaque, hwaddr haddr, unsigned size) {
 	dmac_catch_up(p);
 	uint64_t value = 0;
 
-	if (!clock_is_enabled(p->clock)) {
-		IO_DUMP_READ(haddr + p->mmio.addr, size, value);
+	if (!clock_is_enabled(p->clock))
 		return value;
-	}
 
 	switch (haddr) {
 		case DMAC_CONFIG:
@@ -1149,11 +1150,9 @@ static uint64_t dmac_io_read(void *opaque, hwaddr haddr, unsigned size) {
 			break;
 
 		default:
-			EPRINTF("unknown reg access: %02"PRIX64"\n", haddr);
+			DEBUG_GUEST_ERROR(&p->dbg, "unknown reg read: %02"PRIX64"\n", haddr);
 			break;
 	}
-
-	IO_DUMP_READ(haddr + p->mmio.addr, size, value);
 
 	return value;
 }
@@ -1162,7 +1161,6 @@ static void dmac_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned s
 	pmb887x_dmac_t *p = opaque;
 
 	dmac_catch_up(p);
-	IO_DUMP_WRITE(haddr + p->mmio.addr, size, value);
 	if (!clock_is_enabled(p->clock))
 		return;
 
@@ -1270,7 +1268,7 @@ static void dmac_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned s
 			break;
 
 		default:
-			EPRINTF("unknown reg access: %02"PRIX64"\n", haddr);
+			DEBUG_GUEST_ERROR(&p->dbg, "unknown reg write: %02"PRIX64" = %08"PRIX64"\n", haddr, value);
 			break;
 	}
 
@@ -1570,7 +1568,7 @@ static void dmac_init(Object *obj) {
 	qdev_init_gpio_in_named(dev, dmac_handle_signal_sel1_breq, "SEL1_BREQ", DMAC_REQUESTS);
 	qdev_init_gpio_in_named(dev, dmac_handle_signal_sel1_lsreq, "SEL1_LSREQ", DMAC_REQUESTS);
 	qdev_init_gpio_in_named(dev, dmac_handle_signal_sel1_lbreq, "SEL1_LBREQ", DMAC_REQUESTS);
-	qdev_init_gpio_in_named(dev, dmac_handle_reset, "RESET_IN", 1);
+	qdev_init_gpio_in_named(dev, dmac_handle_reset, "RESET", 1);
 }
 
 static int dmac_tc_irq_router(void *opaque, int event_id) {
@@ -1586,6 +1584,7 @@ static int dmac_err_irq_router(void *opaque, int event_id) {
 
 static void dmac_realize(DeviceState *dev, Error **errp) {
 	pmb887x_dmac_t *p = PMB887X_DMAC(dev);
+	pmb887x_mod_debug_init(&p->dbg, dev, &p->mmio, &pmb887x_dmac_regs);
 
 	if (!clock_has_source(p->clock)) {
 		error_setg(errp, "DMAC 'clk' input is not connected");
@@ -1602,6 +1601,7 @@ static void dmac_realize(DeviceState *dev, Error **errp) {
 		.commit = dmac_memory_commit,
 	};
 	memory_listener_register(&p->downstream_listener, &p->downstream_as);
+	dma_sink_cache_init(&p->downstream_sink, &p->downstream_as);
 
 	for (int i = 0; i < DMAC_CHANNELS; i++)
 		p->ch[i].id = i;

@@ -1,14 +1,9 @@
-#define PMB887X_TRACE_ID		DSP_CIPHER
-#define PMB887X_TRACE_PREFIX	"pmb887x-dsp-cipher"
-#define PMB887X_TRACE_IO		PMB887X_TRACE_IO_DSP
-
 #include "qemu/osdep.h"
 #include "qemu/bitops.h"
 #include "qemu/timer.h"
 #include "hw/arm/pmb887x/dsp/peripheral/cipher-kasumi.h"
 #include "hw/arm/pmb887x/dsp/peripheral/internal.h"
 #include "hw/arm/pmb887x/gen/dsp.h"
-#include "hw/arm/pmb887x/trace.h"
 
 #define CIPHER_REGISTER_COUNT	(TEAK_CIPH_KDATA4 + 1)
 #define CIPHER_STREAM_OFFSET	0x0020
@@ -345,7 +340,7 @@ static bool cipher_read(dsp_device_t *device, uint16_t offset, uint32_t pc, uint
 
 	*value = offset < CIPHER_REGISTER_COUNT ? state->registers[offset] : 0;
 
-	IO_DUMP_READ_EX(device->config->base + offset, sizeof(*value), *value, pc, 0);
+	dsp_device_debug_io(device, offset, *value, false, pc);
 	return true;
 }
 
@@ -377,9 +372,10 @@ static bool cipher_write(dsp_device_t *device, uint16_t offset, uint32_t pc, uin
 			break;
 	}
 
-	IO_DUMP_WRITE_EX(device->config->base + offset, sizeof(value), value, pc, 0);
+	dsp_device_debug_io(device, offset, value, true, pc);
 	return true;
 }
+
 
 static const dsp_device_ops_t cipher_ops = {
 	.destroy = cipher_destroy,
@@ -388,14 +384,19 @@ static const dsp_device_ops_t cipher_ops = {
 	.write = cipher_write,
 };
 
-dsp_device_t *cipher_create(const pmb887x_dsp_peripheral_config_t *config, dsp_device_t *interrupt, const dsp_host_t *host) {
+dsp_device_t *cipher_create(
+	const pmb887x_dsp_peripheral_config_t *config,
+	const DebugChannel *parent,
+	dsp_device_t *interrupt,
+	const dsp_host_t *host
+) {
 	cipher_state_t *state = g_new0(cipher_state_t, 1);
 	state->interrupt = interrupt;
 	state->host = *host;
 	state->ram_base = config->ram_base;
 	state->last_update_ns = state->host.get_time_ns(state->host.opaque);
 	state->timer = timer_new_ns(QEMU_CLOCK_VIRTUAL, cipher_timer, state);
-	return dsp_device_create(config, &cipher_ops, state);
+	return dsp_device_create(config, parent, &cipher_ops, state);
 }
 
 void cipher_set_clock_hz(dsp_device_t *device, uint32_t frequency_hz) {

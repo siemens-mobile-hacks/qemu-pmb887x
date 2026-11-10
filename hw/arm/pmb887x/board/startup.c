@@ -101,7 +101,7 @@ void pmb887x_board_startup_init(DeviceState *keypad) {
 	startup_sequence.duration_ms = (uint32_t) duration_seconds * 1000;
 	startup_sequence.activation_timer = timer_new_ms(QEMU_CLOCK_VIRTUAL, pmb887x_board_startup_activate, &startup_sequence);
 	startup_sequence.release_timer = timer_new_ms(QEMU_CLOCK_VIRTUAL, pmb887x_board_startup_release, &startup_sequence);
-	qdev_connect_gpio_out_named(keypad, "KEYPAD_READY_OUT", 0,
+	qdev_connect_gpio_out_named(keypad, "KEYPAD_READY", 0,
 		qemu_allocate_irq(pmb887x_board_startup_keypad_ready, &startup_sequence, 0));
 	timer_mod(startup_sequence.activation_timer, qemu_clock_get_ms(QEMU_CLOCK_VIRTUAL));
 	qemu_log("Startup: %s (%d s after KEYPAD_READY)\n", scenario_name, duration_seconds);

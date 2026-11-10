@@ -709,6 +709,7 @@ static void device_finalize(Object *obj)
     }
 
     qdev_finalize_clocklist(dev);
+    qdev_finalize_bus_ports(dev);
 
     /* Only send event if the device had been completely realized */
     if (dev->pending_deleted_event) {

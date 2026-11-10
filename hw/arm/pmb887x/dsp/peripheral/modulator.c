@@ -1,14 +1,9 @@
-#define PMB887X_TRACE_ID		DSP_MODULATOR
-#define PMB887X_TRACE_PREFIX	"pmb887x-dsp-modulator"
-#define PMB887X_TRACE_IO		PMB887X_TRACE_IO_DSP
-
 #include "qemu/osdep.h"
 #include "qemu/atomic.h"
 #include "qemu/bitops.h"
 
 #include "hw/arm/pmb887x/dsp/peripheral/internal.h"
 #include "hw/arm/pmb887x/gen/dsp.h"
-#include "hw/arm/pmb887x/trace.h"
 
 #define MODULATOR_REGISTER_COUNT	(TEAK_MOD_UNKA + 1)
 #define MODULATOR_RESERVED	0x02
@@ -62,7 +57,7 @@ static bool modulator_read(dsp_device_t *device, uint16_t offset, uint32_t pc, u
 			break;
 	}
 
-	IO_DUMP_READ_EX(device->config->base + offset, sizeof(*value), *value, pc, 0);
+	dsp_device_debug_io(device, offset, *value, false, pc);
 	return true;
 }
 
@@ -101,9 +96,10 @@ static bool modulator_write(dsp_device_t *device, uint16_t offset, uint32_t pc, 
 			break;
 	}
 
-	IO_DUMP_WRITE_EX(device->config->base + offset, sizeof(value), value, pc, 0);
+	dsp_device_debug_io(device, offset, value, true, pc);
 	return true;
 }
+
 
 static const dsp_device_ops_t modulator_ops = {
 	.destroy = modulator_destroy,
@@ -116,10 +112,14 @@ uint16_t modulator_ram_stored_bits(uint16_t hardware_version) {
 	return hardware_version == PMB887X_DSP_HW_VERSION_E101 ? 0x000F : 0x0001;
 }
 
-dsp_device_t *modulator_create(const pmb887x_dsp_peripheral_config_t *config, dsp_device_t *interrupt) {
+dsp_device_t *modulator_create(
+	const pmb887x_dsp_peripheral_config_t *config,
+	const DebugChannel *parent,
+	dsp_device_t *interrupt
+) {
 	modulator_state_t *state = g_new0(modulator_state_t, 1);
 	state->interrupt = interrupt;
-	return dsp_device_create(config, &modulator_ops, state);
+	return dsp_device_create(config, parent, &modulator_ops, state);
 }
 
 void modulator_set_codon(dsp_device_t *device, bool level) {

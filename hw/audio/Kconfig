@@ -55,3 +55,26 @@ config VIRTIO_SND
     bool
     default y
     depends on VIRTIO
+
+config PCM_OUT
+    bool
+
+config SPEAKER
+    bool
+    select PCM_OUT
+
+config AUDIO_ROUTER
+    bool
+
+config B00B10B
+    bool
+    depends on SSI
+
+config LM4946
+    bool
+    depends on I2C
+    select AUDIO_ROUTER
+
+config TEA5761UK
+    bool
+    depends on I2C

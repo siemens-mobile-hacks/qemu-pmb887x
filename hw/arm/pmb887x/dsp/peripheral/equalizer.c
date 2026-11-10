@@ -1,13 +1,8 @@
-#define PMB887X_TRACE_ID		DSP_EQUALIZER
-#define PMB887X_TRACE_PREFIX	"pmb887x-dsp-equalizer"
-#define PMB887X_TRACE_IO		PMB887X_TRACE_IO_DSP
-
 #include "qemu/osdep.h"
 #include "qemu/bitops.h"
 
 #include "hw/arm/pmb887x/dsp/peripheral/internal.h"
 #include "hw/arm/pmb887x/gen/dsp.h"
-#include "hw/arm/pmb887x/trace.h"
 
 #define EQUALIZER_EDGE_STATES		8U
 #define EQUALIZER_GMSK_STATES		16U
@@ -367,7 +362,7 @@ static bool equalizer_read(dsp_device_t *device, uint16_t offset, uint32_t pc, u
 			break;
 	}
 
-	IO_DUMP_READ_EX(device->config->base + offset, sizeof(*value), *value, pc, 0);
+	dsp_device_debug_io(device, offset, *value, false, pc);
 	return true;
 }
 
@@ -404,9 +399,10 @@ static bool equalizer_write(dsp_device_t *device, uint16_t offset, uint32_t pc, 
 			break;
 	}
 
-	IO_DUMP_WRITE_EX(device->config->base + offset, sizeof(value), value, pc, 0);
+	dsp_device_debug_io(device, offset, value, true, pc);
 	return true;
 }
+
 
 static const dsp_device_ops_t equalizer_ops = {
 	.destroy = equalizer_destroy,
@@ -1090,9 +1086,13 @@ bool equalizer_is_active(const dsp_device_t *device) {
 	return state->active;
 }
 
-dsp_device_t *equalizer_create(const pmb887x_dsp_peripheral_config_t *config, dsp_device_t *interrupt) {
+dsp_device_t *equalizer_create(
+	const pmb887x_dsp_peripheral_config_t *config,
+	const DebugChannel *parent,
+	dsp_device_t *interrupt
+) {
 	equalizer_state_t *state = g_new0(equalizer_state_t, 1);
 	state->interrupt = interrupt;
 	equalizer_reset_state(state);
-	return dsp_device_create(config, &equalizer_ops, state);
+	return dsp_device_create(config, parent, &equalizer_ops, state);
 }

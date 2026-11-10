@@ -46,6 +46,15 @@ bool cpu_unwind_state_data(CPUState *cpu, uintptr_t host_pc, uint64_t *data);
 bool cpu_restore_state(CPUState *cpu, uintptr_t host_pc);
 
 /**
+ * cpu_get_io_context:
+ * @cpu: the cpu context
+ * @pc: the PC of the instruction at @cpu->mem_io_pc
+ * @lr: its return address
+ * @return: false if @cpu->mem_io_pc is not in translated code
+ */
+bool cpu_get_io_context(CPUState *cpu, uint64_t *pc, uint64_t *lr);
+
+/**
  * cpu_loop_exit_noexc:
  * @cpu: the cpu context
  *

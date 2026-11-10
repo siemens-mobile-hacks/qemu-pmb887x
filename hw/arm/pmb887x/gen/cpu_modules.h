@@ -9,6 +9,9 @@ enum {
 	PMB887X_DMAC_BUS_AHB2,
 };
 
+#define PMB887X_GPIO_DIR_IN		(1 << 0)
+#define PMB887X_GPIO_DIR_OUT	(1 << 1)
+
 typedef struct pmb887x_cpu_t pmb887x_cpu_t;
 typedef struct pmb887x_cpu_module_t pmb887x_cpu_module_t;
 typedef struct pmb887x_cpu_module_gpio_t pmb887x_cpu_module_gpio_t;
@@ -42,6 +45,7 @@ struct pmb887x_cpu_module_gpio_t {
 	const char name[64];
 	int pin;
 	int alt;
+	uint32_t directions;
 };
 
 struct pmb887x_cpu_module_dma_t {

@@ -3,7 +3,7 @@
 #include "hw/arm/pmb887x/board/gpio.h"
 
 #include "hw/arm/pmb887x/utils/toml.h"
-#include "hw/arm/pmb887x/utils/tomlc17.h"
+#include "tomlc17.h"
 #include "hw/core/irq.h"
 #include "qapi/qapi-types-ui.h"
 #include "qemu/error-report.h"
@@ -81,7 +81,7 @@ static bool keyboard_connect_key_to_gpio(DeviceState *keypad, const char *name, 
 	for (size_t i = 0; i < ARRAY_SIZE(keyboard_map); i++) {
 		if (strcmp(name, keyboard_map[i].name) != 0)
 			continue;
-		pmb887x_qdev_connect_gpio_out(keypad, "KEY_OUT", keyboard_map[i].qcode, input);
+		pmb887x_qdev_connect_gpio_out(keypad, "KEY", keyboard_map[i].qcode, input);
 		found = true;
 	}
 

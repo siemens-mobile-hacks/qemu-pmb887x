@@ -44,6 +44,7 @@
 #include "qemu/uuid.h"
 #include "system/reset.h"
 #include "system/runstate.h"
+#include "system/debug-channel.h"
 #include "system/runstate-action.h"
 #include "system/seccomp.h"
 #include "system/tcg.h"
@@ -2628,6 +2629,9 @@ static void qemu_process_early_options(void)
                 exit(1);
             }
         }
+        if (debug_channels_is_requested()) {
+            mask |= LOG_TRACE;
+        }
         qemu_set_log_filename_flags(log_file, mask, &error_fatal);
     }
 
@@ -2793,6 +2797,7 @@ static bool qemu_machine_creation_done(Error **errp)
     qdev_prop_check_globals();
 
     qdev_machine_creation_done();
+    debug_channels_machine_done();
 
     if (machine->cgs && !machine->cgs->ready) {
         error_setg(errp, "accelerator does not support confidential guest %s",
@@ -3140,6 +3145,9 @@ void qemu_init(int argc, char **argv)
                 break;
             case QEMU_OPTION_D:
                 log_file = optarg;
+                break;
+            case QEMU_OPTION_debug_channels:
+                debug_channels_parse_option(optarg, &error_fatal);
                 break;
             case QEMU_OPTION_DFILTER:
                 qemu_set_dfilter_ranges(optarg, &error_fatal);
@@ -3769,6 +3777,7 @@ void qemu_init(int argc, char **argv)
 
     qemu_init_main_loop(&error_fatal);
     cpu_timers_init();
+    debug_channels_set_clock(cpus_peek_virtual_clock);
 
     user_register_global_props();
     replay_configure(icount_opts);

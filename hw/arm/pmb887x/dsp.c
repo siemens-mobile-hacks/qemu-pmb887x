@@ -1,9 +1,6 @@
 /*
  * DSP
  */
-#define PMB887X_TRACE_ID		DSP
-#define PMB887X_TRACE_PREFIX	"pmb887x-dsp"
-
 #include "qemu/osdep.h"
 #include "hw/core/sysbus.h"
 #include "system/memory.h"
@@ -12,9 +9,11 @@
 #include "qemu/timer.h"
 #include "hw/core/qdev-properties.h"
 #include "hw/core/qdev-clock.h"
+#include "hw/audio/audio-line.h"
 #include "hw/audio/i2s.h"
 #include "hw/ssi/ssi.h"
 #include "system/runstate.h"
+#include "system/debug-channel.h"
 
 #include "hw/arm/pmb887x/dsp/runtime.h"
 
@@ -24,10 +23,9 @@
 #include "hw/arm/pmb887x/dsp.h"
 #include "hw/arm/pmb887x/dsp/config.h"
 #include "hw/arm/pmb887x/dsp/peripheral/internal.h"
-#include "hw/arm/pmb887x/regs_dump.h"
+#include "hw/arm/pmb887x/gen/cpu_meta.h"
 #include "hw/arm/pmb887x/mod.h"
-#include "hw/arm/pmb887x/rf.h"
-#include "hw/arm/pmb887x/trace.h"
+#include "hw/gsm/iq-bus.h"
 
 #define DSP_BOOT_DATA_OFFSET	2
 #define DSP_RUNTIME_PIPE_OFFSET	5
@@ -36,12 +34,6 @@
 #define DSP_SYNC_PERIOD_NS	(100 * SCALE_US)
 #define DSP_RESET_START_CYCLES	512
 #define DSP_RUN_CYCLES		16384
-#define DSP_SSC_BUS_NAME	"pmb887x-dsp-ssc"
-#define DSP_I2S1_TX_BUS_NAME	"pmb887x-dsp-i2s1-tx"
-#define DSP_I2S1_RX_BUS_NAME	"pmb887x-dsp-i2s1-rx"
-#define DSP_I2S2_TX_BUS_NAME	"pmb887x-dsp-i2s2-tx"
-#define DSP_I2S2_RX_BUS_NAME	"pmb887x-dsp-i2s2-rx"
-#define DSP_IQ_RX_BUS_NAME	"pmb887x-dsp-iq-rx"
 #define PMB887X_DSP(obj)	OBJECT_CHECK(dsp_state_t, (obj), TYPE_PMB887X_DSP)
 
 enum {
@@ -66,6 +58,7 @@ struct dsp_state_t {
 	MemoryRegion mmio;
 	MemoryRegion regs;
 	MemoryRegion ram;
+	DebugChannel dbg;
 	uint32_t revision;
 	uint32_t rom_version;
 	const pmb887x_dsp_config_t *config;
@@ -94,7 +87,9 @@ struct dsp_state_t {
 	qemu_irq active_output;
 	dsp_i2s_port_t i2s1;
 	dsp_i2s_port_t i2s2;
-	pmb887x_iq_bus_t *iq_rx_bus;
+	IQBus *iq_rx_bus;
+	AudioLineBus *afe_ep_bus;
+	AudioLineBus *afe_eppa_bus;
 	SSIBus *ssc_bus;
 };
 
@@ -317,7 +312,7 @@ static void dsp_notify_activity(void *opaque) {
 
 static void dsp_notify_comm(void *opaque, uint16_t flags, bool set) {
 	dsp_state_t *p = opaque;
-	DPRINTF("comm: flags=%04X set=%u pc=%05X time=%" PRId64 "\n", flags, set,
+	DEBUG_LOG(&p->dbg, "comm: flags=%04X set=%u pc=%05X time=%" PRId64 "\n", flags, set,
 		dsp_runtime_get_trace_pc(p->runtime), dsp_get_time_ns(p));
 
 	if (set) {
@@ -389,7 +384,7 @@ static void dsp_trace_command(dsp_state_t *p, size_t pipe) {
 		if (command != DSP_BOOT_BRANCH)
 			words = dsp_runtime_shared_read(p->runtime, DSP_BOOT_DATA_OFFSET + 2);
 
-		DPRINTF("boot command: %s(%u) address=%04X words=%u\n", dsp_boot_command_name(command), command, address, words);
+		DEBUG_LOG(&p->dbg, "boot command: %s(%u) address=%04X words=%u\n", dsp_boot_command_name(command), command, address, words);
 
 		if (command == DSP_BOOT_BRANCH)
 			p->trace_boot_mode = false;
@@ -398,7 +393,11 @@ static void dsp_trace_command(dsp_state_t *p, size_t pipe) {
 
 	uint16_t offset = DSP_RUNTIME_PIPE_OFFSET + pipe * DSP_RUNTIME_PIPE_STRIDE;
 	uint16_t command = dsp_runtime_shared_read(p->runtime, offset);
-	DPRINTF("runtime command: pipe=%zu command=%u (0x%04X)\n", pipe, command, command);
+	g_autoptr(GString) args = g_string_new("");
+	for (uint16_t i = 1; i < DSP_RUNTIME_PIPE_STRIDE; i++)
+		g_string_append_printf(args, " %04X", dsp_runtime_shared_read(p->runtime, offset + i));
+
+	DEBUG_LOG(&p->dbg, "runtime command: pipe=%zu command=%u (0x%04X) args:%s\n", pipe, command, command, args->str);
 }
 
 static void dsp_interrupt_input(void *opaque, int id, int level) {
@@ -407,7 +406,7 @@ static void dsp_interrupt_input(void *opaque, int id, int level) {
 	if (!level)
 		return;
 
-	if (pmb887x_trace_log_enabled(PMB887X_TRACE_DSP))
+	if (debug_channel_is_enabled(&p->dbg, DEBUG_CH_LOG))
 		dsp_trace_command(p, id);
 
 	dsp_runtime_set_request(p->runtime, id, true);
@@ -483,7 +482,7 @@ static uint64_t dsp_io_read(void *opaque, hwaddr haddr, unsigned size) {
 				dsp_schedule_sync(p);
 			}
 			if (dsp_runtime_take_program_start(p->runtime, &program_start_pc))
-				DPRINTF("cold program start: pc=%05X flags=%04" PRIX64 "\n", program_start_pc, value);
+				DEBUG_LOG(&p->dbg, "cold program start: pc=%05X flags=%04" PRIX64 "\n", program_start_pc, value);
 			break;
 		}
 
@@ -498,11 +497,10 @@ static uint64_t dsp_io_read(void *opaque, hwaddr haddr, unsigned size) {
 			break;
 
 		default:
-			EPRINTF("unknown reg access: %02"PRIX64"\n", haddr);
+			DEBUG_GUEST_ERROR(&p->dbg, "unknown reg read: %02"PRIX64"\n", haddr);
 			break;
 	}
 
-	IO_DUMP_READ(haddr + p->mmio.addr, size, value);
 	return value;
 }
 
@@ -538,12 +536,11 @@ static void dsp_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned si
 			break;
 
 		default:
-			EPRINTF("unknown reg access: %02"PRIX64"\n", haddr);
+			DEBUG_GUEST_ERROR(&p->dbg, "unknown reg write: %02"PRIX64" = %08"PRIX64"\n", haddr, value);
 			break;
 	}
 
 	dsp_schedule_sync(p);
-	IO_DUMP_WRITE(haddr + p->mmio.addr, size, value);
 }
 
 static const MemoryRegionOps io_ops = {
@@ -560,32 +557,24 @@ static uint64_t dsp_ram_read(void *opaque, hwaddr haddr, unsigned size) {
 	dsp_state_t *p = opaque;
 	uint64_t value;
 
-	if (!dsp_mcu_interface_is_enabled(p)) {
-		IO_DUMP_READ(haddr + p->mmio.addr + DSP_RAM0, size, 0);
+	if (!dsp_mcu_interface_is_enabled(p))
 		return 0;
-	}
 	p->comm_transition_pending = false;
 	dsp_sync_access(p);
 	value = dsp_runtime_shared_read_bytes(p->runtime, haddr, size);
-
-	IO_DUMP_READ(haddr + p->mmio.addr + DSP_RAM0, size, value);
 	return value;
 }
 
 static void dsp_ram_write(void *opaque, hwaddr haddr, uint64_t value, unsigned size) {
 	dsp_state_t *p = opaque;
 
-	if (!dsp_mcu_interface_is_enabled(p)) {
-		IO_DUMP_WRITE(haddr + p->mmio.addr + DSP_RAM0, size, value);
+	if (!dsp_mcu_interface_is_enabled(p))
 		return;
-	}
 	p->comm_transition_pending = false;
 	dsp_sync_access(p);
 
 	dsp_runtime_shared_write_bytes(p->runtime, haddr, value, size);
 	dsp_schedule_sync(p);
-
-	IO_DUMP_WRITE(haddr + p->mmio.addr + DSP_RAM0, size, value);
 }
 
 static const MemoryRegionOps ram_io_ops = {
@@ -609,34 +598,36 @@ static void dsp_init(Object *obj) {
 
 	pmb887x_clc_init(&p->clc, DEVICE(obj));
 	pmb887x_clc_set_callback(&p->clc, dsp_clock_update, p);
-	p->ssc_bus = ssi_create_bus(DEVICE(obj), DSP_SSC_BUS_NAME);
-	p->i2s1.tx_bus = i2s_tx_bus_init(DEVICE(obj), DSP_I2S1_TX_BUS_NAME);
-	p->i2s1.rx_bus = i2s_rx_bus_init(DEVICE(obj), DSP_I2S1_RX_BUS_NAME);
-	p->i2s2.tx_bus = i2s_tx_bus_init(DEVICE(obj), DSP_I2S2_TX_BUS_NAME);
-	p->i2s2.rx_bus = i2s_rx_bus_init(DEVICE(obj), DSP_I2S2_RX_BUS_NAME);
-	p->iq_rx_bus = pmb887x_iq_bus_create(DEVICE(obj), DSP_IQ_RX_BUS_NAME);
+	p->ssc_bus = ssi_create_bus(DEVICE(obj), "SSC");
+	p->i2s1.tx_bus = i2s_tx_bus_init(DEVICE(obj), "I2S1_TX");
+	p->i2s1.rx_bus = i2s_rx_bus_init(DEVICE(obj), "I2S1_RX");
+	p->i2s2.tx_bus = i2s_tx_bus_init(DEVICE(obj), "I2S2_TX");
+	p->i2s2.rx_bus = i2s_rx_bus_init(DEVICE(obj), "I2S2_RX");
+	p->iq_rx_bus = IQ_BUS(qbus_new(TYPE_IQ_BUS, DEVICE(obj), "IQ_RX"));
+	p->afe_ep_bus = audio_line_bus_init(DEVICE(obj), "AFE_EP");
+	p->afe_eppa_bus = audio_line_bus_init(DEVICE(obj), "AFE_EPPA");
 	memory_region_init(&p->mmio, obj, "pmb887x-dsp", DSP_IO_SIZE);
 	memory_region_init_io(&p->regs, obj, &io_ops, p, "pmb887x-dsp-regs", DSP_RAM0);
 	memory_region_add_subregion(&p->mmio, 0, &p->regs);
 	sysbus_init_mmio(SYS_BUS_DEVICE(obj), &p->mmio);
-	qdev_init_gpio_in_named(DEVICE(obj), dsp_reset_input, "RESET_IN", 1);
-	qdev_init_gpio_in_named(DEVICE(obj), dsp_interrupt_input, "INT_IN", PMB887X_DSP_INT_COUNT);
-	qdev_init_gpio_out_named(DEVICE(obj), p->mcu_interrupts, "INT_OUT", ARRAY_SIZE(p->mcu_interrupts));
-	qdev_init_gpio_in_named(DEVICE(obj), dsp_input0, "DSPIN0_IN", 1);
-	qdev_init_gpio_in_named(DEVICE(obj), dsp_input1, "DSPIN1_IN", 1);
-	qdev_init_gpio_in_named(DEVICE(obj), dsp_gsm_input, "GSM_IN", PMB887X_DSP_GSM_SIGNAL_COUNT);
-	qdev_init_gpio_in_named(DEVICE(obj), dsp_i2s2_input, "I2S2_RX_IN", 1);
+	qdev_init_gpio_in_named(DEVICE(obj), dsp_reset_input, "RESET", 1);
+	qdev_init_gpio_in_named(DEVICE(obj), dsp_interrupt_input, "INT", PMB887X_DSP_INT_COUNT);
+	qdev_init_gpio_out_named(DEVICE(obj), p->mcu_interrupts, "INT", ARRAY_SIZE(p->mcu_interrupts));
+	qdev_init_gpio_in_named(DEVICE(obj), dsp_input0, "DSPIN0", 1);
+	qdev_init_gpio_in_named(DEVICE(obj), dsp_input1, "DSPIN1", 1);
+	qdev_init_gpio_in_named(DEVICE(obj), dsp_gsm_input, "GSM", PMB887X_DSP_GSM_SIGNAL_COUNT);
+	qdev_init_gpio_in_named(DEVICE(obj), dsp_i2s2_input, "I2S2_RX", 1);
 	p->gsm_clock = qdev_init_clock_in(DEVICE(obj), "GSM_CLOCK", NULL, p, 0);
 	p->ms_clock = qdev_init_clock_in(DEVICE(obj), "MS_CLOCK", dsp_ms_clock_update, p, ClockUpdate);
-	qdev_init_gpio_out_named(DEVICE(obj), &p->outputs[0], "DSPOUT0_OUT", 1);
-	qdev_init_gpio_out_named(DEVICE(obj), &p->outputs[1], "DSPOUT1_OUT", 1);
-	qdev_init_gpio_out_named(DEVICE(obj), &p->outputs[2], "DSPOUT2_OUT", 1);
-	qdev_init_gpio_out_named(DEVICE(obj), &p->i2s2_outputs[PMB887X_DSP_I2S_OUTPUT_CLK0], "I2S2_CLK0_OUT", 1);
-	qdev_init_gpio_out_named(DEVICE(obj), &p->i2s2_outputs[PMB887X_DSP_I2S_OUTPUT_TX], "I2S2_TX_OUT", 1);
-	qdev_init_gpio_out_named(DEVICE(obj), &p->i2s2_outputs[PMB887X_DSP_I2S_OUTPUT_WA0], "I2S2_WA0_OUT", 1);
-	qdev_init_gpio_out_named(DEVICE(obj), &p->i2s2_outputs[PMB887X_DSP_I2S_OUTPUT_CLK1], "I2S2_CLK1_OUT", 1);
-	qdev_init_gpio_out_named(DEVICE(obj), &p->i2s2_outputs[PMB887X_DSP_I2S_OUTPUT_WA1], "I2S2_WA1_OUT", 1);
-	qdev_init_gpio_out_named(DEVICE(obj), &p->active_output, "ACTIVE_OUT", 1);
+	qdev_init_gpio_out_named(DEVICE(obj), &p->outputs[0], "DSPOUT0", 1);
+	qdev_init_gpio_out_named(DEVICE(obj), &p->outputs[1], "DSPOUT1", 1);
+	qdev_init_gpio_out_named(DEVICE(obj), &p->outputs[2], "DSPOUT2", 1);
+	qdev_init_gpio_out_named(DEVICE(obj), &p->i2s2_outputs[PMB887X_DSP_I2S_OUTPUT_CLK0], "I2S2_CLK0", 1);
+	qdev_init_gpio_out_named(DEVICE(obj), &p->i2s2_outputs[PMB887X_DSP_I2S_OUTPUT_TX], "I2S2_TX", 1);
+	qdev_init_gpio_out_named(DEVICE(obj), &p->i2s2_outputs[PMB887X_DSP_I2S_OUTPUT_WA0], "I2S2_WA0", 1);
+	qdev_init_gpio_out_named(DEVICE(obj), &p->i2s2_outputs[PMB887X_DSP_I2S_OUTPUT_CLK1], "I2S2_CLK1", 1);
+	qdev_init_gpio_out_named(DEVICE(obj), &p->i2s2_outputs[PMB887X_DSP_I2S_OUTPUT_WA1], "I2S2_WA1", 1);
+	qdev_init_gpio_out_named(DEVICE(obj), &p->active_output, "ACTIVE", 1);
 }
 
 static void dsp_reset(DeviceState *dev) {
@@ -659,12 +650,6 @@ static const Property dsp_properties[] = {
 	DEFINE_PROP_UINT32("revision", dsp_state_t, revision, 0),
 	DEFINE_PROP_UINT32("rom_version", dsp_state_t, rom_version, 0),
 	DEFINE_PROP_LINK("cpu", dsp_state_t, cpu, TYPE_CPU, CPUState *),
-	DEFINE_PROP_LINK("bus_ssc", dsp_state_t, ssc_bus, "SSI", SSIBus *),
-	DEFINE_PROP_LINK("bus_i2s1_tx", dsp_state_t, i2s1.tx_bus, TYPE_I2S_TX_BUS, I2STxBus *),
-	DEFINE_PROP_LINK("bus_i2s1_rx", dsp_state_t, i2s1.rx_bus, TYPE_I2S_RX_BUS, I2SRxBus *),
-	DEFINE_PROP_LINK("bus_i2s2_tx", dsp_state_t, i2s2.tx_bus, TYPE_I2S_TX_BUS, I2STxBus *),
-	DEFINE_PROP_LINK("bus_i2s2_rx", dsp_state_t, i2s2.rx_bus, TYPE_I2S_RX_BUS, I2SRxBus *),
-	DEFINE_PROP_LINK("bus_iq_rx", dsp_state_t, iq_rx_bus, TYPE_PMB887X_IQ_BUS, pmb887x_iq_bus_t *),
 };
 
 static void dsp_realize(DeviceState *dev, Error **errp) {
@@ -673,6 +658,7 @@ static void dsp_realize(DeviceState *dev, Error **errp) {
 	const pmb887x_dsp_rom_t *rom;
 	size_t shared_ram_size;
 
+	pmb887x_mod_debug_init(&p->dbg, dev, &p->regs, &pmb887x_dsp_regs);
 	if (p->config == NULL) {
 		error_setg(errp, "DSP configuration is not set");
 		return;
@@ -687,6 +673,7 @@ static void dsp_realize(DeviceState *dev, Error **errp) {
 	shared_ram_size = config->shared_size * sizeof(uint16_t);
 	memory_region_init_io(&p->ram, OBJECT(dev), &ram_io_ops, p, "pmb887x-dsp-ram", shared_ram_size);
 	memory_region_add_subregion(&p->mmio, DSP_RAM0, &p->ram);
+	debug_channel_attach_mr(&p->dbg, &p->ram, DSP_RAM_BASE);
 	if (p->rom_version == 0)
 		p->rom_version = config->default_rom_version;
 
@@ -707,9 +694,11 @@ static void dsp_realize(DeviceState *dev, Error **errp) {
 				.rx_bus = p->i2s2.rx_bus,
 			},
 		},
+		.afe_ep = p->afe_ep_bus,
+		.afe_eppa = p->afe_eppa_bus,
 	};
 	p->runtime = dsp_runtime_create(config, rom->program_rom, rom->data_rom,
-		p, dsp_notify_activity, dsp_notify_comm, dsp_get_time_ns, dsp_ssc_transfer, &ports);
+		p, dsp_notify_activity, dsp_notify_comm, dsp_get_time_ns, dsp_ssc_transfer, &ports, &p->dbg);
 	dsp_runtime_set_iq_bus(p->runtime, p->iq_rx_bus);
 	dsp_runtime_set_ms_clock_hz(p->runtime, clock_get_hz(p->ms_clock));
 	p->sync_timer = timer_new_ns(QEMU_CLOCK_VIRTUAL, dsp_sync_timer, p);
@@ -718,7 +707,7 @@ static void dsp_realize(DeviceState *dev, Error **errp) {
 	p->vmstate = qdev_add_vm_change_state_handler(dev, dsp_vm_state_change, NULL, p);
 	pmb887x_clc_set(&p->clc, MOD_CLC_DISR);
 	dsp_reset_internal_state(p);
-	DPRINTF("core initialized: cpu=%s revision=%02X rom_version=%04X\n", config->name, p->revision, p->rom_version);
+	DEBUG_LOG(&p->dbg, "core initialized: cpu=%s revision=%02X rom_version=%04X\n", config->name, p->revision, p->rom_version);
 }
 
 static void dsp_unrealize(DeviceState *dev) {

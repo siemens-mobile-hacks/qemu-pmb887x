@@ -2070,6 +2070,11 @@ if fdt_opt == 'internal'
   fdt = libfdt_proj.get_variable('libfdt_dep')
 endif
 
+tomlc17 = not_found
+if have_system
+  tomlc17 = subproject('tomlc17').get_variable('tomlc17_dep')
+endif
+
 rdma = not_found
 if not get_option('rdma').auto() or have_system
   rdma_libs = [cc.find_library('rdmacm', has_headers: ['rdma/rdma_cma.h'],
@@ -3769,7 +3774,23 @@ subdir('fpu')
 subdir('plugins')
 subdir('ebpf')
 
-host_unit_tests = {}
+host_unit_tests = {
+  'debug-channel': {
+    'sources': files('tests/unit/test-debug-channel.c'),
+  },
+  'debug-channel-queue': {
+    'sources': files('tests/unit/test-debug-channel-queue.c'),
+  },
+  'debug-regs': {
+    'sources': files('tests/unit/test-debug-regs.c'),
+  },
+  'fifo': {
+    'sources': files('tests/unit/test-fifo.c'),
+  },
+  'pcm-out': {
+    'sources': files('tests/unit/test-pcm-out.c', 'hw/audio/pcm-out.c'),
+  },
+}
 target_unit_tests = {}
 
 if have_system
@@ -3808,18 +3829,6 @@ libqemuutil = static_library('qemuutil',
 qemuutil = declare_dependency(link_with: libqemuutil,
                               sources: genh + version_res,
                               dependencies: [event_loop_base])
-
-foreach test_name, test_config : host_unit_tests
-  test_exe = executable(
-    'test-' + test_name,
-    test_config['sources'],
-    genh,
-    c_args: test_config.get('c_args', []),
-    dependencies: [qemuutil] + test_config.get('dependencies', []),
-    build_by_default: false,
-  )
-  test(test_name, test_exe, suite: ['unit'])
-endforeach
 
 if have_system or have_user
   decodetree = generator(find_program('scripts/decodetree.py'),
@@ -4113,6 +4122,64 @@ libhwcore = static_library('hwcore', sources: hwcore_ss.sources() + genh,
                            build_by_default: false)
 hwcore = declare_dependency(objects: libhwcore.extract_all_objects(recursive: false))
 common_ss.add(hwcore)
+
+if have_system
+  host_unit_tests += {
+    'qdev': {
+      'sources': files('tests/unit/test-qdev.c', 'hw/core/split-irq.c'),
+      'dependencies': [qom, hwcore],
+    },
+    'speaker': {
+      'sources': files(
+        'tests/unit/test-speaker.c',
+        'hw/audio/audio-line.c',
+        'hw/audio/speaker.c',
+      ),
+      'dependencies': [qom, hwcore, libm],
+    },
+    'audio-router': {
+      'sources': files(
+        'tests/unit/test-audio-router.c',
+        'hw/audio/audio-junction.c',
+        'hw/audio/audio-line.c',
+        'hw/audio/audio-router.c',
+        'hw/audio/audio-switch.c',
+      ),
+      'dependencies': [qom, hwcore],
+    },
+    'accessory-connector': {
+      'sources': files(
+        'tests/unit/test-accessory-connector.c',
+        'hw/audio/audio-line.c',
+        'hw/audio/i2s.c',
+        'hw/misc/phone/accessory-connector.c',
+      ),
+      'dependencies': [qom, hwcore],
+    },
+    'bus-port': {
+      'sources': files(
+        'tests/unit/test-bus-port.c',
+        'hw/audio/audio-line.c',
+        'hw/audio/i2s.c',
+        'hw/i2c/core.c',
+        'hw/ssi/three-wire-serial.c',
+      ),
+      'dependencies': [qom, hwcore],
+    },
+  }
+endif
+
+foreach test_name, test_config : host_unit_tests
+  test_exe = executable(
+    'test-' + test_name,
+    test_config['sources'],
+    genh,
+    c_args: test_config.get('c_args', []),
+    dependencies: [qemuutil] + test_config.get('dependencies', []),
+    build_by_default: false,
+  )
+  test(test_name, test_exe, suite: ['unit'])
+endforeach
 
 audio_ss = audio_ss.apply({})
 libaudio = static_library('qemuaudio', audio_ss.sources() + genh,

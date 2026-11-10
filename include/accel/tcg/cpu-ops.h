@@ -93,6 +93,13 @@ struct TCGCPUOps {
      */
     void (*restore_state_to_opc)(CPUState *cpu, const TranslationBlock *tb,
                                  const uint64_t *data);
+    /**
+     * @get_io_context: Get the PC and the return address of the
+     * instruction given by the INDEX_op_start_insn arguments @data,
+     * without changing the CPU state.
+     */
+    void (*get_io_context)(CPUState *cpu, const uint64_t *data,
+                           uint64_t *pc, uint64_t *lr);
 
     /** @cpu_exec_enter: Callback for cpu_exec preparation */
     void (*cpu_exec_enter)(CPUState *cpu);

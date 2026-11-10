@@ -1,13 +1,8 @@
-#define PMB887X_TRACE_ID		DSP_CHANNEL_DECODER
-#define PMB887X_TRACE_PREFIX	"pmb887x-dsp-channel-decoder"
-#define PMB887X_TRACE_IO		PMB887X_TRACE_IO_DSP
-
 #include "qemu/osdep.h"
 #include "qemu/bitops.h"
 
 #include "hw/arm/pmb887x/dsp/peripheral/internal.h"
 #include "hw/arm/pmb887x/gen/dsp.h"
-#include "hw/arm/pmb887x/trace.h"
 
 #define CHANNEL_DECODER_CONF2_MODE_MASK	(TEAK_CHDEC_CONF2_HW_ENA_DEC | TEAK_CHDEC_CONF2_DEC_FLAG_RD | \
 	TEAK_CHDEC_CONF2_PC_DEC_0 | TEAK_CHDEC_CONF2_PC_DEC_1 | TEAK_CHDEC_CONF2_OFLOW_PROT | \
@@ -129,7 +124,7 @@ static bool chdec_read(dsp_device_t *device, uint16_t offset, uint32_t pc, uint1
 			break;
 	}
 
-	IO_DUMP_READ_EX(device->config->base + offset, sizeof(*value), *value, pc, 0);
+	dsp_device_debug_io(device, offset, *value, false, pc);
 	return true;
 }
 
@@ -167,9 +162,10 @@ static bool chdec_write(dsp_device_t *device, uint16_t offset, uint32_t pc, uint
 			break;
 	}
 
-	IO_DUMP_WRITE_EX(device->config->base + offset, sizeof(value), value, pc, 0);
+	dsp_device_debug_io(device, offset, value, true, pc);
 	return true;
 }
+
 
 static const dsp_device_ops_t chdec_ops = {
 	.destroy = chdec_destroy,
@@ -364,8 +360,12 @@ bool chdec_is_active(const dsp_device_t *device) {
 	return state->active;
 }
 
-dsp_device_t *chdec_create(const pmb887x_dsp_peripheral_config_t *config, dsp_device_t *interrupt) {
+dsp_device_t *chdec_create(
+	const pmb887x_dsp_peripheral_config_t *config,
+	const DebugChannel *parent,
+	dsp_device_t *interrupt
+) {
 	chdec_state_t *state = g_new0(chdec_state_t, 1);
 	state->interrupt = interrupt;
-	return dsp_device_create(config, &chdec_ops, state);
+	return dsp_device_create(config, parent, &chdec_ops, state);
 }

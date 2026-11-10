@@ -1,5 +1,5 @@
 /*
- * Generic FIFO32 component, based on FIFO8.
+ * Generic FIFO32 component.
  *
  * Copyright (c) 2016 Jean-Christophe Dubois
  *
@@ -15,10 +15,15 @@
 #ifndef FIFO32_H
 #define FIFO32_H
 
+/* Existing users get Fifo8 through this header */
 #include "qemu/fifo8.h"
 
 typedef struct {
-    Fifo8 fifo;
+    /* All fields are private */
+    uint32_t *data;
+    uint32_t capacity;
+    uint32_t head;
+    uint32_t num;
 } Fifo32;
 
 /**
@@ -32,7 +37,10 @@ typedef struct {
 
 static inline void fifo32_create(Fifo32 *fifo, uint32_t capacity)
 {
-    fifo8_create(&fifo->fifo, capacity * sizeof(uint32_t));
+    fifo->data = g_new(uint32_t, capacity);
+    fifo->capacity = capacity;
+    fifo->head = 0;
+    fifo->num = 0;
 }
 
 /**
@@ -45,7 +53,7 @@ static inline void fifo32_create(Fifo32 *fifo, uint32_t capacity)
 
 static inline void fifo32_destroy(Fifo32 *fifo)
 {
-    fifo8_destroy(&fifo->fifo);
+    g_free(fifo->data);
 }
 
 /**
@@ -57,9 +65,9 @@ static inline void fifo32_destroy(Fifo32 *fifo)
  * Returns: Number of free 32 bit words.
  */
 
-static inline uint32_t fifo32_num_free(Fifo32 *fifo)
+static inline uint32_t fifo32_num_free(const Fifo32 *fifo)
 {
-    return DIV_ROUND_UP(fifo8_num_free(&fifo->fifo), sizeof(uint32_t));
+    return fifo->capacity - fifo->num;
 }
 
 /**
@@ -71,9 +79,16 @@ static inline uint32_t fifo32_num_free(Fifo32 *fifo)
  * Returns: Number of used 32 bit words.
  */
 
-static inline uint32_t fifo32_num_used(Fifo32 *fifo)
+static inline uint32_t fifo32_num_used(const Fifo32 *fifo)
 {
-    return DIV_ROUND_UP(fifo8_num_used(&fifo->fifo), sizeof(uint32_t));
+    return fifo->num;
+}
+
+static inline uint32_t fifo32_index(const Fifo32 *fifo, uint32_t pos)
+{
+    uint32_t index = fifo->head + pos;
+
+    return index >= fifo->capacity ? index - fifo->capacity : index;
 }
 
 /**
@@ -88,12 +103,9 @@ static inline uint32_t fifo32_num_used(Fifo32 *fifo)
 
 static inline void fifo32_push(Fifo32 *fifo, uint32_t data)
 {
-    int i;
-
-    for (i = 0; i < sizeof(data); i++) {
-        fifo8_push(&fifo->fifo, data & 0xff);
-        data >>= 8;
-    }
+    assert(fifo->num < fifo->capacity);
+    fifo->data[fifo32_index(fifo, fifo->num)] = data;
+    fifo->num++;
 }
 
 /**
@@ -110,9 +122,7 @@ static inline void fifo32_push(Fifo32 *fifo, uint32_t data)
 static inline void fifo32_push_all(Fifo32 *fifo, const uint32_t *data,
                                    uint32_t num)
 {
-    int i;
-
-    for (i = 0; i < num; i++) {
+    for (uint32_t i = 0; i < num; i++) {
         fifo32_push(fifo, data[i]);
     }
 }
@@ -130,20 +140,43 @@ static inline void fifo32_push_all(Fifo32 *fifo, const uint32_t *data,
 
 static inline uint32_t fifo32_pop(Fifo32 *fifo)
 {
-    uint32_t ret = 0;
-    int i;
+    uint32_t ret;
 
-    for (i = 0; i < sizeof(uint32_t); i++) {
-        ret |= (fifo8_pop(&fifo->fifo) << (i * 8));
-    }
-
+    assert(fifo->num > 0);
+    ret = fifo->data[fifo->head];
+    fifo->head = fifo32_index(fifo, 1);
+    fifo->num--;
     return ret;
 }
 
 /**
- * There is no fifo32_pop_buf() because the data is not stored in the buffer
- * as a set of native-order words.
+ * fifo32_peek:
+ * @fifo: fifo to peek from
+ *
+ * Return the oldest 32 bits data word without removing it. Behaviour is
+ * undefined if the FIFO is empty.
  */
+
+static inline uint32_t fifo32_peek(const Fifo32 *fifo)
+{
+    assert(fifo->num > 0);
+    return fifo->data[fifo->head];
+}
+
+/**
+ * fifo32_replace_last:
+ * @fifo: FIFO to update
+ * @data: 32 bits data word to store
+ *
+ * Overwrite the most recently pushed word. Behaviour is undefined if the
+ * FIFO is empty.
+ */
+
+static inline void fifo32_replace_last(Fifo32 *fifo, uint32_t data)
+{
+    assert(fifo->num > 0);
+    fifo->data[fifo32_index(fifo, fifo->num - 1)] = data;
+}
 
 /**
  * fifo32_reset:
@@ -154,7 +187,8 @@ static inline uint32_t fifo32_pop(Fifo32 *fifo)
 
 static inline void fifo32_reset(Fifo32 *fifo)
 {
-    fifo8_reset(&fifo->fifo);
+    fifo->head = 0;
+    fifo->num = 0;
 }
 
 /**
@@ -166,9 +200,9 @@ static inline void fifo32_reset(Fifo32 *fifo)
  * Returns: True if the fifo is empty, false otherwise.
  */
 
-static inline bool fifo32_is_empty(Fifo32 *fifo)
+static inline bool fifo32_is_empty(const Fifo32 *fifo)
 {
-    return fifo8_is_empty(&fifo->fifo);
+    return fifo->num == 0;
 }
 
 /**
@@ -180,11 +214,19 @@ static inline bool fifo32_is_empty(Fifo32 *fifo)
  * Returns: True if the fifo is full, false otherwise.
  */
 
-static inline bool fifo32_is_full(Fifo32 *fifo)
+static inline bool fifo32_is_full(const Fifo32 *fifo)
 {
-    return fifo8_num_free(&fifo->fifo) < sizeof(uint32_t);
+    return fifo->num == fifo->capacity;
 }
 
-#define VMSTATE_FIFO32(_field, _state) VMSTATE_FIFO8(_field.fifo, _state)
+extern const VMStateDescription vmstate_fifo32;
+
+#define VMSTATE_FIFO32(_field, _state) {                             \
+    .name         = (stringify(_field)),                             \
+    .size         = sizeof(Fifo32),                                  \
+    .vmsd         = &vmstate_fifo32,                                 \
+    .flags        = VMS_STRUCT,                                      \
+    .offset       = vmstate_offset_value(_state, _field, Fifo32),    \
+}
 
 #endif /* FIFO32_H */

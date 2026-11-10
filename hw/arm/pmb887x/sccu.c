@@ -1,12 +1,8 @@
 /*
  * SCCU
  * */
-#define PMB887X_TRACE_ID		SCCU
-#define PMB887X_TRACE_PREFIX	"pmb887x-sccu"
-
 #include "qemu/osdep.h"
 #include "hw/core/sysbus.h"
-#include "hw/core/hw-error.h"
 #include "system/memory.h"
 #include "cpu.h"
 #include "qapi/error.h"
@@ -17,8 +13,8 @@
 
 #include "hw/arm/pmb887x/sccu.h"
 #include "hw/arm/pmb887x/gen/cpu_regs.h"
+#include "hw/arm/pmb887x/gen/cpu_meta.h"
 #include "hw/arm/pmb887x/mod.h"
-#include "hw/arm/pmb887x/trace.h"
 
 #define TYPE_PMB887X_SCCU	"pmb887x-sccu"
 #define PMB887X_SCCU(obj)	OBJECT_CHECK(pmb887x_sccu_t, (obj), TYPE_PMB887X_SCCU)
@@ -33,6 +29,7 @@ typedef struct pmb887x_sccu_t pmb887x_sccu_t;
 struct pmb887x_sccu_t {
 	SysBusDevice parent_obj;
 	MemoryRegion mmio;
+	DebugChannel dbg;
 	uint32_t revision;
 
 	qemu_irq irq[2];
@@ -149,8 +146,8 @@ static void sccu_ptimer_reset(void *opaque) {
 		p->slpctrl &= ~SCCU_SLPCTRL_SLPEN;
 		sccu_set_active_state(p);
 
-		DPRINTF("now %u\n", (uint32_t) (qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) / 1000000));
-		DPRINTF("sleep timer done\n");
+		DEBUG_LOG(&p->dbg, "now %u\n", (uint32_t) (qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) / 1000000));
+		DEBUG_LOG(&p->dbg, "sleep timer done\n");
 	} else {
 		timer_mod(p->timer, p->start + sccu_ticks_to_ns(p, overflow));
 	}
@@ -167,7 +164,7 @@ static void sccu_start_sleep(pmb887x_sccu_t *p) {
 
 	uint32_t first_event = sccu_get_wakeup_count(p);
 	timer_mod(p->timer, p->start + sccu_ticks_to_ns(p, first_event));
-	DPRINTF("sleep timer start %d ms\n", (uint32_t) (sccu_ticks_to_ns(p, p->tdmini + 1) / 1000000));
+	DEBUG_LOG(&p->dbg, "sleep timer start %d ms\n", (uint32_t) (sccu_ticks_to_ns(p, p->tdmini + 1) / 1000000));
 }
 
 uint32_t pmb887x_sccu_clc_get(pmb887x_sccu_t *p) {
@@ -247,19 +244,15 @@ static uint64_t sccu_io_read(void *opaque, hwaddr haddr, unsigned size) {
 			break;
 
 		default:
-			EPRINTF("unknown reg access: %02"PRIX64"\n", haddr);
+			DEBUG_GUEST_ERROR(&p->dbg, "unknown reg read: %02"PRIX64"\n", haddr);
 			break;
 	}
-
-	IO_DUMP_READ(haddr + p->mmio.addr, size, value);
 
 	return value;
 }
 
 static void sccu_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned size) {
 	pmb887x_sccu_t *p = opaque;
-
-	IO_DUMP_WRITE(haddr + p->mmio.addr, size, value);
 
 	switch (haddr) {
 		case SCCU_SPCR:
@@ -339,7 +332,7 @@ static void sccu_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned s
 			break;
 
 		default:
-			EPRINTF("unknown reg access: %02"PRIX64"\n", haddr);
+			DEBUG_GUEST_ERROR(&p->dbg, "unknown reg write: %02"PRIX64" = %08"PRIX64"\n", haddr, value);
 			break;
 	}
 }
@@ -367,6 +360,7 @@ static void sccu_init(Object *obj) {
 
 static void sccu_realize(DeviceState *dev, Error **errp) {
 	pmb887x_sccu_t *p = PMB887X_SCCU(dev);
+	pmb887x_mod_debug_init(&p->dbg, dev, &p->mmio, &pmb887x_sccu_regs);
 
 	if (!clock_has_source(p->clock32)) {
 		error_setg(errp, "pmb887x-sccu: clk32 input is not connected");
@@ -376,8 +370,10 @@ static void sccu_realize(DeviceState *dev, Error **errp) {
 	pmb887x_clc_set(&p->clc, 1U << MOD_CLC_RMC_SHIFT);
 
 	for (int i = 0; i < ARRAY_SIZE(p->src); i++) {
-		if (!p->irq[i])
-			hw_error("pmb887x-tpu: irq %d not set", i);
+		if (!p->irq[i]) {
+			error_setg(errp, "%s: IRQ %d is not connected", object_get_typename(OBJECT(dev)), i);
+			return;
+		}
 
 		pmb887x_src_init(&p->src[i], p->irq[i]);
 	}

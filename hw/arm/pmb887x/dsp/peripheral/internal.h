@@ -19,7 +19,18 @@ struct dsp_device_t {
 	const pmb887x_dsp_peripheral_config_t *config;
 	const dsp_device_ops_t *ops;
 	void *state;
+	DebugChannel dbg;
 };
+
+static inline void dsp_device_debug_io(
+	dsp_device_t *device,
+	uint16_t offset,
+	uint16_t value,
+	bool is_write,
+	uint32_t pc
+) {
+	DEBUG_IO_ACCESS(&device->dbg, device->config->base + offset, offset, sizeof(value), value, is_write, false, pc, 0);
+}
 
 struct dsp_route_t {
 	dsp_device_t *device;
@@ -27,6 +38,7 @@ struct dsp_route_t {
 };
 
 struct dsp_bus_t {
+	const DebugChannel *dbg;
 	dsp_device_t **devices;
 	dsp_route_t *routes;
 	size_t device_count;
@@ -70,42 +82,76 @@ static inline void dsp_bus_write_at(dsp_bus_t *bus, uint16_t address, uint16_t v
 		bus->fallback->ops->write(bus->fallback, address - bus->fallback->config->base, pc, value);
 }
 
-dsp_device_t *dsp_device_create(const pmb887x_dsp_peripheral_config_t *config, const dsp_device_ops_t *ops, void *state);
+dsp_device_t *dsp_device_create(
+	const pmb887x_dsp_peripheral_config_t *config,
+	const DebugChannel *parent,
+	const dsp_device_ops_t *ops,
+	void *state
+);
 
-dsp_device_t *afe_create(const pmb887x_dsp_peripheral_config_t *config, dsp_device_t *interrupt, const dsp_host_t *host);
+dsp_device_t *afe_create(
+	const pmb887x_dsp_peripheral_config_t *config,
+	const DebugChannel *parent,
+	dsp_device_t *interrupt,
+	const dsp_host_t *host,
+	AudioLineBus *ep_bus,
+	AudioLineBus *eppa_bus
+);
 void afe_advance(dsp_device_t *device, size_t cycles);
 bool afe_is_active(const dsp_device_t *device);
 size_t afe_get_cycles_until_event(const dsp_device_t *device);
 void afe_set_clock_hz(dsp_device_t *device, uint32_t frequency_hz);
 void afe_set_ms_clock_hz(dsp_device_t *device, uint32_t frequency_hz);
 
-dsp_device_t *baseband_create(const pmb887x_dsp_peripheral_config_t *config, dsp_device_t *interrupt, const dsp_host_t *host);
+dsp_device_t *baseband_create(
+	const pmb887x_dsp_peripheral_config_t *config,
+	const DebugChannel *parent,
+	dsp_device_t *interrupt,
+	const dsp_host_t *host
+);
 void baseband_set_signal(
 	dsp_device_t *device,
 	pmb887x_dsp_gsm_signal_t signal,
 	bool level,
 	int64_t timestamp_ns
 );
-void baseband_set_iq_bus(dsp_device_t *device, pmb887x_iq_bus_t *iq_bus);
+void baseband_set_iq_bus(dsp_device_t *device, IQBus *iq_bus);
 void baseband_advance(dsp_device_t *device);
 bool baseband_is_active(const dsp_device_t *device);
 
-dsp_device_t *chdec_create(const pmb887x_dsp_peripheral_config_t *config, dsp_device_t *interrupt);
+dsp_device_t *chdec_create(
+	const pmb887x_dsp_peripheral_config_t *config,
+	const DebugChannel *parent,
+	dsp_device_t *interrupt
+);
 void chdec_advance(dsp_device_t *device, size_t cycles);
 bool chdec_is_active(const dsp_device_t *device);
 uint16_t chdec_external_read(dsp_device_t *device);
 void chdec_external_write(dsp_device_t *device, uint16_t value);
 
-dsp_device_t *cipher_create(const pmb887x_dsp_peripheral_config_t *config, dsp_device_t *interrupt, const dsp_host_t *host);
+dsp_device_t *cipher_create(
+	const pmb887x_dsp_peripheral_config_t *config,
+	const DebugChannel *parent,
+	dsp_device_t *interrupt,
+	const dsp_host_t *host
+);
 void cipher_set_clock_hz(dsp_device_t *device, uint32_t frequency_hz);
 void cipher_update_time(dsp_device_t *device);
 
-dsp_device_t *control_create(const pmb887x_dsp_peripheral_config_t *config, const dsp_host_t *host);
+dsp_device_t *control_create(
+	const pmb887x_dsp_peripheral_config_t *config,
+	const DebugChannel *parent,
+	const dsp_host_t *host
+);
 int control_set_input(dsp_device_t *device, size_t index, bool level);
 uint16_t control_get_outputs(dsp_device_t *device);
 uint16_t control_take_output_events(dsp_device_t *device);
 
-dsp_device_t *equalizer_create(const pmb887x_dsp_peripheral_config_t *config, dsp_device_t *interrupt);
+dsp_device_t *equalizer_create(
+	const pmb887x_dsp_peripheral_config_t *config,
+	const DebugChannel *parent,
+	dsp_device_t *interrupt
+);
 void equalizer_advance(dsp_device_t *device, size_t cycles);
 bool equalizer_is_active(const dsp_device_t *device);
 uint16_t equalizer_external_read(dsp_device_t *device);
@@ -113,6 +159,7 @@ void equalizer_external_write(dsp_device_t *device, uint16_t value);
 
 dsp_device_t *dsp_i2s_create(
 	const pmb887x_dsp_peripheral_config_t *config,
+	const DebugChannel *parent,
 	dsp_device_t *interrupt,
 	const dsp_host_t *host,
 	const dsp_i2s_port_t *i2s_port,
@@ -124,13 +171,21 @@ void dsp_i2s_advance(dsp_device_t *device, size_t cycles);
 size_t dsp_i2s_get_cycles_until_receive_interrupt(const dsp_device_t *device);
 bool dsp_i2s_is_active(const dsp_device_t *device);
 
-dsp_device_t *dsp_i2s_tx_create(const pmb887x_dsp_peripheral_config_t *config, dsp_device_t *interrupt);
+dsp_device_t *dsp_i2s_tx_create(
+	const pmb887x_dsp_peripheral_config_t *config,
+	const DebugChannel *parent,
+	dsp_device_t *interrupt
+);
 void dsp_i2s_tx_set_clock_hz(dsp_device_t *device, uint32_t frequency_hz);
 void dsp_i2s_tx_set_ms_clock_hz(dsp_device_t *device, uint32_t frequency_hz);
 void dsp_i2s_tx_advance(dsp_device_t *device, size_t cycles);
 bool dsp_i2s_tx_is_active(const dsp_device_t *device);
 
-dsp_device_t *dsp_int_create(const pmb887x_dsp_peripheral_config_t *config, const dsp_host_t *host);
+dsp_device_t *dsp_int_create(
+	const pmb887x_dsp_peripheral_config_t *config,
+	const DebugChannel *parent,
+	const dsp_host_t *host
+);
 uint8_t dsp_int_get_lines(dsp_device_t *device);
 uint16_t dsp_int_get_flags(dsp_device_t *device, size_t group);
 uint16_t dsp_int_get_pending_flags(dsp_device_t *device, size_t group);
@@ -139,7 +194,11 @@ void dsp_int_set_flags(dsp_device_t *device, size_t group, uint16_t flags);
 void dsp_int_set_i2s3_tx(dsp_device_t *device);
 uint16_t dsp_int_take_mcu_events(dsp_device_t *device);
 
-dsp_device_t *mcs_create(const pmb887x_dsp_peripheral_config_t *config, const dsp_host_t *host);
+dsp_device_t *mcs_create(
+	const pmb887x_dsp_peripheral_config_t *config,
+	const DebugChannel *parent,
+	const dsp_host_t *host
+);
 uint16_t mcs_get_flags(dsp_device_t *device);
 void mcs_set_flags(dsp_device_t *device, uint16_t value);
 void mcs_clear_flags(dsp_device_t *device, uint16_t value);
@@ -148,24 +207,41 @@ uint16_t mcs_get_mcu_semaphore_status(dsp_device_t *device);
 void mcs_request_mcu_semaphores(dsp_device_t *device, uint16_t value);
 void mcs_release_mcu_semaphores(dsp_device_t *device, uint16_t value);
 
-dsp_device_t *modulator_create(const pmb887x_dsp_peripheral_config_t *config, dsp_device_t *interrupt);
+dsp_device_t *modulator_create(
+	const pmb887x_dsp_peripheral_config_t *config,
+	const DebugChannel *parent,
+	dsp_device_t *interrupt
+);
 uint16_t modulator_ram_stored_bits(uint16_t hardware_version);
 void modulator_set_codon(dsp_device_t *device, bool level);
 void modulator_advance(dsp_device_t *device, size_t cycles);
 bool modulator_is_active(const dsp_device_t *device);
 
-dsp_device_t *ssc_create(const pmb887x_dsp_peripheral_config_t *config, dsp_device_t *interrupt, const dsp_host_t *host);
+dsp_device_t *ssc_create(
+	const pmb887x_dsp_peripheral_config_t *config,
+	const DebugChannel *parent,
+	dsp_device_t *interrupt,
+	const dsp_host_t *host
+);
 void ssc_advance(dsp_device_t *device, size_t cycles);
 bool ssc_is_active(const dsp_device_t *device);
 
-dsp_device_t *timer1_create(const pmb887x_dsp_peripheral_config_t *config, dsp_device_t *interrupt);
+dsp_device_t *timer1_create(
+	const pmb887x_dsp_peripheral_config_t *config,
+	const DebugChannel *parent,
+	dsp_device_t *interrupt
+);
 void timer1_advance(dsp_device_t *device, size_t cycles);
 bool timer1_is_active(const dsp_device_t *device);
 
-dsp_device_t *timer2_create(const pmb887x_dsp_peripheral_config_t *config, dsp_device_t *interrupt);
+dsp_device_t *timer2_create(
+	const pmb887x_dsp_peripheral_config_t *config,
+	const DebugChannel *parent,
+	dsp_device_t *interrupt
+);
 void timer2_advance(dsp_device_t *device, size_t cycles);
 bool timer2_is_active(const dsp_device_t *device);
 
-dsp_device_t *unknown_create(const pmb887x_dsp_peripheral_config_t *config);
+dsp_device_t *unknown_create(const pmb887x_dsp_peripheral_config_t *config, const DebugChannel *parent);
 
 #endif

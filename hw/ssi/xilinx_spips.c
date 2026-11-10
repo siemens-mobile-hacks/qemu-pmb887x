@@ -344,7 +344,8 @@ static void xlnx_zynqmp_qspips_update_ixr(XlnxZynqMPQSPIPS *s)
     s->regs[R_GQSPI_ISR] |=
         (fifo32_is_empty(&s->fifo_g) ? IXR_GENERIC_FIFO_EMPTY : 0) |
         (fifo32_is_full(&s->fifo_g) ? IXR_GENERIC_FIFO_FULL : 0) |
-        (s->fifo_g.fifo.num < s->regs[R_GQSPI_GFIFO_THRESH] ?
+        (fifo32_num_used(&s->fifo_g) * sizeof(uint32_t) <
+            s->regs[R_GQSPI_GFIFO_THRESH] ?
                                     IXR_GENERIC_FIFO_NOT_FULL : 0) |
         (fifo8_is_empty(&s->rx_fifo_g) ? IXR_RX_FIFO_EMPTY : 0) |
         (fifo8_is_full(&s->rx_fifo_g) ? IXR_RX_FIFO_FULL : 0) |

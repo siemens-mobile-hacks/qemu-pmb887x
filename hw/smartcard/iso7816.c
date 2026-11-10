@@ -1,12 +1,12 @@
 /* SPDX-License-Identifier: GPL-2.0-or-later */
 #include "qemu/osdep.h"
 #include "qemu/cutils.h"
-#include "qemu/log.h"
 #include "qemu/module.h"
 #include "qemu/timer.h"
 #include "hw/core/qdev-clock.h"
 #include "hw/core/qdev-properties.h"
 #include "qapi/error.h"
+#include "system/debug-channel.h"
 
 #include "hw/smartcard/iso7816.h"
 
@@ -46,33 +46,17 @@ static ISO7816Slot *iso7816_card_get_slot(ISO7816Card *card)
     return ISO7816_SLOT(qdev_get_parent_bus(DEVICE(card))->parent);
 }
 
-static void G_GNUC_PRINTF(2, 3) iso7816_card_trace(ISO7816Card *card,
-                                                   const char *format, ...)
-{
-    g_autofree char *message = NULL;
-    va_list args;
-
-    if (!iso7816_card_get_slot(card)->trace) {
-        return;
-    }
-
-    va_start(args, format);
-    message = g_strdup_vprintf(format, args);
-    va_end(args);
-    qemu_log_mask(LOG_TRACE, "[iso7816]: %s\n", message);
-}
-
 static void iso7816_card_trace_bytes(ISO7816Card *card, const char *name,
                                      const uint8_t *data, size_t size)
 {
-    g_autoptr(GString) text = NULL;
+    const DebugChannel *dbg = &iso7816_card_get_slot(card)->dbg;
 
-    if (!iso7816_card_get_slot(card)->trace) {
+    if (!debug_channel_is_enabled(dbg, DEBUG_CH_LOG)) {
         return;
     }
 
-    text = qemu_hexdump_line(NULL, data, size, 1, 0);
-    iso7816_card_trace(card, "%s (%zu bytes): %s", name, size, text->str);
+    g_autoptr(GString) text = qemu_hexdump_line(NULL, data, size, 1, 0);
+    DEBUG_LOG(dbg, "%s (%zu bytes): %s\n", name, size, text->str);
 }
 
 static uint32_t iso7816_fidi_to_clocks_per_etu(uint8_t fidi)
@@ -155,7 +139,8 @@ void iso7816_card_complete(ISO7816Card *card, uint32_t exchange_id,
 
     iso7816_card_trace_bytes(card, "response data", response->data,
                              response->size);
-    iso7816_card_trace(card, "status %02X%02X", response->sw1, response->sw2);
+    DEBUG_LOG(&iso7816_card_get_slot(card)->dbg, "status %02X%02X\n",
+              response->sw1, response->sw2);
 
     if (response->size != 0) {
         output[output_size++] = card->command[ISO7816_OFFSET_INS];
@@ -326,7 +311,8 @@ static void iso7816_card_set_reset(ISO7816Card *card, bool active)
         return;
     }
 
-    iso7816_card_trace(card, "RST %s", active ? "high" : "low");
+    DEBUG_LOG(&iso7816_card_get_slot(card)->dbg, "RST %s\n",
+              active ? "high" : "low");
     if (active) {
         iso7816_card_answer_to_reset(card);
     } else {
@@ -373,7 +359,7 @@ static void iso7816_slot_init(Object *obj)
     ISO7816Slot *slot = ISO7816_SLOT(obj);
     DeviceState *dev = DEVICE(obj);
 
-    qdev_init_gpio_in_named(dev, iso7816_slot_set_reset, "RST_IN", 1);
+    qdev_init_gpio_in_named(dev, iso7816_slot_set_reset, "RST", 1);
     slot->clock = qdev_init_clock_in(dev, "CLK", NULL, NULL, 0);
     slot->bus = qbus_new(TYPE_ISO7816_BUS, dev, NULL);
 }
@@ -386,9 +372,7 @@ static void iso7816_slot_realize(DeviceState *dev, Error **errp)
         error_setg(errp, "iso7816-slot: no card interface is connected");
         return;
     }
-    if (slot->trace) {
-        qemu_set_log(qemu_loglevel | LOG_TRACE, errp);
-    }
+    debug_channel_init_device(&slot->dbg, dev);
 }
 
 static void iso7816_card_clock_update(void *opaque, ClockEvent event)
@@ -429,14 +413,6 @@ static void iso7816_card_device_reset(DeviceState *dev)
     iso7816_card_stop(ISO7816_CARD(dev));
 }
 
-/*
- * TODO: temporary switch; replace it with a QEMU log category, the build
- * has no trace backend for speed.
- */
-static const Property iso7816_slot_properties[] = {
-    DEFINE_PROP_BOOL("trace", ISO7816Slot, trace, false),
-};
-
 static void iso7816_bus_class_init(ObjectClass *klass, const void *data)
 {
     BUS_CLASS(klass)->max_dev = 1;
@@ -448,7 +424,6 @@ static void iso7816_slot_class_init(ObjectClass *klass, const void *data)
 
     dc->realize = iso7816_slot_realize;
     dc->user_creatable = false;
-    device_class_set_props(dc, iso7816_slot_properties);
 }
 
 static void iso7816_card_class_init(ObjectClass *klass, const void *data)

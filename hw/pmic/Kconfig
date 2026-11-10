@@ -1,0 +1,9 @@
+config D1094XX
+    bool
+    depends on I2C
+    select AUDIO_ROUTER
+
+config PMB6812
+    bool
+    depends on I2C
+    select AUDIO_ROUTER

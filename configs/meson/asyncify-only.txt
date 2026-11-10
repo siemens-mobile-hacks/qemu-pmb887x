@@ -80,6 +80,7 @@ block_job_*
 blockdev_*
 blockdev_init
 bus_reset_child_foreach
+cfi_flash_*
 co_*
 co_schedule_bh_cb
 coroutine_*
@@ -109,10 +110,6 @@ emscripten_proxy_sync
 emscripten_proxy_sync_with_ctx
 emscripten_thread_mailbox_send
 emscripten_thread_sleep
-flash_*
-flash_data_write
-flash_io_write
-flash_realize
 fsync
 g_main_context_*
 g_main_context_dispatch
@@ -138,9 +135,6 @@ pl181_reset
 pmb887x_board_*
 pmb887x_board_create_nor_flash
 pmb887x_board_init_devices
-pmb887x_flash*
-pmb887x_flash_blk_pread
-pmb887x_flash_blk_pwrite
 pmb887x_init
 property_set_bool
 pthread_attr_init

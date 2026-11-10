@@ -1,12 +1,7 @@
-#define PMB887X_TRACE_ID		DSP_I2S_TX
-#define PMB887X_TRACE_PREFIX	"pmb887x-dsp-i2s-tx"
-#define PMB887X_TRACE_IO		PMB887X_TRACE_IO_DSP
-
 #include "qemu/osdep.h"
 
 #include "hw/arm/pmb887x/dsp/peripheral/internal.h"
 #include "hw/arm/pmb887x/gen/dsp.h"
-#include "hw/arm/pmb887x/trace.h"
 
 #define I2S_TX_REGISTER_COUNT	(TEAK_I2S3_TXINTADDR + 1)
 #define I2S_TX_FRACTIONAL_DIVIDER_FACTOR	4U
@@ -106,7 +101,7 @@ static bool i2s_tx_read(dsp_device_t *device, uint16_t offset, uint32_t pc, uint
 			break;
 	}
 
-	IO_DUMP_READ_EX(device->config->base + offset, sizeof(*value), *value, pc, 0);
+	dsp_device_debug_io(device, offset, *value, false, pc);
 	return true;
 }
 
@@ -136,9 +131,10 @@ static bool i2s_tx_register_write(dsp_device_t *device, uint16_t offset, uint32_
 			break;
 	}
 
-	IO_DUMP_WRITE_EX(device->config->base + offset, sizeof(value), value, pc, 0);
+	dsp_device_debug_io(device, offset, value, true, pc);
 	return true;
 }
+
 
 static const dsp_device_ops_t i2s_tx_ops = {
 	.destroy = i2s_tx_destroy,
@@ -147,10 +143,14 @@ static const dsp_device_ops_t i2s_tx_ops = {
 	.write = i2s_tx_register_write,
 };
 
-dsp_device_t *dsp_i2s_tx_create(const pmb887x_dsp_peripheral_config_t *config, dsp_device_t *interrupt) {
+dsp_device_t *dsp_i2s_tx_create(
+	const pmb887x_dsp_peripheral_config_t *config,
+	const DebugChannel *parent,
+	dsp_device_t *interrupt
+) {
 	i2s_tx_state_t *state = g_new0(i2s_tx_state_t, 1);
 	state->interrupt = interrupt;
-	return dsp_device_create(config, &i2s_tx_ops, state);
+	return dsp_device_create(config, parent, &i2s_tx_ops, state);
 }
 
 void dsp_i2s_tx_set_clock_hz(dsp_device_t *device, uint32_t frequency_hz) {

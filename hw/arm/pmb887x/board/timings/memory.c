@@ -131,6 +131,6 @@ void pmb887x_memory_timing_init(CPUState *cpu, DeviceState *cgu, DeviceState *sc
 	clock_set_callback(p->ebu_clock, pmb887x_memory_timing_clock_update, p, ClockUpdate);
 	clock_set_source(p->cpu_clock, qdev_get_clock_out(cgu, "CPU"));
 	clock_set_source(p->ebu_clock, qdev_get_clock_out(cgu, "EBU"));
-	qdev_connect_gpio_out_named(scu, "EBU_SYNC_OUT", 0, qemu_allocate_irq(pmb887x_memory_timing_sync_input, p, 0));
+	qdev_connect_gpio_out_named(scu, "EBU_SYNC", 0, qemu_allocate_irq(pmb887x_memory_timing_sync_input, p, 0));
 	pmb887x_memory_timing_update(p);
 }

@@ -3,6 +3,7 @@
 
 #include <stdbool.h>
 
+#include "hw/audio/audio-line.h"
 #include "hw/audio/i2s.h"
 #include "hw/arm/pmb887x/dsp/config.h"
 #include "hw/arm/pmb887x/dsp/signals.h"
@@ -11,7 +12,7 @@ typedef struct dsp_bus_t dsp_bus_t;
 typedef struct dsp_host_t dsp_host_t;
 typedef struct dsp_i2s_port_t dsp_i2s_port_t;
 typedef struct dsp_ports_t dsp_ports_t;
-typedef struct pmb887x_iq_bus_t pmb887x_iq_bus_t;
+typedef struct IQBus IQBus;
 
 #define DSP_I2S_COUNT	2
 
@@ -22,6 +23,8 @@ struct dsp_i2s_port_t {
 
 struct dsp_ports_t {
 	dsp_i2s_port_t i2s[DSP_I2S_COUNT];
+	AudioLineBus *afe_ep;
+	AudioLineBus *afe_eppa;
 };
 
 struct dsp_host_t {
@@ -39,7 +42,12 @@ struct dsp_host_t {
 	uint32_t (*ssc_transfer)(void *opaque, uint32_t value);
 };
 
-dsp_bus_t *dsp_bus_create(const pmb887x_dsp_config_t *config, const dsp_host_t *host, const dsp_ports_t *ports);
+dsp_bus_t *dsp_bus_create(
+	const pmb887x_dsp_config_t *config,
+	const dsp_host_t *host,
+	const dsp_ports_t *ports,
+	const DebugChannel *dbg
+);
 void dsp_bus_destroy(dsp_bus_t *bus);
 void dsp_bus_reset(dsp_bus_t *bus);
 void dsp_bus_set_clock_hz(dsp_bus_t *bus, uint32_t frequency_hz);
@@ -58,7 +66,7 @@ uint16_t dsp_bus_get_irq_flags(dsp_bus_t *bus, size_t group);
 uint16_t dsp_bus_get_irq_pending_flags(dsp_bus_t *bus, size_t group);
 void dsp_bus_set_request(dsp_bus_t *bus, size_t index, bool level);
 void dsp_bus_set_input(dsp_bus_t *bus, size_t index, bool level);
-void dsp_bus_set_iq_bus(dsp_bus_t *bus, pmb887x_iq_bus_t *iq_bus);
+void dsp_bus_set_iq_bus(dsp_bus_t *bus, IQBus *iq_bus);
 void dsp_bus_set_gsm_signal(
 	dsp_bus_t *bus,
 	pmb887x_dsp_gsm_signal_t signal,

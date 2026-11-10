@@ -1,12 +1,8 @@
 /*
  * RTC
  * */
-#define PMB887X_TRACE_ID		RTC
-#define PMB887X_TRACE_PREFIX	"pmb887x-rtc"
-
 #include "qemu/osdep.h"
 #include "hw/core/sysbus.h"
-#include "hw/core/hw-error.h"
 #include "system/memory.h"
 #include "system/rtc.h"
 #include "cpu.h"
@@ -18,9 +14,8 @@
 #include "hw/core/qdev-clock.h"
 
 #include "hw/arm/pmb887x/gen/cpu_regs.h"
-#include "hw/arm/pmb887x/regs_dump.h"
+#include "hw/arm/pmb887x/gen/cpu_meta.h"
 #include "hw/arm/pmb887x/mod.h"
-#include "hw/arm/pmb887x/trace.h"
 
 #define TYPE_PMB887X_RTC	"pmb887x-rtc"
 #define PMB887X_RTC(obj)	OBJECT_CHECK(pmb887x_rtc_t, (obj), TYPE_PMB887X_RTC)
@@ -37,6 +32,7 @@ typedef struct pmb887x_rtc_t pmb887x_rtc_t;
 struct pmb887x_rtc_t {
 	SysBusDevice parent_obj;
 	MemoryRegion mmio;
+	DebugChannel dbg;
 	uint32_t revision;
 	char *cnt_format;
 
@@ -221,11 +217,9 @@ static uint64_t rtc_io_read(void *opaque, hwaddr haddr, unsigned size) {
 			break;
 		
 		default:
-			EPRINTF("unknown reg access: %02"PRIX64"\n", haddr);
+			DEBUG_GUEST_ERROR(&p->dbg, "unknown reg read: %02"PRIX64"\n", haddr);
 			break;
 	}
-	
-	IO_DUMP_READ(haddr + p->mmio.addr, size, value);
 	
 	return value;
 }
@@ -233,8 +227,6 @@ static uint64_t rtc_io_read(void *opaque, hwaddr haddr, unsigned size) {
 static void rtc_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned size) {
 	pmb887x_rtc_t *p = opaque;
 	rtc_sync(p);
-	
-	IO_DUMP_WRITE(haddr + p->mmio.addr, size, value);
 	
 	switch (haddr) {
 		case RTC_CLC:
@@ -283,7 +275,7 @@ static void rtc_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned si
 			break;
 		
 		default:
-			EPRINTF("unknown reg access: %02"PRIX64"\n", haddr);
+			DEBUG_GUEST_ERROR(&p->dbg, "unknown reg write: %02"PRIX64" = %08"PRIX64"\n", haddr, value);
 			break;
 	}
 
@@ -313,7 +305,7 @@ static void rtc_init(Object *obj) {
 	memory_region_init_io(&p->mmio, obj, &io_ops, p, "pmb887x-rtc", RTC_IO_SIZE);
 	sysbus_init_mmio(SYS_BUS_DEVICE(obj), &p->mmio);
 	sysbus_init_irq(SYS_BUS_DEVICE(obj), &p->irq);
-	qdev_init_gpio_in_named(DEVICE(obj), rtc_handle_reset, "RESET_IN", 1);
+	qdev_init_gpio_in_named(DEVICE(obj), rtc_handle_reset, "RESET", 1);
 }
 
 static uint32_t rtc_pack_cnt(uint32_t day_rel, uint32_t yday, uint32_t hour, uint32_t min, uint32_t sec) {
@@ -378,9 +370,12 @@ static void rtc_reset(DeviceState *dev) {
 
 static void rtc_realize(DeviceState *dev, Error **errp) {
 	pmb887x_rtc_t *p = PMB887X_RTC(dev);
+	pmb887x_mod_debug_init(&p->dbg, dev, &p->mmio, &pmb887x_rtc_regs);
 	
-	if (!p->irq)
-		hw_error("pmb887x-rtc: irq not set");
+	if (!p->irq) {
+		error_setg(errp, "%s: IRQ is not connected", object_get_typename(OBJECT(dev)));
+		return;
+	}
 	if (p->cnt_format && strcmp(p->cnt_format, "unix") && strcmp(p->cnt_format, "calendar")) {
 		error_setg(errp, "pmb887x-rtc: unknown cnt-format '%s' (unix|calendar)", p->cnt_format);
 		return;

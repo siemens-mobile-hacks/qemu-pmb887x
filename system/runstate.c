@@ -963,6 +963,30 @@ void qemu_remove_exit_notifier(Notifier *notify)
     notifier_remove(notify);
 }
 
+static void cpu_exit_log(Notifier *notifier, void *data)
+{
+    CPUState *cpu;
+    FILE *f;
+
+    if (!qemu_loglevel_mask(CPU_LOG_EXIT)) {
+        return;
+    }
+
+    f = qemu_log_trylock();
+    if (!f) {
+        return;
+    }
+    CPU_FOREACH(cpu) {
+        fprintf(f, "CPU Exit (CPU %d)\n", cpu->cpu_index);
+        cpu_dump_state(cpu, f, 0);
+    }
+    qemu_log_unlock(f);
+}
+
+static Notifier cpu_exit_log_notifier = {
+    .notify = cpu_exit_log,
+};
+
 static void qemu_run_exit_notifiers(void)
 {
     BQL_LOCK_GUARD();
@@ -982,6 +1006,7 @@ void qemu_init_subsystems(void)
     bql_lock();
 
     atexit(qemu_run_exit_notifiers);
+    qemu_add_exit_notifier(&cpu_exit_log_notifier);
 
     module_call_init(MODULE_INIT_QOM);
     module_call_init(MODULE_INIT_MIGRATION);

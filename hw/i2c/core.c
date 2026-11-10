@@ -321,6 +321,10 @@ int i2c_send(I2CBus *bus, uint8_t data)
     I2CNode *node;
     int ret = 0;
 
+    if (QLIST_EMPTY(&bus->current_devs)) {
+        return -1;
+    }
+
     QLIST_FOREACH(node, &bus->current_devs, next) {
         s = node->elt;
         sc = I2C_SLAVE_GET_CLASS(s);
@@ -473,6 +477,20 @@ static void i2c_slave_class_init(ObjectClass *klass, const void *data)
     sc->match_and_add = i2c_slave_match;
 }
 
+static void i2c_target_endpoint_unrealize(DeviceState *dev)
+{
+    I2CBus *bus = I2C_BUS(qdev_get_parent_bus(dev));
+    I2CNode *node, *next;
+
+    QLIST_FOREACH_SAFE(node, &bus->current_devs, next, next) {
+        if (node->elt == I2C_SLAVE(dev)) {
+            QLIST_REMOVE(node, next);
+            g_free(node);
+            i2c_target_endpoint_event(I2C_SLAVE(dev), I2C_FINISH);
+        }
+    }
+}
+
 static void i2c_target_endpoint_class_init(ObjectClass *klass,
                                            const void *data)
 {
@@ -480,6 +498,7 @@ static void i2c_target_endpoint_class_init(ObjectClass *klass,
     I2CSlaveClass *sc = I2C_SLAVE_CLASS(klass);
 
     dc->vmsd = &vmstate_i2c_slave;
+    dc->unrealize = i2c_target_endpoint_unrealize;
     sc->send = i2c_target_endpoint_send;
     sc->recv = i2c_target_endpoint_recv;
     sc->event = i2c_target_endpoint_event;

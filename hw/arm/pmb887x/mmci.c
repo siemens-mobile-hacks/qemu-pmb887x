@@ -1,17 +1,13 @@
 /*
  * MMC interface wrapper
  */
-#define PMB887X_TRACE_ID MMCI
-#define PMB887X_TRACE_PREFIX "pmb887x-mmci"
-
 #include "qemu/osdep.h"
 #include "hw/core/qdev-properties.h"
 #include "hw/core/sysbus.h"
 
 #include "hw/arm/pmb887x/gen/cpu_regs.h"
 #include "hw/arm/pmb887x/mod.h"
-#include "hw/arm/pmb887x/regs_dump.h"
-#include "hw/arm/pmb887x/trace.h"
+#include "hw/arm/pmb887x/gen/cpu_meta.h"
 
 #define TYPE_PMB887X_MMCI "pmb887x-mmci"
 #define PMB887X_MMCI(obj) OBJECT_CHECK(pmb887x_mmci_t, (obj), TYPE_PMB887X_MMCI)
@@ -21,6 +17,7 @@ typedef struct pmb887x_mmci_t pmb887x_mmci_t;
 struct pmb887x_mmci_t {
 	SysBusDevice parent_obj;
 	MemoryRegion mmio;
+	DebugChannel dbg;
 	uint32_t revision;
 	pmb887x_clc_reg_t clc;
 	qemu_irq gpio_dat0;
@@ -44,14 +41,12 @@ static uint64_t mmci_io_read(void *opaque, hwaddr haddr, unsigned size) {
 			break;
 	}
 
-	IO_DUMP_READ(haddr + p->mmio.addr, size, value);
 	return value;
 }
 
 static void mmci_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned size) {
 	pmb887x_mmci_t *p = opaque;
 
-	IO_DUMP_WRITE(haddr + p->mmio.addr, size, value);
 	switch (haddr) {
 		case MMCI_CLC:
 			pmb887x_clc_set(&p->clc, value);
@@ -80,18 +75,18 @@ static void mmci_init(Object *obj) {
 	memory_region_init_io(&p->mmio, obj, &mmci_io_ops, p, "pmb887x-mmci", MMCI_IO_SIZE);
 	sysbus_init_mmio(SYS_BUS_DEVICE(obj), &p->mmio);
 
-	qdev_init_gpio_in_named(dev, mmci_gpio_input, "DAT0_IN", 1);
-	qdev_init_gpio_in_named(dev, mmci_gpio_input, "DAT1_IN", 1);
-	qdev_init_gpio_in_named(dev, mmci_gpio_input, "DAT2_IN", 1);
-	qdev_init_gpio_in_named(dev, mmci_gpio_input, "DAT3_IN", 1);
-	qdev_init_gpio_in_named(dev, mmci_gpio_input, "CMD_IN", 1);
-	qdev_init_gpio_in_named(dev, mmci_gpio_input, "CLK_IN", 1);
-	qdev_init_gpio_out_named(dev, &p->gpio_dat0, "DAT0_OUT", 1);
-	qdev_init_gpio_out_named(dev, &p->gpio_dat1, "DAT1_OUT", 1);
-	qdev_init_gpio_out_named(dev, &p->gpio_dat2, "DAT2_OUT", 1);
-	qdev_init_gpio_out_named(dev, &p->gpio_dat3, "DAT3_OUT", 1);
-	qdev_init_gpio_out_named(dev, &p->gpio_cmd, "CMD_OUT", 1);
-	qdev_init_gpio_out_named(dev, &p->gpio_clk, "CLK_OUT", 1);
+	qdev_init_gpio_in_named(dev, mmci_gpio_input, "DAT0", 1);
+	qdev_init_gpio_in_named(dev, mmci_gpio_input, "DAT1", 1);
+	qdev_init_gpio_in_named(dev, mmci_gpio_input, "DAT2", 1);
+	qdev_init_gpio_in_named(dev, mmci_gpio_input, "DAT3", 1);
+	qdev_init_gpio_in_named(dev, mmci_gpio_input, "CMD", 1);
+	qdev_init_gpio_in_named(dev, mmci_gpio_input, "CLK", 1);
+	qdev_init_gpio_out_named(dev, &p->gpio_dat0, "DAT0", 1);
+	qdev_init_gpio_out_named(dev, &p->gpio_dat1, "DAT1", 1);
+	qdev_init_gpio_out_named(dev, &p->gpio_dat2, "DAT2", 1);
+	qdev_init_gpio_out_named(dev, &p->gpio_dat3, "DAT3", 1);
+	qdev_init_gpio_out_named(dev, &p->gpio_cmd, "CMD", 1);
+	qdev_init_gpio_out_named(dev, &p->gpio_clk, "CLK", 1);
 }
 
 static void mmci_reset(DeviceState *dev) {
@@ -102,6 +97,7 @@ static void mmci_reset(DeviceState *dev) {
 
 static void mmci_realize(DeviceState *dev, Error **_errp) {
 	pmb887x_mmci_t *p = PMB887X_MMCI(dev);
+	pmb887x_mod_debug_init(&p->dbg, dev, &p->mmio, &pmb887x_mmci_regs);
 
 	pmb887x_clc_set(&p->clc, 1U << MOD_CLC_RMC_SHIFT);
 }

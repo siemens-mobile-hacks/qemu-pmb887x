@@ -1,12 +1,7 @@
-#define PMB887X_TRACE_ID		DSP_I2S
-#define PMB887X_TRACE_PREFIX	"pmb887x-dsp-i2s"
-#define PMB887X_TRACE_IO		PMB887X_TRACE_IO_DSP
-
 #include "qemu/osdep.h"
 
 #include "hw/arm/pmb887x/dsp/peripheral/internal.h"
 #include "hw/arm/pmb887x/gen/dsp.h"
-#include "hw/arm/pmb887x/trace.h"
 
 #define I2S_REGISTER_COUNT	(TEAK_I2S_TXINTADDR + 1)
 #define I2S_FRACTIONAL_DIVIDER_FACTOR	4U
@@ -273,7 +268,7 @@ static bool i2s_register_read(dsp_device_t *device, uint16_t offset, uint32_t pc
 			break;
 	}
 
-	IO_DUMP_READ_EX(device->config->base + offset, sizeof(*value), *value, pc, 0);
+	dsp_device_debug_io(device, offset, *value, false, pc);
 	return true;
 }
 
@@ -312,9 +307,10 @@ static bool i2s_register_write(dsp_device_t *device, uint16_t offset, uint32_t p
 	if (state->host.events_changed != NULL)
 		state->host.events_changed(state->host.opaque);
 
-	IO_DUMP_WRITE_EX(device->config->base + offset, sizeof(value), value, pc, 0);
+	dsp_device_debug_io(device, offset, value, true, pc);
 	return true;
 }
+
 
 static const dsp_device_ops_t i2s_ops = {
 	.destroy = i2s_destroy,
@@ -325,6 +321,7 @@ static const dsp_device_ops_t i2s_ops = {
 
 dsp_device_t *dsp_i2s_create(
 	const pmb887x_dsp_peripheral_config_t *config,
+	const DebugChannel *parent,
 	dsp_device_t *interrupt,
 	const dsp_host_t *host,
 	const dsp_i2s_port_t *i2s_port,
@@ -335,7 +332,7 @@ dsp_device_t *dsp_i2s_create(
 	state->host = *host;
 	state->port = *i2s_port;
 	state->transmit_interrupt_flag = interrupt_flag;
-	return dsp_device_create(config, &i2s_ops, state);
+	return dsp_device_create(config, parent, &i2s_ops, state);
 }
 
 void dsp_i2s_set_clock_hz(dsp_device_t *device, uint32_t frequency_hz) {

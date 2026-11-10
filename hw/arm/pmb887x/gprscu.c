@@ -1,19 +1,15 @@
 /*
  * GPRS Ciphering Unit
  */
-#define PMB887X_TRACE_ID GPRSCU
-#define PMB887X_TRACE_PREFIX "pmb887x-gprscu"
-
 #include "qemu/osdep.h"
 #include "hw/core/qdev-properties.h"
 #include "hw/core/sysbus.h"
 #include "system/memory.h"
 
-#include "hw/arm/pmb887x/fifo.h"
+#include "qemu/fifo8.h"
 #include "hw/arm/pmb887x/gen/cpu_regs.h"
 #include "hw/arm/pmb887x/mod.h"
-#include "hw/arm/pmb887x/regs_dump.h"
-#include "hw/arm/pmb887x/trace.h"
+#include "hw/arm/pmb887x/gen/cpu_meta.h"
 
 #define TYPE_PMB887X_GPRSCU "pmb887x-gprscu"
 #define PMB887X_GPRSCU(obj) OBJECT_CHECK(pmb887x_gprscu_t, (obj), TYPE_PMB887X_GPRSCU)
@@ -31,6 +27,7 @@ typedef struct pmb887x_gprscu_t pmb887x_gprscu_t;
 struct pmb887x_gprscu_t {
 	SysBusDevice parent_obj;
 	MemoryRegion mmio;
+	DebugChannel dbg;
 	uint32_t revision;
 
 	qemu_irq irq[2];
@@ -45,8 +42,8 @@ struct pmb887x_gprscu_t {
 	uint32_t polynom;
 	bool output_underrun;
 
-	pmb887x_fifo8_t input_fifo;
-	pmb887x_fifo8_t output_fifo;
+	Fifo8 input_fifo;
+	Fifo8 output_fifo;
 };
 
 static void gprscu_process_fifo(pmb887x_gprscu_t *p) {
@@ -55,13 +52,13 @@ static void gprscu_process_fifo(pmb887x_gprscu_t *p) {
 	if (control_conversion || segment_conversion)
 		return;
 
-	while (!pmb887x_fifo_is_empty(&p->input_fifo) && !pmb887x_fifo_is_full(&p->output_fifo))
-		pmb887x_fifo8_push(&p->output_fifo, pmb887x_fifo8_pop(&p->input_fifo));
+	while (!fifo8_is_empty(&p->input_fifo) && !fifo8_is_full(&p->output_fifo))
+		fifo8_push(&p->output_fifo, fifo8_pop(&p->input_fifo));
 }
 
 static uint32_t gprscu_status(pmb887x_gprscu_t *p) {
-	uint32_t value = pmb887x_fifo_count(&p->output_fifo) << GPRSCU_STAT_OUTPUT_COUNT_SHIFT;
-	value |= pmb887x_fifo_free_count(&p->input_fifo) << GPRSCU_STAT_INPUT_FREE_SHIFT;
+	uint32_t value = fifo8_num_used(&p->output_fifo) << GPRSCU_STAT_OUTPUT_COUNT_SHIFT;
+	value |= fifo8_num_free(&p->input_fifo) << GPRSCU_STAT_INPUT_FREE_SHIFT;
 	if (p->output_underrun)
 		value |= GPRSCU_STAT_OUTPUT_UNDERRUN;
 	return value;
@@ -71,11 +68,11 @@ static uint64_t gprscu_read_data(pmb887x_gprscu_t *p, unsigned int size) {
 	uint64_t value = 0;
 
 	for (uint32_t index = 0; index < size; index++) {
-		if (pmb887x_fifo_is_empty(&p->output_fifo)) {
+		if (fifo8_is_empty(&p->output_fifo)) {
 			p->output_underrun = true;
 			break;
 		}
-		value |= (uint64_t) pmb887x_fifo8_pop(&p->output_fifo) << (index * 8);
+		value |= (uint64_t) fifo8_pop(&p->output_fifo) << (index * 8);
 	}
 
 	gprscu_process_fifo(p);
@@ -84,17 +81,17 @@ static uint64_t gprscu_read_data(pmb887x_gprscu_t *p, unsigned int size) {
 
 static void gprscu_write_data(pmb887x_gprscu_t *p, uint64_t value, unsigned int size) {
 	for (uint32_t index = 0; index < size; index++) {
-		if (pmb887x_fifo_is_full(&p->input_fifo))
+		if (fifo8_is_full(&p->input_fifo))
 			break;
-		pmb887x_fifo8_push(&p->input_fifo, (uint8_t) (value >> (index * 8)));
+		fifo8_push(&p->input_fifo, (uint8_t) (value >> (index * 8)));
 	}
 
 	gprscu_process_fifo(p);
 }
 
 static void gprscu_initialize(pmb887x_gprscu_t *p) {
-	pmb887x_fifo_reset(&p->input_fifo);
-	pmb887x_fifo_reset(&p->output_fifo);
+	fifo8_reset(&p->input_fifo);
+	fifo8_reset(&p->output_fifo);
 	p->output_underrun = false;
 	p->con &= ~(GPRSCU_CON_INIT | GPRSCU_CON_BUSY);
 }
@@ -149,18 +146,15 @@ static uint64_t gprscu_io_read(void *opaque, hwaddr haddr, unsigned int size) {
 			break;
 
 		default:
-			EPRINTF("unknown reg access: %02" PRIX64 "\n", haddr);
+			DEBUG_GUEST_ERROR(&p->dbg, "unknown reg read: %02"PRIX64"\n", haddr);
 			break;
 	}
 
-	IO_DUMP_READ(haddr + p->mmio.addr, size, value);
 	return value;
 }
 
 static void gprscu_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned int size) {
 	pmb887x_gprscu_t *p = opaque;
-
-	IO_DUMP_WRITE(haddr + p->mmio.addr, size, value);
 
 	switch (haddr) {
 		case GPRSCU_CLC:
@@ -213,7 +207,7 @@ static void gprscu_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned
 			break;
 
 		default:
-			EPRINTF("unknown reg access: %02" PRIX64 "\n", haddr);
+			DEBUG_GUEST_ERROR(&p->dbg, "unknown reg write: %02"PRIX64" = %08"PRIX64"\n", haddr, value);
 			break;
 	}
 }
@@ -252,25 +246,26 @@ static void gprscu_reset(DeviceState *dev) {
 	p->fcs = 0;
 	p->polynom = 0;
 	p->output_underrun = false;
-	pmb887x_fifo_reset(&p->input_fifo);
-	pmb887x_fifo_reset(&p->output_fifo);
+	fifo8_reset(&p->input_fifo);
+	fifo8_reset(&p->output_fifo);
 }
 
 static void gprscu_realize(DeviceState *dev, Error **errp) {
 	pmb887x_gprscu_t *p = PMB887X_GPRSCU(dev);
+	pmb887x_mod_debug_init(&p->dbg, dev, &p->mmio, &pmb887x_gprscu_regs);
 
 	for (size_t index = 0; index < ARRAY_SIZE(p->src); index++)
 		pmb887x_src_init(&p->src[index], p->irq[index]);
-	pmb887x_fifo8_init(&p->input_fifo, GPRSCU_FIFO_SIZE);
-	pmb887x_fifo8_init(&p->output_fifo, GPRSCU_FIFO_SIZE);
+	fifo8_create(&p->input_fifo, GPRSCU_FIFO_SIZE);
+	fifo8_create(&p->output_fifo, GPRSCU_FIFO_SIZE);
 	gprscu_reset(dev);
 }
 
 static void gprscu_finalize(Object *obj) {
 	pmb887x_gprscu_t *p = PMB887X_GPRSCU(obj);
 
-	pmb887x_fifo8_free(&p->input_fifo);
-	pmb887x_fifo8_free(&p->output_fifo);
+	fifo8_destroy(&p->input_fifo);
+	fifo8_destroy(&p->output_fifo);
 }
 
 static const Property gprscu_properties[] = {

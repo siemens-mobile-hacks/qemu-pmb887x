@@ -1,12 +1,9 @@
 /*
  * CGU
  * */
-#define PMB887X_TRACE_ID		CGU
-#define PMB887X_TRACE_PREFIX	"pmb887x-cgu"
-
 #include "qemu/osdep.h"
+#include "qapi/error.h"
 #include "hw/core/sysbus.h"
-#include "hw/core/hw-error.h"
 #include "system/memory.h"
 #include "hw/core/qdev-properties.h"
 #include "hw/core/qdev-clock.h"
@@ -14,9 +11,8 @@
 #include "qemu/timer.h"
 
 #include "hw/arm/pmb887x/gen/cpu_regs.h"
-#include "hw/arm/pmb887x/regs_dump.h"
+#include "hw/arm/pmb887x/gen/cpu_meta.h"
 #include "hw/arm/pmb887x/mod.h"
-#include "hw/arm/pmb887x/trace.h"
 
 #define TYPE_PMB887X_CGU	"pmb887x-cgu"
 #define PMB887X_CGU(obj)	OBJECT_CHECK(pmb887x_cgu_t, (obj), TYPE_PMB887X_CGU)
@@ -27,6 +23,7 @@ typedef struct pmb887x_cgu_t pmb887x_cgu_t;
 struct pmb887x_cgu_t {
 	SysBusDevice parent_obj;
 	MemoryRegion mmio;
+	DebugChannel dbg;
 	uint32_t revision;
 	
 	pmb887x_src_reg_t src;
@@ -323,13 +320,13 @@ static void cgu_update_state(struct pmb887x_cgu_t *p) {
 	bool new_fpi2_pll_selected = (p->con1 & CGU_CON1_FPI2_CLKSEL) == CGU_CON1_FPI2_CLKSEL_PLL;
 	
 	if (new_fcpu != p->fcpu)
-		DPRINTF("fCPU: %u -> %u Hz\n", p->fcpu, new_fcpu);
+		DEBUG_LOG(&p->dbg, "fCPU: %u -> %u Hz\n", p->fcpu, new_fcpu);
 	if (new_fahb != p->fahb)
-		DPRINTF("fAHB: %u -> %u Hz\n", p->fahb, new_fahb);
+		DEBUG_LOG(&p->dbg, "fAHB: %u -> %u Hz\n", p->fahb, new_fahb);
 	if (new_fsys != p->fsys)
-		DPRINTF("fSYS: %u -> %u Hz\n", p->fsys, new_fsys);
+		DEBUG_LOG(&p->dbg, "fSYS: %u -> %u Hz\n", p->fsys, new_fsys);
 	if (new_fpi2 != p->fpi2)
-		DPRINTF("fPI2: %u -> %u Hz\n", p->fpi2, new_fpi2);
+		DEBUG_LOG(&p->dbg, "fPI2: %u -> %u Hz\n", p->fpi2, new_fpi2);
 
 	p->fsys = new_fsys;
 	p->fcpu = new_fcpu;
@@ -388,19 +385,15 @@ static uint64_t cgu_io_read(void *opaque, hwaddr haddr, unsigned size) {
 			break;
 		
 		default:
-			EPRINTF("unknown reg access: %02"PRIX64"\n", haddr);
+			DEBUG_GUEST_ERROR(&p->dbg, "unknown reg read: %02"PRIX64"\n", haddr);
 			break;
 	}
-	
-	IO_DUMP_READ(haddr + p->mmio.addr, size, value);
 	
 	return value;
 }
 
 static void cgu_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned size) {
 	pmb887x_cgu_t *p = opaque;
-	
-	IO_DUMP_WRITE(haddr + p->mmio.addr, size, value);
 	
 	switch (haddr) {
 		case CGU_OSC: {
@@ -438,7 +431,7 @@ static void cgu_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned si
 			break;
 		
 		default:
-			EPRINTF("unknown reg access: %02"PRIX64"\n", haddr);
+			DEBUG_GUEST_ERROR(&p->dbg, "unknown reg write: %02"PRIX64" = %08"PRIX64"\n", haddr, value);
 			break;
 	}
 	
@@ -461,9 +454,9 @@ static void cgu_init(Object *obj) {
 	memory_region_init_io(&p->mmio, obj, &io_ops, p, "pmb887x-cgu", CGU_IO_SIZE);
 	sysbus_init_mmio(SYS_BUS_DEVICE(obj), &p->mmio);
 	sysbus_init_irq(SYS_BUS_DEVICE(obj), &p->irq);
-	qdev_init_gpio_out_named(dev, &p->gpio_clk32, "CLK32_OUT", 1);
+	qdev_init_gpio_out_named(dev, &p->gpio_clk32, "CLK32", 1);
 	qdev_init_gpio_out_named(dev, &p->gpio_fpi2_pll_selected, "FPI2_PLL_SELECTED", 1);
-	qdev_init_gpio_in_named(dev, cgu_dsp_active_input, "DSP_ACTIVE_IN", 1);
+	qdev_init_gpio_in_named(dev, cgu_dsp_active_input, "DSP_ACTIVE", 1);
 	p->osc_clock = qdev_init_clock_out(dev, "OSC");
 	p->rtc_clock = qdev_init_clock_out(dev, "RTC");
 	p->sys_clock = qdev_init_clock_out(dev, "FSYS");
@@ -503,9 +496,12 @@ static void cgu_reset(DeviceState *dev) {
 
 static void cgu_realize(DeviceState *dev, Error **errp) {
 	pmb887x_cgu_t *p = PMB887X_CGU(dev);
+	pmb887x_mod_debug_init(&p->dbg, dev, &p->mmio, &pmb887x_cgu_regs);
 	
-	if (!p->irq)
-		hw_error("pmb887x-cgu: irq not set");
+	if (!p->irq) {
+		error_setg(errp, "%s: IRQ is not connected", object_get_typename(OBJECT(dev)));
+		return;
+	}
 	
 	pmb887x_src_init(&p->src, p->irq);
 	

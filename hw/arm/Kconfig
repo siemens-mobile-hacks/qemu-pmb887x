@@ -228,6 +228,7 @@ config STRONGARM
     bool
     select PXA2XX_TIMER
     select SSI
+    select CFI_FLASH
 
 config COLLIE
     bool
@@ -262,6 +263,35 @@ config PMB887X
     depends on TCG && ARM
     select ISO7816
     select GSM_SIM
+    select DMA_SINK
+    select SPEAKER
+    select AUDIO_ROUTER
+    select SPLIT_IRQ
+    select ACCESSORY_CONNECTOR
+    select ROTARY_ENCODER
+    select I2C
+    select SSI
+    select B00B10B
+    select LM4946
+    select TEA5761UK
+    select PMB6812
+    select D1094XX
+    select S1D13705
+    select S1D13716
+    select S1D13732
+    select JBT6K71
+    select SSD1286
+    select PCF8882
+    select LH15KAH2
+    select L2F50333T
+    select L2F50126T
+    select L2F50250
+    select LR38826
+    select R61505
+    select R63400
+    select GSM_IQ_BUS
+    select HD155153NP
+    select PMB6272
 
 config VEXPRESS
     bool

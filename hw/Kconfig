@@ -10,6 +10,8 @@ source display/Kconfig
 source dma/Kconfig
 source fsi/Kconfig
 source gpio/Kconfig
+source gpu/Kconfig
+source gsm/Kconfig
 source hyperv/Kconfig
 source i2c/Kconfig
 source i3c/Kconfig
@@ -19,6 +21,7 @@ source intc/Kconfig
 source ipack/Kconfig
 source ipmi/Kconfig
 source isa/Kconfig
+source lcd/Kconfig
 source mem/Kconfig
 source misc/Kconfig
 source net/Kconfig
@@ -29,6 +32,7 @@ source nvram/Kconfig
 source pci-bridge/Kconfig
 source pci-host/Kconfig
 source pci/Kconfig
+source pmic/Kconfig
 source remote/Kconfig
 source rtc/Kconfig
 source scsi/Kconfig

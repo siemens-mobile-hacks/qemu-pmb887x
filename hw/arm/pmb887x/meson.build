@@ -18,19 +18,13 @@ dsp_peripheral_sources = files(
 	'dsp/peripheral/timer2.c',
 	'dsp/peripheral/unknown.c',
 )
-dsp_audio_sources = files('dsp/peripheral/afe-audio.c')
 
 arm_common_ss.add(when: 'CONFIG_PMB887X', if_true: files(
 	'board.c',
-	'audio/buffer.c',
-	'fifo.c',
-	'flash.c',
-	'flash-blk.c',
 	'afc.c',
 	'adc.c',
 	'ebu.c',
 	'dmac.c',
-	'dma_sink.c',
 	'stm.c',
 	'cgu.c',
 	'scu.c',
@@ -59,19 +53,13 @@ arm_common_ss.add(when: 'CONFIG_PMB887X', if_true: files(
 	'tcm.c',
 	'unknown.c',
 	'io_bridge.c',
-	'regs_dump.c',
-	'rf.c',
-	'rf/gsm.c',
-	'rf/hd155153np.c',
-	'rf/pmb6272.c',
-	'trace_common.c',
 
 	'gen/brom.c',
 	'gen/cpu_meta.c',
 	'gen/cpu_modules.c',
 	'gen/dsp_rom.c',
-	'gen/flash-info.c',
 
+	'board/accessory.c',
 	'board/dsp.c',
 	'board/analog.c',
 	'board/board.c',
@@ -83,50 +71,14 @@ arm_common_ss.add(when: 'CONFIG_PMB887X', if_true: files(
 	'board/startup.c',
 	'board/timings/bus.c',
 	'board/timings/memory.c',
-	'audio/pasic.c',
 
-	'utils/regexp.c',
-	'utils/strings.c',
 	'utils/toml.c',
-	'utils/tomlc17.c',
-
-	'ssc/s1d13716.c',
-	'ssc/s1d13705.c',
-	'ssc/s1d13732.c',
-	'ssc/b00b10b.c',
-	'ssc/lcd_common.c',
-	'ssc/lcd_common_format.c',
-	'ssc/lcd_jbt6k71.c',
-	'ssc/lcd_ssd1286.c',
-	'ssc/lcd_pcf8882.c',
-	'ssc/lcd_l2f50333t.c',
-	'ssc/lcd_l2f50126t.c',
-	'ssc/lcd_l2f50250.c',
-	'ssc/lcd_lh15kah2.c',
-	'ssc/lcd_lr38826.c',
-	'ssc/lcd_r61505.c',
-	'ssc/lcd_r63400.c',
-	'input/ke970_scroll.c',
-
-	'i2c/d1094xx.c',
-	'i2c/lm4946.c',
-	'i2c/pmb6812.c',
-	'i2c/tea5761uk.c',
-
-	'input/ke970_scroll.c',
 ))
-arm_common_ss.add(when: 'CONFIG_PMB887X', if_true: dsp_core_sources + dsp_peripheral_sources + dsp_audio_sources +
+arm_common_ss.add(when: 'CONFIG_PMB887X', if_true: dsp_core_sources + dsp_peripheral_sources +
 	files('dsp/tcg.c', 'dsp/runtime.c'))
+arm_common_ss.add(when: 'CONFIG_PMB887X', if_true: tomlc17)
 
 host_unit_tests += {
-	'pmb887x-audio-buffer': {
-		'sources': files('tests/audio/buffer.c', 'audio/buffer.c'),
-		'dependencies': [glib],
-	},
-	'pmb887x-fifo': {
-		'sources': files('tests/fifo.c', 'fifo.c'),
-		'dependencies': [glib],
-	},
 	'pmb887x-dsp-core': {
 		'sources': files('dsp/tests/core.c') + dsp_core_sources,
 		'dependencies': [glib],

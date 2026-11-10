@@ -1,9 +1,6 @@
 /*
  * ADC
  * */
-#define PMB887X_TRACE_ID		ADC
-#define PMB887X_TRACE_PREFIX	"pmb887x-adc"
-
 #include "qemu/osdep.h"
 #include "hw/core/sysbus.h"
 #include "system/memory.h"
@@ -13,9 +10,8 @@
 
 #include "hw/arm/pmb887x/adc.h"
 #include "hw/arm/pmb887x/gen/cpu_regs.h"
-#include "hw/arm/pmb887x/regs_dump.h"
+#include "hw/arm/pmb887x/gen/cpu_meta.h"
 #include "hw/arm/pmb887x/mod.h"
-#include "hw/arm/pmb887x/trace.h"
 
 #define TYPE_PMB887X_ADC	"pmb887x-adc"
 #define PMB887X_ADC(obj)	OBJECT_CHECK(pmb887x_adc_t, (obj), TYPE_PMB887X_ADC)
@@ -66,6 +62,7 @@ struct pmb887x_adc_ch_cfg_t {
 struct pmb887x_adc_t {
 	SysBusDevice parent_obj;
 	MemoryRegion mmio;
+	DebugChannel dbg;
 	uint32_t revision;
 	
 	int measure_mode;
@@ -117,8 +114,7 @@ static int32_t adc_get_input_voltage(pmb887x_adc_t *p, uint8_t input_n, uint8_t 
 			break;
 
 		default:
-			EPRINTF("Unknown adc input type: %d\n", input->type);
-			break;
+			g_assert_not_reached();
 	}
 
 	return current > 0 ? CPU_VCC_VOLTAGE : 0;
@@ -173,12 +169,12 @@ static uint16_t adc_read_channel(pmb887x_adc_t *p) {
 	
 	if (current_a > 0) {
 		if (cfg->type == ADC_CH_TYPE_DIFFERENTIAL) {
-			DPRINTF("ADC %02X (%s): input=%d mV, value=%03X%s (%duA, %duA)\n", ch, cfg->name, input, adc_value, (p->con1 & ADC_CTRL_INV ? " [INV]" : ""), current_a, current_b);
+			DEBUG_LOG(&p->dbg, "ADC %02X (%s): input=%d mV, value=%03X%s (%duA, %duA)\n", ch, cfg->name, input, adc_value, (p->con1 & ADC_CTRL_INV ? " [INV]" : ""), current_a, current_b);
 		} else {
-			DPRINTF("ADC %02X (%s): input=%d mV, value=%03X%s (%duA)\n", ch, cfg->name, input, adc_value, (p->con1 & ADC_CTRL_INV ? " [INV]" : ""), current_a);
+			DEBUG_LOG(&p->dbg, "ADC %02X (%s): input=%d mV, value=%03X%s (%duA)\n", ch, cfg->name, input, adc_value, (p->con1 & ADC_CTRL_INV ? " [INV]" : ""), current_a);
 		}
 	} else {
-		DPRINTF("ADC %02X (%s): input=%d mV, value=%03X%s (voltage)\n", ch, cfg->name, input, adc_value, (p->con1 & ADC_CTRL_INV ? " [INV]" : ""));
+		DEBUG_LOG(&p->dbg, "ADC %02X (%s): input=%d mV, value=%03X%s (voltage)\n", ch, cfg->name, input, adc_value, (p->con1 & ADC_CTRL_INV ? " [INV]" : ""));
 	}
 	
 	return adc_value;
@@ -217,7 +213,7 @@ static void adc_update_state(pmb887x_adc_t *p) {
 		p->measure_mode = ADC_MEASURE_MODE_NONE;
 	}
 	
-	DPRINTF("is_enabled=%d, fADC=%d, measure_mode=%d, start=%d\n", is_enabled, fadc, p->measure_mode, p->con1 & ADC_CTRL_START ? 1 : 0);
+	DEBUG_LOG(&p->dbg, "is_enabled=%d, fADC=%d, measure_mode=%d, start=%d\n", is_enabled, fadc, p->measure_mode, p->con1 & ADC_CTRL_START ? 1 : 0);
 }
 
 static uint64_t adc_io_read(void *opaque, hwaddr haddr, unsigned size) {
@@ -265,19 +261,15 @@ static uint64_t adc_io_read(void *opaque, hwaddr haddr, unsigned size) {
 			break;
 
 		default:
-			EPRINTF("unknown reg access: %02"PRIX64"\n", haddr);
+			DEBUG_GUEST_ERROR(&p->dbg, "unknown reg read: %02"PRIX64"\n", haddr);
 			break;
 	}
-	
-	IO_DUMP_READ(haddr + p->mmio.addr, size, value);
 	
 	return value;
 }
 
 static void adc_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned size) {
 	pmb887x_adc_t *p = opaque;
-	
-	IO_DUMP_WRITE(haddr + p->mmio.addr, size, value);
 	
 	switch (haddr) {
 		case ADC_CLC:
@@ -307,7 +299,7 @@ static void adc_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned si
 			break;
 
 		default:
-			EPRINTF("unknown reg access: %02"PRIX64"\n", haddr);
+			DEBUG_GUEST_ERROR(&p->dbg, "unknown reg write: %02"PRIX64" = %08"PRIX64"\n", haddr, value);
 			break;
 	}
 	
@@ -359,6 +351,7 @@ static void adc_reset(DeviceState *dev) {
 
 static void adc_realize(DeviceState *dev, Error **errp) {
 	pmb887x_adc_t *p = PMB887X_ADC(dev);
+	pmb887x_mod_debug_init(&p->dbg, dev, &p->mmio, &pmb887x_adc_regs);
 	
 	pmb887x_clc_set(&p->clc, 1U << MOD_CLC_RMC_SHIFT);
 	

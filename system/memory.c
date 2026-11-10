@@ -601,7 +601,7 @@ static inline uint64_t memory_region_shift_write_access(uint64_t *value,
     return tmp;
 }
 
-static hwaddr memory_region_to_absolute_addr(MemoryRegion *mr, hwaddr offset)
+hwaddr memory_region_to_absolute_addr(MemoryRegion *mr, hwaddr offset)
 {
     MemoryRegion *root;
     hwaddr abs_addr = offset;
@@ -1941,9 +1941,8 @@ MemTxResult memory_region_dispatch_write(MemoryRegion *mr,
     }
 }
 
-static void memory_region_set_ops(MemoryRegion *mr,
-                                  const MemoryRegionOps *ops,
-                                  void *opaque)
+void memory_region_set_ops(MemoryRegion *mr, const MemoryRegionOps *ops,
+                           void *opaque)
 {
     mr->ops = ops ?: &unassigned_mem_ops;
     mr->opaque = opaque;

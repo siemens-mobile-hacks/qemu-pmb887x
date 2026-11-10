@@ -1,9 +1,6 @@
 /*
  * System Timer (56 bit)
  * */
-#define PMB887X_TRACE_ID		STM
-#define PMB887X_TRACE_PREFIX	"pmb887x-stm"
-
 #include "qemu/osdep.h"
 #include "hw/core/sysbus.h"
 #include "system/memory.h"
@@ -16,9 +13,8 @@
 #include "hw/core/qdev-clock.h"
 
 #include "hw/arm/pmb887x/gen/cpu_regs.h"
-#include "hw/arm/pmb887x/regs_dump.h"
+#include "hw/arm/pmb887x/gen/cpu_meta.h"
 #include "hw/arm/pmb887x/mod.h"
-#include "hw/arm/pmb887x/trace.h"
 
 #define TYPE_PMB887X_STM	"pmb887x-stm"
 #define PMB887X_STM(obj)	OBJECT_CHECK(pmb887x_stm_t, (obj), TYPE_PMB887X_STM)
@@ -29,6 +25,7 @@ typedef struct pmb887x_stm_t pmb887x_stm_t;
 struct pmb887x_stm_t {
 	SysBusDevice parent_obj;
 	MemoryRegion mmio;
+	DebugChannel dbg;
 	uint32_t revision;
 	
 	pmb887x_clc_reg_t clc;
@@ -97,7 +94,7 @@ static void stm_update_state(pmb887x_stm_t *p) {
 		}
 		seqlock_write_end(&p->seq);
 		
-		DPRINTF("clk=%u, fSTM=%u [%s]\n", clock_get_hz(p->clc.clock), p->freq, p->enabled ? "ON" : "OFF");
+		DEBUG_LOG(&p->dbg, "clk=%u, fSTM=%u [%s]\n", clock_get_hz(p->clc.clock), p->freq, p->enabled ? "ON" : "OFF");
 	}
 }
 
@@ -166,11 +163,9 @@ static uint64_t stm_io_read(void *opaque, hwaddr haddr, unsigned size) {
 			break;
 		
 		default:
-			EPRINTF("unknown reg access: %02"PRIX64"\n", haddr);
+			DEBUG_GUEST_ERROR(&p->dbg, "unknown reg read: %02"PRIX64"\n", haddr);
 			break;
 	}
-	
-	IO_DUMP_READ(haddr + p->mmio.addr, size, value);
 	
 	return value;
 }
@@ -179,7 +174,6 @@ static void stm_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned si
 	pmb887x_stm_t *p = opaque;
 	
 	BQL_LOCK_GUARD();
-	IO_DUMP_WRITE(haddr + p->mmio.addr, size, value);
 	
 	switch (haddr) {
 		case STM_CLC:
@@ -187,7 +181,7 @@ static void stm_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned si
 			break;
 		
 		default:
-			EPRINTF("unknown reg access: %02"PRIX64"\n", haddr);
+			DEBUG_GUEST_ERROR(&p->dbg, "unknown reg write: %02"PRIX64" = %08"PRIX64"\n", haddr, value);
 			break;
 	}
 }
@@ -206,7 +200,7 @@ static void stm_init(Object *obj) {
 	struct pmb887x_stm_t *p = PMB887X_STM(obj);
 	pmb887x_clc_init(&p->clc, DEVICE(obj));
 	pmb887x_clc_set_callback(&p->clc, stm_clock_update, p);
-	qdev_init_gpio_in_named(DEVICE(obj), stm_handle_rmc2_enable, "RMC2_ENABLE_IN", 1);
+	qdev_init_gpio_in_named(DEVICE(obj), stm_handle_rmc2_enable, "RMC2_ENABLE", 1);
 	seqlock_init(&p->seq);
 	memory_region_init_io(&p->mmio, obj, &io_ops, p, "pmb887x-stm", STM_IO_SIZE);
 	memory_region_enable_lockless_io(&p->mmio);
@@ -228,6 +222,7 @@ static void stm_reset(DeviceState *dev) {
 
 static void stm_realize(DeviceState *dev, Error **errp) {
 	struct pmb887x_stm_t *p = PMB887X_STM(dev);
+	pmb887x_mod_debug_init(&p->dbg, dev, &p->mmio, &pmb887x_stm_regs);
 	
 	pmb887x_clc_set(&p->clc, STM_CLC_RESET_VALUE);
 	

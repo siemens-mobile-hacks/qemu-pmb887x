@@ -1,19 +1,17 @@
 #include "hw/arm/pmb887x/board/devices.h"
 
-#include "hw/arm/pmb887x/flash-blk.h"
+#include "hw/block/cfi-flash.h"
+#include "hw/arm/pmb887x/board/accessory.h"
 #include "hw/arm/pmb887x/board/board.h"
 #include "hw/arm/pmb887x/board/gpio.h"
 #include "hw/arm/pmb887x/board/memory.h"
 #include "hw/arm/pmb887x/dsp.h"
 #include "hw/arm/pmb887x/mmicif.h"
-#include "hw/arm/pmb887x/rf.h"
 #include "hw/arm/pmb887x/sim.h"
-#include "hw/arm/pmb887x/ssc/lcd_common.h"
-#include "hw/arm/pmb887x/trace_common.h"
-#include "hw/arm/pmb887x/utils/regexp.h"
+#include "hw/lcd/lcd.h"
 #include "hw/arm/pmb887x/utils/toml.h"
 
-#include "hw/arm/pmb887x/utils/tomlc17.h"
+#include "tomlc17.h"
 #include "hw/core/hw-error.h"
 #include "hw/core/qdev-clock.h"
 #include "hw/core/sysbus.h"
@@ -21,6 +19,7 @@
 #include "qom/object.h"
 #include "hw/core/qdev-properties.h"
 #include "hw/i2c/i2c.h"
+#include "hw/misc/phone/accessory-connector.h"
 #include "qapi/error.h"
 
 typedef enum pmb887x_dev_prop_type_t pmb887x_dev_prop_type_t;
@@ -109,7 +108,7 @@ static pmb887x_dev_t devices_meta[] = {
 
 	// Input
 	{
-		.name = "ke970-scroll",
+		.name = "rotary-encoder",
 		.props = {
 			{ "steps", DEV_PROP_UINT, false },
 			{ "edge_us", DEV_PROP_UINT, false },
@@ -153,6 +152,31 @@ static pmb887x_dev_t devices_meta[] = {
 		.props = {},
 	},
 
+	// Audio output
+	{
+		.name = "speaker",
+		.props = {
+			{ "gain", DEV_PROP_INT, false },
+		},
+	},
+	{
+		.name = "audio-switch",
+		.props = {},
+	},
+	{
+		.name = "audio-junction",
+		.props = {},
+	},
+
+	// System connector
+	{
+		.name = TYPE_ACCESSORY_CONNECTOR,
+		.props = {
+			{ "unplugged", DEV_PROP_STRING, false },
+			{ "replug-delay-ms", DEV_PROP_UINT, false },
+		},
+	},
+
 	// NOR FLASH
 	{
 		.name = "cfi-flash",
@@ -180,10 +204,8 @@ static DeviceState *device_find_by_id(GHashTable *devices, const char *name) {
 	return dev != NULL ? dev : qdev_find_recursive(sysbus_get_default(), name);
 }
 
-static Object *bus_find_by_id(GHashTable *devices, const char *name) {
+Object *pmb887x_board_find_bus(GHashTable *devices, const char *name) {
 	g_autofree char *device_name = g_strdup(name);
-	g_autofree char *normalized_bus_name = NULL;
-	g_autofree char *bus_property_name = NULL;
 	char *bus_name = strchr(device_name, ':');
 	DeviceState *dev;
 
@@ -195,11 +217,10 @@ static Object *bus_find_by_id(GHashTable *devices, const char *name) {
 	if (!dev)
 		hw_error("Bus device not found: %s", device_name);
 	if (bus_name != NULL) {
-		normalized_bus_name = g_ascii_strdown(bus_name, -1);
-		bus_property_name = g_strdup_printf("bus_%s", normalized_bus_name);
-		if (!object_property_find(OBJECT(dev), bus_property_name))
+		BusState *child_bus = qdev_get_child_bus(dev, bus_name);
+		if (!child_bus)
 			hw_error("Bus not found: %s", name);
-		return object_property_get_link(OBJECT(dev), bus_property_name, &error_fatal);
+		return OBJECT(child_bus);
 	}
 
 	if (object_property_find(OBJECT(dev), "bus")) {
@@ -236,7 +257,7 @@ static void device_init_ports_from_config(GHashTable *devices, DeviceState *dev,
 		const char *name = ports.u.tab.key[i];
 		const char *bus_name = toml_table_get_string(ports, name, NULL, true);
 		g_autofree char *property_name = g_strdup_printf("port.%s", name);
-		Object *bus = bus_find_by_id(devices, bus_name);
+		Object *bus = pmb887x_board_find_bus(devices, bus_name);
 
 		if (!object_property_find(OBJECT(dev), property_name))
 			hw_error("Device '%s' has no bus port '%s'", dev->id, name);
@@ -251,7 +272,7 @@ static void device_init_prop_from_config(DeviceState *dev, const pmb887x_dev_pro
 	switch (prop->type) {
 		case DEV_PROP_INT: {
 			int value = toml_table_get_int32(table, prop->name, -1, true);
-			qdev_prop_set_uint32(dev, prop->name, value);
+			qdev_prop_set_int32(dev, prop->name, value);
 			break;
 		}
 		case DEV_PROP_UINT: {
@@ -273,7 +294,7 @@ static void device_init_prop_from_config(DeviceState *dev, const pmb887x_dev_pro
 }
 
 static void device_init_props_from_config(DeviceState *dev, const pmb887x_dev_t *meta, toml_datum_t table) {
-	if (object_dynamic_cast(OBJECT(dev), TYPE_PMB887X_LCD)) {
+	if (object_dynamic_cast(OBJECT(dev), TYPE_LCD)) {
 		for (int i = 0; i < ARRAY_SIZE(LCD_PROPS); i++)
 			device_init_prop_from_config(dev, &LCD_PROPS[i], table);
 	}
@@ -313,6 +334,7 @@ static DeviceState *device_create_from_config(const char *id, toml_datum_t table
 
 	DeviceState *dev = qdev_new(type);
 	dev->id = g_strdup(id);
+	object_property_add_child(machine_get_container("peripheral"), id, OBJECT(dev));
 	device_init_props_from_config(dev, meta, table);
 	return dev;
 }
@@ -332,7 +354,7 @@ static void device_realize_from_config(GHashTable *devices, const char *id, toml
 		return;
 	}
 
-	Object *bus = bus_find_by_id(devices, bus_id);
+	Object *bus = pmb887x_board_find_bus(devices, bus_id);
 	pmb887x_dev_bus_type_t bus_type = bus_get_type(bus);
 
 	switch (bus_type) {
@@ -352,7 +374,6 @@ static void device_realize_from_config(GHashTable *devices, const char *id, toml
 
 		case DEV_BUS_SIM:
 			qdev_connect_clock_in(dev, "CLK", qdev_get_clock_out(DEVICE(bus), "CC_CLK"));
-			qdev_prop_set_bit(dev, "trace", pmb887x_trace_log_enabled(PMB887X_TRACE_SIM_CARD));
 			pmb887x_sim_connect_slot(PMB887X_SIM(bus), ISO7816_SLOT(dev));
 			sysbus_realize_and_unref(SYS_BUS_DEVICE(dev), &error_fatal);
 			device_init_gpios_from_config(dev, table);
@@ -411,8 +432,11 @@ void pmb887x_board_init_devices(DeviceState *ebuc) {
 		const char *id = value.u.tab.key[i];
 		toml_datum_t table = toml_table_get(value, TOML_TABLE, id, true);
 		DeviceState *dev = g_hash_table_lookup(devices, id);
-		if (dev != NULL)
-			device_init_ports_from_config(devices, dev, table);
+		if (dev == NULL)
+			continue;
+		device_init_ports_from_config(devices, dev, table);
+		if (object_dynamic_cast(OBJECT(dev), TYPE_ACCESSORY_CONNECTOR))
+			pmb887x_board_accessory_configure(devices, dev, table);
 	}
 
 	for (int i = 0; i < value.u.tab.size; i++) {
@@ -425,7 +449,7 @@ void pmb887x_board_init_devices(DeviceState *ebuc) {
 
 	DeviceState *flash_blk = qdev_find_recursive(sysbus_get_default(), "FULLFLASH");
 	if (flash_blk) {
-		int64_t total_flash_size = pmb887x_flash_blk_size(pmb887x_flash_blk_self(flash_blk));
+		int64_t total_flash_size = cfi_flash_storage_size(CFI_FLASH_STORAGE(flash_blk));
 		if (board->flash_offset != total_flash_size)
 			hw_error("Invalid fullflash size=0x%08"PRIX64". Please, specify fullflash with size=0x%08X", total_flash_size, board->flash_offset);
 	}

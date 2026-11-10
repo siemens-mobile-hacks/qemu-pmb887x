@@ -1,11 +1,7 @@
 /*
  * Capture/Compare
  */
-#define PMB887X_TRACE_ID		CAPCOM
-#define PMB887X_TRACE_PREFIX	"pmb887x-capcom"
-
 #include "qemu/osdep.h"
-#include "hw/core/hw-error.h"
 #include "hw/core/qdev-properties.h"
 #include "hw/core/sysbus.h"
 #include "qapi/error.h"
@@ -14,8 +10,7 @@
 
 #include "hw/arm/pmb887x/gen/cpu_regs.h"
 #include "hw/arm/pmb887x/mod.h"
-#include "hw/arm/pmb887x/regs_dump.h"
-#include "hw/arm/pmb887x/trace.h"
+#include "hw/arm/pmb887x/gen/cpu_meta.h"
 
 #define TYPE_PMB887X_CAPCOM	"pmb887x-capcom"
 #define PMB887X_CAPCOM(obj)	OBJECT_CHECK(pmb887x_capcom_t, (obj), TYPE_PMB887X_CAPCOM)
@@ -46,6 +41,7 @@ struct pmb887x_capcom_pwm_t {
 struct pmb887x_capcom_t {
 	SysBusDevice parent_obj;
 	MemoryRegion mmio;
+	DebugChannel dbg;
 	uint32_t revision;
 	QEMUTimer *event_timer;
 
@@ -146,11 +142,10 @@ static void capcom_pwm_stub_configure(
 	pwm->duty_per_mille = duty_per_mille;
 
 	if (is_enabled) {
-		DPRINTF("%08" PRIX64 " CC%uIO PWM configured: %" PRIu64 ".%03" PRIu64 " Hz, %u.%u%% duty\n",
-			(uint64_t) p->mmio.addr, channel, frequency_millihz / 1000, frequency_millihz % 1000,
-			duty_per_mille / 10, duty_per_mille % 10);
+		DEBUG_LOG(&p->dbg, "CC%uIO PWM configured: %" PRIu64 ".%03" PRIu64 " Hz, %u.%u%% duty\n",
+			channel, frequency_millihz / 1000, frequency_millihz % 1000, duty_per_mille / 10, duty_per_mille % 10);
 	} else {
-		DPRINTF("%08" PRIX64 " CC%uIO PWM disabled\n", (uint64_t) p->mmio.addr, channel);
+		DEBUG_LOG(&p->dbg, "CC%uIO PWM disabled\n", channel);
 	}
 }
 
@@ -488,7 +483,7 @@ static uint32_t capcom_register_read(pmb887x_capcom_t *p, hwaddr offset) {
 		case CAPCOM_T0_SRC:
 			return pmb887x_src_get(&p->timer_src[0]);
 		default:
-			EPRINTF("unknown reg read: %02" PRIX64 "\n", offset);
+			DEBUG_GUEST_ERROR(&p->dbg, "unknown reg read: %02" PRIX64 "\n", offset);
 			return 0;
 	}
 }
@@ -500,7 +495,6 @@ static uint64_t capcom_io_read(void *opaque, hwaddr offset, unsigned size) {
 	uint32_t value = capcom_register_read(p, offset);
 
 	capcom_schedule(p);
-	IO_DUMP_READ(offset + p->mmio.addr, size, value);
 	return value;
 }
 
@@ -604,7 +598,7 @@ static void capcom_register_write(pmb887x_capcom_t *p, hwaddr offset, uint32_t v
 			pmb887x_src_set(&p->timer_src[0], value);
 			break;
 		default:
-			EPRINTF("unknown reg write: %02" PRIX64 " = %08" PRIX32 "\n", offset, value);
+			DEBUG_GUEST_ERROR(&p->dbg, "unknown reg write: %02" PRIX64 " = %08" PRIX32 "\n", offset, value);
 			break;
 	}
 }
@@ -612,7 +606,6 @@ static void capcom_register_write(pmb887x_capcom_t *p, hwaddr offset, uint32_t v
 static void capcom_io_write(void *opaque, hwaddr offset, uint64_t value, unsigned size) {
 	pmb887x_capcom_t *p = opaque;
 
-	IO_DUMP_WRITE(offset + p->mmio.addr, size, value);
 	capcom_sync(p);
 	capcom_register_write(p, offset, (uint32_t) value);
 	capcom_state_update(p);
@@ -638,7 +631,7 @@ static void capcom_handle_input_change(pmb887x_capcom_t *p, unsigned channel, in
 	unsigned timer_index = capcom_channel_timer(p, channel);
 	p->compare[channel] = p->timers[timer_index].value;
 	pmb887x_src_update(&p->channel_src[channel], 0, MOD_SRC_SETR);
-	DPRINTF("CC%u captured T%u=%04X on %s edge\n", channel, timer_index, p->compare[channel],
+	DEBUG_LOG(&p->dbg, "CC%u captured T%u=%04X on %s edge\n", channel, timer_index, p->compare[channel],
 		rising_edge ? "rising" : "falling");
 	capcom_schedule(p);
 }
@@ -699,14 +692,14 @@ static void capcom_init(Object *obj) {
 	for (unsigned index = 0; index < CAPCOM_CHANNEL_COUNT; index++)
 		sysbus_init_irq(SYS_BUS_DEVICE(obj), &p->channel_irq[index]);
 
-	qdev_init_gpio_in_named(dev, capcom_input_cc0_handler, "CC0_IN", 1);
-	qdev_init_gpio_in_named(dev, capcom_input_cc1_handler, "CC1_IN", 1);
-	qdev_init_gpio_in_named(dev, capcom_input_cc2_handler, "CC2_IN", 1);
-	qdev_init_gpio_in_named(dev, capcom_input_cc3_handler, "CC3_IN", 1);
-	qdev_init_gpio_in_named(dev, capcom_input_cc4_handler, "CC4_IN", 1);
-	qdev_init_gpio_in_named(dev, capcom_input_cc5_handler, "CC5_IN", 1);
-	qdev_init_gpio_in_named(dev, capcom_input_cc6_handler, "CC6_IN", 1);
-	qdev_init_gpio_in_named(dev, capcom_input_cc7_handler, "CC7_IN", 1);
+	qdev_init_gpio_in_named(dev, capcom_input_cc0_handler, "CC0", 1);
+	qdev_init_gpio_in_named(dev, capcom_input_cc1_handler, "CC1", 1);
+	qdev_init_gpio_in_named(dev, capcom_input_cc2_handler, "CC2", 1);
+	qdev_init_gpio_in_named(dev, capcom_input_cc3_handler, "CC3", 1);
+	qdev_init_gpio_in_named(dev, capcom_input_cc4_handler, "CC4", 1);
+	qdev_init_gpio_in_named(dev, capcom_input_cc5_handler, "CC5", 1);
+	qdev_init_gpio_in_named(dev, capcom_input_cc6_handler, "CC6", 1);
+	qdev_init_gpio_in_named(dev, capcom_input_cc7_handler, "CC7", 1);
 }
 
 static void capcom_reset(DeviceState *dev) {
@@ -739,6 +732,7 @@ static void capcom_reset(DeviceState *dev) {
 
 static void capcom_realize(DeviceState *dev, Error **errp) {
 	pmb887x_capcom_t *p = PMB887X_CAPCOM(dev);
+	pmb887x_mod_debug_init(&p->dbg, dev, &p->mmio, &pmb887x_capcom_regs);
 
 	if (!clock_has_source(p->clc.clock)) {
 		error_setg(errp, "CAPCOM 'clk' input is not connected");
@@ -746,13 +740,17 @@ static void capcom_realize(DeviceState *dev, Error **errp) {
 	}
 
 	for (unsigned index = 0; index < CAPCOM_TIMER_COUNT; index++) {
-		if (!p->timer_irq[index])
-			hw_error("pmb887x-capcom: timer IRQ %u is not connected", index);
+		if (!p->timer_irq[index]) {
+			error_setg(errp, "CAPCOM timer IRQ %u is not connected", index);
+			return;
+		}
 		pmb887x_src_init(&p->timer_src[index], p->timer_irq[index]);
 	}
 	for (unsigned index = 0; index < CAPCOM_CHANNEL_COUNT; index++) {
-		if (!p->channel_irq[index])
-			hw_error("pmb887x-capcom: channel IRQ %u is not connected", index);
+		if (!p->channel_irq[index]) {
+			error_setg(errp, "CAPCOM channel IRQ %u is not connected", index);
+			return;
+		}
 		pmb887x_src_init(&p->channel_src[index], p->channel_irq[index]);
 	}
 }

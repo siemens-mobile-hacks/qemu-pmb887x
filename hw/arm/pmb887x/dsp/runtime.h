@@ -16,7 +16,8 @@ dsp_runtime_t *dsp_runtime_create(
 	void (*notify_comm)(void *opaque, uint16_t flags, bool set),
 	int64_t (*get_time_ns)(void *opaque),
 	uint32_t (*ssc_transfer)(void *opaque, uint32_t value),
-	const dsp_ports_t *ports
+	const dsp_ports_t *ports,
+	const DebugChannel *dbg
 );
 void dsp_runtime_destroy(dsp_runtime_t *runtime);
 void dsp_runtime_reset(dsp_runtime_t *runtime);
@@ -41,7 +42,7 @@ uint64_t dsp_runtime_shared_read_bytes(dsp_runtime_t *runtime, size_t offset, si
 void dsp_runtime_shared_write_bytes(dsp_runtime_t *runtime, size_t offset, uint64_t value, size_t size);
 void dsp_runtime_set_request(dsp_runtime_t *runtime, size_t index, bool level);
 void dsp_runtime_set_input(dsp_runtime_t *runtime, size_t index, bool level);
-void dsp_runtime_set_iq_bus(dsp_runtime_t *runtime, pmb887x_iq_bus_t *iq_bus);
+void dsp_runtime_set_iq_bus(dsp_runtime_t *runtime, IQBus *iq_bus);
 void dsp_runtime_set_gsm_signal(
 	dsp_runtime_t *runtime,
 	pmb887x_dsp_gsm_signal_t signal,

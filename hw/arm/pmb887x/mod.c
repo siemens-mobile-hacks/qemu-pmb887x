@@ -1,14 +1,11 @@
 /*
  * Standart parts for all modules: CLC, SRB, SRC
  * */
-#define PMB887X_TRACE_ID		MOD
-#define PMB887X_TRACE_PREFIX	"pmb887x-mod"
-
 #include "hw/arm/pmb887x/mod.h"
 #include "hw/arm/pmb887x/gen/cpu_regs.h"
 #include "hw/core/hw-error.h"
 #include "hw/core/qdev.h"
-#include "hw/arm/pmb887x/trace.h"
+#include "system/debug-channel.h"
 
 static uint32_t pmb887x_clc_calculate_hz(pmb887x_clc_reg_t *reg) {
 	if (!reg->clock || !clock_has_source(reg->clock))
@@ -320,4 +317,14 @@ void pmb887x_srb_ext_set_isr(pmb887x_srb_ext_reg_t *reg, uint32_t value) {
 	
 	if ((reg->ris & reg->imsc))
 		pmb887x_srb_set_isr(reg->parent, reg->events);
+}
+
+void pmb887x_mod_debug_init(
+	DebugChannel *ch,
+	DeviceState *dev,
+	MemoryRegion *mmio,
+	const DebugRegs *regs
+) {
+	debug_channel_init_device_regs(ch, dev, regs);
+	debug_channel_attach_mr(ch, mmio, 0);
 }

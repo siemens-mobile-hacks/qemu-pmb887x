@@ -627,6 +627,26 @@ qemu_irq qdev_get_gpio_in(DeviceState *dev, int n);
 qemu_irq qdev_get_gpio_in_named(DeviceState *dev, const char *name, int n);
 
 /**
+ * qdev_has_gpio_in_named: Check whether a named input GPIO line exists
+ * @dev: Device to check
+ * @name: Name of the input GPIO array, or NULL for anonymous lines
+ * @n: Number of the GPIO line in that array
+ *
+ * Return: true if @dev has input line @n in the array @name
+ */
+bool qdev_has_gpio_in_named(const DeviceState *dev, const char *name, int n);
+
+/**
+ * qdev_has_gpio_out_named: Check whether a named output GPIO line exists
+ * @dev: Device to check
+ * @name: Name of the output GPIO array, or NULL for anonymous lines
+ * @n: Number of the GPIO line in that array
+ *
+ * Return: true if @dev has output line @n in the array @name
+ */
+bool qdev_has_gpio_out_named(const DeviceState *dev, const char *name, int n);
+
+/**
  * qdev_connect_gpio_out: Connect one of a device's anonymous output GPIO lines
  * @dev: Device whose GPIO to connect
  * @n: Number of the anonymous output GPIO line (which must be in range)
@@ -800,7 +820,8 @@ void qdev_init_gpio_out_named(DeviceState *dev, qemu_irq *pins,
  * @dev: Device to create input GPIOs for
  * @handler: Function to call when GPIO line value is set
  * @opaque: Opaque data pointer to pass to @handler
- * @name: Name of the GPIO input (must be unique for this device)
+ * @name: Name of the GPIO input (must be unique among the inputs of this
+ *        device; an output may use the same name)
  * @n: Number of GPIO lines in this input set
  */
 void qdev_init_gpio_in_named_with_opaque(DeviceState *dev,
@@ -812,7 +833,8 @@ void qdev_init_gpio_in_named_with_opaque(DeviceState *dev,
  * qdev_init_gpio_in_named() - create an array of input GPIO lines
  * @dev: device to add array to
  * @handler: a &typedef qemu_irq_handler function to call when GPIO is set
- * @name: Name of the GPIO input (must be unique for this device)
+ * @name: Name of the GPIO input (must be unique among the inputs of this
+ *        device; an output may use the same name)
  * @n: Number of GPIO lines in this input set
  *
  * Like qdev_init_gpio_in_named_with_opaque(), but the opaque pointer

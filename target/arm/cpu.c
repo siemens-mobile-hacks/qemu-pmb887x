@@ -126,6 +126,19 @@ void arm_restore_state_to_opc(CPUState *cs,
     }
 }
 
+void arm_get_io_context(CPUState *cs, const uint64_t *data, uint64_t *pc,
+                        uint64_t *lr)
+{
+    CPUARMState *env = cpu_env(cs);
+
+    *pc = data[0];
+    if (tcg_cflags_has(cs, CF_PCREL)) {
+        uint64_t page_pc = is_a64(env) ? env->pc : env->regs[15];
+        *pc = (page_pc & TARGET_PAGE_MASK) | data[0];
+    }
+    *lr = is_a64(env) ? env->xregs[30] : env->regs[14];
+}
+
 int arm_cpu_mmu_index(CPUState *cs, bool ifetch)
 {
     return arm_env_mmu_index(cpu_env(cs));
@@ -2610,6 +2623,7 @@ static const TCGCPUOps arm_tcg_ops = {
     .synchronize_from_tb = arm_cpu_synchronize_from_tb,
     .debug_excp_handler = arm_debug_excp_handler,
     .restore_state_to_opc = arm_restore_state_to_opc,
+    .get_io_context = arm_get_io_context,
     .mmu_index = arm_cpu_mmu_index,
 
 #ifdef CONFIG_USER_ONLY

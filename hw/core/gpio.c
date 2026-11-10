@@ -22,8 +22,8 @@
 #include "hw/core/irq.h"
 #include "qapi/error.h"
 
-static NamedGPIOList *qdev_get_named_gpio_list(DeviceState *dev,
-                                               const char *name)
+static NamedGPIOList *qdev_find_named_gpio_list(const DeviceState *dev,
+                                                const char *name)
 {
     NamedGPIOList *ngl;
 
@@ -33,11 +33,31 @@ static NamedGPIOList *qdev_get_named_gpio_list(DeviceState *dev,
             return ngl;
         }
     }
+    return NULL;
+}
+
+static NamedGPIOList *qdev_get_named_gpio_list(DeviceState *dev,
+                                               const char *name)
+{
+    NamedGPIOList *ngl = qdev_find_named_gpio_list(dev, name);
+
+    if (ngl) {
+        return ngl;
+    }
 
     ngl = g_malloc0(sizeof(*ngl));
     ngl->name = g_strdup(name);
     QLIST_INSERT_HEAD(&dev->gpios, ngl, node);
     return ngl;
+}
+
+/* An input and an output may share a name, so their properties differ. */
+static char *qdev_gpio_out_propname(const char *name, int n)
+{
+    if (!name) {
+        return g_strdup_printf("unnamed-gpio-out[%d]", n);
+    }
+    return g_strdup_printf("%s-out[%d]", name, n);
 }
 
 void qdev_init_gpio_in_named_with_opaque(DeviceState *dev,
@@ -48,7 +68,6 @@ void qdev_init_gpio_in_named_with_opaque(DeviceState *dev,
     int i;
     NamedGPIOList *gpio_list = qdev_get_named_gpio_list(dev, name);
 
-    assert(gpio_list->num_out == 0 || !name);
     gpio_list->in = qemu_extend_irqs(gpio_list->in, gpio_list->num_in, handler,
                                      opaque, n);
 
@@ -77,15 +96,10 @@ void qdev_init_gpio_out_named(DeviceState *dev, qemu_irq *pins,
     int i;
     NamedGPIOList *gpio_list = qdev_get_named_gpio_list(dev, name);
 
-    assert(gpio_list->num_in == 0 || !name);
-
-    if (!name) {
-        name = "unnamed-gpio-out";
-    }
     memset(pins, 0, sizeof(*pins) * n);
     for (i = 0; i < n; ++i) {
-        gchar *propname = g_strdup_printf("%s[%u]", name,
-                                          gpio_list->num_out + i);
+        gchar *propname = qdev_gpio_out_propname(name,
+                                                 gpio_list->num_out + i);
 
         object_property_add_link(OBJECT(dev), propname, TYPE_IRQ,
                                  (Object **)&pins[i],
@@ -99,6 +113,20 @@ void qdev_init_gpio_out_named(DeviceState *dev, qemu_irq *pins,
 void qdev_init_gpio_out(DeviceState *dev, qemu_irq *pins, int n)
 {
     qdev_init_gpio_out_named(dev, pins, NULL, n);
+}
+
+bool qdev_has_gpio_in_named(const DeviceState *dev, const char *name, int n)
+{
+    NamedGPIOList *ngl = qdev_find_named_gpio_list(dev, name);
+
+    return ngl && n >= 0 && n < ngl->num_in;
+}
+
+bool qdev_has_gpio_out_named(const DeviceState *dev, const char *name, int n)
+{
+    NamedGPIOList *ngl = qdev_find_named_gpio_list(dev, name);
+
+    return ngl && n >= 0 && n < ngl->num_out;
 }
 
 qemu_irq qdev_get_gpio_in_named(DeviceState *dev, const char *name, int n)
@@ -117,8 +145,7 @@ qemu_irq qdev_get_gpio_in(DeviceState *dev, int n)
 void qdev_connect_gpio_out_named(DeviceState *dev, const char *name, int n,
                                  qemu_irq input_pin)
 {
-    char *propname = g_strdup_printf("%s[%d]",
-                                     name ? name : "unnamed-gpio-out", n);
+    char *propname = qdev_gpio_out_propname(name, n);
     if (input_pin && !OBJECT(input_pin)->parent) {
         /* We need a name for object_property_set_link to work */
         object_property_add_child(machine_get_container("unattached"),
@@ -132,8 +159,7 @@ void qdev_connect_gpio_out_named(DeviceState *dev, const char *name, int n,
 qemu_irq qdev_get_gpio_out_connector(const DeviceState *dev,
                                      const char *name, int n)
 {
-    g_autofree char *propname = g_strdup_printf("%s[%d]",
-                                     name ? name : "unnamed-gpio-out", n);
+    g_autofree char *propname = qdev_gpio_out_propname(name, n);
 
     qemu_irq ret = (qemu_irq)object_property_get_link(OBJECT(dev), propname,
                                                       NULL);
@@ -146,8 +172,7 @@ qemu_irq qdev_get_gpio_out_connector(const DeviceState *dev,
 static qemu_irq qdev_disconnect_gpio_out_named(DeviceState *dev,
                                                const char *name, int n)
 {
-    char *propname = g_strdup_printf("%s[%d]",
-                                     name ? name : "unnamed-gpio-out", n);
+    char *propname = qdev_gpio_out_propname(name, n);
 
     qemu_irq ret = (qemu_irq)object_property_get_link(OBJECT(dev), propname,
                                                       NULL);
@@ -186,8 +211,7 @@ void qdev_pass_gpios(DeviceState *dev, DeviceState *container,
         g_free(propname);
     }
     for (i = 0; i < ngl->num_out; i++) {
-        const char *nm = ngl->name ? ngl->name : "unnamed-gpio-out";
-        char *propname = g_strdup_printf("%s[%d]", nm, i);
+        char *propname = qdev_gpio_out_propname(ngl->name, i);
 
         object_property_add_alias(OBJECT(container), propname,
                                   OBJECT(dev), propname);

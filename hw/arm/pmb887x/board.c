@@ -29,19 +29,16 @@
 #include "hw/arm/pmb887x/board/keyboard.h"
 #include "hw/arm/pmb887x/board/cpu_module.h"
 #include "hw/arm/pmb887x/board/startup.h"
+#include "hw/block/cfi-flash.h"
 
 #include "hw/arm/pmb887x/gen/brom.h"
+#include "hw/arm/pmb887x/gen/cpu_meta.h"
 #include "hw/arm/pmb887x/gen/cpu_modules.h"
 #include "hw/arm/pmb887x/gen/cpu_regs.h"
 
 #include "hw/arm/pmb887x/io_bridge.h"
-#include "hw/arm/pmb887x/regs_dump.h"
 #include "hw/arm/pmb887x/tpu.h"
-#include "hw/arm/pmb887x/trace_common.h"
 
-void qmp_pmemsave(uint64_t addr, uint64_t size, const char *filename, Error **errp);
-
-static bool machine_used = false;
 static bool initial_cpu_reset = true;
 
 static uint32_t pmb887x_get_initial_pc(void) {
@@ -66,28 +63,6 @@ static void pmb887x_cpu_reset(void *opaque) {
 	initial_cpu_reset = false;
 }
 
-__attribute__((destructor))
-static void memory_dump_at_exit(void) {
-	if (!machine_used)
-		return;
-
-	CPUState *cpu = qemu_get_cpu(0);
-	if (!cpu)
-		return;
-
-	fprintf(stderr, "sorry died at %08X LR %08X\n", ARM_CPU(cpu)->env.regs[15], ARM_CPU(cpu)->env.regs[14]);
-
-
-//	qmp_pmemsave(0xB0000000, 32 * 1024 * 1024, "/tmp/ram.bin", NULL);
-//	qmp_pmemsave(0xFFFF0000, 0x4000, "/tmp/tcm.bin", NULL);
-//	qmp_pmemsave(0x00000000, 96 * 1024, "/tmp/sram.bin", NULL);
-//	qmp_pmemsave(0x00020000, 96 * 1024, "/tmp/sram2.bin", NULL);
-
-//	qmp_pmemsave(0xA8000000, 8 * 1024 * 1024, "/tmp/ram.bin", NULL);
-//	qmp_pmemsave(0x00000000, 0x4000, "/tmp/tcm.bin", NULL);
-//	qmp_pmemsave(0x00080000, 96 * 1024, "/tmp/sram.bin", NULL);
-}
-
 static void pmb887x_cpu_clock_update(void *opaque, ClockEvent _event) {
 	cpu_clock_set_cpu_hz(clock_get_hz(opaque));
 }
@@ -99,9 +74,34 @@ static void pmb887x_init_keymap(DeviceState *keypad, const uint32_t *map, int ma
     qdev_prop_set_array(keypad, "map", list);
 }
 
-static void pmb887x_init(MachineState *machine) {
-	machine_used = true;
+static void pmb887x_init_gpio_names(DeviceState *gpio) {
+	const pmb887x_board_t *board = pmb887x_board();
+	const pmb887x_cpu_meta_t *cpu_info = pmb887x_get_cpu_meta(board->cpu);
+	QList *list = qlist_new();
+	for (int i = 0; i < cpu_info->gpios_count; i++) {
+		const char *name = board->gpio_names[i];
+		qlist_append_str(list, strcmp(name, cpu_info->gpios[i].name) ? name : "");
+	}
+	qdev_prop_set_array(gpio, "pin-names", list);
+}
 
+static void pmb887x_init_irq_names(DeviceState *vic) {
+	const pmb887x_cpu_meta_t *cpu = pmb887x_get_cpu_meta(pmb887x_board()->cpu);
+	uint32_t count = 0;
+	for (int i = 0; i < cpu->irqs_count; i++)
+		count = MAX(count, (cpu->irqs[i].addr - VIC_CON0) / 4 + 1);
+
+	g_autofree const char **names = g_new0(const char *, count);
+	for (int i = 0; i < cpu->irqs_count; i++)
+		names[(cpu->irqs[i].addr - VIC_CON0) / 4] = cpu->irqs[i].name;
+
+	QList *list = qlist_new();
+	for (uint32_t i = 0; i < count; i++)
+		qlist_append_str(list, names[i] ? names[i] : "");
+	qdev_prop_set_array(vic, "irq-names", list);
+}
+
+static void pmb887x_init(MachineState *machine) {
 	const char *board_config_file = getenv("PMB887X_BOARD");
 	if (!board_config_file) {
 		error_report("Please, set board config with env PMB887X_BOARD=path/to/board.cfg");
@@ -110,15 +110,12 @@ static void pmb887x_init(MachineState *machine) {
 
 	bool has_memory_timing = pmb887x_has_memory_timing();
 
-	pmb887x_trace_init();
 	pmb887x_board_init(board_config_file);
 
 #if PMB887X_IO_BRIDGE
 	fprintf(stderr, "Waiting for IO bridge...\n");
 	pmb8876_io_bridge_init();
 #endif
-
-	pmb887x_io_dump_init();
 
 	MemoryRegion *sysmem = get_system_memory();
 
@@ -139,11 +136,13 @@ static void pmb887x_init(MachineState *machine) {
 
 	// TCM
 	DeviceState *tcm = qdev_new("pmb887x-tcm");
+	tcm->id = g_strdup("TCM");
 	object_property_set_link(OBJECT(tcm), "cpu", OBJECT(cpu), &error_fatal);
 	sysbus_realize_and_unref(SYS_BUS_DEVICE(tcm), &error_fatal);
 
 	// 0x00000000-0xFFFFFFFF (Unmapped IO access)
 	DeviceState *unknown_io = qdev_new("pmb887x-unknown");
+	unknown_io->id = g_strdup("UNKNOWN");
 	sysbus_mmio_map(SYS_BUS_DEVICE(unknown_io), 0, 0);
 	sysbus_realize_and_unref(SYS_BUS_DEVICE(unknown_io), &error_fatal);
 
@@ -179,6 +178,7 @@ static void pmb887x_init(MachineState *machine) {
 
 	// VIC
 	DeviceState *vic = pmb887x_new_cpu_module("VIC");
+	pmb887x_init_irq_names(vic);
 	sysbus_connect_irq(SYS_BUS_DEVICE(vic), 0, qdev_get_gpio_in(DEVICE(cpu), ARM_CPU_IRQ));
 	sysbus_connect_irq(SYS_BUS_DEVICE(vic), 1, qdev_get_gpio_in(DEVICE(cpu), ARM_CPU_FIQ));
 	sysbus_realize_and_unref(SYS_BUS_DEVICE(vic), &error_fatal);
@@ -195,13 +195,14 @@ static void pmb887x_init(MachineState *machine) {
 
 	// Port Control Logic
 	DeviceState *gpio = pmb887x_new_cpu_module("GPIO");
+	pmb887x_init_gpio_names(gpio);
 	sysbus_realize_and_unref(SYS_BUS_DEVICE(gpio), &error_fatal);
 
 	// System Timer
 	DeviceState *stm = pmb887x_new_cpu_module("STM");
-	pmb887x_qdev_connect_gpio_out(cgu, "FPI2_PLL_SELECTED", 0,
-		qdev_get_gpio_in_named(stm, "RMC2_ENABLE_IN", 0));
 	sysbus_realize_and_unref(SYS_BUS_DEVICE(stm), &error_fatal);
+	pmb887x_qdev_connect_gpio_out(cgu, "FPI2_PLL_SELECTED", 0,
+		qdev_get_gpio_in_named(stm, "RMC2_ENABLE", 0));
 
 	// Time Processing Unit
 	DeviceState *tpu = pmb887x_new_cpu_module("TPU");
@@ -223,8 +224,8 @@ static void pmb887x_init(MachineState *machine) {
 	pmb887x_dsp_set_config(dsp, pmb887x_cpu_get(pmb887x_board()->cpu)->dsp_config);
 	pmb887x_board_init_dsp(dsp);
 	qdev_connect_clock_in(dsp, "GSM_CLOCK", qdev_get_clock_out(tpu, "GSM_CLOCK"));
-	qdev_connect_gpio_out_named(dsp, "ACTIVE_OUT", 0,
-		qdev_get_gpio_in_named(cgu, "DSP_ACTIVE_IN", 0));
+	qdev_connect_gpio_out_named(dsp, "ACTIVE", 0,
+		qdev_get_gpio_in_named(cgu, "DSP_ACTIVE", 0));
 	sysbus_realize_and_unref(SYS_BUS_DEVICE(dsp), &error_fatal);
 	pmb887x_tpu_set_dsp(tpu, dsp);
 
@@ -302,15 +303,15 @@ static void pmb887x_init(MachineState *machine) {
 	object_property_set_uint(OBJECT(scu), "cpu_uid0", pmb887x_board()->cpu_uid[0], &error_fatal);
 	object_property_set_uint(OBJECT(scu), "cpu_uid1", pmb887x_board()->cpu_uid[1], &error_fatal);
 	object_property_set_uint(OBJECT(scu), "cpu_uid2", pmb887x_board()->cpu_uid[2], &error_fatal);
-	qdev_connect_gpio_out_named(scu, "DSP_RESET_OUT", 0, qdev_get_gpio_in_named(dsp, "RESET_IN", 0));
-	qdev_connect_gpio_out_named(scu, "USB_RESET_OUT", 0, qdev_get_gpio_in_named(usb, "RESET_IN", 0));
-	qdev_connect_gpio_out_named(scu, "DMAC_RESET_OUT", 0, qdev_get_gpio_in_named(dmac, "RESET_IN", 0));
-	qdev_connect_gpio_out_named(scu, "I2C_RESET_OUT", 0, qdev_get_gpio_in_named(i2c, "RESET_IN", 0));
+	qdev_connect_gpio_out_named(scu, "DSP_RESET", 0, qdev_get_gpio_in_named(dsp, "RESET", 0));
+	qdev_connect_gpio_out_named(scu, "USB_RESET", 0, qdev_get_gpio_in_named(usb, "RESET", 0));
+	qdev_connect_gpio_out_named(scu, "DMAC_RESET", 0, qdev_get_gpio_in_named(dmac, "RESET", 0));
+	qdev_connect_gpio_out_named(scu, "I2C_RESET", 0, qdev_get_gpio_in_named(i2c, "RESET", 0));
 	for (int i = 0; i < PMB887X_DSP_INT_COUNT; i++)
-		qdev_connect_gpio_out_named(scu, "DSP_INT_OUT", i, qdev_get_gpio_in_named(dsp, "INT_IN", i));
+		qdev_connect_gpio_out_named(scu, "DSP_INT", i, qdev_get_gpio_in_named(dsp, "INT", i));
 	sysbus_realize_and_unref(SYS_BUS_DEVICE(scu), &error_fatal);
 	for (int i = 0; i < PMB887X_DSP_MCU_INT_COUNT; i++)
-		qdev_connect_gpio_out_named(dsp, "INT_OUT", i, qdev_get_gpio_in_named(scu, "DSP_INT_IN", i));
+		qdev_connect_gpio_out_named(dsp, "INT", i, qdev_get_gpio_in_named(scu, "DSP_INT", i));
 
 	// CAPCOM0
 	DeviceState *capcom0 = pmb887x_new_cpu_module("CAPCOM0");
@@ -327,7 +328,7 @@ static void pmb887x_init(MachineState *machine) {
 	qdev_prop_set_string(rtc, "cnt-format",
 		toml_table_get_string(pmb887x_board()->config, "rtc.format", "unix", false));
 	sysbus_realize_and_unref(SYS_BUS_DEVICE(rtc), &error_fatal);
-	qdev_connect_gpio_out_named(scu, "RTC_RESET_OUT", 0, qdev_get_gpio_in_named(rtc, "RESET_IN", 0));
+	qdev_connect_gpio_out_named(scu, "RTC_RESET", 0, qdev_get_gpio_in_named(rtc, "RESET", 0));
 
 	// GPTU0
 	DeviceState *gptu0 = pmb887x_new_cpu_module("GPTU0");
@@ -352,7 +353,7 @@ static void pmb887x_init(MachineState *machine) {
 	// Flash
 	DriveInfo *flash_dinfo = drive_get(IF_PFLASH, 0, 0);
 	if (flash_dinfo) {
-		DeviceState *flash_blk = qdev_new("pmb887x-flash-blk");
+		DeviceState *flash_blk = qdev_new(TYPE_CFI_FLASH_STORAGE);
 		flash_blk->id = strdup("FULLFLASH");
 		qdev_prop_set_drive(flash_blk, "drive", blk_by_legacy_dinfo(flash_dinfo));
 		sysbus_realize_and_unref(SYS_BUS_DEVICE(flash_blk), &error_fatal);
@@ -361,11 +362,9 @@ static void pmb887x_init(MachineState *machine) {
 	pmb887x_cpu_modules_post_init();
 	pmb887x_board_init_analog();
 	pmb887x_board_gpio_init_fixed_inputs();
-	pmb887x_board_gpio_init_fixed_connections();
 	pmb887x_board_init_devices(ebuc);
 	sysbus_realize_and_unref(SYS_BUS_DEVICE(ebuc), &error_fatal);
 	pmb887x_board_keyboard_connect_gpios(keypad);
-	pmb887x_qdev_connect_gpio_outputs();
 	pmb887x_board_startup_init(keypad);
 
 #if PMB887X_IO_BRIDGE

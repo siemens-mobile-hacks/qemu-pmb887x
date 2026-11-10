@@ -1,9 +1,6 @@
 /*
  * PMB887x SIM card interface
  */
-#define PMB887X_TRACE_ID SIM
-#define PMB887X_TRACE_PREFIX "pmb887x-sim"
-
 #include "qemu/osdep.h"
 #include "qemu/fifo8.h"
 #include "qemu/module.h"
@@ -16,9 +13,8 @@
 
 #include "hw/arm/pmb887x/gen/cpu_regs.h"
 #include "hw/arm/pmb887x/mod.h"
-#include "hw/arm/pmb887x/regs_dump.h"
+#include "hw/arm/pmb887x/gen/cpu_meta.h"
 #include "hw/arm/pmb887x/sim.h"
-#include "hw/arm/pmb887x/trace.h"
 
 #define SIM_IRQ_MASK (SIM_IMSC_ERR | SIM_IMSC_IN | SIM_IMSC_OK)
 #define SIM_EVENT_ENABLE_MASK ( \
@@ -62,6 +58,7 @@ enum sim_t0_state_t {
 struct pmb887x_sim_t {
 	SysBusDevice parent_obj;
 	MemoryRegion mmio;
+	DebugChannel dbg;
 	uint32_t revision;
 	qemu_irq irq[SIM_IRQ_COUNT];
 
@@ -219,7 +216,7 @@ static void sim_t0_reset(pmb887x_sim_t *p, bool start) {
 }
 
 static void sim_t0_finish(pmb887x_sim_t *p) {
-	DPRINTF("T=0 complete: SW=%02X%02X\n", p->sw1, p->sw2);
+	DEBUG_LOG(&p->dbg, "T=0 complete: SW=%02X%02X\n", p->sw1, p->sw2);
 	timer_del(p->character_timer);
 	p->t0_state = SIM_T0_STATE_HEADER;
 	p->t0_header_size = 0;
@@ -244,7 +241,7 @@ static void sim_t0_receive(pmb887x_sim_t *p, uint8_t value) {
 				uint16_t remaining = p->t0_data_size - p->t0_data_transferred;
 				p->t0_chunk_remaining = value == instruction ? remaining : MIN(remaining, 1);
 				p->t0_state = (p->ins & SIM_INS_INSDIR) ? SIM_T0_STATE_RX_DATA : SIM_T0_STATE_TX_DATA;
-				DPRINTF("T=0 procedure: %02X, %s %u byte(s)\n", value,
+				DEBUG_LOG(&p->dbg, "T=0 procedure: %02X, %s %u byte(s)\n", value,
 					(p->ins & SIM_INS_INSDIR) ? "receive" : "transmit", p->t0_chunk_remaining);
 				if (p->t0_state == SIM_T0_STATE_TX_DATA)
 					p->t0_tx_slot = true;
@@ -335,7 +332,7 @@ static void sim_t0_tx_advance(pmb887x_sim_t *p) {
 		if (p->t0_header_size == ISO7816_HEADER_SIZE) {
 			p->t0_state = SIM_T0_STATE_PROCEDURE;
 			p->t0_data_size = p->p3 ? p->p3 : ISO7816_MAX_DATA_SIZE;
-			DPRINTF("T=0 header sent: INS=%02X, P3=%u\n", p->ins & SIM_INS_INS, p->t0_data_size);
+			DEBUG_LOG(&p->dbg, "T=0 header sent: INS=%02X, P3=%u\n", p->ins & SIM_INS_INS, p->t0_data_size);
 		}
 	} else if (p->t0_state == SIM_T0_STATE_TX_DATA) {
 		p->t0_data_transferred++;
@@ -493,18 +490,15 @@ static uint64_t sim_io_read(void *opaque, hwaddr haddr, unsigned size) {
 			value = pmb887x_srb_get_dmae(&p->srb);
 			break;
 		default:
-			IO_DUMP_READ(haddr + p->mmio.addr, size, 0xFFFFFFFF);
-			EPRINTF("unknown reg access: %02"PRIX64"\n", haddr);
+			DEBUG_GUEST_ERROR(&p->dbg, "unknown reg read: %02"PRIX64"\n", haddr);
 			return 0;
 	}
 
-	IO_DUMP_READ(haddr + p->mmio.addr, size, value);
 	return value;
 }
 
 static void sim_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned size) {
 	pmb887x_sim_t *p = opaque;
-	IO_DUMP_WRITE(haddr + p->mmio.addr, size, value);
 
 	switch (haddr) {
 		case SIM_CLC:
@@ -600,7 +594,7 @@ static void sim_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned si
 		case SIM_MIS:
 			break;
 		default:
-			EPRINTF("unknown reg access: %02"PRIX64"\n", haddr);
+			DEBUG_GUEST_ERROR(&p->dbg, "unknown reg write: %02"PRIX64" = %08"PRIX64"\n", haddr, value);
 			break;
 	}
 }
@@ -671,9 +665,9 @@ static void sim_init(Object *obj) {
 	for (size_t i = 0; i < ARRAY_SIZE(p->irq); i++)
 		sysbus_init_irq(SYS_BUS_DEVICE(obj), &p->irq[i]);
 
-	qdev_init_gpio_in_named(dev, sim_handle_cc_io, "CC_IO_IN", 1);
-	qdev_init_gpio_out_named(dev, &p->cc_io, "CC_IO_OUT", 1);
-	qdev_init_gpio_out_named(dev, &p->cc_rst, "CC_RST_OUT", 1);
+	qdev_init_gpio_in_named(dev, sim_handle_cc_io, "CC_IO", 1);
+	qdev_init_gpio_out_named(dev, &p->cc_io, "CC_IO", 1);
+	qdev_init_gpio_out_named(dev, &p->cc_rst, "CC_RST", 1);
 	p->cc_clk = qdev_init_clock_out(dev, "CC_CLK");
 
 	qdev_init_gpio_in_named(dev, sim_handle_dmac_tx_clr, "DMAC_TX_CLR", 1);
@@ -686,6 +680,7 @@ static void sim_init(Object *obj) {
 
 static void sim_realize(DeviceState *dev, Error **errp) {
 	pmb887x_sim_t *p = PMB887X_SIM(dev);
+	pmb887x_mod_debug_init(&p->dbg, dev, &p->mmio, &pmb887x_sim_regs);
 	pmb887x_clc_set(&p->clc, 1U << MOD_CLC_RMC_SHIFT);
 	pmb887x_srb_init(&p->srb, p->irq, ARRAY_SIZE(p->irq));
 	pmb887x_srb_set_event_handler(&p->srb, p, sim_event_handler);
