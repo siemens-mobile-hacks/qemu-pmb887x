@@ -214,7 +214,10 @@ dsp_device_t *modulator_create(
 );
 uint16_t modulator_ram_stored_bits(uint16_t hardware_version);
 void modulator_set_codon(dsp_device_t *device, bool level);
+void modulator_set_clock_hz(dsp_device_t *device, uint32_t frequency_hz);
+void modulator_set_ms_clock_hz(dsp_device_t *device, uint32_t frequency_hz);
 void modulator_advance(dsp_device_t *device, size_t cycles);
+size_t modulator_get_cycles_until_interrupt(const dsp_device_t *device);
 bool modulator_is_active(const dsp_device_t *device);
 
 dsp_device_t *ssc_create(

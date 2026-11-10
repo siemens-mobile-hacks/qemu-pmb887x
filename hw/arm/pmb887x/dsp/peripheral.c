@@ -217,6 +217,8 @@ void dsp_bus_set_clock_hz(dsp_bus_t *bus, uint32_t frequency_hz) {
 		dsp_i2s_set_clock_hz(bus->i2s[i], frequency_hz);
 	if (bus->i2s_tx != NULL)
 		dsp_i2s_tx_set_clock_hz(bus->i2s_tx, frequency_hz);
+	if (bus->modulator != NULL)
+		modulator_set_clock_hz(bus->modulator, frequency_hz);
 }
 
 void dsp_bus_set_ms_clock_hz(dsp_bus_t *bus, uint32_t frequency_hz) {
@@ -226,6 +228,8 @@ void dsp_bus_set_ms_clock_hz(dsp_bus_t *bus, uint32_t frequency_hz) {
 		dsp_i2s_set_ms_clock_hz(bus->i2s[i], frequency_hz);
 	if (bus->i2s_tx != NULL)
 		dsp_i2s_tx_set_ms_clock_hz(bus->i2s_tx, frequency_hz);
+	if (bus->modulator != NULL)
+		modulator_set_ms_clock_hz(bus->modulator, frequency_hz);
 }
 
 void dsp_bus_update_time(dsp_bus_t *bus) {
@@ -268,6 +272,8 @@ size_t dsp_bus_get_cycles_until_event(const dsp_bus_t *bus) {
 		cycles = afe_get_cycles_until_event(bus->afe);
 	for (size_t i = 0; i < bus->i2s_count; i++)
 		cycles = MIN(cycles, dsp_i2s_get_cycles_until_receive_interrupt(bus->i2s[i]));
+	if (bus->modulator != NULL && modulator_is_active(bus->modulator))
+		cycles = MIN(cycles, modulator_get_cycles_until_interrupt(bus->modulator));
 	return cycles;
 }
 
