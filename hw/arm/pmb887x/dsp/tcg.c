@@ -6755,8 +6755,8 @@ static void tcg_chain_exit_link(
 		return;
 	if (entry->block.fetch_split || entry->block.splits_block_repeat_end)
 		return;
-	/* a linked jump would skip the fast-loop lookup */
-	if (entry->fast)
+	/* a linked jump would skip the fast-loop lookup, and the helper's preparation of a repeat */
+	if (entry->fast || entry->dynamic_cycles)
 		return;
 	if (tcg_active_block_repeat_slots(state) > 1)
 		return;
@@ -6827,16 +6827,31 @@ void *HELPER(teak_tcg_chain)(
 		entry->fast = tcg_fast_map[state->pc & TEAK_PROGRAM_ADDRESS_MASK] != 0;
 		entry->fast_epoch = tcg_fast_map_epoch;
 	}
-	if ((entry->fast && tcg_fast_lookup(core) != NULL) || entry->dynamic_cycles) {
+	if (entry->fast && tcg_fast_lookup(core) != NULL) {
 		core->chain_cache_stops++;
 		return NULL;
 	}
-	if (core->chain_cycle_limit - core->last_block_cycles < entry->block.instruction_count) {
-		core->chain_budget_stops++;
-		return NULL;
-	}
+	if (entry->dynamic_cycles || core->chain_cycle_limit - core->last_block_cycles < entry->block.instruction_count) {
+		/*
+		 * tcg_execute_cached_slice() would come straight back with this block while the slice has cycles left,
+		 * whatever the block takes: prepare it the same way.
+		 */
+		uint32_t entry_cycles = tcg_block_cycles(core, &entry->block);
+		uint32_t remaining;
 
-	core->batch_cycles_remaining = core->chain_cycle_limit - core->last_block_cycles;
+		if (core->last_block_cycles >= core->chain_slice_limit) {
+			core->chain_budget_stops++;
+			return NULL;
+		}
+		remaining = core->chain_slice_limit - core->last_block_cycles;
+		if (entry->dynamic_cycles)
+			core->batch_block_cycles = entry_cycles;
+		core->batch_cycles_remaining = MAX(remaining, entry_cycles);
+		core->chain_cycle_limit = core->last_block_cycles + core->batch_cycles_remaining;
+		core->repeat_stop_repc = tcg_repeat_stop_repc(core, &entry->block, entry_cycles, remaining);
+	} else {
+		core->batch_cycles_remaining = core->chain_cycle_limit - core->last_block_cycles;
+	}
 	state->exit_reason = TEAK_EXIT_NONE;
 	core->chain_links++;
 	core->chain_prev = entry;
@@ -8385,6 +8400,7 @@ bool teak_tcg_execute_block(teak_tcg_core_t *core) {
 	core->advanced_cycles = 0;
 	core->synchronization_valid = false;
 	core->wait_cycles = 0;
+	core->chain_slice_limit = 0;
 
 	tb = tcg_prepare_block(core, &block);
 	if (tb == NULL)
@@ -8436,6 +8452,7 @@ static bool tcg_execute_slice_block(teak_tcg_core_t *core, const teak_tcg_block_
 static bool tcg_execute_cached_slice(teak_tcg_core_t *core, teak_tcg_block_cache_entry_t *entry, size_t max_cycles,
 	bool *fast_next
 ) {
+	core->chain_slice_limit = max_cycles;
 	while (true) {
 		teak_tcg_block_cache_entry_t *next;
 		size_t remaining_cycles = max_cycles - core->last_block_cycles;
@@ -8490,6 +8507,7 @@ bool teak_tcg_execute_slice(teak_tcg_core_t *core, size_t max_cycles) {
 	core->advanced_cycles = 0;
 	core->synchronization_valid = false;
 	core->wait_cycles = 0;
+	core->chain_slice_limit = 0;
 
 	if (qatomic_xchg(&core->state.exit_request, 0) != 0)
 		return true;
