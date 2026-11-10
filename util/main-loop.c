@@ -169,8 +169,8 @@ void qemu_notify_event(void)
  * wake never actually worked (the emscripten pipe poll mask stays 0 -
  * the spin itself was the only wake mechanism).
  *
- * Replace the poll with a worker-local timed wait on a condvar that
- * qemu_notify_event()/aio_notify() signal.  The fd set is never
+ * Replace the poll with a timed futex wait that
+ * qemu_notify_event()/aio_notify() wake.  The fd set is never
  * watched - measured over 950k polls during boot, no fd ever became
  * ready (all returns r==0); device input arrives via BHs (wasm.c
  * input ring) and chardev I/O is proxy-based, not poll-driven.

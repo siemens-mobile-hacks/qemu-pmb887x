@@ -37,7 +37,6 @@
 #include "system/cpu-timers.h"
 #include "system/cpu-timers-internal.h"
 #include "system/runstate.h"
-#include "system/tcg.h"
 #include "ui/console.h"
 #include "ui/input.h"
 #include "ui/surface.h"
