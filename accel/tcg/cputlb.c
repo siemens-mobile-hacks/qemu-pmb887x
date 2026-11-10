@@ -2729,6 +2729,10 @@ bool do_ld_mmio_1p(CPUState *cpu, vaddr addr, MemOpIdx oi,
     if (guard) {
         *guard = true;
     }
+    if (unlikely(tcg_cflags_has(cpu, CF_MEMORY_TIMING))) {
+        cpu->neg.cycle_count +=
+            memory_region_get_read_cycles(full->section->mr);
+    }
     val = full->io_read_fn(full->io_opaque, io_offset, size);
     if (guard) {
         *guard = false;
