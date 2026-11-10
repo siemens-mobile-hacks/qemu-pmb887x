@@ -15,7 +15,6 @@
 #include "exec/gdbstub.h"
 #include "hw/core/cpu.h"
 #include <emscripten.h>
-#include "qemu/timer.h"
 #include "exec/translation-block.h"
 #include "wasm64.h"
 #include "w64-interp.h"
@@ -1163,6 +1162,14 @@ uintptr_t w64_tb_env;
 /* Drop the oldest live batch: its members fall back to the dispatcher
  * (fidx 0 + batch tag), which retires them. */
 uint32_t w64_evict_epoch;
+
+bool w64_tc_evicted(const void *tc_ptr)
+{
+    const uint32_t *desc = tc_ptr;
+
+    return desc[W64_DESC_FIDX / 4] == 0 &&
+           (desc[W64_DESC_BATCH / 4] & W64_BATCH_TAG);
+}
 
 static void w64_batch_evict_oldest(void)
 {

@@ -280,6 +280,8 @@ static inline uintptr_t w64_ra_off(uintptr_t ra)
 
 /* Bumped whenever an evicted batch clears the fidx of its descriptors. */
 extern uint32_t w64_evict_epoch;
+/* Whether the code at @tc_ptr went with an evicted batch. */
+bool w64_tc_evicted(const void *tc_ptr);
 
 /*
  * The env the TB being translated will always run with, or 0 when that

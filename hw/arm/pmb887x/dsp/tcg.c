@@ -1800,10 +1800,34 @@ static void tcg_remove_cached_entry(teak_tcg_block_cache_entry_t **link) {
 
 static bool tcg_is_block_repeat(const teak_insn_t *instruction);
 
+#ifdef CONFIG_TCG_WASM64
+static uint32_t tcg_block_cache_evict_epoch;
+
+/* An evicted batch took its blocks' code with it: they are compiled again. */
+static void tcg_drop_evicted_blocks(void) {
+	if (tcg_block_cache_evict_epoch == w64_evict_epoch)
+		return;
+	tcg_block_cache_evict_epoch = w64_evict_epoch;
+	for (size_t i = 0; i < ARRAY_SIZE(tcg_block_cache); i++) {
+		teak_tcg_block_cache_entry_t **link = &tcg_block_cache[i];
+		while (*link != NULL) {
+			if (w64_tc_evicted((*link)->code))
+				tcg_remove_cached_entry(link);
+			else
+				link = &(*link)->next;
+		}
+	}
+}
+#endif
+
 static void tcg_check_block_cache(void) {
 	unsigned int flush_count = qatomic_read(&tb_ctx.tb_flush_count);
-	if (tcg_block_cache_context == tcg_ctx && tcg_block_cache_flush_count == flush_count)
+	if (tcg_block_cache_context == tcg_ctx && tcg_block_cache_flush_count == flush_count) {
+#ifdef CONFIG_TCG_WASM64
+		tcg_drop_evicted_blocks();
+#endif
 		return;
+	}
 	tcg_clear_block_cache();
 	tcg_block_cache_context = tcg_ctx;
 	tcg_block_cache_flush_count = flush_count;
@@ -6854,6 +6878,13 @@ void *HELPER(teak_tcg_chain)(
 		core->chain_cache_stops++;
 		return NULL;
 	}
+#ifdef CONFIG_TCG_WASM64
+	if (entry->evict_epoch != w64_evict_epoch && w64_tc_evicted(entry->code)) {
+		/* the slice loop drops it (tcg_drop_evicted_blocks) */
+		core->chain_cache_stops++;
+		return NULL;
+	}
+#endif
 	if (entry->fast_epoch != tcg_fast_map_epoch) {
 		entry->fast = tcg_fast_map[state->pc & TEAK_PROGRAM_ADDRESS_MASK] != 0;
 		entry->fast_epoch = tcg_fast_map_epoch;
