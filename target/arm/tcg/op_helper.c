@@ -841,6 +841,9 @@ void HELPER(cpsr_write_eret)(CPUARMState *env, uint32_t val)
      * state. Do the masking now.
      */
     env->regs[15] &= (env->thumb ? ~1 : ~3);
+#ifndef CONFIG_TCG_WASM64
+    arm_rebuild_hflags(env);
+#endif
 
     if (hooks) {
         bql_lock();
