@@ -316,6 +316,17 @@ static void w64_get_i64(TCGContext *s, TCGReg r)
     }
 }
 
+/*
+ * Push the I32 value in reg r zero-extended.  extrl_i64_i32 is a plain
+ * move here, so an i64 local holding an I32 value has arbitrary upper
+ * bits.
+ */
+static void w64_get_u32(TCGContext *s, TCGReg r)
+{
+    w64_get_i32(s, r);
+    w64_u8(s, 0xad);                        /* i64.extend_i32_u */
+}
+
 static void w64_get(TCGContext *s, TCGReg r, TCGType t)
 {
     if (t == TCG_TYPE_I32) {
@@ -1912,7 +1923,7 @@ static void tgen_qemu_ld(TCGContext *s, TCGType type, TCGReg data,
          * register that also holds its address) an arm's local.set of
          * the data register would flip the tracked representation and
          * make the arm emitted second read a stale local. */
-        w64_get_i64(s, addr);
+        w64_get_u32(s, addr);
         w64_local_set(s, W64_L_SCR2);
         w64_tlb_probe(s, W64_L_SCR2, &tc);
         w64_hint(s, true);
@@ -1926,7 +1937,10 @@ static void tgen_qemu_ld(TCGContext *s, TCGType type, TCGReg data,
     if (fast) {
         w64_local_get(s, W64_L_SCR2);       /* addr snapshot */
     } else {
-        w64_get_i64(s, addr);               /* 32-bit guest addr: zext */
+        w64_get(s, addr, s->addr_type);
+        if (s->addr_type == TCG_TYPE_I32) {
+            w64_u8(s, 0xad);                /* i64.extend_i32_u */
+        }
     }
     w64_const_i32(s, oi);
     w64_const_i64(s, ra);
@@ -1973,7 +1987,7 @@ static void tgen_qemu_st(TCGContext *s, TCGType type, TCGReg data,
 
     fast = w64_tlb_setup(&tc, s, oi, false);
     if (fast) {
-        w64_get_i64(s, addr);               /* snapshot (see ld above) */
+        w64_get_u32(s, addr);               /* snapshot (see ld above) */
         w64_local_set(s, W64_L_SCR2);
         w64_tlb_probe(s, W64_L_SCR2, &tc);
         w64_hint(s, true);
@@ -1987,7 +2001,10 @@ static void tgen_qemu_st(TCGContext *s, TCGType type, TCGReg data,
     if (fast) {
         w64_local_get(s, W64_L_SCR2);       /* addr snapshot */
     } else {
-        w64_get_i64(s, addr);
+        w64_get(s, addr, s->addr_type);
+        if (s->addr_type == TCG_TYPE_I32) {
+            w64_u8(s, 0xad);                /* i64.extend_i32_u */
+        }
     }
     if (q) {
         w64_get_i64(s, data);
@@ -2398,8 +2415,8 @@ static void tgen_mulu2(TCGContext *s, TCGType t, TCGReg a0, TCGReg a1,
 {
     w64_ir_mul2(WI_MULU2_32, a0, a1, a2, a3);
     tcg_debug_assert(t == TCG_TYPE_I32);
-    w64_get_i64(s, a2);
-    w64_get_i64(s, a3);
+    w64_get_u32(s, a2);
+    w64_get_u32(s, a3);
     w64_u8(s, 0x7e);                        /* i64.mul */
     w64_local_tee(s, W64_L_SCR0);
     w64_u8(s, 0xa7);                        /* i32.wrap_i64 */
@@ -2443,8 +2460,8 @@ static void tgen_muluh(TCGContext *s, TCGType t, TCGReg a0, TCGReg a1, TCGReg a2
 {
     w64_ir_alu(t, WI_ALU_MULUH, a0, a1, a2);
     tcg_debug_assert(t == TCG_TYPE_I32);
-    w64_get_i64(s, a1);
-    w64_get_i64(s, a2);
+    w64_get_u32(s, a1);
+    w64_get_u32(s, a2);
     w64_u8(s, 0x7e);                        /* i64.mul */
     w64_const_i64(s, 32);
     w64_u8(s, 0x88);                        /* i64.shr_u */

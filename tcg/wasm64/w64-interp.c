@@ -682,7 +682,7 @@ static uint32_t w64_interp_run(const struct w64_irec *r, uintptr_t env,
             uint64_t v;
             pc += 3;
             *(uintptr_t *)tp = ra;
-            v = w64_iqemu_ld((CPUArchState *)env, regs[a1], oi, ra);
+            v = w64_iqemu_ld((CPUArchState *)env, (uint32_t)regs[a1], oi, ra);
             regs[a0] = op == WI_QEMU_LD32 ? (uint32_t)v : v;
             break;
         }
@@ -692,7 +692,7 @@ static uint32_t w64_interp_run(const struct w64_irec *r, uintptr_t env,
             uintptr_t ra = (uintptr_t)W64_I64(c, pc + 1);
             pc += 3;
             *(uintptr_t *)tp = ra;
-            w64_iqemu_st((CPUArchState *)env, regs[a1],
+            w64_iqemu_st((CPUArchState *)env, (uint32_t)regs[a1],
                          op == WI_QEMU_ST32 ? (uint32_t)regs[a0] : regs[a0],
                          oi, ra);
             break;
