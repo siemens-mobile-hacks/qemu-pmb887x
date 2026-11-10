@@ -7835,6 +7835,142 @@ TEAK_FAST_INLINE uint64_t tcg_fast_mac_lazy(uint64_t accumulator, uint64_t opera
 	return tcg_fast_saturate(tcg_fast_sign_extend(result & TEAK_ACCUMULATOR_MASK), sata, flm);
 }
 
+/* How many post-increments of @address_register stay linear from @address, as tcg_fast_walk() counts them. */
+TEAK_FAST_INLINE uint32_t tcg_fast_linear(const teak_state_t *state, uint8_t address_register, uint32_t address) {
+	const teak_modulo_step_t *modulo = &state->modulo_steps[address_register][TEAK_STEP_INCREASE - 1];
+	uint32_t low = address & modulo->mask;
+	uint32_t linear = modulo->mask - low;
+
+	if (modulo->boundary >= low && modulo->boundary - low < linear)
+		linear = modulo->boundary - low;
+	return linear;
+}
+
+/*
+ * One 35BE iteration on guest memory itself, in the order of the iteration
+ * below, for the correlator's usual shape: r0, r1 and r2 linear, the r4
+ * accesses in one flat ring (or linear), saturation off.  No walks and no
+ * operand copies; false leaves the state alone for the general iteration.
+ */
+TEAK_FAST_INLINE bool tcg_fast_iterate_35be_flat(teak_state_t *state, const teak_data_map_t *map,
+	uint32_t y_space_base
+) {
+	enum { MULTIPLIES = 26, X_READS = 13, R4_ACCESSES = 30 };
+	const teak_modulo_step_t *modulo = &state->modulo_steps[4][TEAK_STEP_INCREASE - 1];
+	uint32_t r0 = state->r[0], r1 = state->r[1], r2 = state->r[2], r4 = state->r[4];
+	uint32_t low = r4 & modulo->mask;
+	uint32_t base, length, index;
+	const uint16_t *source, *x_words, *ring_read, *y_words;
+	uint16_t *ring, *r1_store[2];
+	uint32_t before;
+	uint32_t shift = state->product_shift;
+	uint32_t right = shift == 1;
+	int64_t sum[2] = { 0x8000, 0x8000 };
+	uint16_t x = 0, y = 0, value;
+	uint32_t product = 0;
+	uint64_t stored;
+
+	if (!state->sata || shift > 2)
+		return false;
+	if (tcg_fast_linear(state, 0, r0) < 4 || tcg_fast_linear(state, 1, r1) < 2 ||
+		tcg_fast_linear(state, 2, r2) < X_READS || r2 + X_READS > y_space_base)
+		return false;
+	if (tcg_fast_linear(state, 4, r4) >= R4_ACCESSES) {
+		base = r4;
+		length = UINT32_MAX;
+		index = 0;
+		if (((r4 ^ (r4 + R4_ACCESSES - 1)) >> TEAK_DATA_PAGE_SHIFT) != 0 || r4 + 2 < y_space_base)
+			return false;
+	} else {
+		if (low < modulo->wrap_target || low > modulo->boundary)
+			return false;
+		base = (r4 & ~modulo->mask) | modulo->wrap_target;
+		length = modulo->boundary - modulo->wrap_target + 1;
+		index = low - modulo->wrap_target;
+		if (length < MULTIPLIES || ((base ^ (base + length - 1)) >> TEAK_DATA_PAGE_SHIFT) != 0 ||
+			base < y_space_base)
+			return false;
+	}
+	if ((((r0 ^ (r0 + 3)) | (r2 ^ (r2 + X_READS - 1))) >> TEAK_DATA_PAGE_SHIFT) != 0)
+		return false;
+	source = map->read_pages[TEAK_DATA_SPACE_ALL][r0 >> TEAK_DATA_PAGE_SHIFT];
+	x_words = map->read_pages[TEAK_DATA_SPACE_ALL][r2 >> TEAK_DATA_PAGE_SHIFT];
+	ring_read = map->read_pages[TEAK_DATA_SPACE_ALL][base >> TEAK_DATA_PAGE_SHIFT];
+	ring = map->write_pages[base >> TEAK_DATA_PAGE_SHIFT];
+	r1_store[0] = tcg_fast_write_pointer(map, r1);
+	r1_store[1] = tcg_fast_write_pointer(map, r1 + 1);
+	/* the ring is read where it is stored */
+	if (source == NULL || x_words == NULL || ring == NULL || ring != ring_read || r1_store[0] == NULL ||
+		r1_store[1] == NULL)
+		return false;
+	source += r0 & (TEAK_DATA_PAGE_WORDS - 1);
+	x_words += r2 & (TEAK_DATA_PAGE_WORDS - 1);
+	ring += base & (TEAK_DATA_PAGE_WORDS - 1);
+
+#define TEAK_35BE_RING_NEXT()	(index = index + 1 == length ? 0 : index + 1)
+	ring[index] = source[0];
+	TEAK_35BE_RING_NEXT();
+	ring[index] = source[1];
+	TEAK_35BE_RING_NEXT();
+
+	/*
+	 * The 26 Y reads wrap at most once (the ring holds them all), so each
+	 * finds its word by itself: stepping the ring index would chain them.
+	 */
+	y_words = ring + index;
+	before = length - index;
+	if (shift == 0) {
+		TEAK_FAST_UNROLL
+		for (uint32_t i = 0; i < MULTIPLIES; i++) {
+			x = x_words[i / 2];
+			y = i < before ? y_words[i] : ring[i - before];
+			product = (uint32_t) ((int32_t) (int16_t) x * (int32_t) (int16_t) y);
+			if (i < MULTIPLIES - 1)
+				sum[i & 1] += (int64_t) (int32_t) product;
+		}
+	} else {
+		shift -= 1;
+		TEAK_FAST_UNROLL
+		for (uint32_t i = 0; i < MULTIPLIES; i++) {
+			x = x_words[i / 2];
+			y = i < before ? y_words[i] : ring[i - before];
+			product = (uint32_t) ((int32_t) (int16_t) x * (int32_t) (int16_t) y);
+			if (i < MULTIPLIES - 1)
+				sum[i & 1] += (int64_t) ((uint64_t) (int64_t) (int32_t) product << shift) >> right;
+		}
+	}
+	index += MULTIPLIES;
+	if (index >= length)
+		index -= length;
+	state->x[0] = x;
+	state->y[0] = y;
+	state->p[0] = product;
+	state->product_extension[0] = product >> 31;
+	state->a[0] = sum[0];
+	state->a[1] = sum[1];
+	tcg_fast_alu_accumulator(state, TEAK_ALU_ADD, 1, tcg_fast_shifted_product(state));
+	stored = tcg_fast_saturate(state->a[0], state->sat, &state->flm);
+	*r1_store[0] = stored >> 16;
+	stored = tcg_fast_saturate(state->a[1], state->sat, &state->flm);
+	*r1_store[1] = stored >> 16;
+
+	value = source[2];
+	ring[index] = value;
+	TEAK_35BE_RING_NEXT();
+	value = source[3];
+	state->a[0] = (uint64_t) (int64_t) (int16_t) value;
+	tcg_fast_value_flags(state, state->a[0]);
+	ring[index] = value;
+	TEAK_35BE_RING_NEXT();
+#undef TEAK_35BE_RING_NEXT
+
+	state->r[0] = r0 + 4;
+	state->r[1] = r1 + 2;
+	state->r[2] = tcg_fast_rn_next(state, 2, TEAK_STEP_PLUS_STEP, false, r2 + X_READS - 1);
+	state->r[4] = length == UINT32_MAX ? r4 + R4_ACCESSES : base + index;
+	return true;
+}
+
 /*
  * Whole iterations of the 35BE correlator: the address walks, the budget and
  * the exit flags are checked once at the loop head, and only the flags that
@@ -7872,6 +8008,8 @@ static uint32_t tcg_fast_iterate_35be(teak_tcg_core_t *core, uint32_t budget) {
 		uint16_t value;
 		bool ok = true;
 
+		if (tcg_fast_iterate_35be_flat(&state, map, y_space_base))
+			goto iterated;
 		if (!tcg_fast_walk(&state, 0, state.r[0], 4, &r0_walk) || !tcg_fast_walk(&state, 1, state.r[1], 2, &r1_walk) ||
 			!tcg_fast_walk(&state, 2, state.r[2], X_READS, &r2_walk) ||
 			!tcg_fast_walk(&state, 4, state.r[4], R4_ACCESSES, &r4_walk))
@@ -7978,6 +8116,7 @@ static uint32_t tcg_fast_iterate_35be(teak_tcg_core_t *core, uint32_t budget) {
 		state.r[1] = r1_walk.next;
 		state.r[2] = tcg_fast_rn_next(&state, 2, TEAK_STEP_PLUS_STEP, false, r2_walk.last);
 		state.r[4] = r4_walk.next;
+iterated:
 		state.r[5] = tcg_fast_rn_next(&state, 5, TEAK_STEP_DECREASE, false, state.r[5]);
 		state.fr = state.r[5] == 0;
 		if (state.fr == 0) {
