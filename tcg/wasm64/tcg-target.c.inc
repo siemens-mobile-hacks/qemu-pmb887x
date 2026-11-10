@@ -215,8 +215,8 @@ static void w64_pcc_call(TCGContext *s)
 #define W64_L_BP      (3 + W64_NL)
 #define W64_L_SCR32   (3 + 2 * W64_NL + 1)
 #define W64_L_SCR0    (W64_L_SCR32 + 1)
-#define W64_L_SCR1    (W64_L_SCR0 + 1)
-#define W64_L_SCR2    (W64_L_SCR1 + 1)   /* ld/st addr snapshot */
+#define W64_L_TLBW    (W64_L_SCR0 + 1)   /* probe: comparator and addend */
+#define W64_L_SCR2    (W64_L_TLBW + 1)   /* ld/st addr snapshot */
 #define W64_L_TMASK   (W64_L_SCR2 + 1)   /* i32: cached fast->mask */
 #define W64_L_TTAB    (W64_L_SCR2 + 2)   /* i32: cached fast->table */
 #define W64_L_FRAME   (W64_L_SCR2 + 3)   /* first frame local (i64) */
@@ -1726,16 +1726,18 @@ static void tcg_out_call(TCGContext *s, const tcg_insn_unit *target,
 
 QEMU_BUILD_BUG_ON(CPU_TLB_ENTRY_BITS != 5);            /* 64-bit host */
 QEMU_BUILD_BUG_ON(sizeof(CPUTLBDescFast) != 16);
-QEMU_BUILD_BUG_ON(offsetof(CPUTLBEntry, addr_read) != 0);
-QEMU_BUILD_BUG_ON(offsetof(CPUTLBEntry, addr_write) != 8);
-QEMU_BUILD_BUG_ON(offsetof(CPUTLBEntry, addend) != 24);
+/* a comparator is the high half of the word whose low half is the addend */
+QEMU_BUILD_BUG_ON(offsetof(CPUTLBEntry, addr_read) !=
+                  offsetof(CPUTLBEntry, addend_read) + 4);
+QEMU_BUILD_BUG_ON(offsetof(CPUTLBEntry, addr_write) !=
+                  offsetof(CPUTLBEntry, addend_write) + 4);
 
 struct w64_tlb_ctx {
     int32_t  fast_ofs;    /* env-relative &cpu->neg.tlb.f[mmuidx] */
     uint64_t tlb_mask;    /* TARGET_PAGE_MASK | a_mask */
     unsigned shr;         /* TARGET_PAGE_BITS - CPU_TLB_ENTRY_BITS */
     unsigned adj;         /* s_mask - a_mask when a_mask < s_mask */
-    unsigned cmp_ofs;     /* offsetof addr_read / addr_write */
+    unsigned cmp_ofs;     /* offsetof addend_read / addend_write */
 };
 
 static bool w64_tlb_setup(struct w64_tlb_ctx *tc, TCGContext *s,
@@ -1755,8 +1757,8 @@ static bool w64_tlb_setup(struct w64_tlb_ctx *tc, TCGContext *s,
     tc->tlb_mask = (uint64_t)(int64_t)(int)TARGET_PAGE_MASK | a_mask;
     tc->shr = TARGET_PAGE_BITS - CPU_TLB_ENTRY_BITS;
     tc->adj = a_mask >= s_mask ? 0 : s_mask - a_mask;
-    tc->cmp_ofs = is_ld ? offsetof(CPUTLBEntry, addr_read)
-                        : offsetof(CPUTLBEntry, addr_write);
+    tc->cmp_ofs = is_ld ? offsetof(CPUTLBEntry, addend_read)
+                        : offsetof(CPUTLBEntry, addend_write);
     return true;
 }
 
@@ -1764,15 +1766,16 @@ static bool w64_tlb_setup(struct w64_tlb_ctx *tc, TCGContext *s,
  * The probe runs in i32 (a 32-bit guest, w64_tlb_setup): every i64 sum
  * ahead of an address costs V8 a movl to narrow it, three on the chain
  * of each access.  The low halves are exact -- the mask, the table
- * pointer and the addend mod 2^32, and a comparator whose high half is
- * nonzero is -1 (invalid), whose low half has the bits between the
- * alignment and the page set and so matches no key.  The key's
+ * pointer and the addend mod 2^32, and an invalid comparator (all ones)
+ * has the bits between the alignment and the page set and so matches
+ * no key.  The key's
  * (addr + adj) may wrap past 2^32 to page 0, but it is compared against
  * the entry of the last page's index, never page 0's.  QEMU's x86-64
  * backend compares 32 bits for a 32-bit guest the same way.
  *
- * $scr32 = entry, then the hit condition (i32) on the value stack for
- * the caller's `if`.  @al is the local holding the zero-extended guest
+ * $tlbw = the entry's word for this access (the addend in the low half,
+ * the comparator in the high half: tlb-common.h), then the hit condition
+ * (i32) on the value stack for the caller's `if`.  @al is the local holding the zero-extended guest
  * address (the $scr2 snapshot — never a TCG register, whose
  * representation the arms may still mutate when data == addr).
  */
@@ -1808,7 +1811,7 @@ static void w64_tlbc_load(TCGContext *s, int fast_ofs)
     W.tlbc = fast_ofs;
 }
 
-/* i32 probe: $scr32 = entry, hit condition on the value stack */
+/* i32 probe: $tlbw = the entry's word, hit condition on the value stack */
 static void w64_tlb_probe(TCGContext *s, int al, const struct w64_tlb_ctx *tc)
 {
     if (W.tlbc != tc->fast_ofs) {
@@ -1822,10 +1825,14 @@ static void w64_tlb_probe(TCGContext *s, int al, const struct w64_tlb_ctx *tc)
     w64_u8(s, 0x71);                        /* i32.and */
     w64_local_get(s, W64_L_TTAB);
     w64_u8(s, 0x6a);                        /* i32.add */
-    w64_local_tee(s, W64_L_SCR32);
 
-    w64_u8(s, 0x28);                        /* i32.load */
-    w64_memarg(s, 2, tc->cmp_ofs);
+    /* one load (one bounds check) for the comparator and the addend */
+    w64_u8(s, 0x29);                        /* i64.load */
+    w64_memarg(s, 3, tc->cmp_ofs);
+    w64_local_tee(s, W64_L_TLBW);
+    w64_const_i64(s, 32);
+    w64_u8(s, 0x88);                        /* i64.shr_u */
+    w64_u8(s, 0xa7);                        /* i32.wrap_i64 */
     w64_local_get(s, al);
     w64_u8(s, 0xa7);                        /* i32.wrap_i64 */
     if (tc->adj) {
@@ -1837,14 +1844,13 @@ static void w64_tlb_probe(TCGContext *s, int al, const struct w64_tlb_ctx *tc)
     w64_u8(s, 0x46);                        /* i32.eq */
 }
 
-/* push the host address [addr + entry->addend] for the fast access */
+/* push the host address [addr + addend] for the fast access */
 static void w64_tlb_haddr(TCGContext *s, int al)
 {
     w64_local_get(s, al);
     w64_u8(s, 0xa7);                        /* i32.wrap_i64 */
-    w64_local_get(s, W64_L_SCR32);
-    w64_u8(s, 0x28);                        /* i32.load */
-    w64_memarg(s, 2, 24);                   /* addend */
+    w64_local_get(s, W64_L_TLBW);
+    w64_u8(s, 0xa7);                        /* i32.wrap_i64 */
     w64_u8(s, 0x6a);                        /* i32.add */
 }
 

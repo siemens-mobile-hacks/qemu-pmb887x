@@ -106,6 +106,15 @@ static inline size_t sizeof_tlb(CPUTLBDescFast *fast)
 static inline uint64_t tlb_read_idx(const CPUTLBEntry *entry,
                                     MMUAccessType access_type)
 {
+#ifdef CONFIG_TCG_WASM64
+    /* WASM PORT FAST PATH (removable): the packed comparators */
+    const uint32_t *ptr = access_type == MMU_DATA_STORE ? &entry->addr_write
+                                                        : &entry->addr_read;
+
+    if (access_type == MMU_INST_FETCH) {
+        return entry->addr_code;
+    }
+#else
     /* Do not rearrange the CPUTLBEntry structure members. */
     QEMU_BUILD_BUG_ON(offsetof(CPUTLBEntry, addr_read) !=
                       MMU_DATA_LOAD * sizeof(uintptr_t));
@@ -115,6 +124,7 @@ static inline uint64_t tlb_read_idx(const CPUTLBEntry *entry,
                       MMU_INST_FETCH * sizeof(uintptr_t));
 
     const uintptr_t *ptr = &entry->addr_idx[access_type];
+#endif
     /* ofs might correspond to .addr_write, so use qatomic_read */
     return qatomic_read(ptr);
 }
@@ -1302,7 +1312,20 @@ static inline void tlb_set_compare(CPUTLBEntryFull *full, CPUTLBEntry *ent,
         address = -1;
         flags = 0;
     }
+#ifdef CONFIG_TCG_WASM64
+    /* WASM PORT FAST PATH (removable): the packed comparators */
+    if (access_type == MMU_INST_FETCH) {
+        ent->addr_code = address;
+    } else if (access_type == MMU_DATA_STORE) {
+        ent->addr_write = address;
+        ent->addend_write = ent->addend;
+    } else {
+        ent->addr_read = address;
+        ent->addend_read = ent->addend;
+    }
+#else
     ent->addr_idx[access_type] = address;
+#endif
     full->slow_flags[access_type] = flags;
 }
 
