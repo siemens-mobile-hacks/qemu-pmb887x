@@ -1257,11 +1257,16 @@
 # @base-port: first of the CLOCK, TRXC, and TRXD ports; osmo-bts-trx
 #     uses the ports 100 higher (default: 5700)
 #
+# @mux-port: UDP port of a TRX multiplexer on @address; when set, the
+#     object connects to the multiplexer instead of acting as the
+#     transceiver of osmo-bts-trx (default: 0, not set)
+#
 # Since: 11.1
 ##
 { 'struct': 'GsmOsmotrxProperties',
   'data': { '*address': 'str',
-            '*base-port': 'uint16' } }
+            '*base-port': 'uint16',
+            '*mux-port': 'uint16' } }
 
 ##
 # @ObjectType:

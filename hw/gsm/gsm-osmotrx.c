@@ -33,6 +33,11 @@
 #define GSM_OSMOTRX_NOMINAL_TX_POWER_DBM "23"
 #define GSM_OSMOTRX_TRXD_VERSION "0"
 #define GSM_OSMOTRX_COMMAND_MAX 256
+#define GSM_OSMOTRX_MUX_HELLO 'H'
+#define GSM_OSMOTRX_MUX_CONFIG 'C'
+#define GSM_OSMOTRX_MUX_DOWNLINK 'D'
+#define GSM_OSMOTRX_MUX_UPLINK 'U'
+#define GSM_OSMOTRX_MUX_RESYNC_FRAMES (2 * GSM_OSMOTRX_CLOCK_INDICATION_FRAMES)
 
 OBJECT_DECLARE_SIMPLE_TYPE(GSMOsmoTrx, GSM_OSMOTRX)
 
@@ -51,6 +56,18 @@ static const char *const GSM_NORMAL_TSC[] = {
 
 typedef enum GSMOsmoTrxSocket GSMOsmoTrxSocket;
 typedef struct GSMOsmoTrxBurst GSMOsmoTrxBurst;
+typedef struct GSMOsmoTrxMuxConfig GSMOsmoTrxMuxConfig;
+
+/* Big-endian body of a multiplexer configuration message. */
+struct QEMU_PACKED GSMOsmoTrxMuxConfig {
+    uint32_t frame_number;
+    uint32_t downlink_khz;
+    uint32_t uplink_khz;
+    uint8_t tsc;
+    uint8_t powered;
+};
+
+_Static_assert(sizeof(GSMOsmoTrxMuxConfig) == 14, "multiplexer configuration layout");
 
 /* Port offsets from base-port, as used by osmo-trx. */
 enum GSMOsmoTrxSocket {
@@ -70,6 +87,9 @@ struct GSMOsmoTrx {
     Object parent_obj;
     char *address;
     uint16_t base_port;
+    uint16_t mux_port;
+    uint32_t mux_frame_offset;
+    bool mux_synced;
     int fds[GSM_OSMOTRX_SOCKET_COUNT];
     QEMUTimer *clock_timer;
     uint16_t downlink_arfcn;
@@ -84,12 +104,22 @@ static void gsm_osmotrx_send_text(GSMOsmoTrx *trx, GSMOsmoTrxSocket socket, cons
         warn_report("gsm-osmotrx: send failed: %s", strerror(errno));
 }
 
-static void gsm_osmotrx_indicate_clock(void *opaque) {
+static void gsm_osmotrx_send_data(GSMOsmoTrx *trx, const void *data, size_t size) {
+    if (send(trx->fds[GSM_OSMOTRX_DATA], data, size, 0) < 0)
+        warn_report("gsm-osmotrx: send failed: %s", strerror(errno));
+}
+
+static void gsm_osmotrx_tick(void *opaque) {
     GSMOsmoTrx *trx = opaque;
     int64_t now = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
-    g_autofree char *indication = g_strdup_printf("IND CLOCK %u", gsm_air_frame_number(now));
 
-    gsm_osmotrx_send_text(trx, GSM_OSMOTRX_CLOCK, indication);
+    if (trx->mux_port != 0) {
+        uint8_t hello = GSM_OSMOTRX_MUX_HELLO;
+        gsm_osmotrx_send_data(trx, &hello, sizeof(hello));
+    } else {
+        g_autofree char *indication = g_strdup_printf("IND CLOCK %u", gsm_air_frame_number(now));
+        gsm_osmotrx_send_text(trx, GSM_OSMOTRX_CLOCK, indication);
+    }
     timer_mod(trx->clock_timer, now + gsm_air_frames_to_ns(GSM_OSMOTRX_CLOCK_INDICATION_FRAMES));
 }
 
@@ -97,7 +127,7 @@ static void gsm_osmotrx_power(GSMOsmoTrx *trx, bool powered) {
     trx->powered = powered;
     memset(trx->downlink, 0, sizeof(trx->downlink));
     if (powered) {
-        gsm_osmotrx_indicate_clock(trx);
+        gsm_osmotrx_tick(trx);
     } else {
         timer_del(trx->clock_timer);
     }
@@ -165,26 +195,76 @@ static void gsm_osmotrx_control_read(void *opaque) {
     gsm_osmotrx_handle_command(trx, message);
 }
 
-static void gsm_osmotrx_data_read(void *opaque) {
-    GSMOsmoTrx *trx = opaque;
-    uint8_t pdu[GSM_OSMOTRX_TRXD_V0_DOWNLINK_HEADER + GSM_BURST_BITS];
-    ssize_t length = recv(trx->fds[GSM_OSMOTRX_DATA], pdu, sizeof(pdu), 0);
-
-    if (length != sizeof(pdu))
+static void gsm_osmotrx_store_downlink(GSMOsmoTrx *trx, const uint8_t *pdu, size_t length) {
+    if (length != GSM_OSMOTRX_TRXD_V0_DOWNLINK_HEADER + GSM_BURST_BITS)
         return;
     if ((pdu[0] >> 4) != 0)
         return;
 
     uint8_t timeslot = pdu[0] & 0x07;
-    uint32_t frame_number = ldl_be_p(&pdu[1]);
-    if (frame_number >= GSM_HYPERFRAME_FRAMES)
+    uint32_t network_frame_number = ldl_be_p(&pdu[1]);
+    if (network_frame_number >= GSM_HYPERFRAME_FRAMES)
         return;
 
+    uint32_t frame_number = (network_frame_number + GSM_HYPERFRAME_FRAMES - trx->mux_frame_offset) %
+        GSM_HYPERFRAME_FRAMES;
     GSMOsmoTrxBurst *slot = &trx->downlink[frame_number % GSM_OSMOTRX_DOWNLINK_FRAMES][timeslot];
     for (size_t bit = 0; bit < GSM_BURST_BITS; bit++)
         slot->burst.bits[bit] = pdu[GSM_OSMOTRX_TRXD_V0_DOWNLINK_HEADER + bit] != 0;
     slot->frame_number = frame_number;
     slot->present = true;
+}
+
+static void gsm_osmotrx_data_read(void *opaque) {
+    GSMOsmoTrx *trx = opaque;
+    uint8_t pdu[GSM_OSMOTRX_TRXD_V0_DOWNLINK_HEADER + GSM_BURST_BITS];
+    ssize_t length = recv(trx->fds[GSM_OSMOTRX_DATA], pdu, sizeof(pdu), 0);
+
+    if (length > 0)
+        gsm_osmotrx_store_downlink(trx, pdu, length);
+}
+
+static void gsm_osmotrx_sync_mux_frames(GSMOsmoTrx *trx, uint32_t network_frame_number) {
+    uint32_t frame_number = gsm_air_frame_number(qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL));
+    uint32_t offset = (network_frame_number + GSM_HYPERFRAME_FRAMES - frame_number) % GSM_HYPERFRAME_FRAMES;
+    uint32_t drift = (offset + GSM_HYPERFRAME_FRAMES - trx->mux_frame_offset) % GSM_HYPERFRAME_FRAMES;
+
+    if (trx->mux_synced && MIN(drift, GSM_HYPERFRAME_FRAMES - drift) <= GSM_OSMOTRX_MUX_RESYNC_FRAMES)
+        return;
+
+    trx->mux_frame_offset = offset;
+    trx->mux_synced = true;
+    memset(trx->downlink, 0, sizeof(trx->downlink));
+}
+
+static void gsm_osmotrx_handle_mux_config(GSMOsmoTrx *trx, const GSMOsmoTrxMuxConfig *config) {
+    uint32_t downlink_hz = ldl_be_p(&config->downlink_khz) * 1000;
+    uint32_t uplink_hz = ldl_be_p(&config->uplink_khz) * 1000;
+    bool powered = config->powered != 0;
+
+    gsm_osmotrx_sync_mux_frames(trx, ldl_be_p(&config->frame_number));
+    gsm_downlink_frequency_to_arfcn(downlink_hz, &trx->downlink_arfcn);
+    gsm_uplink_frequency_to_arfcn(uplink_hz, &trx->uplink_arfcn);
+    trx->tsc = config->tsc & GSM_BSIC_BCC_MASK;
+    if (trx->powered != powered) {
+        trx->powered = powered;
+        memset(trx->downlink, 0, sizeof(trx->downlink));
+    }
+}
+
+static void gsm_osmotrx_mux_read(void *opaque) {
+    GSMOsmoTrx *trx = opaque;
+    uint8_t message[1 + GSM_OSMOTRX_TRXD_V0_DOWNLINK_HEADER + GSM_BURST_BITS];
+    ssize_t length = recv(trx->fds[GSM_OSMOTRX_DATA], message, sizeof(message), 0);
+
+    if (length <= 0)
+        return;
+
+    if (message[0] == GSM_OSMOTRX_MUX_CONFIG && length == 1 + sizeof(GSMOsmoTrxMuxConfig)) {
+        gsm_osmotrx_handle_mux_config(trx, (const GSMOsmoTrxMuxConfig *) &message[1]);
+    } else if (message[0] == GSM_OSMOTRX_MUX_DOWNLINK && trx->mux_synced) {
+        gsm_osmotrx_store_downlink(trx, &message[1], length - 1);
+    }
 }
 
 static bool gsm_osmotrx_downlink_burst(
@@ -247,8 +327,12 @@ static void gsm_osmotrx_uplink_burst(
     const GSMUplinkBurst *burst
 ) {
     GSMOsmoTrx *trx = GSM_OSMOTRX(network);
-    uint8_t pdu[GSM_OSMOTRX_TRXD_V0_UPLINK_HEADER + GSM_BURST_BITS + GSM_OSMOTRX_TRXD_V0_UPLINK_PADDING] = { 0 };
+    uint8_t message[1 + GSM_OSMOTRX_TRXD_V0_UPLINK_HEADER + GSM_BURST_BITS + GSM_OSMOTRX_TRXD_V0_UPLINK_PADDING] = {
+        GSM_OSMOTRX_MUX_UPLINK
+    };
+    uint8_t *pdu = &message[1];
     uint8_t *soft_bits = &pdu[GSM_OSMOTRX_TRXD_V0_UPLINK_HEADER];
+    uint32_t network_frame_number = (frame_number + trx->mux_frame_offset) % GSM_HYPERFRAME_FRAMES;
     size_t start;
     size_t length;
 
@@ -269,20 +353,23 @@ static void gsm_osmotrx_uplink_burst(
     size_t received = MIN(length, GSM_UPLINK_WINDOW_SYMBOLS - start);
 
     pdu[0] = timeslot;
-    stl_be_p(&pdu[1], frame_number);
+    stl_be_p(&pdu[1], network_frame_number);
     pdu[5] = GSM_OSMOTRX_UPLINK_RSSI_MINUS_DBM;
     stw_be_p(&pdu[6], toa_256);
     memset(soft_bits, GSM_SOFT_BIT_UNKNOWN, GSM_BURST_BITS);
     memcpy(soft_bits, &burst->soft_bits[start], received);
 
-    if (send(trx->fds[GSM_OSMOTRX_DATA], pdu, sizeof(pdu), 0) < 0)
-        warn_report("gsm-osmotrx: send failed: %s", strerror(errno));
+    if (trx->mux_port != 0) {
+        gsm_osmotrx_send_data(trx, message, sizeof(message));
+    } else {
+        gsm_osmotrx_send_data(trx, pdu, sizeof(message) - 1);
+    }
 }
 
-static int gsm_osmotrx_open_socket(GSMOsmoTrx *trx, GSMOsmoTrxSocket socket, Error **errp) {
+static int gsm_osmotrx_open_socket(GSMOsmoTrx *trx, uint16_t local_port, uint16_t remote_port, Error **errp) {
     struct sockaddr_in local = {
         .sin_family = AF_INET,
-        .sin_port = htons(trx->base_port + socket),
+        .sin_port = htons(local_port),
     };
 
     if (inet_pton(AF_INET, trx->address, &local.sin_addr) != 1) {
@@ -290,8 +377,8 @@ static int gsm_osmotrx_open_socket(GSMOsmoTrx *trx, GSMOsmoTrxSocket socket, Err
         return -1;
     }
 
-    struct sockaddr_in bts = local;
-    bts.sin_port = htons(trx->base_port + GSM_OSMOTRX_BTS_PORT_OFFSET + socket);
+    struct sockaddr_in remote = local;
+    remote.sin_port = htons(remote_port);
 
     int fd = qemu_socket(AF_INET, SOCK_DGRAM, 0);
     if (fd < 0) {
@@ -299,13 +386,12 @@ static int gsm_osmotrx_open_socket(GSMOsmoTrx *trx, GSMOsmoTrxSocket socket, Err
         return -1;
     }
     if (bind(fd, (struct sockaddr *) &local, sizeof(local)) < 0) {
-        error_setg_errno(errp, errno, "gsm-osmotrx: cannot bind %s:%u", trx->address, trx->base_port + socket);
+        error_setg_errno(errp, errno, "gsm-osmotrx: cannot bind %s:%u", trx->address, local_port);
         close(fd);
         return -1;
     }
-    if (connect(fd, (struct sockaddr *) &bts, sizeof(bts)) < 0) {
-        error_setg_errno(errp, errno, "gsm-osmotrx: cannot connect to %s:%u", trx->address,
-            trx->base_port + GSM_OSMOTRX_BTS_PORT_OFFSET + socket);
+    if (connect(fd, (struct sockaddr *) &remote, sizeof(remote)) < 0) {
+        error_setg_errno(errp, errno, "gsm-osmotrx: cannot connect to %s:%u", trx->address, remote_port);
         close(fd);
         return -1;
     }
@@ -334,8 +420,20 @@ static void gsm_osmotrx_complete(UserCreatable *creatable, Error **errp) {
         return;
     }
 
+    if (trx->mux_port != 0) {
+        trx->fds[GSM_OSMOTRX_DATA] = gsm_osmotrx_open_socket(trx, 0, trx->mux_port, errp);
+        if (trx->fds[GSM_OSMOTRX_DATA] < 0)
+            return;
+
+        qemu_set_fd_handler(trx->fds[GSM_OSMOTRX_DATA], gsm_osmotrx_mux_read, NULL, trx);
+        gsm_osmotrx_tick(trx);
+        return;
+    }
+
     for (size_t i = 0; i < GSM_OSMOTRX_SOCKET_COUNT; i++) {
-        trx->fds[i] = gsm_osmotrx_open_socket(trx, i, errp);
+        uint16_t port = trx->base_port + i;
+
+        trx->fds[i] = gsm_osmotrx_open_socket(trx, port, port + GSM_OSMOTRX_BTS_PORT_OFFSET, errp);
         if (trx->fds[i] < 0) {
             gsm_osmotrx_close_sockets(trx);
             return;
@@ -364,8 +462,9 @@ static void gsm_osmotrx_init(Object *obj) {
     trx->base_port = GSM_OSMOTRX_DEFAULT_BASE_PORT;
     for (size_t i = 0; i < GSM_OSMOTRX_SOCKET_COUNT; i++)
         trx->fds[i] = -1;
-    trx->clock_timer = timer_new_ns(QEMU_CLOCK_VIRTUAL, gsm_osmotrx_indicate_clock, trx);
+    trx->clock_timer = timer_new_ns(QEMU_CLOCK_VIRTUAL, gsm_osmotrx_tick, trx);
     object_property_add_uint16_ptr(obj, "base-port", &trx->base_port, OBJ_PROP_FLAG_READWRITE);
+    object_property_add_uint16_ptr(obj, "mux-port", &trx->mux_port, OBJ_PROP_FLAG_READWRITE);
 }
 
 static void gsm_osmotrx_finalize(Object *obj) {
