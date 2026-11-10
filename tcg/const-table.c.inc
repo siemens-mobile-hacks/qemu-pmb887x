@@ -68,13 +68,6 @@ static TCGTemp *w64c_check(TCGContext *s, TCGType type, int64_t val,
 /* tcg_func_start: forget the last TB's constants */
 static void w64c_reset(TCGContext *s)
 {
-#ifdef W64C_CHECK
-    for (int t = 0; t < TCG_TYPE_COUNT; t++) {
-        if (s->const_table[t]) {
-            g_hash_table_remove_all(s->const_table[t]);
-        }
-    }
-#endif
     if (++w64c_gen == 0) {
         for (int t = 0; t < TCG_TYPE_COUNT; t++) {
             if (w64c_tab[t]) {

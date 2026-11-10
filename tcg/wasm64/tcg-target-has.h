@@ -6,8 +6,8 @@
 #ifndef TCG_TARGET_HAS_H
 #define TCG_TARGET_HAS_H
 
-/* extrl/extrh are separate real ops (see tcg-target.h); "extr" as a
- * plain move needs a canonical i32-in-i64 representation we don't have. */
+/* extrl is a plain move: an I32 value in an i64 local has no canonical
+ * upper half, and the readers that need one zero-extend (w64_get_u32). */
 #define TCG_TARGET_HAS_extr_i64_i32     0
 
 #define TCG_TARGET_HAS_qemu_ldst_i128   0

@@ -28,7 +28,6 @@ static __thread uint16_t la_w64_e[TCG_MAX_TEMPS];   /* touched EBB/const */
 static __thread uint8_t la_w64_on[TCG_MAX_TEMPS];
 static __thread int la_w64_tb_n, la_w64_e_n;
 
-static void la_global_sync(TCGContext *s, int ng);
 static void temp_save(TCGContext *s, TCGTemp *ts, TCGRegSet allocated_regs);
 
 /* la_func_end, plus the TEMP_TB list and an empty touched list */

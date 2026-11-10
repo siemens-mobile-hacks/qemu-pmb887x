@@ -1945,14 +1945,13 @@ void tcg_func_start(TCGContext *s)
     tcg_temp_ebb_reset_freed(s);
 
     /* No constant temps have been previously allocated. */
+    for (int i = 0; i < TCG_TYPE_COUNT; ++i) {
+        if (s->const_table[i]) {
+            g_hash_table_remove_all(s->const_table[i]);
+        }
+    }
     if (W64_CONSTS) {  /* WASM PORT FAST PATH (removable) */
         w64c_reset(s);
-    } else {
-        for (int i = 0; i < TCG_TYPE_COUNT; ++i) {
-            if (s->const_table[i]) {
-                g_hash_table_remove_all(s->const_table[i]);
-            }
-        }
     }
 
     s->nb_ops = 0;

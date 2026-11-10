@@ -20,7 +20,6 @@
  */
 #include "qemu/osdep.h"
 #include "tcg/tcg.h"
-#include "tcg/helper-info.h"
 #include "exec/helper-head.h.inc"
 #include "tcg/tcg-ldst.h"
 #include "system/cpu-timers.h"
