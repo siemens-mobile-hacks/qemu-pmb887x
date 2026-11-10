@@ -10,6 +10,9 @@
 #define GSM_QUARTER_SYMBOLS_PER_NS_DENOMINATOR 12000U
 #define GSM_GMSK_SAMPLES_PER_SYMBOL 4U
 #define GSM_GMSK_COEFFICIENT_SYMBOLS (GSM_BURST_BITS + 2U)
+#define GSM_UPLINK_DELAY_QUARTER_SYMBOLS (3U * GSM_TIMESLOT_QUARTER_SYMBOLS)
+#define GSM_UPLINK_DELIVERY_QUARTER_SYMBOLS GSM_FRAME_QUARTER_SYMBOLS
+#define GSM_PHASE_UNITS_PER_QUARTER_SYMBOL 64
 
 typedef struct GSMComplex GSMComplex;
 
@@ -176,4 +179,80 @@ IQSample gsm_air_read_iq(GSMAir *air, uint32_t frequency_hz, int64_t timestamp, 
     sample.i = (int16_t) lround(-(double) amplitude * reference.real);
     sample.q = (int16_t) lround((double) amplitude * reference.imaginary);
     return sample;
+}
+
+static void gsm_air_deliver_uplink(GSMAir *air) {
+    if (!air->uplink_active)
+        return;
+
+    air->uplink_active = false;
+    timer_del(air->uplink_timer);
+    if (air->uplink_symbols <= GSM_UPLINK_WINDOW_SYMBOLS / 2)
+        return;
+
+    GSMNetworkClass *network_class = GSM_NETWORK_GET_CLASS(air->network);
+    if (network_class->uplink_burst != NULL) {
+        network_class->uplink_burst(air->network, air->uplink_arfcn, air->uplink_frame_number,
+            air->uplink_timeslot, &air->uplink);
+    }
+}
+
+static void gsm_air_uplink_timer(void *opaque) {
+    gsm_air_deliver_uplink(opaque);
+}
+
+void gsm_air_init_uplink(GSMAir *air) {
+    air->uplink_timer = timer_new_ns(QEMU_CLOCK_VIRTUAL, gsm_air_uplink_timer, air);
+}
+
+void gsm_air_cleanup_uplink(GSMAir *air) {
+    timer_free(air->uplink_timer);
+}
+
+void gsm_air_reset_uplink(GSMAir *air) {
+    timer_del(air->uplink_timer);
+    air->uplink_active = false;
+}
+
+void gsm_air_transmit(GSMAir *air, uint16_t arfcn, int64_t timestamp, bool symbol) {
+    if (air->network == NULL || timestamp < 0)
+        return;
+
+    uint64_t quarter_symbols = gsm_air_quarter_symbols(timestamp);
+    if (quarter_symbols < GSM_UPLINK_DELAY_QUARTER_SYMBOLS)
+        return;
+
+    uint64_t window_quarter_symbols = quarter_symbols - GSM_UPLINK_DELAY_QUARTER_SYMBOLS +
+        GSM_UPLINK_LEAD_SYMBOLS * GSM_GMSK_SAMPLES_PER_SYMBOL;
+    uint32_t frame_number = window_quarter_symbols / GSM_FRAME_QUARTER_SYMBOLS % GSM_HYPERFRAME_FRAMES;
+    uint32_t frame_quarter_symbol = window_quarter_symbols % GSM_FRAME_QUARTER_SYMBOLS;
+    uint8_t timeslot = frame_quarter_symbol / GSM_TIMESLOT_QUARTER_SYMBOLS;
+    uint32_t window_quarter_symbol = frame_quarter_symbol % GSM_TIMESLOT_QUARTER_SYMBOLS;
+    uint32_t index = (window_quarter_symbol + GSM_GMSK_SAMPLES_PER_SYMBOL / 2) / GSM_GMSK_SAMPLES_PER_SYMBOL;
+    bool same_burst = air->uplink_active && air->uplink_arfcn == arfcn &&
+        air->uplink_frame_number == frame_number && air->uplink_timeslot == timeslot;
+
+    if (!same_burst) {
+        gsm_air_deliver_uplink(air);
+
+        int32_t phase = (int32_t) window_quarter_symbol - (int32_t) index * GSM_GMSK_SAMPLES_PER_SYMBOL;
+        uint64_t delivery = quarter_symbols - window_quarter_symbol + GSM_TIMESLOT_QUARTER_SYMBOLS +
+            GSM_UPLINK_DELIVERY_QUARTER_SYMBOLS;
+
+        memset(air->uplink.soft_bits, GSM_SOFT_BIT_UNKNOWN, sizeof(air->uplink.soft_bits));
+        air->uplink.phase_256 = phase * GSM_PHASE_UNITS_PER_QUARTER_SYMBOL;
+        air->uplink_arfcn = arfcn;
+        air->uplink_frame_number = frame_number;
+        air->uplink_timeslot = timeslot;
+        air->uplink_symbols = 0;
+        air->uplink_active = true;
+        timer_mod(air->uplink_timer, muldiv64(delivery, GSM_QUARTER_SYMBOLS_PER_NS_DENOMINATOR,
+            GSM_QUARTER_SYMBOLS_PER_NS_NUMERATOR));
+    }
+
+    if (index >= GSM_UPLINK_WINDOW_SYMBOLS)
+        return;
+
+    air->uplink.soft_bits[index] = symbol ? GSM_SOFT_BIT_ONE : GSM_SOFT_BIT_ZERO;
+    air->uplink_symbols++;
 }

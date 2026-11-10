@@ -35,13 +35,26 @@ bool iq_bus_has_source(const IQBus *bus) {
     return bus != NULL && !QTAILQ_EMPTY(&bus->parent_obj.children);
 }
 
+static IQSourceEndpoint *iq_bus_get_endpoint(IQBus *bus) {
+    BusChild *child = QTAILQ_FIRST(&bus->parent_obj.children);
+    return container_of(child->child, IQSourceEndpoint, parent_obj);
+}
+
 IQSample iq_bus_read(IQBus *bus, int64_t timestamp, uint64_t sample_index) {
     if (!iq_bus_has_source(bus))
         return (IQSample) { 0, 0 };
 
-    BusChild *child = QTAILQ_FIRST(&bus->parent_obj.children);
-    IQSourceEndpoint *endpoint = container_of(child->child, IQSourceEndpoint, parent_obj);
+    IQSourceEndpoint *endpoint = iq_bus_get_endpoint(bus);
     return endpoint->source_class->read(endpoint->source, timestamp, sample_index);
+}
+
+void iq_bus_transmit(IQBus *bus, int64_t timestamp, bool symbol) {
+    if (!iq_bus_has_source(bus))
+        return;
+
+    IQSourceEndpoint *endpoint = iq_bus_get_endpoint(bus);
+    if (endpoint->source_class->transmit != NULL)
+        endpoint->source_class->transmit(endpoint->source, timestamp, symbol);
 }
 
 static bool iq_bus_check_address(BusState *bus, DeviceState *_dev, Error **errp) {

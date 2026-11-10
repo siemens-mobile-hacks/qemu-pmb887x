@@ -8,6 +8,7 @@
 #define GSM900_HIGHEST_ARFCN 124
 #define EGSM900_LOWEST_ARFCN 975
 #define GSM_ARFCN_COUNT 1024
+#define GSM900_DUPLEX_SPACING_HZ 45000000U
 
 bool gsm_downlink_frequency_to_arfcn(uint32_t frequency_hz, uint16_t *arfcn) {
     int64_t offset_hz = (int64_t) frequency_hz - GSM900_DOWNLINK_ARFCN0_HZ;
@@ -21,6 +22,10 @@ bool gsm_downlink_frequency_to_arfcn(uint32_t frequency_hz, uint16_t *arfcn) {
 
     *arfcn = channel >= 0 ? channel : channel + GSM_ARFCN_COUNT;
     return true;
+}
+
+bool gsm_uplink_frequency_to_arfcn(uint32_t frequency_hz, uint16_t *arfcn) {
+    return gsm_downlink_frequency_to_arfcn(frequency_hz + GSM900_DUPLEX_SPACING_HZ, arfcn);
 }
 
 static const TypeInfo gsm_network_info = {

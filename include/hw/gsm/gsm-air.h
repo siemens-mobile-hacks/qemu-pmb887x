@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: GPL-2.0-or-later */
 #pragma once
 
+#include "qemu/timer.h"
 #include "hw/gsm/gsm-network.h"
 #include "hw/gsm/iq-bus.h"
 
@@ -18,6 +19,13 @@ struct GSMAir {
     uint8_t burst_timeslot;
     bool burst_cached;
     bool burst_present;
+    QEMUTimer *uplink_timer;
+    GSMUplinkBurst uplink;
+    uint32_t uplink_frame_number;
+    uint16_t uplink_arfcn;
+    uint16_t uplink_symbols;
+    uint8_t uplink_timeslot;
+    bool uplink_active;
 };
 
 /**
@@ -35,3 +43,25 @@ int64_t gsm_air_frames_to_ns(uint32_t frames);
  * virtual time @timestamp, scaled to @amplitude.
  */
 IQSample gsm_air_read_iq(GSMAir *air, uint32_t frequency_hz, int64_t timestamp, int32_t amplitude);
+
+/**
+ * gsm_air_init_uplink: prepare @air for gsm_air_transmit().
+ */
+void gsm_air_init_uplink(GSMAir *air);
+
+/**
+ * gsm_air_cleanup_uplink: release what gsm_air_init_uplink() allocated.
+ */
+void gsm_air_cleanup_uplink(GSMAir *air);
+
+/**
+ * gsm_air_reset_uplink: drop the burst in progress without delivering it.
+ */
+void gsm_air_reset_uplink(GSMAir *air);
+
+/**
+ * gsm_air_transmit: send the GMSK modulator input bit @symbol that starts at virtual
+ * time @timestamp on uplink channel @arfcn. The network receives each burst at the
+ * end of its timeslot.
+ */
+void gsm_air_transmit(GSMAir *air, uint16_t arfcn, int64_t timestamp, bool symbol);

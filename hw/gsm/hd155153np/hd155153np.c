@@ -33,6 +33,8 @@ OBJECT_DECLARE_SIMPLE_TYPE(HD155153NPState, HD155153NP)
 #define HD155153NP_PLL_BAND_PCS1900             3U
 #define HD155153NP_PLL_LOW_BAND_DIVIDER_SHIFT   3U
 #define HD155153NP_PLL_HIGH_BAND_DIVIDER_SHIFT  2U
+#define HD155153NP_PLL_RECEIVE                  BIT(16)
+#define HD155153NP_TRANSMIT_OFFSET_HZ           80000000U
 #define HD155153NP_RECEIVER_BASE_GAIN_DB        25
 #define HD155153NP_PGA_STEP_DB                  2
 #define HD155153NP_MIXER1_LOW_GAIN_REDUCTION_DB 36
@@ -55,6 +57,7 @@ struct HD155153NPState {
     uint8_t shift_bits;
     bool strobe_asserted;
     bool shift_overflow;
+    bool transmitting;
 };
 
 static void hd155153np_set_gain(HD155153NPState *p, uint32_t value) {
@@ -109,6 +112,7 @@ static void hd155153np_set_channel(HD155153NPState *p, uint32_t value) {
     uint32_t channel_raster = HD155153NP_REFERENCE_FREQUENCY / HD155153NP_CHANNEL_RASTER_DIVIDER;
     uint32_t frequency = divider * channel_raster;
 
+    qatomic_set(&p->transmitting, (synthesizer & HD155153NP_PLL_RECEIVE) == 0);
     qatomic_set(&p->frequency, frequency);
     DEBUG_LOG(&p->dbg, "tuned: frequency=%u Hz band=%s mode=%u\n", frequency, band, mode);
 }
@@ -174,6 +178,18 @@ static IQSample hd155153np_read_iq(IQSource *source, int64_t timestamp, uint64_t
     return gsm_air_read_iq(&p->air, frequency, timestamp, amplitude);
 }
 
+static void hd155153np_transmit(IQSource *source, int64_t timestamp, bool symbol) {
+    HD155153NPState *p = HD155153NP(source);
+    uint16_t arfcn;
+
+    if (!qatomic_read(&p->transmitting))
+        return;
+    if (!gsm_uplink_frequency_to_arfcn(qatomic_read(&p->frequency) - HD155153NP_TRANSMIT_OFFSET_HZ, &arfcn))
+        return;
+
+    gsm_air_transmit(&p->air, arfcn, timestamp, symbol);
+}
+
 static void hd155153np_reset(DeviceState *device) {
     HD155153NPState *p = HD155153NP(device);
 
@@ -185,6 +201,8 @@ static void hd155153np_reset(DeviceState *device) {
     p->shift_bits = 0;
     p->strobe_asserted = false;
     p->shift_overflow = false;
+    qatomic_set(&p->transmitting, false);
+    gsm_air_reset_uplink(&p->air);
 }
 
 static void hd155153np_init(Object *obj) {
@@ -192,6 +210,12 @@ static void hd155153np_init(Object *obj) {
 
     three_wire_serial_target_port_init(&p->serial_port, DEVICE(obj), "RFSSC", THREE_WIRE_SERIAL_TARGET(obj));
     iq_source_port_init(&p->iq_port, DEVICE(obj), "IQ_TX", IQ_SOURCE(obj));
+    gsm_air_init_uplink(&p->air);
+}
+
+static void hd155153np_finalize(Object *obj) {
+    HD155153NPState *p = HD155153NP(obj);
+    gsm_air_cleanup_uplink(&p->air);
 }
 
 static void hd155153np_realize(DeviceState *dev, Error **_errp) {
@@ -211,6 +235,7 @@ static void hd155153np_class_init(ObjectClass *klass, const void *_data) {
     serial_class->set_strobe = hd155153np_set_strobe;
     serial_class->write = hd155153np_write;
     iq_class->read = hd155153np_read_iq;
+    iq_class->transmit = hd155153np_transmit;
     device_class_set_legacy_reset(device_class, hd155153np_reset);
     device_class->realize = hd155153np_realize;
     device_class_set_props(device_class, hd155153np_properties);
@@ -221,6 +246,7 @@ static const TypeInfo hd155153np_info = {
     .parent = TYPE_SYS_BUS_DEVICE,
     .instance_size = sizeof(HD155153NPState),
     .instance_init = hd155153np_init,
+    .instance_finalize = hd155153np_finalize,
     .class_init = hd155153np_class_init,
     .interfaces = (const InterfaceInfo[]) {
         { TYPE_THREE_WIRE_SERIAL_TARGET },
