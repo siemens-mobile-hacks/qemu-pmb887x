@@ -19,10 +19,35 @@
 #define GSM_OSMOTRX_CLOCK_INDICATION_FRAMES 216
 #define GSM_OSMOTRX_DOWNLINK_FRAMES 64
 #define GSM_OSMOTRX_TRXD_V0_DOWNLINK_HEADER 6
+#define GSM_OSMOTRX_TRXD_V0_UPLINK_HEADER 8
+#define GSM_OSMOTRX_TRXD_V0_UPLINK_PADDING 2
+#define GSM_OSMOTRX_UPLINK_RSSI_MINUS_DBM 60
+#define GSM_OSMOTRX_SOFT_BIT_THRESHOLD 128
+#define GSM_OSMOTRX_TOA_UNITS_PER_SYMBOL 256
+#define GSM_ACCESS_BURST_BITS 88
+#define GSM_ACCESS_SYNC_OFFSET 8
+#define GSM_ACCESS_SYNC_MIN_MATCHES 37
+#define GSM_NORMAL_TSC_OFFSET 61
+#define GSM_NORMAL_TSC_MIN_MATCHES 23
+#define GSM_BSIC_BCC_MASK 0x07
 #define GSM_OSMOTRX_NOMINAL_TX_POWER_DBM "23"
+#define GSM_OSMOTRX_TRXD_VERSION "0"
 #define GSM_OSMOTRX_COMMAND_MAX 256
 
 OBJECT_DECLARE_SIMPLE_TYPE(GSMOsmoTrx, GSM_OSMOTRX)
+
+/* GSM 05.02 5.2.5 and 5.2.7 synchronisation and training sequences. */
+static const char GSM_ACCESS_SYNC[] = "01001011011111111001100110101010001111000";
+static const char *const GSM_NORMAL_TSC[] = {
+    "00100101110000100010010111",
+    "00101101110111100010110111",
+    "01000011101110100100001110",
+    "01000111101101000100011110",
+    "00011010111001000001101011",
+    "01001110101100000100111010",
+    "10100111110110001010011111",
+    "11101111000100101110111100",
+};
 
 typedef enum GSMOsmoTrxSocket GSMOsmoTrxSocket;
 typedef struct GSMOsmoTrxBurst GSMOsmoTrxBurst;
@@ -48,6 +73,8 @@ struct GSMOsmoTrx {
     int fds[GSM_OSMOTRX_SOCKET_COUNT];
     QEMUTimer *clock_timer;
     uint16_t downlink_arfcn;
+    uint16_t uplink_arfcn;
+    uint8_t tsc;
     bool powered;
     GSMOsmoTrxBurst downlink[GSM_OSMOTRX_DOWNLINK_FRAMES][GSM_TIMESLOTS];
 };
@@ -76,12 +103,16 @@ static void gsm_osmotrx_power(GSMOsmoTrx *trx, bool powered) {
     }
 }
 
-static int gsm_osmotrx_tune_downlink(GSMOsmoTrx *trx, const char *frequency_khz) {
+static int gsm_osmotrx_tune(
+    const char *frequency_khz,
+    bool (*frequency_to_arfcn)(uint32_t frequency_hz, uint16_t *arfcn),
+    uint16_t *arfcn
+) {
     uint64_t frequency_hz = g_ascii_strtoull(frequency_khz, NULL, 10) * 1000;
 
     if (frequency_hz > UINT32_MAX)
         return 1;
-    if (!gsm_downlink_frequency_to_arfcn(frequency_hz, &trx->downlink_arfcn))
+    if (!frequency_to_arfcn(frequency_hz, arfcn))
         return 1;
     return 0;
 }
@@ -105,7 +136,13 @@ static void gsm_osmotrx_handle_command(GSMOsmoTrx *trx, char *message) {
     } else if (strcmp(name, "POWEROFF") == 0) {
         gsm_osmotrx_power(trx, false);
     } else if (strcmp(name, "TXTUNE") == 0) {
-        status = gsm_osmotrx_tune_downlink(trx, params);
+        status = gsm_osmotrx_tune(params, gsm_downlink_frequency_to_arfcn, &trx->downlink_arfcn);
+    } else if (strcmp(name, "SETTSC") == 0 || strcmp(name, "SETBSIC") == 0) {
+        trx->tsc = g_ascii_strtoull(params, NULL, 10) & GSM_BSIC_BCC_MASK;
+    } else if (strcmp(name, "RXTUNE") == 0) {
+        status = gsm_osmotrx_tune(params, gsm_uplink_frequency_to_arfcn, &trx->uplink_arfcn);
+    } else if (strcmp(name, "SETFORMAT") == 0) {
+        reply_params = GSM_OSMOTRX_TRXD_VERSION;
     } else if (strcmp(name, "NOMTXPOWER") == 0) {
         reply_params = GSM_OSMOTRX_NOMINAL_TX_POWER_DBM;
     }
@@ -167,6 +204,79 @@ static bool gsm_osmotrx_downlink_burst(
 
     *burst = slot->burst;
     return true;
+}
+
+static size_t gsm_osmotrx_count_matches(const uint8_t *soft_bits, const char *sequence) {
+    size_t matches = 0;
+
+    for (size_t i = 0; sequence[i] != '\0'; i++) {
+        if (soft_bits[i] == GSM_SOFT_BIT_UNKNOWN)
+            continue;
+        if ((soft_bits[i] >= GSM_OSMOTRX_SOFT_BIT_THRESHOLD) == (sequence[i] == '1'))
+            matches++;
+    }
+    return matches;
+}
+
+static bool gsm_osmotrx_find_burst_start(
+    const GSMUplinkBurst *burst,
+    const char *sequence,
+    size_t sequence_offset,
+    size_t min_matches,
+    size_t *burst_start
+) {
+    size_t length = strlen(sequence);
+    size_t best_matches = 0;
+
+    for (size_t position = sequence_offset; position + length <= GSM_UPLINK_WINDOW_SYMBOLS; position++) {
+        size_t matches = gsm_osmotrx_count_matches(&burst->soft_bits[position], sequence);
+
+        if (matches > best_matches) {
+            best_matches = matches;
+            *burst_start = position - sequence_offset;
+        }
+    }
+    return best_matches >= min_matches;
+}
+
+static void gsm_osmotrx_uplink_burst(
+    GSMNetwork *network,
+    uint16_t arfcn,
+    uint32_t frame_number,
+    uint8_t timeslot,
+    const GSMUplinkBurst *burst
+) {
+    GSMOsmoTrx *trx = GSM_OSMOTRX(network);
+    uint8_t pdu[GSM_OSMOTRX_TRXD_V0_UPLINK_HEADER + GSM_BURST_BITS + GSM_OSMOTRX_TRXD_V0_UPLINK_PADDING] = { 0 };
+    uint8_t *soft_bits = &pdu[GSM_OSMOTRX_TRXD_V0_UPLINK_HEADER];
+    size_t start;
+    size_t length;
+
+    if (!trx->powered || arfcn != trx->uplink_arfcn)
+        return;
+
+    if (gsm_osmotrx_find_burst_start(burst, GSM_ACCESS_SYNC, GSM_ACCESS_SYNC_OFFSET, GSM_ACCESS_SYNC_MIN_MATCHES,
+            &start)) {
+        length = GSM_ACCESS_BURST_BITS;
+    } else if (gsm_osmotrx_find_burst_start(burst, GSM_NORMAL_TSC[trx->tsc], GSM_NORMAL_TSC_OFFSET,
+            GSM_NORMAL_TSC_MIN_MATCHES, &start)) {
+        length = GSM_BURST_BITS;
+    } else {
+        return;
+    }
+
+    int toa_256 = ((int) start - GSM_UPLINK_LEAD_SYMBOLS) * GSM_OSMOTRX_TOA_UNITS_PER_SYMBOL + burst->phase_256;
+    size_t received = MIN(length, GSM_UPLINK_WINDOW_SYMBOLS - start);
+
+    pdu[0] = timeslot;
+    stl_be_p(&pdu[1], frame_number);
+    pdu[5] = GSM_OSMOTRX_UPLINK_RSSI_MINUS_DBM;
+    stw_be_p(&pdu[6], toa_256);
+    memset(soft_bits, GSM_SOFT_BIT_UNKNOWN, GSM_BURST_BITS);
+    memcpy(soft_bits, &burst->soft_bits[start], received);
+
+    if (send(trx->fds[GSM_OSMOTRX_DATA], pdu, sizeof(pdu), 0) < 0)
+        warn_report("gsm-osmotrx: send failed: %s", strerror(errno));
 }
 
 static int gsm_osmotrx_open_socket(GSMOsmoTrx *trx, GSMOsmoTrxSocket socket, Error **errp) {
@@ -271,6 +381,7 @@ static void gsm_osmotrx_class_init(ObjectClass *klass, const void *_data) {
     UserCreatableClass *creatable_class = USER_CREATABLE_CLASS(klass);
 
     network_class->downlink_burst = gsm_osmotrx_downlink_burst;
+    network_class->uplink_burst = gsm_osmotrx_uplink_burst;
     creatable_class->complete = gsm_osmotrx_complete;
     object_class_property_add_str(klass, "address", gsm_osmotrx_get_address, gsm_osmotrx_set_address);
 }
