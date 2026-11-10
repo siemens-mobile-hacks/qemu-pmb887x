@@ -101,6 +101,8 @@ struct TCGLabel {
     bool present;
     bool has_value;
     uint16_t id;
+    /* WASM PORT FAST PATH (removable): branches to it are rarely taken */
+    bool cold;
     union {
         uintptr_t value;
         const tcg_insn_unit *value_ptr;

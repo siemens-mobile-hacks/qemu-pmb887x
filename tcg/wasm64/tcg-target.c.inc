@@ -1366,12 +1366,18 @@ static void w64_br_to_label(TCGContext *s, TCGLabel *l, bool cond)
             W.overflow = true;
             return;
         }
+        if (cond && l->cold) {
+            w64_hint(s, false);
+        }
         w64_u8(s, cond ? 0x0d : 0x0c);      /* br_if / br */
         w64_uleb(s, W.n_blk - 1 - i);
         return;
     }
 
     if (cond) {
+        if (l->cold) {
+            w64_hint(s, false);
+        }
         w64_blk_push(s, W64_BLK_IF, -1);
     }
     if (idx == 0) {
