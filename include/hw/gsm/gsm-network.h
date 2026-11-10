@@ -5,6 +5,8 @@
 
 #define TYPE_GSM_NETWORK "gsm-network"
 #define GSM_BURST_BITS 148
+#define GSM_TIMESLOTS 8
+#define GSM_HYPERFRAME_FRAMES 2715648U
 
 typedef struct GSMBurst GSMBurst;
 typedef struct GSMNetwork GSMNetwork;
@@ -27,3 +29,9 @@ struct GSMNetworkClass {
     bool (*downlink_burst)(GSMNetwork *network, uint16_t arfcn, uint32_t frame_number, uint8_t timeslot,
         GSMBurst *burst);
 };
+
+/**
+ * gsm_downlink_frequency_to_arfcn: store the GSM900 or E-GSM900 channel of the downlink
+ * carrier @frequency_hz in @arfcn; return false for a frequency off the channel raster.
+ */
+bool gsm_downlink_frequency_to_arfcn(uint32_t frequency_hz, uint16_t *arfcn);

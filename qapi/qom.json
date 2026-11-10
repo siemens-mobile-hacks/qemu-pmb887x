@@ -1247,6 +1247,23 @@
             '*close-action': 'MonitorQMPCloseAction' } }
 
 ##
+# @GsmOsmotrxProperties:
+#
+# Properties for gsm-osmotrx objects.
+#
+# @address: IPv4 address of the transceiver sockets; osmo-bts-trx is
+#     expected on the same address (default: 127.0.0.1)
+#
+# @base-port: first of the CLOCK, TRXC, and TRXD ports; osmo-bts-trx
+#     uses the ports 100 higher (default: 5700)
+#
+# Since: 11.1
+##
+{ 'struct': 'GsmOsmotrxProperties',
+  'data': { '*address': 'str',
+            '*base-port': 'uint16' } }
+
+##
 # @ObjectType:
 #
 # Features:
@@ -1281,6 +1298,7 @@
     'filter-replay',
     'filter-rewriter',
     'gsm-bts',
+    'gsm-osmotrx',
     { 'name': 'igvm-cfg',
       'if': 'CONFIG_IGVM' },
     'input-barrier',
@@ -1361,6 +1379,7 @@
       'filter-redirector':          'FilterRedirectorProperties',
       'filter-replay':              'NetfilterProperties',
       'filter-rewriter':            'FilterRewriterProperties',
+      'gsm-osmotrx':                'GsmOsmotrxProperties',
       'igvm-cfg':                   { 'type': 'IgvmCfgProperties',
                                       'if': 'CONFIG_IGVM' },
       'input-barrier':              'InputBarrierProperties',

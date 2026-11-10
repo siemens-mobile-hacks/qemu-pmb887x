@@ -4,18 +4,12 @@
 #include "qemu/host-utils.h"
 #include "hw/gsm/gsm-air.h"
 
-#define GSM_HYPERFRAME_FRAMES 2715648U
 #define GSM_FRAME_QUARTER_SYMBOLS 5000U
 #define GSM_TIMESLOT_QUARTER_SYMBOLS 625U
 #define GSM_QUARTER_SYMBOLS_PER_NS_NUMERATOR 13U
 #define GSM_QUARTER_SYMBOLS_PER_NS_DENOMINATOR 12000U
 #define GSM_GMSK_SAMPLES_PER_SYMBOL 4U
 #define GSM_GMSK_COEFFICIENT_SYMBOLS (GSM_BURST_BITS + 2U)
-#define GSM900_DOWNLINK_ARFCN0_HZ 935000000U
-#define GSM_CHANNEL_SPACING_HZ 200000U
-#define GSM900_HIGHEST_ARFCN 124
-#define EGSM900_LOWEST_ARFCN 975
-#define GSM_ARFCN_COUNT 1024
 
 typedef struct GSMComplex GSMComplex;
 
@@ -35,20 +29,6 @@ static const double GSM_GMSK_LAURENT_C1[] = {
     0.0, 8.16373112e-03, 2.84385729e-02, 5.64158904e-02,
     7.05463553e-02, 5.64158904e-02, 2.84385729e-02, 8.16373112e-03,
 };
-
-static bool gsm_air_frequency_to_arfcn(uint32_t frequency_hz, uint16_t *arfcn) {
-    int64_t offset_hz = (int64_t) frequency_hz - GSM900_DOWNLINK_ARFCN0_HZ;
-
-    if (offset_hz % GSM_CHANNEL_SPACING_HZ != 0)
-        return false;
-
-    int64_t channel = offset_hz / GSM_CHANNEL_SPACING_HZ;
-    if (channel > GSM900_HIGHEST_ARFCN || channel < EGSM900_LOWEST_ARFCN - GSM_ARFCN_COUNT)
-        return false;
-
-    *arfcn = channel >= 0 ? channel : channel + GSM_ARFCN_COUNT;
-    return true;
-}
 
 static bool gsm_air_load_burst(GSMAir *air, uint16_t arfcn, uint32_t frame_number, uint8_t timeslot) {
     bool same_burst = air->burst_cached && air->burst_arfcn == arfcn &&
@@ -157,6 +137,19 @@ static GSMComplex gsm_gmsk_laurent_sample(const GSMBurst *burst, uint32_t quarte
     return sample;
 }
 
+static uint64_t gsm_air_quarter_symbols(int64_t timestamp) {
+    return muldiv64((uint64_t) timestamp, GSM_QUARTER_SYMBOLS_PER_NS_NUMERATOR, GSM_QUARTER_SYMBOLS_PER_NS_DENOMINATOR);
+}
+
+uint32_t gsm_air_frame_number(int64_t timestamp) {
+    return gsm_air_quarter_symbols(timestamp) / GSM_FRAME_QUARTER_SYMBOLS % GSM_HYPERFRAME_FRAMES;
+}
+
+int64_t gsm_air_frames_to_ns(uint32_t frames) {
+    return muldiv64((uint64_t) frames * GSM_FRAME_QUARTER_SYMBOLS, GSM_QUARTER_SYMBOLS_PER_NS_DENOMINATOR,
+        GSM_QUARTER_SYMBOLS_PER_NS_NUMERATOR);
+}
+
 IQSample gsm_air_read_iq(GSMAir *air, uint32_t frequency_hz, int64_t timestamp, int32_t amplitude) {
     IQSample sample = { 0, 0 };
     uint16_t arfcn;
@@ -165,11 +158,10 @@ IQSample gsm_air_read_iq(GSMAir *air, uint32_t frequency_hz, int64_t timestamp, 
         return sample;
     if (timestamp < 0)
         return sample;
-    if (!gsm_air_frequency_to_arfcn(frequency_hz, &arfcn))
+    if (!gsm_downlink_frequency_to_arfcn(frequency_hz, &arfcn))
         return sample;
 
-    uint64_t quarter_symbols = muldiv64((uint64_t) timestamp, GSM_QUARTER_SYMBOLS_PER_NS_NUMERATOR,
-        GSM_QUARTER_SYMBOLS_PER_NS_DENOMINATOR);
+    uint64_t quarter_symbols = gsm_air_quarter_symbols(timestamp);
     uint32_t frame_number = quarter_symbols / GSM_FRAME_QUARTER_SYMBOLS % GSM_HYPERFRAME_FRAMES;
     uint32_t frame_quarter_symbol = quarter_symbols % GSM_FRAME_QUARTER_SYMBOLS;
     uint8_t timeslot = frame_quarter_symbol / GSM_TIMESLOT_QUARTER_SYMBOLS;
