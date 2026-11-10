@@ -2142,7 +2142,6 @@ void teak_tcg_invalidate_all(teak_tcg_core_t *core) {
 }
 
 void teak_tcg_set_program_context(teak_tcg_core_t *core, uint32_t context) {
-	/* links compare the context, so they survive bank switches */
 	core->program_context = context;
 }
 
@@ -4806,7 +4805,8 @@ static void tcg_emit_mov_imm_register(const teak_insn_t *instruction) {
 			break;
 
 		case 11:
-			tcg_emit_register_write(instruction->register_code, value);
+			gen_helper_teak_tcg_register_write(tcg_env, tcg_constant_i32(instruction->register_code), value);
+			tcg_mark_call(tcg_register_write_effects(instruction->register_code));
 			break;
 
 		case 12:
@@ -4859,7 +4859,8 @@ static void tcg_emit_mov_imm_register(const teak_insn_t *instruction) {
 			break;
 
 		case 30:
-			tcg_emit_mov_register_write(instruction->register_code, value);
+			gen_helper_teak_tcg_mov_register_write(tcg_env, tcg_constant_i32(instruction->register_code), value);
+			tcg_mark_call(tcg_register_write_effects(instruction->register_code));
 			break;
 
 		case 31:
@@ -8262,7 +8263,6 @@ typedef struct teak_tcg_fast_site_t {
 	int8_t verified;
 } teak_tcg_fast_site_t;
 
-static uint8_t tcg_fast_map[TEAK_PROGRAM_ADDRESS_MASK + 1];
 /* Bumped whenever tcg_fast_map changes; never 0. */
 static uint32_t tcg_fast_map_epoch = 1;
 static teak_tcg_fast_site_t tcg_fast_sites[32];
