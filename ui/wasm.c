@@ -5,7 +5,8 @@
  * sdl/gtk/curses): the page in front of the emulator needs (a) the guest
  * framebuffer on the wasm heap where JS can read it, (b) a way to inject
  * key events from the browser main thread while the vCPU runs on a
- * pthread, and (c) a thread-safe quit. All three are provided here as
+ * pthread, (c) a thread-safe quit, and (d) a way to swap the accessory
+ * plugged into the phone while it runs. All four are provided here as
  * EMSCRIPTEN_KEEPALIVE exports.
  *
  * Exposes the guest framebuffer to JavaScript and accepts linux-keycode
@@ -30,6 +31,8 @@
 #include "qemu/timer.h"
 #include "exec/icount.h"
 #include "hw/core/cpu.h"
+#include "hw/misc/phone/accessory-connector.h"
+#include "qapi/error.h"
 #include "qemu/seqlock.h"
 #include "system/cpu-timers.h"
 #include "system/cpu-timers-internal.h"
@@ -286,6 +289,54 @@ EMSCRIPTEN_KEEPALIVE
 void wasm_quit(void)
 {
     qemu_system_shutdown_request(SHUTDOWN_CAUSE_HOST_QMP_QUIT);
+}
+
+/* ------------------------------------------------------------------ */
+/* Accessory: what is plugged into the phone's system connector        */
+/* ------------------------------------------------------------------ */
+
+/*
+ * The page writes a profile name of the board's accessory-connector
+ * ("headset-stereo", or the unplugged one, "none") into this buffer and
+ * calls wasm_accessory_plug(). The name is copied there, on the JS thread,
+ * so the page may reuse the buffer at once; the QOM property is set by a
+ * bottom half on the main loop, under the BQL. Replacing one accessory
+ * with another goes through the connector's own unplugged gap.
+ */
+static char accessory_name[64];
+
+EMSCRIPTEN_KEEPALIVE
+char *wasm_accessory_buf(void)
+{
+    return accessory_name;
+}
+
+static void wasm_accessory_bh(void *opaque)
+{
+    g_autofree char *name = opaque;
+    Object *connector = object_resolve_path_type("", TYPE_ACCESSORY_CONNECTOR,
+                                                 NULL);
+    Error *err = NULL;
+
+    if (!connector) {
+        error_report("wasm: the board has no accessory connector");
+        return;
+    }
+    if (!object_property_set_str(connector, "accessory", name, &err)) {
+        error_report_err(err);
+    }
+}
+
+EMSCRIPTEN_KEEPALIVE
+void wasm_accessory_plug(void)
+{
+    /* the machine exists once the display does (see wasm_send_key) */
+    if (!qatomic_load_acquire(&key_bh_ready)) {
+        return;
+    }
+    aio_bh_schedule_oneshot(qemu_get_aio_context(), wasm_accessory_bh,
+                            g_strndup(accessory_name,
+                                      sizeof(accessory_name) - 1));
 }
 
 /* ------------------------------------------------------------------ */
