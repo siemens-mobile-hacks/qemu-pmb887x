@@ -1072,6 +1072,8 @@ static void gptu_set_reload(pmb887x_gptu_t *p, int id, uint32_t value, int size)
 		pmb887x_gptu_timer_t *timer = &p->timers[id * 4 + i];
 		timer->reload = (value >> (i * 8)) & 0xFF;
 	}
+	/* a root's own reload sets when a timer it carries into overflows */
+	gptu_sync_timer(p);
 }
 
 static void gptu_rebuild_timers(pmb887x_gptu_t *p) {
@@ -1235,17 +1237,22 @@ static void gptu_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned s
 			break;
 
 		case GPTU_T01IRS:
+			/* the ticks elapsed so far count under the old inputs */
+			gptu_sync_timer(p);
 			p->t01irs = value;
 			gptu_sync_timer(p);
 			gptu_rebuild_timers(p);
 			break;
 
 		case GPTU_T01OTS:
+			/* deferred overflows land under the old routing */
+			gptu_sync_timer(p);
 			p->t01ots = value;
 			gptu_update_events(p);
 			break;
 
 		case GPTU_T2CON:
+			gptu_sync_timer(p);
 			gptu_t2_sync_timer(p);
 			p->t2con = value;
 			gptu_t2_update_state(p);
@@ -1256,6 +1263,7 @@ static void gptu_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned s
 			break;
 
 		case GPTU_T2RCCON:
+			gptu_sync_timer(p);
 			gptu_t2_sync_timer(p);
 			p->t2rccon = value;
 			gptu_t2_update_state(p);
@@ -1263,18 +1271,21 @@ static void gptu_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned s
 			break;
 
 		case GPTU_T2AIS:
+			gptu_sync_timer(p);
 			gptu_t2_sync_timer(p);
 			p->t2ais = value;
 			gptu_sync_timer(p);
 			break;
 
 		case GPTU_T2BIS:
+			gptu_sync_timer(p);
 			gptu_t2_sync_timer(p);
 			p->t2bis = value;
 			gptu_sync_timer(p);
 			break;
 
 		case GPTU_T2ES:
+			gptu_sync_timer(p);
 			gptu_t2_sync_timer(p);
 			p->t2es = value;
 			gptu_sync_timer(p);
@@ -1383,6 +1394,7 @@ static void gptu_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned s
 			break;
 
 		case GPTU_SRSEL:
+			gptu_sync_timer(p);
 			p->srsel = value;
 			gptu_update_events(p);
 			break;
