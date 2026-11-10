@@ -275,11 +275,10 @@ static bool qemu_cond_timedwait_ts(QemuCond *cond, QemuMutex *mutex,
                                    const char *file, const int line)
 {
     struct timespec now;
-    int64_t ms;
+    double ms;
 
     clock_gettime(qemu_timedwait_clockid(), &now);
-    ms = (int64_t)(ts->tv_sec - now.tv_sec) * 1000
-       + (ts->tv_nsec - now.tv_nsec) / 1000000;
+    ms = (ts->tv_sec - now.tv_sec) * 1e3 + (ts->tv_nsec - now.tv_nsec) / 1e6;
     return qemu_cond_wait_common(cond, mutex, ms < 0 ? 0 : ms, file, line);
 }
 #else
