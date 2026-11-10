@@ -2709,15 +2709,23 @@ void memory_region_set_readonly(MemoryRegion *mr, bool readonly)
         }
         /* The on-list is the whole readonly signature input; track it even
          * for disabled MRs, as the romd off-list does. */
+        bool listed = true;
+
         if (readonly) {
             g_ptr_array_add(ro_on_mrs, mr);
         } else {
-            g_ptr_array_remove(ro_on_mrs, mr);
+            listed = g_ptr_array_remove(ro_on_mrs, mr);
         }
         memory_region_transaction_begin();
         mr->readonly = readonly;
         if (mr->enabled) {
-            romd_update_pending = true;
+            if (listed) {
+                romd_update_pending = true;
+            } else {
+                /* born read-only (a ROM): the signature never held it, so
+                 * no variant tells this state from the one before */
+                memory_region_update_pending = true;
+            }
         }
         memory_region_transaction_commit();
     }
