@@ -5695,18 +5695,44 @@ static teak_tcg_chain_exit_t *tcg_chain_exit_new(void) {
 	return chain_exit;
 }
 
-static void tcg_emit_branch_if_nonzero_u8(size_t offset, TCGLabel *label) {
-	TCGv_i32 value = tcg_temp_new_i32();
-
-	tcg_gen_ld8u_i32(value, tcg_env, offset);
-	tcg_gen_brcondi_i32(TCG_COND_NE, value, 0, label);
-}
-
 static void tcg_emit_branch_if_nonzero_u32(size_t offset, TCGLabel *label) {
 	TCGv_i32 value = tcg_temp_new_i32();
 
 	tcg_gen_ld_i32(value, tcg_env, offset);
 	tcg_gen_brcondi_i32(TCG_COND_NE, value, 0, label);
+}
+
+/* Branches when any of the byte flags at @offsets is set; they share one 64-bit load. */
+static void tcg_emit_branch_if_any_flag(const size_t *offsets, size_t count, TCGLabel *label) {
+	TCGv_i64 flags = tcg_temp_new_i64();
+	uint8_t bytes[sizeof(uint64_t)] = {};
+	size_t base = offsets[0];
+	uint64_t mask;
+
+	for (size_t i = 1; i < count; i++)
+		base = MIN(base, offsets[i]);
+	g_assert(base + sizeof(bytes) <= sizeof(teak_state_t));
+	for (size_t i = 0; i < count; i++) {
+		g_assert(offsets[i] - base < sizeof(bytes));
+		bytes[offsets[i] - base] = 0xFF;
+	}
+	memcpy(&mask, bytes, sizeof(mask));
+	tcg_gen_ld_i64(flags, tcg_env, base);
+	tcg_gen_brcondi_i64(TCG_COND_TSTNE, flags, mask, label);
+}
+
+static void tcg_emit_branch_if_link_field_differs_u16(
+	TCGv_ptr link,
+	size_t link_offset,
+	size_t state_offset,
+	TCGLabel *label
+) {
+	TCGv_i32 expected = tcg_temp_new_i32();
+	TCGv_i32 value = tcg_temp_new_i32();
+
+	tcg_gen_ld16u_i32(expected, link, link_offset);
+	tcg_gen_ld16u_i32(value, tcg_env, state_offset);
+	tcg_gen_brcond_i32(TCG_COND_NE, value, expected, label);
 }
 
 static void tcg_emit_branch_if_link_field_differs_u8(
@@ -5758,9 +5784,11 @@ static void tcg_emit_branch_if_link_mismatch(TCGv_ptr link, bool check_mode, TCG
 		offsetof(teak_state_t, pc), label);
 	tcg_emit_branch_if_link_field_differs_u32(link, offsetof(teak_tcg_chain_link_t, program_context),
 		offsetof(teak_tcg_core_t, program_context), label);
-	tcg_emit_branch_if_link_field_differs_u8(link, offsetof(teak_tcg_chain_link_t, block_repeat_level),
-		offsetof(teak_state_t, bcn), label);
-	tcg_emit_branch_if_link_field_differs_u8(link, offsetof(teak_tcg_chain_link_t, block_repeat_active),
+	/* lp and bcn, laid out alike on both sides */
+	QEMU_BUILD_BUG_ON(offsetof(teak_state_t, bcn) != offsetof(teak_state_t, lp) + 1);
+	QEMU_BUILD_BUG_ON(offsetof(teak_tcg_chain_link_t, block_repeat_level) !=
+		offsetof(teak_tcg_chain_link_t, block_repeat_active) + 1);
+	tcg_emit_branch_if_link_field_differs_u16(link, offsetof(teak_tcg_chain_link_t, block_repeat_active),
 		offsetof(teak_state_t, lp), label);
 	if (check_mode) {
 		tcg_emit_branch_if_link_field_differs_u8(link, offsetof(teak_tcg_chain_link_t, mode.product_shift),
@@ -5839,17 +5867,20 @@ static void tcg_emit_linked_chain(
 	TCGv_ptr target = tcg_temp_new_ptr();
 	TCGLabel *linked = gen_new_label();
 
+	/* The completion below touches none of these flags, so they are tested together and first. */
+	const size_t flags[] = {
+		offsetof(teak_state_t, block_repeat_break_pending),
+		offsetof(teak_state_t, repeat_active),
+		offsetof(teak_state_t, fetch_split_pending),
+		offsetof(teak_state_t, block_repeat_end_reached),
+	};
+
 	tcg_emit_branch_if_nonzero_u32(offsetof(teak_tcg_core_t, wait_cycles), slow);
-	if (block->ends_block_repeat) {
+	tcg_emit_branch_if_any_flag(flags, ARRAY_SIZE(flags) - (block->ends_block_repeat ? 1 : 0), slow);
+	if (block->ends_block_repeat)
 		tcg_emit_outermost_block_repeat_completion(slow);
-	} else {
-		tcg_emit_branch_if_nonzero_u8(offsetof(teak_state_t, block_repeat_end_reached), slow);
-	}
-	tcg_emit_branch_if_nonzero_u8(offsetof(teak_state_t, block_repeat_break_pending), slow);
 	tcg_emit_branch_if_nonzero_u32(offsetof(teak_state_t, exit_request), slow);
 	tcg_emit_branch_if_interrupt_deliverable(slow);
-	tcg_emit_branch_if_nonzero_u8(offsetof(teak_state_t, repeat_active), slow);
-	tcg_emit_branch_if_nonzero_u8(offsetof(teak_state_t, fetch_split_pending), slow);
 
 	for (size_t i = 0; i < ARRAY_SIZE(chain_exit->links); i++) {
 		TCGLabel *next_slot = gen_new_label();
