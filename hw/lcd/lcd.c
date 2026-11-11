@@ -1,5 +1,4 @@
 /* SPDX-License-Identifier: GPL-2.0-or-later */
-/* Generic serial display */
 #include <math.h>
 #include "qemu/osdep.h"
 #include "qapi/error.h"
@@ -15,10 +14,6 @@
 #define LCD_CMD_MAX_PARAMS 256
 #define LCD_RAM_QUEUE_SIZE (64 * 1024)
 #define LCD_RAM_QUEUE_WAKE_BYTES (4 * 1024)
-
-static void lcd_incr_px(LCDState *lcd);
-
-static void lcd_write_control_byte(LCDState *lcd, uint8_t value);
 
 static uint32_t lcd_read_from_fifo(LCDState *lcd, uint32_t width);
 static void lcd_clear_fifo(LCDState *lcd);
@@ -118,14 +113,13 @@ void lcd_set_transform(LCDState *lcd, bool flip_h_pins, bool flip_v_pins) {
     bool new_flip_horizontal = lcd->default_flip_horizontal;
     bool new_flip_vertical = lcd->default_flip_vertical;
 
-    // Apply HW ping remapping
     if (flip_h_pins)
         new_flip_horizontal = !new_flip_horizontal;
     if (flip_v_pins)
         new_flip_vertical = !new_flip_vertical;
 
-    // 180deg + flip_v + flip_h == 0deg
-    if (new_rotation == 180 && new_flip_horizontal && new_flip_vertical) {
+    bool is_identity = new_rotation == 180 && new_flip_horizontal && new_flip_vertical;
+    if (is_identity) {
         new_rotation = 0;
         new_flip_horizontal = false;
         new_flip_vertical = false;
@@ -228,7 +222,7 @@ static inline void lcd_incr_px(LCDState *lcd) {
 }
 
 static void lcd_write_ram_byte(LCDState *lcd, uint8_t value) {
-    lcd->tmp_pixel = lcd->tmp_pixel << 8 | value;
+    lcd->tmp_pixel = (lcd->tmp_pixel << 8) | value;
     lcd->tmp_index++;
 
     if (lcd->tmp_index == lcd->byte_pp) {
@@ -322,7 +316,6 @@ static void lcd_handle_param(LCDState *lcd, uint8_t value) {
         lcd_clear_fifo(lcd);
         lcd->wr_state = LCD_WR_STATE_NONE;
     } else if (lcd->wr_state == LCD_WR_STATE_NONE) {
-        // Unexpected data
         DEBUG_LOG(&lcd->dbg, "Unexpected PARAM: %02X (command=%02X)\n", value, lcd->current_cmd);
     } else if (lcd->wr_state == LCD_WR_STATE_PARAM) {
         fifo8_push(&lcd->fifo, value);
@@ -330,10 +323,8 @@ static void lcd_handle_param(LCDState *lcd, uint8_t value) {
         if (fifo8_num_used(&lcd->fifo) >= (lcd->k->param_width * lcd->current_cmd_params)) {
             uint32_t tmp_params[LCD_CMD_MAX_PARAMS];
             uint32_t tmp_params_n = 0;
-            while (fifo8_num_used(&lcd->fifo) >= lcd->k->param_width) {
+            while (fifo8_num_used(&lcd->fifo) >= lcd->k->param_width)
                 tmp_params[tmp_params_n++] = lcd_read_from_fifo(lcd, lcd->k->param_width);
-                // DEBUG_LOG(&lcd->dbg, "PARAM: %04X\n", tmp_params[tmp_params_n - 1]);
-            }
 
             lcd->k->on_cmd_with_params(lcd, lcd->current_cmd, tmp_params, tmp_params_n);
 
@@ -376,7 +367,7 @@ static void lcd_write_control_byte(LCDState *lcd, uint8_t value) {
 
 static uint32_t lcd_read_from_fifo(LCDState *lcd, uint32_t width) {
     uint32_t value = 0;
-    for (int i = 0; i < width; i++)
+    for (uint32_t i = 0; i < width; i++)
         value |= fifo8_pop(&lcd->fifo) << ((width - i - 1) * 8);
     return value;
 }
@@ -416,12 +407,11 @@ static inline void lcd_transform_rect(LCDState *lcd, LCDRect *r) {
     if (lcd->flip_vertical)
         y = lcd->height - y - rect_h;
 
-    uint32_t out_x = x, out_y = y, out_w = rect_w, out_h = rect_h;
+    uint32_t out_x = x;
+    uint32_t out_y = y;
+    uint32_t out_w = rect_w;
+    uint32_t out_h = rect_h;
     switch (lcd->rotation) {
-        case 0:
-            out_x = x;
-            out_y = y;
-            break;
         case 90:
             out_x = lcd->height - y - rect_h;
             out_y = x;
@@ -597,7 +587,7 @@ static const Property lcd_props[] = {
     DEFINE_PROP_BOOL("bgr_filter", LCDState, bgr_filter, false),
 };
 
-static void lcd_handle_rd(void *opaque, int n, int level) {
+static void lcd_handle_rd(void *opaque, int _n, int level) {
     LCDState *lcd = LCD(opaque);
     bool read_active = level == 0;
     lcd_drain_ram_queue(lcd);
@@ -609,11 +599,10 @@ static void lcd_handle_rd(void *opaque, int n, int level) {
     lcd->read_active = read_active;
 }
 
-static void lcd_handle_wr(void *opaque, int n, int level) {
-    // nothing
+static void lcd_handle_wr(void *_opaque, int _n, int _level) {
 }
 
-static void lcd_handle_cd(void *opaque, int n, int level) {
+static void lcd_handle_cd(void *opaque, int _n, int level) {
     LCDState *lcd = LCD(opaque);
     lcd_drain_ram_queue(lcd);
     bool old_cd = lcd->cd;
@@ -630,7 +619,7 @@ static void lcd_handle_cd(void *opaque, int n, int level) {
         lcd_set_ram_mode(lcd, !lcd->cd);
 }
 
-static void lcd_handle_reset(void *opaque, int n, int level) {
+static void lcd_handle_reset(void *opaque, int _n, int level) {
     LCDState *lcd = LCD(opaque);
     bool reset_active = level == 0;
     lcd_drain_ram_queue(lcd);
@@ -654,10 +643,10 @@ static void lcd_init(Object *obj) {
     }
 
     DeviceState *dev = DEVICE(obj);
-    qdev_init_gpio_in_named(DEVICE(dev), lcd_handle_rd, "RD", 1);
-    qdev_init_gpio_in_named(DEVICE(dev), lcd_handle_wr, "WR", 1);
-    qdev_init_gpio_in_named(DEVICE(dev), lcd_handle_cd, "CD", 1);
-    qdev_init_gpio_in_named(DEVICE(dev), lcd_handle_reset, "RESET", 1);
+    qdev_init_gpio_in_named(dev, lcd_handle_rd, "RD", 1);
+    qdev_init_gpio_in_named(dev, lcd_handle_wr, "WR", 1);
+    qdev_init_gpio_in_named(dev, lcd_handle_cd, "CD", 1);
+    qdev_init_gpio_in_named(dev, lcd_handle_reset, "RESET", 1);
 }
 
 static void lcd_realize(SSIPeripheral *d, Error **errp) {
