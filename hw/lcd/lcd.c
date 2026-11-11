@@ -291,13 +291,6 @@ static void lcd_queue_ram_bytes(LCDState *lcd, const uint32_t *values, size_t co
         qemu_event_set(&lcd->ram_queue_ready);
 }
 
-static void lcd_flush_partial_command(LCDState *lcd) {
-    if (lcd->wr_state != LCD_WR_STATE_CMD)
-        return;
-    lcd_clear_fifo(lcd);
-    lcd->wr_state = LCD_WR_STATE_NONE;
-}
-
 static void lcd_handle_command(LCDState *lcd, uint8_t value) {
     if (lcd->wr_state != LCD_WR_STATE_CMD) {
         if (lcd->wr_state == LCD_WR_STATE_PARAM)
