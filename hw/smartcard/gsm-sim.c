@@ -168,6 +168,15 @@ static const uint8_t GSM_SIM_MSISDN[GSM_SIM_DIALING_RECORD_SIZE] = {
     0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF
 };
 
+/* GSM 11.11 10.5.6: SMSC "+1234" as the only parameter. */
+static const uint8_t GSM_SIM_SMSP[GSM_SIM_SMSP_RECORD_SIZE] = {
+    0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+    0xFD,
+    0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+    0x03, 0x91, 0x21, 0x43, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+    0xFF, 0xFF, 0xFF
+};
+
 static const GSMSimFileDefinition GSM_SIM_FILES[] = {
     { .id = GSM_SIM_FS_MF_ID, .structure = GSM_SIM_FILE_MF },
     { .id = GSM_SIM_EF_ICCID, .parent_id = GSM_SIM_FS_MF_ID,
@@ -281,8 +290,8 @@ static const GSMSimFileDefinition GSM_SIM_FILES[] = {
       .access = GSM_SIM_ACCESS_READ_CHV1_UPDATE_CHV1 },
     { .id = GSM_SIM_EF_SMSP, .parent_id = GSM_SIM_DF_TELECOM,
       .structure = GSM_SIM_FILE_LINEAR_FIXED,
-      .size = 5 * GSM_SIM_SMSP_RECORD_SIZE,
-      .record_size = GSM_SIM_SMSP_RECORD_SIZE, .fill = 0xFF,
+      .size = sizeof(GSM_SIM_SMSP),
+      .record_size = GSM_SIM_SMSP_RECORD_SIZE, .content = GSM_SIM_SMSP,
       .access = GSM_SIM_ACCESS_READ_CHV1_UPDATE_CHV1 },
     { .id = GSM_SIM_EF_SMSS, .parent_id = GSM_SIM_DF_TELECOM,
       .structure = GSM_SIM_FILE_TRANSPARENT,
