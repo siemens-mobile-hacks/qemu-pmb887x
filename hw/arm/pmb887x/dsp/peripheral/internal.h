@@ -224,11 +224,17 @@ void mcs_release_mcu_semaphores(dsp_device_t *device, uint16_t value);
 dsp_device_t *modulator_create(
 	const pmb887x_dsp_peripheral_config_t *config,
 	const DebugChannel *parent,
-	dsp_device_t *interrupt
+	dsp_device_t *interrupt,
+	const dsp_host_t *host
 );
 uint16_t modulator_ram_stored_bits(uint16_t hardware_version);
-void modulator_set_codon(dsp_device_t *device, bool level);
+void modulator_set_codon(dsp_device_t *device, bool level, int64_t timestamp_ns);
+void modulator_set_iq_bus(dsp_device_t *device, IQBus *iq_bus);
+void modulator_commit_transmit(dsp_device_t *device, int64_t idle_until_ns);
+void modulator_set_clock_hz(dsp_device_t *device, uint32_t frequency_hz);
+void modulator_set_ms_clock_hz(dsp_device_t *device, uint32_t frequency_hz);
 void modulator_advance(dsp_device_t *device, size_t cycles);
+size_t modulator_get_cycles_until_interrupt(const dsp_device_t *device);
 bool modulator_is_active(const dsp_device_t *device);
 
 dsp_device_t *ssc_create(

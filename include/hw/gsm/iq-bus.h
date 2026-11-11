@@ -26,6 +26,8 @@ struct IQSample {
 struct IQSourceClass {
     InterfaceClass parent_class;
     IQSample (*read)(IQSource *source, int64_t timestamp, uint64_t sample_index);
+    void (*transmit)(IQSource *source, int64_t timestamp, bool symbol);
+    void (*transmit_until)(IQSource *source, int64_t timestamp);
 };
 
 struct IQSourcePort {
@@ -38,3 +40,7 @@ void iq_source_port_init(IQSourcePort *port, DeviceState *dev, const char *name,
 bool iq_bus_has_source(const IQBus *bus);
 /* timestamp is the virtual time of the requested sample. */
 IQSample iq_bus_read(IQBus *bus, int64_t timestamp, uint64_t sample_index);
+/* symbol is the GMSK modulator input bit that starts at virtual time timestamp. */
+void iq_bus_transmit(IQBus *bus, int64_t timestamp, bool symbol);
+/* The transmitter will send no more symbols that start before virtual time timestamp. */
+void iq_bus_transmit_until(IQBus *bus, int64_t timestamp);

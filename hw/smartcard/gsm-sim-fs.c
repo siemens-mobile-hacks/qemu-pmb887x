@@ -402,7 +402,8 @@ void gsm_sim_fs_select(GSMSimFS *fs, uint16_t id, ISO7816Response *response)
         fs->current_directory = file;
     }
     fs->selected_file = file;
-    fs->record_selected = false;
+    fs->record_selected = file->definition->structure == GSM_SIM_FILE_CYCLIC;
+    fs->current_record = 0;
     size = gsm_sim_fs_encode_file(fs, file, fs->response);
     gsm_sim_fs_publish_response(fs, size, response);
 }

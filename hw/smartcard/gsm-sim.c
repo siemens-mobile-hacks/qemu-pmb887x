@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: GPL-2.0-or-later */
 #include "qemu/osdep.h"
+#include "qemu/timer.h"
 #include "qemu/error-report.h"
 #include "qemu/module.h"
 #include "hw/core/qdev-properties.h"
@@ -53,29 +54,30 @@ OBJECT_DECLARE_TYPE(GSMSim, GSMSimClass, GSM_SIM)
 #define GSM_SIM_ACCESS_READ_CHV1_UPDATE_ADM_REHABILITATE_CHV1 { 0x14, 0xF0, 0x14 }
 
 #define GSM_SIM_DEFAULT_OPERATOR "00101"
-#define GSM_SIM_DEFAULT_SUBSCRIBER "0123456789"
+#define GSM_SIM_DEFAULT_SUBSCRIBER "0000001000"
 #define GSM_SIM_DEFAULT_KI "000102030405060708090A0B0C0D0E0F"
 #define GSM_SIM_DEFAULT_PIN "0000"
 #define GSM_SIM_DEFAULT_PUK "12345678"
 #define GSM_SIM_PIN_MIN_LENGTH 4
 #define GSM_SIM_CHV_PADDING 0xFF
 
-#define GSM_SIM_ATR_DELAY_CLOCKS 11960
-#define GSM_SIM_SELECT_CLOCKS 10199
-#define GSM_SIM_STATUS_CLOCKS 12253
-#define GSM_SIM_READ_BINARY_CLOCKS 959
-#define GSM_SIM_READ_RECORD_CLOCKS 1017
-#define GSM_SIM_GET_RESPONSE_CLOCKS 296
-#define GSM_SIM_UPDATE_BINARY_CLOCKS 3019
-#define GSM_SIM_UPDATE_RECORD_CLOCKS 10462
-#define GSM_SIM_SEEK_CLOCKS 3006
-#define GSM_SIM_INCREASE_CLOCKS 6016
-#define GSM_SIM_RUN_GSM_ALGORITHM_CLOCKS 171649
-#define GSM_SIM_TERMINAL_PROFILE_CLOCKS 8258
-#define GSM_SIM_FETCH_CLOCKS 494
-#define GSM_SIM_FETCH_MILLICLOCKS_PER_BYTE 18330
-#define GSM_SIM_TERMINAL_RESPONSE_CLOCKS 270
-#define GSM_SIM_ENVELOPE_CLOCKS 1586
+/* Processing times of a reference SIM card; they do not depend on the SIM clock. */
+#define GSM_SIM_ATR_DELAY_US 3680
+#define GSM_SIM_SELECT_US 3138
+#define GSM_SIM_STATUS_US 3770
+#define GSM_SIM_READ_BINARY_US 295
+#define GSM_SIM_READ_RECORD_US 313
+#define GSM_SIM_GET_RESPONSE_US 91
+#define GSM_SIM_UPDATE_BINARY_US 929
+#define GSM_SIM_UPDATE_RECORD_US 3219
+#define GSM_SIM_SEEK_US 925
+#define GSM_SIM_INCREASE_US 1851
+#define GSM_SIM_RUN_GSM_ALGORITHM_US 52815
+#define GSM_SIM_TERMINAL_PROFILE_US 2541
+#define GSM_SIM_FETCH_US 152
+#define GSM_SIM_FETCH_NS_PER_BYTE 5640
+#define GSM_SIM_TERMINAL_RESPONSE_US 83
+#define GSM_SIM_ENVELOPE_US 488
 
 struct GSMSim {
     ISO7816Card parent_obj;
@@ -151,9 +153,9 @@ static const uint8_t GSM_SIM_ACMMAX[] = { 0x00, 0x00, 0x00 };
 static const uint8_t GSM_SIM_SST[] = {
     0xFF, 0x3F, 0xFF, 0x0F, 0x00, 0x00, 0x30, 0x03, 0x00, 0x0C
 };
-static const uint8_t GSM_SIM_ACC[] = { 0x00, 0x00 };
+static const uint8_t GSM_SIM_ACC[] = { 0x00, 0x01 };
 static const uint8_t GSM_SIM_LOCI[] = {
-    0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0x00, 0x00
+    0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0x00, 0x01
 };
 static const uint8_t GSM_SIM_LOCIGPRS[] = {
     0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
@@ -166,6 +168,15 @@ static const uint8_t GSM_SIM_MSISDN[GSM_SIM_DIALING_RECORD_SIZE] = {
     GSM_SIM_MSISDN_NUMBER_LENGTH, GSM_SIM_MSISDN_TON_NPI,
     0x99, 0x09, 0x00, 0x00, 0x00, 0x98,
     0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF
+};
+
+/* GSM 11.11 10.5.6: SMSC "+1234" as the only parameter. */
+static const uint8_t GSM_SIM_SMSP[GSM_SIM_SMSP_RECORD_SIZE] = {
+    0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+    0xFD,
+    0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+    0x03, 0x91, 0x21, 0x43, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF,
+    0xFF, 0xFF, 0xFF
 };
 
 static const GSMSimFileDefinition GSM_SIM_FILES[] = {
@@ -281,8 +292,8 @@ static const GSMSimFileDefinition GSM_SIM_FILES[] = {
       .access = GSM_SIM_ACCESS_READ_CHV1_UPDATE_CHV1 },
     { .id = GSM_SIM_EF_SMSP, .parent_id = GSM_SIM_DF_TELECOM,
       .structure = GSM_SIM_FILE_LINEAR_FIXED,
-      .size = 5 * GSM_SIM_SMSP_RECORD_SIZE,
-      .record_size = GSM_SIM_SMSP_RECORD_SIZE, .fill = 0xFF,
+      .size = sizeof(GSM_SIM_SMSP),
+      .record_size = GSM_SIM_SMSP_RECORD_SIZE, .content = GSM_SIM_SMSP,
       .access = GSM_SIM_ACCESS_READ_CHV1_UPDATE_CHV1 },
     { .id = GSM_SIM_EF_SMSS, .parent_id = GSM_SIM_DF_TELECOM,
       .structure = GSM_SIM_FILE_TRANSPARENT,
@@ -336,42 +347,50 @@ static bool gsm_sim_command_has_data(ISO7816Card *card, const uint8_t *header)
     return gsm11_command_has_data(header[ISO7816_OFFSET_INS]);
 }
 
-static uint32_t gsm_sim_processing_clocks(ISO7816Card *card,
-                                          const uint8_t *header)
+static int64_t gsm_sim_processing_us(const uint8_t *header)
 {
     switch (header[ISO7816_OFFSET_INS]) {
     case GSM11_INS_SELECT:
-        return GSM_SIM_SELECT_CLOCKS;
+        return GSM_SIM_SELECT_US;
     case GSM11_INS_STATUS:
-        return GSM_SIM_STATUS_CLOCKS;
+        return GSM_SIM_STATUS_US;
     case GSM11_INS_READ_BINARY:
-        return GSM_SIM_READ_BINARY_CLOCKS;
+        return GSM_SIM_READ_BINARY_US;
     case GSM11_INS_READ_RECORD:
-        return GSM_SIM_READ_RECORD_CLOCKS;
+        return GSM_SIM_READ_RECORD_US;
     case GSM11_INS_GET_RESPONSE:
-        return GSM_SIM_GET_RESPONSE_CLOCKS;
+        return GSM_SIM_GET_RESPONSE_US;
     case GSM11_INS_UPDATE_BINARY:
-        return GSM_SIM_UPDATE_BINARY_CLOCKS;
+        return GSM_SIM_UPDATE_BINARY_US;
     case GSM11_INS_UPDATE_RECORD:
-        return GSM_SIM_UPDATE_RECORD_CLOCKS;
+        return GSM_SIM_UPDATE_RECORD_US;
     case GSM11_INS_SEEK:
-        return GSM_SIM_SEEK_CLOCKS;
+        return GSM_SIM_SEEK_US;
     case GSM11_INS_INCREASE:
-        return GSM_SIM_INCREASE_CLOCKS;
+        return GSM_SIM_INCREASE_US;
     case GSM11_INS_RUN_GSM_ALGORITHM:
-        return GSM_SIM_RUN_GSM_ALGORITHM_CLOCKS;
+        return GSM_SIM_RUN_GSM_ALGORITHM_US;
     case GSM11_INS_TERMINAL_PROFILE:
-        return GSM_SIM_TERMINAL_PROFILE_CLOCKS;
+        return GSM_SIM_TERMINAL_PROFILE_US;
     case GSM11_INS_FETCH:
-        return GSM_SIM_FETCH_CLOCKS + header[ISO7816_OFFSET_P3] *
-               GSM_SIM_FETCH_MILLICLOCKS_PER_BYTE / 1000;
+        return GSM_SIM_FETCH_US;
     case GSM11_INS_TERMINAL_RESPONSE:
-        return GSM_SIM_TERMINAL_RESPONSE_CLOCKS;
+        return GSM_SIM_TERMINAL_RESPONSE_US;
     case GSM11_INS_ENVELOPE:
-        return GSM_SIM_ENVELOPE_CLOCKS;
+        return GSM_SIM_ENVELOPE_US;
     default:
         return 0;
     }
+}
+
+static int64_t gsm_sim_processing_ns(ISO7816Card *card, const uint8_t *header)
+{
+    int64_t processing_ns = gsm_sim_processing_us(header) * SCALE_US;
+
+    if (header[ISO7816_OFFSET_INS] == GSM11_INS_FETCH) {
+        processing_ns += header[ISO7816_OFFSET_P3] * GSM_SIM_FETCH_NS_PER_BYTE;
+    }
+    return processing_ns;
 }
 
 static uint16_t gsm_sim_data_size(uint8_t p3)
@@ -841,8 +860,8 @@ static void gsm_sim_class_init(ObjectClass *klass, const void *data)
     cc->cold_reset = gsm_sim_cold_reset;
     cc->command_has_data = gsm_sim_command_has_data;
     cc->exchange = gsm_sim_exchange;
-    cc->processing_clocks = gsm_sim_processing_clocks;
-    cc->atr_delay_clocks = GSM_SIM_ATR_DELAY_CLOCKS;
+    cc->processing_ns = gsm_sim_processing_ns;
+    cc->atr_delay_ns = GSM_SIM_ATR_DELAY_US * SCALE_US;
 }
 
 static const TypeInfo gsm_sim_info = {

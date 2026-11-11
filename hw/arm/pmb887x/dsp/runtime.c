@@ -685,6 +685,10 @@ void dsp_runtime_set_iq_bus(dsp_runtime_t *runtime, IQBus *iq_bus) {
 	dsp_bus_set_iq_bus(runtime->bus, iq_bus);
 }
 
+void dsp_runtime_commit_transmit(dsp_runtime_t *runtime, int64_t idle_until_ns) {
+	dsp_bus_commit_transmit(runtime->bus, idle_until_ns);
+}
+
 void dsp_runtime_set_gsm_signal(
 	dsp_runtime_t *runtime,
 	pmb887x_dsp_gsm_signal_t signal,

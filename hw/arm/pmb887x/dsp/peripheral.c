@@ -140,7 +140,7 @@ static dsp_device_t *dsp_bus_create_device(dsp_bus_t *bus, const pmb887x_dsp_per
 		case PMB887X_DSP_PERIPHERAL_MODULATOR:
 			g_assert(bus->interrupt != NULL);
 
-			device = modulator_create(config, bus->dbg, bus->interrupt);
+			device = modulator_create(config, bus->dbg, bus->interrupt, &bus->host);
 			bus->modulator = device;
 			return device;
 
@@ -256,6 +256,8 @@ void dsp_bus_set_clock_hz(dsp_bus_t *bus, uint32_t frequency_hz) {
 		dsp_i2s_set_clock_hz(bus->i2s[i], frequency_hz);
 	if (bus->i2s_tx != NULL)
 		dsp_i2s_tx_set_clock_hz(bus->i2s_tx, frequency_hz);
+	if (bus->modulator != NULL)
+		modulator_set_clock_hz(bus->modulator, frequency_hz);
 }
 
 void dsp_bus_set_ms_clock_hz(dsp_bus_t *bus, uint32_t frequency_hz) {
@@ -266,6 +268,8 @@ void dsp_bus_set_ms_clock_hz(dsp_bus_t *bus, uint32_t frequency_hz) {
 		dsp_i2s_set_ms_clock_hz(bus->i2s[i], frequency_hz);
 	if (bus->i2s_tx != NULL)
 		dsp_i2s_tx_set_ms_clock_hz(bus->i2s_tx, frequency_hz);
+	if (bus->modulator != NULL)
+		modulator_set_ms_clock_hz(bus->modulator, frequency_hz);
 }
 
 void dsp_bus_update_time(dsp_bus_t *bus) {
@@ -351,6 +355,8 @@ size_t dsp_bus_get_cycles_until_event(const dsp_bus_t *bus) {
 		cycles = afe_get_cycles_until_event(bus->afe);
 	for (size_t i = 0; i < bus->i2s_count; i++)
 		cycles = MIN(cycles, dsp_i2s_get_cycles_until_receive_interrupt(bus->i2s[i]));
+	if (bus->modulator != NULL && modulator_is_active(bus->modulator))
+		cycles = MIN(cycles, modulator_get_cycles_until_interrupt(bus->modulator));
 	if (cycles != SIZE_MAX)
 		cycles -= bus->pending_cycles;
 	return cycles;
@@ -445,6 +451,13 @@ void dsp_bus_set_input(dsp_bus_t *bus, size_t index, bool level) {
 void dsp_bus_set_iq_bus(dsp_bus_t *bus, IQBus *iq_bus) {
 	if (bus->baseband != NULL)
 		baseband_set_iq_bus(bus->baseband, iq_bus);
+	if (bus->modulator != NULL)
+		modulator_set_iq_bus(bus->modulator, iq_bus);
+}
+
+void dsp_bus_commit_transmit(dsp_bus_t *bus, int64_t idle_until_ns) {
+	if (bus->modulator != NULL)
+		modulator_commit_transmit(bus->modulator, idle_until_ns);
 }
 
 void dsp_bus_set_gsm_signal(
@@ -477,7 +490,7 @@ void dsp_bus_set_gsm_signal(
 	if (signal == PMB887X_DSP_GSM_SIGNAL_CODON) {
 		dsp_bus_flush(bus);
 		if (bus->modulator != NULL)
-			modulator_set_codon(bus->modulator, level);
+			modulator_set_codon(bus->modulator, level, timestamp_ns);
 
 		uint16_t flag = level ? TEAK_INT_FINTA0_CODONHI : TEAK_INT_FINTA0_CODONLO;
 		dsp_int_set_flags(bus->interrupt, 0, flag);

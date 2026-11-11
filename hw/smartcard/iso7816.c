@@ -72,7 +72,6 @@ static uint32_t iso7816_fidi_to_clocks_per_etu(uint8_t fidi)
 static void iso7816_card_schedule_output(ISO7816Card *card)
 {
     uint32_t clock_hz = clock_get_hz(card->clock);
-    uint64_t clocks;
     int64_t delay_ns;
 
     if (fifo8_is_empty(&card->output) || clock_hz == 0 ||
@@ -80,10 +79,10 @@ static void iso7816_card_schedule_output(ISO7816Card *card)
         return;
     }
 
-    clocks = ISO7816_CHARACTER_ETU * card->clocks_per_etu +
-             card->processing_clocks;
-    card->processing_clocks = 0;
-    delay_ns = muldiv64(clocks, NANOSECONDS_PER_SECOND, clock_hz);
+    delay_ns = muldiv64(ISO7816_CHARACTER_ETU * card->clocks_per_etu,
+                        NANOSECONDS_PER_SECOND, clock_hz) +
+               card->processing_ns;
+    card->processing_ns = 0;
     timer_mod(card->tx_timer,
               qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + delay_ns);
 }
@@ -150,7 +149,7 @@ void iso7816_card_complete(ISO7816Card *card, uint32_t exchange_id,
     output[output_size++] = response->sw1;
     output[output_size++] = response->sw2;
 
-    card->processing_clocks = klass->processing_clocks(card, card->command);
+    card->processing_ns = klass->processing_ns(card, card->command);
     iso7816_card_queue_bytes(card, output, output_size);
     iso7816_card_reset_protocol(card);
 }
@@ -274,7 +273,7 @@ static void iso7816_card_stop(ISO7816Card *card)
     card->exchange_id++;
     timer_del(card->tx_timer);
     fifo8_reset(&card->output);
-    card->processing_clocks = 0;
+    card->processing_ns = 0;
     iso7816_card_reset_protocol(card);
 }
 
@@ -300,7 +299,7 @@ static void iso7816_card_answer_to_reset(ISO7816Card *card)
     card->pps_allowed = true;
     card->clocks_per_etu = iso7816_fidi_to_clocks_per_etu(ISO7816_DEFAULT_FIDI);
     card->pps_clocks_per_etu = 0;
-    card->processing_clocks = klass->atr_delay_clocks;
+    card->processing_ns = klass->atr_delay_ns;
     iso7816_card_trace_bytes(card, "ATR", atr, atr_size);
     iso7816_card_queue_bytes(card, atr, atr_size);
 }

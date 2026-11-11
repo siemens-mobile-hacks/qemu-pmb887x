@@ -85,6 +85,7 @@
 #define TPU_FADE_RESET 0x0700
 #define TPU_GSMCLK1_RESET (1U << TPU_GSMCLK1_K_SHIFT)
 #define TPU_GSMCLK2_RESET (2U << TPU_GSMCLK2_L_SHIFT)
+#define TPU_COUNTER_INPUT_DIVIDER 6U
 
 typedef struct pmb887x_tpu_t pmb887x_tpu_t;
 
@@ -144,8 +145,10 @@ struct pmb887x_tpu_t {
 	
 	bool enabled;
 	uint32_t freq;
+	uint32_t counter_input_hz;
 	uint32_t counter;
 	int64_t start;
+	uint64_t start_ticks;
 	int64_t next;
 	int64_t armed;
 	uint32_t frame_ticks;
@@ -163,29 +166,37 @@ struct pmb887x_tpu_t {
 	uint32_t unk;
 };
 
+static uint64_t tpu_get_elapsed_ticks(pmb887x_tpu_t *p) {
+	int64_t elapsed_ns = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) - p->start;
+	return muldiv64(elapsed_ns, p->counter_input_hz, NANOSECONDS_PER_SECOND) / TPU_COUNTER_INPUT_DIVIDER;
+}
+
 static uint64_t tpu_get_counter(pmb887x_tpu_t *p) {
 	uint64_t counter = p->counter;
 
-	if (p->enabled) {
-		int64_t delta_ns = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) - p->start;
-		counter += muldiv64(delta_ns, p->freq, NANOSECONDS_PER_SECOND);
-	}
+	if (p->enabled)
+		counter += tpu_get_elapsed_ticks(p) - p->start_ticks;
 
 	return counter;
 }
 
-static int64_t tpu_ticks_to_ns(pmb887x_tpu_t *p, uint64_t ticks) {
-	return (int64_t) muldiv64_round_up(ticks, NANOSECONDS_PER_SECOND, p->freq);
+static int64_t tpu_counter_time(pmb887x_tpu_t *p, uint32_t counter) {
+	int64_t ticks = (int64_t) p->start_ticks + counter - p->counter;
+	uint64_t input_clocks = (uint64_t) llabs(ticks) * TPU_COUNTER_INPUT_DIVIDER;
+
+	if (ticks < 0)
+		return p->start - (int64_t) muldiv64(input_clocks, NANOSECONDS_PER_SECOND, p->counter_input_hz);
+	return p->start + (int64_t) muldiv64_round_up(input_clocks, NANOSECONDS_PER_SECOND, p->counter_input_hz);
 }
 
-static int64_t tpu_run_irq(pmb887x_tpu_t *p, int64_t counter, uint64_t now, int64_t next) {
+static int64_t tpu_run_irq(pmb887x_tpu_t *p, int64_t counter, int64_t next) {
 	for (int i = 0; i < 2; i++) {
 		if (!(p->irq_fired & (1 << i))) {
 			if (counter >= p->intr[i]) {
 				pmb887x_src_update(&p->src[i], 0, MOD_SRC_SETR);
 				p->irq_fired |= (1 << i);
 			} else {
-				next = MIN(next, now + tpu_ticks_to_ns(p, p->intr[i] - counter));
+				next = MIN(next, tpu_counter_time(p, p->intr[i]));
 			}
 		}
 	}
@@ -488,7 +499,7 @@ static void tpu_execute_event(
 		pmb887x_src_update(&p->gp_src[decoder - TPU_EVENT_GP_FIRST], 0, MOD_SRC_SETR);
 }
 
-static int64_t tpu_run_events(pmb887x_tpu_t *p, uint32_t counter, int64_t now, int64_t next) {
+static int64_t tpu_run_events(pmb887x_tpu_t *p, uint32_t counter, int64_t next) {
 	while (!p->events_finished && p->ceap < p->eapt) {
 		if (p->ceap > TPU_TIMER_RAM_WORDS - TPU_EVENT_WORDS) {
 			p->events_finished = true;
@@ -516,11 +527,11 @@ static int64_t tpu_run_events(pmb887x_tpu_t *p, uint32_t counter, int64_t now, i
 		if (compare == 0)
 			compare = 1;
 		if (counter < compare) {
-			next = MIN(next, now + tpu_ticks_to_ns(p, compare - counter));
+			next = MIN(next, tpu_counter_time(p, compare));
 			break;
 		}
 
-		int64_t event_time_ns = now - tpu_ticks_to_ns(p, counter - compare);
+		int64_t event_time_ns = tpu_counter_time(p, compare);
 
 		tpu_execute_event(p, p->ceap, control, timer_bits_low, event_time_ns);
 		p->ceap += TPU_EVENT_WORDS;
@@ -548,10 +559,10 @@ static uint32_t tpu_regular_frame_ticks(pmb887x_tpu_t *p) {
 static void tpu_finish_frame(pmb887x_tpu_t *p) {
 	uint32_t regular_frame_ticks = tpu_regular_frame_ticks(p);
 	uint32_t final_counter = p->frame_ticks - 1;
-	int64_t final_time_ns = p->start - tpu_ticks_to_ns(p, p->counter - final_counter);
+	int64_t final_time_ns = tpu_counter_time(p, final_counter);
 
-	tpu_run_irq(p, final_counter, final_time_ns, final_time_ns);
-	tpu_run_events(p, final_counter, final_time_ns, final_time_ns);
+	tpu_run_irq(p, final_counter, final_time_ns);
+	tpu_run_events(p, final_counter, final_time_ns);
 
 	if ((p->skip & TPU_SKIP_SKIPC) && !p->skip_extended) {
 		p->frame_ticks += regular_frame_ticks;
@@ -585,17 +596,16 @@ static void tpu_finish_frame(pmb887x_tpu_t *p) {
  * tpu_update_timer() does except arming the QEMU timer.
  */
 static void tpu_advance(pmb887x_tpu_t *p) {
-	uint64_t counter = tpu_get_counter(p);
-	uint64_t elapsed_ticks = counter - p->counter;
-	p->counter = (uint32_t) counter;
-	p->start += tpu_ticks_to_ns(p, elapsed_ticks);
+	uint64_t elapsed_ticks = tpu_get_elapsed_ticks(p);
+	p->counter += elapsed_ticks - p->start_ticks;
+	p->start_ticks = elapsed_ticks;
 
 	while (p->counter >= p->frame_ticks)
 		tpu_finish_frame(p);
 
-	p->next = p->start + tpu_ticks_to_ns(p, p->frame_ticks - p->counter);
-	p->next = tpu_run_irq(p, p->counter, p->start, p->next);
-	p->next = tpu_run_events(p, p->counter, p->start, p->next);
+	p->next = tpu_counter_time(p, p->frame_ticks);
+	p->next = tpu_run_irq(p, p->counter, p->next);
+	p->next = tpu_run_events(p, p->counter, p->next);
 }
 
 static void tpu_update_timer(pmb887x_tpu_t *p) {
@@ -651,14 +661,13 @@ static void tpu_update_state(pmb887x_tpu_t *p) {
 	}
 	
 	// Input freq for TPU counter
-	uint32_t new_freq;
+	uint32_t new_input_hz;
 	if (p->L == 0 && p->K == 0) {
-		new_freq = ftpu > 0 ? ftpu / 6 : 0;
+		new_input_hz = ftpu;
 	} else {
-		new_freq = ftpu > 0 ? (ftpu / p->L * p->K) / 6 : 0;
+		new_input_hz = ftpu > 0 ? ftpu / p->L * p->K : 0;
 	}
-	
-	// new_freq = new_freq / 6;
+	uint32_t new_freq = new_input_hz / TPU_COUNTER_INPUT_DIVIDER;
 	
 	bool new_enabled = pmb887x_clc_is_enabled(&p->clc) && new_freq > 0 &&
 		(p->param & TPU_PARAM_TINI) != 0 && p->overflow >= 2;
@@ -675,8 +684,8 @@ static void tpu_update_state(pmb887x_tpu_t *p) {
 	 * there reads the counter, and the values it computes above are
 	 * pure functions of the registers.
 	 */
-	if (was_enabled && (p->freq != new_freq || p->enabled != new_enabled ||
-			    !(p->param & TPU_PARAM_TINI))) {
+	if (was_enabled && (p->counter_input_hz != new_input_hz || p->freq != new_freq ||
+			    p->enabled != new_enabled || !(p->param & TPU_PARAM_TINI))) {
 		tpu_advance(p);
 	}
 
@@ -694,6 +703,11 @@ static void tpu_update_state(pmb887x_tpu_t *p) {
 		p->triggers = 0;
 	}
 	
+	if (p->counter_input_hz != new_input_hz) {
+		p->counter_input_hz = new_input_hz;
+		p->start = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
+		p->start_ticks = 0;
+	}
 	if (p->freq != new_freq || p->enabled != new_enabled) {
 		p->freq = new_freq;
 		p->enabled = new_enabled;
@@ -716,6 +730,7 @@ static void tpu_update_state(pmb887x_tpu_t *p) {
 		p->timing_advance = 0;
 		p->triggers = 0;
 		p->start = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
+		p->start_ticks = 0;
 		if (p->offset_pending)
 			tpu_apply_offset(p);
 		p->offset_pending = false;
@@ -1207,8 +1222,10 @@ static void tpu_reset(DeviceState *dev) {
 	p->enabled = false;
 	p->freq = 0;
 	clock_update_hz(p->gsm_clock, 0);
+	p->counter_input_hz = 0;
 	p->counter = 0;
 	p->start = 0;
+	p->start_ticks = 0;
 	p->next = 0;
 	p->frame_ticks = tpu_regular_frame_ticks(p);
 	p->next_frame_ticks = 0;

@@ -33,6 +33,7 @@
 #include "qemu/w64-low.h"
 #endif
 #include "hw/block/cfi-flash.h"
+#include "hw/gsm/gsm-network.h"
 
 #include "hw/arm/pmb887x/gen/brom.h"
 #include "hw/arm/pmb887x/gen/cpu_meta.h"
@@ -41,6 +42,15 @@
 
 #include "hw/arm/pmb887x/io_bridge.h"
 #include "hw/arm/pmb887x/tpu.h"
+
+#define TYPE_PMB887X_MACHINE MACHINE_TYPE_NAME("pmb887x")
+
+typedef struct pmb887x_machine_t pmb887x_machine_t;
+
+struct pmb887x_machine_t {
+	MachineState parent_obj;
+	Object *gsm_network;
+};
 
 static bool initial_cpu_reset = true;
 
@@ -374,7 +384,8 @@ static void pmb887x_init(MachineState *machine) {
 	pmb887x_cpu_modules_post_init();
 	pmb887x_board_init_analog();
 	pmb887x_board_gpio_init_fixed_inputs();
-	pmb887x_board_init_devices(ebuc);
+	pmb887x_machine_t *pmb887x_machine = OBJECT_CHECK(pmb887x_machine_t, machine, TYPE_PMB887X_MACHINE);
+	pmb887x_board_init_devices(ebuc, pmb887x_machine->gsm_network);
 	sysbus_realize_and_unref(SYS_BUS_DEVICE(ebuc), &error_fatal);
 	pmb887x_board_keyboard_connect_gpios(keypad);
 	pmb887x_board_startup_init(keypad);
@@ -420,11 +431,14 @@ static void pmb887x_class_init(ObjectClass *oc, const void *data) {
 	 */
 	mc->minimum_page_bits = 12;
 #endif
+	object_class_property_add_link(oc, "gsm-network", TYPE_GSM_NETWORK, offsetof(pmb887x_machine_t, gsm_network),
+		object_property_allow_set_link, OBJ_PROP_LINK_STRONG);
 }
 
 static const TypeInfo pmb887x_type = {
-	.name = MACHINE_TYPE_NAME("pmb887x"),
+	.name = TYPE_PMB887X_MACHINE,
 	.parent = TYPE_MACHINE,
+	.instance_size = sizeof(pmb887x_machine_t),
 	.class_init = pmb887x_class_init,
 	.interfaces = arm_machine_interfaces,
 };

@@ -290,6 +290,13 @@ config PMB887X
     select R61505
     select R63400
     select GSM_IQ_BUS
+    select GSM_NETWORK
+    select GSM_AIR
+    select GSM_CODING
+    select GSM_BTS
+    select GSM_OSMOTRX
+    select GSM_KASUMI
+    select GSM_GEA
     select HD155153NP
     select PMB6272
 

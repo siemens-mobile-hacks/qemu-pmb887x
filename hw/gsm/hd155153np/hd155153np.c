@@ -2,14 +2,14 @@
 #include "qemu/osdep.h"
 #include <math.h>
 
-#include "qemu/atomic.h"
 #include "qemu/bitops.h"
 #include "qemu/module.h"
 
 #include "system/debug-channel.h"
+#include "hw/core/qdev-properties.h"
 #include "hw/core/sysbus.h"
 #include "hw/ssi/three-wire-serial.h"
-#include "hw/gsm/bts-signal.h"
+#include "hw/gsm/gsm-air.h"
 #include "regs.h"
 
 #define TYPE_HD155153NP "hd155153np"
@@ -32,6 +32,8 @@ OBJECT_DECLARE_SIMPLE_TYPE(HD155153NPState, HD155153NP)
 #define HD155153NP_PLL_BAND_PCS1900             3U
 #define HD155153NP_PLL_LOW_BAND_DIVIDER_SHIFT   3U
 #define HD155153NP_PLL_HIGH_BAND_DIVIDER_SHIFT  2U
+#define HD155153NP_PLL_RECEIVE                  BIT(16)
+#define HD155153NP_TRANSMIT_OFFSET_HZ           80000000U
 #define HD155153NP_RECEIVER_BASE_GAIN_DB        25
 #define HD155153NP_PGA_STEP_DB                  2
 #define HD155153NP_MIXER1_LOW_GAIN_REDUCTION_DB 36
@@ -45,6 +47,7 @@ struct HD155153NPState {
     DebugChannel dbg;
     ThreeWireSerialTargetPort serial_port;
     IQSourcePort iq_port;
+    GSMAir air;
     uint32_t telegram;
     uint32_t frequency;
     int32_t amplitude;
@@ -53,7 +56,18 @@ struct HD155153NPState {
     uint8_t shift_bits;
     bool strobe_asserted;
     bool shift_overflow;
+    bool transmitting;
 };
+
+static void hd155153np_update_air(HD155153NPState *p) {
+    if (p->frequency == 0) {
+        gsm_air_tune(&p->air, GSM_AIR_PATH_OFF, 0, 0);
+    } else if (p->transmitting) {
+        gsm_air_tune(&p->air, GSM_AIR_PATH_TRANSMIT, p->frequency - HD155153NP_TRANSMIT_OFFSET_HZ, 0);
+    } else {
+        gsm_air_tune(&p->air, GSM_AIR_PATH_RECEIVE, p->frequency, p->amplitude);
+    }
+}
 
 static void hd155153np_set_gain(HD155153NPState *p, uint32_t value) {
     uint32_t step = (value & HD155153NP_GAIN_CONTROL_PGA_GAIN) >> HD155153NP_GAIN_CONTROL_PGA_GAIN_SHIFT;
@@ -68,7 +82,8 @@ static void hd155153np_set_gain(HD155153NPState *p, uint32_t value) {
     int32_t adc_level_db = HD155153NP_FAKE_SIGNAL_LEVEL_DBM + HD155153NP_ADC_AMPLITUDE_OFFSET_DB + gain_db;
     int32_t amplitude = (int32_t) lround(pow(10.0, adc_level_db / 20.0));
 
-    qatomic_set(&p->amplitude, MIN(amplitude, HD155153NP_ADC_MAX_AMPLITUDE));
+    p->amplitude = MIN(amplitude, HD155153NP_ADC_MAX_AMPLITUDE);
+    hd155153np_update_air(p);
 }
 
 static void hd155153np_set_channel(HD155153NPState *p, uint32_t value) {
@@ -100,14 +115,17 @@ static void hd155153np_set_channel(HD155153NPState *p, uint32_t value) {
     uint32_t divider = (synthesizer & HD155153NP_PLL_DIVIDER_MASK) >> divider_shift;
 
     if (divider == 0) {
-        qatomic_set(&p->frequency, 0);
+        p->frequency = 0;
+        hd155153np_update_air(p);
         return;
     }
 
     uint32_t channel_raster = HD155153NP_REFERENCE_FREQUENCY / HD155153NP_CHANNEL_RASTER_DIVIDER;
     uint32_t frequency = divider * channel_raster;
 
-    qatomic_set(&p->frequency, frequency);
+    p->transmitting = (synthesizer & HD155153NP_PLL_RECEIVE) == 0;
+    p->frequency = frequency;
+    hd155153np_update_air(p);
     DEBUG_LOG(&p->dbg, "tuned: frequency=%u Hz band=%s mode=%u\n", frequency, band, mode);
 }
 
@@ -165,24 +183,30 @@ static void hd155153np_write(ThreeWireSerialTarget *target, uint32_t value, unsi
 }
 
 static IQSample hd155153np_read_iq(IQSource *source, int64_t timestamp, uint64_t _sample_index) {
-    HD155153NPState *p = HD155153NP(source);
-    uint32_t frequency = qatomic_read(&p->frequency);
-    int32_t amplitude = qatomic_read(&p->amplitude);
+    return gsm_air_read_iq(&HD155153NP(source)->air, timestamp);
+}
 
-    return bts_signal_read_iq(frequency, timestamp, amplitude);
+static void hd155153np_transmit(IQSource *source, int64_t timestamp, bool symbol) {
+    gsm_air_transmit(&HD155153NP(source)->air, timestamp, symbol);
+}
+
+static void hd155153np_transmit_until(IQSource *source, int64_t timestamp) {
+    gsm_air_transmit_until(&HD155153NP(source)->air, timestamp);
 }
 
 static void hd155153np_reset(DeviceState *device) {
     HD155153NPState *p = HD155153NP(device);
 
     p->telegram = 0;
-    qatomic_set(&p->frequency, 0);
-    qatomic_set(&p->amplitude, 0);
+    p->frequency = 0;
+    p->amplitude = 0;
     p->shift_register = 0;
     p->telegram_bits = 0;
     p->shift_bits = 0;
     p->strobe_asserted = false;
     p->shift_overflow = false;
+    p->transmitting = false;
+    gsm_air_reset(&p->air);
 }
 
 static void hd155153np_init(Object *obj) {
@@ -190,12 +214,22 @@ static void hd155153np_init(Object *obj) {
 
     three_wire_serial_target_port_init(&p->serial_port, DEVICE(obj), "RFSSC", THREE_WIRE_SERIAL_TARGET(obj));
     iq_source_port_init(&p->iq_port, DEVICE(obj), "IQ_TX", IQ_SOURCE(obj));
+    gsm_air_init_uplink(&p->air);
+}
+
+static void hd155153np_finalize(Object *obj) {
+    HD155153NPState *p = HD155153NP(obj);
+    gsm_air_cleanup_uplink(&p->air);
 }
 
 static void hd155153np_realize(DeviceState *dev, Error **_errp) {
     HD155153NPState *p = HD155153NP(dev);
     debug_channel_init_device_regs(&p->dbg, dev, &hd155153np_debug_regs);
 }
+
+static const Property hd155153np_properties[] = {
+    DEFINE_PROP_LINK("gsm-network", HD155153NPState, air.network, TYPE_GSM_NETWORK, GSMNetwork *),
+};
 
 static void hd155153np_class_init(ObjectClass *klass, const void *_data) {
     DeviceClass *device_class = DEVICE_CLASS(klass);
@@ -205,8 +239,11 @@ static void hd155153np_class_init(ObjectClass *klass, const void *_data) {
     serial_class->set_strobe = hd155153np_set_strobe;
     serial_class->write = hd155153np_write;
     iq_class->read = hd155153np_read_iq;
+    iq_class->transmit = hd155153np_transmit;
+    iq_class->transmit_until = hd155153np_transmit_until;
     device_class_set_legacy_reset(device_class, hd155153np_reset);
     device_class->realize = hd155153np_realize;
+    device_class_set_props(device_class, hd155153np_properties);
 }
 
 static const TypeInfo hd155153np_info = {
@@ -214,6 +251,7 @@ static const TypeInfo hd155153np_info = {
     .parent = TYPE_SYS_BUS_DEVICE,
     .instance_size = sizeof(HD155153NPState),
     .instance_init = hd155153np_init,
+    .instance_finalize = hd155153np_finalize,
     .class_init = hd155153np_class_init,
     .interfaces = (const InterfaceInfo[]) {
         { TYPE_THREE_WIRE_SERIAL_TARGET },

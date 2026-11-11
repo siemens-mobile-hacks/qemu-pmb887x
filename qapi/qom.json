@@ -1247,6 +1247,45 @@
             '*close-action': 'MonitorQMPCloseAction' } }
 
 ##
+# @GsmBtsProperties:
+#
+# Properties for gsm-bts objects.
+#
+# @netdev: ID of the network backend that carries the IP traffic of
+#     the GPRS subscribers (default: none, no packet data)
+#
+# @gsmtap: IPv4 address that receives a GSMTAP copy of every decoded
+#     radio block on UDP port 4729 (default: none)
+#
+# Since: 11.1
+##
+{ 'struct': 'GsmBtsProperties',
+  'data': { '*netdev': 'str',
+            '*gsmtap': 'str' } }
+
+##
+# @GsmOsmotrxProperties:
+#
+# Properties for gsm-osmotrx objects.
+#
+# @address: IPv4 address of the transceiver sockets; osmo-bts-trx is
+#     expected on the same address (default: 127.0.0.1)
+#
+# @base-port: first of the CLOCK, TRXC, and TRXD ports; osmo-bts-trx
+#     uses the ports 100 higher (default: 5700)
+#
+# @mux-port: UDP port of a TRX multiplexer on @address; when set, the
+#     object connects to the multiplexer instead of acting as the
+#     transceiver of osmo-bts-trx (default: 0, not set)
+#
+# Since: 11.1
+##
+{ 'struct': 'GsmOsmotrxProperties',
+  'data': { '*address': 'str',
+            '*base-port': 'uint16',
+            '*mux-port': 'uint16' } }
+
+##
 # @ObjectType:
 #
 # Features:
@@ -1280,6 +1319,8 @@
     'filter-redirector',
     'filter-replay',
     'filter-rewriter',
+    'gsm-bts',
+    'gsm-osmotrx',
     { 'name': 'igvm-cfg',
       'if': 'CONFIG_IGVM' },
     'input-barrier',
@@ -1360,6 +1401,8 @@
       'filter-redirector':          'FilterRedirectorProperties',
       'filter-replay':              'NetfilterProperties',
       'filter-rewriter':            'FilterRewriterProperties',
+      'gsm-bts':                    'GsmBtsProperties',
+      'gsm-osmotrx':                'GsmOsmotrxProperties',
       'igvm-cfg':                   { 'type': 'IgvmCfgProperties',
                                       'if': 'CONFIG_IGVM' },
       'input-barrier':              'InputBarrierProperties',

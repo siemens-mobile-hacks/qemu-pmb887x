@@ -88,7 +88,7 @@ struct ISO7816Card {
     bool pps_allowed;
     uint32_t clocks_per_etu;
     uint32_t pps_clocks_per_etu;
-    uint32_t processing_clocks;
+    int64_t processing_ns;
 };
 
 struct ISO7816CardClass {
@@ -99,8 +99,8 @@ struct ISO7816CardClass {
     bool (*command_has_data)(ISO7816Card *card, const uint8_t *header);
     void (*exchange)(ISO7816Card *card, const uint8_t *command, size_t size,
                      uint32_t exchange_id);
-    uint32_t (*processing_clocks)(ISO7816Card *card, const uint8_t *header);
-    uint32_t atr_delay_clocks;
+    int64_t (*processing_ns)(ISO7816Card *card, const uint8_t *header);
+    int64_t atr_delay_ns;
 };
 
 void iso7816_card_complete(ISO7816Card *card, uint32_t exchange_id,
