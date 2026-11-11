@@ -413,6 +413,8 @@ struct w64_landed {
     struct w64_bsrc src;
     uint32_t *tidx;        /* member chain-table indices (eviction) */
     struct w64_landed *next; /* live FIFO */
+    uint32_t thunk;        /* the run thunk, to reach the rebinder */
+    uint32_t rtidx;        /* the rebinder's chain-table index, 0 = none */
 };
 static struct w64_landed **w64_landed_by_id;
 static unsigned w64_landed_cap;
@@ -907,19 +909,58 @@ static void w64_bsrc_of_open(void)
     B_src.id = B.id;
 }
 
+/*
+ * SpiderMonkey binds a table slot to the code a function has when the slot
+ * is written, and never patches it: a member registered by an active
+ * segment is entered through its baseline code for good, which hops to the
+ * optimized code through a jump table once there is some (the comment on
+ * tiering in js/src/wasm/WasmCompile.cpp).  Chained TBs enter each other
+ * through the table and nowhere else, so that is every TB transition.
+ * table.init binds a slot again, to the best tier of that moment
+ * (Instance::initElems), so a batch for Firefox carries its members a
+ * second time in a passive segment, and a function of the TB signature,
+ * (dst, src, n) -> 0, that copies a run of them into the table.  It sits
+ * in the chain table like a member; w64_rebind_live() calls it through
+ * the run thunk.  V8 patches its dispatch tables when a function tiers
+ * up, so nothing of this is emitted for it.
+ */
+EM_JS(int, w64_rebind_wanted, (void), {
+    return navigator.userAgent.indexOf('Firefox') >= 0 ? 1 : 0;
+});
+
+static int w64_rebind = -1;
+
+static void w64_rebind_body(struct w64_mb *b, unsigned segment)
+{
+    static const uint8_t args[] = {
+        0x00,                               /* no locals */
+        0x20, 0x00, 0xa7,                   /* local.get 0, i32.wrap_i64 */
+        0x20, 0x01, 0xa7,
+        0x20, 0x02, 0xa7,
+        0xfc, 0x0c,                         /* table.init */
+    };
+
+    mb_put(b, args, sizeof(args));
+    mb_uleb(b, segment);
+    mb_u8(b, 0x00);                         /* table 0 */
+    mb_u8(b, 0x41); mb_u8(b, 0x00);         /* i32.const 0 */
+    mb_u8(b, 0x0b);
+}
+
 /* Assemble the batch module from @src and instantiate it; returns the
- * run thunk's fidx. */
-static uint32_t w64_assemble_instantiate(const struct w64_bsrc *src)
+ * run thunk's fidx.  A nonzero @rtidx asks for a rebinder there. */
+static uint32_t w64_assemble_instantiate(const struct w64_bsrc *src,
+                                         uint32_t rtidx)
 {
     static const uint8_t magic[8] = { 0, 'a', 's', 'm', 1, 0, 0, 0 };
-    struct w64_mb mod = { 0 }, sec = { 0 }, probe = { 0 };
+    struct w64_mb mod = { 0 }, sec = { 0 }, probe = { 0 }, rebind = { 0 };
     struct w64_hint ph[W64_PB_HINTS];
     uint8_t name[8];
     uint32_t maxtidx = 0;
     uint32_t *ip;
     uint32_t thunk;
     unsigned m, i, nph = 0;
-    unsigned nfn = src->n_member;       /* members, the probe */
+    unsigned nfn = src->n_member;       /* members, the probe, the rebinder */
     int miss = -1;
 
     /* the pc-cache probe, when a member calls it: the last function */
@@ -956,6 +997,10 @@ static uint32_t w64_assemble_instantiate(const struct w64_bsrc *src)
                 p[4] = v & 0x7f;
             }
         }
+    }
+    if (rtidx) {
+        /* segments: one per member, the rebinder's, the passive one */
+        w64_rebind_body(&rebind, src->n_member + 1);
     }
     mb_put(&mod, magic, sizeof(magic));
 
@@ -1004,18 +1049,22 @@ static uint32_t w64_assemble_instantiate(const struct w64_bsrc *src)
 
     /* function section: every member has type 0, the TB signature */
     sec.n = 0;
-    mb_uleb(&sec, nfn);
+    mb_uleb(&sec, nfn + (rtidx != 0));
     for (i = 0; i < src->n_member; i++) {
         mb_uleb(&sec, 0);
     }
     if (miss >= 0) {
         mb_uleb(&sec, src->uimp[miss].type); /* the probe: the helper's */
     }
+    if (rtidx) {
+        mb_uleb(&sec, 0);
+        nfn++;
+    }
     mb_sec(&mod, 3, &sec);
 
     /* element section: one active segment per member, TAB[tidx] = m */
     sec.n = 0;
-    mb_uleb(&sec, src->n_member);
+    mb_uleb(&sec, src->n_member + (rtidx ? 2 : 0));
     for (m = 0; m < src->n_member; m++) {
         uint32_t tidx = ((const uint32_t *)(uintptr_t)src->member[m].tcptr)
                         [W64_DESC_TIDX / 4];
@@ -1026,6 +1075,21 @@ static uint32_t w64_assemble_instantiate(const struct w64_bsrc *src)
         mb_u8(&sec, 0x0b);                /* end */
         mb_uleb(&sec, 1);
         mb_uleb(&sec, src->n_uimp + m);
+    }
+    if (rtidx) {
+        maxtidx = MAX(maxtidx, rtidx);
+        mb_u8(&sec, 0x00);                /* active: TAB[rtidx] = rebinder */
+        mb_u8(&sec, 0x41);
+        mb_sleb32(&sec, (int32_t)rtidx);
+        mb_u8(&sec, 0x0b);
+        mb_uleb(&sec, 1);
+        mb_uleb(&sec, src->n_uimp + nfn - 1);
+        mb_u8(&sec, 0x01);                /* passive, function indices */
+        mb_u8(&sec, 0x00);
+        mb_uleb(&sec, src->n_member);
+        for (m = 0; m < src->n_member; m++) {
+            mb_uleb(&sec, src->n_uimp + m);
+        }
     }
     mb_sec(&mod, 9, &sec);
 
@@ -1087,9 +1151,9 @@ static uint32_t w64_assemble_instantiate(const struct w64_bsrc *src)
         }
     }
 
-    /* code section: the staged bodies and the probe; the total size is a
-     * padded 5-byte LEB so it never shifts when the body sum crosses a LEB
-     * width boundary */
+    /* code section: the staged bodies, the probe and the rebinder; the
+     * total size is a padded 5-byte LEB so it never shifts when the body
+     * sum crosses a LEB width boundary */
     {
         uint64_t total = nfn < 128 ? 1 : 2;
 
@@ -1098,6 +1162,9 @@ static uint32_t w64_assemble_instantiate(const struct w64_bsrc *src)
         }
         if (miss >= 0) {
             total += 5 + probe.n;
+        }
+        if (rtidx) {
+            total += 1 + rebind.n;
         }
         mb_u8(&mod, 10);
         mb_uleb_p5(&mod, (uint32_t)total);
@@ -1108,6 +1175,11 @@ static uint32_t w64_assemble_instantiate(const struct w64_bsrc *src)
         if (miss >= 0) {
             mb_uleb_p5(&mod, probe.n);
             mb_put(&mod, probe.b, probe.n);
+        }
+        if (rtidx) {
+            tcg_debug_assert(rebind.n < 128);
+            mb_u8(&mod, rebind.n);
+            mb_put(&mod, rebind.b, rebind.n);
         }
     }
 
@@ -1153,6 +1225,7 @@ static uint32_t w64_assemble_instantiate(const struct w64_bsrc *src)
     g_free(mod.b);
     g_free(sec.b);
     g_free(probe.b);
+    g_free(rebind.b);
     g_free(ip);
     return thunk;
 }
@@ -1210,6 +1283,9 @@ static void w64_batch_evict_oldest(void)
         }
     }
     w64_tab_unset((uintptr_t)l->tidx, l->src.n_member);
+    if (l->rtidx) {
+        w64_tab_unset((uintptr_t)&l->rtidx, 1);
+    }
 
     /*
      * A goto_ptr inline-cache slot holds a table index too, and has no
@@ -1287,14 +1363,55 @@ static void w64_landed_register(struct w64_landed *l)
     w64_landed_by_id[l->src.id] = l;
 }
 
+/*
+ * Bind the chain-table slots of every live batch again.  A member that has
+ * been optimized since the last pass is entered directly from here on.
+ * Indices are handed out in translation order, so a batch is a few runs.
+ */
+static void w64_rebind_live(void)
+{
+    struct w64_landed *l;
+
+    for (l = w64_live_head; l; l = l->next) {
+        w64_run_fn *run = (w64_run_fn *)(uintptr_t)l->thunk;
+        unsigned m, n;
+
+        for (m = 0; l->rtidx && m < l->src.n_member; m += n) {
+            for (n = 1; m + n < l->src.n_member &&
+                        l->tidx[m + n] == l->tidx[m] + n; n++) {
+            }
+            run(l->tidx[m], m, n, l->rtidx);
+        }
+    }
+}
+
+#define W64_REBIND_MS   1000.0
+
+static void w64_rebind_poll(void)
+{
+    static double next;
+    double now = emscripten_get_now();
+
+    if (now >= next) {
+        w64_rebind_live();
+        next = now + W64_REBIND_MS;
+    }
+}
+
 static void w64_batch_close(void)
 {
     struct w64_landed *l;
-    uint32_t thunk;
+    uint32_t thunk, rtidx = 0;
     unsigned m;
 
+    if (w64_rebind < 0) {
+        w64_rebind = w64_rebind_wanted();
+    }
+    if (w64_rebind && w64_tidx_left()) {
+        rtidx = w64_alloc_tidx();
+    }
     w64_bsrc_of_open();
-    thunk = w64_assemble_instantiate(&B_src);
+    thunk = w64_assemble_instantiate(&B_src, rtidx);
 
     /* the module holds the code now */
     for (m = 0; m < B.n_member; m++) {
@@ -1308,6 +1425,8 @@ static void w64_batch_close(void)
     l->src.n_member = B.n_member;
     l->src.id = B.id;
     l->tidx = g_new(uint32_t, B.n_member);
+    l->thunk = thunk;
+    l->rtidx = rtidx;
 
     /* land: point every member at the run thunk */
     for (m = 0; m < B.n_member; m++) {
@@ -1423,6 +1542,11 @@ uint32_t w64_chain_stop;
 static uintptr_t QEMU_DISABLE_CFI w64_exec(CPUArchState *env, uintptr_t tb,
                                             uint8_t *frame)
 {
+    static uint32_t entries;
+
+    if (w64_rebind > 0 && (++entries & 0x3ff) == 0) {
+        w64_rebind_poll();
+    }
     for (;;) {
         uint32_t *desc = (uint32_t *)tb;
         uint32_t fidx, res;
