@@ -80,6 +80,11 @@ static __thread struct {
     /* fast_ofs whose mask and table $tmask/$ttab hold at this point of
      * the emission, -1: none (see w64_tlb_probe) */
     int tlbc;
+
+    /* registers whose local holds the constant a movi put there (bit r)
+     * and the constants (see w64_const_base) */
+    uint32_t kreg;
+    uint64_t kval[TCG_TARGET_NB_REGS];
 } W;
 
 enum {
@@ -341,12 +346,14 @@ static void w64_set_i32(TCGContext *s, TCGReg r)
 {
     w64_local_set(s, w64_local32(r));
     W.rep &= ~(1u << r);
+    W.kreg &= ~(1u << r);
 }
 
 static void w64_set_i64(TCGContext *s, TCGReg r)
 {
     w64_local_set(s, w64_local64(r));
     W.rep |= 1u << r;
+    W.kreg &= ~(1u << r);
 }
 
 static void w64_const_i32(TCGContext *s, int32_t v)
@@ -770,6 +777,7 @@ static void tcg_out_set_label(TCGContext *s, TCGLabel *l)
     int i;
 
     w64_ir_set_label(l);
+    W.kreg = 0;                             /* a merge point */
 
     if (W.nested) {
         uint16_t idx = l->id < W64_MAX_LABELS ? W.label_idx[l->id] : 0;
@@ -916,11 +924,28 @@ static void w64_const_addr(TCGContext *s, uint64_t v)
     w64_const_i32(s, (int32_t)v);
 }
 
+/*
+ * A register a movi loaded is a known address (the DSP's chain links, a
+ * C variable).  Read through the local, V8 bounds-checks the access: it
+ * drops the check only for an index that is a constant when it builds
+ * its graph, and wrap(local) becomes one later.  The sum is the 32-bit
+ * one the emitters below would compute.
+ */
+static bool w64_const_base(TCGReg base, intptr_t ofs)
+{
+    return ((W.kreg >> base) & 1) && W.kval[base] <= UINT32_MAX &&
+           W.kval[base] + (uint64_t)ofs <= UINT32_MAX;
+}
+
 /* push register base as an address */
 static void w64_get_addr(TCGContext *s, TCGReg base)
 {
     if (base == TCG_AREG0 && w64_tb_env) {
         w64_const_addr(s, w64_tb_env);      /* no bounds check (see w64_tb_env) */
+        return;
+    }
+    if (w64_const_base(base, 0)) {
+        w64_const_addr(s, W.kval[base]);
         return;
     }
     w64_get_i64(s, base);
@@ -936,6 +961,10 @@ static void w64_addr(TCGContext *s, TCGReg base, intptr_t ofs)
     }
     if (base == TCG_AREG0 && w64_tb_env) {
         w64_const_addr(s, w64_tb_env + ofs);
+        return;
+    }
+    if (w64_const_base(base, ofs)) {
+        w64_const_addr(s, W.kval[base] + ofs);
         return;
     }
     /* narrow first: one wrap of the base serves every access, and the
@@ -1032,7 +1061,7 @@ static void w64_frame_truncate(TCGContext *s, unsigned align)
  */
 static bool w64_memarg_ofs(TCGReg base, intptr_t ofs)
 {
-    if (base == TCG_AREG0 && w64_tb_env) {
+    if ((base == TCG_AREG0 && w64_tb_env) || w64_const_base(base, ofs)) {
         return false;
     }
     return ofs >= 0 && ofs <= 0xffffffffu;
@@ -1231,6 +1260,8 @@ static void tcg_out_movi(TCGContext *s, TCGType type,
     case TCG_TYPE_I64:
         w64_const_i64(s, arg);
         w64_set_i64(s, ret);
+        W.kreg |= 1u << ret;
+        W.kval[ret] = arg;
         break;
     default:
         g_assert_not_reached();
@@ -1712,11 +1743,9 @@ static void tcg_out_call(TCGContext *s, const tcg_insn_unit *target,
 
     /* result -> oarg register (ret: 0 = i32, 1 = i64, 0xff = void) */
     if (ret == 1) {
-        w64_local_set(s, W64_L64(TCG_REG_R0));
-        W.rep |= 1u << TCG_REG_R0;
+        w64_set_i64(s, TCG_REG_R0);
     } else if (ret == 0) {
-        w64_local_set(s, W64_L32(TCG_REG_R0));
-        W.rep &= ~(1u << TCG_REG_R0);
+        w64_set_i32(s, TCG_REG_R0);
     }
 }
 
@@ -2941,6 +2970,7 @@ static void tcg_out_tb_start(TCGContext *s)
     W.selfloop = false;
     W.rep = 0;
     W.tlbc = -1;
+    W.kreg = 0;
     for (unsigned k = 0; k < W.n_frame; k++) {
         W.frame_local[W.frame_ofs[k]] = 0;
     }
