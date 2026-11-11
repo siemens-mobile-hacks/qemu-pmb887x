@@ -2,7 +2,6 @@
 #include "qemu/osdep.h"
 #include <math.h>
 
-#include "qemu/atomic.h"
 #include "qemu/bitops.h"
 #include "qemu/module.h"
 
@@ -60,6 +59,16 @@ struct HD155153NPState {
     bool transmitting;
 };
 
+static void hd155153np_update_air(HD155153NPState *p) {
+    if (p->frequency == 0) {
+        gsm_air_tune(&p->air, GSM_AIR_PATH_OFF, 0, 0);
+    } else if (p->transmitting) {
+        gsm_air_tune(&p->air, GSM_AIR_PATH_TRANSMIT, p->frequency - HD155153NP_TRANSMIT_OFFSET_HZ, 0);
+    } else {
+        gsm_air_tune(&p->air, GSM_AIR_PATH_RECEIVE, p->frequency, p->amplitude);
+    }
+}
+
 static void hd155153np_set_gain(HD155153NPState *p, uint32_t value) {
     uint32_t step = (value & HD155153NP_GAIN_CONTROL_PGA_GAIN) >> HD155153NP_GAIN_CONTROL_PGA_GAIN_SHIFT;
     int32_t gain_db = HD155153NP_RECEIVER_BASE_GAIN_DB + (int32_t) step * HD155153NP_PGA_STEP_DB;
@@ -73,7 +82,8 @@ static void hd155153np_set_gain(HD155153NPState *p, uint32_t value) {
     int32_t adc_level_db = HD155153NP_FAKE_SIGNAL_LEVEL_DBM + HD155153NP_ADC_AMPLITUDE_OFFSET_DB + gain_db;
     int32_t amplitude = (int32_t) lround(pow(10.0, adc_level_db / 20.0));
 
-    qatomic_set(&p->amplitude, MIN(amplitude, HD155153NP_ADC_MAX_AMPLITUDE));
+    p->amplitude = MIN(amplitude, HD155153NP_ADC_MAX_AMPLITUDE);
+    hd155153np_update_air(p);
 }
 
 static void hd155153np_set_channel(HD155153NPState *p, uint32_t value) {
@@ -105,15 +115,17 @@ static void hd155153np_set_channel(HD155153NPState *p, uint32_t value) {
     uint32_t divider = (synthesizer & HD155153NP_PLL_DIVIDER_MASK) >> divider_shift;
 
     if (divider == 0) {
-        qatomic_set(&p->frequency, 0);
+        p->frequency = 0;
+        hd155153np_update_air(p);
         return;
     }
 
     uint32_t channel_raster = HD155153NP_REFERENCE_FREQUENCY / HD155153NP_CHANNEL_RASTER_DIVIDER;
     uint32_t frequency = divider * channel_raster;
 
-    qatomic_set(&p->transmitting, (synthesizer & HD155153NP_PLL_RECEIVE) == 0);
-    qatomic_set(&p->frequency, frequency);
+    p->transmitting = (synthesizer & HD155153NP_PLL_RECEIVE) == 0;
+    p->frequency = frequency;
+    hd155153np_update_air(p);
     DEBUG_LOG(&p->dbg, "tuned: frequency=%u Hz band=%s mode=%u\n", frequency, band, mode);
 }
 
@@ -171,23 +183,11 @@ static void hd155153np_write(ThreeWireSerialTarget *target, uint32_t value, unsi
 }
 
 static IQSample hd155153np_read_iq(IQSource *source, int64_t timestamp, uint64_t _sample_index) {
-    HD155153NPState *p = HD155153NP(source);
-    uint32_t frequency = qatomic_read(&p->frequency);
-    int32_t amplitude = qatomic_read(&p->amplitude);
-
-    return gsm_air_read_iq(&p->air, frequency, timestamp, amplitude);
+    return gsm_air_read_iq(&HD155153NP(source)->air, timestamp);
 }
 
 static void hd155153np_transmit(IQSource *source, int64_t timestamp, bool symbol) {
-    HD155153NPState *p = HD155153NP(source);
-    uint16_t arfcn;
-
-    if (!qatomic_read(&p->transmitting))
-        return;
-    if (!gsm_uplink_frequency_to_arfcn(qatomic_read(&p->frequency) - HD155153NP_TRANSMIT_OFFSET_HZ, &arfcn))
-        return;
-
-    gsm_air_transmit(&p->air, arfcn, timestamp, symbol);
+    gsm_air_transmit(&HD155153NP(source)->air, timestamp, symbol);
 }
 
 static void hd155153np_transmit_until(IQSource *source, int64_t timestamp) {
@@ -198,15 +198,15 @@ static void hd155153np_reset(DeviceState *device) {
     HD155153NPState *p = HD155153NP(device);
 
     p->telegram = 0;
-    qatomic_set(&p->frequency, 0);
-    qatomic_set(&p->amplitude, 0);
+    p->frequency = 0;
+    p->amplitude = 0;
     p->shift_register = 0;
     p->telegram_bits = 0;
     p->shift_bits = 0;
     p->strobe_asserted = false;
     p->shift_overflow = false;
-    qatomic_set(&p->transmitting, false);
-    gsm_air_reset_uplink(&p->air);
+    p->transmitting = false;
+    gsm_air_reset(&p->air);
 }
 
 static void hd155153np_init(Object *obj) {

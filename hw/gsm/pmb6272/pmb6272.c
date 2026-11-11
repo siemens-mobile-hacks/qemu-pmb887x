@@ -1,6 +1,5 @@
 /* SPDX-License-Identifier: GPL-2.0-or-later */
 #include "qemu/osdep.h"
-#include "qemu/atomic.h"
 #include "qemu/bitops.h"
 #include "qemu/module.h"
 
@@ -40,10 +39,21 @@ struct PMB6272State {
     uint8_t shift_bits;
     uint8_t channel_integer;
     uint8_t band;
+    uint32_t power_mode;
     bool transmit;
     bool strobe_asserted;
     bool shift_overflow;
 };
+
+static void pmb6272_update_air(PMB6272State *p) {
+    if (p->power_mode != PMB6272_CHANNEL2_POWER_MODE_ALL_ON) {
+        gsm_air_tune(&p->air, GSM_AIR_PATH_OFF, 0, 0);
+    } else if (p->transmit) {
+        gsm_air_tune(&p->air, GSM_AIR_PATH_TRANSMIT, p->frequency, 0);
+    } else {
+        gsm_air_tune(&p->air, GSM_AIR_PATH_RECEIVE, p->frequency, PMB6272_SIGNAL_AMPLITUDE);
+    }
+}
 
 static void pmb6272_write_telegram(PMB6272State *p, uint32_t telegram, uint8_t bits) {
     static const char *band_names[] = { "GSM850", "GSM900", "DCS1800", "PCS1900" };
@@ -63,7 +73,8 @@ static void pmb6272_write_telegram(PMB6272State *p, uint32_t telegram, uint8_t b
             p->channel_fraction = deposit32(p->channel_fraction, 20, 3,
                 (telegram & PMB6272_CHANNEL2_FRACTION) >> PMB6272_CHANNEL2_FRACTION_SHIFT);
             p->channel_integer = (telegram & PMB6272_CHANNEL2_INTEGER) >> PMB6272_CHANNEL2_INTEGER_SHIFT;
-            qatomic_set(&p->transmit, (telegram & PMB6272_CHANNEL2_TRX) != 0);
+            p->power_mode = telegram & PMB6272_CHANNEL2_POWER_MODE;
+            p->transmit = (telegram & PMB6272_CHANNEL2_TRX) != 0;
             p->band = (telegram & PMB6272_CHANNEL2_BAND) >> PMB6272_CHANNEL2_BAND_SHIFT;
 
             uint64_t synthesizer = ((uint64_t) p->channel_integer << PMB6272_CHANNEL_FRACTION_BITS) |
@@ -72,7 +83,8 @@ static void pmb6272_write_telegram(PMB6272State *p, uint32_t telegram, uint8_t b
             uint32_t frequency = muldiv64(synthesizer, PMB6272_REFERENCE_FREQUENCY,
                 (uint64_t) 1 << PMB6272_CHANNEL_FRACTION_BITS) / divisor;
 
-            qatomic_set(&p->frequency, frequency);
+            p->frequency = frequency;
+            pmb6272_update_air(p);
             DEBUG_LOG(&p->dbg, "tuned to %u Hz: band=%s path=%s\n", frequency, band_names[p->band],
                 p->transmit ? "TX" : "RX");
             break;
@@ -116,10 +128,19 @@ static void pmb6272_write(ThreeWireSerialTarget *target, uint32_t value, unsigne
 }
 
 static IQSample pmb6272_read_iq(IQSource *source, int64_t timestamp, uint64_t _sample_index) {
-    PMB6272State *p = PMB6272(source);
-    uint32_t frequency = qatomic_read(&p->transmit) ? 0 : qatomic_read(&p->frequency);
+    IQSample sample = gsm_air_read_iq(&PMB6272(source)->air, timestamp);
 
-    return gsm_air_read_iq(&p->air, frequency, timestamp, PMB6272_SIGNAL_AMPLITUDE);
+    /* Firmware for this transceiver finds FCCH but decodes SCH only from the mirrored spectrum. */
+    sample.q = -sample.q;
+    return sample;
+}
+
+static void pmb6272_transmit(IQSource *source, int64_t timestamp, bool symbol) {
+    gsm_air_transmit(&PMB6272(source)->air, timestamp, symbol);
+}
+
+static void pmb6272_transmit_until(IQSource *source, int64_t timestamp) {
+    gsm_air_transmit_until(&PMB6272(source)->air, timestamp);
 }
 
 static void pmb6272_reset(DeviceState *device) {
@@ -128,15 +149,17 @@ static void pmb6272_reset(DeviceState *device) {
     memset(p->registers, 0, sizeof(p->registers));
     p->telegram = 0;
     p->channel_fraction = 0;
-    qatomic_set(&p->frequency, 0);
+    p->frequency = 0;
     p->shift_register = 0;
     p->telegram_bits = 0;
     p->shift_bits = 0;
     p->channel_integer = 0;
     p->band = 0;
-    qatomic_set(&p->transmit, false);
+    p->power_mode = PMB6272_CHANNEL2_POWER_MODE_ALL_OFF;
+    p->transmit = false;
     p->strobe_asserted = false;
     p->shift_overflow = false;
+    gsm_air_reset(&p->air);
 }
 
 static void pmb6272_init(Object *obj) {
@@ -144,6 +167,12 @@ static void pmb6272_init(Object *obj) {
 
     three_wire_serial_target_port_init(&p->serial_port, DEVICE(obj), "RFSSC", THREE_WIRE_SERIAL_TARGET(obj));
     iq_source_port_init(&p->iq_port, DEVICE(obj), "IQ_TX", IQ_SOURCE(obj));
+    gsm_air_init_uplink(&p->air);
+}
+
+static void pmb6272_finalize(Object *obj) {
+    PMB6272State *p = PMB6272(obj);
+    gsm_air_cleanup_uplink(&p->air);
 }
 
 static void pmb6272_realize(DeviceState *dev, Error **_errp) {
@@ -163,6 +192,8 @@ static void pmb6272_class_init(ObjectClass *klass, const void *_data) {
     serial_class->set_strobe = pmb6272_set_strobe;
     serial_class->write = pmb6272_write;
     iq_class->read = pmb6272_read_iq;
+    iq_class->transmit = pmb6272_transmit;
+    iq_class->transmit_until = pmb6272_transmit_until;
     device_class_set_legacy_reset(device_class, pmb6272_reset);
     device_class->realize = pmb6272_realize;
     device_class_set_props(device_class, pmb6272_properties);
@@ -173,6 +204,7 @@ static const TypeInfo pmb6272_info = {
     .parent = TYPE_SYS_BUS_DEVICE,
     .instance_size = sizeof(PMB6272State),
     .instance_init = pmb6272_init,
+    .instance_finalize = pmb6272_finalize,
     .class_init = pmb6272_class_init,
     .interfaces = (const InterfaceInfo[]) {
         { TYPE_THREE_WIRE_SERIAL_TARGET },

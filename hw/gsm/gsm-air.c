@@ -13,6 +13,14 @@
 #define GSM_UPLINK_DELAY_QUARTER_SYMBOLS (3U * GSM_TIMESLOT_QUARTER_SYMBOLS)
 #define GSM_UPLINK_DELIVERY_QUARTER_SYMBOLS GSM_FRAME_QUARTER_SYMBOLS
 #define GSM_PHASE_UNITS_PER_QUARTER_SYMBOL 64
+/*
+ * The received carrier is at -60 dBm and the receiver noise floor near -110 dBm.
+ * A real ADC never outputs a run of exact zeros: firmware converts the logarithm
+ * of an all-zero measurement window into the strongest possible level.
+ */
+#define GSM_AIR_SIGNAL_TO_NOISE_RATIO 316
+#define GSM_AIR_MIN_NOISE_AMPLITUDE 1
+#define GSM_AIR_NOISE_SEED 0x2545F491U
 
 typedef struct GSMComplex GSMComplex;
 
@@ -153,15 +161,61 @@ int64_t gsm_air_frames_to_ns(uint32_t frames) {
         GSM_QUARTER_SYMBOLS_PER_NS_NUMERATOR);
 }
 
-IQSample gsm_air_read_iq(GSMAir *air, uint32_t frequency_hz, int64_t timestamp, int32_t amplitude) {
+void gsm_air_tune(GSMAir *air, GSMAirPath path, uint32_t frequency_hz, int32_t amplitude) {
+    uint16_t arfcn = 0;
+    bool on_raster = false;
+
+    switch (path) {
+        case GSM_AIR_PATH_OFF:
+            break;
+
+        case GSM_AIR_PATH_RECEIVE:
+            on_raster = gsm_downlink_frequency_to_arfcn(frequency_hz, &arfcn);
+            break;
+
+        case GSM_AIR_PATH_TRANSMIT:
+            on_raster = gsm_uplink_frequency_to_arfcn(frequency_hz, &arfcn);
+            break;
+    }
+
+    air->tuning_last = (air->tuning_last + 1) % GSM_AIR_TUNING_HISTORY;
+    air->tunings[air->tuning_last] = (GSMAirTuning) {
+        .timestamp = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL),
+        .path = on_raster ? path : GSM_AIR_PATH_OFF,
+        .arfcn = arfcn,
+        .amplitude = amplitude,
+    };
+    air->tuning_count = MIN(air->tuning_count + 1, GSM_AIR_TUNING_HISTORY);
+}
+
+static const GSMAirTuning *gsm_air_find_tuning(const GSMAir *air, GSMAirPath path, int64_t timestamp) {
+    for (uint8_t age = 0; age < air->tuning_count; age++) {
+        const GSMAirTuning *tuning =
+            &air->tunings[(air->tuning_last + GSM_AIR_TUNING_HISTORY - age) % GSM_AIR_TUNING_HISTORY];
+
+        if (tuning->timestamp <= timestamp)
+            return tuning->path == path ? tuning : NULL;
+    }
+    return NULL;
+}
+
+static int16_t gsm_air_noise(GSMAir *air, int32_t noise_amplitude) {
+    air->noise_state ^= air->noise_state << 13;
+    air->noise_state ^= air->noise_state >> 17;
+    air->noise_state ^= air->noise_state << 5;
+    return (int32_t) (air->noise_state % (2 * noise_amplitude + 1)) - noise_amplitude;
+}
+
+IQSample gsm_air_read_iq(GSMAir *air, int64_t timestamp) {
     IQSample sample = { 0, 0 };
-    uint16_t arfcn;
 
     if (air->network == NULL)
         return sample;
     if (timestamp < 0)
         return sample;
-    if (!gsm_downlink_frequency_to_arfcn(frequency_hz, &arfcn))
+
+    const GSMAirTuning *tuning = gsm_air_find_tuning(air, GSM_AIR_PATH_RECEIVE, timestamp);
+    if (tuning == NULL)
         return sample;
 
     uint64_t quarter_symbols = gsm_air_quarter_symbols(timestamp);
@@ -170,14 +224,17 @@ IQSample gsm_air_read_iq(GSMAir *air, uint32_t frequency_hz, int64_t timestamp, 
     uint8_t timeslot = frame_quarter_symbol / GSM_TIMESLOT_QUARTER_SYMBOLS;
     uint32_t timeslot_quarter_symbol = frame_quarter_symbol % GSM_TIMESLOT_QUARTER_SYMBOLS;
 
-    if (!gsm_air_load_burst(air, arfcn, frame_number, timeslot))
+    int32_t noise_amplitude = MAX(tuning->amplitude / GSM_AIR_SIGNAL_TO_NOISE_RATIO, GSM_AIR_MIN_NOISE_AMPLITUDE);
+    sample.i = gsm_air_noise(air, noise_amplitude);
+    sample.q = gsm_air_noise(air, noise_amplitude);
+    if (!gsm_air_load_burst(air, tuning->arfcn, frame_number, timeslot))
         return sample;
 
     GSMComplex reference = gsm_gmsk_laurent_sample(&air->burst, timeslot_quarter_symbol);
 
     /* Preserve the baseband model's existing complex orientation and initial phase. */
-    sample.i = (int16_t) lround(-(double) amplitude * reference.real);
-    sample.q = (int16_t) lround((double) amplitude * reference.imaginary);
+    sample.i += (int16_t) lround(-(double) tuning->amplitude * reference.real);
+    sample.q += (int16_t) lround((double) tuning->amplitude * reference.imaginary);
     return sample;
 }
 
@@ -213,13 +270,19 @@ void gsm_air_cleanup_uplink(GSMAir *air) {
     timer_free(air->uplink_timer);
 }
 
-void gsm_air_reset_uplink(GSMAir *air) {
+void gsm_air_reset(GSMAir *air) {
+    air->tuning_count = 0;
+    air->noise_state = GSM_AIR_NOISE_SEED;
     timer_del(air->uplink_timer);
     air->uplink_active = false;
 }
 
-void gsm_air_transmit(GSMAir *air, uint16_t arfcn, int64_t timestamp, bool symbol) {
+void gsm_air_transmit(GSMAir *air, int64_t timestamp, bool symbol) {
     if (air->network == NULL || timestamp < 0)
+        return;
+
+    const GSMAirTuning *tuning = gsm_air_find_tuning(air, GSM_AIR_PATH_TRANSMIT, timestamp);
+    if (tuning == NULL)
         return;
 
     uint64_t quarter_symbols = gsm_air_quarter_symbols(timestamp);
@@ -232,7 +295,7 @@ void gsm_air_transmit(GSMAir *air, uint16_t arfcn, int64_t timestamp, bool symbo
     uint8_t timeslot = frame_quarter_symbol / GSM_TIMESLOT_QUARTER_SYMBOLS;
     uint32_t window_quarter_symbol = frame_quarter_symbol % GSM_TIMESLOT_QUARTER_SYMBOLS;
     uint32_t index = (window_quarter_symbol + GSM_GMSK_SAMPLES_PER_SYMBOL / 2) / GSM_GMSK_SAMPLES_PER_SYMBOL;
-    bool same_burst = air->uplink_active && air->uplink_arfcn == arfcn &&
+    bool same_burst = air->uplink_active && air->uplink_arfcn == tuning->arfcn &&
         air->uplink_frame_number == frame_number && air->uplink_timeslot == timeslot;
 
     if (!same_burst) {
@@ -244,7 +307,7 @@ void gsm_air_transmit(GSMAir *air, uint16_t arfcn, int64_t timestamp, bool symbo
 
         memset(air->uplink.soft_bits, GSM_SOFT_BIT_UNKNOWN, sizeof(air->uplink.soft_bits));
         air->uplink.phase_256 = phase * GSM_PHASE_UNITS_PER_QUARTER_SYMBOL;
-        air->uplink_arfcn = arfcn;
+        air->uplink_arfcn = tuning->arfcn;
         air->uplink_frame_number = frame_number;
         air->uplink_timeslot = timeslot;
         air->uplink_symbols = 0;
