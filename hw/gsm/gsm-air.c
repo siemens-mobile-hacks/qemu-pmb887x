@@ -181,6 +181,10 @@ IQSample gsm_air_read_iq(GSMAir *air, uint32_t frequency_hz, int64_t timestamp, 
     return sample;
 }
 
+static uint64_t gsm_air_uplink_window(uint64_t quarter_symbols) {
+    return quarter_symbols - GSM_UPLINK_DELAY_QUARTER_SYMBOLS + GSM_UPLINK_LEAD_SYMBOLS * GSM_GMSK_SAMPLES_PER_SYMBOL;
+}
+
 static void gsm_air_deliver_uplink(GSMAir *air) {
     if (!air->uplink_active)
         return;
@@ -222,8 +226,7 @@ void gsm_air_transmit(GSMAir *air, uint16_t arfcn, int64_t timestamp, bool symbo
     if (quarter_symbols < GSM_UPLINK_DELAY_QUARTER_SYMBOLS)
         return;
 
-    uint64_t window_quarter_symbols = quarter_symbols - GSM_UPLINK_DELAY_QUARTER_SYMBOLS +
-        GSM_UPLINK_LEAD_SYMBOLS * GSM_GMSK_SAMPLES_PER_SYMBOL;
+    uint64_t window_quarter_symbols = gsm_air_uplink_window(quarter_symbols);
     uint32_t frame_number = window_quarter_symbols / GSM_FRAME_QUARTER_SYMBOLS % GSM_HYPERFRAME_FRAMES;
     uint32_t frame_quarter_symbol = window_quarter_symbols % GSM_FRAME_QUARTER_SYMBOLS;
     uint8_t timeslot = frame_quarter_symbol / GSM_TIMESLOT_QUARTER_SYMBOLS;
@@ -255,4 +258,28 @@ void gsm_air_transmit(GSMAir *air, uint16_t arfcn, int64_t timestamp, bool symbo
 
     air->uplink.soft_bits[index] = symbol ? GSM_SOFT_BIT_ONE : GSM_SOFT_BIT_ZERO;
     air->uplink_symbols++;
+}
+
+void gsm_air_transmit_until(GSMAir *air, int64_t timestamp) {
+    if (air->network == NULL || timestamp < 0)
+        return;
+
+    uint64_t quarter_symbols = gsm_air_quarter_symbols(timestamp);
+    if (quarter_symbols < GSM_UPLINK_DELAY_QUARTER_SYMBOLS + GSM_FRAME_QUARTER_SYMBOLS)
+        return;
+
+    uint64_t window_frame = gsm_air_uplink_window(quarter_symbols) / GSM_FRAME_QUARTER_SYMBOLS;
+    if (air->uplink_active && air->uplink_frame_number != window_frame % GSM_HYPERFRAME_FRAMES)
+        gsm_air_deliver_uplink(air);
+
+    uint32_t complete_frame = (window_frame - 1) % GSM_HYPERFRAME_FRAMES;
+    uint32_t advance = (complete_frame + GSM_HYPERFRAME_FRAMES - air->uplink_complete_frame) % GSM_HYPERFRAME_FRAMES;
+    if (air->uplink_complete_valid && (advance == 0 || advance > GSM_HYPERFRAME_FRAMES / 2))
+        return;
+
+    air->uplink_complete_frame = complete_frame;
+    air->uplink_complete_valid = true;
+    GSMNetworkClass *network_class = GSM_NETWORK_GET_CLASS(air->network);
+    if (network_class->uplink_complete != NULL)
+        network_class->uplink_complete(air->network, complete_frame);
 }

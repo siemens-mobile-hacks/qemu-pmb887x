@@ -57,6 +57,15 @@ void iq_bus_transmit(IQBus *bus, int64_t timestamp, bool symbol) {
         endpoint->source_class->transmit(endpoint->source, timestamp, symbol);
 }
 
+void iq_bus_transmit_until(IQBus *bus, int64_t timestamp) {
+    if (!iq_bus_has_source(bus))
+        return;
+
+    IQSourceEndpoint *endpoint = iq_bus_get_endpoint(bus);
+    if (endpoint->source_class->transmit_until != NULL)
+        endpoint->source_class->transmit_until(endpoint->source, timestamp);
+}
+
 static bool iq_bus_check_address(BusState *bus, DeviceState *_dev, Error **errp) {
     if (!QTAILQ_EMPTY(&bus->children)) {
         error_setg(errp, "I/Q bus already has a source");

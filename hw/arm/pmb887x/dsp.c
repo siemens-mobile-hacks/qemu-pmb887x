@@ -72,6 +72,8 @@ struct dsp_state_t {
 	uint64_t cycle_debt;
 	uint64_t cycle_remainder;
 	int64_t sync_time_ns;
+	int64_t sync_deadline_ns;
+	int64_t transmit_until_ns;
 	uint32_t clock_hz;
 	uint16_t comm_status;
 	uint16_t comm_pending;
@@ -207,6 +209,7 @@ static void dsp_sync(dsp_state_t *p) {
 	}
 	dsp_runtime_advance_idle(p->runtime, remaining_cycles);
 	p->syncing = false;
+	dsp_runtime_commit_transmit(p->runtime, p->transmit_until_ns);
 
 	p->comm_status = dsp_runtime_get_comm(p->runtime);
 	dsp_update_active_output(p);
@@ -249,18 +252,28 @@ static void dsp_sync_access(dsp_state_t *p) {
 	}
 }
 
+static void dsp_arm_sync_timer(dsp_state_t *p) {
+	p->sync_deadline_ns = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + DSP_SYNC_PERIOD_NS;
+	timer_mod(p->sync_timer, p->sync_deadline_ns);
+}
+
 static void dsp_sync_timer(void *opaque) {
 	dsp_state_t *p = opaque;
 
+	/*
+	 * Timers run in deadline order, so every TPU event before this deadline,
+	 * including a CODON edge that starts the modulator, has been applied.
+	 */
+	p->transmit_until_ns = p->sync_deadline_ns;
 	p->comm_transition_pending = false;
 	dsp_sync_access(p);
 	if (p->vm_running && p->clock_hz != 0)
-		timer_mod(p->sync_timer, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + DSP_SYNC_PERIOD_NS);
+		dsp_arm_sync_timer(p);
 }
 
 static void dsp_update_timer(dsp_state_t *p) {
 	if (p->vm_running && p->clock_hz != 0) {
-		timer_mod(p->sync_timer, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + DSP_SYNC_PERIOD_NS);
+		dsp_arm_sync_timer(p);
 	} else {
 		timer_del(p->sync_timer);
 	}
@@ -324,7 +337,7 @@ static void dsp_notify_comm(void *opaque, uint16_t flags, bool set) {
 	p->comm_transition_pending = true;
 	dsp_runtime_request_reschedule(p->runtime);
 	if (p->vm_running && p->clock_hz != 0)
-		timer_mod(p->sync_timer, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + DSP_SYNC_PERIOD_NS);
+		dsp_arm_sync_timer(p);
 }
 
 static void dsp_reset_internal_state(dsp_state_t *p) {

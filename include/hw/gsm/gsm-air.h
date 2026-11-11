@@ -26,6 +26,8 @@ struct GSMAir {
     uint16_t uplink_symbols;
     uint8_t uplink_timeslot;
     bool uplink_active;
+    uint32_t uplink_complete_frame;
+    bool uplink_complete_valid;
 };
 
 /**
@@ -65,3 +67,10 @@ void gsm_air_reset_uplink(GSMAir *air);
  * end of its timeslot.
  */
 void gsm_air_transmit(GSMAir *air, uint16_t arfcn, int64_t timestamp, bool symbol);
+
+/**
+ * gsm_air_transmit_until: the transmitter will send no more symbols that start
+ * before virtual time @timestamp. Delivers a burst of an earlier frame and reports
+ * every uplink frame that is complete to the network.
+ */
+void gsm_air_transmit_until(GSMAir *air, int64_t timestamp);

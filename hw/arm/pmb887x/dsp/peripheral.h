@@ -67,6 +67,7 @@ uint16_t dsp_bus_get_irq_pending_flags(dsp_bus_t *bus, size_t group);
 void dsp_bus_set_request(dsp_bus_t *bus, size_t index, bool level);
 void dsp_bus_set_input(dsp_bus_t *bus, size_t index, bool level);
 void dsp_bus_set_iq_bus(dsp_bus_t *bus, IQBus *iq_bus);
+void dsp_bus_commit_transmit(dsp_bus_t *bus, int64_t idle_until_ns);
 void dsp_bus_set_gsm_signal(
 	dsp_bus_t *bus,
 	pmb887x_dsp_gsm_signal_t signal,

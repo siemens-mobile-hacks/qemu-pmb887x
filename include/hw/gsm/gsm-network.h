@@ -42,6 +42,8 @@ struct GSMUplinkBurst {
  * frame @frame_number, timeslot @timeslot; return false if it transmits nothing.
  * @uplink_burst: receive @burst a mobile sent on uplink channel @arfcn in frame
  * @frame_number, timeslot @timeslot; NULL when the network ignores the uplink.
+ * @uplink_complete: the mobile delivered every uplink burst of frame @frame_number
+ * and earlier; NULL when the network does not need it.
  */
 struct GSMNetworkClass {
     InterfaceClass parent_class;
@@ -49,6 +51,7 @@ struct GSMNetworkClass {
         GSMBurst *burst);
     void (*uplink_burst)(GSMNetwork *network, uint16_t arfcn, uint32_t frame_number, uint8_t timeslot,
         const GSMUplinkBurst *burst);
+    void (*uplink_complete)(GSMNetwork *network, uint32_t frame_number);
 };
 
 /**

@@ -43,6 +43,7 @@ void dsp_runtime_shared_write_bytes(dsp_runtime_t *runtime, size_t offset, uint6
 void dsp_runtime_set_request(dsp_runtime_t *runtime, size_t index, bool level);
 void dsp_runtime_set_input(dsp_runtime_t *runtime, size_t index, bool level);
 void dsp_runtime_set_iq_bus(dsp_runtime_t *runtime, IQBus *iq_bus);
+void dsp_runtime_commit_transmit(dsp_runtime_t *runtime, int64_t idle_until_ns);
 void dsp_runtime_set_gsm_signal(
 	dsp_runtime_t *runtime,
 	pmb887x_dsp_gsm_signal_t signal,

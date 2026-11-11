@@ -190,6 +190,10 @@ static void hd155153np_transmit(IQSource *source, int64_t timestamp, bool symbol
     gsm_air_transmit(&p->air, arfcn, timestamp, symbol);
 }
 
+static void hd155153np_transmit_until(IQSource *source, int64_t timestamp) {
+    gsm_air_transmit_until(&HD155153NP(source)->air, timestamp);
+}
+
 static void hd155153np_reset(DeviceState *device) {
     HD155153NPState *p = HD155153NP(device);
 
@@ -236,6 +240,7 @@ static void hd155153np_class_init(ObjectClass *klass, const void *_data) {
     serial_class->write = hd155153np_write;
     iq_class->read = hd155153np_read_iq;
     iq_class->transmit = hd155153np_transmit;
+    iq_class->transmit_until = hd155153np_transmit_until;
     device_class_set_legacy_reset(device_class, hd155153np_reset);
     device_class->realize = hd155153np_realize;
     device_class_set_props(device_class, hd155153np_properties);

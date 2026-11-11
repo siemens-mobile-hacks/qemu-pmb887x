@@ -41,14 +41,16 @@ static bool modulator_active(const modulator_state_t *state) {
 	return qatomic_read(&state->codon) || software_active;
 }
 
+static int64_t modulator_next_word_ns(const modulator_state_t *state) {
+	uint64_t sent_cycles = state->words_sent * MODULATOR_MS_CYCLES_PER_SYMBOL * state->symbols_per_word;
+	return state->start_ns + MODULATOR_OUTPUT_DELAY_NS + muldiv64(sent_cycles, NANOSECONDS_PER_SECOND, state->ms_clock_hz);
+}
+
 static void modulator_read_word(modulator_state_t *state) {
 	uint16_t address = state->position;
 	uint16_t word = state->host.data_read(state->host.opaque, state->ram_base + address);
-	uint64_t sent_cycles = state->words_sent * MODULATOR_MS_CYCLES_PER_SYMBOL * state->symbols_per_word;
-	int64_t timestamp = state->start_ns + MODULATOR_OUTPUT_DELAY_NS +
-		muldiv64(sent_cycles, NANOSECONDS_PER_SECOND, state->ms_clock_hz);
 
-	iq_bus_transmit(state->iq_bus, timestamp, (word & MODULATOR_SYMBOL_BIT) != 0);
+	iq_bus_transmit(state->iq_bus, modulator_next_word_ns(state), (word & MODULATOR_SYMBOL_BIT) != 0);
 	state->words_sent++;
 	state->position = (state->position + 1U) % MODULATOR_RAM_WORDS;
 	if (address == state->registers[TEAK_MOD_INT_ADDR])
@@ -230,6 +232,13 @@ size_t modulator_get_cycles_until_interrupt(const dsp_device_t *device) {
 
 	uint16_t words_before = (uint16_t) (state->registers[TEAK_MOD_INT_ADDR] - state->position) % MODULATOR_RAM_WORDS;
 	return DIV_ROUND_UP((words_before + 1U) * period - state->word_phase, state->ms_clock_hz);
+}
+
+void modulator_commit_transmit(dsp_device_t *device, int64_t idle_until_ns) {
+	modulator_state_t *state = device->state;
+	int64_t until_ns = modulator_active(state) ? modulator_next_word_ns(state) : idle_until_ns;
+
+	iq_bus_transmit_until(state->iq_bus, until_ns);
 }
 
 bool modulator_is_active(const dsp_device_t *device) {

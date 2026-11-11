@@ -368,6 +368,11 @@ void dsp_bus_set_iq_bus(dsp_bus_t *bus, IQBus *iq_bus) {
 		modulator_set_iq_bus(bus->modulator, iq_bus);
 }
 
+void dsp_bus_commit_transmit(dsp_bus_t *bus, int64_t idle_until_ns) {
+	if (bus->modulator != NULL)
+		modulator_commit_transmit(bus->modulator, idle_until_ns);
+}
+
 void dsp_bus_set_gsm_signal(
 	dsp_bus_t *bus,
 	pmb887x_dsp_gsm_signal_t signal,
