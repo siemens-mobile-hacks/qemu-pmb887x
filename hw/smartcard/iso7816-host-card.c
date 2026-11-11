@@ -178,8 +178,8 @@ static bool iso7816_host_card_command_has_data(ISO7816Card *card,
     return gsm11_command_has_data(header[ISO7816_OFFSET_INS]);
 }
 
-static uint32_t iso7816_host_card_processing_clocks(ISO7816Card *card,
-                                                    const uint8_t *header)
+static int64_t iso7816_host_card_processing_ns(ISO7816Card *card,
+                                               const uint8_t *header)
 {
     return 0;
 }
@@ -428,7 +428,7 @@ static void iso7816_host_card_class_init(ObjectClass *klass, const void *data)
     cc->cold_reset = iso7816_host_card_cold_reset;
     cc->command_has_data = iso7816_host_card_command_has_data;
     cc->exchange = iso7816_host_card_exchange;
-    cc->processing_clocks = iso7816_host_card_processing_clocks;
+    cc->processing_ns = iso7816_host_card_processing_ns;
 }
 
 static const TypeInfo iso7816_host_card_info = {
