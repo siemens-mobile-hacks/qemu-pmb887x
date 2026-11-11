@@ -216,7 +216,7 @@ static void gprscu_initialize(pmb887x_gprscu_t *p) {
 
 static uint64_t gprscu_io_read(void *opaque, hwaddr haddr, unsigned int size) {
 	pmb887x_gprscu_t *p = opaque;
-	uint64_t value;
+	uint64_t value = 0;
 
 	switch (haddr) {
 		case GPRSCU_CLC:
