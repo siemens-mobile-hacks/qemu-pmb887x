@@ -310,7 +310,7 @@ static void test_modulator(void) {
 	dsp_bus_reset(bus);
 	g_assert_cmphex(dsp_bus_read(bus, TEST_MODULATOR_BASE + 6), ==, 0xFF);
 	dsp_bus_write(bus, TEST_MODULATOR_BASE, UINT16_MAX);
-	g_assert_cmphex(dsp_bus_read(bus, TEST_MODULATOR_BASE), ==, 0x0101);
+	g_assert_cmphex(dsp_bus_read(bus, TEST_MODULATOR_BASE), ==, 0x071F);
 	dsp_bus_write(bus, TEST_MODULATOR_BASE + 4, UINT16_MAX);
 	g_assert_cmphex(dsp_bus_read(bus, TEST_MODULATOR_BASE + 4), ==, 0x0FFF);
 	dsp_bus_destroy(bus);

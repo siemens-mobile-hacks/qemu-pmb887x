@@ -11,12 +11,15 @@
 #define MODULATOR_RESERVED	0x02
 #define MODULATOR_INTERRUPT_GROUP	0
 #define MODULATOR_RAM_WORDS	(TEAK_MOD_INT_ADDR_MINT_ADDR + 1U)
-#define MODULATOR_MS_CYCLES_PER_SYMBOL	96U
-/* E101 reads one RAM word per four GMSK symbols, measured on hardware. */
-#define MODULATOR_E101_SYMBOLS_PER_WORD	4U
+/* E101 and E001 read one RAM word per 384 MS clock cycles, measured on hardware. */
+#define MODULATOR_MS_CYCLES_PER_WORD	384U
 #define MODULATOR_SYMBOL_BIT	BIT(0)
 /* RAM word read to antenna: six GSM symbols of 48/13 us. */
 #define MODULATOR_OUTPUT_DELAY_NS	22154
+#define E001_MOD_CTRL_RESET	0x0000
+#define E001_MOD_CTRL_MASK	(TEAK_MOD_CTRL_IQSWAP | TEAK_MOD_CTRL_MSWACT)
+#define E101_MOD_CTRL_RESET	0x0600
+#define E101_MOD_CTRL_MASK	0x071F
 
 typedef struct modulator_state_t modulator_state_t;
 
@@ -32,17 +35,22 @@ struct modulator_state_t {
 	uint64_t words_sent;
 	uint16_t ram_base;
 	uint16_t position;
-	uint16_t symbols_per_word;
+	uint16_t ctrl_mask;
+	bool mswact_starts_reads;
 	bool codon;
 };
 
+static bool modulator_is_mswact_set(const modulator_state_t *state) {
+	return qatomic_read(&state->registers[TEAK_MOD_CTRL]) & TEAK_MOD_CTRL_MSWACT;
+}
+
+/* E001 sets MSTAT for MSWACT but reads RAM only while CODON is high, measured on hardware. */
 static bool modulator_active(const modulator_state_t *state) {
-	bool software_active = qatomic_read(&state->registers[TEAK_MOD_CTRL]) & TEAK_MOD_CTRL_MSWACT;
-	return qatomic_read(&state->codon) || software_active;
+	return qatomic_read(&state->codon) || (state->mswact_starts_reads && modulator_is_mswact_set(state));
 }
 
 static int64_t modulator_next_word_ns(const modulator_state_t *state) {
-	uint64_t sent_cycles = state->words_sent * MODULATOR_MS_CYCLES_PER_SYMBOL * state->symbols_per_word;
+	uint64_t sent_cycles = state->words_sent * MODULATOR_MS_CYCLES_PER_WORD;
 	return state->start_ns + MODULATOR_OUTPUT_DELAY_NS + muldiv64(sent_cycles, NANOSECONDS_PER_SECOND, state->ms_clock_hz);
 }
 
@@ -66,7 +74,7 @@ static void modulator_start(modulator_state_t *state, int64_t timestamp_ns) {
 }
 
 static uint64_t modulator_word_phase_period(const modulator_state_t *state) {
-	return (uint64_t) state->clock_hz * MODULATOR_MS_CYCLES_PER_SYMBOL * state->symbols_per_word;
+	return (uint64_t) state->clock_hz * MODULATOR_MS_CYCLES_PER_WORD;
 }
 
 static void modulator_destroy(dsp_device_t *device) {
@@ -89,9 +97,14 @@ static void modulator_reset(dsp_device_t *device) {
 	state->clock_hz = clock_hz;
 	state->ms_clock_hz = ms_clock_hz;
 	state->ram_base = ram_base;
-	state->symbols_per_word = device->dsp_config->hardware_version == PMB887X_DSP_HW_VERSION_E101 ?
-		MODULATOR_E101_SYMBOLS_PER_WORD : 1U;
-	state->registers[TEAK_MOD_CTRL] = 0x0600;
+	if (device->dsp_config->hardware_version == PMB887X_DSP_HW_VERSION_E101) {
+		state->registers[TEAK_MOD_CTRL] = E101_MOD_CTRL_RESET;
+		state->ctrl_mask = E101_MOD_CTRL_MASK;
+		state->mswact_starts_reads = true;
+	} else {
+		state->registers[TEAK_MOD_CTRL] = E001_MOD_CTRL_RESET;
+		state->ctrl_mask = E001_MOD_CTRL_MASK;
+	}
 	state->registers[TEAK_MOD_ACI] = 0x00FF;
 	state->registers[TEAK_MOD_ACQ] = 0x00FF;
 }
@@ -101,7 +114,7 @@ static bool modulator_read(dsp_device_t *device, uint16_t offset, uint32_t pc, u
 
 	switch (offset) {
 		case TEAK_MOD_STAT:
-			*value = modulator_active(state) * TEAK_MOD_STAT_MSTAT;
+			*value = (qatomic_read(&state->codon) || modulator_is_mswact_set(state)) * TEAK_MOD_STAT_MSTAT;
 			break;
 
 		case MODULATOR_RESERVED:
@@ -128,7 +141,7 @@ static bool modulator_write(dsp_device_t *device, uint16_t offset, uint32_t pc, 
 		case TEAK_MOD_CTRL: {
 			bool was_active = modulator_active(state);
 
-			qatomic_set(&state->registers[offset], value & (TEAK_MOD_CTRL_IQSWAP | TEAK_MOD_CTRL_MSWACT));
+			qatomic_set(&state->registers[offset], value & state->ctrl_mask);
 			if (!was_active && modulator_active(state))
 				modulator_start(state, state->host.get_time_ns(state->host.opaque));
 			break;
