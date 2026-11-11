@@ -97,7 +97,7 @@ static int32_t hd155155npeb_receiver_gain_db(HD15515XState *p, uint32_t pga_gain
     int32_t gain_db = HD155155NPEB_APPROX_BASE_GAIN_DB + HD155155NPEB_PGA_OFFSET_DB +
         (int32_t) pga_gain * HD15515X_PGA_STEP_DB;
 
-    if ((front_end & band_stage) == 0)
+    if ((front_end & band_stage) != 0)
         return gain_db;
     if (low_band)
         return gain_db + HD155155NPEB_FRONT_END_LOW_BAND_DB;
