@@ -347,33 +347,57 @@ void wasm_accessory_plug(void)
 #define WASM_REFRESH_INTERVAL_MIN  16    /* ~60 fps when busy   */
 #define WASM_REFRESH_INTERVAL_MAX  500   /* idle polling        */
 
-static void wasm_refresh(DisplayChangeListener *dcl)
+/*
+ * Why polling (and why adaptive): the pmb887x LCD model has no dirty
+ * interrupt — it only repaints while GraphicHwOps.gfx_update is called,
+ * so the display goes stale unless we poll. Polling at max rate would
+ * burn the single-threaded-ish browser main loop; the adaptive interval
+ * backs off to 500 ms when nothing changed and spins up to ~60 fps as
+ * soon as the guest animates (boot splash, menus).
+ *
+ * Returns the interval to poll at next, after one at @interval.
+ */
+static int wasm_refresh_poll(DisplayChangeListener *dcl, int interval)
 {
     uint64_t before = wasm_fb.updates;
 
-    /*
-     * Why polling (and why adaptive): the pmb887x LCD model has no dirty
-     * interrupt — it only repaints while GraphicHwOps.gfx_update is called,
-     * so the display goes stale unless we poll. Polling at max rate would
-     * burn the single-threaded-ish browser main loop; the adaptive interval
-     * backs off to 500 ms when nothing changed and spins up to ~60 fps as
-     * soon as the guest animates (boot splash, menus).
-     */
     qemu_console_hw_update(dcl->con);
 
     if (wasm_fb.updates != before) {
-        if (dcl->update_interval > WASM_REFRESH_INTERVAL_MIN) {
-            qemu_console_listener_set_refresh(
-                dcl, dcl->update_interval / 2 > WASM_REFRESH_INTERVAL_MIN
-                        ? dcl->update_interval / 2
-                        : WASM_REFRESH_INTERVAL_MIN);
-        }
-    } else if (dcl->update_interval < WASM_REFRESH_INTERVAL_MAX) {
-        qemu_console_listener_set_refresh(
-            dcl, dcl->update_interval * 2 < WASM_REFRESH_INTERVAL_MAX
-                    ? dcl->update_interval * 2
-                    : WASM_REFRESH_INTERVAL_MAX);
+        return MAX(interval / 2, WASM_REFRESH_INTERVAL_MIN);
     }
+    return MIN(interval * 2, WASM_REFRESH_INTERVAL_MAX);
+}
+
+static void wasm_refresh(DisplayChangeListener *dcl)
+{
+    int interval = wasm_refresh_poll(dcl, dcl->update_interval);
+
+    if (interval != dcl->update_interval) {
+        qemu_console_listener_set_refresh(dcl, interval);
+    }
+}
+
+/*
+ * WASM PORT FAST PATH (removable): the refresh as a timer of the virtual
+ * clock, where the vCPU thread runs those (qemu_virtual_timers_on_vcpu).
+ * The console's own timer runs on the main loop under the BQL, which the
+ * vCPU takes thousands of times a second: on a phone, whose scheduler
+ * keeps the main loop on a slow core, the vCPU waited out every refresh
+ * (3.3 % of its time on a Pixel 8 Pro, and the wake after it).  On its
+ * own thread the refresh meets nobody.  It follows guest time, so a
+ * guest at half speed is also polled half as often.
+ *
+ * Remove: this timer and wasm_vcpu_dcl_ops; wasm_dcl_ops serves alone.
+ */
+static QEMUTimer *wasm_refresh_timer;
+static int wasm_refresh_interval = WASM_REFRESH_INTERVAL_MIN;
+
+static void wasm_refresh_vcpu(void *opaque)
+{
+    wasm_refresh_interval = wasm_refresh_poll(opaque, wasm_refresh_interval);
+    timer_mod(wasm_refresh_timer,
+              qemu_clock_get_ms(QEMU_CLOCK_VIRTUAL) + wasm_refresh_interval);
 }
 
 static void wasm_gfx_update(DisplayChangeListener *dcl,
@@ -405,6 +429,13 @@ static const DisplayChangeListenerOps wasm_dcl_ops = {
     .dpy_gfx_switch       = wasm_gfx_switch,
 };
 
+/* no dpy_refresh: the console then keeps no timer of its own */
+static const DisplayChangeListenerOps wasm_vcpu_dcl_ops = {
+    .dpy_name             = "wasm",
+    .dpy_gfx_update       = wasm_gfx_update,
+    .dpy_gfx_switch       = wasm_gfx_switch,
+};
+
 static DisplayChangeListener wasm_dcl;
 
 static void wasm_display_init(DisplayState *ds, DisplayOptions *opts)
@@ -420,6 +451,13 @@ static void wasm_display_init(DisplayState *ds, DisplayOptions *opts)
     if (!con) {
         error_report("wasm display: no console found");
         exit(1);
+    }
+    if (qemu_virtual_timers_on_vcpu) {
+        qemu_console_register_listener(con, &wasm_dcl, &wasm_vcpu_dcl_ops);
+        wasm_refresh_timer = timer_new_ms(QEMU_CLOCK_VIRTUAL,
+                                          wasm_refresh_vcpu, &wasm_dcl);
+        timer_mod(wasm_refresh_timer, qemu_clock_get_ms(QEMU_CLOCK_VIRTUAL));
+        return;
     }
     qemu_console_register_listener(con, &wasm_dcl, &wasm_dcl_ops);
     qemu_console_listener_set_refresh(&wasm_dcl, WASM_REFRESH_INTERVAL_MIN);
