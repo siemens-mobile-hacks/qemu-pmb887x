@@ -8502,6 +8502,11 @@ static bool tcg_execute_slice_block(teak_tcg_core_t *core, const teak_tcg_block_
 			continue_block = false;
 		if (core->state.exit_reason != TEAK_EXIT_BRANCH)
 			continue_block = false;
+#ifdef CONFIG_TCG_WASM64
+		/* a batch that landed while the block ran may have evicted the block's own */
+		if (w64_tc_evicted(tb->tc.ptr))
+			continue_block = false;
+#endif
 
 		if (!continue_block)
 			break;
@@ -8538,6 +8543,10 @@ static bool tcg_execute_cached_slice(teak_tcg_core_t *core, teak_tcg_block_cache
 			break;
 		}
 
+#ifdef CONFIG_TCG_WASM64
+		/* a batch that landed while the block ran may have evicted the next block's */
+		tcg_drop_evicted_blocks();
+#endif
 		next = tcg_find_cached_entry_fast(core);
 		if (next == NULL)
 			break;
@@ -8597,6 +8606,9 @@ bool teak_tcg_execute_slice(teak_tcg_core_t *core, size_t max_cycles) {
 			continue;
 		}
 
+#ifdef CONFIG_TCG_WASM64
+		tcg_drop_evicted_blocks();
+#endif
 		entry = tcg_find_cached_entry_fast(core);
 		if (entry == NULL) {
 			if (core->last_block_cycles == 0)

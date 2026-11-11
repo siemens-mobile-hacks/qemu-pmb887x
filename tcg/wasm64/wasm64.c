@@ -1215,8 +1215,10 @@ static void w64_batch_evict_oldest(void)
      * A goto_ptr inline-cache slot holds a table index too, and has no
      * back-reference at all, so retire every slot at once — that is what
      * the generation is for.  A boot stays an order of magnitude below
-     * W64_LIVE_MAX (~450-760 live modules against 6144), so neither this
-     * nor the unlink above has been observed to run.
+     * W64_LIVE_MAX (~450-760 live modules against 6144); a Java game that
+     * keeps compiling lands two or three batches a second and can get
+     * there in half an hour.  Nothing short of that runs this path, so
+     * test it with the cap lowered (256 under tools/lockstep-wasm.mjs).
      */
     CPU_FOREACH(cpu) {
         cpu_tb_key_gen_bump(cpu);
