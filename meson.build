@@ -4151,6 +4151,12 @@ if have_system
         'hw/gsm/kasumi.c',
       ),
     },
+    'gsm-coding': {
+      'sources': files(
+        'tests/unit/test-gsm-coding.c',
+        'hw/gsm/gsm-coding.c',
+      ),
+    },
     'bus-port': {
       'sources': files(
         'tests/unit/test-bus-port.c',

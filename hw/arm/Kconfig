@@ -292,6 +292,7 @@ config PMB887X
     select GSM_IQ_BUS
     select GSM_NETWORK
     select GSM_AIR
+    select GSM_CODING
     select GSM_BTS
     select GSM_OSMOTRX
     select GSM_KASUMI

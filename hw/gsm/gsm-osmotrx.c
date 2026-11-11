@@ -9,6 +9,7 @@
 #include "qapi/error.h"
 #include "qom/object_interfaces.h"
 #include "hw/gsm/gsm-air.h"
+#include "hw/gsm/gsm-coding.h"
 #include "hw/gsm/gsm-network.h"
 
 #define TYPE_GSM_OSMOTRX "gsm-osmotrx"
@@ -24,13 +25,8 @@
 #define GSM_OSMOTRX_TRXD_MTS_ACCESS_BURST 0x30
 #define GSM_OSMOTRX_UPLINK_RSSI_MINUS_DBM 60
 #define GSM_OSMOTRX_UPLINK_CI_CB 300
-#define GSM_OSMOTRX_SOFT_BIT_THRESHOLD 128
 #define GSM_OSMOTRX_TOA_UNITS_PER_SYMBOL 256
 #define GSM_ACCESS_BURST_BITS 88
-#define GSM_ACCESS_SYNC_OFFSET 8
-#define GSM_ACCESS_SYNC_MIN_MATCHES 37
-#define GSM_NORMAL_TSC_OFFSET 61
-#define GSM_NORMAL_TSC_MIN_MATCHES 23
 #define GSM_BSIC_BCC_MASK 0x07
 #define GSM_OSMOTRX_NOMINAL_TX_POWER_DBM "23"
 #define GSM_OSMOTRX_COMMAND_MAX 256
@@ -42,19 +38,6 @@
 #define GSM_OSMOTRX_MUX_RESYNC_FRAMES (2 * GSM_OSMOTRX_CLOCK_INDICATION_FRAMES)
 
 OBJECT_DECLARE_SIMPLE_TYPE(GSMOsmoTrx, GSM_OSMOTRX)
-
-/* GSM 05.02 5.2.5 and 5.2.7 synchronisation and training sequences. */
-static const char GSM_ACCESS_SYNC[] = "01001011011111111001100110101010001111000";
-static const char *const GSM_NORMAL_TSC[] = {
-    "00100101110000100010010111",
-    "00101101110111100010110111",
-    "01000011101110100100001110",
-    "01000111101101000100011110",
-    "00011010111001000001101011",
-    "01001110101100000100111010",
-    "10100111110110001010011111",
-    "11101111000100101110111100",
-};
 
 typedef enum GSMOsmoTrxSocket GSMOsmoTrxSocket;
 typedef struct GSMOsmoTrxBurst GSMOsmoTrxBurst;
@@ -289,39 +272,6 @@ static bool gsm_osmotrx_downlink_burst(
     return true;
 }
 
-static size_t gsm_osmotrx_count_matches(const uint8_t *soft_bits, const char *sequence) {
-    size_t matches = 0;
-
-    for (size_t i = 0; sequence[i] != '\0'; i++) {
-        if (soft_bits[i] == GSM_SOFT_BIT_UNKNOWN)
-            continue;
-        if ((soft_bits[i] >= GSM_OSMOTRX_SOFT_BIT_THRESHOLD) == (sequence[i] == '1'))
-            matches++;
-    }
-    return matches;
-}
-
-static bool gsm_osmotrx_find_burst_start(
-    const GSMUplinkBurst *burst,
-    const char *sequence,
-    size_t sequence_offset,
-    size_t min_matches,
-    size_t *burst_start
-) {
-    size_t length = strlen(sequence);
-    size_t best_matches = 0;
-
-    for (size_t position = sequence_offset; position + length <= GSM_UPLINK_WINDOW_SYMBOLS; position++) {
-        size_t matches = gsm_osmotrx_count_matches(&burst->soft_bits[position], sequence);
-
-        if (matches > best_matches) {
-            best_matches = matches;
-            *burst_start = position - sequence_offset;
-        }
-    }
-    return best_matches >= min_matches;
-}
-
 static void gsm_osmotrx_uplink_burst(
     GSMNetwork *network,
     uint16_t arfcn,
@@ -343,12 +293,10 @@ static void gsm_osmotrx_uplink_burst(
     if (!trx->powered || arfcn != trx->uplink_arfcn)
         return;
 
-    if (gsm_osmotrx_find_burst_start(burst, GSM_ACCESS_SYNC, GSM_ACCESS_SYNC_OFFSET, GSM_ACCESS_SYNC_MIN_MATCHES,
-            &start)) {
+    if (gsm_uplink_find_access_burst(burst, &start)) {
         length = GSM_ACCESS_BURST_BITS;
         mts = GSM_OSMOTRX_TRXD_MTS_ACCESS_BURST;
-    } else if (gsm_osmotrx_find_burst_start(burst, GSM_NORMAL_TSC[trx->tsc], GSM_NORMAL_TSC_OFFSET,
-            GSM_NORMAL_TSC_MIN_MATCHES, &start)) {
+    } else if (gsm_uplink_find_normal_burst(burst, trx->tsc, &start)) {
         length = GSM_BURST_BITS;
         mts = trx->tsc;
     } else {

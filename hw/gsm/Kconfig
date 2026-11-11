@@ -15,6 +15,9 @@ config GSM_KASUMI
 config GSM_GEA
     bool
 
+config GSM_CODING
+    bool
+
 config GSM_BTS
     bool
     select GSM_NETWORK
@@ -22,6 +25,7 @@ config GSM_BTS
 config GSM_OSMOTRX
     bool
     select GSM_AIR
+    select GSM_CODING
     select GSM_NETWORK
 
 config HD155153NP
