@@ -2,6 +2,7 @@
  * GPRS Ciphering Unit
  */
 #include "qemu/osdep.h"
+#include "qemu/bswap.h"
 #include "hw/core/qdev-properties.h"
 #include "hw/core/sysbus.h"
 #include "system/memory.h"
@@ -9,6 +10,8 @@
 #include "hw/arm/pmb887x/gen/cpu_regs.h"
 #include "hw/arm/pmb887x/mod.h"
 #include "hw/arm/pmb887x/gen/cpu_meta.h"
+#include "hw/gsm/gea.h"
+#include "hw/gsm/kasumi.h"
 
 #define TYPE_PMB887X_GPRSCU "pmb887x-gprscu"
 #define PMB887X_GPRSCU(obj) OBJECT_CHECK(pmb887x_gprscu_t, (obj), TYPE_PMB887X_GPRSCU)
@@ -52,29 +55,18 @@ struct pmb887x_gprscu_t {
 	size_t segment_index;
 	uint32_t segment_received;
 	uint32_t segment_output_count;
+	bool segment_start_pending;
 
 	uint32_t fifo[GPRSCU_FIFO_SIZE];
 	size_t fifo_head;
 	size_t fifo_count;
-	size_t output_count;
 	uint32_t data_latch;
 	bool output_underrun;
+
+	bool gea3;
+	GEAKeystream gea;
+	KGCore kgcore;
 };
-
-static bool gprscu_is_ciphering(pmb887x_gprscu_t *p) {
-	if ((p->con & GPRSCU_CON_CIPH_CTRL) != 0)
-		return true;
-	for (size_t index = 0; index < p->segment_count; index++) {
-		if ((p->segments[index] & GPRSCU_SEGMENT_CIPH_CTRL) != 0)
-			return true;
-	}
-	return false;
-}
-
-static void gprscu_publish_output(pmb887x_gprscu_t *p) {
-	if (!gprscu_is_ciphering(p))
-		p->output_count = p->fifo_count;
-}
 
 static void gprscu_update_crc(pmb887x_gprscu_t *p, uint8_t value) {
 	p->crc ^= value;
@@ -87,23 +79,58 @@ static void gprscu_update_fcs(pmb887x_gprscu_t *p, uint8_t value) {
 	p->fcs_byte = value;
 }
 
-static void gprscu_receive_segment_byte(pmb887x_gprscu_t *p, uint8_t value) {
-	uint32_t segment = p->segments[p->segment_index];
+static void gprscu_start_keystream(pmb887x_gprscu_t *p) {
+	p->gea3 = (p->con & GPRSCU_CON_GEA3) != 0;
+	if (p->gea3) {
+		uint8_t key[KASUMI_KEY_BYTES];
 
-	if ((segment & GPRSCU_SEGMENT_CRC_CTRL) != 0)
-		gprscu_update_fcs(p, value);
+		for (size_t i = 0; i < KASUMI_KEY_BYTES; i++)
+			key[i] = p->key[ARRAY_SIZE(p->key) - 1 - i / 4] >> (24 - 8 * (i % 4));
+		kgcore_start(&p->kgcore, ((uint64_t) p->input[0] << 32) | p->input[1], key);
+	} else {
+		GEAAlgorithm algorithm = (p->con & GPRSCU_CON_GEA2) != 0 ? GEA_ALGORITHM_GEA2 : GEA_ALGORITHM_GEA1;
+		uint64_t kc = bswap64(((uint64_t) p->key[1] << 32) | p->key[0]);
+
+		gea_start(&p->gea, algorithm, p->input[0], (p->con & GPRSCU_CON_DIRECTION) != 0, kc);
+	}
+}
+
+static uint8_t gprscu_process_byte(pmb887x_gprscu_t *p, uint8_t input, bool crc, bool cipher) {
+	uint8_t output = input;
+
+	if (cipher)
+		output ^= p->gea3 ? kgcore_next_byte(&p->kgcore) : gea_next_byte(&p->gea);
+	if (crc)
+		gprscu_update_fcs(p, (p->con & GPRSCU_CON_DIRECTION) != 0 ? output : input);
+	return output;
+}
+
+static uint8_t gprscu_receive_segment_byte(pmb887x_gprscu_t *p, uint8_t value) {
+	uint32_t segment = p->segments[p->segment_index];
+	uint8_t output = gprscu_process_byte(p, value, (segment & GPRSCU_SEGMENT_CRC_CTRL) != 0,
+		(segment & GPRSCU_SEGMENT_CIPH_CTRL) != 0);
+
 	p->segment_received++;
-	if (p->segment_received == (segment & GPRSCU_SEGMENT_LENGTH) && p->segment_index + 1 < p->segment_count) {
+	if (p->segment_received != (segment & GPRSCU_SEGMENT_LENGTH))
+		return output;
+
+	if (p->segment_index + 1 < p->segment_count) {
 		p->segment_index++;
 		p->segment_received = 0;
+	} else if (p->segment_start_pending) {
+		p->segment_start_pending = false;
+		pmb887x_src_update(&p->src[GPRSCU_SEGMENT_SRC], 0, MOD_SRC_SETR);
 	}
+	return output;
 }
 
 static void gprscu_start_segment(pmb887x_gprscu_t *p) {
 	p->con &= ~GPRSCU_CON_SEGMENT_START;
-	gprscu_publish_output(p);
-	if (p->output_count != 0)
+	if (p->fifo_count != 0) {
 		pmb887x_src_update(&p->src[GPRSCU_SEGMENT_SRC], 0, MOD_SRC_SETR);
+	} else {
+		p->segment_start_pending = true;
+	}
 }
 
 static void gprscu_reset_segments(pmb887x_gprscu_t *p) {
@@ -128,7 +155,7 @@ static void gprscu_reset_segments(pmb887x_gprscu_t *p) {
 }
 
 static uint32_t gprscu_status(pmb887x_gprscu_t *p) {
-	uint32_t value = p->output_count << GPRSCU_STAT_OUTPUT_COUNT_SHIFT;
+	uint32_t value = p->fifo_count << GPRSCU_STAT_OUTPUT_COUNT_SHIFT;
 	value |= (GPRSCU_FIFO_SIZE - p->fifo_count) << GPRSCU_STAT_INPUT_FREE_SHIFT;
 	if (p->output_underrun)
 		value |= GPRSCU_STAT_OUTPUT_UNDERRUN;
@@ -136,7 +163,7 @@ static uint32_t gprscu_status(pmb887x_gprscu_t *p) {
 }
 
 static uint64_t gprscu_read_data(pmb887x_gprscu_t *p, unsigned int size) {
-	if (p->output_count == 0) {
+	if (p->fifo_count == 0) {
 		p->output_underrun = true;
 		return p->data_latch & MAKE_64BIT_MASK(0, size * 8);
 	}
@@ -144,7 +171,6 @@ static uint64_t gprscu_read_data(pmb887x_gprscu_t *p, unsigned int size) {
 	p->data_latch = p->fifo[p->fifo_head];
 	p->fifo_head = (p->fifo_head + 1) % GPRSCU_FIFO_SIZE;
 	p->fifo_count--;
-	p->output_count--;
 
 	if ((p->con & GPRSCU_CON_SEGMENT_MODE) != 0 && p->segment_count != 0) {
 		p->segment_output_count++;
@@ -160,26 +186,31 @@ static void gprscu_write_data(pmb887x_gprscu_t *p, uint64_t value, unsigned int 
 	if (p->fifo_count == GPRSCU_FIFO_SIZE)
 		return;
 
-	p->fifo[(p->fifo_head + p->fifo_count) % GPRSCU_FIFO_SIZE] = value;
-	p->fifo_count++;
+	bool control_mode = (p->con & GPRSCU_CON_SEGMENT_MODE) == 0;
+	bool control_crc = control_mode && (p->con & GPRSCU_CON_CRC_CTRL) != 0;
+	bool control_cipher = control_mode && (p->con & GPRSCU_CON_CIPH_CTRL) != 0;
+	uint32_t output = 0;
 
-	bool control_crc = (p->con & (GPRSCU_CON_CRC_CTRL | GPRSCU_CON_SEGMENT_MODE)) == GPRSCU_CON_CRC_CTRL;
 	for (unsigned int index = 0; index < size; index++) {
 		uint8_t byte = value >> (index * 8);
 
 		if (p->segment_index < p->segment_count) {
-			gprscu_receive_segment_byte(p, byte);
-		} else if (control_crc) {
-			gprscu_update_fcs(p, byte);
+			byte = gprscu_receive_segment_byte(p, byte);
+		} else {
+			byte = gprscu_process_byte(p, byte, control_crc, control_cipher);
 		}
+		output |= (uint32_t) byte << (index * 8);
 	}
-	gprscu_publish_output(p);
+
+	p->fifo[(p->fifo_head + p->fifo_count) % GPRSCU_FIFO_SIZE] = output;
+	p->fifo_count++;
 }
 
 static void gprscu_initialize(pmb887x_gprscu_t *p) {
 	p->segment_index = 0;
 	p->segment_received = 0;
 	p->segment_output_count = 0;
+	gprscu_start_keystream(p);
 	p->con &= ~(GPRSCU_CON_INIT | GPRSCU_CON_BUSY);
 }
 
@@ -254,7 +285,6 @@ static void gprscu_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned
 				gprscu_initialize(p);
 			if ((p->con & GPRSCU_CON_SEGMENT_RESET) != 0)
 				gprscu_reset_segments(p);
-			gprscu_publish_output(p);
 			if ((p->con & GPRSCU_CON_SEGMENT_START) != 0)
 				gprscu_start_segment(p);
 			break;
@@ -272,7 +302,6 @@ static void gprscu_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned
 			p->segment = value & GPRSCU_SEGMENT_CONFIGURATION;
 			if (p->segment_count < GPRSCU_SEGMENT_LIST_SIZE)
 				p->segments[p->segment_count++] = p->segment;
-			gprscu_publish_output(p);
 			break;
 
 		case GPRSCU_INPUT0 ... GPRSCU_INPUT1:
@@ -341,9 +370,9 @@ static void gprscu_reset(DeviceState *dev) {
 	p->segment_index = 0;
 	p->segment_received = 0;
 	p->segment_output_count = 0;
+	p->segment_start_pending = false;
 	p->fifo_head = 0;
 	p->fifo_count = 0;
-	p->output_count = 0;
 	p->data_latch = 0;
 	p->output_underrun = false;
 }
