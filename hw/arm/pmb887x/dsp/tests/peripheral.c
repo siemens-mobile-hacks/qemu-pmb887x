@@ -64,6 +64,14 @@ IQSample iq_bus_read(IQBus *bus, int64_t _timestamp, uint64_t _sample_index) {
 	return (IQSample) { 0, 0 };
 }
 
+void iq_bus_transmit(IQBus *bus, int64_t _timestamp, bool _symbol) {
+	g_assert_null(bus);
+}
+
+void iq_bus_transmit_until(IQBus *bus, int64_t _timestamp) {
+	g_assert_null(bus);
+}
+
 typedef struct test_host_t {
 	int64_t time_ns;
 	uint16_t page;
