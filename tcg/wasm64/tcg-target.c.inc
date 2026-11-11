@@ -1024,6 +1024,20 @@ static void w64_frame_truncate(TCGContext *s, unsigned align)
     }
 }
 
+/*
+ * Whether @ofs goes into the access as its offset, or into the address.
+ * With env at a constant address it is one constant: V8 on arm64 takes a
+ * constant address as the immediate of the access (qemu/w64-low.h), but a
+ * store at a constant address plus an offset costs it an add first.
+ */
+static bool w64_memarg_ofs(TCGReg base, intptr_t ofs)
+{
+    if (base == TCG_AREG0 && w64_tb_env) {
+        return false;
+    }
+    return ofs >= 0 && ofs <= 0xffffffffu;
+}
+
 static void w64_load(TCGContext *s, uint8_t opc, TCGType t, TCGReg r0,
                      TCGReg base, intptr_t ofs, unsigned align)
 {
@@ -1032,7 +1046,7 @@ static void w64_load(TCGContext *s, uint8_t opc, TCGType t, TCGReg r0,
     if (frame >= 0) {
         w64_local_get(s, frame);
         w64_frame_extend(s, opc);
-    } else if (ofs >= 0 && ofs <= 0xffffffffu) {
+    } else if (w64_memarg_ofs(base, ofs)) {
         w64_get_addr(s, base);
         w64_u8(s, opc);
         w64_memarg(s, align, ofs);
@@ -1057,7 +1071,7 @@ static void w64_store(TCGContext *s, uint8_t opc, TCGType t, TCGReg val,
         w64_get_i64(s, val);
         w64_frame_truncate(s, align);
         w64_local_set(s, frame);
-    } else if (ofs >= 0 && ofs <= 0xffffffffu) {
+    } else if (w64_memarg_ofs(base, ofs)) {
         w64_get_addr(s, base);
         w64_get(s, val, t);
         w64_u8(s, opc);
@@ -1174,7 +1188,7 @@ static bool tcg_out_sti(TCGContext *s, TCGType t, TCGArg v, TCGReg b, intptr_t o
     if (frame >= 0) {
         w64_const_i64(s, t == TCG_TYPE_I32 ? (uint32_t)v : v);
         w64_local_set(s, frame);
-    } else if (o >= 0 && o <= 0xffffffffu) {
+    } else if (w64_memarg_ofs(b, o)) {
         w64_get_addr(s, b);
         w64_const(s, t, v);
         w64_u8(s, opc);
