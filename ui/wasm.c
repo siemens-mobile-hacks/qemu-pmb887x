@@ -153,7 +153,9 @@ uint64_t wasm_fb_updates(void)
  * wasm64 TB prologue (w64_acct_addr).  Under icount the count is exact in
  * the icount state and wasm_insns() reads it there instead.
  */
+#ifndef wasm_guest_insns
 uint64_t wasm_guest_insns;
+#endif
 
 /*
  * Guest instructions executed so far.  Under icount: the finished

@@ -1232,9 +1232,45 @@ static uint32_t w64_assemble_instantiate(const struct w64_bsrc *src,
 
 uintptr_t w64_tb_env;
 
+/* include/qemu/w64-low.h */
+extern char __global_base;
+static uintptr_t w64_low_given[4];
+
+void *w64_low_place(uintptr_t at, size_t size)
+{
+    unsigned i, free = ARRAY_SIZE(w64_low_given);
+
+    for (i = 0; i < ARRAY_SIZE(w64_low_given); i++) {
+        if (w64_low_given[i] == at) {
+            return NULL;
+        }
+        if (w64_low_given[i] == 0) {
+            free = i;
+        }
+    }
+    if (free == ARRAY_SIZE(w64_low_given) ||
+        at + size > (uintptr_t)&__global_base) {
+        return NULL;
+    }
+    w64_low_given[free] = at;
+    return memset((void *)at, 0, size);
+}
+
+bool w64_low_release(void *p)
+{
+    unsigned i;
+
+    for (i = 0; i < ARRAY_SIZE(w64_low_given); i++) {
+        if (p && w64_low_given[i] == (uintptr_t)p) {
+            w64_low_given[i] = 0;
+            return true;
+        }
+    }
+    return false;
+}
+
 /* Drop the oldest live batch: its members fall back to the dispatcher
  * (fidx 0 + batch tag), which retires them. */
-uint32_t w64_evict_epoch;
 
 bool w64_tc_evicted(const void *tc_ptr)
 {

@@ -278,8 +278,13 @@ static inline uintptr_t w64_ra_off(uintptr_t ra)
     return ra & ((1u << W64_RA_SHIFT) - 1);
 }
 
-/* Bumped whenever an evicted batch clears the fidx of its descriptors. */
-extern uint32_t w64_evict_epoch;
+/*
+ * Bumped whenever an evicted batch clears the fidx of its descriptors.
+ * WASM PORT FAST PATH (removable): at a fixed low address, for the DSP
+ * blocks' chain test (qemu/w64-low.h); otherwise a uint32_t in wasm64.c.
+ */
+#include "qemu/w64-low.h"
+#define w64_evict_epoch (*(uint32_t *)(uintptr_t)W64_LOW_EPOCH)
 /* Whether the code at @tc_ptr went with an evicted batch. */
 bool w64_tc_evicted(const void *tc_ptr);
 

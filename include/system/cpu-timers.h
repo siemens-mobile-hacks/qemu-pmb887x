@@ -81,7 +81,13 @@ int64_t cpus_get_elapsed_ticks(void);
 
 #ifdef __EMSCRIPTEN__
 /* guest instructions run on a board without icount (ui/wasm.c) */
+#ifdef CONFIG_TCG_WASM64
+/* WASM PORT FAST PATH (removable): where every TB's prologue reaches it for nothing */
+#include "qemu/w64-low.h"
+#define wasm_guest_insns (*(uint64_t *)(uintptr_t)W64_LOW_INSNS)
+#else
 extern uint64_t wasm_guest_insns;
+#endif
 /* times the vCPU went to sleep idle (ui/wasm.c) */
 extern uint64_t wasm_vcpu_idle_count;
 #endif

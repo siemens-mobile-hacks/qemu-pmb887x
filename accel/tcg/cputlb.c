@@ -398,6 +398,10 @@ void tlb_init(CPUState *cpu)
 
     /* All tlbs are initialized flushed. */
     cpu->neg.tlb.c.dirty = 0;
+#ifdef CONFIG_TCG_WASM64
+    /* WASM PORT FAST PATH (removable): see CPUTLB */
+    cpu->neg.tlb.d = g_new0(CPUTLBDesc, NB_MMU_MODES);
+#endif
 
     for (i = 0; i < NB_MMU_MODES; i++) {
         tlb_mmu_init(&cpu->neg.tlb.d[i], cpu_tlb_fast(cpu, i), now);
@@ -416,6 +420,9 @@ void tlb_destroy(CPUState *cpu)
         g_free(fast->table);
         g_free(desc->fulltlb);
     }
+#ifdef CONFIG_TCG_WASM64
+    g_free(cpu->neg.tlb.d);
+#endif
 }
 
 /* flush_all_helper: run fn across all cpus

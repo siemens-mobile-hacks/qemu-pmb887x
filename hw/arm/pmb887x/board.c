@@ -29,6 +29,9 @@
 #include "hw/arm/pmb887x/board/keyboard.h"
 #include "hw/arm/pmb887x/board/cpu_module.h"
 #include "hw/arm/pmb887x/board/startup.h"
+#ifdef CONFIG_TCG_WASM64
+#include "qemu/w64-low.h"
+#endif
 #include "hw/block/cfi-flash.h"
 
 #include "hw/arm/pmb887x/gen/brom.h"
@@ -119,7 +122,16 @@ static void pmb887x_init(MachineState *machine) {
 
 	MemoryRegion *sysmem = get_system_memory();
 
+#ifdef CONFIG_TCG_WASM64
+	/* WASM PORT FAST PATH (removable): the CPU object at the bottom of memory (qemu/w64-low.h) */
+	Object *cpuobj = w64_low_place(W64_LOW_CPU, sizeof(ARMCPU));
+	if (cpuobj != NULL)
+		object_initialize(cpuobj, sizeof(ARMCPU), machine->cpu_type);
+	else
+		cpuobj = object_new(machine->cpu_type);
+#else
 	Object *cpuobj = object_new(machine->cpu_type);
+#endif
 	ARMCPU *cpu = ARM_CPU(cpuobj);
 
 	if (object_property_find(cpuobj, "has_el3"))

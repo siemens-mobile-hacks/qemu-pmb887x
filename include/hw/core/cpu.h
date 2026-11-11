@@ -401,7 +401,16 @@ typedef struct CPUTLBCommon {
 typedef struct CPUTLB {
 #ifdef CONFIG_TCG
     CPUTLBCommon c;
+#ifdef CONFIG_TCG_WASM64
+    /*
+     * WASM PORT FAST PATH (removable): out of line, which leaves 3 KiB
+     * between the start of a CPU object and its env, not 73, so that env
+     * can sit where arm64 code reaches it for nothing (qemu/w64-low.h).
+     */
+    CPUTLBDesc *d;
+#else
     CPUTLBDesc d[NB_MMU_MODES];
+#endif
     CPUTLBDescFast f[NB_MMU_MODES];
 #endif
 } CPUTLB;
