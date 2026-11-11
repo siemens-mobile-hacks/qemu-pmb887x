@@ -1,6 +1,3 @@
-/*
- * DMA Controller (PL080)
- * */
 #include "qemu/osdep.h"
 #include "hw/core/sysbus.h"
 #include "hw/core/hw-error.h"
@@ -22,9 +19,7 @@
 #define DMAC_CHANNELS		8
 #define DMAC_REQUESTS		16
 #define DMAC_FIFO_SIZE		16
-
-/* Max bursts serviced per timer callback before yielding the BQL back to the
- * main loop / vCPU. Bounds how long a single pass can hold the lock. */
+#define DMAC_MAX_TRANSFER_BYTES	((DMAC_CH_CONTROL_TRANSFER_SIZE >> DMAC_CH_CONTROL_TRANSFER_SIZE_SHIFT) * sizeof(uint32_t))
 #define DMAC_MAX_BURSTS_PER_PASS	10240
 
 static const uint32_t PCELL_ID = 0xB105F00D;
@@ -174,9 +169,8 @@ static void dmac_schedule(pmb887x_dmac_t *p) {
 		timer_mod(p->timer, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL));
 }
 
-static void dmac_clock_update(void *opaque, ClockEvent event) {
+static void dmac_clock_update(void *opaque, ClockEvent _event) {
 	pmb887x_dmac_t *p = opaque;
-	(void) event;
 
 	if (!clock_is_enabled(p->clock)) {
 		timer_del(p->timer);
@@ -317,7 +311,7 @@ static void dmac_transfer_advance(pmb887x_dmac_t *p, pmb887x_dmac_ch_t *ch, uint
 }
 
 static void dmac_transfer_memory(pmb887x_dmac_t *p, pmb887x_dmac_ch_t *ch, uint32_t burst_size) {
-	uint8_t buffer[16 * 1024] QEMU_ALIGNED(4); // 12bit TransferSize x DWORD
+	uint8_t buffer[DMAC_MAX_TRANSFER_BYTES] QEMU_ALIGNED(4);
 	uint32_t src_width = dmac_get_width((ch->control & DMAC_CH_CONTROL_S_WIDTH) >> DMAC_CH_CONTROL_S_WIDTH_SHIFT);
 	uint32_t dst_width = dmac_get_width((ch->control & DMAC_CH_CONTROL_D_WIDTH) >> DMAC_CH_CONTROL_D_WIDTH_SHIFT);
 	uint32_t flow_ctrl = (ch->config & DMAC_CH_CONFIG_FLOW_CTRL);
@@ -631,12 +625,8 @@ static void dmac_run_per2per_destination(
 ) {
 	pmb887x_dmac_pending_request_t source;
 	pmb887x_dmac_pending_request_t destination;
-	uint32_t src_width = dmac_get_width(
-		(ch->control & DMAC_CH_CONTROL_S_WIDTH) >> DMAC_CH_CONTROL_S_WIDTH_SHIFT
-	);
-	uint32_t dst_width = dmac_get_width(
-		(ch->control & DMAC_CH_CONTROL_D_WIDTH) >> DMAC_CH_CONTROL_D_WIDTH_SHIFT
-	);
+	uint32_t src_width = dmac_get_width((ch->control & DMAC_CH_CONTROL_S_WIDTH) >> DMAC_CH_CONTROL_S_WIDTH_SHIFT);
+	uint32_t dst_width = dmac_get_width((ch->control & DMAC_CH_CONTROL_D_WIDTH) >> DMAC_CH_CONTROL_D_WIDTH_SHIFT);
 	if (!dmac_get_pending_request(p, dst_sel, dst_periph, dst_burst_size, &destination))
 		return;
 
@@ -713,12 +703,8 @@ static void dmac_run_per2per_source(
 ) {
 	pmb887x_dmac_pending_request_t source;
 	bool destination_pending = dmac_is_request_pending(&p->breq, dst_sel, dst_periph);
-	uint32_t src_width = dmac_get_width(
-		(ch->control & DMAC_CH_CONTROL_S_WIDTH) >> DMAC_CH_CONTROL_S_WIDTH_SHIFT
-	);
-	uint32_t dst_width = dmac_get_width(
-		(ch->control & DMAC_CH_CONTROL_D_WIDTH) >> DMAC_CH_CONTROL_D_WIDTH_SHIFT
-	);
+	uint32_t src_width = dmac_get_width((ch->control & DMAC_CH_CONTROL_S_WIDTH) >> DMAC_CH_CONTROL_S_WIDTH_SHIFT);
+	uint32_t dst_width = dmac_get_width((ch->control & DMAC_CH_CONTROL_D_WIDTH) >> DMAC_CH_CONTROL_D_WIDTH_SHIFT);
 	uint32_t destination_bytes = dst_burst_size * dst_width;
 	if (ch->remaining_last_source_bytes == 0) {
 		if (ch->fifo_bytes != 0) {
@@ -825,9 +811,8 @@ static void dmac_channel_run(pmb887x_dmac_t *p, pmb887x_dmac_ch_t *ch) {
 		}
 
 		case DMAC_CH_CONFIG_FLOW_CTRL_MEM2PER_PER: {
-			if (!dmac_service_destination_request(p, ch, &p->breq, &p->lbreq, dst_sel, dst_periph, dst_burst_size)) {
+			if (!dmac_service_destination_request(p, ch, &p->breq, &p->lbreq, dst_sel, dst_periph, dst_burst_size))
 				dmac_service_destination_request(p, ch, &p->sreq, &p->lsreq, dst_sel, dst_periph, 1);
-			}
 			break;
 		}
 
@@ -931,7 +916,7 @@ static void dmac_handle_signal(pmb887x_dmac_t *p, pmb887x_dmac_request_t *reques
 		dmac_schedule(p);
 }
 
-static uint64_t dmac_io_read(void *opaque, hwaddr haddr, unsigned size) {
+static uint64_t dmac_io_read(void *opaque, hwaddr haddr, unsigned _size) {
 	pmb887x_dmac_t *p = opaque;
 
 	uint64_t value = 0;
@@ -1077,7 +1062,7 @@ static uint64_t dmac_io_read(void *opaque, hwaddr haddr, unsigned size) {
 	return value;
 }
 
-static void dmac_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned size) {
+static void dmac_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned _size) {
 	pmb887x_dmac_t *p = opaque;
 
 	if (!clock_is_enabled(p->clock))
@@ -1207,7 +1192,7 @@ uint32_t pmb887x_dmac_get_sel(pmb887x_dmac_t *p) {
 	return value;
 }
 
-static void dmac_timer_reset(void *opaque) {
+static void dmac_run_channels(void *opaque) {
 	pmb887x_dmac_t *p = opaque;
 
 	if (!clock_is_enabled(p->clock))
@@ -1280,7 +1265,7 @@ static const MemoryRegionOps io_ops = {
 
 static void dmac_reset(DeviceState *dev);
 
-static void dmac_handle_reset(void *opaque, int id, int level) {
+static void dmac_handle_reset(void *opaque, int _id, int level) {
 	if (level)
 		dmac_reset(DEVICE(opaque));
 }
@@ -1289,7 +1274,7 @@ static void dmac_init(Object *obj) {
 	DeviceState *dev = DEVICE(obj);
 	pmb887x_dmac_t *p = PMB887X_DMAC(obj);
 	p->clock = qdev_init_clock_in(dev, "clk", dmac_clock_update, p, ClockUpdate);
-	p->timer = timer_new_ns(QEMU_CLOCK_VIRTUAL, dmac_timer_reset, p);
+	p->timer = timer_new_ns(QEMU_CLOCK_VIRTUAL, dmac_run_channels, p);
 	memory_region_init_io(&p->mmio, obj, &io_ops, p, "pmb887x-dmac", DMAC_IO_SIZE);
 	sysbus_init_mmio(SYS_BUS_DEVICE(obj), &p->mmio);
 
@@ -1316,14 +1301,14 @@ static void dmac_init(Object *obj) {
 	qdev_init_gpio_in_named(dev, dmac_handle_reset, "RESET", 1);
 }
 
-static int dmac_tc_irq_router(void *opaque, int event_id) {
+static int dmac_tc_irq_router(void *_opaque, int event_id) {
 	if (event_id < DMAC_CHANNELS)
 		return event_id;
 
 	hw_error("Unknown event id: %d\n", event_id);
 }
 
-static int dmac_err_irq_router(void *opaque, int event_id) {
+static int dmac_err_irq_router(void *_opaque, int _event_id) {
 	return 0;
 }
 
