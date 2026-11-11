@@ -20,6 +20,7 @@ struct dsp_device_t {
 	const dsp_device_ops_t *ops;
 	void *state;
 	DebugChannel dbg;
+	bool timed;
 };
 
 static inline void dsp_device_debug_io(
@@ -62,13 +63,24 @@ struct dsp_bus_t {
 	dsp_device_t *ssc;
 	dsp_device_t *timer1;
 	dsp_device_t *timer2;
+	size_t pending_cycles;
+	size_t horizon_cycles;
+	size_t horizon_max;
 };
+
+void dsp_bus_flush(dsp_bus_t *bus);
+
+static inline void dsp_bus_access(dsp_bus_t *bus, const dsp_device_t *device) {
+	if (device->timed)
+		dsp_bus_flush(bus);
+}
 
 static inline uint16_t dsp_bus_read_at(dsp_bus_t *bus, uint16_t address, uint32_t pc) {
 	dsp_route_t *route = &bus->routes[address - bus->fallback_config.base];
 	dsp_device_t *device = route->device;
 	uint16_t value;
 
+	dsp_bus_access(bus, device);
 	if (!device->ops->read(device, route->offset, pc, &value))
 		bus->fallback->ops->read(bus->fallback, address - bus->fallback->config->base, pc, &value);
 	return value;
@@ -78,6 +90,7 @@ static inline void dsp_bus_write_at(dsp_bus_t *bus, uint16_t address, uint16_t v
 	dsp_route_t *route = &bus->routes[address - bus->fallback_config.base];
 	dsp_device_t *device = route->device;
 
+	dsp_bus_access(bus, device);
 	if (!device->ops->write(device, route->offset, pc, value))
 		bus->fallback->ops->write(bus->fallback, address - bus->fallback->config->base, pc, value);
 }
@@ -169,6 +182,7 @@ void dsp_i2s_set_clock_hz(dsp_device_t *device, uint32_t frequency_hz);
 void dsp_i2s_set_ms_clock_hz(dsp_device_t *device, uint32_t frequency_hz);
 void dsp_i2s_advance(dsp_device_t *device, size_t cycles);
 size_t dsp_i2s_get_cycles_until_receive_interrupt(const dsp_device_t *device);
+size_t dsp_i2s_get_cycles_until_frame(const dsp_device_t *device);
 bool dsp_i2s_is_active(const dsp_device_t *device);
 
 dsp_device_t *dsp_i2s_tx_create(
@@ -240,6 +254,7 @@ dsp_device_t *timer2_create(
 	dsp_device_t *interrupt
 );
 void timer2_advance(dsp_device_t *device, size_t cycles);
+size_t timer2_get_cycles_until_interrupt(const dsp_device_t *device);
 bool timer2_is_active(const dsp_device_t *device);
 
 dsp_device_t *unknown_create(const pmb887x_dsp_peripheral_config_t *config, const DebugChannel *parent);
