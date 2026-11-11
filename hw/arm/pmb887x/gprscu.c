@@ -1,6 +1,3 @@
-/*
- * GPRS Ciphering Unit
- */
 #include "qemu/osdep.h"
 #include "qemu/bswap.h"
 #include "hw/core/qdev-properties.h"
