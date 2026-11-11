@@ -4144,6 +4144,13 @@ if have_system
       ),
       'dependencies': [qom, hwcore],
     },
+    'gsm-cipher': {
+      'sources': files(
+        'tests/unit/test-gsm-cipher.c',
+        'hw/gsm/gea.c',
+        'hw/gsm/kasumi.c',
+      ),
+    },
     'bus-port': {
       'sources': files(
         'tests/unit/test-bus-port.c',

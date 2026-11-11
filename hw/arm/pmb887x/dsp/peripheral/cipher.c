@@ -1,9 +1,9 @@
 #include "qemu/osdep.h"
 #include "qemu/bitops.h"
 #include "qemu/timer.h"
-#include "hw/arm/pmb887x/dsp/peripheral/cipher-kasumi.h"
 #include "hw/arm/pmb887x/dsp/peripheral/internal.h"
 #include "hw/arm/pmb887x/gen/dsp.h"
+#include "hw/gsm/kasumi.h"
 
 #define CIPHER_REGISTER_COUNT	(TEAK_CIPH_KDATA4 + 1)
 #define CIPHER_STREAM_OFFSET	0x0020
@@ -227,7 +227,6 @@ static void cipher_a53_generate(cipher_state_t *state) {
 	uint8_t ca = state->registers[TEAK_CIPH_KDATA1] >> 8;
 	uint8_t cb = kdata2 >> 11;
 	uint8_t cd = kdata2 >> 10 & 1;
-	uint16_t ce = 0;
 	uint32_t frame_count = ((uint32_t) kdata3 & 0xFF00) << 8 | kdata4;
 
 	for (size_t group = 0; group < 4; group++) {
@@ -240,7 +239,13 @@ static void cipher_a53_generate(cipher_state_t *state) {
 		key[key_offset + 3] = odd;
 	}
 
-	cipher_kgcore(ca, cb, frame_count, cd, ce, key, output, CIPHER_GSM_BITS * 2);
+	uint64_t input = ((uint64_t) frame_count << 32) | ((uint32_t) cb << 27) | ((uint32_t) cd << 26) |
+		((uint32_t) ca << 16);
+	KGCore kgcore;
+
+	kgcore_start(&kgcore, input, key);
+	for (size_t i = 0; i < ARRAY_SIZE(output); i++)
+		output[i] = kgcore_next_byte(&kgcore);
 
 	for (size_t stream = 0; stream < 2; stream++) {
 		uint16_t base = state->ram_base + stream * CIPHER_STREAM_OFFSET;

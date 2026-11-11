@@ -9,6 +9,12 @@ config GSM_AIR
     select GSM_IQ_BUS
     select GSM_NETWORK
 
+config GSM_KASUMI
+    bool
+
+config GSM_GEA
+    bool
+
 config GSM_BTS
     bool
     select GSM_NETWORK

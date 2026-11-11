@@ -5,7 +5,6 @@ dsp_peripheral_sources = files(
 	'dsp/peripheral/baseband.c',
 	'dsp/peripheral/channel-decoder.c',
 	'dsp/peripheral/cipher.c',
-	'dsp/peripheral/cipher-kasumi.c',
 	'dsp/peripheral/dsp.c',
 	'dsp/peripheral/equalizer.c',
 	'dsp/peripheral/i2s.c',
