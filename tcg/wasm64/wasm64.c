@@ -593,12 +593,34 @@ static void mb_sec(struct w64_mb *mod, uint8_t id, struct w64_mb *sec)
     mb_put(mod, sec->b, sec->n);
 }
 
+/* an element of the chain table's type: (ref.func @fn) */
+static void w64_elem_func(struct w64_mb *sec, uint32_t fn)
+{
+    mb_u8(sec, 0xd2);                     /* ref.func */
+    mb_uleb(sec, fn);
+    mb_u8(sec, 0x0b);                     /* end */
+}
+
+/* an active segment: TAB[@tidx] = @fn */
+static void w64_elem_active(struct w64_mb *sec, uint32_t tidx, uint32_t fn)
+{
+    mb_u8(sec, 0x06);                     /* active, typed expressions */
+    mb_u8(sec, 0x00);                     /* table 0 */
+    mb_u8(sec, 0x41);                     /* i32.const */
+    mb_sleb32(sec, (int32_t)tidx);
+    mb_u8(sec, 0x0b);                     /* end */
+    mb_u8(sec, 0x64);                     /* (ref 0) */
+    mb_u8(sec, 0x00);
+    mb_uleb(sec, 1);
+    w64_elem_func(sec, fn);
+}
+
 EM_JS(void, w64_tab_unset, (uintptr_t arr, uint32_t n), {
     const TAB = globalThis.__w64tab;
     const dv = new DataView(HEAPU8.buffer);
     const a = Number(arr);
     for (let i = 0; i < n; i++) {
-        TAB.set(dv.getUint32(a + i * 4, true), null);
+        TAB.set(dv.getUint32(a + i * 4, true), globalThis.__w64none);
     }
 });
 
@@ -606,7 +628,7 @@ EM_JS(void, w64_tab_clear, (void), {
     const TAB = globalThis.__w64tab;
     if (TAB) {
         for (let i = 0; i < TAB.length; i++) {
-            TAB.set(i, null);
+            TAB.set(i, globalThis.__w64none);
         }
     }
 });
@@ -623,7 +645,14 @@ EM_JS(void, w64_tab_clear, (void), {
  * which tail-calls TAB[tidx] with (env, sp, tp).  It is one function for
  * every batch, made with the first: a thunk per module cost an
  * addFunction/removeFunction pair and a lazy compile per module, and the
- * dispatcher's indirect call met a different target for every batch. */
+ * dispatcher's indirect call met a different target for every batch.
+ *
+ * The thunk's module defines TAB, because only a module can give a table
+ * the type it has: (ref $tb), non-null references to the TB signature.
+ * A call_indirect of that signature through such a table needs neither
+ * the signature compare nor a null test, five of the 21 instructions of
+ * every chained transition in V8's arm64 code.  An entry no TB owns holds
+ * `none`, which traps. */
 EM_JS(int, w64_batch_instantiate,
       (uintptr_t modp, uint32_t modlen, uintptr_t ipp, uint32_t nimp,
        uint32_t maxtidx), {
@@ -638,12 +667,39 @@ EM_JS(int, w64_batch_instantiate,
     }
     const dv = __v.dv;
     const mod_bytes = HEAPU8.slice(Number(modp), Number(modp) + Number(modlen));
-    if (!globalThis.__w64tab) {
-        globalThis.__w64tab = new WebAssembly.Table({ element: 'anyfunc', initial: 1 << 14 });
+    if (globalThis.__w64run === undefined) {
+        const run = new Uint8Array([
+            0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00,
+            /* types: 0 the TB signature, 1 the thunk's */
+            0x01, 0x10, 0x02,
+            0x60, 0x03, 0x7e, 0x7e, 0x7e, 0x01, 0x7f,
+            0x60, 0x04, 0x7e, 0x7e, 0x7e, 0x7f, 0x01, 0x7f,
+            /* functions: run (type 1), none (type 0) */
+            0x03, 0x03, 0x02, 0x01, 0x00,
+            /* table 0: (ref 0), min 1 << 14, every entry (ref.func none) */
+            0x04, 0x0c, 0x01, 0x40, 0x00, 0x64, 0x00, 0x00, 0x80, 0x80, 0x01,
+            0xd2, 0x01, 0x0b,
+            /* exports: "run" = func 0, "t" = table 0, "none" = func 1 */
+            0x07, 0x12, 0x03,
+            0x03, 0x72, 0x75, 0x6e, 0x00, 0x00,
+            0x01, 0x74, 0x01, 0x00,
+            0x04, 0x6e, 0x6f, 0x6e, 0x65, 0x00, 0x01,
+            /* run: local.get 0..3; return_call_indirect type 0, table 0
+             * none: unreachable */
+            0x0a, 0x13, 0x02,
+            0x0d, 0x00,
+            0x20, 0x00, 0x20, 0x01, 0x20, 0x02, 0x20, 0x03,
+            0x13, 0x00, 0x00, 0x0b,
+            0x03, 0x00, 0x00, 0x0b,
+        ]);
+        const ex = new WebAssembly.Instance(new WebAssembly.Module(run), {}).exports;
+        globalThis.__w64tab = ex.t;
+        globalThis.__w64none = ex.none;
+        globalThis.__w64run = addFunction(ex.run, 'jjjii');
     }
     const TAB = globalThis.__w64tab;
     if (maxtidx >= TAB.length) {
-        TAB.grow(Math.max(4096, maxtidx + 1 - TAB.length));
+        TAB.grow(Math.max(4096, maxtidx + 1 - TAB.length), globalThis.__w64none);
     }
     const ip = Number(ipp);
     const imports = { e: { m: wasmMemory, t: TAB } };
@@ -671,27 +727,6 @@ EM_JS(int, w64_batch_instantiate,
     if (globalThis.__w64gc && (globalThis.__w64ninst & 255) === 0) {
         const junk = new ArrayBuffer(32 << 20);
         new Uint8Array(junk)[0] = 1;
-    }
-    if (globalThis.__w64run === undefined) {
-        const run = new Uint8Array([
-            0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00,
-            /* types: 0 the TB signature, 1 the thunk's */
-            0x01, 0x10, 0x02,
-            0x60, 0x03, 0x7e, 0x7e, 0x7e, 0x01, 0x7f,
-            0x60, 0x04, 0x7e, 0x7e, 0x7e, 0x7f, 0x01, 0x7f,
-            /* import e.t: funcref table, min 1 */
-            0x02, 0x09, 0x01, 0x01, 0x65, 0x01, 0x74, 0x01, 0x70, 0x00, 0x01,
-            /* one function of type 1, exported as "run" */
-            0x03, 0x02, 0x01, 0x01,
-            0x07, 0x07, 0x01, 0x03, 0x72, 0x75, 0x6e, 0x00, 0x00,
-            /* local.get 0..3; return_call_indirect type 0, table 0 */
-            0x0a, 0x0f, 0x01, 0x0d, 0x00,
-            0x20, 0x00, 0x20, 0x01, 0x20, 0x02, 0x20, 0x03,
-            0x13, 0x00, 0x00, 0x0b,
-        ]);
-        globalThis.__w64run = addFunction(new WebAssembly.Instance(
-            new WebAssembly.Module(run), { e: { t: TAB } }).exports.run,
-            'jjjii');
     }
     return globalThis.__w64run;
 });
@@ -1034,7 +1069,8 @@ static uint32_t w64_assemble_instantiate(const struct w64_bsrc *src,
     mb_u8(&sec, 1); mb_u8(&sec, 'e');
     mb_u8(&sec, 1); mb_u8(&sec, 't');
     mb_u8(&sec, 0x01);                    /* table */
-    mb_u8(&sec, 0x70);                    /* funcref */
+    mb_u8(&sec, 0x64);                    /* (ref 0): the TB signature */
+    mb_u8(&sec, 0x00);
     mb_u8(&sec, 0x00);                    /* limits: min only */
     mb_uleb(&sec, 1);
     for (i = 0; i < src->n_uimp; i++) {
@@ -1069,26 +1105,18 @@ static uint32_t w64_assemble_instantiate(const struct w64_bsrc *src,
         uint32_t tidx = ((const uint32_t *)(uintptr_t)src->member[m].tcptr)
                         [W64_DESC_TIDX / 4];
         maxtidx = MAX(maxtidx, tidx);
-        mb_u8(&sec, 0x00);                /* active, table 0 */
-        mb_u8(&sec, 0x41);                /* i32.const */
-        mb_sleb32(&sec, (int32_t)tidx);
-        mb_u8(&sec, 0x0b);                /* end */
-        mb_uleb(&sec, 1);
-        mb_uleb(&sec, src->n_uimp + m);
+        w64_elem_active(&sec, tidx, src->n_uimp + m);
     }
     if (rtidx) {
         maxtidx = MAX(maxtidx, rtidx);
-        mb_u8(&sec, 0x00);                /* active: TAB[rtidx] = rebinder */
-        mb_u8(&sec, 0x41);
-        mb_sleb32(&sec, (int32_t)rtidx);
-        mb_u8(&sec, 0x0b);
-        mb_uleb(&sec, 1);
-        mb_uleb(&sec, src->n_uimp + nfn - 1);
-        mb_u8(&sec, 0x01);                /* passive, function indices */
+        /* TAB[rtidx] = rebinder */
+        w64_elem_active(&sec, rtidx, src->n_uimp + nfn - 1);
+        mb_u8(&sec, 0x05);                /* passive, (ref 0) expressions */
+        mb_u8(&sec, 0x64);
         mb_u8(&sec, 0x00);
         mb_uleb(&sec, src->n_member);
         for (m = 0; m < src->n_member; m++) {
-            mb_uleb(&sec, src->n_uimp + m);
+            w64_elem_func(&sec, src->n_uimp + m);
         }
     }
     mb_sec(&mod, 9, &sec);
