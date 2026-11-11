@@ -44,7 +44,8 @@ OBJECT_DECLARE_TYPE(HD15515XState, HD15515XClass, HD15515X)
 
 #define HD155155NPEB_APPROX_BASE_GAIN_DB        23
 #define HD155155NPEB_PGA_OFFSET_DB              (-36)
-#define HD155155NPEB_APPROX_FRONT_END_GAIN_DB   38
+#define HD155155NPEB_FRONT_END_LOW_BAND_DB      38
+#define HD155155NPEB_FRONT_END_HIGH_BAND_DB     29
 
 struct HD15515XState {
     SysBusDevice parent_obj;
@@ -91,13 +92,16 @@ static int32_t hd155153np_receiver_gain_db(HD15515XState *_p, uint32_t pga_gain,
 }
 
 static int32_t hd155155npeb_receiver_gain_db(HD15515XState *p, uint32_t pga_gain, uint32_t front_end) {
-    uint32_t band_stage = p->band <= HD15515X_LAST_LOW_BAND ? HD15515X_FRONT_END_LOW_BAND : HD15515X_FRONT_END_HIGH_BAND;
+    bool low_band = p->band <= HD15515X_LAST_LOW_BAND;
+    uint32_t band_stage = low_band ? HD15515X_FRONT_END_LOW_BAND : HD15515X_FRONT_END_HIGH_BAND;
     int32_t gain_db = HD155155NPEB_APPROX_BASE_GAIN_DB + HD155155NPEB_PGA_OFFSET_DB +
         (int32_t) pga_gain * HD15515X_PGA_STEP_DB;
 
-    if ((front_end & band_stage) != 0)
-        gain_db += HD155155NPEB_APPROX_FRONT_END_GAIN_DB;
-    return gain_db;
+    if ((front_end & band_stage) == 0)
+        return gain_db;
+    if (low_band)
+        return gain_db + HD155155NPEB_FRONT_END_LOW_BAND_DB;
+    return gain_db + HD155155NPEB_FRONT_END_HIGH_BAND_DB;
 }
 
 static void hd15515x_set_gain(HD15515XState *p, uint32_t value) {
