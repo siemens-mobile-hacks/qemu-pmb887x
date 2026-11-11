@@ -1247,6 +1247,23 @@
             '*close-action': 'MonitorQMPCloseAction' } }
 
 ##
+# @GsmBtsProperties:
+#
+# Properties for gsm-bts objects.
+#
+# @netdev: ID of the network backend that carries the IP traffic of
+#     the GPRS subscribers (default: none, no packet data)
+#
+# @gsmtap: IPv4 address that receives a GSMTAP copy of every decoded
+#     radio block on UDP port 4729 (default: none)
+#
+# Since: 11.1
+##
+{ 'struct': 'GsmBtsProperties',
+  'data': { '*netdev': 'str',
+            '*gsmtap': 'str' } }
+
+##
 # @GsmOsmotrxProperties:
 #
 # Properties for gsm-osmotrx objects.
@@ -1384,6 +1401,7 @@
       'filter-redirector':          'FilterRedirectorProperties',
       'filter-replay':              'NetfilterProperties',
       'filter-rewriter':            'FilterRewriterProperties',
+      'gsm-bts':                    'GsmBtsProperties',
       'gsm-osmotrx':                'GsmOsmotrxProperties',
       'igvm-cfg':                   { 'type': 'IgvmCfgProperties',
                                       'if': 'CONFIG_IGVM' },

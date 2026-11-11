@@ -20,6 +20,8 @@ config GSM_CODING
 
 config GSM_BTS
     bool
+    select GSM_AIR
+    select GSM_CODING
     select GSM_NETWORK
 
 config GSM_OSMOTRX

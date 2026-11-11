@@ -30,7 +30,6 @@
 #include "hw/arm/pmb887x/board/cpu_module.h"
 #include "hw/arm/pmb887x/board/startup.h"
 #include "hw/block/cfi-flash.h"
-#include "hw/gsm/gsm-bts.h"
 #include "hw/gsm/gsm-network.h"
 
 #include "hw/arm/pmb887x/gen/brom.h"
@@ -110,18 +109,6 @@ static void pmb887x_init_irq_names(DeviceState *vic) {
 	for (uint32_t i = 0; i < count; i++)
 		qlist_append_str(list, names[i] ? names[i] : "");
 	qdev_prop_set_array(vic, "irq-names", list);
-}
-
-static Object *pmb887x_init_gsm_network(MachineState *machine) {
-	pmb887x_machine_t *pmb887x_machine = OBJECT_CHECK(pmb887x_machine_t, machine, TYPE_PMB887X_MACHINE);
-
-	if (pmb887x_machine->gsm_network == NULL) {
-		Object *bts = object_new(TYPE_GSM_BTS);
-		object_property_add_child(OBJECT(machine), "gsm-bts", bts);
-		object_property_set_link(OBJECT(machine), "gsm-network", bts, &error_fatal);
-		object_unref(bts);
-	}
-	return pmb887x_machine->gsm_network;
 }
 
 static void pmb887x_init(MachineState *machine) {
@@ -385,7 +372,8 @@ static void pmb887x_init(MachineState *machine) {
 	pmb887x_cpu_modules_post_init();
 	pmb887x_board_init_analog();
 	pmb887x_board_gpio_init_fixed_inputs();
-	pmb887x_board_init_devices(ebuc, pmb887x_init_gsm_network(machine));
+	pmb887x_machine_t *pmb887x_machine = OBJECT_CHECK(pmb887x_machine_t, machine, TYPE_PMB887X_MACHINE);
+	pmb887x_board_init_devices(ebuc, pmb887x_machine->gsm_network);
 	sysbus_realize_and_unref(SYS_BUS_DEVICE(ebuc), &error_fatal);
 	pmb887x_board_keyboard_connect_gpios(keypad);
 	pmb887x_board_startup_init(keypad);
