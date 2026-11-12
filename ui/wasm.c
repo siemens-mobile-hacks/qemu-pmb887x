@@ -5,9 +5,10 @@
  * sdl/gtk/curses): the page in front of the emulator needs (a) the guest
  * framebuffer on the wasm heap where JS can read it, (b) a way to inject
  * key events from the browser main thread while the vCPU runs on a
- * pthread, (c) a thread-safe quit, and (d) a way to swap the accessory
- * plugged into the phone while it runs. All four are provided here as
- * EMSCRIPTEN_KEEPALIVE exports.
+ * pthread, (c) a thread-safe quit, (d) a way to swap the accessory
+ * plugged into the phone while it runs, and (e) a network port for the
+ * GSM cell's IP side. All five are provided here as EMSCRIPTEN_KEEPALIVE
+ * exports.
  *
  * Exposes the guest framebuffer to JavaScript and accepts linux-keycode
  * input + a quit request from JavaScript. All JS entry points are safe to
@@ -32,6 +33,8 @@
 #include "exec/icount.h"
 #include "hw/core/cpu.h"
 #include "hw/misc/phone/accessory-connector.h"
+#include "net/hub.h"
+#include "net/net.h"
 #include "qapi/error.h"
 #include "qemu/seqlock.h"
 #include "system/cpu-timers.h"
@@ -338,6 +341,135 @@ void wasm_accessory_plug(void)
     aio_bh_schedule_oneshot(qemu_get_aio_context(), wasm_accessory_bh,
                             g_strndup(accessory_name,
                                       sizeof(accessory_name) - 1));
+}
+
+/* ------------------------------------------------------------------ */
+/* Network: the page's port on the GSM cell's hub                      */
+/* ------------------------------------------------------------------ */
+
+/*
+ * WASM PORT (removable): a browser gives slirp no sockets, so the page runs
+ * the IP side itself. It boots the cell with "-netdev hubport,id=net0,
+ * hubid=0" and calls wasm_net_attach(), which adds the page as a second port
+ * of hub 0. Frames the hub delivers here wait in net_out until the JS thread
+ * takes them with wasm_net_take(); frames the page hands over with
+ * wasm_net_put() wait in net_in for a bottom half that sends them under the
+ * BQL. Both rings have one producer and one consumer, like key_ring.
+ */
+#define NET_FRAME_MAX 1600
+#define NET_RING_SIZE 64        /* power of two */
+
+typedef struct {
+    struct {
+        uint16_t len;
+        uint8_t data[NET_FRAME_MAX];
+    } slot[NET_RING_SIZE];
+    unsigned int head;
+    unsigned int tail;
+} WasmNetRing;
+
+static WasmNetRing net_out, net_in;
+static uint8_t net_buf[NET_FRAME_MAX];  /* the page's staging buffer */
+static NetClientState *net_nc;
+static QEMUBH *net_bh;
+static int net_ready;
+
+static bool net_ring_push(WasmNetRing *r, const uint8_t *data, size_t len)
+{
+    unsigned int tail = qatomic_read(&r->tail);
+
+    if (len > NET_FRAME_MAX ||
+        tail - qatomic_load_acquire(&r->head) >= NET_RING_SIZE) {
+        return false;
+    }
+    r->slot[tail & (NET_RING_SIZE - 1)].len = len;
+    memcpy(r->slot[tail & (NET_RING_SIZE - 1)].data, data, len);
+    qatomic_store_release(&r->tail, tail + 1);
+    return true;
+}
+
+static size_t net_ring_pop(WasmNetRing *r, uint8_t *out)
+{
+    unsigned int head = qatomic_read(&r->head);
+    size_t len;
+
+    if (qatomic_load_acquire(&r->tail) == head) {
+        return 0;
+    }
+    len = r->slot[head & (NET_RING_SIZE - 1)].len;
+    memcpy(out, r->slot[head & (NET_RING_SIZE - 1)].data, len);
+    qatomic_store_release(&r->head, head + 1);
+    return len;
+}
+
+static ssize_t wasm_net_receive(NetClientState *nc, const uint8_t *buf,
+                                size_t size)
+{
+    net_ring_push(&net_out, buf, size);
+    return size;
+}
+
+static NetClientInfo wasm_net_info = {
+    .type = NET_CLIENT_DRIVER_NONE,
+    .size = sizeof(NetClientState),
+    .receive = wasm_net_receive,
+};
+
+static void wasm_net_bh(void *opaque)
+{
+    uint8_t frame[NET_FRAME_MAX];
+    size_t len;
+
+    while ((len = net_ring_pop(&net_in, frame))) {
+        qemu_send_packet(net_nc, frame, len);
+    }
+}
+
+static void wasm_net_attach_bh(void *opaque)
+{
+    if (net_nc) {
+        return;
+    }
+    net_nc = qemu_new_net_client(&wasm_net_info, NULL, "wasm", "wasm-net");
+    net_hub_add_port(0, NULL, net_nc);
+    net_bh = qemu_bh_new(wasm_net_bh, NULL);
+    qatomic_store_release(&net_ready, 1);
+}
+
+/* Exported to JS: 0 while there is no machine yet (see wasm_send_key). */
+EMSCRIPTEN_KEEPALIVE
+int32_t wasm_net_attach(void)
+{
+    if (!qatomic_load_acquire(&key_bh_ready)) {
+        return 0;
+    }
+    aio_bh_schedule_oneshot(qemu_get_aio_context(), wasm_net_attach_bh, NULL);
+    return 1;
+}
+
+EMSCRIPTEN_KEEPALIVE
+uint8_t *wasm_net_buf(void)
+{
+    return net_buf;
+}
+
+/* Exported to JS: the next frame for the page, copied to net_buf; 0 if none. */
+EMSCRIPTEN_KEEPALIVE
+int32_t wasm_net_take(void)
+{
+    return net_ring_pop(&net_out, net_buf);
+}
+
+/* Exported to JS: send the frame of @len bytes in net_buf; 0 if dropped. */
+EMSCRIPTEN_KEEPALIVE
+int32_t wasm_net_put(int32_t len)
+{
+    if (!qatomic_load_acquire(&net_ready) || len <= 0 ||
+        !net_ring_push(&net_in, net_buf, len)) {
+        return 0;
+    }
+    qemu_bh_schedule(net_bh);
+    return 1;
 }
 
 /* ------------------------------------------------------------------ */
