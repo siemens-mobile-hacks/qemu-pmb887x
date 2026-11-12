@@ -1,5 +1,7 @@
 /* SPDX-License-Identifier: GPL-2.0-or-later */
 #include "qemu/osdep.h"
+#include <math.h>
+
 #include "qemu/bitops.h"
 #include "qemu/module.h"
 
@@ -24,7 +26,16 @@ OBJECT_DECLARE_TYPE(PMB627XState, PMB627XClass, PMB627X)
 #define PMB627X_TELEGRAM_MASK           MAKE_64BIT_MASK(0, PMB627X_TELEGRAM_BITS)
 #define PMB627X_REGISTER_COUNT          16U
 #define PMB627X_CHANNEL_FRACTION_BITS   23U
-#define PMB627X_SIGNAL_AMPLITUDE        4000
+#define PMB627X_LNA_LOW_GAIN_DB         23
+#define PMB627X_LNA_MEDIUM_GAIN_DB      43
+#define PMB627X_LNA_HIGH_GAIN_DB        57
+#define PMB627X_RXGS0_GAIN_DB           12
+#define PMB627X_RXGS1_GAIN_DB           6
+#define PMB627X_RXGS2_GAIN_DB           (-6)
+#define PMB627X_RXGS3_GAIN_DB           (-3)
+#define PMB627X_FAKE_SIGNAL_LEVEL_DBM   (-60)
+#define PMB627X_APPROX_ADC_OFFSET_DB    75
+#define PMB627X_ADC_MAX_AMPLITUDE       16000
 
 struct PMB627XState {
     SysBusDevice parent_obj;
@@ -36,6 +47,7 @@ struct PMB627XState {
     uint32_t telegram;
     uint32_t channel_fraction;
     uint32_t frequency;
+    int32_t amplitude;
     uint64_t shift_register;
     uint8_t telegram_bits;
     uint8_t shift_bits;
@@ -58,12 +70,41 @@ static void pmb627x_update_air(PMB627XState *p) {
     } else if (p->transmit) {
         gsm_air_tune(&p->air, GSM_AIR_PATH_TRANSMIT, p->frequency, 0);
     } else {
-        gsm_air_tune(&p->air, GSM_AIR_PATH_RECEIVE, p->frequency, PMB627X_SIGNAL_AMPLITUDE);
+        gsm_air_tune(&p->air, GSM_AIR_PATH_RECEIVE, p->frequency, p->amplitude);
     }
 }
 
+static int32_t pmb627x_lna_gain_db(uint32_t rxtx) {
+    switch (rxtx & PMB627X_RXTX_RXGAIN) {
+        case PMB627X_RXTX_RXGAIN_HIGH:
+            return PMB627X_LNA_HIGH_GAIN_DB;
+
+        case PMB627X_RXTX_RXGAIN_MEDIUM:
+            return PMB627X_LNA_MEDIUM_GAIN_DB;
+    }
+    return PMB627X_LNA_LOW_GAIN_DB;
+}
+
+static void pmb627x_set_gain(PMB627XState *p, uint32_t rxtx) {
+    int32_t gain_db = pmb627x_lna_gain_db(rxtx);
+
+    if ((rxtx & PMB627X_RXTX_RXGS0) != 0)
+        gain_db += PMB627X_RXGS0_GAIN_DB;
+    if ((rxtx & PMB627X_RXTX_RXGS1) != 0)
+        gain_db += PMB627X_RXGS1_GAIN_DB;
+    if ((rxtx & PMB627X_RXTX_RXGS2) != 0)
+        gain_db += PMB627X_RXGS2_GAIN_DB;
+    if ((rxtx & PMB627X_RXTX_RXGS3) != 0)
+        gain_db += PMB627X_RXGS3_GAIN_DB;
+
+    int32_t adc_level_db = PMB627X_FAKE_SIGNAL_LEVEL_DBM + PMB627X_APPROX_ADC_OFFSET_DB + gain_db;
+    int32_t amplitude = (int32_t) lround(pow(10.0, adc_level_db / 20.0));
+
+    p->amplitude = MIN(amplitude, PMB627X_ADC_MAX_AMPLITUDE);
+    pmb627x_update_air(p);
+}
+
 static void pmb627x_write_telegram(PMB627XState *p, uint32_t telegram, uint8_t bits) {
-    static const char *band_names[] = { "GSM850", "GSM900", "DCS1800", "PCS1900" };
     uint8_t address = (telegram & PMB627X_REGISTER_ADDRESS_MASK) >> PMB627X_REGISTER_ADDRESS_SHIFT;
 
     p->telegram = telegram;
@@ -92,10 +133,14 @@ static void pmb627x_write_telegram(PMB627XState *p, uint32_t telegram, uint8_t b
 
             p->frequency = frequency;
             pmb627x_update_air(p);
-            DEBUG_LOG(&p->dbg, "tuned to %u Hz: band=%s path=%s\n", frequency, band_names[p->band],
+            DEBUG_LOG(&p->dbg, "tuned to %u Hz: band=%u path=%s\n", frequency, p->band,
                 p->transmit ? "TX" : "RX");
             break;
         }
+
+        case PMB627X_RXTX:
+            pmb627x_set_gain(p, telegram);
+            break;
     }
 
     DEBUG_IO_WRITE(&p->dbg, address, bits >> PMB627X_BITS_TO_BYTES_SHIFT, telegram);
@@ -157,6 +202,7 @@ static void pmb627x_reset(DeviceState *device) {
     p->telegram = 0;
     p->channel_fraction = 0;
     p->frequency = 0;
+    p->amplitude = 0;
     p->shift_register = 0;
     p->telegram_bits = 0;
     p->shift_bits = 0;
