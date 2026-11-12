@@ -15,6 +15,7 @@
 #define TYPE_HD15515X       "hd15515x"
 #define TYPE_HD155153NP     "hd155153np"
 #define TYPE_HD155155NPEB   "hd155155npeb"
+#define TYPE_HD155165BP     "hd155165bp"
 
 OBJECT_DECLARE_TYPE(HD15515XState, HD15515XClass, HD15515X)
 
@@ -292,6 +293,11 @@ static const TypeInfo hd15515x_types[] = {
     },
     {
         .name = TYPE_HD155155NPEB,
+        .parent = TYPE_HD15515X,
+        .class_init = hd155155npeb_class_init,
+    },
+    {
+        .name = TYPE_HD155165BP,
         .parent = TYPE_HD15515X,
         .class_init = hd155155npeb_class_init,
     },

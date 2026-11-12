@@ -4,7 +4,7 @@
 #include "qemu/debug-regs.h"
 
 // HD15515X
-// Hitachi HD155153NP and HD155155NPEB GSM RF transceivers
+// Hitachi HD155153NP, HD155155NPEB and HD155165BP GSM RF transceivers
 /* Channel synthesizer configuration */
 #define HD15515X_CHANNEL_PLL                        0x01
 #define HD15515X_CHANNEL_PLL_BAND                   MAKE_64BIT_MASK(0, 2)    // Synthesizer band code
