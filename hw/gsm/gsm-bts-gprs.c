@@ -153,7 +153,8 @@
 #define LLC_SAPIS 16U
 #define LLC_N201_U 500U
 #define LLC_QUEUE_SIZE 64U
-#define LLC_MAX_BYTES (LLC_N201_U + LLC_UI_HEADER_BYTES + LLC_FCS_BYTES)
+#define LLC_N201_U_MAX 1520U
+#define LLC_MAX_BYTES (LLC_N201_U_MAX + LLC_UI_HEADER_BYTES + LLC_FCS_BYTES)
 
 #define GSM48_PD_GMM 0x08U
 #define GSM48_PD_SM 0x0AU
@@ -294,7 +295,7 @@ struct GSMBtsUplinkTbf {
     bool final_acknowledged;
     uint32_t unacknowledged_blocks;
     uint32_t idle_blocks;
-    GSMBtsMessage llc;
+    GSMBtsLlcFrame llc;
 };
 
 struct GSMBtsDownlinkTbf {
@@ -859,7 +860,7 @@ static size_t rlc_uplink_decode_chunks(
 }
 
 static void rlc_uplink_deliver_block(GSMBts *bts, const uint8_t block[GSM_XCCH_BLOCK_BYTES]) {
-    GSMBtsMessage *llc = &bts->gprs->ul.llc;
+    GSMBtsLlcFrame *llc = &bts->gprs->ul.llc;
     GSMBtsRlcChunk chunks[RLC_MAX_CHUNKS];
     size_t chunk_count;
     size_t offset = rlc_uplink_decode_chunks(block, chunks, &chunk_count);
