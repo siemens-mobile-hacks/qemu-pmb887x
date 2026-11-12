@@ -1258,7 +1258,7 @@
 #     radio block on UDP port 4729 (default: none)
 #
 # @arfcn: channel of the cell: a GSM850, GSM900, or DCS1800 ARFCN,
-#     or a PCS1900 ARFCN with @pcs1900 (default: 5)
+#     or a PCS1900 ARFCN with @pcs1900 (default: 512)
 #
 # @pcs1900: @arfcn is a PCS1900 channel (default: false)
 #
