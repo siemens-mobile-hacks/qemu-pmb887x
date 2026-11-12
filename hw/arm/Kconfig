@@ -297,7 +297,7 @@ config PMB887X
     select GSM_OSMOTRX
     select GSM_KASUMI
     select GSM_GEA
-    select HD155153NP
+    select HD15515X
     select PMB6272
 
 config VEXPRESS

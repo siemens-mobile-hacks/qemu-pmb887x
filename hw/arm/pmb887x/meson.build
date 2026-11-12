@@ -83,7 +83,7 @@ host_unit_tests += {
 		'dependencies': [glib],
 	},
 	'pmb887x-dsp-peripheral': {
-		'sources': files('dsp/tests/peripheral.c') + dsp_peripheral_sources,
+		'sources': files('dsp/tests/peripheral.c', '../../gsm/kasumi.c') + dsp_peripheral_sources,
 		'dependencies': [glib],
 	},
 }

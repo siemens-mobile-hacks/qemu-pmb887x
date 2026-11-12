@@ -30,7 +30,7 @@ config GSM_OSMOTRX
     select GSM_CODING
     select GSM_NETWORK
 
-config HD155153NP
+config HD15515X
     bool
     select GSM_AIR
 

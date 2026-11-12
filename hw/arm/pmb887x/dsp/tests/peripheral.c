@@ -64,6 +64,14 @@ IQSample iq_bus_read(IQBus *bus, int64_t _timestamp, uint64_t _sample_index) {
 	return (IQSample) { 0, 0 };
 }
 
+void iq_bus_transmit(IQBus *bus, int64_t _timestamp, bool _symbol) {
+	g_assert_null(bus);
+}
+
+void iq_bus_transmit_until(IQBus *bus, int64_t _timestamp) {
+	g_assert_null(bus);
+}
+
 typedef struct test_host_t {
 	int64_t time_ns;
 	uint16_t page;
@@ -346,7 +354,7 @@ static void test_modulator(void) {
 	dsp_bus_reset(bus);
 	g_assert_cmphex(dsp_bus_read(bus, TEST_MODULATOR_BASE + 6), ==, 0xFF);
 	dsp_bus_write(bus, TEST_MODULATOR_BASE, UINT16_MAX);
-	g_assert_cmphex(dsp_bus_read(bus, TEST_MODULATOR_BASE), ==, 0x0101);
+	g_assert_cmphex(dsp_bus_read(bus, TEST_MODULATOR_BASE), ==, 0x071F);
 	dsp_bus_write(bus, TEST_MODULATOR_BASE + 4, UINT16_MAX);
 	g_assert_cmphex(dsp_bus_read(bus, TEST_MODULATOR_BASE + 4), ==, 0x0FFF);
 	dsp_bus_destroy(bus);
