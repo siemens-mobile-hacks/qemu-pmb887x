@@ -125,6 +125,8 @@
 #define GSM_BTS_CELL_OPTIONS ((GSM48_DTX_NOT_USED << GSM48_DTX_SHIFT) | GSM48_RADIO_LINK_TIMEOUT_64)
 #define SI3_ABSENT_FIELDS_BEFORE_GPRS 5
 #define SI4_ABSENT_FIELDS_BEFORE_GPRS 2
+#define SI6_ABSENT_FIELDS_BEFORE_BAND_INDICATOR 3
+#define SI6_REST_OCTETS_BYTES 7
 #define SI13_L2_PSEUDO_LENGTH 0
 #define SI13_POSITION_BCCH_NORM 0
 #define SI13_BCCH_CHANGE_MARK 0
@@ -313,6 +315,7 @@ struct QEMU_PACKED GSMSacchSystemInformation6 {
     uint8_t lai[GSM48_LAI_BYTES];
     uint8_t cell_options;
     uint8_t ncc_permitted;
+    uint8_t rest_octets[SI6_REST_OCTETS_BYTES];
 };
 
 struct GSMSchField {
@@ -855,9 +858,14 @@ static void gsm_bts_sacch_transmit(GSMBts *bts, uint8_t block[GSM_XCCH_BLOCK_BYT
             .cell_options = GSM_BTS_CELL_OPTIONS,
             .ncc_permitted = GSM48_NCC_PERMITTED_ALL,
         };
+        GSMBitWriter rest = { .data = si.rest_octets };
 
         stw_be_p(&si.cell_identity, GSM_BTS_CELL_IDENTITY);
         gsm_bts_encode_lai(si.lai);
+        memset(si.rest_octets, GSM_MACBLOCK_PADDING, sizeof(si.rest_octets));
+        for (size_t i = 0; i < SI6_ABSENT_FIELDS_BEFORE_BAND_INDICATOR; i++)
+            gsm_bit_writer_put_lh(&rest, false);
+        gsm_bit_writer_put_lh(&rest, bts->pcs1900);
         gsm_lapdm_encode_frame(&header->lapdm, LAPDM_CONTROL_UI, true, (uint8_t *) &si, sizeof(si), false);
     } else {
         GSMSacchSystemInformation5 si = {
