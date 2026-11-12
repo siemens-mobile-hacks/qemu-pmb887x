@@ -81,6 +81,11 @@
 #define GSM48_CHANNEL_TSC_SHIFT 5
 #define GSM48_CHANNEL_ARFCN_HIGH_SHIFT 8
 #define GSM48_CHANNEL_LIST_BYTES 16
+#define GSM48_CHANNEL_LIST_VARIABLE_BIT_MAP 0x47
+#define GSM48_CHANNEL_LIST_FORMAT_BITS 7
+#define GSM48_BIT_MAP_0_FIRST_ARFCN 1
+#define GSM48_BIT_MAP_0_LAST_ARFCN 124
+#define GSM48_ARFCN_BITS 10
 #define GSM48_BCD_FILLER 0x0F
 #define GSM48_BCD_HIGH_SHIFT 4
 #define GSM48_L2_PSEUDO_LENGTH_SHIFT 2
@@ -115,6 +120,7 @@
 #define GSM_BTS_RA_COLOUR 0
 #define GSM_BTS_RAC 0
 #define GSM_BTS_LAC 1
+#define GSM_BTS_DEFAULT_ARFCN 5
 #define GSM_BTS_CELL_IDENTITY 0
 #define GSM_BTS_CELL_OPTIONS ((GSM48_DTX_NOT_USED << GSM48_DTX_SHIFT) | GSM48_RADIO_LINK_TIMEOUT_64)
 #define SI3_ABSENT_FIELDS_BEFORE_GPRS 5
@@ -406,18 +412,35 @@ static void gsm_bts_encode_header(GSMSystemInformationHeader *header, uint8_t me
     header->message_type = message_type;
 }
 
-static void gsm_bts_encode_si1(uint8_t block[GSM_XCCH_BLOCK_BYTES]) {
+static void gsm_bts_encode_cell_channels(const GSMBts *bts, uint8_t list[GSM48_CHANNEL_LIST_BYTES]) {
+    bool bit_map_0 = !bts->pcs1900 && bts->arfcn >= GSM48_BIT_MAP_0_FIRST_ARFCN &&
+        bts->arfcn <= GSM48_BIT_MAP_0_LAST_ARFCN;
+
+    memset(list, 0, GSM48_CHANNEL_LIST_BYTES);
+    if (bit_map_0) {
+        list[GSM48_CHANNEL_LIST_BYTES - 1 - ((bts->arfcn - 1) / 8)] = 1 << ((bts->arfcn - 1) % 8);
+        return;
+    }
+
+    GSMBitWriter writer = { .data = list };
+    gsm_bit_writer_put(&writer, GSM48_CHANNEL_LIST_VARIABLE_BIT_MAP, GSM48_CHANNEL_LIST_FORMAT_BITS);
+    gsm_bit_writer_put(&writer, bts->arfcn, GSM48_ARFCN_BITS);
+}
+
+static void gsm_bts_encode_si1(const GSMBts *bts, uint8_t block[GSM_XCCH_BLOCK_BYTES]) {
     GSMSystemInformation1 *si = (GSMSystemInformation1 *) block;
-    size_t arfcn_byte = GSM48_CHANNEL_LIST_BYTES - 1 - ((GSM_BTS_ARFCN - 1) / 8);
+    GSMBitWriter rest = { .data = si->rest_octets };
 
     memset(block, GSM_MACBLOCK_PADDING, GSM_XCCH_BLOCK_BYTES);
     gsm_bts_encode_header(&si->header, GSM48_MT_RR_SYSINFO_1, offsetof(GSMSystemInformation1, rest_octets));
-    memset(si->cell_channels, 0, sizeof(si->cell_channels));
-    si->cell_channels[arfcn_byte] = 1 << ((GSM_BTS_ARFCN - 1) % 8);
+    gsm_bts_encode_cell_channels(bts, si->cell_channels);
     memcpy(si->rach_control, GSM_BTS_RACH_CONTROL, sizeof(si->rach_control));
+
+    gsm_bit_writer_put_lh(&rest, CSN_ABSENT);
+    gsm_bit_writer_put_lh(&rest, bts->pcs1900);
 }
 
-static void gsm_bts_encode_si2(uint8_t block[GSM_XCCH_BLOCK_BYTES]) {
+static void gsm_bts_encode_si2(const GSMBts *_bts, uint8_t block[GSM_XCCH_BLOCK_BYTES]) {
     GSMSystemInformation2 *si = (GSMSystemInformation2 *) block;
 
     gsm_bts_encode_header(&si->header, GSM48_MT_RR_SYSINFO_2, sizeof(GSMSystemInformation2));
@@ -432,7 +455,7 @@ static void gsm_bts_put_gprs_indicator(GSMBitWriter *writer) {
     gsm_bit_writer_put(writer, SI13_POSITION_BCCH_NORM, 1);
 }
 
-static void gsm_bts_encode_si3(uint8_t block[GSM_XCCH_BLOCK_BYTES]) {
+static void gsm_bts_encode_si3(const GSMBts *_bts, uint8_t block[GSM_XCCH_BLOCK_BYTES]) {
     GSMSystemInformation3 *si = (GSMSystemInformation3 *) block;
     GSMBitWriter rest = { .data = si->rest_octets };
 
@@ -451,7 +474,7 @@ static void gsm_bts_encode_si3(uint8_t block[GSM_XCCH_BLOCK_BYTES]) {
     gsm_bit_writer_put_lh(&rest, false);
 }
 
-static void gsm_bts_encode_si4(uint8_t block[GSM_XCCH_BLOCK_BYTES]) {
+static void gsm_bts_encode_si4(const GSMBts *_bts, uint8_t block[GSM_XCCH_BLOCK_BYTES]) {
     GSMSystemInformation4 *si = (GSMSystemInformation4 *) block;
     GSMBitWriter rest = { .data = si->rest_octets };
 
@@ -483,7 +506,7 @@ static void gsm_bts_put_gprs_cell_options(GSMBitWriter *writer) {
     gsm_bit_writer_put(writer, 0, GPRS_CELL_OPTIONS_EXTENSION_BITS);
 }
 
-static void gsm_bts_encode_si13(uint8_t block[GSM_XCCH_BLOCK_BYTES]) {
+static void gsm_bts_encode_si13(const GSMBts *_bts, uint8_t block[GSM_XCCH_BLOCK_BYTES]) {
     GSMSystemInformation13 *si = (GSMSystemInformation13 *) block;
     GSMBitWriter rest = { .data = si->rest_octets };
 
@@ -532,11 +555,16 @@ void gsm_bts_encode_immediate_assignment(
     ia->mobile_allocation_length = 0;
 }
 
-static void gsm_bts_encode_sdcch_assignment(uint8_t block[GSM_XCCH_BLOCK_BYTES], uint8_t ra, uint32_t frame_number) {
+static void gsm_bts_encode_sdcch_assignment(
+    uint8_t block[GSM_XCCH_BLOCK_BYTES],
+    uint16_t arfcn,
+    uint8_t ra,
+    uint32_t frame_number
+) {
     const uint8_t channel_description[GSM_CHANNEL_DESCRIPTION_BYTES] = {
         GSM48_CHANNEL_SDCCH4_SUBCHANNEL0,
-        (GSM_BTS_TSC << GSM48_CHANNEL_TSC_SHIFT) | (GSM_BTS_ARFCN >> GSM48_CHANNEL_ARFCN_HIGH_SHIFT),
-        GSM_BTS_ARFCN & 0xFF,
+        (GSM_BTS_TSC << GSM48_CHANNEL_TSC_SHIFT) | (arfcn >> GSM48_CHANNEL_ARFCN_HIGH_SHIFT),
+        arfcn & 0xFF,
     };
 
     gsm_bts_encode_immediate_assignment((GSMImmediateAssignment *) block, GSM48_MODE_DEDICATED,
@@ -573,7 +601,7 @@ void gsm_bts_gsmtap(
     header->header_words = sizeof(*header) / GSMTAP_HEADER_WORD_BYTES;
     header->type = GSMTAP_TYPE_UM;
     header->timeslot = timeslot;
-    stw_be_p(&header->arfcn, GSM_BTS_ARFCN | (uplink ? GSMTAP_ARFCN_UPLINK : 0));
+    stw_be_p(&header->arfcn, bts->channel | (uplink ? GSMTAP_ARFCN_UPLINK : 0));
     stl_be_p(&header->frame_number, frame_number);
     header->channel = channel;
     memcpy(&packet[sizeof(*header)], data, length);
@@ -602,8 +630,8 @@ static void gsm_bts_ccch_dequeue(GSMBts *bts, uint8_t block[GSM_XCCH_BLOCK_BYTES
     bts->ccch_count--;
 }
 
-static void gsm_bts_encode_bcch(uint32_t frame_number, uint8_t block[GSM_XCCH_BLOCK_BYTES]) {
-    static void (*const schedule[GSM_BCCH_TYPES])(uint8_t block[GSM_XCCH_BLOCK_BYTES]) = {
+static void gsm_bts_encode_bcch(const GSMBts *bts, uint32_t frame_number, uint8_t block[GSM_XCCH_BLOCK_BYTES]) {
+    static void (*const schedule[GSM_BCCH_TYPES])(const GSMBts *bts, uint8_t block[GSM_XCCH_BLOCK_BYTES]) = {
         gsm_bts_encode_si1,
         gsm_bts_encode_si2,
         gsm_bts_encode_si3,
@@ -614,7 +642,7 @@ static void gsm_bts_encode_bcch(uint32_t frame_number, uint8_t block[GSM_XCCH_BL
         gsm_bts_encode_si4,
     };
 
-    schedule[(frame_number / GSM_CONTROL_MULTIFRAME_FRAMES) % GSM_BCCH_TYPES](block);
+    schedule[(frame_number / GSM_CONTROL_MULTIFRAME_FRAMES) % GSM_BCCH_TYPES](bts, block);
 }
 
 static void gsm_lapdm_encode_frame(
@@ -949,7 +977,7 @@ static uint8_t gsm_bts_ts0_transmit_block(
 ) {
     switch (channel) {
         case GSM_BTS_TS0_BCCH:
-            gsm_bts_encode_bcch(block_start, block);
+            gsm_bts_encode_bcch(bts, block_start, block);
             return GSMTAP_CHANNEL_BCCH;
         case GSM_BTS_TS0_CCCH:
             gsm_bts_ccch_dequeue(bts, block);
@@ -1003,7 +1031,7 @@ static void gsm_bts_handle_rach(GSMBts *bts, uint8_t ra, uint32_t frame_number) 
 
     memset(&bts->lapdm, 0, sizeof(bts->lapdm));
     bts->lapdm.active = true;
-    gsm_bts_encode_sdcch_assignment(message, ra, frame_number);
+    gsm_bts_encode_sdcch_assignment(message, bts->arfcn, ra, frame_number);
     gsm_bts_ccch_enqueue(bts, message);
 }
 
@@ -1079,7 +1107,7 @@ static bool gsm_bts_downlink_burst(
 ) {
     GSMBts *bts = GSM_BTS(network);
 
-    if (arfcn != GSM_BTS_ARFCN)
+    if (arfcn != bts->channel)
         return false;
 
     if (timeslot == 0) {
@@ -1101,7 +1129,7 @@ static void gsm_bts_uplink_burst(
 ) {
     GSMBts *bts = GSM_BTS(network);
 
-    if (arfcn != GSM_BTS_ARFCN)
+    if (arfcn != bts->channel)
         return;
 
     if (timeslot == 0) {
@@ -1156,6 +1184,13 @@ static void gsm_bts_connect_netdev(Notifier *notifier, void *_data) {
 static void gsm_bts_complete(UserCreatable *uc, Error **errp) {
     GSMBts *bts = GSM_BTS(uc);
 
+    bts->channel = bts->arfcn | (bts->pcs1900 ? GSM_ARFCN_PCS1900 : 0);
+    if (!gsm_arfcn_is_valid(bts->channel)) {
+        error_setg(errp, "gsm-bts: ARFCN %u is not a %s channel", bts->arfcn,
+            bts->pcs1900 ? "PCS1900" : "GSM850, GSM900, or DCS1800");
+        return;
+    }
+
     if (bts->gsmtap && !gsm_bts_open_gsmtap(bts, errp))
         return;
 
@@ -1188,8 +1223,20 @@ static void gsm_bts_set_gsmtap(Object *obj, const char *value, Error **_errp) {
     bts->gsmtap = g_strdup(value);
 }
 
+static bool gsm_bts_get_pcs1900(Object *obj, Error **_errp) {
+    return GSM_BTS(obj)->pcs1900;
+}
+
+static void gsm_bts_set_pcs1900(Object *obj, bool value, Error **_errp) {
+    GSM_BTS(obj)->pcs1900 = value;
+}
+
 static void gsm_bts_instance_init(Object *obj) {
-    GSM_BTS(obj)->gsmtap_fd = -1;
+    GSMBts *bts = GSM_BTS(obj);
+
+    bts->gsmtap_fd = -1;
+    bts->arfcn = GSM_BTS_DEFAULT_ARFCN;
+    object_property_add_uint16_ptr(obj, "arfcn", &bts->arfcn, OBJ_PROP_FLAG_READWRITE);
 }
 
 static void gsm_bts_instance_finalize(Object *obj) {
@@ -1215,6 +1262,7 @@ static void gsm_bts_class_init(ObjectClass *klass, const void *_data) {
     ucc->complete = gsm_bts_complete;
     object_class_property_add_str(klass, "netdev", gsm_bts_get_netdev, gsm_bts_set_netdev);
     object_class_property_add_str(klass, "gsmtap", gsm_bts_get_gsmtap, gsm_bts_set_gsmtap);
+    object_class_property_add_bool(klass, "pcs1900", gsm_bts_get_pcs1900, gsm_bts_set_pcs1900);
 }
 
 static const TypeInfo gsm_bts_info = {

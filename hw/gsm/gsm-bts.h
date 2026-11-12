@@ -9,7 +9,6 @@
 #define TYPE_GSM_BTS "gsm-bts"
 OBJECT_DECLARE_SIMPLE_TYPE(GSMBts, GSM_BTS)
 
-#define GSM_BTS_ARFCN 5
 #define GSM_BTS_BSIC 0
 #define GSM_BTS_TSC 0
 #define GSM_BTS_PDCH_TIMESLOT 7
@@ -107,6 +106,9 @@ struct GSMBts {
     MemReentrancyGuard reentrancy_guard;
     Notifier machine_done;
     int gsmtap_fd;
+    uint16_t arfcn;
+    bool pcs1900;
+    uint16_t channel;
 
     GSMBtsDownlinkBlock ts0_block;
     GSMBtsUplinkBlock sdcch_uplink;

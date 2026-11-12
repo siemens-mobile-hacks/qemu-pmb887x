@@ -981,10 +981,10 @@ static void rlcmac_put_timing_advance(GSMBitWriter *writer) {
     gsm_bit_writer_put(writer, CSN_ABSENT, 1);
 }
 
-static void rlcmac_put_frequency_parameters(GSMBitWriter *writer) {
+static void rlcmac_put_frequency_parameters(GSMBitWriter *writer, uint16_t arfcn) {
     gsm_bit_writer_put(writer, GSM_BTS_TSC, RLCMAC_TSC_BITS);
     gsm_bit_writer_put(writer, RLCMAC_FREQUENCY_ARFCN, RLCMAC_FREQUENCY_CHOICE_BITS);
-    gsm_bit_writer_put(writer, GSM_BTS_ARFCN, RLCMAC_ARFCN_BITS);
+    gsm_bit_writer_put(writer, arfcn, RLCMAC_ARFCN_BITS);
 }
 
 static void rlcmac_put_tlli(GSMBitWriter *writer, uint32_t tlli) {
@@ -1031,6 +1031,7 @@ static void rlcmac_encode_uplink_ack(
 
 static void rlcmac_encode_downlink_assignment(
     const GSMBtsGprs *gprs,
+    uint16_t arfcn,
     uint8_t usf,
     uint8_t block[GSM_XCCH_BLOCK_BYTES]
 ) {
@@ -1052,7 +1053,7 @@ static void rlcmac_encode_downlink_assignment(
     rlcmac_put_timing_advance(&writer);
     gsm_bit_writer_put(&writer, CSN_ABSENT, 1);
     gsm_bit_writer_put(&writer, CSN_PRESENT, 1);
-    rlcmac_put_frequency_parameters(&writer);
+    rlcmac_put_frequency_parameters(&writer, arfcn);
     gsm_bit_writer_put(&writer, CSN_PRESENT, 1);
     gsm_bit_writer_put(&writer, gprs->dl.tfi, RLCMAC_TFI_BITS);
     gsm_bit_writer_put(&writer, CSN_PRESENT, 1);
@@ -1068,7 +1069,12 @@ static void rlcmac_encode_downlink_assignment(
     gsm_bit_writer_pad(&writer, GSM_XCCH_BLOCK_BYTES);
 }
 
-static void rlcmac_encode_uplink_assignment(const GSMBtsGprs *gprs, uint8_t usf, uint8_t block[GSM_XCCH_BLOCK_BYTES]) {
+static void rlcmac_encode_uplink_assignment(
+    const GSMBtsGprs *gprs,
+    uint16_t arfcn,
+    uint8_t usf,
+    uint8_t block[GSM_XCCH_BLOCK_BYTES]
+) {
     GSMBitWriter writer = { .data = block };
 
     rlcmac_put_control_header(&writer, false, usf);
@@ -1084,7 +1090,7 @@ static void rlcmac_encode_uplink_assignment(const GSMBtsGprs *gprs, uint8_t usf,
     gsm_bit_writer_put(&writer, RLCMAC_TLLI_BLOCK_COMMANDED_CODING, 1);
     rlcmac_put_timing_advance(&writer);
     gsm_bit_writer_put(&writer, CSN_PRESENT, 1);
-    rlcmac_put_frequency_parameters(&writer);
+    rlcmac_put_frequency_parameters(&writer, arfcn);
     gsm_bit_writer_put(&writer, RLCMAC_ALLOCATION_DYNAMIC, RLCMAC_ALLOCATION_BITS);
     gsm_bit_writer_put(&writer, RLCMAC_NOT_EXTENDED_DYNAMIC, 1);
     gsm_bit_writer_put(&writer, CSN_ABSENT, 1);
@@ -1114,6 +1120,7 @@ static void rlcmac_encode_dummy(uint8_t usf, uint8_t block[GSM_XCCH_BLOCK_BYTES]
 
 static GSMBitWriter gsm_bts_encode_packet_assignment(
     uint8_t block[GSM_XCCH_BLOCK_BYTES],
+    uint16_t arfcn,
     bool downlink,
     uint8_t ra,
     uint32_t reference_frame
@@ -1128,7 +1135,7 @@ static GSMBitWriter gsm_bts_encode_packet_assignment(
     gsm_bit_writer_put(&description, GSM_BTS_PDCH_TIMESLOT, IA_TIMESLOT_BITS);
     gsm_bit_writer_put(&description, GSM_BTS_TSC, RLCMAC_TSC_BITS);
     gsm_bit_writer_put(&description, IA_NON_HOPPING, IA_HOPPING_BITS);
-    gsm_bit_writer_put(&description, GSM_BTS_ARFCN, RLCMAC_ARFCN_BITS);
+    gsm_bit_writer_put(&description, arfcn, RLCMAC_ARFCN_BITS);
     gsm_bts_encode_immediate_assignment(ia, mode, channel_description, ra, reference_frame);
 
     gsm_bit_writer_put_lh(&rest, true);
@@ -1138,8 +1145,13 @@ static GSMBitWriter gsm_bts_encode_packet_assignment(
     return rest;
 }
 
-static void gsm_bts_encode_uplink_assignment(uint8_t block[GSM_XCCH_BLOCK_BYTES], uint8_t ra, uint32_t frame_number) {
-    GSMBitWriter rest = gsm_bts_encode_packet_assignment(block, false, ra, frame_number);
+static void gsm_bts_encode_uplink_assignment(
+    uint8_t block[GSM_XCCH_BLOCK_BYTES],
+    uint16_t arfcn,
+    uint8_t ra,
+    uint32_t frame_number
+) {
+    GSMBitWriter rest = gsm_bts_encode_packet_assignment(block, arfcn, false, ra, frame_number);
 
     gsm_bit_writer_put(&rest, IA_MULTI_BLOCK_ALLOCATION, 1);
     gsm_bit_writer_put(&rest, GPRS_UPLINK_TFI, RLCMAC_TFI_BITS);
@@ -1158,11 +1170,12 @@ static void gsm_bts_encode_uplink_assignment(uint8_t block[GSM_XCCH_BLOCK_BYTES]
 
 static void gsm_bts_encode_single_block_assignment(
     uint8_t block[GSM_XCCH_BLOCK_BYTES],
+    uint16_t arfcn,
     uint8_t ra,
     uint32_t frame_number,
     uint32_t single_block_frame
 ) {
-    GSMBitWriter rest = gsm_bts_encode_packet_assignment(block, false, ra, frame_number);
+    GSMBitWriter rest = gsm_bts_encode_packet_assignment(block, arfcn, false, ra, frame_number);
 
     gsm_bit_writer_put(&rest, IA_SINGLE_BLOCK_ALLOCATION, 1);
     gsm_bit_writer_put(&rest, CSN_ABSENT, 1);
@@ -1177,11 +1190,12 @@ static void gsm_bts_encode_single_block_assignment(
 
 static void gsm_bts_encode_downlink_assignment(
     uint8_t block[GSM_XCCH_BLOCK_BYTES],
+    uint16_t arfcn,
     uint32_t reference_frame,
     uint32_t tlli,
     uint8_t tfi
 ) {
-    GSMBitWriter rest = gsm_bts_encode_packet_assignment(block, true, IA_DOWNLINK_REFERENCE_RA, reference_frame);
+    GSMBitWriter rest = gsm_bts_encode_packet_assignment(block, arfcn, true, IA_DOWNLINK_REFERENCE_RA, reference_frame);
 
     gsm_bit_writer_put(&rest, tlli, RLCMAC_TLLI_BITS);
     gsm_bit_writer_put(&rest, CSN_PRESENT, 1);
@@ -1204,14 +1218,14 @@ bool gsm_bts_gprs_handle_rach(GSMBts *bts, uint8_t ra, uint32_t frame_number) {
     switch (ra & RACH_PACKET_ACCESS_MASK) {
         case RACH_ONE_PHASE:
             rlc_uplink_start(gprs);
-            gsm_bts_encode_uplink_assignment(message, ra, frame_number);
+            gsm_bts_encode_uplink_assignment(message, bts->arfcn, ra, frame_number);
             break;
         case RACH_SINGLE_BLOCK: {
             uint32_t earliest_frame = gsm_bts_frame_number_add(frame_number, GPRS_SINGLE_BLOCK_DELAY_FRAMES);
 
             gprs->single_block_pending = true;
             gprs->single_block_frame = pdch_block_after(earliest_frame);
-            gsm_bts_encode_single_block_assignment(message, ra, frame_number, gprs->single_block_frame);
+            gsm_bts_encode_single_block_assignment(message, bts->arfcn, ra, frame_number, gprs->single_block_frame);
             break;
         }
         default:
@@ -1261,7 +1275,7 @@ static void rlc_downlink_assign(GSMBts *bts, uint32_t frame_number) {
     for (uint32_t i = 0; i < GPRS_ASSIGNMENT_REPEATS; i++) {
         uint8_t message[GSM_XCCH_BLOCK_BYTES];
 
-        gsm_bts_encode_downlink_assignment(message, reference, gprs->tlli, dl->tfi);
+        gsm_bts_encode_downlink_assignment(message, bts->arfcn, reference, gprs->tlli, dl->tfi);
         gsm_bts_ccch_enqueue(bts, message);
     }
 }
@@ -1511,7 +1525,7 @@ static uint8_t gsm_bts_gprs_transmit_block(GSMBts *bts, uint32_t block_start, ui
 
     if (gprs->uplink_assignment_pending) {
         gprs->uplink_assignment_pending = false;
-        rlcmac_encode_uplink_assignment(gprs, usf, block);
+        rlcmac_encode_uplink_assignment(gprs, bts->arfcn, usf, block);
     } else if (gprs->uplink_ack_pending && gprs->ul.active) {
         poll = ul_final && can_poll;
         rlcmac_encode_uplink_ack(gprs, ul_final, poll, usf, block);
@@ -1524,7 +1538,7 @@ static uint8_t gsm_bts_gprs_transmit_block(GSMBts *bts, uint32_t block_start, ui
             rlc_uplink_release(gprs);
     } else if (downlink_assignment_ready) {
         gprs->downlink_assignment_pending = false;
-        rlcmac_encode_downlink_assignment(gprs, usf, block);
+        rlcmac_encode_downlink_assignment(gprs, bts->arfcn, usf, block);
     } else if (rlc_downlink_next_block(gprs, block_start, block, &want_poll)) {
         channel = GSMTAP_CHANNEL_PDTCH;
         poll = want_poll && can_poll;
