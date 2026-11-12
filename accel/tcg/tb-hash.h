@@ -26,7 +26,49 @@
 #include "qemu/xxhash.h"
 #include "tb-jmp-cache.h"
 
-#ifdef CONFIG_SOFTMMU
+#if defined(CONFIG_SOFTMMU) && defined(CONFIG_TCG_WASM64)
+
+/*
+ * The upstream hash below keeps 8 bits of the offset in a page, so the
+ * 2048 Thumb PCs of a 4 KiB page share 256 entries, and three quarters
+ * of the misses of the 64K-entry cache were TBs of one page evicting
+ * each other.  Here every halfword of a page has its own entry, and a
+ * multiplicative hash of the page number above 4 KiB picks one of
+ * 32 blocks.  A page's entries stay one block for
+ * tb_jmp_cache_clear_page (a superset for 1 KiB pages).
+ */
+#define TB_JMP_PAGE_BITS 11
+#define TB_JMP_PAGE_SIZE (1 << TB_JMP_PAGE_BITS)
+#define TB_JMP_ADDR_MASK (TB_JMP_PAGE_SIZE - 1)
+#define TB_JMP_HASH_PAGE_SHIFT (TB_JMP_PAGE_BITS + 1)
+#define TB_JMP_HASH_MUL 0x9e3779b1u
+#define TB_JMP_HASH_MUL_SHIFT (32 - (TB_JMP_CACHE_BITS - TB_JMP_PAGE_BITS))
+
+static inline unsigned int tb_jmp_cache_hash_page(vaddr pc)
+{
+    uint32_t page = (uint32_t)(pc >> TB_JMP_HASH_PAGE_SHIFT);
+
+    return ((page * TB_JMP_HASH_MUL) >> TB_JMP_HASH_MUL_SHIFT)
+           << TB_JMP_PAGE_BITS;
+}
+
+/*
+ * Firmware routines run both from user-mode tasks and from privileged
+ * modes, and same-PC key mismatches became most of the remaining misses:
+ * two bits of the TB flags (ARM's low MMU index bits, which the
+ * translator asserts) move an entry within its page's block.
+ */
+#define TB_JMP_HASH_FLAGS_SHIFT 4
+#define TB_JMP_HASH_FLAGS(flags) \
+    ((((flags) >> TB_JMP_HASH_FLAGS_SHIFT) & 3) << (TB_JMP_PAGE_BITS - 2))
+
+static inline unsigned int tb_jmp_cache_hash_func(vaddr pc, uint32_t flags)
+{
+    return tb_jmp_cache_hash_page(pc) |
+           (((pc >> 1) ^ TB_JMP_HASH_FLAGS(flags)) & TB_JMP_ADDR_MASK);
+}
+
+#elif defined(CONFIG_SOFTMMU)
 
 /* Only the bottom TB_JMP_PAGE_BITS of the jump cache hash bits vary for
    addresses on the same page.  The top bits are the same.  This allows
@@ -43,7 +85,7 @@ static inline unsigned int tb_jmp_cache_hash_page(vaddr pc)
     return (tmp >> (TARGET_PAGE_BITS - TB_JMP_PAGE_BITS)) & TB_JMP_PAGE_MASK;
 }
 
-static inline unsigned int tb_jmp_cache_hash_func(vaddr pc)
+static inline unsigned int tb_jmp_cache_hash_func(vaddr pc, uint32_t flags)
 {
     vaddr tmp;
     tmp = pc ^ (pc >> (TARGET_PAGE_BITS - TB_JMP_PAGE_BITS));
@@ -54,7 +96,7 @@ static inline unsigned int tb_jmp_cache_hash_func(vaddr pc)
 #else
 
 /* In user-mode we can get better hashing because we do not have a TLB */
-static inline unsigned int tb_jmp_cache_hash_func(vaddr pc)
+static inline unsigned int tb_jmp_cache_hash_func(vaddr pc, uint32_t flags)
 {
     return (pc ^ (pc >> TB_JMP_CACHE_BITS)) & (TB_JMP_CACHE_SIZE - 1);
 }

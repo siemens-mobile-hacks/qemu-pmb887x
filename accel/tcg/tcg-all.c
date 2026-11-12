@@ -59,6 +59,8 @@ struct TCGState {
     int splitwx_enabled;
     unsigned long tb_size;
     bool vcpu_timers;
+    uint32_t vcpu_timers_bank;
+    uint32_t vcpu_timers_idle_lead;
 };
 typedef struct TCGState TCGState;
 
@@ -155,6 +157,8 @@ static int tcg_init_machine(AccelState *as, MachineState *ms)
             return -EINVAL;
         }
         qemu_virtual_timers_on_vcpu = true;
+        cpu_clock_set_bank(s->vcpu_timers_bank * NANOSECONDS_PER_SECOND);
+        cpu_clock_set_idle_lead(s->vcpu_timers_idle_lead * SCALE_US);
     }
 
     if (tcg_cross_page_links && ms->smp.max_cpus > 1) {
@@ -286,6 +290,48 @@ static void tcg_set_vcpu_timers(Object *obj, bool value, Error **errp)
     TCG_STATE(obj)->vcpu_timers = value;
 }
 
+static void tcg_get_vcpu_timers_bank(Object *obj, Visitor *v,
+                                     const char *name, void *opaque,
+                                     Error **errp)
+{
+    uint32_t value = TCG_STATE(obj)->vcpu_timers_bank;
+
+    visit_type_uint32(v, name, &value, errp);
+}
+
+static void tcg_set_vcpu_timers_bank(Object *obj, Visitor *v,
+                                     const char *name, void *opaque,
+                                     Error **errp)
+{
+    uint32_t value;
+
+    if (!visit_type_uint32(v, name, &value, errp)) {
+        return;
+    }
+    TCG_STATE(obj)->vcpu_timers_bank = value;
+}
+
+static void tcg_get_vcpu_timers_idle_lead(Object *obj, Visitor *v,
+                                          const char *name, void *opaque,
+                                          Error **errp)
+{
+    uint32_t value = TCG_STATE(obj)->vcpu_timers_idle_lead;
+
+    visit_type_uint32(v, name, &value, errp);
+}
+
+static void tcg_set_vcpu_timers_idle_lead(Object *obj, Visitor *v,
+                                          const char *name, void *opaque,
+                                          Error **errp)
+{
+    uint32_t value;
+
+    if (!visit_type_uint32(v, name, &value, errp)) {
+        return;
+    }
+    TCG_STATE(obj)->vcpu_timers_idle_lead = value;
+}
+
 static bool tcg_get_cross_page_links(Object *obj, Error **errp)
 {
     return tcg_cross_page_links;
@@ -335,6 +381,21 @@ static void tcg_accel_class_init(ObjectClass *oc, const void *data)
     object_class_property_set_description(oc, "vcpu-timers",
         "Run virtual clock timers on the vCPU thread instead of the main "
         "loop");
+
+    object_class_property_add(oc, "vcpu-timers-bank", "uint32",
+        tcg_get_vcpu_timers_bank, tcg_set_vcpu_timers_bank,
+        NULL, NULL);
+    object_class_property_set_description(oc, "vcpu-timers-bank",
+        "With vcpu-timers: for this many seconds of guest time, catch up "
+        "on time lost to a slow host instead of dropping it");
+
+    object_class_property_add(oc, "vcpu-timers-idle-lead", "uint32",
+        tcg_get_vcpu_timers_idle_lead, tcg_set_vcpu_timers_idle_lead,
+        NULL, NULL);
+    object_class_property_set_description(oc, "vcpu-timers-idle-lead",
+        "With vcpu-timers: while the guest waits for an interrupt, run its "
+        "timers up to this many microseconds ahead of real time and sleep "
+        "once per batch instead of once per timer");
 
     object_class_property_add_bool(oc, "cross-page-links",
                                    tcg_get_cross_page_links,

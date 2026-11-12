@@ -29,6 +29,9 @@
 #include "hw/arm/pmb887x/board/keyboard.h"
 #include "hw/arm/pmb887x/board/cpu_module.h"
 #include "hw/arm/pmb887x/board/startup.h"
+#ifdef CONFIG_TCG_WASM64
+#include "qemu/w64-low.h"
+#endif
 #include "hw/block/cfi-flash.h"
 #include "hw/gsm/gsm-network.h"
 
@@ -129,7 +132,16 @@ static void pmb887x_init(MachineState *machine) {
 
 	MemoryRegion *sysmem = get_system_memory();
 
+#ifdef CONFIG_TCG_WASM64
+	/* WASM PORT FAST PATH (removable): the CPU object at the bottom of memory (qemu/w64-low.h) */
+	Object *cpuobj = w64_low_place(W64_LOW_CPU, sizeof(ARMCPU));
+	if (cpuobj != NULL)
+		object_initialize(cpuobj, sizeof(ARMCPU), machine->cpu_type);
+	else
+		cpuobj = object_new(machine->cpu_type);
+#else
 	Object *cpuobj = object_new(machine->cpu_type);
+#endif
 	ARMCPU *cpu = ARM_CPU(cpuobj);
 
 	if (object_property_find(cpuobj, "has_el3"))
@@ -410,6 +422,15 @@ static void pmb887x_class_init(ObjectClass *oc, const void *data) {
 	mc->default_cpu_type = ARM_CPU_TYPE_NAME("arm926");
 	mc->default_ram_size = 16 * 1024 * 1024;
 	mc->tcg_auxiliary_threads = 1;
+#ifdef CONFIG_TCG_WASM64
+	/*
+	 * 4 KB pages: a TB may then run and branch across more of its code
+	 * (the firmware maps only 1 MB sections).  This is the only page-size
+	 * lever that runs before machine_memory_init() commits the size; see
+	 * arm_cpu_realizefn.
+	 */
+	mc->minimum_page_bits = 12;
+#endif
 	object_class_property_add_link(oc, "gsm-network", TYPE_GSM_NETWORK, offsetof(pmb887x_machine_t, gsm_network),
 		object_property_allow_set_link, OBJ_PROP_LINK_STRONG);
 }

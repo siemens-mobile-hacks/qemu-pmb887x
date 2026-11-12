@@ -945,6 +945,12 @@ struct FlatView {
     unsigned nr_allocated;
     struct AddressSpaceDispatch *dispatch;
     MemoryRegion *root;
+    /* Topology tags (see system/memory.c, generate_memory_topology):
+     * identity of the MR-tree state this view was rendered from, so a
+     * romd-only toggle can reuse a previously rendered variant without
+     * re-rendering.  Zero = untagged/never reuse. */
+    uint64_t topo_gen;
+    uint64_t romd_sig;
     FlatRange *prev_ranges;
 };
 
@@ -2033,6 +2039,24 @@ void memory_region_set_nonvolatile(MemoryRegion *mr, bool nonvolatile);
 void memory_region_rom_device_set_romd(MemoryRegion *mr, bool romd_mode);
 
 /**
+ * memory_topology_views_recycled: whether a FlatView variant was recycled
+ * (evicted from the romd stash) during the commit being dispatched; the
+ * flag is cleared once the commit's listeners have run.
+ * Readers holding pointers into FlatViews (TLB entries keep their
+ * MemoryRegionSection) must flush them when this returns true.
+ */
+bool memory_topology_views_recycled(void);
+
+/**
+ * memory_topology_commit_full: whether the transaction commit that is
+ * currently being dispatched (or just finished) changed real memory
+ * topology, as opposed to only romd mode or ioeventfds.  Such commits
+ * can put different code behind the same guest physical address, so
+ * the TCG jump cache must be cleared in addition to the TLB ranges.
+ */
+bool memory_topology_commit_full(void);
+
+/**
  * memory_region_set_coalescing: Enable memory coalescing for the region.
  *
  * Enabled writes to a region to be queued for later processing. MMIO ->write
@@ -2471,6 +2495,27 @@ MemTxResult memory_region_dispatch_write(MemoryRegion *mr,
                                          uint64_t data,
                                          MemOp op,
                                          MemTxAttrs attrs);
+
+/**
+ * memory_region_subpage_leaf: resolve one level of a subpage container.
+ *
+ * A target page shared by several regions is represented by a subpage
+ * container whose ops re-enter the flatview on every access, so a caller
+ * holding only the container (the TCG TLB does: its fill translates with
+ * resolve_subpage = false) pays a full translate + dispatch per access.
+ * This resolves the leaf that backs one offset, and reports the run of
+ * offsets that resolve to the same leaf, so the caller can cache the
+ * resolution and range-check instead of re-walking.
+ *
+ * Valid until a topology commit flushes the TLB entry that cached it.
+ *
+ * @mr: the container; NULL is returned unless it is a subpage
+ * @offset: offset within @mr (i.e. within one target page)
+ * @lo: filled with the first offset of the run
+ * @len: filled with the length of the run
+ */
+MemoryRegionSection *memory_region_subpage_leaf(MemoryRegion *mr, hwaddr offset,
+                                                unsigned *lo, unsigned *len);
 
 /**
  * address_space_init: initializes an address space

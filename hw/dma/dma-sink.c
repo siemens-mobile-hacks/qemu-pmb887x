@@ -36,6 +36,21 @@ static DMASink *dma_sink_cache_get_sink(DMASinkCache *cache, MemoryRegion *mr)
     return cache->sink;
 }
 
+/* WASM PORT FAST PATH (removable): the caller already translated @addr */
+bool dma_sink_write_block_mr(DMASinkCache *cache, MemoryRegion *mr,
+                             hwaddr offset, const uint8_t *data,
+                             uint32_t width, uint32_t count,
+                             bool is_increment)
+{
+    DMASink *sink = dma_sink_cache_get_sink(cache, mr);
+    if (!sink) {
+        return false;
+    }
+
+    return cache->klass->write_block(sink, mr, offset, data, width, count,
+                                     is_increment);
+}
+
 bool dma_sink_write_block(DMASinkCache *cache, hwaddr addr,
                           const uint8_t *data, uint32_t width, uint32_t count,
                           bool is_increment)
@@ -51,13 +66,8 @@ bool dma_sink_write_block(DMASinkCache *cache, hwaddr addr,
         return false;
     }
 
-    DMASink *sink = dma_sink_cache_get_sink(cache, mr);
-    if (!sink) {
-        return false;
-    }
-
-    return cache->klass->write_block(sink, mr, offset, data, width, count,
-                                     is_increment);
+    return dma_sink_write_block_mr(cache, mr, offset, data, width, count,
+                                   is_increment);
 }
 
 static const TypeInfo dma_sink_info = {

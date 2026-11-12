@@ -278,33 +278,150 @@ void cpu_clock_owner_wake(void)
     qemu_mutex_unlock(&cpu_clock_owner_lock);
 }
 
-/* Caller must hold BQL which serves as mutex for vm_clock_seqlock. */
-void cpu_clock_owner_limit_lag(void)
+/* Guest time before which lag is caught up instead of dropped. */
+static int64_t cpu_clock_bank_end;
+
+void cpu_clock_set_bank(int64_t ns)
 {
-    int64_t position = cpu_clock_owner_position();
-
-    if (position == INT64_MAX ||
-        cpu_get_raw_clock() - position <= CPU_CLOCK_OWNER_LAG_MAX_NS) {
-        return;
-    }
-    seqlock_write_lock(&timers_state.vm_clock_seqlock,
-                       &timers_state.vm_clock_lock);
-    if (timers_state.cpu_ticks_enabled) {
-        int64_t lag = cpu_get_clock_locked() - position;
-
-        if (lag > CPU_CLOCK_OWNER_LAG_MAX_NS) {
-            timers_state.cpu_clock_offset -= lag - CPU_CLOCK_OWNER_LAG_MAX_NS;
-        }
-    }
-    seqlock_write_unlock(&timers_state.vm_clock_seqlock,
-                         &timers_state.vm_clock_lock);
+    cpu_clock_bank_end = ns;
 }
 
-static uint32_t cpu_clock_owner_budget(int64_t deadline)
+bool cpu_clock_banked(void)
+{
+    return qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) < cpu_clock_bank_end;
+}
+
+static int64_t cpu_clock_idle_lead;
+
+void cpu_clock_set_idle_lead(int64_t ns)
+{
+    cpu_clock_idle_lead = ns;
+}
+
+/*
+ * For an owner waiting for an interrupt, once its expired timers have run;
+ * @deadline is the next one, -1 for none.  Returns 0 after moving the
+ * owner's clock to a deadline at most cpu_clock_idle_lead ahead of real
+ * time - the caller runs timers again - else how long to sleep with the
+ * clock following real time.  A timer every 100 us would otherwise cost a
+ * sleep and a wakeup each.  The host clock only moves forward, so a
+ * deadline within the lead of an earlier reading is within it now: the
+ * clock is read again only when that reading would put the owner to sleep.
+ */
+static int64_t cpu_clock_owner_idle_raw;
+
+int64_t cpu_clock_owner_idle(int64_t deadline)
+{
+    int64_t raw = cpu_clock_owner_idle_raw;
+
+    if (deadline < 0 || !cpu_clock_idle_lead) {
+        cpu_clock_owner_progress(true);
+        return deadline < 0 ? -1 :
+               MAX(deadline - qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL), 0);
+    }
+    if (deadline - raw > cpu_clock_idle_lead) {
+        raw = cpu_clock_owner_idle_raw = cpu_get_raw_clock();
+    }
+    if (deadline - raw <= cpu_clock_idle_lead) {
+        qemu_mutex_lock(&cpu_clock_owner_lock);
+        cpu_clock_owner_write(deadline, qatomic_read(cpu_clock_owner_cycles),
+                              cpu_clock_cycle_ps);
+        qemu_mutex_unlock(&cpu_clock_owner_lock);
+        return 0;
+    }
+    cpu_clock_owner_progress(true);
+    return deadline - cpu_clock_idle_lead - raw;
+}
+
+/*
+ * For a virtual timer callback on an owner waiting for an interrupt, when
+ * nothing else is due before @deadline: whether cpu_clock_owner_idle() would
+ * move the clock to a timer at @deadline rather than sleep first.  The
+ * callback can then do that timer's work at once, and move the clock with
+ * cpu_clock_owner_idle_advance().
+ */
+bool cpu_clock_owner_idle_reaches(int64_t deadline)
+{
+    if (!qemu_virtual_timers_on_vcpu || !cpu_clock_owner ||
+        !cpu_clock_idle_lead) {
+        return false;
+    }
+    if (deadline - cpu_clock_owner_idle_raw > cpu_clock_idle_lead) {
+        cpu_clock_owner_idle_raw = cpu_get_raw_clock();
+    }
+    return deadline - cpu_clock_owner_idle_raw <= cpu_clock_idle_lead;
+}
+
+void cpu_clock_owner_idle_advance(int64_t deadline)
+{
+    qemu_mutex_lock(&cpu_clock_owner_lock);
+    cpu_clock_owner_write(deadline, qatomic_read(cpu_clock_owner_cycles),
+                          cpu_clock_cycle_ps);
+    qemu_mutex_unlock(&cpu_clock_owner_lock);
+}
+
+/*
+ * The owner's last host clock reading and its position at the time.  While
+ * the position is still more than CPU_CLOCK_OWNER_LEAD_NS behind that
+ * reading the guest is behind real time, so cpu_get_real_clock() is the
+ * position itself and a fresh reading would change nothing - but it is a
+ * call out to JavaScript on wasm, once per budget, and a compute-bound
+ * guest is exactly the one that cannot spare it.  The reading is renewed
+ * every CPU_CLOCK_OWNER_REREAD_NS of guest time anyway, so lag past
+ * CPU_CLOCK_OWNER_LAG_MAX_NS is still dropped promptly.
+ */
+#define CPU_CLOCK_OWNER_REREAD_NS (10 * SCALE_MS)
+static int64_t cpu_clock_owner_raw_seen;
+static int64_t cpu_clock_owner_raw_at;
+
+static int64_t cpu_clock_owner_raw(int64_t position)
+{
+    if (position != INT64_MAX &&
+        cpu_clock_owner_raw_seen - position > CPU_CLOCK_OWNER_LEAD_NS &&
+        position - cpu_clock_owner_raw_at < CPU_CLOCK_OWNER_REREAD_NS) {
+        return cpu_clock_owner_raw_seen;
+    }
+    cpu_clock_owner_raw_seen = cpu_get_raw_clock();
+    cpu_clock_owner_raw_at = position;
+    return cpu_clock_owner_raw_seen;
+}
+
+/*
+ * Caller must hold BQL which serves as mutex for vm_clock_seqlock.
+ * Returns cpu_get_real_clock() as of the lag check: reading the host clock
+ * is a call out to JavaScript on wasm, and the owner needs it once per
+ * budget, not once per helper.
+ */
+int64_t cpu_clock_owner_limit_lag(void)
+{
+    int64_t position = cpu_clock_owner_position();
+    int64_t raw = cpu_clock_owner_raw(position);
+
+    if (position != INT64_MAX && position >= cpu_clock_bank_end &&
+        raw - position > CPU_CLOCK_OWNER_LAG_MAX_NS) {
+        seqlock_write_lock(&timers_state.vm_clock_seqlock,
+                           &timers_state.vm_clock_lock);
+        if (timers_state.cpu_ticks_enabled) {
+            int64_t lag = cpu_get_clock_locked() - position;
+
+            if (lag > CPU_CLOCK_OWNER_LAG_MAX_NS) {
+                timers_state.cpu_clock_offset -=
+                    lag - CPU_CLOCK_OWNER_LAG_MAX_NS;
+            }
+        }
+        seqlock_write_unlock(&timers_state.vm_clock_seqlock,
+                             &timers_state.vm_clock_lock);
+        cpu_clock_owner_raw_seen = 0;
+        raw = cpu_clock_owner_raw(position);
+    }
+    return MIN(MIN(raw, position), qatomic_read(&qemu_virtual_clock_cap));
+}
+
+static uint32_t cpu_clock_owner_budget(int64_t deadline, int64_t real)
 {
     uint32_t cycle_ps = qatomic_read(&cpu_clock_cycle_ps);
     int64_t position = cpu_clock_owner_position();
-    int64_t until = cpu_get_real_clock() + CPU_CLOCK_OWNER_LEAD_NS;
+    int64_t until = real + CPU_CLOCK_OWNER_LEAD_NS;
     uint64_t cycles;
 
     if (deadline >= 0) {
@@ -314,7 +431,7 @@ static uint32_t cpu_clock_owner_budget(int64_t deadline)
     return MAX(MIN(cycles, CPU_CLOCK_BUDGET_MAX), CPU_CLOCK_BUDGET_MIN);
 }
 
-void cpu_clock_owner_shorten_budget(void)
+static void cpu_clock_owner_shorten_budget_at(int64_t real)
 {
     uint32_t *cycles = qatomic_load_acquire(&cpu_clock_owner_cycles);
     uint32_t *cycle_limit = qatomic_read(&cpu_clock_owner_cycle_limit);
@@ -325,7 +442,7 @@ void cpu_clock_owner_shorten_budget(void)
         return;
     }
     deadline = qemu_clock_expire_time_ns(QEMU_CLOCK_VIRTUAL);
-    limit = qatomic_read(cycles) + cpu_clock_owner_budget(deadline);
+    limit = qatomic_read(cycles) + cpu_clock_owner_budget(deadline, real);
     old = qatomic_read(cycle_limit);
     while ((int32_t)(limit - old) < 0) {
         uint32_t seen = qatomic_cmpxchg(cycle_limit, old, limit);
@@ -337,13 +454,33 @@ void cpu_clock_owner_shorten_budget(void)
     }
 }
 
-void cpu_clock_owner_start_budget(void)
+void cpu_clock_owner_shorten_budget(void)
+{
+    if (!cpu_clock_owner) {
+        cpu_clock_owner_shorten_budget_at(cpu_get_real_clock());
+        return;
+    }
+    /*
+     * The owner arms timers by the thousand during a display refill.  Its
+     * budget already ends no later than real time and its position, as of
+     * the budget's start, plus the lead; both only move forward, so they
+     * cannot lower the limit now - only the new deadline and the cap can.
+     * A keeping-up guest stays within the lead of real time, where
+     * cpu_clock_owner_raw() reads the host clock (JavaScript) every call.
+     */
+    cpu_clock_owner_shorten_budget_at(
+        MIN(qatomic_read(&qemu_virtual_clock_cap),
+            INT64_MAX - CPU_CLOCK_OWNER_LEAD_NS));
+}
+
+/* @real: cpu_get_real_clock(), e.g. from cpu_clock_owner_limit_lag() */
+void cpu_clock_owner_start_budget(int64_t real)
 {
     qatomic_set(cpu_clock_owner_cycle_limit,
                 qatomic_read(cpu_clock_owner_cycles) + CPU_CLOCK_BUDGET_MAX);
     /* Then a limit lowered meanwhile cannot be missed. */
     smp_mb();
-    cpu_clock_owner_shorten_budget();
+    cpu_clock_owner_shorten_budget_at(real);
 }
 
 /*

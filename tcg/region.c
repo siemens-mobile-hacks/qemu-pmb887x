@@ -247,6 +247,12 @@ void tcg_tb_remove(TranslationBlock *tb)
  */
 TranslationBlock *tcg_tb_lookup(uintptr_t tc_ptr)
 {
+#ifdef CONFIG_TCG_WASM64
+    /* a retaddr names the TB by its descriptor (exec/translation-block.h) */
+    if (w64_ra_encoded(tc_ptr)) {
+        tc_ptr = w64_ra_desc(tc_ptr);
+    }
+#endif
     struct tcg_region_tree *rt = tc_ptr_to_region_tree((void *)tc_ptr);
     TranslationBlock *tb;
     struct tb_tc s = { .ptr = (void *)tc_ptr };

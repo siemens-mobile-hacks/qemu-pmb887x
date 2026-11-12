@@ -326,7 +326,7 @@ static void dsp_notify_activity(void *opaque) {
 static void dsp_notify_comm(void *opaque, uint16_t flags, bool set) {
 	dsp_state_t *p = opaque;
 	DEBUG_LOG(&p->dbg, "comm: flags=%04X set=%u pc=%05X time=%" PRId64 "\n", flags, set,
-		dsp_runtime_get_pc(p->runtime), dsp_get_time_ns(p));
+		dsp_runtime_get_trace_pc(p->runtime), dsp_get_time_ns(p));
 
 	if (set) {
 		p->comm_status |= flags;

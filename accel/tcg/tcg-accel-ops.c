@@ -70,6 +70,10 @@ void tcg_cpu_init_cflags(CPUState *cpu, bool parallel)
     cflags |= parallel ? CF_PARALLEL : 0;
     cflags |= icount_enabled() ? CF_USE_ICOUNT : 0;
     tcg_cflags_set(cpu, cflags);
+#ifdef CONFIG_TCG_WASM64
+    /* the inline lookup caches start empty (slot gen 0): never be 0 here */
+    cpu_tb_key_gen_bump(cpu);
+#endif
 }
 
 void tcg_cpu_destroy(CPUState *cpu)
@@ -94,16 +98,6 @@ void tcg_vcpu_timers_start(CPUState *cpu)
     cpu_clock_set_owner(&cpu->neg.cycle_count, &cpu->neg.cycle_limit);
 }
 
-static int64_t tcg_vcpu_timers_next_ns(void)
-{
-    int64_t expire = qemu_clock_expire_time_ns(QEMU_CLOCK_VIRTUAL);
-
-    if (expire < 0) {
-        return -1;
-    }
-    return MAX(expire - qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL), 0);
-}
-
 static int64_t tcg_vcpu_timers_run_idle(CPUState *cpu)
 {
     cpu_clock_owner_progress(false);
@@ -112,8 +106,7 @@ static int64_t tcg_vcpu_timers_run_idle(CPUState *cpu)
         return 0;
     }
     /* Interrupts are raised under the BQL, held until the thread sleeps. */
-    cpu_clock_owner_progress(true);
-    return tcg_vcpu_timers_next_ns();
+    return cpu_clock_owner_idle(qemu_clock_expire_time_ns(QEMU_CLOCK_VIRTUAL));
 }
 
 void tcg_vcpu_timers_wait_io_event(CPUState *cpu)
@@ -121,14 +114,13 @@ void tcg_vcpu_timers_wait_io_event(CPUState *cpu)
     qemu_process_cpu_events_timed(cpu, tcg_vcpu_timers_run_idle);
 }
 
-static bool tcg_vcpu_timers_wait_for_clock(CPUState *cpu)
+static bool tcg_vcpu_timers_wait_for_clock(CPUState *cpu, int64_t *realp)
 {
     int64_t position, real, until;
 
     cpu_clock_owner_progress(false);
-    cpu_clock_owner_limit_lag();
+    real = *realp = cpu_clock_owner_limit_lag();
     position = cpu_clock_owner_position();
-    real = cpu_get_real_clock();
     if (position - real < CPU_CLOCK_OWNER_LEAD_NS) {
         return false;
     }
@@ -141,12 +133,41 @@ static bool tcg_vcpu_timers_wait_for_clock(CPUState *cpu)
 
 bool tcg_vcpu_timers_prepare_exec(CPUState *cpu)
 {
+    int64_t real;
+
     qemu_clock_run_timers(QEMU_CLOCK_VIRTUAL);
-    if (tcg_vcpu_timers_wait_for_clock(cpu)) {
+    if (tcg_vcpu_timers_wait_for_clock(cpu, &real)) {
         return false;
     }
-    cpu_clock_owner_start_budget();
+    cpu_clock_owner_start_budget(real);
     return true;
+}
+
+/*
+ * cpu_exec() found the vcpu-timers cycle budget spent and nothing else to
+ * do: run the virtual timers that are due and start the next budget
+ * without leaving it, as the vCPU thread loop would.  A display refill
+ * spends a budget on every DMA burst, and leaving cpu_exec() for each
+ * costs more than the burst.  False when the loop has to act first: queued
+ * work, a stop request, or a clock that must wait for real time.
+ */
+bool tcg_vcpu_timers_next_budget(CPUState *cpu)
+{
+    int64_t real;
+    bool next = false;
+
+    bql_lock();
+    qemu_clock_run_timers(QEMU_CLOCK_VIRTUAL);
+    if (!qatomic_read(&cpu->exit_request) && cpu_can_run(cpu)) {
+        cpu_clock_owner_progress(false);
+        real = cpu_clock_owner_limit_lag();
+        if (cpu_clock_owner_position() - real < CPU_CLOCK_OWNER_LEAD_NS) {
+            cpu_clock_owner_start_budget(real);
+            next = true;
+        }
+    }
+    bql_unlock();
+    return next;
 }
 
 static void tcg_cpu_reset_hold(CPUState *cpu)

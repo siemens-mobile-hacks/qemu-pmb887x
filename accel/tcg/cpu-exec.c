@@ -49,6 +49,11 @@
 #include "internal-common.h"
 #if !defined(CONFIG_USER_ONLY)
 #include "accel/tcg/iommu.h"
+#ifdef CONFIG_TCG_WASM64
+#include "accel/tcg/probe.h"
+#include "accel/tcg/cpu-mmu-index.h"
+#include "exec/tlb-flags.h"
+#endif
 #endif
 
 /* -icount align implementation. */
@@ -187,6 +192,32 @@ static bool tb_lookup_cmp(const void *p, const void *d)
              * here by the faulting lookup is not premature.
              */
             virt_page1 = TARGET_PAGE_ALIGN(desc->s->pc);
+#ifdef CONFIG_TCG_WASM64
+            if (unlikely(tb->w64_inl & W64_INL_VPAGE1)) {
+                /*
+                 * Page 1 is an inlined callee's page (translation-block.h
+                 * w64_inl), reached only after the instructions before
+                 * the call ran - so a fault here would be premature: a
+                 * page the guest has unmapped just makes this TB not
+                 * match, and the retranslation will not inline from it.
+                 */
+                void *host;
+                int fl;
+
+                virt_page1 = (desc->s->pc & TARGET_PAGE_MASK) +
+                             tb->w64_inl_vpage1;
+                if (desc->s->pc <= UINT32_MAX) {
+                    virt_page1 = (uint32_t)virt_page1;
+                }
+                fl = probe_access_flags(desc->env, virt_page1, 0,
+                                        MMU_INST_FETCH,
+                                        cpu_mmu_index(env_cpu(desc->env), true),
+                                        true, &host, 0);
+                if ((fl & (TLB_INVALID_MASK | TLB_MMIO)) || host == NULL) {
+                    return false;
+                }
+            }
+#endif
             phys_page1 = get_page_addr_code(desc->env, virt_page1);
             if (tb_phys_page1 == phys_page1) {
                 return true;
@@ -239,12 +270,12 @@ static inline TranslationBlock *tb_lookup(CPUState *cpu,
     /* we should never be trying to look up an INVALID tb */
     tcg_debug_assert(!(s->cflags & CF_INVALID));
 
-    hash = tb_jmp_cache_hash_func(s->pc);
+    hash = tb_jmp_cache_hash_func(s->pc, s->flags);
     jc = cpu->tb_jmp_cache;
 
     tb = qatomic_read(&jc->array[hash].tb);
     if (likely(tb &&
-               jc->array[hash].pc == s->pc &&
+               jc->array[hash].pc == tb_jmp_cache_key(jc, s->pc) &&
                tb->cs_base == s->cs_base &&
                tb->flags == s->flags &&
                tb_cflags(tb) == s->cflags)) {
@@ -256,7 +287,7 @@ static inline TranslationBlock *tb_lookup(CPUState *cpu,
         return NULL;
     }
 
-    jc->array[hash].pc = s->pc;
+    jc->array[hash].pc = tb_jmp_cache_key(jc, s->pc);
     qatomic_set(&jc->array[hash].tb, tb);
 
 hit:
@@ -369,6 +400,138 @@ static inline bool check_for_breakpoints(CPUState *cpu, vaddr pc,
         check_for_breakpoints_slow(cpu, pc, cflags);
 }
 
+#ifdef CONFIG_TCG_WASM64
+/*
+ * What a goto_ptr exit is handed (exec/translation-block.h): the target's
+ * shared-table index, tagged, so the emitted dispatch tail-calls it without
+ * reading the target TB's descriptor.  An uncompiled or evicted target
+ * (fidx == 0) still goes to the C dispatcher, which wants the pointer.
+ */
+static inline const void *w64_dispatch_target(const TranslationBlock *tb)
+{
+    const uint32_t *desc = tb->tc.ptr;
+
+    if (unlikely(desc[W64_TCP_FIDX / 4] == 0)) {
+        return tb->tc.ptr;
+    }
+    return (const void *)(uintptr_t)(W64_TIDX_TAG | desc[W64_TCP_TIDX / 4]);
+}
+
+/*
+ * ARM-only.  This file is target-independent (TARGET_* are poisoned), but
+ * wasm64 is only ever linked with the ARM target; any other target would
+ * fail to link on these symbols rather than silently fall back.
+ */
+bool arm_w64_lc_key(CPUState *cs, uint32_t key32[3]);
+bool arm_w64_lc_key_pc(CPUState *cs, uint32_t key32[3], uint32_t *pc);
+void arm_w64_lc_key_layout(struct W64PccShape *sh);
+#define W64_LC_KEY(cpu, k32)  arm_w64_lc_key(cpu, k32)
+#define W64_LC_KEY_PC(cpu, k32, pcp)  arm_w64_lc_key_pc(cpu, k32, pcp)
+
+/*
+ * The global next-TB cache, keyed on the target PC: the per-TB slot is
+ * monomorphic, and an interpreter's `ldr pc, [table, op, lsl #2]` goes
+ * somewhere different almost every time.  It asks the jump cache's own
+ * question (same size) against the key the per-TB slot uses (pc,
+ * hflags.flags, thumb, condexec_bits, plus the generation for everything
+ * else), without arm_get_tb_cpu_state or curr_cflags.  Its hash is its
+ * own: three ops for the emitted probe, where the jump cache's page-wise
+ * one takes ten.
+ *
+ * The lookup helpers probe it first.  So does a function every batch
+ * module carries (tcg/wasm64 w64_pcc_probe), which the goto_ptr exits
+ * call instead of helper_lookup_tb_ptr_lc and which calls it on a miss:
+ * emitted at every exit, the probe cost the EL71 boot burst ~8-10 % in
+ * translation and Liftoff compile time against ~3.6 % its hits saved,
+ * while behind the C helper a hit costs video ~4 % and towerblox ~1.5 %
+ * in steady state.  TurboFan inlines the module's function into the hot
+ * TBs.
+ *
+ * Soundness is the per-TB slot's: the generation retires the whole table
+ * wherever a jump-cache entry is dropped, wherever a key input the test
+ * does not cover moves (hflags.flags2, FPSCR.Len/Stride, FPEXC.EN,
+ * cflags) and wherever a module is evicted; A64, M-profile and
+ * single-step never fill (arm_w64_lc_key).  Only a compiled target is
+ * cached, because a hit never comes back here to refill.
+ *
+ * The entry is declared in exec/translation-block.h because the generated
+ * code reads it too.  @cpu_index names the owner of a per-CPU generation
+ * in a global table, and pads the entry to 32 bytes.
+ */
+#define W64_PCC_BITS TB_JMP_CACHE_BITS
+#define W64_PCC_MUL 0x9e3779b1u
+static struct W64PccEnt w64_pcc[1 << W64_PCC_BITS];
+QEMU_BUILD_BUG_ON(sizeof(struct W64PccEnt) != 32);
+
+static inline uint32_t w64_pcc_hash(uint32_t pc)
+{
+    return (pc * W64_PCC_MUL) >> (32 - W64_PCC_BITS);
+}
+
+const struct W64PccShape *w64_pcc_shape(void)
+{
+    static struct W64PccShape shape;
+
+    if (!shape.tab) {
+        shape.mul = W64_PCC_MUL;
+        shape.bits = W64_PCC_BITS;
+        shape.helper = (const void *)HELPER(lookup_tb_ptr_lc);
+        arm_w64_lc_key_layout(&shape);
+        shape.tab = w64_pcc;
+    }
+    return &shape;
+}
+
+static inline const void *w64_pcc_get(CPUState *cpu, uint32_t gen,
+                                      uint32_t key[3], uint32_t *pc_out)
+{
+    uint32_t pc;
+    const struct W64PccEnt *e;
+
+    if (!W64_LC_KEY_PC(cpu, key, &pc)) {
+        return NULL;
+    }
+    e = &w64_pcc[w64_pcc_hash(pc)];
+    if (likely(e->pc == pc && e->gen == gen &&
+               e->cpu_index == (uint32_t)cpu->cpu_index &&
+               e->key32[0] == key[0] &&
+               e->key32[1] == key[1] &&
+               e->key32[2] == key[2])) {
+        *pc_out = pc;
+        return e->tc;
+    }
+    return NULL;
+}
+
+/*
+ * @gen is read before the lookup that produced @target, so an
+ * invalidation racing with this fill leaves a stale stamp and the entry
+ * is simply missed — never a stale target under a current stamp.  Same
+ * ordering rule as the per-TB slot.
+ */
+static inline void w64_pcc_put(CPUState *cpu, TCGTBCPUState s, uint32_t gen,
+                               const void *target)
+{
+    uint32_t key[3];
+    struct W64PccEnt *e;
+
+    if (!((uintptr_t)target & W64_TIDX_TAG) ||
+        s.cflags != cpu->tcg_cflags ||
+        !W64_LC_KEY(cpu, key)) {
+        return;
+    }
+    e = &w64_pcc[w64_pcc_hash((uint32_t)s.pc)];
+    e->pc = (uint32_t)s.pc;
+    e->key32[0] = key[0];
+    e->key32[1] = key[1];
+    e->key32[2] = key[2];
+    e->cpu_index = (uint32_t)cpu->cpu_index;
+    e->tc = target;
+    e->gen = gen;
+}
+
+#endif /* CONFIG_TCG_WASM64 */
+
 /**
  * helper_lookup_tb_ptr: quick check for next tb
  * @env: current cpu state
@@ -411,12 +574,45 @@ static TranslationBlock *lookup_tb_for_ptr(CPUState *cpu, TCGTBCPUState *s)
     return tb;
 }
 
+#ifdef CONFIG_TCG_WASM64
+static const void *w64_lookup_tb_ptr_miss(CPUState *cpu, uint32_t gen)
+{
+    TCGTBCPUState s;
+    TranslationBlock *tb = lookup_tb_for_ptr(cpu, &s);
+    const void *target;
+
+    if (tb == NULL) {
+        return tcg_code_gen_epilogue;
+    }
+    if (qemu_loglevel_mask(CPU_LOG_TB_CPU | CPU_LOG_EXEC)) {
+        return tb->tc.ptr;
+    }
+    target = w64_dispatch_target(tb);
+    w64_pcc_put(cpu, s, gen, target);
+    return target;
+}
+#endif
+
 const void *HELPER(lookup_tb_ptr)(CPUArchState *env)
 {
+#ifdef CONFIG_TCG_WASM64
+    CPUState *cpu = env_cpu(env);
+    uint32_t gen = qatomic_read(&cpu->neg.tb_key_gen);
+    uint32_t key[3], pc;
+    const void *target;
+
+    cpu->neg.can_do_io = true;
+    target = w64_pcc_get(cpu, gen, key, &pc);
+    if (likely(target != NULL)) {
+        return target;
+    }
+    return w64_lookup_tb_ptr_miss(cpu, gen);
+#else
     TCGTBCPUState s;
     TranslationBlock *tb = lookup_tb_for_ptr(env_cpu(env), &s);
 
     return tb ? tb->tc.ptr : tcg_code_gen_epilogue;
+#endif
 }
 
 static bool tb_lookup_link_can_reuse(CPUState *cpu,
@@ -455,6 +651,95 @@ const void *HELPER(lookup_tb_ptr_link)(CPUArchState *env, void *opaque)
     }
     return tb->tc.ptr;
 }
+
+#ifdef CONFIG_TCG_WASM64
+/*
+ * Fill the per-TB slot for @cur, if every word the translator stamped
+ * statically matches; the dynamic words take @cur's values.
+ */
+static void w64_lc_fill(struct W64LookupCache *lc, const uint32_t cur[3],
+                        uint32_t pc, const void *target, uint32_t gen)
+{
+    for (int i = 0; i < 3; i++) {
+        if (!(lc->dynmask & (1 << i)) && lc->key32[i] != cur[i]) {
+            return;
+        }
+    }
+    lc->pc = pc;
+    for (int i = 0; i < 3; i++) {
+        if (lc->dynmask & (1 << i)) {
+            lc->key32[i] = cur[i];
+        }
+    }
+    lc->tc = target;
+    lc->gen = gen;
+}
+
+/*
+ * helper_lookup_tb_ptr_lc: helper_lookup_tb_ptr for a TB whose goto_ptr
+ * carries an inline next-TB cache (@slot = &tb->w64_lc of the calling
+ * TB, see target/arm gen_goto_ptr).  The emitted code takes the cached
+ * target when (pc, cpu->neg.tb_key_gen, dyn) all match and calls here
+ * otherwise, which refills the slot.  A NULL @slot is an exit keyed
+ * differently from the one its TB's slot serves: nothing to fill.
+ *
+ * Soundness: a slot stamped with generation G is valid for as long as
+ * the jump-cache entry it was filled from would be — every event that
+ * drops a jump-cache entry (tb_phys_invalidate, tcg_flush_jmp_cache,
+ * tb_jmp_cache_clear_page) bumps the generation, and so does every
+ * change of a target key input that neither the inline test nor the
+ * static stamp covers (ARM: hflags.flags2, FPSCR.Len/Stride, FPEXC.EN).
+ * The generation is read BEFORE the lookup so that an invalidation
+ * racing with the fill leaves a stale stamp, never a stale target.
+ */
+const void *HELPER(lookup_tb_ptr_lc)(CPUArchState *env, void *slot)
+{
+    CPUState *cpu = env_cpu(env);
+    struct W64LookupCache *lc = slot;
+    const void *target;
+    uint32_t gen = qatomic_read(&cpu->neg.tb_key_gen);
+    uint32_t cur[3], pc;
+    TCGTBCPUState s;
+    TranslationBlock *tb;
+
+    cpu->neg.can_do_io = true;
+    target = w64_pcc_get(cpu, gen, cur, &pc);
+    if (likely(target != NULL)) {
+        /* the slot missed; without a refill it keeps missing */
+        if (lc) {
+            w64_lc_fill(lc, cur, pc, target, gen);
+        }
+        return target;
+    }
+    tb = lookup_tb_for_ptr(cpu, &s);
+    if (tb == NULL) {
+        return tcg_code_gen_epilogue;
+    }
+    if (qemu_loglevel_mask(CPU_LOG_TB_CPU | CPU_LOG_EXEC)) {
+        return tb->tc.ptr;         /* keep every lookup visible in the log */
+    }
+
+    target = w64_dispatch_target(tb);
+    w64_pcc_put(cpu, s, gen, target);
+
+    /*
+     * Only a compiled target may be cached: an untagged one (fidx == 0)
+     * would pin this slot to the dispatcher handoff for good, because a
+     * hit never calls back here to refill it.
+     */
+    if (lc && likely(s.cflags == cpu->tcg_cflags) &&
+        ((uintptr_t)target & W64_TIDX_TAG) &&
+        W64_LC_KEY(cpu, cur)) {
+        w64_lc_fill(lc, cur, s.pc, target, gen);
+    }
+    return target;
+}
+
+void HELPER(tb_key_gen_bump)(CPUArchState *env)
+{
+    cpu_tb_key_gen_bump(env_cpu(env));
+}
+#endif /* CONFIG_TCG_WASM64 */
 
 /* Return the current PC from CPU, which may be cached in TB. */
 static vaddr log_pc(CPUState *cpu, const TranslationBlock *tb)
@@ -565,6 +850,9 @@ static void cpu_exec_longjmp_cleanup(CPUState *cpu)
 {
     /* Non-buggy compilers preserve this; assert the correct value. */
     g_assert(cpu == current_cpu);
+#ifdef CONFIG_TCG_WASM64
+    w64_exec_unwound();
+#endif
 
 #ifdef CONFIG_USER_ONLY
     clear_helper_retaddr();
@@ -661,6 +949,27 @@ void tb_set_jmp_target(TranslationBlock *tb, int n, uintptr_t addr)
     uintptr_t jmp_rx = (uintptr_t)tb->tc.ptr + offset;
     uintptr_t jmp_rw = jmp_rx - tcg_splitwx_diff;
 
+#ifdef CONFIG_TCG_WASM64
+    /*
+     * The wasm64 chain reads this slot and tail-calls the shared table, so
+     * hold the target's table index here (tagged, exec/translation-block.h)
+     * instead of its descriptor address: the chain then touches nothing of
+     * the target, where it used to load fidx and tidx out of a cache line
+     * that only the dispatch ever reads.  tb_reset_jump's own address is a
+     * wasm64 heap pointer, below 2 GB, so a reset slot reads as "not
+     * linked" with no second test.
+     *
+     * A chain is only ever *taken* after the target has run once through
+     * the dispatcher (tb_add_jump is immediately followed by executing the
+     * target), so its table entry is live by then.  The one thing that can
+     * unregister it afterwards is batch eviction, which unlinks the
+     * incoming jumps itself (tcg/wasm64/wasm64.c).
+     */
+    if (addr != (uintptr_t)tb->tc.ptr + tb->jmp_reset_offset[n]) {
+        addr = (uintptr_t)(W64_TIDX_TAG |
+                           ((const uint32_t *)addr)[W64_TCP_TIDX / 4]);
+    }
+#endif
     tb->jmp_target_addr[n] = addr;
     tb_target_set_jmp_target(c_tb, n, jmp_rx, jmp_rw);
 }
@@ -669,6 +978,14 @@ static inline void tb_add_jump(TranslationBlock *tb, int n,
                                TranslationBlock *tb_next)
 {
     uintptr_t old;
+#ifdef CONFIG_TCG_WASM64
+    /* chains into it are dropped at every TLB flush (tb_unlink_inlined) */
+    bool inl = tb_next->w64_inl && tb_page_addr1(tb_next) != -1;
+
+    if (inl) {
+        w64_inl_lock_acquire();
+    }
+#endif
 
     qemu_thread_jit_write();
     assert(n < ARRAY_SIZE(tb->jmp_list_next));
@@ -678,6 +995,19 @@ static inline void tb_add_jump(TranslationBlock *tb, int n,
     if (tb_next->cflags & CF_INVALID) {
         goto out_unlock_next;
     }
+#ifdef CONFIG_TCG_WASM64
+    /*
+     * The wasm64 chain tail-calls the target's shared-table entry, which
+     * exists only once the target has a module.  Until the interpreter
+     * tier there was no way for a target to run without one, so linking
+     * here was always safe; now it is not.  Leave the pair unlinked --
+     * jmp_dest stays NULL, so the next exit through this edge links it
+     * once the target has been compiled.
+     */
+    if (((const uint32_t *)tb_next->tc.ptr)[W64_TCP_FIDX / 4] == 0) {
+        goto out_unlock_next;
+    }
+#endif
     /* Atomically claim the jump destination slot only if it was NULL */
     old = qatomic_cmpxchg(&tb->jmp_dest[n], (uintptr_t)NULL,
                           (uintptr_t)tb_next);
@@ -689,10 +1019,20 @@ static inline void tb_add_jump(TranslationBlock *tb, int n,
     tb_set_jmp_target(tb, n, (uintptr_t)tb_next->tc.ptr);
 
     /* add in TB jmp list */
+#ifdef CONFIG_TCG_WASM64
+    if (inl && !tb_next->jmp_list_head) {
+        w64_inl_list_add(tb_next);
+    }
+#endif
     tb->jmp_list_next[n] = tb_next->jmp_list_head;
     tb_next->jmp_list_head = (uintptr_t)tb | n;
 
     qemu_spin_unlock(&tb_next->jmp_lock);
+#ifdef CONFIG_TCG_WASM64
+    if (inl) {
+        w64_inl_lock_release();
+    }
+#endif
 
     if (tcg_cross_page_links && ((tb->pc ^ tb_next->pc) & TARGET_PAGE_MASK)) {
         tb_record_cross_page_jump(tb, n);
@@ -704,6 +1044,11 @@ static inline void tb_add_jump(TranslationBlock *tb, int n,
 
  out_unlock_next:
     qemu_spin_unlock(&tb_next->jmp_lock);
+#ifdef CONFIG_TCG_WASM64
+    if (inl) {
+        w64_inl_lock_release();
+    }
+#endif
 }
 
 static inline bool cpu_handle_halt(CPUState *cpu)
@@ -825,6 +1170,17 @@ static inline bool cpu_cycle_budget_expired(CPUState *cpu)
            (int32_t)(cpu->neg.cycle_limit - cpu->neg.cycle_count) <= 0;
 }
 
+/* A spent budget is renewed in place unless the loop outside has work. */
+static inline bool cpu_cycle_budget_exit(CPUState *cpu)
+{
+#ifdef CONFIG_USER_ONLY
+    return false;
+#else
+    return cpu_cycle_budget_expired(cpu) &&
+           (cpu->exception_index != -1 || !tcg_vcpu_timers_next_budget(cpu));
+#endif
+}
+
 static inline bool icount_exit_request(CPUState *cpu)
 {
     if (!icount_enabled()) {
@@ -934,7 +1290,8 @@ static inline bool cpu_handle_interrupt(CPUState *cpu,
      * The corresponding store-release is in cpu_exit.
      */
     if (unlikely(qatomic_load_acquire(&cpu->exit_request)) ||
-        icount_exit_request(cpu) || cpu_cycle_budget_expired(cpu)) {
+        icount_exit_request(cpu) ||
+        cpu_cycle_budget_exit(cpu)) {
         if (cpu->exception_index == -1) {
             cpu->exception_index = EXCP_INTERRUPT;
         }
@@ -1008,6 +1365,19 @@ cpu_exec_loop(CPUState *cpu, SyncClocks *sc)
 
         while (!cpu_handle_interrupt(cpu, &last_tb)) {
             TranslationBlock *tb;
+
+#ifndef CONFIG_USER_ONLY
+            /*
+             * A BQL this thread is holding only because bql_unlock_mmio()
+             * deferred the release (system/cpus.c) is given back here as
+             * soon as another thread asks for it.  One atomic load, which
+             * on x86 is a plain one; the release itself is rare.
+             */
+            if (unlikely(bql_wanted_by_other())) {
+                bql_release_lazy();
+            }
+#endif
+
             TCGTBCPUState s = cpu->cc->tcg_ops->get_tb_cpu_state(cpu);
             s.cflags = cpu->cflags_next_tb;
 
@@ -1041,9 +1411,9 @@ cpu_exec_loop(CPUState *cpu, SyncClocks *sc)
                  * We add the TB in the virtual pc hash table
                  * for the fast lookup
                  */
-                h = tb_jmp_cache_hash_func(s.pc);
+                h = tb_jmp_cache_hash_func(s.pc, s.flags);
                 jc = cpu->tb_jmp_cache;
-                jc->array[h].pc = s.pc;
+                jc->array[h].pc = tb_jmp_cache_key(jc, s.pc);
                 qatomic_set(&jc->array[h].tb, tb);
             }
             if (tb_cflags(tb) & CF_MEMORY_TIMING) {
@@ -1058,6 +1428,16 @@ cpu_exec_loop(CPUState *cpu, SyncClocks *sc)
              * for the second page can change.
              */
             if (tb_page_addr1(tb) != -1) {
+#ifdef CONFIG_TCG_WASM64
+                /*
+                 * Unless the second page is an inlined callee's
+                 * (translation-block.h w64_inl): those chains are dropped
+                 * whenever the mapping may have changed
+                 * (tb_unlink_inlined, from cpu_tb_key_gen_bump), which
+                 * is what makes a direct jump into the TB safe.
+                 */
+                if (!tb->w64_inl)
+#endif
                 last_tb = NULL;
             }
 #endif

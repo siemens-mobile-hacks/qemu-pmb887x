@@ -4,6 +4,17 @@
 #include "hw/arm/pmb887x/dsp/peripheral/internal.h"
 #include "hw/arm/pmb887x/gen/dsp.h"
 
+/*
+ * WASM PORT FAST PATH (removable): dsp_bus_advance() only counts cycles
+ * while they end before the first cycle at which a device can do anything
+ * but count them itself, and dsp_bus_flush() hands the devices the sum:
+ * before an access to a device that takes cycles, and before anything else
+ * that changes one. An active device that dsp_bus_get_horizon() has no
+ * horizon for keeps the bus advancing on every call, and so does a device
+ * it does not know.
+ */
+#define DSP_BUS_HORIZON_MAX	((size_t) 1 << 24)
+
 static void dsp_device_debug_print(const DebugChannel *ch, const DebugIoAccess *io, GString *out) {
 	if (ch->io_format_opaque) {
 		debug_regs_format.print(ch, io, out);
@@ -38,6 +49,21 @@ static void dsp_device_destroy(dsp_device_t *device) {
 	device->ops->destroy(device);
 	debug_channel_cleanup(&device->dbg);
 	g_free(device);
+}
+
+static bool dsp_bus_device_takes_cycles(const pmb887x_dsp_peripheral_config_t *config) {
+	switch (config->type) {
+		case PMB887X_DSP_PERIPHERAL_BASEBAND:
+		case PMB887X_DSP_PERIPHERAL_CIPHER:
+		case PMB887X_DSP_PERIPHERAL_DSP:
+		case PMB887X_DSP_PERIPHERAL_INTERRUPT:
+		case PMB887X_DSP_PERIPHERAL_MCS:
+		case PMB887X_DSP_PERIPHERAL_XBIU:
+			return false;
+
+		default:
+			return true;
+	}
 }
 
 static dsp_device_t *dsp_bus_create_device(dsp_bus_t *bus, const pmb887x_dsp_peripheral_config_t *config) {
@@ -161,6 +187,16 @@ dsp_bus_t *dsp_bus_create(
 		bus->devices[i]->dsp_config = config;
 	}
 
+	size_t timed = 0;
+	for (size_t i = 0; i < bus->device_count; i++) {
+		bus->devices[i]->timed = dsp_bus_device_takes_cycles(&config->peripherals[i]);
+		timed += bus->devices[i]->timed;
+	}
+	if (timed == bus->i2s_count + (bus->afe != NULL) + (bus->channel_decoder != NULL) +
+			(bus->equalizer != NULL) + (bus->i2s_tx != NULL) + (bus->modulator != NULL) +
+			(bus->ssc != NULL) + (bus->timer1 != NULL) + (bus->timer2 != NULL))
+		bus->horizon_max = DSP_BUS_HORIZON_MAX;
+
 	bus->fallback_config = (pmb887x_dsp_peripheral_config_t) {
 		.name = "UNKNOWN",
 		.base = config->mmio_base,
@@ -202,6 +238,8 @@ void dsp_bus_destroy(dsp_bus_t *bus) {
 }
 
 void dsp_bus_reset(dsp_bus_t *bus) {
+	bus->pending_cycles = 0;
+	bus->horizon_cycles = 0;
 	qatomic_set(&bus->gsm_signals, 0);
 	bus->fallback->ops->reset(bus->fallback);
 	for (size_t i = 0; i < bus->device_count; i++)
@@ -209,6 +247,7 @@ void dsp_bus_reset(dsp_bus_t *bus) {
 }
 
 void dsp_bus_set_clock_hz(dsp_bus_t *bus, uint32_t frequency_hz) {
+	dsp_bus_flush(bus);
 	if (bus->afe != NULL)
 		afe_set_clock_hz(bus->afe, frequency_hz);
 	if (bus->cipher != NULL)
@@ -222,6 +261,7 @@ void dsp_bus_set_clock_hz(dsp_bus_t *bus, uint32_t frequency_hz) {
 }
 
 void dsp_bus_set_ms_clock_hz(dsp_bus_t *bus, uint32_t frequency_hz) {
+	dsp_bus_flush(bus);
 	if (bus->afe != NULL)
 		afe_set_ms_clock_hz(bus->afe, frequency_hz);
 	for (size_t i = 0; i < bus->i2s_count; i++)
@@ -237,10 +277,13 @@ void dsp_bus_update_time(dsp_bus_t *bus) {
 		cipher_update_time(bus->cipher);
 }
 
-void dsp_bus_advance(dsp_bus_t *bus, size_t cycles) {
+static void dsp_bus_advance_devices(dsp_bus_t *bus, bool baseband) {
+	size_t cycles = bus->pending_cycles;
+
+	bus->pending_cycles = 0;
 	if (bus->afe != NULL && afe_is_active(bus->afe))
 		afe_advance(bus->afe, cycles);
-	if (bus->baseband != NULL && baseband_is_active(bus->baseband))
+	if (baseband)
 		baseband_advance(bus->baseband);
 	if (bus->channel_decoder != NULL && chdec_is_active(bus->channel_decoder))
 		chdec_advance(bus->channel_decoder, cycles);
@@ -261,6 +304,46 @@ void dsp_bus_advance(dsp_bus_t *bus, size_t cycles) {
 		timer2_advance(bus->timer2, cycles);
 }
 
+static size_t dsp_bus_get_horizon(const dsp_bus_t *bus) {
+	size_t cycles = bus->horizon_max;
+
+	if (bus->afe != NULL && afe_is_active(bus->afe))
+		return 0;
+	if (bus->channel_decoder != NULL && chdec_is_active(bus->channel_decoder))
+		return 0;
+	if (bus->equalizer != NULL && equalizer_is_active(bus->equalizer))
+		return 0;
+	if (bus->i2s_tx != NULL && dsp_i2s_tx_is_active(bus->i2s_tx))
+		return 0;
+	if (bus->modulator != NULL && modulator_is_active(bus->modulator))
+		return 0;
+	if (bus->ssc != NULL && ssc_is_active(bus->ssc))
+		return 0;
+	if (bus->timer1 != NULL && timer1_is_active(bus->timer1))
+		return 0;
+	for (size_t i = 0; i < bus->i2s_count; i++)
+		cycles = MIN(cycles, dsp_i2s_get_cycles_until_frame(bus->i2s[i]));
+	if (bus->timer2 != NULL && timer2_is_active(bus->timer2))
+		cycles = MIN(cycles, timer2_get_cycles_until_interrupt(bus->timer2));
+	return cycles;
+}
+
+void dsp_bus_flush(dsp_bus_t *bus) {
+	if (bus->pending_cycles != 0)
+		dsp_bus_advance_devices(bus, false);
+	bus->horizon_cycles = 0;
+}
+
+void dsp_bus_advance(dsp_bus_t *bus, size_t cycles) {
+	bool baseband = bus->baseband != NULL && baseband_is_active(bus->baseband);
+
+	bus->pending_cycles += cycles;
+	if (bus->pending_cycles < bus->horizon_cycles && !baseband)
+		return;
+	dsp_bus_advance_devices(bus, baseband);
+	bus->horizon_cycles = dsp_bus_get_horizon(bus);
+}
+
 void dsp_bus_advance_idle(dsp_bus_t *bus, size_t cycles) {
 	dsp_bus_advance(bus, cycles);
 }
@@ -274,6 +357,8 @@ size_t dsp_bus_get_cycles_until_event(const dsp_bus_t *bus) {
 		cycles = MIN(cycles, dsp_i2s_get_cycles_until_receive_interrupt(bus->i2s[i]));
 	if (bus->modulator != NULL && modulator_is_active(bus->modulator))
 		cycles = MIN(cycles, modulator_get_cycles_until_interrupt(bus->modulator));
+	if (cycles != SIZE_MAX)
+		cycles -= bus->pending_cycles;
 	return cycles;
 }
 
@@ -321,6 +406,7 @@ void dsp_bus_write(dsp_bus_t *bus, uint16_t address, uint16_t value) {
 }
 
 uint16_t dsp_bus_external_read(dsp_bus_t *bus, size_t index) {
+	dsp_bus_flush(bus);
 	if (index == 0 && bus->channel_decoder != NULL)
 		return chdec_external_read(bus->channel_decoder);
 	if (index == 1 && bus->equalizer != NULL)
@@ -329,6 +415,7 @@ uint16_t dsp_bus_external_read(dsp_bus_t *bus, size_t index) {
 }
 
 void dsp_bus_external_write(dsp_bus_t *bus, size_t index, uint16_t value) {
+	dsp_bus_flush(bus);
 	if (index == 0 && bus->channel_decoder != NULL)
 		chdec_external_write(bus->channel_decoder, value);
 	if (index == 1 && bus->equalizer != NULL)
@@ -401,6 +488,7 @@ void dsp_bus_set_gsm_signal(
 	}
 
 	if (signal == PMB887X_DSP_GSM_SIGNAL_CODON) {
+		dsp_bus_flush(bus);
 		if (bus->modulator != NULL)
 			modulator_set_codon(bus->modulator, level, timestamp_ns);
 

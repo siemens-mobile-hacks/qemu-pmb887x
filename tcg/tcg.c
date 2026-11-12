@@ -118,6 +118,10 @@ static void tcg_register_jit_int(const void *buf, size_t size,
 static void tcg_out_tb_start(TCGContext *s);
 static void tcg_out_ld(TCGContext *s, TCGType type, TCGReg ret, TCGReg arg1,
                        intptr_t arg2);
+#ifdef CONFIG_TCG_WASM64
+static void tcg_out_set_label(TCGContext *s, TCGLabel *l);
+static int tcg_out_tb_finalize(TCGContext *s);
+#endif
 static bool tcg_out_mov(TCGContext *s, TCGType type, TCGReg ret, TCGReg arg);
 static void tcg_out_movi(TCGContext *s, TCGType type,
                          TCGReg ret, tcg_target_long arg);
@@ -246,7 +250,7 @@ TCGv_env tcg_env;
 const void *tcg_code_gen_epilogue;
 ptrdiff_t tcg_splitwx_diff;
 
-#ifndef CONFIG_TCG_INTERPRETER
+#ifndef HAVE_TCG_QEMU_TB_EXEC
 tcg_prologue_fn *tcg_qemu_tb_exec;
 #endif
 
@@ -353,6 +357,9 @@ static void tcg_out_label(TCGContext *s, TCGLabel *l)
     tcg_debug_assert(!l->has_value);
     l->has_value = 1;
     l->u.value_ptr = tcg_splitwx_to_rx(s->code_ptr);
+#ifdef CONFIG_TCG_WASM64
+    tcg_out_set_label(s, l);
+#endif
 }
 
 TCGLabel *gen_new_label(void)
@@ -1853,7 +1860,7 @@ void tcg_prologue_init(void)
     s->code_buf = s->code_gen_ptr;
     s->data_gen_ptr = NULL;
 
-#ifndef CONFIG_TCG_INTERPRETER
+#ifndef HAVE_TCG_QEMU_TB_EXEC
     tcg_qemu_tb_exec = (tcg_prologue_fn *)tcg_splitwx_to_rx(s->code_ptr);
 #endif
 
@@ -1909,7 +1916,7 @@ void tcg_prologue_init(void)
         }
     }
 
-#ifndef CONFIG_TCG_INTERPRETER
+#ifndef HAVE_TCG_QEMU_TB_EXEC
     /*
      * Assert that goto_ptr is implemented completely, setting an epilogue.
      * For tci, we use NULL as the signal to return from the interpreter,
@@ -1920,6 +1927,14 @@ void tcg_prologue_init(void)
 
     tcg_region_prologue_set(s);
 }
+
+/* WASM PORT FAST PATH (removable): w64c_reset and w64c_constant below */
+#ifdef CONFIG_TCG_WASM64
+#define W64_CONSTS 1
+#else
+#define W64_CONSTS 0
+#endif
+#include "const-table.c.inc"
 
 void tcg_func_start(TCGContext *s)
 {
@@ -1934,6 +1949,9 @@ void tcg_func_start(TCGContext *s)
         if (s->const_table[i]) {
             g_hash_table_remove_all(s->const_table[i]);
         }
+    }
+    if (W64_CONSTS) {  /* WASM PORT FAST PATH (removable) */
+        w64c_reset(s);
     }
 
     s->nb_ops = 0;
@@ -2236,6 +2254,9 @@ TCGTemp *tcg_constant_internal(TCGType type, int64_t val)
     GHashTable *h = s->const_table[type];
     TCGTemp *ts;
 
+    if (W64_CONSTS) {  /* WASM PORT FAST PATH (removable) */
+        return w64c_constant(s, type, val);
+    }
     if (h == NULL) {
         h = g_hash_table_new(g_int64_hash, g_int64_equal);
         s->const_table[type] = h;
@@ -3796,6 +3817,14 @@ static void la_cross_call(TCGContext *s, int nt)
     }
 }
 
+/* WASM PORT FAST PATH (removable): the la_w64_* hooks below */
+#ifdef CONFIG_TCG_WASM64
+#define LA_W64 1
+#else
+#define LA_W64 0
+#endif
+#include "la-touched.c.inc"
+
 /*
  * Liveness analysis: Verify the lifetime of TEMP_TB, and reduce
  * to TEMP_EBB, if possible.
@@ -3893,7 +3922,11 @@ liveness_pass_1(TCGContext *s)
     }
 
     /* ??? Should be redundant with the exit_tb that ends the TB.  */
-    la_func_end(s, nb_globals, nb_temps);
+    if (LA_W64) {  /* WASM PORT FAST PATH (removable) */
+        la_w64_start(s, nb_globals, nb_temps);
+    } else {
+        la_func_end(s, nb_globals, nb_temps);
+    }
 
     s->carry_live = false;
     QTAILQ_FOREACH_REVERSE_SAFE(op, &s->ops, link, op_prev) {
@@ -3959,7 +3992,11 @@ liveness_pass_1(TCGContext *s)
                 }
 
                 /* For all live registers, remove call-clobbered prefs.  */
-                la_cross_call(s, nb_temps);
+                if (LA_W64) {  /* WASM PORT FAST PATH (removable) */
+                    la_w64_cross_call(s);
+                } else {
+                    la_cross_call(s, nb_temps);
+                }
 
                 /*
                  * Input arguments are live for preceding opcodes.
@@ -3991,6 +4028,8 @@ liveness_pass_1(TCGContext *s)
                             break;
                         }
                         ts->state &= ~TS_DEAD;
+                        /* WASM PORT FAST PATH (removable) */
+                        la_w64_touch(s, ts);
                     }
                 }
 
@@ -4184,18 +4223,34 @@ liveness_pass_1(TCGContext *s)
             /* If end of basic block, update.  */
             if (def->flags & TCG_OPF_BB_EXIT) {
                 assert_carry_dead(s);
-                la_func_end(s, nb_globals, nb_temps);
+                if (LA_W64) {  /* WASM PORT FAST PATH (removable) */
+                    la_w64_func_end(s, nb_globals);
+                } else {
+                    la_func_end(s, nb_globals, nb_temps);
+                }
             } else if (def->flags & TCG_OPF_COND_BRANCH) {
                 assert_carry_dead(s);
-                la_bb_sync(s, nb_globals, nb_temps);
+                if (LA_W64) {  /* WASM PORT FAST PATH (removable) */
+                    la_w64_bb_sync(s, nb_globals);
+                } else {
+                    la_bb_sync(s, nb_globals, nb_temps);
+                }
             } else if (def->flags & TCG_OPF_BB_END) {
                 assert_carry_dead(s);
-                la_bb_end(s, nb_globals, nb_temps);
+                if (LA_W64) {  /* WASM PORT FAST PATH (removable) */
+                    la_w64_bb_end(s, nb_globals);
+                } else {
+                    la_bb_end(s, nb_globals, nb_temps);
+                }
             } else if (def->flags & TCG_OPF_SIDE_EFFECTS) {
                 assert_carry_dead(s);
                 la_global_sync(s, nb_globals);
                 if (def->flags & TCG_OPF_CALL_CLOBBER) {
-                    la_cross_call(s, nb_temps);
+                    if (LA_W64) {  /* WASM PORT FAST PATH (removable) */
+                        la_w64_cross_call(s);
+                    } else {
+                        la_cross_call(s, nb_temps);
+                    }
                 }
             }
 
@@ -4218,6 +4273,7 @@ liveness_pass_1(TCGContext *s)
                        all regs for the type.  */
                     *la_temp_pref(ts) = tcg_target_available_regs[ts->type];
                     ts->state &= ~TS_DEAD;
+                    la_w64_touch(s, ts);  /* WASM PORT FAST PATH (removable) */
                 }
             }
             if (def->flags & TCG_OPF_CARRY_IN) {
@@ -4233,6 +4289,8 @@ liveness_pass_1(TCGContext *s)
                 if (IS_DEAD_ARG(1)) {
                     *la_temp_pref(arg_temp(op->args[0]))
                         = *la_temp_pref(arg_temp(op->args[1]));
+                    /* WASM PORT FAST PATH (removable) */
+                    la_w64_touch(s, arg_temp(op->args[0]));
                 }
                 break;
 
@@ -4843,6 +4901,11 @@ static void sync_globals(TCGContext *s, TCGRegSet allocated_regs)
 static void tcg_reg_alloc_bb_end(TCGContext *s, TCGRegSet allocated_regs)
 {
     assert_carry_dead(s);
+    if (LA_W64_RA) {  /* WASM PORT FAST PATH (removable) */
+        la_w64_ra_bb_end(s, allocated_regs);
+        save_globals(s, allocated_regs);
+        return;
+    }
     for (int i = s->nb_globals; i < s->nb_temps; i++) {
         TCGTemp *ts = &s->temps[i];
 
@@ -4876,6 +4939,9 @@ static void tcg_reg_alloc_cbranch(TCGContext *s, TCGRegSet allocated_regs)
 {
     assert_carry_dead(s);
     sync_globals(s, allocated_regs);
+    if (LA_W64_RA) {  /* WASM PORT FAST PATH (removable) */
+        return;     /* the loop below only asserts */
+    }
 
     for (int i = s->nb_globals; i < s->nb_temps; i++) {
         TCGTemp *ts = &s->temps[i];
@@ -6752,6 +6818,12 @@ int tcg_gen_code(TCGContext *s, TranslationBlock *tb, uint64_t pc_start)
     if (i < 0) {
         return i;
     }
+#ifdef CONFIG_TCG_WASM64
+    /* the wasm64 backend assembles the module around the body */
+    if (tcg_out_tb_finalize(s) < 0) {
+        return -2;
+    }
+#endif
     if (!tcg_resolve_relocs(s)) {
         return -2;
     }

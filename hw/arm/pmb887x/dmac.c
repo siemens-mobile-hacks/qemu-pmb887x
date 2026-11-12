@@ -1,5 +1,6 @@
 #include "qemu/osdep.h"
 #include "hw/core/sysbus.h"
+#include "hw/core/irq.h"
 #include "hw/core/hw-error.h"
 #include "system/memory.h"
 #include "cpu.h"
@@ -48,6 +49,15 @@ struct pmb887x_dmac_ch_t {
 	uint8_t fifo[DMAC_FIFO_SIZE];
 };
 
+/* A bus range known to map to one region, valid until the next memory topology change. */
+typedef struct {
+	hwaddr start;
+	hwaddr end;
+	MemoryRegion *mr;
+	hwaddr xlat;
+	uint8_t *host;
+} pmb887x_dmac_translation_t;
+
 struct pmb887x_dmac_pending_request_t {
 	pmb887x_dmac_request_t *request;
 	uint32_t count;
@@ -65,6 +75,9 @@ struct pmb887x_dmac_t {
 	QEMUTimer *timer;
 	MemoryRegion *downstream;
 	AddressSpace downstream_as;
+	MemoryListener downstream_listener;
+	pmb887x_dmac_translation_t read_translation;
+	pmb887x_dmac_translation_t sink_translation;
 	DMASinkCache downstream_sink;
 
 	qemu_irq irq_err;
@@ -77,6 +90,9 @@ struct pmb887x_dmac_t {
 
 	bool dmac_pending;
 	bool is_in_pass;
+	void (*catch_up)(void *opaque);
+	void *catch_up_opaque;
+	uint32_t raised_levels;
 	uint32_t config;
 	uint32_t sync;
 
@@ -147,14 +163,53 @@ static void dmac_swap_byte_order(uint8_t *buffer, uint32_t width, uint32_t count
 	}
 }
 
+static bool dmac_translate(pmb887x_dmac_t *p, pmb887x_dmac_translation_t *translation, hwaddr addr, hwaddr size, bool is_write) {
+	if (addr >= translation->start && addr + size <= translation->end)
+		return true;
+
+	MemoryRegionSection section = memory_region_find(p->downstream, addr, UINT64_MAX - addr);
+	if (!section.mr || section.offset_within_address_space != addr) {
+		if (section.mr)
+			memory_region_unref(section.mr);
+		*translation = (pmb887x_dmac_translation_t) { 0 };
+		return false;
+	}
+
+	MemoryRegion *mr = section.mr;
+	hwaddr xlat = section.offset_within_region + (addr - section.offset_within_address_space);
+	translation->start = addr;
+	translation->end = section.offset_within_address_space + int128_get64(section.size);
+	translation->mr = mr;
+	translation->xlat = xlat;
+	translation->host = memory_access_is_direct(mr, is_write, MEMTXATTRS_UNSPECIFIED) ?
+		(uint8_t *) memory_region_get_ram_ptr(mr) + xlat : NULL;
+	memory_region_unref(mr);
+	return addr + size <= translation->end;
+}
+
+static void dmac_memory_commit(MemoryListener *listener) {
+	pmb887x_dmac_t *p = container_of(listener, pmb887x_dmac_t, downstream_listener);
+	p->read_translation = (pmb887x_dmac_translation_t) { 0 };
+	p->sink_translation = (pmb887x_dmac_translation_t) { 0 };
+}
+
+static void dmac_read_bytes(pmb887x_dmac_t *p, hwaddr addr, uint8_t *buffer, uint32_t size) {
+	pmb887x_dmac_translation_t *translation = &p->read_translation;
+	if (dmac_translate(p, translation, addr, size, false) && translation->host) {
+		memcpy(buffer, translation->host + (addr - translation->start), size);
+	} else {
+		address_space_read(&p->downstream_as, addr, MEMTXATTRS_UNSPECIFIED, buffer, size);
+	}
+}
+
 static void dmac_read(pmb887x_dmac_t *p, hwaddr addr, uint8_t *buffer, uint32_t width, uint32_t count, enum device_endian endian) {
 	if (endian == DEVICE_BIG_ENDIAN && width < sizeof(uint32_t)) {
 		for (uint32_t i = 0; i < count; i++) {
 			hwaddr transfer_addr = (addr + i * width) ^ (sizeof(uint32_t) - width);
-			address_space_read(&p->downstream_as, transfer_addr, MEMTXATTRS_UNSPECIFIED, buffer + i * width, width);
+			dmac_read_bytes(p, transfer_addr, buffer + i * width, width);
 		}
 	} else {
-		address_space_read(&p->downstream_as, addr, MEMTXATTRS_UNSPECIFIED, buffer, width * count);
+		dmac_read_bytes(p, addr, buffer, width * count);
 	}
 }
 
@@ -169,8 +224,15 @@ static void dmac_schedule(pmb887x_dmac_t *p) {
 		timer_mod(p->timer, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL));
 }
 
-static void dmac_clock_update(void *opaque, ClockEvent _event) {
+static void dmac_catch_up(pmb887x_dmac_t *p);
+
+static void dmac_clock_update(void *opaque, ClockEvent event) {
 	pmb887x_dmac_t *p = opaque;
+
+	if (event == ClockPreUpdate) {
+		dmac_catch_up(p);
+		return;
+	}
 
 	if (!clock_is_enabled(p->clock)) {
 		timer_del(p->timer);
@@ -460,8 +522,18 @@ static void dmac_fifo_drain(pmb887x_dmac_t *p, pmb887x_dmac_ch_t *ch, uint32_t b
 
 	bool is_increment = (ch->control & DMAC_CH_CONTROL_DI) != 0;
 	bool has_whole_transfers = (bytes % dst_width) == 0;
-	bool is_block_written = has_whole_transfers &&
-		dma_sink_write_block(&p->downstream_sink, ch->dst_addr, buffer, dst_width, count, is_increment);
+	pmb887x_dmac_translation_t *sink = &p->sink_translation;
+	bool is_block_written = false;
+	if (has_whole_transfers &&
+		dmac_translate(p, sink, ch->dst_addr, is_increment ? (hwaddr) dst_width * count : dst_width, true)) {
+		if (sink->host && is_increment) {
+			dmac_write(p, ch->dst_addr, buffer, dst_width * count);
+			is_block_written = true;
+		} else {
+			is_block_written = dma_sink_write_block_mr(&p->downstream_sink, sink->mr,
+				sink->xlat + (ch->dst_addr - sink->start), buffer, dst_width, count, is_increment);
+		}
+	}
 	if (!is_block_written) {
 		for (uint32_t i = 0; i < count; i++) {
 			hwaddr addr = is_increment ? ch->dst_addr + i * dst_width : ch->dst_addr;
@@ -894,11 +966,18 @@ static const char *dmac_request_name(pmb887x_dmac_t *p, const pmb887x_dmac_reque
 	return "UNK";
 }
 
+static void dmac_catch_up(pmb887x_dmac_t *p) {
+	if (p->catch_up)
+		p->catch_up(p->catch_up_opaque);
+}
+
 static void dmac_handle_signal(pmb887x_dmac_t *p, pmb887x_dmac_request_t *request, int sel, int id, int level) {
 	if (request->level[sel][id] == level)
 		return;
 
+	dmac_catch_up(p);
 	DEBUG_LOG(&p->dbg, "%s request=%d, level=%d\n", dmac_request_name(p, request), id, level);
+	p->raised_levels += (level != 0) - (request->level[sel][id] != 0);
 	request->level[sel][id] = level;
 
 	if (level == 0) {
@@ -919,6 +998,7 @@ static void dmac_handle_signal(pmb887x_dmac_t *p, pmb887x_dmac_request_t *reques
 static uint64_t dmac_io_read(void *opaque, hwaddr haddr, unsigned _size) {
 	pmb887x_dmac_t *p = opaque;
 
+	dmac_catch_up(p);
 	uint64_t value = 0;
 
 	if (!clock_is_enabled(p->clock))
@@ -1065,6 +1145,7 @@ static uint64_t dmac_io_read(void *opaque, hwaddr haddr, unsigned _size) {
 static void dmac_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned _size) {
 	pmb887x_dmac_t *p = opaque;
 
+	dmac_catch_up(p);
 	if (!clock_is_enabled(p->clock))
 		return;
 
@@ -1180,12 +1261,14 @@ static void dmac_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned _
 }
 
 void pmb887x_dmac_set_sel(pmb887x_dmac_t *p, uint32_t value) {
+	dmac_catch_up(p);
 	for (int i = 0; i < DMAC_REQUESTS; i++)
 		p->sel[i] = (value & (1 << i)) ? 1 : 0;
 	dmac_schedule(p);
 }
 
 uint32_t pmb887x_dmac_get_sel(pmb887x_dmac_t *p) {
+	dmac_catch_up(p);
 	uint32_t value = 0;
 	for (int i = 0; i < DMAC_REQUESTS; i++)
 		value |= p->sel[i] << i;
@@ -1253,6 +1336,178 @@ static void dmac_handle_signal_sel1_lbreq(void *opaque, int request, int level) 
 	dmac_handle_signal(p, &p->lbreq, 1, request, level);
 }
 
+static bool dmac_has_pending_requests(const pmb887x_dmac_t *p) {
+	return p->raised_levels != 0 || p->sreq.soft || p->breq.soft || p->lsreq.soft || p->lbreq.soft;
+}
+
+/* The one channel pmb887x_dmac_serve_burst() can serve on @line, if any. */
+static pmb887x_dmac_ch_t *dmac_get_served_channel(qemu_irq line) {
+	int sel;
+	if (line->handler == dmac_handle_signal_sel0_breq) {
+		sel = 0;
+	} else if (line->handler == dmac_handle_signal_sel1_breq) {
+		sel = 1;
+	} else {
+		return NULL;
+	}
+
+	pmb887x_dmac_t *p = line->opaque;
+	int id = line->n;
+	if (p->sel[id] != sel || p->is_in_pass || p->dmac_pending || timer_pending(p->timer))
+		return NULL;
+	if (!clock_is_enabled(p->clock) || !(p->config & DMAC_CONFIG_ENABLE) || dmac_has_pending_requests(p))
+		return NULL;
+
+	pmb887x_dmac_ch_t *ch = NULL;
+	for (int i = 0; i < DMAC_CHANNELS; i++) {
+		pmb887x_dmac_ch_t *other = &p->ch[i];
+		if (!(other->config & DMAC_CH_CONFIG_ENABLE))
+			continue;
+		uint32_t flow_ctrl = other->config & DMAC_CH_CONFIG_FLOW_CTRL;
+		uint8_t src_periph = (other->config & DMAC_CH_CONFIG_SRC_PERIPH) >> DMAC_CH_CONFIG_SRC_PERIPH_SHIFT;
+		uint8_t dst_periph = (other->config & DMAC_CH_CONFIG_DST_PERIPH) >> DMAC_CH_CONFIG_DST_PERIPH_SHIFT;
+		if (flow_ctrl == DMAC_CH_CONFIG_FLOW_CTRL_MEM2MEM)
+			return NULL;
+		if (src_periph != id && dst_periph != id)
+			continue;
+		if (ch != NULL || dst_periph != id)
+			return NULL;
+		if (flow_ctrl != DMAC_CH_CONFIG_FLOW_CTRL_MEM2PER_PER && flow_ctrl != DMAC_CH_CONFIG_FLOW_CTRL_MEM2PER)
+			return NULL;
+		ch = other;
+	}
+	if (ch == NULL || (ch->config & DMAC_CH_CONFIG_HALT))
+		return NULL;
+
+	bool is_dmac_flow = (ch->config & DMAC_CH_CONFIG_FLOW_CTRL) == DMAC_CH_CONFIG_FLOW_CTRL_MEM2PER;
+	if (is_dmac_flow && (ch->control & DMAC_CH_CONTROL_TRANSFER_SIZE) == 0)
+		return NULL;
+	return ch;
+}
+
+/*
+ * Serves a burst request, not the last one, of a memory-to-peripheral channel
+ * (either side controlling the flow), as the pass raising the request line
+ * would start, without the line and the pass: the peripheral calls it where it
+ * would raise the line and nothing can run before that pass. A display refill
+ * raises and clears the line once per word. Returns false, changing nothing,
+ * unless that pass would move one burst on the one channel serving the
+ * peripheral and do nothing else; after a partial burst it returns false and
+ * the raised line leaves the rest to a pass.
+ */
+bool pmb887x_dmac_serve_burst(qemu_irq line) {
+	pmb887x_dmac_ch_t *ch = dmac_get_served_channel(line);
+	if (ch == NULL)
+		return false;
+
+	pmb887x_dmac_t *p = line->opaque;
+	bool is_dmac_flow = (ch->config & DMAC_CH_CONFIG_FLOW_CTRL) == DMAC_CH_CONFIG_FLOW_CTRL_MEM2PER;
+
+	RCU_READ_LOCK_GUARD();
+	uint32_t dst_burst_size = dmac_get_burst_size((ch->control & DMAC_CH_CONTROL_DB_SIZE) >> DMAC_CH_CONTROL_DB_SIZE_SHIFT);
+	p->is_in_pass = true;
+	bool is_served = dmac_transfer_memory_to_destination(p, ch, dst_burst_size, is_dmac_flow);
+	p->is_in_pass = false;
+	if (p->dmac_pending) {
+		bool is_pass_cut = pmb887x_srb_get_ris(&p->srb_tc) || pmb887x_srb_get_ris(&p->srb_err);
+		timer_mod(p->timer, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + (is_pass_cut ? 1 : 0));
+	}
+	return is_served;
+}
+
+/*
+ * The bursts pmb887x_dmac_serve_burst() would serve one after another on
+ * @line while nothing else runs, for a peripheral-controlled transfer of
+ * 32-bit words from RAM, of which the peripheral ends the last: 0 if the
+ * channel moves data any other way.  *bulk is where the bursts go, one after
+ * another if is_increment.
+ */
+uint32_t pmb887x_dmac_count_bulk_bursts(qemu_irq line, pmb887x_dmac_bulk_t *bulk) {
+	pmb887x_dmac_ch_t *ch = dmac_get_served_channel(line);
+	if (ch == NULL)
+		return 0;
+
+	pmb887x_dmac_t *p = line->opaque;
+	uint32_t src_width = dmac_get_width((ch->control & DMAC_CH_CONTROL_S_WIDTH) >> DMAC_CH_CONTROL_S_WIDTH_SHIFT);
+	uint32_t dst_width = dmac_get_width((ch->control & DMAC_CH_CONTROL_D_WIDTH) >> DMAC_CH_CONTROL_D_WIDTH_SHIFT);
+	if ((ch->config & DMAC_CH_CONFIG_FLOW_CTRL) != DMAC_CH_CONFIG_FLOW_CTRL_MEM2PER_PER)
+		return 0;
+	if (src_width != sizeof(uint32_t) || dst_width != sizeof(uint32_t))
+		return 0;
+	if (!(ch->control & DMAC_CH_CONTROL_SI))
+		return 0;
+	if (ch->fifo_bytes != 0 || ch->delivered_byte_remainder != 0 || (ch->src_addr & 3) != 0 || (ch->dst_addr & 3) != 0)
+		return 0;
+
+	RCU_READ_LOCK_GUARD();
+	uint32_t burst_words = dmac_get_burst_size((ch->control & DMAC_CH_CONTROL_DB_SIZE) >> DMAC_CH_CONTROL_DB_SIZE_SHIFT);
+	uint32_t burst_bytes = burst_words * sizeof(uint32_t);
+	pmb887x_dmac_translation_t *source = &p->read_translation;
+	if (!dmac_translate(p, source, ch->src_addr, burst_bytes, false) || !source->host)
+		return 0;
+	pmb887x_dmac_translation_t *sink = &p->sink_translation;
+	if (!dmac_translate(p, sink, ch->dst_addr, dst_width, true) || sink->host)
+		return 0;
+
+	bulk->sink = sink->mr;
+	bulk->sink_addr = sink->xlat + (ch->dst_addr - sink->start);
+	bulk->burst_words = burst_words;
+	bulk->is_increment = (ch->control & DMAC_CH_CONTROL_DI) != 0;
+	uint32_t count = (source->end - ch->src_addr) / burst_bytes;
+	if (bulk->is_increment)
+		count = MIN(count, (sink->end - ch->dst_addr) / burst_bytes);
+	return count;
+}
+
+bool pmb887x_dmac_get_bulk_source(qemu_irq line, uint32_t count, ram_addr_t *start, ram_addr_t *length,
+	ram_addr_t *available) {
+	pmb887x_dmac_ch_t *ch = dmac_get_served_channel(line);
+	if (ch == NULL)
+		return false;
+
+	pmb887x_dmac_t *p = line->opaque;
+	uint32_t burst_words = dmac_get_burst_size((ch->control & DMAC_CH_CONTROL_DB_SIZE) >> DMAC_CH_CONTROL_DB_SIZE_SHIFT);
+	hwaddr bytes = (hwaddr) burst_words * count * sizeof(uint32_t);
+	pmb887x_dmac_translation_t *source = &p->read_translation;
+	if (!dmac_translate(p, source, ch->src_addr, bytes, false) || !source->host || !memory_region_is_ram(source->mr))
+		return false;
+	*start = memory_region_get_ram_addr(source->mr) + source->xlat + (ch->src_addr - source->start);
+	*length = bytes;
+	*available = source->end - ch->src_addr;
+	return true;
+}
+
+void pmb887x_dmac_set_catch_up(qemu_irq line, void (*fn)(void *opaque), void *opaque) {
+	pmb887x_dmac_t *p = line->opaque;
+	g_assert(p->catch_up == NULL || p->catch_up == fn);
+	p->catch_up = fn;
+	p->catch_up_opaque = opaque;
+}
+
+/* Serves @count of the bursts pmb887x_dmac_count_bulk_bursts() counted into @data, as the sink would get them. */
+void pmb887x_dmac_serve_bulk_bursts(qemu_irq line, uint8_t *data, uint32_t count) {
+	pmb887x_dmac_ch_t *ch = dmac_get_served_channel(line);
+	pmb887x_dmac_t *p = line->opaque;
+	g_assert(ch != NULL);
+
+	RCU_READ_LOCK_GUARD();
+	uint32_t burst_words = dmac_get_burst_size((ch->control & DMAC_CH_CONTROL_DB_SIZE) >> DMAC_CH_CONTROL_DB_SIZE_SHIFT);
+	uint32_t words = burst_words * count;
+	pmb887x_dmac_translation_t *source = &p->read_translation;
+	bool is_translated = dmac_translate(p, source, ch->src_addr, words * sizeof(uint32_t), false);
+	g_assert(is_translated && source->host);
+	memcpy(data, source->host + (ch->src_addr - source->start), words * sizeof(uint32_t));
+
+	enum device_endian src_endian = dmac_master_endian(p, (ch->control & DMAC_CH_CONTROL_S_AHB2) != 0);
+	enum device_endian dst_endian = dmac_master_endian(p, (ch->control & DMAC_CH_CONTROL_D_AHB2) != 0);
+	if (src_endian != dst_endian)
+		dmac_swap_byte_order(data, sizeof(uint32_t), words);
+	ch->src_addr += words * sizeof(uint32_t);
+	if ((ch->control & DMAC_CH_CONTROL_DI))
+		ch->dst_addr += words * sizeof(uint32_t);
+	dmac_transfer_advance(p, ch, words);
+}
+
 static const MemoryRegionOps io_ops = {
 	.read			= dmac_io_read,
 	.write			= dmac_io_write,
@@ -1273,7 +1528,7 @@ static void dmac_handle_reset(void *opaque, int _id, int level) {
 static void dmac_init(Object *obj) {
 	DeviceState *dev = DEVICE(obj);
 	pmb887x_dmac_t *p = PMB887X_DMAC(obj);
-	p->clock = qdev_init_clock_in(dev, "clk", dmac_clock_update, p, ClockUpdate);
+	p->clock = qdev_init_clock_in(dev, "clk", dmac_clock_update, p, ClockPreUpdate | ClockUpdate);
 	p->timer = timer_new_ns(QEMU_CLOCK_VIRTUAL, dmac_run_channels, p);
 	memory_region_init_io(&p->mmio, obj, &io_ops, p, "pmb887x-dmac", DMAC_IO_SIZE);
 	sysbus_init_mmio(SYS_BUS_DEVICE(obj), &p->mmio);
@@ -1326,6 +1581,11 @@ static void dmac_realize(DeviceState *dev, Error **errp) {
 	}
 
 	address_space_init(&p->downstream_as, p->downstream, "pl080-downstream");
+	p->downstream_listener = (MemoryListener) {
+		.name = "pmb887x-dmac",
+		.commit = dmac_memory_commit,
+	};
+	memory_listener_register(&p->downstream_listener, &p->downstream_as);
 	dma_sink_cache_init(&p->downstream_sink, &p->downstream_as);
 
 	for (int i = 0; i < DMAC_CHANNELS; i++)

@@ -186,6 +186,20 @@ static void cfi_flash_writeback_expire(void *opaque) {
     cfi_flash_writeback_start(flash);
 }
 
+#ifdef __EMSCRIPTEN__
+/*
+ * WASM PORT: the writeback starts block-layer coroutines, and a coroutine
+ * switch on wasm unwinds every frame below it with Asyncify.  Timer
+ * dispatch is not instrumented (the vCPU thread runs it for every virtual
+ * timer), bottom halves are, so the timer only schedules the writeback.
+ */
+static void cfi_flash_writeback_timer(void *opaque) {
+    aio_bh_schedule_oneshot(qemu_get_aio_context(), cfi_flash_writeback_expire, opaque);
+}
+#else
+#define cfi_flash_writeback_timer cfi_flash_writeback_expire
+#endif
+
 static void cfi_flash_vm_state_change(void *opaque, bool running, RunState _state) {
     CFIFlashState *flash = opaque;
     if (running)
@@ -649,7 +663,7 @@ static void cfi_flash_realize(DeviceState *dev, Error **errp) {
     cfi_flash_init_file_paths(flash);
     flash->writable = flash->storage && cfi_flash_storage_is_rw(flash->storage);
     if (flash->writable) {
-        flash->writeback_timer = timer_new_ms(QEMU_CLOCK_REALTIME, cfi_flash_writeback_expire, flash);
+        flash->writeback_timer = timer_new_ms(QEMU_CLOCK_REALTIME, cfi_flash_writeback_timer, flash);
         qemu_add_vm_change_state_handler(cfi_flash_vm_state_change, flash);
     }
 

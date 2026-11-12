@@ -471,6 +471,8 @@ struct teak_tcg_core_t {
 	uint32_t batch_block_cycles;
 	uint32_t batch_cycles_remaining;
 	uint32_t chain_cycle_limit;
+	/* Where tcg_execute_cached_slice() stops starting blocks; 0 outside it. */
+	uint32_t chain_slice_limit;
 	uint32_t repeat_stop_repc;
 	uint32_t chain_exit_pc;
 	uint64_t cache_fast_hits;
@@ -478,10 +480,13 @@ struct teak_tcg_core_t {
 	uint64_t cache_compiles;
 	uint64_t jit_entries;
 	uint64_t chain_links;
+	/* the block cache entry the last chain link went to, or NULL */
+	void *chain_prev;
 	uint64_t chain_interrupts;
 	uint64_t chain_exit_stops;
 	uint64_t chain_budget_stops;
 	uint64_t chain_cache_stops;
+	uint64_t fast_runs;
 	bool synchronization_valid;
 	teak_data_map_t data_map;
 };
