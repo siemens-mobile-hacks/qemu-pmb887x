@@ -9,7 +9,7 @@
 #define HD15515X_CHANNEL_PLL                        0x01
 #define HD15515X_CHANNEL_PLL_BAND                   MAKE_64BIT_MASK(0, 2)    // Synthesizer band code
 #define HD15515X_CHANNEL_PLL_BAND_SHIFT             0
-#define HD15515X_CHANNEL_PLL_DIVIDER                MAKE_64BIT_MASK(2, 14)   // Synthesizer divider in 200 kHz steps; bit 2 is zero in bands 0 and 1
+#define HD15515X_CHANNEL_PLL_DIVIDER                MAKE_64BIT_MASK(2, 14)   // Synthesizer divider in 200 kHz steps, 100 kHz steps in bands 0 and 1
 #define HD15515X_CHANNEL_PLL_DIVIDER_SHIFT          2
 #define HD15515X_CHANNEL_PLL_RECEIVE                BIT(16)                  // Receive path
 #define HD15515X_CHANNEL_PLL_RECEIVE_SHIFT          16
