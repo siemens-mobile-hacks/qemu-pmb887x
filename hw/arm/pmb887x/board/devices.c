@@ -127,6 +127,10 @@ static pmb887x_dev_t devices_meta[] = {
 		.props = {},
 	},
 	{
+		.name = "pmb6270",
+		.props = {},
+	},
+	{
 		.name = "pmb6272",
 		.props = {},
 	},

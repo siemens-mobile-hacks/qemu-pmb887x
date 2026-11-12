@@ -298,7 +298,7 @@ config PMB887X
     select GSM_KASUMI
     select GSM_GEA
     select HD15515X
-    select PMB6272
+    select PMB627X
 
 config VEXPRESS
     bool
