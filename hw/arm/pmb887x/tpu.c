@@ -49,6 +49,11 @@
 #define TPU_RF_TYPE2_TRIGGER_SPLIT 50U
 #define TPU_RF_TYPE2_TELEGRAMS 112U
 #define TPU_RFSSC_STROBE_COUNT 4U
+#define TPU_RF_TELEGRAM_LENGTH_STOP 3U
+#define TPU_RFSSC_BIT_CYCLES_6_5MHZ 2U
+#define TPU_RFSSC_BIT_CYCLES_3_25MHZ 4U
+#define TPU_RF_TELEGRAM_START_CYCLES 11U
+#define TPU_RF_TELEGRAM_GAP_CYCLES 5U
 
 #define TPU_EVENT_WORDS 3
 #define TPU_EVENT_TIMER_BITS_HIGH_MASK 0x00FF
@@ -112,6 +117,7 @@ struct pmb887x_tpu_t {
 	qemu_irq irq[2];
 	qemu_irq gp_irq[TPU_GP_COUNT];
 	qemu_irq rfssc_irq;
+	qemu_irq rfstr[TPU_RFSSC_STROBE_COUNT];
 	qemu_irq gsm_outputs[PMB887X_DSP_GSM_SIGNAL_COUNT];
 	DeviceState *dsp;
 	ThreeWireSerialBus *rfssc_bus[TPU_RFSSC_STROBE_COUNT];
@@ -132,12 +138,17 @@ struct pmb887x_tpu_t {
 	uint32_t rfcon1;
 	uint32_t rfcon2;
 	uint16_t rfssc_tb;
-	bool rfssc_active;
 	bool rfssc_buffer_full;
-	bool rfssc_direct_transfer;
+	bool rfssc_shifting;
+	bool rfssc_start_pending;
+	bool rfssc_series;
+	bool rfssc_series_burst;
 	bool rfssc_strobe_asserted;
 	uint8_t rfssc_strobe;
-	QEMUBH *rfssc_bh;
+	uint32_t rfssc_series_index;
+	uint32_t rfssc_series_limit;
+	int64_t rfssc_deadline;
+	QEMUTimer *rfssc_timer;
 	uint32_t fade;
 
 	uint32_t irq_fired;
@@ -208,84 +219,6 @@ static uint16_t tpu_ram_word_read(pmb887x_tpu_t *p, uint32_t index) {
 	return p->ram[offset] | p->ram[offset + 1] << 8;
 }
 
-static void tpu_rfssc_end_frame(pmb887x_tpu_t *p) {
-	if (!p->rfssc_strobe_asserted)
-		return;
-
-	three_wire_serial_set_strobe(p->rfssc_bus[p->rfssc_strobe], false);
-	p->rfssc_strobe_asserted = false;
-}
-
-static bool tpu_rfssc_start_frame(pmb887x_tpu_t *p) {
-	uint8_t strobe = (p->rfcon2 & TPU_RFCON2_SSCSB) >> TPU_RFCON2_SSCSB_SHIFT;
-
-	if (p->rfssc_strobe_asserted && p->rfssc_strobe == strobe)
-		return true;
-
-	tpu_rfssc_end_frame(p);
-	if (strobe >= ARRAY_SIZE(p->rfssc_bus))
-		return false;
-
-	p->rfssc_strobe = strobe;
-	p->rfssc_strobe_asserted = true;
-	three_wire_serial_set_strobe(p->rfssc_bus[strobe], true);
-	return true;
-}
-
-static uint32_t tpu_rfssc_wire_value(pmb887x_tpu_t *p, uint32_t value, uint8_t bits) {
-	uint32_t mask = MAKE_64BIT_MASK(0, bits);
-	value &= mask;
-	if (!(p->rfcon2 & TPU_RFCON2_SSCHB))
-		value = revbit32(value) >> (32 - bits);
-	return value;
-}
-
-static void tpu_rfssc_start_shift(
-	pmb887x_tpu_t *p,
-	uint32_t value,
-	uint8_t bits,
-	bool direct_transfer
-) {
-	if (tpu_rfssc_start_frame(p))
-		three_wire_serial_write(p->rfssc_bus[p->rfssc_strobe], tpu_rfssc_wire_value(p, value, bits), bits);
-	if (!direct_transfer)
-		tpu_rfssc_end_frame(p);
-
-	p->rfssc_active = true;
-	p->rfssc_direct_transfer = direct_transfer;
-	pmb887x_src_update(&p->rfssc_src, 0, MOD_SRC_SETR);
-	if (!direct_transfer)
-		qemu_bh_schedule_idle(p->rfssc_bh);
-}
-
-static void tpu_rfssc_start_buffered(pmb887x_tpu_t *p) {
-	if (p->rfssc_active || !p->rfssc_buffer_full || !(p->rfcon2 & TPU_RFCON2_SSCEN))
-		return;
-
-	uint8_t bits = (p->rfcon2 & TPU_RFCON2_SSCBM) + 1;
-	p->rfssc_buffer_full = false;
-	tpu_rfssc_start_shift(p, p->rfssc_tb, bits, true);
-}
-
-/* Direct transfers advance at MMIO boundaries; control-block transfers use the idle BH. */
-static void tpu_rfssc_finish_shift(pmb887x_tpu_t *p) {
-	p->rfssc_active = false;
-	if (p->rfssc_buffer_full && (p->rfcon2 & TPU_RFCON2_SSCEN)) {
-		tpu_rfssc_start_buffered(p);
-		return;
-	}
-
-	p->rfcon2 &= ~TPU_RFCON2_SSCEN;
-	p->rfssc_direct_transfer = false;
-	tpu_rfssc_end_frame(p);
-}
-
-static void tpu_rfssc_complete_shift(void *opaque) {
-	pmb887x_tpu_t *p = opaque;
-
-	tpu_rfssc_finish_shift(p);
-}
-
 static bool tpu_rf_telegram_index(pmb887x_tpu_t *p, uint32_t trigger, uint32_t *index, uint32_t *limit) {
 	if (!(p->rfcon1 & TPU_RFCON1_RAMTYPE)) {
 		if (trigger < TPU_RF_TYPE1_TRIGGER_FIRST || trigger >= TPU_RF_TYPE1_TRIGGER_LIMIT)
@@ -319,7 +252,154 @@ static uint32_t tpu_rf_telegram_control(uint16_t control, uint8_t bits) {
 	return (rfcon2 | TPU_RFCON2_SSCEN);
 }
 
-static void tpu_rf_control_trigger(pmb887x_tpu_t *p) {
+static int64_t tpu_gsm_if_cycles_ns(pmb887x_tpu_t *p, uint32_t cycles) {
+	return muldiv64(cycles, NANOSECONDS_PER_SECOND, p->counter_input_hz);
+}
+
+static uint32_t tpu_rfssc_bit_cycles(pmb887x_tpu_t *p) {
+	return (p->rfcon2 & TPU_RFCON2_SSCFB) ? TPU_RFSSC_BIT_CYCLES_3_25MHZ : TPU_RFSSC_BIT_CYCLES_6_5MHZ;
+}
+
+static void tpu_rfssc_drive_strobe(pmb887x_tpu_t *p, uint8_t strobe, bool asserted) {
+	bool active_high = (p->rfcon1 & (1U << strobe)) != 0;
+	qemu_set_irq(p->rfstr[strobe], asserted == active_high);
+}
+
+static void tpu_rfssc_drive_idle_strobes(pmb887x_tpu_t *p) {
+	for (uint8_t strobe = 0; strobe < TPU_RFSSC_STROBE_COUNT; strobe++) {
+		bool asserted = p->rfssc_strobe_asserted && p->rfssc_strobe == strobe;
+		tpu_rfssc_drive_strobe(p, strobe, asserted);
+	}
+}
+
+static void tpu_rfssc_release_strobe(pmb887x_tpu_t *p, int64_t timestamp) {
+	if (!p->rfssc_strobe_asserted)
+		return;
+
+	p->rfssc_strobe_asserted = false;
+	tpu_rfssc_drive_strobe(p, p->rfssc_strobe, false);
+	three_wire_serial_set_strobe(p->rfssc_bus[p->rfssc_strobe], false, timestamp);
+}
+
+static uint32_t tpu_rfssc_wire_value(pmb887x_tpu_t *p, uint32_t value, uint8_t bits) {
+	uint32_t mask = MAKE_64BIT_MASK(0, bits);
+	value &= mask;
+	if (!(p->rfcon2 & TPU_RFCON2_SSCHB))
+		value = revbit32(value) >> (32 - bits);
+	return value;
+}
+
+static void tpu_rfssc_schedule(pmb887x_tpu_t *p) {
+	if (p->rfssc_shifting || p->rfssc_start_pending) {
+		timer_mod(p->rfssc_timer, p->rfssc_deadline);
+	} else {
+		timer_del(p->rfssc_timer);
+	}
+}
+
+static void tpu_rfssc_load_word(pmb887x_tpu_t *p, uint32_t value, uint8_t bits, int64_t timestamp) {
+	uint8_t strobe = (p->rfcon2 & TPU_RFCON2_SSCSB) >> TPU_RFCON2_SSCSB_SHIFT;
+
+	if (p->rfssc_strobe_asserted && p->rfssc_strobe != strobe)
+		tpu_rfssc_release_strobe(p, timestamp);
+	if (strobe < TPU_RFSSC_STROBE_COUNT) {
+		if (!p->rfssc_strobe_asserted) {
+			p->rfssc_strobe = strobe;
+			p->rfssc_strobe_asserted = true;
+			tpu_rfssc_drive_strobe(p, strobe, true);
+			three_wire_serial_set_strobe(p->rfssc_bus[strobe], true, timestamp);
+		}
+		three_wire_serial_write(p->rfssc_bus[strobe], tpu_rfssc_wire_value(p, value, bits), bits);
+	}
+
+	p->rfssc_shifting = true;
+	p->rfssc_deadline = timestamp + tpu_gsm_if_cycles_ns(p, bits * tpu_rfssc_bit_cycles(p));
+	pmb887x_src_update(&p->rfssc_src, 0, MOD_SRC_SETR);
+}
+
+static bool tpu_rfssc_can_load_buffer(pmb887x_tpu_t *p) {
+	return p->rfssc_buffer_full && !p->rfssc_series && (p->rfcon2 & TPU_RFCON2_SSCEN) && p->counter_input_hz > 0;
+}
+
+static void tpu_rfssc_load_buffer(pmb887x_tpu_t *p, int64_t timestamp) {
+	uint8_t bits = (p->rfcon2 & TPU_RFCON2_SSCBM) + 1;
+
+	p->rfssc_buffer_full = false;
+	tpu_rfssc_load_word(p, p->rfssc_tb, bits, timestamp);
+}
+
+static void tpu_rfssc_start_telegram(pmb887x_tpu_t *p, int64_t timestamp) {
+	uint32_t word = TPU_RF_CONTROL_RAM_BASE + p->rfssc_series_index * TPU_RF_TELEGRAM_WORDS;
+	uint16_t control = tpu_ram_word_read(p, word);
+	uint32_t length = (control & TPU_RF_TELEGRAM_LENGTH_MASK) >> TPU_RF_TELEGRAM_LENGTH_SHIFT;
+
+	if (length == TPU_RF_TELEGRAM_LENGTH_STOP) {
+		p->rfssc_series = false;
+		p->rfcon2 &= ~TPU_RFCON2_SSCEN;
+		return;
+	}
+
+	uint8_t bytes = length + 1;
+	uint8_t bits = bytes * 8;
+	uint32_t value = 0;
+	for (uint32_t i = 0; i < bytes; i++)
+		value = (value << 8) | (tpu_ram_word_read(p, word + i + 1) & TPU_RF_TELEGRAM_DATA_MASK);
+
+	DEBUG_LOG(&p->dbg, "RF telegram: slot=%u control=%04X bits=%u value=%08X\n",
+		p->rfssc_series_index, control, bits, value);
+
+	p->rfssc_series_burst = (control & TPU_RF_TELEGRAM_BURST) != 0;
+	p->rfssc_series_index++;
+	p->rfcon2 = tpu_rf_telegram_control(control, bits);
+	tpu_rfssc_load_word(p, value, bits, timestamp);
+}
+
+static void tpu_rfssc_finish_word(pmb887x_tpu_t *p) {
+	int64_t end = p->rfssc_deadline;
+
+	p->rfssc_shifting = false;
+	if (tpu_rfssc_can_load_buffer(p)) {
+		tpu_rfssc_load_buffer(p, end);
+		return;
+	}
+
+	tpu_rfssc_release_strobe(p, end);
+	if (p->rfssc_series && p->rfssc_series_burst && p->rfssc_series_index < p->rfssc_series_limit) {
+		p->rfssc_start_pending = true;
+		p->rfssc_deadline = end + tpu_gsm_if_cycles_ns(p, TPU_RF_TELEGRAM_GAP_CYCLES);
+		return;
+	}
+
+	p->rfssc_series = false;
+	p->rfcon2 &= ~TPU_RFCON2_SSCEN;
+}
+
+static void tpu_rfssc_advance(pmb887x_tpu_t *p, int64_t now) {
+	while ((p->rfssc_shifting || p->rfssc_start_pending) && p->rfssc_deadline <= now) {
+		if (p->rfssc_start_pending) {
+			p->rfssc_start_pending = false;
+			tpu_rfssc_start_telegram(p, p->rfssc_deadline);
+		} else {
+			tpu_rfssc_finish_word(p);
+		}
+	}
+	tpu_rfssc_schedule(p);
+}
+
+static void tpu_rfssc_timer_callback(void *opaque) {
+	pmb887x_tpu_t *p = opaque;
+	tpu_rfssc_advance(p, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL));
+}
+
+static void tpu_rfssc_abort(pmb887x_tpu_t *p, int64_t timestamp) {
+	p->rfssc_shifting = false;
+	p->rfssc_start_pending = false;
+	p->rfssc_series = false;
+	tpu_rfssc_release_strobe(p, timestamp);
+	tpu_rfssc_schedule(p);
+}
+
+static void tpu_rf_control_trigger(pmb887x_tpu_t *p, int64_t event_time) {
 	uint32_t trigger = (p->triggers & TPU_RF_TRIGGER_MASK);
 	uint32_t index;
 	uint32_t limit;
@@ -327,34 +407,14 @@ static void tpu_rf_control_trigger(pmb887x_tpu_t *p) {
 	if (!tpu_rf_telegram_index(p, trigger, &index, &limit))
 		return;
 
-	bool burst;
-	do {
-		uint32_t word = TPU_RF_CONTROL_RAM_BASE + index * TPU_RF_TELEGRAM_WORDS;
-		uint16_t control = tpu_ram_word_read(p, word);
-		uint32_t length = ((control & TPU_RF_TELEGRAM_LENGTH_MASK) >> TPU_RF_TELEGRAM_LENGTH_SHIFT);
-
-		if (length == 3)
-			return;
-
-		uint8_t bytes = length + 1;
-		uint8_t bits = bytes * 8;
-		uint32_t value = 0;
-
-		for (uint32_t i = 0; i < bytes; i++)
-			value = (value << 8) | (tpu_ram_word_read(p, word + i + 1) & TPU_RF_TELEGRAM_DATA_MASK);
-
-		uint32_t strobe = ((control & TPU_RF_TELEGRAM_STROBE_MASK) >> TPU_RF_TELEGRAM_STROBE_SHIFT);
-		DEBUG_LOG(&p->dbg, "RF trigger: counter=%04X trigger=%u slot=%u control=%04X bits=%u strobe=%u value=%08X\n",
-			p->counter, trigger, index, control, bits, strobe, value);
-
-		p->rfcon2 = tpu_rf_telegram_control(control, bits);
-		p->rfssc_tb = (uint16_t) value;
-		p->rfssc_buffer_full = false;
-		tpu_rfssc_start_shift(p, value, bits, false);
-
-		burst = (control & TPU_RF_TELEGRAM_BURST) != 0;
-		index++;
-	} while (burst && index < limit);
+	DEBUG_LOG(&p->dbg, "RF trigger: counter=%04X trigger=%u slot=%u\n", p->counter, trigger, index);
+	tpu_rfssc_abort(p, event_time);
+	p->rfssc_series = true;
+	p->rfssc_series_index = index;
+	p->rfssc_series_limit = limit;
+	p->rfssc_start_pending = true;
+	p->rfssc_deadline = event_time + tpu_gsm_if_cycles_ns(p, TPU_RF_TELEGRAM_START_CYCLES);
+	tpu_rfssc_advance(p, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL));
 }
 
 static void tpu_begin_event_frame(pmb887x_tpu_t *p) {
@@ -492,7 +552,7 @@ static void tpu_execute_event(
 	uint32_t rf_trigger = (p->triggers & TPU_RF_TRIGGER_MASK);
 	DEBUG_LOG(&p->dbg, "event execute: event=%03X counter=%04X control=%04X action=%04X triggers=%06X->%06X decoder=%u rf=%u\n",
 		event, p->counter, control, timer_bits_low, old_triggers, p->triggers, decoder, rf_trigger);
-	tpu_rf_control_trigger(p);
+	tpu_rf_control_trigger(p, timestamp_ns);
 	tpu_decode_gsm_signal(p, decoder, timestamp_ns);
 	if (decoder >= TPU_EVENT_GP_FIRST && decoder <= TPU_EVENT_GP_LAST)
 		pmb887x_src_update(&p->gp_src[decoder - TPU_EVENT_GP_FIRST], 0, MOD_SRC_SETR);
@@ -668,6 +728,8 @@ static void tpu_update_state(pmb887x_tpu_t *p) {
 		p->counter_input_hz = new_input_hz;
 		p->start = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
 		p->start_ticks = 0;
+		if (new_input_hz == 0)
+			tpu_rfssc_abort(p, p->start);
 	}
 	if (p->freq != new_freq || p->enabled != enabled) {
 		p->freq = new_freq;
@@ -767,8 +829,7 @@ static uint64_t tpu_io_read(void *opaque, hwaddr haddr, unsigned size) {
 			break;
 
 		case TPU_RFCON2:
-			if (p->rfssc_active && p->rfssc_direct_transfer)
-				tpu_rfssc_finish_shift(p);
+			tpu_rfssc_advance(p, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL));
 			value = p->rfcon2;
 			break;
 
@@ -857,6 +918,7 @@ static uint64_t tpu_io_read(void *opaque, hwaddr haddr, unsigned size) {
 			break;
 
 		case TPU_RFSSC_SRC:
+			tpu_rfssc_advance(p, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL));
 			value = pmb887x_src_get(&p->rfssc_src);
 			break;
 
@@ -886,29 +948,36 @@ static void tpu_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned si
 
 		case TPU_RFCON1:
 			p->rfcon1 = value;
+			tpu_rfssc_drive_idle_strobes(p);
 			break;
 
-		case TPU_RFCON2:
+		case TPU_RFCON2: {
+			int64_t now = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
+
+			tpu_rfssc_advance(p, now);
 			p->rfcon2 = value;
-			if (!(value & TPU_RFCON2_SSCEN) && p->rfssc_active) {
-				qemu_bh_cancel(p->rfssc_bh);
-				p->rfssc_active = false;
-				p->rfssc_direct_transfer = false;
-				tpu_rfssc_end_frame(p);
+			if (!(value & TPU_RFCON2_SSCEN)) {
+				tpu_rfssc_abort(p, now);
+			} else if (!p->rfssc_shifting && tpu_rfssc_can_load_buffer(p)) {
+				tpu_rfssc_load_buffer(p, now);
+				tpu_rfssc_schedule(p);
 			}
-			tpu_rfssc_start_buffered(p);
 			break;
+		}
 
-		case TPU_RFSSCTB:
+		case TPU_RFSSCTB: {
+			int64_t now = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
+
 			DEBUG_LOG(&p->dbg, "RF control: %04X\n", (uint16_t) value);
+			tpu_rfssc_advance(p, now);
 			p->rfssc_tb = (uint16_t) value;
 			p->rfssc_buffer_full = true;
-			if (p->rfssc_active && p->rfssc_direct_transfer) {
-				tpu_rfssc_finish_shift(p);
-			} else {
-				tpu_rfssc_start_buffered(p);
+			if (!p->rfssc_shifting && tpu_rfssc_can_load_buffer(p)) {
+				tpu_rfssc_load_buffer(p, now);
+				tpu_rfssc_schedule(p);
 			}
 			break;
+		}
 
 		case TPU_CORRECTION:
 			tpu_update_timer(p);
@@ -1055,6 +1124,10 @@ static void tpu_init(Object *obj) {
 	sysbus_init_mmio(SYS_BUS_DEVICE(obj), &p->mmio);
 	
 	sysbus_init_irq(SYS_BUS_DEVICE(obj), &p->rfssc_irq);
+	for (size_t i = 0; i < ARRAY_SIZE(p->rfstr); i++) {
+		g_autofree char *name = g_strdup_printf("RFSTR%zu", i);
+		qdev_init_gpio_out_named(DEVICE(obj), &p->rfstr[i], name, 1);
+	}
 	for (size_t i = 0; i < ARRAY_SIZE(p->gp_irq); i++)
 		sysbus_init_irq(SYS_BUS_DEVICE(obj), &p->gp_irq[i]);
 	for (size_t i = 0; i < ARRAY_SIZE(p->irq); i++)
@@ -1087,7 +1160,7 @@ static void tpu_realize(DeviceState *dev, Error **errp) {
 	}
 	
 	p->timer = timer_new_ns(QEMU_CLOCK_VIRTUAL, tpu_timer_callback, p);
-	p->rfssc_bh = qemu_bh_new(tpu_rfssc_complete_shift, p);
+	p->rfssc_timer = timer_new_ns(QEMU_CLOCK_VIRTUAL, tpu_rfssc_timer_callback, p);
 	p->enabled = false;
 	
 	tpu_update_state(p);
@@ -1096,8 +1169,7 @@ static void tpu_realize(DeviceState *dev, Error **errp) {
 static void tpu_unrealize(DeviceState *dev) {
 	pmb887x_tpu_t *p = PMB887X_TPU(dev);
 
-	tpu_rfssc_end_frame(p);
-	qemu_bh_delete(p->rfssc_bh);
+	timer_free(p->rfssc_timer);
 	timer_free(p->timer);
 }
 
@@ -1105,8 +1177,7 @@ static void tpu_reset(DeviceState *dev) {
 	pmb887x_tpu_t *p = PMB887X_TPU(dev);
 
 	timer_del(p->timer);
-	qemu_bh_cancel(p->rfssc_bh);
-	tpu_rfssc_end_frame(p);
+	tpu_rfssc_abort(p, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL));
 
 	pmb887x_clc_set(&p->clc, MOD_CLC_DISR);
 
@@ -1138,11 +1209,13 @@ static void tpu_reset(DeviceState *dev) {
 	p->rfcon1 = 0;
 	p->rfcon2 = 0;
 	p->rfssc_tb = 0;
-	p->rfssc_active = false;
 	p->rfssc_buffer_full = false;
-	p->rfssc_direct_transfer = false;
-	p->rfssc_strobe_asserted = false;
+	p->rfssc_series_burst = false;
 	p->rfssc_strobe = 0;
+	p->rfssc_series_index = 0;
+	p->rfssc_series_limit = 0;
+	p->rfssc_deadline = 0;
+	tpu_rfssc_drive_idle_strobes(p);
 	p->fade = TPU_FADE_RESET;
 	p->irq_fired = 0;
 	int64_t now_ns = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);

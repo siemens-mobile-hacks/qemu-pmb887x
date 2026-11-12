@@ -72,13 +72,13 @@ struct HD15515XClass {
     int32_t (*receiver_gain_db)(HD15515XState *p, uint32_t pga_gain, uint32_t front_end);
 };
 
-static void hd15515x_update_air(HD15515XState *p) {
+static void hd15515x_update_air(HD15515XState *p, int64_t timestamp) {
     if (p->frequency == 0) {
-        gsm_air_tune(&p->air, GSM_AIR_PATH_OFF, 0, 0);
+        gsm_air_tune(&p->air, GSM_AIR_PATH_OFF, 0, 0, timestamp);
     } else if (p->transmitting) {
-        gsm_air_tune(&p->air, GSM_AIR_PATH_TRANSMIT, p->frequency - p->transmit_offset, 0);
+        gsm_air_tune(&p->air, GSM_AIR_PATH_TRANSMIT, p->frequency - p->transmit_offset, 0, timestamp);
     } else {
-        gsm_air_tune(&p->air, GSM_AIR_PATH_RECEIVE, p->frequency, p->amplitude);
+        gsm_air_tune(&p->air, GSM_AIR_PATH_RECEIVE, p->frequency, p->amplitude, timestamp);
     }
 }
 
@@ -105,7 +105,7 @@ static int32_t hd155155npeb_receiver_gain_db(HD15515XState *p, uint32_t pga_gain
     return gain_db + HD155155NPEB_FRONT_END_HIGH_BAND_DB;
 }
 
-static void hd15515x_set_gain(HD15515XState *p, uint32_t value) {
+static void hd15515x_set_gain(HD15515XState *p, uint32_t value, int64_t timestamp) {
     HD15515XClass *klass = HD15515X_GET_CLASS(p);
     uint32_t pga_gain = (value & HD15515X_GAIN_CONTROL_PGA_GAIN) >> HD15515X_GAIN_CONTROL_PGA_GAIN_SHIFT;
     uint32_t front_end = (value & HD15515X_GAIN_CONTROL_FRONT_END) >> HD15515X_GAIN_CONTROL_FRONT_END_SHIFT;
@@ -115,10 +115,10 @@ static void hd15515x_set_gain(HD15515XState *p, uint32_t value) {
     int32_t amplitude = (int32_t) lround(pow(10.0, adc_level_db / 20.0));
 
     p->amplitude = MIN(amplitude, HD15515X_ADC_MAX_AMPLITUDE);
-    hd15515x_update_air(p);
+    hd15515x_update_air(p, timestamp);
 }
 
-static void hd15515x_set_channel(HD15515XState *p, uint32_t value) {
+static void hd15515x_set_channel(HD15515XState *p, uint32_t value, int64_t timestamp) {
     uint32_t band = (value & HD15515X_CHANNEL_PLL_BAND) >> HD15515X_CHANNEL_PLL_BAND_SHIFT;
     uint32_t divider = (value & HD15515X_CHANNEL_PLL_DIVIDER) >> HD15515X_CHANNEL_PLL_DIVIDER_SHIFT;
     uint32_t mode = (value & HD15515X_CHANNEL_PLL_MODE) >> HD15515X_CHANNEL_PLL_MODE_SHIFT;
@@ -129,7 +129,7 @@ static void hd15515x_set_channel(HD15515XState *p, uint32_t value) {
     p->band = band;
     if (divider == 0) {
         p->frequency = 0;
-        hd15515x_update_air(p);
+        hd15515x_update_air(p, timestamp);
         return;
     }
 
@@ -139,11 +139,11 @@ static void hd15515x_set_channel(HD15515XState *p, uint32_t value) {
     p->transmitting = (value & HD15515X_CHANNEL_PLL_RECEIVE) == 0;
     p->transmit_offset = offset_82mhz ? HD15515X_TRANSMIT_OFFSET_82MHZ_HZ : HD15515X_TRANSMIT_OFFSET_HZ;
     p->frequency = divider * channel_raster;
-    hd15515x_update_air(p);
+    hd15515x_update_air(p, timestamp);
     DEBUG_LOG(&p->dbg, "tuned: frequency=%u Hz band=%u mode=%u\n", p->frequency, band, mode);
 }
 
-static void hd15515x_write_telegram(HD15515XState *p, uint32_t telegram, uint8_t bits) {
+static void hd15515x_write_telegram(HD15515XState *p, uint32_t telegram, uint8_t bits, int64_t timestamp) {
     uint8_t address = (telegram & HD15515X_REGISTER_ADDRESS_MASK) >> HD15515X_REGISTER_ADDRESS_SHIFT;
     uint32_t value = telegram >> HD15515X_REGISTER_VALUE_SHIFT;
 
@@ -152,18 +152,18 @@ static void hd15515x_write_telegram(HD15515XState *p, uint32_t telegram, uint8_t
 
     switch (address) {
         case HD15515X_CHANNEL_PLL:
-            hd15515x_set_channel(p, value);
+            hd15515x_set_channel(p, value, timestamp);
             break;
 
         case HD15515X_GAIN_CONTROL:
-            hd15515x_set_gain(p, value);
+            hd15515x_set_gain(p, value, timestamp);
             break;
     }
 
     DEBUG_IO_WRITE(&p->dbg, address, bits >> HD15515X_BITS_TO_BYTES_SHIFT, value);
 }
 
-static void hd15515x_set_strobe(ThreeWireSerialTarget *target, bool asserted) {
+static void hd15515x_set_strobe(ThreeWireSerialTarget *target, bool asserted, int64_t timestamp) {
     HD15515XState *p = HD15515X(target);
 
     if (asserted) {
@@ -179,7 +179,7 @@ static void hd15515x_set_strobe(ThreeWireSerialTarget *target, bool asserted) {
 
     p->strobe_asserted = false;
     if (!p->shift_overflow && p->shift_bits != 0)
-        hd15515x_write_telegram(p, p->shift_register & HD15515X_TELEGRAM_MASK, p->shift_bits);
+        hd15515x_write_telegram(p, p->shift_register & HD15515X_TELEGRAM_MASK, p->shift_bits, timestamp);
 }
 
 static void hd15515x_write(ThreeWireSerialTarget *target, uint32_t value, unsigned int bits) {

@@ -64,13 +64,13 @@ struct PMB627XClass {
     bool mirrors_spectrum;
 };
 
-static void pmb627x_update_air(PMB627XState *p) {
+static void pmb627x_update_air(PMB627XState *p, int64_t timestamp) {
     if (p->power_mode != PMB627X_CHANNEL2_POWER_MODE_ALL_ON) {
-        gsm_air_tune(&p->air, GSM_AIR_PATH_OFF, 0, 0);
+        gsm_air_tune(&p->air, GSM_AIR_PATH_OFF, 0, 0, timestamp);
     } else if (p->transmit) {
-        gsm_air_tune(&p->air, GSM_AIR_PATH_TRANSMIT, p->frequency, 0);
+        gsm_air_tune(&p->air, GSM_AIR_PATH_TRANSMIT, p->frequency, 0, timestamp);
     } else {
-        gsm_air_tune(&p->air, GSM_AIR_PATH_RECEIVE, p->frequency, p->amplitude);
+        gsm_air_tune(&p->air, GSM_AIR_PATH_RECEIVE, p->frequency, p->amplitude, timestamp);
     }
 }
 
@@ -85,7 +85,7 @@ static int32_t pmb627x_lna_gain_db(uint32_t rxtx) {
     return PMB627X_LNA_LOW_GAIN_DB;
 }
 
-static void pmb627x_set_gain(PMB627XState *p, uint32_t rxtx) {
+static void pmb627x_set_gain(PMB627XState *p, uint32_t rxtx, int64_t timestamp) {
     int32_t gain_db = pmb627x_lna_gain_db(rxtx);
 
     if ((rxtx & PMB627X_RXTX_RXGS0) != 0)
@@ -101,10 +101,10 @@ static void pmb627x_set_gain(PMB627XState *p, uint32_t rxtx) {
     int32_t amplitude = (int32_t) lround(pow(10.0, adc_level_db / 20.0));
 
     p->amplitude = MIN(amplitude, PMB627X_ADC_MAX_AMPLITUDE);
-    pmb627x_update_air(p);
+    pmb627x_update_air(p, timestamp);
 }
 
-static void pmb627x_write_telegram(PMB627XState *p, uint32_t telegram, uint8_t bits) {
+static void pmb627x_write_telegram(PMB627XState *p, uint32_t telegram, uint8_t bits, int64_t timestamp) {
     uint8_t address = (telegram & PMB627X_REGISTER_ADDRESS_MASK) >> PMB627X_REGISTER_ADDRESS_SHIFT;
 
     p->telegram = telegram;
@@ -132,21 +132,21 @@ static void pmb627x_write_telegram(PMB627XState *p, uint32_t telegram, uint8_t b
                 (uint64_t) 1 << PMB627X_CHANNEL_FRACTION_BITS) / divisor;
 
             p->frequency = frequency;
-            pmb627x_update_air(p);
+            pmb627x_update_air(p, timestamp);
             DEBUG_LOG(&p->dbg, "tuned to %u Hz: band=%u path=%s\n", frequency, p->band,
                 p->transmit ? "TX" : "RX");
             break;
         }
 
         case PMB627X_RXTX:
-            pmb627x_set_gain(p, telegram);
+            pmb627x_set_gain(p, telegram, timestamp);
             break;
     }
 
     DEBUG_IO_WRITE(&p->dbg, address, bits >> PMB627X_BITS_TO_BYTES_SHIFT, telegram);
 }
 
-static void pmb627x_set_strobe(ThreeWireSerialTarget *target, bool asserted) {
+static void pmb627x_set_strobe(ThreeWireSerialTarget *target, bool asserted, int64_t timestamp) {
     PMB627XState *p = PMB627X(target);
 
     if (asserted) {
@@ -162,7 +162,7 @@ static void pmb627x_set_strobe(ThreeWireSerialTarget *target, bool asserted) {
 
     p->strobe_asserted = false;
     if (!p->shift_overflow && p->shift_bits != 0)
-        pmb627x_write_telegram(p, p->shift_register & PMB627X_TELEGRAM_MASK, p->shift_bits);
+        pmb627x_write_telegram(p, p->shift_register & PMB627X_TELEGRAM_MASK, p->shift_bits, timestamp);
 }
 
 static void pmb627x_write(ThreeWireSerialTarget *target, uint32_t value, unsigned int bits) {

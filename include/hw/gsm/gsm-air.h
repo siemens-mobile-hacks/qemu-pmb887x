@@ -68,12 +68,12 @@ uint32_t gsm_air_frame_number(int64_t timestamp);
 int64_t gsm_air_frames_to_ns(uint32_t frames);
 
 /**
- * gsm_air_tune: from now on the transceiver uses @path on carrier @frequency_hz,
- * the downlink carrier when receiving and the uplink carrier when transmitting,
- * and receives samples of full scale @amplitude. A carrier off the GSM900 channel
- * raster turns the path off.
+ * gsm_air_tune: from virtual time @timestamp on the transceiver uses @path on carrier
+ * @frequency_hz, the downlink carrier when receiving and the uplink carrier when
+ * transmitting, and receives samples of full scale @amplitude. A carrier off the GSM
+ * channel raster turns the path off. Calls must come in @timestamp order.
  */
-void gsm_air_tune(GSMAir *air, GSMAirPath path, uint32_t frequency_hz, int32_t amplitude);
+void gsm_air_tune(GSMAir *air, GSMAirPath path, uint32_t frequency_hz, int32_t amplitude, int64_t timestamp);
 
 /**
  * gsm_air_read_iq: return the downlink I/Q sample received at virtual time @timestamp.

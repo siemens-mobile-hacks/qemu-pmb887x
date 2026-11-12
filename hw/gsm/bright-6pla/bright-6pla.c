@@ -47,13 +47,13 @@ struct Bright6plaState {
     bool transmitting;
 };
 
-static void bright_6pla_update_air(Bright6plaState *p) {
+static void bright_6pla_update_air(Bright6plaState *p, int64_t timestamp) {
     if (p->frequency == 0) {
-        gsm_air_tune(&p->air, GSM_AIR_PATH_OFF, 0, 0);
+        gsm_air_tune(&p->air, GSM_AIR_PATH_OFF, 0, 0, timestamp);
     } else if (p->transmitting) {
-        gsm_air_tune(&p->air, GSM_AIR_PATH_TRANSMIT, p->frequency, 0);
+        gsm_air_tune(&p->air, GSM_AIR_PATH_TRANSMIT, p->frequency, 0, timestamp);
     } else {
-        gsm_air_tune(&p->air, GSM_AIR_PATH_RECEIVE, p->frequency, p->amplitude);
+        gsm_air_tune(&p->air, GSM_AIR_PATH_RECEIVE, p->frequency, p->amplitude, timestamp);
     }
 }
 
@@ -65,7 +65,7 @@ static int32_t bright_6pla_lna_gain_db(uint32_t lna) {
     return -BRIGHT_6PLA_APPROX_LNA_MINIMUM_DB;
 }
 
-static void bright_6pla_set_gain(Bright6plaState *p, uint32_t value) {
+static void bright_6pla_set_gain(Bright6plaState *p, uint32_t value, int64_t timestamp) {
     uint32_t lna = (value & BRIGHT_6PLA_GAIN_LNA) >> BRIGHT_6PLA_GAIN_LNA_SHIFT;
     uint32_t pga = (value & BRIGHT_6PLA_GAIN_PGA) >> BRIGHT_6PLA_GAIN_PGA_SHIFT;
     int32_t gain_db = BRIGHT_6PLA_APPROX_BASE_GAIN_DB + bright_6pla_lna_gain_db(lna) +
@@ -75,39 +75,39 @@ static void bright_6pla_set_gain(Bright6plaState *p, uint32_t value) {
     int32_t amplitude = (int32_t) lround(pow(10.0, adc_level_db / 20.0));
 
     p->amplitude = MIN(amplitude, BRIGHT_6PLA_ADC_MAX_AMPLITUDE);
-    bright_6pla_update_air(p);
+    bright_6pla_update_air(p, timestamp);
 }
 
-static void bright_6pla_set_channel(Bright6plaState *p, uint32_t value) {
+static void bright_6pla_set_channel(Bright6plaState *p, uint32_t value, int64_t timestamp) {
     uint32_t band = (value & BRIGHT_6PLA_CHANNEL_BAND) >> BRIGHT_6PLA_CHANNEL_BAND_SHIFT;
     uint32_t channel = (value & BRIGHT_6PLA_CHANNEL_FREQUENCY) >> BRIGHT_6PLA_CHANNEL_FREQUENCY_SHIFT;
     uint32_t step_hz = band <= BRIGHT_6PLA_LAST_LOW_BAND ? BRIGHT_6PLA_LOW_BAND_STEP_HZ : BRIGHT_6PLA_HIGH_BAND_STEP_HZ;
 
     p->transmitting = (value & BRIGHT_6PLA_CHANNEL_RECEIVE) == 0;
     p->frequency = channel * step_hz;
-    bright_6pla_update_air(p);
+    bright_6pla_update_air(p, timestamp);
     DEBUG_LOG(&p->dbg, "tuned: frequency=%u Hz band=%u %s\n", p->frequency, band, p->transmitting ? "TX" : "RX");
 }
 
-static void bright_6pla_write_telegram(Bright6plaState *p, uint32_t telegram, uint8_t bits) {
+static void bright_6pla_write_telegram(Bright6plaState *p, uint32_t telegram, uint8_t bits, int64_t timestamp) {
     uint8_t value_bits = bits - BRIGHT_6PLA_REGISTER_BITS;
     uint8_t address = telegram >> value_bits;
     uint32_t value = telegram & MAKE_64BIT_MASK(0, value_bits);
 
     switch (address) {
         case BRIGHT_6PLA_CHANNEL:
-            bright_6pla_set_channel(p, value);
+            bright_6pla_set_channel(p, value, timestamp);
             break;
 
         case BRIGHT_6PLA_GAIN:
-            bright_6pla_set_gain(p, value);
+            bright_6pla_set_gain(p, value, timestamp);
             break;
     }
 
     DEBUG_IO_WRITE(&p->dbg, address, bits >> BRIGHT_6PLA_BITS_TO_BYTES_SHIFT, value);
 }
 
-static void bright_6pla_set_strobe(ThreeWireSerialTarget *target, bool asserted) {
+static void bright_6pla_set_strobe(ThreeWireSerialTarget *target, bool asserted, int64_t timestamp) {
     Bright6plaState *p = BRIGHT_6PLA(target);
 
     if (asserted) {
@@ -123,7 +123,7 @@ static void bright_6pla_set_strobe(ThreeWireSerialTarget *target, bool asserted)
 
     p->strobe_asserted = false;
     if (!p->shift_overflow && p->shift_bits > BRIGHT_6PLA_REGISTER_BITS)
-        bright_6pla_write_telegram(p, p->shift_register, p->shift_bits);
+        bright_6pla_write_telegram(p, p->shift_register, p->shift_bits, timestamp);
 }
 
 static void bright_6pla_write(ThreeWireSerialTarget *target, uint32_t value, unsigned int bits) {

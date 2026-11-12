@@ -46,7 +46,8 @@ void three_wire_serial_target_port_init(ThreeWireSerialTargetPort *port,
                        three_wire_serial_target_port_create_endpoint);
 }
 
-void three_wire_serial_set_strobe(ThreeWireSerialBus *bus, bool asserted)
+void three_wire_serial_set_strobe(ThreeWireSerialBus *bus, bool asserted,
+                                  int64_t timestamp)
 {
     BusChild *child;
 
@@ -57,7 +58,7 @@ void three_wire_serial_set_strobe(ThreeWireSerialBus *bus, bool asserted)
             THREE_WIRE_SERIAL_TARGET_GET_CLASS(target);
 
         if (klass->set_strobe != NULL) {
-            klass->set_strobe(target, asserted);
+            klass->set_strobe(target, asserted, timestamp);
         }
     }
 }

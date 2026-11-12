@@ -460,6 +460,10 @@ static const int pmb8876_tpu_irqs[] = {
 	PMB8876_TPU_INT1_IRQ
 };
 
+static const pmb887x_cpu_module_gpio_t pmb8876_tpu_gpios[] = {
+	{"RFSTR0",	PMB8876_GPIO_RF_STR0,	0,	PMB887X_GPIO_DIR_OUT},
+};
+
 static const int pmb8876_dif_irqs[] = {
 	PMB8876_DIF_RX_SINGLE_IRQ,
 	PMB8876_DIF_RX_BURST_IRQ,
@@ -552,7 +556,7 @@ static const pmb887x_cpu_module_t pmb8876_modules[] = {
 	{"DSP",		0xF022C031,	PMB8876_DSP_BASE,		"pmb887x-dsp",		"DSP",		"FPI3",		NULL,					0,									pmb8876_dsp_gpios,		ARRAY_SIZE(pmb8876_dsp_gpios),		NULL,				0},
 	{"GPRSCU",	0xF003C022,	PMB8876_GPRSCU_BASE,	"pmb887x-gprscu",	"FSYS",		"FPI3",		pmb8876_gprscu_irqs,	ARRAY_SIZE(pmb8876_gprscu_irqs),	NULL,					0,									NULL,				0},
 	{"AFC",		0xF004C011,	PMB8876_AFC_BASE,		"pmb887x-afc",		"FSYS",		"FPI3",		NULL,					0,									NULL,					0,									NULL,				0},
-	{"TPU",		0xF021C012,	PMB8876_TPU_BASE,		"pmb887x-tpu",		"FSYS",		"FPI3",		pmb8876_tpu_irqs,		ARRAY_SIZE(pmb8876_tpu_irqs),		NULL,					0,									NULL,				0},
+	{"TPU",		0xF021C012,	PMB8876_TPU_BASE,		"pmb887x-tpu",		"FSYS",		"FPI3",		pmb8876_tpu_irqs,		ARRAY_SIZE(pmb8876_tpu_irqs),		pmb8876_tpu_gpios,		ARRAY_SIZE(pmb8876_tpu_gpios),		NULL,				0},
 	{"DIF",		0xF043C012,	PMB8876_DIF_BASE,		"pmb887x-dif-v2",	"AHB_PER",	"AHB_PER",	pmb8876_dif_irqs,		ARRAY_SIZE(pmb8876_dif_irqs),		pmb8876_dif_gpios,		ARRAY_SIZE(pmb8876_dif_gpios),		pmb8876_dif_dma,	ARRAY_SIZE(pmb8876_dif_dma)},
 	{"MMCI",	0xF041C022,	PMB8876_MMCI_BASE,		"pmb887x-mmci",		"MMCI",		"AHB_PER",	NULL,					0,									pmb8876_mmci_gpios,		ARRAY_SIZE(pmb8876_mmci_gpios),		NULL,				0},
 	{"USIF",	0xF051C012,	PMB8876_USIF_BASE,		"pmb887x-usif",		"MMCI",		"AHB_PER",	pmb8876_usif_irqs,		ARRAY_SIZE(pmb8876_usif_irqs),		NULL,					0,									pmb8876_usif_dma,	ARRAY_SIZE(pmb8876_usif_dma)},
@@ -1010,6 +1014,10 @@ static const int pmb8875_tpu_irqs[] = {
 	PMB8875_TPU_INT1_IRQ
 };
 
+static const pmb887x_cpu_module_gpio_t pmb8875_tpu_gpios[] = {
+	{"RFSTR0",	PMB8875_GPIO_RF_STR0,	0,	PMB887X_GPIO_DIR_OUT},
+};
+
 static const pmb887x_cpu_module_t pmb8875_modules[] = {
 	{"EBU",		0x0014C004,	PMB8875_EBU_BASE,		"pmb887x-ebu",		"FSYS",	"",	NULL,					0,									NULL,					0,									NULL,				0},
 	{"USART0",	0x000044E2,	PMB8875_USART0_BASE,	"pmb887x-usart",	"FPI1",	"",	pmb8875_usart0_irqs,	ARRAY_SIZE(pmb8875_usart0_irqs),	pmb8875_usart0_gpios,	ARRAY_SIZE(pmb8875_usart0_gpios),	NULL,				0},
@@ -1036,7 +1044,7 @@ static const pmb887x_cpu_module_t pmb8875_modules[] = {
 	{"DSP",		0xF022C010,	PMB8875_DSP_BASE,		"pmb887x-dsp",		"DSP",	"",	NULL,					0,									pmb8875_dsp_gpios,		ARRAY_SIZE(pmb8875_dsp_gpios),		NULL,				0},
 	{"GPRSCU",	0xF003C010,	PMB8875_GPRSCU_BASE,	"pmb887x-gprscu",	"FSYS",	"",	pmb8875_gprscu_irqs,	ARRAY_SIZE(pmb8875_gprscu_irqs),	NULL,					0,									NULL,				0},
 	{"AFC",		0xF004C000,	PMB8875_AFC_BASE,		"pmb887x-afc",		"FSYS",	"",	NULL,					0,									NULL,					0,									NULL,				0},
-	{"TPU",		0xF021C000,	PMB8875_TPU_BASE,		"pmb887x-tpu",		"FSYS",	"",	pmb8875_tpu_irqs,		ARRAY_SIZE(pmb8875_tpu_irqs),		NULL,					0,									NULL,				0},
+	{"TPU",		0xF021C000,	PMB8875_TPU_BASE,		"pmb887x-tpu",		"FSYS",	"",	pmb8875_tpu_irqs,		ARRAY_SIZE(pmb8875_tpu_irqs),		pmb8875_tpu_gpios,		ARRAY_SIZE(pmb8875_tpu_gpios),		NULL,				0},
 };
 
 static const pmb887x_cpu_t pmb8875_cpu = {
