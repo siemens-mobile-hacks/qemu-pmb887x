@@ -297,6 +297,7 @@ config PMB887X
     select GSM_OSMOTRX
     select GSM_KASUMI
     select GSM_GEA
+    select BRIGHT_6PLA
     select HD15515X
     select PMB627X
 

@@ -119,6 +119,10 @@ static pmb887x_dev_t devices_meta[] = {
 
 	// RF transceiver
 	{
+		.name = "bright-6pla",
+		.props = {},
+	},
+	{
 		.name = "hd155153np",
 		.props = {},
 	},

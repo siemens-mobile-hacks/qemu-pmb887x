@@ -30,6 +30,10 @@ config GSM_OSMOTRX
     select GSM_CODING
     select GSM_NETWORK
 
+config BRIGHT_6PLA
+    bool
+    select GSM_AIR
+
 config HD15515X
     bool
     select GSM_AIR
