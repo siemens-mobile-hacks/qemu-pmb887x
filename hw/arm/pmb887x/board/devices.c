@@ -318,6 +318,35 @@ static void device_init_props_from_config(DeviceState *dev, const pmb887x_dev_t 
 		device_init_prop_from_config(dev, &meta->props[i], table);
 }
 
+static void device_init_nor_flash(DeviceState *ebuc, toml_datum_t table, const char *id) {
+	pmb887x_board_t *board = pmb887x_board();
+	uint32_t vid = toml_table_get_uint32(table, "flash.vid", 0, true);
+	uint32_t pid = toml_table_get_uint32(table, "flash.pid", 0, true);
+	MemoryRegion *flash = pmb887x_board_create_nor_flash(id, vid, pid, board->flash_offset);
+	uint32_t flash_size = memory_region_size(flash);
+	board->flash_offset += flash_size;
+
+	toml_datum_t windows = toml_table_get(table, TOML_ARRAY, "ebu.windows", false);
+	if (windows.type == TOML_UNKNOWN) {
+		pmb887x_board_ebu_connect(ebuc, toml_table_get_uint32(table, "ebu.cs", 0, true), flash);
+		return;
+	}
+
+	for (uint32_t i = 0; i < windows.u.arr.size; i++) {
+		toml_datum_t window_config = toml_array_get(windows, TOML_TABLE, i, true);
+		uint32_t cs = toml_table_get_uint32(window_config, "cs", 0, true);
+		uint32_t offset = toml_table_get_uint32(window_config, "offset", 0, true);
+		uint32_t size = toml_table_get_uint32(window_config, "size", 0, true);
+		if (!size || offset > flash_size || size > flash_size - offset)
+			toml_fail(window_config, "window 0x%08X+0x%08X is outside the 0x%08X byte flash", offset, size, flash_size);
+
+		g_autofree char *name = g_strdup_printf("%s.cs%u", id, cs);
+		MemoryRegion *window = g_new(MemoryRegion, 1);
+		memory_region_init_alias(window, NULL, name, flash, offset, size);
+		pmb887x_board_ebu_connect(ebuc, cs, window);
+	}
+}
+
 static void device_init_gpios_from_config(DeviceState *dev, toml_datum_t table) {
 	toml_datum_t gpio_in_tab = toml_table_get(table, TOML_TABLE, "in", false);
 	toml_datum_t gpio_out_tab = toml_table_get(table, TOML_TABLE, "out", false);
@@ -401,14 +430,7 @@ static void device_realize_from_config(GHashTable *devices, const char *id, toml
 				uint32_t size = toml_table_get_uint32(table, "ram.size", 0, true);
 				pmb887x_board_ebu_connect(DEVICE(bus), cs, pmb887x_board_create_sdram(id, size));
 			} else if (strcmp(type, "cfi-flash") == 0) {
-				pmb887x_board_t *board = pmb887x_board();
-				uint32_t cs = toml_table_get_uint32(table, "ebu.cs", 0, true);
-				uint32_t vid = toml_table_get_uint32(table, "flash.vid", 0, true);
-				uint32_t pid = toml_table_get_uint32(table, "flash.pid", 0, true);
-				uint32_t bank_size = toml_table_get_uint32(table, "flash.size", 0, false);
-				pmb887x_board_ebu_connect(DEVICE(bus), cs, pmb887x_board_create_nor_flash(id, vid, pid,
-					board->flash_offset, &bank_size));
-				board->flash_offset += bank_size;
+				device_init_nor_flash(DEVICE(bus), table, id);
 			} else {
 				error_report("Invalid dev type: %s", type);
 				exit(EXIT_FAILURE);

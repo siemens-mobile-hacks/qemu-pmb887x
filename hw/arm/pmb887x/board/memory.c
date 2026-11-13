@@ -25,7 +25,7 @@ MemoryRegion *pmb887x_board_create_sdram(const char *id, uint32_t size) {
 	return sdram;
 }
 
-MemoryRegion *pmb887x_board_create_nor_flash(const char *id, uint32_t vid, uint32_t pid, uint32_t offset, uint32_t *size) {
+MemoryRegion *pmb887x_board_create_nor_flash(const char *id, uint32_t vid, uint32_t pid, uint32_t offset) {
 	DeviceState *flash_blk = qdev_find_recursive(sysbus_get_default(), "FULLFLASH");
 
 	g_autofree char *otp0_env = g_strdup_printf("PMB887X_%s_OTP0", id);
@@ -44,12 +44,9 @@ MemoryRegion *pmb887x_board_create_nor_flash(const char *id, uint32_t vid, uint3
 	qdev_prop_set_uint16(flash, "vid", vid);
 	qdev_prop_set_uint16(flash, "pid", pid);
 	qdev_prop_set_uint32(flash, "offset", offset);
-	qdev_prop_set_uint32(flash, "size", *size);
 	if (flash_blk)
 		object_property_set_link(OBJECT(flash), "storage", OBJECT(flash_blk), &error_fatal);
 	sysbus_realize_and_unref(SYS_BUS_DEVICE(flash), &error_fatal);
-
-	*size = object_property_get_uint(OBJECT(flash), "size", &error_fatal);
 
 	MemoryRegion *region = sysbus_mmio_get_region(SYS_BUS_DEVICE(flash), 0);
 	memory_region_set_fetch_kind(region, PMB887X_FETCH_FLASH);

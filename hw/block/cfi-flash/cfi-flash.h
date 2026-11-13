@@ -10,9 +10,18 @@
 
 #define CFI_ADDR 0x10
 #define CFI_INDEX_MASK 0xFFF
+#define CFI_ERASE_SECTOR_UNIT 256
+
+#define P_ID_INTEL_EXT          0x0001
+#define P_ID_INTEL_STD          0x0003
+#define P_ID_INTEL_PERFORMANCE  0x0200
 
 OBJECT_DECLARE_SIMPLE_TYPE(CFIFlashState, CFI_FLASH)
 
+typedef struct CFIFlashEraseRegion CFIFlashEraseRegion;
+typedef struct CFIFlashChipPart CFIFlashChipPart;
+typedef struct CFIFlashOtp CFIFlashOtp;
+typedef struct CFIQueryReader CFIQueryReader;
 typedef struct CFIFlashPart CFIFlashPart;
 typedef struct CFIFlashBlock CFIFlashBlock;
 typedef struct CFIFlashDirtyRange CFIFlashDirtyRange;
@@ -23,6 +32,32 @@ enum CFIFlashResult {
     CFI_FLASH_OK,
     CFI_FLASH_PROTECTED,
     CFI_FLASH_OUT_OF_RANGE,
+};
+
+struct CFIFlashEraseRegion {
+    uint32_t offset;
+    uint32_t size;
+    uint32_t sector;
+};
+
+struct CFIFlashChipPart {
+    uint32_t offset;
+    uint32_t size;
+    const CFIFlashEraseRegion *erase_regions;
+    uint32_t erase_regions_count;
+};
+
+struct CFIFlashOtp {
+    uint32_t addr;
+    uint32_t size;
+    uint32_t factory_size;
+};
+
+struct CFIQueryReader {
+    const uint8_t *data;
+    uint32_t size;
+    uint32_t pos;
+    bool overrun;
 };
 
 struct CFIFlashBlock {
@@ -59,6 +94,7 @@ struct CFIFlashPart {
 
 struct CFIFlashCommandSet {
     size_t part_size;
+    bool (*decode_pri)(CFIFlashState *flash);
     void (*init)(CFIFlashState *flash);
     uint64_t (*read)(CFIFlashPart *p, uint32_t offset, uint32_t size);
     void (*write)(CFIFlashPart *p, uint32_t offset, uint64_t value, uint32_t size);
@@ -97,10 +133,19 @@ struct CFIFlashState {
     char *hex_otp0_data;
     char *hex_otp1_data;
 
-    uint32_t size;
     uint32_t offset;
 
-    bool strict_opcodes;
+    uint32_t size;
+    uint16_t algorithm;
+    uint16_t pri_addr;
+    uint32_t cfi_erase_regions_n;
+    CFIFlashEraseRegion *cfi_erase_regions;
+    uint32_t chip_parts_n;
+    CFIFlashChipPart *chip_parts;
+    uint32_t efa_erase_regions_n;
+    CFIFlashEraseRegion *efa_erase_regions;
+    CFIFlashOtp otp0;
+    CFIFlashOtp otp1;
 
     uint16_t *otp0_data;
     uint16_t *otp1_data;
@@ -112,6 +157,10 @@ struct CFIFlashState {
     uint32_t parts_n;
     CFIFlashPart **parts;
 };
+
+void cfi_flash_error(CFIFlashState *flash, const char *format, ...) G_GNUC_PRINTF(2, 3);
+uint32_t cfi_query_read_le(CFIQueryReader *r, uint32_t bytes);
+void cfi_query_skip(CFIQueryReader *r, uint32_t bytes);
 
 CFIFlashBlock *cfi_flash_part_find_block(CFIFlashPart *p, uint32_t offset);
 uint32_t cfi_flash_find_sector_size(CFIFlashPart *p, uint32_t offset);

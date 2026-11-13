@@ -2,22 +2,6 @@
 #include "qemu/osdep.h"
 #include "parts.h"
 
-static const CFIFlashEraseRegion flash_0020_8819_erase_regions_0[] = {
-    { 0x0, 0x800000, 0x40000 }
-};
-static const CFIFlashChipPart flash_0020_8819_parts[] = {
-    { 0x00000000, 0x00800000, flash_0020_8819_erase_regions_0, ARRAY_SIZE(flash_0020_8819_erase_regions_0) },
-    { 0x00800000, 0x00800000, flash_0020_8819_erase_regions_0, ARRAY_SIZE(flash_0020_8819_erase_regions_0) },
-    { 0x01000000, 0x00800000, flash_0020_8819_erase_regions_0, ARRAY_SIZE(flash_0020_8819_erase_regions_0) },
-    { 0x01800000, 0x00800000, flash_0020_8819_erase_regions_0, ARRAY_SIZE(flash_0020_8819_erase_regions_0) },
-    { 0x02000000, 0x00800000, flash_0020_8819_erase_regions_0, ARRAY_SIZE(flash_0020_8819_erase_regions_0) },
-    { 0x02800000, 0x00800000, flash_0020_8819_erase_regions_0, ARRAY_SIZE(flash_0020_8819_erase_regions_0) },
-    { 0x03000000, 0x00800000, flash_0020_8819_erase_regions_0, ARRAY_SIZE(flash_0020_8819_erase_regions_0) },
-    { 0x03800000, 0x00800000, flash_0020_8819_erase_regions_0, ARRAY_SIZE(flash_0020_8819_erase_regions_0) }
-};
-static const CFIFlashEraseRegion flash_0020_8819_efa_erase_regions[] = {
-    { 0x0, 0x8000, 0x2000 }
-};
 static const uint8_t flash_0020_8819_cfi[] = {
     0x51, 0x52, 0x59, 0x00, 0x02, 0x0A, 0x01, 0x00, 0x00, 0x00, 0x00, 0x17, 0x20, 0x85, 0x95, 0x06,
     0x0B, 0x0A, 0x00, 0x02, 0x02, 0x02, 0x00, 0x1A, 0x01, 0x00, 0x0A, 0x00, 0x01, 0xFF, 0x00, 0x00,
@@ -29,31 +13,6 @@ static const uint8_t flash_0020_8819_pri[] = {
     0x03, 0x07, 0x01, 0x16, 0x00, 0x08, 0x00, 0x11, 0x00, 0x00, 0x01, 0x1F, 0x00, 0x00, 0x04, 0x64,
     0x00, 0x12, 0x03, 0x0A, 0x00, 0x10, 0x00, 0x10, 0x00, 0x01, 0x16, 0x00, 0x01, 0x00, 0x11, 0x00,
     0x00, 0x01, 0x03, 0x00, 0x20, 0x00, 0x64, 0x00, 0x01, 0x03, 0x00, 0x80, 0x00, 0x00, 0x00, 0x80,
-};
-static const CFIFlashEraseRegion flash_0089_880d_erase_regions_0[] = {
-    { 0x0, 0x200000, 0x20000 }
-};
-static const CFIFlashEraseRegion flash_0089_880d_erase_regions_1[] = {
-    { 0x0, 0x1E0000, 0x20000 },
-    { 0x1E0000, 0x20000, 0x8000 }
-};
-static const CFIFlashChipPart flash_0089_880d_parts[] = {
-    { 0x00000000, 0x00200000, flash_0089_880d_erase_regions_0, ARRAY_SIZE(flash_0089_880d_erase_regions_0) },
-    { 0x00200000, 0x00200000, flash_0089_880d_erase_regions_0, ARRAY_SIZE(flash_0089_880d_erase_regions_0) },
-    { 0x00400000, 0x00200000, flash_0089_880d_erase_regions_0, ARRAY_SIZE(flash_0089_880d_erase_regions_0) },
-    { 0x00600000, 0x00200000, flash_0089_880d_erase_regions_0, ARRAY_SIZE(flash_0089_880d_erase_regions_0) },
-    { 0x00800000, 0x00200000, flash_0089_880d_erase_regions_0, ARRAY_SIZE(flash_0089_880d_erase_regions_0) },
-    { 0x00A00000, 0x00200000, flash_0089_880d_erase_regions_0, ARRAY_SIZE(flash_0089_880d_erase_regions_0) },
-    { 0x00C00000, 0x00200000, flash_0089_880d_erase_regions_0, ARRAY_SIZE(flash_0089_880d_erase_regions_0) },
-    { 0x00E00000, 0x00200000, flash_0089_880d_erase_regions_0, ARRAY_SIZE(flash_0089_880d_erase_regions_0) },
-    { 0x01000000, 0x00200000, flash_0089_880d_erase_regions_0, ARRAY_SIZE(flash_0089_880d_erase_regions_0) },
-    { 0x01200000, 0x00200000, flash_0089_880d_erase_regions_0, ARRAY_SIZE(flash_0089_880d_erase_regions_0) },
-    { 0x01400000, 0x00200000, flash_0089_880d_erase_regions_0, ARRAY_SIZE(flash_0089_880d_erase_regions_0) },
-    { 0x01600000, 0x00200000, flash_0089_880d_erase_regions_0, ARRAY_SIZE(flash_0089_880d_erase_regions_0) },
-    { 0x01800000, 0x00200000, flash_0089_880d_erase_regions_0, ARRAY_SIZE(flash_0089_880d_erase_regions_0) },
-    { 0x01A00000, 0x00200000, flash_0089_880d_erase_regions_0, ARRAY_SIZE(flash_0089_880d_erase_regions_0) },
-    { 0x01C00000, 0x00200000, flash_0089_880d_erase_regions_0, ARRAY_SIZE(flash_0089_880d_erase_regions_0) },
-    { 0x01E00000, 0x00200000, flash_0089_880d_erase_regions_1, ARRAY_SIZE(flash_0089_880d_erase_regions_1) }
 };
 static const uint8_t flash_0089_880d_cfi[] = {
     0x51, 0x52, 0x59, 0x01, 0x00, 0x0A, 0x01, 0x00, 0x00, 0x00, 0x00, 0x17, 0x20, 0x85, 0x95, 0x08,
@@ -67,13 +26,6 @@ static const uint8_t flash_0089_880d_pri[] = {
     0x02, 0x03, 0x01, 0x00, 0x11, 0x00, 0x00, 0x02, 0x0E, 0x00, 0x00, 0x02, 0x64, 0x00, 0x02, 0x03,
     0x03, 0x00, 0x80, 0x00, 0x64, 0x00, 0x02, 0x03,
 };
-static const CFIFlashEraseRegion flash_0089_8819_erase_regions_0[] = {
-    { 0x0, 0x1FE0000, 0x20000 },
-    { 0x1FE0000, 0x20000, 0x8000 }
-};
-static const CFIFlashChipPart flash_0089_8819_parts[] = {
-    { 0x00000000, 0x02000000, flash_0089_8819_erase_regions_0, ARRAY_SIZE(flash_0089_8819_erase_regions_0) }
-};
 static const uint8_t flash_0089_8819_cfi[] = {
     0x51, 0x52, 0x59, 0x01, 0x00, 0x35, 0x00, 0x00, 0x00, 0x00, 0x00, 0x17, 0x20, 0x85, 0x95, 0x08,
     0x09, 0x0A, 0x00, 0x01, 0x01, 0x02, 0x00, 0x19, 0x01, 0x00, 0x06, 0x00, 0x02, 0xFE, 0x00, 0x00,
@@ -82,13 +34,6 @@ static const uint8_t flash_0089_8819_cfi[] = {
 static const uint8_t flash_0089_8819_pri[] = {
     0x50, 0x52, 0x49, 0x31, 0x33, 0xA6, 0x00, 0x00, 0x00, 0x01, 0x03, 0x00, 0x18, 0x90, 0x03, 0x00,
 };
-static const CFIFlashEraseRegion flash_0089_881c_erase_regions_0[] = {
-    { 0x0, 0x20000, 0x8000 },
-    { 0x20000, 0x1FE0000, 0x20000 }
-};
-static const CFIFlashChipPart flash_0089_881c_parts[] = {
-    { 0x00000000, 0x02000000, flash_0089_881c_erase_regions_0, ARRAY_SIZE(flash_0089_881c_erase_regions_0) }
-};
 static const uint8_t flash_0089_881c_cfi[] = {
     0x51, 0x52, 0x59, 0x01, 0x00, 0x35, 0x00, 0x00, 0x00, 0x00, 0x00, 0x17, 0x20, 0x85, 0x95, 0x08,
     0x09, 0x0A, 0x00, 0x01, 0x01, 0x02, 0x00, 0x19, 0x01, 0x00, 0x06, 0x00, 0x02, 0x03, 0x00, 0x80,
@@ -96,22 +41,6 @@ static const uint8_t flash_0089_881c_cfi[] = {
 };
 static const uint8_t flash_0089_881c_pri[] = {
     0x50, 0x52, 0x49, 0x31, 0x33, 0xA6, 0x00, 0x00, 0x00, 0x01, 0x03, 0x00, 0x18, 0x90, 0x03, 0x00,
-};
-static const CFIFlashEraseRegion flash_0089_887e_erase_regions_0[] = {
-    { 0x0, 0x800000, 0x40000 }
-};
-static const CFIFlashChipPart flash_0089_887e_parts[] = {
-    { 0x00000000, 0x00800000, flash_0089_887e_erase_regions_0, ARRAY_SIZE(flash_0089_887e_erase_regions_0) },
-    { 0x00800000, 0x00800000, flash_0089_887e_erase_regions_0, ARRAY_SIZE(flash_0089_887e_erase_regions_0) },
-    { 0x01000000, 0x00800000, flash_0089_887e_erase_regions_0, ARRAY_SIZE(flash_0089_887e_erase_regions_0) },
-    { 0x01800000, 0x00800000, flash_0089_887e_erase_regions_0, ARRAY_SIZE(flash_0089_887e_erase_regions_0) },
-    { 0x02000000, 0x00800000, flash_0089_887e_erase_regions_0, ARRAY_SIZE(flash_0089_887e_erase_regions_0) },
-    { 0x02800000, 0x00800000, flash_0089_887e_erase_regions_0, ARRAY_SIZE(flash_0089_887e_erase_regions_0) },
-    { 0x03000000, 0x00800000, flash_0089_887e_erase_regions_0, ARRAY_SIZE(flash_0089_887e_erase_regions_0) },
-    { 0x03800000, 0x00800000, flash_0089_887e_erase_regions_0, ARRAY_SIZE(flash_0089_887e_erase_regions_0) }
-};
-static const CFIFlashEraseRegion flash_0089_887e_efa_erase_regions[] = {
-    { 0x0, 0x8000, 0x2000 }
 };
 static const uint8_t flash_0089_887e_cfi[] = {
     0x51, 0x52, 0x59, 0x00, 0x02, 0x0A, 0x01, 0x00, 0x00, 0x00, 0x00, 0x17, 0x20, 0x85, 0x95, 0x06,
@@ -124,22 +53,6 @@ static const uint8_t flash_0089_887e_pri[] = {
     0x03, 0x07, 0x01, 0x16, 0x00, 0x08, 0x00, 0x11, 0x00, 0x00, 0x01, 0x1F, 0x00, 0x00, 0x04, 0x64,
     0x00, 0x12, 0x03, 0x0A, 0x00, 0x10, 0x00, 0x10, 0x00, 0x01, 0x16, 0x00, 0x01, 0x00, 0x11, 0x00,
     0x00, 0x01, 0x03, 0x00, 0x20, 0x00, 0x64, 0x00, 0x01, 0x03, 0x00, 0x80, 0x00, 0x00, 0x00, 0x80,
-};
-static const CFIFlashEraseRegion flash_0089_88b0_erase_regions_0[] = {
-    { 0x0, 0x1000000, 0x40000 }
-};
-static const CFIFlashChipPart flash_0089_88b0_parts[] = {
-    { 0x00000000, 0x01000000, flash_0089_88b0_erase_regions_0, ARRAY_SIZE(flash_0089_88b0_erase_regions_0) },
-    { 0x01000000, 0x01000000, flash_0089_88b0_erase_regions_0, ARRAY_SIZE(flash_0089_88b0_erase_regions_0) },
-    { 0x02000000, 0x01000000, flash_0089_88b0_erase_regions_0, ARRAY_SIZE(flash_0089_88b0_erase_regions_0) },
-    { 0x03000000, 0x01000000, flash_0089_88b0_erase_regions_0, ARRAY_SIZE(flash_0089_88b0_erase_regions_0) },
-    { 0x04000000, 0x01000000, flash_0089_88b0_erase_regions_0, ARRAY_SIZE(flash_0089_88b0_erase_regions_0) },
-    { 0x05000000, 0x01000000, flash_0089_88b0_erase_regions_0, ARRAY_SIZE(flash_0089_88b0_erase_regions_0) },
-    { 0x06000000, 0x01000000, flash_0089_88b0_erase_regions_0, ARRAY_SIZE(flash_0089_88b0_erase_regions_0) },
-    { 0x07000000, 0x01000000, flash_0089_88b0_erase_regions_0, ARRAY_SIZE(flash_0089_88b0_erase_regions_0) }
-};
-static const CFIFlashEraseRegion flash_0089_88b0_efa_erase_regions[] = {
-    { 0x0, 0x8000, 0x2000 }
 };
 static const uint8_t flash_0089_88b0_cfi[] = {
     0x51, 0x52, 0x59, 0x00, 0x02, 0x0A, 0x01, 0x00, 0x00, 0x00, 0x00, 0x17, 0x20, 0x85, 0x95, 0x06,
@@ -155,136 +68,64 @@ static const uint8_t flash_0089_88b0_pri[] = {
 };
 static const CFIFlashChip flashes[] = {
     {
-        .vid                        = 0x0020,
-        .pid                        = 0x8819,
-        .cr                         = 0xF907,
-        .ehcr                       = 0x0004,
-        .size                       = 0x4000000,
-        .cfi                        = flash_0020_8819_cfi,
-        .cfi_size                   = ARRAY_SIZE(flash_0020_8819_cfi),
-        .pri                        = flash_0020_8819_pri,
-        .pri_size                   = ARRAY_SIZE(flash_0020_8819_pri),
-        .parts                      = flash_0020_8819_parts,
-        .parts_count                = ARRAY_SIZE(flash_0020_8819_parts),
-        .efa_erase_regions          = flash_0020_8819_efa_erase_regions,
-        .efa_erase_regions_count    = ARRAY_SIZE(flash_0020_8819_efa_erase_regions),
-        .pri_addr                   = 0x10A,
-        .otp0_addr                  = 0x80,
-        .otp0_size                  = 0x12,
-        .otp0_factory_size          = 0x8,
-        .otp1_addr                  = 0x89,
-        .otp1_size                  = 0x102,
-
+        .vid        = 0x0020,
+        .pid        = 0x8819,
+        .cfi        = flash_0020_8819_cfi,
+        .cfi_size   = ARRAY_SIZE(flash_0020_8819_cfi),
+        .pri        = flash_0020_8819_pri,
+        .pri_size   = ARRAY_SIZE(flash_0020_8819_pri),
+        .rcr        = 0xF907,
+        .ecr        = 0x0004,
     },
     {
-        .vid                        = 0x0089,
-        .pid                        = 0x880D,
-        .cr                         = 0xBFCF,
-        .ehcr                       = 0x0001,
-        .size                       = 0x2000000,
-        .cfi                        = flash_0089_880d_cfi,
-        .cfi_size                   = ARRAY_SIZE(flash_0089_880d_cfi),
-        .pri                        = flash_0089_880d_pri,
-        .pri_size                   = ARRAY_SIZE(flash_0089_880d_pri),
-        .parts                      = flash_0089_880d_parts,
-        .parts_count                = ARRAY_SIZE(flash_0089_880d_parts),
-        .efa_erase_regions          = NULL,
-        .efa_erase_regions_count    = 0,
-        .pri_addr                   = 0x10A,
-        .otp0_addr                  = 0x80,
-        .otp0_size                  = 0x12,
-        .otp0_factory_size          = 0x8,
-        .otp1_addr                  = 0x89,
-        .otp1_size                  = 0x102,
-
+        .vid        = 0x0089,
+        .pid        = 0x880D,
+        .cfi        = flash_0089_880d_cfi,
+        .cfi_size   = ARRAY_SIZE(flash_0089_880d_cfi),
+        .pri        = flash_0089_880d_pri,
+        .pri_size   = ARRAY_SIZE(flash_0089_880d_pri),
+        .rcr        = 0xBFCF,
+        .ecr        = 0x0001,
     },
     {
-        .vid                        = 0x0089,
-        .pid                        = 0x8819,
-        .cr                         = 0xBFCF,
-        .ehcr                       = 0x0001,
-        .size                       = 0x2000000,
-        .cfi                        = flash_0089_8819_cfi,
-        .cfi_size                   = ARRAY_SIZE(flash_0089_8819_cfi),
-        .pri                        = flash_0089_8819_pri,
-        .pri_size                   = ARRAY_SIZE(flash_0089_8819_pri),
-        .parts                      = flash_0089_8819_parts,
-        .parts_count                = ARRAY_SIZE(flash_0089_8819_parts),
-        .efa_erase_regions          = NULL,
-        .efa_erase_regions_count    = 0,
-        .pri_addr                   = 0x35,
-        .otp0_addr                  = 0x0,
-        .otp0_size                  = 0x0,
-        .otp0_factory_size          = 0x0,
-        .otp1_addr                  = 0x0,
-        .otp1_size                  = 0x0,
-
+        .vid        = 0x0089,
+        .pid        = 0x8819,
+        .cfi        = flash_0089_8819_cfi,
+        .cfi_size   = ARRAY_SIZE(flash_0089_8819_cfi),
+        .pri        = flash_0089_8819_pri,
+        .pri_size   = ARRAY_SIZE(flash_0089_8819_pri),
+        .rcr        = 0xBFCF,
+        .ecr        = 0x0001,
     },
     {
-        .vid                        = 0x0089,
-        .pid                        = 0x881C,
-        .cr                         = 0xBFCF,
-        .ehcr                       = 0x0001,
-        .size                       = 0x2000000,
-        .cfi                        = flash_0089_881c_cfi,
-        .cfi_size                   = ARRAY_SIZE(flash_0089_881c_cfi),
-        .pri                        = flash_0089_881c_pri,
-        .pri_size                   = ARRAY_SIZE(flash_0089_881c_pri),
-        .parts                      = flash_0089_881c_parts,
-        .parts_count                = ARRAY_SIZE(flash_0089_881c_parts),
-        .efa_erase_regions          = NULL,
-        .efa_erase_regions_count    = 0,
-        .pri_addr                   = 0x35,
-        .otp0_addr                  = 0x0,
-        .otp0_size                  = 0x0,
-        .otp0_factory_size          = 0x0,
-        .otp1_addr                  = 0x0,
-        .otp1_size                  = 0x0,
-
+        .vid        = 0x0089,
+        .pid        = 0x881C,
+        .cfi        = flash_0089_881c_cfi,
+        .cfi_size   = ARRAY_SIZE(flash_0089_881c_cfi),
+        .pri        = flash_0089_881c_pri,
+        .pri_size   = ARRAY_SIZE(flash_0089_881c_pri),
+        .rcr        = 0xBFCF,
+        .ecr        = 0x0001,
     },
     {
-        .vid                        = 0x0089,
-        .pid                        = 0x887E,
-        .cr                         = 0xF907,
-        .ehcr                       = 0x0004,
-        .size                       = 0x4000000,
-        .cfi                        = flash_0089_887e_cfi,
-        .cfi_size                   = ARRAY_SIZE(flash_0089_887e_cfi),
-        .pri                        = flash_0089_887e_pri,
-        .pri_size                   = ARRAY_SIZE(flash_0089_887e_pri),
-        .parts                      = flash_0089_887e_parts,
-        .parts_count                = ARRAY_SIZE(flash_0089_887e_parts),
-        .efa_erase_regions          = flash_0089_887e_efa_erase_regions,
-        .efa_erase_regions_count    = ARRAY_SIZE(flash_0089_887e_efa_erase_regions),
-        .pri_addr                   = 0x10A,
-        .otp0_addr                  = 0x80,
-        .otp0_size                  = 0x12,
-        .otp0_factory_size          = 0x8,
-        .otp1_addr                  = 0x89,
-        .otp1_size                  = 0x102,
-
+        .vid        = 0x0089,
+        .pid        = 0x887E,
+        .cfi        = flash_0089_887e_cfi,
+        .cfi_size   = ARRAY_SIZE(flash_0089_887e_cfi),
+        .pri        = flash_0089_887e_pri,
+        .pri_size   = ARRAY_SIZE(flash_0089_887e_pri),
+        .rcr        = 0xF907,
+        .ecr        = 0x0004,
     },
     {
-        .vid                        = 0x0089,
-        .pid                        = 0x88B0,
-        .cr                         = 0xF907,
-        .ehcr                       = 0x0004,
-        .size                       = 0x8000000,
-        .cfi                        = flash_0089_88b0_cfi,
-        .cfi_size                   = ARRAY_SIZE(flash_0089_88b0_cfi),
-        .pri                        = flash_0089_88b0_pri,
-        .pri_size                   = ARRAY_SIZE(flash_0089_88b0_pri),
-        .parts                      = flash_0089_88b0_parts,
-        .parts_count                = ARRAY_SIZE(flash_0089_88b0_parts),
-        .efa_erase_regions          = flash_0089_88b0_efa_erase_regions,
-        .efa_erase_regions_count    = ARRAY_SIZE(flash_0089_88b0_efa_erase_regions),
-        .pri_addr                   = 0x10A,
-        .otp0_addr                  = 0x80,
-        .otp0_size                  = 0x12,
-        .otp0_factory_size          = 0x8,
-        .otp1_addr                  = 0x89,
-        .otp1_size                  = 0x102,
-
+        .vid        = 0x0089,
+        .pid        = 0x88B0,
+        .cfi        = flash_0089_88b0_cfi,
+        .cfi_size   = ARRAY_SIZE(flash_0089_88b0_cfi),
+        .pri        = flash_0089_88b0_pri,
+        .pri_size   = ARRAY_SIZE(flash_0089_88b0_pri),
+        .rcr        = 0xF907,
+        .ecr        = 0x0004,
     },
 };
 
