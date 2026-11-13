@@ -60,18 +60,21 @@ static bool gpio_get_pad_level(pmb887x_gpio_t *p, int id) {
 	return (p->pins[id] & GPIO_PDPU) == GPIO_PDPU_PULLUP;
 }
 
-static void gpio_sync_pin_state(pmb887x_gpio_t *p, int id) {
-	int pin_mux_is = gpio_get_mux_is(p, id);
+static bool gpio_get_pin_level(pmb887x_gpio_t *p, int id) {
 	bool output_enabled = (p->pins[id] & GPIO_ENAQ) == GPIO_ENAQ_OUTPUT_ENABLED;
-	bool pad_level;
 
 	if ((p->pins[id] & GPIO_PS) == GPIO_PS_MANUAL) {
 		bool gpio_output = (p->pins[id] & GPIO_DIR) == GPIO_DIR_OUT && output_enabled;
-		pad_level = gpio_output ? (p->pins[id] & GPIO_DATA) == GPIO_DATA_HIGH : gpio_get_pad_level(p, id);
-	} else {
-		int pin_mux_os = gpio_get_mux_os(p, id);
-		pad_level = pin_mux_os != 0 && output_enabled ? p->input_state[pin_mux_os][id] : gpio_get_pad_level(p, id);
+		return gpio_output ? (p->pins[id] & GPIO_DATA) == GPIO_DATA_HIGH : gpio_get_pad_level(p, id);
 	}
+
+	int pin_mux_os = gpio_get_mux_os(p, id);
+	return pin_mux_os != 0 && output_enabled ? p->input_state[pin_mux_os][id] : gpio_get_pad_level(p, id);
+}
+
+static void gpio_sync_pin_state(pmb887x_gpio_t *p, int id) {
+	int pin_mux_is = gpio_get_mux_is(p, id);
+	bool pad_level = gpio_get_pin_level(p, id);
 
 	qemu_set_irq(p->pins_out[0][id], pad_level);
 	for (unsigned mux = 1; mux < ARRAY_SIZE(p->pins_out); mux++)
@@ -100,12 +103,9 @@ static uint64_t gpio_io_read(void *opaque, hwaddr haddr, unsigned size) {
 		case GPIO_PIN0 ... GPIO_PIN113: {
 			uint32_t id = (haddr - GPIO_PIN0) / 4;
 			value = p->pins[id];
-			if ((value & GPIO_PS) == GPIO_PS_MANUAL && (value & GPIO_DIR) == GPIO_DIR_IN) {
+			if ((value & GPIO_PS) == GPIO_PS_ALT || (value & GPIO_DIR) == GPIO_DIR_IN) {
 				value &= ~GPIO_DATA;
-				value |= gpio_get_pad_level(p, id) ? GPIO_DATA_HIGH : GPIO_DATA_LOW;
-			} else if ((value & GPIO_PS) == GPIO_PS_ALT && (value & GPIO_OS) == GPIO_OS_NONE) {
-				value &= ~GPIO_DATA;
-				value |= gpio_get_pad_level(p, id) ? GPIO_DATA_HIGH : GPIO_DATA_LOW;
+				value |= gpio_get_pin_level(p, id) ? GPIO_DATA_HIGH : GPIO_DATA_LOW;
 			}
 			break;
 		}

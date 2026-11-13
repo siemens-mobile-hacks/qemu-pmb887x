@@ -12,6 +12,8 @@
 #define GSM_SOFT_BIT_ZERO 0
 #define GSM_SOFT_BIT_ONE 255
 #define GSM_SOFT_BIT_UNKNOWN 127
+#define GSM_ARFCN_NUMBER 0x03FF
+#define GSM_ARFCN_PCS1900 0x8000
 
 typedef struct GSMBurst GSMBurst;
 typedef struct GSMUplinkBurst GSMUplinkBurst;
@@ -54,14 +56,25 @@ struct GSMNetworkClass {
     void (*uplink_complete)(GSMNetwork *network, uint32_t frame_number);
 };
 
+/*
+ * A channel is an ARFCN with GSM_ARFCN_PCS1900 set for PCS1900, whose numbers 512..810
+ * repeat those of DCS1800; GSMTAP marks PCS1900 channels with the same bit.
+ */
+
 /**
- * gsm_downlink_frequency_to_arfcn: store the GSM900 or E-GSM900 channel of the downlink
- * carrier @frequency_hz in @arfcn; return false for a frequency off the channel raster.
+ * gsm_downlink_frequency_to_arfcn: store the channel of the downlink carrier
+ * @frequency_hz in @arfcn; return false for a frequency off every band raster.
  */
 bool gsm_downlink_frequency_to_arfcn(uint32_t frequency_hz, uint16_t *arfcn);
 
 /**
- * gsm_uplink_frequency_to_arfcn: store the GSM900 or E-GSM900 channel of the uplink
- * carrier @frequency_hz in @arfcn; return false for a frequency off the channel raster.
+ * gsm_uplink_frequency_to_arfcn: store the channel of the uplink carrier
+ * @frequency_hz in @arfcn; return false for a frequency off every band raster.
  */
 bool gsm_uplink_frequency_to_arfcn(uint32_t frequency_hz, uint16_t *arfcn);
+
+/**
+ * gsm_arfcn_is_valid: return true if @arfcn is a channel of GSM850, GSM900,
+ * E-GSM900, DCS1800, or PCS1900.
+ */
+bool gsm_arfcn_is_valid(uint16_t arfcn);

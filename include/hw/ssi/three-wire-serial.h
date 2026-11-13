@@ -8,8 +8,8 @@
 /*
  * Transmit-only synchronous serial control bus with clock, data, and strobe
  * signals.  Strobe polarity and clock timing belong to the controller; this
- * interface exposes logical strobe state and the resulting wire-order bit
- * stream.
+ * interface exposes logical strobe state with the virtual time of each strobe
+ * edge and the resulting wire-order bit stream.
  */
 #define TYPE_THREE_WIRE_SERIAL_BUS "three-wire-serial-bus"
 OBJECT_DECLARE_SIMPLE_TYPE(ThreeWireSerialBus, THREE_WIRE_SERIAL_BUS)
@@ -28,7 +28,8 @@ DECLARE_CLASS_CHECKERS(ThreeWireSerialTargetClass, THREE_WIRE_SERIAL_TARGET,
 struct ThreeWireSerialTargetClass {
     InterfaceClass parent_class;
 
-    void (*set_strobe)(ThreeWireSerialTarget *target, bool asserted);
+    void (*set_strobe)(ThreeWireSerialTarget *target, bool asserted,
+                       int64_t timestamp);
     /* Of the low @bits bits, bit @bits - 1 is first on the wire. */
     void (*write)(ThreeWireSerialTarget *target, uint32_t value,
                   unsigned int bits);
@@ -44,7 +45,8 @@ ThreeWireSerialBus *three_wire_serial_bus_init(DeviceState *parent,
 void three_wire_serial_target_port_init(ThreeWireSerialTargetPort *port,
                                         DeviceState *dev, const char *name,
                                         ThreeWireSerialTarget *target);
-void three_wire_serial_set_strobe(ThreeWireSerialBus *bus, bool asserted);
+void three_wire_serial_set_strobe(ThreeWireSerialBus *bus, bool asserted,
+                                  int64_t timestamp);
 void three_wire_serial_write(ThreeWireSerialBus *bus, uint32_t value,
                              unsigned int bits);
 

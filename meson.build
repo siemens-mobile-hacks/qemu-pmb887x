@@ -4169,6 +4169,13 @@ if have_system
         'hw/gsm/gsm-coding.c',
       ),
     },
+    'gsm-network': {
+      'sources': files(
+        'tests/unit/test-gsm-network.c',
+        'hw/gsm/gsm-network.c',
+      ),
+      'dependencies': [qom],
+    },
     'bus-port': {
       'sources': files(
         'tests/unit/test-bus-port.c',

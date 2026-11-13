@@ -161,7 +161,7 @@ int64_t gsm_air_frames_to_ns(uint32_t frames) {
         GSM_QUARTER_SYMBOLS_PER_NS_NUMERATOR);
 }
 
-void gsm_air_tune(GSMAir *air, GSMAirPath path, uint32_t frequency_hz, int32_t amplitude) {
+void gsm_air_tune(GSMAir *air, GSMAirPath path, uint32_t frequency_hz, int32_t amplitude, int64_t timestamp) {
     uint16_t arfcn = 0;
     bool on_raster = false;
 
@@ -180,7 +180,7 @@ void gsm_air_tune(GSMAir *air, GSMAirPath path, uint32_t frequency_hz, int32_t a
 
     air->tuning_last = (air->tuning_last + 1) % GSM_AIR_TUNING_HISTORY;
     air->tunings[air->tuning_last] = (GSMAirTuning) {
-        .timestamp = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL),
+        .timestamp = timestamp,
         .path = on_raster ? path : GSM_AIR_PATH_OFF,
         .arfcn = arfcn,
         .amplitude = amplitude,
