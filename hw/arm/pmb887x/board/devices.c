@@ -318,10 +318,23 @@ static void device_init_props_from_config(DeviceState *dev, const pmb887x_dev_t 
 		device_init_prop_from_config(dev, &meta->props[i], table);
 }
 
+static void device_get_nor_flash_pid(toml_datum_t table, uint32_t pid[PMB887X_NOR_FLASH_PID_WORDS]) {
+	toml_datum_t value = toml_seek(table, "flash.pid");
+	if (value.type != TOML_ARRAY) {
+		pid[0] = toml_table_get_uint32(table, "flash.pid", 0, true);
+		return;
+	}
+	if (value.u.arr.size == 0 || value.u.arr.size > PMB887X_NOR_FLASH_PID_WORDS)
+		toml_fail(value, "'flash.pid' must have 1 to %d device ID words", PMB887X_NOR_FLASH_PID_WORDS);
+	for (int i = 0; i < value.u.arr.size; i++)
+		pid[i] = toml_array_get_uint32(value, i, 0, true);
+}
+
 static void device_init_nor_flash(DeviceState *ebuc, toml_datum_t table, const char *id) {
 	pmb887x_board_t *board = pmb887x_board();
 	uint32_t vid = toml_table_get_uint32(table, "flash.vid", 0, true);
-	uint32_t pid = toml_table_get_uint32(table, "flash.pid", 0, true);
+	uint32_t pid[PMB887X_NOR_FLASH_PID_WORDS] = { 0 };
+	device_get_nor_flash_pid(table, pid);
 	MemoryRegion *flash = pmb887x_board_create_nor_flash(id, vid, pid, board->flash_offset);
 	uint32_t flash_size = memory_region_size(flash);
 	board->flash_offset += flash_size;

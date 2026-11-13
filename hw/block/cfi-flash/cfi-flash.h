@@ -27,6 +27,7 @@ typedef enum CFIFlashResult CFIFlashResult;
 
 enum CFICommandSet {
     P_ID_INTEL_EXT          = 0x0001,
+    P_ID_AMD_STD            = 0x0002,
     P_ID_INTEL_STD          = 0x0003,
     P_ID_INTEL_PERFORMANCE  = 0x0200,
 };
@@ -53,6 +54,7 @@ struct CFIFlashChipPart {
 struct CFIFlashOtp {
     uint32_t addr;
     uint32_t size;
+    uint32_t lock_size;
     uint32_t factory_size;
 };
 
@@ -131,7 +133,7 @@ struct CFIFlashState {
     uint32_t writeback_in_flight;
 
     uint16_t vid;
-    uint16_t pid;
+    uint16_t pid[CFI_FLASH_PID_WORDS];
 
     char *hex_otp0_data;
     char *hex_otp1_data;
@@ -139,6 +141,10 @@ struct CFIFlashState {
     uint32_t offset;
 
     uint32_t size;
+    uint32_t word_program_typical_us;
+    uint32_t buffer_program_typical_us;
+    uint32_t block_erase_typical_ms;
+    uint32_t write_buffer_size;
     uint16_t algorithm;
     uint16_t pri_addr;
     uint32_t pri_features;
@@ -166,6 +172,7 @@ void cfi_flash_error(CFIFlashState *flash, const char *format, ...) G_GNUC_PRINT
 uint32_t cfi_query_read_le(CFIQueryReader *r, uint32_t bytes);
 void cfi_query_skip(CFIQueryReader *r, uint32_t bytes);
 
+uint32_t cfi_flash_array_read(CFIFlashPart *p, uint32_t offset, uint32_t size);
 CFIFlashBlock *cfi_flash_part_find_block(CFIFlashPart *p, uint32_t offset);
 uint32_t cfi_flash_find_sector_size(CFIFlashPart *p, uint32_t offset);
 CFIFlashResult cfi_flash_program(CFIFlashPart *p, CFIFlashBlock *blk, uint32_t offset, uint32_t value, uint32_t size);
@@ -181,3 +188,4 @@ CFIFlashResult cfi_flash_efa_erase_block(CFIFlashState *flash, CFIFlashBlock *bl
 void cfi_flash_otp_program(CFIFlashState *flash, uint16_t *otp_data, uint32_t data_index, uint16_t value);
 
 extern const CFIFlashCommandSet cfi_flash_intel_cmdset;
+extern const CFIFlashCommandSet cfi_flash_amd_cmdset;

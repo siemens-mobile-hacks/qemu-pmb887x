@@ -11,7 +11,9 @@
 #include "cfi-flash.h"
 
 #define CFI_QUERY_MAGIC         0x595251
+#define CFI_TYPICAL_TIMEOUTS    0x1F
 #define CFI_DEVICE_SIZE         0x27
+#define CFI_WRITE_BUFFER_SIZE   0x2A
 #define CFI_ERASE_REGIONS       0x2C
 
 #define CFI_FLASH_ROMD_THRESHOLD_MIN        42
@@ -229,7 +231,7 @@ static void cfi_flash_data_write(CFIFlashPart *p, uint32_t offset, uint32_t valu
     cfi_flash_part_mark_dirty(p, offset, size);
 }
 
-static uint32_t cfi_flash_array_read(CFIFlashPart *p, uint32_t offset, uint32_t size) {
+uint32_t cfi_flash_array_read(CFIFlashPart *p, uint32_t offset, uint32_t size) {
     uint32_t value = 0;
     offset -= p->offset;
     for (uint32_t i = 0; i < size; i++)
@@ -624,8 +626,14 @@ static bool cfi_flash_decode_cfi(CFIFlashState *flash) {
     uint32_t magic = cfi_query_read_le(&r, 3);
     flash->algorithm = cfi_query_read_le(&r, 2);
     flash->pri_addr = cfi_query_read_le(&r, 2);
+    r.pos = CFI_TYPICAL_TIMEOUTS - CFI_ADDR;
+    uint32_t word_program_shift = cfi_query_read_le(&r, 1);
+    uint32_t buffer_program_shift = cfi_query_read_le(&r, 1);
+    uint32_t block_erase_shift = cfi_query_read_le(&r, 1);
     r.pos = CFI_DEVICE_SIZE - CFI_ADDR;
     uint32_t size_shift = cfi_query_read_le(&r, 1);
+    r.pos = CFI_WRITE_BUFFER_SIZE - CFI_ADDR;
+    uint32_t write_buffer_shift = cfi_query_read_le(&r, 2);
     r.pos = CFI_ERASE_REGIONS - CFI_ADDR;
     uint32_t regions_n = cfi_query_read_le(&r, 1);
     if (r.overrun || magic != CFI_QUERY_MAGIC) {
@@ -636,7 +644,16 @@ static bool cfi_flash_decode_cfi(CFIFlashState *flash) {
         cfi_flash_error(flash, "invalid CFI device size 2^%u", size_shift);
         return false;
     }
+    if (word_program_shift >= 32 || buffer_program_shift >= 32 || block_erase_shift >= 32 ||
+        write_buffer_shift >= 32) {
+        cfi_flash_error(flash, "invalid CFI typical timeout or write buffer size");
+        return false;
+    }
     flash->size = 1U << size_shift;
+    flash->word_program_typical_us = word_program_shift ? 1U << word_program_shift : 0;
+    flash->buffer_program_typical_us = buffer_program_shift ? 1U << buffer_program_shift : 0;
+    flash->block_erase_typical_ms = block_erase_shift ? 1U << block_erase_shift : 0;
+    flash->write_buffer_size = write_buffer_shift ? 1U << write_buffer_shift : 0;
 
     flash->cfi_erase_regions = g_new(CFIFlashEraseRegion, regions_n);
     flash->cfi_erase_regions_n = regions_n;
@@ -666,6 +683,8 @@ static const CFIFlashCommandSet *cfi_flash_get_cmdset(uint16_t algorithm) {
         case P_ID_INTEL_STD:
         case P_ID_INTEL_PERFORMANCE:
             return &cfi_flash_intel_cmdset;
+        case P_ID_AMD_STD:
+            return &cfi_flash_amd_cmdset;
         default:
             return NULL;
     }
@@ -681,7 +700,8 @@ static void cfi_flash_realize(DeviceState *dev, Error **errp) {
 
     const CFIFlashChip *chip = cfi_flash_find_chip(flash->vid, flash->pid);
     if (!chip) {
-        cfi_flash_error(flash, "unimplemented %04X:%04X", flash->vid, flash->pid);
+        cfi_flash_error(flash, "unimplemented %04X:%04X:%04X:%04X", flash->vid, flash->pid[0], flash->pid[1],
+            flash->pid[2]);
         exit(1);
     }
 
@@ -702,8 +722,8 @@ static void cfi_flash_realize(DeviceState *dev, Error **errp) {
         qemu_add_vm_change_state_handler(cfi_flash_vm_state_change, flash);
     }
 
-    DEBUG_LOG(&flash->dbg, "FLASH %04X:%04X, 0x%08X ... 0x%08X\n",
-        flash->vid, flash->pid, flash->offset, flash->offset + flash->size - 1);
+    DEBUG_LOG(&flash->dbg, "FLASH %04X:%04X:%04X:%04X, 0x%08X ... 0x%08X\n",
+        flash->vid, flash->pid[0], flash->pid[1], flash->pid[2], flash->offset, flash->offset + flash->size - 1);
 
     char *mmio_name = g_strdup_printf("cfi-flash[%s]", flash->name);
     memory_region_init(&flash->mmio, OBJECT(flash->dev), mmio_name, flash->size);
@@ -713,13 +733,15 @@ static void cfi_flash_realize(DeviceState *dev, Error **errp) {
     if (flash->otp0.size > 0) {
         flash->otp0_data = g_new(uint16_t, flash->otp0.size / 2);
         memset(flash->otp0_data, 0xFF, flash->otp0.size);
-        flash->otp0_data[0] = (uint16_t) ~CFI_FLASH_OTP_FACTORY_LOCK;
-        memcpy(&flash->otp0_data[1], CFI_FLASH_FACTORY_SERIAL,
-            MIN(sizeof(CFI_FLASH_FACTORY_SERIAL), flash->otp0.factory_size));
+        uint8_t *otp0_payload = (uint8_t *) flash->otp0_data + flash->otp0.lock_size;
+        uint32_t otp0_payload_size = flash->otp0.size - flash->otp0.lock_size;
+        if (flash->otp0.lock_size)
+            flash->otp0_data[0] = (uint16_t) ~CFI_FLASH_OTP_FACTORY_LOCK;
+        memcpy(otp0_payload, CFI_FLASH_FACTORY_SERIAL, MIN(sizeof(CFI_FLASH_FACTORY_SERIAL), flash->otp0.factory_size));
 
-        if (!fill_data_from_hex((uint8_t *) flash->otp0_data, flash->otp0.size, flash->hex_otp0_data)) {
+        if (!fill_data_from_hex(otp0_payload, otp0_payload_size, flash->hex_otp0_data)) {
             cfi_flash_error(flash, "Invalid OTP0 hex data: %s [max_size=%u, len=%zu]",
-                flash->hex_otp0_data, flash->otp0.size, strlen(flash->hex_otp0_data) / 2);
+                flash->hex_otp0_data, otp0_payload_size, strlen(flash->hex_otp0_data) / 2);
             exit(1);
         }
     }
@@ -729,9 +751,11 @@ static void cfi_flash_realize(DeviceState *dev, Error **errp) {
         flash->otp1_data = g_new(uint16_t, flash->otp1.size / 2);
         memset(flash->otp1_data, 0xFF, flash->otp1.size);
 
-        if (!fill_data_from_hex((uint8_t *) flash->otp1_data, flash->otp1.size, flash->hex_otp1_data)) {
+        uint8_t *otp1_payload = (uint8_t *) flash->otp1_data + flash->otp1.lock_size;
+        uint32_t otp1_payload_size = flash->otp1.size - flash->otp1.lock_size;
+        if (!fill_data_from_hex(otp1_payload, otp1_payload_size, flash->hex_otp1_data)) {
             cfi_flash_error(flash, "Invalid OTP1 hex data: %s [max_size=%u, len=%zu]",
-                flash->hex_otp1_data, flash->otp1.size, strlen(flash->hex_otp1_data) / 2);
+                flash->hex_otp1_data, otp1_payload_size, strlen(flash->hex_otp1_data) / 2);
             exit(1);
         }
     }
@@ -780,7 +804,9 @@ static const Property cfi_flash_properties[] = {
 
     DEFINE_PROP_STRING("name", CFIFlashState, name),
     DEFINE_PROP_UINT16("vid", CFIFlashState, vid, 0),
-    DEFINE_PROP_UINT16("pid", CFIFlashState, pid, 0),
+    DEFINE_PROP_UINT16("pid", CFIFlashState, pid[0], 0),
+    DEFINE_PROP_UINT16("pid2", CFIFlashState, pid[1], 0),
+    DEFINE_PROP_UINT16("pid3", CFIFlashState, pid[2], 0),
     DEFINE_PROP_UINT32("offset", CFIFlashState, offset, 0),
     DEFINE_PROP_STRING("otp0-file", CFIFlashState, otp0_file),
     DEFINE_PROP_STRING("otp1-file", CFIFlashState, otp1_file),

@@ -163,7 +163,7 @@ static uint32_t cfi_intel_query_read(CFIIntelPart *ip, uint32_t offset) {
                 break;
 
             case CFI_INTEL_ID_DEVICE_CODE:
-                value = flash->pid;
+                value = flash->pid[0];
                 DEBUG_LOG(&flash->dbg, "<%d> device id: %04X\n", p->n, value);
                 break;
 
@@ -821,6 +821,7 @@ static bool cfi_intel_decode_otp(CFIFlashState *flash, CFIQueryReader *r) {
         CFIFlashOtp otp = {
             .addr = addr,
             .size = factory_size + (user_groups << user_shift) + CFI_INTEL_OTP_LOCK_SIZE,
+            .lock_size = CFI_INTEL_OTP_LOCK_SIZE,
             .factory_size = factory_size,
         };
         if (i == 0) {
