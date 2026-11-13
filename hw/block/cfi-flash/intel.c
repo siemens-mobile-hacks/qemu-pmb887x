@@ -17,10 +17,10 @@
 #define CFI_INTEL_CONFIGURATION_MASK            0xFFFF
 
 #define CFI_INTEL_PRI_MAGIC                     0x495250
-#define CFI_INTEL_PRI_VERSION_1_3               0x3331
-#define CFI_INTEL_PRI_VERSION_1_4               0x3431
 #define CFI_INTEL_PRI_FEATURES                  0x05
 #define CFI_INTEL_PRI_OTP_FIELDS                0x0E
+#define CFI_INTEL_PRI_ERASE_SUSPEND             BIT(1)
+#define CFI_INTEL_PRI_PROGRAM_SUSPEND           BIT(2)
 #define CFI_INTEL_PRI_PROTECTION_BITS           BIT(6)
 #define CFI_INTEL_PRI_SIMULTANEOUS_OPERATIONS   BIT(9)
 #define CFI_INTEL_PRI_PAGE_MODE_BYTES           1
@@ -29,6 +29,51 @@
 #define CFI_INTEL_PRI_ERASE_REGION_INFO_BYTES   4
 #define CFI_INTEL_PRI_V14_ERASE_REGION_BYTES    6
 #define CFI_INTEL_OTP_LOCK_SIZE                 sizeof(uint16_t)
+
+typedef enum CFIIntelCommand CFIIntelCommand;
+typedef enum CFIIntelIdentifier CFIIntelIdentifier;
+typedef enum CFIIntelPriVersion CFIIntelPriVersion;
+
+enum CFIIntelPriVersion {
+    CFI_INTEL_PRI_VERSION_1_3 = 0x3331,
+    CFI_INTEL_PRI_VERSION_1_4 = 0x3431,
+};
+
+enum CFIIntelCommand {
+    CFI_INTEL_CMD_BLOCK_LOCK_CONFIRM                            = 0x01,
+    CFI_INTEL_CMD_SET_CONFIGURATION_REGISTER_CONFIRM            = 0x03,
+    CFI_INTEL_CMD_SET_ENHANCED_CONFIGURATION_REGISTER_CONFIRM   = 0x04,
+    CFI_INTEL_CMD_WORD_PROGRAM_SETUP_ALTERNATE                  = 0x10,
+    CFI_INTEL_CMD_BLOCK_ERASE_SETUP                             = 0x20,
+    CFI_INTEL_CMD_EFA_BLOCK_ERASE_SETUP                         = 0x24,
+    CFI_INTEL_CMD_BLOCK_LOCK_DOWN_CONFIRM                       = 0x2F,
+    CFI_INTEL_CMD_WORD_PROGRAM_SETUP                            = 0x40,
+    CFI_INTEL_CMD_PROGRAM_SETUP                                 = 0x41,
+    CFI_INTEL_CMD_EFA_PROGRAM_SETUP                             = 0x44,
+    CFI_INTEL_CMD_CLEAR_STATUS_REGISTER                         = 0x50,
+    CFI_INTEL_CMD_BLOCK_LOCK_SETUP                              = 0x60,
+    CFI_INTEL_CMD_EFA_BLOCK_LOCK_SETUP                          = 0x64,
+    CFI_INTEL_CMD_READ_STATUS_REGISTER                          = 0x70,
+    CFI_INTEL_CMD_BUFFERED_ENHANCED_FACTORY_PROGRAM             = 0x80,
+    CFI_INTEL_CMD_READ_DEVICE_IDENTIFIER                        = 0x90,
+    CFI_INTEL_CMD_READ_EFA                                      = 0x94,
+    CFI_INTEL_CMD_CFI_QUERY                                     = 0x98,
+    CFI_INTEL_CMD_PROGRAM_ERASE_SUSPEND                         = 0xB0,
+    CFI_INTEL_CMD_BLANK_CHECK_SETUP                             = 0xBC,
+    CFI_INTEL_CMD_PROTECTION_REGISTER_PROGRAM                   = 0xC0,
+    CFI_INTEL_CMD_CONFIRM                                       = 0xD0,
+    CFI_INTEL_CMD_BUFFERED_PROGRAM                              = 0xE8,
+    CFI_INTEL_CMD_BUFFER_PROGRAM                                = 0xE9,
+    CFI_INTEL_CMD_READ_ARRAY                                    = 0xFF,
+};
+
+enum CFIIntelIdentifier {
+    CFI_INTEL_ID_MANUFACTURER_CODE                  = 0x00,
+    CFI_INTEL_ID_DEVICE_CODE                        = 0x01,
+    CFI_INTEL_ID_BLOCK_LOCK_STATUS                  = 0x02,
+    CFI_INTEL_ID_CONFIGURATION_REGISTER             = 0x05,
+    CFI_INTEL_ID_ENHANCED_CONFIGURATION_REGISTER    = 0x06,
+};
 
 typedef struct CFIIntelBankRegion CFIIntelBankRegion;
 typedef struct CFIIntelBuffer CFIIntelBuffer;
@@ -79,7 +124,7 @@ static void cfi_intel_buffer_clear(CFIIntelPart *ip) {
 
 static void cfi_intel_sequence_error(CFIIntelPart *ip) {
     cfi_intel_buffer_clear(ip);
-    ip->cmd = 0x70;
+    ip->cmd = CFI_INTEL_CMD_READ_STATUS_REGISTER;
     ip->wcycle = 0;
     ip->status |= CFI_INTEL_STATUS_READY | CFI_INTEL_STATUS_SEQUENCE_ERROR;
 }
@@ -112,17 +157,17 @@ static uint32_t cfi_intel_query_read(CFIIntelPart *ip, uint32_t offset) {
         DEBUG_LOG(&flash->dbg, "<%d> OTP1 %02X: %04X\n", p->n, index - flash->otp1.addr, value);
     } else {
         switch (index) {
-            case 0x00:
+            case CFI_INTEL_ID_MANUFACTURER_CODE:
                 value = flash->vid;
                 DEBUG_LOG(&flash->dbg, "<%d> vendor id: %04X\n", p->n, value);
                 break;
 
-            case 0x01:
+            case CFI_INTEL_ID_DEVICE_CODE:
                 value = flash->pid;
                 DEBUG_LOG(&flash->dbg, "<%d> device id: %04X\n", p->n, value);
                 break;
 
-            case 0x02: {
+            case CFI_INTEL_ID_BLOCK_LOCK_STATUS: {
                 CFIFlashBlock *blk = cfi_flash_part_find_block(p, offset);
                 uint32_t efa_offset = offset - p->offset;
                 value = (blk->protected ? CFI_INTEL_LOCK_STATUS_LOCKED : 0) |
@@ -137,12 +182,12 @@ static uint32_t cfi_intel_query_read(CFIIntelPart *ip, uint32_t offset) {
                 break;
             }
 
-            case 0x05:
+            case CFI_INTEL_ID_CONFIGURATION_REGISTER:
                 value = chip_state->rcr;
                 DEBUG_LOG(&flash->dbg, "<%d> configuration register: %04X\n", p->n, value);
                 break;
 
-            case 0x06:
+            case CFI_INTEL_ID_ENHANCED_CONFIGURATION_REGISTER:
                 value = chip_state->ecr;
                 DEBUG_LOG(&flash->dbg, "<%d> enhanced configuration register: %04X\n", p->n, value);
                 break;
@@ -168,13 +213,13 @@ static bool cfi_intel_efa_lock(CFIIntelPart *ip, uint32_t offset, uint64_t value
         cfi_intel_sequence_error(ip);
         return true;
     }
-    if (value == 0x01) {
+    if (value == CFI_INTEL_CMD_BLOCK_LOCK_CONFIRM) {
         DEBUG_LOG(&flash->dbg, "<%d> lock EFA block %08X\n", p->n, flash->offset + offset);
         blk->protected = true;
-    } else if (value == 0xD0) {
+    } else if (value == CFI_INTEL_CMD_CONFIRM) {
         DEBUG_LOG(&flash->dbg, "<%d> unlock EFA block %08X\n", p->n, flash->offset + offset);
         blk->protected = false;
-    } else if (value == 0x2F) {
+    } else if (value == CFI_INTEL_CMD_BLOCK_LOCK_DOWN_CONFIRM) {
         DEBUG_LOG(&flash->dbg, "<%d> lock-down EFA block %08X\n", p->n, flash->offset + offset);
         blk->protected = true;
         chip_state->efa_locked_down[blk - flash->efa_blocks] = true;
@@ -263,19 +308,19 @@ static bool cfi_intel_lock_command(CFIIntelPart *ip, uint32_t offset, uint64_t v
     CFIFlashState *flash = p->flash;
     CFIIntelState *chip_state = flash->cmdset_state;
 
-    if (value == 0xFF) {
+    if (value == CFI_INTEL_CMD_READ_ARRAY) {
         cfi_intel_reset_part(ip);
         return true;
     }
 
     uint16_t configuration = (offset >> 1) & CFI_INTEL_CONFIGURATION_MASK;
-    if (value == 0x03) {
+    if (value == CFI_INTEL_CMD_SET_CONFIGURATION_REGISTER_CONFIRM) {
         chip_state->rcr = configuration;
         DEBUG_LOG(&flash->dbg, "<%d> program read configuration register: %04X\n", p->n, chip_state->rcr);
         cfi_intel_reset_part(ip);
         return true;
     }
-    if (value == 0x04) {
+    if (value == CFI_INTEL_CMD_SET_ENHANCED_CONFIGURATION_REGISTER_CONFIRM) {
         bool has_ecr = flash->algorithm == P_ID_INTEL_PERFORMANCE;
         if (has_ecr)
             chip_state->ecr = configuration;
@@ -284,17 +329,22 @@ static bool cfi_intel_lock_command(CFIIntelPart *ip, uint32_t offset, uint64_t v
         cfi_intel_reset_part(ip);
         return true;
     }
-    if (value != 0x01 && value != 0xD0 && value != 0x2F)
+    bool block_lock_confirm = (
+        value == CFI_INTEL_CMD_BLOCK_LOCK_CONFIRM ||
+        value == CFI_INTEL_CMD_CONFIRM ||
+        value == CFI_INTEL_CMD_BLOCK_LOCK_DOWN_CONFIRM
+    );
+    if (!block_lock_confirm)
         return false;
 
     CFIFlashBlock *blk = cfi_flash_part_find_block(p, offset);
-    if (value == 0x01) {
+    if (value == CFI_INTEL_CMD_BLOCK_LOCK_CONFIRM) {
         DEBUG_LOG(&flash->dbg, "<%d> lock block %08X\n", p->n, flash->offset + offset);
         blk->protected = true;
-    } else if (value == 0xD0) {
+    } else if (value == CFI_INTEL_CMD_CONFIRM) {
         DEBUG_LOG(&flash->dbg, "<%d> unlock block %08X\n", p->n, flash->offset + offset);
         blk->protected = false;
-    } else if (value == 0x2F) {
+    } else if (value == CFI_INTEL_CMD_BLOCK_LOCK_DOWN_CONFIRM) {
         DEBUG_LOG(&flash->dbg, "<%d> lock-down block %08X\n", p->n, flash->offset + offset);
         blk->protected = true;
         ip->locked_down[blk - p->blocks] = true;
@@ -318,7 +368,7 @@ static void cfi_intel_blank_check(CFIIntelPart *ip, uint32_t offset) {
     if (!blank)
         ip->status |= CFI_INTEL_STATUS_BLOCK_ERASE_ERROR;
     ip->status |= CFI_INTEL_STATUS_READY;
-    ip->cmd = 0x70;
+    ip->cmd = CFI_INTEL_CMD_READ_STATUS_REGISTER;
     ip->wcycle = 0;
 }
 
@@ -434,7 +484,7 @@ static uint64_t cfi_intel_read(CFIFlashPart *p, uint32_t offset, uint32_t size) 
     uint32_t value = 0;
 
     switch (ip->cmd) {
-        case 0x94:
+        case CFI_INTEL_CMD_READ_EFA:
             if (cfi_flash_efa_read(p->flash, offset - p->offset, size, &value) != CFI_FLASH_OK) {
                 DEBUG_GUEST_ERROR(&p->flash->dbg, "<%d> EFA read outside EFA: %08X\n", p->n,
                     p->flash->offset + offset);
@@ -442,25 +492,24 @@ static uint64_t cfi_intel_read(CFIFlashPart *p, uint32_t offset, uint32_t size) 
             }
             break;
 
-        case 0x90:
-        case 0x98:
+        case CFI_INTEL_CMD_READ_DEVICE_IDENTIFIER:
+        case CFI_INTEL_CMD_CFI_QUERY:
             value = cfi_intel_query_read(ip, offset);
             break;
 
-        case 0x20:  // Erase
-        case 0x24:  // EFA erase
-        case 0x44:  // EFA program word
-        case 0x60:  // Lock or configuration
-        case 0x64:  // EFA lock
-        case 0x70:  // Status
-        case 0xC0:  // Protection register program
-        case 0xE8:  // buffered program
-        case 0xE9:  // buffered program
-        case 0x41:  // program word
-        case 0x40:  // program word
-        case 0x10:  // program word
+        case CFI_INTEL_CMD_BLOCK_ERASE_SETUP:
+        case CFI_INTEL_CMD_EFA_BLOCK_ERASE_SETUP:
+        case CFI_INTEL_CMD_EFA_PROGRAM_SETUP:
+        case CFI_INTEL_CMD_BLOCK_LOCK_SETUP:
+        case CFI_INTEL_CMD_EFA_BLOCK_LOCK_SETUP:
+        case CFI_INTEL_CMD_READ_STATUS_REGISTER:
+        case CFI_INTEL_CMD_PROTECTION_REGISTER_PROGRAM:
+        case CFI_INTEL_CMD_BUFFERED_PROGRAM:
+        case CFI_INTEL_CMD_BUFFER_PROGRAM:
+        case CFI_INTEL_CMD_PROGRAM_SETUP:
+        case CFI_INTEL_CMD_WORD_PROGRAM_SETUP:
+        case CFI_INTEL_CMD_WORD_PROGRAM_SETUP_ALTERNATE:
             value = ip->status;
-            // DEBUG_LOG(&p->flash->dbg, "<%d> %08"PRIX64": status 0x%02X\n", p->n, offset, value);
             break;
 
         default:
@@ -472,128 +521,155 @@ static uint64_t cfi_intel_read(CFIFlashPart *p, uint32_t offset, uint32_t size) 
     return value;
 }
 
+static bool cfi_intel_command_is_declared(const CFIFlashState *flash, uint64_t command) {
+    bool performance = flash->algorithm == P_ID_INTEL_PERFORMANCE;
+
+    switch (command) {
+        case CFI_INTEL_CMD_READ_ARRAY:
+        case CFI_INTEL_CMD_READ_STATUS_REGISTER:
+        case CFI_INTEL_CMD_CLEAR_STATUS_REGISTER:
+        case CFI_INTEL_CMD_READ_DEVICE_IDENTIFIER:
+        case CFI_INTEL_CMD_CFI_QUERY:
+        case CFI_INTEL_CMD_BLOCK_ERASE_SETUP:
+        case CFI_INTEL_CMD_BLOCK_LOCK_SETUP:
+        case CFI_INTEL_CMD_BUFFERED_ENHANCED_FACTORY_PROGRAM:
+            return true;
+
+        case CFI_INTEL_CMD_WORD_PROGRAM_SETUP:
+        case CFI_INTEL_CMD_WORD_PROGRAM_SETUP_ALTERNATE:
+        case CFI_INTEL_CMD_BUFFERED_PROGRAM:
+            return !performance;
+
+        case CFI_INTEL_CMD_PROGRAM_SETUP:
+        case CFI_INTEL_CMD_BUFFER_PROGRAM:
+        case CFI_INTEL_CMD_BLANK_CHECK_SETUP:
+            return performance;
+
+        case CFI_INTEL_CMD_PROGRAM_ERASE_SUSPEND:
+        case CFI_INTEL_CMD_CONFIRM:
+            return (flash->pri_features & (CFI_INTEL_PRI_ERASE_SUSPEND | CFI_INTEL_PRI_PROGRAM_SUSPEND)) != 0;
+
+        case CFI_INTEL_CMD_PROTECTION_REGISTER_PROGRAM:
+            return (flash->pri_features & CFI_INTEL_PRI_PROTECTION_BITS) != 0;
+
+        case CFI_INTEL_CMD_READ_EFA:
+        case CFI_INTEL_CMD_EFA_PROGRAM_SETUP:
+        case CFI_INTEL_CMD_EFA_BLOCK_ERASE_SETUP:
+        case CFI_INTEL_CMD_EFA_BLOCK_LOCK_SETUP:
+            return flash->efa_erase_regions_n != 0;
+
+        default:
+            return false;
+    }
+}
+
 static void cfi_intel_write(CFIFlashPart *p, uint32_t offset, uint64_t value, uint32_t size) {
     CFIIntelPart *ip = container_of(p, CFIIntelPart, parent);
     bool valid_command = false;
 
     if (ip->wcycle == 0) {
+        if (!cfi_intel_command_is_declared(p->flash, value)) {
+            DEBUG_LOG(&p->flash->dbg, "<%d> command %02"PRIX64" is not declared by CFI, ignored\n", p->n, value);
+            return;
+        }
         valid_command = true;
         ip->cmd_addr = offset;
 
         switch (value) {
-            case 0xFF:
+            case CFI_INTEL_CMD_READ_ARRAY:
                 cfi_intel_reset_part(ip);
                 break;
 
-            case 0x00:
-            case 0xAA:
-            case 0x55:
-            case 0xF0:
-                DEBUG_LOG(&p->flash->dbg, "<%d> undefined command %02"PRIX64" ignored\n", p->n, value);
-                break;
-
-            case 0x70:
+            case CFI_INTEL_CMD_READ_STATUS_REGISTER:
                 DEBUG_LOG(&p->flash->dbg, "<%d> cmd read status (%02"PRIX64")\n", p->n, value);
                 ip->cmd = value;
                 break;
 
-            case 0x90:
+            case CFI_INTEL_CMD_READ_DEVICE_IDENTIFIER:
                 DEBUG_LOG(&p->flash->dbg, "<%d> cmd read devid (%02"PRIX64")\n", p->n, value);
                 ip->cmd = value;
                 break;
 
-            case 0x94:
+            case CFI_INTEL_CMD_READ_EFA:
                 DEBUG_LOG(&p->flash->dbg, "<%d> cmd read EFA (%02"PRIX64")\n", p->n, value);
                 ip->cmd = value;
                 break;
 
-            case 0x98:
+            case CFI_INTEL_CMD_CFI_QUERY:
                 DEBUG_LOG(&p->flash->dbg, "<%d> cmd read cfi (%02"PRIX64")\n", p->n, value);
                 ip->cmd = value;
                 break;
 
-            case 0x50:
+            case CFI_INTEL_CMD_CLEAR_STATUS_REGISTER:
                 DEBUG_LOG(&p->flash->dbg, "<%d> cmd clear status (%02"PRIX64")\n", p->n, value);
                 ip->status &= ~CFI_INTEL_STATUS_ERRORS;
                 break;
 
-            case 0x10:
-                if (p->flash->algorithm == P_ID_INTEL_PERFORMANCE) {
-                    DEBUG_LOG(&p->flash->dbg, "<%d> command %02"PRIX64" is not in command set 0200, ignored\n",
-                        p->n, value);
-                    break;
-                }
-                QEMU_FALLTHROUGH;
-            case 0x41:
-            case 0x40:
+            case CFI_INTEL_CMD_WORD_PROGRAM_SETUP_ALTERNATE:
+            case CFI_INTEL_CMD_PROGRAM_SETUP:
+            case CFI_INTEL_CMD_WORD_PROGRAM_SETUP:
                 DEBUG_LOG(&p->flash->dbg, "<%d> cmd program word (%02"PRIX64")\n", p->n, value);
                 ip->cmd = value;
                 ip->wcycle++;
                 break;
 
-            case 0x44:
+            case CFI_INTEL_CMD_EFA_PROGRAM_SETUP:
                 DEBUG_LOG(&p->flash->dbg, "<%d> cmd program EFA word (%02"PRIX64")\n", p->n, value);
                 ip->cmd = value;
                 ip->wcycle++;
                 break;
 
-            case 0xE8:
-                if (p->flash->algorithm == P_ID_INTEL_PERFORMANCE) {
-                    DEBUG_LOG(&p->flash->dbg, "<%d> command %02"PRIX64" is not in command set 0200, ignored\n",
-                        p->n, value);
-                    break;
-                }
-                QEMU_FALLTHROUGH;
-            case 0xE9:
+            case CFI_INTEL_CMD_BUFFERED_PROGRAM:
+            case CFI_INTEL_CMD_BUFFER_PROGRAM:
                 DEBUG_LOG(&p->flash->dbg, "<%d> cmd buffered program (%02"PRIX64")\n", p->n, value);
                 ip->cmd = value;
                 ip->wcycle++;
                 ip->status |= CFI_INTEL_STATUS_READY;
                 break;
 
-            case 0x80:
+            case CFI_INTEL_CMD_BUFFERED_ENHANCED_FACTORY_PROGRAM:
                 DEBUG_LOG(&p->flash->dbg, "<%d> cmd buffered EFP (%02"PRIX64")\n", p->n, value);
                 ip->cmd = value;
                 ip->wcycle++;
                 break;
 
-            case 0x20:
+            case CFI_INTEL_CMD_BLOCK_ERASE_SETUP:
                 DEBUG_LOG(&p->flash->dbg, "<%d> cmd block erase (%02"PRIX64")\n", p->n, value);
                 ip->cmd = value;
                 ip->wcycle++;
                 ip->status |= CFI_INTEL_STATUS_READY;
                 break;
 
-            case 0x24:
+            case CFI_INTEL_CMD_EFA_BLOCK_ERASE_SETUP:
                 DEBUG_LOG(&p->flash->dbg, "<%d> cmd EFA block erase (%02"PRIX64")\n", p->n, value);
                 ip->cmd = value;
                 ip->wcycle++;
                 ip->status |= CFI_INTEL_STATUS_READY;
                 break;
 
-            case 0xBC:
+            case CFI_INTEL_CMD_BLANK_CHECK_SETUP:
                 DEBUG_LOG(&p->flash->dbg, "<%d> cmd blank check (%02"PRIX64")\n", p->n, value);
                 ip->cmd = value;
                 ip->wcycle++;
                 break;
 
-            case 0xB0:
+            case CFI_INTEL_CMD_PROGRAM_ERASE_SUSPEND:
                 DEBUG_LOG(&p->flash->dbg, "<%d> cmd suspend (%02"PRIX64")\n", p->n, value);
                 break;
 
-            case 0x60:
+            case CFI_INTEL_CMD_BLOCK_LOCK_SETUP:
                 DEBUG_LOG(&p->flash->dbg, "<%d> cmd block lock or read configuration (%02"PRIX64")\n", p->n, value);
                 ip->cmd = value;
                 ip->wcycle++;
                 break;
 
-            case 0x64:
+            case CFI_INTEL_CMD_EFA_BLOCK_LOCK_SETUP:
                 DEBUG_LOG(&p->flash->dbg, "<%d> cmd EFA block lock (%02"PRIX64")\n", p->n, value);
                 ip->cmd = value;
                 ip->wcycle++;
                 break;
 
-            case 0xC0:
+            case CFI_INTEL_CMD_PROTECTION_REGISTER_PROGRAM:
                 DEBUG_LOG(&p->flash->dbg, "<%d> cmd protection program (%02"PRIX64")\n", p->n, value);
                 ip->cmd = value;
                 ip->wcycle++;
@@ -607,32 +683,32 @@ static void cfi_intel_write(CFIFlashPart *p, uint32_t offset, uint64_t value, ui
         }
     } else if (ip->wcycle == 1) {
         switch (ip->cmd) {
-            case 0x70:  // read status
-            case 0x90:  // read devid
-            case 0x98:  // read cfi
-                if (value == 0xFF) {
+            case CFI_INTEL_CMD_READ_STATUS_REGISTER:
+            case CFI_INTEL_CMD_READ_DEVICE_IDENTIFIER:
+            case CFI_INTEL_CMD_CFI_QUERY:
+                if (value == CFI_INTEL_CMD_READ_ARRAY) {
                     valid_command = true;
                     cfi_intel_reset_part(ip);
                 }
                 break;
 
-            case 0x60:  // lock or configuration
+            case CFI_INTEL_CMD_BLOCK_LOCK_SETUP:
                 valid_command = cfi_intel_lock_command(ip, offset, value);
                 break;
 
-            case 0x64:
+            case CFI_INTEL_CMD_EFA_BLOCK_LOCK_SETUP:
                 valid_command = cfi_intel_efa_lock(ip, offset, value);
                 break;
 
-            case 0xBC:
-                if (value == 0xD0) {
+            case CFI_INTEL_CMD_BLANK_CHECK_SETUP:
+                if (value == CFI_INTEL_CMD_CONFIRM) {
                     cfi_intel_blank_check(ip, offset);
                     valid_command = true;
                 }
                 break;
 
-            case 0x20:  // erase
-                if (value == 0xD0) {
+            case CFI_INTEL_CMD_BLOCK_ERASE_SETUP:
+                if (value == CFI_INTEL_CMD_CONFIRM) {
                     cfi_intel_block_erase(ip, offset);
                     valid_command = true;
                     ip->wcycle = 0;
@@ -640,8 +716,8 @@ static void cfi_intel_write(CFIFlashPart *p, uint32_t offset, uint64_t value, ui
                 }
                 break;
 
-            case 0x24: // EFA erase
-                if (value == 0xD0) {
+            case CFI_INTEL_CMD_EFA_BLOCK_ERASE_SETUP:
+                if (value == CFI_INTEL_CMD_CONFIRM) {
                     cfi_intel_efa_erase(ip, offset);
                     valid_command = true;
                     ip->wcycle = 0;
@@ -649,8 +725,8 @@ static void cfi_intel_write(CFIFlashPart *p, uint32_t offset, uint64_t value, ui
                 }
                 break;
 
-            case 0xE9:  // buffered program
-            case 0xE8:  // buffered program
+            case CFI_INTEL_CMD_BUFFER_PROGRAM:
+            case CFI_INTEL_CMD_BUFFERED_PROGRAM:
                 valid_command = true;
                 if (!cfi_intel_buffer_address_in_block(ip, offset, size)) {
                     cfi_intel_buffer_abort(ip, offset);
@@ -664,23 +740,23 @@ static void cfi_intel_write(CFIFlashPart *p, uint32_t offset, uint64_t value, ui
                 }
                 break;
 
-            case 0x10:  // program word
-            case 0x40:  // program word
-            case 0x41:  // program word
+            case CFI_INTEL_CMD_WORD_PROGRAM_SETUP_ALTERNATE:
+            case CFI_INTEL_CMD_WORD_PROGRAM_SETUP:
+            case CFI_INTEL_CMD_PROGRAM_SETUP:
                 valid_command = true;
                 cfi_intel_word_program(ip, offset, value, size);
                 ip->wcycle = 0;
                 ip->status |= CFI_INTEL_STATUS_READY;
                 break;
 
-            case 0x44: // EFA program word
+            case CFI_INTEL_CMD_EFA_PROGRAM_SETUP:
                 valid_command = true;
                 cfi_intel_efa_program(ip, offset, value, size);
                 ip->wcycle = 0;
                 ip->status |= CFI_INTEL_STATUS_READY;
                 break;
 
-            case 0xC0: // Protection register program
+            case CFI_INTEL_CMD_PROTECTION_REGISTER_PROGRAM:
                 cfi_intel_otp_program(ip, offset, value, size);
                 valid_command = true;
                 ip->wcycle = 0;
@@ -689,18 +765,18 @@ static void cfi_intel_write(CFIFlashPart *p, uint32_t offset, uint64_t value, ui
         }
     } else if (ip->wcycle == 2) {
         switch (ip->cmd) {
-            case 0xE9:  // buffered program
-            case 0xE8:  // buffered program
+            case CFI_INTEL_CMD_BUFFER_PROGRAM:
+            case CFI_INTEL_CMD_BUFFERED_PROGRAM:
                 valid_command = true;
                 cfi_intel_buffer_add(ip, offset, value, size);
                 break;
         }
     } else if (ip->wcycle == 3) {
         switch (ip->cmd) {
-            case 0xE9:  // buffered program
-            case 0xE8:  // buffered program
+            case CFI_INTEL_CMD_BUFFER_PROGRAM:
+            case CFI_INTEL_CMD_BUFFERED_PROGRAM:
                 valid_command = true;
-                if (value != 0xD0 || !cfi_intel_buffer_address_in_block(ip, offset, size)) {
+                if (value != CFI_INTEL_CMD_CONFIRM || !cfi_intel_buffer_address_in_block(ip, offset, size)) {
                     cfi_intel_buffer_abort(ip, offset);
                 } else {
                     cfi_intel_buffer_commit(ip);
@@ -845,6 +921,7 @@ static bool cfi_intel_decode_pri(CFIFlashState *flash) {
 
     r.pos = CFI_INTEL_PRI_FEATURES;
     uint32_t features = cfi_query_read_le(&r, 4);
+    flash->pri_features = features;
     r.pos = CFI_INTEL_PRI_OTP_FIELDS;
     if ((features & CFI_INTEL_PRI_PROTECTION_BITS) && !cfi_intel_decode_otp(flash, &r))
         return false;

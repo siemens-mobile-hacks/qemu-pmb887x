@@ -12,12 +12,9 @@
 #define CFI_INDEX_MASK 0xFFF
 #define CFI_ERASE_SECTOR_UNIT 256
 
-#define P_ID_INTEL_EXT          0x0001
-#define P_ID_INTEL_STD          0x0003
-#define P_ID_INTEL_PERFORMANCE  0x0200
-
 OBJECT_DECLARE_SIMPLE_TYPE(CFIFlashState, CFI_FLASH)
 
+typedef enum CFICommandSet CFICommandSet;
 typedef struct CFIFlashEraseRegion CFIFlashEraseRegion;
 typedef struct CFIFlashChipPart CFIFlashChipPart;
 typedef struct CFIFlashOtp CFIFlashOtp;
@@ -27,6 +24,12 @@ typedef struct CFIFlashBlock CFIFlashBlock;
 typedef struct CFIFlashDirtyRange CFIFlashDirtyRange;
 typedef struct CFIFlashCommandSet CFIFlashCommandSet;
 typedef enum CFIFlashResult CFIFlashResult;
+
+enum CFICommandSet {
+    P_ID_INTEL_EXT          = 0x0001,
+    P_ID_INTEL_STD          = 0x0003,
+    P_ID_INTEL_PERFORMANCE  = 0x0200,
+};
 
 enum CFIFlashResult {
     CFI_FLASH_OK,
@@ -138,6 +141,7 @@ struct CFIFlashState {
     uint32_t size;
     uint16_t algorithm;
     uint16_t pri_addr;
+    uint32_t pri_features;
     uint32_t cfi_erase_regions_n;
     CFIFlashEraseRegion *cfi_erase_regions;
     uint32_t chip_parts_n;
