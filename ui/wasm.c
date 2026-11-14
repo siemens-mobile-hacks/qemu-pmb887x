@@ -212,16 +212,20 @@ int32_t wasm_clock_banked(void)
 /* Key input: SPSC ring filled from the JS main thread, drained by BH  */
 /* ------------------------------------------------------------------ */
 
-#define KEY_RING_SIZE 64        /* power of two */
+#define KEY_RING_SIZE 256       /* power of two */
 
 static struct {
     uint32_t lnx;
     uint8_t down;
+    int64_t after;      /* ns of guest time after the edge before, or -1 */
 } key_ring[KEY_RING_SIZE];
 static unsigned int key_ring_head;   /* consumer (main loop) */
 static unsigned int key_ring_tail;   /* producer (JS thread) */
 
 static QEMUBH *key_bh;
+static QEMUTimer *key_timer;
+/* guest time the last edge was handed to the guest */
+static int64_t key_last_at;
 /*
  * Release-published once @key_bh exists.  A separate flag rather than an
  * atomic read of @key_bh itself: QEMUBH is opaque here, and qatomic's
@@ -237,19 +241,41 @@ static int key_bh_ready;
  * which Asyncify cannot do on the JS main thread.)
  */
 
-static void wasm_key_bh(void *opaque)
+/*
+ * An edge with a spacing waits on a QEMU_CLOCK_VIRTUAL timer until that
+ * much guest time has passed since the edge before it.  The page types a
+ * letter as taps a few tens of ms apart, and how fast the phone runs
+ * against the page's clock varies with the host: timing them on the page
+ * and handing them over as they come would let a late hand-over shorten a
+ * hold or a gap the firmware then misses.  An edge that arrives late still
+ * goes out at once; the ones after it keep their spacing from it.
+ */
+static void wasm_key_pump(void *opaque)
 {
     while (qatomic_load_acquire(&key_ring_tail) != key_ring_head) {
         unsigned int i = key_ring_head & (KEY_RING_SIZE - 1);
+        int64_t now = qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL);
+
+        if (key_ring[i].after >= 0 && key_last_at + key_ring[i].after > now) {
+            timer_mod(key_timer, key_last_at + key_ring[i].after);
+            return;
+        }
         qemu_input_event_send_key_linux(NULL, key_ring[i].lnx,
                                         key_ring[i].down);
-        key_ring_head++;
+        qatomic_set(&key_last_at, now);
+        qatomic_store_release(&key_ring_head, key_ring_head + 1);
     }
 }
 
-/* Exported to JS: enqueue a key event (linux keycode). */
-EMSCRIPTEN_KEEPALIVE
-void wasm_send_key(uint32_t lnx, int32_t down)
+static void wasm_key_bh(void *opaque)
+{
+    /* an edge waiting on the timer keeps the ones behind it */
+    if (!timer_pending(key_timer)) {
+        wasm_key_pump(NULL);
+    }
+}
+
+static void wasm_key_push(uint32_t lnx, int32_t down, int64_t after)
 {
     unsigned int tail, head;
     /*
@@ -278,11 +304,45 @@ void wasm_send_key(uint32_t lnx, int32_t down)
     }
     key_ring[tail & (KEY_RING_SIZE - 1)].lnx = lnx;
     key_ring[tail & (KEY_RING_SIZE - 1)].down = !!down;
+    key_ring[tail & (KEY_RING_SIZE - 1)].after = after;
     /* release: publish the slot stores before the tail, so the consumer
      * can never observe the new tail with stale slot contents */
     qatomic_store_release(&key_ring_tail, tail + 1);
 
     qemu_bh_schedule(key_bh);
+}
+
+/* Exported to JS: enqueue a key event (linux keycode), for the guest now. */
+EMSCRIPTEN_KEEPALIVE
+void wasm_send_key(uint32_t lnx, int32_t down)
+{
+    wasm_key_push(lnx, down, -1);
+}
+
+/*
+ * Exported to JS: enqueue a key event for when @after_us of guest time
+ * has passed since the edge queued before it went to the guest (see
+ * wasm_key_pump).
+ */
+EMSCRIPTEN_KEEPALIVE
+void wasm_send_key_after(uint32_t lnx, int32_t down, uint32_t after_us)
+{
+    wasm_key_push(lnx, down, (int64_t)after_us * 1000);
+}
+
+/* Exported to JS: edges queued and not yet handed to the guest. */
+EMSCRIPTEN_KEEPALIVE
+uint32_t wasm_keys_queued(void)
+{
+    return qatomic_load_acquire(&key_ring_tail) -
+           qatomic_load_acquire(&key_ring_head);
+}
+
+/* Exported to JS: the guest time (ns) the last edge was handed over. */
+EMSCRIPTEN_KEEPALIVE
+int64_t wasm_key_last_at(void)
+{
+    return qatomic_read(&key_last_at);
 }
 
 /* ------------------------------------------------------------------ */
@@ -575,6 +635,7 @@ static void wasm_display_init(DisplayState *ds, DisplayOptions *opts)
     QemuConsole *con;
 
     key_bh = qemu_bh_new(wasm_key_bh, NULL);
+    key_timer = timer_new_ns(QEMU_CLOCK_VIRTUAL, wasm_key_pump, NULL);
     /* release: pairs with the acquire in wasm_send_key() */
     qatomic_store_release(&key_bh_ready, 1);
 
