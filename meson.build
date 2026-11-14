@@ -4398,6 +4398,10 @@ foreach target : target_dirs
     c_args += ['-DCONFIG_DEVICES="@0@-config-devices.h"'.format(target)]
     arch_srcs += config_devices_h[target]
     link_args += enable_modules ? ['@block.syms', '@qemu.syms'] : []
+    if host_os == 'emscripten'
+      # system/runstate.c: exit() with the BQL held runs the exit notifiers
+      link_args += ['-Wl,--wrap=exit']
+    endif
   else
     abi = config_target['TARGET_ABI_DIR']
     target_type='user'

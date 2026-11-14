@@ -987,11 +987,45 @@ static Notifier cpu_exit_log_notifier = {
     .notify = cpu_exit_log,
 };
 
+#ifdef __EMSCRIPTEN__
+static bool exit_notifiers_ran;
+#endif
+
 static void qemu_run_exit_notifiers(void)
 {
+#ifdef __EMSCRIPTEN__
+    if (qatomic_xchg(&exit_notifiers_ran, true)) {
+        return;
+    }
+#endif
     BQL_LOCK_GUARD();
     notifier_list_notify(&exit_notifiers, NULL);
 }
+
+#ifdef __EMSCRIPTEN__
+/*
+ * emscripten hands an exit() on a pthread over to the browser main thread
+ * and runs the atexit() handlers there.  A thread that exits while holding
+ * the BQL - any start-up error in qemu_init(), error_fatal, the wasm
+ * display's "no console found" - never releases it, so the main thread
+ * would spin in qemu_run_exit_notifiers() forever and freeze the page.
+ * Such a thread runs the notifiers itself, as exit() does on a native host,
+ * where BQL_LOCK_GUARD() finds the lock already held.  An exit without the
+ * BQL, the normal one from qemu_default_main(), still runs them from the
+ * atexit() handler.  The emulator is linked with -Wl,--wrap=exit
+ * (meson.build).
+ */
+G_NORETURN void __real_exit(int status);
+G_NORETURN void __wrap_exit(int status);
+
+void __wrap_exit(int status)
+{
+    if (bql_locked()) {
+        qemu_run_exit_notifiers();
+    }
+    __real_exit(status);
+}
+#endif
 
 void qemu_init_subsystems(void)
 {
