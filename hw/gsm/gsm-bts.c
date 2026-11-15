@@ -692,6 +692,7 @@ static void gsm_bts_handle_mm(GSMBtsLapdm *lapdm, const uint8_t *message) {
             gsm_bts_encode_lai(&accept[GSM48_L3_HEADER_BYTES]);
             gsm_bts_lapdm_enqueue(lapdm, accept, sizeof(accept));
             gsm_bts_release_channel(lapdm);
+            container_of(lapdm, GSMBts, lapdm)->ms_state |= GSM_BTS_MS_REGISTERED; /* WASM PORT (removable) */
             break;
         }
         case GSM48_MT_MM_CM_SERVICE_REQUEST: {
@@ -704,6 +705,7 @@ static void gsm_bts_handle_mm(GSMBtsLapdm *lapdm, const uint8_t *message) {
             break;
         }
         case GSM48_MT_MM_IMSI_DETACH_INDICATION:
+            container_of(lapdm, GSMBts, lapdm)->ms_state &= ~GSM_BTS_MS_REGISTERED; /* WASM PORT (removable) */
             gsm_bts_release_channel(lapdm);
             break;
     }
@@ -1245,6 +1247,7 @@ static void gsm_bts_instance_init(Object *obj) {
     bts->gsmtap_fd = -1;
     bts->arfcn = GSM_BTS_DEFAULT_ARFCN;
     object_property_add_uint16_ptr(obj, "arfcn", &bts->arfcn, OBJ_PROP_FLAG_READWRITE);
+    object_property_add_uint8_ptr(obj, "ms-state", &bts->ms_state, OBJ_PROP_FLAG_READ); /* WASM PORT (removable) */
 }
 
 static void gsm_bts_instance_finalize(Object *obj) {

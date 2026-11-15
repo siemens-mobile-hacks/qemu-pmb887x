@@ -485,6 +485,7 @@ static void gmm_handle(GSMBts *bts, const uint8_t *message, size_t length) {
     switch (message[GSM48_MESSAGE_TYPE_OFFSET]) {
         case GMM_ATTACH_REQUEST:
             bts->gprs->pdp_active = false;
+            bts->ms_state = (bts->ms_state & GSM_BTS_MS_REGISTERED) | GSM_BTS_MS_GPRS_ATTACHED; /* WASM PORT (removable) */
             reply[position++] = GMM_ATTACH_ACCEPT;
             reply[position++] = GMM_ATTACH_RESULT_GPRS;
             reply[position++] = GMM_TIMER_DEACTIVATED;
@@ -497,6 +498,7 @@ static void gmm_handle(GSMBts *bts, const uint8_t *message, size_t length) {
             break;
         case GMM_DETACH_REQUEST:
             bts->gprs->pdp_active = false;
+            bts->ms_state &= GSM_BTS_MS_REGISTERED; /* WASM PORT (removable) */
             if (length <= GMM_DETACH_TYPE_OFFSET)
                 return;
             if (message[GMM_DETACH_TYPE_OFFSET] & GMM_DETACH_POWER_OFF)
@@ -594,6 +596,7 @@ static void sm_handle_activate(GSMBts *bts, const uint8_t *message, size_t lengt
     gprs->nsapi = message[SM_REQUEST_NSAPI_OFFSET] & SNDCP_NSAPI_MASK;
     gprs->data_sapi = message[SM_REQUEST_LLC_SAPI_OFFSET] & LLC_SAPI_MASK;
     gprs->pdp_active = true;
+    bts->ms_state |= GSM_BTS_MS_PDP_ACTIVE; /* WASM PORT (removable) */
     gprs->npdu = 0;
     gprs->sndcp_length = 0;
 
@@ -627,6 +630,7 @@ static void sm_handle(GSMBts *bts, const uint8_t *message, size_t length) {
             uint8_t accept[] = { message[0] ^ GSM48_TI_FLAG, SM_DEACTIVATE_PDP_ACCEPT };
 
             bts->gprs->pdp_active = false;
+            bts->ms_state &= ~GSM_BTS_MS_PDP_ACTIVE; /* WASM PORT (removable) */
             llc_send_ui(bts, LLC_SAPI_GMM, accept, sizeof(accept));
             break;
         }

@@ -23,6 +23,10 @@ OBJECT_DECLARE_SIMPLE_TYPE(GSMBts, GSM_BTS)
 #define GSM48_MESSAGE_TYPE_OFFSET 1
 #define CSN_ABSENT 0
 #define CSN_PRESENT 1
+/* WASM PORT (removable): the bits of GSMBts.ms_state, property "ms-state" */
+#define GSM_BTS_MS_REGISTERED 0x01
+#define GSM_BTS_MS_GPRS_ATTACHED 0x02
+#define GSM_BTS_MS_PDP_ACTIVE 0x04
 
 #define GSMTAP_CHANNEL_BCCH 0x01
 #define GSMTAP_CHANNEL_CCCH 0x02
@@ -117,6 +121,7 @@ struct GSMBts {
     size_t ccch_count;
     GSMBtsLapdm lapdm;
     bool sacch_si6;
+    uint8_t ms_state;   /* WASM PORT (removable) */
 
     GSMBtsGprs *gprs;
 };

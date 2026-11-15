@@ -532,6 +532,43 @@ int32_t wasm_net_put(int32_t len)
     return 1;
 }
 
+/*
+ * WASM PORT (removable): the phone as the GSM cell sees it, for the page's
+ * indicator: the gsm-bts object's read-only "ms-state" (GSM_BTS_MS_* in
+ * hw/gsm/gsm-bts.h: 1 registered, 2 GPRS attached, 4 PDP context active).
+ * The object is read under the BQL in a bottom half; the export returns
+ * what the last one read and asks for the next, so a page polling it once
+ * a second sees a change within two polls.
+ */
+static int gsm_state;
+static int gsm_bh_pending;
+
+static void wasm_gsm_state_bh(void *opaque)
+{
+    static Object *bts;
+
+    if (!bts) {
+        bts = object_resolve_path_type("", "gsm-bts", NULL);
+    }
+    if (bts) {
+        qatomic_set(&gsm_state,
+                    object_property_get_uint(bts, "ms-state", NULL));
+    }
+    qatomic_store_release(&gsm_bh_pending, 0);
+}
+
+/* Exported to JS: GSM_BTS_MS_* bits; 0 before the machine or with no cell. */
+EMSCRIPTEN_KEEPALIVE
+int32_t wasm_gsm_state(void)
+{
+    if (qatomic_load_acquire(&key_bh_ready) &&
+        !qatomic_xchg(&gsm_bh_pending, 1)) {
+        aio_bh_schedule_oneshot(qemu_get_aio_context(), wasm_gsm_state_bh,
+                                NULL);
+    }
+    return qatomic_read(&gsm_state);
+}
+
 /* ------------------------------------------------------------------ */
 /* DisplayChangeListener                                               */
 /* ------------------------------------------------------------------ */
