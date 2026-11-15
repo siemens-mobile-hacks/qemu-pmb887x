@@ -81,20 +81,20 @@ struct pmb887x_usb_t {
 	uint8_t event_enable;
 	uint8_t dma0_enable;
 	uint8_t dma1_enable;
-	uint8_t ep_a_status_low;
-	uint8_t ep_a_status_high;
-	uint8_t ep_a_enable_low;
-	uint8_t ep_a_enable_high;
-	uint8_t ep_b_status_low;
-	uint8_t ep_b_status_high;
-	uint8_t ep_b_enable_low;
-	uint8_t ep_b_enable_high;
+	uint8_t ep_ready_status_low;
+	uint8_t ep_ready_status_high;
+	uint8_t ep_ready_enable_low;
+	uint8_t ep_ready_enable_high;
+	uint8_t ep_done_status_low;
+	uint8_t ep_done_status_high;
+	uint8_t ep_done_enable_low;
+	uint8_t ep_done_enable_high;
 
 	pmb887x_usb_slot_t slots[USB_SLOT_COUNT];
 	pmb887x_usb_endpoint_t endpoints[USB_ENDPOINT_COUNT];
 
 	bool resume;
-	bool wakeup_end;
+	bool wakeup_started;
 	bool suspended;
 	pmb887x_usb_bus_phase_t bus_phase;
 	int64_t bus_phase_start_ns;
@@ -182,15 +182,15 @@ static void usb_raise_event(pmb887x_usb_t *p, uint32_t events) {
 	usb_update_irq(p);
 }
 
-static void usb_raise_ep_a(pmb887x_usb_t *p, uint32_t endpoint) {
+static void usb_raise_ep_ready(pmb887x_usb_t *p, uint32_t endpoint) {
 	if (endpoint < USB_EP_LOW_COUNT) {
-		p->ep_a_status_low |= BIT(endpoint);
-		if (p->ep_a_enable_low & BIT(endpoint))
-			p->global_status |= USB_GLOBAL_INT_STATUS_EP_A_LOW;
+		p->ep_ready_status_low |= BIT(endpoint);
+		if (p->ep_ready_enable_low & BIT(endpoint))
+			p->global_status |= USB_GLOBAL_INT_STATUS_EP_READY_LOW;
 	} else {
-		p->ep_a_status_high |= BIT(endpoint - USB_EP_LOW_COUNT);
-		if (p->ep_a_enable_high & BIT(endpoint - USB_EP_LOW_COUNT))
-			p->global_status |= USB_GLOBAL_INT_STATUS_EP_A_HIGH;
+		p->ep_ready_status_high |= BIT(endpoint - USB_EP_LOW_COUNT);
+		if (p->ep_ready_enable_high & BIT(endpoint - USB_EP_LOW_COUNT))
+			p->global_status |= USB_GLOBAL_INT_STATUS_EP_READY_HIGH;
 	}
 	usb_update_irq(p);
 }
@@ -214,7 +214,7 @@ static void usb_bus_start_phase(pmb887x_usb_t *p, pmb887x_usb_bus_phase_t phase,
 
 static void usb_bus_drive_k(pmb887x_usb_t *p) {
 	p->suspended = false;
-	p->wakeup_end = true;
+	p->wakeup_started = true;
 	usb_bus_start_phase(p, USB_BUS_DRIVE_K, USB_REMOTE_WAKEUP_K_CYCLES);
 }
 
@@ -304,8 +304,8 @@ static uint32_t usb_get_phy_control(pmb887x_usb_t *p) {
 	uint32_t value = usb_get_line_state(p);
 	if (p->suspended)
 		value |= USB_PHY_CONTROL_SUSPEND;
-	if (p->wakeup_end)
-		value |= USB_PHY_CONTROL_WAKEUP_END;
+	if (p->wakeup_started)
+		value |= USB_PHY_CONTROL_WAKEUP_STARTED;
 	if (p->resume)
 		value |= USB_PHY_CONTROL_RESUME;
 	return value;
@@ -349,7 +349,7 @@ static void usb_slot_set_control(pmb887x_usb_t *p, uint32_t slot, uint32_t value
 		bool queued_in_data = usb_slot_is_in(slot) && s->used_bytes && (s->control & USB_EP_CONTROL_IN_ENABLE);
 		s->used_bytes = 0;
 		if (queued_in_data)
-			usb_raise_ep_a(p, endpoint);
+			usb_raise_ep_ready(p, endpoint);
 	}
 	if ((value & USB_EP_CONTROL_ARM) && !usb_slot_is_in(slot) && usb_endpoint_is_enabled(p, endpoint))
 		s->armed = true;
@@ -378,10 +378,10 @@ static void usb_reset_core(pmb887x_usb_t *p) {
 	p->event_enable = 0;
 	p->dma0_enable = 0;
 	p->dma1_enable = 0;
-	p->ep_a_enable_low = 0;
-	p->ep_a_enable_high = 0;
-	p->ep_b_enable_low = 0;
-	p->ep_b_enable_high = 0;
+	p->ep_ready_enable_low = 0;
+	p->ep_ready_enable_high = 0;
+	p->ep_done_enable_low = 0;
+	p->ep_done_enable_high = 0;
 	usb_update_irq(p);
 }
 
@@ -409,12 +409,12 @@ static void usb_reset_state(pmb887x_usb_t *p) {
 	p->device_address = 0;
 	p->ep_enable_low = 0;
 	p->ep_enable_high = 0;
-	p->ep_a_status_low = 0;
-	p->ep_a_status_high = 0;
-	p->ep_b_status_low = 0;
-	p->ep_b_status_high = 0;
+	p->ep_ready_status_low = 0;
+	p->ep_ready_status_high = 0;
+	p->ep_done_status_low = 0;
+	p->ep_done_status_high = 0;
 	p->resume = false;
-	p->wakeup_end = false;
+	p->wakeup_started = false;
 	p->suspended = false;
 	p->bus_phase = USB_BUS_OFF;
 	usb_reset_core(p);
@@ -486,29 +486,29 @@ static uint64_t usb_io_read(void *opaque, hwaddr haddr, unsigned _size) {
 		case USB_EVENT_INT_ENABLE:
 			return p->event_enable;
 
-		case USB_EP_A_INT_STATUS_LOW:
-			return p->ep_a_status_low;
+		case USB_EP_READY_INT_STATUS_LOW:
+			return p->ep_ready_status_low;
 
-		case USB_EP_A_INT_ENABLE_LOW:
-			return p->ep_a_enable_low;
+		case USB_EP_READY_INT_ENABLE_LOW:
+			return p->ep_ready_enable_low;
 
-		case USB_EP_A_INT_STATUS_HIGH:
-			return p->ep_a_status_high;
+		case USB_EP_READY_INT_STATUS_HIGH:
+			return p->ep_ready_status_high;
 
-		case USB_EP_A_INT_ENABLE_HIGH:
-			return p->ep_a_enable_high;
+		case USB_EP_READY_INT_ENABLE_HIGH:
+			return p->ep_ready_enable_high;
 
-		case USB_EP_B_INT_STATUS_LOW:
-			return p->ep_b_status_low;
+		case USB_EP_DONE_INT_STATUS_LOW:
+			return p->ep_done_status_low;
 
-		case USB_EP_B_INT_ENABLE_LOW:
-			return p->ep_b_enable_low;
+		case USB_EP_DONE_INT_ENABLE_LOW:
+			return p->ep_done_enable_low;
 
-		case USB_EP_B_INT_STATUS_HIGH:
-			return p->ep_b_status_high;
+		case USB_EP_DONE_INT_STATUS_HIGH:
+			return p->ep_done_status_high;
 
-		case USB_EP_B_INT_ENABLE_HIGH:
-			return p->ep_b_enable_high;
+		case USB_EP_DONE_INT_ENABLE_HIGH:
+			return p->ep_done_enable_high;
 
 		case USB_EP_DATA0 ... USB_EP_COUNT_HIGH11: {
 			uint32_t slot = (haddr - USB_EP_DATA0) / USB_SLOT_STRIDE;
@@ -543,20 +543,20 @@ static uint64_t usb_io_read(void *opaque, hwaddr haddr, unsigned _size) {
 		case USB_GLOBAL_EVENT_INT_STATUS:
 			return p->global_status | (p->event_status << USB_GLOBAL_EVENT_INT_STATUS_EVENT_SHIFT);
 
-		case USB_DMA_EP_A_INT_STATUS:
-			return p->ep_a_status_low << USB_DMA_EP_A_INT_STATUS_EP_A_LOW_SHIFT;
+		case USB_DMA_EP_READY_INT_STATUS:
+			return p->ep_ready_status_low << USB_DMA_EP_READY_INT_STATUS_EP_READY_LOW_SHIFT;
 
-		case USB_GLOBAL_EVENT_EP_B_INT_ENABLE:
+		case USB_GLOBAL_EVENT_EP_DONE_INT_ENABLE:
 			return p->global_enable |
-				(p->event_enable << USB_GLOBAL_EVENT_EP_B_INT_ENABLE_EVENT_SHIFT) |
-				(p->ep_b_enable_low << USB_GLOBAL_EVENT_EP_B_INT_ENABLE_EP_B_LOW_SHIFT) |
-				(p->ep_b_enable_high << USB_GLOBAL_EVENT_EP_B_INT_ENABLE_EP_B_HIGH_SHIFT);
+				(p->event_enable << USB_GLOBAL_EVENT_EP_DONE_INT_ENABLE_EVENT_SHIFT) |
+				(p->ep_done_enable_low << USB_GLOBAL_EVENT_EP_DONE_INT_ENABLE_EP_DONE_LOW_SHIFT) |
+				(p->ep_done_enable_high << USB_GLOBAL_EVENT_EP_DONE_INT_ENABLE_EP_DONE_HIGH_SHIFT);
 
-		case USB_DMA_EP_A_INT_ENABLE:
+		case USB_DMA_EP_READY_INT_ENABLE:
 			return p->dma0_enable |
-				(p->dma1_enable << USB_DMA_EP_A_INT_ENABLE_DMA1_SHIFT) |
-				(p->ep_a_enable_low << USB_DMA_EP_A_INT_ENABLE_EP_A_LOW_SHIFT) |
-				(p->ep_a_enable_high << USB_DMA_EP_A_INT_ENABLE_EP_A_HIGH_SHIFT);
+				(p->dma1_enable << USB_DMA_EP_READY_INT_ENABLE_DMA1_SHIFT) |
+				(p->ep_ready_enable_low << USB_DMA_EP_READY_INT_ENABLE_EP_READY_LOW_SHIFT) |
+				(p->ep_ready_enable_high << USB_DMA_EP_READY_INT_ENABLE_EP_READY_HIGH_SHIFT);
 
 		case USB_EP0_COUNT:
 			return usb_slot_get_packed_count(p, USB_EP0_OUT_SLOT) |
@@ -645,36 +645,36 @@ static void usb_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned _s
 			p->event_enable = value;
 			break;
 
-		case USB_EP_A_INT_STATUS_LOW:
-			p->ep_a_status_low &= ~value;
+		case USB_EP_READY_INT_STATUS_LOW:
+			p->ep_ready_status_low &= ~value;
 			break;
 
-		case USB_EP_A_INT_ENABLE_LOW:
-			p->ep_a_enable_low = value;
+		case USB_EP_READY_INT_ENABLE_LOW:
+			p->ep_ready_enable_low = value;
 			break;
 
-		case USB_EP_A_INT_STATUS_HIGH:
-			p->ep_a_status_high &= ~value;
+		case USB_EP_READY_INT_STATUS_HIGH:
+			p->ep_ready_status_high &= ~value;
 			break;
 
-		case USB_EP_A_INT_ENABLE_HIGH:
-			p->ep_a_enable_high = value;
+		case USB_EP_READY_INT_ENABLE_HIGH:
+			p->ep_ready_enable_high = value;
 			break;
 
-		case USB_EP_B_INT_STATUS_LOW:
-			p->ep_b_status_low &= ~value;
+		case USB_EP_DONE_INT_STATUS_LOW:
+			p->ep_done_status_low &= ~value;
 			break;
 
-		case USB_EP_B_INT_ENABLE_LOW:
-			p->ep_b_enable_low = value;
+		case USB_EP_DONE_INT_ENABLE_LOW:
+			p->ep_done_enable_low = value;
 			break;
 
-		case USB_EP_B_INT_STATUS_HIGH:
-			p->ep_b_status_high &= ~value;
+		case USB_EP_DONE_INT_STATUS_HIGH:
+			p->ep_done_status_high &= ~value;
 			break;
 
-		case USB_EP_B_INT_ENABLE_HIGH:
-			p->ep_b_enable_high = value;
+		case USB_EP_DONE_INT_ENABLE_HIGH:
+			p->ep_done_enable_high = value;
 			break;
 
 		case USB_EP_DATA0 ... USB_EP_COUNT_HIGH11: {
@@ -714,19 +714,19 @@ static void usb_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned _s
 			usb_update_irq(p);
 			break;
 
-		case USB_GLOBAL_EVENT_EP_B_INT_ENABLE:
+		case USB_GLOBAL_EVENT_EP_DONE_INT_ENABLE:
 			p->global_enable = value;
-			p->event_enable = value >> USB_GLOBAL_EVENT_EP_B_INT_ENABLE_EVENT_SHIFT;
-			p->ep_b_enable_low = value >> USB_GLOBAL_EVENT_EP_B_INT_ENABLE_EP_B_LOW_SHIFT;
-			p->ep_b_enable_high = value >> USB_GLOBAL_EVENT_EP_B_INT_ENABLE_EP_B_HIGH_SHIFT;
+			p->event_enable = value >> USB_GLOBAL_EVENT_EP_DONE_INT_ENABLE_EVENT_SHIFT;
+			p->ep_done_enable_low = value >> USB_GLOBAL_EVENT_EP_DONE_INT_ENABLE_EP_DONE_LOW_SHIFT;
+			p->ep_done_enable_high = value >> USB_GLOBAL_EVENT_EP_DONE_INT_ENABLE_EP_DONE_HIGH_SHIFT;
 			usb_update_irq(p);
 			break;
 
-		case USB_DMA_EP_A_INT_ENABLE:
+		case USB_DMA_EP_READY_INT_ENABLE:
 			p->dma0_enable = value;
-			p->dma1_enable = value >> USB_DMA_EP_A_INT_ENABLE_DMA1_SHIFT;
-			p->ep_a_enable_low = value >> USB_DMA_EP_A_INT_ENABLE_EP_A_LOW_SHIFT;
-			p->ep_a_enable_high = value >> USB_DMA_EP_A_INT_ENABLE_EP_A_HIGH_SHIFT;
+			p->dma1_enable = value >> USB_DMA_EP_READY_INT_ENABLE_DMA1_SHIFT;
+			p->ep_ready_enable_low = value >> USB_DMA_EP_READY_INT_ENABLE_EP_READY_LOW_SHIFT;
+			p->ep_ready_enable_high = value >> USB_DMA_EP_READY_INT_ENABLE_EP_READY_HIGH_SHIFT;
 			break;
 
 		case USB_CLC:
