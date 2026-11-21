@@ -3145,8 +3145,10 @@ static void tcg_region_changed(MemoryListener *listener,
         cpuas->pend_all = true;
         return;
     }
-    cpuas->pend_lo[cpuas->pend_n] = lo;
-    cpuas->pend_hi[cpuas->pend_n] = lo + int128_getlo(sz);
+    /* whole pages: an entry's phys_addr is page-aligned */
+    cpuas->pend_lo[cpuas->pend_n] = lo & TARGET_PAGE_MASK;
+    cpuas->pend_hi[cpuas->pend_n] = ROUND_UP(lo + int128_getlo(sz),
+                                             TARGET_PAGE_SIZE);
     cpuas->pend_n++;
 }
 
@@ -3189,17 +3191,12 @@ static void tcg_commit(MemoryListener *listener)
     cpu = cpuas->cpu;
 
     /*
-     * If a FlatView variant was recycled since the last flush, entries
-     * may point into its dispatch: those we cannot identify by range,
-     * so fall back to the full flush.  (Steady-state romd ping-pong
-     * never evicts from the variant stash - this triggers during the
-     * render-heavy boot phases only, where a full flush is what stock
-     * does anyway.)
+     * A view rendered anew takes its dispatch, which entries point into,
+     * with it: those cannot be found by range.  An update in place (a
+     * romd or readonly flip) reported its ranges to tcg_region_changed.
      */
-    if (memory_topology_views_recycled()) {
+    if (memory_topology_views_replaced()) {
         cpuas->pend_all = true;
-    }
-    if (memory_topology_commit_full()) {
         cpuas->jmp_flush = true;
     }
 
