@@ -357,6 +357,15 @@ static void w64_set_i64(TCGContext *s, TCGReg r)
     W.kreg &= ~(1u << r);
 }
 
+static void w64_set(TCGContext *s, TCGReg r, TCGType t)
+{
+    if (t == TCG_TYPE_I32) {
+        w64_set_i32(s, r);
+    } else {
+        w64_set_i64(s, r);
+    }
+}
+
 static void w64_const_i32(TCGContext *s, int32_t v)
 {
     w64_u8(s, 0x41);
@@ -883,11 +892,7 @@ static void w64_binop_rrr(TCGContext *s, TCGType t, uint8_t op32, uint8_t op64,
     w64_get(s, r1, t);
     w64_get(s, r2, t);
     w64_u8(s, t == TCG_TYPE_I32 ? op32 : op64);
-    if (t == TCG_TYPE_I32) {
-        w64_set_i32(s, r0);
-    } else {
-        w64_set_i64(s, r0);
-    }
+    w64_set(s, r0, t);
 }
 
 static void w64_binop_rri(TCGContext *s, TCGType t, uint8_t op32, uint8_t op64,
@@ -896,11 +901,7 @@ static void w64_binop_rri(TCGContext *s, TCGType t, uint8_t op32, uint8_t op64,
     w64_get(s, r1, t);
     w64_const(s, t, i2);
     w64_u8(s, t == TCG_TYPE_I32 ? op32 : op64);
-    if (t == TCG_TYPE_I32) {
-        w64_set_i32(s, r0);
-    } else {
-        w64_set_i64(s, r0);
-    }
+    w64_set(s, r0, t);
 }
 
 /* ------------------------------------------------------------------ */
@@ -1090,11 +1091,7 @@ static void w64_load(TCGContext *s, uint8_t opc, TCGType t, TCGReg r0,
         w64_u8(s, opc);
         w64_memarg(s, align, 0);
     }
-    if (t == TCG_TYPE_I32) {
-        w64_set_i32(s, r0);
-    } else {
-        w64_set_i64(s, r0);
-    }
+    w64_set(s, r0, t);
 }
 
 static void w64_store(TCGContext *s, uint8_t opc, TCGType t, TCGReg val,
@@ -1246,11 +1243,7 @@ static bool tcg_out_mov(TCGContext *s, TCGType type, TCGReg ret, TCGReg arg)
     w64_ir_op(type == TCG_TYPE_I32 ? WI_MOV32 : WI_MOV64, ret, arg, 0);
     tcg_debug_assert(ret != arg);
     w64_get(s, arg, type);
-    if (type == TCG_TYPE_I32) {
-        w64_set_i32(s, ret);
-    } else {
-        w64_set_i64(s, ret);
-    }
+    w64_set(s, ret, type);
     return true;
 }
 
@@ -1933,11 +1926,7 @@ static void w64_ld_fast(TCGContext *s, TCGType type, TCGReg data,
     w64_tlb_haddr(s, W64_L_SCR2);
     w64_u8(s, w64_fast_ld[type == TCG_TYPE_I64][mop & MO_SSIZE]);
     w64_memarg(s, s_bits, 0);
-    if (type == TCG_TYPE_I32) {
-        w64_set_i32(s, data);
-    } else {
-        w64_set_i64(s, data);
-    }
+    w64_set(s, data, type);
 }
 
 static void w64_st_fast(TCGContext *s, TCGReg data, bool q, unsigned s_bits)
@@ -2146,11 +2135,7 @@ static void tgen_subi(TCGContext *s, TCGType t, TCGReg r0, tcg_target_long i1,
     w64_const(s, t, i1);
     w64_get(s, r2, t);
     w64_u8(s, t == TCG_TYPE_I32 ? 0x6b : 0x7d);   /* sub */
-    if (t == TCG_TYPE_I32) {
-        w64_set_i32(s, r0);
-    } else {
-        w64_set_i64(s, r0);
-    }
+    w64_set(s, r0, t);
 }
 static const TCGOutOpSubtract outop_sub = {
     .base.static_constraint = C_O1_I2(r, rC, r),
@@ -2167,11 +2152,7 @@ static void tgen_andc(TCGContext *s, TCGType t, TCGReg r0, TCGReg r1, TCGReg r2)
     w64_const(s, t, -1);
     w64_u8(s, t == TCG_TYPE_I32 ? 0x73 : 0x85);   /* xor */
     w64_u8(s, t == TCG_TYPE_I32 ? 0x71 : 0x83);   /* and */
-    if (t == TCG_TYPE_I32) {
-        w64_set_i32(s, r0);
-    } else {
-        w64_set_i64(s, r0);
-    }
+    w64_set(s, r0, t);
 }
 static void tgen_andci(TCGContext *s, TCGType t, TCGReg r0, TCGReg r1,
                        tcg_target_long i2)
@@ -2180,11 +2161,7 @@ static void tgen_andci(TCGContext *s, TCGType t, TCGReg r0, TCGReg r1,
     w64_get(s, r1, t);
     w64_const(s, t, ~i2);
     w64_u8(s, t == TCG_TYPE_I32 ? 0x71 : 0x83);   /* and */
-    if (t == TCG_TYPE_I32) {
-        w64_set_i32(s, r0);
-    } else {
-        w64_set_i64(s, r0);
-    }
+    w64_set(s, r0, t);
 }
 static const TCGOutOpBinary outop_andc = {
     .base.static_constraint = C_O1_I2(r, r, rC),
@@ -2200,11 +2177,7 @@ static void tgen_orc(TCGContext *s, TCGType t, TCGReg r0, TCGReg r1, TCGReg r2)
     w64_const(s, t, -1);
     w64_u8(s, t == TCG_TYPE_I32 ? 0x73 : 0x85);   /* xor */
     w64_u8(s, t == TCG_TYPE_I32 ? 0x72 : 0x84);   /* or */
-    if (t == TCG_TYPE_I32) {
-        w64_set_i32(s, r0);
-    } else {
-        w64_set_i64(s, r0);
-    }
+    w64_set(s, r0, t);
 }
 static void tgen_orci(TCGContext *s, TCGType t, TCGReg r0, TCGReg r1,
                       tcg_target_long i2)
@@ -2213,11 +2186,7 @@ static void tgen_orci(TCGContext *s, TCGType t, TCGReg r0, TCGReg r1,
     w64_get(s, r1, t);
     w64_const(s, t, ~i2);
     w64_u8(s, t == TCG_TYPE_I32 ? 0x72 : 0x84);   /* or */
-    if (t == TCG_TYPE_I32) {
-        w64_set_i32(s, r0);
-    } else {
-        w64_set_i64(s, r0);
-    }
+    w64_set(s, r0, t);
 }
 static const TCGOutOpBinary outop_orc = {
     .base.static_constraint = C_O1_I2(r, r, rC),
@@ -2271,11 +2240,7 @@ static void tgen_neg(TCGContext *s, TCGType t, TCGReg r0, TCGReg r1)
     w64_const(s, t, 0);
     w64_get(s, r1, t);
     w64_u8(s, t == TCG_TYPE_I32 ? 0x6b : 0x7d);   /* sub */
-    if (t == TCG_TYPE_I32) {
-        w64_set_i32(s, r0);
-    } else {
-        w64_set_i64(s, r0);
-    }
+    w64_set(s, r0, t);
 }
 static const TCGOutOpUnary outop_neg = {
     .base.static_constraint = C_O1_I1(r, r),
@@ -2288,11 +2253,7 @@ static void tgen_not(TCGContext *s, TCGType t, TCGReg r0, TCGReg r1)
     w64_get(s, r1, t);
     w64_const(s, t, -1);
     w64_u8(s, t == TCG_TYPE_I32 ? 0x73 : 0x85);   /* xor */
-    if (t == TCG_TYPE_I32) {
-        w64_set_i32(s, r0);
-    } else {
-        w64_set_i64(s, r0);
-    }
+    w64_set(s, r0, t);
 }
 static const TCGOutOpUnary outop_not = {
     .base.static_constraint = C_O1_I1(r, r),
@@ -2304,11 +2265,7 @@ static void tgen_ctpop(TCGContext *s, TCGType t, TCGReg r0, TCGReg r1)
     w64_ir_un(t, WI_UN_CTPOP, r0, r1);
     w64_get(s, r1, t);
     w64_u8(s, t == TCG_TYPE_I32 ? 0x69 : 0x7b);   /* popcnt */
-    if (t == TCG_TYPE_I32) {
-        w64_set_i32(s, r0);
-    } else {
-        w64_set_i64(s, r0);
-    }
+    w64_set(s, r0, t);
 }
 static const TCGOutOpUnary outop_ctpop = {
     .base.static_constraint = C_O1_I1(r, r),
@@ -2429,11 +2386,7 @@ static void tgen_movcond(TCGContext *s, TCGType t, TCGCond c, TCGReg ret,
         w64_get(s, vf, t);
     }
     w64_u8(s, 0x0b);                       /* end */
-    if (t == TCG_TYPE_I32) {
-        w64_set_i32(s, ret);
-    } else {
-        w64_set_i64(s, ret);
-    }
+    w64_set(s, ret, t);
 }
 
 static const TCGOutOpMovcond outop_movcond = {
@@ -2594,11 +2547,7 @@ static void tgen_deposit(TCGContext *s, TCGType t, TCGReg a0, TCGReg a1,
     w64_u8(s, t == TCG_TYPE_I32 ? 0x71 : 0x83);           /* and */
     w64_local_get(s, w64_scr(t));       /* the typed scratch set above */
     w64_u8(s, t == TCG_TYPE_I32 ? 0x72 : 0x84);           /* or */
-    if (t == TCG_TYPE_I32) {
-        w64_set_i32(s, a0);
-    } else {
-        w64_set_i64(s, a0);
-    }
+    w64_set(s, a0, t);
 }
 static const TCGOutOpDeposit outop_deposit = {
     .base.static_constraint = C_O1_I2(r, r, r),
@@ -2626,11 +2575,7 @@ static void tgen_extract(TCGContext *s, TCGType t, TCGReg a0, TCGReg a1,
         w64_const(s, t, mask);
         w64_u8(s, t == TCG_TYPE_I32 ? 0x71 : 0x83);       /* and */
     }
-    if (t == TCG_TYPE_I32) {
-        w64_set_i32(s, a0);
-    } else {
-        w64_set_i64(s, a0);
-    }
+    w64_set(s, a0, t);
 }
 static const TCGOutOpExtract outop_extract = {
     .base.static_constraint = C_O1_I1(r, r),
@@ -2656,11 +2601,7 @@ static void tgen_sextract(TCGContext *s, TCGType t, TCGReg a0, TCGReg a1,
         w64_const(s, t, width - len);
         w64_u8(s, t == TCG_TYPE_I32 ? 0x75 : 0x87);       /* shr_s */
     }
-    if (t == TCG_TYPE_I32) {
-        w64_set_i32(s, a0);
-    } else {
-        w64_set_i64(s, a0);
-    }
+    w64_set(s, a0, t);
 }
 static const TCGOutOpExtract outop_sextract = {
     .base.static_constraint = C_O1_I1(r, r),
@@ -2716,11 +2657,7 @@ static void tgen_bswap16(TCGContext *s, TCGType t, TCGReg r0, TCGReg r1,
         w64_u8(s, t == TCG_TYPE_I32 ? 0x72 : 0x84);       /* or */
     }
     }
-    if (t == TCG_TYPE_I32) {
-        w64_set_i32(s, r0);
-    } else {
-        w64_set_i64(s, r0);
-    }
+    w64_set(s, r0, t);
 }
 static const TCGOutOpBswap outop_bswap16 = {
     .base.static_constraint = C_O1_I1(r, r),
