@@ -103,12 +103,17 @@ tb_page_addr_t get_page_addr_code_hostp(CPUArchState *env, vaddr addr,
 
 #ifdef CONFIG_TCG_WASM64
 void tb_unlink_inlined(void);
-void w64_inl_list_add(TranslationBlock *tb);
-void w64_inl_lock_acquire(void);
-void w64_inl_lock_release(void);
 void w64_inl_list_clear(void);
 /* the index of the guest instruction @host_pc unwinds to, or -1 */
 int w64_tb_insn_index(TranslationBlock *tb, uintptr_t host_pc);
+/* tb_add_jump: chains into a TB with an inlined callee page (tb-maint.c) */
+bool tb_w64_inl_link_begin(TranslationBlock *tb_next);
+void tb_w64_inl_link_add(bool inl, TranslationBlock *tb_next);
+void tb_w64_inl_link_end(bool inl);
+#else
+static inline bool tb_w64_inl_link_begin(TranslationBlock *t) { return false; }
+static inline void tb_w64_inl_link_add(bool inl, TranslationBlock *t) { }
+static inline void tb_w64_inl_link_end(bool inl) { }
 #endif
 
 /**

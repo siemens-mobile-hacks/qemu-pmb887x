@@ -1153,24 +1153,37 @@ static TranslationBlock **w64_inl_tbs;
 static unsigned w64_inl_ntbs, w64_inl_cap;
 static QemuSpin w64_inl_lock;
 
-void w64_inl_lock_acquire(void)
+/*
+ * tb_add_jump's half: true, with the list lock taken, when a chain into
+ * @tb_next is to be listed; _add lists it if the chain is its first;
+ * _end drops the lock.
+ */
+bool tb_w64_inl_link_begin(TranslationBlock *tb_next)
 {
+    if (!tb_next->w64_inl || tb_page_addr1(tb_next) == -1) {
+        return false;
+    }
     qemu_spin_lock(&w64_inl_lock);
+    return true;
 }
 
-void w64_inl_lock_release(void)
+void tb_w64_inl_link_add(bool inl, TranslationBlock *tb_next)
 {
-    qemu_spin_unlock(&w64_inl_lock);
-}
-
-/* with w64_inl_lock held */
-void w64_inl_list_add(TranslationBlock *tb)
-{
+    if (!inl || tb_next->jmp_list_head) {
+        return;
+    }
     if (w64_inl_ntbs == w64_inl_cap) {
         w64_inl_cap = w64_inl_cap ? w64_inl_cap * 2 : 1024;
         w64_inl_tbs = g_renew(TranslationBlock *, w64_inl_tbs, w64_inl_cap);
     }
-    w64_inl_tbs[w64_inl_ntbs++] = tb;
+    w64_inl_tbs[w64_inl_ntbs++] = tb_next;
+}
+
+void tb_w64_inl_link_end(bool inl)
+{
+    if (inl) {
+        qemu_spin_unlock(&w64_inl_lock);
+    }
 }
 
 void w64_inl_list_clear(void)
