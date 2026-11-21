@@ -1,23 +1,20 @@
 /*
  * QEMU wasm display/input backend (for emscripten builds).
  *
- * Needed because a browser build has none of the host toolkits (no
- * sdl/gtk/curses): the page in front of the emulator needs (a) the guest
- * framebuffer on the wasm heap where JS can read it, (b) a way to inject
- * key events from the browser main thread while the vCPU runs on a
- * pthread, (c) a thread-safe quit, (d) a way to swap the accessory
- * plugged into the phone while it runs, and (e) a network port for the
- * GSM cell's IP side. All five are provided here as EMSCRIPTEN_KEEPALIVE
- * exports.
- *
- * Exposes the guest framebuffer to JavaScript and accepts linux-keycode
- * input + a quit request from JavaScript. All JS entry points are safe to
- * call from the browser main thread while QEMU runs on a pthread:
- *  - the framebuffer is converted into a private XRGB8888 staging buffer
- *    that JS reads directly (a "dirty" flag guards redraws),
- *  - key events are pushed into a single-producer/single-consumer ring and
- *    drained on the QEMU main loop via a bottom half,
- *  - quit goes through the thread-safe qemu_system_shutdown_request().
+ * A browser build has none of the host toolkits (no sdl/gtk/curses), so
+ * this file gives the page in front of the emulator, as
+ * EMSCRIPTEN_KEEPALIVE exports that are safe to call from the browser main
+ * thread while QEMU runs on pthreads:
+ *  - the guest framebuffer, converted into a private XRGB8888 staging
+ *    buffer on the wasm heap that JS reads directly (a "dirty" flag guards
+ *    redraws),
+ *  - linux-keycode input, pushed into a single-producer/single-consumer
+ *    ring and drained on the QEMU main loop via a bottom half,
+ *  - a quit request, through the thread-safe qemu_system_shutdown_request(),
+ *  - the accessory plugged into the phone, swapped by a bottom half,
+ *  - a network port on the GSM cell's hub, with a ring each way,
+ *  - progress counters and the cell's state, read as racy snapshots or
+ *    through a bottom half.
  *
  * Enable with: qemu-system-arm ... -display wasm
  */
@@ -66,15 +63,10 @@ static uint8_t *wasm_fb_data;   /* XRGB8888, width*height*4, wasm heap */
  * an implementation detail and can change per guest mode switch.
  */
 
-static void wasm_fb_free(void)
+static void wasm_fb_resize(int width, int height)
 {
     g_free(wasm_fb_data);
     wasm_fb_data = NULL;
-}
-
-static void wasm_fb_resize(int width, int height)
-{
-    wasm_fb_free();
     wasm_fb.width = width;
     wasm_fb.height = height;
     wasm_fb.stride = width * 4;
