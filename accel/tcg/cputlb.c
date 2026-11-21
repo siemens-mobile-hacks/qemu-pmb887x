@@ -1594,6 +1594,11 @@ void tlb_set_page_full(CPUState *cpu, int mmu_idx,
             n < ((size_t)1 << TLB_FILL_GROW_MAX_BITS)) {
             desc->window_max_entries = n;    /* rate 100 %: doubles */
             tlb_flush_one_mmuidx_locked(cpu, mmu_idx, get_clock_realtime());
+            /* the flush forgot the large page recorded above */
+            if (full->lg_page_size > TARGET_PAGE_BITS) {
+                tlb_add_large_page(cpu, mmu_idx, addr,
+                                   (hwaddr)1 << full->lg_page_size);
+            }
             index = tlb_index(cpu, mmu_idx, addr_page);
             te = tlb_entry(cpu, mmu_idx, addr_page);
         }
