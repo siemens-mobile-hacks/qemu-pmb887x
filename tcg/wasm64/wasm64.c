@@ -598,10 +598,9 @@ static void w64_elem_active(struct w64_mb *sec, uint32_t tidx, uint32_t fn)
 
 EM_JS(void, w64_tab_unset, (uintptr_t arr, uint32_t n), {
     const TAB = globalThis.__w64tab;
-    const dv = new DataView(HEAPU8.buffer);
-    const a = Number(arr);
+    const a = Number(arr) >> 2;
     for (let i = 0; i < n; i++) {
-        TAB.set(dv.getUint32(a + i * 4, true), globalThis.__w64none);
+        TAB.set(HEAPU32[a + i], globalThis.__w64none);
     }
 });
 
@@ -637,16 +636,6 @@ EM_JS(void, w64_tab_clear, (void), {
 EM_JS(int, w64_batch_instantiate,
       (uintptr_t modp, uint32_t modlen, uintptr_t ipp, uint32_t nimp,
        uint32_t maxtidx), {
-    /*
-     * A DataView over HEAPU8.buffer, cached until the buffer identity
-     * changes (emscripten replaces HEAPU8 on a memory growth, the only
-     * event that can invalidate it).
-     */
-    let __v = globalThis.__w64v;
-    if (__v === undefined || __v.b !== HEAPU8.buffer) {
-        __v = globalThis.__w64v = { b: HEAPU8.buffer, dv: new DataView(HEAPU8.buffer) };
-    }
-    const dv = __v.dv;
     const mod_bytes = HEAPU8.slice(Number(modp), Number(modp) + Number(modlen));
     if (globalThis.__w64run === undefined) {
         const run = new Uint8Array([
@@ -682,10 +671,10 @@ EM_JS(int, w64_batch_instantiate,
     if (maxtidx >= TAB.length) {
         TAB.grow(Math.max(4096, maxtidx + 1 - TAB.length), globalThis.__w64none);
     }
-    const ip = Number(ipp);
+    const ip = Number(ipp) >> 2;      /* g_malloc_n: 4-aligned */
     const imports = { e: { m: wasmMemory, t: TAB } };
     for (let i = 0; i < nimp; i++) {
-        imports.e['f' + i] = wasmTable.get(dv.getUint32(ip + i * 4, true));
+        imports.e['f' + i] = wasmTable.get(HEAPU32[ip + i]);
     }
     let inst;
     try {
