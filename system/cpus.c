@@ -590,38 +590,15 @@ bool bql_locked(void)
 }
 
 /*
- * BQL for the MMIO dispatch path (accel/tcg/cputlb.c).
- *
- * A guest that polls a device register takes and drops the BQL about
- * four million times a second (the S75's driven menu), and the generic
- * BQL_LOCK_GUARD() pair is ~22 calls that no compiler may inline:
- * bql_locked() and its coroutine-TLS accessor are deliberately
- * noinline, three g_asserts call them again, bql_lock_impl() reaches
- * pthread_mutex through the lock-profiling function pointer, and
- * qemu_mutex_post_lock()/pre_unlock() call mutex_is_bql() and
- * bql_update_status() - which calls the accessor twice more.  On wasm
- * that measures ~41 ns per pair, a quarter of what a device register
- * read costs in total.
- *
- * This pair reads the thread-local flag once, takes the mutex, and
- * writes the flag once.  What it gives up on this one path: the
- * qemu_mutex_lock/locked/unlock trace points, the -enable-sync-profile
- * lock-profiling hook, and CONFIG_DEBUG_MUTEX's file/line bookkeeping.
- *
- * Returns true if this call took the lock, in which case the caller
- * must call bql_unlock_mmio(); false if this thread already held it,
- * in which case the caller must not (an outer holder may have called
- * bql_block_unlock(), and it owns the unlock either way).
- */
-/*
- * Deferred release (see bql_release_lazy in main-loop.h).  @bql_mmio_lazy
- * says "this thread holds the BQL and the only reason is that
+ * The lean and deferred BQL of the MMIO path (main-loop.h bql_lock_mmio).
+ * @bql_mmio_lazy says "this thread holds the BQL only because
  * bql_unlock_mmio() did not give it back"; @bql_wanted counts the threads
  * blocked, or about to block, in bql_lock_impl().
  *
  * Plain __thread rather than the coroutine-safe TLS the bql_locked flag
  * uses: the flag is read and written only by the thread that owns the
  * lock, on the vCPU's device-access path, which is not coroutine code.
+ * The pair calls pthread_mutex_* directly, past the profiling hook.
  */
 static __thread bool bql_mmio_lazy;
 static int bql_wanted;

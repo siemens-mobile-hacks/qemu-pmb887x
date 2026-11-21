@@ -292,37 +292,27 @@ void bql_update_status(bool locked);
  * bql_lock_mmio: take the BQL for one device access, leanly.
  * bql_unlock_mmio: drop it again.
  *
- * The BQL_LOCK_GUARD() pair costs ~22 non-inlinable calls, which a
- * device-polling guest pays millions of times a second.  This pair does
- * the same job with the thread-local flag read once and written once,
- * giving up the mutex trace points and the lock-profiling hook.  Use it
- * only on a path that is hot enough to care - see system/cpus.c.
+ * The job of BQL_LOCK_GUARD() with the thread-local flag read once and
+ * written once, without the mutex trace points and the lock-profiling
+ * hook, for the MMIO dispatch path.  bql_lock_mmio() returns true if it
+ * took the lock; only then may bql_unlock_mmio() be called.
  *
- * bql_lock_mmio() returns true if it took the lock; only then may
- * bql_unlock_mmio() be called.
+ * On a vCPU thread under icount or vcpu-timers, bql_unlock_mmio() keeps
+ * the lock while no other thread wants it, and the next bql_lock_mmio()
+ * finds it held.  The hold ends when the next bql_lock_mmio(), a pass of
+ * cpu_exec_loop() or (wasm64) an exception return sees
+ * bql_wanted_by_other() and calls bql_release_lazy(), when the thread's
+ * own bql_lock() adopts it or bql_unlock() drops it, and at the latest at
+ * the end of the icount slice or the vcpu-timers budget.  Chained TBs
+ * come back to none of the others, so without either mode the lock is
+ * always released.
  */
 bool bql_lock_mmio(void);
 void bql_unlock_mmio(void);
 
 /**
- * bql_wanted_by_other: is a thread blocked (or about to block) on the BQL?
+ * bql_wanted_by_other: is a thread blocked (or about to block) in bql_lock()?
  * bql_release_lazy: give up a BQL held only by a deferred bql_unlock_mmio().
- *
- * bql_unlock_mmio() on a vCPU thread does not really unlock: an idle S75
- * takes and drops the BQL three million times a second for device
- * accesses that nobody is contending, and the atomic pair alone is ~3.5 %
- * of the vCPU.  It keeps the lock instead, and the next bql_lock_mmio()
- * sees the thread-local flag already set and does nothing at all.
- *
- * What ends the deferral: an explicit bql_lock() on this thread adopts it
- * (the rr loop's own bql_lock() after tcg_cpu_exec()), an explicit
- * bql_unlock() drops it, and cpu_exec_loop() calls bql_release_lazy()
- * whenever bql_wanted_by_other() says somebody is waiting.  One pass of
- * that loop is not a bound on its own: chained TBs never come back to it,
- * and without icount no budget ends the chain, so a firmware idle spin
- * after an MMIO access would keep the lock forever.  An exception return
- * releases it too (HELPER(cpsr_write_eret)), which is what ends the hold
- * on the way into such a spin.
  */
 bool bql_wanted_by_other(void);
 void bql_release_lazy(void);
