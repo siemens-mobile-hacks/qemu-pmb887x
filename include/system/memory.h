@@ -951,6 +951,7 @@ struct FlatView {
      * re-rendering.  Zero = untagged/never reuse. */
     uint64_t topo_gen;
     uint64_t romd_sig;
+    uint64_t romd_sig2;     /* a second, independent hash of the same */
     FlatRange *prev_ranges;
 };
 

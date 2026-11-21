@@ -77,7 +77,9 @@ static bool flatview_ref(FlatView *view);
  *               array mode, the init default,
  * and a commit whose only change is romd_mode can reuse a previously
  * rendered variant of the same (root, tag) instead of re-rendering it.
- * Correctness of a reuse therefore needs exactly the two tags to match:
+ * Correctness of a reuse therefore needs exactly the two tags to match.
+ * romd_sig hashes the two sets, so it carries a second, independent hash
+ * (romd_sig2) and a reuse needs both to match:
  * any other mutation (subregion add/del, resize, enable, readonly,
  * alias, finalize, ...) bumps topo_gen, and any other romd combination
  * gives a different romd_sig.
@@ -108,7 +110,7 @@ static GPtrArray *ro_on_mrs;
 typedef struct RomdStashSlot {
     MemoryRegion *root;
     uint64_t gen;
-    uint64_t sig;
+    uint64_t sig, sig2;
     FlatView *view; /* stashed ref */
 } RomdStashSlot;
 static RomdStashSlot romd_stash[ROMD_STASH_SLOTS];
@@ -127,11 +129,13 @@ static int romd_ptr_cmp(const void *a, const void *b)
     return x < y ? -1 : x > y;
 }
 
-static uint64_t romd_signature(void)
+static uint64_t romd_signature(uint64_t *sig2)
 {
     uintptr_t ptrs[64];
-    uint64_t sig = 0x9e3779b97f4a7c15ULL;
+    uint64_t sig = 0x9e3779b97f4a7c15ULL, h2 = 0x2545f4914f6cdd1dULL;
     unsigned n = 0, i;
+
+    *sig2 = 0;
 
     if (romd_off_mrs) {
         n = MIN(romd_off_mrs->len, ARRAY_SIZE(ptrs));
@@ -151,8 +155,11 @@ static uint64_t romd_signature(void)
         sig ^= (uint64_t)ptrs[i];
         sig *= 0xff51afd7ed558ccdULL;
         sig ^= sig >> 29;
+        h2 = (h2 + (uint64_t)ptrs[i]) * 0xc4ceb9fe1a85ec53ULL;
+        h2 ^= h2 >> 31;
     }
     sig ^= (uint64_t)n << 32;
+    h2 += n;
 
     /* ...and the read-only set, separated so the two cannot alias */
     sig ^= 0xd6e8feb86659fd93ULL;
@@ -171,26 +178,29 @@ static uint64_t romd_signature(void)
         sig ^= (uint64_t)ptrs[i];
         sig *= 0xff51afd7ed558ccdULL;
         sig ^= sig >> 29;
+        h2 = (h2 ^ (uint64_t)ptrs[i]) * 0x9e6c63d0676a9a99ULL;
+        h2 ^= h2 >> 27;
     }
     sig ^= (uint64_t)n << 48;
+    *sig2 = h2 + ((uint64_t)n << 40);
     return sig;
 }
 
 static FlatView *romd_stash_lookup(MemoryRegion *root, uint64_t gen,
-                                   uint64_t sig)
+                                   uint64_t sig, uint64_t sig2)
 {
     for (unsigned i = 0; i < ROMD_STASH_SLOTS; i++) {
         RomdStashSlot *s = &romd_stash[i];
 
-        if (s->view && s->root == root && s->gen == gen && s->sig == sig) {
+        if (s->view && s->root == root && s->gen == gen && s->sig == sig &&
+            s->sig2 == sig2) {
             return s->view;
         }
     }
     return NULL;
 }
 
-static void romd_stash_record(MemoryRegion *root, uint64_t gen, uint64_t sig,
-                              FlatView *view)
+static void romd_stash_record(MemoryRegion *root, FlatView *view)
 {
     RomdStashSlot *s = &romd_stash[romd_stash_next];
 
@@ -199,8 +209,9 @@ static void romd_stash_record(MemoryRegion *root, uint64_t gen, uint64_t sig,
         flatview_unref(s->view);
     }
     s->root = root;
-    s->gen = gen;
-    s->sig = sig;
+    s->gen = view->topo_gen;
+    s->sig = view->romd_sig;
+    s->sig2 = view->romd_sig2;
     s->view = view;
     flatview_ref(view);
     romd_stash_next = (romd_stash_next + 1) % ROMD_STASH_SLOTS;
@@ -1007,7 +1018,7 @@ static FlatView *generate_memory_topology(MemoryRegion *mr, FlatView *old_view)
 
     view = flatview_new(mr);
     view->topo_gen = topo_gen;
-    view->romd_sig = romd_signature();
+    view->romd_sig = romd_signature(&view->romd_sig2);
     /* sig 0 = "more off-list MRs than the signature can represent":
      * never adopt or stash such a view (a wrong variant could be
      * picked up); it is only used for this one commit. */
@@ -1033,6 +1044,7 @@ static FlatView *generate_memory_topology(MemoryRegion *mr, FlatView *old_view)
         flatview_update_attributes(old_view, view);
         old_view->topo_gen = view->topo_gen;
         old_view->romd_sig = view->romd_sig;
+        old_view->romd_sig2 = view->romd_sig2;
         flatview_destroy(view);
         view = old_view;
         flatview_ref(view);
@@ -1053,8 +1065,8 @@ static FlatView *generate_memory_topology(MemoryRegion *mr, FlatView *old_view)
      * destruction of its regions until ring eviction - fine for the boot
      * workload this serves (no hot-unplug of flash devices at runtime).
      */
-    if (mr) {
-        romd_stash_record(mr, view->topo_gen, view->romd_sig, view);
+    if (mr && view->topo_gen) {
+        romd_stash_record(mr, view);
     }
 
     g_hash_table_replace(flat_views, mr, view);
@@ -1463,7 +1475,8 @@ static void address_space_update_topology(AddressSpace *as)
 static void flatviews_update_romd(void)
 {
     AddressSpace *as;
-    uint64_t sig = romd_signature();
+    uint64_t sig2;
+    uint64_t sig = romd_signature(&sig2);
 
     flatviews_init();
     QTAILQ_FOREACH(as, &address_spaces, address_spaces_link) {
@@ -1475,11 +1488,12 @@ static void flatviews_update_romd(void)
             continue;
         }
         view = g_hash_table_lookup(flat_views, physmr);
-        if (view && view->topo_gen == topo_gen && view->romd_sig == sig) {
+        if (view && view->topo_gen == topo_gen && view->romd_sig == sig &&
+            view->romd_sig2 == sig2) {
             /* rendered from exactly this tree state - still current */
             continue;
         }
-        view = romd_stash_lookup(physmr, topo_gen, sig);
+        view = romd_stash_lookup(physmr, topo_gen, sig, sig2);
         if (view) {
             flatview_ref(view);
             g_hash_table_replace(flat_views, physmr, view);
