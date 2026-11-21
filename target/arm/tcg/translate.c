@@ -1934,6 +1934,11 @@ static bool w64_back_edge(DisasContext *s, int64_t diff)
         (tb_cflags(s->base.tb) & CF_SINGLE_STEP)) {
         return false;
     }
+    /* blx to the TB's start runs the other instruction set; MVE's LE needs
+     * the TB to end (both as in w64_absorb) */
+    if (s->w64_thumb != s->thumb || arm_dc_feature(s, ARM_FEATURE_M)) {
+        return false;
+    }
     /*
      * A conditional back-edge is the taken arm of a brcond, so the TB can
      * carry on into the fall-through exactly as it does for a deferred
