@@ -2143,36 +2143,14 @@ static const TCGOutOpSubtract outop_sub = {
     .out_rir = tgen_subi,
 };
 
-/* a & ~b */
-static void tgen_andc(TCGContext *s, TCGType t, TCGReg r0, TCGReg r1, TCGReg r2)
-{
-    w64_ir_alu(t, WI_ALU_ANDC, r0, r1, r2);
-    w64_get(s, r1, t);
-    w64_get(s, r2, t);
-    w64_const(s, t, -1);
-    w64_u8(s, t == TCG_TYPE_I32 ? 0x73 : 0x85);   /* xor */
-    w64_u8(s, t == TCG_TYPE_I32 ? 0x71 : 0x83);   /* and */
-    w64_set(s, r0, t);
-}
-static void tgen_andci(TCGContext *s, TCGType t, TCGReg r0, TCGReg r1,
-                       tcg_target_long i2)
-{
-    w64_ir_alui(t, WI_ALU_ANDC, r0, r1, i2);
-    w64_get(s, r1, t);
-    w64_const(s, t, ~i2);
-    w64_u8(s, t == TCG_TYPE_I32 ? 0x71 : 0x83);   /* and */
-    w64_set(s, r0, t);
-}
-static const TCGOutOpBinary outop_andc = {
-    .base.static_constraint = C_O1_I2(r, r, rC),
-    .out_rrr = tgen_andc,
-    .out_rri = tgen_andci,
-};
-
 /*
  * wasm has none of these: without them tcg-op.c emits not and the plain
  * op, the same instructions.
  */
+static const TCGOutOpBinary outop_andc = {
+    .base.static_constraint = C_NotImplemented,
+};
+
 static const TCGOutOpBinary outop_orc = {
     .base.static_constraint = C_NotImplemented,
 };
