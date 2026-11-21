@@ -1539,8 +1539,10 @@ static void dif_tx_bus_go_lazy(pmb887x_dif_t *p) {
 
 	pmb887x_dmac_bulk_t bulk;
 	uint32_t max_wakes = dif_count_fed_tx_wakes(p, &bulk);
+	if (max_wakes < 2)
+		return;
 	uint32_t wake_words = bulk.burst_words * (4 / dif_get_tx_align(p));
-	if (max_wakes < 2 || p->tx_words_remaining / wake_words < 2)
+	if (p->tx_words_remaining / wake_words < 2)
 		return;
 	max_wakes = MIN(max_wakes, p->tx_words_remaining / wake_words);
 
