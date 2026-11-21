@@ -424,6 +424,7 @@ int cpu_breakpoint_insert(CPUState *cpu, vaddr pc, int flags,
     } else {
         QTAILQ_INSERT_TAIL(&cpu->breakpoints, bp, entry);
     }
+    cpu_tb_key_gen_bump(cpu);   /* WASM PORT: next-TB caches */
 
     if (breakpoint) {
         *breakpoint = bp;

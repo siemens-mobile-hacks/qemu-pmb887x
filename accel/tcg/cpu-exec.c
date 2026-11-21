@@ -449,10 +449,9 @@ void arm_w64_lc_key_layout(struct W64PccShape *sh);
  *
  * Soundness is the per-TB slot's: the generation retires the whole table
  * wherever a jump-cache entry is dropped, wherever a key input the test
- * does not cover moves (hflags.flags2, FPSCR.Len/Stride, FPEXC.EN,
- * cflags) and wherever a module is evicted; A64, M-profile and
- * single-step never fill (arm_w64_lc_key).  Only a compiled target is
- * cached, because a hit never comes back here to refill.
+ * does not cover moves (hflags.flags2, FPSCR.Len/Stride, FPEXC.EN, the
+ * memory timing class, the breakpoint list) and wherever a module is
+ * evicted; A64, M-profile and single-step never fill (arm_w64_lc_key).
  *
  * The entry is declared in exec/translation-block.h because the generated
  * code reads it too.  @cpu_index names the owner of a per-CPU generation
@@ -504,6 +503,22 @@ static inline const void *w64_pcc_get(CPUState *cpu, uint32_t gen,
 }
 
 /*
+ * A hit in either cache skips lookup_tb_for_ptr(), so neither may hold a
+ * target that needs what it does besides the lookup: the memory-timing
+ * fetch charge and the breakpoint check (tb_lookup_link_can_reuse()
+ * refuses the same).  Only a compiled target is cached, because a hit
+ * never comes back here to refill.
+ */
+static inline bool w64_may_cache(CPUState *cpu, const TCGTBCPUState *s,
+                                 const void *target)
+{
+    return ((uintptr_t)target & W64_TIDX_TAG) &&
+           s->cflags == cpu->tcg_cflags &&
+           !(s->cflags & CF_MEMORY_TIMING) &&
+           QTAILQ_EMPTY(&cpu->breakpoints);
+}
+
+/*
  * @gen is read before the lookup that produced @target, so an
  * invalidation racing with this fill leaves a stale stamp and the entry
  * is simply missed — never a stale target under a current stamp.  Same
@@ -515,9 +530,7 @@ static inline void w64_pcc_put(CPUState *cpu, TCGTBCPUState s, uint32_t gen,
     uint32_t key[3];
     struct W64PccEnt *e;
 
-    if (!((uintptr_t)target & W64_TIDX_TAG) ||
-        s.cflags != cpu->tcg_cflags ||
-        !W64_LC_KEY(cpu, key)) {
+    if (!w64_may_cache(cpu, &s, target) || !W64_LC_KEY(cpu, key)) {
         return;
     }
     e = &w64_pcc[w64_pcc_hash((uint32_t)s.pc)];
@@ -722,13 +735,7 @@ const void *HELPER(lookup_tb_ptr_lc)(CPUArchState *env, void *slot)
     target = w64_dispatch_target(tb);
     w64_pcc_put(cpu, s, gen, target);
 
-    /*
-     * Only a compiled target may be cached: an untagged one (fidx == 0)
-     * would pin this slot to the dispatcher handoff for good, because a
-     * hit never calls back here to refill it.
-     */
-    if (lc && likely(s.cflags == cpu->tcg_cflags) &&
-        ((uintptr_t)target & W64_TIDX_TAG) &&
+    if (lc && likely(w64_may_cache(cpu, &s, target)) &&
         W64_LC_KEY(cpu, cur)) {
         w64_lc_fill(lc, cur, s.pc, target, gen);
     }

@@ -42,9 +42,11 @@ void tcg_memory_timing_select(CPUState *cpu, unsigned index)
     uint32_t class = index < memory_timing_count ? index + 1 : 0;
 
     memory_timing_cflags = class << CF_MEMORY_TIMING_SHIFT;
-    if (tcg_cflags_has(cpu, CF_COUNT_CYCLES)) {
+    if (tcg_cflags_has(cpu, CF_COUNT_CYCLES) &&
+        (cpu->tcg_cflags & CF_MEMORY_TIMING) != memory_timing_cflags) {
         cpu->tcg_cflags = (cpu->tcg_cflags & ~CF_MEMORY_TIMING) |
                           memory_timing_cflags;
+        cpu_tb_key_gen_bump(cpu);   /* WASM PORT: next-TB caches */
     }
 }
 
