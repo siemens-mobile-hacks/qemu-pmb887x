@@ -23,6 +23,7 @@
 #include "exec/helper-head.h.inc"
 #include "tcg/tcg-ldst.h"
 #include "system/cpu-timers.h"
+#include "exec/icount.h"
 #include "exec/translation-block.h"
 #include "wasm64.h"
 #include "w64-interp.h"
@@ -136,15 +137,13 @@ void w64_irec_flush(void)
 static uint32_t w64_interp_run(const struct w64_irec *r, uintptr_t env,
                                uintptr_t sp, uintptr_t tp);
 
-/* the emitted prologue's per-TB-entry accounting, in C (wasm64.h) */
+/* the emitted prologue's per-TB-entry accounting, in C */
 static void w64_interp_acct(uint32_t icount)
 {
-    uint32_t f = w64_acct_flags;
-
-    if (f & W64_ACCT_GUEST_INSNS) {
+    if (!icount_enabled()) {
         wasm_guest_insns += icount;
     }
-    if ((f & W64_ACCT_LS) && w64_ls_on) {
+    if (w64_ls_on) {
         w64_lockstep_account(icount);
     }
 }

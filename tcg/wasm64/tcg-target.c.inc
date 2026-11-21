@@ -248,18 +248,10 @@ static bool w64_guest_insns_inline(void)
     return !icount_enabled();
 }
 
-/* The lockstep fold is armed per process (W64_LOCKSTEP, set by the page
- * before qemu starts).  An unarmed process omits the w64_ls_on test and
- * import from every prologue and the w64_chain_stop term from every
- * goto_tb/goto_ptr; nothing else ever sets w64_chain_stop. */
-static bool w64_ls_armed(void)
-{
-    static int mode = -1;
-    if (mode < 0) {
-        mode = getenv("W64_LOCKSTEP") != NULL;
-    }
-    return mode != 0;
-}
+/* The lockstep fold is armed per process (w64_ls_armed).  An unarmed
+ * process omits the w64_ls_on test and import from every prologue and the
+ * w64_chain_stop term from every goto_tb/goto_ptr; nothing else ever sets
+ * w64_chain_stop. */
 
 static int w64_local32(TCGReg r)
 {
@@ -2667,14 +2659,6 @@ static void tcg_out_tb_start(TCGContext *s)
     w64_scan_labels(s);
     w64_batch_begin_tb();
 
-    /* lazy one-time init of the inline-accounting address table
-     * (translation of the first TB precedes w64_init/first exec) */
-    if (w64_acct_addr[W64_ACCT_INSNS] == 0) {
-        w64_acct_init();
-    }
-    w64_acct_flags = (w64_guest_insns_inline() ? W64_ACCT_GUEST_INSNS : 0) |
-                     (w64_ls_armed() ? W64_ACCT_LS : 0);
-
     /* descriptor */
     stl_p(s->code_buf + W64_DESC_FIDX, 0);
     stl_p(s->code_buf + W64_DESC_BATCH, 0);
@@ -2709,12 +2693,12 @@ static void tcg_out_tb_start(TCGContext *s)
     if (w64_guest_insns_inline()) {
         /* wasm_guest_insns += icount (a plain RMW: only this vCPU thread
          * writes it) */
-        w64_const_addr(s, w64_acct_addr[W64_ACCT_INSNS]);
+        w64_const_addr(s, (uintptr_t)&wasm_guest_insns);
         w64_u8(s, 0x29);  w64_memarg(s, 3, 0);        /* i64.load */
         w64_const_i64(s, s->gen_tb->icount);
         w64_u8(s, 0x7c);                              /* i64.add */
         w64_local_set(s, W64_L_SCR0);
-        w64_const_addr(s, w64_acct_addr[W64_ACCT_INSNS]);
+        w64_const_addr(s, (uintptr_t)&wasm_guest_insns);
         w64_local_get(s, W64_L_SCR0);
         w64_u8(s, 0x37);  w64_memarg(s, 3, 0);        /* i64.store */
     }
@@ -2723,7 +2707,7 @@ static void tcg_out_tb_start(TCGContext *s)
         /* if (w64_ls_on) w64_lockstep_account(icount) — the lockstep
          * fold import (w64_ls_on stays 0 when the log could not be
          * opened) */
-        w64_const_addr(s, w64_acct_addr[W64_ACCT_LS_ON]);
+        w64_const_addr(s, (uintptr_t)&w64_ls_on);
         w64_u8(s, 0x28);  w64_memarg(s, 2, 0);        /* i32.load */
         w64_blk_push(s, W64_BLK_IF, -1);
         w64_const_i32(s, s->gen_tb->icount);

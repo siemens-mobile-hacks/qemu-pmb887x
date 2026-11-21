@@ -39,33 +39,6 @@ typedef uint32_t w64_run_fn(uintptr_t env, uintptr_t sp, uintptr_t tp,
 
 static void w64_ls_init(void);
 
-static void w64_init(void)
-{
-    static bool ls_armed;
-
-    if (!ls_armed) {
-        ls_armed = true;
-        /* Eager lockstep init: an armed prologue tests w64_ls_on before
-         * its import call, so the fold must be armed before the first
-         * executed TB's prologue runs. */
-        w64_ls_init();
-    }
-}
-
-/* Addresses for the inline TB-prologue accounting (tcg_out_tb_start
- * reads these at translation time; see wasm64.h).  Filled lazily by
- * the emitter's first tcg_out_tb_start — wasm cannot fold integer casts
- * of addresses into static initializers, and translation of the first
- * TB happens before w64_init()/first exec. */
-uint64_t w64_acct_addr[W64_ACCT_N];
-uint32_t w64_acct_flags;
-
-void w64_acct_init(void)
-{
-    w64_acct_addr[W64_ACCT_INSNS] = (uint64_t)(uintptr_t)&wasm_guest_insns;
-    w64_acct_addr[W64_ACCT_LS_ON] = (uint64_t)(uintptr_t)&w64_ls_on;
-}
-
 /* ------------------------------------------------------------------ */
 /* lockstep fold
  *
@@ -97,7 +70,7 @@ struct w64_ls_state {
 static struct w64_ls_state LS;
 
 /* Lockstep armed (set once by w64_ls_init); the emitted TB prologues
- * test it through w64_acct_addr[W64_ACCT_LS_ON]. */
+ * test it. */
 uint32_t w64_ls_on;
 
 static uint64_t w64_ls_fnv(uint64_t h, const void *p, size_t n)
@@ -332,14 +305,26 @@ void w64_lockstep_account(unsigned insns)
     }
 }
 
-int64_t *w64_ls_count(void)
+/*
+ * Whether the page asked for the fold (W64_LOCKSTEP, set before qemu
+ * starts), even if its log could not be opened and w64_ls_on stayed 0.
+ * The first call arms the fold: the emitter asks for every TB, so that is
+ * before any prologue that tests w64_ls_on runs.
+ */
+bool w64_ls_armed(void)
 {
     static int armed = -1;
 
     if (armed < 0) {
         armed = getenv("W64_LOCKSTEP") != NULL;
+        w64_ls_init();
     }
-    return armed ? &LS.count : NULL;
+    return armed;
+}
+
+int64_t *w64_ls_count(void)
+{
+    return w64_ls_armed() ? &LS.count : NULL;
 }
 
 /* Shared-chain-table index allocator: one index per translated TB,
@@ -1656,7 +1641,6 @@ uintptr_t tcg_qemu_tb_exec(CPUArchState *env, const void *v_tb_ptr)
     uintptr_t outer_tb_ptr = w64_tb_ptr;
     uintptr_t res;
 
-    w64_init();
     g_assert(depth < W64_EXEC_NEST_MAX);
     if (!w64_frames[depth]) {
         w64_frames[depth] = g_malloc0(16 + TCG_STATIC_CALL_ARGS_SIZE +

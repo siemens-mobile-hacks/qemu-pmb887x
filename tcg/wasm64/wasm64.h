@@ -116,32 +116,15 @@ struct w64_hint {
 uint32_t w64_alloc_tidx(void);   /* next shared-chain-table index (>=1) */
 extern uint32_t w64_chain_stop;  /* lockstep budget reached: stop chaining */
 
-/* Inline TB-prologue accounting: addresses of the state the emitted
- * prologue touches directly, read at translation time. */
-enum {
-    W64_ACCT_INSNS,         /* &wasm_guest_insns */
-    W64_ACCT_LS_ON,         /* &w64_ls_on */
-    W64_ACCT_N,
-};
-extern uint64_t w64_acct_addr[W64_ACCT_N];
-
-/* One-time lazy fill of w64_acct_addr (called from the emitter's first
- * tcg_out_tb_start — translation of the first TB precedes first exec). */
-void w64_acct_init(void);
-
 /* Lockstep fold accounting (emitted prologue calls it only when armed;
  * exported for the emitter's import registration). */
 void w64_lockstep_account(unsigned insns);
 
 /* 1 once w64_ls_init() armed the lockstep fold; the emitted prologue
- * tests it via w64_acct_addr[W64_ACCT_LS_ON] to skip the import when off. */
+ * tests it to skip the import when off. */
 extern uint32_t w64_ls_on;
-
-/* What the emitted TB prologue accounts for, published once by the
- * emitter so the interpreter tier can do the same work (w64-interp.c). */
-#define W64_ACCT_GUEST_INSNS  2
-#define W64_ACCT_LS       8
-extern uint32_t w64_acct_flags;
+/* W64_LOCKSTEP was set: the prologues and chain tests carry the fold */
+bool w64_ls_armed(void);
 
 /* batching API (wasm64.c) — called from tcg-target.c.inc */
 void w64_batch_begin_tb(void);
