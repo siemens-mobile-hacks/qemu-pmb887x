@@ -677,12 +677,9 @@ static void tpu_update_timer(pmb887x_tpu_t *p) {
 	tpu_advance(p);
 
 	/*
-	 * tpu_io_write() ends in tpu_update_state() for *every* register,
-	 * including the event RAM, so a guest that keeps the TPU busy
-	 * reaches here ~1.5M times a second (the S75 at idle).  timer_mod()
-	 * is not free at that rate - it takes the timer list's lock, walks
-	 * it and may notify the main loop - so only re-arm when the
-	 * deadline actually moved.
+	 * WASM PORT FAST PATH (removable): D7, re-arm only when the deadline
+	 * moved or the timer is not pending; every TPU register write ends
+	 * here, and timer_mod() takes and walks the timer list.
 	 */
 	if (p->armed != p->next || !timer_pending(p->timer)) {
 		p->armed = p->next;
@@ -733,16 +730,10 @@ static void tpu_update_state(pmb887x_tpu_t *p) {
 		(p->param & TPU_PARAM_TINI) != 0 && p->overflow >= 2;
 
 	/*
-	 * Bring the counter up to date *at the old rate* - but only when
-	 * something below actually consumes that: a rate or enable change,
-	 * or the TINI reset that wipes the counter.  Otherwise this is a
-	 * second tpu_advance() on top of the one tpu_update_timer() does at
-	 * the end of this function, at the same virtual instant and the
-	 * same frequency, and tpu_io_write() reaches here for *every* TPU
-	 * register - ~815k times a second on the S75's idle screen, where
-	 * tpu_advance was 5.8 % of the vCPU.  Nothing between here and
-	 * there reads the counter, and the values it computes above are
-	 * pure functions of the registers.
+	 * WASM PORT FAST PATH (removable): D7, advance at the old rate only
+	 * when a rate, enable or TINI change consumes it; otherwise
+	 * tpu_update_timer() below advances once, at the same instant and
+	 * rate, and nothing in between reads the counter.
 	 */
 	if (was_enabled && (p->counter_input_hz != new_input_hz || p->freq != new_freq ||
 			    p->enabled != new_enabled || !(p->param & TPU_PARAM_TINI))) {
@@ -978,23 +969,10 @@ static uint64_t tpu_io_read(void *opaque, hwaddr haddr, unsigned size) {
 }
 
 /*
- * Can a write to this RAM word change p->next?
- *
- * The event RAM is plain memory: tpu_run_events() re-reads it on every
- * scan and caches nothing, so a word only matters while it is inside the
- * part of the current frame's list that is still to be scanned.
- * Everything else - the RF half of the RAM, entries this frame has
- * already consumed, entries past p->eapt, and any word at all once the
- * frame's list has finished - is read no earlier than the next frame,
- * and tpu_advance() runs there anyway (the QEMU timer is armed for it).
- *
- * "Still to be scanned" is one event, not the rest of the list.
- * tpu_run_events() breaks at the first event the counter has not
- * reached, leaving p->ceap on it, and p->next is that event's time; it
- * read words ceap..ceap+2 and nothing beyond.  A later event cannot
- * move the deadline, because the list is executed in order and nothing
- * reaches it before p->next anyway - at which point the timer fires and
- * the list is rescanned from RAM.
+ * WASM PORT FAST PATH (removable): D7, a RAM word moves p->next only if it
+ * is in the event tpu_run_events() stopped on (ceap..ceap+2).  The scan
+ * re-reads RAM and caches nothing, and any other word is read no earlier
+ * than p->next or the next frame, when the armed timer rescans the list.
  */
 static bool tpu_ram_write_moves_deadline(pmb887x_tpu_t *p, uint32_t offset) {
 	uint32_t word = (offset - TPU_RAM0) / TPU_RAM_WORD_STRIDE;
