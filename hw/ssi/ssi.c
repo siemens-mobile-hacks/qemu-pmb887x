@@ -160,9 +160,10 @@ SSIBus *ssi_create_bus(DeviceState *parent, const char *name)
 
 uint32_t ssi_transfer(SSIBus *bus, uint32_t val)
 {
-    /* plain casts: the checked ones' trace point costs a call per
-     * transferred byte on the LCD path; every child of an SSI bus is an
-     * SSIPeripheral (qdev checks the bus type at attach) */
+    /* WASM PORT FAST PATH (removable): D9, plain casts: the checked
+     * ones' trace point costs a call per transferred byte on the LCD
+     * path; every child of an SSI bus is an SSIPeripheral (qdev checks
+     * the bus type at attach) */
     BusState *b = &bus->parent_obj;
     BusChild *kid;
     uint32_t r = 0;
@@ -206,6 +207,7 @@ void ssi_transfer_block(SSIBus *bus, const uint32_t *tx, uint32_t *rx,
     }
 }
 
+/* WASM PORT FAST PATH (removable): D9, display bytes in runs */
 void ssi_transfer_bytes(SSIBus *bus, const uint8_t *tx, size_t count)
 {
     BusState *b = BUS(bus);

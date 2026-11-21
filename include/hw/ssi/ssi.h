@@ -48,7 +48,8 @@ struct SSIPeripheralClass {
      */
     void (*transfer_block)(SSIPeripheral *dev, const uint32_t *tx,
                            uint32_t *rx, size_t count);
-    /* optional: transfer_block for byte words whose replies nobody reads.
+    /* WASM PORT FAST PATH (removable): D9, display bytes in runs.
+     * optional: transfer_block for byte words whose replies nobody reads.
      * See ssi_transfer_bytes().
      */
     void (*transfer_bytes)(SSIPeripheral *dev, const uint8_t *tx,
@@ -144,6 +145,7 @@ uint32_t ssi_transfer(SSIBus *bus, uint32_t val);
 void ssi_transfer_block(SSIBus *bus, const uint32_t *tx, uint32_t *rx,
                         size_t count);
 /*
+ * WASM PORT FAST PATH (removable): D9, display bytes in runs.
  * Transfers the bytes in order, with the same effect as calling
  * ssi_transfer() for each of them; the replies are dropped.
  */

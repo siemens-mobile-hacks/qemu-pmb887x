@@ -49,7 +49,11 @@ struct pmb887x_dmac_ch_t {
 	uint8_t fifo[DMAC_FIFO_SIZE];
 };
 
-/* A bus range known to map to one region, valid until the next memory topology change. */
+/*
+ * WASM PORT FAST PATH (removable): D6, a bus range known to map to one region,
+ * valid until dmac_memory_commit() drops it: whenever the memory listeners
+ * commit, a ROMD mode flip included.
+ */
 typedef struct {
 	hwaddr start;
 	hwaddr end;
@@ -163,6 +167,7 @@ static void dmac_swap_byte_order(uint8_t *buffer, uint32_t width, uint32_t count
 	}
 }
 
+/* WASM PORT FAST PATH (removable): D6, the FIFO's bus translations, cached */
 static bool dmac_translate(pmb887x_dmac_t *p, pmb887x_dmac_translation_t *translation, hwaddr addr, hwaddr size, bool is_write) {
 	if (addr >= translation->start && addr + size <= translation->end)
 		return true;
@@ -522,6 +527,7 @@ static void dmac_fifo_drain(pmb887x_dmac_t *p, pmb887x_dmac_ch_t *ch, uint32_t b
 
 	bool is_increment = (ch->control & DMAC_CH_CONTROL_DI) != 0;
 	bool has_whole_transfers = (bytes % dst_width) == 0;
+	/* WASM PORT FAST PATH (removable): D6, a translated sink */
 	pmb887x_dmac_translation_t *sink = &p->sink_translation;
 	bool is_block_written = false;
 	if (has_whole_transfers &&
@@ -966,6 +972,7 @@ static const char *dmac_request_name(pmb887x_dmac_t *p, const pmb887x_dmac_reque
 	return "UNK";
 }
 
+/* WASM PORT FAST PATH (removable): D1, a lazy peripheral catches up first */
 static void dmac_catch_up(pmb887x_dmac_t *p) {
 	if (p->catch_up)
 		p->catch_up(p->catch_up_opaque);
@@ -1336,6 +1343,7 @@ static void dmac_handle_signal_sel1_lbreq(void *opaque, int request, int level) 
 	dmac_handle_signal(p, &p->lbreq, 1, request, level);
 }
 
+/* WASM PORT FAST PATH (removable): D3, down to pmb887x_dmac_serve_burst() */
 static bool dmac_has_pending_requests(const pmb887x_dmac_t *p) {
 	return p->raised_levels != 0 || p->sreq.soft || p->breq.soft || p->lsreq.soft || p->lbreq.soft;
 }
@@ -1416,6 +1424,8 @@ bool pmb887x_dmac_serve_burst(qemu_irq line) {
 }
 
 /*
+ * WASM PORT FAST PATH (removable): D2, down to pmb887x_dmac_get_bulk_source().
+ *
  * The bursts pmb887x_dmac_serve_burst() would serve one after another on
  * @line while nothing else runs, for a peripheral-controlled transfer of
  * 32-bit words from RAM, of which the peripheral ends the last: 0 if the
@@ -1477,6 +1487,7 @@ bool pmb887x_dmac_get_bulk_source(qemu_irq line, uint32_t count, ram_addr_t *sta
 	return true;
 }
 
+/* WASM PORT FAST PATH (removable): D1, see dmac.h */
 void pmb887x_dmac_set_catch_up(qemu_irq line, void (*fn)(void *opaque), void *opaque) {
 	pmb887x_dmac_t *p = line->opaque;
 	g_assert(p->catch_up == NULL || p->catch_up == fn);
@@ -1484,6 +1495,7 @@ void pmb887x_dmac_set_catch_up(qemu_irq line, void (*fn)(void *opaque), void *op
 	p->catch_up_opaque = opaque;
 }
 
+/* WASM PORT FAST PATH (removable): D2, the counted bursts served in bulk */
 /* Serves @count of the bursts pmb887x_dmac_count_bulk_bursts() counted into @data, as the sink would get them. */
 void pmb887x_dmac_serve_bulk_bursts(qemu_irq line, uint8_t *data, uint32_t count) {
 	pmb887x_dmac_ch_t *ch = dmac_get_served_channel(line);

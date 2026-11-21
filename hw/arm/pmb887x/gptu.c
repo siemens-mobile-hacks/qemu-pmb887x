@@ -777,6 +777,11 @@ static void gptu_t01_external_count(pmb887x_gptu_t *p, int cnt_id, uint64_t coun
 	}
 }
 
+/*
+ * WASM PORT FAST PATH (removable): D8, the T0/T1 timer armed only for
+ * overflows the guest can observe: this to gptu_t01_advance(), and the
+ * boundary steps in gptu_sync_timer().
+ */
 static bool gptu_t01_free_running(pmb887x_gptu_t *p, int timer_id) {
 	return p->timers[timer_id].enabled && gptu_t01_input(p, timer_id) == INPUT_BYPASS;
 }
@@ -986,6 +991,7 @@ static void gptu_sync_timer(pmb887x_gptu_t *p) {
 			timer->start = now;
 	}
 
+	/* WASM PORT FAST PATH (removable): D8, from boundary to boundary */
 	for (int guard = 0; guard < 65536; guard++) {
 		uint64_t boundary[8];
 		int64_t t_next = INT64_MAX;

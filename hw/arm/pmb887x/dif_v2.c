@@ -314,7 +314,10 @@ static bool dif_has_tx_fifo_free(pmb887x_dif_t *p, uint32_t stages) {
 	return FIFO_SIZE - dif_get_tx_fifo_level(p) >= stages;
 }
 
-/* *now_ps caches the clock across one FIFO pass; -1 until first read. */
+/*
+ * WASM PORT FAST PATH (removable): D4, the clock read once per FIFO pass:
+ * *now_ps caches it across the pass; -1 until first read.
+ */
 static void dif_occupy_tx_bus(pmb887x_dif_t *p, uint64_t word_ps, int64_t *now_ps) {
 	uint32_t words = p->tx_bus_words;
 	p->tx_bus_words = 0;
@@ -411,6 +414,9 @@ static void dif_update_gpio_state(pmb887x_dif_t *p) {
 static void dif_tx_bus_catch_up(pmb887x_dif_t *p, int64_t until_ns, bool is_leaving);
 
 /*
+ * WASM PORT FAST PATH (removable): D1, lazy bus wakes: this, its callers, and
+ * dif_tx_bus_catch_up() to dif_tx_bus_go_lazy() below.
+ *
  * Before anything else sees the bus: the lazy wakes the guest has passed run,
  * the rest turn eager.  A wake at the very time of the access has not run yet,
  * as an eager one would not have.
@@ -474,6 +480,9 @@ static void dif_trigger_dma(pmb887x_dif_t *p) {
 }
 
 /*
+ * WASM PORT FAST PATH (removable): D3, TX bursts served without the request
+ * handshake: this, dif_raise_tx_burst_request() and dif_clear_dma_requests().
+ *
  * A bus wake raising the TX burst request runs no guest code before the DMAC
  * pass serves it, and the DMAC alone sees the request line, so the DMAC can
  * serve it at once: the request still raises and clears the TX interrupt as it
@@ -1216,6 +1225,10 @@ static void dif_tx_bus_wake_once(pmb887x_dif_t *p) {
 }
 
 /*
+ * WASM PORT FAST PATH (removable): D2, a fed bus run in one callback: this to
+ * dif_run_fed_tx_bus(), the loop in dif_tx_bus_wake(), dif_mux_entries() and
+ * the mux shifts in dif_update_mux().
+ *
  * A bus wake of a parallel transfer that the DMAC feeds a FIFO stage per
  * burst: the wake retires the stage leaving the bus, the DMAC serves the
  * burst that refills it at once (dif_serve_tx_burst()), the stage goes to

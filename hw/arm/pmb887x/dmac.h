@@ -6,8 +6,10 @@ OBJECT_DECLARE_SIMPLE_TYPE(pmb887x_dmac_t, PMB887X_DMAC);
 
 void pmb887x_dmac_set_sel(pmb887x_dmac_t *p, uint32_t value);
 uint32_t pmb887x_dmac_get_sel(pmb887x_dmac_t *p);
+/* WASM PORT FAST PATH (removable): D3, a burst served without its line */
 bool pmb887x_dmac_serve_burst(qemu_irq line);
 
+/* WASM PORT FAST PATH (removable): D2, the bursts of a fed bus in bulk */
 typedef struct {
 	MemoryRegion *sink;
 	hwaddr sink_addr;
@@ -25,6 +27,7 @@ bool pmb887x_dmac_get_bulk_source(qemu_irq line, uint32_t count, ram_addr_t *sta
 void pmb887x_dmac_serve_bulk_bursts(qemu_irq line, uint8_t *data, uint32_t count);
 
 /*
+ * WASM PORT FAST PATH (removable): D1, the lazy peripheral's catch-up.
  * @fn runs before anything else can read or change the DMAC: a register
  * access, a request line, a selection or clock change.  For a peripheral
  * that serves the DMAC on @line behind the clock.

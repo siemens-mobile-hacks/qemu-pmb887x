@@ -24,12 +24,14 @@ struct I2SRxBus {
 struct I2SSinkEndpoint {
     DeviceState parent_obj;
     I2SSink *sink;
+    /* WASM PORT FAST PATH (removable): D10, the class, cached at creation */
     I2SSinkClass *klass;
 };
 
 struct I2SSourceEndpoint {
     DeviceState parent_obj;
     I2SSource *source;
+    /* WASM PORT FAST PATH (removable): D10, the class, cached at creation */
     I2SSourceClass *klass;
 };
 
@@ -110,6 +112,7 @@ void i2s_tx_write(I2STxBus *bus, const int16_t *samples,
         return;
     }
 
+    /* WASM PORT FAST PATH (removable): D10, no checked casts per write */
     I2SSinkEndpoint *endpoint = container_of(child->child, I2SSinkEndpoint,
                                              parent_obj);
 
@@ -145,6 +148,7 @@ size_t i2s_rx_read(I2SRxBus *bus, int16_t *samples,
         return 0;
     }
 
+    /* WASM PORT FAST PATH (removable): D10, no checked casts per read */
     I2SSourceEndpoint *endpoint = container_of(child->child,
                                                I2SSourceEndpoint, parent_obj);
 
