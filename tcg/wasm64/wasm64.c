@@ -398,33 +398,22 @@ static struct {
     bool tb_overflow;       /* the translation added too many */
 } B;
 
-/* A batch as the assembler sees it (the open batch, B); a landed batch
- * keeps only its members and id in one. */
-struct w64_bsrc {
-    const struct w64_type *utype;
-    const struct w64_import *uimp;
-    const struct w64_member *member;
-    const struct w64_hint *hint;
-    unsigned n_utypes, n_uimp, n_member, n_hint;
-    uint32_t id;
-};
-
-/* Landed batches, by id.  A landed batch keeps only its records — which
- * descriptors and chain-table entries are its members — for eviction.
- * The staged bodies are freed at landing, so an evicted member cannot be
- * re-instantiated: the dispatcher retires it and the TB is translated
- * afresh (w64_batch_retire).  The live set (instantiated modules) is a
- * FIFO capped at W64_LIVE_MAX — Firefox caps a process at ~16k live wasm
- * modules (64 KB of executable address space each). */
+/* A landed batch keeps only which descriptors and chain-table entries
+ * are its members, for eviction.  The staged bodies are freed at landing,
+ * so an evicted member cannot be re-instantiated: the dispatcher retires
+ * it and the TB is translated afresh (w64_batch_retire).  The live set
+ * (instantiated modules) is a FIFO capped at W64_LIVE_MAX — Firefox caps
+ * a process at ~16k live wasm modules (64 KB of executable address space
+ * each); an evicted batch's record goes with it. */
 struct w64_landed {
-    struct w64_bsrc src;
-    uint32_t *tidx;        /* member chain-table indices (eviction) */
+    uint32_t *tcptr;       /* member descriptors */
+    uint32_t *tidx;        /* member chain-table indices */
+    unsigned n_member;
+    uint32_t id;
     struct w64_landed *next; /* live FIFO */
     uint32_t thunk;        /* the run thunk, to reach the rebinder */
     uint32_t rtidx;        /* the rebinder's chain-table index, 0 = none */
 };
-static struct w64_landed **w64_landed_by_id;
-static unsigned w64_landed_cap;
 static struct w64_landed *w64_live_head, *w64_live_tail;
 static unsigned w64_live_n;
 static uint32_t w64_next_batch_id;
@@ -935,22 +924,6 @@ static void w64_pcc_probe(struct w64_mb *b, uint32_t miss,
     mb_u8(b, 0x0b);                             /* end */
 }
 
-/* the open batch, viewed as a source (B's arrays are inline) */
-static struct w64_bsrc B_src;
-
-static void w64_bsrc_of_open(void)
-{
-    B_src.utype = B.utype;
-    B_src.uimp = B.uimp;
-    B_src.member = B.member;
-    B_src.hint = B.hint;
-    B_src.n_utypes = B.n_utypes;
-    B_src.n_uimp = B.n_uimp;
-    B_src.n_member = B.n_member;
-    B_src.n_hint = B.n_hint;
-    B_src.id = B.id;
-}
-
 /*
  * SpiderMonkey binds a table slot to the code a function has when the slot
  * is written, and never patches it: a member registered by an active
@@ -989,10 +962,9 @@ static void w64_rebind_body(struct w64_mb *b, unsigned segment)
     mb_u8(b, 0x0b);
 }
 
-/* Assemble the batch module from @src and instantiate it; returns the
- * run thunk's fidx.  A nonzero @rtidx asks for a rebinder there. */
-static uint32_t w64_assemble_instantiate(const struct w64_bsrc *src,
-                                         uint32_t rtidx)
+/* Assemble the open batch's module and instantiate it; returns the run
+ * thunk's fidx.  A nonzero @rtidx asks for a rebinder there. */
+static uint32_t w64_assemble_instantiate(uint32_t rtidx)
 {
     static const uint8_t magic[8] = { 0, 'a', 's', 'm', 1, 0, 0, 0 };
     struct w64_mb mod = { 0 }, sec = { 0 }, probe = { 0 }, rebind = { 0 };
@@ -1002,16 +974,16 @@ static uint32_t w64_assemble_instantiate(const struct w64_bsrc *src,
     uint32_t *ip;
     uint32_t thunk;
     unsigned m, i, nph = 0;
-    unsigned nfn = src->n_member;       /* members, the probe, the rebinder */
+    unsigned nfn = B.n_member;       /* members, the probe, the rebinder */
     int miss = -1;
 
     /* the pc-cache probe, when a member calls it: the last function */
-    for (i = 0; i < src->n_hint; i++) {
-        if (src->hint[i].pcc_call) {
+    for (i = 0; i < B.n_hint; i++) {
+        if (B.hint[i].pcc_call) {
             uint32_t helper = (uint32_t)(uintptr_t)w64_pcc_shape()->helper;
 
-            for (m = 0; m < src->n_uimp; m++) {
-                if (src->uimp[m].fptr == helper) {
+            for (m = 0; m < B.n_uimp; m++) {
+                if (B.uimp[m].fptr == helper) {
                     miss = m;
                     break;
                 }
@@ -1022,14 +994,14 @@ static uint32_t w64_assemble_instantiate(const struct w64_bsrc *src,
             break;
         }
     }
-    for (m = 0; miss >= 0 && m < src->n_member; m++) {
-        uint32_t hs = m ? src->member[m - 1].hint_end : 0;
+    for (m = 0; miss >= 0 && m < B.n_member; m++) {
+        uint32_t hs = m ? B.member[m - 1].hint_end : 0;
 
-        for (i = hs; i < src->member[m].hint_end; i++) {
-            if (src->hint[i].pcc_call) {
-                uint8_t *p = src->member[m].body + src->hint[i].pos -
+        for (i = hs; i < B.member[m].hint_end; i++) {
+            if (B.hint[i].pcc_call) {
+                uint8_t *p = B.member[m].body + B.hint[i].pos -
                              W64_BODY_OFF;
-                uint32_t v = src->n_uimp + src->n_member;
+                uint32_t v = B.n_uimp + B.n_member;
                 int b;
 
                 for (b = 0; b < 4; b++) {
@@ -1042,31 +1014,31 @@ static uint32_t w64_assemble_instantiate(const struct w64_bsrc *src,
     }
     if (rtidx) {
         /* segments: one per member, the rebinder's, the passive one */
-        w64_rebind_body(&rebind, src->n_member + 1);
+        w64_rebind_body(&rebind, B.n_member + 1);
     }
     mb_put(&mod, magic, sizeof(magic));
 
     /* type section: union types */
-    mb_uleb(&sec, src->n_utypes);
-    for (i = 0; i < src->n_utypes; i++) {
+    mb_uleb(&sec, B.n_utypes);
+    for (i = 0; i < B.n_utypes; i++) {
         unsigned j;
         mb_u8(&sec, 0x60);
-        mb_uleb(&sec, src->utype[i].np);
-        for (j = 0; j < src->utype[i].np; j++) {
-            mb_u8(&sec, src->utype[i].p[j] ? 0x7e : 0x7f);
+        mb_uleb(&sec, B.utype[i].np);
+        for (j = 0; j < B.utype[i].np; j++) {
+            mb_u8(&sec, B.utype[i].p[j] ? 0x7e : 0x7f);
         }
-        if (src->utype[i].ret == 0xff) {
+        if (B.utype[i].ret == 0xff) {
             mb_uleb(&sec, 0);
         } else {
             mb_uleb(&sec, 1);
-            mb_u8(&sec, src->utype[i].ret ? 0x7e : 0x7f);
+            mb_u8(&sec, B.utype[i].ret ? 0x7e : 0x7f);
         }
     }
     mb_sec(&mod, 1, &sec);
 
     /* import section: memory + shared chain table + union helpers */
     sec.n = 0;
-    mb_uleb(&sec, src->n_uimp + 2);
+    mb_uleb(&sec, B.n_uimp + 2);
     mb_u8(&sec, 1); mb_u8(&sec, 'e');
     mb_u8(&sec, 1); mb_u8(&sec, 'm');
     mb_u8(&sec, 0x02);                    /* memory */
@@ -1080,24 +1052,24 @@ static uint32_t w64_assemble_instantiate(const struct w64_bsrc *src,
     mb_u8(&sec, 0x00);
     mb_u8(&sec, 0x00);                    /* limits: min only */
     mb_uleb(&sec, 1);
-    for (i = 0; i < src->n_uimp; i++) {
+    for (i = 0; i < B.n_uimp; i++) {
         int len = snprintf((char *)name, sizeof(name), "f%u", i);
         mb_u8(&sec, 1); mb_u8(&sec, 'e');
         mb_u8(&sec, len);
         mb_put(&sec, name, len);
         mb_u8(&sec, 0x00);                /* function */
-        mb_uleb(&sec, src->uimp[i].type);
+        mb_uleb(&sec, B.uimp[i].type);
     }
     mb_sec(&mod, 2, &sec);
 
     /* function section: every member has type 0, the TB signature */
     sec.n = 0;
     mb_uleb(&sec, nfn + (rtidx != 0));
-    for (i = 0; i < src->n_member; i++) {
+    for (i = 0; i < B.n_member; i++) {
         mb_uleb(&sec, 0);
     }
     if (miss >= 0) {
-        mb_uleb(&sec, src->uimp[miss].type); /* the probe: the helper's */
+        mb_uleb(&sec, B.uimp[miss].type); /* the probe: the helper's */
     }
     if (rtidx) {
         mb_uleb(&sec, 0);
@@ -1107,23 +1079,23 @@ static uint32_t w64_assemble_instantiate(const struct w64_bsrc *src,
 
     /* element section: one active segment per member, TAB[tidx] = m */
     sec.n = 0;
-    mb_uleb(&sec, src->n_member + (rtidx ? 2 : 0));
-    for (m = 0; m < src->n_member; m++) {
-        uint32_t tidx = ((const uint32_t *)(uintptr_t)src->member[m].tcptr)
+    mb_uleb(&sec, B.n_member + (rtidx ? 2 : 0));
+    for (m = 0; m < B.n_member; m++) {
+        uint32_t tidx = ((const uint32_t *)(uintptr_t)B.member[m].tcptr)
                         [W64_DESC_TIDX / 4];
         maxtidx = MAX(maxtidx, tidx);
-        w64_elem_active(&sec, tidx, src->n_uimp + m);
+        w64_elem_active(&sec, tidx, B.n_uimp + m);
     }
     if (rtidx) {
         maxtidx = MAX(maxtidx, rtidx);
         /* TAB[rtidx] = rebinder */
-        w64_elem_active(&sec, rtidx, src->n_uimp + nfn - 1);
+        w64_elem_active(&sec, rtidx, B.n_uimp + nfn - 1);
         mb_u8(&sec, 0x05);                /* passive, (ref 0) expressions */
         mb_u8(&sec, 0x64);
         mb_u8(&sec, 0x00);
-        mb_uleb(&sec, src->n_member);
-        for (m = 0; m < src->n_member; m++) {
-            w64_elem_func(&sec, src->n_uimp + m);
+        mb_uleb(&sec, B.n_member);
+        for (m = 0; m < B.n_member; m++) {
+            w64_elem_func(&sec, B.n_uimp + m);
         }
     }
     mb_sec(&mod, 9, &sec);
@@ -1140,40 +1112,40 @@ static uint32_t w64_assemble_instantiate(const struct w64_bsrc *src,
         sec.n = 0;
         mb_uleb(&sec, sizeof(hname) - 1);
         mb_put(&sec, hname, sizeof(hname) - 1);
-        for (m = 0; m < src->n_member; m++) {
-            uint32_t hs = m ? src->member[m - 1].hint_end : 0;
+        for (m = 0; m < B.n_member; m++) {
+            uint32_t hs = m ? B.member[m - 1].hint_end : 0;
 
-            for (i = hs; i < src->member[m].hint_end; i++) {
-                if (!src->hint[i].pcc_call) {
+            for (i = hs; i < B.member[m].hint_end; i++) {
+                if (!B.hint[i].pcc_call) {
                     nf++;
                     break;
                 }
             }
         }
         mb_uleb(&sec, nf);
-        for (m = 0; nf && m < src->n_member; m++) {
-            uint32_t hs = m ? src->member[m - 1].hint_end : 0;
+        for (m = 0; nf && m < B.n_member; m++) {
+            uint32_t hs = m ? B.member[m - 1].hint_end : 0;
 
             nh = 0;
-            for (i = hs; i < src->member[m].hint_end; i++) {
-                nh += !src->hint[i].pcc_call;
+            for (i = hs; i < B.member[m].hint_end; i++) {
+                nh += !B.hint[i].pcc_call;
             }
             if (nh == 0) {
                 continue;
             }
-            mb_uleb(&sec, src->n_uimp + m);
+            mb_uleb(&sec, B.n_uimp + m);
             mb_uleb(&sec, nh);
-            for (i = hs; i < src->member[m].hint_end; i++) {
-                if (src->hint[i].pcc_call) {
+            for (i = hs; i < B.member[m].hint_end; i++) {
+                if (B.hint[i].pcc_call) {
                     continue;
                 }
-                mb_uleb(&sec, src->hint[i].pos - W64_BODY_OFF - 5);
+                mb_uleb(&sec, B.hint[i].pos - W64_BODY_OFF - 5);
                 mb_u8(&sec, 1);
-                mb_u8(&sec, src->hint[i].likely);
+                mb_u8(&sec, B.hint[i].likely);
             }
         }
         if (nph) {
-            mb_uleb(&sec, src->n_uimp + src->n_member);
+            mb_uleb(&sec, B.n_uimp + B.n_member);
             mb_uleb(&sec, nph);
             for (i = 0; i < nph; i++) {
                 mb_uleb(&sec, ph[i].pos);
@@ -1192,8 +1164,8 @@ static uint32_t w64_assemble_instantiate(const struct w64_bsrc *src,
     {
         uint64_t total = nfn < 128 ? 1 : 2;
 
-        for (m = 0; m < src->n_member; m++) {
-            total += src->member[m].body_len;
+        for (m = 0; m < B.n_member; m++) {
+            total += B.member[m].body_len;
         }
         if (miss >= 0) {
             total += 5 + probe.n;
@@ -1204,8 +1176,8 @@ static uint32_t w64_assemble_instantiate(const struct w64_bsrc *src,
         mb_u8(&mod, 10);
         mb_uleb_p5(&mod, (uint32_t)total);
         mb_uleb(&mod, nfn);
-        for (m = 0; m < src->n_member; m++) {
-            mb_put(&mod, src->member[m].body, src->member[m].body_len);
+        for (m = 0; m < B.n_member; m++) {
+            mb_put(&mod, B.member[m].body, B.member[m].body_len);
         }
         if (miss >= 0) {
             mb_uleb_p5(&mod, probe.n);
@@ -1229,14 +1201,14 @@ static uint32_t w64_assemble_instantiate(const struct w64_bsrc *src,
         sec.n = 0;
         mb_uleb(&sec, sizeof(nname) - 1);
         mb_put(&sec, nname, sizeof(nname) - 1);
-        mb_uleb(&sub, src->n_member);
-        for (m = 0; m < src->n_member; m++) {
-            TranslationBlock *tb = tcg_tb_lookup(src->member[m].tcptr);
+        mb_uleb(&sub, B.n_member);
+        for (m = 0; m < B.n_member; m++) {
+            TranslationBlock *tb = tcg_tb_lookup(B.member[m].tcptr);
             int len = tb ? snprintf(buf, sizeof(buf), "tb_%08x_%u_%x",
                                     (unsigned)tb->pc, tb->icount, tb->flags)
                          : snprintf(buf, sizeof(buf), "x_%x",
-                                    src->member[m].tcptr);
-            mb_uleb(&sub, src->n_uimp + m);
+                                    B.member[m].tcptr);
+            mb_uleb(&sub, B.n_uimp + m);
             mb_uleb(&sub, len);
             mb_put(&sub, buf, len);
         }
@@ -1249,13 +1221,13 @@ static uint32_t w64_assemble_instantiate(const struct w64_bsrc *src,
 #endif
 
     /* union import table for the JS resolver */
-    ip = g_malloc_n(src->n_uimp ? src->n_uimp : 1, sizeof(uint32_t));
-    for (i = 0; i < src->n_uimp; i++) {
-        ip[i] = src->uimp[i].fptr;
+    ip = g_malloc_n(B.n_uimp ? B.n_uimp : 1, sizeof(uint32_t));
+    for (i = 0; i < B.n_uimp; i++) {
+        ip[i] = B.uimp[i].fptr;
     }
 
     thunk = w64_batch_instantiate((uintptr_t)mod.b, mod.n, (uintptr_t)ip,
-                                  src->n_uimp, maxtidx);
+                                  B.n_uimp, maxtidx);
     tcg_debug_assert(thunk != 0);
     g_free(mod.b);
     g_free(sec.b);
@@ -1315,6 +1287,13 @@ bool w64_tc_evicted(const void *tc_ptr)
            (desc[W64_DESC_BATCH / 4] & W64_BATCH_TAG);
 }
 
+static void w64_landed_free(struct w64_landed *l)
+{
+    g_free(l->tcptr);
+    g_free(l->tidx);
+    g_free(l);
+}
+
 static void w64_batch_evict_oldest(void)
 {
     struct w64_landed *l = w64_live_head;
@@ -1332,13 +1311,13 @@ static void w64_batch_evict_oldest(void)
     w64_live_n--;
     w64_evict_epoch++;
 
-    for (m = 0; m < l->src.n_member; m++) {
-        uint32_t *desc = (uint32_t *)(uintptr_t)l->src.member[m].tcptr;
+    for (m = 0; m < l->n_member; m++) {
+        uint32_t *desc = (uint32_t *)(uintptr_t)l->tcptr[m];
         TranslationBlock *tb;
 
         /* a descriptor re-used by a later translation carries another
          * batch id by now: leave it alone */
-        if (desc[W64_DESC_BATCH / 4] != (W64_BATCH_TAG | l->src.id)) {
+        if (desc[W64_DESC_BATCH / 4] != (W64_BATCH_TAG | l->id)) {
             continue;
         }
         desc[W64_DESC_FIDX / 4] = 0;
@@ -1348,15 +1327,16 @@ static void w64_batch_evict_oldest(void)
          * longer stops the chain: drop the incoming jumps instead.  They
          * are re-linked the next time each source runs.
          */
-        tb = tcg_tb_lookup(l->src.member[m].tcptr);
+        tb = tcg_tb_lookup(l->tcptr[m]);
         if (tb) {
             tb_w64_unlink_incoming(tb);
         }
     }
-    w64_tab_unset((uintptr_t)l->tidx, l->src.n_member);
+    w64_tab_unset((uintptr_t)l->tidx, l->n_member);
     if (l->rtidx) {
         w64_tab_unset((uintptr_t)&l->rtidx, 1);
     }
+    w64_landed_free(l);
 
     /*
      * A goto_ptr inline-cache slot holds a table index too, and has no
@@ -1408,30 +1388,14 @@ static G_NORETURN void w64_batch_retire(CPUArchState *env, uintptr_t tcptr)
 
 static void w64_landed_free_all(void)
 {
-    unsigned i;
-    for (i = 0; i < w64_landed_cap; i++) {
-        struct w64_landed *l = w64_landed_by_id[i];
-        if (l) {
-            g_free((void *)l->src.member);
-            g_free(l->tidx);
-            g_free(l);
-            w64_landed_by_id[i] = NULL;
-        }
-    }
-    w64_live_head = w64_live_tail = NULL;
-    w64_live_n = 0;
-}
+    while (w64_live_head) {
+        struct w64_landed *l = w64_live_head;
 
-static void w64_landed_register(struct w64_landed *l)
-{
-    if (l->src.id >= w64_landed_cap) {
-        unsigned ncap = MAX(w64_landed_cap * 2, l->src.id + 1024);
-        w64_landed_by_id = g_renew(struct w64_landed *, w64_landed_by_id, ncap);
-        memset(w64_landed_by_id + w64_landed_cap, 0,
-               (ncap - w64_landed_cap) * sizeof(*w64_landed_by_id));
-        w64_landed_cap = ncap;
+        w64_live_head = l->next;
+        w64_landed_free(l);
     }
-    w64_landed_by_id[l->src.id] = l;
+    w64_live_tail = NULL;
+    w64_live_n = 0;
 }
 
 /*
@@ -1447,8 +1411,8 @@ static void w64_rebind_live(void)
         w64_run_fn *run = (w64_run_fn *)(uintptr_t)l->thunk;
         unsigned m, n;
 
-        for (m = 0; l->rtidx && m < l->src.n_member; m += n) {
-            for (n = 1; m + n < l->src.n_member &&
+        for (m = 0; l->rtidx && m < l->n_member; m += n) {
+            for (n = 1; m + n < l->n_member &&
                         l->tidx[m + n] == l->tidx[m] + n; n++) {
             }
             run(l->tidx[m], m, n, l->rtidx);
@@ -1481,8 +1445,7 @@ static void w64_batch_close(void)
     if (w64_rebind && w64_tidx_left()) {
         rtidx = w64_alloc_tidx();
     }
-    w64_bsrc_of_open();
-    thunk = w64_assemble_instantiate(&B_src, rtidx);
+    thunk = w64_assemble_instantiate(rtidx);
 
     /* the module holds the code now */
     for (m = 0; m < B.n_member; m++) {
@@ -1492,10 +1455,10 @@ static void w64_batch_close(void)
 
     /* landed record: the members, for eviction */
     l = g_new0(struct w64_landed, 1);
-    l->src.member = g_memdup2(B.member, B.n_member * sizeof(*B.member));
-    l->src.n_member = B.n_member;
-    l->src.id = B.id;
+    l->tcptr = g_new(uint32_t, B.n_member);
     l->tidx = g_new(uint32_t, B.n_member);
+    l->n_member = B.n_member;
+    l->id = B.id;
     l->thunk = thunk;
     l->rtidx = rtidx;
 
@@ -1504,11 +1467,11 @@ static void w64_batch_close(void)
         uint32_t *desc = (uint32_t *)(uintptr_t)B.member[m].tcptr;
         desc[W64_DESC_FIDX / 4] = thunk;
         desc[W64_DESC_BATCH / 4] = W64_BATCH_TAG | B.id;
+        l->tcptr[m] = B.member[m].tcptr;
         l->tidx[m] = desc[W64_DESC_TIDX / 4];
         w64_irec_drop(l->tidx[m]);
     }
 
-    w64_landed_register(l);
     w64_live_push(l);
     B.id = 0;
 }
