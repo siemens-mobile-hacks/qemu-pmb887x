@@ -270,7 +270,7 @@ static inline TranslationBlock *tb_lookup(CPUState *cpu,
     /* we should never be trying to look up an INVALID tb */
     tcg_debug_assert(!(s->cflags & CF_INVALID));
 
-    hash = tb_jmp_cache_hash_func(s->pc, s->flags);
+    hash = tb_jmp_hash(s->pc, s->flags);
     jc = cpu->tb_jmp_cache;
 
     tb = qatomic_read(&jc->array[hash].tb);
@@ -577,20 +577,20 @@ static TranslationBlock *lookup_tb_for_ptr(CPUState *cpu, TCGTBCPUState *s)
 }
 
 #ifdef CONFIG_TCG_WASM64
-static const void *w64_lookup_tb_ptr_miss(CPUState *cpu, uint32_t gen)
+static const void *w64_lookup_tb_ptr_miss(CPUState *cpu, uint32_t gen,
+                                          TCGTBCPUState *s)
 {
-    TCGTBCPUState s;
-    TranslationBlock *tb = lookup_tb_for_ptr(cpu, &s);
+    TranslationBlock *tb = lookup_tb_for_ptr(cpu, s);
     const void *target;
 
     if (tb == NULL) {
         return tcg_code_gen_epilogue;
     }
     if (qemu_loglevel_mask(CPU_LOG_TB_CPU | CPU_LOG_EXEC)) {
-        return tb->tc.ptr;
+        return tb->tc.ptr;  /* untagged: keeps every lookup in the log */
     }
     target = w64_dispatch_target(tb);
-    w64_pcc_put(cpu, s, gen, target);
+    w64_pcc_put(cpu, *s, gen, target);
     return target;
 }
 #endif
@@ -602,13 +602,14 @@ const void *HELPER(lookup_tb_ptr)(CPUArchState *env)
     uint32_t gen = qatomic_read(&cpu->neg.tb_key_gen);
     uint32_t key[3], pc;
     const void *target;
+    TCGTBCPUState s;
 
     cpu->neg.can_do_io = true;
     target = w64_pcc_get(cpu, gen, key, &pc);
     if (likely(target != NULL)) {
         return target;
     }
-    return w64_lookup_tb_ptr_miss(cpu, gen);
+    return w64_lookup_tb_ptr_miss(cpu, gen, &s);
 #else
     TCGTBCPUState s;
     TranslationBlock *tb = lookup_tb_for_ptr(env_cpu(env), &s);
@@ -702,7 +703,6 @@ const void *HELPER(lookup_tb_ptr_lc)(CPUArchState *env, void *slot)
     uint32_t gen = qatomic_read(&cpu->neg.tb_key_gen);
     uint32_t cur[3], pc;
     TCGTBCPUState s;
-    TranslationBlock *tb;
 
     cpu->neg.can_do_io = true;
     target = w64_pcc_get(cpu, gen, cur, &pc);
@@ -713,17 +713,7 @@ const void *HELPER(lookup_tb_ptr_lc)(CPUArchState *env, void *slot)
         }
         return target;
     }
-    tb = lookup_tb_for_ptr(cpu, &s);
-    if (tb == NULL) {
-        return tcg_code_gen_epilogue;
-    }
-    if (qemu_loglevel_mask(CPU_LOG_TB_CPU | CPU_LOG_EXEC)) {
-        return tb->tc.ptr;         /* keep every lookup visible in the log */
-    }
-
-    target = w64_dispatch_target(tb);
-    w64_pcc_put(cpu, s, gen, target);
-
+    target = w64_lookup_tb_ptr_miss(cpu, gen, &s);
     if (lc && likely(w64_may_cache(cpu, &s, target)) &&
         arm_w64_lc_key(cpu, cur)) {
         w64_lc_fill(lc, cur, s.pc, target, gen);
@@ -1286,8 +1276,7 @@ static inline bool cpu_handle_interrupt(CPUState *cpu,
      * The corresponding store-release is in cpu_exit.
      */
     if (unlikely(qatomic_load_acquire(&cpu->exit_request)) ||
-        icount_exit_request(cpu) ||
-        cpu_cycle_budget_exit(cpu)) {
+        icount_exit_request(cpu) || cpu_cycle_budget_exit(cpu)) {
         if (cpu->exception_index == -1) {
             cpu->exception_index = EXCP_INTERRUPT;
         }
@@ -1407,7 +1396,7 @@ cpu_exec_loop(CPUState *cpu, SyncClocks *sc)
                  * We add the TB in the virtual pc hash table
                  * for the fast lookup
                  */
-                h = tb_jmp_cache_hash_func(s.pc, s.flags);
+                h = tb_jmp_hash(s.pc, s.flags);
                 jc = cpu->tb_jmp_cache;
                 jc->array[h].pc = tb_jmp_cache_key(jc, s.pc);
                 qatomic_set(&jc->array[h].tb, tb);

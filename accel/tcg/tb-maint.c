@@ -1250,7 +1250,7 @@ static void tb_jmp_cache_inval_tb(TranslationBlock *tb)
             tcg_flush_jmp_cache(cpu);
         }
     } else {
-        uint32_t h = tb_jmp_cache_hash_func(tb->pc, tb->flags);
+        uint32_t h = tb_jmp_hash(tb->pc, tb->flags);
 
         CPU_FOREACH(cpu) {
             CPUJumpCache *jc = cpu->tb_jmp_cache;
