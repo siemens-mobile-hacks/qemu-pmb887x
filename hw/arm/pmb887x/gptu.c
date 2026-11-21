@@ -1391,6 +1391,8 @@ static void gptu_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned s
 			p->t012run = t012run;
 			gptu_rebuild_timers(p);
 			gptu_t2_update_state(p);
+			/* T2's run state is an input to gptu_t01_observable() */
+			gptu_sync_timer(p);
 			break;
 
 		case GPTU_SRSEL:
