@@ -43,6 +43,7 @@
 #include "ui/console.h"
 #include "ui/input.h"
 #include "ui/surface.h"
+#include "console-priv.h"
 
 /* ------------------------------------------------------------------ */
 /* Framebuffer shared state (read by JS through exported accessors)    */
@@ -624,7 +625,16 @@ static int wasm_refresh_interval = WASM_REFRESH_INTERVAL_MIN;
 
 static void wasm_refresh_vcpu(void *opaque)
 {
-    wasm_refresh_interval = wasm_refresh_poll(opaque, wasm_refresh_interval);
+    DisplayChangeListener *dcl = opaque;
+
+    /*
+     * An update wakes the screendumps waiting for one, and a coroutine
+     * cannot run on this thread: while one waits, the main loop's bottom
+     * half (qemu_console_co_wait_update) does the update.
+     */
+    if (qemu_co_queue_empty(&dcl->con->dump_queue)) {
+        wasm_refresh_interval = wasm_refresh_poll(dcl, wasm_refresh_interval);
+    }
     timer_mod(wasm_refresh_timer,
               qemu_clock_get_ms(QEMU_CLOCK_VIRTUAL) + wasm_refresh_interval);
 }
