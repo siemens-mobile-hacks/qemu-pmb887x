@@ -419,6 +419,7 @@ static void w64_scan_labels(TCGContext *s)
 {
     TCGOp *op;
     int prologue_target = -1;   /* label branched to before any is placed */
+    unsigned back_at = 0;       /* labels placed before the last back-edge */
 
     W.nested = true;
     W.selfloop = false;
@@ -450,6 +451,7 @@ static void w64_scan_labels(TCGContext *s)
             if (l->id < W64_MAX_LABELS && W.label_idx[l->id] != 0) {
                 if (W.label_idx[l->id] == 1) {
                     W.selfloop = true;      /* back-edge to the TB's top */
+                    back_at = W.n_labels;
                 } else {
                     W.nested = false;       /* any other backward branch */
                 }
@@ -462,12 +464,14 @@ static void w64_scan_labels(TCGContext *s)
     /*
      * The loop starts where label 1 is placed, so everything before it
      * stays outside, and the only label whose block can still wrap it is
-     * the one placed last.
+     * the one placed last.  Placing that label closes the loop, so a
+     * back-edge after it has no loop to branch to.
      */
     if (W.selfloop &&
-        (W.n_labels < 2 || (prologue_target >= 0 &&
-                            (prologue_target >= W64_MAX_LABELS ||
-                             W.label_idx[prologue_target] != W.n_labels)))) {
+        (W.n_labels < 2 || back_at == W.n_labels ||
+         (prologue_target >= 0 &&
+          (prologue_target >= W64_MAX_LABELS ||
+           W.label_idx[prologue_target] != W.n_labels)))) {
         W.nested = false;
     }
     if (W.nested && W.n_labels + 9 > W64_MAX_BLK) {
