@@ -164,7 +164,11 @@ static bool sme_fa64(CPUARMState *env, int el)
     return true;
 }
 
+#ifdef CONFIG_TCG_WASM64
 /*
+ * WASM PORT FAST PATH (removable): R5, the A32 rebuild of a pre-v6
+ * A-profile core in two loads and a few bit tests.
+ *
  * The features whose absence makes every question rebuild_hflags_a32()
  * asks answerable from two words of state.  An ARMv5 A-profile core with
  * an MMU - the pmb887x's ARM926EJ-S - has none of them.
@@ -201,11 +205,7 @@ static bool sme_fa64(CPUARMState *env, int el)
  *   sctlr_b                !v6 implies !v7, so it is just SCTLR.B.
  *   BE_DATA                system mode ignores sctlr_b here; CPSR.E.
  *
- * Five out-of-line calls and ~20 branches become two loads and a
- * handful of bit tests.  This is worth it because the rebuild is not
- * rare: every mode change runs it, and on an idle S75 the hflags
- * cluster (rebuild_hflags_a32 + arm_rebuild_hflags + arm_mmu_idx_el)
- * was 3.4 % of the vCPU thread.
+ * Every mode change runs the rebuild.
  *
  * el > 1 cannot happen without EL2/EL3, but arm_current_el() decodes it
  * from CPSR, so take the generic path rather than trust the guest.
@@ -216,11 +216,6 @@ bool rebuild_hflags_a32_fast(CPUARMState *env, int el, CPUARMTBFlags *out)
     CPUARMTBFlags flags = {};
     uint64_t sctlr;
     ARMMMUIdx mmu_idx;
-
-#ifdef CONFIG_USER_ONLY
-    /* Both ALIGN_MEM and BE_DATA are computed differently there. */
-    return false;
-#endif
 
     if ((env->features & HFLAGS_A32_FAST_FEATURES) || el > 1) {
         return false;
@@ -254,6 +249,7 @@ bool rebuild_hflags_a32_fast(CPUARMState *env, int el, CPUARMTBFlags *out)
     *out = flags;
     return true;
 }
+#endif
 
 static CPUARMTBFlags rebuild_hflags_a32(CPUARMState *env, int fp_el,
                                         ARMMMUIdx mmu_idx)
@@ -301,19 +297,6 @@ static CPUARMTBFlags rebuild_hflags_a32(CPUARMState *env, int fp_el,
     }
 
     return rebuild_hflags_common_32(env, fp_el, mmu_idx, flags);
-}
-
-/* The single AArch32 entry point: every caller has @el and nothing else. */
-static inline __attribute__((always_inline))
-CPUARMTBFlags rebuild_hflags_a32_el(CPUARMState *env, int el)
-{
-    CPUARMTBFlags fast;
-
-    if (rebuild_hflags_a32_fast(env, el, &fast)) {
-        return fast;
-    }
-    return rebuild_hflags_a32(env, fp_exception_el(env, el),
-                              arm_mmu_idx_el(env, el));
 }
 
 /*
@@ -669,20 +652,15 @@ static CPUARMTBFlags rebuild_hflags_a64(CPUARMState *env, int el, int fp_el,
 static CPUARMTBFlags rebuild_hflags_internal(CPUARMState *env)
 {
     int el = arm_current_el(env);
-    int fp_el;
-    ARMMMUIdx mmu_idx;
-
-    if (!is_a64(env) && !arm_feature(env, ARM_FEATURE_M)) {
-        return rebuild_hflags_a32_el(env, el);
-    }
-
-    fp_el = fp_exception_el(env, el);
-    mmu_idx = arm_mmu_idx_el(env, el);
+    int fp_el = fp_exception_el(env, el);
+    ARMMMUIdx mmu_idx = arm_mmu_idx_el(env, el);
 
     if (is_a64(env)) {
         return rebuild_hflags_a64(env, el, fp_el, mmu_idx);
-    } else {
+    } else if (arm_feature(env, ARM_FEATURE_M)) {
         return rebuild_hflags_m32(env, fp_el, mmu_idx);
+    } else {
+        return rebuild_hflags_a32(env, fp_el, mmu_idx);
     }
 }
 
@@ -703,6 +681,19 @@ static void arm_set_hflags(CPUARMState *env, CPUARMTBFlags f)
 }
 
 #ifdef CONFIG_TCG_WASM64
+/* R5's entry: true if it set the flags, for a core without the features */
+static inline __attribute__((always_inline))
+bool w64_set_hflags_a32_fast(CPUARMState *env, int el)
+{
+    CPUARMTBFlags fast;
+
+    if (!rebuild_hflags_a32_fast(env, el, &fast)) {
+        return false;
+    }
+    arm_set_hflags(env, fast);
+    return true;
+}
+
 /*
  * The words of the wasm64 inline TB-lookup cache key (gen_goto_ptr
  * stamps or compares them without recomputing the TB flags):
@@ -772,6 +763,11 @@ void arm_w64_lc_key_layout(struct W64PccShape *sh)
 
 void arm_rebuild_hflags(CPUARMState *env)
 {
+#ifdef CONFIG_TCG_WASM64
+    if (w64_set_hflags_a32_fast(env, arm_current_el(env))) {
+        return;
+    }
+#endif
     arm_set_hflags(env, rebuild_hflags_internal(env));
 }
 
@@ -802,12 +798,28 @@ void HELPER(rebuild_hflags_m32)(CPUARMState *env, int el)
  */
 void HELPER(rebuild_hflags_a32_newel)(CPUARMState *env)
 {
-    arm_set_hflags(env, rebuild_hflags_a32_el(env, arm_current_el(env)));
+    int el = arm_current_el(env);
+#ifdef CONFIG_TCG_WASM64
+    if (w64_set_hflags_a32_fast(env, el)) {
+        return;
+    }
+#endif
+    int fp_el = fp_exception_el(env, el);
+    ARMMMUIdx mmu_idx = arm_mmu_idx_el(env, el);
+    arm_set_hflags(env, rebuild_hflags_a32(env, fp_el, mmu_idx));
 }
 
 void HELPER(rebuild_hflags_a32)(CPUARMState *env, int el)
 {
-    arm_set_hflags(env, rebuild_hflags_a32_el(env, el));
+#ifdef CONFIG_TCG_WASM64
+    if (w64_set_hflags_a32_fast(env, el)) {
+        return;
+    }
+#endif
+    int fp_el = fp_exception_el(env, el);
+    ARMMMUIdx mmu_idx = arm_mmu_idx_el(env, el);
+
+    arm_set_hflags(env, rebuild_hflags_a32(env, fp_el, mmu_idx));
 }
 
 void HELPER(rebuild_hflags_a64)(CPUARMState *env, int el)
