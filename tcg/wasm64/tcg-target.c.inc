@@ -1471,6 +1471,42 @@ static void w64_chain_go(TCGContext *s)
     w64_uleb(s, 0);                         /* table 0: the shared table */
 }
 
+/* the block a chain test leaves to fall through to the exit */
+static void w64_chain_open(TCGContext *s)
+{
+    tcg_debug_assert(W.n_blk < W64_MAX_BLK);
+    w64_u8(s, 0x02);                        /* block void */
+    w64_u8(s, 0x40);
+    W.blk[W.n_blk].kind = W64_BLK_IF;
+    W.blk[W.n_blk].label = -1;
+    W.n_blk++;
+}
+
+/*
+ * The i64 on the stack is a chain-table index if its high half is set:
+ * keep it in $scr0, leave the block if it is not one (or the lockstep
+ * brake is on), tail-call it if it is, and close the block.
+ */
+static void w64_chain_test_go(TCGContext *s)
+{
+    w64_local_tee(s, W64_L_SCR0);
+    w64_const_i64(s, 32);
+    w64_u8(s, 0x88);                        /* i64.shr_u */
+    w64_u8(s, 0x50);                        /* i64.eqz */
+    if (w64_ls_armed()) {
+        w64_const_addr(s, (uintptr_t)&w64_chain_stop);
+        w64_u8(s, 0x28);                    /* i32.load */
+        w64_memarg(s, 2, 0);
+        w64_u8(s, 0x72);                    /* i32.or */
+    }
+    w64_u8(s, 0x0d);                        /* br_if */
+    w64_uleb(s, 0);
+
+    w64_chain_go(s);
+
+    w64_blk_pop(s);                         /* end */
+}
+
 static void tcg_out_goto_tb(TCGContext *s, int which)
 {
     w64_ir_op(WI_GOTO_TB, which, 0, 0);
@@ -1516,32 +1552,11 @@ static void tcg_out_goto_tb(TCGContext *s, int which)
 
     set_jmp_reset_offset(s, which);
 
-    tcg_debug_assert(W.n_blk < W64_MAX_BLK);
-    w64_u8(s, 0x02);                        /* block void */
-    w64_u8(s, 0x40);
-    W.blk[W.n_blk].kind = W64_BLK_IF;
-    W.blk[W.n_blk].label = -1;
-    W.n_blk++;
-
+    w64_chain_open(s);
     w64_const_addr(s, slot);
     w64_u8(s, 0x29);                        /* i64.load */
     w64_memarg(s, 3, 0);
-    w64_local_tee(s, W64_L_SCR0);
-    w64_const_i64(s, 32);
-    w64_u8(s, 0x88);                        /* i64.shr_u */
-    w64_u8(s, 0x50);                        /* i64.eqz: not linked */
-    if (w64_ls_armed()) {
-        w64_const_addr(s, (uintptr_t)&w64_chain_stop);
-        w64_u8(s, 0x28);                    /* i32.load */
-        w64_memarg(s, 2, 0);
-        w64_u8(s, 0x72);                    /* i32.or */
-    }
-    w64_u8(s, 0x0d);                        /* br_if */
-    w64_uleb(s, 0);
-
-    w64_chain_go(s);
-
-    w64_blk_pop(s);                         /* end */
+    w64_chain_test_go(s);
 }
 
 static void tcg_out_goto_ptr(TCGContext *s, TCGReg a0)
@@ -1567,30 +1582,9 @@ static void tcg_out_goto_ptr(TCGContext *s, TCGReg a0)
      *
      * A wasm64 heap pointer is below 2 GB, so the high half separates the
      * two cases without a tag test of its own. */
-    tcg_debug_assert(W.n_blk < W64_MAX_BLK);
-    w64_u8(s, 0x02);                        /* block void */
-    w64_u8(s, 0x40);
-    W.blk[W.n_blk].kind = W64_BLK_IF;
-    W.blk[W.n_blk].label = -1;
-    W.n_blk++;
-
+    w64_chain_open(s);
     w64_get_i64(s, a0);
-    w64_local_tee(s, W64_L_SCR0);
-    w64_const_i64(s, 32);
-    w64_u8(s, 0x88);                        /* i64.shr_u */
-    w64_u8(s, 0x50);                        /* i64.eqz: not a table index */
-    if (w64_ls_armed()) {
-        w64_const_addr(s, (uintptr_t)&w64_chain_stop);
-        w64_u8(s, 0x28);                    /* i32.load */
-        w64_memarg(s, 2, 0);
-        w64_u8(s, 0x72);                    /* i32.or */
-    }
-    w64_u8(s, 0x0d);                        /* br_if */
-    w64_uleb(s, 0);
-
-    w64_chain_go(s);
-
-    w64_blk_pop(s);                         /* end */
+    w64_chain_test_go(s);
 
     /* store the next TB's code pointer at [sp-8] and return the
      * handoff code; the C dispatcher continues the chain. */
