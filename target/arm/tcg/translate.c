@@ -2360,7 +2360,8 @@ static bool w64_inline_call(DisasContext *s, int64_t diff)
     s->w64_inl_depth = depth + 1;
     s->page_start = dest & TARGET_PAGE_MASK;
     s->w64_inl_page = on_page;
-    if (depth == 0) {
+    /* after an absorbed cross-page b the linear range has ended already */
+    if (depth == 0 && s->w64_abs_rec < 0) {
         db->w64_lin_end = ret;
     }
     db->pc_next = dest;
@@ -2425,7 +2426,7 @@ static bool w64_inline_return(DisasContext *s, int rm)
     w64_inl_pending[s->w64_inl_recidx[depth]].idx1 = s->base.num_insns;
     s->page_start = s->w64_inl_pstart[depth];
     s->w64_inl_page = s->w64_inl_page_save[depth];
-    if (depth == 0) {
+    if (depth == 0 && s->w64_abs_rec < 0) {
         s->base.w64_lin_end = 0;
     }
     s->base.pc_next = ret & ~(vaddr)1;
