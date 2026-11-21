@@ -188,7 +188,7 @@ struct teak_tcg_chain_exit_t {
 static teak_tcg_block_cache_entry_t *tcg_block_cache[TEAK_TCG_BLOCK_CACHE_ENTRIES];
 static uint64_t tcg_block_cache_generation = 1;
 /*
- * Bumped whenever an entry is added or freed; never 0. Unlike the generation,
+ * Bumped whenever an entry is added or freed. Unlike the generation,
  * it survives program context switches (tens of thousands a second on S75).
  */
 static uint32_t tcg_block_cache_epoch = 1;
@@ -2000,6 +2000,7 @@ static void tcg_cache_block(
 	entry->code = tb->tc.ptr;
 	entry->dynamic_cycles = tcg_block_has_dynamic_cycles(block);
 	entry->fast_epoch = 0;
+	entry->fast = false;
 #ifdef CONFIG_TCG_WASM64
 	entry->evict_epoch = w64_evict_epoch - 1;
 #endif
@@ -2025,6 +2026,8 @@ static void tcg_cache_block(
 			entry->level_free = false;
 	}
 	entry->succ_epoch = 0;
+	entry->succ[0] = NULL;
+	entry->succ[1] = NULL;
 	entry->mode = mode;
 	entry->next = tcg_block_cache[block->pc];
 	tcg_block_cache[block->pc] = entry;
@@ -8261,7 +8264,7 @@ typedef struct teak_tcg_fast_site_t {
 	int8_t verified;
 } teak_tcg_fast_site_t;
 
-/* Bumped whenever tcg_fast_map changes; never 0. */
+/* Bumped whenever tcg_fast_map changes. */
 static uint32_t tcg_fast_map_epoch = 1;
 static teak_tcg_fast_site_t tcg_fast_sites[32];
 static size_t tcg_fast_site_count;
