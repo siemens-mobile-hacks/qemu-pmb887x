@@ -402,31 +402,6 @@ static uint64_t w64_iun(unsigned op, uint64_t a, bool is64)
     }
 }
 
-static uint64_t w64_ibswap(unsigned size, uint64_t a, unsigned flags,
-                           bool is64)
-{
-    uint64_t v;
-
-    switch (size) {
-    case 16:
-        v = bswap16((uint16_t)a);
-        if (flags & TCG_BSWAP_OS) {
-            v = is64 ? (uint64_t)(int16_t)v : (uint32_t)(int16_t)v;
-        } else if (!(flags & TCG_BSWAP_OZ)) {
-            v = (a & ~(uint64_t)0xffff) | v;
-        }
-        return is64 ? v : (uint32_t)v;
-    case 32:
-        v = bswap32((uint32_t)a);
-        if (flags & TCG_BSWAP_OS) {
-            v = (uint64_t)(int32_t)v;
-        }
-        return is64 ? v : (uint32_t)v;
-    default:
-        return bswap64(a);
-    }
-}
-
 static uint32_t w64_interp_run(const struct w64_irec *r, uintptr_t env,
                                uintptr_t sp, uintptr_t tp)
 {
@@ -532,18 +507,6 @@ static uint32_t w64_interp_run(const struct w64_irec *r, uintptr_t env,
             }
             break;
         }
-
-        case WI_BSWAP16:
-            regs[a0] = w64_ibswap(16, regs[a1], c[pc], a2);
-            pc += 1;
-            break;
-        case WI_BSWAP32:
-            regs[a0] = w64_ibswap(32, regs[a1], c[pc], a2);
-            pc += 1;
-            break;
-        case WI_BSWAP64:
-            regs[a0] = bswap64(regs[a1]);
-            break;
 
         case WI_SETCOND32:
             regs[a0] = w64_icond32(c[pc], regs[a1], regs[a2]);

@@ -81,10 +81,6 @@ enum {
     WI_STI32,           /* a1 = base;   +1: ofs, +2: imm64             */
     WI_STI64,
 
-    WI_BSWAP16,         /* a0, a1, a2 = is64; +1: flags                */
-    WI_BSWAP32,
-    WI_BSWAP64,
-
     WI_SETCOND32,       /* a0, a1, a2;  +1: cond                       */
     WI_SETCOND64,
     WI_SETCONDI32,      /* a0, a1;      +1: cond, +2: imm64            */

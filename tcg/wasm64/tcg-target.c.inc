@@ -2616,180 +2616,20 @@ static const TCGOutOpExtract2 outop_extract2 = {
 /* byte swaps                                                          */
 /* ------------------------------------------------------------------ */
 
-/* i32/i64 bswap16: swap the low 16 bits; flags govern the upper bits
- * (TCG_BSWAP_IZ is an input promise, not an output property). */
-static void tgen_bswap16(TCGContext *s, TCGType t, TCGReg r0, TCGReg r1,
-                         unsigned flags)
-{
-    w64_ir_op(WI_BSWAP16, r0, r1, t != TCG_TYPE_I32);
-    w64_ir_w(flags);
-    unsigned top = t == TCG_TYPE_I32 ? 32 : 64;
-
-    /* swapped low half */
-    w64_get(s, r1, t);
-    w64_const(s, t, 8);
-    w64_u8(s, t == TCG_TYPE_I32 ? 0x76 : 0x88);           /* shr_u */
-    w64_const(s, t, 0xff);
-    w64_u8(s, t == TCG_TYPE_I32 ? 0x71 : 0x83);           /* and */
-    w64_get(s, r1, t);
-    w64_const(s, t, 0xff);
-    w64_u8(s, t == TCG_TYPE_I32 ? 0x71 : 0x83);           /* and */
-    w64_const(s, t, 8);
-    w64_u8(s, t == TCG_TYPE_I32 ? 0x74 : 0x86);           /* shl */
-    w64_u8(s, t == TCG_TYPE_I32 ? 0x72 : 0x84);           /* or */
-    { int scr_ = w64_scr(t);
-    w64_local_set(s, scr_);
-
-    if (flags & TCG_BSWAP_OZ) {
-        w64_local_get(s, scr_);
-    } else if (flags & TCG_BSWAP_OS) {
-        w64_local_get(s, scr_);
-        w64_const(s, t, top - 16);
-        w64_u8(s, t == TCG_TYPE_I32 ? 0x74 : 0x86);       /* shl */
-        w64_const(s, t, top - 16);
-        w64_u8(s, t == TCG_TYPE_I32 ? 0x75 : 0x87);       /* shr_s */
-    } else {
-        /* preserve input upper bits (default) */
-        w64_local_get(s, scr_);
-        w64_get(s, r1, t);
-        w64_const(s, t, ~(tcg_target_long)0xffff);
-        w64_u8(s, t == TCG_TYPE_I32 ? 0x71 : 0x83);       /* and */
-        w64_u8(s, t == TCG_TYPE_I32 ? 0x72 : 0x84);       /* or */
-    }
-    }
-    w64_set(s, r0, t);
-}
+/*
+ * wasm has no byte swap: without the ops tcg-op.c builds the swaps from
+ * shifts and masks, which is all an emitter here would do.
+ */
 static const TCGOutOpBswap outop_bswap16 = {
-    .base.static_constraint = C_O1_I1(r, r),
-    .out_rr = tgen_bswap16,
+    .base.static_constraint = C_NotImplemented,
 };
 
-static void tgen_bswap32(TCGContext *s, TCGType t, TCGReg r0, TCGReg r1,
-                         unsigned flags)
-{
-    w64_ir_op(WI_BSWAP32, r0, r1, t != TCG_TYPE_I32);
-    w64_ir_w(flags);
-    unsigned top = t == TCG_TYPE_I32 ? 32 : 64;
-
-    if (t == TCG_TYPE_I32) {
-        /* t = rotr(x, 16); ret = (t & 0xff00ff00) >> 8 | (t & 0x00ff00ff) << 8 */
-        w64_get_i32(s, r1);
-        w64_const_i32(s, 16);
-        w64_u8(s, 0x78);                    /* i32.rotr */
-        w64_local_tee(s, W64_L_SCR32);
-        w64_const_i32(s, (int32_t)0xff00ff00u);
-        w64_u8(s, 0x71);                    /* and */
-        w64_const_i32(s, 8);
-        w64_u8(s, 0x76);                    /* shr_u */
-        w64_local_get(s, W64_L_SCR32);
-        w64_const_i32(s, 0x00ff00ff);
-        w64_u8(s, 0x71);                    /* and */
-        w64_const_i32(s, 8);
-        w64_u8(s, 0x74);                    /* shl */
-        w64_u8(s, 0x72);                    /* or */
-        w64_set_i32(s, r0);
-        return;
-    }
-
-    /* i64: swap the low 32 bits, upper 32 governed by flags.
-     * bswap32(x) = adjacent-byte swap of the 16-bit-half swap, all in
-     * the low 32 bits (kept as i64 ops; every intermediate stays
-     * masked to 32 bits). */
-    w64_get_i64(s, r1);
-    w64_const_i64(s, 0x00000000ffffffffull);
-    w64_u8(s, 0x83);                        /* and */
-    w64_local_set(s, W64_L_SCR0);
-    /* 16-bit half swap */
-    w64_local_get(s, W64_L_SCR0);
-    w64_const_i64(s, 16);
-    w64_u8(s, 0x86);                        /* shl */
-    w64_local_get(s, W64_L_SCR0);
-    w64_const_i64(s, 16);
-    w64_u8(s, 0x88);                        /* shr_u */
-    w64_u8(s, 0x84);                        /* or */
-    w64_const_i64(s, 0x00000000ffffffffull);
-    w64_u8(s, 0x83);                        /* and */
-    w64_local_set(s, W64_L_SCR0);
-    /* two-mask adjacent-byte swap */
-    w64_local_get(s, W64_L_SCR0);
-    w64_const_i64(s, (int64_t)0xff00ff00u);
-    w64_u8(s, 0x83);                        /* and */
-    w64_const_i64(s, 8);
-    w64_u8(s, 0x88);                        /* shr_u */
-    w64_local_get(s, W64_L_SCR0);
-    w64_const_i64(s, 0x00ff00ff);
-    w64_u8(s, 0x83);                        /* and */
-    w64_const_i64(s, 8);
-    w64_u8(s, 0x86);                        /* shl */
-    w64_u8(s, 0x84);                        /* or */
-    w64_local_set(s, W64_L_SCR0);
-
-    if (flags & TCG_BSWAP_OZ) {
-        w64_local_get(s, W64_L_SCR0);
-    } else if (flags & TCG_BSWAP_OS) {
-        w64_local_get(s, W64_L_SCR0);
-        w64_const_i64(s, top - 32);
-        w64_u8(s, 0x86);                    /* shl */
-        w64_const_i64(s, top - 32);
-        w64_u8(s, 0x87);                    /* shr_s */
-    } else {
-        w64_local_get(s, W64_L_SCR0);
-        w64_get_i64(s, r1);
-        w64_const_i64(s, ~(int64_t)0xffffffffu);
-        w64_u8(s, 0x83);                    /* and */
-        w64_u8(s, 0x84);                    /* or */
-    }
-    w64_set_i64(s, r0);
-}
 static const TCGOutOpBswap outop_bswap32 = {
-    .base.static_constraint = C_O1_I1(r, r),
-    .out_rr = tgen_bswap32,
+    .base.static_constraint = C_NotImplemented,
 };
 
-static void tgen_bswap64(TCGContext *s, TCGType t, TCGReg r0, TCGReg r1)
-{
-    w64_ir_op(WI_BSWAP64, r0, r1, 0);
-    /* stage 1: bytes */
-    w64_get_i64(s, r1);
-    w64_const_i64(s, 0x00ff00ff00ff00ffull);
-    w64_u8(s, 0x83);                        /* and */
-    w64_const_i64(s, 8);
-    w64_u8(s, 0x86);                        /* shl */
-    w64_get_i64(s, r1);
-    w64_const_i64(s, 8);
-    w64_u8(s, 0x88);                        /* shr_u */
-    w64_const_i64(s, 0x00ff00ff00ff00ffull);
-    w64_u8(s, 0x83);                        /* and */
-    w64_u8(s, 0x84);                        /* or */
-    w64_local_set(s, W64_L_SCR0);
-
-    /* stage 2: 16-bit halves */
-    w64_local_get(s, W64_L_SCR0);
-    w64_const_i64(s, 0x0000ffff0000ffffull);
-    w64_u8(s, 0x83);                        /* and */
-    w64_const_i64(s, 16);
-    w64_u8(s, 0x86);                        /* shl */
-    w64_local_get(s, W64_L_SCR0);
-    w64_const_i64(s, 16);
-    w64_u8(s, 0x88);                        /* shr_u */
-    w64_const_i64(s, 0x0000ffff0000ffffull);
-    w64_u8(s, 0x83);                        /* and */
-    w64_u8(s, 0x84);                        /* or */
-    w64_local_set(s, W64_L_SCR0);
-
-    /* stage 3: 32-bit halves */
-    w64_local_get(s, W64_L_SCR0);
-    w64_const_i64(s, 32);
-    w64_u8(s, 0x86);                        /* shl */
-    w64_local_get(s, W64_L_SCR0);
-    w64_const_i64(s, 32);
-    w64_u8(s, 0x88);                        /* shr_u */
-    w64_u8(s, 0x84);                        /* or */
-    w64_set_i64(s, r0);
-}
 static const TCGOutOpUnary outop_bswap64 = {
-    .base.static_constraint = C_O1_I1(r, r),
-    .out_rr = tgen_bswap64,
+    .base.static_constraint = C_NotImplemented,
 };
 
 /* ------------------------------------------------------------------ */
