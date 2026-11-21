@@ -670,12 +670,13 @@ TranslationBlock *tb_gen_code(CPUState *cpu, TCGTBCPUState s)
     tb->w64_inl_nrec = 0;
     if (tb->w64_inl && w64_inl_pending_n) {
         size_t rec_size = w64_inl_pending_n * sizeof(struct W64InlRec);
-        void *p = (void *)gen_code_buf + gen_code_size + search_size;
+        uintptr_t end = (uintptr_t)gen_code_buf + gen_code_size + search_size;
+        void *p = (void *)ROUND_UP(end, __alignof__(struct W64InlRec));
 
         memcpy(p, w64_inl_pending, rec_size);
         tb->w64_inl_rec = p;
         tb->w64_inl_nrec = w64_inl_pending_n;
-        search_size += rec_size;
+        search_size += (uintptr_t)p - end + rec_size;
     }
 #endif
 
