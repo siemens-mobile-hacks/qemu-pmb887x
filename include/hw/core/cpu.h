@@ -261,15 +261,11 @@ struct CPUTLBEntryFull {
     uint8_t slow_flags[MMU_ACCESS_COUNT];
 
     /*
-     * Fill-time resolved MMIO dispatch: when the entry's section is a
-     * leaf I/O region whose ops allow a direct call for a given exact size,
-     * tlb_set_page_full resolves the callback + opaque + allowed-size
-     * mask + endianness swap here, so the access path is one mask
-     * test + one indirect call instead of the generic
-     * memory_region_dispatch_{read,write} resolution.  An empty mask
-     * disables the fast path (RAM, aliases, accept callbacks,
-     * ioeventfd writes, with-attrs ops, out-of-range sizes all fall
-     * back to the stock path with no added per-access conditions).
+     * Fill-time resolved MMIO dispatch (cputlb.c tlb_resolve_io_dispatch):
+     * the callback, opaque, allowed sizes and endianness swap of a leaf
+     * I/O region, so the access path is one mask test and one indirect
+     * call.  An empty mask disables it, and the access takes the stock
+     * path with no added per-access conditions.
      */
     void *io_opaque;
     uint64_t (*io_read_fn)(void *opaque, hwaddr addr, unsigned size);
@@ -281,14 +277,12 @@ struct CPUTLBEntryFull {
     uint8_t io_check_align;    /* misaligned: rejected or split by stock */
     bool *io_guard;            /* re-entrancy guard flag, or NULL */
     /*
-     * When @section is a subpage container (a target page shared by
-     * several regions), the three fields above describe its *leaf*, and
-     * the fast path is only equivalent for the part of the page that
-     * leaf backs: offsets in [io_lo, io_lo + io_len) are dispatched with
-     * io_off_delta added, anything else falls back to the container's
-     * own ops.  A leaf section (the common case) sets io_lo = 0,
-     * io_len = UINT32_MAX and io_off_delta = 0, so the range test is a
-     * subtract and a compare that always passes.
+     * For a subpage container (a target page shared by several regions)
+     * the fields above describe its leaf, which backs only the offsets in
+     * [io_lo, io_lo + io_len): those are dispatched with io_off_delta
+     * added, anything else takes the container's own ops.  A leaf section
+     * sets io_lo = 0, io_len = UINT32_MAX and io_off_delta = 0, so the
+     * range test always passes.
      */
     uint32_t io_lo;
     uint32_t io_len;

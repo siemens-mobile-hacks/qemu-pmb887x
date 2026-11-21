@@ -418,29 +418,23 @@ static inline const void *w64_dispatch_target(const TranslationBlock *tb)
 }
 
 /*
- * The global next-TB cache, keyed on the target PC: the per-TB slot is
- * monomorphic, and an interpreter's `ldr pc, [table, op, lsl #2]` goes
+ * The global next-TB cache (A2), keyed on the target PC: the per-TB slot
+ * is monomorphic, and an interpreter's `ldr pc, [table, op, lsl #2]` goes
  * somewhere different almost every time.  It asks the jump cache's own
  * question (same size) against the key the per-TB slot uses (pc,
  * hflags.flags, thumb, condexec_bits, plus the generation for everything
  * else), without arm_get_tb_cpu_state or curr_cflags.  Its hash is its
- * own: three ops for the emitted probe, where the jump cache's page-wise
- * one takes ten.
+ * own, a multiply and a shift, which the emitted probe can afford.
  *
  * The lookup helpers probe it first.  So does a function every batch
  * module carries (tcg/wasm64 w64_pcc_probe), which the goto_ptr exits
  * call instead of helper_lookup_tb_ptr_lc and which calls it on a miss:
- * emitted at every exit, the probe cost the EL71 boot burst ~8-10 % in
- * translation and Liftoff compile time against ~3.6 % its hits saved,
- * while behind the C helper a hit costs video ~4 % and towerblox ~1.5 %
- * in steady state.  TurboFan inlines the module's function into the hot
- * TBs.
+ * one probe per module costs less translation and compile time than one
+ * at every exit, and TurboFan inlines it into the hot TBs.
  *
- * Soundness is the per-TB slot's: the generation retires the whole table
- * wherever a jump-cache entry is dropped, wherever a key input the test
- * does not cover moves (hflags.flags2, FPSCR.Len/Stride, FPEXC.EN, the
- * memory timing class, the breakpoint list) and wherever a module is
- * evicted; A64, M-profile and single-step never fill (arm_w64_lc_key).
+ * Soundness is the per-TB slot's (helper_lookup_tb_ptr_lc below): the
+ * generation retires the whole table at the same events.  A64, M-profile
+ * and single-step never fill (arm_w64_lc_key).
  *
  * The entry is declared in exec/translation-block.h because the generated
  * code reads it too.  @cpu_index names the owner of a per-CPU generation
@@ -691,9 +685,11 @@ static void w64_lc_fill(struct W64LookupCache *lc, const uint32_t cur[3],
  * drops a jump-cache entry (tb_phys_invalidate, tcg_flush_jmp_cache,
  * tb_jmp_cache_clear_page) bumps the generation, and so does every
  * change of a target key input that neither the inline test nor the
- * static stamp covers (ARM: hflags.flags2, FPSCR.Len/Stride, FPEXC.EN).
- * The generation is read BEFORE the lookup so that an invalidation
- * racing with the fill leaves a stale stamp, never a stale target.
+ * static stamp covers (ARM: hflags.flags2, FPSCR.Len/Stride, FPEXC.EN;
+ * the memory timing class, the breakpoint list), and so does every batch
+ * module eviction, as the slots hold table indices.  The generation is
+ * read BEFORE the lookup so that an invalidation racing with the fill
+ * leaves a stale stamp, never a stale target.
  */
 const void *HELPER(lookup_tb_ptr_lc)(CPUArchState *env, void *slot)
 {
@@ -1400,8 +1396,9 @@ cpu_exec_loop(CPUState *cpu, SyncClocks *sc)
                  * Unless the second page is an inlined callee's
                  * (translation-block.h w64_inl): those chains are dropped
                  * whenever the mapping may have changed
-                 * (tb_unlink_inlined, from cpu_tb_key_gen_bump), which
-                 * is what makes a direct jump into the TB safe.
+                 * (tb_unlink_inlined, from tcg_flush_jmp_cache and
+                 * tb_jmp_cache_clear_page), which is what makes a
+                 * direct jump into the TB safe.
                  */
                 if (!tb->w64_inl)
 #endif

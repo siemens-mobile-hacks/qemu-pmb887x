@@ -217,30 +217,18 @@ struct PageDesc {
 
 #ifdef CONFIG_TCG_WASM64
 /*
- * A page keeps its slow-write protection for as long as it holds any TB, so
- * a guest that puts writable data on a page it also executes from pays the
- * invalidation path on every store -- and tb_page_covers() below answers
- * "does any TB cover this store" by walking the page's whole TB list.  On a
- * J2ME game that walk was 14.7 % of the vCPU, half of all time spent outside
- * emitted code, and it answered "no" 485.6 times out of 485.7 -- after 50.9
- * list steps each, because 60-odd TBs pile up on a single page.
+ * A page keeps its slow-write protection while it holds any TB, so a store
+ * to data on a page that also holds code takes the invalidation path, and
+ * finding that no TB covers the store means walking the page's TB list.
+ * code_mask marks the page's code granules so that tb_page_covers() and
+ * tb_store_misses_code() answer that without the walk: one bit per 1/1024th
+ * of a page, four bytes (one instruction) at the 4 KB pages used here, as
+ * coarser granules let data words share a bit with nearby code (A4).
  *
- * code_mask caches that answer per page, one bit per 1/1024th of a page:
- * four bytes, one guest instruction, at this board's 4 KB pages.  A 64-bit
- * version of the same mask rejected only 57 % of the stores -- the rest were
- * data words close enough to code to share a granule with it.  The mask
- * was 256 bits while pages were 1 KB, and kept that size when they became
- * 4 KB: at 16-byte granules game 1 was back to 55 % rejected, and game 5
- * walked 149 TBs per unrejected store (38 600 list steps per Mi, for 0.06
- * hits).  At four bytes game 5 walks 0.7 times per Mi.  The price is 96
- * bytes more per PageDesc.
- *
- * Bits are only ever added when a TB is linked, and cleared wholesale when
- * the page empties, so the mask is a conservative superset: a stale bit
- * costs a walk, never correctness.  Nothing narrows it when one TB of
- * several goes away, because on this workload stores outrun TB removals
- * 5500:1 -- there is nothing to narrow, and the obvious place to do it (the
- * walk, which visits every TB anyway) is exactly the path being optimised.
+ * Bits are only added, by tb_page_add(), and cleared wholesale when the
+ * page empties, so the mask is a superset: a stale bit costs the walk that
+ * upstream does anyway, never correctness.  Nothing narrows it when one TB
+ * of several goes away; stores far outnumber TB removals.
  *
  * An empty page must still take the long path whatever the mask holds: that
  * is where the protection is lifted, and it happens once.
@@ -1602,25 +1590,14 @@ void tb_invalidate_phys_range(CPUState *cpu, tb_page_addr_t start,
 #ifdef CONFIG_TCG_WASM64
 /*
  * Is there anything for the invalidation below to do to [start, last]?
+ * The page collection (two allocations and a tree) and the tcg_tb_lookup
+ * are only needed to invalidate, so they are skipped when no TB covers the
+ * write; the walk that establishes it is no more than page_collection_lock
+ * would do.  code_mask (see struct PageDesc) answers most stores first.
  *
- * A page keeps its slow-write protection for as long as it holds any TB,
- * so a guest that puts writable data on a page it also executes from pays
- * the invalidation path on every store - a J2ME game does ~31k of them a
- * second, and none of them hits a TB.  The collection is only needed to
- * invalidate: building it (two allocations, a tree created, filled and
- * destroyed) and the tcg_tb_lookup that precedes the walk are wasted
- * whenever no TB covers the write, and the walk that establishes that
- * costs nothing beyond the one page_collection_lock would do anyway.
- *
- * The walk itself is not cheap (a dependent load per TB on the page), so
- * code_mask answers most stores without touching the list.  The mask is
- * only ever grown, in tb_page_add, and cleared when the page empties; a
- * stale set bit only costs the walk upstream would have done anyway.
- *
- * An empty page still goes the long way: that is where the protection is
- * lifted, and it happens once.  Hence the first_tb test in front of the
- * mask, not a test for the mask being non-zero: an empty page's mask is
- * zero, and must not short-circuit to "nothing to do".
+ * The mask is guarded by a first_tb test, not by a test for a non-zero
+ * mask: an empty page's mask is zero, and that page must still go the long
+ * way, where its protection is lifted.
  *
  * Holding one page's lock is order-safe by construction: it is the lock
  * page_collection_lock would take first, and nothing is locked yet.

@@ -832,14 +832,14 @@ void cpu_io_recompile(CPUState *cpu, uintptr_t retaddr)
 
 #ifdef __EMSCRIPTEN__
     /*
-     * wasm: the JS-exception unwind in cpu_loop_exit_noexc costs ~15 us,
-     * and this TB stays cached with the MMIO in its middle - a polling
-     * loop re-pays the rewind on every iteration forever.  Remember the
-     * faulting insn as an io barrier and drop the TB: the next translation
-     * of this code splits the TB around the barrier (see translator.c),
-     * the MMIO insn executes as a single-insn TB with can_do_io set, and
-     * the rewind (and its clock semantics: the callback sees the clock
-     * of exactly that insn) is reproduced without any further unwinding.
+     * wasm: this TB stays cached with the MMIO in its middle, so a polling
+     * loop would pay the rewind and its unwind on every iteration (A5).
+     * Remember the faulting insn as an io barrier and drop the TB: the
+     * next translation of this code splits the TB around the barrier (see
+     * translator.c), the MMIO insn executes as a single-insn TB with
+     * can_do_io set, and the rewind (and its clock semantics: the callback
+     * sees the clock of exactly that insn) is reproduced without any
+     * further unwinding.
      */
     wasm_add_io_barrier(cpu->cc->get_pc(cpu));
     tb_phys_invalidate(tb, -1);

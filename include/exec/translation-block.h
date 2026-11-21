@@ -165,8 +165,9 @@ struct TranslationBlock {
      * page-relative range w64_inl_lo..hi[n] (inclusive) on page n.  Page
      * 1, which such a TB never uses for a linear crossing, is the callee's
      * page when the callee is not on the entry page: @w64_inl_vpage1 holds
-     * it as an offset from the entry page, the bl displacement.  W64_INL_PAGE(n) says which hulls are set, W64_INL_VPAGE1 that
-     * page 1 is a callee page (tb_page_span, tb_lookup_cmp).
+     * it as an offset from the entry page, the bl displacement.
+     * W64_INL_PAGE(n) says which hulls are set, W64_INL_VPAGE1 that page 1
+     * is a callee page (tb_page_span, tb_lookup_cmp).
      */
     vaddr w64_inl_vpage1;
     uint16_t w64_inl_lo[2];
@@ -206,21 +207,16 @@ struct TranslationBlock {
  * What a goto_ptr operand means to the wasm64 backend.
  *
  * The emitted dispatch is a return_call_indirect through the shared chain
- * table, so all it needs is the target's table index.  That index used to
- * be read out of the descriptor at tb->tc.ptr — one u32 per ~576-byte
- * module staging area, i.e. one cache line per TB in a ~20 MB region that
- * nothing else in the execution path touches.  A synthetic dispatch chain
- * (tools/dispatch-probe.mjs) prices that dependent load at +2 ns over a
- * 256-TB working set and +8..9 ns over 1024-4096 TBs, on a dispatch that
- * runs ~11 M times a second.
- *
- * So the lookup helpers hand the index over directly, tagged in the high
- * half (a wasm64 heap pointer is < 2 GB, so a real pointer never has one):
+ * table, so all it needs is the target's table index.  The lookup helpers
+ * hand that index over directly, so that the dispatch does not load it
+ * from the descriptor at tb->tc.ptr, one cache line per TB that nothing
+ * else on the path touches.  It is tagged in the high half (a wasm64 heap
+ * pointer is < 2 GB, so a real pointer never has one):
  *
  *   hi != 0   W64_TIDX_TAG | tidx — tail-call table[tidx]
  *   hi == 0   a descriptor pointer (target not compiled yet, or its batch
  *             was evicted) or NULL (lookup miss): hand off to the C
- *             dispatcher, which is what used to happen when fidx was 0.
+ *             dispatcher.
  *
  * The offsets mirror W64_DESC_FIDX / W64_DESC_TIDX in tcg/wasm64/wasm64.h,
  * which asserts they agree.

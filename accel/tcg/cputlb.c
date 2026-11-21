@@ -560,13 +560,9 @@ static inline bool tlb_flush_entry_locked(CPUTLBEntry *tlb_entry, vaddr page)
  * Selective variant of tlb_flush() for memory topology commits
  * (tcg_commit): drop only the entries that translate into one of the
  * changed physical ranges [lo[i], hi[i]) reported by the commit's
- * region_add/region_del listener callbacks.
- *
- * A full tlb_flush() per commit would also throw away every unrelated
- * code/data translation and pay a page-table walk per page to get them
- * back; ROM devices flip their romd mode per flash command, which
- * re-flushed the whole TLB tens of thousands of times per boot (each
- * flip followed by a ~33-entry refill storm of the running code).
+ * region_add/region_del listener callbacks.  A full tlb_flush() per commit
+ * would also drop every unrelated translation, to be refilled by page-table
+ * walks, and ROM devices flip their romd mode per flash command (C6).
  *
  * Entries outside the changed ranges translate to the same section
  * content as before, so they stay valid - including entries installed
@@ -1432,10 +1428,8 @@ static void tlb_resolve_io_dispatch(CPUTLBEntryFull *full, MemoryRegion *mr)
  * (subpage_read/_write -> address_space_read -> translate + dispatch),
  * and its valid.accepts callback stops tlb_resolve_io_dispatch() from
  * installing any direct call, so a device register smaller than a page
- * paid two translations and two dispatches per access.  Every pmb887x
- * device under 1 KB is such a region (STM is 0x30 bytes), and a firmware
- * that polls one - the EL71 polls the STM - spent ~20 % of the vCPU
- * there.
+ * pays two translations and two dispatches per access.  Small pmb887x
+ * devices such as the STM (0x30 bytes) sit in such pages.
  *
  * Resolve the leaf that backs the faulting offset once, at fill time,
  * and record the run of offsets it covers.  The access path adds
@@ -1575,16 +1569,14 @@ void tlb_set_page_full(CPUState *cpu, int mmu_idx,
     qemu_spin_lock(&tlb->c.lock);
 
     /*
-     * Grow the TLB from the fill path.  The resize policy in
+     * Grow the TLB from the fill path (C5).  The resize policy in
      * tlb_mmu_resize_locked only runs at flush time, so a guest that
-     * never flushes its TLB (or a phase that runs long between flushes)
-     * is stuck with the current size however hard it misses: a J2ME app
-     * on an ARMv5 board with 1 KB pages refilled a 256-entry table 83k
-     * times per second, no flush in sight.  Once the fills since the
-     * last flush/resize exceed twice the table, double it (the resize
-     * flushes this mmu_idx, so the refill is paid once per doubling);
-     * capped well below CPU_TLB_DYN_MAX_BITS so a streaming working set
-     * cannot grow the table without bound.
+     * rarely flushes its TLB keeps the current size however hard it
+     * misses.  Once the fills since the last flush/resize exceed twice
+     * the table, double it (the resize flushes this mmu_idx, so the
+     * refill is paid once per doubling); capped well below
+     * CPU_TLB_DYN_MAX_BITS so a streaming working set cannot grow the
+     * table without bound.
      */
     desc->n_fills++;
     {
@@ -2614,12 +2606,11 @@ static uint64_t do_ld_mmio_beN(CPUState *cpu, CPUTLBEntryFull *full,
 #ifdef CONFIG_TCG_WASM64
 /*
  * A store to a RAM page that holds translated code, when no TB covers the
- * bytes stored.  Such a page keeps TLB_NOTDIRTY for as long as it holds
- * any TB, so every store to it leaves the generated code; the generic
- * route is mmu_lookup, mmu_watch_or_dirty and notdirty_write, which reads
- * the CODE dirty bit and asks tb_page_covers whether to invalidate, and
- * the answer is almost always no.  A J2ME game keeps its data on its code
- * pages: 6700 such stores per Mi on game 5, 0.06 of them hitting a TB.
+ * bytes stored (C3).  Such a page keeps TLB_NOTDIRTY for as long as it
+ * holds any TB, so every store to it leaves the generated code; the
+ * generic route is mmu_lookup, mmu_watch_or_dirty and notdirty_write,
+ * which reads the CODE dirty bit and asks tb_page_covers whether to
+ * invalidate, and for data kept on code pages the answer is no.
  *
  * Take exactly that shape here: a TLB hit whose only flag is NOTDIRTY
  * (so no TLB_FORCE_SLOW and no slow_flags), aligned, within one page,
@@ -2672,16 +2663,10 @@ static inline bool do_ram_notdirty_1p(CPUState *cpu, vaddr addr,
 #endif
 
 /*
- * Fused single-piece MMIO load.
- *
- * The generic route from a guest load to a device callback is six
- * frames that re-derive from each other - do_ldN_mmu fills an
- * MMULookupLocals via mmu_lookup/mmu_lookup1, do_ld_N tests its flags,
- * do_ld_mmio_beN turns the entry back into a MemoryRegionSection, and
- * int_ld_mmio_beN splits the access into aligned pieces.  A firmware
- * that polls device registers takes that route ~1M times a second (the
- * EL71's STM poll; see doc/performance-handoff.md), and on wasm the
- * frames themselves are a measurable share of the vCPU.
+ * Fused single-piece MMIO load (C2).  The generic route from a guest load
+ * to a device callback is six frames that re-derive from each other
+ * (mmu_lookup/mmu_lookup1, do_ld_N, do_ld_mmio_beN, int_ld_mmio_beN), and
+ * firmware that polls device registers takes it at a high rate.
  *
  * Every one of those accesses is the same shape: a TLB hit on an I/O
  * entry whose dispatch tlb_set_page_full() already resolved, naturally
@@ -2691,19 +2676,13 @@ static inline bool do_ram_notdirty_1p(CPUState *cpu, vaddr addr,
  * false and takes the generic path unchanged, so this adds conditions
  * only to accesses it also completes.
  *
- * Returns the value ready for the caller to hand back: the device swap
- * and the caller's own bswap are combined into the one that is left
- * over, so unlike do_ld_mmio_beN() this does not stop at the
- * big-endian-assembled form.
- */
-/*
- * @size is a literal at every call site (helper_ld*_mmu already assert
- * it), so the mask tests, the alignment tests, the value mask and the
- * swap all fold.  @caller_le is (memop & MO_BSWAP) == MO_LE, the swap
- * the caller used to apply to the big-endian-assembled result: combining
- * it with the device's own swap here removes a double swap that, for a
- * little-endian device read by a little-endian guest - every hot MMIO
- * register on these boards - cancelled out into two real bswaps.
+ * Returns the value ready for the caller to hand back, unlike
+ * do_ld_mmio_beN(): @caller_le is (memop & MO_BSWAP) == MO_LE, the swap
+ * the caller would apply to the big-endian-assembled result, and is
+ * combined here with the device's own swap, so a little-endian device
+ * read by a little-endian guest is not swapped twice.  @size is a literal
+ * at every call site (helper_ld*_mmu already assert it), so the mask
+ * tests, the alignment tests, the value mask and the swap all fold.
  */
 static inline __attribute__((always_inline))
 bool do_ld_mmio_1p(CPUState *cpu, vaddr addr, MemOpIdx oi,

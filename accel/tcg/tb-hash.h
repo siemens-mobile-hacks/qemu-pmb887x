@@ -30,11 +30,9 @@
 
 /*
  * The upstream hash below keeps 8 bits of the offset in a page, so the
- * 2048 Thumb PCs of a 4 KiB page share 256 entries, and three quarters
- * of the misses of the 64K-entry cache were TBs of one page evicting
- * each other.  Here every halfword of a page has its own entry, and a
- * multiplicative hash of the page number above 4 KiB picks one of
- * 32 blocks.  A page's entries stay one block for
+ * Thumb TBs of one page evict each other.  Here every halfword of a page
+ * has its own entry, and a multiplicative hash of the page number above
+ * 4 KiB picks one of 32 blocks.  A page's entries stay one block for
  * tb_jmp_cache_clear_page (a superset for 1 KiB pages).
  */
 #define TB_JMP_PAGE_BITS 11
@@ -54,9 +52,9 @@ static inline unsigned int tb_jmp_cache_hash_page(vaddr pc)
 
 /*
  * Firmware routines run both from user-mode tasks and from privileged
- * modes, and same-PC key mismatches became most of the remaining misses:
- * two bits of the TB flags (ARM's low MMU index bits, which the
- * translator asserts) move an entry within its page's block.
+ * modes, so the TBs of one PC under both must not share an entry: two
+ * bits of the TB flags (ARM's low MMU index bits, which the translator
+ * asserts) move an entry within its page's block.
  */
 #define TB_JMP_HASH_FLAGS_SHIFT 4
 #define TB_JMP_HASH_FLAGS(flags) \

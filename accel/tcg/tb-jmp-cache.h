@@ -16,10 +16,9 @@
 /*
  * The wasm64 backend reaches this cache on every inline next-TB cache
  * miss, and the pc cache its emitted code probes first (cpu-exec.c
- * w64_pcc) has the same size.  At 12 bits most qht lookups were
- * conflict misses; 14 was the peak measured on a boot, and the J2ME
- * working set in play still sends two thirds of the miss path's qht
- * traffic through conflicts at 14 (round fifty-three), hence 16.
+ * w64_pcc) has the same size.  16 bits keep conflict misses from
+ * sending most of the miss path to the qht lookup on a J2ME working set
+ * (A1).
  */
 #define TB_JMP_CACHE_BITS 16
 #else
