@@ -1969,8 +1969,8 @@ static bool w64_back_edge(DisasContext *s, int64_t diff)
     if (icount) {
         tcg_gen_st16_i32(count, tcg_env, off16);
     }
-    w64_acct_charge(s, s->base.num_insns);
     w64_charge_cycles(s, exit);
+    w64_acct_charge(s, s->base.num_insns);
     if (conditional) {
         w64_fill_match(s);  /* WASM PORT FAST PATH (removable) */
         w64_blit_match(s);  /* WASM PORT FAST PATH (removable) */
