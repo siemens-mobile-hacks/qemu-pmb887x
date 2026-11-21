@@ -341,6 +341,11 @@ static void dif_wake_on_tx_fifo_free(pmb887x_dif_t *p, uint32_t stages) {
 		timer_mod(p->tx_bus_timer, wake_ns);
 }
 
+/* FIFO stages one TX burst request moves. */
+static uint32_t dif_get_tx_burst_entries(pmb887x_dif_t *p) {
+	return dif_get_tx_burst_size(p) / (4 / dif_get_tx_align(p));
+}
+
 /*
  * Firmware may set a TX DMA request through ISR while earlier bursts are still
  * on the parallel bus. The DMAC serves a request at once, so apply it only when
@@ -352,7 +357,7 @@ static uint32_t dif_defer_tx_isr(pmb887x_dif_t *p, uint32_t value) {
 		return value;
 
 	uint32_t stages = (requests & (DIFv2_ISR_TXBREQ | DIFv2_ISR_TXLBREQ)) != 0 ?
-		dif_get_tx_burst_size(p) / (4 / dif_get_tx_align(p)) : 1;
+		dif_get_tx_burst_entries(p) : 1;
 	if (dif_has_tx_fifo_free(p, stages))
 		return value;
 
@@ -413,6 +418,10 @@ static void dif_tx_bus_catch_up(pmb887x_dif_t *p, int64_t until_ns, bool is_leav
 static void dif_tx_bus_leave_lazy(pmb887x_dif_t *p) {
 	if (p->tx_lazy_wake_ns >= 0)
 		dif_tx_bus_catch_up(p, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) - 1, true);
+}
+
+static void dif_tx_bus_leave_lazy_cb(void *opaque) {
+	dif_tx_bus_leave_lazy(opaque);
 }
 
 static void dif_schedule(pmb887x_dif_t *p) {
@@ -1233,12 +1242,7 @@ static bool dif_is_fed_tx_bus(pmb887x_dif_t *p) {
 		return false;
 	uint32_t burst_size = dif_get_tx_burst_size(p);
 	uint32_t words_per_entry = 4 / dif_get_tx_align(p);
-	return burst_size != 0 && burst_size % words_per_entry == 0 && burst_size / words_per_entry <= FIFO_SIZE;
-}
-
-/* FIFO stages one TX burst request moves. */
-static uint32_t dif_get_tx_burst_entries(pmb887x_dif_t *p) {
-	return dif_get_tx_burst_size(p) / (4 / dif_get_tx_align(p));
+	return burst_size != 0 && burst_size % words_per_entry == 0 && dif_get_tx_burst_entries(p) <= FIFO_SIZE;
 }
 
 #define DIF_FED_TX_WAKES_MAX	512
@@ -1490,14 +1494,6 @@ static void dif_tx_bus_lazy_wake(void *opaque) {
 	dif_tx_bus_catch_up(p, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL), false);
 }
 
-static void dif_tx_bus_write_trap(void *opaque) {
-	dif_tx_bus_leave_lazy(opaque);
-}
-
-static void dif_tx_bus_dmac_catch_up(void *opaque) {
-	dif_tx_bus_leave_lazy(opaque);
-}
-
 /*
  * How much of the TX source RAM from @start on CPU stores reach the write
  * guard for: the pages with their VGA dirty bit clear.  A store sets the bit
@@ -1549,7 +1545,7 @@ static void dif_tx_bus_go_lazy(pmb887x_dif_t *p) {
 	ram_addr_t start, length, available;
 	if (!pmb887x_dmac_get_bulk_source(p->dmac_tx_breq, max_wakes, &start, &length, &available))
 		return;
-	tlb_set_ram_write_guard(start, length, dif_tx_bus_write_trap, p);
+	tlb_set_ram_write_guard(start, length, dif_tx_bus_leave_lazy_cb, p);
 	max_wakes = MIN(max_wakes, dif_get_guarded_tx_source(p, start, length, available) / (bulk.burst_words * sizeof(uint32_t)));
 
 	int64_t wake_ns = timer_expire_time_ns(p->tx_bus_timer);
@@ -1558,10 +1554,10 @@ static void dif_tx_bus_go_lazy(pmb887x_dif_t *p) {
 		tlb_set_ram_write_guard(0, 0, NULL, NULL);
 		return;
 	}
-	tlb_set_ram_write_guard(start, (ram_addr_t) bus.wakes * bulk.burst_words * sizeof(uint32_t), dif_tx_bus_write_trap, p);
+	tlb_set_ram_write_guard(start, (ram_addr_t) bus.wakes * bulk.burst_words * sizeof(uint32_t), dif_tx_bus_leave_lazy_cb, p);
 
 	if (!p->is_dmac_catch_up_set) {
-		pmb887x_dmac_set_catch_up(p->dmac_tx_breq, dif_tx_bus_dmac_catch_up, p);
+		pmb887x_dmac_set_catch_up(p->dmac_tx_breq, dif_tx_bus_leave_lazy_cb, p);
 		p->is_dmac_catch_up_set = true;
 	}
 	p->tx_lazy_hz = pmb887x_clc_get_hz(&p->clc);
@@ -2141,10 +2137,6 @@ static void dif_event_handler(void *opaque, int event_id, int level) {
 		dif_trigger_dma(p);
 }
 
-static void dif_clock_changed(void *opaque) {
-	dif_tx_bus_leave_lazy(opaque);
-}
-
 static void dif_init(Object *obj) {
 	DeviceState *dev = DEVICE(obj);
 	pmb887x_dif_t *p = PMB887X_DIF(obj);
@@ -2200,7 +2192,7 @@ static void dif_realize(DeviceState *dev, Error **errp) {
 	pmb887x_mod_debug_init(&p->dbg, dev, &p->mmio, &pmb887x_difv2_regs);
 
 	pmb887x_clc_set(&p->clc, 1U << MOD_CLC_RMC_SHIFT);
-	pmb887x_clc_set_callback(&p->clc, dif_clock_changed, p);
+	pmb887x_clc_set_callback(&p->clc, dif_tx_bus_leave_lazy_cb, p);
 	pmb887x_srb_init(&p->srb, p->irq, ARRAY_SIZE(p->irq));
 	pmb887x_srb_set_irq_router(&p->srb, p, dif_irq_router);
 	pmb887x_srb_set_event_handler(&p->srb, p, dif_event_handler);
