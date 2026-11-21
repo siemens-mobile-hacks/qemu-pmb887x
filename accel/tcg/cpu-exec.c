@@ -418,17 +418,6 @@ static inline const void *w64_dispatch_target(const TranslationBlock *tb)
 }
 
 /*
- * ARM-only.  This file is target-independent (TARGET_* are poisoned), but
- * wasm64 is only ever linked with the ARM target; any other target would
- * fail to link on these symbols rather than silently fall back.
- */
-bool arm_w64_lc_key(CPUState *cs, uint32_t key32[3]);
-bool arm_w64_lc_key_pc(CPUState *cs, uint32_t key32[3], uint32_t *pc);
-void arm_w64_lc_key_layout(struct W64PccShape *sh);
-#define W64_LC_KEY(cpu, k32)  arm_w64_lc_key(cpu, k32)
-#define W64_LC_KEY_PC(cpu, k32, pcp)  arm_w64_lc_key_pc(cpu, k32, pcp)
-
-/*
  * The global next-TB cache, keyed on the target PC: the per-TB slot is
  * monomorphic, and an interpreter's `ldr pc, [table, op, lsl #2]` goes
  * somewhere different almost every time.  It asks the jump cache's own
@@ -487,7 +476,7 @@ static inline const void *w64_pcc_get(CPUState *cpu, uint32_t gen,
     uint32_t pc;
     const struct W64PccEnt *e;
 
-    if (!W64_LC_KEY_PC(cpu, key, &pc)) {
+    if (!arm_w64_lc_key_pc(cpu, key, &pc)) {
         return NULL;
     }
     e = &w64_pcc[w64_pcc_hash(pc)];
@@ -530,7 +519,7 @@ static inline void w64_pcc_put(CPUState *cpu, TCGTBCPUState s, uint32_t gen,
     uint32_t key[3];
     struct W64PccEnt *e;
 
-    if (!w64_may_cache(cpu, &s, target) || !W64_LC_KEY(cpu, key)) {
+    if (!w64_may_cache(cpu, &s, target) || !arm_w64_lc_key(cpu, key)) {
         return;
     }
     e = &w64_pcc[w64_pcc_hash((uint32_t)s.pc)];
@@ -736,7 +725,7 @@ const void *HELPER(lookup_tb_ptr_lc)(CPUArchState *env, void *slot)
     w64_pcc_put(cpu, s, gen, target);
 
     if (lc && likely(w64_may_cache(cpu, &s, target)) &&
-        W64_LC_KEY(cpu, cur)) {
+        arm_w64_lc_key(cpu, cur)) {
         w64_lc_fill(lc, cur, s.pc, target, gen);
     }
     return target;

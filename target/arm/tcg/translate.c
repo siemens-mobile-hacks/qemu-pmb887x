@@ -1839,7 +1839,7 @@ static void w64_rect_match(DisasContext *s)
     int i;
 
     memset(r, 0, sizeof(*r));
-    if (!s->thumb || (tb_cflags(s->base.tb) & (CF_USE_ICOUNT | CF_PCREL))) {
+    if (!s->thumb || (tb_cflags(s->base.tb) & CF_USE_ICOUNT)) {
         return;
     }
     if (desc) {

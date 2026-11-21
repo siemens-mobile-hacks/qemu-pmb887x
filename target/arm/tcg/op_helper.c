@@ -860,11 +860,7 @@ void HELPER(cpsr_write_eret)(CPUARMState *env, uint32_t val)
 #ifdef CONFIG_TCG_WASM64
 void HELPER(svc_inline)(CPUARMState *env, uint32_t syndrome)
 {
-#ifdef CONFIG_USER_ONLY
-    g_assert_not_reached();
-#else
     arm_take_svc_aarch32(env, syndrome);
-#endif
 }
 #endif
 

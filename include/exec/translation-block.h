@@ -324,6 +324,15 @@ struct W64PccShape {
 };
 
 const struct W64PccShape *w64_pcc_shape(void);
+/*
+ * The target's half (ARM only: target/arm/tcg/hflags.c; wasm64 is linked
+ * with no other target): the dynamic words of the next-TB cache key, the
+ * same with the PC the key belongs to, and where the second reads them as
+ * env-relative offsets.
+ */
+bool arm_w64_lc_key(CPUState *cs, uint32_t key32[3]);
+bool arm_w64_lc_key_pc(CPUState *cs, uint32_t key32[3], uint32_t *pc);
+void arm_w64_lc_key_layout(struct W64PccShape *sh);
 /* withdraw the staged module body of a TB that was abandoned */
 void w64_batch_unstage(uintptr_t tcptr);
 #endif
