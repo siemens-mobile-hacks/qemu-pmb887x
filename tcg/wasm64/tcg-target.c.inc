@@ -1711,24 +1711,9 @@ static void tcg_out_call(TCGContext *s, const tcg_insn_unit *target,
         }
     }
 
-    /* ret type: inline switch — a literal decoding, no helper (bring-up
-     * paranoia after observing an -O3 inlining artifact) */
-    switch (mask & 7) {
-    case 0:
-        ret = 0xff;                    /* void */
-        break;
-    case 2:
-    case 3:
-        ret = 0;                       /* i32 */
-        break;
-    case 4:
-    case 5:
-    case 6:
-        ret = 1;                       /* i64 / ptr */
-        break;
-    default:
-        g_assert_not_reached();
-    }
+    /* 0xff: void */
+    ret = w64_typecode_to_wasm(mask & 7);
+    g_assert(ret != 0xff || (mask & 7) == dh_typecode_void);
 
     uimp = w64_union_import((uint32_t)(uintptr_t)target,
                             w64_union_type(np, p, ret));
@@ -2441,23 +2426,17 @@ static const TCGOutOpBinary outop_mulsh = {
 /* deposit / extract                                                   */
 /* ------------------------------------------------------------------ */
 
-static void w64_deposit_field(TCGContext *s, TCGType t,
-                              TCGReg arg2, tcg_target_long c2, bool is_c,
+static void w64_deposit_field(TCGContext *s, TCGType t, TCGReg arg2,
                               unsigned ofs, unsigned len)
 {
     uint64_t mask = (len >= 64 ? ~(uint64_t)0 : (UINT64_C(1) << len) - 1)
                    << ofs;
-    tcg_target_long smask = (tcg_target_long)mask;
 
-    if (is_c) {
-        w64_const(s, t, (c2 << ofs) & smask);
-        return;
-    }
     w64_get(s, arg2, t);
     w64_const(s, t, ofs);
     w64_u8(s, t == TCG_TYPE_I32 ? 0x74 : 0x86);           /* shl */
     if (ofs + len < (unsigned)(t == TCG_TYPE_I32 ? 32 : 64)) {
-        w64_const(s, t, smask);
+        w64_const(s, t, (tcg_target_long)mask);
         w64_u8(s, t == TCG_TYPE_I32 ? 0x71 : 0x83);       /* and */
     }
     /* ofs+len == width: the shift already placed the field, no mask */
@@ -2471,7 +2450,7 @@ static void tgen_deposit(TCGContext *s, TCGType t, TCGReg a0, TCGReg a1,
     uint64_t mask = (len >= 64 ? ~(uint64_t)0 : (UINT64_C(1) << len) - 1)
                    << ofs;
 
-    w64_deposit_field(s, t, a2, 0, false, ofs, len);
+    w64_deposit_field(s, t, a2, ofs, len);
     w64_local_set(s, w64_scr(t));
     w64_get(s, a1, t);
     w64_const(s, t, ~(tcg_target_long)mask);
