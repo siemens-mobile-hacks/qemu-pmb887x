@@ -373,6 +373,20 @@ uint64_t *w64_tb_acct_insns(void);
 /* The lockstep fold's count (the prologue adds tb->icount), when armed. */
 int64_t *w64_ls_count(void);
 
+/* Add @insns to both, as the prologue would; negative hands them back. */
+static inline void w64_acct_adjust(int64_t insns)
+{
+    uint64_t *acct = w64_tb_acct_insns();
+    int64_t *ls = w64_ls_count();
+
+    if (acct) {
+        *acct += insns;
+    }
+    if (ls) {
+        *ls += insns;
+    }
+}
+
 /*
  * WASM PORT FAST PATH (removable): tcg/wasm64/w64-interp.c, for
  * target/arm/tcg/w64-fill.c.  A TB on this thread runs in the interpreter

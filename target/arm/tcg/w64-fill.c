@@ -143,19 +143,6 @@ static void w64_fill_cmp(CPUARMState *env, uint32_t c, uint32_t n)
     env->VF = (c ^ n) & (c ^ res);
 }
 
-static void w64_fill_count(uint64_t insns)
-{
-    uint64_t *acct = w64_tb_acct_insns();
-    int64_t *ls = w64_ls_count();
-
-    if (acct) {
-        *acct += insns;
-    }
-    if (ls) {
-        *ls += insns;
-    }
-}
-
 /*
  * Run the passes after the charged one whose blt is still taken, as many
  * as the budgets, the page and @cap allow.  True when that leaves the
@@ -219,7 +206,7 @@ static bool w64_fill_row(CPUARMState *env, const W64Fill *f, int64_t *cap)
     if (f->desc & W64_FILL_CYCLES) {
         cs->neg.cycle_count += k * (f->taken + f->cycles);
     }
-    w64_fill_count(k * f->insns);
+    w64_acct_adjust(k * f->insns);
     *cap -= k;
     return k == rest;
 }
@@ -316,7 +303,6 @@ static void w64_fill_rect(CPUARMState *env, const W64Fill *f,
     uint32_t rest = n - 2, page = 1, lim = 0, v, k = 0, rows = 0;
     uintptr_t base = 0;
     const uint8_t *hs, *hl;
-    uint64_t *acct;
 
     /* the next row's start is width-aligned when the pitch is */
     if ((int32_t)n < 2 || ((d | pitch) & (width - 1)) || ((src | slot) & 3)) {
@@ -412,10 +398,7 @@ static void w64_fill_rect(CPUARMState *env, const W64Fill *f,
     if (cyc) {
         cs->neg.cycle_count = c;
     }
-    acct = w64_tb_acct_insns();
-    if (acct) {
-        *acct += ins;
-    }
+    w64_acct_adjust(ins);   /* no lockstep fold here: w64_rect_head */
 }
 
 void HELPER(w64_fill)(CPUARMState *env, const void *tbp, uint32_t desc,
@@ -613,7 +596,7 @@ void HELPER(w64_blit)(CPUARMState *env, uint32_t lit, uint32_t desc,
         cs->neg.cycle_count += done * (cycles + taken) + n_imm * cyc_imm +
                                n_lit * cyc_lit + n_key * cyc_key;
     }
-    w64_fill_count((uint64_t)done * insns - skipped);
+    w64_acct_adjust((uint64_t)done * insns - skipped);
 }
 
 #endif
