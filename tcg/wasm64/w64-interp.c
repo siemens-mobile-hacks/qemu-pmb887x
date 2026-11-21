@@ -332,10 +332,6 @@ static uint32_t w64_ialu32(unsigned op, uint32_t a, uint32_t b)
     case WI_ALU_OR:   return a | b;
     case WI_ALU_XOR:  return a ^ b;
     case WI_ALU_ANDC: return a & ~b;
-    case WI_ALU_ORC:  return a | ~b;
-    case WI_ALU_EQV:  return ~(a ^ b);
-    case WI_ALU_NAND: return ~(a & b);
-    case WI_ALU_NOR:  return ~(a | b);
     case WI_ALU_SHL:  return a << (b & 31);
     case WI_ALU_SHR:  return a >> (b & 31);
     case WI_ALU_SAR:  return (int32_t)a >> (b & 31);
@@ -363,10 +359,6 @@ static uint64_t w64_ialu64(unsigned op, uint64_t a, uint64_t b)
     case WI_ALU_OR:   return a | b;
     case WI_ALU_XOR:  return a ^ b;
     case WI_ALU_ANDC: return a & ~b;
-    case WI_ALU_ORC:  return a | ~b;
-    case WI_ALU_EQV:  return ~(a ^ b);
-    case WI_ALU_NAND: return ~(a & b);
-    case WI_ALU_NOR:  return ~(a | b);
     case WI_ALU_SHL:  return a << (b & 63);
     case WI_ALU_SHR:  return a >> (b & 63);
     case WI_ALU_SAR:  return (int64_t)a >> (b & 63);

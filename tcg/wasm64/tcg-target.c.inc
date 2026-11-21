@@ -2143,7 +2143,7 @@ static const TCGOutOpSubtract outop_sub = {
     .out_rir = tgen_subi,
 };
 
-/* a & ~b, a | ~b, ~(a^b), ~(a&b), ~(a|b) */
+/* a & ~b */
 static void tgen_andc(TCGContext *s, TCGType t, TCGReg r0, TCGReg r1, TCGReg r2)
 {
     w64_ir_alu(t, WI_ALU_ANDC, r0, r1, r2);
@@ -2169,70 +2169,25 @@ static const TCGOutOpBinary outop_andc = {
     .out_rri = tgen_andci,
 };
 
-static void tgen_orc(TCGContext *s, TCGType t, TCGReg r0, TCGReg r1, TCGReg r2)
-{
-    w64_ir_alu(t, WI_ALU_ORC, r0, r1, r2);
-    w64_get(s, r1, t);
-    w64_get(s, r2, t);
-    w64_const(s, t, -1);
-    w64_u8(s, t == TCG_TYPE_I32 ? 0x73 : 0x85);   /* xor */
-    w64_u8(s, t == TCG_TYPE_I32 ? 0x72 : 0x84);   /* or */
-    w64_set(s, r0, t);
-}
-static void tgen_orci(TCGContext *s, TCGType t, TCGReg r0, TCGReg r1,
-                      tcg_target_long i2)
-{
-    w64_ir_alui(t, WI_ALU_ORC, r0, r1, i2);
-    w64_get(s, r1, t);
-    w64_const(s, t, ~i2);
-    w64_u8(s, t == TCG_TYPE_I32 ? 0x72 : 0x84);   /* or */
-    w64_set(s, r0, t);
-}
+/*
+ * wasm has none of these: without them tcg-op.c emits not and the plain
+ * op, the same instructions.
+ */
 static const TCGOutOpBinary outop_orc = {
-    .base.static_constraint = C_O1_I2(r, r, rC),
-    .out_rrr = tgen_orc,
-    .out_rri = tgen_orci,
+    .base.static_constraint = C_NotImplemented,
 };
 
-#define W64_NOTOP(NM, UP, OP32, OP64, INV32, INV64)                            \
-static void tgen_##NM(TCGContext *s, TCGType t, TCGReg r0, TCGReg r1, TCGReg r2) \
-{                                                                          \
-    w64_ir_alu(t, WI_ALU_##UP, r0, r1, r2);                                \
-    w64_get(s, r1, t);                                                     \
-    w64_get(s, r2, t);                                                     \
-    w64_u8(s, t == TCG_TYPE_I32 ? OP32 : OP64);                            \
-    w64_const(s, t, -1);                                                   \
-    w64_u8(s, t == TCG_TYPE_I32 ? INV32 : INV64);                          \
-    if (t == TCG_TYPE_I32) {                                               \
-        w64_set_i32(s, r0);                                                \
-    } else {                                                               \
-        w64_set_i64(s, r0);                                                \
-    }                                                                      \
-}                                                                          \
-static void tgen_##NM##i(TCGContext *s, TCGType t, TCGReg r0, TCGReg r1,  \
-                         tcg_target_long i2)                              \
-{                                                                          \
-    w64_ir_alui(t, WI_ALU_##UP, r0, r1, i2);                               \
-    w64_get(s, r1, t);                                                     \
-    w64_const(s, t, i2);                                                   \
-    w64_u8(s, t == TCG_TYPE_I32 ? OP32 : OP64);                            \
-    w64_const(s, t, -1);                                                   \
-    w64_u8(s, t == TCG_TYPE_I32 ? INV32 : INV64);                          \
-    if (t == TCG_TYPE_I32) {                                               \
-        w64_set_i32(s, r0);                                                \
-    } else {                                                               \
-        w64_set_i64(s, r0);                                                \
-    }                                                                      \
-}                                                                          \
-static const TCGOutOpBinary outop_##NM = {                                 \
-    .base.static_constraint = C_O1_I2(r, r, rC),                           \
-    .out_rrr = tgen_##NM,                                                  \
-    .out_rri = tgen_##NM##i,                                               \
+static const TCGOutOpBinary outop_eqv = {
+    .base.static_constraint = C_NotImplemented,
 };
 
-W64_NOTOP(eqv, EQV,  0x73, 0x85, 0x73, 0x85)   /* ~(a^b)  */
-W64_NOTOP(nand, NAND, 0x71, 0x83, 0x73, 0x85)   /* ~(a&b)  */
-W64_NOTOP(nor, NOR,  0x72, 0x84, 0x73, 0x85)   /* ~(a|b)  */
+static const TCGOutOpBinary outop_nand = {
+    .base.static_constraint = C_NotImplemented,
+};
+
+static const TCGOutOpBinary outop_nor = {
+    .base.static_constraint = C_NotImplemented,
+};
 
 static void tgen_neg(TCGContext *s, TCGType t, TCGReg r0, TCGReg r1)
 {
