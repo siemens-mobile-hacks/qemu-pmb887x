@@ -7104,31 +7104,18 @@ TEAK_FAST_INLINE void tcg_fast_alu_accumulator(teak_state_t *state, teak_alu_ope
 	uint64_t value = state->a[accumulator_index] & TEAK_ACCUMULATOR_MASK;
 	uint64_t normalized_operand = operand & TEAK_ACCUMULATOR_MASK;
 	uint64_t result;
-	bool comparison = operation == TEAK_ALU_CMP || operation == TEAK_ALU_CMPU;
+	bool comparison = operation == TEAK_ALU_CMPU;
 	bool saturating = false;
 
 	switch (operation) {
-		case TEAK_ALU_OR:
-			result = value | normalized_operand;
-			break;
-		case TEAK_ALU_AND:
-			result = value & normalized_operand;
-			break;
-		case TEAK_ALU_XOR:
-			result = value ^ normalized_operand;
-			break;
 		case TEAK_ALU_ADD:
-		case TEAK_ALU_ADDH:
-		case TEAK_ALU_ADDL:
 			result = value + normalized_operand;
 			tcg_fast_add_sub_flags(state, value, normalized_operand, result, false);
 			saturating = true;
 			break;
-		case TEAK_ALU_CMP:
 		case TEAK_ALU_CMPU:
 		case TEAK_ALU_SUB:
 		case TEAK_ALU_SUBH:
-		case TEAK_ALU_SUBL:
 			result = value - normalized_operand;
 			tcg_fast_add_sub_flags(state, value, normalized_operand, result, true);
 			saturating = !comparison;
@@ -7156,65 +7143,28 @@ TEAK_FAST_INLINE uint64_t tcg_fast_shifted_product(const teak_state_t *state) {
 	return (uint64_t) ((int64_t) (product << (shift & 63U)) >> right);
 }
 
-TEAK_FAST_INLINE uint64_t tcg_fast_aligned_product(const teak_state_t *state) {
-	uint64_t product = tcg_fast_shifted_product(state) >> 16;
-	return (uint64_t) ((int64_t) (product << 40) >> 40);
-}
-
-TEAK_FAST_INLINE void tcg_fast_multiply(teak_state_t *state, uint16_t x, bool unsigned_x, bool unsigned_y) {
+TEAK_FAST_INLINE void tcg_fast_multiply(teak_state_t *state, uint16_t x) {
 	uint16_t y = state->y[0];
-	uint32_t x_factor = unsigned_x ? x : (uint32_t) (int32_t) (int16_t) x;
-	uint32_t y_factor = unsigned_y ? y : (uint32_t) (int32_t) (int16_t) y;
-	uint32_t product = x_factor * y_factor;
+	uint32_t product = (uint32_t) (int32_t) (int16_t) x * (uint32_t) (int32_t) (int16_t) y;
 
 	state->x[0] = x;
 	state->p[0] = product;
-	state->product_extension[0] = unsigned_x && unsigned_y ? 0 : product >> 31;
-}
-
-TEAK_FAST_INLINE bool tcg_fast_multiply_supported(teak_multiply_operation_t operation) {
-	return operation <= TEAK_MULTIPLY_MSU;
+	state->product_extension[0] = product >> 31;
 }
 
 TEAK_FAST_INLINE void tcg_fast_multiply_operation(teak_state_t *state, const teak_insn_t *instruction, uint16_t x) {
 	uint8_t index = instruction->accumulator_index;
-	bool unsigned_x = false;
-	bool unsigned_y = false;
 
 	switch (instruction->multiply_operation) {
 		case TEAK_MULTIPLY_MPY:
 			break;
-		case TEAK_MULTIPLY_MPYSU:
-			unsigned_x = true;
-			break;
 		case TEAK_MULTIPLY_MAC:
 			tcg_fast_alu_accumulator(state, TEAK_ALU_ADD, index, tcg_fast_shifted_product(state));
 			break;
-		case TEAK_MULTIPLY_MACUS:
-			tcg_fast_alu_accumulator(state, TEAK_ALU_ADD, index, tcg_fast_shifted_product(state));
-			unsigned_y = true;
-			break;
-		case TEAK_MULTIPLY_MACSU:
-			tcg_fast_alu_accumulator(state, TEAK_ALU_ADD, index, tcg_fast_shifted_product(state));
-			unsigned_x = true;
-			break;
-		case TEAK_MULTIPLY_MAA:
-			tcg_fast_alu_accumulator(state, TEAK_ALU_ADD, index, tcg_fast_aligned_product(state));
-			break;
-		case TEAK_MULTIPLY_MACUU:
-			tcg_fast_alu_accumulator(state, TEAK_ALU_ADD, index, tcg_fast_shifted_product(state));
-			unsigned_x = true;
-			unsigned_y = true;
-			break;
-		case TEAK_MULTIPLY_MAASU:
-			tcg_fast_alu_accumulator(state, TEAK_ALU_ADD, index, tcg_fast_aligned_product(state));
-			unsigned_x = true;
-			break;
-		case TEAK_MULTIPLY_MSU:
-			tcg_fast_alu_accumulator(state, TEAK_ALU_SUB, index, tcg_fast_shifted_product(state));
-			break;
+		default:
+			g_assert_not_reached();
 	}
-	tcg_fast_multiply(state, x, unsigned_x, unsigned_y);
+	tcg_fast_multiply(state, x);
 }
 
 TEAK_FAST_INLINE uint16_t tcg_fast_rn_next(const teak_state_t *state, uint8_t address_register, teak_step_t step_mode,
@@ -7274,50 +7224,14 @@ TEAK_FAST_INLINE bool tcg_fast_condition(const teak_state_t *state, teak_conditi
 	switch (condition) {
 		case TEAK_COND_TRUE:
 			return true;
-		case TEAK_COND_EQ:
-			predicate = state->fz;
-			break;
 		case TEAK_COND_NEQ:
 			predicate = state->fz ^ 1U;
-			break;
-		case TEAK_COND_GT:
-			predicate = (state->fz | state->fm) ^ 1U;
 			break;
 		case TEAK_COND_GE:
 			predicate = state->fm ^ 1U;
 			break;
-		case TEAK_COND_LT:
-			predicate = state->fm;
-			break;
-		case TEAK_COND_LE:
-			predicate = state->fm | state->fz;
-			break;
-		case TEAK_COND_NN:
-			predicate = state->fn ^ 1U;
-			break;
-		case TEAK_COND_C:
-			predicate = state->fc0;
-			break;
-		case TEAK_COND_V:
-			predicate = state->fv;
-			break;
-		case TEAK_COND_E:
-			predicate = state->fe;
-			break;
-		case TEAK_COND_L:
-			predicate = state->flm | state->fvl;
-			break;
 		case TEAK_COND_NR:
 			predicate = state->fr ^ 1U;
-			break;
-		case TEAK_COND_NIU0:
-			predicate = state->iu[0] ^ 1U;
-			break;
-		case TEAK_COND_IU0:
-			predicate = state->iu[0];
-			break;
-		case TEAK_COND_IU1:
-			predicate = state->iu[1];
 			break;
 		default:
 			g_assert_not_reached();
@@ -7340,13 +7254,8 @@ TEAK_FAST_INLINE uint16_t tcg_fast_mov_read_register(teak_state_t *state, uint8_
 	if (register_code >= 16 && register_code <= 19) {
 		accumulator = tcg_fast_sign_extend(state->b[register_code & 1U]);
 		high = register_code < 18;
-	} else if (register_code >= 26 && register_code <= 29) {
-		accumulator = tcg_fast_sign_extend(state->a[register_code & 1U]);
-		high = register_code >= 28;
 	} else if (register_code <= 7) {
 		return *tcg_fast_rn_old(state, register_code);
-	} else if (register_code == 24 || register_code == 25) {
-		return state->a[register_code & 1U];
 	} else {
 		g_assert(register_code == 31);
 		return state->shift_value;
@@ -7405,50 +7314,41 @@ TEAK_FAST_INLINE uint64_t *tcg_fast_accumulator_register(teak_state_t *state, ui
 	return &state->a[register_code & 1U];
 }
 
-static bool tcg_fast_readable_register(uint8_t register_code) {
-	return register_code <= 7 || (register_code >= 16 && register_code <= 19) ||
-		(register_code >= 24 && register_code <= 29) || register_code == 31;
-}
-
+/*
+ * Exactly the instructions the tables above hold: tcg_fast_execute() models
+ * these and nothing else, so a table with any other fails verification.
+ */
 static bool tcg_fast_supported(const teak_insn_t *instruction) {
+	uint8_t code = instruction->register_code;
+	teak_alu_operation_t alu = instruction->alu_operation;
+
 	switch (instruction->opcode) {
-		case TEAK_OP_NOP:
-			return true;
 		case TEAK_OP_MOV_DATA_RN_STEP_REGISTER:
-			return instruction->register_code == 12 || tcg_fast_readable_register(instruction->register_code);
+			return code == 7 || code == 24 || code == 28 || code == 29;
 		case TEAK_OP_MOV_REGISTER_DATA_RN_STEP:
-			return tcg_fast_readable_register(instruction->register_code);
+			return code == 18 || (code >= 26 && code <= 29);
 		case TEAK_OP_MODA4_ACCUMULATOR:
+			return instruction->moda_operation == TEAK_MODA_CLRR && instruction->condition == TEAK_COND_TRUE;
 		case TEAK_OP_MODB3_ACCUMULATOR:
-			return instruction->condition < TEAK_COND_COUNT && (instruction->moda_operation == TEAK_MODA_CLR ||
-				instruction->moda_operation == TEAK_MODA_CLRR || instruction->moda_operation == TEAK_MODA_SHR ||
-				instruction->moda_operation == TEAK_MODA_SHR4);
+			return instruction->moda_operation == TEAK_MODA_SHR && instruction->condition == TEAK_COND_GE;
 		case TEAK_OP_MULTIPLY_DUAL_RN:
 		case TEAK_OP_MULTIPLY_RN_STEP:
-			return tcg_fast_multiply_supported(instruction->multiply_operation);
+			return instruction->multiply_operation == TEAK_MULTIPLY_MPY ||
+				instruction->multiply_operation == TEAK_MULTIPLY_MAC;
 		case TEAK_OP_ALU_RN_STEP_ACCUMULATOR:
+			return alu == TEAK_ALU_SUB || alu == TEAK_ALU_SUBH;
 		case TEAK_OP_ALU_REGISTER_ACCUMULATOR:
-			if (tcg_alu_uses_multiply(instruction->alu_operation) || instruction->alu_operation == TEAK_ALU_TST0 ||
-				instruction->alu_operation == TEAK_ALU_TST1)
-				return false;
-			return instruction->opcode == TEAK_OP_ALU_RN_STEP_ACCUMULATOR || instruction->register_code == 11 ||
-				tcg_fast_readable_register(instruction->register_code);
+			return (alu == TEAK_ALU_ADD && (code == 11 || code == 18)) || (alu == TEAK_ALU_CMPU && code == 1);
 		case TEAK_OP_MOV_REGISTER_B_ACCUMULATOR:
-			return instruction->register_code == 12 || tcg_fast_readable_register(instruction->register_code);
+			return code == 31;
 		case TEAK_OP_MOV_REGISTER_REGISTER:
-			if (instruction->destination_register_code == 12)
-				return true;
-			if (instruction->register_code == 11)
-				return instruction->destination_register_code == 24 || instruction->destination_register_code == 25;
-			return (instruction->register_code == 12 || tcg_fast_readable_register(instruction->register_code)) &&
-				tcg_fast_readable_register(instruction->destination_register_code);
+			return code == 11 && instruction->destination_register_code == 24;
 		case TEAK_OP_MODIFY_RN:
 			return true;
-		case TEAK_OP_BRANCH_ABSOLUTE:
 		case TEAK_OP_BRANCH_RELATIVE:
-			return instruction->condition < TEAK_COND_COUNT;
+			return instruction->condition == TEAK_COND_NEQ || instruction->condition == TEAK_COND_NR;
 		case TEAK_OP_MOV_IMM_REGISTER:
-			return instruction->register_code <= 7;
+			return code == 1;
 		default:
 			return false;
 	}
@@ -7461,24 +7361,17 @@ TEAK_FAST_INLINE bool tcg_fast_execute(teak_state_t *state, const teak_data_map_
 	uint8_t address_register = instruction->address_register;
 
 	switch (instruction->opcode) {
-		case TEAK_OP_NOP:
-			break;
-
 		case TEAK_OP_MOV_DATA_RN_STEP_REGISTER: {
 			uint8_t code = instruction->register_code;
 			uint32_t address = state->r[address_register];
 			uint16_t value;
 
-			if (code == 12)
-				break;
 			if (!tcg_fast_read(map, TEAK_DATA_SPACE_ALL, address, &value))
 				return false;
 			state->r[address_register] = tcg_fast_rn_next(state, address_register, instruction->step,
 				instruction->disable_modulo, address);
 			if (code <= 7) {
 				*tcg_fast_rn_old(state, code) = value;
-			} else if (code == 31) {
-				state->shift_value = value;
 			} else {
 				uint64_t accumulator = value;
 
@@ -7499,16 +7392,14 @@ TEAK_FAST_INLINE bool tcg_fast_execute(teak_state_t *state, const teak_data_map_
 			uint16_t *pointer;
 			uint16_t value;
 
-			if (code <= 7) {
-				value = *tcg_fast_rn_old(state, code);
-			} else if ((code >= 16 && code <= 19) || (code >= 26 && code <= 29)) {
+			if ((code >= 16 && code <= 19) || (code >= 26 && code <= 29)) {
 				uint64_t accumulator = tcg_fast_saturate(*tcg_fast_accumulator_register(state, code), state->sat, &flm);
 
 				if (code <= 17 || code >= 28)
 					accumulator >>= 16;
 				value = accumulator;
 			} else {
-				value = tcg_fast_mov_read_register(state, code);
+				g_assert_not_reached();
 			}
 			address = state->r[address_register];
 			pointer = tcg_fast_write_pointer(map, address);
@@ -7533,22 +7424,15 @@ TEAK_FAST_INLINE bool tcg_fast_execute(teak_state_t *state, const teak_data_map_
 				&state->a[instruction->accumulator_index];
 			value = *accumulator & TEAK_ACCUMULATOR_MASK;
 			switch (instruction->moda_operation) {
-				case TEAK_MODA_CLR:
-					result = 0;
-					break;
 				case TEAK_MODA_CLRR:
 					result = 0x8000;
 					break;
 				case TEAK_MODA_SHR:
-				case TEAK_MODA_SHR4: {
-					uint32_t amount = instruction->moda_operation == TEAK_MODA_SHR4 ? 4 : 1;
-
-					result = state->s == 0 ? (uint64_t) (tcg_fast_sign_extend(value) >> amount) : value >> amount;
+					result = state->s == 0 ? (uint64_t) (tcg_fast_sign_extend(value) >> 1) : value >> 1;
 					if (state->s == 0)
 						state->fv = 0;
-					state->fc0 = (uint32_t) (value >> (amount - 1)) & 1U;
+					state->fc0 = (uint32_t) value & 1U;
 					break;
-				}
 				default:
 					g_assert_not_reached();
 			}
@@ -7607,10 +7491,6 @@ TEAK_FAST_INLINE bool tcg_fast_execute(teak_state_t *state, const teak_data_map_
 				tcg_fast_alu_accumulator(state, operation, instruction->accumulator_index,
 					tcg_fast_shifted_product(state));
 				break;
-			} else if (code == 24 || code == 25) {
-				tcg_fast_alu_accumulator(state, operation, instruction->accumulator_index,
-					state->a[code - 24] & TEAK_ACCUMULATOR_MASK);
-				break;
 			} else {
 				value = tcg_fast_mov_read_register(state, code);
 			}
@@ -7624,15 +7504,9 @@ TEAK_FAST_INLINE bool tcg_fast_execute(teak_state_t *state, const teak_data_map_
 		}
 
 		case TEAK_OP_MOV_REGISTER_B_ACCUMULATOR: {
-			uint8_t code = instruction->register_code;
-			uint64_t accumulator;
+			uint16_t value = tcg_fast_mov_read_register(state, instruction->register_code);
+			uint64_t accumulator = (uint64_t) (int64_t) (int16_t) value;
 
-			if (code == 24 || code == 25) {
-				accumulator = state->a[code - 24];
-			} else {
-				uint16_t value = code == 12 ? next_pc : tcg_fast_mov_read_register(state, code);
-				accumulator = (uint64_t) (int64_t) (int16_t) value;
-			}
 			tcg_fast_value_flags(state, accumulator);
 			state->b[instruction->accumulator_index] = accumulator;
 			break;
@@ -7642,8 +7516,6 @@ TEAK_FAST_INLINE bool tcg_fast_execute(teak_state_t *state, const teak_data_map_
 			uint8_t code = instruction->register_code;
 			uint8_t destination = instruction->destination_register_code;
 
-			if (destination == 12)
-				break;
 			if (code == 11) {
 				uint64_t product = tcg_fast_shifted_product(state);
 
@@ -7651,16 +7523,7 @@ TEAK_FAST_INLINE bool tcg_fast_execute(teak_state_t *state, const teak_data_map_
 				state->a[destination - 24] = product;
 				break;
 			}
-			if ((code == 24 || code == 25) &&
-				((destination >= 16 && destination <= 19) || (destination >= 24 && destination <= 29))) {
-				uint64_t accumulator = state->a[code - 24];
-
-				tcg_fast_value_flags(state, accumulator);
-				*tcg_fast_accumulator_register(state, destination) = accumulator;
-				break;
-			}
-			tcg_mov_write_register(state, destination, code == 12 ? next_pc : tcg_fast_mov_read_register(state, code));
-			break;
+			g_assert_not_reached();
 		}
 
 		case TEAK_OP_MODIFY_RN: {
@@ -7672,7 +7535,6 @@ TEAK_FAST_INLINE bool tcg_fast_execute(teak_state_t *state, const teak_data_map_
 			break;
 		}
 
-		case TEAK_OP_BRANCH_ABSOLUTE:
 		case TEAK_OP_BRANCH_RELATIVE:
 			if (tcg_fast_condition(state, instruction->condition)) {
 				state->pc = instruction->branch_target;
