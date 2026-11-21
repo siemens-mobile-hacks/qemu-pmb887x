@@ -2529,42 +2529,8 @@ static uint64_t int_ld_mmio_beN(CPUState *cpu, CPUTLBEntryFull *full,
         if (tcg_cflags_has(cpu, CF_MEMORY_TIMING)) {
             cpu->neg.cycle_count += memory_region_get_read_cycles(mr);
         }
-        /* Fill-time resolved dispatch: one mask test + indirect call. */
-        hwaddr io_offset = mr_offset + full->io_off_delta;
-
-        if (likely((full->io_rmask & (1u << this_size)) &&
-                   tlb_io_in_range(full, mr_offset, this_size) &&
-                   (!full->io_check_align ||
-                    !(io_offset & (this_size - 1))))) {
-            bool *guard = full->io_guard;
-
-            if (unlikely(guard && *guard)) {
-                /* Re-entrant access: take the stock path for its
-                 * warn_report_once + MEMTX_ACCESS_ERROR semantics. */
-                r = memory_region_dispatch_read(mr, mr_offset, &val,
-                                                this_mop, full->attrs);
-            } else {
-                if (guard) {
-                    *guard = true;
-                }
-                val = full->io_read_fn(full->io_opaque, io_offset,
-                                       this_size);
-                if (guard) {
-                    *guard = false;
-                }
-                /* stock's accessor masks the piece to its access size;
-                 * a device returning 0xffffffff for a 2-byte read must
-                 * not corrupt the preceding piece of a split load */
-                val &= MAKE_64BIT_MASK(0, this_size * 8);
-                if (full->io_swap & 1) {
-                    val = io_fast_bswap(val, this_size);
-                }
-                r = MEMTX_OK;
-            }
-        } else {
-            r = memory_region_dispatch_read(mr, mr_offset, &val,
-                                            this_mop, full->attrs);
-        }
+        r = memory_region_dispatch_read(mr, mr_offset, &val,
+                                        this_mop, full->attrs);
         if (unlikely(r != MEMTX_OK)) {
             io_failed(cpu, full, addr, this_size, type, mmu_idx, r, ra);
         }
@@ -3266,41 +3232,8 @@ static uint64_t int_st_mmio_leN(CPUState *cpu, CPUTLBEntryFull *full,
         this_size = 1 << this_mop;
         this_mop |= MO_LE;
 
-        /* Fill-time resolved dispatch: one mask test + indirect call. */
-        hwaddr io_offset = mr_offset + full->io_off_delta;
-
-        if (likely((full->io_wmask & (1u << this_size)) &&
-                   tlb_io_in_range(full, mr_offset, this_size) &&
-                   (!full->io_check_align ||
-                    !(io_offset & (this_size - 1))))) {
-            bool *guard = full->io_guard;
-
-            if (unlikely(guard && *guard)) {
-                r = memory_region_dispatch_write(mr, mr_offset, val_le,
-                                                 this_mop, full->attrs);
-            } else {
-                uint64_t tmp = val_le;
-
-                if (guard) {
-                    *guard = true;
-                }
-                /* stock's accessor masks the piece to its access size
-                 * before the device sees it */
-                tmp &= MAKE_64BIT_MASK(0, this_size * 8);
-                if (full->io_swap & 2) {
-                    tmp = io_fast_bswap(tmp, this_size);
-                }
-                full->io_write_fn(full->io_opaque, io_offset, tmp,
-                                  this_size);
-                if (guard) {
-                    *guard = false;
-                }
-                r = MEMTX_OK;
-            }
-        } else {
-            r = memory_region_dispatch_write(mr, mr_offset, val_le,
-                                             this_mop, full->attrs);
-        }
+        r = memory_region_dispatch_write(mr, mr_offset, val_le,
+                                         this_mop, full->attrs);
         if (unlikely(r != MEMTX_OK)) {
             io_failed(cpu, full, addr, this_size, MMU_DATA_STORE,
                       mmu_idx, r, ra);
