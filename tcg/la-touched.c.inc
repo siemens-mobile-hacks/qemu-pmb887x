@@ -12,10 +12,16 @@
  * An EL71 boot translates ~74k TBs of ~24 globals and ~52 other temps; the
  * full walks took ~2900 steps per TB.
  *
- * Only wasm64 builds take it (LA_W64, set in tcg.c).  To remove: delete
- * this file, its #include in tcg.c, the branches there that test LA_W64 and
+ * Only wasm64 builds take it (LA_W64, below).  To remove: delete this
+ * file, its #include in tcg.c, the branches there that test LA_W64 and
  * LA_W64_RA, and the la_w64_touch calls.
  */
+
+#ifdef CONFIG_TCG_WASM64
+#define LA_W64 1
+#else
+#define LA_W64 0
+#endif
 
 #if LA_W64 && !defined(CONFIG_DEBUG_TCG)
 #define LA_W64_RA 1

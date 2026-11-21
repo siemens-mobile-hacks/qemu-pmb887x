@@ -10,10 +10,15 @@
  * same temps in the same order.  A thread translates with one TCGContext
  * only, so the tables are per thread.
  *
- * Only wasm64 builds take it (W64_CONSTS, set in tcg.c).  To remove: delete
- * this file, its #include in tcg.c, and the branches there that test
- * W64_CONSTS.
+ * Only wasm64 builds take it (W64_CONSTS, below).  To remove: delete this
+ * file, its #include in tcg.c, and the branches there that test W64_CONSTS.
  */
+
+#ifdef CONFIG_TCG_WASM64
+#define W64_CONSTS 1
+#else
+#define W64_CONSTS 0
+#endif
 
 #define W64C_BITS 10
 QEMU_BUILD_BUG_ON((1 << W64C_BITS) < 2 * TCG_MAX_TEMPS);

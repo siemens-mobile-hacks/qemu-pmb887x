@@ -1928,13 +1928,7 @@ void tcg_prologue_init(void)
     tcg_region_prologue_set(s);
 }
 
-/* WASM PORT FAST PATH (removable): w64c_reset and w64c_constant below */
-#ifdef CONFIG_TCG_WASM64
-#define W64_CONSTS 1
-#else
-#define W64_CONSTS 0
-#endif
-#include "const-table.c.inc"
+#include "const-table.c.inc"  /* WASM PORT FAST PATH (removable) */
 
 void tcg_func_start(TCGContext *s)
 {
@@ -3817,13 +3811,7 @@ static void la_cross_call(TCGContext *s, int nt)
     }
 }
 
-/* WASM PORT FAST PATH (removable): the la_w64_* hooks below */
-#ifdef CONFIG_TCG_WASM64
-#define LA_W64 1
-#else
-#define LA_W64 0
-#endif
-#include "la-touched.c.inc"
+#include "la-touched.c.inc"  /* WASM PORT FAST PATH (removable) */
 
 /*
  * Liveness analysis: Verify the lifetime of TEMP_TB, and reduce
