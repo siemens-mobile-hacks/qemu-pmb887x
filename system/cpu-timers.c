@@ -298,6 +298,14 @@ void cpu_clock_set_idle_lead(int64_t ns)
     cpu_clock_idle_lead = ns;
 }
 
+void cpu_clock_owner_idle_advance(int64_t deadline)
+{
+    qemu_mutex_lock(&cpu_clock_owner_lock);
+    cpu_clock_owner_write(deadline, qatomic_read(cpu_clock_owner_cycles),
+                          cpu_clock_cycle_ps);
+    qemu_mutex_unlock(&cpu_clock_owner_lock);
+}
+
 /*
  * For an owner waiting for an interrupt, once its expired timers have run;
  * @deadline is the next one, -1 for none.  Returns 0 after moving the
@@ -323,10 +331,7 @@ int64_t cpu_clock_owner_idle(int64_t deadline)
         raw = cpu_clock_owner_idle_raw = cpu_get_raw_clock();
     }
     if (deadline - raw <= cpu_clock_idle_lead) {
-        qemu_mutex_lock(&cpu_clock_owner_lock);
-        cpu_clock_owner_write(deadline, qatomic_read(cpu_clock_owner_cycles),
-                              cpu_clock_cycle_ps);
-        qemu_mutex_unlock(&cpu_clock_owner_lock);
+        cpu_clock_owner_idle_advance(deadline);
         return 0;
     }
     cpu_clock_owner_progress(true);
@@ -350,14 +355,6 @@ bool cpu_clock_owner_idle_reaches(int64_t deadline)
         cpu_clock_owner_idle_raw = cpu_get_raw_clock();
     }
     return deadline - cpu_clock_owner_idle_raw <= cpu_clock_idle_lead;
-}
-
-void cpu_clock_owner_idle_advance(int64_t deadline)
-{
-    qemu_mutex_lock(&cpu_clock_owner_lock);
-    cpu_clock_owner_write(deadline, qatomic_read(cpu_clock_owner_cycles),
-                          cpu_clock_cycle_ps);
-    qemu_mutex_unlock(&cpu_clock_owner_lock);
 }
 
 /*
