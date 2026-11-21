@@ -1931,7 +1931,7 @@ static bool w64_back_edge(DisasContext *s, int64_t diff)
     if (s->pc_curr + diff != s->base.pc_first ||
         tcg_ctx->exitreq_label == NULL || s->condexec_mask || s->eci ||
         unlikely(s->ss_active) ||
-        (tb_cflags(s->base.tb) & CF_SINGLE_STEP)) {
+        (tb_cflags(s->base.tb) & (CF_SINGLE_STEP | CF_MEMORY_TIMING))) {
         return false;
     }
     /* blx to the TB's start runs the other instruction set; MVE's LE needs
@@ -1998,7 +1998,7 @@ static bool w64_defer_taken(DisasContext *s, int64_t diff)
     }
     if (!s->condjmp || s->w64_ft_n >= W64_FT_MAX ||
         s->condexec_mask || s->eci || unlikely(s->ss_active) ||
-        (tb_cflags(s->base.tb) & CF_SINGLE_STEP)) {
+        (tb_cflags(s->base.tb) & (CF_SINGLE_STEP | CF_MEMORY_TIMING))) {
         return false;
     }
     s->w64_ft[s->w64_ft_n].label = gen_disas_label(s);
@@ -2074,7 +2074,7 @@ static bool w64_absorb(DisasContext *s, int64_t diff)
 
     if (s->base.is_jmp != DISAS_NEXT || s->condjmp || s->condexec_mask ||
         s->eci || unlikely(s->ss_active) ||
-        (tb_cflags(s->base.tb) & CF_SINGLE_STEP)) {
+        (tb_cflags(s->base.tb) & (CF_SINGLE_STEP | CF_MEMORY_TIMING))) {
         return false;
     }
     /*
@@ -2330,7 +2330,8 @@ static bool w64_inline_call(DisasContext *s, int64_t diff)
     }
     if (db->is_jmp != DISAS_NEXT ||
         s->eci || unlikely(s->ss_active) ||
-        (tb_cflags(tb) & (CF_SINGLE_STEP | CF_COUNT_MASK)) ||
+        (tb_cflags(tb) &
+         (CF_SINGLE_STEP | CF_COUNT_MASK | CF_MEMORY_TIMING)) ||
         s->pc_save == -1 ||
         arm_dc_feature(s, ARM_FEATURE_M) ||
         s->w64_thumb != s->thumb) {
