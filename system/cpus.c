@@ -45,6 +45,7 @@
 #include "system/runstate.h"
 #include "migration/misc.h"
 #include "system/cpu-timers.h"
+#include "exec/icount.h"
 #include "system/whpx.h"
 #include "hw/core/boards.h"
 #include "hw/core/hw-error.h"
@@ -662,11 +663,15 @@ bool bql_lock_mmio(void)
 void bql_unlock_mmio(void)
 {
     /*
-     * Keep it, unless somebody wants it, or this is not a vCPU thread -
-     * only a vCPU reliably comes back through cpu_exec_loop(), which is
-     * what bounds the deferral.
+     * Keep it, unless somebody wants it, or this is not a vCPU thread, or
+     * nothing bounds the hold.  A waiter only bumps bql_wanted (and one
+     * re-locking in a cond wait not even that), which the vCPU reads when
+     * it comes back to cpu_exec_loop(); chained TBs do not, and only the
+     * end of an icount slice or a vcpu-timers budget brings it back.
      */
-    if (likely(current_cpu && !bql_wanted_by_other())) {
+    if (likely(current_cpu &&
+               (qemu_virtual_timers_on_vcpu || icount_enabled()) &&
+               !bql_wanted_by_other())) {
         bql_mmio_lazy = true;
         return;
     }
