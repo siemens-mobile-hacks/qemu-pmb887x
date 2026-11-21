@@ -945,6 +945,12 @@ struct FlatView {
     unsigned nr_allocated;
     struct AddressSpaceDispatch *dispatch;
     MemoryRegion *root;
+    /* Topology tags (see system/memory.c, generate_memory_topology):
+     * identity of the MR-tree state this view was rendered from, so a
+     * romd-only toggle can reuse a previously rendered variant without
+     * re-rendering.  Zero = untagged/never reuse. */
+    uint64_t topo_gen;
+    uint64_t romd_sig;
     FlatRange *prev_ranges;
 };
 
@@ -2033,13 +2039,22 @@ void memory_region_set_nonvolatile(MemoryRegion *mr, bool nonvolatile);
 void memory_region_rom_device_set_romd(MemoryRegion *mr, bool romd_mode);
 
 /**
- * memory_topology_views_replaced: whether the transaction commit being
- * dispatched rendered a FlatView with a new dispatch, rather than updating
- * the old one in place.  Pointers into the old dispatch (TLB entries keep
- * their MemoryRegionSection) must then be dropped, and a guest physical
- * address may have different code behind it.
+ * memory_topology_views_recycled: whether a FlatView variant was recycled
+ * (evicted from the romd stash) during the commit being dispatched; the
+ * flag is cleared once the commit's listeners have run.
+ * Readers holding pointers into FlatViews (TLB entries keep their
+ * MemoryRegionSection) must flush them when this returns true.
  */
-bool memory_topology_views_replaced(void);
+bool memory_topology_views_recycled(void);
+
+/**
+ * memory_topology_commit_full: whether the transaction commit that is
+ * currently being dispatched (or just finished) changed real memory
+ * topology, as opposed to only romd mode or ioeventfds.  Such commits
+ * can put different code behind the same guest physical address, so
+ * the TCG jump cache must be cleared in addition to the TLB ranges.
+ */
+bool memory_topology_commit_full(void);
 
 /**
  * memory_region_set_coalescing: Enable memory coalescing for the region.
