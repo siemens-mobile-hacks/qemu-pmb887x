@@ -33,6 +33,7 @@
 /* ------------------------------------------------------------------ */
 
 static struct w64_irec *w64_irecs;
+static uint32_t w64_irecs_n;            /* grown to the indices in use */
 
 /*
  * A TB is interpreted for its first W64_INTERP_THRESH entries and only
@@ -89,8 +90,13 @@ void w64_irec_put(uint32_t tidx, uint32_t *code, uint32_t n)
         g_free(code);
         return;
     }
-    if (!w64_irecs) {
-        w64_irecs = g_malloc0((size_t)W64_TIDX_N * sizeof(*w64_irecs));
+    if (tidx >= w64_irecs_n) {
+        uint32_t n = MAX(4096, pow2ceil(tidx + 1));
+
+        w64_irecs = g_renew(struct w64_irec, w64_irecs, n);
+        memset(w64_irecs + w64_irecs_n, 0,
+               (size_t)(n - w64_irecs_n) * sizeof(*w64_irecs));
+        w64_irecs_n = n;
     }
     r = &w64_irecs[tidx];
     w64_irec_free(r->code);
@@ -104,7 +110,7 @@ void w64_irec_drop(uint32_t tidx)
 {
     struct w64_irec *r;
 
-    if (!w64_irecs || tidx >= W64_TIDX_N) {
+    if (tidx >= w64_irecs_n) {
         return;
     }
     r = &w64_irecs[tidx];
@@ -119,10 +125,7 @@ void w64_irec_flush(void)
 {
     uint32_t i;
 
-    if (!w64_irecs) {
-        return;
-    }
-    for (i = 0; i < W64_TIDX_N; i++) {
+    for (i = 0; i < w64_irecs_n; i++) {
         g_free(w64_irecs[i].code);
         w64_irecs[i].code = NULL;
         w64_irecs[i].n = 0;
@@ -151,7 +154,7 @@ bool w64_interp_try(uint32_t tidx, uint32_t icount, uintptr_t env,
 {
     struct w64_irec *r;
 
-    if (!w64_irecs || tidx >= W64_TIDX_N) {
+    if (tidx >= w64_irecs_n) {
         return false;
     }
     r = &w64_irecs[tidx];
