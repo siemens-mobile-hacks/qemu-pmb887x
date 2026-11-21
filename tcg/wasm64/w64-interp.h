@@ -1,17 +1,16 @@
 /*
  * wasm64 interpreter tier: the recorded op stream.
  *
- * A wasm module costs ~86 us to close and carries only 4.85 TBs, because
- * the batch closes the moment one of its members must run.  96 % of the
- * boot's module time is that fixed per-close cost (playbook § 0f).  The
- * only way to stop closing is to have another way to run a TB before its
- * module exists, and this is it: the backend records what it emitted, in
- * a form a C interpreter in the main module can execute.
+ * A batch closes into a module the moment one of its members must run as
+ * compiled code, and a module costs a fixed price per close.  This is the
+ * other way to run a TB before its module exists: the backend records
+ * what it emitted, in a form a C interpreter in the main module can
+ * execute.
  *
  * The record is written as the wasm is written, from the same
  * already-register-allocated operands, so the two are the same program
  * by construction.  Anything the recorder cannot encode marks the TB
- * un-interpretable and it takes today's path -- correctness never
+ * un-interpretable and it waits for its module -- correctness never
  * depends on the recorder being complete.
  *
  * Encoding: a stream of uint32_t.  The first word of every op is

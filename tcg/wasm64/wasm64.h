@@ -1,8 +1,9 @@
 /*
  * TCG wasm64 backend — shared definitions (tcg-target.c.inc + wasm64.c).
  *
- * Each translated TB is a descriptor followed by one wasm function body
- * in the code generation buffer:
+ * Each translated TB is a descriptor in the code generation buffer; its
+ * wasm function body is staged in the open batch (a heap copy, freed when
+ * the batch lands):
  *
  *   tb_ptr +  0  u32  fidx    addFunction() index of the run thunk (one
  *                              for every batch), 0 = not compiled (or
@@ -11,7 +12,8 @@
  *                              module landed, else 0
  *   tb_ptr +  8  u32  icount  guest insns (prologue accounting)
  *   tb_ptr + 12  u32  tidx    index of this TB in the shared chain table
- *   tb_ptr + 16       body:   [size LEB (5 bytes)][locals][expr]
+ *   tb_ptr + 16       body:   [size LEB (5 bytes)][locals][expr], while
+ *                              it is being emitted
  *
  * The TB joins its thread's open batch at finalize.  A batch becomes one
  * module - union type and import tables, one function per member, one

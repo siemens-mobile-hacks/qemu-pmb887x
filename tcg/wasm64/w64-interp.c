@@ -3,9 +3,7 @@
  *
  * Runs a TB from the op stream the backend recorded while emitting its
  * wasm (w64-interp.h), so that a TB can run before a module exists for
- * it.  That is the whole point: a batch closes the moment one member
- * must run, which costs ~86 us and buys a module holding only 4.85 TBs;
- * 96 % of the boot's module time is that fixed per-close cost.
+ * it and its batch need not close early (w64-interp.h).
  *
  * The exit protocol is the emitted code's, exactly -- the dispatcher
  * cannot tell which ran:

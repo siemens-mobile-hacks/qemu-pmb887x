@@ -533,7 +533,7 @@ static void w64_emit_loop_head(TCGContext *s)
 /* same already-register-allocated operands, so the recorded program   */
 /* and the emitted wasm are the same program by construction.  An      */
 /* emitter that cannot be encoded calls w64_ir_bad(): that TB is then  */
-/* never interpreted and takes today's path, so correctness never      */
+/* never interpreted and waits for its module, so correctness never   */
 /* depends on this being complete.                                     */
 /* ------------------------------------------------------------------ */
 

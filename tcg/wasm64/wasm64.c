@@ -1250,9 +1250,7 @@ bool w64_low_release(void *p)
     return false;
 }
 
-/* Drop the oldest live batch: its members fall back to the dispatcher
- * (fidx 0 + batch tag), which retires them. */
-
+/* a member of an evicted batch (fidx 0 + batch tag) */
 bool w64_tc_evicted(const void *tc_ptr)
 {
     const uint32_t *desc = tc_ptr;
@@ -1268,6 +1266,8 @@ static void w64_landed_free(struct w64_landed *l)
     g_free(l);
 }
 
+/* Drop the oldest live batch: its members fall back to the dispatcher
+ * (fidx 0 + batch tag), which retires them. */
 static void w64_batch_evict_oldest(void)
 {
     struct w64_landed *l = w64_live_head;
@@ -1603,9 +1603,7 @@ static uintptr_t QEMU_DISABLE_CFI w64_exec(CPUArchState *env, uintptr_t tb,
         }
 
         if (res & W64_EXIT_GOTOPTR) {
-            /* the handoff slot is [sp-8] = frame+8 (sp = frame+16); the
-             * dispatcher read frame+0 — always 0 — so every goto_ptr
-             * unwound to cpu_exec_loop (14.9M of 16.8M exits per boot) */
+            /* the handoff slot is [sp-8] = frame+8 (sp = frame+16) */
             uintptr_t next = *(uintptr_t *)(frame + 8);
             if (next == 0 || next == (uintptr_t)tcg_code_gen_epilogue) {
                 return 0;
