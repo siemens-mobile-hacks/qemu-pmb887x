@@ -691,7 +691,7 @@ EM_JS(int, w64_batch_instantiate,
         const ex = new WebAssembly.Instance(new WebAssembly.Module(run), {}).exports;
         globalThis.__w64tab = ex.t;
         globalThis.__w64none = ex.none;
-        globalThis.__w64run = addFunction(ex.run, 'jjjii');
+        globalThis.__w64run = addFunction(ex.run, 'ijjji');
     }
     const TAB = globalThis.__w64tab;
     if (maxtidx >= TAB.length) {
