@@ -6882,7 +6882,6 @@ void *HELPER(teak_tcg_chain)(
 #ifdef CONFIG_TCG_WASM64
 	if (entry->evict_epoch != w64_evict_epoch && w64_tc_evicted(entry->code)) {
 		/* the slice loop drops it (tcg_drop_evicted_blocks) */
-		core->chain_cache_stops++;
 		return NULL;
 	}
 #endif
@@ -6890,10 +6889,8 @@ void *HELPER(teak_tcg_chain)(
 		entry->fast = tcg_fast_map[state->pc & TEAK_PROGRAM_ADDRESS_MASK] != 0;
 		entry->fast_epoch = tcg_fast_map_epoch;
 	}
-	if (entry->fast && tcg_fast_lookup(core) != NULL) {
-		core->chain_cache_stops++;
+	if (entry->fast && tcg_fast_lookup(core) != NULL)
 		return NULL;
-	}
 	if (entry->dynamic_cycles || core->chain_cycle_limit - core->last_block_cycles < entry->block.instruction_count) {
 		/*
 		 * tcg_execute_cached_slice() would come straight back with this block while the slice has cycles left,
