@@ -15,6 +15,12 @@
 #ifndef TARGET_ARM_W64_FILL_H
 #define TARGET_ARM_W64_FILL_H
 
+/*
+ * The cycles of a taken Thumb b<cond>, which trans_B_cond_thumb charges and
+ * the fill and blit helpers replay: they must stay one number.
+ */
+#define ARM9E_THUMB_BCOND_TAKEN_CYCLES 2
+
 #define W64_FILL_ICOUNT (1u << 24)
 #define W64_FILL_CYCLES (1u << 25)
 

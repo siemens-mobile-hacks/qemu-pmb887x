@@ -1728,7 +1728,7 @@ static void w64_fill_match(DisasContext *s)
         desc |= W64_FILL_CYCLES;
     }
     /* trans_B_cond_thumb charges a taken branch's cycles at run time */
-    taken = s->arm9e_cycles ? 2 : 0;
+    taken = s->arm9e_cycles ? ARM9E_THUMB_BCOND_TAKEN_CYCLES : 0;
     charge = s->base.num_insns | taken << 8 | w64_cycles(s) << 16;
     s->w64_fill_desc = desc;
     gen_helper_w64_fill(tcg_env, tcg_constant_ptr(s->base.tb),
@@ -1799,7 +1799,7 @@ static void w64_blit_match(DisasContext *s)
         desc |= W64_FILL_CYCLES;
     }
     lit = ((s->base.pc_first + 6 + 4) & ~3u) + (w[3] & 0xff) * 4;
-    taken = s->arm9e_cycles ? 2 : 0;
+    taken = s->arm9e_cycles ? ARM9E_THUMB_BCOND_TAKEN_CYCLES : 0;
     charge = s->base.num_insns | taken << 8 | w64_cycles(s) << 16;
     gen_helper_w64_blit(tcg_env, tcg_constant_i32(lit),
                         tcg_constant_i32(desc), tcg_constant_i32(refund),
@@ -1912,7 +1912,7 @@ static void w64_rect_match(DisasContext *s)
         return;
     }
     r->dest = dest;
-    r->taken = s->arm9e_cycles ? 2 : 0;
+    r->taken = s->arm9e_cycles ? ARM9E_THUMB_BCOND_TAKEN_CYCLES : 0;
     s->w64_rect_ft = i;
 }
 
@@ -7086,7 +7086,7 @@ static bool trans_B_cond_thumb(DisasContext *s, arg_ci *a)
     }
     arm_skip_unless(s, a->cond);
     if (s->arm9e_cycles) {
-        translator_count_cycles(&s->base, 2, true);
+        translator_count_cycles(&s->base, ARM9E_THUMB_BCOND_TAKEN_CYCLES, true);
     }
     gen_jmp(s, jmp_diff(s, a->imm));
     return true;
