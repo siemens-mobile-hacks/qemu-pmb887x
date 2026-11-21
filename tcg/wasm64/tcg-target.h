@@ -17,8 +17,9 @@
  * zero-extension, converting back is a wrap — the same invariants TCI
  * maintains in its 64-bit register file.
  *
- * $env is the CPUArchState pointer (TCG_AREG0), $sp the per-vCPU call
- * frame (helpers receive their arguments through it, TCI-style — the
+ * $env is the CPUArchState pointer (TCG_AREG0), $sp the call frame of
+ * this thread and nesting depth (helpers receive their arguments through
+ * it, TCI-style — the
  * backend declares no argument registers), $tp the address of the
  * thread-local w64_tb_ptr, which generated code updates before every
  * helper call so that GETPC()-using helpers unwind correctly.
@@ -42,12 +43,10 @@
 #define MIN_TLB_MASK_TABLE_OFS    INT_MIN
 
 /* Number of abstract registers (= wasm locals).  Every register costs two
- * declared locals in every TB function (an i32 and an i64 one), and a
- * declared local is not free: the baseline tier zeroes all of them at
- * entry.  One costs about 8 us/Mi guest instructions, so the 32-register file
- * was ~5.6 % of wall for registers TCG never allocated — tcgSpill reads 0
- * with 13 allocatable and 29 over 64 631 TBs with 10.  env and sp are
- * function parameters, so only the 13 allocatable registers get locals. */
+ * declared locals in every TB function (an i32 and an i64 one), which the
+ * baseline tier zeroes at entry, so the file is no larger than TCG fills:
+ * env and sp are function parameters, and only the 13 allocatable
+ * registers get locals. */
 #define TCG_TARGET_NB_REGS 15
 
 typedef enum {

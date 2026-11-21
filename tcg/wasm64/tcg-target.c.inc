@@ -216,7 +216,8 @@ static void w64_pcc_call(TCGContext *s)
  *   3 .. 3+NL-1                 i32 reg locals (+ $bp at 3+NL)
  *   3+NL+1 .. 3+NL+NL           i64 reg locals
  *   3+2*NL+1                    i32 scratch ($scr32)
- *   3+2*NL+2..+4                three i64 scratch locals              */
+ *   3+2*NL+2..+4                i64 $scr0, $tlbw, $scr2
+ *   then i32 $tmask, $ttab, and the i64 frame locals              */
 #define W64_NL        TCG_AREG0
 #define W64_P_ENV     0
 #define W64_P_SP      1
@@ -1375,9 +1376,10 @@ static bool tcg_out_xchg(TCGContext *s, TCGType t, TCGReg r1, TCGReg r2)
 /* branches, exits                                                     */
 /* ------------------------------------------------------------------ */
 
-/* Set $bp to label's region index and break to the loop head.  The
- * compare producing the branch condition (for brcond) must already be
- * on the stack when cond is true. */
+/* Branch to a label: in nested mode a plain br / br_if to its block; in
+ * the region scheme set $bp to its region index and break to the loop
+ * head.  The compare producing the branch condition (for brcond) must
+ * already be on the stack when cond is true. */
 static void w64_br_to_label(TCGContext *s, TCGLabel *l, bool cond)
 {
     uint16_t idx = W.label_idx[l->id];
@@ -1518,12 +1520,8 @@ static void tcg_out_goto_tb(TCGContext *s, int which)
      *                          ($env, $sp, $tp, i32.wrap $scr0)
      *   end
      *
-     * The chain then reads one word — this TB's own slot — where it used
-     * to follow that word into the target's descriptor for fidx and tidx:
-     * a cache line per TB, in a ~20 MB region nothing else in the
-     * execution path touches.  tools/dispatch-probe.mjs prices that
-     * dependent load at +2 ns over a 256-TB working set and +8..9 ns over
-     * 1024-4096 of them.
+     * The chain reads one word, this TB's own slot, and nothing of the
+     * target.
      *
      * The fall-through runs the exit_tb the frontend emits right after
      * goto_tb, returning (tb|which) to cpu_exec — which then performs
@@ -1556,10 +1554,7 @@ static void tcg_out_goto_ptr(TCGContext *s, TCGReg a0)
     w64_ir_op(WI_GOTO_PTR, a0, 0, 0);
     /* The lookup helpers hand over the target's shared-table index with
      * W64_TIDX_TAG in the high half (exec/translation-block.h), so this
-     * tail-call reads nothing of the target: every bx lr / pop {pc} /
-     * ldr pc used to unwind to the C dispatcher and re-enter through the
-     * batch run thunk (0.5-1.7M exits/s early in the boot), then paid two
-     * loads from the target's descriptor to get here.
+     * tail-call reads nothing of the target:
      *
      *   block
      *     $scr0 = a0
@@ -1592,7 +1587,7 @@ static void tcg_out_mb(TCGContext *s, unsigned a0)
 {
     /*
      * The guest is single-vCPU, but the linear memory is shared with
-     * other pthreads (main-loop timers, the DSP worker); wasm plain
+     * other pthreads (the main loop, the LCD writer); wasm plain
      * loads/stores carry no cross-thread ordering, so honour the
      * barrier (atomic.fence, 0xfe 0x03 0x00).  ARMv5 firmware issues
      * essentially no barriers, so the cost is nil.
@@ -1629,10 +1624,8 @@ void tb_target_set_jmp_target(const TranslationBlock *tb, int n,
  * sequence, and for a guest insn whose code starts with that call (any
  * plain load/store: the address is already in a register) the raw
  * offset equals the insn's start = the previous insn's end, so the
- * unwind resolved one guest insn too early.  cpu_io_recompile() then
- * rewound to the previous insn and re-executed it — an EL71 boot
- * re-ran an `ldm r0!` twice before a buffered flash program and wrote
- * the erased pattern, aborting with ">>EXIT<< FILE: flash" (0x0506).
+ * unwind would resolve one guest insn too early (and cpu_io_recompile()
+ * re-execute the previous insn).
  *
  * Bias by GETPC_ADJ so the subtraction lands exactly on the insn start,
  * which the strict comparison attributes to this insn.  The call
@@ -1887,8 +1880,7 @@ static const uint8_t w64_fast_st[2][16] = {
     [1][MO_UQ] = 0x37,
 };
 
-/* the fast arm of a guest load/store, factored out so a second check in
- * front of the inline probe can emit it too */
+/* the fast arm of a guest load */
 static void w64_ld_fast(TCGContext *s, TCGType type, TCGReg data,
                         MemOp mop, unsigned s_bits)
 {
@@ -2634,10 +2626,8 @@ static void tcg_out_tb_start(TCGContext *s)
 
     /*
      * Only the counters and the live prefix of label_idx carry state
-     * from the previous TB: fixup[] and blk[] are both
-     * bounded by their own counters and are written before they are
-     * read.  Zeroing the whole struct was 11.6 KB of memset per
-     * translation, against the ~10 label slots a TB actually uses.
+     * from the previous TB: fixup[] and blk[] are both bounded by their
+     * own counters and are written before they are read.
      */
     memset(W.label_idx, 0, nlabels * sizeof(W.label_idx[0]));
     W.n_labels = 0;
@@ -2759,9 +2749,8 @@ static int tcg_out_tb_finalize(TCGContext *s)
 
     /* join the open batch: may assemble + instantiate the batch module
      * right here (fill or union-table pressure).  The batch takes its own
-     * copy of the body, and the bytes go back to the code buffer: a TB
-     * costs it the descriptor and the unwind data, not the ~1.7 KB module
-     * body that nothing reads once the batch has landed. */
+     * copy of the body, and the bytes go back to the code buffer, which
+     * keeps the descriptor and the unwind data only. */
     w64_ir_finish(ldl_p(s->code_buf + W64_DESC_TIDX));
     w64_batch_member((uintptr_t)s->code_buf, s->code_buf + W64_BODY_OFF,
                      body_total, HINT, n_hint);

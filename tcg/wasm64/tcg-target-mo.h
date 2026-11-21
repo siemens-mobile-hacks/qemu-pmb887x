@@ -6,7 +6,8 @@
 #ifndef TCG_TARGET_MO_H
 #define TCG_TARGET_MO_H
 
-/* Single linear memory, single vCPU thread: no ordering required. */
+/* The host promises no ordering: TCG emits the barriers the guest needs,
+ * and tcg_out_mb honours them with atomic.fence. */
 #define TCG_TARGET_DEFAULT_MO  0
 
 #endif
