@@ -376,7 +376,14 @@ struct w64_member {
     uint8_t *body;          /* staged copy; freed when the batch lands */
 };
 
-static __thread struct {
+/*
+ * The open batch.  Like the rest of the batch state (the chain-table
+ * indices, the landed batches, the interpreter records) it is
+ * process-wide: one thread translates, the vCPU's, on which the DSP
+ * translates too.  A tb_flush from another thread (loadvm) then resets
+ * the batch the translator has open, not an empty one of its own.
+ */
+static struct {
     struct w64_type utype[W64_UMAX_TYPES];
     uint8_t n_utypes;
     struct w64_import uimp[W64_UMAX_IMPORTS];

@@ -159,9 +159,10 @@ static void w64_sleb64(TCGContext *s, int64_t v)
 
 /* Branch hints of the TB being translated; reset at every
  * tcg_out_tb_start, so an aborted attempt leaks nothing into the batch
- * (w64_batch_member copies them at finalize). */
-static __thread struct w64_hint *HINT;
-static __thread uint32_t n_hint, cap_hint;
+ * (w64_batch_member copies them at finalize).  Process-wide like the
+ * batch and the recorder: one thread translates (wasm64.c). */
+static struct w64_hint *HINT;
+static uint32_t n_hint, cap_hint;
 
 static void w64_hint_rec(TCGContext *s, bool likely, bool pcc_call)
 {
@@ -525,6 +526,7 @@ static void w64_emit_loop_head(TCGContext *s)
 /* depends on this being complete.                                     */
 /* ------------------------------------------------------------------ */
 
+/* process-wide: one thread translates (wasm64.c, the batch) */
 #define W64_IREC_MAX   (1 << 14)        /* words; a TB overflowing is bad */
 #define W64_IREC_LBL   512
 #define W64_IREC_FIX   1024
