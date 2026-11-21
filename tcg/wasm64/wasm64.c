@@ -1528,6 +1528,8 @@ void w64_batch_unstage(uintptr_t tcptr)
     B.n_member--;
     g_free(B.member[B.n_member].body);
     B.member[B.n_member].body = NULL;
+    /* the descriptor is still intact: its retranslation takes a new tidx */
+    w64_irec_drop(((const uint32_t *)tcptr)[W64_DESC_TIDX / 4]);
 }
 
 /*
