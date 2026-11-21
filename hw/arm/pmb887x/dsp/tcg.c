@@ -1951,7 +1951,8 @@ static inline QEMU_ALWAYS_INLINE teak_tcg_block_cache_entry_t *tcg_find_cached_e
  * walk returns as long as no entry was added or freed since.
  */
 static inline QEMU_ALWAYS_INLINE teak_tcg_block_cache_entry_t *tcg_find_chained_entry(teak_tcg_core_t *core) {
-	teak_tcg_block_cache_entry_t *prev = core->chain_prev;
+	/* an entry freed since the link would have moved the epoch */
+	teak_tcg_block_cache_entry_t *prev = core->chain_prev_epoch == tcg_block_cache_epoch ? core->chain_prev : NULL;
 	teak_tcg_block_cache_entry_t *entry;
 	uint32_t pc = core->state.pc;
 
@@ -2052,7 +2053,7 @@ static bool tcg_block_borrows_word(const teak_tcg_block_t *block, uint16_t addre
 	return loop_start || return_address;
 }
 
-static void tcg_invalidate_borrowed_word(teak_tcg_core_t *core, uint16_t address) {
+static void tcg_invalidate_borrowed_word(uint16_t address) {
 	uint8_t bit = BIT(address & 7U);
 
 	if ((tcg_borrowed_word_addresses[address >> 3] & bit) == 0)
@@ -2064,7 +2065,6 @@ static void tcg_invalidate_borrowed_word(teak_tcg_core_t *core, uint16_t address
 			teak_tcg_block_cache_entry_t *entry = *link;
 			if (tcg_block_borrows_word(&entry->block, address, 1)) {
 				tcg_remove_cached_entry(link);
-				core->chain_prev = NULL;
 			} else {
 				link = &entry->next;
 			}
@@ -2086,13 +2086,12 @@ void teak_tcg_invalidate_program(teak_tcg_core_t *core, uint32_t address) {
 			bool matching_entry = entry->cache_id == core->cache_id && contains_address;
 			if (matching_entry) {
 				tcg_remove_cached_entry(link);
-				core->chain_prev = NULL;
 			} else {
 				link = &entry->next;
 			}
 		}
 	}
-	tcg_invalidate_borrowed_word(core, program_address);
+	tcg_invalidate_borrowed_word(program_address);
 }
 
 void teak_tcg_invalidate_program_range(teak_tcg_core_t *core, uint32_t address, size_t words) {
@@ -2116,7 +2115,6 @@ void teak_tcg_invalidate_program_range(teak_tcg_core_t *core, uint32_t address, 
 
 			if (entry->cache_id == core->cache_id && (intersects || borrowed_word_written)) {
 				tcg_remove_cached_entry(link);
-				core->chain_prev = NULL;
 			} else {
 				link = &entry->next;
 			}
@@ -2133,7 +2131,6 @@ void teak_tcg_invalidate_all(teak_tcg_core_t *core) {
 			teak_tcg_block_cache_entry_t *entry = *link;
 			if (entry->cache_id == core->cache_id) {
 				tcg_remove_cached_entry(link);
-				core->chain_prev = NULL;
 			} else {
 				link = &entry->next;
 			}
@@ -6918,6 +6915,7 @@ void *HELPER(teak_tcg_chain)(
 	state->exit_reason = TEAK_EXIT_NONE;
 	core->chain_links++;
 	core->chain_prev = entry;
+	core->chain_prev_epoch = tcg_block_cache_epoch;
 #ifdef CONFIG_TCG_WASM64
 	if (entry->evict_epoch != w64_evict_epoch) {
 		/* goto_ptr tail-calls a tagged table index (exec/translation-block.h) */
