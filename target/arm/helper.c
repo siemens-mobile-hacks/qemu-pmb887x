@@ -9737,8 +9737,7 @@ void arm_cpu_do_interrupt(CPUState *cs)
  * whenever anything is pending, exactly the kick cpu_interrupt() gives.
  *
  * The change hooks exist only on cores with a PMU or GICv3 cpuif; when a
- * qualifying core has them they run under the lean BQL pair, as the
- * exception dispatch in cpu_handle_exception() does.
+ * qualifying core has them they run under bql_lock_mmio().
  */
 void arm_take_svc_aarch32(CPUARMState *env, uint32_t syndrome)
 {

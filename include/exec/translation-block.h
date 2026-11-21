@@ -165,9 +165,7 @@ struct TranslationBlock {
      * page-relative range w64_inl_lo..hi[n] (inclusive) on page n.  Page
      * 1, which such a TB never uses for a linear crossing, is the callee's
      * page when the callee is not on the entry page: @w64_inl_vpage1 holds
-     * it as an offset from the entry page, because under CF_PCREL the TB
-     * may be entered at any virtual alias and only the bl displacement is
-     * fixed.  W64_INL_PAGE(n) says which hulls are set, W64_INL_VPAGE1 that
+     * it as an offset from the entry page, the bl displacement.  W64_INL_PAGE(n) says which hulls are set, W64_INL_VPAGE1 that
      * page 1 is a callee page (tb_page_span, tb_lookup_cmp).
      */
     vaddr w64_inl_vpage1;

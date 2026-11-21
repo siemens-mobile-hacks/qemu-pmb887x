@@ -1425,13 +1425,9 @@ static void gen_goto_ptr(DisasContext *s, uint32_t condexec)
 {
 #ifdef CONFIG_TCG_WASM64
     /*
-     * Every bx lr / pop {pc} / ldr pc and every msr CPSR_* ends here, one
-     * lookup per ~12 guest insns, so the inline test has to be cheaper
-     * than the helper's own jump-cache hit: comparing every key word
-     * (pc, gen, hflags, thumb, condexec) was measured slower.
-     *
-     * So the emitted test compares only what can differ at this exit
-     * from what the translator knows.  hflags cannot: any insn that
+     * Every bx lr / pop {pc} / ldr pc and every msr CPSR_* ends here, so
+     * the emitted test compares only what can differ at this exit from
+     * what the translator knows.  hflags cannot: any insn that
      * changes them ends the TB (the TB's own flags are the proof), so a
      * plain branch exit stamps tb->flags into the slot statically and
      * the fill-time helper only ever fills a slot whose static words
@@ -2018,14 +2014,12 @@ static bool w64_defer_taken(DisasContext *s, int64_t diff)
 /*
  * Hand back what the prologue prepaid for instructions not run - unless
  * can_do_io says a device may already have read the prepaid clock in this
- * TB.  A refund after that would move the clock the device saw *backwards*,
- * and a device that keeps "now - last" (the RTC counts ticks from its last
- * sync) then spins on a negative interval.  The translator clears can_do_io
- * before the first instruction and sets it only before the last one, which
- * no deferred exit is, and a mid-TB MMIO access rewinds the TB
- * (cpu_io_recompile).  When it is set anyway the instructions are left
- * charged - time runs one TB ahead - and the guest instruction count stays
- * exact.
+ * TB: a refund after that would move the clock the device saw *backwards*.
+ * The translator clears can_do_io before the first instruction and sets it
+ * only before the last one, which no deferred exit is, and a mid-TB MMIO
+ * access rewinds the TB (cpu_io_recompile).  When it is set anyway the
+ * instructions are left charged - time runs one TB ahead - and the guest
+ * instruction count stays exact.
  */
 static void w64_refund(DisasContext *dc, int skipped, int cycles)
 {

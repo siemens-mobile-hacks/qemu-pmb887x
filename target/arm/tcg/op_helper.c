@@ -813,11 +813,10 @@ void HELPER(cpsr_write_eret)(CPUARMState *env, uint32_t val)
     uint32_t mask;
     /*
      * wasm64: the hook lists are empty on a core without a PMU or GICv3
-     * cpuif, and taking the BQL around nothing cost two lock/unlock pairs
-     * per exception return - 1.29 M bql_lock() calls a second while the
-     * SL65 plays a video.  The pair's unlock still has to end a hold that
-     * bql_unlock_mmio() deferred, or an idle spin entered by this return
-     * starves the main loop of the BQL (KE970 froze at 408 MIPS).
+     * cpuif, so no BQL pair around them.  The return still has to end a
+     * hold that bql_unlock_mmio() deferred, as the pair's unlock did, or
+     * an idle spin entered by it keeps the BQL from the main loop until
+     * the budget ends.
      */
 #ifdef CONFIG_TCG_WASM64
     bool hooks = !QLIST_EMPTY(&cpu->pre_el_change_hooks) ||
