@@ -8167,8 +8167,6 @@ static bool tcg_fast_verify(teak_tcg_core_t *core, const teak_tcg_fast_site_t *s
 		memset(&instruction, 0, sizeof(instruction));
 		if (!teak_decode(core, expected.address, &instruction) || !tcg_fast_same_instruction(&instruction, &expected))
 			return false;
-		if (!tcg_fast_supported(&loop->instructions[i]))
-			return false;
 	}
 	return true;
 }
@@ -8226,8 +8224,10 @@ static void tcg_fast_init(void) {
 	QEMU_BUILD_BUG_ON(ARRAY_SIZE(tcg_fast_loops) > ARRAY_SIZE(tcg_fast_sites));
 	for (size_t i = 0; i < ARRAY_SIZE(tcg_fast_loops); i++) {
 		tcg_fast_sites[i].loop = &tcg_fast_loops[i];
-		for (size_t j = 0; j < tcg_fast_loops[i].count; j++)
+		for (size_t j = 0; j < tcg_fast_loops[i].count; j++) {
+			g_assert(tcg_fast_supported(&tcg_fast_loops[i].instructions[j]));
 			tcg_fast_map[tcg_fast_loops[i].instructions[j].address] = i + 1;
+		}
 	}
 	tcg_fast_map_epoch++;
 	tcg_block_cache_generation++;
@@ -8268,8 +8268,8 @@ static void tcg_fast_discover(teak_tcg_core_t *core, uint32_t pc) {
 		tcg_fast_sites[index] = (teak_tcg_fast_site_t) { .loop = loop, .delta = delta };
 		for (size_t k = 0; k < loop->count; k++)
 			tcg_fast_map[(loop->instructions[k].address + delta) & TEAK_PROGRAM_ADDRESS_MASK] = index + 1;
+		/* tcg_cache_block() bumped tcg_block_cache_generation just before */
 		tcg_fast_map_epoch++;
-		tcg_block_cache_generation++;
 		return;
 	}
 }
@@ -8297,16 +8297,12 @@ static uint32_t tcg_fast_site_run(teak_tcg_core_t *core, const teak_tcg_fast_sit
 	return cycles;
 }
 
-static void tcg_fast_account(teak_tcg_core_t *core, uint32_t cycles) {
-	core->last_block_cycles += cycles;
-}
-
 static bool tcg_execute_fast(teak_tcg_core_t *core, const teak_tcg_fast_site_t *site, size_t max_cycles) {
 	uint32_t cycles = tcg_fast_site_run(core, site, max_cycles - core->last_block_cycles);
 
 	if (cycles == 0)
 		return false;
-	tcg_fast_account(core, cycles);
+	core->last_block_cycles += cycles;
 	core->fast_runs++;
 	return true;
 }
