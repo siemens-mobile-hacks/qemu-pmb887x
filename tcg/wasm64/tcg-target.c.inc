@@ -113,14 +113,19 @@ static void w64_uleb(TCGContext *s, uint64_t v)
 }
 
 /* unsigned LEB padded to 5 bytes (patchable; value must fit u32) */
-static void w64_uleb32_p5(TCGContext *s, uint32_t v)
+static void w64_patch_uleb32_p5(tcg_insn_unit *p, uint32_t v)
 {
-    int i;
-    for (i = 0; i < 4; i++) {
-        w64_u8(s, (v & 0x7f) | 0x80);
+    for (int i = 0; i < 4; i++) {
+        p[i] = (v & 0x7f) | 0x80;
         v >>= 7;
     }
-    w64_u8(s, v & 0x7f);
+    p[4] = v & 0x7f;
+}
+
+static void w64_uleb32_p5(TCGContext *s, uint32_t v)
+{
+    w64_patch_uleb32_p5(s->code_ptr, v);
+    s->code_ptr += 5;
 }
 
 static void w64_sleb32(TCGContext *s, int32_t v)
@@ -840,14 +845,7 @@ static void tcg_out_set_label(TCGContext *s, TCGLabel *l)
     /* patch forward branches to this label */
     for (i = 0; i < W.n_fixup; i++) {
         if (W.fixup[i].label == l->id) {
-            tcg_insn_unit *p = s->code_buf + W.fixup[i].pos;
-            uint32_t v = W.n_labels;
-            int b;
-            for (b = 0; b < 4; b++) {
-                p[b] = (v & 0x7f) | 0x80;
-                v >>= 7;
-            }
-            p[4] = v & 0x7f;
+            w64_patch_uleb32_p5(s->code_buf + W.fixup[i].pos, W.n_labels);
             W.fixup[i] = W.fixup[--W.n_fixup];
             i--;
         }
@@ -2798,26 +2796,9 @@ static int tcg_out_tb_finalize(TCGContext *s)
     }
 
     /* patch the frame locals' count and the body-size LEB */
-    {
-        tcg_insn_unit *p = s->code_buf + W.frame_count_pos;
-        uint32_t v = W.n_frame;
-        for (int b = 0; b < 4; b++) {
-            p[b] = (v & 0x7f) | 0x80;
-            v >>= 7;
-        }
-        p[4] = v & 0x7f;
-    }
+    w64_patch_uleb32_p5(s->code_buf + W.frame_count_pos, W.n_frame);
     body_total = s->code_ptr - (s->code_buf + W64_BODY_OFF);
-    {
-        tcg_insn_unit *p = s->code_buf + W64_BODY_OFF;
-        uint32_t v = body_total - 5;
-        int b;
-        for (b = 0; b < 4; b++) {
-            p[b] = (v & 0x7f) | 0x80;
-            v >>= 7;
-        }
-        p[4] = v & 0x7f;
-    }
+    w64_patch_uleb32_p5(s->code_buf + W64_BODY_OFF, body_total - 5);
 
     /* join the open batch: may assemble + instantiate the batch module
      * right here (fill or union-table pressure).  The batch takes its own
