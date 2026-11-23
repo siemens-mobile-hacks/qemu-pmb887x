@@ -24,6 +24,7 @@
 #include <pixman.h>
 
 #include "qemu/atomic.h"
+#include "chardev/char.h"
 #include "qemu/error-report.h"
 #include "qemu/main-loop.h"
 #include "qemu/timer.h"
@@ -560,6 +561,212 @@ int32_t wasm_gsm_state(void)
                                 NULL);
     }
     return qatomic_read(&gsm_state);
+}
+
+/* ------------------------------------------------------------------ */
+/* GSM relay: the cell's link to the PC relay, through the page        */
+/* ------------------------------------------------------------------ */
+
+/*
+ * WASM PORT (removable): the gsm-bts cell's services (hw/gsm/gsm-relay.c,
+ * doc/gsm-relay.md) talk to a relay server over a chardev; a browser has no TCP,
+ * so the page boots "-chardev wasm-gsm,id=gsmrelay -object gsm-bts,...,
+ * relay=gsmrelay" and carries the bytes over a WebSocket (site/gsm-relay.js).
+ * What the cell writes waits in relay_out until the JS thread takes it with
+ * wasm_gsmrelay_take(); what the page puts with wasm_gsmrelay_put() waits in
+ * relay_in for a bottom half that hands it to the cell under the BQL. The
+ * page says when its WebSocket opens or closes (wasm_gsmrelay_open), which
+ * the cell sees as the chardev's OPENED/CLOSED. Byte rings with one
+ * producer and one consumer each, like key_ring.
+ */
+#define RELAY_RING_SIZE 65536   /* power of two */
+#define RELAY_BUF_SIZE  4096    /* the page's staging buffer */
+
+typedef struct {
+    uint8_t data[RELAY_RING_SIZE];
+    unsigned int head;
+    unsigned int tail;
+} WasmByteRing;
+
+static WasmByteRing relay_out, relay_in;
+static uint8_t relay_buf[RELAY_BUF_SIZE];
+static Chardev *relay_chr;
+static QEMUBH *relay_bh;
+static int relay_want_open;     /* what the page asked for */
+static bool relay_is_open;      /* what the cell was told (BQL) */
+
+static size_t byte_ring_push(WasmByteRing *r, const uint8_t *data, size_t len)
+{
+    unsigned int tail = qatomic_read(&r->tail);
+    size_t room = RELAY_RING_SIZE - (tail - qatomic_load_acquire(&r->head));
+    size_t i;
+
+    len = MIN(len, room);
+    for (i = 0; i < len; i++) {
+        r->data[(tail + i) & (RELAY_RING_SIZE - 1)] = data[i];
+    }
+    qatomic_store_release(&r->tail, tail + len);
+    return len;
+}
+
+static size_t byte_ring_pop(WasmByteRing *r, uint8_t *out, size_t max)
+{
+    unsigned int head = qatomic_read(&r->head);
+    size_t len = MIN(max, qatomic_load_acquire(&r->tail) - head);
+    size_t i;
+
+    for (i = 0; i < len; i++) {
+        out[i] = r->data[(head + i) & (RELAY_RING_SIZE - 1)];
+    }
+    qatomic_store_release(&r->head, head + len);
+    return len;
+}
+
+#define TYPE_CHARDEV_WASM_GSM "chardev-wasm-gsm"
+
+static int wasm_gsm_chr_write(Chardev *chr, const uint8_t *buf, int len)
+{
+    /* nothing waits for the page: what does not fit (no page) is dropped */
+    if (relay_is_open) {
+        byte_ring_push(&relay_out, buf, len);
+    }
+    return len;
+}
+
+static void wasm_gsmrelay_bh(void *opaque)
+{
+    uint8_t chunk[RELAY_BUF_SIZE];
+    bool open = qatomic_load_acquire(&relay_want_open);
+    size_t len;
+
+    if (!relay_chr) {
+        return;
+    }
+    if (open != relay_is_open) {
+        relay_is_open = open;
+        if (!open) {
+            /* bytes of the old link are not the new link's */
+            qatomic_store_release(&relay_in.head, qatomic_read(&relay_in.tail));
+        }
+        qemu_chr_be_event(relay_chr, open ? CHR_EVENT_OPENED : CHR_EVENT_CLOSED);
+    }
+    while (relay_is_open) {
+        size_t room = qemu_chr_be_can_write(relay_chr);
+
+        if (!room || !(len = byte_ring_pop(&relay_in, chunk, MIN(room, sizeof(chunk))))) {
+            break;
+        }
+        qemu_chr_be_write(relay_chr, chunk, len);
+    }
+}
+
+/* not opened here: the cell hears OPENED when the page's WebSocket opens */
+static bool wasm_gsm_chr_open(Chardev *chr, ChardevBackend *backend,
+                              Error **errp)
+{
+    if (relay_chr) {
+        error_setg(errp, "only one wasm-gsm chardev");
+        return false;
+    }
+    relay_chr = chr;
+    relay_bh = qemu_bh_new(wasm_gsmrelay_bh, NULL);
+    return true;
+}
+
+static void wasm_gsm_chr_class_init(ObjectClass *oc, const void *data)
+{
+    ChardevClass *cc = CHARDEV_CLASS(oc);
+
+    cc->chr_open = wasm_gsm_chr_open;
+    cc->chr_write = wasm_gsm_chr_write;
+}
+
+static const TypeInfo wasm_gsm_chr_type = {
+    .name = TYPE_CHARDEV_WASM_GSM,
+    .parent = TYPE_CHARDEV,
+    .class_init = wasm_gsm_chr_class_init,
+};
+
+static void register_wasm_gsm_chr(void)
+{
+    type_register_static(&wasm_gsm_chr_type);
+}
+type_init(register_wasm_gsm_chr);
+
+/* Exported to JS: 1 once the machine has the chardev, else 0. */
+EMSCRIPTEN_KEEPALIVE
+int32_t wasm_gsmrelay_ready(void)
+{
+    return qatomic_load_acquire(&key_bh_ready) && relay_bh ? 1 : 0;
+}
+
+EMSCRIPTEN_KEEPALIVE
+uint8_t *wasm_gsmrelay_buf(void)
+{
+    return relay_buf;
+}
+
+/* Exported to JS: the page's link to the relay is up (1) or down (0). */
+EMSCRIPTEN_KEEPALIVE
+void wasm_gsmrelay_open(int32_t open)
+{
+    if (!relay_bh) {
+        return;
+    }
+    qatomic_store_release(&relay_want_open, !!open);
+    qemu_bh_schedule(relay_bh);
+}
+
+/* Exported to JS: bytes for the relay copied to relay_buf, 0 if none. */
+EMSCRIPTEN_KEEPALIVE
+int32_t wasm_gsmrelay_take(void)
+{
+    return byte_ring_pop(&relay_out, relay_buf, sizeof(relay_buf));
+}
+
+/* Exported to JS: hand the cell @len bytes of relay_buf; returns how many fit. */
+EMSCRIPTEN_KEEPALIVE
+int32_t wasm_gsmrelay_put(int32_t len)
+{
+    size_t n;
+
+    if (!relay_bh || len <= 0 || len > RELAY_BUF_SIZE) {
+        return 0;
+    }
+    n = byte_ring_push(&relay_in, relay_buf, len);
+    qemu_bh_schedule(relay_bh);
+    return n;
+}
+
+/* ------------------------------------------------------------------ */
+/* Microphone: the page's getUserMedia into the phone's mic ADC        */
+/* ------------------------------------------------------------------ */
+
+/*
+ * WASM PORT (removable): the page captures the microphone at 8 kHz
+ * (site/mic.js), writes signed 16-bit samples to mic_buf and calls
+ * wasm_mic_put(); the AFE model (hw/arm/pmb887x/dsp/peripheral/afe.c) takes
+ * them as the mic ADC's input. Nothing put = silence, as before.
+ */
+size_t pmb887x_afe_mic_push(const int16_t *samples, size_t count);
+
+#define MIC_BUF_SAMPLES 2048
+static int16_t mic_buf[MIC_BUF_SAMPLES];
+
+EMSCRIPTEN_KEEPALIVE
+int16_t *wasm_mic_buf(void)
+{
+    return mic_buf;
+}
+
+/* Exported to JS: hand the ADC @count samples of mic_buf; returns how many it kept. */
+EMSCRIPTEN_KEEPALIVE
+int32_t wasm_mic_put(int32_t count)
+{
+    if (count <= 0 || count > MIC_BUF_SAMPLES) {
+        return 0;
+    }
+    return pmb887x_afe_mic_push(mic_buf, count);
 }
 
 /* ------------------------------------------------------------------ */

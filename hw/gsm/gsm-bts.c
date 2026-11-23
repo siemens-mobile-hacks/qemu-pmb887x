@@ -847,7 +847,7 @@ static void gsm_bts_lapdm_transmit(GSMBtsLapdm *lapdm, uint8_t block[GSM_XCCH_BL
     gsm_lapdm_encode_frame(header, LAPDM_CONTROL_UI, false, NULL, 0, false);
 }
 
-static void gsm_bts_sacch_transmit(GSMBts *bts, uint8_t block[GSM_XCCH_BLOCK_BYTES]) {
+void gsm_bts_sacch_transmit(GSMBts *bts, uint8_t block[GSM_XCCH_BLOCK_BYTES]) {
     GSMSacchHeader *header = (GSMSacchHeader *) block;
 
     memset(block, GSM_MACBLOCK_PADDING, GSM_XCCH_BLOCK_BYTES);
@@ -990,10 +990,15 @@ static uint8_t gsm_bts_ts0_transmit_block(
             gsm_bts_encode_bcch(bts, block_start, block);
             return GSMTAP_CHANNEL_BCCH;
         case GSM_BTS_TS0_CCCH:
+            if (bts->relay_core && bts->ccch_count == 0 && gsm_relay_ccch(bts, block))
+                return GSMTAP_CHANNEL_CCCH;
             gsm_bts_ccch_dequeue(bts, block);
             return GSMTAP_CHANNEL_CCCH;
         case GSM_BTS_TS0_SDCCH:
-            gsm_bts_lapdm_transmit(&bts->lapdm, block);
+            if (bts->relay_core)
+                gsm_relay_sdcch_tx(bts, block_start, block);
+            else
+                gsm_bts_lapdm_transmit(&bts->lapdm, block);
             return GSMTAP_CHANNEL_SDCCH4;
         default:
             gsm_bts_sacch_transmit(bts, block);
@@ -1041,6 +1046,8 @@ static void gsm_bts_handle_rach(GSMBts *bts, uint8_t ra, uint32_t frame_number) 
 
     memset(&bts->lapdm, 0, sizeof(bts->lapdm));
     bts->lapdm.active = true;
+    if (bts->relay_core)
+        gsm_relay_rach(bts, ra);
     gsm_bts_encode_sdcch_assignment(message, bts->arfcn, ra, frame_number);
     gsm_bts_ccch_enqueue(bts, message);
 }
@@ -1093,7 +1100,10 @@ static void gsm_bts_ts0_uplink_sdcch(
         return;
 
     gsm_bts_gsmtap(bts, true, 0, block_start, GSMTAP_CHANNEL_SDCCH4, block, sizeof(block));
-    gsm_bts_lapdm_handle_frame(&bts->lapdm, block);
+    if (bts->relay_core)
+        gsm_relay_sdcch_rx(bts, block);
+    else
+        gsm_bts_lapdm_handle_frame(&bts->lapdm, block);
 }
 
 static void gsm_bts_ts0_uplink(GSMBts *bts, uint32_t frame_number, const GSMUplinkBurst *burst) {
@@ -1120,6 +1130,8 @@ static bool gsm_bts_downlink_burst(
     if (arfcn != bts->channel)
         return false;
 
+    if (bts->relay_core && gsm_relay_downlink(bts, frame_number, timeslot, burst))
+        return true;
     if (timeslot == 0) {
         gsm_bts_ts0_burst(bts, frame_number, burst);
     } else if (timeslot == GSM_BTS_PDCH_TIMESLOT) {
@@ -1142,6 +1154,8 @@ static void gsm_bts_uplink_burst(
     if (arfcn != bts->channel)
         return;
 
+    if (bts->relay_core && gsm_relay_uplink(bts, frame_number, timeslot, burst))
+        return;
     if (timeslot == 0) {
         gsm_bts_ts0_uplink(bts, frame_number, burst);
     } else if (timeslot == GSM_BTS_PDCH_TIMESLOT) {
@@ -1204,6 +1218,9 @@ static void gsm_bts_complete(UserCreatable *uc, Error **errp) {
     if (bts->gsmtap && !gsm_bts_open_gsmtap(bts, errp))
         return;
 
+    if (bts->relay)
+        gsm_relay_init(bts);
+
     if (bts->netdev) {
         bts->machine_done.notify = gsm_bts_connect_netdev;
         qemu_add_machine_init_done_notifier(&bts->machine_done);
@@ -1233,6 +1250,17 @@ static void gsm_bts_set_gsmtap(Object *obj, const char *value, Error **_errp) {
     bts->gsmtap = g_strdup(value);
 }
 
+static char *gsm_bts_get_relay(Object *obj, Error **_errp) {
+    return g_strdup(GSM_BTS(obj)->relay);
+}
+
+static void gsm_bts_set_relay(Object *obj, const char *value, Error **_errp) {
+    GSMBts *bts = GSM_BTS(obj);
+
+    g_free(bts->relay);
+    bts->relay = g_strdup(value);
+}
+
 static bool gsm_bts_get_pcs1900(Object *obj, Error **_errp) {
     return GSM_BTS(obj)->pcs1900;
 }
@@ -1254,6 +1282,7 @@ static void gsm_bts_instance_finalize(Object *obj) {
     GSMBts *bts = GSM_BTS(obj);
 
     gsm_bts_gprs_cleanup(bts);
+    gsm_relay_cleanup(bts);
     if (bts->machine_done.notify)
         qemu_remove_machine_init_done_notifier(&bts->machine_done);
     if (bts->nic)
@@ -1262,6 +1291,7 @@ static void gsm_bts_instance_finalize(Object *obj) {
         close(bts->gsmtap_fd);
     g_free(bts->netdev);
     g_free(bts->gsmtap);
+    g_free(bts->relay);
 }
 
 static void gsm_bts_class_init(ObjectClass *klass, const void *_data) {
@@ -1273,6 +1303,7 @@ static void gsm_bts_class_init(ObjectClass *klass, const void *_data) {
     ucc->complete = gsm_bts_complete;
     object_class_property_add_str(klass, "netdev", gsm_bts_get_netdev, gsm_bts_set_netdev);
     object_class_property_add_str(klass, "gsmtap", gsm_bts_get_gsmtap, gsm_bts_set_gsmtap);
+    object_class_property_add_str(klass, "relay", gsm_bts_get_relay, gsm_bts_set_relay);
     object_class_property_add_bool(klass, "pcs1900", gsm_bts_get_pcs1900, gsm_bts_set_pcs1900);
 }
 

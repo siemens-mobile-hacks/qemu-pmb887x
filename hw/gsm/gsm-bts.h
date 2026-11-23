@@ -3,6 +3,7 @@
 
 #include "qom/object.h"
 #include "net/net.h"
+#include "chardev/char-fe.h"
 #include "hw/gsm/gsm-coding.h"
 #include "hw/gsm/gsm-network.h"
 
@@ -34,6 +35,7 @@ OBJECT_DECLARE_SIMPLE_TYPE(GSMBts, GSM_BTS)
 #define GSMTAP_CHANNEL_SDCCH4 0x07
 #define GSMTAP_CHANNEL_PACCH 0x0B
 #define GSMTAP_CHANNEL_PDTCH 0x0D
+#define GSMTAP_CHANNEL_TCH_F 0x09
 #define GSMTAP_CHANNEL_ACCH 0x80
 
 typedef struct GSMBitWriter GSMBitWriter;
@@ -43,6 +45,10 @@ typedef struct GSMBtsUplinkBlock GSMBtsUplinkBlock;
 typedef struct GSMBtsMessage GSMBtsMessage;
 typedef struct GSMBtsLapdm GSMBtsLapdm;
 typedef struct GSMBtsGprs GSMBtsGprs;
+typedef struct GSMRelay GSMRelay;
+
+/* gsm-relay.c: the TCH/F of a call (relay option) */
+#define GSM_RELAY_TCH_TS 2
 
 struct GSMBitWriter {
     uint8_t *data;
@@ -124,6 +130,12 @@ struct GSMBts {
     uint8_t ms_state;   /* WASM PORT (removable) */
 
     GSMBtsGprs *gprs;
+
+    /* gsm-relay.c: SMS, USSD and calls through an external relay server (relay=<chardev>) */
+    char *relay;
+    CharFrontend relay_chr;
+    Notifier relay_done;
+    GSMRelay *relay_core;
 };
 
 void gsm_bit_writer_put(GSMBitWriter *writer, uint32_t value, uint32_t count);
@@ -149,6 +161,7 @@ void gsm_bts_gsmtap(
     const uint8_t *data,
     size_t length
 );
+void gsm_bts_sacch_transmit(GSMBts *bts, uint8_t block[GSM_XCCH_BLOCK_BYTES]);
 void gsm_bts_send_ethernet(GSMBts *bts, const uint8_t *frame, size_t size);
 
 void gsm_bts_gprs_init(GSMBts *bts);
@@ -157,3 +170,12 @@ bool gsm_bts_gprs_handle_rach(GSMBts *bts, uint8_t ra, uint32_t frame_number);
 void gsm_bts_gprs_downlink_burst(GSMBts *bts, uint32_t frame_number, GSMBurst *burst);
 void gsm_bts_gprs_uplink_burst(GSMBts *bts, uint32_t frame_number, const GSMUplinkBurst *burst);
 void gsm_bts_gprs_handle_ethernet(GSMBts *bts, const uint8_t *frame, size_t size);
+
+void gsm_relay_init(GSMBts *bts);
+void gsm_relay_cleanup(GSMBts *bts);
+void gsm_relay_rach(GSMBts *bts, uint8_t ra);
+bool gsm_relay_ccch(GSMBts *bts, uint8_t block[GSM_XCCH_BLOCK_BYTES]);
+void gsm_relay_sdcch_tx(GSMBts *bts, uint32_t block_start, uint8_t block[GSM_XCCH_BLOCK_BYTES]);
+void gsm_relay_sdcch_rx(GSMBts *bts, const uint8_t block[GSM_XCCH_BLOCK_BYTES]);
+bool gsm_relay_downlink(GSMBts *bts, uint32_t frame_number, uint8_t timeslot, GSMBurst *burst);
+bool gsm_relay_uplink(GSMBts *bts, uint32_t frame_number, uint8_t timeslot, const GSMUplinkBurst *burst);
