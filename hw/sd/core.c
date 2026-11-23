@@ -243,6 +243,19 @@ bool sdbus_get_readonly(SDBus *sdbus)
     return false;
 }
 
+bool sdbus_get_response_has_crc(SDBus *sdbus)
+{
+    SDState *card = get_card(sdbus);
+
+    if (card) {
+        SDCardClass *sc = SDMMC_COMMON_GET_CLASS(card);
+
+        return sc->get_response_has_crc(card);
+    }
+
+    return true;
+}
+
 void sdbus_set_inserted(SDBus *sdbus, bool inserted)
 {
     SDBusClass *sbc = SD_BUS_GET_CLASS(sdbus);

@@ -269,6 +269,7 @@ config PMB887X
     select SPLIT_IRQ
     select ACCESSORY_CONNECTOR
     select ROTARY_ENCODER
+    select SD_SLOT
     select I2C
     select SSI
     select B00B10B

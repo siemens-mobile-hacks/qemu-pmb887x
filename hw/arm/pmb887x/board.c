@@ -47,6 +47,7 @@ typedef struct pmb887x_machine_t pmb887x_machine_t;
 struct pmb887x_machine_t {
 	MachineState parent_obj;
 	Object *gsm_network;
+	bool has_quirks;
 };
 
 static bool initial_cpu_reset = true;
@@ -253,6 +254,11 @@ static void pmb887x_init(MachineState *machine) {
 		DeviceState *mmci = pmb887x_new_cpu_module("MMCI");
 		sysbus_realize_and_unref(SYS_BUS_DEVICE(mmci), &error_fatal);
 
+		// Multimedia Card Interface
+		DeviceState *mci = pmb887x_new_cpu_module("MCI");
+		qdev_connect_clock_in(mci, "MCLK", qdev_get_clock_out(mmci, "MCLK"));
+		sysbus_realize_and_unref(SYS_BUS_DEVICE(mci), &error_fatal);
+
 		// Multi Media Controller Interface
 		DeviceState *mmicif = pmb887x_new_cpu_module("MMICIF");
 		sysbus_mmio_map(SYS_BUS_DEVICE(mmicif), 1, PMB8876_MMICIF_BASE + MMICIF_MMAP_BASE);
@@ -399,6 +405,18 @@ static void pmb887x_init(MachineState *machine) {
 	cpu_set_pc(CPU(cpu), pmb887x_get_initial_pc());
 }
 
+static bool pmb887x_get_quirks(Object *obj, Error **_errp) {
+	return OBJECT_CHECK(pmb887x_machine_t, obj, TYPE_PMB887X_MACHINE)->has_quirks;
+}
+
+static void pmb887x_set_quirks(Object *obj, bool value, Error **_errp) {
+	OBJECT_CHECK(pmb887x_machine_t, obj, TYPE_PMB887X_MACHINE)->has_quirks = value;
+}
+
+static void pmb887x_instance_init(Object *obj) {
+	OBJECT_CHECK(pmb887x_machine_t, obj, TYPE_PMB887X_MACHINE)->has_quirks = true;
+}
+
 /*
  * Generic PMB887X machine
  * */
@@ -413,12 +431,15 @@ static void pmb887x_class_init(ObjectClass *oc, const void *data) {
 	mc->tcg_auxiliary_threads = 1;
 	object_class_property_add_link(oc, "gsm-network", TYPE_GSM_NETWORK, offsetof(pmb887x_machine_t, gsm_network),
 		object_property_allow_set_link, OBJ_PROP_LINK_STRONG);
+	object_class_property_add_bool(oc, "quirks", pmb887x_get_quirks, pmb887x_set_quirks);
+	object_class_property_set_description(oc, "quirks", "Apply the quirks of the board config");
 }
 
 static const TypeInfo pmb887x_type = {
 	.name = TYPE_PMB887X_MACHINE,
 	.parent = TYPE_MACHINE,
 	.instance_size = sizeof(pmb887x_machine_t),
+	.instance_init = pmb887x_instance_init,
 	.class_init = pmb887x_class_init,
 	.interfaces = arm_machine_interfaces,
 };

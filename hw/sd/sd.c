@@ -150,6 +150,7 @@ struct SDState {
     uint8_t csd[16];
     uint16_t rca;
     uint32_t card_status;
+    bool response_has_crc;
     uint8_t sd_status[64];
     union {
         uint8_t ext_csd[512];
@@ -503,6 +504,9 @@ static void emmc_set_cid(SDState *sd)
 #define WPGROUP_SHIFT   7        /* 2 megs */
 #define CMULT_SHIFT     9        /* 512 times HWBLOCK_SIZE */
 #define WPGROUP_SIZE    (1 << (HWBLOCK_SHIFT + SECTOR_SHIFT + WPGROUP_SHIFT))
+/* SDSC C_SIZE unit and the largest size C_SIZE encodes with 512 byte blocks */
+#define SDSC_CSIZE_UNIT (1 << (CMULT_SHIFT + HWBLOCK_SHIFT))
+#define SDSC_CSIZE_MAX_CAPACITY (4096 * SDSC_CSIZE_UNIT)
 
 static const uint8_t sd_csd_rw_mask[16] = {
     0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
@@ -966,6 +970,11 @@ static bool sd_get_inserted(SDState *sd)
 static bool sd_get_readonly(SDState *sd)
 {
     return sd->wp_switch;
+}
+
+static bool sd_get_response_has_crc(SDState *sd)
+{
+    return sd->response_has_crc;
 }
 
 static void sd_cardchange(void *opaque, bool load, Error **errp)
@@ -2272,6 +2281,12 @@ static sd_rsp_type_t sd_cmd_SEND_OP_COND(SDState *sd, SDRequest req)
         return sd_invalid_state_for_cmd(sd, req);
     }
 
+    /* An SDHC or SDXC card stays busy for a host that does not set HCS */
+    if (!sd_is_emmc(sd) && sd->size > SDSC_MAX_CAPACITY &&
+        !FIELD_EX32(req.arg, OCR, CARD_CAPACITY)) {
+        return sd_r3;
+    }
+
     /*
      * If it's the first ACMD41 since reset, we need to decide
      * whether to power up. If this is not an enquiry ACMD41,
@@ -2552,6 +2567,7 @@ static size_t sd_do_command(SDState *sd, SDRequest *req,
 send_response:
     rsplen = sd_response_size(sd, rtype);
     assert(rsplen <= respsz);
+    sd->response_has_crc = rtype != sd_r3;
 
     switch (rtype) {
     case sd_r1:
@@ -3137,7 +3153,9 @@ static void sd_realize(DeviceState *dev, Error **errp)
                                   "multiples of 512K", errp);
                 return;
             }
-        } else if (blk_size > 0 && !is_power_of_2(blk_size)) {
+        } else if (blk_size > 0 && !is_power_of_2(blk_size) &&
+                   (sd_is_emmc(sd) || blk_size > SDSC_CSIZE_MAX_CAPACITY ||
+                    !QEMU_IS_ALIGNED(blk_size, SDSC_CSIZE_UNIT))) {
             sd_blk_size_error(sd, blk_size, pow2ceil(blk_size), "a power of 2",
                               errp);
             return;
@@ -3241,6 +3259,7 @@ static void sdmmc_common_class_init(ObjectClass *klass, const void *data)
     sc->data_ready = sd_data_ready;
     sc->get_inserted = sd_get_inserted;
     sc->get_readonly = sd_get_readonly;
+    sc->get_response_has_crc = sd_get_response_has_crc;
 }
 
 static void sd_class_init(ObjectClass *klass, const void *data)

@@ -199,6 +199,14 @@ static pmb887x_dev_t devices_meta[] = {
 		},
 	},
 
+	// Memory card slot
+	{
+		.name = "sd-slot",
+		.props = {
+			{ "index", DEV_PROP_UINT, false },
+		},
+	},
+
 	// NOR FLASH
 	{
 		.name = "cfi-flash",

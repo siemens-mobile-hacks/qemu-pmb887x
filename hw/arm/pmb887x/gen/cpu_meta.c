@@ -619,7 +619,7 @@ static const DebugRegField mci_command_fields[] = {
 };
 
 static const DebugRegField mci_respcmd_fields[] = {
-	{"CMDINDEX",	MCI_RESPCMD_CMDINDEX,	MCI_RESPCMD_CMDINDEX_SHIFT,	NULL,	0},
+	{"RESPCMD",	MCI_RESPCMD_RESPCMD,	MCI_RESPCMD_RESPCMD_SHIFT,	NULL,	0},
 };
 
 static const DebugRegField mci_response0_fields[] = {
@@ -639,11 +639,11 @@ static const DebugRegField mci_response3_fields[] = {
 };
 
 static const DebugRegField mci_datatimer_fields[] = {
-	{"TIMER",	MCI_DATATIMER_TIMER,	MCI_DATATIMER_TIMER_SHIFT,	NULL,	0},
+	{"DATATIME",	MCI_DATATIMER_DATATIME,	MCI_DATATIMER_DATATIME_SHIFT,	NULL,	0},
 };
 
 static const DebugRegField mci_datalength_fields[] = {
-	{"LENGTH",	MCI_DATALENGTH_LENGTH,	MCI_DATALENGTH_LENGTH_SHIFT,	NULL,	0},
+	{"DATALENGTH",	MCI_DATALENGTH_DATALENGTH,	MCI_DATALENGTH_DATALENGTH_SHIFT,	NULL,	0},
 };
 
 static const DebugRegValue mci_mci_datactrl_direction_values[] = {
@@ -665,7 +665,7 @@ static const DebugRegField mci_datactrl_fields[] = {
 };
 
 static const DebugRegField mci_datacnt_fields[] = {
-	{"COUNT",	MCI_DATACNT_COUNT,	MCI_DATACNT_COUNT_SHIFT,	NULL,	0},
+	{"DATACOUNT",	MCI_DATACNT_DATACOUNT,	MCI_DATACNT_DATACOUNT_SHIFT,	NULL,	0},
 };
 
 static const DebugRegField mci_status_fields[] = {
@@ -762,7 +762,7 @@ static const DebugRegField mci_select_fields[] = {
 };
 
 static const DebugRegField mci_fifocnt_fields[] = {
-	{"COUNT",	MCI_FIFOCNT_COUNT,	MCI_FIFOCNT_COUNT_SHIFT,	NULL,	0},
+	{"DATACOUNT",	MCI_FIFOCNT_DATACOUNT,	MCI_FIFOCNT_DATACOUNT_SHIFT,	NULL,	0},
 };
 
 static const DebugRegField mci_fifo_fields[] = {
@@ -9795,7 +9795,8 @@ static const pmb887x_cpu_meta_irq_t pmb8876_irqs[] = {
 	{"CIF_UNK0",		PMB8876_CIF_UNK0_IRQ,		VIC_CON138},
 	{"CIF_UNK1",		PMB8876_CIF_UNK1_IRQ,		VIC_CON139},
 	{"CIF_UNK2",		PMB8876_CIF_UNK2_IRQ,		VIC_CON140},
-	{"MCI",				PMB8876_MCI_IRQ,			VIC_CON148},
+	{"MCI_INTR0",		PMB8876_MCI_INTR0_IRQ,		VIC_CON148},
+	{"MCI_INTR1",		PMB8876_MCI_INTR1_IRQ,		VIC_CON149},
 	{"I2C_SINGLE_REQ",	PMB8876_I2C_SINGLE_REQ_IRQ,	VIC_CON155},
 	{"I2C_BURST_REQ",	PMB8876_I2C_BURST_REQ_IRQ,	VIC_CON156},
 	{"I2C_ERROR",		PMB8876_I2C_ERROR_IRQ,		VIC_CON157},

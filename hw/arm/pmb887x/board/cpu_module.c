@@ -5,6 +5,8 @@
 #include "hw/arm/pmb887x/board/gpio.h"
 #include "hw/arm/pmb887x/gen/cpu_modules.h"
 #include "hw/arm/pmb887x/gen/cpu_regs.h"
+#include "hw/arm/pmb887x/utils/toml.h"
+#include "tomlc17.h"
 
 #include "hw/core/hw-error.h"
 #include "hw/core/irq.h"
@@ -12,6 +14,7 @@
 #include "hw/core/sysbus.h"
 #include "hw/core/qdev.h"
 #include "hw/core/qdev-properties.h"
+#include "qapi/error.h"
 #include "qom/object.h"
 
 static const struct pmb887x_cpu_module_t *get_cpu_module_definition(const char *name) {
@@ -25,6 +28,19 @@ static const struct pmb887x_cpu_module_t *get_cpu_module_definition(const char *
 	hw_error("Can't find CPU module: %s\n", name);
 }
 
+static void cpu_module_set_quirks(DeviceState *dev, const char *name) {
+	g_autofree char *key = g_strdup_printf("quirks.%s", name);
+	toml_datum_t quirks = toml_table_get(pmb887x_board()->config, TOML_TABLE, key, false);
+	if (quirks.type == TOML_UNKNOWN)
+		return;
+
+	for (size_t i = 0; i < quirks.u.tab.size; i++) {
+		const char *quirk = quirks.u.tab.key[i];
+		g_autofree char *prop = g_strdup_printf("quirk_%s", quirk);
+		object_property_set_bool(OBJECT(dev), prop, toml_table_get_bool(quirks, quirk, false, true), &error_fatal);
+	}
+}
+
 DeviceState *pmb887x_new_cpu_module(const char *name) {
 	const pmb887x_cpu_module_t *mod = get_cpu_module_definition(name);
 
@@ -33,6 +49,8 @@ DeviceState *pmb887x_new_cpu_module(const char *name) {
 	qdev_prop_set_uint32(dev, "revision", mod->id & MOD_ID_REV);
 	if (object_property_find(OBJECT(dev), "peripheral-id"))
 		qdev_prop_set_uint32(dev, "peripheral-id", mod->id);
+	if (object_property_get_bool(qdev_get_machine(), "quirks", &error_abort))
+		cpu_module_set_quirks(dev, name);
 
 	sysbus_mmio_map(SYS_BUS_DEVICE(dev), 0, mod->base);
 	if (mod->bus[0])

@@ -138,6 +138,8 @@ struct SDCardClass {
     bool (*get_cmd_line)(SDState *sd);
     bool (*get_inserted)(SDState *sd);
     bool (*get_readonly)(SDState *sd);
+    /* Return false if the last response carried no CRC (R3) */
+    bool (*get_response_has_crc)(SDState *sd);
     void (*set_cid)(SDState *sd);
     void (*set_csd)(SDState *sd, uint64_t size);
 
@@ -219,6 +221,7 @@ bool sdbus_receive_ready(SDBus *sd);
 bool sdbus_data_ready(SDBus *sd);
 bool sdbus_get_inserted(SDBus *sd);
 bool sdbus_get_readonly(SDBus *sd);
+bool sdbus_get_response_has_crc(SDBus *sd);
 /**
  * sdbus_reparent_card: Reparent an SD card from one controller to another
  * @from: controller bus to remove card from
