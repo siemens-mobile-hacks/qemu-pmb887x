@@ -206,6 +206,7 @@ static void pmb887x_init(MachineState *machine) {
 	// Port Control Logic
 	DeviceState *gpio = pmb887x_new_cpu_module("GPIO");
 	pmb887x_init_gpio_names(gpio);
+	pmb887x_board_gpio_init_pull_resistors(gpio);
 	sysbus_realize_and_unref(SYS_BUS_DEVICE(gpio), &error_fatal);
 
 	// System Timer
