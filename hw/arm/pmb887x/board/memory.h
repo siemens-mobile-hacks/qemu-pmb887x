@@ -17,5 +17,6 @@ MemoryRegion *pmb887x_board_create_nor_flash(
 	const char *id,
 	uint32_t vid,
 	const uint32_t pid[PMB887X_NOR_FLASH_PID_WORDS],
-	uint32_t offset
+	uint32_t offset,
+	bool dyb_protected
 );

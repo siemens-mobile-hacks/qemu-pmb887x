@@ -808,6 +808,7 @@ static const Property cfi_flash_properties[] = {
     DEFINE_PROP_UINT16("pid2", CFIFlashState, pid[1], 0),
     DEFINE_PROP_UINT16("pid3", CFIFlashState, pid[2], 0),
     DEFINE_PROP_UINT32("offset", CFIFlashState, offset, 0),
+    DEFINE_PROP_BOOL("dyb-protected", CFIFlashState, dyb_protected, false),
     DEFINE_PROP_STRING("otp0-file", CFIFlashState, otp0_file),
     DEFINE_PROP_STRING("otp1-file", CFIFlashState, otp1_file),
     DEFINE_PROP_STRING("efa-file", CFIFlashState, efa_file),

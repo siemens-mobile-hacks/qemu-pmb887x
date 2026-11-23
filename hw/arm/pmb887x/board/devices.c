@@ -335,7 +335,8 @@ static void device_init_nor_flash(DeviceState *ebuc, toml_datum_t table, const c
 	uint32_t vid = toml_table_get_uint32(table, "flash.vid", 0, true);
 	uint32_t pid[PMB887X_NOR_FLASH_PID_WORDS] = { 0 };
 	device_get_nor_flash_pid(table, pid);
-	MemoryRegion *flash = pmb887x_board_create_nor_flash(id, vid, pid, board->flash_offset);
+	bool dyb_protected = toml_table_get_bool(table, "flash.dyb_protected", false, false);
+	MemoryRegion *flash = pmb887x_board_create_nor_flash(id, vid, pid, board->flash_offset, dyb_protected);
 	uint32_t flash_size = memory_region_size(flash);
 	board->flash_offset += flash_size;
 

@@ -281,6 +281,8 @@ static uint16_t cfi_amd_read_autoselect(CFIAmdPart *ap, uint32_t offset) {
         case CFI_AMD_AUTOSELECT_INDICATOR_BITS: {
             CFIAmdState *chip_state = flash->cmdset_state;
             uint16_t indicator = flash->chip->indicator_bits & ~CFI_AMD_INDICATOR_CUSTOMER_LOCKED;
+            if (!flash->dyb_protected)
+                indicator |= CFI_AMD_INDICATOR_DYB_UNLOCKED;
             if (!(chip_state->lock_register & CFI_AMD_LOCK_CUSTOMER_SECSI))
                 indicator |= CFI_AMD_INDICATOR_CUSTOMER_LOCKED;
             return indicator;
@@ -1222,7 +1224,6 @@ static void cfi_amd_init(CFIFlashState *flash) {
 
 static void cfi_amd_reset(CFIFlashState *flash) {
     CFIAmdState *chip_state = flash->cmdset_state;
-    bool dyb_protected = (flash->chip->indicator_bits & CFI_AMD_INDICATOR_DYB_UNLOCKED) == 0;
 
     chip_state->unlock_cycles = 0;
     chip_state->program_setup = false;
@@ -1240,7 +1241,7 @@ static void cfi_amd_reset(CFIFlashState *flash) {
         ap->erase_suspended = false;
         ap->program_suspended = false;
         for (uint32_t j = 0; j < p->blocks_n; j++) {
-            ap->dyb_protected[j] = dyb_protected;
+            ap->dyb_protected[j] = flash->dyb_protected;
             cfi_amd_update_protection(ap, j);
         }
         cfi_amd_set_mode(ap, CFI_AMD_MODE_READ_ARRAY);
