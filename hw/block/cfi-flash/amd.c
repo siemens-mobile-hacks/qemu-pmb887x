@@ -112,7 +112,6 @@ enum CFIAmdMode {
 
 enum CFIAmdPending {
     CFI_AMD_PENDING_NONE,
-    CFI_AMD_PENDING_PROGRAM,
     CFI_AMD_PENDING_BUFFER_COUNT,
     CFI_AMD_PENDING_BUFFER_LOAD,
     CFI_AMD_PENDING_BUFFER_CONFIRM,
@@ -161,6 +160,7 @@ struct CFIAmdState {
     bool address_sensitive_unlock;
     bool erase_suspend;
     uint8_t unlock_cycles;
+    bool program_setup;
     bool erase_setup;
 
     uint16_t configuration;
@@ -421,7 +421,6 @@ static void cfi_amd_secsi_program(CFIAmdPart *ap, uint16_t *otp_data, uint32_t d
 static void cfi_amd_program_word(CFIAmdPart *ap, uint32_t offset, uint16_t value) {
     CFIFlashPart *p = &ap->parent;
 
-    ap->pending = CFI_AMD_PENDING_NONE;
     uint16_t *otp_data;
     uint32_t data_index;
     if (ap->mode == CFI_AMD_MODE_SECSI_SECTOR && cfi_amd_secsi_find(p->flash, offset, &otp_data, &data_index)) {
@@ -822,9 +821,11 @@ static bool cfi_amd_command_set_write(CFIAmdPart *ap, uint32_t offset, uint16_t 
 }
 
 static bool cfi_amd_unlock_bypass_write(CFIAmdPart *ap, uint16_t value) {
+    CFIAmdState *chip_state = ap->parent.flash->cmdset_state;
+
     switch (value) {
         case CFI_AMD_CMD_PROGRAM:
-            ap->pending = CFI_AMD_PENDING_PROGRAM;
+            chip_state->program_setup = true;
             return true;
 
         case CFI_AMD_CMD_UNLOCK_BYPASS_RESET:
@@ -891,7 +892,7 @@ static void cfi_amd_unlocked_command(CFIAmdPart *ap, uint32_t offset, uint16_t v
             break;
 
         case CFI_AMD_CMD_PROGRAM:
-            ap->pending = CFI_AMD_PENDING_PROGRAM;
+            chip_state->program_setup = true;
             break;
 
         case CFI_AMD_CMD_ERASE_SETUP:
@@ -1007,11 +1008,13 @@ static void cfi_amd_write(CFIFlashPart *p, uint32_t offset, uint64_t value64, ui
             break;
     }
 
-    switch (ap->pending) {
-        case CFI_AMD_PENDING_PROGRAM:
-            cfi_amd_program_word(ap, offset, value);
-            return;
+    if (chip_state->program_setup) {
+        chip_state->program_setup = false;
+        cfi_amd_program_word(ap, offset, value);
+        return;
+    }
 
+    switch (ap->pending) {
         case CFI_AMD_PENDING_BUFFER_COUNT:
         case CFI_AMD_PENDING_BUFFER_LOAD:
         case CFI_AMD_PENDING_BUFFER_CONFIRM:
@@ -1222,6 +1225,7 @@ static void cfi_amd_reset(CFIFlashState *flash) {
     bool dyb_protected = (flash->chip->indicator_bits & CFI_AMD_INDICATOR_DYB_UNLOCKED) == 0;
 
     chip_state->unlock_cycles = 0;
+    chip_state->program_setup = false;
     chip_state->erase_setup = false;
     chip_state->configuration = CFI_AMD_CONFIGURATION_DEFAULT;
     chip_state->ppb_lock = (chip_state->lock_register & CFI_AMD_LOCK_PASSWORD_MODE) == 0;
