@@ -117,6 +117,12 @@ static pmb887x_dev_t devices_meta[] = {
 		},
 	},
 
+	// UMTS baseband
+	{
+		.name = "bcm2141",
+		.props = {},
+	},
+
 	// RF transceiver
 	{
 		.name = "bright-6pla",
@@ -388,7 +394,8 @@ static DeviceState *device_create_from_config(const char *id, toml_datum_t table
 	const char *type = toml_table_get_string(table, "type", NULL, true);
 	const char *bus_id = toml_table_get_string(table, "bus", NULL, false);
 	const pmb887x_dev_t *meta = dev_get_metadata(type);
-	if (bus_id && strcmp(bus_id, "EBU") == 0)
+	bool is_ebu_memory = strcmp(type, "sdram") == 0 || strcmp(type, "cfi-flash") == 0;
+	if (bus_id && strcmp(bus_id, "EBU") == 0 && is_ebu_memory)
 		return NULL;
 
 	DeviceState *dev = qdev_new(type);
@@ -446,8 +453,10 @@ static void device_realize_from_config(GHashTable *devices, const char *id, toml
 			} else if (strcmp(type, "cfi-flash") == 0) {
 				device_init_nor_flash(DEVICE(bus), table, id);
 			} else {
-				error_report("Invalid dev type: %s", type);
-				exit(EXIT_FAILURE);
+				uint32_t cs = toml_table_get_uint32(table, "ebu.cs", 0, true);
+				sysbus_realize_and_unref(SYS_BUS_DEVICE(dev), &error_fatal);
+				pmb887x_board_ebu_connect(DEVICE(bus), cs, sysbus_mmio_get_region(SYS_BUS_DEVICE(dev), 0));
+				device_init_gpios_from_config(dev, table);
 			}
 			break;
 
