@@ -6855,6 +6855,11 @@ static void arm_tr_translate_insn(DisasContextBase *dcbase, CPUState *cpu)
     }
 
     dc->pc_curr = pc;
+    if (unlikely(pc == qatomic_read(&arm_pc_hook_addr))) {
+        /* pmb887x board hook (cpu.h): may redirect the guest */
+        gen_update_pc(dc, 0);
+        gen_helper_pmb887x_pc_hook(tcg_env);
+    }
     insn = arm_ldl_code(env, &dc->base, pc, dc->sctlr_b);
     dc->insn = insn;
     dc->base.pc_next = pc + 4;
@@ -6936,6 +6941,11 @@ static void thumb_tr_translate_insn(DisasContextBase *dcbase, CPUState *cpu)
     }
 
     dc->pc_curr = pc;
+    if (unlikely(pc == qatomic_read(&arm_pc_hook_addr))) {
+        /* pmb887x board hook (cpu.h): may redirect the guest */
+        gen_update_pc(dc, 0);
+        gen_helper_pmb887x_pc_hook(tcg_env);
+    }
     insn = arm_lduw_code(env, &dc->base, pc, dc->sctlr_b);
     is_16bit = thumb_insn_is_16bit(dc, dc->base.pc_next, insn);
     pc += 2;

@@ -27,6 +27,18 @@
 #include "accel/tcg/probe.h"
 #include "cpregs.h"
 
+uint32_t arm_pc_hook_addr = UINT32_MAX;
+void (*arm_pc_hook_fn)(CPUARMState *env, uintptr_t ra);
+
+void HELPER(pmb887x_pc_hook)(CPUARMState *env)
+{
+    void (*fn)(CPUARMState *env, uintptr_t ra) = qatomic_read(&arm_pc_hook_fn);
+
+    if (fn) {
+        fn(env, GETPC());
+    }
+}
+
 #define SIGNBIT (uint32_t)0x80000000
 #define SIGNBIT64 ((uint64_t)1 << 63)
 

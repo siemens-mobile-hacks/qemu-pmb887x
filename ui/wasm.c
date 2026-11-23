@@ -34,6 +34,7 @@
 #include "net/hub.h"
 #include "net/net.h"
 #include "qapi/error.h"
+#include "qapi/qapi-commands-block.h"
 #include "qemu/seqlock.h"
 #include "system/cpu-timers.h"
 #include "system/cpu-timers-internal.h"
@@ -395,6 +396,95 @@ void wasm_accessory_plug(void)
     aio_bh_schedule_oneshot(qemu_get_aio_context(), wasm_accessory_bh,
                             g_strndup(accessory_name,
                                       sizeof(accessory_name) - 1));
+}
+
+/* ------------------------------------------------------------------ */
+/* Memory card: eject / insert the SD image                            */
+/* ------------------------------------------------------------------ */
+
+/*
+ * WASM PORT (removable): the page boots with "-drive if=sd,format=raw,
+ * file=<MEMFS path>" and syncs that image with a host folder. To change it
+ * under a running phone it calls wasm_card_eject(), waits until
+ * wasm_card_done() has counted it, reads or rewrites the MEMFS file, writes
+ * its path into wasm_card_buf() and calls wasm_card_insert(). Both are the
+ * monitor's eject/change ("sd0"), run by a bottom half under the BQL; the
+ * MCI model turns the media change into the firmware's card detect
+ * (hw/arm/pmb887x/mci.c), so the phone unmounts / mounts the card.
+ */
+static char card_path[512];
+static int32_t card_done;
+
+EMSCRIPTEN_KEEPALIVE
+char *wasm_card_buf(void)
+{
+    return card_path;
+}
+
+/* blocks the phone wrote to the card so far (hw/arm/pmb887x/mci.c) */
+extern uint32_t pmb887x_mci_write_blocks;
+
+EMSCRIPTEN_KEEPALIVE
+int32_t wasm_card_writes(void)
+{
+    return qatomic_read(&pmb887x_mci_write_blocks);
+}
+
+/*
+ * what the firmware knows of the card (hw/arm/pmb887x/mci.c): 0 in (read
+ * again after the last insert), 1 out, 2 going out (the firmware has not
+ * seen the removal yet), 3 reading (inserted, the firmware has not read it
+ * yet), 4 not seen (the model gave up telling the firmware)
+ */
+extern uint32_t pmb887x_mci_card_state;
+
+EMSCRIPTEN_KEEPALIVE
+int32_t wasm_card_state(void)
+{
+    return qatomic_read(&pmb887x_mci_card_state);
+}
+
+/* operations finished so far (eject and insert count one each) */
+EMSCRIPTEN_KEEPALIVE
+int32_t wasm_card_done(void)
+{
+    return qatomic_read(&card_done);
+}
+
+static void wasm_card_bh(void *opaque)
+{
+    g_autofree char *path = opaque;
+    Error *err = NULL;
+
+    if (path) {
+        qmp_blockdev_change_medium("sd0", NULL, path, "raw", false, false,
+                                   false, 0, &err);
+    } else {
+        qmp_eject("sd0", NULL, true, true, &err);
+    }
+    if (err) {
+        error_report_err(err);
+    }
+    qatomic_inc(&card_done);
+}
+
+EMSCRIPTEN_KEEPALIVE
+void wasm_card_eject(void)
+{
+    if (!qatomic_load_acquire(&key_bh_ready)) {
+        return;
+    }
+    aio_bh_schedule_oneshot(qemu_get_aio_context(), wasm_card_bh, NULL);
+}
+
+EMSCRIPTEN_KEEPALIVE
+void wasm_card_insert(void)
+{
+    if (!qatomic_load_acquire(&key_bh_ready)) {
+        return;
+    }
+    aio_bh_schedule_oneshot(qemu_get_aio_context(), wasm_card_bh,
+                            g_strndup(card_path, sizeof(card_path) - 1));
 }
 
 /* ------------------------------------------------------------------ */

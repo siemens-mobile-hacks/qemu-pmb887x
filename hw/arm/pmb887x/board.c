@@ -264,6 +264,10 @@ static void pmb887x_init(MachineState *machine) {
 		DeviceState *mmci = pmb887x_new_cpu_module("MMCI");
 		sysbus_realize_and_unref(SYS_BUS_DEVICE(mmci), &error_fatal);
 
+		// MCI: PL180 card controller, card from -drive if=sd
+		DeviceState *mci = pmb887x_new_cpu_module("MCI");
+		sysbus_realize_and_unref(SYS_BUS_DEVICE(mci), &error_fatal);
+
 		// Multi Media Controller Interface
 		DeviceState *mmicif = pmb887x_new_cpu_module("MMICIF");
 		sysbus_mmio_map(SYS_BUS_DEVICE(mmicif), 1, PMB8876_MMICIF_BASE + MMICIF_MMAP_BASE);
