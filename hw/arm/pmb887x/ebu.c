@@ -88,6 +88,8 @@ static void ebu_update_state(pmb887x_ebu_t *p) {
 			
 			memory_region_set_enabled(region, is_enabled);
 			memory_region_set_size(region, size);
+			if (p->cs[i])
+				memory_region_set_alias_offset(region, addr & (memory_region_size(p->cs[i]) - 1));
 			memory_region_set_readonly(region, is_ro);
 			
 			if (!memory_region_is_mapped(region)) {
