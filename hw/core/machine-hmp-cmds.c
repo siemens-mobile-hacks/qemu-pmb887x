@@ -220,6 +220,7 @@ void hmp_memsave(Monitor *mon, const QDict *qdict)
     uint32_t size = qdict_get_int(qdict, "size");
     const char *filename = qdict_get_str(qdict, "filename");
     uint64_t addr = qdict_get_int(qdict, "val");
+    bool ignore_errors = qdict_get_try_bool(qdict, "ignore", false);
     Error *err = NULL;
     int cpu_index = monitor_get_cpu_index(mon);
 
@@ -228,7 +229,8 @@ void hmp_memsave(Monitor *mon, const QDict *qdict)
         return;
     }
 
-    qmp_memsave(addr, size, filename, true, cpu_index, &err);
+    qmp_memsave(addr, size, filename, true, cpu_index, true, ignore_errors,
+                &err);
     hmp_handle_error(mon, err);
 }
 

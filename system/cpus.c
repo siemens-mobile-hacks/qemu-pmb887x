@@ -26,6 +26,8 @@
 #include "monitor/monitor.h"
 #include "qemu/coroutine-tls.h"
 #include "qapi/error.h"
+#include "qemu/error-report.h"
+#include "exec/target_page.h"
 #include "qapi/qapi-commands-machine.h"
 #include "qapi/qapi-commands-misc.h"
 #include "qapi/qapi-events-run-state.h"
@@ -864,14 +866,24 @@ int vm_stop_force_state(RunState state)
     }
 }
 
+static void memsave_warn_unreadable(uint64_t addr, uint64_t size)
+{
+    warn_report("memsave: 0x%016" PRIx64 "..0x%016" PRIx64
+                " is unreadable, saved as zeros",
+                addr, addr + size - 1);
+}
+
 void qmp_memsave(uint64_t addr, uint64_t size, const char *filename,
-                 bool has_cpu, int64_t cpu_index, Error **errp)
+                 bool has_cpu, int64_t cpu_index,
+                 bool has_ignore_errors, bool ignore_errors, Error **errp)
 {
     FILE *f;
     uint64_t l;
     CPUState *cpu;
     uint8_t buf[1024];
     uint64_t orig_addr = addr, orig_size = size;
+    uint64_t page_size = qemu_target_page_size();
+    uint64_t unreadable_addr = 0, unreadable_size = 0;
 
     if (migration_guest_ram_loading()) {
         error_setg(errp, "Guest memory access not allowed during migration");
@@ -899,10 +911,23 @@ void qmp_memsave(uint64_t addr, uint64_t size, const char *filename,
         l = sizeof(buf);
         if (l > size)
             l = size;
+        if (ignore_errors) {
+            l = MIN(l, page_size - (addr & (page_size - 1)));
+        }
         if (cpu_memory_rw_debug(cpu, addr, buf, l, 0) != 0) {
-            error_setg(errp, "Invalid addr 0x%016" PRIx64 "/size %" PRIu64
-                             " specified", orig_addr, orig_size);
-            goto exit;
+            if (!ignore_errors) {
+                error_setg(errp, "Invalid addr 0x%016" PRIx64 "/size %" PRIu64
+                                 " specified", orig_addr, orig_size);
+                goto exit;
+            }
+            memset(buf, 0, l);
+            if (unreadable_size == 0) {
+                unreadable_addr = addr;
+            }
+            unreadable_size += l;
+        } else if (unreadable_size != 0) {
+            memsave_warn_unreadable(unreadable_addr, unreadable_size);
+            unreadable_size = 0;
         }
         if (fwrite(buf, 1, l, f) != l) {
             error_setg(errp, "writing memory to '%s' failed",
@@ -911,6 +936,9 @@ void qmp_memsave(uint64_t addr, uint64_t size, const char *filename,
         }
         addr += l;
         size -= l;
+    }
+    if (unreadable_size != 0) {
+        memsave_warn_unreadable(unreadable_addr, unreadable_size);
     }
 
 exit:
