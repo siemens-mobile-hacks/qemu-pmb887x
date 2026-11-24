@@ -477,6 +477,36 @@ void wasm_card_eject(void)
     aio_bh_schedule_oneshot(qemu_get_aio_context(), wasm_card_bh, NULL);
 }
 
+/*
+ * clean unmount before a change (hw/arm/pmb887x/mci.c): the phone writes its
+ * FAT and drops its cache, as with "Eject card", so the change that follows
+ * gives no "Data lost" note. wasm_card_unmount_state(): 0 none, 1 pending,
+ * 2 sent, 3 not possible (no GBS_SendMessage found, no card server)
+ */
+extern void pmb887x_mci_unmount(void);
+extern uint32_t pmb887x_mci_unmount_state;
+
+static void wasm_card_unmount_bh(void *opaque)
+{
+    pmb887x_mci_unmount();
+}
+
+EMSCRIPTEN_KEEPALIVE
+void wasm_card_unmount(void)
+{
+    if (!qatomic_load_acquire(&key_bh_ready)) {
+        return;
+    }
+    qatomic_set(&pmb887x_mci_unmount_state, 1);
+    aio_bh_schedule_oneshot(qemu_get_aio_context(), wasm_card_unmount_bh, NULL);
+}
+
+EMSCRIPTEN_KEEPALIVE
+int32_t wasm_card_unmount_state(void)
+{
+    return qatomic_read(&pmb887x_mci_unmount_state);
+}
+
 EMSCRIPTEN_KEEPALIVE
 void wasm_card_insert(void)
 {

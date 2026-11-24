@@ -84,6 +84,8 @@ typedef struct pmb887x_mci_t pmb887x_mci_t;
 uint32_t pmb887x_mci_write_blocks;
 /* what the firmware knows of the card (ui/wasm.c wasm_card_state, the page) */
 uint32_t pmb887x_mci_card_state;
+/* clean unmount (pmb887x_mci_unmount): 0 none, 1 pending, 2 sent, 3 not possible */
+uint32_t pmb887x_mci_unmount_state;
 
 struct pmb887x_mci_t {
 	SysBusDevice parent_obj;
@@ -603,6 +605,8 @@ static struct {
 	int64_t goal_start;		/* realtime ms (0: not yet hit) */
 	uint32_t saved[6];		/* r0-r3, r12, lr */
 	uint32_t saved_sp;
+	uint32_t ret_sp;		/* SP the injected call comes back with */
+	uint32_t gbs_send;		/* GBS_SendMessage (bit 0 = Thumb), 0 not looked for, 1 not found */
 	bool hide;				/* removed, the firmware has not seen it yet */
 	bool absent_seen;		/* a command failed while hidden */
 	pmb887x_mci_t *p;
@@ -943,6 +947,33 @@ static void mci_cd_hook(CPUARMState *env, uintptr_t ra) {
 	if (env->thumb != (mci_cd.hook & 1))
 		return;
 
+	if (mci_cd.state == CD_CALL && mci_cd.gbs_send > 1 &&
+			qatomic_read(&pmb887x_mci_unmount_state) == 1) {
+		/* clean unmount: GBS_SendMessage(0x4100, 0x18, 0, 4, 0), as "Eject card" */
+		cpu_restore_state(cs, ra);
+		for (int i = 0; i < 4; i++)
+			mci_cd.saved[i] = env->regs[i];
+		mci_cd.saved[4] = env->regs[12];
+		mci_cd.saved[5] = env->regs[14];
+		mci_cd.saved_sp = env->regs[13];
+		mci_cd.ret_sp = env->regs[13] - 8;
+		if (!mci_cd_wr(cs, mci_cd.ret_sp, 0)) {
+			qatomic_set(&pmb887x_mci_unmount_state, 3);
+			return;
+		}
+		env->regs[13] = mci_cd.ret_sp;
+		env->regs[0] = 0x4100;
+		env->regs[1] = 0x18;
+		env->regs[2] = 0;
+		env->regs[3] = 4;
+		env->regs[14] = mci_cd.hook;
+		env->regs[15] = mci_cd.gbs_send & ~1;
+		env->thumb = mci_cd.gbs_send & 1;
+		mci_cd.state = CD_RETURN;
+		qatomic_set(&pmb887x_mci_unmount_state, 2);
+		cpu_loop_exit(cs);
+	}
+
 	if (mci_cd.state == CD_CALL) {
 		uint8_t enabled[4];
 		int64_t now = qemu_clock_get_ms(QEMU_CLOCK_REALTIME);	/* (virtual time cannot be read mid-TB under icount) */
@@ -999,6 +1030,7 @@ static void mci_cd_hook(CPUARMState *env, uintptr_t ra) {
 		mci_cd.saved[4] = env->regs[12];
 		mci_cd.saved[5] = env->regs[14];
 		mci_cd.saved_sp = env->regs[13];
+		mci_cd.ret_sp = env->regs[13];
 		env->regs[0] = mci_cd.arg;
 		env->regs[14] = mci_cd.hook;
 		env->regs[15] = mci_cd.routine & ~1;
@@ -1007,11 +1039,12 @@ static void mci_cd_hook(CPUARMState *env, uintptr_t ra) {
 		cpu_loop_exit(cs);
 	}
 
-	if (mci_cd.state == CD_RETURN && env->regs[13] == mci_cd.saved_sp) {
-		/* the CARDSRV routine returned here: the original call goes on */
+	if (mci_cd.state == CD_RETURN && env->regs[13] == mci_cd.ret_sp) {
+		/* the injected call returned here: the original call goes on */
 		for (int i = 0; i < 4; i++)
 			env->regs[i] = mci_cd.saved[i];
 		env->regs[12] = mci_cd.saved[4];
+		env->regs[13] = mci_cd.saved_sp;
 		env->regs[14] = mci_cd.saved[5];
 		if (mci_cd.want != CD_WANT_NONE) {
 			mci_cd.state = CD_CALL;		/* next tick: check again */
@@ -1051,6 +1084,91 @@ static void mci_cd_power_off(pmb887x_mci_t *p) {
 		mci_cd_goal_done("the firmware saw the removal");
 }
 
+/*
+ * Clean unmount, as the firmware's "Eject card": message 0x18 to the memory
+ * card file system process (0x4100) with the drive (4). The file system
+ * writes its FAT and directories to the card and drops its cache; the next
+ * access mounts the card again. A card taken out after it gives no "Data
+ * lost" note (that one is for a card removed while mounted). It is refused
+ * (nothing changes) while a file on the card is open.
+ * GBS_SendMessage is found by the ElfPack function library patterns
+ * (sdk/swilib/patterns.toml, function 0x100: ELKA Thumb, NSG ARM).
+ */
+static const int16_t mci_gbs_elka[] = {
+	-1,0xB4,-1,0xB5,-1,0x1C,-1,0x1C,-1,0x1C,-1,0x9D,-1,-1,-1,0xF9,-1,0x0F,-1,0x92,-1,0x04,-1,0x0C,
+	-1,0x1C,-1,0xA8,-1,0x99,-1,-1,-1,0xFC,-1,0x60,-1,0xC0,-1,0xA8,-1,-1,-1,0xFA,-1,0xBC,-1,0xBC,
+	-1,0xB0,-1,0x47,
+};
+static const int16_t mci_gbs_nsg[] = {
+	-1,-1,-1,0xE9,-1,-1,-1,0xE5,-1,-1,-1,0xE1,-1,-1,-1,0xE1,-1,-1,-1,0xE1,-1,-1,-1,0xE1,-1,-1,-1,-1,
+	-1,-1,-1,0xE1,-1,-1,-1,0xE5,-1,-1,-1,0xE1,-1,-1,-1,0xE1,-1,-1,-1,0xE2,-1,-1,-1,0xE1,-1,-1,-1,0xE1,
+	-1,-1,-1,-1,-1,-1,-1,0xE8,-1,-1,-1,0xE5,-1,-1,-1,0xE2,-1,-1,-1,-1,-1,-1,-1,0xE8,
+};
+
+#define MCI_FLASH_BASE	0xA0000000u
+#define MCI_FLASH_MAX	(64u << 20)
+#define MCI_SCAN_CHUNK	(64u << 10)
+
+/* matches starting in b[0 .. starts) (b holds starts + 128 bytes, a pattern is shorter) */
+static int mci_pat_scan(const uint8_t *b, uint32_t starts, uint32_t base, const int16_t *pat, int len,
+		int align, uint32_t *at) {
+	int hits = 0;
+	for (uint32_t o = 0; o < starts; o += align) {
+		int k = 0;
+		while (k < len && (pat[k] < 0 || b[o + k] == pat[k]))
+			k++;
+		if (k == len) {
+			hits++;
+			*at = base + o;
+		}
+	}
+	return hits;
+}
+
+static uint32_t mci_find_gbs_send(CPUState *cs) {
+	g_autofree uint8_t *buf = g_malloc(MCI_SCAN_CHUNK + 128);
+	uint32_t at_t = 0, at_a = 0, ov = 0;
+	int ht = 0, ha = 0;
+	for (uint32_t off = 0; off < MCI_FLASH_MAX; off += MCI_SCAN_CHUNK) {
+		/* (the last 128 bytes of the chunk before go first: no pattern is cut;
+		 * each start is looked at once, the chunk's last 128 bytes next time) */
+		if (cpu_memory_rw_debug(cs, MCI_FLASH_BASE + off, buf + 128, MCI_SCAN_CHUNK, false))
+			break;
+		uint32_t base = MCI_FLASH_BASE + off - ov;
+		const uint8_t *b = buf + 128 - ov;
+		ht += mci_pat_scan(b, MCI_SCAN_CHUNK + ov - 128, base, mci_gbs_elka, ARRAY_SIZE(mci_gbs_elka), 2, &at_t);
+		ha += mci_pat_scan(b, MCI_SCAN_CHUNK + ov - 128, base, mci_gbs_nsg, ARRAY_SIZE(mci_gbs_nsg), 4, &at_a);
+		memcpy(buf, buf + MCI_SCAN_CHUNK, 128);
+		ov = 128;
+	}
+	if (ht + ha != 1)
+		return 1;
+	return ht ? at_t | 1 : at_a;
+}
+
+static void mci_unmount_req(pmb887x_mci_t *p) {
+	if (!p || !mci_cd_ready(p)) {
+		qatomic_set(&pmb887x_mci_unmount_state, 3);
+		return;
+	}
+	if (!mci_cd.gbs_send)
+		mci_cd.gbs_send = mci_find_gbs_send(first_cpu);
+	DEBUG_LOG(&p->dbg, "card unmount: GBS_SendMessage %08X\n", mci_cd.gbs_send);
+	if (mci_cd.gbs_send == 1) {
+		qatomic_set(&pmb887x_mci_unmount_state, 3);
+		return;
+	}
+	qatomic_set(&pmb887x_mci_unmount_state, 1);
+	mci_cd_arm();
+}
+
+static pmb887x_mci_t *mci_dev;
+
+/* the page's "Sync card", before it takes the card out (under the BQL) */
+void pmb887x_mci_unmount(void) {
+	mci_unmount_req(mci_dev);
+}
+
 /* sd-card: media changed (monitor eject/change, wasm_card_*) */
 static void mci_bus_set_inserted(DeviceState *dev, bool inserted) {
 	pmb887x_mci_t *p = PMB887X_MCI(dev);
@@ -1088,6 +1206,7 @@ static void mci_bus_class_init(ObjectClass *klass, const void *data) {
 
 static void mci_realize(DeviceState *dev, Error **errp) {
 	pmb887x_mci_t *p = PMB887X_MCI(dev);
+	mci_dev = p;
 	pmb887x_mod_debug_init(&p->dbg, dev, &p->mmio, &pmb887x_mci_regs);
 	p->cmd_timer = timer_new_ns(QEMU_CLOCK_VIRTUAL, mci_cmd_timer, p);
 
