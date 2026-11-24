@@ -1902,9 +1902,11 @@ static sd_rsp_type_t sd_cmd_STOP_TRANSMISSION(SDState *sd, SDRequest req)
 {
     switch (sd->state) {
     case sd_sendingdata_state:
+        sd->multi_blk_cnt = 0;
         sd->state = sd_transfer_state;
         return sd_r1b;
     case sd_receivingdata_state:
+        sd->multi_blk_cnt = 0;
         sd->state = sd_programming_state;
         /* Bzzzzzzztt .... Operation complete.  */
         sd->state = sd_transfer_state;
@@ -2366,7 +2368,9 @@ static sd_rsp_type_t sd_normal_command(SDState *sd, SDRequest req)
 
     /* CMD23 (set block count) must be immediately followed by CMD18 or CMD25
      * if not, its effects are cancelled */
-    if (sd->multi_blk_cnt != 0 && !(req.cmd == 18 || req.cmd == 25)) {
+    if (sd->multi_blk_cnt != 0 && !(req.cmd == 18 || req.cmd == 25) &&
+        sd->state != sd_sendingdata_state &&
+        sd->state != sd_receivingdata_state) {
         sd->multi_blk_cnt = 0;
     }
 
@@ -2504,9 +2508,10 @@ static bool cmd_valid_while_locked(SDState *sd, unsigned cmd)
 static size_t sd_do_command(SDState *sd, SDRequest *req,
                             uint8_t *response, size_t respsz)
 {
-    int last_state;
+    int last_state = sd->state;
     sd_rsp_type_t rtype;
     int rsplen;
+    bool keeps_transfer;
 
     if (!sd->blk || !blk_is_inserted(sd->blk)) {
         return 0;
@@ -2545,8 +2550,6 @@ static size_t sd_do_command(SDState *sd, SDRequest *req,
         }
     }
 
-    last_state = sd->state;
-
     if (sd->expecting_acmd) {
         sd->expecting_acmd = false;
         rtype = sd_app_command(sd, *req);
@@ -2565,6 +2568,16 @@ static size_t sd_do_command(SDState *sd, SDRequest *req,
     }
 
 send_response:
+    /*
+     * A command that leaves the card in the data or receive state does not
+     * stop the transfer: CMD13 and CMD55 keep the state (SD Physical Layer
+     * 3.01, Table 4-31), an illegal command or a CRC error changes nothing
+     * (4.6.1), and another card's addressed command is not for this card
+     * (4.1).
+     */
+    keeps_transfer = sd->state == last_state &&
+                     (last_state == sd_sendingdata_state ||
+                      last_state == sd_receivingdata_state);
     rsplen = sd_response_size(sd, rtype);
     assert(rsplen <= respsz);
     sd->response_has_crc = rtype != sd_r3;
@@ -2604,8 +2617,10 @@ send_response:
          * Invalid state transition, reset implementation
          * fields to avoid OOB abuse.
          */
-        sd->data_start = 0;
-        sd->data_offset = 0;
+        if (!keeps_transfer) {
+            sd->data_start = 0;
+            sd->data_offset = 0;
+        }
         /* fall-through */
     case sd_illegal:
         break;
@@ -2625,7 +2640,9 @@ send_response:
     qemu_hexdump(stderr, "Response", response, rsplen);
 #endif
 
-    sd->current_cmd = rtype == sd_illegal ? 0 : req->cmd;
+    if (!keeps_transfer) {
+        sd->current_cmd = rtype == sd_illegal ? 0 : req->cmd;
+    }
 
     return rsplen;
 }
