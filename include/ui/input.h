@@ -43,6 +43,8 @@ struct QemuInputHandler {
     uint32_t               mask;
     QemuInputHandlerEvent  event;
     QemuInputHandlerSync   sync;
+    /* Every shared handler gets the events, not just the first one. */
+    bool                   shared;
 };
 
 G_GNUC_WARN_UNUSED_RESULT

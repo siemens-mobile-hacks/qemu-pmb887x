@@ -352,8 +352,18 @@ void qemu_input_event_send_impl(QemuConsole *src, QemuInputEvent *evt)
     if (!s) {
         return;
     }
-    s->handler->event(s->dev, src, evt);
-    s->events++;
+    if (!s->handler->shared) {
+        s->handler->event(s->dev, src, evt);
+        s->events++;
+        return;
+    }
+    QTAILQ_FOREACH(s, &handlers, node) {
+        if (s->handler->shared && (s->handler->mask & (1 << evt->type)) &&
+            (s->con == NULL || s->con == src)) {
+            s->handler->event(s->dev, src, evt);
+            s->events++;
+        }
+    }
 }
 
 void qemu_input_event_send(QemuConsole *src, QemuInputEvent *evt)
