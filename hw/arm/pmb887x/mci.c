@@ -30,6 +30,9 @@
 #define MCI_RESPONSE_RESERVED_INDEX	0x3F
 #define MCI_PCELL_ID				0xB105F00D
 #define MCI_STATIC_FLAGS			MAKE_64BIT_MASK(0, 11)
+#define MCI_FIFO_WINDOW				0x3000
+#define MCI_FIFO_WINDOW_SIZE		0x4000
+#define MCI_MMIO_SIZE				(MCI_FIFO_WINDOW + MCI_FIFO_WINDOW_SIZE)
 
 typedef struct pmb887x_mci_t pmb887x_mci_t;
 
@@ -683,6 +686,7 @@ static uint64_t mci_io_read(void *opaque, hwaddr haddr, unsigned _size) {
 			value = p->fifo_count;
 			break;
 		case MCI_FIFO0 ... MCI_FIFO15:
+		case MCI_FIFO_WINDOW ... MCI_MMIO_SIZE - 4:
 			value = mci_fifo_read(p);
 			mci_update(p);
 			break;
@@ -744,6 +748,7 @@ static void mci_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned _s
 			p->select = value;
 			break;
 		case MCI_FIFO0 ... MCI_FIFO15:
+		case MCI_FIFO_WINDOW ... MCI_MMIO_SIZE - 4:
 			mci_fifo_write(p, value);
 			break;
 		case MCI_TCR:
@@ -775,7 +780,7 @@ static void mci_init(Object *obj) {
 	DeviceState *dev = DEVICE(obj);
 	pmb887x_mci_t *p = PMB887X_MCI(obj);
 
-	memory_region_init_io(&p->mmio, obj, &mci_io_ops, p, "pmb887x-mci", MCI_IO_SIZE);
+	memory_region_init_io(&p->mmio, obj, &mci_io_ops, p, "pmb887x-mci", MCI_MMIO_SIZE);
 	sysbus_init_mmio(SYS_BUS_DEVICE(obj), &p->mmio);
 	for (size_t i = 0; i < ARRAY_SIZE(p->irq); i++)
 		sysbus_init_irq(SYS_BUS_DEVICE(obj), &p->irq[i]);
