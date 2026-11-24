@@ -26,7 +26,6 @@
 #include "hw/arm/pmb887x/board/memory.h"
 #include "hw/arm/pmb887x/board/analog.h"
 #include "hw/arm/pmb887x/board/gpio.h"
-#include "hw/arm/pmb887x/board/keyboard.h"
 #include "hw/arm/pmb887x/board/cpu_module.h"
 #include "hw/arm/pmb887x/board/startup.h"
 #include "hw/block/cfi-flash.h"
@@ -76,13 +75,6 @@ static void pmb887x_cpu_reset(void *opaque) {
 
 static void pmb887x_cpu_clock_update(void *opaque, ClockEvent _event) {
 	cpu_clock_set_cpu_hz(clock_get_hz(opaque));
-}
-
-static void pmb887x_init_keymap(DeviceState *keypad, const uint32_t *map, int map_size) {
-	QList *list = qlist_new();
-	for (int i = 0; i < map_size; i++)
-		qlist_append_int(list, map[i]);
-    qdev_prop_set_array(keypad, "map", list);
 }
 
 static void pmb887x_init_gpio_names(DeviceState *gpio) {
@@ -361,7 +353,6 @@ static void pmb887x_init(MachineState *machine) {
 
 	// KEYPAD
 	DeviceState *keypad = pmb887x_new_cpu_module("KEYPAD");
-	pmb887x_init_keymap(keypad, pmb887x_board()->keymap, Q_KEY_CODE__MAX);
 	sysbus_realize_and_unref(SYS_BUS_DEVICE(keypad), &error_fatal);
 
 	// External Bus Unit
@@ -382,7 +373,6 @@ static void pmb887x_init(MachineState *machine) {
 	pmb887x_machine_t *pmb887x_machine = OBJECT_CHECK(pmb887x_machine_t, machine, TYPE_PMB887X_MACHINE);
 	pmb887x_board_init_devices(ebuc, pmb887x_machine->gsm_network);
 	sysbus_realize_and_unref(SYS_BUS_DEVICE(ebuc), &error_fatal);
-	pmb887x_board_keyboard_connect_gpios(keypad);
 	pmb887x_board_startup_init(keypad);
 
 #if PMB887X_IO_BRIDGE

@@ -4,6 +4,7 @@
 #include "hw/arm/pmb887x/board/accessory.h"
 #include "hw/arm/pmb887x/board/board.h"
 #include "hw/arm/pmb887x/board/gpio.h"
+#include "hw/arm/pmb887x/board/keyboard.h"
 #include "hw/arm/pmb887x/board/memory.h"
 #include "hw/arm/pmb887x/dsp.h"
 #include "hw/arm/pmb887x/mmicif.h"
@@ -115,6 +116,15 @@ static pmb887x_dev_t devices_meta[] = {
 			{ "repeat_delay_us", DEV_PROP_UINT, false },
 			{ "detent_us", DEV_PROP_UINT, false },
 		},
+	},
+
+	{
+		.name = "key-matrix",
+		.props = {},
+	},
+	{
+		.name = "key-switch",
+		.props = {},
 	},
 
 	// UMTS baseband
@@ -375,14 +385,49 @@ static void device_init_nor_flash(DeviceState *ebuc, toml_datum_t table, const c
 	}
 }
 
-static void device_init_gpios_from_config(DeviceState *dev, toml_datum_t table) {
+typedef struct pmb887x_dev_net_t pmb887x_dev_net_t;
+
+struct pmb887x_dev_net_t {
+	qemu_irq input;
+	uint32_t drivers;
+	uint32_t connected;
+	DeviceState *wired_and;
+};
+
+static void device_count_net_drivers(GHashTable *nets, toml_datum_t table) {
+	toml_datum_t gpio_out_tab = toml_table_get(table, TOML_TABLE, "out", false);
+	if (gpio_out_tab.type == TOML_UNKNOWN)
+		return;
+
+	for (size_t i = 0; i < gpio_out_tab.u.tab.size; i++) {
+		const char *per_pin_name = toml_table_get_string(gpio_out_tab, gpio_out_tab.u.tab.key[i], NULL, true);
+		qemu_irq input = pmb887x_gpio_get_input(per_pin_name);
+		pmb887x_dev_net_t *net = g_hash_table_lookup(nets, input);
+		if (!net) {
+			net = g_new0(pmb887x_dev_net_t, 1);
+			net->input = input;
+			g_hash_table_insert(nets, input, net);
+		}
+		net->drivers++;
+	}
+}
+
+static qemu_irq device_get_net_driver_input(pmb887x_dev_net_t *net) {
+	if (net->drivers == 1)
+		return net->input;
+
+	if (!net->wired_and)
+		net->wired_and = pmb887x_gpio_new_wired_and(net->input, net->drivers);
+	return qdev_get_gpio_in(net->wired_and, net->connected++);
+}
+
+static void device_init_gpios_from_config(GHashTable *nets, DeviceState *dev, toml_datum_t table) {
 	toml_datum_t gpio_in_tab = toml_table_get(table, TOML_TABLE, "in", false);
 	toml_datum_t gpio_out_tab = toml_table_get(table, TOML_TABLE, "out", false);
 
 	if (gpio_in_tab.type != TOML_UNKNOWN) {
 		for (size_t i = 0; i < gpio_in_tab.u.tab.size; i++) {
-			char dev_pin_name[64];
-			sprintf(dev_pin_name, "%s:%s", dev->id, gpio_in_tab.u.tab.key[i]);
+			g_autofree char *dev_pin_name = g_strdup_printf("%s:%s", dev->id, gpio_in_tab.u.tab.key[i]);
 			const char *per_pin_name = toml_table_get_string(gpio_in_tab, gpio_in_tab.u.tab.key[i], NULL, true);
 			pmb887x_gpio_connect(per_pin_name, dev_pin_name);
 		}
@@ -390,10 +435,10 @@ static void device_init_gpios_from_config(DeviceState *dev, toml_datum_t table) 
 
 	if (gpio_out_tab.type != TOML_UNKNOWN) {
 		for (size_t i = 0; i < gpio_out_tab.u.tab.size; i++) {
-			char dev_pin_name[64];
-			sprintf(dev_pin_name, "%s:%s", dev->id, gpio_out_tab.u.tab.key[i]);
+			g_autofree char *dev_pin_name = g_strdup_printf("%s:%s", dev->id, gpio_out_tab.u.tab.key[i]);
 			const char *per_pin_name = toml_table_get_string(gpio_out_tab, gpio_out_tab.u.tab.key[i], NULL, true);
-			pmb887x_gpio_connect(dev_pin_name, per_pin_name);
+			pmb887x_dev_net_t *net = g_hash_table_lookup(nets, pmb887x_gpio_get_input(per_pin_name));
+			pmb887x_gpio_connect_output(dev_pin_name, device_get_net_driver_input(net));
 		}
 	}
 }
@@ -424,7 +469,6 @@ static void device_realize_from_config(GHashTable *devices, const char *id, toml
 		} else {
 			qdev_realize_and_unref(dev, NULL, &error_fatal);
 		}
-		device_init_gpios_from_config(dev, table);
 		return;
 	}
 
@@ -436,21 +480,18 @@ static void device_realize_from_config(GHashTable *devices, const char *id, toml
 			uint32_t addr = toml_table_get_uint32(table, "addr", 0, true);
 			qdev_prop_set_uint8(dev, "address", addr);
 			i2c_slave_realize_and_unref(I2C_SLAVE(dev), I2C_BUS(bus), &error_fatal);
-			device_init_gpios_from_config(dev, table);
 			break;
 		}
 
 		case DEV_BUS_SSI:
 			qdev_prop_set_uint8(dev, "cs", global_cs_index++);
 			qdev_realize_and_unref(dev, BUS(bus), &error_fatal);
-			device_init_gpios_from_config(dev, table);
 			break;
 
 		case DEV_BUS_SIM:
 			qdev_connect_clock_in(dev, "CLK", qdev_get_clock_out(DEVICE(bus), "CC_CLK"));
 			pmb887x_sim_connect_slot(PMB887X_SIM(bus), ISO7816_SLOT(dev));
 			sysbus_realize_and_unref(SYS_BUS_DEVICE(dev), &error_fatal);
-			device_init_gpios_from_config(dev, table);
 			break;
 
 		case DEV_BUS_EBU:
@@ -464,13 +505,11 @@ static void device_realize_from_config(GHashTable *devices, const char *id, toml
 				uint32_t cs = toml_table_get_uint32(table, "ebu.cs", 0, true);
 				sysbus_realize_and_unref(SYS_BUS_DEVICE(dev), &error_fatal);
 				pmb887x_board_ebu_connect(DEVICE(bus), cs, sysbus_mmio_get_region(SYS_BUS_DEVICE(dev), 0));
-				device_init_gpios_from_config(dev, table);
 			}
 			break;
 
 		case DEV_BUS_MMICIF:
 			qdev_realize_and_unref(dev, BUS(bus), &error_fatal);
-			device_init_gpios_from_config(dev, table);
 			break;
 
 		default:
@@ -508,6 +547,10 @@ void pmb887x_board_init_devices(DeviceState *ebuc, Object *gsm_network) {
 			object_property_set_link(OBJECT(dev), "gsm-network", gsm_network, &error_fatal);
 		if (object_dynamic_cast(OBJECT(dev), TYPE_ACCESSORY_CONNECTOR))
 			pmb887x_board_accessory_configure(devices, dev, table);
+		if (object_dynamic_cast(OBJECT(dev), "key-matrix"))
+			pmb887x_board_key_matrix_configure(dev, table);
+		if (object_dynamic_cast(OBJECT(dev), "key-switch"))
+			pmb887x_board_key_switch_configure(dev, table);
 	}
 
 	for (int i = 0; i < value.u.tab.size; i++) {
@@ -516,6 +559,19 @@ void pmb887x_board_init_devices(DeviceState *ebuc, Object *gsm_network) {
 		device_realize_from_config(devices, id, table);
 	}
 
+	GHashTable *nets = g_hash_table_new_full(g_direct_hash, g_direct_equal, NULL, g_free);
+	for (int i = 0; i < value.u.tab.size; i++) {
+		const char *id = value.u.tab.key[i];
+		if (g_hash_table_lookup(devices, id))
+			device_count_net_drivers(nets, toml_table_get(value, TOML_TABLE, id, true));
+	}
+	for (int i = 0; i < value.u.tab.size; i++) {
+		const char *id = value.u.tab.key[i];
+		DeviceState *dev = g_hash_table_lookup(devices, id);
+		if (dev)
+			device_init_gpios_from_config(nets, dev, toml_table_get(value, TOML_TABLE, id, true));
+	}
+	g_hash_table_unref(nets);
 	g_hash_table_unref(devices);
 
 	DeviceState *flash_blk = qdev_find_recursive(sysbus_get_default(), "FULLFLASH");

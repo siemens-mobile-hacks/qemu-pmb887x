@@ -41,11 +41,18 @@ struct pmb887x_cpu_module_t {
 	size_t dma_count;
 };
 
+enum pmb887x_gpio_pull {
+	PMB887X_GPIO_PULL_NONE,
+	PMB887X_GPIO_PULL_UP,
+	PMB887X_GPIO_PULL_DOWN,
+};
+
 struct pmb887x_cpu_module_gpio_t {
 	const char name[64];
 	int pin;
 	int alt;
 	uint32_t directions;
+	enum pmb887x_gpio_pull pull;
 };
 
 struct pmb887x_cpu_module_dma_t {

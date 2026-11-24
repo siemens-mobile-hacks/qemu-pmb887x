@@ -2,7 +2,6 @@
 
 #include "tomlc17.h"
 #include "qemu/osdep.h"
-#include "qapi/qapi-types-ui.h"
 
 #include "hw/arm/pmb887x/gen/cpu_meta.h"
 #include "hw/arm/pmb887x/utils/toml.h"
@@ -18,8 +17,6 @@ struct pmb887x_board_t {
 
 	toml_result_t config_result;
 	toml_datum_t config;
-
-	uint32_t keymap[Q_KEY_CODE__MAX];
 
 	const char **gpio_names;
 

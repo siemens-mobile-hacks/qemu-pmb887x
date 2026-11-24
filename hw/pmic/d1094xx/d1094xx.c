@@ -302,7 +302,7 @@ static void d1094xx_audio_register_write(D1094XXState *s, uint8_t reg, uint8_t v
 static void d1094xx_on_off_handler(void *opaque, int _n, int level) {
     D1094XXState *s = opaque;
 
-    s->on_pressed = level != 0;
+    s->on_pressed = level == 0;
     qemu_set_irq(s->on_off_out, !s->on_pressed);
 }
 

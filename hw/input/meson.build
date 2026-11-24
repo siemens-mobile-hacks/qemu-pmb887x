@@ -12,3 +12,5 @@ system_ss.add(when: 'CONFIG_VIRTIO_INPUT_HOST', if_true: files('virtio-input-hos
 system_ss.add(when: 'CONFIG_LASIPS2', if_true: files('lasips2.c'))
 
 system_ss.add(when: 'CONFIG_ROTARY_ENCODER', if_true: files('rotary-encoder/rotary-encoder.c'))
+system_ss.add(when: 'CONFIG_KEY_MATRIX', if_true: files('key-matrix.c'))
+system_ss.add(when: 'CONFIG_KEY_SWITCH', if_true: files('key-switch.c'))

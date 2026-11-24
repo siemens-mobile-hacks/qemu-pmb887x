@@ -34,5 +34,11 @@ config VHOST_USER_INPUT
 config LASIPS2
     select PS2
 
+config KEY_MATRIX
+    bool
+
+config KEY_SWITCH
+    bool
+
 config ROTARY_ENCODER
     bool

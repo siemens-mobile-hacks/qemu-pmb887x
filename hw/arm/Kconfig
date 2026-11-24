@@ -269,6 +269,9 @@ config PMB887X
     select SPLIT_IRQ
     select ACCESSORY_CONNECTOR
     select ROTARY_ENCODER
+    select KEY_MATRIX
+    select KEY_SWITCH
+    select WIRED_AND
     select SD_SLOT
     select I2C
     select SSI

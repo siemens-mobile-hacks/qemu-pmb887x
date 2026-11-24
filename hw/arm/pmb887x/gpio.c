@@ -9,6 +9,7 @@
 #include "cpu.h"
 
 #include "hw/arm/pmb887x/gen/cpu_meta.h"
+#include "hw/arm/pmb887x/gpio.h"
 #include "hw/arm/pmb887x/mod.h"
 #include "hw/arm/pmb887x/io_bridge.h"
 #include "hw/arm/pmb887x/gen/cpu_regs.h"
@@ -35,6 +36,7 @@ struct pmb887x_gpio_t {
 	bool external_pull[GPIOS_COUNT];
 	bool external_pull_level[GPIOS_COUNT];
 	qemu_irq pins_out[8][GPIOS_COUNT];
+	enum pmb887x_gpio_pull input_pulls[8][GPIOS_COUNT];
 
 	qemu_irq mon3_out;
 	qemu_irq mon4_out;
@@ -86,8 +88,20 @@ static void gpio_sync_pin_state(pmb887x_gpio_t *p, int id) {
 	bool pad_level = gpio_get_pin_level(p, id);
 
 	qemu_set_irq(p->pins_out[0][id], pad_level);
-	for (unsigned mux = 1; mux < ARRAY_SIZE(p->pins_out); mux++)
-		qemu_set_irq(p->pins_out[mux][id], mux == pin_mux_is ? pad_level : 0);
+	for (uint32_t mux = 1; mux < ARRAY_SIZE(p->pins_out); mux++) {
+		enum pmb887x_gpio_pull pull = p->input_pulls[mux][id];
+		if (mux == pin_mux_is) {
+			qemu_set_irq(p->pins_out[mux][id], pad_level);
+		} else if (pull != PMB887X_GPIO_PULL_NONE) {
+			qemu_set_irq(p->pins_out[mux][id], pull == PMB887X_GPIO_PULL_UP);
+		}
+	}
+}
+
+void pmb887x_gpio_set_input_pull(DeviceState *dev, int pin, int alt, enum pmb887x_gpio_pull pull) {
+	pmb887x_gpio_t *p = PMB887X_GPIO(dev);
+	p->input_pulls[alt + 1][pin] = pull;
+	gpio_sync_pin_state(p, pin);
 }
 
 static uint64_t gpio_io_read(void *opaque, hwaddr haddr, unsigned size) {
@@ -256,8 +270,6 @@ static void gpio_reset(DeviceState *dev) {
 	memset(p->mon_cr, 0, sizeof(p->mon_cr));
 
 	for (int id = 0; id < GPIOS_COUNT; id++) {
-		for (size_t mux = 0; mux < ARRAY_SIZE(p->pins_out); mux++)
-			qemu_set_irq(p->pins_out[mux][id], 0);
 		p->pins[id] = GPIO_PS_MANUAL | GPIO_DIR_IN | GPIO_ENAQ_ON | GPIO_PDPU_PULLDOWN | GPIO_PPEN_PUSHPULL;
 		gpio_sync_pin_state(p, id);
 	}

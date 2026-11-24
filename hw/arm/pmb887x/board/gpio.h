@@ -7,6 +7,7 @@ void pmb887x_board_gpio_init_pull_resistors(DeviceState *gpio);
 
 void pmb887x_gpio_connect(const char *output_spec, const char *input_spec);
 void pmb887x_gpio_connect_output(const char *output_spec, qemu_irq gpio_in);
+DeviceState *pmb887x_gpio_new_wired_and(qemu_irq output, uint32_t lines);
 void pmb887x_qdev_connect_gpio_out(DeviceState *dev, const char *name, int n, qemu_irq gpio_in);
 qemu_irq pmb887x_gpio_get_input(const char *spec);
 qemu_irq pmb887x_qdev_get_gpio_in(DeviceState *dev, const char *name, int n);

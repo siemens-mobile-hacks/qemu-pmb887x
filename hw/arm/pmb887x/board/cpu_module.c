@@ -5,6 +5,7 @@
 #include "hw/arm/pmb887x/board/gpio.h"
 #include "hw/arm/pmb887x/gen/cpu_modules.h"
 #include "hw/arm/pmb887x/gen/cpu_regs.h"
+#include "hw/arm/pmb887x/gpio.h"
 #include "hw/arm/pmb887x/utils/toml.h"
 #include "tomlc17.h"
 
@@ -73,27 +74,63 @@ DeviceState *pmb887x_new_cpu_module(const char *name) {
 	return dev;
 }
 
-static void pmb887x_cpu_module_post_init(DeviceState *dev, const pmb887x_cpu_module_t *mod) {
-	if (mod->gpios_count > 0) {
-		DeviceState *gpio = qdev_find_recursive(sysbus_get_default(), "GPIO");
-		g_assert(gpio != NULL);
+typedef struct cpu_module_input_net_t cpu_module_input_net_t;
 
-		for (int i = 0; i < mod->gpios_count; i++) {
-			const pmb887x_cpu_module_gpio_t *gpio_link = &mod->gpios[i];
-			char alt_name[16];
-			sprintf(alt_name, "pin_alt%d", gpio_link->alt);
+struct cpu_module_input_net_t {
+	uint32_t pins;
+	uint32_t connected;
+	DeviceState *wired_and;
+};
 
-			if (gpio_link->directions & PMB887X_GPIO_DIR_OUT) {
-				qemu_irq gpio_in = pmb887x_qdev_get_gpio_in(gpio, alt_name, gpio_link->pin);
-				pmb887x_qdev_connect_gpio_out(dev, gpio_link->name, 0, gpio_in);
-			}
+static qemu_irq cpu_module_get_input(DeviceState *dev, GHashTable *nets, const pmb887x_cpu_module_gpio_t *gpio_link) {
+	qemu_irq dev_in = pmb887x_qdev_get_gpio_in(dev, gpio_link->name, 0);
+	cpu_module_input_net_t *net = g_hash_table_lookup(nets, gpio_link->name);
+	if (!net || net->pins == 1)
+		return dev_in;
 
-			if (gpio_link->directions & PMB887X_GPIO_DIR_IN) {
-				qemu_irq dev_in = pmb887x_qdev_get_gpio_in(dev, gpio_link->name, 0);
-				pmb887x_qdev_connect_gpio_out(gpio, alt_name, gpio_link->pin, dev_in);
-			}
+	if (!net->wired_and)
+		net->wired_and = pmb887x_gpio_new_wired_and(dev_in, net->pins);
+	return qdev_get_gpio_in(net->wired_and, net->connected++);
+}
+
+static void cpu_module_connect_gpios(DeviceState *dev, const pmb887x_cpu_module_t *mod) {
+	DeviceState *gpio = qdev_find_recursive(sysbus_get_default(), "GPIO");
+	g_assert(gpio != NULL);
+
+	g_autoptr(GHashTable) nets = g_hash_table_new_full(g_str_hash, g_str_equal, NULL, g_free);
+	for (int i = 0; i < mod->gpios_count; i++) {
+		const pmb887x_cpu_module_gpio_t *gpio_link = &mod->gpios[i];
+		bool is_pulled_input = (gpio_link->directions & PMB887X_GPIO_DIR_IN) && gpio_link->pull != PMB887X_GPIO_PULL_NONE;
+		if (!is_pulled_input)
+			continue;
+		cpu_module_input_net_t *net = g_hash_table_lookup(nets, gpio_link->name);
+		if (!net) {
+			net = g_new0(cpu_module_input_net_t, 1);
+			g_hash_table_insert(nets, (gpointer) gpio_link->name, net);
+		}
+		net->pins++;
+	}
+
+	for (int i = 0; i < mod->gpios_count; i++) {
+		const pmb887x_cpu_module_gpio_t *gpio_link = &mod->gpios[i];
+		char alt_name[16];
+		sprintf(alt_name, "pin_alt%d", gpio_link->alt);
+
+		if (gpio_link->directions & PMB887X_GPIO_DIR_OUT) {
+			qemu_irq gpio_in = pmb887x_qdev_get_gpio_in(gpio, alt_name, gpio_link->pin);
+			pmb887x_qdev_connect_gpio_out(dev, gpio_link->name, 0, gpio_in);
+		}
+
+		if (gpio_link->directions & PMB887X_GPIO_DIR_IN) {
+			pmb887x_qdev_connect_gpio_out(gpio, alt_name, gpio_link->pin, cpu_module_get_input(dev, nets, gpio_link));
+			pmb887x_gpio_set_input_pull(gpio, gpio_link->pin, gpio_link->alt, gpio_link->pull);
 		}
 	}
+}
+
+static void pmb887x_cpu_module_post_init(DeviceState *dev, const pmb887x_cpu_module_t *mod) {
+	if (mod->gpios_count > 0)
+		cpu_module_connect_gpios(dev, mod);
 
 	if (mod->dma_count > 0) {
 		DeviceState *dmac = qdev_find_recursive(sysbus_get_default(), "DMAC");

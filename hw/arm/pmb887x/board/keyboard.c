@@ -1,17 +1,18 @@
 #include "hw/arm/pmb887x/board/keyboard.h"
-#include "hw/arm/pmb887x/board/board.h"
-#include "hw/arm/pmb887x/board/gpio.h"
 
 #include "hw/arm/pmb887x/utils/toml.h"
 #include "tomlc17.h"
-#include "hw/core/irq.h"
-#include "qapi/qapi-types-ui.h"
-#include "qemu/error-report.h"
+#include "hw/core/qdev-properties.h"
+#include "qobject/qlist.h"
 
-static const struct {
+typedef struct keyboard_key_t keyboard_key_t;
+
+struct keyboard_key_t {
 	const char *name;
 	QKeyCode qcode;
-} keyboard_map[] = {
+};
+
+static const keyboard_key_t keyboard_map[] = {
 	{ "NAV_UP", Q_KEY_CODE_UP },
 	{ "NAV_RIGHT", Q_KEY_CODE_RIGHT },
 	{ "NAV_CENTER", Q_KEY_CODE_KP_ENTER },
@@ -63,92 +64,72 @@ static const struct {
 };
 
 bool pmb887x_board_find_keycode(const char *name, QKeyCode *qcode) {
-	pmb887x_board_t *board = pmb887x_board();
-
 	for (size_t i = 0; i < ARRAY_SIZE(keyboard_map); i++) {
-		if (strcmp(name, keyboard_map[i].name) == 0 && board->keymap[keyboard_map[i].qcode]) {
+		if (strcmp(name, keyboard_map[i].name) == 0) {
 			*qcode = keyboard_map[i].qcode;
 			return true;
 		}
 	}
-
 	return false;
 }
 
-static bool keyboard_connect_key_to_gpio(DeviceState *keypad, const char *name, qemu_irq input) {
-	bool found = false;
-
+static size_t keyboard_append_key_codes(QList *codes, const char *name, toml_datum_t where) {
+	size_t count = 0;
 	for (size_t i = 0; i < ARRAY_SIZE(keyboard_map); i++) {
-		if (strcmp(name, keyboard_map[i].name) != 0)
-			continue;
-		pmb887x_qdev_connect_gpio_out(keypad, "KEY", keyboard_map[i].qcode, input);
-		found = true;
+		if (strcmp(name, keyboard_map[i].name) == 0) {
+			qlist_append_int(codes, keyboard_map[i].qcode);
+			count++;
+		}
 	}
-
-	return found;
+	if (count == 0)
+		toml_fail(where, "unknown key '%s'", name);
+	return count;
 }
 
-void pmb887x_board_keyboard_connect_gpios(DeviceState *keypad) {
-	pmb887x_board_t *board = pmb887x_board();
-	toml_datum_t table = toml_table_get(board->config, TOML_TABLE, "keyboard.gpio", false);
+static void keyboard_add_contacts(QList *codes, QList *rows, QList *columns, const char *name, toml_datum_t contact) {
+	if (contact.u.arr.size != 2)
+		toml_fail(contact, "key '%s' must be [out, in]", name);
+	uint32_t row = toml_array_get_uint32(contact, 0, 0, true);
+	uint32_t column = toml_array_get_uint32(contact, 1, 0, true);
 
-	if (table.type == TOML_UNKNOWN)
-		return;
-
-	for (int i = 0; i < table.u.tab.size; i++) {
-		const char *key_name = table.u.tab.key[i];
-		toml_datum_t connections = toml_table_get(table, TOML_ARRAY, key_name, true);
-
-		for (int j = 0; j < connections.u.arr.size; j++) {
-			toml_datum_t config = toml_array_get(connections, TOML_TABLE, j, true);
-			const char *target = toml_table_get_string(config, "target", NULL, true);
-			qemu_irq input = pmb887x_gpio_get_input(target);
-
-			if (toml_table_get_bool(config, "inverted", false, false))
-				input = qemu_irq_invert(input);
-			if (!keyboard_connect_key_to_gpio(keypad, key_name, input)) {
-				error_report("Unknown key '%s' in keyboard GPIO config", key_name);
-				exit(EXIT_FAILURE);
-			}
-		}
+	size_t count = keyboard_append_key_codes(codes, name, contact);
+	for (size_t i = 0; i < count; i++) {
+		qlist_append_int(rows, row);
+		qlist_append_int(columns, column);
 	}
 }
 
-void pmb887x_board_keymap_init(void) {
-	pmb887x_board_t *board = pmb887x_board();
+void pmb887x_board_key_matrix_configure(DeviceState *dev, toml_datum_t table) {
+	toml_datum_t keys = toml_table_get(table, TOML_TABLE, "keys", true);
+	QList *codes = qlist_new();
+	QList *rows = qlist_new();
+	QList *columns = qlist_new();
 
-	toml_datum_t table = toml_table_get(board->config, TOML_TABLE, "keyboard", false);
-	if (table.type == TOML_UNKNOWN)
-		return;
-	for (int i = 0; i < table.u.tab.size; i++) {
-		const char *key_name = table.u.tab.key[i];
-		if (strcmp(key_name, "gpio") == 0)
-			continue;
+	for (int i = 0; i < keys.u.tab.size; i++) {
+		const char *name = keys.u.tab.key[i];
+		toml_datum_t value = toml_table_get(keys, TOML_ARRAY, name, true);
+		bool has_several_contacts = value.u.arr.size > 0 && value.u.arr.elem[0].type == TOML_ARRAY;
 
-		uint32_t keycode = 0;
-		toml_datum_t arr = toml_table_get(table, TOML_ARRAY, key_name, true);
-		if (arr.u.arr.size < 2) {
-			warn_report("Invalid key '%s' board config!", key_name);
+		if (!has_several_contacts) {
+			keyboard_add_contacts(codes, rows, columns, name, value);
 			continue;
 		}
-
-		uint32_t kp_in = toml_array_get_uint32(arr, 0, 0, true);
-		keycode |= 1 << kp_in;
-
-		for (int j = 1; j < arr.u.arr.size; j++) {
-			uint32_t kp_out = toml_array_get_uint32(arr, j, 0, true);
-			keycode |= 1 << (8 + kp_out);
-		}
-
-		bool found = false;
-		for (size_t j = 0; j < ARRAY_SIZE(keyboard_map); j++) {
-			if (strcmp(key_name, keyboard_map[j].name) == 0) {
-				board->keymap[keyboard_map[j].qcode] = keycode;
-				found = true;
-			}
-		}
-
-		if (!found)
-			warn_report("Unknown key '%s' in board config!", key_name);
+		for (int j = 0; j < value.u.arr.size; j++)
+			keyboard_add_contacts(codes, rows, columns, name, toml_array_get(value, TOML_ARRAY, j, true));
 	}
+	qdev_prop_set_array(dev, "key-codes", codes);
+	qdev_prop_set_array(dev, "key-rows", rows);
+	qdev_prop_set_array(dev, "key-columns", columns);
+}
+
+void pmb887x_board_key_switch_configure(DeviceState *dev, toml_datum_t table) {
+	const char *name = toml_table_get_string(table, "key", NULL, true);
+	uint32_t level = toml_table_get_uint32(table, "level", 0, true);
+	if (level > 1)
+		toml_fail(table, "key switch level must be 0 or 1");
+
+	QList *codes = qlist_new();
+	keyboard_append_key_codes(codes, name, table);
+	qdev_prop_set_array(dev, "key-codes", codes);
+	qdev_prop_set_bit(dev, "level", level);
 }

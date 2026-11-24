@@ -10,6 +10,7 @@
 #include "hw/core/split-irq.h"
 #include "hw/core/qdev.h"
 #include "hw/core/qdev-properties.h"
+#include "qapi/error.h"
 #include "qemu/error-report.h"
 #include "qobject/qlist.h"
 
@@ -107,8 +108,22 @@ void pmb887x_gpio_connect_output(const char *output_spec, qemu_irq gpio_in) {
 	pmb887x_qdev_connect_gpio_out(dev, name, n, gpio_in);
 }
 
+DeviceState *pmb887x_gpio_new_wired_and(qemu_irq output, uint32_t lines) {
+	DeviceState *wired_and = qdev_new("wired-and");
+	qdev_prop_set_uint32(wired_and, "num-lines", lines);
+	qdev_realize_and_unref(wired_and, NULL, &error_fatal);
+	qdev_connect_gpio_out(wired_and, 0, output);
+	return wired_and;
+}
+
 void pmb887x_gpio_connect(const char *output_spec, const char *input_spec) {
-	pmb887x_gpio_connect_output(output_spec, pmb887x_gpio_get_input(input_spec));
+	qemu_irq input = pmb887x_gpio_get_input(input_spec);
+
+	if (strcmp(output_spec, "GND") == 0) {
+		qemu_set_irq(input, 0);
+	} else {
+		pmb887x_gpio_connect_output(output_spec, input);
+	}
 }
 
 void pmb887x_board_gpio_init_pull_resistors(DeviceState *gpio) {

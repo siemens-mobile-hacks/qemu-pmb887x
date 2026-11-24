@@ -1,7 +1,6 @@
 #include "hw/arm/pmb887x/board/board.h"
 
 #include "hw/arm/pmb887x/board/gpio.h"
-#include "hw/arm/pmb887x/board/keyboard.h"
 #include "hw/arm/pmb887x/gen/cpu_regs.h"
 #include "hw/arm/pmb887x/utils/toml.h"
 #include "tomlc17.h"
@@ -70,7 +69,6 @@ void pmb887x_board_init(const char *config_file) {
 	board->cpu_uid[1] = toml_table_get_uint32(board->config, "board.cpu.uid1", default_cpu_id[board->cpu].uid1, false);
 	board->cpu_uid[2] = toml_table_get_uint32(board->config, "board.cpu.uid2", default_cpu_id[board->cpu].uid2, false);
 
-	pmb887x_board_keymap_init();
 	pmb887x_board_gpio_init();
 }
 
