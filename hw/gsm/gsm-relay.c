@@ -45,6 +45,9 @@
 #include "system/system.h"
 #include "hw/gsm/gsm-bts.h"
 
+#define GSM_RELAY_TCH_TS 2           /* the TCH/F of a call */
+#define GSMTAP_CHANNEL_TCH_F 0x09
+
 #define GSM48_PD_CC 0x03
 #define GSM48_PD_MM 0x05
 #define GSM48_PD_RR 0x06
@@ -81,7 +84,7 @@ enum { VNB_MT_NONE, VNB_MT_PAGING, VNB_MT_DELIVERED, VNB_MT_FAILED };
 #define VNB_CC_N 4
 #define VNB_TR_N 16
 #define VNB_SP_N 64
-#define SP_HIGH 32                 /* downlink speech frames kept at most (pacing guard) */
+#define SP_HIGH 48                 /* downlink speech frames kept at most (pacing guard); above relay.py's lead of 40 */
 #define VNB_SP_BYTES 33
 #define VNB_SU_N 32
 enum { VNB_CC_SETUP = 1, VNB_CC_ALERT, VNB_CC_CONNECT, VNB_CC_DISC };
@@ -219,6 +222,9 @@ typedef struct {
 } Bridge;
 
 struct GSMRelay {
+    GSMBts *bts;
+    CharFrontend chr;
+    Notifier done;
     VNet net;
     VTch tch;
     Bridge br;
@@ -433,7 +439,7 @@ static void vn_cp(VNet *n, uint8_t ti_pd, uint8_t type, const uint8_t *rp, size_
 }
 
 static void vn_deliver(VNet *n) {
-    uint8_t rp[6 + VN_SMS_MAX];
+    uint8_t rp[7 + VN_SMS_MAX];
     size_t o = 0;
     rp[o++] = 0x01;                     /* RP-DATA network -> MS */
     rp[o++] = 0x42;                     /* RP-MR */
@@ -607,15 +613,21 @@ static void vn_cc_clear(VNet *n) {
         vn_release(n);
 }
 
+/* a call's paging ends (cancelled, unanswered): the counter is shared, so an
+ * SMS that was paging when the call came pages afresh */
+static void vn_cc_page_end(VNet *n) {
+    n->cc = CC_NULL;
+    n->cc_bridge = false;
+    n->page_left = n->sms_pending && n->paging ? VN_PAGE_BLOCKS : 0;
+}
+
 static void vn_cc_net_disc(VNet *n, uint8_t cause) {
     uint8_t ie[3] = { 2, 0xE0, (uint8_t) (0x80 | cause) };
     switch (n->cc) {
         case CC_NULL: case CC_DISC: case CC_REL:
             return;
         case CC_MT_PAGE:
-            n->page_left = 0;
-            n->cc = CC_NULL;
-            n->cc_bridge = false;
+            vn_cc_page_end(n);
             return;
     }
     vn_cc_send(n, 0x25, ie, sizeof(ie));                    /* DISCONNECT */
@@ -845,17 +857,14 @@ static void vn_cc_poll(VNet *n) {
     if (n->cc_bridge && !b->bridge && n->cc != CC_NULL) {   /* relay gone */
         n->cc_up_disc = true;
         if (n->cc == CC_MT_PAGE) {
-            n->page_left = 0;
-            n->cc = CC_NULL;
-            n->cc_bridge = false;
+            vn_cc_page_end(n);
         } else {
             vn_cc_net_disc(n, 41);
         }
     }
     if (n->cc == CC_MT_PAGE && n->page_left == 0 && !n->active) {   /* no paging response */
         vn_cc_up(n, VNB_CC_DISC, 18);
-        n->cc = CC_NULL;
-        n->cc_bridge = false;
+        vn_cc_page_end(n);
     }
     if (n->cc_tev != CT_NONE && (int32_t) (n->clk - n->cc_t) >= 0) {
         uint8_t ev = n->cc_tev;
@@ -1293,8 +1302,12 @@ static void br_input(Bridge *b, VnBox *x, const uint8_t *d, int n) {
         while (b->rxn >= 2 && b->rxn >= 2 + b->rx[1]) {
             int len = b->rx[1];
             const uint8_t *p = &b->rx[2];
-            if (b->rx[0] == 'D' && len >= 1 && p[0] >= 2 && p[0] <= 12 && len >= 1 + p[0] &&
-                len - 1 - p[0] <= VN_SMS_MAX && b->dn < BR_DQ) {
+            bool sms = b->rx[0] == 'D' && len >= 1 && p[0] >= 2 && p[0] <= 12 && len >= 1 + p[0] &&
+                len - 1 - p[0] <= VN_SMS_MAX;
+            if (sms && b->dn == BR_DQ) {
+                uint8_t st = VNB_MT_FAILED;     /* no room: the sender hears it failed */
+                br_put(b, 'R', &st, 1);
+            } else if (sms) {
                 BrSms *s = &b->dq[(b->dh + b->dn) % BR_DQ];
                 memset(s->oa, 0, sizeof(s->oa));
                 memcpy(s->oa, p + 1, p[0]);
@@ -1636,7 +1649,7 @@ static void gsm_relay_flush(GSMBts *bts) {
         b->txn = 0;
         return;
     }
-    sent = qemu_chr_fe_write(&bts->relay_chr, b->tx, b->txn);
+    sent = qemu_chr_fe_write(&bts->relay_core->chr, b->tx, b->txn);
     if (sent <= 0)
         return;
     b->txn -= sent;
@@ -1673,6 +1686,8 @@ static void gsm_relay_event(void *opaque, QEMUChrEvent event) {
             info_report("gsm-bts relay: connected");
             br_connected(&r->br);
             r->br.tr_r = r->net.box.tr_w;                   /* old trace entries are not news */
+            r->net.box.su_r = r->net.box.su_w;              /* nor speech and call events of the old link */
+            r->net.box.up_r = r->net.box.up_w;
             break;
         case CHR_EVENT_CLOSED:
             info_report("gsm-bts relay: disconnected");
@@ -1685,17 +1700,17 @@ static void gsm_relay_event(void *opaque, QEMUChrEvent event) {
 
 /* chardevs are created after -object gsm-bts: connect once the machine is up */
 static void gsm_relay_connect(Notifier *notifier, void *_data) {
-    GSMBts *bts = container_of(notifier, GSMBts, relay_done);
+    GSMRelay *r = container_of(notifier, GSMRelay, done);
+    GSMBts *bts = r->bts;
     Chardev *chr = qemu_chr_find(bts->relay);
-    GSMRelay *r = bts->relay_core;
 
     if (!chr) {
         error_report("gsm-bts: no chardev '%s' for relay", bts->relay);
         exit(1);
     }
-    if (!qemu_chr_fe_init(&bts->relay_chr, chr, &error_fatal))
+    if (!qemu_chr_fe_init(&r->chr, chr, &error_fatal))
         return;
-    qemu_chr_fe_set_handlers(&bts->relay_chr, gsm_relay_can_read, gsm_relay_read, gsm_relay_event, NULL, bts,
+    qemu_chr_fe_set_handlers(&r->chr, gsm_relay_can_read, gsm_relay_read, gsm_relay_event, NULL, bts,
         NULL, true);
     timer_mod(r->timer, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + NANOSECONDS_PER_SECOND / VN_HZ);
 }
@@ -1704,26 +1719,44 @@ void gsm_relay_init(GSMBts *bts) {
     GSMRelay *r;
 
     r = g_new0(GSMRelay, 1);
+    r->bts = bts;
     r->net.bts = bts;
     vn_link_reset(&r->net.l[0], 0);
     vn_link_reset(&r->net.l[1], 3);
     bts->relay_core = r;
     r->timer = timer_new_ns(QEMU_CLOCK_VIRTUAL, gsm_relay_tick, bts);
-    bts->relay_done.notify = gsm_relay_connect;
-    qemu_add_machine_init_done_notifier(&bts->relay_done);
+    r->done.notify = gsm_relay_connect;
+    qemu_add_machine_init_done_notifier(&r->done);
 }
 
 void gsm_relay_cleanup(GSMBts *bts) {
     GSMRelay *r = bts->relay_core;
 
+    g_free(bts->relay);
+    bts->relay = NULL;
     if (!r)
         return;
-    if (bts->relay_done.notify)
-        qemu_remove_machine_init_done_notifier(&bts->relay_done);
-    qemu_chr_fe_deinit(&bts->relay_chr, false);
+    qemu_remove_machine_init_done_notifier(&r->done);
+    qemu_chr_fe_deinit(&r->chr, false);
     timer_free(r->timer);
     g_free(r);
     bts->relay_core = NULL;
+}
+
+/* relay=<chardev> */
+static char *gsm_relay_get(Object *obj, Error **_errp) {
+    return g_strdup(GSM_BTS(obj)->relay);
+}
+
+static void gsm_relay_set(Object *obj, const char *value, Error **_errp) {
+    GSMBts *bts = GSM_BTS(obj);
+
+    g_free(bts->relay);
+    bts->relay = g_strdup(value);
+}
+
+void gsm_relay_class_init(ObjectClass *klass) {
+    object_class_property_add_str(klass, "relay", gsm_relay_get, gsm_relay_set);
 }
 
 void gsm_relay_rach(GSMBts *bts, uint8_t ra) {
@@ -1736,7 +1769,7 @@ void gsm_relay_rach(GSMBts *bts, uint8_t ra) {
 bool gsm_relay_ccch(GSMBts *bts, uint8_t block[GSM_XCCH_BLOCK_BYTES]) {
     VNet *n = &bts->relay_core->net;
 
-    if (!n->page_left || !n->mi[0] || n->active)
+    if (bts->ccch_count || !n->page_left || !n->mi[0] || n->active)  /* gsm-bts's own CCCH queue goes first */
         return false;
     vn_paging(n, block);
     if (getenv("GSM_RELAY_DEBUG"))

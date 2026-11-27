@@ -285,7 +285,16 @@ static void sccu_io_write(void *opaque, hwaddr haddr, uint64_t value, unsigned s
 				timer_mod(p->cal_timer, qemu_clock_get_ns(QEMU_CLOCK_VIRTUAL) + duration);
 			}
 
-			if ((value & SCCU_SLPCTRL_SLPEN) && !p->enabled)
+			/*
+			 * PMB887X-WEB UPSTREAM FIX: drop once upstream has it.
+			 * A CPU woken before the sleep timer ran out (by another
+			 * interrupt, or in the PREWUP ticks) finds the old sleep still
+			 * running; firmware never sends SLPSTP, it writes SLPEN again
+			 * and spins with IRQs off until GSMCLK drops. Start the new
+			 * sleep, or GSMCLK stays set for good.
+			 */
+			if ((value & SCCU_SLPCTRL_SLPEN) &&
+				(!p->enabled || (p->sccuclksta & SCCU_SCCUCLKSTA_GSMCLK)))
 				sccu_start_sleep(p);
 
 			if ((value & SCCU_SLPCTRL_SLPSTP)) {

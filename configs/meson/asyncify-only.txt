@@ -7,7 +7,10 @@
 # sd_realize's blk_getlength polls a coroutine), sd.c runs the vCPU's block
 # I/O as a BH on the main loop (sd_wasm_blk_io_bh: all of sd_*/sdbus_*), and the page's
 # eject/insert (wasm_card_bh: QMP, the slot's "inserted" through
-# pmb887x_card_set_inserted; the card assist's held insert, cd_insert_bh).
+# pmb887x_card_set_inserted; the card assist's held insert, cd_insert_bh;
+# qom-set on the assist, ca_*).  A stop while the vCPU waits on that BH runs
+# it from the shutdown's own waits (pause_all_vcpus, qemu_clock_enable under
+# qemu_cleanup/vm_stop).
 __emscripten_environ_constructor
 __main_void
 __pthread_cond_timedwait
@@ -48,6 +51,7 @@ block_job_*
 blockdev_*
 bus_port_connect
 bus_reset_child_foreach
+ca_*
 cd_insert_bh
 cfi_flash_*
 co_*
@@ -84,6 +88,7 @@ monitor_*
 notifier_list_notify
 object_property_set*
 os_*
+pause_all_vcpus
 pl181_reset
 pmb887x_board_*
 pmb887x_card_set_inserted
@@ -103,6 +108,7 @@ qdev_realize*
 qemu_aio_*
 qemu_bh_*
 qemu_cleanup
+qemu_clock_enable
 qemu_co*
 qemu_default_main
 qemu_devices_reset
@@ -131,6 +137,7 @@ sysbus_realize*
 thread_pool_*
 versatile_init
 vm_*
+vm_stop
 vpb_init
 wasm_card_bh
 worker_thread

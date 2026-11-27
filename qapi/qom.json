@@ -1274,8 +1274,9 @@
             '*gsmtap': 'str',
             '*arfcn': 'uint16',
             '*pcs1900': 'bool',
-            '*relay': 'str' } }
+            '*relay': 'str' } }   # PMB887X-WEB FEATURE (relay)
 
+# PMB887X-WEB FEATURE (card assist), to the end of the struct
 ##
 # @Pmb887xCardAssistProperties:
 #
@@ -1370,7 +1371,7 @@
     'monitor-hmp',
     'monitor-qmp',
     'pef-guest',
-    'pmb887x-card-assist',
+    'pmb887x-card-assist',   # PMB887X-WEB FEATURE (card assist)
     { 'name': 'pr-manager-helper',
       'if': 'CONFIG_LINUX' },
     'qtest',
@@ -1452,7 +1453,7 @@
                                       'if': 'CONFIG_POSIX' },
       'monitor-hmp':                'MonitorHMPProperties',
       'monitor-qmp':                'MonitorQMPProperties',
-      'pmb887x-card-assist':        'Pmb887xCardAssistProperties',
+      'pmb887x-card-assist':        'Pmb887xCardAssistProperties',   # PMB887X-WEB FEATURE (card assist)
       'pr-manager-helper':          { 'type': 'PrManagerHelperProperties',
                                       'if': 'CONFIG_LINUX' },
       'qtest':                      'QtestProperties',

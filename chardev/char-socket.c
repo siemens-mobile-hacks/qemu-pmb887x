@@ -1129,6 +1129,7 @@ static void qemu_chr_socket_connected(QIOTask *task, void *opaque)
     if (qio_task_propagate_error(task, &err)) {
         tcp_chr_change_state(s, TCP_CHARDEV_STATE_DISCONNECTED);
         /*
+         * PMB887X-WEB UPSTREAM FIX: drop once upstream has it.
          * Nothing to unregister: the yank function is registered in
          * tcp_chr_new_client() only (5c102ac9f1), which a failed connect never
          * reached; unregistering it here aborted every failed reconnect.

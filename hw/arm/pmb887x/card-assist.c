@@ -69,6 +69,7 @@
 #include "accel/tcg/cpu-loop.h"
 #include "system/memory.h"
 #include "system/address-spaces.h"
+#include "system/reset.h"
 
 #include "hw/arm/pmb887x/gen/cpu_regs.h"
 #include "hw/arm/pmb887x/card-assist.h"
@@ -126,6 +127,7 @@ static struct {
 	uint32_t saved_sp;
 	uint32_t ret_sp;		/* SP the injected call comes back with */
 	uint32_t gbs_send;		/* GBS_SendMessage (bit 0 = Thumb), 0 not looked for, 1 not found */
+	bool unmount;			/* pmb887x_card_unmount() checked it: the hook sends "Eject card" */
 	bool hide;				/* removed, the firmware has not seen it yet */
 	bool absent_seen;		/* a command failed while hidden */
 	SDBus *bus;				/* the bus the firmware talks to the card on */
@@ -176,6 +178,7 @@ static void cd_publish(void) {
 /* ---------------- goals ---------------- */
 
 static void cd_hook(CPUARMState *env, uintptr_t ra);
+static bool cd_ready(void);
 
 static void cd_arm(void) {
 	if (cd.state == CD_IDLE) {
@@ -216,7 +219,9 @@ static void cd_insert_bh(void *opaque) {
 		error_report_err(err);
 		return;
 	}
-	cd_set_goal(CD_WANT_IN);
+	if (cd_ready())
+		cd_set_goal(CD_WANT_IN);
+	cd_publish();
 }
 
 static void cd_release_insert(void) {
@@ -548,14 +553,13 @@ static void cd_hook_idle(CPUState *cs) {
 	}
 }
 
-static void cd_hook(CPUARMState *env, uintptr_t ra) {
+static void cd_hook_locked(CPUARMState *env, uintptr_t ra) {
 	CPUState *cs = env_cpu(env);
 
 	if (env->thumb != (cd.hook & 1))
 		return;
 
-	if (cd.state == CD_CALL && cd.gbs_send > 1 &&
-			qatomic_read(&pmb887x_card_unmount_state) == 1) {
+	if (cd.state == CD_CALL && cd.unmount && cd.gbs_send > 1) {
 		/* clean unmount: GBS_SendMessage(0x4100, 0x18, 0, 4, 0), as "Eject card" */
 		cpu_restore_state(cs, ra);
 		for (int i = 0; i < 4; i++)
@@ -565,6 +569,7 @@ static void cd_hook(CPUARMState *env, uintptr_t ra) {
 		cd.saved_sp = env->regs[13];
 		cd.ret_sp = env->regs[13] - 8;
 		if (!cd_wr(cs, cd.ret_sp, 0)) {
+			cd.unmount = false;
 			qatomic_set(&pmb887x_card_unmount_state, 3);
 			return;
 		}
@@ -577,6 +582,7 @@ static void cd_hook(CPUARMState *env, uintptr_t ra) {
 		env->regs[15] = cd.gbs_send & ~1;
 		env->thumb = cd.gbs_send & 1;
 		cd.state = CD_RETURN;
+		cd.unmount = false;
 		qatomic_set(&pmb887x_card_unmount_state, 2);
 		cpu_loop_exit(cs);
 	}
@@ -646,7 +652,7 @@ static void cd_hook(CPUARMState *env, uintptr_t ra) {
 		env->regs[12] = cd.saved[4];
 		env->regs[13] = cd.saved_sp;
 		env->regs[14] = cd.saved[5];
-		if (cd.want != CD_WANT_NONE || qatomic_read(&pmb887x_card_unmount_state) == 1)
+		if (cd.want != CD_WANT_NONE || cd.unmount)
 			cd.state = CD_CALL;		/* next tick: check again */
 		else {
 			cd.state = CD_IDLE;
@@ -655,12 +661,28 @@ static void cd_hook(CPUARMState *env, uintptr_t ra) {
 	}
 }
 
+/*
+ * The goals and the unmount are set on the main loop under the BQL; the hook
+ * runs on the vCPU and takes it too, so neither sees the other half-done.
+ * (cpu_loop_exit's longjmp gives it back.)
+ */
+static void cd_hook(CPUARMState *env, uintptr_t ra) {
+	bool locked = bql_locked();
+
+	if (!locked)
+		bql_lock();
+	cd_hook_locked(env, ra);
+	if (!locked)
+		bql_unlock();
+}
+
 /* can the firmware be told? (finds the card server and the hook point) */
 static bool cd_ready(void) {
 	if (!first_cpu)
 		return false;
-	/* (again each time: the enabled timers change; not while a call is under way) */
-	if (cd.state != CD_RETURN && !cd_find()) {
+	/* (again each time, the enabled timers change; not while the hook is armed
+	 * on the routine found before) */
+	if (cd.state == CD_IDLE && !cd_find()) {
 		CA_LOG("no CARDSRV timer, the firmware is not told");
 		return false;
 	}
@@ -743,6 +765,7 @@ void pmb887x_card_unmount(void) {
 		qatomic_set(&pmb887x_card_unmount_state, 3);
 		return;
 	}
+	cd.unmount = true;
 	qatomic_set(&pmb887x_card_unmount_state, 1);
 	cd_arm();
 }
@@ -829,6 +852,22 @@ static void ca_set_debug(Object *obj, bool value, Error **errp) {
 	PMB887X_CARD_ASSIST(obj)->debug = value;
 }
 
+/* a reboot ends whatever the firmware was being told: the new one scans the slot itself */
+static void ca_reset(void *opaque) {
+	if (cd.state != CD_IDLE)
+		cd_disarm(first_cpu);
+	cd.state = CD_IDLE;
+	cd.want = CD_WANT_NONE;
+	cd.hide = false;
+	cd.timer_wait = false;
+	if (cd.unmount) {
+		cd.unmount = false;
+		qatomic_set(&pmb887x_card_unmount_state, 3);
+	}
+	cd_release_insert();
+	cd_publish();
+}
+
 static void ca_complete(UserCreatable *uc, Error **errp) {
 	CardAssist *s = PMB887X_CARD_ASSIST(uc);
 
@@ -839,6 +878,7 @@ static void ca_complete(UserCreatable *uc, Error **errp) {
 	ca = s;
 	s->power_timer = timer_new_ns(QEMU_CLOCK_VIRTUAL, cd_power_poll, s);
 	sdbus_command_observer = cd_observe;
+	qemu_register_reset(ca_reset, NULL);
 	cd_publish();
 }
 

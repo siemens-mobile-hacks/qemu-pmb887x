@@ -694,6 +694,26 @@ void bql_lock_impl(const char *file, int line)
     qatomic_dec(&bql_wanted);
 }
 
+/*
+ * PMB887X-WEB WASM PORT: give the BQL up for a wait and take it back as it
+ * was (hw/sd/sd.c sd_blk_io).  A plain bql_unlock()/bql_lock() would turn a
+ * deferred hold, which the MMIO path that found it held will not give back,
+ * into an ordinary one that nobody gives back.
+ */
+bool bql_unlock_for_wait(void)
+{
+    bool lazy = bql_mmio_lazy;
+
+    bql_unlock();
+    return lazy;
+}
+
+void bql_lock_after_wait(bool lazy)
+{
+    bql_lock();
+    bql_mmio_lazy = lazy;
+}
+
 void bql_unlock(void)
 {
     g_assert(bql_locked());
@@ -777,7 +797,16 @@ void pause_all_vcpus(void)
     replay_mutex_unlock();
 
     while (!all_vcpus_paused()) {
+#ifdef __EMSCRIPTEN__
+        /*
+         * PMB887X-WEB WASM PORT: a vCPU may be waiting for a main-loop BH
+         * (hw/sd/sd.c sd_blk_io), which only this thread can run
+         */
+        qemu_cond_timedwait_bql(&qemu_pause_cond, 10);
+        aio_poll(qemu_get_aio_context(), false);
+#else
         qemu_cond_wait(&qemu_pause_cond, &bql);
+#endif
         /* FIXME: is this needed? */
         CPU_FOREACH(cpu) {
             qemu_cpu_kick(cpu);

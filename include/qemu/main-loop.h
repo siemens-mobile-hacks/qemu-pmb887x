@@ -317,6 +317,14 @@ void bql_unlock_mmio(void);
 bool bql_wanted_by_other(void);
 void bql_release_lazy(void);
 
+/*
+ * PMB887X-WEB WASM PORT: bql_unlock() for a wait, returning what
+ * bql_lock_after_wait() needs to take the BQL back as it was held, a
+ * deferred hold included.
+ */
+bool bql_unlock_for_wait(void);
+void bql_lock_after_wait(bool lazy);
+
 #ifdef __EMSCRIPTEN__
 /**
  * qemu_main_loop_wake: wake the main loop's futex wait.

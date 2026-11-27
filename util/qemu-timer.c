@@ -203,6 +203,18 @@ void qemu_clock_enable(QEMUClockType type, bool enabled)
         qemu_clock_notify(type);
     } else if (!enabled && old) {
         QLIST_FOREACH(tl, &clock->timerlists, list) {
+#ifdef __EMSCRIPTEN__
+            /*
+             * PMB887X-WEB WASM PORT: a timer on the vCPU thread may be
+             * waiting for a main-loop BH (hw/sd/sd.c sd_blk_io); on the main
+             * thread, run them meanwhile
+             */
+            while (!qemu_event_is_set(&tl->timers_done_ev) &&
+                   qemu_get_current_aio_context() == qemu_get_aio_context()) {
+                aio_poll(qemu_get_aio_context(), false);
+                g_usleep(1000);
+            }
+#endif
             qemu_event_wait(&tl->timers_done_ev);
         }
     }

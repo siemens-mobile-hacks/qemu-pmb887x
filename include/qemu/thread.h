@@ -203,6 +203,7 @@ void qemu_event_init(QemuEvent *ev, bool init);
 void qemu_event_set(QemuEvent *ev);
 void qemu_event_reset(QemuEvent *ev);
 void qemu_event_wait(QemuEvent *ev);
+bool qemu_event_is_set(QemuEvent *ev);   /* PMB887X-WEB WASM PORT */
 void qemu_event_destroy(QemuEvent *ev);
 
 void qemu_thread_create(QemuThread *thread, const char *name,

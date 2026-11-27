@@ -1,5 +1,8 @@
 system_ss.add(when: 'CONFIG_PL181', if_true: files('pl181.c'))
 system_ss.add(when: 'CONFIG_SD', if_true: files('sd.c', 'core.c'))
+if host_os == 'emscripten'   # PMB887X-WEB WASM PORT
+  system_ss.add(when: 'CONFIG_SD', if_true: files('sd-wasm.c'))
+endif
 system_ss.add(when: 'CONFIG_SD_SLOT', if_true: files('sd-slot.c'))
 system_ss.add(when: 'CONFIG_SDHCI', if_true: files('sdhci.c'))
 system_ss.add(when: 'CONFIG_SDHCI_PCI', if_true: files('sdhci-pci.c'))

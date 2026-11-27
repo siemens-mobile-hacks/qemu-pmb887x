@@ -992,16 +992,17 @@ static uint8_t gsm_bts_ts0_transmit_block(
             return GSMTAP_CHANNEL_BCCH;
         case GSM_BTS_TS0_CCCH:
             /* PMB887X-WEB FEATURE (relay) */
-            if (bts->relay_core && bts->ccch_count == 0 && gsm_relay_ccch(bts, block))
+            if (bts->relay_core && gsm_relay_ccch(bts, block))
                 return GSMTAP_CHANNEL_CCCH;
             gsm_bts_ccch_dequeue(bts, block);
             return GSMTAP_CHANNEL_CCCH;
         case GSM_BTS_TS0_SDCCH:
             /* PMB887X-WEB FEATURE (relay) */
-            if (bts->relay_core)
+            if (bts->relay_core) {
                 gsm_relay_sdcch_tx(bts, block_start, block);
-            else
-                gsm_bts_lapdm_transmit(&bts->lapdm, block);
+                return GSMTAP_CHANNEL_SDCCH4;
+            }
+            gsm_bts_lapdm_transmit(&bts->lapdm, block);
             return GSMTAP_CHANNEL_SDCCH4;
         default:
             gsm_bts_sacch_transmit(bts, block);
@@ -1105,10 +1106,11 @@ static void gsm_bts_ts0_uplink_sdcch(
 
     gsm_bts_gsmtap(bts, true, 0, block_start, GSMTAP_CHANNEL_SDCCH4, block, sizeof(block));
     /* PMB887X-WEB FEATURE (relay) */
-    if (bts->relay_core)
+    if (bts->relay_core) {
         gsm_relay_sdcch_rx(bts, block);
-    else
-        gsm_bts_lapdm_handle_frame(&bts->lapdm, block);
+        return;
+    }
+    gsm_bts_lapdm_handle_frame(&bts->lapdm, block);
 }
 
 static void gsm_bts_ts0_uplink(GSMBts *bts, uint32_t frame_number, const GSMUplinkBurst *burst) {
@@ -1258,18 +1260,6 @@ static void gsm_bts_set_gsmtap(Object *obj, const char *value, Error **_errp) {
     bts->gsmtap = g_strdup(value);
 }
 
-/* PMB887X-WEB FEATURE (relay): relay=<chardev> */
-static char *gsm_bts_get_relay(Object *obj, Error **_errp) {
-    return g_strdup(GSM_BTS(obj)->relay);
-}
-
-static void gsm_bts_set_relay(Object *obj, const char *value, Error **_errp) {
-    GSMBts *bts = GSM_BTS(obj);
-
-    g_free(bts->relay);
-    bts->relay = g_strdup(value);
-}
-
 static bool gsm_bts_get_pcs1900(Object *obj, Error **_errp) {
     return GSM_BTS(obj)->pcs1900;
 }
@@ -1300,7 +1290,6 @@ static void gsm_bts_instance_finalize(Object *obj) {
         close(bts->gsmtap_fd);
     g_free(bts->netdev);
     g_free(bts->gsmtap);
-    g_free(bts->relay);   /* PMB887X-WEB FEATURE (relay) */
 }
 
 static void gsm_bts_class_init(ObjectClass *klass, const void *_data) {
@@ -1312,7 +1301,7 @@ static void gsm_bts_class_init(ObjectClass *klass, const void *_data) {
     ucc->complete = gsm_bts_complete;
     object_class_property_add_str(klass, "netdev", gsm_bts_get_netdev, gsm_bts_set_netdev);
     object_class_property_add_str(klass, "gsmtap", gsm_bts_get_gsmtap, gsm_bts_set_gsmtap);
-    object_class_property_add_str(klass, "relay", gsm_bts_get_relay, gsm_bts_set_relay); /* PMB887X-WEB FEATURE (relay) */
+    gsm_relay_class_init(klass);   /* PMB887X-WEB FEATURE (relay): relay=<chardev> */
     object_class_property_add_bool(klass, "pcs1900", gsm_bts_get_pcs1900, gsm_bts_set_pcs1900);
 }
 

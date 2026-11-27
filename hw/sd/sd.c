@@ -53,9 +53,9 @@
 #include "sdmmc-internal.h"
 #include "trace.h"
 #include "crypto/hmac.h"
-#ifdef __EMSCRIPTEN__
-#include "qemu/main-loop.h"
+#ifdef __EMSCRIPTEN__   /* PMB887X-WEB WASM PORT */
 #include "qemu/coroutine-core.h"
+#include "sd-wasm.h"
 #endif
 
 //#define DEBUG_SD 1
@@ -1014,6 +1014,13 @@ static void sd_cardchange(void *opaque, bool load, Error **errp)
         trace_sdcard_ejected();
     }
 
+    /*
+     * PMB887X-WEB WASM PORT: a card its slot let go while sd_blk_io() held
+     * it is still the drive's device, without a bus
+     */
+    if (!qdev_get_parent_bus(dev)) {
+        return;
+    }
     sdbus = SD_BUS(qdev_get_parent_bus(dev));
     sdbus_set_inserted(sdbus, inserted);
     if (inserted) {
@@ -1144,62 +1151,12 @@ static const VMStateDescription sd_vmstate = {
     },
 };
 
-/*
- * PMB887X-WEB WASM PORT (porting necessity): the block layer runs coroutines,
- * which only the main loop thread can (asyncify), and a card controller calls
- * the card from the vCPU thread (MMIO, its transfer timers). There the I/O runs as a BH
- * on the main loop and the vCPU waits for it with the BQL dropped. The main
- * loop may unbind the card meanwhile (sd-slot "inserted"): the card and its
- * BlockBackend are held until the BH is done.
- */
-#ifdef __EMSCRIPTEN__
-typedef struct {
-    SDState *sd;
-    BlockBackend *blk;
-    int64_t addr;
-    int64_t len;
-    bool is_write;
-    int ret;
-    QemuEvent done;
-} SDWasmBlkIO;
-
-static void sd_wasm_blk_io_bh(void *opaque)
-{
-    SDWasmBlkIO *io = opaque;
-
-    io->ret = io->is_write ? blk_pwrite(io->blk, io->addr, io->len, io->sd->data, 0)
-                           : blk_pread(io->blk, io->addr, io->len, io->sd->data, 0);
-    qemu_event_set(&io->done);
-}
-#endif
-
 static int sd_blk_io(SDState *sd, int64_t addr, int64_t len, bool is_write)
 {
 #ifdef __EMSCRIPTEN__
-    /*
-     * not qemu_in_vcpu_thread(): the MCI's transfer timers run on the vCPU
-     * thread outside any CPU (current_cpu NULL)
-     */
+    /* PMB887X-WEB WASM PORT: not from the vCPU thread (sd-wasm.c) */
     if (qemu_coroutine_current_thread_forbidden()) {
-        SDWasmBlkIO io = { .sd = sd, .blk = sd->blk, .addr = addr, .len = len,
-                           .is_write = is_write };
-        bool locked = bql_locked();
-
-        object_ref(OBJECT(sd));
-        blk_ref(io.blk);
-        qemu_event_init(&io.done, false);
-        aio_bh_schedule_oneshot(qemu_get_aio_context(), sd_wasm_blk_io_bh, &io);
-        if (locked) {
-            bql_unlock();
-        }
-        qemu_event_wait(&io.done);
-        if (locked) {
-            bql_lock();
-        }
-        qemu_event_destroy(&io.done);
-        blk_unref(io.blk);
-        object_unref(OBJECT(sd));
-        return io.ret;
+        return sd_wasm_blk_io(OBJECT(sd), sd->blk, addr, len, sd->data, is_write);
     }
 #endif
     return is_write ? blk_pwrite(sd->blk, addr, len, sd->data, 0)
@@ -1210,7 +1167,7 @@ static void sd_blk_read(SDState *sd, uint64_t addr, uint32_t len)
 {
     trace_sdcard_read_block(addr, len);
     addr += sd_part_offset(sd);
-    if (!sd->blk || sd_blk_io(sd, addr, len, false) < 0) {
+    if (!sd->blk || sd_blk_io(sd, addr, len, false) < 0) {   /* PMB887X-WEB WASM PORT */
         fprintf(stderr, "sd_blk_read: read error on host side\n");
     }
 }
@@ -1219,7 +1176,7 @@ static void sd_blk_write(SDState *sd, uint64_t addr, uint32_t len)
 {
     trace_sdcard_write_block(addr, len);
     addr += sd_part_offset(sd);
-    if (!sd->blk || sd_blk_io(sd, addr, len, true) < 0) {
+    if (!sd->blk || sd_blk_io(sd, addr, len, true) < 0) {   /* PMB887X-WEB WASM PORT */
         fprintf(stderr, "sd_blk_write: write error on host side\n");
     }
 }
@@ -2597,7 +2554,7 @@ static size_t sd_do_command(SDState *sd, SDRequest *req,
     int rsplen;
     bool keeps_transfer;
 
-    if (!sd_get_inserted(sd)) {
+    if (!sd_get_inserted(sd)) {     /* PMB887X-WEB WASM PORT: was blk_is_inserted() */
         return 0;
     }
 
@@ -2782,7 +2739,7 @@ static size_t sd_write_data(SDState *sd, const void *buf, size_t length)
     int i;
     const uint8_t *value = buf;
 
-    if (!sd_get_inserted(sd)) {
+    if (!sd_get_inserted(sd)) {     /* PMB887X-WEB WASM PORT: was blk_is_inserted() */
         return length;
     }
 
@@ -2930,7 +2887,7 @@ static size_t sd_read_data(SDState *sd, void *buf, size_t length)
     uint32_t io_len;
     uint8_t *value = buf;
 
-    if (!sd_get_inserted(sd)) {
+    if (!sd_get_inserted(sd)) {     /* PMB887X-WEB WASM PORT: was blk_is_inserted() */
         memset(buf, dummy_byte, length);
         return length;
     }

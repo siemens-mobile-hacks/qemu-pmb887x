@@ -24,8 +24,9 @@
 #include "qemu/coroutine-tls.h"
 
 #include <emscripten/fiber.h>
-#include <emscripten/em_js.h>
+#include <emscripten/em_js.h>   /* PMB887X-WEB WASM PORT, as all the hunks below */
 
+/* PMB887X-WEB WASM PORT: the vCPU thread's ban (coroutine-core.h) */
 static __thread bool co_forbidden_thread;
 
 void qemu_coroutine_forbid_current_thread(void)
@@ -39,7 +40,7 @@ bool qemu_coroutine_current_thread_forbidden(void)
 }
 
 /*
- * QEMU_COSTACK=1: log every distinct JS/wasm call stack at a coroutine
+ * PMB887X-WEB WASM PORT: QEMU_COSTACK=1 logs every distinct JS/wasm call stack at a coroutine
  * switch (Asyncify must instrument exactly these frames; the set feeds
  * -sASYNCIFY_ONLY).  Frames print as wasm-function[N], resolved with the
  * .symbols sidecar.
@@ -126,7 +127,7 @@ CoroutineAction qemu_coroutine_switch(Coroutine *from_, Coroutine *to_,
     CoroutineEmscripten *from = DO_UPCAST(CoroutineEmscripten, base, from_);
     CoroutineEmscripten *to = DO_UPCAST(CoroutineEmscripten, base, to_);
 
-    if (co_forbidden_thread) {
+    if (co_forbidden_thread) {      /* PMB887X-WEB WASM PORT, to the COSTACK log */
         /*
          * Only the frames in configs/meson/asyncify-only.txt can be
          * unwound; a vCPU thread stack (JIT'd TB frames, invoke_*

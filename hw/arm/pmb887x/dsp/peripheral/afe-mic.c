@@ -26,10 +26,18 @@ static bool afe_mic_loaded;
 #define AFE_MIC_LIVE_MAX 2000
 static int16_t afe_mic_live[AFE_MIC_LIVE_SIZE];
 static unsigned int afe_mic_live_head, afe_mic_live_tail;
+static unsigned int afe_mic_live_flush;    /* the producer's ask: drop what waits up to here */
+
+/* the mic stopped: what it said is not for the next call (the ADC may not be reading now) */
+void pmb887x_afe_mic_flush(void) {
+	qatomic_store_release(&afe_mic_live_flush, qatomic_read(&afe_mic_live_tail));
+}
 
 size_t pmb887x_afe_mic_push(const int16_t *samples, size_t count) {
 	unsigned int tail = qatomic_read(&afe_mic_live_tail);
-	unsigned int fill = tail - qatomic_load_acquire(&afe_mic_live_head);
+	unsigned int head = qatomic_load_acquire(&afe_mic_live_head);
+	unsigned int flush = qatomic_read(&afe_mic_live_flush);
+	unsigned int fill = tail - ((int) (flush - head) > 0 ? flush : head);
 	size_t n = 0;
 
 	while (n < count && fill + n < AFE_MIC_LIVE_MAX) {
@@ -42,7 +50,10 @@ size_t pmb887x_afe_mic_push(const int16_t *samples, size_t count) {
 
 static bool afe_mic_live_pop(int16_t *v) {
 	unsigned int head = qatomic_read(&afe_mic_live_head);
+	unsigned int flush = qatomic_load_acquire(&afe_mic_live_flush);
 
+	if ((int) (flush - head) > 0)
+		head = flush;
 	if (qatomic_load_acquire(&afe_mic_live_tail) == head)
 		return false;
 	*v = afe_mic_live[head & (AFE_MIC_LIVE_SIZE - 1)];

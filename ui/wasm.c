@@ -698,6 +698,15 @@ int32_t wasm_gsm_state(void)
  * page says when its WebSocket opens or closes (wasm_gsmrelay_open), which
  * the cell sees as the chardev's OPENED/CLOSED. Byte rings with one
  * producer and one consumer each, like key_ring.
+ *
+ * Every open or close is a new link, even a close and an open the bottom
+ * half sees as one (the page redials within a stall): relay_gen counts
+ * them, and the bottom half answers each new count with CLOSED (if the cell
+ * had a link) and OPENED (if the page has one). Neither link's bytes reach
+ * the other: relay_in is dropped up to relay_in_mark, where it stood at the
+ * page's last open or close; the page takes nothing from relay_out until
+ * the bottom half has caught up (relay_gen_done) and skips what the cell
+ * wrote before it heard CLOSED (relay_out_mark).
  */
 #define RELAY_RING_SIZE 65536   /* power of two */
 #define RELAY_BUF_SIZE  4096    /* the page's staging buffer */
@@ -713,6 +722,10 @@ static uint8_t relay_buf[RELAY_BUF_SIZE];
 static Chardev *relay_chr;
 static QEMUBH *relay_bh;
 static int relay_want_open;     /* what the page asked for */
+static unsigned int relay_gen;          /* the page's opens and closes */
+static unsigned int relay_in_mark;      /* relay_in.tail at the last one */
+static unsigned int relay_gen_done;     /* the last one the cell was told of */
+static unsigned int relay_out_mark;     /* relay_out.tail when it was */
 static bool relay_is_open;      /* what the cell was told (BQL) */
 
 static size_t byte_ring_push(WasmByteRing *r, const uint8_t *data, size_t len)
@@ -760,19 +773,28 @@ static int wasm_gsm_chr_write(Chardev *chr, const uint8_t *buf, int len)
 static void wasm_gsmrelay_bh(void *opaque)
 {
     uint8_t chunk[RELAY_BUF_SIZE];
-    bool open = qatomic_load_acquire(&relay_want_open);
+    unsigned int gen = qatomic_load_acquire(&relay_gen);
     size_t len;
 
     if (!relay_chr) {
         return;
     }
-    if (open != relay_is_open) {
-        relay_is_open = open;
-        if (!open) {
-            /* bytes of the old link are not the new link's */
-            qatomic_store_release(&relay_in.head, qatomic_read(&relay_in.tail));
+    if (gen != qatomic_read(&relay_gen_done)) {
+        unsigned int mark = qatomic_read(&relay_in_mark);
+
+        if ((int) (mark - qatomic_read(&relay_in.head)) > 0) {
+            qatomic_store_release(&relay_in.head, mark);
         }
-        qemu_chr_be_event(relay_chr, open ? CHR_EVENT_OPENED : CHR_EVENT_CLOSED);
+        if (relay_is_open) {
+            relay_is_open = false;
+            qemu_chr_be_event(relay_chr, CHR_EVENT_CLOSED);
+        }
+        qatomic_set(&relay_out_mark, qatomic_read(&relay_out.tail));
+        if (qatomic_read(&relay_want_open)) {
+            relay_is_open = true;
+            qemu_chr_be_event(relay_chr, CHR_EVENT_OPENED);
+        }
+        qatomic_store_release(&relay_gen_done, gen);
     }
     while (relay_is_open) {
         size_t room = qemu_chr_be_can_write(relay_chr);
@@ -837,7 +859,9 @@ void wasm_gsmrelay_open(int32_t open)
     if (!relay_bh) {
         return;
     }
-    qatomic_store_release(&relay_want_open, !!open);
+    qatomic_set(&relay_in_mark, qatomic_read(&relay_in.tail));
+    qatomic_set(&relay_want_open, !!open);
+    qatomic_store_release(&relay_gen, relay_gen + 1);
     qemu_bh_schedule(relay_bh);
 }
 
@@ -845,6 +869,15 @@ void wasm_gsmrelay_open(int32_t open)
 EMSCRIPTEN_KEEPALIVE
 int32_t wasm_gsmrelay_take(void)
 {
+    unsigned int mark;
+
+    if (qatomic_load_acquire(&relay_gen_done) != qatomic_read(&relay_gen)) {
+        return 0;
+    }
+    mark = qatomic_read(&relay_out_mark);
+    if ((int) (mark - qatomic_read(&relay_out.head)) > 0) {
+        qatomic_store_release(&relay_out.head, mark);
+    }
     return byte_ring_pop(&relay_out, relay_buf, sizeof(relay_buf));
 }
 
@@ -882,11 +915,18 @@ int16_t *wasm_mic_buf(void)
     return mic_buf;
 }
 
-/* Exported to JS: hand the ADC @count samples of mic_buf; returns how many it kept. */
+/*
+ * Exported to JS: hand the ADC @count samples of mic_buf; returns how many it
+ * kept. 0 = the mic stopped: what it queued is dropped.
+ */
 EMSCRIPTEN_KEEPALIVE
 int32_t wasm_mic_put(int32_t count)
 {
-    if (count <= 0 || count > MIC_BUF_SAMPLES) {
+    if (count == 0) {
+        pmb887x_afe_mic_flush();
+        return 0;
+    }
+    if (count < 0 || count > MIC_BUF_SAMPLES) {
         return 0;
     }
     return pmb887x_afe_mic_push(mic_buf, count);
