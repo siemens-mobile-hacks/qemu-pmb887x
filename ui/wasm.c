@@ -746,11 +746,15 @@ static size_t byte_ring_pop(WasmByteRing *r, uint8_t *out, size_t max)
 
 static int wasm_gsm_chr_write(Chardev *chr, const uint8_t *buf, int len)
 {
-    /* nothing waits for the page: what does not fit (no page) is dropped */
-    if (relay_is_open) {
-        byte_ring_push(&relay_out, buf, len);
+    /*
+     * No page: dropped. A full ring (a page that has not read for a while)
+     * takes what fits and says so; the cell keeps the rest and its frames
+     * stay whole (gsm_relay_flush).
+     */
+    if (!relay_is_open) {
+        return len;
     }
-    return len;
+    return byte_ring_push(&relay_out, buf, len);
 }
 
 static void wasm_gsmrelay_bh(void *opaque)

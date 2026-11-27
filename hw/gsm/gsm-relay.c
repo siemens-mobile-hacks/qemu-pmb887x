@@ -66,6 +66,7 @@
 #define VN_L3_MAX 251
 #define VN_QUEUE 4
 #define VN_PAGE_BLOCKS (30 * VN_HZ)   /* ticks of paging for an SMS */
+#define VN_SMS_TRIES 3                /* MT channels an SMS gets before it fails */
 #define VN_SMS_MAX 176
 #define VN_HZ 13            /* network clock: ticks a second */
 #define VN_CALL_PAGE (20 * VN_HZ)     /* ticks of paging for an MT call */
@@ -146,6 +147,7 @@ typedef struct {
     uint8_t sms[VN_SMS_MAX];
     uint8_t sms_len;
     bool sms_pending, rp_acked, release_req;
+    uint8_t sms_tries;         /* MT channels that ended with the SMS still pending */
     uint16_t page_left;
     bool mt_bridge, paging;
     uint32_t clk;              /* ticks */
@@ -282,6 +284,14 @@ static void vn_release_now(VNet *n) {
 
 static void vn_cc_lost(VNet *n);
 
+static void vn_sms_fail(VNet *n) {
+    if (n->mt_bridge)
+        n->box.mt_state = VNB_MT_FAILED;
+    n->sms_pending = false;
+    n->paging = false;
+    n->page_left = 0;
+}
+
 static void vn_channel_end_why(VNet *n, uint8_t why) {
     vn_trace(n, 'E', &why, 1);
     n->sp_on = false;
@@ -294,9 +304,15 @@ static void vn_channel_end_why(VNet *n, uint8_t why) {
     n->release_req = false;
     vn_link_reset(&n->l[0], 0);
     vn_link_reset(&n->l[1], 3);
-    if (n->sms_pending && n->mode == VN_MO && n->mi[0]) {
-        n->page_left = VN_PAGE_BLOCKS;
-        n->paging = true;
+    /* an SMS still pending: its own channel failed (retried a few times), or
+     * another channel (an MO SMS, a location update) came between: page again */
+    if (n->sms_pending) {
+        if (!n->mi[0] || (n->mode == VN_MT && ++n->sms_tries >= VN_SMS_TRIES)) {
+            vn_sms_fail(n);
+        } else {
+            n->page_left = VN_PAGE_BLOCKS;
+            n->paging = true;
+        }
     }
     n->mode = VN_IDLE;
 }
@@ -317,8 +333,8 @@ static void vn_channel_start(VNet *n) {
     n->idle = 0;
     n->mode = VN_IDLE;
     n->rp_acked = false;
-    n->page_left = 0;
-    n->paging = false;
+    /* paging (an SMS, a call) is not sent while the channel is up, and goes
+     * on after it: the phone may have come for something else */
     n->tch = false;
     n->tch_go = false;
     n->heard = n->clk;
@@ -511,6 +527,7 @@ static void vn_l3_sms(VNet *n, const uint8_t *m, size_t len) {
                 n->box.stats[0]++;
             } else if (i < rl && i + 1 + rp[i] <= rl && vn_submit_to_deliver(n, &rp[i + 1], rp[i], 0)) {
                 n->sms_pending = true;                      /* no relay: back to the sender */
+                n->sms_tries = 0;
                 n->mt_bridge = false;
             }
             vn_cp(n, back, 0x01, ack, sizeof(ack));         /* CP-DATA (RP-ACK) */
@@ -713,8 +730,19 @@ static void vn_l3_cc(VNet *n, const uint8_t *m, size_t len) {
         }
         return;
     }
-    if (len >= 5 && (mt == 0x25 || mt == 0x2D || mt == 0x2A) && m[2] >= 2)
-        cause = m[4] & 0x7F;
+    if (mt == 0x25 || mt == 0x2D || mt == 0x2A) {
+        /* DISCONNECT: the cause is mandatory LV at m[2]; RELEASE and
+         * RELEASE COMPLETE: optional TLV, IEI 0x08 at m[2]. Octet 3a
+         * (recommendation) follows octet 3 when its extension bit is 0. */
+        size_t c = mt == 0x25 ? 2 : 3;
+        if (mt != 0x25 && (len < 3 || m[2] != 0x08))
+            c = 0;
+        if (c && len > c + 1 && m[c] >= 2) {
+            size_t v = c + 2 + !(m[c + 1] & 0x80);
+            if (v < len && v <= c + m[c])
+                cause = m[v] & 0x7F;
+        }
+    }
     switch (mt) {
         case 0x0F:                                          /* CONNECT ACKNOWLEDGE */
             if (n->cc == CC_MO_CONN)
@@ -883,7 +911,9 @@ static size_t vn_tl(uint8_t *o, uint8_t tag, size_t n) {
 }
 
 static void vn_ss_done(VNet *n, const uint8_t *ucs2, size_t nt) {
-    uint8_t rc[24 + VNB_USSD_A], body[16 + VNB_USSD_A];
+    /* body: three 3-byte tag+length headers, three 3-byte INTEGER/OCTET
+     * fields and the string's own 3-byte header, 21 bytes at most */
+    uint8_t body[21 + VNB_USSD_A], rc[4 + sizeof(body)];
     size_t o = 0, k, inner, seq, rr;
 
     n->ss_wait = false;
@@ -1192,7 +1222,7 @@ static void vn_paging(VNet *n, uint8_t *b) {
 static void vn_poll(VNet *n) {
     VnBox *b = &n->box;
     n->clk++;
-    if (n->page_left)
+    if (n->page_left && !n->active)
         n->page_left--;
     if (n->active && n->tch && (int32_t) (n->clk - n->tch_ul) > 6 * VN_HZ)
         vn_channel_end_why(n, 1);   /* no uplink on the TCH for 6 s */
@@ -1205,10 +1235,7 @@ static void vn_poll(VNet *n) {
     if (n->sms_pending && n->paging && n->page_left == 0) {
         if (getenv("GSM_RELAY_DEBUG"))
             info_report("gsm-bts relay: no paging response, SMS dropped (clk %u)", n->clk);
-        if (n->mt_bridge)
-            b->mt_state = VNB_MT_FAILED;
-        n->sms_pending = false;
-        n->paging = false;
+        vn_sms_fail(n);
     }
     if (n->sms_pending || n->cc != CC_NULL || b->mt_seq == b->mt_ack || !n->mi[0])
         return;
@@ -1225,6 +1252,7 @@ static void vn_poll(VNet *n) {
     b->mt_state = VNB_MT_PAGING;
     b->mt_ack = b->mt_seq;
     n->sms_pending = true;
+    n->sms_tries = 0;
     n->mt_bridge = true;
     n->page_left = VN_PAGE_BLOCKS;
     n->paging = true;
@@ -1264,8 +1292,8 @@ static void br_input(Bridge *b, VnBox *x, const uint8_t *d, int n) {
         while (b->rxn >= 2 && b->rxn >= 2 + b->rx[1]) {
             int len = b->rx[1];
             const uint8_t *p = &b->rx[2];
-            if (b->rx[0] == 'D' && len >= 1 && p[0] >= 2 && p[0] <= 12 && len - 1 - p[0] <= VN_SMS_MAX &&
-                b->dn < BR_DQ) {
+            if (b->rx[0] == 'D' && len >= 1 && p[0] >= 2 && p[0] <= 12 && len >= 1 + p[0] &&
+                len - 1 - p[0] <= VN_SMS_MAX && b->dn < BR_DQ) {
                 BrSms *s = &b->dq[(b->dh + b->dn) % BR_DQ];
                 memset(s->oa, 0, sizeof(s->oa));
                 memcpy(s->oa, p + 1, p[0]);
@@ -1592,13 +1620,26 @@ static void vt_check_go(GSMRelay *r, uint32_t fn) {
 
 /* ---------------- gsm-bts hooks ---------------- */
 
+/*
+ * Never waits for the relay: what the chardev does not take now stays at the
+ * front of b->tx for the next tick. br_put drops whole frames once b->tx is
+ * full, so a relay that stops reading loses frames, not the framing.
+ */
 static void gsm_relay_flush(GSMBts *bts) {
     Bridge *b = &bts->relay_core->br;
-    if (b->txn) {
-        if (b->up)
-            qemu_chr_fe_write_all(&bts->relay_chr, b->tx, b->txn);
+    int sent;
+
+    if (!b->txn)
+        return;
+    if (!b->up) {
         b->txn = 0;
+        return;
     }
+    sent = qemu_chr_fe_write(&bts->relay_chr, b->tx, b->txn);
+    if (sent <= 0)
+        return;
+    b->txn -= sent;
+    memmove(b->tx, b->tx + sent, b->txn);
 }
 
 static void gsm_relay_tick(void *opaque) {
