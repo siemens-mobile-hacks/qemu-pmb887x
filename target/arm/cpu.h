@@ -2723,8 +2723,8 @@ extern const uint64_t pred_esz_masks[5];
 #define TAG_GRANULE      (1 << LOG2_TAG_GRANULE)
 
 /*
- * pmb887x: a one-shot hook a board model can put on one guest address, A32
- * or Thumb (hw/arm/pmb887x/mci.c: card detect). While arm_pc_hook_addr
+ * PMB887X-WEB FEATURE (card assist): a one-shot hook a board model can put on
+ * one guest address, A32 or Thumb (hw/arm/pmb887x/card-assist.c). While arm_pc_hook_addr
  * matches, the translator emits helper_pmb887x_pc_hook before that insn and calls
  * arm_pc_hook_fn(env, host return address). Set both, then queue_tb_flush();
  * UINT32_MAX = off, and no code is emitted then.

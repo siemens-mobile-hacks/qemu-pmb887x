@@ -1277,6 +1277,23 @@
             '*relay': 'str' } }
 
 ##
+# @Pmb887xCardAssistProperties:
+#
+# Properties for pmb887x-card-assist objects (pmb887x-emu-web
+# doc/sd-card.md): with it the card is taken out and put back with
+# the object's "inserted" property, and the firmware is told.
+#
+# @slot: QOM path of the sd-slot (default: the only one)
+#
+# @debug: report what the object does (default: false)
+#
+# Since: 11.1
+##
+{ 'struct': 'Pmb887xCardAssistProperties',
+  'data': { '*slot': 'str',
+            '*debug': 'bool' } }
+
+##
 # @GsmOsmotrxProperties:
 #
 # Properties for gsm-osmotrx objects.
@@ -1353,6 +1370,7 @@
     'monitor-hmp',
     'monitor-qmp',
     'pef-guest',
+    'pmb887x-card-assist',
     { 'name': 'pr-manager-helper',
       'if': 'CONFIG_LINUX' },
     'qtest',
@@ -1434,6 +1452,7 @@
                                       'if': 'CONFIG_POSIX' },
       'monitor-hmp':                'MonitorHMPProperties',
       'monitor-qmp':                'MonitorQMPProperties',
+      'pmb887x-card-assist':        'Pmb887xCardAssistProperties',
       'pr-manager-helper':          { 'type': 'PrManagerHelperProperties',
                                       'if': 'CONFIG_LINUX' },
       'qtest':                      'QtestProperties',

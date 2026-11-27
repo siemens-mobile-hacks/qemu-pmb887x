@@ -182,6 +182,12 @@ bool sdbus_get_cmd_line(SDBus *sdbus);
  * Return: size of the response
  */
 size_t sdbus_do_command(SDBus *sd, SDRequest *req, uint8_t *resp, size_t respsz);
+/*
+ * PMB887X-WEB FEATURE (card assist, hw/arm/pmb887x/card-assist.c): called
+ * after every command on any SD bus with the length of the card's response
+ * (0: no card, or no response). NULL when nothing watches.
+ */
+extern void (*sdbus_command_observer)(SDBus *sd, const SDRequest *req, size_t rlen);
 /**
  * Write a byte to a SD bus.
  * @sd: bus

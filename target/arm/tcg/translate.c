@@ -6856,7 +6856,7 @@ static void arm_tr_translate_insn(DisasContextBase *dcbase, CPUState *cpu)
 
     dc->pc_curr = pc;
     if (unlikely(pc == qatomic_read(&arm_pc_hook_addr))) {
-        /* pmb887x board hook (cpu.h): may redirect the guest */
+        /* PMB887X-WEB FEATURE (card assist, cpu.h): may redirect the guest */
         gen_update_pc(dc, 0);
         gen_helper_pmb887x_pc_hook(tcg_env);
     }
@@ -6942,7 +6942,7 @@ static void thumb_tr_translate_insn(DisasContextBase *dcbase, CPUState *cpu)
 
     dc->pc_curr = pc;
     if (unlikely(pc == qatomic_read(&arm_pc_hook_addr))) {
-        /* pmb887x board hook (cpu.h): may redirect the guest */
+        /* PMB887X-WEB FEATURE (card assist, cpu.h): may redirect the guest */
         gen_update_pc(dc, 0);
         gen_helper_pmb887x_pc_hook(tcg_env);
     }

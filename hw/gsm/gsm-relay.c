@@ -1,7 +1,8 @@
 /* SPDX-License-Identifier: GPL-2.0-or-later */
 /*
  * gsm-relay.c - SMS, USSD, network name and calls for gsm-bts
- * (option relay=<chardev>).
+ * (option relay=<chardev>). PMB887X-WEB FEATURE (relay): a file of the fork,
+ * its hooks in upstream's gsm-bts.c/.h carry the same mark.
  *
  * The cell keeps only the radio side; everything behind it (routing calls and
  * SMS between phones, an SMS centre, USSD answers, call services) is an

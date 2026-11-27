@@ -2,11 +2,12 @@
 # (tools/asyncify-audit.mjs); the 2026-09-16 scsi_*/resettable_*/versatile*
 # batch is the versatilepb machine-init / legacy-SCSI / board-reset path the
 # wasm64 op-suite target (-M versatilepb, semihosting) unwinds through.
-# The PMB8876 memory card (hw/arm/pmb887x/mci.c): mci_realize
-# (realizes the sd-card, whose blk_getlength polls a coroutine), the MCI's
-# card calls run as BHs on the main loop (mci_sd_call_bh/_run: hw/sd/sd.c
-# does its block I/O in commands and data accesses, so all of sd_*/sdbus_*),
-# and wasm_card_bh (the page's eject/insert via QMP).
+# The memory card: the board's sd-slot realizes the sd-card when it binds
+# its port (qdev_bus_port_bind, bus_port_connect, sd_slot_* under sd_*:
+# sd_realize's blk_getlength polls a coroutine), sd.c runs the vCPU's block
+# I/O as a BH on the main loop (sd_wasm_blk_io_bh: all of sd_*/sdbus_*), and the page's
+# eject/insert (wasm_card_bh: QMP, the slot's "inserted" through
+# pmb887x_card_set_inserted; the card assist's held insert, cd_insert_bh).
 __emscripten_environ_constructor
 __main_void
 __pthread_cond_timedwait
@@ -45,7 +46,9 @@ blk_*
 blkconf_blocksizes
 block_job_*
 blockdev_*
+bus_port_connect
 bus_reset_child_foreach
+cd_insert_bh
 cfi_flash_*
 co_*
 coroutine_*
@@ -77,15 +80,13 @@ lsi53c8xx_handle_legacy_cmdline
 machine_run_board_init
 main
 main_loop*
-mci_realize
-mci_sd_call_bh
-mci_sd_call_run
 monitor_*
 notifier_list_notify
 object_property_set*
 os_*
 pl181_reset
 pmb887x_board_*
+pmb887x_card_set_inserted
 pmb887x_init
 property_set_bool
 pthread_attr_init
@@ -96,6 +97,7 @@ pthread_cond_wait
 pthread_kill
 pthread_mutex_destroy
 pthread_sigmask
+qdev_bus_port_bind
 qdev_machine_creation_done
 qdev_realize*
 qemu_aio_*

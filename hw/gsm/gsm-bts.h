@@ -3,7 +3,7 @@
 
 #include "qom/object.h"
 #include "net/net.h"
-#include "chardev/char-fe.h"
+#include "chardev/char-fe.h"   /* PMB887X-WEB FEATURE (relay) */
 #include "hw/gsm/gsm-coding.h"
 #include "hw/gsm/gsm-network.h"
 
@@ -35,7 +35,7 @@ OBJECT_DECLARE_SIMPLE_TYPE(GSMBts, GSM_BTS)
 #define GSMTAP_CHANNEL_SDCCH4 0x07
 #define GSMTAP_CHANNEL_PACCH 0x0B
 #define GSMTAP_CHANNEL_PDTCH 0x0D
-#define GSMTAP_CHANNEL_TCH_F 0x09
+#define GSMTAP_CHANNEL_TCH_F 0x09   /* PMB887X-WEB FEATURE (relay) */
 #define GSMTAP_CHANNEL_ACCH 0x80
 
 typedef struct GSMBitWriter GSMBitWriter;
@@ -45,6 +45,7 @@ typedef struct GSMBtsUplinkBlock GSMBtsUplinkBlock;
 typedef struct GSMBtsMessage GSMBtsMessage;
 typedef struct GSMBtsLapdm GSMBtsLapdm;
 typedef struct GSMBtsGprs GSMBtsGprs;
+/* PMB887X-WEB FEATURE (relay), from here to GSM_RELAY_TCH_TS */
 typedef struct GSMRelay GSMRelay;
 
 /* gsm-relay.c: the TCH/F of a call (relay option) */
@@ -131,7 +132,7 @@ struct GSMBts {
 
     GSMBtsGprs *gprs;
 
-    /* gsm-relay.c: SMS, USSD and calls through an external relay server (relay=<chardev>) */
+    /* PMB887X-WEB FEATURE (relay), gsm-relay.c: SMS, USSD and calls through an external relay server (relay=<chardev>) */
     char *relay;
     CharFrontend relay_chr;
     Notifier relay_done;
@@ -171,6 +172,7 @@ void gsm_bts_gprs_downlink_burst(GSMBts *bts, uint32_t frame_number, GSMBurst *b
 void gsm_bts_gprs_uplink_burst(GSMBts *bts, uint32_t frame_number, const GSMUplinkBurst *burst);
 void gsm_bts_gprs_handle_ethernet(GSMBts *bts, const uint8_t *frame, size_t size);
 
+/* PMB887X-WEB FEATURE (relay): gsm-relay.c */
 void gsm_relay_init(GSMBts *bts);
 void gsm_relay_cleanup(GSMBts *bts);
 void gsm_relay_rach(GSMBts *bts, uint8_t ra);

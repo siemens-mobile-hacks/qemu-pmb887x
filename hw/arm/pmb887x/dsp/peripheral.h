@@ -85,7 +85,4 @@ uint16_t dsp_bus_get_mcu_semaphores(dsp_bus_t *bus);
 void dsp_bus_request_mcu_semaphores(dsp_bus_t *bus, uint16_t value);
 void dsp_bus_release_mcu_semaphores(dsp_bus_t *bus, uint16_t value);
 
-/* live microphone (the browser page): 8 kHz signed 16-bit samples for the AFE's mic ADC (afe.c) */
-size_t pmb887x_afe_mic_push(const int16_t *samples, size_t count);
-
 #endif

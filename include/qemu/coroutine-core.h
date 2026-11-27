@@ -117,8 +117,10 @@ Coroutine *qemu_coroutine_self(void);
  */
 #ifdef __EMSCRIPTEN__
 void qemu_coroutine_forbid_current_thread(void);
+bool qemu_coroutine_current_thread_forbidden(void);
 #else
 static inline void qemu_coroutine_forbid_current_thread(void) {}
+static inline bool qemu_coroutine_current_thread_forbidden(void) { return false; }
 #endif
 
 /**

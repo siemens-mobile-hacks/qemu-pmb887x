@@ -303,7 +303,7 @@ void gsm_uplink_access_burst_data(const GSMUplinkBurst *burst, size_t start, uin
 }
 
 /*
- * gsm-relay.c: the TCH/F channel coding without the burst
+ * PMB887X-WEB FEATURE (relay), gsm-relay.c: the TCH/F channel coding without the burst
  * mapping, which TCH/F does with block-diagonal interleaving over 8 bursts.
  */
 void gsm_xcch_code_bits(const uint8_t block[GSM_XCCH_BLOCK_BYTES], uint8_t coded[GSM_XCCH_CODED_BITS]) {

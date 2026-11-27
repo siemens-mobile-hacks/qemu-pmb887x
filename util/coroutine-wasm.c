@@ -33,6 +33,11 @@ void qemu_coroutine_forbid_current_thread(void)
     co_forbidden_thread = true;
 }
 
+bool qemu_coroutine_current_thread_forbidden(void)
+{
+    return co_forbidden_thread;
+}
+
 /*
  * QEMU_COSTACK=1: log every distinct JS/wasm call stack at a coroutine
  * switch (Asyncify must instrument exactly these frames; the set feeds
@@ -129,6 +134,7 @@ CoroutineAction qemu_coroutine_switch(Coroutine *from_, Coroutine *to_,
          */
         fprintf(stderr, "qemu: coroutine switch on the vCPU thread "
                 "(not Asyncify-instrumented) — aborting\n");
+        wasm_costack_trace();   /* the stack that did it, as COSTACK */
         abort();
     }
     set_current(to_);

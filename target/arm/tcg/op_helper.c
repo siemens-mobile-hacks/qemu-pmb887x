@@ -27,6 +27,7 @@
 #include "accel/tcg/probe.h"
 #include "cpregs.h"
 
+/* PMB887X-WEB FEATURE (card assist): see cpu.h */
 uint32_t arm_pc_hook_addr = UINT32_MAX;
 void (*arm_pc_hook_fn)(CPUARMState *env, uintptr_t ra);
 

@@ -30,6 +30,8 @@
 #include "qemu/timer.h"
 #include "exec/icount.h"
 #include "hw/core/cpu.h"
+#include "hw/arm/pmb887x/card-assist.h"
+#include "hw/arm/pmb887x/dsp/afe-mic.h"
 #include "hw/misc/phone/accessory-connector.h"
 #include "net/hub.h"
 #include "net/net.h"
@@ -407,10 +409,11 @@ void wasm_accessory_plug(void)
  * file=<MEMFS path>" and syncs that image with a host folder. To change it
  * under a running phone it calls wasm_card_eject(), waits until
  * wasm_card_done() has counted it, reads or rewrites the MEMFS file, writes
- * its path into wasm_card_buf() and calls wasm_card_insert(). Both are the
- * monitor's eject/change ("sd0"), run by a bottom half under the BQL; the
- * MCI model turns the media change into the firmware's card detect
- * (hw/arm/pmb887x/mci.c), so the phone unmounts / mounts the card.
+ * its path into wasm_card_buf() and calls wasm_card_insert(). Each runs as a
+ * bottom half under the BQL: the card leaves the sd-slot (through the card
+ * assist when the page made one, which tells the firmware: PMB887X-WEB
+ * FEATURE, hw/arm/pmb887x/card-assist.c), then the drive "sd0" is closed;
+ * an insert opens the new image, then puts the card back.
  */
 static char card_path[512];
 static int32_t card_done;
@@ -421,27 +424,23 @@ char *wasm_card_buf(void)
     return card_path;
 }
 
-/* blocks the phone wrote to the card so far (hw/arm/pmb887x/mci.c) */
-extern uint32_t pmb887x_mci_write_blocks;
-
+/* write commands the card answered so far: changes when the phone writes */
 EMSCRIPTEN_KEEPALIVE
 int32_t wasm_card_writes(void)
 {
-    return qatomic_read(&pmb887x_mci_write_blocks);
+    return qatomic_read(&pmb887x_card_writes);
 }
 
 /*
- * what the firmware knows of the card (hw/arm/pmb887x/mci.c): 0 in (read
- * again after the last insert), 1 out, 2 going out (the firmware has not
- * seen the removal yet), 3 reading (inserted, the firmware has not read it
- * yet), 4 not seen (the model gave up telling the firmware)
+ * what the firmware knows of the card (card-assist.c): 0 in (read again
+ * after the last insert), 1 out, 2 going out (the firmware has not seen the
+ * removal yet), 3 reading (inserted, the firmware has not read it yet), 4 not
+ * seen (the assist gave up telling the firmware)
  */
-extern uint32_t pmb887x_mci_card_state;
-
 EMSCRIPTEN_KEEPALIVE
 int32_t wasm_card_state(void)
 {
-    return qatomic_read(&pmb887x_mci_card_state);
+    return qatomic_read(&pmb887x_card_state);
 }
 
 /* operations finished so far (eject and insert count one each) */
@@ -459,7 +458,10 @@ static void wasm_card_bh(void *opaque)
     if (path) {
         qmp_blockdev_change_medium("sd0", NULL, path, "raw", false, false,
                                    false, 0, &err);
-    } else {
+        if (!err) {
+            pmb887x_card_set_inserted(true, &err);
+        }
+    } else if (pmb887x_card_set_inserted(false, &err)) {
         qmp_eject("sd0", NULL, true, true, &err);
     }
     if (err) {
@@ -478,17 +480,15 @@ void wasm_card_eject(void)
 }
 
 /*
- * clean unmount before a change (hw/arm/pmb887x/mci.c): the phone writes its
- * FAT and drops its cache, as with "Eject card", so the change that follows
+ * clean unmount before a change (card-assist.c): the phone writes its FAT
+ * and drops its cache, as with "Eject card", so the change that follows
  * gives no "Data lost" note. wasm_card_unmount_state(): 0 none, 1 pending,
- * 2 sent, 3 not possible (no GBS_SendMessage found, no card server)
+ * 2 sent, 3 not possible (no card assist, no GBS_SendMessage found, no card
+ * server)
  */
-extern void pmb887x_mci_unmount(void);
-extern uint32_t pmb887x_mci_unmount_state;
-
 static void wasm_card_unmount_bh(void *opaque)
 {
-    pmb887x_mci_unmount();
+    pmb887x_card_unmount();
 }
 
 EMSCRIPTEN_KEEPALIVE
@@ -497,14 +497,14 @@ void wasm_card_unmount(void)
     if (!qatomic_load_acquire(&key_bh_ready)) {
         return;
     }
-    qatomic_set(&pmb887x_mci_unmount_state, 1);
+    qatomic_set(&pmb887x_card_unmount_state, 1);
     aio_bh_schedule_oneshot(qemu_get_aio_context(), wasm_card_unmount_bh, NULL);
 }
 
 EMSCRIPTEN_KEEPALIVE
 int32_t wasm_card_unmount_state(void)
 {
-    return qatomic_read(&pmb887x_mci_unmount_state);
+    return qatomic_read(&pmb887x_card_unmount_state);
 }
 
 EMSCRIPTEN_KEEPALIVE
@@ -870,9 +870,8 @@ int32_t wasm_gsmrelay_put(int32_t len)
  * WASM PORT (removable): the page captures the microphone at 8 kHz
  * (site/mic.js), writes signed 16-bit samples to mic_buf and calls
  * wasm_mic_put(); the AFE model (hw/arm/pmb887x/dsp/peripheral/afe.c) takes
- * them as the mic ADC's input. Nothing put = silence, as before.
+ * them as the mic ADC's input (afe-mic.c). Nothing put = silence, as before.
  */
-size_t pmb887x_afe_mic_push(const int16_t *samples, size_t count);
 
 #define MIC_BUF_SAMPLES 2048
 static int16_t mic_buf[MIC_BUF_SAMPLES];

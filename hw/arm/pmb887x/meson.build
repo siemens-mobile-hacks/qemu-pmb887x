@@ -2,6 +2,7 @@ dsp_core_sources = files('dsp/core.c')
 dsp_peripheral_sources = files(
 	'dsp/peripheral.c',
 	'dsp/peripheral/afe.c',
+	'dsp/peripheral/afe-mic.c',	# PMB887X-WEB FEATURE (mic)
 	'dsp/peripheral/baseband.c',
 	'dsp/peripheral/channel-decoder.c',
 	'dsp/peripheral/cipher.c',
@@ -35,6 +36,7 @@ arm_common_ss.add(when: 'CONFIG_PMB887X', if_true: files(
 	'sim.c',
 	'mmci.c',
 	'mci.c',
+	'card-assist.c',	# PMB887X-WEB FEATURE (card assist)
 	'mmicif.c',
 	'gptu.c',
 	'vic.c',

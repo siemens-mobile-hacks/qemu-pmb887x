@@ -54,7 +54,7 @@ DEF_HELPER_2(exception_swstep, noreturn, env, i32)
 DEF_HELPER_2(exception_pc_alignment, noreturn, env, vaddr)
 DEF_HELPER_1(setend, void, env)
 DEF_HELPER_2(wfi, void, env, i32)
-/* pmb887x: board hook before the A32 insn at arm_pc_hook_addr (see cpu.h) */
+/* PMB887X-WEB FEATURE (card assist): hook before the insn at arm_pc_hook_addr (see cpu.h) */
 DEF_HELPER_1(pmb887x_pc_hook, void, env)
 DEF_HELPER_2(wfe, void, env, i32)
 DEF_HELPER_2(wfit, void, env, i32)
